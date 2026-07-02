@@ -10,7 +10,7 @@ export class Renderer {
     this.ctx = canvas.getContext('2d');
   }
 
-  draw(sim, alpha) {
+  draw(sim, alpha, perfGovernor = null) {
     const { ctx, canvas } = this;
     const fracture = sim.fracture || null;
 
@@ -48,8 +48,8 @@ export class Renderer {
     this._drawMidio(ctx, pose, sim.midio.groundY);
 
     if (sim.midasus) sim.midasus.draw(ctx);
-    if (sim.fracture) sim.fracture.draw(ctx, canvas);
-    if (biomeManager) biomeManager.drawForeground(ctx, canvas, pose.worldX, calmC);
+    if (sim.fracture) sim.fracture.draw(ctx, canvas, { glow: perfGovernor ? perfGovernor.crackGlowEnabled : true });
+    if (biomeManager && (!perfGovernor || perfGovernor.veilEnabled)) biomeManager.drawForeground(ctx, canvas, pose.worldX, calmC);
 
     ctx.restore(); // camera transform
     ctx.restore();

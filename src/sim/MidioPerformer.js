@@ -6,7 +6,7 @@ import { Role } from '../core/NoteEvent.js';
 import { clamp, mulberry32 } from '../utils/math.js';
 
 const SPIN_PHASE = { launch: 0.0, apex: 0.35, fall: 0.65, land: 1.0 };
-const GHOST_FRAMES = 4;
+const GHOST_FRAMES = 6;
 const MILESTONES = [5, 10, 20];
 
 const easeInOutC1 = (t) => {
@@ -51,9 +51,9 @@ export class MidioPerformer {
       if (!isKick) strut = Math.sin(beatPhase * Math.PI) * 0.035 * (1 - calmC * 0.5);
     }
 
-    // --- apex tricks: spin or backflip on high-velocity jump or combo ≥2 ---
+    // --- apex tricks: spin or backflip on high-velocity jump or combo ≥1.5 ---
     let spin = 0;
-    if (jump.state === 'AIR' && (jump.lastVel > 0.8 || (comboSystem && comboSystem.M >= 2))) {
+    if (jump.state === 'AIR' && (jump.lastVel > 0.55 || (comboSystem && comboSystem.M >= 1.5))) {
       if (!this._spin && jump.airborne) {
         // Trigger once per jump at launch.
         const kind = this._pickKind();
@@ -78,9 +78,9 @@ export class MidioPerformer {
       this._midasus.burstAt(midio.screenX, midio.renderY - 30, 16, 60); // golden sparkle
     }
 
-    // --- landing flourish: one-frame superhero pose on clean landing at M≥2 ---
+    // --- landing flourish: one-frame superhero pose on clean landing at M≥1.5 ---
     let armFlare = 0, crouch = 0;
-    if (jump.pendingLanding && comboSystem && comboSystem.justClean && comboSystem.M >= 2) {
+    if (jump.pendingLanding && comboSystem && comboSystem.justClean && comboSystem.M >= 1.5) {
       armFlare = 1;
       crouch = -0.18;
     }
@@ -116,7 +116,7 @@ export class MidioPerformer {
 
     // --- ghost trail: ring-buffer of recent live poses during launch/fall ---
     const speed = jump.state === 'AIR' ? Math.abs(jump.y - (this._prevY || 0)) / Math.max(dtSec, 1e-6) : 0;
-    if (speed > 80) {
+    if (speed > 50) {
       this._ghosts.unshift({
         x: midio.screenX + driftX,
         y: midio.renderY + driftY,
@@ -125,7 +125,7 @@ export class MidioPerformer {
         leanDeg: midio.leanDeg,
         spin,
         armFlare,
-        alpha: clamp((speed - 80) / 600, 0, 0.55),
+        alpha: clamp((speed - 50) / 600, 0, 0.6),
       });
       if (this._ghosts.length > GHOST_FRAMES) this._ghosts.length = GHOST_FRAMES;
     } else if (this._ghosts.length) {

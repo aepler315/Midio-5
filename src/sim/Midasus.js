@@ -13,10 +13,11 @@ const KP = 90, KD = 12;
 const SNAP = 0.70;
 
 export class Midasus {
-  constructor(timeline, midio, { groundY = 480, ceilingY = 40, seed = 777 } = {}) {
+  constructor(timeline, midio, { groundY = 480, ceilingY = 40, seed = 777, worldScale = 1 } = {}) {
     this.midio = midio;
     this.yFloor = groundY;
     this.yCeiling = ceilingY;
+    this.worldScale = worldScale;
 
     this.q = timeline.filter((e) => e.role === Role.MELODY).sort((a, b) => a.tMs - b.tMs);
     this.i = 0;
@@ -46,7 +47,9 @@ export class Midasus {
   _target(n) {
     const norm = clamp((n.pitch - this.pMin) / (this.pMax - this.pMin), 0, 1);
     const y = lerp(this.yFloor - 120, this.yCeiling + 60, norm);
-    const x = this.midio.screenX + 90 + 50 * n.vel;
+    // Hot notes push the fairy much further out ahead of Midio — a wide,
+    // energetic range rather than a small tether (scaled to the screen).
+    const x = this.midio.screenX + (90 + 260 * n.vel) * this.worldScale;
     return { x, y };
   }
 
@@ -56,8 +59,8 @@ export class Midasus {
     const ay = this.midio.groundY - this.midio.y - 130;
     const t = nowMs / 1000;
     // Calm = wider, slower orbit; loud = tighter, faster.
-    const axAmp = 60 + 50 * C;
-    const ayAmp = 34 + 30 * C;
+    const axAmp = (140 + 100 * C) * this.worldScale;
+    const ayAmp = (80 + 55 * C) * this.worldScale;
     const freqMul = 1 - 0.35 * C;
     const x = ax + axAmp * Math.sin(1.8 * freqMul * t + this.phi);
     const y = ay + ayAmp * Math.sin(1.2 * freqMul * t);

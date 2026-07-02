@@ -126,14 +126,14 @@ export class BiomeManager {
 
   _profile(name) { return BIOMES.find((b) => b.name === name); }
 
-  update(nowMs, dtSec, energyCurves, calm) {
+  update(nowMs, dtSec, energyCurves, calm, perfMul = 1) {
     this.tSec = nowMs / 1000;
     this._calmC = calm ? calm.C : 0;
     const { from, to, t } = this._blend(nowMs);
     this.currentBlend = { from, to, t };
 
-    this.fields.get(from).update(dtSec, this.tSec, energyCurves, nowMs, this._calmC);
-    if (to !== from) this.fields.get(to).update(dtSec, this.tSec, energyCurves, nowMs, this._calmC);
+    this.fields.get(from).update(dtSec, this.tSec, energyCurves, nowMs, this._calmC, perfMul);
+    if (to !== from) this.fields.get(to).update(dtSec, this.tSec, energyCurves, nowMs, this._calmC, perfMul);
 
     if (this._scanlineActive) {
       this._scanlineY += dtSec * this.h * 2.2;

@@ -29,16 +29,16 @@ export class ImpactFX {
   trigger(worldX, groundY, I, camera) {
     const rand = this.rand;
 
-    this.craters.spawn({ wx: worldX, y: groundY, R: 14 + 66 * I, alpha: 0.85 * I, life: 0.12 });
+    this.craters.spawn({ wx: worldX, y: groundY, R: 20 + 92 * I, alpha: 0.9 * I, life: 0.14 });
 
-    const ring = this.rings.spawn({ wx: worldX, y: groundY, Rd: 40 + 120 * I, tau: 0.09, life: 0.42 });
-    for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * 4 * I;
+    const ring = this.rings.spawn({ wx: worldX, y: groundY, Rd: 55 + 170 * I, tau: 0.1, life: 0.48 });
+    for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * 5 * I;
 
-    const n = Math.round(6 + 18 * I);
+    const n = Math.round(10 + 30 * I);
     for (let i = 0; i < n; i++) {
       const theta = (rand() * 2 - 1) * (35 * Math.PI / 180);
       const dir = rand() < 0.5 ? -1 : 1;
-      const speed = 60 + 160 * I * rand();
+      const speed = 90 + 220 * I * rand();
       this.motes.spawn({
         wx: worldX, y: groundY,
         vx: Math.cos(theta) * speed * dir,
@@ -50,7 +50,7 @@ export class ImpactFX {
     this.scars.push({ wx: worldX, y: groundY, width: 20 + 40 * I, age: 0, maxAge: 4 });
     if (this.scars.length > 60) this.scars.shift();
 
-    if (camera) camera.shake(9 * I);
+    if (camera) camera.shake(14 * I);
   }
 
   /** One-shot dust burst (gag crack-dust, item 5) — rising motes, no crater/ring. */

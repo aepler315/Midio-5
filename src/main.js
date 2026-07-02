@@ -11,6 +11,7 @@ import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
+import { PerfGovernor } from './render/PerfGovernor.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -39,7 +40,9 @@ let debugOverlay = null;
 let simTime = 0;
 let acc = 0;
 let lastNowMs = 0;
+let lastRafMs = 0;
 let running = false;
+const perfGovernor = new PerfGovernor();
 
 function fitCanvas() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -67,11 +70,12 @@ function startTimeline(timelineData) {
   });
   renderer = new Renderer(canvas);
   visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false });
-  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop);
+  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop, perfGovernor);
 
   simTime = 0;
   acc = 0;
   lastNowMs = audioEngine.nowMs;
+  lastRafMs = null;
   audioEngine.start(0);
   running = true;
 
@@ -162,6 +166,11 @@ dropzoneEl.addEventListener('click', () => fileInputEl.click());
 
 function frame(tRaf) {
   if (!running) return;
+
+  if (lastRafMs !== null) perfGovernor.sample(tRaf - lastRafMs, tRaf);
+  lastRafMs = tRaf;
+  sim.perfMul = perfGovernor.particleMul;
+
   const nowMs = audioEngine.nowMs;
   let deltaMs = nowMs - lastNowMs;
   lastNowMs = nowMs;
@@ -176,10 +185,10 @@ function frame(tRaf) {
   }
 
   const alpha = acc / STEP_MS;
-  renderer.draw(sim, alpha);
+  renderer.draw(sim, alpha, perfGovernor);
   comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
 
-  visionLoop.maybeSample(tRaf, simTime);
+  if (perfGovernor.visionAllowed) visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();
 
   if (sim.fracture.isDone) {

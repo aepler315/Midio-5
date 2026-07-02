@@ -45,10 +45,11 @@ export class ParticleField {
     return p;
   }
 
-  update(dtSec, tSec, energyCurves, nowMs, calmC = 0) {
+  update(dtSec, tSec, energyCurves, nowMs, calmC = 0, perfMul = 1) {
     const rand = this.rand;
-    // Calm = denser, brighter ambient field.
-    this._activeCount = Math.max(1, Math.floor(this.count * (0.7 + 0.5 * calmC)));
+    // Calm = denser, brighter ambient field; perfMul shrinks the field under
+    // sustained frame-time pressure (perf governor, spec §6.2 "particle caps").
+    this._activeCount = Math.max(1, Math.floor(this.count * (0.7 + 0.5 * calmC) * perfMul));
     const speedMul = 0.65 + 0.6 * calmC;
     const alphaMul = 0.7 + 0.4 * calmC;
 

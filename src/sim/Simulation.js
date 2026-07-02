@@ -31,7 +31,7 @@ export class Simulation {
     this.canvasWidth = canvasWidth;
     this.canvasHeight = canvasHeight;
 
-    this.midio = new Midio();
+    this.midio = new Midio({ canvasWidth, canvasHeight });
     this.jump = new JumpController(paramBus);
     this.camera = new CameraDirector();
     this.comboSystem = new ComboSystem();
@@ -40,8 +40,14 @@ export class Simulation {
     this.obstacles = new ObstacleSpawner(paramBus);
     this.obstacles.buildCandidates(conductor.timeline, 60000 / bpm);
 
-    this.midasus = new Midasus(conductor.timeline, this.midio, { groundY: this.midio.groundY, ceilingY: 40 });
-    this.broshi = new Broshi(conductor, paramBus);
+    // worldScale keeps companion excursion amplitudes (tuned against a 1280px
+    // reference) proportional to the actual canvas, so the cast's roam range
+    // scales with the screen instead of staying pinned to fixed pixel offsets.
+    const worldScale = canvasWidth / 1280;
+    this.midasus = new Midasus(conductor.timeline, this.midio, {
+      groundY: this.midio.groundY, ceilingY: canvasHeight * (40 / 720), worldScale,
+    });
+    this.broshi = new Broshi(conductor, paramBus, { worldScale });
     this.broshi._lastBarPeriodMs = (60000 / bpm) * 4;
 
     this.performer = new MidioPerformer({ seed: 1313 });
@@ -64,6 +70,7 @@ export class Simulation {
 
     this.worldX = 0;
     this.timeMs = 0;
+    this.perfMul = 1; // set by the perf governor (spec §6.2); 1 = full quality
 
     this.prev = this._snapshot();
     this.curr = this._snapshot();
@@ -111,8 +118,8 @@ export class Simulation {
     }
 
     // Gag FX: crack-dust at the sag, camera punch + shake at the recovery.
-    if (this.ground.justSagged) this.impactFX.dustBurst(this.worldX + 120, this.midio.groundY, 14);
-    if (this.ground.justRecovered) { this.camera.punch(1.04); this.camera.shake(9); }
+    if (this.ground.justSagged) this.impactFX.dustBurst(this.worldX + 120, this.midio.groundY, 20);
+    if (this.ground.justRecovered) { this.camera.punch(1.07); this.camera.shake(14); }
 
     const stumbled = this.obstacles.checkCollision(this.worldX, this.midio.halfWidth, this.jump.y, this.ground, nowMs);
     if (stumbled) this.comboSystem.onStumble();
@@ -133,7 +140,7 @@ export class Simulation {
 
     this.midasus.update(nowMs, dtSec, this.calm);
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm);
-    this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm);
+    this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm, this.perfMul);
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
 
     this.camera.update(dtSec, this.calm);

@@ -10,7 +10,9 @@ import { RABID_WEIGHTS } from '../audio/bands.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 
 const K = 26, C = 3.4; // spring stiffness (s^-2), damping (s^-1)
-const D_TRAIL = -140, D_SURGE = 120, D_PANIC = -220;
+// Reference (1280px canvas) set-point offsets; scaled by worldScale per
+// instance so Broshi's swing spans a consistent fraction of any screen size.
+const D_TRAIL_REF = -190, D_SURGE_REF = 190, D_PANIC_REF = -260;
 const PANIC_LOOKAHEAD_MS = 300;
 const RABID_ENTER_G = 0.75, RABID_EXIT_G = 0.60, RABID_ENTER_HOLD_MS = 1500;
 const RABID_FADE_SEC = 0.8;
@@ -25,9 +27,13 @@ const easeOutElastic = (t) => {
 };
 
 export class Broshi {
-  constructor(conductor, paramBus, { seed = 555 } = {}) {
+  constructor(conductor, paramBus, { seed = 555, worldScale = 1 } = {}) {
     this.conductor = conductor;
     this.rand = mulberry32(seed);
+    this.worldScale = worldScale;
+    this.dTrail = D_TRAIL_REF * worldScale;
+    this.dSurge = D_SURGE_REF * worldScale;
+    this.dPanic = D_PANIC_REF * worldScale;
 
     this.state = 'TRAIL'; // TRAIL | SURGE | PANIC
     this.surgeUntilMs = -Infinity;
@@ -37,7 +43,7 @@ export class Broshi {
     this._barsSinceSurge = 0;
     this._lastBarPeriodMs = 500;
 
-    this.xRel = D_TRAIL;
+    this.xRel = this.dTrail;
     this.xRelVel = 0;
 
     this.G = 0;
@@ -145,7 +151,7 @@ export class Broshi {
     else if (this.state === 'PANIC') this.state = 'TRAIL';
     else if (this.state === 'SURGE' && nowMs >= this.surgeUntilMs) this.state = 'TRAIL';
 
-    const dStar = this.state === 'SURGE' ? D_SURGE : this.state === 'PANIC' ? D_PANIC : D_TRAIL;
+    const dStar = this.state === 'SURGE' ? this.dSurge : this.state === 'PANIC' ? this.dPanic : this.dTrail;
     const accel = -K * (this.xRel - dStar) - C * this.xRelVel;
     this.xRelVel += accel * dtSec;
     this.xRel += this.xRelVel * dtSec;
