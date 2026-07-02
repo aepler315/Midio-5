@@ -3,6 +3,8 @@ import { Conductor } from './core/Conductor.js';
 import { ParamBus } from './core/ParamBus.js';
 import { midiToTimeline } from './core/MidiAdapter.js';
 import { buildDemoTimeline } from './core/DemoTimeline.js';
+import { synthesizeEnergyCurves } from './core/EnergyCurvesSynth.js';
+import { audioToTimeline } from './audio/AudioAdapter.js';
 import { Simulation } from './sim/Simulation.js';
 import { Renderer } from './render/Renderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
@@ -15,6 +17,7 @@ const loaderEl = document.getElementById('loader');
 const dropzoneEl = document.getElementById('dropzone');
 const fileInputEl = document.getElementById('fileInput');
 const demoBtnEl = document.getElementById('demoBtn');
+const progressEl = document.getElementById('progressText');
 const hudEl = document.getElementById('hud');
 const comboReadoutEl = document.getElementById('comboReadout');
 
@@ -47,7 +50,10 @@ async function bootAudio() {
 
 function startTimeline(timelineData) {
   conductor.load(timelineData);
-  sim = new Simulation(conductor, paramBus, { bpm: timelineData.bpm || 120 });
+  sim = new Simulation(conductor, paramBus, {
+    bpm: timelineData.bpm || 120,
+    energyCurves: timelineData.energyCurves || null,
+  });
   renderer = new Renderer(canvas);
   fitCanvas();
 
@@ -69,8 +75,14 @@ async function loadMidiFile(file) {
   await bootAudio();
   const buf = await file.arrayBuffer();
   const data = midiToTimeline(buf);
+  data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
   synth.connectConductor(conductor);
   startTimeline(data);
+}
+
+function showProgress(text) {
+  progressEl.textContent = text;
+  progressEl.classList.remove('hidden');
 }
 
 async function loadAudioFile(file) {
@@ -83,11 +95,19 @@ async function loadAudioFile(file) {
     alert('Could not decode audio file: ' + err.message);
     return;
   }
-  // Full 7-band stem separation + onset/BPM analysis lands in a later build
-  // stage (spec §1.2). Until then, fall back to a demo click-track so the
-  // real audio still plays and the visual systems still have KICK events.
-  const bpmGuess = 120;
-  const data = buildDemoTimeline({ bpm: bpmGuess, bars: Math.max(8, Math.round(audioBuffer.duration / (60 / bpmGuess) / 4)) });
+
+  showProgress('Separating into 7 frequency bands…');
+  const data = await audioToTimeline(audioBuffer, {
+    onProgress: ({ phase, progress }) => {
+      if (phase === 'separate') showProgress(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`);
+      else if (phase === 'analyze') showProgress('Detecting onsets, tempo, and downbeat…');
+    },
+  });
+  progressEl.classList.add('hidden');
+
+  if (data.freeTime) {
+    console.warn(`Low tempo confidence (${data.confidence.toFixed(2)}) — switching to free-time, kick-reactive jumps.`);
+  }
   startTimeline(data);
   audioEngine.playBuffer(audioBuffer, 0);
 }
@@ -96,6 +116,7 @@ async function loadDemo() {
   await bootAudio();
   synth.connectConductor(conductor);
   const data = buildDemoTimeline({});
+  data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
   startTimeline(data);
 }
 
