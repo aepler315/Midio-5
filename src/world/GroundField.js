@@ -155,21 +155,45 @@ export class GroundField {
     return amp;
   }
 
-  /** The ground's screen-y at a world x — replaces the constant groundY. */
+  /** The ground's screen-y at a world x — replaces the constant groundY.
+   *  Geometric: each slice is mostly flat, with only a narrow linear blend
+   *  at the boundary between slices. This avoids the lumpy organic look while
+   *  still keeping the play surface readable. */
   heightAt(worldX, nowMs) {
     const now = nowMs ?? this._lastNowMs;
     const f = (((worldX / this.spacing) % this.n) + this.n) % this.n;
     const i0 = Math.floor(f);
     const frac = f - i0;
     const h = this.h;
-    const terrain = catmull(
-      h[(i0 - 1 + this.n) % this.n],
-      h[i0 % this.n],
-      h[(i0 + 1) % this.n],
-      h[(i0 + 2) % this.n],
-      frac,
-    );
+    // h[i0] is the slice's height; blend only over the first/last 15% of the
+    // slice width so the surface reads as flat platforms separated by seams.
+    const blendWidth = 0.15;
+    let h0, h1, localT;
+    if (frac < blendWidth) {
+      // left blend with previous slice
+      const prev = h[(i0 - 1 + this.n) % this.n];
+      h0 = prev; h1 = h[i0 % this.n];
+      localT = frac / blendWidth;
+    } else if (frac > 1 - blendWidth) {
+      // right blend with next slice
+      h0 = h[i0 % this.n]; h1 = h[(i0 + 1) % this.n];
+      localT = (frac - (1 - blendWidth)) / blendWidth;
+    } else {
+      h0 = h[i0 % this.n]; h1 = h0; localT = 0;
+    }
+    const terrain = h0 + (h1 - h0) * localT;
     return this.baseY + terrain + this._gagOffset(worldX, now);
+  }
+
+  /** Array of {x, y} slice tops for a given screen span, for wireframe draw. */
+  sliceTops(worldX0, originX, nowMs) {
+    const out = [];
+    for (let x = -this.spacing; x <= 1280 + this.spacing; x += this.spacing) {
+      const wx = worldX0 + (x - originX);
+      const y = this.heightAt(wx, nowMs);
+      out.push({ x, wx, y });
+    }
+    return out;
   }
 
   get gagActive() { return this.gagState !== 'idle'; }

@@ -353,28 +353,36 @@ export class BiomeManager {
     const groundColor = this.lerpCache.get(A.silhouette, B.silhouette, t);
 
     if (groundField) {
-      // Rolling terrain (item 5): sample the ground field across the screen and
-      // fill downward from the surface line so the play surface is the terrain.
-      const originX = 220; // Midio's screenX — worldX maps here (matches Renderer obstacle draw)
+      // Geometric/wireframe ground (item 5): flat slice platforms with only
+      // narrow linear seams, rendered as stroked edges over a transparent fill.
+      const originX = 220; // Midio's screenX — worldX maps here
+      const tops = groundField.sliceTops(worldX, originX, nowMs);
+
+      // Optional dark silhouette fill below the platform tops.
       ctx.fillStyle = groundColor;
       ctx.beginPath();
       ctx.moveTo(0, canvas.height);
-      for (let x = 0; x <= canvas.width; x += 10) {
-        const wx = worldX + (x - originX);
-        ctx.lineTo(x, groundField.heightAt(wx, nowMs));
+      for (const p of tops) {
+        ctx.lineTo(p.x, p.y);
       }
       ctx.lineTo(canvas.width, canvas.height);
       ctx.closePath();
+      ctx.globalAlpha = 0.6;
       ctx.fill();
+      ctx.globalAlpha = 1;
 
-      // A subtle highlight along the surface so the silhouette reads as ground.
-      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-      ctx.lineWidth = 2;
+      // Wireframe slice lines: vertical seams + horizontal tops.
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      for (let x = 0; x <= canvas.width; x += 10) {
-        const wx = worldX + (x - originX);
-        const y = groundField.heightAt(wx, nowMs);
-        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      for (const p of tops) {
+        // horizontal top edge
+        const prev = tops[tops.indexOf(p) - 1] || { x: p.x - groundField.spacing, y: p.y };
+        ctx.moveTo(prev.x, prev.y);
+        ctx.lineTo(p.x, p.y);
+        // vertical seam down to canvas bottom
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x, canvas.height);
       }
       ctx.stroke();
     } else {
