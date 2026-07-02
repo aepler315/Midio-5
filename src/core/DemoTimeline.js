@@ -19,11 +19,16 @@ export function buildDemoTimeline({ bpm = 120, bars = 96, seed = 1337 } = {}) {
 
     const energyPhase = 0.5 + 0.5 * Math.sin((bar / bars) * Math.PI * 1.3);
     const surge = bar % 8 === 7;
+    // Every 5th bar drops to a sparse one-kick pattern, opening a >1.5-beat
+    // gap so the obstacle spawner (spec §2.2.3) has room to seed a hazard —
+    // a dense four-on-the-floor pattern never leaves that much daylight.
+    const sparse = bar % 5 === 4;
 
-    // RHYTHM: kick on 1 & 3, snare on 2 & 4, hats on every 8th note.
+    // RHYTHM: kick on 1 & 3 (or just 1 on sparse bars), snare fills, hats on every 8th note.
     for (let beat = 0; beat < 4; beat++) {
       const t = barStart + beat * beatMs;
-      if (beat === 0 || beat === 2) {
+      const isKickBeat = beat === 0 || (!sparse && beat === 2);
+      if (isKickBeat) {
         timeline.push(makeNoteEvent({
           tMs: t, durMs: 90, pitch: 36, vel: 0.75 + 0.2 * energyPhase + (surge ? 0.15 : 0),
           role: Role.RHYTHM, kick: true, src: 'audio', channel: 0,
@@ -34,12 +39,14 @@ export function buildDemoTimeline({ bpm = 120, bars = 96, seed = 1337 } = {}) {
           role: Role.RHYTHM, kick: false, src: 'audio', channel: 0,
         }));
       }
-      for (let e = 0; e < 2; e++) {
-        const th = t + e * (beatMs / 2);
-        timeline.push(makeNoteEvent({
-          tMs: th, durMs: 40, pitch: 42, vel: 0.3 + 0.25 * rand(),
-          role: Role.RHYTHM, kick: false, src: 'audio', channel: 0,
-        }));
+      if (!sparse) {
+        for (let e = 0; e < 2; e++) {
+          const th = t + e * (beatMs / 2);
+          timeline.push(makeNoteEvent({
+            tMs: th, durMs: 40, pitch: 42, vel: 0.3 + 0.25 * rand(),
+            role: Role.RHYTHM, kick: false, src: 'audio', channel: 0,
+          }));
+        }
       }
     }
 

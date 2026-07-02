@@ -57,6 +57,7 @@ export function midiToTimeline(arrayBuffer) {
     timeline,
     barGrid,
     durationMs: tempoMap.toMs(lastTick),
+    bpm: tempoMap.bpmAt ? (tempoMap.bpmAt(0) || 120) : 120,
     tracks: trackData.map(({ track, notes }, i) => ({
       index: track.index, name: track.name, role: roles.get(track.index), noteCount: notes.length,
     })),

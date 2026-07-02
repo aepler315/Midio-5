@@ -28,9 +28,9 @@ export class Renderer {
       this._drawGround(ctx, canvas, pose, sim.midio.groundY);
     }
 
-    if (sim.telegraph) sim.telegraph.draw(ctx, pose, sim.midio.groundY);
-    if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, sim.midio.groundY);
-    if (sim.impactFX) sim.impactFX.draw(ctx);
+    if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
+    if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY);
+    if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
     if (sim.broshi) sim.broshi.draw(ctx, pose);
 
     this._drawMidio(ctx, pose, sim.midio.groundY);
@@ -40,9 +40,6 @@ export class Renderer {
     if (biomeManager) biomeManager.drawForeground(ctx, canvas, pose.worldX);
 
     ctx.restore(); // camera transform
-
-    if (sim.comboSystem) this._drawCombo(ctx, canvas, sim.comboSystem);
-
     ctx.restore();
   }
 
@@ -86,15 +83,6 @@ export class Renderer {
     ctx.ellipse(10, -h / 2 - 4, 5, 6, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.restore();
-  }
-
-  _drawCombo(ctx, canvas, combo) {
-    ctx.save();
-    ctx.font = 'bold 28px sans-serif';
-    ctx.fillStyle = '#ffd76a';
-    ctx.textAlign = 'right';
-    ctx.fillText(`x${combo.M.toFixed(1)}`, canvas.width - 24, 44);
     ctx.restore();
   }
 }

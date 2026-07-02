@@ -16,6 +16,7 @@ const dropzoneEl = document.getElementById('dropzone');
 const fileInputEl = document.getElementById('fileInput');
 const demoBtnEl = document.getElementById('demoBtn');
 const hudEl = document.getElementById('hud');
+const comboReadoutEl = document.getElementById('comboReadout');
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -46,7 +47,7 @@ async function bootAudio() {
 
 function startTimeline(timelineData) {
   conductor.load(timelineData);
-  sim = new Simulation(conductor, paramBus);
+  sim = new Simulation(conductor, paramBus, { bpm: timelineData.bpm || 120 });
   renderer = new Renderer(canvas);
   fitCanvas();
 
@@ -59,6 +60,9 @@ function startTimeline(timelineData) {
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
   requestAnimationFrame(frame);
+
+  // Exposed for the debug overlay (Stage 8) and for smoke-testing internals.
+  window.__SMW = { conductor, paramBus, sim, audioEngine };
 }
 
 async function loadMidiFile(file) {
@@ -140,6 +144,7 @@ function frame(tRaf) {
 
   const alpha = acc / STEP_MS;
   renderer.draw(sim, alpha);
+  comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
 
   requestAnimationFrame(frame);
 }

@@ -4,10 +4,10 @@
 // mid-air retargeting so a new kick always lands Midio back on the grid.
 import { clamp } from '../utils/math.js';
 
-const A = 0.35;   // LAUNCH fraction
-const B = 0.30;   // APEX HANG fraction
-const GAMMA = 0.35; // FALL fraction
-const W = 0.08;   // apex headroom fraction
+export const A = 0.35;   // LAUNCH fraction
+export const B = 0.30;   // APEX HANG fraction
+export const GAMMA = 0.35; // FALL fraction
+export const W = 0.08;   // apex headroom fraction
 
 export function jumpY(u, H) {
   const Ha = (1 - W) * H;
@@ -24,8 +24,8 @@ export function jumpY(u, H) {
   return Ha * (1 - r * r);
 }
 
-const H_BASE = 150; // px
-const D_MIN = 380, D_MAX = 1200; // ms
+export const H_BASE = 150; // px
+export const D_MIN = 380, D_MAX = 1200; // ms
 const RETARGET_FALL_MS = 120;
 const HIGH_BPM_HALFTIME = 170;
 

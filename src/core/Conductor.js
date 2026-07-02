@@ -69,4 +69,27 @@ export class Conductor {
     this.cursor = 0;
     this.barCursor = 0;
   }
+
+  /** Nearest event (already-fired or upcoming) matching predicate, within +/-windowMs of nowMs. */
+  nearestEventMs(predicate, nowMs, windowMs) {
+    let lo = 0, hi = this.timeline.length - 1, idx = this.timeline.length;
+    while (lo <= hi) {
+      const m = (lo + hi) >> 1;
+      if (this.timeline[m].tMs >= nowMs) { idx = m; hi = m - 1; } else lo = m + 1;
+    }
+    let best = null, bestDist = Infinity;
+    for (let i = idx; i < this.timeline.length && this.timeline[i].tMs <= nowMs + windowMs; i++) {
+      const e = this.timeline[i];
+      if (!predicate(e)) continue;
+      const d = Math.abs(e.tMs - nowMs);
+      if (d < bestDist) { bestDist = d; best = e; }
+    }
+    for (let i = idx - 1; i >= 0 && this.timeline[i].tMs >= nowMs - windowMs; i--) {
+      const e = this.timeline[i];
+      if (!predicate(e)) continue;
+      const d = Math.abs(e.tMs - nowMs);
+      if (d < bestDist) { bestDist = d; best = e; }
+    }
+    return best;
+  }
 }
