@@ -9,6 +9,8 @@ import { Simulation } from './sim/Simulation.js';
 import { Renderer } from './render/Renderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
+import { VisionLoop } from './vision/VisionLoop.js';
+import { DebugOverlay } from './ui/DebugOverlay.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -23,6 +25,9 @@ const comboReadoutEl = document.getElementById('comboReadout');
 const completePanelEl = document.getElementById('completePanel');
 const completeStatsEl = document.getElementById('completeStats');
 const playAgainBtnEl = document.getElementById('playAgainBtn');
+const debugOverlayEl = document.getElementById('debugOverlay');
+const eqCanvas = document.getElementById('eqCanvas');
+const eqCtx = eqCanvas.getContext('2d');
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -30,6 +35,8 @@ let audioEngine = null;
 let synth = null;
 let sim = null;
 let renderer = null;
+let visionLoop = null;
+let debugOverlay = null;
 
 let simTime = 0;
 let acc = 0;
@@ -61,6 +68,8 @@ function startTimeline(timelineData) {
     canvasHeight: canvas.height,
   });
   renderer = new Renderer(canvas);
+  visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false });
+  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop);
 
   simTime = 0;
   acc = 0;
@@ -72,8 +81,8 @@ function startTimeline(timelineData) {
   hudEl.classList.remove('hidden');
   requestAnimationFrame(frame);
 
-  // Exposed for the debug overlay (Stage 8) and for smoke-testing internals.
-  window.__SMW = { conductor, paramBus, sim, audioEngine };
+  // Exposed for the debug overlay and for smoke-testing internals.
+  window.__SMW = { conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay };
 }
 
 async function loadMidiFile(file) {
@@ -171,6 +180,10 @@ function frame(tRaf) {
   const alpha = acc / STEP_MS;
   renderer.draw(sim, alpha);
   comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
+  drawEqCrown();
+
+  visionLoop.maybeSample(tRaf, simTime);
+  debugOverlay.render();
 
   if (sim.fracture.isDone) {
     onSongComplete();
@@ -179,6 +192,27 @@ function frame(tRaf) {
 
   requestAnimationFrame(frame);
 }
+
+function drawEqCrown() {
+  const w = eqCanvas.width, h = eqCanvas.height;
+  eqCtx.clearRect(0, 0, w, h);
+  if (!sim.energyCurves) return;
+  const sens = sim.paramBus.live.eqSensitivity;
+  const bands = sim.energyCurves.sampleAll(simTime);
+  const barW = w / bands.length;
+  for (let i = 0; i < bands.length; i++) {
+    const v = Math.max(0, Math.min(1, bands[i] * sens));
+    const barH = v * h;
+    eqCtx.fillStyle = `hsl(${200 + i * 18}, 80%, 65%)`;
+    eqCtx.fillRect(i * barW + 2, h - barH, barW - 4, barH);
+  }
+}
+
+window.addEventListener('keydown', (e) => {
+  if (!debugOverlay) return;
+  if (e.key === '`') { debugOverlay.toggle(); }
+  else if (e.key === 'v' || e.key === 'V') { debugOverlay.toggleVision(); }
+});
 
 function onSongComplete() {
   running = false;
