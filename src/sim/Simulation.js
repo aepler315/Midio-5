@@ -9,6 +9,8 @@ import { ComboSystem } from './ComboSystem.js';
 import { ImpactFX } from './ImpactFX.js';
 import { TelegraphScanner } from './TelegraphScanner.js';
 import { ObstacleSpawner } from './ObstacleSpawner.js';
+import { Midasus } from './Midasus.js';
+import { Broshi } from './Broshi.js';
 
 const WORLD_SPEED_PX_S = 220;
 const CLEAN_WINDOW_MS = 90;
@@ -29,6 +31,10 @@ export class Simulation {
     this.telegraph = new TelegraphScanner();
     this.obstacles = new ObstacleSpawner(paramBus);
     this.obstacles.buildCandidates(conductor.timeline, 60000 / bpm);
+
+    this.midasus = new Midasus(conductor.timeline, this.midio, { groundY: this.midio.groundY, ceilingY: 40 });
+    this.broshi = new Broshi(conductor, paramBus);
+    this.broshi._lastBarPeriodMs = (60000 / bpm) * 4;
 
     this.worldX = 0;
     this.timeMs = 0;
@@ -74,6 +80,10 @@ export class Simulation {
     this.obstacles.update(nowMs, this.worldX, worldSpeed / 1000);
     this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.obstacles);
     this.impactFX.step(dtSec);
+
+    this.midasus.update(nowMs, dtSec);
+    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY);
+
     this.camera.update(dtSec);
     this.paramBus.step();
 

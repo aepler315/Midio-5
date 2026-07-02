@@ -68,8 +68,8 @@ export function hexLerpHsl(a, b, t) {
   const h = lerpHue(A.h, B.h, t);
   const s = A.s + (B.s - A.s) * t;
   const l = A.l + (B.l - A.l) * t;
-  const { r, g, b } = hslToRgb(h, s, l);
-  return rgbToHex(r, g, b);
+  const rgb = hslToRgb(h, s, l);
+  return rgbToHex(rgb.r, rgb.g, rgb.b);
 }
 
 /** Small memoization cache for per-frame full-profile blends (128 quantized steps). */
