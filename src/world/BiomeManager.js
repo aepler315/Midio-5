@@ -6,7 +6,7 @@ import { BIOMES } from './BiomeProfiles.js';
 import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
 import { ParticleField } from './ParticleField.js';
 import { clamp, clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
-import { LerpCache } from '../utils/color.js';
+import { LerpCache, hexToRgb } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
 
 const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
@@ -30,6 +30,9 @@ export class BiomeManager {
     this._glitchActiveMs = 0;
     this._scanlineY = 0;
     this._pylonFlash = 0;
+
+    // Horizon EQ state (item 2): 7 bands, two-stage envelope.
+    this._eqSmooth = new Float32Array(7);
 
     this.strips = new Map(); // biomeName -> { L2, L3, L4, L5 }
     for (const b of BIOMES) {
@@ -140,6 +143,19 @@ export class BiomeManager {
     this._glitchActiveMs -= dtSec * 1000;
     this._glitchTimer -= dtSec;
     if (this._glitchTimer <= 0) { this._glitchActiveMs = 60; this._glitchTimer = 2.5 + this._starSeed() * 3.5; }
+
+    // Horizon EQ smoothing (item 2): two-stage attack/release per band.
+    if (energyCurves && this.paramBus) {
+      const bands = energyCurves.sampleAll(nowMs);
+      const sens = this.paramBus.live.eqSensitivity;
+      for (let i = 0; i < 7; i++) {
+        const target = clamp(bands[i] * sens, 0, 1);
+        const cur = this._eqSmooth[i];
+        const tau = target >= cur ? 0.08 : 0.60;
+        const alpha = 1 - Math.exp(-dtSec / tau);
+        this._eqSmooth[i] += alpha * (target - cur);
+      }
+    }
   }
 
   draw(ctx, canvas, worldX, groundField = null, nowMs = 0) {
@@ -148,6 +164,9 @@ export class BiomeManager {
 
     this._drawSky(ctx, canvas, A, B, t);
     this._drawCelestial(ctx, canvas, A, B, t);
+
+    // Horizon EQ (item 2): far parallax layer between celestial and L2 mountains.
+    this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
 
     const scrollX0 = worldX * LAYER_RATIOS.L2, scrollX1 = worldX * LAYER_RATIOS.L3;
     const scrollX2 = worldX * LAYER_RATIOS.L4, scrollX3 = worldX * LAYER_RATIOS.L5;
@@ -294,6 +313,34 @@ export class BiomeManager {
         ctx.fillRect(-8, 0, 16, 600);
         ctx.restore();
       }
+    }
+    ctx.restore();
+  }
+
+  _drawHorizonEQ(ctx, canvas, worldX, A, B, t) {
+    const bands = this._eqSmooth;
+    if (!bands) return;
+    const maxH = canvas.height * 0.40; // never exceed ~40% of screen height
+    const barW = canvas.width / 7;
+    const parallax = worldX * 0.06; // far-depth scroll
+    const c = this.lerpCache.get(A.sky[1], B.sky[1], t);
+    const { r, g: gg, b } = hexToRgb(c);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 7; i++) {
+      const v = clamp(bands[i], 0, 1);
+      const h = v * maxH;
+      const x0 = i * barW - (parallax % barW);
+      // Wrap horizontally so the row is infinite-looking.
+      const x = ((x0 % canvas.width) + canvas.width) % canvas.width;
+      if (x > canvas.width) continue;
+      const gr = ctx.createLinearGradient(0, canvas.height * 0.55 - h, 0, canvas.height * 0.55);
+      gr.addColorStop(0, 'rgba(0,0,0,0)');
+      gr.addColorStop(0.35, `rgba(${r},${gg},${b},0.30)`);
+      gr.addColorStop(1, `rgba(${r},${gg},${b},0.60)`);
+      ctx.fillStyle = gr;
+      ctx.globalAlpha = 0.22;
+      ctx.fillRect(x, canvas.height * 0.55 - h, barW - 2, h);
     }
     ctx.restore();
   }
