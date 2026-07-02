@@ -3,8 +3,9 @@
 // frequency->anatomy mapping driven by live band energy and note onsets,
 // and a Rabid overlay gated on global track energy.
 import { Role } from '../core/NoteEvent.js';
-import { clamp, smoothstep, mulberry32 } from '../utils/math.js';
+import { clamp, smoothstep, mulberry32, lerp } from '../utils/math.js';
 import { hexLerp } from '../utils/color.js';
+import { drawMesh, BROSHI_MESH } from '../render/MeshDrawer.js';
 import { RABID_WEIGHTS } from '../audio/bands.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 
@@ -267,32 +268,12 @@ export class Broshi {
       ctx.fill();
     }
 
-    // body
-    ctx.save();
-    ctx.rotate((this.neckAngle * Math.PI) / 180);
-    ctx.fillStyle = skin;
-    ctx.beginPath();
-    ctx.ellipse(0, -14, 24, 16, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // head
-    ctx.beginPath();
-    ctx.ellipse(14, -20, 10, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // jaw
-    ctx.fillStyle = '#2a1410';
-    ctx.beginPath();
-    ctx.moveTo(10, -16);
-    ctx.lineTo(22, -16 + this.jawOpen * 10);
-    ctx.lineTo(22, -14 + this.jawOpen * 10);
-    ctx.lineTo(10, -14);
-    ctx.closePath();
-    ctx.fill();
-    // eye
-    ctx.fillStyle = this.rho > 0.3 ? `rgba(255,255,255,${0.5 + 0.4 * this.rho})` : '#150a08';
-    ctx.beginPath();
-    ctx.arc(16, -23, 2.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    // Wireframe body/head/jaw/tail (item 1). Keep FX (tongue, spittle, drool, aura) separate.
+    const meshBaseHue = lerp(120, 0, this.rho); // green → red as rabid grows
+    drawMesh(ctx, BROSHI_MESH, {
+      x: 0, y: 0, scaleX: 1, scaleY: 1,
+      jawOpen: this.jawOpen, neckAngle: this.neckAngle,
+    }, meshBaseHue, { fill: true, lineWidth: 1.5, glow: true });
 
     for (const d of this.drool.active) {
       ctx.fillStyle = 'rgba(150,220,255,0.7)';

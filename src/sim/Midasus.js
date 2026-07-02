@@ -5,6 +5,7 @@
 import { Role } from '../core/NoteEvent.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { clamp, lerp, mulberry32 } from '../utils/math.js';
+import { drawMesh, MIDASUS_MESH } from '../render/MeshDrawer.js';
 
 const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
@@ -131,13 +132,8 @@ export class Midasus {
       ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.fillStyle = `hsla(${this.hue},${sat}%,90%,0.6)`;
-    ctx.beginPath();
-    ctx.arc(this.p.x, this.p.y, 11, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = `hsla(${this.hue},${sat}%,72%,1)`;
-    ctx.beginPath();
-    ctx.arc(this.p.x, this.p.y, 7, 0, Math.PI * 2);
-    ctx.fill();
+    drawMesh(ctx, MIDASUS_MESH, {
+      x: this.p.x, y: this.p.y,
+    }, this.hue, { fill: false, lineWidth: 1.5, glow: true });
   }
 }

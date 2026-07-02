@@ -2,6 +2,8 @@
 // telegraph glints -> world FX -> companions -> Midio -> foreground veil ->
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
 // each stage guards on the subsystem's presence so this file grows additively.
+import { drawMesh, MIDIO_MESH, BROSHI_MESH, MIDASUS_MESH } from './MeshDrawer.js';
+
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -77,22 +79,11 @@ export class Renderer {
   }
 
   _drawMidio(ctx, pose, groundY) {
-    ctx.save();
-    ctx.translate(pose.midioX, pose.midioY);
-    ctx.rotate((pose.leanDeg * Math.PI) / 180);
-    ctx.scale(pose.scaleX, pose.scaleY);
-
-    const w = 46, h = 54;
-    ctx.fillStyle = '#ffd76a';
-    ctx.beginPath();
-    ctx.ellipse(0, -h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#1a0d16';
-    ctx.beginPath();
-    ctx.ellipse(10, -h / 2 - 4, 5, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
+    const mesh = pose.mesh || {};
+    drawMesh(ctx, MIDIO_MESH, {
+      x: pose.midioX, y: pose.midioY,
+      scaleX: pose.scaleX, scaleY: pose.scaleY,
+      leanDeg: pose.leanDeg, spin: mesh.spin || 0, armFlare: mesh.armFlare || 0,
+    }, MIDIO_MESH.baseHue, { fill: true, lineWidth: 1.5, glow: true, goldPulse: mesh.goldPulse || 0 });
   }
 }
