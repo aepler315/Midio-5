@@ -1,0 +1,14 @@
+{
+  "name": "super-midio-world",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A framework-free, audio-clock-mastered rhythm side-scroller. Canvas 2D + Web Audio API.",
+  "scripts": {
+    "start": "node tools/serve.js",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}

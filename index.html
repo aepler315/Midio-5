@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Super Midio World</title>
+  <link rel="stylesheet" href="/src/ui/style.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="stage" width="1280" height="720"></canvas>
+
+    <div id="loader" class="panel">
+      <h1>SUPER MIDIO WORLD</h1>
+      <p class="sub">Drop a .mid file or an audio file (mp3/wav/flac) to begin.</p>
+      <div id="dropzone" tabindex="0">
+        <span>Drop file here, or</span>
+        <label class="filebtn">
+          Choose file
+          <input id="fileInput" type="file" accept=".mid,.midi,audio/*,.mp3,.wav,.flac" hidden />
+        </label>
+      </div>
+      <button id="demoBtn" type="button">Play procedural demo (no file needed)</button>
+      <p id="progressText" class="hint hidden"></p>
+      <p class="hint">Press <kbd>`</kbd> during play to open the vision/tuning debug overlay.</p>
+    </div>
+
+    <div id="hud" class="hidden">
+      <div id="comboReadout">×1.0</div>
+      <div id="eqCrown"><canvas id="eqCanvas" width="240" height="40"></canvas></div>
+    </div>
+
+    <div id="completePanel" class="panel hidden">
+      <h1>COMPLETE</h1>
+      <p id="completeStats" class="sub"></p>
+      <button id="playAgainBtn" type="button">Play again</button>
+    </div>
+
+    <div id="debugOverlay" class="hidden"></div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
