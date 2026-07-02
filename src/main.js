@@ -49,13 +49,15 @@ async function bootAudio() {
 }
 
 function startTimeline(timelineData) {
+  fitCanvas();
   conductor.load(timelineData);
   sim = new Simulation(conductor, paramBus, {
     bpm: timelineData.bpm || 120,
     energyCurves: timelineData.energyCurves || null,
+    canvasWidth: canvas.width,
+    canvasHeight: canvas.height,
   });
   renderer = new Renderer(canvas);
-  fitCanvas();
 
   simTime = 0;
   acc = 0;

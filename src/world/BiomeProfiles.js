@@ -1,0 +1,75 @@
+// Biome profiles (spec §4.1.2) — pure data (Strategy pattern). Adding a
+// ninth biome is one object literal, zero engine code. `particles` config
+// feeds the generic ParticleField; `fx` names a small biome-specific
+// canvas trick BiomeManager knows how to run.
+export const BIOMES = [
+  {
+    name: 'TWILIGHT',
+    sky: ['#1a1a3e', '#4a3b6b', '#e8746a'],
+    silhouette: '#2b2145',
+    celestial: { kind: 'sun', color: '#ffb37a', radius: 46, haloColor: '#ffdca0' },
+    particles: { kind: 'fireflies', color: '#fff2a8', count: 26, speed: 14 },
+    fx: 'starTwinkle',
+  },
+  {
+    name: 'EMBER',
+    sky: ['#2b0f0a', '#7a2413', '#ff9a3c'],
+    silhouette: '#3d120b',
+    celestial: { kind: 'sun', color: '#ff8a3c', radius: 50, haloColor: '#ffb37a', veiled: true },
+    particles: { kind: 'embers', color: '#ff7a3c', count: 34, speed: 60 },
+    fx: 'heatShimmer',
+  },
+  {
+    name: 'ARCTIC',
+    sky: ['#0e2a44', '#3f6d9e', '#cfe8ff'],
+    silhouette: '#12324f',
+    celestial: { kind: 'sun', color: '#eaf6ff', radius: 34, haloColor: '#ffffff', ring: true },
+    particles: { kind: 'snow', color: '#ffffff', count: 60, speed: 45 },
+    fx: 'aurora',
+  },
+  {
+    name: 'JADE',
+    sky: ['#0c2b1c', '#1f6b46', '#a9e5b0'],
+    silhouette: '#0f3a26',
+    celestial: { kind: 'sun', color: '#eaffb0', radius: 40, haloColor: '#c8f2a0', shafts: true },
+    particles: { kind: 'pollen', color: '#eaffb0', count: 40, speed: 8 },
+    fx: 'canopyDapple',
+  },
+  {
+    name: 'VOID',
+    sky: ['#05010d', '#1b0f33', '#4d2b8c'],
+    silhouette: '#150a2e',
+    celestial: { kind: 'moon', color: '#cabfff', radius: 38, haloColor: '#7a5bd8', shattered: true },
+    particles: { kind: 'antigrav', color: '#b79bff', count: 30, speed: 20 },
+    fx: 'glitchTear',
+  },
+  {
+    name: 'SAKURA',
+    sky: ['#2b1030', '#8a3a6b', '#ffd7e8'],
+    silhouette: '#3a1642',
+    celestial: { kind: 'moon', color: '#ffe9f2', radius: 62, haloColor: '#ffc9de' },
+    particles: { kind: 'petals', color: '#ffb6d3', count: 46, speed: 35 },
+    fx: 'petalPile',
+  },
+  {
+    name: 'SOLAR',
+    sky: ['#3a1f00', '#c96a00', '#ffe08a'],
+    silhouette: '#4a2600',
+    celestial: { kind: 'sun', color: '#ffe08a', radius: 78, haloColor: '#ffb347', dominant: true },
+    particles: { kind: 'flaresparks', color: '#ffcf6b', count: 18, speed: 90 },
+    fx: 'prominence',
+  },
+  {
+    name: 'CYBER',
+    sky: ['#020814', '#062a3f', '#0b4b5e'],
+    silhouette: '#04121f',
+    edgeLight: '#00ffd0',
+    celestial: { kind: 'sun', color: '#00ffd0', radius: 36, haloColor: '#00ffd0', wireframe: true },
+    particles: { kind: 'digitalrain', color: '#00ffb0', count: 22, speed: 140 },
+    fx: 'neonGrid',
+  },
+];
+
+export function biomeByName(name) {
+  return BIOMES.find((b) => b.name === name) || BIOMES[0];
+}

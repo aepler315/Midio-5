@@ -8,10 +8,11 @@ export class Renderer {
     this.ctx = canvas.getContext('2d');
   }
 
-  draw(sim, alpha, biomeManager = null) {
+  draw(sim, alpha) {
     const { ctx, canvas } = this;
     const pose = sim.lerpState(alpha);
     const camera = sim.camera;
+    const biomeManager = sim.biomes || null;
 
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);

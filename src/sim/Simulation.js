@@ -11,6 +11,8 @@ import { TelegraphScanner } from './TelegraphScanner.js';
 import { ObstacleSpawner } from './ObstacleSpawner.js';
 import { Midasus } from './Midasus.js';
 import { Broshi } from './Broshi.js';
+import { BiomeManager } from '../world/BiomeManager.js';
+import { hashSeed } from '../utils/math.js';
 
 const WORLD_SPEED_PX_S = 220;
 const CLEAN_WINDOW_MS = 90;
@@ -18,7 +20,7 @@ const CLEAN_WINDOW_MS = 90;
 const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
 
 export class Simulation {
-  constructor(conductor, paramBus, { bpm = 120, energyCurves = null } = {}) {
+  constructor(conductor, paramBus, { bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720 } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
@@ -35,6 +37,12 @@ export class Simulation {
     this.midasus = new Midasus(conductor.timeline, this.midio, { groundY: this.midio.groundY, ceilingY: 40 });
     this.broshi = new Broshi(conductor, paramBus);
     this.broshi._lastBarPeriodMs = (60000 / bpm) * 4;
+
+    const songSeed = hashSeed(`${conductor.timeline.length}:${conductor.durationMs}:${conductor.timeline[0]?.tMs ?? 0}:${conductor.timeline.at(-1)?.tMs ?? 0}`);
+    this.biomes = new BiomeManager({
+      conductor, energyCurves, durationMs: conductor.durationMs,
+      canvasWidth, canvasHeight, groundY: this.midio.groundY, songSeed,
+    });
 
     this.worldX = 0;
     this.timeMs = 0;
@@ -83,6 +91,7 @@ export class Simulation {
 
     this.midasus.update(nowMs, dtSec);
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY);
+    this.biomes.update(nowMs, dtSec, this.energyCurves);
 
     this.camera.update(dtSec);
     this.paramBus.step();
