@@ -53,6 +53,21 @@ export class ImpactFX {
     if (camera) camera.shake(9 * I);
   }
 
+  /** One-shot dust burst (gag crack-dust, item 5) — rising motes, no crater/ring. */
+  dustBurst(worldX, groundY, n) {
+    const rand = this.rand;
+    for (let i = 0; i < n; i++) {
+      const dir = rand() < 0.5 ? -1 : 1;
+      const speed = 30 + 90 * rand();
+      this.motes.spawn({
+        wx: worldX + (rand() * 2 - 1) * 60, y: groundY,
+        vx: Math.cos(0.5) * speed * dir,
+        vy: -40 - 60 * rand(),
+        size: 2 + 2 * rand(), life: 0.4 + 0.3 * rand(),
+      });
+    }
+  }
+
   /** Pre-kick sputter dust at Midio's feet during telegraph anticipation (spec §2.2.3). */
   sputter(worldX, groundY, dtSec) {
     this._sputterAccum += dtSec * 120; // ~2 per rendered frame at 60fps == ~1 per sim step at 120Hz

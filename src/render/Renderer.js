@@ -30,14 +30,14 @@ export class Renderer {
     ctx.translate(-canvas.width / 2 + camera.shakeX, -canvas.height / 2 + camera.shakeY);
 
     if (biomeManager) {
-      biomeManager.draw(ctx, canvas, pose.worldX);
+      biomeManager.draw(ctx, canvas, pose.worldX, sim.ground, sim.timeMs);
     } else {
       this._drawFallbackSky(ctx, canvas);
       this._drawGround(ctx, canvas, pose, sim.midio.groundY);
     }
 
     if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
-    if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY);
+    if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY, sim.ground, sim.timeMs);
     if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
     if (sim.broshi) sim.broshi.draw(ctx, pose);
 

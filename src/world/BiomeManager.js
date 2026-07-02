@@ -13,8 +13,9 @@ const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.0
 const WORLD_SPEED_PX_S = 220;
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed }) {
+  constructor({ conductor, paramBus, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed }) {
     this.conductor = conductor;
+    this.paramBus = paramBus || null;
     this.energyCurves = energyCurves;
     this.w = canvasWidth;
     this.h = canvasHeight;
@@ -141,7 +142,7 @@ export class BiomeManager {
     if (this._glitchTimer <= 0) { this._glitchActiveMs = 60; this._glitchTimer = 2.5 + this._starSeed() * 3.5; }
   }
 
-  draw(ctx, canvas, worldX) {
+  draw(ctx, canvas, worldX, groundField = null, nowMs = 0) {
     const { from, to, t } = this.currentBlend || { from: this.sections[0].profile, to: this.sections[0].profile, t: 1 };
     const A = this._profile(from), B = this._profile(to);
 
@@ -162,7 +163,7 @@ export class BiomeManager {
     this._drawLayer(ctx, canvas, 'L4', scrollX2, tint, t, A, B);
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
 
-    this._drawGround(ctx, canvas, worldX, A, B, t);
+    this._drawGround(ctx, canvas, worldX, A, B, t, groundField, nowMs);
   }
 
   drawForeground(ctx, canvas, worldX) {
@@ -348,22 +349,50 @@ export class BiomeManager {
     }
   }
 
-  _drawGround(ctx, canvas, worldX, A, B, t) {
+  _drawGround(ctx, canvas, worldX, A, B, t, groundField, nowMs) {
     const groundColor = this.lerpCache.get(A.silhouette, B.silhouette, t);
-    ctx.fillStyle = groundColor;
-    ctx.fillRect(0, this.groundY, canvas.width, canvas.height - this.groundY);
 
-    // LOW-MID energy makes the ground breathe (spec §4.1.1 L6).
-    const e2 = this.energyCurves ? this.energyCurves.sample(2, this.tSec * 1000) : 0;
-    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let x = 0; x <= canvas.width; x += 12) {
-      const undulate = 14 * e2 * Math.sin((2 * Math.PI * (x + worldX)) / 900);
-      const y = this.groundY + undulate;
-      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    if (groundField) {
+      // Rolling terrain (item 5): sample the ground field across the screen and
+      // fill downward from the surface line so the play surface is the terrain.
+      const originX = 220; // Midio's screenX — worldX maps here (matches Renderer obstacle draw)
+      ctx.fillStyle = groundColor;
+      ctx.beginPath();
+      ctx.moveTo(0, canvas.height);
+      for (let x = 0; x <= canvas.width; x += 10) {
+        const wx = worldX + (x - originX);
+        ctx.lineTo(x, groundField.heightAt(wx, nowMs));
+      }
+      ctx.lineTo(canvas.width, canvas.height);
+      ctx.closePath();
+      ctx.fill();
+
+      // A subtle highlight along the surface so the silhouette reads as ground.
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let x = 0; x <= canvas.width; x += 10) {
+        const wx = worldX + (x - originX);
+        const y = groundField.heightAt(wx, nowMs);
+        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = groundColor;
+      ctx.fillRect(0, this.groundY, canvas.width, canvas.height - this.groundY);
+
+      // LOW-MID energy makes the ground breathe (spec §4.1.1 L6).
+      const e2 = this.energyCurves ? this.energyCurves.sample(2, this.tSec * 1000) : 0;
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let x = 0; x <= canvas.width; x += 12) {
+        const undulate = 14 * e2 * Math.sin((2 * Math.PI * (x + worldX)) / 900);
+        const y = this.groundY + undulate;
+        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
 
     const activeFx = t > 0.5 ? B.fx : A.fx;
     if (activeFx === 'neonGrid') this._drawNeonGrid(ctx, canvas, worldX);

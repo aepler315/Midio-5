@@ -3,6 +3,7 @@
 // (quadratic ease-in, accelerating/heavy). Kick-quantized takeoffs with
 // mid-air retargeting so a new kick always lands Midio back on the grid.
 import { clamp } from '../utils/math.js';
+import * as JumpPlanner from './JumpPlanner.js';
 
 export const A = 0.35;   // LAUNCH fraction
 export const B = 0.30;   // APEX HANG fraction
@@ -26,7 +27,7 @@ export function jumpY(u, H) {
 
 export const H_BASE = 150; // px
 export const D_MIN = 380, D_MAX = 1200; // ms
-const RETARGET_FALL_MS = 120;
+export const RETARGET_FALL_MS = 120;
 const HIGH_BPM_HALFTIME = 170;
 
 export class JumpController {
@@ -47,6 +48,9 @@ export class JumpController {
     this.compress = null;      // {startMs, fromY, dur} — mid-air retarget in progress
     this._pendingLaunch = null;
 
+    /** Velocity of the most recent launch — read by MidioPerformer for apex tricks. */
+    this.lastVel = 0;
+
     /** Set for exactly one sim step on landing; consumed by ComboSystem/ImpactFX. */
     this.pendingLanding = null;
     /** Set for one step when a kick is skipped (half-time) — routes to landing FX instead. */
@@ -55,14 +59,14 @@ export class JumpController {
 
   get bpm() { return 60000 / this.beatPeriodMs; }
 
-  onKick(evt, nowMs) {
+  onKick(evt, nowMs, obstacle = null) {
     this._updateBeatPeriod(nowMs);
     this.kickCount++;
     if (this.bpm > HIGH_BPM_HALFTIME && this.kickCount % 2 === 0) {
       this.pendingGhostKick = { vel: evt.vel };
       return;
     }
-    this._launchOrRetarget(evt, nowMs);
+    this._launchOrRetarget(evt, nowMs, obstacle);
   }
 
   _updateBeatPeriod(nowMs) {
@@ -75,12 +79,23 @@ export class JumpController {
     this.lastKickMs = nowMs;
   }
 
-  _launchOrRetarget(evt, nowMs) {
-    const H = this.hBase * (0.6 + 0.8 * evt.vel) * this.P.live.jumpHeight;
+  _launchOrRetarget(evt, nowMs, obstacle = null) {
     const D = clamp(1.0 * this.beatPeriodMs, D_MIN, D_MAX);
+    let H = this.hBase * (0.6 + 0.8 * evt.vel) * this.P.live.jumpHeight;
+
+    // Accommodation (item 4): if an obstacle arrives during this arc, floor H
+    // at the clearance height so the hang plateau clears it. Capped by the
+    // jumpHeight guardrail; if even the cap can't clear it, the collision is
+    // the rare, legible "vision loop compressed the arc" case the spec allows.
+    if (obstacle && obstacle.tMs > nowMs && obstacle.tMs <= nowMs + D) {
+      const effH = obstacle.effHeight ?? obstacle.height; // effHeight set by stage-5 ground delta
+      const reqH = JumpPlanner.minClearanceH(effH);
+      const cap = H_BASE * 1.4 * this.P.live.jumpHeight;
+      H = Math.min(cap, Math.max(H, reqH));
+    }
 
     if (this.state === 'GROUND') {
-      this._launch(nowMs, H, D);
+      this._launch(nowMs, H, D, evt.vel);
       return;
     }
 
@@ -95,11 +110,12 @@ export class JumpController {
     // Mid launch/hang: ignore — already committed, avoids impossible double-jumps.
   }
 
-  _launch(nowMs, H, D) {
+  _launch(nowMs, H, D, vel = 0) {
     this.state = 'AIR';
     this.jumpStartMs = nowMs;
     this.H = H;
     this.D = D;
+    this.lastVel = vel;
     this.compress = null;
   }
 

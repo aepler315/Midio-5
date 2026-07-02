@@ -1,13 +1,15 @@
-// World obstacles seeded from RHYTHM events away from any kick (spec §2.2.3
-// final paragraph). Since Midio's jumps are entirely music-driven (no player
-// input), obstacle placement is designed to be clearable by the deterministic
-// jump arc; density only thins candidates, it never relocates them.
+// World obstacles placed under Midio's predicted jump arcs (spec §2.2.3 final
+// paragraph, item 4). Since Midio's jumps are entirely music-driven (no player
+// input), obstacle placement is a contract with the deterministic jump
+// schedule: every candidate is snapped into the middle 50% of a covered arc,
+// so Midio is guaranteed airborne when it passes. Density only thins
+// candidates, it never relocates them.
 import { Role } from '../core/NoteEvent.js';
 import { clamp, mulberry32 } from '../utils/math.js';
+import * as JumpPlanner from './JumpPlanner.js';
 
 const SPAWN_LEAD_MS = 2500;
 const MIN_VEL = 0.55;
-const MIN_KICK_DISTANCE_BEATS = 1.5;
 
 export class ObstacleSpawner {
   constructor(paramBus, { seed = 99, height = 46, width = 28 } = {}) {
@@ -22,23 +24,29 @@ export class ObstacleSpawner {
 
   buildCandidates(timeline, beatPeriodMsGuess) {
     const kicks = [];
-    for (const e of timeline) if (e.role === Role.RHYTHM && e.kick) kicks.push(e.tMs);
+    for (const e of timeline) if (e.role === Role.RHYTHM && e.kick) kicks.push({ tMs: e.tMs, vel: e.vel });
 
-    let ki = 0;
+    // Predict where Midio is airborne high enough to clear this obstacle.
+    const windows = JumpPlanner.coveredWindows(kicks, {
+      obstacleHeight: this.height,
+      jumpHeight: this.P.live.jumpHeight,
+    });
+
     let lastAccepted = -Infinity;
     const minGap = Math.max(beatPeriodMsGuess, 420);
-    const minKickDist = MIN_KICK_DISTANCE_BEATS * beatPeriodMsGuess;
 
     for (const e of timeline) {
       if (e.role !== Role.RHYTHM || e.kick || e.vel < MIN_VEL) continue;
-      while (ki + 1 < kicks.length && kicks[ki + 1] <= e.tMs) ki++;
-      const dPrev = ki < kicks.length ? Math.abs(e.tMs - kicks[ki]) : Infinity;
-      const dNext = ki + 1 < kicks.length ? Math.abs(e.tMs - kicks[ki + 1]) : Infinity;
-      if (Math.min(dPrev, dNext) < minKickDist) continue;
-      if (e.tMs - lastAccepted < minGap) continue;
-      this.candidates.push({ tMs: e.tMs });
-      lastAccepted = e.tMs;
+      // Snap the salient seed into the nearest covered arc's middle 50%.
+      const snap = JumpPlanner.snapToWindow(e.tMs, windows, this.rand);
+      if (!snap) continue; // no arc clears this obstacle → drop, never place where unavoidable
+      if (snap.placeMs - lastAccepted < minGap) continue;
+      this.candidates.push({ tMs: snap.placeMs });
+      lastAccepted = snap.placeMs;
     }
+    // Candidates are consumed in tMs order by update(); snap jitter can break
+    // that ordering, so sort once at build time.
+    this.candidates.sort((a, b) => a.tMs - b.tMs);
   }
 
   update(nowMs, worldX, scrollSpeedPxMs) {
@@ -61,28 +69,33 @@ export class ObstacleSpawner {
     return null;
   }
 
-  /** Marks crossed obstacles as passed; returns true if Midio was too low to clear one. */
-  checkCollision(worldX, halfWidth, jumpYPx) {
+  /** Marks crossed obstacles as passed; returns true if Midio was too low to clear one.
+   *  `ground` (GroundField) makes the effective obstacle height terrain-aware:
+   *  effH = o.height + (groundAtMidio - groundAtObstacle). */
+  checkCollision(worldX, halfWidth, jumpYPx, ground = null, nowMs = 0) {
     let stumbled = false;
+    const gM = ground ? ground.heightAt(worldX, nowMs) : 0;
     for (const o of this.active) {
       if (o.passed) continue;
       if (Math.abs(o.wx - worldX) <= halfWidth + o.width / 2) {
-        if (jumpYPx < o.height) stumbled = true;
+        const effH = ground ? o.height + (gM - ground.heightAt(o.wx, nowMs)) : o.height;
+        if (jumpYPx < effH) stumbled = true;
         o.passed = true;
       }
     }
     return stumbled;
   }
 
-  draw(ctx, worldX, originX, groundY) {
+  draw(ctx, worldX, originX, groundY, ground = null, nowMs = 0) {
     for (const o of this.active) {
       const x = o.wx - worldX + originX;
       if (x < -60 || x > 2200) continue;
+      const baseY = ground ? ground.heightAt(o.wx, nowMs) : groundY;
       ctx.fillStyle = '#8a3a6b';
       ctx.strokeStyle = 'rgba(255,255,255,0.25)';
       ctx.lineWidth = 1.5;
-      ctx.fillRect(x - o.width / 2, groundY - o.height, o.width, o.height);
-      ctx.strokeRect(x - o.width / 2, groundY - o.height, o.width, o.height);
+      ctx.fillRect(x - o.width / 2, baseY - o.height, o.width, o.height);
+      ctx.strokeRect(x - o.width / 2, baseY - o.height, o.width, o.height);
     }
   }
 }

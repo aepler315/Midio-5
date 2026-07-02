@@ -13,6 +13,7 @@ import { Midasus } from './Midasus.js';
 import { Broshi } from './Broshi.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
+import { GroundField } from '../world/GroundField.js';
 import { hashSeed } from '../utils/math.js';
 
 const WORLD_SPEED_PX_S = 220;
@@ -25,6 +26,8 @@ export class Simulation {
     this.conductor = conductor;
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
+    this.canvasWidth = canvasWidth;
+    this.canvasHeight = canvasHeight;
 
     this.midio = new Midio();
     this.jump = new JumpController(paramBus);
@@ -40,8 +43,13 @@ export class Simulation {
     this.broshi._lastBarPeriodMs = (60000 / bpm) * 4;
 
     const songSeed = hashSeed(`${conductor.timeline.length}:${conductor.durationMs}:${conductor.timeline[0]?.tMs ?? 0}:${conductor.timeline.at(-1)?.tMs ?? 0}`);
+    this.ground = new GroundField({
+      baseY: this.midio.groundY, canvasWidth, durationMs: conductor.durationMs,
+      barGrid: conductor.barGrid, beatMs: 60000 / bpm,
+      obstacleTimes: this.obstacles.candidates.map((c) => c.tMs), seed: songSeed,
+    });
     this.biomes = new BiomeManager({
-      conductor, energyCurves, durationMs: conductor.durationMs,
+      conductor, paramBus, energyCurves, durationMs: conductor.durationMs,
       canvasWidth, canvasHeight, groundY: this.midio.groundY, songSeed,
     });
     this.fracture = new FractureEngine(conductor, {
@@ -55,7 +63,16 @@ export class Simulation {
     this.curr = this._snapshot();
 
     conductor.on(Role.RHYTHM, (evt) => {
-      if (evt.kick) this.jump.onKick(evt, this.timeMs);
+      if (evt.kick) {
+        // Accommodation: pass the nearest upcoming obstacle with its terrain-
+        // aware effective height so JumpController can floor H for clearance.
+        const o = this.obstacles.nearestAhead(this.worldX);
+        const obstacle = o ? {
+          tMs: o.tMs,
+          height: o.height + (this.midio.groundY - this.ground.heightAt(o.wx, this.timeMs)),
+        } : null;
+        this.jump.onKick(evt, this.timeMs, obstacle);
+      }
     });
   }
 
@@ -71,6 +88,11 @@ export class Simulation {
     this.jump.update(nowMs);
     this.midio.y = this.jump.y;
 
+    // Ground field: drives the rolling terrain + gag, then becomes Midio's
+    // local ground line so renderY (= groundY - y) follows the surface.
+    this.ground.update(nowMs, dtSec, this.energyCurves, this.worldX);
+    this.midio.groundY = this.ground.heightAt(this.worldX, nowMs);
+
     if (this.jump.pendingLanding) {
       const nearestKick = this.conductor.nearestEventMs(
         (e) => e.role === Role.RHYTHM && e.kick, nowMs, CLEAN_WINDOW_MS + 20,
@@ -82,7 +104,11 @@ export class Simulation {
       this.fracture.registerImpact(I);
     }
 
-    const stumbled = this.obstacles.checkCollision(this.worldX, this.midio.halfWidth, this.jump.y);
+    // Gag FX: crack-dust at the sag, camera punch + shake at the recovery.
+    if (this.ground.justSagged) this.impactFX.dustBurst(this.worldX + 120, this.midio.groundY, 14);
+    if (this.ground.justRecovered) { this.camera.punch(1.04); this.camera.shake(9); }
+
+    const stumbled = this.obstacles.checkCollision(this.worldX, this.midio.halfWidth, this.jump.y, this.ground, nowMs);
     if (stumbled) this.comboSystem.onStumble();
 
     this.comboSystem.update(nowMs, this.jump.beatPeriodMs);
