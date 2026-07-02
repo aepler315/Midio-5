@@ -10,6 +10,13 @@ export class Renderer {
 
   draw(sim, alpha) {
     const { ctx, canvas } = this;
+    const fracture = sim.fracture || null;
+
+    if (fracture && (fracture.isFrozen || fracture.isDone)) {
+      fracture.drawShatter(ctx, canvas);
+      return;
+    }
+
     const pose = sim.lerpState(alpha);
     const camera = sim.camera;
     const biomeManager = sim.biomes || null;
@@ -42,6 +49,8 @@ export class Renderer {
 
     ctx.restore(); // camera transform
     ctx.restore();
+
+    if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
   }
 
   _drawFallbackSky(ctx, canvas) {

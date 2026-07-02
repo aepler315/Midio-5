@@ -20,6 +20,9 @@ const demoBtnEl = document.getElementById('demoBtn');
 const progressEl = document.getElementById('progressText');
 const hudEl = document.getElementById('hud');
 const comboReadoutEl = document.getElementById('comboReadout');
+const completePanelEl = document.getElementById('completePanel');
+const completeStatsEl = document.getElementById('completeStats');
+const playAgainBtnEl = document.getElementById('playAgainBtn');
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -169,5 +172,20 @@ function frame(tRaf) {
   renderer.draw(sim, alpha);
   comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
 
+  if (sim.fracture.isDone) {
+    onSongComplete();
+    return;
+  }
+
   requestAnimationFrame(frame);
 }
+
+function onSongComplete() {
+  running = false;
+  hudEl.classList.add('hidden');
+  const combo = sim.comboSystem;
+  completeStatsEl.textContent = `Peak streak: ${combo.streak} · Final combo: ×${combo.displayM.toFixed(1)}`;
+  completePanelEl.classList.remove('hidden');
+}
+
+playAgainBtnEl.addEventListener('click', () => window.location.reload());

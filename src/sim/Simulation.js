@@ -12,6 +12,7 @@ import { ObstacleSpawner } from './ObstacleSpawner.js';
 import { Midasus } from './Midasus.js';
 import { Broshi } from './Broshi.js';
 import { BiomeManager } from '../world/BiomeManager.js';
+import { FractureEngine } from '../world/FractureEngine.js';
 import { hashSeed } from '../utils/math.js';
 
 const WORLD_SPEED_PX_S = 220;
@@ -42,6 +43,9 @@ export class Simulation {
     this.biomes = new BiomeManager({
       conductor, energyCurves, durationMs: conductor.durationMs,
       canvasWidth, canvasHeight, groundY: this.midio.groundY, songSeed,
+    });
+    this.fracture = new FractureEngine(conductor, {
+      canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,
     });
 
     this.worldX = 0;
@@ -75,6 +79,7 @@ export class Simulation {
       this.comboSystem.onLanding(nowMs, isClean);
       const I = ImpactFX.intensity(this.jump.pendingLanding.vLandPxMs, V_REF);
       this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera);
+      this.fracture.registerImpact(I);
     }
 
     const stumbled = this.obstacles.checkCollision(this.worldX, this.midio.halfWidth, this.jump.y);
@@ -92,6 +97,7 @@ export class Simulation {
     this.midasus.update(nowMs, dtSec);
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY);
     this.biomes.update(nowMs, dtSec, this.energyCurves);
+    this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
 
     this.camera.update(dtSec);
     this.paramBus.step();
