@@ -4,6 +4,8 @@
 import { Role } from '../core/NoteEvent.js';
 import { Midio } from './Midio.js';
 import { JumpController, A, GAMMA, W, H_BASE, D_MIN } from './JumpController.js';
+import { MidioPerformer } from './MidioPerformer.js';
+import { CalmDirector } from './CalmDirector.js';
 import { CameraDirector } from '../render/CameraDirector.js';
 import { ComboSystem } from './ComboSystem.js';
 import { ImpactFX } from './ImpactFX.js';
@@ -41,6 +43,10 @@ export class Simulation {
     this.midasus = new Midasus(conductor.timeline, this.midio, { groundY: this.midio.groundY, ceilingY: 40 });
     this.broshi = new Broshi(conductor, paramBus);
     this.broshi._lastBarPeriodMs = (60000 / bpm) * 4;
+
+    this.performer = new MidioPerformer({ seed: 1313 });
+    this.performer.setMidasus(this.midasus);
+    this.calm = new CalmDirector();
 
     const songSeed = hashSeed(`${conductor.timeline.length}:${conductor.durationMs}:${conductor.timeline[0]?.tMs ?? 0}:${conductor.timeline.at(-1)?.tMs ?? 0}`);
     this.ground = new GroundField({
@@ -113,6 +119,9 @@ export class Simulation {
 
     this.comboSystem.update(nowMs, this.jump.beatPeriodMs);
 
+    // Midio stage presence: writes scale/lean/poseExtras now that jump/combo are current.
+    this.performer.update(nowMs, dtSec, this.jump, this.comboSystem, this.calm, this.midio, this.conductor);
+
     const worldSpeed = WORLD_SPEED_PX_S * this.paramBus.live.scrollSpeed;
     this.worldX += worldSpeed * dtSec;
 
@@ -120,12 +129,14 @@ export class Simulation {
     this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.obstacles);
     this.impactFX.step(dtSec);
 
-    this.midasus.update(nowMs, dtSec);
-    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY);
-    this.biomes.update(nowMs, dtSec, this.energyCurves);
+    this.calm.update(nowMs, dtSec, this.energyCurves);
+
+    this.midasus.update(nowMs, dtSec, this.calm);
+    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm);
+    this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm);
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
 
-    this.camera.update(dtSec);
+    this.camera.update(dtSec, this.calm);
     this.paramBus.step();
 
     this.curr = this._snapshot();
@@ -138,6 +149,7 @@ export class Simulation {
       scaleX: this.midio.scaleX,
       scaleY: this.midio.scaleY,
       leanDeg: this.midio.leanDeg,
+      mesh: { ...this.midio.poseExtras },
     };
   }
 
@@ -152,6 +164,7 @@ export class Simulation {
       scaleX: lerp(p.scaleX, c.scaleX),
       scaleY: lerp(p.scaleY, c.scaleY),
       leanDeg: lerp(p.leanDeg, c.leanDeg),
+      mesh: c.mesh || {},
       airborne: this.jump.airborne,
     };
   }

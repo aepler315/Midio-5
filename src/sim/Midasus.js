@@ -50,12 +50,17 @@ export class Midasus {
     return { x, y };
   }
 
-  _orbitAnchor(nowMs) {
+  _orbitAnchor(nowMs, calm = null) {
+    const C = calm ? calm.C : 0;
     const ax = this.midio.screenX;
     const ay = this.midio.groundY - this.midio.y - 130;
     const t = nowMs / 1000;
-    const x = ax + 60 * Math.sin(1.8 * t + this.phi);
-    const y = ay + 34 * Math.sin(1.2 * t);
+    // Calm = wider, slower orbit; loud = tighter, faster.
+    const axAmp = 60 + 50 * C;
+    const ayAmp = 34 + 30 * C;
+    const freqMul = 1 - 0.35 * C;
+    const x = ax + axAmp * Math.sin(1.8 * freqMul * t + this.phi);
+    const y = ay + ayAmp * Math.sin(1.2 * freqMul * t);
     return { x, y };
   }
 
@@ -72,17 +77,31 @@ export class Midasus {
     }
   }
 
-  _emitStreak(speed) {
+  /** External callers (MidioPerformer apex sparkle) can emit a burst at a point. */
+  burstAt(x, y, n, hue = this.hue) {
+    for (let i = 0; i < n; i++) {
+      const ang = this.rand() * Math.PI * 2;
+      const speed = 40 + 80 * this.rand();
+      this.particles.spawn({
+        x, y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
+        size: 3, hue, life: 0.25 + 0.15 * this.rand(),
+      });
+    }
+  }
+
+  _emitStreak(speed, calmC = 0) {
     const jitter = 25;
     this.particles.spawn({
       x: this.p.x, y: this.p.y,
       vx: this.v.x * 0.3 + (this.rand() * 2 - 1) * jitter,
       vy: this.v.y * 0.3 + (this.rand() * 2 - 1) * jitter,
-      size: 3, hue: this.hue, life: (260 + 160 * this.rand()) / 1000,
+      size: 3, hue: this.hue,
+      life: ((260 + 160 * this.rand()) / 1000) * (1 + 0.6 * calmC),
     });
   }
 
-  update(nowMs, dtSec) {
+  update(nowMs, dtSec, calm = null) {
+    const C = calm ? calm.C : 0;
     while (this.i < this.q.length && this.q[this.i].tMs <= nowMs) {
       const n = this.q[this.i++];
       const t = this._target(n);
@@ -95,11 +114,11 @@ export class Midasus {
       this.lastNoteMs = nowMs;
     }
 
-    this.phi += 0.15 * dtSec;
+    this.phi += (0.15 - 0.05 * C) * dtSec;
 
     const nxt = this.q[this.i];
     const silence = nowMs - this.lastNoteMs >= SILENCE_MS || !nxt;
-    const target = silence ? this._orbitAnchor(nowMs) : this._target(nxt);
+    const target = silence ? this._orbitAnchor(nowMs, calm) : this._target(nxt);
     const restTarget = silence ? 1 : 0;
     this.rest += clamp((restTarget - this.rest) * (dtSec / BLEND_SEC), -1, 1);
     this.rest = clamp(this.rest, 0, 1);
@@ -113,7 +132,7 @@ export class Midasus {
     const rateMul = 0.15 + 0.85 * (1 - this.rest);
     const rate = (2 + 26 * Math.min(1, speed / 1400)) * rateMul;
     this._emitAccum += rate * dtSec * 60;
-    while (this._emitAccum >= 1) { this._emitAccum -= 1; this._emitStreak(speed); }
+    while (this._emitAccum >= 1) { this._emitAccum -= 1; this._emitStreak(speed, C); }
 
     this.particles.step(dtSec, (o, dt) => {
       o.x += o.vx * dt; o.y += o.vy * dt; o.age += dt;
@@ -128,10 +147,14 @@ export class Midasus {
       const size = p.size * (1 - t);
       if (size <= 0) continue;
       ctx.fillStyle = `hsla(${p.hue},${sat}%,65%,${(1 - t) * 0.9})`;
+      // Calm = fainter, longer-lived ambient trail.
+      const alpha = (1 - t) * 0.9;
+      ctx.globalAlpha = alpha;
       ctx.beginPath();
       ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.globalAlpha = 1;
     drawMesh(ctx, MIDASUS_MESH, {
       x: this.p.x, y: this.p.y,
     }, this.hue, { fill: false, lineWidth: 1.5, glow: true });

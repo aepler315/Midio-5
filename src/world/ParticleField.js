@@ -45,14 +45,21 @@ export class ParticleField {
     return p;
   }
 
-  update(dtSec, tSec, energyCurves, nowMs) {
+  update(dtSec, tSec, energyCurves, nowMs, calmC = 0) {
     const rand = this.rand;
+    // Calm = denser, brighter ambient field.
+    this._activeCount = Math.max(1, Math.floor(this.count * (0.7 + 0.5 * calmC)));
+    const speedMul = 0.65 + 0.6 * calmC;
+    const alphaMul = 0.7 + 0.4 * calmC;
+
+    let active = 0;
     for (const p of this.particles) {
+      if (++active > this._activeCount) break;
       switch (this.kind) {
         case 'fireflies':
-          p.x += Math.sin(tSec * 0.4 + p.phase) * this.baseSpeed * dtSec;
-          p.y += Math.cos(tSec * 0.3 + p.phase * 1.3) * this.baseSpeed * 0.6 * dtSec;
-          p.alpha = 0.5 + 0.5 * Math.sin((2 * Math.PI * tSec) / 3 + p.phase);
+          p.x += Math.sin(tSec * 0.4 + p.phase) * this.baseSpeed * speedMul * dtSec;
+          p.y += Math.cos(tSec * 0.3 + p.phase * 1.3) * this.baseSpeed * 0.6 * speedMul * dtSec;
+          p.alpha = alphaMul * (0.5 + 0.5 * Math.sin((2 * Math.PI * tSec) / 3 + p.phase));
           break;
         case 'embers':
           p.vy = p.vy || -(40 + rand() * 50);
@@ -67,10 +74,10 @@ export class ParticleField {
           if (p.y > this.h + 10) Object.assign(p, this._spawn(rand() * this.w, -10));
           break;
         case 'pollen': {
-          p.x += Math.sin(tSec * 0.5 + p.phase) * 6 * dtSec;
-          p.y += Math.cos(tSec * 0.4 + p.phase * 1.7) * 6 * dtSec;
+          p.x += Math.sin(tSec * 0.5 + p.phase) * 6 * speedMul * dtSec;
+          p.y += Math.cos(tSec * 0.4 + p.phase * 1.7) * 6 * speedMul * dtSec;
           const air = energyCurves ? energyCurves.sample(6, nowMs) : 0.3;
-          p.alpha = 0.3 + 0.5 * clamp01(air);
+          p.alpha = alphaMul * (0.35 + 0.55 * clamp01(air));
           break;
         }
         case 'antigrav':
@@ -109,7 +116,10 @@ export class ParticleField {
 
   draw(ctx) {
     ctx.save();
+    const limit = this._activeCount ?? this.count;
+    let i = 0;
     for (const p of this.particles) {
+      if (++i > limit) break;
       switch (this.kind) {
         case 'fireflies':
         case 'pollen':

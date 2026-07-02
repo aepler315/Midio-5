@@ -29,10 +29,11 @@ export class Renderer {
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.scale(camera.zoom, camera.zoom);
-    ctx.translate(-canvas.width / 2 + camera.shakeX, -canvas.height / 2 + camera.shakeY);
+    ctx.translate(-canvas.width / 2 + camera.shakeX + camera.driftX, -canvas.height / 2 + camera.shakeY + camera.driftY);
 
+    const calmC = sim.calm ? sim.calm.C : 0;
     if (biomeManager) {
-      biomeManager.draw(ctx, canvas, pose.worldX, sim.ground, sim.timeMs);
+      biomeManager.draw(ctx, canvas, pose.worldX, sim.ground, sim.timeMs, calmC);
     } else {
       this._drawFallbackSky(ctx, canvas);
       this._drawGround(ctx, canvas, pose, sim.midio.groundY);
@@ -43,11 +44,12 @@ export class Renderer {
     if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
     if (sim.broshi) sim.broshi.draw(ctx, pose);
 
+    this._drawMidioGhosts(ctx, sim);
     this._drawMidio(ctx, pose, sim.midio.groundY);
 
     if (sim.midasus) sim.midasus.draw(ctx);
     if (sim.fracture) sim.fracture.draw(ctx, canvas);
-    if (biomeManager) biomeManager.drawForeground(ctx, canvas, pose.worldX);
+    if (biomeManager) biomeManager.drawForeground(ctx, canvas, pose.worldX, calmC);
 
     ctx.restore(); // camera transform
     ctx.restore();
@@ -81,9 +83,23 @@ export class Renderer {
   _drawMidio(ctx, pose, groundY) {
     const mesh = pose.mesh || {};
     drawMesh(ctx, MIDIO_MESH, {
-      x: pose.midioX, y: pose.midioY,
-      scaleX: pose.scaleX, scaleY: pose.scaleY,
+      x: pose.midioX + (mesh.driftX || 0),
+      y: pose.midioY + (mesh.driftY || 0),
+      scaleX: pose.scaleX * (mesh.blink || 1),
+      scaleY: pose.scaleY * (mesh.blink || 1),
       leanDeg: pose.leanDeg, spin: mesh.spin || 0, armFlare: mesh.armFlare || 0,
     }, MIDIO_MESH.baseHue, { fill: true, lineWidth: 1.5, glow: true, goldPulse: mesh.goldPulse || 0 });
+  }
+
+  _drawMidioGhosts(ctx, sim) {
+    if (!sim || !sim.performer) return;
+    const ghosts = sim.performer.ghosts();
+    for (const g of ghosts) {
+      drawMesh(ctx, MIDIO_MESH, {
+        x: g.x, y: g.y,
+        scaleX: g.scaleX, scaleY: g.scaleY,
+        leanDeg: g.leanDeg, spin: g.spin, armFlare: g.armFlare,
+      }, MIDIO_MESH.baseHue, { fill: false, lineWidth: 1, glow: false, goldPulse: 0 });
+    }
   }
 }

@@ -9,6 +9,7 @@ export class Midio {
     this.leanDeg = 0;
     this.facing = 1;
     this.halfWidth = 23;
+    this.poseExtras = {};
   }
 
   get renderY() { return this.groundY - this.y; }

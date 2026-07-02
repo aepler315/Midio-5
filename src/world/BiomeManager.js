@@ -126,13 +126,14 @@ export class BiomeManager {
 
   _profile(name) { return BIOMES.find((b) => b.name === name); }
 
-  update(nowMs, dtSec, energyCurves) {
+  update(nowMs, dtSec, energyCurves, calm) {
     this.tSec = nowMs / 1000;
+    this._calmC = calm ? calm.C : 0;
     const { from, to, t } = this._blend(nowMs);
     this.currentBlend = { from, to, t };
 
-    this.fields.get(from).update(dtSec, this.tSec, energyCurves, nowMs);
-    if (to !== from) this.fields.get(to).update(dtSec, this.tSec, energyCurves, nowMs);
+    this.fields.get(from).update(dtSec, this.tSec, energyCurves, nowMs, this._calmC);
+    if (to !== from) this.fields.get(to).update(dtSec, this.tSec, energyCurves, nowMs, this._calmC);
 
     if (this._scanlineActive) {
       this._scanlineY += dtSec * this.h * 2.2;
@@ -158,7 +159,8 @@ export class BiomeManager {
     }
   }
 
-  draw(ctx, canvas, worldX, groundField = null, nowMs = 0) {
+  draw(ctx, canvas, worldX, groundField = null, nowMs = 0, calmC = 0) {
+    this._calmC = calmC;
     const { from, to, t } = this.currentBlend || { from: this.sections[0].profile, to: this.sections[0].profile, t: 1 };
     const A = this._profile(from), B = this._profile(to);
 
@@ -185,10 +187,11 @@ export class BiomeManager {
     this._drawGround(ctx, canvas, worldX, A, B, t, groundField, nowMs);
   }
 
-  drawForeground(ctx, canvas, worldX) {
+  drawForeground(ctx, canvas, worldX, calmC = 0) {
     // L7: oversized, blurred, low-alpha foreground veil (spec §4.1.1).
+    // Calm raises the veil slightly so the world feels closer/peaceful.
     ctx.save();
-    ctx.globalAlpha = 0.10;
+    ctx.globalAlpha = 0.10 + 0.08 * calmC;
     ctx.filter = 'blur(6px)';
     const scrollX = worldX * LAYER_RATIOS.L7;
     for (let i = 0; i < 3; i++) {
@@ -214,7 +217,8 @@ export class BiomeManager {
         ctx.globalAlpha = alpha;
         ctx.fillStyle = '#ffffff';
         for (const s of this.stars) {
-          const a = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(this.tSec * 1.3 + s.phase));
+          const twinkleHz = 1.3 + 1.0 * this._calmC;
+          const a = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(this.tSec * twinkleHz + s.phase));
           ctx.globalAlpha = alpha * a;
           ctx.fillRect(s.x, s.y, 1.6, 1.6);
         }

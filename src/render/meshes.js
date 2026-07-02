@@ -41,8 +41,8 @@ const BROSHI_VERTS = [
   // jaw (group: 'jaw', hinge = vertex 18)
   { x: 18, y: -18 }, { x: 26, y: -18 }, { x: 30, y: -10 }, { x: 26, y: -6 },
   { x: 18, y: -8 }, { x: 14, y: -12 },
-  // tail
-  { x: -24, y: -12 }, { x: -40, y: -22 }, { x: -54, y: -12 },
+  // tail (grouped for lazy sway when calm)
+  { x: -24, y: -12, group: 'tail' }, { x: -40, y: -22, group: 'tail' }, { x: -54, y: -12, group: 'tail' },
   // eye
   { x: 20, y: -22, group: 'head' },
 ];

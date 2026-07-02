@@ -56,6 +56,14 @@ export class Broshi {
     this._neckStartMs = -Infinity;
     this._neckAmp = 0;
 
+    this.tailAngle = 0;
+    this._yawnUntilMs = -Infinity;
+    this._yawnStartMs = -Infinity;
+    this._yawnCooldownUntilMs = 0;
+    this._calmBarStreak = 0;
+    this.calmC = 0;
+    this._lastCalmC = 1;
+
     this.spittle = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 60);
     this.drool = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 60);
     this._droolAccum = 0;
@@ -80,6 +88,18 @@ export class Broshi {
     if (hist.length > 8) hist.shift();
     this._barsSinceSurge++;
     if (this._barsSinceSurge >= 8) this._triggerSurge(bar.ms);
+
+    // Yawn trigger: after >4 consecutive calm bars.
+    this._lastCalmC = this.calmC ?? 1;
+    if (this._lastCalmC > 0.75) this._calmBarStreak++;
+    else this._calmBarStreak = 0;
+    if (this._calmBarStreak >= 4 && bar.ms >= this._yawnCooldownUntilMs) {
+      this._yawnUntilMs = bar.ms + 1400;
+      this._yawnStartMs = bar.ms;
+      this._yawnCooldownUntilMs = bar.ms + 4000;
+      this._calmBarStreak = 0;
+    }
+
     this._barEnergyAccum = 0;
     this._barEnergySamples = 0;
   }
@@ -105,7 +125,11 @@ export class Broshi {
     this._neckPending = { vel: evt.vel };
   }
 
-  update(nowMs, dtSec, midio, energyCurves, obstacles, worldX, groundY) {
+  update(nowMs, dtSec, midio, energyCurves, obstacles, worldX, groundY, calm) {
+    this.calmC = calm ? calm.C : 0;
+    const tSec = nowMs / 1000;
+    this.tailAngle = this.calmC * Math.sin(tSec * 2.6) * 22;
+
     const gInstant = energyCurves ? energyCurves.globalEnergy(nowMs, RABID_WEIGHTS) : 0;
     this._barEnergyAccum += gInstant;
     this._barEnergySamples++;
@@ -171,10 +195,19 @@ export class Broshi {
       }
     }
 
-    // --- jaw ---
-    if (nowMs >= this._jawUntilMs) this.jawOpen = Math.max(0, this.jawOpen - dtSec / 0.05);
-    const jawSnapHz = 2 * (1 + 3 * this.rho);
-    if (this.rabid) this.jawOpen = 0.5 + 0.5 * Math.sin(2 * Math.PI * jawSnapHz * (nowMs / 1000));
+    // --- jaw (yawn overrides everything when calm) ---
+    const yawning = nowMs < this._yawnUntilMs;
+    if (yawning) {
+      const yawningDur = this._yawnUntilMs - this._yawnStartMs;
+      const u = yawningDur > 0 ? clamp((nowMs - this._yawnStartMs) / yawningDur, 0, 1) : 1;
+      const shape = Math.sin(Math.PI * u);
+      this.jawOpen = 0.15 + 0.85 * shape;
+      this.neckAngle = 10 - 18 * shape; // head dips at peak yawn
+    } else {
+      if (nowMs >= this._jawUntilMs) this.jawOpen = Math.max(0, this.jawOpen - dtSec / 0.05);
+      const jawSnapHz = 2 * (1 + 3 * this.rho);
+      if (this.rabid) this.jawOpen = 0.5 + 0.5 * Math.sin(2 * Math.PI * jawSnapHz * (nowMs / 1000));
+    }
 
     // --- mini-hop ---
     if (nowMs < this._hopUntilMs) {
@@ -185,11 +218,13 @@ export class Broshi {
       this.hopY = 0;
     }
 
-    // --- head-bob (neck angle) ---
-    const dt = nowMs - this._neckStartMs;
-    this.neckAngle = dt >= 0 && dt < 600
-      ? this._neckAmp * Math.exp(-dt / 180) * Math.sin((2 * Math.PI * dt) / 220)
-      : 0;
+    // --- head-bob (neck angle), suppressed during yawn ---
+    if (!yawning) {
+      const dt = nowMs - this._neckStartMs;
+      this.neckAngle = dt >= 0 && dt < 600
+        ? this._neckAmp * Math.exp(-dt / 180) * Math.sin((2 * Math.PI * dt) / 220)
+        : 0;
+    }
 
     // --- rabid aura / drool ---
     if (this.rabid) {
@@ -208,8 +243,9 @@ export class Broshi {
   }
 
   _startHop(nowMs, vel) {
-    this._hopH = 10 + 18 * vel;
-    this._hopUntilMs = nowMs + 160;
+    // Calm = higher, floatier hops; intense = lower, tighter twitches.
+    this._hopH = (10 + 18 * vel) * (0.35 + 0.65 * this.calmC);
+    this._hopUntilMs = nowMs + 160 * (0.6 + 0.7 * this.calmC);
   }
 
   _spawnSpittle() {
@@ -272,7 +308,7 @@ export class Broshi {
     const meshBaseHue = lerp(120, 0, this.rho); // green → red as rabid grows
     drawMesh(ctx, BROSHI_MESH, {
       x: 0, y: 0, scaleX: 1, scaleY: 1,
-      jawOpen: this.jawOpen, neckAngle: this.neckAngle,
+      jawOpen: this.jawOpen, neckAngle: this.neckAngle, tailAngle: this.tailAngle,
     }, meshBaseHue, { fill: true, lineWidth: 1.5, glow: true });
 
     for (const d of this.drool.active) {

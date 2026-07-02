@@ -36,17 +36,19 @@ function rotate(p, cx, cy, angle) {
 function transformVertices(mesh, pose) {
   const out = new Array(mesh.vertices.length);
   const { x = 0, y = 0, scaleX = 1, scaleY = 1, leanDeg = 0, spin = 0,
-          jawOpen = 0, neckAngle = 0, armFlare = 0 } = pose;
+          jawOpen = 0, neckAngle = 0, armFlare = 0, tailAngle = 0 } = pose;
 
-  // Group-aware local transforms for Broshi's hinged jaw / head.
+  // Group-aware local transforms for Broshi's hinged jaw / head / tail.
   const jawAngle = jawOpen * 0.55; // radians
   const headAngle = (neckAngle * Math.PI) / 180;
+  const tailSway = (tailAngle * Math.PI) / 180;
   const lean = (leanDeg * Math.PI) / 180;
 
-  // Broshi jaw hinge is vertex 18 in BROSHI_MESH; head pivot is vertex 12.
+  // Broshi jaw hinge is vertex 18; head pivot vertex 12; tail root vertex 11.
   const isBroshi = mesh === BROSHI_MESH;
   const jawHinge = isBroshi ? mesh.vertices[18] : null;
   const headPivot = isBroshi ? mesh.vertices[12] : null;
+  const tailPivot = isBroshi ? mesh.vertices[11] : null;
 
   // Arm flare for Midio superhero pose (push arms outward).
   const isMidio = mesh === MIDIO_MESH;
@@ -58,6 +60,7 @@ function transformVertices(mesh, pose) {
     if (isBroshi) {
       if (p.group === 'jaw') p = rotate(p, jawHinge.x, jawHinge.y, jawAngle);
       else if (p.group === 'head') p = rotate(p, headPivot.x, headPivot.y, headAngle);
+      else if (p.group === 'tail') p = rotate(p, tailPivot.x, tailPivot.y, tailSway);
     }
     if (isMidio && armFlare && p.y < -30) {
       const dir = p.x > 0 ? 1 : -1;
