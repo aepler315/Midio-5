@@ -137,3 +137,18 @@ test('extractContent returns empty string on a malformed response, parser reject
     assert.equal(parseVisionResponse(a.extractContent({})), null);
   }
 });
+
+test('jsonMode:false omits the JSON-mode field (prompt-only fallback shape)', () => {
+  const ollama = getProvider('ollama');
+  const oBody = JSON.parse(ollama.buildRequest({ ...ARGS(ollama), jsonMode: false }).body);
+  assert.equal(oBody.format, undefined);
+
+  const openai = getProvider('openai');
+  const wBody = JSON.parse(openai.buildRequest({ ...ARGS(openai), jsonMode: false }).body);
+  assert.equal(wBody.response_format, undefined);
+
+  // Adapters without native JSON mode ignore the flag entirely.
+  const anth = getProvider('anthropic');
+  const aBody = JSON.parse(anth.buildRequest({ ...ARGS(anth), jsonMode: false }).body);
+  assert.equal(aBody.system, 'SYS');
+});

@@ -16,7 +16,7 @@ export function createOpenAIAdapter({
     supportsJsonMode: true,
     needsKey: true,
 
-    buildRequest({ frames, telemetry, system, baseUrl, model, apiKey }) {
+    buildRequest({ frames, telemetry, system, baseUrl, model, apiKey, jsonMode = true }) {
       const content = [
         ...frames.map((b64) => ({
           type: 'image_url',
@@ -28,12 +28,14 @@ export function createOpenAIAdapter({
         model,
         temperature: 0.2,
         max_tokens: 300,
-        response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: system },
           { role: 'user', content },
         ],
       };
+      // Some OpenAI/OpenRouter vision models reject response_format with a
+      // 400. The caller drops to prompt-only (jsonMode=false) and retries.
+      if (jsonMode) body.response_format = { type: 'json_object' };
       return {
         url: baseUrl,
         headers: {

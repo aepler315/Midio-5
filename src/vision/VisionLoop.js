@@ -32,6 +32,9 @@ export class VisionLoop {
     this.enabled = enabled;
     this.settings = settings || { provider: 'ollama', apiKey: '', baseUrl: '', model: '' };
     this.adapter = adapter || { id: 'ollama', defaultBaseUrl: 'http://localhost:11434/api/chat', defaultModel: 'llava:13b', needsKey: false };
+    // JSON-mode is adapter-supported but adaptive: if a model 400s on the
+    // JSON-mode request, we drop to prompt-only and stay there.
+    this.jsonMode = this.adapter.supportsJsonMode ?? false;
 
     this.ring = new RingBuffer(4);
     this.log = new RingBuffer(40);
@@ -52,10 +55,16 @@ export class VisionLoop {
   }
 
   /** Hot-apply new provider settings without a reload. An in-flight cycle
-   *  finishes on the old adapter; _inFlight serializes, so no mutex needed. */
+   *  finishes on the old adapter; _inFlight serializes, so no mutex needed.
+   *  Switching providers resets the JSON-mode adaptation (the new provider
+   *  hasn't told us yet that it can't do JSON mode). */
   updateSettings(settings, adapter) {
     if (settings) this.settings = settings;
-    if (adapter) this.adapter = adapter;
+    if (adapter) {
+      const changed = adapter.id !== this.adapter?.id;
+      this.adapter = adapter;
+      if (changed) this.jsonMode = adapter.supportsJsonMode ?? false;
+    }
   }
 
   // Derived, for window.__SMW introspection and the debug overlay.
@@ -120,27 +129,42 @@ export class VisionLoop {
     }
 
     try {
-      const { url, headers, body } = this.adapter.buildRequest({
-        frames, telemetry, system: CRITIC_SYSTEM,
-        baseUrl: this.endpoint, model: this.model, apiKey: this.settings.apiKey,
-      });
-      const res = await fetch(url, {
-        method: 'POST',
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        headers,
-        body,
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const content = this.adapter.extractContent(data);
-      const parsed = parseVisionResponse(content);
-      if (parsed) this._applyResult(parsed, nowSimMs);
-      else this.log.push({ t: nowSimMs, applied: false, reason: 'invalid-or-low-confidence-payload' });
+      let result = await this._attempt(frames, telemetry);
+      // Some vision models 400 on the JSON-mode request. Drop to prompt-only
+      // and retry the same cycle once; stay prompt-only for subsequent cycles.
+      if (result.status === 400 && this.jsonMode) {
+        this.jsonMode = false;
+        this.log.push({ t: nowSimMs, applied: false, reason: 'json-mode-disabled-by-400' });
+        result = await this._attempt(frames, telemetry);
+      }
+      if (result.parsed) this._applyResult(result.parsed, nowSimMs);
+      else this.log.push({ t: nowSimMs, applied: false, reason: result.reason || 'invalid-or-low-confidence-payload' });
     } catch (err) {
       this.log.push({ t: nowSimMs, applied: false, reason: String((err && err.message) || err) });
     } finally {
       this._inFlight = false;
     }
+  }
+
+  // One request+parse attempt. Returns { status, parsed, reason }. Network
+  // errors throw (caught by _runCycle); a non-OK HTTP returns a status reason.
+  async _attempt(frames, telemetry) {
+    const { url, headers, body } = this.adapter.buildRequest({
+      frames, telemetry, system: CRITIC_SYSTEM,
+      baseUrl: this.endpoint, model: this.model, apiKey: this.settings.apiKey,
+      jsonMode: this.jsonMode,
+    });
+    const res = await fetch(url, {
+      method: 'POST',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      headers,
+      body,
+    });
+    if (!res.ok) return { status: res.status, parsed: null, reason: `HTTP ${res.status}` };
+    const data = await res.json();
+    const content = this.adapter.extractContent(data);
+    const parsed = parseVisionResponse(content);
+    return { status: res.status, parsed, reason: parsed ? null : 'invalid-or-low-confidence-payload' };
   }
 
   _buildTelemetry(nowSimMs) {
