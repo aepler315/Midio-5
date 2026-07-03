@@ -26,8 +26,6 @@ const completePanelEl = document.getElementById('completePanel');
 const completeStatsEl = document.getElementById('completeStats');
 const playAgainBtnEl = document.getElementById('playAgainBtn');
 const debugOverlayEl = document.getElementById('debugOverlay');
-const eqCanvas = document.getElementById('eqCanvas');
-const eqCtx = eqCanvas.getContext('2d');
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -180,7 +178,6 @@ function frame(tRaf) {
   const alpha = acc / STEP_MS;
   renderer.draw(sim, alpha);
   comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
-  drawEqCrown();
 
   visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();
@@ -191,21 +188,6 @@ function frame(tRaf) {
   }
 
   requestAnimationFrame(frame);
-}
-
-function drawEqCrown() {
-  const w = eqCanvas.width, h = eqCanvas.height;
-  eqCtx.clearRect(0, 0, w, h);
-  if (!sim.energyCurves) return;
-  const sens = sim.paramBus.live.eqSensitivity;
-  const bands = sim.energyCurves.sampleAll(simTime);
-  const barW = w / bands.length;
-  for (let i = 0; i < bands.length; i++) {
-    const v = Math.max(0, Math.min(1, bands[i] * sens));
-    const barH = v * h;
-    eqCtx.fillStyle = `hsl(${200 + i * 18}, 80%, 65%)`;
-    eqCtx.fillRect(i * barW + 2, h - barH, barW - 4, barH);
-  }
 }
 
 window.addEventListener('keydown', (e) => {

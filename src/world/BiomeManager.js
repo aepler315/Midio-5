@@ -10,7 +10,12 @@ import { LerpCache } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
 
 const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
+const LAYER_EQ_RATIO = 0.06; // between L1 (celestial) and L2 (far mountains)
 const WORLD_SPEED_PX_S = 220;
+const BAND_COUNT = 7;
+const EQ_ATTACK_SEC = 0.08;
+const EQ_RELEASE_SEC = 0.6;
+const EQ_MAX_HEIGHT_FRAC = 0.4; // never exceed 40% of screen height, however excited the section is
 
 export class BiomeManager {
   constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null }) {
@@ -30,6 +35,7 @@ export class BiomeManager {
     this._glitchActiveMs = 0;
     this._scanlineY = 0;
     this._pylonFlash = 0;
+    this._eqSmoothed = new Float32Array(BAND_COUNT);
 
     this.strips = new Map(); // biomeName -> { L2, L3, L4, L5 }
     for (const b of BIOMES) {
@@ -131,6 +137,14 @@ export class BiomeManager {
     this.fields.get(from).update(dtSec, this.tSec, energyCurves, nowMs);
     if (to !== from) this.fields.get(to).update(dtSec, this.tSec, energyCurves, nowMs);
 
+    // Horizon EQ (follow-up item 2): fast attack so hits register, slow
+    // release so it breathes instead of flickering -- excited, never noisy.
+    for (let b = 0; b < BAND_COUNT; b++) {
+      const raw = energyCurves ? clamp01(energyCurves.sample(b, nowMs)) : 0;
+      const tau = raw > this._eqSmoothed[b] ? EQ_ATTACK_SEC : EQ_RELEASE_SEC;
+      this._eqSmoothed[b] += (1 - Math.exp(-dtSec / tau)) * (raw - this._eqSmoothed[b]);
+    }
+
     if (this._scanlineActive) {
       this._scanlineY += dtSec * this.h * 2.2;
       if (this._scanlineY > this.h) this._scanlineActive = false;
@@ -148,6 +162,7 @@ export class BiomeManager {
 
     this._drawSky(ctx, canvas, A, B, t);
     this._drawCelestial(ctx, canvas, A, B, t);
+    this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
 
     const scrollX0 = worldX * LAYER_RATIOS.L2, scrollX1 = worldX * LAYER_RATIOS.L3;
     const scrollX2 = worldX * LAYER_RATIOS.L4, scrollX3 = worldX * LAYER_RATIOS.L5;
@@ -234,6 +249,45 @@ export class BiomeManager {
       const alpha = A.fx === 'prominence' ? 1 - t : t;
       if (alpha > 0.02) this._drawProminence(ctx, cx, cy, alpha);
     }
+  }
+
+  /**
+   * The EQ, moved to a distant background layer (follow-up item 2): seven
+   * huge, soft bars on the horizon at far parallax depth, between the
+   * celestial layer and the far mountains. Excited but never distracting --
+   * additive, low alpha, and hard-clamped so it can never dominate the frame.
+   */
+  _drawHorizonEQ(ctx, canvas, worldX, A, B, t) {
+    const scrollX = worldX * LAYER_EQ_RATIO;
+    const barCount = BAND_COUNT;
+    const totalWidth = canvas.width * 1.4;
+    const barWidth = totalWidth / barCount;
+    const baseline = canvas.height * 0.62;
+    const maxHeight = canvas.height * EQ_MAX_HEIGHT_FRAC;
+    // The celestial color (not a sky gradient stop) so the glow actually
+    // reads as light against a sky that may already share the sky's own hue.
+    const color = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const offset = -(((scrollX % totalWidth) + totalWidth) % totalWidth);
+    for (let rep = 0; rep < 3; rep++) {
+      const groupX = offset + rep * totalWidth - totalWidth;
+      for (let i = 0; i < barCount; i++) {
+        const x = groupX + i * barWidth;
+        if (x + barWidth < -50 || x > canvas.width + 50) continue;
+        const v = clamp01(this._eqSmoothed[i]);
+        const h = Math.min(maxHeight, v * maxHeight);
+        if (h <= 1) continue;
+        const grad = ctx.createLinearGradient(0, baseline, 0, baseline - h);
+        grad.addColorStop(0, `${color}80`);
+        grad.addColorStop(1, `${color}00`);
+        ctx.fillStyle = grad;
+        ctx.globalAlpha = 0.30;
+        ctx.fillRect(x + barWidth * 0.08, baseline - h, barWidth * 0.84, h);
+      }
+    }
+    ctx.restore();
   }
 
   _drawOneCelestial(ctx, cx, cy, c, alpha) {
