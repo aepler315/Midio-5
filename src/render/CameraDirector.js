@@ -20,10 +20,11 @@ export class CameraDirector {
     this._shakeT = 0;
   }
 
-  update(dtSec) {
+  update(dtSec, calmLevel = 0) {
     this.zoom += (this.targetZoom - this.zoom) * Math.min(1, dtSec * 10);
     this.targetZoom += (1 - this.targetZoom) * Math.min(1, dtSec * 6);
 
+    let shakeX = 0, shakeY = 0;
     if (this._shakeAmp > 0.01) {
       this._shakeT += dtSec;
       const decay = Math.exp(-this._shakeT / 0.07);
@@ -31,11 +32,20 @@ export class CameraDirector {
       // 2-octave value-noise direction, not pure sine (spec §2.2.1) — cheap approximation via
       // summed incommensurate sines seeded per-shake so it never reads as jello.
       const t = this._shakeT * 1000;
-      this.shakeX = amp * (Math.sin(t * 0.031 + this._shakeSeed) * 0.6 + Math.sin(t * 0.077 + this._shakeSeed * 1.7) * 0.4);
-      this.shakeY = amp * (Math.sin(t * 0.043 + this._shakeSeed * 2.3) * 0.6 + Math.sin(t * 0.091 + this._shakeSeed * 0.5) * 0.4);
+      shakeX = amp * (Math.sin(t * 0.031 + this._shakeSeed) * 0.6 + Math.sin(t * 0.077 + this._shakeSeed * 1.7) * 0.4);
+      shakeY = amp * (Math.sin(t * 0.043 + this._shakeSeed * 2.3) * 0.6 + Math.sin(t * 0.091 + this._shakeSeed * 0.5) * 0.4);
       this._shakeAmp = amp < 0.05 ? 0 : this._shakeAmp;
-    } else {
-      this.shakeX = 0; this.shakeY = 0;
     }
+
+    // Calm sections (follow-up item 3): a slow drift layered on top of
+    // impact shake (additive, so a landing during a calm stretch still
+    // reads correctly) -- keeps the frame from ever feeling frozen.
+    this._driftT = (this._driftT || 0) + dtSec;
+    const driftAmp = 3 * calmLevel;
+    const driftX = driftAmp * Math.sin(2 * Math.PI * 0.1 * this._driftT);
+    const driftY = driftAmp * Math.sin(2 * Math.PI * 0.1 * this._driftT * 0.7 + 1.3);
+
+    this.shakeX = shakeX + driftX;
+    this.shakeY = shakeY + driftY;
   }
 }

@@ -3,11 +3,11 @@
 // frequency->anatomy mapping driven by live band energy and note onsets,
 // and a Rabid overlay gated on global track energy.
 import { Role } from '../core/NoteEvent.js';
-import { clamp, smoothstep, mulberry32 } from '../utils/math.js';
+import { clamp, smoothstep, mulberry32, lerp } from '../utils/math.js';
 import { hexLerp, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { RABID_WEIGHTS } from '../audio/bands.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
-import { BROSHI_BODY, BROSHI_HEAD, BROSHI_JAW, BROSHI_EYE } from '../render/meshes.js';
+import { BROSHI_BODY, BROSHI_HEAD, BROSHI_JAW, BROSHI_EYE, BROSHI_TAIL } from '../render/meshes.js';
 import { computeRestLengths, drawMeshPart } from '../render/MeshDrawer.js';
 
 const K = 26, C = 3.4; // spring stiffness (s^-2), damping (s^-1)
@@ -17,6 +17,17 @@ const RABID_ENTER_G = 0.75, RABID_EXIT_G = 0.60, RABID_ENTER_HOLD_MS = 1500;
 const RABID_FADE_SEC = 0.8;
 const G_EMA_TAU = 0.4;
 const TONGUE_COOLDOWN_MS = 350;
+
+// Calm/idle behaviors (follow-up item 3): a relaxed lope (softer hops, a
+// wide lazy tail sway) plus an occasional yawn during sustained quiet
+// stretches, so low-intensity sections still feel alive.
+const TAIL_BASE_HZ = 0.9, TAIL_CALM_HZ = 0.32;
+const TAIL_BASE_DEG = 6, TAIL_CALM_DEG = 18;
+const CALM_LEVEL_THRESHOLD = 0.5;
+const CALM_BAR_THRESHOLD = 4;
+const YAWN_CHANCE_PER_BAR = 0.35;
+const YAWN_COOLDOWN_BARS = 8;
+const YAWN_DUR_MS = 1400;
 
 const easeOutCubic = (t) => 1 - (1 - t) ** 3;
 const easeOutElastic = (t) => {
@@ -65,6 +76,14 @@ export class Broshi {
     this._headRest = computeRestLengths(BROSHI_HEAD);
     this._jawRest = computeRestLengths(BROSHI_JAW);
     this._eyeRest = computeRestLengths(BROSHI_EYE);
+    this._tailRest = computeRestLengths(BROSHI_TAIL);
+
+    this._calmLevel = 0;
+    this._calmBarsStreak = 0;
+    this._barsSinceYawn = Infinity;
+    this._yawnStartMs = -Infinity;
+    this.tailAngle = 0;
+    this._tailPhase = this.rand() * Math.PI * 2;
 
     conductor.onBar((bar) => this._onBar(bar));
     conductor.on(Role.RHYTHM, (evt) => {
@@ -88,6 +107,15 @@ export class Broshi {
     if (this._barsSinceSurge >= 8) this._triggerSurge(bar.ms);
     this._barEnergyAccum = 0;
     this._barEnergySamples = 0;
+
+    if (this._calmLevel > CALM_LEVEL_THRESHOLD) this._calmBarsStreak++;
+    else this._calmBarsStreak = 0;
+    this._barsSinceYawn++;
+    if (this._calmBarsStreak >= CALM_BAR_THRESHOLD && this._barsSinceYawn >= YAWN_COOLDOWN_BARS
+      && !this.rabid && this.rand() < YAWN_CHANCE_PER_BAR) {
+      this._yawnStartMs = bar.ms;
+      this._barsSinceYawn = 0;
+    }
   }
 
   _triggerSurge(nowMs) {
@@ -111,7 +139,8 @@ export class Broshi {
     this._neckPending = { vel: evt.vel };
   }
 
-  update(nowMs, dtSec, midio, energyCurves, obstacles, worldX, groundY) {
+  update(nowMs, dtSec, midio, energyCurves, obstacles, worldX, groundY, calmLevel = 0) {
+    this._calmLevel = calmLevel;
     const gInstant = energyCurves ? energyCurves.globalEnergy(nowMs, RABID_WEIGHTS) : 0;
     this._barEnergyAccum += gInstant;
     this._barEnergySamples++;
@@ -177,10 +206,20 @@ export class Broshi {
       }
     }
 
-    // --- jaw ---
-    if (nowMs >= this._jawUntilMs) this.jawOpen = Math.max(0, this.jawOpen - dtSec / 0.05);
+    // --- jaw (yawn takes priority over the idle decay, kicks/rabid override both) ---
+    const sinceYawn = nowMs - this._yawnStartMs;
+    if (sinceYawn >= 0 && sinceYawn < YAWN_DUR_MS) {
+      this.jawOpen = Math.sin((sinceYawn / YAWN_DUR_MS) * Math.PI) * 0.85;
+    } else if (nowMs >= this._jawUntilMs) {
+      this.jawOpen = Math.max(0, this.jawOpen - dtSec / 0.05);
+    }
     const jawSnapHz = 2 * (1 + 3 * this.rho);
     if (this.rabid) this.jawOpen = 0.5 + 0.5 * Math.sin(2 * Math.PI * jawSnapHz * (nowMs / 1000));
+
+    // --- tail sway: wider and lazier the calmer things get, never still ---
+    const tailHz = lerp(TAIL_BASE_HZ, TAIL_CALM_HZ, calmLevel);
+    const tailDeg = lerp(TAIL_BASE_DEG, TAIL_CALM_DEG, calmLevel);
+    this.tailAngle = tailDeg * Math.sin(2 * Math.PI * tailHz * (nowMs / 1000) + this._tailPhase);
 
     // --- mini-hop ---
     if (nowMs < this._hopUntilMs) {
@@ -214,7 +253,8 @@ export class Broshi {
   }
 
   _startHop(nowMs, vel) {
-    this._hopH = 10 + 18 * vel;
+    // Relaxed lope: calm sections soften the hop instead of cutting it entirely.
+    this._hopH = (10 + 18 * vel) * (1 - 0.5 * this._calmLevel);
     this._hopUntilMs = nowMs + 160;
   }
 
@@ -288,6 +328,16 @@ export class Broshi {
     const jawTip = BROSHI_JAW.vertices[1];
     const jawMesh = { vertices: [BROSHI_JAW.vertices[0], { x: jawTip.x, y: jawTip.y + this.jawOpen * 10 }], edges: BROSHI_JAW.edges };
     drawMeshPart(ctx, jawMesh, this._jawRest, group, baseHue + 15, { satBase: 30, lightBase: 25 });
+
+    const tailRad = (this.tailAngle * Math.PI) / 180;
+    const [tailBase, tailTip0] = BROSHI_TAIL.vertices;
+    const tdx = tailTip0.x - tailBase.x, tdy = tailTip0.y - tailBase.y;
+    const tailTip = {
+      x: tailBase.x + tdx * Math.cos(tailRad) - tdy * Math.sin(tailRad),
+      y: tailBase.y + tdx * Math.sin(tailRad) + tdy * Math.cos(tailRad),
+    };
+    const tailMesh = { vertices: [tailBase, tailTip], edges: BROSHI_TAIL.edges };
+    drawMeshPart(ctx, tailMesh, this._tailRest, group, baseHue - 10, { satBase: 40, lightBase: 30 });
 
     const eyeLit = this.rho > 0.3;
     drawMeshPart(ctx, BROSHI_EYE, this._eyeRest, group, eyeLit ? 0 : baseHue, {

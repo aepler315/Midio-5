@@ -33,9 +33,10 @@ export function mergeMeshes(meshes) {
   return { mesh: { vertices, edges }, offsets };
 }
 
-// --- Midio: rounded body wheel + a small eye wheel ---
-const MIDIO_BODY = radialMesh(23, 27, 10, 0, -27);
-const MIDIO_EYE = radialMesh(5, 6, 5, 10, -31);
+// --- Midio: rounded body wheel + a small eye wheel (kept separate so the
+// eye can scale independently for a blink -- see MidioPerformer) ---
+export const MIDIO_BODY = radialMesh(23, 27, 10, 0, -27);
+export const MIDIO_EYE = radialMesh(5, 6, 5, 10, -31);
 export const MIDIO_MESH = mergeMeshes([MIDIO_BODY, MIDIO_EYE]).mesh;
 
 // --- Broshi: body wheel + head wheel (parts kept separate so the head can
@@ -48,6 +49,9 @@ export const BROSHI_JAW = {
   edges: [[0, 1]],
 };
 export const BROSHI_EYE = radialMesh(2.4, 2.4, 5, 16, -23);
+// Tail: anchor near the back of the body, tip trailing behind -- swayed
+// in place (see Broshi's calm behaviors) by rotating vertex 1 about vertex 0.
+export const BROSHI_TAIL = { vertices: [{ x: -22, y: -6 }, { x: -42, y: 2 }], edges: [[0, 1]] };
 
 // --- Midasus: a small diamond core; particle trail carries most of her presence ---
 export const MIDASUS_MESH = radialMesh(7, 7, 6, 0, 0);

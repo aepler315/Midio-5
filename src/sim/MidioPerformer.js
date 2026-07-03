@@ -18,6 +18,18 @@ const AFTERIMAGE_INTERVAL_MS = 28;
 const AFTERIMAGE_COUNT = 4;
 const STRUT_DEG = 2.2;
 
+// Calm/idle behavior (follow-up item 3): distinctly relaxed vs. energetic
+// sections, but never inert. Gated to !airborne so it never fights a trick.
+const BREATH_HZ = 0.25;
+const BREATH_AMP = 0.02;
+const CALM_SWAY_DEG = 3.0;
+const CALM_DRIFT_PX = 3.0;
+const CALM_DRIFT_HZ = 0.2;
+const BLINK_MIN_GAP_MS = 2500;
+const BLINK_JITTER_MS = 3000;
+const BLINK_DUR_MS = 180;
+const BLINK_CALM_THRESHOLD = 0.3;
+
 export class MidioPerformer {
   constructor(seed = 4242) {
     this.rand = mulberry32(seed);
@@ -34,6 +46,10 @@ export class MidioPerformer {
 
     this.afterimages = [];
     this._lastCaptureMs = -Infinity;
+
+    this.blinkScale = 1; // 1 = eye open, 0 = fully closed
+    this._nextBlinkMs = BLINK_MIN_GAP_MS + this.rand() * BLINK_JITTER_MS;
+    this._blinkStartMs = -Infinity;
   }
 
   clearFrameFlags() {
@@ -54,7 +70,7 @@ export class MidioPerformer {
     }
   }
 
-  update(nowMs, dtSec, midio, jump, comboSystem) {
+  update(nowMs, dtSec, midio, jump, comboSystem, calmLevel = 0) {
     const justLaunched = !this._wasAirborne && jump.airborne;
     if (justLaunched) {
       const shouldTrick = jump.lastLaunchVel > TRICK_VEL_THRESHOLD || comboSystem.displayM >= TRICK_COMBO_THRESHOLD;
@@ -90,8 +106,29 @@ export class MidioPerformer {
 
     if (!jump.airborne && jump.beatPeriodMs > 0) {
       const phase = (nowMs % jump.beatPeriodMs) / jump.beatPeriodMs;
-      midio.leanDeg += STRUT_DEG * Math.sin(phase * Math.PI * 2);
+      // Energetic strut damps down as calm rises; a slower, gentler sway
+      // (half the frequency -- "synced to beat halves") takes its place, so
+      // quiet sections read as distinctly relaxed without ever going still.
+      const strutAmp = STRUT_DEG * (1 - 0.5 * calmLevel);
+      const swayAmp = CALM_SWAY_DEG * calmLevel;
+      midio.leanDeg += strutAmp * Math.sin(phase * Math.PI * 2) + swayAmp * Math.sin(phase * Math.PI + 1.7);
     }
+
+    if (!jump.airborne && nowMs >= this._flourishUntilMs) {
+      // Slow breathing cycle + a light coasting drift, both calm-scaled.
+      const tSec = nowMs / 1000;
+      midio.scaleY *= 1 + BREATH_AMP * calmLevel * Math.sin(2 * Math.PI * BREATH_HZ * tSec);
+      midio.y += CALM_DRIFT_PX * calmLevel * Math.sin(2 * Math.PI * CALM_DRIFT_HZ * tSec);
+
+      if (calmLevel > BLINK_CALM_THRESHOLD && nowMs >= this._nextBlinkMs) {
+        this._blinkStartMs = nowMs;
+        this._nextBlinkMs = nowMs + BLINK_MIN_GAP_MS + this.rand() * BLINK_JITTER_MS;
+      }
+    }
+    const sinceBlink = nowMs - this._blinkStartMs;
+    this.blinkScale = sinceBlink < BLINK_DUR_MS
+      ? Math.abs(sinceBlink / BLINK_DUR_MS - 0.5) * 2
+      : 1;
 
     this.goldFlash = Math.max(0, this.goldFlash - dtSec / GOLD_FLASH_DECAY_SEC);
 

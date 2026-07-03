@@ -129,13 +129,14 @@ export class BiomeManager {
 
   _profile(name) { return BIOMES.find((b) => b.name === name); }
 
-  update(nowMs, dtSec, energyCurves) {
+  update(nowMs, dtSec, energyCurves, calmLevel = 0) {
     this.tSec = nowMs / 1000;
+    this.calmLevel = calmLevel;
     const { from, to, t } = this._blend(nowMs);
     this.currentBlend = { from, to, t };
 
-    this.fields.get(from).update(dtSec, this.tSec, energyCurves, nowMs);
-    if (to !== from) this.fields.get(to).update(dtSec, this.tSec, energyCurves, nowMs);
+    this.fields.get(from).update(dtSec, this.tSec, energyCurves, nowMs, calmLevel);
+    if (to !== from) this.fields.get(to).update(dtSec, this.tSec, energyCurves, nowMs, calmLevel);
 
     // Horizon EQ (follow-up item 2): fast attack so hits register, slow
     // release so it breathes instead of flickering -- excited, never noisy.
@@ -183,8 +184,10 @@ export class BiomeManager {
 
   drawForeground(ctx, canvas, worldX) {
     // L7: oversized, blurred, low-alpha foreground veil (spec §4.1.1).
+    // Calm sections lift the veil alpha a little -- a small, cheap way to
+    // keep this backmost layer visibly breathing when nothing else is loud.
     ctx.save();
-    ctx.globalAlpha = 0.10;
+    ctx.globalAlpha = 0.10 * (1 + 0.6 * (this.calmLevel || 0));
     ctx.filter = 'blur(6px)';
     const scrollX = worldX * LAYER_RATIOS.L7;
     for (let i = 0; i < 3; i++) {
@@ -209,8 +212,11 @@ export class BiomeManager {
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.fillStyle = '#ffffff';
+        // Calm sections twinkle faster -- a small, free source of motion
+        // for a layer that otherwise barely changes frame to frame.
+        const twinkleRate = 1.3 * (1 + 0.6 * (this.calmLevel || 0));
         for (const s of this.stars) {
-          const a = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(this.tSec * 1.3 + s.phase));
+          const a = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(this.tSec * twinkleRate + s.phase));
           ctx.globalAlpha = alpha * a;
           ctx.fillRect(s.x, s.y, 1.6, 1.6);
         }

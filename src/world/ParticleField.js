@@ -45,14 +45,16 @@ export class ParticleField {
     return p;
   }
 
-  update(dtSec, tSec, energyCurves, nowMs) {
+  update(dtSec, tSec, energyCurves, nowMs, calmLevel = 0) {
     const rand = this.rand;
     for (const p of this.particles) {
       switch (this.kind) {
         case 'fireflies':
           p.x += Math.sin(tSec * 0.4 + p.phase) * this.baseSpeed * dtSec;
           p.y += Math.cos(tSec * 0.3 + p.phase * 1.3) * this.baseSpeed * 0.6 * dtSec;
-          p.alpha = 0.5 + 0.5 * Math.sin((2 * Math.PI * tSec) / 3 + p.phase);
+          // Calm sections: brighter, slightly faster blink -- ambient life
+          // to lean on when the foreground has gone quiet.
+          p.alpha = clamp01((0.5 + 0.5 * Math.sin((2 * Math.PI * tSec) / 3 * (1 + 0.3 * calmLevel) + p.phase)) * (1 + 0.4 * calmLevel));
           break;
         case 'embers':
           p.vy = p.vy || -(40 + rand() * 50);
@@ -70,7 +72,7 @@ export class ParticleField {
           p.x += Math.sin(tSec * 0.5 + p.phase) * 6 * dtSec;
           p.y += Math.cos(tSec * 0.4 + p.phase * 1.7) * 6 * dtSec;
           const air = energyCurves ? energyCurves.sample(6, nowMs) : 0.3;
-          p.alpha = 0.3 + 0.5 * clamp01(air);
+          p.alpha = clamp01((0.3 + 0.5 * clamp01(air)) * (1 + 0.3 * calmLevel));
           break;
         }
         case 'antigrav':

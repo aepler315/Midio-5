@@ -12,6 +12,7 @@ import { ObstacleSpawner } from './ObstacleSpawner.js';
 import { Midasus } from './Midasus.js';
 import { Broshi } from './Broshi.js';
 import { MidioPerformer } from './MidioPerformer.js';
+import { CalmDirector } from './CalmDirector.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
@@ -43,6 +44,7 @@ export class Simulation {
 
     const songSeed = hashSeed(`${conductor.timeline.length}:${conductor.durationMs}:${conductor.timeline[0]?.tMs ?? 0}:${conductor.timeline.at(-1)?.tMs ?? 0}`);
     this.performer = new MidioPerformer(songSeed);
+    this.calm = new CalmDirector();
     this.groundField = new GroundField(this.midio.groundY, {
       conductor, durationMs: conductor.durationMs, songSeed,
     });
@@ -76,6 +78,7 @@ export class Simulation {
     this.performer.clearFrameFlags();
 
     this.conductor.dispatchUpTo(nowMs);
+    this.calm.update(nowMs, dtSec, this.energyCurves);
     this.jump.update(nowMs);
     this.midio.y = this.jump.y;
 
@@ -106,15 +109,15 @@ export class Simulation {
 
     this.obstacles.update(nowMs, this.worldX, worldSpeed / 1000);
     this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.obstacles);
-    this.performer.update(nowMs, dtSec, this.midio, this.jump, this.comboSystem);
+    this.performer.update(nowMs, dtSec, this.midio, this.jump, this.comboSystem, this.calm.level);
     this.impactFX.step(dtSec);
 
-    this.midasus.update(nowMs, dtSec);
-    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY);
-    this.biomes.update(nowMs, dtSec, this.energyCurves);
+    this.midasus.update(nowMs, dtSec, this.calm.level);
+    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level);
+    this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level);
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
 
-    this.camera.update(dtSec);
+    this.camera.update(dtSec, this.calm.level);
     this.paramBus.step();
 
     this.curr = this._snapshot();

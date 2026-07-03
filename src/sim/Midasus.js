@@ -54,12 +54,16 @@ export class Midasus {
     return { x, y };
   }
 
-  _orbitAnchor(nowMs) {
+  _orbitAnchor(nowMs, calmLevel) {
     const ax = this.midio.screenX;
     const ay = this.midio.groundY - this.midio.y - 130;
     const t = nowMs / 1000;
-    const x = ax + 60 * Math.sin(1.8 * t + this.phi);
-    const y = ay + 34 * Math.sin(1.2 * t);
+    // Calm sections: the orbit widens and slows -- a lazier, dreamier drift
+    // instead of the tighter, quicker figure she traces when energetic.
+    const ampMul = 1 + 0.6 * calmLevel;
+    const rateMul = 1 - 0.5 * calmLevel;
+    const x = ax + 60 * ampMul * Math.sin(1.8 * rateMul * t + this.phi);
+    const y = ay + 34 * ampMul * Math.sin(1.2 * rateMul * t);
     return { x, y };
   }
 
@@ -78,15 +82,18 @@ export class Midasus {
 
   _emitStreak(speed) {
     const jitter = 25;
+    // Calm sections get a longer, fainter ribbon instead of a short, punchy trail.
+    const calmLevel = this._calmLevel || 0;
     this.particles.spawn({
       x: this.p.x, y: this.p.y,
       vx: this.v.x * 0.3 + (this.rand() * 2 - 1) * jitter,
       vy: this.v.y * 0.3 + (this.rand() * 2 - 1) * jitter,
-      size: 3, hue: this.hue, life: (260 + 160 * this.rand()) / 1000,
+      size: 3, hue: this.hue, life: ((260 + 160 * this.rand()) * (1 + 0.6 * calmLevel)) / 1000,
     });
   }
 
-  update(nowMs, dtSec) {
+  update(nowMs, dtSec, calmLevel = 0) {
+    this._calmLevel = calmLevel;
     while (this.i < this.q.length && this.q[this.i].tMs <= nowMs) {
       const n = this.q[this.i++];
       const t = this._target(n);
@@ -105,7 +112,7 @@ export class Midasus {
 
     const nxt = this.q[this.i];
     const silence = nowMs - this.lastNoteMs >= SILENCE_MS || !nxt;
-    const target = silence ? this._orbitAnchor(nowMs) : this._target(nxt);
+    const target = silence ? this._orbitAnchor(nowMs, calmLevel) : this._target(nxt);
     const restTarget = silence ? 1 : 0;
     this.rest += clamp((restTarget - this.rest) * (dtSec / BLEND_SEC), -1, 1);
     this.rest = clamp(this.rest, 0, 1);
@@ -129,11 +136,15 @@ export class Midasus {
 
   draw(ctx) {
     const sat = Math.round(90 - 40 * this.rest);
+    // Calm sections fade the ribbon rather than shortening it -- the longer
+    // reach comes from _emitStreak's extended particle life, this is the
+    // "fainter" half of that same trade.
+    const calmFade = 1 - 0.4 * (this._calmLevel || 0);
     for (const p of this.particles.active) {
       const t = p.age / p.life;
       const size = p.size * (1 - t);
       if (size <= 0) continue;
-      ctx.fillStyle = `hsla(${p.hue},${sat}%,65%,${(1 - t) * 0.9})`;
+      ctx.fillStyle = `hsla(${p.hue},${sat}%,65%,${(1 - t) * 0.9 * calmFade})`;
       ctx.beginPath();
       ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
       ctx.fill();

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { MidioPerformer } from '../src/sim/MidioPerformer.js';
 
 function fakeMidio() {
-  return { leanDeg: 0, scaleX: 1, scaleY: 1, renderY: 400, screenX: 200 };
+  return { leanDeg: 0, scaleX: 1, scaleY: 1, y: 400, renderY: 400, screenX: 200 };
 }
 
 function fakeJump({ airborne, lastLaunchVel = 0.9, jumpStartMs = 0, D = 500, beatPeriodMs = 500 }) {
@@ -107,4 +107,60 @@ test('afterimages accumulate while airborne and clear immediately on landing', (
 
   perf.update(t, 1 / 120, midio, fakeJump({ airborne: false }), fakeCombo());
   assert.equal(perf.afterimages.length, 0);
+});
+
+test('idle strut damps down and a slower sway takes over as calmLevel rises', () => {
+  const jump = fakeJump({ airborne: false, beatPeriodMs: 500 });
+  let strutMax = 0, swayMax = 0;
+  for (let t = 0; t < 500; t += 5) {
+    const energetic = new MidioPerformer(1);
+    const m1 = fakeMidio();
+    energetic.update(t, 1 / 120, m1, jump, fakeCombo(), 0);
+    strutMax = Math.max(strutMax, Math.abs(m1.leanDeg));
+
+    const calm = new MidioPerformer(1);
+    const m2 = fakeMidio();
+    calm.update(t, 1 / 120, m2, jump, fakeCombo(), 1);
+    swayMax = Math.max(swayMax, Math.abs(m2.leanDeg));
+  }
+  assert.ok(strutMax > 0.01 && swayMax > 0.01, 'both regimes should keep some idle motion, never fully still');
+});
+
+test('breathing/drift only apply once grounded and past any flourish window, scaled by calmLevel', () => {
+  const jump = fakeJump({ airborne: false, beatPeriodMs: 0 }); // beatPeriodMs=0 disables strut so breathing is isolated
+  const energetic = new MidioPerformer(1);
+  const calmPerf = new MidioPerformer(1);
+  let energeticDrift = 0, calmDrift = 0;
+  for (let t = 0; t < 4000; t += 20) {
+    const m1 = fakeMidio();
+    energetic.update(t, 1 / 60, m1, jump, fakeCombo(), 0);
+    energeticDrift = Math.max(energeticDrift, Math.abs(m1.y - 400), Math.abs(m1.scaleY - 1));
+
+    const m2 = fakeMidio();
+    calmPerf.update(t, 1 / 60, m2, jump, fakeCombo(), 1);
+    calmDrift = Math.max(calmDrift, Math.abs(m2.y - 400), Math.abs(m2.scaleY - 1));
+  }
+  assert.ok(energeticDrift < 1e-6, `expected no breathing/drift at calmLevel=0, got ${energeticDrift}`);
+  assert.ok(calmDrift > 0.001, `expected visible breathing/drift at calmLevel=1, got ${calmDrift}`);
+});
+
+test('blinking only engages once calm is sustained past the threshold', () => {
+  const jump = fakeJump({ airborne: false, beatPeriodMs: 0 });
+  const perf = new MidioPerformer(1);
+  let everBlinked = false;
+  for (let t = 0; t < 12000; t += 20) {
+    const m = fakeMidio();
+    perf.update(t, 1 / 60, m, jump, fakeCombo(), 1);
+    if (perf.blinkScale < 0.99) everBlinked = true;
+  }
+  assert.ok(everBlinked, 'expected at least one blink over 12s of sustained calm');
+
+  const perfEnergetic = new MidioPerformer(1);
+  let everBlinkedEnergetic = false;
+  for (let t = 0; t < 12000; t += 20) {
+    const m = fakeMidio();
+    perfEnergetic.update(t, 1 / 60, m, jump, fakeCombo(), 0);
+    if (perfEnergetic.blinkScale < 0.99) everBlinkedEnergetic = true;
+  }
+  assert.ok(!everBlinkedEnergetic, 'expected no blinking below the calm threshold');
 });

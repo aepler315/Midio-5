@@ -2,16 +2,19 @@
 // telegraph glints -> world FX -> companions -> Midio -> foreground veil ->
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
 // each stage guards on the subsystem's presence so this file grows additively.
-import { MIDIO_MESH } from './meshes.js';
+import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE } from './meshes.js';
 import { computeRestLengths, drawMeshPart } from './MeshDrawer.js';
 
 const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
+const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
 
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this._midioRestLengths = computeRestLengths(MIDIO_MESH);
+    this._midioBodyRest = computeRestLengths(MIDIO_BODY);
+    this._midioEyeRest = computeRestLengths(MIDIO_EYE);
   }
 
   draw(sim, alpha) {
@@ -85,15 +88,26 @@ export class Renderer {
 
   _drawMidio(ctx, pose, performer) {
     const flash = performer ? performer.goldFlash : 0;
+    const blink = performer ? performer.blinkScale : 1;
     const transform = {
       tx: pose.midioX, ty: pose.midioY,
       rot: (pose.leanDeg * Math.PI) / 180,
       scaleX: pose.scaleX, scaleY: pose.scaleY,
     };
     const hue = flash > 0 ? MIDIO_BASE_HUE + (48 - MIDIO_BASE_HUE) * flash : MIDIO_BASE_HUE;
-    drawMeshPart(ctx, MIDIO_MESH, this._midioRestLengths, transform, hue, {
-      lightBase: 52 + flash * 24, satBase: 68 + flash * 20,
-    });
+    const options = { lightBase: 52 + flash * 24, satBase: 68 + flash * 20 };
+
+    drawMeshPart(ctx, MIDIO_BODY, this._midioBodyRest, transform, hue, options);
+
+    if (blink < 0.98) {
+      const blinkEye = {
+        vertices: MIDIO_EYE.vertices.map((v) => ({ x: v.x, y: MIDIO_EYE_CY + (v.y - MIDIO_EYE_CY) * blink })),
+        edges: MIDIO_EYE.edges,
+      };
+      drawMeshPart(ctx, blinkEye, this._midioEyeRest, transform, hue, options);
+    } else {
+      drawMeshPart(ctx, MIDIO_EYE, this._midioEyeRest, transform, hue, options);
+    }
   }
 
   /** Motion-streak ghosts trailing a fast jump (follow-up item 6). */
