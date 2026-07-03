@@ -23,6 +23,29 @@
       <button id="demoBtn" type="button">Play procedural demo (no file needed)</button>
       <p id="progressText" class="hint hidden"></p>
       <p class="hint">Press <kbd>`</kbd> during play to open the vision/tuning debug overlay.</p>
+
+      <details id="visionSettings" class="vision-form">
+        <summary>Vision provider settings (optional)</summary>
+        <p class="hint">The vision loop is OFF by default; enable it in the debug overlay with <kbd>V</kbd> during play. Cloud providers call their API directly from your browser.</p>
+        <label class="vision-row">
+          <span>Provider</span>
+          <select id="visionProvider"></select>
+        </label>
+        <label class="vision-row">
+          <span>API key</span>
+          <input id="visionApiKey" type="password" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="vision-row">
+          <span>Base URL</span>
+          <input id="visionBaseUrl" type="text" spellcheck="false" />
+        </label>
+        <label class="vision-row">
+          <span>Model</span>
+          <input id="visionModel" type="text" spellcheck="false" />
+        </label>
+        <p class="hint vision-warn">Keys are stored in this browser's localStorage (cleartext) and sent only to the chosen provider. Clear them by emptying the field and reloading.</p>
+        <p id="visionSavedHint" class="hint vision-saved"></p>
+      </details>
     </div>
 
     <div id="hud" class="hidden">

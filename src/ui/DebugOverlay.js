@@ -32,7 +32,10 @@ export class DebugOverlay {
     }
 
     lines.push('');
-    lines.push(`vision loop: ${this.visionLoop.enabled ? 'ON' : 'OFF'} (press V to toggle)  fps~${Math.round(this.visionLoop._fps)}`);
+    const vl = this.visionLoop;
+    const pid = vl.adapter ? vl.adapter.id : 'ollama';
+    const keyState = vl.adapter && vl.adapter.needsKey ? (vl.settings && vl.settings.apiKey ? 'key' : 'NO KEY') : 'no key needed';
+    lines.push(`vision loop: ${vl.enabled ? 'ON' : 'OFF'} [${pid} ${keyState}] (press V to toggle)  fps~${Math.round(vl._fps)}`);
     if (this.perfGovernor) {
       const g = this.perfGovernor;
       lines.push(`perf governor: level ${g.level}/4  (vision ${g.visionAllowed ? 'ok' : 'shed'}, particles ×${g.particleMul}, crackGlow ${g.crackGlowEnabled ? 'on' : 'off'}, veil ${g.veilEnabled ? 'on' : 'off'})`);

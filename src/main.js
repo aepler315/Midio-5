@@ -10,7 +10,9 @@ import { Renderer } from './render/Renderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
 import { VisionLoop } from './vision/VisionLoop.js';
+import { resolveSettings, subscribe as subscribeVision } from './vision/VisionSettings.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
+import { VisionSettingsForm } from './ui/VisionSettingsForm.js';
 import { PerfGovernor } from './render/PerfGovernor.js';
 
 const STEP_MS = 1000 / 120;
@@ -27,6 +29,14 @@ const completePanelEl = document.getElementById('completePanel');
 const completeStatsEl = document.getElementById('completeStats');
 const playAgainBtnEl = document.getElementById('playAgainBtn');
 const debugOverlayEl = document.getElementById('debugOverlay');
+const visionSettingsEl = document.getElementById('visionSettings');
+
+// Loader-panel form for the vision provider/key/model. Lives only at load;
+// changes hot-apply to a running loop via the subscription below.
+new VisionSettingsForm(visionSettingsEl);
+subscribeVision((resolved) => {
+  if (visionLoop) visionLoop.updateSettings(resolved, resolved.adapter);
+});
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -69,7 +79,14 @@ function startTimeline(timelineData) {
     canvasHeight: canvas.height,
   });
   renderer = new Renderer(canvas);
-  visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false });
+  // Resolve settings fresh here so form changes made on the loader screen
+  // (provider/key/model) are picked up when the show starts.
+  const vision = resolveSettings();
+  visionLoop = new VisionLoop(canvas, paramBus, sim, {
+    enabled: false,
+    settings: { provider: vision.provider, apiKey: vision.apiKey, baseUrl: vision.baseUrl, model: vision.model },
+    adapter: vision.adapter,
+  });
   debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop, perfGovernor);
 
   simTime = 0;

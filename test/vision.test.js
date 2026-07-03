@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { parseVisionResponse } from '../src/vision/VisionLoop.js';
 import { ParamBus } from '../src/core/ParamBus.js';
 
-function payload(obj) {
-  return { message: { content: JSON.stringify(obj) } };
+function content(obj) {
+  return JSON.stringify(obj);
 }
 
 const VALID = {
@@ -14,39 +14,39 @@ const VALID = {
 };
 
 test('parseVisionResponse accepts a well-formed payload', () => {
-  const parsed = parseVisionResponse(payload(VALID));
+  const parsed = parseVisionResponse(content(VALID));
   assert.ok(parsed);
   assert.equal(parsed.adjust.jumpHeight, 1.1);
   assert.equal(parsed.observations.companion_weight, 2);
 });
 
 test('parseVisionResponse strips markdown code fences', () => {
-  const raw = { message: { content: '```json\n' + JSON.stringify(VALID) + '\n```' } };
+  const raw = '```json\n' + JSON.stringify(VALID) + '\n```';
   const parsed = parseVisionResponse(raw);
   assert.ok(parsed);
 });
 
 test('parseVisionResponse rejects payloads below the confidence floor', () => {
   const low = { ...VALID, confidence: 0.1 };
-  assert.equal(parseVisionResponse(payload(low)), null);
+  assert.equal(parseVisionResponse(content(low)), null);
 });
 
 test('parseVisionResponse rejects malformed JSON without throwing', () => {
-  assert.equal(parseVisionResponse({ message: { content: 'not json at all {' } }), null);
-  assert.equal(parseVisionResponse({}), null);
+  assert.equal(parseVisionResponse('not json at all {'), null);
+  assert.equal(parseVisionResponse(''), null);
   assert.equal(parseVisionResponse(null), null);
 });
 
 test('parseVisionResponse clamps out-of-range adjust values into [0.5, 1.5]', () => {
   const wild = { ...VALID, adjust: { ...VALID.adjust, jumpHeight: 99, scrollSpeed: -5 } };
-  const parsed = parseVisionResponse(payload(wild));
+  const parsed = parseVisionResponse(content(wild));
   assert.equal(parsed.adjust.jumpHeight, 1.5);
   assert.equal(parsed.adjust.scrollSpeed, 0.5);
 });
 
 test('parseVisionResponse rejects a payload missing a required adjust key', () => {
   const missing = { ...VALID, adjust: { jumpHeight: 1.1 } };
-  assert.equal(parseVisionResponse(payload(missing)), null);
+  assert.equal(parseVisionResponse(content(missing)), null);
 });
 
 test('ParamBus: a regression reverts to the pre-apply snapshot on the next cycle', () => {

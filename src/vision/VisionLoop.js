@@ -1,12 +1,18 @@
 // Autonomous closed-loop vision self-tuning (spec §5). A vision model is a
 // noisy sensor, not a chat partner: slow sampling, strict schema, heavy
 // actuator smoothing (owned by ParamBus), and revert-on-regress. This loop
-// must be safe to fail 100% of the time — Ollama being absent/unreachable
-// degrades to a silent no-op, never a crash or a stuck game.
+// must be safe to fail 100% of the time — a provider being absent/unreachable
+// or unconfigured degrades to a silent no-op, never a crash or a stuck game.
+//
+// Provider-agnostic: a provider adapter (src/vision/providers/*.js) owns the
+// request shape (auth header, image encoding, JSON mode) and response content
+// extraction; parseVisionResponse below is the single JSON validator across
+// all of them. Settings (provider, apiKey, baseUrl, model) come from
+// VisionSettings and hot-apply via updateSettings() with no reload.
 import { RingBuffer } from '../utils/RingBuffer.js';
 import { clamp, clamp01 } from '../utils/math.js';
 
-const CRITIC_SYSTEM = `You are the visual director of a rhythm-driven side-scroller. You receive 4 frames spanning ~1 second, in order, plus telemetry. Judge only what is visible. Respond with ONLY a JSON object matching the schema — no prose, no markdown fences.`;
+export const CRITIC_SYSTEM = `You are the visual director of a rhythm-driven side-scroller. You receive 4 frames spanning ~1 second, in order, plus telemetry. Judge only what is visible. Respond with ONLY a JSON object matching the schema — no prose, no markdown fences.`;
 
 const ADJUST_KEYS = ['jumpHeight', 'obstacleDensity', 'scrollSpeed', 'eqSensitivity', 'onsetThreshold'];
 const CAPTURE_INTERVAL_MS = 350;
@@ -18,14 +24,14 @@ const MIN_CONFIDENCE = 0.4;
 
 export class VisionLoop {
   constructor(canvas, paramBus, sim, {
-    enabled = false, endpoint = 'http://localhost:11434/api/chat', model = 'llava:13b',
+    enabled = false, settings = null, adapter = null,
   } = {}) {
     this.canvas = canvas;
     this.paramBus = paramBus;
     this.sim = sim;
     this.enabled = enabled;
-    this.endpoint = endpoint;
-    this.model = model;
+    this.settings = settings || { provider: 'ollama', apiKey: '', baseUrl: '', model: '' };
+    this.adapter = adapter || { id: 'ollama', defaultBaseUrl: 'http://localhost:11434/api/chat', defaultModel: 'llava:13b', needsKey: false };
 
     this.ring = new RingBuffer(4);
     this.log = new RingBuffer(40);
@@ -44,6 +50,17 @@ export class VisionLoop {
     this._fps = 60;
     this._lastFrameTime = null;
   }
+
+  /** Hot-apply new provider settings without a reload. An in-flight cycle
+   *  finishes on the old adapter; _inFlight serializes, so no mutex needed. */
+  updateSettings(settings, adapter) {
+    if (settings) this.settings = settings;
+    if (adapter) this.adapter = adapter;
+  }
+
+  // Derived, for window.__SMW introspection and the debug overlay.
+  get endpoint() { return this.settings.baseUrl || this.adapter.defaultBaseUrl; }
+  get model() { return this.settings.model || this.adapter.defaultModel; }
 
   /** Called once per rAF frame (spec §6.1). tRafMs: performance.now(); nowSimMs: song-relative ms. */
   maybeSample(tRafMs, nowSimMs) {
@@ -94,25 +111,29 @@ export class VisionLoop {
     const frames = this.ring.toArray();
     const telemetry = this._buildTelemetry(nowSimMs);
 
+    // Fail-safe: cloud providers need a key. No key -> silent no-op, never a
+    // crash. Ollama is local and needs none.
+    if (this.adapter.needsKey && !this.settings.apiKey) {
+      this._inFlight = false;
+      this.log.push({ t: nowSimMs, applied: false, reason: 'no-api-key' });
+      return;
+    }
+
     try {
-      const res = await fetch(this.endpoint, {
+      const { url, headers, body } = this.adapter.buildRequest({
+        frames, telemetry, system: CRITIC_SYSTEM,
+        baseUrl: this.endpoint, model: this.model, apiKey: this.settings.apiKey,
+      });
+      const res = await fetch(url, {
         method: 'POST',
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: this.model,
-          stream: false,
-          format: 'json',
-          options: { temperature: 0.2, num_predict: 300 },
-          messages: [
-            { role: 'system', content: CRITIC_SYSTEM },
-            { role: 'user', content: telemetry, images: frames },
-          ],
-        }),
+        headers,
+        body,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const parsed = this._parseResponse(data);
+      const content = this.adapter.extractContent(data);
+      const parsed = parseVisionResponse(content);
       if (parsed) this._applyResult(parsed, nowSimMs);
       else this.log.push({ t: nowSimMs, applied: false, reason: 'invalid-or-low-confidence-payload' });
     } catch (err) {
@@ -138,10 +159,6 @@ export class VisionLoop {
     ].join('\n');
   }
 
-  _parseResponse(data) {
-    return parseVisionResponse(data);
-  }
-
   _applyResult(parsed, nowSimMs) {
     const severity = parsed.observations.eq_motion + parsed.observations.speed_match
       + parsed.observations.companion_weight + parsed.observations.clutter;
@@ -163,15 +180,17 @@ export class VisionLoop {
 }
 
 /**
- * Defensive parse of an Ollama chat response into a validated adjustment
+ * Defensive parse of a vision-model response into a validated adjustment
  * (spec §5.2.1): strip stray fences, type-check every field, clamp
  * everything to schema bounds, reject the whole payload on any doubt.
- * Pure function — exported standalone so it's unit-testable without a DOM.
+ * Provider-agnostic — takes the already-extracted content *string* from the
+ * adapter's extractContent(), so it works for Ollama, OpenAI, Anthropic,
+ * Gemini, and OpenRouter uniformly. Pure function — exported standalone so
+ * it's unit-testable without a DOM.
  */
-export function parseVisionResponse(data) {
+export function parseVisionResponse(contentStr) {
   try {
-    let content = data?.message?.content ?? data?.response ?? '';
-    content = String(content).trim()
+    let content = String(contentStr ?? '').trim()
       .replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
     const obj = JSON.parse(content);
     if (!obj || typeof obj !== 'object') return null;

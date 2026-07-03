@@ -130,3 +130,53 @@ html, body {
   line-height: 1.5;
   white-space: pre-wrap;
 }
+
+.vision-form {
+  margin-top: 10px;
+  width: min(440px, 92vw);
+  text-align: left;
+  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.vision-form summary {
+  cursor: pointer;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  opacity: 0.9;
+}
+.vision-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+}
+.vision-row > span {
+  flex: 0 0 70px;
+  opacity: 0.7;
+  font-size: 0.8rem;
+}
+.vision-row input,
+.vision-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  color: #e8e6f0;
+  padding: 6px 8px;
+  font-size: 0.82rem;
+}
+.vision-row input:focus,
+.vision-row select:focus {
+  outline: none;
+  border-color: #7ad1ff;
+}
+.vision-row input:disabled {
+  opacity: 0.4;
+}
+.vision-warn { color: #ffb86a; }
+.vision-saved { color: #7ad1ff; min-height: 1em; }

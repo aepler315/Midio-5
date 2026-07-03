@@ -23,9 +23,22 @@ click **"Play procedural demo"** to run with zero file input.
 
 Press `` ` `` during play to open the debug overlay (ParamBus state + vision
 loop log); press `V` inside it to toggle the vision self-tuning loop (off by
-default — it calls out to a local Ollama instance at
-`http://localhost:11434`, and degrades to a silent no-op if that's not
-running).
+default).
+
+The vision loop is provider-pluggable. Configure it from the **"Vision
+provider settings"** panel on the start screen: pick a provider, paste an API
+key, and optionally override the base URL / model. Supported providers:
+
+- **Ollama (local)** — default, no key needed; calls `http://localhost:11434`.
+- **OpenAI** / **OpenRouter** — Bearer-auth chat completions.
+- **Anthropic** — `x-api-key` Messages API.
+- **Google Gemini** — `x-goog-api-key` generateContent API.
+
+Settings persist to `localStorage` (`smw.vision`) and hot-apply to a running
+loop with no reload. The API key is stored in cleartext in the browser and sent
+only to the chosen provider. Cloud providers call their API directly from your
+browser. The loop is fail-safe: any provider that's unconfigured (no key) or
+unreachable degrades to a silent no-op, never a crash or a stuck game.
 
 ## Project layout
 
@@ -36,7 +49,7 @@ src/
   sim/       fixed-step simulation: jump physics, combo, companions, FX
   world/     biomes (8-layer parallax) and the fracture/shatter engine
   render/    canvas compositor + camera
-  vision/    Ollama-backed closed-loop self-tuning
+  vision/    Provider-pluggable closed-loop self-tuning (Ollama/OpenAI/OpenRouter/Anthropic/Gemini)
   ui/        debug overlay, styles
 test/        node --test unit tests (pure logic, no DOM needed)
 tools/       dev server, WAV/MIDI test-fixture generators, Playwright smoke tests
@@ -51,6 +64,7 @@ node tools/smoke.mjs                 # demo playthrough screenshot sequence
 node tools/smoke-audio.mjs <wav>     # drives a real audio file through the full pipeline
 node tools/smoke-fracture.mjs        # exercises crack growth -> terminal shatter directly
 node tools/smoke-vision.mjs          # debug overlay + vision loop toggling
+node tools/smoke-vision-providers.mjs # provider settings form + fail-safe no-key (browser/Playwright)
 node tools/smoke-full.mjs <mid>      # every system together on a real MIDI file
 node tools/gen-test-wav.mjs <out.wav> <bpm> <seconds>   # synthesize a test click track
 node tools/gen-test-midi.mjs <out.mid> <bars>           # synthesize a multi-track test MIDI file
