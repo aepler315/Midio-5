@@ -40,6 +40,14 @@ only to the chosen provider. Cloud providers call their API directly from your
 browser. The loop is fail-safe: any provider that's unconfigured (no key) or
 unreachable degrades to a silent no-op, never a crash or a stuck game.
 
+**CORS note:** the Anthropic adapter sends
+`anthropic-dangerous-direct-browser-access: true` (the sanctioned bring-your-own-key
+header that enables browser CORS). OpenAI and Gemini already permit browser
+origin calls. If the vision log shows an HTTP 403/CORS error, the most common
+cause is an org-level CORS restriction on the account — there's nothing the app
+can do from the browser; use a different provider or a key without that
+restriction.
+
 ## Project layout
 
 ```

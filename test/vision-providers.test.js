@@ -72,6 +72,7 @@ test('anthropic: x-api-key + anthropic-version, top-level system, base64 image s
   assert.equal(a.supportsJsonMode, false);
   assert.equal(r.headers['x-api-key'], 'secret');
   assert.equal(r.headers['anthropic-version'], '2023-06-01');
+  assert.equal(r.headers['anthropic-dangerous-direct-browser-access'], 'true', 'enables CORS for BYO-key browser calls');
   assert.equal(body.system, 'SYS');
   assert.equal(body.messages[0].content[0].source.data, 'AAAA');
   assert.equal(body.messages[0].content.at(-1).text, 'TEL');

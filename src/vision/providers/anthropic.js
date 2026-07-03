@@ -1,7 +1,9 @@
 // Anthropic Messages API vision adapter. `x-api-key` + `anthropic-version`
 // headers; the system prompt is a top-level `system` field (not a message);
 // images are base64 `source` blocks. No native JSON mode — relies on the
-// system prompt + the fence-stripping/clamping parser.
+// system prompt + the fence-stripping/clamping parser. Direct browser calls
+// require `anthropic-dangerous-direct-browser-access: true` to enable CORS
+// (this is the sanctioned BYO-key pattern — the user supplies their own key).
 export function createAnthropicAdapter({
   id = 'anthropic',
   label = 'Anthropic',
@@ -37,6 +39,7 @@ export function createAnthropicAdapter({
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify(body),
       };
