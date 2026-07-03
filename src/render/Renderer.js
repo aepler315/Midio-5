@@ -2,10 +2,16 @@
 // telegraph glints -> world FX -> companions -> Midio -> foreground veil ->
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
 // each stage guards on the subsystem's presence so this file grows additively.
+import { MIDIO_MESH } from './meshes.js';
+import { computeRestLengths, drawMeshPart } from './MeshDrawer.js';
+
+const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
+
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+    this._midioRestLengths = computeRestLengths(MIDIO_MESH);
   }
 
   draw(sim, alpha) {
@@ -41,7 +47,7 @@ export class Renderer {
     if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
     if (sim.broshi) sim.broshi.draw(ctx, pose);
 
-    this._drawMidio(ctx, pose, sim.midio.groundY);
+    this._drawMidio(ctx, pose);
 
     if (sim.midasus) sim.midasus.draw(ctx);
     if (sim.fracture) sim.fracture.draw(ctx, canvas);
@@ -76,23 +82,12 @@ export class Renderer {
     ctx.stroke();
   }
 
-  _drawMidio(ctx, pose, groundY) {
-    ctx.save();
-    ctx.translate(pose.midioX, pose.midioY);
-    ctx.rotate((pose.leanDeg * Math.PI) / 180);
-    ctx.scale(pose.scaleX, pose.scaleY);
-
-    const w = 46, h = 54;
-    ctx.fillStyle = '#ffd76a';
-    ctx.beginPath();
-    ctx.ellipse(0, -h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#1a0d16';
-    ctx.beginPath();
-    ctx.ellipse(10, -h / 2 - 4, 5, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
+  _drawMidio(ctx, pose) {
+    const transform = {
+      tx: pose.midioX, ty: pose.midioY,
+      rot: (pose.leanDeg * Math.PI) / 180,
+      scaleX: pose.scaleX, scaleY: pose.scaleY,
+    };
+    drawMeshPart(ctx, MIDIO_MESH, this._midioRestLengths, transform, MIDIO_BASE_HUE);
   }
 }

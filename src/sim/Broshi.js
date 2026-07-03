@@ -4,9 +4,11 @@
 // and a Rabid overlay gated on global track energy.
 import { Role } from '../core/NoteEvent.js';
 import { clamp, smoothstep, mulberry32 } from '../utils/math.js';
-import { hexLerp } from '../utils/color.js';
+import { hexLerp, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { RABID_WEIGHTS } from '../audio/bands.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
+import { BROSHI_BODY, BROSHI_HEAD, BROSHI_JAW, BROSHI_EYE } from '../render/meshes.js';
+import { computeRestLengths, drawMeshPart } from '../render/MeshDrawer.js';
 
 const K = 26, C = 3.4; // spring stiffness (s^-2), damping (s^-1)
 const D_TRAIL = -140, D_SURGE = 120, D_PANIC = -220;
@@ -58,6 +60,11 @@ export class Broshi {
     this.spittle = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 60);
     this.drool = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 60);
     this._droolAccum = 0;
+
+    this._bodyRest = computeRestLengths(BROSHI_BODY);
+    this._headRest = computeRestLengths(BROSHI_HEAD);
+    this._jawRest = computeRestLengths(BROSHI_JAW);
+    this._eyeRest = computeRestLengths(BROSHI_EYE);
 
     conductor.onBar((bar) => this._onBar(bar));
     conductor.on(Role.RHYTHM, (evt) => {
@@ -224,7 +231,9 @@ export class Broshi {
   }
 
   draw(ctx) {
-    const skin = hexLerp('#63c74d', '#e43b44', this.rho);
+    const skinHex = hexLerp('#63c74d', '#e43b44', this.rho);
+    const skinRgb = hexToRgb(skinHex);
+    const baseHue = rgbToHsl(skinRgb.r, skinRgb.g, skinRgb.b).h;
     const x = this.screenX;
     const y = this.groundY - this.hopY;
 
@@ -266,34 +275,27 @@ export class Broshi {
       ctx.arc(6 + p.x, -16 + p.y, 2, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.restore(); // done with the ctx.translate-relative aura/tongue/spittle drawing
 
-    // body
+    // Body/head/jaw/eye as a low-poly wireframe (follow-up item 1): manually
+    // transformed (not via ctx.rotate) so edge angle/length -- and therefore
+    // hue/glow -- actually reacts to the neck-bob and jaw snap.
+    const neckRad = (this.neckAngle * Math.PI) / 180;
+    const group = { tx: x, ty: y, rot: neckRad, scaleX: 1, scaleY: 1 };
+    drawMeshPart(ctx, BROSHI_BODY, this._bodyRest, group, baseHue);
+    drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue);
+
+    const jawTip = BROSHI_JAW.vertices[1];
+    const jawMesh = { vertices: [BROSHI_JAW.vertices[0], { x: jawTip.x, y: jawTip.y + this.jawOpen * 10 }], edges: BROSHI_JAW.edges };
+    drawMeshPart(ctx, jawMesh, this._jawRest, group, baseHue + 15, { satBase: 30, lightBase: 25 });
+
+    const eyeLit = this.rho > 0.3;
+    drawMeshPart(ctx, BROSHI_EYE, this._eyeRest, group, eyeLit ? 0 : baseHue, {
+      satBase: eyeLit ? 20 : 30, lightBase: eyeLit ? 80 : 15, alpha: eyeLit ? 0.5 + 0.4 * this.rho : 0.9,
+    });
+
     ctx.save();
-    ctx.rotate((this.neckAngle * Math.PI) / 180);
-    ctx.fillStyle = skin;
-    ctx.beginPath();
-    ctx.ellipse(0, -14, 24, 16, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // head
-    ctx.beginPath();
-    ctx.ellipse(14, -20, 10, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // jaw
-    ctx.fillStyle = '#2a1410';
-    ctx.beginPath();
-    ctx.moveTo(10, -16);
-    ctx.lineTo(22, -16 + this.jawOpen * 10);
-    ctx.lineTo(22, -14 + this.jawOpen * 10);
-    ctx.lineTo(10, -14);
-    ctx.closePath();
-    ctx.fill();
-    // eye
-    ctx.fillStyle = this.rho > 0.3 ? `rgba(255,255,255,${0.5 + 0.4 * this.rho})` : '#150a08';
-    ctx.beginPath();
-    ctx.arc(16, -23, 2.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
+    ctx.translate(x, y);
     for (const d of this.drool.active) {
       ctx.fillStyle = 'rgba(150,220,255,0.7)';
       ctx.beginPath();

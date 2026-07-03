@@ -5,6 +5,8 @@
 import { Role } from '../core/NoteEvent.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { clamp, lerp, mulberry32 } from '../utils/math.js';
+import { MIDASUS_MESH } from '../render/meshes.js';
+import { computeRestLengths, drawMeshPart } from '../render/MeshDrawer.js';
 
 const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
@@ -40,6 +42,9 @@ export class Midasus {
     this.phi = 0;
     this.particles = new ObjectPool(() => ({}), (o, init) => Object.assign(o, init, { age: 0 }), 600);
     this._emitAccum = 0;
+
+    this._meshRest = computeRestLengths(MIDASUS_MESH);
+    this.pulse = 1;
   }
 
   _target(n) {
@@ -92,8 +97,10 @@ export class Midasus {
       this.hue = this._hueOf(n.pitch);
       this._burst(8 + 24 * n.vel, this.hue);
       this.lastNoteMs = nowMs;
+      this.pulse = 1.7 + 0.5 * n.vel; // a brief mesh flash on each note onset
     }
 
+    this.pulse += (1 - this.pulse) * Math.min(1, dtSec / 0.12);
     this.phi += 0.15 * dtSec;
 
     const nxt = this.q[this.i];
@@ -131,13 +138,12 @@ export class Midasus {
       ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.fillStyle = `hsla(${this.hue},${sat}%,90%,0.6)`;
-    ctx.beginPath();
-    ctx.arc(this.p.x, this.p.y, 11, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = `hsla(${this.hue},${sat}%,72%,1)`;
-    ctx.beginPath();
-    ctx.arc(this.p.x, this.p.y, 7, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    ctx.filter = 'blur(1.5px)';
+    drawMeshPart(ctx, MIDASUS_MESH, this._meshRest, { tx: this.p.x, ty: this.p.y, scaleX: this.pulse * 1.5, scaleY: this.pulse * 1.5 }, this.hue, { satBase: sat, lightBase: 78, alpha: 1 });
+    ctx.restore();
+
+    drawMeshPart(ctx, MIDASUS_MESH, this._meshRest, { tx: this.p.x, ty: this.p.y, scaleX: this.pulse, scaleY: this.pulse }, this.hue, { satBase: sat, lightBase: 65, hueSpread: 70 });
   }
 }
