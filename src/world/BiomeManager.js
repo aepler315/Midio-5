@@ -5,7 +5,7 @@
 import { BIOMES } from './BiomeProfiles.js';
 import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
 import { ParticleField } from './ParticleField.js';
-import { clamp, clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
+import { clamp, clamp01, smoothstep, mulberry32, hashSeed, shuffle } from '../utils/math.js';
 import { LerpCache } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
 
@@ -13,12 +13,13 @@ const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.0
 const WORLD_SPEED_PX_S = 220;
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null }) {
     this.conductor = conductor;
     this.energyCurves = energyCurves;
     this.w = canvasWidth;
     this.h = canvasHeight;
     this.groundY = groundY;
+    this.groundField = groundField;
     this.lerpCache = new LerpCache();
     this.tSec = 0;
     this._starSeed = mulberry32(9001);
@@ -141,7 +142,7 @@ export class BiomeManager {
     if (this._glitchTimer <= 0) { this._glitchActiveMs = 60; this._glitchTimer = 2.5 + this._starSeed() * 3.5; }
   }
 
-  draw(ctx, canvas, worldX) {
+  draw(ctx, canvas, worldX, originX = 0) {
     const { from, to, t } = this.currentBlend || { from: this.sections[0].profile, to: this.sections[0].profile, t: 1 };
     const A = this._profile(from), B = this._profile(to);
 
@@ -162,7 +163,7 @@ export class BiomeManager {
     this._drawLayer(ctx, canvas, 'L4', scrollX2, tint, t, A, B);
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
 
-    this._drawGround(ctx, canvas, worldX, A, B, t);
+    this._drawGround(ctx, canvas, worldX, originX, A, B, t);
   }
 
   drawForeground(ctx, canvas, worldX) {
@@ -348,39 +349,50 @@ export class BiomeManager {
     }
   }
 
-  _drawGround(ctx, canvas, worldX, A, B, t) {
+  _drawGround(ctx, canvas, worldX, originX, A, B, t) {
     const groundColor = this.lerpCache.get(A.silhouette, B.silhouette, t);
-    ctx.fillStyle = groundColor;
-    ctx.fillRect(0, this.groundY, canvas.width, canvas.height - this.groundY);
+    const localGroundY = this.groundField ? this.groundField.heightAt(worldX) : this.groundY;
 
-    // LOW-MID energy makes the ground breathe (spec §4.1.1 L6).
-    const e2 = this.energyCurves ? this.energyCurves.sample(2, this.tSec * 1000) : 0;
-    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let x = 0; x <= canvas.width; x += 12) {
-      const undulate = 14 * e2 * Math.sin((2 * Math.PI * (x + worldX)) / 900);
-      const y = this.groundY + undulate;
-      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    if (this.groundField) {
+      // Ground as shifted EQ-bar-shaped slices (follow-up item 5): each bar
+      // echoes the horizon EQ's own per-band reading, just offset by a few
+      // columns, so the terrain visually rhymes with the music playing far
+      // in the background.
+      const bars = this.groundField.visibleBars(worldX, originX, canvas.width);
+      ctx.fillStyle = groundColor;
+      for (const bar of bars) ctx.fillRect(bar.x, bar.y, bar.width + 1, canvas.height - bar.y);
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < bars.length; i++) {
+        const bar = bars[i];
+        ctx.moveTo(bar.x, bar.y);
+        ctx.lineTo(bar.x + bar.width, bar.y);
+        if (i + 1 < bars.length) ctx.lineTo(bar.x + bar.width, bars[i + 1].y); // vertical connector at the seam
+      }
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = groundColor;
+      ctx.fillRect(0, localGroundY, canvas.width, canvas.height - localGroundY);
     }
-    ctx.stroke();
 
     const activeFx = t > 0.5 ? B.fx : A.fx;
-    if (activeFx === 'neonGrid') this._drawNeonGrid(ctx, canvas, worldX);
-    else if (activeFx === 'canopyDapple') this._drawCanopyDapple(ctx, canvas);
+    if (activeFx === 'neonGrid') this._drawNeonGrid(ctx, canvas, worldX, localGroundY);
+    else if (activeFx === 'canopyDapple') this._drawCanopyDapple(ctx, canvas, localGroundY);
     else if (activeFx === 'glitchTear' && this._glitchActiveMs > 0) this._drawGlitchTear(ctx, canvas);
   }
 
-  _drawNeonGrid(ctx, canvas, worldX) {
+  _drawNeonGrid(ctx, canvas, worldX, groundY) {
     ctx.save();
     ctx.strokeStyle = 'rgba(0,255,208,0.35)';
     ctx.lineWidth = 1;
     const spacing = 48;
     const offset = worldX % spacing;
     for (let x = -offset; x < canvas.width; x += spacing) {
-      ctx.beginPath(); ctx.moveTo(x, this.groundY); ctx.lineTo(x, canvas.height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, groundY); ctx.lineTo(x, canvas.height); ctx.stroke();
     }
-    for (let y = this.groundY; y < canvas.height; y += 24) {
+    for (let y = groundY; y < canvas.height; y += 24) {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
     }
     if (this._scanlineActive) {
@@ -392,13 +404,13 @@ export class BiomeManager {
       ctx.fillStyle = '#00ffd0';
       for (let i = 0; i < 3; i++) {
         const x = ((i * 420 - worldX * 0.65) % (canvas.width + 200) + canvas.width + 200) % (canvas.width + 200) - 100;
-        ctx.fillRect(x, this.groundY - 140, 6, 140);
+        ctx.fillRect(x, groundY - 140, 6, 140);
       }
     }
     ctx.restore();
   }
 
-  _drawCanopyDapple(ctx, canvas) {
+  _drawCanopyDapple(ctx, canvas, groundY) {
     ctx.save();
     ctx.fillStyle = 'rgba(234,255,176,0.10)';
     for (let i = 0; i < 5; i++) {
@@ -406,7 +418,7 @@ export class BiomeManager {
       ctx.globalAlpha = 0.5 * flick;
       const x = ((i * 240) % canvas.width);
       ctx.beginPath();
-      ctx.ellipse(x, this.groundY + 30, 60, 18, 0, 0, Math.PI * 2);
+      ctx.ellipse(x, groundY + 30, 60, 18, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -419,13 +431,4 @@ export class BiomeManager {
     const snapshot = ctx.getImageData(0, rowY, canvas.width, rowH);
     ctx.putImageData(snapshot, shift, rowY);
   }
-}
-
-function shuffle(arr, rand) {
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
 }

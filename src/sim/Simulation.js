@@ -13,6 +13,7 @@ import { Midasus } from './Midasus.js';
 import { Broshi } from './Broshi.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
+import { GroundField } from '../world/GroundField.js';
 import { hashSeed } from '../utils/math.js';
 
 const WORLD_SPEED_PX_S = 220;
@@ -40,9 +41,13 @@ export class Simulation {
     this.broshi._lastBarPeriodMs = (60000 / bpm) * 4;
 
     const songSeed = hashSeed(`${conductor.timeline.length}:${conductor.durationMs}:${conductor.timeline[0]?.tMs ?? 0}:${conductor.timeline.at(-1)?.tMs ?? 0}`);
+    this.groundField = new GroundField(this.midio.groundY, {
+      conductor, durationMs: conductor.durationMs, songSeed,
+    });
     this.biomes = new BiomeManager({
       conductor, energyCurves, durationMs: conductor.durationMs,
       canvasWidth, canvasHeight, groundY: this.midio.groundY, songSeed,
+      groundField: this.groundField,
     });
     this.fracture = new FractureEngine(conductor, {
       canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,
@@ -70,6 +75,10 @@ export class Simulation {
     this.conductor.dispatchUpTo(nowMs);
     this.jump.update(nowMs);
     this.midio.y = this.jump.y;
+
+    this.groundField.update(nowMs, dtSec, this.worldX, this.energyCurves);
+    this.midio.groundY = this.groundField.heightAt(this.worldX);
+    if (this.groundField.justRecovered) this.camera.shake(10);
 
     if (this.jump.pendingLanding) {
       const nearestKick = this.conductor.nearestEventMs(

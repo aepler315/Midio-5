@@ -30,7 +30,7 @@ export class Renderer {
     ctx.translate(-canvas.width / 2 + camera.shakeX, -canvas.height / 2 + camera.shakeY);
 
     if (biomeManager) {
-      biomeManager.draw(ctx, canvas, pose.worldX);
+      biomeManager.draw(ctx, canvas, pose.worldX, pose.midioX);
     } else {
       this._drawFallbackSky(ctx, canvas);
       this._drawGround(ctx, canvas, pose, sim.midio.groundY);
