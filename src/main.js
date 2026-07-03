@@ -169,15 +169,22 @@ function frame(tRaf) {
   if (deltaMs > 250) deltaMs = 250; // clamp huge gaps (tab backgrounded, breakpoint, etc.)
   acc += deltaMs;
 
+  let milestoneFiredThisFrame = false;
   while (acc >= STEP_MS) {
     sim.step(STEP_MS, simTime + STEP_MS);
     simTime += STEP_MS;
     acc -= STEP_MS;
+    if (sim.performer.milestoneFlash) milestoneFiredThisFrame = true;
   }
 
   const alpha = acc / STEP_MS;
   renderer.draw(sim, alpha);
   comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
+  if (milestoneFiredThisFrame) {
+    comboReadoutEl.classList.remove('milestone-pulse');
+    void comboReadoutEl.offsetWidth; // restart the CSS animation even if it's still mid-flight
+    comboReadoutEl.classList.add('milestone-pulse');
+  }
 
   visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();

@@ -39,6 +39,7 @@ export class JumpController {
     this.D = 500;
     this.H = 100;
     this.y = 0; // px above ground, >=0
+    this.lastLaunchVel = 0.7; // velocity of the kick that started the current/most recent jump
 
     this.lastKickMs = null;
     this.beatPeriodMs = 500;
@@ -95,6 +96,7 @@ export class JumpController {
     const D = clamp(1.0 * this.beatPeriodMs, D_MIN, D_MAX);
 
     if (this.state === 'GROUND') {
+      this.lastLaunchVel = evt.vel;
       this._launch(nowMs, H, D);
       return;
     }
@@ -104,7 +106,7 @@ export class JumpController {
       const r = (u - A - B) / GAMMA;
       if (r < 0.3 && !this.compress) {
         this.compress = { startMs: nowMs, fromY: this.y, dur: RETARGET_FALL_MS };
-        this._pendingLaunch = { H, D };
+        this._pendingLaunch = { H, D, vel: evt.vel };
       }
     }
     // Mid launch/hang: ignore — already committed, avoids impossible double-jumps.
@@ -136,8 +138,9 @@ export class JumpController {
         this._land(vLand);
         this.compress = null;
         if (this._pendingLaunch) {
-          const { H, D } = this._pendingLaunch;
+          const { H, D, vel } = this._pendingLaunch;
           this._pendingLaunch = null;
+          this.lastLaunchVel = vel;
           this._launch(nowMs, H, D);
         }
       }

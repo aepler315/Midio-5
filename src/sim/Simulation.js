@@ -11,6 +11,7 @@ import { TelegraphScanner } from './TelegraphScanner.js';
 import { ObstacleSpawner } from './ObstacleSpawner.js';
 import { Midasus } from './Midasus.js';
 import { Broshi } from './Broshi.js';
+import { MidioPerformer } from './MidioPerformer.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
@@ -41,6 +42,7 @@ export class Simulation {
     this.broshi._lastBarPeriodMs = (60000 / bpm) * 4;
 
     const songSeed = hashSeed(`${conductor.timeline.length}:${conductor.durationMs}:${conductor.timeline[0]?.tMs ?? 0}:${conductor.timeline.at(-1)?.tMs ?? 0}`);
+    this.performer = new MidioPerformer(songSeed);
     this.groundField = new GroundField(this.midio.groundY, {
       conductor, durationMs: conductor.durationMs, songSeed,
     });
@@ -71,6 +73,7 @@ export class Simulation {
 
     this.jump.clearFrameFlags();
     this.comboSystem.clearFrameFlags();
+    this.performer.clearFrameFlags();
 
     this.conductor.dispatchUpTo(nowMs);
     this.jump.update(nowMs);
@@ -86,6 +89,8 @@ export class Simulation {
       );
       const isClean = ComboSystem.isCleanLanding(nowMs, nearestKick ? nearestKick.tMs : null);
       this.comboSystem.onLanding(nowMs, isClean);
+      this.performer.onLanding(nowMs, this.comboSystem.justClean, this.comboSystem.displayM);
+      this.performer.onStreak(this.comboSystem.streak);
       const I = ImpactFX.intensity(this.jump.pendingLanding.vLandPxMs, V_REF);
       this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera);
       this.fracture.registerImpact(I);
@@ -101,6 +106,7 @@ export class Simulation {
 
     this.obstacles.update(nowMs, this.worldX, worldSpeed / 1000);
     this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.obstacles);
+    this.performer.update(nowMs, dtSec, this.midio, this.jump, this.comboSystem);
     this.impactFX.step(dtSec);
 
     this.midasus.update(nowMs, dtSec);

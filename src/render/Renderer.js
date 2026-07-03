@@ -47,7 +47,8 @@ export class Renderer {
     if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
     if (sim.broshi) sim.broshi.draw(ctx, pose);
 
-    this._drawMidio(ctx, pose);
+    if (sim.performer) this._drawMidioAfterimages(ctx, sim.performer, pose.midioX);
+    this._drawMidio(ctx, pose, sim.performer);
 
     if (sim.midasus) sim.midasus.draw(ctx);
     if (sim.fracture) sim.fracture.draw(ctx, canvas);
@@ -82,12 +83,33 @@ export class Renderer {
     ctx.stroke();
   }
 
-  _drawMidio(ctx, pose) {
+  _drawMidio(ctx, pose, performer) {
+    const flash = performer ? performer.goldFlash : 0;
     const transform = {
       tx: pose.midioX, ty: pose.midioY,
       rot: (pose.leanDeg * Math.PI) / 180,
       scaleX: pose.scaleX, scaleY: pose.scaleY,
     };
-    drawMeshPart(ctx, MIDIO_MESH, this._midioRestLengths, transform, MIDIO_BASE_HUE);
+    const hue = flash > 0 ? MIDIO_BASE_HUE + (48 - MIDIO_BASE_HUE) * flash : MIDIO_BASE_HUE;
+    drawMeshPart(ctx, MIDIO_MESH, this._midioRestLengths, transform, hue, {
+      lightBase: 52 + flash * 24, satBase: 68 + flash * 20,
+    });
+  }
+
+  /** Motion-streak ghosts trailing a fast jump (follow-up item 6). */
+  _drawMidioAfterimages(ctx, performer, midioX) {
+    const frames = performer.afterimages;
+    const n = frames.length;
+    if (n === 0) return;
+    ctx.save();
+    for (let i = 0; i < n; i++) {
+      const f = frames[i];
+      const alpha = 0.28 * ((i + 1) / n);
+      ctx.globalAlpha = alpha;
+      drawMeshPart(ctx, MIDIO_MESH, this._midioRestLengths, {
+        tx: midioX, ty: f.y, rot: (f.rot * Math.PI) / 180, scaleX: f.scaleX, scaleY: f.scaleY,
+      }, MIDIO_BASE_HUE, { alpha: 1 });
+    }
+    ctx.restore();
   }
 }
