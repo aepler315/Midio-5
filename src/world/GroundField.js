@@ -50,6 +50,9 @@ export class GroundField {
 
     this._gagQueue = this._scheduleGags(durationMs, conductor?.barGrid, songSeed);
     this._activeGagSliceIdxs = null;
+
+    this._buzz = 0; // EMA of bass energy, driving a render-only micro-vibration
+    this._nowMs = 0;
   }
 
   _scheduleGags(durationMs, barGrid, seed) {
@@ -114,6 +117,9 @@ export class GroundField {
 
   update(nowMs, dtSec, worldX, energyCurves) {
     this.justRecovered = false;
+    this._nowMs = nowMs;
+    const bass = energyCurves ? clamp01(energyCurves.sample(1, nowMs)) : 0;
+    this._buzz += (1 - Math.exp(-dtSec / 0.12)) * (bass - this._buzz);
     this._spawnSlicesUpTo(worldX + LOOKAHEAD_PX);
     this._trimBehind(worldX);
     this._maybeTriggerGag(nowMs, worldX);
@@ -164,14 +170,22 @@ export class GroundField {
     return this.baseGroundY + (s ? s.offset : 0);
   }
 
-  /** Rendering helper: slice rectangles visible across [worldX, worldX+screenWidth] in screen space. */
+  /** Rendering helper: slice rectangles visible across [worldX, worldX+screenWidth] in screen space.
+   * Includes a render-only bass buzz: a 13 Hz vertical shiver, phase-staggered
+   * across slices by the golden angle so it travels as a shimmer rather than
+   * the whole floor bouncing in lockstep. heightAt() (the physics reference)
+   * deliberately does NOT include it -- a 1-2px visual tremble is free, a
+   * trembling physics floor is not. */
   visibleBars(worldX, originX, screenWidth) {
     const bars = [];
+    const buzzAmp = 2.5 * this._buzz;
+    const wt = (this._nowMs / 1000) * 2 * Math.PI * 13;
     for (const s of this.slices) {
       const screenXStart = s.worldXStart - worldX + originX;
       const screenXEnd = screenXStart + this.sliceWidth;
       if (screenXEnd < -20 || screenXStart > screenWidth + 20) continue;
-      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + s.offset });
+      const buzz = buzzAmp > 0.15 ? buzzAmp * Math.sin(wt + s.index * 2.39996) : 0;
+      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + s.offset + buzz });
     }
     return bars;
   }

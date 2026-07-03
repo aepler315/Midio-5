@@ -8,7 +8,8 @@ import { hexLerp, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { RABID_WEIGHTS } from '../audio/bands.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { BROSHI_BODY, BROSHI_HEAD, BROSHI_JAW, BROSHI_EYE, BROSHI_TAIL } from '../render/meshes.js';
-import { computeRestLengths, drawMeshPart } from '../render/MeshDrawer.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial } from '../render/MeshDrawer.js';
+import { ModalRing } from '../render/oscillators.js';
 
 const K = 26, C = 3.4; // spring stiffness (s^-2), damping (s^-1)
 const D_TRAIL = -140, D_SURGE = 120, D_PANIC = -220;
@@ -85,6 +86,10 @@ export class Broshi {
     this.tailAngle = 0;
     this._tailPhase = this.rand() * Math.PI * 2;
 
+    // Body vibration: struck by kicks and hops, and fed a continuous low
+    // shiver while rabid so his whole silhouette trembles at high energy.
+    this.modal = new ModalRing({ modes: 4, baseHz: 7, decaySec: 0.5, seed: seed + 1 });
+
     conductor.onBar((bar) => this._onBar(bar));
     conductor.on(Role.RHYTHM, (evt) => {
       if (evt.kick) this._onKick();
@@ -145,8 +150,8 @@ export class Broshi {
     this._barEnergyAccum += gInstant;
     this._barEnergySamples++;
 
-    if (this._jawKickPending) { this._jawKickPending = false; this._jawUntilMs = nowMs + 80; this.jawOpen = 1; }
-    if (this._hopPending) { const { vel } = this._hopPending; this._hopPending = null; this._startHop(nowMs, vel); }
+    if (this._jawKickPending) { this._jawKickPending = false; this._jawUntilMs = nowMs + 80; this.jawOpen = 1; this.modal.excite(1.8); }
+    if (this._hopPending) { const { vel } = this._hopPending; this._hopPending = null; this._startHop(nowMs, vel); this.modal.excite(0.6 + 1.2 * vel); }
     if (this._neckPending) { const { vel } = this._neckPending; this._neckPending = null; this._neckStartMs = nowMs; this._neckAmp = 10 + 16 * vel; }
 
     // --- locomotion FSM ---
@@ -220,6 +225,10 @@ export class Broshi {
     const tailHz = lerp(TAIL_BASE_HZ, TAIL_CALM_HZ, calmLevel);
     const tailDeg = lerp(TAIL_BASE_DEG, TAIL_CALM_DEG, calmLevel);
     this.tailAngle = tailDeg * Math.sin(2 * Math.PI * tailHz * (nowMs / 1000) + this._tailPhase);
+
+    // --- body vibration: continuous feed while rabid, ring-down otherwise ---
+    if (this.rho > 0.05) this.modal.excite(4 * this.rho * dtSec);
+    this.modal.update(dtSec);
 
     // --- mini-hop ---
     if (nowMs < this._hopUntilMs) {
@@ -322,7 +331,9 @@ export class Broshi {
     // hue/glow -- actually reacts to the neck-bob and jaw snap.
     const neckRad = (this.neckAngle * Math.PI) / 180;
     const group = { tx: x, ty: y, rot: neckRad, scaleX: 1, scaleY: 1 };
-    drawMeshPart(ctx, BROSHI_BODY, this._bodyRest, group, baseHue);
+    const bodyHub = BROSHI_BODY.vertices[0];
+    const bodyMesh = displaceMeshRadial(BROSHI_BODY, bodyHub.x, bodyHub.y, this.modal);
+    drawMeshPart(ctx, bodyMesh, this._bodyRest, group, baseHue);
     drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue);
 
     const jawTip = BROSHI_JAW.vertices[1];

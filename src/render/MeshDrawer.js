@@ -67,3 +67,22 @@ export function drawMeshPart(ctx, mesh, restLengths, transform, baseHueDeg, opti
   drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, options);
   return points;
 }
+
+/**
+ * Radially displace a mesh's vertices about (cx,cy) by a ModalRing-style
+ * field (anything with .energy and .displacementAt(theta)). Rest lengths
+ * are intentionally NOT recomputed: displacement changes edge lengths
+ * relative to rest, which is exactly what drives the glow/brightness in
+ * drawMeshEdges -- the vibration lights the wireframe up for free.
+ */
+export function displaceMeshRadial(mesh, cx, cy, field) {
+  if (!field || field.energy < 0.05) return mesh;
+  const vertices = mesh.vertices.map((v) => {
+    const dx = v.x - cx, dy = v.y - cy;
+    const r = Math.hypot(dx, dy);
+    if (r < 2) return v; // hub vertex: no radial direction to displace along
+    const s = (r + field.displacementAt(Math.atan2(dy, dx))) / r;
+    return { x: cx + dx * s, y: cy + dy * s };
+  });
+  return { vertices, edges: mesh.edges };
+}

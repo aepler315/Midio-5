@@ -6,7 +6,8 @@ import { Role } from '../core/NoteEvent.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { clamp, lerp, mulberry32 } from '../utils/math.js';
 import { MIDASUS_MESH } from '../render/meshes.js';
-import { computeRestLengths, drawMeshPart } from '../render/MeshDrawer.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial } from '../render/MeshDrawer.js';
+import { ModalRing } from '../render/oscillators.js';
 
 const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
@@ -45,6 +46,9 @@ export class Midasus {
 
     this._meshRest = computeRestLengths(MIDASUS_MESH);
     this.pulse = 1;
+    // Her diamond core shivers on every melody onset -- quicker and lighter
+    // than Midio's body (higher base frequency, faster ring-down).
+    this.modal = new ModalRing({ modes: 3, baseHz: 11, decaySec: 0.4, seed: seed + 1 });
   }
 
   _target(n) {
@@ -105,9 +109,11 @@ export class Midasus {
       this._burst(8 + 24 * n.vel, this.hue);
       this.lastNoteMs = nowMs;
       this.pulse = 1.7 + 0.5 * n.vel; // a brief mesh flash on each note onset
+      this.modal.excite(0.8 + 2.2 * n.vel);
     }
 
     this.pulse += (1 - this.pulse) * Math.min(1, dtSec / 0.12);
+    this.modal.update(dtSec);
     this.phi += 0.15 * dtSec;
 
     const nxt = this.q[this.i];
@@ -149,12 +155,15 @@ export class Midasus {
       ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
       ctx.fill();
     }
+    const hub = MIDASUS_MESH.vertices[0];
+    const coreMesh = displaceMeshRadial(MIDASUS_MESH, hub.x, hub.y, this.modal);
+
     ctx.save();
     ctx.globalAlpha = 0.6;
     ctx.filter = 'blur(1.5px)';
-    drawMeshPart(ctx, MIDASUS_MESH, this._meshRest, { tx: this.p.x, ty: this.p.y, scaleX: this.pulse * 1.5, scaleY: this.pulse * 1.5 }, this.hue, { satBase: sat, lightBase: 78, alpha: 1 });
+    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, scaleX: this.pulse * 1.5, scaleY: this.pulse * 1.5 }, this.hue, { satBase: sat, lightBase: 78, alpha: 1 });
     ctx.restore();
 
-    drawMeshPart(ctx, MIDASUS_MESH, this._meshRest, { tx: this.p.x, ty: this.p.y, scaleX: this.pulse, scaleY: this.pulse }, this.hue, { satBase: sat, lightBase: 65, hueSpread: 70 });
+    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, scaleX: this.pulse, scaleY: this.pulse }, this.hue, { satBase: sat, lightBase: 65, hueSpread: 70 });
   }
 }

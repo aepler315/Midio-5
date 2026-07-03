@@ -91,10 +91,10 @@ export class Simulation {
         (e) => e.role === Role.RHYTHM && e.kick, nowMs, CLEAN_WINDOW_MS + 20,
       );
       const isClean = ComboSystem.isCleanLanding(nowMs, nearestKick ? nearestKick.tMs : null);
-      this.comboSystem.onLanding(nowMs, isClean);
-      this.performer.onLanding(nowMs, this.comboSystem.justClean, this.comboSystem.displayM);
-      this.performer.onStreak(this.comboSystem.streak);
       const I = ImpactFX.intensity(this.jump.pendingLanding.vLandPxMs, V_REF);
+      this.comboSystem.onLanding(nowMs, isClean);
+      this.performer.onLanding(nowMs, this.comboSystem.justClean, this.comboSystem.displayM, I);
+      this.performer.onStreak(this.comboSystem.streak);
       this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera);
       this.fracture.registerImpact(I);
     }

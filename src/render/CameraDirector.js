@@ -9,6 +9,11 @@ export class CameraDirector {
     this._shakeAmp = 0;
     this._shakeT = 0;
     this._shakeSeed = Math.random() * 1000;
+
+    this.roll = 0; // radians, applied around screen center by the Renderer
+    this._rollAmp = 0;
+    this._rollT = 0;
+    this._rollSign = 1;
   }
 
   punch(scale) {
@@ -18,6 +23,11 @@ export class CameraDirector {
   shake(amplitudePx) {
     this._shakeAmp = Math.max(this._shakeAmp, amplitudePx);
     this._shakeT = 0;
+    // Impacts also kick a damped rotational oscillation -- a subtle roll
+    // (fractions of a degree) that alternates direction hit to hit.
+    this._rollAmp = Math.max(this._rollAmp, amplitudePx * 0.0011);
+    this._rollT = 0;
+    this._rollSign = -this._rollSign;
   }
 
   update(dtSec, calmLevel = 0) {
@@ -35,6 +45,16 @@ export class CameraDirector {
       shakeX = amp * (Math.sin(t * 0.031 + this._shakeSeed) * 0.6 + Math.sin(t * 0.077 + this._shakeSeed * 1.7) * 0.4);
       shakeY = amp * (Math.sin(t * 0.043 + this._shakeSeed * 2.3) * 0.6 + Math.sin(t * 0.091 + this._shakeSeed * 0.5) * 0.4);
       this._shakeAmp = amp < 0.05 ? 0 : this._shakeAmp;
+    }
+
+    // Damped 6.5 Hz roll ring-down from the last impact.
+    if (this._rollAmp > 1e-4) {
+      this._rollT += dtSec;
+      const env = Math.exp(-this._rollT / 0.22);
+      this.roll = this._rollSign * this._rollAmp * env * Math.sin(2 * Math.PI * 6.5 * this._rollT);
+      if (env < 0.02) this._rollAmp = 0;
+    } else {
+      this.roll = 0;
     }
 
     // Calm sections (follow-up item 3): a slow drift layered on top of

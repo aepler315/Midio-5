@@ -16,6 +16,7 @@ export class ImpactFX {
       16,
     );
     this.motes = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 400);
+    this.polyRings = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 8);
     this.scars = []; // small list, capped manually — decals persist seconds, not worth pooling
 
     this._sputterAccum = 0;
@@ -50,6 +51,19 @@ export class ImpactFX {
     this.scars.push({ wx: worldX, y: groundY, width: 20 + 40 * I, age: 0, maxAge: 4 });
     if (this.scars.length > 60) this.scars.shift();
 
+    // Hard landings additionally throw a rotating star polygon -- crisp
+    // geometry cutting through the soft dust ring.
+    if (I > 0.5) {
+      this.polyRings.spawn({
+        wx: worldX, y: groundY,
+        n: 5 + Math.floor(rand() * 3), // pentagram / hexagram / heptagram
+        Rd: 90 + 160 * I,
+        spin: (rand() < 0.5 ? -1 : 1) * (1.5 + 2 * rand()),
+        rot0: rand() * Math.PI * 2,
+        star: 0.55, tau: 0.12, life: 0.5, I,
+      });
+    }
+
     if (camera) camera.shake(9 * I);
   }
 
@@ -70,6 +84,7 @@ export class ImpactFX {
   step(dtSec) {
     this.craters.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.rings.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
+    this.polyRings.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.motes.step(dtSec, (o, dt) => {
       o.vy += 300 * dt;
       o.wx += o.vx * dt;
@@ -120,6 +135,31 @@ export class ImpactFX {
         const rad = radius + r.jitter[i % 24];
         const px = x + Math.cos(ang) * rad;
         const py = r.y + Math.sin(ang) * rad * 0.35;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+
+    // Star-polygon shockwaves: 2n vertices alternating outer/inner radius,
+    // spinning as they expand, spikes rippling with a 3-lobe wobble --
+    // same ground-plane perspective squash as the dust ring above.
+    for (const p of this.polyRings.active) {
+      const t = p.age / p.life;
+      const envelope = p.Rd * (1 - Math.exp(-p.age / p.tau));
+      const alpha = Math.pow(1 - t, 2) * 0.55 * p.I;
+      const x = toScreen(p.wx);
+      const rot = p.rot0 + p.spin * p.age;
+      ctx.strokeStyle = `rgba(255,235,170,${alpha})`;
+      ctx.lineWidth = Math.max(0.5, 2.2 * (1 - t));
+      ctx.beginPath();
+      const verts = p.n * 2;
+      for (let i = 0; i <= verts; i++) {
+        const ang = rot + (i / verts) * Math.PI * 2;
+        const spike = i % 2 === 0 ? 1 : p.star;
+        const wobble = 1 + 0.08 * Math.sin(3 * ang + 12 * p.age);
+        const rad = envelope * spike * wobble;
+        const px = x + Math.cos(ang) * rad;
+        const py = p.y + Math.sin(ang) * rad * 0.35;
         if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
       ctx.stroke();

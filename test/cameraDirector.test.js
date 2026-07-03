@@ -30,3 +30,27 @@ test('impact shake and calm drift compose additively rather than one overriding 
   // or discard the drift signal entirely -- just assert it produced *some* offset.
   assert.ok(Math.abs(cam.shakeX) > 0 || Math.abs(cam.shakeY) > 0);
 });
+
+test('an impact excites a small camera roll that rings down to zero', () => {
+  const cam = new CameraDirector();
+  assert.equal(cam.roll, 0);
+  cam.shake(10);
+  let maxRoll = 0;
+  for (let i = 0; i < 30; i++) { cam.update(1 / 60, 0); maxRoll = Math.max(maxRoll, Math.abs(cam.roll)); }
+  assert.ok(maxRoll > 0, 'expected the shake to excite a roll oscillation');
+  assert.ok(maxRoll < 0.03, `roll should stay subtle (fractions of a degree), got ${maxRoll} rad`);
+
+  for (let i = 0; i < 300; i++) cam.update(1 / 60, 0);
+  assert.ok(Math.abs(cam.roll) < 1e-4, `expected the roll to ring down, got ${cam.roll}`);
+});
+
+test('consecutive impacts alternate roll direction', () => {
+  const first = new CameraDirector();
+  first.shake(10);
+  first.update(0.02, 0);
+  const firstSign = Math.sign(first.roll);
+
+  first.shake(10); // re-strike: direction flips
+  first.update(0.02, 0);
+  assert.equal(Math.sign(first.roll), -firstSign);
+});

@@ -5,6 +5,7 @@
 import { BIOMES } from './BiomeProfiles.js';
 import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
 import { ParticleField } from './ParticleField.js';
+import { Mandala } from './Mandala.js';
 import { clamp, clamp01, smoothstep, mulberry32, hashSeed, shuffle } from '../utils/math.js';
 import { LerpCache } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
@@ -52,9 +53,10 @@ export class BiomeManager {
     for (const b of BIOMES) this.fields.set(b.name, new ParticleField(b.particles, canvasWidth, canvasHeight, hashSeed(b.name + 'p')));
 
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed);
+    this.mandala = new Mandala(songSeed);
 
     conductor.onBar(() => { this._scanlineActive = true; this._scanlineY = 0; });
-    conductor.on(Role.RHYTHM, (evt) => { if (evt.kick) this._pylonFlash = 1; });
+    conductor.on(Role.RHYTHM, (evt) => { if (evt.kick) { this._pylonFlash = 1; this.mandala.kick(); } });
   }
 
   _buildSchedule(barGrid, energyCurves, durationMs, songSeed) {
@@ -146,6 +148,8 @@ export class BiomeManager {
       this._eqSmoothed[b] += (1 - Math.exp(-dtSec / tau)) * (raw - this._eqSmoothed[b]);
     }
 
+    this.mandala.update(nowMs, dtSec, energyCurves, calmLevel);
+
     if (this._scanlineActive) {
       this._scanlineY += dtSec * this.h * 2.2;
       if (this._scanlineY > this.h) this._scanlineActive = false;
@@ -163,6 +167,10 @@ export class BiomeManager {
 
     this._drawSky(ctx, canvas, A, B, t);
     this._drawCelestial(ctx, canvas, A, B, t);
+    // Spirograph resonance mandala, centered on the celestial body so it
+    // reads as the sun/moon itself resonating with the track.
+    const mandalaColor = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
+    this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * 0.22, canvas.height * 0.30, mandalaColor);
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
 
     const scrollX0 = worldX * LAYER_RATIOS.L2, scrollX1 = worldX * LAYER_RATIOS.L3;

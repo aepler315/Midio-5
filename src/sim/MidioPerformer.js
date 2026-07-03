@@ -5,6 +5,7 @@
 // only ever *adds* to midio.leanDeg/scaleY or briefly overrides scale
 // during a flourish window, so the underlying physics never changes.
 import { mulberry32, clamp, smoothstep } from '../utils/math.js';
+import { ModalRing } from '../render/oscillators.js';
 
 const TRICK_HANG_START = 0.35; // matches JumpController's A
 const TRICK_HANG_END = 0.65;   // matches JumpController's A+B
@@ -50,14 +51,20 @@ export class MidioPerformer {
     this.blinkScale = 1; // 1 = eye open, 0 = fully closed
     this._nextBlinkMs = BLINK_MIN_GAP_MS + this.rand() * BLINK_JITTER_MS;
     this._blinkStartMs = -Infinity;
+
+    // Modal body vibration: struck on landings (scaled by impact intensity)
+    // and lightly on takeoff, rung down over ~half a second. The Renderer
+    // displaces MIDIO_BODY's rim through this field.
+    this.modal = new ModalRing({ modes: 4, baseHz: 8, decaySec: 0.55, seed: (seed ^ 0x9e37) >>> 0 });
   }
 
   clearFrameFlags() {
     this.milestoneFlash = false;
   }
 
-  onLanding(nowMs, isClean, comboDisplay) {
+  onLanding(nowMs, isClean, comboDisplay, intensity = 0) {
     if (isClean && comboDisplay >= FLOURISH_COMBO_THRESHOLD) this._flourishUntilMs = nowMs + FLOURISH_MS;
+    this.modal.excite(1.5 + 4.5 * intensity);
   }
 
   onStreak(streak) {
@@ -71,8 +78,10 @@ export class MidioPerformer {
   }
 
   update(nowMs, dtSec, midio, jump, comboSystem, calmLevel = 0) {
+    this.modal.update(dtSec);
     const justLaunched = !this._wasAirborne && jump.airborne;
     if (justLaunched) {
+      this.modal.excite(0.8 + 1.6 * jump.lastLaunchVel);
       const shouldTrick = jump.lastLaunchVel > TRICK_VEL_THRESHOLD || comboSystem.displayM >= TRICK_COMBO_THRESHOLD;
       if (shouldTrick) {
         let type = this.rand() < 0.5 ? 'spin' : 'backflip';

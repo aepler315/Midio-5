@@ -11,6 +11,35 @@ function fakeEnergyCurves(value) {
   return { sample: () => value };
 }
 
+test('bass buzz shivers the render bars over time but never touches the physics height', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  let t = 0;
+  // Settle springs under sustained high bass so the buzz EMA charges up.
+  for (let i = 0; i < 600; i++) { gf.update(t, STEP_S, 0, fakeEnergyCurves(1)); t += 8.33; }
+
+  const physicsBefore = gf.heightAt(100);
+  const ySamples = new Set();
+  for (let i = 0; i < 30; i++) {
+    gf.update(t, STEP_S, 0, fakeEnergyCurves(1));
+    const bars = gf.visibleBars(0, 220, 1280);
+    ySamples.add(bars[2].y.toFixed(3));
+    // Physics reference must stay put (modulo spring settle residue) while the visual bars shiver.
+    assert.ok(Math.abs(gf.heightAt(100) - physicsBefore) < 0.01);
+    t += 8.33;
+  }
+  assert.ok(ySamples.size > 5, `expected the bar height to oscillate across steps, saw ${ySamples.size} distinct values`);
+});
+
+test('bass buzz is phase-staggered across neighboring slices, not lockstep', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  let t = 0;
+  for (let i = 0; i < 600; i++) { gf.update(t, STEP_S, 0, fakeEnergyCurves(1)); t += 8.33; }
+  const bars = gf.visibleBars(0, 220, 1280);
+  const offsets = bars.slice(0, 5).map((b) => b.y);
+  const distinct = new Set(offsets.map((y) => y.toFixed(2)));
+  assert.ok(distinct.size >= 4, 'neighboring slices should sit at different buzz phases');
+});
+
 function buildConductor(durationMs, kickPeriodMs = 500) {
   const timeline = [];
   for (let t = 0; t < durationMs; t += kickPeriodMs) {

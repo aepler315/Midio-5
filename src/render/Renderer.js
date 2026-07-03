@@ -3,7 +3,7 @@
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
 // each stage guards on the subsystem's presence so this file grows additively.
 import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE } from './meshes.js';
-import { computeRestLengths, drawMeshPart } from './MeshDrawer.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial } from './MeshDrawer.js';
 
 const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
@@ -36,6 +36,7 @@ export class Renderer {
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.scale(camera.zoom, camera.zoom);
+    ctx.rotate(camera.roll || 0); // damped impact roll, pivoting on screen center
     ctx.translate(-canvas.width / 2 + camera.shakeX, -canvas.height / 2 + camera.shakeY);
 
     if (biomeManager) {
@@ -97,7 +98,12 @@ export class Renderer {
     const hue = flash > 0 ? MIDIO_BASE_HUE + (48 - MIDIO_BASE_HUE) * flash : MIDIO_BASE_HUE;
     const options = { lightBase: 52 + flash * 24, satBase: 68 + flash * 20 };
 
-    drawMeshPart(ctx, MIDIO_BODY, this._midioBodyRest, transform, hue, options);
+    // Modal vibration: rim vertices ride the performer's ring-down field.
+    // Rest lengths stay the undisplaced ones, so the wobble reads as edge
+    // deformation and lights up the glow automatically.
+    const hub = MIDIO_BODY.vertices[0];
+    const bodyMesh = displaceMeshRadial(MIDIO_BODY, hub.x, hub.y, performer ? performer.modal : null);
+    drawMeshPart(ctx, bodyMesh, this._midioBodyRest, transform, hue, options);
 
     if (blink < 0.98) {
       const blinkEye = {
