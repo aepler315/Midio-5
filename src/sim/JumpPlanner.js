@@ -1,0 +1,82 @@
+// Predicts Midio's full jump-arc schedule from the kick timeline in advance,
+// so obstacle placement can guarantee clearance instead of scripting around
+// it. This replays JumpController's exact takeoff/retarget decision logic
+// (kept in lockstep — see test/jumpPlanner.test.js, which cross-checks this
+// against a live JumpController stepped in real time) but as a pure,
+// non-realtime function over the whole kick list at once.
+import { clamp } from '../utils/math.js';
+import { A, B, GAMMA, D_MIN, D_MAX, H_BASE, jumpY } from './JumpController.js';
+
+const RETARGET_FALL_MS = 120;
+const HIGH_BPM_HALFTIME = 170;
+
+/**
+ * @param {{tMs:number, vel:number}[]} kicks sorted ascending
+ * @returns {{takeoffMs:number, landMs:number, H:number, D:number}[]}
+ */
+export function predictJumpArcs(kicks, { hBase = H_BASE, jumpHeightMul = 1 } = {}) {
+  let beatPeriodMs = 500;
+  let lastKickMs = null;
+  let kickCount = 0;
+  let compressingUntilMs = -Infinity;
+  const arcs = [];
+
+  for (const k of kicks) {
+    if (lastKickMs != null) {
+      const interval = k.tMs - lastKickMs;
+      if (interval > 120 && interval < 2000) beatPeriodMs = beatPeriodMs * 0.7 + interval * 0.3;
+    }
+    lastKickMs = k.tMs;
+    kickCount++;
+
+    if (k.tMs < compressingUntilMs) continue; // mid-compression: ignored, same guard as JumpController
+
+    const bpm = 60000 / beatPeriodMs;
+    if (bpm > HIGH_BPM_HALFTIME && kickCount % 2 === 0) continue; // ghost kick, routes to FX only
+
+    const H = hBase * (0.6 + 0.8 * k.vel) * jumpHeightMul;
+    const D = clamp(1.0 * beatPeriodMs, D_MIN, D_MAX);
+
+    const last = arcs[arcs.length - 1];
+    const airborne = last && k.tMs < last.landMs;
+
+    if (!airborne) {
+      arcs.push({ takeoffMs: k.tMs, landMs: k.tMs + D, H, D });
+      continue;
+    }
+
+    const u = (k.tMs - last.takeoffMs) / last.D;
+    if (u >= A + B) {
+      const r = (u - A - B) / GAMMA;
+      if (r < 0.3) {
+        const compressLandMs = k.tMs + RETARGET_FALL_MS;
+        last.landMs = compressLandMs; // truncate the in-flight arc
+        compressingUntilMs = compressLandMs;
+        arcs.push({ takeoffMs: compressLandMs, landMs: compressLandMs + D, H, D });
+      }
+    }
+    // else: mid launch/hang -- kick ignored, already committed to this arc
+  }
+
+  return arcs;
+}
+
+/**
+ * The contiguous time window (in ms) during which a given arc keeps Midio's
+ * altitude at or above thresholdPx, clipped to the arc's (possibly
+ * retarget-truncated) actual landing time. Returns null if the arc never
+ * clears the threshold at all.
+ */
+export function safeWindowForArc(arc, thresholdPx, samples = 64) {
+  let loU = null, hiU = null;
+  const maxU = Math.min(1, (arc.landMs - arc.takeoffMs) / arc.D);
+  for (let i = 0; i <= samples; i++) {
+    const u = (i / samples) * maxU;
+    if (jumpY(u, arc.H) >= thresholdPx) {
+      if (loU === null) loU = u;
+      hiU = u;
+    }
+  }
+  if (loU === null) return null;
+  return { fromMs: arc.takeoffMs + loU * arc.D, toMs: arc.takeoffMs + hiU * arc.D };
+}

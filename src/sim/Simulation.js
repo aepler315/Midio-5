@@ -33,7 +33,7 @@ export class Simulation {
     this.impactFX = new ImpactFX();
     this.telegraph = new TelegraphScanner();
     this.obstacles = new ObstacleSpawner(paramBus);
-    this.obstacles.buildCandidates(conductor.timeline, 60000 / bpm);
+    this.obstacles.buildCandidates(conductor.timeline, 60000 / bpm, this.midio.halfWidth);
 
     this.midasus = new Midasus(conductor.timeline, this.midio, { groundY: this.midio.groundY, ceilingY: 40 });
     this.broshi = new Broshi(conductor, paramBus);
@@ -55,7 +55,7 @@ export class Simulation {
     this.curr = this._snapshot();
 
     conductor.on(Role.RHYTHM, (evt) => {
-      if (evt.kick) this.jump.onKick(evt, this.timeMs);
+      if (evt.kick) this.jump.onKick(evt);
     });
   }
 

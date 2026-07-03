@@ -1,13 +1,22 @@
-// World obstacles seeded from RHYTHM events away from any kick (spec §2.2.3
-// final paragraph). Since Midio's jumps are entirely music-driven (no player
-// input), obstacle placement is designed to be clearable by the deterministic
-// jump arc; density only thins candidates, it never relocates them.
+// World obstacles placed against a *predicted* jump schedule (spec §2.2.3
+// final paragraph: "never force an impossible double-jump"). Rather than
+// reactively nudging jumps at runtime, placement itself is built to be safe:
+// every candidate sits inside a window where predictJumpArcs guarantees
+// Midio clears it, computed against the worst case the live-tunable
+// ParamBus guardrails could ever produce (weakest jump height, slowest
+// scroll speed) — so a collision can only ever come from the vision loop
+// legitimately choosing to make the game harder, never from bad luck.
 import { Role } from '../core/NoteEvent.js';
 import { clamp, mulberry32 } from '../utils/math.js';
+import { GUARDRAIL_MIN } from '../core/ParamBus.js';
+import { predictJumpArcs, safeWindowForArc } from './JumpPlanner.js';
 
-const SPAWN_LEAD_MS = 2500;
+const WORLD_SPEED_PX_S = 220;
 const MIN_VEL = 0.55;
-const MIN_KICK_DISTANCE_BEATS = 1.5;
+const CLEARANCE_MARGIN_PX = 14;
+const MIN_SAFE_WINDOW_MS = 150; // discard slivers too narrow to place anything in safely
+const EDGE_KEEPOUT_MS = 40; // stay this far off a window's own edges before crossing-width is even considered
+const SPAWN_LEAD_MS = 2500;
 
 export class ObstacleSpawner {
   constructor(paramBus, { seed = 99, height = 46, width = 28 } = {}) {
@@ -18,26 +27,58 @@ export class ObstacleSpawner {
     this.rand = mulberry32(seed);
     this.height = height;
     this.width = width;
+    this.halfWidth = 0; // set from Midio in buildCandidates
   }
 
-  buildCandidates(timeline, beatPeriodMsGuess) {
-    const kicks = [];
-    for (const e of timeline) if (e.role === Role.RHYTHM && e.kick) kicks.push(e.tMs);
+  /**
+   * @param {import('../core/NoteEvent.js').NoteEvent[]} timeline full song timeline
+   * @param {number} beatPeriodMsGuess used only for candidate min-gap spacing
+   * @param {number} midioHalfWidth Midio's collision half-width, for crossing-time math
+   */
+  buildCandidates(timeline, beatPeriodMsGuess, midioHalfWidth = 23) {
+    this.candidates = [];
+    this.halfWidth = midioHalfWidth;
 
-    let ki = 0;
+    const kicks = [];
+    for (const e of timeline) if (e.role === Role.RHYTHM && e.kick) kicks.push({ tMs: e.tMs, vel: e.vel });
+    if (kicks.length === 0) return;
+
+    // Worst case across the ParamBus's full live-tunable range: the weakest
+    // jump the vision loop could ever produce, and the slowest scroll (which
+    // maximizes how long an obstacle lingers in the danger zone).
+    const arcs = predictJumpArcs(kicks, { jumpHeightMul: GUARDRAIL_MIN });
+    const threshold = this.height + CLEARANCE_MARGIN_PX;
+    const worstScrollPxPerMs = (WORLD_SPEED_PX_S * GUARDRAIL_MIN) / 1000;
+    const crossHalfMs = (midioHalfWidth + this.width / 2) / worstScrollPxPerMs;
+
+    const rhythmEvents = timeline.filter((e) => e.role === Role.RHYTHM && !e.kick && e.vel >= MIN_VEL);
+    let ei = 0;
     let lastAccepted = -Infinity;
     const minGap = Math.max(beatPeriodMsGuess, 420);
-    const minKickDist = MIN_KICK_DISTANCE_BEATS * beatPeriodMsGuess;
 
-    for (const e of timeline) {
-      if (e.role !== Role.RHYTHM || e.kick || e.vel < MIN_VEL) continue;
-      while (ki + 1 < kicks.length && kicks[ki + 1] <= e.tMs) ki++;
-      const dPrev = ki < kicks.length ? Math.abs(e.tMs - kicks[ki]) : Infinity;
-      const dNext = ki + 1 < kicks.length ? Math.abs(e.tMs - kicks[ki + 1]) : Infinity;
-      if (Math.min(dPrev, dNext) < minKickDist) continue;
-      if (e.tMs - lastAccepted < minGap) continue;
-      this.candidates.push({ tMs: e.tMs });
-      lastAccepted = e.tMs;
+    for (const arc of arcs) {
+      const w = safeWindowForArc(arc, threshold);
+      if (!w) continue; // this arc never clears the obstacle height at all -- skip, don't gamble
+
+      const usableFrom = w.fromMs + EDGE_KEEPOUT_MS + crossHalfMs;
+      const usableTo = w.toMs - EDGE_KEEPOUT_MS - crossHalfMs;
+      if (usableTo - usableFrom < MIN_SAFE_WINDOW_MS - 2 * crossHalfMs) continue; // too narrow once crossing time is reserved
+      if (usableFrom > usableTo) continue;
+
+      // Anchor to the loudest nearby off-kick rhythm event for musical
+      // correlation; fall back to the window's center if none qualify.
+      while (ei < rhythmEvents.length && rhythmEvents[ei].tMs < usableFrom) ei++;
+      let arrival = (usableFrom + usableTo) / 2;
+      let bestVel = -1;
+      let ej = ei;
+      while (ej < rhythmEvents.length && rhythmEvents[ej].tMs <= usableTo) {
+        if (rhythmEvents[ej].vel > bestVel) { bestVel = rhythmEvents[ej].vel; arrival = rhythmEvents[ej].tMs; }
+        ej++;
+      }
+
+      if (arrival - lastAccepted < minGap) continue;
+      this.candidates.push({ tMs: arrival });
+      lastAccepted = arrival;
     }
   }
 

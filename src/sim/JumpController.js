@@ -55,14 +55,29 @@ export class JumpController {
 
   get bpm() { return 60000 / this.beatPeriodMs; }
 
-  onKick(evt, nowMs) {
-    this._updateBeatPeriod(nowMs);
+  /**
+   * @param evt the RHYTHM/kick NoteEvent (evt.tMs is the exact musical
+   *   onset; the dispatcher may not reach it until up to one sim step
+   *   later)
+   */
+  onKick(evt) {
+    // Everything below is anchored to evt.tMs, the exact onset time — NOT
+    // the caller's discretized "now". Kick-quantized jumps land almost
+    // exactly when the next kick arrives, so the gap between a kick's true
+    // time and the ~8ms-later instant the fixed-step sim actually gets to
+    // process it is not noise to ignore: feeding that jitter into the
+    // beat-period EMA compounds a slowly-growing phase error into D every
+    // cycle, and resolving state against the wrong instant can leave a
+    // kick seeing stale AIR state and silently dropping its launch.
+    const tMs = evt.tMs;
+    this.update(tMs); // resolve any landing/compress transition due by tMs first
+    this._updateBeatPeriod(tMs);
     this.kickCount++;
     if (this.bpm > HIGH_BPM_HALFTIME && this.kickCount % 2 === 0) {
       this.pendingGhostKick = { vel: evt.vel };
       return;
     }
-    this._launchOrRetarget(evt, nowMs);
+    this._launchOrRetarget(evt, tMs);
   }
 
   _updateBeatPeriod(nowMs) {
