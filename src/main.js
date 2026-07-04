@@ -47,8 +47,12 @@ const perfGovernor = new PerfGovernor();
 function fitCanvas() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const rect = canvas.getBoundingClientRect();
-  canvas.width = Math.round(rect.width * dpr);
-  canvas.height = Math.round(rect.height * dpr);
+  const w = Math.max(1, Math.round((rect.width || 1280) * dpr));
+  const h = Math.max(1, Math.round((rect.height || 720) * dpr));
+  if (Number.isFinite(w) && Number.isFinite(h)) {
+    canvas.width = w;
+    canvas.height = h;
+  }
 }
 window.addEventListener('resize', fitCanvas);
 

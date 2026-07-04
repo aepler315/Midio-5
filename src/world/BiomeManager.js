@@ -126,6 +126,14 @@ export class BiomeManager {
 
   _profile(name) { return BIOMES.find((b) => b.name === name); }
 
+  edgeLight(nowMs = 0) {
+    const { from, to, t } = this._blend(nowMs);
+    const A = this._profile(from), B = this._profile(to);
+    if (A.edgeLight && B.edgeLight) return this.lerpCache.get(A.edgeLight, B.edgeLight, t);
+    if (t > 0.5) return B.edgeLight || null;
+    return A.edgeLight || null;
+  }
+
   update(nowMs, dtSec, energyCurves, calm, perfMul = 1) {
     this.tSec = nowMs / 1000;
     this._calmC = calm ? calm.C : 0;
@@ -340,13 +348,13 @@ export class BiomeManager {
     this._drawEQRow(ctx, canvas, bands, [1, 3, 5], {
       barW, parallax, r, g: gg, b,
       baselineY: canvas.height * 0.47, maxH: canvas.height * 0.30,
-      alpha: 0.16, desat: 0.55,
+      alpha: 0.34, desat: 0.55,
     });
     // Front row: every other (even) band — nearer, so taller/brighter/lower.
     this._drawEQRow(ctx, canvas, bands, [0, 2, 4, 6], {
       barW, parallax, r, g: gg, b,
       baselineY: canvas.height * 0.57, maxH: canvas.height * 0.42,
-      alpha: 0.30, desat: 0,
+      alpha: 0.62, desat: 0,
     });
   }
 
@@ -356,8 +364,8 @@ export class BiomeManager {
     const cr = Math.round(r + (255 - r) * desat * 0.35);
     const cg = Math.round(gg + (255 - gg) * desat * 0.35);
     const cb = Math.round(b + (255 - b) * desat * 0.35);
-    const innerA = 0.30 * (1 - desat * 0.45);
-    const baseA = 0.60 * (1 - desat * 0.45);
+    const innerA = 0.38 * (1 - desat * 0.35);
+    const baseA = 0.72 * (1 - desat * 0.35);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (const i of indices) {
@@ -368,11 +376,18 @@ export class BiomeManager {
       const x = ((x0 % canvas.width) + canvas.width) % canvas.width;
       const gr = ctx.createLinearGradient(0, baselineY - h, 0, baselineY);
       gr.addColorStop(0, 'rgba(0,0,0,0)');
-      gr.addColorStop(0.35, `rgba(${cr},${cg},${cb},${innerA})`);
+      gr.addColorStop(0.30, `rgba(${cr},${cg},${cb},${innerA})`);
       gr.addColorStop(1, `rgba(${cr},${cg},${cb},${baseA})`);
       ctx.fillStyle = gr;
       ctx.globalAlpha = alpha;
       ctx.fillRect(x, baselineY - h, barW - 2, h);
+
+      // Top-cap highlight: a thin bright line that makes each bar register
+      // as a discrete peak on the horizon.
+      ctx.globalAlpha = alpha * 1.25;
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},0.85)`;
+      ctx.fillRect(x, baselineY - h, barW - 2, Math.max(1.5, h * 0.035));
+      ctx.globalAlpha = alpha;
     }
     ctx.restore();
   }
@@ -442,10 +457,10 @@ export class BiomeManager {
       const { r, g: gg, b } = hexToRgb(groundColor);
 
       // (a) Volume fill: groundColor at the surface fading to near-black at
-      //     the canvas bottom, so the ground reads as a solid slab with depth.
-      let minTopY = canvas.height;
-      for (const p of tops) if (p.y < minTopY) minTopY = p.y;
-      const fillGrad = ctx.createLinearGradient(0, minTopY, 0, canvas.height);
+      //     the canvas bottom. Anchor the gradient at the base ground level
+      //     (this.groundY) so the color bands stay stable as the terrain rolls.
+      const baseY = this.groundY;
+      const fillGrad = ctx.createLinearGradient(0, baseY - 40, 0, canvas.height);
       fillGrad.addColorStop(0, `rgba(${r},${gg},${b},0.62)`);
       fillGrad.addColorStop(0.45, `rgba(${(r * 0.4) | 0},${(gg * 0.4) | 0},${(b * 0.4) | 0},0.55)`);
       fillGrad.addColorStop(1, 'rgba(0,0,0,0.9)');
@@ -458,12 +473,14 @@ export class BiomeManager {
       ctx.fill();
 
       // (b) Subterranean contour strata — faint horizontal lines below the
-      //     surface, giving the slab a layered-rock read.
+      //     surface, giving the slab a layered-rock read. Fixed spacing so
+      //     the strata don't jitter with the rolling terrain.
       ctx.strokeStyle = 'rgba(255,255,255,0.06)';
       ctx.lineWidth = 1;
-      const span = canvas.height - minTopY;
+      const strataSpacing = (canvas.height - baseY) / 5;
       for (let s = 1; s <= 4; s++) {
-        const y = minTopY + (s / 5) * span;
+        const y = baseY + s * strataSpacing;
+        if (y >= canvas.height - 4) break;
         ctx.beginPath();
         ctx.moveTo(0, y);
         ctx.lineTo(canvas.width, y);

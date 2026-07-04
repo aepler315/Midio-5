@@ -92,10 +92,31 @@ function edgeColor(baseHue, angle, deform, alpha, goldPulse = 0) {
   // Hue from edge orientation rotated by character base hue.
   const hue = (baseHue + (angle * 180) / Math.PI) % 360;
   // Deformation → lightness boost and saturation/glow.
-  const light = 45 + 20 * deform;
-  const sat = 70 + 10 * deform;
+  const light = 45 + 24 * deform;
+  const sat = 70 + 14 * deform;
   const a = alpha + goldPulse * 0.35;
   return `hsla(${hue},${sat}%,${light}%,${clamp(a, 0, 1)})`;
+}
+
+function fillMesh(ctx, mesh, tv, baseHue) {
+  if (!mesh.fillLoops || mesh.fillLoops.length === 0) return;
+  ctx.save();
+  for (let li = 0; li < mesh.fillLoops.length; li++) {
+    const loop = mesh.fillLoops[li];
+    // Body loop gets a richer silhouette; secondary loops (eye, head detail)
+    // get a lighter tint so they read as detail, not a dark blob.
+    ctx.fillStyle = li === 0
+      ? `hsla(${baseHue}, 50%, 14%, 0.26)`
+      : `hsla(${baseHue}, 45%, 20%, 0.14)`;
+    ctx.beginPath();
+    for (let i = 0; i < loop.length; i++) {
+      const p = tv[loop[i]];
+      if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 export function drawMesh(ctx, mesh, pose, baseHue, opts = {}) {
@@ -103,20 +124,11 @@ export function drawMesh(ctx, mesh, pose, baseHue, opts = {}) {
   const { restLengths, restAngles } = ensureCache(mesh);
   const tv = transformVertices(mesh, pose);
 
-  if (fill) {
-    ctx.save();
-    ctx.fillStyle = `hsla(${baseHue}, 50%, 10%, 0.35)`;
-    ctx.beginPath();
-    for (let i = 0; i < mesh.edges.length; i++) {
-      const [a, b] = mesh.edges[i];
-      const p0 = tv[a], p1 = tv[b];
-      if (i === 0) ctx.moveTo(p0.x, p0.y); else ctx.lineTo(p0.x, p0.y);
-      ctx.lineTo(p1.x, p1.y);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
+  // Uniform pose scale: deform is the deviation from this isotropic size.
+  // Without this, passing CHAR_SCALE as pose.scaleX/scaleY lights every edge.
+  const uniformScale = Math.sqrt(Math.abs((pose.scaleX || 1) * (pose.scaleY || 1))) || 1;
+
+  if (fill) fillMesh(ctx, mesh, tv, baseHue);
 
   ctx.save();
   ctx.lineWidth = lineWidth;
@@ -129,11 +141,12 @@ export function drawMesh(ctx, mesh, pose, baseHue, opts = {}) {
       const [a, b] = mesh.edges[i];
       const p0 = tv[a], p1 = tv[b];
       const len = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-      const deform = restLengths[i] > 0 ? Math.abs(len - restLengths[i]) / restLengths[i] : 0;
-      if (deform < 0.18) continue;
+      const effectiveRest = restLengths[i] * uniformScale;
+      const deform = effectiveRest > 0 ? Math.abs(len - effectiveRest) / effectiveRest : 0;
+      if (deform < 0.14) continue;
       const ang = Math.atan2(p1.y - p0.y, p1.x - p0.x);
       ctx.strokeStyle = edgeColor(baseHue, ang, deform, 0.28, goldPulse);
-      ctx.lineWidth = lineWidth + 3 * deform;
+      ctx.lineWidth = lineWidth + 3.5 * deform;
       ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
     }
     ctx.lineWidth = lineWidth;
@@ -145,12 +158,14 @@ export function drawMesh(ctx, mesh, pose, baseHue, opts = {}) {
     const [a, b] = mesh.edges[i];
     const p0 = tv[a], p1 = tv[b];
     const len = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-    const deform = restLengths[i] > 0 ? Math.abs(len - restLengths[i]) / restLengths[i] : 0;
+    const effectiveRest = restLengths[i] * uniformScale;
+    const deform = effectiveRest > 0 ? Math.abs(len - effectiveRest) / effectiveRest : 0;
     const ang = Math.atan2(p1.y - p0.y, p1.x - p0.x);
     ctx.strokeStyle = edgeColor(baseHue, ang, deform, 0.9, goldPulse);
     ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
   }
   ctx.restore();
 }
+
 
 export { MIDIO_MESH, BROSHI_MESH, MIDASUS_MESH };

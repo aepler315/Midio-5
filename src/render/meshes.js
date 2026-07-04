@@ -25,6 +25,10 @@ export const MIDIO_MESH = {
   vertices: MIDIO_VERTS,
   edges: MIDIO_EDGES,
   baseHue: 48, // warm yellow
+  fillLoops: [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], // body silhouette
+    [16, 17, 18, 19, 20, 21], // eye ring
+  ],
 };
 
 // Broshi: body (~14), head (~8), jaw as hinged sub-mesh (~6), tail (~3).
@@ -65,6 +69,10 @@ export const BROSHI_MESH = {
   vertices: BROSHI_VERTS,
   edges: BROSHI_EDGES,
   baseHue: 120, // green; shifted toward red by rho in drawer
+  fillLoops: [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], // body silhouette
+    [14, 15, 16, 17, 18, 19], // head
+  ],
 };
 
 // Midasus: small diamond/moth shape (~10 verts), particle-driven otherwise.
@@ -83,6 +91,7 @@ export const MIDASUS_MESH = {
   vertices: MIDASUS_VERTS,
   edges: MIDASUS_EDGES,
   baseHue: 200, // initial fairy blue, replaced by live hue
+  fillLoops: [[0, 1, 2, 3]], // wing/body diamond
 };
 
 Object.freeze(MIDIO_MESH); Object.freeze(MIDIO_MESH.vertices); Object.freeze(MIDIO_MESH.edges);

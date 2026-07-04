@@ -86,16 +86,39 @@ export class ObstacleSpawner {
     return stumbled;
   }
 
-  draw(ctx, worldX, originX, groundY, ground = null, nowMs = 0) {
+  draw(ctx, worldX, originX, groundY, ground = null, nowMs = 0, edgeLight = null) {
     for (const o of this.active) {
       const x = o.wx - worldX + originX;
       if (x < -60 || x > 2200) continue;
       const baseY = ground ? ground.heightAt(o.wx, nowMs) : groundY;
-      ctx.fillStyle = '#8a3a6b';
-      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-      ctx.lineWidth = 1.5;
-      ctx.fillRect(x - o.width / 2, baseY - o.height, o.width, o.height);
-      ctx.strokeRect(x - o.width / 2, baseY - o.height, o.width, o.height);
+      const left = x - o.width / 2;
+      const top = baseY - o.height;
+
+      // Gradient body fill, brighter at the top edge to read as a hazard lip.
+      const bodyGrad = ctx.createLinearGradient(0, top, 0, baseY);
+      bodyGrad.addColorStop(0, edgeLight ? 'rgba(80,40,70,0.95)' : '#8a3a6b');
+      bodyGrad.addColorStop(1, edgeLight ? 'rgba(40,15,35,0.90)' : '#5a244d');
+      ctx.fillStyle = bodyGrad;
+      ctx.fillRect(left, top, o.width, o.height);
+
+      // Neon top edge when the biome provides an accent color.
+      if (edgeLight) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.strokeStyle = edgeLight;
+        ctx.lineWidth = 2;
+        ctx.shadowColor = edgeLight;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.moveTo(left, top);
+        ctx.lineTo(left + o.width, top);
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(left, top, o.width, o.height);
+      }
     }
   }
 }

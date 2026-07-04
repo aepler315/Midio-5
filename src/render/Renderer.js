@@ -40,9 +40,11 @@ export class Renderer {
     }
 
     if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
-    if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY, sim.ground, sim.timeMs);
+    const edgeLight = biomeManager ? biomeManager.edgeLight(sim.timeMs) : null;
+    if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY, sim.ground, sim.timeMs, edgeLight);
     if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
-    if (sim.broshi) sim.broshi.draw(ctx, pose);
+
+    if (sim.broshi) sim.broshi.draw(ctx);
 
     this._drawMidioGhosts(ctx, sim);
     this._drawMidio(ctx, pose, sim.midio.groundY);
@@ -53,6 +55,20 @@ export class Renderer {
 
     ctx.restore(); // camera transform
     ctx.restore();
+
+    // Cinematic vignette: soft darkening at the edges so the cast stays the
+    // focal point. Kept subtle so it never competes with the biome palette.
+    const cx = (canvas.width || 1280) / 2;
+    const cy = (canvas.height || 720) / 2;
+    const r0 = Math.max(0, cy * 0.35);
+    const r1 = Math.max(r0 + 1, cy * 0.85);
+    if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(r0) && Number.isFinite(r1)) {
+      const vignette = ctx.createRadialGradient(cx, cy, r0, cx, cy, r1);
+      vignette.addColorStop(0, 'rgba(0,0,0,0)');
+      vignette.addColorStop(1, 'rgba(0,0,0,0.35)');
+      ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
   }
