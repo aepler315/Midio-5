@@ -322,29 +322,57 @@ export class BiomeManager {
   }
 
   _drawHorizonEQ(ctx, canvas, worldX, A, B, t) {
+    // Two depth layers (item 2). The 7 bands share one slot grid (i/7 of the
+    // width); the FRONT layer draws every other band (even indices 0,2,4,6)
+    // low, tall and bright, and the BACK layer draws the in-between bands
+    // (odd indices 1,3,5) higher, smaller and dimmer — so the back bands
+    // always peek through the gaps between the front ones, reading as two
+    // stacked rows. Both layers use the same parallax so the interleaving
+    // never drifts apart; depth comes from baseline height, scale and alpha.
     const bands = this._eqSmooth;
     if (!bands) return;
-    const maxH = canvas.height * 0.40; // never exceed ~40% of screen height
     const barW = canvas.width / 7;
-    const parallax = worldX * 0.06; // far-depth scroll
+    const parallax = worldX * 0.06; // shared so front/back slots stay aligned
     const c = this.lerpCache.get(A.sky[1], B.sky[1], t);
     const { r, g: gg, b } = hexToRgb(c);
+
+    // Back row: the in-between (odd) bands — farther, so smaller/dimmer/higher.
+    this._drawEQRow(ctx, canvas, bands, [1, 3, 5], {
+      barW, parallax, r, g: gg, b,
+      baselineY: canvas.height * 0.47, maxH: canvas.height * 0.30,
+      alpha: 0.16, desat: 0.55,
+    });
+    // Front row: every other (even) band — nearer, so taller/brighter/lower.
+    this._drawEQRow(ctx, canvas, bands, [0, 2, 4, 6], {
+      barW, parallax, r, g: gg, b,
+      baselineY: canvas.height * 0.57, maxH: canvas.height * 0.42,
+      alpha: 0.30, desat: 0,
+    });
+  }
+
+  _drawEQRow(ctx, canvas, bands, indices, o) {
+    const { barW, parallax, r, g: gg, b, baselineY, maxH, alpha, desat } = o;
+    // Desaturate + lighten the far row so it reads as atmospheric haze.
+    const cr = Math.round(r + (255 - r) * desat * 0.35);
+    const cg = Math.round(gg + (255 - gg) * desat * 0.35);
+    const cb = Math.round(b + (255 - b) * desat * 0.35);
+    const innerA = 0.30 * (1 - desat * 0.45);
+    const baseA = 0.60 * (1 - desat * 0.45);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 7; i++) {
+    for (const i of indices) {
       const v = clamp(bands[i], 0, 1);
       const h = v * maxH;
+      if (h <= 0.5) continue;
       const x0 = i * barW - (parallax % barW);
-      // Wrap horizontally so the row is infinite-looking.
       const x = ((x0 % canvas.width) + canvas.width) % canvas.width;
-      if (x > canvas.width) continue;
-      const gr = ctx.createLinearGradient(0, canvas.height * 0.55 - h, 0, canvas.height * 0.55);
+      const gr = ctx.createLinearGradient(0, baselineY - h, 0, baselineY);
       gr.addColorStop(0, 'rgba(0,0,0,0)');
-      gr.addColorStop(0.35, `rgba(${r},${gg},${b},0.30)`);
-      gr.addColorStop(1, `rgba(${r},${gg},${b},0.60)`);
+      gr.addColorStop(0.35, `rgba(${cr},${cg},${cb},${innerA})`);
+      gr.addColorStop(1, `rgba(${cr},${cg},${cb},${baseA})`);
       ctx.fillStyle = gr;
-      ctx.globalAlpha = 0.22;
-      ctx.fillRect(x, canvas.height * 0.55 - h, barW - 2, h);
+      ctx.globalAlpha = alpha;
+      ctx.fillRect(x, baselineY - h, barW - 2, h);
     }
     ctx.restore();
   }
@@ -404,38 +432,76 @@ export class BiomeManager {
     const groundColor = this.lerpCache.get(A.silhouette, B.silhouette, t);
 
     if (groundField) {
-      // Geometric/wireframe ground (item 5): flat slice platforms with only
-      // narrow linear seams, rendered as stroked edges over a transparent fill.
+      // Geometric/wireframe ground (item 5) — enriched: a volume-gradient
+      // fill below the surface, subterranean contour strata, gradient
+      // vertical seams, and an EQ-reactive neon horizon edge. The surface
+      // shape itself still comes from groundField.heightAt (unchanged — its
+      // bounds are covered by ground.test.js).
       const originX = 220; // Midio's screenX — worldX maps here
       const tops = groundField.sliceTops(worldX, originX, nowMs);
+      const { r, g: gg, b } = hexToRgb(groundColor);
 
-      // Optional dark silhouette fill below the platform tops.
-      ctx.fillStyle = groundColor;
+      // (a) Volume fill: groundColor at the surface fading to near-black at
+      //     the canvas bottom, so the ground reads as a solid slab with depth.
+      let minTopY = canvas.height;
+      for (const p of tops) if (p.y < minTopY) minTopY = p.y;
+      const fillGrad = ctx.createLinearGradient(0, minTopY, 0, canvas.height);
+      fillGrad.addColorStop(0, `rgba(${r},${gg},${b},0.62)`);
+      fillGrad.addColorStop(0.45, `rgba(${(r * 0.4) | 0},${(gg * 0.4) | 0},${(b * 0.4) | 0},0.55)`);
+      fillGrad.addColorStop(1, 'rgba(0,0,0,0.9)');
+      ctx.fillStyle = fillGrad;
       ctx.beginPath();
       ctx.moveTo(0, canvas.height);
-      for (const p of tops) {
-        ctx.lineTo(p.x, p.y);
-      }
+      for (const p of tops) ctx.lineTo(p.x, p.y);
       ctx.lineTo(canvas.width, canvas.height);
       ctx.closePath();
-      ctx.globalAlpha = 0.6;
       ctx.fill();
-      ctx.globalAlpha = 1;
 
-      // Wireframe slice lines: vertical seams + horizontal tops.
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
+      // (b) Subterranean contour strata — faint horizontal lines below the
+      //     surface, giving the slab a layered-rock read.
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.lineWidth = 1;
+      const span = canvas.height - minTopY;
+      for (let s = 1; s <= 4; s++) {
+        const y = minTopY + (s / 5) * span;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+
+      // (c) Gradient vertical seams at each slice boundary — bright at the
+      //     surface, fading down into the slab.
       for (const p of tops) {
-        // horizontal top edge
-        const prev = tops[tops.indexOf(p) - 1] || { x: p.x - groundField.spacing, y: p.y };
-        ctx.moveTo(prev.x, prev.y);
-        ctx.lineTo(p.x, p.y);
-        // vertical seam down to canvas bottom
+        const sg = ctx.createLinearGradient(0, p.y, 0, canvas.height);
+        sg.addColorStop(0, 'rgba(255,255,255,0.32)');
+        sg.addColorStop(0.4, 'rgba(255,255,255,0.07)');
+        sg.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.strokeStyle = sg;
+        ctx.beginPath();
         ctx.moveTo(p.x, p.y);
         ctx.lineTo(p.x, canvas.height);
+        ctx.stroke();
+      }
+
+      // (d) EQ-reactive neon horizon edge — the surface line glows with
+      //     overall energy and punches up during the gag "almost-falls" beat.
+      const e = this.energyCurves ? this.energyCurves.globalEnergy(nowMs) : 0;
+      const pulse = groundField.gagActive ? 1 : clamp(e, 0, 1);
+      const edgeR = Math.min(255, r + 90), edgeG = Math.min(255, gg + 90), edgeB = Math.min(255, b + 90);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = `rgba(${edgeR},${edgeG},${edgeB},${0.45 + 0.4 * pulse})`;
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = `rgba(${edgeR},${edgeG},${edgeB},0.9)`;
+      ctx.shadowBlur = 8 + 18 * pulse;
+      ctx.beginPath();
+      for (let k = 0; k < tops.length; k++) {
+        const p = tops[k];
+        if (k === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
       }
       ctx.stroke();
+      ctx.restore();
     } else {
       ctx.fillStyle = groundColor;
       ctx.fillRect(0, this.groundY, canvas.width, canvas.height - this.groundY);

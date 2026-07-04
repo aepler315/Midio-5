@@ -5,7 +5,7 @@
 import { Role } from '../core/NoteEvent.js';
 import { clamp, smoothstep, mulberry32, lerp } from '../utils/math.js';
 import { hexLerp } from '../utils/color.js';
-import { drawMesh, BROSHI_MESH } from '../render/MeshDrawer.js';
+import { drawMesh, BROSHI_MESH, CHAR_SCALE } from '../render/MeshDrawer.js';
 import { RABID_WEIGHTS } from '../audio/bands.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 
@@ -273,6 +273,10 @@ export class Broshi {
 
     ctx.save();
     ctx.translate(x, y);
+    // Scale the whole body (mesh + tongue/spittle/drool/aura FX) so Broshi
+    // reads at the cast's dominant size. The mesh itself is drawn at scaleX 1
+    // — the ctx.scale handles the enlargement and keeps the FX proportional.
+    ctx.scale(CHAR_SCALE, CHAR_SCALE);
 
     if (this.rho > 0.02) {
       ctx.save();

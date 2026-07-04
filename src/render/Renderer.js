@@ -2,7 +2,7 @@
 // telegraph glints -> world FX -> companions -> Midio -> foreground veil ->
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
 // each stage guards on the subsystem's presence so this file grows additively.
-import { drawMesh, MIDIO_MESH, BROSHI_MESH, MIDASUS_MESH } from './MeshDrawer.js';
+import { drawMesh, MIDIO_MESH, BROSHI_MESH, MIDASUS_MESH, CHAR_SCALE } from './MeshDrawer.js';
 
 export class Renderer {
   constructor(canvas) {
@@ -85,8 +85,8 @@ export class Renderer {
     drawMesh(ctx, MIDIO_MESH, {
       x: pose.midioX + (mesh.driftX || 0),
       y: pose.midioY + (mesh.driftY || 0),
-      scaleX: pose.scaleX * (mesh.blink || 1),
-      scaleY: pose.scaleY * (mesh.blink || 1),
+      scaleX: pose.scaleX * (mesh.blink || 1) * CHAR_SCALE,
+      scaleY: pose.scaleY * (mesh.blink || 1) * CHAR_SCALE,
       leanDeg: pose.leanDeg, spin: mesh.spin || 0, armFlare: mesh.armFlare || 0,
     }, MIDIO_MESH.baseHue, { fill: true, lineWidth: 1.5, glow: true, goldPulse: mesh.goldPulse || 0 });
   }
@@ -97,7 +97,7 @@ export class Renderer {
     for (const g of ghosts) {
       drawMesh(ctx, MIDIO_MESH, {
         x: g.x, y: g.y,
-        scaleX: g.scaleX, scaleY: g.scaleY,
+        scaleX: g.scaleX * CHAR_SCALE, scaleY: g.scaleY * CHAR_SCALE,
         leanDeg: g.leanDeg, spin: g.spin, armFlare: g.armFlare,
       }, MIDIO_MESH.baseHue, { fill: false, lineWidth: 1, glow: false, goldPulse: 0 });
     }

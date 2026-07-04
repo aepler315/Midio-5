@@ -1,16 +1,23 @@
 // Midasus, the airborne fairy (spec §3.1). Obeys the score: absolute
 // pitch-space coordinates, zero inertia tolerance. Sequential no-skip note
-// tracking with a 70% trajectory snap on each trigger, a PD pursuit
-// controller between triggers, and a Lissajous orbit during rests.
+// tracking — each trigger launches the fairy toward the note with a velocity
+// impulse, and a PD pursuit controller carries it there along a continuous
+// arc (so it always flies, never teleports). A Lissajous orbit governs rests.
 import { Role } from '../core/NoteEvent.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { clamp, lerp, mulberry32 } from '../utils/math.js';
-import { drawMesh, MIDASUS_MESH } from '../render/MeshDrawer.js';
+import { drawMesh, MIDASUS_MESH, CHAR_SCALE } from '../render/MeshDrawer.js';
 
 const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
 const KP = 90, KD = 12;
-const SNAP = 0.70;
+// Note-trigger launch: a velocity impulse toward the target (px of velocity
+// per px of distance), plus momentum damping so direction changes read
+// instantly. Capped so a far/high-velocity note can't sling the fairy past
+// the target — the PD controller finishes the approach smoothly.
+const KICK = 3.0;
+const KICK_CAP = 1500; // px/s max launch speed from a single note
+const DAMP = 0.45;
 
 export class Midasus {
   constructor(timeline, midio, { groundY = 480, ceilingY = 40, seed = 777, worldScale = 1 } = {}) {
@@ -108,10 +115,14 @@ export class Midasus {
     while (this.i < this.q.length && this.q[this.i].tMs <= nowMs) {
       const n = this.q[this.i++];
       const t = this._target(n);
-      this.p.x += SNAP * (t.x - this.p.x);
-      this.p.y += SNAP * (t.y - this.p.y);
-      this.v.x *= 0.4;
-      this.v.y *= 0.4;
+      // Launch toward the note target with a capped velocity impulse — the PD
+      // controller then flies the fairy there along a continuous arc. (A prior
+      // 70% position snap made far/high-velocity notes teleport instantly.)
+      const dx = t.x - this.p.x, dy = t.y - this.p.y;
+      const kick = Math.min(KICK_CAP, Math.hypot(dx, dy) * KICK);
+      const inv = kick / (Math.hypot(dx, dy) || 1);
+      this.v.x = this.v.x * DAMP + dx * inv;
+      this.v.y = this.v.y * DAMP + dy * inv;
       this.hue = this._hueOf(n.pitch);
       this._burst(8 + 24 * n.vel, this.hue);
       this.lastNoteMs = nowMs;
@@ -160,6 +171,7 @@ export class Midasus {
     ctx.globalAlpha = 1;
     drawMesh(ctx, MIDASUS_MESH, {
       x: this.p.x, y: this.p.y,
+      scaleX: CHAR_SCALE, scaleY: CHAR_SCALE,
     }, this.hue, { fill: false, lineWidth: 1.5, glow: true });
   }
 }
