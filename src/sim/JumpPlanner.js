@@ -17,6 +17,12 @@ import { clamp } from '../utils/math.js';
 /** px of headroom Midio must clear above an obstacle's top. */
 export const CLEAR_MARGIN = 8;
 
+/** Above this BPM every other kick is a half-time ghost (no jump). */
+export const HIGH_BPM_HALFTIME = 170;
+
+/** Quantized terrace / prop heights (px). */
+export const HEIGHT_TIERS = [28, 46, 72];
+
 const SAMPLES = 240; // fine enough that u-resolution is sub-ms for D up to D_MAX
 
 /**
@@ -39,7 +45,7 @@ export function arcAltitude(tMs, takeoffMs, H, D) {
  * @param {{hBase?:number, jumpHeight?:number, halftimeBpm?:number}} opts
  * @returns {Array<{takeoffMs:number, H:number, D:number}>}
  */
-export function predictArcs(kicks, { hBase = H_BASE, jumpHeight = 1, halftimeBpm = 170 } = {}) {
+export function predictArcs(kicks, { hBase = H_BASE, jumpHeight = 1, halftimeBpm = HIGH_BPM_HALFTIME } = {}) {
   const arcs = [];
   let state = 'GROUND';
   let jumpStartMs = 0, curD = 500, curH = 0, jumpEndMs = 0;
@@ -92,7 +98,7 @@ export function predictArcs(kicks, { hBase = H_BASE, jumpHeight = 1, halftimeBpm
  * @param {Array<{tMs:number, vel:number}>} kicks
  * @param {{obstacleHeight:number, margin?:number, jumpHeight?:number, hBase?:number, halftimeBpm?:number}} opts
  */
-export function coveredWindows(kicks, { obstacleHeight, margin = CLEAR_MARGIN, jumpHeight = 1, hBase = H_BASE, halftimeBpm = 170 } = {}) {
+export function coveredWindows(kicks, { obstacleHeight, margin = CLEAR_MARGIN, jumpHeight = 1, hBase = H_BASE, halftimeBpm = HIGH_BPM_HALFTIME } = {}) {
   const threshold = obstacleHeight + margin;
   const windows = [];
   for (const arc of predictArcs(kicks, { hBase, jumpHeight, halftimeBpm })) {
@@ -119,13 +125,36 @@ export function coveredWindows(kicks, { obstacleHeight, margin = CLEAR_MARGIN, j
   return windows;
 }
 
+/** Snap a raw height to the nearest terrace tier. */
+export function quantizeHeight(h) {
+  let best = HEIGHT_TIERS[0];
+  let bestDist = Math.abs(h - best);
+  for (const tier of HEIGHT_TIERS) {
+    const d = Math.abs(h - tier);
+    if (d < bestDist) { bestDist = d; best = tier; }
+  }
+  return best;
+}
+
+/**
+ * Covered windows per terrace height tier — each tier gets its own arc
+ * clearance pass so placement can vary obstacle height musically.
+ */
+export function coveredWindowsTiered(kicks, opts = {}) {
+  const tiers = opts.tiers ?? HEIGHT_TIERS;
+  return tiers.map((height) => ({
+    height,
+    windows: coveredWindows(kicks, { ...opts, obstacleHeight: height }),
+  }));
+}
+
 /**
  * Snap a salient rhythm-event seed time to the nearest covered window, placing
- * the obstacle inside that window's middle 50% (seeded jitter). Returns null if
- * no window exists — meaning Midio is never airborne high enough anywhere, so
- * the candidate is dropped (not placed where it would be unavoidable).
+ * the obstacle inside that window's middle 50% (seeded jitter) or near the apex
+ * (bias:'apex'). Returns null if no window exists — meaning Midio is never
+ * airborne high enough anywhere, so the candidate is dropped.
  */
-export function snapToWindow(tMs, windows, rand) {
+export function snapToWindow(tMs, windows, rand, { bias = 'mid' } = {}) {
   let best = null, bestDist = Infinity;
   for (const w of windows) {
     const [lo, hi] = w.mid50;
@@ -133,8 +162,11 @@ export function snapToWindow(tMs, windows, rand) {
     if (d < bestDist) { bestDist = d; best = w; }
   }
   if (!best) return null;
-  const [lo, hi] = best.mid50;
-  return { window: best, placeMs: lo + rand() * (hi - lo) };
+  const span = best.exitMs - best.enterMs;
+  const placeMs = bias === 'apex'
+    ? best.enterMs + 0.35 * span + rand() * 0.15 * span
+    : (() => { const [lo, hi] = best.mid50; return lo + rand() * (hi - lo); })();
+  return { window: best, placeMs };
 }
 
 /**

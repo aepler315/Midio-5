@@ -4,6 +4,7 @@
 // mid-air retargeting so a new kick always lands Midio back on the grid.
 import { clamp } from '../utils/math.js';
 import * as JumpPlanner from './JumpPlanner.js';
+import { HIGH_BPM_HALFTIME } from './JumpPlanner.js';
 
 export const A = 0.35;   // LAUNCH fraction
 export const B = 0.30;   // APEX HANG fraction
@@ -28,7 +29,6 @@ export function jumpY(u, H) {
 export const H_BASE = 150; // px
 export const D_MIN = 380, D_MAX = 1200; // ms
 export const RETARGET_FALL_MS = 120;
-const HIGH_BPM_HALFTIME = 170;
 
 export class JumpController {
   constructor(paramBus, { hBase = H_BASE } = {}) {
@@ -59,14 +59,14 @@ export class JumpController {
 
   get bpm() { return 60000 / this.beatPeriodMs; }
 
-  onKick(evt, nowMs, obstacle = null) {
+  onKick(evt, nowMs, obstacle = null, comboM = 1) {
     this._updateBeatPeriod(nowMs);
     this.kickCount++;
     if (this.bpm > HIGH_BPM_HALFTIME && this.kickCount % 2 === 0) {
       this.pendingGhostKick = { vel: evt.vel };
       return;
     }
-    this._launchOrRetarget(evt, nowMs, obstacle);
+    this._launchOrRetarget(evt, nowMs, obstacle, comboM);
   }
 
   _updateBeatPeriod(nowMs) {
@@ -79,9 +79,10 @@ export class JumpController {
     this.lastKickMs = nowMs;
   }
 
-  _launchOrRetarget(evt, nowMs, obstacle = null) {
+  _launchOrRetarget(evt, nowMs, obstacle = null, comboM = 1) {
     const D = clamp(1.0 * this.beatPeriodMs, D_MIN, D_MAX);
-    let H = this.hBase * (0.6 + 0.8 * evt.vel) * this.P.live.jumpHeight;
+    const skillMul = 1 + 0.10 * (comboM - 1);
+    let H = this.hBase * (0.6 + 0.8 * evt.vel) * this.P.live.jumpHeight * skillMul;
 
     // Accommodation (item 4): if an obstacle arrives during this arc, floor H
     // at the clearance height so the hang plateau clears it. Capped by the
