@@ -2,7 +2,7 @@
 // telegraph glints -> world FX -> companions -> Midio -> foreground veil ->
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
 // each stage guards on the subsystem's presence so this file grows additively.
-import { drawMesh, MIDIO_MESH, BROSHI_MESH, MIDASUS_MESH, CHAR_SCALE } from './MeshDrawer.js';
+import { drawMesh, MIDIO_MESH, BROSHI_MESH, MIDASUS_MESH, MIDIO_SCALE } from './MeshDrawer.js';
 
 export class Renderer {
   constructor(canvas) {
@@ -33,7 +33,7 @@ export class Renderer {
 
     const calmC = sim.calm ? sim.calm.C : 0;
     if (biomeManager) {
-      biomeManager.draw(ctx, canvas, pose.worldX, sim.ground, sim.timeMs, calmC);
+      biomeManager.draw(ctx, canvas, pose.worldX, sim.ground, sim.timeMs, calmC, perfGovernor?.level ?? 0);
     } else {
       this._drawFallbackSky(ctx, canvas);
       this._drawGround(ctx, canvas, pose, sim.midio.groundY);
@@ -101,8 +101,8 @@ export class Renderer {
     drawMesh(ctx, MIDIO_MESH, {
       x: pose.midioX + (mesh.driftX || 0),
       y: pose.midioY + (mesh.driftY || 0),
-      scaleX: pose.scaleX * (mesh.blink || 1) * CHAR_SCALE,
-      scaleY: pose.scaleY * (mesh.blink || 1) * CHAR_SCALE,
+      scaleX: pose.scaleX * (mesh.blink || 1) * MIDIO_SCALE,
+      scaleY: pose.scaleY * (mesh.blink || 1) * MIDIO_SCALE,
       leanDeg: pose.leanDeg, spin: mesh.spin || 0, armFlare: mesh.armFlare || 0,
     }, MIDIO_MESH.baseHue, { fill: true, lineWidth: 1.5, glow: true, goldPulse: mesh.goldPulse || 0 });
   }
@@ -113,7 +113,7 @@ export class Renderer {
     for (const g of ghosts) {
       drawMesh(ctx, MIDIO_MESH, {
         x: g.x, y: g.y,
-        scaleX: g.scaleX * CHAR_SCALE, scaleY: g.scaleY * CHAR_SCALE,
+        scaleX: g.scaleX * MIDIO_SCALE, scaleY: g.scaleY * MIDIO_SCALE,
         leanDeg: g.leanDeg, spin: g.spin, armFlare: g.armFlare,
       }, MIDIO_MESH.baseHue, { fill: false, lineWidth: 1, glow: false, goldPulse: 0 });
     }

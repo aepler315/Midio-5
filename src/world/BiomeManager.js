@@ -7,6 +7,7 @@ import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
 import { ParticleField } from './ParticleField.js';
 import { clamp, clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
 import { LerpCache, hexToRgb } from '../utils/color.js';
+import { ValueNoise1D, ridged } from '../utils/noise.js';
 import { Role } from '../core/NoteEvent.js';
 
 const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
@@ -16,7 +17,7 @@ const STRIP_HEIGHT = 320; // matches generateSilhouette's default (SilhouetteGen
 // Per-layer depth model (ground-horizon-depth). nearer = more opaque = lower.
 // `alpha` delivers atmospheric perspective (the already-drawn sky shows through
 // distant ridges); `yOffsetPct` × the silhouette/ground gap closes the seam for
-// the nearest layer (L5 pins to the ground top). Consumed in _drawLayer + _drawHorizonEQ.
+// the nearest layer (L5 pins to the ground top). Consumed in _drawLayer + _drawMountainEQ.
 export const DEPTH = Object.freeze({
   L2: { alpha: 0.50, yOffsetPct: 0.00 },   // farthest, unchanged bottom anchor
   L3: { alpha: 0.66, yOffsetPct: 0.33 },
@@ -49,6 +50,11 @@ export class BiomeManager {
 
     // Horizon EQ state (item 2): 7 bands, two-stage envelope.
     this._eqSmooth = new Float32Array(7);
+    this._ridgeNoise = [
+      new ValueNoise1D(7101, 256),
+      new ValueNoise1D(7102, 256),
+      new ValueNoise1D(7103, 256),
+    ];
 
     this.strips = new Map(); // biomeName -> { L2, L3, L4, L5 }
     for (const b of BIOMES) {
@@ -183,7 +189,7 @@ export class BiomeManager {
     }
   }
 
-  draw(ctx, canvas, worldX, groundField = null, nowMs = 0, calmC = 0) {
+  draw(ctx, canvas, worldX, groundField = null, nowMs = 0, calmC = 0, perfLevel = 0) {
     this._calmC = calmC;
     const { from, to, t } = this.currentBlend || { from: this.sections[0].profile, to: this.sections[0].profile, t: 1 };
     const A = this._profile(from), B = this._profile(to);
@@ -191,8 +197,8 @@ export class BiomeManager {
     this._drawSky(ctx, canvas, A, B, t);
     this._drawCelestial(ctx, canvas, A, B, t);
 
-    // Horizon EQ (item 2): far parallax layer between celestial and L2 mountains.
-    this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
+    // EQ mountain ridgelines between celestial and L2 silhouette strips.
+    this._drawMountainEQ(ctx, canvas, worldX, A, B, t, perfLevel);
 
     const scrollX0 = worldX * LAYER_RATIOS.L2, scrollX1 = worldX * LAYER_RATIOS.L3;
     const scrollX2 = worldX * LAYER_RATIOS.L4, scrollX3 = worldX * LAYER_RATIOS.L5;
@@ -206,6 +212,7 @@ export class BiomeManager {
     if (to !== from && t > 0.02) { ctx.save(); ctx.globalAlpha = t; this.fields.get(to).draw(ctx); ctx.restore(); }
 
     this._drawLayer(ctx, canvas, 'L4', scrollX2, tint, t, A, B);
+    this._drawPineForestEQ(ctx, canvas, worldX, A, B, t);
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
 
     this._drawGround(ctx, canvas, worldX, A, B, t, groundField, nowMs);
@@ -345,73 +352,128 @@ export class BiomeManager {
     ctx.restore();
   }
 
-  _drawHorizonEQ(ctx, canvas, worldX, A, B, t) {
-    // Two depth layers (item 2). The 7 bands share one slot grid (i/7 of the
-    // width); the FRONT layer draws every other band (even indices 0,2,4,6)
-    // low, tall and bright, and the BACK layer draws the in-between bands
-    // (odd indices 1,3,5) higher, smaller and dimmer — so the back bands
-    // always peek through the gaps between the front ones, reading as two
-    // stacked rows. Both layers use the same parallax so the interleaving
-    // never drifts apart; depth comes from baseline height, scale and alpha, with the feet re-seated to the parallax gap (ground-horizon-depth).
+  _drawMountainEQ(ctx, canvas, worldX, A, B, t, perfLevel = 0) {
+    // Three EQ-driven ridgelines (far/mid/near) between celestial and L2.
+    // Height blends band energy with ridged ValueNoise1D; baselines follow
+    // layerDepth so the mountains seat into the silhouette/ground gap.
     const bands = this._eqSmooth;
     if (!bands) return;
-    const barW = canvas.width / 7;
-    const parallax = worldX * 0.06; // shared so front/back slots stay aligned
+    const parallax = worldX * 0.06;
     const c = this.lerpCache.get(A.sky[1], B.sky[1], t);
     const { r, g: gg, b } = hexToRgb(c);
-
-    // ground-horizon-depth: seat the EQ feet just above the haze band where the
-    // silhouette ridges converge, so the bars read as living in the horizon.
     const gap = this.groundY - (canvas.height - STRIP_HEIGHT);
-    const backBase  = canvas.height - STRIP_HEIGHT + layerDepth('L2').yOffsetPct * gap + 6;
-    const frontBase = canvas.height - STRIP_HEIGHT + layerDepth('L4').yOffsetPct * gap + 6;
+    const barW = canvas.width / 7;
+    const step = 4;
 
-    // Back row: the in-between (odd) bands — farther, so smaller/dimmer/higher.
-    this._drawEQRow(ctx, canvas, bands, [1, 3, 5], {
-      barW, parallax, r, g: gg, b,
-      baselineY: backBase, maxH: canvas.height * 0.30,
-      alpha: 0.34, desat: 0.55,
-    });
-    // Front row: every other (even) band — nearer, so taller/brighter/lower.
-    this._drawEQRow(ctx, canvas, bands, [0, 2, 4, 6], {
-      barW, parallax, r, g: gg, b,
-      baselineY: frontBase, maxH: canvas.height * 0.42,
-      alpha: 0.62, desat: 0,
-    });
-  }
+    const layers = [
+      { key: 'L2', maxHPct: 0.28, eqWeight: 0.28, noiseIdx: 0, desat: 0.55, alphaMul: 0.55 },
+      { key: 'L3', maxHPct: 0.34, eqWeight: 0.48, noiseIdx: 1, desat: 0.30, alphaMul: 0.72 },
+      { key: 'L4', maxHPct: 0.42, eqWeight: 0.68, noiseIdx: 2, desat: 0, alphaMul: 0.92 },
+    ];
 
-  _drawEQRow(ctx, canvas, bands, indices, o) {
-    const { barW, parallax, r, g: gg, b, baselineY, maxH, alpha, desat } = o;
-    // Desaturate + lighten the far row so it reads as atmospheric haze.
-    const cr = Math.round(r + (255 - r) * desat * 0.35);
-    const cg = Math.round(gg + (255 - gg) * desat * 0.35);
-    const cb = Math.round(b + (255 - b) * desat * 0.35);
-    const innerA = 0.38 * (1 - desat * 0.35);
-    const baseA = 0.72 * (1 - desat * 0.35);
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (const i of indices) {
-      const v = clamp(bands[i], 0, 1);
-      const h = v * maxH;
-      if (h <= 0.5) continue;
-      const x0 = i * barW - (parallax % barW);
-      const x = ((x0 % canvas.width) + canvas.width) % canvas.width;
-      const gr = ctx.createLinearGradient(0, baselineY - h, 0, baselineY);
+    for (let li = 0; li < layers.length; li++) {
+      if (perfLevel >= 3 && li === 0) continue; // far ridge sheds first
+      if (perfLevel >= 4 && li === 1) continue; // mid ridge sheds second
+
+      const layer = layers[li];
+      const d = layerDepth(layer.key);
+      const baselineY = canvas.height - STRIP_HEIGHT + d.yOffsetPct * gap + 6;
+      const maxH = canvas.height * layer.maxHPct;
+      const noise = this._ridgeNoise[layer.noiseIdx];
+      const cr = Math.round(r + (255 - r) * layer.desat * 0.35);
+      const cg = Math.round(gg + (255 - gg) * layer.desat * 0.35);
+      const cb = Math.round(b + (255 - b) * layer.desat * 0.35);
+      const innerA = 0.38 * (1 - layer.desat * 0.35);
+      const baseA = 0.72 * (1 - layer.desat * 0.35);
+
+      let peakY = baselineY;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = d.alpha * layer.alphaMul;
+      ctx.beginPath();
+      ctx.moveTo(0, baselineY);
+      for (let x = 0; x <= canvas.width; x += step) {
+        const sampleX = x + parallax;
+        const bandPos = (((sampleX % canvas.width) + canvas.width) % canvas.width) / barW;
+        const i0 = Math.floor(bandPos) % 7;
+        const i1 = (i0 + 1) % 7;
+        const frac = bandPos - Math.floor(bandPos);
+        const eqV = bands[i0] * (1 - frac) + bands[i1] * frac;
+        const n = ridged(noise, sampleX * 0.005, 2);
+        const h = (eqV * layer.eqWeight + n * (1 - layer.eqWeight * 0.45)) * maxH;
+        const y = baselineY - h;
+        if (y < peakY) peakY = y;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(canvas.width, baselineY);
+      ctx.closePath();
+      const gr = ctx.createLinearGradient(0, peakY, 0, baselineY);
       gr.addColorStop(0, 'rgba(0,0,0,0)');
       gr.addColorStop(0.30, `rgba(${cr},${cg},${cb},${innerA})`);
       gr.addColorStop(1, `rgba(${cr},${cg},${cb},${baseA})`);
       ctx.fillStyle = gr;
-      ctx.globalAlpha = alpha;
-      ctx.fillRect(x, baselineY - h, barW - 2, h);
-
-      // Top-cap highlight: a thin bright line that makes each bar register
-      // as a discrete peak on the horizon.
-      ctx.globalAlpha = alpha * 1.25;
-      ctx.fillStyle = `rgba(${cr},${cg},${cb},0.85)`;
-      ctx.fillRect(x, baselineY - h, barW - 2, Math.max(1.5, h * 0.035));
-      ctx.globalAlpha = alpha;
+      ctx.fill();
+      ctx.restore();
     }
-    ctx.restore();
+  }
+
+  _drawPineForestEQ(ctx, canvas, worldX, A, B, t) {
+    // Seven EQ band slots as triangle pines in two depth rows (odd back, even front).
+    const bands = this._eqSmooth;
+    if (!bands) return;
+    const barW = canvas.width / 7;
+    const parallax = worldX * 0.06;
+    const tint = this.lerpCache.get(A.silhouette, B.silhouette, t);
+    const { r, g: gg, b } = hexToRgb(tint);
+    const gap = this.groundY - (canvas.height - STRIP_HEIGHT);
+    const backBase = canvas.height - STRIP_HEIGHT + layerDepth('L4').yOffsetPct * gap + 4;
+    const frontBase = canvas.height - STRIP_HEIGHT + layerDepth('L5').yOffsetPct * gap;
+
+    const rows = [
+      { indices: [1, 3, 5], baselineY: backBase, scale: 0.72, alpha: 0.50 },
+      { indices: [0, 2, 4, 6], baselineY: frontBase, scale: 1.0, alpha: 0.82 },
+    ];
+
+    for (const row of rows) {
+      ctx.save();
+      ctx.globalAlpha = row.alpha;
+      for (const i of row.indices) {
+        const v = clamp(bands[i], 0, 1);
+        const x0 = i * barW - (parallax % barW);
+        const x = ((x0 % canvas.width) + canvas.width) % canvas.width;
+        const treeH = (0.32 + v * 0.58) * canvas.height * 0.22 * row.scale;
+        if (treeH <= 2) continue;
+        const treeW = treeH * 0.44;
+        const sway = Math.sin(this.tSec * (1.1 + i * 0.15) + i * 0.9) * (2 + v * 4);
+        this._drawPineTree(ctx, x + barW * 0.5, row.baselineY, treeW, treeH, r, gg, b, sway);
+      }
+      ctx.restore();
+    }
+  }
+
+  _drawPineTree(ctx, cx, baseY, w, h, r, g, b, sway) {
+    const trunkW = w * 0.18;
+    const trunkH = h * 0.22;
+    ctx.fillStyle = `rgba(${(r * 0.45) | 0},${(g * 0.45) | 0},${(b * 0.45) | 0},0.9)`;
+    ctx.fillRect(cx - trunkW / 2, baseY - trunkH, trunkW, trunkH);
+
+    const foliageH = h - trunkH;
+    const tiers = 3;
+    for (let tier = 0; tier < tiers; tier++) {
+      const tierSway = sway * (1 + tier * 0.35);
+      const tierBase = baseY - trunkH - foliageH * (tier / tiers);
+      const tierH = (foliageH / tiers) * 1.15;
+      const tierW = w * (1 - tier * 0.22);
+      const topX = cx + tierSway;
+      const topY = tierBase - tierH;
+      ctx.fillStyle = `rgba(${r},${g},${b},${0.52 + tier * 0.14})`;
+      ctx.beginPath();
+      ctx.moveTo(topX, topY);
+      ctx.lineTo(cx - tierW / 2, tierBase);
+      ctx.lineTo(cx + tierW / 2, tierBase);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 
   _drawProminence(ctx, cx, cy, alpha) {
