@@ -6,11 +6,13 @@
 import { MIDIO_MESH, BROSHI_MESH, MIDASUS_MESH } from './meshes.js';
 import { clamp, lerp } from '../utils/math.js';
 
-// Global character scale (item 1). The wireframe meshes are authored small
-// (~50px tall); drawing them at this multiplier makes the cast read at a
-// dominant size on screen. Applied at each draw site so the three characters
-// share one knob.
-export const CHAR_SCALE = 2.5;
+// Per-character draw scale (graphics refinement pass). Meshes are authored
+// small (~50px tall); each character has its own multiplier at draw sites.
+export const CHAR_SCALE_BASE = 2.5;
+export const CHAR_SCALE = CHAR_SCALE_BASE; // deprecated alias
+export const MIDIO_SCALE   = 2.5 * 1.23; // 3.075
+export const BROSHI_SCALE  = 2.5 * 1.18; // 2.95
+export const MIDASUS_SCALE = 2.5 * 1.18; // 2.95
 
 const meshes = new WeakMap(); // mesh → { restLengths[], restAngles[] }
 

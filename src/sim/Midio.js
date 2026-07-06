@@ -1,3 +1,5 @@
+import { MIDIO_SCALE, CHAR_SCALE_BASE } from '../render/MeshDrawer.js';
+
 // The player character. Screen-space x is fixed; the world scrolls under him.
 // Anchor position is a fraction of the actual canvas, not a fixed pixel: at a
 // fixed pixel, the whole cast (Midio + companions, both offset relative to
@@ -16,7 +18,7 @@ export class Midio {
     this.scaleY = 1;
     this.leanDeg = 0;
     this.facing = 1;
-    this.halfWidth = 23;
+    this.halfWidth = 23 * (MIDIO_SCALE / CHAR_SCALE_BASE);
     this.poseExtras = {};
   }
 
