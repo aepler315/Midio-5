@@ -53,6 +53,7 @@ export class Midasus {
     this.phi = 0;
     this.particles = new ObjectPool(() => ({}), (o, init) => Object.assign(o, init, { age: 0 }), 600);
     this._emitAccum = 0;
+    this._hitPulse = 0;
 
     conductor.onBar((bar) => this._refreshPitchWindow(bar));
   }
@@ -207,7 +208,8 @@ export class Midasus {
       this.v.y = ry / 0.04;
     }
     this.hue = hue;
-    this._burst(8 + 24 * n.vel, this.hue);
+    this._burst(16 + 40 * n.vel, this.hue);
+    this._hitPulse = 1;
     this.lastNoteMs = n.tMs;
     this._prevNoteTMs = n.tMs;
   }
@@ -229,6 +231,7 @@ export class Midasus {
 
     if (nowMs > cursor) this._pursuitStep(nowMs, (nowMs - cursor) / 1000, calm);
     this._simMs = nowMs;
+    if (this._hitPulse > 0) this._hitPulse = Math.max(0, this._hitPulse - dtSec / 0.22);
 
     this.particles.step(dtSec, (o, dt) => {
       o.x += o.vx * dt; o.y += o.vy * dt; o.age += dt;
@@ -237,22 +240,27 @@ export class Midasus {
   }
 
   draw(ctx) {
-    const sat = Math.round(90 - 40 * this.rest);
+    const sat = Math.round(95 - 35 * this.rest);
+    const speed = Math.hypot(this.v.x, this.v.y);
+    const energy = clamp(speed / 900 + this._hitPulse * 0.6 + (1 - this.rest) * 0.3, 0, 1);
+    const pulse = 1 + this._hitPulse * 0.18;
     for (const p of this.particles.active) {
       const t = p.age / p.life;
-      const size = p.size * (1 - t);
+      const size = p.size * (1 - t * 0.5) * (1 + energy * 0.4);
       if (size <= 0) continue;
-      ctx.fillStyle = `hsla(${p.hue},${sat}%,65%,${(1 - t) * 0.9})`;
-      const alpha = (1 - t) * 0.9;
-      ctx.globalAlpha = alpha;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = `hsla(${p.hue},${sat}%,72%,${(1 - t) * 0.95})`;
+      ctx.globalAlpha = (1 - t) * 0.95;
       ctx.beginPath();
       ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
     }
     ctx.globalAlpha = 1;
     drawMesh(ctx, MIDASUS_MESH, {
       x: this.p.x, y: this.p.y,
-      scaleX: MIDASUS_SCALE, scaleY: MIDASUS_SCALE,
-    }, this.hue, { fill: false, lineWidth: 1.5, glow: true });
+      scaleX: MIDASUS_SCALE * pulse, scaleY: MIDASUS_SCALE * (1.12 - this._hitPulse * 0.12),
+    }, this.hue, { fill: true, lineWidth: 2.2, glow: true, energy });
   }
 }

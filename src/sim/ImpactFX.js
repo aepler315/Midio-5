@@ -29,12 +29,12 @@ export class ImpactFX {
   trigger(worldX, groundY, I, camera) {
     const rand = this.rand;
 
-    this.craters.spawn({ wx: worldX, y: groundY, R: 20 + 92 * I, alpha: 0.9 * I, life: 0.14 });
+    this.craters.spawn({ wx: worldX, y: groundY, R: 28 + 120 * I, alpha: 0.95 * I, life: 0.18 });
 
-    const ring = this.rings.spawn({ wx: worldX, y: groundY, Rd: 55 + 170 * I, tau: 0.1, life: 0.48 });
-    for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * 5 * I;
+    const ring = this.rings.spawn({ wx: worldX, y: groundY, Rd: 70 + 220 * I, tau: 0.1, life: 0.55 });
+    for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * 8 * I;
 
-    const n = Math.round(10 + 30 * I);
+    const n = Math.round(18 + 48 * I);
     for (let i = 0; i < n; i++) {
       const theta = (rand() * 2 - 1) * (35 * Math.PI / 180);
       const dir = rand() < 0.5 ? -1 : 1;
@@ -50,7 +50,10 @@ export class ImpactFX {
     this.scars.push({ wx: worldX, y: groundY, width: 20 + 40 * I, age: 0, maxAge: 4 });
     if (this.scars.length > 60) this.scars.shift();
 
-    if (camera) camera.shake(14 * I);
+    if (camera) {
+      camera.shake(22 * I);
+      camera.punch(1.04 + 0.1 * I);
+    }
   }
 
   /** One-shot dust burst (gag crack-dust, item 5) — rising motes, no crater/ring. */
@@ -70,7 +73,7 @@ export class ImpactFX {
 
   /** Pre-kick sputter dust at Midio's feet during telegraph anticipation (spec §2.2.3). */
   sputter(worldX, groundY, dtSec) {
-    this._sputterAccum += dtSec * 120; // ~2 per rendered frame at 60fps == ~1 per sim step at 120Hz
+    this._sputterAccum += dtSec * 220;
     while (this._sputterAccum >= 1) {
       this._sputterAccum -= 1;
       const rand = this.rand;

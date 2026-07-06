@@ -6,7 +6,7 @@ import { Role } from '../core/NoteEvent.js';
 import { clamp, mulberry32 } from '../utils/math.js';
 
 const SPIN_PHASE = { launch: 0.0, apex: 0.35, fall: 0.65, land: 1.0 };
-const GHOST_FRAMES = 10;
+const GHOST_FRAMES = 14;
 const MILESTONES = [5, 10, 20];
 
 const easeInOutC1 = (t) => {
@@ -44,17 +44,14 @@ export class MidioPerformer {
     const sway = Math.sin(nowMs * 0.002 * Math.PI) * 3 * calmC;
     const blink = (nowMs % 4200) < 120 ? 0.6 : 1; // occasional eye-ring squish
 
-    // Grounded strut: tiny scaleY bob on each non-kick beat.
+    // Grounded strut: bounce on every beat — the stage never stops moving.
     let strut = 0;
     if (jump.state === 'GROUND') {
       const beatPhase = (nowMs % beatPeriodMs) / beatPeriodMs;
-      const isKick = conductor.nearestEventMs(
-        (e) => e.role === Role.RHYTHM && e.kick, nowMs, 40,
-      );
-      if (!isKick) strut = Math.sin(beatPhase * Math.PI) * 0.065 * (1 - calmC * 0.5);
+      strut = Math.sin(beatPhase * Math.PI) * 0.11 * (1 - calmC * 0.35);
     }
 
-    // Kick pulse: +0.04 scaleY for 120ms on each kick while grounded.
+    // Kick pulse: sharp pop on every kick.
     let kickPulse = 0;
     if (jump.state === 'GROUND') {
       const kickEvt = conductor.nearestEventMs(
@@ -62,15 +59,22 @@ export class MidioPerformer {
       );
       if (kickEvt && Math.abs(kickEvt.tMs - nowMs) < 12 && kickEvt.tMs !== this._lastKickMs) {
         this._lastKickMs = kickEvt.tMs;
-        this._kickPulseUntilMs = nowMs + 120;
+        this._kickPulseUntilMs = nowMs + 160;
       }
-      if (nowMs < this._kickPulseUntilMs) kickPulse = 0.04;
+      if (nowMs < this._kickPulseUntilMs) {
+        const k = 1 - (nowMs - (this._kickPulseUntilMs - 160)) / 160;
+        kickPulse = 0.14 * k * k;
+      }
     }
 
-    // --- apex tricks: spin or backflip on high-velocity jump or combo ≥1.0 ---
+    // Combo energy drives aura intensity and camera-adjacent read.
+    const comboM = comboSystem ? comboSystem.M : 1;
+    const energy = clamp((comboM - 1) * 0.55 + jump.lastVel * 0.35 + (jump.state === 'AIR' ? 0.25 : 0), 0, 1);
+
+    // --- apex tricks: spin or backflip on every airborne jump ---
     let spin = 0;
     let u = 0;
-    if (jump.state === 'AIR' && (jump.lastVel > 0.40 || (comboSystem && comboSystem.M >= 1.0))) {
+    if (jump.state === 'AIR') {
       if (!this._spin && jump.airborne) {
         // Trigger once per jump at launch.
         const kind = this._pickKind();
@@ -94,47 +98,49 @@ export class MidioPerformer {
       u = clamp((nowMs - jump.jumpStartMs) / jump.D, 0, 1);
     }
     if (this._midasus && apexSparkle) {
-      this._midasus.burstAt(midio.screenX, midio.renderY - 30, 16, 60); // golden sparkle
+      this._midasus.burstAt(midio.screenX, midio.renderY - 30, 36, 55);
     }
 
-    // --- landing flourish: one-frame superhero pose on clean landing at M≥1.5 ---
+    // Landing flourish: superhero pose on any clean landing with combo.
     let armFlare = 0, crouch = 0;
-    if (jump.pendingLanding && comboSystem && comboSystem.justClean && comboSystem.M >= 1.5) {
-      armFlare = 1;
-      crouch = -0.18;
+    if (jump.pendingLanding && comboSystem && comboSystem.justClean && comboSystem.M >= 1) {
+      armFlare = 0.6 + 0.4 * clamp(comboM / 3, 0, 1);
+      crouch = -0.22;
     }
+    if (jump.state === 'AIR' && u > 0.35 && u < 0.65) armFlare = Math.max(armFlare, 0.35 + jump.lastVel * 0.4);
 
     // --- combo verbosity: gold edge-glow pulse + HUD mini-shatter at milestones ---
     let goldPulse = 0;
     for (const m of MILESTONES) {
       if (comboSystem && comboSystem.streak >= m && !this._milestoneReached.has(m)) {
         this._milestoneReached.add(m);
-        this._goldPulse = 1;
+        this._goldPulse = 1.4;
         this._shatterComboReadout();
       }
     }
     if (this._goldPulse > 0) {
       goldPulse = this._goldPulse;
-      this._goldPulse = Math.max(0, this._goldPulse - dtSec / 0.35);
+      this._goldPulse = Math.max(0, this._goldPulse - dtSec / 0.28);
     }
 
     // --- compose pose ---
     if (jump.state === 'GROUND') {
-      const anticY = 1 - 0.22 * a * a * a;
-      const anticX = 1 / anticY;
+      const anticY = 1 - 0.32 * a * a * a;
+      const anticX = 1 / Math.max(0.55, anticY);
       midio.scaleY = anticY + strut + kickPulse - breath + crouch;
       midio.scaleX = anticX * (1 + breath * 0.5);
-      midio.leanDeg = 6 * a + sway;
+      midio.leanDeg = 10 * a + sway + Math.sin(nowMs * 0.012) * 2 * energy;
     } else {
-      const launchSquash = jump.airborne && (nowMs - jump.jumpStartMs) < 90;
+      const launchSquash = jump.airborne && (nowMs - jump.jumpStartMs) < 110;
       if (launchSquash) {
-        midio.scaleY = 1.42;
-        midio.scaleX = 0.72;
+        const ls = 1 - (nowMs - jump.jumpStartMs) / 110;
+        midio.scaleY = 1.55 + 0.15 * ls;
+        midio.scaleX = 0.58 - 0.08 * ls;
       } else {
-        midio.scaleY = 1 - breath + crouch;
-        midio.scaleX = 1 + breath * 0.5;
+        midio.scaleY = 1.05 - breath + crouch + 0.08 * Math.sin(u * Math.PI);
+        midio.scaleX = 0.92 + breath * 0.5;
       }
-      midio.leanDeg = sway + jump.lastVel * 14 + 6 * Math.sin(u * Math.PI);
+      midio.leanDeg = sway + jump.lastVel * 22 + 12 * Math.sin(u * Math.PI);
     }
 
     midio.poseExtras = {
@@ -142,14 +148,14 @@ export class MidioPerformer {
       armFlare,
       strut,
       goldPulse,
+      energy,
       driftX,
       driftY,
       blink,
     };
 
-    // --- ghost trail: ring-buffer of recent live poses during launch/fall ---
     const speed = jump.state === 'AIR' ? Math.abs(jump.y - (this._prevY || 0)) / Math.max(dtSec, 1e-6) : 0;
-    if (speed > 28) {
+    if (speed > 15 || jump.state === 'AIR') {
       this._ghosts.unshift({
         x: midio.screenX + driftX,
         y: midio.renderY + driftY,
@@ -158,7 +164,7 @@ export class MidioPerformer {
         leanDeg: midio.leanDeg,
         spin,
         armFlare,
-        alpha: clamp((speed - 28) / 600, 0, 0.6),
+        alpha: clamp(0.25 + (speed - 15) / 400 + energy * 0.2, 0, 0.88),
       });
       if (this._ghosts.length > GHOST_FRAMES) this._ghosts.length = GHOST_FRAMES;
     } else if (this._ghosts.length) {

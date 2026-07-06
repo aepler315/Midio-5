@@ -15,7 +15,7 @@ export class CameraDirector {
   }
 
   punch(scale) {
-    this.targetZoom = Math.max(this.targetZoom, scale);
+    this.targetZoom = Math.max(this.targetZoom, Math.min(scale, 1.18));
   }
 
   shake(amplitudePx) {
@@ -24,8 +24,8 @@ export class CameraDirector {
   }
 
   update(dtSec, calm) {
-    this.zoom += (this.targetZoom - this.zoom) * Math.min(1, dtSec * 10);
-    this.targetZoom += (1 - this.targetZoom) * Math.min(1, dtSec * 6);
+    this.zoom += (this.targetZoom - this.zoom) * Math.min(1, dtSec * 14);
+    this.targetZoom += (1 - this.targetZoom) * Math.min(1, dtSec * 4);
 
     // Calm-driven slow sinusoidal drift (±3 px, ~0.1 Hz).
     this._driftT += dtSec;

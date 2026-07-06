@@ -237,9 +237,10 @@ export class Broshi {
       this.hopY = 0;
     }
 
-    // --- rabid lean + kick body pump ---
-    this.leanDeg = this.rho * (10 + 8 * Math.sin(nowMs * 0.011));
-    this.bodyPump = nowMs < this._bodyPumpUntilMs ? 0.08 : 0;
+    // --- rabid lean + kick body pump + idle predator sway ---
+    this.leanDeg = this.rho * (14 + 12 * Math.sin(nowMs * 0.014)) + Math.sin(nowMs * 0.009) * 4 * (1 - this.calmC * 0.4);
+    this.bodyPump = nowMs < this._bodyPumpUntilMs ? 0.14 : 0.03 * Math.sin(nowMs * 0.018);
+    this.idleBounce = Math.sin(nowMs * 0.011) * 5 * (0.6 + 0.4 * (1 - this.calmC));
 
     // --- head-bob (neck angle), suppressed during yawn ---
     if (!yawning) {
@@ -266,9 +267,8 @@ export class Broshi {
   }
 
   _startHop(nowMs, vel) {
-    // Calm = higher, floatier hops; intense = lower, tighter twitches.
-    this._hopH = (16 + 28 * vel) * (0.5 + 0.5 * this.calmC);
-    this._hopDur = 130 * (0.5 + 0.6 * this.calmC);
+    this._hopH = (22 + 38 * vel) * (0.55 + 0.45 * this.calmC);
+    this._hopDur = 110 * (0.45 + 0.55 * this.calmC);
     this._hopUntilMs = nowMs + this._hopDur;
   }
 
@@ -287,7 +287,7 @@ export class Broshi {
   draw(ctx) {
     const skin = hexLerp('#63c74d', '#e43b44', this.rho);
     const x = this.screenX;
-    const y = this.groundY - this.hopY;
+    const y = this.groundY - this.hopY - (this.idleBounce || 0);
 
     ctx.save();
     ctx.translate(x, y);
@@ -296,9 +296,10 @@ export class Broshi {
     // — the ctx.scale handles the enlargement and keeps the FX proportional.
     ctx.scale(BROSHI_SCALE, BROSHI_SCALE);
 
-    if (this.rho > 0.02) {
+    const broEnergy = clamp(this.rho * 0.8 + (this.state === 'SURGE' || this.state === 'PANIC' ? 0.35 : 0), 0, 1);
+    if (this.rho > 0.02 || broEnergy > 0.2) {
       ctx.save();
-      ctx.globalAlpha = 0.5 * this.rho;
+      ctx.globalAlpha = 0.35 + 0.45 * this.rho;
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -335,10 +336,10 @@ export class Broshi {
     // Wireframe body/head/jaw/tail (item 1). Keep FX (tongue, spittle, drool, aura) separate.
     const meshBaseHue = lerp(120, 0, this.rho); // green → red as rabid grows
     drawMesh(ctx, BROSHI_MESH, {
-      x: 0, y: 0, scaleX: 1 + this.bodyPump, scaleY: 1,
+      x: 0, y: 0, scaleX: 1 + this.bodyPump, scaleY: 1 - this.bodyPump * 0.3,
       jawOpen: this.jawOpen, neckAngle: this.neckAngle, tailAngle: this.tailAngle,
       leanDeg: this.leanDeg,
-    }, meshBaseHue, { fill: true, lineWidth: 1.5, glow: true });
+    }, meshBaseHue, { fill: true, lineWidth: 2.2, glow: true, energy: broEnergy });
 
     for (const d of this.drool.active) {
       ctx.fillStyle = 'rgba(150,220,255,0.7)';

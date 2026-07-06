@@ -42,16 +42,30 @@ export class TelegraphScanner {
     }
   }
 
-  draw(ctx, groundY) {
-    if (!this.glintActive) return;
+  draw(ctx, groundY, midioX = null) {
     ctx.save();
-    const g = ctx.createRadialGradient(this.glintScreenX, groundY, 0, this.glintScreenX, groundY, 18);
-    g.addColorStop(0, 'rgba(255,255,255,0.85)');
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.ellipse(this.glintScreenX, groundY, 18, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
+    if (this.a > 0.05 && midioX != null) {
+      const kickR = 12 + 28 * this.a * this.a;
+      ctx.globalCompositeOperation = 'lighter';
+      const kg = ctx.createRadialGradient(midioX, groundY, 0, midioX, groundY, kickR);
+      kg.addColorStop(0, `rgba(255,240,160,${0.55 * this.a})`);
+      kg.addColorStop(0.5, `rgba(255,180,80,${0.25 * this.a})`);
+      kg.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = kg;
+      ctx.beginPath();
+      ctx.arc(midioX, groundY, kickR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (this.glintActive) {
+      const g = ctx.createRadialGradient(this.glintScreenX, groundY, 0, this.glintScreenX, groundY, 32);
+      g.addColorStop(0, 'rgba(255,255,255,0.95)');
+      g.addColorStop(0.4, 'rgba(255,200,120,0.45)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(this.glintScreenX, groundY, 32, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 }

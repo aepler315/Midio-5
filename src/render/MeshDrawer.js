@@ -90,26 +90,41 @@ function transformVertices(mesh, pose) {
   return out;
 }
 
-function edgeColor(baseHue, angle, deform, alpha, goldPulse = 0) {
-  // Hue from edge orientation rotated by character base hue.
+function edgeColor(baseHue, angle, deform, alpha, goldPulse = 0, energy = 0) {
   const hue = (baseHue + (angle * 180) / Math.PI) % 360;
-  // Deformation → lightness boost and saturation/glow.
-  const light = 45 + 24 * deform;
-  const sat = 70 + 14 * deform;
-  const a = alpha + goldPulse * 0.35;
-  return `hsla(${hue},${sat}%,${light}%,${clamp(a, 0, 1)})`;
+  const light = 52 + 38 * deform + 12 * energy;
+  const sat = 82 + 16 * deform;
+  const a = clamp(alpha + goldPulse * 0.55 + energy * 0.25, 0, 1);
+  return `hsla(${hue},${sat}%,${light}%,${a})`;
 }
 
-function fillMesh(ctx, mesh, tv, baseHue) {
+function drawAura(ctx, tv, baseHue, energy = 0, goldPulse = 0) {
+  let cx = 0, cy = 0, n = 0;
+  for (const p of tv) { cx += p.x; cy += p.y; n++; }
+  if (!n) return;
+  cx /= n; cy /= n;
+  const r = 38 + 28 * energy + 18 * goldPulse;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  g.addColorStop(0, `hsla(${baseHue}, 90%, 72%, ${0.22 + energy * 0.18})`);
+  g.addColorStop(0.45, `hsla(${baseHue}, 85%, 55%, ${0.10 + goldPulse * 0.12})`);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function fillMesh(ctx, mesh, tv, baseHue, energy = 0) {
   if (!mesh.fillLoops || mesh.fillLoops.length === 0) return;
   ctx.save();
   for (let li = 0; li < mesh.fillLoops.length; li++) {
     const loop = mesh.fillLoops[li];
-    // Body loop gets a richer silhouette; secondary loops (eye, head detail)
-    // get a lighter tint so they read as detail, not a dark blob.
     ctx.fillStyle = li === 0
-      ? `hsla(${baseHue}, 50%, 14%, 0.26)`
-      : `hsla(${baseHue}, 45%, 20%, 0.14)`;
+      ? `hsla(${baseHue}, 68%, ${22 + energy * 8}%, ${0.42 + energy * 0.12})`
+      : `hsla(${baseHue}, 62%, 32%, ${0.28 + energy * 0.08})`;
     ctx.beginPath();
     for (let i = 0; i < loop.length; i++) {
       const p = tv[loop[i]];
@@ -122,21 +137,20 @@ function fillMesh(ctx, mesh, tv, baseHue) {
 }
 
 export function drawMesh(ctx, mesh, pose, baseHue, opts = {}) {
-  const { fill = false, lineWidth = 1.5, glow = true, goldPulse = 0 } = opts;
+  const { fill = false, lineWidth = 2.2, glow = true, goldPulse = 0, energy = 0, aura = true } = opts;
   const { restLengths, restAngles } = ensureCache(mesh);
   const tv = transformVertices(mesh, pose);
 
-  // Uniform pose scale: deform is the deviation from this isotropic size.
-  // Without this, passing CHAR_SCALE as pose.scaleX/scaleY lights every edge.
   const uniformScale = Math.sqrt(Math.abs((pose.scaleX || 1) * (pose.scaleY || 1))) || 1;
 
-  if (fill) fillMesh(ctx, mesh, tv, baseHue);
+  if (aura && (energy > 0.05 || goldPulse > 0.05 || glow)) drawAura(ctx, tv, baseHue, energy, goldPulse);
+  if (fill) fillMesh(ctx, mesh, tv, baseHue, energy);
 
   ctx.save();
   ctx.lineWidth = lineWidth;
   ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
 
-  // First pass: high-deform edges get an additive glow.
   if (glow) {
     ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < mesh.edges.length; i++) {
@@ -145,16 +159,16 @@ export function drawMesh(ctx, mesh, pose, baseHue, opts = {}) {
       const len = Math.hypot(p1.x - p0.x, p1.y - p0.y);
       const effectiveRest = restLengths[i] * uniformScale;
       const deform = effectiveRest > 0 ? Math.abs(len - effectiveRest) / effectiveRest : 0;
-      if (deform < 0.14) continue;
+      const glowAmt = deform + energy * 0.12;
+      if (glowAmt < 0.05) continue;
       const ang = Math.atan2(p1.y - p0.y, p1.x - p0.x);
-      ctx.strokeStyle = edgeColor(baseHue, ang, deform, 0.28, goldPulse);
-      ctx.lineWidth = lineWidth + 3.5 * deform;
+      ctx.strokeStyle = edgeColor(baseHue, ang, deform, 0.38 + energy * 0.15, goldPulse, energy);
+      ctx.lineWidth = lineWidth + 5 * glowAmt;
       ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
     }
     ctx.lineWidth = lineWidth;
   }
 
-  // Second pass: every edge, base stroke.
   ctx.globalCompositeOperation = 'source-over';
   for (let i = 0; i < mesh.edges.length; i++) {
     const [a, b] = mesh.edges[i];
@@ -163,7 +177,7 @@ export function drawMesh(ctx, mesh, pose, baseHue, opts = {}) {
     const effectiveRest = restLengths[i] * uniformScale;
     const deform = effectiveRest > 0 ? Math.abs(len - effectiveRest) / effectiveRest : 0;
     const ang = Math.atan2(p1.y - p0.y, p1.x - p0.x);
-    ctx.strokeStyle = edgeColor(baseHue, ang, deform, 0.9, goldPulse);
+    ctx.strokeStyle = edgeColor(baseHue, ang, deform, 0.95, goldPulse, energy);
     ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
   }
   ctx.restore();

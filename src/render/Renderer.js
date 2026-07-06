@@ -39,7 +39,7 @@ export class Renderer {
       this._drawGround(ctx, canvas, pose, sim.midio.groundY);
     }
 
-    if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
+    if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY, sim.midio.screenX);
     const edgeLight = biomeManager ? biomeManager.edgeLight(sim.timeMs) : null;
     if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY, sim.ground, sim.timeMs, edgeLight);
     if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
@@ -65,7 +65,7 @@ export class Renderer {
     if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(r0) && Number.isFinite(r1)) {
       const vignette = ctx.createRadialGradient(cx, cy, r0, cx, cy, r1);
       vignette.addColorStop(0, 'rgba(0,0,0,0)');
-      vignette.addColorStop(1, 'rgba(0,0,0,0.35)');
+      vignette.addColorStop(1, 'rgba(0,0,0,0.14)');
       ctx.fillStyle = vignette;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
@@ -98,24 +98,42 @@ export class Renderer {
 
   _drawMidio(ctx, pose, groundY) {
     const mesh = pose.mesh || {};
+    const energy = mesh.energy || 0;
+    const x = pose.midioX + (mesh.driftX || 0);
+    const y = pose.midioY + (mesh.driftY || 0);
+    if (energy > 0.1 || mesh.goldPulse > 0.1) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(x, y - 20, 0, x, y - 20, 70 + 40 * energy);
+      g.addColorStop(0, `rgba(255,220,120,${0.15 + mesh.goldPulse * 0.2})`);
+      g.addColorStop(0.5, `rgba(255,140,60,${0.08 + energy * 0.12})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y - 20, 70 + 40 * energy, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
     drawMesh(ctx, MIDIO_MESH, {
-      x: pose.midioX + (mesh.driftX || 0),
-      y: pose.midioY + (mesh.driftY || 0),
+      x, y,
       scaleX: pose.scaleX * (mesh.blink || 1) * MIDIO_SCALE,
       scaleY: pose.scaleY * (mesh.blink || 1) * MIDIO_SCALE,
       leanDeg: pose.leanDeg, spin: mesh.spin || 0, armFlare: mesh.armFlare || 0,
-    }, MIDIO_MESH.baseHue, { fill: true, lineWidth: 1.5, glow: true, goldPulse: mesh.goldPulse || 0 });
+    }, MIDIO_MESH.baseHue, { fill: true, lineWidth: 2.4, glow: true, goldPulse: mesh.goldPulse || 0, energy });
   }
 
   _drawMidioGhosts(ctx, sim) {
     if (!sim || !sim.performer) return;
     const ghosts = sim.performer.ghosts();
     for (const g of ghosts) {
+      ctx.save();
+      ctx.globalAlpha = g.alpha || 0.5;
       drawMesh(ctx, MIDIO_MESH, {
         x: g.x, y: g.y,
         scaleX: g.scaleX * MIDIO_SCALE, scaleY: g.scaleY * MIDIO_SCALE,
         leanDeg: g.leanDeg, spin: g.spin, armFlare: g.armFlare,
-      }, MIDIO_MESH.baseHue, { fill: false, lineWidth: 1, glow: false, goldPulse: 0 });
+      }, MIDIO_MESH.baseHue, { fill: true, lineWidth: 1.8, glow: true, energy: g.alpha * 0.5, aura: false });
+      ctx.restore();
     }
   }
 }

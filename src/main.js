@@ -190,7 +190,11 @@ function frame(tRaf) {
 
   const alpha = acc / STEP_MS;
   renderer.draw(sim, alpha, perfGovernor);
-  comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
+  const dm = sim.comboSystem.displayM;
+  comboReadoutEl.textContent = `×${dm.toFixed(1)}`;
+  const pulse = 1 + 0.12 * Math.sin(simTime * 0.012) + (dm > 1.5 ? 0.08 : 0);
+  comboReadoutEl.style.transform = `scale(${pulse})`;
+  comboReadoutEl.style.color = dm >= 2 ? '#ffd76a' : dm >= 1.5 ? '#ffe8a8' : '';
 
   if (perfGovernor.visionAllowed) visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();

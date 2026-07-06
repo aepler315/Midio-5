@@ -146,6 +146,8 @@ export class Simulation {
     this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm, this.perfMul);
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
 
+    const comboZoom = 1 + 0.04 * Math.max(0, this.comboSystem.M - 1);
+    if (comboZoom > 1.01) this.camera.punch(comboZoom);
     this.camera.update(dtSec, this.calm);
     this.paramBus.step();
 
