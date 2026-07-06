@@ -44,7 +44,7 @@ export class Simulation {
     // reference) proportional to the actual canvas, so the cast's roam range
     // scales with the screen instead of staying pinned to fixed pixel offsets.
     const worldScale = canvasWidth / 1280;
-    this.midasus = new Midasus(conductor.timeline, this.midio, {
+    this.midasus = new Midasus(conductor, this.midio, {
       groundY: this.midio.groundY, ceilingY: canvasHeight * (40 / 720), worldScale,
     });
     this.broshi = new Broshi(conductor, paramBus, { worldScale });
@@ -126,14 +126,14 @@ export class Simulation {
 
     this.comboSystem.update(nowMs, this.jump.beatPeriodMs);
 
-    // Midio stage presence: writes scale/lean/poseExtras now that jump/combo are current.
-    this.performer.update(nowMs, dtSec, this.jump, this.comboSystem, this.calm, this.midio, this.conductor);
-
     const worldSpeed = WORLD_SPEED_PX_S * this.paramBus.live.scrollSpeed;
     this.worldX += worldSpeed * dtSec;
 
     this.obstacles.update(nowMs, this.worldX, worldSpeed / 1000);
     this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.obstacles);
+
+    // Midio stage presence: writes scale/lean/poseExtras from telegraph.a + jump/combo state.
+    this.performer.update(nowMs, dtSec, this.jump, this.comboSystem, this.calm, this.midio, this.conductor, this.telegraph);
     this.impactFX.step(dtSec);
 
     this.calm.update(nowMs, dtSec, this.energyCurves);

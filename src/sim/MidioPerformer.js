@@ -6,7 +6,7 @@ import { Role } from '../core/NoteEvent.js';
 import { clamp, mulberry32 } from '../utils/math.js';
 
 const SPIN_PHASE = { launch: 0.0, apex: 0.35, fall: 0.65, land: 1.0 };
-const GHOST_FRAMES = 6;
+const GHOST_FRAMES = 10;
 const MILESTONES = [5, 10, 20];
 
 const easeInOutC1 = (t) => {
@@ -26,13 +26,16 @@ export class MidioPerformer {
     this._prevY = 0;
     this._midasus = null; // set by Simulation
     this._sparkled = false;
+    this._kickPulseUntilMs = -Infinity;
+    this._lastKickMs = -Infinity;
   }
 
   setMidasus(midasus) { this._midasus = midasus; }
 
-  update(nowMs, dtSec, jump, comboSystem, calm, midio, conductor) {
+  update(nowMs, dtSec, jump, comboSystem, calm, midio, conductor, telegraph) {
     const beatPeriodMs = jump.beatPeriodMs || 500;
     const calmC = calm ? calm.C : 0;
+    const a = telegraph ? telegraph.a : 0;
 
     // --- idle / calm motion (also partially active during flight) ---
     const breath = Math.sin(nowMs * 0.00155) * 0.02 * (0.6 + 0.4 * calmC);
@@ -48,12 +51,26 @@ export class MidioPerformer {
       const isKick = conductor.nearestEventMs(
         (e) => e.role === Role.RHYTHM && e.kick, nowMs, 40,
       );
-      if (!isKick) strut = Math.sin(beatPhase * Math.PI) * 0.035 * (1 - calmC * 0.5);
+      if (!isKick) strut = Math.sin(beatPhase * Math.PI) * 0.065 * (1 - calmC * 0.5);
     }
 
-    // --- apex tricks: spin or backflip on high-velocity jump or combo ≥1.5 ---
+    // Kick pulse: +0.04 scaleY for 120ms on each kick while grounded.
+    let kickPulse = 0;
+    if (jump.state === 'GROUND') {
+      const kickEvt = conductor.nearestEventMs(
+        (e) => e.role === Role.RHYTHM && e.kick, nowMs, 20,
+      );
+      if (kickEvt && Math.abs(kickEvt.tMs - nowMs) < 12 && kickEvt.tMs !== this._lastKickMs) {
+        this._lastKickMs = kickEvt.tMs;
+        this._kickPulseUntilMs = nowMs + 120;
+      }
+      if (nowMs < this._kickPulseUntilMs) kickPulse = 0.04;
+    }
+
+    // --- apex tricks: spin or backflip on high-velocity jump or combo ≥1.0 ---
     let spin = 0;
-    if (jump.state === 'AIR' && (jump.lastVel > 0.55 || (comboSystem && comboSystem.M >= 1.5))) {
+    let u = 0;
+    if (jump.state === 'AIR' && (jump.lastVel > 0.40 || (comboSystem && comboSystem.M >= 1.0))) {
       if (!this._spin && jump.airborne) {
         // Trigger once per jump at launch.
         const kind = this._pickKind();
@@ -67,12 +84,14 @@ export class MidioPerformer {
     }
     let apexSparkle = false;
     if (this._spin) {
-      const u = clamp((nowMs - this._spin.startMs) / this._spin.D, 0, 1);
+      u = clamp((nowMs - this._spin.startMs) / this._spin.D, 0, 1);
       const p = easeInOutC1(clamp((u - SPIN_PHASE.launch) / (SPIN_PHASE.land - SPIN_PHASE.launch), 0, 1));
       spin = p * (this._spin.kind === 'backflip' ? -Math.PI : Math.PI * 2) * this._spin.dir;
       // Apex sparkle at the top of the arc (u ~ A+B/2).
       if (!this._sparkled && u >= 0.45 && u <= 0.55) { apexSparkle = true; this._sparkled = true; }
       if (u >= 1) { this._spin = null; this._sparkled = false; }
+    } else if (jump.state === 'AIR' && jump.D > 0) {
+      u = clamp((nowMs - jump.jumpStartMs) / jump.D, 0, 1);
     }
     if (this._midasus && apexSparkle) {
       this._midasus.burstAt(midio.screenX, midio.renderY - 30, 16, 60); // golden sparkle
@@ -96,13 +115,27 @@ export class MidioPerformer {
     }
     if (this._goldPulse > 0) {
       goldPulse = this._goldPulse;
-      this._goldPulse = Math.max(0, this._goldPulse - dtSec / 0.45);
+      this._goldPulse = Math.max(0, this._goldPulse - dtSec / 0.35);
     }
 
     // --- compose pose ---
-    midio.scaleX = 1 + breath + driftX * 0.015 + strut * 0.5;
-    midio.scaleY = 1 - breath + crouch + strut;
-    midio.leanDeg = sway + (jump.state === 'AIR' ? jump.lastVel * 8 : 0);
+    if (jump.state === 'GROUND') {
+      const anticY = 1 - 0.22 * a * a * a;
+      const anticX = 1 / anticY;
+      midio.scaleY = anticY + strut + kickPulse - breath + crouch;
+      midio.scaleX = anticX * (1 + breath * 0.5);
+      midio.leanDeg = 6 * a + sway;
+    } else {
+      const launchSquash = jump.airborne && (nowMs - jump.jumpStartMs) < 90;
+      if (launchSquash) {
+        midio.scaleY = 1.42;
+        midio.scaleX = 0.72;
+      } else {
+        midio.scaleY = 1 - breath + crouch;
+        midio.scaleX = 1 + breath * 0.5;
+      }
+      midio.leanDeg = sway + jump.lastVel * 14 + 6 * Math.sin(u * Math.PI);
+    }
 
     midio.poseExtras = {
       spin,
@@ -116,7 +149,7 @@ export class MidioPerformer {
 
     // --- ghost trail: ring-buffer of recent live poses during launch/fall ---
     const speed = jump.state === 'AIR' ? Math.abs(jump.y - (this._prevY || 0)) / Math.max(dtSec, 1e-6) : 0;
-    if (speed > 50) {
+    if (speed > 28) {
       this._ghosts.unshift({
         x: midio.screenX + driftX,
         y: midio.renderY + driftY,
@@ -125,7 +158,7 @@ export class MidioPerformer {
         leanDeg: midio.leanDeg,
         spin,
         armFlare,
-        alpha: clamp((speed - 50) / 600, 0, 0.6),
+        alpha: clamp((speed - 28) / 600, 0, 0.6),
       });
       if (this._ghosts.length > GHOST_FRAMES) this._ghosts.length = GHOST_FRAMES;
     } else if (this._ghosts.length) {
