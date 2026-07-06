@@ -15,8 +15,10 @@ test('Midasus consumes melody notes in strict order, never skipping', () => {
   for (let i = 0; i < 20; i++) {
     timeline.push(makeNoteEvent({ tMs: i * 100, pitch: 60 + (i % 7), vel: 0.6, role: Role.MELODY, src: 'midi' }));
   }
+  const conductor = new Conductor();
+  conductor.load({ timeline, barGrid: [], durationMs: 2100 });
   const midio = { screenX: 200, groundY: 480, y: 0 };
-  const m = new Midasus(timeline, midio, { groundY: 480, ceilingY: 40 });
+  const m = new Midasus(conductor, midio, { groundY: 480, ceilingY: 40 });
   stepFor((t, dt) => m.update(t, dt), 2100);
   assert.equal(m.i, timeline.length); // every note consumed
 });
@@ -27,16 +29,20 @@ test('Midasus handles a burst of several notes landing in a single sim step', ()
     makeNoteEvent({ tMs: 11, pitch: 64, vel: 0.5, role: Role.MELODY, src: 'midi' }),
     makeNoteEvent({ tMs: 12, pitch: 67, vel: 0.5, role: Role.MELODY, src: 'midi' }),
   ];
+  const conductor = new Conductor();
+  conductor.load({ timeline, barGrid: [], durationMs: 100 });
   const midio = { screenX: 200, groundY: 480, y: 0 };
-  const m = new Midasus(timeline, midio, { groundY: 480, ceilingY: 40 });
+  const m = new Midasus(conductor, midio, { groundY: 480, ceilingY: 40 });
   m.update(20, 1000 / 120 / 1000); // single step past all three onsets
   assert.equal(m.i, 3);
 });
 
 test('Midasus falls into orbital wander after 800ms of silence', () => {
   const timeline = [makeNoteEvent({ tMs: 0, pitch: 60, vel: 0.5, role: Role.MELODY, src: 'midi' })];
+  const conductor = new Conductor();
+  conductor.load({ timeline, barGrid: [], durationMs: 2000 });
   const midio = { screenX: 200, groundY: 480, y: 0 };
-  const m = new Midasus(timeline, midio, { groundY: 480, ceilingY: 40 });
+  const m = new Midasus(conductor, midio, { groundY: 480, ceilingY: 40 });
   stepFor((t, dt) => m.update(t, dt), 200);
   assert.ok(m.rest < 0.5);
   stepFor((t, dt) => m.update(200 + t, dt), 1200);

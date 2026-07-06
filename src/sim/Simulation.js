@@ -38,7 +38,10 @@ export class Simulation {
     this.impactFX = new ImpactFX();
     this.telegraph = new TelegraphScanner();
     this.obstacles = new ObstacleSpawner(paramBus);
-    this.obstacles.buildCandidates(conductor.timeline, 60000 / bpm);
+    this.obstacles.buildCandidates(conductor.timeline, 60000 / bpm, {
+      energyCurves: this.energyCurves,
+      barGrid: conductor.barGrid,
+    });
 
     // worldScale keeps companion excursion amplitudes (tuned against a 1280px
     // reference) proportional to the actual canvas, so the cast's roam range
@@ -84,7 +87,7 @@ export class Simulation {
           tMs: o.tMs,
           height: o.height + (this.midio.groundY - this.ground.heightAt(o.wx, this.timeMs)),
         } : null;
-        this.jump.onKick(evt, this.timeMs, obstacle);
+        this.jump.onKick(evt, this.timeMs, obstacle, this.comboSystem.M);
       }
     });
   }

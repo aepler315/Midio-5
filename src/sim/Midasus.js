@@ -1,39 +1,39 @@
 // Midasus, the airborne fairy (spec §3.1). Obeys the score: absolute
 // pitch-space coordinates, zero inertia tolerance. Sequential no-skip note
-// tracking — each trigger launches the fairy toward the note with a velocity
-// impulse, and a PD pursuit controller carries it there along a continuous
-// arc (so it always flies, never teleports). A Lissajous orbit governs rests.
+// tracking — each trigger latches the note target for 85% of the gap to the
+// next onset, with a 35% position snap and velocity kick; a PD pursuit
+// controller carries the fairy there along a continuous arc. A Lissajous
+// orbit governs rests. Pitch range is a rolling 8-bar p10–p90 window.
 import { Role } from '../core/NoteEvent.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { clamp, lerp, mulberry32 } from '../utils/math.js';
-import { drawMesh, MIDASUS_MESH, CHAR_SCALE } from '../render/MeshDrawer.js';
+import { drawMesh, MIDASUS_MESH, MIDASUS_SCALE } from '../render/MeshDrawer.js';
 
 const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
-const KP = 90, KD = 12;
-// Note-trigger launch: a velocity impulse toward the target (px of velocity
-// per px of distance), plus momentum damping so direction changes read
-// instantly. Capped so a far/high-velocity note can't sling the fairy past
-// the target — the PD controller finishes the approach smoothly.
-const KICK = 3.0;
-const KICK_CAP = 1500; // px/s max launch speed from a single note
-const DAMP = 0.45;
+const LATCH_FRAC = 0.85;
+const KP_LATCH = 140, KP_ORBIT = 90, KD = 16;
+const KICK = 4.5;
+const KICK_CAP = 1500;
+const DAMP = 0.30;
+const SNAP = 0.35;
 
 export class Midasus {
-  constructor(timeline, midio, { groundY = 480, ceilingY = 40, seed = 777, worldScale = 1 } = {}) {
+  constructor(conductor, midio, { groundY = 480, ceilingY = 40, seed = 777, worldScale = 1 } = {}) {
+    this.conductor = conductor;
     this.midio = midio;
     this.yFloor = groundY;
     this.yCeiling = ceilingY;
     this.worldScale = worldScale;
 
-    this.q = timeline.filter((e) => e.role === Role.MELODY).sort((a, b) => a.tMs - b.tMs);
+    this.q = conductor.timeline.filter((e) => e.role === Role.MELODY).sort((a, b) => a.tMs - b.tMs);
     this.i = 0;
 
     let pMin = 48, pMax = 84;
     if (this.q.length) {
       const pitches = this.q.map((n) => n.pitch).sort((a, b) => a - b);
-      pMin = pitches[Math.floor(0.05 * pitches.length)];
-      pMax = pitches[Math.min(pitches.length - 1, Math.floor(0.95 * pitches.length))];
+      pMin = pitches[Math.floor(0.10 * pitches.length)];
+      pMax = pitches[Math.min(pitches.length - 1, Math.floor(0.90 * pitches.length))];
       if (pMax <= pMin) pMax = pMin + 12;
     }
     this.pMin = pMin;
@@ -43,21 +43,48 @@ export class Midasus {
     this.v = { x: 0, y: 0 };
     this.lastNoteMs = -Infinity;
     this.hue = 200;
-    this.rest = 0; // 0 = active/full color, 1 = resting/desaturated
+    this.rest = 0;
+    this._latched = null;
+    this._prevNoteTMs = -Infinity;
+    this._barPeriodMs = 2000;
+    this._simMs = 0;
 
     this.rand = mulberry32(seed);
     this.phi = 0;
     this.particles = new ObjectPool(() => ({}), (o, init) => Object.assign(o, init, { age: 0 }), 600);
     this._emitAccum = 0;
+
+    conductor.onBar((bar) => this._refreshPitchWindow(bar));
+  }
+
+  _refreshPitchWindow(bar) {
+    const bars = this.conductor.barGrid;
+    const idx = bars.findIndex((b) => b.ms === bar.ms);
+    if (idx > 0) this._barPeriodMs = bar.ms - bars[idx - 1].ms;
+    else if (bars.length > 1) this._barPeriodMs = bars[1].ms - bars[0].ms;
+
+    const windowStart = bar.ms - 8 * this._barPeriodMs;
+    const windowEnd = bar.ms + this._barPeriodMs;
+    const pitches = this.q
+      .filter((n) => n.tMs >= windowStart && n.tMs < windowEnd)
+      .map((n) => n.pitch)
+      .sort((a, b) => a - b);
+    if (!pitches.length) return;
+
+    this.pMin = pitches[Math.floor(0.10 * pitches.length)];
+    this.pMax = pitches[Math.min(pitches.length - 1, Math.floor(0.90 * pitches.length))];
+    if (this.pMax <= this.pMin) this.pMax = this.pMin + 12;
   }
 
   _target(n) {
-    const norm = clamp((n.pitch - this.pMin) / (this.pMax - this.pMin), 0, 1);
-    const y = lerp(this.yFloor - 120, this.yCeiling + 60, norm);
-    // Hot notes push the fairy much further out ahead of Midio — a wide,
-    // energetic range rather than a small tether (scaled to the screen).
-    const x = this.midio.screenX + (90 + 260 * n.vel) * this.worldScale;
+    const registerNorm = clamp((n.pitch - this.pMin) / (this.pMax - this.pMin), 0, 1);
+    const y = lerp(this.yFloor - 120, this.yCeiling + 60, registerNorm);
+    const x = this.midio.screenX + (70 + 140 * n.vel + 40 * registerNorm) * this.worldScale;
     return { x, y };
+  }
+
+  targetFor(note) {
+    return this._target(note);
   }
 
   _orbitAnchor(nowMs, calm = null) {
@@ -65,7 +92,6 @@ export class Midasus {
     const ax = this.midio.screenX;
     const ay = this.midio.groundY - this.midio.y - 130;
     const t = nowMs / 1000;
-    // Calm = wider, slower orbit; loud = tighter, faster.
     const axAmp = (140 + 100 * C) * this.worldScale;
     const ayAmp = (80 + 55 * C) * this.worldScale;
     const freqMul = 1 - 0.35 * C;
@@ -87,7 +113,6 @@ export class Midasus {
     }
   }
 
-  /** External callers (MidioPerformer apex sparkle) can emit a burst at a point. */
   burstAt(x, y, n, hue = this.hue) {
     for (let i = 0; i < n; i++) {
       const ang = this.rand() * Math.PI * 2;
@@ -110,43 +135,100 @@ export class Midasus {
     });
   }
 
-  update(nowMs, dtSec, calm = null) {
-    const C = calm ? calm.C : 0;
-    while (this.i < this.q.length && this.q[this.i].tMs <= nowMs) {
-      const n = this.q[this.i++];
-      const t = this._target(n);
-      // Launch toward the note target with a capped velocity impulse — the PD
-      // controller then flies the fairy there along a continuous arc. (A prior
-      // 70% position snap made far/high-velocity notes teleport instantly.)
-      const dx = t.x - this.p.x, dy = t.y - this.p.y;
-      const kick = Math.min(KICK_CAP, Math.hypot(dx, dy) * KICK);
-      const inv = kick / (Math.hypot(dx, dy) || 1);
-      this.v.x = this.v.x * DAMP + dx * inv;
-      this.v.y = this.v.y * DAMP + dy * inv;
-      this.hue = this._hueOf(n.pitch);
-      this._burst(8 + 24 * n.vel, this.hue);
-      this.lastNoteMs = nowMs;
-    }
-
-    this.phi += (0.15 - 0.05 * C) * dtSec;
-
+  _pursuitTarget(nowMs) {
     const nxt = this.q[this.i];
     const silence = nowMs - this.lastNoteMs >= SILENCE_MS || !nxt;
-    const target = silence ? this._orbitAnchor(nowMs, calm) : this._target(nxt);
+    const latchedActive = this._latched && nowMs < this._latched.untilMs;
+
+    if (latchedActive) {
+      // Drift from the latched onset toward the next note across the 85% hold window.
+      const blend = clamp((nowMs - this._latched.onsetMs) / (this._latched.untilMs - this._latched.onsetMs), 0, 1);
+      if (this._latched.nxtNote) {
+        const ahead = this._target(this._latched.nxtNote);
+        return {
+          x: lerp(this._latched.x, ahead.x, blend),
+          y: lerp(this._latched.y, ahead.y, blend),
+        };
+      }
+      return { x: this._latched.x, y: this._latched.y };
+    }
+    if (silence) return this._orbitAnchor(nowMs);
+    return this._target(nxt);
+  }
+
+  _pursuitStep(nowMs, dtSec, calm = null) {
+    const C = calm ? calm.C : 0;
+    const nxt = this.q[this.i];
+    const silence = nowMs - this.lastNoteMs >= SILENCE_MS || !nxt;
+    const latchedActive = this._latched && nowMs < this._latched.untilMs;
+    const target = this._pursuitTarget(nowMs);
+    const kp = (latchedActive || !silence) ? KP_LATCH : KP_ORBIT;
     const restTarget = silence ? 1 : 0;
     this.rest += clamp((restTarget - this.rest) * (dtSec / BLEND_SEC), -1, 1);
     this.rest = clamp(this.rest, 0, 1);
 
-    this.v.x += (KP * (target.x - this.p.x) - KD * this.v.x) * dtSec;
-    this.v.y += (KP * (target.y - this.p.y) - KD * this.v.y) * dtSec;
+    this.v.x += (kp * (target.x - this.p.x) - KD * this.v.x) * dtSec;
+    this.v.y += (kp * (target.y - this.p.y) - KD * this.v.y) * dtSec;
     this.p.x += this.v.x * dtSec;
     this.p.y += this.v.y * dtSec;
 
+    this.phi += (0.15 - 0.05 * C) * dtSec;
     const speed = Math.hypot(this.v.x, this.v.y);
     const rateMul = 0.15 + 0.85 * (1 - this.rest);
     const rate = (2 + 26 * Math.min(1, speed / 1400)) * rateMul;
     this._emitAccum += rate * dtSec * 60;
     while (this._emitAccum >= 1) { this._emitAccum -= 1; this._emitStreak(speed, C); }
+  }
+
+  _consumeNote(n, nxtNote) {
+    const t = this._target(n);
+    const gapToNext = nxtNote ? (nxtNote.tMs - n.tMs) : SILENCE_MS;
+    const hue = this._hueOf(n.pitch);
+    this._latched = {
+      x: t.x, y: t.y, hue,
+      onsetMs: n.tMs,
+      nxtNote: nxtNote || null,
+      untilMs: n.tMs + LATCH_FRAC * gapToNext,
+    };
+
+    const dx0 = t.x - this.p.x, dy0 = t.y - this.p.y;
+    const dist0 = Math.hypot(dx0, dy0) || 1;
+    const kick = Math.min(KICK_CAP, dist0 * KICK);
+    const inv = kick / dist0;
+    this.v.x = this.v.x * DAMP + dx0 * inv;
+    this.v.y = this.v.y * DAMP + dy0 * inv;
+    this.p.x += SNAP * dx0;
+    this.p.y += SNAP * dy0;
+    if (n.tMs - this._prevNoteTMs > SILENCE_MS) {
+      const rx = t.x - this.p.x, ry = t.y - this.p.y;
+      this.p.x += SNAP * rx;
+      this.p.y += SNAP * ry;
+      this.v.x = rx / 0.04;
+      this.v.y = ry / 0.04;
+    }
+    this.hue = hue;
+    this._burst(8 + 24 * n.vel, this.hue);
+    this.lastNoteMs = n.tMs;
+    this._prevNoteTMs = n.tMs;
+  }
+
+  update(nowMs, dtSec, calm = null) {
+    const startMs = this._simMs || (nowMs - dtSec * 1000);
+    let cursor = startMs;
+
+    while (this.i < this.q.length && this.q[this.i].tMs <= nowMs) {
+      const n = this.q[this.i];
+      const onsetMs = n.tMs;
+      if (onsetMs > cursor) {
+        this._pursuitStep(onsetMs, (onsetMs - cursor) / 1000, calm);
+        cursor = onsetMs;
+      }
+      this._consumeNote(n, this.q[this.i + 1]);
+      this.i++;
+    }
+
+    if (nowMs > cursor) this._pursuitStep(nowMs, (nowMs - cursor) / 1000, calm);
+    this._simMs = nowMs;
 
     this.particles.step(dtSec, (o, dt) => {
       o.x += o.vx * dt; o.y += o.vy * dt; o.age += dt;
@@ -161,7 +243,6 @@ export class Midasus {
       const size = p.size * (1 - t);
       if (size <= 0) continue;
       ctx.fillStyle = `hsla(${p.hue},${sat}%,65%,${(1 - t) * 0.9})`;
-      // Calm = fainter, longer-lived ambient trail.
       const alpha = (1 - t) * 0.9;
       ctx.globalAlpha = alpha;
       ctx.beginPath();
@@ -171,7 +252,7 @@ export class Midasus {
     ctx.globalAlpha = 1;
     drawMesh(ctx, MIDASUS_MESH, {
       x: this.p.x, y: this.p.y,
-      scaleX: CHAR_SCALE, scaleY: CHAR_SCALE,
+      scaleX: MIDASUS_SCALE, scaleY: MIDASUS_SCALE,
     }, this.hue, { fill: false, lineWidth: 1.5, glow: true });
   }
 }
