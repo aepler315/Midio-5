@@ -8,6 +8,16 @@ import { mulberry32 } from '../utils/math.js';
 import { planTerraces } from './TerrainHazardPlanner.js';
 
 const SPAWN_LEAD_MS = 2500;
+const BERM_BASE_SPREAD = 1.38;
+const PROP_SCALE = 0.72;
+
+function groundYAt(ground, groundY, wx, nowMs) {
+  return ground ? ground.heightAt(wx, nowMs) : groundY;
+}
+
+function screenX(wx, worldX, originX) {
+  return wx - worldX + originX;
+}
 
 export class ObstacleSpawner {
   constructor(paramBus, { seed = 99, width = 28 } = {}) {
@@ -48,7 +58,7 @@ export class ObstacleSpawner {
         tMs: c.tMs,
         height: c.height,
         width: c.width ?? this.width,
-        kind: c.kind ?? 'terrace',
+        kind: c.kind ?? 'berm',
         colliding: c.colliding !== false,
         passed: false,
       });
@@ -84,41 +94,121 @@ export class ObstacleSpawner {
 
   draw(ctx, worldX, originX, groundY, ground = null, nowMs = 0, edgeLight = null) {
     for (const o of this.active) {
-      const x = o.wx - worldX + originX;
-      if (x < -60 || x > 2200) continue;
-      const baseY = ground ? ground.heightAt(o.wx, nowMs) : groundY;
-      const left = x - o.width / 2;
-      const top = baseY - o.height;
+      const cx = screenX(o.wx, worldX, originX);
+      if (cx < -80 || cx > 2200) continue;
 
-      const isProp = o.colliding === false;
-      const bodyGrad = ctx.createLinearGradient(0, top, 0, baseY);
-      if (isProp) {
-        bodyGrad.addColorStop(0, edgeLight ? 'rgba(60,80,90,0.55)' : 'rgba(70,90,100,0.65)');
-        bodyGrad.addColorStop(1, edgeLight ? 'rgba(30,40,50,0.45)' : 'rgba(40,55,65,0.55)');
+      const kind = o.kind ?? (o.colliding === false ? 'prop' : 'berm');
+      if (o.colliding === false || kind === 'stump' || kind === 'crystal' || kind === 'prop') {
+        this._drawProp(ctx, o, cx, worldX, groundY, ground, nowMs, kind);
       } else {
-        bodyGrad.addColorStop(0, edgeLight ? 'rgba(80,40,70,0.95)' : '#8a3a6b');
-        bodyGrad.addColorStop(1, edgeLight ? 'rgba(40,15,35,0.90)' : '#5a244d');
-      }
-      ctx.fillStyle = bodyGrad;
-      ctx.fillRect(left, top, o.width, o.height);
-
-      if (edgeLight) {
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.strokeStyle = edgeLight;
-        ctx.lineWidth = isProp ? 1 : 2;
-        ctx.shadowColor = edgeLight;
-        ctx.shadowBlur = isProp ? 4 : 10;
-        ctx.beginPath();
-        ctx.moveTo(left, top);
-        ctx.lineTo(left + o.width, top);
-        ctx.stroke();
-        ctx.restore();
-      } else {
-        ctx.strokeStyle = isProp ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.25)';
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(left, top, o.width, o.height);
+        this._drawBerm(ctx, o, cx, groundY, ground, nowMs, edgeLight);
       }
     }
+  }
+
+  /** Colliding berm — trapezoid wider at the base, base corners follow ground.heightAt. */
+  _drawBerm(ctx, o, cx, groundY, ground, nowMs, edgeLight) {
+    const topW = o.width;
+    const baseW = o.width * BERM_BASE_SPREAD;
+
+    const wxL = o.wx - baseW / 2;
+    const wxR = o.wx + baseW / 2;
+    const yBL = groundYAt(ground, groundY, wxL, nowMs);
+    const yBR = groundYAt(ground, groundY, wxR, nowMs);
+    const yCenter = groundYAt(ground, groundY, o.wx, nowMs);
+    const topY = yCenter - o.height;
+
+    const xBL = cx - baseW / 2;
+    const xBR = cx + baseW / 2;
+    const xTL = cx - topW / 2;
+    const xTR = cx + topW / 2;
+    const baseY = Math.max(yBL, yBR);
+
+    const bodyGrad = ctx.createLinearGradient(0, topY, 0, baseY);
+    if (edgeLight) {
+      bodyGrad.addColorStop(0, 'rgba(80,40,70,0.95)');
+      bodyGrad.addColorStop(1, 'rgba(40,15,35,0.90)');
+    } else {
+      bodyGrad.addColorStop(0, '#8a3a6b');
+      bodyGrad.addColorStop(1, '#5a244d');
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(xBL, yBL);
+    ctx.lineTo(xBR, yBR);
+    ctx.lineTo(xTR, topY);
+    ctx.lineTo(xTL, topY);
+    ctx.closePath();
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+
+    if (edgeLight) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = edgeLight;
+      ctx.lineWidth = 2;
+      ctx.shadowColor = edgeLight;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.moveTo(xTL, topY);
+      ctx.lineTo(xTR, topY);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(xTL, topY);
+      ctx.lineTo(xTR, topY);
+      ctx.stroke();
+    }
+  }
+
+  /** Decorative prop — smaller stump or crystal with a muted palette (no neon edge). */
+  _drawProp(ctx, o, cx, worldX, groundY, ground, nowMs, kind) {
+    const propKind = kind === 'stump' || kind === 'crystal' ? kind : (o.wx % 2 < 1 ? 'stump' : 'crystal');
+    const w = o.width * PROP_SCALE;
+    const h = o.height * PROP_SCALE;
+    const baseY = groundYAt(ground, groundY, o.wx, nowMs);
+    const topY = baseY - h;
+
+    if (propKind === 'crystal') {
+      const bodyGrad = ctx.createLinearGradient(0, topY, 0, baseY);
+      bodyGrad.addColorStop(0, 'rgba(60,80,90,0.55)');
+      bodyGrad.addColorStop(0.5, 'rgba(45,60,72,0.50)');
+      bodyGrad.addColorStop(1, 'rgba(30,40,50,0.45)');
+      ctx.beginPath();
+      ctx.moveTo(cx, topY - h * 0.12);
+      ctx.lineTo(cx + w / 2, baseY);
+      ctx.lineTo(cx - w / 2, baseY);
+      ctx.closePath();
+      ctx.fillStyle = bodyGrad;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      return;
+    }
+
+    // stump — short rounded column
+    const left = cx - w / 2;
+    const r = w * 0.22;
+    const bodyGrad = ctx.createLinearGradient(0, topY, 0, baseY);
+    bodyGrad.addColorStop(0, 'rgba(70,90,100,0.65)');
+    bodyGrad.addColorStop(1, 'rgba(40,55,65,0.55)');
+    ctx.beginPath();
+    ctx.moveTo(left + r, topY);
+    ctx.lineTo(left + w - r, topY);
+    ctx.quadraticCurveTo(left + w, topY, left + w, topY + r);
+    ctx.lineTo(left + w, baseY);
+    ctx.lineTo(left, baseY);
+    ctx.lineTo(left, topY + r);
+    ctx.quadraticCurveTo(left, topY, left + r, topY);
+    ctx.closePath();
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
 }

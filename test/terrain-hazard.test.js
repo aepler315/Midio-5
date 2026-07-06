@@ -37,7 +37,7 @@ test('weak accents become decorative props that never collide', () => {
   assert.ok(props.length > 0, 'demo timeline should yield decorative props');
 
   for (const p of props.slice(0, 3)) {
-    assert.equal(p.kind, 'prop');
+    assert.ok(['stump', 'crystal', 'prop'].includes(p.kind), `expected decorative kind, got ${p.kind}`);
     assert.equal(p.height, JumpPlanner.HEIGHT_TIERS[0]);
     obstacles.active.push({
       wx: 100, tMs: p.tMs, height: p.height, width: p.width, kind: 'prop', colliding: false, passed: false,
@@ -90,4 +90,5 @@ test('planTerraces yields tiered colliding heights from velocity and energy', ()
   const heights = new Set(colliding.map((c) => c.height));
   assert.ok(heights.size >= 2, `expected multiple tiers, got ${[...heights]}`);
   for (const h of heights) assert.ok(JumpPlanner.HEIGHT_TIERS.includes(h));
+  for (const c of colliding) assert.equal(c.kind, 'berm');
 });

@@ -64,11 +64,12 @@ export function planTerraces({
       : accentHeight(accent, energyCurves);
 
     if (accent.strength === Strength.WEAK) {
+      const propKind = rand() < 0.5 ? 'stump' : 'crystal';
       candidates.push({
         tMs: accent.tMs,
         height,
         width: PROP_WIDTH,
-        kind: 'prop',
+        kind: propKind,
         colliding: false,
       });
       continue;
@@ -86,7 +87,7 @@ export function planTerraces({
       tMs: snap.placeMs,
       height,
       width: PROP_WIDTH,
-      kind: accent.strength === Strength.STRONG ? 'terrace' : 'block',
+      kind: 'berm',
       colliding: true,
     });
     lastCollidingMs = snap.placeMs;
