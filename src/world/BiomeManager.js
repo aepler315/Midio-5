@@ -11,6 +11,22 @@ import { Role } from '../core/NoteEvent.js';
 
 const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
 const WORLD_SPEED_PX_S = 220;
+const STRIP_HEIGHT = 320; // matches generateSilhouette's default (SilhouetteGenerator.js); kept here so the silhouette/ground seam-gap math stays resolution-independent (ground-horizon-depth).
+
+// Per-layer depth model (ground-horizon-depth). nearer = more opaque = lower.
+// `alpha` delivers atmospheric perspective (the already-drawn sky shows through
+// distant ridges); `yOffsetPct` × the silhouette/ground gap closes the seam for
+// the nearest layer (L5 pins to the ground top). Consumed in _drawLayer + _drawHorizonEQ.
+export const DEPTH = Object.freeze({
+  L2: { alpha: 0.50, yOffsetPct: 0.00 },   // farthest, unchanged bottom anchor
+  L3: { alpha: 0.66, yOffsetPct: 0.33 },
+  L4: { alpha: 0.82, yOffsetPct: 0.66 },
+  L5: { alpha: 0.95, yOffsetPct: 1.00 },   // nearest, pinned to ground top
+});
+
+export function layerDepth(key) {
+  return DEPTH[key] ?? { alpha: 1, yOffsetPct: 0 };
+}
 
 export class BiomeManager {
   constructor({ conductor, paramBus, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed }) {
@@ -336,7 +352,7 @@ export class BiomeManager {
     // (odd indices 1,3,5) higher, smaller and dimmer — so the back bands
     // always peek through the gaps between the front ones, reading as two
     // stacked rows. Both layers use the same parallax so the interleaving
-    // never drifts apart; depth comes from baseline height, scale and alpha.
+    // never drifts apart; depth comes from baseline height, scale and alpha, with the feet re-seated to the parallax gap (ground-horizon-depth).
     const bands = this._eqSmooth;
     if (!bands) return;
     const barW = canvas.width / 7;
@@ -344,16 +360,22 @@ export class BiomeManager {
     const c = this.lerpCache.get(A.sky[1], B.sky[1], t);
     const { r, g: gg, b } = hexToRgb(c);
 
+    // ground-horizon-depth: seat the EQ feet just above the haze band where the
+    // silhouette ridges converge, so the bars read as living in the horizon.
+    const gap = this.groundY - (canvas.height - STRIP_HEIGHT);
+    const backBase  = canvas.height - STRIP_HEIGHT + layerDepth('L2').yOffsetPct * gap + 6;
+    const frontBase = canvas.height - STRIP_HEIGHT + layerDepth('L4').yOffsetPct * gap + 6;
+
     // Back row: the in-between (odd) bands — farther, so smaller/dimmer/higher.
     this._drawEQRow(ctx, canvas, bands, [1, 3, 5], {
       barW, parallax, r, g: gg, b,
-      baselineY: canvas.height * 0.47, maxH: canvas.height * 0.30,
+      baselineY: backBase, maxH: canvas.height * 0.30,
       alpha: 0.34, desat: 0.55,
     });
     // Front row: every other (even) band — nearer, so taller/brighter/lower.
     this._drawEQRow(ctx, canvas, bands, [0, 2, 4, 6], {
       barW, parallax, r, g: gg, b,
-      baselineY: canvas.height * 0.57, maxH: canvas.height * 0.42,
+      baselineY: frontBase, maxH: canvas.height * 0.42,
       alpha: 0.62, desat: 0,
     });
   }
@@ -413,26 +435,36 @@ export class BiomeManager {
   }
 
   _drawLayer(ctx, canvas, layerKey, scrollX, tint, t, A, B) {
+    // ground-horizon-depth: per-layer alpha gives atmospheric perspective
+    // (distant ridges translucent so the sky shows through) and yOffsetPct × the
+    // silhouette/ground gap lowers near ridges to meet the ground slab.
+    const d = layerDepth(layerKey);
+    const gap = this.groundY - (canvas.height - STRIP_HEIGHT);
+    const yOffset = d.yOffsetPct * gap;
     const stripsA = this.strips.get(A.name), stripsB = this.strips.get(B.name);
     ctx.save();
+    ctx.globalAlpha *= d.alpha; // near layers opaque, far layers haze out
     if (A.fx === 'heatShimmer' || B.fx === 'heatShimmer') {
       const alpha = A.fx === 'heatShimmer' ? 1 - t : t;
-      if (alpha > 0.05 && layerKey !== 'L5') { this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX); }
-      else drawTiledStrip(ctx, stripsA[layerKey], scrollX, canvas.width, canvas.height);
+      if (alpha > 0.05 && layerKey !== 'L5') { this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX, yOffset); }
+      else drawTiledStrip(ctx, stripsA[layerKey], scrollX, canvas.width, canvas.height, yOffset);
     } else {
-      drawTiledStrip(ctx, stripsA[layerKey], scrollX, canvas.width, canvas.height);
+      drawTiledStrip(ctx, stripsA[layerKey], scrollX, canvas.width, canvas.height, yOffset);
     }
     if (B !== A && t > 0.02) {
-      ctx.globalAlpha = t;
-      drawTiledStrip(ctx, stripsB[layerKey], scrollX, canvas.width, canvas.height);
-      ctx.globalAlpha = 1;
+      // Crossfade biome B in on top. Multiply (not overwrite) so the per-layer
+      // depth alpha still applies: effective alpha = d.alpha * t.
+      const prev = ctx.globalAlpha;
+      ctx.globalAlpha = prev * t;
+      drawTiledStrip(ctx, stripsB[layerKey], scrollX, canvas.width, canvas.height, yOffset);
+      ctx.globalAlpha = prev;
     }
     ctx.restore();
   }
 
-  _drawShimmered(ctx, canvas, strip, scrollX) {
+  _drawShimmered(ctx, canvas, strip, scrollX, yOffset = 0) {
     const w = strip.width, h = strip.height;
-    const baseY = canvas.height - h;
+    const baseY = canvas.height - h + yOffset; // ground-horizon-depth: thread layer yOffset
     let x0 = -(((scrollX % w) + w) % w);
     const step = 6;
     for (let sx = x0; sx < canvas.width; sx += w) {
@@ -452,7 +484,7 @@ export class BiomeManager {
       // vertical seams, and an EQ-reactive neon horizon edge. The surface
       // shape itself still comes from groundField.heightAt (unchanged — its
       // bounds are covered by ground.test.js).
-      const originX = 220; // Midio's screenX — worldX maps here
+      const originX = canvas.width * 0.26; // Midio's SCREEN_X_FRAC (src/sim/Midio.js) — keep in sync. Was a stale hardcoded 220; now matches Midio's actual screenX so the seam-sharpness peak (Step 5) and sliceTops anchor align with Midio + obstacles across resolutions.
       const tops = groundField.sliceTops(worldX, originX, nowMs);
       const { r, g: gg, b } = hexToRgb(groundColor);
 
@@ -488,11 +520,18 @@ export class BiomeManager {
       }
 
       // (c) Gradient vertical seams at each slice boundary — bright at the
-      //     surface, fading down into the slab.
+      //     surface, fading down into the slab. ground-horizon-depth platform
+      //     variation: per-seam brightness + thickness fall off with distance to
+      //     Midio, so platforms near Midio read crisper (foreground) and far
+      //     ones hazier (background) — the surface becomes a depth cue.
       for (const p of tops) {
+        const dx = Math.abs(p.x - originX);
+        const nd = Math.min(1, dx / (canvas.width * 0.5)); // 0 at Midio, 1 at far edge
+        const scale = 1 - 0.65 * nd;                        // 1 → 0.35 brightness
+        ctx.lineWidth = 0.75 + 0.75 * (1 - nd);             // 1.5px near → 0.75px far
         const sg = ctx.createLinearGradient(0, p.y, 0, canvas.height);
-        sg.addColorStop(0, 'rgba(255,255,255,0.32)');
-        sg.addColorStop(0.4, 'rgba(255,255,255,0.07)');
+        sg.addColorStop(0, `rgba(255,255,255,${0.32 * scale})`);
+        sg.addColorStop(0.4, `rgba(255,255,255,${0.07 * scale})`);
         sg.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.strokeStyle = sg;
         ctx.beginPath();
