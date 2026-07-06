@@ -165,19 +165,16 @@ export class GroundField {
     const i0 = Math.floor(f);
     const frac = f - i0;
     const h = this.h;
-    // h[i0] is the slice's height; blend only over the first/last 15% of the
-    // slice width so the surface reads as flat platforms separated by seams.
-    const blendWidth = 0.15;
+    // Smooth blend across slice boundaries — rolling hills, not faceted ramps.
+    const blendWidth = 0.42;
     let h0, h1, localT;
     if (frac < blendWidth) {
-      // left blend with previous slice
       const prev = h[(i0 - 1 + this.n) % this.n];
       h0 = prev; h1 = h[i0 % this.n];
-      localT = frac / blendWidth;
+      localT = smoothstep(0, 1, frac / blendWidth);
     } else if (frac > 1 - blendWidth) {
-      // right blend with next slice
       h0 = h[i0 % this.n]; h1 = h[(i0 + 1) % this.n];
-      localT = (frac - (1 - blendWidth)) / blendWidth;
+      localT = smoothstep(0, 1, (frac - (1 - blendWidth)) / blendWidth);
     } else {
       h0 = h[i0 % this.n]; h1 = h0; localT = 0;
     }

@@ -537,87 +537,69 @@ export class BiomeManager {
     }
   }
 
+  /** Dense surface samples for draw — smooth rolling hills, not slice-faceted ramps. */
+  _sampleGroundSurface(groundField, worldX, originX, nowMs, canvasWidth, step = 6) {
+    const pts = [];
+    for (let x = 0; x <= canvasWidth; x += step) {
+      const wx = worldX + (x - originX);
+      pts.push({ x, y: groundField.heightAt(wx, nowMs) });
+    }
+    return pts;
+  }
+
+  _strokeGroundPath(ctx, pts) {
+    if (!pts.length) return;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  }
+
   _drawGround(ctx, canvas, worldX, A, B, t, groundField, nowMs) {
     const groundColor = this.lerpCache.get(A.silhouette, B.silhouette, t);
 
     if (groundField) {
-      // Geometric/wireframe ground (item 5) — enriched: a volume-gradient
-      // fill below the surface, subterranean contour strata, gradient
-      // vertical seams, and an EQ-reactive neon horizon edge. The surface
-      // shape itself still comes from groundField.heightAt (unchanged — its
-      // bounds are covered by ground.test.js).
-      const originX = canvas.width * 0.26; // Midio's SCREEN_X_FRAC (src/sim/Midio.js) — keep in sync. Was a stale hardcoded 220; now matches Midio's actual screenX so the seam-sharpness peak (Step 5) and sliceTops anchor align with Midio + obstacles across resolutions.
-      const tops = groundField.sliceTops(worldX, originX, nowMs);
+      const originX = canvas.width * 0.26; // Midio SCREEN_X_FRAC — keep in sync with Midio.js
+      const surface = this._sampleGroundSurface(groundField, worldX, originX, nowMs, canvas.width);
       const { r, g: gg, b } = hexToRgb(groundColor);
+      const surfaceMinY = surface.reduce((m, p) => Math.min(m, p.y), canvas.height);
 
-      // (a) Volume fill: groundColor at the surface fading to near-black at
-      //     the canvas bottom. Anchor the gradient at the base ground level
-      //     (this.groundY) so the color bands stay stable as the terrain rolls.
-      const baseY = this.groundY;
-      const fillGrad = ctx.createLinearGradient(0, baseY - 40, 0, canvas.height);
-      fillGrad.addColorStop(0, `rgba(${r},${gg},${b},0.62)`);
-      fillGrad.addColorStop(0.45, `rgba(${(r * 0.4) | 0},${(gg * 0.4) | 0},${(b * 0.4) | 0},0.55)`);
-      fillGrad.addColorStop(1, 'rgba(0,0,0,0.9)');
+      // (a) Volume fill below the smoothed surface — gradient anchored to the
+      //     visible surface band so it does not cut a horizontal seam across slopes.
+      const fillGrad = ctx.createLinearGradient(0, surfaceMinY - 20, 0, canvas.height);
+      fillGrad.addColorStop(0, `rgba(${r},${gg},${b},0.68)`);
+      fillGrad.addColorStop(0.35, `rgba(${(r * 0.45) | 0},${(gg * 0.45) | 0},${(b * 0.45) | 0},0.58)`);
+      fillGrad.addColorStop(1, 'rgba(0,0,0,0.92)');
       ctx.fillStyle = fillGrad;
       ctx.beginPath();
       ctx.moveTo(0, canvas.height);
-      for (const p of tops) ctx.lineTo(p.x, p.y);
+      for (const p of surface) ctx.lineTo(p.x, p.y);
       ctx.lineTo(canvas.width, canvas.height);
       ctx.closePath();
       ctx.fill();
 
-      // (b) Subterranean contour strata — faint horizontal lines below the
-      //     surface, giving the slab a layered-rock read. Fixed spacing so
-      //     the strata don't jitter with the rolling terrain.
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-      ctx.lineWidth = 1;
-      const strataSpacing = (canvas.height - baseY) / 5;
-      for (let s = 1; s <= 4; s++) {
-        const y = baseY + s * strataSpacing;
-        if (y >= canvas.height - 4) break;
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-        ctx.stroke();
-      }
+      // (b) Soft inner shadow just under the lip — replaces fixed horizontal strata
+      //     that read as a band across sloped terrain.
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+      ctx.lineWidth = 10;
+      ctx.lineJoin = 'round';
+      this._strokeGroundPath(ctx, surface);
+      ctx.stroke();
+      ctx.restore();
 
-      // (c) Gradient vertical seams at each slice boundary — bright at the
-      //     surface, fading down into the slab. ground-horizon-depth platform
-      //     variation: per-seam brightness + thickness fall off with distance to
-      //     Midio, so platforms near Midio read crisper (foreground) and far
-      //     ones hazier (background) — the surface becomes a depth cue.
-      for (const p of tops) {
-        const dx = Math.abs(p.x - originX);
-        const nd = Math.min(1, dx / (canvas.width * 0.5)); // 0 at Midio, 1 at far edge
-        const scale = 1 - 0.65 * nd;                        // 1 → 0.35 brightness
-        ctx.lineWidth = 0.75 + 0.75 * (1 - nd);             // 1.5px near → 0.75px far
-        const sg = ctx.createLinearGradient(0, p.y, 0, canvas.height);
-        sg.addColorStop(0, `rgba(255,255,255,${0.32 * scale})`);
-        sg.addColorStop(0.4, `rgba(255,255,255,${0.07 * scale})`);
-        sg.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.strokeStyle = sg;
-        ctx.beginPath();
-        ctx.moveTo(p.x, p.y);
-        ctx.lineTo(p.x, canvas.height);
-        ctx.stroke();
-      }
-
-      // (d) EQ-reactive neon horizon edge — the surface line glows with
-      //     overall energy and punches up during the gag "almost-falls" beat.
+      // (c) EQ-reactive neon horizon edge on the smoothed surface.
       const e = this.energyCurves ? this.energyCurves.globalEnergy(nowMs) : 0;
       const pulse = groundField.gagActive ? 1 : clamp(e, 0, 1);
       const edgeR = Math.min(255, r + 90), edgeG = Math.min(255, gg + 90), edgeB = Math.min(255, b + 90);
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      ctx.strokeStyle = `rgba(${edgeR},${edgeG},${edgeB},${0.45 + 0.4 * pulse})`;
-      ctx.lineWidth = 2.5;
-      ctx.shadowColor = `rgba(${edgeR},${edgeG},${edgeB},0.9)`;
-      ctx.shadowBlur = 8 + 18 * pulse;
-      ctx.beginPath();
-      for (let k = 0; k < tops.length; k++) {
-        const p = tops[k];
-        if (k === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
-      }
+      ctx.strokeStyle = `rgba(${edgeR},${edgeG},${edgeB},${0.40 + 0.35 * pulse})`;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.shadowColor = `rgba(${edgeR},${edgeG},${edgeB},0.85)`;
+      ctx.shadowBlur = 6 + 14 * pulse;
+      this._strokeGroundPath(ctx, surface);
       ctx.stroke();
       ctx.restore();
     } else {
@@ -638,21 +620,39 @@ export class BiomeManager {
     }
 
     const activeFx = t > 0.5 ? B.fx : A.fx;
-    if (activeFx === 'neonGrid') this._drawNeonGrid(ctx, canvas, worldX);
+    if (activeFx === 'neonGrid') {
+      const surface = groundField
+        ? this._sampleGroundSurface(groundField, worldX, canvas.width * 0.26, nowMs, canvas.width, 24)
+        : null;
+      this._drawNeonGrid(ctx, canvas, worldX, surface);
+    }
     else if (activeFx === 'canopyDapple') this._drawCanopyDapple(ctx, canvas);
     else if (activeFx === 'glitchTear' && this._glitchActiveMs > 0) this._drawGlitchTear(ctx, canvas);
   }
 
-  _drawNeonGrid(ctx, canvas, worldX) {
+  _drawNeonGrid(ctx, canvas, worldX, surface = null) {
     ctx.save();
-    ctx.strokeStyle = 'rgba(0,255,208,0.35)';
+    ctx.globalAlpha = 0.18;
+    ctx.strokeStyle = 'rgba(0,255,208,0.55)';
     ctx.lineWidth = 1;
-    const spacing = 48;
+    const spacing = 64;
     const offset = worldX % spacing;
+    const yAt = (x) => {
+      if (!surface || surface.length < 2) return this.groundY;
+      for (let i = 0; i < surface.length - 1; i++) {
+        if (x >= surface[i].x && x <= surface[i + 1].x) {
+          const t = (x - surface[i].x) / (surface[i + 1].x - surface[i].x || 1);
+          return surface[i].y + t * (surface[i + 1].y - surface[i].y);
+        }
+      }
+      return surface[surface.length - 1].y;
+    };
     for (let x = -offset; x < canvas.width; x += spacing) {
-      ctx.beginPath(); ctx.moveTo(x, this.groundY); ctx.lineTo(x, canvas.height); ctx.stroke();
+      const y0 = yAt(x) + 8;
+      ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, canvas.height); ctx.stroke();
     }
-    for (let y = this.groundY; y < canvas.height; y += 24) {
+    const baseY = surface ? surface[0].y + 24 : this.groundY + 24;
+    for (let y = baseY; y < canvas.height; y += 32) {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
     }
     if (this._scanlineActive) {
