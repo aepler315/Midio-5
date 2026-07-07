@@ -142,3 +142,13 @@ html, body {
   line-height: 1.5;
   white-space: pre-wrap;
 }
+
+/* Mario Paint-style wobbling title letters on the COMPLETE panel. */
+.wobble-letter {
+  display: inline-block;
+  animation: letterWobble 1.5s ease-in-out infinite;
+}
+@keyframes letterWobble {
+  0%, 100% { transform: rotate(-5deg) translateY(0); }
+  50% { transform: rotate(5deg) translateY(-5px); }
+}

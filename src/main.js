@@ -208,6 +208,14 @@ function onSongComplete() {
   hudEl.classList.add('hidden');
   const combo = sim.comboSystem;
   completeStatsEl.textContent = `Peak streak: ${combo.streak} · Final combo: ×${combo.displayM.toFixed(1)}`;
+  // Mario Paint title-screen treatment: each letter wobbles on its own beat.
+  const title = completePanelEl.querySelector('h1');
+  if (title && !title.dataset.wobbled) {
+    title.dataset.wobbled = '1';
+    title.innerHTML = [...title.textContent].map((ch, i) =>
+      ch === ' ' ? ' ' : `<span class="wobble-letter" style="animation-delay:${i * 110}ms">${ch}</span>`,
+    ).join('');
+  }
   completePanelEl.classList.remove('hidden');
 }
 

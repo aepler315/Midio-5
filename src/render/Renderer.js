@@ -5,6 +5,8 @@
 import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE } from './meshes.js';
 import { computeRestLengths, drawMeshPart, displaceMeshRadial } from './MeshDrawer.js';
 import { EpicycleShow } from './EpicycleShow.js';
+import { ComposerStrip } from './ComposerStrip.js';
+import { RainbowBrush } from './RainbowBrush.js';
 
 const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
@@ -18,6 +20,8 @@ export class Renderer {
     this._midioEyeRest = computeRestLengths(MIDIO_EYE);
     this.epicycles = new EpicycleShow();
     this._lastMilestoneMs = null;
+    this.composer = null; // lazy: needs the conductor's timeline at first draw
+    this.brush = new RainbowBrush();
   }
 
   draw(sim, alpha) {
@@ -52,6 +56,11 @@ export class Renderer {
     if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
     if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY);
     if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
+
+    // Rainbow brush: paint Midio's jump arcs, world-locked behind him.
+    this.brush.update(sim.timeMs, pose.airborne, pose.worldX, pose.midioY);
+    this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs);
+
     if (sim.broshi) sim.broshi.draw(ctx, pose);
 
     if (sim.performer) this._drawMidioAfterimages(ctx, sim.performer, pose.midioX);
@@ -71,6 +80,12 @@ export class Renderer {
 
     ctx.restore(); // camera transform
     ctx.restore();
+
+    // Mario Paint composer strip: fixed HUD layer, outside camera shake/zoom.
+    if (sim.conductor) {
+      if (!this.composer) this.composer = new ComposerStrip(sim.conductor.timeline, sim.conductor.barGrid, sim.conductor.durationMs);
+      this.composer.draw(ctx, canvas, sim.timeMs);
+    }
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
   }

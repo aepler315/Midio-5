@@ -17,6 +17,7 @@ export class ImpactFX {
     );
     this.motes = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 400);
     this.polyRings = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 8);
+    this.splats = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 20);
     this.scars = []; // small list, capped manually — decals persist seconds, not worth pooling
 
     this._sputterAccum = 0;
@@ -67,6 +68,23 @@ export class ImpactFX {
     if (camera) camera.shake(9 * I);
   }
 
+  /** Mario Paint-style paint splat, stamped only on rhythm-clean landings:
+   * a handful of chunky square blobs in one bright paint-pot color. */
+  splat(worldX, groundY) {
+    const rand = this.rand;
+    const colors = ['#ff4d4d', '#ffd400', '#39c8ff', '#63e04d', '#ff7ad9', '#b06bff'];
+    const blobs = [];
+    const n = 6 + Math.floor(rand() * 4);
+    for (let i = 0; i < n; i++) {
+      blobs.push({
+        dx: (rand() * 2 - 1) * 28,
+        dy: -rand() * 9,
+        s: 3 + Math.floor(rand() * 5),
+      });
+    }
+    this.splats.spawn({ wx: worldX, y: groundY, color: colors[Math.floor(rand() * colors.length)], blobs, life: 2.8 });
+  }
+
   /** Pre-kick sputter dust at Midio's feet during telegraph anticipation (spec §2.2.3). */
   sputter(worldX, groundY, dtSec) {
     this._sputterAccum += dtSec * 120; // ~2 per rendered frame at 60fps == ~1 per sim step at 120Hz
@@ -85,6 +103,7 @@ export class ImpactFX {
     this.craters.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.rings.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.polyRings.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
+    this.splats.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.motes.step(dtSec, (o, dt) => {
       o.vy += 300 * dt;
       o.wx += o.vx * dt;
@@ -108,6 +127,17 @@ export class ImpactFX {
       const x = toScreen(s.wx);
       ctx.fillRect(x - s.width / 2, s.y, s.width, 4);
     }
+
+    for (const sp of this.splats.active) {
+      const t = sp.age / sp.life;
+      const x = toScreen(sp.wx);
+      ctx.fillStyle = sp.color;
+      ctx.globalAlpha = 0.8 * (1 - t);
+      for (const b of sp.blobs) {
+        ctx.fillRect(Math.round(x + b.dx - b.s / 2), Math.round(sp.y + b.dy - b.s / 2), b.s, b.s);
+      }
+    }
+    ctx.globalAlpha = 1;
 
     for (const c of this.craters.active) {
       const t = c.age / c.life;

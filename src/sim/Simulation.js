@@ -96,6 +96,7 @@ export class Simulation {
       this.performer.onLanding(nowMs, this.comboSystem.justClean, this.comboSystem.displayM, I);
       this.performer.onStreak(this.comboSystem.streak, nowMs);
       this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera);
+      if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY);
       this.fracture.registerImpact(I);
     }
 
