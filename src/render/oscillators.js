@@ -75,3 +75,51 @@ export function hypotrochoid(theta, R, r, d) {
     y: (R - r) * Math.sin(theta) - d * Math.sin(k * theta),
   };
 }
+
+/**
+ * Chladni figure amplitude for a free square plate, normalized coords
+ * u,v in [0,1]: the superposition of the (m,n) and (n,m) standing-wave
+ * modes. Sand on a real vibrating plate collects along the nodal lines
+ * where this is zero -- that's cymatics, sound made literally visible.
+ * Antisymmetric under u<->v swap, so the u=v diagonal is always nodal.
+ */
+export function chladni(u, v, m, n) {
+  return Math.cos(m * Math.PI * u) * Math.cos(n * Math.PI * v)
+       - Math.cos(n * Math.PI * u) * Math.cos(m * Math.PI * v);
+}
+
+/** Analytic gradient of chladni() -- lets settling particles descend |z|^2 directly. */
+export function chladniGrad(u, v, m, n) {
+  const mp = m * Math.PI, np = n * Math.PI;
+  return {
+    du: -mp * Math.sin(mp * u) * Math.cos(np * v) + np * Math.sin(np * u) * Math.cos(mp * v),
+    dv: -np * Math.cos(mp * u) * Math.sin(np * v) + mp * Math.cos(np * u) * Math.sin(mp * v),
+  };
+}
+
+/**
+ * Thomas' cyclically symmetric attractor: x' = sin(y) - b*x (and cyclic).
+ * The single damping parameter b is a bifurcation knob: ~0.33 gives
+ * gentle limit cycles, ~0.19 is fully chaotic -- so driving b with track
+ * energy makes the trajectory literally bifurcate with the music.
+ */
+export function thomasDeriv(s, b) {
+  return {
+    x: Math.sin(s.y) - b * s.x,
+    y: Math.sin(s.z) - b * s.y,
+    z: Math.sin(s.x) - b * s.z,
+  };
+}
+
+/** Classic RK4 step for a 3D autonomous system s' = f(s, ...args). */
+export function rk4Step3(f, s, dt, ...args) {
+  const k1 = f(s, ...args);
+  const k2 = f({ x: s.x + k1.x * dt / 2, y: s.y + k1.y * dt / 2, z: s.z + k1.z * dt / 2 }, ...args);
+  const k3 = f({ x: s.x + k2.x * dt / 2, y: s.y + k2.y * dt / 2, z: s.z + k2.z * dt / 2 }, ...args);
+  const k4 = f({ x: s.x + k3.x * dt, y: s.y + k3.y * dt, z: s.z + k3.z * dt }, ...args);
+  return {
+    x: s.x + (dt / 6) * (k1.x + 2 * k2.x + 2 * k3.x + k4.x),
+    y: s.y + (dt / 6) * (k1.y + 2 * k2.y + 2 * k3.y + k4.y),
+    z: s.z + (dt / 6) * (k1.z + 2 * k2.z + 2 * k3.z + k4.z),
+  };
+}

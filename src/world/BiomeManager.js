@@ -6,6 +6,9 @@ import { BIOMES } from './BiomeProfiles.js';
 import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
 import { ParticleField } from './ParticleField.js';
 import { Mandala } from './Mandala.js';
+import { CymaticField } from './CymaticField.js';
+import { KuramotoSwarm } from './KuramotoSwarm.js';
+import { ChaosRibbon } from './ChaosRibbon.js';
 import { clamp, clamp01, smoothstep, mulberry32, hashSeed, shuffle } from '../utils/math.js';
 import { LerpCache } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
@@ -54,9 +57,25 @@ export class BiomeManager {
 
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed);
     this.mandala = new Mandala(songSeed);
+    this.cymatics = new CymaticField(songSeed);
+    this.swarm = new KuramotoSwarm(songSeed);
+    this.ribbon = new ChaosRibbon(songSeed);
+    this._beatMs = 500; // EMA'd kick interval, feeding the swarm's natural frequency
+    this._lastKickMs = null;
 
-    conductor.onBar(() => { this._scanlineActive = true; this._scanlineY = 0; });
-    conductor.on(Role.RHYTHM, (evt) => { if (evt.kick) { this._pylonFlash = 1; this.mandala.kick(); } });
+    conductor.onBar(() => { this._scanlineActive = true; this._scanlineY = 0; this.cymatics.onBar(); });
+    conductor.on(Role.RHYTHM, (evt) => {
+      if (!evt.kick) return;
+      this._pylonFlash = 1;
+      this.mandala.kick();
+      this.swarm.kick(evt.vel);
+      this.ribbon.kick();
+      if (this._lastKickMs != null) {
+        const delta = evt.tMs - this._lastKickMs;
+        if (delta >= 240 && delta <= 1500) this._beatMs += 0.25 * (delta - this._beatMs);
+      }
+      this._lastKickMs = evt.tMs;
+    });
   }
 
   _buildSchedule(barGrid, energyCurves, durationMs, songSeed) {
@@ -149,6 +168,9 @@ export class BiomeManager {
     }
 
     this.mandala.update(nowMs, dtSec, energyCurves, calmLevel);
+    this.cymatics.update(nowMs, dtSec, energyCurves, calmLevel);
+    this.swarm.update(nowMs, dtSec, energyCurves, this._beatMs, calmLevel);
+    this.ribbon.update(nowMs, dtSec, energyCurves, calmLevel);
 
     if (this._scanlineActive) {
       this._scanlineY += dtSec * this.h * 2.2;
@@ -171,6 +193,10 @@ export class BiomeManager {
     // reads as the sun/moon itself resonating with the track.
     const mandalaColor = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
     this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * 0.22, canvas.height * 0.30, mandalaColor);
+    // Phenomena layer, deep sky: cymatic dust settling into Chladni
+    // figures, and the chaos ribbon opposite the celestial for balance.
+    this.cymatics.draw(ctx, canvas, mandalaColor);
+    this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075, mandalaColor);
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
 
     const scrollX0 = worldX * LAYER_RATIOS.L2, scrollX1 = worldX * LAYER_RATIOS.L3;
@@ -183,6 +209,8 @@ export class BiomeManager {
     // Ambient particle field lives roughly at mid-depth.
     this.fields.get(from).draw(ctx);
     if (to !== from && t > 0.02) { ctx.save(); ctx.globalAlpha = t; this.fields.get(to).draw(ctx); ctx.restore(); }
+    // The Kuramoto swarm shares this depth: synchronized flashing motes.
+    this.swarm.draw(ctx, canvas, mandalaColor);
 
     this._drawLayer(ctx, canvas, 'L4', scrollX2, tint, t, A, B);
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);

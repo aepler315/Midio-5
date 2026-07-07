@@ -2,6 +2,7 @@
 // (spec §4.1.2 table): a fixed-size, ever-respawning field rather than a
 // pooled emit-and-die burst, since these are continuous atmosphere, not FX.
 import { mulberry32, clamp01 } from '../utils/math.js';
+import { curl2 } from '../utils/fields.js';
 
 export class ParticleField {
   constructor(config, canvasWidth, canvasHeight, seed = 1) {
@@ -56,18 +57,25 @@ export class ParticleField {
           // to lean on when the foreground has gone quiet.
           p.alpha = clamp01((0.5 + 0.5 * Math.sin((2 * Math.PI * tSec) / 3 * (1 + 0.3 * calmLevel) + p.phase)) * (1 + 0.4 * calmLevel));
           break;
-        case 'embers':
+        case 'embers': {
           p.vy = p.vy || -(40 + rand() * 50);
           p.vx += (rand() * 2 - 1) * 18 * dtSec;
-          p.x += p.vx * dtSec;
-          p.y += p.vy * dtSec;
+          // Curl-noise updraft: a divergence-free gust field so the embers
+          // swirl in eddies like real fire-lofted ash, never clumping.
+          const gust = energyCurves ? 0.5 + clamp01(energyCurves.sample(1, nowMs)) : 1;
+          const fl = curl2(p.x * 0.006, p.y * 0.006, tSec * 0.2);
+          p.x += (p.vx + fl.x * 55 * gust) * dtSec;
+          p.y += (p.vy + fl.y * 55 * gust) * dtSec;
           if (p.y < -20) Object.assign(p, this._spawn(rand() * this.w, this.h + 10));
           break;
-        case 'snow':
-          p.y += (30 + p.size * 13) * dtSec;
-          p.x += 18 * Math.sin(tSec * p.omega + p.phase) * dtSec;
+        }
+        case 'snow': {
+          const drift = curl2(p.x * 0.004, p.y * 0.004, tSec * 0.12);
+          p.y += (30 + p.size * 13 + drift.y * 25) * dtSec;
+          p.x += (18 * Math.sin(tSec * p.omega + p.phase) + drift.x * 40) * dtSec;
           if (p.y > this.h + 10) Object.assign(p, this._spawn(rand() * this.w, -10));
           break;
+        }
         case 'pollen': {
           p.x += Math.sin(tSec * 0.5 + p.phase) * 6 * dtSec;
           p.y += Math.cos(tSec * 0.4 + p.phase * 1.7) * 6 * dtSec;
