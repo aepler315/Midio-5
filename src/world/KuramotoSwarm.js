@@ -36,6 +36,7 @@ export class KuramotoSwarm {
     }
     this.E = 0;
     this.r = 0; // live order parameter, 0 = incoherent, 1 = perfect unison
+    this.intensity = 1; // dramaturgy budget multiplier
     this._kickPull = 0;
   }
 
@@ -79,7 +80,7 @@ export class KuramotoSwarm {
       if (bright < 0.03) continue;
       const x = (o.ax + 0.06 * Math.sin(o.omega2 * t + o.phase)) * canvas.width;
       const y = (o.ay + 0.04 * Math.sin(o.omega2 * 0.7 * t + o.phase * 1.7)) * canvas.height;
-      ctx.globalAlpha = 0.45 * bright;
+      ctx.globalAlpha = 0.45 * bright * this.intensity;
       ctx.beginPath();
       ctx.arc(x, y, 1.6 + 1.4 * bright + 2 * unison * bright, 0, TWO_PI);
       ctx.fill();

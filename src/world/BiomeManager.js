@@ -10,7 +10,9 @@ import { CymaticField } from './CymaticField.js';
 import { KuramotoSwarm } from './KuramotoSwarm.js';
 import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
-import { clamp, clamp01, smoothstep, mulberry32, hashSeed, shuffle } from '../utils/math.js';
+import { decorateStrip } from './Landmarks.js';
+import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
+import { clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
 import { LerpCache } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
 
@@ -26,10 +28,18 @@ export class BiomeManager {
   constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null }) {
     this.conductor = conductor;
     this.energyCurves = energyCurves;
+    this.durationMs = durationMs || 0;
     this.w = canvasWidth;
     this.h = canvasHeight;
     this.groundY = groundY;
     this.groundField = groundField;
+    this._lastSectionIdx = null;
+    this._cutFlash = 0;
+    this._shutterStartMs = -Infinity;
+    this._shutterBarMs = 500;
+    this.cutFlashJustFired = false;
+    this.budget = 1;
+    this._progress = 0;
     this.lerpCache = new LerpCache();
     this.tSec = 0;
     this._starSeed = mulberry32(9001);
@@ -45,12 +55,17 @@ export class BiomeManager {
     this.strips = new Map(); // biomeName -> { L2, L3, L4, L5 }
     for (const b of BIOMES) {
       const seed = hashSeed(b.name);
-      this.strips.set(b.name, {
+      const strips = {
         L2: generateSilhouette({ seed: seed + 1, octaves: 1, amplitude: 0.20, baseline: 0.45, color: b.silhouette }),
         L3: generateSilhouette({ seed: seed + 2, octaves: 2, amplitude: 0.26, baseline: 0.55, color: b.silhouette }),
-        L4: generateSilhouette({ seed: seed + 3, octaves: 3, amplitude: 0.34, baseline: 0.70, color: b.silhouette }),
-        L5: generateSilhouette({ seed: seed + 4, octaves: 2, amplitude: 0.22, baseline: 0.85, color: b.silhouette }),
-      });
+        L4: generateSilhouette({ seed: seed + 3, octaves: 3, amplitude: 0.34, baseline: 0.70, color: b.silhouette, edgeLight: b.edgeLight }),
+        L5: generateSilhouette({ seed: seed + 4, octaves: 2, amplitude: 0.22, baseline: 0.85, color: b.silhouette, edgeLight: b.edgeLight }),
+      };
+      // Landmarks: per-song placements (songSeed), baked into the strips,
+      // each rooted on the noise ridge at its own x.
+      decorateStrip(strips.L4, b.name, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
+      decorateStrip(strips.L5, b.name, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
+      this.strips.set(b.name, strips);
     }
 
     this.fields = new Map(); // biomeName -> ParticleField
@@ -112,20 +127,33 @@ export class BiomeManager {
     peaks.sort((a, b) => a - b);
 
     const cuts = [0, ...peaks, barTimes.length - 1];
-    const rand = mulberry32(songSeed >>> 0);
-    const order = shuffle(BIOMES.map((b) => b.name), rand);
 
     this.sections = [];
+    const meanEnergies = [];
+    const maxNovelty = Math.max(...novelty, 1e-9);
     for (let i = 0; i < cuts.length - 1; i++) {
       if (cuts[i + 1] <= cuts[i]) continue;
+      // Section's mean global energy, for dramaturgical casting.
+      let e = 0, count = 0;
+      for (let b = cuts[i]; b < cuts[i + 1]; b++, count++) {
+        for (let k = 0; k < 7; k++) e += vectors[b][k] / 7;
+      }
+      meanEnergies.push(count > 0 ? e / count : 0);
       this.sections.push({
         startMs: barTimes[cuts[i]],
         endMs: i === cuts.length - 2 ? durationMs : barTimes[cuts[i + 1]],
-        profile: order[i % order.length],
+        // Boundary sharpness picks the transition style into this section.
+        transition: this.sections.length === 0 ? 'fade' : classifyTransition(novelty[cuts[i]], maxNovelty),
         barMs: (barTimes[Math.min(barTimes.length - 1, cuts[i] + 1)] - barTimes[cuts[i]]) || 500,
       });
     }
-    if (this.sections.length === 0) this.sections = [{ startMs: 0, endMs: durationMs, profile: order[0], barMs: 500 }];
+    if (this.sections.length === 0) {
+      this.sections = [{ startMs: 0, endMs: durationMs, transition: 'fade', barMs: 500 }];
+      meanEnergies.push(0.5);
+    }
+    // Cast the show: biomes matched to each section's energy temperament.
+    const cast = castBiomes(meanEnergies, songSeed);
+    this.sections.forEach((s, i) => { s.profile = cast[i]; });
   }
 
   _evenSplit(durationMs, n) {
@@ -146,8 +174,14 @@ export class BiomeManager {
     const idx = this._sectionAt(nowMs);
     const sec = this.sections[idx];
     if (idx === 0) return { from: sec.profile, to: sec.profile, t: 1 };
-    const fadeWindowMs = 4 * sec.barMs;
-    const t = smoothstep(0, 1, (nowMs - sec.startMs) / fadeWindowMs);
+    // Transition style sets the crossfade length: a hard cut lands in a
+    // small fraction of a bar, a shutter wipes over one bar, a fade
+    // breathes across four.
+    const bars = sec.transition === 'cut' ? 0.08 : sec.transition === 'shutter' ? 1 : 4;
+    const t = smoothstep(0, 1, (nowMs - sec.startMs) / (bars * sec.barMs));
+    // Once the crossfade completes, retire the old biome entirely --
+    // otherwise its taller peaks and particles ghost through forever.
+    if (t >= 0.999) return { from: sec.profile, to: sec.profile, t: 1 };
     return { from: this.sections[idx - 1].profile, to: sec.profile, t };
   }
 
@@ -158,6 +192,28 @@ export class BiomeManager {
     this.calmLevel = calmLevel;
     const { from, to, t } = this._blend(nowMs);
     this.currentBlend = { from, to, t };
+
+    // Dramaturgy: detect section boundaries and fire their transition FX.
+    const sectionIdx = this._sectionAt(nowMs);
+    this.cutFlashJustFired = false;
+    if (sectionIdx !== this._lastSectionIdx) {
+      const sec = this.sections[sectionIdx];
+      if (this._lastSectionIdx != null) {
+        if (sec.transition === 'cut') { this._cutFlash = 1; this.cutFlashJustFired = true; }
+        else if (sec.transition === 'shutter') { this._shutterStartMs = nowMs; this._shutterBarMs = sec.barMs; }
+      }
+      this._lastSectionIdx = sectionIdx;
+    }
+    this._cutFlash = Math.max(0, this._cutFlash - dtSec / 0.25);
+
+    // Intensity budget: stage the show -- restrained intro, full finale.
+    this._progress = this.durationMs > 0 ? clamp01(nowMs / this.durationMs) : 0.5;
+    this.budget = intensityBudget(this._progress);
+    this.mandala.intensity = this.budget;
+    this.cymatics.intensity = this.budget;
+    this.swarm.intensity = this.budget;
+    this.ribbon.intensity = this.budget;
+    this.rd.intensity = this.budget;
 
     this.fields.get(from).update(dtSec, this.tSec, energyCurves, nowMs, calmLevel);
     if (to !== from) this.fields.get(to).update(dtSec, this.tSec, energyCurves, nowMs, calmLevel);
@@ -192,11 +248,24 @@ export class BiomeManager {
     const A = this._profile(from), B = this._profile(to);
 
     this._drawSky(ctx, canvas, A, B, t);
-    this._drawCelestial(ctx, canvas, A, B, t);
+
+    // Day arc: dawn/dusk tint washes and the celestial's slow climb/descent.
+    const arc = dayArc(this._progress);
+    for (const wash of [arc.dawn, arc.dusk]) {
+      if (wash.alpha > 0.005) {
+        ctx.save();
+        ctx.globalAlpha = wash.alpha;
+        ctx.fillStyle = wash.color;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      }
+    }
+
+    this._drawCelestial(ctx, canvas, A, B, t, arc.celestialYFrac);
     // Spirograph resonance mandala, centered on the celestial body so it
     // reads as the sun/moon itself resonating with the track.
     const mandalaColor = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
-    this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * 0.22, canvas.height * 0.30, mandalaColor);
+    this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * arc.celestialYFrac, canvas.height * 0.30, mandalaColor);
     // Phenomena layer, deep sky: cymatic dust settling into Chladni
     // figures, and the chaos ribbon opposite the celestial for balance.
     this.cymatics.draw(ctx, canvas, mandalaColor);
@@ -220,6 +289,35 @@ export class BiomeManager {
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
 
     this._drawGround(ctx, canvas, worldX, originX, A, B, t);
+    this._drawTransitionOverlays(ctx, canvas, B);
+  }
+
+  /** Cut flash + shutter wipe, fired by the Dramaturgy Director. */
+  _drawTransitionOverlays(ctx, canvas, B) {
+    const nowMs = this.tSec * 1000;
+    const u = (nowMs - this._shutterStartMs) / this._shutterBarMs;
+    if (u >= 0 && u <= 1) {
+      // Vertical shutter columns closing then reopening over one bar,
+      // phase-staggered so the wipe ripples instead of slamming.
+      ctx.save();
+      ctx.fillStyle = B.silhouette;
+      const cols = 14;
+      const colW = canvas.width / cols;
+      for (let i = 0; i < cols; i++) {
+        const stagger = 0.8 + 0.2 * Math.sin(i * 1.7);
+        const h = canvas.height * 0.5 * Math.sin(Math.PI * Math.min(1, u * 1.05)) * stagger;
+        ctx.fillRect(i * colW, 0, colW + 1, h);
+        ctx.fillRect(i * colW, canvas.height - h, colW + 1, h);
+      }
+      ctx.restore();
+    }
+    if (this._cutFlash > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = 0.35 * this._cutFlash;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    }
   }
 
   drawForeground(ctx, canvas, worldX) {
@@ -286,8 +384,8 @@ export class BiomeManager {
     ctx.restore();
   }
 
-  _drawCelestial(ctx, canvas, A, B, t) {
-    const cx = canvas.width * 0.78, cy = canvas.height * 0.22;
+  _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22) {
+    const cx = canvas.width * 0.78, cy = canvas.height * cyFrac;
     this._drawOneCelestial(ctx, cx, cy, A.celestial, 1 - t);
     if (B !== A) this._drawOneCelestial(ctx, cx, cy, B.celestial, t);
 
@@ -329,7 +427,7 @@ export class BiomeManager {
         grad.addColorStop(0, `${color}80`);
         grad.addColorStop(1, `${color}00`);
         ctx.fillStyle = grad;
-        ctx.globalAlpha = 0.30;
+        ctx.globalAlpha = 0.30 * this.budget;
         ctx.fillRect(x + barWidth * 0.08, baseline - h, barWidth * 0.84, h);
       }
     }
@@ -420,25 +518,28 @@ export class BiomeManager {
 
   _drawLayer(ctx, canvas, layerKey, scrollX, tint, t, A, B) {
     const stripsA = this.strips.get(A.name), stripsB = this.strips.get(B.name);
+    // Lift the ranges so their ridges actually clear the ground band --
+    // strip bottoms stay tucked safely beneath the ground fill.
+    const yOff = this.groundY + 40 - canvas.height;
     ctx.save();
     if (A.fx === 'heatShimmer' || B.fx === 'heatShimmer') {
       const alpha = A.fx === 'heatShimmer' ? 1 - t : t;
-      if (alpha > 0.05 && layerKey !== 'L5') { this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX); }
-      else drawTiledStrip(ctx, stripsA[layerKey], scrollX, canvas.width, canvas.height);
+      if (alpha > 0.05 && layerKey !== 'L5') { this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX, yOff); }
+      else drawTiledStrip(ctx, stripsA[layerKey], scrollX, canvas.width, canvas.height, yOff);
     } else {
-      drawTiledStrip(ctx, stripsA[layerKey], scrollX, canvas.width, canvas.height);
+      drawTiledStrip(ctx, stripsA[layerKey], scrollX, canvas.width, canvas.height, yOff);
     }
     if (B !== A && t > 0.02) {
       ctx.globalAlpha = t;
-      drawTiledStrip(ctx, stripsB[layerKey], scrollX, canvas.width, canvas.height);
+      drawTiledStrip(ctx, stripsB[layerKey], scrollX, canvas.width, canvas.height, yOff);
       ctx.globalAlpha = 1;
     }
     ctx.restore();
   }
 
-  _drawShimmered(ctx, canvas, strip, scrollX) {
+  _drawShimmered(ctx, canvas, strip, scrollX, yOff = 0) {
     const w = strip.width, h = strip.height;
-    const baseY = canvas.height - h;
+    const baseY = canvas.height - h + yOff;
     let x0 = -(((scrollX % w) + w) % w);
     const step = 6;
     for (let sx = x0; sx < canvas.width; sx += w) {

@@ -28,6 +28,7 @@ export class CymaticField {
     this.modeIdx = Math.floor(this.rand() * MODES.length);
     this._barCount = 0;
     this.E = 0;
+    this.intensity = 1; // dramaturgy budget multiplier
   }
 
   onBar() {
@@ -80,7 +81,7 @@ export class CymaticField {
     for (const p of this.particles) {
       const absZ = Math.abs(chladni(p.u, p.v, m, n));
       // Settled dust glows brightest -- the figure emerges as lines of light.
-      ctx.globalAlpha = 0.06 + 0.36 * (1 - Math.min(1, absZ));
+      ctx.globalAlpha = (0.06 + 0.36 * (1 - Math.min(1, absZ))) * this.intensity;
       ctx.fillRect(p.u * canvas.width, p.v * h, 1.8, 1.8);
     }
     ctx.restore();

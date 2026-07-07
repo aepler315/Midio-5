@@ -115,6 +115,7 @@ export class Simulation {
     this.midasus.update(nowMs, dtSec, this.calm.level);
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level);
     this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level);
+    if (this.biomes.cutFlashJustFired) { this.camera.punch(1.06); this.camera.shake(6); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
 
     this.camera.update(dtSec, this.calm.level);

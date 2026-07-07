@@ -29,6 +29,7 @@ export class Mandala {
     this.E = 0;
     this.pulse = 0;
     this.tSec = 0;
+    this.intensity = 1; // dramaturgy budget multiplier
   }
 
   kick() { this.pulse = 1; }
@@ -62,7 +63,7 @@ export class Mandala {
 
       const steps = SEGMENTS_PER_TURN * q;
       const span = 2 * Math.PI * q; // exact closure period for coprime p,q
-      ctx.globalAlpha = Math.min(MAX_ALPHA, layer.alpha * (0.55 + 0.45 * this.E) * (1 + 0.5 * this.pulse));
+      ctx.globalAlpha = Math.min(MAX_ALPHA, layer.alpha * (0.55 + 0.45 * this.E) * (1 + 0.5 * this.pulse)) * this.intensity;
       ctx.lineWidth = 1.2 + this.pulse;
       ctx.beginPath();
       for (let i = 0; i <= steps; i++) {

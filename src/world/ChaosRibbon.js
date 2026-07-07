@@ -24,6 +24,7 @@ export class ChaosRibbon {
     this.rand = rand;
     this.trail = []; // projected 2D points, unscaled attractor units
     this.E = 0;
+    this.intensity = 1; // dramaturgy budget multiplier
     this.yaw = rand() * Math.PI * 2;
     this.pitch = 0;
     this._jolt = 0;
@@ -83,7 +84,7 @@ export class ChaosRibbon {
     for (let c = 0; c < CHUNKS; c++) {
       const i0 = Math.floor((c / CHUNKS) * (n - 1));
       const i1 = Math.floor(((c + 1) / CHUNKS) * (n - 1));
-      ctx.globalAlpha = 0.05 + 0.30 * ((c + 1) / CHUNKS) * (0.5 + 0.5 * this.E);
+      ctx.globalAlpha = (0.05 + 0.30 * ((c + 1) / CHUNKS) * (0.5 + 0.5 * this.E)) * this.intensity;
       ctx.beginPath();
       for (let i = i0; i <= i1; i++) {
         const p = this.trail[i];
@@ -94,7 +95,7 @@ export class ChaosRibbon {
     }
     // The head: a small bright bead.
     const head = this.trail[n - 1];
-    ctx.globalAlpha = 0.7;
+    ctx.globalAlpha = 0.7 * this.intensity;
     ctx.beginPath();
     ctx.arc(cx + head.x * scale, cy + head.y * scale, 2.2, 0, Math.PI * 2);
     ctx.fill();

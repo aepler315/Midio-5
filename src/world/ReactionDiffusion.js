@@ -29,6 +29,7 @@ export class ReactionDiffusion {
     this._u2 = new Float32Array(W * H);
     this._v2 = new Float32Array(W * H);
     this.E = 0;
+    this.intensity = 1; // dramaturgy budget multiplier
     this.w = W;
     this.h = H;
 
@@ -113,7 +114,7 @@ export class ReactionDiffusion {
     const ox = ((worldX * 0.4) % canvas.width + canvas.width) % canvas.width;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.13;
+    ctx.globalAlpha = 0.13 * this.intensity;
     ctx.drawImage(this._canvas, -ox, groundTopY, canvas.width, bandH);
     ctx.drawImage(this._canvas, canvas.width - ox, groundTopY, canvas.width, bandH);
     ctx.restore();
