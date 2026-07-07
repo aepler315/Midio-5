@@ -12,6 +12,7 @@ import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
+import { LightningFX } from './Lightning.js';
 import { clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
 import { LerpCache } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
@@ -77,6 +78,7 @@ export class BiomeManager {
     this.swarm = new KuramotoSwarm(songSeed);
     this.ribbon = new ChaosRibbon(songSeed);
     this.rd = new ReactionDiffusion(songSeed);
+    this.lightning = new LightningFX(songSeed);
     this._beatMs = 500; // EMA'd kick interval, feeding the swarm's natural frequency
     this._lastKickMs = null;
 
@@ -88,6 +90,9 @@ export class BiomeManager {
       this.swarm.kick(evt.vel);
       this.ribbon.kick();
       this.rd.onKick();
+      // Heavy kicks strike lightning, but only while a storm is blowing.
+      const active = this.currentBlend ? this._profile(this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from) : null;
+      if (active && active.fx === 'lightning') this.lightning.maybeTrigger(evt.tMs, evt.vel, this.w, this.groundY);
       if (this._lastKickMs != null) {
         const delta = evt.tMs - this._lastKickMs;
         if (delta >= 240 && delta <= 1500) this._beatMs += 0.25 * (delta - this._beatMs);
@@ -231,6 +236,7 @@ export class BiomeManager {
     this.swarm.update(nowMs, dtSec, energyCurves, this._beatMs, calmLevel);
     this.ribbon.update(nowMs, dtSec, energyCurves, calmLevel);
     this.rd.update(nowMs, dtSec, energyCurves, calmLevel);
+    this.lightning.update(dtSec);
 
     if (this._scanlineActive) {
       this._scanlineY += dtSec * this.h * 2.2;
@@ -270,6 +276,7 @@ export class BiomeManager {
     // figures, and the chaos ribbon opposite the celestial for balance.
     this.cymatics.draw(ctx, canvas, mandalaColor);
     this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075, mandalaColor);
+    this.lightning.draw(ctx, canvas, this.tSec * 1000); // behind the ranges: bolts land beyond the hills
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
 
     const scrollX0 = worldX * LAYER_RATIOS.L2, scrollX1 = worldX * LAYER_RATIOS.L3;
@@ -595,6 +602,23 @@ export class BiomeManager {
     if (activeFx === 'neonGrid') this._drawNeonGrid(ctx, canvas, worldX, localGroundY);
     else if (activeFx === 'canopyDapple') this._drawCanopyDapple(ctx, canvas, localGroundY);
     else if (activeFx === 'glitchTear' && this._glitchActiveMs > 0) this._drawGlitchTear(ctx, canvas);
+    else if (activeFx === 'petalPile') this._drawPetalPiles(ctx, canvas, worldX, localGroundY, t > 0.5 ? B : A);
+  }
+
+  /** SAKURA's dormant hook: soft petal drifts scrolling with the ground. */
+  _drawPetalPiles(ctx, canvas, worldX, groundY, profile) {
+    ctx.save();
+    ctx.fillStyle = profile.particles.color;
+    const spacing = 300;
+    for (let i = 0; i < 6; i++) {
+      const x = ((i * spacing - worldX) % (canvas.width + spacing) + canvas.width + spacing) % (canvas.width + spacing) - spacing / 2;
+      const breathe = 0.8 + 0.2 * Math.sin(this.tSec * 0.5 + i * 2.1);
+      ctx.globalAlpha = 0.22 * breathe;
+      ctx.beginPath();
+      ctx.ellipse(x, groundY + 3, 40 + (i % 3) * 16, 7 + (i % 2) * 3, 0, Math.PI, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   _drawNeonGrid(ctx, canvas, worldX, groundY) {

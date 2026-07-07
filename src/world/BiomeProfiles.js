@@ -60,6 +60,14 @@ export const BIOMES = [
     fx: 'prominence',
   },
   {
+    name: 'STORM',
+    sky: ['#0b0f1a', '#1f2937', '#3d4f66'],
+    silhouette: '#0a1220',
+    celestial: { kind: 'moon', color: '#b9c7dd', radius: 34, haloColor: '#8fa5c8', veiled: true },
+    particles: { kind: 'rain', color: '#9fb8d8', count: 70, speed: 0 },
+    fx: 'lightning',
+  },
+  {
     name: 'CYBER',
     sky: ['#020814', '#062a3f', '#0b4b5e'],
     silhouette: '#04121f',

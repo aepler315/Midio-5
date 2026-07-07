@@ -231,6 +231,7 @@ export const LANDMARKS = {
   EMBER: [paintSpires],
   TWILIGHT: [paintMenhirs, paintRuinTower],
   SOLAR: [paintObelisks],
+  STORM: [paintTree(3, 32)], // sparse wind-blasted trees
 };
 
 /**

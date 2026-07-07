@@ -37,6 +37,13 @@ export class ParticleField {
       p.y = -rand() * this.h;
       p.glyphT = 0;
     }
+    if (this.kind === 'rain') {
+      p.y = -rand() * this.h;
+      p.vx = -(70 + rand() * 50);
+      p.vy = 380 + rand() * 170;
+      p.state = 'fall';
+      p.splashT = 0;
+    }
     if (this.kind === 'flaresparks') {
       p.t = rand();
       p.origin = { x: rand() * this.w * 0.3, y: this.h * 0.25 };
@@ -102,6 +109,18 @@ export class ParticleField {
             if (p.pileT > 1.2) Object.assign(p, this._spawn(rand() * this.w, -10));
           }
           break;
+        case 'rain': {
+          if (p.state === 'splash') {
+            p.splashT += dtSec;
+            if (p.splashT > 0.16) Object.assign(p, this._spawn(rand() * this.w));
+            break;
+          }
+          p.x += p.vx * dtSec;
+          p.y += p.vy * dtSec;
+          if (p.x < -20) p.x += this.w + 40;
+          if (p.y >= this.h * 0.667) { p.state = 'splash'; p.splashT = 0; p.y = this.h * 0.667; }
+          break;
+        }
         case 'flaresparks':
           p.t += dtSec * 0.6;
           if (p.t > 1) Object.assign(p, this._spawn());
@@ -164,6 +183,27 @@ export class ParticleField {
           ctx.closePath();
           ctx.fill();
           ctx.restore();
+          break;
+        }
+        case 'rain': {
+          if (p.state === 'splash') {
+            // A widening half-ring where the drop hit the ground plane.
+            const t = p.splashT / 0.16;
+            ctx.globalAlpha = 0.5 * (1 - t);
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(p.x, p.y, 3 + 7 * t, 1 + 2.2 * t, 0, Math.PI, Math.PI * 2);
+            ctx.stroke();
+          } else {
+            ctx.globalAlpha = 0.55;
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p.x - p.vx * 0.035, p.y - p.vy * 0.035);
+            ctx.stroke();
+          }
           break;
         }
         case 'flaresparks': {

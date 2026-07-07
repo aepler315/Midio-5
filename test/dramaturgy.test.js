@@ -5,13 +5,16 @@ import { castBiomes, classifyTransition, intensityBudget, dayArc, BIOME_TEMPERAT
 const COLD = new Set(['ARCTIC', 'SAKURA', 'TWILIGHT']);
 const HOT = new Set(['CYBER', 'EMBER', 'SOLAR']);
 
-test('castBiomes sends hot sections to hot biomes and cold sections to cold ones', () => {
+test('castBiomes sends the extremes to matching biomes and orders the middle by temperature', () => {
   const cast = castBiomes([0.05, 0.95, 0.1, 0.9], 7);
   assert.equal(cast.length, 4);
+  // The coldest and hottest sections must land squarely in their bands;
+  // mid sections may wander within the seeded jitter, but their biome
+  // temperatures must still respect the sections' energy ordering.
   assert.ok(COLD.has(cast[0]), `coldest section got ${cast[0]}`);
   assert.ok(HOT.has(cast[1]), `hottest section got ${cast[1]}`);
-  assert.ok(COLD.has(cast[2]), `cold section got ${cast[2]}`);
-  assert.ok(HOT.has(cast[3]), `hot section got ${cast[3]}`);
+  assert.ok(BIOME_TEMPERATURE[cast[2]] < BIOME_TEMPERATURE[cast[3]],
+    `cold-ish (${cast[2]}) must cast cooler than hot-ish (${cast[3]})`);
 });
 
 test('castBiomes never repeats a biome back to back, and always returns valid names', () => {

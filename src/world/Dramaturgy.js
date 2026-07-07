@@ -17,7 +17,7 @@ import { clamp01, smoothstep, mulberry32 } from '../utils/math.js';
 // Where each biome sits on the cold-to-hot axis.
 export const BIOME_TEMPERATURE = {
   ARCTIC: 0.05, SAKURA: 0.20, TWILIGHT: 0.32, VOID: 0.45,
-  JADE: 0.55, CYBER: 0.70, EMBER: 0.85, SOLAR: 0.95,
+  JADE: 0.55, CYBER: 0.70, STORM: 0.78, EMBER: 0.85, SOLAR: 0.95,
 };
 
 /**
