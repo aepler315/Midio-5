@@ -8,6 +8,7 @@ import { clamp, lerp, mulberry32 } from '../utils/math.js';
 import { MIDASUS_MESH } from '../render/meshes.js';
 import { computeRestLengths, drawMeshPart, displaceMeshRadial } from '../render/MeshDrawer.js';
 import { ModalRing } from '../render/oscillators.js';
+import { OrbitalDebris } from './OrbitalDebris.js';
 
 const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
@@ -49,6 +50,8 @@ export class Midasus {
     // Her diamond core shivers on every melody onset -- quicker and lighter
     // than Midio's body (higher base frequency, faster ring-down).
     this.modal = new ModalRing({ modes: 3, baseHz: 11, decaySec: 0.4, seed: seed + 1 });
+    // Gravitationally bound shards: they trail and slingshot as she darts.
+    this.debris = new OrbitalDebris(seed + 2);
   }
 
   _target(n) {
@@ -110,6 +113,7 @@ export class Midasus {
       this.lastNoteMs = nowMs;
       this.pulse = 1.7 + 0.5 * n.vel; // a brief mesh flash on each note onset
       this.modal.excite(0.8 + 2.2 * n.vel);
+      if (n.vel > 0.75) this.debris.burst(n.vel); // hard notes fling the shards outward
     }
 
     this.pulse += (1 - this.pulse) * Math.min(1, dtSec / 0.12);
@@ -138,10 +142,16 @@ export class Midasus {
       o.x += o.vx * dt; o.y += o.vy * dt; o.age += dt;
       return o.age < o.life;
     });
+
+    // Note pulses briefly raise her effective mass (orbits tighten);
+    // calm sections lower it, so the shards drift into wider, lazier arcs.
+    const massMul = (0.8 + 0.5 * (this.pulse - 1)) * (1 - 0.3 * calmLevel);
+    this.debris.update(dtSec, this.p, Math.max(0.3, massMul));
   }
 
   draw(ctx) {
     const sat = Math.round(90 - 40 * this.rest);
+    this.debris.draw(ctx, this.hue, this.rest); // behind her core and trail
     // Calm sections fade the ribbon rather than shortening it -- the longer
     // reach comes from _emitStreak's extended particle life, this is the
     // "fainter" half of that same trade.

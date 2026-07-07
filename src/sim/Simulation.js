@@ -94,7 +94,7 @@ export class Simulation {
       const I = ImpactFX.intensity(this.jump.pendingLanding.vLandPxMs, V_REF);
       this.comboSystem.onLanding(nowMs, isClean);
       this.performer.onLanding(nowMs, this.comboSystem.justClean, this.comboSystem.displayM, I);
-      this.performer.onStreak(this.comboSystem.streak);
+      this.performer.onStreak(this.comboSystem.streak, nowMs);
       this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera);
       this.fracture.registerImpact(I);
     }

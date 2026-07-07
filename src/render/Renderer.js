@@ -4,6 +4,7 @@
 // each stage guards on the subsystem's presence so this file grows additively.
 import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE } from './meshes.js';
 import { computeRestLengths, drawMeshPart, displaceMeshRadial } from './MeshDrawer.js';
+import { EpicycleShow } from './EpicycleShow.js';
 
 const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
@@ -15,6 +16,8 @@ export class Renderer {
     this._midioRestLengths = computeRestLengths(MIDIO_MESH);
     this._midioBodyRest = computeRestLengths(MIDIO_BODY);
     this._midioEyeRest = computeRestLengths(MIDIO_EYE);
+    this.epicycles = new EpicycleShow();
+    this._lastMilestoneMs = null;
   }
 
   draw(sim, alpha) {
@@ -53,6 +56,14 @@ export class Renderer {
 
     if (sim.performer) this._drawMidioAfterimages(ctx, sim.performer, pose.midioX);
     this._drawMidio(ctx, pose, sim.performer);
+
+    // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
+    const lm = sim.performer ? sim.performer.lastMilestone : null;
+    if (lm && lm.atMs !== this._lastMilestoneMs) {
+      this._lastMilestoneMs = lm.atMs;
+      this.epicycles.trigger(lm.idx, pose.midioX + 30, sim.midio.groundY - 245, sim.timeMs);
+    }
+    this.epicycles.draw(ctx, sim.timeMs);
 
     if (sim.midasus) sim.midasus.draw(ctx);
     if (sim.fracture) sim.fracture.draw(ctx, canvas);

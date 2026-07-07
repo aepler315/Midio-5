@@ -44,6 +44,7 @@ export class MidioPerformer {
     this._lastMilestoneIdx = -1;
     this.milestoneFlash = false; // one-shot per step
     this.goldFlash = 0;
+    this.lastMilestone = null; // {idx, atMs} -- persists for the renderer
 
     this.afterimages = [];
     this._lastCaptureMs = -Infinity;
@@ -67,13 +68,16 @@ export class MidioPerformer {
     this.modal.excite(1.5 + 4.5 * intensity);
   }
 
-  onStreak(streak) {
+  onStreak(streak, nowMs = 0) {
     let idx = -1;
     for (let i = 0; i < MILESTONES.length; i++) if (streak >= MILESTONES[i]) idx = i;
     if (idx > this._lastMilestoneIdx) {
       this._lastMilestoneIdx = idx;
       this.milestoneFlash = true;
       this.goldFlash = 1;
+      // Persistent record (not a one-shot flag) so the renderer can't
+      // miss it between sim steps -- it triggers the epicycle glyph show.
+      this.lastMilestone = { idx, atMs: nowMs };
     }
   }
 

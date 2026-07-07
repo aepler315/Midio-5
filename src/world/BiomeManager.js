@@ -9,6 +9,7 @@ import { Mandala } from './Mandala.js';
 import { CymaticField } from './CymaticField.js';
 import { KuramotoSwarm } from './KuramotoSwarm.js';
 import { ChaosRibbon } from './ChaosRibbon.js';
+import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { clamp, clamp01, smoothstep, mulberry32, hashSeed, shuffle } from '../utils/math.js';
 import { LerpCache } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
@@ -60,6 +61,7 @@ export class BiomeManager {
     this.cymatics = new CymaticField(songSeed);
     this.swarm = new KuramotoSwarm(songSeed);
     this.ribbon = new ChaosRibbon(songSeed);
+    this.rd = new ReactionDiffusion(songSeed);
     this._beatMs = 500; // EMA'd kick interval, feeding the swarm's natural frequency
     this._lastKickMs = null;
 
@@ -70,6 +72,7 @@ export class BiomeManager {
       this.mandala.kick();
       this.swarm.kick(evt.vel);
       this.ribbon.kick();
+      this.rd.onKick();
       if (this._lastKickMs != null) {
         const delta = evt.tMs - this._lastKickMs;
         if (delta >= 240 && delta <= 1500) this._beatMs += 0.25 * (delta - this._beatMs);
@@ -171,6 +174,7 @@ export class BiomeManager {
     this.cymatics.update(nowMs, dtSec, energyCurves, calmLevel);
     this.swarm.update(nowMs, dtSec, energyCurves, this._beatMs, calmLevel);
     this.ribbon.update(nowMs, dtSec, energyCurves, calmLevel);
+    this.rd.update(nowMs, dtSec, energyCurves, calmLevel);
 
     if (this._scanlineActive) {
       this._scanlineY += dtSec * this.h * 2.2;
@@ -457,6 +461,19 @@ export class BiomeManager {
       const bars = this.groundField.visibleBars(worldX, originX, canvas.width);
       ctx.fillStyle = groundColor;
       for (const bar of bars) ctx.fillRect(bar.x, bar.y, bar.width + 1, canvas.height - bar.y);
+
+      // Gray-Scott texture living inside the ground: clip to the slice
+      // silhouette so the pattern rides the terrain's vertical motion.
+      let minTop = canvas.height;
+      ctx.save();
+      ctx.beginPath();
+      for (const bar of bars) {
+        ctx.rect(bar.x, bar.y, bar.width + 1, canvas.height - bar.y);
+        if (bar.y < minTop) minTop = bar.y;
+      }
+      ctx.clip();
+      this.rd.draw(ctx, canvas, worldX, minTop);
+      ctx.restore();
 
       ctx.strokeStyle = 'rgba(255,255,255,0.18)';
       ctx.lineWidth = 2;
