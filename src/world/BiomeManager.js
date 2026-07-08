@@ -43,6 +43,7 @@ export class BiomeManager {
     this._shutterBarMs = 500;
     this.cutFlashJustFired = false;
     this.budget = 1;
+    this.hypeBoost = 1; // drop-surge multiplier from the HypeDirector
     this._progress = 0;
     this.lerpCache = new LerpCache();
     this.tSec = 0;
@@ -197,6 +198,13 @@ export class BiomeManager {
 
   _profile(name) { return BIOMES.find((b) => b.name === name); }
 
+  /** The current blended halo color -- shared accent for HUD-level effects. */
+  currentHaloColor() {
+    if (!this.currentBlend) return '#ffffff';
+    const { from, to, t } = this.currentBlend;
+    return this.lerpCache.get(this._profile(from).celestial.haloColor, this._profile(to).celestial.haloColor, t);
+  }
+
   update(nowMs, dtSec, energyCurves, calmLevel = 0) {
     this.tSec = nowMs / 1000;
     this.calmLevel = calmLevel;
@@ -219,12 +227,13 @@ export class BiomeManager {
     // Intensity budget: stage the show -- restrained intro, full finale.
     this._progress = this.durationMs > 0 ? clamp01(nowMs / this.durationMs) : 0.5;
     this.budget = intensityBudget(this._progress);
-    this.mandala.intensity = this.budget;
-    this.murmuration.intensity = this.budget;
-    this.cymatics.intensity = this.budget;
-    this.swarm.intensity = this.budget;
-    this.ribbon.intensity = this.budget;
-    this.rd.intensity = this.budget;
+    const gain = this.budget * this.hypeBoost;
+    this.mandala.intensity = gain;
+    this.murmuration.intensity = gain;
+    this.cymatics.intensity = gain;
+    this.swarm.intensity = gain;
+    this.ribbon.intensity = gain;
+    this.rd.intensity = gain;
 
     // Biome personality: the dominant biome tunes the phenomena dials.
     const pers = PERSONALITY[t > 0.5 ? to : from] || {};

@@ -22,8 +22,11 @@ const TONGUE_COOLDOWN_MS = 350;
 // Calm/idle behaviors (follow-up item 3): a relaxed lope (softer hops, a
 // wide lazy tail sway) plus an occasional yawn during sustained quiet
 // stretches, so low-intensity sections still feel alive.
-const TAIL_BASE_HZ = 0.9, TAIL_CALM_HZ = 0.32;
-const TAIL_BASE_DEG = 6, TAIL_CALM_DEG = 18;
+const TAIL_BASE_HZ = 1.3, TAIL_CALM_HZ = 0.32;
+const TAIL_BASE_DEG = 9, TAIL_CALM_DEG = 18;
+const DRAW_SCALE = 1.45; // ferocity pass: render-only, physics untouched
+const WEAVE_PX = 6;      // predatory side-to-side drift while trailing
+const BEAT_FLASH_DECAY_SEC = 0.14;
 const CALM_LEVEL_THRESHOLD = 0.5;
 const CALM_BAR_THRESHOLD = 4;
 const YAWN_CHANCE_PER_BAR = 0.35;
@@ -89,6 +92,8 @@ export class Broshi {
     // Body vibration: struck by kicks and hops, and fed a continuous low
     // shiver while rabid so his whole silhouette trembles at high energy.
     this.modal = new ModalRing({ modes: 4, baseHz: 7, decaySec: 0.5, seed: seed + 1 });
+    this.beatFlash = 0;
+    this._nowMs = 0;
 
     conductor.onBar((bar) => this._onBar(bar));
     conductor.on(Role.RHYTHM, (evt) => {
@@ -134,6 +139,7 @@ export class Broshi {
     this.jawOpen = 1;
     this._jawUntilMs = -Infinity; // set precisely in update() using nowMs snapshot
     this._jawKickPending = true;
+    this.beatFlash = 1;
   }
 
   _onMiniHopTrigger(evt) {
@@ -150,7 +156,7 @@ export class Broshi {
     this._barEnergyAccum += gInstant;
     this._barEnergySamples++;
 
-    if (this._jawKickPending) { this._jawKickPending = false; this._jawUntilMs = nowMs + 80; this.jawOpen = 1; this.modal.excite(1.8); }
+    if (this._jawKickPending) { this._jawKickPending = false; this._jawUntilMs = nowMs + 80; this.jawOpen = 1; this.modal.excite(2.6); }
     if (this._hopPending) { const { vel } = this._hopPending; this._hopPending = null; this._startHop(nowMs, vel); this.modal.excite(0.6 + 1.2 * vel); }
     if (this._neckPending) { const { vel } = this._neckPending; this._neckPending = null; this._neckStartMs = nowMs; this._neckAmp = 10 + 16 * vel; }
 
@@ -257,13 +263,15 @@ export class Broshi {
     this.spittle.step(dtSec, (o, dtt) => { o.x += o.vx * dtt; o.y += o.vy * dtt; o.vy += 400 * dtt; o.age += dtt; return o.age < o.life; });
     this.drool.step(dtSec, (o, dtt) => { o.y += o.vy * dtt; o.age += dtt; return o.age < o.life; });
 
+    this.beatFlash = Math.max(0, this.beatFlash - dtSec / BEAT_FLASH_DECAY_SEC);
+    this._nowMs = nowMs;
     this.groundY = groundY;
     this.screenX = midio.screenX + this.xRel;
   }
 
   _startHop(nowMs, vel) {
     // Relaxed lope: calm sections soften the hop instead of cutting it entirely.
-    this._hopH = (10 + 18 * vel) * (1 - 0.5 * this._calmLevel);
+    this._hopH = (16 + 26 * vel) * (1 - 0.5 * this._calmLevel);
     this._hopUntilMs = nowMs + 160;
   }
 
@@ -283,11 +291,15 @@ export class Broshi {
     const skinHex = hexLerp('#63c74d', '#e43b44', this.rho);
     const skinRgb = hexToRgb(skinHex);
     const baseHue = rgbToHsl(skinRgb.r, skinRgb.g, skinRgb.b).h;
-    const x = this.screenX;
+    // Predatory weave: he stalks side to side instead of gliding on rails.
+    // Render-only -- the spring physics and panic hops are untouched.
+    const weave = WEAVE_PX * (1 - 0.5 * this._calmLevel) * Math.sin(this._nowMs * 0.006);
+    const x = this.screenX + weave;
     const y = this.groundY - this.hopY;
 
     ctx.save();
     ctx.translate(x, y);
+    ctx.scale(DRAW_SCALE, DRAW_SCALE);
 
     if (this.rho > 0.02) {
       ctx.save();
@@ -329,12 +341,19 @@ export class Broshi {
     // transformed (not via ctx.rotate) so edge angle/length -- and therefore
     // hue/glow -- actually reacts to the neck-bob and jaw snap.
     const neckRad = (this.neckAngle * Math.PI) / 180;
-    const group = { tx: x, ty: y, rot: neckRad, scaleX: 1, scaleY: 1 };
+    const group = { tx: x, ty: y, rot: neckRad, scaleX: DRAW_SCALE, scaleY: DRAW_SCALE };
     const bodyHub = BROSHI_BODY.vertices[0];
     const bodyMesh = displaceMeshRadial(BROSHI_BODY, bodyHub.x, bodyHub.y, this.modal);
     const glyphOpts = { satBase: 30, lightBase: 56, hueSpread: 20 };
     drawMeshPart(ctx, bodyMesh, this._bodyRest, group, baseHue, glyphOpts);
     drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue, glyphOpts);
+    if (this.beatFlash > 0.03) {
+      // Kick ignition: the whole glyph flashes additively with the beat.
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      drawMeshPart(ctx, bodyMesh, this._bodyRest, group, baseHue, { alpha: 0.6 * this.beatFlash, satBase: 65, lightBase: 72, widthBase: 2.2 });
+      ctx.restore();
+    }
 
     const jawTip = BROSHI_JAW.vertices[1];
     const jawMesh = { vertices: [BROSHI_JAW.vertices[0], { x: jawTip.x, y: jawTip.y + this.jawOpen * 10 }], edges: BROSHI_JAW.edges };
@@ -357,6 +376,7 @@ export class Broshi {
 
     ctx.save();
     ctx.translate(x, y);
+    ctx.scale(DRAW_SCALE, DRAW_SCALE);
     for (const d of this.drool.active) {
       ctx.fillStyle = 'rgba(150,220,255,0.7)';
       ctx.beginPath();
