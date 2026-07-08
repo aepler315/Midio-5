@@ -13,6 +13,8 @@ import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { LightningFX } from './Lightning.js';
+import { PERSONALITY } from './BiomePersonality.js';
+import { superformula } from '../render/oscillators.js';
 import { clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
 import { LerpCache } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
@@ -220,6 +222,15 @@ export class BiomeManager {
     this.ribbon.intensity = this.budget;
     this.rd.intensity = this.budget;
 
+    // Biome personality: the dominant biome tunes the phenomena dials.
+    const pers = PERSONALITY[t > 0.5 ? to : from] || {};
+    this.cymatics.modePool = pers.cymaticModes || null;
+    const [bandLo, bandHi] = pers.swarmBand || [0.18, 0.53];
+    this.swarm.setBand(bandLo, bandHi);
+    this.mandala.rateMul = pers.mandalaRate ?? 1;
+    this.rd.bias = pers.rdBias ?? 0;
+    this._ribbonScaleMul = pers.ribbonScale ?? 1;
+
     this.fields.get(from).update(dtSec, this.tSec, energyCurves, nowMs, calmLevel);
     if (to !== from) this.fields.get(to).update(dtSec, this.tSec, energyCurves, nowMs, calmLevel);
 
@@ -275,7 +286,7 @@ export class BiomeManager {
     // Phenomena layer, deep sky: cymatic dust settling into Chladni
     // figures, and the chaos ribbon opposite the celestial for balance.
     this.cymatics.draw(ctx, canvas, mandalaColor);
-    this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075, mandalaColor);
+    this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075 * (this._ribbonScaleMul || 1), mandalaColor);
     this.lightning.draw(ctx, canvas, this.tSec * 1000); // behind the ranges: bolts land beyond the hills
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
 
@@ -462,6 +473,33 @@ export class BiomeManager {
       ctx.moveTo(cx - c.radius, cy); ctx.lineTo(cx + c.radius, cy);
       ctx.moveTo(cx, cy - c.radius); ctx.lineTo(cx, cy + c.radius);
       ctx.stroke();
+    } else if (c.shape) {
+      // Superformula silhouette: this biome's sun/moon is a Gielis curve,
+      // slowly rotating, normalized so `radius` still means what it says.
+      // Odd m only closes after 4*pi (the curve needs two revolutions),
+      // even m closes after 2*pi.
+      const { m, n1, n2, n3 } = c.shape;
+      const span = (m % 2 === 1 ? 4 : 2) * Math.PI;
+      const steps = m % 2 === 1 ? 192 : 96;
+      let rMax = 0;
+      const rs = new Array(steps + 1);
+      for (let i = 0; i <= steps; i++) {
+        rs[i] = superformula((i / steps) * span, m, n1, n2, n3);
+        if (rs[i] > rMax) rMax = rs[i];
+      }
+      const rot = this.tSec * 0.05;
+      ctx.fillStyle = c.color;
+      ctx.globalAlpha = alpha * (c.veiled ? 0.6 : 1);
+      ctx.beginPath();
+      for (let i = 0; i <= steps; i++) {
+        const phi = (i / steps) * span;
+        const r = (rs[i] / rMax) * c.radius;
+        const x = cx + Math.cos(phi + rot) * r;
+        const y = cy + Math.sin(phi + rot) * r;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
     } else {
       ctx.fillStyle = c.color;
       ctx.globalAlpha = alpha * (c.veiled ? 0.6 : 1);

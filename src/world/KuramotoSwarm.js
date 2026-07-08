@@ -38,7 +38,14 @@ export class KuramotoSwarm {
     this.r = 0; // live order parameter, 0 = incoherent, 1 = perfect unison
     this.intensity = 1; // dramaturgy budget multiplier
     this._kickPull = 0;
+
+    // Biome personality: the vertical band the swarm drifts toward.
+    this._bandLo = 0.18;
+    this._bandHi = 0.53;
+    for (const o of this.oscillators) o.bandFrac = (o.ay - 0.18) / 0.35;
   }
+
+  setBand(lo, hi) { this._bandLo = lo; this._bandHi = hi; }
 
   kick(vel = 0.8) {
     this._kickPull = 0.22 + 0.33 * vel;
@@ -61,11 +68,13 @@ export class KuramotoSwarm {
 
     const pull = this._kickPull;
     this._kickPull = 0;
+    const bandBlend = 1 - Math.exp(-dtSec / 2); // ~2s migration when the band moves
     for (const o of this.oscillators) {
       o.theta += (omega0 + o.detune + K * R * Math.sin(psi - o.theta)) * dtSec;
       if (pull > 0) o.theta += pull * Math.sin(-o.theta); // entrain the flash to the kick
       if (o.theta > TWO_PI) o.theta -= TWO_PI;
       else if (o.theta < 0) o.theta += TWO_PI;
+      o.ay += (this._bandLo + o.bandFrac * (this._bandHi - this._bandLo) - o.ay) * bandBlend;
     }
   }
 

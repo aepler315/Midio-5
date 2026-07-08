@@ -30,6 +30,7 @@ export class ReactionDiffusion {
     this._v2 = new Float32Array(W * H);
     this.E = 0;
     this.intensity = 1; // dramaturgy budget multiplier
+    this.bias = 0; // biome personality: shifts the regime sweep along the energy axis
     this.w = W;
     this.h = H;
 
@@ -85,7 +86,7 @@ export class ReactionDiffusion {
     this.E += (1 - Math.exp(-dtSec / E_EMA_TAU)) * (eInstant - this.E);
 
     // Sweep (F,k) piecewise-linearly: calm -> mid -> loud along the energy axis.
-    const e = clamp01(this.E * (1 - 0.3 * calmLevel));
+    const e = clamp01(this.E * (1 - 0.3 * calmLevel) + this.bias);
     const t = e < 0.5 ? e * 2 : (e - 0.5) * 2;
     const a = e < 0.5 ? REGIME_CALM : REGIME_MID;
     const b = e < 0.5 ? REGIME_MID : REGIME_LOUD;

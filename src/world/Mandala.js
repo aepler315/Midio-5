@@ -30,6 +30,7 @@ export class Mandala {
     this.pulse = 0;
     this.tSec = 0;
     this.intensity = 1; // dramaturgy budget multiplier
+    this.rateMul = 1; // biome personality: rotation-rate multiplier
   }
 
   kick() { this.pulse = 1; }
@@ -40,7 +41,7 @@ export class Mandala {
     this.E += (1 - Math.exp(-dtSec / E_EMA_TAU)) * (eInstant - this.E);
     this.pulse *= Math.exp(-dtSec / PULSE_DECAY_SEC);
 
-    const rate = (0.25 + 0.9 * this.E) * (1 - 0.45 * calmLevel);
+    const rate = (0.25 + 0.9 * this.E) * (1 - 0.45 * calmLevel) * this.rateMul;
     for (const layer of this.layers) layer.rot += layer.spin * rate * dtSec;
   }
 

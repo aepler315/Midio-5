@@ -98,6 +98,19 @@ export function chladniGrad(u, v, m, n) {
 }
 
 /**
+ * Gielis' superformula: one radial equation whose exponents sweep from
+ * circles through polygons, stars, and petals --
+ *   r(phi) = (|cos(m*phi/4)/a|^n2 + |sin(m*phi/4)/b|^n3)^(-1/n1)
+ * Used to give each biome's sun or moon its own silhouette.
+ */
+export function superformula(phi, m, n1, n2, n3, a = 1, b = 1) {
+  const t1 = Math.abs(Math.cos((m * phi) / 4) / a) ** n2;
+  const t2 = Math.abs(Math.sin((m * phi) / 4) / b) ** n3;
+  const r = (t1 + t2) ** (-1 / n1);
+  return Number.isFinite(r) ? r : 0;
+}
+
+/**
  * Thomas' cyclically symmetric attractor: x' = sin(y) - b*x (and cyclic).
  * The single damping parameter b is a bifurcation knob: ~0.33 gives
  * gentle limit cycles, ~0.19 is fully chaotic -- so driving b with track

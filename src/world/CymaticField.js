@@ -29,13 +29,17 @@ export class CymaticField {
     this._barCount = 0;
     this.E = 0;
     this.intensity = 1; // dramaturgy budget multiplier
+    this.modePool = null; // biome personality: allowed MODES indices, null = all
   }
 
   onBar() {
     this._barCount++;
     if (this._barCount % MODE_PERIOD_BARS === 0) {
-      let next = Math.floor(this.rand() * MODES.length);
-      if (next === this.modeIdx) next = (next + 1) % MODES.length;
+      const pool = this.modePool && this.modePool.length
+        ? this.modePool
+        : MODES.map((_, i) => i);
+      let next = pool[Math.floor(this.rand() * pool.length)];
+      if (next === this.modeIdx) next = pool[(pool.indexOf(next) + 1) % pool.length];
       this.modeIdx = next;
     }
   }
