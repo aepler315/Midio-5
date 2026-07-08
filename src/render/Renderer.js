@@ -75,6 +75,7 @@ export class Renderer {
     this.epicycles.draw(ctx, sim.timeMs);
 
     if (sim.midasus) sim.midasus.draw(ctx);
+    if (sim.gnat) sim.gnat.draw(ctx, sim.timeMs);
     if (sim.fracture) sim.fracture.draw(ctx, canvas);
     if (biomeManager) biomeManager.drawForeground(ctx, canvas, pose.worldX);
 

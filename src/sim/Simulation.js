@@ -13,6 +13,7 @@ import { Midasus } from './Midasus.js';
 import { Broshi } from './Broshi.js';
 import { MidioPerformer } from './MidioPerformer.js';
 import { CalmDirector } from './CalmDirector.js';
+import { GnatGag } from './GnatGag.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
@@ -45,6 +46,7 @@ export class Simulation {
     const songSeed = hashSeed(`${conductor.timeline.length}:${conductor.durationMs}:${conductor.timeline[0]?.tMs ?? 0}:${conductor.timeline.at(-1)?.tMs ?? 0}`);
     this.performer = new MidioPerformer(songSeed);
     this.calm = new CalmDirector();
+    this.gnat = new GnatGag(songSeed, { canvasWidth, canvasHeight });
     this.groundField = new GroundField(this.midio.groundY, {
       conductor, durationMs: conductor.durationMs, songSeed,
     });
@@ -64,7 +66,7 @@ export class Simulation {
     this.curr = this._snapshot();
 
     conductor.on(Role.RHYTHM, (evt) => {
-      if (evt.kick) this.jump.onKick(evt);
+      if (evt.kick) { this.jump.onKick(evt); this.gnat.onKick(evt); }
     });
   }
 
@@ -119,6 +121,7 @@ export class Simulation {
     if (this.biomes.cutFlashJustFired) { this.camera.punch(1.06); this.camera.shake(6); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
 
+    this.gnat.update(nowMs, dtSec, this.calm.level);
     this.camera.update(dtSec, this.calm.level);
     this.paramBus.step();
 

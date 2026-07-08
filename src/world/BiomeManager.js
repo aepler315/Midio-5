@@ -14,6 +14,7 @@ import { decorateStrip } from './Landmarks.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { LightningFX } from './Lightning.js';
 import { PERSONALITY } from './BiomePersonality.js';
+import { Murmuration } from './Murmuration.js';
 import { superformula } from '../render/oscillators.js';
 import { clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
 import { LerpCache } from '../utils/color.js';
@@ -81,6 +82,7 @@ export class BiomeManager {
     this.ribbon = new ChaosRibbon(songSeed);
     this.rd = new ReactionDiffusion(songSeed);
     this.lightning = new LightningFX(songSeed);
+    this.murmuration = new Murmuration(canvasWidth, canvasHeight, songSeed);
     this._beatMs = 500; // EMA'd kick interval, feeding the swarm's natural frequency
     this._lastKickMs = null;
 
@@ -92,6 +94,7 @@ export class BiomeManager {
       this.swarm.kick(evt.vel);
       this.ribbon.kick();
       this.rd.onKick();
+      if (evt.vel > 0.78) this.murmuration.startle(evt.vel);
       // Heavy kicks strike lightning, but only while a storm is blowing.
       const active = this.currentBlend ? this._profile(this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from) : null;
       if (active && active.fx === 'lightning') this.lightning.maybeTrigger(evt.tMs, evt.vel, this.w, this.groundY);
@@ -217,6 +220,7 @@ export class BiomeManager {
     this._progress = this.durationMs > 0 ? clamp01(nowMs / this.durationMs) : 0.5;
     this.budget = intensityBudget(this._progress);
     this.mandala.intensity = this.budget;
+    this.murmuration.intensity = this.budget;
     this.cymatics.intensity = this.budget;
     this.swarm.intensity = this.budget;
     this.ribbon.intensity = this.budget;
@@ -248,6 +252,7 @@ export class BiomeManager {
     this.ribbon.update(nowMs, dtSec, energyCurves, calmLevel);
     this.rd.update(nowMs, dtSec, energyCurves, calmLevel);
     this.lightning.update(dtSec);
+    this.murmuration.update(nowMs, dtSec, energyCurves, calmLevel);
 
     if (this._scanlineActive) {
       this._scanlineY += dtSec * this.h * 2.2;
@@ -300,8 +305,10 @@ export class BiomeManager {
     // Ambient particle field lives roughly at mid-depth.
     this.fields.get(from).draw(ctx);
     if (to !== from && t > 0.02) { ctx.save(); ctx.globalAlpha = t; this.fields.get(to).draw(ctx); ctx.restore(); }
-    // The Kuramoto swarm shares this depth: synchronized flashing motes.
+    // The Kuramoto swarm shares this depth: synchronized flashing motes,
+    // with the murmuration wheeling among them.
     this.swarm.draw(ctx, canvas, mandalaColor);
+    this.murmuration.draw(ctx, this.tSec * 1000, mandalaColor);
 
     this._drawLayer(ctx, canvas, 'L4', scrollX2, tint, t, A, B);
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
@@ -363,7 +370,7 @@ export class BiomeManager {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (A.fx === 'starTwinkle' || B.fx === 'starTwinkle') {
-      const alpha = A.fx === 'starTwinkle' ? 1 - t : t;
+      const alpha = (A.fx === 'starTwinkle' ? 1 - t : 0) + (B.fx === 'starTwinkle' ? t : 0);
       if (alpha > 0.02) {
         ctx.save();
         ctx.globalAlpha = alpha;
@@ -380,7 +387,7 @@ export class BiomeManager {
       }
     }
     if (A.fx === 'aurora' || B.fx === 'aurora') {
-      const alpha = A.fx === 'aurora' ? 1 - t : t;
+      const alpha = (A.fx === 'aurora' ? 1 - t : 0) + (B.fx === 'aurora' ? t : 0);
       if (alpha > 0.02) this._drawAurora(ctx, canvas, alpha);
     }
   }
@@ -404,13 +411,15 @@ export class BiomeManager {
 
   _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22) {
     const cx = canvas.width * 0.78, cy = canvas.height * cyFrac;
-    this._drawOneCelestial(ctx, cx, cy, A.celestial, 1 - t);
-    if (B !== A) this._drawOneCelestial(ctx, cx, cy, B.celestial, t);
-
-    if (A.fx === 'prominence' || B.fx === 'prominence') {
-      const alpha = A.fx === 'prominence' ? 1 - t : t;
-      if (alpha > 0.02) this._drawProminence(ctx, cx, cy, alpha);
+    if (B === A) {
+      this._drawOneCelestial(ctx, cx, cy, A.celestial, 1);
+    } else {
+      this._drawOneCelestial(ctx, cx, cy, A.celestial, 1 - t);
+      this._drawOneCelestial(ctx, cx, cy, B.celestial, t);
     }
+
+    const promAlpha = (A.fx === 'prominence' ? 1 - t : 0) + (B.fx === 'prominence' ? t : 0);
+    if (promAlpha > 0.02) this._drawProminence(ctx, cx, cy, promAlpha);
   }
 
   /**
@@ -568,7 +577,7 @@ export class BiomeManager {
     const yOff = this.groundY + 40 - canvas.height;
     ctx.save();
     if (A.fx === 'heatShimmer' || B.fx === 'heatShimmer') {
-      const alpha = A.fx === 'heatShimmer' ? 1 - t : t;
+      const alpha = (A.fx === 'heatShimmer' ? 1 - t : 0) + (B.fx === 'heatShimmer' ? t : 0);
       if (alpha > 0.05 && layerKey !== 'L5') { this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX, yOff); }
       else drawTiledStrip(ctx, stripsA[layerKey], scrollX, canvas.width, canvas.height, yOff);
     } else {
