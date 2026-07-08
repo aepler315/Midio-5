@@ -17,7 +17,10 @@ const SPRING_K = 40, SPRING_C = 12; // per-slice settle spring (critically-dampe
 const RECOVER_C = 4; // reduced damping during recovery -> elastic overshoot
 const RECOVER_DURATION_MS = 700; // how long the softened damping lasts
 const LOOKAHEAD_PX = 1600;
-const TRIM_BEHIND_PX = 300;
+// Must exceed the ensemble roam window: Midio's screen anchor can sit as
+// far right as ~0.62*stageW, so slices up to that far behind worldX are
+// still on screen to his left.
+const TRIM_BEHIND_PX = 940;
 
 const GAG_LEAD_PX = 420; // how far ahead of Midio a gag is seeded, so it's visible before he reaches it
 const GAG_SLICE_COUNT = 7;

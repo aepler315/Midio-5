@@ -92,7 +92,7 @@ export class MidioPerformer {
     }
   }
 
-  update(nowMs, dtSec, midio, jump, comboSystem, calmLevel = 0) {
+  update(nowMs, dtSec, midio, jump, comboSystem, calmLevel = 0, ensemble = null) {
     this.modal.update(dtSec);
     const justLaunched = !this._wasAirborne && jump.airborne;
     if (justLaunched) {
@@ -129,18 +129,17 @@ export class MidioPerformer {
     }
 
     if (!jump.airborne && jump.beatPeriodMs > 0) {
-      const phase = (nowMs % jump.beatPeriodMs) / jump.beatPeriodMs;
-      // The stomp: a cubed sine keeps the sign but sharpens the peaks into
-      // attacks, and scaleY dips exactly on the beat -- he hits the ground
-      // WITH the kick instead of swaying near it. Calm melts it back into
-      // the gentle half-frequency sway.
-      const s = Math.sin(phase * Math.PI * 2);
+      // The stomp rides the ENSEMBLE phase when one is wired: when the trio
+      // locks, all three bodies hit together; when it slips, his timing
+      // audibly-visibly fights the others'. Falls back to raw song phase.
+      const theta = ensemble ? ensemble.phase(0) : ((nowMs % jump.beatPeriodMs) / jump.beatPeriodMs) * Math.PI * 2;
+      const s = Math.sin(theta);
       const strutAmp = STRUT_DEG * (1 - 0.6 * calmLevel);
       const swayAmp = CALM_SWAY_DEG * calmLevel;
-      midio.leanDeg += strutAmp * s * s * s + swayAmp * Math.sin(phase * Math.PI + 1.7);
+      midio.leanDeg += strutAmp * s * s * s + swayAmp * Math.sin(theta / 2 + 1.7);
       // The scale dip yields to the flourish window, which owns scale outright.
       if (nowMs >= this._flourishUntilMs) {
-        const beatHit = Math.max(0, Math.cos(phase * Math.PI * 2));
+        const beatHit = Math.max(0, Math.cos(theta));
         midio.scaleY *= 1 - STOMP_DIP * (1 - calmLevel) * beatHit * beatHit * beatHit;
       }
     }

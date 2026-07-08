@@ -432,40 +432,59 @@ export class BiomeManager {
   }
 
   /**
-   * The EQ, moved to a distant background layer (follow-up item 2): seven
-   * huge, soft bars on the horizon at far parallax depth, between the
-   * celestial layer and the far mountains. Excited but never distracting --
-   * additive, low alpha, and hard-clamped so it can never dominate the frame.
+   * The spectrum as weather, not as bars: a continuous luminous ridge on
+   * the horizon whose silhouette IS the 7-band spectrum -- cosine-
+   * interpolated between bands so there is not a straight line in it,
+   * slowly scrolling through the bands, with a traveling undulation riding
+   * the crest. Filled glow below, a bright aurora crest line on top.
    */
   _drawHorizonEQ(ctx, canvas, worldX, A, B, t) {
-    const scrollX = worldX * LAYER_EQ_RATIO;
-    const barCount = BAND_COUNT;
-    const totalWidth = canvas.width * 1.4;
-    const barWidth = totalWidth / barCount;
-    const baseline = canvas.height * 0.62;
-    const maxHeight = canvas.height * EQ_MAX_HEIGHT_FRAC;
-    // The celestial color (not a sky gradient stop) so the glow actually
-    // reads as light against a sky that may already share the sky's own hue.
     const color = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
+    const baseline = canvas.height * 0.60;
+    const maxH = canvas.height * EQ_MAX_HEIGHT_FRAC;
+    const scroll = worldX * 0.0018;
+    const tS = this.tSec;
+
+    const N = 64;
+    const pts = new Array(N + 1);
+    for (let i = 0; i <= N; i++) {
+      const u = i / N;
+      // Which pair of bands this column sits between (wrapping, scrolling).
+      const p = ((u * BAND_COUNT + scroll) % BAND_COUNT + BAND_COUNT) % BAND_COUNT;
+      const i0 = Math.floor(p) % BAND_COUNT, i1 = (i0 + 1) % BAND_COUNT;
+      const f = p - Math.floor(p);
+      const c = (1 - Math.cos(f * Math.PI)) / 2; // cosine ease: no corners
+      const v = clamp01(this._eqSmoothed[i0] * (1 - c) + this._eqSmoothed[i1] * c);
+      const wave = Math.sin(u * Math.PI * 7 + tS * 1.6) * 7 * (0.25 + v);
+      pts[i] = { x: u * canvas.width, y: baseline - (v * maxH + wave) };
+    }
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    const offset = -(((scrollX % totalWidth) + totalWidth) % totalWidth);
-    for (let rep = 0; rep < 3; rep++) {
-      const groupX = offset + rep * totalWidth - totalWidth;
-      for (let i = 0; i < barCount; i++) {
-        const x = groupX + i * barWidth;
-        if (x + barWidth < -50 || x > canvas.width + 50) continue;
-        const v = clamp01(this._eqSmoothed[i]);
-        const h = Math.min(maxHeight, v * maxHeight);
-        if (h <= 1) continue;
-        const grad = ctx.createLinearGradient(0, baseline, 0, baseline - h);
-        grad.addColorStop(0, `${color}80`);
-        grad.addColorStop(1, `${color}00`);
-        ctx.fillStyle = grad;
-        ctx.globalAlpha = 0.30 * this.budget;
-        ctx.fillRect(x + barWidth * 0.08, baseline - h, barWidth * 0.84, h);
+
+    // Body: a soft filled glow from the crest down.
+    const grad = ctx.createLinearGradient(0, baseline - maxH, 0, baseline + 30);
+    grad.addColorStop(0, `${color}55`);
+    grad.addColorStop(1, `${color}00`);
+    ctx.fillStyle = grad;
+    ctx.globalAlpha = 0.5 * this.budget;
+    ctx.beginPath();
+    ctx.moveTo(0, baseline + 30);
+    for (const p of pts) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(canvas.width, baseline + 30);
+    ctx.closePath();
+    ctx.fill();
+
+    // Crest: wide faint halo under a bright aurora line.
+    for (const [lw, a] of [[7, 0.14], [2.2, 0.6]]) {
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = a * this.budget;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      for (let i = 0; i <= N; i++) {
+        if (i === 0) ctx.moveTo(pts[i].x, pts[i].y); else ctx.lineTo(pts[i].x, pts[i].y);
       }
+      ctx.stroke();
     }
     ctx.restore();
   }

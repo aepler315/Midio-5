@@ -94,7 +94,7 @@ export class ObstacleSpawner {
       const wx = worldX + scrollSpeedPxMs * (c.tMs - nowMs);
       this.active.push({ wx, tMs: c.tMs, height: this.height, width: this.width, passed: false });
     }
-    while (this.active.length && this.active[0].wx < worldX - 400) this.active.shift();
+    while (this.active.length && this.active[0].wx < worldX - 1000) this.active.shift(); // roam-safe cull margin
   }
 
   nearestAhead(worldX) {

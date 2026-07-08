@@ -3,7 +3,7 @@
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
 // each stage guards on the subsystem's presence so this file grows additively.
 import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE } from './meshes.js';
-import { computeRestLengths, drawMeshPart, displaceMeshRadial } from './MeshDrawer.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh } from './MeshDrawer.js';
 import { EpicycleShow } from './EpicycleShow.js';
 import { ComposerStrip } from './ComposerStrip.js';
 import { RainbowBrush } from './RainbowBrush.js';
@@ -65,7 +65,7 @@ export class Renderer {
     if (sim.broshi) sim.broshi.draw(ctx, pose);
 
     if (sim.performer) this._drawMidioAfterimages(ctx, sim.performer, pose.midioX);
-    this._drawMidio(ctx, pose, sim.performer);
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
@@ -174,7 +174,7 @@ export class Renderer {
     ctx.stroke();
   }
 
-  _drawMidio(ctx, pose, performer) {
+  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0) {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
     const transform = {
@@ -191,7 +191,10 @@ export class Renderer {
     // Rest lengths stay the undisplaced ones, so the wobble reads as edge
     // deformation and lights up the glow automatically.
     const hub = MIDIO_BODY.vertices[0];
-    const bodyMesh = displaceMeshRadial(MIDIO_BODY, hub.x, hub.y, performer ? performer.modal : null);
+    const bodyMesh = meltMesh(
+      displaceMeshRadial(MIDIO_BODY, hub.x, hub.y, performer ? performer.modal : null),
+      hub.x, hub.y, tSec, melt, 1,
+    );
     drawMeshPart(ctx, bodyMesh, this._midioBodyRest, transform, hue, options);
 
     if (blink < 0.98) {

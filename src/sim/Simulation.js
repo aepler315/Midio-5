@@ -15,6 +15,8 @@ import { MidioPerformer } from './MidioPerformer.js';
 import { CalmDirector } from './CalmDirector.js';
 import { GnatGag } from './GnatGag.js';
 import { HypeDirector } from './HypeDirector.js';
+import { VibeDirector } from './VibeDirector.js';
+import { EnsembleDirector } from './EnsembleDirector.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
@@ -48,6 +50,8 @@ export class Simulation {
     this.performer = new MidioPerformer(songSeed);
     this.calm = new CalmDirector();
     this.hype = new HypeDirector();
+    this.vibe = new VibeDirector(conductor.timeline);
+    this.ensemble = new EnsembleDirector(songSeed, { stageW: canvasWidth, stageH: canvasHeight });
     this.gnat = new GnatGag(songSeed, { canvasWidth, canvasHeight });
     this.groundField = new GroundField(this.midio.groundY, {
       conductor, durationMs: conductor.durationMs, songSeed,
@@ -89,6 +93,11 @@ export class Simulation {
     this.conductor.dispatchUpTo(nowMs);
     this.calm.update(nowMs, dtSec, this.energyCurves);
     this.hype.update(nowMs, dtSec, this.energyCurves);
+    this.vibe.update(nowMs, dtSec, this.energyCurves);
+    this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs);
+    // Midio roams toward his ensemble anchor -- slow, never gameplay-fast.
+    const dxA = this.ensemble.anchors[0].x - this.midio.screenX;
+    this.midio.screenX += Math.max(-30 * dtSec, Math.min(30 * dtSec, dxA));
     this.jump.update(nowMs);
     this.midio.y = this.jump.y;
 
@@ -120,11 +129,16 @@ export class Simulation {
 
     this.obstacles.update(nowMs, this.worldX, worldSpeed / 1000);
     this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.obstacles);
-    this.performer.update(nowMs, dtSec, this.midio, this.jump, this.comboSystem, this.calm.level);
+    this.performer.update(nowMs, dtSec, this.midio, this.jump, this.comboSystem, this.calm.level, this.ensemble);
     this.impactFX.step(dtSec);
 
-    this.midasus.update(nowMs, dtSec, this.calm.level);
-    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level);
+    this.midasus.update(nowMs, dtSec, this.calm.level, {
+      x: this.ensemble.anchors[2].x, y: this.ensemble.anchors[2].y,
+      phase: this.ensemble.phase(2), melt: 2 + 4.5 * this.vibe.epic,
+    });
+    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level, {
+      trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
+    });
     this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge; // drops surge every phenomena system
     this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level);
     if (this.biomes.cutFlashJustFired) { this.camera.punch(1.06); this.camera.shake(6); }

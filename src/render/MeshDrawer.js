@@ -3,6 +3,7 @@
 // 1): hue from the edge's screen-space angle, brightness/glow from how far
 // its current length has deformed from rest. Squash-and-stretch, jaw
 // snaps, and neck bobs all become visible motion this way, for free.
+import { curl2 } from '../utils/fields.js';
 
 /** Precompute each edge's local (undeformed) length once per mesh. */
 export function computeRestLengths(mesh) {
@@ -66,6 +67,26 @@ export function drawMeshPart(ctx, mesh, restLengths, transform, baseHueDeg, opti
   const points = mesh.vertices.map((v) => applyTransform(v, transform));
   drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, options);
   return points;
+}
+
+/**
+ * The salvia melt: every vertex flows through a slow divergence-free
+ * curl-noise field, so the form is never at rest -- a liquid instrument
+ * rather than a rigid glyph. Two incommensurate field samples blend so
+ * the flow never settles into a loop. Rest lengths are NOT recomputed:
+ * the melt registers as continuous edge deformation, which the drawer
+ * turns into shifting glow and hue -- the body itself plays.
+ */
+export function meltMesh(mesh, cx, cy, tSec, amt, seed = 0) {
+  if (amt <= 0.02) return mesh;
+  const vertices = mesh.vertices.map((v) => {
+    const dx = v.x - cx, dy = v.y - cy;
+    if (dx * dx + dy * dy < 4) return v; // the hub holds still: a fixed heart in a flowing body
+    const f = curl2((v.x + seed * 37.7) * 0.028, (v.y - seed * 11.3) * 0.028, tSec * 0.21 + seed);
+    const g = curl2((v.y + seed * 5.1) * 0.041, v.x * 0.041, tSec * 0.34 - seed * 2);
+    return { x: v.x + (f.x * 0.7 + g.x * 0.3) * amt, y: v.y + (f.y * 0.7 + g.y * 0.3) * amt };
+  });
+  return { vertices, edges: mesh.edges };
 }
 
 /**

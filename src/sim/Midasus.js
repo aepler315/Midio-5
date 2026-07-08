@@ -6,7 +6,7 @@ import { Role } from '../core/NoteEvent.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { clamp, lerp, mulberry32 } from '../utils/math.js';
 import { MIDASUS_MESH } from '../render/meshes.js';
-import { computeRestLengths, drawMeshPart, displaceMeshRadial } from '../render/MeshDrawer.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh } from '../render/MeshDrawer.js';
 import { ModalRing } from '../render/oscillators.js';
 import { OrbitalDebris } from './OrbitalDebris.js';
 
@@ -62,11 +62,18 @@ export class Midasus {
     const norm = clamp((n.pitch - this.pMin) / (this.pMax - this.pMin), 0, 1);
     const y = lerp(this.yFloor - 120, this.yCeiling + 60, norm);
     const x = this.midio.screenX + 90 + 50 * n.vel;
+    // The ensemble pulls her across the stage; pitch stays primary vertically.
+    if (this._ens) {
+      return {
+        x: x * 0.35 + this._ens.x * 0.65,
+        y: y + clamp(this._ens.y - y, -110, 110) * 0.35,
+      };
+    }
     return { x, y };
   }
 
   _orbitAnchor(nowMs, calmLevel) {
-    const ax = this.midio.screenX;
+    const ax = this._ens ? this._ens.x : this.midio.screenX;
     const ay = this.midio.groundY - this.midio.y - 130;
     const t = nowMs / 1000;
     // Calm sections: the orbit widens and slows -- a lazier, dreamier drift
@@ -103,8 +110,10 @@ export class Midasus {
     });
   }
 
-  update(nowMs, dtSec, calmLevel = 0) {
+  update(nowMs, dtSec, calmLevel = 0, ensemble = null) {
     this._calmLevel = calmLevel;
+    this._ens = ensemble;
+    this._nowMs = nowMs;
     while (this.i < this.q.length && this.q[this.i].tMs <= nowMs) {
       const n = this.q[this.i++];
       const t = this._target(n);
@@ -193,9 +202,14 @@ export class Midasus {
     ctx.restore();
 
     const hub = MIDASUS_MESH.vertices[0];
-    const coreMesh = displaceMeshRadial(MIDASUS_MESH, hub.x, hub.y, this.modal);
-    // Banking: she rolls into her darts like something with mass.
-    const bank = clamp(this.v.x * BANK_GAIN, -BANK_MAX, BANK_MAX);
+    const coreMesh = meltMesh(
+      displaceMeshRadial(MIDASUS_MESH, hub.x, hub.y, this.modal),
+      hub.x, hub.y, (this._nowMs || 0) / 1000, (this._ens ? this._ens.melt : 0) * 0.7, 3,
+    );
+    // Banking: she rolls into her darts like something with mass, and her
+    // pulse breathes on her ensemble phase -- in step when the trio locks.
+    const bank = clamp(this.v.x * BANK_GAIN, -BANK_MAX, BANK_MAX)
+      + (this._ens ? 0.08 * Math.sin(this._ens.phase) : 0);
 
     ctx.save();
     ctx.globalAlpha = 0.6;
