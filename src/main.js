@@ -9,6 +9,8 @@ import { Simulation } from './sim/Simulation.js';
 import { Renderer } from './render/Renderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
+import { Sf2Synth } from './audio/Sf2Synth.js';
+import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 
@@ -26,6 +28,13 @@ const completePanelEl = document.getElementById('completePanel');
 const completeStatsEl = document.getElementById('completeStats');
 const playAgainBtnEl = document.getElementById('playAgainBtn');
 const debugOverlayEl = document.getElementById('debugOverlay');
+const sfFileInputEl = document.getElementById('sfFileInput');
+const sfDirInputEl = document.getElementById('sfDirInput');
+const sfDirBtnEl = document.getElementById('sfDirBtn');
+const fontBarEl = document.getElementById('fontBar');
+const fontPrevEl = document.getElementById('fontPrev');
+const fontNameEl = document.getElementById('fontName');
+const fontNextEl = document.getElementById('fontNext');
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -35,6 +44,9 @@ let sim = null;
 let renderer = null;
 let visionLoop = null;
 let debugOverlay = null;
+let sf2Engine = null;
+let fontLibrary = null;
+let fontBarTimer = null;
 
 let simTime = 0;
 let acc = 0;
@@ -57,7 +69,33 @@ async function bootAudio() {
   if (audioEngine) return;
   audioEngine = new AudioEngine();
   await audioEngine.resume();
-  synth = new SimpleSynth(audioEngine);
+  const fallback = new SimpleSynth(audioEngine);
+  sf2Engine = new Sf2Synth(audioEngine);
+  synth = new SynthRouter(fallback);
+  synth.setSf2Engine(sf2Engine);
+  fontLibrary = new SoundfontLibrary();
+  fontLibrary.onChange = (active) => applyActiveFont(active);
+}
+
+function applyActiveFont(active) {
+  if (sf2Engine) {
+    if (active && active.data) {
+      sf2Engine.loadSf2(active.data);
+    } else {
+      sf2Engine.loadSf2(null);
+    }
+  }
+  if (fontNameEl) {
+    fontNameEl.textContent = active ? active.name : 'No font';
+  }
+  pokeFontBar();
+}
+
+function pokeFontBar() {
+  if (!fontBarEl) return;
+  fontBarEl.classList.add('visible');
+  clearTimeout(fontBarTimer);
+  fontBarTimer = setTimeout(() => fontBarEl.classList.remove('visible'), 3000);
 }
 
 function startTimeline(timelineData) {
@@ -84,7 +122,7 @@ function startTimeline(timelineData) {
   requestAnimationFrame(frame);
 
   // Exposed for the debug overlay and for smoke-testing internals.
-  window.__SMW = { conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay };
+  window.__SMW = { conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary, sf2Engine };
 }
 
 async function loadMidiFile(file) {
@@ -163,6 +201,44 @@ dropzoneEl.addEventListener('drop', (e) => {
   if (file) handleFile(file);
 });
 dropzoneEl.addEventListener('click', () => fileInputEl.click());
+// --- SoundFont UI wiring ---
+if (sfFileInputEl) {
+  sfFileInputEl.addEventListener('change', async (e) => {
+    await bootAudio();
+    if (fontLibrary) await fontLibrary.addFiles(e.target.files);
+    e.target.value = '';
+  });
+}
+if (sfDirInputEl) {
+  sfDirInputEl.addEventListener('change', async (e) => {
+    await bootAudio();
+    if (fontLibrary) await fontLibrary.addFiles(e.target.files);
+    e.target.value = '';
+  });
+}
+if (sfDirBtnEl) {
+  if (window.showDirectoryPicker) {
+    sfDirBtnEl.addEventListener('click', async () => {
+      try {
+        const dirHandle = await window.showDirectoryPicker();
+        await bootAudio();
+        if (fontLibrary) await fontLibrary.useDirectory(dirHandle);
+      } catch { /* user cancelled */ }
+    });
+  } else {
+    // No File System Access API — fall back to the webkitdirectory input
+    sfDirBtnEl.addEventListener('click', () => sfDirInputEl?.click());
+  }
+}
+if (fontNextEl) fontNextEl.addEventListener('click', () => { if (fontLibrary) fontLibrary.cycle(1); });
+if (fontPrevEl) fontPrevEl.addEventListener('click', () => { if (fontLibrary) fontLibrary.cycle(-1); });
+// §3 UX hardening: hover holds the bar open, mouse leave re-pokes
+if (fontBarEl) {
+  fontBarEl.addEventListener('mouseenter', () => clearTimeout(fontBarTimer));
+  fontBarEl.addEventListener('mouseleave', pokeFontBar);
+}
+// Mouse movement fades in the font bar during playback
+window.addEventListener('mousemove', () => { if (running) pokeFontBar(); });
 
 function frame(tRaf) {
   if (!running) return;

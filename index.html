@@ -21,12 +21,28 @@
         </label>
       </div>
       <button id="demoBtn" type="button">Play procedural demo (no file needed)</button>
+      <div class="sfRow">
+        <label class="filebtn">
+          Load .sf2 / .zip
+          <input id="sfFileInput" type="file" accept=".sf2,.zip" multiple hidden />
+        </label>
+        <label class="filebtn">
+          Folder
+          <input id="sfDirInput" type="file" webkitdirectory hidden />
+        </label>
+        <button id="sfDirBtn" type="button" class="ghostbtn">Open directory…</button>
+      </div>
       <p id="progressText" class="hint hidden"></p>
       <p class="hint">Press <kbd>`</kbd> during play to open the vision/tuning debug overlay.</p>
     </div>
 
     <div id="hud" class="hidden">
       <div id="comboReadout">×1.0</div>
+    </div>
+    <div id="fontBar">
+      <button id="fontPrev" class="ghostbtn">‹</button>
+      <span id="fontName">No font</span>
+      <button id="fontNext" class="ghostbtn">›</button>
     </div>
 
     <div id="completePanel" class="panel hidden">
