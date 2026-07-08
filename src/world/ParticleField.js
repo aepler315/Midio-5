@@ -2,6 +2,7 @@
 // (spec §4.1.2 table): a fixed-size, ever-respawning field rather than a
 // pooled emit-and-die burst, since these are continuous atmosphere, not FX.
 import { mulberry32, clamp01 } from '../utils/math.js';
+import { curl2 } from '../utils/fields.js';
 
 export class ParticleField {
   constructor(config, canvasWidth, canvasHeight, seed = 1) {
@@ -36,6 +37,13 @@ export class ParticleField {
       p.y = -rand() * this.h;
       p.glyphT = 0;
     }
+    if (this.kind === 'rain') {
+      p.y = -rand() * this.h;
+      p.vx = -(70 + rand() * 50);
+      p.vy = 380 + rand() * 170;
+      p.state = 'fall';
+      p.splashT = 0;
+    }
     if (this.kind === 'flaresparks') {
       p.t = rand();
       p.origin = { x: rand() * this.w * 0.3, y: this.h * 0.25 };
@@ -45,40 +53,41 @@ export class ParticleField {
     return p;
   }
 
-  update(dtSec, tSec, energyCurves, nowMs, calmC = 0, perfMul = 1) {
+  update(dtSec, tSec, energyCurves, nowMs, calmLevel = 0) {
     const rand = this.rand;
-    // Calm = denser, brighter ambient field; perfMul shrinks the field under
-    // sustained frame-time pressure (perf governor, spec §6.2 "particle caps").
-    this._activeCount = Math.max(1, Math.floor(this.count * (0.7 + 0.5 * calmC) * perfMul));
-    const speedMul = 0.65 + 0.6 * calmC;
-    const alphaMul = 0.7 + 0.4 * calmC;
-
-    let active = 0;
     for (const p of this.particles) {
-      if (++active > this._activeCount) break;
       switch (this.kind) {
         case 'fireflies':
-          p.x += Math.sin(tSec * 0.4 + p.phase) * this.baseSpeed * speedMul * dtSec;
-          p.y += Math.cos(tSec * 0.3 + p.phase * 1.3) * this.baseSpeed * 0.6 * speedMul * dtSec;
-          p.alpha = alphaMul * (0.5 + 0.5 * Math.sin((2 * Math.PI * tSec) / 3 + p.phase));
+          p.x += Math.sin(tSec * 0.4 + p.phase) * this.baseSpeed * dtSec;
+          p.y += Math.cos(tSec * 0.3 + p.phase * 1.3) * this.baseSpeed * 0.6 * dtSec;
+          // Calm sections: brighter, slightly faster blink -- ambient life
+          // to lean on when the foreground has gone quiet.
+          p.alpha = clamp01((0.5 + 0.5 * Math.sin((2 * Math.PI * tSec) / 3 * (1 + 0.3 * calmLevel) + p.phase)) * (1 + 0.4 * calmLevel));
           break;
-        case 'embers':
+        case 'embers': {
           p.vy = p.vy || -(40 + rand() * 50);
           p.vx += (rand() * 2 - 1) * 18 * dtSec;
-          p.x += p.vx * dtSec;
-          p.y += p.vy * dtSec;
+          // Curl-noise updraft: a divergence-free gust field so the embers
+          // swirl in eddies like real fire-lofted ash, never clumping.
+          const gust = energyCurves ? 0.5 + clamp01(energyCurves.sample(1, nowMs)) : 1;
+          const fl = curl2(p.x * 0.006, p.y * 0.006, tSec * 0.2);
+          p.x += (p.vx + fl.x * 55 * gust) * dtSec;
+          p.y += (p.vy + fl.y * 55 * gust) * dtSec;
           if (p.y < -20) Object.assign(p, this._spawn(rand() * this.w, this.h + 10));
           break;
-        case 'snow':
-          p.y += (30 + p.size * 13) * dtSec;
-          p.x += 18 * Math.sin(tSec * p.omega + p.phase) * dtSec;
+        }
+        case 'snow': {
+          const drift = curl2(p.x * 0.004, p.y * 0.004, tSec * 0.12);
+          p.y += (30 + p.size * 13 + drift.y * 25) * dtSec;
+          p.x += (18 * Math.sin(tSec * p.omega + p.phase) + drift.x * 40) * dtSec;
           if (p.y > this.h + 10) Object.assign(p, this._spawn(rand() * this.w, -10));
           break;
+        }
         case 'pollen': {
-          p.x += Math.sin(tSec * 0.5 + p.phase) * 6 * speedMul * dtSec;
-          p.y += Math.cos(tSec * 0.4 + p.phase * 1.7) * 6 * speedMul * dtSec;
+          p.x += Math.sin(tSec * 0.5 + p.phase) * 6 * dtSec;
+          p.y += Math.cos(tSec * 0.4 + p.phase * 1.7) * 6 * dtSec;
           const air = energyCurves ? energyCurves.sample(6, nowMs) : 0.3;
-          p.alpha = alphaMul * (0.35 + 0.55 * clamp01(air));
+          p.alpha = clamp01((0.3 + 0.5 * clamp01(air)) * (1 + 0.3 * calmLevel));
           break;
         }
         case 'antigrav':
@@ -100,6 +109,18 @@ export class ParticleField {
             if (p.pileT > 1.2) Object.assign(p, this._spawn(rand() * this.w, -10));
           }
           break;
+        case 'rain': {
+          if (p.state === 'splash') {
+            p.splashT += dtSec;
+            if (p.splashT > 0.16) Object.assign(p, this._spawn(rand() * this.w));
+            break;
+          }
+          p.x += p.vx * dtSec;
+          p.y += p.vy * dtSec;
+          if (p.x < -20) p.x += this.w + 40;
+          if (p.y >= this.h * 0.667) { p.state = 'splash'; p.splashT = 0; p.y = this.h * 0.667; }
+          break;
+        }
         case 'flaresparks':
           p.t += dtSec * 0.6;
           if (p.t > 1) Object.assign(p, this._spawn());
@@ -117,10 +138,7 @@ export class ParticleField {
 
   draw(ctx) {
     ctx.save();
-    const limit = this._activeCount ?? this.count;
-    let i = 0;
     for (const p of this.particles) {
-      if (++i > limit) break;
       switch (this.kind) {
         case 'fireflies':
         case 'pollen':
@@ -165,6 +183,27 @@ export class ParticleField {
           ctx.closePath();
           ctx.fill();
           ctx.restore();
+          break;
+        }
+        case 'rain': {
+          if (p.state === 'splash') {
+            // A widening half-ring where the drop hit the ground plane.
+            const t = p.splashT / 0.16;
+            ctx.globalAlpha = 0.5 * (1 - t);
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(p.x, p.y, 3 + 7 * t, 1 + 2.2 * t, 0, Math.PI, Math.PI * 2);
+            ctx.stroke();
+          } else {
+            ctx.globalAlpha = 0.55;
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p.x - p.vx * 0.035, p.y - p.vy * 0.035);
+            ctx.stroke();
+          }
           break;
         }
         case 'flaresparks': {

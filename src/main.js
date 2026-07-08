@@ -11,7 +11,6 @@ import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
-import { PerfGovernor } from './render/PerfGovernor.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -40,19 +39,13 @@ let debugOverlay = null;
 let simTime = 0;
 let acc = 0;
 let lastNowMs = 0;
-let lastRafMs = 0;
 let running = false;
-const perfGovernor = new PerfGovernor();
 
 function fitCanvas() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const rect = canvas.getBoundingClientRect();
-  const w = Math.max(1, Math.round((rect.width || 1280) * dpr));
-  const h = Math.max(1, Math.round((rect.height || 720) * dpr));
-  if (Number.isFinite(w) && Number.isFinite(h)) {
-    canvas.width = w;
-    canvas.height = h;
-  }
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
 }
 window.addEventListener('resize', fitCanvas);
 
@@ -74,12 +67,11 @@ function startTimeline(timelineData) {
   });
   renderer = new Renderer(canvas);
   visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false });
-  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop, perfGovernor);
+  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop);
 
   simTime = 0;
   acc = 0;
   lastNowMs = audioEngine.nowMs;
-  lastRafMs = null;
   audioEngine.start(0);
   running = true;
 
@@ -170,11 +162,6 @@ dropzoneEl.addEventListener('click', () => fileInputEl.click());
 
 function frame(tRaf) {
   if (!running) return;
-
-  if (lastRafMs !== null) perfGovernor.sample(tRaf - lastRafMs, tRaf);
-  lastRafMs = tRaf;
-  sim.perfMul = perfGovernor.particleMul;
-
   const nowMs = audioEngine.nowMs;
   let deltaMs = nowMs - lastNowMs;
   lastNowMs = nowMs;
@@ -182,21 +169,24 @@ function frame(tRaf) {
   if (deltaMs > 250) deltaMs = 250; // clamp huge gaps (tab backgrounded, breakpoint, etc.)
   acc += deltaMs;
 
+  let milestoneFiredThisFrame = false;
   while (acc >= STEP_MS) {
     sim.step(STEP_MS, simTime + STEP_MS);
     simTime += STEP_MS;
     acc -= STEP_MS;
+    if (sim.performer.milestoneFlash) milestoneFiredThisFrame = true;
   }
 
   const alpha = acc / STEP_MS;
-  renderer.draw(sim, alpha, perfGovernor);
-  const dm = sim.comboSystem.displayM;
-  comboReadoutEl.textContent = `×${dm.toFixed(1)}`;
-  const pulse = 1 + 0.12 * Math.sin(simTime * 0.012) + (dm > 1.5 ? 0.08 : 0);
-  comboReadoutEl.style.transform = `scale(${pulse})`;
-  comboReadoutEl.style.color = dm >= 2 ? '#ffd76a' : dm >= 1.5 ? '#ffe8a8' : '';
+  renderer.draw(sim, alpha);
+  comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
+  if (milestoneFiredThisFrame) {
+    comboReadoutEl.classList.remove('milestone-pulse');
+    void comboReadoutEl.offsetWidth; // restart the CSS animation even if it's still mid-flight
+    comboReadoutEl.classList.add('milestone-pulse');
+  }
 
-  if (perfGovernor.visionAllowed) visionLoop.maybeSample(tRaf, simTime);
+  visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();
 
   if (sim.fracture.isDone) {
@@ -218,6 +208,14 @@ function onSongComplete() {
   hudEl.classList.add('hidden');
   const combo = sim.comboSystem;
   completeStatsEl.textContent = `Peak streak: ${combo.streak} · Final combo: ×${combo.displayM.toFixed(1)}`;
+  // Mario Paint title-screen treatment: each letter wobbles on its own beat.
+  const title = completePanelEl.querySelector('h1');
+  if (title && !title.dataset.wobbled) {
+    title.dataset.wobbled = '1';
+    title.innerHTML = [...title.textContent].map((ch, i) =>
+      ch === ' ' ? ' ' : `<span class="wobble-letter" style="animation-delay:${i * 110}ms">${ch}</span>`,
+    ).join('');
+  }
   completePanelEl.classList.remove('hidden');
 }
 

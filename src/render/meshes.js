@@ -1,99 +1,123 @@
-// Static wireframe meshes for the three characters (item 1). Each mesh is a
-// small vertex/edge list — framework-free, no sprite assets. Vertices are in
-// local character space (y up is negative, as Canvas 2D draws). Edges are
-// indices into the vertex array. Some vertices are grouped for sub-mesh
-// transforms (jaw hinge, head/neck, eye ring) applied by MeshDrawer.
+// Wireframe rest-pose meshes for the three characters. Each mesh is a flat
+// {vertices:[{x,y}], edges:[[i,j],...]} in local space; vertex 0 is always
+// the hub (the anchor modal vibration displaces the rim around).
+//
+// Design language: angular, asymmetric spectral glyphs -- irregular shard
+// silhouettes with sparse internal bracing, nothing round, nothing cute.
+// The characters are made of the same geometry the world runs on: sharp
+// facets that catch the deformation-driven glow, sigils rather than
+// mascots. MeshDrawer.js applies per-frame pose transforms and computes
+// geometry-driven edge color from these rest shapes.
 
-// Midio: rounded body silhouette (~20 verts) + eye ring.
-const MIDIO_VERTS = [
-  // lower body, clockwise from bottom-left
-  { x: -23, y: -8 }, { x: -18, y: -2 }, { x: -10, y: 0 }, { x: 0, y: 1 },
-  { x: 10, y: 0 }, { x: 18, y: -2 }, { x: 23, y: -8 }, { x: 24, y: -18 },
-  { x: 20, y: -28 }, { x: 14, y: -38 }, { x: 8, y: -46 }, { x: 0, y: -54 },
-  { x: -8, y: -46 }, { x: -14, y: -38 }, { x: -20, y: -28 }, { x: -24, y: -18 },
-  // eye ring
-  { x: 5, y: -36 }, { x: 11, y: -38 }, { x: 15, y: -34 }, { x: 13, y: -28 },
-  { x: 7, y: -26 }, { x: 3, y: -30 },
-];
-const MIDIO_EDGES = [
-  [0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10,11],
-  [11,12],[12,13],[13,14],[14,15],[15,0], // body ring
-  [16,17],[17,18],[18,19],[19,20],[20,21],[21,16], // eye ring
-  [11,16], // eye connector
-];
-export const MIDIO_MESH = {
-  vertices: MIDIO_VERTS,
-  edges: MIDIO_EDGES,
-  baseHue: 48, // warm yellow
-  fillLoops: [
-    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], // body silhouette
-    [16, 17, 18, 19, 20, 21], // eye ring
-  ],
+/** A wheel: one center vertex, n rim vertices, spokes + rim edges. */
+export function radialMesh(rx, ry, n, cx = 0, cy = 0, startAngle = 0) {
+  const vertices = [{ x: cx, y: cy }];
+  const edges = [];
+  for (let i = 0; i < n; i++) {
+    const ang = startAngle + (i / n) * Math.PI * 2;
+    vertices.push({ x: cx + Math.cos(ang) * rx, y: cy + Math.sin(ang) * ry });
+    edges.push([0, i + 1]);
+  }
+  for (let i = 0; i < n; i++) edges.push([i + 1, ((i + 1) % n) + 1]);
+  return { vertices, edges };
+}
+
+/**
+ * An irregular shard: hub + hand-authored rim, closed by a rim ring,
+ * anchored by sparse spokes, with optional cross-braces (rim indices)
+ * as internal fracture lines. The irregularity IS the character.
+ */
+export function shardMesh(hub, rim, { spokeEvery = 2, braces = [] } = {}) {
+  const vertices = [{ ...hub }, ...rim.map((v) => ({ ...v }))];
+  const edges = [];
+  const n = rim.length;
+  for (let i = 0; i < n; i++) edges.push([i + 1, ((i + 1) % n) + 1]);
+  for (let i = 0; i < n; i += spokeEvery) edges.push([0, i + 1]);
+  for (const [a, b] of braces) edges.push([a + 1, b + 1]);
+  return { vertices, edges };
+}
+
+/** Merge several local meshes into one, offsetting edge indices. Returns
+ * the merged mesh plus the vertex-index offset each input mesh landed at,
+ * so callers can still address "my mesh's vertex 3" after merging. */
+export function mergeMeshes(meshes) {
+  const vertices = [];
+  const edges = [];
+  const offsets = [];
+  for (const m of meshes) {
+    offsets.push(vertices.length);
+    for (const v of m.vertices) vertices.push({ x: v.x, y: v.y });
+    for (const [i, j] of m.edges) edges.push([i + offsets[offsets.length - 1], j + offsets[offsets.length - 1]]);
+  }
+  return { mesh: { vertices, edges }, offsets };
+}
+
+// --- Midio: the Sigil. A tall asymmetric shard -- crown spike, uneven
+// shoulders, two blunt ground-contact points (feet at y=0, half-width
+// within his 23px collision body). The separate core (kept under the
+// MIDIO_EYE name so the blink machinery still drives it) is a small
+// triangle that contracts instead of blinking: the core dims. ---
+export const MIDIO_BODY = shardMesh({ x: 0, y: -27 }, [
+  { x: 0, y: -58 },   // crown spike
+  { x: 13, y: -45 },
+  { x: 23, y: -31 },
+  { x: 13, y: -15 },  // pinched right waist
+  { x: 9, y: 0 },     // right foot
+  { x: -7, y: 0 },    // left foot
+  { x: -14, y: -13 }, // pinched left waist
+  { x: -22, y: -35 },
+  { x: -11, y: -46 },
+], { spokeEvery: 2, braces: [[1, 4], [6, 8]] });
+export const MIDIO_EYE = radialMesh(5.5, 6, 3, 3, -31, -Math.PI / 2);
+export const MIDIO_MESH = mergeMeshes([MIDIO_BODY, MIDIO_EYE]).mesh;
+
+// --- Broshi: the Dart. A low predatory chassis with a serrated dorsal
+// ridge (deep notches between three spine spikes), a wedge head that
+// still neck-bobs, a thin mandible line driven by jawOpen, and a long
+// whip tail (2 vertices: base + tip, swayed by rotating the tip). ---
+export const BROSHI_BODY = shardMesh({ x: 0, y: -14 }, [
+  { x: -26, y: -9 },  // rear haunch
+  { x: -19, y: -25 }, // spine spike 1
+  { x: -13, y: -18 }, // notch
+  { x: -6, y: -30 },  // spine spike 2
+  { x: 1, y: -21 },   // notch
+  { x: 7, y: -27 },   // spine spike 3
+  { x: 15, y: -16 },  // shoulder, into the head
+  { x: 12, y: -4 },
+  { x: 2, y: -1 },    // front foot
+  { x: -14, y: -2 },  // rear foot
+], { spokeEvery: 3, braces: [[1, 3], [3, 5]] });
+export const BROSHI_HEAD = shardMesh({ x: 14, y: -19 }, [
+  { x: 27, y: -16 },  // snout tip
+  { x: 21, y: -25 },  // crest
+  { x: 10, y: -24 },
+  { x: 7, y: -17 },
+  { x: 12, y: -12 },
+], { spokeEvery: 2 });
+// Jaw: two free vertices (upper anchor, moving mandible tip) driven by jawOpen.
+export const BROSHI_JAW = {
+  vertices: [{ x: 11, y: -14 }, { x: 25, y: -12 }],
+  edges: [[0, 1]],
 };
+export const BROSHI_EYE = radialMesh(2.2, 2.2, 3, 15, -22, -Math.PI / 2);
+// Tail: anchor near the back of the body, tip trailing behind -- swayed
+// in place (see Broshi's calm behaviors) by rotating vertex 1 about vertex 0.
+export const BROSHI_TAIL = { vertices: [{ x: -25, y: -7 }, { x: -47, y: -1 }], edges: [[0, 1]] };
 
-// Broshi: body (~14), head (~8), jaw as hinged sub-mesh (~6), tail (~3).
-const BROSHI_VERTS = [
-  // body, centered at (0,-14)
-  { x: -24, y: -6 }, { x: -20, y: -2 }, { x: -10, y: 2 }, { x: 0, y: 4 },
-  { x: 12, y: 2 }, { x: 20, y: -2 }, { x: 24, y: -8 }, { x: 20, y: -18 },
-  { x: 12, y: -24 }, { x: 0, y: -28 }, { x: -12, y: -26 }, { x: -20, y: -20 },
-  // neck
-  { x: 12, y: -24 }, { x: 16, y: -28 },
-  // head (group: 'head', pivot around neck 12/13)
-  { x: 14, y: -28 }, { x: 22, y: -30 }, { x: 26, y: -24 }, { x: 24, y: -18 },
-  { x: 16, y: -16 }, { x: 12, y: -20 },
-  // jaw (group: 'jaw', hinge = vertex 18)
-  { x: 18, y: -18 }, { x: 26, y: -18 }, { x: 30, y: -10 }, { x: 26, y: -6 },
-  { x: 18, y: -8 }, { x: 14, y: -12 },
-  // tail (grouped for lazy sway when calm)
-  { x: -24, y: -12, group: 'tail' }, { x: -40, y: -22, group: 'tail' }, { x: -54, y: -12, group: 'tail' },
-  // eye
-  { x: 20, y: -22, group: 'head' },
-];
-const BROSHI_EDGES = [
-  // body
-  [0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10,11],[11,0],
-  [12,13], // neck
-  // head
-  [14,15],[15,16],[16,17],[17,18],[18,19],[19,14],
-  // jaw
-  [20,21],[21,22],[22,23],[23,24],[24,25],[25,20],
-  // mouth hinge seam
-  [17,20],[18,25],
-  // tail
-  [11,26],[26,27],[27,28],
-  // eye
-  [29,16],[29,17],
-];
-export const BROSHI_MESH = {
-  vertices: BROSHI_VERTS,
-  edges: BROSHI_EDGES,
-  baseHue: 120, // green; shifted toward red by rho in drawer
-  fillLoops: [
-    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], // body silhouette
-    [14, 15, 16, 17, 18, 19], // head
-  ],
-};
-
-// Midasus: small diamond/moth shape (~10 verts), particle-driven otherwise.
-const MIDASUS_VERTS = [
-  { x: 0, y: -14 }, { x: 12, y: -6 }, { x: 0, y: 12 }, { x: -12, y: -6 },
-  { x: 20, y: -10 }, { x: 26, y: -20 }, { x: 22, y: -2 },
-  { x: -20, y: -10 }, { x: -26, y: -20 }, { x: -22, y: -2 },
-];
-const MIDASUS_EDGES = [
-  [0,1],[1,2],[2,3],[3,0],
-  [1,4],[4,5],[5,6],[6,1],
-  [3,7],[7,8],[8,9],[9,3],
-  [0,4],[0,7],
-];
+// --- Midasus: a hexagram -- two interlocked triangles about the hub with
+// a single vertical axis spoke pair. An arcane instrument, not a gem. ---
+const HEX_R = 8.5;
+const tri = (offsetDeg) => [0, 1, 2].map((i) => {
+  const a = ((offsetDeg + i * 120) * Math.PI) / 180;
+  return { x: Math.cos(a) * HEX_R, y: Math.sin(a) * HEX_R };
+});
+const [a0, a1, a2] = tri(-90);
+const [b0, b1, b2] = tri(90);
 export const MIDASUS_MESH = {
-  vertices: MIDASUS_VERTS,
-  edges: MIDASUS_EDGES,
-  baseHue: 200, // initial fairy blue, replaced by live hue
-  fillLoops: [[0, 1, 2, 3]], // wing/body diamond
+  vertices: [{ x: 0, y: 0 }, a0, a1, a2, b0, b1, b2],
+  edges: [
+    [1, 2], [2, 3], [3, 1], // upward triangle
+    [4, 5], [5, 6], [6, 4], // downward triangle
+    [0, 1], [0, 4],         // vertical axis
+  ],
 };
-
-Object.freeze(MIDIO_MESH); Object.freeze(MIDIO_MESH.vertices); Object.freeze(MIDIO_MESH.edges);
-Object.freeze(BROSHI_MESH); Object.freeze(BROSHI_MESH.vertices); Object.freeze(BROSHI_MESH.edges);
-Object.freeze(MIDASUS_MESH); Object.freeze(MIDASUS_MESH.vertices); Object.freeze(MIDASUS_MESH.edges);

@@ -1,210 +1,155 @@
-// Midio's stage presence (item 6). Reads jump state, combo, and calm level,
-// then writes the previously-inert pose hooks (scaleX/scaleY/leanDeg) plus a
-// poseExtras object used by the mesh drawer: spin, armFlare, strut, goldPulse,
-// ghost-trail poses, etc. Designed to escalate with energy and combo streak.
-import { Role } from '../core/NoteEvent.js';
-import { clamp, mulberry32 } from '../utils/math.js';
+// Midio's stage presence (follow-up item 6): apex tricks, motion-streak
+// afterimages, a landing flourish on hot combos, beat-synced idle strut,
+// and a gold flash + HUD pulse at combo milestones. Layered on top of
+// JumpController/TelegraphScanner rather than replacing them -- this class
+// only ever *adds* to midio.leanDeg/scaleY or briefly overrides scale
+// during a flourish window, so the underlying physics never changes.
+import { mulberry32, clamp, smoothstep } from '../utils/math.js';
+import { ModalRing } from '../render/oscillators.js';
 
-const SPIN_PHASE = { launch: 0.0, apex: 0.35, fall: 0.65, land: 1.0 };
-const GHOST_FRAMES = 14;
+const TRICK_HANG_START = 0.35; // matches JumpController's A
+const TRICK_HANG_END = 0.65;   // matches JumpController's A+B
+const TRICK_VEL_THRESHOLD = 0.8;
+const TRICK_COMBO_THRESHOLD = 2.0;
 const MILESTONES = [5, 10, 20];
+const FLOURISH_MS = 90;
+const FLOURISH_COMBO_THRESHOLD = 2.0;
+const GOLD_FLASH_DECAY_SEC = 0.6;
+const AFTERIMAGE_INTERVAL_MS = 28;
+const AFTERIMAGE_COUNT = 4;
+const STRUT_DEG = 2.2;
 
-const easeInOutC1 = (t) => {
-  // C1-eased cubic: smooth 0..1 with zero velocity at both ends.
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-};
+// Calm/idle behavior (follow-up item 3): distinctly relaxed vs. energetic
+// sections, but never inert. Gated to !airborne so it never fights a trick.
+const BREATH_HZ = 0.25;
+const BREATH_AMP = 0.02;
+const CALM_SWAY_DEG = 3.0;
+const CALM_DRIFT_PX = 3.0;
+const CALM_DRIFT_HZ = 0.2;
+const BLINK_MIN_GAP_MS = 2500;
+const BLINK_JITTER_MS = 3000;
+const BLINK_DUR_MS = 180;
+const BLINK_CALM_THRESHOLD = 0.3;
 
 export class MidioPerformer {
-  constructor({ seed = 1313 } = {}) {
+  constructor(seed = 4242) {
     this.rand = mulberry32(seed);
-    this._spin = null; // { startMs, D, dir, kind }
-    this._lastKind = null;
-    this._ghosts = []; // recent pose snapshots for trail
-    this._strutT = 0;
-    this._goldPulse = 0;
-    this._milestoneReached = new Set();
-    this._prevY = 0;
-    this._midasus = null; // set by Simulation
-    this._sparkled = false;
-    this._kickPulseUntilMs = -Infinity;
-    this._lastKickMs = -Infinity;
+    this._lastTrickType = null;
+    this.trick = null; // {type, jumpStartMs, D}
+    this._wasAirborne = false;
+    this.spinDeg = 0;
+
+    this._flourishUntilMs = -Infinity;
+
+    this._lastMilestoneIdx = -1;
+    this.milestoneFlash = false; // one-shot per step
+    this.goldFlash = 0;
+    this.lastMilestone = null; // {idx, atMs} -- persists for the renderer
+
+    this.afterimages = [];
+    this._lastCaptureMs = -Infinity;
+
+    this.blinkScale = 1; // 1 = eye open, 0 = fully closed
+    this._nextBlinkMs = BLINK_MIN_GAP_MS + this.rand() * BLINK_JITTER_MS;
+    this._blinkStartMs = -Infinity;
+
+    // Modal body vibration: struck on landings (scaled by impact intensity)
+    // and lightly on takeoff, rung down over ~half a second. The Renderer
+    // displaces MIDIO_BODY's rim through this field.
+    this.modal = new ModalRing({ modes: 4, baseHz: 8, decaySec: 0.55, seed: (seed ^ 0x9e37) >>> 0 });
   }
 
-  setMidasus(midasus) { this._midasus = midasus; }
+  clearFrameFlags() {
+    this.milestoneFlash = false;
+  }
 
-  update(nowMs, dtSec, jump, comboSystem, calm, midio, conductor, telegraph) {
-    const beatPeriodMs = jump.beatPeriodMs || 500;
-    const calmC = calm ? calm.C : 0;
-    const a = telegraph ? telegraph.a : 0;
+  onLanding(nowMs, isClean, comboDisplay, intensity = 0) {
+    if (isClean && comboDisplay >= FLOURISH_COMBO_THRESHOLD) this._flourishUntilMs = nowMs + FLOURISH_MS;
+    this.modal.excite(1.5 + 4.5 * intensity);
+  }
 
-    // --- idle / calm motion (also partially active during flight) ---
-    const breath = Math.sin(nowMs * 0.00155) * 0.02 * (0.6 + 0.4 * calmC);
-    const driftX = Math.sin(nowMs * 0.00031) * 2.5 * calmC;
-    const driftY = Math.cos(nowMs * 0.00042) * 2.0 * calmC;
-    const sway = Math.sin(nowMs * 0.002 * Math.PI) * 3 * calmC;
-    const blink = (nowMs % 4200) < 120 ? 0.6 : 1; // occasional eye-ring squish
-
-    // Grounded strut: bounce on every beat — the stage never stops moving.
-    let strut = 0;
-    if (jump.state === 'GROUND') {
-      const beatPhase = (nowMs % beatPeriodMs) / beatPeriodMs;
-      strut = Math.sin(beatPhase * Math.PI) * 0.11 * (1 - calmC * 0.35);
+  onStreak(streak, nowMs = 0) {
+    let idx = -1;
+    for (let i = 0; i < MILESTONES.length; i++) if (streak >= MILESTONES[i]) idx = i;
+    if (idx > this._lastMilestoneIdx) {
+      this._lastMilestoneIdx = idx;
+      this.milestoneFlash = true;
+      this.goldFlash = 1;
+      // Persistent record (not a one-shot flag) so the renderer can't
+      // miss it between sim steps -- it triggers the epicycle glyph show.
+      this.lastMilestone = { idx, atMs: nowMs };
     }
+  }
 
-    // Kick pulse: sharp pop on every kick.
-    let kickPulse = 0;
-    if (jump.state === 'GROUND') {
-      const kickEvt = conductor.nearestEventMs(
-        (e) => e.role === Role.RHYTHM && e.kick, nowMs, 20,
-      );
-      if (kickEvt && Math.abs(kickEvt.tMs - nowMs) < 12 && kickEvt.tMs !== this._lastKickMs) {
-        this._lastKickMs = kickEvt.tMs;
-        this._kickPulseUntilMs = nowMs + 160;
-      }
-      if (nowMs < this._kickPulseUntilMs) {
-        const k = 1 - (nowMs - (this._kickPulseUntilMs - 160)) / 160;
-        kickPulse = 0.14 * k * k;
-      }
-    }
-
-    // Combo energy drives aura intensity and camera-adjacent read.
-    const comboM = comboSystem ? comboSystem.M : 1;
-    const energy = clamp((comboM - 1) * 0.55 + jump.lastVel * 0.35 + (jump.state === 'AIR' ? 0.25 : 0), 0, 1);
-
-    // --- apex tricks: spin or backflip on every airborne jump ---
-    let spin = 0;
-    let u = 0;
-    if (jump.state === 'AIR') {
-      if (!this._spin && jump.airborne) {
-        // Trigger once per jump at launch.
-        const kind = this._pickKind();
-        this._spin = {
-          startMs: jump.jumpStartMs,
-          D: jump.D,
-          kind,
-          dir: this.rand() < 0.5 ? 1 : -1,
-        };
-      }
-    }
-    let apexSparkle = false;
-    if (this._spin) {
-      u = clamp((nowMs - this._spin.startMs) / this._spin.D, 0, 1);
-      const p = easeInOutC1(clamp((u - SPIN_PHASE.launch) / (SPIN_PHASE.land - SPIN_PHASE.launch), 0, 1));
-      spin = p * (this._spin.kind === 'backflip' ? -Math.PI : Math.PI * 2) * this._spin.dir;
-      // Apex sparkle at the top of the arc (u ~ A+B/2).
-      if (!this._sparkled && u >= 0.45 && u <= 0.55) { apexSparkle = true; this._sparkled = true; }
-      if (u >= 1) { this._spin = null; this._sparkled = false; }
-    } else if (jump.state === 'AIR' && jump.D > 0) {
-      u = clamp((nowMs - jump.jumpStartMs) / jump.D, 0, 1);
-    }
-    if (this._midasus && apexSparkle) {
-      this._midasus.burstAt(midio.screenX, midio.renderY - 30, 36, 55);
-    }
-
-    // Landing flourish: superhero pose on any clean landing with combo.
-    let armFlare = 0, crouch = 0;
-    if (jump.pendingLanding && comboSystem && comboSystem.justClean && comboSystem.M >= 1) {
-      armFlare = 0.6 + 0.4 * clamp(comboM / 3, 0, 1);
-      crouch = -0.22;
-    }
-    if (jump.state === 'AIR' && u > 0.35 && u < 0.65) armFlare = Math.max(armFlare, 0.35 + jump.lastVel * 0.4);
-
-    // --- combo verbosity: gold edge-glow pulse + HUD mini-shatter at milestones ---
-    let goldPulse = 0;
-    for (const m of MILESTONES) {
-      if (comboSystem && comboSystem.streak >= m && !this._milestoneReached.has(m)) {
-        this._milestoneReached.add(m);
-        this._goldPulse = 1.4;
-        this._shatterComboReadout();
-      }
-    }
-    if (this._goldPulse > 0) {
-      goldPulse = this._goldPulse;
-      this._goldPulse = Math.max(0, this._goldPulse - dtSec / 0.28);
-    }
-
-    // --- compose pose ---
-    if (jump.state === 'GROUND') {
-      const anticY = 1 - 0.32 * a * a * a;
-      const anticX = 1 / Math.max(0.55, anticY);
-      midio.scaleY = anticY + strut + kickPulse - breath + crouch;
-      midio.scaleX = anticX * (1 + breath * 0.5);
-      midio.leanDeg = 10 * a + sway + Math.sin(nowMs * 0.012) * 2 * energy;
-    } else {
-      const launchSquash = jump.airborne && (nowMs - jump.jumpStartMs) < 110;
-      if (launchSquash) {
-        const ls = 1 - (nowMs - jump.jumpStartMs) / 110;
-        midio.scaleY = 1.55 + 0.15 * ls;
-        midio.scaleX = 0.58 - 0.08 * ls;
+  update(nowMs, dtSec, midio, jump, comboSystem, calmLevel = 0) {
+    this.modal.update(dtSec);
+    const justLaunched = !this._wasAirborne && jump.airborne;
+    if (justLaunched) {
+      this.modal.excite(0.8 + 1.6 * jump.lastLaunchVel);
+      const shouldTrick = jump.lastLaunchVel > TRICK_VEL_THRESHOLD || comboSystem.displayM >= TRICK_COMBO_THRESHOLD;
+      if (shouldTrick) {
+        let type = this.rand() < 0.5 ? 'spin' : 'backflip';
+        if (type === this._lastTrickType) type = type === 'spin' ? 'backflip' : 'spin'; // never twice in a row
+        this.trick = { type, jumpStartMs: jump.jumpStartMs, D: jump.D };
+        this._lastTrickType = type;
       } else {
-        midio.scaleY = 1.05 - breath + crouch + 0.08 * Math.sin(u * Math.PI);
-        midio.scaleX = 0.92 + breath * 0.5;
+        this.trick = null;
       }
-      midio.leanDeg = sway + jump.lastVel * 22 + 12 * Math.sin(u * Math.PI);
+    }
+    this._wasAirborne = jump.airborne;
+    if (!jump.airborne) this.trick = null;
+
+    this.spinDeg = 0;
+    let flipFactor = 1;
+    if (this.trick && jump.airborne) {
+      const u = clamp((nowMs - this.trick.jumpStartMs) / this.trick.D, 0, 1);
+      const progress = smoothstep(TRICK_HANG_START, TRICK_HANG_END, u);
+      if (this.trick.type === 'spin') this.spinDeg = 360 * progress;
+      else flipFactor = Math.cos(progress * Math.PI); // 1 -> -1 -> 1, a 2D flip illusion
     }
 
-    midio.poseExtras = {
-      spin,
-      armFlare,
-      strut,
-      goldPulse,
-      energy,
-      driftX,
-      driftY,
-      blink,
-    };
+    // Composite on top of whatever TelegraphScanner already wrote this step.
+    midio.leanDeg += this.spinDeg;
+    midio.scaleY *= flipFactor;
 
-    const speed = jump.state === 'AIR' ? Math.abs(jump.y - (this._prevY || 0)) / Math.max(dtSec, 1e-6) : 0;
-    if (speed > 15 || jump.state === 'AIR') {
-      this._ghosts.unshift({
-        x: midio.screenX + driftX,
-        y: midio.renderY + driftY,
-        scaleX: midio.scaleX,
-        scaleY: midio.scaleY,
-        leanDeg: midio.leanDeg,
-        spin,
-        armFlare,
-        alpha: clamp(0.25 + (speed - 15) / 400 + energy * 0.2, 0, 0.88),
-      });
-      if (this._ghosts.length > GHOST_FRAMES) this._ghosts.length = GHOST_FRAMES;
-    } else if (this._ghosts.length) {
-      this._ghosts.pop();
+    if (nowMs < this._flourishUntilMs) {
+      midio.scaleY = 0.65;
+      midio.scaleX = 1.55;
     }
-    this._prevY = jump.y;
-  }
 
-  _pickKind() {
-    const kinds = ['spin', 'backflip'];
-    let kind = kinds[Math.floor(this.rand() * kinds.length)];
-    if (kind === this._lastKind) kind = kinds.find((k) => k !== kind);
-    this._lastKind = kind;
-    return kind;
-  }
-
-  _shatterComboReadout() {
-    const el = document.getElementById('comboReadout');
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    for (let i = 0; i < 8; i++) {
-      const s = document.createElement('span');
-      s.textContent = '×';
-      s.style.position = 'fixed';
-      s.style.left = rect.left + rect.width / 2 + 'px';
-      s.style.top = rect.top + rect.height / 2 + 'px';
-      s.style.fontSize = '14px';
-      s.style.color = '#ffd76a';
-      s.style.pointerEvents = 'none';
-      s.style.transition = 'transform 0.7s ease-out, opacity 0.7s ease-out';
-      document.body.appendChild(s);
-      requestAnimationFrame(() => {
-        const a = (i / 8) * Math.PI * 2;
-        const d = 30 + this.rand() * 40;
-        s.style.transform = `translate(${Math.cos(a) * d}px, ${Math.sin(a) * d}px) rotate(${this.rand() * 360}deg)`;
-        s.style.opacity = '0';
-      });
-      setTimeout(() => s.remove(), 750);
+    if (!jump.airborne && jump.beatPeriodMs > 0) {
+      const phase = (nowMs % jump.beatPeriodMs) / jump.beatPeriodMs;
+      // Energetic strut damps down as calm rises; a slower, gentler sway
+      // (half the frequency -- "synced to beat halves") takes its place, so
+      // quiet sections read as distinctly relaxed without ever going still.
+      const strutAmp = STRUT_DEG * (1 - 0.5 * calmLevel);
+      const swayAmp = CALM_SWAY_DEG * calmLevel;
+      midio.leanDeg += strutAmp * Math.sin(phase * Math.PI * 2) + swayAmp * Math.sin(phase * Math.PI + 1.7);
     }
-  }
 
-  ghosts() { return this._ghosts; }
+    if (!jump.airborne && nowMs >= this._flourishUntilMs) {
+      // Slow breathing cycle + a light coasting drift, both calm-scaled.
+      const tSec = nowMs / 1000;
+      midio.scaleY *= 1 + BREATH_AMP * calmLevel * Math.sin(2 * Math.PI * BREATH_HZ * tSec);
+      midio.y += CALM_DRIFT_PX * calmLevel * Math.sin(2 * Math.PI * CALM_DRIFT_HZ * tSec);
+
+      if (calmLevel > BLINK_CALM_THRESHOLD && nowMs >= this._nextBlinkMs) {
+        this._blinkStartMs = nowMs;
+        this._nextBlinkMs = nowMs + BLINK_MIN_GAP_MS + this.rand() * BLINK_JITTER_MS;
+      }
+    }
+    const sinceBlink = nowMs - this._blinkStartMs;
+    this.blinkScale = sinceBlink < BLINK_DUR_MS
+      ? Math.abs(sinceBlink / BLINK_DUR_MS - 0.5) * 2
+      : 1;
+
+    this.goldFlash = Math.max(0, this.goldFlash - dtSec / GOLD_FLASH_DECAY_SEC);
+
+    if (jump.airborne && nowMs - this._lastCaptureMs >= AFTERIMAGE_INTERVAL_MS) {
+      this._lastCaptureMs = nowMs;
+      this.afterimages.push({ y: midio.renderY, scaleX: midio.scaleX, scaleY: midio.scaleY, rot: midio.leanDeg });
+      if (this.afterimages.length > AFTERIMAGE_COUNT) this.afterimages.shift();
+    }
+    if (!jump.airborne && this.afterimages.length) this.afterimages.length = 0;
+  }
 }

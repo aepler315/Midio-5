@@ -6,6 +6,13 @@ import { clamp } from '../utils/math.js';
 
 const KEYS = ['jumpHeight', 'obstacleDensity', 'scrollSpeed', 'eqSensitivity', 'onsetThreshold'];
 
+// Absolute guardrail multipliers (spec §5.2.2) — exported so systems that
+// must stay safe across the *entire* live-tunable range (e.g. obstacle
+// placement planning against the worst-case jump height) don't duplicate
+// these as disconnected magic numbers.
+export const GUARDRAIL_MIN = 0.5;
+export const GUARDRAIL_MAX = 1.6;
+
 export class ParamBus {
   constructor() {
     this.def = Object.fromEntries(KEYS.map((k) => [k, 1]));
@@ -27,7 +34,7 @@ export class ParamBus {
       t = clamp(t, this.target[k] - 0.10, this.target[k] + 0.10); // rate limit +/-10%/cycle
       this.target[k] = clamp(
         this.target[k] * (1 - w) + t * w,
-        0.5 * this.def[k], 1.6 * this.def[k], // absolute guardrails
+        GUARDRAIL_MIN * this.def[k], GUARDRAIL_MAX * this.def[k],
       );
     }
   }

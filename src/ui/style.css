@@ -112,9 +112,21 @@ html, body {
   font-weight: 700;
   color: #ffd76a;
   text-shadow: 0 0 12px rgba(255, 215, 106, 0.6);
+  display: inline-block;
 }
 
-#eqCrown { opacity: 0.85; }
+/* Combo-milestone flourish (follow-up item 6): a quick shatter-and-reform
+   pulse, mirroring FractureEngine's terminal-shatter beat in miniature. */
+@keyframes comboMilestone {
+  0%   { transform: scale(1) rotate(0deg); color: #ffd76a; text-shadow: 0 0 12px rgba(255, 215, 106, 0.6); }
+  25%  { transform: scale(1.7) rotate(-8deg); color: #fff6cf; text-shadow: 0 0 34px rgba(255, 246, 207, 0.95); }
+  50%  { transform: scale(0.82) rotate(5deg); }
+  75%  { transform: scale(1.12) rotate(-2deg); }
+  100% { transform: scale(1) rotate(0deg); color: #ffd76a; text-shadow: 0 0 12px rgba(255, 215, 106, 0.6); }
+}
+#comboReadout.milestone-pulse {
+  animation: comboMilestone 0.55s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
 
 #debugOverlay {
   position: absolute;
@@ -129,4 +141,14 @@ html, body {
   font-size: 11px;
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+/* Mario Paint-style wobbling title letters on the COMPLETE panel. */
+.wobble-letter {
+  display: inline-block;
+  animation: letterWobble 1.5s ease-in-out infinite;
+}
+@keyframes letterWobble {
+  0%, 100% { transform: rotate(-5deg) translateY(0); }
+  50% { transform: rotate(5deg) translateY(-5px); }
 }

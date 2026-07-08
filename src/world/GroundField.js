@@ -1,197 +1,192 @@
-// Ground as N vertical EQ slices (item 5) — a rolling terrain whose per-slice
-// target height is driven by band energy (shifted so it echoes the horizon EQ),
-// heavily spring-smoothed and capped so the play surface stays readable. Owns
-// the seeded "almost-falls" gag: a scheduled, localized sag ahead of Midio that
-// holds an "oh no" beat then recovers with an overshooting elastic spring +
-// camera punch.
-//
-// Pure logic (no canvas) so it can be unit-tested in node. heightAt(worldX) is
-// the single groundYAt(worldX) the spec calls for — every gameplay/draw system
-// samples the ground through it.
-import { clamp, smoothstep, mulberry32 } from '../utils/math.js';
+// The ground as a conveyor of EQ-bar-shaped slices (follow-up item 5):
+// each slice's height echoes a shifted per-band energy reading from the
+// same 7-band EnergyCurves the horizon EQ reads, so the terrain visually
+// rhymes with the music playing far in the background, just offset by a
+// few bars. Slices are baked at generation time and simply scroll by
+// afterward (a rolling waveform, not something that keeps changing shape
+// once it's passed) — with an occasional scripted "the ground gives way,
+// then recovers spectacularly" gag layered on top.
+import { clamp01, mulberry32, hashSeed, shuffle } from '../utils/math.js';
+import { Role } from '../core/NoteEvent.js';
 
-const ZETA = 0.8;        // spring damping (≈400ms settle)
-const OMEGA_N = 12.5;    // spring natural frequency (s^-1)
-const MAX_OFFSET = 22;   // ±px slice travel around baseY (readable surface)
-const GAG_SAG_MS = 1500;
-const GAG_HOLD_BEATS = 1;
-const GAG_RECOVER_MS = 520;
-const GAG_MAX_SAG = 70;  // px
-const GAG_REACH_PX = 720; // how far ahead of Midio the gag reaches
-const GAG_AVOID_BEATS = 2;
+const SLICE_WIDTH_PX = 90;
+const NUM_BANDS = 7;
+const BAND_SHIFT = 3;
+const RISE_AMPLITUDE_PX = 30; // how far energy alone can lift a slice
+const SPRING_K = 40, SPRING_C = 12; // per-slice settle spring (critically-damped-ish)
+const RECOVER_C = 4; // reduced damping during recovery -> elastic overshoot
+const RECOVER_DURATION_MS = 700; // how long the softened damping lasts
+const LOOKAHEAD_PX = 1600;
+const TRIM_BEHIND_PX = 300;
 
-const easeIn = (t) => t * t;
-// Elastic ease-out: 0→1 with one overshoot above 1, settling to 1 at t=1.
-const elasticOut = (t) => {
-  if (t <= 0) return 0;
-  if (t >= 1) return 1;
-  return 2 ** (-10 * t) * Math.sin(((t * 10 - 0.75) * (2 * Math.PI)) / 3) + 1;
-};
+const GAG_LEAD_PX = 420; // how far ahead of Midio a gag is seeded, so it's visible before he reaches it
+const GAG_SLICE_COUNT = 7;
+const GAG_STAGGER_MS = 90;
+const GAG_SAG_PX = 70;
+const GAG_HOLD_MS = 500;
+const GAG_KICK_SYNC_WINDOW_MS = 150;
 
-function catmull(p0, p1, p2, p3, t) {
-  const t2 = t * t, t3 = t2 * t;
-  return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+class Slice {
+  constructor(index, worldXStart) {
+    this.index = index;
+    this.worldXStart = worldXStart;
+    this.baseTarget = 0;
+    this.offset = 0;
+    this.vel = 0;
+    this.gagTarget = null; // non-null while a gag is actively overriding this slice
+    this.recoverUntilMs = -Infinity;
+  }
 }
 
 export class GroundField {
-  constructor({
-    baseY = 480, slices = 14, shift = 3, canvasWidth = 1280, bands = 7,
-    durationMs, barGrid = [], beatMs = 500, obstacleTimes = [], seed = 1,
-  } = {}) {
-    this.baseY = baseY;
-    this.n = slices;
-    this.bands = bands; // EQ band count (7); 14 slices == bands repeated x2
-    this.shift = shift;
-    this.spacing = canvasWidth / slices;
-    this.durationMs = durationMs;
-    this.beatMs = beatMs;
-
-    // Per-slice spring state (offset around baseY).
-    this.h = new Float32Array(slices);
-    this.v = new Float32Array(slices);
-    this.target = new Float32Array(slices);
-
-    this.zeta = ZETA;
-
-    // Gag scheduling + state machine.
-    this._rand = mulberry32(seed);
-    this._gagSchedule = this._scheduleGags(barGrid, obstacleTimes, durationMs, beatMs);
-    this._gagIdx = 0;
-    this.gagState = 'idle'; // 'idle' | 'sag' | 'hold' | 'recover'
-    this._gagStartMs = 0;
-    this._gagCenterWorldX = 0;
-
-    // One-shot flags for the Simulation to wire FX/camera.
-    this.justSagged = false;
+  constructor(baseGroundY, { conductor, durationMs = 0, songSeed = 1, sliceWidth = SLICE_WIDTH_PX } = {}) {
+    this.baseGroundY = baseGroundY;
+    this.sliceWidth = sliceWidth;
+    this.conductor = conductor;
+    this.slices = [];
+    this._nextIndex = 0;
+    this._nextWorldXStart = -TRIM_BEHIND_PX;
     this.justRecovered = false;
+
+    this._gagQueue = this._scheduleGags(durationMs, conductor?.barGrid, songSeed);
+    this._activeGagSliceIdxs = null;
+
+    this._buzz = 0; // EMA of bass energy, driving a render-only micro-vibration
+    this._nowMs = 0;
   }
 
-  _scheduleGags(barGrid, obstacleTimes, durationMs, beatMs) {
-    const rand = this._rand;
-    const count = 1 + (rand() < 0.45 ? 1 : 0); // 1–2 gags
-    // Second-half bar boundaries, leaving room for the recover before the end.
-    const secondHalf = barGrid
-      .map((b) => b.ms)
-      .filter((ms) => ms >= 0.5 * durationMs && ms <= durationMs - 2 * beatMs - GAG_RECOVER_MS);
-    const avoid = GAG_AVOID_BEATS * beatMs;
-    const out = [];
-    let tries = 0;
-    while (out.length < count && tries < 40 && secondHalf.length) {
-      tries++;
-      const ms = secondHalf[Math.floor(rand() * secondHalf.length)];
-      if (out.some((m) => Math.abs(m - ms) < 4 * beatMs)) continue; // gags spaced apart
-      if (obstacleTimes.some((t) => Math.abs(t - ms) < avoid)) continue; // not near an obstacle
-      out.push(ms);
+  _scheduleGags(durationMs, barGrid, seed) {
+    if (!durationMs || durationMs < 15000) return []; // too short for a scripted gag to land well
+    const rand = mulberry32(hashSeed(`${seed}:gag`));
+    const candidateTimes = (barGrid && barGrid.length > 8)
+      ? barGrid.map((b) => b.ms)
+      : Array.from({ length: 24 }, (_, i) => (i / 24) * durationMs);
+
+    const backHalf = candidateTimes.filter((t) => t >= durationMs * 0.5 && t <= durationMs * 0.92);
+    if (backHalf.length === 0) return [];
+
+    const numGags = durationMs > 70000 ? 2 : 1;
+    const minGapMs = durationMs * 0.2;
+    const shuffled = shuffle(backHalf, rand);
+    const chosen = [];
+    for (const t of shuffled) {
+      if (chosen.every((c) => Math.abs(c - t) >= minGapMs)) chosen.push(t);
+      if (chosen.length >= numGags) break;
     }
-    out.sort((a, b) => a - b);
-    return out;
+    return chosen.sort((a, b) => a - b);
   }
 
-  update(nowMs, dtSec, energyCurves, worldX) {
-    this._lastNowMs = nowMs;
-    // Per-slice targets from band energy, shifted so the ground echoes the EQ.
-    if (energyCurves) {
-      for (let i = 0; i < this.n; i++) {
-        const band = energyCurves.sample((i + this.shift) % this.bands, nowMs);
-        this.target[i] = clamp((band - 0.5) * 2 * MAX_OFFSET, -MAX_OFFSET, MAX_OFFSET);
-      }
+  _spawnSlicesUpTo(worldXLimit) {
+    while (this._nextWorldXStart < worldXLimit) {
+      this.slices.push(new Slice(this._nextIndex, this._nextWorldXStart));
+      this._nextIndex++;
+      this._nextWorldXStart += this.sliceWidth;
     }
-    // Critically-damped spring toward target (underdamped during recover for overshoot).
-    const z = this.zeta;
-    for (let i = 0; i < this.n; i++) {
-      const a = -OMEGA_N * OMEGA_N * (this.h[i] - this.target[i]) - 2 * z * OMEGA_N * this.v[i];
-      this.v[i] += a * dtSec;
-      this.h[i] += this.v[i] * dtSec;
-    }
+  }
 
-    // --- gag state machine ---
-    this.justSagged = false;
+  _trimBehind(worldX) {
+    while (this.slices.length && this.slices[0].worldXStart + this.sliceWidth < worldX - TRIM_BEHIND_PX) {
+      this.slices.shift();
+    }
+  }
+
+  _maybeTriggerGag(nowMs, worldX) {
+    if (this._gagQueue.length === 0) return;
+    if (nowMs < this._gagQueue[0]) return;
+    this._gagQueue.shift();
+
+    const centerWorldX = worldX + GAG_LEAD_PX;
+    const centerIdx = this.slices.findIndex((s) => s.worldXStart >= centerWorldX);
+    if (centerIdx < 0) return;
+    const startIdx = Math.max(0, centerIdx - Math.floor(GAG_SLICE_COUNT / 2));
+    const group = this.slices.slice(startIdx, startIdx + GAG_SLICE_COUNT);
+    if (group.length === 0) return;
+
+    group.forEach((s, i) => {
+      s._gagSinkAtMs = nowMs + i * GAG_STAGGER_MS;
+    });
+    // Recovery is a single synchronized moment for the whole group, snapped
+    // to the nearest kick for punch (spec-style crack-birth kick sync).
+    const holdEndEstimate = nowMs + (group.length - 1) * GAG_STAGGER_MS + GAG_HOLD_MS;
+    const nearestKick = this.conductor
+      ? this.conductor.nearestEventMs((e) => e.role === Role.RHYTHM && e.kick, holdEndEstimate, GAG_KICK_SYNC_WINDOW_MS)
+      : null;
+    const recoverMs = nearestKick ? Math.max(holdEndEstimate, nearestKick.tMs) : holdEndEstimate;
+    for (const s of group) s._gagRecoverAtMs = recoverMs;
+  }
+
+  update(nowMs, dtSec, worldX, energyCurves) {
     this.justRecovered = false;
-    if (this.gagState === 'idle') {
-      if (this._gagIdx < this._gagSchedule.length && nowMs >= this._gagSchedule[this._gagIdx]) {
-        this._gagIdx++;
-        this.gagState = 'sag';
-        this._gagStartMs = nowMs;
-        this._gagCenterWorldX = worldX; // anchor the collapse ahead of Midio's current spot
-        this.justSagged = true;
+    this._nowMs = nowMs;
+    const bass = energyCurves ? clamp01(energyCurves.sample(1, nowMs)) : 0;
+    this._buzz += (1 - Math.exp(-dtSec / 0.12)) * (bass - this._buzz);
+    this._spawnSlicesUpTo(worldX + LOOKAHEAD_PX);
+    this._trimBehind(worldX);
+    this._maybeTriggerGag(nowMs, worldX);
+
+    for (const s of this.slices) {
+      if (!s._initialized) {
+        const bandIdx = (s.index + BAND_SHIFT) % NUM_BANDS;
+        const e = energyCurves ? clamp01(energyCurves.sample(bandIdx, nowMs)) : 0.3;
+        s.baseTarget = -e * RISE_AMPLITUDE_PX; // more energy -> ground rises to meet it
+        s._initialized = true;
       }
-    } else if (this.gagState === 'sag') {
-      if (nowMs - this._gagStartMs >= GAG_SAG_MS) {
-        this.gagState = 'hold';
-        this._holdStartMs = nowMs;
+
+      let target = s.baseTarget;
+      let damping = SPRING_C;
+
+      if (s._gagSinkAtMs !== undefined) {
+        if (nowMs >= s._gagRecoverAtMs) {
+          target = s.baseTarget;
+          if (nowMs < s._gagRecoverAtMs + RECOVER_DURATION_MS) {
+            damping = RECOVER_C; // softened briefly -> elastic overshoot on the way back up
+            if (!s._recoveredFired) { s._recoveredFired = true; this.justRecovered = true; }
+          } else {
+            s._gagSinkAtMs = undefined; // gag fully resolved, back to plain band-driven behavior
+          }
+        } else if (nowMs >= s._gagSinkAtMs) {
+          target = GAG_SAG_PX;
+        }
       }
-    } else if (this.gagState === 'hold') {
-      if (nowMs - this._holdStartMs >= GAG_HOLD_BEATS * this.beatMs) {
-        this.gagState = 'recover';
-        this._recoverStartMs = nowMs;
-        this.zeta = 0.25; // underdamped → overshooting elastic recovery
-        this.justRecovered = true;
-      }
-    } else if (this.gagState === 'recover') {
-      if (nowMs - this._recoverStartMs >= GAG_RECOVER_MS) {
-        this.gagState = 'idle';
-        this.zeta = ZETA;
-      }
+
+      const accel = -SPRING_K * (s.offset - target) - damping * s.vel;
+      s.vel += accel * dtSec;
+      s.offset += s.vel * dtSec;
     }
   }
 
-  /** Sag offset (px, positive = ground lower) at worldX during the gag. */
-  _gagOffset(worldX, nowMs) {
-    if (this.gagState === 'idle') return 0;
-    const dist = worldX - this._gagCenterWorldX;
-    if (dist < -24 || dist > GAG_REACH_PX) return 0;
-    const reach = clamp(1 - dist / GAG_REACH_PX, 0, 1); // 1 under Midio → 0 far ahead
-    let amp;
-    if (this.gagState === 'sag') {
-      const p = clamp((nowMs - this._gagStartMs) / GAG_SAG_MS, 0, 1);
-      const stagger = clamp(p - dist / GAG_REACH_PX, 0, 1); // nearer slices drop first
-      amp = GAG_MAX_SAG * reach * easeIn(stagger);
-    } else if (this.gagState === 'hold') {
-      amp = GAG_MAX_SAG * reach;
-    } else { // recover
-      const r = clamp((nowMs - this._recoverStartMs) / GAG_RECOVER_MS, 0, 1);
-      amp = GAG_MAX_SAG * reach * (1 - elasticOut(r)); // overshoots negative, settles to 0
+  _sliceAt(worldX) {
+    // Slices are generated in ascending worldXStart order; linear scan is
+    // fine at this count (a couple dozen live slices at once).
+    for (let i = this.slices.length - 1; i >= 0; i--) {
+      if (this.slices[i].worldXStart <= worldX) return this.slices[i];
     }
-    return amp;
+    return this.slices[0] || null;
   }
 
-  /** The ground's screen-y at a world x — replaces the constant groundY.
-   *  Geometric: each slice is mostly flat, with only a narrow linear blend
-   *  at the boundary between slices. This avoids the lumpy organic look while
-   *  still keeping the play surface readable. */
-  heightAt(worldX, nowMs) {
-    const now = nowMs ?? this._lastNowMs;
-    const f = (((worldX / this.spacing) % this.n) + this.n) % this.n;
-    const i0 = Math.floor(f);
-    const frac = f - i0;
-    const h = this.h;
-    // Smooth blend across slice boundaries — rolling hills, not faceted ramps.
-    const blendWidth = 0.42;
-    let h0, h1, localT;
-    if (frac < blendWidth) {
-      const prev = h[(i0 - 1 + this.n) % this.n];
-      h0 = prev; h1 = h[i0 % this.n];
-      localT = smoothstep(0, 1, frac / blendWidth);
-    } else if (frac > 1 - blendWidth) {
-      h0 = h[i0 % this.n]; h1 = h[(i0 + 1) % this.n];
-      localT = smoothstep(0, 1, (frac - (1 - blendWidth)) / blendWidth);
-    } else {
-      h0 = h[i0 % this.n]; h1 = h0; localT = 0;
-    }
-    const terrain = h0 + (h1 - h0) * localT;
-    return this.baseY + terrain + this._gagOffset(worldX, now);
+  /** Physics reference: the ground height directly under an arbitrary world-x (used for Midio's own position). */
+  heightAt(worldX) {
+    const s = this._sliceAt(worldX);
+    return this.baseGroundY + (s ? s.offset : 0);
   }
 
-  /** Array of {x, y} slice tops for a given screen span, for wireframe draw. */
-  sliceTops(worldX0, originX, nowMs) {
-    const out = [];
-    for (let x = -this.spacing; x <= 1280 + this.spacing; x += this.spacing) {
-      const wx = worldX0 + (x - originX);
-      const y = this.heightAt(wx, nowMs);
-      out.push({ x, wx, y });
+  /** Rendering helper: slice rectangles visible across [worldX, worldX+screenWidth] in screen space.
+   * Includes a render-only bass buzz: a 13 Hz vertical shiver, phase-staggered
+   * across slices by the golden angle so it travels as a shimmer rather than
+   * the whole floor bouncing in lockstep. heightAt() (the physics reference)
+   * deliberately does NOT include it -- a 1-2px visual tremble is free, a
+   * trembling physics floor is not. */
+  visibleBars(worldX, originX, screenWidth) {
+    const bars = [];
+    const buzzAmp = 2.5 * this._buzz;
+    const wt = (this._nowMs / 1000) * 2 * Math.PI * 13;
+    for (const s of this.slices) {
+      const screenXStart = s.worldXStart - worldX + originX;
+      const screenXEnd = screenXStart + this.sliceWidth;
+      if (screenXEnd < -20 || screenXStart > screenWidth + 20) continue;
+      const buzz = buzzAmp > 0.15 ? buzzAmp * Math.sin(wt + s.index * 2.39996) : 0;
+      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + s.offset + buzz });
     }
-    return out;
+    return bars;
   }
-
-  get gagActive() { return this.gagState !== 'idle'; }
 }

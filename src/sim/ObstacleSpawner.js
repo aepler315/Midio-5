@@ -1,48 +1,85 @@
-// World obstacles placed under Midio's predicted jump arcs (spec §2.2.3 final
-// paragraph, item 4). Since Midio's jumps are entirely music-driven (no player
-// input), obstacle placement is a contract with the deterministic jump
-// schedule: colliding terraces snap into covered arc windows; weak phrase
-// accents become decorative props that never trip collision.
+// World obstacles placed against a *predicted* jump schedule (spec §2.2.3
+// final paragraph: "never force an impossible double-jump"). Rather than
+// reactively nudging jumps at runtime, placement itself is built to be safe:
+// every candidate sits inside a window where predictJumpArcs guarantees
+// Midio clears it, computed against the worst case the live-tunable
+// ParamBus guardrails could ever produce (weakest jump height, slowest
+// scroll speed) — so a collision can only ever come from the vision loop
+// legitimately choosing to make the game harder, never from bad luck.
 import { Role } from '../core/NoteEvent.js';
-import { mulberry32 } from '../utils/math.js';
-import { planTerraces } from './TerrainHazardPlanner.js';
+import { clamp, mulberry32 } from '../utils/math.js';
+import { GUARDRAIL_MIN } from '../core/ParamBus.js';
+import { predictJumpArcs, safeWindowForArc } from './JumpPlanner.js';
 
+const WORLD_SPEED_PX_S = 220;
+const MIN_VEL = 0.55;
+const CLEARANCE_MARGIN_PX = 14;
+const MIN_SAFE_WINDOW_MS = 150; // discard slivers too narrow to place anything in safely
+const EDGE_KEEPOUT_MS = 40; // stay this far off a window's own edges before crossing-width is even considered
 const SPAWN_LEAD_MS = 2500;
-const BERM_BASE_SPREAD = 1.38;
-const PROP_SCALE = 0.72;
-
-function groundYAt(ground, groundY, wx, nowMs) {
-  return ground ? ground.heightAt(wx, nowMs) : groundY;
-}
-
-function screenX(wx, worldX, originX) {
-  return wx - worldX + originX;
-}
 
 export class ObstacleSpawner {
-  constructor(paramBus, { seed = 99, width = 28 } = {}) {
+  constructor(paramBus, { seed = 99, height = 46, width = 28 } = {}) {
     this.P = paramBus;
     this.candidates = [];
     this.nextCandidateIdx = 0;
     this.active = [];
     this.rand = mulberry32(seed);
+    this.height = height;
     this.width = width;
+    this.halfWidth = 0; // set from Midio in buildCandidates
   }
 
-  buildCandidates(timeline, beatPeriodMsGuess, { energyCurves = null, barGrid = [] } = {}) {
+  /**
+   * @param {import('../core/NoteEvent.js').NoteEvent[]} timeline full song timeline
+   * @param {number} beatPeriodMsGuess used only for candidate min-gap spacing
+   * @param {number} midioHalfWidth Midio's collision half-width, for crossing-time math
+   */
+  buildCandidates(timeline, beatPeriodMsGuess, midioHalfWidth = 23) {
+    this.candidates = [];
+    this.halfWidth = midioHalfWidth;
+
     const kicks = [];
     for (const e of timeline) if (e.role === Role.RHYTHM && e.kick) kicks.push({ tMs: e.tMs, vel: e.vel });
+    if (kicks.length === 0) return;
 
-    this.candidates = planTerraces({
-      timeline,
-      barGrid,
-      kicks,
-      energyCurves,
-      obstacleDensity: this.P.live.obstacleDensity,
-      jumpHeight: this.P.live.jumpHeight,
-      beatPeriodMs: beatPeriodMsGuess,
-      rand: this.rand,
-    });
+    // Worst case across the ParamBus's full live-tunable range: the weakest
+    // jump the vision loop could ever produce, and the slowest scroll (which
+    // maximizes how long an obstacle lingers in the danger zone).
+    const arcs = predictJumpArcs(kicks, { jumpHeightMul: GUARDRAIL_MIN });
+    const threshold = this.height + CLEARANCE_MARGIN_PX;
+    const worstScrollPxPerMs = (WORLD_SPEED_PX_S * GUARDRAIL_MIN) / 1000;
+    const crossHalfMs = (midioHalfWidth + this.width / 2) / worstScrollPxPerMs;
+
+    const rhythmEvents = timeline.filter((e) => e.role === Role.RHYTHM && !e.kick && e.vel >= MIN_VEL);
+    let ei = 0;
+    let lastAccepted = -Infinity;
+    const minGap = Math.max(beatPeriodMsGuess, 420);
+
+    for (const arc of arcs) {
+      const w = safeWindowForArc(arc, threshold);
+      if (!w) continue; // this arc never clears the obstacle height at all -- skip, don't gamble
+
+      const usableFrom = w.fromMs + EDGE_KEEPOUT_MS + crossHalfMs;
+      const usableTo = w.toMs - EDGE_KEEPOUT_MS - crossHalfMs;
+      if (usableTo - usableFrom < MIN_SAFE_WINDOW_MS - 2 * crossHalfMs) continue; // too narrow once crossing time is reserved
+      if (usableFrom > usableTo) continue;
+
+      // Anchor to the loudest nearby off-kick rhythm event for musical
+      // correlation; fall back to the window's center if none qualify.
+      while (ei < rhythmEvents.length && rhythmEvents[ei].tMs < usableFrom) ei++;
+      let arrival = (usableFrom + usableTo) / 2;
+      let bestVel = -1;
+      let ej = ei;
+      while (ej < rhythmEvents.length && rhythmEvents[ej].tMs <= usableTo) {
+        if (rhythmEvents[ej].vel > bestVel) { bestVel = rhythmEvents[ej].vel; arrival = rhythmEvents[ej].tMs; }
+        ej++;
+      }
+
+      if (arrival - lastAccepted < minGap) continue;
+      this.candidates.push({ tMs: arrival });
+      lastAccepted = arrival;
+    }
   }
 
   update(nowMs, worldX, scrollSpeedPxMs) {
@@ -52,163 +89,41 @@ export class ObstacleSpawner {
     ) {
       const c = this.candidates[this.nextCandidateIdx++];
       if (c.tMs < nowMs) continue;
+      const p = clamp(0.5 * this.P.live.obstacleDensity, 0, 1);
+      if (this.rand() > p) continue;
       const wx = worldX + scrollSpeedPxMs * (c.tMs - nowMs);
-      this.active.push({
-        wx,
-        tMs: c.tMs,
-        height: c.height,
-        width: c.width ?? this.width,
-        kind: c.kind ?? 'berm',
-        colliding: c.colliding !== false,
-        passed: false,
-      });
+      this.active.push({ wx, tMs: c.tMs, height: this.height, width: this.width, passed: false });
     }
     while (this.active.length && this.active[0].wx < worldX - 400) this.active.shift();
   }
 
   nearestAhead(worldX) {
-    for (const o of this.active) if (o.wx >= worldX && o.colliding !== false) return o;
+    for (const o of this.active) if (o.wx >= worldX) return o;
     return null;
   }
 
-  /** Marks crossed obstacles as passed; returns true if Midio was too low to clear one.
-   *  `ground` (GroundField) makes the effective obstacle height terrain-aware:
-   *  effH = o.height + (groundAtMidio - groundAtObstacle). */
-  checkCollision(worldX, halfWidth, jumpYPx, ground = null, nowMs = 0) {
+  /** Marks crossed obstacles as passed; returns true if Midio was too low to clear one. */
+  checkCollision(worldX, halfWidth, jumpYPx) {
     let stumbled = false;
-    const gM = ground ? ground.heightAt(worldX, nowMs) : 0;
     for (const o of this.active) {
       if (o.passed) continue;
       if (Math.abs(o.wx - worldX) <= halfWidth + o.width / 2) {
+        if (jumpYPx < o.height) stumbled = true;
         o.passed = true;
-        if (o.colliding === false) continue;
-        // Spatial overlap can precede the musical crossing — only judge clearance
-        // once sim time has reached the obstacle's scheduled tMs.
-        if (nowMs < o.tMs - 40) continue;
-        const effH = ground ? o.height + (gM - ground.heightAt(o.wx, nowMs)) : o.height;
-        if (jumpYPx < effH) stumbled = true;
       }
     }
     return stumbled;
   }
 
-  draw(ctx, worldX, originX, groundY, ground = null, nowMs = 0, edgeLight = null) {
+  draw(ctx, worldX, originX, groundY) {
     for (const o of this.active) {
-      const cx = screenX(o.wx, worldX, originX);
-      if (cx < -80 || cx > 2200) continue;
-
-      const kind = o.kind ?? (o.colliding === false ? 'prop' : 'berm');
-      if (o.colliding === false || kind === 'stump' || kind === 'crystal' || kind === 'prop') {
-        this._drawProp(ctx, o, cx, worldX, groundY, ground, nowMs, kind);
-      } else {
-        this._drawBerm(ctx, o, cx, groundY, ground, nowMs, edgeLight);
-      }
-    }
-  }
-
-  /** Colliding berm — trapezoid wider at the base, base corners follow ground.heightAt. */
-  _drawBerm(ctx, o, cx, groundY, ground, nowMs, edgeLight) {
-    const topW = o.width;
-    const baseW = o.width * BERM_BASE_SPREAD;
-
-    const wxL = o.wx - baseW / 2;
-    const wxR = o.wx + baseW / 2;
-    const yBL = groundYAt(ground, groundY, wxL, nowMs);
-    const yBR = groundYAt(ground, groundY, wxR, nowMs);
-    const yCenter = groundYAt(ground, groundY, o.wx, nowMs);
-    const topY = yCenter - o.height;
-
-    const xBL = cx - baseW / 2;
-    const xBR = cx + baseW / 2;
-    const xTL = cx - topW / 2;
-    const xTR = cx + topW / 2;
-    const baseY = Math.max(yBL, yBR);
-
-    const bodyGrad = ctx.createLinearGradient(0, topY, 0, baseY);
-    if (edgeLight) {
-      bodyGrad.addColorStop(0, 'rgba(80,40,70,0.95)');
-      bodyGrad.addColorStop(1, 'rgba(40,15,35,0.90)');
-    } else {
-      bodyGrad.addColorStop(0, '#8a3a6b');
-      bodyGrad.addColorStop(1, '#5a244d');
-    }
-
-    ctx.beginPath();
-    ctx.moveTo(xBL, yBL);
-    ctx.lineTo(xBR, yBR);
-    ctx.lineTo(xTR, topY);
-    ctx.lineTo(xTL, topY);
-    ctx.closePath();
-    ctx.fillStyle = bodyGrad;
-    ctx.fill();
-
-    if (edgeLight) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.strokeStyle = edgeLight;
-      ctx.lineWidth = 2;
-      ctx.shadowColor = edgeLight;
-      ctx.shadowBlur = 10;
-      ctx.beginPath();
-      ctx.moveTo(xTL, topY);
-      ctx.lineTo(xTR, topY);
-      ctx.stroke();
-      ctx.restore();
-    } else {
+      const x = o.wx - worldX + originX;
+      if (x < -60 || x > 2200) continue;
+      ctx.fillStyle = '#8a3a6b';
       ctx.strokeStyle = 'rgba(255,255,255,0.25)';
       ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(xTL, topY);
-      ctx.lineTo(xTR, topY);
-      ctx.stroke();
+      ctx.fillRect(x - o.width / 2, groundY - o.height, o.width, o.height);
+      ctx.strokeRect(x - o.width / 2, groundY - o.height, o.width, o.height);
     }
-  }
-
-  /** Decorative prop — smaller stump or crystal with a muted palette (no neon edge). */
-  _drawProp(ctx, o, cx, worldX, groundY, ground, nowMs, kind) {
-    const propKind = kind === 'stump' || kind === 'crystal' ? kind : (o.wx % 2 < 1 ? 'stump' : 'crystal');
-    const w = o.width * PROP_SCALE;
-    const h = o.height * PROP_SCALE;
-    const baseY = groundYAt(ground, groundY, o.wx, nowMs);
-    const topY = baseY - h;
-
-    if (propKind === 'crystal') {
-      const bodyGrad = ctx.createLinearGradient(0, topY, 0, baseY);
-      bodyGrad.addColorStop(0, 'rgba(60,80,90,0.55)');
-      bodyGrad.addColorStop(0.5, 'rgba(45,60,72,0.50)');
-      bodyGrad.addColorStop(1, 'rgba(30,40,50,0.45)');
-      ctx.beginPath();
-      ctx.moveTo(cx, topY - h * 0.12);
-      ctx.lineTo(cx + w / 2, baseY);
-      ctx.lineTo(cx - w / 2, baseY);
-      ctx.closePath();
-      ctx.fillStyle = bodyGrad;
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.10)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      return;
-    }
-
-    // stump — short rounded column
-    const left = cx - w / 2;
-    const r = w * 0.22;
-    const bodyGrad = ctx.createLinearGradient(0, topY, 0, baseY);
-    bodyGrad.addColorStop(0, 'rgba(70,90,100,0.65)');
-    bodyGrad.addColorStop(1, 'rgba(40,55,65,0.55)');
-    ctx.beginPath();
-    ctx.moveTo(left + r, topY);
-    ctx.lineTo(left + w - r, topY);
-    ctx.quadraticCurveTo(left + w, topY, left + w, topY + r);
-    ctx.lineTo(left + w, baseY);
-    ctx.lineTo(left, baseY);
-    ctx.lineTo(left, topY + r);
-    ctx.quadraticCurveTo(left, topY, left + r, topY);
-    ctx.closePath();
-    ctx.fillStyle = bodyGrad;
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
   }
 }

@@ -3,8 +3,6 @@
 // (quadratic ease-in, accelerating/heavy). Kick-quantized takeoffs with
 // mid-air retargeting so a new kick always lands Midio back on the grid.
 import { clamp } from '../utils/math.js';
-import * as JumpPlanner from './JumpPlanner.js';
-import { HIGH_BPM_HALFTIME } from './JumpPlanner.js';
 
 export const A = 0.35;   // LAUNCH fraction
 export const B = 0.30;   // APEX HANG fraction
@@ -28,7 +26,8 @@ export function jumpY(u, H) {
 
 export const H_BASE = 150; // px
 export const D_MIN = 380, D_MAX = 1200; // ms
-export const RETARGET_FALL_MS = 120;
+const RETARGET_FALL_MS = 120;
+const HIGH_BPM_HALFTIME = 170;
 
 export class JumpController {
   constructor(paramBus, { hBase = H_BASE } = {}) {
@@ -40,6 +39,7 @@ export class JumpController {
     this.D = 500;
     this.H = 100;
     this.y = 0; // px above ground, >=0
+    this.lastLaunchVel = 0.7; // velocity of the kick that started the current/most recent jump
 
     this.lastKickMs = null;
     this.beatPeriodMs = 500;
@@ -47,9 +47,6 @@ export class JumpController {
 
     this.compress = null;      // {startMs, fromY, dur} — mid-air retarget in progress
     this._pendingLaunch = null;
-
-    /** Velocity of the most recent launch — read by MidioPerformer for apex tricks. */
-    this.lastVel = 0;
 
     /** Set for exactly one sim step on landing; consumed by ComboSystem/ImpactFX. */
     this.pendingLanding = null;
@@ -59,14 +56,29 @@ export class JumpController {
 
   get bpm() { return 60000 / this.beatPeriodMs; }
 
-  onKick(evt, nowMs, obstacle = null, comboM = 1) {
-    this._updateBeatPeriod(nowMs);
+  /**
+   * @param evt the RHYTHM/kick NoteEvent (evt.tMs is the exact musical
+   *   onset; the dispatcher may not reach it until up to one sim step
+   *   later)
+   */
+  onKick(evt) {
+    // Everything below is anchored to evt.tMs, the exact onset time — NOT
+    // the caller's discretized "now". Kick-quantized jumps land almost
+    // exactly when the next kick arrives, so the gap between a kick's true
+    // time and the ~8ms-later instant the fixed-step sim actually gets to
+    // process it is not noise to ignore: feeding that jitter into the
+    // beat-period EMA compounds a slowly-growing phase error into D every
+    // cycle, and resolving state against the wrong instant can leave a
+    // kick seeing stale AIR state and silently dropping its launch.
+    const tMs = evt.tMs;
+    this.update(tMs); // resolve any landing/compress transition due by tMs first
+    this._updateBeatPeriod(tMs);
     this.kickCount++;
     if (this.bpm > HIGH_BPM_HALFTIME && this.kickCount % 2 === 0) {
       this.pendingGhostKick = { vel: evt.vel };
       return;
     }
-    this._launchOrRetarget(evt, nowMs, obstacle, comboM);
+    this._launchOrRetarget(evt, tMs);
   }
 
   _updateBeatPeriod(nowMs) {
@@ -79,24 +91,13 @@ export class JumpController {
     this.lastKickMs = nowMs;
   }
 
-  _launchOrRetarget(evt, nowMs, obstacle = null, comboM = 1) {
+  _launchOrRetarget(evt, nowMs) {
+    const H = this.hBase * (0.6 + 0.8 * evt.vel) * this.P.live.jumpHeight;
     const D = clamp(1.0 * this.beatPeriodMs, D_MIN, D_MAX);
-    const skillMul = 1 + 0.10 * (comboM - 1);
-    let H = this.hBase * (0.6 + 0.8 * evt.vel) * this.P.live.jumpHeight * skillMul;
-
-    // Accommodation (item 4): if an obstacle arrives during this arc, floor H
-    // at the clearance height so the hang plateau clears it. Capped by the
-    // jumpHeight guardrail; if even the cap can't clear it, the collision is
-    // the rare, legible "vision loop compressed the arc" case the spec allows.
-    if (obstacle && obstacle.tMs > nowMs && obstacle.tMs <= nowMs + D) {
-      const effH = obstacle.effHeight ?? obstacle.height; // effHeight set by stage-5 ground delta
-      const reqH = JumpPlanner.minClearanceH(effH);
-      const cap = H_BASE * 1.4 * this.P.live.jumpHeight;
-      H = Math.min(cap, Math.max(H, reqH));
-    }
 
     if (this.state === 'GROUND') {
-      this._launch(nowMs, H, D, evt.vel);
+      this.lastLaunchVel = evt.vel;
+      this._launch(nowMs, H, D);
       return;
     }
 
@@ -105,18 +106,17 @@ export class JumpController {
       const r = (u - A - B) / GAMMA;
       if (r < 0.3 && !this.compress) {
         this.compress = { startMs: nowMs, fromY: this.y, dur: RETARGET_FALL_MS };
-        this._pendingLaunch = { H, D };
+        this._pendingLaunch = { H, D, vel: evt.vel };
       }
     }
     // Mid launch/hang: ignore — already committed, avoids impossible double-jumps.
   }
 
-  _launch(nowMs, H, D, vel = 0) {
+  _launch(nowMs, H, D) {
     this.state = 'AIR';
     this.jumpStartMs = nowMs;
     this.H = H;
     this.D = D;
-    this.lastVel = vel;
     this.compress = null;
   }
 
@@ -138,8 +138,9 @@ export class JumpController {
         this._land(vLand);
         this.compress = null;
         if (this._pendingLaunch) {
-          const { H, D } = this._pendingLaunch;
+          const { H, D, vel } = this._pendingLaunch;
           this._pendingLaunch = null;
+          this.lastLaunchVel = vel;
           this._launch(nowMs, H, D);
         }
       }

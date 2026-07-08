@@ -13,6 +13,7 @@ function makeCanvas(width, height) {
 
 export function generateSilhouette({
   seed, width = 2048, height = 320, octaves = 2, baseline = 0.55, amplitude = 0.30, color, step = 4,
+  edgeLight = null, // optional neon ridge-line stroke (CYBER's edgeLight hook)
 }) {
   const noise = new ValueNoise1D(seed, 256);
   const n = Math.floor(width / step) + 1;
@@ -41,7 +42,35 @@ export function generateSilhouette({
   ctx.lineTo(width, height);
   ctx.closePath();
   ctx.fill();
+
+  if (edgeLight) {
+    // Two-pass glow along the ridge: a wide faint stroke under a thin
+    // bright one -- baked once, free forever.
+    for (const [lw, alpha] of [[4, 0.30], [1.5, 0.85]]) {
+      ctx.strokeStyle = edgeLight;
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const y = height * baseline - heights[i] * height * amplitude;
+        if (i === 0) ctx.moveTo(0, y); else ctx.lineTo(i * step, y);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // Ridge metadata: lets landmark decoration root itself on the actual
+  // skyline instead of the layer baseline.
+  canvas.ridge = { heights, step, baseline, amplitude, height };
   return canvas;
+}
+
+/** Screen-space (in-strip) y of the noise ridge at a given strip x. */
+export function ridgeYAt(strip, x) {
+  const r = strip.ridge;
+  if (!r) return strip.height * 0.7;
+  const i = Math.max(0, Math.min(r.heights.length - 1, Math.round(x / r.step)));
+  return r.height * r.baseline - r.heights[i] * r.height * r.amplitude;
 }
 
 /** Draws a tileable strip scroll-wrapped across the canvas width at the given y offset. */

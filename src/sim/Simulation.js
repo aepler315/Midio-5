@@ -4,8 +4,6 @@
 import { Role } from '../core/NoteEvent.js';
 import { Midio } from './Midio.js';
 import { JumpController, A, GAMMA, W, H_BASE, D_MIN } from './JumpController.js';
-import { MidioPerformer } from './MidioPerformer.js';
-import { CalmDirector } from './CalmDirector.js';
 import { CameraDirector } from '../render/CameraDirector.js';
 import { ComboSystem } from './ComboSystem.js';
 import { ImpactFX } from './ImpactFX.js';
@@ -13,6 +11,9 @@ import { TelegraphScanner } from './TelegraphScanner.js';
 import { ObstacleSpawner } from './ObstacleSpawner.js';
 import { Midasus } from './Midasus.js';
 import { Broshi } from './Broshi.js';
+import { MidioPerformer } from './MidioPerformer.js';
+import { CalmDirector } from './CalmDirector.js';
+import { GnatGag } from './GnatGag.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
@@ -28,44 +29,31 @@ export class Simulation {
     this.conductor = conductor;
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
-    this.canvasWidth = canvasWidth;
-    this.canvasHeight = canvasHeight;
 
-    this.midio = new Midio({ canvasWidth, canvasHeight });
+    this.midio = new Midio();
     this.jump = new JumpController(paramBus);
     this.camera = new CameraDirector();
     this.comboSystem = new ComboSystem();
     this.impactFX = new ImpactFX();
     this.telegraph = new TelegraphScanner();
     this.obstacles = new ObstacleSpawner(paramBus);
-    this.obstacles.buildCandidates(conductor.timeline, 60000 / bpm, {
-      energyCurves: this.energyCurves,
-      barGrid: conductor.barGrid,
-    });
+    this.obstacles.buildCandidates(conductor.timeline, 60000 / bpm, this.midio.halfWidth);
 
-    // worldScale keeps companion excursion amplitudes (tuned against a 1280px
-    // reference) proportional to the actual canvas, so the cast's roam range
-    // scales with the screen instead of staying pinned to fixed pixel offsets.
-    const worldScale = canvasWidth / 1280;
-    this.midasus = new Midasus(conductor, this.midio, {
-      groundY: this.midio.groundY, ceilingY: canvasHeight * (40 / 720), worldScale,
-    });
-    this.broshi = new Broshi(conductor, paramBus, { worldScale });
+    this.midasus = new Midasus(conductor.timeline, this.midio, { groundY: this.midio.groundY, ceilingY: 40 });
+    this.broshi = new Broshi(conductor, paramBus);
     this.broshi._lastBarPeriodMs = (60000 / bpm) * 4;
 
-    this.performer = new MidioPerformer({ seed: 1313 });
-    this.performer.setMidasus(this.midasus);
-    this.calm = new CalmDirector();
-
     const songSeed = hashSeed(`${conductor.timeline.length}:${conductor.durationMs}:${conductor.timeline[0]?.tMs ?? 0}:${conductor.timeline.at(-1)?.tMs ?? 0}`);
-    this.ground = new GroundField({
-      baseY: this.midio.groundY, canvasWidth, durationMs: conductor.durationMs,
-      barGrid: conductor.barGrid, beatMs: 60000 / bpm,
-      obstacleTimes: this.obstacles.candidates.map((c) => c.tMs), seed: songSeed,
+    this.performer = new MidioPerformer(songSeed);
+    this.calm = new CalmDirector();
+    this.gnat = new GnatGag(songSeed, { canvasWidth, canvasHeight });
+    this.groundField = new GroundField(this.midio.groundY, {
+      conductor, durationMs: conductor.durationMs, songSeed,
     });
     this.biomes = new BiomeManager({
-      conductor, paramBus, energyCurves, durationMs: conductor.durationMs,
+      conductor, energyCurves, durationMs: conductor.durationMs,
       canvasWidth, canvasHeight, groundY: this.midio.groundY, songSeed,
+      groundField: this.groundField,
     });
     this.fracture = new FractureEngine(conductor, {
       canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,
@@ -73,22 +61,12 @@ export class Simulation {
 
     this.worldX = 0;
     this.timeMs = 0;
-    this.perfMul = 1; // set by the perf governor (spec §6.2); 1 = full quality
 
     this.prev = this._snapshot();
     this.curr = this._snapshot();
 
     conductor.on(Role.RHYTHM, (evt) => {
-      if (evt.kick) {
-        // Accommodation: pass the nearest upcoming obstacle with its terrain-
-        // aware effective height so JumpController can floor H for clearance.
-        const o = this.obstacles.nearestAhead(this.worldX);
-        const obstacle = o ? {
-          tMs: o.tMs,
-          height: o.height + (this.midio.groundY - this.ground.heightAt(o.wx, this.timeMs)),
-        } : null;
-        this.jump.onKick(evt, this.timeMs, obstacle, this.comboSystem.M);
-      }
+      if (evt.kick) { this.jump.onKick(evt); this.gnat.onKick(evt); }
     });
   }
 
@@ -99,32 +77,32 @@ export class Simulation {
 
     this.jump.clearFrameFlags();
     this.comboSystem.clearFrameFlags();
+    this.performer.clearFrameFlags();
 
     this.conductor.dispatchUpTo(nowMs);
+    this.calm.update(nowMs, dtSec, this.energyCurves);
     this.jump.update(nowMs);
     this.midio.y = this.jump.y;
 
-    // Ground field: drives the rolling terrain + gag, then becomes Midio's
-    // local ground line so renderY (= groundY - y) follows the surface.
-    this.ground.update(nowMs, dtSec, this.energyCurves, this.worldX);
-    this.midio.groundY = this.ground.heightAt(this.worldX, nowMs);
+    this.groundField.update(nowMs, dtSec, this.worldX, this.energyCurves);
+    this.midio.groundY = this.groundField.heightAt(this.worldX);
+    if (this.groundField.justRecovered) this.camera.shake(10);
 
     if (this.jump.pendingLanding) {
       const nearestKick = this.conductor.nearestEventMs(
         (e) => e.role === Role.RHYTHM && e.kick, nowMs, CLEAN_WINDOW_MS + 20,
       );
       const isClean = ComboSystem.isCleanLanding(nowMs, nearestKick ? nearestKick.tMs : null);
-      this.comboSystem.onLanding(nowMs, isClean);
       const I = ImpactFX.intensity(this.jump.pendingLanding.vLandPxMs, V_REF);
+      this.comboSystem.onLanding(nowMs, isClean);
+      this.performer.onLanding(nowMs, this.comboSystem.justClean, this.comboSystem.displayM, I);
+      this.performer.onStreak(this.comboSystem.streak, nowMs);
       this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera);
+      if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY);
       this.fracture.registerImpact(I);
     }
 
-    // Gag FX: crack-dust at the sag, camera punch + shake at the recovery.
-    if (this.ground.justSagged) this.impactFX.dustBurst(this.worldX + 120, this.midio.groundY, 20);
-    if (this.ground.justRecovered) { this.camera.punch(1.07); this.camera.shake(14); }
-
-    const stumbled = this.obstacles.checkCollision(this.worldX, this.midio.halfWidth, this.jump.y, this.ground, nowMs);
+    const stumbled = this.obstacles.checkCollision(this.worldX, this.midio.halfWidth, this.jump.y);
     if (stumbled) this.comboSystem.onStumble();
 
     this.comboSystem.update(nowMs, this.jump.beatPeriodMs);
@@ -134,21 +112,17 @@ export class Simulation {
 
     this.obstacles.update(nowMs, this.worldX, worldSpeed / 1000);
     this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.obstacles);
-
-    // Midio stage presence: writes scale/lean/poseExtras from telegraph.a + jump/combo state.
-    this.performer.update(nowMs, dtSec, this.jump, this.comboSystem, this.calm, this.midio, this.conductor, this.telegraph);
+    this.performer.update(nowMs, dtSec, this.midio, this.jump, this.comboSystem, this.calm.level);
     this.impactFX.step(dtSec);
 
-    this.calm.update(nowMs, dtSec, this.energyCurves);
-
-    this.midasus.update(nowMs, dtSec, this.calm);
-    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm);
-    this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm, this.perfMul);
+    this.midasus.update(nowMs, dtSec, this.calm.level);
+    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level);
+    this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level);
+    if (this.biomes.cutFlashJustFired) { this.camera.punch(1.06); this.camera.shake(6); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
 
-    const comboZoom = 1 + 0.04 * Math.max(0, this.comboSystem.M - 1);
-    if (comboZoom > 1.01) this.camera.punch(comboZoom);
-    this.camera.update(dtSec, this.calm);
+    this.gnat.update(nowMs, dtSec, this.calm.level);
+    this.camera.update(dtSec, this.calm.level);
     this.paramBus.step();
 
     this.curr = this._snapshot();
@@ -161,7 +135,6 @@ export class Simulation {
       scaleX: this.midio.scaleX,
       scaleY: this.midio.scaleY,
       leanDeg: this.midio.leanDeg,
-      mesh: { ...this.midio.poseExtras },
     };
   }
 
@@ -176,7 +149,6 @@ export class Simulation {
       scaleX: lerp(p.scaleX, c.scaleX),
       scaleY: lerp(p.scaleY, c.scaleY),
       leanDeg: lerp(p.leanDeg, c.leanDeg),
-      mesh: c.mesh || {},
       airborne: this.jump.airborne,
     };
   }

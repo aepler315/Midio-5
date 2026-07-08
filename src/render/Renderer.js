@@ -2,15 +2,29 @@
 // telegraph glints -> world FX -> companions -> Midio -> foreground veil ->
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
 // each stage guards on the subsystem's presence so this file grows additively.
-import { drawMesh, MIDIO_MESH, BROSHI_MESH, MIDASUS_MESH, MIDIO_SCALE } from './MeshDrawer.js';
+import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE } from './meshes.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial } from './MeshDrawer.js';
+import { EpicycleShow } from './EpicycleShow.js';
+import { ComposerStrip } from './ComposerStrip.js';
+import { RainbowBrush } from './RainbowBrush.js';
+
+const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
+const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
 
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+    this._midioRestLengths = computeRestLengths(MIDIO_MESH);
+    this._midioBodyRest = computeRestLengths(MIDIO_BODY);
+    this._midioEyeRest = computeRestLengths(MIDIO_EYE);
+    this.epicycles = new EpicycleShow();
+    this._lastMilestoneMs = null;
+    this.composer = null; // lazy: needs the conductor's timeline at first draw
+    this.brush = new RainbowBrush();
   }
 
-  draw(sim, alpha, perfGovernor = null) {
+  draw(sim, alpha) {
     const { ctx, canvas } = this;
     const fracture = sim.fracture || null;
 
@@ -29,45 +43,49 @@ export class Renderer {
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.scale(camera.zoom, camera.zoom);
-    ctx.translate(-canvas.width / 2 + camera.shakeX + camera.driftX, -canvas.height / 2 + camera.shakeY + camera.driftY);
+    ctx.rotate(camera.roll || 0); // damped impact roll, pivoting on screen center
+    ctx.translate(-canvas.width / 2 + camera.shakeX, -canvas.height / 2 + camera.shakeY);
 
-    const calmC = sim.calm ? sim.calm.C : 0;
     if (biomeManager) {
-      biomeManager.draw(ctx, canvas, pose.worldX, sim.ground, sim.timeMs, calmC, perfGovernor?.level ?? 0);
+      biomeManager.draw(ctx, canvas, pose.worldX, pose.midioX);
     } else {
       this._drawFallbackSky(ctx, canvas);
       this._drawGround(ctx, canvas, pose, sim.midio.groundY);
     }
 
-    if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY, sim.midio.screenX);
-    const edgeLight = biomeManager ? biomeManager.edgeLight(sim.timeMs) : null;
-    if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY, sim.ground, sim.timeMs, edgeLight);
+    if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
+    if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY);
     if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
 
-    if (sim.broshi) sim.broshi.draw(ctx);
+    // Rainbow brush: paint Midio's jump arcs, world-locked behind him.
+    this.brush.update(sim.timeMs, pose.airborne, pose.worldX, pose.midioY);
+    this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs);
 
-    this._drawMidioGhosts(ctx, sim);
-    this._drawMidio(ctx, pose, sim.midio.groundY);
+    if (sim.broshi) sim.broshi.draw(ctx, pose);
+
+    if (sim.performer) this._drawMidioAfterimages(ctx, sim.performer, pose.midioX);
+    this._drawMidio(ctx, pose, sim.performer);
+
+    // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
+    const lm = sim.performer ? sim.performer.lastMilestone : null;
+    if (lm && lm.atMs !== this._lastMilestoneMs) {
+      this._lastMilestoneMs = lm.atMs;
+      this.epicycles.trigger(lm.idx, pose.midioX + 30, sim.midio.groundY - 245, sim.timeMs);
+    }
+    this.epicycles.draw(ctx, sim.timeMs);
 
     if (sim.midasus) sim.midasus.draw(ctx);
-    if (sim.fracture) sim.fracture.draw(ctx, canvas, { glow: perfGovernor ? perfGovernor.crackGlowEnabled : true });
-    if (biomeManager && (!perfGovernor || perfGovernor.veilEnabled)) biomeManager.drawForeground(ctx, canvas, pose.worldX, calmC);
+    if (sim.gnat) sim.gnat.draw(ctx, sim.timeMs);
+    if (sim.fracture) sim.fracture.draw(ctx, canvas);
+    if (biomeManager) biomeManager.drawForeground(ctx, canvas, pose.worldX);
 
     ctx.restore(); // camera transform
     ctx.restore();
 
-    // Cinematic vignette: soft darkening at the edges so the cast stays the
-    // focal point. Kept subtle so it never competes with the biome palette.
-    const cx = (canvas.width || 1280) / 2;
-    const cy = (canvas.height || 720) / 2;
-    const r0 = Math.max(0, cy * 0.35);
-    const r1 = Math.max(r0 + 1, cy * 0.85);
-    if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(r0) && Number.isFinite(r1)) {
-      const vignette = ctx.createRadialGradient(cx, cy, r0, cx, cy, r1);
-      vignette.addColorStop(0, 'rgba(0,0,0,0)');
-      vignette.addColorStop(1, 'rgba(0,0,0,0.14)');
-      ctx.fillStyle = vignette;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Mario Paint composer strip: fixed HUD layer, outside camera shake/zoom.
+    if (sim.conductor) {
+      if (!this.composer) this.composer = new ComposerStrip(sim.conductor.timeline, sim.conductor.barGrid, sim.conductor.durationMs);
+      this.composer.draw(ctx, canvas, sim.timeMs);
     }
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
@@ -96,44 +114,51 @@ export class Renderer {
     ctx.stroke();
   }
 
-  _drawMidio(ctx, pose, groundY) {
-    const mesh = pose.mesh || {};
-    const energy = mesh.energy || 0;
-    const x = pose.midioX + (mesh.driftX || 0);
-    const y = pose.midioY + (mesh.driftY || 0);
-    if (energy > 0.1 || mesh.goldPulse > 0.1) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      const g = ctx.createRadialGradient(x, y - 20, 0, x, y - 20, 70 + 40 * energy);
-      g.addColorStop(0, `rgba(255,220,120,${0.15 + mesh.goldPulse * 0.2})`);
-      g.addColorStop(0.5, `rgba(255,140,60,${0.08 + energy * 0.12})`);
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(x, y - 20, 70 + 40 * energy, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+  _drawMidio(ctx, pose, performer) {
+    const flash = performer ? performer.goldFlash : 0;
+    const blink = performer ? performer.blinkScale : 1;
+    const transform = {
+      tx: pose.midioX, ty: pose.midioY,
+      rot: (pose.leanDeg * Math.PI) / 180,
+      scaleX: pose.scaleX, scaleY: pose.scaleY,
+    };
+    const hue = flash > 0 ? MIDIO_BASE_HUE + (48 - MIDIO_BASE_HUE) * flash : MIDIO_BASE_HUE;
+    // Spectral treatment: near-white filament with a narrow warm fringe.
+    // The milestone gold flash reads as the glyph igniting into color.
+    const options = { satBase: 26 + flash * 45, lightBase: 68 + flash * 14, hueSpread: 16 };
+
+    // Modal vibration: rim vertices ride the performer's ring-down field.
+    // Rest lengths stay the undisplaced ones, so the wobble reads as edge
+    // deformation and lights up the glow automatically.
+    const hub = MIDIO_BODY.vertices[0];
+    const bodyMesh = displaceMeshRadial(MIDIO_BODY, hub.x, hub.y, performer ? performer.modal : null);
+    drawMeshPart(ctx, bodyMesh, this._midioBodyRest, transform, hue, options);
+
+    if (blink < 0.98) {
+      const blinkEye = {
+        vertices: MIDIO_EYE.vertices.map((v) => ({ x: v.x, y: MIDIO_EYE_CY + (v.y - MIDIO_EYE_CY) * blink })),
+        edges: MIDIO_EYE.edges,
+      };
+      drawMeshPart(ctx, blinkEye, this._midioEyeRest, transform, hue, options);
+    } else {
+      drawMeshPart(ctx, MIDIO_EYE, this._midioEyeRest, transform, hue, options);
     }
-    drawMesh(ctx, MIDIO_MESH, {
-      x, y,
-      scaleX: pose.scaleX * (mesh.blink || 1) * MIDIO_SCALE,
-      scaleY: pose.scaleY * (mesh.blink || 1) * MIDIO_SCALE,
-      leanDeg: pose.leanDeg, spin: mesh.spin || 0, armFlare: mesh.armFlare || 0,
-    }, MIDIO_MESH.baseHue, { fill: true, lineWidth: 2.4, glow: true, goldPulse: mesh.goldPulse || 0, energy });
   }
 
-  _drawMidioGhosts(ctx, sim) {
-    if (!sim || !sim.performer) return;
-    const ghosts = sim.performer.ghosts();
-    for (const g of ghosts) {
-      ctx.save();
-      ctx.globalAlpha = g.alpha || 0.5;
-      drawMesh(ctx, MIDIO_MESH, {
-        x: g.x, y: g.y,
-        scaleX: g.scaleX * MIDIO_SCALE, scaleY: g.scaleY * MIDIO_SCALE,
-        leanDeg: g.leanDeg, spin: g.spin, armFlare: g.armFlare,
-      }, MIDIO_MESH.baseHue, { fill: true, lineWidth: 1.8, glow: true, energy: g.alpha * 0.5, aura: false });
-      ctx.restore();
+  /** Motion-streak ghosts trailing a fast jump (follow-up item 6). */
+  _drawMidioAfterimages(ctx, performer, midioX) {
+    const frames = performer.afterimages;
+    const n = frames.length;
+    if (n === 0) return;
+    ctx.save();
+    for (let i = 0; i < n; i++) {
+      const f = frames[i];
+      const alpha = 0.28 * ((i + 1) / n);
+      ctx.globalAlpha = alpha;
+      drawMeshPart(ctx, MIDIO_MESH, this._midioRestLengths, {
+        tx: midioX, ty: f.y, rot: (f.rot * Math.PI) / 180, scaleX: f.scaleX, scaleY: f.scaleY,
+      }, MIDIO_BASE_HUE, { alpha: 1, satBase: 18, lightBase: 60, hueSpread: 16 });
     }
+    ctx.restore();
   }
 }

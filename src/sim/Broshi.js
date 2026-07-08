@@ -4,20 +4,31 @@
 // and a Rabid overlay gated on global track energy.
 import { Role } from '../core/NoteEvent.js';
 import { clamp, smoothstep, mulberry32, lerp } from '../utils/math.js';
-import { hexLerp } from '../utils/color.js';
-import { drawMesh, BROSHI_MESH, BROSHI_SCALE } from '../render/MeshDrawer.js';
+import { hexLerp, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { RABID_WEIGHTS } from '../audio/bands.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
+import { BROSHI_BODY, BROSHI_HEAD, BROSHI_JAW, BROSHI_EYE, BROSHI_TAIL } from '../render/meshes.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial } from '../render/MeshDrawer.js';
+import { ModalRing } from '../render/oscillators.js';
 
-const K = 32, C = 3.0; // spring stiffness (s^-2), damping (s^-1)
-// Reference (1280px canvas) set-point offsets; scaled by worldScale per
-// instance so Broshi's swing spans a consistent fraction of any screen size.
-const D_TRAIL_REF = -190, D_SURGE_REF = 190, D_PANIC_REF = -260;
+const K = 26, C = 3.4; // spring stiffness (s^-2), damping (s^-1)
+const D_TRAIL = -140, D_SURGE = 120, D_PANIC = -220;
 const PANIC_LOOKAHEAD_MS = 300;
 const RABID_ENTER_G = 0.75, RABID_EXIT_G = 0.60, RABID_ENTER_HOLD_MS = 1500;
 const RABID_FADE_SEC = 0.8;
 const G_EMA_TAU = 0.4;
 const TONGUE_COOLDOWN_MS = 350;
+
+// Calm/idle behaviors (follow-up item 3): a relaxed lope (softer hops, a
+// wide lazy tail sway) plus an occasional yawn during sustained quiet
+// stretches, so low-intensity sections still feel alive.
+const TAIL_BASE_HZ = 0.9, TAIL_CALM_HZ = 0.32;
+const TAIL_BASE_DEG = 6, TAIL_CALM_DEG = 18;
+const CALM_LEVEL_THRESHOLD = 0.5;
+const CALM_BAR_THRESHOLD = 4;
+const YAWN_CHANCE_PER_BAR = 0.35;
+const YAWN_COOLDOWN_BARS = 8;
+const YAWN_DUR_MS = 1400;
 
 const easeOutCubic = (t) => 1 - (1 - t) ** 3;
 const easeOutElastic = (t) => {
@@ -27,13 +38,9 @@ const easeOutElastic = (t) => {
 };
 
 export class Broshi {
-  constructor(conductor, paramBus, { seed = 555, worldScale = 1 } = {}) {
+  constructor(conductor, paramBus, { seed = 555 } = {}) {
     this.conductor = conductor;
     this.rand = mulberry32(seed);
-    this.worldScale = worldScale;
-    this.dTrail = D_TRAIL_REF * worldScale;
-    this.dSurge = D_SURGE_REF * worldScale;
-    this.dPanic = D_PANIC_REF * worldScale;
 
     this.state = 'TRAIL'; // TRAIL | SURGE | PANIC
     this.surgeUntilMs = -Infinity;
@@ -43,7 +50,7 @@ export class Broshi {
     this._barsSinceSurge = 0;
     this._lastBarPeriodMs = 500;
 
-    this.xRel = this.dTrail;
+    this.xRel = D_TRAIL;
     this.xRelVel = 0;
 
     this.G = 0;
@@ -58,25 +65,30 @@ export class Broshi {
     this._hopUntilMs = -Infinity;
     this._hopStartMs = 0;
     this._hopH = 0;
-    this._hopDur = 0;
     this.neckAngle = 0;
-    this.leanDeg = 0;
-    this.bodyPump = 0;
-    this._bodyPumpUntilMs = -Infinity;
     this._neckStartMs = -Infinity;
     this._neckAmp = 0;
-
-    this.tailAngle = 0;
-    this._yawnUntilMs = -Infinity;
-    this._yawnStartMs = -Infinity;
-    this._yawnCooldownUntilMs = 0;
-    this._calmBarStreak = 0;
-    this.calmC = 0;
-    this._lastCalmC = 1;
 
     this.spittle = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 60);
     this.drool = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 60);
     this._droolAccum = 0;
+
+    this._bodyRest = computeRestLengths(BROSHI_BODY);
+    this._headRest = computeRestLengths(BROSHI_HEAD);
+    this._jawRest = computeRestLengths(BROSHI_JAW);
+    this._eyeRest = computeRestLengths(BROSHI_EYE);
+    this._tailRest = computeRestLengths(BROSHI_TAIL);
+
+    this._calmLevel = 0;
+    this._calmBarsStreak = 0;
+    this._barsSinceYawn = Infinity;
+    this._yawnStartMs = -Infinity;
+    this.tailAngle = 0;
+    this._tailPhase = this.rand() * Math.PI * 2;
+
+    // Body vibration: struck by kicks and hops, and fed a continuous low
+    // shiver while rabid so his whole silhouette trembles at high energy.
+    this.modal = new ModalRing({ modes: 4, baseHz: 7, decaySec: 0.5, seed: seed + 1 });
 
     conductor.onBar((bar) => this._onBar(bar));
     conductor.on(Role.RHYTHM, (evt) => {
@@ -92,26 +104,23 @@ export class Broshi {
     if (hist.length > 0) {
       const window = hist.slice(-4);
       const mean4 = window.reduce((a, b) => a + b, 0) / window.length;
-      if (mean4 > 1e-6 && barEnergy > mean4 * 1.15) this._triggerSurge(bar.ms);
+      if (mean4 > 1e-6 && barEnergy > mean4 * 1.3) this._triggerSurge(bar.ms);
     }
     hist.push(barEnergy);
     if (hist.length > 8) hist.shift();
     this._barsSinceSurge++;
     if (this._barsSinceSurge >= 8) this._triggerSurge(bar.ms);
-
-    // Yawn trigger: after >4 consecutive calm bars.
-    this._lastCalmC = this.calmC ?? 1;
-    if (this._lastCalmC > 0.75) this._calmBarStreak++;
-    else this._calmBarStreak = 0;
-    if (this._calmBarStreak >= 4 && bar.ms >= this._yawnCooldownUntilMs) {
-      this._yawnUntilMs = bar.ms + 1400;
-      this._yawnStartMs = bar.ms;
-      this._yawnCooldownUntilMs = bar.ms + 4000;
-      this._calmBarStreak = 0;
-    }
-
     this._barEnergyAccum = 0;
     this._barEnergySamples = 0;
+
+    if (this._calmLevel > CALM_LEVEL_THRESHOLD) this._calmBarsStreak++;
+    else this._calmBarsStreak = 0;
+    this._barsSinceYawn++;
+    if (this._calmBarsStreak >= CALM_BAR_THRESHOLD && this._barsSinceYawn >= YAWN_COOLDOWN_BARS
+      && !this.rabid && this.rand() < YAWN_CHANCE_PER_BAR) {
+      this._yawnStartMs = bar.ms;
+      this._barsSinceYawn = 0;
+    }
   }
 
   _triggerSurge(nowMs) {
@@ -135,36 +144,24 @@ export class Broshi {
     this._neckPending = { vel: evt.vel };
   }
 
-  update(nowMs, dtSec, midio, energyCurves, obstacles, worldX, groundY, calm) {
-    this.calmC = calm ? calm.C : 0;
-    const tSec = nowMs / 1000;
-    this.tailAngle = this.calmC * Math.sin(tSec * 2.6) * 22;
-
+  update(nowMs, dtSec, midio, energyCurves, obstacles, worldX, groundY, calmLevel = 0) {
+    this._calmLevel = calmLevel;
     const gInstant = energyCurves ? energyCurves.globalEnergy(nowMs, RABID_WEIGHTS) : 0;
     this._barEnergyAccum += gInstant;
     this._barEnergySamples++;
 
-    if (this._jawKickPending) {
-      this._jawKickPending = false;
-      this._jawUntilMs = nowMs + 120;
-      this._bodyPumpUntilMs = nowMs + 120;
-      this.jawOpen = 1;
-    }
-    if (this._hopPending) { const { vel } = this._hopPending; this._hopPending = null; this._startHop(nowMs, vel); }
-    if (this._neckPending) { const { vel } = this._neckPending; this._neckPending = null; this._neckStartMs = nowMs; this._neckAmp = 14 + 24 * vel; }
+    if (this._jawKickPending) { this._jawKickPending = false; this._jawUntilMs = nowMs + 80; this.jawOpen = 1; this.modal.excite(1.8); }
+    if (this._hopPending) { const { vel } = this._hopPending; this._hopPending = null; this._startHop(nowMs, vel); this.modal.excite(0.6 + 1.2 * vel); }
+    if (this._neckPending) { const { vel } = this._neckPending; this._neckPending = null; this._neckStartMs = nowMs; this._neckAmp = 10 + 16 * vel; }
 
     // --- locomotion FSM ---
     const obs = obstacles ? obstacles.nearestAhead(worldX) : null;
     const dangerNear = !!obs && obs.tMs - nowMs <= PANIC_LOOKAHEAD_MS && obs.tMs - nowMs >= -100;
-    const prevState = this.state;
     if (dangerNear) this.state = 'PANIC';
     else if (this.state === 'PANIC') this.state = 'TRAIL';
     else if (this.state === 'SURGE' && nowMs >= this.surgeUntilMs) this.state = 'TRAIL';
-    if (this.state !== prevState && (this.state === 'SURGE' || this.state === 'PANIC')) {
-      this._spawnSpittle(2);
-    }
 
-    const dStar = this.state === 'SURGE' ? this.dSurge : this.state === 'PANIC' ? this.dPanic : this.dTrail;
+    const dStar = this.state === 'SURGE' ? D_SURGE : this.state === 'PANIC' ? D_PANIC : D_TRAIL;
     const accel = -K * (this.xRel - dStar) - C * this.xRelVel;
     this.xRelVel += accel * dtSec;
     this.xRel += this.xRelVel * dtSec;
@@ -214,41 +211,39 @@ export class Broshi {
       }
     }
 
-    // --- jaw (yawn overrides everything when calm) ---
-    const yawning = nowMs < this._yawnUntilMs;
-    if (yawning) {
-      const yawningDur = this._yawnUntilMs - this._yawnStartMs;
-      const u = yawningDur > 0 ? clamp((nowMs - this._yawnStartMs) / yawningDur, 0, 1) : 1;
-      const shape = Math.sin(Math.PI * u);
-      this.jawOpen = 0.15 + 0.85 * shape;
-      this.neckAngle = 10 - 18 * shape; // head dips at peak yawn
-    } else {
-      if (nowMs >= this._jawUntilMs) this.jawOpen = Math.max(0, this.jawOpen - dtSec / 0.05);
-      const jawSnapHz = 2 * (1 + 3 * this.rho);
-      if (this.rabid) this.jawOpen = 0.5 + 0.5 * Math.sin(2 * Math.PI * jawSnapHz * (nowMs / 1000));
+    // --- jaw (yawn takes priority over the idle decay, kicks/rabid override both) ---
+    const sinceYawn = nowMs - this._yawnStartMs;
+    if (sinceYawn >= 0 && sinceYawn < YAWN_DUR_MS) {
+      this.jawOpen = Math.sin((sinceYawn / YAWN_DUR_MS) * Math.PI) * 0.85;
+    } else if (nowMs >= this._jawUntilMs) {
+      this.jawOpen = Math.max(0, this.jawOpen - dtSec / 0.05);
     }
+    const jawSnapHz = 2 * (1 + 3 * this.rho);
+    if (this.rabid) this.jawOpen = 0.5 + 0.5 * Math.sin(2 * Math.PI * jawSnapHz * (nowMs / 1000));
+
+    // --- tail sway: wider and lazier the calmer things get, never still ---
+    const tailHz = lerp(TAIL_BASE_HZ, TAIL_CALM_HZ, calmLevel);
+    const tailDeg = lerp(TAIL_BASE_DEG, TAIL_CALM_DEG, calmLevel);
+    this.tailAngle = tailDeg * Math.sin(2 * Math.PI * tailHz * (nowMs / 1000) + this._tailPhase);
+
+    // --- body vibration: continuous feed while rabid, ring-down otherwise ---
+    if (this.rho > 0.05) this.modal.excite(4 * this.rho * dtSec);
+    this.modal.update(dtSec);
 
     // --- mini-hop ---
     if (nowMs < this._hopUntilMs) {
-      const D = this._hopDur || 130;
+      const D = 160 * (1 / (1 + 0.6 * this.rho));
       const u = clamp(1 - (this._hopUntilMs - nowMs) / D, 0, 1);
       this.hopY = this._hopH * 4 * u * (1 - u); // simple parabola, peak at u=0.5
     } else {
       this.hopY = 0;
     }
 
-    // --- rabid lean + kick body pump + idle predator sway ---
-    this.leanDeg = this.rho * (14 + 12 * Math.sin(nowMs * 0.014)) + Math.sin(nowMs * 0.009) * 4 * (1 - this.calmC * 0.4);
-    this.bodyPump = nowMs < this._bodyPumpUntilMs ? 0.14 : 0.03 * Math.sin(nowMs * 0.018);
-    this.idleBounce = Math.sin(nowMs * 0.011) * 5 * (0.6 + 0.4 * (1 - this.calmC));
-
-    // --- head-bob (neck angle), suppressed during yawn ---
-    if (!yawning) {
-      const dt = nowMs - this._neckStartMs;
-      this.neckAngle = dt >= 0 && dt < 600
-        ? this._neckAmp * Math.exp(-dt / 180) * Math.sin((2 * Math.PI * dt) / 220)
-        : 0;
-    }
+    // --- head-bob (neck angle) ---
+    const dt = nowMs - this._neckStartMs;
+    this.neckAngle = dt >= 0 && dt < 600
+      ? this._neckAmp * Math.exp(-dt / 180) * Math.sin((2 * Math.PI * dt) / 220)
+      : 0;
 
     // --- rabid aura / drool ---
     if (this.rabid) {
@@ -267,13 +262,13 @@ export class Broshi {
   }
 
   _startHop(nowMs, vel) {
-    this._hopH = (22 + 38 * vel) * (0.55 + 0.45 * this.calmC);
-    this._hopDur = 110 * (0.45 + 0.55 * this.calmC);
-    this._hopUntilMs = nowMs + this._hopDur;
+    // Relaxed lope: calm sections soften the hop instead of cutting it entirely.
+    this._hopH = (10 + 18 * vel) * (1 - 0.5 * this._calmLevel);
+    this._hopUntilMs = nowMs + 160;
   }
 
-  _spawnSpittle(count = 3) {
-    for (let i = 0; i < count; i++) {
+  _spawnSpittle() {
+    for (let i = 0; i < 3; i++) {
       const ang = -0.38 + (this.rand() * 2 - 1) * 0.3; // ~22deg below horizontal, jittered
       const speed = 80 + 60 * this.rand();
       this.spittle.spawn({
@@ -285,28 +280,25 @@ export class Broshi {
   }
 
   draw(ctx) {
-    const skin = hexLerp('#63c74d', '#e43b44', this.rho);
+    const skinHex = hexLerp('#63c74d', '#e43b44', this.rho);
+    const skinRgb = hexToRgb(skinHex);
+    const baseHue = rgbToHsl(skinRgb.r, skinRgb.g, skinRgb.b).h;
     const x = this.screenX;
-    const y = this.groundY - this.hopY - (this.idleBounce || 0);
+    const y = this.groundY - this.hopY;
 
     ctx.save();
     ctx.translate(x, y);
-    // Scale the whole body (mesh + tongue/spittle/drool/aura FX) so Broshi
-    // reads at the cast's dominant size. The mesh itself is drawn at scaleX 1
-    // — the ctx.scale handles the enlargement and keeps the FX proportional.
-    ctx.scale(BROSHI_SCALE, BROSHI_SCALE);
 
-    const broEnergy = clamp(this.rho * 0.8 + (this.state === 'SURGE' || this.state === 'PANIC' ? 0.35 : 0), 0, 1);
-    if (this.rho > 0.02 || broEnergy > 0.2) {
+    if (this.rho > 0.02) {
       ctx.save();
-      ctx.globalAlpha = 0.35 + 0.45 * this.rho;
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.38 * this.rho;
+      ctx.strokeStyle = '#e8f2ff';
+      ctx.lineWidth = 1.4;
       ctx.beginPath();
-      for (let i = 0; i <= 16; i++) {
-        const ang = (i / 16) * Math.PI * 2;
-        const r = 26 + (this.rand() * 2 - 1) * 3;
-        const px = Math.cos(ang) * r, py = -18 + Math.sin(ang) * r * 0.7;
+      for (let i = 0; i <= 14; i++) {
+        const ang = (i / 14) * Math.PI * 2;
+        const r = (i % 2 === 0 ? 30 : 21) + (this.rand() * 2 - 1) * 4; // serrated, not round
+        const px = Math.cos(ang) * r, py = -16 + Math.sin(ang) * r * 0.7;
         if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
       ctx.closePath();
@@ -316,31 +308,55 @@ export class Broshi {
 
     // tongue (behind head, extends forward/down)
     if (this.tongue.len > 0.5) {
-      ctx.strokeStyle = '#ff5f7a';
-      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(200,228,255,0.85)';
+      ctx.lineWidth = 1.8;
       ctx.beginPath();
       ctx.moveTo(6, -16);
-      const midX = 6 + this.tongue.len * 0.6, midY = -16 + this.tongue.len * 0.22;
+      const midX = 6 + this.tongue.len * 0.55, midY = -16 + this.tongue.len * 0.10;
       const endX = 6 + this.tongue.len * Math.cos(22 * Math.PI / 180);
       const endY = -16 + this.tongue.len * Math.sin(22 * Math.PI / 180);
-      ctx.quadraticCurveTo(midX, midY, endX, endY);
+      ctx.lineTo(midX, midY); // an angular lash, not a soft curve
+      ctx.lineTo(endX, endY);
       ctx.stroke();
     }
+    ctx.fillStyle = 'rgba(200,230,255,0.8)';
     for (const p of this.spittle.active) {
-      ctx.fillStyle = 'rgba(255,140,160,0.8)';
-      ctx.beginPath();
-      ctx.arc(6 + p.x, -16 + p.y, 2, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillRect(6 + p.x - 1, -16 + p.y - 1, 2.4, 2.4); // sparks, not droplets
     }
+    ctx.restore(); // done with the ctx.translate-relative aura/tongue/spittle drawing
 
-    // Wireframe body/head/jaw/tail (item 1). Keep FX (tongue, spittle, drool, aura) separate.
-    const meshBaseHue = lerp(120, 0, this.rho); // green → red as rabid grows
-    drawMesh(ctx, BROSHI_MESH, {
-      x: 0, y: 0, scaleX: 1 + this.bodyPump, scaleY: 1 - this.bodyPump * 0.3,
-      jawOpen: this.jawOpen, neckAngle: this.neckAngle, tailAngle: this.tailAngle,
-      leanDeg: this.leanDeg,
-    }, meshBaseHue, { fill: true, lineWidth: 2.2, glow: true, energy: broEnergy });
+    // Body/head/jaw/eye as a low-poly wireframe (follow-up item 1): manually
+    // transformed (not via ctx.rotate) so edge angle/length -- and therefore
+    // hue/glow -- actually reacts to the neck-bob and jaw snap.
+    const neckRad = (this.neckAngle * Math.PI) / 180;
+    const group = { tx: x, ty: y, rot: neckRad, scaleX: 1, scaleY: 1 };
+    const bodyHub = BROSHI_BODY.vertices[0];
+    const bodyMesh = displaceMeshRadial(BROSHI_BODY, bodyHub.x, bodyHub.y, this.modal);
+    const glyphOpts = { satBase: 30, lightBase: 56, hueSpread: 20 };
+    drawMeshPart(ctx, bodyMesh, this._bodyRest, group, baseHue, glyphOpts);
+    drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue, glyphOpts);
 
+    const jawTip = BROSHI_JAW.vertices[1];
+    const jawMesh = { vertices: [BROSHI_JAW.vertices[0], { x: jawTip.x, y: jawTip.y + this.jawOpen * 10 }], edges: BROSHI_JAW.edges };
+    drawMeshPart(ctx, jawMesh, this._jawRest, group, baseHue + 15, { satBase: 22, lightBase: 62, widthBase: 1.2 });
+
+    const tailRad = (this.tailAngle * Math.PI) / 180;
+    const [tailBase, tailTip0] = BROSHI_TAIL.vertices;
+    const tdx = tailTip0.x - tailBase.x, tdy = tailTip0.y - tailBase.y;
+    const tailTip = {
+      x: tailBase.x + tdx * Math.cos(tailRad) - tdy * Math.sin(tailRad),
+      y: tailBase.y + tdx * Math.sin(tailRad) + tdy * Math.cos(tailRad),
+    };
+    const tailMesh = { vertices: [tailBase, tailTip], edges: BROSHI_TAIL.edges };
+    drawMeshPart(ctx, tailMesh, this._tailRest, group, baseHue - 10, { satBase: 24, lightBase: 48, widthBase: 1.2 });
+
+    const eyeLit = this.rho > 0.3;
+    drawMeshPart(ctx, BROSHI_EYE, this._eyeRest, group, eyeLit ? 0 : baseHue, {
+      satBase: eyeLit ? 20 : 30, lightBase: eyeLit ? 80 : 15, alpha: eyeLit ? 0.5 + 0.4 * this.rho : 0.9,
+    });
+
+    ctx.save();
+    ctx.translate(x, y);
     for (const d of this.drool.active) {
       ctx.fillStyle = 'rgba(150,220,255,0.7)';
       ctx.beginPath();

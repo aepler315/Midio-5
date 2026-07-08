@@ -48,3 +48,13 @@ export function lerpHue(h0, h1, t) {
   let d = ((h1 - h0 + 540) % 360) - 180;
   return (h0 + d * t + 360) % 360;
 }
+
+/** Deterministic Fisher-Yates shuffle driven by a seeded rand(). */
+export function shuffle(arr, rand) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
