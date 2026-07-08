@@ -41,13 +41,17 @@ let acc = 0;
 let lastNowMs = 0;
 let running = false;
 
+// The Stage model: the game is composed for a fixed 1280x720 stage and the
+// browser scales that stage to fit the window (letterboxed via CSS
+// object-fit). Sizing the backing store to the window instead put every
+// fixed-pixel anchor (Midio at x=220, ground at y=480) in the top-left
+// corner of large screens while canvas-fraction systems spread across the
+// whole frame -- the composition only held together at one window size.
+const STAGE_W = 1280, STAGE_H = 720;
 function fitCanvas() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = Math.round(rect.width * dpr);
-  canvas.height = Math.round(rect.height * dpr);
+  canvas.width = STAGE_W;
+  canvas.height = STAGE_H;
 }
-window.addEventListener('resize', fitCanvas);
 
 async function bootAudio() {
   if (audioEngine) return;

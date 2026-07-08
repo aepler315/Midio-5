@@ -14,6 +14,9 @@ const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
 const KP = 90, KD = 12;
 const SNAP = 0.70;
+const DRAW_SCALE = 1.45; // ferocity pass: render-only
+const BANK_GAIN = 0.0016, BANK_MAX = 0.6; // she rolls into her darts
+const SLASH_LIFE_SEC = 0.18;
 
 export class Midasus {
   constructor(timeline, midio, { groundY = 480, ceilingY = 40, seed = 777 } = {}) {
@@ -47,6 +50,7 @@ export class Midasus {
 
     this._meshRest = computeRestLengths(MIDASUS_MESH);
     this.pulse = 1;
+    this.slashes = []; // short bright cuts along her velocity on note onsets
     // Her diamond core shivers on every melody onset -- quicker and lighter
     // than Midio's body (higher base frequency, faster ring-down).
     this.modal = new ModalRing({ modes: 3, baseHz: 11, decaySec: 0.4, seed: seed + 1 });
@@ -112,8 +116,13 @@ export class Midasus {
       this._burst(8 + 24 * n.vel, this.hue);
       this.lastNoteMs = nowMs;
       this.pulse = 1.7 + 0.5 * n.vel; // a brief mesh flash on each note onset
-      this.modal.excite(0.8 + 2.2 * n.vel);
+      this.modal.excite(1.2 + 3 * n.vel);
       if (n.vel > 0.75) this.debris.burst(n.vel); // hard notes fling the shards outward
+      // A slash: a bright cut through her position along her motion.
+      const sp = Math.hypot(this.v.x, this.v.y);
+      const ang = sp > 20 ? Math.atan2(this.v.y, this.v.x) : this.rand() * Math.PI * 2;
+      this.slashes.push({ x: this.p.x, y: this.p.y, ang, len: 26 + 60 * n.vel, age: 0, hue: this.hue });
+      if (this.slashes.length > 8) this.slashes.shift();
     }
 
     this.pulse += (1 - this.pulse) * Math.min(1, dtSec / 0.12);
@@ -142,6 +151,8 @@ export class Midasus {
       o.x += o.vx * dt; o.y += o.vy * dt; o.age += dt;
       return o.age < o.life;
     });
+    for (const s of this.slashes) s.age += dtSec;
+    while (this.slashes.length && this.slashes[0].age >= SLASH_LIFE_SEC) this.slashes.shift();
 
     // Note pulses briefly raise her effective mass (orbits tighten);
     // calm sections lower it, so the shards drift into wider, lazier arcs.
@@ -165,15 +176,33 @@ export class Midasus {
       ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
       ctx.fill();
     }
+    // Note slashes: bright cuts along her velocity, gone in a blink.
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    for (const s of this.slashes) {
+      const u = s.age / SLASH_LIFE_SEC;
+      ctx.strokeStyle = `hsla(${s.hue},70%,78%,${0.85 * (1 - u)})`;
+      ctx.lineWidth = 2.6 * (1 - u * 0.6);
+      const ext = s.len * (0.4 + 0.6 * u); // the cut extends as it fades
+      ctx.beginPath();
+      ctx.moveTo(s.x - Math.cos(s.ang) * ext, s.y - Math.sin(s.ang) * ext);
+      ctx.lineTo(s.x + Math.cos(s.ang) * ext, s.y + Math.sin(s.ang) * ext);
+      ctx.stroke();
+    }
+    ctx.restore();
+
     const hub = MIDASUS_MESH.vertices[0];
     const coreMesh = displaceMeshRadial(MIDASUS_MESH, hub.x, hub.y, this.modal);
+    // Banking: she rolls into her darts like something with mass.
+    const bank = clamp(this.v.x * BANK_GAIN, -BANK_MAX, BANK_MAX);
 
     ctx.save();
     ctx.globalAlpha = 0.6;
     ctx.filter = 'blur(1.5px)';
-    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, scaleX: this.pulse * 1.5, scaleY: this.pulse * 1.5 }, this.hue, { satBase: sat, lightBase: 78, alpha: 1 });
+    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot: bank, scaleX: this.pulse * 1.5 * DRAW_SCALE, scaleY: this.pulse * 1.5 * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 78, alpha: 1 });
     ctx.restore();
 
-    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, scaleX: this.pulse, scaleY: this.pulse }, this.hue, { satBase: sat, lightBase: 70, hueSpread: 26 });
+    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot: bank, scaleX: this.pulse * DRAW_SCALE, scaleY: this.pulse * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 70, hueSpread: 26 });
   }
 }

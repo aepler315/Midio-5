@@ -88,13 +88,42 @@ test('streak milestones fire milestoneFlash and goldFlash exactly once each, in 
   assert.deepEqual(fired, [5, 10, 20]);
 });
 
-test('idle strut adds a small beat-synced lean offset only while grounded', () => {
+test('idle stomp adds a beat-synced lean attack only while grounded', () => {
   const perf = new MidioPerformer(1);
   const midio = fakeMidio();
   const jump = fakeJump({ airborne: false, beatPeriodMs: 500 });
-  perf.update(125, 1 / 120, midio, jump, fakeCombo()); // quarter-beat phase -> sin near max
+  perf.update(125, 1 / 120, midio, jump, fakeCombo()); // quarter-beat phase -> sin^3 near max
   assert.ok(Math.abs(midio.leanDeg) > 0.01);
-  assert.ok(Math.abs(midio.leanDeg) <= 2.3);
+  assert.ok(Math.abs(midio.leanDeg) <= 4.6); // ferocity pass: STRUT_DEG 4.5
+});
+
+test('every landing recoils: squash first, overshoot tall, then settle', () => {
+  const perf = new MidioPerformer(1);
+  const jump = fakeJump({ airborne: false, beatPeriodMs: 0 }); // no strut: isolate the recoil
+  perf.onLanding(1000, false, 1.0); // NOT clean, NOT combo -- still recoils
+
+  const early = fakeMidio();
+  perf.update(1030, 1 / 120, early, jump, fakeCombo());
+  assert.ok(early.scaleY < 0.95, `expected squash shortly after landing, got ${early.scaleY}`);
+
+  const late = fakeMidio();
+  perf.update(1160, 1 / 120, late, jump, fakeCombo());
+  assert.ok(late.scaleY > 1.0, `expected tall overshoot on the rebound, got ${late.scaleY}`);
+
+  const settled = fakeMidio();
+  perf.update(1400, 1 / 120, settled, jump, fakeCombo());
+  assert.ok(Math.abs(settled.scaleY - 1) < 0.02, `expected settle, got ${settled.scaleY}`);
+});
+
+test('kicks ignite beatFlash, which decays fast', () => {
+  const perf = new MidioPerformer(1);
+  perf.onKick();
+  assert.equal(perf.beatFlash, 1);
+  const midio = fakeMidio();
+  const jump = fakeJump({ airborne: false, beatPeriodMs: 0 });
+  let t = 0;
+  for (let i = 0; i < 40; i++) { t += 8.33; perf.update(t, 1 / 120, fakeMidio(), jump, fakeCombo()); }
+  assert.ok(perf.beatFlash < 0.15, `flash must die within ~a third of a second, got ${perf.beatFlash}`);
 });
 
 test('afterimages accumulate while airborne and clear immediately on landing', () => {

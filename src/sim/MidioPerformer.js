@@ -17,7 +17,10 @@ const FLOURISH_COMBO_THRESHOLD = 2.0;
 const GOLD_FLASH_DECAY_SEC = 0.6;
 const AFTERIMAGE_INTERVAL_MS = 28;
 const AFTERIMAGE_COUNT = 4;
-const STRUT_DEG = 2.2;
+const STRUT_DEG = 4.5;   // ferocity pass: the strut is a stomp, not a sway
+const STOMP_DIP = 0.10;  // scaleY dip landing exactly on the beat
+const RECOIL_MS = 200;   // universal landing recoil: squash -> overshoot -> settle
+const BEAT_FLASH_DECAY_SEC = 0.14;
 
 // Calm/idle behavior (follow-up item 3): distinctly relaxed vs. energetic
 // sections, but never inert. Gated to !airborne so it never fights a trick.
@@ -57,6 +60,13 @@ export class MidioPerformer {
     // and lightly on takeoff, rung down over ~half a second. The Renderer
     // displaces MIDIO_BODY's rim through this field.
     this.modal = new ModalRing({ modes: 4, baseHz: 8, decaySec: 0.55, seed: (seed ^ 0x9e37) >>> 0 });
+
+    this.beatFlash = 0; // additive mesh ignition on every kick, fast decay
+    this._landMs = -Infinity;
+  }
+
+  onKick() {
+    this.beatFlash = 1;
   }
 
   clearFrameFlags() {
@@ -65,7 +75,8 @@ export class MidioPerformer {
 
   onLanding(nowMs, isClean, comboDisplay, intensity = 0) {
     if (isClean && comboDisplay >= FLOURISH_COMBO_THRESHOLD) this._flourishUntilMs = nowMs + FLOURISH_MS;
-    this.modal.excite(1.5 + 4.5 * intensity);
+    this.modal.excite(2.2 + 6 * intensity);
+    this._landMs = nowMs; // every landing recoils, not just the clean ones
   }
 
   onStreak(streak, nowMs = 0) {
@@ -119,12 +130,29 @@ export class MidioPerformer {
 
     if (!jump.airborne && jump.beatPeriodMs > 0) {
       const phase = (nowMs % jump.beatPeriodMs) / jump.beatPeriodMs;
-      // Energetic strut damps down as calm rises; a slower, gentler sway
-      // (half the frequency -- "synced to beat halves") takes its place, so
-      // quiet sections read as distinctly relaxed without ever going still.
-      const strutAmp = STRUT_DEG * (1 - 0.5 * calmLevel);
+      // The stomp: a cubed sine keeps the sign but sharpens the peaks into
+      // attacks, and scaleY dips exactly on the beat -- he hits the ground
+      // WITH the kick instead of swaying near it. Calm melts it back into
+      // the gentle half-frequency sway.
+      const s = Math.sin(phase * Math.PI * 2);
+      const strutAmp = STRUT_DEG * (1 - 0.6 * calmLevel);
       const swayAmp = CALM_SWAY_DEG * calmLevel;
-      midio.leanDeg += strutAmp * Math.sin(phase * Math.PI * 2) + swayAmp * Math.sin(phase * Math.PI + 1.7);
+      midio.leanDeg += strutAmp * s * s * s + swayAmp * Math.sin(phase * Math.PI + 1.7);
+      // The scale dip yields to the flourish window, which owns scale outright.
+      if (nowMs >= this._flourishUntilMs) {
+        const beatHit = Math.max(0, Math.cos(phase * Math.PI * 2));
+        midio.scaleY *= 1 - STOMP_DIP * (1 - calmLevel) * beatHit * beatHit * beatHit;
+      }
+    }
+
+    // Universal landing recoil: a fast squash that overshoots tall and
+    // settles, layered under (and yielding to) the clean-combo flourish.
+    const sinceLand = nowMs - this._landMs;
+    if (!jump.airborne && sinceLand >= 0 && sinceLand < RECOIL_MS && nowMs >= this._flourishUntilMs) {
+      const u = sinceLand / RECOIL_MS;
+      const recoil = -0.26 * Math.exp(-3.2 * u) * Math.cos(Math.PI * 1.4 * u);
+      midio.scaleY *= 1 + recoil;
+      midio.scaleX *= 1 - recoil * 0.7;
     }
 
     if (!jump.airborne && nowMs >= this._flourishUntilMs) {
@@ -138,6 +166,8 @@ export class MidioPerformer {
         this._nextBlinkMs = nowMs + BLINK_MIN_GAP_MS + this.rand() * BLINK_JITTER_MS;
       }
     }
+    this.beatFlash = Math.max(0, this.beatFlash - dtSec / BEAT_FLASH_DECAY_SEC);
+
     const sinceBlink = nowMs - this._blinkStartMs;
     this.blinkScale = sinceBlink < BLINK_DUR_MS
       ? Math.abs(sinceBlink / BLINK_DUR_MS - 0.5) * 2
