@@ -2,11 +2,12 @@
 // ParamBus live/target state and the vision loop's 40-entry ring log so the
 // self-tuning loop's recent history is inspectable.
 export class DebugOverlay {
-  constructor(el, sim, paramBus, visionLoop) {
+  constructor(el, sim, paramBus, visionLoop, perfGovernor = null) {
     this.el = el;
     this.sim = sim;
     this.paramBus = paramBus;
     this.visionLoop = visionLoop;
+    this.perfGovernor = perfGovernor;
     this.visible = false;
   }
 
@@ -32,6 +33,10 @@ export class DebugOverlay {
 
     lines.push('');
     lines.push(`vision loop: ${this.visionLoop.enabled ? 'ON' : 'OFF'} (press V to toggle)  fps~${Math.round(this.visionLoop._fps)}`);
+    if (this.perfGovernor) {
+      const g = this.perfGovernor;
+      lines.push(`perf governor: level ${g.level}/4  (vision ${g.visionAllowed ? 'ok' : 'shed'}, particles ×${g.particleMul}, crackGlow ${g.crackGlowEnabled ? 'on' : 'off'}, veil ${g.veilEnabled ? 'on' : 'off'})`);
+    }
     lines.push('');
     lines.push('=== VISION LOG (most recent first) ===');
     const entries = this.visionLoop.log.toArray().reverse();

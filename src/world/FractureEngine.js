@@ -79,7 +79,7 @@ function collectNodes(crack, out) {
   for (const c of crack.children) collectNodes(c, out);
 }
 
-function drawRevealedPolyline(ctx, nodes, lengths, total, revealLen) {
+function drawRevealedPolyline(ctx, nodes, lengths, total, revealLen, glow = true) {
   if (revealLen <= 0 || total <= 0) return;
   const pts = [nodes[0]];
   let acc = 0;
@@ -92,12 +92,17 @@ function drawRevealedPolyline(ctx, nodes, lengths, total, revealLen) {
       break;
     }
   }
-  ctx.strokeStyle = '#9fd9ff';
-  ctx.globalAlpha = 0.25;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  for (let i = 0; i < pts.length; i++) { if (i === 0) ctx.moveTo(pts[i].x, pts[i].y); else ctx.lineTo(pts[i].x, pts[i].y); }
-  ctx.stroke();
+  // Glow-tint pass (perf governor rung, spec §6.2 "crack refraction off"):
+  // this codebase never built real per-pixel refraction, so this wide tinted
+  // stroke — the nearest real cost in this draw call — is what sheds instead.
+  if (glow) {
+    ctx.strokeStyle = '#9fd9ff';
+    ctx.globalAlpha = 0.25;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let i = 0; i < pts.length; i++) { if (i === 0) ctx.moveTo(pts[i].x, pts[i].y); else ctx.lineTo(pts[i].x, pts[i].y); }
+    ctx.stroke();
+  }
 
   ctx.strokeStyle = '#ffffff';
   ctx.globalAlpha = 0.55;
@@ -115,12 +120,12 @@ function drawRevealedPolyline(ctx, nodes, lengths, total, revealLen) {
   }
 }
 
-function drawCrackTree(ctx, crack, nowMs) {
+function drawCrackTree(ctx, crack, nowMs, glow = true) {
   const t = clamp01((nowMs - crack.birthMs) / GROW_MS);
   const eased = 1 - (1 - t) ** 3;
-  drawRevealedPolyline(ctx, crack.nodes, crack.lengths, crack.total, crack.total * eased);
+  drawRevealedPolyline(ctx, crack.nodes, crack.lengths, crack.total, crack.total * eased, glow);
   for (const child of crack.children) {
-    if (nowMs >= child.birthMs) drawCrackTree(ctx, child, nowMs);
+    if (nowMs >= child.birthMs) drawCrackTree(ctx, child, nowMs, glow);
   }
 }
 
@@ -210,10 +215,10 @@ export class FractureEngine {
     if (camera) camera.shake(4);
   }
 
-  draw(ctx, canvas) {
+  draw(ctx, canvas, { glow = true } = {}) {
     if (this.shatterState === 'frozen' || this.shatterState === 'done') return; // handled by Renderer's shatter path
     ctx.save();
-    for (const crack of this.cracks) drawCrackTree(ctx, crack, this._lastNowMs ?? 0);
+    for (const crack of this.cracks) drawCrackTree(ctx, crack, this._lastNowMs ?? 0, glow);
     if (this.flashAlpha > 0.01) {
       ctx.globalAlpha = this.flashAlpha * 0.9;
       ctx.fillStyle = '#ffffff';
