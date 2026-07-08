@@ -150,7 +150,7 @@ export class Midasus {
   }
 
   draw(ctx) {
-    const sat = Math.round(90 - 40 * this.rest);
+    const sat = Math.round(58 - 28 * this.rest); // spectral: pale, never candy
     this.debris.draw(ctx, this.hue, this.rest); // behind her core and trail
     // Calm sections fade the ribbon rather than shortening it -- the longer
     // reach comes from _emitStreak's extended particle life, this is the
@@ -174,6 +174,6 @@ export class Midasus {
     drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, scaleX: this.pulse * 1.5, scaleY: this.pulse * 1.5 }, this.hue, { satBase: sat, lightBase: 78, alpha: 1 });
     ctx.restore();
 
-    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, scaleX: this.pulse, scaleY: this.pulse }, this.hue, { satBase: sat, lightBase: 65, hueSpread: 70 });
+    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, scaleX: this.pulse, scaleY: this.pulse }, this.hue, { satBase: sat, lightBase: 70, hueSpread: 26 });
   }
 }

@@ -123,7 +123,9 @@ export class Renderer {
       scaleX: pose.scaleX, scaleY: pose.scaleY,
     };
     const hue = flash > 0 ? MIDIO_BASE_HUE + (48 - MIDIO_BASE_HUE) * flash : MIDIO_BASE_HUE;
-    const options = { lightBase: 52 + flash * 24, satBase: 68 + flash * 20 };
+    // Spectral treatment: near-white filament with a narrow warm fringe.
+    // The milestone gold flash reads as the glyph igniting into color.
+    const options = { satBase: 26 + flash * 45, lightBase: 68 + flash * 14, hueSpread: 16 };
 
     // Modal vibration: rim vertices ride the performer's ring-down field.
     // Rest lengths stay the undisplaced ones, so the wobble reads as edge
@@ -155,7 +157,7 @@ export class Renderer {
       ctx.globalAlpha = alpha;
       drawMeshPart(ctx, MIDIO_MESH, this._midioRestLengths, {
         tx: midioX, ty: f.y, rot: (f.rot * Math.PI) / 180, scaleX: f.scaleX, scaleY: f.scaleY,
-      }, MIDIO_BASE_HUE, { alpha: 1 });
+      }, MIDIO_BASE_HUE, { alpha: 1, satBase: 18, lightBase: 60, hueSpread: 16 });
     }
     ctx.restore();
   }

@@ -1,9 +1,13 @@
-// Low-poly wireframe rest-pose meshes for the three characters (follow-up
-// item 1). Each mesh is a flat {vertices:[{x,y}], edges:[[i,j],...]} in
-// local, untransformed space, generated parametrically rather than
-// hand-authored so the "low-poly" silhouette stays easy to retune.
-// MeshDrawer.js applies per-frame pose transforms and computes geometry-
-// driven edge color from these rest shapes.
+// Wireframe rest-pose meshes for the three characters. Each mesh is a flat
+// {vertices:[{x,y}], edges:[[i,j],...]} in local space; vertex 0 is always
+// the hub (the anchor modal vibration displaces the rim around).
+//
+// Design language: angular, asymmetric spectral glyphs -- irregular shard
+// silhouettes with sparse internal bracing, nothing round, nothing cute.
+// The characters are made of the same geometry the world runs on: sharp
+// facets that catch the deformation-driven glow, sigils rather than
+// mascots. MeshDrawer.js applies per-frame pose transforms and computes
+// geometry-driven edge color from these rest shapes.
 
 /** A wheel: one center vertex, n rim vertices, spokes + rim edges. */
 export function radialMesh(rx, ry, n, cx = 0, cy = 0, startAngle = 0) {
@@ -15,6 +19,21 @@ export function radialMesh(rx, ry, n, cx = 0, cy = 0, startAngle = 0) {
     edges.push([0, i + 1]);
   }
   for (let i = 0; i < n; i++) edges.push([i + 1, ((i + 1) % n) + 1]);
+  return { vertices, edges };
+}
+
+/**
+ * An irregular shard: hub + hand-authored rim, closed by a rim ring,
+ * anchored by sparse spokes, with optional cross-braces (rim indices)
+ * as internal fracture lines. The irregularity IS the character.
+ */
+export function shardMesh(hub, rim, { spokeEvery = 2, braces = [] } = {}) {
+  const vertices = [{ ...hub }, ...rim.map((v) => ({ ...v }))];
+  const edges = [];
+  const n = rim.length;
+  for (let i = 0; i < n; i++) edges.push([i + 1, ((i + 1) % n) + 1]);
+  for (let i = 0; i < n; i += spokeEvery) edges.push([0, i + 1]);
+  for (const [a, b] of braces) edges.push([a + 1, b + 1]);
   return { vertices, edges };
 }
 
@@ -33,25 +52,72 @@ export function mergeMeshes(meshes) {
   return { mesh: { vertices, edges }, offsets };
 }
 
-// --- Midio: rounded body wheel + a small eye wheel (kept separate so the
-// eye can scale independently for a blink -- see MidioPerformer) ---
-export const MIDIO_BODY = radialMesh(23, 27, 10, 0, -27);
-export const MIDIO_EYE = radialMesh(5, 6, 5, 10, -31);
+// --- Midio: the Sigil. A tall asymmetric shard -- crown spike, uneven
+// shoulders, two blunt ground-contact points (feet at y=0, half-width
+// within his 23px collision body). The separate core (kept under the
+// MIDIO_EYE name so the blink machinery still drives it) is a small
+// triangle that contracts instead of blinking: the core dims. ---
+export const MIDIO_BODY = shardMesh({ x: 0, y: -27 }, [
+  { x: 0, y: -58 },   // crown spike
+  { x: 13, y: -45 },
+  { x: 23, y: -31 },
+  { x: 13, y: -15 },  // pinched right waist
+  { x: 9, y: 0 },     // right foot
+  { x: -7, y: 0 },    // left foot
+  { x: -14, y: -13 }, // pinched left waist
+  { x: -22, y: -35 },
+  { x: -11, y: -46 },
+], { spokeEvery: 2, braces: [[1, 4], [6, 8]] });
+export const MIDIO_EYE = radialMesh(5.5, 6, 3, 3, -31, -Math.PI / 2);
 export const MIDIO_MESH = mergeMeshes([MIDIO_BODY, MIDIO_EYE]).mesh;
 
-// --- Broshi: body wheel + head wheel (parts kept separate so the head can
-// rotate independently for the neck-bob) + a 2-vertex jaw wedge ---
-export const BROSHI_BODY = radialMesh(24, 16, 8, 0, -14);
-export const BROSHI_HEAD = radialMesh(10, 8, 6, 14, -20);
-// Jaw: two free vertices (upper lip anchor, moving jaw tip) driven by jawOpen.
+// --- Broshi: the Dart. A low predatory chassis with a serrated dorsal
+// ridge (deep notches between three spine spikes), a wedge head that
+// still neck-bobs, a thin mandible line driven by jawOpen, and a long
+// whip tail (2 vertices: base + tip, swayed by rotating the tip). ---
+export const BROSHI_BODY = shardMesh({ x: 0, y: -14 }, [
+  { x: -26, y: -9 },  // rear haunch
+  { x: -19, y: -25 }, // spine spike 1
+  { x: -13, y: -18 }, // notch
+  { x: -6, y: -30 },  // spine spike 2
+  { x: 1, y: -21 },   // notch
+  { x: 7, y: -27 },   // spine spike 3
+  { x: 15, y: -16 },  // shoulder, into the head
+  { x: 12, y: -4 },
+  { x: 2, y: -1 },    // front foot
+  { x: -14, y: -2 },  // rear foot
+], { spokeEvery: 3, braces: [[1, 3], [3, 5]] });
+export const BROSHI_HEAD = shardMesh({ x: 14, y: -19 }, [
+  { x: 27, y: -16 },  // snout tip
+  { x: 21, y: -25 },  // crest
+  { x: 10, y: -24 },
+  { x: 7, y: -17 },
+  { x: 12, y: -12 },
+], { spokeEvery: 2 });
+// Jaw: two free vertices (upper anchor, moving mandible tip) driven by jawOpen.
 export const BROSHI_JAW = {
-  vertices: [{ x: 10, y: -16 }, { x: 22, y: -16 }],
+  vertices: [{ x: 11, y: -14 }, { x: 25, y: -12 }],
   edges: [[0, 1]],
 };
-export const BROSHI_EYE = radialMesh(2.4, 2.4, 5, 16, -23);
+export const BROSHI_EYE = radialMesh(2.2, 2.2, 3, 15, -22, -Math.PI / 2);
 // Tail: anchor near the back of the body, tip trailing behind -- swayed
 // in place (see Broshi's calm behaviors) by rotating vertex 1 about vertex 0.
-export const BROSHI_TAIL = { vertices: [{ x: -22, y: -6 }, { x: -42, y: 2 }], edges: [[0, 1]] };
+export const BROSHI_TAIL = { vertices: [{ x: -25, y: -7 }, { x: -47, y: -1 }], edges: [[0, 1]] };
 
-// --- Midasus: a small diamond core; particle trail carries most of her presence ---
-export const MIDASUS_MESH = radialMesh(7, 7, 6, 0, 0);
+// --- Midasus: a hexagram -- two interlocked triangles about the hub with
+// a single vertical axis spoke pair. An arcane instrument, not a gem. ---
+const HEX_R = 8.5;
+const tri = (offsetDeg) => [0, 1, 2].map((i) => {
+  const a = ((offsetDeg + i * 120) * Math.PI) / 180;
+  return { x: Math.cos(a) * HEX_R, y: Math.sin(a) * HEX_R };
+});
+const [a0, a1, a2] = tri(-90);
+const [b0, b1, b2] = tri(90);
+export const MIDASUS_MESH = {
+  vertices: [{ x: 0, y: 0 }, a0, a1, a2, b0, b1, b2],
+  edges: [
+    [1, 2], [2, 3], [3, 1], // upward triangle
+    [4, 5], [5, 6], [6, 4], // downward triangle
+    [0, 1], [0, 4],         // vertical axis
+  ],
+};

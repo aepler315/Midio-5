@@ -291,14 +291,14 @@ export class Broshi {
 
     if (this.rho > 0.02) {
       ctx.save();
-      ctx.globalAlpha = 0.5 * this.rho;
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.38 * this.rho;
+      ctx.strokeStyle = '#e8f2ff';
+      ctx.lineWidth = 1.4;
       ctx.beginPath();
-      for (let i = 0; i <= 16; i++) {
-        const ang = (i / 16) * Math.PI * 2;
-        const r = 26 + (this.rand() * 2 - 1) * 3;
-        const px = Math.cos(ang) * r, py = -18 + Math.sin(ang) * r * 0.7;
+      for (let i = 0; i <= 14; i++) {
+        const ang = (i / 14) * Math.PI * 2;
+        const r = (i % 2 === 0 ? 30 : 21) + (this.rand() * 2 - 1) * 4; // serrated, not round
+        const px = Math.cos(ang) * r, py = -16 + Math.sin(ang) * r * 0.7;
         if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
       ctx.closePath();
@@ -308,21 +308,20 @@ export class Broshi {
 
     // tongue (behind head, extends forward/down)
     if (this.tongue.len > 0.5) {
-      ctx.strokeStyle = '#ff5f7a';
-      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(200,228,255,0.85)';
+      ctx.lineWidth = 1.8;
       ctx.beginPath();
       ctx.moveTo(6, -16);
-      const midX = 6 + this.tongue.len * 0.6, midY = -16 + this.tongue.len * 0.22;
+      const midX = 6 + this.tongue.len * 0.55, midY = -16 + this.tongue.len * 0.10;
       const endX = 6 + this.tongue.len * Math.cos(22 * Math.PI / 180);
       const endY = -16 + this.tongue.len * Math.sin(22 * Math.PI / 180);
-      ctx.quadraticCurveTo(midX, midY, endX, endY);
+      ctx.lineTo(midX, midY); // an angular lash, not a soft curve
+      ctx.lineTo(endX, endY);
       ctx.stroke();
     }
+    ctx.fillStyle = 'rgba(200,230,255,0.8)';
     for (const p of this.spittle.active) {
-      ctx.fillStyle = 'rgba(255,140,160,0.8)';
-      ctx.beginPath();
-      ctx.arc(6 + p.x, -16 + p.y, 2, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillRect(6 + p.x - 1, -16 + p.y - 1, 2.4, 2.4); // sparks, not droplets
     }
     ctx.restore(); // done with the ctx.translate-relative aura/tongue/spittle drawing
 
@@ -333,12 +332,13 @@ export class Broshi {
     const group = { tx: x, ty: y, rot: neckRad, scaleX: 1, scaleY: 1 };
     const bodyHub = BROSHI_BODY.vertices[0];
     const bodyMesh = displaceMeshRadial(BROSHI_BODY, bodyHub.x, bodyHub.y, this.modal);
-    drawMeshPart(ctx, bodyMesh, this._bodyRest, group, baseHue);
-    drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue);
+    const glyphOpts = { satBase: 30, lightBase: 56, hueSpread: 20 };
+    drawMeshPart(ctx, bodyMesh, this._bodyRest, group, baseHue, glyphOpts);
+    drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue, glyphOpts);
 
     const jawTip = BROSHI_JAW.vertices[1];
     const jawMesh = { vertices: [BROSHI_JAW.vertices[0], { x: jawTip.x, y: jawTip.y + this.jawOpen * 10 }], edges: BROSHI_JAW.edges };
-    drawMeshPart(ctx, jawMesh, this._jawRest, group, baseHue + 15, { satBase: 30, lightBase: 25 });
+    drawMeshPart(ctx, jawMesh, this._jawRest, group, baseHue + 15, { satBase: 22, lightBase: 62, widthBase: 1.2 });
 
     const tailRad = (this.tailAngle * Math.PI) / 180;
     const [tailBase, tailTip0] = BROSHI_TAIL.vertices;
@@ -348,7 +348,7 @@ export class Broshi {
       y: tailBase.y + tdx * Math.sin(tailRad) + tdy * Math.cos(tailRad),
     };
     const tailMesh = { vertices: [tailBase, tailTip], edges: BROSHI_TAIL.edges };
-    drawMeshPart(ctx, tailMesh, this._tailRest, group, baseHue - 10, { satBase: 40, lightBase: 30 });
+    drawMeshPart(ctx, tailMesh, this._tailRest, group, baseHue - 10, { satBase: 24, lightBase: 48, widthBase: 1.2 });
 
     const eyeLit = this.rho > 0.3;
     drawMeshPart(ctx, BROSHI_EYE, this._eyeRest, group, eyeLit ? 0 : baseHue, {
