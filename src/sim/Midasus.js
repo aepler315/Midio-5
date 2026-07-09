@@ -9,6 +9,7 @@ import { MIDASUS_MESH } from '../render/meshes.js';
 import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh } from '../render/MeshDrawer.js';
 import { ModalRing } from '../render/oscillators.js';
 import { OrbitalDebris } from './OrbitalDebris.js';
+import { SkyVoyage } from './SkyVoyage.js';
 
 const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
@@ -19,10 +20,12 @@ const BANK_GAIN = 0.0016, BANK_MAX = 0.6; // she rolls into her darts
 const SLASH_LIFE_SEC = 0.18;
 
 export class Midasus {
-  constructor(timeline, midio, { groundY = 480, ceilingY = 40, seed = 777 } = {}) {
+  constructor(timeline, midio, { groundY = 480, ceilingY = 40, seed = 777, stageW = 1280, stageH = 720 } = {}) {
     this.midio = midio;
     this.yFloor = groundY;
     this.yCeiling = ceilingY;
+    this.stageW = stageW;
+    this.stageH = stageH;
 
     this.q = timeline.filter((e) => e.role === Role.MELODY).sort((a, b) => a.tMs - b.tMs);
     this.i = 0;
@@ -56,6 +59,15 @@ export class Midasus {
     this.modal = new ModalRing({ modes: 3, baseHz: 11, decaySec: 0.4, seed: seed + 1 });
     // Gravitationally bound shards: they trail and slingshot as she darts.
     this.debris = new OrbitalDebris(seed + 2);
+    // Occasional deep-sky excursion: BiomeManager draws it (see
+    // drawDeepSky), far behind the world, while this is active.
+    this.voyage = new SkyVoyage(seed + 3);
+  }
+
+  /** Test/debug hook: send her on a voyage right now regardless of natural
+   * triggers. No-op if she's already away. */
+  forceVoyage(nowMs) {
+    return this.voyage.trigger(nowMs, { ...this.p }, this.stageW, this.stageH);
   }
 
   _target(n) {
@@ -167,9 +179,22 @@ export class Midasus {
     // calm sections lower it, so the shards drift into wider, lazier arcs.
     const massMul = (0.8 + 0.5 * (this.pulse - 1)) * (1 - 0.3 * calmLevel);
     this.debris.update(dtSec, this.p, Math.max(0.3, massMul));
+
+    // Sky voyage: the note/PD logic above keeps running harmlessly
+    // underneath (so a return never has to catch up on a backlog), but
+    // once she's away the voyage fully owns where "she" is -- draw() skips
+    // rendering her here and BiomeManager's deep-sky pass takes over.
+    const anchorX = this._ens ? this._ens.x : this.midio.screenX + 90;
+    const anchorY = this._ens ? this._ens.y : this.yFloor - 200;
+    this.voyage.update(nowMs, dtSec, ensemble ? ensemble.epic || 0 : 0, { x: anchorX, y: anchorY });
+    if (this.voyage.active) {
+      this.p = { ...this.voyage.p };
+      this.hue = this.voyage.hue;
+    }
   }
 
   draw(ctx) {
+    if (this.voyage.depth > 0.02) return; // she's away; BiomeManager's deep-sky pass owns rendering
     const sat = Math.round(58 - 28 * this.rest); // spectral: pale, never candy
     this.debris.draw(ctx, this.hue, this.rest); // behind her core and trail
     // Calm sections fade the ribbon rather than shortening it -- the longer

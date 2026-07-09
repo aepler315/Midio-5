@@ -274,7 +274,7 @@ export class BiomeManager {
     if (this._glitchTimer <= 0) { this._glitchActiveMs = 60; this._glitchTimer = 2.5 + this._starSeed() * 3.5; }
   }
 
-  draw(ctx, canvas, worldX, originX = 0) {
+  draw(ctx, canvas, worldX, originX = 0, skyVoyage = null) {
     const { from, to, t } = this.currentBlend || { from: this.sections[0].profile, to: this.sections[0].profile, t: 1 };
     const A = this._profile(from), B = this._profile(to);
 
@@ -302,6 +302,7 @@ export class BiomeManager {
     this.cymatics.draw(ctx, canvas, mandalaColor);
     this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075 * (this._ribbonScaleMul || 1), mandalaColor);
     this.lightning.draw(ctx, canvas, this.tSec * 1000); // behind the ranges: bolts land beyond the hills
+    this.drawDeepSky(ctx, skyVoyage); // Midasus's sky voyage, when she's away -- behind the mountains below
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
 
     const scrollX0 = worldX * LAYER_RATIOS.L2, scrollX1 = worldX * LAYER_RATIOS.L3;
@@ -324,6 +325,64 @@ export class BiomeManager {
 
     this._drawGround(ctx, canvas, worldX, originX, A, B, t);
     this._drawTransitionOverlays(ctx, canvas, B);
+  }
+
+  /** Midasus's deep-space excursion: drawn here (behind the mountain
+   * silhouettes drawn further down in draw()) so she genuinely reads as
+   * "way in the distance" rather than just smaller. Renders her fading
+   * constellations (completed figures frozen into the sky), the live
+   * persistent trail sky-writing the current figure, and a small mote of
+   * light at her current position. A no-op whenever she isn't away. */
+  drawDeepSky(ctx, voyage) {
+    if (!voyage || voyage.depth <= 0.02) return;
+    const nowMs = this.tSec * 1000;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    for (const c of voyage.constellations) {
+      const life = 1 - clamp01((nowMs - c.bornMs) / 6000);
+      if (life <= 0) continue;
+      ctx.strokeStyle = `hsla(${c.hue}, 60%, 80%, ${0.5 * life})`;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      c.points.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+      ctx.stroke();
+      ctx.fillStyle = `hsla(${c.hue}, 75%, 90%, ${0.9 * life})`;
+      for (const p of c.points) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Persistent trail: a soft wide glow pass underneath a bright thin
+    // core, the way a comet's tail actually reads -- this is the geometry
+    // she's sky-writing, so it needs to be legible, not a faint scratch.
+    const trail = voyage.trail;
+    for (let i = 1; i < trail.length; i++) {
+      const a = trail[i - 1], b = trail[i];
+      const u = i / trail.length; // older points fade toward transparent
+      ctx.strokeStyle = `hsla(${b.hue}, 65%, 78%, ${0.22 * u})`;
+      ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.strokeStyle = `hsla(${b.hue}, 75%, 88%, ${0.85 * u})`;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+
+    // Her current position: fades in from nothing (still "here" at the
+    // start of ascent) to a small glowing comet-head once fully away.
+    const r = 2 + 3 * (1 - voyage.depth);
+    ctx.fillStyle = `hsla(${voyage.hue}, 60%, 85%, ${0.28 * voyage.depth})`;
+    ctx.beginPath();
+    ctx.arc(voyage.p.x, voyage.p.y, r * 3.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `hsla(${voyage.hue}, 80%, 92%, ${0.6 + 0.4 * voyage.depth})`;
+    ctx.beginPath();
+    ctx.arc(voyage.p.x, voyage.p.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
   }
 
   /** Cut flash + shutter wipe, fired by the Dramaturgy Director. */

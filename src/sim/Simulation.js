@@ -42,7 +42,9 @@ export class Simulation {
     this.obstacles = new ObstacleSpawner(paramBus);
     this.obstacles.buildCandidates(conductor.timeline, 60000 / bpm, this.midio.halfWidth);
 
-    this.midasus = new Midasus(conductor.timeline, this.midio, { groundY: this.midio.groundY, ceilingY: 40 });
+    this.midasus = new Midasus(conductor.timeline, this.midio, {
+      groundY: this.midio.groundY, ceilingY: 40, stageW: canvasWidth, stageH: canvasHeight,
+    });
     this.broshi = new Broshi(conductor, paramBus);
     this.broshi._lastBarPeriodMs = (60000 / bpm) * 4;
 
@@ -134,8 +136,12 @@ export class Simulation {
 
     this.midasus.update(nowMs, dtSec, this.calm.level, {
       x: this.ensemble.anchors[2].x, y: this.ensemble.anchors[2].y,
-      phase: this.ensemble.phase(2), melt: 2 + 4.5 * this.vibe.epic,
+      phase: this.ensemble.phase(2), melt: 2 + 4.5 * this.vibe.epic, epic: this.vibe.epic,
     });
+    // She's off on a voyage -> the ensemble's Kuramoto math should feel the
+    // hole (this takes effect next frame; the weight eases over ~1.5s
+    // regardless, so the one-step lag is inaudible/invisible).
+    this.ensemble.setPresence(2, this.midasus.voyage.active ? 0 : 1);
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level, {
       trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
     });

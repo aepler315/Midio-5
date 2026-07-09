@@ -20,6 +20,7 @@ const DETUNES = [0.5, -0.72, 0.9];
 const R_TAU = 1.5;
 const SPREAD_TAU = 2.8;   // formation changes drift, never snap
 const CENTROID_SPEED = 0.041; // rad/s of the roam ellipse -- slow
+const PRESENCE_TAU = 1.5; // seconds for a presence weight to ease toward its target
 
 export class EnsembleDirector {
   constructor(seed = 1, { stageW = 1280, stageH = 720 } = {}) {
@@ -34,24 +35,46 @@ export class EnsembleDirector {
     this._phi = rand() * TWO_PI;
     this._t = 0;
     this.anchors = [{ x: stageW * 0.26, y: 0 }, { x: stageW * 0.15, y: 0 }, { x: stageW * 0.4, y: stageH * 0.35 }];
+    // Presence weights: 1 = fully in the ensemble, 0 = off on an excursion.
+    // An excursion director eases these toward 0/1 rather than snapping, so
+    // "leaving the band" and "coming home" both read as physical transitions.
+    this.weights = [1, 1, 1];
+    this._targetWeights = [1, 1, 1];
+  }
+
+  /** Ease this performer's presence weight toward w01 (0..1) over ~1.5s. */
+  setPresence(i, w01) {
+    this._targetWeights[i] = clamp01(w01);
   }
 
   update(nowMs, dtSec, vibe, beatPeriodMs = 500) {
     this._t += dtSec;
     const omega0 = TWO_PI / Math.max(0.25, (beatPeriodMs || 500) / 1000);
 
+    const wAlpha = 1 - Math.exp(-dtSec / PRESENCE_TAU);
+    for (let i = 0; i < 3; i++) this.weights[i] += wAlpha * (this._targetWeights[i] - this.weights[i]);
+
     // Coupling from vibe: mood gates it, drive deepens it.
     const mood = clamp01(0.5 + 0.5 * vibe.valence);
     const drive = clamp01(vibe.epic);
     this.K = 0.15 + 2.9 * Math.pow(mood, 1.3) * (0.3 + 0.7 * drive);
 
-    // Kuramoto, N=3, direct mean field.
-    let sc = 0, ss = 0;
-    for (const th of this.theta) { sc += Math.cos(th); ss += Math.sin(th); }
-    const R = Math.hypot(sc, ss) / 3;
+    // Kuramoto, N=3, presence-weighted mean field: an absent performer
+    // (weight -> 0) barely dents what "the group" is doing, and its own
+    // phase equation's coupling term is scaled by that same weight, so it
+    // free-runs on its natural detune instead of chasing a group it isn't
+    // part of. The remaining duo's weighted R reverts to an honest N=2
+    // Kuramoto field, so they can still fully lock without the absent third.
+    let sc = 0, ss = 0, wsum = 0;
+    for (let i = 0; i < 3; i++) {
+      sc += this.weights[i] * Math.cos(this.theta[i]);
+      ss += this.weights[i] * Math.sin(this.theta[i]);
+      wsum += this.weights[i];
+    }
+    const R = wsum > 1e-6 ? Math.hypot(sc, ss) / wsum : 0;
     const psi = Math.atan2(ss, sc);
     for (let i = 0; i < 3; i++) {
-      this.theta[i] += (omega0 + DETUNES[i] + this.K * R * Math.sin(psi - this.theta[i])) * dtSec;
+      this.theta[i] += (omega0 + DETUNES[i] + this.weights[i] * this.K * R * Math.sin(psi - this.theta[i])) * dtSec;
       if (this.theta[i] > TWO_PI) this.theta[i] -= TWO_PI;
       else if (this.theta[i] < 0) this.theta[i] += TWO_PI;
     }

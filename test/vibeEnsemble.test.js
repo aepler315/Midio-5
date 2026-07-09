@@ -83,6 +83,61 @@ test('ensemble anchors stay inside their stage-safety windows', () => {
   }
 });
 
+test('setPresence eases a weight toward its target rather than snapping', () => {
+  const { ens } = runEnsemble(0.5, 0.5, 2);
+  ens.setPresence(2, 0);
+  const before = ens.weights[2];
+  ens.update(0, STEP, { valence: 0.5, epic: 0.5 }, 500);
+  assert.ok(ens.weights[2] < before, 'weight should start easing down');
+  assert.ok(ens.weights[2] > 0.001, 'a single 8ms step must not reach 0 instantly');
+});
+
+test('an absent oscillator free-runs on its own detune, ignoring the group', () => {
+  const ens = new EnsembleDirector(7);
+  const vibe = { valence: 0.9, epic: 0.9 }; // strong coupling if it were present
+  let t = 0;
+  ens.setPresence(2, 0);
+  // Let the weight actually reach ~0 before measuring free-run behavior.
+  for (let i = 0; i < 6 * 120; i++) { ens.update(t, STEP, vibe, 500); t += 8.33; }
+  assert.ok(ens.weights[2] < 0.02, `weight should have eased to ~0, got ${ens.weights[2].toFixed(3)}`);
+
+  const omega0 = TWO_PI_FOR_TEST(500);
+  const expectedRate = omega0 + 0.9; // DETUNES[2] (Midasus) with no coupling term
+  const theta0 = ens.theta[2];
+  ens.update(t, STEP, vibe, 500);
+  const dTheta = wrapDelta(ens.theta[2] - theta0);
+  assert.ok(Math.abs(dTheta / STEP - expectedRate) < 0.05, `expected free-run rate ${expectedRate}, got ${dTheta / STEP}`);
+});
+
+test('a duo can still fully lock while the third performer is away', () => {
+  const ens = new EnsembleDirector(7);
+  const vibe = { valence: 0.9, epic: 0.9 };
+  let t = 0;
+  ens.setPresence(2, 0);
+  for (let i = 0; i < 20 * 120; i++) { ens.update(t, STEP, vibe, 500); t += 8.33; }
+  assert.ok(ens.rSmooth > 0.85, `duo should still lock tightly, got r=${ens.rSmooth.toFixed(2)}`);
+});
+
+test('presence weight returning to 1 lets the trio re-sync (no permanent damage)', () => {
+  const ens = new EnsembleDirector(7);
+  const vibe = { valence: 0.9, epic: 0.9 };
+  let t = 0;
+  ens.setPresence(1, 0);
+  for (let i = 0; i < 15 * 120; i++) { ens.update(t, STEP, vibe, 500); t += 8.33; }
+  ens.setPresence(1, 1);
+  for (let i = 0; i < 20 * 120; i++) { ens.update(t, STEP, vibe, 500); t += 8.33; }
+  assert.ok(ens.weights[1] > 0.98, 'weight should have fully returned');
+  assert.ok(ens.rSmooth > 0.85, `full trio should re-lock after the return, got r=${ens.rSmooth.toFixed(2)}`);
+});
+
+function TWO_PI_FOR_TEST(beatPeriodMs) { return (Math.PI * 2) / (beatPeriodMs / 1000); }
+function wrapDelta(d) {
+  const TWO_PI = Math.PI * 2;
+  while (d > Math.PI) d -= TWO_PI;
+  while (d < -Math.PI) d += TWO_PI;
+  return d;
+}
+
 test('meltMesh flows every rim vertex, holds the hub, and stays bounded', () => {
   const mesh = radialMesh(20, 20, 8, 0, -20);
   const melted = meltMesh(mesh, 0, -20, 3.7, 5, 1);
