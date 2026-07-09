@@ -22,11 +22,29 @@ const MIME = {
   '.flac': 'audio/flac',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.sf2': 'application/octet-stream',
+  '.zip': 'application/zip',
 };
+
+const SOUNDFONTS_DIR = path.join(ROOT, 'soundfonts');
 
 const server = http.createServer((req, res) => {
   let reqPath = decodeURIComponent(req.url.split('?')[0]);
   if (reqPath === '/') reqPath = '/index.html';
+
+  // Soundfont auto-discovery: the client fetches this manifest at boot so
+  // dropping a .sf2/.zip into soundfonts/ "just works" without the File
+  // System Access API's permission prompt. A static host with no server
+  // logic simply 404s here, and the client treats that as "nothing found".
+  if (reqPath === '/soundfonts/' || reqPath === '/soundfonts') {
+    fs.readdir(SOUNDFONTS_DIR, (err, entries) => {
+      const files = err ? [] : entries.filter((f) => /\.(sf2|zip)$/i.test(f)).sort();
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(files));
+    });
+    return;
+  }
+
   const filePath = path.join(ROOT, reqPath);
 
   if (!filePath.startsWith(ROOT)) {

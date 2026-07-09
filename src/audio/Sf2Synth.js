@@ -1,124 +1,272 @@
-// Sample-playback synth over a parsed SoundFont: same one-method surface
-// as SimpleSynth (noteOn(evt)), so the router can swap between them live.
-// Each voice is an AudioBufferSourceNode over the font's whole sample pool
-// (offset + absolute loop points select the sample) through an ADSR gain.
+// Sample-playback synth built on Sf2Parser output. Mirrors SimpleSynth's
+// shape (constructor(audioEngine), connectConductor, noteOn) so SynthRouter
+// can swap it in or out as the active engine.
+//
+// - One cached AudioBuffer per sampleIndex (pooled, not per-note)
+// - 48-voice polyphony with oldest-voice stealing
+// - Key/vel zone match with a 2-layer cap
+// - ADSR gain envelope per zone
+// - Role → GM program map; bank 128 for RHYTHM
 import { Role } from '../core/NoteEvent.js';
+import { parseSf2 } from './Sf2Parser.js';
 
-const NOMINAL_RATE = 44100; // pool buffer rate; per-sample rates fold into playbackRate
 const MAX_VOICES = 48;
+
+// Role → (bank, program) for preset lookup.
 const ROLE_PROGRAMS = {
-  // Preferred GM programs per role, first available wins; bank 0 fallback is "anything".
-  [Role.MELODY]: [80, 81, 73, 40, 0],
-  [Role.BASS]: [33, 32, 38, 34, 0],
-  [Role.PAD]: [89, 88, 91, 48, 0],
+  [Role.MELODY]: { bank: 0, program: 0 },   // Acoustic Grand Piano
+  [Role.BASS]:   { bank: 0, program: 33 },   // Electric Bass (finger)
+  [Role.PAD]:    { bank: 0, program: 89 },   // Pad 1 (new age)
+  [Role.RHYTHM]: { bank: 128, program: 0 },  // Standard Drum Set
 };
 
+const presetKey = (bank, program) => bank * 128 + program;
+
+/**
+ * Blends a soundfont zone's own authored pan (its stereo-pair spread, or
+ * just a static instrument placement) with the MIDI channel's pan (CC#10,
+ * or the intertwined-pair pan-out curve). A plain sum+clamp lets an extreme
+ * track pan fight the font's own L/R pair apart — e.g. a hard-right track
+ * (evtPan=+1) plus a hard-left zone (zonePan=-1) sums to 0, dragging the
+ * "left" half of a stereo pair back to dead center while its "right" half
+ * clamps to +1, skewing the image. This blend instead treats `evtPan` as
+ * the track's mandatory center: as it approaches ±1 it proportionally
+ * compresses (never cancels) the zone's own spread, so a fully hard-panned
+ * track collapses stereo zones to its single side by design, while a
+ * centered track leaves the font's authored stereo width fully intact.
+ * Bounded to [-1,1] by construction (|evtPan| + |zonePan|*(1-|evtPan|) <=
+ * |evtPan| + (1-|evtPan|) = 1); the clamp is defensive only.
+ */
+export function combinePan(evtPan, zonePan) {
+  return Math.max(-1, Math.min(1, evtPan + zonePan * (1 - Math.abs(evtPan))));
+}
+
 export class Sf2Synth {
-  constructor(audioEngine, font) {
+  constructor(audioEngine) {
     this.ae = audioEngine;
-    this.font = font;
     this.enabled = true;
+    this.sf2 = null;
+    this._buffers = new Map(); // sampleIndex → AudioBuffer (lazy, pooled)
     this._voices = [];
-
-    // One Float32 buffer for the whole pool, built once per font.
-    const ctx = audioEngine.ctx;
-    const data = font.sampleData;
-    this.buffer = ctx.createBuffer(1, Math.max(1, data.length), NOMINAL_RATE);
-    const ch = this.buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) ch[i] = data[i] / 32768;
-
-    this.out = ctx.createGain();
-    this.out.gain.value = 0.55;
-    this.out.connect(audioEngine.master);
-
-    // Role -> preset resolution, done once.
-    this._rolePreset = {};
-    for (const role of [Role.MELODY, Role.BASS, Role.PAD]) {
-      this._rolePreset[role] = this._findPreset(0, ROLE_PROGRAMS[role]);
-    }
-    this._drumPreset = this._findPreset(128, [0]) || this._anyInBank(128);
   }
 
-  _findPreset(bank, programs) {
-    for (const prog of programs) {
-      const hit = this.font.presets.get(bank * 128 + prog);
-      if (hit) return hit;
+  /** Immediately fades and stops every currently-sounding voice. Called
+   *  before swapping fonts or starting a new song so the outgoing font's
+   *  notes never bleed into the incoming one. */
+  stopAll() {
+    const ctx = this.ae?.ctx;
+    for (const voice of this._voices) {
+      try {
+        if (voice.gain && ctx) {
+          const now = ctx.currentTime;
+          voice.gain.gain.cancelScheduledValues(now);
+          voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+          voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.02);
+        }
+        voice.src?.stop?.(ctx ? ctx.currentTime + 0.03 : 0);
+      } catch { /* already ended */ }
     }
-    return this._anyInBank(bank);
+    this._voices = [];
   }
 
-  _anyInBank(bank) {
-    for (const [key, preset] of this.font.presets) {
-      if (Math.floor(key / 128) === bank) return preset;
+  /** Load a parsed SF2 (from parseSf2) or an ArrayBuffer. Pass null to unload. */
+  loadSf2(parsedOrBuffer, name) {
+    this.stopAll();
+    if (parsedOrBuffer == null) {
+      this.sf2 = null;
+      this._buffers.clear();
+      return;
+    }
+    if (parsedOrBuffer instanceof ArrayBuffer) {
+      this.sf2 = parseSf2(parsedOrBuffer, name);
+    } else {
+      this.sf2 = parsedOrBuffer;
+    }
+    this._buffers.clear();
+    return this.sf2;
+  }
+
+  connectConductor(conductor) {
+    return conductor.on('*', (evt) => this.noteOn(evt));
+  }
+
+  noteOn(evt) {
+    if (!this.enabled || !this.sf2) return;
+    const preset = this._findPreset(evt.role, evt.program ?? -1);
+    if (!preset) return;
+
+    const vel = Math.round(evt.vel * 127);
+    const matching = preset.zones.filter(
+      (z) => evt.pitch >= z.loKey && evt.pitch <= z.hiKey &&
+            vel >= z.loVel && vel <= z.hiVel,
+    );
+    // 2-layer cap: only the first two matching zones play.
+    for (const zone of matching.slice(0, 2)) {
+      this._playZone(zone, evt);
+    }
+  }
+
+  /**
+   * Resolves the preset to play: a real MIDI program (from the source file)
+   * wins when the loaded font has a matching bank-0 preset, so a track keeps
+   * its authored instrument instead of always falling back to the role's
+   * generic default. RHYTHM always stays in bank 128 (drum kits) first, but
+   * still honors the specific kit variant the MIDI selected via Program
+   * Change. Every role ends in a last-resort scan of the whole font so a
+   * font that simply doesn't have the "usual" programs (a single-instrument
+   * export, a strings-only pack, a drum-kit-only pack) still makes SOME
+   * sound instead of dropping notes silently — melodic roles never borrow a
+   * drum-kit preset, and RHYTHM only borrows a melodic one if the font has
+   * no drum kit at all.
+   */
+  _findPreset(role, program) {
+    if (role === Role.RHYTHM) {
+      const kit = program >= 0 ? program : 0;
+      return this.sf2.presets.get(presetKey(128, kit))
+          || this.sf2.presets.get(presetKey(128, 0))
+          || this._firstInBank(128)
+          || this._anyPreset();
+    }
+    if (program >= 0) {
+      const p = this.sf2.presets.get(presetKey(0, program));
+      if (p) return p;
+    }
+    const cfg = ROLE_PROGRAMS[role] || ROLE_PROGRAMS[Role.MELODY];
+    return this.sf2.presets.get(presetKey(cfg.bank, cfg.program))
+        || this.sf2.presets.get(0) // bank 0, program 0
+        || this._firstInBank(0)
+        || this._anyPreset(128); // never hand a melodic note a drum kit
+  }
+
+  /** First preset found in `bank`, in Map insertion (file) order, or null. */
+  _firstInBank(bank) {
+    for (const preset of this.sf2.presets.values()) {
+      if (preset.bank === bank) return preset;
     }
     return null;
   }
 
-  noteOn(evt) {
-    if (!this.enabled) return;
-    const preset = evt.role === Role.RHYTHM ? this._drumPreset : (this._rolePreset[evt.role] || this._rolePreset[Role.MELODY]);
-    if (!preset) return;
-    const key = Math.max(0, Math.min(127, Math.round(evt.pitch ?? 60)));
-    const vel127 = Math.max(1, Math.min(127, Math.round((evt.vel ?? 0.7) * 127)));
-
-    let layered = 0;
-    for (const z of preset.zones) {
-      if (key < z.keyLo || key > z.keyHi || vel127 < z.velLo || vel127 > z.velHi) continue;
-      this._startVoice(z, key, evt);
-      if (++layered >= 2) break; // cap stacked layers per note
+  /** Any preset at all — the true last resort for a font with unconventional
+   *  bank numbers (nothing in bank 0 or 128). `excludeBank` skips a bank
+   *  (e.g. the drum bank for melodic-role callers). Null only when the font
+   *  has zero presets. */
+  _anyPreset(excludeBank = -1) {
+    for (const preset of this.sf2.presets.values()) {
+      if (preset.bank !== excludeBank) return preset;
     }
+    return null;
   }
 
-  _startVoice(z, key, evt) {
-    const ctx = this.ae.ctx;
-    const s = this.font.samples[z.sampleIdx];
-    if (!s) return;
-    const t = ctx.currentTime;
+  _getBuffer(sampleIndex) {
+    let buf = this._buffers.get(sampleIndex);
+    if (buf) return buf;
+    const sample = this.sf2.samples[sampleIndex];
+    if (!sample) return null;
+    buf = this._renderSample(sample);
+    this._buffers.set(sampleIndex, buf);
+    return buf;
+  }
 
-    const start = s.start + z.startOfs;
-    const end = s.end + z.endOfs;
-    if (end <= start) return;
-    const root = z.rootKey >= 0 ? z.rootKey : s.originalKey;
-    const semis = (key - root) + z.coarse + (z.fine + s.correction) / 100;
-    const rate = Math.pow(2, semis / 12) * (s.sampleRate / NOMINAL_RATE);
+  _renderSample(sample) {
+    const ctx = this.ae.ctx;
+    const sd = this.sf2.sampleData;
+    const start = sample.start;
+    const end = Math.min(sample.end, sd.length);
+    const len = Math.max(1, end - start);
+    const buf = ctx.createBuffer(1, len, sample.sampleRate || 44100);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      ch[i] = sd[start + i] / 32768;
+    }
+    return buf;
+  }
+
+  _playZone(zone, evt) {
+    const ctx = this.ae.ctx;
+    const buf = this._getBuffer(zone.sampleIndex);
+    if (!buf) return;
+    const sample = this.sf2.samples[zone.sampleIndex];
+    if (!sample) return;
 
     const src = ctx.createBufferSource();
-    src.buffer = this.buffer;
-    src.playbackRate.value = rate;
-    const looped = (z.modes === 1 || z.modes === 3) && s.loopEnd > s.loopStart;
-    if (looped) {
+    src.buffer = buf;
+
+    // Pitch ratio: 2^((pitch - rootKey - fineTune_cents/100 - coarseTune) / 12)
+    const rootKey = sample.rootKey > 0 ? sample.rootKey : 60;
+    const fineCents = (zone.fineTune || 0) + (sample.fineTune || 0);
+    const semis = evt.pitch - rootKey - fineCents / 100 - (zone.coarseTune || 0);
+    src.playbackRate.value = Math.pow(2, semis / 12);
+
+    // Loop — AudioBuffer was rendered starting from sample.start, so loop
+    // points must be offset by sample.start to land within the buffer.
+    if (zone.loopMode === 1 && sample.loopEnd > sample.loopStart) {
       src.loop = true;
-      src.loopStart = (s.loopStart + z.loopStartOfs) / NOMINAL_RATE;
-      src.loopEnd = (s.loopEnd + z.loopEndOfs) / NOMINAL_RATE;
+      const sr = sample.sampleRate || 44100;
+      src.loopStart = Math.max(0, sample.loopStart - sample.start) / sr;
+      src.loopEnd = Math.max(1, sample.loopEnd - sample.start) / sr;
     }
 
-    // ADSR: attack -> hold -> decay to sustain, release scheduled off durMs.
-    const velGain = Math.pow((evt.vel ?? 0.7), 1.1);
-    const peak = velGain * Math.pow(10, -Math.max(0, z.attenuation) / 200);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(Math.max(0.0002, peak), t + Math.max(0.001, z.attack));
-    const decayStart = t + z.attack + z.hold;
-    g.gain.setTargetAtTime(Math.max(0.0001, peak * z.sustain), decayStart, Math.max(0.01, z.decay / 4));
+    // Gain envelope (AHDSR: attack → hold → decay → sustain → release)
+    const gain = ctx.createGain();
+    const t = ctx.currentTime;
+    const peak = evt.vel * (zone.attenuation ?? 1) * 0.25; // scale to prevent clipping
+    const sustainLevel = Math.max(0.0001, peak * (zone.sustain ?? 1));
+    const atk = Math.max(0.0005, zone.attack ?? 0.005);
+    const hld = Math.max(0, zone.hold ?? 0);
+    const dec = Math.max(0.001, zone.decay ?? 0.05);
+    const rel = Math.max(0.01, zone.release ?? 0.05);
+    const dur = Math.max(0.05, evt.durMs / 1000);
+    const relStart = t + dur;
 
-    const durSec = Math.max(0.06, (evt.durMs ?? 300) / 1000);
-    const tRel = t + durSec;
-    const relTau = Math.max(0.02, Math.min(2, z.release) / 4);
-    g.gain.setTargetAtTime(0.0001, tRel, relTau);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(peak, t + atk);
+    // Hold at peak
+    const holdEnd = t + atk + hld;
+    gain.gain.setValueAtTime(peak, holdEnd);
+    // Decay to sustain level
+    const decEnd = holdEnd + dec;
+    gain.gain.exponentialRampToValueAtTime(sustainLevel, decEnd);
+    // Hold sustain until release (only if decay finished before note end)
+    if (decEnd < relStart) {
+      gain.gain.setValueAtTime(sustainLevel, relStart);
+    }
+    // Release
+    gain.gain.exponentialRampToValueAtTime(0.0001, relStart + rel);
 
-    src.connect(g).connect(this.out);
-    src.start(t, start / NOMINAL_RATE);
-    const stopAt = looped ? tRel + relTau * 5 + 0.05 : Math.min(tRel + relTau * 5, t + (end - start) / NOMINAL_RATE / Math.max(0.01, rate)) + 0.05;
+    // Routing: gain → (stereoPanner →) master. See combinePan() above.
+    const combinedPan = combinePan(evt.pan || 0, zone.pan || 0);
+    if (combinedPan && typeof ctx.createStereoPanner === 'function') {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = combinedPan;
+      gain.connect(panner);
+      panner.connect(this.ae.master);
+    } else {
+      gain.connect(this.ae.master);
+    }
+
+    src.connect(gain);
+    src.start(t);
+    const stopAt = Math.max(relStart + rel + 0.05, decEnd);
     src.stop(stopAt);
 
-    this._voices.push(src);
+    // Voice management (oldest steal with quick fade to avoid clicks)
+    const voice = { src, gain, t };
+    if (this._voices.length >= MAX_VOICES) {
+      const old = this._voices.shift();
+      if (old?.src && old?.gain) {
+        const now = ctx.currentTime;
+        try {
+          old.gain.gain.cancelScheduledValues(now);
+          old.gain.gain.setValueAtTime(old.gain.gain.value, now);
+          old.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.02);
+          old.src.stop(now + 0.03);
+        } catch { /* already ended */ }
+      }
+    }
     src.onended = () => {
-      const i = this._voices.indexOf(src);
+      const i = this._voices.indexOf(voice);
       if (i >= 0) this._voices.splice(i, 1);
     };
-    if (this._voices.length > MAX_VOICES) {
-      const oldest = this._voices.shift();
-      try { oldest.stop(); } catch { /* already stopped */ }
-    }
+    this._voices.push(voice);
   }
 }

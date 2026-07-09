@@ -1,91 +1,236 @@
-// The user's soundfont collection: loaded from single .sf2 files, a zip
-// of them, a picked folder, or a persistent File System Access directory
-// handle ("use this directory ongoing" -- re-scanned on demand). Cycling
-// swaps the active font; the router hears about it via onChange.
+// SoundfontLibrary: manages a collection of loaded SoundFonts. Supports
+// single buffer, multi-file (incl. .zip extraction), and File System Access
+// directory loading + rescanning. Cycles through fonts with onChange callback.
+//
+// SynthRouter: drop-in replacement for SimpleSynth that routes noteOn to the
+// active SF2 engine when a font is loaded, otherwise to the fallback synth.
 import { parseSf2 } from './Sf2Parser.js';
-import { listZipEntries, extractZipEntry } from '../utils/zip.js';
+import { Sf2Synth } from './Sf2Synth.js';
+import { extractZip } from '../utils/zip.js';
 
 export class SoundfontLibrary {
   constructor() {
-    this.fonts = []; // {name, parsed}
-    this.activeIdx = -1;
-    this.onChange = null; // (fontOrNull) => void
+    /** @type {{name:string, data:object, hidden:boolean, _dirSourced?:boolean}[]} */
+    this.fonts = [];
+    this.activeIndex = -1;
+    this.onChange = null; // (activeFont | null) => void
     this._dirHandle = null;
   }
 
-  get active() { return this.fonts[this.activeIdx] || null; }
-
-  _emit() { if (this.onChange) this.onChange(this.active); }
-
-  _add(parsed) {
-    this.fonts.push({ name: parsed.name, parsed });
-    if (this.activeIdx < 0) this.activeIdx = 0;
+  get active() {
+    return this.activeIndex >= 0 ? this.fonts[this.activeIndex] : null;
   }
 
-  async addBuffer(buffer, fallbackName) {
-    const lower = (fallbackName || '').toLowerCase();
-    if (lower.endsWith('.zip')) {
-      for (const entry of listZipEntries(buffer)) {
-        if (!entry.name.toLowerCase().endsWith('.sf2')) continue;
-        const data = await extractZipEntry(buffer, entry);
-        this._add(parseSf2(data, entry.name.replace(/^.*\//, '').replace(/\.sf2$/i, '')));
-      }
-    } else {
-      this._add(parseSf2(buffer, (fallbackName || 'soundfont').replace(/\.sf2$/i, '')));
-    }
-    this._emit();
+  get count() {
+    return this.fonts.length;
   }
 
-  /** Files from an <input type=file> (single, multi, or webkitdirectory). */
+  /** Fonts not hidden — what the switcher popup's main list and `cycle`
+   *  operate over. Each entry keeps its real index into `fonts` so the UI
+   *  can call `select`/`hide` without having to re-derive it. */
+  get visibleFonts() {
+    return this.fonts
+      .map((font, index) => ({ font, index }))
+      .filter(({ font }) => !font.hidden);
+  }
+
+  /** Fonts the user hid — what the settings "unhide" panel lists. */
+  get hiddenFonts() {
+    return this.fonts
+      .map((font, index) => ({ font, index }))
+      .filter(({ font }) => font.hidden);
+  }
+
+  /** Parse an SF2 ArrayBuffer and add it to the library. auto-activates the
+   *  very first font ever added (or the next one added after every font
+   *  was hidden/removed) — always the font that was just added, never a
+   *  stale index 0 that might now point at something else. */
+  async addBuffer(name, arrayBuffer) {
+    const u8 = arrayBuffer instanceof Uint8Array ? arrayBuffer : new Uint8Array(arrayBuffer);
+    const parsed = parseSf2(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength), name);
+    this.fonts.push({ name: parsed.name || name, data: parsed, hidden: false });
+    if (this.activeIndex < 0) this.activeIndex = this.fonts.length - 1;
+    this._notify();
+    return parsed;
+  }
+
+  /** Handle <input> files: .sf2 single, multi-select, .zip extraction. */
   async addFiles(fileList) {
     for (const file of fileList) {
-      const lower = file.name.toLowerCase();
-      if (!lower.endsWith('.sf2') && !lower.endsWith('.zip')) continue;
-      try {
-        await this.addBuffer(await file.arrayBuffer(), file.name);
-      } catch (err) {
-        console.warn(`soundfont: skipped ${file.name}:`, err.message);
+      const name = file.name.toLowerCase();
+      const buf = await file.arrayBuffer();
+      if (name.endsWith('.sf2')) {
+        await this.addBuffer(file.name, buf);
+      } else if (name.endsWith('.zip')) {
+        await this._addZipContents(buf, file.name);
       }
     }
   }
 
-  /** Persistent directory (File System Access API). Re-scannable. */
-  async useDirectory(handle) {
-    this._dirHandle = handle;
-    await this.rescanDirectory();
+  async _addZipContents(arrayBuffer, zipName) {
+    const entries = await extractZip(arrayBuffer);
+    for (const [fname, data] of entries) {
+      if (fname.toLowerCase().endsWith('.sf2')) {
+        await this.addBuffer(fname, data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+      }
+    }
   }
 
-  async rescanDirectory() {
+  /**
+   * Best-effort: fetch tools/serve.js's `/soundfonts/` manifest and load
+   * every font it lists — the "I don't know where to put the .sf2 files"
+   * fix. Silently loads nothing (never throws) when the endpoint is 404,
+   * unreachable, or returns something unexpected, so it's always safe to
+   * fire off at boot even when the app is served by a plain static host
+   * that doesn't implement the manifest route.
+   * @returns {Promise<number>} how many fonts were loaded
+   */
+  async autoLoadFromServer(baseUrl = '/soundfonts/') {
+    let names;
+    try {
+      const res = await fetch(baseUrl);
+      if (!res.ok) return 0;
+      names = await res.json();
+      if (!Array.isArray(names)) return 0;
+    } catch {
+      return 0;
+    }
+
+    let loaded = 0;
+    for (const name of names) {
+      try {
+        const res = await fetch(baseUrl + encodeURIComponent(name));
+        if (!res.ok) continue;
+        const buf = await res.arrayBuffer();
+        if (name.toLowerCase().endsWith('.zip')) {
+          await this._addZipContents(buf, name);
+        } else {
+          await this.addBuffer(name, buf);
+        }
+        loaded++;
+      } catch {
+        // Skip this one file and keep going — a single corrupt/unreadable
+        // font shouldn't block the rest of the manifest from loading.
+      }
+    }
+    return loaded;
+  }
+
+  /** File System Access API: load all .sf2/.zip from a directory handle. */
+  async useDirectory(dirHandle) {
+    this._dirHandle = dirHandle;
+    await this._scanDirectory();
+  }
+
+  async _scanDirectory() {
     if (!this._dirHandle) return;
-    const seen = new Set(this.fonts.map((f) => f.name));
     for await (const entry of this._dirHandle.values()) {
-      if (entry.kind !== 'file' || !entry.name.toLowerCase().endsWith('.sf2')) continue;
-      const name = entry.name.replace(/\.sf2$/i, '');
-      if (seen.has(name)) continue;
-      try {
-        const file = await entry.getFile();
-        this._add(parseSf2(await file.arrayBuffer(), name));
-      } catch (err) {
-        console.warn(`soundfont: skipped ${entry.name}:`, err.message);
+      if (entry.kind !== 'file') continue;
+      const name = entry.name.toLowerCase();
+      if (!name.endsWith('.sf2') && !name.endsWith('.zip')) continue;
+      const file = await entry.getFile();
+      const buf = await file.arrayBuffer();
+      const before = this.fonts.length;
+      if (name.endsWith('.sf2')) {
+        await this.addBuffer(entry.name, buf);
+      } else if (name.endsWith('.zip')) {
+        await this._addZipContents(buf, entry.name);
+      }
+      // Mark fonts added by this scan as directory-sourced
+      for (let i = before; i < this.fonts.length; i++) {
+        this.fonts[i]._dirSourced = true;
       }
     }
-    this._emit();
   }
 
-  cycle(dir) {
-    if (this.fonts.length === 0) return;
-    this.activeIdx = ((this.activeIdx + dir) % this.fonts.length + this.fonts.length) % this.fonts.length;
-    this._emit();
+  /** Re-scan the bound directory: clears dir-sourced fonts and re-scans. */
+  async rescanDirectory() {
+    this.fonts = this.fonts.filter((f) => !f._dirSourced);
+    this.activeIndex = this.fonts.length > 0 ? Math.min(this.activeIndex, this.fonts.length - 1) : -1;
+    await this._scanDirectory();
+    this._notify();
+  }
+
+  /** Cycle to the next/prev VISIBLE font. dir=1 next, dir=-1 prev. Hidden
+   *  fonts are skipped entirely, as if they weren't in the library. */
+  cycle(dir = 1) {
+    const visible = this.visibleFonts;
+    if (visible.length === 0) return;
+    const curPos = visible.findIndex((v) => v.index === this.activeIndex);
+    const nextPos = curPos < 0 ? 0 : (curPos + dir + visible.length) % visible.length;
+    this.activeIndex = visible[nextPos].index;
+    this._notify();
+  }
+
+  /** Explicitly activate a specific (visible) font by index — the switcher
+   *  popup's click-to-select interaction. No-ops on a hidden or out-of-
+   *  range index rather than surfacing something the user just hid. */
+  select(index) {
+    const font = this.fonts[index];
+    if (!font || font.hidden) return;
+    this.activeIndex = index;
+    this._notify();
+  }
+
+  /** Hide a font: excluded from `cycle` and the switcher's main list until
+   *  `unhide`. If it was active, auto-advances to the next visible font (or
+   *  clears to "no font" if none remain). Data stays in memory — this is a
+   *  visibility toggle, not a removal. */
+  hide(index) {
+    const font = this.fonts[index];
+    if (!font || font.hidden) return;
+    font.hidden = true;
+    if (this.activeIndex === index) {
+      this._activateNextVisible(index);
+    } else {
+      this._notify(); // list membership changed even though the active font didn't
+    }
+  }
+
+  /** Restore a hidden font to the rotation. Does not auto-activate it. */
+  unhide(index) {
+    const font = this.fonts[index];
+    if (!font || !font.hidden) return;
+    font.hidden = false;
+    this._notify();
+  }
+
+  _activateNextVisible(fromIndex) {
+    const n = this.fonts.length;
+    for (let step = 1; step <= n; step++) {
+      const idx = (fromIndex + step) % n;
+      if (!this.fonts[idx].hidden) {
+        this.activeIndex = idx;
+        this._notify();
+        return;
+      }
+    }
+    this.activeIndex = -1; // nothing visible left
+    this._notify();
+  }
+
+  _notify() {
+    if (this.onChange) this.onChange(this.active);
   }
 }
 
-/** Drop-in for SimpleSynth: routes each note to the active SF2 engine,
- * falling back to the oscillator synth when no font is loaded. */
+/**
+ * Routes noteOn to the SF2 engine when a font is loaded, else to the fallback.
+ * Mirrors SimpleSynth's shape so main.js can use it as a drop-in `synth`.
+ */
 export class SynthRouter {
-  constructor(fallbackSynth) {
-    this.fallback = fallbackSynth;
-    this.sf2 = null;
-    this.enabled = true;
+  constructor(fallback) {
+    this.fallback = fallback;
+    this.sf2 = null; // Sf2Synth instance (may have no loaded font)
+  }
+
+  setSf2Engine(sf2Engine) {
+    this.sf2 = sf2Engine;
+  }
+
+  /** The active engine: SF2 synth if a font is loaded, else fallback. */
+  get current() {
+    return (this.sf2 && this.sf2.sf2) ? this.sf2 : this.fallback;
   }
 
   connectConductor(conductor) {
@@ -93,7 +238,23 @@ export class SynthRouter {
   }
 
   noteOn(evt) {
-    if (!this.enabled) return;
-    (this.sf2 || this.fallback).noteOn(evt);
+    const engine = this.current;
+    if (engine) engine.noteOn(evt);
+  }
+
+  get enabled() { return this.current?.enabled ?? true; }
+  set enabled(v) {
+    if (this.fallback) this.fallback.enabled = v;
+    if (this.sf2) this.sf2.enabled = v;
+  }
+
+  /** Silences every currently-sounding voice. The SF2 engine tracks voices
+   *  explicitly and needs an active fade+stop; the fallback SimpleSynth's
+   *  notes are all short oscillator/noise bursts with no persistent voice
+   *  list, so there's nothing to forward to there. Call this before
+   *  starting a new song (or swapping fonts) so the outgoing song's notes
+   *  never bleed into the incoming one. */
+  stopAll() {
+    this.sf2?.stopAll?.();
   }
 }

@@ -1,51 +1,53 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { listZipEntries, extractZipEntry } from '../src/utils/zip.js';
-import { buildZip } from './helpers/zipFixture.js';
+import { extractZip } from '../src/utils/zip.js';
+import { buildStoredZip, buildDeflateZip } from './helpers/zipFixture.js';
 
-const enc = new TextEncoder();
+const fileA = new TextEncoder().encode('Hello SF2 World');
+const fileB = new TextEncoder().encode('Second file content');
 
-const storedData = new Uint8Array([0, 1, 2, 250, 251, 252, 127, 128, 42]);
-const textData = enc.encode('SoundFonts inside zips inside tests. '.repeat(40));
+test('extractZip extracts a stored (method 0) single file', async () => {
+  const zip = buildStoredZip([{ name: 'test.txt', data: fileA }]);
+  const files = await extractZip(zip);
+  assert.equal(files.size, 1);
+  assert.ok(files.has('test.txt'));
+  assert.deepEqual([...files.get('test.txt')], [...fileA]);
+});
 
-test('listZipEntries walks the central directory', () => {
-  const zip = buildZip([
-    { name: 'fonts/one.sf2', data: storedData, method: 0 },
-    { name: 'two.sf2', data: textData, method: 8 },
+test('extractZip extracts multiple stored files', async () => {
+  const zip = buildStoredZip([
+    { name: 'a.txt', data: fileA },
+    { name: 'b.txt', data: fileB },
   ]);
-  const entries = listZipEntries(zip);
-  assert.equal(entries.length, 2);
-  assert.equal(entries[0].name, 'fonts/one.sf2');
-  assert.equal(entries[0].method, 0);
-  assert.equal(entries[0].size, storedData.length);
-  assert.equal(entries[1].name, 'two.sf2');
-  assert.equal(entries[1].method, 8);
-  assert.equal(entries[1].size, textData.length);
-  assert.ok(entries[1].compSize < textData.length, 'deflate actually compressed');
+  const files = await extractZip(zip);
+  assert.equal(files.size, 2);
+  assert.deepEqual([...files.get('a.txt')], [...fileA]);
+  assert.deepEqual([...files.get('b.txt')], [...fileB]);
 });
 
-test('extractZipEntry returns stored entries byte-identical', async () => {
-  const zip = buildZip([{ name: 'raw.sf2', data: storedData, method: 0 }]);
-  const [entry] = listZipEntries(zip);
-  const out = new Uint8Array(await extractZipEntry(zip, entry));
-  assert.deepEqual([...out], [...storedData]);
+test('extractZip decompresses deflate (method 8) entries', async () => {
+  const zip = buildDeflateZip([{ name: 'deflated.txt', data: fileA }]);
+  const files = await extractZip(zip);
+  assert.equal(files.size, 1);
+  assert.deepEqual([...files.get('deflated.txt')], [...fileA]);
 });
 
-test('extractZipEntry inflates deflate entries', async () => {
-  const zip = buildZip([{ name: 'packed.sf2', data: textData, method: 8 }]);
-  const [entry] = listZipEntries(zip);
-  const out = new Uint8Array(await extractZipEntry(zip, entry));
-  assert.equal(out.length, textData.length);
-  assert.deepEqual([...out.subarray(0, 40)], [...textData.subarray(0, 40)]);
-  assert.deepEqual([...out.subarray(-10)], [...textData.subarray(-10)]);
+test('extractZip skips directory entries (trailing slash)', async () => {
+  const zip = buildStoredZip([{ name: 'fonts/', data: new Uint8Array(0) }]);
+  const files = await extractZip(zip);
+  assert.equal(files.size, 0);
+  assert.ok(!files.has('fonts/'));
 });
 
-test('listZipEntries rejects non-zip data', () => {
-  assert.throws(() => listZipEntries(new Uint8Array(64).buffer), /not a zip/);
+test('extractZip throws on invalid data', async () => {
+  const bad = new Uint8Array([0, 1, 2, 3, 4, 5]).buffer;
+  await assert.rejects(() => extractZip(bad), /EOCD/);
 });
 
-test('extractZipEntry rejects unsupported compression methods', async () => {
-  const zip = buildZip([{ name: 'weird.sf2', data: storedData, method: 0 }]);
-  const [entry] = listZipEntries(zip);
-  await assert.rejects(() => extractZipEntry(zip, { ...entry, method: 12 }), /unsupported zip method/);
+test('extractZip handles nested paths in filenames', async () => {
+  const zip = buildStoredZip([{ name: 'subdir/nested.sf2', data: fileA }]);
+  const files = await extractZip(zip);
+  assert.equal(files.size, 1);
+  assert.ok(files.has('subdir/nested.sf2'));
+  assert.deepEqual([...files.get('subdir/nested.sf2')], [...fileA]);
 });

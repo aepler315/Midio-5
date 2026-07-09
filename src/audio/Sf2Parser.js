@@ -1,173 +1,458 @@
-// A pragmatic SoundFont 2 parser: RIFF walk -> sample data + a flattened
-// zone table per (bank, program). Deliberately a playback subset, not a
-// spec-complete reader: key/vel ranges, sample addressing + loops, the
-// volume envelope, tuning, and attenuation -- the generators that decide
-// what you hear. Modulators, filters, LFOs, and stereo links are ignored.
+// SoundFont 2 (SF2) parser. Parses RIFF/sfbk structure, extracts sample data
+// and preset/zone definitions with global-zone folding and preset×instrument
+// range intersection. Converts timecent/centibel envelope generators to
+// seconds/linear for direct use by the synth.
+//
+// parseSf2(buffer, fallbackName) → {
+//   name: string,
+//   samples: [{ name, start, end, loopStart, loopEnd, sampleRate, rootKey, fineTune, link, type }],
+//   sampleData: Int16Array,            // raw PCM from sdta/smpl
+//   presets: Map(bank*128+prog → { name, bank, program, zones: [
+//     { loKey, hiKey, loVel, hiVel, sampleIndex,
+//       attack, hold, decay, sustain, release,  // seconds / linear
+//       loopMode, pan, fineTune, coarseTune, attenuation },
+//   ]}),
+// }
 
+const RIFF = 'RIFF';
+const SFBK = 'sfbk';
+const LIST = 'LIST';
+const INFO = 'INFO';
+const SDTA = 'sdta';
+const PDTA = 'pdta';
+
+// Generator opcodes (SF2 spec §8.5)
 const GEN = {
-  START_OFS: 0, END_OFS: 1, LOOPSTART_OFS: 2, LOOPEND_OFS: 3,
-  ATTACK: 34, HOLD: 35, DECAY: 36, SUSTAIN: 37, RELEASE: 38,
-  INSTRUMENT: 41, KEY_RANGE: 43, VEL_RANGE: 44, ATTENUATION: 48,
-  COARSE_TUNE: 51, FINE_TUNE: 52, SAMPLE_ID: 53, SAMPLE_MODES: 54,
-  ROOT_KEY: 58,
+  PAN: 17,
+  DECAY_VOL: 33,       // timecents
+  SUSTAIN_VOL: 34,     // centibels (sustain LEVEL below peak)
+  ATTACK_VOL: 36,      // timecents
+  HOLD_VOL: 37,        // timecents
+  KEY_TO_VOL_DECAY: 38,
+  INSTRUMENT: 41,      // preset zones → instrument index
+  KEY_RANGE: 43,       // lo/hi byte pair
+  VEL_RANGE: 44,       // lo/hi byte pair
+  INITIAL_ATTENUATION: 48, // 0.1 dB units
+  COARSE_TUNE: 50,     // semitones
+  FINE_TUNE: 51,       // cents
+  SAMPLE_ID: 53,       // instrument zones → sample header index
+  SAMPLE_MODES: 55,    // 0=none, 1=loop
 };
 
-const tc2sec = (tc) => Math.pow(2, tc / 1200); // timecents -> seconds
-const readName = (bytes, off) => {
+// --- timecent / centibel conversions ---
+function tcToSec(tc) {
+  if (tc <= -32768) return 0;
+  return Math.pow(2, tc / 1200);
+}
+function cbToLinear(cb) {
+  // centibels below peak → linear gain (0 cb = full, -100 cb = -10 dB ≈ 0.316)
+  if (cb <= -32768) return 0;
+  return Math.pow(10, cb / 200); // cb/10 = dB → 10^(-dB/20) = 10^(-cb/200)
+}
+
+// --- RIFF utilities ---
+function fourcc(dv, off) {
+  return String.fromCharCode(dv.getUint8(off), dv.getUint8(off + 1), dv.getUint8(off + 2), dv.getUint8(off + 3));
+}
+function u16(dv, off) { return dv.getUint16(off, true); }
+function u32(dv, off) { return dv.getUint32(off, true); }
+function i16(dv, off) { return dv.getInt16(off, true); }
+function i32(dv, off) { return dv.getInt32(off, true); }
+
+function readName(u8, off, len) {
+  // Null-terminated ASCII, padded to field length
   let s = '';
-  for (let i = 0; i < 20; i++) { const c = bytes[off + i]; if (!c) break; s += String.fromCharCode(c); }
-  return s.trim();
-};
+  for (let i = 0; i < len; i++) {
+    const b = u8[off + i];
+    if (b === 0) break;
+    s += String.fromCharCode(b);
+  }
+  return s;
+}
 
-export function parseSf2(buffer, fallbackName = 'soundfont') {
-  const view = new DataView(buffer);
-  const bytes = new Uint8Array(buffer);
-  const tag = (p) => String.fromCharCode(bytes[p], bytes[p + 1], bytes[p + 2], bytes[p + 3]);
-  if (tag(0) !== 'RIFF' || tag(8) !== 'sfbk') throw new Error('not an sf2 file');
+/**
+ * @param {ArrayBuffer} buffer
+ * @param {string} [fallbackName]
+ * @returns {{name:string, samples:Array, sampleData:Int16Array, presets:Map}}
+ */
+export function parseSf2(buffer, fallbackName = 'Unknown SoundFont') {
+  const dv = new DataView(buffer);
+  const u8 = new Uint8Array(buffer);
 
-  // Walk the top-level LIST chunks and collect the sub-chunks we need.
-  const chunks = {}; // id -> {offset, size} (pdta sub-chunks + smpl)
-  let name = fallbackName;
-  let p = 12;
-  while (p + 8 <= buffer.byteLength) {
-    const id = tag(p);
-    const size = view.getUint32(p + 4, true);
-    if (id === 'LIST') {
-      const listType = tag(p + 8);
-      let q = p + 12;
-      const end = p + 8 + size;
-      while (q + 8 <= end) {
-        const cid = tag(q);
-        const csize = view.getUint32(q + 4, true);
-        if (listType === 'sdta' && cid === 'smpl') chunks.smpl = { offset: q + 8, size: csize };
-        if (listType === 'pdta') chunks[cid] = { offset: q + 8, size: csize };
-        if (listType === 'INFO' && cid === 'INAM') {
-          name = new TextDecoder().decode(bytes.subarray(q + 8, q + 8 + csize)).replace(/\0.*$/, '').trim() || fallbackName;
-        }
-        q += 8 + csize + (csize & 1);
+  if (fourcc(dv, 0) !== RIFF || fourcc(dv, 8) !== SFBK) {
+    throw new Error('sf2: not a valid SF2 RIFF file');
+  }
+
+  // Walk top-level LIST chunks starting at offset 12
+  let off = 12;
+  let fontName = fallbackName;
+  let sampleData = null;
+  let pdta = null;
+
+  while (off + 8 <= buffer.byteLength) {
+    const tag = fourcc(dv, off);
+    const size = u32(dv, off + 4);
+    if (tag === LIST && off + 12 <= buffer.byteLength) {
+      const listType = fourcc(dv, off + 8);
+      const dataStart = off + 12;
+
+      if (listType === INFO) {
+        const n = parseInfoList(dv, u8, dataStart, size - 4);
+        if (n) fontName = n;
+      } else if (listType === SDTA) {
+        sampleData = parseSdtaList(dv, dataStart, size - 4);
+      } else if (listType === PDTA) {
+        pdta = parsePdtaList(dv, u8, dataStart, size - 4);
       }
     }
-    p += 8 + size + (size & 1);
-  }
-  for (const need of ['smpl', 'phdr', 'pbag', 'pgen', 'inst', 'ibag', 'igen', 'shdr']) {
-    if (!chunks[need]) throw new Error(`sf2 missing ${need} chunk`);
+    off += 8 + size + (size & 1); // word-aligned
   }
 
-  // 16-bit PCM sample pool.
-  const sampleData = new Int16Array(buffer, chunks.smpl.offset, Math.floor(chunks.smpl.size / 2));
+  if (!sampleData) throw new Error('sf2: no sample data (sdta/smpl) found');
+  if (!pdta) throw new Error('sf2: no preset data (pdta) found');
 
-  // shdr: sample headers.
-  const samples = [];
-  for (let o = chunks.shdr.offset; o + 46 <= chunks.shdr.offset + chunks.shdr.size; o += 46) {
-    samples.push({
-      name: readName(bytes, o),
-      start: view.getUint32(o + 20, true),
-      end: view.getUint32(o + 24, true),
-      loopStart: view.getUint32(o + 28, true),
-      loopEnd: view.getUint32(o + 32, true),
-      sampleRate: view.getUint32(o + 36, true) || 44100,
-      originalKey: bytes[o + 40] <= 127 ? bytes[o + 40] : 60,
-      correction: view.getInt8(o + 41),
-      type: view.getUint16(o + 44, true),
+  const presets = buildPresets(pdta, fontName);
+
+  return {
+    name: fontName,
+    samples: pdta.shdr,
+    sampleData,
+    presets,
+  };
+}
+
+// --- INFO list: find INAM (font name) ---
+function parseInfoList(dv, u8, start, size) {
+  const end = start + size;
+  let off = start;
+  while (off + 8 <= end) {
+    const tag = fourcc(dv, off);
+    const csz = u32(dv, off + 4);
+    if (tag === 'INAM') {
+      return readName(u8, off + 8, csz);
+    }
+    off += 8 + csz + (csz & 1);
+  }
+  return null;
+}
+
+// --- sdta list: find smpl chunk (raw 16-bit PCM) ---
+function parseSdtaList(dv, start, size) {
+  const end = start + size;
+  let off = start;
+  while (off + 8 <= end) {
+    const tag = fourcc(dv, off);
+    const csz = u32(dv, off + 4);
+    if (tag === 'smpl') {
+      // 16-bit signed samples → Int16Array view over the chunk
+      return new Int16Array(dv.buffer, off + 8, csz / 2);
+    }
+    off += 8 + csz + (csz & 1);
+  }
+  return null;
+}
+
+// --- pdta list: parse phdr, pbag, pgen, inst, ibag, igen, shdr ---
+function parsePdtaList(dv, u8, start, size) {
+  const end = start + size;
+  let off = start;
+  const chunks = {};
+  while (off + 8 <= end) {
+    const tag = fourcc(dv, off);
+    const csz = u32(dv, off + 4);
+    const dataOff = off + 8;
+    chunks[tag] = { dataOff, size: csz };
+    off += 8 + csz + (csz & 1);
+  }
+
+  return {
+    phdr: parsePhdr(dv, u8, chunks.phdr),
+    pbag: parsePbag(dv, chunks.pbag),
+    pgen: parseGen(dv, chunks.pgen),
+    inst: parseInst(dv, u8, chunks.inst),
+    ibag: parsePbag(dv, chunks.ibag),
+    igen: parseGen(dv, chunks.igen),
+    shdr: parseShdr(dv, u8, chunks.shdr),
+  };
+}
+
+// phdr: 38 bytes per preset
+function parsePhdr(dv, u8, chunk) {
+  if (!chunk) return [];
+  const items = [];
+  const n = Math.floor(chunk.size / 38);
+  for (let i = 0; i < n; i++) {
+    const o = chunk.dataOff + i * 38;
+    items.push({
+      name: readName(u8, o, 20),
+      preset: u16(dv, o + 20),
+      bank: u16(dv, o + 22),
+      bagNdx: u16(dv, o + 24),
     });
   }
-  samples.pop(); // terminal EOS record
+  return items;
+}
 
-  const readBags = (c) => {
-    const out = [];
-    for (let o = c.offset; o + 4 <= c.offset + c.size; o += 4) out.push(view.getUint16(o, true));
-    return out; // genIdx stream (we ignore modIdx)
-  };
-  const readGens = (c) => {
-    const out = [];
-    for (let o = c.offset; o + 4 <= c.offset + c.size; o += 4) {
-      out.push({ op: view.getUint16(o, true), raw: view.getUint16(o + 2, true), amt: view.getInt16(o + 2, true) });
-    }
-    return out;
-  };
-  const pbag = readBags(chunks.pbag), pgen = readGens(chunks.pgen);
-  const ibag = readBags(chunks.ibag), igen = readGens(chunks.igen);
-
-  // inst: instrument -> flattened zones (global zone folded in).
-  const instruments = [];
-  const instRecords = [];
-  for (let o = chunks.inst.offset; o + 22 <= chunks.inst.offset + chunks.inst.size; o += 22) {
-    instRecords.push({ name: readName(bytes, o), bagIdx: view.getUint16(o + 20, true) });
+// pbag/ibag: 4 bytes per entry (genNdx, modNdx)
+function parsePbag(dv, chunk) {
+  if (!chunk) return [];
+  const items = [];
+  const n = Math.floor(chunk.size / 4);
+  for (let i = 0; i < n; i++) {
+    const o = chunk.dataOff + i * 4;
+    items.push({ genNdx: u16(dv, o), modNdx: u16(dv, o + 2) });
   }
-  for (let i = 0; i < instRecords.length - 1; i++) {
+  return items;
+}
+
+// pgen/igen: 4 bytes per entry (genOper: uint16, val: uint16)
+function parseGen(dv, chunk) {
+  if (!chunk) return [];
+  const items = [];
+  const n = Math.floor(chunk.size / 4);
+  for (let i = 0; i < n; i++) {
+    const o = chunk.dataOff + i * 4;
+    items.push({ oper: u16(dv, o), val: u16(dv, o + 2), valS: i16(dv, o + 2) });
+  }
+  return items;
+}
+
+// inst: 22 bytes per instrument (name[20] + bagNdx: uint16)
+function parseInst(dv, u8, chunk) {
+  if (!chunk) return [];
+  const items = [];
+  const n = Math.floor(chunk.size / 22);
+  for (let i = 0; i < n; i++) {
+    const o = chunk.dataOff + i * 22;
+    items.push({ name: readName(u8, o, 20), bagNdx: u16(dv, o + 20) });
+  }
+  return items;
+}
+
+// shdr: 46 bytes per sample header
+function parseShdr(dv, u8, chunk) {
+  if (!chunk) return [];
+  const items = [];
+  const n = Math.floor(chunk.size / 46);
+  for (let i = 0; i < n; i++) {
+    const o = chunk.dataOff + i * 46;
+    items.push({
+      name: readName(u8, o, 20),
+      start: u32(dv, o + 20),
+      end: u32(dv, o + 24),
+      loopStart: u32(dv, o + 28),
+      loopEnd: u32(dv, o + 32),
+      sampleRate: u32(dv, o + 36),
+      rootKey: u8[o + 40],
+      fineTune: dv.getInt8(o + 41), // int8 correction (cents), NOT int16 — byte 42 is sampleLink
+      link: u16(dv, o + 42),
+      type: u16(dv, o + 44),
+    });
+  }
+  return items;
+}
+
+// --- Generator helpers ---
+
+// Collect generators for a bag range into a flat object.
+function collectGens(gens, start, end) {
+  const out = {};
+  for (let i = start; i < end; i++) {
+    const g = gens[i];
+    if (!g) break;
+    if (g.oper === GEN.KEY_RANGE) {
+      out.loKey = g.val & 0xff;
+      out.hiKey = (g.val >> 8) & 0xff;
+    } else if (g.oper === GEN.VEL_RANGE) {
+      out.loVel = g.val & 0xff;
+      out.hiVel = (g.val >> 8) & 0xff;
+    } else if (g.oper === GEN.INSTRUMENT) {
+      out.instrument = g.val;
+    } else if (g.oper === GEN.SAMPLE_ID) {
+      out.sampleIndex = g.val;
+    } else if (g.oper === GEN.PAN) {
+      out.pan = g.valS / 500; // 0.1% → -1..1
+    } else if (g.oper === GEN.ATTACK_VOL) {
+      out.attackTc = g.valS;
+    } else if (g.oper === GEN.HOLD_VOL) {
+      out.holdTc = g.valS;
+    } else if (g.oper === GEN.DECAY_VOL) {
+      out.decayTc = g.valS;
+    } else if (g.oper === GEN.SUSTAIN_VOL) {
+      out.sustainCb = g.valS;
+    } else if (g.oper === GEN.KEY_TO_VOL_DECAY) {
+      out.keyToDecay = g.valS;
+    } else if (g.oper === GEN.SAMPLE_MODES) {
+      out.loopMode = g.val & 1;
+    } else if (g.oper === GEN.FINE_TUNE) {
+      out.fineTune = g.valS;
+    } else if (g.oper === GEN.COARSE_TUNE) {
+      out.coarseTune = g.valS;
+    } else if (g.oper === GEN.INITIAL_ATTENUATION) {
+      out.attenuationCb = g.valS; // 0.1 dB units → divide by 10 for dB
+    }
+  }
+  return out;
+}
+
+// Build preset→zone map with global-zone folding + instrument range intersection.
+function buildPresets(pdta, fontName) {
+  const { phdr, pbag, pgen, inst, ibag, igen, shdr } = pdta;
+  const presets = new Map();
+
+  for (let p = 0; p < phdr.length - 1; p++) {
+    // Last phdr entry is a sentinel; iterate to phdr.length - 1
+    const ph = phdr[p];
+    const bagStart = ph.bagNdx;
+    const bagEnd = phdr[p + 1] ? phdr[p + 1].bagNdx : pbag.length;
+    const key = ph.bank * 128 + ph.preset;
+
+    // Walk preset bags: collect global gens, then per-zone gens
+    let presetGlobal = null;
+    const presetZones = [];
+
+    for (let b = bagStart; b < bagEnd; b++) {
+      const bag = pbag[b];
+      const gStart = bag.genNdx;
+      const gEnd = (pbag[b + 1] && pbag[b + 1].genNdx !== undefined)
+        ? pbag[b + 1].genNdx
+        : pgen.length;
+      const gens = collectGens(pgen, gStart, gEnd);
+
+      if (gens.instrument === undefined) {
+        // Global zone — fold into presetGlobal
+        if (!presetGlobal) presetGlobal = {};
+        Object.assign(presetGlobal, gens);
+      } else {
+        // Specific zone — merge global + local
+        const merged = { ...(presetGlobal || {}), ...gens };
+        // Defaults
+        if (merged.loKey === undefined) merged.loKey = 0;
+        if (merged.hiKey === undefined) merged.hiKey = 127;
+        if (merged.loVel === undefined) merged.loVel = 0;
+        if (merged.hiVel === undefined) merged.hiVel = 127;
+        presetZones.push(merged);
+      }
+    }
+
+    // For each preset zone, expand into instrument zones
     const zones = [];
-    let global = null;
-    for (let b = instRecords[i].bagIdx; b < instRecords[i + 1].bagIdx; b++) {
-      const gens = igen.slice(ibag[b], ibag[b + 1] ?? igen.length);
-      const zone = global ? { ...global } : {
-        keyLo: 0, keyHi: 127, velLo: 0, velHi: 127, sampleIdx: -1, rootKey: -1,
-        startOfs: 0, endOfs: 0, loopStartOfs: 0, loopEndOfs: 0, modes: 0,
-        attack: 0.002, hold: 0, decay: 0.4, sustain: 1, release: 0.25,
-        attenuation: 0, coarse: 0, fine: 0,
-      };
-      for (const g of gens) {
-        switch (g.op) {
-          case GEN.KEY_RANGE: zone.keyLo = g.raw & 0xff; zone.keyHi = (g.raw >> 8) & 0xff; break;
-          case GEN.VEL_RANGE: zone.velLo = g.raw & 0xff; zone.velHi = (g.raw >> 8) & 0xff; break;
-          case GEN.SAMPLE_ID: zone.sampleIdx = g.raw; break;
-          case GEN.ROOT_KEY: zone.rootKey = g.amt; break;
-          case GEN.START_OFS: zone.startOfs = g.amt; break;
-          case GEN.END_OFS: zone.endOfs = g.amt; break;
-          case GEN.LOOPSTART_OFS: zone.loopStartOfs = g.amt; break;
-          case GEN.LOOPEND_OFS: zone.loopEndOfs = g.amt; break;
-          case GEN.SAMPLE_MODES: zone.modes = g.raw & 3; break;
-          case GEN.ATTACK: zone.attack = tc2sec(g.amt); break;
-          case GEN.HOLD: zone.hold = tc2sec(g.amt); break;
-          case GEN.DECAY: zone.decay = tc2sec(g.amt); break;
-          case GEN.SUSTAIN: zone.sustain = Math.pow(10, -Math.max(0, Math.min(1440, g.amt)) / 200); break;
-          case GEN.RELEASE: zone.release = tc2sec(g.amt); break;
-          case GEN.ATTENUATION: zone.attenuation = g.amt; break;
-          case GEN.COARSE_TUNE: zone.coarse = g.amt; break;
-          case GEN.FINE_TUNE: zone.fine = g.amt; break;
+    for (const pz of presetZones) {
+      const instIdx = pz.instrument;
+      const instrument = inst[instIdx];
+      if (!instrument) continue;
+
+      const iBagStart = instrument.bagNdx;
+      const iBagEnd = (inst[instIdx + 1] && inst[instIdx + 1].bagNdx !== undefined)
+        ? inst[instIdx + 1].bagNdx
+        : ibag.length;
+
+      // Walk instrument bags. Two passes: first collect every zone's raw
+      // generators (and which sample indices they reference), THEN build
+      // the final zone list — the second pass needs to know the full set of
+      // referenced samples up front to decide whether a stereo-linked
+      // sample (see below) already has its partner hand-authored as its own
+      // zone, or needs to be synthesized.
+      let instGlobal = null;
+      const rawZones = [];
+
+      for (let b = iBagStart; b < iBagEnd; b++) {
+        const bag = ibag[b];
+        const gStart = bag.genNdx;
+        const gEnd = (ibag[b + 1] && ibag[b + 1].genNdx !== undefined)
+          ? ibag[b + 1].genNdx
+          : igen.length;
+        const gens = collectGens(igen, gStart, gEnd);
+
+        if (gens.sampleIndex === undefined) {
+          // Global zone for this instrument
+          if (!instGlobal) instGlobal = {};
+          Object.assign(instGlobal, gens);
+        } else {
+          // Merge: instrument global → instrument zone → preset zone
+          // (preset zone values override for ranges; instrument zone for sample/envelope)
+          const merged = { ...(instGlobal || {}), ...gens };
+
+          // Range intersection
+          const loKey = Math.max(pz.loKey, merged.loKey ?? 0);
+          const hiKey = Math.min(pz.hiKey, merged.hiKey ?? 127);
+          const loVel = Math.max(pz.loVel, merged.loVel ?? 0);
+          const hiVel = Math.min(pz.hiVel, merged.hiVel ?? 127);
+
+          if (loKey > hiKey || loVel > hiVel) continue; // no overlap
+
+          rawZones.push({ merged, loKey, hiKey, loVel, hiVel });
         }
       }
-      if (zone.sampleIdx < 0) { global = zone; continue; } // a global zone carries defaults
-      zones.push(zone);
+
+      const referencedSamples = new Set(rawZones.map((z) => z.merged.sampleIndex));
+
+      for (const { merged, loKey, hiKey, loVel, hiVel } of rawZones) {
+        const hasExplicitPan = merged.pan !== undefined;
+        let pan = merged.pan ?? 0;
+
+        // Stereo sample-link pair (SF2 spec §7.10 sampleType: 2=rightSample,
+        // 4=leftSample, ROM equivalents +0x8000). Some fonts encode a stereo
+        // instrument as ONE explicit zone per side with each sample's own
+        // `sampleLink` pointing at its partner, relying on the player to
+        // locate and also play the linked sample — as opposed to the (also
+        // common, already-handled-by-the-code-above) pattern of two
+        // explicit zones each with its own PAN generator. Detect the
+        // link-only pattern and synthesize the missing zone so these fonts
+        // aren't silently reduced to a single channel.
+        const sample = shdr[merged.sampleIndex];
+        const baseType = sample ? (sample.type & 0x7fff) : 0; // strip the ROM bit
+        const isStereoHalf = baseType === 2 || baseType === 4; // right | left
+        if (isStereoHalf && !hasExplicitPan) pan = baseType === 4 ? -1 : 1;
+
+        // Build zone with envelope in seconds/linear
+        zones.push({
+          loKey,
+          hiKey,
+          loVel,
+          hiVel,
+          sampleIndex: merged.sampleIndex,
+          attack: tcToSec(merged.attackTc ?? -12000),
+          hold: tcToSec(merged.holdTc ?? -12000),
+          decay: tcToSec(merged.decayTc ?? -12000),
+          sustain: cbToLinear(merged.sustainCb ?? 0),
+          release: 0.05, // SF2 has no explicit releaseVolEnv generator; use musical default
+          loopMode: merged.loopMode ?? 0,
+          pan,
+          fineTune: merged.fineTune ?? 0,
+          coarseTune: merged.coarseTune ?? 0,
+          attenuation: merged.attenuationCb != null
+            ? Math.pow(10, -merged.attenuationCb / 200) // 0.1 dB units → linear
+            : 1,
+        });
+
+        if (isStereoHalf && sample.link !== undefined && shdr[sample.link] && !referencedSamples.has(sample.link)) {
+          referencedSamples.add(sample.link); // don't pair it again within this instrument
+          zones.push({
+            loKey,
+            hiKey,
+            loVel,
+            hiVel,
+            sampleIndex: sample.link,
+            attack: tcToSec(merged.attackTc ?? -12000),
+            hold: tcToSec(merged.holdTc ?? -12000),
+            decay: tcToSec(merged.decayTc ?? -12000),
+            sustain: cbToLinear(merged.sustainCb ?? 0),
+            release: 0.05,
+            loopMode: merged.loopMode ?? 0,
+            pan: baseType === 4 ? 1 : -1, // the linked partner sits on the opposite side
+            fineTune: merged.fineTune ?? 0,
+            coarseTune: merged.coarseTune ?? 0,
+            attenuation: merged.attenuationCb != null
+              ? Math.pow(10, -merged.attenuationCb / 200)
+              : 1,
+          });
+        }
+      }
     }
-    instruments.push({ name: instRecords[i].name, zones });
+
+    presets.set(key, { name: ph.name, bank: ph.bank, program: ph.preset, zones });
   }
 
-  // phdr/pbag/pgen: presets -> instrument links (+ preset-level key filter & tuning adds).
-  const presets = new Map(); // bank*128+program -> zones[]
-  const phdrRecords = [];
-  for (let o = chunks.phdr.offset; o + 38 <= chunks.phdr.offset + chunks.phdr.size; o += 38) {
-    phdrRecords.push({
-      name: readName(bytes, o),
-      program: view.getUint16(o + 20, true),
-      bank: view.getUint16(o + 22, true),
-      bagIdx: view.getUint16(o + 24, true),
-    });
-  }
-  for (let i = 0; i < phdrRecords.length - 1; i++) {
-    const rec = phdrRecords[i];
-    const flat = [];
-    for (let b = rec.bagIdx; b < phdrRecords[i + 1].bagIdx; b++) {
-      const gens = pgen.slice(pbag[b], pbag[b + 1] ?? pgen.length);
-      let keyLo = 0, keyHi = 127, velLo = 0, velHi = 127, coarse = 0, fine = 0, atten = 0, instIdx = -1;
-      for (const g of gens) {
-        if (g.op === GEN.KEY_RANGE) { keyLo = g.raw & 0xff; keyHi = (g.raw >> 8) & 0xff; }
-        else if (g.op === GEN.VEL_RANGE) { velLo = g.raw & 0xff; velHi = (g.raw >> 8) & 0xff; }
-        else if (g.op === GEN.COARSE_TUNE) coarse = g.amt;
-        else if (g.op === GEN.FINE_TUNE) fine = g.amt;
-        else if (g.op === GEN.ATTENUATION) atten = g.amt;
-        else if (g.op === GEN.INSTRUMENT) instIdx = g.raw;
-      }
-      if (instIdx < 0 || !instruments[instIdx]) continue; // global preset zone: rare adds, skipped
-      for (const z of instruments[instIdx].zones) {
-        // Intersect ranges; add preset-level tuning/attenuation.
-        const kLo = Math.max(keyLo, z.keyLo), kHi = Math.min(keyHi, z.keyHi);
-        const vLo = Math.max(velLo, z.velLo), vHi = Math.min(velHi, z.velHi);
-        if (kLo > kHi || vLo > vHi) continue;
-        flat.push({ ...z, keyLo: kLo, keyHi: kHi, velLo: vLo, velHi: vHi, coarse: z.coarse + coarse, fine: z.fine + fine, attenuation: z.attenuation + atten });
-      }
-    }
-    if (flat.length) presets.set(rec.bank * 128 + rec.program, { name: rec.name, zones: flat });
-  }
-
-  return { name, samples, sampleData, presets };
+  return presets;
 }
