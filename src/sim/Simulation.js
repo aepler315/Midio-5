@@ -17,6 +17,7 @@ import { GnatGag } from './GnatGag.js';
 import { HypeDirector } from './HypeDirector.js';
 import { VibeDirector } from './VibeDirector.js';
 import { EnsembleDirector } from './EnsembleDirector.js';
+import { ExcursionDirector } from './ExcursionDirector.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
@@ -54,6 +55,7 @@ export class Simulation {
     this.hype = new HypeDirector();
     this.vibe = new VibeDirector(conductor.timeline);
     this.ensemble = new EnsembleDirector(songSeed, { stageW: canvasWidth, stageH: canvasHeight });
+    this.excursions = new ExcursionDirector(conductor.durationMs || 0);
     this.gnat = new GnatGag(songSeed, { canvasWidth, canvasHeight });
     this.groundField = new GroundField(this.midio.groundY, {
       conductor, durationMs: conductor.durationMs, songSeed,
@@ -133,6 +135,15 @@ export class Simulation {
     this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.obstacles);
     this.performer.update(nowMs, dtSec, this.midio, this.jump, this.comboSystem, this.calm.level, this.ensemble);
     this.impactFX.step(dtSec);
+
+    // Decides whether Midasus or Broshi leaves the ensemble this frame;
+    // triggering here (before their own update() calls below) means a
+    // freshly-launched excursion starts animating in this very frame
+    // rather than waiting one extra tick.
+    this.excursions.update(nowMs, dtSec, {
+      vibe: this.vibe, calm: this.calm, hype: this.hype, energyCurves: this.energyCurves,
+      conductor: this.conductor, midasus: this.midasus, broshi: this.broshi, worldX: this.worldX,
+    });
 
     this.midasus.update(nowMs, dtSec, this.calm.level, {
       x: this.ensemble.anchors[2].x, y: this.ensemble.anchors[2].y,
