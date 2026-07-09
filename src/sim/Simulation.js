@@ -144,7 +144,9 @@ export class Simulation {
     this.ensemble.setPresence(2, this.midasus.voyage.active ? 0 : 1);
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level, {
       trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
-    });
+    }, this.groundField);
+    // He's underground -> same presence handoff as Midasus's voyage.
+    this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
     this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge; // drops surge every phenomena system
     this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level);
     if (this.biomes.cutFlashJustFired) { this.camera.punch(1.06); this.camera.shake(6); }

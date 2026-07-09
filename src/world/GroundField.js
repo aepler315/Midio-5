@@ -118,6 +118,22 @@ export class GroundField {
     for (const s of group) s._gagRecoverAtMs = recoverMs;
   }
 
+  /** A one-off deformation at a world-x, reusing the scripted gag's own
+   * sink/recover spring physics (elastic overshoot included) instead of any
+   * new physics -- Broshi's mole-ridge surface tell and burrow eruption
+   * both just call this with different sag depths and hold times.
+   * `sagPx` follows the same sign convention as the gag: positive sinks the
+   * ground, negative rises it (a small negative sag reads as a mole-ridge
+   * bump; a larger positive one reads as the ground giving way). */
+  pulseAt(nowMs, worldX, sagPx, recoverAtMs) {
+    const s = this._sliceAt(worldX);
+    if (!s) return;
+    s._gagSinkAtMs = nowMs;
+    s._gagSinkTarget = sagPx;
+    s._gagRecoverAtMs = recoverAtMs;
+    s._recoveredFired = false;
+  }
+
   update(nowMs, dtSec, worldX, energyCurves) {
     this.justRecovered = false;
     this._nowMs = nowMs;
@@ -148,7 +164,7 @@ export class GroundField {
             s._gagSinkAtMs = undefined; // gag fully resolved, back to plain band-driven behavior
           }
         } else if (nowMs >= s._gagSinkAtMs) {
-          target = GAG_SAG_PX;
+          target = s._gagSinkTarget ?? GAG_SAG_PX;
         }
       }
 

@@ -10,6 +10,7 @@ import { ObjectPool } from '../utils/ObjectPool.js';
 import { BROSHI_BODY, BROSHI_HEAD, BROSHI_JAW, BROSHI_EYE, BROSHI_TAIL } from '../render/meshes.js';
 import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh } from '../render/MeshDrawer.js';
 import { ModalRing } from '../render/oscillators.js';
+import { Burrow } from './Burrow.js';
 
 const K = 26, C = 3.4; // spring stiffness (s^-2), damping (s^-1)
 const D_TRAIL = -140, D_SURGE = 120, D_PANIC = -220;
@@ -97,6 +98,9 @@ export class Broshi {
     this._trailTarget = D_TRAIL;
     this._ensPhase = null;
     this._melt = 0;
+    // Occasional underground excursion: drawn beneath the world (see
+    // Renderer.js), fog-of-war dirt-sight owned entirely by Burrow.
+    this.burrow = new Burrow(seed + 2);
 
     conductor.onBar((bar) => this._onBar(bar));
     conductor.on(Role.RHYTHM, (evt) => {
@@ -104,6 +108,12 @@ export class Broshi {
       else if (evt.vel >= 0.3) this._onMiniHopTrigger(evt);
     });
     conductor.on(Role.MELODY, (evt) => this._onHeadBob(evt));
+  }
+
+  /** Test/debug hook: send him underground right now regardless of natural
+   * triggers. No-op if he's already away. */
+  forceBurrow(nowMs, worldX) {
+    return this.burrow.trigger(nowMs, { x: this.screenX, y: this.groundY }, worldX, this.groundY);
   }
 
   _onBar(bar) {
@@ -153,7 +163,7 @@ export class Broshi {
     this._neckPending = { vel: evt.vel };
   }
 
-  update(nowMs, dtSec, midio, energyCurves, obstacles, worldX, groundY, calmLevel = 0, ensemble = null) {
+  update(nowMs, dtSec, midio, energyCurves, obstacles, worldX, groundY, calmLevel = 0, ensemble = null, groundField = null) {
     this._calmLevel = calmLevel;
     this._ensPhase = ensemble ? ensemble.phase : null;
     this._melt = ensemble ? ensemble.melt : 0;
@@ -275,6 +285,12 @@ export class Broshi {
     this._nowMs = nowMs;
     this.groundY = groundY;
     this.screenX = midio.screenX + this.xRel;
+
+    // Locomotion/rendering above keeps running harmlessly underneath (so a
+    // resurface never has to catch up on anything); once he's away,
+    // draw() skips him here and Renderer draws the underground band
+    // instead (see Burrow.draw, called directly from Renderer.js).
+    this.burrow.update(nowMs, dtSec, worldX, groundField);
   }
 
   _startHop(nowMs, vel) {
@@ -296,6 +312,7 @@ export class Broshi {
   }
 
   draw(ctx) {
+    if (this.burrow.depth > 0.02) return; // he's underground; Renderer draws the Burrow band instead
     const skinHex = hexLerp('#63c74d', '#e43b44', this.rho);
     const skinRgb = hexToRgb(skinHex);
     const baseHue = rgbToHsl(skinRgb.r, skinRgb.g, skinRgb.b).h;

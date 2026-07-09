@@ -54,6 +54,11 @@ export class Renderer {
       this._drawGround(ctx, canvas, pose, sim.midio.groundY);
     }
 
+    // Broshi's underground excursion: drawn beneath the world -- literally
+    // inside the earth, under everything that walks on it -- rather than
+    // inside BiomeManager's sky/parallax stack.
+    if (sim.broshi) sim.broshi.burrow.draw(ctx, pose.worldX, pose.midioX);
+
     if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
     if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY);
     if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
