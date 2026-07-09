@@ -21,12 +21,31 @@
         </label>
       </div>
       <button id="demoBtn" type="button">Play procedural demo (no file needed)</button>
+      <div class="sfRow">
+        <span class="sfLabel">SoundFont</span>
+        <label class="ghostbtn">
+          Add .sf2 / .zip
+          <input id="sf2Input" type="file" accept=".sf2,.zip" multiple hidden />
+        </label>
+        <label class="ghostbtn">
+          Add folder
+          <input id="sf2FolderInput" type="file" webkitdirectory hidden />
+        </label>
+        <button id="sf2DirBtn" type="button" class="ghostbtn">Use directory ongoing</button>
+      </div>
+      <p id="sf2Status" class="hint hidden"></p>
       <p id="progressText" class="hint hidden"></p>
       <p class="hint">Press <kbd>`</kbd> during play to open the vision/tuning debug overlay.</p>
     </div>
 
     <div id="hud" class="hidden">
       <div id="comboReadout">×1.0</div>
+    </div>
+
+    <div id="fontBar">
+      <button id="fontPrev" type="button" aria-label="Previous soundfont">&#8249;</button>
+      <span id="fontName"></span>
+      <button id="fontNext" type="button" aria-label="Next soundfont">&#8250;</button>
     </div>
 
     <div id="completePanel" class="panel hidden">

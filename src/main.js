@@ -9,6 +9,8 @@ import { Simulation } from './sim/Simulation.js';
 import { Renderer } from './render/Renderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
+import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
+import { Sf2Synth } from './audio/Sf2Synth.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 
@@ -26,6 +28,14 @@ const completePanelEl = document.getElementById('completePanel');
 const completeStatsEl = document.getElementById('completeStats');
 const playAgainBtnEl = document.getElementById('playAgainBtn');
 const debugOverlayEl = document.getElementById('debugOverlay');
+const sf2InputEl = document.getElementById('sf2Input');
+const sf2FolderInputEl = document.getElementById('sf2FolderInput');
+const sf2DirBtnEl = document.getElementById('sf2DirBtn');
+const sf2StatusEl = document.getElementById('sf2Status');
+const fontBarEl = document.getElementById('fontBar');
+const fontPrevEl = document.getElementById('fontPrev');
+const fontNameEl = document.getElementById('fontName');
+const fontNextEl = document.getElementById('fontNext');
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -57,8 +67,86 @@ async function bootAudio() {
   if (audioEngine) return;
   audioEngine = new AudioEngine();
   await audioEngine.resume();
-  synth = new SimpleSynth(audioEngine);
+  // Router in front of the oscillator synth: when a soundfont is active,
+  // notes play through its samples; otherwise the SimpleSynth fallback.
+  synth = new SynthRouter(new SimpleSynth(audioEngine));
+  applyActiveFont();
 }
+
+// --- SoundFont library (single .sf2, .zip of them, folder, or a persistent
+// --- directory handle) + the in-play cycler bar. -------------------------
+const fontLibrary = new SoundfontLibrary();
+const sf2EngineCache = new Map(); // font entry -> Sf2Synth (buffers are per-font)
+
+function applyActiveFont() {
+  const font = fontLibrary.active;
+  fontNameEl.textContent = font
+    ? `${fontLibrary.activeIdx + 1}/${fontLibrary.fonts.length} · ${font.name}`
+    : 'Built-in synth';
+  if (!synth || !audioEngine) return; // re-applied by bootAudio once audio exists
+  if (!font) { synth.sf2 = null; return; }
+  let engine = sf2EngineCache.get(font);
+  if (!engine) {
+    try {
+      engine = new Sf2Synth(audioEngine, font.parsed);
+      sf2EngineCache.set(font, engine);
+    } catch (err) {
+      console.warn(`soundfont: could not build engine for ${font.name}:`, err.message);
+      synth.sf2 = null;
+      return;
+    }
+  }
+  synth.sf2 = engine;
+}
+fontLibrary.onChange = applyActiveFont;
+
+function showSf2Status() {
+  const n = fontLibrary.fonts.length;
+  if (n === 0) {
+    sf2StatusEl.textContent = 'No .sf2 files found.';
+  } else {
+    sf2StatusEl.textContent = `${n} soundfont${n === 1 ? '' : 's'} loaded · active: ${fontLibrary.active.name} · cycle with ‹ › during play`;
+  }
+  sf2StatusEl.classList.remove('hidden');
+}
+
+sf2InputEl.addEventListener('change', async (e) => {
+  if (!e.target.files.length) return;
+  await fontLibrary.addFiles(e.target.files);
+  showSf2Status();
+  e.target.value = '';
+});
+sf2FolderInputEl.addEventListener('change', async (e) => {
+  if (!e.target.files.length) return;
+  await fontLibrary.addFiles(e.target.files);
+  showSf2Status();
+  e.target.value = '';
+});
+sf2DirBtnEl.addEventListener('click', async () => {
+  try {
+    const handle = await window.showDirectoryPicker();
+    await fontLibrary.useDirectory(handle);
+    showSf2Status();
+  } catch { /* user cancelled the picker */ }
+});
+if (!window.showDirectoryPicker) sf2DirBtnEl.classList.add('hidden');
+
+// The cycler bar appears on mouse movement and fades back out after 3s of
+// stillness, so it never sits over the visualization uninvited.
+const FONT_BAR_IDLE_MS = 3000;
+let fontBarTimer = 0;
+function pokeFontBar() {
+  if (!running || fontLibrary.fonts.length === 0) return;
+  fontBarEl.classList.add('visible');
+  clearTimeout(fontBarTimer);
+  fontBarTimer = setTimeout(() => fontBarEl.classList.remove('visible'), FONT_BAR_IDLE_MS);
+}
+window.addEventListener('mousemove', pokeFontBar);
+// A cursor resting on the bar itself shouldn't have it vanish underneath it.
+fontBarEl.addEventListener('mouseenter', () => clearTimeout(fontBarTimer));
+fontBarEl.addEventListener('mouseleave', pokeFontBar);
+fontPrevEl.addEventListener('click', () => { fontLibrary.cycle(-1); pokeFontBar(); });
+fontNextEl.addEventListener('click', () => { fontLibrary.cycle(1); pokeFontBar(); });
 
 function startTimeline(timelineData) {
   fitCanvas();
@@ -84,7 +172,7 @@ function startTimeline(timelineData) {
   requestAnimationFrame(frame);
 
   // Exposed for the debug overlay and for smoke-testing internals.
-  window.__SMW = { conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay };
+  window.__SMW = { conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary };
 }
 
 async function loadMidiFile(file) {
@@ -210,6 +298,7 @@ window.addEventListener('keydown', (e) => {
 function onSongComplete() {
   running = false;
   hudEl.classList.add('hidden');
+  fontBarEl.classList.remove('visible');
   const combo = sim.comboSystem;
   completeStatsEl.textContent = `Peak streak: ${combo.streak} · Final combo: ×${combo.displayM.toFixed(1)}`;
   // Mario Paint title-screen treatment: each letter wobbles on its own beat.
