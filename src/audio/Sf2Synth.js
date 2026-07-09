@@ -22,6 +22,25 @@ const ROLE_PROGRAMS = {
 
 const presetKey = (bank, program) => bank * 128 + program;
 
+/**
+ * Blends a soundfont zone's own authored pan (its stereo-pair spread, or
+ * just a static instrument placement) with the MIDI channel's pan (CC#10,
+ * or the intertwined-pair pan-out curve). A plain sum+clamp lets an extreme
+ * track pan fight the font's own L/R pair apart — e.g. a hard-right track
+ * (evtPan=+1) plus a hard-left zone (zonePan=-1) sums to 0, dragging the
+ * "left" half of a stereo pair back to dead center while its "right" half
+ * clamps to +1, skewing the image. This blend instead treats `evtPan` as
+ * the track's mandatory center: as it approaches ±1 it proportionally
+ * compresses (never cancels) the zone's own spread, so a fully hard-panned
+ * track collapses stereo zones to its single side by design, while a
+ * centered track leaves the font's authored stereo width fully intact.
+ * Bounded to [-1,1] by construction (|evtPan| + |zonePan|*(1-|evtPan|) <=
+ * |evtPan| + (1-|evtPan|) = 1); the clamp is defensive only.
+ */
+export function combinePan(evtPan, zonePan) {
+  return Math.max(-1, Math.min(1, evtPan + zonePan * (1 - Math.abs(evtPan))));
+}
+
 export class Sf2Synth {
   constructor(audioEngine) {
     this.ae = audioEngine;
@@ -31,12 +50,31 @@ export class Sf2Synth {
     this._voices = [];
   }
 
+  /** Immediately fades and stops every currently-sounding voice. Called
+   *  before swapping fonts or starting a new song so the outgoing font's
+   *  notes never bleed into the incoming one. */
+  stopAll() {
+    const ctx = this.ae?.ctx;
+    for (const voice of this._voices) {
+      try {
+        if (voice.gain && ctx) {
+          const now = ctx.currentTime;
+          voice.gain.gain.cancelScheduledValues(now);
+          voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+          voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.02);
+        }
+        voice.src?.stop?.(ctx ? ctx.currentTime + 0.03 : 0);
+      } catch { /* already ended */ }
+    }
+    this._voices = [];
+  }
+
   /** Load a parsed SF2 (from parseSf2) or an ArrayBuffer. Pass null to unload. */
   loadSf2(parsedOrBuffer, name) {
+    this.stopAll();
     if (parsedOrBuffer == null) {
       this.sf2 = null;
       this._buffers.clear();
-      this._voices = [];
       return;
     }
     if (parsedOrBuffer instanceof ArrayBuffer) {
@@ -45,7 +83,6 @@ export class Sf2Synth {
       this.sf2 = parsedOrBuffer;
     }
     this._buffers.clear();
-    this._voices = [];
     return this.sf2;
   }
 
@@ -73,15 +110,22 @@ export class Sf2Synth {
    * Resolves the preset to play: a real MIDI program (from the source file)
    * wins when the loaded font has a matching bank-0 preset, so a track keeps
    * its authored instrument instead of always falling back to the role's
-   * generic default. RHYTHM always stays in bank 128 (drum kits), but still
-   * honors the specific kit variant the MIDI selected via Program Change.
+   * generic default. RHYTHM always stays in bank 128 (drum kits) first, but
+   * still honors the specific kit variant the MIDI selected via Program
+   * Change. Every role ends in a last-resort scan of the whole font so a
+   * font that simply doesn't have the "usual" programs (a single-instrument
+   * export, a strings-only pack, a drum-kit-only pack) still makes SOME
+   * sound instead of dropping notes silently — melodic roles never borrow a
+   * drum-kit preset, and RHYTHM only borrows a melodic one if the font has
+   * no drum kit at all.
    */
   _findPreset(role, program) {
     if (role === Role.RHYTHM) {
       const kit = program >= 0 ? program : 0;
       return this.sf2.presets.get(presetKey(128, kit))
           || this.sf2.presets.get(presetKey(128, 0))
-          || null;
+          || this._firstInBank(128)
+          || this._anyPreset();
     }
     if (program >= 0) {
       const p = this.sf2.presets.get(presetKey(0, program));
@@ -89,8 +133,28 @@ export class Sf2Synth {
     }
     const cfg = ROLE_PROGRAMS[role] || ROLE_PROGRAMS[Role.MELODY];
     return this.sf2.presets.get(presetKey(cfg.bank, cfg.program))
-        || this.sf2.presets.get(0) // bank 0, program 0 fallback
-        || null;
+        || this.sf2.presets.get(0) // bank 0, program 0
+        || this._firstInBank(0)
+        || this._anyPreset(128); // never hand a melodic note a drum kit
+  }
+
+  /** First preset found in `bank`, in Map insertion (file) order, or null. */
+  _firstInBank(bank) {
+    for (const preset of this.sf2.presets.values()) {
+      if (preset.bank === bank) return preset;
+    }
+    return null;
+  }
+
+  /** Any preset at all — the true last resort for a font with unconventional
+   *  bank numbers (nothing in bank 0 or 128). `excludeBank` skips a bank
+   *  (e.g. the drum bank for melodic-role callers). Null only when the font
+   *  has zero presets. */
+  _anyPreset(excludeBank = -1) {
+    for (const preset of this.sf2.presets.values()) {
+      if (preset.bank !== excludeBank) return preset;
+    }
+    return null;
   }
 
   _getBuffer(sampleIndex) {
@@ -169,10 +233,8 @@ export class Sf2Synth {
     // Release
     gain.gain.exponentialRampToValueAtTime(0.0001, relStart + rel);
 
-    // Routing: gain → (stereoPanner →) master. Combines the soundfont's own
-    // sample pan with the MIDI channel's pan (CC#10, or the intertwined-pair
-    // pan-out curve), summed and clamped to the valid range.
-    const combinedPan = Math.max(-1, Math.min(1, (zone.pan || 0) + (evt.pan || 0)));
+    // Routing: gain → (stereoPanner →) master. See combinePan() above.
+    const combinedPan = combinePan(evt.pan || 0, zone.pan || 0);
     if (combinedPan && typeof ctx.createStereoPanner === 'function') {
       const panner = ctx.createStereoPanner();
       panner.pan.value = combinedPan;

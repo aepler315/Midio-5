@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSf2 } from '../src/audio/Sf2Parser.js';
-import { buildMinimalSf2, buildBadSf2 } from './helpers/sf2Fixture.js';
+import { buildMinimalSf2, buildBadSf2, buildStereoLinkSf2, buildDualZoneStereoSf2 } from './helpers/sf2Fixture.js';
 
 test('parseSf2 extracts the font name from INAM', () => {
   const sf2 = parseSf2(buildMinimalSf2('MyFont'));
@@ -78,4 +78,40 @@ test('parseSf2 sample header has correct fields', () => {
   assert.equal(s.sampleRate, 44100);
   assert.equal(s.rootKey, 60);
   assert.equal(s.fineTune, 0);
+});
+
+test('a stereo sample-link pair (one explicit zone, sampleLink to an unzoned partner) is expanded to both channels', () => {
+  // Some fonts encode a stereo instrument as ONE zone per side, relying on
+  // the player to follow each sample's `sampleLink` to find its partner —
+  // as opposed to hand-authoring two explicit panned zones. Without
+  // following the link, only the named sample's channel would ever sound
+  // ("some soundfonts only play left or right").
+  const sf2 = parseSf2(buildStereoLinkSf2({}));
+  const zones = sf2.presets.get(0).zones;
+  assert.equal(zones.length, 2, 'both the named sample and its linked partner should become zones');
+  const bySample = Object.fromEntries(zones.map((z) => [z.sampleIndex, z]));
+  assert.equal(bySample[0].pan, -1, 'leftSample (type 4) defaults hard left');
+  assert.equal(bySample[1].pan, 1, 'the linked rightSample partner sits on the opposite side');
+});
+
+test('an explicit PAN generator on a stereo-linked zone wins over the type-inferred default', () => {
+  const sf2 = parseSf2(buildStereoLinkSf2({ explicitPan: 0.3 }));
+  const zones = sf2.presets.get(0).zones;
+  const bySample = Object.fromEntries(zones.map((z) => [z.sampleIndex, z]));
+  assert.equal(bySample[0].pan, 0.3, 'the font author\'s own pan is never overridden');
+  assert.equal(bySample[1].pan, 1, 'the synthesized partner (no authored pan of its own) still gets the type default');
+});
+
+test('a font that already hand-authors both stereo-pair zones is not double-paired', () => {
+  // The common, already-working pattern: two explicit zones, each with its
+  // own PAN generator, referencing untyped (non-stereo-linked) samples.
+  // Confirms the new link-expansion logic only adds a zone when the
+  // partner ISN'T already present, so this font still gets exactly 2 zones.
+  const sf2 = parseSf2(buildDualZoneStereoSf2());
+  assert.equal(sf2.presets.get(0).zones.length, 2);
+});
+
+test('an unrelated mono zone (no stereo link) is unaffected by the expansion logic', () => {
+  const sf2 = parseSf2(buildMinimalSf2());
+  assert.equal(sf2.presets.get(0).zones.length, 1);
 });

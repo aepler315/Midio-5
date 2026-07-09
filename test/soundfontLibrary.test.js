@@ -11,9 +11,11 @@ function makeMockSynth() {
     enabled: true,
     sf2: null,
     calls: 0,
+    stopAllCalls: 0,
     noteOn(evt) { this.calls++; },
     connectConductor() { return () => {}; },
     loadSf2(data) { this.sf2 = data; },
+    stopAll() { this.stopAllCalls++; },
   };
 }
 
@@ -224,6 +226,89 @@ test('autoLoadFromServer skips an unreadable file but keeps loading the rest', a
   }
 });
 
+test('hide excludes a font from visibleFonts and cycle, and adds it to hiddenFonts', async () => {
+  const lib = new SoundfontLibrary();
+  await lib.addBuffer('a.sf2', buildMinimalSf2('AlphaFont'));
+  await lib.addBuffer('b.sf2', buildMinimalSf2('BetaFont'));
+  lib.hide(0); // hide AlphaFont
+  assert.deepEqual(lib.visibleFonts.map((v) => v.font.name), ['BetaFont']);
+  assert.deepEqual(lib.hiddenFonts.map((v) => v.font.name), ['AlphaFont']);
+  assert.equal(lib.count, 2, 'hiding never removes the font from memory');
+});
+
+test('hiding the active font auto-advances to the next visible one', async () => {
+  const lib = new SoundfontLibrary();
+  await lib.addBuffer('a.sf2', buildMinimalSf2('AlphaFont'));
+  await lib.addBuffer('b.sf2', buildMinimalSf2('BetaFont'));
+  assert.equal(lib.active.name, 'AlphaFont');
+  lib.hide(0);
+  assert.equal(lib.active.name, 'BetaFont');
+});
+
+test('hiding the only visible font clears active to null', async () => {
+  const lib = new SoundfontLibrary();
+  await lib.addBuffer('a.sf2', buildMinimalSf2('AlphaFont'));
+  lib.hide(0);
+  assert.equal(lib.active, null);
+});
+
+test('hide notifies onChange even when the hidden font was not active', async () => {
+  const lib = new SoundfontLibrary();
+  await lib.addBuffer('a.sf2', buildMinimalSf2('AlphaFont'));
+  await lib.addBuffer('b.sf2', buildMinimalSf2('BetaFont'));
+  let notified = false;
+  lib.onChange = () => { notified = true; };
+  lib.hide(1); // BetaFont, not the active one (Alpha stays active)
+  assert.ok(notified, 'the switcher popup needs to re-render even if the active font is unchanged');
+  assert.equal(lib.active.name, 'AlphaFont');
+});
+
+test('unhide restores a font to visibleFonts without auto-activating it', async () => {
+  const lib = new SoundfontLibrary();
+  await lib.addBuffer('a.sf2', buildMinimalSf2('AlphaFont'));
+  await lib.addBuffer('b.sf2', buildMinimalSf2('BetaFont'));
+  lib.hide(0);
+  assert.equal(lib.active.name, 'BetaFont');
+  lib.unhide(0);
+  assert.deepEqual(lib.visibleFonts.map((v) => v.font.name), ['AlphaFont', 'BetaFont'], 'visibleFonts preserves stable index order, not restoration order');
+  assert.equal(lib.active.name, 'BetaFont', 'unhide restores visibility but does not steal activation');
+});
+
+test('cycle skips hidden fonts entirely', async () => {
+  const lib = new SoundfontLibrary();
+  await lib.addBuffer('a.sf2', buildMinimalSf2('AlphaFont'));
+  await lib.addBuffer('b.sf2', buildMinimalSf2('BetaFont'));
+  await lib.addBuffer('c.sf2', buildMinimalSf2('GammaFont'));
+  lib.hide(1); // hide BetaFont — cycling from Alpha should land on Gamma, not Beta
+  assert.equal(lib.active.name, 'AlphaFont');
+  lib.cycle(1);
+  assert.equal(lib.active.name, 'GammaFont');
+  lib.cycle(1);
+  assert.equal(lib.active.name, 'AlphaFont', 'wraps around skipping the hidden font');
+});
+
+test('select activates a specific visible font and no-ops on a hidden one', async () => {
+  const lib = new SoundfontLibrary();
+  await lib.addBuffer('a.sf2', buildMinimalSf2('AlphaFont'));
+  await lib.addBuffer('b.sf2', buildMinimalSf2('BetaFont'));
+  lib.select(1);
+  assert.equal(lib.active.name, 'BetaFont');
+  lib.hide(0);
+  lib.select(0); // AlphaFont is hidden — selecting it must not surface a hidden font
+  assert.equal(lib.active.name, 'BetaFont');
+});
+
+test('addBuffer after every font was hidden activates the newly added font, not a stale index', async () => {
+  const lib = new SoundfontLibrary();
+  await lib.addBuffer('a.sf2', buildMinimalSf2('AlphaFont'));
+  lib.hide(0);
+  assert.equal(lib.active, null);
+  await lib.addBuffer('b.sf2', buildMinimalSf2('BetaFont'));
+  // Regression: a hardcoded `activeIndex = 0` here would point at the still-
+  // hidden AlphaFont (index 0) instead of the font that was just added.
+  assert.equal(lib.active.name, 'BetaFont');
+});
+
 // --- SynthRouter ---
 
 test('SynthRouter routes to fallback when no SF2 is loaded', () => {
@@ -266,4 +351,20 @@ test('SynthRouter current getter returns the active engine', () => {
   sf2Engine.sf2 = {};
   router.setSf2Engine(sf2Engine);
   assert.equal(router.current, sf2Engine);
+});
+
+test('SynthRouter.stopAll forwards to the SF2 engine when one is set', () => {
+  const fallback = makeMockSynth();
+  const sf2Engine = makeMockSynth();
+  const router = new SynthRouter(fallback);
+  router.setSf2Engine(sf2Engine);
+  router.stopAll();
+  assert.equal(sf2Engine.stopAllCalls, 1);
+  assert.equal(fallback.stopAllCalls, 0, 'the fallback has no persistent voice list to stop');
+});
+
+test('SynthRouter.stopAll is a no-op (never throws) before an SF2 engine is set', () => {
+  const fallback = makeMockSynth();
+  const router = new SynthRouter(fallback);
+  assert.doesNotThrow(() => router.stopAll());
 });

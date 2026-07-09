@@ -33,6 +33,15 @@ function checkpoint(label, cond) {
   if (!ok) throw new Error(`Checkpoint ${step} failed: ${label}`);
 }
 
+// Mock the soundfonts/ manifest to empty BEFORE navigating: the real folder
+// can (and, on this machine, does) hold gigabytes of real user-dropped
+// fonts that would take minutes to fetch+parse sequentially and make every
+// count this test asserts a moving target. This test is about the library
+// API and switcher UI, not the real-folder auto-load mechanism (that's
+// covered by smoke-multitrack.mjs), so a clean, deterministic empty
+// baseline is the right environment for it.
+await page.route('**/soundfonts/', (route) => route.fulfill({ contentType: 'application/json', body: '[]' }));
+
 // Step 1: Load page and start demo
 await page.goto(url, { waitUntil: 'load' });
 await page.click('#demoBtn');
@@ -43,6 +52,7 @@ checkpoint('Demo started', await page.evaluate(() => !!window.__SMW));
 checkpoint('fontLibrary exposed', await page.evaluate(() => !!window.__SMW.fontLibrary));
 checkpoint('sf2Engine exposed', await page.evaluate(() => !!window.__SMW.sf2Engine));
 checkpoint('SynthRouter is the synth', await page.evaluate(() => !!window.__SMW.synth));
+checkpoint('library starts empty (manifest mocked)', await page.evaluate(() => window.__SMW.fontLibrary.count === 0));
 
 // Step 3: Inject a test SoundFont via the library
 const sf2Buffer = buildMinimalSf2('SmokeFont');
@@ -62,27 +72,30 @@ checkpoint('SF2 engine has loaded font', sf2Loaded);
 const routing = await page.evaluate(() => window.__SMW.synth.current === window.__SMW.sf2Engine);
 checkpoint('Router routes to SF2 engine', routing);
 
-// Step 6: Cycle font using raw mouse events (avoids click timeout on auto-hiding bar)
-// First poke the bar with a mouse move, then use raw down/up on #fontNext
-await page.mouse.move(640, 700); // bottom-center area to trigger pokeFontBar
-await page.waitForTimeout(200);
-const nextRect = await page.evaluate(() => {
-  const el = document.getElementById('fontNext');
-  if (!el) return null;
-  const r = el.getBoundingClientRect();
-  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+// Step 6: Switch fonts via the new switcher popup (replaces the old </>
+// arrow cycler). Add a second font, open the popup, click its row to
+// activate it, and confirm the pill + fontLibrary both reflect the switch.
+const sf2Bytes2 = Array.from(new Uint8Array(buildMinimalSf2('SecondFont')));
+await page.evaluate(async (arr) => {
+  await window.__SMW.fontLibrary.addBuffer('second.sf2', new Uint8Array(arr).buffer);
+}, sf2Bytes2);
+await page.click('#fontBarBtn');
+const modalVisible = await page.evaluate(() => !document.getElementById('fontModal').classList.contains('hidden'));
+checkpoint('font switcher popup opens', modalVisible);
+const rowCount = await page.evaluate(() => document.querySelectorAll('#fontModalList .fontRow').length);
+checkpoint('popup lists both fonts', rowCount === 2);
+// Click the row for SecondFont specifically (order in the list follows
+// fonts[] index order, so find it by its rendered name rather than assuming a position).
+await page.evaluate(() => {
+  const row = [...document.querySelectorAll('#fontModalList .fontRow')].find((r) => r.textContent.includes('SecondFont'));
+  row.click();
 });
-checkpoint('fontNext button found', !!nextRect);
-if (nextRect) {
-  // The mouse.move re-pokes the bar (mousemove listener), making it visible
-  await page.mouse.move(nextRect.x, nextRect.y);
-  await page.mouse.down();
-  await page.mouse.up();
-  await page.waitForTimeout(200);
-}
-// Verify font name display updated
+await page.waitForTimeout(100);
 const fontName = await page.evaluate(() => document.getElementById('fontName')?.textContent);
-checkpoint('Font name displayed', fontName === 'SmokeFont');
+checkpoint('Font name displayed', fontName === 'SecondFont');
+await page.click('#fontModalClose');
+const modalClosed = await page.evaluate(() => document.getElementById('fontModal').classList.contains('hidden'));
+checkpoint('popup closes', modalClosed);
 
 // Step 7: Verify SF2 synth is receiving note events
 // Monkey-patch noteOn to count calls
@@ -104,5 +117,5 @@ checkpoint('Zero page errors', errors.length === 0);
 
 // Screenshot
 await page.screenshot({ path: '.smoke-soundfont.png' });
-console.log(`\nSMOKE PASSED (8/8 checkpoints, ${afterCount - noteCount} note events, ${errors.length} errors)`);
+console.log(`\nSMOKE PASSED (${step}/${step} checkpoints, ${afterCount - noteCount} note events, ${errors.length} errors)`);
 await browser.close();

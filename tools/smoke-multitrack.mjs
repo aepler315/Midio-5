@@ -6,7 +6,7 @@
 //   - opposite-panned, overlapping tracks are flagged "intertwined" and
 //     their notes actually ease from center to full pan over the song
 //   - the soundfonts/ folder auto-loads with zero clicks
-//   - the font cycler arrows grey out at <=1 font and re-enable at 2+
+//   - the switcher popup lists every auto-loaded font by name
 //
 // Usage: node tools/serve.js & node tools/smoke-multitrack.mjs [url]
 import { chromium } from 'playwright';
@@ -124,33 +124,39 @@ try {
   const collapsed = await page.evaluate(() => !document.getElementById('trackBadge').classList.contains('expanded'));
   checkpoint('T key toggles the panel closed', collapsed);
 
-  // Step 8: soundfonts/ auto-load — give the background fetch a moment,
-  // then confirm the dropped font loaded with zero clicks and the cycler
-  // arrows correctly grey out since there's only one font.
-  await page.waitForFunction(() => window.__SMW.fontLibrary && window.__SMW.fontLibrary.count >= 1, { timeout: 5000 });
-  const autoLoaded = await page.evaluate(() => ({
-    count: window.__SMW.fontLibrary.count,
-    name: window.__SMW.fontLibrary.active?.name,
-  }));
-  checkpoint(`soundfonts/ auto-loaded (${autoLoaded.name})`, autoLoaded.count === 1 && autoLoaded.name === 'AutoloadFont');
+  // Step 8: soundfonts/ auto-load — confirm the dropped font loaded with
+  // zero clicks and the switcher popup lists it. The real folder can (and,
+  // on this machine, does) hold gigabytes of other real, user-dropped
+  // fonts that take minutes to fetch+parse sequentially, so this checks
+  // for the SPECIFIC dropped font by name/existence rather than any total
+  // count, which would otherwise be a moving target for the entire test.
+  // The dropped filename is dot-prefixed (`.smoke-autoload-*.sf2`), which
+  // sorts before every real filename in the manifest (ASCII '.' < digits <
+  // letters), so it's fetched first and this settles quickly regardless of
+  // how much else is in the folder.
+  await page.waitForFunction(
+    () => window.__SMW.fontLibrary?.fonts?.some((f) => f.name === 'AutoloadFont'),
+    { timeout: 8000 },
+  );
+  checkpoint('soundfonts/ auto-loaded the dropped font with zero clicks', true);
   await page.mouse.move(640, 700); // poke the fontBar open (auto-hides otherwise)
   await page.waitForTimeout(150);
-  const arrowsDisabledAtOne = await page.evaluate(() => ({
-    prev: document.getElementById('fontPrev').classList.contains('disabled'),
-    next: document.getElementById('fontNext').classList.contains('disabled'),
-  }));
-  checkpoint('cycler arrows greyed out with only 1 font', arrowsDisabledAtOne.prev && arrowsDisabledAtOne.next);
+  await page.click('#fontBarBtn');
+  const listedAfterAutoload = await page.evaluate(() =>
+    [...document.querySelectorAll('#fontModalList .fontRow')].some((r) => r.textContent.includes('AutoloadFont')));
+  checkpoint('switcher popup lists the auto-loaded font', listedAfterAutoload);
+  await page.click('#fontModalClose');
 
-  // Step 9: adding a second font re-enables the arrows.
+  // Step 9: adding a second font shows it in the popup too, alongside the
+  // auto-loaded one.
   const sf2Bytes = Array.from(new Uint8Array(buildMinimalSf2('SecondFont')));
   await page.evaluate(async (arr) => {
     await window.__SMW.fontLibrary.addBuffer('second.sf2', new Uint8Array(arr).buffer);
   }, sf2Bytes);
-  const arrowsEnabledAtTwo = await page.evaluate(() => ({
-    prev: document.getElementById('fontPrev').classList.contains('disabled'),
-    next: document.getElementById('fontNext').classList.contains('disabled'),
-  }));
-  checkpoint('cycler arrows re-enable with 2 fonts', !arrowsEnabledAtTwo.prev && !arrowsEnabledAtTwo.next);
+  await page.click('#fontBarBtn');
+  const rows = await page.evaluate(() => [...document.querySelectorAll('#fontModalList .fontRow')].map((r) => r.textContent));
+  checkpoint('switcher popup lists both the auto-loaded and the newly-added font', rows.some((t) => t.includes('AutoloadFont')) && rows.some((t) => t.includes('SecondFont')));
+  await page.click('#fontModalClose');
 
   // Step 10: zero page errors throughout.
   checkpoint('zero page errors', errors.length === 0);

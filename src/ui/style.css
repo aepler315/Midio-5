@@ -110,6 +110,19 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Right-hand cluster of the HUD row: the settings gear + track badge sit
+   side by side. #hud disables pointer-events so the canvas underneath
+   stays clickable; this wrapper opts its interactive children back in. */
+#hudRight {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: auto;
+}
+#settingsBtn {
+  line-height: 1;
+}
+
 #comboReadout {
   font-size: 1.6rem;
   font-weight: 700;
@@ -180,21 +193,20 @@ html, body {
   color: #7ad1ff;
 }
 
-/* Auto-hiding font cycler pill (bottom-center) */
+/* Compact square variant for single-glyph buttons (gear, ×). */
+.iconbtn {
+  padding: 4px 10px;
+  font-size: 1rem;
+  border-radius: 6px;
+}
+
+/* Auto-hiding SoundFont pill (bottom-center) — click to open the switcher
+   popup (#fontModal). */
 #fontBar {
   position: absolute;
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  background: rgba(5, 5, 10, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 24px;
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.85);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.3s ease;
@@ -204,19 +216,27 @@ html, body {
   opacity: 1;
   pointer-events: auto;
 }
+#fontBarBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(5, 5, 10, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+#fontBarBtn:hover { border-color: #7ad1ff; color: #7ad1ff; }
 #fontName {
   min-width: 100px;
+  max-width: 220px;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* Disabled ghost button (font cycler arrows when there's nothing to cycle to) */
-.ghostbtn.disabled {
-  opacity: 0.3;
-  pointer-events: none;
-  cursor: default;
 }
 
 /* Track visibility badge (top-right of the HUD row) — click/tap or press T
@@ -297,3 +317,135 @@ html, body {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   margin-top: 4px;
 }
+
+/* Full-window "drop to play" feedback — shown while dragging a file over
+   the page mid-song (the loader screen's own #dropzone already gives its
+   own drag feedback pre-game, so this only activates once #loader is
+   hidden; see main.js's isLoaderVisible()). pointer-events:none keeps it
+   purely decorative — the actual dragenter/dragover/drop listeners live on
+   `window`, not on this element. */
+#dragOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 3, 8, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 20;
+}
+#dragOverlay.visible { opacity: 1; }
+.dragOverlayMsg {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 20px 40px;
+  border: 3px dashed #ffd76a;
+  border-radius: 16px;
+  color: #ffd76a;
+  background: rgba(5, 5, 10, 0.5);
+}
+
+/* SoundFont switcher popup — lists every loaded font with a click-to-
+   activate row and a × (hide) action; #fontHiddenToggle swaps the same
+   list into the "settings" view of hidden fonts with a + (unhide) action. */
+.modalBackdrop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 3, 8, 0.72);
+  z-index: 30;
+}
+.modalPanel {
+  width: min(420px, 90vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(8, 6, 14, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  flex: none;
+}
+.modalHeader h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  color: #ffd76a;
+}
+.fontList {
+  overflow-y: auto;
+  padding: 8px;
+  flex: 1 1 auto;
+  min-height: 60px;
+}
+.fontListEmpty {
+  opacity: 0.55;
+  font-size: 0.85rem;
+  padding: 20px 12px;
+  text-align: center;
+}
+.fontRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.fontRow:hover { background: rgba(255, 255, 255, 0.06); }
+.fontRow.active { background: rgba(255, 215, 106, 0.12); }
+.fontRow.active .fontRowName { color: #ffd76a; font-weight: 600; }
+.fontRowName {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fontRowAction {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  transition: border-color 0.15s, color 0.15s;
+}
+/* Hide (×) reads as a removal — red accent, matching RHYTHM's roleDot.
+   Unhide (+) reads as a restore — blue accent, matching the shared hover. */
+.fontRowAction[data-action="hide"]:hover { border-color: #ff5a7a; color: #ff5a7a; }
+.fontRowAction[data-action="unhide"]:hover { border-color: #7ad1ff; color: #7ad1ff; }
+.modalFooter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  flex: none;
+}
+.modalFooter .filebtn, .modalFooter .ghostbtn {
+  font-size: 0.78rem;
+  padding: 6px 12px;
+}
+#fontHiddenToggle { margin-left: auto; }

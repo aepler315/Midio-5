@@ -34,20 +34,49 @@
       </div>
       <p class="hint">Or drop <code>.sf2</code>/<code>.zip</code> files into the <code>soundfonts/</code> folder next to <code>index.html</code> — they load automatically, no clicking required.</p>
       <p id="progressText" class="hint hidden"></p>
-      <p class="hint">Press <kbd>`</kbd> during play to open the vision/tuning debug overlay. Press <kbd>T</kbd> to see loaded tracks.</p>
+      <p class="hint">You can drop a different MIDI/audio file in at any time, even mid-song, to switch instantly. Press <kbd>`</kbd> during play to open the vision/tuning debug overlay, <kbd>T</kbd> to see loaded tracks, <kbd>F</kbd> for SoundFonts.</p>
     </div>
 
     <div id="hud" class="hidden">
       <div id="comboReadout">×1.0</div>
-      <div id="trackBadge" class="hidden">
-        <button id="trackBadgeBtn" type="button"></button>
-        <div id="trackList"></div>
+      <div id="hudRight">
+        <button id="settingsBtn" class="ghostbtn iconbtn" type="button" title="SoundFont settings (hidden fonts)">&#9881;</button>
+        <div id="trackBadge" class="hidden">
+          <button id="trackBadgeBtn" type="button"></button>
+          <div id="trackList"></div>
+        </div>
       </div>
     </div>
     <div id="fontBar">
-      <button id="fontPrev" class="ghostbtn">‹</button>
-      <span id="fontName">No font</span>
-      <button id="fontNext" class="ghostbtn">›</button>
+      <button id="fontBarBtn" type="button" title="SoundFonts (F)">
+        <span id="fontName">No font</span>
+      </button>
+    </div>
+
+    <div id="dragOverlay">
+      <div class="dragOverlayMsg">Drop to play</div>
+    </div>
+
+    <div id="fontModal" class="modalBackdrop hidden">
+      <div id="fontModalPanel" class="modalPanel">
+        <div class="modalHeader">
+          <h2 id="fontModalTitle">SoundFonts</h2>
+          <button id="fontModalClose" class="ghostbtn iconbtn" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div id="fontModalList" class="fontList"></div>
+        <div class="modalFooter">
+          <label class="filebtn">
+            Load .sf2 / .zip
+            <input id="fontModalFileInput" type="file" accept=".sf2,.zip" multiple hidden />
+          </label>
+          <label class="filebtn">
+            Folder
+            <input id="fontModalDirInput" type="file" webkitdirectory hidden />
+          </label>
+          <button id="fontModalDirBtn" type="button" class="ghostbtn">Open directory…</button>
+          <button id="fontHiddenToggle" type="button" class="ghostbtn">Hidden (0)</button>
+        </div>
+      </div>
     </div>
 
     <div id="completePanel" class="panel hidden">

@@ -347,8 +347,14 @@ function buildPresets(pdta, fontName) {
         ? inst[instIdx + 1].bagNdx
         : ibag.length;
 
-      // Walk instrument bags
+      // Walk instrument bags. Two passes: first collect every zone's raw
+      // generators (and which sample indices they reference), THEN build
+      // the final zone list — the second pass needs to know the full set of
+      // referenced samples up front to decide whether a stereo-linked
+      // sample (see below) already has its partner hand-authored as its own
+      // zone, or needs to be synthesized.
       let instGlobal = null;
+      const rawZones = [];
 
       for (let b = iBagStart; b < iBagEnd; b++) {
         const bag = ibag[b];
@@ -375,24 +381,70 @@ function buildPresets(pdta, fontName) {
 
           if (loKey > hiKey || loVel > hiVel) continue; // no overlap
 
-          // Build zone with envelope in seconds/linear
+          rawZones.push({ merged, loKey, hiKey, loVel, hiVel });
+        }
+      }
+
+      const referencedSamples = new Set(rawZones.map((z) => z.merged.sampleIndex));
+
+      for (const { merged, loKey, hiKey, loVel, hiVel } of rawZones) {
+        const hasExplicitPan = merged.pan !== undefined;
+        let pan = merged.pan ?? 0;
+
+        // Stereo sample-link pair (SF2 spec §7.10 sampleType: 2=rightSample,
+        // 4=leftSample, ROM equivalents +0x8000). Some fonts encode a stereo
+        // instrument as ONE explicit zone per side with each sample's own
+        // `sampleLink` pointing at its partner, relying on the player to
+        // locate and also play the linked sample — as opposed to the (also
+        // common, already-handled-by-the-code-above) pattern of two
+        // explicit zones each with its own PAN generator. Detect the
+        // link-only pattern and synthesize the missing zone so these fonts
+        // aren't silently reduced to a single channel.
+        const sample = shdr[merged.sampleIndex];
+        const baseType = sample ? (sample.type & 0x7fff) : 0; // strip the ROM bit
+        const isStereoHalf = baseType === 2 || baseType === 4; // right | left
+        if (isStereoHalf && !hasExplicitPan) pan = baseType === 4 ? -1 : 1;
+
+        // Build zone with envelope in seconds/linear
+        zones.push({
+          loKey,
+          hiKey,
+          loVel,
+          hiVel,
+          sampleIndex: merged.sampleIndex,
+          attack: tcToSec(merged.attackTc ?? -12000),
+          hold: tcToSec(merged.holdTc ?? -12000),
+          decay: tcToSec(merged.decayTc ?? -12000),
+          sustain: cbToLinear(merged.sustainCb ?? 0),
+          release: 0.05, // SF2 has no explicit releaseVolEnv generator; use musical default
+          loopMode: merged.loopMode ?? 0,
+          pan,
+          fineTune: merged.fineTune ?? 0,
+          coarseTune: merged.coarseTune ?? 0,
+          attenuation: merged.attenuationCb != null
+            ? Math.pow(10, -merged.attenuationCb / 200) // 0.1 dB units → linear
+            : 1,
+        });
+
+        if (isStereoHalf && sample.link !== undefined && shdr[sample.link] && !referencedSamples.has(sample.link)) {
+          referencedSamples.add(sample.link); // don't pair it again within this instrument
           zones.push({
             loKey,
             hiKey,
             loVel,
             hiVel,
-            sampleIndex: merged.sampleIndex,
+            sampleIndex: sample.link,
             attack: tcToSec(merged.attackTc ?? -12000),
             hold: tcToSec(merged.holdTc ?? -12000),
             decay: tcToSec(merged.decayTc ?? -12000),
             sustain: cbToLinear(merged.sustainCb ?? 0),
-            release: 0.05, // SF2 has no explicit releaseVolEnv generator; use musical default
+            release: 0.05,
             loopMode: merged.loopMode ?? 0,
-            pan: merged.pan ?? 0,
+            pan: baseType === 4 ? 1 : -1, // the linked partner sits on the opposite side
             fineTune: merged.fineTune ?? 0,
             coarseTune: merged.coarseTune ?? 0,
             attenuation: merged.attenuationCb != null
-              ? Math.pow(10, -merged.attenuationCb / 200) // 0.1 dB units → linear
+              ? Math.pow(10, -merged.attenuationCb / 200)
               : 1,
           });
         }

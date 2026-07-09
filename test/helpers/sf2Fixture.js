@@ -117,6 +117,122 @@ export function buildMinimalSf2(name = 'TestFont') {
   return buf;
 }
 
+/**
+ * A font whose ONE preset -> ONE instrument has ONE explicit zone
+ * referencing a "leftSample" (SF2 sampleType=4) whose `sampleLink` points at
+ * an UNZONED "rightSample" (type=2) partner — the link-only stereo pattern
+ * some fonts use instead of hand-authoring two panned zones. If
+ * `explicitPan` is set, the zone also carries its own PAN generator, which
+ * must win over the type-inferred default.
+ */
+export function buildStereoLinkSf2({ name = 'LinkFont', explicitPan = null } = {}) {
+  const smplData = cat(sineSampleBytes(), sineSampleBytes());
+  const smplChunk = cat(fourcc('smpl'), u32(smplData.length), smplData);
+
+  let inamRaw = cat(fourcc('INAM'), u32(name.length + 1), str(name, name.length + 1));
+  if (inamRaw.length & 1) inamRaw.push(0);
+  const infoBody = cat(fourcc('INFO'), inamRaw);
+  const infoList = cat(fourcc('LIST'), u32(infoBody.length), infoBody);
+
+  const sdtaBody = cat(fourcc('sdta'), smplChunk);
+  const sdtaList = cat(fourcc('LIST'), u32(sdtaBody.length), sdtaBody);
+
+  const phdrData = cat(
+    str('P', 20), u16(0), u16(0), u16(0), u32(0), u32(0), u32(0),
+    str('EOP', 20), u16(0), u16(0), u16(1), u32(0), u32(0), u32(0),
+  );
+  const phdrChunk = cat(fourcc('phdr'), u32(phdrData.length), phdrData);
+  const pbagChunk = cat(fourcc('pbag'), u32(4), u16(0), u16(0));
+  const pmodChunk = cat(fourcc('pmod'), u32(10), new Array(10).fill(0));
+  const pgenChunk = cat(fourcc('pgen'), u32(4), u16(41), u16(0));
+  const instData = cat(str('I', 20), u16(0), str('EOI', 20), u16(1));
+  const instChunk = cat(fourcc('inst'), u32(instData.length), instData);
+  const ibagChunk = cat(fourcc('ibag'), u32(4), u16(0), u16(0));
+  const imodChunk = cat(fourcc('imod'), u32(10), new Array(10).fill(0));
+
+  let igenData = cat(
+    u16(43), u16(0 | (127 << 8)), // keyRange full
+    u16(44), u16(0 | (127 << 8)), // velRange full
+  );
+  if (explicitPan !== null) igenData = igenData.concat(u16(17), i16(Math.round(explicitPan * 500)));
+  igenData = igenData.concat(u16(53), u16(0)); // sampleID: 0 (the leftSample), must stay last
+  const igenChunk = cat(fourcc('igen'), u32(igenData.length), igenData);
+
+  const shdrData = cat(
+    str('Left', 20), u32(0), u32(SAMPLE_COUNT), u32(16), u32(SAMPLE_COUNT - 16), u32(SAMPLE_RATE), i8v(60), i8v(0), u16(1), u16(4), // type=4 leftSample, link=1
+    str('Right', 20), u32(SAMPLE_COUNT), u32(SAMPLE_COUNT * 2), u32(SAMPLE_COUNT + 16), u32(SAMPLE_COUNT * 2 - 16), u32(SAMPLE_RATE), i8v(60), i8v(0), u16(0), u16(2), // type=2 rightSample, link=0
+    str('EOS', 20), u32(0), u32(0), u32(0), u32(0), u32(44100), i8v(0), i8v(0), u16(0), u16(0),
+  );
+  const shdrChunk = cat(fourcc('shdr'), u32(shdrData.length), shdrData);
+
+  const pdtaBody = cat(fourcc('pdta'), phdrChunk, pbagChunk, pmodChunk, pgenChunk, instChunk, ibagChunk, imodChunk, igenChunk, shdrChunk);
+  const pdtaList = cat(fourcc('LIST'), u32(pdtaBody.length), pdtaBody);
+  const riffBody = cat(fourcc('sfbk'), infoList, sdtaList, pdtaList);
+  const riff = cat(fourcc('RIFF'), u32(riffBody.length), riffBody);
+  const buf = new ArrayBuffer(riff.length);
+  new Uint8Array(buf).set(riff);
+  return buf;
+}
+
+/**
+ * A font whose ONE preset -> ONE instrument has TWO explicit zones, each
+ * with its own PAN generator (-1 / +1) and its own untyped (type=0) sample —
+ * the "already works" hand-authored stereo pattern, used to confirm the
+ * link-expansion logic never double-pairs a font that doesn't need it.
+ */
+export function buildDualZoneStereoSf2(name = 'DualFont') {
+  const smplData = cat(sineSampleBytes(), sineSampleBytes());
+  const smplChunk = cat(fourcc('smpl'), u32(smplData.length), smplData);
+
+  let inamRaw = cat(fourcc('INAM'), u32(name.length + 1), str(name, name.length + 1));
+  if (inamRaw.length & 1) inamRaw.push(0);
+  const infoBody = cat(fourcc('INFO'), inamRaw);
+  const infoList = cat(fourcc('LIST'), u32(infoBody.length), infoBody);
+
+  const sdtaBody = cat(fourcc('sdta'), smplChunk);
+  const sdtaList = cat(fourcc('LIST'), u32(sdtaBody.length), sdtaBody);
+
+  const phdrData = cat(
+    str('P', 20), u16(0), u16(0), u16(0), u32(0), u32(0), u32(0),
+    str('EOP', 20), u16(0), u16(0), u16(1), u32(0), u32(0), u32(0),
+  );
+  const phdrChunk = cat(fourcc('phdr'), u32(phdrData.length), phdrData);
+  const pbagChunk = cat(fourcc('pbag'), u32(4), u16(0), u16(0));
+  const pmodChunk = cat(fourcc('pmod'), u32(10), new Array(10).fill(0));
+  const pgenChunk = cat(fourcc('pgen'), u32(4), u16(41), u16(0));
+  const instData = cat(str('I', 20), u16(0), str('EOI', 20), u16(2)); // 2 ibag zones
+  const instChunk = cat(fourcc('inst'), u32(instData.length), instData);
+  const ibagChunk = cat(fourcc('ibag'), u32(8), u16(0), u16(0), u16(4), u16(0)); // 2 entries, 4 gens each
+  const imodChunk = cat(fourcc('imod'), u32(10), new Array(10).fill(0));
+  const igenData = cat(
+    u16(43), u16(0 | (127 << 8)), u16(44), u16(0 | (127 << 8)), u16(17), i16(-500), u16(53), u16(0), // zone 1: pan=-1, sample 0
+    u16(43), u16(0 | (127 << 8)), u16(44), u16(0 | (127 << 8)), u16(17), i16(500), u16(53), u16(1),  // zone 2: pan=+1, sample 1
+  );
+  const igenChunk = cat(fourcc('igen'), u32(igenData.length), igenData);
+  const shdrData = cat(
+    str('A', 20), u32(0), u32(SAMPLE_COUNT), u32(16), u32(SAMPLE_COUNT - 16), u32(SAMPLE_RATE), i8v(60), i8v(0), u16(0), u16(0),
+    str('B', 20), u32(SAMPLE_COUNT), u32(SAMPLE_COUNT * 2), u32(SAMPLE_COUNT + 16), u32(SAMPLE_COUNT * 2 - 16), u32(SAMPLE_RATE), i8v(60), i8v(0), u16(0), u16(0),
+    str('EOS', 20), u32(0), u32(0), u32(0), u32(0), u32(44100), i8v(0), i8v(0), u16(0), u16(0),
+  );
+  const shdrChunk = cat(fourcc('shdr'), u32(shdrData.length), shdrData);
+  const pdtaBody = cat(fourcc('pdta'), phdrChunk, pbagChunk, pmodChunk, pgenChunk, instChunk, ibagChunk, imodChunk, igenChunk, shdrChunk);
+  const pdtaList = cat(fourcc('LIST'), u32(pdtaBody.length), pdtaBody);
+  const riffBody = cat(fourcc('sfbk'), infoList, sdtaList, pdtaList);
+  const riff = cat(fourcc('RIFF'), u32(riffBody.length), riffBody);
+  const buf = new ArrayBuffer(riff.length);
+  new Uint8Array(buf).set(riff);
+  return buf;
+}
+
+function sineSampleBytes() {
+  const d = [];
+  for (let i = 0; i < SAMPLE_COUNT; i++) {
+    const v = Math.round(Math.sin((i / SAMPLE_COUNT) * Math.PI * 2) * 0.8 * 32767);
+    d.push(...i16(v));
+  }
+  return d;
+}
+
 export function buildBadSf2() {
   // Not a valid SF2 — wrong magic
   const bytes = [0x00, 0x01, 0x02, 0x03];

@@ -10,7 +10,7 @@ import { extractZip } from '../utils/zip.js';
 
 export class SoundfontLibrary {
   constructor() {
-    /** @type {{name:string, data:object}[]} */
+    /** @type {{name:string, data:object, hidden:boolean, _dirSourced?:boolean}[]} */
     this.fonts = [];
     this.activeIndex = -1;
     this.onChange = null; // (activeFont | null) => void
@@ -25,12 +25,31 @@ export class SoundfontLibrary {
     return this.fonts.length;
   }
 
-  /** Parse an SF2 ArrayBuffer and add it to the library. auto-activates first. */
+  /** Fonts not hidden — what the switcher popup's main list and `cycle`
+   *  operate over. Each entry keeps its real index into `fonts` so the UI
+   *  can call `select`/`hide` without having to re-derive it. */
+  get visibleFonts() {
+    return this.fonts
+      .map((font, index) => ({ font, index }))
+      .filter(({ font }) => !font.hidden);
+  }
+
+  /** Fonts the user hid — what the settings "unhide" panel lists. */
+  get hiddenFonts() {
+    return this.fonts
+      .map((font, index) => ({ font, index }))
+      .filter(({ font }) => font.hidden);
+  }
+
+  /** Parse an SF2 ArrayBuffer and add it to the library. auto-activates the
+   *  very first font ever added (or the next one added after every font
+   *  was hidden/removed) — always the font that was just added, never a
+   *  stale index 0 that might now point at something else. */
   async addBuffer(name, arrayBuffer) {
     const u8 = arrayBuffer instanceof Uint8Array ? arrayBuffer : new Uint8Array(arrayBuffer);
     const parsed = parseSf2(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength), name);
-    this.fonts.push({ name: parsed.name || name, data: parsed });
-    if (this.activeIndex < 0) this.activeIndex = 0;
+    this.fonts.push({ name: parsed.name || name, data: parsed, hidden: false });
+    if (this.activeIndex < 0) this.activeIndex = this.fonts.length - 1;
     this._notify();
     return parsed;
   }
@@ -132,14 +151,61 @@ export class SoundfontLibrary {
     this._notify();
   }
 
-  /** Cycle to the next/prev font. dir=1 next, dir=-1 prev. */
+  /** Cycle to the next/prev VISIBLE font. dir=1 next, dir=-1 prev. Hidden
+   *  fonts are skipped entirely, as if they weren't in the library. */
   cycle(dir = 1) {
-    if (this.fonts.length === 0) return;
-    if (this.activeIndex < 0) {
-      this.activeIndex = 0;
+    const visible = this.visibleFonts;
+    if (visible.length === 0) return;
+    const curPos = visible.findIndex((v) => v.index === this.activeIndex);
+    const nextPos = curPos < 0 ? 0 : (curPos + dir + visible.length) % visible.length;
+    this.activeIndex = visible[nextPos].index;
+    this._notify();
+  }
+
+  /** Explicitly activate a specific (visible) font by index — the switcher
+   *  popup's click-to-select interaction. No-ops on a hidden or out-of-
+   *  range index rather than surfacing something the user just hid. */
+  select(index) {
+    const font = this.fonts[index];
+    if (!font || font.hidden) return;
+    this.activeIndex = index;
+    this._notify();
+  }
+
+  /** Hide a font: excluded from `cycle` and the switcher's main list until
+   *  `unhide`. If it was active, auto-advances to the next visible font (or
+   *  clears to "no font" if none remain). Data stays in memory — this is a
+   *  visibility toggle, not a removal. */
+  hide(index) {
+    const font = this.fonts[index];
+    if (!font || font.hidden) return;
+    font.hidden = true;
+    if (this.activeIndex === index) {
+      this._activateNextVisible(index);
     } else {
-      this.activeIndex = (this.activeIndex + dir + this.fonts.length) % this.fonts.length;
+      this._notify(); // list membership changed even though the active font didn't
     }
+  }
+
+  /** Restore a hidden font to the rotation. Does not auto-activate it. */
+  unhide(index) {
+    const font = this.fonts[index];
+    if (!font || !font.hidden) return;
+    font.hidden = false;
+    this._notify();
+  }
+
+  _activateNextVisible(fromIndex) {
+    const n = this.fonts.length;
+    for (let step = 1; step <= n; step++) {
+      const idx = (fromIndex + step) % n;
+      if (!this.fonts[idx].hidden) {
+        this.activeIndex = idx;
+        this._notify();
+        return;
+      }
+    }
+    this.activeIndex = -1; // nothing visible left
     this._notify();
   }
 
@@ -180,5 +246,15 @@ export class SynthRouter {
   set enabled(v) {
     if (this.fallback) this.fallback.enabled = v;
     if (this.sf2) this.sf2.enabled = v;
+  }
+
+  /** Silences every currently-sounding voice. The SF2 engine tracks voices
+   *  explicitly and needs an active fade+stop; the fallback SimpleSynth's
+   *  notes are all short oscillator/noise bursts with no persistent voice
+   *  list, so there's nothing to forward to there. Call this before
+   *  starting a new song (or swapping fonts) so the outgoing song's notes
+   *  never bleed into the incoming one. */
+  stopAll() {
+    this.sf2?.stopAll?.();
   }
 }
