@@ -32,12 +32,17 @@
         </label>
         <button id="sfDirBtn" type="button" class="ghostbtn">Open directory…</button>
       </div>
+      <p class="hint">Or drop <code>.sf2</code>/<code>.zip</code> files into the <code>soundfonts/</code> folder next to <code>index.html</code> — they load automatically, no clicking required.</p>
       <p id="progressText" class="hint hidden"></p>
-      <p class="hint">Press <kbd>`</kbd> during play to open the vision/tuning debug overlay.</p>
+      <p class="hint">Press <kbd>`</kbd> during play to open the vision/tuning debug overlay. Press <kbd>T</kbd> to see loaded tracks.</p>
     </div>
 
     <div id="hud" class="hidden">
       <div id="comboReadout">×1.0</div>
+      <div id="trackBadge" class="hidden">
+        <button id="trackBadgeBtn" type="button"></button>
+        <div id="trackList"></div>
+      </div>
     </div>
     <div id="fontBar">
       <button id="fontPrev" class="ghostbtn">‹</button>

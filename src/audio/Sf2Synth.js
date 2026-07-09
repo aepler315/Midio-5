@@ -20,6 +20,8 @@ const ROLE_PROGRAMS = {
   [Role.RHYTHM]: { bank: 128, program: 0 },  // Standard Drum Set
 };
 
+const presetKey = (bank, program) => bank * 128 + program;
+
 export class Sf2Synth {
   constructor(audioEngine) {
     this.ae = audioEngine;
@@ -53,7 +55,7 @@ export class Sf2Synth {
 
   noteOn(evt) {
     if (!this.enabled || !this.sf2) return;
-    const preset = this._findPreset(evt.role);
+    const preset = this._findPreset(evt.role, evt.program ?? -1);
     if (!preset) return;
 
     const vel = Math.round(evt.vel * 127);
@@ -67,11 +69,28 @@ export class Sf2Synth {
     }
   }
 
-  _findPreset(role) {
+  /**
+   * Resolves the preset to play: a real MIDI program (from the source file)
+   * wins when the loaded font has a matching bank-0 preset, so a track keeps
+   * its authored instrument instead of always falling back to the role's
+   * generic default. RHYTHM always stays in bank 128 (drum kits), but still
+   * honors the specific kit variant the MIDI selected via Program Change.
+   */
+  _findPreset(role, program) {
+    if (role === Role.RHYTHM) {
+      const kit = program >= 0 ? program : 0;
+      return this.sf2.presets.get(presetKey(128, kit))
+          || this.sf2.presets.get(presetKey(128, 0))
+          || null;
+    }
+    if (program >= 0) {
+      const p = this.sf2.presets.get(presetKey(0, program));
+      if (p) return p;
+    }
     const cfg = ROLE_PROGRAMS[role] || ROLE_PROGRAMS[Role.MELODY];
-    let p = this.sf2.presets.get(cfg.bank * 128 + cfg.program);
-    if (!p) p = this.sf2.presets.get(0); // bank 0, program 0 fallback
-    return p || null;
+    return this.sf2.presets.get(presetKey(cfg.bank, cfg.program))
+        || this.sf2.presets.get(0) // bank 0, program 0 fallback
+        || null;
   }
 
   _getBuffer(sampleIndex) {
@@ -150,10 +169,13 @@ export class Sf2Synth {
     // Release
     gain.gain.exponentialRampToValueAtTime(0.0001, relStart + rel);
 
-    // Routing: gain → (stereoPanner →) master
-    if (zone.pan && typeof ctx.createStereoPanner === 'function') {
+    // Routing: gain → (stereoPanner →) master. Combines the soundfont's own
+    // sample pan with the MIDI channel's pan (CC#10, or the intertwined-pair
+    // pan-out curve), summed and clamped to the valid range.
+    const combinedPan = Math.max(-1, Math.min(1, (zone.pan || 0) + (evt.pan || 0)));
+    if (combinedPan && typeof ctx.createStereoPanner === 'function') {
       const panner = ctx.createStereoPanner();
-      panner.pan.value = Math.max(-1, Math.min(1, zone.pan));
+      panner.pan.value = combinedPan;
       gain.connect(panner);
       panner.connect(this.ae.master);
     } else {

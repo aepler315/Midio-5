@@ -2,3 +2,10 @@ node_modules/
 *.log
 .DS_Store
 .smoke/
+.smoke-soundfont.png
+.smoke-multitrack.png
+
+# User-dropped SoundFonts (see soundfonts/README.md) — never commit binary
+# fonts; the folder itself stays tracked via the README.
+/soundfonts/*.sf2
+/soundfonts/*.zip

@@ -57,6 +57,46 @@ export class SoundfontLibrary {
     }
   }
 
+  /**
+   * Best-effort: fetch tools/serve.js's `/soundfonts/` manifest and load
+   * every font it lists — the "I don't know where to put the .sf2 files"
+   * fix. Silently loads nothing (never throws) when the endpoint is 404,
+   * unreachable, or returns something unexpected, so it's always safe to
+   * fire off at boot even when the app is served by a plain static host
+   * that doesn't implement the manifest route.
+   * @returns {Promise<number>} how many fonts were loaded
+   */
+  async autoLoadFromServer(baseUrl = '/soundfonts/') {
+    let names;
+    try {
+      const res = await fetch(baseUrl);
+      if (!res.ok) return 0;
+      names = await res.json();
+      if (!Array.isArray(names)) return 0;
+    } catch {
+      return 0;
+    }
+
+    let loaded = 0;
+    for (const name of names) {
+      try {
+        const res = await fetch(baseUrl + encodeURIComponent(name));
+        if (!res.ok) continue;
+        const buf = await res.arrayBuffer();
+        if (name.toLowerCase().endsWith('.zip')) {
+          await this._addZipContents(buf, name);
+        } else {
+          await this.addBuffer(name, buf);
+        }
+        loaded++;
+      } catch {
+        // Skip this one file and keep going — a single corrupt/unreadable
+        // font shouldn't block the rest of the manifest from loading.
+      }
+    }
+    return loaded;
+  }
+
   /** File System Access API: load all .sf2/.zip from a directory handle. */
   async useDirectory(dirHandle) {
     this._dirHandle = dirHandle;

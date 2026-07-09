@@ -21,6 +21,26 @@ npm start     # serves the app at http://localhost:5173
 Then open `http://localhost:5173` and either drop a `.mid`/audio file, or
 click **"Play procedural demo"** to run with zero file input.
 
+**MIDI files with many tracks/channels are fully supported** — including
+SMF Type 0 files that multiplex several instruments through one track,
+which get split back out into one voice per channel. During play, a small
+**"N tracks · M roles"** badge appears top-right of the HUD; click it (or
+press `T`) to see every track's name, role, note count, and stereo pan. Any
+pair of tracks that were mixed hard-panned to opposite sides *and* actually
+play together gets a ↔ marker: their stereo spread starts centered and
+eases out to the full authored pan by the end of the song, instead of
+jumping straight to full width on note one.
+
+**SoundFonts (`.sf2`)** give MIDI playback real sampled instruments instead
+of the built-in oscillator synth. Drop `.sf2`/`.zip` files into the
+`soundfonts/` folder next to `index.html` and refresh — `npm start`'s dev
+server auto-loads everything in there, no clicking required (see
+`soundfonts/README.md`). You can also load fonts manually from the title
+screen (file picker, folder picker, or `showDirectoryPicker` on supporting
+browsers). Once 2+ fonts are loaded, the **‹ name ›** pill at the bottom
+cycles between them; with 0 or 1 loaded the arrows grey out since there's
+nothing to cycle to.
+
 Press `` ` `` during play to open the debug overlay (ParamBus state + vision
 loop log); press `V` inside it to toggle the vision self-tuning loop (off by
 default — it calls out to a local Ollama instance at
@@ -54,6 +74,8 @@ node tools/smoke-vision.mjs          # debug overlay + vision loop toggling
 node tools/smoke-full.mjs <mid>      # every system together on a real MIDI file
 node tools/gen-test-wav.mjs <out.wav> <bpm> <seconds>   # synthesize a test click track
 node tools/gen-test-midi.mjs <out.mid> <bars>           # synthesize a multi-track test MIDI file
+node tools/smoke-soundfont.mjs               # SF2 loading, cycling, and routing
+node tools/smoke-multitrack.mjs              # multi-channel voices, pan-out, soundfont auto-load
 ```
 
 `OfflineAudioContext` (used for stem separation) only exists in a browser,

@@ -124,6 +124,106 @@ test('rescanDirectory clears dir-sourced fonts and re-scans', async () => {
   assert.equal(lib.count, 1); // still 1, not 2 (dedup'd)
 });
 
+test('autoLoadFromServer loads every font listed in the manifest', async () => {
+  const lib = new SoundfontLibrary();
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (url === '/soundfonts/') {
+      return { ok: true, json: async () => ['a.sf2', 'b.sf2'] };
+    }
+    if (url.endsWith('a.sf2')) {
+      return { ok: true, arrayBuffer: async () => buildMinimalSf2('AlphaFont') };
+    }
+    if (url.endsWith('b.sf2')) {
+      return { ok: true, arrayBuffer: async () => buildMinimalSf2('BetaFont') };
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const loaded = await lib.autoLoadFromServer('/soundfonts/');
+    assert.equal(loaded, 2);
+    assert.equal(lib.count, 2);
+    assert.equal(lib.active.name, 'AlphaFont'); // first added auto-activates
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test('autoLoadFromServer extracts SF2 fonts from a .zip listed in the manifest', async () => {
+  const lib = new SoundfontLibrary();
+  const sf2Data = new Uint8Array(buildMinimalSf2('ZippedFont'));
+  const zip = buildStoredZip([{ name: 'inner.sf2', data: sf2Data }]);
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (url === '/soundfonts/') return { ok: true, json: async () => ['pack.zip'] };
+    if (url.endsWith('pack.zip')) return { ok: true, arrayBuffer: async () => zip };
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const loaded = await lib.autoLoadFromServer('/soundfonts/');
+    assert.equal(loaded, 1);
+    assert.equal(lib.active.name, 'ZippedFont');
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test('autoLoadFromServer resolves to 0 (never throws) when the manifest 404s', async () => {
+  const lib = new SoundfontLibrary();
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false });
+  try {
+    const loaded = await lib.autoLoadFromServer('/soundfonts/');
+    assert.equal(loaded, 0);
+    assert.equal(lib.count, 0);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test('autoLoadFromServer resolves to 0 (never throws) on a network error', async () => {
+  const lib = new SoundfontLibrary();
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('network down'); };
+  try {
+    const loaded = await lib.autoLoadFromServer('/soundfonts/');
+    assert.equal(loaded, 0);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test('autoLoadFromServer resolves to 0 when the manifest is not a JSON array', async () => {
+  const lib = new SoundfontLibrary();
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ oops: 'not an array' }) });
+  try {
+    const loaded = await lib.autoLoadFromServer('/soundfonts/');
+    assert.equal(loaded, 0);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test('autoLoadFromServer skips an unreadable file but keeps loading the rest', async () => {
+  const lib = new SoundfontLibrary();
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (url === '/soundfonts/') return { ok: true, json: async () => ['broken.sf2', 'good.sf2'] };
+    if (url.endsWith('broken.sf2')) return { ok: false };
+    if (url.endsWith('good.sf2')) return { ok: true, arrayBuffer: async () => buildMinimalSf2('GoodFont') };
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const loaded = await lib.autoLoadFromServer('/soundfonts/');
+    assert.equal(loaded, 1);
+    assert.equal(lib.count, 1);
+    assert.equal(lib.active.name, 'GoodFont');
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
 // --- SynthRouter ---
 
 test('SynthRouter routes to fallback when no SF2 is loaded', () => {

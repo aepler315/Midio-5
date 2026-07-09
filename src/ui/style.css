@@ -211,3 +211,89 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Disabled ghost button (font cycler arrows when there's nothing to cycle to) */
+.ghostbtn.disabled {
+  opacity: 0.3;
+  pointer-events: none;
+  cursor: default;
+}
+
+/* Track visibility badge (top-right of the HUD row) — click/tap or press T
+   to expand the full per-track breakdown of the loaded MIDI. */
+#trackBadge {
+  position: relative;
+  pointer-events: auto;
+}
+#trackBadgeBtn {
+  background: rgba(5, 5, 10, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+#trackBadgeBtn:hover { border-color: #7ad1ff; color: #7ad1ff; }
+
+#trackList {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 260px;
+  max-width: 340px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: rgba(5, 5, 10, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 8px;
+  font-size: 0.78rem;
+}
+#trackBadge.expanded #trackList { display: block; }
+
+.trackRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.trackRow.intertwined { background: rgba(255, 255, 255, 0.05); }
+.trackRow .roleDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.roleDot.role-MELODY { background: #ffd76a; }
+.roleDot.role-BASS   { background: #7ad1ff; }
+.roleDot.role-PAD    { background: #b9a3ff; }
+.roleDot.role-RHYTHM { background: #ff5a7a; }
+
+.trackRow .trackName {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trackRow .trackMeta {
+  flex: none;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+.trackRow .panGlyph {
+  flex: none;
+  width: 1.4em;
+  text-align: center;
+  opacity: 0.8;
+}
+.trackListHint {
+  opacity: 0.5;
+  font-size: 0.72rem;
+  padding: 4px 6px 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 4px;
+}

@@ -35,6 +35,9 @@ const fontBarEl = document.getElementById('fontBar');
 const fontPrevEl = document.getElementById('fontPrev');
 const fontNameEl = document.getElementById('fontName');
 const fontNextEl = document.getElementById('fontNext');
+const trackBadgeEl = document.getElementById('trackBadge');
+const trackBadgeBtnEl = document.getElementById('trackBadgeBtn');
+const trackListEl = document.getElementById('trackList');
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -75,6 +78,8 @@ async function bootAudio() {
   synth.setSf2Engine(sf2Engine);
   fontLibrary = new SoundfontLibrary();
   fontLibrary.onChange = (active) => applyActiveFont(active);
+  // Best-effort background load — never blocks song start (§ soundfonts/README.md).
+  fontLibrary.autoLoadFromServer('/soundfonts/');
 }
 
 function applyActiveFont(active) {
@@ -88,6 +93,11 @@ function applyActiveFont(active) {
   if (fontNameEl) {
     fontNameEl.textContent = active ? active.name : 'No font';
   }
+  // The cycler arrows do nothing with 0 or 1 fonts loaded — grey them out
+  // instead of leaving them clickable-looking but inert.
+  const multi = !!fontLibrary && fontLibrary.count > 1;
+  if (fontPrevEl) fontPrevEl.classList.toggle('disabled', !multi);
+  if (fontNextEl) fontNextEl.classList.toggle('disabled', !multi);
   pokeFontBar();
 }
 
@@ -96,6 +106,58 @@ function pokeFontBar() {
   fontBarEl.classList.add('visible');
   clearTimeout(fontBarTimer);
   fontBarTimer = setTimeout(() => fontBarEl.classList.remove('visible'), 3000);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/** Populates the track badge/list from a loaded MIDI's per-track breakdown
+ *  (multi-track MIDI, visible somewhere). No-ops for non-MIDI sources
+ *  (raw audio file / procedural demo), which carry no track metadata. */
+function renderTracks(tracks, pairs) {
+  if (!trackBadgeEl || !trackBadgeBtnEl || !trackListEl) return;
+  const shown = (tracks || []).filter((t) => t.noteCount > 0);
+  if (shown.length === 0) {
+    trackBadgeEl.classList.add('hidden');
+    trackBadgeEl.classList.remove('expanded');
+    trackListEl.innerHTML = '';
+    return;
+  }
+
+  const roleCount = new Set(shown.map((t) => t.role)).size;
+  trackBadgeBtnEl.textContent =
+    `${shown.length} track${shown.length === 1 ? '' : 's'} \u00b7 ${roleCount} role${roleCount === 1 ? '' : 's'}`;
+
+  const panGlyph = (pan) => (pan <= -0.15 ? '\u25c4' : pan >= 0.15 ? '\u25ba' : '\u25cf');
+  const partnerName = (track) => {
+    const pair = (pairs || []).find((p) => p.channelA === track.channel || p.channelB === track.channel);
+    if (!pair) return null;
+    const otherChannel = pair.channelA === track.channel ? pair.channelB : pair.channelA;
+    const other = shown.find((t) => t.channel === otherChannel);
+    return other ? other.name : null;
+  };
+
+  const rows = shown.map((t) => {
+    const partner = t.intertwined ? partnerName(t) : null;
+    const title = partner ? `Widens apart from "${partner}" over the course of the song` : '';
+    return `<div class="trackRow${t.intertwined ? ' intertwined' : ''}" title="${escapeHtml(title)}">`
+      + `<span class="roleDot role-${t.role}"></span>`
+      + `<span class="trackName">${escapeHtml(t.name)}${partner ? ' \u2194' : ''}</span>`
+      + `<span class="panGlyph">${panGlyph(t.pan)}</span>`
+      + `<span class="trackMeta">${t.noteCount}</span>`
+      + `</div>`;
+  }).join('');
+  const hint = (pairs && pairs.length)
+    ? '<div class="trackListHint">\u2194 tracks were mixed hard-panned opposite and play together — their stereo spread widens gradually over the song.</div>'
+    : '';
+  trackListEl.innerHTML = rows + hint;
+
+  trackBadgeEl.classList.remove('hidden');
+}
+
+function toggleTrackList() {
+  if (trackBadgeEl) trackBadgeEl.classList.toggle('expanded');
 }
 
 function startTimeline(timelineData) {
@@ -110,6 +172,7 @@ function startTimeline(timelineData) {
   renderer = new Renderer(canvas);
   visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false });
   debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop);
+  renderTracks(timelineData.tracks, timelineData.pairs);
 
   simTime = 0;
   acc = 0;
@@ -122,7 +185,10 @@ function startTimeline(timelineData) {
   requestAnimationFrame(frame);
 
   // Exposed for the debug overlay and for smoke-testing internals.
-  window.__SMW = { conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary, sf2Engine };
+  window.__SMW = {
+    conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary, sf2Engine,
+    tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
+  };
 }
 
 async function loadMidiFile(file) {
@@ -240,6 +306,9 @@ if (fontBarEl) {
 // Mouse movement fades in the font bar during playback
 window.addEventListener('mousemove', () => { if (running) pokeFontBar(); });
 
+// --- Track visibility wiring ---
+if (trackBadgeBtnEl) trackBadgeBtnEl.addEventListener('click', () => toggleTrackList());
+
 function frame(tRaf) {
   if (!running) return;
   const nowMs = audioEngine.nowMs;
@@ -281,6 +350,7 @@ window.addEventListener('keydown', (e) => {
   if (!debugOverlay) return;
   if (e.key === '`') { debugOverlay.toggle(); }
   else if (e.key === 'v' || e.key === 'V') { debugOverlay.toggleVision(); }
+  else if (e.key === 't' || e.key === 'T') { toggleTrackList(); }
 });
 
 function onSongComplete() {
