@@ -12,6 +12,7 @@ import {
 } from '../render/marchingSquares.js';
 import { BROSHI_BODY } from '../render/meshes.js';
 import { computeRestLengths, drawMeshPart, meltMesh } from '../render/MeshDrawer.js';
+import { generateBolt } from '../world/Lightning.js';
 
 export const BurrowPhase = Object.freeze({
   IDLE: 'IDLE', DIG_IN: 'DIG_IN', TUNNELING: 'TUNNELING', ERUPT: 'ERUPT',
@@ -29,6 +30,12 @@ const RIDGE_PERIOD_SEC = 1.0; // a mole-ridge surface tell at a fixed cadence
 const MIN_CONTOUR_AREA = 6; // grid-units^2; skip decorating tiny noise-blob contours
 const MAX_SPIKES = 14; // combined stalactite + stalagmite cap
 const MAX_CRYSTALS = 5;
+// Resonance veins: melody-charged crystals arc glowing filaments to each
+// other, building a ley-line network of the motif inside the rock.
+const CHARGE_PER_ONSET = 0.4;
+const CHARGE_TAU_SEC = 2.5;
+const VEIN_CHARGE_MIN = 0.25;
+const VEIN_REGEN_MS = 120; // the filament re-jitters at this cadence, like a held arc
 
 export class Burrow {
   constructor(seed = 1) {
@@ -56,6 +63,7 @@ export class Burrow {
     this.rings = [];   // {age, vel} expanding from his position
     this.drips = [];   // {x, y, vy, age, life} in local cave coords
     this.shards = [];  // {wx, wy, vx, vy, age, life, rot} in world coords
+    this.veins = [];   // {key, i, j, pts, regenAtMs, packetU} between charged crystals
     this.crystalFlash = 0;
     this._bass = 0;
     this.justSurfaced = false; // one-frame flag: Broshi pops a hop off this
@@ -70,17 +78,59 @@ export class Burrow {
     this.crystalFlash = 1;
   }
 
-  /** A melody onset while he's tunneling: the stalactite nearest his x
-   * drips, as though the note shook it loose. */
-  onMelodyOnset() {
-    if (this.phase !== BurrowPhase.TUNNELING || this.stalactites.length === 0) return;
-    const lx = this._gx * CELL_PX;
-    let nearest = this.stalactites[0];
-    for (const s of this.stalactites) {
-      if (Math.abs(s.x - lx) < Math.abs(nearest.x - lx)) nearest = s;
+  /** A melody onset while he's tunneling: the note's pitch class rings a
+   * specific crystal (a repeating motif visibly re-rings the same stones),
+   * and the stalactite nearest his x drips, shaken loose. */
+  onMelodyOnset(evt = {}) {
+    if (this.phase !== BurrowPhase.TUNNELING) return;
+
+    if (this.crystals.length > 0) {
+      const pc = ((Math.round(evt.pitch ?? 60) % 12) + 12) % 12;
+      const crystal = this.crystals[pc % this.crystals.length];
+      crystal.charge = Math.min(1, crystal.charge + CHARGE_PER_ONSET * (evt.vel ?? 0.7));
     }
-    this.drips.push({ x: nearest.x, y: nearest.y + nearest.len, vy: 0, age: 0, life: 0.9 });
-    if (this.drips.length > 10) this.drips.shift();
+
+    if (this.stalactites.length > 0) {
+      const lx = this._gx * CELL_PX;
+      let nearest = this.stalactites[0];
+      for (const s of this.stalactites) {
+        if (Math.abs(s.x - lx) < Math.abs(nearest.x - lx)) nearest = s;
+      }
+      this.drips.push({ x: nearest.x, y: nearest.y + nearest.len, vy: 0, age: 0, life: 0.9 });
+      if (this.drips.length > 10) this.drips.shift();
+    }
+  }
+
+  /** Charged crystal pairs hold a living arc between them: filaments form
+   * when both ends are hot, re-jitter at a fixed cadence like a sustained
+   * spark, carry a traveling energy packet, and dissolve as charge fades. */
+  _updateVeins(nowMs, dtSec) {
+    const eligible = [];
+    for (let i = 0; i < this.crystals.length; i++) {
+      for (let j = i + 1; j < this.crystals.length; j++) {
+        if (this.crystals[i].charge > VEIN_CHARGE_MIN && this.crystals[j].charge > VEIN_CHARGE_MIN) {
+          eligible.push(`${i}-${j}`);
+        }
+      }
+    }
+    const eligibleSet = new Set(eligible);
+    this.veins = this.veins.filter((v) => eligibleSet.has(v.key));
+    const have = new Set(this.veins.map((v) => v.key));
+    for (const key of eligible) {
+      if (have.has(key)) continue;
+      const [i, j] = key.split('-').map(Number);
+      this.veins.push({ key, i, j, pts: null, regenAtMs: -Infinity, packetU: this.rand() });
+    }
+    for (const v of this.veins) {
+      if (nowMs >= v.regenAtMs) {
+        const a = this.crystals[v.i], b = this.crystals[v.j];
+        v.pts = generateBolt(a.x, a.y, b.x, b.y, { displace: 14, detail: 4, branches: 0, rand: this.rand }).main;
+        v.regenAtMs = nowMs + VEIN_REGEN_MS;
+      }
+      const speed = 0.8 + 0.8 * Math.min(this.crystals[v.i].charge, this.crystals[v.j].charge);
+      v.packetU += speed * dtSec;
+      if (v.packetU > 1) v.packetU -= 1;
+    }
   }
 
   _spawnShards(count, worldXAt, surfaceY) {
@@ -185,7 +235,7 @@ export class Burrow {
     for (const c of bySize.slice(0, 3)) {
       if (this.crystals.length >= MAX_CRYSTALS) break;
       const centroid = toLocal(polygonCentroid(c.points));
-      this.crystals.push({ x: centroid.x + (this.rand() - 0.5) * 20, y: centroid.y + (this.rand() - 0.5) * 20, hue: 180 + this.rand() * 60 });
+      this.crystals.push({ x: centroid.x + (this.rand() - 0.5) * 20, y: centroid.y + (this.rand() - 0.5) * 20, hue: 180 + this.rand() * 60, charge: 0 });
     }
   }
 
@@ -214,6 +264,11 @@ export class Burrow {
 
     if (!this.active) return;
     this._t += dtSec;
+
+    // Crystal charges ring down like struck bells; the vein network follows.
+    const chargeDecay = Math.exp(-dtSec / CHARGE_TAU_SEC);
+    for (const cr of this.crystals) cr.charge *= chargeDecay;
+    this._updateVeins(nowMs, dtSec);
 
     if (this.phase === BurrowPhase.DIG_IN) {
       if (!this._dugInPulseFired) {
@@ -252,6 +307,7 @@ export class Burrow {
         this.crystals = [];
         this.rings = [];
         this.drips = [];
+        this.veins = [];
         this.justSurfaced = true; // one-frame flag: Broshi pops a hop off this
       }
     }
@@ -428,9 +484,33 @@ export class Burrow {
       }
     }
 
-    // Kicks flash every crystal with the beat...
-    if (this.crystalFlash > 0.03) {
-      for (const cr of this.crystals) this._drawCrystal(sctx, cr, this.crystalFlash);
+    // Resonance veins: charged crystal pairs hold a living arc, its
+    // brightness riding the weaker end's charge, with an energy packet
+    // traveling the filament.
+    for (const v of this.veins) {
+      if (!v.pts) continue;
+      const a = this.crystals[v.i], b = this.crystals[v.j];
+      if (!a || !b) continue;
+      const strength = Math.min(a.charge, b.charge);
+      const hue = (a.hue + b.hue) / 2;
+      sctx.strokeStyle = `hsla(${hue}, 70%, 80%, ${0.2 + 0.5 * strength})`;
+      sctx.lineWidth = 1 + 1.2 * strength;
+      sctx.beginPath();
+      v.pts.forEach((p, k) => { if (k === 0) sctx.moveTo(p.x, p.y); else sctx.lineTo(p.x, p.y); });
+      sctx.stroke();
+      const idx = Math.min(v.pts.length - 1, Math.floor(v.packetU * (v.pts.length - 1)));
+      const pp = v.pts[idx];
+      sctx.fillStyle = `hsla(${hue}, 85%, 90%, ${0.5 + 0.5 * strength})`;
+      sctx.beginPath();
+      sctx.arc(pp.x, pp.y, 2.4, 0, Math.PI * 2);
+      sctx.fill();
+    }
+
+    // Kicks flash every crystal with the beat, and a melody-charged
+    // crystal holds its own glow while the charge rings down.
+    for (const cr of this.crystals) {
+      const glow = this.crystalFlash + cr.charge;
+      if (glow > 0.03) this._drawCrystal(sctx, cr, Math.min(1.4, glow));
     }
     // ...and fire a pressure ring off him through the rock.
     for (const r of this.rings) {

@@ -335,8 +335,34 @@ export class BiomeManager {
    * persistent trail sky-writing the current figure, and a small mote of
    * light at her current position. A no-op whenever she isn't away. */
   drawDeepSky(ctx, voyage) {
-    if (!voyage || voyage.depth <= 0.02) return;
+    if (!voyage) return;
     const nowMs = this.tSec * 1000;
+
+    // The Star Atlas draws whether or not she's away: every crystallized
+    // constellation stays in the sky for the rest of the song, twinkling
+    // per-star and glinting with the beat (atlasPulse rides hype.slam).
+    if (voyage.atlas.length) {
+      const pulse = voyage.atlasPulse || 0;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const entry of voyage.atlas) {
+        ctx.strokeStyle = `hsla(${entry.hue}, 35%, 82%, ${0.09 * (1 + 1.2 * pulse)})`;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        entry.stars.forEach((s, i) => { if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y); });
+        ctx.stroke();
+        for (const s of entry.stars) {
+          const twinkle = 0.5 + 0.5 * Math.sin(nowMs * 0.0013 + s.phase);
+          ctx.fillStyle = `hsla(${entry.hue}, 45%, 88%, ${(0.16 + 0.16 * twinkle) * (1 + 1.6 * pulse)})`;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, 1.1 + 0.5 * twinkle, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+
+    if (voyage.depth <= 0.02) return;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
 

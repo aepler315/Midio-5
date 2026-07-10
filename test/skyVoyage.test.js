@@ -313,6 +313,59 @@ test('landing resets the melody tuning for the next voyage', () => {
   assert.equal(v._kickTarget, 0);
 });
 
+test('expired constellations crystallize into the atlas instead of vanishing', () => {
+  const v = new SkyVoyage(50);
+  let t = 0;
+  v.trigger(t, { x: 200, y: 400 }, 1280, 720);
+  t = advance(v, t, 0.55 + 1.2 + 3.3); // one figure completes -> one bright constellation
+  assert.ok(v.constellations.length >= 1);
+  assert.equal(v.atlas.length, 0, 'nothing crystallized yet');
+
+  t = advance(v, t, 7); // past the 6s bright life
+  assert.equal(v.constellations.length + 0, v.constellations.length); // (sanity no-op)
+  assert.ok(v.atlas.length >= 1, 'the expired constellation should now live in the atlas');
+  const entry = v.atlas[0];
+  assert.ok(entry.stars.length >= 3);
+  for (const s of entry.stars) {
+    assert.ok(Number.isFinite(s.x) && Number.isFinite(s.y));
+    assert.ok(Number.isFinite(s.phase), 'each star carries its own twinkle phase');
+  }
+});
+
+test('the atlas persists after the voyage ends and across a second voyage', () => {
+  const v = new SkyVoyage(51);
+  let t = 0;
+  v.trigger(t, { x: 200, y: 400 }, 1280, 720);
+  t = advance(v, t, 20); // full voyage + everything expired into the atlas
+  assert.equal(v.phase, VoyagePhase.IDLE);
+  const atlasAfterFirst = v.atlas.length;
+  assert.ok(atlasAfterFirst >= 1, 'the sky remembers the first voyage');
+
+  v.trigger(t, { x: 200, y: 400 }, 1280, 720);
+  t = advance(v, t, 20);
+  assert.ok(v.atlas.length > atlasAfterFirst, 'the second voyage adds to the same map');
+});
+
+test('the atlas is capped at 8 entries, oldest dropped first', () => {
+  const v = new SkyVoyage(52);
+  let t = 0;
+  // Four voyages x up to 3 constellations each would exceed the cap.
+  for (let k = 0; k < 4; k++) {
+    v.trigger(t, { x: 200, y: 400 }, 1280, 720);
+    t = advance(v, t, 22);
+    assert.equal(v.phase, VoyagePhase.IDLE, `voyage ${k} should have completed`);
+  }
+  assert.ok(v.atlas.length <= 8, `atlas must stay capped, got ${v.atlas.length}`);
+  assert.ok(v.atlas.length >= 6, 'but should have accumulated plenty');
+});
+
+test('atlasPulse defaults to 0 and is a plain writable field for the Simulation', () => {
+  const v = new SkyVoyage(53);
+  assert.equal(v.atlasPulse, 0);
+  v.atlasPulse = 0.7; // Simulation writes hype.slam here each step
+  assert.equal(v.atlasPulse, 0.7);
+});
+
 test('position stays within a sane radius of the sky station throughout deep space', () => {
   const v = new SkyVoyage(12);
   let t = 0;

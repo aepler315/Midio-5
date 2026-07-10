@@ -298,3 +298,110 @@ test('the hole world-x defaults to worldX when not given (back-compat)', () => {
   b.trigger(0, { x: 300, y: 480 }, 500, 480);
   assert.equal(b._holeWorldX, 500);
 });
+
+// --- Resonance veins: the melody builds a ley-line network in the rock ---
+
+/** A tunneling burrow with a known crystal layout (>= 2 crystals). */
+function intoTunnelingWithCrystals(seeds = [30, 31, 32, 33, 34, 35, 36, 37]) {
+  for (const seed of seeds) {
+    const b = new Burrow(seed);
+    let t = 0;
+    b.trigger(t, { x: 300, y: 480 }, 500, 480);
+    if (b.crystals.length < 2) continue;
+    t = advance(b, t, 0.8);
+    assert.equal(b.phase, BurrowPhase.TUNNELING);
+    return { b, t };
+  }
+  assert.fail('expected at least one test seed to generate >= 2 crystals');
+  return null;
+}
+
+test('a melody onset charges the crystal selected by pitch class', () => {
+  const { b } = intoTunnelingWithCrystals();
+  const n = b.crystals.length;
+  const pitch = 60 + 3; // pitch class 3
+  const expectedIdx = 3 % n;
+  b.onMelodyOnset({ pitch, vel: 1.0 });
+  assert.ok(b.crystals[expectedIdx].charge > 0.3, 'the pitch-mapped crystal charges');
+  for (let i = 0; i < n; i++) {
+    if (i !== expectedIdx) assert.equal(b.crystals[i].charge, 0, `crystal ${i} should be untouched`);
+  }
+  // The same pitch class rings the SAME stone again -- a motif re-lights it.
+  const before = b.crystals[expectedIdx].charge;
+  b.onMelodyOnset({ pitch: pitch + 12, vel: 1.0 }); // same class, octave up
+  assert.ok(b.crystals[expectedIdx].charge > before);
+});
+
+test('crystal charges ring down over time', () => {
+  const { b, t } = intoTunnelingWithCrystals();
+  b.onMelodyOnset({ pitch: 60, vel: 1.0 });
+  const idx = 0 % b.crystals.length;
+  const charged = b.crystals[idx].charge;
+  advance(b, t, 3);
+  assert.ok(b.crystals[idx].charge < charged * 0.5, 'charge should have decayed substantially over ~1.2 tau');
+});
+
+test('a vein forms only when BOTH crystals of a pair are charged, and dissolves as charge fades', () => {
+  const { b, t } = intoTunnelingWithCrystals();
+  const n = b.crystals.length;
+  // Charge exactly one crystal: no pair, no vein.
+  b.onMelodyOnset({ pitch: 60, vel: 1.0 }); // class 0 -> crystal 0
+  let t2 = advance(b, t, 0.05);
+  assert.equal(b.veins.length, 0, 'one hot crystal alone cannot arc');
+
+  // Charge a second, different crystal.
+  b.onMelodyOnset({ pitch: 61, vel: 1.0 }); // class 1 -> crystal 1 % n (differs since n >= 2)
+  t2 = advance(b, t2, 0.05);
+  assert.ok(b.veins.length >= 1, 'two hot crystals arc a vein');
+  const v = b.veins[0];
+  assert.ok(Array.isArray(v.pts) && v.pts.length >= 2, 'the vein has midpoint-displacement geometry');
+
+  // Let the charges ring down below the threshold: the vein dissolves.
+  advance(b, t2, 8);
+  assert.equal(b.veins.length, 0, 'veins dissolve as the charge fades');
+});
+
+test('vein energy packets travel and wrap along the filament', () => {
+  const { b, t } = intoTunnelingWithCrystals();
+  b.onMelodyOnset({ pitch: 60, vel: 1.0 });
+  b.onMelodyOnset({ pitch: 61, vel: 1.0 });
+  let t2 = advance(b, t, 0.05);
+  assert.ok(b.veins.length >= 1);
+  const u0 = b.veins[0].packetU;
+  advance(b, t2, 0.4);
+  if (b.veins.length >= 1) {
+    const u1 = b.veins[0].packetU;
+    assert.ok(u1 !== u0, 'the packet advances along the vein');
+    assert.ok(u1 >= 0 && u1 <= 1, 'and stays in [0, 1] (wrapping)');
+  }
+});
+
+test('vein geometry re-jitters on its regen cadence but stays anchored at both crystals', () => {
+  const { b, t } = intoTunnelingWithCrystals();
+  b.onMelodyOnset({ pitch: 60, vel: 1.0 });
+  b.onMelodyOnset({ pitch: 61, vel: 1.0 });
+  let t2 = advance(b, t, 0.05);
+  const v = b.veins[0];
+  const a = b.crystals[v.i], c = b.crystals[v.j];
+  const firstPts = v.pts;
+  assert.ok(Math.hypot(firstPts[0].x - a.x, firstPts[0].y - a.y) < 1e-9, 'endpoint anchored at crystal A');
+  const last = firstPts[firstPts.length - 1];
+  assert.ok(Math.hypot(last.x - c.x, last.y - c.y) < 1e-9, 'endpoint anchored at crystal B');
+
+  advance(b, t2, 0.2); // past the 120ms regen cadence
+  if (b.veins.length >= 1) {
+    assert.notEqual(b.veins[0].pts, firstPts, 'the filament re-jittered into new geometry');
+  }
+});
+
+test('surfacing clears the vein network along with the cave', () => {
+  const { b, t } = intoTunnelingWithCrystals();
+  b.onMelodyOnset({ pitch: 60, vel: 1.0 });
+  b.onMelodyOnset({ pitch: 61, vel: 1.0 });
+  let t2 = advance(b, t, 0.05);
+  assert.ok(b.veins.length >= 1);
+  b.forceEnd(t2);
+  advance(b, t2, 0.6); // through ERUPT into IDLE
+  assert.equal(b.phase, BurrowPhase.IDLE);
+  assert.equal(b.veins.length, 0);
+});

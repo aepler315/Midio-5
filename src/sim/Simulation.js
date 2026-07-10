@@ -156,8 +156,10 @@ export class Simulation {
     this.ensemble.setPresence(2, this.midasus.voyage.active ? 0 : 1);
     if (this.midasus.voyage.justLanded) { this.camera.punch(1.05); this.camera.shake(7); }
     // The sky notices her presence: the celestial's mandala swells while
-    // she's dancing around it.
+    // she's dancing around it, and the accumulated star atlas glints with
+    // every beat for the rest of the song.
     this.biomes.mandalaScaleMul = 1 + 0.12 * this.midasus.voyage.depth;
+    this.midasus.voyage.atlasPulse = this.hype.slam;
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level, {
       trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
     }, this.groundField);

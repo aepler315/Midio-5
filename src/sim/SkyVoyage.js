@@ -24,6 +24,7 @@ const TRAIL_SEC = 3.2;
 const TRAIL_MAX_PTS = 400;
 const CONSTELLATION_LIFE_SEC = 6;
 const CONSTELLATION_MAX = 4;
+const ATLAS_MAX = 8; // permanent star-map entries; oldest myths fade first
 // Default pairs per figure slot (no melody heard yet)...
 const LISSAJOUS_FREQS = [[3, 2], [5, 4], [2, 3], [4, 3]];
 // ...and the melody's own tuning: one coprime pair per pitch class, so a
@@ -74,6 +75,14 @@ export class SkyVoyage {
 
     this.sparkles = [];     // {x, y, vx, vy, hue, age}
     this.microSlashes = []; // {x, y, ang, hue, age}
+
+    // The Star Atlas: constellations don't die, they crystallize. When a
+    // bright constellation's 6s fade ends it commits here as a permanent
+    // dim star-map entry -- the song's sky slowly accumulates a mythology
+    // of her voyages. atlasPulse (fed hype.slam by the Simulation) lets
+    // the whole atlas glint with the beat.
+    this.atlas = []; // {stars:[{x, y, phase}], hue}
+    this.atlasPulse = 0;
   }
 
   /** A melody onset while she's away: retunes the Lissajous knot to the
@@ -325,8 +334,18 @@ export class SkyVoyage {
     if (this.constellations.length > CONSTELLATION_MAX) this.constellations.shift();
   }
 
-  /** Drop constellations past their fade life. Call once per frame. */
+  /** A constellation past its bright fade doesn't vanish -- it crystallizes
+   * into the permanent atlas as dim twinkling stars. Call once per frame. */
   pruneConstellations(nowMs) {
-    this.constellations = this.constellations.filter((c) => nowMs - c.bornMs < CONSTELLATION_LIFE_SEC * 1000);
+    const keep = [];
+    for (const c of this.constellations) {
+      if (nowMs - c.bornMs < CONSTELLATION_LIFE_SEC * 1000) { keep.push(c); continue; }
+      this.atlas.push({
+        stars: c.points.map((p) => ({ x: p.x, y: p.y, phase: this.rand() * Math.PI * 2 })),
+        hue: c.hue,
+      });
+      if (this.atlas.length > ATLAS_MAX) this.atlas.shift();
+    }
+    this.constellations = keep;
   }
 }
