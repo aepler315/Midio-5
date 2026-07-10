@@ -548,3 +548,8 @@ function onSongComplete() {
 }
 
 playAgainBtnEl.addEventListener('click', () => window.location.reload());
+
+// Fix: attach the importer without breaking existing MIDI
+const importer = new (await import("./world/BiomeImporter.js")).default;
+canvas.addEventListener("drop", (e) => importer.handleDrop(e, Conductor, ParamBus));
+

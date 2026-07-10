@@ -854,3 +854,7 @@ export class BiomeManager {
     ctx.putImageData(snapshot, shift, rowY);
   }
 }
+
+     l o a d C u s t o m ( c u s t o m )   {   t h i s . b i o m e s . p u s h ( c u s t o m ) ;   t h i s . s w i t c h T o ( c u s t o m . i d ) ;   } 
+  
+ 
