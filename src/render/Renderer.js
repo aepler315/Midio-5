@@ -242,3 +242,11 @@ export class Renderer {
     ctx.restore();
   }
 }
+
+     / /   = = =   W e b G L   +   C u s t o m   B i o m e   i n t e g r a t i o n   a d d e d   h e r e   = = = 
+     i f   ( m o d e   = = =   " w e b g l " )   { 
+         t h i s . c u r r e n t R e n d e r e r   =   n e w   ( a w a i t   i m p o r t ( " . / W e b G L R e n d e r e r . j s " ) ) . d e f a u l t ( t h i s . c a n v a s ) ; 
+         t h i s . c u r r e n t R e n d e r e r . e n a b l e ( P a r a m B u s ) ; 
+     } 
+  
+ 
