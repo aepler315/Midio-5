@@ -29,10 +29,11 @@ const CLEAN_WINDOW_MS = 90;
 const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
 
 export class Simulation {
-  constructor(conductor, paramBus, { bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720 } = {}) {
+  constructor(conductor, paramBus, { bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720, customBiome = null } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
+    this.customBiome = customBiome || null;
 
     this.midio = new Midio();
     this.jump = new JumpController(paramBus);
@@ -64,6 +65,7 @@ export class Simulation {
       conductor, energyCurves, durationMs: conductor.durationMs,
       canvasWidth, canvasHeight, groundY: this.midio.groundY, songSeed,
       groundField: this.groundField,
+      customBiome: this.customBiome,
     });
     this.fracture = new FractureEngine(conductor, {
       canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,

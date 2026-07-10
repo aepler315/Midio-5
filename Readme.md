@@ -24,6 +24,16 @@ a different `.mid`/audio file in at any time, even mid-song** — dragging one
 anywhere on the page (not just the loader screen) tears down whatever's
 currently playing and starts the new one immediately.
 
+**MIDI → custom biome:** every dropped/uploaded `.mid` file also generates a
+unique biome profile (palette, particles, FX) from its pitch-class histogram,
+velocity, density, and role mix, and casts the whole song into that world.
+Stock demos keep the dramaturgical 9-biome cast.
+
+**Optional WebGL path:** open with `?renderer=webgl` to enable a non-destructive
+WebGL2 post-FX overlay (energy-driven tint/vignette). The Canvas 2D compositor
+always draws the scene; WebGL never steals the stage canvas context. If WebGL
+is unavailable, the path falls back to pure Canvas automatically.
+
 **MIDI files with many tracks/channels are fully supported** — including
 SMF Type 0 files that multiplex several instruments through one track,
 which get split back out into one voice per channel. During play, a small
