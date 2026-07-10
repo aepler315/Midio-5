@@ -11,9 +11,13 @@ soundfonts/
   RetroSynths.zip
 ```
 
-Once at least one font loads, the **‹ name ›** pill at the bottom of the
-screen lets you cycle between them (hover to keep it open, or move the mouse
-during play to bring it back).
+Once at least one font loads, the font name pill at the bottom of the
+screen shows the active font — click it (or press **F**) to open a popup
+listing every loaded SoundFont. Click a row to make it active, or click the
+**×** on a font to hide it (excluded from the rotation, but never deleted).
+Hidden fonts come back through the **settings gear** (top-right of the HUD)
+or the popup's **Hidden (n)** link. Hover the pill to keep it open, or move
+the mouse during play to bring it back.
 
 You can still load fonts manually instead (or in addition) with the
 **Load .sf2 / .zip**, **Folder**, and **Open directory…** controls on the
