@@ -362,6 +362,44 @@ export class BiomeManager {
       ctx.restore();
     }
 
+    // The finale's supernova cascade: each detonating atlas star throws an
+    // expanding ring, a hot core, and a five-ray flare. Drawn whether or
+    // not she's away -- she's home watching her own myths go up.
+    if (voyage.novae.length) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const n of voyage.novae) {
+        const age = nowMs - n.bornMs - n.delayMs;
+        if (age < 0) continue; // still waiting on its popcorn delay
+        const u = Math.min(1, age / 1100);
+        const easeOut = 1 - (1 - u) ** 3;
+        const fade = 1 - u;
+
+        ctx.strokeStyle = `hsla(${n.hue}, 70%, 85%, ${0.7 * fade})`;
+        ctx.lineWidth = 0.5 + 2 * fade;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, 4 + 62 * easeOut, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = `hsla(${n.hue}, 30%, 96%, ${fade})`;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, 1 + 3 * fade, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = `hsla(${n.hue}, 60%, 90%, ${0.5 * fade})`;
+        ctx.lineWidth = 1;
+        for (let k = 0; k < 5; k++) {
+          const ang = n.phase + (k / 5) * Math.PI * 2;
+          const len = 10 + 42 * easeOut;
+          ctx.beginPath();
+          ctx.moveTo(n.x + Math.cos(ang) * 5, n.y + Math.sin(ang) * 5);
+          ctx.lineTo(n.x + Math.cos(ang) * len, n.y + Math.sin(ang) * len);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
     if (voyage.depth <= 0.02) return;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';

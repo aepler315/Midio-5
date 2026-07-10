@@ -160,6 +160,15 @@ export class Simulation {
     // every beat for the rest of the song.
     this.biomes.mandalaScaleMul = 1 + 0.12 * this.midasus.voyage.depth;
     this.midasus.voyage.atlasPulse = this.hype.slam;
+    // The finale: 4s before the end (3.7s before the fracture freezes the
+    // frame at durationMs-300), every accumulated atlas star goes
+    // supernova -- her myths detonate as the song shatters.
+    if (!this._atlasDetonated && this.conductor.durationMs > 0
+      && nowMs >= this.conductor.durationMs - 4000 && this.midasus.voyage.atlas.length > 0) {
+      this._atlasDetonated = true;
+      this.midasus.voyage.detonateAtlas(nowMs);
+      this.camera.shake(9);
+    }
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level, {
       trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
     }, this.groundField);
