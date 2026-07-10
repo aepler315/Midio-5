@@ -81,6 +81,7 @@ export class Simulation {
         this.gnat.onKick(evt);
         this.performer.onKick();
         this.hype.onKick(evt.vel);
+        this.midasus.voyage.onKick(evt.vel); // deep-space sparkle burst (self-gated on phase)
       }
     });
   }
@@ -153,6 +154,10 @@ export class Simulation {
     // hole (this takes effect next frame; the weight eases over ~1.5s
     // regardless, so the one-step lag is inaudible/invisible).
     this.ensemble.setPresence(2, this.midasus.voyage.active ? 0 : 1);
+    if (this.midasus.voyage.justLanded) { this.camera.punch(1.05); this.camera.shake(7); }
+    // The sky notices her presence: the celestial's mandala swells while
+    // she's dancing around it.
+    this.biomes.mandalaScaleMul = 1 + 0.12 * this.midasus.voyage.depth;
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level, {
       trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
     }, this.groundField);

@@ -205,6 +205,114 @@ test('a full voyage never produces NaN/Infinity in position, hue, or depth', () 
   }
 });
 
+test('a melody onset in deep space retunes her to the pitch class: hue and Lissajous pair', () => {
+  const v = new SkyVoyage(20);
+  let t = 0;
+  v.trigger(t, { x: 200, y: 400 }, 1280, 720);
+  t = advance(v, t, 0.55 + 1.2 + 0.1);
+  assert.equal(v.phase, VoyagePhase.DEEP_SPACE);
+
+  v.onMelodyOnset({ pitch: 64, vel: 0.8 }); // E -> pitch class 4
+  assert.equal(v.hue, 4 * 30);
+  assert.deepEqual(v._currentLiss(), [7, 4], 'pitch class 4 selects its coprime pair');
+
+  v.onMelodyOnset({ pitch: 71, vel: 0.5 }); // B -> pitch class 11
+  assert.deepEqual(v._currentLiss(), [5, 1]);
+});
+
+test('a melody onset outside deep space is ignored', () => {
+  const v = new SkyVoyage(21);
+  v.trigger(0, { x: 200, y: 400 }, 1280, 720); // WINDUP
+  const hueBefore = v.hue;
+  v.onMelodyOnset({ pitch: 64, vel: 0.8 });
+  assert.equal(v.hue, hueBefore);
+  assert.equal(v._liss, null);
+});
+
+test('a pitch-class retune morphs the position rather than teleporting it', () => {
+  const v = new SkyVoyage(22);
+  let t = 0;
+  v.trigger(t, { x: 200, y: 400 }, 1280, 720);
+  // Force the first figure to be a Lissajous so the retune actually applies.
+  v._figureOrder = ['lissajous', 'lissajous', 'lissajous'];
+  t = advance(v, t, 0.55 + 1.2 + 1.5); // mid-figure
+  const before = { ...v.p };
+  v.onMelodyOnset({ pitch: 66, vel: 0.9 }); // F# -> [5,3], very different from default [3,2]
+  t = advance(v, t, 1 / 60); // a single ~frame later
+  const jump = Math.hypot(v.p.x - before.x, v.p.y - before.y);
+  assert.ok(jump < 40, `retune should morph, not teleport: jumped ${jump.toFixed(1)}px in one frame`);
+});
+
+test('onset phase-kicks accumulate smoothly, never as an instant time jump', () => {
+  const v = new SkyVoyage(23);
+  let t = 0;
+  v.trigger(t, { x: 200, y: 400 }, 1280, 720);
+  t = advance(v, t, 0.55 + 1.2 + 0.5);
+  assert.equal(v._kickSmooth, 0);
+  v.onMelodyOnset({ pitch: 60, vel: 1.0 });
+  assert.equal(v._kickSmooth, 0, 'the kick must not apply instantaneously');
+  assert.ok(v._kickTarget > 0.05, 'the kick target should be pending');
+  t = advance(v, t, 0.5);
+  assert.ok(v._kickSmooth > 0.05, 'the kick should have eased in by now');
+  assert.ok(Math.abs(v._kickSmooth - v._kickTarget) < 0.02, 'and settled near its target');
+});
+
+test('kicks in deep space spawn a capped sparkle burst; kicks elsewhere are ignored', () => {
+  const v = new SkyVoyage(24);
+  v.onKick(0.9);
+  assert.equal(v.sparkles.length, 0, 'idle: no sparkles');
+  let t = 0;
+  v.trigger(t, { x: 200, y: 400 }, 1280, 720);
+  t = advance(v, t, 0.55 + 1.2 + 0.1);
+  v.onKick(0.9);
+  assert.ok(v.sparkles.length >= 5, 'deep space: a burst appears');
+  for (let i = 0; i < 20; i++) v.onKick(1.0); // spam
+  assert.ok(v.sparkles.length <= 36, `sparkles must stay capped, got ${v.sparkles.length}`);
+  t = advance(v, t, 0.8); // past SPARKLE_LIFE_SEC
+  assert.equal(v.sparkles.length, 0, 'sparkles expire');
+});
+
+test('melody onsets in deep space cut micro-slashes that expire', () => {
+  const v = new SkyVoyage(25);
+  let t = 0;
+  v.trigger(t, { x: 200, y: 400 }, 1280, 720);
+  t = advance(v, t, 0.55 + 1.2 + 0.1);
+  v.onMelodyOnset({ pitch: 62, vel: 0.7 });
+  assert.equal(v.microSlashes.length, 1);
+  for (let i = 0; i < 12; i++) v.onMelodyOnset({ pitch: 62 + i, vel: 0.7 });
+  assert.ok(v.microSlashes.length <= 6, 'micro-slashes must stay capped');
+  t = advance(v, t, 0.4); // past SLASH_LIFE_SEC
+  assert.equal(v.microSlashes.length, 0);
+});
+
+test('justLanded fires exactly on the frame she returns, then clears', () => {
+  const v = new SkyVoyage(26);
+  let t = 0;
+  v.trigger(t, { x: 200, y: 400 }, 1280, 720);
+  let landedFrames = 0;
+  for (let i = 0; i < 16 * 120; i++) {
+    t += STEP_MS;
+    v.update(t, STEP_MS / 1000, 0.5, { x: 300, y: 250 });
+    if (v.justLanded) landedFrames++;
+  }
+  assert.equal(landedFrames, 1, 'justLanded must be a one-frame flag');
+  assert.equal(v.phase, VoyagePhase.IDLE);
+  assert.equal(v.justLanded, false);
+});
+
+test('landing resets the melody tuning for the next voyage', () => {
+  const v = new SkyVoyage(27);
+  let t = 0;
+  v.trigger(t, { x: 200, y: 400 }, 1280, 720);
+  t = advance(v, t, 0.55 + 1.2 + 0.1);
+  v.onMelodyOnset({ pitch: 66, vel: 0.9 });
+  assert.ok(v._liss, 'tuning is live mid-voyage');
+  t = advance(v, t, 14); // run the voyage out
+  assert.equal(v.phase, VoyagePhase.IDLE);
+  assert.equal(v._liss, null, 'tuning cleared for next time');
+  assert.equal(v._kickTarget, 0);
+});
+
 test('position stays within a sane radius of the sky station throughout deep space', () => {
   const v = new SkyVoyage(12);
   let t = 0;

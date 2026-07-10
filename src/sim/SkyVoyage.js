@@ -24,7 +24,21 @@ const TRAIL_SEC = 3.2;
 const TRAIL_MAX_PTS = 400;
 const CONSTELLATION_LIFE_SEC = 6;
 const CONSTELLATION_MAX = 4;
+// Default pairs per figure slot (no melody heard yet)...
 const LISSAJOUS_FREQS = [[3, 2], [5, 4], [2, 3], [4, 3]];
+// ...and the melody's own tuning: one coprime pair per pitch class, so a
+// C melody knots differently than an F# one -- the figure is literally
+// played by the notes.
+const LISSAJOUS_BY_PITCH_CLASS = [
+  [3, 2], [5, 4], [4, 3], [5, 2], [7, 4], [3, 1],
+  [5, 3], [7, 5], [2, 1], [7, 3], [8, 3], [5, 1],
+];
+const LISS_MORPH_SEC = 0.45; // parametric cross-fade between old/new tuning
+const KICK_TAU_SEC = 0.15;   // onset phase-kicks ease in, never teleport
+const SPARKLES_MAX = 36;
+const SPARKLE_LIFE_SEC = 0.6;
+const SLASH_MAX = 6;
+const SLASH_LIFE_SEC = 0.25;
 
 export class SkyVoyage {
   constructor(seed = 1) {
@@ -44,9 +58,64 @@ export class SkyVoyage {
     this._figureCount = 0;
     this._figureIdx = 0;
     this._figureStartMs = 0;
-    this._figureSeed = { lissA: 0, lissB: 0, phaseA: 0, phaseB: 0, epicPh: [0, 0, 0] };
     this._prevFigureEndOffset = { x: 0, y: 0 };
     this._attractor = { x: 0.12, y: 0, z: 0 };
+
+    // Melody coupling: the current Lissajous tuning, the tuning it's
+    // morphing away from, and a smoothed onset phase-kick (an eased burst
+    // of extra curve-time so a hard note visibly accelerates her without
+    // ever teleporting the position).
+    this._liss = null;      // {a, b} or null -> figure-slot default
+    this._lissPrev = null;
+    this._lissMorphStartMs = -Infinity;
+    this._kickSmooth = 0;   // seconds of accumulated eased curve-time
+    this._kickTarget = 0;
+    this.justLanded = false;
+
+    this.sparkles = [];     // {x, y, vx, vy, hue, age}
+    this.microSlashes = []; // {x, y, ang, hue, age}
+  }
+
+  /** A melody onset while she's away: retunes the Lissajous knot to the
+   * note's pitch class (with a parametric morph, not a snap), kicks the
+   * figure's phase along by an eased burst proportional to velocity, cuts
+   * a micro-slash at her deep-sky position, and paints her the note's hue. */
+  onMelodyOnset(evt) {
+    if (this.phase !== VoyagePhase.DEEP_SPACE) return;
+    const pc = ((Math.round(evt.pitch ?? 60) % 12) + 12) % 12;
+    this.hue = pc * 30;
+    const next = LISSAJOUS_BY_PITCH_CLASS[pc];
+    const cur = this._currentLiss();
+    if (next[0] !== cur[0] || next[1] !== cur[1]) {
+      this._lissPrev = cur;
+      this._liss = next;
+      this._lissMorphStartMs = this._nowMs ?? this._figureStartMs;
+    }
+    this._kickTarget += 0.10 * (evt.vel ?? 0.7);
+    const ang = this.rand() * Math.PI * 2;
+    this.microSlashes.push({ x: this.p.x, y: this.p.y, ang, hue: this.hue, age: 0 });
+    if (this.microSlashes.length > SLASH_MAX) this.microSlashes.shift();
+  }
+
+  /** A kick while she's away: a radial sparkle burst off her position. */
+  onKick(vel = 0.8) {
+    if (this.phase !== VoyagePhase.DEEP_SPACE) return;
+    const n = 5 + Math.round(3 * vel);
+    for (let i = 0; i < n; i++) {
+      if (this.sparkles.length >= SPARKLES_MAX) this.sparkles.shift();
+      const ang = (i / n) * Math.PI * 2 + this.rand() * 0.5;
+      const speed = 40 + 60 * this.rand();
+      this.sparkles.push({
+        x: this.p.x, y: this.p.y,
+        vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
+        hue: this.hue, age: 0,
+      });
+    }
+  }
+
+  _currentLiss() {
+    if (this._liss) return this._liss;
+    return LISSAJOUS_FREQS[(this._figureIdx >= 0 ? this._figureIdx : 0) % LISSAJOUS_FREQS.length];
   }
 
   get active() { return this.phase !== VoyagePhase.IDLE; }
@@ -95,8 +164,16 @@ export class SkyVoyage {
   }
 
   update(nowMs, dtSec, epicMood, ensembleAnchor) {
-    // Constellations keep fading even after the voyage itself has ended.
+    this._nowMs = nowMs;
+    this.justLanded = false;
+    // Constellations, sparkles, and slashes keep fading even once she's home.
     this.pruneConstellations(nowMs);
+    for (const s of this.sparkles) { s.x += s.vx * dtSec; s.y += s.vy * dtSec; s.age += dtSec; }
+    this.sparkles = this.sparkles.filter((s) => s.age < SPARKLE_LIFE_SEC);
+    for (const s of this.microSlashes) s.age += dtSec;
+    this.microSlashes = this.microSlashes.filter((s) => s.age < SLASH_LIFE_SEC);
+    // Onset phase-kicks ease toward their target rather than jumping.
+    this._kickSmooth += (1 - Math.exp(-dtSec / KICK_TAU_SEC)) * (this._kickTarget - this._kickSmooth);
     if (!this.active) return;
     const elapsed = (nowMs - this.phaseStartMs) / 1000;
 
@@ -154,17 +231,18 @@ export class SkyVoyage {
       }
       if (this.phase === VoyagePhase.DEEP_SPACE) {
         const kind = this._figureOrder[this._figureIdx];
-        const localT = (nowMs - this._figureStartMs) / 1000;
+        // Onset kicks add eased extra curve-time: hard notes visibly whip
+        // her along the figure without a positional discontinuity.
+        const localT = (nowMs - this._figureStartMs) / 1000 + this._kickSmooth;
         const raw = this._figureOffset(kind, localT);
         // Morph into the new figure from the previous one's exit point
         // instead of teleporting -- a brief parametric cross-fade.
-        const morphU = clamp(localT / FIGURE_MORPH_SEC, 0, 1);
+        const morphU = clamp(((nowMs - this._figureStartMs) / 1000) / FIGURE_MORPH_SEC, 0, 1);
         const blended = {
           x: lerp(this._prevFigureEndOffset.x, raw.x, morphU),
           y: lerp(this._prevFigureEndOffset.y, raw.y, morphU),
         };
         this.p = { x: this._station.x + blended.x * FIGURE_RADIUS_PX, y: this._station.y + blended.y * FIGURE_RADIUS_PX };
-        this.hue = (kind.length * 47 + this._figureIdx * 63) % 360;
         this._pushTrail(nowMs);
       }
     } else if (this.phase === VoyagePhase.REENTRY) {
@@ -180,6 +258,11 @@ export class SkyVoyage {
       if (this._phaseU >= 1) {
         this.phase = VoyagePhase.IDLE;
         this.trail = [];
+        this._liss = null;
+        this._lissPrev = null;
+        this._kickSmooth = 0;
+        this._kickTarget = 0;
+        this.justLanded = true; // one-frame flag: Midasus/Simulation fire landing FX off this
       }
     }
   }
@@ -187,8 +270,19 @@ export class SkyVoyage {
   _figureOffset(kind, localT) {
     const RATE = 1.6;
     if (kind === 'lissajous') {
-      const [a, b] = LISSAJOUS_FREQS[(this._figureIdx >= 0 ? this._figureIdx : 0) % LISSAJOUS_FREQS.length];
-      return { x: Math.sin(a * RATE * localT), y: Math.sin(b * RATE * localT + Math.PI / 4) };
+      const [a, b] = this._currentLiss();
+      const cur = { x: Math.sin(a * RATE * localT), y: Math.sin(b * RATE * localT + Math.PI / 4) };
+      // Mid-retune: evaluate BOTH tunings at the same parameter and blend --
+      // the same morph trick used at figure switches, here for the melody's
+      // pitch-class retargeting.
+      if (this._lissPrev) {
+        const u = clamp(((this._nowMs ?? 0) - this._lissMorphStartMs) / (LISS_MORPH_SEC * 1000), 0, 1);
+        if (u >= 1) { this._lissPrev = null; return cur; }
+        const [pa, pb] = this._lissPrev;
+        const prev = { x: Math.sin(pa * RATE * localT), y: Math.sin(pb * RATE * localT + Math.PI / 4) };
+        return { x: lerp(prev.x, cur.x, u), y: lerp(prev.y, cur.y, u) };
+      }
+      return cur;
     }
     if (kind === 'epicycle') {
       const terms = [{ r: 1.0, k: 1 }, { r: 0.48, k: 3 }, { r: 0.2, k: 7 }];

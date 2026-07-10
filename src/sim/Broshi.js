@@ -104,16 +104,18 @@ export class Broshi {
 
     conductor.onBar((bar) => this._onBar(bar));
     conductor.on(Role.RHYTHM, (evt) => {
-      if (evt.kick) this._onKick();
+      if (evt.kick) { this._onKick(); this.burrow.onKick(evt.vel); }
       else if (evt.vel >= 0.3) this._onMiniHopTrigger(evt);
     });
-    conductor.on(Role.MELODY, (evt) => this._onHeadBob(evt));
+    conductor.on(Role.MELODY, (evt) => { this._onHeadBob(evt); this.burrow.onMelodyOnset(evt); });
   }
 
   /** Test/debug hook: send him underground right now regardless of natural
    * triggers. No-op if he's already away. */
   forceBurrow(nowMs, worldX) {
-    return this.burrow.trigger(nowMs, { x: this.screenX, y: this.groundY }, worldX, this.groundY);
+    // The hole belongs where HE stands, not at Midio's world anchor:
+    // his world-x is Midio's plus the trailing spring offset.
+    return this.burrow.trigger(nowMs, { x: this.screenX, y: this.groundY }, worldX, this.groundY, worldX + this.xRel);
   }
 
   _onBar(bar) {
@@ -289,8 +291,18 @@ export class Broshi {
     // Locomotion/rendering above keeps running harmlessly underneath (so a
     // resurface never has to catch up on anything); once he's away,
     // draw() skips him here and Renderer draws the underground band
-    // instead (see Burrow.draw, called directly from Renderer.js).
-    this.burrow.update(nowMs, dtSec, worldX, groundField);
+    // instead (see Burrow.draw, called directly from Renderer.js). The
+    // bass band (e1, computed above for the tongue) doubles as the cave
+    // walls' vibration drive.
+    this.burrow.update(nowMs, dtSec, worldX, groundField, e1);
+    if (this.burrow.justSurfaced) {
+      // The pop-out: a real hop arc, a hard body ring, and a beat flash --
+      // he bursts out of the ground, he doesn't fade back in.
+      this._hopH = 40;
+      this._hopUntilMs = nowMs + 300;
+      this.modal.excite(5);
+      this.beatFlash = 1;
+    }
   }
 
   _startHop(nowMs, vel) {

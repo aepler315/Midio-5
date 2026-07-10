@@ -44,6 +44,7 @@ export class BiomeManager {
     this.cutFlashJustFired = false;
     this.budget = 1;
     this.hypeBoost = 1; // drop-surge multiplier from the HypeDirector
+    this.mandalaScaleMul = 1; // swells while Midasus dances near the celestial
     this._progress = 0;
     this.lerpCache = new LerpCache();
     this.tSec = 0;
@@ -296,7 +297,7 @@ export class BiomeManager {
     // Spirograph resonance mandala, centered on the celestial body so it
     // reads as the sun/moon itself resonating with the track.
     const mandalaColor = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
-    this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * arc.celestialYFrac, canvas.height * 0.30, mandalaColor);
+    this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * arc.celestialYFrac, canvas.height * 0.30 * this.mandalaScaleMul, mandalaColor);
     // Phenomena layer, deep sky: cymatic dust settling into Chladni
     // figures, and the chaos ribbon opposite the celestial for balance.
     this.cymatics.draw(ctx, canvas, mandalaColor);
@@ -368,6 +369,29 @@ export class BiomeManager {
       ctx.strokeStyle = `hsla(${b.hue}, 75%, 88%, ${0.85 * u})`;
       ctx.lineWidth = 1.6;
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+
+    // Kick sparkles: radial bursts flung off her on every beat out there.
+    for (const s of voyage.sparkles) {
+      const life = 1 - s.age / 0.6;
+      if (life <= 0) continue;
+      ctx.fillStyle = `hsla(${s.hue}, 80%, 88%, ${0.85 * life})`;
+      ctx.fillRect(s.x - 1, s.y - 1, 2.2, 2.2);
+    }
+
+    // Micro-slashes: each melody onset cuts a brief bright line at her
+    // deep-sky position -- her note-slash vocabulary, miniaturized.
+    ctx.lineCap = 'round';
+    for (const s of voyage.microSlashes) {
+      const u = s.age / 0.25;
+      if (u >= 1) continue;
+      const ext = 8 + 14 * u;
+      ctx.strokeStyle = `hsla(${s.hue}, 75%, 85%, ${0.9 * (1 - u)})`;
+      ctx.lineWidth = 1.6 * (1 - u * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(s.x - Math.cos(s.ang) * ext, s.y - Math.sin(s.ang) * ext);
+      ctx.lineTo(s.x + Math.cos(s.ang) * ext, s.y + Math.sin(s.ang) * ext);
+      ctx.stroke();
     }
 
     // Her current position: fades in from nothing (still "here" at the

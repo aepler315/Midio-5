@@ -134,6 +134,7 @@ export class Midasus {
       this.v.x *= 0.4;
       this.v.y *= 0.4;
       this.hue = this._hueOf(n.pitch);
+      if (this.voyage.active) this.voyage.onMelodyOnset(n); // deep space hears the melody too
       this._burst(8 + 24 * n.vel, this.hue);
       this.lastNoteMs = nowMs;
       this.pulse = 1.7 + 0.5 * n.vel; // a brief mesh flash on each note onset
@@ -190,6 +191,17 @@ export class Midasus {
     if (this.voyage.active) {
       this.p = { ...this.voyage.p };
       this.hue = this.voyage.hue;
+    }
+    if (this.voyage.justLanded) {
+      // Touchdown: her core rings hard, the shards fling, and a five-point
+      // slash star marks the landing (drawn by her normal pass, which has
+      // just resumed since depth is back to 0).
+      this.modal.excite(6);
+      this.debris.burst(1);
+      for (let k = 0; k < 5; k++) {
+        this.slashes.push({ x: this.p.x, y: this.p.y, ang: (k / 5) * Math.PI, len: 64, age: 0, hue: this.hue });
+      }
+      while (this.slashes.length > 8) this.slashes.shift();
     }
   }
 

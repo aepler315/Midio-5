@@ -10,6 +10,8 @@ import { curl2, valueNoise3 } from '../utils/fields.js';
 import {
   sampleCaveGrid, extractContours, insetContour, polygonArea, polygonCentroid,
 } from '../render/marchingSquares.js';
+import { BROSHI_BODY } from '../render/meshes.js';
+import { computeRestLengths, drawMeshPart, meltMesh } from '../render/MeshDrawer.js';
 
 export const BurrowPhase = Object.freeze({
   IDLE: 'IDLE', DIG_IN: 'DIG_IN', TUNNELING: 'TUNNELING', ERUPT: 'ERUPT',
@@ -31,6 +33,7 @@ const MAX_CRYSTALS = 5;
 export class Burrow {
   constructor(seed = 1) {
     this.rand = mulberry32((seed ^ 0x8123) >>> 0 || 1);
+    this._bodyRest = computeRestLengths(BROSHI_BODY);
     this.phase = BurrowPhase.IDLE;
     this.phaseStartMs = 0;
     this.p = { x: 0, y: 0 }; // world px
@@ -46,6 +49,50 @@ export class Burrow {
     this._nextRidgeMs = -Infinity;
     this._enteredTunneling = false;
     this._diveTarget = { x: 0, y: 0 };
+
+    // Music reactivity underground: kick pressure-rings + crystal flash,
+    // bass-driven wall vibration, melody-triggered stalactite drips -- and
+    // world-locked dirt shards flung from the hole on dig-in and eruption.
+    this.rings = [];   // {age, vel} expanding from his position
+    this.drips = [];   // {x, y, vy, age, life} in local cave coords
+    this.shards = [];  // {wx, wy, vx, vy, age, life, rot} in world coords
+    this.crystalFlash = 0;
+    this._bass = 0;
+    this.justSurfaced = false; // one-frame flag: Broshi pops a hop off this
+  }
+
+  /** A kick while he's tunneling: a pressure ring expands off him and
+   * every currently-visible crystal flashes with the beat. */
+  onKick(vel = 0.8) {
+    if (this.phase !== BurrowPhase.TUNNELING) return;
+    this.rings.push({ age: 0, vel });
+    if (this.rings.length > 4) this.rings.shift();
+    this.crystalFlash = 1;
+  }
+
+  /** A melody onset while he's tunneling: the stalactite nearest his x
+   * drips, as though the note shook it loose. */
+  onMelodyOnset() {
+    if (this.phase !== BurrowPhase.TUNNELING || this.stalactites.length === 0) return;
+    const lx = this._gx * CELL_PX;
+    let nearest = this.stalactites[0];
+    for (const s of this.stalactites) {
+      if (Math.abs(s.x - lx) < Math.abs(nearest.x - lx)) nearest = s;
+    }
+    this.drips.push({ x: nearest.x, y: nearest.y + nearest.len, vy: 0, age: 0, life: 0.9 });
+    if (this.drips.length > 10) this.drips.shift();
+  }
+
+  _spawnShards(count, worldXAt, surfaceY) {
+    for (let i = 0; i < count; i++) {
+      const ang = -Math.PI / 2 + (this.rand() - 0.5) * 1.3; // an upward fan
+      const speed = 140 + 220 * this.rand();
+      this.shards.push({
+        wx: worldXAt + (this.rand() - 0.5) * 26, wy: surfaceY,
+        vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
+        age: 0, life: 0.7 + 0.4 * this.rand(), rot: this.rand() * Math.PI,
+      });
+    }
   }
 
   get active() { return this.phase !== BurrowPhase.IDLE; }
@@ -60,16 +107,18 @@ export class Burrow {
     return 0;
   }
 
-  trigger(nowMs, fromPos, worldX, groundY) {
+  trigger(nowMs, fromPos, worldX, groundY, holeWorldX = worldX) {
     if (this.active) return false;
     this.phase = BurrowPhase.DIG_IN;
     this.phaseStartMs = nowMs;
     this._nowMs = nowMs;
     this._diveTarget = { ...fromPos };
     this._groundY = groundY;
+    this._holeWorldX = holeWorldX; // where HE actually digs (not Midio's world anchor)
     this._dugInPulseFired = false;
     this._geoCanvas = null; // rebuilt lazily on first draw() from the fresh geometry below
     this._generateCave(worldX);
+    this._spawnShards(14, holeWorldX, groundY);
     return true;
   }
 
@@ -140,20 +189,36 @@ export class Burrow {
     }
   }
 
-  /** Advances the phase machine, Broshi's underground steering, and the
-   * surface mole-ridge tell. `groundField` (optional) receives pulseAt()
-   * calls for both the mole-ridge and the DIG_IN/ERUPT ground deformation --
-   * passing null is fine for pure-logic tests that don't care about the
-   * ground's visual reaction. */
-  update(nowMs, dtSec, worldX, groundField = null) {
+  /** Advances the phase machine, Broshi's underground steering, the music
+   * FX (rings/drips/shards/flash), and the surface mole-ridge tell.
+   * `groundField` (optional) receives pulseAt() calls; `bassEnergy` (0..1)
+   * drives the cave walls' vibration. Both are safe to omit in pure-logic
+   * tests. */
+  update(nowMs, dtSec, worldX, groundField = null, bassEnergy = 0) {
     this._nowMs = nowMs;
+    this.justSurfaced = false;
+
+    // FX keep aging even in the frame the phase machine goes idle, so the
+    // last shards of an eruption finish their arcs above ground.
+    this._bass += (1 - Math.exp(-dtSec / 0.12)) * (clamp01(bassEnergy) - this._bass);
+    this.crystalFlash = Math.max(0, this.crystalFlash - dtSec / 0.25);
+    for (const r of this.rings) r.age += dtSec;
+    this.rings = this.rings.filter((r) => r.age < 0.4);
+    for (const d of this.drips) { d.vy += 300 * dtSec; d.y += d.vy * dtSec; d.age += dtSec; }
+    this.drips = this.drips.filter((d) => d.age < d.life);
+    for (const s of this.shards) {
+      s.vy += 520 * dtSec; s.wx += s.vx * dtSec; s.wy += s.vy * dtSec;
+      s.rot += 4 * dtSec; s.age += dtSec;
+    }
+    this.shards = this.shards.filter((s) => s.age < s.life);
+
     if (!this.active) return;
     this._t += dtSec;
 
     if (this.phase === BurrowPhase.DIG_IN) {
       if (!this._dugInPulseFired) {
         this._dugInPulseFired = true;
-        if (groundField) groundField.pulseAt(nowMs, worldX, 34, nowMs + 260);
+        if (groundField) groundField.pulseAt(nowMs, this._holeWorldX ?? worldX, 34, nowMs + 260);
       }
       const u = clamp01((nowMs - this.phaseStartMs) / (DIG_IN_SEC * 1000));
       this.p = { x: this._diveTarget.x, y: this._diveTarget.y + u * u * 60 }; // an accelerating nose-down dip
@@ -174,6 +239,7 @@ export class Burrow {
         this.phase = BurrowPhase.ERUPT;
         this.phaseStartMs = nowMs;
         if (groundField) groundField.pulseAt(nowMs, this.p.x, 46, nowMs + 480);
+        this._spawnShards(18, this.p.x, this._groundY ?? 480);
       }
     } else if (this.phase === BurrowPhase.ERUPT) {
       const u = clamp01((nowMs - this.phaseStartMs) / (ERUPT_SEC * 1000));
@@ -184,6 +250,9 @@ export class Burrow {
         this.stalactites = [];
         this.stalagmites = [];
         this.crystals = [];
+        this.rings = [];
+        this.drips = [];
+        this.justSurfaced = true; // one-frame flag: Broshi pops a hop off this
       }
     }
   }
@@ -269,29 +338,36 @@ export class Burrow {
       ctx.closePath(); ctx.fill();
     }
 
-    for (const cr of this.crystals) {
-      ctx.save();
-      ctx.translate(cr.x, cr.y);
-      ctx.fillStyle = `hsla(${cr.hue}, 70%, 70%, 0.8)`;
-      ctx.strokeStyle = `hsla(${cr.hue}, 80%, 88%, 0.9)`;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (let i = 0; i < 6; i++) {
-        const ang = (i / 6) * Math.PI * 2;
-        const r = i % 2 === 0 ? 10 : 5;
-        const px = Math.cos(ang) * r, py = Math.sin(ang) * r;
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.restore();
-    }
+    for (const cr of this.crystals) this._drawCrystal(ctx, cr, 1);
     return canvas;
   }
 
+  _drawCrystal(ctx, cr, alphaMul) {
+    ctx.save();
+    ctx.translate(cr.x, cr.y);
+    ctx.fillStyle = `hsla(${cr.hue}, 70%, 70%, ${0.8 * alphaMul})`;
+    ctx.strokeStyle = `hsla(${cr.hue}, 80%, 88%, ${0.9 * alphaMul})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2;
+      const r = i % 2 === 0 ? 10 : 5;
+      const px = Math.cos(ang) * r, py = Math.sin(ang) * r;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
   draw(ctx, worldX, originX) {
-    if (!this.active || this.depth <= 0.02) return;
+    // Shards outlive the burrow itself (the eruption's debris finishes its
+    // arc after he's surfaced), so they draw whether or not the band does.
+    if (!this.active || this.depth <= 0.02) {
+      this._drawShards(ctx, worldX, originX);
+      return;
+    }
     this._ensureCanvases();
     const w = GRID_COLS * CELL_PX, h = GRID_ROWS * CELL_PX;
     const vctx = this._visionCanvas.getContext('2d');
@@ -324,11 +400,56 @@ export class Burrow {
     vctx.arc(hx, hy, HEADLIGHT_R, 0, Math.PI * 2);
     vctx.fill();
 
-    // Composite: the static geometry, masked by the live vision field.
+    // Composite: static geometry + the live music layers, all masked by
+    // the vision field together so nothing dynamic leaks outside his sight.
     const sctx = this._scratchCanvas.getContext('2d');
     sctx.clearRect(0, 0, w, h);
     sctx.globalCompositeOperation = 'source-over';
     sctx.drawImage(this._geoCanvas, 0, 0);
+
+    const nowMs = this._nowMs ?? 0;
+    sctx.save();
+    sctx.globalCompositeOperation = 'lighter';
+
+    // Bass makes the earth itself vibrate: the cave walls get a live
+    // re-stroke whose width and vertex jitter ride the low band.
+    if (this._bass > 0.12) {
+      sctx.strokeStyle = `hsla(260, 45%, 80%, ${0.15 + 0.35 * this._bass})`;
+      sctx.lineWidth = 1.2 + 1.6 * this._bass;
+      for (const c of this.contours) {
+        sctx.beginPath();
+        c.points.forEach((p, i) => {
+          const jx = Math.sin(nowMs * 0.02 + i * 1.7) * 2.5 * this._bass;
+          const jy = Math.cos(nowMs * 0.023 + i * 2.3) * 2.5 * this._bass;
+          if (i === 0) sctx.moveTo(p.x + jx, p.y + jy); else sctx.lineTo(p.x + jx, p.y + jy);
+        });
+        sctx.closePath();
+        sctx.stroke();
+      }
+    }
+
+    // Kicks flash every crystal with the beat...
+    if (this.crystalFlash > 0.03) {
+      for (const cr of this.crystals) this._drawCrystal(sctx, cr, this.crystalFlash);
+    }
+    // ...and fire a pressure ring off him through the rock.
+    for (const r of this.rings) {
+      const u = r.age / 0.4;
+      sctx.strokeStyle = `hsla(180, 60%, 80%, ${0.5 * (1 - u)})`;
+      sctx.lineWidth = 2 * (1 - u * 0.5);
+      sctx.beginPath();
+      sctx.arc(lx, ly, 12 + u * 90, 0, Math.PI * 2);
+      sctx.stroke();
+    }
+
+    // Melody onsets shake drips loose from the nearest stalactite.
+    for (const d of this.drips) {
+      const life = 1 - d.age / d.life;
+      sctx.fillStyle = `hsla(195, 70%, 78%, ${0.9 * life})`;
+      sctx.fillRect(d.x - 1, d.y, 2, 3.5);
+    }
+    sctx.restore();
+
     sctx.globalCompositeOperation = 'destination-in';
     sctx.drawImage(this._visionCanvas, 0, 0);
     sctx.globalCompositeOperation = 'source-over';
@@ -341,8 +462,8 @@ export class Burrow {
     ctx.fillRect(screenX, screenY, w, h);
     ctx.drawImage(this._scratchCanvas, screenX, screenY);
 
-    // Broshi himself: a small marker plus a short dotted excavation line
-    // trailing behind his heading.
+    // Broshi himself: his actual body glyph at 0.8 scale, melted and
+    // rolling with the swim, plus the dotted excavation line behind him.
     const bx = screenX + lx, by = screenY + ly;
     ctx.strokeStyle = 'rgba(150,255,180,0.35)';
     ctx.setLineDash([3, 5]);
@@ -353,11 +474,35 @@ export class Burrow {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    ctx.fillStyle = '#a8f0c0';
-    ctx.beginPath();
-    ctx.arc(bx, by, 4, 0, Math.PI * 2);
-    ctx.fill();
+    const facing = Math.cos(this.heading) >= 0 ? 1 : -1;
+    const swimRoll = 0.22 * Math.sin(nowMs * 0.0075);
+    const pitchTilt = Math.sin(this.heading) * 0.35 * facing;
+    const hub = BROSHI_BODY.vertices[0];
+    const bodyMesh = meltMesh(BROSHI_BODY, hub.x, hub.y, nowMs / 1000, 2.5, 2);
+    drawMeshPart(ctx, bodyMesh, this._bodyRest, {
+      tx: bx, ty: by, rot: swimRoll + pitchTilt, scaleX: 0.8 * facing, scaleY: 0.8,
+    }, 110, { satBase: 42, lightBase: 62, hueSpread: 20 });
 
+    ctx.restore();
+
+    this._drawShards(ctx, worldX, originX);
+  }
+
+  /** Dirt shards: flung from the hole on dig-in and eruption, arcing
+   * ABOVE ground in world space -- deliberately not vision-masked. */
+  _drawShards(ctx, worldX, originX) {
+    if (!this.shards.length) return;
+    ctx.save();
+    for (const s of this.shards) {
+      const life = 1 - s.age / s.life;
+      const sx = s.wx - worldX + originX;
+      ctx.translate(sx, s.wy);
+      ctx.rotate(s.rot);
+      ctx.fillStyle = `hsla(28, 48%, 42%, ${0.95 * life})`;
+      ctx.fillRect(-2.4, -1.2, 4.8, 2.4);
+      ctx.rotate(-s.rot);
+      ctx.translate(-sx, -s.wy);
+    }
     ctx.restore();
   }
 }
