@@ -6,13 +6,14 @@ import { buildDemoTimeline } from './core/DemoTimeline.js';
 import { synthesizeEnergyCurves } from './core/EnergyCurvesSynth.js';
 import { audioToTimeline } from './audio/AudioAdapter.js';
 import { Simulation } from './sim/Simulation.js';
-import { Renderer } from './render/Renderer.js';
+import { createRenderer, resolveRendererMode } from './render/WebGLRenderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
 import { Sf2Synth } from './audio/Sf2Synth.js';
 import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
+import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -68,6 +69,12 @@ let simTime = 0;
 let acc = 0;
 let lastNowMs = 0;
 let running = false;
+// Renderer path: ?renderer=webgl enables the optional WebGL post-FX overlay.
+// Default remains pure Canvas 2D so drag/upload MIDI never depends on GL.
+const rendererMode = resolveRendererMode(
+  typeof location !== 'undefined' ? location.search : '',
+);
+paramBus.rendererMode = rendererMode;
 
 // The Stage model: the game is composed for a fixed 1280x720 stage and the
 // browser scales that stage to fit the window (letterboxed via CSS
@@ -237,6 +244,11 @@ function stopTimeline() {
   }
   audioEngine?.pause();
   synth?.stopAll?.();
+  // Tear down optional WebGL overlay so a mid-song drop doesn't stack layers.
+  if (renderer && typeof renderer.dispose === 'function') {
+    try { renderer.dispose(); } catch { /* ignore */ }
+  }
+  renderer = null;
   completePanelEl.classList.add('hidden');
   debugOverlayEl.classList.add('hidden');
 }
@@ -250,8 +262,10 @@ function startTimeline(timelineData) {
     energyCurves: timelineData.energyCurves || null,
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
+    customBiome: timelineData.customBiome || null,
   });
-  renderer = new Renderer(canvas);
+  // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
+  renderer = createRenderer(canvas, rendererMode);
   visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false });
   debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop);
   renderTracks(timelineData.tracks, timelineData.pairs);
@@ -273,17 +287,35 @@ function startTimeline(timelineData) {
   // rAF throttling and AudioContext clock drift make unreliable to assert on).
   window.__SMW = {
     conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary, sf2Engine,
+    renderer, rendererMode, rendererBackend: renderer?.backend || 'canvas',
+    customBiome: timelineData.customBiome || null,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
   };
 }
 
 async function loadMidiFile(file) {
-  await bootAudio();
-  const buf = await file.arrayBuffer();
-  const data = midiToTimeline(buf);
-  data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
-  startTimeline(data);
+  try {
+    await bootAudio();
+    const buf = await file.arrayBuffer();
+    if (!buf || buf.byteLength < 14) {
+      throw new Error('File is empty or too small to be a MIDI file');
+    }
+    const data = midiToTimeline(buf);
+    if (!data.timeline || data.timeline.length === 0) {
+      throw new Error('MIDI parsed but contains no notes');
+    }
+    data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
+    // Custom biome generation lives inside the load path so every drop/upload
+    // of a .mid produces a unique world without changing stock demo casting.
+    data.customBiome = generateCustomBiomeFromMidi(data, file.name || 'MIDI');
+    rememberCustomBiome(paramBus, data.customBiome);
+    startTimeline(data);
+  } catch (err) {
+    console.error('[MIDI load failed]', err);
+    progressEl.classList.add('hidden');
+    alert('Could not load MIDI file: ' + (err?.message || err));
+  }
 }
 
 function showProgress(text) {
@@ -326,8 +358,14 @@ async function loadDemo() {
 }
 
 function handleFile(file) {
-  const name = file.name.toLowerCase();
-  if (name.endsWith('.mid') || name.endsWith('.midi')) {
+  if (!file) return;
+  const name = (file.name || '').toLowerCase();
+  // Also accept application/midi / audio/midi MIME when the OS omits extension.
+  const mime = (file.type || '').toLowerCase();
+  const isMidi = name.endsWith('.mid') || name.endsWith('.midi')
+    || mime === 'audio/midi' || mime === 'audio/mid' || mime === 'application/x-midi'
+    || mime === 'application/midi';
+  if (isMidi) {
     loadMidiFile(file);
   } else {
     loadAudioFile(file);
