@@ -19,13 +19,45 @@ npm start     # serves the app at http://localhost:5173
 ```
 
 Then open `http://localhost:5173` and either drop a `.mid`/audio file, or
-click **"Play procedural demo"** to run with zero file input.
+click **"Play procedural demo"** to run with zero file input. **You can drop
+a different `.mid`/audio file in at any time, even mid-song** — dragging one
+anywhere on the page (not just the loader screen) tears down whatever's
+currently playing and starts the new one immediately.
+
+**MIDI files with many tracks/channels are fully supported** — including
+SMF Type 0 files that multiplex several instruments through one track,
+which get split back out into one voice per channel. During play, a small
+**"N tracks · M roles"** badge appears top-right of the HUD; click it (or
+press `T`) to see every track's name, role, note count, and stereo pan. Any
+pair of tracks that were mixed hard-panned to opposite sides *and* actually
+play together gets a ↔ marker: their stereo spread starts centered and
+eases out to the full authored pan by the end of the song, instead of
+jumping straight to full width on note one.
+
+**SoundFonts (`.sf2`)** give MIDI playback real sampled instruments instead
+of the built-in oscillator synth. Drop `.sf2`/`.zip` files into the
+`soundfonts/` folder next to `index.html` and refresh — `npm start`'s dev
+server auto-loads everything in there, no clicking required (see
+`soundfonts/README.md`). You can also load fonts manually from the title
+screen or from the switcher popup below (file picker, folder picker, or
+`showDirectoryPicker` on supporting browsers). The pill at the bottom shows
+the active font's name; click it (or press `F`) to open the **switcher
+popup** listing every loaded font — click a row to make it active, or the
+`×` to hide it (excluded from the rotation, but never deleted). Hidden fonts
+come back through the **settings gear** (top-right of the HUD) or the
+popup's "Hidden (n)" link, which lists them with a `+` to restore. Robust
+against real-world fonts: preset lookup falls back gracefully instead of
+dropping notes when a font is missing the exact program/bank a role
+expects, stereo instrument pairs authored via SF2's sample-link mechanism
+(rather than two explicitly-panned zones) still play both channels, and a
+track's own hard pan blends with — rather than fighting — the font's
+authored stereo spread.
 
 Press `` ` `` during play to open the debug overlay (ParamBus state + vision
 loop log); press `V` inside it to toggle the vision self-tuning loop (off by
 default — it calls out to a local Ollama instance at
 `http://localhost:11434`, and degrades to a silent no-op if that's not
-running).
+running). Press `Escape` to close any open popup.
 
 ## Project layout
 
@@ -54,6 +86,10 @@ node tools/smoke-vision.mjs          # debug overlay + vision loop toggling
 node tools/smoke-full.mjs <mid>      # every system together on a real MIDI file
 node tools/gen-test-wav.mjs <out.wav> <bpm> <seconds>   # synthesize a test click track
 node tools/gen-test-midi.mjs <out.mid> <bars>           # synthesize a multi-track test MIDI file
+node tools/smoke-soundfont.mjs               # SF2 loading, switching, and routing
+node tools/smoke-multitrack.mjs              # multi-channel voices, pan-out, soundfont auto-load
+node tools/smoke-hotswap.mjs                 # drag a different MIDI in mid-song; no duplicate listeners/frame loops
+node tools/smoke-fontswitcher.mjs            # switcher popup: select/hide/unhide, settings view
 ```
 
 `OfflineAudioContext` (used for stem separation) only exists in a browser,

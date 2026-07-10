@@ -15,6 +15,9 @@ import { MidioPerformer } from './MidioPerformer.js';
 import { CalmDirector } from './CalmDirector.js';
 import { GnatGag } from './GnatGag.js';
 import { HypeDirector } from './HypeDirector.js';
+import { VibeDirector } from './VibeDirector.js';
+import { EnsembleDirector } from './EnsembleDirector.js';
+import { ExcursionDirector } from './ExcursionDirector.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
@@ -40,7 +43,9 @@ export class Simulation {
     this.obstacles = new ObstacleSpawner(paramBus);
     this.obstacles.buildCandidates(conductor.timeline, 60000 / bpm, this.midio.halfWidth);
 
-    this.midasus = new Midasus(conductor.timeline, this.midio, { groundY: this.midio.groundY, ceilingY: 40 });
+    this.midasus = new Midasus(conductor.timeline, this.midio, {
+      groundY: this.midio.groundY, ceilingY: 40, stageW: canvasWidth, stageH: canvasHeight,
+    });
     this.broshi = new Broshi(conductor, paramBus);
     this.broshi._lastBarPeriodMs = (60000 / bpm) * 4;
 
@@ -48,6 +53,9 @@ export class Simulation {
     this.performer = new MidioPerformer(songSeed);
     this.calm = new CalmDirector();
     this.hype = new HypeDirector();
+    this.vibe = new VibeDirector(conductor.timeline);
+    this.ensemble = new EnsembleDirector(songSeed, { stageW: canvasWidth, stageH: canvasHeight });
+    this.excursions = new ExcursionDirector(conductor.durationMs || 0);
     this.gnat = new GnatGag(songSeed, { canvasWidth, canvasHeight });
     this.groundField = new GroundField(this.midio.groundY, {
       conductor, durationMs: conductor.durationMs, songSeed,
@@ -73,6 +81,7 @@ export class Simulation {
         this.gnat.onKick(evt);
         this.performer.onKick();
         this.hype.onKick(evt.vel);
+        this.midasus.voyage.onKick(evt.vel); // deep-space sparkle burst (self-gated on phase)
       }
     });
   }
@@ -89,6 +98,11 @@ export class Simulation {
     this.conductor.dispatchUpTo(nowMs);
     this.calm.update(nowMs, dtSec, this.energyCurves);
     this.hype.update(nowMs, dtSec, this.energyCurves);
+    this.vibe.update(nowMs, dtSec, this.energyCurves);
+    this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs);
+    // Midio roams toward his ensemble anchor -- slow, never gameplay-fast.
+    const dxA = this.ensemble.anchors[0].x - this.midio.screenX;
+    this.midio.screenX += Math.max(-30 * dtSec, Math.min(30 * dtSec, dxA));
     this.jump.update(nowMs);
     this.midio.y = this.jump.y;
 
@@ -120,11 +134,37 @@ export class Simulation {
 
     this.obstacles.update(nowMs, this.worldX, worldSpeed / 1000);
     this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.obstacles);
-    this.performer.update(nowMs, dtSec, this.midio, this.jump, this.comboSystem, this.calm.level);
+    this.performer.update(nowMs, dtSec, this.midio, this.jump, this.comboSystem, this.calm.level, this.ensemble);
     this.impactFX.step(dtSec);
 
-    this.midasus.update(nowMs, dtSec, this.calm.level);
-    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level);
+    // Decides whether Midasus or Broshi leaves the ensemble this frame;
+    // triggering here (before their own update() calls below) means a
+    // freshly-launched excursion starts animating in this very frame
+    // rather than waiting one extra tick.
+    this.excursions.update(nowMs, dtSec, {
+      vibe: this.vibe, calm: this.calm, hype: this.hype, energyCurves: this.energyCurves,
+      conductor: this.conductor, midasus: this.midasus, broshi: this.broshi, worldX: this.worldX,
+    });
+
+    this.midasus.update(nowMs, dtSec, this.calm.level, {
+      x: this.ensemble.anchors[2].x, y: this.ensemble.anchors[2].y,
+      phase: this.ensemble.phase(2), melt: 2 + 4.5 * this.vibe.epic, epic: this.vibe.epic,
+    });
+    // She's off on a voyage -> the ensemble's Kuramoto math should feel the
+    // hole (this takes effect next frame; the weight eases over ~1.5s
+    // regardless, so the one-step lag is inaudible/invisible).
+    this.ensemble.setPresence(2, this.midasus.voyage.active ? 0 : 1);
+    if (this.midasus.voyage.justLanded) { this.camera.punch(1.05); this.camera.shake(7); }
+    // The sky notices her presence: the celestial's mandala swells while
+    // she's dancing around it, and the accumulated star atlas glints with
+    // every beat for the rest of the song.
+    this.biomes.mandalaScaleMul = 1 + 0.12 * this.midasus.voyage.depth;
+    this.midasus.voyage.atlasPulse = this.hype.slam;
+    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level, {
+      trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
+    }, this.groundField);
+    // He's underground -> same presence handoff as Midasus's voyage.
+    this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
     this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge; // drops surge every phenomena system
     this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level);
     if (this.biomes.cutFlashJustFired) { this.camera.punch(1.06); this.camera.shake(6); }

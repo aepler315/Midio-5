@@ -115,3 +115,72 @@ test('GroundField gag sinks a run of slices then recovers with justRecovered fir
   assert.ok(sawSink, 'expected the ground to visibly sag during the gag window');
   assert.ok(recoverCount >= 1, 'expected justRecovered to fire at least once');
 });
+
+test('pulseAt sinks the nearest slice by the given amount and recovers on schedule', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  let t = 0;
+  gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+  gf.pulseAt(t, 50, 40, t + 300); // sink 40px at worldX=50, recover at t+300ms
+
+  let sawSink = false;
+  while (t < 1500) {
+    t += 8.33;
+    gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+    if (gf.heightAt(50) > BASE_Y + 15) sawSink = true;
+  }
+  assert.ok(sawSink, 'the pulsed slice should visibly sink toward the requested depth');
+  // After recovering, it should settle back near baseline (no residual gag state).
+  assert.ok(Math.abs(gf.heightAt(50) - BASE_Y) < 5, `expected settle near baseline, got ${gf.heightAt(50)}`);
+});
+
+test('pulseAt with a negative sag rises the slice (a mole-ridge bump)', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  let t = 0;
+  gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+  gf.pulseAt(t, 50, -7, t + 220);
+
+  let minY = Infinity;
+  while (t < 400) {
+    t += 8.33;
+    gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+    minY = Math.min(minY, gf.heightAt(50));
+  }
+  assert.ok(minY < BASE_Y - 1, `expected the ground to rise for a negative pulse, min height ${minY}`);
+});
+
+test('pulseAt fires justRecovered once, like the scripted gag', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  let t = 0;
+  gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+  gf.pulseAt(t, 50, 30, t + 200);
+
+  let recoverCount = 0;
+  while (t < 1200) {
+    t += 8.33;
+    gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+    if (gf.justRecovered) recoverCount++;
+  }
+  assert.equal(recoverCount, 1);
+});
+
+test('a second pulseAt on the same slice before the first resolves still recovers cleanly', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  let t = 0;
+  gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+  gf.pulseAt(t, 50, 40, t + 1000);
+  t += 100;
+  gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+  gf.pulseAt(t, 50, -7, t + 220); // re-pulse before the first has recovered
+
+  let ranWithoutThrowing = true;
+  try {
+    while (t < 2000) {
+      t += 8.33;
+      gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+    }
+  } catch {
+    ranWithoutThrowing = false;
+  }
+  assert.ok(ranWithoutThrowing);
+  assert.ok(Math.abs(gf.heightAt(50) - BASE_Y) < 5, 'should still settle back near baseline eventually');
+});

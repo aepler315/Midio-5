@@ -8,8 +8,9 @@ import { hexLerp, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { RABID_WEIGHTS } from '../audio/bands.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { BROSHI_BODY, BROSHI_HEAD, BROSHI_JAW, BROSHI_EYE, BROSHI_TAIL } from '../render/meshes.js';
-import { computeRestLengths, drawMeshPart, displaceMeshRadial } from '../render/MeshDrawer.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh } from '../render/MeshDrawer.js';
 import { ModalRing } from '../render/oscillators.js';
+import { Burrow } from './Burrow.js';
 
 const K = 26, C = 3.4; // spring stiffness (s^-2), damping (s^-1)
 const D_TRAIL = -140, D_SURGE = 120, D_PANIC = -220;
@@ -94,13 +95,27 @@ export class Broshi {
     this.modal = new ModalRing({ modes: 4, baseHz: 7, decaySec: 0.5, seed: seed + 1 });
     this.beatFlash = 0;
     this._nowMs = 0;
+    this._trailTarget = D_TRAIL;
+    this._ensPhase = null;
+    this._melt = 0;
+    // Occasional underground excursion: drawn beneath the world (see
+    // Renderer.js), fog-of-war dirt-sight owned entirely by Burrow.
+    this.burrow = new Burrow(seed + 2);
 
     conductor.onBar((bar) => this._onBar(bar));
     conductor.on(Role.RHYTHM, (evt) => {
-      if (evt.kick) this._onKick();
+      if (evt.kick) { this._onKick(); this.burrow.onKick(evt.vel); }
       else if (evt.vel >= 0.3) this._onMiniHopTrigger(evt);
     });
-    conductor.on(Role.MELODY, (evt) => this._onHeadBob(evt));
+    conductor.on(Role.MELODY, (evt) => { this._onHeadBob(evt); this.burrow.onMelodyOnset(evt); });
+  }
+
+  /** Test/debug hook: send him underground right now regardless of natural
+   * triggers. No-op if he's already away. */
+  forceBurrow(nowMs, worldX) {
+    // The hole belongs where HE stands, not at Midio's world anchor:
+    // his world-x is Midio's plus the trailing spring offset.
+    return this.burrow.trigger(nowMs, { x: this.screenX, y: this.groundY }, worldX, this.groundY, worldX + this.xRel);
   }
 
   _onBar(bar) {
@@ -150,8 +165,13 @@ export class Broshi {
     this._neckPending = { vel: evt.vel };
   }
 
-  update(nowMs, dtSec, midio, energyCurves, obstacles, worldX, groundY, calmLevel = 0) {
+  update(nowMs, dtSec, midio, energyCurves, obstacles, worldX, groundY, calmLevel = 0, ensemble = null, groundField = null) {
     this._calmLevel = calmLevel;
+    this._ensPhase = ensemble ? ensemble.phase : null;
+    this._melt = ensemble ? ensemble.melt : 0;
+    // The ensemble roams him around the floor: his spring's TRAIL set-point
+    // chases the formation anchor instead of a fixed -140px offset.
+    this._trailTarget = ensemble ? clamp(ensemble.trailX - midio.screenX, -420, 320) : D_TRAIL;
     const gInstant = energyCurves ? energyCurves.globalEnergy(nowMs, RABID_WEIGHTS) : 0;
     this._barEnergyAccum += gInstant;
     this._barEnergySamples++;
@@ -167,7 +187,7 @@ export class Broshi {
     else if (this.state === 'PANIC') this.state = 'TRAIL';
     else if (this.state === 'SURGE' && nowMs >= this.surgeUntilMs) this.state = 'TRAIL';
 
-    const dStar = this.state === 'SURGE' ? D_SURGE : this.state === 'PANIC' ? D_PANIC : D_TRAIL;
+    const dStar = this.state === 'SURGE' ? D_SURGE : this.state === 'PANIC' ? D_PANIC : this._trailTarget;
     const accel = -K * (this.xRel - dStar) - C * this.xRelVel;
     this.xRelVel += accel * dtSec;
     this.xRel += this.xRelVel * dtSec;
@@ -267,6 +287,22 @@ export class Broshi {
     this._nowMs = nowMs;
     this.groundY = groundY;
     this.screenX = midio.screenX + this.xRel;
+
+    // Locomotion/rendering above keeps running harmlessly underneath (so a
+    // resurface never has to catch up on anything); once he's away,
+    // draw() skips him here and Renderer draws the underground band
+    // instead (see Burrow.draw, called directly from Renderer.js). The
+    // bass band (e1, computed above for the tongue) doubles as the cave
+    // walls' vibration drive.
+    this.burrow.update(nowMs, dtSec, worldX, groundField, e1);
+    if (this.burrow.justSurfaced) {
+      // The pop-out: a real hop arc, a hard body ring, and a beat flash --
+      // he bursts out of the ground, he doesn't fade back in.
+      this._hopH = 40;
+      this._hopUntilMs = nowMs + 300;
+      this.modal.excite(5);
+      this.beatFlash = 1;
+    }
   }
 
   _startHop(nowMs, vel) {
@@ -288,12 +324,13 @@ export class Broshi {
   }
 
   draw(ctx) {
+    if (this.burrow.depth > 0.02) return; // he's underground; Renderer draws the Burrow band instead
     const skinHex = hexLerp('#63c74d', '#e43b44', this.rho);
     const skinRgb = hexToRgb(skinHex);
     const baseHue = rgbToHsl(skinRgb.r, skinRgb.g, skinRgb.b).h;
     // Predatory weave: he stalks side to side instead of gliding on rails.
     // Render-only -- the spring physics and panic hops are untouched.
-    const weave = WEAVE_PX * (1 - 0.5 * this._calmLevel) * Math.sin(this._nowMs * 0.006);
+    const weave = WEAVE_PX * (1 - 0.5 * this._calmLevel) * Math.sin(this._ensPhase != null ? this._ensPhase : this._nowMs * 0.006);
     const x = this.screenX + weave;
     const y = this.groundY - this.hopY;
 
@@ -343,7 +380,10 @@ export class Broshi {
     const neckRad = (this.neckAngle * Math.PI) / 180;
     const group = { tx: x, ty: y, rot: neckRad, scaleX: DRAW_SCALE, scaleY: DRAW_SCALE };
     const bodyHub = BROSHI_BODY.vertices[0];
-    const bodyMesh = displaceMeshRadial(BROSHI_BODY, bodyHub.x, bodyHub.y, this.modal);
+    const bodyMesh = meltMesh(
+      displaceMeshRadial(BROSHI_BODY, bodyHub.x, bodyHub.y, this.modal),
+      bodyHub.x, bodyHub.y, this._nowMs / 1000, this._melt || 0, 2,
+    );
     const glyphOpts = { satBase: 30, lightBase: 56, hueSpread: 20 };
     drawMeshPart(ctx, bodyMesh, this._bodyRest, group, baseHue, glyphOpts);
     drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue, glyphOpts);

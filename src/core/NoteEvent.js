@@ -11,6 +11,8 @@
 // @property {boolean} kick    true -> may drive a Midio jump
 // @property {'midi'|'audio'} src
 // @property {number} channel  midi channel or band index
+// @property {number} pan      stereo placement, -1 (hard left) .. 1 (hard right), 0 = center
+// @property {number} program  GM instrument 0-127 from the source MIDI, -1 if unknown/non-MIDI
 
 export const Role = Object.freeze({
   MELODY: 'MELODY',
@@ -29,9 +31,12 @@ export const GM_DRUM = Object.freeze({
 
 /** @returns {NoteEvent} */
 export function makeNoteEvent({
-  tMs, durMs = 90, pitch, vel, role, kick = false, src, channel = 0,
+  tMs, durMs = 90, pitch, vel, role, kick = false, src, channel = 0, pan = 0, program = -1,
 }) {
-  return { tMs, durMs, pitch, vel: Math.max(0, Math.min(1, vel)), role, kick, src, channel };
+  return {
+    tMs, durMs, pitch, vel: Math.max(0, Math.min(1, vel)), role, kick, src, channel,
+    pan: Math.max(-1, Math.min(1, pan)), program,
+  };
 }
 
 export function sortNoteEvents(events) {

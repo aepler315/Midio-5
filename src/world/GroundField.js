@@ -17,7 +17,10 @@ const SPRING_K = 40, SPRING_C = 12; // per-slice settle spring (critically-dampe
 const RECOVER_C = 4; // reduced damping during recovery -> elastic overshoot
 const RECOVER_DURATION_MS = 700; // how long the softened damping lasts
 const LOOKAHEAD_PX = 1600;
-const TRIM_BEHIND_PX = 300;
+// Must exceed the ensemble roam window: Midio's screen anchor can sit as
+// far right as ~0.62*stageW, so slices up to that far behind worldX are
+// still on screen to his left.
+const TRIM_BEHIND_PX = 940;
 
 const GAG_LEAD_PX = 420; // how far ahead of Midio a gag is seeded, so it's visible before he reaches it
 const GAG_SLICE_COUNT = 7;
@@ -115,6 +118,22 @@ export class GroundField {
     for (const s of group) s._gagRecoverAtMs = recoverMs;
   }
 
+  /** A one-off deformation at a world-x, reusing the scripted gag's own
+   * sink/recover spring physics (elastic overshoot included) instead of any
+   * new physics -- Broshi's mole-ridge surface tell and burrow eruption
+   * both just call this with different sag depths and hold times.
+   * `sagPx` follows the same sign convention as the gag: positive sinks the
+   * ground, negative rises it (a small negative sag reads as a mole-ridge
+   * bump; a larger positive one reads as the ground giving way). */
+  pulseAt(nowMs, worldX, sagPx, recoverAtMs) {
+    const s = this._sliceAt(worldX);
+    if (!s) return;
+    s._gagSinkAtMs = nowMs;
+    s._gagSinkTarget = sagPx;
+    s._gagRecoverAtMs = recoverAtMs;
+    s._recoveredFired = false;
+  }
+
   update(nowMs, dtSec, worldX, energyCurves) {
     this.justRecovered = false;
     this._nowMs = nowMs;
@@ -145,7 +164,7 @@ export class GroundField {
             s._gagSinkAtMs = undefined; // gag fully resolved, back to plain band-driven behavior
           }
         } else if (nowMs >= s._gagSinkAtMs) {
-          target = GAG_SAG_PX;
+          target = s._gagSinkTarget ?? GAG_SAG_PX;
         }
       }
 

@@ -44,6 +44,7 @@ export class BiomeManager {
     this.cutFlashJustFired = false;
     this.budget = 1;
     this.hypeBoost = 1; // drop-surge multiplier from the HypeDirector
+    this.mandalaScaleMul = 1; // swells while Midasus dances near the celestial
     this._progress = 0;
     this.lerpCache = new LerpCache();
     this.tSec = 0;
@@ -274,7 +275,7 @@ export class BiomeManager {
     if (this._glitchTimer <= 0) { this._glitchActiveMs = 60; this._glitchTimer = 2.5 + this._starSeed() * 3.5; }
   }
 
-  draw(ctx, canvas, worldX, originX = 0) {
+  draw(ctx, canvas, worldX, originX = 0, skyVoyage = null) {
     const { from, to, t } = this.currentBlend || { from: this.sections[0].profile, to: this.sections[0].profile, t: 1 };
     const A = this._profile(from), B = this._profile(to);
 
@@ -296,12 +297,13 @@ export class BiomeManager {
     // Spirograph resonance mandala, centered on the celestial body so it
     // reads as the sun/moon itself resonating with the track.
     const mandalaColor = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
-    this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * arc.celestialYFrac, canvas.height * 0.30, mandalaColor);
+    this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * arc.celestialYFrac, canvas.height * 0.30 * this.mandalaScaleMul, mandalaColor);
     // Phenomena layer, deep sky: cymatic dust settling into Chladni
     // figures, and the chaos ribbon opposite the celestial for balance.
     this.cymatics.draw(ctx, canvas, mandalaColor);
     this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075 * (this._ribbonScaleMul || 1), mandalaColor);
     this.lightning.draw(ctx, canvas, this.tSec * 1000); // behind the ranges: bolts land beyond the hills
+    this.drawDeepSky(ctx, skyVoyage); // Midasus's sky voyage, when she's away -- behind the mountains below
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
 
     const scrollX0 = worldX * LAYER_RATIOS.L2, scrollX1 = worldX * LAYER_RATIOS.L3;
@@ -324,6 +326,113 @@ export class BiomeManager {
 
     this._drawGround(ctx, canvas, worldX, originX, A, B, t);
     this._drawTransitionOverlays(ctx, canvas, B);
+  }
+
+  /** Midasus's deep-space excursion: drawn here (behind the mountain
+   * silhouettes drawn further down in draw()) so she genuinely reads as
+   * "way in the distance" rather than just smaller. Renders her fading
+   * constellations (completed figures frozen into the sky), the live
+   * persistent trail sky-writing the current figure, and a small mote of
+   * light at her current position. A no-op whenever she isn't away. */
+  drawDeepSky(ctx, voyage) {
+    if (!voyage) return;
+    const nowMs = this.tSec * 1000;
+
+    // The Star Atlas draws whether or not she's away: every crystallized
+    // constellation stays in the sky for the rest of the song, twinkling
+    // per-star and glinting with the beat (atlasPulse rides hype.slam).
+    if (voyage.atlas.length) {
+      const pulse = voyage.atlasPulse || 0;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const entry of voyage.atlas) {
+        ctx.strokeStyle = `hsla(${entry.hue}, 35%, 82%, ${0.09 * (1 + 1.2 * pulse)})`;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        entry.stars.forEach((s, i) => { if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y); });
+        ctx.stroke();
+        for (const s of entry.stars) {
+          const twinkle = 0.5 + 0.5 * Math.sin(nowMs * 0.0013 + s.phase);
+          ctx.fillStyle = `hsla(${entry.hue}, 45%, 88%, ${(0.16 + 0.16 * twinkle) * (1 + 1.6 * pulse)})`;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, 1.1 + 0.5 * twinkle, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+
+    if (voyage.depth <= 0.02) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    for (const c of voyage.constellations) {
+      const life = 1 - clamp01((nowMs - c.bornMs) / 6000);
+      if (life <= 0) continue;
+      ctx.strokeStyle = `hsla(${c.hue}, 60%, 80%, ${0.5 * life})`;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      c.points.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+      ctx.stroke();
+      ctx.fillStyle = `hsla(${c.hue}, 75%, 90%, ${0.9 * life})`;
+      for (const p of c.points) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Persistent trail: a soft wide glow pass underneath a bright thin
+    // core, the way a comet's tail actually reads -- this is the geometry
+    // she's sky-writing, so it needs to be legible, not a faint scratch.
+    const trail = voyage.trail;
+    for (let i = 1; i < trail.length; i++) {
+      const a = trail[i - 1], b = trail[i];
+      const u = i / trail.length; // older points fade toward transparent
+      ctx.strokeStyle = `hsla(${b.hue}, 65%, 78%, ${0.22 * u})`;
+      ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.strokeStyle = `hsla(${b.hue}, 75%, 88%, ${0.85 * u})`;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+
+    // Kick sparkles: radial bursts flung off her on every beat out there.
+    for (const s of voyage.sparkles) {
+      const life = 1 - s.age / 0.6;
+      if (life <= 0) continue;
+      ctx.fillStyle = `hsla(${s.hue}, 80%, 88%, ${0.85 * life})`;
+      ctx.fillRect(s.x - 1, s.y - 1, 2.2, 2.2);
+    }
+
+    // Micro-slashes: each melody onset cuts a brief bright line at her
+    // deep-sky position -- her note-slash vocabulary, miniaturized.
+    ctx.lineCap = 'round';
+    for (const s of voyage.microSlashes) {
+      const u = s.age / 0.25;
+      if (u >= 1) continue;
+      const ext = 8 + 14 * u;
+      ctx.strokeStyle = `hsla(${s.hue}, 75%, 85%, ${0.9 * (1 - u)})`;
+      ctx.lineWidth = 1.6 * (1 - u * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(s.x - Math.cos(s.ang) * ext, s.y - Math.sin(s.ang) * ext);
+      ctx.lineTo(s.x + Math.cos(s.ang) * ext, s.y + Math.sin(s.ang) * ext);
+      ctx.stroke();
+    }
+
+    // Her current position: fades in from nothing (still "here" at the
+    // start of ascent) to a small glowing comet-head once fully away.
+    const r = 2 + 3 * (1 - voyage.depth);
+    ctx.fillStyle = `hsla(${voyage.hue}, 60%, 85%, ${0.28 * voyage.depth})`;
+    ctx.beginPath();
+    ctx.arc(voyage.p.x, voyage.p.y, r * 3.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `hsla(${voyage.hue}, 80%, 92%, ${0.6 + 0.4 * voyage.depth})`;
+    ctx.beginPath();
+    ctx.arc(voyage.p.x, voyage.p.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
   }
 
   /** Cut flash + shutter wipe, fired by the Dramaturgy Director. */
@@ -432,40 +541,59 @@ export class BiomeManager {
   }
 
   /**
-   * The EQ, moved to a distant background layer (follow-up item 2): seven
-   * huge, soft bars on the horizon at far parallax depth, between the
-   * celestial layer and the far mountains. Excited but never distracting --
-   * additive, low alpha, and hard-clamped so it can never dominate the frame.
+   * The spectrum as weather, not as bars: a continuous luminous ridge on
+   * the horizon whose silhouette IS the 7-band spectrum -- cosine-
+   * interpolated between bands so there is not a straight line in it,
+   * slowly scrolling through the bands, with a traveling undulation riding
+   * the crest. Filled glow below, a bright aurora crest line on top.
    */
   _drawHorizonEQ(ctx, canvas, worldX, A, B, t) {
-    const scrollX = worldX * LAYER_EQ_RATIO;
-    const barCount = BAND_COUNT;
-    const totalWidth = canvas.width * 1.4;
-    const barWidth = totalWidth / barCount;
-    const baseline = canvas.height * 0.62;
-    const maxHeight = canvas.height * EQ_MAX_HEIGHT_FRAC;
-    // The celestial color (not a sky gradient stop) so the glow actually
-    // reads as light against a sky that may already share the sky's own hue.
     const color = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
+    const baseline = canvas.height * 0.60;
+    const maxH = canvas.height * EQ_MAX_HEIGHT_FRAC;
+    const scroll = worldX * 0.0018;
+    const tS = this.tSec;
+
+    const N = 64;
+    const pts = new Array(N + 1);
+    for (let i = 0; i <= N; i++) {
+      const u = i / N;
+      // Which pair of bands this column sits between (wrapping, scrolling).
+      const p = ((u * BAND_COUNT + scroll) % BAND_COUNT + BAND_COUNT) % BAND_COUNT;
+      const i0 = Math.floor(p) % BAND_COUNT, i1 = (i0 + 1) % BAND_COUNT;
+      const f = p - Math.floor(p);
+      const c = (1 - Math.cos(f * Math.PI)) / 2; // cosine ease: no corners
+      const v = clamp01(this._eqSmoothed[i0] * (1 - c) + this._eqSmoothed[i1] * c);
+      const wave = Math.sin(u * Math.PI * 7 + tS * 1.6) * 7 * (0.25 + v);
+      pts[i] = { x: u * canvas.width, y: baseline - (v * maxH + wave) };
+    }
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    const offset = -(((scrollX % totalWidth) + totalWidth) % totalWidth);
-    for (let rep = 0; rep < 3; rep++) {
-      const groupX = offset + rep * totalWidth - totalWidth;
-      for (let i = 0; i < barCount; i++) {
-        const x = groupX + i * barWidth;
-        if (x + barWidth < -50 || x > canvas.width + 50) continue;
-        const v = clamp01(this._eqSmoothed[i]);
-        const h = Math.min(maxHeight, v * maxHeight);
-        if (h <= 1) continue;
-        const grad = ctx.createLinearGradient(0, baseline, 0, baseline - h);
-        grad.addColorStop(0, `${color}80`);
-        grad.addColorStop(1, `${color}00`);
-        ctx.fillStyle = grad;
-        ctx.globalAlpha = 0.30 * this.budget;
-        ctx.fillRect(x + barWidth * 0.08, baseline - h, barWidth * 0.84, h);
+
+    // Body: a soft filled glow from the crest down.
+    const grad = ctx.createLinearGradient(0, baseline - maxH, 0, baseline + 30);
+    grad.addColorStop(0, `${color}55`);
+    grad.addColorStop(1, `${color}00`);
+    ctx.fillStyle = grad;
+    ctx.globalAlpha = 0.5 * this.budget;
+    ctx.beginPath();
+    ctx.moveTo(0, baseline + 30);
+    for (const p of pts) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(canvas.width, baseline + 30);
+    ctx.closePath();
+    ctx.fill();
+
+    // Crest: wide faint halo under a bright aurora line.
+    for (const [lw, a] of [[7, 0.14], [2.2, 0.6]]) {
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = a * this.budget;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      for (let i = 0; i <= N; i++) {
+        if (i === 0) ctx.moveTo(pts[i].x, pts[i].y); else ctx.lineTo(pts[i].x, pts[i].y);
       }
+      ctx.stroke();
     }
     ctx.restore();
   }

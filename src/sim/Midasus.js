@@ -6,9 +6,10 @@ import { Role } from '../core/NoteEvent.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { clamp, lerp, mulberry32 } from '../utils/math.js';
 import { MIDASUS_MESH } from '../render/meshes.js';
-import { computeRestLengths, drawMeshPart, displaceMeshRadial } from '../render/MeshDrawer.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh } from '../render/MeshDrawer.js';
 import { ModalRing } from '../render/oscillators.js';
 import { OrbitalDebris } from './OrbitalDebris.js';
+import { SkyVoyage } from './SkyVoyage.js';
 
 const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
@@ -19,10 +20,12 @@ const BANK_GAIN = 0.0016, BANK_MAX = 0.6; // she rolls into her darts
 const SLASH_LIFE_SEC = 0.18;
 
 export class Midasus {
-  constructor(timeline, midio, { groundY = 480, ceilingY = 40, seed = 777 } = {}) {
+  constructor(timeline, midio, { groundY = 480, ceilingY = 40, seed = 777, stageW = 1280, stageH = 720 } = {}) {
     this.midio = midio;
     this.yFloor = groundY;
     this.yCeiling = ceilingY;
+    this.stageW = stageW;
+    this.stageH = stageH;
 
     this.q = timeline.filter((e) => e.role === Role.MELODY).sort((a, b) => a.tMs - b.tMs);
     this.i = 0;
@@ -56,17 +59,33 @@ export class Midasus {
     this.modal = new ModalRing({ modes: 3, baseHz: 11, decaySec: 0.4, seed: seed + 1 });
     // Gravitationally bound shards: they trail and slingshot as she darts.
     this.debris = new OrbitalDebris(seed + 2);
+    // Occasional deep-sky excursion: BiomeManager draws it (see
+    // drawDeepSky), far behind the world, while this is active.
+    this.voyage = new SkyVoyage(seed + 3);
+  }
+
+  /** Test/debug hook: send her on a voyage right now regardless of natural
+   * triggers. No-op if she's already away. */
+  forceVoyage(nowMs) {
+    return this.voyage.trigger(nowMs, { ...this.p }, this.stageW, this.stageH);
   }
 
   _target(n) {
     const norm = clamp((n.pitch - this.pMin) / (this.pMax - this.pMin), 0, 1);
     const y = lerp(this.yFloor - 120, this.yCeiling + 60, norm);
     const x = this.midio.screenX + 90 + 50 * n.vel;
+    // The ensemble pulls her across the stage; pitch stays primary vertically.
+    if (this._ens) {
+      return {
+        x: x * 0.35 + this._ens.x * 0.65,
+        y: y + clamp(this._ens.y - y, -110, 110) * 0.35,
+      };
+    }
     return { x, y };
   }
 
   _orbitAnchor(nowMs, calmLevel) {
-    const ax = this.midio.screenX;
+    const ax = this._ens ? this._ens.x : this.midio.screenX;
     const ay = this.midio.groundY - this.midio.y - 130;
     const t = nowMs / 1000;
     // Calm sections: the orbit widens and slows -- a lazier, dreamier drift
@@ -103,8 +122,10 @@ export class Midasus {
     });
   }
 
-  update(nowMs, dtSec, calmLevel = 0) {
+  update(nowMs, dtSec, calmLevel = 0, ensemble = null) {
     this._calmLevel = calmLevel;
+    this._ens = ensemble;
+    this._nowMs = nowMs;
     while (this.i < this.q.length && this.q[this.i].tMs <= nowMs) {
       const n = this.q[this.i++];
       const t = this._target(n);
@@ -113,6 +134,7 @@ export class Midasus {
       this.v.x *= 0.4;
       this.v.y *= 0.4;
       this.hue = this._hueOf(n.pitch);
+      if (this.voyage.active) this.voyage.onMelodyOnset(n); // deep space hears the melody too
       this._burst(8 + 24 * n.vel, this.hue);
       this.lastNoteMs = nowMs;
       this.pulse = 1.7 + 0.5 * n.vel; // a brief mesh flash on each note onset
@@ -158,9 +180,33 @@ export class Midasus {
     // calm sections lower it, so the shards drift into wider, lazier arcs.
     const massMul = (0.8 + 0.5 * (this.pulse - 1)) * (1 - 0.3 * calmLevel);
     this.debris.update(dtSec, this.p, Math.max(0.3, massMul));
+
+    // Sky voyage: the note/PD logic above keeps running harmlessly
+    // underneath (so a return never has to catch up on a backlog), but
+    // once she's away the voyage fully owns where "she" is -- draw() skips
+    // rendering her here and BiomeManager's deep-sky pass takes over.
+    const anchorX = this._ens ? this._ens.x : this.midio.screenX + 90;
+    const anchorY = this._ens ? this._ens.y : this.yFloor - 200;
+    this.voyage.update(nowMs, dtSec, ensemble ? ensemble.epic || 0 : 0, { x: anchorX, y: anchorY });
+    if (this.voyage.active) {
+      this.p = { ...this.voyage.p };
+      this.hue = this.voyage.hue;
+    }
+    if (this.voyage.justLanded) {
+      // Touchdown: her core rings hard, the shards fling, and a five-point
+      // slash star marks the landing (drawn by her normal pass, which has
+      // just resumed since depth is back to 0).
+      this.modal.excite(6);
+      this.debris.burst(1);
+      for (let k = 0; k < 5; k++) {
+        this.slashes.push({ x: this.p.x, y: this.p.y, ang: (k / 5) * Math.PI, len: 64, age: 0, hue: this.hue });
+      }
+      while (this.slashes.length > 8) this.slashes.shift();
+    }
   }
 
   draw(ctx) {
+    if (this.voyage.depth > 0.02) return; // she's away; BiomeManager's deep-sky pass owns rendering
     const sat = Math.round(58 - 28 * this.rest); // spectral: pale, never candy
     this.debris.draw(ctx, this.hue, this.rest); // behind her core and trail
     // Calm sections fade the ribbon rather than shortening it -- the longer
@@ -193,9 +239,14 @@ export class Midasus {
     ctx.restore();
 
     const hub = MIDASUS_MESH.vertices[0];
-    const coreMesh = displaceMeshRadial(MIDASUS_MESH, hub.x, hub.y, this.modal);
-    // Banking: she rolls into her darts like something with mass.
-    const bank = clamp(this.v.x * BANK_GAIN, -BANK_MAX, BANK_MAX);
+    const coreMesh = meltMesh(
+      displaceMeshRadial(MIDASUS_MESH, hub.x, hub.y, this.modal),
+      hub.x, hub.y, (this._nowMs || 0) / 1000, (this._ens ? this._ens.melt : 0) * 0.7, 3,
+    );
+    // Banking: she rolls into her darts like something with mass, and her
+    // pulse breathes on her ensemble phase -- in step when the trio locks.
+    const bank = clamp(this.v.x * BANK_GAIN, -BANK_MAX, BANK_MAX)
+      + (this._ens ? 0.08 * Math.sin(this._ens.phase) : 0);
 
     ctx.save();
     ctx.globalAlpha = 0.6;

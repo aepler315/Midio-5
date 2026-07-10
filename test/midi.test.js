@@ -3,28 +3,7 @@ import assert from 'node:assert/strict';
 import { TempoMap } from '../src/core/TempoMap.js';
 import { midiToTimeline } from '../src/core/MidiAdapter.js';
 import { Role } from '../src/core/NoteEvent.js';
-
-function vlq(value) {
-  let buffer = value & 0x7f;
-  const bytes = [];
-  while ((value >>= 7)) {
-    buffer <<= 8;
-    buffer |= 0x80 | (value & 0x7f);
-  }
-  while (true) {
-    bytes.push(buffer & 0xff);
-    if (buffer & 0x80) buffer >>= 8; else break;
-  }
-  return bytes;
-}
-
-function buildTrackChunk(events) {
-  const bytes = [];
-  for (const e of events) bytes.push(...e);
-  const header = [0x4d, 0x54, 0x72, 0x6b]; // 'MTrk'
-  const len = bytes.length;
-  return [...header, (len >> 24) & 0xff, (len >> 16) & 0xff, (len >> 8) & 0xff, len & 0xff, ...bytes];
-}
+import { vlq, buildTrackChunk, buildMultiTrackPannedMidi, buildType0MultiChannelMidi } from './helpers/midiFixture.js';
 
 function buildSimpleMidi() {
   const ppqn = 96;
@@ -90,4 +69,66 @@ test('single melody track with runs/legato falls back to MELODY role', () => {
   const { timeline } = midiToTimeline(buf);
   // Named "Lead" should hit the MELODY keyword regex directly.
   assert.equal(timeline[0].role, Role.MELODY);
+});
+
+test('a MIDI with no pan/program-change info defaults to center pan and unknown program', () => {
+  const buf = buildSimpleMidi();
+  const { timeline, tracks } = midiToTimeline(buf);
+  for (const e of timeline) {
+    assert.equal(e.pan, 0);
+    assert.equal(e.program, -1);
+  }
+  assert.equal(tracks[0].pan, 0);
+  assert.equal(tracks[0].intertwined, false);
+});
+
+test('a single track multiplexing channels (SMF Type 0 style) splits into per-channel voices', () => {
+  const buf = buildType0MultiChannelMidi();
+  const { tracks, timeline } = midiToTimeline(buf);
+  assert.equal(tracks.length, 2, `expected 2 voices, got ${tracks.map((t) => t.name).join(', ')}`);
+
+  const melodic = tracks.find((t) => t.channel === 0);
+  const drums = tracks.find((t) => t.channel === 9);
+  assert.ok(melodic, 'channel 0 voice should exist');
+  assert.ok(drums, 'channel 9 voice should exist');
+  assert.equal(melodic.noteCount, 2);
+  assert.equal(drums.noteCount, 1);
+  // Channel 10 (0-indexed 9) is always RHYTHM regardless of statistics.
+  assert.equal(drums.role, Role.RHYTHM);
+
+  const kickEvt = timeline.find((e) => e.channel === 9);
+  assert.ok(kickEvt);
+  assert.equal(kickEvt.kick, true);
+  const melodicEvt = timeline.find((e) => e.channel === 0);
+  assert.equal(melodicEvt.program, 73);
+});
+
+test('two tracks hard-panned to opposite sides with overlapping notes are intertwined and pan-out over the song', () => {
+  const buf = buildMultiTrackPannedMidi();
+  const { timeline, tracks, pairs } = midiToTimeline(buf);
+  assert.equal(tracks.length, 2);
+
+  const left = tracks.find((t) => t.name === 'Left');
+  const right = tracks.find((t) => t.name === 'Right');
+  assert.ok(left && right, 'both named tracks should be present');
+  assert.ok(left.pan < -0.9, `left should be hard-panned, got ${left.pan}`);
+  assert.ok(right.pan > 0.9, `right should be hard-panned, got ${right.pan}`);
+  assert.equal(left.intertwined, true);
+  assert.equal(right.intertwined, true);
+  assert.equal(pairs.length, 1);
+  assert.deepEqual(pairs[0], { channelA: 0, channelB: 1 });
+
+  const leftNotes = timeline.filter((e) => e.channel === 0);
+  const rightNotes = timeline.filter((e) => e.channel === 1);
+  assert.ok(leftNotes.length > 0 && rightNotes.length > 0);
+
+  // The song-opening note should play centered; by the final note the pair
+  // should have eased out toward its full authored hard-pan spread.
+  assert.ok(Math.abs(leftNotes[0].pan) < 0.05, `first note should start centered, got ${leftNotes[0].pan}`);
+  assert.ok(leftNotes[leftNotes.length - 1].pan < -0.5, `last note should widen left, got ${leftNotes.at(-1).pan}`);
+  assert.ok(rightNotes[rightNotes.length - 1].pan > 0.5, `last note should widen right, got ${rightNotes.at(-1).pan}`);
+
+  // Real GM program numbers from Program Change carry through onto notes.
+  assert.equal(leftNotes[0].program, 40);
+  assert.equal(rightNotes[0].program, 42);
 });
