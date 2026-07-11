@@ -10,6 +10,13 @@ import { FLAT_WEIGHTS } from '../audio/bands.js';
 
 // Coprime (p,q) pairs only, so each curve closes exactly after theta=2*pi*q.
 const PAIRS = [[5, 2], [7, 3], [8, 3], [9, 4], [10, 3], [11, 4], [7, 2], [9, 2]];
+
+// One rosette per pitch class (Movement III, "The Key of the World"): each
+// key owns a distinct hypotrochoid figure, all still coprime pairs.
+export const ROSETTE_TABLE = [
+  [5, 2], [7, 2], [8, 3], [9, 2], [7, 3], [10, 3],
+  [11, 3], [9, 4], [11, 4], [13, 4], [10, 7], [12, 5],
+];
 const SEGMENTS_PER_TURN = 48;
 const E_EMA_TAU = 0.25;
 const PULSE_DECAY_SEC = 0.18;
@@ -34,6 +41,16 @@ export class Mandala {
   }
 
   kick() { this.pulse = 1; }
+
+  /** The Key of the World: re-seed both layers' hypotrochoid ratios from
+   *  ROSETTE_TABLE, indexed by pitch class, fired on a confirmed key
+   *  change. The second layer sits a fifth away from the first -- the
+   *  mandala re-forms as a different figure, in tune with the new tonic. */
+  reseed(pc) {
+    const i = ((pc % 12) + 12) % 12;
+    this.layers[0].pair = ROSETTE_TABLE[i];
+    this.layers[1].pair = ROSETTE_TABLE[(i + 7) % 12];
+  }
 
   update(nowMs, dtSec, energyCurves, calmLevel = 0) {
     this.tSec = nowMs / 1000;

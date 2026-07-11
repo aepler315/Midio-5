@@ -68,6 +68,14 @@ export const BIOMES = [
     fx: 'lightning',
   },
   {
+    name: 'MIRROR',
+    sky: ['#0a1626', '#254a6b', '#bfe0ff'],
+    silhouette: '#0f2438',
+    celestial: { kind: 'moon', color: '#eaf6ff', radius: 44, haloColor: '#cfe8ff' },
+    particles: { kind: 'fireflies', color: '#dff3ff', count: 18, speed: 6 },
+    fx: 'lakeReflection',
+  },
+  {
     name: 'CYBER',
     sky: ['#020814', '#062a3f', '#0b4b5e'],
     silhouette: '#04121f',

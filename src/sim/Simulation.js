@@ -18,9 +18,14 @@ import { HypeDirector } from './HypeDirector.js';
 import { VibeDirector } from './VibeDirector.js';
 import { EnsembleDirector } from './EnsembleDirector.js';
 import { ExcursionDirector } from './ExcursionDirector.js';
+import { ApotheosisDirector } from './ApotheosisDirector.js';
+import { KeyDirector } from './KeyDirector.js';
+import { CodaDirector } from './CodaDirector.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
+import { PerfGovernor } from '../render/PerfGovernor.js';
+import { HighlightReel } from '../render/HighlightReel.js';
 import { hashSeed } from '../utils/math.js';
 
 const WORLD_SPEED_PX_S = 220;
@@ -52,9 +57,12 @@ export class Simulation {
 
     const songSeed = hashSeed(`${conductor.timeline.length}:${conductor.durationMs}:${conductor.timeline[0]?.tMs ?? 0}:${conductor.timeline.at(-1)?.tMs ?? 0}`);
     this.performer = new MidioPerformer(songSeed);
+    this.apotheosis = new ApotheosisDirector();
     this.calm = new CalmDirector();
     this.hype = new HypeDirector();
     this.vibe = new VibeDirector(conductor.timeline);
+    this.keyDirector = new KeyDirector();
+    this.coda = new CodaDirector(conductor.durationMs || 0);
     this.ensemble = new EnsembleDirector(songSeed, { stageW: canvasWidth, stageH: canvasHeight });
     this.excursions = new ExcursionDirector(conductor.durationMs || 0);
     this.gnat = new GnatGag(songSeed, { canvasWidth, canvasHeight });
@@ -67,6 +75,8 @@ export class Simulation {
       groundField: this.groundField,
       customBiome: this.customBiome,
     });
+    this.biomes.reducedFlash = this.reducedFlash;
+    this.highlightReel = new HighlightReel();
     this.fracture = new FractureEngine(conductor, {
       canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,
     });
@@ -84,8 +94,16 @@ export class Simulation {
         this.performer.onKick();
         this.hype.onKick(evt.vel);
         this.midasus.voyage.onKick(evt.vel); // deep-space sparkle burst (self-gated on phase)
+        if (this.apotheosis.active) this.performer.captureGoldAfterimage(this.midio, this.timeMs);
       }
     });
+  }
+
+  /** The Reel (Movement VI): live-toggle the reduced-flash accessibility
+   *  setting, cascading to every consumer that caps its own flash alphas. */
+  setReducedFlash(v) {
+    this.reducedFlash = v;
+    this.biomes.reducedFlash = v;
   }
 
   step(dtMs, nowMs) {
@@ -101,6 +119,15 @@ export class Simulation {
     this.calm.update(nowMs, dtSec, this.energyCurves);
     this.hype.update(nowMs, dtSec, this.energyCurves);
     this.vibe.update(nowMs, dtSec, this.energyCurves);
+    this.keyDirector.update(nowMs, dtSec, {
+      tonic: this.vibe.tonic, tonicConfidence: this.vibe.tonicConfidence, conductor: this.conductor,
+    });
+    if (this.keyDirector.justKeyChange) {
+      this.biomes.mandala.reseed(this.keyDirector.lastKeyChange.to);
+      this.camera.shake(6);
+    }
+    this.coda.update(nowMs);
+    this.groundField.flatten = this.coda.unravel; // the ground lies down as the ending arc progresses
     this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs);
     // Midio roams toward his ensemble anchor -- slow, never gameplay-fast.
     const dxA = this.ensemble.anchors[0].x - this.midio.screenX;
@@ -124,6 +151,19 @@ export class Simulation {
       this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera);
       if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY);
       this.fracture.registerImpact(I);
+
+      // The Apotheosis: gameplay precision powers the show -- every clean
+      // landing and combo milestone literally charges the transformation.
+      if (this.comboSystem.justClean) this.apotheosis.onCleanLanding();
+      if (this.performer.milestoneFlash) this.apotheosis.onMilestone();
+      if (this.apotheosis.active) this.impactFX.ignite(this.worldX, this.midio.groundY);
+    }
+
+    this.apotheosis.update(nowMs, dtSec, { vibe: this.vibe, hype: this.hype, calm: this.calm });
+    if (this.apotheosis.active) this.camera.punch(1.04);
+    if (this.apotheosis.justEnded) {
+      this.performer.modal.excite(8);
+      this.impactFX.splat(this.worldX, this.midio.groundY);
     }
 
     const stumbled = this.obstacles.checkCollision(this.worldX, this.midio.halfWidth, this.jump.y);
@@ -151,7 +191,7 @@ export class Simulation {
     this.midasus.update(nowMs, dtSec, this.calm.level, {
       x: this.ensemble.anchors[2].x, y: this.ensemble.anchors[2].y,
       phase: this.ensemble.phase(2), melt: 2 + 4.5 * this.vibe.epic, epic: this.vibe.epic,
-    });
+    }, this.perf.particleMul, this.biomes.wind);
     // She's off on a voyage -> the ensemble's Kuramoto math should feel the
     // hole (this takes effect next frame; the weight eases over ~1.5s
     // regardless, so the one-step lag is inaudible/invisible).
@@ -162,13 +202,26 @@ export class Simulation {
     // every beat for the rest of the song.
     this.biomes.mandalaScaleMul = 1 + 0.12 * this.midasus.voyage.depth;
     this.midasus.voyage.atlasPulse = this.hype.slam;
+    // The finale: 4s before the end (3.7s before the fracture freezes the
+    // frame at durationMs-300), every accumulated atlas star goes
+    // supernova -- her myths detonate as the song shatters.
+    if (!this._atlasDetonated && this.conductor.durationMs > 0
+      && nowMs >= this.conductor.durationMs - 4000 && this.midasus.voyage.atlas.length > 0) {
+      this._atlasDetonated = true;
+      this.midasus.voyage.detonateAtlas(nowMs);
+      this.camera.shake(9);
+    }
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level, {
       trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
     }, this.groundField);
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
     this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge; // drops surge every phenomena system
-    this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level);
+    this.biomes.heatShimmer = this.hype.fast; // a hard hype spike shimmers the far range
+    this.biomes.paletteRotation = this.keyDirector.paletteRotation; // the world transposes with the song's key
+    this.biomes.dropAtMs = this.hype.dropAtMs; // drops send a heavy ring through the lake
+    this.biomes.unravel = this.coda.unravel; // parallax delaminates, particle hues converge to the halo
+    this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level, this.worldX);
     if (this.biomes.cutFlashJustFired) { this.camera.punch(1.06); this.camera.shake(6); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
 

@@ -122,7 +122,7 @@ export class Midasus {
     });
   }
 
-  update(nowMs, dtSec, calmLevel = 0, ensemble = null) {
+  update(nowMs, dtSec, calmLevel = 0, ensemble = null, particleMul = 1, wind = null) {
     this._calmLevel = calmLevel;
     this._ens = ensemble;
     this._nowMs = nowMs;
@@ -165,12 +165,15 @@ export class Midasus {
 
     const speed = Math.hypot(this.v.x, this.v.y);
     const rateMul = 0.15 + 0.85 * (1 - this.rest);
-    const rate = (2 + 26 * Math.min(1, speed / 1400)) * rateMul;
+    const rate = (2 + 26 * Math.min(1, speed / 1400)) * rateMul * particleMul;
     this._emitAccum += rate * dtSec * 60;
     while (this._emitAccum >= 1) { this._emitAccum -= 1; this._emitStreak(speed); }
 
+    // The settling stardust rides the same global wind everything else
+    // does -- one sample for the whole trail, not per-mote.
+    const windX = wind ? wind.x : 0, windY = wind ? wind.y : 0;
     this.particles.step(dtSec, (o, dt) => {
-      o.x += o.vx * dt; o.y += o.vy * dt; o.age += dt;
+      o.x += (o.vx + windX) * dt; o.y += (o.vy + windY) * dt; o.age += dt;
       return o.age < o.life;
     });
     for (const s of this.slashes) s.age += dtSec;
@@ -205,10 +208,10 @@ export class Midasus {
     }
   }
 
-  draw(ctx) {
+  draw(ctx, particleMul = 1) {
     if (this.voyage.depth > 0.02) return; // she's away; BiomeManager's deep-sky pass owns rendering
     const sat = Math.round(58 - 28 * this.rest); // spectral: pale, never candy
-    this.debris.draw(ctx, this.hue, this.rest); // behind her core and trail
+    this.debris.draw(ctx, this.hue, this.rest, particleMul); // behind her core and trail
     // Calm sections fade the ribbon rather than shortening it -- the longer
     // reach comes from _emitStreak's extended particle life, this is the
     // "fainter" half of that same trade.

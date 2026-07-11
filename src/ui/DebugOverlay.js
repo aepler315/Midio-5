@@ -37,6 +37,10 @@ export class DebugOverlay {
       const g = this.perfGovernor;
       lines.push(`perf governor: level ${g.level}/4  (vision ${g.visionAllowed ? 'ok' : 'shed'}, particles ×${g.particleMul}, crackGlow ${g.crackGlowEnabled ? 'on' : 'off'}, veil ${g.veilEnabled ? 'on' : 'off'})`);
     }
+    lines.push(`reduced flash: ${this.sim.reducedFlash ? 'ON' : 'OFF'} (press R to toggle)`);
+    if (this.sim.highlightReel) {
+      lines.push(`highlight reel: ${this.sim.highlightReel.frames.length}/8 captured`);
+    }
     lines.push('');
     lines.push('=== VISION LOG (most recent first) ===');
     const entries = this.visionLoop.log.toArray().reverse();

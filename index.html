@@ -34,7 +34,7 @@
       </div>
       <p class="hint">Or drop <code>.sf2</code>/<code>.zip</code> files into the <code>soundfonts/</code> folder next to <code>index.html</code> — they load automatically, no clicking required.</p>
       <p id="progressText" class="hint hidden"></p>
-      <p class="hint">You can drop a different MIDI/audio file in at any time, even mid-song, to switch instantly. Each MIDI builds a custom biome from its melody/energy. Optional WebGL post-FX: append <code>?renderer=webgl</code> to the URL. Press <kbd>`</kbd> during play to open the vision/tuning debug overlay, <kbd>T</kbd> to see loaded tracks, <kbd>F</kbd> for SoundFonts.</p>
+      <p class="hint">You can drop a different MIDI/audio file in at any time, even mid-song, to switch instantly. Each MIDI builds a custom biome from its melody/energy. Optional WebGL post-FX: append <code>?renderer=webgl</code> to the URL. Press <kbd>`</kbd> during play to open the vision/tuning debug overlay, <kbd>T</kbd> to see loaded tracks, <kbd>F</kbd> for SoundFonts, <kbd>R</kbd> to toggle reduced-flash accessibility mode.</p>
     </div>
 
     <div id="hud" class="hidden">
@@ -82,7 +82,21 @@
     <div id="completePanel" class="panel hidden">
       <h1>COMPLETE</h1>
       <p id="completeStats" class="sub"></p>
+      <div id="filmstrip" class="hidden"></div>
       <button id="playAgainBtn" type="button">Play again</button>
+    </div>
+
+    <div id="filmstripModal" class="modalBackdrop hidden">
+      <div class="modalPanel filmstripModalPanel">
+        <div class="modalHeader">
+          <h2 id="filmstripModalTitle">Highlight</h2>
+          <button id="filmstripModalClose" class="ghostbtn iconbtn" type="button" aria-label="Close">&times;</button>
+        </div>
+        <img id="filmstripModalImg" alt="" />
+        <div class="modalFooter">
+          <a id="filmstripModalDownload" class="ghostbtn" download>Download</a>
+        </div>
+      </div>
     </div>
 
     <div id="debugOverlay" class="hidden"></div>

@@ -25,6 +25,13 @@ const TRAIL_MAX_PTS = 400;
 const CONSTELLATION_LIFE_SEC = 6;
 const CONSTELLATION_MAX = 4;
 const ATLAS_MAX = 8; // permanent star-map entries; oldest myths fade first
+// Navigational atlas: the next voyage is drawn toward the densest cluster
+// of her own past figures -- she revisits her myths.
+const NAV_CLUSTER_RADIUS_PX = 140;
+const NAV_PULL = 0.65; // how strongly the cluster overrides the random station
+// Supernova finale: each atlas star detonates on its own popcorn delay.
+const NOVA_STAGGER_MS = 900;
+const NOVA_LIFE_MS = 1100;
 // Default pairs per figure slot (no melody heard yet)...
 const LISSAJOUS_FREQS = [[3, 2], [5, 4], [2, 3], [4, 3]];
 // ...and the melody's own tuning: one coprime pair per pitch class, so a
@@ -83,6 +90,44 @@ export class SkyVoyage {
     // the whole atlas glint with the beat.
     this.atlas = []; // {stars:[{x, y, phase}], hue}
     this.atlasPulse = 0;
+    this.novae = []; // {x, y, hue, phase, delayMs, bornMs} -- the finale's detonation cascade
+  }
+
+  /** The densest cluster of her own past stars: for each atlas entry,
+   * count ALL atlas stars within a radius of its centroid, and return the
+   * winning centroid. Null when the sky is still unwritten. */
+  _navTarget() {
+    if (this.atlas.length === 0) return null;
+    const centroids = this.atlas.map((entry) => {
+      let x = 0, y = 0;
+      for (const s of entry.stars) { x += s.x; y += s.y; }
+      return { x: x / entry.stars.length, y: y / entry.stars.length };
+    });
+    let best = null, bestCount = -1;
+    for (const c of centroids) {
+      let count = 0;
+      for (const entry of this.atlas) {
+        for (const s of entry.stars) {
+          if (Math.hypot(s.x - c.x, s.y - c.y) <= NAV_CLUSTER_RADIUS_PX) count++;
+        }
+      }
+      if (count > bestCount) { bestCount = count; best = c; }
+    }
+    return best;
+  }
+
+  /** The finale: every atlas star detonates, staggered like popcorn, and
+   * the map is spent. One-shot per accumulation; no-op on an empty sky. */
+  detonateAtlas(nowMs) {
+    for (const entry of this.atlas) {
+      for (const s of entry.stars) {
+        this.novae.push({
+          x: s.x, y: s.y, hue: entry.hue, phase: s.phase,
+          delayMs: this.rand() * NOVA_STAGGER_MS, bornMs: nowMs,
+        });
+      }
+    }
+    this.atlas = [];
   }
 
   /** A melody onset while she's away: retunes the Lissajous knot to the
@@ -148,6 +193,16 @@ export class SkyVoyage {
     this._windUpFrom = { ...fromPos };
     this.p = { ...fromPos };
     this._station = { x: stageW * (0.52 + this.rand() * 0.22), y: stageH * 0.16 };
+    // She revisits her myths: past voyages pull this one's station toward
+    // the densest cluster of her own accumulated stars, clamped to a safe
+    // sky band so the pull can never drag her down into the mountains.
+    const nav = this._navTarget();
+    if (nav) {
+      this._station = {
+        x: clamp(lerp(this._station.x, nav.x, NAV_PULL), stageW * 0.30, stageW * 0.86),
+        y: clamp(lerp(this._station.y, nav.y, NAV_PULL), stageH * 0.09, stageH * 0.24),
+      };
+    }
 
     this._figureOrder = this._pickFigureOrder();
     this._figureCount = 0;
@@ -181,6 +236,8 @@ export class SkyVoyage {
     this.sparkles = this.sparkles.filter((s) => s.age < SPARKLE_LIFE_SEC);
     for (const s of this.microSlashes) s.age += dtSec;
     this.microSlashes = this.microSlashes.filter((s) => s.age < SLASH_LIFE_SEC);
+    // Nova cascade keeps playing out whether or not she's away.
+    this.novae = this.novae.filter((n) => nowMs - n.bornMs < n.delayMs + NOVA_LIFE_MS);
     // Onset phase-kicks ease toward their target rather than jumping.
     this._kickSmooth += (1 - Math.exp(-dtSec / KICK_TAU_SEC)) * (this._kickTarget - this._kickSmooth);
     if (!this.active) return;

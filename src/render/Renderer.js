@@ -2,11 +2,14 @@
 // telegraph glints -> world FX -> companions -> Midio -> foreground veil ->
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
 // each stage guards on the subsystem's presence so this file grows additively.
-import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE } from './meshes.js';
-import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh } from './MeshDrawer.js';
+import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE, MIDIO_APOTHEOSIS_FOLDED, MIDIO_APOTHEOSIS_UNFOLDED } from './meshes.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, lerpMesh } from './MeshDrawer.js';
 import { EpicycleShow } from './EpicycleShow.js';
 import { ComposerStrip } from './ComposerStrip.js';
 import { RainbowBrush } from './RainbowBrush.js';
+import { GOLD_AFTERIMAGE_LIFE_MS } from '../sim/MidioPerformer.js';
+import { clamp01 } from '../utils/math.js';
+import { capFlashAlpha } from '../ui/Accessibility.js';
 
 const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
@@ -19,6 +22,7 @@ export class Renderer {
     this._midioRestLengths = computeRestLengths(MIDIO_MESH);
     this._midioBodyRest = computeRestLengths(MIDIO_BODY);
     this._midioEyeRest = computeRestLengths(MIDIO_EYE);
+    this._apoBodyRest = computeRestLengths(MIDIO_APOTHEOSIS_FOLDED);
     this.epicycles = new EpicycleShow();
     this._lastMilestoneMs = null;
     this.composer = null; // lazy: needs the conductor's timeline at first draw
@@ -37,6 +41,8 @@ export class Renderer {
     const pose = sim.lerpState(alpha);
     const camera = sim.camera;
     const biomeManager = sim.biomes || null;
+    const perf = sim.perf || null;
+    const particleMul = perf ? perf.particleMul : 1;
 
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -48,7 +54,7 @@ export class Renderer {
     ctx.translate(-canvas.width / 2 + camera.shakeX, -canvas.height / 2 + camera.shakeY);
 
     if (biomeManager) {
-      biomeManager.draw(ctx, canvas, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null);
+      biomeManager.draw(ctx, canvas, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul);
     } else {
       this._drawFallbackSky(ctx, canvas);
       this._drawGround(ctx, canvas, pose, sim.midio.groundY);
@@ -59,18 +65,27 @@ export class Renderer {
     // inside BiomeManager's sky/parallax stack.
     if (sim.broshi) sim.broshi.burrow.draw(ctx, pose.worldX, pose.midioX);
 
+    // The Unraveling: a global desaturation overlay, drawn right here so it
+    // only touches the world painted so far (sky/phenomena/silhouettes/
+    // burrow) -- telegraph, obstacles, and every character draw afterward,
+    // fully saturated, exactly per the hard rule.
+    if (sim.coda) this._drawDesaturationOverlay(ctx, canvas, sim.coda);
+
     if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
     if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY);
     if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
 
     // Rainbow brush: paint Midio's jump arcs, world-locked behind him.
     this.brush.update(sim.timeMs, pose.airborne, pose.worldX, pose.midioY);
-    this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs);
+    this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs, sim.apotheosis && sim.apotheosis.active ? 2 : 1);
 
     if (sim.broshi) sim.broshi.draw(ctx, pose);
 
-    if (sim.performer) this._drawMidioAfterimages(ctx, sim.performer, pose.midioX);
-    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0);
+    if (sim.performer) {
+      this._drawMidioAfterimages(ctx, sim.performer, pose.midioX);
+      this._drawGoldAfterimages(ctx, sim.performer, pose.midioX, sim.timeMs);
+    }
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0, sim.apotheosis, sim.reducedFlash);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
@@ -81,10 +96,11 @@ export class Renderer {
     this.epicycles.draw(ctx, sim.timeMs);
     this._drawDropShockwave(ctx, canvas, sim, pose);
 
-    if (sim.midasus) sim.midasus.draw(ctx);
+    if (sim.midasus) sim.midasus.draw(ctx, particleMul);
     if (sim.gnat) sim.gnat.draw(ctx, sim.timeMs);
-    if (sim.fracture) sim.fracture.draw(ctx, canvas);
-    if (biomeManager) biomeManager.drawForeground(ctx, canvas, pose.worldX);
+    if (sim.fracture) sim.fracture.draw(ctx, canvas, { glow: perf ? perf.crackGlowEnabled : true });
+    if (biomeManager) biomeManager.drawForeground(ctx, canvas, pose.worldX, perf ? perf.veilEnabled : true);
+    if (sim.keyDirector) this._drawTranspositionWave(ctx, canvas, sim.keyDirector);
 
     ctx.restore(); // camera transform
     ctx.restore();
@@ -98,6 +114,53 @@ export class Renderer {
     if (sim.hype) this._drawHypeFrame(ctx, canvas, sim);
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
+
+    // The Reel: grab a highlight thumbnail of the fully-composed frame at
+    // each of the song's five defining moments. notify() edge-triggers, so
+    // each condition just describes "is this happening right now".
+    if (sim.highlightReel) {
+      const reel = sim.highlightReel, t = sim.timeMs;
+      reel.notify('drop', Number.isFinite(sim.hype?.dropAtMs) && t - sim.hype.dropAtMs < 100, canvas, t, 'Drop');
+      reel.notify('voyage', sim.midasus?.voyage?.phase === 'WINDUP', canvas, t, 'Sky Voyage');
+      reel.notify('burrow', sim.broshi?.burrow?.phase === 'DIG_IN', canvas, t, 'Burrow');
+      reel.notify('detonation', !!sim._atlasDetonated, canvas, t, 'Supernova');
+      reel.notify('freeze', !!(fracture && fracture.isAboutToFreeze), canvas, t, 'Finale');
+    }
+  }
+
+  /** The Key of the World: a kick-synced vertical chromatic wash, in the
+   *  new tonic's hue, sweeping across the frame over a confirmed key change. */
+  _drawTranspositionWave(ctx, canvas, keyDirector) {
+    if (!keyDirector.transitionActive || !keyDirector.lastKeyChange) return;
+    const hue = (((keyDirector.lastKeyChange.to % 12) + 12) % 12) * 30;
+    const u = keyDirector.transitionProgress;
+    const bandWidth = canvas.width * 0.55;
+    const cx = -bandWidth + u * (canvas.width + bandWidth * 2);
+    const alpha = Math.sin(Math.PI * u); // eases in and back out across the sweep
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createLinearGradient(cx - bandWidth / 2, 0, cx + bandWidth / 2, 0);
+    g.addColorStop(0, `hsla(${hue},80%,60%,0)`);
+    g.addColorStop(0.5, `hsla(${hue},85%,65%,${(0.35 * alpha).toFixed(3)})`);
+    g.addColorStop(1, `hsla(${hue},80%,60%,0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+
+  /** The Unraveling: a 'saturation' blend-mode rect pulls the whole world
+   *  toward gray as the ending arc progresses. A fully desaturated (gray)
+   *  fill under this blend mode desaturates the backdrop proportionally to
+   *  globalAlpha -- no pixel readback needed. */
+  _drawDesaturationOverlay(ctx, canvas, coda) {
+    const amount = coda.desaturation;
+    if (amount <= 0.001) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'saturation';
+    ctx.globalAlpha = amount;
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
   }
 
   /** Drop shockwave: two expanding rings thrown from Midio on a detected drop. */
@@ -132,7 +195,9 @@ export class Renderer {
     const color = sim.biomes && sim.biomes.currentHaloColor ? sim.biomes.currentHaloColor() : '#ffffff';
 
     // Frame echo: on hard hits the previous frame ghosts outward once.
-    const echo = Math.max(hype.surge > 0.45 ? hype.surge : 0, hype.slam > 0.7 ? hype.slam * 0.8 : 0);
+    // The Reel: reduced-flash disables it outright (a rapid self-blit
+    // ghost is exactly the kind of flash the toggle exists to remove).
+    const echo = sim.reducedFlash ? 0 : Math.max(hype.surge > 0.45 ? hype.surge : 0, hype.slam > 0.7 ? hype.slam * 0.8 : 0);
     if (echo > 0.05) {
       const off = 3 + 5 * echo;
       ctx.save();
@@ -179,28 +244,41 @@ export class Renderer {
     ctx.stroke();
   }
 
-  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0) {
+  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false) {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
+    const apoProgress = apotheosis ? apotheosis.progress : 0;
     const transform = {
       tx: pose.midioX, ty: pose.midioY,
       rot: (pose.leanDeg * Math.PI) / 180,
-      scaleX: pose.scaleX * MIDIO_DRAW_SCALE, scaleY: pose.scaleY * MIDIO_DRAW_SCALE,
+      scaleX: pose.scaleX * MIDIO_DRAW_SCALE * (1 + 0.25 * apoProgress),
+      scaleY: pose.scaleY * MIDIO_DRAW_SCALE * (1 + 0.25 * apoProgress),
     };
     const hue = flash > 0 ? MIDIO_BASE_HUE + (48 - MIDIO_BASE_HUE) * flash : MIDIO_BASE_HUE;
     // Spectral treatment: near-white filament with a narrow warm fringe.
-    // The milestone gold flash reads as the glyph igniting into color.
-    const options = { satBase: 26 + flash * 45, lightBase: 68 + flash * 14, hueSpread: 16 };
+    // The milestone gold flash reads as the glyph igniting into color; the
+    // Apotheosis widens the hue band further into a full sweep around the rim.
+    const options = {
+      satBase: 26 + flash * 45 + 20 * apoProgress,
+      lightBase: 68 + flash * 14 + 10 * apoProgress,
+      hueSpread: 16 + 60 * apoProgress,
+    };
 
     // Modal vibration: rim vertices ride the performer's ring-down field.
     // Rest lengths stay the undisplaced ones, so the wobble reads as edge
-    // deformation and lights up the glow automatically.
+    // deformation and lights up the glow automatically. Below the morph
+    // threshold this stays on the original 9-rim MIDIO_BODY untouched;
+    // the Apotheosis swaps in the 18-rim folded/unfolded blend, whose own
+    // lengthening edges (relative to the FOLDED rest lengths) add the
+    // unfolding glow on top of the modal one.
     const hub = MIDIO_BODY.vertices[0];
+    const bodyBase = apoProgress > 0.001 ? lerpMesh(MIDIO_APOTHEOSIS_FOLDED, MIDIO_APOTHEOSIS_UNFOLDED, apoProgress) : MIDIO_BODY;
+    const bodyRest = apoProgress > 0.001 ? this._apoBodyRest : this._midioBodyRest;
     const bodyMesh = meltMesh(
-      displaceMeshRadial(MIDIO_BODY, hub.x, hub.y, performer ? performer.modal : null),
+      displaceMeshRadial(bodyBase, hub.x, hub.y, performer ? performer.modal : null),
       hub.x, hub.y, tSec, melt, 1,
     );
-    drawMeshPart(ctx, bodyMesh, this._midioBodyRest, transform, hue, options);
+    drawMeshPart(ctx, bodyMesh, bodyRest, transform, hue, options);
 
     if (blink < 0.98) {
       const blinkEye = {
@@ -218,7 +296,7 @@ export class Renderer {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       drawMeshPart(ctx, bodyMesh, this._midioBodyRest, transform, hue, {
-        alpha: 0.65 * beatFlash, satBase: 70, lightBase: 74, widthBase: 2.4,
+        alpha: capFlashAlpha(0.65 * beatFlash, reducedFlash), satBase: 70, lightBase: 74, widthBase: 2.4,
       });
       ctx.restore();
     }
@@ -238,6 +316,27 @@ export class Renderer {
         tx: midioX, ty: f.y, rot: (f.rot * Math.PI) / 180,
         scaleX: f.scaleX * MIDIO_DRAW_SCALE, scaleY: f.scaleY * MIDIO_DRAW_SCALE,
       }, MIDIO_BASE_HUE, { alpha: 1, satBase: 18, lightBase: 60, hueSpread: 16 });
+    }
+    ctx.restore();
+  }
+
+  /** Apotheosis-only: gold, beat-quantized afterimages (captured on every
+   * kick while transformed, independent of MidioPerformer's airborne-only
+   * trick-jump streaks above). */
+  _drawGoldAfterimages(ctx, performer, midioX, nowMs) {
+    const frames = performer.goldAfterimages;
+    if (!frames.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const f of frames) {
+      const age = clamp01((nowMs - f.bornMs) / GOLD_AFTERIMAGE_LIFE_MS);
+      const alpha = 0.4 * (1 - age);
+      if (alpha <= 0) continue;
+      ctx.globalAlpha = alpha;
+      drawMeshPart(ctx, MIDIO_MESH, this._midioRestLengths, {
+        tx: midioX, ty: f.y, rot: (f.rot * Math.PI) / 180,
+        scaleX: f.scaleX * MIDIO_DRAW_SCALE, scaleY: f.scaleY * MIDIO_DRAW_SCALE,
+      }, 46, { alpha: 1, satBase: 85, lightBase: 68, hueSpread: 10 });
     }
     ctx.restore();
   }

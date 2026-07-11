@@ -16,6 +16,7 @@ const W_SEP = 60, W_ALI = 1.4, W_COH = 0.9, W_NOISE = 30;
 // gas (at this density most boids would otherwise have no neighbors at
 // all), and guarantees the flock re-forms after every startle.
 const W_GLOBAL = 0.55;
+const W_WIND = 0.5; // wind-assist: nudged, never overridden -- the flock still flies itself
 const PANIC_DECAY_SEC = 0.8; // startle grants a brief overspeed allowance
 const E_EMA_TAU = 0.4;
 
@@ -65,7 +66,7 @@ export class Murmuration {
     };
   }
 
-  update(nowMs, dtSec, energyCurves, calmLevel = 0) {
+  update(nowMs, dtSec, energyCurves, calmLevel = 0, wind = null) {
     const eInstant = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS)) : 0.3;
     this.E += (1 - Math.exp(-dtSec / E_EMA_TAU)) * (eInstant - this.E);
 
@@ -105,6 +106,7 @@ export class Murmuration {
       ay += flow.y * this.noiseGain;
       ax += this._wrapDx(cxAll - b.x) * W_GLOBAL;
       ay += (cyAll - b.y) * W_GLOBAL;
+      if (wind) { ax += wind.x * W_WIND; ay += wind.y * W_WIND; }
 
       if (startle > 0) {
         const dx = this._wrapDx(b.x - cxAll), dy = b.y - cyAll;
@@ -149,14 +151,16 @@ export class Murmuration {
     return Math.hypot(sx, sy) / this.boids.length;
   }
 
-  draw(ctx, nowMs, color) {
+  draw(ctx, nowMs, color, mul = 1) {
     const tSec = nowMs / 1000;
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.4;
     ctx.globalAlpha = 0.55 * this.intensity;
     ctx.beginPath();
-    for (const b of this.boids) {
+    const n = Math.max(1, Math.ceil(this.boids.length * mul));
+    for (let idx = 0; idx < n; idx++) {
+      const b = this.boids[idx];
       const heading = Math.atan2(b.vy, b.vx);
       const flap = 0.55 + 0.4 * Math.sin(tSec * 16 + b.phase); // wing half-angle
       const len = 4.6;

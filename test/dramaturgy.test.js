@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { castBiomes, classifyTransition, intensityBudget, dayArc, BIOME_TEMPERATURE } from '../src/world/Dramaturgy.js';
 
-const COLD = new Set(['ARCTIC', 'SAKURA', 'TWILIGHT']);
+const COLD = new Set(['ARCTIC', 'MIRROR', 'SAKURA', 'TWILIGHT']);
 const HOT = new Set(['CYBER', 'EMBER', 'SOLAR']);
 
 test('castBiomes sends the extremes to matching biomes and orders the middle by temperature', () => {
