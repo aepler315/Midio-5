@@ -21,6 +21,7 @@ import { ExcursionDirector } from './ExcursionDirector.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
+import { PerfGovernor } from '../render/PerfGovernor.js';
 import { hashSeed } from '../utils/math.js';
 
 const WORLD_SPEED_PX_S = 220;
@@ -29,10 +30,11 @@ const CLEAN_WINDOW_MS = 90;
 const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
 
 export class Simulation {
-  constructor(conductor, paramBus, { bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720 } = {}) {
+  constructor(conductor, paramBus, { bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720, perfGovernor = null } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
+    this.perf = perfGovernor || new PerfGovernor();
 
     this.midio = new Midio();
     this.jump = new JumpController(paramBus);
@@ -149,7 +151,7 @@ export class Simulation {
     this.midasus.update(nowMs, dtSec, this.calm.level, {
       x: this.ensemble.anchors[2].x, y: this.ensemble.anchors[2].y,
       phase: this.ensemble.phase(2), melt: 2 + 4.5 * this.vibe.epic, epic: this.vibe.epic,
-    });
+    }, this.perf.particleMul);
     // She's off on a voyage -> the ensemble's Kuramoto math should feel the
     // hole (this takes effect next frame; the weight eases over ~1.5s
     // regardless, so the one-step lag is inaudible/invisible).

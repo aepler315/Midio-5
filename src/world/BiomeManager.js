@@ -275,7 +275,7 @@ export class BiomeManager {
     if (this._glitchTimer <= 0) { this._glitchActiveMs = 60; this._glitchTimer = 2.5 + this._starSeed() * 3.5; }
   }
 
-  draw(ctx, canvas, worldX, originX = 0, skyVoyage = null) {
+  draw(ctx, canvas, worldX, originX = 0, skyVoyage = null, particleMul = 1) {
     const { from, to, t } = this.currentBlend || { from: this.sections[0].profile, to: this.sections[0].profile, t: 1 };
     const A = this._profile(from), B = this._profile(to);
 
@@ -314,12 +314,12 @@ export class BiomeManager {
     this._drawLayer(ctx, canvas, 'L3', scrollX1, tint, t, A, B);
 
     // Ambient particle field lives roughly at mid-depth.
-    this.fields.get(from).draw(ctx);
-    if (to !== from && t > 0.02) { ctx.save(); ctx.globalAlpha = t; this.fields.get(to).draw(ctx); ctx.restore(); }
+    this.fields.get(from).draw(ctx, particleMul);
+    if (to !== from && t > 0.02) { ctx.save(); ctx.globalAlpha = t; this.fields.get(to).draw(ctx, particleMul); ctx.restore(); }
     // The Kuramoto swarm shares this depth: synchronized flashing motes,
     // with the murmuration wheeling among them.
     this.swarm.draw(ctx, canvas, mandalaColor);
-    this.murmuration.draw(ctx, this.tSec * 1000, mandalaColor);
+    this.murmuration.draw(ctx, this.tSec * 1000, mandalaColor, particleMul);
 
     this._drawLayer(ctx, canvas, 'L4', scrollX2, tint, t, A, B);
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
@@ -501,10 +501,11 @@ export class BiomeManager {
     }
   }
 
-  drawForeground(ctx, canvas, worldX) {
+  drawForeground(ctx, canvas, worldX, veilEnabled = true) {
     // L7: oversized, blurred, low-alpha foreground veil (spec §4.1.1).
     // Calm sections lift the veil alpha a little -- a small, cheap way to
     // keep this backmost layer visibly breathing when nothing else is loud.
+    if (!veilEnabled) return;
     ctx.save();
     ctx.globalAlpha = 0.10 * (1 + 0.6 * (this.calmLevel || 0));
     ctx.filter = 'blur(6px)';

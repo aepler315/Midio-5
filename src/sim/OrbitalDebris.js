@@ -90,12 +90,14 @@ export class OrbitalDebris {
     }
   }
 
-  draw(ctx, hue, rest = 0) {
+  draw(ctx, hue, rest = 0, mul = 1) {
     const sat = Math.round(85 - 40 * rest);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineWidth = 1.3;
-    for (const s of this.shards) {
+    const n = Math.max(1, Math.ceil(this.shards.length * mul));
+    for (let idx = 0; idx < n; idx++) {
+      const s = this.shards[idx];
       ctx.strokeStyle = `hsla(${hue},${sat}%,68%,0.55)`;
       ctx.beginPath();
       for (let i = 0; i <= 3; i++) {

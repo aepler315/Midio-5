@@ -13,6 +13,7 @@ import { Sf2Synth } from './audio/Sf2Synth.js';
 import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
+import { PerfGovernor } from './render/PerfGovernor.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -56,6 +57,8 @@ let sim = null;
 let renderer = null;
 let visionLoop = null;
 let debugOverlay = null;
+let perfGovernor = null;
+let lastRafMs = null; // separate from lastNowMs (audio clock) -- tracks real rAF-to-rAF cadence for the perf governor
 let sf2Engine = null;
 let fontLibrary = null;
 let fontBarTimer = null;
@@ -245,20 +248,23 @@ function startTimeline(timelineData) {
   stopTimeline();
   fitCanvas();
   conductor.load(timelineData);
+  perfGovernor = new PerfGovernor();
   sim = new Simulation(conductor, paramBus, {
     bpm: timelineData.bpm || 120,
     energyCurves: timelineData.energyCurves || null,
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
+    perfGovernor,
   });
   renderer = new Renderer(canvas);
-  visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false });
-  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop);
+  visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false, perfGovernor });
+  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop, perfGovernor);
   renderTracks(timelineData.tracks, timelineData.pairs);
 
   simTime = 0;
   acc = 0;
   lastNowMs = audioEngine.nowMs;
+  lastRafMs = null;
   audioEngine.start(0);
   running = true;
 
@@ -272,7 +278,7 @@ function startTimeline(timelineData) {
   // (rather than inferring it from run rates, which headless Chromium's
   // rAF throttling and AudioContext clock drift make unreliable to assert on).
   window.__SMW = {
-    conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary, sf2Engine,
+    conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary, sf2Engine, perfGovernor,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
   };
@@ -484,6 +490,8 @@ if (trackBadgeBtnEl) trackBadgeBtnEl.addEventListener('click', () => toggleTrack
 
 function frame(tRaf) {
   if (!running) return;
+  if (lastRafMs !== null) perfGovernor.sample(tRaf - lastRafMs, tRaf);
+  lastRafMs = tRaf;
   const nowMs = audioEngine.nowMs;
   let deltaMs = nowMs - lastNowMs;
   lastNowMs = nowMs;

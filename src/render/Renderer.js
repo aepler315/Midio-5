@@ -37,6 +37,8 @@ export class Renderer {
     const pose = sim.lerpState(alpha);
     const camera = sim.camera;
     const biomeManager = sim.biomes || null;
+    const perf = sim.perf || null;
+    const particleMul = perf ? perf.particleMul : 1;
 
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -48,7 +50,7 @@ export class Renderer {
     ctx.translate(-canvas.width / 2 + camera.shakeX, -canvas.height / 2 + camera.shakeY);
 
     if (biomeManager) {
-      biomeManager.draw(ctx, canvas, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null);
+      biomeManager.draw(ctx, canvas, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul);
     } else {
       this._drawFallbackSky(ctx, canvas);
       this._drawGround(ctx, canvas, pose, sim.midio.groundY);
@@ -81,10 +83,10 @@ export class Renderer {
     this.epicycles.draw(ctx, sim.timeMs);
     this._drawDropShockwave(ctx, canvas, sim, pose);
 
-    if (sim.midasus) sim.midasus.draw(ctx);
+    if (sim.midasus) sim.midasus.draw(ctx, particleMul);
     if (sim.gnat) sim.gnat.draw(ctx, sim.timeMs);
-    if (sim.fracture) sim.fracture.draw(ctx, canvas);
-    if (biomeManager) biomeManager.drawForeground(ctx, canvas, pose.worldX);
+    if (sim.fracture) sim.fracture.draw(ctx, canvas, { glow: perf ? perf.crackGlowEnabled : true });
+    if (biomeManager) biomeManager.drawForeground(ctx, canvas, pose.worldX, perf ? perf.veilEnabled : true);
 
     ctx.restore(); // camera transform
     ctx.restore();

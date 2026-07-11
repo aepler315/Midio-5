@@ -136,9 +136,11 @@ export class ParticleField {
     }
   }
 
-  draw(ctx) {
+  draw(ctx, mul = 1) {
     ctx.save();
-    for (const p of this.particles) {
+    const n = Math.max(1, Math.ceil(this.particles.length * mul));
+    for (let idx = 0; idx < n; idx++) {
+      const p = this.particles[idx];
       switch (this.kind) {
         case 'fireflies':
         case 'pollen':

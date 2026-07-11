@@ -149,14 +149,16 @@ export class Murmuration {
     return Math.hypot(sx, sy) / this.boids.length;
   }
 
-  draw(ctx, nowMs, color) {
+  draw(ctx, nowMs, color, mul = 1) {
     const tSec = nowMs / 1000;
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.4;
     ctx.globalAlpha = 0.55 * this.intensity;
     ctx.beginPath();
-    for (const b of this.boids) {
+    const n = Math.max(1, Math.ceil(this.boids.length * mul));
+    for (let idx = 0; idx < n; idx++) {
+      const b = this.boids[idx];
       const heading = Math.atan2(b.vy, b.vx);
       const flap = 0.55 + 0.4 * Math.sin(tSec * 16 + b.phase); // wing half-angle
       const len = 4.6;
