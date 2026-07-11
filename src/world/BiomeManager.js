@@ -16,6 +16,7 @@ import { LightningFX } from './Lightning.js';
 import { PERSONALITY } from './BiomePersonality.js';
 import { Murmuration } from './Murmuration.js';
 import { Atmosphere } from './Atmosphere.js';
+import { CodaDirector } from '../sim/CodaDirector.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
 import { clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
 import { LerpCache, rotateHueHex } from '../utils/color.js';
@@ -112,6 +113,10 @@ export class BiomeManager {
     this.lakeRing = new ModalRing({ modes: 3, baseHz: 1.1, decaySec: 1.4, seed: hashSeed('lake' + songSeed) });
     this.dropAtMs = -Infinity; // set externally from HypeDirector.dropAtMs each frame
     this._lastSeenDropAtMs = -Infinity;
+
+    // The Unraveling (Movement V): set externally from CodaDirector.unravel
+    // each frame.
+    this.unravel = 0;
 
     conductor.onBar(() => { this._scanlineActive = true; this._scanlineY = 0; this.cymatics.onBar(); });
     conductor.on(Role.RHYTHM, (evt) => {
@@ -369,16 +374,27 @@ export class BiomeManager {
     this.drawDeepSky(ctx, skyVoyage); // Midasus's sky voyage, when she's away -- behind the mountains below
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
 
-    const scrollX0 = worldX * LAYER_RATIOS.L2, scrollX1 = worldX * LAYER_RATIOS.L3;
-    const scrollX2 = worldX * LAYER_RATIOS.L4, scrollX3 = worldX * LAYER_RATIOS.L5;
+    // The Unraveling: each layer's scroll ratio drifts apart from the rest
+    // as the world delaminates -- nearer layers race ahead more than far
+    // ones (the ratio itself is the depth proxy, so no separate table).
+    const scrollX0 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L2, this.unravel);
+    const scrollX1 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L3, this.unravel);
+    const scrollX2 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L4, this.unravel);
+    const scrollX3 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L5, this.unravel);
     const tint = this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t));
 
     this._drawLayer(ctx, canvas, 'L2', scrollX0, tint, t, A, B);
     this._drawLayer(ctx, canvas, 'L3', scrollX1, tint, t, A, B);
 
-    // Ambient particle field lives roughly at mid-depth.
-    this.fields.get(from).draw(ctx, particleMul);
-    if (to !== from && t > 0.02) { ctx.save(); ctx.globalAlpha = t; this.fields.get(to).draw(ctx, particleMul); ctx.restore(); }
+    // Ambient particle field lives roughly at mid-depth. The Unraveling:
+    // particle hues converge toward the biome's own halo color as the
+    // ending arc progresses.
+    this.fields.get(from).draw(ctx, particleMul, mandalaColor, this.unravel);
+    if (to !== from && t > 0.02) {
+      ctx.save(); ctx.globalAlpha = t;
+      this.fields.get(to).draw(ctx, particleMul, mandalaColor, this.unravel);
+      ctx.restore();
+    }
     // The Kuramoto swarm shares this depth: synchronized flashing motes,
     // with the murmuration wheeling among them.
     this.swarm.draw(ctx, canvas, mandalaColor);
@@ -573,7 +589,7 @@ export class BiomeManager {
     ctx.save();
     ctx.globalAlpha = 0.10 * (1 + 0.6 * (this.calmLevel || 0));
     ctx.filter = 'blur(6px)';
-    const scrollX = worldX * LAYER_RATIOS.L7;
+    const scrollX = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L7, this.unravel);
     for (let i = 0; i < 3; i++) {
       const x = ((i * 480 - scrollX) % (canvas.width + 400) + canvas.width + 400) % (canvas.width + 400) - 200;
       ctx.fillStyle = '#ffffff';

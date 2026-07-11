@@ -20,6 +20,7 @@ import { EnsembleDirector } from './EnsembleDirector.js';
 import { ExcursionDirector } from './ExcursionDirector.js';
 import { ApotheosisDirector } from './ApotheosisDirector.js';
 import { KeyDirector } from './KeyDirector.js';
+import { CodaDirector } from './CodaDirector.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
@@ -60,6 +61,7 @@ export class Simulation {
     this.hype = new HypeDirector();
     this.vibe = new VibeDirector(conductor.timeline);
     this.keyDirector = new KeyDirector();
+    this.coda = new CodaDirector(conductor.durationMs || 0);
     this.ensemble = new EnsembleDirector(songSeed, { stageW: canvasWidth, stageH: canvasHeight });
     this.excursions = new ExcursionDirector(conductor.durationMs || 0);
     this.gnat = new GnatGag(songSeed, { canvasWidth, canvasHeight });
@@ -113,6 +115,8 @@ export class Simulation {
       this.biomes.mandala.reseed(this.keyDirector.lastKeyChange.to);
       this.camera.shake(6);
     }
+    this.coda.update(nowMs);
+    this.groundField.flatten = this.coda.unravel; // the ground lies down as the ending arc progresses
     this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs);
     // Midio roams toward his ensemble anchor -- slow, never gameplay-fast.
     const dxA = this.ensemble.anchors[0].x - this.midio.screenX;
@@ -205,6 +209,7 @@ export class Simulation {
     this.biomes.heatShimmer = this.hype.fast; // a hard hype spike shimmers the far range
     this.biomes.paletteRotation = this.keyDirector.paletteRotation; // the world transposes with the song's key
     this.biomes.dropAtMs = this.hype.dropAtMs; // drops send a heavy ring through the lake
+    this.biomes.unravel = this.coda.unravel; // parallax delaminates, particle hues converge to the halo
     this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level, this.worldX);
     if (this.biomes.cutFlashJustFired) { this.camera.punch(1.06); this.camera.shake(6); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);

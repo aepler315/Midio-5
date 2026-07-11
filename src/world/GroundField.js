@@ -56,6 +56,14 @@ export class GroundField {
 
     this._buzz = 0; // EMA of bass energy, driving a render-only micro-vibration
     this._nowMs = 0;
+
+    // The Unraveling (Movement V): set externally from CodaDirector.unravel
+    // each frame -- the terrain-EQ slices visually flatten toward
+    // baseGroundY as the ending arc progresses. Render-only, same
+    // discipline as the bass buzz above: heightAt() (the physics
+    // reference) never reads this, so landings stay exactly as tuned even
+    // while the ground appears to lie down.
+    this.flatten = 0;
   }
 
   _scheduleGags(durationMs, barGrid, seed) {
@@ -199,12 +207,13 @@ export class GroundField {
     const bars = [];
     const buzzAmp = 2.5 * this._buzz;
     const wt = (this._nowMs / 1000) * 2 * Math.PI * 13;
+    const settle = 1 - clamp01(this.flatten);
     for (const s of this.slices) {
       const screenXStart = s.worldXStart - worldX + originX;
       const screenXEnd = screenXStart + this.sliceWidth;
       if (screenXEnd < -20 || screenXStart > screenWidth + 20) continue;
       const buzz = buzzAmp > 0.15 ? buzzAmp * Math.sin(wt + s.index * 2.39996) : 0;
-      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + s.offset + buzz });
+      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + s.offset * settle + buzz });
     }
     return bars;
   }

@@ -52,6 +52,41 @@ test('rain with no wind argument behaves exactly as before (defaults to zero)', 
   }
 });
 
+// --- The Unraveling (Movement V): particle hues converge to the halo color ---
+
+function fakeCtxCapturingFillStyle() {
+  const styles = [];
+  return {
+    styles,
+    set fillStyle(v) { styles.push(v); },
+    get fillStyle() { return styles[styles.length - 1]; },
+    save() {}, restore() {}, beginPath() {}, fill() {}, arc() {},
+    createRadialGradient() { return { addColorStop() {} }; },
+  };
+}
+
+test('with hueBlend=0 (or omitted), the field draws in its native color', () => {
+  const field = new ParticleField({ kind: 'fireflies', color: '#ff0000', count: 3, speed: 1 }, 800, 600, 1);
+  const ctx = fakeCtxCapturingFillStyle();
+  field.draw(ctx, 1, '#0000ff', 0);
+  assert.ok(ctx.styles.every((s) => s === '#ff0000'));
+});
+
+test('with hueBlend=1, the field draws fully in the halo color', () => {
+  const field = new ParticleField({ kind: 'fireflies', color: '#ff0000', count: 3, speed: 1 }, 800, 600, 1);
+  const ctx = fakeCtxCapturingFillStyle();
+  field.draw(ctx, 1, '#0000ff', 1);
+  for (const s of ctx.styles) assert.notEqual(s, '#ff0000');
+});
+
+test('hueBlend is computed once per draw call, not per particle (cheap even at high particle counts)', () => {
+  const field = new ParticleField({ kind: 'fireflies', color: '#ff0000', count: 50, speed: 1 }, 800, 600, 1);
+  const ctx = fakeCtxCapturingFillStyle();
+  field.draw(ctx, 1, '#0000ff', 0.5);
+  const unique = new Set(ctx.styles);
+  assert.equal(unique.size, 1, 'every particle in one draw() call must share the same blended color');
+});
+
 test('snow drifts downwind: position shifts further in the wind direction than with no wind', () => {
   const calm = new ParticleField({ kind: 'snow', color: '#fff', count: 10, speed: 10 }, 800, 600, 7);
   const windy = new ParticleField({ kind: 'snow', color: '#fff', count: 10, speed: 10 }, 800, 600, 7);

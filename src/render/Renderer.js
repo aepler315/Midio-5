@@ -64,6 +64,12 @@ export class Renderer {
     // inside BiomeManager's sky/parallax stack.
     if (sim.broshi) sim.broshi.burrow.draw(ctx, pose.worldX, pose.midioX);
 
+    // The Unraveling: a global desaturation overlay, drawn right here so it
+    // only touches the world painted so far (sky/phenomena/silhouettes/
+    // burrow) -- telegraph, obstacles, and every character draw afterward,
+    // fully saturated, exactly per the hard rule.
+    if (sim.coda) this._drawDesaturationOverlay(ctx, canvas, sim.coda);
+
     if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
     if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY);
     if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
@@ -125,6 +131,21 @@ export class Renderer {
     g.addColorStop(0.5, `hsla(${hue},85%,65%,${(0.35 * alpha).toFixed(3)})`);
     g.addColorStop(1, `hsla(${hue},80%,60%,0)`);
     ctx.fillStyle = g;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+
+  /** The Unraveling: a 'saturation' blend-mode rect pulls the whole world
+   *  toward gray as the ending arc progresses. A fully desaturated (gray)
+   *  fill under this blend mode desaturates the backdrop proportionally to
+   *  globalAlpha -- no pixel readback needed. */
+  _drawDesaturationOverlay(ctx, canvas, coda) {
+    const amount = coda.desaturation;
+    if (amount <= 0.001) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'saturation';
+    ctx.globalAlpha = amount;
+    ctx.fillStyle = '#808080';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
   }
