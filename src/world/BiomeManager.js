@@ -955,7 +955,18 @@ export class BiomeManager {
     const lakeHeight = canvas.height - groundY;
     if (lakeHeight <= 0) return;
 
+    // Self-referential drawImage reads the canvas's raw device-pixel
+    // buffer -- already fully composed by everything drawn so far this
+    // frame, including the Renderer's outer camera transform (zoom/roll/
+    // shake). Compositing that buffer back through the SAME still-active
+    // transform would apply the camera a second time, throwing the
+    // reflection wildly out of place (visible as a displaced/ghosted
+    // smear, worse the more the camera is currently punched/shaking).
+    // Reset to identity for this self-referential pass; the fade overlay
+    // below is a plain fill (not a canvas read) so it stays in the
+    // normal local space every other draw call in this file uses.
     ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.beginPath();
     ctx.rect(0, groundY, canvas.width, lakeHeight);
     ctx.clip();
@@ -976,10 +987,12 @@ export class BiomeManager {
     ctx.fillRect(0, groundY, canvas.width, lakeHeight);
     ctx.restore();
 
-    // Ripples.
+    // Ripples: also a self-referential drawImage, same identity-transform
+    // requirement as the flip above.
     const SLICES = 8;
     const step = Math.max(1, Math.ceil(lakeHeight / SLICES));
     ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.beginPath();
     ctx.rect(0, groundY, canvas.width, lakeHeight);
     ctx.clip();
