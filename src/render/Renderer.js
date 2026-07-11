@@ -9,6 +9,7 @@ import { ComposerStrip } from './ComposerStrip.js';
 import { RainbowBrush } from './RainbowBrush.js';
 import { GOLD_AFTERIMAGE_LIFE_MS } from '../sim/MidioPerformer.js';
 import { clamp01 } from '../utils/math.js';
+import { capFlashAlpha } from '../ui/Accessibility.js';
 
 const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
@@ -84,7 +85,7 @@ export class Renderer {
       this._drawMidioAfterimages(ctx, sim.performer, pose.midioX);
       this._drawGoldAfterimages(ctx, sim.performer, pose.midioX, sim.timeMs);
     }
-    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0, sim.apotheosis);
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0, sim.apotheosis, sim.reducedFlash);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
@@ -113,6 +114,18 @@ export class Renderer {
     if (sim.hype) this._drawHypeFrame(ctx, canvas, sim);
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
+
+    // The Reel: grab a highlight thumbnail of the fully-composed frame at
+    // each of the song's five defining moments. notify() edge-triggers, so
+    // each condition just describes "is this happening right now".
+    if (sim.highlightReel) {
+      const reel = sim.highlightReel, t = sim.timeMs;
+      reel.notify('drop', Number.isFinite(sim.hype?.dropAtMs) && t - sim.hype.dropAtMs < 100, canvas, t, 'Drop');
+      reel.notify('voyage', sim.midasus?.voyage?.phase === 'WINDUP', canvas, t, 'Sky Voyage');
+      reel.notify('burrow', sim.broshi?.burrow?.phase === 'DIG_IN', canvas, t, 'Burrow');
+      reel.notify('detonation', !!sim._atlasDetonated, canvas, t, 'Supernova');
+      reel.notify('freeze', !!(fracture && fracture.isAboutToFreeze), canvas, t, 'Finale');
+    }
   }
 
   /** The Key of the World: a kick-synced vertical chromatic wash, in the
@@ -182,7 +195,9 @@ export class Renderer {
     const color = sim.biomes && sim.biomes.currentHaloColor ? sim.biomes.currentHaloColor() : '#ffffff';
 
     // Frame echo: on hard hits the previous frame ghosts outward once.
-    const echo = Math.max(hype.surge > 0.45 ? hype.surge : 0, hype.slam > 0.7 ? hype.slam * 0.8 : 0);
+    // The Reel: reduced-flash disables it outright (a rapid self-blit
+    // ghost is exactly the kind of flash the toggle exists to remove).
+    const echo = sim.reducedFlash ? 0 : Math.max(hype.surge > 0.45 ? hype.surge : 0, hype.slam > 0.7 ? hype.slam * 0.8 : 0);
     if (echo > 0.05) {
       const off = 3 + 5 * echo;
       ctx.save();
@@ -229,7 +244,7 @@ export class Renderer {
     ctx.stroke();
   }
 
-  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null) {
+  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false) {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
     const apoProgress = apotheosis ? apotheosis.progress : 0;
@@ -281,7 +296,7 @@ export class Renderer {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       drawMeshPart(ctx, bodyMesh, this._midioBodyRest, transform, hue, {
-        alpha: 0.65 * beatFlash, satBase: 70, lightBase: 74, widthBase: 2.4,
+        alpha: capFlashAlpha(0.65 * beatFlash, reducedFlash), satBase: 70, lightBase: 74, widthBase: 2.4,
       });
       ctx.restore();
     }

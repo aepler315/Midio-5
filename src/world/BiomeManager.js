@@ -17,6 +17,7 @@ import { PERSONALITY } from './BiomePersonality.js';
 import { Murmuration } from './Murmuration.js';
 import { Atmosphere } from './Atmosphere.js';
 import { CodaDirector } from '../sim/CodaDirector.js';
+import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
 import { clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
 import { LerpCache, rotateHueHex } from '../utils/color.js';
@@ -117,6 +118,9 @@ export class BiomeManager {
     // The Unraveling (Movement V): set externally from CodaDirector.unravel
     // each frame.
     this.unravel = 0;
+
+    // The Reel (Movement VI): set externally, persisted accessibility toggle.
+    this.reducedFlash = false;
 
     conductor.onBar(() => { this._scanlineActive = true; this._scanlineY = 0; this.cymatics.onBar(); });
     conductor.on(Role.RHYTHM, (evt) => {
@@ -370,7 +374,7 @@ export class BiomeManager {
     // figures, and the chaos ribbon opposite the celestial for balance.
     this.cymatics.draw(ctx, canvas, mandalaColor);
     this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075 * (this._ribbonScaleMul || 1), mandalaColor);
-    this.lightning.draw(ctx, canvas, this.tSec * 1000); // behind the ranges: bolts land beyond the hills
+    this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
     this.drawDeepSky(ctx, skyVoyage); // Midasus's sky voyage, when she's away -- behind the mountains below
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
 
@@ -455,18 +459,18 @@ export class BiomeManager {
         const easeOut = 1 - (1 - u) ** 3;
         const fade = 1 - u;
 
-        ctx.strokeStyle = `hsla(${n.hue}, 70%, 85%, ${0.7 * fade})`;
+        ctx.strokeStyle = `hsla(${n.hue}, 70%, 85%, ${capFlashAlpha(0.7 * fade, this.reducedFlash)})`;
         ctx.lineWidth = 0.5 + 2 * fade;
         ctx.beginPath();
         ctx.arc(n.x, n.y, 4 + 62 * easeOut, 0, Math.PI * 2);
         ctx.stroke();
 
-        ctx.fillStyle = `hsla(${n.hue}, 30%, 96%, ${fade})`;
+        ctx.fillStyle = `hsla(${n.hue}, 30%, 96%, ${capFlashAlpha(fade, this.reducedFlash)})`;
         ctx.beginPath();
         ctx.arc(n.x, n.y, 1 + 3 * fade, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.strokeStyle = `hsla(${n.hue}, 60%, 90%, ${0.5 * fade})`;
+        ctx.strokeStyle = `hsla(${n.hue}, 60%, 90%, ${capFlashAlpha(0.5 * fade, this.reducedFlash)})`;
         ctx.lineWidth = 1;
         for (let k = 0; k < 5; k++) {
           const ang = n.phase + (k / 5) * Math.PI * 2;
@@ -574,7 +578,7 @@ export class BiomeManager {
     }
     if (this._cutFlash > 0.01) {
       ctx.save();
-      ctx.globalAlpha = 0.35 * this._cutFlash;
+      ctx.globalAlpha = capFlashAlpha(0.35 * this._cutFlash, this.reducedFlash);
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.restore();

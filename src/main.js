@@ -14,6 +14,7 @@ import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { PerfGovernor } from './render/PerfGovernor.js';
+import { getReducedFlash, setReducedFlash } from './ui/Accessibility.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -48,6 +49,12 @@ const fontHiddenToggleEl = document.getElementById('fontHiddenToggle');
 const fontModalFileInputEl = document.getElementById('fontModalFileInput');
 const fontModalDirInputEl = document.getElementById('fontModalDirInput');
 const fontModalDirBtnEl = document.getElementById('fontModalDirBtn');
+const filmstripEl = document.getElementById('filmstrip');
+const filmstripModalEl = document.getElementById('filmstripModal');
+const filmstripModalTitleEl = document.getElementById('filmstripModalTitle');
+const filmstripModalCloseEl = document.getElementById('filmstripModalClose');
+const filmstripModalImgEl = document.getElementById('filmstripModalImg');
+const filmstripModalDownloadEl = document.getElementById('filmstripModalDownload');
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -66,6 +73,7 @@ let rafHandle = null; // tracks the pending frame() call so a mid-song file
                        // drop can cancel the old loop instead of stacking a
                        // second one alongside it
 let fontModalView = 'list'; // 'list' (visible fonts, click-to-hide) | 'hidden' (hidden fonts, click-to-unhide)
+let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted accessibility toggle
 
 let simTime = 0;
 let acc = 0;
@@ -255,11 +263,13 @@ function startTimeline(timelineData) {
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
     perfGovernor,
+    reducedFlash,
   });
   renderer = new Renderer(canvas);
   visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false, perfGovernor });
   debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop, perfGovernor);
   renderTracks(timelineData.tracks, timelineData.pairs);
+  if (filmstripEl) { filmstripEl.innerHTML = ''; filmstripEl.classList.add('hidden'); }
 
   simTime = 0;
   acc = 0;
@@ -530,14 +540,24 @@ function frame(tRaf) {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (fontModalEl && !fontModalEl.classList.contains('hidden')) closeFontModal();
+    if (filmstripModalEl && !filmstripModalEl.classList.contains('hidden')) closeFilmstripModal();
     return;
   }
   if (e.key === 'f' || e.key === 'F') { openFontModal('list'); return; }
+  if (e.key === 'r' || e.key === 'R') { toggleReducedFlash(); return; }
   if (!debugOverlay) return;
   if (e.key === '`') { debugOverlay.toggle(); }
   else if (e.key === 'v' || e.key === 'V') { debugOverlay.toggleVision(); }
   else if (e.key === 't' || e.key === 'T') { toggleTrackList(); }
 });
+
+/** The Reel (Movement VI): live-toggle + persist the reduced-flash
+ *  accessibility setting, cascading into the running sim if there is one. */
+function toggleReducedFlash() {
+  reducedFlash = !reducedFlash;
+  setReducedFlash(reducedFlash);
+  sim?.setReducedFlash(reducedFlash);
+}
 
 function onSongComplete() {
   running = false;
@@ -552,7 +572,53 @@ function onSongComplete() {
       ch === ' ' ? ' ' : `<span class="wobble-letter" style="animation-delay:${i * 110}ms">${ch}</span>`,
     ).join('');
   }
+  renderFilmstrip(sim.highlightReel?.frames || []);
   completePanelEl.classList.remove('hidden');
+}
+
+/** The Reel: the COMPLETE panel's highlight filmstrip -- proof of what the
+ *  song just did. Click a frame to enlarge it; the modal offers a
+ *  per-frame download link. */
+function renderFilmstrip(frames) {
+  if (!filmstripEl) return;
+  if (!frames.length) {
+    filmstripEl.innerHTML = '';
+    filmstripEl.classList.add('hidden');
+    return;
+  }
+  filmstripEl.classList.remove('hidden');
+  filmstripEl.innerHTML = frames.map((f, i) =>
+    `<button type="button" class="filmstripFrame" data-index="${i}" title="${escapeHtml(f.label)}">`
+    + `<img src="${f.dataUrl}" alt="${escapeHtml(f.label)}" /></button>`,
+  ).join('');
+}
+
+function openFilmstripModal(frame) {
+  if (!filmstripModalEl) return;
+  filmstripModalTitleEl.textContent = frame.label;
+  filmstripModalImgEl.src = frame.dataUrl;
+  filmstripModalImgEl.alt = frame.label;
+  const slug = frame.label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  filmstripModalDownloadEl.href = frame.dataUrl;
+  filmstripModalDownloadEl.download = `super-midio-world-${slug}-${Math.round(frame.atMs)}ms.jpg`;
+  filmstripModalEl.classList.remove('hidden');
+}
+
+function closeFilmstripModal() {
+  filmstripModalEl?.classList.add('hidden');
+}
+
+if (filmstripEl) {
+  filmstripEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.filmstripFrame');
+    if (!btn) return;
+    const frame = sim?.highlightReel?.frames?.[Number(btn.dataset.index)];
+    if (frame) openFilmstripModal(frame);
+  });
+}
+if (filmstripModalCloseEl) filmstripModalCloseEl.addEventListener('click', closeFilmstripModal);
+if (filmstripModalEl) {
+  filmstripModalEl.addEventListener('click', (e) => { if (e.target === filmstripModalEl) closeFilmstripModal(); });
 }
 
 playAgainBtnEl.addEventListener('click', () => window.location.reload());

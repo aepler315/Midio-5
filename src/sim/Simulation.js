@@ -25,6 +25,7 @@ import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
 import { PerfGovernor } from '../render/PerfGovernor.js';
+import { HighlightReel } from '../render/HighlightReel.js';
 import { hashSeed } from '../utils/math.js';
 
 const WORLD_SPEED_PX_S = 220;
@@ -33,11 +34,14 @@ const CLEAN_WINDOW_MS = 90;
 const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
 
 export class Simulation {
-  constructor(conductor, paramBus, { bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720, perfGovernor = null } = {}) {
+  constructor(conductor, paramBus, {
+    bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720, perfGovernor = null, reducedFlash = false,
+  } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
     this.perf = perfGovernor || new PerfGovernor();
+    this.reducedFlash = reducedFlash; // The Reel (Movement VI): persisted accessibility toggle
 
     this.midio = new Midio();
     this.jump = new JumpController(paramBus);
@@ -73,6 +77,8 @@ export class Simulation {
       canvasWidth, canvasHeight, groundY: this.midio.groundY, songSeed,
       groundField: this.groundField,
     });
+    this.biomes.reducedFlash = this.reducedFlash;
+    this.highlightReel = new HighlightReel();
     this.fracture = new FractureEngine(conductor, {
       canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,
     });
@@ -93,6 +99,13 @@ export class Simulation {
         if (this.apotheosis.active) this.performer.captureGoldAfterimage(this.midio, this.timeMs);
       }
     });
+  }
+
+  /** The Reel (Movement VI): live-toggle the reduced-flash accessibility
+   *  setting, cascading to every consumer that caps its own flash alphas. */
+  setReducedFlash(v) {
+    this.reducedFlash = v;
+    this.biomes.reducedFlash = v;
   }
 
   step(dtMs, nowMs) {
