@@ -28,6 +28,22 @@ html, body {
   object-fit: contain;
   display: block;
   background: #0a0a14;
+  position: relative;
+  z-index: 1;
+}
+
+/* Optional WebGL post-FX overlay (created only when ?renderer=webgl).
+   Pointer-events none so drops/clicks still hit the page/stage handlers. */
+#stage-webgl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  z-index: 2;
+  display: block;
+  background: transparent;
 }
 
 .panel {

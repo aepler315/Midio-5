@@ -1,0 +1,12 @@
+# Historical note
+#
+# An earlier attempt to land WebGL + custom biomes (PR #7) appended UTF-16
+# garbage to ParamBus.js, Renderer.js, and BiomeManager.js, which made those
+# modules fail to parse and broke MIDI drag/upload entirely.
+#
+# The real implementation now lives in:
+#   - src/render/WebGLRenderer.js   (safe overlay path, ?renderer=webgl)
+#   - src/world/BiomeImporter.js    (MIDI → custom biome profile)
+#   - wiring in main.js / Simulation.js / BiomeManager.js
+#
+# Do not re-apply this file as a patch. See branch fix-midi-webgl-2026-07-10.

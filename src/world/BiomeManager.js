@@ -33,7 +33,7 @@ const EQ_RELEASE_SEC = 0.6;
 const EQ_MAX_HEIGHT_FRAC = 0.4; // never exceed 40% of screen height, however excited the section is
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, customBiome = null }) {
     this.conductor = conductor;
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
@@ -41,6 +41,9 @@ export class BiomeManager {
     this.h = canvasHeight;
     this.groundY = groundY;
     this.groundField = groundField;
+    this.customBiome = customBiome || null;
+    // Instance profile list: stock BIOMES plus an optional MIDI-derived profile.
+    this.profiles = customBiome ? [...BIOMES, customBiome] : BIOMES.slice();
     this._lastSectionIdx = null;
     this._cutFlash = 0;
     this._shutterStartMs = -Infinity;
@@ -63,7 +66,7 @@ export class BiomeManager {
     this._eqSmoothed = new Float32Array(BAND_COUNT);
 
     this.strips = new Map(); // biomeName -> { L2, L3, L4, L5 }
-    for (const b of BIOMES) {
+    for (const b of this.profiles) {
       const seed = hashSeed(b.name);
       const strips = {
         L2: generateSilhouette({ seed: seed + 1, octaves: 1, amplitude: 0.20, baseline: 0.45, color: b.silhouette }),
@@ -72,16 +75,20 @@ export class BiomeManager {
         L5: generateSilhouette({ seed: seed + 4, octaves: 2, amplitude: 0.22, baseline: 0.85, color: b.silhouette, edgeLight: b.edgeLight }),
       };
       // Landmarks: per-song placements (songSeed), baked into the strips,
-      // each rooted on the noise ridge at its own x.
+      // each rooted on the noise ridge at its own x. Unknown biome names
+      // (custom MIDI profiles) no-op inside decorateStrip — safe.
       decorateStrip(strips.L4, b.name, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
       decorateStrip(strips.L5, b.name, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
       this.strips.set(b.name, strips);
     }
 
     this.fields = new Map(); // biomeName -> ParticleField
-    for (const b of BIOMES) this.fields.set(b.name, new ParticleField(b.particles, canvasWidth, canvasHeight, hashSeed(b.name + 'p')));
+    for (const b of this.profiles) this.fields.set(b.name, new ParticleField(b.particles, canvasWidth, canvasHeight, hashSeed(b.name + 'p')));
 
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed);
+    // MIDI custom biome: cast every section into the generated world so the
+    // dropped file IS the place, while stock demos keep dramaturgical casting.
+    if (this.customBiome) this.loadCustom(this.customBiome);
     this.mandala = new Mandala(songSeed);
     this.cymatics = new CymaticField(songSeed);
     this.swarm = new KuramotoSwarm(songSeed);
@@ -233,7 +240,30 @@ export class BiomeManager {
     return { from: this.sections[idx - 1].profile, to: sec.profile, t };
   }
 
-  _profile(name) { return BIOMES.find((b) => b.name === name); }
+  _profile(name) {
+    return this.profiles.find((b) => b.name === name) || this.profiles[0] || BIOMES[0];
+  }
+
+  /**
+   * Register (or re-cast) a custom biome profile for the current song.
+   * Safe to call after construction; strips/fields must already exist for
+   * the profile name (constructor path always builds them when customBiome
+   * is passed in). Hot registration of a brand-new profile mid-song is not
+   * supported — drop a new MIDI to rebuild the world.
+   */
+  loadCustom(custom) {
+    if (!custom || !custom.name) return;
+    if (!this.profiles.some((b) => b.name === custom.name)) {
+      this.profiles.push(custom);
+    }
+    this.customBiome = custom;
+    if (this.sections && this.sections.length) {
+      for (const s of this.sections) s.profile = custom.name;
+      // Reset blend so the next draw lands fully on the custom world.
+      this.currentBlend = { from: custom.name, to: custom.name, t: 1 };
+      this._lastSectionIdx = null;
+    }
+  }
 
   /** The Key of the World: hue-rotate a color by the current (quantized)
    *  palette rotation. Quantizing to 3deg steps before rotating means the
