@@ -34,11 +34,16 @@ const CLEAN_WINDOW_MS = 90;
 const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
 
 export class Simulation {
-  constructor(conductor, paramBus, { bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720, customBiome = null } = {}) {
+  constructor(conductor, paramBus, {
+    bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720, customBiome = null,
+    perfGovernor = null, reducedFlash = false,
+  } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
     this.customBiome = customBiome || null;
+    this.perf = perfGovernor || new PerfGovernor();
+    this.reducedFlash = reducedFlash; // The Reel (Movement VI): persisted accessibility toggle
 
     this.midio = new Midio();
     this.jump = new JumpController(paramBus);

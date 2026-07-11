@@ -14,6 +14,8 @@ import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
+import { PerfGovernor } from './render/PerfGovernor.js';
+import { getReducedFlash, setReducedFlash } from './ui/Accessibility.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -273,11 +275,13 @@ function startTimeline(timelineData) {
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
     customBiome: timelineData.customBiome || null,
+    perfGovernor,
+    reducedFlash,
   });
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
   renderer = createRenderer(canvas, rendererMode);
-  visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false });
-  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop);
+  visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false, perfGovernor });
+  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop, perfGovernor);
   renderTracks(timelineData.tracks, timelineData.pairs);
   if (filmstripEl) { filmstripEl.innerHTML = ''; filmstripEl.classList.add('hidden'); }
 
@@ -298,7 +302,7 @@ function startTimeline(timelineData) {
   // (rather than inferring it from run rates, which headless Chromium's
   // rAF throttling and AudioContext clock drift make unreliable to assert on).
   window.__SMW = {
-    conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary, sf2Engine,
+    conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary, sf2Engine, perfGovernor,
     renderer, rendererMode, rendererBackend: renderer?.backend || 'canvas',
     customBiome: timelineData.customBiome || null,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
