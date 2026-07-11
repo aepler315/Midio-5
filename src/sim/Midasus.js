@@ -122,7 +122,7 @@ export class Midasus {
     });
   }
 
-  update(nowMs, dtSec, calmLevel = 0, ensemble = null, particleMul = 1) {
+  update(nowMs, dtSec, calmLevel = 0, ensemble = null, particleMul = 1, wind = null) {
     this._calmLevel = calmLevel;
     this._ens = ensemble;
     this._nowMs = nowMs;
@@ -169,8 +169,11 @@ export class Midasus {
     this._emitAccum += rate * dtSec * 60;
     while (this._emitAccum >= 1) { this._emitAccum -= 1; this._emitStreak(speed); }
 
+    // The settling stardust rides the same global wind everything else
+    // does -- one sample for the whole trail, not per-mote.
+    const windX = wind ? wind.x : 0, windY = wind ? wind.y : 0;
     this.particles.step(dtSec, (o, dt) => {
-      o.x += o.vx * dt; o.y += o.vy * dt; o.age += dt;
+      o.x += (o.vx + windX) * dt; o.y += (o.vy + windY) * dt; o.age += dt;
       return o.age < o.life;
     });
     for (const s of this.slashes) s.age += dtSec;

@@ -40,6 +40,7 @@ export class ParticleField {
     if (this.kind === 'rain') {
       p.y = -rand() * this.h;
       p.vx = -(70 + rand() * 50);
+      p._rainVxBase = p.vx; // the wind field re-derives vx from this each frame
       p.vy = 380 + rand() * 170;
       p.state = 'fall';
       p.splashT = 0;
@@ -53,13 +54,14 @@ export class ParticleField {
     return p;
   }
 
-  update(dtSec, tSec, energyCurves, nowMs, calmLevel = 0) {
+  update(dtSec, tSec, energyCurves, nowMs, calmLevel = 0, wind = null) {
     const rand = this.rand;
+    const wx = wind ? wind.x : 0, wy = wind ? wind.y : 0;
     for (const p of this.particles) {
       switch (this.kind) {
         case 'fireflies':
-          p.x += Math.sin(tSec * 0.4 + p.phase) * this.baseSpeed * dtSec;
-          p.y += Math.cos(tSec * 0.3 + p.phase * 1.3) * this.baseSpeed * 0.6 * dtSec;
+          p.x += (Math.sin(tSec * 0.4 + p.phase) * this.baseSpeed + wx * 0.4) * dtSec;
+          p.y += (Math.cos(tSec * 0.3 + p.phase * 1.3) * this.baseSpeed * 0.6 + wy * 0.4) * dtSec;
           // Calm sections: brighter, slightly faster blink -- ambient life
           // to lean on when the foreground has gone quiet.
           p.alpha = clamp01((0.5 + 0.5 * Math.sin((2 * Math.PI * tSec) / 3 * (1 + 0.3 * calmLevel) + p.phase)) * (1 + 0.4 * calmLevel));
@@ -71,21 +73,21 @@ export class ParticleField {
           // swirl in eddies like real fire-lofted ash, never clumping.
           const gust = energyCurves ? 0.5 + clamp01(energyCurves.sample(1, nowMs)) : 1;
           const fl = curl2(p.x * 0.006, p.y * 0.006, tSec * 0.2);
-          p.x += (p.vx + fl.x * 55 * gust) * dtSec;
-          p.y += (p.vy + fl.y * 55 * gust) * dtSec;
+          p.x += (p.vx + fl.x * 55 * gust + wx) * dtSec;
+          p.y += (p.vy + fl.y * 55 * gust + wy) * dtSec;
           if (p.y < -20) Object.assign(p, this._spawn(rand() * this.w, this.h + 10));
           break;
         }
         case 'snow': {
           const drift = curl2(p.x * 0.004, p.y * 0.004, tSec * 0.12);
-          p.y += (30 + p.size * 13 + drift.y * 25) * dtSec;
-          p.x += (18 * Math.sin(tSec * p.omega + p.phase) + drift.x * 40) * dtSec;
+          p.y += (30 + p.size * 13 + drift.y * 25 + wy) * dtSec;
+          p.x += (18 * Math.sin(tSec * p.omega + p.phase) + drift.x * 40 + wx) * dtSec;
           if (p.y > this.h + 10) Object.assign(p, this._spawn(rand() * this.w, -10));
           break;
         }
         case 'pollen': {
-          p.x += Math.sin(tSec * 0.5 + p.phase) * 6 * dtSec;
-          p.y += Math.cos(tSec * 0.4 + p.phase * 1.7) * 6 * dtSec;
+          p.x += (Math.sin(tSec * 0.5 + p.phase) * 6 + wx * 0.6) * dtSec;
+          p.y += (Math.cos(tSec * 0.4 + p.phase * 1.7) * 6 + wy * 0.6) * dtSec;
           const air = energyCurves ? energyCurves.sample(6, nowMs) : 0.3;
           p.alpha = clamp01((0.3 + 0.5 * clamp01(air)) * (1 + 0.3 * calmLevel));
           break;
@@ -100,7 +102,7 @@ export class ParticleField {
           break;
         case 'petals':
           p.vy = p.vy || (25 + rand() * 30);
-          p.x += 22 * Math.sin(tSec * p.omega + p.phase) * dtSec;
+          p.x += (22 * Math.sin(tSec * p.omega + p.phase) + wx) * dtSec;
           p.y += p.vy * dtSec;
           p.rot += p.spin * dtSec;
           if (p.state === 'alive' && p.y > this.h - 6) { p.state = 'piled'; p.pileT = 0; }
@@ -115,6 +117,8 @@ export class ParticleField {
             if (p.splashT > 0.16) Object.assign(p, this._spawn(rand() * this.w));
             break;
           }
+          // The fall angle itself rides the wind, not just a fixed slant.
+          p.vx = p._rainVxBase + wx * 1.6;
           p.x += p.vx * dtSec;
           p.y += p.vy * dtSec;
           if (p.x < -20) p.x += this.w + 40;

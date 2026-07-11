@@ -167,7 +167,7 @@ export class Simulation {
     this.midasus.update(nowMs, dtSec, this.calm.level, {
       x: this.ensemble.anchors[2].x, y: this.ensemble.anchors[2].y,
       phase: this.ensemble.phase(2), melt: 2 + 4.5 * this.vibe.epic, epic: this.vibe.epic,
-    }, this.perf.particleMul);
+    }, this.perf.particleMul, this.biomes.wind);
     // She's off on a voyage -> the ensemble's Kuramoto math should feel the
     // hole (this takes effect next frame; the weight eases over ~1.5s
     // regardless, so the one-step lag is inaudible/invisible).
@@ -193,7 +193,8 @@ export class Simulation {
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
     this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge; // drops surge every phenomena system
-    this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level);
+    this.biomes.heatShimmer = this.hype.fast; // a hard hype spike shimmers the far range
+    this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level, this.worldX);
     if (this.biomes.cutFlashJustFired) { this.camera.punch(1.06); this.camera.shake(6); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
 

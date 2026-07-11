@@ -16,6 +16,7 @@ const W_SEP = 60, W_ALI = 1.4, W_COH = 0.9, W_NOISE = 30;
 // gas (at this density most boids would otherwise have no neighbors at
 // all), and guarantees the flock re-forms after every startle.
 const W_GLOBAL = 0.55;
+const W_WIND = 0.5; // wind-assist: nudged, never overridden -- the flock still flies itself
 const PANIC_DECAY_SEC = 0.8; // startle grants a brief overspeed allowance
 const E_EMA_TAU = 0.4;
 
@@ -65,7 +66,7 @@ export class Murmuration {
     };
   }
 
-  update(nowMs, dtSec, energyCurves, calmLevel = 0) {
+  update(nowMs, dtSec, energyCurves, calmLevel = 0, wind = null) {
     const eInstant = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS)) : 0.3;
     this.E += (1 - Math.exp(-dtSec / E_EMA_TAU)) * (eInstant - this.E);
 
@@ -105,6 +106,7 @@ export class Murmuration {
       ay += flow.y * this.noiseGain;
       ax += this._wrapDx(cxAll - b.x) * W_GLOBAL;
       ay += (cyAll - b.y) * W_GLOBAL;
+      if (wind) { ax += wind.x * W_WIND; ay += wind.y * W_WIND; }
 
       if (startle > 0) {
         const dx = this._wrapDx(b.x - cxAll), dy = b.y - cyAll;
