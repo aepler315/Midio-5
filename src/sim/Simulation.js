@@ -204,6 +204,7 @@ export class Simulation {
     this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge; // drops surge every phenomena system
     this.biomes.heatShimmer = this.hype.fast; // a hard hype spike shimmers the far range
     this.biomes.paletteRotation = this.keyDirector.paletteRotation; // the world transposes with the song's key
+    this.biomes.dropAtMs = this.hype.dropAtMs; // drops send a heavy ring through the lake
     this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level, this.worldX);
     if (this.biomes.cutFlashJustFired) { this.camera.punch(1.06); this.camera.shake(6); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);

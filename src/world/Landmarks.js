@@ -206,6 +206,22 @@ function paintRuinTower(ctx, x, rootY, scale, rand, color) {
   ctx.fill();
 }
 
+function paintReeds(ctx, x, rootY, scale, rand, color) {
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  const n = 5 + Math.floor(rand() * 4);
+  for (let i = 0; i < n; i++) {
+    const h = (18 + rand() * 22) * scale;
+    const cx = x + (i - n / 2) * 4 * scale;
+    const lean = (rand() * 2 - 1) * 6 * scale;
+    ctx.lineWidth = Math.max(0.8, 1.4 * scale);
+    ctx.beginPath();
+    ctx.moveTo(cx, rootY);
+    ctx.quadraticCurveTo(cx + lean * 0.5, rootY - h * 0.6, cx + lean, rootY - h);
+    ctx.stroke();
+  }
+}
+
 function paintObelisks(ctx, x, rootY, scale, rand, color) {
   ctx.fillStyle = color;
   for (const side of [-1, 1]) {
@@ -232,6 +248,7 @@ export const LANDMARKS = {
   TWILIGHT: [paintMenhirs, paintRuinTower],
   SOLAR: [paintObelisks],
   STORM: [paintTree(3, 32)], // sparse wind-blasted trees
+  MIRROR: [paintReeds], // lakeside reeds, low enough to keep the water reads clear
 };
 
 /**

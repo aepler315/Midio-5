@@ -16,7 +16,7 @@ import { LightningFX } from './Lightning.js';
 import { PERSONALITY } from './BiomePersonality.js';
 import { Murmuration } from './Murmuration.js';
 import { Atmosphere } from './Atmosphere.js';
-import { superformula } from '../render/oscillators.js';
+import { superformula, ModalRing } from '../render/oscillators.js';
 import { clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
 import { LerpCache, rotateHueHex } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
@@ -106,6 +106,13 @@ export class BiomeManager {
     this.paletteRotation = 0;
     this._rotationCache = new Map();
 
+    // The Mirror (Movement IV): a shared 1-D ring for the lake's ripples --
+    // gentle mode reuse of the same ModalRing driving Midio's body vibration
+    // elsewhere, just tuned slower/softer for water instead of a body strike.
+    this.lakeRing = new ModalRing({ modes: 3, baseHz: 1.1, decaySec: 1.4, seed: hashSeed('lake' + songSeed) });
+    this.dropAtMs = -Infinity; // set externally from HypeDirector.dropAtMs each frame
+    this._lastSeenDropAtMs = -Infinity;
+
     conductor.onBar(() => { this._scanlineActive = true; this._scanlineY = 0; this.cymatics.onBar(); });
     conductor.on(Role.RHYTHM, (evt) => {
       if (!evt.kick) return;
@@ -118,6 +125,8 @@ export class BiomeManager {
       // Heavy kicks strike lightning, but only while a storm is blowing.
       const active = this.currentBlend ? this._profile(this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from) : null;
       if (active && active.fx === 'lightning') this.lightning.maybeTrigger(evt.tMs, evt.vel, this.w, this.groundY);
+      // Beats ripple the water, but only while the lake is out.
+      if (active && active.fx === 'lakeReflection') this.lakeRing.excite(3 + 9 * evt.vel);
       if (this._lastKickMs != null) {
         const delta = evt.tMs - this._lastKickMs;
         if (delta >= 240 && delta <= 1500) this._beatMs += 0.25 * (delta - this._beatMs);
@@ -309,6 +318,13 @@ export class BiomeManager {
     this.ribbon.update(nowMs, dtSec, energyCurves, calmLevel);
     this.rd.update(nowMs, dtSec, energyCurves, calmLevel);
     this.lightning.update(dtSec);
+    // Drops send a heavy ring through the lake -- edge-detected off the
+    // externally-set dropAtMs (same passthrough pattern as heatShimmer).
+    if (Number.isFinite(this.dropAtMs) && this.dropAtMs !== this._lastSeenDropAtMs) {
+      this._lastSeenDropAtMs = this.dropAtMs;
+      this.lakeRing.excite(22);
+    }
+    this.lakeRing.update(dtSec);
     this.murmuration.update(nowMs, dtSec, energyCurves, calmLevel, wind);
 
     if (this._scanlineActive) {
@@ -857,8 +873,13 @@ export class BiomeManager {
   _drawGround(ctx, canvas, worldX, originX, A, B, t) {
     const groundColor = this.lerpCache.get(A.silhouette, B.silhouette, t);
     const localGroundY = this.groundField ? this.groundField.heightAt(worldX) : this.groundY;
+    const activeFx = t > 0.5 ? B.fx : A.fx;
+    // The Mirror: GroundField's physics (collision height) are untouched,
+    // but the lake is where the terrain-EQ visually takes a rest -- a
+    // still, flat surface instead of jittering EQ-bar terrain.
+    const isLake = activeFx === 'lakeReflection';
 
-    if (this.groundField) {
+    if (this.groundField && !isLake) {
       // Ground as shifted EQ-bar-shaped slices (follow-up item 5): each bar
       // echoes the horizon EQ's own per-band reading, just offset by a few
       // columns, so the terrain visually rhymes with the music playing far
@@ -895,11 +916,60 @@ export class BiomeManager {
       ctx.fillRect(0, localGroundY, canvas.width, canvas.height - localGroundY);
     }
 
-    const activeFx = t > 0.5 ? B.fx : A.fx;
     if (activeFx === 'neonGrid') this._drawNeonGrid(ctx, canvas, worldX, localGroundY);
     else if (activeFx === 'canopyDapple') this._drawCanopyDapple(ctx, canvas, localGroundY);
     else if (activeFx === 'glitchTear' && this._glitchActiveMs > 0) this._drawGlitchTear(ctx, canvas);
     else if (activeFx === 'petalPile') this._drawPetalPiles(ctx, canvas, worldX, localGroundY, t > 0.5 ? B : A);
+    else if (isLake) this._drawLakeReflection(ctx, canvas, localGroundY);
+  }
+
+  /** The Mirror (Movement IV): flip the sky/phenomena/silhouette region
+   *  already painted above the waterline straight down into the lake band
+   *  -- the mandala, aurora, murmuration, and Midasus's sky voyage all
+   *  reflect for free, since this reads back whatever canvas pixels are
+   *  already there. Then ripples: a kick/drop-excited ModalRing drives a
+   *  horizontal sine offset per row-slice, re-blitting the reflection
+   *  sideways in place (the same self-referential drawImage trick as the
+   *  hype-frame echo in Renderer.js). */
+  _drawLakeReflection(ctx, canvas, groundY) {
+    const lakeHeight = canvas.height - groundY;
+    if (lakeHeight <= 0) return;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, groundY, canvas.width, lakeHeight);
+    ctx.clip();
+
+    ctx.globalAlpha = 0.35;
+    ctx.translate(0, 2 * groundY);
+    ctx.scale(1, -1);
+    ctx.drawImage(canvas, 0, 0);
+    ctx.restore();
+
+    // Vertical fade with depth: the reflection dissolves toward the far
+    // (bottom) edge of the lake band rather than cutting off sharply.
+    ctx.save();
+    const fadeGrad = ctx.createLinearGradient(0, groundY, 0, canvas.height);
+    fadeGrad.addColorStop(0, 'rgba(0,0,0,0)');
+    fadeGrad.addColorStop(1, 'rgba(6,10,18,0.75)');
+    ctx.fillStyle = fadeGrad;
+    ctx.fillRect(0, groundY, canvas.width, lakeHeight);
+    ctx.restore();
+
+    // Ripples.
+    const SLICES = 8;
+    const step = Math.max(1, Math.ceil(lakeHeight / SLICES));
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, groundY, canvas.width, lakeHeight);
+    ctx.clip();
+    for (let row = 0, i = 0; row < lakeHeight; row += step, i++) {
+      const theta = (i / SLICES) * Math.PI * 2;
+      const offset = this.lakeRing.displacementAt(theta) * 3;
+      if (Math.abs(offset) < 0.05) continue;
+      ctx.drawImage(canvas, 0, groundY + row, canvas.width, step, offset, groundY + row, canvas.width, step);
+    }
+    ctx.restore();
   }
 
   /** The Wind: SAKURA's piles actively shed a few petals downwind rather
