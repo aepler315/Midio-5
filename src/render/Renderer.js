@@ -2,11 +2,13 @@
 // telegraph glints -> world FX -> companions -> Midio -> foreground veil ->
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
 // each stage guards on the subsystem's presence so this file grows additively.
-import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE } from './meshes.js';
-import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh } from './MeshDrawer.js';
+import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE, MIDIO_APOTHEOSIS_FOLDED, MIDIO_APOTHEOSIS_UNFOLDED } from './meshes.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, lerpMesh } from './MeshDrawer.js';
 import { EpicycleShow } from './EpicycleShow.js';
 import { ComposerStrip } from './ComposerStrip.js';
 import { RainbowBrush } from './RainbowBrush.js';
+import { GOLD_AFTERIMAGE_LIFE_MS } from '../sim/MidioPerformer.js';
+import { clamp01 } from '../utils/math.js';
 
 const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
@@ -19,6 +21,7 @@ export class Renderer {
     this._midioRestLengths = computeRestLengths(MIDIO_MESH);
     this._midioBodyRest = computeRestLengths(MIDIO_BODY);
     this._midioEyeRest = computeRestLengths(MIDIO_EYE);
+    this._apoBodyRest = computeRestLengths(MIDIO_APOTHEOSIS_FOLDED);
     this.epicycles = new EpicycleShow();
     this._lastMilestoneMs = null;
     this.composer = null; // lazy: needs the conductor's timeline at first draw
@@ -67,12 +70,15 @@ export class Renderer {
 
     // Rainbow brush: paint Midio's jump arcs, world-locked behind him.
     this.brush.update(sim.timeMs, pose.airborne, pose.worldX, pose.midioY);
-    this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs);
+    this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs, sim.apotheosis && sim.apotheosis.active ? 2 : 1);
 
     if (sim.broshi) sim.broshi.draw(ctx, pose);
 
-    if (sim.performer) this._drawMidioAfterimages(ctx, sim.performer, pose.midioX);
-    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0);
+    if (sim.performer) {
+      this._drawMidioAfterimages(ctx, sim.performer, pose.midioX);
+      this._drawGoldAfterimages(ctx, sim.performer, pose.midioX, sim.timeMs);
+    }
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0, sim.apotheosis);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
@@ -181,28 +187,41 @@ export class Renderer {
     ctx.stroke();
   }
 
-  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0) {
+  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null) {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
+    const apoProgress = apotheosis ? apotheosis.progress : 0;
     const transform = {
       tx: pose.midioX, ty: pose.midioY,
       rot: (pose.leanDeg * Math.PI) / 180,
-      scaleX: pose.scaleX * MIDIO_DRAW_SCALE, scaleY: pose.scaleY * MIDIO_DRAW_SCALE,
+      scaleX: pose.scaleX * MIDIO_DRAW_SCALE * (1 + 0.25 * apoProgress),
+      scaleY: pose.scaleY * MIDIO_DRAW_SCALE * (1 + 0.25 * apoProgress),
     };
     const hue = flash > 0 ? MIDIO_BASE_HUE + (48 - MIDIO_BASE_HUE) * flash : MIDIO_BASE_HUE;
     // Spectral treatment: near-white filament with a narrow warm fringe.
-    // The milestone gold flash reads as the glyph igniting into color.
-    const options = { satBase: 26 + flash * 45, lightBase: 68 + flash * 14, hueSpread: 16 };
+    // The milestone gold flash reads as the glyph igniting into color; the
+    // Apotheosis widens the hue band further into a full sweep around the rim.
+    const options = {
+      satBase: 26 + flash * 45 + 20 * apoProgress,
+      lightBase: 68 + flash * 14 + 10 * apoProgress,
+      hueSpread: 16 + 60 * apoProgress,
+    };
 
     // Modal vibration: rim vertices ride the performer's ring-down field.
     // Rest lengths stay the undisplaced ones, so the wobble reads as edge
-    // deformation and lights up the glow automatically.
+    // deformation and lights up the glow automatically. Below the morph
+    // threshold this stays on the original 9-rim MIDIO_BODY untouched;
+    // the Apotheosis swaps in the 18-rim folded/unfolded blend, whose own
+    // lengthening edges (relative to the FOLDED rest lengths) add the
+    // unfolding glow on top of the modal one.
     const hub = MIDIO_BODY.vertices[0];
+    const bodyBase = apoProgress > 0.001 ? lerpMesh(MIDIO_APOTHEOSIS_FOLDED, MIDIO_APOTHEOSIS_UNFOLDED, apoProgress) : MIDIO_BODY;
+    const bodyRest = apoProgress > 0.001 ? this._apoBodyRest : this._midioBodyRest;
     const bodyMesh = meltMesh(
-      displaceMeshRadial(MIDIO_BODY, hub.x, hub.y, performer ? performer.modal : null),
+      displaceMeshRadial(bodyBase, hub.x, hub.y, performer ? performer.modal : null),
       hub.x, hub.y, tSec, melt, 1,
     );
-    drawMeshPart(ctx, bodyMesh, this._midioBodyRest, transform, hue, options);
+    drawMeshPart(ctx, bodyMesh, bodyRest, transform, hue, options);
 
     if (blink < 0.98) {
       const blinkEye = {
@@ -240,6 +259,27 @@ export class Renderer {
         tx: midioX, ty: f.y, rot: (f.rot * Math.PI) / 180,
         scaleX: f.scaleX * MIDIO_DRAW_SCALE, scaleY: f.scaleY * MIDIO_DRAW_SCALE,
       }, MIDIO_BASE_HUE, { alpha: 1, satBase: 18, lightBase: 60, hueSpread: 16 });
+    }
+    ctx.restore();
+  }
+
+  /** Apotheosis-only: gold, beat-quantized afterimages (captured on every
+   * kick while transformed, independent of MidioPerformer's airborne-only
+   * trick-jump streaks above). */
+  _drawGoldAfterimages(ctx, performer, midioX, nowMs) {
+    const frames = performer.goldAfterimages;
+    if (!frames.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const f of frames) {
+      const age = clamp01((nowMs - f.bornMs) / GOLD_AFTERIMAGE_LIFE_MS);
+      const alpha = 0.4 * (1 - age);
+      if (alpha <= 0) continue;
+      ctx.globalAlpha = alpha;
+      drawMeshPart(ctx, MIDIO_MESH, this._midioRestLengths, {
+        tx: midioX, ty: f.y, rot: (f.rot * Math.PI) / 180,
+        scaleX: f.scaleX * MIDIO_DRAW_SCALE, scaleY: f.scaleY * MIDIO_DRAW_SCALE,
+      }, 46, { alpha: 1, satBase: 85, lightBase: 68, hueSpread: 10 });
     }
     ctx.restore();
   }

@@ -18,6 +18,7 @@ import { HypeDirector } from './HypeDirector.js';
 import { VibeDirector } from './VibeDirector.js';
 import { EnsembleDirector } from './EnsembleDirector.js';
 import { ExcursionDirector } from './ExcursionDirector.js';
+import { ApotheosisDirector } from './ApotheosisDirector.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
@@ -53,6 +54,7 @@ export class Simulation {
 
     const songSeed = hashSeed(`${conductor.timeline.length}:${conductor.durationMs}:${conductor.timeline[0]?.tMs ?? 0}:${conductor.timeline.at(-1)?.tMs ?? 0}`);
     this.performer = new MidioPerformer(songSeed);
+    this.apotheosis = new ApotheosisDirector();
     this.calm = new CalmDirector();
     this.hype = new HypeDirector();
     this.vibe = new VibeDirector(conductor.timeline);
@@ -84,6 +86,7 @@ export class Simulation {
         this.performer.onKick();
         this.hype.onKick(evt.vel);
         this.midasus.voyage.onKick(evt.vel); // deep-space sparkle burst (self-gated on phase)
+        if (this.apotheosis.active) this.performer.captureGoldAfterimage(this.midio, this.timeMs);
       }
     });
   }
@@ -124,6 +127,19 @@ export class Simulation {
       this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera);
       if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY);
       this.fracture.registerImpact(I);
+
+      // The Apotheosis: gameplay precision powers the show -- every clean
+      // landing and combo milestone literally charges the transformation.
+      if (this.comboSystem.justClean) this.apotheosis.onCleanLanding();
+      if (this.performer.milestoneFlash) this.apotheosis.onMilestone();
+      if (this.apotheosis.active) this.impactFX.ignite(this.worldX, this.midio.groundY);
+    }
+
+    this.apotheosis.update(nowMs, dtSec, { vibe: this.vibe, hype: this.hype, calm: this.calm });
+    if (this.apotheosis.active) this.camera.punch(1.04);
+    if (this.apotheosis.justEnded) {
+      this.performer.modal.excite(8);
+      this.impactFX.splat(this.worldX, this.midio.groundY);
     }
 
     const stumbled = this.obstacles.checkCollision(this.worldX, this.midio.halfWidth, this.jump.y);

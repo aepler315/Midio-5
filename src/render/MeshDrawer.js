@@ -90,6 +90,22 @@ export function meltMesh(mesh, cx, cy, tSec, amt, seed = 0) {
 }
 
 /**
+ * Per-vertex lerp between two meshes that share vertex count and edge
+ * topology (spec: the Apotheosis morph) -- t=0 is exactly meshA, t=1 is
+ * exactly meshB, continuous in between. Edges are taken from meshA since
+ * the two are required to be topologically identical.
+ */
+export function lerpMesh(meshA, meshB, t) {
+  if (t <= 0) return meshA;
+  if (t >= 1) return meshB;
+  const vertices = meshA.vertices.map((v, i) => {
+    const w = meshB.vertices[i];
+    return { x: v.x + (w.x - v.x) * t, y: v.y + (w.y - v.y) * t };
+  });
+  return { vertices, edges: meshA.edges };
+}
+
+/**
  * Radially displace a mesh's vertices about (cx,cy) by a ModalRing-style
  * field (anything with .energy and .displacementAt(theta)). Rest lengths
  * are intentionally NOT recomputed: displacement changes edge lengths

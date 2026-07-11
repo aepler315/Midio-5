@@ -18,6 +18,7 @@ export class ImpactFX {
     this.motes = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 400);
     this.polyRings = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 8);
     this.splats = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 20);
+    this.ignitions = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 8);
     this.scars = []; // small list, capped manually — decals persist seconds, not worth pooling
 
     this._sputterAccum = 0;
@@ -85,6 +86,11 @@ export class ImpactFX {
     this.splats.spawn({ wx: worldX, y: groundY, color: colors[Math.floor(rand() * colors.length)], blobs, life: 2.8 });
   }
 
+  /** Apotheosis-only: a bright gold ring stamped on every landing while transformed. */
+  ignite(worldX, groundY) {
+    this.ignitions.spawn({ wx: worldX, y: groundY, Rd: 150, life: 0.5 });
+  }
+
   /** Pre-kick sputter dust at Midio's feet during telegraph anticipation (spec §2.2.3). */
   sputter(worldX, groundY, dtSec) {
     this._sputterAccum += dtSec * 120; // ~2 per rendered frame at 60fps == ~1 per sim step at 120Hz
@@ -104,6 +110,7 @@ export class ImpactFX {
     this.rings.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.polyRings.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.splats.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
+    this.ignitions.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.motes.step(dtSec, (o, dt) => {
       o.vy += 300 * dt;
       o.wx += o.vx * dt;
@@ -194,6 +201,21 @@ export class ImpactFX {
       }
       ctx.stroke();
     }
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const g of this.ignitions.active) {
+      const t = g.age / g.life;
+      const radius = g.Rd * (1 - (1 - t) ** 3);
+      const alpha = (1 - t) ** 2;
+      const x = toScreen(g.wx);
+      ctx.strokeStyle = `rgba(255,225,140,${(0.8 * alpha).toFixed(3)})`;
+      ctx.lineWidth = Math.max(0.5, 4 * (1 - t));
+      ctx.beginPath();
+      ctx.ellipse(x, g.y, radius, radius * 0.4, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
 
     ctx.fillStyle = 'rgba(230,220,200,0.9)';
     for (const m of this.motes.active) {

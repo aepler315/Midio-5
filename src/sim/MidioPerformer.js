@@ -17,6 +17,8 @@ const FLOURISH_COMBO_THRESHOLD = 2.0;
 const GOLD_FLASH_DECAY_SEC = 0.6;
 const AFTERIMAGE_INTERVAL_MS = 28;
 const AFTERIMAGE_COUNT = 4;
+export const GOLD_AFTERIMAGE_LIFE_MS = 1000;
+const GOLD_AFTERIMAGE_MAX = 6;
 const STRUT_DEG = 4.5;   // ferocity pass: the strut is a stomp, not a sway
 const STOMP_DIP = 0.10;  // scaleY dip landing exactly on the beat
 const RECOIL_MS = 200;   // universal landing recoil: squash -> overshoot -> settle
@@ -52,6 +54,10 @@ export class MidioPerformer {
     this.afterimages = [];
     this._lastCaptureMs = -Infinity;
 
+    // Apotheosis-only: one gold snapshot per kick while transformed, held
+    // regardless of airborne state (unlike the trick-jump streaks above).
+    this.goldAfterimages = [];
+
     this.blinkScale = 1; // 1 = eye open, 0 = fully closed
     this._nextBlinkMs = BLINK_MIN_GAP_MS + this.rand() * BLINK_JITTER_MS;
     this._blinkStartMs = -Infinity;
@@ -67,6 +73,11 @@ export class MidioPerformer {
 
   onKick() {
     this.beatFlash = 1;
+  }
+
+  captureGoldAfterimage(midio, nowMs) {
+    this.goldAfterimages.push({ y: midio.renderY, scaleX: midio.scaleX, scaleY: midio.scaleY, rot: midio.leanDeg, bornMs: nowMs });
+    if (this.goldAfterimages.length > GOLD_AFTERIMAGE_MAX) this.goldAfterimages.shift();
   }
 
   clearFrameFlags() {
@@ -173,6 +184,7 @@ export class MidioPerformer {
       : 1;
 
     this.goldFlash = Math.max(0, this.goldFlash - dtSec / GOLD_FLASH_DECAY_SEC);
+    while (this.goldAfterimages.length && nowMs - this.goldAfterimages[0].bornMs > GOLD_AFTERIMAGE_LIFE_MS) this.goldAfterimages.shift();
 
     if (jump.airborne && nowMs - this._lastCaptureMs >= AFTERIMAGE_INTERVAL_MS) {
       this._lastCaptureMs = nowMs;
