@@ -93,6 +93,7 @@ export class Renderer {
     if (sim.gnat) sim.gnat.draw(ctx, sim.timeMs);
     if (sim.fracture) sim.fracture.draw(ctx, canvas, { glow: perf ? perf.crackGlowEnabled : true });
     if (biomeManager) biomeManager.drawForeground(ctx, canvas, pose.worldX, perf ? perf.veilEnabled : true);
+    if (sim.keyDirector) this._drawTranspositionWave(ctx, canvas, sim.keyDirector);
 
     ctx.restore(); // camera transform
     ctx.restore();
@@ -106,6 +107,26 @@ export class Renderer {
     if (sim.hype) this._drawHypeFrame(ctx, canvas, sim);
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
+  }
+
+  /** The Key of the World: a kick-synced vertical chromatic wash, in the
+   *  new tonic's hue, sweeping across the frame over a confirmed key change. */
+  _drawTranspositionWave(ctx, canvas, keyDirector) {
+    if (!keyDirector.transitionActive || !keyDirector.lastKeyChange) return;
+    const hue = (((keyDirector.lastKeyChange.to % 12) + 12) % 12) * 30;
+    const u = keyDirector.transitionProgress;
+    const bandWidth = canvas.width * 0.55;
+    const cx = -bandWidth + u * (canvas.width + bandWidth * 2);
+    const alpha = Math.sin(Math.PI * u); // eases in and back out across the sweep
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createLinearGradient(cx - bandWidth / 2, 0, cx + bandWidth / 2, 0);
+    g.addColorStop(0, `hsla(${hue},80%,60%,0)`);
+    g.addColorStop(0.5, `hsla(${hue},85%,65%,${(0.35 * alpha).toFixed(3)})`);
+    g.addColorStop(1, `hsla(${hue},80%,60%,0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
   }
 
   /** Drop shockwave: two expanding rings thrown from Midio on a detected drop. */

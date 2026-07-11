@@ -27,6 +27,12 @@ export class VibeDirector {
     this._rawEpic = 0.3;
     this.valence = 0;
     this.epic = 0.3;
+    // The Key of the World (Movement III): the argmax pitch class already
+    // computed below for the major/minor third balance, exposed for
+    // BiomeManager's harmony-driven palette. Held from the last window with
+    // enough evidence (count>=3) rather than reset every thin-evidence eval.
+    this.tonic = 0;
+    this.tonicConfidence = 0;
   }
 
   _evaluate(nowMs, energyCurves) {
@@ -49,6 +55,11 @@ export class VibeDirector {
       for (let pc = 1; pc < 12; pc++) if (hist[pc] > hist[tonic]) tonic = pc;
       const M = hist[(tonic + 4) % 12], m = hist[(tonic + 3) % 12];
       third = (M - m) / (M + m + 0.5); // +0.5: thin evidence shouldn't swing hard
+
+      let second = 0;
+      for (let pc = 0; pc < 12; pc++) if (pc !== tonic && hist[pc] > second) second = hist[pc];
+      this.tonic = tonic;
+      this.tonicConfidence = clamp01((hist[tonic] - second) / (hist[tonic] + 0.5));
     }
 
     let bright = 0;

@@ -32,6 +32,24 @@ test('a looping major arpeggio reads happy; the minor version reads sad', () => 
   assert.ok(major.valence > minor.valence + 0.3, 'the two modes must clearly separate');
 });
 
+test('a looping C arpeggio settles the exposed tonic at pitch-class 0 with real confidence', () => {
+  const v = runVibe(loopedTimeline([60, 64, 67, 72], 250, 40), 8);
+  assert.equal(v.tonic, 0);
+  assert.ok(v.tonicConfidence > 0.3, `expected real confidence, got ${v.tonicConfidence.toFixed(2)}`);
+});
+
+test('a looping G arpeggio settles the exposed tonic at pitch-class 7', () => {
+  const v = runVibe(loopedTimeline([67, 71, 74, 79], 250, 40), 8);
+  assert.equal(v.tonic, 7);
+});
+
+test('tonic/tonicConfidence hold their defaults when there is not yet enough evidence (count<3)', () => {
+  const vibe = new VibeDirector([{ tMs: 0, pitch: 60, vel: 0.7, role: Role.MELODY }]);
+  vibe.update(0, STEP, null);
+  assert.equal(vibe.tonic, 0);
+  assert.equal(vibe.tonicConfidence, 0);
+});
+
 test('dense, loud, wide-register writing reads epic; sparse quiet writing reads trivial', () => {
   const epicNotes = loopedTimeline([36, 48, 60, 72, 84, 96], 120, 80);
   const trivialNotes = loopedTimeline([60, 62], 1800, 6, 0.3);

@@ -18,7 +18,7 @@ import { Murmuration } from './Murmuration.js';
 import { Atmosphere } from './Atmosphere.js';
 import { superformula } from '../render/oscillators.js';
 import { clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
-import { LerpCache } from '../utils/color.js';
+import { LerpCache, rotateHueHex } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
 
@@ -98,6 +98,13 @@ export class BiomeManager {
     this._shedPetals = [];
     const fogSeed = mulberry32(songSeed ^ 0x0f06);
     this._fogBanks = [0, 1, 2].map(() => ({ x: fogSeed() * canvasWidth * 1.6 }));
+
+    // The Key of the World (Movement III): the harmony-driven palette
+    // rotation, set externally each frame from KeyDirector.paletteRotation
+    // (same pattern as hypeBoost/heatShimmer above). Quantized to 3deg
+    // steps before rotating so the LerpCache-style cache below stays hot.
+    this.paletteRotation = 0;
+    this._rotationCache = new Map();
 
     conductor.onBar(() => { this._scanlineActive = true; this._scanlineY = 0; this.cymatics.onBar(); });
     conductor.on(Role.RHYTHM, (evt) => {
@@ -209,6 +216,22 @@ export class BiomeManager {
   }
 
   _profile(name) { return BIOMES.find((b) => b.name === name); }
+
+  /** The Key of the World: hue-rotate a color by the current (quantized)
+   *  palette rotation. Quantizing to 3deg steps before rotating means the
+   *  same handful of rotated hex strings recur across many frames, so this
+   *  small cache actually hits instead of growing unbounded. */
+  _rotated(hex) {
+    const deg = Math.round((this.paletteRotation || 0) / 3) * 3;
+    if (deg === 0) return hex;
+    const key = hex + '|' + deg;
+    let v = this._rotationCache.get(key);
+    if (v === undefined) {
+      v = rotateHueHex(hex, deg);
+      this._rotationCache.set(key, v);
+    }
+    return v;
+  }
 
   /** The current blended halo color -- shared accent for HUD-level effects. */
   currentHaloColor() {
@@ -332,7 +355,7 @@ export class BiomeManager {
 
     const scrollX0 = worldX * LAYER_RATIOS.L2, scrollX1 = worldX * LAYER_RATIOS.L3;
     const scrollX2 = worldX * LAYER_RATIOS.L4, scrollX3 = worldX * LAYER_RATIOS.L5;
-    const tint = this.lerpCache.get(A.silhouette, B.silhouette, t);
+    const tint = this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t));
 
     this._drawLayer(ctx, canvas, 'L2', scrollX0, tint, t, A, B);
     this._drawLayer(ctx, canvas, 'L3', scrollX1, tint, t, A, B);
@@ -547,7 +570,7 @@ export class BiomeManager {
 
   _drawSky(ctx, canvas, A, B, t) {
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    for (let i = 0; i < 3; i++) g.addColorStop(i / 2, this.lerpCache.get(A.sky[i], B.sky[i], t));
+    for (let i = 0; i < 3; i++) g.addColorStop(i / 2, this._rotated(this.lerpCache.get(A.sky[i], B.sky[i], t)));
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
