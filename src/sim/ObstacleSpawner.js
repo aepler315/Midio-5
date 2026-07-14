@@ -34,8 +34,10 @@ export class ObstacleSpawner {
    * @param {import('../core/NoteEvent.js').NoteEvent[]} timeline full song timeline
    * @param {number} beatPeriodMsGuess used only for candidate min-gap spacing
    * @param {number} midioHalfWidth Midio's collision half-width, for crossing-time math
+   * @param {{fromMs:number, toMs:number}[]} excludeSpans keep-out ranges (hold
+   *   notes: the player rides those grounded, so nothing placed there is clearable)
    */
-  buildCandidates(timeline, beatPeriodMsGuess, midioHalfWidth = 23) {
+  buildCandidates(timeline, beatPeriodMsGuess, midioHalfWidth = 23, excludeSpans = []) {
     this.candidates = [];
     this.halfWidth = midioHalfWidth;
 
@@ -75,6 +77,9 @@ export class ObstacleSpawner {
         if (rhythmEvents[ej].vel > bestVel) { bestVel = rhythmEvents[ej].vel; arrival = rhythmEvents[ej].tMs; }
         ej++;
       }
+
+      const blocked = excludeSpans.some((s) => arrival + crossHalfMs >= s.fromMs && arrival - crossHalfMs <= s.toMs);
+      if (blocked) continue;
 
       if (arrival - lastAccepted < minGap) continue;
       this.candidates.push({ tMs: arrival });

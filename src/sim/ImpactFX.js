@@ -18,6 +18,7 @@ export class ImpactFX {
     this.motes = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 400);
     this.polyRings = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 8);
     this.splats = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 20);
+    this.ignitions = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 8);
     this.scars = []; // small list, capped manually — decals persist seconds, not worth pooling
 
     this._sputterAccum = 0;
@@ -33,7 +34,9 @@ export class ImpactFX {
 
     this.craters.spawn({ wx: worldX, y: groundY, R: 14 + 66 * I, alpha: 0.85 * I, life: 0.12 });
 
-    const ring = this.rings.spawn({ wx: worldX, y: groundY, Rd: 40 + 120 * I, tau: 0.09, life: 0.42 });
+    // color: null — pooled objects keep old fields across reuse, and this
+    // slot may have last served a tier-tinted judgment ring.
+    const ring = this.rings.spawn({ wx: worldX, y: groundY, Rd: 40 + 120 * I, tau: 0.09, life: 0.42, color: null });
     for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * 4 * I;
 
     const n = Math.round(6 + 18 * I);
@@ -85,6 +88,38 @@ export class ImpactFX {
     this.splats.spawn({ wx: worldX, y: groundY, color: colors[Math.floor(rand() * colors.length)], blobs, life: 2.8 });
   }
 
+  /** Apotheosis-only: a bright gold ring stamped on every landing while transformed. */
+  ignite(worldX, groundY) {
+    this.ignitions.spawn({ wx: worldX, y: groundY, Rd: 150, life: 0.5 });
+  }
+
+  /** Tap-judgment burst at Midio: a tier-colored halo ring (reusing the
+   * pooled dust rings, lifted to body height) plus a few motes — rising for
+   * hits, drooping for a sour press. The color alone carries the verdict,
+   * so the shape stays language-free. */
+  judgment(worldX, groundY, tier, particleMul = 1) {
+    const style = {
+      perfect: { col: '255,215,106', Rd: 150, motes: 10, up: true, jag: 2.5 },
+      great: { col: '79,216,196', Rd: 110, motes: 6, up: true, jag: 2.5 },
+      good: { col: '235,235,245', Rd: 75, motes: 3, up: true, jag: 2.5 },
+      sour: { col: '158,132,168', Rd: 55, motes: 8, up: false, jag: 7 },
+    }[tier];
+    if (!style) return;
+    const rand = this.rand;
+    const ring = this.rings.spawn({ wx: worldX, y: groundY - 42, Rd: style.Rd, tau: 0.09, life: 0.38, color: style.col });
+    for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * style.jag;
+    const n = Math.round(style.motes * particleMul);
+    for (let i = 0; i < n; i++) {
+      this.motes.spawn({
+        wx: worldX + (rand() * 2 - 1) * 16,
+        y: groundY - (style.up ? 6 : 46),
+        vx: (rand() * 2 - 1) * 50,
+        vy: style.up ? -70 - rand() * 90 : 10 + rand() * 30,
+        size: 2.2, life: 0.3 + 0.2 * rand(),
+      });
+    }
+  }
+
   /** Pre-kick sputter dust at Midio's feet during telegraph anticipation (spec §2.2.3). */
   sputter(worldX, groundY, dtSec) {
     this._sputterAccum += dtSec * 120; // ~2 per rendered frame at 60fps == ~1 per sim step at 120Hz
@@ -104,6 +139,7 @@ export class ImpactFX {
     this.rings.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.polyRings.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.splats.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
+    this.ignitions.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.motes.step(dtSec, (o, dt) => {
       o.vy += 300 * dt;
       o.wx += o.vx * dt;
@@ -157,7 +193,7 @@ export class ImpactFX {
       const radius = r.Rd * (1 - Math.exp(-r.age / r.tau));
       const alpha = Math.pow(1 - t, 2);
       const x = toScreen(r.wx);
-      ctx.strokeStyle = `rgba(255,255,255,${0.7 * alpha})`;
+      ctx.strokeStyle = `rgba(${r.color || '255,255,255'},${0.7 * alpha})`;
       ctx.lineWidth = Math.max(0.5, 3 * (1 - t));
       ctx.beginPath();
       for (let i = 0; i <= 24; i++) {
@@ -194,6 +230,21 @@ export class ImpactFX {
       }
       ctx.stroke();
     }
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const g of this.ignitions.active) {
+      const t = g.age / g.life;
+      const radius = g.Rd * (1 - (1 - t) ** 3);
+      const alpha = (1 - t) ** 2;
+      const x = toScreen(g.wx);
+      ctx.strokeStyle = `rgba(255,225,140,${(0.8 * alpha).toFixed(3)})`;
+      ctx.lineWidth = Math.max(0.5, 4 * (1 - t));
+      ctx.beginPath();
+      ctx.ellipse(x, g.y, radius, radius * 0.4, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
 
     ctx.fillStyle = 'rgba(230,220,200,0.9)';
     for (const m of this.motes.active) {

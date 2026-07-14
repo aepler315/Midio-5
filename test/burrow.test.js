@@ -14,7 +14,10 @@ function advance(burrow, t, seconds, worldX = 500, groundField = null) {
 }
 
 function makeMockGroundField() {
-  return { calls: [], pulseAt(nowMs, worldX, sagPx, recoverAtMs) { this.calls.push({ nowMs, worldX, sagPx, recoverAtMs }); } };
+  return {
+    calls: [], pulseAt(nowMs, worldX, sagPx, recoverAtMs) { this.calls.push({ nowMs, worldX, sagPx, recoverAtMs }); },
+    impulseCalls: [], impulse(worldX, strength, nowMs) { this.impulseCalls.push({ worldX, strength, nowMs }); },
+  };
 }
 
 test('a fresh burrow is idle and inactive', () => {
@@ -156,6 +159,9 @@ test('eruption fires a ground pulse at the surface point', () => {
   assert.equal(b.phase, BurrowPhase.ERUPT);
   const eruptCall = gf.calls[gf.calls.length - 1];
   assert.ok(eruptCall.sagPx > 30, 'eruption pulse should be a pronounced sag, not a small ridge tick');
+  assert.equal(gf.impulseCalls.length, 1, 'the eruption should also send exactly one terrain ripple');
+  assert.ok(gf.impulseCalls[0].strength > 0.5, 'the eruption ripple should be a strong one');
+  assert.equal(gf.impulseCalls[0].worldX, eruptCall.worldX, 'ripple and pulse must anchor to the same eruption site');
 });
 
 test('a full burrow cycle never produces NaN/Infinity', () => {

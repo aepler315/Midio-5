@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GroundField } from '../src/world/GroundField.js';
+import { GroundField, rippleOffsetAt } from '../src/world/GroundField.js';
 import { Conductor } from '../src/core/Conductor.js';
 import { makeNoteEvent, Role } from '../src/core/NoteEvent.js';
 
@@ -9,6 +9,13 @@ const STEP_S = 1000 / 120 / 1000;
 
 function fakeEnergyCurves(value) {
   return { sample: () => value };
+}
+
+// Band 1 drives the bass-buzz micro-vibration; every other band drives the
+// EQ-bar height. Splitting them lets tests build a real EQ offset without
+// the buzz's own small jitter muddying flatten's exact-proportionality math.
+function fakeEnergyCurvesBanded(bassValue, otherValue) {
+  return { sample: (band) => (band === 1 ? bassValue : otherValue) };
 }
 
 test('bass buzz shivers the render bars over time but never touches the physics height', () => {
@@ -28,6 +35,46 @@ test('bass buzz shivers the render bars over time but never touches the physics 
     t += 8.33;
   }
   assert.ok(ySamples.size > 5, `expected the bar height to oscillate across steps, saw ${ySamples.size} distinct values`);
+});
+
+test('the Unraveling: flatten visually settles the EQ bars toward baseGroundY, but never touches heightAt (physics)', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  let t = 0;
+  // Let the springs settle under strong non-bass energy (bass=0 so the
+  // buzz micro-vibration stays silent) so slices sit away from
+  // baseGroundY purely from the EQ-offset before we test flattening.
+  const energy = fakeEnergyCurvesBanded(0, 1);
+  for (let i = 0; i < 600; i++) { gf.update(t, STEP_S, 0, energy); t += 8.33; }
+
+  const physicsHeight = gf.heightAt(100);
+  const barsBefore = gf.visibleBars(0, 220, 1280);
+  assert.ok(barsBefore.some((b) => Math.abs(b.y - BASE_Y) > 1), 'slices should be visibly offset before flattening');
+
+  gf.flatten = 1;
+  const barsFlat = gf.visibleBars(0, 220, 1280);
+  for (const b of barsFlat) assert.ok(Math.abs(b.y - BASE_Y) < 0.05, `expected slice ${b.x} to lie flat at baseGroundY, got y=${b.y}`);
+
+  // Physics reference is untouched by flatten, at any value.
+  assert.ok(Math.abs(gf.heightAt(100) - physicsHeight) < 1e-9);
+});
+
+test('flatten interpolates smoothly between the offset and flat bar heights', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  let t = 0;
+  const energy = fakeEnergyCurvesBanded(0, 1);
+  for (let i = 0; i < 600; i++) { gf.update(t, STEP_S, 0, energy); t += 8.33; }
+
+  gf.flatten = 0;
+  const yFull = gf.visibleBars(0, 220, 1280)[2].y;
+  gf.flatten = 0.5;
+  const yHalf = gf.visibleBars(0, 220, 1280)[2].y;
+  gf.flatten = 1;
+  const yFlat = gf.visibleBars(0, 220, 1280)[2].y;
+
+  const offsetFull = Math.abs(yFull - BASE_Y);
+  const offsetHalf = Math.abs(yHalf - BASE_Y);
+  assert.ok(Math.abs(offsetHalf - offsetFull * 0.5) < 0.01, `expected the half-flattened offset to be half the full offset, got full=${offsetFull} half=${offsetHalf}`);
+  assert.ok(Math.abs(yFlat - BASE_Y) < 0.05);
 });
 
 test('bass buzz is phase-staggered across neighboring slices, not lockstep', () => {
@@ -161,6 +208,97 @@ test('pulseAt fires justRecovered once, like the scripted gag', () => {
     if (gf.justRecovered) recoverCount++;
   }
   assert.equal(recoverCount, 1);
+});
+
+test('rippleOffsetAt has bounded support in time: 0 before the wavefront arrives, 0 long after it settles', () => {
+  const ripple = { originWorldX: 1000, startMs: 0, strength: 1 };
+  // Far away, early: the front hasn't traveled there yet.
+  assert.equal(rippleOffsetAt(1000 + 5000, 10, ripple), 0);
+  // Right at the origin, long after: fully decayed.
+  assert.equal(rippleOffsetAt(1000, 5000, ripple), 0);
+});
+
+test('rippleOffsetAt is symmetric in distance from the origin (radial, direction-agnostic)', () => {
+  const ripple = { originWorldX: 500, startMs: 0, strength: 0.8 };
+  for (const [d, t] of [[50, 100], [120, 200], [200, 260]]) {
+    const left = rippleOffsetAt(500 - d, t, ripple);
+    const right = rippleOffsetAt(500 + d, t, ripple);
+    assert.ok(Math.abs(left - right) < 1e-9, `d=${d} t=${t}: left=${left} right=${right}`);
+  }
+});
+
+test('rippleOffsetAt magnitude never exceeds strength*RIPPLE_AMPLITUDE_PX (11px at strength=1)', () => {
+  const ripple = { originWorldX: 0, startMs: 0, strength: 1 };
+  let maxAbs = 0;
+  for (let d = 0; d <= 400; d += 10) {
+    for (let t = 0; t <= 700; t += 15) {
+      maxAbs = Math.max(maxAbs, Math.abs(rippleOffsetAt(d, t, ripple)));
+    }
+  }
+  assert.ok(maxAbs <= 11 + 1e-6, `expected bounded by 11px, got ${maxAbs}`);
+});
+
+test('impulse() ripples the render bars but heightAt (physics) stays bit-identical throughout its life', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  let t = 0;
+  gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+  const physicsBefore = gf.heightAt(100);
+  gf.impulse(100, 1, t);
+
+  let sawRippledBar = false;
+  while (t < 600) {
+    t += 8.33;
+    gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+    assert.ok(Math.abs(gf.heightAt(100) - physicsBefore) < 1e-9, 'a ripple must never move the physics reference');
+    const bars = gf.visibleBars(0, 220, 1280);
+    const near = bars.find((b) => Math.abs(b.x - (100 + 220)) < 45);
+    if (near && Math.abs(near.y - BASE_Y) > 0.5) sawRippledBar = true;
+  }
+  assert.ok(sawRippledBar, 'expected a visible bob in the rendered bar near the impact');
+});
+
+test('impulse() fully settles back after RIPPLE_TOTAL_LIFE_MS -- no residual drift', () => {
+  const gfA = new GroundField(BASE_Y, { durationMs: 0 });
+  const gfB = new GroundField(BASE_Y, { durationMs: 0 });
+  gfA.update(0, STEP_S, 0, fakeEnergyCurves(0));
+  gfB.update(0, STEP_S, 0, fakeEnergyCurves(0));
+  gfA.impulse(100, 1, 0); // only gfA gets the ripple
+
+  let t = 0;
+  while (t < 1500) {
+    t += 8.33;
+    gfA.update(t, STEP_S, 0, fakeEnergyCurves(0));
+    gfB.update(t, STEP_S, 0, fakeEnergyCurves(0));
+  }
+  const barsA = gfA.visibleBars(0, 220, 1280);
+  const barsB = gfB.visibleBars(0, 220, 1280);
+  for (let i = 0; i < barsA.length; i++) {
+    assert.ok(Math.abs(barsA[i].y - barsB[i].y) < 0.05, `bar ${i} did not settle back to the un-rippled baseline`);
+  }
+});
+
+test('a fast combo of impulses never exceeds RIPPLE_MAX_ACTIVE tracked ripples', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  gf.update(0, STEP_S, 0, fakeEnergyCurves(0));
+  for (let i = 0; i < 12; i++) gf.impulse(100 + i * 10, 1, i * 5);
+  assert.ok(gf._ripples.length <= 4);
+});
+
+test('a worst-case pile-up of max-strength ripples stays under the softcap ceiling', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  gf.update(0, STEP_S, 0, fakeEnergyCurves(0));
+  for (let i = 0; i < 4; i++) gf.impulse(100, 1, 0); // 4 simultaneous, in-phase, same point
+  const bars = gf.visibleBars(0, 220, 1280);
+  const near = bars.find((b) => Math.abs(b.x - (100 + 220)) < 45);
+  assert.ok(Math.abs(near.y - BASE_Y) <= 21, `pile-up offset ${Math.abs(near.y - BASE_Y)} exceeded the softcap`);
+});
+
+test('impulse with zero or negative strength is a no-op', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  gf.update(0, STEP_S, 0, fakeEnergyCurves(0));
+  gf.impulse(100, 0, 0);
+  gf.impulse(100, -1, 0);
+  assert.equal(gf._ripples.length, 0);
 });
 
 test('a second pulseAt on the same slice before the first resolves still recovers cleanly', () => {

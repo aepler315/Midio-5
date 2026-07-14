@@ -5,11 +5,12 @@
 import { Role } from '../core/NoteEvent.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { clamp, lerp, mulberry32 } from '../utils/math.js';
-import { MIDASUS_MESH } from '../render/meshes.js';
+import { MIDASUS_MESH, MIDASUS_HEX_R } from '../render/meshes.js';
 import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh } from '../render/MeshDrawer.js';
 import { ModalRing } from '../render/oscillators.js';
 import { OrbitalDebris } from './OrbitalDebris.js';
 import { SkyVoyage } from './SkyVoyage.js';
+import { BabyStars } from './BabyStars.js';
 
 const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
@@ -62,6 +63,17 @@ export class Midasus {
     // Occasional deep-sky excursion: BiomeManager draws it (see
     // drawDeepSky), far behind the world, while this is active.
     this.voyage = new SkyVoyage(seed + 3);
+    // Three baby stars use her as their secure base: orbiting close,
+    // exploring one at a time in calm stretches, rushing home when loud.
+    this.babies = new BabyStars(seed + 4);
+
+    // Rest-flight repertoire: each time she settles into a rest she picks a
+    // fresh figure to trace (see _orbitAnchor), never the same one twice
+    // running. Hard melody accents also spin her into a brief pirouette.
+    this.orbitStyle = 'lissajous';
+    this._wasResting = false;
+    this.rollExtra = 0; // pirouette roll, added to her banking in draw()
+    this._pirouetteStartMs = -Infinity;
   }
 
   /** Test/debug hook: send her on a voyage right now regardless of natural
@@ -90,11 +102,30 @@ export class Midasus {
     const t = nowMs / 1000;
     // Calm sections: the orbit widens and slows -- a lazier, dreamier drift
     // instead of the tighter, quicker figure she traces when energetic.
-    const ampMul = 1 + 0.6 * calmLevel;
-    const rateMul = 1 - 0.5 * calmLevel;
-    const x = ax + 60 * ampMul * Math.sin(1.8 * rateMul * t + this.phi);
-    const y = ay + 34 * ampMul * Math.sin(1.2 * rateMul * t);
-    return { x, y };
+    const a = 1 + 0.6 * calmLevel;
+    const r = 1 - 0.5 * calmLevel;
+    switch (this.orbitStyle) {
+      case 'figure8': // a sideways 8, crossing right over the anchor
+        return {
+          x: ax + 68 * a * Math.sin(1.6 * r * t + this.phi),
+          y: ay + 40 * a * Math.sin(3.2 * r * t + 2 * this.phi),
+        };
+      case 'loop': // quick tight circles: loop-the-loops around the anchor
+        return {
+          x: ax + 46 * a * Math.cos(2.6 * r * t + this.phi),
+          y: ay + 46 * a * Math.sin(2.6 * r * t + this.phi),
+        };
+      case 'petal': { // a three-petal rose, dipping through the center
+        const th = 1.4 * r * t + this.phi;
+        const rho = 56 * a * (0.55 + 0.45 * Math.cos(3 * th));
+        return { x: ax + rho * Math.cos(th), y: ay + rho * Math.sin(th) * 0.7 };
+      }
+      default: // 'lissajous', the original drift
+        return {
+          x: ax + 60 * a * Math.sin(1.8 * r * t + this.phi),
+          y: ay + 34 * a * Math.sin(1.2 * r * t),
+        };
+    }
   }
 
   _hueOf(pitch) { return (((pitch % 12) + 12) % 12) * 30; }
@@ -122,7 +153,7 @@ export class Midasus {
     });
   }
 
-  update(nowMs, dtSec, calmLevel = 0, ensemble = null) {
+  update(nowMs, dtSec, calmLevel = 0, ensemble = null, particleMul = 1, wind = null) {
     this._calmLevel = calmLevel;
     this._ens = ensemble;
     this._nowMs = nowMs;
@@ -135,6 +166,7 @@ export class Midasus {
       this.v.y *= 0.4;
       this.hue = this._hueOf(n.pitch);
       if (this.voyage.active) this.voyage.onMelodyOnset(n); // deep space hears the melody too
+      if (n.vel > 0.85) this._pirouetteStartMs = nowMs; // hard accents spin her right around
       this._burst(8 + 24 * n.vel, this.hue);
       this.lastNoteMs = nowMs;
       this.pulse = 1.7 + 0.5 * n.vel; // a brief mesh flash on each note onset
@@ -158,6 +190,21 @@ export class Midasus {
     this.rest += clamp((restTarget - this.rest) * (dtSec / BLEND_SEC), -1, 1);
     this.rest = clamp(this.rest, 0, 1);
 
+    // Each time she settles into a rest she picks a fresh figure to trace —
+    // figure-8s, loop-the-loops, a petaled rose — never the same twice
+    // running, with a fresh phase so the entry point varies too.
+    const resting = this.rest >= 0.5;
+    if (resting && !this._wasResting) {
+      const styles = ['lissajous', 'figure8', 'loop', 'petal'].filter((s) => s !== this.orbitStyle);
+      this.orbitStyle = styles[Math.floor(this.rand() * styles.length)];
+      this.phi = this.rand() * Math.PI * 2;
+    }
+    this._wasResting = resting;
+
+    // Pirouette: a full roll, eased out, landing exactly back at her bank.
+    const pirU = (nowMs - this._pirouetteStartMs) / 320;
+    this.rollExtra = pirU >= 0 && pirU < 1 ? Math.PI * 2 * (1 - (1 - pirU) ** 3) : 0;
+
     this.v.x += (KP * (target.x - this.p.x) - KD * this.v.x) * dtSec;
     this.v.y += (KP * (target.y - this.p.y) - KD * this.v.y) * dtSec;
     this.p.x += this.v.x * dtSec;
@@ -165,12 +212,15 @@ export class Midasus {
 
     const speed = Math.hypot(this.v.x, this.v.y);
     const rateMul = 0.15 + 0.85 * (1 - this.rest);
-    const rate = (2 + 26 * Math.min(1, speed / 1400)) * rateMul;
+    const rate = (2 + 26 * Math.min(1, speed / 1400)) * rateMul * particleMul;
     this._emitAccum += rate * dtSec * 60;
     while (this._emitAccum >= 1) { this._emitAccum -= 1; this._emitStreak(speed); }
 
+    // The settling stardust rides the same global wind everything else
+    // does -- one sample for the whole trail, not per-mote.
+    const windX = wind ? wind.x : 0, windY = wind ? wind.y : 0;
     this.particles.step(dtSec, (o, dt) => {
-      o.x += o.vx * dt; o.y += o.vy * dt; o.age += dt;
+      o.x += (o.vx + windX) * dt; o.y += (o.vy + windY) * dt; o.age += dt;
       return o.age < o.life;
     });
     for (const s of this.slashes) s.age += dtSec;
@@ -192,6 +242,12 @@ export class Midasus {
       this.p = { ...this.voyage.p };
       this.hue = this.voyage.hue;
     }
+    // The babies track her wherever the frame puts her (ensemble, darts,
+    // even voyage return points); Midio is their favorite point of interest.
+    this.babies.update(nowMs, dtSec, this.p, calmLevel, {
+      x: this.midio.screenX, y: this.midio.groundY - this.midio.y - 40,
+    });
+
     if (this.voyage.justLanded) {
       // Touchdown: her core rings hard, the shards fling, and a five-point
       // slash star marks the landing (drawn by her normal pass, which has
@@ -205,10 +261,16 @@ export class Midasus {
     }
   }
 
-  draw(ctx) {
+  /** Current on-screen width in px -- pulses in sync with her core on note
+   *  onsets (the same `pulse` value her mesh render uses), then settles. */
+  get shadowWidthPx() {
+    return 2 * MIDASUS_HEX_R * DRAW_SCALE * this.pulse;
+  }
+
+  draw(ctx, particleMul = 1) {
     if (this.voyage.depth > 0.02) return; // she's away; BiomeManager's deep-sky pass owns rendering
     const sat = Math.round(58 - 28 * this.rest); // spectral: pale, never candy
-    this.debris.draw(ctx, this.hue, this.rest); // behind her core and trail
+    this.debris.draw(ctx, this.hue, this.rest, particleMul); // behind her core and trail
     // Calm sections fade the ribbon rather than shortening it -- the longer
     // reach comes from _emitStreak's extended particle life, this is the
     // "fainter" half of that same trade.
@@ -248,12 +310,17 @@ export class Midasus {
     const bank = clamp(this.v.x * BANK_GAIN, -BANK_MAX, BANK_MAX)
       + (this._ens ? 0.08 * Math.sin(this._ens.phase) : 0);
 
+    const rot = bank + this.rollExtra; // pirouette rides on top of the banking
+
     ctx.save();
     ctx.globalAlpha = 0.6;
     ctx.filter = 'blur(1.5px)';
-    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot: bank, scaleX: this.pulse * 1.5 * DRAW_SCALE, scaleY: this.pulse * 1.5 * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 78, alpha: 1 });
+    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot, scaleX: this.pulse * 1.5 * DRAW_SCALE, scaleY: this.pulse * 1.5 * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 78, alpha: 1 });
     ctx.restore();
 
-    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot: bank, scaleX: this.pulse * DRAW_SCALE, scaleY: this.pulse * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 70, hueSpread: 26 });
+    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot, scaleX: this.pulse * DRAW_SCALE, scaleY: this.pulse * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 70, hueSpread: 26 });
+
+    // The baby stars ride on top of her pass — small enough never to mask her.
+    this.babies.draw(ctx, this.hue, this.rest);
   }
 }

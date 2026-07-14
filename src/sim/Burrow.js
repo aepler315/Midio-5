@@ -36,6 +36,9 @@ const CHARGE_PER_ONSET = 0.4;
 const CHARGE_TAU_SEC = 2.5;
 const VEIN_CHARGE_MIN = 0.25;
 const VEIN_REGEN_MS = 120; // the filament re-jitters at this cadence, like a held arc
+// The eruption's ground ripple: just under Midio's max landing strength
+// (1.0) -- a big surface event, but a smaller body than Midio's own impact.
+const ERUPT_RIPPLE_STRENGTH = 0.85;
 
 export class Burrow {
   constructor(seed = 1) {
@@ -293,7 +296,10 @@ export class Burrow {
       if (nowMs - this.phaseStartMs >= TUNNEL_SEC * 1000) {
         this.phase = BurrowPhase.ERUPT;
         this.phaseStartMs = nowMs;
-        if (groundField) groundField.pulseAt(nowMs, this.p.x, 46, nowMs + 480);
+        if (groundField) {
+          groundField.pulseAt(nowMs, this.p.x, 46, nowMs + 480);
+          groundField.impulse(this.p.x, ERUPT_RIPPLE_STRENGTH, nowMs);
+        }
         this._spawnShards(18, this.p.x, this._groundY ?? 480);
       }
     } else if (this.phase === BurrowPhase.ERUPT) {

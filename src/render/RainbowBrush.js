@@ -26,13 +26,13 @@ export class RainbowBrush {
     if (this.dabs.length > MAX_DABS) this.dabs.shift();
   }
 
-  draw(ctx, worldX, originX, nowMs) {
+  draw(ctx, worldX, originX, nowMs, sizeMul = 1) {
     while (this.dabs.length && nowMs - this.dabs[0].bornMs >= LIFE_MS) this.dabs.shift();
     if (this.dabs.length === 0) return;
     ctx.save();
     for (const d of this.dabs) {
       const age = (nowMs - d.bornMs) / LIFE_MS;
-      const size = Math.max(3, Math.round(9 - 4 * age));
+      const size = Math.max(3, Math.round((9 - 4 * age) * sizeMul));
       ctx.globalAlpha = 0.72 * (1 - age);
       ctx.fillStyle = `hsl(${d.hue},90%,62%)`;
       const x = Math.round(d.wx - worldX + originX - size / 2);

@@ -22,12 +22,12 @@ test('a high-velocity launch selects a trick and spins/flips across the hang pha
   assert.ok(perf.trick, 'expected a trick to be selected on a high-velocity launch');
 
   // Step through to the middle of the hang phase (u ~ 0.5, between A=0.35 and A+B=0.65).
+  // Whichever trick the (now larger) book served, it must be visibly mid-move.
   perf.update(250, 1 / 120, midio, jump, fakeCombo());
-  if (perf.trick.type === 'spin') {
-    assert.ok(midio.leanDeg > 0 && midio.leanDeg < 360, 'spin should be partway through its rotation');
-  } else {
-    assert.ok(midio.scaleY < 1 && midio.scaleY > -1, 'backflip should be mid-flip (scaleY between -1 and 1)');
-  }
+  assert.ok(
+    midio.leanDeg !== 0 || midio.scaleY !== 1 || midio.scaleX !== 1,
+    `trick '${perf.trick.type}' should visibly transform Midio at mid-hang`,
+  );
 });
 
 test('a slow, low-combo launch does not trigger a trick', () => {
@@ -192,4 +192,31 @@ test('blinking only engages once calm is sustained past the threshold', () => {
     if (perfEnergetic.blinkScale < 0.99) everBlinkedEnergetic = true;
   }
   assert.ok(!everBlinkedEnergetic, 'expected no blinking below the calm threshold');
+});
+
+test('an active hold owns the pose outright while grounded', () => {
+  const perf = new MidioPerformer(1);
+  const midio = fakeMidio();
+  const holdState = { active: true, chargeU: 0.5, note: {} };
+  perf.update(1000, 1 / 120, midio, fakeJump({ airborne: false }), fakeCombo(), 0, null, holdState);
+  assert.equal(midio.scaleY, 0.62);
+  assert.equal(midio.scaleX, 1.45);
+  assert.equal(midio.leanDeg, -14);
+  assert.ok(perf.holdGlow > 0.6, 'glow lit and riding the charge');
+});
+
+test('the hold pose never applies airborne, and the glow decays once released', () => {
+  const perf = new MidioPerformer(1);
+  const midio = fakeMidio();
+  const holdState = { active: true, chargeU: 1, note: {} };
+  perf.update(0, 1 / 120, midio, fakeJump({ airborne: true, lastLaunchVel: 0.3 }), fakeCombo(), 0, null, holdState);
+  assert.notEqual(midio.leanDeg, -14, 'no slide pose while airborne');
+
+  perf.update(100, 1 / 120, midio, fakeJump({ airborne: false }), fakeCombo(), 0, null, holdState);
+  assert.equal(perf.holdGlow, 1);
+
+  perf.update(200, 0.1, fakeMidio(), fakeJump({ airborne: false }), fakeCombo(), 0, null, { active: false, chargeU: 0, note: null });
+  assert.ok(perf.holdGlow < 1, 'released: the glow decays');
+  perf.update(300, 1, fakeMidio(), fakeJump({ airborne: false }), fakeCombo(), 0, null, null);
+  assert.equal(perf.holdGlow, 0);
 });

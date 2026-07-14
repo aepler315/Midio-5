@@ -21,6 +21,7 @@ test('every personality entry names a real biome, and dials stay in sane ranges'
     if (p.mandalaRate) assert.ok(p.mandalaRate > 0.3 && p.mandalaRate < 2);
     if (p.ribbonScale) assert.ok(p.ribbonScale > 0.5 && p.ribbonScale < 2);
     if (p.rdBias) assert.ok(Math.abs(p.rdBias) <= 0.35);
+    if (p.haze) assert.ok(p.haze > 0.1 && p.haze < 2.5, `haze dial out of range for ${name}: ${p.haze}`);
   }
 });
 

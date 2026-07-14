@@ -72,6 +72,14 @@ export function hexLerpHsl(a, b, t) {
   return rgbToHex(rgb.r, rgb.g, rgb.b);
 }
 
+/** Rotate a hex color's hue by `deg` (mod 360), preserving saturation/lightness. */
+export function rotateHueHex(hex, deg) {
+  const { r, g, b } = hexToRgb(hex);
+  const hsl = rgbToHsl(r, g, b);
+  const rgb = hslToRgb(((hsl.h + deg) % 360 + 360) % 360, hsl.s, hsl.l);
+  return rgbToHex(rgb.r, rgb.g, rgb.b);
+}
+
 /** Small memoization cache for per-frame full-profile blends (128 quantized steps). */
 export class LerpCache {
   constructor(steps = 128, fn = hexLerp) {

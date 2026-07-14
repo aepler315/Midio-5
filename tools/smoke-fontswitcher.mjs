@@ -46,6 +46,12 @@ await page.goto(url, { waitUntil: 'load' });
 await page.click('#demoBtn');
 await page.waitForTimeout(1000);
 checkpoint('demo started', await page.evaluate(() => !!window.__SMW));
+// This test scripts explicit select/hide/unhide sequences against tiny
+// one-shot fixture fonts that the per-song audition (rightly) rejects as
+// spikes-only — put the recommender in observe-only mode so it badges but
+// never fights the scripted clicks. Its policy is covered by
+// smoke-recommend.mjs.
+await page.evaluate(() => { window.__SMW.fontRecommender.autoApply = false; });
 checkpoint('library starts empty (manifest mocked)', await page.evaluate(() => window.__SMW.fontLibrary.count === 0));
 
 const names = ['AlphaFont', 'BetaFont', 'GammaFont'];

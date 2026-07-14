@@ -18,7 +18,7 @@ const MIN_CONFIDENCE = 0.4;
 
 export class VisionLoop {
   constructor(canvas, paramBus, sim, {
-    enabled = false, endpoint = 'http://localhost:11434/api/chat', model = 'llava:13b',
+    enabled = false, endpoint = 'http://localhost:11434/api/chat', model = 'llava:13b', perfGovernor = null,
   } = {}) {
     this.canvas = canvas;
     this.paramBus = paramBus;
@@ -26,6 +26,7 @@ export class VisionLoop {
     this.enabled = enabled;
     this.endpoint = endpoint;
     this.model = model;
+    this.perfGovernor = perfGovernor;
 
     this.ring = new RingBuffer(4);
     this.log = new RingBuffer(40);
@@ -49,6 +50,7 @@ export class VisionLoop {
   maybeSample(tRafMs, nowSimMs) {
     this._trackFps(tRafMs);
     if (!this.enabled) return;
+    if (this.perfGovernor && !this.perfGovernor.visionAllowed) return;
 
     if (tRafMs - this._lastCaptureMs >= CAPTURE_INTERVAL_MS && !this._pendingBlob) {
       this._lastCaptureMs = tRafMs;

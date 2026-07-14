@@ -359,6 +359,80 @@ test('the atlas is capped at 8 entries, oldest dropped first', () => {
   assert.ok(v.atlas.length >= 6, 'but should have accumulated plenty');
 });
 
+test('_navTarget is null on an unwritten sky and finds the densest cluster otherwise', () => {
+  const v = new SkyVoyage(60);
+  assert.equal(v._navTarget(), null);
+
+  // A tight 12-star cluster near (900, 80) vs a lone sparse 3-star entry
+  // far away: the cluster must win.
+  v.atlas.push({
+    stars: Array.from({ length: 12 }, (_, i) => ({ x: 900 + (i % 4) * 10, y: 80 + Math.floor(i / 4) * 10, phase: 0 })),
+    hue: 120,
+  });
+  v.atlas.push({
+    stars: [{ x: 200, y: 200, phase: 0 }, { x: 210, y: 205, phase: 0 }, { x: 190, y: 195, phase: 0 }],
+    hue: 240,
+  });
+  const nav = v._navTarget();
+  assert.ok(nav, 'a written sky yields a target');
+  assert.ok(Math.hypot(nav.x - 915, nav.y - 90) < 30, `expected the dense cluster's centroid, got (${nav.x.toFixed(0)}, ${nav.y.toFixed(0)})`);
+});
+
+test('past voyages pull the next station toward the densest cluster (she revisits her myths)', () => {
+  // Two voyages with the SAME seed: one with an empty sky (default random
+  // station) and one with a seeded cluster. Identical rand streams mean
+  // the only difference is the navigational pull.
+  const clusterAt = { x: 950, y: 100 };
+  const plain = new SkyVoyage(61);
+  const guided = new SkyVoyage(61);
+  guided.atlas.push({
+    stars: Array.from({ length: 10 }, (_, i) => ({ x: clusterAt.x + i, y: clusterAt.y + i, phase: 0 })),
+    hue: 90,
+  });
+  plain.trigger(0, { x: 200, y: 400 }, 1280, 720);
+  guided.trigger(0, { x: 200, y: 400 }, 1280, 720);
+
+  const dPlain = Math.hypot(plain._station.x - clusterAt.x, plain._station.y - clusterAt.y);
+  const dGuided = Math.hypot(guided._station.x - clusterAt.x, guided._station.y - clusterAt.y);
+  assert.ok(dGuided < dPlain, `guided station should sit closer to the cluster (${dGuided.toFixed(0)} vs ${dPlain.toFixed(0)})`);
+
+  // And the pull can never drag her out of the safe sky band.
+  assert.ok(guided._station.x >= 1280 * 0.30 - 1 && guided._station.x <= 1280 * 0.86 + 1);
+  assert.ok(guided._station.y >= 720 * 0.09 - 1 && guided._station.y <= 720 * 0.24 + 1);
+});
+
+test('detonateAtlas converts every atlas star into a staggered nova and spends the map', () => {
+  const v = new SkyVoyage(62);
+  v.atlas.push({ stars: [{ x: 100, y: 50, phase: 1 }, { x: 120, y: 60, phase: 2 }], hue: 30 });
+  v.atlas.push({ stars: [{ x: 300, y: 90, phase: 3 }], hue: 200 });
+  v.detonateAtlas(5000);
+  assert.equal(v.atlas.length, 0, 'the map is spent');
+  assert.equal(v.novae.length, 3, 'one nova per star');
+  for (const n of v.novae) {
+    assert.ok(n.delayMs >= 0 && n.delayMs < 900, 'popcorn stagger within the window');
+    assert.equal(n.bornMs, 5000);
+    assert.ok(Number.isFinite(n.hue) && Number.isFinite(n.phase));
+  }
+  // A second detonation with nothing left is a harmless no-op.
+  v.detonateAtlas(6000);
+  assert.equal(v.novae.length, 3);
+});
+
+test('novae expire after their delay + life, aging even while the voyage is idle', () => {
+  const v = new SkyVoyage(63);
+  v.atlas.push({ stars: [{ x: 100, y: 50, phase: 0 }], hue: 60 });
+  v.detonateAtlas(0);
+  assert.equal(v.novae.length, 1);
+  assert.equal(v.phase, VoyagePhase.IDLE, 'she is home; the cascade plays anyway');
+
+  let t = 0;
+  for (let i = 0; i < Math.round(2.2 * 120); i++) { // 2.2s > max delay (0.9) + life (1.1)
+    t += STEP_MS;
+    v.update(t, STEP_MS / 1000, 0.5, { x: 300, y: 250 });
+  }
+  assert.equal(v.novae.length, 0, 'the cascade has fully burned out');
+});
+
 test('atlasPulse defaults to 0 and is a plain writable field for the Simulation', () => {
   const v = new SkyVoyage(53);
   assert.equal(v.atlasPulse, 0);

@@ -18,13 +18,23 @@ import { HypeDirector } from './HypeDirector.js';
 import { VibeDirector } from './VibeDirector.js';
 import { EnsembleDirector } from './EnsembleDirector.js';
 import { ExcursionDirector } from './ExcursionDirector.js';
+import { ApotheosisDirector } from './ApotheosisDirector.js';
+import { KeyDirector } from './KeyDirector.js';
+import { CodaDirector } from './CodaDirector.js';
+import { FilmFinish } from '../render/FilmFinish.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
+import { PerfGovernor } from '../render/PerfGovernor.js';
+import { HighlightReel } from '../render/HighlightReel.js';
 import { hashSeed } from '../utils/math.js';
-import { buildTapChart } from './TapChart.js';
-import { NoteHighway } from '../render/NoteHighway.js';
-import { TapScorer } from './TapScorer.js';
+import { buildNoteChart } from './NoteChart.js';
+import { TapJudge } from './TapJudge.js';
+import { ScoreKeeper } from './ScoreKeeper.js';
+import { PhraseTracker } from '../core/PhraseTracker.js';
+import { AirJumpSequencer } from './AirJumpSequencer.js';
+import { FeverMeter } from './FeverMeter.js';
+import { LatencyCalibrator } from './LatencyCalibrator.js';
 
 const WORLD_SPEED_PX_S = 220;
 const CLEAN_WINDOW_MS = 90;
@@ -49,7 +59,29 @@ export class Simulation {
     this.impactFX = new ImpactFX();
     this.telegraph = new TelegraphScanner();
     this.obstacles = new ObstacleSpawner(paramBus);
-    this.obstacles.buildCandidates(conductor.timeline, 60000 / bpm, this.midio.halfWidth);
+
+    // Player-driven rhythm layer: the chart of tap/hold targets, the judge
+    // that scores presses against it, and the score itself. Built before
+    // obstacle candidates so hold spans can be excluded from placement (the
+    // player is grounded in a slide there — an obstacle would be unclearable).
+    this.noteChart = buildNoteChart(conductor.timeline, conductor.durationMs || 0);
+    this.judge = new TapJudge(this.noteChart);
+    this.scoreKeeper = new ScoreKeeper(this.noteChart.maxPossibleScore);
+    this.inputQueue = [];
+    this._lastHoldComboMs = -Infinity;
+
+    // Phrase structure (4- or 8-measure groupings, chosen by the energy
+    // autocorrelation upgrade in PhraseTracker) paces the double-jump budget.
+    this.phrases = new PhraseTracker(conductor.barGrid, energyCurves);
+    this.airSeq = new AirJumpSequencer(this.phrases);
+    // Steady accurate taps × song energy = how insane the visuals get.
+    this.fever = new FeverMeter();
+    // Steady-but-biased taps are pipeline latency, not player error: the
+    // calibrator watches judged offsets and shifts the input offset to
+    // cancel a consistent lag. main.js applies offsetMs at stamp time.
+    this.latency = new LatencyCalibrator(inputOffsetMs);
+
+    this.obstacles.buildCandidates(conductor.timeline, 60000 / bpm, this.midio.halfWidth, this.noteChart.holdSpans);
 
     this.midasus = new Midasus(conductor.timeline, this.midio, {
       groundY: this.midio.groundY, ceilingY: 40, stageW: canvasWidth, stageH: canvasHeight,
@@ -59,9 +91,13 @@ export class Simulation {
 
     const songSeed = hashSeed(`${conductor.timeline.length}:${conductor.durationMs}:${conductor.timeline[0]?.tMs ?? 0}:${conductor.timeline.at(-1)?.tMs ?? 0}`);
     this.performer = new MidioPerformer(songSeed);
+    this.apotheosis = new ApotheosisDirector();
     this.calm = new CalmDirector();
     this.hype = new HypeDirector();
+    this.filmFinish = new FilmFinish();
     this.vibe = new VibeDirector(conductor.timeline);
+    this.keyDirector = new KeyDirector();
+    this.coda = new CodaDirector(conductor.durationMs || 0);
     this.ensemble = new EnsembleDirector(songSeed, { stageW: canvasWidth, stageH: canvasHeight });
     this.excursions = new ExcursionDirector(conductor.durationMs || 0);
     this.gnat = new GnatGag(songSeed, { canvasWidth, canvasHeight });
@@ -74,6 +110,8 @@ export class Simulation {
       groundField: this.groundField,
       customBiome: this.customBiome,
     });
+    this.biomes.reducedFlash = this.reducedFlash;
+    this.highlightReel = new HighlightReel();
     this.fracture = new FractureEngine(conductor, {
       canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,
     });
@@ -98,51 +136,112 @@ export class Simulation {
     this.prev = this._snapshot();
     this.curr = this._snapshot();
 
+    this._holdSpanIdx = 0;
+    this._skippedRollKick = false;
     conductor.on(Role.RHYTHM, (evt) => {
       if (evt.kick) {
-        this.jump.onKick(evt);
+        // Kicks no longer launch jumps (the player does) — but the inter-kick
+        // EMA must keep flowing: it drives jump duration, the combo grace/
+        // break windows, and the ensemble/strut timing. Kicks INSIDE a hold
+        // span are the roll's pay ticks, not beat carriers — feeding their
+        // 150ms gaps in would crush the EMA, shrink the combo break window
+        // below the next physical landing gap, and mistime the next jump.
+        // The span's first kick still carries its beat in; after the span,
+        // the baseline resets so the roll-sized gap never reads as a beat.
+        const spans = this.noteChart.holdSpans;
+        while (this._holdSpanIdx < spans.length && evt.tMs > spans[this._holdSpanIdx].toMs) this._holdSpanIdx++;
+        const span = spans[this._holdSpanIdx];
+        if (span && evt.tMs > span.fromMs && evt.tMs <= span.toMs) {
+          this._skippedRollKick = true;
+        } else {
+          if (this._skippedRollKick) {
+            this._skippedRollKick = false;
+            this.jump.resetKickBaseline();
+          }
+          this.jump.noteKickTiming(evt.tMs);
+        }
         this.gnat.onKick(evt);
         this.performer.onKick();
         this.hype.onKick(evt.vel);
         this.midasus.voyage.onKick(evt.vel); // deep-space sparkle burst (self-gated on phase)
+        if (this.apotheosis.active) this.performer.captureGoldAfterimage(this.midio, this.timeMs);
       }
     });
   }
 
-  /** Player tap (space / click / touch). Returns judgment or null. */
-  onPlayerTap(nowMs = this.timeMs) {
-    if (!this.highway) return null;
-    const hit = this.highway.tryHit(nowMs);
-    if (!hit) return null;
-    this.tapScorer.register(hit.grade);
-    this.highway.addFlash(this.midio.screenX, this.midio.groundY - 180, hit.grade, nowMs);
-    this.pendingSfx.push({ type: 'grade', grade: hit.grade, note: hit.note });
-    if (hit.grade === 'perfect' || hit.grade === 'great') {
-      this.camera.punch?.(1.02);
+  /** Player input entry: kind 'down' | 'up', tMs stamped by the DOM handler
+   *  on the audio clock (plus the calibration offset). Queued here, drained
+   *  inside step() in time order — judgment and launch both anchor to the
+   *  press's own stamp, so the 8.3ms step grid never quantizes the score. */
+  enqueueTap(kind, tMs) {
+    // Insertion-sorted: the drain in step() pops strictly by timestamp, so
+    // the queue must stay time-ordered even if a caller stamps out of order
+    // (DOM events never do; scheduled/test input may). Equal stamps keep
+    // insertion order, preserving a down/up pair enqueued back to back.
+    const q = this.inputQueue;
+    let i = q.length;
+    while (i > 0 && q[i - 1].tMs > tMs) i--;
+    q.splice(i, 0, { kind, tMs });
+  }
+
+  /** Fan the judge's one-shot events out into score, combo, and FX. */
+  _applyJudgeEvents() {
+    // Fever cranks the judgment FX too: the same perfect press throws a
+    // bigger burst at high fever than it does cold.
+    const particleMul = (this.perf ? this.perf.particleMul : 1) * (1 + 1.5 * this.fever.level);
+    for (const evt of this.judge.stepEvents) {
+      this.fever.onJudge(evt);
+      if ((evt.kind === 'hit' || evt.kind === 'holdStart') && evt.offsetMs != null) {
+        this.latency.onJudgedHit(evt.offsetMs);
+      }
+      // Hold ticks/completions keep the combo alive through a landing-free
+      // hold (RULE 4 would otherwise break the streak mid-note) — but a
+      // dense roll must not grow the streak faster than landings ever
+      // could, so combo credit is rate-limited while every tick still pays.
+      if (evt.kind === 'holdTick' || evt.kind === 'holdComplete') {
+        if (evt.tMs - this._lastHoldComboMs >= 300) {
+          this._lastHoldComboMs = evt.tMs;
+          this.comboSystem.onLanding(evt.tMs, true);
+          this.performer.onStreak(this.comboSystem.streak, evt.tMs);
+          this.scoreKeeper.noteStreak(this.comboSystem.streak);
+        }
+      }
+      this.scoreKeeper.applyEvent(evt, this.comboSystem.displayM);
+
+      switch (evt.kind) {
+        case 'hit':
+        case 'holdStart':
+          if (evt.tier === 'sour') {
+            this.impactFX.judgment(this.worldX, this.midio.groundY, 'sour', particleMul);
+            this.camera.shake(4);
+          } else if (evt.tier) { // tier null = late-armed hold: the glow ramp is its own cue
+            this.impactFX.judgment(this.worldX, this.midio.groundY, evt.tier, particleMul);
+            this.comboSystem.sustain(evt.tMs); // a clean press keeps the combo warm through its airtime
+            if (evt.tier === 'perfect') this.performer.goldFlash = 1;
+          }
+          break;
+        case 'sour':
+          this.impactFX.judgment(this.worldX, this.midio.groundY, 'sour', particleMul);
+          this.camera.shake(4);
+          break;
+        case 'holdComplete':
+          this.impactFX.splat(this.worldX, this.midio.groundY);
+          this.impactFX.ignite(this.worldX, this.midio.groundY);
+          break;
+        case 'holdChoke':
+          this.camera.shake(5);
+          break;
+        default: // 'miss' | 'holdTick': deliberately quiet on the visual side
+          break;
+      }
     }
-    return hit;
   }
 
-  /** Rebuild the tap chart when the player switches difficulty mid-run. */
-  setDifficulty(difficulty) {
-    this.difficulty = difficulty;
-    const bpm = 60000 / (this.jump.beatPeriodMs || 500);
-    const tapNotes = buildTapChart({
-      timeline: this.conductor.timeline,
-      barGrid: this.conductor.barGrid,
-      bpm,
-      beatPeriodMs: this.jump.beatPeriodMs,
-      durationMs: this.conductor.durationMs,
-      difficulty,
-    });
-    this.highway.setNotes(tapNotes);
-    this.tapScorer.reset();
-  }
-
-  drainSfx() {
-    const out = this.pendingSfx;
-    this.pendingSfx = [];
-    return out;
+  /** The Reel (Movement VI): live-toggle the reduced-flash accessibility
+   *  setting, cascading to every consumer that caps its own flash alphas. */
+  setReducedFlash(v) {
+    this.reducedFlash = v;
+    this.biomes.reducedFlash = v;
   }
 
   step(dtMs, nowMs) {
@@ -153,20 +252,51 @@ export class Simulation {
     this.jump.clearFrameFlags();
     this.comboSystem.clearFrameFlags();
     this.performer.clearFrameFlags();
+    this.judge.clearFrameFlags();
 
     this.conductor.dispatchUpTo(nowMs);
 
-    // Notes that slid past the hit line without a tap → miss.
-    if (this.highway) {
-      for (const m of this.highway.autoMissPast(nowMs)) {
-        this.tapScorer.register('miss');
-        this.highway.addFlash(this.midio.screenX, this.midio.groundY - 160, 'miss', nowMs);
-        this.pendingSfx.push({ type: 'grade', grade: 'miss', note: m.note });
+    // Drain player presses stamped up to this step's time. Hold starts
+    // suppress the physical jump (a hold is a grounded slide); everything
+    // else attempts a launch under the usual launch/retarget rules, with
+    // the matched kick's velocity when the press hit a chart note.
+    while (this.inputQueue.length && this.inputQueue[0].tMs <= nowMs) {
+      const ev = this.inputQueue.shift();
+      if (ev.kind === 'down') {
+        const res = this.judge.onTapDown(ev.tMs);
+        if (!res.startedHold) {
+          const tapEvt = { tMs: ev.tMs, vel: res.matchedVel ?? 0.7 };
+          // A tap before the character hits the ground is a double jump —
+          // budgeted per 4-/8-measure phrase, then feet-first physics again.
+          let performed = false;
+          if (this.jump.airborne) {
+            const grant = this.airSeq.tryConsume(ev.tMs);
+            if (grant) {
+              performed = this.jump.airJump(tapEvt, grant.boostMul, grant);
+              if (!performed) this.airSeq.refund(); // landed by tMs after all
+            }
+          }
+          if (!performed) this.jump.onPlayerTap(tapEvt);
+        }
+      } else {
+        this.judge.onTapUp(ev.tMs);
       }
     }
+    this.judge.update(nowMs);
+    this._applyJudgeEvents();
+    this.fever.update(nowMs, dtSec, this.energyCurves);
     this.calm.update(nowMs, dtSec, this.energyCurves);
     this.hype.update(nowMs, dtSec, this.energyCurves);
     this.vibe.update(nowMs, dtSec, this.energyCurves);
+    this.keyDirector.update(nowMs, dtSec, {
+      tonic: this.vibe.tonic, tonicConfidence: this.vibe.tonicConfidence, conductor: this.conductor,
+    });
+    if (this.keyDirector.justKeyChange) {
+      this.biomes.mandala.reseed(this.keyDirector.lastKeyChange.to);
+      this.camera.shake(6);
+    }
+    this.coda.update(nowMs);
+    this.groundField.flatten = this.coda.unravel; // the ground lies down as the ending arc progresses
     this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs);
     // Midio roams toward his ensemble anchor -- slow, never gameplay-fast.
     const dxA = this.ensemble.anchors[0].x - this.midio.screenX;
@@ -178,6 +308,21 @@ export class Simulation {
     this.midio.groundY = this.groundField.heightAt(this.worldX);
     if (this.groundField.justRecovered) this.camera.shake(10);
 
+    if (this.jump.pendingAirJump) {
+      // The double jump reads as its own beat: a burst at the character's
+      // altitude, a camera kiss, and the body rings. The flourish (the
+      // phrase's last air jump) hits harder.
+      const aj = this.jump.pendingAirJump;
+      const airY = this.midio.groundY - aj.y;
+      this.impactFX.splat(this.worldX, airY);
+      this.performer.modal.excite(aj.isFlourish ? 6 : 3);
+      this.camera.punch(aj.isFlourish ? 1.05 : 1.02);
+      if (aj.isFlourish) {
+        this.impactFX.ignite(this.worldX, airY);
+        this.fever.spark(0.12); // the phrase's flourish stokes the fever directly
+      }
+    }
+
     if (this.jump.pendingLanding) {
       const nearestKick = this.conductor.nearestEventMs(
         (e) => e.role === Role.RHYTHM && e.kick, nowMs, CLEAN_WINDOW_MS + 20,
@@ -187,9 +332,24 @@ export class Simulation {
       this.comboSystem.onLanding(nowMs, isClean);
       this.performer.onLanding(nowMs, this.comboSystem.justClean, this.comboSystem.displayM, I);
       this.performer.onStreak(this.comboSystem.streak, nowMs);
+      this.scoreKeeper.noteStreak(this.comboSystem.streak);
       this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera);
+      this.groundField.impulse(this.worldX, I, nowMs); // a shockwave ripples the terrain outward from the landing
       if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY);
       this.fracture.registerImpact(I);
+
+      // The Apotheosis: gameplay precision powers the show -- every clean
+      // landing and combo milestone literally charges the transformation.
+      if (this.comboSystem.justClean) this.apotheosis.onCleanLanding();
+      if (this.performer.milestoneFlash) this.apotheosis.onMilestone();
+      if (this.apotheosis.active) this.impactFX.ignite(this.worldX, this.midio.groundY);
+    }
+
+    this.apotheosis.update(nowMs, dtSec, { vibe: this.vibe, hype: this.hype, calm: this.calm });
+    if (this.apotheosis.active) this.camera.punch(1.04);
+    if (this.apotheosis.justEnded) {
+      this.performer.modal.excite(8);
+      this.impactFX.splat(this.worldX, this.midio.groundY);
     }
 
     const stumbled = this.obstacles.checkCollision(this.worldX, this.midio.halfWidth, this.jump.y);
@@ -201,8 +361,12 @@ export class Simulation {
     this.worldX += worldSpeed * dtSec;
 
     this.obstacles.update(nowMs, this.worldX, worldSpeed / 1000);
-    this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.obstacles);
-    this.performer.update(nowMs, dtSec, this.midio, this.jump, this.comboSystem, this.calm.level, this.ensemble);
+    this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.obstacles, this.noteChart);
+    this.performer.update(nowMs, dtSec, this.midio, this.jump, this.comboSystem, this.calm.level, this.ensemble, this.judge.holdState);
+    // Riding a hold: heel dust streams from the slide the whole way.
+    if (this.judge.holdState.active && !this.jump.airborne) {
+      this.impactFX.sputter(this.worldX, this.midio.groundY, dtSec);
+    }
     this.impactFX.step(dtSec);
 
     // Decides whether Midasus or Broshi leaves the ensemble this frame;
@@ -217,7 +381,7 @@ export class Simulation {
     this.midasus.update(nowMs, dtSec, this.calm.level, {
       x: this.ensemble.anchors[2].x, y: this.ensemble.anchors[2].y,
       phase: this.ensemble.phase(2), melt: 2 + 4.5 * this.vibe.epic, epic: this.vibe.epic,
-    });
+    }, this.perf.particleMul, this.biomes.wind);
     // She's off on a voyage -> the ensemble's Kuramoto math should feel the
     // hole (this takes effect next frame; the weight eases over ~1.5s
     // regardless, so the one-step lag is inaudible/invisible).
@@ -228,13 +392,35 @@ export class Simulation {
     // every beat for the rest of the song.
     this.biomes.mandalaScaleMul = 1 + 0.12 * this.midasus.voyage.depth;
     this.midasus.voyage.atlasPulse = this.hype.slam;
+    // The finale: 4s before the end (3.7s before the fracture freezes the
+    // frame at durationMs-300), every accumulated atlas star goes
+    // supernova -- her myths detonate as the song shatters.
+    if (!this._atlasDetonated && this.conductor.durationMs > 0
+      && nowMs >= this.conductor.durationMs - 4000 && this.midasus.voyage.atlas.length > 0) {
+      this._atlasDetonated = true;
+      this.midasus.voyage.detonateAtlas(nowMs);
+      this.camera.shake(9);
+    }
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level, {
       trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
     }, this.groundField);
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
-    this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge; // drops surge every phenomena system
-    this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level);
+    this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge + 1.1 * this.fever.level; // drops + player fever surge every phenomena system
+    this.biomes.heatShimmer = this.hype.fast; // a hard hype spike shimmers the far range
+    this.biomes.paletteRotation = this.keyDirector.paletteRotation; // the world transposes with the song's key
+    this.biomes.dropAtMs = this.hype.dropAtMs; // drops send a heavy ring through the lake
+    this.biomes.unravel = this.coda.unravel; // parallax delaminates, particle hues converge to the halo
+    this.biomes.particleMul = this.perf.particleMul * (1 + this.fever.level); // perf headroom × player fever
+    this.biomes.fever = this.fever.level; // the mountains dance harder as the fever climbs
+    this.biomes.midioX = this.midio.screenX; // the light rig's drop-snap points at him
+    this.biomes.midioY = this.midio.renderY;
+    if (this.performer.lastMilestone) {
+      this.biomes.milestoneAtMs = this.performer.lastMilestone.atMs;
+      this.biomes.milestoneIdx = this.performer.lastMilestone.idx;
+    }
+    this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level, this.worldX);
+    this.filmFinish.update(nowMs, dtSec, this.calm.level, this.biomes.budget, this.hype);
     if (this.biomes.cutFlashJustFired) { this.camera.punch(1.06); this.camera.shake(6); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
 

@@ -29,6 +29,38 @@ const GAG_SAG_PX = 70;
 const GAG_HOLD_MS = 500;
 const GAG_KICK_SYNC_WINDOW_MS = 150;
 
+// Landing ripples (The Light Show, pass 5): a damped, radially-traveling
+// shockwave that bobs the render-only ground bars outward from an impact,
+// then settles -- never touching heightAt() (the physics reference), same
+// render-only discipline as the bass buzz above.
+const RIPPLE_WAVE_SPEED_PX_S = 700;  // how fast the shockwave front travels outward
+const RIPPLE_OSC_HZ = 5.5;           // local oscillation frequency once the front arrives
+const RIPPLE_DECAY_TAU_SEC = 0.10;   // local envelope decay (time since the front passed this point)
+const RIPPLE_LOCAL_LIFE_SEC = 0.32;  // beyond this, a point's contribution is treated as exactly 0
+const RIPPLE_TOTAL_LIFE_MS = 480;    // hard wall-clock cap on a ripple record's life
+const RIPPLE_AMPLITUDE_PX = 11;      // peak per-bar bob at strength=1
+const RIPPLE_MAX_ACTIVE = 4;         // hard cap on concurrently-tracked ripples (oldest shed first)
+const RIPPLE_SOFTCAP_PX = 20;        // tanh compressive ceiling on the SUMMED offset at a bar
+
+/**
+ * Pure per-ripple contribution at a given worldX/time. `ripple` =
+ * { originWorldX, startMs, strength } (0..1 strength). The wavefront
+ * travels outward at RIPPLE_WAVE_SPEED_PX_S; `tauLocal` is the elapsed
+ * time since that front passed THIS point -- rearranging the "distance
+ * traveled = speed * age" relationship into a per-point local clock.
+ * Returns 0 before the front arrives (causality) and 0 once it has long
+ * since passed (settled) -- continuous at both boundaries since
+ * sin(tauLocal=0) = 0.
+ */
+export function rippleOffsetAt(worldX, nowMs, ripple) {
+  const distancePx = Math.abs(worldX - ripple.originWorldX);
+  const ageSec = (nowMs - ripple.startMs) / 1000;
+  const tauLocal = ageSec - distancePx / RIPPLE_WAVE_SPEED_PX_S;
+  if (tauLocal < 0 || tauLocal > RIPPLE_LOCAL_LIFE_SEC) return 0;
+  const envelope = Math.exp(-tauLocal / RIPPLE_DECAY_TAU_SEC);
+  return ripple.strength * RIPPLE_AMPLITUDE_PX * envelope * Math.sin(tauLocal * RIPPLE_OSC_HZ * 2 * Math.PI);
+}
+
 class Slice {
   constructor(index, worldXStart) {
     this.index = index;
@@ -56,6 +88,15 @@ export class GroundField {
 
     this._buzz = 0; // EMA of bass energy, driving a render-only micro-vibration
     this._nowMs = 0;
+    this._ripples = []; // active landing-ripple records, render-only (see impulse())
+
+    // The Unraveling (Movement V): set externally from CodaDirector.unravel
+    // each frame -- the terrain-EQ slices visually flatten toward
+    // baseGroundY as the ending arc progresses. Render-only, same
+    // discipline as the bass buzz above: heightAt() (the physics
+    // reference) never reads this, so landings stay exactly as tuned even
+    // while the ground appears to lie down.
+    this.flatten = 0;
   }
 
   _scheduleGags(durationMs, barGrid, seed) {
@@ -134,9 +175,32 @@ export class GroundField {
     s._recoveredFired = false;
   }
 
+  /** A one-off landing shockwave at a world-x: fire-and-forget, capped at
+   *  RIPPLE_MAX_ACTIVE concurrent records (oldest/most-decayed shed first).
+   *  Visual only -- never touches heightAt()'s physics. `strength` <= 0 is
+   *  a no-op (a soft hop's near-zero intensity shouldn't allocate dead
+   *  state). */
+  impulse(worldX, strength, nowMs) {
+    const s = clamp01(strength);
+    if (s <= 0) return;
+    if (this._ripples.length >= RIPPLE_MAX_ACTIVE) this._ripples.shift();
+    this._ripples.push({ originWorldX: worldX, startMs: nowMs, strength: s });
+  }
+
+  /** Sums every active ripple's contribution at worldX, then applies a
+   *  tanh compressive softcap so a pile-up of near-simultaneous landings
+   *  can never blow the terrain past a fixed visual ceiling. */
+  _rippleOffset(worldX, nowMs) {
+    if (this._ripples.length === 0) return 0;
+    let sum = 0;
+    for (const r of this._ripples) sum += rippleOffsetAt(worldX, nowMs, r);
+    return RIPPLE_SOFTCAP_PX * Math.tanh(sum / RIPPLE_SOFTCAP_PX);
+  }
+
   update(nowMs, dtSec, worldX, energyCurves) {
     this.justRecovered = false;
     this._nowMs = nowMs;
+    if (this._ripples.length) this._ripples = this._ripples.filter((r) => nowMs - r.startMs < RIPPLE_TOTAL_LIFE_MS);
     const bass = energyCurves ? clamp01(energyCurves.sample(1, nowMs)) : 0;
     this._buzz += (1 - Math.exp(-dtSec / 0.12)) * (bass - this._buzz);
     this._spawnSlicesUpTo(worldX + LOOKAHEAD_PX);
@@ -199,12 +263,14 @@ export class GroundField {
     const bars = [];
     const buzzAmp = 2.5 * this._buzz;
     const wt = (this._nowMs / 1000) * 2 * Math.PI * 13;
+    const settle = 1 - clamp01(this.flatten);
     for (const s of this.slices) {
       const screenXStart = s.worldXStart - worldX + originX;
       const screenXEnd = screenXStart + this.sliceWidth;
       if (screenXEnd < -20 || screenXStart > screenWidth + 20) continue;
       const buzz = buzzAmp > 0.15 ? buzzAmp * Math.sin(wt + s.index * 2.39996) : 0;
-      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + s.offset + buzz });
+      const ripple = this._rippleOffset(s.worldXStart, this._nowMs);
+      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + (s.offset + ripple) * settle + buzz });
     }
     return bars;
   }

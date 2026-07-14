@@ -3,6 +3,7 @@
 // pooled emit-and-die burst, since these are continuous atmosphere, not FX.
 import { mulberry32, clamp01 } from '../utils/math.js';
 import { curl2 } from '../utils/fields.js';
+import { hexLerpHsl } from '../utils/color.js';
 
 export class ParticleField {
   constructor(config, canvasWidth, canvasHeight, seed = 1) {
@@ -40,6 +41,7 @@ export class ParticleField {
     if (this.kind === 'rain') {
       p.y = -rand() * this.h;
       p.vx = -(70 + rand() * 50);
+      p._rainVxBase = p.vx; // the wind field re-derives vx from this each frame
       p.vy = 380 + rand() * 170;
       p.state = 'fall';
       p.splashT = 0;
@@ -53,13 +55,14 @@ export class ParticleField {
     return p;
   }
 
-  update(dtSec, tSec, energyCurves, nowMs, calmLevel = 0) {
+  update(dtSec, tSec, energyCurves, nowMs, calmLevel = 0, wind = null) {
     const rand = this.rand;
+    const wx = wind ? wind.x : 0, wy = wind ? wind.y : 0;
     for (const p of this.particles) {
       switch (this.kind) {
         case 'fireflies':
-          p.x += Math.sin(tSec * 0.4 + p.phase) * this.baseSpeed * dtSec;
-          p.y += Math.cos(tSec * 0.3 + p.phase * 1.3) * this.baseSpeed * 0.6 * dtSec;
+          p.x += (Math.sin(tSec * 0.4 + p.phase) * this.baseSpeed + wx * 0.4) * dtSec;
+          p.y += (Math.cos(tSec * 0.3 + p.phase * 1.3) * this.baseSpeed * 0.6 + wy * 0.4) * dtSec;
           // Calm sections: brighter, slightly faster blink -- ambient life
           // to lean on when the foreground has gone quiet.
           p.alpha = clamp01((0.5 + 0.5 * Math.sin((2 * Math.PI * tSec) / 3 * (1 + 0.3 * calmLevel) + p.phase)) * (1 + 0.4 * calmLevel));
@@ -71,21 +74,21 @@ export class ParticleField {
           // swirl in eddies like real fire-lofted ash, never clumping.
           const gust = energyCurves ? 0.5 + clamp01(energyCurves.sample(1, nowMs)) : 1;
           const fl = curl2(p.x * 0.006, p.y * 0.006, tSec * 0.2);
-          p.x += (p.vx + fl.x * 55 * gust) * dtSec;
-          p.y += (p.vy + fl.y * 55 * gust) * dtSec;
+          p.x += (p.vx + fl.x * 55 * gust + wx) * dtSec;
+          p.y += (p.vy + fl.y * 55 * gust + wy) * dtSec;
           if (p.y < -20) Object.assign(p, this._spawn(rand() * this.w, this.h + 10));
           break;
         }
         case 'snow': {
           const drift = curl2(p.x * 0.004, p.y * 0.004, tSec * 0.12);
-          p.y += (30 + p.size * 13 + drift.y * 25) * dtSec;
-          p.x += (18 * Math.sin(tSec * p.omega + p.phase) + drift.x * 40) * dtSec;
+          p.y += (30 + p.size * 13 + drift.y * 25 + wy) * dtSec;
+          p.x += (18 * Math.sin(tSec * p.omega + p.phase) + drift.x * 40 + wx) * dtSec;
           if (p.y > this.h + 10) Object.assign(p, this._spawn(rand() * this.w, -10));
           break;
         }
         case 'pollen': {
-          p.x += Math.sin(tSec * 0.5 + p.phase) * 6 * dtSec;
-          p.y += Math.cos(tSec * 0.4 + p.phase * 1.7) * 6 * dtSec;
+          p.x += (Math.sin(tSec * 0.5 + p.phase) * 6 + wx * 0.6) * dtSec;
+          p.y += (Math.cos(tSec * 0.4 + p.phase * 1.7) * 6 + wy * 0.6) * dtSec;
           const air = energyCurves ? energyCurves.sample(6, nowMs) : 0.3;
           p.alpha = clamp01((0.3 + 0.5 * clamp01(air)) * (1 + 0.3 * calmLevel));
           break;
@@ -100,7 +103,7 @@ export class ParticleField {
           break;
         case 'petals':
           p.vy = p.vy || (25 + rand() * 30);
-          p.x += 22 * Math.sin(tSec * p.omega + p.phase) * dtSec;
+          p.x += (22 * Math.sin(tSec * p.omega + p.phase) + wx) * dtSec;
           p.y += p.vy * dtSec;
           p.rot += p.spin * dtSec;
           if (p.state === 'alive' && p.y > this.h - 6) { p.state = 'piled'; p.pileT = 0; }
@@ -115,6 +118,8 @@ export class ParticleField {
             if (p.splashT > 0.16) Object.assign(p, this._spawn(rand() * this.w));
             break;
           }
+          // The fall angle itself rides the wind, not just a fixed slant.
+          p.vx = p._rainVxBase + wx * 1.6;
           p.x += p.vx * dtSec;
           p.y += p.vy * dtSec;
           if (p.x < -20) p.x += this.w + 40;
@@ -136,22 +141,29 @@ export class ParticleField {
     }
   }
 
-  draw(ctx) {
+  /** mul: draw-density multiplier (PerfGovernor). haloColor/hueBlend: the
+   *  Unraveling (Movement V) -- as the song ends, particle hues converge
+   *  toward the biome's own halo color. Blended once per draw call, not
+   *  per particle. */
+  draw(ctx, mul = 1, haloColor = null, hueBlend = 0) {
+    const color = haloColor && hueBlend > 0.001 ? hexLerpHsl(this.color, haloColor, clamp01(hueBlend)) : this.color;
     ctx.save();
-    for (const p of this.particles) {
+    const n = Math.max(1, Math.ceil(this.particles.length * mul));
+    for (let idx = 0; idx < n; idx++) {
+      const p = this.particles[idx];
       switch (this.kind) {
         case 'fireflies':
         case 'pollen':
         case 'antigrav':
           ctx.globalAlpha = p.alpha ?? 1;
-          ctx.fillStyle = this.color;
+          ctx.fillStyle = color;
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
           ctx.fill();
           break;
         case 'embers': {
           const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 2.4);
-          grad.addColorStop(0, this.color);
+          grad.addColorStop(0, color);
           grad.addColorStop(1, 'rgba(0,0,0,0)');
           ctx.globalAlpha = 0.85;
           ctx.fillStyle = grad;
@@ -162,14 +174,14 @@ export class ParticleField {
         }
         case 'snow':
           ctx.globalAlpha = 0.85;
-          ctx.fillStyle = this.color;
+          ctx.fillStyle = color;
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.size * 0.7, 0, Math.PI * 2);
           ctx.fill();
           break;
         case 'petals': {
           ctx.globalAlpha = p.state === 'piled' ? Math.max(0, 1 - p.pileT / 1.2) * 0.7 : 0.9;
-          ctx.fillStyle = this.color;
+          ctx.fillStyle = color;
           ctx.save();
           ctx.translate(p.x, p.y);
           ctx.rotate(p.rot);
@@ -190,14 +202,14 @@ export class ParticleField {
             // A widening half-ring where the drop hit the ground plane.
             const t = p.splashT / 0.16;
             ctx.globalAlpha = 0.5 * (1 - t);
-            ctx.strokeStyle = this.color;
+            ctx.strokeStyle = color;
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.ellipse(p.x, p.y, 3 + 7 * t, 1 + 2.2 * t, 0, Math.PI, Math.PI * 2);
             ctx.stroke();
           } else {
             ctx.globalAlpha = 0.55;
-            ctx.strokeStyle = this.color;
+            ctx.strokeStyle = color;
             ctx.lineWidth = 1.2;
             ctx.beginPath();
             ctx.moveTo(p.x, p.y);
@@ -208,7 +220,7 @@ export class ParticleField {
         }
         case 'flaresparks': {
           ctx.globalAlpha = clamp01(1 - Math.abs(p.t - 0.5) * 2) * 0.9;
-          ctx.strokeStyle = this.color;
+          ctx.strokeStyle = color;
           ctx.lineWidth = 1.5;
           ctx.beginPath();
           ctx.moveTo(p.origin.x, p.origin.y);
@@ -222,7 +234,7 @@ export class ParticleField {
         case 'digitalrain': {
           const flicker = 0.5 + 0.5 * Math.sin(p.glyphT * 9 + p.phase);
           ctx.globalAlpha = 0.25 + 0.35 * flicker;
-          ctx.fillStyle = this.color;
+          ctx.fillStyle = color;
           ctx.fillRect(p.x, p.y, 2, 14);
           break;
         }

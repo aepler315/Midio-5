@@ -52,6 +52,8 @@ export class JumpController {
     this.pendingLanding = null;
     /** Set for one step when a kick is skipped (half-time) — routes to landing FX instead. */
     this.pendingGhostKick = null;
+    /** Set for one step when an air jump fires — {y, index, isFlourish} for FX. */
+    this.pendingAirJump = null;
   }
 
   get bpm() { return 60000 / this.beatPeriodMs; }
@@ -79,6 +81,69 @@ export class JumpController {
       return;
     }
     this._launchOrRetarget(evt, tMs);
+  }
+
+  /** Player-driven mode: kicks no longer launch jumps, but the inter-kick
+   * EMA must keep flowing — it drives jump duration, the combo grace/break
+   * windows, and the ensemble/strut timing. This is onKick minus the launch. */
+  noteKickTiming(tMs) {
+    this._updateBeatPeriod(tMs);
+  }
+
+  /** Forget the last kick so the next one sets no interval. Called after a
+   * span of kicks was deliberately withheld from the EMA (a double-bass
+   * roll): without this, the first kick after the span would feed the whole
+   * gap in as one giant "beat". */
+  resetKickBaseline() {
+    this.lastKickMs = null;
+  }
+
+  /**
+   * A player press. Same anchoring discipline as onKick (judge/launch at the
+   * press's own DOM-captured audio-clock time, not the sim step that drains
+   * it), same launch/retarget rules — but no EMA write (the beat period
+   * stays chart-driven) and no halftime ghosting (a human already taps at
+   * whatever rate a human can).
+   * @param evt {{tMs:number, vel:number}} vel inherited from the matched
+   *   kick when the press hit a chart note, or a neutral default when not.
+   */
+  onPlayerTap(evt) {
+    const tMs = evt.tMs;
+    this.update(tMs); // resolve any landing/compress transition due by tMs first
+    this._launchOrRetarget(evt, tMs);
+  }
+
+  /**
+   * Double jump: a tap before the character hits the ground relaunches the
+   * arc from the CURRENT height — C0-continuous, no teleport. The new arc's
+   * apex is the current height plus a boost, and the arc is entered at the
+   * launch-phase point whose height equals where the character already is,
+   * so y never snaps. The budget/sequence policy lives in AirJumpSequencer;
+   * this only refuses when the character turns out to be grounded by tMs
+   * (the caller then refunds and falls through to a normal ground launch).
+   * @returns {boolean} true if the air jump fired
+   */
+  airJump(evt, boostMul = 1, meta = {}) {
+    const tMs = evt.tMs;
+    this.update(tMs); // the press may postdate the landing this step hasn't resolved yet
+    if (this.state !== 'AIR') return false;
+
+    const yNow = this.y;
+    const extra = this.hBase * (0.5 + 0.6 * evt.vel) * boostMul * this.P.live.jumpHeight;
+    const H2 = (yNow + extra) / (1 - W);
+    const D2 = clamp(0.9 * this.beatPeriodMs, D_MIN, D_MAX);
+    // Launch-phase height is Ha*(1-(1-p)^2); invert for the p where it equals yNow.
+    const p = 1 - Math.sqrt(Math.max(0, 1 - yNow / ((1 - W) * H2)));
+    this.compress = null;
+    this._pendingLaunch = null;
+    this.lastLaunchVel = evt.vel;
+    this.state = 'AIR';
+    this.jumpStartMs = tMs - p * A * D2;
+    this.H = H2;
+    this.D = D2;
+    this.y = yNow;
+    this.pendingAirJump = { y: yNow, index: meta.index ?? 0, isFlourish: !!meta.isFlourish };
+    return true;
   }
 
   _updateBeatPeriod(nowMs) {
@@ -126,6 +191,7 @@ export class JumpController {
   clearFrameFlags() {
     this.pendingLanding = null;
     this.pendingGhostKick = null;
+    this.pendingAirJump = null;
   }
 
   update(nowMs) {
