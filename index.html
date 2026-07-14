@@ -12,7 +12,8 @@
 
     <div id="loader" class="panel">
       <h1>SUPER MIDIO WORLD</h1>
-      <p class="sub">Drop a .mid file or an audio file (mp3/wav/flac) to begin.</p>
+      <p class="sub">Drop a .mid file or an audio file (mp3/wav/flac) to begin.<br />
+        Then <b>tap Space or click/touch</b> on the bass drum to jump — hold through double-bass rolls, and release when they end.</p>
       <div id="dropzone" tabindex="0">
         <span>Drop file here, or</span>
         <label class="filebtn">
@@ -38,7 +39,10 @@
     </div>
 
     <div id="hud" class="hidden">
-      <div id="comboReadout">×1.0</div>
+      <div id="hudLeft">
+        <div id="comboReadout">×1.0</div>
+        <div id="scoreReadout">0</div>
+      </div>
       <div id="hudRight">
         <button id="settingsBtn" class="ghostbtn iconbtn" type="button" title="SoundFont settings (hidden fonts)">&#9881;</button>
         <div id="trackBadge" class="hidden">
@@ -64,6 +68,7 @@
           <button id="fontModalClose" class="ghostbtn iconbtn" type="button" aria-label="Close">&times;</button>
         </div>
         <div id="fontModalList" class="fontList"></div>
+        <div id="fontAuditionStatus" class="auditionStatus hidden"></div>
         <div class="modalFooter">
           <label class="filebtn">
             Load .sf2 / .zip
@@ -82,6 +87,7 @@
     <div id="completePanel" class="panel hidden">
       <h1>COMPLETE</h1>
       <p id="completeStats" class="sub"></p>
+      <div id="resultsGrid" class="hidden"></div>
       <div id="filmstrip" class="hidden"></div>
       <button id="playAgainBtn" type="button">Play again</button>
     </div>

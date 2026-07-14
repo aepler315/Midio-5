@@ -147,7 +147,8 @@ export const BROSHI_TAIL = { vertices: [{ x: -25, y: -7 }, { x: -47, y: -1 }], e
 
 // --- Midasus: a hexagram -- two interlocked triangles about the hub with
 // a single vertical axis spoke pair. An arcane instrument, not a gem. ---
-const HEX_R = 8.5;
+export const MIDASUS_HEX_R = 8.5;
+const HEX_R = MIDASUS_HEX_R;
 const tri = (offsetDeg) => [0, 1, 2].map((i) => {
   const a = ((offsetDeg + i * 120) * Math.PI) / 180;
   return { x: Math.cos(a) * HEX_R, y: Math.sin(a) * HEX_R };

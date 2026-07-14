@@ -58,3 +58,21 @@ test('dayArc: sun climbs to zenith mid-song; dawn and dusk tints stay at their o
   assert.equal(noon.dusk.alpha, 0);
   assert.ok(dusk.dusk.alpha > 0.15);
 });
+
+test('dayArc hazeWarm peaks at both ends of the song and dips at zenith', () => {
+  assert.ok(dayArc(0).hazeWarm > 0.9);
+  assert.ok(dayArc(1).hazeWarm > 0.9);
+  assert.ok(dayArc(0.5).hazeWarm < 0.05);
+  let prev = dayArc(0).hazeWarm;
+  for (let p = 0.02; p <= 0.35; p += 0.02) {
+    const v = dayArc(p).hazeWarm;
+    assert.ok(v <= prev + 1e-9, `hazeWarm must fall monotonically approaching zenith, p=${p}`);
+    prev = v;
+  }
+  prev = dayArc(0.65).hazeWarm;
+  for (let p = 0.67; p <= 1; p += 0.02) {
+    const v = dayArc(p).hazeWarm;
+    assert.ok(v >= prev - 1e-9, `hazeWarm must rise monotonically past zenith, p=${p}`);
+    prev = v;
+  }
+});

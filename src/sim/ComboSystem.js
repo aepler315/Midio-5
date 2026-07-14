@@ -33,6 +33,15 @@ export class ComboSystem {
     this.justStumbled = true;
   }
 
+  /** Player-rhythm layer: a well-judged press refreshes combo freshness
+   * without growing the streak. Landings stay the only source of streak
+   * (rules 1-6 untouched); this just keeps RULE 3/4's clocks from counting
+   * the airtime of a jump the player was literally scored "clean" for —
+   * without it, every hold exit sits exactly on the 2-beat break boundary. */
+  sustain(nowMs) {
+    if (this.streak > 0 && nowMs > this.lastCleanMs) this.lastCleanMs = nowMs;
+  }
+
   static isCleanLanding(landingMs, nearestKickMs) {
     return nearestKickMs !== null && Math.abs(landingMs - nearestKickMs) <= CLEAN_WINDOW_MS;
   }

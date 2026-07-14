@@ -63,6 +63,40 @@ expects, stereo instrument pairs authored via SF2's sample-link mechanism
 track's own hard pan blends with — rather than fighting — the font's
 authored stereo spread.
 
+**Per-song SoundFont recommendation:** the same font can be perfect for one
+MIDI and dead silent for the next (missing programs, drum-kit-only banks,
+broken root keys) — the MIDI file is the volatile variable. So every time a
+`.mid` loads, each loaded font is *auditioned against that song* in the
+background: a coverage-maximizing excerpt of the actual timeline plus one
+isolated loud/soft probe note pair per track are rendered through the font
+offline, and the output is analyzed. Hard rules disqualify fonts that
+render silence, only onset-aligned percussive spikes where sustained notes
+were scored, pitched content octaves away from what the MIDI asks, or heavy
+clipping; survivors get a 0–100 fit score from track coverage, pitch
+accuracy, sustain quality, loudness, level balance, velocity response,
+timbre distinctness, and spectral liveliness. The engine auto-activates the
+best fit (bailing out of a disqualified active font the moment its verdict
+lands — to the built-in synth if nothing qualifies), badges every row in
+the switcher popup (★ best fit, numeric score, ⚠ + reason), and never
+overrides a font you picked by hand for the current song. Auditions never
+block song start and cancel themselves when a new file drops in.
+
+**The world plays along:** every parallax range dances — a groove-scaled
+traveling wave rolls along each ridge, and kicks bounce the hills, near
+layers first, far peaks a beat-fraction later. Behind them all sits one
+super-distant massif whose skyline IS a live bar graph of the current
+7-band spectrum (bass builds the summit at the center, treble falls away
+to the flanks), haze-tinted and on the slowest scroll in the scene. The
+Mario-Paint composer strip keeps its icons spread across the whole page
+even on dense, velocity-clamped MIDIs (time-stratified icon budget), and
+the trio's stage presence runs deeper: Midio's trick book grows with the
+heat of the run (corkscrew, tuck-pop, 720 helicopter, double flip) plus a
+milestone victory dance and landing pirouettes; Broshi barrel-rolls his
+hard hops, coils into a pounce when a surge starts, and chases his own
+tail when things stay calm; Midasus picks a fresh rest-flight figure every
+time the melody rests (figure-8s, loop-the-loops, a petaled rose) and
+pirouettes on hard accents.
+
 Press `` ` `` during play to open the debug overlay (ParamBus state + vision
 loop log); press `V` inside it to toggle the vision self-tuning loop (off by
 default — it calls out to a local Ollama instance at
@@ -100,6 +134,7 @@ node tools/smoke-soundfont.mjs               # SF2 loading, switching, and routi
 node tools/smoke-multitrack.mjs              # multi-channel voices, pan-out, soundfont auto-load
 node tools/smoke-hotswap.mjs                 # drag a different MIDI in mid-song; no duplicate listeners/frame loops
 node tools/smoke-fontswitcher.mjs            # switcher popup: select/hide/unhide, settings view
+node tools/smoke-recommend.mjs               # per-MIDI font audition: hard DQs, auto-rescue, badges, pinning
 ```
 
 `OfflineAudioContext` (used for stem separation) only exists in a browser,

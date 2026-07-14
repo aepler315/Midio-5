@@ -15,18 +15,30 @@ export class TelegraphScanner {
     this._lastMs = 0;
     this.glintActive = false;
     this.glintScreenX = 0;
+    this._chartIdx = 0; // monotonic cursor into noteChart.notes (playback is seek-free)
   }
 
-  update(nowMs, conductor, midio, jump, impactFX, worldX, groundY, obstacles) {
+  update(nowMs, conductor, midio, jump, impactFX, worldX, groundY, obstacles, noteChart = null) {
     const dtSec = Math.max(0, (nowMs - this._lastMs) / 1000);
     this._lastMs = nowMs;
 
-    const window = conductor.peekWindow(nowMs, T_LOOK);
-    let nearestKick = null;
-    for (const evt of window) {
-      if (evt.role === Role.RHYTHM && evt.kick) { nearestKick = evt; break; }
+    // With a chart, the crouch telegraphs the next *judgeable* onset — a tap
+    // or a hold start — which is exactly the "press now" cue the player
+    // needs; a hold's interior ticks no longer crouch him (the slide owns
+    // the pose there). Without one, legacy behavior: the next raw kick.
+    let nextOnsetMs = null;
+    if (noteChart) {
+      const notes = noteChart.notes;
+      while (this._chartIdx < notes.length && notes[this._chartIdx].tMs < nowMs) this._chartIdx++;
+      const n = notes[this._chartIdx];
+      if (n && n.tMs - nowMs <= T_LOOK) nextOnsetMs = n.tMs;
+    } else {
+      const window = conductor.peekWindow(nowMs, T_LOOK);
+      for (const evt of window) {
+        if (evt.role === Role.RHYTHM && evt.kick) { nextOnsetMs = evt.tMs; break; }
+      }
     }
-    const a = nearestKick ? clamp(1 - (nearestKick.tMs - nowMs) / T_LOOK, 0, 1) : 0;
+    const a = nextOnsetMs !== null ? clamp(1 - (nextOnsetMs - nowMs) / T_LOOK, 0, 1) : 0;
     this.a = a;
 
     const justLaunched = !this._wasAirborne && jump.airborne;

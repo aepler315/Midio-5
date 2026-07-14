@@ -81,6 +81,36 @@ export class JumpController {
     this._launchOrRetarget(evt, tMs);
   }
 
+  /** Player-driven mode: kicks no longer launch jumps, but the inter-kick
+   * EMA must keep flowing — it drives jump duration, the combo grace/break
+   * windows, and the ensemble/strut timing. This is onKick minus the launch. */
+  noteKickTiming(tMs) {
+    this._updateBeatPeriod(tMs);
+  }
+
+  /** Forget the last kick so the next one sets no interval. Called after a
+   * span of kicks was deliberately withheld from the EMA (a double-bass
+   * roll): without this, the first kick after the span would feed the whole
+   * gap in as one giant "beat". */
+  resetKickBaseline() {
+    this.lastKickMs = null;
+  }
+
+  /**
+   * A player press. Same anchoring discipline as onKick (judge/launch at the
+   * press's own DOM-captured audio-clock time, not the sim step that drains
+   * it), same launch/retarget rules — but no EMA write (the beat period
+   * stays chart-driven) and no halftime ghosting (a human already taps at
+   * whatever rate a human can).
+   * @param evt {{tMs:number, vel:number}} vel inherited from the matched
+   *   kick when the press hit a chart note, or a neutral default when not.
+   */
+  onPlayerTap(evt) {
+    const tMs = evt.tMs;
+    this.update(tMs); // resolve any landing/compress transition due by tMs first
+    this._launchOrRetarget(evt, tMs);
+  }
+
   _updateBeatPeriod(nowMs) {
     if (this.lastKickMs != null) {
       const interval = nowMs - this.lastKickMs;

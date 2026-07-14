@@ -60,3 +60,24 @@ test('clean-landing window is +/-90ms of the nearest kick', () => {
   assert.equal(ComboSystem.isCleanLanding(1000, 1091), false);
   assert.equal(ComboSystem.isCleanLanding(1000, null), false);
 });
+
+test('sustain refreshes freshness without growing the streak', () => {
+  const combo = new ComboSystem();
+  combo.onLanding(1000, true);
+  combo.onLanding(1500, true);
+  assert.equal(combo.streak, 2);
+  // A 2-beat landing gap would break (RULE 4) — a clean press mid-gap keeps it warm.
+  combo.sustain(2000);
+  combo.update(2510, 500); // 1010ms past the last landing, 510 past the sustain
+  assert.equal(combo.streak, 2, 'sustained combo must survive the airtime');
+  assert.equal(combo.justBroke, false);
+});
+
+test('sustain never resurrects a broken or empty combo', () => {
+  const combo = new ComboSystem();
+  combo.sustain(1000);
+  assert.equal(combo.lastCleanMs, -Infinity, 'no streak, nothing to keep warm');
+  combo.onLanding(2000, true);
+  combo.sustain(1500); // stale timestamps must not rewind freshness
+  assert.equal(combo.lastCleanMs, 2000);
+});

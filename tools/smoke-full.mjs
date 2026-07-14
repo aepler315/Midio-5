@@ -4,7 +4,22 @@
 import { chromium } from 'playwright';
 
 const midiPath = process.argv[2];
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+
+// Same launch strategy as the other smoke tests: env override, then the CI
+// image's pinned chromium, then whatever Playwright has installed locally.
+const CHROMIUM_CANDIDATES = [
+  process.env.PLAYWRIGHT_CHROMIUM_PATH,
+  '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+].filter(Boolean);
+
+async function launch() {
+  for (const executablePath of CHROMIUM_CANDIDATES) {
+    try { return await chromium.launch({ executablePath }); } catch { /* try next */ }
+  }
+  return chromium.launch();
+}
+
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
 page.on('console', (msg) => { if (msg.type() === 'error' && !msg.text().includes('favicon')) errors.push(msg.text()); });

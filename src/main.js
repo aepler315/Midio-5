@@ -9,11 +9,16 @@ import { Simulation } from './sim/Simulation.js';
 import { createRenderer, resolveRendererMode } from './render/WebGLRenderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
+import { SfxSynth } from './audio/SfxSynth.js';
 import { Sf2Synth } from './audio/Sf2Synth.js';
 import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
+import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
+import { getReducedFlash } from './ui/Accessibility.js';
+import { PerfGovernor } from './render/PerfGovernor.js';
+import { INPUT_OFFSET_MS } from './sim/TapJudge.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -25,8 +30,10 @@ const demoBtnEl = document.getElementById('demoBtn');
 const progressEl = document.getElementById('progressText');
 const hudEl = document.getElementById('hud');
 const comboReadoutEl = document.getElementById('comboReadout');
+const scoreReadoutEl = document.getElementById('scoreReadout');
 const completePanelEl = document.getElementById('completePanel');
 const completeStatsEl = document.getElementById('completeStats');
+const resultsGridEl = document.getElementById('resultsGrid');
 const playAgainBtnEl = document.getElementById('playAgainBtn');
 const debugOverlayEl = document.getElementById('debugOverlay');
 const sfFileInputEl = document.getElementById('sfFileInput');
@@ -48,6 +55,7 @@ const fontHiddenToggleEl = document.getElementById('fontHiddenToggle');
 const fontModalFileInputEl = document.getElementById('fontModalFileInput');
 const fontModalDirInputEl = document.getElementById('fontModalDirInput');
 const fontModalDirBtnEl = document.getElementById('fontModalDirBtn');
+const fontAuditionStatusEl = document.getElementById('fontAuditionStatus');
 const filmstripEl = document.getElementById('filmstrip');
 const filmstripModalEl = document.getElementById('filmstripModal');
 const filmstripModalTitleEl = document.getElementById('filmstripModalTitle');
@@ -59,6 +67,7 @@ const conductor = new Conductor();
 const paramBus = new ParamBus();
 let audioEngine = null;
 let synth = null;
+let sfx = null; // judgment-feedback synth (SfxSynth), created in bootAudio
 let sim = null;
 let renderer = null;
 let visionLoop = null;
@@ -67,6 +76,7 @@ let perfGovernor = null;
 let lastRafMs = null; // separate from lastNowMs (audio clock) -- tracks real rAF-to-rAF cadence for the perf governor
 let sf2Engine = null;
 let fontLibrary = null;
+let fontRecommender = null;
 let fontBarTimer = null;
 let rafHandle = null; // tracks the pending frame() call so a mid-song file
                        // drop can cancel the old loop instead of stacking a
@@ -111,8 +121,14 @@ async function bootAudio() {
   // as used to happen on every dropped MIDI file — would add a duplicate
   // listener and fire every note twice.
   synth.connectConductor(conductor);
+  sfx = new SfxSynth(audioEngine);
   fontLibrary = new SoundfontLibrary();
   fontLibrary.onChange = (active) => applyActiveFont(active);
+  // Auditions every font against each loaded MIDI and steers the library to
+  // the best fit (see FontRecommender.js). Fonts dropped in mid-song get
+  // auditioned against the current song as they land.
+  fontRecommender = new FontRecommender(fontLibrary, { onUpdate: () => renderFontModal() });
+  fontLibrary.onAdded = (font) => fontRecommender.auditionFont(font);
   // Best-effort background load — never blocks song start (§ soundfonts/README.md).
   fontLibrary.autoLoadFromServer('/soundfonts/');
 }
@@ -154,6 +170,8 @@ function renderFontModal() {
     fontModalTitleEl.textContent = fontModalView === 'hidden' ? 'Hidden SoundFonts' : 'SoundFonts';
   }
 
+  renderAuditionStatus();
+
   const entries = fontModalView === 'hidden' ? fontLibrary.hiddenFonts : fontLibrary.visibleFonts;
   if (entries.length === 0) {
     const msg = fontModalView === 'hidden'
@@ -166,13 +184,57 @@ function renderFontModal() {
   const action = fontModalView === 'hidden' ? 'unhide' : 'hide';
   const glyph = fontModalView === 'hidden' ? '+' : '\u00d7';
   const title = fontModalView === 'hidden' ? 'Restore this font' : 'Hide this font';
+  const recommendedIndex = fontRecommender ? fontRecommender.recommendedIndex : -1;
   fontModalListEl.innerHTML = entries.map(({ font, index }) => {
     const active = fontModalView === 'list' && index === fontLibrary.activeIndex;
+    const star = (fontModalView === 'list' && index === recommendedIndex)
+      ? '<span class="fontRowStar" title="Best fit for this song">★</span>'
+      : '';
     return `<div class="fontRow${active ? ' active' : ''}" data-index="${index}">`
+      + star
       + `<span class="fontRowName">${escapeHtml(font.name)}</span>`
+      + (fontModalView === 'list' ? auditionBadge(font) : '')
       + `<button type="button" class="fontRowAction" data-action="${action}" data-index="${index}" title="${title}">${glyph}</button>`
       + `</div>`;
   }).join('');
+}
+
+/** Per-row verdict from this song's audition: fit score (0-100), warning +
+ *  reason for a disqualified font, or an ellipsis while still rendering. */
+function auditionBadge(font) {
+  const review = font.review;
+  if (!review) return '';
+  if (review.status === 'pending') {
+    return '<span class="fontRowBadge pending" title="Auditioning against this song…">…</span>';
+  }
+  if (review.status === 'disqualified') {
+    return `<span class="fontRowBadge dq" title="${escapeHtml(review.reason || 'Disqualified')}">⚠</span>`;
+  }
+  return `<span class="fontRowBadge ok" title="Fit score for this song: ${review.score}/100">${review.score}</span>`;
+}
+
+/** The switcher popup's one-line audition summary for the current song. */
+function renderAuditionStatus() {
+  if (!fontAuditionStatusEl) return;
+  const s = fontRecommender ? fontRecommender.status : null;
+  if (!s || !s.planned || s.total === 0 || fontModalView === 'hidden') {
+    fontAuditionStatusEl.classList.add('hidden');
+    return;
+  }
+  let text;
+  if (s.analyzing) {
+    text = `Auditioning fonts for this song… ${s.done}/${s.total}`;
+  } else if (s.allDisqualified) {
+    text = 'No loaded font fits this song — using the built-in synth.';
+  } else if (s.recommendedIndex >= 0) {
+    const name = fontLibrary.fonts[s.recommendedIndex]?.name || '';
+    text = `★ Best fit for this song: ${name}`;
+  } else {
+    fontAuditionStatusEl.classList.add('hidden');
+    return;
+  }
+  fontAuditionStatusEl.textContent = text;
+  fontAuditionStatusEl.classList.remove('hidden');
 }
 
 function openFontModal(view = 'list') {
@@ -274,6 +336,7 @@ function startTimeline(timelineData) {
     canvasHeight: canvas.height,
     customBiome: timelineData.customBiome || null,
   });
+  sim.perf = perfGovernor;
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
   renderer = createRenderer(canvas, rendererMode);
   visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false });
@@ -285,6 +348,10 @@ function startTimeline(timelineData) {
   acc = 0;
   lastNowMs = audioEngine.nowMs;
   lastRafMs = null;
+  // Fresh song, fresh button: no press may carry across, and the demo/play
+  // buttons must lose focus or the first Space would "click" them again.
+  pressedSources.clear();
+  document.activeElement?.blur?.();
   audioEngine.start(0);
   running = true;
 
@@ -298,7 +365,7 @@ function startTimeline(timelineData) {
   // (rather than inferring it from run rates, which headless Chromium's
   // rAF throttling and AudioContext clock drift make unreliable to assert on).
   window.__SMW = {
-    conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary, sf2Engine,
+    conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary, sf2Engine, fontRecommender,
     renderer, rendererMode, rendererBackend: renderer?.backend || 'canvas',
     customBiome: timelineData.customBiome || null,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
@@ -323,6 +390,9 @@ async function loadMidiFile(file) {
     data.customBiome = generateCustomBiomeFromMidi(data, file.name || 'MIDI');
     rememberCustomBiome(paramBus, data.customBiome);
     startTimeline(data);
+    // Background: audition every loaded font against THIS midi and steer to
+    // the best fit. Never blocks the song, cancels itself on the next drop.
+    fontRecommender?.auditionForTimeline(data);
   } catch (err) {
     console.error('[MIDI load failed]', err);
     progressEl.classList.add('hidden');
@@ -359,6 +429,9 @@ async function loadAudioFile(file) {
     console.warn(`Low tempo confidence (${data.confidence.toFixed(2)}) — switching to free-time, kick-reactive jumps.`);
   }
   startTimeline(data);
+  // Raw audio is its own sound source — font fit scores from the previous
+  // MIDI would be stale noise here, so drop them.
+  fontRecommender?.clear();
   audioEngine.playBuffer(audioBuffer, 0);
 }
 
@@ -367,6 +440,8 @@ async function loadDemo() {
   const data = buildDemoTimeline({});
   data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
   startTimeline(data);
+  // The demo is synth-voiced just like a MIDI file, so it gets auditioned too.
+  fontRecommender?.auditionForTimeline(data);
 }
 
 function handleFile(file) {
@@ -487,10 +562,18 @@ if (fontModalListEl) {
       const idx = Number(actionBtn.dataset.index);
       if (actionBtn.dataset.action === 'hide') fontLibrary?.hide(idx);
       else fontLibrary?.unhide(idx);
+      // Membership changed — the recommendation may need to move with it
+      // (e.g. the starred font was just hidden).
+      fontRecommender?.reapply();
       return; // don't also treat this click as a row-select
     }
     const row = e.target.closest('.fontRow');
-    if (row && fontModalView === 'list') fontLibrary?.select(Number(row.dataset.index));
+    if (row && fontModalView === 'list') {
+      // A hand-picked font is pinned for the rest of this song: the
+      // recommender keeps badging but stops auto-switching.
+      fontRecommender?.pinUserChoice();
+      fontLibrary?.select(Number(row.dataset.index));
+    }
   });
 }
 if (fontModalFileInputEl) {
@@ -544,16 +627,23 @@ function frame(tRaf) {
   acc += deltaMs;
 
   let milestoneFiredThisFrame = false;
+  judgeEventsThisFrame.length = 0;
   while (acc >= STEP_MS) {
     sim.step(STEP_MS, simTime + STEP_MS);
     simTime += STEP_MS;
     acc -= STEP_MS;
     if (sim.performer.milestoneFlash) milestoneFiredThisFrame = true;
+    // Judge events are one-shot per sim step (cleared at the next step's
+    // top), and several steps run per rendered frame — latch them here,
+    // same pattern as the milestone flag above, so the SFX layer misses none.
+    if (sim.judge.stepEvents.length) judgeEventsThisFrame.push(...sim.judge.stepEvents);
   }
+  dispatchJudgeSfx(judgeEventsThisFrame);
 
   const alpha = acc / STEP_MS;
   renderer.draw(sim, alpha);
   comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
+  if (scoreReadoutEl) scoreReadoutEl.textContent = sim.scoreKeeper.score.toLocaleString('en-US');
   if (milestoneFiredThisFrame) {
     comboReadoutEl.classList.remove('milestone-pulse');
     void comboReadoutEl.offsetWidth; // restart the CSS animation even if it's still mid-flight
@@ -569,6 +659,87 @@ function frame(tRaf) {
   }
 
   rafHandle = requestAnimationFrame(frame);
+}
+
+// --- Player input: one logical jump button across Space + every pointer ---
+// Edge-collapsed: 'down' fires only on the 0 -> 1 pressed-source transition
+// and 'up' only on 1 -> 0, so keyboard+mouse together (or multi-touch) can
+// never double-judge a press or drop a hold early. Timestamps are read HERE,
+// in the DOM handler, on the audio clock — event-time accuracy is what the
+// judge scores, never the 8.3ms sim step grid.
+const pressedSources = new Set();
+const judgeEventsThisFrame = [];
+
+function anyModalOpen() {
+  return (fontModalEl && !fontModalEl.classList.contains('hidden'))
+    || (filmstripModalEl && !filmstripModalEl.classList.contains('hidden'));
+}
+
+function pressDown(src) {
+  if (!running || !sim || !audioEngine) return;
+  if (pressedSources.size === 0) sim.enqueueTap('down', audioEngine.nowMs + INPUT_OFFSET_MS);
+  pressedSources.add(src);
+}
+
+function pressUp(src) {
+  if (!pressedSources.delete(src)) return;
+  if (pressedSources.size === 0 && sim && audioEngine) {
+    sim.enqueueTap('up', audioEngine.nowMs + INPUT_OFFSET_MS);
+  }
+}
+
+/** Tab blur / pointer cancel: a hold must never stick to a button the
+ *  browser will not deliver an 'up' for. */
+function releaseAllPresses() {
+  if (pressedSources.size > 0 && sim && audioEngine) {
+    sim.enqueueTap('up', audioEngine.nowMs + INPUT_OFFSET_MS);
+  }
+  pressedSources.clear();
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space') return;
+  if (anyModalOpen()) return;
+  e.preventDefault(); // stops page scroll, and Space "clicking" a focused button
+  if (e.repeat) return;
+  pressDown('key');
+});
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'Space') pressUp('key');
+});
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  pressDown(`ptr:${e.pointerId}`);
+});
+window.addEventListener('pointerup', (e) => pressUp(`ptr:${e.pointerId}`));
+window.addEventListener('pointercancel', (e) => pressUp(`ptr:${e.pointerId}`));
+window.addEventListener('blur', releaseAllPresses);
+
+// SFX cap per rendered frame: a tab-restore burst can run ~30 sim steps
+// under the 250ms clamp, and thirty simultaneous plucks is a noise-bomb.
+const SFX_MAX_PER_FRAME = 4;
+
+/** Feedback sounds for the frame's latched judge events. Audio lives here
+ *  (not in Simulation) so the sim stays constructible in node tests; the
+ *  cost is at most one rAF of delay on feedback-only sounds. */
+function dispatchJudgeSfx(events) {
+  if (!sfx || events.length === 0) return;
+  const tonicPc = sim?.vibe?.tonic ?? 0;
+  const conf = sim?.vibe?.tonicConfidence ?? 0;
+  let played = 0;
+  for (const evt of events) {
+    if (played >= SFX_MAX_PER_FRAME) break;
+    switch (evt.kind) {
+      case 'hit': sfx.judgment(evt.tier, tonicPc, conf); played++; break;
+      case 'holdStart': sfx.judgment(evt.tier ?? 'good', tonicPc, conf); played++; break;
+      case 'sour': sfx.judgment('sour', tonicPc, conf); played++; break;
+      case 'miss': sfx.miss(); played++; break;
+      case 'holdTick': sfx.holdTick(evt.tickIdx, tonicPc, conf); played++; break;
+      case 'holdComplete': sfx.holdComplete(tonicPc, conf); played++; break;
+      case 'holdChoke': sfx.holdChoke(); played++; break;
+      default: break;
+    }
+  }
 }
 
 window.addEventListener('keydown', (e) => {
@@ -595,9 +766,32 @@ function toggleReducedFlash() {
 
 function onSongComplete() {
   running = false;
+  pressedSources.clear();
   hudEl.classList.add('hidden');
   const combo = sim.comboSystem;
-  completeStatsEl.textContent = `Peak streak: ${combo.streak} · Final combo: ×${combo.displayM.toFixed(1)}`;
+  const sk = sim.scoreKeeper;
+  // The real high-water mark, not the live streak the freeze happened to catch.
+  completeStatsEl.textContent = `Peak streak: ${sk.peakStreak} · Final combo: ×${combo.displayM.toFixed(1)}`;
+  if (resultsGridEl) {
+    const c = sk.counts;
+    const acc = sk.accuracyPct;
+    const holdsTotal = sim.noteChart.holdCount;
+    resultsGridEl.innerHTML = `
+      <div class="rGrade">${sk.grade ?? '—'}</div>
+      <div class="rRows">
+        <div class="rRow"><span>Score</span><b>${sk.score.toLocaleString('en-US')}</b></div>
+        <div class="rRow"><span>Timing</span><b>${acc === null ? '—' : acc.toFixed(1) + '%'}</b></div>
+        <div class="rRow rTiers">
+          <span class="tPerfect">${c.perfect} perfect</span>
+          <span class="tGreat">${c.great} great</span>
+          <span class="tGood">${c.good} good</span>
+          <span class="tSour">${c.sour} sour</span>
+          <span class="tMiss">${sk.misses} missed</span>
+        </div>
+        ${holdsTotal > 0 ? `<div class="rRow"><span>Holds ridden</span><b>${sk.holdsCompleted} / ${holdsTotal}</b></div>` : ''}
+      </div>`;
+    resultsGridEl.classList.remove('hidden');
+  }
   // Mario Paint title-screen treatment: each letter wobbles on its own beat.
   const title = completePanelEl.querySelector('h1');
   if (title && !title.dataset.wobbled) {

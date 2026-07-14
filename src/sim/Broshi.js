@@ -27,12 +27,27 @@ const TAIL_BASE_HZ = 1.3, TAIL_CALM_HZ = 0.32;
 const TAIL_BASE_DEG = 9, TAIL_CALM_DEG = 18;
 const DRAW_SCALE = 1.45; // ferocity pass: render-only, physics untouched
 const WEAVE_PX = 6;      // predatory side-to-side drift while trailing
+// BROSHI_BODY+BROSHI_HEAD combined local-space x-span (snout tip to rear
+// haunch, see meshes.js) -- the only source of truth for his on-screen
+// width, used by the contact shadow.
+const BODY_WIDTH_LOCAL = 53;
 const BEAT_FLASH_DECAY_SEC = 0.14;
 const CALM_LEVEL_THRESHOLD = 0.5;
 const CALM_BAR_THRESHOLD = 4;
 const YAWN_CHANCE_PER_BAR = 0.35;
 const YAWN_COOLDOWN_BARS = 8;
 const YAWN_DUR_MS = 1400;
+
+// Ferocity/variety pass: airborne barrel rolls on hard hops (likelier the
+// more rabid he is), a pounce-crouch telegraph when a surge kicks off, a
+// goofy tail-chase spin when things stay calm long enough, and a jittery
+// rabid skitter layered onto the predatory weave.
+const ROLL_CHANCE_BASE = 0.30;
+const ROLL_DUR_MS = 340;
+const POUNCE_MS = 180;
+const TAILCHASE_DUR_MS = 900;
+const TAILCHASE_CHANCE_PER_BAR = 0.18;
+const TAILCHASE_COOLDOWN_BARS = 6;
 
 const easeOutCubic = (t) => 1 - (1 - t) ** 3;
 const easeOutElastic = (t) => {
@@ -98,6 +113,18 @@ export class Broshi {
     this._trailTarget = D_TRAIL;
     this._ensPhase = null;
     this._melt = 0;
+
+    // Barrel roll / pounce / tail-chase state (render-only, like the weave).
+    this.bodyRoll = 0;         // radians added to the whole-glyph rotation
+    this.squashX = 1;
+    this.squashY = 1;
+    this._rollStartMs = -Infinity;
+    this._rollDurMs = ROLL_DUR_MS;
+    this._rollTurns = 1;
+    this._rollDir = 1;
+    this._pounceStartMs = -Infinity;
+    this._lastState = 'TRAIL';
+    this._barsSinceTailChase = Infinity;
     // Occasional underground excursion: drawn beneath the world (see
     // Renderer.js), fog-of-war dirt-sight owned entirely by Burrow.
     this.burrow = new Burrow(seed + 2);
@@ -136,10 +163,22 @@ export class Broshi {
     if (this._calmLevel > CALM_LEVEL_THRESHOLD) this._calmBarsStreak++;
     else this._calmBarsStreak = 0;
     this._barsSinceYawn++;
+    this._barsSinceTailChase++;
     if (this._calmBarsStreak >= CALM_BAR_THRESHOLD && this._barsSinceYawn >= YAWN_COOLDOWN_BARS
       && !this.rabid && this.rand() < YAWN_CHANCE_PER_BAR) {
       this._yawnStartMs = bar.ms;
       this._barsSinceYawn = 0;
+    }
+    // Bored enough for long enough -> he chases his own tail: a slow goofy
+    // double spin, mutually exclusive with the yawn so they don't stack.
+    if (this._calmBarsStreak >= 2 && this._barsSinceTailChase >= TAILCHASE_COOLDOWN_BARS
+      && !this.rabid && bar.ms - this._yawnStartMs > YAWN_DUR_MS
+      && this.rand() < TAILCHASE_CHANCE_PER_BAR) {
+      this._rollStartMs = bar.ms;
+      this._rollDurMs = TAILCHASE_DUR_MS;
+      this._rollTurns = 2;
+      this._rollDir = this.rand() < 0.5 ? 1 : -1;
+      this._barsSinceTailChase = 0;
     }
   }
 
@@ -186,6 +225,11 @@ export class Broshi {
     if (dangerNear) this.state = 'PANIC';
     else if (this.state === 'PANIC') this.state = 'TRAIL';
     else if (this.state === 'SURGE' && nowMs >= this.surgeUntilMs) this.state = 'TRAIL';
+
+    // Pounce telegraph: the instant a surge starts he coils — a quick
+    // crouch-and-release squash before the burst forward reads as intent.
+    if (this.state === 'SURGE' && this._lastState !== 'SURGE') this._pounceStartMs = nowMs;
+    this._lastState = this.state;
 
     const dStar = this.state === 'SURGE' ? D_SURGE : this.state === 'PANIC' ? D_PANIC : this._trailTarget;
     const accel = -K * (this.xRel - dStar) - C * this.xRelVel;
@@ -252,6 +296,24 @@ export class Broshi {
     const tailDeg = lerp(TAIL_BASE_DEG, TAIL_CALM_DEG, calmLevel);
     this.tailAngle = tailDeg * Math.sin(2 * Math.PI * tailHz * (nowMs / 1000) + this._tailPhase);
 
+    // --- barrel roll / tail-chase spin: one shared roll channel ---
+    const rollU = (nowMs - this._rollStartMs) / this._rollDurMs;
+    if (rollU >= 0 && rollU < 1) {
+      this.bodyRoll = this._rollDir * this._rollTurns * Math.PI * 2 * easeOutCubic(rollU);
+      // Mid-tail-chase his tail whips fast — he's chasing it, after all.
+      if (this._rollDurMs >= TAILCHASE_DUR_MS) {
+        this.tailAngle += 14 * Math.sin(2 * Math.PI * 6 * (nowMs / 1000));
+      }
+    } else {
+      this.bodyRoll = 0;
+    }
+
+    // --- pounce crouch: sine in-out squash over POUNCE_MS ---
+    const pounceU = (nowMs - this._pounceStartMs) / POUNCE_MS;
+    const crouch = pounceU >= 0 && pounceU < 1 ? Math.sin(pounceU * Math.PI) : 0;
+    this.squashY = 1 - 0.22 * crouch;
+    this.squashX = 1 + 0.16 * crouch;
+
     // --- body vibration: continuous feed while rabid, ring-down otherwise ---
     if (this.rho > 0.05) this.modal.excite(4 * this.rho * dtSec);
     this.modal.update(dtSec);
@@ -287,6 +349,14 @@ export class Broshi {
     this._nowMs = nowMs;
     this.groundY = groundY;
     this.screenX = midio.screenX + this.xRel;
+    // Predatory weave (+ rabid skitter): stalks side to side instead of
+    // gliding on rails. Render-only -- the spring physics/panic hops above
+    // are untouched. Hoisted here (rather than computed inline in draw())
+    // so Renderer can read his true rendered x for the contact shadow
+    // without reaching into underscore-prefixed internals.
+    const weave = WEAVE_PX * (1 - 0.5 * this._calmLevel) * Math.sin(this._ensPhase != null ? this._ensPhase : nowMs * 0.006)
+      + 3.5 * this.rho * Math.sin(nowMs * 0.031);
+    this.renderX = this.screenX + weave;
 
     // Locomotion/rendering above keeps running harmlessly underneath (so a
     // resurface never has to catch up on anything); once he's away,
@@ -297,9 +367,14 @@ export class Broshi {
     this.burrow.update(nowMs, dtSec, worldX, groundField, e1);
     if (this.burrow.justSurfaced) {
       // The pop-out: a real hop arc, a hard body ring, and a beat flash --
-      // he bursts out of the ground, he doesn't fade back in.
+      // he bursts out of the ground, he doesn't fade back in. And always
+      // with a celebratory flip: he's proud of the tunnel.
       this._hopH = 40;
       this._hopUntilMs = nowMs + 300;
+      this._rollStartMs = nowMs;
+      this._rollDurMs = 300;
+      this._rollTurns = 1;
+      this._rollDir = 1;
       this.modal.excite(5);
       this.beatFlash = 1;
     }
@@ -309,6 +384,16 @@ export class Broshi {
     // Relaxed lope: calm sections soften the hop instead of cutting it entirely.
     this._hopH = (16 + 26 * vel) * (1 - 0.5 * this._calmLevel);
     this._hopUntilMs = nowMs + 160;
+    // Hard hops sometimes come with a full barrel roll — likelier (and
+    // occasionally doubled) the more rabid he's running.
+    const rollU = (nowMs - this._rollStartMs) / this._rollDurMs;
+    const rolling = rollU >= 0 && rollU < 1;
+    if (!rolling && vel > 0.6 && this.rand() < ROLL_CHANCE_BASE + 0.4 * this.rho) {
+      this._rollStartMs = nowMs;
+      this._rollDurMs = ROLL_DUR_MS;
+      this._rollTurns = this.rho > 0.6 && this.rand() < 0.5 ? 2 : 1;
+      this._rollDir = this.xRelVel >= 0 ? 1 : -1;
+    }
   }
 
   _spawnSpittle() {
@@ -323,15 +408,19 @@ export class Broshi {
     }
   }
 
+  /** Current on-screen width in px -- the contact shadow's only source of
+   *  truth for his size. Widens on the same pounce-crouch squash frames
+   *  his body does. */
+  get shadowWidthPx() {
+    return BODY_WIDTH_LOCAL * DRAW_SCALE * this.squashX;
+  }
+
   draw(ctx) {
     if (this.burrow.depth > 0.02) return; // he's underground; Renderer draws the Burrow band instead
     const skinHex = hexLerp('#63c74d', '#e43b44', this.rho);
     const skinRgb = hexToRgb(skinHex);
     const baseHue = rgbToHsl(skinRgb.r, skinRgb.g, skinRgb.b).h;
-    // Predatory weave: he stalks side to side instead of gliding on rails.
-    // Render-only -- the spring physics and panic hops are untouched.
-    const weave = WEAVE_PX * (1 - 0.5 * this._calmLevel) * Math.sin(this._ensPhase != null ? this._ensPhase : this._nowMs * 0.006);
-    const x = this.screenX + weave;
+    const x = this.renderX;
     const y = this.groundY - this.hopY;
 
     ctx.save();
@@ -378,7 +467,12 @@ export class Broshi {
     // transformed (not via ctx.rotate) so edge angle/length -- and therefore
     // hue/glow -- actually reacts to the neck-bob and jaw snap.
     const neckRad = (this.neckAngle * Math.PI) / 180;
-    const group = { tx: x, ty: y, rot: neckRad, scaleX: DRAW_SCALE, scaleY: DRAW_SCALE };
+    // bodyRoll tumbles the whole glyph (barrel roll / tail-chase); the
+    // pounce squash coils it. Both render-only, like everything else here.
+    const group = {
+      tx: x, ty: y, rot: neckRad + this.bodyRoll,
+      scaleX: DRAW_SCALE * this.squashX, scaleY: DRAW_SCALE * this.squashY,
+    };
     const bodyHub = BROSHI_BODY.vertices[0];
     const bodyMesh = meltMesh(
       displaceMeshRadial(BROSHI_BODY, bodyHub.x, bodyHub.y, this.modal),

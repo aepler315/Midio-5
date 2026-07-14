@@ -73,9 +73,16 @@ export function intensityBudget(progress) {
  */
 export function dayArc(progress) {
   const p = clamp01(progress);
+  // Distance from either edge of the song: 0 at dawn/dusk, 0.5 at zenith.
+  const edgeDist = Math.min(p, 1 - p);
   return {
     celestialYFrac: 0.28 - 0.13 * Math.sin(Math.PI * p), // low at dawn/dusk, high at zenith
     dawn: { color: '#ff9a6b', alpha: 0.14 * (1 - smoothstep(0, 0.18, p)) },
     dusk: { color: '#141040', alpha: 0.20 * smoothstep(0.78, 1, p) },
+    // Aerial-perspective haze warms at both ends of the day arc (a low sun
+    // means a longer light path through the atmosphere) and cools toward
+    // zenith; plateaus at 0 for the middle third of the song rather than
+    // dipping only at a single instant.
+    hazeWarm: 1 - smoothstep(0, 0.35, edgeDist),
   };
 }

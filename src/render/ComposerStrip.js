@@ -68,8 +68,41 @@ export function popBump(dtMs) {
   return dtMs > -80 && dtMs < 200 ? Math.exp(-u * u) : 0;
 }
 
+/**
+ * Cap a dense page at `cap` icons WITHOUT losing temporal coverage. A plain
+ * "loudest first" slice breaks on real MIDIs: velocity rescaling clamps the
+ * top 5% of notes to exactly 1.0 (quantized files put EVERY note there), the
+ * sort is stable, so equal velocities keep time order and the slice keeps
+ * only the page's first `cap` notes — the strip then shows notes only in
+ * the first half (or less) of its viewport. Instead: divide the page into
+ * time slots, sort each slot loudest-first, and take rounds of one-per-slot
+ * until the budget is spent — every part of the page keeps its loudest
+ * material, and the full width stays populated.
+ */
+export function stratifyCap(events, cap, pageStartMs, pageMs, slots = 32) {
+  if (events.length <= cap) return events;
+  const buckets = Array.from({ length: slots }, () => []);
+  for (const evt of events) {
+    const s = clamp(Math.floor(((evt.tMs - pageStartMs) / pageMs) * slots), 0, slots - 1);
+    buckets[s].push(evt);
+  }
+  for (const b of buckets) b.sort((a, c) => c.vel - a.vel);
+  const kept = [];
+  for (let round = 0; kept.length < cap; round++) {
+    let took = 0;
+    for (const b of buckets) {
+      if (round < b.length && kept.length < cap) { kept.push(b[round]); took++; }
+    }
+    if (took === 0) break;
+  }
+  return kept.sort((a, b) => a.tMs - b.tMs);
+}
+
 export class ComposerStrip {
-  constructor(timeline, barGrid, durationMs) {
+  constructor(timeline, barGrid, durationMs, holds = []) {
+    // Hold-note spans (player rhythm layer): painted as bars behind the
+    // icons so an upcoming press-and-hold is readable a full page ahead.
+    this.holds = holds;
     // Page length: four median bars (robust to the odd tempo hiccup).
     let barMs = 2000;
     if (barGrid && barGrid.length >= 2) {
@@ -100,10 +133,7 @@ export class ComposerStrip {
     for (let p = 0; p < this.pages.length; p++) {
       if (!this.pages[p]) { this.pages[p] = []; continue; }
       if (this.pages[p].length > MAX_ICONS_PER_PAGE) {
-        this.pages[p] = this.pages[p]
-          .slice().sort((a, b) => b.vel - a.vel)
-          .slice(0, MAX_ICONS_PER_PAGE)
-          .sort((a, b) => a.tMs - b.tMs);
+        this.pages[p] = stratifyCap(this.pages[p], MAX_ICONS_PER_PAGE, p * this.pageMs, this.pageMs);
       }
     }
 
@@ -172,6 +202,27 @@ export class ComposerStrip {
       const isBar = b % 4 === 0;
       ctx.strokeStyle = isBar ? 'rgba(120,95,70,0.5)' : 'rgba(120,95,70,0.22)';
       ctx.beginPath(); ctx.moveTo(x, staffTop + (isBar ? 0 : rowH * 2)); ctx.lineTo(x, staffBottom - (isBar ? 0 : rowH * 2)); ctx.stroke();
+    }
+
+    // Hold bars: the slice of each hold note crossing this page, on the
+    // kick's staff row — press at the left edge, ride to the right.
+    if (this.holds.length) {
+      const pageEnd = pageStart + this.pageMs;
+      for (const hd of this.holds) {
+        if (hd.endMs <= pageStart || hd.tMs >= pageEnd) continue;
+        const fa = Math.max(0, (hd.tMs - pageStart) / this.pageMs);
+        const fb = Math.min(1, (hd.endMs - pageStart) / this.pageMs);
+        const xa = x0 + 8 + fa * (w - 16);
+        const xb = x0 + 8 + fb * (w - 16);
+        const y = staffTop + this.staffRow(36) * rowH;
+        ctx.fillStyle = 'rgba(255,180,58,0.34)';
+        ctx.strokeStyle = 'rgba(255,180,58,0.7)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect(xa, y - 7, Math.max(6, xb - xa), 14, 7);
+        ctx.fill();
+        ctx.stroke();
+      }
     }
 
     // Icons.
