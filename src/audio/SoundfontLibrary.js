@@ -10,10 +10,11 @@ import { extractZip } from '../utils/zip.js';
 
 export class SoundfontLibrary {
   constructor() {
-    /** @type {{name:string, data:object, hidden:boolean, _dirSourced?:boolean}[]} */
+    /** @type {{name:string, data:object, hidden:boolean, review?:object, _dirSourced?:boolean}[]} */
     this.fonts = [];
     this.activeIndex = -1;
     this.onChange = null; // (activeFont | null) => void
+    this.onAdded = null;  // (font) => void — fires per font as it lands (FontRecommender hook)
     this._dirHandle = null;
   }
 
@@ -48,9 +49,11 @@ export class SoundfontLibrary {
   async addBuffer(name, arrayBuffer) {
     const u8 = arrayBuffer instanceof Uint8Array ? arrayBuffer : new Uint8Array(arrayBuffer);
     const parsed = parseSf2(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength), name);
-    this.fonts.push({ name: parsed.name || name, data: parsed, hidden: false });
+    const font = { name: parsed.name || name, data: parsed, hidden: false };
+    this.fonts.push(font);
     if (this.activeIndex < 0) this.activeIndex = this.fonts.length - 1;
     this._notify();
+    if (this.onAdded) this.onAdded(font);
     return parsed;
   }
 
@@ -185,6 +188,15 @@ export class SoundfontLibrary {
     } else {
       this._notify(); // list membership changed even though the active font didn't
     }
+  }
+
+  /** Clear the active font entirely (back to the built-in oscillator
+   *  synth). Used by the recommender when every loaded font is disqualified
+   *  for the current song — a plain synth beats silence or rumble. */
+  deselect() {
+    if (this.activeIndex === -1) return;
+    this.activeIndex = -1;
+    this._notify();
   }
 
   /** Restore a hidden font to the rotation. Does not auto-activate it. */

@@ -11,8 +11,20 @@ const TRICK_HANG_START = 0.35; // matches JumpController's A
 const TRICK_HANG_END = 0.65;   // matches JumpController's A+B
 const TRICK_VEL_THRESHOLD = 0.8;
 const TRICK_COMBO_THRESHOLD = 2.0;
+// Trick vocabulary, unlocked by heat (launch velocity + combo + section
+// energy): everyone gets the classics; hot sections add the corkscrew and
+// tuck-pop; a blazing run unlocks the 720 helicopter and the double flip.
+const TRICKS_BASE = ['spin', 'backflip'];
+const TRICKS_HOT = ['corkscrew', 'tuckpop'];
+const TRICKS_FIRE = ['helicopter', 'doubleflip'];
+const HEAT_HOT = 0.55;
+const HEAT_FIRE = 0.8;
 const MILESTONES = [5, 10, 20];
 const FLOURISH_MS = 90;
+const DANCE_MS = 800;          // milestone victory dance (grounded shimmy)
+const PIROUETTE_MS = 300;      // hot clean landing: a full ground spin
+const PIROUETTE_COMBO = 4;
+const PIROUETTE_CHANCE = 0.35;
 const FLOURISH_COMBO_THRESHOLD = 2.0;
 const GOLD_FLASH_DECAY_SEC = 0.6;
 const AFTERIMAGE_INTERVAL_MS = 28;
@@ -68,7 +80,11 @@ export class MidioPerformer {
     this.modal = new ModalRing({ modes: 4, baseHz: 8, decaySec: 0.55, seed: (seed ^ 0x9e37) >>> 0 });
 
     this.beatFlash = 0; // additive mesh ignition on every kick, fast decay
+    this.holdGlow = 0; // hold-slide charge glow: lights on arm, ramps with paid ticks
     this._landMs = -Infinity;
+
+    this._danceStartMs = -Infinity;     // milestone victory shimmy (grounded)
+    this._pirouetteStartMs = -Infinity; // hot clean landing: full ground spin
   }
 
   onKick() {
@@ -86,6 +102,11 @@ export class MidioPerformer {
 
   onLanding(nowMs, isClean, comboDisplay, intensity = 0) {
     if (isClean && comboDisplay >= FLOURISH_COMBO_THRESHOLD) this._flourishUntilMs = nowMs + FLOURISH_MS;
+    // A blazing-combo clean landing sometimes sticks into a full ground
+    // pirouette — 360 degrees and back to facing front, physics untouched.
+    if (isClean && comboDisplay >= PIROUETTE_COMBO && this.rand() < PIROUETTE_CHANCE) {
+      this._pirouetteStartMs = nowMs;
+    }
     this.modal.excite(2.2 + 6 * intensity);
     this._landMs = nowMs; // every landing recoils, not just the clean ones
   }
@@ -100,18 +121,31 @@ export class MidioPerformer {
       // Persistent record (not a one-shot flag) so the renderer can't
       // miss it between sim steps -- it triggers the epicycle glyph show.
       this.lastMilestone = { idx, atMs: nowMs };
+      // And a victory dance: a decaying grounded shimmy (see update()).
+      this._danceStartMs = nowMs;
     }
   }
 
-  update(nowMs, dtSec, midio, jump, comboSystem, calmLevel = 0, ensemble = null) {
+  update(nowMs, dtSec, midio, jump, comboSystem, calmLevel = 0, ensemble = null, holdState = null) {
     this.modal.update(dtSec);
     const justLaunched = !this._wasAirborne && jump.airborne;
     if (justLaunched) {
       this.modal.excite(0.8 + 1.6 * jump.lastLaunchVel);
       const shouldTrick = jump.lastLaunchVel > TRICK_VEL_THRESHOLD || comboSystem.displayM >= TRICK_COMBO_THRESHOLD;
       if (shouldTrick) {
-        let type = this.rand() < 0.5 ? 'spin' : 'backflip';
-        if (type === this._lastTrickType) type = type === 'spin' ? 'backflip' : 'spin'; // never twice in a row
+        // Heat decides how deep into the trick book he reaches: launch
+        // velocity, combo, and section energy all feed it.
+        const heat = clamp(
+          jump.lastLaunchVel * 0.5 + comboSystem.displayM / 8 + (1 - calmLevel) * 0.25,
+          0, 1.2,
+        );
+        const pool = [...TRICKS_BASE];
+        if (heat > HEAT_HOT) pool.push(...TRICKS_HOT);
+        if (heat > HEAT_FIRE) pool.push(...TRICKS_FIRE);
+        let type = pool[Math.floor(this.rand() * pool.length)];
+        if (type === this._lastTrickType) {
+          type = pool[(pool.indexOf(type) + 1) % pool.length]; // never twice in a row
+        }
         this.trick = { type, jumpStartMs: jump.jumpStartMs, D: jump.D };
         this._lastTrickType = type;
       } else {
@@ -123,20 +157,65 @@ export class MidioPerformer {
 
     this.spinDeg = 0;
     let flipFactor = 1;
+    let trickScaleX = 1;
     if (this.trick && jump.airborne) {
       const u = clamp((nowMs - this.trick.jumpStartMs) / this.trick.D, 0, 1);
       const progress = smoothstep(TRICK_HANG_START, TRICK_HANG_END, u);
-      if (this.trick.type === 'spin') this.spinDeg = 360 * progress;
-      else flipFactor = Math.cos(progress * Math.PI); // 1 -> -1 -> 1, a 2D flip illusion
+      switch (this.trick.type) {
+        case 'spin':
+          this.spinDeg = 360 * progress;
+          break;
+        case 'helicopter': // the 720: two full rotations across the hang
+          this.spinDeg = 720 * progress;
+          break;
+        case 'backflip':
+          flipFactor = Math.cos(progress * Math.PI); // the 2D flip illusion
+          break;
+        case 'doubleflip': // two full flips, upright again before descent
+          flipFactor = Math.cos(progress * 2 * Math.PI);
+          break;
+        case 'corkscrew': // a spin that drills: rotation + a width pinch
+          this.spinDeg = 360 * progress;
+          trickScaleX = 1 - 0.28 * Math.sin(progress * Math.PI * 2) ** 2;
+          break;
+        case 'tuckpop': // ball up mid-air, pop back open with a tilt
+          {
+            const tuck = Math.sin(progress * Math.PI);
+            flipFactor = 1 - 0.38 * tuck;
+            trickScaleX = 1 - 0.30 * tuck;
+            this.spinDeg = 28 * Math.sin(progress * Math.PI * 2);
+          }
+          break;
+        default:
+          break;
+      }
     }
 
     // Composite on top of whatever TelegraphScanner already wrote this step.
     midio.leanDeg += this.spinDeg;
     midio.scaleY *= flipFactor;
+    midio.scaleX *= trickScaleX;
 
     if (nowMs < this._flourishUntilMs) {
       midio.scaleY = 0.65;
       midio.scaleX = 1.55;
+    }
+
+    // Milestone victory dance: a decaying grounded shimmy — lean rocking at
+    // ~4 Hz with quick scale bounces on top. Additive, so the strut/recoil
+    // underneath keep doing their thing.
+    const danceU = (nowMs - this._danceStartMs) / DANCE_MS;
+    if (!jump.airborne && danceU >= 0 && danceU < 1) {
+      const decay = 1 - danceU;
+      midio.leanDeg += 14 * decay * Math.sin(danceU * Math.PI * 6);
+      midio.scaleY *= 1 + 0.08 * decay * Math.sin(danceU * Math.PI * 12);
+    }
+
+    // Ground pirouette: one full revolution, ending exactly front-facing.
+    const pirU = (nowMs - this._pirouetteStartMs) / PIROUETTE_MS;
+    if (!jump.airborne && pirU >= 0 && pirU < 1) {
+      const ease = 1 - (1 - pirU) ** 3;
+      midio.leanDeg += 360 * ease;
     }
 
     if (!jump.airborne && jump.beatPeriodMs > 0) {
@@ -147,7 +226,10 @@ export class MidioPerformer {
       const s = Math.sin(theta);
       const strutAmp = STRUT_DEG * (1 - 0.6 * calmLevel);
       const swayAmp = CALM_SWAY_DEG * calmLevel;
-      midio.leanDeg += strutAmp * s * s * s + swayAmp * Math.sin(theta / 2 + 1.7);
+      // Second harmonic: a little offbeat skip that only shows when the
+      // section is running hot — the strut turns into a groove.
+      const skip = 1.6 * (1 - calmLevel) * Math.sin(2 * theta + 0.6);
+      midio.leanDeg += strutAmp * s * s * s + swayAmp * Math.sin(theta / 2 + 1.7) + skip;
       // The scale dip yields to the flourish window, which owns scale outright.
       if (nowMs >= this._flourishUntilMs) {
         const beatHit = Math.max(0, Math.cos(theta));
@@ -192,5 +274,18 @@ export class MidioPerformer {
       if (this.afterimages.length > AFTERIMAGE_COUNT) this.afterimages.shift();
     }
     if (!jump.airborne && this.afterimages.length) this.afterimages.length = 0;
+
+    // Hold slide: while a hold note is being ridden (grounded), the pose is
+    // owned outright — a low, wide power-slide leaning back into the roll —
+    // the same override precedent as the flourish window above. Written
+    // last so it wins over strut/dance/recoil for the duration.
+    if (holdState && holdState.active && !jump.airborne) {
+      midio.scaleY = 0.62;
+      midio.scaleX = 1.45;
+      midio.leanDeg = -14;
+      this.holdGlow = Math.min(1, 0.35 + 0.65 * holdState.chargeU);
+    } else {
+      this.holdGlow = Math.max(0, this.holdGlow - dtSec / 0.25);
+    }
   }
 }

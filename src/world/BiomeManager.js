@@ -11,8 +11,13 @@ import { KuramotoSwarm } from './KuramotoSwarm.js';
 import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
+import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars } from './MountainChoreo.js';
+import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { LightningFX } from './Lightning.js';
+import { MeteorShowerFX } from './MeteorShower.js';
+import { LightRig } from './LightRig.js';
+import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS } from './DepthHaze.js';
 import { PERSONALITY } from './BiomePersonality.js';
 import { Murmuration } from './Murmuration.js';
 import { Atmosphere } from './Atmosphere.js';
@@ -20,7 +25,7 @@ import { CodaDirector } from '../sim/CodaDirector.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
 import { clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
-import { LerpCache, rotateHueHex } from '../utils/color.js';
+import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
 
@@ -31,6 +36,9 @@ const BAND_COUNT = 7;
 const EQ_ATTACK_SEC = 0.08;
 const EQ_RELEASE_SEC = 0.6;
 const EQ_MAX_HEIGHT_FRAC = 0.4; // never exceed 40% of screen height, however excited the section is
+const MILESTONE_METEOR_BASE = [5, 8, 14];
+const DROP_METEOR_BASE = 12;
+const ACHROMATIC_SAT_THRESHOLD = 0.08;
 
 export class BiomeManager {
   constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, customBiome = null }) {
@@ -65,6 +73,20 @@ export class BiomeManager {
     this._pylonFlash = 0;
     this._eqSmoothed = new Float32Array(BAND_COUNT);
 
+    // The mountains dance: a groove level (smoothed global energy) drives a
+    // traveling ridge wave through every range, and each kick sends a
+    // bounce rolling from the near hills out to the far peaks.
+    this._danceGroove = 0;
+    this._danceKickMs = -Infinity;
+    this._danceKickAmp = 0;
+    this.fever = 0; // player fever (Simulation.fever.level): cranks the dance and the runners
+    // Miniature characters running along the near ranges' ridges — an
+    // independent trio per range so the depths don't mirror each other.
+    this.ridgeRunners = {
+      L4: new RidgeRunners(hashSeed(`${songSeed}:runners:L4`)),
+      L5: new RidgeRunners(hashSeed(`${songSeed}:runners:L5`)),
+    };
+
     this.strips = new Map(); // biomeName -> { L2, L3, L4, L5 }
     for (const b of this.profiles) {
       const seed = hashSeed(b.name);
@@ -95,6 +117,20 @@ export class BiomeManager {
     this.ribbon = new ChaosRibbon(songSeed);
     this.rd = new ReactionDiffusion(songSeed);
     this.lightning = new LightningFX(songSeed);
+    this.meteors = new MeteorShowerFX(songSeed);
+    this.lightRig = new LightRig(songSeed);
+    // Concert beams anchor toward Midio on a drop; sane defaults so a
+    // trigger before the first Simulation-set value still points somewhere
+    // reasonable rather than at (0,0).
+    this.midioX = this.w * 0.5;
+    this.midioY = this.groundY;
+    // Reward bursts: milestone/drop counts scale with perf headroom
+    // (defaults to 1 so BiomeManager works standalone in tests with no
+    // wired Simulation/PerfGovernor) and the song's intensity budget.
+    this.particleMul = 1;
+    this.milestoneAtMs = -Infinity;
+    this._lastSeenMilestoneMs = -Infinity;
+    this.milestoneIdx = -1;
     this.murmuration = new Murmuration(canvasWidth, canvasHeight, songSeed);
     this._beatMs = 500; // EMA'd kick interval, feeding the swarm's natural frequency
     this._lastKickMs = null;
@@ -133,6 +169,8 @@ export class BiomeManager {
     conductor.on(Role.RHYTHM, (evt) => {
       if (!evt.kick) return;
       this._pylonFlash = 1;
+      this._danceKickMs = evt.tMs;
+      this._danceKickAmp = 0.4 + 0.6 * evt.vel;
       this.mandala.kick();
       this.swarm.kick(evt.vel);
       this.ribbon.kick();
@@ -288,6 +326,18 @@ export class BiomeManager {
     return this.lerpCache.get(this._profile(from).celestial.haloColor, this._profile(to).celestial.haloColor, t);
   }
 
+  /** Fires a reward meteor volley sized by both PerfGovernor headroom and
+   *  the song's staged intensity budget, colored from the current blended
+   *  halo (an achromatic biome like ARCTIC's near-white sun gets a
+   *  desaturated volley instead of an arbitrary hue). */
+  _triggerMeteors(nowMs, baseCount) {
+    const count = Math.max(2, Math.round(baseCount * this.particleMul * this.budget));
+    const { r, g, b } = hexToRgb(this.currentHaloColor());
+    const { h, s } = rgbToHsl(r, g, b);
+    const hue = s < ACHROMATIC_SAT_THRESHOLD ? -1 : h;
+    this.meteors.trigger(nowMs, count, hue);
+  }
+
   update(nowMs, dtSec, energyCurves, calmLevel = 0, worldX = 0) {
     this.tSec = nowMs / 1000;
     this.calmLevel = calmLevel;
@@ -326,12 +376,17 @@ export class BiomeManager {
     this.mandala.rateMul = pers.mandalaRate ?? 1;
     this.rd.bias = pers.rdBias ?? 0;
     this._ribbonScaleMul = pers.ribbonScale ?? 1;
+    this._hazeMul = pers.haze ?? 1;
 
     // The Wind: one sample per frame, shared by every consumer below --
     // never re-derived per particle.
     this.atmosphere.turbulence = pers.turbulence ?? 1;
     const energyInstant = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS)) : 0;
     this.atmosphere.update(dtSec, energyInstant);
+
+    // Groove for the dancing ranges: energy-driven, calmed sections settle.
+    const grooveTarget = energyInstant * (1 - 0.55 * calmLevel);
+    this._danceGroove += (1 - Math.exp(-dtSec / 0.30)) * (grooveTarget - this._danceGroove);
     const wind = this.atmosphere.at(worldX, this.h * 0.4);
     this.wind = wind;
 
@@ -357,11 +412,22 @@ export class BiomeManager {
     this.ribbon.update(nowMs, dtSec, energyCurves, calmLevel);
     this.rd.update(nowMs, dtSec, energyCurves, calmLevel);
     this.lightning.update(dtSec);
-    // Drops send a heavy ring through the lake -- edge-detected off the
-    // externally-set dropAtMs (same passthrough pattern as heatShimmer).
+    this.lightRig.update(nowMs, dtSec, this._beatMs, calmLevel, this.budget);
+    this.meteors.update(dtSec);
+    // Drops send a heavy ring through the lake and snap every light-rig beam
+    // onto Midio for a moment -- edge-detected off the externally-set
+    // dropAtMs (same passthrough pattern as heatShimmer).
     if (Number.isFinite(this.dropAtMs) && this.dropAtMs !== this._lastSeenDropAtMs) {
       this._lastSeenDropAtMs = this.dropAtMs;
       this.lakeRing.excite(22);
+      this.lightRig.trigger(nowMs, this.midioX, this.midioY);
+      this._triggerMeteors(nowMs, DROP_METEOR_BASE);
+    }
+    // Combo milestones (streak 5/10/20) throw their own reward volley.
+    if (Number.isFinite(this.milestoneAtMs) && this.milestoneAtMs !== this._lastSeenMilestoneMs) {
+      this._lastSeenMilestoneMs = this.milestoneAtMs;
+      const idx = Math.max(0, Math.min(MILESTONE_METEOR_BASE.length - 1, this.milestoneIdx));
+      this._triggerMeteors(nowMs, MILESTONE_METEOR_BASE[idx]);
     }
     this.lakeRing.update(dtSec);
     this.murmuration.update(nowMs, dtSec, energyCurves, calmLevel, wind);
@@ -406,7 +472,15 @@ export class BiomeManager {
     this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075 * (this._ribbonScaleMul || 1), mandalaColor);
     this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
     this.drawDeepSky(ctx, skyVoyage); // Midasus's sky voyage, when she's away -- behind the mountains below
+    this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
+    this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
+
+    // Concert beams: anchored at the celestial, drawn before the mountain
+    // silhouettes so the ranges occlude their lower reach the same way
+    // Lightning's bolts do.
+    const cx = canvas.width * 0.78, cy = canvas.height * arc.celestialYFrac;
+    this.lightRig.draw(ctx, canvas, cx, cy, mandalaColor, particleMul, this.reducedFlash);
 
     // The Unraveling: each layer's scroll ratio drifts apart from the rest
     // as the world delaminates -- nearer layers race ahead more than far
@@ -418,7 +492,9 @@ export class BiomeManager {
     const tint = this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t));
 
     this._drawLayer(ctx, canvas, 'L2', scrollX0, tint, t, A, B);
+    this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
     this._drawLayer(ctx, canvas, 'L3', scrollX1, tint, t, A, B);
+    this._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
 
     // Ambient particle field lives roughly at mid-depth. The Unraveling:
     // particle hues converge toward the biome's own halo color as the
@@ -436,10 +512,32 @@ export class BiomeManager {
     this._drawFogBanks(ctx, canvas);
 
     this._drawLayer(ctx, canvas, 'L4', scrollX2, tint, t, A, B);
+    this._drawHaze(ctx, canvas, 'L4', A, B, t, arc);
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
 
     this._drawGround(ctx, canvas, worldX, originX, A, B, t);
     this._drawTransitionOverlays(ctx, canvas, B);
+  }
+
+  /** Aerial perspective: a translucent sky-colored wash after a mountain
+   *  layer, strongest behind the farthest range (L2) and none behind the
+   *  nearest (L5), so distance accumulates atmosphere the way it does in
+   *  the real world instead of every range reading as the same flat
+   *  cutout. Color pulls toward a warm dawn/dusk tone via the day arc;
+   *  the per-biome PERSONALITY.haze dial and calmLevel both scale it. */
+  _drawHaze(ctx, canvas, layerKey, A, B, t, arc) {
+    const alpha = hazeAlpha(layerKey, this._hazeMul, this.calmLevel);
+    if (alpha < HAZE_EPS) return;
+    const skyTint = this.lerpCache.get(A.sky[2], B.sky[2], t);
+    const hazeColor = this._rotated(this.lerpCache.get(skyTint, HAZE_WARM_COLOR, hazeWarmMix(arc.hazeWarm)));
+    const { r, g, b } = hexToRgb(hazeColor);
+    ctx.save();
+    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    grad.addColorStop(0, `rgba(${r},${g},${b},0)`);
+    grad.addColorStop(1, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
   }
 
   /** Midasus's deep-space excursion: drawn here (behind the mountain
@@ -897,12 +995,93 @@ export class BiomeManager {
     if (applyBiomeShimmer || applyDynamicShimmer) {
       this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX, yOff);
     } else {
-      drawTiledStrip(ctx, stripsA[layerKey], scrollX, canvas.width, canvas.height, yOff);
+      this._drawDancingStrip(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey);
     }
     if (B !== A && t > 0.02) {
       ctx.globalAlpha = t;
-      drawTiledStrip(ctx, stripsB[layerKey], scrollX, canvas.width, canvas.height, yOff);
+      this._drawDancingStrip(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey);
       ctx.globalAlpha = 1;
+    }
+    // Miniature characters run along the two nearest ranges' ridges,
+    // riding the same dance the columns do.
+    if (layerKey === 'L4' || layerKey === 'L5') {
+      const strip = (t > 0.5 ? stripsB : stripsA)[layerKey];
+      const cfg = DANCE_LAYERS[layerKey];
+      const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
+      this.ridgeRunners[layerKey].draw(ctx, strip, scrollX, canvas.width, canvas.height - strip.height + yOff, {
+        tSec: this.tSec, groove: this._danceGroove, kick, cfg, fever: this.fever || 0,
+      }, layerKey === 'L5' ? 0.55 : 0.4);
+    }
+    ctx.restore();
+  }
+
+  /** The mountains dance: the strip is drawn in column slices, each riding
+   *  a groove-scaled traveling wave along the ridge, and the whole range
+   *  bounces on kicks — near hills first, far peaks a beat-fraction later
+   *  (per-layer delaySec), a crowd wave rolling into the distance. Column
+   *  phase is computed in scroll-stable strip space so the wave travels
+   *  with time, never jittering with camera scroll. The strips overhang
+   *  the ground band by ~40px, which quietly swallows the bottom gap a
+   *  lifted column would otherwise open. */
+  _drawDancingStrip(ctx, canvas, strip, scrollX, yOff, layerKey) {
+    const cfg = DANCE_LAYERS[layerKey];
+    if (!cfg) {
+      drawTiledStrip(ctx, strip, scrollX, canvas.width, canvas.height, yOff);
+      return;
+    }
+    const nowMs = this.tSec * 1000;
+    const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
+    const baseY = canvas.height - strip.height + yOff;
+    const w = strip.width;
+    let x = -(((scrollX % w) + w) % w);
+    while (x < canvas.width) {
+      for (let cx = 0; cx < w; cx += DANCE_COL_W) {
+        const cw = Math.min(DANCE_COL_W, w - cx);
+        const sx = x + cx;
+        if (sx + cw < 0 || sx > canvas.width) continue;
+        const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0);
+        ctx.drawImage(strip, cx, 0, cw, strip.height, sx, baseY + dy, cw, strip.height);
+      }
+      x += w;
+    }
+  }
+
+  /** One super-distant mountain that IS the spectrum: seven chunky bars —
+   *  bass building the summit at the center, treble falling away to the
+   *  flanks (see spectrumBars) — riding the same attack/release-smoothed
+   *  band levels as the horizon EQ. It sits on the slowest scroll ratio in
+   *  the scene and is haze-mixed toward the sky, so it reads as the
+   *  farthest solid thing in the world; a pedestal bell keeps it a
+   *  mountain even in total silence, and thin halo-colored crest caps are
+   *  the "this peak is an equalizer" tell. */
+  _drawSpectrumMassif(ctx, canvas, worldX, A, B, t) {
+    const bars = spectrumBars(this._eqSmoothed);
+    const barW = 46, gap = 3;
+    const massifW = bars.length * (barW + gap) - gap;
+    const period = canvas.width * 1.5;
+    const scroll = worldX * CodaDirector.delaminateRatio(0.03, this.unravel);
+    const left = ((((canvas.width * 0.58 - scroll) % period) + period) % period) - massifW;
+    if (left > canvas.width || left + massifW < 0) return;
+
+    const baseY = this.groundY - 26;
+    const maxH = 234;
+    const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
+    const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
+    const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.55));
+    const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
+
+    ctx.save();
+    ctx.fillStyle = body;
+    for (let i = 0; i < bars.length; i++) {
+      const h = bars[i].h01 * maxH;
+      const bx = left + i * (barW + gap);
+      ctx.fillRect(bx, baseY - h, barW, h);
+    }
+    ctx.fillStyle = cap;
+    ctx.globalAlpha = 0.32 * (0.5 + 0.5 * this.budget);
+    for (let i = 0; i < bars.length; i++) {
+      const h = bars[i].h01 * maxH;
+      ctx.fillRect(left + i * (barW + gap), baseY - h, barW, 2.5);
     }
     ctx.restore();
   }

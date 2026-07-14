@@ -49,6 +49,7 @@ html, body {
 .panel {
   position: absolute;
   inset: 0;
+  z-index: 3;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -119,6 +120,7 @@ html, body {
   top: 16px;
   left: 16px;
   right: 16px;
+  z-index: 3;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -451,6 +453,36 @@ html, body {
    Unhide (+) reads as a restore — blue accent, matching the shared hover. */
 .fontRowAction[data-action="hide"]:hover { border-color: #ff5a7a; color: #ff5a7a; }
 .fontRowAction[data-action="unhide"]:hover { border-color: #7ad1ff; color: #7ad1ff; }
+
+/* Per-song audition verdicts (FontRecommender) */
+.fontRowStar {
+  flex: none;
+  color: #ffd76a;
+  font-size: 0.9rem;
+  cursor: default;
+}
+.fontRowBadge {
+  flex: none;
+  min-width: 30px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  text-align: center;
+  cursor: default;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.75);
+}
+.fontRowBadge.ok { border-color: rgba(122, 209, 255, 0.45); color: #7ad1ff; }
+.fontRowBadge.dq { border-color: rgba(255, 90, 122, 0.55); color: #ff5a7a; }
+.fontRowBadge.pending { opacity: 0.55; }
+.auditionStatus {
+  flex: none;
+  padding: 8px 16px;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.65);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.auditionStatus.hidden { display: none; }
 .modalFooter {
   display: flex;
   flex-wrap: wrap;
@@ -490,3 +522,95 @@ html, body {
 
 .filmstripModalPanel { width: min(720px, 92vw); }
 #filmstripModalImg { width: 100%; display: block; background: #000; }
+
+/* --- Player-driven rhythm layer: live score + end-of-song results --- */
+#hudLeft {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+#scoreReadout {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #e8e6f0;
+  text-shadow: 0 0 8px rgba(232, 230, 240, 0.35);
+}
+#resultsGrid {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  margin: 6px 0 10px;
+}
+#resultsGrid .rGrade {
+  font-size: 3.4rem;
+  font-weight: 800;
+  color: #ffd76a;
+  text-shadow: 0 0 24px rgba(255, 215, 106, 0.65);
+  min-width: 64px;
+}
+#resultsGrid .rRows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  font-size: 0.95rem;
+}
+#resultsGrid .rRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+#resultsGrid .rRow b { font-variant-numeric: tabular-nums; }
+#resultsGrid .rTiers {
+  justify-content: flex-start;
+  gap: 10px;
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+.tPerfect { color: #ffd76a; }
+.tGreat { color: #4fd8c4; }
+.tGood { color: #e8e6f0; }
+.tSour { color: #9e84a8; }
+.tMiss { color: #8a8794; }
+
+/* --- Calibration screen (runs once, before the first gameplay session) --- */
+#calibBeaconWrap {
+  width: 140px;
+  height: 140px;
+  margin: 18px auto 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#calibBeacon {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  border: 3px solid #ffd76a;
+  box-shadow: 0 0 34px rgba(255, 215, 106, 0.45), inset 0 0 22px rgba(255, 215, 106, 0.25);
+  will-change: transform, opacity;
+}
+#calibStatus { min-height: 1.4em; }
+
+/* --- Audition load screen (font ratings gate the show) --- */
+#auditionCanvas {
+  display: block;
+  margin: 8px auto;
+  background: transparent;
+}
+#auditionBar {
+  width: min(420px, 80%);
+  height: 6px;
+  margin: 10px auto 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+#auditionBarFill {
+  width: 0%;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #4fd8c4, #ffd76a);
+  transition: width 0.25s ease;
+}

@@ -52,23 +52,25 @@ export function mergeMeshes(meshes) {
   return { mesh: { vertices, edges }, offsets };
 }
 
-// --- Midio: the Sigil. A tall asymmetric shard -- crown spike, uneven
-// shoulders, two blunt ground-contact points (feet at y=0, half-width
-// within his 23px collision body). The separate core (kept under the
-// MIDIO_EYE name so the blink machinery still drives it) is a small
-// triangle that contracts instead of blinking: the core dims. ---
-export const MIDIO_BODY = shardMesh({ x: 0, y: -27 }, [
-  { x: 0, y: -58 },   // crown spike
-  { x: 13, y: -45 },
-  { x: 23, y: -31 },
-  { x: 13, y: -15 },  // pinched right waist
-  { x: 9, y: 0 },     // right foot
-  { x: -7, y: 0 },    // left foot
-  { x: -14, y: -13 }, // pinched left waist
-  { x: -22, y: -35 },
-  { x: -11, y: -46 },
+// --- Midio: the Star Ascendant. The trio's design language converged on
+// Midasus -- the star is perfect -- so Midio is now a five-spike star
+// glyph: crown spike, two shoulder spikes, two ground spikes (his feet, at
+// y=0 within the 23px collision body), with deep concave notches between.
+// Slightly asymmetric so he stays a character, not clip-art. The separate
+// core (kept under the MIDIO_EYE name so the blink machinery still drives
+// it) is a small triangle that contracts instead of blinking. ---
+export const MIDIO_BODY = shardMesh({ x: 0, y: -28 }, [
+  { x: 0, y: -58 },    // crown spike
+  { x: 7, y: -38 },    //   notch
+  { x: 22, y: -41 },   // right shoulder spike
+  { x: 10, y: -24 },   //   notch
+  { x: 14, y: 0 },     // right foot spike (ground contact)
+  { x: 0, y: -14 },    //   keel notch, tucked between the feet
+  { x: -14, y: 0 },    // left foot spike (ground contact)
+  { x: -9, y: -25 },   //   notch
+  { x: -21, y: -44 },  // left shoulder spike, a shade higher: the asymmetry
 ], { spokeEvery: 2, braces: [[1, 4], [6, 8]] });
-export const MIDIO_EYE = radialMesh(5.5, 6, 3, 3, -31, -Math.PI / 2);
+export const MIDIO_EYE = radialMesh(5.5, 6, 3, 0, -31, -Math.PI / 2);
 export const MIDIO_MESH = mergeMeshes([MIDIO_BODY, MIDIO_EYE]).mesh;
 
 // --- Apotheosis: Midio's earned transformation (spec: charge earned by
@@ -112,53 +114,65 @@ export const MIDIO_APOTHEOSIS_UNFOLDED = shardMesh(_apoHub, _unfoldedRim, {
 // MIDIO_BODY's rim vertex k (MIDIO_BODY.vertices[k + 1]).
 export const APOTHEOSIS_INDEX_MAP = Array.from({ length: _bodyRim.length }, (_, k) => 2 * k + 1);
 
-// --- Broshi: the Dart. A low predatory chassis with a serrated dorsal
-// ridge (deep notches between three spine spikes), a wedge head that
-// still neck-bobs, a thin mandible line driven by jawOpen, and a long
-// whip tail (2 vertices: base + tip, swayed by rotating the tip). ---
-export const BROSHI_BODY = shardMesh({ x: 0, y: -14 }, [
-  { x: -26, y: -9 },  // rear haunch
-  { x: -19, y: -25 }, // spine spike 1
-  { x: -13, y: -18 }, // notch
-  { x: -6, y: -30 },  // spine spike 2
-  { x: 1, y: -21 },   // notch
-  { x: 7, y: -27 },   // spine spike 3
-  { x: 15, y: -16 },  // shoulder, into the head
-  { x: 12, y: -4 },
-  { x: 2, y: -1 },    // front foot
-  { x: -14, y: -2 },  // rear foot
-], { spokeEvery: 3, braces: [[1, 3], [3, 5]] });
-export const BROSHI_HEAD = shardMesh({ x: 14, y: -19 }, [
-  { x: 27, y: -16 },  // snout tip
-  { x: 21, y: -25 },  // crest
-  { x: 10, y: -24 },
-  { x: 7, y: -17 },
-  { x: 12, y: -12 },
+// --- Broshi: the Comet Star. Same starward abstraction as the other two:
+// a low four-spike star raked hard forward -- one long nose spike, a tall
+// dorsal spike, a swept tail spike, two short ground spikes -- with deep
+// concave notches carving the spikes apart (high radius variation: he
+// must never read as a wheel). The head is a small forward dart-star that
+// still neck-bobs, the mandible line is still driven by jawOpen, and the
+// whip tail stays a 2-vertex line swayed by rotating the tip. ---
+export const BROSHI_BODY = shardMesh({ x: -3, y: -13 }, [
+  { x: -28, y: -20 }, // swept tail spike
+  { x: -12, y: -14 }, //   notch
+  { x: -6, y: -34 },  // dorsal spike
+  { x: 1, y: -15 },   //   notch
+  { x: 18, y: -22 },  // raked nose spike, into the head
+  { x: 6, y: -10 },   //   notch
+  { x: 9, y: 0 },     // front ground spike
+  { x: -1, y: -6 },   //   keel notch
+  { x: -13, y: 0 },   // rear ground spike
+  { x: -18, y: -8 },  //   notch back toward the tail
+], { spokeEvery: 3, braces: [[0, 2], [2, 4]] });
+export const BROSHI_HEAD = shardMesh({ x: 16, y: -19 }, [
+  { x: 29, y: -17 },  // snout spike
+  { x: 20, y: -22 },  //   notch
+  { x: 17, y: -29 },  // crest spike
+  { x: 12, y: -21 },  //   notch
+  { x: 8, y: -14 },   // throat point
 ], { spokeEvery: 2 });
 // Jaw: two free vertices (upper anchor, moving mandible tip) driven by jawOpen.
 export const BROSHI_JAW = {
-  vertices: [{ x: 11, y: -14 }, { x: 25, y: -12 }],
+  vertices: [{ x: 10, y: -13 }, { x: 26, y: -11 }],
   edges: [[0, 1]],
 };
-export const BROSHI_EYE = radialMesh(2.2, 2.2, 3, 15, -22, -Math.PI / 2);
+export const BROSHI_EYE = radialMesh(2.2, 2.2, 3, 16, -23, -Math.PI / 2);
 // Tail: anchor near the back of the body, tip trailing behind -- swayed
 // in place (see Broshi's calm behaviors) by rotating vertex 1 about vertex 0.
-export const BROSHI_TAIL = { vertices: [{ x: -25, y: -7 }, { x: -47, y: -1 }], edges: [[0, 1]] };
+export const BROSHI_TAIL = { vertices: [{ x: -26, y: -16 }, { x: -48, y: -6 }], edges: [[0, 1]] };
 
 // --- Midasus: a hexagram -- two interlocked triangles about the hub with
 // a single vertical axis spoke pair. An arcane instrument, not a gem. ---
-const HEX_R = 8.5;
-const tri = (offsetDeg) => [0, 1, 2].map((i) => {
-  const a = ((offsetDeg + i * 120) * Math.PI) / 180;
-  return { x: Math.cos(a) * HEX_R, y: Math.sin(a) * HEX_R };
-});
-const [a0, a1, a2] = tri(-90);
-const [b0, b1, b2] = tri(90);
-export const MIDASUS_MESH = {
-  vertices: [{ x: 0, y: 0 }, a0, a1, a2, b0, b1, b2],
-  edges: [
-    [1, 2], [2, 3], [3, 1], // upward triangle
-    [4, 5], [5, 6], [6, 4], // downward triangle
-    [0, 1], [0, 4],         // vertical axis
-  ],
-};
+export function hexagramMesh(r) {
+  const tri = (offsetDeg) => [0, 1, 2].map((i) => {
+    const a = ((offsetDeg + i * 120) * Math.PI) / 180;
+    return { x: Math.cos(a) * r, y: Math.sin(a) * r };
+  });
+  const [a0, a1, a2] = tri(-90);
+  const [b0, b1, b2] = tri(90);
+  return {
+    vertices: [{ x: 0, y: 0 }, a0, a1, a2, b0, b1, b2],
+    edges: [
+      [1, 2], [2, 3], [3, 1], // upward triangle
+      [4, 5], [5, 6], [6, 4], // downward triangle
+      [0, 1], [0, 4],         // vertical axis
+    ],
+  };
+}
+export const MIDASUS_HEX_R = 8.5;
+export const MIDASUS_MESH = hexagramMesh(MIDASUS_HEX_R);
+
+// --- The baby stars: three miniatures of Midasus's hexagram. They treat
+// her as a secure base -- orbiting close, venturing out to explore the
+// stage, and rushing home when the song turns loud (see BabyStars.js). ---
+export const BABY_STAR_R = 3.6;
+export const BABY_STAR_MESH = hexagramMesh(BABY_STAR_R);

@@ -8,12 +8,24 @@ import { EpicycleShow } from './EpicycleShow.js';
 import { ComposerStrip } from './ComposerStrip.js';
 import { RainbowBrush } from './RainbowBrush.js';
 import { GOLD_AFTERIMAGE_LIFE_MS } from '../sim/MidioPerformer.js';
+import { contactShadow } from '../world/ContactShadow.js';
 import { clamp01 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
+import { LerpCache } from '../utils/color.js';
 
 const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
 const MIDIO_DRAW_SCALE = 1.45; // ferocity pass: render-only, physics untouched
+
+// Film finish: breathing vignette + very-low-alpha color grade (see FilmFinish.js).
+const FILM_GRADE_COOL = '#1f8fa3';       // muted teal -- calm push
+const FILM_GRADE_WARM = '#ff9a4d';       // muted amber -- hot/high-budget push
+const FILM_GRADE_ALPHA_BASE = 0.05;      // floor alpha for the grade wash -- a finish, not a filter
+const FILM_GRADE_ALPHA_RANGE = 0.03;     // extra alpha the further warmth sits from neutral
+const VIGNETTE_MIN_ALPHA = 0.10;         // edge darkness at maximum openness (full hype/drop)
+const VIGNETTE_MAX_ALPHA = 0.46;         // edge darkness at maximum depth (fully calm)
+const VIGNETTE_ONSET_MIN = 0.34;         // onset fraction (of corner radius) at max depth -- a deep iris
+const VIGNETTE_ONSET_MAX = 0.62;         // onset fraction at min depth -- only the outer ring ever darkens
 
 export class Renderer {
   constructor(canvas) {
@@ -27,6 +39,9 @@ export class Renderer {
     this._lastMilestoneMs = null;
     this.composer = null; // lazy: needs the conductor's timeline at first draw
     this.brush = new RainbowBrush();
+    // Renderer-owned (not sim.biomes.lerpCache) so the film finish still
+    // works if sim.biomes were ever null (the fallback-sky branch below).
+    this._filmLerpCache = new LerpCache();
   }
 
   draw(sim, alpha) {
@@ -79,12 +94,21 @@ export class Renderer {
     this.brush.update(sim.timeMs, pose.airborne, pose.worldX, pose.midioY);
     this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs, sim.apotheosis && sim.apotheosis.active ? 2 : 1);
 
+    // Contact shadows: grounds the trio to the terrain instead of letting
+    // them read as floating. Drawn just before each character so the
+    // shadow always sits directly underneath its owner in paint order.
+    if (sim.broshi && sim.broshi.burrow.depth <= 0.02) {
+      this._drawContactShadow(ctx, contactShadow(sim.broshi.renderX, sim.broshi.groundY, sim.broshi.hopY, sim.broshi.shadowWidthPx));
+    }
     if (sim.broshi) sim.broshi.draw(ctx, pose);
 
     if (sim.performer) {
       this._drawMidioAfterimages(ctx, sim.performer, pose.midioX);
       this._drawGoldAfterimages(ctx, sim.performer, pose.midioX, sim.timeMs);
     }
+    const midioWidthPx = sim.midio.halfWidth * 2 * MIDIO_DRAW_SCALE * pose.scaleX;
+    const midioHeightAbove = sim.midio.groundY - pose.midioY;
+    this._drawContactShadow(ctx, contactShadow(pose.midioX, sim.midio.groundY, midioHeightAbove, midioWidthPx));
     this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0, sim.apotheosis, sim.reducedFlash);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
@@ -96,6 +120,10 @@ export class Renderer {
     this.epicycles.draw(ctx, sim.timeMs);
     this._drawDropShockwave(ctx, canvas, sim, pose);
 
+    if (sim.midasus && sim.midasus.voyage.depth <= 0) {
+      const heightAbove = sim.midasus.yFloor - sim.midasus.p.y;
+      this._drawContactShadow(ctx, contactShadow(sim.midasus.p.x, sim.midasus.yFloor, heightAbove, sim.midasus.shadowWidthPx));
+    }
     if (sim.midasus) sim.midasus.draw(ctx, particleMul);
     if (sim.gnat) sim.gnat.draw(ctx, sim.timeMs);
     if (sim.fracture) sim.fracture.draw(ctx, canvas, { glow: perf ? perf.crackGlowEnabled : true });
@@ -107,10 +135,14 @@ export class Renderer {
 
     // Mario Paint composer strip: fixed HUD layer, outside camera shake/zoom.
     if (sim.conductor) {
-      if (!this.composer) this.composer = new ComposerStrip(sim.conductor.timeline, sim.conductor.barGrid, sim.conductor.durationMs);
+      if (!this.composer) {
+        const holds = sim.noteChart ? sim.noteChart.notes.filter((n) => n.type === 'hold') : [];
+        this.composer = new ComposerStrip(sim.conductor.timeline, sim.conductor.barGrid, sim.conductor.durationMs, holds);
+      }
       this.composer.draw(ctx, canvas, sim.timeMs);
     }
 
+    if (sim.filmFinish) this._drawFilmFinish(ctx, canvas, sim);
     if (sim.hype) this._drawHypeFrame(ctx, canvas, sim);
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
@@ -187,6 +219,40 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** Film finish: the last cinematography pass before the HUD. A soft-light
+   *  color grade wash (warm push when hot/high-budget, cool push when
+   *  calm) drawn first, then a radial-gradient vignette on top -- grade-
+   *  then-vignette matches a real post pipeline, where the vignette is a
+   *  neutral lens artifact applied after grading. Neither channel ever
+   *  spikes upward on a kick/drop (edgeAlpha only ever opens on hype,
+   *  gradeAlpha has no percussive term at all), so this deliberately never
+   *  routes through capFlashAlpha. */
+  _drawFilmFinish(ctx, canvas, sim) {
+    const ff = sim.filmFinish;
+
+    const color = this._filmLerpCache.get(FILM_GRADE_COOL, FILM_GRADE_WARM, ff.warmth);
+    const gradeAlpha = FILM_GRADE_ALPHA_BASE + FILM_GRADE_ALPHA_RANGE * Math.abs(ff.warmth - 0.5) * 2;
+    ctx.save();
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.globalAlpha = gradeAlpha;
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+    const outerR = Math.hypot(cx, cy);
+    const onset = VIGNETTE_ONSET_MAX - (VIGNETTE_ONSET_MAX - VIGNETTE_ONSET_MIN) * ff.vignetteDepth;
+    const edgeAlpha = VIGNETTE_MIN_ALPHA + (VIGNETTE_MAX_ALPHA - VIGNETTE_MIN_ALPHA) * ff.vignetteDepth;
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    const vg = ctx.createRadialGradient(cx, cy, outerR * onset, cx, cy, outerR);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, `rgba(0,0,0,${edgeAlpha.toFixed(3)})`);
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+
   /** The energy frame: a thin border that breathes with the track, slams on
    * kicks, and echoes the whole frame during a drop surge -- the always-on,
    * any-distance signal that the screen is running on the music. */
@@ -244,6 +310,21 @@ export class Renderer {
     ctx.stroke();
   }
 
+  /** One contact-shadow ellipse. 'multiply' darkens whatever terrain color
+   *  sits underneath (petal piles, neon grid, lake bed) instead of
+   *  flattening it to a fixed gray. */
+  _drawContactShadow(ctx, s) {
+    if (s.alpha <= 0.002 || s.rx <= 0.5) return;
+    ctx.save();
+    ctx.globalAlpha = s.alpha;
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = '#0a0a12';
+    ctx.beginPath();
+    ctx.ellipse(s.cx, s.cy, s.rx, s.ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false) {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
@@ -297,6 +378,18 @@ export class Renderer {
       ctx.globalCompositeOperation = 'lighter';
       drawMeshPart(ctx, bodyMesh, this._midioBodyRest, transform, hue, {
         alpha: capFlashAlpha(0.65 * beatFlash, reducedFlash), satBase: 70, lightBase: 74, widthBase: 2.4,
+      });
+      ctx.restore();
+    }
+
+    // Hold-slide charge: beatFlash's additive shape, but sustained — it
+    // lights when a hold arms and brightens with every paid tick.
+    const holdGlow = performer ? performer.holdGlow : 0;
+    if (holdGlow > 0.03) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      drawMeshPart(ctx, bodyMesh, this._midioBodyRest, transform, hue, {
+        alpha: capFlashAlpha(0.5 * holdGlow, reducedFlash), satBase: 80, lightBase: 70, widthBase: 2.0,
       });
       ctx.restore();
     }

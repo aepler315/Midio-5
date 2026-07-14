@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ComposerStrip, iconFor, popBump } from '../src/render/ComposerStrip.js';
+import { ComposerStrip, iconFor, popBump, stratifyCap } from '../src/render/ComposerStrip.js';
 import { RainbowBrush } from '../src/render/RainbowBrush.js';
 import { ImpactFX } from '../src/sim/ImpactFX.js';
 import { Role } from '../src/core/NoteEvent.js';
@@ -31,6 +31,35 @@ test('ComposerStrip caps dense pages at 64 icons, keeping the loudest, back in t
   for (let i = 1; i < page.length; i++) assert.ok(page[i].tMs >= page[i - 1].tMs, 'page must stay in time order');
   // Everything kept should be at least as loud as the loudest discarded... spot-check: no kept note below vel 0.15.
   for (const evt of page) assert.ok(evt.vel >= 0.15);
+});
+
+test('a dense uniform-velocity page keeps notes across the WHOLE viewport, not just its first half', () => {
+  // Regression: velocity rescaling clamps many real MIDIs to vel=1.0 across
+  // the board; the old loudest-first cap (stable sort) then kept the first
+  // 64 notes IN TIME ORDER, so icons only ever appeared at the start of
+  // each page — the "strip only shows notes in its first half" bug.
+  const timeline = [];
+  for (let i = 0; i < 300; i++) timeline.push(note(i * 26, Role.MELODY, 60 + (i % 12), 1.0));
+  const strip = new ComposerStrip(timeline, BAR_GRID, 32000); // pageMs 8000
+  const page = strip.pages[0];
+  assert.equal(page.length, 64);
+  const fx = page.map((e) => e.tMs / strip.pageMs);
+  assert.ok(Math.max(...fx) > 0.85, `latest kept icon at fx=${Math.max(...fx)} — right side empty`);
+  for (let q = 0; q < 4; q++) {
+    const inQuarter = fx.filter((f) => f >= q / 4 && f < (q + 1) / 4).length;
+    assert.ok(inQuarter >= 8, `page quarter ${q} nearly empty (${inQuarter} icons)`);
+  }
+});
+
+test('stratifyCap still prefers the loudest notes within each time slot', () => {
+  const events = [];
+  for (let i = 0; i < 128; i++) {
+    events.push(note(i * 62.5, Role.MELODY, 60, i % 2 ? 0.9 : 0.3)); // loud/soft alternating
+  }
+  const kept = stratifyCap(events, 32, 0, 8000);
+  assert.equal(kept.length, 32);
+  const loudShare = kept.filter((e) => e.vel > 0.5).length / kept.length;
+  assert.ok(loudShare >= 0.9, `loud notes should dominate the kept set, got ${loudShare}`);
 });
 
 test('ComposerStrip staff rows quantize pitch: higher pitch sits higher on the staff', () => {

@@ -63,6 +63,81 @@ expects, stereo instrument pairs authored via SF2's sample-link mechanism
 track's own hard pan blends with — rather than fighting — the font's
 authored stereo spread.
 
+**Per-song SoundFont recommendation:** the same font can be perfect for one
+MIDI and dead silent for the next (missing programs, drum-kit-only banks,
+broken root keys) — the MIDI file is the volatile variable. So every time a
+`.mid` loads, each loaded font is *auditioned against that song* in the
+background: a coverage-maximizing excerpt of the actual timeline plus one
+isolated loud/soft probe note pair per track are rendered through the font
+offline, and the output is analyzed. Hard rules disqualify fonts that
+render silence, only onset-aligned percussive spikes where sustained notes
+were scored, pitched content octaves away from what the MIDI asks, or heavy
+clipping; survivors get a 0–100 fit score from track coverage, pitch
+accuracy, sustain quality, loudness, level balance, velocity response,
+timbre distinctness, and spectral liveliness. The engine auto-activates the
+best fit (bailing out of a disqualified active font the moment its verdict
+lands — to the built-in synth if nothing qualifies), badges every row in
+the switcher popup (★ best fit, numeric score, ⚠ + reason), and never
+overrides a font you picked by hand for the current song. When fonts are
+loaded, the ratings **gate the start of the song** (offline renders on the
+main thread used to lag gameplay badly): a loading screen plays a
+hyper-simplified rendition of *this song's* percussion — its kicks
+distilled to thumps with the in-between hits demoted to soft hats, looping
+under a pulsing star — until the verdicts land and the best fit takes the
+stage. A new file dropped during the gate cancels it cleanly; with no
+fonts loaded there is no gate at all.
+
+**Play it, don't just watch it:** tap Space (or click/touch) on the bass
+drum to jump. A tap **before the character hits the ground is a double
+jump** — a C0-continuous relaunch from the current height — but not
+forever: the air-jump budget is paced by the song's *phrase structure*.
+The analysis engine autocorrelates the per-bar energy profile at 4- and
+8-bar lags to decide whether the song phrases in 4s or 8s, and the budget
+(2 per 4-bar phrase, 4 per 8-bar) refills on each phrase boundary, with
+each successive air jump in a phrase a little smaller until the last one —
+the flourish — spikes. And the visuals follow *you*: a *fever meter*
+multiplies steady, accurate tapping (tight offset clustering, high tiers)
+by the song's live energy, and everything downstream — judgment particle
+bursts, phenomena intensity, meteor volleys, and the mountain dance
+amplitude (up to ~2.8×) — rides it. Sloppy taps through a drop stay tame;
+perfect taps through a lullaby stay elegant; both together go insane.
+
+**Latency is measured, never blamed:** the first session ever opens with a
+one-time **calibration screen** — tap along with a bare metronome and the
+median bias becomes your stored input offset (skippable). From then on the
+in-game calibrator watches judged offsets silently: a player who is steady
+between beats but always ~30ms late is reading pipeline latency, not
+sloppiness, so the bias is cancelled automatically (jittery windows are
+left alone — that's the player) and persisted across sessions.
+
+**The trio went stellar:** the design language converged on Midasus — the
+star was perfect — so Midio is now a five-spike star glyph (crown, two
+shoulders, two ground-spike feet) and Broshi a low comet-star raked hard
+forward, both still wireframe instruments of the same deformation-driven
+glow. Midasus gained **three baby stars** that treat her as a secure base:
+they orbit close, exactly one at a time ventures out to explore in calm
+stretches (Midio is their favorite point of interest), and they rush home
+the moment the song turns loud. Meanwhile **miniature versions of all
+three characters run along the background mountain ridges** — riding the
+exact same ridge wave the mountains dance with, hopping on the
+layer-delayed kick, and sprinting faster as the fever climbs.
+
+**The world plays along:** every parallax range dances — a groove-scaled
+traveling wave rolls along each ridge, and kicks bounce the hills, near
+layers first, far peaks a beat-fraction later. Behind them all sits one
+super-distant massif whose skyline IS a live bar graph of the current
+7-band spectrum (bass builds the summit at the center, treble falls away
+to the flanks), haze-tinted and on the slowest scroll in the scene. The
+Mario-Paint composer strip keeps its icons spread across the whole page
+even on dense, velocity-clamped MIDIs (time-stratified icon budget), and
+the trio's stage presence runs deeper: Midio's trick book grows with the
+heat of the run (corkscrew, tuck-pop, 720 helicopter, double flip) plus a
+milestone victory dance and landing pirouettes; Broshi barrel-rolls his
+hard hops, coils into a pounce when a surge starts, and chases his own
+tail when things stay calm; Midasus picks a fresh rest-flight figure every
+time the melody rests (figure-8s, loop-the-loops, a petaled rose) and
+pirouettes on hard accents.
+
 Press `` ` `` during play to open the debug overlay (ParamBus state + vision
 loop log); press `V` inside it to toggle the vision self-tuning loop (off by
 default — it calls out to a local Ollama instance at
@@ -100,6 +175,7 @@ node tools/smoke-soundfont.mjs               # SF2 loading, switching, and routi
 node tools/smoke-multitrack.mjs              # multi-channel voices, pan-out, soundfont auto-load
 node tools/smoke-hotswap.mjs                 # drag a different MIDI in mid-song; no duplicate listeners/frame loops
 node tools/smoke-fontswitcher.mjs            # switcher popup: select/hide/unhide, settings view
+node tools/smoke-recommend.mjs               # per-MIDI font audition: hard DQs, auto-rescue, badges, pinning
 ```
 
 `OfflineAudioContext` (used for stem separation) only exists in a browser,
