@@ -126,18 +126,26 @@ html, body {
   align-items: flex-start;
   pointer-events: none;
   font-variant-numeric: tabular-nums;
+  z-index: 5;
 }
 
-/* Right-hand cluster of the HUD row: the settings gear + track badge sit
-   side by side. #hud disables pointer-events so the canvas underneath
-   stays clickable; this wrapper opts its interactive children back in. */
+#hudLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+/* Right-hand cluster of the HUD row: difficulty, fullscreen, settings gear,
+   track badge. #hud disables pointer-events so the canvas underneath stays
+   clickable; this wrapper opts its interactive children back in. */
 #hudRight {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   pointer-events: auto;
 }
-#settingsBtn {
+#settingsBtn, #fullscreenBtn {
   line-height: 1;
 }
 
@@ -147,6 +155,65 @@ html, body {
   color: #ffd76a;
   text-shadow: 0 0 12px rgba(255, 215, 106, 0.6);
   display: inline-block;
+}
+
+#tapReadout {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+#tapReadout.hidden { display: none; }
+#tapGrade {
+  min-width: 4.5em;
+  color: #ffd76a;
+  letter-spacing: 0.04em;
+}
+#tapGrade.grade-perfect { color: #ffd76a; }
+#tapGrade.grade-great { color: #7ad1ff; }
+#tapGrade.grade-ok { color: #b9a3ff; }
+#tapGrade.grade-miss { color: #ff5a7a; }
+#tapScore { opacity: 0.9; font-variant-numeric: tabular-nums; }
+#tapStreak { opacity: 0.7; font-size: 0.8rem; }
+
+/* Difficulty picker — shared by loader and in-game HUD. */
+.diffPicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(5, 5, 10, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  padding: 3px;
+}
+.diffPicker.loaderDiff {
+  margin-top: 4px;
+  padding: 6px 10px;
+  gap: 8px;
+}
+.diffLabel {
+  font-size: 0.78rem;
+  opacity: 0.65;
+  padding-left: 4px;
+}
+.diffBtn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.65);
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.diffBtn:hover { color: #7ad1ff; }
+.diffBtn.active {
+  background: rgba(255, 215, 106, 0.2);
+  color: #ffd76a;
 }
 
 /* Combo-milestone flourish (follow-up item 6): a quick shatter-and-reform

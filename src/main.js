@@ -46,6 +46,7 @@ const fontBarEl = document.getElementById('fontBar');
 const fontBarBtnEl = document.getElementById('fontBarBtn');
 const fontNameEl = document.getElementById('fontName');
 const settingsBtnEl = document.getElementById('settingsBtn');
+const fullscreenBtnEl = document.getElementById('fullscreenBtn');
 const trackBadgeEl = document.getElementById('trackBadge');
 const trackBadgeBtnEl = document.getElementById('trackBadgeBtn');
 const trackListEl = document.getElementById('trackList');
@@ -132,6 +133,7 @@ async function bootAudio() {
   sf2Engine = new Sf2Synth(audioEngine);
   synth = new SynthRouter(fallback);
   synth.setSf2Engine(sf2Engine);
+  sfx = new SfxEngine(audioEngine);
   // Connect exactly once: `synth`/`conductor` are both persistent
   // singletons for the lifetime of the page (bootAudio itself only ever
   // runs once, guarded by the early return above), so a second connect —
@@ -215,6 +217,65 @@ async function startWithAuditionGate(data, gen) {
   if (gen !== loadGen) return; // another file dropped during the gate
   startTimeline(data);
 }
+
+function applySynthMutePolicy() {
+  // Audio-file playback already has the song in the buffer — stacking the
+  // synthetic hi-hat / click / kick voices on top is what the player hears as
+  // the unwanted metronome layer. MIDI and the procedural demo need the synth.
+  if (synth) synth.enabled = !muteTimelineSynth;
+}
+
+function setDifficulty(next) {
+  if (!DIFFICULTIES.includes(next)) return;
+  difficulty = next;
+  for (const root of [loaderDiffPickerEl, hudDiffPickerEl]) {
+    if (!root) continue;
+    root.querySelectorAll('.diffBtn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.diff === difficulty);
+    });
+  }
+  if (sim && typeof sim.setDifficulty === 'function') sim.setDifficulty(difficulty);
+}
+
+function wireDiffPicker(root) {
+  if (!root) return;
+  root.addEventListener('click', (e) => {
+    const btn = e.target.closest('.diffBtn');
+    if (!btn) return;
+    setDifficulty(btn.dataset.diff);
+  });
+}
+wireDiffPicker(loaderDiffPickerEl);
+wireDiffPicker(hudDiffPickerEl);
+
+// --- Fullscreen ---
+function isFullscreen() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+async function toggleFullscreen() {
+  const root = document.documentElement;
+  try {
+    if (isFullscreen()) {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+    } else if (root.requestFullscreen) {
+      await root.requestFullscreen();
+    } else if (root.webkitRequestFullscreen) {
+      await root.webkitRequestFullscreen();
+    }
+  } catch (err) {
+    console.warn('[fullscreen]', err);
+  }
+  updateFullscreenBtn();
+}
+function updateFullscreenBtn() {
+  if (!fullscreenBtnEl) return;
+  fullscreenBtnEl.title = isFullscreen() ? 'Exit fullscreen' : 'Fullscreen';
+  fullscreenBtnEl.setAttribute('aria-pressed', isFullscreen() ? 'true' : 'false');
+}
+if (fullscreenBtnEl) fullscreenBtnEl.addEventListener('click', () => toggleFullscreen());
+document.addEventListener('fullscreenchange', updateFullscreenBtn);
+document.addEventListener('webkitfullscreenchange', updateFullscreenBtn);
 
 function applyActiveFont(active) {
   if (sf2Engine) {
@@ -411,10 +472,12 @@ function stopTimeline() {
 function startTimeline(timelineData) {
   stopTimeline();
   fitCanvas();
+  applySynthMutePolicy();
   conductor.load(timelineData);
   perfGovernor = new PerfGovernor();
   sim = new Simulation(conductor, paramBus, {
     bpm: timelineData.bpm || 120,
+    beatPeriodMs: timelineData.beatPeriodMs || null,
     energyCurves: timelineData.energyCurves || null,
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
@@ -442,6 +505,8 @@ function startTimeline(timelineData) {
 
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
+  if (tapReadoutEl) tapReadoutEl.classList.remove('hidden');
+  updateTapHud();
   rafHandle = requestAnimationFrame(frame);
 
   // Exposed for the debug overlay and for smoke-testing internals.
@@ -453,6 +518,7 @@ function startTimeline(timelineData) {
     conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary, sf2Engine, fontRecommender,
     renderer, rendererMode, rendererBackend: renderer?.backend || 'canvas',
     customBiome: timelineData.customBiome || null,
+    difficulty, muteTimelineSynth,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
   };
@@ -738,6 +804,20 @@ function frame(tRaf) {
     sim.latency.lastAdjustment = null;
   }
 
+  // Drain judgment SFX produced during the sim steps (hits + auto-misses).
+  // Auto-miss thuds are rate-limited so a hard chart doesn't rattle the bus.
+  if (sfx && sim) {
+    let missPlayed = false;
+    for (const ev of sim.drainSfx()) {
+      if (ev.type !== 'grade') continue;
+      if (ev.grade === 'miss') {
+        if (missPlayed) continue;
+        missPlayed = true;
+      }
+      sfx.playGrade(ev.grade, ev.note);
+    }
+  }
+
   const alpha = acc / STEP_MS;
   renderer.draw(sim, alpha);
   comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
@@ -747,6 +827,7 @@ function frame(tRaf) {
     void comboReadoutEl.offsetWidth; // restart the CSS animation even if it's still mid-flight
     comboReadoutEl.classList.add('milestone-pulse');
   }
+  updateTapHud();
 
   visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();

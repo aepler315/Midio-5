@@ -42,11 +42,15 @@ const CLEAN_WINDOW_MS = 90;
 const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
 
 export class Simulation {
-  constructor(conductor, paramBus, { bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720, customBiome = null, inputOffsetMs = 0 } = {}) {
+  constructor(conductor, paramBus, {
+    bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720,
+    customBiome = null, difficulty = 'medium', beatPeriodMs = null,
+  } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
     this.customBiome = customBiome || null;
+    this.difficulty = difficulty;
 
     this.midio = new Midio();
     this.jump = new JumpController(paramBus);
@@ -114,6 +118,20 @@ export class Simulation {
 
     this.worldX = 0;
     this.timeMs = 0;
+
+    // Player tap highway: density from difficulty, jump bars aligned to kicks.
+    const tapNotes = buildTapChart({
+      timeline: conductor.timeline,
+      barGrid: conductor.barGrid,
+      bpm,
+      beatPeriodMs: beatPeriodMs || (60000 / bpm),
+      durationMs: conductor.durationMs,
+      difficulty,
+    });
+    this.highway = new NoteHighway(tapNotes);
+    this.tapScorer = new TapScorer();
+    /** One-shot SFX hooks consumed by main.js each frame. */
+    this.pendingSfx = [];
 
     this.prev = this._snapshot();
     this.curr = this._snapshot();

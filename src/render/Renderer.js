@@ -142,7 +142,12 @@ export class Renderer {
       this.composer.draw(ctx, canvas, sim.timeMs);
     }
 
-    if (sim.filmFinish) this._drawFilmFinish(ctx, canvas, sim);
+    // Note highway: vertical bars glide R→L and meet Midio on the hit line.
+    // Drawn in screen space (no camera shake) so timing stays readable.
+    if (sim.highway) {
+      sim.highway.draw(ctx, canvas, sim.timeMs, pose.midioX, sim.midio.groundY);
+    }
+
     if (sim.hype) this._drawHypeFrame(ctx, canvas, sim);
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
