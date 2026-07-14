@@ -412,7 +412,7 @@ export class BiomeManager {
     this.ribbon.update(nowMs, dtSec, energyCurves, calmLevel);
     this.rd.update(nowMs, dtSec, energyCurves, calmLevel);
     this.lightning.update(dtSec);
-    this.lightRig.update(nowMs, dtSec, this._beatMs, calmLevel, this.budget);
+    this.lightRig.update(nowMs, dtSec, this._beatMs, calmLevel, this.budget, this.fever || 0);
     this.meteors.update(dtSec);
     // Drops send a heavy ring through the lake and snap every light-rig beam
     // onto Midio for a moment -- edge-detected off the externally-set
@@ -1116,6 +1116,29 @@ export class BiomeManager {
       const bars = this.groundField.visibleBars(worldX, originX, canvas.width);
       ctx.fillStyle = groundColor;
       for (const bar of bars) ctx.fillRect(bar.x, bar.y, bar.width + 1, canvas.height - bar.y);
+
+      // Kick ground glow: an emissive rim over bars a kick-synced pulse
+      // (GroundField.kickGlow) is currently racing through -- tinted toward
+      // the biome's own halo color so it reads as the world's light, not a
+      // generic overlay. Silent (zero cost) whenever no pulse is active.
+      const glowBars = bars.filter((bar) => bar.glow > 0.01);
+      if (glowBars.length) {
+        const haloColor = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
+        const { r, g, b } = hexToRgb(haloColor);
+        const rgb = `${r},${g},${b}`;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        for (const bar of glowBars) {
+          const alpha = capFlashAlpha(0.5 * bar.glow, this.reducedFlash);
+          const rimH = Math.min(60, canvas.height - bar.y);
+          const grad = ctx.createLinearGradient(0, bar.y, 0, bar.y + rimH);
+          grad.addColorStop(0, `rgba(${rgb},${alpha})`);
+          grad.addColorStop(1, `rgba(${rgb},0)`);
+          ctx.fillStyle = grad;
+          ctx.fillRect(bar.x, bar.y, bar.width + 1, rimH);
+        }
+        ctx.restore();
+      }
 
       // Gray-Scott texture living inside the ground: clip to the slice
       // silhouette so the pattern rides the terrain's vertical motion.

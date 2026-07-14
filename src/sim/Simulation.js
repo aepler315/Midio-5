@@ -30,6 +30,9 @@ import { HighlightReel } from '../render/HighlightReel.js';
 import { hashSeed } from '../utils/math.js';
 import { buildNoteChart } from './NoteChart.js';
 import { TapJudge } from './TapJudge.js';
+import { buildTapChart } from './TapChart.js';
+import { NoteHighway } from '../render/NoteHighway.js';
+import { TapScorer } from './TapScorer.js';
 import { ScoreKeeper } from './ScoreKeeper.js';
 import { PhraseTracker } from '../core/PhraseTracker.js';
 import { AirJumpSequencer } from './AirJumpSequencer.js';
@@ -44,7 +47,7 @@ const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
 export class Simulation {
   constructor(conductor, paramBus, {
     bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720,
-    customBiome = null, difficulty = 'medium', beatPeriodMs = null,
+    customBiome = null, difficulty = 'medium', beatPeriodMs = null, inputOffsetMs = 0,
   } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
@@ -163,6 +166,7 @@ export class Simulation {
         this.gnat.onKick(evt);
         this.performer.onKick();
         this.hype.onKick(evt.vel);
+        this.groundField.kickGlow(this.worldX, evt.tMs, evt.vel);
         this.midasus.voyage.onKick(evt.vel); // deep-space sparkle burst (self-gated on phase)
         if (this.apotheosis.active) this.performer.captureGoldAfterimage(this.midio, this.timeMs);
       }
@@ -184,6 +188,17 @@ export class Simulation {
     q.splice(i, 0, { kind, tMs });
   }
 
+  /** Drains and clears pendingSfx (main.js polls this every frame). Judging
+   *  currently flows entirely through TapJudge/`this.judge` (scored on real
+   *  input, driving score/combo/fever); pendingSfx is reserved for the
+   *  highway's own tapScorer path and stays empty until that's wired to
+   *  input, so this is a safe no-op today rather than a crash. */
+  drainSfx() {
+    const out = this.pendingSfx;
+    this.pendingSfx = [];
+    return out;
+  }
+
   /** Fan the judge's one-shot events out into score, combo, and FX. */
   _applyJudgeEvents() {
     // Fever cranks the judgment FX too: the same perfect press throws a
@@ -191,6 +206,9 @@ export class Simulation {
     const particleMul = (this.perf ? this.perf.particleMul : 1) * (1 + 1.5 * this.fever.level);
     for (const evt of this.judge.stepEvents) {
       this.fever.onJudge(evt);
+      // Highway hit-line impact FX: spawned on sim time (not evt.tMs, the
+      // chart's own note time), so a late-judged press still bursts *now*.
+      this.highway?.onJudge(evt, this.timeMs, particleMul);
       if ((evt.kind === 'hit' || evt.kind === 'holdStart') && evt.offsetMs != null) {
         this.latency.onJudgedHit(evt.offsetMs);
       }

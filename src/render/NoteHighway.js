@@ -7,11 +7,20 @@
 // Screen x for a note at song-time tMs:
 //   x = hitX + (tMs - nowMs) * (approachPx / approachMs)
 // When nowMs === tMs, x === hitX.
+//
+// onJudge() feeds TapJudge's own stepEvents (see Simulation._applyJudgeEvents)
+// into a small impact list drawn at the hit line -- tier-colored bursts/rings
+// so a connect actually reads as an impact instead of the bar just fading.
+import { capFlashAlpha } from '../ui/Accessibility.js';
 
 export const DEFAULT_APPROACH_MS = 1600;
 export const HIT_WINDOW_PERFECT_MS = 45;
 export const HIT_WINDOW_GREAT_MS = 90;
 export const HIT_WINDOW_OK_MS = 130;
+
+const IMPACT_LIFE_MS = 260;
+const IMPACT_MAX = 24; // oldest shed first; a hard cap during dense hold-tick runs
+const SPARK_BASE_COUNT = 5;
 
 export class NoteHighway {
   /**
@@ -25,12 +34,14 @@ export class NoteHighway {
     this._judged = new Map(); // note index -> grade
     this._flash = []; // {x, y, grade, untilMs}
     this._cursor = 0; // first not-yet-past note (for miss auto-judge)
+    this._impacts = []; // {kind, spawnMs, seed} -- hit-line impact FX, see onJudge()
   }
 
   setNotes(notes) {
     this.notes = notes || [];
     this._judged.clear();
     this._flash = [];
+    this._impacts = [];
     this._cursor = 0;
   }
 
@@ -113,12 +124,38 @@ export class NoteHighway {
     this._flash.push({ x, y, grade, untilMs: nowMs + 280 });
   }
 
-  draw(ctx, canvas, nowMs, hitX, groundY) {
+  /** Feeds one TapJudge stepEvent (see Simulation._applyJudgeEvents) into a
+   *  hit-line impact -- tier-colored burst/ring/fizzle drawn at the next
+   *  draw() call. `particleMul` is the sim's fever-boosted multiplier
+   *  (Simulation.js), so a perfect press throws a bigger burst hot than cold.
+   *  Late-armed holds (tier === null) stay quiet, matching the existing
+   *  judgment-halo rule -- the glow ramp is their own cue. */
+  onJudge(evt, nowMs, particleMul = 1) {
+    let kind;
+    switch (evt.kind) {
+      case 'hit':
+      case 'holdStart':
+        if (evt.tier == null) return;
+        kind = evt.tier === 'sour' ? 'sour' : evt.tier; // perfect | great | good | sour
+        break;
+      case 'sour': kind = 'sour'; break;
+      case 'miss':
+      case 'holdChoke': kind = 'miss'; break;
+      case 'holdTick': kind = 'tick'; break;
+      case 'holdComplete': kind = 'complete'; break;
+      default: return;
+    }
+    if (this._impacts.length >= IMPACT_MAX) this._impacts.shift();
+    this._impacts.push({ kind, spawnMs: nowMs, particleMul: Math.max(0, particleMul) });
+  }
+
+  draw(ctx, canvas, nowMs, hitX, groundY, { fever = 0, reducedFlash = false } = {}) {
     const stageW = canvas.width;
     const stageH = canvas.height;
     const barTop = 90;
     const barBottom = Math.min(groundY - 20, stageH - 40);
     const barH = barBottom - barTop;
+    const hitMidY = (barTop + barBottom) / 2;
 
     // Approach lane (subtle).
     ctx.save();
@@ -127,6 +164,16 @@ export class NoteHighway {
     laneGrad.addColorStop(1, 'rgba(255, 215, 106, 0.00)');
     ctx.fillStyle = laneGrad;
     ctx.fillRect(hitX, barTop, stageW - hitX, barH);
+
+    // Recent connects briefly brighten the hit line itself, so it reads as
+    // struck rather than just a static rail the bars slide past.
+    this._impacts = this._impacts.filter((imp) => nowMs - imp.spawnMs < IMPACT_LIFE_MS);
+    let lineBoost = 0;
+    for (const imp of this._impacts) {
+      if (!brightensLine(imp.kind)) continue;
+      const life = 1 - (nowMs - imp.spawnMs) / IMPACT_LIFE_MS;
+      if (life > lineBoost) lineBoost = life;
+    }
 
     // Hit line at Midio.
     ctx.strokeStyle = 'rgba(255, 246, 207, 0.85)';
@@ -137,9 +184,10 @@ export class NoteHighway {
     ctx.lineTo(hitX, barBottom);
     ctx.stroke();
     ctx.setLineDash([]);
-    // Glow at hit line.
-    ctx.strokeStyle = 'rgba(255, 215, 106, 0.35)';
-    ctx.lineWidth = 10;
+    // Glow at hit line -- brightens on a connect, and runs hotter at high fever.
+    const glowAlpha = capFlashAlpha(0.35 + 0.45 * lineBoost + 0.15 * fever, reducedFlash);
+    ctx.strokeStyle = `rgba(255, 215, 106, ${glowAlpha})`;
+    ctx.lineWidth = 10 + 6 * lineBoost;
     ctx.beginPath();
     ctx.moveTo(hitX, barTop);
     ctx.lineTo(hitX, barBottom);
@@ -147,7 +195,12 @@ export class NoteHighway {
 
     const visible = this.visibleNotes(nowMs, hitX, stageW);
     for (const { note, x, judged } of visible) {
-      drawBar(ctx, x, barTop, barH, note, judged, nowMs);
+      drawBar(ctx, x, barTop, barH, note, judged, nowMs, fever);
+    }
+
+    // Hit-line impact FX: tier-colored bursts/rings/fizzles from onJudge().
+    for (const imp of this._impacts) {
+      drawImpact(ctx, hitX, hitMidY, imp, nowMs, reducedFlash);
     }
 
     // Judgment flashes.
@@ -165,7 +218,80 @@ export class NoteHighway {
   }
 }
 
-function drawBar(ctx, x, top, h, note, judged, nowMs) {
+/** Which impact kinds are worth a brief hit-line brighten (misses/fizzles should not). */
+function brightensLine(kind) {
+  return kind === 'perfect' || kind === 'great' || kind === 'good' || kind === 'complete' || kind === 'tick';
+}
+
+const IMPACT_COLORS = {
+  perfect: '255,215,106', // gold
+  great: '79,216,196',    // teal
+  good: '200,200,210',    // gray
+  complete: '255,215,106',
+  sour: '255,90,110',     // red
+  miss: '255,90,110',
+  tick: '255,215,106',
+};
+
+/** One hit-line impact: burst + expanding ring + radial sparks for the big
+ *  tiers, a modest ring for great, a small pop for good, a dim fizzle for
+ *  misses/sour, and a tiny spark for hold ticks. All alpha capped through
+ *  capFlashAlpha so reduced-flash never sees a spike here either. */
+function drawImpact(ctx, x, y, imp, nowMs, reducedFlash) {
+  const age = nowMs - imp.spawnMs;
+  const life = 1 - age / IMPACT_LIFE_MS; // 1 at spawn -> 0 at death
+  if (life <= 0) return;
+  const rgb = IMPACT_COLORS[imp.kind] || IMPACT_COLORS.good;
+  const mul = Math.max(0.3, Math.min(2.5, imp.particleMul));
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+
+  if (imp.kind === 'perfect' || imp.kind === 'complete') {
+    const burstAlpha = capFlashAlpha(0.55 * life, reducedFlash);
+    const burstR = 6 + 22 * (1 - life);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, burstR);
+    g.addColorStop(0, `rgba(${rgb},${burstAlpha})`);
+    g.addColorStop(1, `rgba(${rgb},0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, burstR, 0, Math.PI * 2); ctx.fill();
+
+    const ringR = 4 + 34 * (1 - life);
+    ctx.strokeStyle = `rgba(${rgb},${capFlashAlpha(0.6 * life, reducedFlash)})`;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(x, y, ringR, 0, Math.PI * 2); ctx.stroke();
+
+    const sparkCount = Math.round(SPARK_BASE_COUNT * mul);
+    for (let i = 0; i < sparkCount; i++) {
+      const a = (i / sparkCount) * Math.PI * 2 + imp.spawnMs * 0.0003;
+      const r = (10 + 30 * (1 - life));
+      const sx = x + Math.cos(a) * r;
+      const sy = y + Math.sin(a) * r * 0.6; // squashed vertically, reads as sparks not a full sphere
+      ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.8 * life, reducedFlash)})`;
+      ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
+    }
+  } else if (imp.kind === 'great') {
+    const ringR = 4 + 26 * (1 - life);
+    ctx.strokeStyle = `rgba(${rgb},${capFlashAlpha(0.55 * life, reducedFlash)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, ringR, 0, Math.PI * 2); ctx.stroke();
+  } else if (imp.kind === 'good') {
+    const popR = 4 + 10 * (1 - life);
+    ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.35 * life, reducedFlash)})`;
+    ctx.beginPath(); ctx.arc(x, y, popR, 0, Math.PI * 2); ctx.fill();
+  } else if (imp.kind === 'tick') {
+    ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.7 * life, reducedFlash)})`;
+    ctx.fillRect(x - 2, y - 2, 4, 4);
+  } else { // sour | miss: a dim red fizzle, never a bright pop
+    const fizzleR = 3 + 8 * (1 - life);
+    ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.22 * life, reducedFlash)})`;
+    ctx.beginPath(); ctx.arc(x, y, fizzleR, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawBar(ctx, x, top, h, note, judged, nowMs, fever = 0) {
   const isJump = note.isJump || note.kind === 'kick';
   const width = isJump ? 10 : note.kind === 'drive' ? 5 : 7;
   const vel = note.vel ?? 0.7;
@@ -177,16 +303,19 @@ function drawBar(ctx, x, top, h, note, judged, nowMs) {
   else if (judged) alpha = 0.35;
 
   // Color by kind: jump/kick = gold (Midio), beat = cyan, drive = pink.
+  // Fever runs the glow hotter -- the lane itself looks like it's catching
+  // fire during a hot streak, not just the impacts at the hit line.
+  const glowMul = 1 + 0.8 * fever;
   let fill, glow;
   if (isJump) {
     fill = `rgba(255, 215, 106, ${alpha})`;
-    glow = `rgba(255, 180, 60, ${0.45 * alpha})`;
+    glow = `rgba(255, 180, 60, ${0.45 * alpha * glowMul})`;
   } else if (note.kind === 'drive') {
     fill = `rgba(255, 90, 140, ${alpha})`;
-    glow = `rgba(255, 90, 140, ${0.35 * alpha})`;
+    glow = `rgba(255, 90, 140, ${0.35 * alpha * glowMul})`;
   } else {
     fill = `rgba(122, 209, 255, ${alpha})`;
-    glow = `rgba(122, 209, 255, ${0.35 * alpha})`;
+    glow = `rgba(122, 209, 255, ${0.35 * alpha * glowMul})`;
   }
 
   // Soft glow.

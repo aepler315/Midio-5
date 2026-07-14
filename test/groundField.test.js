@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GroundField, rippleOffsetAt } from '../src/world/GroundField.js';
+import { GroundField, rippleOffsetAt, kickGlowAt } from '../src/world/GroundField.js';
 import { Conductor } from '../src/core/Conductor.js';
 import { makeNoteEvent, Role } from '../src/core/NoteEvent.js';
 
@@ -321,4 +321,79 @@ test('a second pulseAt on the same slice before the first resolves still recover
   }
   assert.ok(ranWithoutThrowing);
   assert.ok(Math.abs(gf.heightAt(50) - BASE_Y) < 5, 'should still settle back near baseline eventually');
+});
+
+test('kickGlowAt has bounded support in time: 0 before the wavefront arrives, 0 long after it settles', () => {
+  const glow = { originWorldX: 1000, startMs: 0, strength: 1 };
+  assert.equal(kickGlowAt(1000 + 5000, 10, glow), 0);
+  assert.equal(kickGlowAt(1000, 5000, glow), 0);
+});
+
+test('kickGlowAt is symmetric in distance from the origin (radial, direction-agnostic)', () => {
+  const glow = { originWorldX: 500, startMs: 0, strength: 0.8 };
+  for (const [d, t] of [[50, 60], [120, 140], [200, 220]]) {
+    const left = kickGlowAt(500 - d, t, glow);
+    const right = kickGlowAt(500 + d, t, glow);
+    assert.ok(Math.abs(left - right) < 1e-9, `d=${d} t=${t}: left=${left} right=${right}`);
+  }
+});
+
+test('kickGlowAt peaks right as the front arrives and never exceeds strength', () => {
+  const glow = { originWorldX: 0, startMs: 0, strength: 1 };
+  let maxAbs = 0;
+  for (let d = 0; d <= 300; d += 10) {
+    for (let t = 0; t <= 500; t += 10) {
+      maxAbs = Math.max(maxAbs, kickGlowAt(d, t, glow));
+    }
+  }
+  assert.ok(maxAbs <= 1 + 1e-9, `expected bounded by strength=1, got ${maxAbs}`);
+  assert.ok(maxAbs > 0.9, `expected the pulse to peak near 1 right at the front, got ${maxAbs}`);
+});
+
+test('kickGlow() lights render bars near the origin, but heightAt (physics) stays untouched', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  let t = 0;
+  gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+  const physicsBefore = gf.heightAt(100);
+  gf.kickGlow(100, t, 1);
+
+  let sawGlow = false;
+  while (t < 400) {
+    t += 8.33;
+    gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+    assert.equal(gf.heightAt(100), physicsBefore, 'a kick glow must never move the physics reference');
+    const bars = gf.visibleBars(0, 220, 1280);
+    const near = bars.find((b) => Math.abs(b.x - (100 + 220)) < 45);
+    if (near && near.glow > 0.05) sawGlow = true;
+  }
+  assert.ok(sawGlow, 'expected a lit bar near the kick origin');
+});
+
+test('kickGlow() fully fades after its life -- glow returns to 0, no residual', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  gf.update(0, STEP_S, 0, fakeEnergyCurves(0));
+  gf.kickGlow(100, 0, 1);
+
+  let t = 0;
+  while (t < 1000) {
+    t += 8.33;
+    gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+  }
+  const bars = gf.visibleBars(0, 220, 1280);
+  for (const bar of bars) assert.equal(bar.glow, 0, `bar at x=${bar.x} should be fully dark after the glow's life`);
+});
+
+test('a fast combo of kicks never exceeds GLOW_MAX_ACTIVE tracked glow records', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  gf.update(0, STEP_S, 0, fakeEnergyCurves(0));
+  for (let i = 0; i < 10; i++) gf.kickGlow(100 + i * 10, i * 5, 1);
+  assert.ok(gf._glows.length <= 3);
+});
+
+test('kickGlow with zero or negative vel is a no-op', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  gf.update(0, STEP_S, 0, fakeEnergyCurves(0));
+  gf.kickGlow(100, 0, 0);
+  gf.kickGlow(100, 0, -1);
+  assert.equal(gf._glows.length, 0);
 });

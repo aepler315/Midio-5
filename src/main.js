@@ -16,12 +16,13 @@ import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
-import { getReducedFlash } from './ui/Accessibility.js';
+import { getReducedFlash, setReducedFlash } from './ui/Accessibility.js';
 import { PerfGovernor } from './render/PerfGovernor.js';
 import {
   getStoredInputOffsetMs, setStoredInputOffsetMs, hasCalibrated, markCalibrated, runCalibrationScreen,
 } from './ui/InputCalibration.js';
 import { LoadingShow } from './ui/LoadingShow.js';
+import { DIFFICULTIES } from './sim/TapChart.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -47,6 +48,8 @@ const fontBarBtnEl = document.getElementById('fontBarBtn');
 const fontNameEl = document.getElementById('fontName');
 const settingsBtnEl = document.getElementById('settingsBtn');
 const fullscreenBtnEl = document.getElementById('fullscreenBtn');
+const loaderDiffPickerEl = document.getElementById('loaderDiffPicker');
+const hudDiffPickerEl = document.getElementById('diffPicker');
 const trackBadgeEl = document.getElementById('trackBadge');
 const trackBadgeBtnEl = document.getElementById('trackBadgeBtn');
 const trackListEl = document.getElementById('trackList');
@@ -74,6 +77,7 @@ const auditionPanelEl = document.getElementById('auditionPanel');
 const auditionCanvasEl = document.getElementById('auditionCanvas');
 const auditionTextEl = document.getElementById('auditionText');
 const auditionBarFillEl = document.getElementById('auditionBarFill');
+const tapReadoutEl = document.getElementById('tapReadout'); // no matching HUD element yet; every use is null-guarded
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -95,6 +99,10 @@ let rafHandle = null; // tracks the pending frame() call so a mid-song file
                        // second one alongside it
 let fontModalView = 'list'; // 'list' (visible fonts, click-to-hide) | 'hidden' (hidden fonts, click-to-unhide)
 let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted accessibility toggle
+// Set per load path (true only for raw decoded audio, which already has
+// every voice baked into the buffer) and read by applySynthMutePolicy().
+let muteTimelineSynth = false;
+let difficulty = 'medium'; // 'easy' | 'medium' | 'hard' -- matches index.html's default-active diffPicker button
 // Input latency offset (ms, applied at DOM stamp time): seeded from storage,
 // set by the one-time calibration screen, refined silently in-game by
 // Simulation's LatencyCalibrator and persisted as refinements land.
@@ -133,7 +141,6 @@ async function bootAudio() {
   sf2Engine = new Sf2Synth(audioEngine);
   synth = new SynthRouter(fallback);
   synth.setSf2Engine(sf2Engine);
-  sfx = new SfxEngine(audioEngine);
   // Connect exactly once: `synth`/`conductor` are both persistent
   // singletons for the lifetime of the page (bootAudio itself only ever
   // runs once, guarded by the early return above), so a second connect —
@@ -224,6 +231,11 @@ function applySynthMutePolicy() {
   // the unwanted metronome layer. MIDI and the procedural demo need the synth.
   if (synth) synth.enabled = !muteTimelineSynth;
 }
+
+// The tapScorer/highway grade path isn't wired to real input yet (see
+// Simulation.drainSfx) -- this stays a no-op until that lands, rather than
+// fabricating a readout for numbers that never move.
+function updateTapHud() {}
 
 function setDifficulty(next) {
   if (!DIFFICULTIES.includes(next)) return;
@@ -483,6 +495,7 @@ function startTimeline(timelineData) {
     canvasHeight: canvas.height,
     customBiome: timelineData.customBiome || null,
     inputOffsetMs,
+    difficulty,
   });
   sim.perf = perfGovernor;
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
@@ -544,6 +557,7 @@ async function loadMidiFile(file) {
     rememberCustomBiome(paramBus, data.customBiome);
     // Ratings gate the start (no more mid-song audition lag): the percussion
     // loading show entertains while every font auditions against THIS midi.
+    muteTimelineSynth = false;
     await startWithAuditionGate(data, gen);
   } catch (err) {
     console.error('[MIDI load failed]', err);
@@ -582,6 +596,10 @@ async function loadAudioFile(file) {
   if (data.freeTime) {
     console.warn(`Low tempo confidence (${data.confidence.toFixed(2)}) — switching to free-time, kick-reactive jumps.`);
   }
+  // Raw audio already has every voice baked into the decoded buffer —
+  // stacking the synth's pseudo-onset voicing on top is the unwanted
+  // synthetic hi-hat/click layer, so the timeline synth stays silent here.
+  muteTimelineSynth = true;
   startTimeline(data);
   // Raw audio is its own sound source — font fit scores from the previous
   // MIDI would be stale noise here, so drop them.
@@ -596,6 +614,7 @@ async function loadDemo() {
   const data = buildDemoTimeline({});
   data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
   // The demo is synth-voiced just like a MIDI file, so it gets the same gate.
+  muteTimelineSynth = false;
   await startWithAuditionGate(data, gen);
 }
 

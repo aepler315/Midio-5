@@ -89,6 +89,24 @@ test('trigger() + update() reproduces the snapEnvelope shape and never exceeds 1
   assert.ok(peak > 0.9, `expected the snap to peak near 1, got ${peak}`);
 });
 
+test('LightRig.update: omitted fever param is back-compat (defaults to 0, matches explicit 0)', () => {
+  const a = new LightRig(5), b = new LightRig(5);
+  for (let i = 0; i < 120; i++) {
+    a.update(i * 16.7, 1 / 60, 500, 0.6, 1);
+    b.update(i * 16.7, 1 / 60, 500, 0.6, 1, 0);
+  }
+  assert.ok(Math.abs(a.heat - b.heat) < 1e-9);
+});
+
+test('LightRig.update: fever pushes heat up even through a calm section', () => {
+  const calm = new LightRig(6), calmHot = new LightRig(6);
+  for (let i = 0; i < 600; i++) {
+    calm.update(i * 16.7, 1 / 60, 500, 1, 1, 0);       // fully calm, no fever
+    calmHot.update(i * 16.7, 1 / 60, 500, 1, 1, 1);     // fully calm, max fever
+  }
+  assert.ok(calmHot.heat > calm.heat + 0.1, `fever should raise heat despite calmLevel=1, got calm=${calm.heat} vs calmHot=${calmHot.heat}`);
+});
+
 test('LightRig.draw never throws with degenerate canvas dims, and scales beam count with particleMul', () => {
   const rig = new LightRig(4);
   for (let i = 0; i < 60; i++) rig.update(i * 16.7, 1 / 60, 500, 0, 1); // hot: full beam count present

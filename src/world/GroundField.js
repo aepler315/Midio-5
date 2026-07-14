@@ -42,6 +42,17 @@ const RIPPLE_AMPLITUDE_PX = 11;      // peak per-bar bob at strength=1
 const RIPPLE_MAX_ACTIVE = 4;         // hard cap on concurrently-tracked ripples (oldest shed first)
 const RIPPLE_SOFTCAP_PX = 20;        // tanh compressive ceiling on the SUMMED offset at a bar
 
+// Kick ground glow: a brightness pulse (not a height wave) that races
+// outward through the EQ-bar ground on every bass-drum hit, same traveling-
+// front shape as the landing ripple above, but painted as an emissive rim
+// on visibleBars() rather than a positional offset -- heightAt() (physics)
+// is untouched by design, same discipline as the ripple and the buzz.
+const GLOW_WAVE_SPEED_PX_S = 900;    // faster than the ripple -- a kick reads instantly, not a rolling thud
+const GLOW_DECAY_TAU_SEC = 0.09;     // local brightness decay once the front passes a bar
+const GLOW_LOCAL_LIFE_SEC = 0.30;    // beyond this a bar's contribution is exactly 0
+const GLOW_TOTAL_LIFE_MS = 380;      // hard wall-clock cap on a glow record's life
+const GLOW_MAX_ACTIVE = 3;           // hard cap on concurrently-tracked glow pulses (oldest shed first)
+
 /**
  * Pure per-ripple contribution at a given worldX/time. `ripple` =
  * { originWorldX, startMs, strength } (0..1 strength). The wavefront
@@ -59,6 +70,21 @@ export function rippleOffsetAt(worldX, nowMs, ripple) {
   if (tauLocal < 0 || tauLocal > RIPPLE_LOCAL_LIFE_SEC) return 0;
   const envelope = Math.exp(-tauLocal / RIPPLE_DECAY_TAU_SEC);
   return ripple.strength * RIPPLE_AMPLITUDE_PX * envelope * Math.sin(tauLocal * RIPPLE_OSC_HZ * 2 * Math.PI);
+}
+
+/**
+ * Pure per-glow brightness contribution at a given worldX/time, 0..1.
+ * `glow` = { originWorldX, startMs, strength } (0..1 strength). Same
+ * traveling-front shape as rippleOffsetAt (causal, bounded local life) but
+ * a pure exponential decay instead of a damped oscillation -- a kick reads
+ * as a bright pulse racing outward, not a bob.
+ */
+export function kickGlowAt(worldX, nowMs, glow) {
+  const distancePx = Math.abs(worldX - glow.originWorldX);
+  const ageSec = (nowMs - glow.startMs) / 1000;
+  const tauLocal = ageSec - distancePx / GLOW_WAVE_SPEED_PX_S;
+  if (tauLocal < 0 || tauLocal > GLOW_LOCAL_LIFE_SEC) return 0;
+  return glow.strength * Math.exp(-tauLocal / GLOW_DECAY_TAU_SEC);
 }
 
 class Slice {
@@ -89,6 +115,7 @@ export class GroundField {
     this._buzz = 0; // EMA of bass energy, driving a render-only micro-vibration
     this._nowMs = 0;
     this._ripples = []; // active landing-ripple records, render-only (see impulse())
+    this._glows = []; // active kick-glow records, render-only (see kickGlow())
 
     // The Unraveling (Movement V): set externally from CodaDirector.unravel
     // each frame -- the terrain-EQ slices visually flatten toward
@@ -197,10 +224,32 @@ export class GroundField {
     return RIPPLE_SOFTCAP_PX * Math.tanh(sum / RIPPLE_SOFTCAP_PX);
   }
 
+  /** A one-off kick-synced brightness pulse racing outward from worldX:
+   *  fire-and-forget, capped at GLOW_MAX_ACTIVE concurrent records (oldest
+   *  shed first). Visual only, read by visibleBars() -- never touches
+   *  heightAt()'s physics. `vel` <= 0 is a no-op. */
+  kickGlow(worldX, nowMs, vel = 1) {
+    const s = clamp01(vel);
+    if (s <= 0) return;
+    if (this._glows.length >= GLOW_MAX_ACTIVE) this._glows.shift();
+    this._glows.push({ originWorldX: worldX, startMs: nowMs, strength: s });
+  }
+
+  /** Sums every active glow's contribution at worldX, clamped to 1 -- a
+   *  simple ceiling (not softcap) since brightness, unlike a positional
+   *  offset, has no meaningful "overshoot" to compress. */
+  _glowAt(worldX, nowMs) {
+    if (this._glows.length === 0) return 0;
+    let sum = 0;
+    for (const g of this._glows) sum += kickGlowAt(worldX, nowMs, g);
+    return Math.min(1, sum);
+  }
+
   update(nowMs, dtSec, worldX, energyCurves) {
     this.justRecovered = false;
     this._nowMs = nowMs;
     if (this._ripples.length) this._ripples = this._ripples.filter((r) => nowMs - r.startMs < RIPPLE_TOTAL_LIFE_MS);
+    if (this._glows.length) this._glows = this._glows.filter((g) => nowMs - g.startMs < GLOW_TOTAL_LIFE_MS);
     const bass = energyCurves ? clamp01(energyCurves.sample(1, nowMs)) : 0;
     this._buzz += (1 - Math.exp(-dtSec / 0.12)) * (bass - this._buzz);
     this._spawnSlicesUpTo(worldX + LOOKAHEAD_PX);
@@ -270,7 +319,8 @@ export class GroundField {
       if (screenXEnd < -20 || screenXStart > screenWidth + 20) continue;
       const buzz = buzzAmp > 0.15 ? buzzAmp * Math.sin(wt + s.index * 2.39996) : 0;
       const ripple = this._rippleOffset(s.worldXStart, this._nowMs);
-      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + (s.offset + ripple) * settle + buzz });
+      const glow = this._glowAt(s.worldXStart, this._nowMs);
+      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + (s.offset + ripple) * settle + buzz, glow });
     }
     return bars;
   }
