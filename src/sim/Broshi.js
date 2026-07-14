@@ -27,10 +27,10 @@ const TAIL_BASE_HZ = 1.3, TAIL_CALM_HZ = 0.32;
 const TAIL_BASE_DEG = 9, TAIL_CALM_DEG = 18;
 const DRAW_SCALE = 1.45; // ferocity pass: render-only, physics untouched
 const WEAVE_PX = 6;      // predatory side-to-side drift while trailing
-// BROSHI_BODY+BROSHI_HEAD combined local-space x-span (snout tip to rear
-// haunch, see meshes.js) -- the only source of truth for his on-screen
-// width, used by the contact shadow.
-const BODY_WIDTH_LOCAL = 53;
+// BROSHI_BODY+BROSHI_HEAD combined local-space x-span (snout spike to
+// swept tail spike, see meshes.js) -- the only source of truth for his
+// on-screen width, used by the contact shadow.
+const BODY_WIDTH_LOCAL = 57;
 const BEAT_FLASH_DECAY_SEC = 0.14;
 const CALM_LEVEL_THRESHOLD = 0.5;
 const CALM_BAR_THRESHOLD = 4;

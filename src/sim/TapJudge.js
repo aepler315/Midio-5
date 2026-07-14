@@ -12,7 +12,8 @@ export const JUDGE_WINDOW_MS = 120;
 // slightly-early press would make the whole hold unplayable.
 export const HOLD_ARM_EARLY_MS = 300;
 export const HOLD_END_GRACE_MS = 100; // releasing this close to the end still completes
-export const INPUT_OFFSET_MS = 0; // latency calibration hook, applied by the DOM handlers
+// Latency calibration lives in LatencyCalibrator/InputCalibration now; the
+// DOM handlers stamp presses with the live, persisted offset.
 
 /** The 10ms snap: every 10ms of offset costs 10 of the 100 points. */
 export function pointsForOffset(offMs) {

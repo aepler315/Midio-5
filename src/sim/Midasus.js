@@ -10,6 +10,7 @@ import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh } from '
 import { ModalRing } from '../render/oscillators.js';
 import { OrbitalDebris } from './OrbitalDebris.js';
 import { SkyVoyage } from './SkyVoyage.js';
+import { BabyStars } from './BabyStars.js';
 
 const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
@@ -62,6 +63,9 @@ export class Midasus {
     // Occasional deep-sky excursion: BiomeManager draws it (see
     // drawDeepSky), far behind the world, while this is active.
     this.voyage = new SkyVoyage(seed + 3);
+    // Three baby stars use her as their secure base: orbiting close,
+    // exploring one at a time in calm stretches, rushing home when loud.
+    this.babies = new BabyStars(seed + 4);
 
     // Rest-flight repertoire: each time she settles into a rest she picks a
     // fresh figure to trace (see _orbitAnchor), never the same one twice
@@ -238,6 +242,12 @@ export class Midasus {
       this.p = { ...this.voyage.p };
       this.hue = this.voyage.hue;
     }
+    // The babies track her wherever the frame puts her (ensemble, darts,
+    // even voyage return points); Midio is their favorite point of interest.
+    this.babies.update(nowMs, dtSec, this.p, calmLevel, {
+      x: this.midio.screenX, y: this.midio.groundY - this.midio.y - 40,
+    });
+
     if (this.voyage.justLanded) {
       // Touchdown: her core rings hard, the shards fling, and a five-point
       // slash star marks the landing (drawn by her normal pass, which has
@@ -309,5 +319,8 @@ export class Midasus {
     ctx.restore();
 
     drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot, scaleX: this.pulse * DRAW_SCALE, scaleY: this.pulse * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 70, hueSpread: 26 });
+
+    // The baby stars ride on top of her pass — small enough never to mask her.
+    this.babies.draw(ctx, this.hue, this.rest);
   }
 }

@@ -57,6 +57,23 @@
       </button>
     </div>
 
+    <div id="calibPanel" class="panel hidden">
+      <h1>CALIBRATE</h1>
+      <p class="sub">Tap <b>Space</b> (or click/touch) in time with the pulse.<br />
+        If your taps are steady but consistently late, that lag is your device's latency — it gets measured here and cancelled in-game.</p>
+      <div id="calibBeaconWrap"><div id="calibBeacon"></div></div>
+      <p id="calibStatus" class="hint">Listen…</p>
+      <button id="calibSkipBtn" type="button" class="ghostbtn">Skip (calibrate automatically while playing)</button>
+    </div>
+
+    <div id="auditionPanel" class="panel hidden">
+      <h1>TUNING THE ORCHESTRA</h1>
+      <canvas id="auditionCanvas" width="420" height="220"></canvas>
+      <p id="auditionText" class="sub">Auditioning SoundFonts…</p>
+      <div id="auditionBar"><div id="auditionBarFill"></div></div>
+      <p class="hint">Every loaded font is auditioned against this exact song and the best fit takes the stage — the show starts the moment the verdicts are in. The beat you're hearing is this song's percussion, distilled.</p>
+    </div>
+
     <div id="dragOverlay">
       <div class="dragOverlayMsg">Drop to play</div>
     </div>

@@ -31,6 +31,10 @@ import { hashSeed } from '../utils/math.js';
 import { buildNoteChart } from './NoteChart.js';
 import { TapJudge } from './TapJudge.js';
 import { ScoreKeeper } from './ScoreKeeper.js';
+import { PhraseTracker } from '../core/PhraseTracker.js';
+import { AirJumpSequencer } from './AirJumpSequencer.js';
+import { FeverMeter } from './FeverMeter.js';
+import { LatencyCalibrator } from './LatencyCalibrator.js';
 
 const WORLD_SPEED_PX_S = 220;
 const CLEAN_WINDOW_MS = 90;
@@ -38,7 +42,7 @@ const CLEAN_WINDOW_MS = 90;
 const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
 
 export class Simulation {
-  constructor(conductor, paramBus, { bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720, customBiome = null } = {}) {
+  constructor(conductor, paramBus, { bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720, customBiome = null, inputOffsetMs = 0 } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
@@ -61,6 +65,17 @@ export class Simulation {
     this.scoreKeeper = new ScoreKeeper(this.noteChart.maxPossibleScore);
     this.inputQueue = [];
     this._lastHoldComboMs = -Infinity;
+
+    // Phrase structure (4- or 8-measure groupings, chosen by the energy
+    // autocorrelation upgrade in PhraseTracker) paces the double-jump budget.
+    this.phrases = new PhraseTracker(conductor.barGrid, energyCurves);
+    this.airSeq = new AirJumpSequencer(this.phrases);
+    // Steady accurate taps × song energy = how insane the visuals get.
+    this.fever = new FeverMeter();
+    // Steady-but-biased taps are pipeline latency, not player error: the
+    // calibrator watches judged offsets and shifts the input offset to
+    // cancel a consistent lag. main.js applies offsetMs at stamp time.
+    this.latency = new LatencyCalibrator(inputOffsetMs);
 
     this.obstacles.buildCandidates(conductor.timeline, 60000 / bpm, this.midio.halfWidth, this.noteChart.holdSpans);
 
@@ -153,8 +168,14 @@ export class Simulation {
 
   /** Fan the judge's one-shot events out into score, combo, and FX. */
   _applyJudgeEvents() {
-    const particleMul = this.perf ? this.perf.particleMul : 1;
+    // Fever cranks the judgment FX too: the same perfect press throws a
+    // bigger burst at high fever than it does cold.
+    const particleMul = (this.perf ? this.perf.particleMul : 1) * (1 + 1.5 * this.fever.level);
     for (const evt of this.judge.stepEvents) {
+      this.fever.onJudge(evt);
+      if ((evt.kind === 'hit' || evt.kind === 'holdStart') && evt.offsetMs != null) {
+        this.latency.onJudgedHit(evt.offsetMs);
+      }
       // Hold ticks/completions keep the combo alive through a landing-free
       // hold (RULE 4 would otherwise break the streak mid-note) — but a
       // dense roll must not grow the streak faster than landings ever
@@ -225,13 +246,27 @@ export class Simulation {
       const ev = this.inputQueue.shift();
       if (ev.kind === 'down') {
         const res = this.judge.onTapDown(ev.tMs);
-        if (!res.startedHold) this.jump.onPlayerTap({ tMs: ev.tMs, vel: res.matchedVel ?? 0.7 });
+        if (!res.startedHold) {
+          const tapEvt = { tMs: ev.tMs, vel: res.matchedVel ?? 0.7 };
+          // A tap before the character hits the ground is a double jump —
+          // budgeted per 4-/8-measure phrase, then feet-first physics again.
+          let performed = false;
+          if (this.jump.airborne) {
+            const grant = this.airSeq.tryConsume(ev.tMs);
+            if (grant) {
+              performed = this.jump.airJump(tapEvt, grant.boostMul, grant);
+              if (!performed) this.airSeq.refund(); // landed by tMs after all
+            }
+          }
+          if (!performed) this.jump.onPlayerTap(tapEvt);
+        }
       } else {
         this.judge.onTapUp(ev.tMs);
       }
     }
     this.judge.update(nowMs);
     this._applyJudgeEvents();
+    this.fever.update(nowMs, dtSec, this.energyCurves);
     this.calm.update(nowMs, dtSec, this.energyCurves);
     this.hype.update(nowMs, dtSec, this.energyCurves);
     this.vibe.update(nowMs, dtSec, this.energyCurves);
@@ -254,6 +289,21 @@ export class Simulation {
     this.groundField.update(nowMs, dtSec, this.worldX, this.energyCurves);
     this.midio.groundY = this.groundField.heightAt(this.worldX);
     if (this.groundField.justRecovered) this.camera.shake(10);
+
+    if (this.jump.pendingAirJump) {
+      // The double jump reads as its own beat: a burst at the character's
+      // altitude, a camera kiss, and the body rings. The flourish (the
+      // phrase's last air jump) hits harder.
+      const aj = this.jump.pendingAirJump;
+      const airY = this.midio.groundY - aj.y;
+      this.impactFX.splat(this.worldX, airY);
+      this.performer.modal.excite(aj.isFlourish ? 6 : 3);
+      this.camera.punch(aj.isFlourish ? 1.05 : 1.02);
+      if (aj.isFlourish) {
+        this.impactFX.ignite(this.worldX, airY);
+        this.fever.spark(0.12); // the phrase's flourish stokes the fever directly
+      }
+    }
 
     if (this.jump.pendingLanding) {
       const nearestKick = this.conductor.nearestEventMs(
@@ -338,12 +388,13 @@ export class Simulation {
     }, this.groundField);
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
-    this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge; // drops surge every phenomena system
+    this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge + 1.1 * this.fever.level; // drops + player fever surge every phenomena system
     this.biomes.heatShimmer = this.hype.fast; // a hard hype spike shimmers the far range
     this.biomes.paletteRotation = this.keyDirector.paletteRotation; // the world transposes with the song's key
     this.biomes.dropAtMs = this.hype.dropAtMs; // drops send a heavy ring through the lake
     this.biomes.unravel = this.coda.unravel; // parallax delaminates, particle hues converge to the halo
-    this.biomes.particleMul = this.perf.particleMul; // meteor volley size scales with perf headroom
+    this.biomes.particleMul = this.perf.particleMul * (1 + this.fever.level); // perf headroom × player fever
+    this.biomes.fever = this.fever.level; // the mountains dance harder as the fever climbs
     this.biomes.midioX = this.midio.screenX; // the light rig's drop-snap points at him
     this.biomes.midioY = this.midio.renderY;
     if (this.performer.lastMilestone) {

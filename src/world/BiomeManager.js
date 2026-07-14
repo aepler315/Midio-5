@@ -12,6 +12,7 @@ import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars } from './MountainChoreo.js';
+import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { LightningFX } from './Lightning.js';
 import { MeteorShowerFX } from './MeteorShower.js';
@@ -78,6 +79,13 @@ export class BiomeManager {
     this._danceGroove = 0;
     this._danceKickMs = -Infinity;
     this._danceKickAmp = 0;
+    this.fever = 0; // player fever (Simulation.fever.level): cranks the dance and the runners
+    // Miniature characters running along the near ranges' ridges — an
+    // independent trio per range so the depths don't mirror each other.
+    this.ridgeRunners = {
+      L4: new RidgeRunners(hashSeed(`${songSeed}:runners:L4`)),
+      L5: new RidgeRunners(hashSeed(`${songSeed}:runners:L5`)),
+    };
 
     this.strips = new Map(); // biomeName -> { L2, L3, L4, L5 }
     for (const b of this.profiles) {
@@ -994,6 +1002,16 @@ export class BiomeManager {
       this._drawDancingStrip(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey);
       ctx.globalAlpha = 1;
     }
+    // Miniature characters run along the two nearest ranges' ridges,
+    // riding the same dance the columns do.
+    if (layerKey === 'L4' || layerKey === 'L5') {
+      const strip = (t > 0.5 ? stripsB : stripsA)[layerKey];
+      const cfg = DANCE_LAYERS[layerKey];
+      const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
+      this.ridgeRunners[layerKey].draw(ctx, strip, scrollX, canvas.width, canvas.height - strip.height + yOff, {
+        tSec: this.tSec, groove: this._danceGroove, kick, cfg, fever: this.fever || 0,
+      }, layerKey === 'L5' ? 0.55 : 0.4);
+    }
     ctx.restore();
   }
 
@@ -1021,7 +1039,7 @@ export class BiomeManager {
         const cw = Math.min(DANCE_COL_W, w - cx);
         const sx = x + cx;
         if (sx + cw < 0 || sx > canvas.width) continue;
-        const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg);
+        const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0);
         ctx.drawImage(strip, cx, 0, cw, strip.height, sx, baseY + dy, cw, strip.height);
       }
       x += w;

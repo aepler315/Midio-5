@@ -26,12 +26,17 @@ const IDLE_DRIVE = 0.15;        // the ranges never stand perfectly still
  * @param {number} groove   smoothed 0..1 global energy (calm-attenuated)
  * @param {number} kick     0..1 kick envelope, already layer-delayed
  * @param {object} cfg      a DANCE_LAYERS entry
+ * @param {number} fever    0..1 player fever — steady accurate taps at high
+ *                          song energy crank the whole dance up to ~2.8×
  */
-export function danceOffset(stripX, tSec, groove, kick, cfg) {
+export function danceOffset(stripX, tSec, groove, kick, cfg, fever = 0) {
+  const mul = 1 + FEVER_DANCE_GAIN * clamp01(fever);
   const drive = IDLE_DRIVE + (1 - IDLE_DRIVE) * clamp01(groove);
   const wave = Math.sin(stripX / cfg.waveLen + tSec * cfg.waveHz * 2 * Math.PI + cfg.phase);
-  return cfg.waveAmp * drive * wave - cfg.bounceAmp * clamp01(kick);
+  return (cfg.waveAmp * drive * wave - cfg.bounceAmp * clamp01(kick)) * mul;
 }
+
+export const FEVER_DANCE_GAIN = 1.8;
 
 /**
  * Kick envelope at `tauMs` after the (layer-delayed) hit: a 40 ms snap up,

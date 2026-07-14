@@ -52,6 +52,8 @@ export class JumpController {
     this.pendingLanding = null;
     /** Set for one step when a kick is skipped (half-time) — routes to landing FX instead. */
     this.pendingGhostKick = null;
+    /** Set for one step when an air jump fires — {y, index, isFlourish} for FX. */
+    this.pendingAirJump = null;
   }
 
   get bpm() { return 60000 / this.beatPeriodMs; }
@@ -111,6 +113,39 @@ export class JumpController {
     this._launchOrRetarget(evt, tMs);
   }
 
+  /**
+   * Double jump: a tap before the character hits the ground relaunches the
+   * arc from the CURRENT height — C0-continuous, no teleport. The new arc's
+   * apex is the current height plus a boost, and the arc is entered at the
+   * launch-phase point whose height equals where the character already is,
+   * so y never snaps. The budget/sequence policy lives in AirJumpSequencer;
+   * this only refuses when the character turns out to be grounded by tMs
+   * (the caller then refunds and falls through to a normal ground launch).
+   * @returns {boolean} true if the air jump fired
+   */
+  airJump(evt, boostMul = 1, meta = {}) {
+    const tMs = evt.tMs;
+    this.update(tMs); // the press may postdate the landing this step hasn't resolved yet
+    if (this.state !== 'AIR') return false;
+
+    const yNow = this.y;
+    const extra = this.hBase * (0.5 + 0.6 * evt.vel) * boostMul * this.P.live.jumpHeight;
+    const H2 = (yNow + extra) / (1 - W);
+    const D2 = clamp(0.9 * this.beatPeriodMs, D_MIN, D_MAX);
+    // Launch-phase height is Ha*(1-(1-p)^2); invert for the p where it equals yNow.
+    const p = 1 - Math.sqrt(Math.max(0, 1 - yNow / ((1 - W) * H2)));
+    this.compress = null;
+    this._pendingLaunch = null;
+    this.lastLaunchVel = evt.vel;
+    this.state = 'AIR';
+    this.jumpStartMs = tMs - p * A * D2;
+    this.H = H2;
+    this.D = D2;
+    this.y = yNow;
+    this.pendingAirJump = { y: yNow, index: meta.index ?? 0, isFlourish: !!meta.isFlourish };
+    return true;
+  }
+
   _updateBeatPeriod(nowMs) {
     if (this.lastKickMs != null) {
       const interval = nowMs - this.lastKickMs;
@@ -156,6 +191,7 @@ export class JumpController {
   clearFrameFlags() {
     this.pendingLanding = null;
     this.pendingGhostKick = null;
+    this.pendingAirJump = null;
   }
 
   update(nowMs) {

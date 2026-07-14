@@ -573,3 +573,44 @@ html, body {
 .tGood { color: #e8e6f0; }
 .tSour { color: #9e84a8; }
 .tMiss { color: #8a8794; }
+
+/* --- Calibration screen (runs once, before the first gameplay session) --- */
+#calibBeaconWrap {
+  width: 140px;
+  height: 140px;
+  margin: 18px auto 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#calibBeacon {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  border: 3px solid #ffd76a;
+  box-shadow: 0 0 34px rgba(255, 215, 106, 0.45), inset 0 0 22px rgba(255, 215, 106, 0.25);
+  will-change: transform, opacity;
+}
+#calibStatus { min-height: 1.4em; }
+
+/* --- Audition load screen (font ratings gate the show) --- */
+#auditionCanvas {
+  display: block;
+  margin: 8px auto;
+  background: transparent;
+}
+#auditionBar {
+  width: min(420px, 80%);
+  height: 6px;
+  margin: 10px auto 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+#auditionBarFill {
+  width: 0%;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #4fd8c4, #ffd76a);
+  transition: width 0.25s ease;
+}

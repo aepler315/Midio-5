@@ -18,7 +18,10 @@ import { DebugOverlay } from './ui/DebugOverlay.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
 import { getReducedFlash } from './ui/Accessibility.js';
 import { PerfGovernor } from './render/PerfGovernor.js';
-import { INPUT_OFFSET_MS } from './sim/TapJudge.js';
+import {
+  getStoredInputOffsetMs, setStoredInputOffsetMs, hasCalibrated, markCalibrated, runCalibrationScreen,
+} from './ui/InputCalibration.js';
+import { LoadingShow } from './ui/LoadingShow.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -62,6 +65,14 @@ const filmstripModalTitleEl = document.getElementById('filmstripModalTitle');
 const filmstripModalCloseEl = document.getElementById('filmstripModalClose');
 const filmstripModalImgEl = document.getElementById('filmstripModalImg');
 const filmstripModalDownloadEl = document.getElementById('filmstripModalDownload');
+const calibPanelEl = document.getElementById('calibPanel');
+const calibBeaconEl = document.getElementById('calibBeacon');
+const calibStatusEl = document.getElementById('calibStatus');
+const calibSkipBtnEl = document.getElementById('calibSkipBtn');
+const auditionPanelEl = document.getElementById('auditionPanel');
+const auditionCanvasEl = document.getElementById('auditionCanvas');
+const auditionTextEl = document.getElementById('auditionText');
+const auditionBarFillEl = document.getElementById('auditionBarFill');
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -83,6 +94,12 @@ let rafHandle = null; // tracks the pending frame() call so a mid-song file
                        // second one alongside it
 let fontModalView = 'list'; // 'list' (visible fonts, click-to-hide) | 'hidden' (hidden fonts, click-to-unhide)
 let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted accessibility toggle
+// Input latency offset (ms, applied at DOM stamp time): seeded from storage,
+// set by the one-time calibration screen, refined silently in-game by
+// Simulation's LatencyCalibrator and persisted as refinements land.
+let inputOffsetMs = getStoredInputOffsetMs();
+let loadShow = null; // percussion loading show, created in bootAudio
+let loadGen = 0;     // a newer load cancels a stale audition gate's start
 
 let simTime = 0;
 let acc = 0;
@@ -127,10 +144,76 @@ async function bootAudio() {
   // Auditions every font against each loaded MIDI and steers the library to
   // the best fit (see FontRecommender.js). Fonts dropped in mid-song get
   // auditioned against the current song as they land.
-  fontRecommender = new FontRecommender(fontLibrary, { onUpdate: () => renderFontModal() });
+  fontRecommender = new FontRecommender(fontLibrary, { onUpdate: () => { renderFontModal(); updateAuditionProgress(); } });
   fontLibrary.onAdded = (font) => fontRecommender.auditionFont(font);
   // Best-effort background load — never blocks song start (§ soundfonts/README.md).
   fontLibrary.autoLoadFromServer('/soundfonts/');
+  loadShow = new LoadingShow({
+    canvasEl: auditionCanvasEl, textEl: auditionTextEl, barFillEl: auditionBarFillEl,
+    audioEngine,
+  });
+}
+
+/** The load screen's progress line/bar, fed by the recommender's onUpdate. */
+function updateAuditionProgress() {
+  if (!loadShow || !fontRecommender) return;
+  if (!auditionPanelEl || auditionPanelEl.classList.contains('hidden')) return;
+  const s = fontRecommender.status;
+  const pending = fontLibrary?.fonts.find((f) => !f.hidden && f.review?.status === 'pending');
+  loadShow.setProgress(s.done, s.total, pending ? pending.name : '');
+}
+
+/** One-time pre-game calibration screen. Skipped for automation (headless
+ *  smoke runs can't tap in time) — the in-game calibrator covers them. */
+async function maybeRunCalibration() {
+  if (hasCalibrated() || navigator.webdriver) return;
+  loaderEl.classList.add('hidden');
+  calibPanelEl?.classList.remove('hidden');
+  try {
+    const off = await runCalibrationScreen({
+      beaconEl: calibBeaconEl, statusEl: calibStatusEl, skipBtnEl: calibSkipBtnEl,
+      tapTargetEl: calibPanelEl, audioEngine,
+    });
+    if (off !== null) {
+      inputOffsetMs = off;
+      setStoredInputOffsetMs(off);
+    }
+    markCalibrated();
+  } finally {
+    calibPanelEl?.classList.add('hidden');
+  }
+}
+
+/**
+ * Font ratings used to run behind the live song and lagged it badly (each
+ * audition is an offline render on this same thread). Now they gate the
+ * start: the percussion loading show plays this song's distilled beat while
+ * the verdicts land, and the game only starts once the ratings are done —
+ * with the best-fit font already on stage. No fonts loaded → no gate.
+ */
+async function startWithAuditionGate(data, gen) {
+  const hasFonts = fontRecommender?.available && fontLibrary
+    && fontLibrary.fonts.some((f) => !f.hidden);
+  if (!hasFonts) {
+    startTimeline(data);
+    // Still arms the audition plan so fonts dropped in mid-song get rated.
+    fontRecommender?.auditionForTimeline(data);
+    return;
+  }
+  stopTimeline(); // a mid-song drop goes quiet while its ratings run
+  hudEl.classList.add('hidden');
+  loaderEl.classList.add('hidden');
+  auditionPanelEl?.classList.remove('hidden');
+  const session = loadShow?.start(data);
+  loadShow?.setProgress(0, fontLibrary.fonts.filter((f) => !f.hidden).length, '');
+  try {
+    await fontRecommender.auditionForTimeline(data);
+  } finally {
+    loadShow?.stop(session);
+    if (gen === loadGen) auditionPanelEl?.classList.add('hidden');
+  }
+  if (gen !== loadGen) return; // another file dropped during the gate
+  startTimeline(data);
 }
 
 function applyActiveFont(active) {
@@ -322,6 +405,7 @@ function stopTimeline() {
   renderer = null;
   completePanelEl.classList.add('hidden');
   debugOverlayEl.classList.add('hidden');
+  auditionPanelEl?.classList.add('hidden');
 }
 
 function startTimeline(timelineData) {
@@ -335,6 +419,7 @@ function startTimeline(timelineData) {
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
     customBiome: timelineData.customBiome || null,
+    inputOffsetMs,
   });
   sim.perf = perfGovernor;
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
@@ -376,6 +461,8 @@ function startTimeline(timelineData) {
 async function loadMidiFile(file) {
   try {
     await bootAudio();
+    await maybeRunCalibration();
+    const gen = ++loadGen;
     const buf = await file.arrayBuffer();
     if (!buf || buf.byteLength < 14) {
       throw new Error('File is empty or too small to be a MIDI file');
@@ -389,10 +476,9 @@ async function loadMidiFile(file) {
     // of a .mid produces a unique world without changing stock demo casting.
     data.customBiome = generateCustomBiomeFromMidi(data, file.name || 'MIDI');
     rememberCustomBiome(paramBus, data.customBiome);
-    startTimeline(data);
-    // Background: audition every loaded font against THIS midi and steer to
-    // the best fit. Never blocks the song, cancels itself on the next drop.
-    fontRecommender?.auditionForTimeline(data);
+    // Ratings gate the start (no more mid-song audition lag): the percussion
+    // loading show entertains while every font auditions against THIS midi.
+    await startWithAuditionGate(data, gen);
   } catch (err) {
     console.error('[MIDI load failed]', err);
     progressEl.classList.add('hidden');
@@ -407,6 +493,8 @@ function showProgress(text) {
 
 async function loadAudioFile(file) {
   await bootAudio();
+  await maybeRunCalibration();
+  loadGen++; // raw audio never gates, but a pending gate must not start over us
   const buf = await file.arrayBuffer();
   let audioBuffer;
   try {
@@ -437,11 +525,12 @@ async function loadAudioFile(file) {
 
 async function loadDemo() {
   await bootAudio();
+  await maybeRunCalibration();
+  const gen = ++loadGen;
   const data = buildDemoTimeline({});
   data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
-  startTimeline(data);
-  // The demo is synth-voiced just like a MIDI file, so it gets auditioned too.
-  fontRecommender?.auditionForTimeline(data);
+  // The demo is synth-voiced just like a MIDI file, so it gets the same gate.
+  await startWithAuditionGate(data, gen);
 }
 
 function handleFile(file) {
@@ -640,6 +729,15 @@ function frame(tRaf) {
   }
   dispatchJudgeSfx(judgeEventsThisFrame);
 
+  // Silent auto-calibration: when the sim's LatencyCalibrator decides the
+  // player is steady-but-late (or -early), adopt and persist the corrected
+  // offset so future presses — and future sessions — are stamped true.
+  if (sim.latency && sim.latency.lastAdjustment) {
+    inputOffsetMs = sim.latency.offsetMs;
+    setStoredInputOffsetMs(inputOffsetMs);
+    sim.latency.lastAdjustment = null;
+  }
+
   const alpha = acc / STEP_MS;
   renderer.draw(sim, alpha);
   comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
@@ -677,14 +775,14 @@ function anyModalOpen() {
 
 function pressDown(src) {
   if (!running || !sim || !audioEngine) return;
-  if (pressedSources.size === 0) sim.enqueueTap('down', audioEngine.nowMs + INPUT_OFFSET_MS);
+  if (pressedSources.size === 0) sim.enqueueTap('down', audioEngine.nowMs + inputOffsetMs);
   pressedSources.add(src);
 }
 
 function pressUp(src) {
   if (!pressedSources.delete(src)) return;
   if (pressedSources.size === 0 && sim && audioEngine) {
-    sim.enqueueTap('up', audioEngine.nowMs + INPUT_OFFSET_MS);
+    sim.enqueueTap('up', audioEngine.nowMs + inputOffsetMs);
   }
 }
 
@@ -692,7 +790,7 @@ function pressUp(src) {
  *  browser will not deliver an 'up' for. */
 function releaseAllPresses() {
   if (pressedSources.size > 0 && sim && audioEngine) {
-    sim.enqueueTap('up', audioEngine.nowMs + INPUT_OFFSET_MS);
+    sim.enqueueTap('up', audioEngine.nowMs + inputOffsetMs);
   }
   pressedSources.clear();
 }
