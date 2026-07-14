@@ -22,6 +22,9 @@ import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
 import { hashSeed } from '../utils/math.js';
+import { buildTapChart } from './TapChart.js';
+import { NoteHighway } from '../render/NoteHighway.js';
+import { TapScorer } from './TapScorer.js';
 
 const WORLD_SPEED_PX_S = 220;
 const CLEAN_WINDOW_MS = 90;
@@ -29,11 +32,15 @@ const CLEAN_WINDOW_MS = 90;
 const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
 
 export class Simulation {
-  constructor(conductor, paramBus, { bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720, customBiome = null } = {}) {
+  constructor(conductor, paramBus, {
+    bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720,
+    customBiome = null, difficulty = 'medium', beatPeriodMs = null,
+  } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
     this.customBiome = customBiome || null;
+    this.difficulty = difficulty;
 
     this.midio = new Midio();
     this.jump = new JumpController(paramBus);
@@ -74,6 +81,20 @@ export class Simulation {
     this.worldX = 0;
     this.timeMs = 0;
 
+    // Player tap highway: density from difficulty, jump bars aligned to kicks.
+    const tapNotes = buildTapChart({
+      timeline: conductor.timeline,
+      barGrid: conductor.barGrid,
+      bpm,
+      beatPeriodMs: beatPeriodMs || (60000 / bpm),
+      durationMs: conductor.durationMs,
+      difficulty,
+    });
+    this.highway = new NoteHighway(tapNotes);
+    this.tapScorer = new TapScorer();
+    /** One-shot SFX hooks consumed by main.js each frame. */
+    this.pendingSfx = [];
+
     this.prev = this._snapshot();
     this.curr = this._snapshot();
 
@@ -88,6 +109,42 @@ export class Simulation {
     });
   }
 
+  /** Player tap (space / click / touch). Returns judgment or null. */
+  onPlayerTap(nowMs = this.timeMs) {
+    if (!this.highway) return null;
+    const hit = this.highway.tryHit(nowMs);
+    if (!hit) return null;
+    this.tapScorer.register(hit.grade);
+    this.highway.addFlash(this.midio.screenX, this.midio.groundY - 180, hit.grade, nowMs);
+    this.pendingSfx.push({ type: 'grade', grade: hit.grade, note: hit.note });
+    if (hit.grade === 'perfect' || hit.grade === 'great') {
+      this.camera.punch?.(1.02);
+    }
+    return hit;
+  }
+
+  /** Rebuild the tap chart when the player switches difficulty mid-run. */
+  setDifficulty(difficulty) {
+    this.difficulty = difficulty;
+    const bpm = 60000 / (this.jump.beatPeriodMs || 500);
+    const tapNotes = buildTapChart({
+      timeline: this.conductor.timeline,
+      barGrid: this.conductor.barGrid,
+      bpm,
+      beatPeriodMs: this.jump.beatPeriodMs,
+      durationMs: this.conductor.durationMs,
+      difficulty,
+    });
+    this.highway.setNotes(tapNotes);
+    this.tapScorer.reset();
+  }
+
+  drainSfx() {
+    const out = this.pendingSfx;
+    this.pendingSfx = [];
+    return out;
+  }
+
   step(dtMs, nowMs) {
     this.prev = this.curr;
     this.timeMs = nowMs;
@@ -98,6 +155,15 @@ export class Simulation {
     this.performer.clearFrameFlags();
 
     this.conductor.dispatchUpTo(nowMs);
+
+    // Notes that slid past the hit line without a tap → miss.
+    if (this.highway) {
+      for (const m of this.highway.autoMissPast(nowMs)) {
+        this.tapScorer.register('miss');
+        this.highway.addFlash(this.midio.screenX, this.midio.groundY - 160, 'miss', nowMs);
+        this.pendingSfx.push({ type: 'grade', grade: 'miss', note: m.note });
+      }
+    }
     this.calm.update(nowMs, dtSec, this.energyCurves);
     this.hype.update(nowMs, dtSec, this.energyCurves);
     this.vibe.update(nowMs, dtSec, this.energyCurves);

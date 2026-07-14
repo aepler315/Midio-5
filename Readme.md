@@ -24,6 +24,24 @@ a different `.mid`/audio file in at any time, even mid-song** — dragging one
 anywhere on the page (not just the loader screen) tears down whatever's
 currently playing and starts the new one immediately.
 
+**Note highway & tap densities:** vertical bars glide in from the right and
+cross Midio's hit line when you should tap (`Space`, click, or touch). Gold
+bars are jump-aligned (kick onsets). Pick **Easy / Medium / Hard** on the
+loader or in the HUD:
+
+| Density | Pattern |
+| --- | --- |
+| Easy | Metronome quarters — 1 · 2 · 3 · 4 |
+| Medium | Bass-drum (kick) hits **plus** the quarter grid |
+| Hard | Excited dual-thumb density: kicks + 16th-note drive around the bass + rhythm onsets |
+
+**Audio files** play the decoded buffer only — the synthetic hi-hat / click
+layer from the timeline synth is muted so it doesn't stack on the song. MIDI
+and the procedural demo still use the synth / SoundFont. Perfect hits play a
+coin-style chime (and other short SFX) synthesized in the Web Audio graph.
+
+**Fullscreen:** use the HUD fullscreen button (⛶) for immersive play.
+
 **MIDI → custom biome:** every dropped/uploaded `.mid` file also generates a
 unique biome profile (palette, particles, FX) from its pitch-class histogram,
 velocity, density, and role mix, and casts the whole song into that world.

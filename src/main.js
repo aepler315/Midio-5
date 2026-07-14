@@ -11,9 +11,11 @@ import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
 import { Sf2Synth } from './audio/Sf2Synth.js';
 import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
+import { SfxEngine } from './audio/SfxEngine.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
+import { DIFFICULTIES } from './sim/TapChart.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -25,6 +27,10 @@ const demoBtnEl = document.getElementById('demoBtn');
 const progressEl = document.getElementById('progressText');
 const hudEl = document.getElementById('hud');
 const comboReadoutEl = document.getElementById('comboReadout');
+const tapReadoutEl = document.getElementById('tapReadout');
+const tapGradeEl = document.getElementById('tapGrade');
+const tapScoreEl = document.getElementById('tapScore');
+const tapStreakEl = document.getElementById('tapStreak');
 const completePanelEl = document.getElementById('completePanel');
 const completeStatsEl = document.getElementById('completeStats');
 const playAgainBtnEl = document.getElementById('playAgainBtn');
@@ -36,6 +42,7 @@ const fontBarEl = document.getElementById('fontBar');
 const fontBarBtnEl = document.getElementById('fontBarBtn');
 const fontNameEl = document.getElementById('fontName');
 const settingsBtnEl = document.getElementById('settingsBtn');
+const fullscreenBtnEl = document.getElementById('fullscreenBtn');
 const trackBadgeEl = document.getElementById('trackBadge');
 const trackBadgeBtnEl = document.getElementById('trackBadgeBtn');
 const trackListEl = document.getElementById('trackList');
@@ -48,11 +55,14 @@ const fontHiddenToggleEl = document.getElementById('fontHiddenToggle');
 const fontModalFileInputEl = document.getElementById('fontModalFileInput');
 const fontModalDirInputEl = document.getElementById('fontModalDirInput');
 const fontModalDirBtnEl = document.getElementById('fontModalDirBtn');
+const loaderDiffPickerEl = document.getElementById('loaderDiffPicker');
+const hudDiffPickerEl = document.getElementById('diffPicker');
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
 let audioEngine = null;
 let synth = null;
+let sfx = null;
 let sim = null;
 let renderer = null;
 let visionLoop = null;
@@ -64,6 +74,11 @@ let rafHandle = null; // tracks the pending frame() call so a mid-song file
                        // drop can cancel the old loop instead of stacking a
                        // second one alongside it
 let fontModalView = 'list'; // 'list' (visible fonts, click-to-hide) | 'hidden' (hidden fonts, click-to-unhide)
+/** @type {'easy'|'medium'|'hard'} */
+let difficulty = 'medium';
+/** When true, the song is a raw audio file — mute the note synth so hats/clicks
+ *  don't stack on top of the decoded buffer. MIDI/demo keep the synth on. */
+let muteTimelineSynth = false;
 
 let simTime = 0;
 let acc = 0;
@@ -96,6 +111,7 @@ async function bootAudio() {
   sf2Engine = new Sf2Synth(audioEngine);
   synth = new SynthRouter(fallback);
   synth.setSf2Engine(sf2Engine);
+  sfx = new SfxEngine(audioEngine);
   // Connect exactly once: `synth`/`conductor` are both persistent
   // singletons for the lifetime of the page (bootAudio itself only ever
   // runs once, guarded by the early return above), so a second connect —
@@ -107,6 +123,65 @@ async function bootAudio() {
   // Best-effort background load — never blocks song start (§ soundfonts/README.md).
   fontLibrary.autoLoadFromServer('/soundfonts/');
 }
+
+function applySynthMutePolicy() {
+  // Audio-file playback already has the song in the buffer — stacking the
+  // synthetic hi-hat / click / kick voices on top is what the player hears as
+  // the unwanted metronome layer. MIDI and the procedural demo need the synth.
+  if (synth) synth.enabled = !muteTimelineSynth;
+}
+
+function setDifficulty(next) {
+  if (!DIFFICULTIES.includes(next)) return;
+  difficulty = next;
+  for (const root of [loaderDiffPickerEl, hudDiffPickerEl]) {
+    if (!root) continue;
+    root.querySelectorAll('.diffBtn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.diff === difficulty);
+    });
+  }
+  if (sim && typeof sim.setDifficulty === 'function') sim.setDifficulty(difficulty);
+}
+
+function wireDiffPicker(root) {
+  if (!root) return;
+  root.addEventListener('click', (e) => {
+    const btn = e.target.closest('.diffBtn');
+    if (!btn) return;
+    setDifficulty(btn.dataset.diff);
+  });
+}
+wireDiffPicker(loaderDiffPickerEl);
+wireDiffPicker(hudDiffPickerEl);
+
+// --- Fullscreen ---
+function isFullscreen() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+async function toggleFullscreen() {
+  const root = document.documentElement;
+  try {
+    if (isFullscreen()) {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+    } else if (root.requestFullscreen) {
+      await root.requestFullscreen();
+    } else if (root.webkitRequestFullscreen) {
+      await root.webkitRequestFullscreen();
+    }
+  } catch (err) {
+    console.warn('[fullscreen]', err);
+  }
+  updateFullscreenBtn();
+}
+function updateFullscreenBtn() {
+  if (!fullscreenBtnEl) return;
+  fullscreenBtnEl.title = isFullscreen() ? 'Exit fullscreen' : 'Fullscreen';
+  fullscreenBtnEl.setAttribute('aria-pressed', isFullscreen() ? 'true' : 'false');
+}
+if (fullscreenBtnEl) fullscreenBtnEl.addEventListener('click', () => toggleFullscreen());
+document.addEventListener('fullscreenchange', updateFullscreenBtn);
+document.addEventListener('webkitfullscreenchange', updateFullscreenBtn);
 
 function applyActiveFont(active) {
   if (sf2Engine) {
@@ -256,13 +331,16 @@ function stopTimeline() {
 function startTimeline(timelineData) {
   stopTimeline();
   fitCanvas();
+  applySynthMutePolicy();
   conductor.load(timelineData);
   sim = new Simulation(conductor, paramBus, {
     bpm: timelineData.bpm || 120,
+    beatPeriodMs: timelineData.beatPeriodMs || null,
     energyCurves: timelineData.energyCurves || null,
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
     customBiome: timelineData.customBiome || null,
+    difficulty,
   });
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
   renderer = createRenderer(canvas, rendererMode);
@@ -278,6 +356,8 @@ function startTimeline(timelineData) {
 
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
+  if (tapReadoutEl) tapReadoutEl.classList.remove('hidden');
+  updateTapHud();
   rafHandle = requestAnimationFrame(frame);
 
   // Exposed for the debug overlay and for smoke-testing internals.
@@ -286,9 +366,10 @@ function startTimeline(timelineData) {
   // (rather than inferring it from run rates, which headless Chromium's
   // rAF throttling and AudioContext clock drift make unreliable to assert on).
   window.__SMW = {
-    conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary, sf2Engine,
+    conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, sfx, fontLibrary, sf2Engine,
     renderer, rendererMode, rendererBackend: renderer?.backend || 'canvas',
     customBiome: timelineData.customBiome || null,
+    difficulty, muteTimelineSynth,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
   };
@@ -297,6 +378,7 @@ function startTimeline(timelineData) {
 async function loadMidiFile(file) {
   try {
     await bootAudio();
+    muteTimelineSynth = false; // MIDI needs the synth / soundfont
     const buf = await file.arrayBuffer();
     if (!buf || buf.byteLength < 14) {
       throw new Error('File is empty or too small to be a MIDI file');
@@ -325,6 +407,9 @@ function showProgress(text) {
 
 async function loadAudioFile(file) {
   await bootAudio();
+  // The decoded buffer IS the music — disable the timeline synth so synthetic
+  // hi-hats / clicks / kicks are not layered on top of the real audio.
+  muteTimelineSynth = true;
   const buf = await file.arrayBuffer();
   let audioBuffer;
   try {
@@ -352,6 +437,7 @@ async function loadAudioFile(file) {
 
 async function loadDemo() {
   await bootAudio();
+  muteTimelineSynth = false;
   const data = buildDemoTimeline({});
   data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
   startTimeline(data);
@@ -537,6 +623,20 @@ function frame(tRaf) {
     if (sim.performer.milestoneFlash) milestoneFiredThisFrame = true;
   }
 
+  // Drain judgment SFX produced during the sim steps (hits + auto-misses).
+  // Auto-miss thuds are rate-limited so a hard chart doesn't rattle the bus.
+  if (sfx && sim) {
+    let missPlayed = false;
+    for (const ev of sim.drainSfx()) {
+      if (ev.type !== 'grade') continue;
+      if (ev.grade === 'miss') {
+        if (missPlayed) continue;
+        missPlayed = true;
+      }
+      sfx.playGrade(ev.grade, ev.note);
+    }
+  }
+
   const alpha = acc / STEP_MS;
   renderer.draw(sim, alpha);
   comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
@@ -545,6 +645,7 @@ function frame(tRaf) {
     void comboReadoutEl.offsetWidth; // restart the CSS animation even if it's still mid-flight
     comboReadoutEl.classList.add('milestone-pulse');
   }
+  updateTapHud();
 
   visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();
@@ -557,23 +658,75 @@ function frame(tRaf) {
   rafHandle = requestAnimationFrame(frame);
 }
 
+function updateTapHud() {
+  if (!sim?.tapScorer || !tapReadoutEl) return;
+  const s = sim.tapScorer;
+  if (tapScoreEl) tapScoreEl.textContent = String(s.score);
+  if (tapStreakEl) tapStreakEl.textContent = s.streak > 1 ? `${s.streak} streak` : '';
+  if (tapGradeEl && s.lastGrade) {
+    tapGradeEl.textContent = s.lastGrade.toUpperCase();
+    tapGradeEl.className = `grade-${s.lastGrade}`;
+  }
+}
+
+/** Player rhythm input — space / click / touch. Ignores UI chrome clicks. */
+function handlePlayerTap(e) {
+  if (!running || !sim) return;
+  // Don't steal taps from buttons, inputs, or open modals.
+  if (e && e.target) {
+    const t = e.target;
+    if (t.closest && (
+      t.closest('button') || t.closest('input') || t.closest('label')
+      || t.closest('.modalBackdrop') || t.closest('#fontBar') || t.closest('#loader')
+    )) return;
+  }
+  // Prefer audio clock for judgment; fall back to sim time.
+  const nowMs = audioEngine ? audioEngine.nowMs : sim.timeMs;
+  sim.onPlayerTap(nowMs);
+  updateTapHud();
+}
+
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (fontModalEl && !fontModalEl.classList.contains('hidden')) closeFontModal();
     return;
   }
-  if (e.key === 'f' || e.key === 'F') { openFontModal('list'); return; }
+  // Space / arrow-up = tap. Don't fire when typing into an input.
+  if ((e.code === 'Space' || e.key === ' ' || e.key === 'ArrowUp') && running) {
+    const tag = (e.target && e.target.tagName) || '';
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+      e.preventDefault();
+      handlePlayerTap(e);
+      return;
+    }
+  }
+  if (e.key === 'f' || e.key === 'F') {
+    // Shift+F or plain F still opens SoundFonts; use the button for fullscreen.
+    openFontModal('list');
+    return;
+  }
   if (!debugOverlay) return;
   if (e.key === '`') { debugOverlay.toggle(); }
   else if (e.key === 'v' || e.key === 'V') { debugOverlay.toggleVision(); }
   else if (e.key === 't' || e.key === 'T') { toggleTrackList(); }
 });
 
+// Click / touch anywhere on the stage (not HUD chrome) counts as a tap.
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button != null && e.button !== 0) return;
+  handlePlayerTap(e);
+});
+
 function onSongComplete() {
   running = false;
   hudEl.classList.add('hidden');
   const combo = sim.comboSystem;
-  completeStatsEl.textContent = `Peak streak: ${combo.streak} · Final combo: ×${combo.displayM.toFixed(1)}`;
+  const tap = sim.tapScorer ? sim.tapScorer.summary() : null;
+  const tapLine = tap
+    ? ` · Taps: ${tap.score} pts (${Math.round(tap.accuracy * 100)}% · ${tap.perfect}P/${tap.great}G/${tap.ok}OK/${tap.miss}M · streak ${tap.streak})`
+    : '';
+  completeStatsEl.textContent =
+    `Peak streak: ${combo.streak} · Final combo: ×${combo.displayM.toFixed(1)}${tapLine}`;
   // Mario Paint title-screen treatment: each letter wobbles on its own beat.
   const title = completePanelEl.querySelector('h1');
   if (title && !title.dataset.wobbled) {
