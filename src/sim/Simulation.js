@@ -30,11 +30,15 @@ import { HighlightReel } from '../render/HighlightReel.js';
 import { hashSeed } from '../utils/math.js';
 import { buildNoteChart } from './NoteChart.js';
 import { TapJudge } from './TapJudge.js';
+import { buildTapChart } from './TapChart.js';
+import { NoteHighway } from '../render/NoteHighway.js';
+import { TapScorer } from './TapScorer.js';
 import { ScoreKeeper } from './ScoreKeeper.js';
 import { PhraseTracker } from '../core/PhraseTracker.js';
 import { AirJumpSequencer } from './AirJumpSequencer.js';
 import { FeverMeter } from './FeverMeter.js';
 import { LatencyCalibrator } from './LatencyCalibrator.js';
+import { WeatherDirector } from './WeatherDirector.js';
 
 const WORLD_SPEED_PX_S = 220;
 const CLEAN_WINDOW_MS = 90;
@@ -44,7 +48,7 @@ const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
 export class Simulation {
   constructor(conductor, paramBus, {
     bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720,
-    customBiome = null, difficulty = 'medium', beatPeriodMs = null,
+    customBiome = null, difficulty = 'medium', beatPeriodMs = null, inputOffsetMs = 0,
   } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
@@ -94,6 +98,8 @@ export class Simulation {
     this.apotheosis = new ApotheosisDirector();
     this.calm = new CalmDirector();
     this.hype = new HypeDirector();
+    this.weather = new WeatherDirector();
+    this._lastDropCount = 0; // matches HypeDirector's own initial dropCount -- no spurious punch at t=0
     this.filmFinish = new FilmFinish();
     this.vibe = new VibeDirector(conductor.timeline);
     this.keyDirector = new KeyDirector();
@@ -163,6 +169,7 @@ export class Simulation {
         this.gnat.onKick(evt);
         this.performer.onKick();
         this.hype.onKick(evt.vel);
+        this.groundField.kickGlow(this.worldX, evt.tMs, evt.vel);
         this.midasus.voyage.onKick(evt.vel); // deep-space sparkle burst (self-gated on phase)
         if (this.apotheosis.active) this.performer.captureGoldAfterimage(this.midio, this.timeMs);
       }
@@ -184,6 +191,17 @@ export class Simulation {
     q.splice(i, 0, { kind, tMs });
   }
 
+  /** Drains and clears pendingSfx (main.js polls this every frame). Judging
+   *  currently flows entirely through TapJudge/`this.judge` (scored on real
+   *  input, driving score/combo/fever); pendingSfx is reserved for the
+   *  highway's own tapScorer path and stays empty until that's wired to
+   *  input, so this is a safe no-op today rather than a crash. */
+  drainSfx() {
+    const out = this.pendingSfx;
+    this.pendingSfx = [];
+    return out;
+  }
+
   /** Fan the judge's one-shot events out into score, combo, and FX. */
   _applyJudgeEvents() {
     // Fever cranks the judgment FX too: the same perfect press throws a
@@ -191,6 +209,9 @@ export class Simulation {
     const particleMul = (this.perf ? this.perf.particleMul : 1) * (1 + 1.5 * this.fever.level);
     for (const evt of this.judge.stepEvents) {
       this.fever.onJudge(evt);
+      // Highway hit-line impact FX: spawned on sim time (not evt.tMs, the
+      // chart's own note time), so a late-judged press still bursts *now*.
+      this.highway?.onJudge(evt, this.timeMs, particleMul);
       if ((evt.kind === 'hit' || evt.kind === 'holdStart') && evt.offsetMs != null) {
         this.latency.onJudgedHit(evt.offsetMs);
       }
@@ -287,6 +308,14 @@ export class Simulation {
     this.fever.update(nowMs, dtSec, this.energyCurves);
     this.calm.update(nowMs, dtSec, this.energyCurves);
     this.hype.update(nowMs, dtSec, this.energyCurves);
+    // Drop impact pack: a fresh drop (dropCount ticking up) throws the
+    // camera into it -- a quick punch-in + shake, on top of the shockwave
+    // ring / chromatic shock / speed-lines the Renderer draws off dropAtMs.
+    if (this.hype.dropCount !== this._lastDropCount) {
+      this._lastDropCount = this.hype.dropCount;
+      this.camera.punch(1.07);
+      this.camera.shake(9);
+    }
     this.vibe.update(nowMs, dtSec, this.energyCurves);
     this.keyDirector.update(nowMs, dtSec, {
       tonic: this.vibe.tonic, tonicConfidence: this.vibe.tonicConfidence, conductor: this.conductor,
@@ -297,6 +326,10 @@ export class Simulation {
     }
     this.coda.update(nowMs);
     this.groundField.flatten = this.coda.unravel; // the ground lies down as the ending arc progresses
+    this.weather.update(nowMs, dtSec, {
+      valence: this.vibe.valence, epic: this.vibe.epic, calm: this.calm.level,
+      energySlow: this.hype.slow, surge: this.hype.surge, unravel: this.coda.unravel,
+    });
     this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs);
     // Midio roams toward his ensemble anchor -- slow, never gameplay-fast.
     const dxA = this.ensemble.anchors[0].x - this.midio.screenX;
@@ -415,6 +448,7 @@ export class Simulation {
     this.biomes.fever = this.fever.level; // the mountains dance harder as the fever climbs
     this.biomes.midioX = this.midio.screenX; // the light rig's drop-snap points at him
     this.biomes.midioY = this.midio.renderY;
+    this.biomes.weatherState = this.weather.state; // music-reactive rain/snow/petals/embers, decoupled from biome
     if (this.performer.lastMilestone) {
       this.biomes.milestoneAtMs = this.performer.lastMilestone.atMs;
       this.biomes.milestoneIdx = this.performer.lastMilestone.idx;

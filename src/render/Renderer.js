@@ -11,11 +11,25 @@ import { GOLD_AFTERIMAGE_LIFE_MS } from '../sim/MidioPerformer.js';
 import { contactShadow } from '../world/ContactShadow.js';
 import { clamp01 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
-import { LerpCache } from '../utils/color.js';
+import { LerpCache, hexToRgb } from '../utils/color.js';
 
 const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
 const MIDIO_DRAW_SCALE = 1.45; // ferocity pass: render-only, physics untouched
+
+// Fever aura: a screen-edge glow that only shows up once the player's earned
+// it -- silent below the threshold so it never competes with the vignette
+// or hype frame on an ordinary section.
+const FEVER_AURA_THRESHOLD = 0.55;
+const FEVER_AURA_MAX_ALPHA = 0.22;
+
+// Drop impact pack: a brief chromatic-split shock + radial speed-lines,
+// fired once per HypeDirector drop (see Simulation's dropCount edge-detect).
+const DROP_IMPACT_LIFE_MS = 320;
+const SHOCK_MAX_OFFSET_PX = 8;
+const SHOCK_MAX_ALPHA = 0.5;
+const SPEED_LINE_COUNT = 24;
+const SPEED_LINE_MAX_ALPHA = 0.35;
 
 // Film finish: breathing vignette + very-low-alpha color grade (see FilmFinish.js).
 const FILM_GRADE_COOL = '#1f8fa3';       // muted teal -- calm push
@@ -109,7 +123,10 @@ export class Renderer {
     const midioWidthPx = sim.midio.halfWidth * 2 * MIDIO_DRAW_SCALE * pose.scaleX;
     const midioHeightAbove = sim.midio.groundY - pose.midioY;
     this._drawContactShadow(ctx, contactShadow(pose.midioX, sim.midio.groundY, midioHeightAbove, midioWidthPx));
-    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0, sim.apotheosis, sim.reducedFlash);
+    // Fever adds its own glow on top of the vibe's epic-ness -- a hot streak
+    // makes Midio himself burn brighter, not just the world around him.
+    const feverGlow = sim.fever ? 3.0 * sim.fever.level : 0;
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, (sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0) + feverGlow, sim.apotheosis, sim.reducedFlash);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
@@ -145,10 +162,18 @@ export class Renderer {
     // Note highway: vertical bars glide R→L and meet Midio on the hit line.
     // Drawn in screen space (no camera shake) so timing stays readable.
     if (sim.highway) {
-      sim.highway.draw(ctx, canvas, sim.timeMs, pose.midioX, sim.midio.groundY);
+      sim.highway.draw(ctx, canvas, sim.timeMs, pose.midioX, sim.midio.groundY, {
+        fever: sim.fever ? sim.fever.level : 0,
+        reducedFlash: !!sim.reducedFlash,
+      });
     }
 
+    if (sim.fever) this._drawFeverAura(ctx, canvas, sim.fever.level, sim.biomes, sim.reducedFlash);
     if (sim.hype) this._drawHypeFrame(ctx, canvas, sim);
+    // Drop impact pack: a chromatic shock + radial speed-lines from Midio,
+    // both keyed off the same window as the shockwave rings -- drawn last so
+    // they shock the fully composed frame, hype border and highway included.
+    if (sim.hype) this._drawDropImpact(ctx, canvas, sim, pose);
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
 
@@ -255,6 +280,93 @@ export class Renderer {
     vg.addColorStop(1, `rgba(0,0,0,${edgeAlpha.toFixed(3)})`);
     ctx.fillStyle = vg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+
+  /** Fever aura: above the threshold, the screen edges glow inward -- an
+   *  inverse vignette (bright at the rim, clear toward center) so a hot
+   *  streak visibly ignites the whole frame, not just Midio and the
+   *  highway. Silent below FEVER_AURA_THRESHOLD; ramps to FEVER_AURA_MAX_ALPHA
+   *  at fever=1. Tinted toward the current biome halo color so it reads as
+   *  part of the world rather than a generic UI glow. */
+  _drawFeverAura(ctx, canvas, fever, biomeManager, reducedFlash) {
+    if (fever <= FEVER_AURA_THRESHOLD) return;
+    const u = (fever - FEVER_AURA_THRESHOLD) / (1 - FEVER_AURA_THRESHOLD);
+    const alpha = capFlashAlpha(FEVER_AURA_MAX_ALPHA * u, reducedFlash);
+    if (alpha <= 0.002) return;
+    const haloHex = biomeManager && biomeManager.currentHaloColor ? biomeManager.currentHaloColor() : '#ffd76a';
+    const { r, g, b } = hexToRgb(haloHex);
+    const rgb = `${r},${g},${b}`;
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+    const outerR = Math.hypot(cx, cy);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const grad = ctx.createRadialGradient(cx, cy, outerR * 0.55, cx, cy, outerR);
+    grad.addColorStop(0, `rgba(${rgb},0)`);
+    grad.addColorStop(1, `rgba(${rgb},${alpha})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+
+  /** Drop impact pack: a brief RGB-split shock (two color-isolated copies of
+   *  the already-composited frame, nudged apart on the 'lighter' blend --
+   *  same self-blit family as the hype echo and the lake reflection) plus
+   *  radial speed-lines thrown from Midio. Both live only for
+   *  DROP_IMPACT_LIFE_MS after hype.dropAtMs, and both skip entirely once
+   *  PerfGovernor has shed particle budget -- this is squarely a "budget
+   *  allowing" flourish, not core feedback. */
+  _drawDropImpact(ctx, canvas, sim, pose) {
+    const hype = sim.hype;
+    const s = dropImpactStrength(sim.timeMs, hype.dropAtMs);
+    if (s <= 0) return;
+    const perf = sim.perf;
+    if (perf && perf.particleMul < 1) return;
+    const reducedFlash = !!sim.reducedFlash;
+
+    // Chromatic shock.
+    if (!this._shockCanvas) {
+      this._shockCanvas = document.createElement('canvas');
+    }
+    const off = this._shockCanvas;
+    if (off.width !== canvas.width || off.height !== canvas.height) {
+      off.width = canvas.width;
+      off.height = canvas.height;
+    }
+    const offCtx = off.getContext('2d');
+    // Reduced-flash halves the pixel split too -- what's left reads as
+    // motion blur, not a flash, which is the whole point of the toggle.
+    const offsetPx = (reducedFlash ? 0.5 : 1) * SHOCK_MAX_OFFSET_PX * s;
+    const shockAlpha = capFlashAlpha(SHOCK_MAX_ALPHA * s, reducedFlash);
+    for (const [color, dir] of [['rgba(255,60,60,1)', 1], ['rgba(60,220,255,1)', -1]]) {
+      offCtx.globalCompositeOperation = 'copy';
+      offCtx.drawImage(canvas, 0, 0);
+      offCtx.globalCompositeOperation = 'multiply';
+      offCtx.fillStyle = color;
+      offCtx.fillRect(0, 0, off.width, off.height);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = shockAlpha;
+      ctx.drawImage(off, dir * offsetPx, 0);
+      ctx.restore();
+    }
+
+    // Radial speed-lines from Midio.
+    const count = Math.max(6, Math.round(SPEED_LINE_COUNT * (perf ? perf.particleMul : 1)));
+    const maxR = Math.hypot(canvas.width, canvas.height) * 0.42;
+    const cx = pose.midioX, cy = sim.midio.groundY - 60;
+    const segs = speedLineSegments(cx, cy, count, s, hype.dropCount, maxR);
+    const lineAlpha = capFlashAlpha(SPEED_LINE_MAX_ALPHA * s, reducedFlash);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = `rgba(255,255,255,${lineAlpha})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (const seg of segs) {
+      ctx.moveTo(seg.x0, seg.y0);
+      ctx.lineTo(seg.x1, seg.y1);
+    }
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -438,4 +550,33 @@ export class Renderer {
     }
     ctx.restore();
   }
+}
+
+/** Drop impact envelope: 1 right at the drop, easing to 0 over
+ *  DROP_IMPACT_LIFE_MS. 0 before the drop or once it's long past --
+ *  dropAtMs starts at -Infinity (HypeDirector), so "no drop yet" is 0 too. */
+export function dropImpactStrength(nowMs, dropAtMs) {
+  const age = nowMs - dropAtMs;
+  if (!(age >= 0) || age >= DROP_IMPACT_LIFE_MS) return 0;
+  const u = age / DROP_IMPACT_LIFE_MS;
+  return (1 - u) * (1 - u); // ease-out: sharp at the hit, tapering fast
+}
+
+/** `count` line segments radiating from (cx, cy), angles fixed per `seed`
+ *  (a drop's own dropCount, so repeat drops don't all fan out identically),
+ *  each spanning [0.55, 0.75+0.25*s] of maxR -- pure and deterministic so
+ *  it's cheaply testable without a canvas. */
+export function speedLineSegments(cx, cy, count, s, seed, maxR) {
+  const segs = [];
+  const jitterBase = seed * 2.399963; // irrational-ish stride so lines don't repeat between drops
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2 + jitterBase;
+    const rInner = 0.55 * maxR;
+    const rOuter = (0.75 + 0.25 * s) * maxR;
+    segs.push({
+      x0: cx + Math.cos(a) * rInner, y0: cy + Math.sin(a) * rInner,
+      x1: cx + Math.cos(a) * rOuter, y1: cy + Math.sin(a) * rOuter,
+    });
+  }
+  return segs;
 }

@@ -85,9 +85,11 @@ export class LightRig {
     this.budget = 1;
   }
 
-  update(nowMs, dtSec, beatMs, calmLevel, budget) {
+  update(nowMs, dtSec, beatMs, calmLevel, budget, fever = 0) {
     this.budget = budget;
-    const heatTarget = clamp01(1 - calmLevel);
+    // Fever pushes the rig hot even through a calm section -- a player on
+    // a streak earns the light show regardless of what the song is doing.
+    const heatTarget = clamp01(1 - calmLevel + 0.5 * fever);
     this.heat += (1 - Math.exp(-dtSec / HEAT_TAU)) * (heatTarget - this.heat);
 
     const effOmega = sweepOmega(beatMs, this.heat);
