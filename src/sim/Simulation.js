@@ -38,6 +38,7 @@ import { PhraseTracker } from '../core/PhraseTracker.js';
 import { AirJumpSequencer } from './AirJumpSequencer.js';
 import { FeverMeter } from './FeverMeter.js';
 import { LatencyCalibrator } from './LatencyCalibrator.js';
+import { WeatherDirector } from './WeatherDirector.js';
 
 const WORLD_SPEED_PX_S = 220;
 const CLEAN_WINDOW_MS = 90;
@@ -97,6 +98,7 @@ export class Simulation {
     this.apotheosis = new ApotheosisDirector();
     this.calm = new CalmDirector();
     this.hype = new HypeDirector();
+    this.weather = new WeatherDirector();
     this._lastDropCount = 0; // matches HypeDirector's own initial dropCount -- no spurious punch at t=0
     this.filmFinish = new FilmFinish();
     this.vibe = new VibeDirector(conductor.timeline);
@@ -324,6 +326,10 @@ export class Simulation {
     }
     this.coda.update(nowMs);
     this.groundField.flatten = this.coda.unravel; // the ground lies down as the ending arc progresses
+    this.weather.update(nowMs, dtSec, {
+      valence: this.vibe.valence, epic: this.vibe.epic, calm: this.calm.level,
+      energySlow: this.hype.slow, surge: this.hype.surge, unravel: this.coda.unravel,
+    });
     this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs);
     // Midio roams toward his ensemble anchor -- slow, never gameplay-fast.
     const dxA = this.ensemble.anchors[0].x - this.midio.screenX;
@@ -442,6 +448,7 @@ export class Simulation {
     this.biomes.fever = this.fever.level; // the mountains dance harder as the fever climbs
     this.biomes.midioX = this.midio.screenX; // the light rig's drop-snap points at him
     this.biomes.midioY = this.midio.renderY;
+    this.biomes.weatherState = this.weather.state; // music-reactive rain/snow/petals/embers, decoupled from biome
     if (this.performer.lastMilestone) {
       this.biomes.milestoneAtMs = this.performer.lastMilestone.atMs;
       this.biomes.milestoneIdx = this.performer.lastMilestone.idx;

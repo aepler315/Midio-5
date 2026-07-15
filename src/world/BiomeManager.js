@@ -107,6 +107,23 @@ export class BiomeManager {
     this.fields = new Map(); // biomeName -> ParticleField
     for (const b of this.profiles) this.fields.set(b.name, new ParticleField(b.particles, canvasWidth, canvasHeight, hashSeed(b.name + 'p')));
 
+    // Music-reactive weather (decoupled from biome): one field per kind,
+    // built once and reused regardless of which biome is active -- unlike
+    // `fields` above (each biome's own signature), only WeatherDirector's
+    // current kind is ever drawn, and only above its DORMANT_GATE.
+    this.weatherState = { kind: 'snow', intensity: 0 }; // set externally each frame from Simulation.weather.state
+    this.weatherFields = new Map();
+    for (const [kind, count, color, speed] of [
+      ['rain', 90, '#9fb8d8', 0],
+      ['snow', 70, '#ffffff', 45],
+      ['petals', 45, '#ffb6d3', 35],
+      ['embers', 55, '#ff7a3c', 60],
+    ]) {
+      this.weatherFields.set(kind, new ParticleField({ kind, color, count, speed }, canvasWidth, canvasHeight, hashSeed(`weather:${kind}`)));
+    }
+    this._weatherSuppress = 1; // eased 0..1: 0 while the active biome already has this exact particle kind
+    this._activeWeatherIntensity = 0; // weatherState.intensity * suppress, computed in update(), read by draw()
+
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed);
     // MIDI custom biome: cast every section into the generated world so the
     // dropped file IS the place, while stock demos keep dramaturgical casting.
@@ -390,6 +407,19 @@ export class BiomeManager {
     const wind = this.atmosphere.at(worldX, this.h * 0.4);
     this.wind = wind;
 
+    // Music-reactive weather: stand down (eased, not snapped) if the active
+    // biome's own particle signature already IS this kind -- STORM already
+    // rains, ARCTIC already snows, SAKURA already sheds petals, EMBER
+    // already lofts embers, so this layer would just double them up there.
+    const activeProfile = this._profile(t > 0.5 ? to : from);
+    const suppressTarget = activeProfile.particles.kind === this.weatherState.kind ? 0 : 1;
+    this._weatherSuppress += (1 - Math.exp(-dtSec / 1.0)) * (suppressTarget - this._weatherSuppress);
+    this._activeWeatherIntensity = this.weatherState.intensity * this._weatherSuppress;
+    if (this._activeWeatherIntensity > 0.01) {
+      const weatherField = this.weatherFields.get(this.weatherState.kind);
+      if (weatherField) weatherField.update(dtSec, this.tSec, energyCurves, nowMs, calmLevel, wind);
+    }
+
     this.fields.get(from).update(dtSec, this.tSec, energyCurves, nowMs, calmLevel, wind);
     if (to !== from) this.fields.get(to).update(dtSec, this.tSec, energyCurves, nowMs, calmLevel, wind);
     this._updateShedPetals(dtSec, worldX, wind, this._profile(t > 0.5 ? to : from));
@@ -505,6 +535,14 @@ export class BiomeManager {
       this.fields.get(to).draw(ctx, particleMul, mandalaColor, this.unravel);
       ctx.restore();
     }
+    // Music-reactive weather, same mid-depth as the ambient field above --
+    // density (and thus fever's boost) comes free from `particleMul`, hue
+    // convergence at the coda comes free from `this.unravel`.
+    if (this._activeWeatherIntensity > 0.01) {
+      const weatherField = this.weatherFields.get(this.weatherState.kind);
+      if (weatherField) weatherField.draw(ctx, this._activeWeatherIntensity * particleMul, mandalaColor, this.unravel);
+    }
+
     // The Kuramoto swarm shares this depth: synchronized flashing motes,
     // with the murmuration wheeling among them.
     this.swarm.draw(ctx, canvas, mandalaColor);
