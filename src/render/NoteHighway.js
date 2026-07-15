@@ -149,7 +149,21 @@ export class NoteHighway {
     this._impacts.push({ kind, spawnMs: nowMs, particleMul: Math.max(0, particleMul) });
   }
 
-  draw(ctx, canvas, nowMs, hitX, groundY, { fever = 0, reducedFlash = false } = {}) {
+  /** The Perfect Illusion: `engagement` (Simulation.engagement.level, 0..1)
+   *  fades the ENTIRE layer -- lane, hit line, bars, impacts, flashes -- to
+   *  nothing while the player isn't tapping, and back in the instant they
+   *  do. Canvas 2D's globalAlpha doesn't multiply across reassignment, so
+   *  rather than a single blanket alpha this threads `engagement` through
+   *  every alpha-driving variable below (`alpha` in drawBar, `life` in
+   *  drawImpact, the hit-line's own alphas) -- one multiply per site, same
+   *  net effect as a true layer fade. */
+  draw(ctx, canvas, nowMs, hitX, groundY, { fever = 0, reducedFlash = false, engagement = 1 } = {}) {
+    // Still prune state on a dormant frame (impacts/flashes keep aging even
+    // while invisible) -- but skip every draw call, zero cost while idle.
+    this._impacts = this._impacts.filter((imp) => nowMs - imp.spawnMs < IMPACT_LIFE_MS);
+    this._flash = this._flash.filter((f) => f.untilMs > nowMs);
+    if (engagement <= 0.01) return;
+
     const stageW = canvas.width;
     const stageH = canvas.height;
     const barTop = 90;
@@ -160,14 +174,13 @@ export class NoteHighway {
     // Approach lane (subtle).
     ctx.save();
     const laneGrad = ctx.createLinearGradient(hitX, 0, stageW, 0);
-    laneGrad.addColorStop(0, 'rgba(255, 215, 106, 0.10)');
+    laneGrad.addColorStop(0, `rgba(255, 215, 106, ${0.10 * engagement})`);
     laneGrad.addColorStop(1, 'rgba(255, 215, 106, 0.00)');
     ctx.fillStyle = laneGrad;
     ctx.fillRect(hitX, barTop, stageW - hitX, barH);
 
     // Recent connects briefly brighten the hit line itself, so it reads as
     // struck rather than just a static rail the bars slide past.
-    this._impacts = this._impacts.filter((imp) => nowMs - imp.spawnMs < IMPACT_LIFE_MS);
     let lineBoost = 0;
     for (const imp of this._impacts) {
       if (!brightensLine(imp.kind)) continue;
@@ -176,7 +189,7 @@ export class NoteHighway {
     }
 
     // Hit line at Midio.
-    ctx.strokeStyle = 'rgba(255, 246, 207, 0.85)';
+    ctx.strokeStyle = `rgba(255, 246, 207, ${0.85 * engagement})`;
     ctx.lineWidth = 3;
     ctx.setLineDash([6, 6]);
     ctx.beginPath();
@@ -185,7 +198,7 @@ export class NoteHighway {
     ctx.stroke();
     ctx.setLineDash([]);
     // Glow at hit line -- brightens on a connect, and runs hotter at high fever.
-    const glowAlpha = capFlashAlpha(0.35 + 0.45 * lineBoost + 0.15 * fever, reducedFlash);
+    const glowAlpha = capFlashAlpha(0.35 + 0.45 * lineBoost + 0.15 * fever, reducedFlash) * engagement;
     ctx.strokeStyle = `rgba(255, 215, 106, ${glowAlpha})`;
     ctx.lineWidth = 10 + 6 * lineBoost;
     ctx.beginPath();
@@ -195,19 +208,18 @@ export class NoteHighway {
 
     const visible = this.visibleNotes(nowMs, hitX, stageW);
     for (const { note, x, judged } of visible) {
-      drawBar(ctx, x, barTop, barH, note, judged, nowMs, fever);
+      drawBar(ctx, x, barTop, barH, note, judged, nowMs, fever, engagement);
     }
 
     // Hit-line impact FX: tier-colored bursts/rings/fizzles from onJudge().
     for (const imp of this._impacts) {
-      drawImpact(ctx, hitX, hitMidY, imp, nowMs, reducedFlash);
+      drawImpact(ctx, hitX, hitMidY, imp, nowMs, reducedFlash, engagement);
     }
 
     // Judgment flashes.
-    this._flash = this._flash.filter((f) => f.untilMs > nowMs);
     for (const f of this._flash) {
       const life = (f.untilMs - nowMs) / 280;
-      ctx.globalAlpha = life;
+      ctx.globalAlpha = life * engagement;
       ctx.fillStyle = gradeColor(f.grade);
       ctx.font = 'bold 18px "Segoe UI", system-ui, sans-serif';
       ctx.textAlign = 'center';
@@ -236,11 +248,17 @@ const IMPACT_COLORS = {
 /** One hit-line impact: burst + expanding ring + radial sparks for the big
  *  tiers, a modest ring for great, a small pop for good, a dim fizzle for
  *  misses/sour, and a tiny spark for hold ticks. All alpha capped through
- *  capFlashAlpha so reduced-flash never sees a spike here either. */
-function drawImpact(ctx, x, y, imp, nowMs, reducedFlash) {
+ *  capFlashAlpha so reduced-flash never sees a spike here either.
+ *  `life` (age-based, 1 at spawn -> 0 at death) drives every RADIUS below --
+ *  it must stay pure so a faded-out impact doesn't balloon in size. `a`
+ *  (life * engagement) drives every ALPHA instead, so The Perfect Illusion
+ *  can fade impacts out without touching their geometry. */
+function drawImpact(ctx, x, y, imp, nowMs, reducedFlash, engagement = 1) {
   const age = nowMs - imp.spawnMs;
-  const life = 1 - age / IMPACT_LIFE_MS; // 1 at spawn -> 0 at death
+  const life = 1 - age / IMPACT_LIFE_MS;
   if (life <= 0) return;
+  const a = life * engagement;
+  if (a <= 0) return;
   const rgb = IMPACT_COLORS[imp.kind] || IMPACT_COLORS.good;
   const mul = Math.max(0.3, Math.min(2.5, imp.particleMul));
 
@@ -248,7 +266,7 @@ function drawImpact(ctx, x, y, imp, nowMs, reducedFlash) {
   ctx.globalCompositeOperation = 'lighter';
 
   if (imp.kind === 'perfect' || imp.kind === 'complete') {
-    const burstAlpha = capFlashAlpha(0.55 * life, reducedFlash);
+    const burstAlpha = capFlashAlpha(0.55 * a, reducedFlash);
     const burstR = 6 + 22 * (1 - life);
     const g = ctx.createRadialGradient(x, y, 0, x, y, burstR);
     g.addColorStop(0, `rgba(${rgb},${burstAlpha})`);
@@ -257,41 +275,41 @@ function drawImpact(ctx, x, y, imp, nowMs, reducedFlash) {
     ctx.beginPath(); ctx.arc(x, y, burstR, 0, Math.PI * 2); ctx.fill();
 
     const ringR = 4 + 34 * (1 - life);
-    ctx.strokeStyle = `rgba(${rgb},${capFlashAlpha(0.6 * life, reducedFlash)})`;
+    ctx.strokeStyle = `rgba(${rgb},${capFlashAlpha(0.6 * a, reducedFlash)})`;
     ctx.lineWidth = 2.5;
     ctx.beginPath(); ctx.arc(x, y, ringR, 0, Math.PI * 2); ctx.stroke();
 
     const sparkCount = Math.round(SPARK_BASE_COUNT * mul);
     for (let i = 0; i < sparkCount; i++) {
-      const a = (i / sparkCount) * Math.PI * 2 + imp.spawnMs * 0.0003;
+      const ang = (i / sparkCount) * Math.PI * 2 + imp.spawnMs * 0.0003;
       const r = (10 + 30 * (1 - life));
-      const sx = x + Math.cos(a) * r;
-      const sy = y + Math.sin(a) * r * 0.6; // squashed vertically, reads as sparks not a full sphere
-      ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.8 * life, reducedFlash)})`;
+      const sx = x + Math.cos(ang) * r;
+      const sy = y + Math.sin(ang) * r * 0.6; // squashed vertically, reads as sparks not a full sphere
+      ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.8 * a, reducedFlash)})`;
       ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
     }
   } else if (imp.kind === 'great') {
     const ringR = 4 + 26 * (1 - life);
-    ctx.strokeStyle = `rgba(${rgb},${capFlashAlpha(0.55 * life, reducedFlash)})`;
+    ctx.strokeStyle = `rgba(${rgb},${capFlashAlpha(0.55 * a, reducedFlash)})`;
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(x, y, ringR, 0, Math.PI * 2); ctx.stroke();
   } else if (imp.kind === 'good') {
     const popR = 4 + 10 * (1 - life);
-    ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.35 * life, reducedFlash)})`;
+    ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.35 * a, reducedFlash)})`;
     ctx.beginPath(); ctx.arc(x, y, popR, 0, Math.PI * 2); ctx.fill();
   } else if (imp.kind === 'tick') {
-    ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.7 * life, reducedFlash)})`;
+    ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.7 * a, reducedFlash)})`;
     ctx.fillRect(x - 2, y - 2, 4, 4);
   } else { // sour | miss: a dim red fizzle, never a bright pop
     const fizzleR = 3 + 8 * (1 - life);
-    ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.22 * life, reducedFlash)})`;
+    ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.22 * a, reducedFlash)})`;
     ctx.beginPath(); ctx.arc(x, y, fizzleR, 0, Math.PI * 2); ctx.fill();
   }
 
   ctx.restore();
 }
 
-function drawBar(ctx, x, top, h, note, judged, nowMs, fever = 0) {
+function drawBar(ctx, x, top, h, note, judged, nowMs, fever = 0, engagement = 1) {
   const isJump = note.isJump || note.kind === 'kick';
   const width = isJump ? 10 : note.kind === 'drive' ? 5 : 7;
   const vel = note.vel ?? 0.7;
@@ -301,6 +319,7 @@ function drawBar(ctx, x, top, h, note, judged, nowMs, fever = 0) {
   let alpha = 0.95;
   if (judged === 'miss') alpha = 0.25;
   else if (judged) alpha = 0.35;
+  alpha *= engagement; // The Perfect Illusion: fades fill/glow/tip together, all keyed off this one value
 
   // Color by kind: jump/kick = gold (Midio), beat = cyan, drive = pink.
   // Fever runs the glow hotter -- the lane itself looks like it's catching
@@ -348,7 +367,7 @@ function drawBar(ctx, x, top, h, note, judged, nowMs, fever = 0) {
   const dt = note.tMs - nowMs;
   if (!judged && Math.abs(dt) < 80) {
     const p = 1 - Math.abs(dt) / 80;
-    ctx.strokeStyle = `rgba(255, 255, 255, ${0.6 * p})`;
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.6 * p * engagement})`;
     ctx.lineWidth = 2;
     ctx.strokeRect(x - width / 2 - 2, y0 - 2, width + 4, height + 4);
   }

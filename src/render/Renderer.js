@@ -165,6 +165,7 @@ export class Renderer {
       sim.highway.draw(ctx, canvas, sim.timeMs, pose.midioX, sim.midio.groundY, {
         fever: sim.fever ? sim.fever.level : 0,
         reducedFlash: !!sim.reducedFlash,
+        engagement: sim.engagement ? sim.engagement.level : 1,
       });
     }
 

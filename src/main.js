@@ -922,6 +922,10 @@ const SFX_MAX_PER_FRAME = 4;
  *  cost is at most one rAF of delay on feedback-only sounds. */
 function dispatchJudgeSfx(events) {
   if (!sfx || events.length === 0) return;
+  // The Perfect Illusion: the ghost performer still produces judge events
+  // while the player is idle (it never stops playing) -- gate the SFX here
+  // so an untouched, faded-out highway doesn't keep chiming.
+  if (sim && sim.engagement && sim.engagement.level < 0.05) return;
   const tonicPc = sim?.vibe?.tonic ?? 0;
   const conf = sim?.vibe?.tonicConfidence ?? 0;
   let played = 0;

@@ -39,6 +39,7 @@ import { AirJumpSequencer } from './AirJumpSequencer.js';
 import { FeverMeter } from './FeverMeter.js';
 import { LatencyCalibrator } from './LatencyCalibrator.js';
 import { WeatherDirector } from './WeatherDirector.js';
+import { EngagementMeter } from './EngagementMeter.js';
 
 const WORLD_SPEED_PX_S = 220;
 const CLEAN_WINDOW_MS = 90;
@@ -73,6 +74,12 @@ export class Simulation {
     this.scoreKeeper = new ScoreKeeper(this.noteChart.maxPossibleScore);
     this.inputQueue = [];
     this._lastHoldComboMs = -Infinity;
+    // The Perfect Illusion: a ghost cursor walks the note chart and enqueues
+    // its own flawless presses (see step()) -- real presses no longer judge
+    // or jump anything, they only feed `engagement` (see below), which gates
+    // whether the illusion's presentation (highway, SFX, judgment FX) shows.
+    this._ghostCursor = 0;
+    this.engagement = new EngagementMeter();
 
     // Phrase structure (4- or 8-measure groupings, chosen by the energy
     // autocorrelation upgrade in PhraseTracker) paces the double-jump budget.
@@ -180,15 +187,34 @@ export class Simulation {
    *  on the audio clock (plus the calibration offset). Queued here, drained
    *  inside step() in time order — judgment and launch both anchor to the
    *  press's own stamp, so the 8.3ms step grid never quantizes the score. */
-  enqueueTap(kind, tMs) {
+  enqueueTap(kind, tMs, ghost = false) {
     // Insertion-sorted: the drain in step() pops strictly by timestamp, so
     // the queue must stay time-ordered even if a caller stamps out of order
     // (DOM events never do; scheduled/test input may). Equal stamps keep
     // insertion order, preserving a down/up pair enqueued back to back.
+    // `ghost` marks the illusion's own synthetic presses (see step()) so the
+    // drain can route them to judge/jump while real presses only feed
+    // `engagement` -- both share this one time-ordered queue.
     const q = this.inputQueue;
     let i = q.length;
     while (i > 0 && q[i - 1].tMs > tMs) i--;
-    q.splice(i, 0, { kind, tMs });
+    q.splice(i, 0, { kind, tMs, ghost });
+  }
+
+  /** Walks the note chart and enqueues a flawless ghost press for every note
+   *  that has now arrived -- offset 0 always judges 'perfect' (TapJudge's
+   *  own pointsForOffset(0) === 100), so the illusion never has to fake a
+   *  score, it just performs the chart exactly on time. Tap notes get a
+   *  60ms-later 'up' (well under HOLD_MAX_GAP_MS/HOLD_ARM_EARLY_MS so it
+   *  can never mis-arm a following hold); hold notes hold down to endMs, so
+   *  onTapUp's grace window pays every tick plus the full completion bonus. */
+  _driveGhostInput(nowMs) {
+    const notes = this.noteChart.notes;
+    while (this._ghostCursor < notes.length && notes[this._ghostCursor].tMs <= nowMs) {
+      const n = notes[this._ghostCursor++];
+      this.enqueueTap('down', n.tMs, true);
+      this.enqueueTap('up', n.type === 'hold' ? n.endMs : n.tMs + 60, true);
+    }
   }
 
   /** Drains and clears pendingSfx (main.js polls this every frame). Judging
@@ -202,19 +228,27 @@ export class Simulation {
     return out;
   }
 
-  /** Fan the judge's one-shot events out into score, combo, and FX. */
+  /** Fan the judge's one-shot events out into score, combo, and FX. The
+   *  ghost cursor drives every one of these events now (see
+   *  _driveGhostInput) — engagement gates the whole PRESENTATION half
+   *  (score, fever, combo, judgment FX, SFX-feeding events) so the illusion
+   *  goes fully dormant the moment the player stops tapping, while the
+   *  ghost keeps launching real jumps underneath regardless (that's handled
+   *  in step()'s drain, untouched by this gate). */
   _applyJudgeEvents() {
+    const engaged = this.engagement.level >= 0.05;
     // Fever cranks the judgment FX too: the same perfect press throws a
     // bigger burst at high fever than it does cold.
     const particleMul = (this.perf ? this.perf.particleMul : 1) * (1 + 1.5 * this.fever.level);
     for (const evt of this.judge.stepEvents) {
+      if ((evt.kind === 'hit' || evt.kind === 'holdStart') && evt.offsetMs != null) {
+        this.latency.onJudgedHit(evt.offsetMs);
+      }
+      if (!engaged) continue; // dormant: no score/fever/combo/FX while idle
       this.fever.onJudge(evt);
       // Highway hit-line impact FX: spawned on sim time (not evt.tMs, the
       // chart's own note time), so a late-judged press still bursts *now*.
       this.highway?.onJudge(evt, this.timeMs, particleMul);
-      if ((evt.kind === 'hit' || evt.kind === 'holdStart') && evt.offsetMs != null) {
-        this.latency.onJudgedHit(evt.offsetMs);
-      }
       // Hold ticks/completions keep the combo alive through a landing-free
       // hold (RULE 4 would otherwise break the streak mid-note) — but a
       // dense roll must not grow the streak faster than landings ever
@@ -276,13 +310,21 @@ export class Simulation {
     this.judge.clearFrameFlags();
 
     this.conductor.dispatchUpTo(nowMs);
+    this._driveGhostInput(nowMs);
 
-    // Drain player presses stamped up to this step's time. Hold starts
-    // suppress the physical jump (a hold is a grounded slide); everything
-    // else attempts a launch under the usual launch/retarget rules, with
-    // the matched kick's velocity when the press hit a chart note.
+    // Drain presses stamped up to this step's time. Ghost presses (the
+    // illusion's own flawless performance) take the full judge+launch path
+    // exactly as a real player's presses used to; real presses now only
+    // feed `engagement` -- they never judge or jump anything themselves.
+    // Hold starts suppress the physical jump (a hold is a grounded slide);
+    // everything else attempts a launch under the usual launch/retarget
+    // rules, with the matched kick's velocity when the press hit a chart note.
     while (this.inputQueue.length && this.inputQueue[0].tMs <= nowMs) {
       const ev = this.inputQueue.shift();
+      if (!ev.ghost) {
+        if (ev.kind === 'down') this.engagement.onTap(ev.tMs);
+        continue;
+      }
       if (ev.kind === 'down') {
         const res = this.judge.onTapDown(ev.tMs);
         if (!res.startedHold) {
@@ -305,6 +347,7 @@ export class Simulation {
     }
     this.judge.update(nowMs);
     this._applyJudgeEvents();
+    this.engagement.update(nowMs, dtSec);
     this.fever.update(nowMs, dtSec, this.energyCurves);
     this.calm.update(nowMs, dtSec, this.energyCurves);
     this.hype.update(nowMs, dtSec, this.energyCurves);
