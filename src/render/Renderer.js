@@ -23,6 +23,14 @@ const MIDIO_DRAW_SCALE = 1.45; // ferocity pass: render-only, physics untouched
 const FEVER_AURA_THRESHOLD = 0.55;
 const FEVER_AURA_MAX_ALPHA = 0.22;
 
+// Drop impact pack: a brief chromatic-split shock + radial speed-lines,
+// fired once per HypeDirector drop (see Simulation's dropCount edge-detect).
+const DROP_IMPACT_LIFE_MS = 320;
+const SHOCK_MAX_OFFSET_PX = 8;
+const SHOCK_MAX_ALPHA = 0.5;
+const SPEED_LINE_COUNT = 24;
+const SPEED_LINE_MAX_ALPHA = 0.35;
+
 // Film finish: breathing vignette + very-low-alpha color grade (see FilmFinish.js).
 const FILM_GRADE_COOL = '#1f8fa3';       // muted teal -- calm push
 const FILM_GRADE_WARM = '#ff9a4d';       // muted amber -- hot/high-budget push
@@ -162,6 +170,10 @@ export class Renderer {
 
     if (sim.fever) this._drawFeverAura(ctx, canvas, sim.fever.level, sim.biomes, sim.reducedFlash);
     if (sim.hype) this._drawHypeFrame(ctx, canvas, sim);
+    // Drop impact pack: a chromatic shock + radial speed-lines from Midio,
+    // both keyed off the same window as the shockwave rings -- drawn last so
+    // they shock the fully composed frame, hype border and highway included.
+    if (sim.hype) this._drawDropImpact(ctx, canvas, sim, pose);
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
 
@@ -294,6 +306,67 @@ export class Renderer {
     grad.addColorStop(1, `rgba(${rgb},${alpha})`);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+
+  /** Drop impact pack: a brief RGB-split shock (two color-isolated copies of
+   *  the already-composited frame, nudged apart on the 'lighter' blend --
+   *  same self-blit family as the hype echo and the lake reflection) plus
+   *  radial speed-lines thrown from Midio. Both live only for
+   *  DROP_IMPACT_LIFE_MS after hype.dropAtMs, and both skip entirely once
+   *  PerfGovernor has shed particle budget -- this is squarely a "budget
+   *  allowing" flourish, not core feedback. */
+  _drawDropImpact(ctx, canvas, sim, pose) {
+    const hype = sim.hype;
+    const s = dropImpactStrength(sim.timeMs, hype.dropAtMs);
+    if (s <= 0) return;
+    const perf = sim.perf;
+    if (perf && perf.particleMul < 1) return;
+    const reducedFlash = !!sim.reducedFlash;
+
+    // Chromatic shock.
+    if (!this._shockCanvas) {
+      this._shockCanvas = document.createElement('canvas');
+    }
+    const off = this._shockCanvas;
+    if (off.width !== canvas.width || off.height !== canvas.height) {
+      off.width = canvas.width;
+      off.height = canvas.height;
+    }
+    const offCtx = off.getContext('2d');
+    // Reduced-flash halves the pixel split too -- what's left reads as
+    // motion blur, not a flash, which is the whole point of the toggle.
+    const offsetPx = (reducedFlash ? 0.5 : 1) * SHOCK_MAX_OFFSET_PX * s;
+    const shockAlpha = capFlashAlpha(SHOCK_MAX_ALPHA * s, reducedFlash);
+    for (const [color, dir] of [['rgba(255,60,60,1)', 1], ['rgba(60,220,255,1)', -1]]) {
+      offCtx.globalCompositeOperation = 'copy';
+      offCtx.drawImage(canvas, 0, 0);
+      offCtx.globalCompositeOperation = 'multiply';
+      offCtx.fillStyle = color;
+      offCtx.fillRect(0, 0, off.width, off.height);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = shockAlpha;
+      ctx.drawImage(off, dir * offsetPx, 0);
+      ctx.restore();
+    }
+
+    // Radial speed-lines from Midio.
+    const count = Math.max(6, Math.round(SPEED_LINE_COUNT * (perf ? perf.particleMul : 1)));
+    const maxR = Math.hypot(canvas.width, canvas.height) * 0.42;
+    const cx = pose.midioX, cy = sim.midio.groundY - 60;
+    const segs = speedLineSegments(cx, cy, count, s, hype.dropCount, maxR);
+    const lineAlpha = capFlashAlpha(SPEED_LINE_MAX_ALPHA * s, reducedFlash);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = `rgba(255,255,255,${lineAlpha})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (const seg of segs) {
+      ctx.moveTo(seg.x0, seg.y0);
+      ctx.lineTo(seg.x1, seg.y1);
+    }
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -477,4 +550,33 @@ export class Renderer {
     }
     ctx.restore();
   }
+}
+
+/** Drop impact envelope: 1 right at the drop, easing to 0 over
+ *  DROP_IMPACT_LIFE_MS. 0 before the drop or once it's long past --
+ *  dropAtMs starts at -Infinity (HypeDirector), so "no drop yet" is 0 too. */
+export function dropImpactStrength(nowMs, dropAtMs) {
+  const age = nowMs - dropAtMs;
+  if (!(age >= 0) || age >= DROP_IMPACT_LIFE_MS) return 0;
+  const u = age / DROP_IMPACT_LIFE_MS;
+  return (1 - u) * (1 - u); // ease-out: sharp at the hit, tapering fast
+}
+
+/** `count` line segments radiating from (cx, cy), angles fixed per `seed`
+ *  (a drop's own dropCount, so repeat drops don't all fan out identically),
+ *  each spanning [0.55, 0.75+0.25*s] of maxR -- pure and deterministic so
+ *  it's cheaply testable without a canvas. */
+export function speedLineSegments(cx, cy, count, s, seed, maxR) {
+  const segs = [];
+  const jitterBase = seed * 2.399963; // irrational-ish stride so lines don't repeat between drops
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2 + jitterBase;
+    const rInner = 0.55 * maxR;
+    const rOuter = (0.75 + 0.25 * s) * maxR;
+    segs.push({
+      x0: cx + Math.cos(a) * rInner, y0: cy + Math.sin(a) * rInner,
+      x1: cx + Math.cos(a) * rOuter, y1: cy + Math.sin(a) * rOuter,
+    });
+  }
+  return segs;
 }

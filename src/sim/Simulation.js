@@ -97,6 +97,7 @@ export class Simulation {
     this.apotheosis = new ApotheosisDirector();
     this.calm = new CalmDirector();
     this.hype = new HypeDirector();
+    this._lastDropCount = 0; // matches HypeDirector's own initial dropCount -- no spurious punch at t=0
     this.filmFinish = new FilmFinish();
     this.vibe = new VibeDirector(conductor.timeline);
     this.keyDirector = new KeyDirector();
@@ -305,6 +306,14 @@ export class Simulation {
     this.fever.update(nowMs, dtSec, this.energyCurves);
     this.calm.update(nowMs, dtSec, this.energyCurves);
     this.hype.update(nowMs, dtSec, this.energyCurves);
+    // Drop impact pack: a fresh drop (dropCount ticking up) throws the
+    // camera into it -- a quick punch-in + shake, on top of the shockwave
+    // ring / chromatic shock / speed-lines the Renderer draws off dropAtMs.
+    if (this.hype.dropCount !== this._lastDropCount) {
+      this._lastDropCount = this.hype.dropCount;
+      this.camera.punch(1.07);
+      this.camera.shake(9);
+    }
     this.vibe.update(nowMs, dtSec, this.energyCurves);
     this.keyDirector.update(nowMs, dtSec, {
       tonic: this.vibe.tonic, tonicConfidence: this.vibe.tonicConfidence, conductor: this.conductor,
