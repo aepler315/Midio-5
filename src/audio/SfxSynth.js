@@ -109,4 +109,35 @@ export class SfxSynth {
     this._pluck(60, t, { peak: 0.15, dur: 0.2, type: 'sawtooth', bendTo: 48, bendSec: 0.16 });
     this._scuff(t, { vel: 0.35, hpFreq: 900, dur: 0.1 });
   }
+
+  /** The Lens crossing into (or back out of) an interior: a soft filtered-
+   *  noise swell with a swept bandpass, quiet enough to read as air moving
+   *  rather than a sound effect. `direction` 1 = sweeping up into the world
+   *  (zooming in), -1 = sweeping back down (zooming out). */
+  transit(direction = 1) {
+    const ctx = this.ae.ctx;
+    const t = ctx.currentTime;
+    const dur = 0.5;
+    const bufSize = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buffer = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 0.9;
+    const [f0, f1] = direction >= 0 ? [500, 2400] : [2400, 500];
+    bp.frequency.setValueAtTime(f0, t);
+    bp.frequency.exponentialRampToValueAtTime(f1, t + dur);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.12, t + dur * 0.35);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+    src.connect(bp).connect(gain).connect(this.out);
+    src.start(t);
+  }
 }

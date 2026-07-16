@@ -18,11 +18,7 @@ import { DebugOverlay } from './ui/DebugOverlay.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
 import { getReducedFlash, setReducedFlash } from './ui/Accessibility.js';
 import { PerfGovernor } from './render/PerfGovernor.js';
-import {
-  getStoredInputOffsetMs, setStoredInputOffsetMs, hasCalibrated, markCalibrated, runCalibrationScreen,
-} from './ui/InputCalibration.js';
 import { LoadingShow } from './ui/LoadingShow.js';
-import { DIFFICULTIES } from './sim/TapChart.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -48,8 +44,6 @@ const fontBarBtnEl = document.getElementById('fontBarBtn');
 const fontNameEl = document.getElementById('fontName');
 const settingsBtnEl = document.getElementById('settingsBtn');
 const fullscreenBtnEl = document.getElementById('fullscreenBtn');
-const loaderDiffPickerEl = document.getElementById('loaderDiffPicker');
-const hudDiffPickerEl = document.getElementById('diffPicker');
 const trackBadgeEl = document.getElementById('trackBadge');
 const trackBadgeBtnEl = document.getElementById('trackBadgeBtn');
 const trackListEl = document.getElementById('trackList');
@@ -69,15 +63,10 @@ const filmstripModalTitleEl = document.getElementById('filmstripModalTitle');
 const filmstripModalCloseEl = document.getElementById('filmstripModalClose');
 const filmstripModalImgEl = document.getElementById('filmstripModalImg');
 const filmstripModalDownloadEl = document.getElementById('filmstripModalDownload');
-const calibPanelEl = document.getElementById('calibPanel');
-const calibBeaconEl = document.getElementById('calibBeacon');
-const calibStatusEl = document.getElementById('calibStatus');
-const calibSkipBtnEl = document.getElementById('calibSkipBtn');
 const auditionPanelEl = document.getElementById('auditionPanel');
 const auditionCanvasEl = document.getElementById('auditionCanvas');
 const auditionTextEl = document.getElementById('auditionText');
 const auditionBarFillEl = document.getElementById('auditionBarFill');
-const tapReadoutEl = document.getElementById('tapReadout'); // no matching HUD element yet; every use is null-guarded
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -102,11 +91,6 @@ let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted acces
 // Set per load path (true only for raw decoded audio, which already has
 // every voice baked into the buffer) and read by applySynthMutePolicy().
 let muteTimelineSynth = false;
-let difficulty = 'medium'; // 'easy' | 'medium' | 'hard' -- matches index.html's default-active diffPicker button
-// Input latency offset (ms, applied at DOM stamp time): seeded from storage,
-// set by the one-time calibration screen, refined silently in-game by
-// Simulation's LatencyCalibrator and persisted as refinements land.
-let inputOffsetMs = getStoredInputOffsetMs();
 let loadShow = null; // percussion loading show, created in bootAudio
 let loadGen = 0;     // a newer load cancels a stale audition gate's start
 
@@ -172,27 +156,6 @@ function updateAuditionProgress() {
   loadShow.setProgress(s.done, s.total, pending ? pending.name : '');
 }
 
-/** One-time pre-game calibration screen. Skipped for automation (headless
- *  smoke runs can't tap in time) — the in-game calibrator covers them. */
-async function maybeRunCalibration() {
-  if (hasCalibrated() || navigator.webdriver) return;
-  loaderEl.classList.add('hidden');
-  calibPanelEl?.classList.remove('hidden');
-  try {
-    const off = await runCalibrationScreen({
-      beaconEl: calibBeaconEl, statusEl: calibStatusEl, skipBtnEl: calibSkipBtnEl,
-      tapTargetEl: calibPanelEl, audioEngine,
-    });
-    if (off !== null) {
-      inputOffsetMs = off;
-      setStoredInputOffsetMs(off);
-    }
-    markCalibrated();
-  } finally {
-    calibPanelEl?.classList.add('hidden');
-  }
-}
-
 /**
  * Font ratings used to run behind the live song and lagged it badly (each
  * audition is an offline render on this same thread). Now they gate the
@@ -231,34 +194,6 @@ function applySynthMutePolicy() {
   // the unwanted metronome layer. MIDI and the procedural demo need the synth.
   if (synth) synth.enabled = !muteTimelineSynth;
 }
-
-// The tapScorer/highway grade path isn't wired to real input yet (see
-// Simulation.drainSfx) -- this stays a no-op until that lands, rather than
-// fabricating a readout for numbers that never move.
-function updateTapHud() {}
-
-function setDifficulty(next) {
-  if (!DIFFICULTIES.includes(next)) return;
-  difficulty = next;
-  for (const root of [loaderDiffPickerEl, hudDiffPickerEl]) {
-    if (!root) continue;
-    root.querySelectorAll('.diffBtn').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.diff === difficulty);
-    });
-  }
-  if (sim && typeof sim.setDifficulty === 'function') sim.setDifficulty(difficulty);
-}
-
-function wireDiffPicker(root) {
-  if (!root) return;
-  root.addEventListener('click', (e) => {
-    const btn = e.target.closest('.diffBtn');
-    if (!btn) return;
-    setDifficulty(btn.dataset.diff);
-  });
-}
-wireDiffPicker(loaderDiffPickerEl);
-wireDiffPicker(hudDiffPickerEl);
 
 // --- Fullscreen ---
 function isFullscreen() {
@@ -489,13 +424,10 @@ function startTimeline(timelineData) {
   perfGovernor = new PerfGovernor();
   sim = new Simulation(conductor, paramBus, {
     bpm: timelineData.bpm || 120,
-    beatPeriodMs: timelineData.beatPeriodMs || null,
     energyCurves: timelineData.energyCurves || null,
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
     customBiome: timelineData.customBiome || null,
-    inputOffsetMs,
-    difficulty,
   });
   sim.perf = perfGovernor;
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
@@ -509,17 +441,15 @@ function startTimeline(timelineData) {
   acc = 0;
   lastNowMs = audioEngine.nowMs;
   lastRafMs = null;
-  // Fresh song, fresh button: no press may carry across, and the demo/play
-  // buttons must lose focus or the first Space would "click" them again.
-  pressedSources.clear();
+  // Fresh song, fresh button: the demo/play buttons must lose focus or the
+  // first Space would "click" them again instead of toggling the zoom.
+  zoomKeyDir = 0;
   document.activeElement?.blur?.();
   audioEngine.start(0);
   running = true;
 
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
-  if (tapReadoutEl) tapReadoutEl.classList.remove('hidden');
-  updateTapHud();
   rafHandle = requestAnimationFrame(frame);
 
   // Exposed for the debug overlay and for smoke-testing internals.
@@ -531,7 +461,7 @@ function startTimeline(timelineData) {
     conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary, sf2Engine, fontRecommender,
     renderer, rendererMode, rendererBackend: renderer?.backend || 'canvas',
     customBiome: timelineData.customBiome || null,
-    difficulty, muteTimelineSynth,
+    muteTimelineSynth,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
   };
@@ -540,7 +470,6 @@ function startTimeline(timelineData) {
 async function loadMidiFile(file) {
   try {
     await bootAudio();
-    await maybeRunCalibration();
     const gen = ++loadGen;
     const buf = await file.arrayBuffer();
     if (!buf || buf.byteLength < 14) {
@@ -573,7 +502,6 @@ function showProgress(text) {
 
 async function loadAudioFile(file) {
   await bootAudio();
-  await maybeRunCalibration();
   loadGen++; // raw audio never gates, but a pending gate must not start over us
   const buf = await file.arrayBuffer();
   let audioBuffer;
@@ -609,7 +537,6 @@ async function loadAudioFile(file) {
 
 async function loadDemo() {
   await bootAudio();
-  await maybeRunCalibration();
   const gen = ++loadGen;
   const data = buildDemoTimeline({});
   data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
@@ -800,41 +727,20 @@ function frame(tRaf) {
   if (deltaMs > 250) deltaMs = 250; // clamp huge gaps (tab backgrounded, breakpoint, etc.)
   acc += deltaMs;
 
+  if (zoomKeyDir && sim.zoom) sim.zoom.nudge(zoomKeyDir * KEY_ZOOM_RATE * (deltaMs / 1000));
+
   let milestoneFiredThisFrame = false;
-  judgeEventsThisFrame.length = 0;
   while (acc >= STEP_MS) {
     sim.step(STEP_MS, simTime + STEP_MS);
     simTime += STEP_MS;
     acc -= STEP_MS;
     if (sim.performer.milestoneFlash) milestoneFiredThisFrame = true;
-    // Judge events are one-shot per sim step (cleared at the next step's
-    // top), and several steps run per rendered frame — latch them here,
-    // same pattern as the milestone flag above, so the SFX layer misses none.
-    if (sim.judge.stepEvents.length) judgeEventsThisFrame.push(...sim.judge.stepEvents);
-  }
-  dispatchJudgeSfx(judgeEventsThisFrame);
-
-  // Silent auto-calibration: when the sim's LatencyCalibrator decides the
-  // player is steady-but-late (or -early), adopt and persist the corrected
-  // offset so future presses — and future sessions — are stamped true.
-  if (sim.latency && sim.latency.lastAdjustment) {
-    inputOffsetMs = sim.latency.offsetMs;
-    setStoredInputOffsetMs(inputOffsetMs);
-    sim.latency.lastAdjustment = null;
   }
 
-  // Drain judgment SFX produced during the sim steps (hits + auto-misses).
-  // Auto-miss thuds are rate-limited so a hard chart doesn't rattle the bus.
-  if (sfx && sim) {
-    let missPlayed = false;
-    for (const ev of sim.drainSfx()) {
-      if (ev.type !== 'grade') continue;
-      if (ev.grade === 'miss') {
-        if (missPlayed) continue;
-        missPlayed = true;
-      }
-      sfx.playGrade(ev.grade, ev.note);
-    }
+  // The Lens: a zoom crossing fires a soft transit whoosh, direction-aware.
+  if (sfx && sim.zoom) {
+    if (sim.zoom.justCrossedIn) sfx.transit?.(1);
+    else if (sim.zoom.justCrossedOut) sfx.transit?.(-1);
   }
 
   const alpha = acc / STEP_MS;
@@ -846,7 +752,6 @@ function frame(tRaf) {
     void comboReadoutEl.offsetWidth; // restart the CSS animation even if it's still mid-flight
     comboReadoutEl.classList.add('milestone-pulse');
   }
-  updateTapHud();
 
   visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();
@@ -859,90 +764,49 @@ function frame(tRaf) {
   rafHandle = requestAnimationFrame(frame);
 }
 
-// --- Player input: one logical jump button across Space + every pointer ---
-// Edge-collapsed: 'down' fires only on the 0 -> 1 pressed-source transition
-// and 'up' only on 1 -> 0, so keyboard+mouse together (or multi-touch) can
-// never double-judge a press or drop a hold early. Timestamps are read HERE,
-// in the DOM handler, on the audio clock — event-time accuracy is what the
-// judge scores, never the 8.3ms sim step grid.
-const pressedSources = new Set();
-const judgeEventsThisFrame = [];
+// --- The Lens: zoom controls ---------------------------------------------
+// Wheel and held arrow keys nudge the zoom TARGET continuously; Space/click
+// snap it fully in or out. Nothing here touches the sim's judgment/jump
+// machinery -- ZoomDirector eases the actual value on its own slow clock
+// (see ZoomDirector.js), so every one of these inputs feels immediate to
+// register but deliberately slow to arrive.
+const WHEEL_ZOOM_RATE = 0.0016; // zoom units per wheel-delta-px
+const KEY_ZOOM_RATE = 1.1;      // zoom units per second while an arrow key is held
+let zoomKeyDir = 0; // -1 (ArrowDown, zooming out) | 0 | 1 (ArrowUp, zooming in)
 
 function anyModalOpen() {
   return (fontModalEl && !fontModalEl.classList.contains('hidden'))
     || (filmstripModalEl && !filmstripModalEl.classList.contains('hidden'));
 }
 
-function pressDown(src) {
-  if (!running || !sim || !audioEngine) return;
-  if (pressedSources.size === 0) sim.enqueueTap('down', audioEngine.nowMs + inputOffsetMs);
-  pressedSources.add(src);
-}
+canvas.addEventListener('wheel', (e) => {
+  if (!running || !sim || !sim.zoom || anyModalOpen()) return;
+  e.preventDefault();
+  sim.zoom.nudge(-e.deltaY * WHEEL_ZOOM_RATE);
+}, { passive: false });
 
-function pressUp(src) {
-  if (!pressedSources.delete(src)) return;
-  if (pressedSources.size === 0 && sim && audioEngine) {
-    sim.enqueueTap('up', audioEngine.nowMs + inputOffsetMs);
-  }
-}
-
-/** Tab blur / pointer cancel: a hold must never stick to a button the
- *  browser will not deliver an 'up' for. */
-function releaseAllPresses() {
-  if (pressedSources.size > 0 && sim && audioEngine) {
-    sim.enqueueTap('up', audioEngine.nowMs + inputOffsetMs);
-  }
-  pressedSources.clear();
-}
-
-window.addEventListener('keydown', (e) => {
-  if (e.code !== 'Space') return;
-  if (anyModalOpen()) return;
-  e.preventDefault(); // stops page scroll, and Space "clicking" a focused button
-  if (e.repeat) return;
-  pressDown('key');
-});
-window.addEventListener('keyup', (e) => {
-  if (e.code === 'Space') pressUp('key');
-});
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
-  pressDown(`ptr:${e.pointerId}`);
+  if (!running || !sim || !sim.zoom || anyModalOpen()) return;
+  sim.zoom.toggle();
 });
-window.addEventListener('pointerup', (e) => pressUp(`ptr:${e.pointerId}`));
-window.addEventListener('pointercancel', (e) => pressUp(`ptr:${e.pointerId}`));
-window.addEventListener('blur', releaseAllPresses);
 
-// SFX cap per rendered frame: a tab-restore burst can run ~30 sim steps
-// under the 250ms clamp, and thirty simultaneous plucks is a noise-bomb.
-const SFX_MAX_PER_FRAME = 4;
-
-/** Feedback sounds for the frame's latched judge events. Audio lives here
- *  (not in Simulation) so the sim stays constructible in node tests; the
- *  cost is at most one rAF of delay on feedback-only sounds. */
-function dispatchJudgeSfx(events) {
-  if (!sfx || events.length === 0) return;
-  // The Perfect Illusion: the ghost performer still produces judge events
-  // while the player is idle (it never stops playing) -- gate the SFX here
-  // so an untouched, faded-out highway doesn't keep chiming.
-  if (sim && sim.engagement && sim.engagement.level < 0.05) return;
-  const tonicPc = sim?.vibe?.tonic ?? 0;
-  const conf = sim?.vibe?.tonicConfidence ?? 0;
-  let played = 0;
-  for (const evt of events) {
-    if (played >= SFX_MAX_PER_FRAME) break;
-    switch (evt.kind) {
-      case 'hit': sfx.judgment(evt.tier, tonicPc, conf); played++; break;
-      case 'holdStart': sfx.judgment(evt.tier ?? 'good', tonicPc, conf); played++; break;
-      case 'sour': sfx.judgment('sour', tonicPc, conf); played++; break;
-      case 'miss': sfx.miss(); played++; break;
-      case 'holdTick': sfx.holdTick(evt.tickIdx, tonicPc, conf); played++; break;
-      case 'holdComplete': sfx.holdComplete(tonicPc, conf); played++; break;
-      case 'holdChoke': sfx.holdChoke(); played++; break;
-      default: break;
-    }
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    if (anyModalOpen()) return;
+    e.preventDefault(); // stops page scroll, and Space "clicking" a focused button
+    if (e.repeat || !running || !sim || !sim.zoom) return;
+    sim.zoom.toggle();
+    return;
   }
-}
+  if (e.code === 'ArrowUp') { zoomKeyDir = 1; e.preventDefault(); }
+  else if (e.code === 'ArrowDown') { zoomKeyDir = -1; e.preventDefault(); }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'ArrowUp' && zoomKeyDir === 1) zoomKeyDir = 0;
+  else if (e.code === 'ArrowDown' && zoomKeyDir === -1) zoomKeyDir = 0;
+});
+window.addEventListener('blur', () => { zoomKeyDir = 0; });
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -968,7 +832,7 @@ function toggleReducedFlash() {
 
 function onSongComplete() {
   running = false;
-  pressedSources.clear();
+  zoomKeyDir = 0;
   hudEl.classList.add('hidden');
   const combo = sim.comboSystem;
   const sk = sim.scoreKeeper;

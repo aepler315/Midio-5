@@ -157,65 +157,6 @@ html, body {
   display: inline-block;
 }
 
-#tapReadout {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
-}
-#tapReadout.hidden { display: none; }
-#tapGrade {
-  min-width: 4.5em;
-  color: #ffd76a;
-  letter-spacing: 0.04em;
-}
-#tapGrade.grade-perfect { color: #ffd76a; }
-#tapGrade.grade-great { color: #7ad1ff; }
-#tapGrade.grade-ok { color: #b9a3ff; }
-#tapGrade.grade-miss { color: #ff5a7a; }
-#tapScore { opacity: 0.9; font-variant-numeric: tabular-nums; }
-#tapStreak { opacity: 0.7; font-size: 0.8rem; }
-
-/* Difficulty picker — shared by loader and in-game HUD. */
-.diffPicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: rgba(5, 5, 10, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 999px;
-  padding: 3px;
-}
-.diffPicker.loaderDiff {
-  margin-top: 4px;
-  padding: 6px 10px;
-  gap: 8px;
-}
-.diffLabel {
-  font-size: 0.78rem;
-  opacity: 0.65;
-  padding-left: 4px;
-}
-.diffBtn {
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.65);
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.diffBtn:hover { color: #7ad1ff; }
-.diffBtn.active {
-  background: rgba(255, 215, 106, 0.2);
-  color: #ffd76a;
-}
-
 /* Combo-milestone flourish (follow-up item 6): a quick shatter-and-reform
    pulse, mirroring FractureEngine's terminal-shatter beat in miniature. */
 @keyframes comboMilestone {
@@ -640,25 +581,6 @@ html, body {
 .tGood { color: #e8e6f0; }
 .tSour { color: #9e84a8; }
 .tMiss { color: #8a8794; }
-
-/* --- Calibration screen (runs once, before the first gameplay session) --- */
-#calibBeaconWrap {
-  width: 140px;
-  height: 140px;
-  margin: 18px auto 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-#calibBeacon {
-  width: 110px;
-  height: 110px;
-  border-radius: 50%;
-  border: 3px solid #ffd76a;
-  box-shadow: 0 0 34px rgba(255, 215, 106, 0.45), inset 0 0 22px rgba(255, 215, 106, 0.25);
-  will-change: transform, opacity;
-}
-#calibStatus { min-height: 1.4em; }
 
 /* --- Audition load screen (font ratings gate the show) --- */
 #auditionCanvas {

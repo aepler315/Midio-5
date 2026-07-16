@@ -1,9 +1,10 @@
-// Pins the exact contract Simulation._driveGhostInput relies on: an
-// offset-0 press against a chart note always judges 'perfect', and a
-// hold's down-at-tMs/up-at-endMs pair always pays every tick plus the full
-// completion bonus with no choke. Exercised directly against TapJudge (a
-// full Simulation is DOM-adjacent and heavy) using the same down/up timing
-// _driveGhostInput itself enqueues.
+// Pins the exact contract Simulation._driveAutoplay relies on: an offset-0
+// press against a chart note always judges 'perfect', and a hold's
+// down-at-tMs/up-at-endMs pair always pays every tick plus the full
+// completion bonus with no choke. This is the autoplay engine -- Midio
+// performs the song himself; there is no player input to judge anymore.
+// Exercised directly against TapJudge (a full Simulation is DOM-adjacent
+// and heavy) using the same down/up timing _driveAutoplay itself enqueues.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TapJudge } from '../src/sim/TapJudge.js';
@@ -14,7 +15,7 @@ const hold = (tMs, tickTimesMs, vel = 0.7) => ({
   type: 'hold', tMs, endMs: tickTimesMs[tickTimesMs.length - 1], vel, tickTimesMs,
 });
 
-/** Mirrors Simulation._driveGhostInput + step()'s ghost drain exactly: for
+/** Mirrors Simulation._driveAutoplay + step()'s autoplay drain exactly: for
  *  each note, enqueue down@tMs and up@(hold ? endMs : tMs+60), merge into
  *  one time-ordered queue (insertion-sorted, ties keep insertion order --
  *  same as Simulation.enqueueTap), then drain in order against the judge. */

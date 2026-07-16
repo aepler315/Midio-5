@@ -6,8 +6,16 @@
 // ParamBus guardrails could ever produce (weakest jump height, slowest
 // scroll speed) — so a collision can only ever come from the vision loop
 // legitimately choosing to make the game harder, never from bad luck.
+//
+// Visually, an obstacle isn't a platformer block: it's an ambient, abstract
+// manifestation of the music -- a shape that condenses into being as it
+// approaches and dissolves into motes once cleared. Placement/collision are
+// pure geometry (untouched below); only the presentation is reskinned.
 import { Role } from '../core/NoteEvent.js';
-import { clamp, mulberry32 } from '../utils/math.js';
+import { clamp, clamp01, mulberry32 } from '../utils/math.js';
+import { superformula } from '../render/oscillators.js';
+import { capFlashAlpha } from '../ui/Accessibility.js';
+import { hexToRgb } from '../utils/color.js';
 import { GUARDRAIL_MIN } from '../core/ParamBus.js';
 import { predictJumpArcs, safeWindowForArc } from './JumpPlanner.js';
 
@@ -17,6 +25,30 @@ const CLEARANCE_MARGIN_PX = 14;
 const MIN_SAFE_WINDOW_MS = 150; // discard slivers too narrow to place anything in safely
 const EDGE_KEEPOUT_MS = 40; // stay this far off a window's own edges before crossing-width is even considered
 const SPAWN_LEAD_MS = 2500;
+const SPAWN_PROB_BASE = 0.75; // was 0.5 -- ambient forms read better with more of them present
+
+export const ARCHETYPES = Object.freeze(['thorn', 'veil', 'echo']);
+export const EMERGENCE_PX = 170; // condenses in over this much approach distance
+export const DISSOLVE_PX = 130;  // dissolves out over this much departure distance
+
+/** Deterministic archetype pick from a 0..1 float (this.rand()'s own output). */
+export function obstacleArchetype(u) {
+  if (u < 1 / 3) return 'thorn';
+  if (u < 2 / 3) return 'veil';
+  return 'echo';
+}
+
+/** 0 far ahead, ramps to 1 over the last EMERGENCE_PX of approach. Clamped
+ *  so a negative (already-arrived) distance still reads as fully formed. */
+export function emergenceEnvelope(distanceAheadPx) {
+  return clamp01(1 - distanceAheadPx / EMERGENCE_PX);
+}
+
+/** 1 right at the moment of being passed, easing to 0 over DISSOLVE_PX of
+ *  departure -- symmetric partner to emergenceEnvelope. */
+export function dissolveEnvelope(distanceBehindPx) {
+  return clamp01(1 - distanceBehindPx / DISSOLVE_PX);
+}
 
 export class ObstacleSpawner {
   constructor(paramBus, { seed = 99, height = 46, width = 28 } = {}) {
@@ -94,10 +126,14 @@ export class ObstacleSpawner {
     ) {
       const c = this.candidates[this.nextCandidateIdx++];
       if (c.tMs < nowMs) continue;
-      const p = clamp(0.5 * this.P.live.obstacleDensity, 0, 1);
+      const p = clamp(SPAWN_PROB_BASE * this.P.live.obstacleDensity, 0, 1);
       if (this.rand() > p) continue;
       const wx = worldX + scrollSpeedPxMs * (c.tMs - nowMs);
-      this.active.push({ wx, tMs: c.tMs, height: this.height, width: this.width, passed: false });
+      const archetype = obstacleArchetype(this.rand());
+      const phase = this.rand() * Math.PI * 2;
+      this.active.push({
+        wx, tMs: c.tMs, height: this.height, width: this.width, passed: false, archetype, phase,
+      });
     }
     while (this.active.length && this.active[0].wx < worldX - 1000) this.active.shift(); // roam-safe cull margin
   }
@@ -120,15 +156,132 @@ export class ObstacleSpawner {
     return stumbled;
   }
 
-  draw(ctx, worldX, originX, groundY) {
+  draw(ctx, worldX, originX, groundY, {
+    nowMs = 0, energyCurves = null, haloColor = '#8a3a6b', wind = { x: 0, y: 0 },
+    particleMul = 1, reducedFlash = false,
+  } = {}) {
+    if (this.active.length === 0) return;
+    const { r, g, b } = hexToRgb(haloColor);
+    const rgb = `${r},${g},${b}`;
+    const pulse = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs)) : 0.5 + 0.5 * Math.sin(nowMs / 900);
+    const tSec = nowMs / 1000;
+
     for (const o of this.active) {
       const x = o.wx - worldX + originX;
-      if (x < -60 || x > 2200) continue;
-      ctx.fillStyle = '#8a3a6b';
-      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-      ctx.lineWidth = 1.5;
-      ctx.fillRect(x - o.width / 2, groundY - o.height, o.width, o.height);
-      ctx.strokeRect(x - o.width / 2, groundY - o.height, o.width, o.height);
+      if (x < -80 || x > 2280) continue;
+
+      const distanceAhead = o.wx - worldX;
+      const emergence = o.passed ? 1 : emergenceEnvelope(Math.max(0, distanceAhead));
+      const dissolve = o.passed ? dissolveEnvelope(Math.max(0, worldX - o.wx)) : 1;
+      const presence = emergence * dissolve;
+      if (presence <= 0.01) continue;
+
+      const cx = x, cy = groundY - o.height / 2;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.globalCompositeOperation = 'lighter';
+
+      switch (o.archetype) {
+        case 'thorn': this._drawThorn(ctx, o, presence, emergence, rgb, tSec, reducedFlash); break;
+        case 'veil': this._drawVeil(ctx, o, presence, distanceAhead, rgb, tSec, wind, reducedFlash); break;
+        default: this._drawEcho(ctx, o, presence, pulse, rgb, tSec, particleMul, reducedFlash); break;
+      }
+
+      // Dissolve motes: a brief upward spray as the shape lets go, keyed off
+      // how far into dissolving it is (1 - dissolve rises from 0 to 1).
+      if (o.passed && dissolve < 0.99) {
+        const u = 1 - dissolve;
+        const n = Math.max(1, Math.round(6 * particleMul));
+        ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.5 * dissolve, reducedFlash)})`;
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2 + o.phase;
+          const r2 = 10 + u * 40;
+          ctx.beginPath();
+          ctx.arc(Math.cos(a) * r2, Math.sin(a) * r2 - u * 30, 1.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      ctx.restore();
+    }
+  }
+
+  /** A dark crystalline growth condensing out of the ground: a superformula
+   *  spike with a slow internal shimmer riding its own hue. */
+  _drawThorn(ctx, o, presence, emergence, rgb, tSec, reducedFlash) {
+    const scale = 0.25 + 0.75 * emergence;
+    ctx.scale(scale, scale);
+    const shimmer = 0.5 + 0.5 * Math.sin(tSec * 1.6 + o.phase);
+    const alpha = capFlashAlpha(0.55 * presence, reducedFlash);
+    ctx.fillStyle = `rgba(20,14,22,${0.7 * presence})`;
+    ctx.strokeStyle = `rgba(${rgb},${alpha + 0.2 * shimmer})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const steps = 40;
+    for (let i = 0; i <= steps; i++) {
+      const phi = (i / steps) * Math.PI * 2;
+      const r = (o.height * 0.62) * superformula(phi, 5, 0.6 + 0.3 * shimmer, 1.7, 1.7);
+      const px = Math.cos(phi) * r * 0.6, py = Math.sin(phi) * r - o.height * 0.05;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  /** A hanging ribbon of dissonance: nested translucent sine-curtains,
+   *  swaying on the global wind, brightest right at the jump moment. */
+  _drawVeil(ctx, o, presence, distanceAhead, rgb, tSec, wind, reducedFlash) {
+    const nearMoment = clamp01(1 - Math.abs(distanceAhead) / 40);
+    const layers = 4;
+    for (let li = 0; li < layers; li++) {
+      const depth = li / (layers - 1);
+      const sway = (wind.x || 0) * 0.02 + Math.sin(tSec * 0.8 + o.phase + li) * 6;
+      const alpha = capFlashAlpha((0.14 + 0.1 * depth + 0.35 * nearMoment) * presence, reducedFlash);
+      ctx.strokeStyle = `rgba(${rgb},${alpha})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      const h = o.height * (0.7 + 0.3 * depth);
+      const segs = 12;
+      for (let i = 0; i <= segs; i++) {
+        const u = i / segs;
+        const py = -h / 2 + u * h;
+        const px = sway * Math.sin(u * Math.PI + tSec * 0.5 + li) + (li - layers / 2) * 5;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+  }
+
+  /** A floating cluster of orbiting shards around a core that inhales and
+   *  exhales with the song's global energy. */
+  _drawEcho(ctx, o, presence, pulse, rgb, tSec, particleMul, reducedFlash) {
+    const coreR = (6 + 5 * pulse) * (0.4 + 0.6 * presence);
+    const coreAlpha = capFlashAlpha((0.25 + 0.35 * pulse) * presence, reducedFlash);
+    ctx.fillStyle = `rgba(${rgb},${coreAlpha})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, coreR, 0, Math.PI * 2);
+    ctx.fill();
+
+    const shardCount = Math.max(1, Math.round(3 * particleMul));
+    const orbitR = o.height * 0.5;
+    for (let i = 0; i < shardCount; i++) {
+      const a = tSec * 0.7 + o.phase + (i / 3) * Math.PI * 2;
+      const sx = Math.cos(a) * orbitR, sy = Math.sin(a) * orbitR * 0.7;
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(a);
+      ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.5 * presence, reducedFlash)})`;
+      ctx.beginPath();
+      for (let k = 0; k < 5; k++) {
+        const phi = (k / 5) * Math.PI * 2;
+        const r = phi % 2 === 0 ? 6 : 3;
+        const px = Math.cos(phi) * r, py = Math.sin(phi) * r;
+        if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
     }
   }
 }
