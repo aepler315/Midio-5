@@ -72,13 +72,20 @@ export class Renderer {
     const biomeManager = sim.biomes || null;
     const perf = sim.perf || null;
     const particleMul = perf ? perf.particleMul : 1;
+    // Shared by the ambient obstacles and (further below) The Lens's
+    // interior reveal, so both tint themselves off the same current biome.
+    const haloColor = biomeManager && biomeManager.currentHaloColor ? biomeManager.currentHaloColor() : '#ffdca0';
 
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // The Lens: the player's own slow-eased zoom multiplies the camera's
+    // own zoom (landings/drops still punch on top of it) -- both pivot on
+    // screen center, so leaning in never scrolls the world sideways.
+    const lensZoom = sim.zoom ? sim.zoom.value : 1;
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
-    ctx.scale(camera.zoom, camera.zoom);
+    ctx.scale(camera.zoom * lensZoom, camera.zoom * lensZoom);
     ctx.rotate(camera.roll || 0); // damped impact roll, pivoting on screen center
     ctx.translate(-canvas.width / 2 + camera.shakeX, -canvas.height / 2 + camera.shakeY);
 
@@ -101,7 +108,13 @@ export class Renderer {
     if (sim.coda) this._drawDesaturationOverlay(ctx, canvas, sim.coda);
 
     if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
-    if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY);
+    if (sim.obstacles) {
+      sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY, {
+        nowMs: sim.timeMs, energyCurves: sim.energyCurves, haloColor,
+        wind: sim.biomes ? sim.biomes.wind : { x: 0, y: 0 },
+        particleMul, reducedFlash: !!sim.reducedFlash,
+      });
+    }
     if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
 
     // Rainbow brush: paint Midio's jump arcs, world-locked behind him.
@@ -150,6 +163,20 @@ export class Renderer {
     ctx.restore(); // camera transform
     ctx.restore();
 
+    // The Lens: past a threshold, dim the fully-composed world and fade in
+    // whatever the current zoom depth actually contains -- drawn in screen
+    // space (independent of camera shake/zoom) so the interior reads as a
+    // steady diorama, not something the world's own motion is jostling.
+    if (sim.zoom && sim.zoom.reveal > 0.01) {
+      ctx.save();
+      ctx.fillStyle = `rgba(6,4,10,${0.75 * sim.zoom.reveal})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+      sim.interior?.draw(ctx, canvas, sim.zoom.reveal, {
+        scene: sim.zoom.scene, haloColor, particleMul, reducedFlash: !!sim.reducedFlash,
+      });
+    }
+
     // Mario Paint composer strip: fixed HUD layer, outside camera shake/zoom.
     if (sim.conductor) {
       if (!this.composer) {
@@ -157,15 +184,6 @@ export class Renderer {
         this.composer = new ComposerStrip(sim.conductor.timeline, sim.conductor.barGrid, sim.conductor.durationMs, holds);
       }
       this.composer.draw(ctx, canvas, sim.timeMs);
-    }
-
-    // Note highway: vertical bars glide R→L and meet Midio on the hit line.
-    // Drawn in screen space (no camera shake) so timing stays readable.
-    if (sim.highway) {
-      sim.highway.draw(ctx, canvas, sim.timeMs, pose.midioX, sim.midio.groundY, {
-        fever: sim.fever ? sim.fever.level : 0,
-        reducedFlash: !!sim.reducedFlash,
-      });
     }
 
     if (sim.fever) this._drawFeverAura(ctx, canvas, sim.fever.level, sim.biomes, sim.reducedFlash);

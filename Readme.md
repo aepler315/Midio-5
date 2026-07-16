@@ -24,21 +24,23 @@ a different `.mid`/audio file in at any time, even mid-song** — dragging one
 anywhere on the page (not just the loader screen) tears down whatever's
 currently playing and starts the new one immediately.
 
-**Note highway & tap densities:** vertical bars glide in from the right and
-cross Midio's hit line when you should tap (`Space`, click, or touch). Gold
-bars are jump-aligned (kick onsets). Pick **Easy / Medium / Hard** on the
-loader or in the HUD:
-
-| Density | Pattern |
-| --- | --- |
-| Easy | Metronome quarters — 1 · 2 · 3 · 4 |
-| Medium | Bass-drum (kick) hits **plus** the quarter grid |
-| Hard | Excited dual-thumb density: kicks + 16th-note drive around the bass + rhythm onsets |
+**The Lens:** Midio performs the song himself — every jump, double-jump, and
+double-bass slide is played flawlessly, on the beat, automatically. Your
+control is how close you lean into the world: **scroll, drag, or hold an
+arrow key** to zoom in or out (slowly eased, on purpose — latency never
+reads as lag when the response itself is unhurried), and **Space or a
+click/tap** snaps you fully in or fully back out. Lean in far enough and the
+world you're flying over gives way to what's actually *inside* it — a
+seeded diorama keyed to the current biome: a mythical burrower's tunnel
+warren, a half-buried temple, a tomb whose murals are literally the song's
+own 7-band EQ, or a crystal resonance geode, each one breathing with the
+music (kicks pulse it, band energies drive it) until you zoom back out.
 
 **Audio files** play the decoded buffer only — the synthetic hi-hat / click
 layer from the timeline synth is muted so it doesn't stack on the song. MIDI
-and the procedural demo still use the synth / SoundFont. Perfect hits play a
-coin-style chime (and other short SFX) synthesized in the Web Audio graph.
+and the procedural demo still use the synth / SoundFont. Crossing into or
+out of an interior plays a soft filtered-noise transit whoosh, synthesized
+in the Web Audio graph.
 
 **Fullscreen:** use the HUD fullscreen button (⛶) for immersive play.
 
@@ -105,28 +107,21 @@ under a pulsing star — until the verdicts land and the best fit takes the
 stage. A new file dropped during the gate cancels it cleanly; with no
 fonts loaded there is no gate at all.
 
-**Play it, don't just watch it:** tap Space (or click/touch) on the bass
-drum to jump. A tap **before the character hits the ground is a double
-jump** — a C0-continuous relaunch from the current height — but not
-forever: the air-jump budget is paced by the song's *phrase structure*.
-The analysis engine autocorrelates the per-bar energy profile at 4- and
-8-bar lags to decide whether the song phrases in 4s or 8s, and the budget
-(2 per 4-bar phrase, 4 per 8-bar) refills on each phrase boundary, with
-each successive air jump in a phrase a little smaller until the last one —
-the flourish — spikes. And the visuals follow *you*: a *fever meter*
-multiplies steady, accurate tapping (tight offset clustering, high tiers)
-by the song's live energy, and everything downstream — judgment particle
-bursts, phenomena intensity, meteor volleys, and the mountain dance
-amplitude (up to ~2.8×) — rides it. Sloppy taps through a drop stay tame;
-perfect taps through a lullaby stay elegant; both together go insane.
-
-**Latency is measured, never blamed:** the first session ever opens with a
-one-time **calibration screen** — tap along with a bare metronome and the
-median bias becomes your stored input offset (skippable). From then on the
-in-game calibrator watches judged offsets silently: a player who is steady
-between beats but always ~30ms late is reading pipeline latency, not
-sloppiness, so the bias is cancelled automatically (jittery windows are
-left alone — that's the player) and persisted across sessions.
+**Watch it perform itself:** Midio's autoplay engine walks the same
+offline-predicted takeoff schedule the world's obstacles are placed
+against, so every jump always lands and every double-bass roll is always
+ridden clean — there's nothing to fail. A jump queued **before the
+character hits the ground is a double jump** — a C0-continuous relaunch
+from the current height — but not forever: the air-jump budget is paced by
+the song's *phrase structure*. The analysis engine autocorrelates the
+per-bar energy profile at 4- and 8-bar lags to decide whether the song
+phrases in 4s or 8s, and the budget (2 per 4-bar phrase, 4 per 8-bar)
+refills on each phrase boundary, with each successive air jump in a phrase
+a little smaller until the last one — the flourish — spikes. A *fever
+meter* still multiplies the flawless performance's own steadiness by the
+song's live energy, and everything downstream — judgment particle bursts,
+phenomena intensity, meteor volleys, and the mountain dance amplitude (up
+to ~2.8×) — rides it: a lullaby stays elegant, a drop goes insane.
 
 **The trio went stellar:** the design language converged on Midasus — the
 star was perfect — so Midio is now a five-spike star glyph (crown, two
@@ -168,8 +163,8 @@ running). Press `Escape` to close any open popup.
 src/
   core/      NoteEvent timeline, MIDI parser/adapter, Conductor, ParamBus
   audio/     7-band stem separation, onset/BPM detection, audio adapter
-  sim/       fixed-step simulation: jump physics, combo, companions, FX
-  world/     biomes (8-layer parallax) and the fracture/shatter engine
+  sim/       fixed-step simulation: jump physics, combo, companions, FX, autoplay, zoom
+  world/     biomes (8-layer parallax), interior realms (The Lens), fracture/shatter engine
   render/    canvas compositor + camera
   vision/    Ollama-backed closed-loop self-tuning
   ui/        debug overlay, styles

@@ -12,8 +12,9 @@
 
     <div id="loader" class="panel">
       <h1>SUPER MIDIO WORLD</h1>
-      <p class="sub">Drop a .mid file or an audio file (mp3/wav/flac) to begin.<br />
-        Then <b>tap Space or click/touch</b> on the bass drum to jump — hold through double-bass rolls, and release when they end.</p>
+      <p class="sub">Drop a .mid file or an audio file (mp3/wav/flac) to begin — Midio performs it himself.<br />
+        <b>Scroll, drag, or the arrow keys</b> to lean into the world; <b>Space or click</b> snaps you fully in or out.
+        Every mountain, temple, and tomb has an inside — go slow and look.</p>
       <div id="dropzone" tabindex="0">
         <span>Drop file here, or</span>
         <label class="filebtn">
@@ -35,13 +36,7 @@
       </div>
       <p class="hint">Or drop <code>.sf2</code>/<code>.zip</code> files into the <code>soundfonts/</code> folder next to <code>index.html</code> — they load automatically, no clicking required.</p>
       <p id="progressText" class="hint hidden"></p>
-      <div class="diffPicker loaderDiff" id="loaderDiffPicker" title="Tap density for the note highway">
-        <span class="diffLabel">Tap density</span>
-        <button type="button" class="diffBtn" data-diff="easy">Easy</button>
-        <button type="button" class="diffBtn active" data-diff="medium">Medium</button>
-        <button type="button" class="diffBtn" data-diff="hard">Hard</button>
-      </div>
-      <p class="hint">Easy = metronome 1·2·3·4 · Medium = bass drum + beats · Hard = dense dual-thumb 16ths. Tap <kbd>Space</kbd> / click when bars hit Midio. You can drop a different MIDI/audio file mid-song. Press <kbd>`</kbd> for debug, <kbd>T</kbd> tracks, <kbd>F</kbd> SoundFonts, fullscreen button for immersive play.</p>
+      <p class="hint">You can drop a different MIDI/audio file mid-song. Press <kbd>`</kbd> for debug, <kbd>T</kbd> tracks, <kbd>F</kbd> SoundFonts, fullscreen button for immersive play.</p>
     </div>
 
     <div id="hud" class="hidden">
@@ -50,11 +45,6 @@
         <div id="scoreReadout">0</div>
       </div>
       <div id="hudRight">
-        <div id="diffPicker" class="diffPicker" title="Tap density">
-          <button type="button" class="diffBtn" data-diff="easy">Easy</button>
-          <button type="button" class="diffBtn active" data-diff="medium">Med</button>
-          <button type="button" class="diffBtn" data-diff="hard">Hard</button>
-        </div>
         <button id="fullscreenBtn" class="ghostbtn iconbtn" type="button" title="Fullscreen (F11)">&#9974;</button>
         <button id="settingsBtn" class="ghostbtn iconbtn" type="button" title="SoundFont settings (hidden fonts)">&#9881;</button>
         <div id="trackBadge" class="hidden">
@@ -67,15 +57,6 @@
       <button id="fontBarBtn" type="button" title="SoundFonts (F)">
         <span id="fontName">No font</span>
       </button>
-    </div>
-
-    <div id="calibPanel" class="panel hidden">
-      <h1>CALIBRATE</h1>
-      <p class="sub">Tap <b>Space</b> (or click/touch) in time with the pulse.<br />
-        If your taps are steady but consistently late, that lag is your device's latency — it gets measured here and cancelled in-game.</p>
-      <div id="calibBeaconWrap"><div id="calibBeacon"></div></div>
-      <p id="calibStatus" class="hint">Listen…</p>
-      <button id="calibSkipBtn" type="button" class="ghostbtn">Skip (calibrate automatically while playing)</button>
     </div>
 
     <div id="auditionPanel" class="panel hidden">
