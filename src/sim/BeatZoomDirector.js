@@ -6,7 +6,17 @@
 // kick-synced snap, or, right on a drop, the big dramatic dive. Never
 // touches ZoomDirector (the player's lens) or camera shake/punch --
 // composed multiplicatively alongside them in Renderer.
-import { clamp01, mulberry32 } from '../utils/math.js';
+//
+// Reads as intentional rather than glitchy for three reasons: every figure
+// produces a TARGET offset that the displayed value chases through a
+// two-rate ease (quick attack, slower release) so figure switches and kick
+// onsets are never a same-frame jump; the kick pulse and the breath cycle
+// both borrow their timing from the world's own choreography (kickEnv --
+// the exact shape the mountains bounce with -- and the bar phase, not wall
+// clock); and the whole thing is gated by the song's own energy, so it's
+// visibly loud when the music is loud and nearly still when it isn't.
+import { clamp, clamp01, mulberry32 } from '../utils/math.js';
+import { kickEnv } from '../world/MountainChoreo.js';
 
 export const BEAT_ZOOM_MIN = 0.965;
 export const BEAT_ZOOM_MAX_BASE = 1.12; // before fever's amplitude boost
@@ -14,7 +24,9 @@ const FEVER_AMP_GAIN = 0.5;
 
 export const FIGURES = Object.freeze(['breath', 'swell', 'snap', 'dive']);
 
-const SNAP_DECAY_TAU_SEC = 0.18;
+const ATTACK_TAU_SEC = 0.10;  // how fast the displayed value chases a rising target
+const RELEASE_TAU_SEC = 0.45; // ...and a falling one -- slower, so it never snaps back
+
 const SNAP_GAIN = 0.035;
 const DIVE_RISE_BEATS = 2;
 const DIVE_GAIN = 0.11;
@@ -39,16 +51,20 @@ export class BeatZoomDirector {
     this.songSeed = songSeed;
     this.value = 1;
     this._figure = 'breath';
-    this._figureStartMs = 0;
     this._lastPhraseIdx = -1;
-    this._snap = 0; // exponential kick-snap envelope
+    this._lastKickMs = -Infinity;
+    this._lastKickVel = 0.8;
     this._diveStartMs = -Infinity;
     this._swellStartMs = -Infinity;
     this._beatPeriodMs = 500;
   }
 
-  onKick() {
-    if (this._figure === 'snap') this._snap = 1;
+  /** @param tMs the kick's own exact onset time (not the caller's sim
+   *   "now") -- same anchoring discipline as JumpController.onKick, so the
+   *   kickEnv-driven snap pulse starts from the true musical instant. */
+  onKick(vel = 0.8, tMs = 0) {
+    this._lastKickMs = tMs;
+    this._lastKickVel = vel;
   }
 
   onDrop(nowMs) {
@@ -56,56 +72,75 @@ export class BeatZoomDirector {
     this._diveStartMs = nowMs;
   }
 
-  update(nowMs, dtSec, { phraseIdx = 0, calmLevel = 0, hypeFast = 0, beatPeriodMs = 500 } = {}) {
+  update(nowMs, dtSec, {
+    phraseIdx = 0, barPhase01 = 0, calmLevel = 0, hypeFast = 0, hypeSlow = 0,
+    beatPeriodMs = 500, adaptEnv = 0,
+  } = {}) {
+    this._nowMs = nowMs;
     this._beatPeriodMs = beatPeriodMs;
     if (phraseIdx !== this._lastPhraseIdx) {
       this._lastPhraseIdx = phraseIdx;
       const energetic = hypeFast > 0.5;
       const fig = pickFigure(this.songSeed, phraseIdx, { calmLevel, energetic });
       this._figure = fig;
-      this._figureStartMs = nowMs;
       if (fig === 'swell') this._swellStartMs = nowMs;
     }
 
-    this._snap = Math.max(0, this._snap - dtSec / SNAP_DECAY_TAU_SEC);
-
-    const ampMul = 1 + FEVER_AMP_GAIN * clamp01(this._fever || 0);
-    const tSec = nowMs / 1000;
-    let offset = 0;
+    let rawOffset = 0;
     switch (this._figure) {
-      case 'breath': {
-        const hz = 1000 / (this._beatPeriodMs * 4); // one slow breath per bar
-        offset = BREATH_GAIN * Math.sin(2 * Math.PI * hz * tSec);
+      case 'breath':
+        // Phase-locked to the bar (not wall-clock) so the inhale always
+        // peaks on the downbeat -- the same reason the mountains' own
+        // groove wave is driven off strip-space position, not time alone.
+        rawOffset = BREATH_GAIN * Math.sin(2 * Math.PI * barPhase01);
         break;
-      }
       case 'swell': {
         const riseMs = SWELL_BARS * this._beatPeriodMs * 4;
         const releaseMs = SWELL_RELEASE_BARS * this._beatPeriodMs * 4;
         const age = nowMs - this._swellStartMs;
-        if (age < riseMs) offset = SWELL_GAIN * (age / riseMs);
-        else offset = SWELL_GAIN * Math.max(0, 1 - (age - riseMs) / releaseMs);
+        if (age < riseMs) rawOffset = SWELL_GAIN * (age / riseMs);
+        else rawOffset = SWELL_GAIN * Math.max(0, 1 - (age - riseMs) / releaseMs);
         break;
       }
       case 'snap':
-        offset = SNAP_GAIN * this._snap;
+        // Borrows the mountains' own kick-bounce shape (kickEnv: a 40ms
+        // rise, ~180ms exponential settle) instead of an instant step, so
+        // the frame pulses in the same choreography as the world does.
+        rawOffset = SNAP_GAIN * kickEnv(nowMs - this._lastKickMs) * this._lastKickVel;
         break;
       case 'dive': {
         const riseMs = DIVE_RISE_BEATS * this._beatPeriodMs;
         const age = nowMs - this._diveStartMs;
-        if (age >= 0 && age < riseMs) offset = DIVE_GAIN * (age / riseMs);
+        if (age >= 0 && age < riseMs) rawOffset = DIVE_GAIN * (age / riseMs);
         else if (age >= riseMs) {
           const releaseAge = (age - riseMs) / 1000;
-          offset = DIVE_GAIN * Math.exp(-releaseAge / DIVE_RELEASE_TAU_SEC);
+          rawOffset = DIVE_GAIN * Math.exp(-releaseAge / DIVE_RELEASE_TAU_SEC);
         }
         break;
       }
       default:
-        offset = 0;
+        rawOffset = 0;
     }
 
+    // Energy-gate: quiet passages barely move, loud ones visibly breathe --
+    // amplitude tracking the music is itself what reads as intentional
+    // rather than a random jitter. Ducks further while the Lens is
+    // adapting back to neutral, so that longer morph stays clean.
+    const energyGate = 0.35 + 0.65 * clamp01(hypeSlow);
+    const adaptDuck = 1 - 0.5 * clamp01(adaptEnv);
+    const ampMul = (1 + FEVER_AMP_GAIN * clamp01(this._fever || 0)) * energyGate * adaptDuck;
+
     const maxAmp = (BEAT_ZOOM_MAX_BASE - 1) * ampMul;
-    offset = Math.max(-(1 - BEAT_ZOOM_MIN), Math.min(maxAmp, offset * ampMul));
-    this.value = 1 + offset;
+    const minAmp = -(1 - BEAT_ZOOM_MIN) * ampMul;
+    const targetOffset = clamp(rawOffset * ampMul, minAmp, maxAmp);
+    const targetValue = 1 + targetOffset;
+
+    // Two-rate ease: quick to rise into a figure's motion, slower to
+    // settle back out of it -- the same attack/release asymmetry real
+    // camera work uses, and what keeps every discontinuity above (figure
+    // switches, kick onsets, dive starts) from ever reaching the screen.
+    const tau = targetValue > this.value ? ATTACK_TAU_SEC : RELEASE_TAU_SEC;
+    this.value += (1 - Math.exp(-dtSec / tau)) * (targetValue - this.value);
   }
 
   /** Fever's own amplitude boost, set externally each step (mirrors how

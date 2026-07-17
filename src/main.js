@@ -738,11 +738,9 @@ function frame(tRaf) {
     if (sim.performer.milestoneFlash) milestoneFiredThisFrame = true;
   }
 
-  // The Lens: a zoom crossing fires a soft transit whoosh, direction-aware.
-  if (sfx && sim.zoom) {
-    if (sim.zoom.justCrossedIn) sfx.transit?.(1);
-    else if (sim.zoom.justCrossedOut) sfx.transit?.(-1);
-  }
+  // The Lens: when the world starts adapting back to neutral, a soft
+  // transit whoosh -- direction-aware -- marks the moment it takes over.
+  if (sfx && sim.zoom && sim.zoom.adaptJustStarted) sfx.transit?.(sim.zoom.adaptDir);
 
   const alpha = acc / STEP_MS;
   renderer.draw(sim, alpha);

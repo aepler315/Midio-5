@@ -28,22 +28,20 @@ currently playing and starts the new one immediately.
 double-bass slide is played flawlessly, on the beat, automatically. Your
 control is how close you lean into the world: **scroll, drag, pinch, or
 hold an arrow key** to zoom in or out — including pulling back past the
-resting view, not just leaning in — (slowly eased, on purpose — latency
+resting view, not just leaning in (slowly eased, on purpose — latency
 never reads as lag when the response itself is unhurried), and **Space or a
-click/tap** snaps you fully in or back to the resting view. Lean in far
-enough and the world you're flying over gives way to what's actually
-*inside* it — a seeded diorama keyed to the current biome: a mythical
-burrower's tunnel warren, a half-buried temple, a tomb whose murals are
-literally the song's own 7-band EQ, or a crystal resonance geode, each one
-breathing with the music (kicks pulse it, band energies drive it) until you
-zoom back out. This sits on top of the world's own automatic beat-synced
-zoom (see below), never fighting it.
+click/tap** snaps you fully in or back to the resting view. **Any lean is
+temporary:** a couple of seconds after you stop, the world eases itself
+back to the overview over the next several seconds, timed to start on the
+next downbeat — and it performs that return rather than just resetting the
+camera, the mountains swelling taller and the haze thickening mid-morph as
+the skyline visibly meets the widening view, with a soft transit whoosh
+marking the moment it takes over. This sits on top of the world's own
+automatic beat-synced zoom (see below), never fighting it.
 
 **Audio files** play the decoded buffer only — the synthetic hi-hat / click
 layer from the timeline synth is muted so it doesn't stack on the song. MIDI
-and the procedural demo still use the synth / SoundFont. Crossing into or
-out of an interior plays a soft filtered-noise transit whoosh, synthesized
-in the Web Audio graph.
+and the procedural demo still use the synth / SoundFont.
 
 **Fullscreen:** use the HUD fullscreen button (⛶) for immersive play.
 

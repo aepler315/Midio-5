@@ -72,8 +72,8 @@ export class Renderer {
     const biomeManager = sim.biomes || null;
     const perf = sim.perf || null;
     const particleMul = perf ? perf.particleMul : 1;
-    // Shared by the ambient obstacles and (further below) The Lens's
-    // interior reveal, so both tint themselves off the same current biome.
+    // Shared by the ambient obstacles, so they tint themselves off the
+    // same current biome as everything else.
     const haloColor = biomeManager && biomeManager.currentHaloColor ? biomeManager.currentHaloColor() : '#ffdca0';
 
     ctx.save();
@@ -177,20 +177,6 @@ export class Renderer {
 
     ctx.restore(); // camera transform
     ctx.restore();
-
-    // The Lens: past a threshold, dim the fully-composed world and fade in
-    // whatever the current zoom depth actually contains -- drawn in screen
-    // space (independent of camera shake/zoom) so the interior reads as a
-    // steady diorama, not something the world's own motion is jostling.
-    if (sim.zoom && sim.zoom.reveal > 0.01) {
-      ctx.save();
-      ctx.fillStyle = `rgba(6,4,10,${0.75 * sim.zoom.reveal})`;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.restore();
-      sim.interior?.draw(ctx, canvas, sim.zoom.reveal, {
-        scene: sim.zoom.scene, haloColor, particleMul, reducedFlash: !!sim.reducedFlash,
-      });
-    }
 
     // Mario Paint composer strip: fixed HUD layer, outside camera shake/zoom.
     if (sim.conductor) {
