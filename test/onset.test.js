@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectRhythmOnsets, estimateTempo, extractPseudoLane } from '../src/audio/OnsetDetector.js';
+import { detectRhythmOnsets, estimateTempo, extractPseudoLane, estimateSustainMs, mixBandEnvelopes } from '../src/audio/OnsetDetector.js';
 import { Role } from '../src/core/NoteEvent.js';
 
 function silentBands(n) {
@@ -74,4 +74,44 @@ test('extractPseudoLane emits MELODY notes from a varying MID band', () => {
     assert.ok(n2.pitch >= 60 && n2.pitch <= 96);
     assert.equal(n2.role, Role.MELODY);
   }
+});
+
+test('extractPseudoLane events carry their analysis frame for downstream pitch/duration refinement', () => {
+  const rate = 86;
+  const n = rate * 4;
+  const bands = silentBands(n);
+  for (let f = 0; f < n; f += Math.round(rate * 0.5)) bands[3][f] = 0.9;
+  const notes = extractPseudoLane(bands, rate, { bandIndices: [2, 3, 4], pitchLo: 60, pitchHi: 96, role: Role.MELODY });
+  assert.ok(notes.length > 0);
+  for (const note of notes) {
+    assert.ok(Number.isInteger(note.frame) && note.frame >= 0 && note.frame < n);
+    assert.ok(Math.abs((note.frame / rate) * 1000 - note.tMs) < 1e-6, 'frame and tMs must agree');
+  }
+});
+
+test('estimateSustainMs: a long plateau sustains, a transient spike stays near the floor, both clamped', () => {
+  const rate = 86;
+  const env = new Float32Array(rate * 4);
+  // A 1s plateau starting at frame 43 (0.5s), then silence.
+  for (let f = 43; f < 43 + rate; f++) env[f] = 0.8;
+  const sustained = estimateSustainMs(env, rate, 43);
+  assert.ok(Math.abs(sustained - 1000) < 120, `expected ~1000ms sustain, got ${sustained}`);
+
+  // A single-frame spike.
+  const spikeEnv = new Float32Array(rate * 2);
+  spikeEnv[20] = 0.9;
+  assert.equal(estimateSustainMs(spikeEnv, rate, 20), 120, 'a transient clamps to the minimum');
+
+  // A plateau longer than the cap clamps to maxMs.
+  const wall = new Float32Array(rate * 6);
+  wall.fill(0.7);
+  assert.equal(estimateSustainMs(wall, rate, 0), 1600);
+});
+
+test('mixBandEnvelopes averages exactly the requested bands', () => {
+  const bands = silentBands(10);
+  bands[2].fill(0.4);
+  bands[3].fill(0.8);
+  const mix = mixBandEnvelopes(bands, [2, 3]);
+  for (const v of mix) assert.ok(Math.abs(v - 0.6) < 1e-6);
 });
