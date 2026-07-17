@@ -37,6 +37,28 @@ export function shardMesh(hub, rim, { spokeEvery = 2, braces = [] } = {}) {
   return { vertices, edges };
 }
 
+/** A hexagram (two interlocked triangles) about (cx,cy), plus a single
+ *  vertical axis spoke pair -- the trio's shared sigil core. Midasus's own
+ *  full-size glyph; Midio and Broshi carry a small one at their eye/socket
+ *  in place of the old bare triangle, so all three read as the same kind
+ *  of instrument. */
+export function hexagramMesh(r, cx = 0, cy = 0) {
+  const tri = (offsetDeg) => [0, 1, 2].map((i) => {
+    const a = ((offsetDeg + i * 120) * Math.PI) / 180;
+    return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
+  });
+  const [a0, a1, a2] = tri(-90);
+  const [b0, b1, b2] = tri(90);
+  return {
+    vertices: [{ x: cx, y: cy }, a0, a1, a2, b0, b1, b2],
+    edges: [
+      [1, 2], [2, 3], [3, 1], // upward triangle
+      [4, 5], [5, 6], [6, 4], // downward triangle
+      [0, 1], [0, 4],         // vertical axis
+    ],
+  };
+}
+
 /** Merge several local meshes into one, offsetting edge indices. Returns
  * the merged mesh plus the vertex-index offset each input mesh landed at,
  * so callers can still address "my mesh's vertex 3" after merging. */
@@ -70,7 +92,7 @@ export const MIDIO_BODY = shardMesh({ x: 0, y: -28 }, [
   { x: -9, y: -25 },   //   notch
   { x: -21, y: -44 },  // left shoulder spike, a shade higher: the asymmetry
 ], { spokeEvery: 2, braces: [[1, 4], [6, 8]] });
-export const MIDIO_EYE = radialMesh(5.5, 6, 3, 0, -31, -Math.PI / 2);
+export const MIDIO_EYE = hexagramMesh(5.5, 0, -31);
 export const MIDIO_MESH = mergeMeshes([MIDIO_BODY, MIDIO_EYE]).mesh;
 
 // --- Apotheosis: Midio's earned transformation (spec: charge earned by
@@ -145,29 +167,13 @@ export const BROSHI_JAW = {
   vertices: [{ x: 10, y: -13 }, { x: 26, y: -11 }],
   edges: [[0, 1]],
 };
-export const BROSHI_EYE = radialMesh(2.2, 2.2, 3, 16, -23, -Math.PI / 2);
+export const BROSHI_EYE = hexagramMesh(2.6, 16, -23);
 // Tail: anchor near the back of the body, tip trailing behind -- swayed
 // in place (see Broshi's calm behaviors) by rotating vertex 1 about vertex 0.
 export const BROSHI_TAIL = { vertices: [{ x: -26, y: -16 }, { x: -48, y: -6 }], edges: [[0, 1]] };
 
 // --- Midasus: a hexagram -- two interlocked triangles about the hub with
 // a single vertical axis spoke pair. An arcane instrument, not a gem. ---
-export function hexagramMesh(r) {
-  const tri = (offsetDeg) => [0, 1, 2].map((i) => {
-    const a = ((offsetDeg + i * 120) * Math.PI) / 180;
-    return { x: Math.cos(a) * r, y: Math.sin(a) * r };
-  });
-  const [a0, a1, a2] = tri(-90);
-  const [b0, b1, b2] = tri(90);
-  return {
-    vertices: [{ x: 0, y: 0 }, a0, a1, a2, b0, b1, b2],
-    edges: [
-      [1, 2], [2, 3], [3, 1], // upward triangle
-      [4, 5], [5, 6], [6, 4], // downward triangle
-      [0, 1], [0, 4],         // vertical axis
-    ],
-  };
-}
 export const MIDASUS_HEX_R = 8.5;
 export const MIDASUS_MESH = hexagramMesh(MIDASUS_HEX_R);
 

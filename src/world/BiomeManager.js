@@ -11,7 +11,7 @@ import { KuramotoSwarm } from './KuramotoSwarm.js';
 import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
-import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars } from './MountainChoreo.js';
+import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul } from './MountainChoreo.js';
 import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { LightningFX } from './Lightning.js';
@@ -80,6 +80,7 @@ export class BiomeManager {
     this._danceKickMs = -Infinity;
     this._danceKickAmp = 0;
     this.fever = 0; // player fever (Simulation.fever.level): cranks the dance and the runners
+    this.orogenyGrowth = 0.1; // mountain-building arc (Simulation.orogeny.growth), set externally each step
     // Miniature characters running along the near ranges' ridges — an
     // independent trio per range so the depths don't mirror each other.
     this.ridgeRunners = {
@@ -341,6 +342,15 @@ export class BiomeManager {
     if (!this.currentBlend) return '#ffffff';
     const { from, to, t } = this.currentBlend;
     return this.lerpCache.get(this._profile(from).celestial.haloColor, this._profile(to).celestial.haloColor, t);
+  }
+
+  /** The current sky's base (horizon) tone -- used as a full-bleed backdrop
+   *  fill so zooming out past 1.0 never exposes blank canvas at the edges
+   *  of the (deliberately un-overscanned) parallax layers. */
+  currentSkyBase() {
+    if (!this.currentBlend) return '#141428';
+    const { from, to, t } = this.currentBlend;
+    return this.lerpCache.get(this._profile(from).sky[1], this._profile(to).sky[1], t);
   }
 
   /** Fires a reward meteor volley sized by both PerfGovernor headroom and
@@ -1069,7 +1079,12 @@ export class BiomeManager {
     }
     const nowMs = this.tSec * 1000;
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
-    const baseY = canvas.height - strip.height + yOff;
+    // Orogeny: the range grows taller toward the song's energy climax, then
+    // subsides -- height only, anchored at the base so the ridge visibly
+    // rears up rather than the whole strip just scaling in place.
+    const growthMul = orogenyHeightMul(layerKey, this.orogenyGrowth || 0);
+    const dh = strip.height * growthMul;
+    const baseY = canvas.height - dh + yOff;
     const w = strip.width;
     let x = -(((scrollX % w) + w) % w);
     while (x < canvas.width) {
@@ -1078,7 +1093,7 @@ export class BiomeManager {
         const sx = x + cx;
         if (sx + cw < 0 || sx > canvas.width) continue;
         const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0);
-        ctx.drawImage(strip, cx, 0, cw, strip.height, sx, baseY + dy, cw, strip.height);
+        ctx.drawImage(strip, cx, 0, cw, strip.height, sx, baseY + dy, cw, dh);
       }
       x += w;
     }
@@ -1102,7 +1117,9 @@ export class BiomeManager {
     if (left > canvas.width || left + massifW < 0) return;
 
     const baseY = this.groundY - 26;
-    const maxH = 234;
+    // The massif is the farthest solid thing in the scene -- it rides the
+    // same orogeny arc as the L2 range (the far-most parallax layer).
+    const maxH = 234 * orogenyHeightMul('L2', this.orogenyGrowth || 0);
     const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
     const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
     const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.55));
@@ -1155,15 +1172,28 @@ export class BiomeManager {
       ctx.fillStyle = groundColor;
       for (const bar of bars) ctx.fillRect(bar.x, bar.y, bar.width + 1, canvas.height - bar.y);
 
+      const haloColor = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
+      const { r, g, b } = hexToRgb(haloColor);
+      const rgb = `${r},${g},${b}`;
+
+      // Crest caps: the ground rhymes with the spectrum massif's own
+      // halo-tinted crest -- a thin bright line riding the groove wave,
+      // silent (skipped) whenever the track's global energy is near zero.
+      const grooveNow = bars.length ? bars[0].groove || 0 : 0;
+      if (grooveNow > 0.05) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.28 * grooveNow, this.reducedFlash)})`;
+        for (const bar of bars) ctx.fillRect(bar.x, bar.y, bar.width + 1, 2);
+        ctx.restore();
+      }
+
       // Kick ground glow: an emissive rim over bars a kick-synced pulse
       // (GroundField.kickGlow) is currently racing through -- tinted toward
       // the biome's own halo color so it reads as the world's light, not a
       // generic overlay. Silent (zero cost) whenever no pulse is active.
       const glowBars = bars.filter((bar) => bar.glow > 0.01);
       if (glowBars.length) {
-        const haloColor = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
-        const { r, g, b } = hexToRgb(haloColor);
-        const rgb = `${r},${g},${b}`;
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         for (const bar of glowBars) {

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ZoomDirector, ZOOM_MIN, ZOOM_MAX, sceneForBiome, sceneSeedFor, SCENES,
+  ZoomDirector, ZOOM_MIN, ZOOM_MAX, ZOOM_NEUTRAL, sceneForBiome, sceneSeedFor, SCENES, pinchZoomDelta,
 } from '../src/sim/ZoomDirector.js';
 
 const STEP = 1 / 120;
@@ -27,23 +27,23 @@ test('sceneSeedFor is deterministic per (song, biome, world bucket) and varies a
   assert.notEqual(a, sceneSeedFor(42, 'EMBER', 100000), 'a different world bucket should differ');
 });
 
-test('value eases toward target with a real lag (not instant), starts at ZOOM_MIN', () => {
+test('value eases toward target with a real lag (not instant), starts at the neutral resting zoom', () => {
   const z = new ZoomDirector(1);
-  assert.equal(z.value, ZOOM_MIN);
+  assert.equal(z.value, ZOOM_NEUTRAL);
   z.nudge(ZOOM_MAX); // clamp will pin target at ZOOM_MAX
   z.update(0, STEP, 'TWILIGHT', 0);
-  assert.ok(z.value > ZOOM_MIN, 'should have started moving');
-  assert.ok(z.value < ZOOM_MIN + (ZOOM_MAX - ZOOM_MIN) * 0.1, 'a single 8.3ms step must not have arrived yet');
+  assert.ok(z.value > ZOOM_NEUTRAL, 'should have started moving');
+  assert.ok(z.value < ZOOM_NEUTRAL + (ZOOM_MAX - ZOOM_NEUTRAL) * 0.1, 'a single 8.3ms step must not have arrived yet');
 });
 
-test('nudge/toggle stay clamped within [ZOOM_MIN, ZOOM_MAX]', () => {
+test('nudge stays clamped within [ZOOM_MIN, ZOOM_MAX]; toggle snaps between neutral and ZOOM_MAX', () => {
   const z = new ZoomDirector(1);
   z.nudge(-100);
   assert.equal(z.target, ZOOM_MIN);
   z.nudge(100);
   assert.equal(z.target, ZOOM_MAX);
   z.toggle();
-  assert.equal(z.target, ZOOM_MIN);
+  assert.equal(z.target, ZOOM_NEUTRAL, 'toggle backs off to the resting zoom, not the far zoomed-out end');
   z.toggle();
   assert.equal(z.target, ZOOM_MAX);
 });
@@ -99,4 +99,16 @@ test('justCrossedIn/justCrossedOut fire exactly once per crossing of the inside 
     t += 8.33;
   }
   assert.equal(outCount, 1, `expected exactly one crossing-out, got ${outCount}`);
+});
+
+test('pinchZoomDelta: spreading zooms in, pinching together zooms out, no-op with invalid distances', () => {
+  assert.ok(pinchZoomDelta(100, 150, 0.01) > 0, 'spreading fingers should zoom in');
+  assert.ok(pinchZoomDelta(150, 100, 0.01) < 0, 'pinching together should zoom out');
+  assert.equal(pinchZoomDelta(0, 150, 0.01), 0);
+  assert.equal(pinchZoomDelta(150, 0, 0.01), 0);
+  assert.equal(pinchZoomDelta(-10, 150, 0.01), 0);
+});
+
+test('ZOOM_MIN now allows zooming out below 1 (the world pulling back, not just leaning in)', () => {
+  assert.ok(ZOOM_MIN < 1, `expected ZOOM_MIN < 1, got ${ZOOM_MIN}`);
 });

@@ -16,7 +16,7 @@ const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
 const KP = 90, KD = 12;
 const SNAP = 0.70;
-const DRAW_SCALE = 1.45; // ferocity pass: render-only
+const DRAW_SCALE = 1.8; // the stage got bigger: render-only
 const BANK_GAIN = 0.0016, BANK_MAX = 0.6; // she rolls into her darts
 const SLASH_LIFE_SEC = 0.18;
 
@@ -107,23 +107,23 @@ export class Midasus {
     switch (this.orbitStyle) {
       case 'figure8': // a sideways 8, crossing right over the anchor
         return {
-          x: ax + 68 * a * Math.sin(1.6 * r * t + this.phi),
-          y: ay + 40 * a * Math.sin(3.2 * r * t + 2 * this.phi),
+          x: ax + 82 * a * Math.sin(1.6 * r * t + this.phi),
+          y: ay + 48 * a * Math.sin(3.2 * r * t + 2 * this.phi),
         };
       case 'loop': // quick tight circles: loop-the-loops around the anchor
         return {
-          x: ax + 46 * a * Math.cos(2.6 * r * t + this.phi),
-          y: ay + 46 * a * Math.sin(2.6 * r * t + this.phi),
+          x: ax + 55 * a * Math.cos(2.6 * r * t + this.phi),
+          y: ay + 55 * a * Math.sin(2.6 * r * t + this.phi),
         };
       case 'petal': { // a three-petal rose, dipping through the center
         const th = 1.4 * r * t + this.phi;
-        const rho = 56 * a * (0.55 + 0.45 * Math.cos(3 * th));
+        const rho = 67 * a * (0.55 + 0.45 * Math.cos(3 * th));
         return { x: ax + rho * Math.cos(th), y: ay + rho * Math.sin(th) * 0.7 };
       }
       default: // 'lissajous', the original drift
         return {
-          x: ax + 60 * a * Math.sin(1.8 * r * t + this.phi),
-          y: ay + 34 * a * Math.sin(1.2 * r * t),
+          x: ax + 72 * a * Math.sin(1.8 * r * t + this.phi),
+          y: ay + 41 * a * Math.sin(1.2 * r * t),
         };
     }
   }

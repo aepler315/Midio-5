@@ -95,7 +95,7 @@ test('hard mini-hops barrel-roll sometimes, bounded, and always settle back to z
   let sawRoll = 0, maxRoll = 0;
   let t = 0;
   for (let i = 0; i < 60; i++) {
-    conductor.fireEvent(Role.RHYTHM, { kick: false, vel: 0.9 });
+    conductor.fireEvent(Role.MELODY, { kick: false, vel: 0.9, pitch: 60 + (i % 12) });
     for (let s = 0; s < 4; s++) {
       t += 40;
       b.update(t, 1 / 60, fakeMidio(), null, null, 0, 480, 0);

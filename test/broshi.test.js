@@ -39,8 +39,8 @@ test('mini-hop height is softened during calm ("relaxed lope")', () => {
   const conductorB = fakeConductor();
   const b = new Broshi(conductorB, {}, { seed: 2 });
 
-  conductorA.fireEvent(Role.RHYTHM, { kick: false, vel: 0.8 });
-  conductorB.fireEvent(Role.RHYTHM, { kick: false, vel: 0.8 });
+  conductorA.fireEvent(Role.MELODY, { kick: false, vel: 0.8, pitch: 64 });
+  conductorB.fireEvent(Role.MELODY, { kick: false, vel: 0.8, pitch: 64 });
   a.update(0, 1 / 60, fakeMidio(), null, null, 0, 480, 0);
   b.update(0, 1 / 60, fakeMidio(), null, null, 0, 480, 1);
 

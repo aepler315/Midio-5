@@ -8,6 +8,7 @@
 // then recovers spectacularly" gag layered on top.
 import { clamp01, mulberry32, hashSeed, shuffle } from '../utils/math.js';
 import { Role } from '../core/NoteEvent.js';
+import { FLAT_WEIGHTS } from '../audio/bands.js';
 
 const SLICE_WIDTH_PX = 90;
 const NUM_BANDS = 7;
@@ -52,6 +53,23 @@ const GLOW_DECAY_TAU_SEC = 0.09;     // local brightness decay once the front pa
 const GLOW_LOCAL_LIFE_SEC = 0.30;    // beyond this a bar's contribution is exactly 0
 const GLOW_TOTAL_LIFE_MS = 380;      // hard wall-clock cap on a glow record's life
 const GLOW_MAX_ACTIVE = 3;           // hard cap on concurrently-tracked glow pulses (oldest shed first)
+
+// Live EQ tracking: a slice's spring target used to be baked once at
+// creation from a one-shot band sample; now it keeps chasing the same
+// band's live level (eased, not snapped, so it never buzzes), so the
+// terrain visibly rides the music passing through it rather than sitting
+// on a frozen snapshot. heightAt() (physics) is unaffected in kind -- it's
+// still just the spring's own output, same as it always was.
+const BASE_TARGET_TAU_SEC = 0.6;
+
+// Groove wave: a render-only traveling ripple (same discipline as buzz/
+// ripple/glow above) whose amplitude rides the song's overall energy, so
+// the ground visibly breathes with the track even between individual
+// kicks/bands. Never touches heightAt().
+const GROOVE_WAVE_AMPLITUDE_PX = 4;
+const GROOVE_WAVELENGTH_PX = 300;
+const GROOVE_HZ = 0.11;
+const GROOVE_TAU_SEC = 0.30;
 
 /**
  * Pure per-ripple contribution at a given worldX/time. `ripple` =
@@ -116,6 +134,7 @@ export class GroundField {
     this._nowMs = 0;
     this._ripples = []; // active landing-ripple records, render-only (see impulse())
     this._glows = []; // active kick-glow records, render-only (see kickGlow())
+    this._groove = 0; // EMA of global energy, driving the render-only groove wave
 
     // The Unraveling (Movement V): set externally from CodaDirector.unravel
     // each frame -- the terrain-EQ slices visually flatten toward
@@ -252,16 +271,25 @@ export class GroundField {
     if (this._glows.length) this._glows = this._glows.filter((g) => nowMs - g.startMs < GLOW_TOTAL_LIFE_MS);
     const bass = energyCurves ? clamp01(energyCurves.sample(1, nowMs)) : 0;
     this._buzz += (1 - Math.exp(-dtSec / 0.12)) * (bass - this._buzz);
+    const globalEnergy = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS)) : 0;
+    this._groove += (1 - Math.exp(-dtSec / GROOVE_TAU_SEC)) * (globalEnergy - this._groove);
     this._spawnSlicesUpTo(worldX + LOOKAHEAD_PX);
     this._trimBehind(worldX);
     this._maybeTriggerGag(nowMs, worldX);
 
+    const baseTargetAlpha = 1 - Math.exp(-dtSec / BASE_TARGET_TAU_SEC);
     for (const s of this.slices) {
+      const bandIdx = (s.index + BAND_SHIFT) % NUM_BANDS;
+      const e = energyCurves ? clamp01(energyCurves.sample(bandIdx, nowMs)) : 0.3;
+      const liveTarget = -e * RISE_AMPLITUDE_PX; // more energy -> ground rises to meet it
       if (!s._initialized) {
-        const bandIdx = (s.index + BAND_SHIFT) % NUM_BANDS;
-        const e = energyCurves ? clamp01(energyCurves.sample(bandIdx, nowMs)) : 0.3;
-        s.baseTarget = -e * RISE_AMPLITUDE_PX; // more energy -> ground rises to meet it
+        s.baseTarget = liveTarget;
         s._initialized = true;
+      } else {
+        // Keeps chasing the band's current level instead of the one-shot
+        // value it was born with -- the terrain is a live EQ, not a
+        // snapshot that just scrolls by.
+        s.baseTarget += baseTargetAlpha * (liveTarget - s.baseTarget);
       }
 
       let target = s.baseTarget;
@@ -320,7 +348,14 @@ export class GroundField {
       const buzz = buzzAmp > 0.15 ? buzzAmp * Math.sin(wt + s.index * 2.39996) : 0;
       const ripple = this._rippleOffset(s.worldXStart, this._nowMs);
       const glow = this._glowAt(s.worldXStart, this._nowMs);
-      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + (s.offset + ripple) * settle + buzz, glow });
+      // Groove wave: a slow traveling ripple keyed off the song's global
+      // energy, phase-driven by world-x so it visibly rolls with scroll
+      // rather than bobbing in lockstep -- the ground breathing with the
+      // track between individual band/kick events.
+      const groove = this._groove > 0.02
+        ? GROOVE_WAVE_AMPLITUDE_PX * this._groove * Math.sin(s.worldXStart / GROOVE_WAVELENGTH_PX + this._nowMs / 1000 * GROOVE_HZ * 2 * Math.PI)
+        : 0;
+      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + (s.offset + ripple + groove) * settle + buzz, glow, groove: this._groove });
     }
     return bars;
   }

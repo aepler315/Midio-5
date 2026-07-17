@@ -7,8 +7,9 @@
 // would actually contain, keyed off the currently-dominant biome.
 import { clamp, clamp01, smoothstep, hashSeed } from '../utils/math.js';
 
-export const ZOOM_MIN = 1;
+export const ZOOM_MIN = 0.85;
 export const ZOOM_MAX = 3.2;
+export const ZOOM_NEUTRAL = 1; // the resting position: neither leaning in nor pulling back
 const EASE_TAU_SEC = 0.7;
 const REVEAL_LO = 0.55, REVEAL_HI = 0.92; // depth range over which the interior crossfades in
 const SCENE_LATCH_ON = 0.05;  // reveal must clear this to latch a scene...
@@ -39,11 +40,21 @@ export function sceneSeedFor(songSeed, biomeName, worldX) {
   return hashSeed(`${songSeed}:${biomeName}:${bucket}`);
 }
 
+/** Pure: the zoom-target delta a pinch gesture should apply this frame,
+ *  from the previous and current two-finger distance (px). Fingers
+ *  spreading (currDist > prevDist) zooms in; pinching together zooms out.
+ *  `rate` converts px of spread into zoom units, same role as
+ *  WHEEL_ZOOM_RATE in main.js. */
+export function pinchZoomDelta(prevDist, currDist, rate) {
+  if (!(prevDist > 0) || !(currDist > 0)) return 0;
+  return (currDist - prevDist) * rate;
+}
+
 export class ZoomDirector {
   constructor(songSeed = 1) {
     this.songSeed = songSeed;
-    this.value = ZOOM_MIN;
-    this.target = ZOOM_MIN;
+    this.value = ZOOM_NEUTRAL;
+    this.target = ZOOM_NEUTRAL;
     this.depth = 0;
     this.reveal = 0;
     /** {kind, seed, biomeName} while latched, else null. Regenerated only
@@ -62,11 +73,12 @@ export class ZoomDirector {
     this.target = clamp(this.target + delta, ZOOM_MIN, ZOOM_MAX);
   }
 
-  /** Space/click: snap the TARGET fully in or fully out, whichever is
-   *  farther from where the target currently sits. */
+  /** Space/click: snap the TARGET fully in, or back to neutral -- the
+   *  resting position, not the far zoomed-out end (that's reachable only
+   *  by deliberate wheel/pinch/arrow-key input, never a single tap). */
   toggle() {
-    const mid = (ZOOM_MIN + ZOOM_MAX) / 2;
-    this.target = this.target > mid ? ZOOM_MIN : ZOOM_MAX;
+    const mid = (ZOOM_NEUTRAL + ZOOM_MAX) / 2;
+    this.target = this.target > mid ? ZOOM_NEUTRAL : ZOOM_MAX;
   }
 
   update(nowMs, dtSec, biomeName, worldX) {

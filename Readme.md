@@ -26,15 +26,18 @@ currently playing and starts the new one immediately.
 
 **The Lens:** Midio performs the song himself — every jump, double-jump, and
 double-bass slide is played flawlessly, on the beat, automatically. Your
-control is how close you lean into the world: **scroll, drag, or hold an
-arrow key** to zoom in or out (slowly eased, on purpose — latency never
-reads as lag when the response itself is unhurried), and **Space or a
-click/tap** snaps you fully in or fully back out. Lean in far enough and the
-world you're flying over gives way to what's actually *inside* it — a
-seeded diorama keyed to the current biome: a mythical burrower's tunnel
-warren, a half-buried temple, a tomb whose murals are literally the song's
-own 7-band EQ, or a crystal resonance geode, each one breathing with the
-music (kicks pulse it, band energies drive it) until you zoom back out.
+control is how close you lean into the world: **scroll, drag, pinch, or
+hold an arrow key** to zoom in or out — including pulling back past the
+resting view, not just leaning in — (slowly eased, on purpose — latency
+never reads as lag when the response itself is unhurried), and **Space or a
+click/tap** snaps you fully in or back to the resting view. Lean in far
+enough and the world you're flying over gives way to what's actually
+*inside* it — a seeded diorama keyed to the current biome: a mythical
+burrower's tunnel warren, a half-buried temple, a tomb whose murals are
+literally the song's own 7-band EQ, or a crystal resonance geode, each one
+breathing with the music (kicks pulse it, band energies drive it) until you
+zoom back out. This sits on top of the world's own automatic beat-synced
+zoom (see below), never fighting it.
 
 **Audio files** play the decoded buffer only — the synthetic hi-hat / click
 layer from the timeline synth is muted so it doesn't stack on the song. MIDI
@@ -127,29 +130,47 @@ to ~2.8×) — rides it: a lullaby stays elegant, a drop goes insane.
 star was perfect — so Midio is now a five-spike star glyph (crown, two
 shoulders, two ground-spike feet) and Broshi a low comet-star raked hard
 forward, both still wireframe instruments of the same deformation-driven
-glow. Midasus gained **three baby stars** that treat her as a secure base:
-they orbit close, exactly one at a time ventures out to explore in calm
-stretches (Midio is their favorite point of interest), and they rush home
-the moment the song turns loud. Meanwhile **miniature versions of all
-three characters run along the background mountain ridges** — riding the
-exact same ridge wave the mountains dance with, hopping on the
-layer-delayed kick, and sprinting faster as the fever climbs.
+glow, now with her own blurred stellar under-glow and a breathing pulse so
+they read as the same kind of instrument as her — Broshi picked up a
+comet-dust tail of his own, and all three cores are small hexagram sigils.
+The stage itself grew: the ground band is shorter, the sky taller, jumps
+arc higher, and everyone's drawn bigger. Midasus gained **three baby
+stars** that treat her as a secure base: they orbit close, exactly one at
+a time ventures out to explore in calm stretches (Midio is their favorite
+point of interest), and they rush home the moment the song turns loud.
+Meanwhile **miniature versions of all three characters run along the
+background mountain ridges** — riding the exact same ridge wave the
+mountains dance with, hopping on the layer-delayed kick, and sprinting
+faster as the fever climbs. **Broshi now moves to the melody** (his hops
+trigger on melodic onsets, sized by how high the note sits in the tune)
+while **Midio's jumps ride the bass line** — the chart's own flawless
+takeoff schedule stays intact, but bass energy makes a jump bigger, and a
+busy bass line can pop him an extra beat mid-air (guarded so it never
+risks a clean landing).
 
 **The world plays along:** every parallax range dances — a groove-scaled
 traveling wave rolls along each ridge, and kicks bounce the hills, near
 layers first, far peaks a beat-fraction later. Behind them all sits one
 super-distant massif whose skyline IS a live bar graph of the current
 7-band spectrum (bass builds the summit at the center, treble falls away
-to the flanks), haze-tinted and on the slowest scroll in the scene. The
-Mario-Paint composer strip keeps its icons spread across the whole page
-even on dense, velocity-clamped MIDIs (time-stratified icon budget), and
-the trio's stage presence runs deeper: Midio's trick book grows with the
-heat of the run (corkscrew, tuck-pop, 720 helicopter, double flip) plus a
-milestone victory dance and landing pirouettes; Broshi barrel-rolls his
-hard hops, coils into a pounce when a surge starts, and chases his own
-tail when things stay calm; Midasus picks a fresh rest-flight figure every
-time the melody rests (figure-8s, loop-the-loops, a petaled rose) and
-pirouettes on hard accents.
+to the flanks), haze-tinted and on the slowest scroll in the scene.
+**Orogeny:** every range visibly builds across the song — far peaks
+grow the most — toward the track's own energy climax, then subsides back
+down through the rest of the runtime, geology on a song's timescale. The
+ground itself keeps chasing the music's live band levels rather than a
+one-shot snapshot, breathes with a slow groove wave between individual
+hits, and the whole frame gets its own automatic beat-synced zoom on top
+of your own — sometimes a slow subtle sway, sometimes a hard kick-synced
+snap, sometimes a dramatic dive right on a drop. The Mario-Paint composer
+strip keeps its icons spread across the whole page even on dense,
+velocity-clamped MIDIs (time-stratified icon budget), and the trio's stage
+presence runs deeper: Midio's trick book grows with the heat of the run
+(corkscrew, tuck-pop, 720 helicopter, double flip) plus a milestone
+victory dance and landing pirouettes; Broshi barrel-rolls his hard hops,
+coils into a pounce when a surge starts, and chases his own tail when
+things stay calm; Midasus picks a fresh rest-flight figure every time the
+melody rests (figure-8s, loop-the-loops, a petaled rose) and pirouettes on
+hard accents.
 
 Press `` ` `` during play to open the debug overlay (ParamBus state + vision
 loop log); press `V` inside it to toggle the vision self-tuning loop (off by

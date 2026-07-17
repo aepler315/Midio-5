@@ -8,14 +8,14 @@ const BASE_Y = 480;
 const STEP_S = 1000 / 120 / 1000;
 
 function fakeEnergyCurves(value) {
-  return { sample: () => value };
+  return { sample: () => value, globalEnergy: () => value };
 }
 
 // Band 1 drives the bass-buzz micro-vibration; every other band drives the
 // EQ-bar height. Splitting them lets tests build a real EQ offset without
 // the buzz's own small jitter muddying flatten's exact-proportionality math.
 function fakeEnergyCurvesBanded(bassValue, otherValue) {
-  return { sample: (band) => (band === 1 ? bassValue : otherValue) };
+  return { sample: (band) => (band === 1 ? bassValue : otherValue), globalEnergy: () => otherValue };
 }
 
 test('bass buzz shivers the render bars over time but never touches the physics height', () => {
