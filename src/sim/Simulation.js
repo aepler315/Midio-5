@@ -27,7 +27,7 @@ import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
 import { PerfGovernor } from '../render/PerfGovernor.js';
 import { HighlightReel } from '../render/HighlightReel.js';
-import { hashSeed } from '../utils/math.js';
+import { hashSeed, clamp01 } from '../utils/math.js';
 import { buildNoteChart } from './NoteChart.js';
 import { TapJudge } from './TapJudge.js';
 import { ScoreKeeper } from './ScoreKeeper.js';
@@ -38,11 +38,29 @@ import { LatencyCalibrator } from './LatencyCalibrator.js';
 import { WeatherDirector } from './WeatherDirector.js';
 import { ZoomDirector } from './ZoomDirector.js';
 import { InteriorRealm } from '../world/InteriorRealm.js';
+import { BeatZoomDirector } from './BeatZoomDirector.js';
+import { OrogenyDirector } from '../world/OrogenyDirector.js';
 
 const WORLD_SPEED_PX_S = 220;
 const CLEAN_WINDOW_MS = 90;
 // v_ref = 2*Ha_max/(gamma*D_min) — the fastest "typical" landing (spec §2.2.1).
 const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
+// Bass-line air jumps: how far ahead (px) an upcoming obstacle must be
+// before an extra, non-charted air jump is allowed to retarget the arc --
+// the chart's own flawless schedule must never be put at risk for a beat
+// that's just decoration.
+const BASS_AIR_JUMP_SAFETY_PX = 260;
+
+/** Pure: is it safe to fire an extra bass-driven air jump right now, given
+ *  the nearest upcoming obstacle (or null)? Safe when there's no obstacle
+ *  ahead, or it's already behind, or it's far enough out that a retargeted
+ *  arc has settled back onto the chart's own schedule well before Midio
+ *  gets there. */
+export function bassAirJumpSafe(obstacle, worldX, safetyPx = BASS_AIR_JUMP_SAFETY_PX) {
+  if (!obstacle) return true;
+  const distancePx = obstacle.wx - worldX;
+  return distancePx < 0 || distancePx > safetyPx;
+}
 
 export class Simulation {
   constructor(conductor, paramBus, {
@@ -128,6 +146,13 @@ export class Simulation {
     // stretch of it actually contains (see InteriorRealm.js).
     this.zoom = new ZoomDirector(songSeed);
     this.interior = new InteriorRealm(songSeed);
+    // The world's own automatic breathing on top of the player's lens --
+    // sometimes a slow subtle sway, sometimes a hard kick-synced snap or a
+    // dramatic dive right on a drop. Never touches ZoomDirector.
+    this.beatZoom = new BeatZoomDirector(songSeed);
+    // Orogeny: the mountains visibly build across the song, peaking at its
+    // energy climax, then subside through the rest of the runtime.
+    this.orogeny = new OrogenyDirector(energyCurves, conductor.durationMs || 0, conductor.barGrid);
 
     this.worldX = 0;
     this.timeMs = 0;
@@ -163,10 +188,24 @@ export class Simulation {
         this.performer.onKick();
         this.hype.onKick(evt.vel);
         this.interior.onKick();
+        this.beatZoom.onKick();
         this.groundField.kickGlow(this.worldX, evt.tMs, evt.vel);
         this.midasus.voyage.onKick(evt.vel); // deep-space sparkle burst (self-gated on phase)
         if (this.apotheosis.active) this.performer.captureGoldAfterimage(this.midio, this.timeMs);
       }
+    });
+
+    // Bass anchoring: on top of the chart's own flawless schedule, a bass
+    // onset while airborne can pop an extra beat mid-air -- a walking bass
+    // line makes him fly busier, a sparse one leaves him be. Guarded so it
+    // never risks the chart's own clearance guarantee.
+    conductor.on(Role.BASS, (evt) => {
+      if (!this.jump.airborne) return;
+      if (!bassAirJumpSafe(this.obstacles.nearestAhead(this.worldX), this.worldX)) return;
+      const grant = this.airSeq.tryConsume(evt.tMs);
+      if (!grant) return;
+      const performed = this.jump.airJump({ tMs: evt.tMs, vel: evt.vel }, grant.boostMul * 0.8, grant);
+      if (!performed) this.airSeq.refund();
     });
   }
 
@@ -279,7 +318,13 @@ export class Simulation {
       if (ev.kind === 'down') {
         const res = this.judge.onTapDown(ev.tMs);
         if (!res.startedHold) {
-          const tapEvt = { tMs: ev.tMs, vel: res.matchedVel ?? 0.7 };
+          // Bass anchoring: the takeoff itself stays chart-timed (obstacles
+          // are placed against it), but its height rides the bass line --
+          // a heavy bass hit under a jump makes that jump bigger, never
+          // smaller, so clearance only ever improves.
+          const bassAtTakeoff = this.energyCurves ? clamp01(this.energyCurves.sample(1, ev.tMs)) : 0;
+          const vel = Math.min(1, (res.matchedVel ?? 0.7) * (1 + 0.3 * bassAtTakeoff));
+          const tapEvt = { tMs: ev.tMs, vel };
           // A tap before the character hits the ground is a double jump —
           // budgeted per 4-/8-measure phrase, then feet-first physics again.
           let performed = false;
@@ -308,6 +353,7 @@ export class Simulation {
       this._lastDropCount = this.hype.dropCount;
       this.camera.punch(1.07);
       this.camera.shake(9);
+      this.beatZoom.onDrop(nowMs); // the beat zoom's own dramatic dive figure
     }
     this.vibe.update(nowMs, dtSec, this.energyCurves);
     this.keyDirector.update(nowMs, dtSec, {
@@ -458,6 +504,19 @@ export class Simulation {
     const dominantBiome = blend ? (blend.t > 0.5 ? blend.to : blend.from) : 'TWILIGHT';
     this.zoom.update(nowMs, dtSec, dominantBiome, this.worldX);
     this.interior.update(nowMs, dtSec, this.energyCurves);
+
+    // The world's own automatic zoom-breathing, composed on top of the
+    // player's lens in Renderer -- figures change on phrase boundaries.
+    this.beatZoom.fever = this.fever.level;
+    this.beatZoom.update(nowMs, dtSec, {
+      phraseIdx: this.phrases.infoAt(nowMs).phraseIdx,
+      calmLevel: this.calm.level, hypeFast: this.hype.fast, beatPeriodMs: this.jump.beatPeriodMs,
+    });
+
+    // Orogeny: the mountains build toward the song's energy climax, then
+    // gradually subside through the rest of the runtime.
+    this.orogeny.update(nowMs);
+    this.biomes.orogenyGrowth = this.orogeny.growth;
 
     this.gnat.update(nowMs, dtSec, this.calm.level);
     this.camera.update(dtSec, this.calm.level);

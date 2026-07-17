@@ -15,7 +15,7 @@ import { LerpCache, hexToRgb } from '../utils/color.js';
 
 const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
-const MIDIO_DRAW_SCALE = 1.45; // ferocity pass: render-only, physics untouched
+const MIDIO_DRAW_SCALE = 1.8; // the stage got bigger: render-only, physics untouched
 
 // Fever aura: a screen-edge glow that only shows up once the player's earned
 // it -- silent below the threshold so it never competes with the vignette
@@ -83,9 +83,24 @@ export class Renderer {
     // own zoom (landings/drops still punch on top of it) -- both pivot on
     // screen center, so leaning in never scrolls the world sideways.
     const lensZoom = sim.zoom ? sim.zoom.value : 1;
+    // The world's own beat-synced breathing, composed alongside the
+    // player's lens and the camera's own shake/punch.
+    const beatZoomVal = sim.beatZoom ? sim.beatZoom.value : 1;
+    const totalZoom = camera.zoom * lensZoom * beatZoomVal;
+
+    // Zooming out past 1.0 shrinks the whole composed scene toward screen
+    // center, which would otherwise expose blank canvas at the edges (the
+    // parallax layers aren't drawn wider than the viewport). A full-bleed
+    // sky-toned backdrop underneath reads as distant haze rather than a
+    // void -- cheap, and never wrong regardless of which biome is active.
+    if (totalZoom < 0.999) {
+      ctx.fillStyle = biomeManager && biomeManager.currentSkyBase ? biomeManager.currentSkyBase() : '#141428';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
-    ctx.scale(camera.zoom * lensZoom, camera.zoom * lensZoom);
+    ctx.scale(totalZoom, totalZoom);
     ctx.rotate(camera.roll || 0); // damped impact roll, pivoting on screen center
     ctx.translate(-canvas.width / 2 + camera.shakeX, -canvas.height / 2 + camera.shakeY);
 
@@ -464,11 +479,16 @@ export class Renderer {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
     const apoProgress = apotheosis ? apotheosis.progress : 0;
+    // A slow ambient breath plus a quick kick-synced swell -- the same
+    // "always slightly alive" pulse that makes Midasus's core read as an
+    // instrument rather than a static glyph.
+    const breatheBeatFlash = performer ? performer.beatFlash : 0;
+    const breathe = 1 + 0.025 * Math.sin(tSec * 2.4) + 0.05 * breatheBeatFlash;
     const transform = {
       tx: pose.midioX, ty: pose.midioY,
       rot: (pose.leanDeg * Math.PI) / 180,
-      scaleX: pose.scaleX * MIDIO_DRAW_SCALE * (1 + 0.25 * apoProgress),
-      scaleY: pose.scaleY * MIDIO_DRAW_SCALE * (1 + 0.25 * apoProgress),
+      scaleX: pose.scaleX * MIDIO_DRAW_SCALE * breathe * (1 + 0.25 * apoProgress),
+      scaleY: pose.scaleY * MIDIO_DRAW_SCALE * breathe * (1 + 0.25 * apoProgress),
     };
     const hue = flash > 0 ? MIDIO_BASE_HUE + (48 - MIDIO_BASE_HUE) * flash : MIDIO_BASE_HUE;
     // Spectral treatment: near-white filament with a narrow warm fringe.
@@ -494,6 +514,22 @@ export class Renderer {
       displaceMeshRadial(bodyBase, hub.x, hub.y, performer ? performer.modal : null),
       hub.x, hub.y, tSec, melt, 1,
     );
+
+    // Stellar under-glow (Midasus's own trick): a blurred, larger, additive
+    // copy of the body drawn first so he reads like an instrument catching
+    // light, not a flat outline -- brighter on fever and right on the beat.
+    const excitement = clamp01(melt / 8); // vibe/fever/apotheosis "melt" doubles as how hard he's glowing
+    const glowAlpha = capFlashAlpha(0.20 + 0.30 * excitement + 0.4 * breatheBeatFlash, reducedFlash);
+    if (glowAlpha > 0.02) {
+      ctx.save();
+      ctx.filter = 'blur(2px)';
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = glowAlpha;
+      drawMeshPart(ctx, bodyMesh, bodyRest, {
+        ...transform, scaleX: transform.scaleX * 1.35, scaleY: transform.scaleY * 1.35,
+      }, hue, { ...options, alpha: 1, lightBase: 78 });
+      ctx.restore();
+    }
     drawMeshPart(ctx, bodyMesh, bodyRest, transform, hue, options);
 
     if (blink < 0.98) {

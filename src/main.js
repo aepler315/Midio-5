@@ -19,6 +19,7 @@ import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeI
 import { getReducedFlash, setReducedFlash } from './ui/Accessibility.js';
 import { PerfGovernor } from './render/PerfGovernor.js';
 import { LoadingShow } from './ui/LoadingShow.js';
+import { pinchZoomDelta } from './sim/ZoomDirector.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -772,6 +773,8 @@ function frame(tRaf) {
 // register but deliberately slow to arrive.
 const WHEEL_ZOOM_RATE = 0.0016; // zoom units per wheel-delta-px
 const KEY_ZOOM_RATE = 1.1;      // zoom units per second while an arrow key is held
+const PINCH_ZOOM_RATE = 0.006;  // zoom units per px of two-finger spread/pinch
+const TAP_MOVE_GUARD_PX = 8;    // more movement than this before pointerup -> not a tap-toggle
 let zoomKeyDir = 0; // -1 (ArrowDown, zooming out) | 0 | 1 (ArrowUp, zooming in)
 
 function anyModalOpen() {
@@ -785,11 +788,59 @@ canvas.addEventListener('wheel', (e) => {
   sim.zoom.nudge(-e.deltaY * WHEEL_ZOOM_RATE);
 }, { passive: false });
 
+// Pinch to zoom: tracks every active pointer by id. With exactly two down,
+// the frame-to-frame change in their distance nudges the zoom target
+// (spreading = in, pinching = out); a single pointer instead toggles
+// fully in/out on release, guarded so a pinch's own down/up never fires a
+// spurious toggle.
+const activePointers = new Map(); // pointerId -> {x, y}
+let pinchPrevDist = null;
+let pinchOccurred = false;
+let tapStart = null;
+
+function pointerDistance() {
+  const pts = [...activePointers.values()];
+  if (pts.length < 2) return null;
+  return Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+}
+
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
-  if (!running || !sim || !sim.zoom || anyModalOpen()) return;
-  sim.zoom.toggle();
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size === 2) {
+    pinchPrevDist = pointerDistance();
+    pinchOccurred = true;
+  } else if (activePointers.size === 1) {
+    tapStart = { x: e.clientX, y: e.clientY };
+    pinchOccurred = false;
+  }
 });
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!activePointers.has(e.pointerId)) return;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (!running || !sim || !sim.zoom || anyModalOpen()) return;
+  if (activePointers.size === 2) {
+    const dist = pointerDistance();
+    if (pinchPrevDist != null && dist != null) {
+      sim.zoom.nudge(pinchZoomDelta(pinchPrevDist, dist, PINCH_ZOOM_RATE));
+    }
+    pinchPrevDist = dist;
+  }
+});
+
+function endPointer(e) {
+  const wasSingle = activePointers.size === 1 && activePointers.has(e.pointerId);
+  activePointers.delete(e.pointerId);
+  if (activePointers.size < 2) pinchPrevDist = null;
+  if (wasSingle && !pinchOccurred && tapStart && running && sim && sim.zoom && !anyModalOpen()) {
+    const moved = Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y);
+    if (moved < TAP_MOVE_GUARD_PX) sim.zoom.toggle();
+  }
+  if (activePointers.size === 0) { pinchOccurred = false; tapStart = null; }
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
 
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space') {

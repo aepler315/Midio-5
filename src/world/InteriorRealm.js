@@ -90,8 +90,11 @@ export function generateGeode(seed) {
   const spears = Array.from({ length: spearCount }, (_, i) => ({
     band: i,
     ang: (i / spearCount) * Math.PI * 2 + (rand() - 0.5) * 0.25,
-    baseLen: 40 + rand() * 18,
-    width: 7 + rand() * 5,
+    // Reaches most of the way to the cavern wall (radius 260) at full
+    // flare, so the chamber reads as populated rather than a mostly-empty
+    // dark void with a lone spark at the center.
+    baseLen: 95 + rand() * 45,
+    width: 15 + rand() * 8,
     hueShift: (rand() - 0.5) * 40,
   }));
   return { kind: 'geode', spears, seedSpin: rand() * Math.PI * 2 };
@@ -360,7 +363,7 @@ export class InteriorRealm {
     ctx.beginPath();
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
-      const r = i % 2 === 0 ? 16 : 8;
+      const r = i % 2 === 0 ? 24 : 12;
       const px = Math.cos(a) * r, py = Math.sin(a) * r;
       if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }

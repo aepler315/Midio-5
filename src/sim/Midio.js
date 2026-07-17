@@ -2,7 +2,7 @@
 export class Midio {
   constructor() {
     this.screenX = 220;
-    this.groundY = 480;
+    this.groundY = 540;
     this.y = 0;          // px above ground (from JumpController)
     this.scaleX = 1;
     this.scaleY = 1;

@@ -3,7 +3,7 @@
 // frequency->anatomy mapping driven by live band energy and note onsets,
 // and a Rabid overlay gated on global track energy.
 import { Role } from '../core/NoteEvent.js';
-import { clamp, smoothstep, mulberry32, lerp } from '../utils/math.js';
+import { clamp, clamp01, smoothstep, mulberry32, lerp } from '../utils/math.js';
 import { hexLerp, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { RABID_WEIGHTS } from '../audio/bands.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
@@ -25,7 +25,7 @@ const TONGUE_COOLDOWN_MS = 350;
 // stretches, so low-intensity sections still feel alive.
 const TAIL_BASE_HZ = 1.3, TAIL_CALM_HZ = 0.32;
 const TAIL_BASE_DEG = 9, TAIL_CALM_DEG = 18;
-const DRAW_SCALE = 1.45; // ferocity pass: render-only, physics untouched
+const DRAW_SCALE = 1.8; // the stage got bigger: render-only, physics untouched
 const WEAVE_PX = 6;      // predatory side-to-side drift while trailing
 // BROSHI_BODY+BROSHI_HEAD combined local-space x-span (snout spike to
 // swept tail spike, see meshes.js) -- the only source of truth for his
@@ -48,6 +48,16 @@ const POUNCE_MS = 180;
 const TAILCHASE_DUR_MS = 900;
 const TAILCHASE_CHANCE_PER_BAR = 0.18;
 const TAILCHASE_COOLDOWN_BARS = 6;
+
+/** Melody anchoring: a hop's height multiplier from where its triggering
+ *  note sits in the melody's own observed pitch range -- higher notes lift
+ *  him higher. Pure/testable; falls back to 1 (no bias) before any range
+ *  has been observed. */
+export function broshiHopHeightMul(pitch, pitchMin, pitchMax) {
+  if (!Number.isFinite(pitch) || !(pitchMax > pitchMin)) return 1;
+  const norm = clamp01((pitch - pitchMin) / (pitchMax - pitchMin));
+  return 0.75 + 0.6 * norm;
+}
 
 const easeOutCubic = (t) => 1 - (1 - t) ** 3;
 const easeOutElastic = (t) => {
@@ -91,6 +101,11 @@ export class Broshi {
     this.spittle = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 60);
     this.drool = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 60);
     this._droolAccum = 0;
+    // A comet-star trail (Midasus's stardust ribbon, his own version): a
+    // stream of fading motes off the tail on hops and rolls, thicker the
+    // more rabid he's running.
+    this.trail = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 120);
+    this._trailAccum = 0;
 
     this._bodyRest = computeRestLengths(BROSHI_BODY);
     this._headRest = computeRestLengths(BROSHI_HEAD);
@@ -129,12 +144,30 @@ export class Broshi {
     // Renderer.js), fog-of-war dirt-sight owned entirely by Burrow.
     this.burrow = new Burrow(seed + 2);
 
+    // Melody anchoring: he moves with the tune, not the drums. Pitch range
+    // is learned adaptively from onsets actually seen so far (no full
+    // timeline is handed to him at construction, unlike Midasus).
+    this._pitchMin = Infinity;
+    this._pitchMax = -Infinity;
+    this._barMelodyCount = 0;
+    this._barMelodyHistory = [];
+
     conductor.onBar((bar) => this._onBar(bar));
     conductor.on(Role.RHYTHM, (evt) => {
       if (evt.kick) { this._onKick(); this.burrow.onKick(evt.vel); }
-      else if (evt.vel >= 0.3) this._onMiniHopTrigger(evt);
+      // Kicks still snap the jaw and light the beat flash (see _onKick) --
+      // he still feels the drums, he just doesn't hop to them anymore.
     });
-    conductor.on(Role.MELODY, (evt) => { this._onHeadBob(evt); this.burrow.onMelodyOnset(evt); });
+    conductor.on(Role.MELODY, (evt) => {
+      this._onHeadBob(evt);
+      this.burrow.onMelodyOnset(evt);
+      if (Number.isFinite(evt.pitch)) {
+        this._pitchMin = Math.min(this._pitchMin, evt.pitch);
+        this._pitchMax = Math.max(this._pitchMax, evt.pitch);
+      }
+      this._barMelodyCount++;
+      if (evt.vel >= 0.3) this._onMiniHopTrigger(evt);
+    });
   }
 
   /** Test/debug hook: send him underground right now regardless of natural
@@ -155,6 +188,19 @@ export class Broshi {
     }
     hist.push(barEnergy);
     if (hist.length > 8) hist.shift();
+
+    // Melodic density: a bar of unusually busy melody (a run, a flurry)
+    // reads as excitement too, independent of the drums' own energy.
+    const mhist = this._barMelodyHistory;
+    if (mhist.length > 0) {
+      const mwindow = mhist.slice(-4);
+      const mmean4 = mwindow.reduce((a, b) => a + b, 0) / mwindow.length;
+      if (mmean4 > 1e-6 && this._barMelodyCount > mmean4 * 1.5) this._triggerSurge(bar.ms);
+    }
+    mhist.push(this._barMelodyCount);
+    if (mhist.length > 8) mhist.shift();
+    this._barMelodyCount = 0;
+
     this._barsSinceSurge++;
     if (this._barsSinceSurge >= 8) this._triggerSurge(bar.ms);
     this._barEnergyAccum = 0;
@@ -197,7 +243,7 @@ export class Broshi {
   }
 
   _onMiniHopTrigger(evt) {
-    this._hopPending = { vel: evt.vel };
+    this._hopPending = { vel: evt.vel, pitch: evt.pitch };
   }
 
   _onHeadBob(evt) {
@@ -216,7 +262,7 @@ export class Broshi {
     this._barEnergySamples++;
 
     if (this._jawKickPending) { this._jawKickPending = false; this._jawUntilMs = nowMs + 80; this.jawOpen = 1; this.modal.excite(2.6); }
-    if (this._hopPending) { const { vel } = this._hopPending; this._hopPending = null; this._startHop(nowMs, vel); this.modal.excite(0.6 + 1.2 * vel); }
+    if (this._hopPending) { const { vel, pitch } = this._hopPending; this._hopPending = null; this._startHop(nowMs, vel, pitch); this.modal.excite(0.6 + 1.2 * vel); }
     if (this._neckPending) { const { vel } = this._neckPending; this._neckPending = null; this._neckStartMs = nowMs; this._neckAmp = 10 + 16 * vel; }
 
     // --- locomotion FSM ---
@@ -345,6 +391,21 @@ export class Broshi {
     this.spittle.step(dtSec, (o, dtt) => { o.x += o.vx * dtt; o.y += o.vy * dtt; o.vy += 400 * dtt; o.age += dtt; return o.age < o.life; });
     this.drool.step(dtSec, (o, dtt) => { o.y += o.vy * dtt; o.age += dtt; return o.age < o.life; });
 
+    // Comet trail: rate scales with speed and rabid-ness, motes drift
+    // behind him (world-relative, since they should stay in place as he
+    // runs on) and fade over ~0.4s.
+    const trailSpeed = Math.abs(this.xRelVel);
+    const trailRate = (4 + 26 * Math.min(1, trailSpeed / 250)) * (1 + 1.2 * this.rho);
+    this._trailAccum += trailRate * dtSec;
+    while (this._trailAccum >= 1) {
+      this._trailAccum -= 1;
+      this.trail.spawn({
+        x: -18 - 4 * this.rand(), y: -13 + (this.rand() * 2 - 1) * 5,
+        life: 0.28 + 0.18 * this.rand(),
+      });
+    }
+    this.trail.step(dtSec, (o, dtt) => { o.age += dtt; return o.age < o.life; });
+
     this.beatFlash = Math.max(0, this.beatFlash - dtSec / BEAT_FLASH_DECAY_SEC);
     this._nowMs = nowMs;
     this.groundY = groundY;
@@ -380,10 +441,13 @@ export class Broshi {
     }
   }
 
-  _startHop(nowMs, vel) {
-    // Relaxed lope: calm sections soften the hop instead of cutting it entirely.
-    this._hopH = (16 + 26 * vel) * (1 - 0.5 * this._calmLevel);
-    this._hopUntilMs = nowMs + 160;
+  _startHop(nowMs, vel, pitch) {
+    // Relaxed lope: calm sections soften the hop instead of cutting it
+    // entirely. Melody anchoring: a higher note lifts him higher (and the
+    // hop resolves a touch quicker -- lighter, not heavier).
+    const liftMul = broshiHopHeightMul(pitch, this._pitchMin, this._pitchMax);
+    this._hopH = (16 + 26 * vel) * liftMul * (1 - 0.5 * this._calmLevel);
+    this._hopUntilMs = nowMs + 160 / Math.sqrt(liftMul);
     // Hard hops sometimes come with a full barrel roll — likelier (and
     // occasionally doubled) the more rabid he's running.
     const rollU = (nowMs - this._rollStartMs) / this._rollDurMs;
@@ -461,6 +525,21 @@ export class Broshi {
     for (const p of this.spittle.active) {
       ctx.fillRect(6 + p.x - 1, -16 + p.y - 1, 2.4, 2.4); // sparks, not droplets
     }
+
+    // Comet trail: fading motes behind him, drawn before the body so his
+    // silhouette sits on top of his own tail of light.
+    if (this.trail.active.length) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const p of this.trail.active) {
+        const u = p.age / p.life;
+        ctx.fillStyle = `hsla(${baseHue},60%,72%,${(1 - u) * 0.55})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2.2 * (1 - u), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
     ctx.restore(); // done with the ctx.translate-relative aura/tongue/spittle drawing
 
     // Body/head/jaw/eye as a low-poly wireframe (follow-up item 1): manually
@@ -479,6 +558,20 @@ export class Broshi {
       bodyHub.x, bodyHub.y, this._nowMs / 1000, this._melt || 0, 2,
     );
     const glyphOpts = { satBase: 30, lightBase: 56, hueSpread: 20 };
+
+    // Stellar under-glow (the same trick Midasus's core uses): a blurred,
+    // larger, additive copy of the body drawn first so he catches light
+    // like an instrument instead of reading flat next to her.
+    const glowAlpha = 0.16 + 0.24 * this.rho + 0.3 * this.beatFlash;
+    ctx.save();
+    ctx.filter = 'blur(2px)';
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = glowAlpha;
+    drawMeshPart(ctx, bodyMesh, this._bodyRest, {
+      ...group, scaleX: group.scaleX * 1.3, scaleY: group.scaleY * 1.3,
+    }, baseHue, { ...glyphOpts, alpha: 1, lightBase: 74 });
+    ctx.restore();
+
     drawMeshPart(ctx, bodyMesh, this._bodyRest, group, baseHue, glyphOpts);
     drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue, glyphOpts);
     if (this.beatFlash > 0.03) {

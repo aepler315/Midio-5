@@ -68,3 +68,16 @@ export function spectrumBars(eq) {
     h01: MASSIF_BELL[i] * (PEDESTAL_FRAC + (1 - PEDESTAL_FRAC) * clamp01(eq?.[band] ?? 0)),
   }));
 }
+
+// Orogeny: how much each range's height grows as the mountains build across
+// the song (see OrogenyDirector). Far layers grow the most -- a skyline
+// visibly rearing up behind everything -- near layers barely at all, so the
+// player's own scale reference never shifts underfoot.
+const OROGENY_GROWTH_MUL = { L2: 0.75, L3: 0.55, L4: 0.40, L5: 0.25 };
+
+/** Height multiplier for a layer at orogeny growth g (0..1). g=0 -> 1.0
+ *  (baseline height, "not yet built"); g=1 -> the layer's full grown height. */
+export function orogenyHeightMul(layerKey, g) {
+  const gain = OROGENY_GROWTH_MUL[layerKey] ?? 0;
+  return 1 + gain * clamp01(g);
+}

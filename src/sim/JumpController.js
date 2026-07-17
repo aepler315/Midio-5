@@ -24,7 +24,7 @@ export function jumpY(u, H) {
   return Ha * (1 - r * r);
 }
 
-export const H_BASE = 150; // px
+export const H_BASE = 190; // px -- the bigger stage (Midio.groundY moved from 480 to 540)
 export const D_MIN = 380, D_MAX = 1200; // ms
 const RETARGET_FALL_MS = 120;
 const HIGH_BPM_HALFTIME = 170;
