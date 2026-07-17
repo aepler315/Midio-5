@@ -1,43 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ZoomDirector, ZOOM_MIN, ZOOM_MAX, ZOOM_NEUTRAL, sceneForBiome, sceneSeedFor, SCENES, pinchZoomDelta,
+  ZoomDirector, ZOOM_MIN, ZOOM_MAX, ZOOM_NEUTRAL, pinchZoomDelta,
 } from '../src/sim/ZoomDirector.js';
 
 const STEP = 1 / 120;
 
-test('SCENES lists all four interior kinds', () => {
-  assert.deepEqual([...SCENES], ['warren', 'temple', 'tomb', 'geode']);
-});
-
-test('sceneForBiome maps every stock biome to one of the four scenes, unknowns fall back to warren', () => {
-  for (const name of ['JADE', 'SAKURA', 'TWILIGHT']) assert.equal(sceneForBiome(name), 'warren');
-  for (const name of ['EMBER', 'SOLAR']) assert.equal(sceneForBiome(name), 'temple');
-  for (const name of ['VOID', 'STORM']) assert.equal(sceneForBiome(name), 'tomb');
-  for (const name of ['ARCTIC', 'MIRROR', 'CYBER']) assert.equal(sceneForBiome(name), 'geode');
-  assert.equal(sceneForBiome('SOME_CUSTOM_MIDI_BIOME'), 'warren');
-});
-
-test('sceneSeedFor is deterministic per (song, biome, world bucket) and varies across each', () => {
-  const a = sceneSeedFor(42, 'EMBER', 1000);
-  const b = sceneSeedFor(42, 'EMBER', 1000);
-  assert.equal(a, b, 'same inputs must reproduce the same seed');
-  assert.notEqual(a, sceneSeedFor(43, 'EMBER', 1000), 'different song seed should differ');
-  assert.notEqual(a, sceneSeedFor(42, 'SOLAR', 1000), 'different biome should differ');
-  assert.notEqual(a, sceneSeedFor(42, 'EMBER', 100000), 'a different world bucket should differ');
-});
-
 test('value eases toward target with a real lag (not instant), starts at the neutral resting zoom', () => {
-  const z = new ZoomDirector(1);
+  const z = new ZoomDirector();
   assert.equal(z.value, ZOOM_NEUTRAL);
   z.nudge(ZOOM_MAX); // clamp will pin target at ZOOM_MAX
-  z.update(0, STEP, 'TWILIGHT', 0);
+  z.update(0, STEP);
   assert.ok(z.value > ZOOM_NEUTRAL, 'should have started moving');
   assert.ok(z.value < ZOOM_NEUTRAL + (ZOOM_MAX - ZOOM_NEUTRAL) * 0.1, 'a single 8.3ms step must not have arrived yet');
 });
 
 test('nudge stays clamped within [ZOOM_MIN, ZOOM_MAX]; toggle snaps between neutral and ZOOM_MAX', () => {
-  const z = new ZoomDirector(1);
+  const z = new ZoomDirector();
   z.nudge(-100);
   assert.equal(z.target, ZOOM_MIN);
   z.nudge(100);
@@ -48,57 +27,15 @@ test('nudge stays clamped within [ZOOM_MIN, ZOOM_MAX]; toggle snaps between neut
   assert.equal(z.target, ZOOM_MAX);
 });
 
-test('sustained nudge toward max eventually reaches full reveal (1) and drops back to 0 when nudged back out', () => {
-  const z = new ZoomDirector(7);
-  z.nudge(ZOOM_MAX);
+test('a sustained (repeated) nudge toward max reaches it and holds while input keeps coming', () => {
+  const z = new ZoomDirector();
   let t = 0;
-  for (let i = 0; i < 600; i++) { z.update(t, STEP, 'EMBER', 0); t += 8.33; } // ~5s: several eases
+  // Mirrors a genuinely held key/wheel: nudge every frame, same as main.js.
+  for (let i = 0; i < 600; i++) { z.nudge(ZOOM_MAX); z.update(t, STEP); t += 8.33; }
   assert.ok(z.value > ZOOM_MAX - 0.05, `expected value to approach ZOOM_MAX, got ${z.value}`);
-  assert.ok(z.reveal > 0.95, `expected near-full reveal, got ${z.reveal}`);
 
-  z.nudge(-ZOOM_MAX);
-  for (let i = 0; i < 600; i++) { z.update(t, STEP, 'EMBER', 0); t += 8.33; }
-  assert.ok(z.value < ZOOM_MIN + 0.05);
-  assert.equal(z.reveal, 0);
-});
-
-test('scene latches on crossing into reveal and releases once reveal returns to (near) 0', () => {
-  const z = new ZoomDirector(3);
-  z.nudge(ZOOM_MAX);
-  let t = 0;
-  for (let i = 0; i < 600; i++) { z.update(t, STEP, 'ARCTIC', 500); t += 8.33; }
-  assert.ok(z.scene, 'expected a latched scene at full zoom');
-  assert.equal(z.scene.kind, 'geode', 'ARCTIC should map to geode');
-
-  const latchedSeed = z.scene.seed;
-  // Even if the biome/worldX drift while still zoomed in, the latched scene must not change.
-  z.update(t, STEP, 'STORM', 999999);
-  assert.equal(z.scene.seed, latchedSeed, 'scene must not change mid-zoom even if inputs drift');
-
-  z.nudge(-ZOOM_MAX);
-  for (let i = 0; i < 600; i++) { z.update(t, STEP, 'STORM', 999999); t += 8.33; }
-  assert.equal(z.scene, null, 'scene should release once fully zoomed back out');
-});
-
-test('justCrossedIn/justCrossedOut fire exactly once per crossing of the inside threshold', () => {
-  const z = new ZoomDirector(9);
-  z.nudge(ZOOM_MAX);
-  let t = 0;
-  let inCount = 0, outCount = 0;
-  for (let i = 0; i < 600; i++) {
-    z.update(t, STEP, 'JADE', 0);
-    if (z.justCrossedIn) inCount++;
-    t += 8.33;
-  }
-  assert.equal(inCount, 1, `expected exactly one crossing-in, got ${inCount}`);
-
-  z.nudge(-ZOOM_MAX);
-  for (let i = 0; i < 600; i++) {
-    z.update(t, STEP, 'JADE', 0);
-    if (z.justCrossedOut) outCount++;
-    t += 8.33;
-  }
-  assert.equal(outCount, 1, `expected exactly one crossing-out, got ${outCount}`);
+  for (let i = 0; i < 600; i++) { z.nudge(-ZOOM_MAX); z.update(t, STEP); t += 8.33; }
+  assert.ok(z.value < ZOOM_MIN + 0.05, `expected value to approach ZOOM_MIN, got ${z.value}`);
 });
 
 test('pinchZoomDelta: spreading zooms in, pinching together zooms out, no-op with invalid distances', () => {
@@ -111,4 +48,83 @@ test('pinchZoomDelta: spreading zooms in, pinching together zooms out, no-op wit
 
 test('ZOOM_MIN now allows zooming out below 1 (the world pulling back, not just leaning in)', () => {
   assert.ok(ZOOM_MIN < 1, `expected ZOOM_MIN < 1, got ${ZOOM_MIN}`);
+});
+
+// --- World-adaptation auto-return -----------------------------------------
+
+test('after input stops, the target eases back to neutral and lands there within the adaptation window', () => {
+  const z = new ZoomDirector();
+  let t = 0;
+  z.nudge(ZOOM_MAX);
+  z.update(t, STEP); // one nudge, then input stops entirely
+  t += 8.33;
+
+  // Idle stretch: still zoomed in, no adaptation yet (< 2s idle).
+  for (let i = 0; i < 100; i++) { z.update(t, STEP); t += 8.33; } // ~0.83s
+  assert.ok(z.target > ZOOM_NEUTRAL + 0.5, 'should not have started adapting yet');
+  assert.equal(z.adaptEnv, 0);
+
+  // Push well past idle (2s) + the full adaptation duration (6.5s).
+  for (let i = 0; i < 1200; i++) { z.update(t, STEP); t += 8.33; } // ~10s more
+  assert.ok(Math.abs(z.target - ZOOM_NEUTRAL) < 0.05, `expected target back near neutral, got ${z.target}`);
+  assert.ok(Math.abs(z.value - ZOOM_NEUTRAL) < 0.1, `expected value to have eased home too, got ${z.value}`);
+  assert.equal(z.adaptEnv, 0, 'adaptation should have fully completed and cleared');
+});
+
+test('adaptEnv rises and falls across the morph (peaks mid-adaptation), and adaptDir reflects the return direction', () => {
+  const z = new ZoomDirector();
+  let t = 0;
+  z.nudge(ZOOM_MAX);
+  z.update(t, STEP);
+  t += 8.33;
+
+  // With no bar grid (nextBarMs=null), idle-crossing and adaptation start
+  // happen in the same update() call -- one continuous loop observes both.
+  let sawStart = false, peak = 0;
+  for (let i = 0; i < 1100; i++) {
+    z.update(t, STEP);
+    if (z.adaptJustStarted) { sawStart = true; assert.equal(z.adaptDir, 1, 'returning from a lean-in'); }
+    peak = Math.max(peak, z.adaptEnv);
+    t += 8.33;
+  }
+  assert.ok(sawStart, 'expected adaptation to start');
+  assert.ok(peak > 0.7, `expected adaptEnv to rise well above 0 mid-morph, got peak ${peak}`);
+});
+
+test('a new nudge mid-adaptation cancels it and re-arms the idle clock', () => {
+  const z = new ZoomDirector();
+  let t = 0;
+  z.nudge(ZOOM_MAX);
+  z.update(t, STEP);
+  t += 8.33;
+  for (let i = 0; i < 900; i++) { z.update(t, STEP); t += 8.33; } // well into adaptation
+  assert.ok(z.adaptEnv > 0, 'expected adaptation to be underway');
+
+  z.nudge(-0.3); // fresh input mid-morph
+  z.update(t, STEP);
+  assert.equal(z.adaptEnv, 0, 'a fresh nudge must cancel the in-flight adaptation');
+  const targetAfterNudge = z.target;
+  t += 8.33;
+  for (let i = 0; i < 100; i++) { z.update(t, STEP); t += 8.33; } // short idle, well under 2s
+  assert.ok(Math.abs(z.target - targetAfterNudge) < 1e-9, 'target should hold where the new input put it');
+});
+
+test('adaptation start defers to the provided next-bar downbeat, not a raw timeout', () => {
+  const z = new ZoomDirector();
+  let t = 0;
+  z.nudge(ZOOM_MAX);
+  z.update(t, STEP);
+  t += 8.33;
+  const farBarMs = t + 5000; // a downbeat well after the idle threshold clears
+  let startedBeforeBar = false;
+  for (let i = 0; i < 260; i++) { // clears the 2s idle window, but stays short of farBarMs
+    z.update(t, STEP, farBarMs);
+    if (z.adaptJustStarted) startedBeforeBar = true;
+    t += 8.33;
+  }
+  assert.ok(!startedBeforeBar, 'must not start before the deferred bar boundary');
+  assert.ok(t < farBarMs, 'sanity: test still short of the bar');
+
+  for (let i = 0; i < 50 && !z.adaptJustStarted; i++) { z.update(farBarMs + i, STEP, farBarMs); }
+  assert.ok(z._adapting || z.adaptEnv > 0, 'should have started once the bar boundary arrived');
 });

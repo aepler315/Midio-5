@@ -37,7 +37,6 @@ import { FeverMeter } from './FeverMeter.js';
 import { LatencyCalibrator } from './LatencyCalibrator.js';
 import { WeatherDirector } from './WeatherDirector.js';
 import { ZoomDirector } from './ZoomDirector.js';
-import { InteriorRealm } from '../world/InteriorRealm.js';
 import { BeatZoomDirector } from './BeatZoomDirector.js';
 import { OrogenyDirector } from '../world/OrogenyDirector.js';
 
@@ -141,11 +140,10 @@ export class Simulation {
       canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,
     });
 
-    // The Lens: the player's real-time control is how deep to zoom, not
-    // when to jump. Deep enough and the world gives way to whatever that
-    // stretch of it actually contains (see InteriorRealm.js).
-    this.zoom = new ZoomDirector(songSeed);
-    this.interior = new InteriorRealm(songSeed);
+    // The Lens: the player's real-time control over how close to lean into
+    // the world. Any lean eases back to the neutral overview a couple of
+    // seconds after input stops (see ZoomDirector's adaptation mechanism).
+    this.zoom = new ZoomDirector();
     // The world's own automatic breathing on top of the player's lens --
     // sometimes a slow subtle sway, sometimes a hard kick-synced snap or a
     // dramatic dive right on a drop. Never touches ZoomDirector.
@@ -187,8 +185,7 @@ export class Simulation {
         this.gnat.onKick(evt);
         this.performer.onKick();
         this.hype.onKick(evt.vel);
-        this.interior.onKick();
-        this.beatZoom.onKick();
+        this.beatZoom.onKick(evt.vel, evt.tMs);
         this.groundField.kickGlow(this.worldX, evt.tMs, evt.vel);
         this.midasus.voyage.onKick(evt.vel); // deep-space sparkle burst (self-gated on phase)
         if (this.apotheosis.active) this.performer.captureGoldAfterimage(this.midio, this.timeMs);
@@ -497,20 +494,44 @@ export class Simulation {
     if (this.biomes.cutFlashJustFired) { this.camera.punch(1.06); this.camera.shake(6); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
 
-    // The Lens: the currently-dominant biome (just refreshed above) decides
-    // what a deep zoom reveals; the scene itself latches at the moment of
-    // crossing in, so it never swaps out from under a sustained zoom.
-    const blend = this.biomes.currentBlend;
-    const dominantBiome = blend ? (blend.t > 0.5 ? blend.to : blend.from) : 'TWILIGHT';
-    this.zoom.update(nowMs, dtSec, dominantBiome, this.worldX);
-    this.interior.update(nowMs, dtSec, this.energyCurves);
+    // Bar phase / next-bar-downbeat, computed once and shared by the beat
+    // zoom's phase-locked breath and the Lens's on-the-beat adaptation
+    // start. Falls back to a beatPeriod-derived phase for bar-less audio.
+    const phraseInfo = this.phrases.infoAt(nowMs);
+    const barMs = this.phrases.barMs;
+    let barPhase01 = 0, nextBarMs = null;
+    const barPeriodMs = Math.max(1, this.jump.beatPeriodMs * 4);
+    if (barMs.length > 0 && phraseInfo.barIdx >= 0 && barMs[phraseInfo.barIdx + 1] != null) {
+      const curBar = barMs[phraseInfo.barIdx], nxt = barMs[phraseInfo.barIdx + 1];
+      barPhase01 = clamp01((nowMs - curBar) / Math.max(1, nxt - curBar));
+      nextBarMs = nxt;
+    } else {
+      barPhase01 = ((nowMs % barPeriodMs) + barPeriodMs) % barPeriodMs / barPeriodMs;
+    }
+
+    // The Lens: any lean the player takes eases back to neutral a couple of
+    // seconds after input stops, deferred to the next downbeat so the
+    // world's own return starts on the beat rather than on a raw timeout.
+    this.zoom.update(nowMs, dtSec, nextBarMs);
+    // While adapting, the world visibly reorganizes around the returning
+    // view instead of just snapping the camera back -- the mountains swell
+    // taller/settle (BiomeManager.adaptSwell) and the ground resettles with
+    // gentle ripples, alternating ahead/behind, once per bar crossing.
+    this.biomes.adaptSwell = this.zoom.adaptEnv * this.zoom.adaptDir;
+    if (this.zoom.adaptEnv > 0.02 && phraseInfo.barIdx !== this._lastAdaptRippleBarIdx) {
+      this._lastAdaptRippleBarIdx = phraseInfo.barIdx;
+      this._adaptRippleSide = -(this._adaptRippleSide || 1);
+      this.groundField.impulse(this.worldX + this._adaptRippleSide * 300, 0.25 * this.zoom.adaptEnv, nowMs);
+    }
 
     // The world's own automatic zoom-breathing, composed on top of the
-    // player's lens in Renderer -- figures change on phrase boundaries.
+    // player's lens in Renderer -- figures change on phrase boundaries,
+    // phase-locked to the bar, and ducked while the Lens is adapting.
     this.beatZoom.fever = this.fever.level;
     this.beatZoom.update(nowMs, dtSec, {
-      phraseIdx: this.phrases.infoAt(nowMs).phraseIdx,
-      calmLevel: this.calm.level, hypeFast: this.hype.fast, beatPeriodMs: this.jump.beatPeriodMs,
+      phraseIdx: phraseInfo.phraseIdx, barPhase01,
+      calmLevel: this.calm.level, hypeFast: this.hype.fast, hypeSlow: this.hype.slow,
+      beatPeriodMs: this.jump.beatPeriodMs, adaptEnv: this.zoom.adaptEnv,
     });
 
     // Orogeny: the mountains build toward the song's energy climax, then
