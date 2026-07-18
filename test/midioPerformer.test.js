@@ -115,15 +115,30 @@ test('every landing recoils: squash first, overshoot tall, then settle', () => {
   assert.ok(Math.abs(settled.scaleY - 1) < 0.02, `expected settle, got ${settled.scaleY}`);
 });
 
-test('kicks ignite beatFlash, which decays fast', () => {
+test('kicks ignite beatFlash — closed-form kickEnv anchored on the kick\'s true onset, decaying fast', () => {
   const perf = new MidioPerformer(1);
-  perf.onKick();
-  assert.equal(perf.beatFlash, 1);
-  const midio = fakeMidio();
   const jump = fakeJump({ airborne: false, beatPeriodMs: 0 });
-  let t = 0;
-  for (let i = 0; i < 40; i++) { t += 8.33; perf.update(t, 1 / 120, fakeMidio(), jump, fakeCombo()); }
+  perf.onKick(1000); // the kick's musical onset
+  // Just before the onset: nothing yet (the flash can't precede the sound).
+  perf.update(996, 1 / 120, fakeMidio(), jump, fakeCombo());
+  assert.equal(perf.beatFlash, 0);
+  // At the kickEnv peak (40ms after onset) the flash is fully lit.
+  perf.update(1040, 1 / 120, fakeMidio(), jump, fakeCombo());
+  assert.ok(perf.beatFlash > 0.95, `expected full flash at the envelope peak, got ${perf.beatFlash}`);
+  // And it dies within ~a third of a second, regardless of step cadence.
+  perf.update(1400, 1 / 120, fakeMidio(), jump, fakeCombo());
   assert.ok(perf.beatFlash < 0.15, `flash must die within ~a third of a second, got ${perf.beatFlash}`);
+});
+
+test('beatFlash is output-latency compensated: the peak waits for the heard beat', () => {
+  const perf = new MidioPerformer(1);
+  const jump = fakeJump({ airborne: false, beatPeriodMs: 0 });
+  perf.visualLagMs = 200; // a Bluetooth-sized pipeline lag
+  perf.onKick(1000);
+  perf.update(1040, 1 / 120, fakeMidio(), jump, fakeCombo());
+  assert.equal(perf.beatFlash, 0, 'the clock says 1040 but the ear is still at 840 -- no flash yet');
+  perf.update(1240, 1 / 120, fakeMidio(), jump, fakeCombo());
+  assert.ok(perf.beatFlash > 0.95, `peak lands when the EAR gets the kick, got ${perf.beatFlash}`);
 });
 
 test('afterimages accumulate while airborne and clear immediately on landing', () => {

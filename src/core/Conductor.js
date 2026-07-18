@@ -14,6 +14,10 @@ export class Conductor {
     this.listeners = new Map();
     this.barCursor = 0;
     this.barListeners = new Set();
+    /** Anticipation channel (see ChoreoClock.js): each registration keeps
+     *  its OWN cursor because different leads reach different depths into
+     *  the timeline at the same nowMs. */
+    this.aheadRegs = [];
   }
 
   load({ timeline, barGrid, durationMs }) {
@@ -22,6 +26,7 @@ export class Conductor {
     this.durationMs = durationMs || 0;
     this.cursor = 0;
     this.barCursor = 0;
+    for (const reg of this.aheadRegs) reg.cursor = 0;
   }
 
   /** Subscribe to events of a given role, or '*' for everything. Returns unsubscribe fn. */
@@ -36,8 +41,37 @@ export class Conductor {
     return () => this.barListeners.delete(fn);
   }
 
+  /**
+   * Anticipatory subscription: events are delivered `leadMs` BEFORE their
+   * tMs (each still carrying its true tMs), so a subscriber can start a
+   * move early and land its peak exactly on the note -- the apex-on-beat
+   * discipline in ChoreoClock.js. `role` filters like on() ('*' for all).
+   * Fires exactly once per event; never skips. Returns unsubscribe fn.
+   */
+  subscribeAhead(role, leadMs, fn) {
+    const reg = { role, leadMs: Math.max(0, leadMs), fn, cursor: 0 };
+    // A mid-song registration must not replay the entire past: start at the
+    // first event still ahead of the on-time cursor's own frontier.
+    reg.cursor = this.cursor;
+    this.aheadRegs.push(reg);
+    return () => {
+      const i = this.aheadRegs.indexOf(reg);
+      if (i >= 0) this.aheadRegs.splice(i, 1);
+    };
+  }
+
   /** Dispatch every event with tMs <= nowMs that hasn't fired yet. Never skips. */
   dispatchUpTo(nowMs) {
+    // Anticipation channel first: at any given call, the ahead listeners
+    // must already know about everything the on-time listeners are about
+    // to be told (lead >= 0 guarantees the ahead frontier never trails).
+    for (const reg of this.aheadRegs) {
+      const horizon = nowMs + reg.leadMs;
+      while (reg.cursor < this.timeline.length && this.timeline[reg.cursor].tMs <= horizon) {
+        const evt = this.timeline[reg.cursor++];
+        if (reg.role === '*' || evt.role === reg.role) reg.fn(evt);
+      }
+    }
     while (this.cursor < this.timeline.length && this.timeline[this.cursor].tMs <= nowMs) {
       const evt = this.timeline[this.cursor++];
       this._emit(evt.role, evt);
@@ -68,6 +102,7 @@ export class Conductor {
   reset() {
     this.cursor = 0;
     this.barCursor = 0;
+    for (const reg of this.aheadRegs) reg.cursor = 0;
   }
 
   /** Nearest event (already-fired or upcoming) matching predicate, within +/-windowMs of nowMs. */

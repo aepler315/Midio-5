@@ -27,7 +27,23 @@ export function applyTransform(v, { tx = 0, ty = 0, rot = 0, scaleX = 1, scaleY 
 export function drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, {
   satBase = 68, lightBase = 52, glowBoost = 34, alpha = 0.9, widthBase = 1.6, widthGlow = 2.0,
   hueSpread = 50, // edges vary within +/-hueSpread/2 of baseHueDeg, not the full wheel -- a cohesive character, not a rainbow
+  outline = false, // true -> a near-black contour pass UNDER the spectral stroke: the silhouette reads razor-sharp against the glow underlays
 } = {}) {
+  if (outline) {
+    const o = outline === true ? {} : outline;
+    ctx.save();
+    ctx.strokeStyle = o.color || 'rgba(7,10,20,0.85)';
+    ctx.lineWidth = widthBase + (o.widthAdd ?? 2.4);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (const [i, j] of mesh.edges) {
+      ctx.moveTo(points[i].x, points[i].y);
+      ctx.lineTo(points[j].x, points[j].y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
   for (let e = 0; e < mesh.edges.length; e++) {
     const [i, j] = mesh.edges[e];
     const a = points[i], b = points[j];

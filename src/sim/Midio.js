@@ -4,6 +4,7 @@ export class Midio {
     this.screenX = 220;
     this.groundY = 540;
     this.y = 0;          // px above ground (from JumpController)
+    this.slipX = 0;      // render-only skid offset on iced ground (Traction.js)
     this.scaleX = 1;
     this.scaleY = 1;
     this.leanDeg = 0;

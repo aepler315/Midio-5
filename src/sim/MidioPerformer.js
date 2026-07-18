@@ -6,6 +6,8 @@
 // during a flourish window, so the underlying physics never changes.
 import { mulberry32, clamp, smoothstep } from '../utils/math.js';
 import { ModalRing } from '../render/oscillators.js';
+import { kickEnv } from '../world/MountainChoreo.js';
+import { visualNow } from '../core/ChoreoClock.js';
 
 const TRICK_HANG_START = 0.35; // matches JumpController's A
 const TRICK_HANG_END = 0.65;   // matches JumpController's A+B
@@ -34,7 +36,6 @@ const GOLD_AFTERIMAGE_MAX = 6;
 const STRUT_DEG = 4.5;   // ferocity pass: the strut is a stomp, not a sway
 const STOMP_DIP = 0.10;  // scaleY dip landing exactly on the beat
 const RECOIL_MS = 200;   // universal landing recoil: squash -> overshoot -> settle
-const BEAT_FLASH_DECAY_SEC = 0.14;
 
 // Calm/idle behavior (follow-up item 3): distinctly relaxed vs. energetic
 // sections, but never inert. Gated to !airborne so it never fights a trick.
@@ -79,7 +80,9 @@ export class MidioPerformer {
     // displaces MIDIO_BODY's rim through this field.
     this.modal = new ModalRing({ modes: 4, baseHz: 8, decaySec: 0.55, seed: (seed ^ 0x9e37) >>> 0 });
 
-    this.beatFlash = 0; // additive mesh ignition on every kick, fast decay
+    this.beatFlash = 0; // additive mesh ignition on every kick -- closed-form kickEnv, see update()
+    this._kickTMs = -Infinity; // the kick's true onset (ChoreoClock anchoring)
+    this.visualLagMs = 0;      // output-latency compensation, set by Simulation each step
     this.holdGlow = 0; // hold-slide charge glow: lights on arm, ramps with paid ticks
     this._landMs = -Infinity;
 
@@ -87,8 +90,11 @@ export class MidioPerformer {
     this._pirouetteStartMs = -Infinity; // hot clean landing: full ground spin
   }
 
-  onKick() {
-    this.beatFlash = 1;
+  /** @param {number} [tMs] the kick's true musical onset; the flash is
+   *  computed closed-form against it in update() so its peak lands when
+   *  the ear gets the kick (ChoreoClock), not when the dispatcher did. */
+  onKick(tMs) {
+    this._kickTMs = Number.isFinite(tMs) ? tMs : this._kickTMs;
   }
 
   captureGoldAfterimage(midio, nowMs) {
@@ -258,7 +264,10 @@ export class MidioPerformer {
         this._nextBlinkMs = nowMs + BLINK_MIN_GAP_MS + this.rand() * BLINK_JITTER_MS;
       }
     }
-    this.beatFlash = Math.max(0, this.beatFlash - dtSec / BEAT_FLASH_DECAY_SEC);
+    // Closed-form beat flash (ChoreoClock): the mountains' kickEnv anchored
+    // on the kick's true onset, evaluated on the heard clock -- exact shape
+    // at any step rate, peak aligned with the audible hit.
+    this.beatFlash = kickEnv(visualNow(nowMs, this.visualLagMs) - this._kickTMs);
 
     const sinceBlink = nowMs - this._blinkStartMs;
     this.blinkScale = sinceBlink < BLINK_DUR_MS

@@ -516,16 +516,18 @@ export class Renderer {
       }, hue, { ...options, alpha: 1, lightBase: 78 });
       ctx.restore();
     }
-    drawMeshPart(ctx, bodyMesh, bodyRest, transform, hue, options);
+    // The crisp pass carries an ink contour underneath (outline: true) so
+    // his silhouette stays razor-edged against his own under-glow.
+    drawMeshPart(ctx, bodyMesh, bodyRest, transform, hue, { ...options, outline: true });
 
     if (blink < 0.98) {
       const blinkEye = {
         vertices: MIDIO_EYE.vertices.map((v) => ({ x: v.x, y: MIDIO_EYE_CY + (v.y - MIDIO_EYE_CY) * blink })),
         edges: MIDIO_EYE.edges,
       };
-      drawMeshPart(ctx, blinkEye, this._midioEyeRest, transform, hue, options);
+      drawMeshPart(ctx, blinkEye, this._midioEyeRest, transform, hue, { ...options, outline: true });
     } else {
-      drawMeshPart(ctx, MIDIO_EYE, this._midioEyeRest, transform, hue, options);
+      drawMeshPart(ctx, MIDIO_EYE, this._midioEyeRest, transform, hue, { ...options, outline: true });
     }
 
     // Kick ignition: the sigil flashes additively right on the beat.

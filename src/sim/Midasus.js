@@ -19,17 +19,29 @@ const SNAP = 0.70;
 const DRAW_SCALE = 1.8; // the stage got bigger: render-only
 const BANK_GAIN = 0.0016, BANK_MAX = 0.6; // she rolls into her darts
 const SLASH_LIFE_SEC = 0.18;
+// Anticipation (ChoreoClock): she launches her dart this far BEFORE each
+// note so she's arriving as it sounds -- the impact FX (burst/slash/pulse)
+// wait for the note's own heard moment.
+const ANTICIPATE_MS = 140;
 
 export class Midasus {
-  constructor(timeline, midio, { groundY = 480, ceilingY = 40, seed = 777, stageW = 1280, stageH = 720 } = {}) {
+  /**
+   * @param {?Function} opts.noteFilter which timeline events are HER line
+   *   -- set by Simulation from the casting lanes (clean melodies when a
+   *   clean lane exists, every MELODY event otherwise).
+   */
+  constructor(timeline, midio, { groundY = 480, ceilingY = 40, seed = 777, stageW = 1280, stageH = 720, noteFilter = null } = {}) {
     this.midio = midio;
     this.yFloor = groundY;
     this.yCeiling = ceilingY;
     this.stageW = stageW;
     this.stageH = stageH;
 
-    this.q = timeline.filter((e) => e.role === Role.MELODY).sort((a, b) => a.tMs - b.tMs);
+    const filter = noteFilter || ((e) => e.role === Role.MELODY);
+    this.q = timeline.filter(filter).sort((a, b) => a.tMs - b.tMs);
     this.i = 0;
+    this._impacts = []; // scheduled note-impact FX, drained at each note's heard moment
+    this.visualLagMs = 0; // output-latency compensation, set by Simulation each step
 
     let pMin = 48, pMax = 84;
     if (this.q.length) {
@@ -157,7 +169,10 @@ export class Midasus {
     this._calmLevel = calmLevel;
     this._ens = ensemble;
     this._nowMs = nowMs;
-    while (this.i < this.q.length && this.q[this.i].tMs <= nowMs) {
+    // Apex-on-beat (ChoreoClock): the DART starts early -- cursor runs
+    // ANTICIPATE_MS ahead, so the 70% trajectory snap and the PD pursuit
+    // are already carrying her toward the perch as the note arrives...
+    while (this.i < this.q.length && this.q[this.i].tMs <= nowMs + ANTICIPATE_MS) {
       const n = this.q[this.i++];
       const t = this._target(n);
       this.p.x += SNAP * (t.x - this.p.x);
@@ -166,16 +181,23 @@ export class Midasus {
       this.v.y *= 0.4;
       this.hue = this._hueOf(n.pitch);
       if (this.voyage.active) this.voyage.onMelodyOnset(n); // deep space hears the melody too
+      this.lastNoteMs = n.tMs;
+      this._impacts.push(n);
+    }
+    // ...while the IMPACT (burst, slash, pulse, core ring) waits for the
+    // note's own heard moment: move early, hit exactly on time.
+    const vNowMs = nowMs - Math.min(350, Math.max(0, this.visualLagMs || 0));
+    while (this._impacts.length && this._impacts[0].tMs <= vNowMs) {
+      const n = this._impacts.shift();
       if (n.vel > 0.85) this._pirouetteStartMs = nowMs; // hard accents spin her right around
       this._burst(8 + 24 * n.vel, this.hue);
-      this.lastNoteMs = nowMs;
       this.pulse = 1.7 + 0.5 * n.vel; // a brief mesh flash on each note onset
       this.modal.excite(1.2 + 3 * n.vel);
       if (n.vel > 0.75) this.debris.burst(n.vel); // hard notes fling the shards outward
       // A slash: a bright cut through her position along her motion.
       const sp = Math.hypot(this.v.x, this.v.y);
       const ang = sp > 20 ? Math.atan2(this.v.y, this.v.x) : this.rand() * Math.PI * 2;
-      this.slashes.push({ x: this.p.x, y: this.p.y, ang, len: 26 + 60 * n.vel, age: 0, hue: this.hue });
+      this.slashes.push({ x: this.p.x, y: this.p.y, ang, len: 26 + 60 * n.vel, age: 0, hue: this._hueOf(n.pitch) });
       if (this.slashes.length > 8) this.slashes.shift();
     }
 
@@ -318,7 +340,9 @@ export class Midasus {
     drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot, scaleX: this.pulse * 1.5 * DRAW_SCALE, scaleY: this.pulse * 1.5 * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 78, alpha: 1 });
     ctx.restore();
 
-    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot, scaleX: this.pulse * DRAW_SCALE, scaleY: this.pulse * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 70, hueSpread: 26 });
+    // Ink contour (outline) under the crisp pass: her diamond stays
+    // knife-edged against the blurred halo drawn just above.
+    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot, scaleX: this.pulse * DRAW_SCALE, scaleY: this.pulse * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 70, hueSpread: 26, outline: true });
 
     // The baby stars ride on top of her pass — small enough never to mask her.
     this.babies.draw(ctx, this.hue, this.rest);

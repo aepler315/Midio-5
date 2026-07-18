@@ -22,11 +22,20 @@ function fakeCombo(displayM = 1, streak = 0) {
 function fakeConductor() {
   const barHandlers = [];
   const roleHandlers = {};
+  const aheadHandlers = {};
   return {
     onBar(fn) { barHandlers.push(fn); },
     on(role, fn) { (roleHandlers[role] ||= []).push(fn); },
+    // Anticipation channel (ChoreoClock): the fake delivers immediately --
+    // lead time is a dispatch detail these tests don't exercise.
+    subscribeAhead(role, leadMs, fn) { (aheadHandlers[role] ||= []).push(fn); },
     fireBar(ms) { for (const fn of barHandlers) fn({ ms }); },
-    fireEvent(role, evt) { for (const fn of (roleHandlers[role] || [])) fn(evt); },
+    fireEvent(role, evt) {
+      const e = { role, ...evt }; // real NoteEvents always carry their role
+      for (const fn of (aheadHandlers[role] || [])) fn(e);
+      for (const fn of (aheadHandlers['*'] || [])) fn(e);
+      for (const fn of (roleHandlers[role] || [])) fn(e);
+    },
   };
 }
 

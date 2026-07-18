@@ -16,6 +16,13 @@ const ENERGY_FLOOR = 0.25, ENERGY_SPAN = 0.5; // energySlow -> intensity target 
 const CALM_SUPPRESS = 0.7; // how much calm dampens the intensity target
 const SURGE_BOOST = 0.5;   // how much a drop's surge (0..1) adds to the target
 const DORMANT_GATE = 0.08; // below this the layer is fully dormant (zero update/draw cost)
+// Snow that actually falls for a while SETTLES: groundCover accumulates
+// during a live snowfall and melts away under any other sky. Simulation
+// turns it into slippery footing (see Traction.js) and BiomeManager draws
+// the frost caps -- weather with consequences, not just a particle skin.
+const COVER_ACCUM_SEC = 22;  // full cover after ~22s of full-intensity snowfall
+const COVER_MELT_SEC = 16;   // and it melts a bit faster than it settles
+const COVER_MIN_INTENSITY = 0.15;
 const EPIC_EMBER_THRESHOLD = 0.75;
 const VALENCE_RAIN_BOUNDARY = -0.2;  // sad <-> neutral
 const VALENCE_PETALS_BOUNDARY = 0.3; // neutral <-> happy
@@ -41,13 +48,22 @@ export class WeatherDirector {
   constructor() {
     this.kind = 'snow'; // stable default until the first evaluation lands
     this.intensity = 0;      // 0..1, the ACTIVE kind's own level
+    this.groundCover = 0;    // 0..1 settled snow -- accumulates during snowfall, melts otherwise
     this._nextEvalMs = 0;
     this._pendingKind = null; // queued kind, held while the current one fades to 0
   }
 
   /** Only one kind is ever live at a time -- {kind, intensity}. */
   get state() {
-    return { kind: this.kind, intensity: this.intensity };
+    return { kind: this.kind, intensity: this.intensity, groundCover: this.groundCover };
+  }
+
+  _stepCover(dtSec) {
+    if (this.kind === 'snow' && this.intensity > COVER_MIN_INTENSITY && !this._pendingKind) {
+      this.groundCover = clamp01(this.groundCover + (dtSec * this.intensity) / COVER_ACCUM_SEC);
+    } else {
+      this.groundCover = clamp01(this.groundCover - dtSec / COVER_MELT_SEC);
+    }
   }
 
   update(nowMs, dtSec, { valence = 0, epic = 0, calm = 0, energySlow = 0, surge = 0, unravel = 0 } = {}) {
@@ -67,6 +83,7 @@ export class WeatherDirector {
         this.kind = this._pendingKind;
         this._pendingKind = null;
       }
+      this._stepCover(dtSec);
       return;
     }
 
@@ -82,5 +99,6 @@ export class WeatherDirector {
     // "nothing to reach for," so snapping off there is safe and saves the
     // draw cost of an imperceptible sprinkle.
     if (target < DORMANT_GATE && this.intensity < DORMANT_GATE) this.intensity = 0;
+    this._stepCover(dtSec);
   }
 }
