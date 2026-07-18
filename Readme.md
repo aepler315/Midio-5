@@ -41,14 +41,31 @@ automatic beat-synced zoom (see below), never fighting it.
 
 **Audio files** play the decoded buffer only — the synthetic hi-hat / click
 layer from the timeline synth is muted so it doesn't stack on the song. MIDI
-and the procedural demo still use the synth / SoundFont.
+and the procedural demo still use the synth / SoundFont. **The audio
+analysis now reaches MIDI parity:** beyond onset/tempo detection, the
+pipeline runs real pitch tracking on the samples themselves — FFT peak
+tracking (leakage-safe, parabolic-refined) gives melody notes their true
+pitches, time-domain autocorrelation over the isolated bass stem recovers
+bass fundamentals, note durations are measured from each onset's actual
+sustain, and every bar's strongest chroma classes are emitted as PAD chord
+events. So the systems that listen to pitch — Midasus's pitch-mapped
+flight, Broshi's melody-height hops, the valence/tonic vibe reads, key-
+change waves — behave the same on an mp3 as on a .mid.
 
 **Fullscreen:** use the HUD fullscreen button (⛶) for immersive play.
 
-**MIDI → custom biome:** every dropped/uploaded `.mid` file also generates a
-unique biome profile (palette, particles, FX) from its pitch-class histogram,
-velocity, density, and role mix, and casts the whole song into that world.
-Stock demos keep the dramaturgical 9-biome cast.
+**Every song → its own world:** every dropped/uploaded file — `.mid` OR
+audio — generates a unique biome profile (palette, particles, FX) and casts
+the whole song into that world; only the stock demos keep the dramaturgical
+9-biome cast. The visual fingerprint reads four layers of the song:
+**tonality** (the chroma-derived tonic sets the hue; the major/minor
+balance — a 24-key Krumhansl template match on audio, third-balance on
+MIDI — tilts the whole palette radiant or somber, minor keys drifting
+cooler), **energy** (density + velocity + kick drive set the temperature),
+**texture** (spectral brightness lifts the sky's hot band, high dynamic
+range earns the neon ridge line, stereo width airs out the particle
+field), and **orchestration** (the melody/rhythm/bass/pad mix picks the
+particle species).
 
 **Optional WebGL path:** open with `?renderer=webgl` to enable a non-destructive
 WebGL2 post-FX overlay (energy-driven tint/vignette). The Canvas 2D compositor

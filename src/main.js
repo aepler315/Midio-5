@@ -462,6 +462,7 @@ function startTimeline(timelineData) {
     conductor, paramBus, sim, audioEngine, visionLoop, debugOverlay, synth, fontLibrary, sf2Engine, fontRecommender,
     renderer, rendererMode, rendererBackend: renderer?.backend || 'canvas',
     customBiome: timelineData.customBiome || null,
+    analysis: timelineData.analysis || null,
     muteTimelineSynth,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
@@ -518,6 +519,7 @@ async function loadAudioFile(file) {
     onProgress: ({ phase, progress }) => {
       if (phase === 'separate') showProgress(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`);
       else if (phase === 'analyze') showProgress('Detecting onsets, tempo, and downbeat…');
+      else if (phase === 'pitch') showProgress('Tracing melody, bass, and harmony…');
     },
   });
   progressEl.classList.add('hidden');
@@ -525,6 +527,11 @@ async function loadAudioFile(file) {
   if (data.freeTime) {
     console.warn(`Low tempo confidence (${data.confidence.toFixed(2)}) — switching to free-time, kick-reactive jumps.`);
   }
+  // Audio files get the same per-song visual fingerprint MIDI files do: a
+  // unique custom biome from the timeline plus the adapter's chroma/
+  // brightness/dynamics/width analysis (see BiomeImporter).
+  data.customBiome = generateCustomBiomeFromMidi(data, file.name || 'Audio');
+  rememberCustomBiome(paramBus, data.customBiome);
   // Raw audio already has every voice baked into the decoded buffer —
   // stacking the synth's pseudo-onset voicing on top is the unwanted
   // synthetic hi-hat/click layer, so the timeline synth stays silent here.

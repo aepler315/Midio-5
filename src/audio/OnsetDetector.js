@@ -237,10 +237,40 @@ function kickGridExplainScore(kickFrames, tau, rate) {
   return explained / kickFrames.length;
 }
 
-/** Pseudo-melody/bass lanes from sustained band energy (spec §1.2.4 final paragraph). */
-export function extractPseudoLane(normBands, rate, { bandIndices, pitchLo, pitchHi, role, onsetThreshold = 1 }) {
+/** The mean of a subset of band envelopes -- shared by extractPseudoLane's
+ *  onset picking and the adapter's sustain estimation, so both walk the
+ *  exact same curve. */
+export function mixBandEnvelopes(normBands, bandIndices) {
   const mix = new Float32Array(normBands[0].length);
   for (const b of bandIndices) for (let i = 0; i < mix.length; i++) mix[i] += normBands[b][i] / bandIndices.length;
+  return mix;
+}
+
+/**
+ * MIDI-like note duration from an envelope: walk forward from the onset
+ * frame while the energy stays above a fraction of its local peak. Gives
+ * audio notes real sustain lengths (feeding the composer strip's icon
+ * spans and Midasus's phrasing) instead of one fixed durMs for every note.
+ */
+export function estimateSustainMs(env, rate, frame, { floorRatio = 0.35, minMs = 120, maxMs = 1600 } = {}) {
+  const peakHold = Math.min(env.length - 1, frame + Math.round(rate * 0.08));
+  let peak = 0;
+  for (let i = frame; i <= peakHold; i++) if (env[i] > peak) peak = env[i];
+  if (peak < 1e-6) return minMs;
+  const floor = peak * floorRatio;
+  let end = frame;
+  const maxFrames = Math.round((maxMs / 1000) * rate);
+  while (end < env.length - 1 && end - frame < maxFrames && env[end] > floor) end++;
+  return clamp(((end - frame) / rate) * 1000, minMs, maxMs);
+}
+
+/** Pseudo-melody/bass lanes from sustained band energy (spec §1.2.4 final
+ *  paragraph). Each event carries its analysis `frame` so the adapter can
+ *  refine pitch/duration against the true spectrum (see PitchTracker) --
+ *  the band-centroid pitch here is only the fallback for moments the
+ *  spectral tracker finds no tonal content in. */
+export function extractPseudoLane(normBands, rate, { bandIndices, pitchLo, pitchHi, role, onsetThreshold = 1 }) {
+  const mix = mixBandEnvelopes(normBands, bandIndices);
 
   const flux = positiveFlux(mix);
   const theta = medianAdaptiveThreshold(flux, MEDIAN_HALF_WINDOW, onsetThreshold);
@@ -258,6 +288,6 @@ export function extractPseudoLane(normBands, rate, { bandIndices, pitchLo, pitch
     }
     const centroid = den > 0 ? num / den / Math.max(1, bandIndices.length - 1) : 0.5;
     const pitch = Math.round(pitchLo + (pitchHi - pitchLo) * clamp(centroid, 0, 1));
-    return { tMs: (i / rate) * 1000, pitch, vel: clamp(flux[i] / p95, 0, 1), role };
+    return { tMs: (i / rate) * 1000, pitch, vel: clamp(flux[i] / p95, 0, 1), role, frame: i };
   });
 }

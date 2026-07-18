@@ -61,6 +61,57 @@ test('rememberCustomBiome prepends and dedupes by id on ParamBus', () => {
   assert.equal(bus.customBiomes[0].id, 'custom-other');
 });
 
+// --- Analysis-driven fingerprint (the audio path's chroma/texture features) ---
+
+function syntheticTimelineData(overrides = {}) {
+  const timeline = [];
+  for (let i = 0; i < 60; i++) {
+    timeline.push({
+      tMs: i * 250, durMs: 200, pitch: 60 + (i % 12), vel: 0.6, pan: 0,
+      role: i % 4 === 0 ? 'RHYTHM' : 'MELODY', kick: i % 4 === 0, src: 'audio', channel: 0,
+    });
+  }
+  return { timeline, durationMs: 15000, bpm: 120, ...overrides };
+}
+
+test('an analysis fingerprint tilts the palette: major vs minor produce different skies, deterministically', () => {
+  const majorA = generateCustomBiomeFromMidi(syntheticTimelineData({ analysis: { tonic: 0, majorness: 0.9, brightness: 0.5, dynamicRange: 0.3, stereoWidth: 0.2 } }), 'song.mp3');
+  const majorB = generateCustomBiomeFromMidi(syntheticTimelineData({ analysis: { tonic: 0, majorness: 0.9, brightness: 0.5, dynamicRange: 0.3, stereoWidth: 0.2 } }), 'song.mp3');
+  const minor = generateCustomBiomeFromMidi(syntheticTimelineData({ analysis: { tonic: 0, majorness: -0.9, brightness: 0.5, dynamicRange: 0.3, stereoWidth: 0.2 } }), 'song.mp3');
+
+  assert.deepEqual(majorA.sky, majorB.sky, 'same analysis must reproduce the same palette');
+  assert.notDeepEqual(majorA.sky, minor.sky, 'major vs minor must read as different worlds');
+  assert.equal(majorA.derived.majorness, 0.9);
+  assert.equal(minor.derived.majorness, -0.9);
+  // Same timeline -> same id either way (identity comes from the notes, mood tilts only the look).
+  assert.equal(majorA.id, minor.id);
+});
+
+test('audio texture features move their palette knobs: dynamics earn the ridge line, width airs out particles', () => {
+  const flat = generateCustomBiomeFromMidi(syntheticTimelineData({ analysis: { dynamicRange: 0.1, stereoWidth: 0 } }), 'flat.wav');
+  const dynamic = generateCustomBiomeFromMidi(syntheticTimelineData({ analysis: { dynamicRange: 0.95, stereoWidth: 1 } }), 'dyn.wav');
+  assert.ok(dynamic.particles.count > flat.particles.count, 'wide mixes should air out the particle field');
+  assert.ok(dynamic.particles.speed > flat.particles.speed, 'dynamic songs should move faster particles');
+});
+
+test('audio file extensions are stripped from the fingerprint name like MIDI extensions are', () => {
+  const b = generateCustomBiomeFromMidi(syntheticTimelineData(), 'my-song.mp3');
+  assert.ok(b.name.startsWith('CUSTOM:MY-SONG'), b.name);
+  assert.ok(!b.name.includes('MP3'), b.name);
+});
+
+test('without an analysis, MIDI derives the same knobs from its own notes (majorness from thirds)', () => {
+  // A minor-heavy timeline: tonic class 0 with lots of minor thirds (class 3).
+  const timeline = [];
+  for (let i = 0; i < 40; i++) {
+    timeline.push({ tMs: i * 200, durMs: 150, pitch: i % 2 === 0 ? 60 : 63, vel: 0.6, pan: 0, role: 'MELODY', kick: false, src: 'midi', channel: 0 });
+  }
+  const b = generateCustomBiomeFromMidi({ timeline, durationMs: 8000, bpm: 120 }, 'sad.mid');
+  assert.ok(b.derived.majorness < 0, `expected a minor read, got ${b.derived.majorness}`);
+  assert.ok(Number.isFinite(b.derived.brightness));
+  assert.ok(Number.isFinite(b.derived.dynamicRange));
+});
+
 test('ParamBus KEYS smoothing still works after customBiomes fields (no regression)', () => {
   const bus = new ParamBus();
   bus.propose({ jumpHeight: 1.2 }, 1);
