@@ -28,29 +28,18 @@
 //      evaluated fresh each evaluation from the audio clock -- zero
 //      accumulated state, zero tick error, and the same exact shape at any
 //      step rate.
+/** The compensation ceiling: latency readings clamp to [0, MAX_LATENCY_MS]
+ *  everywhere (outputLatencyMs, visualNow, Simulation's per-step sample) so
+ *  a transient outputLatency glitch can never throw the choreography
+ *  seconds off. One constant -- raise it HERE to support higher-latency
+ *  outputs, nowhere else. */
+export const MAX_LATENCY_MS = 350;
+
 /** How early ahead-subscriptions deliver character-choreography events.
  *  Must cover the longest anticipation rise plus a couple of sim steps of
  *  dispatch slack; output latency only ever ADDS margin (visualNow lags
  *  the dispatch clock), so it needs no term here. */
 export const CHOREO_LEAD_MS = 220;
-
-/**
- * The anticipation envelope: a smoothstep lean-in that peaks at exactly 1
- * ON the anchor, then the mountains' own exponential ring-down after it
- * (the same settle constant kickEnv uses, so characters and ranges share
- * one motion language). 0 before the rise begins.
- *
- *        rise           settle
- *   ____/‾‾‾\_______________
- *       ^anchor-rise   ^anchor
- */
-export function anticipationEnv(nowMs, anchorMs, riseMs = 110, settleMs = 180) {
-  const dt = nowMs - anchorMs;
-  if (dt >= 0) return Math.exp(-dt / Math.max(1, settleMs));
-  const u = 1 + dt / Math.max(1, riseMs); // 0 at rise start, 1 at the anchor
-  if (u <= 0) return 0;
-  return u * u * (3 - 2 * u);
-}
 
 /**
  * An anticipated hop arc: a parabola spanning [anchor - riseMs, anchor +
@@ -75,11 +64,11 @@ export function outputLatencyMs(ctx) {
   if (!ctx) return 0;
   const base = Number.isFinite(ctx.baseLatency) ? ctx.baseLatency : 0;
   const out = Number.isFinite(ctx.outputLatency) ? ctx.outputLatency : 0;
-  return Math.min(350, Math.max(0, (base + out) * 1000));
+  return Math.min(MAX_LATENCY_MS, Math.max(0, (base + out) * 1000));
 }
 
 /** Convenience shared by every consumer: the clock the EAR is on. */
 export function visualNow(nowMs, latencyMs) {
-  const lag = Number.isFinite(latencyMs) ? Math.min(350, Math.max(0, latencyMs)) : 0;
+  const lag = Number.isFinite(latencyMs) ? Math.min(MAX_LATENCY_MS, Math.max(0, latencyMs)) : 0;
   return nowMs - lag;
 }

@@ -3,7 +3,7 @@
 // interpolate smoothly between 120 Hz sim steps regardless of display refresh.
 import { Role } from '../core/NoteEvent.js';
 import { Lane, laneCounts } from '../core/Casting.js';
-import { visualNow } from '../core/ChoreoClock.js';
+import { MAX_LATENCY_MS } from '../core/ChoreoClock.js';
 import { skidOffset, skidParams, tractionFrom } from './Traction.js';
 import { Midio } from './Midio.js';
 import { JumpController, A, GAMMA, W, H_BASE, D_MIN } from './JumpController.js';
@@ -84,13 +84,20 @@ export class Simulation {
     // fall back to the pre-casting wiring so an untagged timeline (the
     // procedural demo, old fixtures) behaves exactly as before.
     const lanes = laneCounts(conductor.timeline);
+    // The one resolver: these three booleans drive ALL routing below (the
+    // Midasus/Broshi filters, the accent filter, and _takeoffAccent), so a
+    // fallback rule can never desync between consumers. this.casting is a
+    // read-only summary derived from the same booleans (debug/UI only).
+    this._midasusCleanLane = lanes[Lane.MIDASUS] > 0;
+    this._broshiBassLane = lanes[Lane.BROSHI] > 0;
+    this._midioLeadLane = lanes[Lane.MIDIO] > 0;
     this.casting = {
-      midasus: lanes[Lane.MIDASUS] > 0 ? 'clean-lane' : 'melody',
-      broshi: lanes[Lane.BROSHI] > 0 ? 'bass-lane' : 'melody',
-      midio: lanes[Lane.MIDIO] > 0 ? 'lead-lane' : 'bass',
+      midasus: this._midasusCleanLane ? 'clean-lane' : 'melody',
+      broshi: this._broshiBassLane ? 'bass-lane' : 'melody',
+      midio: this._midioLeadLane ? 'lead-lane' : 'bass',
       counts: lanes,
     };
-    this._midioAccentFilter = lanes[Lane.MIDIO] > 0
+    this._midioAccentFilter = this._midioLeadLane
       ? (e) => e.lane === Lane.MIDIO
       : (e) => e.role === Role.BASS;
 
@@ -130,10 +137,10 @@ export class Simulation {
 
     this.midasus = new Midasus(conductor.timeline, this.midio, {
       groundY: this.midio.groundY, ceilingY: 40, stageW: canvasWidth, stageH: canvasHeight,
-      noteFilter: lanes[Lane.MIDASUS] > 0 ? (e) => e.lane === Lane.MIDASUS : null,
+      noteFilter: this._midasusCleanLane ? (e) => e.lane === Lane.MIDASUS : null,
     });
     this.broshi = new Broshi(conductor, paramBus, {
-      hopFilter: lanes[Lane.BROSHI] > 0 ? (e) => e.lane === Lane.BROSHI : null,
+      hopFilter: this._broshiBassLane ? (e) => e.lane === Lane.BROSHI : null,
     });
     this.broshi._lastBarPeriodMs = (60000 / bpm) * 4;
 
@@ -324,7 +331,7 @@ export class Simulation {
    *  nearest lead-lane note's velocity when the casting found a lead lane,
    *  else the live bass band (the pre-casting behavior). */
   _takeoffAccent(tMs) {
-    if (this.casting.midio === 'lead-lane') {
+    if (this._midioLeadLane) {
       const e = this.conductor.nearestEventMs((evt) => evt.lane === Lane.MIDIO, tMs, 120);
       return e ? e.vel : 0;
     }
@@ -346,7 +353,7 @@ export class Simulation {
     // ChoreoClock: sample the audio pipeline's output latency once per step
     // and hand it to every performer whose decorative envelopes anchor on
     // note onsets -- their peaks then land when the EAR gets the beat.
-    this.visualLagMs = this._outputLatencyFn ? Math.min(350, Math.max(0, this._outputLatencyFn() || 0)) : 0;
+    this.visualLagMs = this._outputLatencyFn ? Math.min(MAX_LATENCY_MS, Math.max(0, this._outputLatencyFn() || 0)) : 0;
     this.performer.visualLagMs = this.visualLagMs;
     this.broshi.visualLagMs = this.visualLagMs;
     this.midasus.visualLagMs = this.visualLagMs;
@@ -643,10 +650,15 @@ export class Simulation {
     const p = this.prev, c = this.curr;
     const lerp = (a, b) => a + (b - a) * alpha;
     return {
+      // midioX doubles as the world->screen ORIGIN for ground, obstacles,
+      // burrow, and impact FX (Renderer passes it as originX), so the skid
+      // must NOT live here -- folding it in would translate the whole
+      // world along with him and cancel the visible slide. midioDrawX is
+      // where his own body (mesh, shadow, afterimages) actually renders:
+      // origin plus the interpolated skid.
       worldX: lerp(p.worldX, c.worldX),
-      // The skid is part of where he IS on screen -- interpolated like the
-      // rest of the pose so the slide renders butter-smooth.
-      midioX: this.midio.screenX + lerp(p.slipX ?? 0, c.slipX ?? 0),
+      midioX: this.midio.screenX,
+      midioDrawX: this.midio.screenX + lerp(p.slipX ?? 0, c.slipX ?? 0),
       midioY: lerp(p.midioY, c.midioY),
       scaleX: lerp(p.scaleX, c.scaleX),
       scaleY: lerp(p.scaleY, c.scaleY),

@@ -235,3 +235,16 @@ test('the hold pose never applies airborne, and the glow decays once released', 
   perf.update(300, 1, fakeMidio(), fakeJump({ airborne: false }), fakeCombo(), 0, null, null);
   assert.equal(perf.holdGlow, 0);
 });
+
+test('kick flash queue: kicks faster than the output latency each still get their flash', () => {
+  const perf = new MidioPerformer(1);
+  const jump = fakeJump({ airborne: false, beatPeriodMs: 0 });
+  perf.visualLagMs = 250;
+  for (const t of [1000, 1200, 1400]) perf.onKick(t); // 200ms kicks, 250ms lag
+  let peak = 0;
+  for (let t = 1000; t <= 2000; t += 8) {
+    perf.update(t, 8 / 1000, fakeMidio(), jump, fakeCombo());
+    peak = Math.max(peak, perf.beatFlash);
+  }
+  assert.ok(peak > 0.95, `expected full flashes despite latency >= kick interval, got ${peak}`);
+});

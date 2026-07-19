@@ -147,3 +147,47 @@ test('lost traction (snow) makes the trailing spring visibly overshoot more', ()
   const icy = run(0.3), dry = run(1);
   assert.ok(icy > dry + 5, `icy overshoot (${icy}) must exceed dry (${dry})`);
 });
+
+test('kick flash queue: rapid kicks under Bluetooth-class latency still light every flash', () => {
+  const conductor = fakeConductor();
+  const b = new Broshi(conductor, {}, { seed: 11 });
+  b.visualLagMs = 250;
+  // Kicks every 200ms -- FASTER than the output latency. The old
+  // overwrite-the-anchor scheme kept the anchor perpetually unheard and the
+  // flash stayed at 0 forever; the queue promotes each at its heard moment.
+  for (const t of [1000, 1200, 1400, 1600]) conductor.fireEvent(Role.RHYTHM, { kick: true, vel: 0.9, tMs: t });
+  let peak = 0;
+  for (let t = 1000; t <= 2200; t += 8) {
+    b.update(t, 8 / 1000, fakeMidio(), null, null, 0, 480, 0);
+    peak = Math.max(peak, b.beatFlash);
+  }
+  assert.ok(peak > 0.95, `expected full flashes despite latency >= kick interval, got peak ${peak}`);
+});
+
+test('dense runs: the busy guard finishes the current hop instead of flattening every hop', () => {
+  const conductor = fakeConductor();
+  const b = new Broshi(conductor, {}, { seed: 12 });
+  // 16th-note spacing (100ms) -- denser than the 220ms anticipation lead.
+  // Without the guard, note B's early delivery replaced note A's hop before
+  // its window even opened and hopY stayed ~0 through the whole run.
+  conductor.fireEvent(Role.MELODY, { vel: 0.8, pitch: 64, tMs: 1000 });
+  conductor.fireEvent(Role.MELODY, { vel: 0.8, pitch: 66, tMs: 1100 });
+  let peakAtA = 0;
+  for (let t = 900; t <= 1080; t += 4) {
+    b.update(t, 4 / 1000, fakeMidio(), null, null, 0, 480, 0);
+    peakAtA = Math.max(peakAtA, b.hopY);
+  }
+  assert.ok(peakAtA > 10, `note A's hop must reach a real apex, got ${peakAtA}`);
+});
+
+test('bar density buckets by each note\'s own tMs, not by early delivery time', () => {
+  const conductor = fakeConductor();
+  const b = new Broshi(conductor, {}, { seed: 13 });
+  // Three notes inside the bar, two anticipated notes belonging to the NEXT
+  // bar (tMs past the boundary) delivered early by the lookahead channel.
+  for (const t of [100, 200, 300]) conductor.fireEvent(Role.MELODY, { vel: 0.5, pitch: 60, tMs: t });
+  for (const t of [520, 640]) conductor.fireEvent(Role.MELODY, { vel: 0.5, pitch: 60, tMs: t });
+  conductor.fireBar(500);
+  assert.equal(b._laneOnsetTimes.length, 2, 'the next bar\'s anticipated notes stay queued for it');
+  assert.equal(b._barMelodyHistory.at(-1), 3, 'the closing bar counts only its own notes');
+});

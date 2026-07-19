@@ -526,19 +526,23 @@ function sumToMixBuffer(buffers) {
   const rate = buffers[0].sampleRate;
   const length = Math.max(...buffers.map((b) => b.length));
   const mix = audioEngine.ctx.createBuffer(2, length, rate);
+  // Peak is tracked during the LAST stem's accumulation (sum order doesn't
+  // change the result, so the longest stem goes last -- it spans the whole
+  // mix, making every out[i] final under it), sparing a separate full scan.
+  const ordered = [...buffers].sort((a, b) => a.length - b.length);
+  let peak = 0;
   for (let c = 0; c < 2; c++) {
     const out = mix.getChannelData(c);
-    for (const b of buffers) {
-      const src = b.getChannelData(Math.min(c, b.numberOfChannels - 1));
-      for (let i = 0; i < src.length; i++) out[i] += src[i];
+    for (let bi = 0; bi < ordered.length; bi++) {
+      const src = ordered[bi].getChannelData(Math.min(c, ordered[bi].numberOfChannels - 1));
+      const last = bi === ordered.length - 1;
+      for (let i = 0; i < src.length; i++) {
+        out[i] += src[i];
+        if (last) { const a = Math.abs(out[i]); if (a > peak) peak = a; }
+      }
     }
   }
   // Normalize only if the sum actually clips -- quiet stems stay quiet.
-  let peak = 0;
-  for (let c = 0; c < 2; c++) {
-    const ch = mix.getChannelData(c);
-    for (let i = 0; i < ch.length; i++) { const a = Math.abs(ch[i]); if (a > peak) peak = a; }
-  }
   if (peak > 1) {
     const g = 0.98 / peak;
     for (let c = 0; c < 2; c++) {

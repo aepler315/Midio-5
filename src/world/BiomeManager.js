@@ -521,7 +521,7 @@ export class BiomeManager {
         silhouette: this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)),
         halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
       },
-      tSec: this.tSec, groove: this._danceGroove, calm: this.calmLevel || 0,
+      tSec: this.tSec, groove: this._danceGroove,
       reducedFlash: this.reducedFlash,
     });
 
@@ -578,7 +578,6 @@ export class BiomeManager {
       silhouette: tint,
       sky: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
       halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
-      calm: this.calmLevel || 0,
     });
     this._drawLayer(ctx, canvas, 'L3', scrollX1, tint, t, A, B);
     this._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
@@ -1253,16 +1252,20 @@ export class BiomeManager {
         const cover = this.snowCover;
         ctx.save();
         ctx.fillStyle = `rgba(230,242,255,${(0.34 * cover).toFixed(3)})`;
-        for (const bar of bars) ctx.fillRect(bar.x, bar.y, bar.width + 1, 4 + 9 * cover);
-        // Specular glints: a few bars catch the light each moment, drifting
-        // with world scroll so the sheen visibly slides underfoot.
-        ctx.globalCompositeOperation = 'lighter';
+        // One pass: caps for every bar, glinting bars collected as we go
+        // (usually 0-3) for the tiny additive pass below.
+        const glints = [];
         for (const bar of bars) {
+          ctx.fillRect(bar.x, bar.y, bar.width + 1, 4 + 9 * cover);
+          // Specular glints: a few bars catch the light each moment,
+          // drifting with world scroll so the sheen slides underfoot.
           const glint = 0.5 + 0.5 * Math.sin(bar.x * 0.13 + worldX * 0.011 + this.tSec * 1.7);
-          if (glint > 0.86) {
-            ctx.fillStyle = `rgba(255,255,255,${(0.30 * cover * (glint - 0.86) / 0.14).toFixed(3)})`;
-            ctx.fillRect(bar.x, bar.y, bar.width + 1, 1.6);
-          }
+          if (glint > 0.86) glints.push([bar, 0.30 * cover * (glint - 0.86) / 0.14]);
+        }
+        ctx.globalCompositeOperation = 'lighter';
+        for (const [bar, a] of glints) {
+          ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+          ctx.fillRect(bar.x, bar.y, bar.width + 1, 1.6);
         }
         ctx.restore();
       }

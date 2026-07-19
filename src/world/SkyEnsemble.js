@@ -73,9 +73,17 @@ export class SkyEnsemble {
     return p;
   }
 
-  /** The artifact active at nowMs, or null. Monotonic cursor: draw() is
-   *  called with a forward-moving clock, so no per-frame search. */
+  /** The artifact active at nowMs, or null. Monotonic cursor for the
+   *  ordinary forward-moving clock; a backward clock jump (a future
+   *  seek/loop feature -- unreachable today) rewinds instead of silently
+   *  skipping every remaining artifact for the rest of the run. */
   activeArtifact(nowMs) {
+    // The frontier is the end of the last window we advanced past; a clock
+    // at or before it means time moved backwards -- re-walk from the top.
+    if (this._cursor > 0) {
+      const prev = this.schedule[this._cursor - 1];
+      if (nowMs <= prev.startMs + prev.durMs) this._cursor = 0;
+    }
     while (this._cursor < this.schedule.length && nowMs > this.schedule[this._cursor].startMs + this.schedule[this._cursor].durMs) {
       this._cursor++;
     }
@@ -89,7 +97,7 @@ export class SkyEnsemble {
    * {skyMid, silhouette, halo}; `groove` breathes the planet halos.
    */
   draw(ctx, canvas, nowMs, {
-    fromName, toName, t = 0, colors, tSec = 0, groove = 0, calm = 0, reducedFlash = false,
+    fromName, toName, t = 0, colors, tSec = 0, groove = 0, reducedFlash = false,
   }) {
     if (toName === fromName) {
       this._drawPlanetSet(ctx, canvas, this._planets(fromName), 1, colors, tSec, groove);
@@ -113,54 +121,72 @@ export class SkyEnsemble {
     }
   }
 
-  _drawPlanetSet(ctx, canvas, planets, alpha, colors, tSec, groove) {
-    if (alpha <= 0.02) return;
-    ctx.save();
-    for (const p of planets) {
-      // A whisper of drift -- planets hang, they don't dart.
-      const cx = (p.xFrac + 0.004 * Math.sin(tSec * 0.05 + p.phase)) * canvas.width;
-      const cy = (p.yFrac + 0.003 * Math.sin(tSec * 0.04 + p.phase * 1.7)) * canvas.height;
+  /** Colors + the limb-shading gradient are cached per planet, keyed on the
+   *  (already palette-rotated) color triple: rebuilding a CanvasGradient
+   *  and two hexLerp strings per planet at 60-120fps was the diff's only
+   *  steady per-frame allocation churn, and planets only actually change
+   *  color when the palette does. The gradient is authored in planet-LOCAL
+   *  coordinates (under a translate) precisely so it can be reused while
+   *  the planet's sub-pixel drift moves it around. */
+  _planetColors(ctx, p, colors) {
+    const key = `${colors.silhouette}|${colors.skyMid}|${colors.halo}`;
+    if (!p._cc || p._cc.key !== key) {
       const body = hexLerp(colors.silhouette, colors.skyMid, p.mix);
       const lit = hexLerp(body, colors.halo, 0.35);
+      const grad = ctx.createRadialGradient(p.r * 0.45, -p.r * 0.4, p.r * 0.15, 0, 0, p.r);
+      grad.addColorStop(0, lit);
+      grad.addColorStop(1, body);
+      p._cc = { key, body, lit, grad };
+    }
+    return p._cc;
+  }
+
+  _drawPlanetSet(ctx, canvas, planets, alpha, colors, tSec, groove) {
+    if (alpha <= 0.02) return;
+    for (const p of planets) {
+      const cc = this._planetColors(ctx, p, colors);
+      ctx.save();
+      // A whisper of drift -- planets hang, they don't dart.
+      ctx.translate(
+        (p.xFrac + 0.004 * Math.sin(tSec * 0.05 + p.phase)) * canvas.width,
+        (p.yFrac + 0.003 * Math.sin(tSec * 0.04 + p.phase * 1.7)) * canvas.height,
+      );
 
       // Halo: barely-there, breathing with the groove.
       ctx.globalAlpha = alpha * (0.10 + 0.08 * groove * (0.5 + 0.5 * Math.sin(tSec * 1.2 + p.phase)));
       ctx.fillStyle = colors.halo;
       ctx.beginPath();
-      ctx.arc(cx, cy, p.r * 1.9, 0, Math.PI * 2);
+      ctx.arc(0, 0, p.r * 1.9, 0, Math.PI * 2);
       ctx.fill();
 
       // Ring behind (upper arc) so the body occludes its middle.
       if (p.kind === 'ringed') {
         ctx.globalAlpha = alpha * 0.5;
-        ctx.strokeStyle = lit;
+        ctx.strokeStyle = cc.lit;
         ctx.lineWidth = 1.6;
         ctx.beginPath();
-        ctx.ellipse(cx, cy, p.r * 1.75, p.r * 0.5, p.tilt, Math.PI, Math.PI * 2);
+        ctx.ellipse(0, 0, p.r * 1.75, p.r * 0.5, p.tilt, Math.PI, Math.PI * 2);
         ctx.stroke();
       }
 
       // Body with a lit limb toward the celestial (upper right).
-      const g = ctx.createRadialGradient(cx + p.r * 0.45, cy - p.r * 0.4, p.r * 0.15, cx, cy, p.r);
-      g.addColorStop(0, lit);
-      g.addColorStop(1, body);
       ctx.globalAlpha = alpha * 0.9;
-      ctx.fillStyle = g;
+      ctx.fillStyle = cc.grad;
       ctx.beginPath();
-      ctx.arc(cx, cy, p.r, 0, Math.PI * 2);
+      ctx.arc(0, 0, p.r, 0, Math.PI * 2);
       ctx.fill();
 
       if (p.kind === 'banded') {
         ctx.save();
         ctx.beginPath();
-        ctx.arc(cx, cy, p.r, 0, Math.PI * 2);
+        ctx.arc(0, 0, p.r, 0, Math.PI * 2);
         ctx.clip();
         ctx.globalAlpha = alpha * 0.30;
         ctx.strokeStyle = colors.skyMid;
         ctx.lineWidth = p.r * 0.22;
         for (let b = -1; b <= 1; b++) {
           ctx.beginPath();
-          ctx.ellipse(cx, cy + b * p.r * 0.42, p.r * 1.1, p.r * 0.30, p.tilt * 0.4, 0, Math.PI * 2);
+          ctx.ellipse(0, b * p.r * 0.42, p.r * 1.1, p.r * 0.30, p.tilt * 0.4, 0, Math.PI * 2);
           ctx.stroke();
         }
         ctx.restore();
@@ -169,7 +195,7 @@ export class SkyEnsemble {
         ctx.fillStyle = colors.silhouette;
         for (const [ox, oy, cr] of [[-0.35, -0.1, 0.2], [0.2, 0.3, 0.14], [0.05, -0.42, 0.11]]) {
           ctx.beginPath();
-          ctx.arc(cx + ox * p.r, cy + oy * p.r, cr * p.r, 0, Math.PI * 2);
+          ctx.arc(ox * p.r, oy * p.r, cr * p.r, 0, Math.PI * 2);
           ctx.fill();
         }
       } else if (p.kind === 'crescent') {
@@ -177,21 +203,21 @@ export class SkyEnsemble {
         ctx.globalAlpha = alpha * 0.85;
         ctx.fillStyle = colors.skyMid;
         ctx.beginPath();
-        ctx.arc(cx - p.r * 0.4, cy + p.r * 0.28, p.r * 0.92, 0, Math.PI * 2);
+        ctx.arc(-p.r * 0.4, p.r * 0.28, p.r * 0.92, 0, Math.PI * 2);
         ctx.fill();
       }
 
       // Ring in front (lower arc).
       if (p.kind === 'ringed') {
         ctx.globalAlpha = alpha * 0.65;
-        ctx.strokeStyle = lit;
+        ctx.strokeStyle = cc.lit;
         ctx.lineWidth = 1.6;
         ctx.beginPath();
-        ctx.ellipse(cx, cy, p.r * 1.75, p.r * 0.5, p.tilt, 0, Math.PI);
+        ctx.ellipse(0, 0, p.r * 1.75, p.r * 0.5, p.tilt, 0, Math.PI);
         ctx.stroke();
       }
+      ctx.restore();
     }
-    ctx.restore();
   }
 
   _drawComet(ctx, canvas, u, env, seed, colors) {

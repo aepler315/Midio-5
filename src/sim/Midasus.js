@@ -3,6 +3,7 @@
 // tracking with a 70% trajectory snap on each trigger, a PD pursuit
 // controller between triggers, and a Lissajous orbit during rests.
 import { Role } from '../core/NoteEvent.js';
+import { visualNow } from '../core/ChoreoClock.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { clamp, lerp, mulberry32 } from '../utils/math.js';
 import { MIDASUS_MESH, MIDASUS_HEX_R } from '../render/meshes.js';
@@ -181,16 +182,21 @@ export class Midasus {
       this.v.y *= 0.4;
       this.hue = this._hueOf(n.pitch);
       if (this.voyage.active) this.voyage.onMelodyOnset(n); // deep space hears the melody too
-      this.lastNoteMs = n.tMs;
       this._impacts.push(n);
     }
     // ...while the IMPACT (burst, slash, pulse, core ring) waits for the
     // note's own heard moment: move early, hit exactly on time.
-    const vNowMs = nowMs - Math.min(350, Math.max(0, this.visualLagMs || 0));
+    const vNowMs = visualNow(nowMs, this.visualLagMs);
     while (this._impacts.length && this._impacts[0].tMs <= vNowMs) {
       const n = this._impacts.shift();
+      // Stamped at the heard moment (not at dart time, which runs up to
+      // ANTICIPATE_MS ahead) so the silence clock never reads the future.
+      this.lastNoteMs = n.tMs;
       if (n.vel > 0.85) this._pirouetteStartMs = nowMs; // hard accents spin her right around
-      this._burst(8 + 24 * n.vel, this.hue);
+      // The impacting NOTE's own color -- this.hue has already darted ahead
+      // to a newer note on dense passages, same reason the slash below
+      // re-derives it from n.pitch.
+      this._burst(8 + 24 * n.vel, this._hueOf(n.pitch));
       this.pulse = 1.7 + 0.5 * n.vel; // a brief mesh flash on each note onset
       this.modal.excite(1.2 + 3 * n.vel);
       if (n.vel > 0.75) this.debris.burst(n.vel); // hard notes fling the shards outward

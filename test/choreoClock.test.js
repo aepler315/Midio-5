@@ -2,26 +2,9 @@
 // output-latency clock, and the Conductor's ahead-of-time dispatch channel.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { anticipationEnv, apexHopY, outputLatencyMs, visualNow, CHOREO_LEAD_MS } from '../src/core/ChoreoClock.js';
+import { apexHopY, outputLatencyMs, visualNow, CHOREO_LEAD_MS } from '../src/core/ChoreoClock.js';
 import { Conductor } from '../src/core/Conductor.js';
 import { Role, makeNoteEvent } from '../src/core/NoteEvent.js';
-
-test('anticipationEnv peaks at exactly 1 ON the anchor, rises before it, settles after', () => {
-  const anchor = 5000;
-  assert.equal(anticipationEnv(anchor - 200, anchor, 110), 0, 'silent before the rise begins');
-  assert.equal(anticipationEnv(anchor, anchor, 110), 1, 'full value exactly on the anchor');
-  const mid = anticipationEnv(anchor - 55, anchor, 110);
-  assert.ok(mid > 0.3 && mid < 0.7, `smooth mid-rise, got ${mid}`);
-  // Monotone rise: the lean-in never dips.
-  let prev = 0;
-  for (let t = anchor - 110; t <= anchor; t += 5) {
-    const v = anticipationEnv(t, anchor, 110);
-    assert.ok(v >= prev - 1e-9, `rise must be monotone at ${t}`);
-    prev = v;
-  }
-  const after = anticipationEnv(anchor + 180, anchor, 110, 180);
-  assert.ok(Math.abs(after - Math.exp(-1)) < 1e-9, 'exponential settle after the anchor');
-});
 
 test('apexHopY: the hop APEX (full height) lands exactly on the anchor', () => {
   const anchor = 3000, rise = 80, h = 30;

@@ -52,3 +52,11 @@ test('activeArtifact tracks the schedule with a monotonic cursor', () => {
     assert.equal(se.activeArtifact(second.startMs + 10), second);
   }
 });
+
+test('a backward clock jump rewinds the artifact cursor instead of killing the schedule', () => {
+  const se = new SkyEnsemble(42, 3 * 60 * 1000);
+  const [first, second] = se.schedule;
+  assert.ok(first && second, 'need at least two scheduled artifacts');
+  assert.equal(se.activeArtifact(second.startMs + 10), second, 'advance to the second window');
+  assert.equal(se.activeArtifact(first.startMs + 10), first, 'a seek back replays the first window');
+});

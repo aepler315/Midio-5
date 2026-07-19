@@ -175,9 +175,8 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
       lane: laneForStemName(name),
       env: activityEnvelope(mixToMono(buffer), buffer.sampleRate, rate),
     }));
-    const reassigned = delegateByStemActivity(timeline, voters, rate);
+    delegateByStemActivity(timeline, voters, rate);
     stemsSummary = voters.map(({ name, lane }) => ({ name, lane }));
-    stemsSummary.reassigned = reassigned;
   }
 
   const chordWindows = [];

@@ -51,7 +51,7 @@ export class FarVignettes {
 
   /**
    * Draw every vignette currently on screen. `env`: {tSec, kick (0..1
-   * layer-delayed kickEnv), silhouette, sky, halo (hex), calm}.
+   * layer-delayed kickEnv), silhouette, sky, halo (hex)}.
    */
   draw(ctx, canvas, worldX, env) {
     const scroll = worldX * VIGNETTE_RATIO;
@@ -67,8 +67,12 @@ export class FarVignettes {
 
   _drawOne(ctx, canvas, v, x, env) {
     // Far things sit in the air: body color is the silhouette pulled well
-    // toward the sky, accents are the halo at low alpha.
-    const body = hexLerp(env.silhouette, env.sky, 0.45);
+    // toward the sky, accents are the halo at low alpha. Cached on the
+    // color pair -- it only changes when the palette does, not per frame.
+    if (!this._bodyCache || this._bodyCache.key !== env.silhouette + env.sky) {
+      this._bodyCache = { key: env.silhouette + env.sky, body: hexLerp(env.silhouette, env.sky, 0.45) };
+    }
+    const body = this._bodyCache.body;
     const baseY = canvas.height * 0.565; // just above where L4/L5 ridges rise
     ctx.save();
     ctx.translate(x, baseY);

@@ -81,7 +81,13 @@ export class MidioPerformer {
     this.modal = new ModalRing({ modes: 4, baseHz: 8, decaySec: 0.55, seed: (seed ^ 0x9e37) >>> 0 });
 
     this.beatFlash = 0; // additive mesh ignition on every kick -- closed-form kickEnv, see update()
-    this._kickTMs = -Infinity; // the kick's true onset (ChoreoClock anchoring)
+    this._kickTMs = -Infinity; // the latest AUDIBLE kick's onset (ChoreoClock anchoring)
+    // Kicks not yet heard: on high-latency outputs (Bluetooth) a new kick
+    // can arrive on the song clock before the previous one reaches the ear.
+    // Overwriting the anchor directly would keep it perpetually in the
+    // future and the flash would never light -- so onsets queue here and
+    // update() promotes each to the anchor at its own heard moment.
+    this._kickPending = [];
     this.visualLagMs = 0;      // output-latency compensation, set by Simulation each step
     this.holdGlow = 0; // hold-slide charge glow: lights on arm, ramps with paid ticks
     this._landMs = -Infinity;
@@ -94,7 +100,9 @@ export class MidioPerformer {
    *  computed closed-form against it in update() so its peak lands when
    *  the ear gets the kick (ChoreoClock), not when the dispatcher did. */
   onKick(tMs) {
-    this._kickTMs = Number.isFinite(tMs) ? tMs : this._kickTMs;
+    if (!Number.isFinite(tMs)) return;
+    this._kickPending.push(tMs);
+    if (this._kickPending.length > 8) this._kickPending.shift(); // update() drains constantly; this is a stall guard
   }
 
   captureGoldAfterimage(midio, nowMs) {
@@ -267,7 +275,11 @@ export class MidioPerformer {
     // Closed-form beat flash (ChoreoClock): the mountains' kickEnv anchored
     // on the kick's true onset, evaluated on the heard clock -- exact shape
     // at any step rate, peak aligned with the audible hit.
-    this.beatFlash = kickEnv(visualNow(nowMs, this.visualLagMs) - this._kickTMs);
+    const vNow = visualNow(nowMs, this.visualLagMs);
+    // Promote each queued kick to the anchor at its own heard moment, so a
+    // kick is never orphaned by a newer one that hasn't reached the ear yet.
+    while (this._kickPending.length && this._kickPending[0] <= vNow) this._kickTMs = this._kickPending.shift();
+    this.beatFlash = kickEnv(vNow - this._kickTMs);
 
     const sinceBlink = nowMs - this._blinkStartMs;
     this.blinkScale = sinceBlink < BLINK_DUR_MS
