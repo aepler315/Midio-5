@@ -145,12 +145,12 @@ export class Renderer {
     if (sim.broshi) sim.broshi.draw(ctx, pose);
 
     if (sim.performer) {
-      this._drawMidioAfterimages(ctx, sim.performer, pose.midioX);
-      this._drawGoldAfterimages(ctx, sim.performer, pose.midioX, sim.timeMs);
+      this._drawMidioAfterimages(ctx, sim.performer, pose.midioDrawX);
+      this._drawGoldAfterimages(ctx, sim.performer, pose.midioDrawX, sim.timeMs);
     }
     const midioWidthPx = sim.midio.halfWidth * 2 * MIDIO_DRAW_SCALE * pose.scaleX;
     const midioHeightAbove = sim.midio.groundY - pose.midioY;
-    this._drawContactShadow(ctx, contactShadow(pose.midioX, sim.midio.groundY, midioHeightAbove, midioWidthPx));
+    this._drawContactShadow(ctx, contactShadow(pose.midioDrawX, sim.midio.groundY, midioHeightAbove, midioWidthPx));
     // Fever adds its own glow on top of the vibe's epic-ness -- a hot streak
     // makes Midio himself burn brighter, not just the world around him.
     const feverGlow = sim.fever ? 3.0 * sim.fever.level : 0;
@@ -160,7 +160,7 @@ export class Renderer {
     const lm = sim.performer ? sim.performer.lastMilestone : null;
     if (lm && lm.atMs !== this._lastMilestoneMs) {
       this._lastMilestoneMs = lm.atMs;
-      this.epicycles.trigger(lm.idx, pose.midioX + 30, sim.midio.groundY - 245, sim.timeMs);
+      this.epicycles.trigger(lm.idx, pose.midioDrawX + 30, sim.midio.groundY - 245, sim.timeMs);
     }
     this.epicycles.draw(ctx, sim.timeMs);
     this._drawDropShockwave(ctx, canvas, sim, pose);
@@ -250,7 +250,7 @@ export class Renderer {
     if (!hype) return;
     const u = hype.ringU(sim.timeMs);
     if (u == null) return;
-    const cx = pose.midioX, cy = sim.midio.groundY - 60;
+    const cx = pose.midioDrawX, cy = sim.midio.groundY - 60;
     const maxR = Math.hypot(canvas.width, canvas.height) * 0.75;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -373,7 +373,7 @@ export class Renderer {
     // Radial speed-lines from Midio.
     const count = Math.max(6, Math.round(SPEED_LINE_COUNT * (perf ? perf.particleMul : 1)));
     const maxR = Math.hypot(canvas.width, canvas.height) * 0.42;
-    const cx = pose.midioX, cy = sim.midio.groundY - 60;
+    const cx = pose.midioDrawX, cy = sim.midio.groundY - 60;
     const segs = speedLineSegments(cx, cy, count, s, hype.dropCount, maxR);
     const lineAlpha = capFlashAlpha(SPEED_LINE_MAX_ALPHA * s, reducedFlash);
     ctx.save();
@@ -471,7 +471,7 @@ export class Renderer {
     const breatheBeatFlash = performer ? performer.beatFlash : 0;
     const breathe = 1 + 0.025 * Math.sin(tSec * 2.4) + 0.05 * breatheBeatFlash;
     const transform = {
-      tx: pose.midioX, ty: pose.midioY,
+      tx: pose.midioDrawX, ty: pose.midioY,
       rot: (pose.leanDeg * Math.PI) / 180,
       scaleX: pose.scaleX * MIDIO_DRAW_SCALE * breathe * (1 + 0.25 * apoProgress),
       scaleY: pose.scaleY * MIDIO_DRAW_SCALE * breathe * (1 + 0.25 * apoProgress),
@@ -516,16 +516,18 @@ export class Renderer {
       }, hue, { ...options, alpha: 1, lightBase: 78 });
       ctx.restore();
     }
-    drawMeshPart(ctx, bodyMesh, bodyRest, transform, hue, options);
+    // The crisp pass carries an ink contour underneath (outline: true) so
+    // his silhouette stays razor-edged against his own under-glow.
+    drawMeshPart(ctx, bodyMesh, bodyRest, transform, hue, { ...options, outline: true });
 
     if (blink < 0.98) {
       const blinkEye = {
         vertices: MIDIO_EYE.vertices.map((v) => ({ x: v.x, y: MIDIO_EYE_CY + (v.y - MIDIO_EYE_CY) * blink })),
         edges: MIDIO_EYE.edges,
       };
-      drawMeshPart(ctx, blinkEye, this._midioEyeRest, transform, hue, options);
+      drawMeshPart(ctx, blinkEye, this._midioEyeRest, transform, hue, { ...options, outline: true });
     } else {
-      drawMeshPart(ctx, MIDIO_EYE, this._midioEyeRest, transform, hue, options);
+      drawMeshPart(ctx, MIDIO_EYE, this._midioEyeRest, transform, hue, { ...options, outline: true });
     }
 
     // Kick ignition: the sigil flashes additively right on the beat.

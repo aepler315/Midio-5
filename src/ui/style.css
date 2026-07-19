@@ -330,6 +330,16 @@ html, body {
   opacity: 0.55;
   font-variant-numeric: tabular-nums;
 }
+/* Casting tag: which character performs this track (Casting.js lanes). */
+.trackRow .laneTag {
+  flex: none;
+  font-size: 0.68rem;
+  opacity: 0.75;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+}
 .trackRow .panGlyph {
   flex: none;
   width: 1.4em;

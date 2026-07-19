@@ -6,11 +6,20 @@ import { Role } from '../src/core/NoteEvent.js';
 function fakeConductor() {
   const barHandlers = [];
   const roleHandlers = {};
+  const aheadHandlers = {};
   return {
     onBar(fn) { barHandlers.push(fn); },
     on(role, fn) { (roleHandlers[role] ||= []).push(fn); },
+    // Anticipation channel (ChoreoClock): the fake delivers immediately --
+    // lead time is a dispatch detail these tests don't exercise.
+    subscribeAhead(role, leadMs, fn) { (aheadHandlers[role] ||= []).push(fn); },
     fireBar(ms) { for (const fn of barHandlers) fn({ ms }); },
-    fireEvent(role, evt) { for (const fn of (roleHandlers[role] || [])) fn(evt); },
+    fireEvent(role, evt) {
+      const e = { role, ...evt }; // real NoteEvents always carry their role
+      for (const fn of (aheadHandlers[role] || [])) fn(e);
+      for (const fn of (aheadHandlers['*'] || [])) fn(e);
+      for (const fn of (roleHandlers[role] || [])) fn(e);
+    },
   };
 }
 
@@ -72,4 +81,113 @@ test('a sustained calm streak eventually triggers a yawn (slow jaw open, not the
     t += 500;
   }
   assert.ok(sawYawn, 'expected a yawn to eventually trigger under a long sustained calm streak');
+});
+
+test('apex-on-beat: the hop peak lands exactly on the triggering note\'s tMs', () => {
+  const conductor = fakeConductor();
+  const b = new Broshi(conductor, {}, { seed: 7 });
+  // The anticipation channel delivers the note early with its true onset.
+  conductor.fireEvent(Role.MELODY, { vel: 0.8, pitch: 64, tMs: 1000 });
+  let peakT = null, peak = -1;
+  for (let t = 800; t <= 1200; t += 4) {
+    b.update(t, 1 / 240, fakeMidio(), null, null, 0, 480, 0);
+    if (b.hopY > peak) { peak = b.hopY; peakT = t; }
+  }
+  assert.ok(peak > 0, 'the hop must fire');
+  assert.ok(Math.abs(peakT - 1000) <= 8, `apex must land ON the note (got peak at ${peakT})`);
+});
+
+test('output latency shifts the hop apex onto the HEARD beat', () => {
+  const conductor = fakeConductor();
+  const b = new Broshi(conductor, {}, { seed: 7 });
+  b.visualLagMs = 120;
+  conductor.fireEvent(Role.MELODY, { vel: 0.8, pitch: 64, tMs: 1000 });
+  let peakT = null, peak = -1;
+  for (let t = 800; t <= 1400; t += 4) {
+    b.update(t, 1 / 240, fakeMidio(), null, null, 0, 480, 0);
+    if (b.hopY > peak) { peak = b.hopY; peakT = t; }
+  }
+  assert.ok(Math.abs(peakT - 1120) <= 8, `with 120ms output lag the apex waits for the ear (got ${peakT})`);
+});
+
+test('casting: a hopFilter routes his body to HIS lane only', () => {
+  const conductor = fakeConductor();
+  const b = new Broshi(conductor, {}, { seed: 8, hopFilter: (e) => e.lane === 'BROSHI' });
+  // A melody note that is NOT his lane: head may bob, body must not hop.
+  conductor.fireEvent(Role.MELODY, { vel: 0.9, pitch: 70, tMs: 500, lane: 'MIDASUS' });
+  let hopped = 0;
+  for (let t = 300; t <= 700; t += 10) {
+    b.update(t, 1 / 100, fakeMidio(), null, null, 0, 480, 0);
+    if (b.hopY > 0) hopped++;
+  }
+  assert.equal(hopped, 0, 'not his line, no hop');
+  // His bass lane note: the hop fires (and learns the bass register).
+  conductor.fireEvent(Role.BASS, { vel: 0.9, pitch: 38, tMs: 1000, lane: 'BROSHI' });
+  let peak = 0;
+  for (let t = 850; t <= 1150; t += 10) {
+    b.update(t, 1 / 100, fakeMidio(), null, null, 0, 480, 0);
+    peak = Math.max(peak, b.hopY);
+  }
+  assert.ok(peak > 0, 'his bass line hops him');
+});
+
+test('lost traction (snow) makes the trailing spring visibly overshoot more', () => {
+  const run = (traction) => {
+    const conductor = fakeConductor();
+    const b = new Broshi(conductor, {}, { seed: 9 });
+    b.traction = traction;
+    b.xRel = -300; // displaced hard from the trail point
+    let overshoot = 0;
+    for (let t = 0; t <= 6000; t += 16) {
+      b.update(t, 16 / 1000, fakeMidio(), null, null, 0, 480, 0);
+      overshoot = Math.max(overshoot, b.xRel - b._trailTarget);
+    }
+    return overshoot;
+  };
+  const icy = run(0.3), dry = run(1);
+  assert.ok(icy > dry + 5, `icy overshoot (${icy}) must exceed dry (${dry})`);
+});
+
+test('kick flash queue: rapid kicks under Bluetooth-class latency still light every flash', () => {
+  const conductor = fakeConductor();
+  const b = new Broshi(conductor, {}, { seed: 11 });
+  b.visualLagMs = 250;
+  // Kicks every 200ms -- FASTER than the output latency. The old
+  // overwrite-the-anchor scheme kept the anchor perpetually unheard and the
+  // flash stayed at 0 forever; the queue promotes each at its heard moment.
+  for (const t of [1000, 1200, 1400, 1600]) conductor.fireEvent(Role.RHYTHM, { kick: true, vel: 0.9, tMs: t });
+  let peak = 0;
+  for (let t = 1000; t <= 2200; t += 8) {
+    b.update(t, 8 / 1000, fakeMidio(), null, null, 0, 480, 0);
+    peak = Math.max(peak, b.beatFlash);
+  }
+  assert.ok(peak > 0.95, `expected full flashes despite latency >= kick interval, got peak ${peak}`);
+});
+
+test('dense runs: the busy guard finishes the current hop instead of flattening every hop', () => {
+  const conductor = fakeConductor();
+  const b = new Broshi(conductor, {}, { seed: 12 });
+  // 16th-note spacing (100ms) -- denser than the 220ms anticipation lead.
+  // Without the guard, note B's early delivery replaced note A's hop before
+  // its window even opened and hopY stayed ~0 through the whole run.
+  conductor.fireEvent(Role.MELODY, { vel: 0.8, pitch: 64, tMs: 1000 });
+  conductor.fireEvent(Role.MELODY, { vel: 0.8, pitch: 66, tMs: 1100 });
+  let peakAtA = 0;
+  for (let t = 900; t <= 1080; t += 4) {
+    b.update(t, 4 / 1000, fakeMidio(), null, null, 0, 480, 0);
+    peakAtA = Math.max(peakAtA, b.hopY);
+  }
+  assert.ok(peakAtA > 10, `note A's hop must reach a real apex, got ${peakAtA}`);
+});
+
+test('bar density buckets by each note\'s own tMs, not by early delivery time', () => {
+  const conductor = fakeConductor();
+  const b = new Broshi(conductor, {}, { seed: 13 });
+  // Three notes inside the bar, two anticipated notes belonging to the NEXT
+  // bar (tMs past the boundary) delivered early by the lookahead channel.
+  for (const t of [100, 200, 300]) conductor.fireEvent(Role.MELODY, { vel: 0.5, pitch: 60, tMs: t });
+  for (const t of [520, 640]) conductor.fireEvent(Role.MELODY, { vel: 0.5, pitch: 60, tMs: t });
+  conductor.fireBar(500);
+  assert.equal(b._laneOnsetTimes.length, 2, 'the next bar\'s anticipated notes stay queued for it');
+  assert.equal(b._barMelodyHistory.at(-1), 3, 'the closing bar counts only its own notes');
 });

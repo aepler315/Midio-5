@@ -12,6 +12,8 @@ import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul } from './MountainChoreo.js';
+import { SkyEnsemble } from './SkyEnsemble.js';
+import { FarVignettes } from './FarVignettes.js';
 import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { LightningFX } from './Lightning.js';
@@ -128,6 +130,14 @@ export class BiomeManager {
     }
     this._weatherSuppress = 1; // eased 0..1: 0 while the active biome already has this exact particle kind
     this._activeWeatherIntensity = 0; // weatherState.intensity * suppress, computed in update(), read by draw()
+    this.snowCover = 0; // settled snow 0..1, set externally each frame from Simulation.snowCover -- drives the frost caps
+
+    // Planets + astral artifacts: seeded per song/biome, drawn behind the
+    // celestial so the sun/moon and ranges occlude them naturally.
+    this.skyEnsemble = new SkyEnsemble(songSeed, durationMs);
+    // Far-distance vignettes: rare seeded scenes (aliens at dinner, a cloud
+    // whale...) witnessed way out between the L2 and L3 ranges.
+    this.farVignettes = new FarVignettes(songSeed);
 
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed);
     // MIDI custom biome: cast every section into the generated world so the
@@ -351,6 +361,15 @@ export class BiomeManager {
   /** The current sky's base (horizon) tone -- used as a full-bleed backdrop
    *  fill so zooming out past 1.0 never exposes blank canvas at the edges
    *  of the (deliberately un-overscanned) parallax layers. */
+  /** The ACTIVE profile's own ambient particle kind ('snow', 'rain', ...) --
+   *  Simulation reads this so an inherently frozen biome ices the footing
+   *  even when the music-reactive weather layer is doing something else. */
+  currentParticleKind() {
+    if (!this.currentBlend) return null;
+    const { from, to, t } = this.currentBlend;
+    return this._profile(t > 0.5 ? to : from).particles.kind;
+  }
+
   currentSkyBase() {
     if (!this.currentBlend) return '#141428';
     const { from, to, t } = this.currentBlend;
@@ -410,8 +429,9 @@ export class BiomeManager {
     this._hazeMul = pers.haze ?? 1;
 
     // The Wind: one sample per frame, shared by every consumer below --
-    // never re-derived per particle.
-    this.atmosphere.turbulence = pers.turbulence ?? 1;
+    // never re-derived per particle. An active weather front gusts it up:
+    // rain and snow arrive WITH wind, not into still air.
+    this.atmosphere.turbulence = (pers.turbulence ?? 1) * (1 + 0.6 * this._activeWeatherIntensity);
     const energyInstant = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS)) : 0;
     this.atmosphere.update(dtSec, energyInstant);
 
@@ -493,6 +513,18 @@ export class BiomeManager {
 
     this._drawSky(ctx, canvas, A, B, t);
 
+    // Planets + astral artifacts, behind everything else in the heavens.
+    this.skyEnsemble.draw(ctx, canvas, this.tSec * 1000, {
+      fromName: A.name, toName: B.name, t,
+      colors: {
+        skyMid: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
+        silhouette: this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)),
+        halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
+      },
+      tSec: this.tSec, groove: this._danceGroove,
+      reducedFlash: this.reducedFlash,
+    });
+
     // Day arc: dawn/dusk tint washes and the celestial's slow climb/descent.
     const arc = dayArc(this._progress);
     for (const wash of [arc.dawn, arc.dusk]) {
@@ -537,6 +569,16 @@ export class BiomeManager {
 
     this._drawLayer(ctx, canvas, 'L2', scrollX0, tint, t, A, B);
     this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
+    // Far-distance vignettes: between the farthest range and everything
+    // nearer, so the L3/L4/L5 ridges partially occlude them -- genuinely
+    // "witnessed in the far distance", not sprites pasted on the sky.
+    this.farVignettes.draw(ctx, canvas, worldX, {
+      tSec: this.tSec,
+      kick: kickEnv(this.tSec * 1000 - this._danceKickMs - 170) * this._danceKickAmp,
+      silhouette: tint,
+      sky: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
+      halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
+    });
     this._drawLayer(ctx, canvas, 'L3', scrollX1, tint, t, A, B);
     this._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
 
@@ -1199,6 +1241,32 @@ export class BiomeManager {
         ctx.globalCompositeOperation = 'lighter';
         ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.28 * grooveNow, this.reducedFlash)})`;
         for (const bar of bars) ctx.fillRect(bar.x, bar.y, bar.width + 1, 2);
+        ctx.restore();
+      }
+
+      // Settled snow: frost caps ride the bar tops -- a pale band whose
+      // thickness grows with cover, plus seeded glints so ice reads as ICE
+      // (slippery, see Traction.js) rather than just pale paint. Melts to
+      // zero cost the moment cover does.
+      if ((this.snowCover || 0) > 0.03) {
+        const cover = this.snowCover;
+        ctx.save();
+        ctx.fillStyle = `rgba(230,242,255,${(0.34 * cover).toFixed(3)})`;
+        // One pass: caps for every bar, glinting bars collected as we go
+        // (usually 0-3) for the tiny additive pass below.
+        const glints = [];
+        for (const bar of bars) {
+          ctx.fillRect(bar.x, bar.y, bar.width + 1, 4 + 9 * cover);
+          // Specular glints: a few bars catch the light each moment,
+          // drifting with world scroll so the sheen slides underfoot.
+          const glint = 0.5 + 0.5 * Math.sin(bar.x * 0.13 + worldX * 0.011 + this.tSec * 1.7);
+          if (glint > 0.86) glints.push([bar, 0.30 * cover * (glint - 0.86) / 0.14]);
+        }
+        ctx.globalCompositeOperation = 'lighter';
+        for (const [bar, a] of glints) {
+          ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+          ctx.fillRect(bar.x, bar.y, bar.width + 1, 1.6);
+        }
         ctx.restore();
       }
 

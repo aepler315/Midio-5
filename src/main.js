@@ -369,12 +369,21 @@ function renderTracks(tracks, pairs) {
     return other ? other.name : null;
   };
 
+  // Casting: who performs this track (Casting.js lanes) -- shown as the
+  // performer's initial so the delegation is visible, not guessed at.
+  const laneGlyph = (lane) => {
+    if (lane === 'MIDASUS') return '<span class="laneTag" title="Danced by Midasus (clean melody)">\u2726 Midasus</span>';
+    if (lane === 'BROSHI') return '<span class="laneTag" title="Hopped by Broshi (bass line)">\u25b8 Broshi</span>';
+    if (lane === 'MIDIO') return '<span class="laneTag" title="Ridden by Midio (lead line)">\u2605 Midio</span>';
+    return '';
+  };
   const rows = shown.map((t) => {
     const partner = t.intertwined ? partnerName(t) : null;
     const title = partner ? `Widens apart from "${partner}" over the course of the song` : '';
     return `<div class="trackRow${t.intertwined ? ' intertwined' : ''}" title="${escapeHtml(title)}">`
       + `<span class="roleDot role-${t.role}"></span>`
       + `<span class="trackName">${escapeHtml(t.name)}${partner ? ' \u2194' : ''}</span>`
+      + laneGlyph(t.lane)
       + `<span class="panGlyph">${panGlyph(t.pan)}</span>`
       + `<span class="trackMeta">${t.noteCount}</span>`
       + `</div>`;
@@ -429,6 +438,9 @@ function startTimeline(timelineData) {
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
     customBiome: timelineData.customBiome || null,
+    // ChoreoClock: live output-latency getter so beat-anchored envelopes
+    // peak when the EAR gets the beat (Bluetooth can lag 200ms+).
+    outputLatencyMs: () => audioEngine.outputLatencyMs,
   });
   sim.perf = perfGovernor;
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
@@ -463,6 +475,7 @@ function startTimeline(timelineData) {
     renderer, rendererMode, rendererBackend: renderer?.backend || 'canvas',
     customBiome: timelineData.customBiome || null,
     analysis: timelineData.analysis || null,
+    stems: timelineData.stems || null,
     muteTimelineSynth,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
@@ -503,19 +516,64 @@ function showProgress(text) {
 }
 
 async function loadAudioFile(file) {
+  return loadAudioFiles([file]);
+}
+
+/** Sums N decoded stems into one stereo mix buffer -- the mix is both the
+ *  analysis subject and what actually plays. Stems shorter than the longest
+ *  simply end early (silence-padded by construction). */
+function sumToMixBuffer(buffers) {
+  const rate = buffers[0].sampleRate;
+  const length = Math.max(...buffers.map((b) => b.length));
+  const mix = audioEngine.ctx.createBuffer(2, length, rate);
+  // Peak is tracked during the LAST stem's accumulation (sum order doesn't
+  // change the result, so the longest stem goes last -- it spans the whole
+  // mix, making every out[i] final under it), sparing a separate full scan.
+  const ordered = [...buffers].sort((a, b) => a.length - b.length);
+  let peak = 0;
+  for (let c = 0; c < 2; c++) {
+    const out = mix.getChannelData(c);
+    for (let bi = 0; bi < ordered.length; bi++) {
+      const src = ordered[bi].getChannelData(Math.min(c, ordered[bi].numberOfChannels - 1));
+      const last = bi === ordered.length - 1;
+      for (let i = 0; i < src.length; i++) {
+        out[i] += src[i];
+        if (last) { const a = Math.abs(out[i]); if (a > peak) peak = a; }
+      }
+    }
+  }
+  // Normalize only if the sum actually clips -- quiet stems stay quiet.
+  if (peak > 1) {
+    const g = 0.98 / peak;
+    for (let c = 0; c < 2; c++) {
+      const ch = mix.getChannelData(c);
+      for (let i = 0; i < ch.length; i++) ch[i] *= g;
+    }
+  }
+  return mix;
+}
+
+/** One audio file plays as itself; SEVERAL dropped together are treated as
+ *  stems of one song -- summed into a mix for analysis/playback, with each
+ *  file's NAME casting its notes to a character (see Casting.js). */
+async function loadAudioFiles(files) {
   await bootAudio();
   loadGen++; // raw audio never gates, but a pending gate must not start over us
-  const buf = await file.arrayBuffer();
-  let audioBuffer;
-  try {
-    audioBuffer = await audioEngine.decodeFile(buf);
-  } catch (err) {
-    alert('Could not decode audio file: ' + err.message);
-    return;
+  const decoded = [];
+  for (const file of files) {
+    try {
+      decoded.push({ name: file.name || 'stem', buffer: await audioEngine.decodeFile(await file.arrayBuffer()) });
+    } catch (err) {
+      alert(`Could not decode audio file "${file.name}": ` + err.message);
+      return;
+    }
   }
+  const isStemDrop = decoded.length > 1;
+  const audioBuffer = isStemDrop ? sumToMixBuffer(decoded.map((d) => d.buffer)) : decoded[0].buffer;
 
-  showProgress('Separating into 7 frequency bands…');
+  showProgress(isStemDrop ? `Mixing ${decoded.length} stems…` : 'Separating into 7 frequency bands…');
   const data = await audioToTimeline(audioBuffer, {
+    userStems: isStemDrop ? decoded : null,
     onProgress: ({ phase, progress }) => {
       if (phase === 'separate') showProgress(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`);
       else if (phase === 'analyze') showProgress('Detecting onsets, tempo, and downbeat…');
@@ -527,10 +585,13 @@ async function loadAudioFile(file) {
   if (data.freeTime) {
     console.warn(`Low tempo confidence (${data.confidence.toFixed(2)}) — switching to free-time, kick-reactive jumps.`);
   }
+  if (data.stems) {
+    console.info('[casting] stems:', data.stems.map((s) => `${s.name} -> ${s.lane || '(world)'}`).join(', '));
+  }
   // Audio files get the same per-song visual fingerprint MIDI files do: a
   // unique custom biome from the timeline plus the adapter's chroma/
   // brightness/dynamics/width analysis (see BiomeImporter).
-  data.customBiome = generateCustomBiomeFromMidi(data, file.name || 'Audio');
+  data.customBiome = generateCustomBiomeFromMidi(data, files[0].name || 'Audio');
   rememberCustomBiome(paramBus, data.customBiome);
   // Raw audio already has every voice baked into the decoded buffer —
   // stacking the synth's pseudo-onset voicing on top is the unwanted
@@ -553,23 +614,36 @@ async function loadDemo() {
   await startWithAuditionGate(data, gen);
 }
 
-function handleFile(file) {
-  if (!file) return;
+function isMidiFile(file) {
   const name = (file.name || '').toLowerCase();
   // Also accept application/midi / audio/midi MIME when the OS omits extension.
   const mime = (file.type || '').toLowerCase();
-  const isMidi = name.endsWith('.mid') || name.endsWith('.midi')
+  return name.endsWith('.mid') || name.endsWith('.midi')
     || mime === 'audio/midi' || mime === 'audio/mid' || mime === 'application/x-midi'
     || mime === 'application/midi';
-  if (isMidi) {
-    loadMidiFile(file);
-  } else {
-    loadAudioFile(file);
+}
+
+function handleFile(file) {
+  if (!file) return;
+  handleFiles([file]);
+}
+
+/** One file plays as itself. Several AUDIO files dropped together are stems
+ *  of one song (their filenames cast the characters); a MIDI in the batch
+ *  wins outright since a MIDI is already a complete score. */
+function handleFiles(files) {
+  const list = [...(files || [])].filter(Boolean);
+  if (!list.length) return;
+  const midi = list.find(isMidiFile);
+  if (midi) {
+    loadMidiFile(midi);
+    return;
   }
+  loadAudioFiles(list);
 }
 
 fileInputEl.addEventListener('change', (e) => {
-  if (e.target.files[0]) handleFile(e.target.files[0]);
+  if (e.target.files.length) handleFiles(e.target.files);
 });
 demoBtnEl.addEventListener('click', () => loadDemo());
 
@@ -613,8 +687,8 @@ window.addEventListener('drop', (e) => {
   e.preventDefault();
   dragDepth = 0;
   if (dragOverlayEl) dragOverlayEl.classList.remove('visible');
-  const file = e.dataTransfer?.files?.[0];
-  if (file) handleFile(file);
+  const files = e.dataTransfer?.files;
+  if (files && files.length) handleFiles(files);
 });
 
 // --- SoundFont UI wiring ---

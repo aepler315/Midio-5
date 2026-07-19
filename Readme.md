@@ -52,6 +52,62 @@ events. So the systems that listen to pitch — Midasus's pitch-mapped
 flight, Broshi's melody-height hops, the valence/tonic vibe reads, key-
 change waves — behave the same on an mp3 as on a .mid.
 
+**The casting (who dances what):** the trio are not generic dancers — each
+answers to an instrument, and the file itself decides the delegation.
+**Clean melodies** (piano, clean/acoustic guitar, mallets, harp) go to
+**Midasus**, **the bass line** goes to **Broshi** (he hops it with his
+whole body, and his trailing spring genuinely loses damping on ice), and
+**lead melodies that aren't clean** (synth leads, driven guitars, horns)
+go to **Midio**, whose takeoff heights and mid-air extra beats ride that
+line. MIDI files are cast from track names and GM programs; a single audio
+file is cast spectrally (a note whose centroid rides far above its own
+fundamental is a lead, one that stays near it is clean); and dropping
+**several audio stems at once** (`bass.wav`, `piano.wav`, `lead.wav`…)
+casts by FILENAME, with each stem's live loudness deciding which stem owns
+each note. The track badge shows the verdicts; timelines with no casting
+information keep the old wiring, so nothing ever starves.
+
+**Anticipatory choreography (the timing method):** character moves don't
+react to the beat — they *arrive* on it. Because the full note timeline
+exists up front, the Conductor has an ahead-of-time dispatch channel that
+hands characters their notes early, and every move envelope is anchored so
+its **peak** — a hop's apex, a flash's full brightness — lands exactly on
+the note's own onset, the way a dancer starts a move before the beat to
+hit it. On top of that, all decorative envelopes evaluate on the *heard*
+clock: the AudioContext's reported output latency (10–30 ms on speakers,
+200 ms+ on Bluetooth) is subtracted, so the peak lines up with the sound
+reaching your ear, not the DSP scheduler. And the envelopes are closed-form
+functions of (now − onset) rather than per-tick integrations, so their
+shape is exact at any frame rate — no 8 ms sim-step quantization, and the
+kick flash is literally the same `kickEnv` curve the mountain ranges
+bounce with: one choreography, sample-accurate.
+
+**The heavens are populated:** each biome hangs its own seeded planets in
+the sky — banded, ringed, cratered, crescent — colored from that world's
+palette, breathing faintly with the groove. And on a rare seeded schedule
+(a handful per song, deterministic per file), astral artifacts pass
+through: a comet crossing, a moon eclipsing a planet with a diamond-ring
+flare, a blinking satellite, an aurora ribbon, a pair of shooting stars
+(reduced-flash safe).
+
+**Weather has consequences now:** snow that actually falls for a while
+**settles** — frost caps build on the terrain with specular glints sliding
+underfoot — and settled snow means **slippery surfaces**: hard landings
+skid (a bounded, render-only slide, so the autoplay's clearance guarantee
+is untouched) with a powder puff at the boots, Broshi overshoots his
+formation point and slides back, and inherently frozen biomes are icy from
+the start. Weather fronts also gust the global wind now, so rain and snow
+arrive with weather rather than into still air.
+
+**Look far into the distance:** every so often, way out between the
+farthest ranges — partially hidden behind nearer ridges — something
+strange is quietly going on: aliens having dinner under their parked
+saucer (one raises its fork right on the kick), two robots slow-dancing
+under a blinking heart, a whale surfacing from the cloud sea, a great
+turtle carrying a tiny lantern city, an observatory tracking the
+celestial. Seeded per song and anchored to world position, so the same
+file always hides the same scenes in the same places.
+
 **Fullscreen:** use the HUD fullscreen button (⛶) for immersive play.
 
 **Every song → its own world:** every dropped/uploaded file — `.mid` OR

@@ -236,6 +236,18 @@ export function tonalityFrom(hist) {
   return { tonic: best.tonic, mode: best.mode, majorness, confidence };
 }
 
+/** The brightness (log-frequency centroid, 0..1) around one moment --
+ *  averaged over a short window so a single noisy frame can't flip a
+ *  note's clean/lead casting verdict. */
+export function brightnessAt(features, tMs, { spanMs = 120 } = {}) {
+  const f0 = Math.max(0, Math.floor((tMs / 1000) * features.rate));
+  const f1 = Math.min(features.brightness.length - 1, Math.ceil(((tMs + spanMs) / 1000) * features.rate));
+  if (f0 >= features.brightness.length) return null;
+  let sum = 0, n = 0;
+  for (let f = f0; f <= f1; f++) { sum += features.brightness[f]; n++; }
+  return n > 0 ? sum / n : null;
+}
+
 /** Energy-weighted mean of the per-frame brightness curve, 0..1. */
 export function meanBrightness(features) {
   let num = 0, den = 0;

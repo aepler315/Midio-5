@@ -22,11 +22,20 @@ function fakeCombo(displayM = 1, streak = 0) {
 function fakeConductor() {
   const barHandlers = [];
   const roleHandlers = {};
+  const aheadHandlers = {};
   return {
     onBar(fn) { barHandlers.push(fn); },
     on(role, fn) { (roleHandlers[role] ||= []).push(fn); },
+    // Anticipation channel (ChoreoClock): the fake delivers immediately --
+    // lead time is a dispatch detail these tests don't exercise.
+    subscribeAhead(role, leadMs, fn) { (aheadHandlers[role] ||= []).push(fn); },
     fireBar(ms) { for (const fn of barHandlers) fn({ ms }); },
-    fireEvent(role, evt) { for (const fn of (roleHandlers[role] || [])) fn(evt); },
+    fireEvent(role, evt) {
+      const e = { role, ...evt }; // real NoteEvents always carry their role
+      for (const fn of (aheadHandlers[role] || [])) fn(e);
+      for (const fn of (aheadHandlers['*'] || [])) fn(e);
+      for (const fn of (roleHandlers[role] || [])) fn(e);
+    },
   };
 }
 
@@ -149,4 +158,19 @@ test('hard melody accents spin her into a pirouette that fully unwinds', () => {
   assert.ok(m.rollExtra > 0.5, `expected a strong mid-pirouette roll, got ${m.rollExtra}`);
   m.update(900, 0.016, 0, null, 1, null);  // past the 320ms window
   assert.equal(m.rollExtra, 0);
+});
+
+test('a note impact bursts in ITS OWN pitch color, not the hue of a note she is already darting toward', () => {
+  const midio = { screenX: 200, groundY: 540, y: 0 };
+  // Pitch 60 -> hue 0, pitch 64 -> hue 120: 100ms apart, both inside the
+  // anticipation window at once, so the dart loop advances this.hue to the
+  // second note before the first note's impact drains.
+  const timeline = [melodyNote(1000, 60, 0.6), melodyNote(1100, 64, 0.6)];
+  const m = new Midasus(timeline, midio, { groundY: 540 });
+  m.update(1005, 1 / 120, 0, null, 1, null); // darts both; impacts note A only
+  // Bursts spawn at size 4; her ambient trail streaks (size 3) legitimately
+  // ride the current dart hue, so only the bursts are under test.
+  const burstHues = new Set(m.particles.active.filter((p) => p.size === 4).map((p) => p.hue));
+  assert.ok(burstHues.has(0), 'note A\'s burst carries note A\'s hue');
+  assert.ok(!burstHues.has(120), 'note B has not been heard yet -- its hue must not appear in a burst');
 });

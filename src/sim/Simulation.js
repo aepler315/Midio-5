@@ -2,6 +2,9 @@
 // gameplay system and exposes prev/current snapshots so the renderer can
 // interpolate smoothly between 120 Hz sim steps regardless of display refresh.
 import { Role } from '../core/NoteEvent.js';
+import { Lane, laneCounts } from '../core/Casting.js';
+import { MAX_LATENCY_MS } from '../core/ChoreoClock.js';
+import { skidOffset, skidParams, tractionFrom } from './Traction.js';
 import { Midio } from './Midio.js';
 import { JumpController, A, GAMMA, W, H_BASE, D_MIN } from './JumpController.js';
 import { CameraDirector } from '../render/CameraDirector.js';
@@ -64,12 +67,39 @@ export function bassAirJumpSafe(obstacle, worldX, safetyPx = BASS_AIR_JUMP_SAFET
 export class Simulation {
   constructor(conductor, paramBus, {
     bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720,
-    customBiome = null, inputOffsetMs = 0,
+    customBiome = null, inputOffsetMs = 0, outputLatencyMs = null,
   } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
     this.customBiome = customBiome || null;
+    // Output-latency compensation (ChoreoClock): main.js passes a live
+    // getter onto the AudioContext's reported latency; decorative
+    // beat-anchored envelopes evaluate on the heard clock via visualLagMs.
+    this._outputLatencyFn = typeof outputLatencyMs === 'function' ? outputLatencyMs : null;
+    this.visualLagMs = 0;
+
+    // Casting (Casting.js): which character performs which line, decided by
+    // the adapters from track names / stem filenames / spectra. Empty lanes
+    // fall back to the pre-casting wiring so an untagged timeline (the
+    // procedural demo, old fixtures) behaves exactly as before.
+    const lanes = laneCounts(conductor.timeline);
+    // The one resolver: these three booleans drive ALL routing below (the
+    // Midasus/Broshi filters, the accent filter, and _takeoffAccent), so a
+    // fallback rule can never desync between consumers. this.casting is a
+    // read-only summary derived from the same booleans (debug/UI only).
+    this._midasusCleanLane = lanes[Lane.MIDASUS] > 0;
+    this._broshiBassLane = lanes[Lane.BROSHI] > 0;
+    this._midioLeadLane = lanes[Lane.MIDIO] > 0;
+    this.casting = {
+      midasus: this._midasusCleanLane ? 'clean-lane' : 'melody',
+      broshi: this._broshiBassLane ? 'bass-lane' : 'melody',
+      midio: this._midioLeadLane ? 'lead-lane' : 'bass',
+      counts: lanes,
+    };
+    this._midioAccentFilter = this._midioLeadLane
+      ? (e) => e.lane === Lane.MIDIO
+      : (e) => e.role === Role.BASS;
 
     this.midio = new Midio();
     this.jump = new JumpController(paramBus);
@@ -107,8 +137,11 @@ export class Simulation {
 
     this.midasus = new Midasus(conductor.timeline, this.midio, {
       groundY: this.midio.groundY, ceilingY: 40, stageW: canvasWidth, stageH: canvasHeight,
+      noteFilter: this._midasusCleanLane ? (e) => e.lane === Lane.MIDASUS : null,
     });
-    this.broshi = new Broshi(conductor, paramBus);
+    this.broshi = new Broshi(conductor, paramBus, {
+      hopFilter: this._broshiBassLane ? (e) => e.lane === Lane.BROSHI : null,
+    });
     this.broshi._lastBarPeriodMs = (60000 / bpm) * 4;
 
     const songSeed = hashSeed(`${conductor.timeline.length}:${conductor.durationMs}:${conductor.timeline[0]?.tMs ?? 0}:${conductor.timeline.at(-1)?.tMs ?? 0}`);
@@ -183,7 +216,7 @@ export class Simulation {
           this.jump.noteKickTiming(evt.tMs);
         }
         this.gnat.onKick(evt);
-        this.performer.onKick();
+        this.performer.onKick(evt.tMs);
         this.hype.onKick(evt.vel);
         this.beatZoom.onKick(evt.vel, evt.tMs);
         this.groundField.kickGlow(this.worldX, evt.tMs, evt.vel);
@@ -192,11 +225,14 @@ export class Simulation {
       }
     });
 
-    // Bass anchoring: on top of the chart's own flawless schedule, a bass
-    // onset while airborne can pop an extra beat mid-air -- a walking bass
+    // Midio's accent line: when the casting found a lead lane (synth leads,
+    // driven guitars, horns -- see Casting.js), his extra mid-air beats ride
+    // THAT line; otherwise the pre-casting bass anchoring stands. Either
+    // way an onset while airborne can pop an extra beat mid-air -- a busy
     // line makes him fly busier, a sparse one leaves him be. Guarded so it
     // never risks the chart's own clearance guarantee.
-    conductor.on(Role.BASS, (evt) => {
+    conductor.on('*', (evt) => {
+      if (!this._midioAccentFilter(evt)) return;
       if (!this.jump.airborne) return;
       if (!bassAirJumpSafe(this.obstacles.nearestAhead(this.worldX), this.worldX)) return;
       const grant = this.airSeq.tryConsume(evt.tMs);
@@ -204,6 +240,11 @@ export class Simulation {
       const performed = this.jump.airJump({ tMs: evt.tMs, vel: evt.vel }, grant.boostMul * 0.8, grant);
       if (!performed) this.airSeq.refund();
     });
+
+    // Slippery surfaces (Traction.js): settled snow turns landings into
+    // bounded render-only skids. Null when the ground grips.
+    this._skid = null;
+    this.snowCover = 0;
   }
 
   /** Queues an autoplay press: kind 'down' | 'up' at tMs. Insertion-sorted
@@ -286,6 +327,17 @@ export class Simulation {
     }
   }
 
+  /** How hard Midio's own line is hitting at a takeoff instant, 0..1: the
+   *  nearest lead-lane note's velocity when the casting found a lead lane,
+   *  else the live bass band (the pre-casting behavior). */
+  _takeoffAccent(tMs) {
+    if (this._midioLeadLane) {
+      const e = this.conductor.nearestEventMs((evt) => evt.lane === Lane.MIDIO, tMs, 120);
+      return e ? e.vel : 0;
+    }
+    return this.energyCurves ? clamp01(this.energyCurves.sample(1, tMs)) : 0;
+  }
+
   /** The Reel (Movement VI): live-toggle the reduced-flash accessibility
    *  setting, cascading to every consumer that caps its own flash alphas. */
   setReducedFlash(v) {
@@ -297,6 +349,14 @@ export class Simulation {
     this.prev = this.curr;
     this.timeMs = nowMs;
     const dtSec = dtMs / 1000;
+
+    // ChoreoClock: sample the audio pipeline's output latency once per step
+    // and hand it to every performer whose decorative envelopes anchor on
+    // note onsets -- their peaks then land when the EAR gets the beat.
+    this.visualLagMs = this._outputLatencyFn ? Math.min(MAX_LATENCY_MS, Math.max(0, this._outputLatencyFn() || 0)) : 0;
+    this.performer.visualLagMs = this.visualLagMs;
+    this.broshi.visualLagMs = this.visualLagMs;
+    this.midasus.visualLagMs = this.visualLagMs;
 
     this.jump.clearFrameFlags();
     this.comboSystem.clearFrameFlags();
@@ -315,12 +375,13 @@ export class Simulation {
       if (ev.kind === 'down') {
         const res = this.judge.onTapDown(ev.tMs);
         if (!res.startedHold) {
-          // Bass anchoring: the takeoff itself stays chart-timed (obstacles
-          // are placed against it), but its height rides the bass line --
-          // a heavy bass hit under a jump makes that jump bigger, never
-          // smaller, so clearance only ever improves.
-          const bassAtTakeoff = this.energyCurves ? clamp01(this.energyCurves.sample(1, ev.tMs)) : 0;
-          const vel = Math.min(1, (res.matchedVel ?? 0.7) * (1 + 0.3 * bassAtTakeoff));
+          // Accent anchoring: the takeoff itself stays chart-timed
+          // (obstacles are placed against it), but its height rides his own
+          // line -- a lead-lane note under a jump (or, pre-casting, a heavy
+          // bass moment) makes that jump bigger, never smaller, so
+          // clearance only ever improves.
+          const accentAtTakeoff = this._takeoffAccent(ev.tMs);
+          const vel = Math.min(1, (res.matchedVel ?? 0.7) * (1 + 0.3 * accentAtTakeoff));
           const tapEvt = { tMs: ev.tMs, vel };
           // A tap before the character hits the ground is a double jump —
           // budgeted per 4-/8-measure phrase, then feet-first physics again.
@@ -366,6 +427,14 @@ export class Simulation {
       valence: this.vibe.valence, epic: this.vibe.epic, calm: this.calm.level,
       energySlow: this.hype.slow, surge: this.hype.surge, unravel: this.coda.unravel,
     });
+    // Slippery surfaces: settled snowfall OR a biome that is snow to begin
+    // with (ARCTIC's own particle signature) ices the footing. The skid this
+    // drives is render-only (see Traction.js); Broshi's trailing spring
+    // genuinely loses damping, so he visibly overshoots and slides back.
+    const biomeSnow = this.biomes.currentParticleKind && this.biomes.currentParticleKind() === 'snow' ? 0.8 : 0;
+    this.snowCover = Math.max(this.weather.groundCover, biomeSnow);
+    this.broshi.traction = tractionFrom(this.snowCover);
+    this.biomes.snowCover = this.snowCover;
     this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs);
     // Midio roams toward his ensemble anchor -- slow, never gameplay-fast.
     const dxA = this.ensemble.anchors[0].x - this.midio.screenX;
@@ -406,6 +475,15 @@ export class Simulation {
       this.groundField.impulse(this.worldX, I, nowMs); // a shockwave ripples the terrain outward from the landing
       if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY);
       this.fracture.registerImpact(I);
+
+      // Iced footing: a hard landing on settled snow starts a bounded,
+      // render-only skid (plus a white powder puff where boots hit).
+      const skid = skidParams(this.snowCover, I);
+      if (skid) {
+        this._skid = { startMs: nowMs, ...skid };
+        this.impactFX.splat(this.worldX, this.midio.groundY);
+        this.impactFX.sputter(this.worldX, this.midio.groundY, 0.06);
+      }
 
       // The Apotheosis: gameplay precision powers the show -- every clean
       // landing and combo milestone literally charges the transformation.
@@ -539,6 +617,16 @@ export class Simulation {
     this.orogeny.update(nowMs);
     this.biomes.orogenyGrowth = this.orogeny.growth;
 
+    // The live skid offset: pure screen-space (collision/chart never see
+    // it), eased by skidOffset's catch-your-footing shape, ended when done.
+    if (this._skid) {
+      const u = (nowMs - this._skid.startMs) / this._skid.durMs;
+      this.midio.slipX = this._skid.amp * skidOffset(u);
+      if (u >= 1) { this._skid = null; this.midio.slipX = 0; }
+    } else {
+      this.midio.slipX = 0;
+    }
+
     this.gnat.update(nowMs, dtSec, this.calm.level);
     this.camera.update(dtSec, this.calm.level);
     this.paramBus.step();
@@ -550,6 +638,7 @@ export class Simulation {
     return {
       worldX: this.worldX,
       midioY: this.midio.renderY,
+      slipX: this.midio.slipX || 0,
       scaleX: this.midio.scaleX,
       scaleY: this.midio.scaleY,
       leanDeg: this.midio.leanDeg,
@@ -561,8 +650,15 @@ export class Simulation {
     const p = this.prev, c = this.curr;
     const lerp = (a, b) => a + (b - a) * alpha;
     return {
+      // midioX doubles as the world->screen ORIGIN for ground, obstacles,
+      // burrow, and impact FX (Renderer passes it as originX), so the skid
+      // must NOT live here -- folding it in would translate the whole
+      // world along with him and cancel the visible slide. midioDrawX is
+      // where his own body (mesh, shadow, afterimages) actually renders:
+      // origin plus the interpolated skid.
       worldX: lerp(p.worldX, c.worldX),
       midioX: this.midio.screenX,
+      midioDrawX: this.midio.screenX + lerp(p.slipX ?? 0, c.slipX ?? 0),
       midioY: lerp(p.midioY, c.midioY),
       scaleX: lerp(p.scaleX, c.scaleX),
       scaleY: lerp(p.scaleY, c.scaleY),

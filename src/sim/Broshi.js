@@ -3,12 +3,14 @@
 // frequency->anatomy mapping driven by live band energy and note onsets,
 // and a Rabid overlay gated on global track energy.
 import { Role } from '../core/NoteEvent.js';
+import { CHOREO_LEAD_MS, apexHopY, visualNow } from '../core/ChoreoClock.js';
 import { clamp, clamp01, smoothstep, mulberry32, lerp } from '../utils/math.js';
 import { hexLerp, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { RABID_WEIGHTS } from '../audio/bands.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { BROSHI_BODY, BROSHI_HEAD, BROSHI_JAW, BROSHI_EYE, BROSHI_TAIL } from '../render/meshes.js';
 import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh } from '../render/MeshDrawer.js';
+import { kickEnv } from '../world/MountainChoreo.js';
 import { ModalRing } from '../render/oscillators.js';
 import { Burrow } from './Burrow.js';
 
@@ -31,7 +33,6 @@ const WEAVE_PX = 6;      // predatory side-to-side drift while trailing
 // swept tail spike, see meshes.js) -- the only source of truth for his
 // on-screen width, used by the contact shadow.
 const BODY_WIDTH_LOCAL = 57;
-const BEAT_FLASH_DECAY_SEC = 0.14;
 const CALM_LEVEL_THRESHOLD = 0.5;
 const CALM_BAR_THRESHOLD = 4;
 const YAWN_CHANCE_PER_BAR = 0.35;
@@ -49,10 +50,11 @@ const TAILCHASE_DUR_MS = 900;
 const TAILCHASE_CHANCE_PER_BAR = 0.18;
 const TAILCHASE_COOLDOWN_BARS = 6;
 
-/** Melody anchoring: a hop's height multiplier from where its triggering
- *  note sits in the melody's own observed pitch range -- higher notes lift
- *  him higher. Pure/testable; falls back to 1 (no bias) before any range
- *  has been observed. */
+/** Pitch anchoring: a hop's height multiplier from where its triggering
+ *  note sits in his own line's observed pitch range -- higher notes lift
+ *  him higher (works identically over a bass line's 28-52 register and a
+ *  melody's 60-96). Pure/testable; falls back to 1 (no bias) before any
+ *  range has been observed. */
 export function broshiHopHeightMul(pitch, pitchMin, pitchMax) {
   if (!Number.isFinite(pitch) || !(pitchMax > pitchMin)) return 1;
   const norm = clamp01((pitch - pitchMin) / (pitchMax - pitchMin));
@@ -67,9 +69,18 @@ const easeOutElastic = (t) => {
 };
 
 export class Broshi {
-  constructor(conductor, paramBus, { seed = 555 } = {}) {
+  /**
+   * @param {?Function} opts.hopFilter which events are HIS line to hop --
+   *   set by Simulation from the casting lanes (bass -> him when a bass
+   *   lane exists; the melody fallback keeps un-cast timelines dancing).
+   */
+  constructor(conductor, paramBus, { seed = 555, hopFilter = null } = {}) {
     this.conductor = conductor;
     this.rand = mulberry32(seed);
+    this._hopFilter = hopFilter || ((evt) => evt.role === Role.MELODY);
+    // Output-latency compensation (ChoreoClock): set by Simulation each
+    // step; every decorative envelope below evaluates on the heard clock.
+    this.visualLagMs = 0;
 
     this.state = 'TRAIL'; // TRAIL | SURGE | PANIC
     this.surgeUntilMs = -Infinity;
@@ -91,9 +102,15 @@ export class Broshi {
     this.jawOpen = 0; // 0..1
     this._jawUntilMs = -Infinity;
     this.hopY = 0;
-    this._hopUntilMs = -Infinity;
-    this._hopStartMs = 0;
-    this._hopH = 0;
+    // Apex-on-beat hop (ChoreoClock): a parabola anchored so its peak lands
+    // exactly ON the note's own tMs -- he leaves the ground before the note
+    // sounds. Null when grounded.
+    this._hop = null;
+    this._kickTMs = -Infinity; // the latest AUDIBLE kick's onset, for the closed-form beat flash
+    // Kicks not yet heard (see MidioPerformer._kickPending): on high-latency
+    // outputs a newer kick must not orphan the one still in flight to the
+    // ear, so onsets queue and update() promotes them at their heard moment.
+    this._kickPending = [];
     this.neckAngle = 0;
     this._neckStartMs = -Infinity;
     this._neckAmp = 0;
@@ -144,29 +161,42 @@ export class Broshi {
     // Renderer.js), fog-of-war dirt-sight owned entirely by Burrow.
     this.burrow = new Burrow(seed + 2);
 
-    // Melody anchoring: he moves with the tune, not the drums. Pitch range
-    // is learned adaptively from onsets actually seen so far (no full
-    // timeline is handed to him at construction, unlike Midasus).
+    // Line anchoring: he hops HIS line (the bass when the casting found
+    // one, the melody otherwise). Pitch range is learned adaptively from
+    // onsets actually seen so far (no full timeline is handed to him at
+    // construction, unlike Midasus).
     this._pitchMin = Infinity;
     this._pitchMax = -Infinity;
-    this._barMelodyCount = 0;
+    // His line's onset times, delivered by the anticipation channel (up to
+    // CHOREO_LEAD_MS early) -- bucketed against the bar boundary by each
+    // note's OWN tMs in _onBar, so the density windows stay bar-aligned
+    // even though delivery runs ahead.
+    this._laneOnsetTimes = [];
     this._barMelodyHistory = [];
 
     conductor.onBar((bar) => this._onBar(bar));
     conductor.on(Role.RHYTHM, (evt) => {
-      if (evt.kick) { this._onKick(); this.burrow.onKick(evt.vel); }
+      if (evt.kick) { this._onKick(evt); this.burrow.onKick(evt.vel); }
       // Kicks still snap the jaw and light the beat flash (see _onKick) --
       // he still feels the drums, he just doesn't hop to them anymore.
     });
-    conductor.on(Role.MELODY, (evt) => {
-      this._onHeadBob(evt);
-      this.burrow.onMelodyOnset(evt);
+    // His hop line arrives EARLY (ChoreoClock's anticipation channel), each
+    // event carrying its true tMs, so the hop's apex can be anchored right
+    // on the note instead of starting rise-time late.
+    conductor.subscribeAhead('*', CHOREO_LEAD_MS, (evt) => {
+      if (!this._hopFilter(evt)) return;
       if (Number.isFinite(evt.pitch)) {
         this._pitchMin = Math.min(this._pitchMin, evt.pitch);
         this._pitchMax = Math.max(this._pitchMax, evt.pitch);
       }
-      this._barMelodyCount++;
+      this._laneOnsetTimes.push(evt.tMs ?? this._nowMs);
       if (evt.vel >= 0.3) this._onMiniHopTrigger(evt);
+    });
+    // The head still nods to the tune regardless of which line his BODY
+    // answers to -- head to the melody, feet to his own instrument.
+    conductor.on(Role.MELODY, (evt) => {
+      this._onHeadBob(evt);
+      this.burrow.onMelodyOnset(evt);
     });
   }
 
@@ -189,17 +219,20 @@ export class Broshi {
     hist.push(barEnergy);
     if (hist.length > 8) hist.shift();
 
-    // Melodic density: a bar of unusually busy melody (a run, a flurry)
-    // reads as excitement too, independent of the drums' own energy.
+    // Line density: a bar of unusually busy playing on HIS line (a run, a
+    // flurry) reads as excitement too, independent of the drums' energy.
+    // Only onsets whose own tMs lands before this boundary belong to the
+    // closing bar; anticipated notes from the next bar stay queued for it.
+    const closed = this._laneOnsetTimes.filter((t) => t < bar.ms).length;
+    this._laneOnsetTimes = this._laneOnsetTimes.filter((t) => t >= bar.ms);
     const mhist = this._barMelodyHistory;
     if (mhist.length > 0) {
       const mwindow = mhist.slice(-4);
       const mmean4 = mwindow.reduce((a, b) => a + b, 0) / mwindow.length;
-      if (mmean4 > 1e-6 && this._barMelodyCount > mmean4 * 1.5) this._triggerSurge(bar.ms);
+      if (mmean4 > 1e-6 && closed > mmean4 * 1.5) this._triggerSurge(bar.ms);
     }
-    mhist.push(this._barMelodyCount);
+    mhist.push(closed);
     if (mhist.length > 8) mhist.shift();
-    this._barMelodyCount = 0;
 
     this._barsSinceSurge++;
     if (this._barsSinceSurge >= 8) this._triggerSurge(bar.ms);
@@ -235,15 +268,19 @@ export class Broshi {
     this._barsSinceSurge = 0;
   }
 
-  _onKick() {
+  _onKick(evt) {
     this.jawOpen = 1;
     this._jawUntilMs = -Infinity; // set precisely in update() using nowMs snapshot
     this._jawKickPending = true;
-    this.beatFlash = 1;
+    // The flash itself is computed closed-form in update() -- kickEnv
+    // anchored on the kick's true onset, latency-compensated -- so its
+    // shape and phase are exact regardless of dispatch step timing.
+    this._kickPending.push(evt && Number.isFinite(evt.tMs) ? evt.tMs : this._nowMs);
+    if (this._kickPending.length > 8) this._kickPending.shift();
   }
 
   _onMiniHopTrigger(evt) {
-    this._hopPending = { vel: evt.vel, pitch: evt.pitch };
+    this._hopPending = { vel: evt.vel, pitch: evt.pitch, anchorMs: evt.tMs };
   }
 
   _onHeadBob(evt) {
@@ -261,8 +298,23 @@ export class Broshi {
     this._barEnergyAccum += gInstant;
     this._barEnergySamples++;
 
+    // The heard clock (ChoreoClock): every anchored envelope below -- hop
+    // arc, beat flash -- evaluates against this, not the raw song clock.
+    const vNow = visualNow(nowMs, this.visualLagMs);
+
     if (this._jawKickPending) { this._jawKickPending = false; this._jawUntilMs = nowMs + 80; this.jawOpen = 1; this.modal.excite(2.6); }
-    if (this._hopPending) { const { vel, pitch } = this._hopPending; this._hopPending = null; this._startHop(nowMs, vel, pitch); this.modal.excite(0.6 + 1.2 * vel); }
+    if (this._hopPending) {
+      const { vel, pitch, anchorMs } = this._hopPending;
+      this._hopPending = null;
+      // Busy guard: on runs denser than the anticipation lead, the next
+      // note's early trigger would otherwise replace the CURRENT hop before
+      // its window even opens, flattening every hop on fast lines. One hop
+      // finishes before the next installs; mid-run triggers just drop.
+      if (!this._hop || vNow >= this._hop.anchorMs + this._hop.riseMs) {
+        this._startHop(nowMs, vel, pitch, anchorMs);
+        this.modal.excite(0.6 + 1.2 * vel);
+      }
+    }
     if (this._neckPending) { const { vel } = this._neckPending; this._neckPending = null; this._neckStartMs = nowMs; this._neckAmp = 10 + 16 * vel; }
 
     // --- locomotion FSM ---
@@ -278,7 +330,12 @@ export class Broshi {
     this._lastState = this.state;
 
     const dStar = this.state === 'SURGE' ? D_SURGE : this.state === 'PANIC' ? D_PANIC : this._trailTarget;
-    const accel = -K * (this.xRel - dStar) - C * this.xRelVel;
+    // Iced footing (Traction.js): lost traction is lost damping -- the
+    // stiffness (his legs) is untouched but he genuinely can't shed speed,
+    // so he overshoots the formation and slides back. Floor keeps the
+    // spring visibly underdamped, never divergent.
+    const cEff = C * (0.35 + 0.65 * (this.traction ?? 1));
+    const accel = -K * (this.xRel - dStar) - cEff * this.xRelVel;
     this.xRelVel += accel * dtSec;
     this.xRel += this.xRelVel * dtSec;
 
@@ -364,11 +421,12 @@ export class Broshi {
     if (this.rho > 0.05) this.modal.excite(4 * this.rho * dtSec);
     this.modal.update(dtSec);
 
-    // --- mini-hop ---
-    if (nowMs < this._hopUntilMs) {
-      const D = 160 * (1 / (1 + 0.6 * this.rho));
-      const u = clamp(1 - (this._hopUntilMs - nowMs) / D, 0, 1);
-      this.hopY = this._hopH * 4 * u * (1 - u); // simple parabola, peak at u=0.5
+    // --- mini-hop: closed-form parabola whose apex lands exactly ON the
+    // triggering note's own onset, evaluated on the heard clock (ChoreoClock
+    // apex-on-beat). No per-step integration, so no tick quantization.
+    if (this._hop) {
+      this.hopY = apexHopY(vNow, this._hop.anchorMs, this._hop.riseMs, this._hop.h);
+      if (vNow > this._hop.anchorMs + this._hop.riseMs) this._hop = null;
     } else {
       this.hopY = 0;
     }
@@ -406,7 +464,13 @@ export class Broshi {
     }
     this.trail.step(dtSec, (o, dtt) => { o.age += dtt; return o.age < o.life; });
 
-    this.beatFlash = Math.max(0, this.beatFlash - dtSec / BEAT_FLASH_DECAY_SEC);
+    // Beat flash: the mountains' own kickEnv anchored on the kick's true
+    // onset -- identical shape and phase to the ranges' bounce, and it
+    // peaks when the EAR gets the kick, not when the dispatcher did. Queued
+    // onsets promote at their own heard moments so a newer kick never
+    // orphans one still in flight to the ear.
+    while (this._kickPending.length && this._kickPending[0] <= vNow) this._kickTMs = this._kickPending.shift();
+    this.beatFlash = kickEnv(vNow - this._kickTMs);
     this._nowMs = nowMs;
     this.groundY = groundY;
     this.screenX = midio.screenX + this.xRel;
@@ -429,25 +493,31 @@ export class Broshi {
     if (this.burrow.justSurfaced) {
       // The pop-out: a real hop arc, a hard body ring, and a beat flash --
       // he bursts out of the ground, he doesn't fade back in. And always
-      // with a celebratory flip: he's proud of the tunnel.
-      this._hopH = 40;
-      this._hopUntilMs = nowMs + 300;
+      // with a celebratory flip: he's proud of the tunnel. (A reaction, not
+      // a charted note, so its hop anchors a rise-time ahead of "now".)
+      this._hop = { anchorMs: vNow + 150, h: 40, riseMs: 150 };
       this._rollStartMs = nowMs;
       this._rollDurMs = 300;
       this._rollTurns = 1;
       this._rollDir = 1;
       this.modal.excite(5);
-      this.beatFlash = 1;
+      // Backdated to kickEnv's peak so the pop-out flash is INSTANTLY full,
+      // matching the old hard set-to-1 -- not a 40ms ramp from zero.
+      this._kickTMs = vNow - 40;
     }
   }
 
-  _startHop(nowMs, vel, pitch) {
+  _startHop(nowMs, vel, pitch, anchorMs = nowMs + 80) {
     // Relaxed lope: calm sections soften the hop instead of cutting it
-    // entirely. Melody anchoring: a higher note lifts him higher (and the
-    // hop resolves a touch quicker -- lighter, not heavier).
+    // entirely. Pitch anchoring: a higher note lifts him higher (and the
+    // hop resolves a touch quicker -- lighter, not heavier). The arc is
+    // anchored so its APEX lands on anchorMs -- the note's own onset.
     const liftMul = broshiHopHeightMul(pitch, this._pitchMin, this._pitchMax);
-    this._hopH = (16 + 26 * vel) * liftMul * (1 - 0.5 * this._calmLevel);
-    this._hopUntilMs = nowMs + 160 / Math.sqrt(liftMul);
+    this._hop = {
+      anchorMs,
+      h: (16 + 26 * vel) * liftMul * (1 - 0.5 * this._calmLevel),
+      riseMs: 80 / Math.sqrt(liftMul),
+    };
     // Hard hops sometimes come with a full barrel roll — likelier (and
     // occasionally doubled) the more rabid he's running.
     const rollU = (nowMs - this._rollStartMs) / this._rollDurMs;
@@ -572,8 +642,10 @@ export class Broshi {
     }, baseHue, { ...glyphOpts, alpha: 1, lightBase: 74 });
     ctx.restore();
 
-    drawMeshPart(ctx, bodyMesh, this._bodyRest, group, baseHue, glyphOpts);
-    drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue, glyphOpts);
+    // Ink contour under the crisp strokes (outline): the raptor's
+    // silhouette stays sharp against his own under-glow and comet trail.
+    drawMeshPart(ctx, bodyMesh, this._bodyRest, group, baseHue, { ...glyphOpts, outline: true });
+    drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue, { ...glyphOpts, outline: true });
     if (this.beatFlash > 0.03) {
       // Kick ignition: the whole glyph flashes additively with the beat.
       ctx.save();

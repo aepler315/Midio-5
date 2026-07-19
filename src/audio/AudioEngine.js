@@ -2,6 +2,8 @@
 // rule 2, §6.1). Every subsystem's "now" derives from ctx.currentTime.
 // Because we query ctx.currentTime fresh every rAF frame rather than caching
 // a performance.now()-based mirror, there is no drift to IIR-correct here.
+import { outputLatencyMs } from '../core/ChoreoClock.js';
+
 export class AudioEngine {
   constructor() {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -38,6 +40,14 @@ export class AudioEngine {
   get nowMs() {
     if (!this.playing || this._startCtxTime === null) return this._pausedAtMs;
     return (this.ctx.currentTime - this._startCtxTime) * 1000;
+  }
+
+  /** How far the HEARD signal lags the clock above (see ChoreoClock.js):
+   *  base (buffer) latency plus the device/output path. Decorative
+   *  beat-anchored visuals subtract this so their peaks line up with the
+   *  sound as heard rather than as scheduled. */
+  get outputLatencyMs() {
+    return outputLatencyMs(this.ctx);
   }
 
   decodeFile(arrayBuffer) {
