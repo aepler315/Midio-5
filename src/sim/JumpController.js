@@ -41,16 +41,16 @@ const HIGH_BPM_HALFTIME = 170;
 // logic already owns -- not a fresh landing target.
 export const LANDING_MIN_GAP_MS = 200;
 
-// A retarget's relaunch only actually fires once the LIVE controller's own
-// fixed-step update() notices the compress has finished (see update()'s
-// r>=1 branch) -- so its real jumpStartMs lands up to one 120Hz step late
-// relative to the exact math the offline replicas (JumpPlanner, NoteChart)
-// use. That slop was invisible before Fix B: EMA-derived D essentially
-// never coincided with any specific kick's tMs. Now D is often chosen to
-// land EXACTLY on the next kick, so a kick arriving right at that nominal
-// boundary is a routine occurrence, and the two systems must agree on
-// which side of "still airborne" it falls on -- this is that shared
-// tolerance (a hair over one sim step).
+// Now that D is routinely chosen to land EXACTLY on the next kick, a kick
+// arriving right at an arc's nominal touchdown is the COMMON case, not a
+// freak coincidence -- and which side of "still airborne" it falls on
+// decides whether that beat gets a jump or gets swallowed. The shared rule,
+// in both the live controller and the offline replicas (JumpPlanner,
+// NoteChart): a kick within this tolerance of the scheduled landing IS the
+// landing -- resolve the touchdown and relaunch ON that kick. The
+// tolerance is a hair over one 120Hz sim step because that's the real slop
+// between the replicas' exact math and the live controller's fixed-step
+// landing/compress resolution.
 export const LANDING_QUANT_EPS_MS = 10;
 
 /**
@@ -67,8 +67,28 @@ export const LANDING_QUANT_EPS_MS = 10;
  */
 export function scheduledJumpD(takeoffMs, nextKickMs, beatPeriodMs) {
   const gap = nextKickMs != null ? nextKickMs - takeoffMs : NaN;
-  const D = gap >= LANDING_MIN_GAP_MS && gap <= 2000 ? gap : beatPeriodMs;
-  return clamp(D, D_MIN, D_MAX);
+  if (gap >= LANDING_MIN_GAP_MS && gap <= 2000) {
+    // A REAL kick is the target: land on it even when it's closer than
+    // D_MIN -- a short, low double-step hop (see shortHopHeightMul) instead
+    // of sailing over the second of two back-to-back kicks and touching
+    // down ~150ms late in musical no-man's-land, which was exactly the
+    // "jumps late on double bass hits" complaint. The gap is already >=
+    // LANDING_MIN_GAP_MS, so only the D_MAX ceiling can bind here.
+    return Math.min(gap, D_MAX);
+  }
+  return clamp(beatPeriodMs, D_MIN, D_MAX);
+}
+
+/**
+ * How tall a jump of duration D stands, relative to a full jump: 1 for any
+ * normal-length arc, shrinking quadratically below D_MIN so the double-step
+ * hop between two back-to-back kicks is a quick LOW skip rather than a
+ * full-height jump crammed into 220ms (which would read as a violent
+ * teleport -- and quadratic keeps the landing velocity 2*Ha/(GAMMA*D)
+ * scaling LINEARLY down with D, so short hops also land gently).
+ */
+export function shortHopHeightMul(D) {
+  return D >= D_MIN ? 1 : (D / D_MIN) ** 2;
 }
 
 /**
@@ -219,9 +239,23 @@ export class JumpController {
     const yNow = this.y;
     const extra = this.hBase * (0.5 + 0.6 * evt.vel) * boostMul * this.P.live.jumpHeight;
     const H2 = (yNow + extra) / (1 - W);
-    const D2 = clamp(0.9 * this.beatPeriodMs, D_MIN, D_MAX);
     // Launch-phase height is Ha*(1-(1-p)^2); invert for the p where it equals yNow.
     const p = 1 - Math.sqrt(Math.max(0, 1 - yNow / ((1 - W) * H2)));
+    // Land ON the next audible kick, like every other launch now does --
+    // this was the back-to-back-kicks lateness: jump on kick 1, double-jump
+    // on kick 2, but the double jump's landing rode 0.9x the beat-period
+    // EMA, so he came down somewhere musically arbitrary and the NEXT
+    // kick's tap found him still airborne (and often unbudgeted), eating a
+    // beat. The arc is entered mid-launch at phase p, so its landing sits
+    // at tMs + D2*(1 - p*A); solving for the landing to hit the next kick's
+    // gap gives D2 = gap/(1 - p*A). EMA fallback when no kick is in range.
+    this._advanceKickCursor(tMs);
+    const nextKickMs = nextLandingKickMs(this._kickTimes, tMs, this._kickIdx);
+    const gap = nextKickMs != null ? nextKickMs - tMs : NaN;
+    const D2 = clamp(
+      gap >= LANDING_MIN_GAP_MS && gap <= 2000 ? gap / (1 - p * A) : 0.9 * this.beatPeriodMs,
+      D_MIN, D_MAX,
+    );
     this.compress = null;
     this._pendingLaunch = null;
     this.lastLaunchVel = evt.vel;
@@ -256,11 +290,28 @@ export class JumpController {
     // lands), so the search's takeoff floor -- and D itself -- must be
     // anchored to THAT instant, not nowMs.
 
+    // Landing-tie relaunch: now that landings are routinely scheduled to
+    // fall EXACTLY on the next kick, that kick's own trigger arrives with
+    // the arc a hair short of touching down (sim-step quantization, a
+    // retarget's one-step-late relaunch) -- and used to read as "still
+    // airborne, past the retarget window, ignore", swallowing the beat
+    // entirely. A kick landing within LANDING_QUANT_EPS_MS of the scheduled
+    // touchdown IS the touchdown: resolve the landing now and fall through
+    // to a fresh on-beat launch. (Offline replicas mirror this via their
+    // symmetric landMs - LANDING_QUANT_EPS_MS airborne test.)
+    if (this.state === 'AIR' && !this.compress) {
+      const remainingMs = this.jumpStartMs + this.D - nowMs;
+      if (remainingMs > 0 && remainingMs <= LANDING_QUANT_EPS_MS) {
+        const Ha = (1 - W) * this.H;
+        this._land((2 * Ha) / (GAMMA * this.D));
+      }
+    }
+
     if (this.state === 'GROUND') {
       const nextKickMs = nextLandingKickMs(this._kickTimes, nowMs, this._kickIdx + 1);
       const D = scheduledJumpD(nowMs, nextKickMs, this.beatPeriodMs);
       this.lastLaunchVel = evt.vel;
-      this._launch(nowMs, H, D);
+      this._launch(nowMs, H * shortHopHeightMul(D), D);
       return;
     }
 
@@ -272,7 +323,7 @@ export class JumpController {
         const nextKickMs = nextLandingKickMs(this._kickTimes, retargetLaunchMs, this._kickIdx + 1);
         const D = scheduledJumpD(retargetLaunchMs, nextKickMs, this.beatPeriodMs);
         this.compress = { startMs: nowMs, fromY: this.y, dur: RETARGET_FALL_MS };
-        this._pendingLaunch = { H, D, vel: evt.vel };
+        this._pendingLaunch = { H: H * shortHopHeightMul(D), D, vel: evt.vel };
       }
     }
     // Mid launch/hang: ignore — already committed, avoids impossible double-jumps.

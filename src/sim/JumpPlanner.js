@@ -4,7 +4,7 @@
 // (kept in lockstep — see test/jumpPlanner.test.js, which cross-checks this
 // against a live JumpController stepped in real time) but as a pure,
 // non-realtime function over the whole kick list at once.
-import { A, B, GAMMA, H_BASE, jumpY, scheduledJumpD, nextLandingKickMs, LANDING_QUANT_EPS_MS } from './JumpController.js';
+import { A, B, GAMMA, H_BASE, jumpY, scheduledJumpD, nextLandingKickMs, shortHopHeightMul, LANDING_QUANT_EPS_MS } from './JumpController.js';
 
 const RETARGET_FALL_MS = 120;
 const HIGH_BPM_HALFTIME = 170;
@@ -38,17 +38,11 @@ export function predictJumpArcs(kicks, { hBase = H_BASE, jumpHeightMul = 1 } = {
     const H = hBase * (0.6 + 0.8 * k.vel) * jumpHeightMul;
 
     const last = arcs[arcs.length - 1];
-    // +LANDING_QUANT_EPS_MS, but ONLY when `last` was itself born from a
-    // retarget: a live compress-relaunch only actually fires once
-    // update() notices the compress finished, up to one sim step late (see
-    // the constant's doc), so a kick arriving right at that arc's nominal
-    // landing must still read as airborne there. A FRESH ground launch's
-    // takeoff is exact in both systems (taken straight from the kick's own
-    // tMs, no compress involved) -- giving every arc this slack would let
-    // a perfectly steady beat's kicks tie against their own exact landing
-    // forever and starve future fresh launches entirely.
-    const eps = last && last.retargeted ? LANDING_QUANT_EPS_MS : 0;
-    const airborne = last && k.tMs < last.landMs + eps;
+    // Symmetric landing-tie rule (see LANDING_QUANT_EPS_MS's doc): a kick
+    // within the tolerance of the arc's scheduled touchdown IS the
+    // touchdown -- it reads as grounded and relaunches ON the kick, in
+    // lockstep with the live controller's own force-land.
+    const airborne = last && k.tMs < last.landMs - LANDING_QUANT_EPS_MS;
 
     if (!airborne) {
       // Land ON the next audible kick when one falls in range (see
@@ -58,7 +52,7 @@ export function predictJumpArcs(kicks, { hBase = H_BASE, jumpHeightMul = 1 } = {
       // cursor walk (JumpController._launchOrRetarget).
       const nextKickMs = nextLandingKickMs(kickTimes, k.tMs, ki + 1);
       const D = scheduledJumpD(k.tMs, nextKickMs, beatPeriodMs);
-      arcs.push({ takeoffMs: k.tMs, landMs: k.tMs + D, H, D });
+      arcs.push({ takeoffMs: k.tMs, landMs: k.tMs + D, H: H * shortHopHeightMul(D), D });
       continue;
     }
 
@@ -71,7 +65,7 @@ export function predictJumpArcs(kicks, { hBase = H_BASE, jumpHeightMul = 1 } = {
         const D = scheduledJumpD(compressLandMs, nextKickMs, beatPeriodMs);
         last.landMs = compressLandMs; // truncate the in-flight arc
         compressingUntilMs = compressLandMs;
-        arcs.push({ takeoffMs: compressLandMs, landMs: compressLandMs + D, H, D, retargeted: true });
+        arcs.push({ takeoffMs: compressLandMs, landMs: compressLandMs + D, H: H * shortHopHeightMul(D), D });
       }
     }
     // else: mid launch/hang -- kick ignored, already committed to this arc
