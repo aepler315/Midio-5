@@ -123,6 +123,18 @@ range earns the neon ridge line, stereo width airs out the particle
 field), and **orchestration** (the melody/rhythm/bass/pad mix picks the
 particle species).
 
+**The chorus is a place:** the world now recognizes song *form*. Sections
+are cut at energy-novelty boundaries as before, but each is then labelled
+by its timbral fingerprint (a cosine-similarity clustering of its mean
+7-band spectral shape — see `SongForm.js`), so a returning chorus gets the
+same structural label as its earlier selves. Every recurrence of a label
+wears the same face: on the stock 9-biome demo it casts back to the *same*
+biome (and, since strips and landmarks bake per biome name, the returning
+skyline is literally identical); on a dropped single-biome song each label
+carries a deterministic signature hue-shift, so the chorus always blooms
+the same color and the verse always another, gliding between them and
+snapping back with a cut of recognition when a familiar section returns.
+
 **Optional WebGL path:** open with `?renderer=webgl` to enable a non-destructive
 WebGL2 post-FX overlay (energy-driven tint/vignette). The Canvas 2D compositor
 always draws the scene; WebGL never steals the stage canvas context. If WebGL

@@ -16,6 +16,7 @@ import { SkyEnsemble } from './SkyEnsemble.js';
 import { FarVignettes } from './FarVignettes.js';
 import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
+import { analyzeSongForm } from './SongForm.js';
 import { LightningFX } from './Lightning.js';
 import { MeteorShowerFX } from './MeteorShower.js';
 import { LightRig } from './LightRig.js';
@@ -41,6 +42,12 @@ const EQ_MAX_HEIGHT_FRAC = 0.4; // never exceed 40% of screen height, however ex
 const MILESTONE_METEOR_BASE = [5, 8, 14];
 const DROP_METEOR_BASE = 12;
 const ACHROMATIC_SAT_THRESHOLD = 0.08;
+// Song-form recognition: how far a structural label's signature hue-shift
+// can swing (degrees). Bounded so a section reads as "the chorus color"
+// without leaving the biome's own palette behind. Layered on top of
+// KeyDirector's key-driven rotation via _rotated.
+const FORM_HUE_BIAS_MAX = 40;
+const FORM_HUE_TAU_SEC = 1.5; // section changes glide their hue, never snap
 
 export class BiomeManager {
   constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, customBiome = null }) {
@@ -182,6 +189,13 @@ export class BiomeManager {
     // steps before rotating so the LerpCache-style cache below stays hot.
     this.paletteRotation = 0;
     this._rotationCache = new Map();
+    // Song-form recognition (SongForm): the active section's structural
+    // signature hue, eased so a section change glides the whole palette by
+    // its label's bias -- the chorus always the same shift, the verse
+    // always another, recurring identically. Composed on top of
+    // paletteRotation in _rotated; works in ANY biome (the payoff on the
+    // single-biome dropped-song path, where every section is one profile).
+    this.sectionHueBias = 0;
 
     // The Mirror (Movement IV): a shared 1-D ring for the lake's ripples --
     // gentle mode reuse of the same ModalRing driving Midio's body vibration
@@ -255,15 +269,20 @@ export class BiomeManager {
 
     this.sections = [];
     const meanEnergies = [];
+    const shapes = []; // per-section mean 7-band spectral vector -- timbral fingerprint
     const maxNovelty = Math.max(...novelty, 1e-9);
     for (let i = 0; i < cuts.length - 1; i++) {
       if (cuts[i + 1] <= cuts[i]) continue;
-      // Section's mean global energy, for dramaturgical casting.
+      // Section's mean global energy (for casting) AND its mean per-band
+      // vector (its timbral shape, for form recognition -- see SongForm).
       let e = 0, count = 0;
+      const shape = new Array(7).fill(0);
       for (let b = cuts[i]; b < cuts[i + 1]; b++, count++) {
-        for (let k = 0; k < 7; k++) e += vectors[b][k] / 7;
+        for (let k = 0; k < 7; k++) { e += vectors[b][k] / 7; shape[k] += vectors[b][k]; }
       }
+      if (count > 0) for (let k = 0; k < 7; k++) shape[k] /= count;
       meanEnergies.push(count > 0 ? e / count : 0);
+      shapes.push(shape);
       this.sections.push({
         startMs: barTimes[cuts[i]],
         endMs: i === cuts.length - 2 ? durationMs : barTimes[cuts[i + 1]],
@@ -275,10 +294,45 @@ export class BiomeManager {
     if (this.sections.length === 0) {
       this.sections = [{ startMs: 0, endMs: durationMs, transition: 'fade', barMs: 500 }];
       meanEnergies.push(0.5);
+      shapes.push(new Array(7).fill(1));
     }
-    // Cast the show: biomes matched to each section's energy temperament.
-    const cast = castBiomes(meanEnergies, songSeed);
-    this.sections.forEach((s, i) => { s.profile = cast[i]; });
+
+    // Song-form recognition: which sections are the SAME music (SongForm).
+    // A returning chorus gets the same structural label as its earlier
+    // selves, so it can wear the same face instead of reading as new.
+    const labels = analyzeSongForm(this.sections.map((_, i) => ({ energy: meanEnergies[i], shape: shapes[i] })));
+
+    // Cast the show by structural LABEL, not per-section: every recurrence
+    // of a label shares a biome name (stock path), so the returning skyline
+    // is literally the same -- strips/landmarks bake per (songSeed, name).
+    const uniqueLabels = [...new Set(labels)]; // first-appearance order
+    const labelEnergy = uniqueLabels.map((lab) => {
+      let s = 0, n = 0;
+      labels.forEach((l, i) => { if (l === lab) { s += meanEnergies[i]; n++; } });
+      return n > 0 ? s / n : 0;
+    });
+    const labelCast = castBiomes(labelEnergy, songSeed);
+    const biomeByLabel = new Map(uniqueLabels.map((lab, i) => [lab, labelCast[i]]));
+
+    // Each label also gets a deterministic color signature (a hue bias),
+    // so even in a single-biome dropped song the chorus recurs in the same
+    // hue-shift and the verse in another -- form made visible in ANY biome.
+    const hueByLabel = new Map(uniqueLabels.map((lab) => {
+      const r = mulberry32(hashSeed(`${songSeed}:form:${lab}`));
+      return [lab, (r() * 2 - 1) * FORM_HUE_BIAS_MAX];
+    }));
+
+    const seenLabels = new Set();
+    this.sections.forEach((s, i) => {
+      s.label = labels[i];
+      s.profile = biomeByLabel.get(labels[i]);
+      s.hueBias = hueByLabel.get(labels[i]);
+      // Recognition: re-entering a label seen earlier snaps back into the
+      // familiar place (a cut of recognition) rather than fading somewhere
+      // new. First occurrence keeps its novelty-derived transition.
+      if (i > 0 && seenLabels.has(labels[i])) s.transition = 'cut';
+      seenLabels.add(labels[i]);
+    });
   }
 
   _evenSplit(durationMs, n) {
@@ -340,7 +394,10 @@ export class BiomeManager {
    *  same handful of rotated hex strings recur across many frames, so this
    *  small cache actually hits instead of growing unbounded. */
   _rotated(hex) {
-    const deg = Math.round((this.paletteRotation || 0) / 3) * 3;
+    // The key-driven rotation and the song-form section signature compose
+    // into one hue offset (both quantized together to 3deg steps so the
+    // cache stays hot).
+    const deg = Math.round(((this.paletteRotation || 0) + (this.sectionHueBias || 0)) / 3) * 3;
     if (deg === 0) return hex;
     const key = hex + '|' + deg;
     let v = this._rotationCache.get(key);
@@ -406,6 +463,13 @@ export class BiomeManager {
       this._lastSectionIdx = sectionIdx;
     }
     this._cutFlash = Math.max(0, this._cutFlash - dtSec / 0.25);
+
+    // Song-form recognition: glide the whole palette toward the active
+    // section's structural signature hue, so a returning chorus settles
+    // back into the same shift it always wears (a recognizable "place")
+    // rather than snapping. Constant, steady color -- reduced-flash safe.
+    const targetHueBias = this.sections[sectionIdx]?.hueBias || 0;
+    this.sectionHueBias += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetHueBias - this.sectionHueBias);
 
     // Intensity budget: stage the show -- restrained intro, full finale.
     this._progress = this.durationMs > 0 ? clamp01(nowMs / this.durationMs) : 0.5;
