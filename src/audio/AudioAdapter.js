@@ -13,7 +13,7 @@
 import { separateStems } from './StemSeparator.js';
 import {
   computeBandEnvelopes, normalizeBands, detectRhythmOnsets, estimateTempo,
-  extractPseudoLane, mixBandEnvelopes, estimateSustainMs,
+  extractPseudoLane, mixBandEnvelopes, estimateSustainMs, globalBandReferences,
 } from './OnsetDetector.js';
 import {
   computePitchFeatures, chromaHistogram, melodyPitchAt, estimateBassPitchAt,
@@ -202,10 +202,21 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
   }
   sortNoteEvents(timeline);
 
+  // EnergyCurves must carry the song's TRUE relative loudness, not
+  // normBands' per-band AGC (release tau=4s) -- an AGC'd quiet intro decays
+  // its own follower down to the intro's peak and reads full-scale, while a
+  // loud chorus normalizes against ITS OWN peak too, so nothing downstream
+  // (CalmDirector, HypeDirector, the section/biome schedule, the mountain
+  // groove, VibeDirector.epic, OrogenyDirector's climax finder...) can ever
+  // tell the intro was quiet or the chorus was loud. normBands stays the
+  // detection domain (onsets/pseudo-lanes/sustains want that local
+  // contrast); this is the one place "how loud RIGHT NOW, relative to the
+  // whole song" actually needs to be answered honestly.
+  const refBands = globalBandReferences(raw);
   const energyCurves = new EnergyCurves(durationMs, rate);
   for (let i = 0; i < energyCurves.n; i++) {
     const frame = Math.min(raw[0].length - 1, i);
-    energyCurves.setFrame(i, normBands.map((b) => b[frame] ?? 0));
+    energyCurves.setFrame(i, raw.map((b, bi) => clamp01((b[frame] ?? 0) / refBands[bi])));
   }
 
   // The song's analysis fingerprint: whole-song tonality + texture stats

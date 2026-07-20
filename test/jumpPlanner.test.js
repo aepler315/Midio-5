@@ -8,6 +8,11 @@ import { mulberry32 } from '../src/utils/math.js';
 function runLive(kicks, opts = {}) {
   const paramBus = new ParamBus();
   const jump = new JumpController(paramBus, opts);
+  // Landing-on-the-next-kick (scheduledJumpD): the live controller needs
+  // the same raw kick-time list predictJumpArcs replays, or it would fall
+  // back to pure-EMA scheduling while the predictor schedules onto real
+  // kicks -- breaking the lockstep this test exists to verify.
+  jump.setKickTimes(kicks.map((k) => k.tMs));
   const STEP_MS = 1000 / 120;
   const landings = [];
   let ki = 0;
@@ -102,4 +107,40 @@ test('safeWindowForArc finds the above-threshold sub-interval and clips to a tru
 test('safeWindowForArc returns null when the arc never clears the threshold', () => {
   const arc = { takeoffMs: 0, landMs: 400, H: 40, D: 400 };
   assert.equal(safeWindowForArc(arc, 200), null);
+});
+
+// --- Chart-scheduled landings (scheduledJumpD / nextLandingKickMs) -------
+
+test('predictJumpArcs lands on syncopated kicks: every landMs matches an actual kick within [D_MIN,D_MAX]', () => {
+  // Deliberately uneven gaps -- the EMA would smear these into an average
+  // that matches none of them; a scheduled landing should hit the real
+  // next kick whenever the gap is a plausible target.
+  const gaps = [500, 750, 500, 250, 900, 400, 600];
+  const kicks = [];
+  let t = 0;
+  for (const g of gaps) { kicks.push({ tMs: t, vel: 0.8 }); t += g; }
+  kicks.push({ tMs: t, vel: 0.8 });
+
+  const arcs = predictJumpArcs(kicks);
+  // The final arc has no kick after it to land on at all (a legitimate
+  // EMA-fallback landing past the last beat) -- this property is about
+  // landing on REAL kicks in the middle of the stream, so only those.
+  for (const arc of arcs.slice(0, -1)) {
+    const scheduledGap = arc.D; // the arc's OWN scheduled duration (D_MIN/D_MAX-clamped)
+    // The arc's landMs matches its intended target whenever the arc
+    // reaches it uninterrupted: either the exact gap to its scheduled
+    // kick (unclamped), or it sat at a D_MIN/D_MAX boundary (too-close/
+    // too-far target, EMA fallback). A LATER retarget can also truncate
+    // an earlier arc's stored landMs down to (some kick's tMs +
+    // RETARGET_FALL_MS) -- landMs then no longer equals takeoffMs+D by
+    // construction (that's the whole point of a retarget), so it's
+    // checked against the retarget formula instead.
+    const scheduledMatchesAKick = kicks.some((k) => Math.abs(k.tMs - (arc.takeoffMs + scheduledGap)) < 1e-6);
+    const atClampBoundary = scheduledGap === 380 || scheduledGap === 1200;
+    const truncatedByRetarget = kicks.some((k) => Math.abs(k.tMs + 120 - arc.landMs) < 1e-6);
+    assert.ok(
+      scheduledMatchesAKick || atClampBoundary || truncatedByRetarget,
+      `arc ${JSON.stringify(arc)} matches no kick, no clamp boundary, and no retarget truncation`,
+    );
+  }
 });

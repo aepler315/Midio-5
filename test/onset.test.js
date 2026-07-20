@@ -1,7 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectRhythmOnsets, estimateTempo, extractPseudoLane, estimateSustainMs, mixBandEnvelopes } from '../src/audio/OnsetDetector.js';
+import {
+  detectRhythmOnsets, estimateTempo, extractPseudoLane, estimateSustainMs, mixBandEnvelopes,
+  globalBandReferences, normalizeBands,
+} from '../src/audio/OnsetDetector.js';
 import { Role } from '../src/core/NoteEvent.js';
+import { clamp } from '../src/utils/math.js';
 
 function silentBands(n) {
   return Array.from({ length: 7 }, () => new Float32Array(n));
@@ -114,4 +118,48 @@ test('mixBandEnvelopes averages exactly the requested bands', () => {
   bands[3].fill(0.8);
   const mix = mixBandEnvelopes(bands, [2, 3]);
   for (const v of mix) assert.ok(Math.abs(v - 0.6) < 1e-6);
+});
+
+// --- True dynamics for EnergyCurves (globalBandReferences) ---------------
+
+test('globalBandReferences: a band that only ever whispers gets a real (not full-scale) reference', () => {
+  const rate = 86;
+  const n = rate * 10;
+  const loud = new Float32Array(n).fill(0.8); // one band roars the whole time
+  const quiet = new Float32Array(n).fill(0.05); // another only ever whispers
+  const [refLoud, refQuiet] = globalBandReferences([loud, quiet]);
+  assert.ok(Math.abs(refLoud - 0.8) < 0.05, `expected the loud band's own reference near its true level, got ${refLoud}`);
+  // Floored at 25% of the loudest band's reference -- not left to read its
+  // own whisper as "full scale for this band".
+  assert.ok(Math.abs(refQuiet - 0.25 * refLoud) < 0.01, `expected the sparse-band floor, got ${refQuiet}`);
+});
+
+test('globalBandReferences: the reference tracks the true 95th-percentile level, not a decayed max', () => {
+  const rate = 86;
+  const env = new Float32Array(rate * 20);
+  for (let i = 0; i < env.length; i++) env[i] = i < rate * 15 ? 0.1 : 0.9; // quiet 15s, then loud
+  const [ref] = globalBandReferences([env]);
+  assert.ok(ref > 0.8, `expected the reference to reflect the loud stretch's true level, got ${ref}`);
+});
+
+test('quiet-intro / loud-chorus: EnergyCurves built from raw+reference reads them proportionally, unlike an AGC-normalized fill', () => {
+  const rate = 86;
+  const introFrames = rate * 15, chorusFrames = rate * 15;
+  const raw = [new Float32Array(introFrames + chorusFrames)];
+  for (let i = 0; i < introFrames; i++) raw[0][i] = 0.05; // a real whisper
+  for (let i = introFrames; i < raw[0].length; i++) raw[0][i] = 0.9; // a real wall of sound
+  const normAgc = normalizeBands(raw, rate); // the OLD path's per-band running-max AGC
+
+  const [ref] = globalBandReferences(raw);
+  const trueIntro = clamp(raw[0][10] / ref, 0, 1);
+  const trueChorus = clamp(raw[0][introFrames + 10] / ref, 0, 1);
+  assert.ok(trueChorus > trueIntro * 5, `true dynamics: chorus (${trueChorus}) must read far louder than the intro (${trueIntro})`);
+
+  // The AGC path is exactly the failure mode this replaces: both sections
+  // normalize toward 1 against their OWN local follower, erasing the gap
+  // true dynamics preserve.
+  const agcIntro = normAgc[0][introFrames - 10];
+  const agcChorus = normAgc[0][introFrames + rate * 5]; // well after the AGC has caught up to the louder section
+  assert.ok(agcIntro > 0.5, `AGC: the intro alone should have decayed its own follower down to near its own peak, got ${agcIntro}`);
+  assert.ok(Math.abs(agcChorus - agcIntro) < 0.5, `AGC: intro and chorus should read similarly against their own local followers, got intro ${agcIntro} vs chorus ${agcChorus}`);
 });
