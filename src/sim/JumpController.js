@@ -28,6 +28,64 @@ export const H_BASE = 190; // px -- the bigger stage (Midio.groundY moved from 4
 export const D_MIN = 380, D_MAX = 1200; // ms
 const RETARGET_FALL_MS = 120;
 const HIGH_BPM_HALFTIME = 170;
+// A jump's landing lands ON the next audible kick whenever one falls in
+// range, rather than merely on the beat-period EMA -- the EMA is only ever
+// right for perfectly steady four-on-the-floor; any syncopation, fill, or
+// tempo drift used to land him off-beat "usually", with the EMA
+// coincidentally matching the true next gap only "occasionally" (spec: the
+// exact "sometimes outstanding, usually weird" symptom). The chart's kick
+// list is known in advance (or, live, the next kick has already sounded/
+// been scheduled), so there's no reason to guess when the real target is
+// sitting right there. Below this floor a "next kick" is really the same
+// hit (layered/duplicate onsets) or one the existing airborne/retarget
+// logic already owns -- not a fresh landing target.
+export const LANDING_MIN_GAP_MS = 200;
+
+// A retarget's relaunch only actually fires once the LIVE controller's own
+// fixed-step update() notices the compress has finished (see update()'s
+// r>=1 branch) -- so its real jumpStartMs lands up to one 120Hz step late
+// relative to the exact math the offline replicas (JumpPlanner, NoteChart)
+// use. That slop was invisible before Fix B: EMA-derived D essentially
+// never coincided with any specific kick's tMs. Now D is often chosen to
+// land EXACTLY on the next kick, so a kick arriving right at that nominal
+// boundary is a routine occurrence, and the two systems must agree on
+// which side of "still airborne" it falls on -- this is that shared
+// tolerance (a hair over one sim step).
+export const LANDING_QUANT_EPS_MS = 10;
+
+/**
+ * The jump duration for a launch at `takeoffMs`: exactly the gap to
+ * `nextKickMs` when that gap is a plausible landing target (beyond the
+ * dedupe floor, within a sane upper bound so a long silence doesn't stretch
+ * one jump for seconds), clamped to [D_MIN, D_MAX] same as always; the
+ * beat-period EMA otherwise (no known/plausible next kick -- silence, the
+ * song's tail, or a target so far out it should be treated as a rest, not
+ * chased). Pure and shared by every replica that must schedule the same
+ * jump the same way: JumpPlanner.predictJumpArcs (obstacle placement),
+ * NoteChart.replayTakeoffTriggers (the tap chart), and this class's own
+ * live launch/retarget (see test/jumpPlanner.test.js's lockstep check).
+ */
+export function scheduledJumpD(takeoffMs, nextKickMs, beatPeriodMs) {
+  const gap = nextKickMs != null ? nextKickMs - takeoffMs : NaN;
+  const D = gap >= LANDING_MIN_GAP_MS && gap <= 2000 ? gap : beatPeriodMs;
+  return clamp(D, D_MIN, D_MAX);
+}
+
+/**
+ * The first entry in the ascending `kickTimes` (forward-scanned from
+ * `fromIdx`) far enough past `takeoffMs` to be a plausible landing target
+ * -- or null if none qualifies. A kick closer than LANDING_MIN_GAP_MS is a
+ * duplicate/layered onset (or one the airborne/retarget rules already
+ * own), not a fresh landing; skip past it rather than giving up on
+ * scheduling entirely. Shared so every replica that walks the same kick
+ * list agrees on which kick a given takeoff should land on.
+ */
+export function nextLandingKickMs(kickTimes, takeoffMs, fromIdx = 0) {
+  for (let i = fromIdx; i < kickTimes.length; i++) {
+    if (kickTimes[i] - takeoffMs >= LANDING_MIN_GAP_MS) return kickTimes[i];
+  }
+  return null;
+}
 
 export class JumpController {
   constructor(paramBus, { hBase = H_BASE } = {}) {
@@ -45,6 +103,18 @@ export class JumpController {
     this.beatPeriodMs = 500;
     this.kickCount = 0;
 
+    // Landing-on-the-next-kick (see scheduledJumpD/nextLandingKickMs above):
+    // the full raw kick-time list (same one JumpPlanner/NoteChart replay),
+    // set once via setKickTimes. _kickIdx is a monotonic cursor tracking
+    // "where the CURRENT triggering kick sits in that list" -- advanced
+    // every onKick/onPlayerTap in the same forward-only order those already
+    // arrive in, so searching "the next kick after this one" is O(1)
+    // amortized and always agrees with the offline replicas' own index walk.
+    // Left empty by default: any caller that never wires this up (tests,
+    // fixtures) gets exactly the old EMA-only behavior.
+    this._kickTimes = [];
+    this._kickIdx = 0;
+
     this.compress = null;      // {startMs, fromY, dur} — mid-air retarget in progress
     this._pendingLaunch = null;
 
@@ -57,6 +127,22 @@ export class JumpController {
   }
 
   get bpm() { return 60000 / this.beatPeriodMs; }
+
+  /** The full raw kick-time list (sorted ascending, every RHYTHM kick --
+   *  same source ObstacleSpawner/NoteChart feed JumpPlanner/replayTakeoff-
+   *  Triggers), so landings can be scheduled onto whichever of them is
+   *  next rather than only ever guessed from the beat-period EMA. */
+  setKickTimes(kickTimes) {
+    this._kickTimes = kickTimes || [];
+    this._kickIdx = 0;
+  }
+
+  /** Advance the cursor to (at or just past) `tMs` in the kick-time list --
+   *  called once per triggering kick, in the same forward-only order they
+   *  arrive, so it always points at the CURRENT kick's own position. */
+  _advanceKickCursor(tMs) {
+    while (this._kickIdx < this._kickTimes.length && this._kickTimes[this._kickIdx] < tMs) this._kickIdx++;
+  }
 
   /**
    * @param evt the RHYTHM/kick NoteEvent (evt.tMs is the exact musical
@@ -75,6 +161,7 @@ export class JumpController {
     const tMs = evt.tMs;
     this.update(tMs); // resolve any landing/compress transition due by tMs first
     this._updateBeatPeriod(tMs);
+    this._advanceKickCursor(tMs);
     this.kickCount++;
     if (this.bpm > HIGH_BPM_HALFTIME && this.kickCount % 2 === 0) {
       this.pendingGhostKick = { vel: evt.vel };
@@ -110,6 +197,7 @@ export class JumpController {
   onPlayerTap(evt) {
     const tMs = evt.tMs;
     this.update(tMs); // resolve any landing/compress transition due by tMs first
+    this._advanceKickCursor(tMs);
     this._launchOrRetarget(evt, tMs);
   }
 
@@ -158,9 +246,19 @@ export class JumpController {
 
   _launchOrRetarget(evt, nowMs) {
     const H = this.hBase * (0.6 + 0.8 * evt.vel) * this.P.live.jumpHeight;
-    const D = clamp(1.0 * this.beatPeriodMs, D_MIN, D_MAX);
+    // Land ON the next audible kick when one falls in range (searched
+    // fresh from the cursor _advanceKickCursor just placed at THIS kick's
+    // own position -- see scheduledJumpD/nextLandingKickMs above), rather
+    // than merely guessing from the beat-period EMA; the EMA only ever
+    // happens to match the real next gap on perfectly steady, unsyncopated
+    // stretches. A fresh ground launch takes off right now; a mid-air
+    // retarget actually launches RETARGET_FALL_MS later (once the compress
+    // lands), so the search's takeoff floor -- and D itself -- must be
+    // anchored to THAT instant, not nowMs.
 
     if (this.state === 'GROUND') {
+      const nextKickMs = nextLandingKickMs(this._kickTimes, nowMs, this._kickIdx + 1);
+      const D = scheduledJumpD(nowMs, nextKickMs, this.beatPeriodMs);
       this.lastLaunchVel = evt.vel;
       this._launch(nowMs, H, D);
       return;
@@ -170,6 +268,9 @@ export class JumpController {
     if (u >= A + B) {
       const r = (u - A - B) / GAMMA;
       if (r < 0.3 && !this.compress) {
+        const retargetLaunchMs = nowMs + RETARGET_FALL_MS;
+        const nextKickMs = nextLandingKickMs(this._kickTimes, retargetLaunchMs, this._kickIdx + 1);
+        const D = scheduledJumpD(retargetLaunchMs, nextKickMs, this.beatPeriodMs);
         this.compress = { startMs: nowMs, fromY: this.y, dur: RETARGET_FALL_MS };
         this._pendingLaunch = { H, D, vel: evt.vel };
       }

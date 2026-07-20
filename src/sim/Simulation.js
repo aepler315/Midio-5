@@ -103,6 +103,13 @@ export class Simulation {
 
     this.midio = new Midio();
     this.jump = new JumpController(paramBus);
+    // Landing-on-the-next-kick (JumpController.scheduledJumpD): the same
+    // raw kick-time list NoteChart/JumpPlanner replay, so live launches and
+    // retargets schedule onto the real next onset instead of only ever
+    // guessing from the beat-period EMA -- see NoteChart.js/JumpPlanner.js
+    // for why the schedule was previously "occasionally outstanding,
+    // usually weird" (an EMA only matches steady four-on-the-floor).
+    this.jump.setKickTimes(conductor.timeline.filter((e) => e.role === Role.RHYTHM && e.kick).map((e) => e.tMs));
     this.camera = new CameraDirector();
     this.comboSystem = new ComboSystem();
     this.impactFX = new ImpactFX();

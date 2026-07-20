@@ -10,8 +10,7 @@
 // following the chart can always clear what the auto-game could. Kicks the
 // predictor ignores (mid-air, halftime ghosts) simply aren't notes.
 import { Role } from '../core/NoteEvent.js';
-import { clamp } from '../utils/math.js';
-import { A, B, GAMMA, D_MIN, D_MAX } from './JumpController.js';
+import { A, B, GAMMA, scheduledJumpD, nextLandingKickMs, LANDING_QUANT_EPS_MS } from './JumpController.js';
 
 export const HOLD_MAX_GAP_MS = 180; // consecutive kicks this close chain into a roll
 export const HOLD_MIN_HITS = 5;
@@ -118,8 +117,10 @@ function replayTakeoffTriggers(kicks) {
   let compressingUntilMs = -Infinity;
   let lastArc = null;
   const triggers = [];
+  const kickTimes = kicks.map((k) => k.tMs);
 
-  for (const k of kicks) {
+  for (let ki = 0; ki < kicks.length; ki++) {
+    const k = kicks[ki];
     if (lastKickMs != null) {
       const interval = k.tMs - lastKickMs;
       if (interval > 120 && interval < 2000) beatPeriodMs = beatPeriodMs * 0.7 + interval * 0.3;
@@ -132,10 +133,19 @@ function replayTakeoffTriggers(kicks) {
     const bpm = 60000 / beatPeriodMs;
     if (bpm > HIGH_BPM_HALFTIME && kickCount % 2 === 0) continue;
 
-    const D = clamp(1.0 * beatPeriodMs, D_MIN, D_MAX);
-    const airborne = lastArc && k.tMs < lastArc.landMs;
+    // +LANDING_QUANT_EPS_MS, but only when the in-flight arc was itself
+    // born from a retarget -- matches JumpPlanner's own tie-break exactly
+    // (see JumpController.LANDING_QUANT_EPS_MS's doc for why a fresh
+    // ground launch must NOT get this slack).
+    const eps = lastArc && lastArc.retargeted ? LANDING_QUANT_EPS_MS : 0;
+    const airborne = lastArc && k.tMs < lastArc.landMs + eps;
 
     if (!airborne) {
+      // Land ON the next audible kick when one's in range -- see
+      // JumpController.scheduledJumpD/nextLandingKickMs, kept in lockstep
+      // with JumpPlanner and the live controller's own cursor walk.
+      const nextKickMs = nextLandingKickMs(kickTimes, k.tMs, ki + 1);
+      const D = scheduledJumpD(k.tMs, nextKickMs, beatPeriodMs);
       lastArc = { takeoffMs: k.tMs, landMs: k.tMs + D, D };
       triggers.push({ tMs: k.tMs, vel: k.vel });
       continue;
@@ -146,8 +156,10 @@ function replayTakeoffTriggers(kicks) {
       const r = (u - A - B) / GAMMA;
       if (r < 0.3) {
         const compressLandMs = k.tMs + RETARGET_FALL_MS;
+        const nextKickMs = nextLandingKickMs(kickTimes, compressLandMs, ki + 1);
+        const D = scheduledJumpD(compressLandMs, nextKickMs, beatPeriodMs);
         compressingUntilMs = compressLandMs;
-        lastArc = { takeoffMs: compressLandMs, landMs: compressLandMs + D, D };
+        lastArc = { takeoffMs: compressLandMs, landMs: compressLandMs + D, D, retargeted: true };
         triggers.push({ tMs: k.tMs, vel: k.vel });
       }
     }
