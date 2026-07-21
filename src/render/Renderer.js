@@ -31,6 +31,23 @@ const SHOCK_MAX_ALPHA = 0.5;
 const SPEED_LINE_COUNT = 24;
 const SPEED_LINE_MAX_ALPHA = 0.35;
 
+// Bloom: a final light-bleed pass over the fully composed frame -- the
+// additive glow language used everywhere (character underlays, kick
+// ignition, the celestial, aurora, drop shockwaves) currently stops hard
+// at each source's own edges instead of bleeding into the frame the way a
+// real luminous source does. Downsampled (cheap blur for free) + a
+// self-multiply threshold (keeps near-white sources, crushes midtones) +
+// a real blur, added back additively at a strength driven by the music.
+const BLOOM_DOWNSCALE = 3;       // offscreen buffers render at 1/3 resolution
+const BLOOM_BLUR_PX = 7;         // blur radius AT that downsampled scale
+const BLOOM_THRESHOLD_PASSES = 2; // self-multiply passes: c^(2^passes)
+const BLOOM_BASE = 0.18;         // steady glow present even at rest -- never flash-capped
+// Headroom above the base must clear FLASH_CAP (Accessibility.js) with
+// margin, or reduced-flash's own cap on the reactive term would be masked
+// by this ceiling clipping first -- the whole point of capping the
+// reactive term separately is that it still visibly tames the swell.
+const BLOOM_MAX = 0.75;          // hard ceiling so a maxed drop+fever never blows out
+
 // Film finish: breathing vignette + very-low-alpha color grade (see FilmFinish.js).
 const FILM_GRADE_COOL = '#1f8fa3';       // muted teal -- calm push
 const FILM_GRADE_WARM = '#ff9a4d';       // muted amber -- hot/high-budget push
@@ -193,6 +210,12 @@ export class Renderer {
     // both keyed off the same window as the shockwave rings -- drawn last so
     // they shock the fully composed frame, hype border and highway included.
     if (sim.hype) this._drawDropImpact(ctx, canvas, sim, pose);
+    // Bloom: the final light-bleed pass over the fully composed frame --
+    // drawn last (after the drop shock, fever aura, hype frame) so every
+    // bright element in the finished shot, including those, bleeds light;
+    // drawn before the freeze capture/highlight-reel grabs so both include it.
+    this._drawBloom(ctx, canvas, sim);
+    if (sim.filmFinish) this._drawFilmFinish(ctx, canvas, sim);
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
 
@@ -386,6 +409,58 @@ export class Renderer {
       ctx.lineTo(seg.x1, seg.y1);
     }
     ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Bloom: light-bleed over the whole composed frame. Downsample (a cheap
+   *  blur for free and ~DOWNSCALE^2 less fill), crush to highlights via a
+   *  self-multiply threshold (near-white sources survive, midtones/darks
+   *  don't), blur, add back additively at a music-reactive strength -- the
+   *  same self-blit + filter-blur + 'lighter' toolkit as the hype echo,
+   *  chromatic shock, and lake reflection, just chained into one pipeline.
+   *  Naturally tinted by whatever was bright: gold glow bleeds gold,
+   *  aurora bleeds green. Sheds under PerfGovernor pressure like the drop
+   *  impact pack (a budget-allowing flourish, not core feedback). */
+  _drawBloom(ctx, canvas, sim) {
+    const perf = sim.perf;
+    if (perf && !perf.bloomEnabled) return;
+    const strength = bloomStrength(sim.hype, sim.fever, !!sim.reducedFlash);
+    if (strength <= 0.005) return;
+
+    const wSmall = Math.max(1, Math.round(canvas.width / BLOOM_DOWNSCALE));
+    const hSmall = Math.max(1, Math.round(canvas.height / BLOOM_DOWNSCALE));
+    if (!this._bloomA) this._bloomA = document.createElement('canvas');
+    if (!this._bloomB) this._bloomB = document.createElement('canvas');
+    const a = this._bloomA, b = this._bloomB;
+    if (a.width !== wSmall || a.height !== hSmall) { a.width = wSmall; a.height = hSmall; }
+    if (b.width !== wSmall || b.height !== hSmall) { b.width = wSmall; b.height = hSmall; }
+    const actx = a.getContext('2d');
+    const bctx = b.getContext('2d');
+
+    // 1) Downsample the fully composed frame into the small buffer.
+    actx.globalCompositeOperation = 'copy';
+    actx.globalAlpha = 1;
+    actx.drawImage(canvas, 0, 0, wSmall, hSmall);
+
+    // 2) Highlight extraction: self-multiply squares every channel each
+    // pass (0.9 -> 0.81 -> 0.66; 0.5 -> 0.25 -> 0.06; 0.2 -> 0.04 -> 0.002),
+    // a cheap threshold with no per-pixel JS.
+    actx.globalCompositeOperation = 'multiply';
+    for (let i = 0; i < BLOOM_THRESHOLD_PASSES; i++) actx.drawImage(a, 0, 0);
+
+    // 3) Blur the highlights.
+    bctx.clearRect(0, 0, wSmall, hSmall);
+    bctx.globalCompositeOperation = 'copy';
+    bctx.filter = `blur(${BLOOM_BLUR_PX}px)`;
+    bctx.drawImage(a, 0, 0);
+    bctx.filter = 'none';
+
+    // 4) Add the blurred highlights back onto the real frame, upscaled --
+    // the upscale itself softens the bloom further, which is the point.
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = strength;
+    ctx.drawImage(b, 0, 0, canvas.width, canvas.height);
     ctx.restore();
   }
 
@@ -592,6 +667,23 @@ export class Renderer {
     }
     ctx.restore();
   }
+}
+
+/**
+ * Music-reactive bloom strength: a small steady base (a lit scene always
+ * catches a little light, not a flash -- never capped by reduced-flash)
+ * plus a reactive swell from the same signals that already throw the drop
+ * shockwave and the fever aura (HypeDirector.slam/surge, FeverMeter.level).
+ * Only the reactive term runs through capFlashAlpha, so reduced-flash tames
+ * the pulsing on drops/kicks while the base glow stays intact. Clamped to
+ * BLOOM_MAX so a maxed-out drop-during-fever never blows the frame out.
+ */
+export function bloomStrength(hype, fever, reducedFlash = false) {
+  const slam = hype ? hype.slam : 0;
+  const surge = hype ? hype.surge : 0;
+  const feverLevel = fever ? fever.level : 0;
+  const reactive = capFlashAlpha(0.45 * slam + 0.35 * surge + 0.3 * feverLevel, reducedFlash);
+  return Math.min(BLOOM_MAX, BLOOM_BASE + reactive);
 }
 
 /** Drop impact envelope: 1 right at the drop, easing to 0 over

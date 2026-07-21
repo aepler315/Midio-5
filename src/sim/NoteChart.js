@@ -133,12 +133,11 @@ function replayTakeoffTriggers(kicks) {
     const bpm = 60000 / beatPeriodMs;
     if (bpm > HIGH_BPM_HALFTIME && kickCount % 2 === 0) continue;
 
-    // +LANDING_QUANT_EPS_MS, but only when the in-flight arc was itself
-    // born from a retarget -- matches JumpPlanner's own tie-break exactly
-    // (see JumpController.LANDING_QUANT_EPS_MS's doc for why a fresh
-    // ground launch must NOT get this slack).
-    const eps = lastArc && lastArc.retargeted ? LANDING_QUANT_EPS_MS : 0;
-    const airborne = lastArc && k.tMs < lastArc.landMs + eps;
+    // Symmetric landing-tie rule (see JumpController.LANDING_QUANT_EPS_MS's
+    // doc): a kick within the tolerance of the arc's scheduled touchdown IS
+    // the touchdown -- grounded, relaunch ON the kick. Lockstep with
+    // JumpPlanner and the live controller's force-land.
+    const airborne = lastArc && k.tMs < lastArc.landMs - LANDING_QUANT_EPS_MS;
 
     if (!airborne) {
       // Land ON the next audible kick when one's in range -- see
@@ -159,7 +158,7 @@ function replayTakeoffTriggers(kicks) {
         const nextKickMs = nextLandingKickMs(kickTimes, compressLandMs, ki + 1);
         const D = scheduledJumpD(compressLandMs, nextKickMs, beatPeriodMs);
         compressingUntilMs = compressLandMs;
-        lastArc = { takeoffMs: compressLandMs, landMs: compressLandMs + D, D, retargeted: true };
+        lastArc = { takeoffMs: compressLandMs, landMs: compressLandMs + D, D };
         triggers.push({ tMs: k.tMs, vel: k.vel });
       }
     }

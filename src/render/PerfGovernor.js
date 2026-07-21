@@ -46,5 +46,9 @@ export class PerfGovernor {
   get visionAllowed() { return this.level < 1; }
   get particleMul() { return this.level >= 2 ? 0.6 : 1; }
   get crackGlowEnabled() { return this.level < 3; }
+  // Bloom (music-reactive post-pass, see Renderer._drawBloom): a few
+  // downsampled offscreen draws plus one full-frame additive blit -- real
+  // but modest cost, shed at the same rung as crack-glow.
+  get bloomEnabled() { return this.level < 3; }
   get veilEnabled() { return this.level < 4; }
 }
