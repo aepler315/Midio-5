@@ -882,13 +882,20 @@ export class BiomeManager {
     if (!veilEnabled) return;
     ctx.save();
     ctx.globalAlpha = 0.10 * (1 + 0.6 * (this.calmLevel || 0));
-    ctx.filter = 'blur(6px)';
     const scrollX = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L7, this.unravel);
     for (let i = 0; i < 3; i++) {
       const x = ((i * 480 - scrollX) % (canvas.width + 400) + canvas.width + 400) % (canvas.width + 400) - 200;
-      ctx.fillStyle = '#ffffff';
+      const cy = canvas.height * (0.3 + 0.2 * i);
+      // Wider, softer radial fill stands in for the old blur(6px) pass --
+      // same soft-edged look, no per-frame offscreen-layer/GPU-flush cost.
+      const rx = 220, ry = 130;
+      const g = ctx.createRadialGradient(x, cy, 0, x, cy, Math.max(rx, ry));
+      g.addColorStop(0, 'rgba(255,255,255,1)');
+      g.addColorStop(0.6, 'rgba(255,255,255,0.6)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.ellipse(x, canvas.height * (0.3 + 0.2 * i), 160, 90, 0, 0, Math.PI * 2);
+      ctx.ellipse(x, cy, rx, ry, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();

@@ -3,7 +3,7 @@
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
 // each stage guards on the subsystem's presence so this file grows additively.
 import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE, MIDIO_APOTHEOSIS_FOLDED, MIDIO_APOTHEOSIS_UNFOLDED } from './meshes.js';
-import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, lerpMesh } from './MeshDrawer.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, lerpMesh, applyTransform, drawGlowHalo } from './MeshDrawer.js';
 import { EpicycleShow } from './EpicycleShow.js';
 import { ComposerStrip } from './ComposerStrip.js';
 import { RainbowBrush } from './RainbowBrush.js';
@@ -582,14 +582,8 @@ export class Renderer {
     const excitement = clamp01(melt / 8); // vibe/fever/apotheosis "melt" doubles as how hard he's glowing
     const glowAlpha = capFlashAlpha(0.20 + 0.30 * excitement + 0.4 * breatheBeatFlash, reducedFlash);
     if (glowAlpha > 0.02) {
-      ctx.save();
-      ctx.filter = 'blur(2px)';
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = glowAlpha;
-      drawMeshPart(ctx, bodyMesh, bodyRest, {
-        ...transform, scaleX: transform.scaleX * 1.35, scaleY: transform.scaleY * 1.35,
-      }, hue, { ...options, alpha: 1, lightBase: 78 });
-      ctx.restore();
+      const glowCenter = applyTransform(hub, transform);
+      drawGlowHalo(ctx, glowCenter.x, glowCenter.y, 30 * transform.scaleX, 38 * transform.scaleY, hue, glowAlpha, { sat: 40, light: 78 });
     }
     // The crisp pass carries an ink contour underneath (outline: true) so
     // his silhouette stays razor-edged against his own under-glow.

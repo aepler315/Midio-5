@@ -7,7 +7,7 @@ import { visualNow } from '../core/ChoreoClock.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { clamp, lerp, mulberry32 } from '../utils/math.js';
 import { MIDASUS_MESH, MIDASUS_HEX_R } from '../render/meshes.js';
-import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh } from '../render/MeshDrawer.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, drawGlowHalo } from '../render/MeshDrawer.js';
 import { ModalRing } from '../render/oscillators.js';
 import { OrbitalDebris } from './OrbitalDebris.js';
 import { SkyVoyage } from './SkyVoyage.js';
@@ -340,11 +340,8 @@ export class Midasus {
 
     const rot = bank + this.rollExtra; // pirouette rides on top of the banking
 
-    ctx.save();
-    ctx.globalAlpha = 0.6;
-    ctx.filter = 'blur(1.5px)';
-    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot, scaleX: this.pulse * 1.5 * DRAW_SCALE, scaleY: this.pulse * 1.5 * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 78, alpha: 1 });
-    ctx.restore();
+    const coreGlowR = MIDASUS_HEX_R * 2.1 * this.pulse * DRAW_SCALE;
+    drawGlowHalo(ctx, this.p.x, this.p.y, coreGlowR, coreGlowR, this.hue, 0.6, { sat, light: 78 });
 
     // Ink contour (outline) under the crisp pass: her diamond stays
     // knife-edged against the blurred halo drawn just above.

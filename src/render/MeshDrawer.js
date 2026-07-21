@@ -86,6 +86,29 @@ export function drawMeshPart(ctx, mesh, restLengths, transform, baseHueDeg, opti
 }
 
 /**
+ * Additive soft halo: a hue-tinted radial gradient (opaque center -> fully
+ * transparent edge) filled into an ellipse. Stands in for the old "blurred,
+ * enlarged, additive mesh copy" under-glow trick without a `ctx.filter`
+ * blur -- on mobile Canvas2D every `filter` use forces an offscreen layer
+ * allocation + GPU flush, which a plain gradient fill avoids entirely.
+ */
+export function drawGlowHalo(ctx, cx, cy, rx, ry, hueDeg, alpha, { sat = 70, light = 74 } = {}) {
+  if (alpha <= 0.002 || rx <= 0.5 || ry <= 0.5) return;
+  const r = Math.max(rx, ry);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  g.addColorStop(0, `hsl(${hueDeg.toFixed(0)},${sat}%,${light}%)`);
+  g.addColorStop(1, `hsla(${hueDeg.toFixed(0)},${sat}%,${light}%,0)`);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
  * The salvia melt: every vertex flows through a slow divergence-free
  * curl-noise field, so the form is never at rest -- a liquid instrument
  * rather than a rigid glyph. Two incommensurate field samples blend so
