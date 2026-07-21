@@ -135,6 +135,17 @@ carries a deterministic signature hue-shift, so the chorus always blooms
 the same color and the verse always another, gliding between them and
 snapping back with a cut of recognition when a familiar section returns.
 
+**The whole frame catches light:** a final bloom pass now runs over every
+composed frame — the composited scene is downsampled, crushed to its own
+highlights, blurred, and added back additively, so bright sources genuinely
+bleed light into the world instead of stopping hard at their own edges (the
+sun's corona, a character's glow, kick flashes, the aurora, all reading
+naturally tinted by their own color). It's music-reactive: a steady base
+glow at rest, swelling on drops, kick slams, and fever, tamed (never
+removed) under reduced-flash. A subtle film-grade wash and vignette close
+out the post stack. Sheds automatically under sustained frame pressure
+(`PerfGovernor`).
+
 **Optional WebGL path:** open with `?renderer=webgl` to enable a non-destructive
 WebGL2 post-FX overlay (energy-driven tint/vignette). The Canvas 2D compositor
 always draws the scene; WebGL never steals the stage canvas context. If WebGL

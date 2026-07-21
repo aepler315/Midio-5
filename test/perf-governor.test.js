@@ -15,6 +15,7 @@ test('stays at level 0 under a healthy frame budget', () => {
   assert.equal(gov.visionAllowed, true);
   assert.equal(gov.particleMul, 1);
   assert.equal(gov.crackGlowEnabled, true);
+  assert.equal(gov.bloomEnabled, true);
   assert.equal(gov.veilEnabled, true);
 });
 
@@ -39,6 +40,7 @@ test('sheds progressively further under sustained pressure', () => {
   assert.equal(gov.visionAllowed, false);
   assert.equal(gov.particleMul, 0.6);
   assert.equal(gov.crackGlowEnabled, false);
+  assert.equal(gov.bloomEnabled, false);
   assert.equal(gov.veilEnabled, false);
 
   // Further over-budget frames don't shed past MAX_LEVEL.

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dropImpactStrength, speedLineSegments } from '../src/render/Renderer.js';
+import { dropImpactStrength, speedLineSegments, bloomStrength } from '../src/render/Renderer.js';
 
 test('dropImpactStrength is 0 with no drop yet (dropAtMs = -Infinity, HypeDirector\'s initial state)', () => {
   assert.equal(dropImpactStrength(0, -Infinity), 0);
@@ -51,4 +51,47 @@ test('speedLineSegments is deterministic per seed and varies between different s
   const c = speedLineSegments(0, 0, 12, 1, 6, 300);
   const anyDifferent = a.some((seg, i) => Math.abs(seg.x1 - c[i].x1) > 1e-6 || Math.abs(seg.y1 - c[i].y1) > 1e-6);
   assert.ok(anyDifferent, 'a different seed should rotate the fan');
+});
+
+// --- bloomStrength -----------------------------------------------------
+
+function fakeHype(slam = 0, surge = 0) { return { slam, surge }; }
+function fakeFever(level = 0) { return { level }; }
+
+test('bloomStrength has a steady base at rest, never zero', () => {
+  const s = bloomStrength(fakeHype(), fakeFever(), false);
+  assert.ok(s > 0, 'a lit scene always catches a little light');
+  assert.ok(Math.abs(s - 0.18) < 1e-9, 'exactly the base with no reactive signal');
+});
+
+test('bloomStrength rises monotonically with hype.slam, hype.surge, and fever.level', () => {
+  const base = bloomStrength(fakeHype(0, 0), fakeFever(0), false);
+  assert.ok(bloomStrength(fakeHype(0.5, 0), fakeFever(0), false) > base, 'slam raises it');
+  assert.ok(bloomStrength(fakeHype(0, 0.5), fakeFever(0), false) > base, 'surge raises it');
+  assert.ok(bloomStrength(fakeHype(0, 0), fakeFever(0.5), false) > base, 'fever raises it');
+  let prev = base;
+  for (const level of [0.2, 0.4, 0.6, 0.8, 1]) {
+    const v = bloomStrength(fakeHype(level, level), fakeFever(level), false);
+    assert.ok(v >= prev, `must rise monotonically, level=${level}`);
+    prev = v;
+  }
+});
+
+test('bloomStrength is bounded: a maxed-out drop during max fever never blows out', () => {
+  const s = bloomStrength(fakeHype(1, 1), fakeFever(1), false);
+  assert.ok(s <= 0.75 + 1e-9, `expected the hard ceiling, got ${s}`);
+});
+
+test('reduced-flash tames the reactive swell but preserves the steady base', () => {
+  const restBase = bloomStrength(fakeHype(), fakeFever(), true);
+  assert.ok(Math.abs(restBase - 0.18) < 1e-9, 'the base is never flash-capped');
+
+  const full = bloomStrength(fakeHype(1, 1), fakeFever(1), false);
+  const capped = bloomStrength(fakeHype(1, 1), fakeFever(1), true);
+  assert.ok(capped < full, 'the reactive pulse is tamed under reduced-flash');
+  assert.ok(capped >= restBase, 'but the scene still reads at least as lit as the resting base');
+});
+
+test('bloomStrength tolerates missing hype/fever (defensive defaults)', () => {
+  assert.ok(Math.abs(bloomStrength(null, null, false) - 0.18) < 1e-9);
 });
