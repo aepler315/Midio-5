@@ -571,14 +571,21 @@ export class BiomeManager {
     if (this._glitchTimer <= 0) { this._glitchActiveMs = 60; this._glitchTimer = 2.5 + this._starSeed() * 3.5; }
   }
 
-  draw(ctx, canvas, worldX, originX = 0, skyVoyage = null, particleMul = 1) {
+  draw(ctx, canvas, worldX, originX = 0, skyVoyage = null, particleMul = 1, perf = null) {
+    // Deeper PerfGovernor rungs (mobile performance round): the optional
+    // phenomena layer and the depth-haze layer count both read this for
+    // the rest of the frame, so it's stashed on `this` rather than threaded
+    // through every helper's signature.
+    this._perf = perf;
+    const phenomenaFull = perf ? perf.phenomenaFull : true;
     const { from, to, t } = this.currentBlend || { from: this.sections[0].profile, to: this.sections[0].profile, t: 1 };
     const A = this._profile(from), B = this._profile(to);
 
     this._drawSky(ctx, canvas, A, B, t);
 
-    // Planets + astral artifacts, behind everything else in the heavens.
-    this.skyEnsemble.draw(ctx, canvas, this.tSec * 1000, {
+    // Planets + astral artifacts, behind everything else in the heavens --
+    // purely atmospheric, first to go on the deepest perf rung.
+    if (phenomenaFull) this.skyEnsemble.draw(ctx, canvas, this.tSec * 1000, {
       fromName: A.name, toName: B.name, t,
       colors: {
         skyMid: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
@@ -608,11 +615,11 @@ export class BiomeManager {
     this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * arc.celestialYFrac, canvas.height * 0.30 * this.mandalaScaleMul, mandalaColor);
     // Phenomena layer, deep sky: cymatic dust settling into Chladni
     // figures, and the chaos ribbon opposite the celestial for balance.
-    this.cymatics.draw(ctx, canvas, mandalaColor);
+    if (phenomenaFull) this.cymatics.draw(ctx, canvas, mandalaColor);
     this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075 * (this._ribbonScaleMul || 1), mandalaColor);
     this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
     this.drawDeepSky(ctx, skyVoyage); // Midasus's sky voyage, when she's away -- behind the mountains below
-    this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
+    if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
     this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
 
@@ -630,13 +637,17 @@ export class BiomeManager {
     const scrollX2 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L4, this.unravel);
     const scrollX3 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L5, this.unravel);
     const tint = this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t));
+    // Depth haze: three wash layers (L2/L3/L4) at healthy perf; the deepest
+    // rung collapses to just L3, the middle layer -- enough of an
+    // atmosphere cue to not read as flat, at a third of the cost.
+    const hazeLayers = this._perf ? this._perf.hazeLayers : 3;
 
     this._drawLayer(ctx, canvas, 'L2', scrollX0, tint, t, A, B);
-    this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
+    if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
     // Far-distance vignettes: between the farthest range and everything
     // nearer, so the L3/L4/L5 ridges partially occlude them -- genuinely
     // "witnessed in the far distance", not sprites pasted on the sky.
-    this.farVignettes.draw(ctx, canvas, worldX, {
+    if (phenomenaFull) this.farVignettes.draw(ctx, canvas, worldX, {
       tSec: this.tSec,
       kick: kickEnv(this.tSec * 1000 - this._danceKickMs - 170) * this._danceKickAmp,
       silhouette: tint,
@@ -666,11 +677,11 @@ export class BiomeManager {
     // The Kuramoto swarm shares this depth: synchronized flashing motes,
     // with the murmuration wheeling among them.
     this.swarm.draw(ctx, canvas, mandalaColor);
-    this.murmuration.draw(ctx, this.tSec * 1000, mandalaColor, particleMul);
+    if (phenomenaFull) this.murmuration.draw(ctx, this.tSec * 1000, mandalaColor, particleMul);
     this._drawFogBanks(ctx, canvas);
 
     this._drawLayer(ctx, canvas, 'L4', scrollX2, tint, t, A, B);
-    this._drawHaze(ctx, canvas, 'L4', A, B, t, arc);
+    if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L4', A, B, t, arc);
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
 
     this._drawGround(ctx, canvas, worldX, originX, A, B, t);
@@ -882,13 +893,20 @@ export class BiomeManager {
     if (!veilEnabled) return;
     ctx.save();
     ctx.globalAlpha = 0.10 * (1 + 0.6 * (this.calmLevel || 0));
-    ctx.filter = 'blur(6px)';
     const scrollX = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L7, this.unravel);
     for (let i = 0; i < 3; i++) {
       const x = ((i * 480 - scrollX) % (canvas.width + 400) + canvas.width + 400) % (canvas.width + 400) - 200;
-      ctx.fillStyle = '#ffffff';
+      const cy = canvas.height * (0.3 + 0.2 * i);
+      // Wider, softer radial fill stands in for the old blur(6px) pass --
+      // same soft-edged look, no per-frame offscreen-layer/GPU-flush cost.
+      const rx = 220, ry = 130;
+      const g = ctx.createRadialGradient(x, cy, 0, x, cy, Math.max(rx, ry));
+      g.addColorStop(0, 'rgba(255,255,255,1)');
+      g.addColorStop(0.6, 'rgba(255,255,255,0.6)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.ellipse(x, canvas.height * (0.3 + 0.2 * i), 160, 90, 0, 0, Math.PI * 2);
+      ctx.ellipse(x, cy, rx, ry, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -1356,16 +1374,21 @@ export class BiomeManager {
 
       // Gray-Scott texture living inside the ground: clip to the slice
       // silhouette so the pattern rides the terrain's vertical motion.
-      let minTop = canvas.height;
-      ctx.save();
-      ctx.beginPath();
-      for (const bar of bars) {
-        ctx.rect(bar.x, bar.y, bar.width + 1, canvas.height - bar.y);
-        if (bar.y < minTop) minTop = bar.y;
+      // Purely decorative texture over the flat fill above it, so the
+      // deepest perf rung skips it outright rather than clip+draw for
+      // nothing.
+      if (!this._perf || this._perf.phenomenaFull) {
+        let minTop = canvas.height;
+        ctx.save();
+        ctx.beginPath();
+        for (const bar of bars) {
+          ctx.rect(bar.x, bar.y, bar.width + 1, canvas.height - bar.y);
+          if (bar.y < minTop) minTop = bar.y;
+        }
+        ctx.clip();
+        this.rd.draw(ctx, canvas, worldX, minTop);
+        ctx.restore();
       }
-      ctx.clip();
-      this.rd.draw(ctx, canvas, worldX, minTop);
-      ctx.restore();
 
       ctx.strokeStyle = 'rgba(255,255,255,0.18)';
       ctx.lineWidth = 2;

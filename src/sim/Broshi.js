@@ -9,7 +9,7 @@ import { hexLerp, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { RABID_WEIGHTS } from '../audio/bands.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { BROSHI_BODY, BROSHI_HEAD, BROSHI_JAW, BROSHI_EYE, BROSHI_TAIL } from '../render/meshes.js';
-import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh } from '../render/MeshDrawer.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, applyTransform, drawGlowHalo } from '../render/MeshDrawer.js';
 import { kickEnv } from '../world/MountainChoreo.js';
 import { ModalRing } from '../render/oscillators.js';
 import { Burrow } from './Burrow.js';
@@ -633,14 +633,8 @@ export class Broshi {
     // larger, additive copy of the body drawn first so he catches light
     // like an instrument instead of reading flat next to her.
     const glowAlpha = 0.16 + 0.24 * this.rho + 0.3 * this.beatFlash;
-    ctx.save();
-    ctx.filter = 'blur(2px)';
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = glowAlpha;
-    drawMeshPart(ctx, bodyMesh, this._bodyRest, {
-      ...group, scaleX: group.scaleX * 1.3, scaleY: group.scaleY * 1.3,
-    }, baseHue, { ...glyphOpts, alpha: 1, lightBase: 74 });
-    ctx.restore();
+    const glowCenter = applyTransform(bodyHub, group);
+    drawGlowHalo(ctx, glowCenter.x, glowCenter.y, 28 * group.scaleX, 24 * group.scaleY, baseHue, glowAlpha, { sat: 30, light: 74 });
 
     // Ink contour under the crisp strokes (outline): the raptor's
     // silhouette stays sharp against his own under-glow and comet trail.

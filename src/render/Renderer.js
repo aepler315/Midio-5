@@ -3,7 +3,7 @@
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
 // each stage guards on the subsystem's presence so this file grows additively.
 import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE, MIDIO_APOTHEOSIS_FOLDED, MIDIO_APOTHEOSIS_UNFOLDED } from './meshes.js';
-import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, lerpMesh } from './MeshDrawer.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, lerpMesh, applyTransform, drawGlowHalo } from './MeshDrawer.js';
 import { EpicycleShow } from './EpicycleShow.js';
 import { ComposerStrip } from './ComposerStrip.js';
 import { RainbowBrush } from './RainbowBrush.js';
@@ -122,7 +122,7 @@ export class Renderer {
     ctx.translate(-canvas.width / 2 + camera.shakeX, -canvas.height / 2 + camera.shakeY);
 
     if (biomeManager) {
-      biomeManager.draw(ctx, canvas, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul);
+      biomeManager.draw(ctx, canvas, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul, perf);
     } else {
       this._drawFallbackSky(ctx, canvas);
       this._drawGround(ctx, canvas, pose, sim.midio.groundY);
@@ -215,7 +215,7 @@ export class Renderer {
     // bright element in the finished shot, including those, bleeds light;
     // drawn before the freeze capture/highlight-reel grabs so both include it.
     this._drawBloom(ctx, canvas, sim);
-    if (sim.filmFinish) this._drawFilmFinish(ctx, canvas, sim);
+    if (sim.filmFinish && (perf ? perf.heavyPostFx : true)) this._drawFilmFinish(ctx, canvas, sim);
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
 
@@ -475,7 +475,7 @@ export class Renderer {
     // The Reel: reduced-flash disables it outright (a rapid self-blit
     // ghost is exactly the kind of flash the toggle exists to remove).
     const echo = sim.reducedFlash ? 0 : Math.max(hype.surge > 0.45 ? hype.surge : 0, hype.slam > 0.7 ? hype.slam * 0.8 : 0);
-    if (echo > 0.05) {
+    if (echo > 0.05 && (sim.perf ? sim.perf.heavyPostFx : true)) {
       const off = 3 + 5 * echo;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
@@ -582,14 +582,8 @@ export class Renderer {
     const excitement = clamp01(melt / 8); // vibe/fever/apotheosis "melt" doubles as how hard he's glowing
     const glowAlpha = capFlashAlpha(0.20 + 0.30 * excitement + 0.4 * breatheBeatFlash, reducedFlash);
     if (glowAlpha > 0.02) {
-      ctx.save();
-      ctx.filter = 'blur(2px)';
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = glowAlpha;
-      drawMeshPart(ctx, bodyMesh, bodyRest, {
-        ...transform, scaleX: transform.scaleX * 1.35, scaleY: transform.scaleY * 1.35,
-      }, hue, { ...options, alpha: 1, lightBase: 78 });
-      ctx.restore();
+      const glowCenter = applyTransform(hub, transform);
+      drawGlowHalo(ctx, glowCenter.x, glowCenter.y, 30 * transform.scaleX, 38 * transform.scaleY, hue, glowAlpha, { sat: 40, light: 78 });
     }
     // The crisp pass carries an ink contour underneath (outline: true) so
     // his silhouette stays razor-edged against his own under-glow.
