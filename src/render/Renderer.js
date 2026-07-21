@@ -122,7 +122,7 @@ export class Renderer {
     ctx.translate(-canvas.width / 2 + camera.shakeX, -canvas.height / 2 + camera.shakeY);
 
     if (biomeManager) {
-      biomeManager.draw(ctx, canvas, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul);
+      biomeManager.draw(ctx, canvas, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul, perf);
     } else {
       this._drawFallbackSky(ctx, canvas);
       this._drawGround(ctx, canvas, pose, sim.midio.groundY);
@@ -215,7 +215,7 @@ export class Renderer {
     // bright element in the finished shot, including those, bleeds light;
     // drawn before the freeze capture/highlight-reel grabs so both include it.
     this._drawBloom(ctx, canvas, sim);
-    if (sim.filmFinish) this._drawFilmFinish(ctx, canvas, sim);
+    if (sim.filmFinish && (perf ? perf.heavyPostFx : true)) this._drawFilmFinish(ctx, canvas, sim);
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
 
@@ -475,7 +475,7 @@ export class Renderer {
     // The Reel: reduced-flash disables it outright (a rapid self-blit
     // ghost is exactly the kind of flash the toggle exists to remove).
     const echo = sim.reducedFlash ? 0 : Math.max(hype.surge > 0.45 ? hype.surge : 0, hype.slam > 0.7 ? hype.slam * 0.8 : 0);
-    if (echo > 0.05) {
+    if (echo > 0.05 && (sim.perf ? sim.perf.heavyPostFx : true)) {
       const off = 3 + 5 * echo;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';

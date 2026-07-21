@@ -17,7 +17,7 @@ import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
 import { getReducedFlash, setReducedFlash } from './ui/Accessibility.js';
-import { PerfGovernor } from './render/PerfGovernor.js';
+import { PerfGovernor, resolvePerfStartLevel } from './render/PerfGovernor.js';
 import { LoadingShow } from './ui/LoadingShow.js';
 import { pinchZoomDelta } from './sim/ZoomDirector.js';
 
@@ -105,6 +105,17 @@ const rendererMode = resolveRendererMode(
   typeof location !== 'undefined' ? location.search : '',
 );
 paramBus.rendererMode = rendererMode;
+
+// Perf tier: ?perf=lite|high overrides; otherwise a coarse-pointer/small-
+// viewport device heuristic starts a phone a rung down so the first
+// second of play is already smooth instead of janky-then-corrected.
+const perfStartLevel = resolvePerfStartLevel(
+  typeof location !== 'undefined' ? location.search : '',
+  {
+    isCoarsePointer: typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches,
+    isSmallViewport: typeof window !== 'undefined' && Math.min(window.innerWidth || 9999, window.innerHeight || 9999) < 700,
+  },
+);
 
 // The Stage model: the game is composed for a fixed 1280x720 stage and the
 // browser scales that stage to fit the window (letterboxed via CSS
@@ -431,7 +442,7 @@ function startTimeline(timelineData) {
   fitCanvas();
   applySynthMutePolicy();
   conductor.load(timelineData);
-  perfGovernor = new PerfGovernor();
+  perfGovernor = new PerfGovernor({ startLevel: perfStartLevel });
   sim = new Simulation(conductor, paramBus, {
     bpm: timelineData.bpm || 120,
     energyCurves: timelineData.energyCurves || null,
