@@ -1,6 +1,8 @@
 // Debug overlay (spec §5.2.3): backtick toggles visibility, renders the
 // ParamBus live/target state and the vision loop's 40-entry ring log so the
 // self-tuning loop's recent history is inspectable.
+import { MAX_LEVEL } from '../render/PerfGovernor.js';
+
 export class DebugOverlay {
   constructor(el, sim, paramBus, visionLoop, perfGovernor = null) {
     this.el = el;
@@ -35,7 +37,7 @@ export class DebugOverlay {
     lines.push(`vision loop: ${this.visionLoop.enabled ? 'ON' : 'OFF'} (press V to toggle)  fps~${Math.round(this.visionLoop._fps)}`);
     if (this.perfGovernor) {
       const g = this.perfGovernor;
-      lines.push(`perf governor: level ${g.level}/4  (vision ${g.visionAllowed ? 'ok' : 'shed'}, particles ×${g.particleMul}, crackGlow ${g.crackGlowEnabled ? 'on' : 'off'}, veil ${g.veilEnabled ? 'on' : 'off'})`);
+      lines.push(`perf governor: level ${g.level}/${MAX_LEVEL}  (vision ${g.visionAllowed ? 'ok' : 'shed'}, particles ×${g.particleMul}, crackGlow ${g.crackGlowEnabled ? 'on' : 'off'}, veil ${g.veilEnabled ? 'on' : 'off'}, phenomena ${g.phenomenaFull ? 'on' : 'off'}, haze ${g.hazeLayers}, postFx ${g.heavyPostFx ? 'on' : 'off'})`);
     }
     lines.push(`reduced flash: ${this.sim.reducedFlash ? 'ON' : 'OFF'} (press R to toggle)`);
     if (this.sim.highlightReel) {

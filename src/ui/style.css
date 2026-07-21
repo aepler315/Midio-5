@@ -170,6 +170,25 @@ html, body {
   animation: comboMilestone 0.55s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
+/* On-device FPS HUD (mobile performance round): small, always-on-top,
+   toggled by the P key or the ?fps URL param -- deliberately much lighter
+   than #debugOverlay so it's cheap enough to leave on during play. */
+#fpsHud {
+  position: absolute;
+  left: 8px; bottom: 8px;
+  z-index: 20;
+  background: rgba(5, 5, 10, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #d8f7c8;
+  pointer-events: none;
+  white-space: pre;
+}
+
 #debugOverlay {
   position: absolute;
   top: 0; right: 0;

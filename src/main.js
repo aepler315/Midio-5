@@ -17,7 +17,8 @@ import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
 import { getReducedFlash, setReducedFlash } from './ui/Accessibility.js';
-import { PerfGovernor, resolvePerfStartLevel } from './render/PerfGovernor.js';
+import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
+import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
 import { pinchZoomDelta } from './sim/ZoomDirector.js';
 
@@ -37,6 +38,7 @@ const completeStatsEl = document.getElementById('completeStats');
 const resultsGridEl = document.getElementById('resultsGrid');
 const playAgainBtnEl = document.getElementById('playAgainBtn');
 const debugOverlayEl = document.getElementById('debugOverlay');
+const fpsHudEl = document.getElementById('fpsHud');
 const sfFileInputEl = document.getElementById('sfFileInput');
 const sfDirInputEl = document.getElementById('sfDirInput');
 const sfDirBtnEl = document.getElementById('sfDirBtn');
@@ -99,6 +101,9 @@ let simTime = 0;
 let acc = 0;
 let lastNowMs = 0;
 let running = false;
+let fpsHudVisible = resolveFpsHudVisible(typeof location !== 'undefined' ? location.search : '');
+let fpsEma = null;
+fpsHudEl?.classList.toggle('hidden', !fpsHudVisible);
 // Renderer path: ?renderer=webgl enables the optional WebGL post-FX overlay.
 // Default remains pure Canvas 2D so drag/upload MIDI never depends on GL.
 const rendererMode = resolveRendererMode(
@@ -811,7 +816,14 @@ if (trackBadgeBtnEl) trackBadgeBtnEl.addEventListener('click', () => toggleTrack
 
 function frame(tRaf) {
   if (!running) return;
-  if (lastRafMs !== null) perfGovernor.sample(tRaf - lastRafMs, tRaf);
+  if (lastRafMs !== null) {
+    const rafDeltaMs = tRaf - lastRafMs;
+    perfGovernor.sample(rafDeltaMs, tRaf);
+    fpsEma = emaFps(fpsEma, rafDeltaMs);
+    if (fpsHudVisible && fpsHudEl) {
+      fpsHudEl.textContent = `${Math.round(fpsEma)} fps  ·  perf ${perfGovernor.level}/${PERF_MAX_LEVEL}`;
+    }
+  }
   lastRafMs = tRaf;
   const nowMs = audioEngine.nowMs;
   let deltaMs = nowMs - lastNowMs;
@@ -957,6 +969,11 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.key === 'f' || e.key === 'F') { openFontModal('list'); return; }
   if (e.key === 'r' || e.key === 'R') { toggleReducedFlash(); return; }
+  if (e.key === 'p' || e.key === 'P') {
+    fpsHudVisible = !fpsHudVisible;
+    fpsHudEl?.classList.toggle('hidden', !fpsHudVisible);
+    return;
+  }
   if (!debugOverlay) return;
   if (e.key === '`') { debugOverlay.toggle(); }
   else if (e.key === 'v' || e.key === 'V') { debugOverlay.toggleVision(); }
