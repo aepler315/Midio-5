@@ -17,6 +17,40 @@ import { Burrow } from './Burrow.js';
 const K = 26, C = 3.4; // spring stiffness (s^-2), damping (s^-1)
 const D_TRAIL = -140, D_SURGE = 120, D_PANIC = -220;
 const PANIC_LOOKAHEAD_MS = 300;
+
+// Midio always lands at his own fixed screenX -- so the danger zone is a
+// fixed band straddling xRel=0, not a moving target. Keep Broshi's spring
+// SET-POINT out of it (keepOutTarget below), and as a last resort clamp
+// his actual RENDERED position out of it too (see update()'s renderX
+// guard) so no upstream signal (ensemble roam, a mid-transition spring
+// crossing) can ever put him where the hero comes down.
+const KEEPOUT_HALF = 70;
+const RENDER_KEEPOUT_HALF = 55;
+const TAKEOFF_CROUCH_MS = 140;
+const CHEER_TAIL_MS = 600;
+const ECHO_HOP_RISE_MS = 70;
+const ECHO_HOP_H = 8;
+
+/** Two quick sine bumps ~160ms apart -- the cheer double-hop shape, added
+ *  on top of whatever else hopY is doing. Pure/testable. */
+export function cheerBumpY(ageMs) {
+  const BUMP_MS = 90, GAP_MS = 160, H = 10;
+  for (const start of [0, GAP_MS]) {
+    const u = (ageMs - start) / BUMP_MS;
+    if (u >= 0 && u <= 1) return H * Math.sin(u * Math.PI);
+  }
+  return 0;
+}
+
+/** Push a spring set-point out of the keep-out band around 0, snapping to
+ *  whichever edge `lastSide` last held (hysteresis -- it doesn't matter
+ *  which side, only that it doesn't flicker between them frame to frame).
+ *  Pure/testable. */
+export function keepOutTarget(dStar, lastSide, half = KEEPOUT_HALF) {
+  if (Math.abs(dStar) >= half) return dStar;
+  const side = lastSide < 0 ? -1 : 1;
+  return side * half;
+}
 const RABID_ENTER_G = 0.75, RABID_EXIT_G = 0.60, RABID_ENTER_HOLD_MS = 1500;
 const RABID_FADE_SEC = 0.8;
 const G_EMA_TAU = 0.4;
@@ -156,6 +190,18 @@ export class Broshi {
     this._trailTarget = D_TRAIL;
     this._ensPhase = null;
     this._melt = 0;
+    // Keep-out hysteresis: which side of Midio he was last clearly on.
+    this._lastSide = -1; // starts trailing behind (D_TRAIL is negative)
+
+    // True-companion behaviors -- all render-only, driven by Midio's own
+    // state via the ensemble bag (see update()).
+    this._wasAirborne = false;
+    this._takeoffCrouchStartMs = -Infinity;
+    this._cheerStartMs = -Infinity;
+    this._echoHopAnchorMs = -Infinity;
+    this._dartUntilMs = -Infinity;
+    this._nextDartCheckMs = 0;
+    this._watchLift = 0; // neck-up tilt while watching Midio fly, render-only
 
     // Barrel roll / pounce / tail-chase state (render-only, like the weave).
     this.bodyRoll = 0;         // radians added to the whole-glyph rotation
@@ -309,6 +355,37 @@ export class Broshi {
     this._barEnergyAccum += gInstant;
     this._barEnergySamples++;
 
+    // --- True companion: he reacts to HIS HERO, not just the music ---
+    const midioAirborne = !!(ensemble && ensemble.midioAirborne);
+    const justLanded = !!(ensemble && ensemble.justLanded);
+    const justClean = !!(ensemble && ensemble.justClean);
+    const midioYNow = ensemble ? (ensemble.midioY || 0) : 0;
+    const worldSpeed = ensemble ? (ensemble.worldSpeed || 0) : 0;
+
+    // Watch him fly: the neck tilts up while Midio's airborne, tracking
+    // roughly how high he is.
+    this._watchLift = midioAirborne ? 0.5 * clamp01(midioYNow / 280) : 0;
+
+    // Anticipation crouch: the instant he leaves the ground, a quick coil.
+    if (midioAirborne && !this._wasAirborne) this._takeoffCrouchStartMs = nowMs;
+
+    // Cheer on a clean landing: double mini-hop, tail flourish, happy jaw.
+    if (justClean) { this._cheerStartMs = nowMs; this.jawOpen = Math.max(this.jawOpen, 0.5); this._jawUntilMs = nowMs + 200; }
+
+    // Echo hop: a half-beat after ANY landing, he hops right along with him.
+    if (justLanded) this._echoHopAnchorMs = nowMs + Math.max(120, (this._lastBarPeriodMs || 500) / 8);
+
+    this._wasAirborne = midioAirborne;
+
+    // Calm play-dart: bored and relaxed, he occasionally darts ahead and
+    // drifts back -- seeded so it's not a metronome. Keep-out (below) still
+    // applies to wherever this sends the spring's target.
+    if (nowMs >= this._nextDartCheckMs) {
+      this._nextDartCheckMs = nowMs + 1000;
+      if (calmLevel > 0.6 && nowMs >= this._dartUntilMs && this.rand() < (1 / 7)) this._dartUntilMs = nowMs + 1200;
+    }
+    const darting = nowMs < this._dartUntilMs;
+
     // The heard clock (ChoreoClock): every anchored envelope below -- hop
     // arc, beat flash -- evaluates against this, not the raw song clock.
     const vNow = visualNow(nowMs, this.visualLagMs);
@@ -340,7 +417,22 @@ export class Broshi {
     if (this.state === 'SURGE' && this._lastState !== 'SURGE') this._pounceStartMs = nowMs;
     this._lastState = this.state;
 
-    const dStar = this.state === 'SURGE' ? D_SURGE : this.state === 'PANIC' ? D_PANIC : this._trailTarget;
+    let rawDStar = this.state === 'SURGE' ? D_SURGE : this.state === 'PANIC' ? D_PANIC : this._trailTarget;
+    if (darting && this.state === 'TRAIL') rawDStar = this._trailTarget + 180;
+
+    // Side-crossing discipline: a target that would flip which side of
+    // Midio he sits on only takes effect once he's grounded again -- while
+    // he's airborne, hold the PREVIOUS side's target so the spring isn't
+    // mid-crossing (near xRel=0, right where he'll come down) at the exact
+    // moment of landing.
+    const naturalSide = rawDStar === 0 ? this._lastSide : Math.sign(rawDStar);
+    let dStar = rawDStar;
+    if (midioAirborne && naturalSide !== this._lastSide) {
+      dStar = this._lastSide >= 0 ? Math.abs(rawDStar) : -Math.abs(rawDStar);
+    }
+    // Keep-out: never ask the spring to rest inside the landing column.
+    dStar = keepOutTarget(dStar, this._lastSide);
+
     // Iced footing (Traction.js): lost traction is lost damping -- the
     // stiffness (his legs) is untouched but he genuinely can't shed speed,
     // so he overshoots the formation and slides back. Floor keeps the
@@ -349,6 +441,7 @@ export class Broshi {
     const accel = -K * (this.xRel - dStar) - cEff * this.xRelVel;
     this.xRelVel += accel * dtSec;
     this.xRel += this.xRelVel * dtSec;
+    if (Math.abs(this.xRel) >= KEEPOUT_HALF) this._lastSide = Math.sign(this.xRel);
 
     // --- Rabid gate ---
     const alpha = 1 - Math.exp(-dtSec / G_EMA_TAU);
@@ -407,7 +500,10 @@ export class Broshi {
 
     // --- tail sway: wider and lazier the calmer things get, never still ---
     const tailHz = lerp(TAIL_BASE_HZ, TAIL_CALM_HZ, calmLevel);
-    const tailDeg = lerp(TAIL_BASE_DEG, TAIL_CALM_DEG, calmLevel);
+    let tailDeg = lerp(TAIL_BASE_DEG, TAIL_CALM_DEG, calmLevel);
+    // Cheer flourish: a clean landing gets a bigger tail wag for a moment.
+    const cheerAge = nowMs - this._cheerStartMs;
+    if (cheerAge >= 0 && cheerAge < CHEER_TAIL_MS) tailDeg *= 2;
     this.tailAngle = tailDeg * Math.sin(2 * Math.PI * tailHz * (nowMs / 1000) + this._tailPhase);
 
     // --- barrel roll / tail-chase spin: one shared roll channel ---
@@ -419,14 +515,21 @@ export class Broshi {
         this.tailAngle += 14 * Math.sin(2 * Math.PI * 6 * (nowMs / 1000));
       }
     } else {
-      this.bodyRoll = 0;
+      // Trot shimmy: a light roll while running grounded, scaled by how
+      // fast the world's actually moving under him -- standing still, he
+      // stands still.
+      this.bodyRoll = midioAirborne ? 0 : 0.02 * clamp(worldSpeed / 220, 0, 1) * Math.sin(worldX / 30);
     }
 
     // --- pounce crouch: sine in-out squash over POUNCE_MS ---
     const pounceU = (nowMs - this._pounceStartMs) / POUNCE_MS;
     const crouch = pounceU >= 0 && pounceU < 1 ? Math.sin(pounceU * Math.PI) : 0;
-    this.squashY = 1 - 0.22 * crouch;
-    this.squashX = 1 + 0.16 * crouch;
+    // A second, gentler coil the instant MIDIO leaves the ground -- he's
+    // anticipating the landing, same shape as the surge pounce.
+    const takeoffU = (nowMs - this._takeoffCrouchStartMs) / TAKEOFF_CROUCH_MS;
+    const takeoffCrouch = takeoffU >= 0 && takeoffU < 1 ? Math.sin(takeoffU * Math.PI) : 0;
+    this.squashY = 1 - 0.22 * crouch - 0.15 * takeoffCrouch;
+    this.squashX = 1 + 0.16 * crouch + 0.10 * takeoffCrouch;
 
     // --- body vibration: continuous feed while rabid, ring-down otherwise ---
     if (this.rho > 0.05) this.modal.excite(4 * this.rho * dtSec);
@@ -441,12 +544,27 @@ export class Broshi {
     } else {
       this.hopY = 0;
     }
+    // Cheer double-hop, on top of whatever his line's own hop is doing.
+    if (cheerAge >= 0 && cheerAge < CHEER_TAIL_MS) this.hopY += cheerBumpY(cheerAge);
+    // Echo hop: a half-beat after Midio lands, he hops right along with
+    // him -- a small apex-on-beat parabola anchored the same way as his
+    // note hops, just triggered by a landing instead of a note.
+    if (Math.abs(vNow - this._echoHopAnchorMs) < ECHO_HOP_RISE_MS * 2) {
+      this.hopY += apexHopY(vNow, this._echoHopAnchorMs, ECHO_HOP_RISE_MS, ECHO_HOP_H);
+    }
+    // Trot: a light stride bounce while his feet are on the ground, so
+    // running never reads as pure gliding.
+    if (!this._hop && this.hopY <= 0.5) {
+      this.hopY += 1.5 * Math.abs(Math.sin(worldX / 38));
+    }
 
     // --- head-bob (neck angle) ---
     const dt = nowMs - this._neckStartMs;
     this.neckAngle = dt >= 0 && dt < 600
       ? this._neckAmp * Math.exp(-dt / 180) * Math.sin((2 * Math.PI * dt) / 220)
       : 0;
+    // Watch him fly: tilts up on top of the head-bob while Midio's airborne.
+    this.neckAngle -= this._watchLift * 18;
 
     // --- rabid aura / drool ---
     if (this.rabid) {
@@ -493,6 +611,17 @@ export class Broshi {
     const weave = WEAVE_PX * (1 - 0.5 * this._calmLevel) * Math.sin(this._ensPhase != null ? this._ensPhase : nowMs * 0.006)
       + 3.5 * this.rho * Math.sin(nowMs * 0.031);
     this.renderX = this.screenX + weave;
+    // Last-resort render guard: whatever the spring/weave/dart/keep-out
+    // math above produced, the DRAWN position never sits inside Midio's
+    // landing column. This is the one guarantee that actually can't be
+    // defeated by a transient (a mid-transition spring crossing, a weave
+    // peak) -- it clamps the final screen position, not an intermediate
+    // target.
+    const renderOff = this.renderX - midio.screenX;
+    if (Math.abs(renderOff) < RENDER_KEEPOUT_HALF) {
+      const side = renderOff === 0 ? this._lastSide : Math.sign(renderOff);
+      this.renderX = midio.screenX + (side >= 0 ? RENDER_KEEPOUT_HALF : -RENDER_KEEPOUT_HALF);
+    }
 
     // Locomotion/rendering above keeps running harmlessly underneath (so a
     // resurface never has to catch up on anything); once he's away,

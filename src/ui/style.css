@@ -242,6 +242,36 @@ html, body {
   font-size: 0.78rem;
 }
 
+/* The ordinary-play auto-recording indicator: small and out of the way in
+   a corner, unlike the big center HUD (#recordingHud) reserved for an
+   explicit replay export -- every play is already being recorded, so this
+   shouldn't compete for attention the way a deliberate export does. */
+#liveRecHud {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 21;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(20, 4, 4, 0.6);
+  border: 1px solid rgba(255, 80, 80, 0.35);
+  border-radius: 999px;
+  padding: 3px 10px;
+  color: #ffdede;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+#liveRecHud .recDot {
+  color: #ff4d4d;
+  animation: recPulse 1.1s ease-in-out infinite;
+}
+
+#saveVideoBtn {
+  margin-top: 4px;
+}
+
 #debugOverlay {
   position: absolute;
   top: 0; right: 0;

@@ -75,6 +75,7 @@ export class Simulation {
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
     this.customBiome = customBiome || null;
+    this.canvasWidth = canvasWidth;
     // Output-latency compensation (ChoreoClock): main.js passes a live
     // getter onto the AudioContext's reported latency; decorative
     // beat-anchored envelopes evaluate on the heard clock via visualLagMs.
@@ -570,6 +571,12 @@ export class Simulation {
     }
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level, {
       trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
+      // A true companion watches his hero: airborne state + height for the
+      // "watch him fly" head-tilt and takeoff crouch, the landing/clean
+      // edges for the cheer + echo hop, world speed for the trot shimmy.
+      midioAirborne: this.jump.airborne, midioY: this.midio.y,
+      justLanded: !!this.jump.pendingLanding, justClean: this.comboSystem.justClean,
+      worldSpeed,
     }, this.groundField);
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
@@ -579,7 +586,7 @@ export class Simulation {
       { x: this.midasus.p.x, y: this.midasus.p.y },
       { x: this.broshi.renderX, y: this.midio.groundY - this.broshi.hopY },
       { x: this.midio.screenX, y: this.midio.renderY },
-    ], this.visualLagMs, this.reducedFlash);
+    ], this.visualLagMs, this.reducedFlash, this.canvasWidth);
     this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge + 1.1 * this.fever.level; // drops + player fever surge every phenomena system
     this.biomes.heatShimmer = this.hype.fast; // a hard hype spike shimmers the far range
     this.biomes.paletteRotation = this.keyDirector.paletteRotation; // the world transposes with the song's key

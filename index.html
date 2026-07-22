@@ -61,7 +61,7 @@
     </div>
 
     <div id="auditionPanel" class="panel hidden">
-      <h1>TUNING THE ORCHESTRA</h1>
+      <h1 id="auditionHeading">TUNING THE ORCHESTRA</h1>
       <canvas id="auditionCanvas" width="420" height="220"></canvas>
       <p id="auditionText" class="sub">Auditioning SoundFonts…</p>
       <div id="auditionBar"><div id="auditionBarFill"></div></div>
@@ -101,25 +101,30 @@
       <div id="resultsGrid" class="hidden"></div>
       <div id="filmstrip" class="hidden"></div>
       <button id="playAgainBtn" type="button">Play again</button>
+      <button id="saveVideoBtn" type="button" class="hidden">Save video</button>
       <div id="exportRow">
         <select id="exportRes">
           <option value="720">720p (native)</option>
-          <option value="1080" selected>1080p</option>
-          <option value="1440">1440p</option>
+          <option value="1080">1080p</option>
+          <option value="1440" selected>1440p</option>
         </select>
         <select id="exportFps">
-          <option value="30" selected>30 fps</option>
-          <option value="60">60 fps</option>
+          <option value="30">30 fps</option>
+          <option value="60" selected>60 fps</option>
         </select>
-        <button id="exportBtn" type="button" class="ghostbtn">Export video</button>
+        <button id="exportBtn" type="button" class="ghostbtn">Re-export at these settings</button>
         <a id="exportDownload" class="ghostbtn hidden" download>Download video</a>
-        <p class="hint">Export replays the song in real time while recording (mp4 where the browser supports it, otherwise webm).</p>
+        <p class="hint">Every play is already recorded at the settings above — hit "Save video" to keep it, or re-export a fresh replay at different settings (mp4 where the browser supports it, otherwise webm).</p>
       </div>
     </div>
 
     <div id="recordingHud" class="hidden">
       <span class="recDot">&#9679;</span> REC <span id="recordingTime"></span>
       <button id="recordingCancelBtn" type="button" class="ghostbtn">Cancel</button>
+    </div>
+
+    <div id="liveRecHud" class="hidden" title="Recording this play — Save video when it ends">
+      <span class="recDot">&#9679;</span> REC
     </div>
 
     <div id="filmstripModal" class="modalBackdrop hidden">

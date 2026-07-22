@@ -51,44 +51,55 @@ export class LoadingShow {
     this._timer = null;
     this._raf = 0;
     this._session = 0;
+    this._active = false;
     this._meshRest = computeRestLengths(MIDASUS_MESH);
     this._babyRest = computeRestLengths(BABY_STAR_MESH);
   }
 
-  get active() { return this._timer !== null; }
+  get active() { return this._active; }
 
-  /** Begin the show for a song. Returns a session token for stop(). */
-  start(timelineData) {
+  /** Begin the show. `timelineData` is optional -- pass null for a
+   *  visual-only run (star glyph + orbiters + bar, no percussion loop),
+   *  the mode used before a timeline exists yet (e.g. while an audio file
+   *  is still being separated/analyzed). Returns a session token for
+   *  stop(). */
+  start(timelineData = null) {
     this.stop(this._session);
     const session = ++this._session;
-    const pattern = buildPercussionPattern(timelineData.timeline, timelineData.bpm || 120);
     const ctx = this.ae.ctx;
-    const t0 = ctx.currentTime + 0.25;
-    let cursor = 0; // absolute pattern time scheduled so far, ms
     this._thumps = []; // scheduled thump ctx-times, for the visual flinch
-    this._hue = 200 + ((timelineData.timeline?.length || 0) % 120);
+    this._hue = 200 + ((timelineData?.timeline?.length || 0) % 120);
+    this._active = true;
 
-    const scheduleHit = (h, whenSec) => {
-      if (h.kind === 'thump') this._thump(whenSec, h.vel);
-      else this._hat(whenSec, h.vel);
-      if (h.kind === 'thump') {
-        this._thumps.push(whenSec);
-        if (this._thumps.length > 64) this._thumps.splice(0, 32);
-      }
-    };
+    if (timelineData) {
+      const pattern = buildPercussionPattern(timelineData.timeline, timelineData.bpm || 120);
+      const t0 = ctx.currentTime + 0.25;
+      let cursor = 0; // absolute pattern time scheduled so far, ms
 
-    this._timer = setInterval(() => {
-      const horizonMs = (ctx.currentTime - t0) * 1000 + 400;
-      while (cursor < horizonMs) {
-        const loopBase = Math.floor(cursor / pattern.loopMs) * pattern.loopMs;
-        const segEnd = Math.min(horizonMs, loopBase + pattern.loopMs);
-        for (const h of pattern.hits) {
-          const abs = loopBase + h.tMs;
-          if (abs >= cursor && abs < segEnd) scheduleHit(h, t0 + abs / 1000);
+      const scheduleHit = (h, whenSec) => {
+        if (h.kind === 'thump') this._thump(whenSec, h.vel);
+        else this._hat(whenSec, h.vel);
+        if (h.kind === 'thump') {
+          this._thumps.push(whenSec);
+          if (this._thumps.length > 64) this._thumps.splice(0, 32);
         }
-        cursor = segEnd;
-      }
-    }, 120);
+      };
+
+      this._timer = setInterval(() => {
+        const horizonMs = (ctx.currentTime - t0) * 1000 + 400;
+        while (cursor < horizonMs) {
+          const loopBase = Math.floor(cursor / pattern.loopMs) * pattern.loopMs;
+          const segEnd = Math.min(horizonMs, loopBase + pattern.loopMs);
+          for (const h of pattern.hits) {
+            const abs = loopBase + h.tMs;
+            if (abs >= cursor && abs < segEnd) scheduleHit(h, t0 + abs / 1000);
+          }
+          cursor = segEnd;
+        }
+      }, 120);
+    } else {
+      this._timer = null; // nothing to schedule yet -- the show is visual-only
+    }
 
     const draw = () => {
       if (session !== this._session) return;
@@ -110,12 +121,21 @@ export class LoadingShow {
     }
   }
 
+  /** Generic staged-progress label, for callers outside the font-audition
+   *  flow (e.g. the audio-separation load screen): a plain status line
+   *  plus an optional 0..1 fill fraction. */
+  setStage(text, frac = null) {
+    if (this.textEl) this.textEl.textContent = text;
+    if (this.barFillEl) this.barFillEl.style.width = frac != null ? `${Math.round(Math.max(0, Math.min(1, frac)) * 100)}%` : '10%';
+  }
+
   /** Stops scheduling/drawing. Pass the token from start() so a stale
    *  finally-block can't kill a newer session. */
   stop(session = this._session) {
     if (session !== this._session) return;
     if (this._timer) { clearInterval(this._timer); this._timer = null; }
     cancelAnimationFrame(this._raf);
+    this._active = false;
   }
 
   _thump(t, vel) {

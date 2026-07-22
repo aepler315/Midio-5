@@ -156,19 +156,21 @@ export class ConstellationWeaver {
     this.figures = survivors;
   }
 
-  draw(ctx, canvas, reducedFlash = false) {
+  draw(ctx, canvas, reducedFlash = false, alphaMul = 1) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
 
-    // Crystallized stars: dim and persistent, atlas-style.
+    // Crystallized stars: dim and persistent, atlas-style. alphaMul lets
+    // the night sky brighten them without touching the active figures
+    // below (those are event-driven, not ambient starlight).
     for (const star of this.stars) {
-      ctx.strokeStyle = `hsla(${star.hue}, 32%, 80%, ${capFlashAlpha(0.07, reducedFlash)})`;
+      ctx.strokeStyle = `hsla(${star.hue}, 32%, 80%, ${capFlashAlpha(0.07 * alphaMul, reducedFlash)})`;
       ctx.lineWidth = 0.8;
       ctx.beginPath();
       star.dots.forEach((s, i) => { if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y); });
       ctx.stroke();
       for (const s of star.dots) {
-        ctx.fillStyle = `hsla(${star.hue}, 40%, 86%, ${capFlashAlpha(0.14, reducedFlash)})`;
+        ctx.fillStyle = `hsla(${star.hue}, 40%, 86%, ${capFlashAlpha(0.14 * alphaMul, reducedFlash)})`;
         ctx.beginPath();
         ctx.arc(s.x, s.y, 1.0, 0, Math.PI * 2);
         ctx.fill();

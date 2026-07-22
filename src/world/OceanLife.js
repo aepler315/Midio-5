@@ -12,7 +12,7 @@ import { clamp01, mulberry32, hashSeed } from '../utils/math.js';
 // unbounded seeded stream -- the same feature reappears every WRAP_PX of
 // scroll, far enough apart (several screens) that the repeat never reads.
 export const OCEAN_LIFE_WRAP_PX = 7000;
-export const OCEAN_LIFE_RATIO = 0.02; // parallax: slower than L2 (0.10) -- it's ON the far water
+export const OCEAN_LIFE_RATIO = 0.06; // parallax: slower than L2 (0.10) but visibly scrolling -- it's ON the far water
 
 /** Wrap `x0 - scroll` into (-WRAP/2, WRAP/2], the signed offset from the
  *  viewport-relative origin -- negative means "already behind/left". */
@@ -34,7 +34,7 @@ export function islands(seed, count = 3) {
       x0: (i + rand()) * (OCEAN_LIFE_WRAP_PX / count),
       rowFrac: 0.25 + rand() * 0.6,
       w: 40 + rand() * 70,
-      h: 14 + rand() * 22,
+      h: 10 + rand() * 12,
       kind: KINDS[Math.floor(rand() * KINDS.length)],
       beacon: rand() < 0.35,
     });
@@ -112,7 +112,7 @@ export function tsunamiSchedule(seed, durationMs, hotspotMs = []) {
   return out;
 }
 
-export const TSUNAMI_SWEEP_MS = 4500;
+export const TSUNAMI_SWEEP_MS = 6000; // a rolling swell, not a sliding cutout
 export const TSUNAMI_WIDTH_PX = 260;
 
 /** The wall's leading-edge x at `nowMs`, sweeping fully across a canvas of
@@ -146,6 +146,19 @@ export function tsunamiProfile(s) {
   const rise = Math.exp(-((c - 0.55) ** 2) / 0.02);
   const settle = clamp01(1 - Math.max(0, c - 0.55) * 1.6);
   return clamp01(Math.max(rise, settle * 0.35));
+}
+
+/** Seeded spray-fleck descriptors riding just above the tsunami's crest --
+ *  {sOff (position along the wall's own -1..1 profile axis), riseFrac (how
+ *  far above the crest line, 0..1 of wall height), phase}. Pure/deterministic
+ *  so the same wall always throws the same spray. */
+export function sprayFlecks(seed, count = 7) {
+  const rand = mulberry32(seed >>> 0);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    out.push({ sOff: -0.25 + rand() * 0.7, riseFrac: 0.15 + rand() * 0.55, phase: rand() * Math.PI * 2 });
+  }
+  return out;
 }
 
 /** Height (px, >=0) of a fish's leap arc at progress u in [0,1]. */

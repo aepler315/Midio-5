@@ -46,6 +46,8 @@ const exportDownloadEl = document.getElementById('exportDownload');
 const recordingHudEl = document.getElementById('recordingHud');
 const recordingTimeEl = document.getElementById('recordingTime');
 const recordingCancelBtnEl = document.getElementById('recordingCancelBtn');
+const liveRecHudEl = document.getElementById('liveRecHud');
+const saveVideoBtnEl = document.getElementById('saveVideoBtn');
 const debugOverlayEl = document.getElementById('debugOverlay');
 const fpsHudEl = document.getElementById('fpsHud');
 const sfFileInputEl = document.getElementById('sfFileInput');
@@ -76,6 +78,7 @@ const filmstripModalCloseEl = document.getElementById('filmstripModalClose');
 const filmstripModalImgEl = document.getElementById('filmstripModalImg');
 const filmstripModalDownloadEl = document.getElementById('filmstripModalDownload');
 const auditionPanelEl = document.getElementById('auditionPanel');
+const auditionHeadingEl = document.getElementById('auditionHeading');
 const auditionCanvasEl = document.getElementById('auditionCanvas');
 const auditionTextEl = document.getElementById('auditionText');
 const auditionBarFillEl = document.getElementById('auditionBarFill');
@@ -116,6 +119,16 @@ let lastAudioBuffer = null;
 let lastSongName = 'song';
 let videoExporter = null;
 let exporting = false;
+// 'live' = the ordinary play, auto-recorded at whatever the export row is
+// set to, offered as "Save video" at the end; 'replay' = the explicit
+// "Re-export at these settings" button's own replay -- that one still
+// auto-downloads on completion, same as before. Only 'replay' recordings
+// skip PerfGovernor sampling (a deliberate re-record should never shed
+// phenomena mid-video); the ordinary live play behaves exactly as it
+// always has, recording alongside it.
+let recordingMode = null;
+let pendingSaveUrl = null;
+let pendingSaveLabel = '';
 
 let simTime = 0;
 let acc = 0;
@@ -454,8 +467,15 @@ function stopTimeline() {
   if (videoExporter?.active) {
     videoExporter.abort();
     exporting = false;
+    recordingMode = null;
     recordingHudEl?.classList.add('hidden');
+    liveRecHudEl?.classList.add('hidden');
   }
+  // An unsaved recording from the play that just ended doesn't carry over --
+  // starting something new discards it (it was already offered via "Save
+  // video" on the complete panel, which is going away right now too).
+  if (pendingSaveUrl) { URL.revokeObjectURL(pendingSaveUrl); pendingSaveUrl = null; }
+  saveVideoBtnEl?.classList.add('hidden');
   audioEngine?.pause();
   synth?.stopAll?.();
   // Tear down optional WebGL overlay so a mid-song drop doesn't stack layers.
@@ -468,7 +488,7 @@ function stopTimeline() {
   auditionPanelEl?.classList.add('hidden');
 }
 
-function startTimeline(timelineData) {
+function startTimeline(timelineData, { autoRecord = true } = {}) {
   stopTimeline();
   fitCanvas();
   applySynthMutePolicy();
@@ -512,6 +532,7 @@ function startTimeline(timelineData) {
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
   rafHandle = requestAnimationFrame(frame);
+  if (autoRecord) startLiveRecording();
 
   // Exposed for the debug overlay and for smoke-testing internals.
   // `rafHandle` is a live getter (not a snapshot) so smoke tests can
@@ -528,6 +549,22 @@ function startTimeline(timelineData) {
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
   };
+}
+
+/** Every ordinary play is recorded by default, at whatever the export row
+ *  is set to (1440p/60fps out of the box) -- so there's always something
+ *  to save at the end without the player having to think ahead and hit
+ *  Export before starting. Small corner indicator only; the big center HUD
+ *  stays reserved for a deliberate re-export. */
+function startLiveRecording() {
+  const preset = Number(exportResEl?.value) || 1440;
+  const fps = Number(exportFpsEl?.value) || 60;
+  const { w, h } = exportDims(preset);
+  videoExporter = new VideoExporter({ audioEngine, sourceCanvas: canvas });
+  videoExporter.start({ width: w, height: h, fps });
+  exporting = true;
+  recordingMode = 'live';
+  liveRecHudEl?.classList.remove('hidden');
 }
 
 async function loadMidiFile(file) {
@@ -620,16 +657,32 @@ async function loadAudioFiles(files) {
   const isStemDrop = decoded.length > 1;
   const audioBuffer = isStemDrop ? sumToMixBuffer(decoded.map((d) => d.buffer)) : decoded[0].buffer;
 
-  showProgress(isStemDrop ? `Mixing ${decoded.length} stems…` : 'Separating into 7 frequency bands…');
-  const data = await audioToTimeline(audioBuffer, {
-    userStems: isStemDrop ? decoded : null,
-    onProgress: ({ phase, progress }) => {
-      if (phase === 'separate') showProgress(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`);
-      else if (phase === 'analyze') showProgress('Detecting onsets, tempo, and downbeat…');
-      else if (phase === 'pitch') showProgress('Tracing melody, bass, and harmony…');
-    },
-  });
-  progressEl.classList.add('hidden');
+  // A dropped audio file has real work ahead of it (band separation, onset/
+  // tempo detection, pitch tracing) with no timeline yet to drive the usual
+  // percussion loading show -- so it runs visual-only (star glyph +
+  // orbiters + bar, no beat) while staged progress narrates what's
+  // happening, instead of leaving the player looking at a bare text line.
+  loaderEl.classList.add('hidden');
+  hudEl.classList.add('hidden');
+  if (auditionHeadingEl) auditionHeadingEl.textContent = 'PULLING THE RECORDING APART';
+  auditionPanelEl?.classList.remove('hidden');
+  const loadShowSession = loadShow?.start(null);
+  loadShow?.setStage(isStemDrop ? `Mixing ${decoded.length} stems…` : 'Separating into 7 frequency bands…', 0);
+  let data;
+  try {
+    data = await audioToTimeline(audioBuffer, {
+      userStems: isStemDrop ? decoded : null,
+      onProgress: ({ phase, progress }) => {
+        if (phase === 'separate') loadShow?.setStage(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`, progress);
+        else if (phase === 'analyze') loadShow?.setStage('Detecting onsets, tempo, and downbeat…', 0.7);
+        else if (phase === 'pitch') loadShow?.setStage('Tracing melody, bass, and harmony…', 0.9);
+      },
+    });
+  } finally {
+    loadShow?.stop(loadShowSession);
+    if (auditionHeadingEl) auditionHeadingEl.textContent = 'TUNING THE ORCHESTRA';
+    auditionPanelEl?.classList.add('hidden');
+  }
 
   if (data.freeTime) {
     console.warn(`Low tempo confidence (${data.confidence.toFixed(2)}) — switching to free-time, kick-reactive jumps.`);
@@ -857,9 +910,12 @@ function frame(tRaf) {
   if (!running) return;
   if (lastRafMs !== null) {
     const rafDeltaMs = tRaf - lastRafMs;
-    // While recording, the extra per-frame export blit must not read as
-    // "the game is struggling" and shed phenomena mid-video.
-    if (!exporting) perfGovernor.sample(rafDeltaMs, tRaf);
+    // A deliberate re-export replay must not read the extra per-frame
+    // export blit as "the game is struggling" and shed phenomena mid-video.
+    // The ordinary live play recording alongside a normal playthrough gets
+    // no such exemption -- it's real gameplay, and should perform (and
+    // shed) exactly as it would unrecorded.
+    if (!(exporting && recordingMode === 'replay')) perfGovernor.sample(rafDeltaMs, tRaf);
     fpsEma = emaFps(fpsEma, rafDeltaMs);
     if (fpsHudVisible && fpsHudEl) {
       fpsHudEl.textContent = `${Math.round(fpsEma)} fps  ·  perf ${perfGovernor.level}/${PERF_MAX_LEVEL}`;
@@ -1096,7 +1152,8 @@ function onSongComplete() {
   }
   renderFilmstrip(sim.highlightReel?.frames || []);
   completePanelEl.classList.remove('hidden');
-  if (exporting) finishExport();
+  if (exporting && recordingMode === 'replay') finishExport();
+  else if (exporting && recordingMode === 'live') finishLiveRecording();
 }
 
 /** Clean in-memory restart of the last-loaded song (MIDI/demo replay from
@@ -1104,14 +1161,15 @@ function onSongComplete() {
  *  is fully seeded and autoplay-driven, so this reproduces the same
  *  performance without a page reload. Falls back to reload if nothing was
  *  retained (e.g. a very first, still-loading session). */
-function replaySong() {
+function replaySong({ autoRecord = true } = {}) {
   if (!lastTimelineData) { window.location.reload(); return; }
-  startTimeline(lastTimelineData);
+  startTimeline(lastTimelineData, { autoRecord });
   if (lastAudioBuffer) audioEngine.playBuffer(lastAudioBuffer, 0);
 }
 
 async function finishExport() {
   exporting = false;
+  recordingMode = null;
   recordingHudEl?.classList.add('hidden');
   if (fpsHudEl) fpsHudEl.classList.toggle('hidden', !fpsHudVisible);
   if (!videoExporter) return;
@@ -1126,6 +1184,28 @@ async function finishExport() {
   exportDownloadEl.download = exportFilename(lastSongName, preset, fps, videoExporter.mime);
   exportDownloadEl.classList.remove('hidden');
   exportDownloadEl.click();
+}
+
+/** The ordinary play's recording, finished: unlike finishExport() this
+ *  does NOT auto-download -- it stashes the blob and offers a "Save video"
+ *  button on the complete panel, since the player didn't explicitly ask
+ *  for this one the way they would an export. */
+async function finishLiveRecording() {
+  exporting = false;
+  recordingMode = null;
+  liveRecHudEl?.classList.add('hidden');
+  if (!videoExporter) return;
+  const preset = Number(exportResEl?.value) || 1440;
+  const fps = Number(exportFpsEl?.value) || 60;
+  const { w, h } = exportDims(preset);
+  const mime = videoExporter.mime;
+  const blob = await videoExporter.stop();
+  if (!blob || !saveVideoBtnEl) return;
+  if (pendingSaveUrl) URL.revokeObjectURL(pendingSaveUrl);
+  pendingSaveUrl = URL.createObjectURL(blob);
+  pendingSaveLabel = exportFilename(lastSongName, preset, fps, mime);
+  saveVideoBtnEl.textContent = `Save video (${w}×${h} · ${fps}fps)`;
+  saveVideoBtnEl.classList.remove('hidden');
 }
 
 /** The Reel: the COMPLETE panel's highlight filmstrip -- proof of what the
@@ -1175,6 +1255,16 @@ if (filmstripModalEl) {
 
 playAgainBtnEl.addEventListener('click', () => replaySong());
 
+saveVideoBtnEl?.addEventListener('click', () => {
+  if (!pendingSaveUrl) return;
+  const a = document.createElement('a');
+  a.href = pendingSaveUrl;
+  a.download = pendingSaveLabel || 'super-midio-world.webm';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+});
+
 exportBtnEl?.addEventListener('click', () => {
   if (exporting || !lastTimelineData) return;
   const preset = Number(exportResEl?.value) || 1080;
@@ -1184,15 +1274,17 @@ exportBtnEl?.addEventListener('click', () => {
   exportDownloadEl?.classList.add('hidden');
   recordingHudEl?.classList.remove('hidden');
   fpsHudEl?.classList.add('hidden'); // the recording itself is the readout that matters here
-  replaySong();
+  replaySong({ autoRecord: false }); // this replay gets its OWN explicit exporter below, not the ordinary live one
   videoExporter = new VideoExporter({ audioEngine, sourceCanvas: canvas });
   videoExporter.start({ width: w, height: h, fps });
   exporting = true;
+  recordingMode = 'replay';
 });
 
 recordingCancelBtnEl?.addEventListener('click', () => {
   videoExporter?.abort();
   exporting = false;
+  recordingMode = null;
   recordingHudEl?.classList.add('hidden');
   if (fpsHudEl) fpsHudEl.classList.toggle('hidden', !fpsHudVisible);
   stopTimeline();
