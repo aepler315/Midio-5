@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Broshi } from '../src/sim/Broshi.js';
+import { Broshi, keepOutTarget, cheerBumpY } from '../src/sim/Broshi.js';
 import { Role } from '../src/core/NoteEvent.js';
 
 function fakeConductor() {
@@ -224,4 +224,50 @@ test('draw() before any update() renders at finite coordinates instead of throwi
   for (const t of ctx.translates) {
     for (const v of Object.values(t)) assert.ok(Number.isFinite(v), `non-finite coordinate: ${JSON.stringify(t)}`);
   }
+});
+
+// --- Keep-out: Midio must never land on Broshi ---
+
+test('keepOutTarget: pushes a target inside the band to the last-held side, leaves clear targets alone', () => {
+  assert.equal(keepOutTarget(0, -1), -70);
+  assert.equal(keepOutTarget(0, 1), 70);
+  assert.equal(keepOutTarget(40, -1), -70, 'inside the band snaps to lastSide regardless of the target\'s own sign');
+  assert.equal(keepOutTarget(-40, 1), 70);
+  assert.equal(keepOutTarget(120, -1), 120, 'clear of the band, passes through unchanged');
+  assert.equal(keepOutTarget(-140, 1), -140);
+  assert.equal(keepOutTarget(70, -1), 70, 'exactly at the edge counts as clear');
+  assert.equal(keepOutTarget(69.9, 1), 70);
+});
+
+test('cheerBumpY produces two bounded bumps and is zero outside them', () => {
+  assert.equal(cheerBumpY(-5), 0);
+  assert.ok(cheerBumpY(45) > 5, 'first bump peak');
+  assert.equal(cheerBumpY(120), 0, 'the gap between bumps is flat');
+  assert.ok(cheerBumpY(205) > 5, 'second bump peak');
+  assert.equal(cheerBumpY(400), 0);
+  for (let t = -10; t < 300; t += 5) assert.ok(Number.isFinite(cheerBumpY(t)) && cheerBumpY(t) >= -1e-9);
+});
+
+test('Broshi never renders inside Midio\'s landing column, across a scripted surge/trail/airborne stress sequence', () => {
+  const conductor = fakeConductor();
+  const b = new Broshi(conductor, {}, { seed: 42 });
+  const midio = { screenX: 220 };
+  let airborne = false;
+  let worst = Infinity;
+  for (let ms = 0; ms < 20000; ms += 16) {
+    // Flip airborne state on a short cycle, and fire surge-triggering bar
+    // energy spikes, to stress exactly the transition path the keep-out
+    // logic has to defend.
+    if (ms % 900 < 40) airborne = !airborne;
+    if (ms % 1500 < 16) conductor.fireBar(ms);
+    const ensemble = {
+      trailX: midio.screenX + (Math.sin(ms / 733) > 0 ? -140 : 300), // sweeps across the danger zone
+      phase: ms * 0.01, melt: 0,
+      midioAirborne: airborne, midioY: airborne ? 150 : 0,
+      justLanded: false, justClean: false, worldSpeed: 180,
+    };
+    b.update(ms, 0.016, midio, null, null, ms * 3, 540, 0.2, ensemble, null);
+    worst = Math.min(worst, Math.abs(b.renderX - midio.screenX));
+  }
+  assert.ok(worst >= 55 - 1e-6, `renderX came within ${worst}px of the landing column`);
 });

@@ -21,6 +21,7 @@ import { CalmDirector } from './CalmDirector.js';
 import { GnatGag } from './GnatGag.js';
 import { HypeDirector } from './HypeDirector.js';
 import { VibeDirector } from './VibeDirector.js';
+import { epicBiasForKind } from '../lyrics/SectionFusion.js';
 import { EnsembleDirector } from './EnsembleDirector.js';
 import { ExcursionDirector } from './ExcursionDirector.js';
 import { ApotheosisDirector } from './ApotheosisDirector.js';
@@ -69,12 +70,13 @@ export function bassAirJumpSafe(obstacle, worldX, safetyPx = BASS_AIR_JUMP_SAFET
 export class Simulation {
   constructor(conductor, paramBus, {
     bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720,
-    customBiome = null, inputOffsetMs = 0, outputLatencyMs = null,
+    customBiome = null, inputOffsetMs = 0, outputLatencyMs = null, lyricSections = null,
   } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
     this.customBiome = customBiome || null;
+    this.canvasWidth = canvasWidth;
     // Output-latency compensation (ChoreoClock): main.js passes a live
     // getter onto the AudioContext's reported latency; decorative
     // beat-anchored envelopes evaluate on the heard clock via visualLagMs.
@@ -176,6 +178,7 @@ export class Simulation {
       canvasWidth, canvasHeight, groundY: this.midio.groundY, songSeed,
       groundField: this.groundField,
       customBiome: this.customBiome,
+      lyricSections,
     });
     this.biomes.reducedFlash = this.reducedFlash;
     // Enemy-wave combat: flying/crawling enemies spawn during the song's
@@ -431,6 +434,11 @@ export class Simulation {
       this.camera.shake(9);
       this.beatZoom.onDrop(nowMs); // the beat zoom's own dramatic dive figure
     }
+    // Lyric structure's epic bias (SectionFusion): zero, and thus a strict
+    // no-op, whenever there's no lyric data (biomes.currentKind stays
+    // null). One-frame lag against biomes.update() (which runs later this
+    // same step) is inaudible against a signal already eased over ~1.5s.
+    this.vibe.epicBias = epicBiasForKind(this.biomes.currentKind, this.biomes.lyricIntensityEased);
     this.vibe.update(nowMs, dtSec, this.energyCurves);
     this.keyDirector.update(nowMs, dtSec, {
       tonic: this.vibe.tonic, tonicConfidence: this.vibe.tonicConfidence, conductor: this.conductor,
@@ -570,6 +578,12 @@ export class Simulation {
     }
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level, {
       trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
+      // A true companion watches his hero: airborne state + height for the
+      // "watch him fly" head-tilt and takeoff crouch, the landing/clean
+      // edges for the cheer + echo hop, world speed for the trot shimmy.
+      midioAirborne: this.jump.airborne, midioY: this.midio.y,
+      justLanded: !!this.jump.pendingLanding, justClean: this.comboSystem.justClean,
+      worldSpeed,
     }, this.groundField);
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
@@ -579,7 +593,7 @@ export class Simulation {
       { x: this.midasus.p.x, y: this.midasus.p.y },
       { x: this.broshi.renderX, y: this.midio.groundY - this.broshi.hopY },
       { x: this.midio.screenX, y: this.midio.renderY },
-    ], this.visualLagMs, this.reducedFlash);
+    ], this.visualLagMs, this.reducedFlash, this.canvasWidth);
     this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge + 1.1 * this.fever.level; // drops + player fever surge every phenomena system
     this.biomes.heatShimmer = this.hype.fast; // a hard hype spike shimmers the far range
     this.biomes.paletteRotation = this.keyDirector.paletteRotation; // the world transposes with the song's key

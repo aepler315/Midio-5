@@ -44,6 +44,17 @@ export class DebugOverlay {
       lines.push(`highlight reel: ${this.sim.highlightReel.frames.length}/8 captured`);
     }
     lines.push('');
+    lines.push('=== LYRICS ===');
+    if (this.sim.lyricIdentity && (this.sim.lyricIdentity.artist || this.sim.lyricIdentity.title)) {
+      const li = this.sim.lyricIdentity;
+      lines.push(`identity: ${li.artist || '?'} — ${li.title || '?'}  (source: ${li.source}, conf ${li.confidence.toFixed(2)})`);
+    } else {
+      lines.push('identity: (unresolved)');
+    }
+    if (this.sim.biomes) {
+      lines.push(`section kind: ${this.sim.biomes.currentKind || '(none — no lyric data)'}  lyricIntensity: ${this.sim.biomes.lyricIntensityEased.toFixed(2)}`);
+    }
+    lines.push('');
     lines.push('=== VISION LOG (most recent first) ===');
     const entries = this.visionLoop.log.toArray().reverse();
     if (entries.length === 0) lines.push('(no cycles yet)');

@@ -300,36 +300,46 @@ export class Renderer {
   _drawBattleEnemies(ctx, sim) {
     const battle = sim.battle;
     const tSec = sim.timeMs / 1000;
+    const nowMs = sim.timeMs;
+    const SCALE = 1.5; // "slightly bigger" -- fewer, tougher, more visible
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (const e of battle.enemies.active) {
       const bob = e.kind === 'flyer' ? Math.sin(tSec * 5 + e.bobPhase) * 8 : 0;
-      const x = e.sx, y = e.sy + bob;
+      // A recent stagger reads as a hot white flash that cools back to the
+      // menace hue -- visible proof the hit landed without killing it.
+      const sinceStagger = nowMs - e.staggerMs;
+      const hot = clamp01(1 - sinceStagger / 220);
       const hue = e.locked ? 350 : 5; // faint menace, brightens once locked/targeted
-      ctx.strokeStyle = `hsla(${hue}, 70%, 65%, ${capFlashAlpha(0.8, sim.reducedFlash).toFixed(3)})`;
-      ctx.lineWidth = 1.6;
+      const light = 65 + 25 * hot;
+      ctx.save();
+      ctx.translate(e.sx, e.sy + bob);
+      ctx.scale(SCALE, SCALE);
+      ctx.strokeStyle = `hsla(${hue}, 70%, ${light}%, ${capFlashAlpha(0.8, sim.reducedFlash).toFixed(3)})`;
+      ctx.lineWidth = 2 / SCALE;
       ctx.beginPath();
       if (e.kind === 'flyer') {
         const wingFlap = Math.sin(tSec * 14 + e.bobPhase);
-        ctx.moveTo(x, y - 10);
-        ctx.lineTo(x + 9, y + wingFlap * 4);
-        ctx.lineTo(x, y + 10);
-        ctx.lineTo(x - 9, y + wingFlap * 4);
+        ctx.moveTo(0, -10);
+        ctx.lineTo(9, wingFlap * 4);
+        ctx.lineTo(0, 10);
+        ctx.lineTo(-9, wingFlap * 4);
         ctx.closePath();
-        ctx.moveTo(x - 9, y); ctx.lineTo(x + 9, y);
+        ctx.moveTo(-9, 0); ctx.lineTo(9, 0);
       } else {
-        ctx.moveTo(x - 10, y);
-        ctx.lineTo(x - 4, y - 9);
-        ctx.lineTo(x + 4, y - 9);
-        ctx.lineTo(x + 10, y);
-        ctx.lineTo(x + 6, y + 4);
-        ctx.lineTo(x - 6, y + 4);
+        ctx.moveTo(-10, 0);
+        ctx.lineTo(-4, -9);
+        ctx.lineTo(4, -9);
+        ctx.lineTo(10, 0);
+        ctx.lineTo(6, 4);
+        ctx.lineTo(-6, 4);
         ctx.closePath();
         const leg = Math.sin(tSec * 16 + e.bobPhase) * 3;
-        ctx.moveTo(x - 6, y + 4); ctx.lineTo(x - 6 + leg, y + 9);
-        ctx.moveTo(x + 6, y + 4); ctx.lineTo(x + 6 - leg, y + 9);
+        ctx.moveTo(-6, 4); ctx.lineTo(-6 + leg, 9);
+        ctx.moveTo(6, 4); ctx.lineTo(6 - leg, 9);
       }
       ctx.stroke();
+      ctx.restore();
     }
     ctx.restore();
   }

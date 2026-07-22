@@ -16,7 +16,7 @@ import { ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, geoCrestOffset } f
 import { seaLineY, oceanRowYs, waveRows, rowAlpha, OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC } from './Ocean.js';
 import {
   islands, ships, seaLifeSchedule, monsterSchedule, tsunamiSchedule,
-  tsunamiX, tsunamiLift, tsunamiProfile, fishArcY, serpentHumpY,
+  tsunamiX, tsunamiLift, tsunamiProfile, sprayFlecks, fishArcY, serpentHumpY,
   wrappedOffset, OCEAN_LIFE_WRAP_PX, OCEAN_LIFE_RATIO, TSUNAMI_WIDTH_PX,
 } from './OceanLife.js';
 import { ConstellationWeaver } from './ConstellationWeaver.js';
@@ -25,6 +25,8 @@ import { SkyEnsemble } from './SkyEnsemble.js';
 import { FarVignettes } from './FarVignettes.js';
 import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
+import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, horizonFade } from './DayNight.js';
+import { fuseSections } from '../lyrics/SectionFusion.js';
 import { analyzeSongForm } from './SongForm.js';
 import { LightningFX } from './Lightning.js';
 import { MeteorShowerFX } from './MeteorShower.js';
@@ -57,13 +59,21 @@ const ACHROMATIC_SAT_THRESHOLD = 0.08;
 // KeyDirector's key-driven rotation via _rotated.
 const FORM_HUE_BIAS_MAX = 40;
 const FORM_HUE_TAU_SEC = 1.5; // section changes glide their hue, never snap
+// Lyric-structure intensity-budget multiplier by section kind (SectionFusion) --
+// a chorus/bridge reads louder, an intro/outro settles. Unrecognized/absent
+// kind (no lyric data at all) multiplies by exactly 1 -- a strict no-op.
+const KIND_BUDGET_MUL = { chorus: 1.15, bridge: 1.3, instrumental: 1.1, intro: 0.9, outro: 0.85, verse: 1.0 };
 const OCEAN_WATER_BLUE = '#55c8f0'; // always reads as water, blended into the biome palette
+const NIGHT_SKY_COLOR = '#0a0c1c'; // sky lerps toward this as the day/night cycle's `night` rises
+const MOON_COLOR = '#dfe6f2';
+const MOON_HALO_COLOR = '#aab8d8';
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, customBiome = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, customBiome = null, lyricSections = null }) {
     this.conductor = conductor;
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
+    this._dayNightCycleMs = dayNightCycleMs(this.durationMs);
     this.w = canvasWidth;
     this.h = canvasHeight;
     this.groundY = groundY;
@@ -76,6 +86,15 @@ export class BiomeManager {
     this._shutterStartMs = -Infinity;
     this._shutterBarMs = 500;
     this.cutFlashJustFired = false;
+    // Lyric-fused structure (SectionFusion): a section's `kind` (verse/
+    // chorus/bridge/instrumental/intro/outro) and its lyric intensity/
+    // valence, when lyrics were found and fused into the schedule below.
+    // Absent lyricSections -> currentKind stays null and every one of
+    // these stays at its neutral default, forever -- a strict no-op.
+    this._lyricSections = lyricSections;
+    this.currentKind = null;
+    this.lyricIntensityEased = 0.4;
+    this._kindBudgetMulEased = 1;
     this.budget = 1;
     this.hypeBoost = 1; // drop-surge multiplier from the HypeDirector
     this.mandalaScaleMul = 1; // swells while Midasus dances near the celestial
@@ -172,7 +191,7 @@ export class BiomeManager {
     // whale...) witnessed way out between the L2 and L3 ranges.
     this.farVignettes = new FarVignettes(songSeed);
 
-    this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed);
+    this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections);
     // MIDI custom biome: cast every section into the generated world so the
     // dropped file IS the place, while stock demos keep dramaturgical casting.
     if (this.customBiome) this.loadCustom(this.customBiome);
@@ -188,6 +207,7 @@ export class BiomeManager {
     this._monsterIdx = 0;
     this._tsunamis = tsunamiSchedule(hashSeed(`${songSeed}:tsunami`), durationMs, this._oceanHotspotMs || []);
     this._tsunamiIdx = 0;
+    this._tsunamiFlecks = sprayFlecks(hashSeed(`${songSeed}:tsunamispray`));
     this.mandala = new Mandala(songSeed);
     this.cymatics = new CymaticField(songSeed);
     this.swarm = new KuramotoSwarm(songSeed);
@@ -281,7 +301,7 @@ export class BiomeManager {
     conductor.on(Role.MELODY, (evt) => { this.weaver.onMelody(evt); });
   }
 
-  _buildSchedule(barGrid, energyCurves, durationMs, songSeed) {
+  _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null) {
     let barTimes = barGrid.length >= 8 ? barGrid.map((b) => b.ms) : this._evenSplit(durationMs, 8);
     if (barTimes.length < 2) barTimes = [0, durationMs];
 
@@ -387,6 +407,14 @@ export class BiomeManager {
       if (i > 0 && seenLabels.has(labels[i])) s.transition = 'cut';
       seenLabels.add(labels[i]);
     });
+
+    // Lyric fusion (SectionFusion): when lyrics were found and resolved,
+    // fold their structural read (verse/chorus/bridge/instrumental/intro/
+    // outro + per-section valence/intensity) onto this novelty-derived
+    // schedule -- synced lyrics can insert/merge boundaries snapped to the
+    // beat grid, plain lyrics only add labels. Absent lyricSections is a
+    // true no-op (fuseSections returns the exact same array).
+    this.sections = fuseSections(this.sections, lyricSections, barGrid, durationMs);
   }
 
   _evenSplit(durationMs, n) {
@@ -513,6 +541,10 @@ export class BiomeManager {
       if (this._lastSectionIdx != null) {
         if (sec.transition === 'cut') { this._cutFlash = 1; this.cutFlashJustFired = true; }
         else if (sec.transition === 'shutter') { this._shutterStartMs = nowMs; this._shutterBarMs = sec.barMs; }
+        // A lyric-identified instrumental/solo section gets the same
+        // spotlight snap a hype drop does -- the show notices the vocals
+        // stepping back just as much as it notices them stepping forward.
+        if (sec.kind === 'instrumental') this.lightRig.trigger(nowMs, this.midioX, this.midioY);
       }
       this._lastSectionIdx = sectionIdx;
     }
@@ -522,12 +554,32 @@ export class BiomeManager {
     // section's structural signature hue, so a returning chorus settles
     // back into the same shift it always wears (a recognizable "place")
     // rather than snapping. Constant, steady color -- reduced-flash safe.
-    const targetHueBias = this.sections[sectionIdx]?.hueBias || 0;
+    const activeSection = this.sections[sectionIdx];
+    let targetHueBias = activeSection?.hueBias || 0;
+    // The lyric-identified bridge is the one place asked to look
+    // unmistakably different from everything around it -- the "epic
+    // bridge" payoff -- so its hue swing is forced large regardless of
+    // how the seeded per-label bias happened to land.
+    if (activeSection?.kind === 'bridge') {
+      targetHueBias = Math.sign(targetHueBias || 1) * Math.max(Math.abs(targetHueBias), FORM_HUE_BIAS_MAX * 0.9) * 1.5;
+    }
     this.sectionHueBias += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetHueBias - this.sectionHueBias);
 
-    // Intensity budget: stage the show -- restrained intro, full finale.
+    // Lyric structure (SectionFusion): the active section's kind and its
+    // eased lyric intensity, both neutral defaults (null / 0.4) when no
+    // lyric data was ever fused in.
+    this.currentKind = activeSection?.kind || null;
+    const targetLyricIntensity = activeSection?.lyricIntensity ?? 0.4;
+    this.lyricIntensityEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetLyricIntensity - this.lyricIntensityEased);
+    const targetKindBudgetMul = KIND_BUDGET_MUL[this.currentKind] ?? 1;
+    this._kindBudgetMulEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetKindBudgetMul - this._kindBudgetMulEased);
+
+    // Intensity budget: stage the show -- restrained intro, full finale --
+    // additionally scaled by the lyric-structure kind (a chorus/bridge
+    // reads louder, an intro/outro settles), a no-op multiplier of 1 when
+    // there's no lyric data.
     this._progress = this.durationMs > 0 ? clamp01(nowMs / this.durationMs) : 0.5;
-    this.budget = intensityBudget(this._progress);
+    this.budget = intensityBudget(this._progress) * this._kindBudgetMulEased;
     const gain = this.budget * this.hypeBoost;
     this.mandala.intensity = gain;
     this.murmuration.intensity = gain;
@@ -643,7 +695,20 @@ export class BiomeManager {
     const { from, to, t } = this.currentBlend || { from: this.sections[0].profile, to: this.sections[0].profile, t: 1 };
     const A = this._profile(from), B = this._profile(to);
 
-    this._drawSky(ctx, canvas, A, B, t);
+    // Sunrise/moonrise cycle: which body is up, how high, and how dark the
+    // sky should read. Computed once per frame -- feeds the sky gradient,
+    // the celestial itself, the mandala/light-rig anchor, and the ocean's
+    // reflection glint, so everything tracks the same body.
+    const dn = dayNight(this.tSec * 1000, this._dayNightCycleMs);
+    const sunUp = dn.sunAlt > 0.001;
+    const activeAlt = sunUp ? dn.sunAlt : dn.moonAlt;
+    const celestialYFrac = celestialYFracFor(activeAlt);
+    // Aerial-perspective haze still warms/cools on the song's own progress
+    // arc (a separate, slower signal than the sunrise/moonrise cycle) --
+    // only `.hazeWarm` from the old day-arc survives here.
+    const arc = dayArc(this._progress);
+
+    this._drawSky(ctx, canvas, A, B, t, dn.night);
 
     // Planets + astral artifacts, behind everything else in the heavens --
     // purely atmospheric, first to go on the deepest perf rung.
@@ -658,9 +723,8 @@ export class BiomeManager {
       reducedFlash: this.reducedFlash,
     });
 
-    // Day arc: dawn/dusk tint washes and the celestial's slow climb/descent.
-    const arc = dayArc(this._progress);
-    for (const wash of [arc.dawn, arc.dusk]) {
+    // Dawn/dusk tint washes bracket the sun's own rise and set.
+    for (const wash of [{ color: '#ff9a6b', alpha: dn.dawnAlpha }, { color: '#141040', alpha: dn.duskAlpha }]) {
       if (wash.alpha > 0.005) {
         ctx.save();
         ctx.globalAlpha = wash.alpha;
@@ -670,11 +734,16 @@ export class BiomeManager {
       }
     }
 
-    this._drawCelestial(ctx, canvas, A, B, t, arc.celestialYFrac);
+    // The sun (this biome's celestial, crossfaded A->B as usual) while
+    // it's up; a plain pale moon takes over once it sets. Both fade in/out
+    // over their last stretch of altitude rather than popping at the
+    // horizon, and both rise from and set into the sea horizon.
+    if (sunUp) this._drawCelestial(ctx, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt));
+    if (dn.moonAlt > 0.001) this._drawMoon(ctx, canvas, celestialYFracFor(dn.moonAlt), horizonFade(dn.moonAlt));
     // Spirograph resonance mandala, centered on the celestial body so it
     // reads as the sun/moon itself resonating with the track.
     const mandalaColor = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
-    this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * arc.celestialYFrac, canvas.height * 0.30 * this.mandalaScaleMul, mandalaColor);
+    this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * celestialYFrac, canvas.height * 0.30 * this.mandalaScaleMul, mandalaColor);
     // Phenomena layer, deep sky: cymatic dust settling into Chladni
     // figures, and the chaos ribbon opposite the celestial for balance.
     if (phenomenaFull) this.cymatics.draw(ctx, canvas, mandalaColor);
@@ -682,7 +751,10 @@ export class BiomeManager {
     this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
     if (phenomenaFull) this.spaceRidge.draw(ctx, canvas, worldX, this._rotated(rotateHueHex(mandalaColor, 45)), this.tSec, this.reducedFlash);
     this.drawDeepSky(ctx, skyVoyage); // Midasus's sky voyage, when she's away -- behind the mountains below
-    if (phenomenaFull) this.weaver.draw(ctx, canvas, this.reducedFlash); // ambient connect-the-dots, same deep-sky depth
+    // Ambient connect-the-dots + reward volleys read as starlight, so the
+    // night sky brightens them the same way it brightens the atlas stars.
+    const nightAlphaMul = 1 + 1.2 * dn.night;
+    if (phenomenaFull) this.weaver.draw(ctx, canvas, this.reducedFlash, nightAlphaMul);
     if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
     this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull);
     this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
@@ -692,7 +764,7 @@ export class BiomeManager {
     // Concert beams: anchored at the celestial, drawn before the mountain
     // silhouettes so the ranges occlude their lower reach the same way
     // Lightning's bolts do.
-    const cx = canvas.width * 0.78, cy = canvas.height * arc.celestialYFrac;
+    const cx = canvas.width * 0.78, cy = canvas.height * celestialYFrac;
     this.lightRig.draw(ctx, canvas, cx, cy, mandalaColor, particleMul, this.reducedFlash);
 
     // The Unraveling: each layer's scroll ratio drifts apart from the rest
@@ -978,32 +1050,40 @@ export class BiomeManager {
     ctx.restore();
   }
 
-  _drawSky(ctx, canvas, A, B, t) {
+  _drawSky(ctx, canvas, A, B, t, night = 0) {
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    for (let i = 0; i < 3; i++) g.addColorStop(i / 2, this._rotated(this.lerpCache.get(A.sky[i], B.sky[i], t)));
+    for (let i = 0; i < 3; i++) {
+      const stop = this._rotated(this.lerpCache.get(A.sky[i], B.sky[i], t));
+      g.addColorStop(i / 2, night > 0.005 ? this.lerpCache.get(stop, NIGHT_SKY_COLOR, 0.45 * night) : stop);
+    }
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    if (A.fx === 'starTwinkle' || B.fx === 'starTwinkle') {
-      const alpha = (A.fx === 'starTwinkle' ? 1 - t : 0) + (B.fx === 'starTwinkle' ? t : 0);
-      if (alpha > 0.02) {
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = '#ffffff';
-        // Calm sections twinkle faster -- a small, free source of motion
-        // for a layer that otherwise barely changes frame to frame.
-        const twinkleRate = 1.3 * (1 + 0.6 * (this.calmLevel || 0));
-        for (const s of this.stars) {
-          const a = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(this.tSec * twinkleRate + s.phase));
-          ctx.globalAlpha = alpha * a;
-          ctx.fillRect(s.x, s.y, 1.6, 1.6);
-        }
-        ctx.restore();
+    // The stars always exist, faint under a day sky; the night deepens
+    // them well past the biome's own starTwinkle showcase.
+    const nightStarBoost = 1 + 1.2 * night;
+    const showStars = A.fx === 'starTwinkle' || B.fx === 'starTwinkle';
+    const starBaseAlpha = showStars
+      ? (A.fx === 'starTwinkle' ? 1 - t : 0) + (B.fx === 'starTwinkle' ? t : 0)
+      : 0.5 * night; // a starless biome still shows a hint of stars once night falls
+    const alpha = clamp01(starBaseAlpha) * nightStarBoost;
+    if (alpha > 0.02) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#ffffff';
+      // Calm sections twinkle faster -- a small, free source of motion
+      // for a layer that otherwise barely changes frame to frame.
+      const twinkleRate = 1.3 * (1 + 0.6 * (this.calmLevel || 0));
+      for (const s of this.stars) {
+        const a = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(this.tSec * twinkleRate + s.phase));
+        ctx.globalAlpha = alpha * a;
+        ctx.fillRect(s.x, s.y, 1.6, 1.6);
       }
+      ctx.restore();
     }
     if (A.fx === 'aurora' || B.fx === 'aurora') {
-      const alpha = (A.fx === 'aurora' ? 1 - t : 0) + (B.fx === 'aurora' ? t : 0);
-      if (alpha > 0.02) this._drawAurora(ctx, canvas, alpha);
+      const auroraAlpha = (A.fx === 'aurora' ? 1 - t : 0) + (B.fx === 'aurora' ? t : 0);
+      if (auroraAlpha > 0.02) this._drawAurora(ctx, canvas, auroraAlpha);
     }
   }
 
@@ -1024,17 +1104,47 @@ export class BiomeManager {
     ctx.restore();
   }
 
-  _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22) {
+  _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22, alpha = 1) {
     const cx = canvas.width * 0.78, cy = canvas.height * cyFrac;
     if (B === A) {
-      this._drawOneCelestial(ctx, cx, cy, A.celestial, 1);
+      this._drawOneCelestial(ctx, cx, cy, A.celestial, alpha);
     } else {
-      this._drawOneCelestial(ctx, cx, cy, A.celestial, 1 - t);
-      this._drawOneCelestial(ctx, cx, cy, B.celestial, t);
+      this._drawOneCelestial(ctx, cx, cy, A.celestial, (1 - t) * alpha);
+      this._drawOneCelestial(ctx, cx, cy, B.celestial, t * alpha);
     }
 
-    const promAlpha = (A.fx === 'prominence' ? 1 - t : 0) + (B.fx === 'prominence' ? t : 0);
+    const promAlpha = ((A.fx === 'prominence' ? 1 - t : 0) + (B.fx === 'prominence' ? t : 0)) * alpha;
     if (promAlpha > 0.02) this._drawProminence(ctx, cx, cy, promAlpha);
+  }
+
+  /** A plain pale moon, taking over from the biome's own sun once it sets
+   *  -- deliberately generic (not crossfaded between biomes) so it always
+   *  reads as "the moon," with a simple crescent bite for character. */
+  _drawMoon(ctx, canvas, cyFrac, alpha) {
+    if (alpha <= 0.02) return;
+    const cx = canvas.width * 0.78, cy = canvas.height * cyFrac;
+    const R = 26;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 2.2);
+    halo.addColorStop(0, MOON_HALO_COLOR);
+    halo.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = MOON_COLOR;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Crescent bite: punch a transparent offset circle out of the disc.
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(cx + R * 0.42, cy - R * 0.12, R * 0.92, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   /** A far ocean seen through/behind the mountain silhouettes: not a solid
@@ -1094,7 +1204,7 @@ export class BiomeManager {
       if (alpha <= 0.01) continue;
       const gapAbove = j === 0 ? nearY - rowYs[0] : rowYs[j - 1] - rowYs[j];
       const ampScale = row.ampMul * Math.max(0.2, clamp01(gapAbove / 24));
-      const scroll = worldX * (0.008 + 0.03 * (1 - j / rows.length));
+      const scroll = worldX * (0.03 + 0.09 * (1 - j / rows.length));
       ctx.globalAlpha = alpha;
       ctx.lineWidth = 1.2 + 0.8 * (1 - j / rows.length);
       ctx.beginPath();
@@ -1102,47 +1212,73 @@ export class BiomeManager {
         const u = (i / N + row.uPhase + scroll / canvas.width) % 1;
         const x = (i / N) * canvas.width;
         let y = rowYs[j] + seaLineY(u, this.tSec * row.speedMul, bass, kick) * ampScale;
-        if (tsunami) y -= tsunamiLift(x - tsunami.wallX) * 42 * (0.6 + 0.4 * ampScale);
+        if (tsunami) y -= tsunamiLift(x - tsunami.wallX) * 70 * (0.6 + 0.4 * ampScale);
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.stroke();
     }
 
     if (tsunami) {
-      // The wave wall itself: a tall curling silhouette sweeping across the
-      // band, foam-bright at its crest.
+      // A rolling swell, not a solid wall -- it must read as WATER, never
+      // as a silhouette (a filled peaked shape in the biome's silhouette
+      // color is exactly what a distant mountain looks like, which is
+      // precisely the bug this replaced: a "mountain" sliding across the
+      // screen). So: no fill silhouette. Just a translucent watery veil
+      // under the crest line, a bright foam crest stroke, and a few spray
+      // flecks kicked up at the tip -- all additive, all see-through to the
+      // wave rows underneath.
       const wallTop = horizonY + (nearY - horizonY) * 0.08;
-      const wallGrad = ctx.createLinearGradient(0, wallTop, 0, nearY);
-      wallGrad.addColorStop(0, `${water}00`);
-      wallGrad.addColorStop(0.5, water);
-      wallGrad.addColorStop(1, `${water}00`);
-      ctx.fillStyle = wallGrad;
-      ctx.beginPath();
+      const wallH = nearY - wallTop;
       const WS = TSUNAMI_WIDTH_PX;
+      const crestY = (s) => nearY - tsunamiProfile(s) * wallH;
+
+      // Watery veil: a soft gradient fill, translucent enough that the
+      // wave rows keep showing through it.
+      const veilGrad = ctx.createLinearGradient(0, wallTop, 0, nearY);
+      veilGrad.addColorStop(0, `${water}00`);
+      veilGrad.addColorStop(0.55, `${water}26`);
+      veilGrad.addColorStop(1, `${water}00`);
+      ctx.fillStyle = veilGrad;
+      ctx.beginPath();
       for (let i = 0; i <= 24; i++) {
         const s = -1 + (i / 24) * 2;
         const x = tsunami.wallX + s * WS;
-        const prof = tsunamiProfile(s);
-        const y = nearY - prof * (nearY - wallTop);
+        const y = crestY(s);
         if (i === 0) ctx.moveTo(x, nearY);
         ctx.lineTo(x, y);
       }
       ctx.lineTo(tsunami.wallX + WS, nearY);
       ctx.closePath();
-      ctx.globalAlpha = capFlashAlpha(0.5 * this.budget, this.reducedFlash);
-      ctx.fill();
-      // Foam crest line.
-      ctx.strokeStyle = cap;
-      ctx.lineWidth = 2;
       ctx.globalAlpha = capFlashAlpha(0.6 * this.budget, this.reducedFlash);
-      ctx.beginPath();
-      for (let i = 0; i <= 24; i++) {
-        const s = -1 + (i / 24) * 2;
-        const x = tsunami.wallX + s * WS;
-        const y = nearY - tsunamiProfile(s) * (nearY - wallTop);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      ctx.fill();
+
+      // Foam crest: wide faint halo under a bright line, same two-pass
+      // language as the horizon EQ's aurora crest.
+      for (const [lw, a] of [[6, 0.14], [1.8, 0.55]]) {
+        ctx.strokeStyle = cap;
+        ctx.lineWidth = lw;
+        ctx.globalAlpha = capFlashAlpha(a * this.budget, this.reducedFlash);
+        ctx.beginPath();
+        for (let i = 0; i <= 24; i++) {
+          const s = -1 + (i / 24) * 2;
+          const x = tsunami.wallX + s * WS;
+          const y = crestY(s);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
       }
-      ctx.stroke();
+
+      // Spray flecks thrown up just above the crest tip.
+      ctx.fillStyle = cap;
+      for (const f of this._tsunamiFlecks) {
+        const x = tsunami.wallX + f.sOff * WS;
+        const baseY = crestY(f.sOff);
+        const bob = Math.sin(this.tSec * 4 + f.phase) * 3;
+        ctx.globalAlpha = capFlashAlpha(0.5 * this.budget, this.reducedFlash);
+        ctx.beginPath();
+        ctx.arc(x, baseY - f.riseFrac * wallH * 0.4 + bob, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     // The horizon itself: where the water meets the sky.
@@ -1237,6 +1373,16 @@ export class BiomeManager {
         ctx.lineTo(x - w * 0.05, y - h * 0.9);
         ctx.stroke();
       }
+      // A bright waterline crossing the base -- reads as sitting IN the
+      // water, not floating over it (the tell that fixed the tsunami bug
+      // above applies here too: a silhouette needs a break at its foot).
+      ctx.strokeStyle = cap;
+      ctx.lineWidth = Math.max(0.8, 1 * scale);
+      ctx.globalAlpha = capFlashAlpha(0.35 * this.budget, this.reducedFlash);
+      ctx.beginPath();
+      ctx.moveTo(x - w * 0.65, y);
+      ctx.lineTo(x + w * 0.65, y);
+      ctx.stroke();
       if (isl.beacon) {
         const blink = 0.5 + 0.5 * Math.sin(this.tSec * 2.3 + isl.x0);
         ctx.globalAlpha = capFlashAlpha(0.6 * blink * this.budget, this.reducedFlash);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPercussionPattern, PATTERN_SPAN_MS } from '../src/ui/LoadingShow.js';
+import { buildPercussionPattern, PATTERN_SPAN_MS, LoadingShow } from '../src/ui/LoadingShow.js';
 import { Role } from '../src/core/NoteEvent.js';
 
 const kick = (tMs, vel = 0.8) => ({ role: Role.RHYTHM, kick: true, tMs, vel });
@@ -37,4 +37,80 @@ test('loop length is a whole number of bars and covers the last hit', () => {
   const barMs = 2000;
   assert.equal(loopMs % barMs, 0);
   assert.ok(loopMs >= 6100);
+});
+
+// --- LoadingShow: null-data (visual-only) mode, used while an audio file
+// is still separating/analyzing, before any timeline exists. ---
+
+function fakeCtx2d() {
+  const noop = () => {};
+  return {
+    clearRect: noop, save: noop, restore: noop, beginPath: noop, closePath: noop,
+    moveTo: noop, lineTo: noop, quadraticCurveTo: noop, bezierCurveTo: noop,
+    fill: noop, stroke: noop, arc: noop, ellipse: noop, translate: noop, rotate: noop, scale: noop,
+    set fillStyle(v) {}, set strokeStyle(v) {}, set lineWidth(v) {}, set globalAlpha(v) {},
+  };
+}
+
+function fakeLoadingShowDeps() {
+  const canvasEl = { width: 420, height: 220, getContext: () => fakeCtx2d() };
+  const textEl = { textContent: '' };
+  const barFillEl = { style: { width: '' } };
+  const audioEngine = {
+    ctx: {
+      currentTime: 0,
+      createOscillator: () => ({ type: '', frequency: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {}, start() {}, stop() {} }),
+      createGain: () => ({ gain: { setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} }),
+      createBuffer: () => ({ getChannelData: () => new Float32Array(4) }),
+      createBufferSource: () => ({ buffer: null, connect: () => ({ connect() {} }), start() {} }),
+      createBiquadFilter: () => ({ type: '', frequency: { value: 0 }, connect: () => ({ connect() {} }) }),
+    },
+    master: {},
+  };
+  return { canvasEl, textEl, barFillEl, audioEngine };
+}
+
+test('LoadingShow: start(null) runs visual-only, with no percussion timer', () => {
+  const savedRAF = globalThis.requestAnimationFrame, savedCAF = globalThis.cancelAnimationFrame;
+  globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 16);
+  globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+  try {
+    const show = new LoadingShow(fakeLoadingShowDeps());
+    assert.equal(show.active, false);
+    const session = show.start(null);
+    assert.equal(show.active, true);
+    assert.equal(show._timer, null, 'no timeline yet -- nothing to schedule a percussion loop from');
+    assert.doesNotThrow(() => show._draw(0));
+    show.stop(session);
+    assert.equal(show.active, false);
+  } finally {
+    globalThis.requestAnimationFrame = savedRAF;
+    globalThis.cancelAnimationFrame = savedCAF;
+  }
+});
+
+test('LoadingShow: start(timelineData) still schedules the percussion loop as before', () => {
+  const savedRAF = globalThis.requestAnimationFrame, savedCAF = globalThis.cancelAnimationFrame;
+  globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 16);
+  globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+  try {
+    const show = new LoadingShow(fakeLoadingShowDeps());
+    const session = show.start({ timeline: [kick(0), kick(500)], bpm: 120 });
+    assert.equal(show.active, true);
+    assert.notEqual(show._timer, null);
+    show.stop(session);
+  } finally {
+    globalThis.requestAnimationFrame = savedRAF;
+    globalThis.cancelAnimationFrame = savedCAF;
+  }
+});
+
+test('LoadingShow.setStage sets a plain status line and an optional fill fraction', () => {
+  const deps = fakeLoadingShowDeps();
+  const show = new LoadingShow(deps);
+  show.setStage('Separating the stems…', 0.42);
+  assert.equal(deps.textEl.textContent, 'Separating the stems…');
+  assert.equal(deps.barFillEl.style.width, '42%');
+  show.setStage('Almost there…');
+  assert.equal(deps.barFillEl.style.width, '10%', 'no fraction given falls back to a hint sliver');
 });

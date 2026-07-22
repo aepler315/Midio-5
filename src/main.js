@@ -23,6 +23,10 @@ import { LoadingShow } from './ui/LoadingShow.js';
 import { pinchZoomDelta } from './sim/ZoomDirector.js';
 import { resolveDurationMs } from './core/SongDuration.js';
 import { VideoExporter, exportDims, exportFilename } from './export/VideoExporter.js';
+import { resolveIdentity } from './lyrics/SongIdentity.js';
+import { fetchLyricsCached } from './lyrics/LyricsClient.js';
+import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
+import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -46,6 +50,8 @@ const exportDownloadEl = document.getElementById('exportDownload');
 const recordingHudEl = document.getElementById('recordingHud');
 const recordingTimeEl = document.getElementById('recordingTime');
 const recordingCancelBtnEl = document.getElementById('recordingCancelBtn');
+const liveRecHudEl = document.getElementById('liveRecHud');
+const saveVideoBtnEl = document.getElementById('saveVideoBtn');
 const debugOverlayEl = document.getElementById('debugOverlay');
 const fpsHudEl = document.getElementById('fpsHud');
 const sfFileInputEl = document.getElementById('sfFileInput');
@@ -76,9 +82,17 @@ const filmstripModalCloseEl = document.getElementById('filmstripModalClose');
 const filmstripModalImgEl = document.getElementById('filmstripModalImg');
 const filmstripModalDownloadEl = document.getElementById('filmstripModalDownload');
 const auditionPanelEl = document.getElementById('auditionPanel');
+const auditionHeadingEl = document.getElementById('auditionHeading');
 const auditionCanvasEl = document.getElementById('auditionCanvas');
 const auditionTextEl = document.getElementById('auditionText');
 const auditionBarFillEl = document.getElementById('auditionBarFill');
+const lyricsRowEl = document.getElementById('lyricsRow');
+const lyricsStatusEl = document.getElementById('lyricsStatus');
+const lyricsFieldsEl = document.getElementById('lyricsFields');
+const lyricsArtistInputEl = document.getElementById('lyricsArtistInput');
+const lyricsTitleInputEl = document.getElementById('lyricsTitleInput');
+const lyricsFindBtnEl = document.getElementById('lyricsFindBtn');
+const lyricsSkipBtnEl = document.getElementById('lyricsSkipBtn');
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -116,6 +130,16 @@ let lastAudioBuffer = null;
 let lastSongName = 'song';
 let videoExporter = null;
 let exporting = false;
+// 'live' = the ordinary play, auto-recorded at whatever the export row is
+// set to, offered as "Save video" at the end; 'replay' = the explicit
+// "Re-export at these settings" button's own replay -- that one still
+// auto-downloads on completion, same as before. Only 'replay' recordings
+// skip PerfGovernor sampling (a deliberate re-record should never shed
+// phenomena mid-video); the ordinary live play behaves exactly as it
+// always has, recording alongside it.
+let recordingMode = null;
+let pendingSaveUrl = null;
+let pendingSaveLabel = '';
 
 let simTime = 0;
 let acc = 0;
@@ -454,8 +478,15 @@ function stopTimeline() {
   if (videoExporter?.active) {
     videoExporter.abort();
     exporting = false;
+    recordingMode = null;
     recordingHudEl?.classList.add('hidden');
+    liveRecHudEl?.classList.add('hidden');
   }
+  // An unsaved recording from the play that just ended doesn't carry over --
+  // starting something new discards it (it was already offered via "Save
+  // video" on the complete panel, which is going away right now too).
+  if (pendingSaveUrl) { URL.revokeObjectURL(pendingSaveUrl); pendingSaveUrl = null; }
+  saveVideoBtnEl?.classList.add('hidden');
   audioEngine?.pause();
   synth?.stopAll?.();
   // Tear down optional WebGL overlay so a mid-song drop doesn't stack layers.
@@ -468,7 +499,7 @@ function stopTimeline() {
   auditionPanelEl?.classList.add('hidden');
 }
 
-function startTimeline(timelineData) {
+function startTimeline(timelineData, { autoRecord = true } = {}) {
   stopTimeline();
   fitCanvas();
   applySynthMutePolicy();
@@ -489,8 +520,13 @@ function startTimeline(timelineData) {
     // ChoreoClock: live output-latency getter so beat-anchored envelopes
     // peak when the EAR gets the beat (Bluetooth can lag 200ms+).
     outputLatencyMs: () => audioEngine.outputLatencyMs,
+    lyricSections: timelineData.lyricSections || null,
   });
   sim.perf = perfGovernor;
+  // Exposed for DebugOverlay only -- resolved song identity has no other
+  // consumer in the sim itself (SectionFusion already folded the lyric
+  // structure into BiomeManager.sections by this point).
+  sim.lyricIdentity = timelineData.lyricIdentity || null;
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
   renderer = createRenderer(canvas, rendererMode);
   visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false });
@@ -512,6 +548,7 @@ function startTimeline(timelineData) {
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
   rafHandle = requestAnimationFrame(frame);
+  if (autoRecord) startLiveRecording();
 
   // Exposed for the debug overlay and for smoke-testing internals.
   // `rafHandle` is a live getter (not a snapshot) so smoke tests can
@@ -528,6 +565,22 @@ function startTimeline(timelineData) {
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
   };
+}
+
+/** Every ordinary play is recorded by default, at whatever the export row
+ *  is set to (1440p/60fps out of the box) -- so there's always something
+ *  to save at the end without the player having to think ahead and hit
+ *  Export before starting. Small corner indicator only; the big center HUD
+ *  stays reserved for a deliberate re-export. */
+function startLiveRecording() {
+  const preset = Number(exportResEl?.value) || 1440;
+  const fps = Number(exportFpsEl?.value) || 60;
+  const { w, h } = exportDims(preset);
+  videoExporter = new VideoExporter({ audioEngine, sourceCanvas: canvas });
+  videoExporter.start({ width: w, height: h, fps });
+  exporting = true;
+  recordingMode = 'live';
+  liveRecHudEl?.classList.remove('hidden');
 }
 
 async function loadMidiFile(file) {
@@ -602,6 +655,162 @@ function sumToMixBuffer(buffers) {
   return mix;
 }
 
+const LYRICS_AUTO_SKIP_MS = 15000;
+
+/** Downmixes a decoded AudioBuffer to one mono Float32Array (plain average
+ *  of its channels) -- StemAlign.vocalActivity only wants a single channel
+ *  and doesn't know or care about the browser AudioBuffer type. */
+function monoChannel(buffer) {
+  const ch0 = buffer.getChannelData(0);
+  if (buffer.numberOfChannels === 1) return ch0;
+  const out = new Float32Array(ch0.length);
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    const data = buffer.getChannelData(c);
+    for (let i = 0; i < out.length; i++) out[i] += data[i] / buffer.numberOfChannels;
+  }
+  return out;
+}
+
+/** LyricsClient's `{synced, plain, instrumental}` result -> LyricStructure's
+ *  labeled/emotion-scored blocks -> the lyricSections shape SectionFusion
+ *  consumes. Returns null for anything unusable (no match, instrumental
+ *  track, or a match with no actual text) -- BiomeManager's fuseSections
+ *  already treats a null/absent lyricSections as a strict no-op.
+ *
+ *  When the lyrics came back plain (no per-line timestamps) AND the drop
+ *  included a stem whose filename reads as a true vocal track, this also
+ *  tries the StemAlign fallback: syllable-onset detection in that stem,
+ *  matched against each block's cumulative syllable count. It's always the
+ *  weaker signal (confidence pinned to 0.3) -- kind/valence/intensity still
+ *  come from the plain-text label pass; only the timing is borrowed from
+ *  the stem. A silent/onset-free stem or any failure in this path simply
+ *  falls back to the untimed plain-text labels, exactly as if no stem had
+ *  been dropped at all. */
+function buildLyricSections(lyricResult, durationMs, vocalStem) {
+  if (!lyricResult || lyricResult.instrumental) return null;
+  const synced = !!(lyricResult.synced && lyricResult.synced.length);
+  const lines = synced ? lyricResult.synced : (lyricResult.plain || []);
+  if (lines.length === 0) return null;
+  const blocks = toBlocks(lines, { synced });
+  if (blocks.length === 0) return null;
+
+  if (!synced && vocalStem) {
+    try {
+      const mono = monoChannel(vocalStem.buffer);
+      const onsets = syllableOnsets(vocalActivity(mono, vocalStem.buffer.sampleRate));
+      if (onsets.length > 0) {
+        const labeled = labelBlocks(blocks, { durationMs: null }); // plain-text kind/emotion, no timing
+        const timed = alignBlocks(blocks, onsets); // stem-derived startMs/endMs only
+        return labeled.map((sec, i) => ({
+          ...sec,
+          startMs: timed[i]?.startMs ?? undefined,
+          endMs: timed[i]?.endMs ?? undefined,
+          confidence: 0.3,
+        }));
+      }
+    } catch (err) {
+      console.warn('[lyrics] stem-aligned syllable fallback failed, using untimed plain labels', err);
+    }
+  }
+
+  const sections = labelBlocks(blocks, { durationMs });
+  return sections.length ? sections : null;
+}
+
+/** Shows the identity/lyrics row on the (already-visible) audition panel
+ *  and resolves once the player has a verdict: a silent auto-match off the
+ *  resolved identity, a manual Find, an explicit Skip, or a 15s auto-skip
+ *  so an unattended run never hangs waiting on a human. Always resolves
+ *  (never rejects); the resolved value is LyricsClient's raw result or
+ *  null ("proceed exactly as before, no lyric data at all"). */
+function promptForLyrics(identity, durationSec) {
+  return new Promise((resolve) => {
+    if (!lyricsRowEl) { resolve(null); return; }
+    let settled = false;
+    let skipTimer = null;
+    const cleanup = () => {
+      if (skipTimer) clearTimeout(skipTimer);
+      lyricsFindBtnEl?.removeEventListener('click', onFind);
+      lyricsSkipBtnEl?.removeEventListener('click', onSkip);
+    };
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      lyricsRowEl.classList.add('hidden');
+      resolve(result);
+    };
+    const armSkipTimer = () => {
+      if (skipTimer) clearTimeout(skipTimer);
+      skipTimer = setTimeout(() => finish(null), LYRICS_AUTO_SKIP_MS);
+    };
+    const runFind = async (artist, title) => {
+      if (skipTimer) { clearTimeout(skipTimer); skipTimer = null; }
+      if (lyricsStatusEl) lyricsStatusEl.textContent = 'Searching for lyrics…';
+      lyricsFieldsEl?.classList.add('hidden');
+      const result = await fetchLyricsCached({ artist, title, album: identity.album, durationSec }, typeof fetch !== 'undefined' ? fetch : null);
+      if (settled) return;
+      const hasText = result && !result.instrumental && ((result.synced && result.synced.length) || (result.plain && result.plain.length));
+      if (hasText) {
+        if (lyricsStatusEl) lyricsStatusEl.textContent = `✓ ${result.synced ? 'synced' : 'plain'} lyrics found — ${artist || '?'} — ${title || '?'}`;
+        setTimeout(() => finish(result), 700);
+      } else {
+        if (lyricsStatusEl) lyricsStatusEl.textContent = result?.instrumental ? 'Marked instrumental — no lyrics.' : 'No lyrics found.';
+        if (lyricsArtistInputEl) lyricsArtistInputEl.value = artist || '';
+        if (lyricsTitleInputEl) lyricsTitleInputEl.value = title || '';
+        lyricsFieldsEl?.classList.remove('hidden');
+        armSkipTimer();
+      }
+    };
+    const onFind = () => runFind(lyricsArtistInputEl?.value.trim(), lyricsTitleInputEl?.value.trim());
+    const onSkip = () => finish(null);
+    lyricsFindBtnEl?.addEventListener('click', onFind);
+    lyricsSkipBtnEl?.addEventListener('click', onSkip);
+
+    lyricsRowEl.classList.remove('hidden');
+    lyricsFieldsEl?.classList.add('hidden');
+    if (lyricsArtistInputEl) lyricsArtistInputEl.value = identity.artist || '';
+    if (lyricsTitleInputEl) lyricsTitleInputEl.value = identity.title || '';
+
+    if (identity.title) {
+      runFind(identity.artist, identity.title);
+    } else {
+      if (lyricsStatusEl) lyricsStatusEl.textContent = 'Enter the song info to find lyrics (optional).';
+      lyricsFieldsEl?.classList.remove('hidden');
+      armSkipTimer();
+    }
+  });
+}
+
+/** Best-effort identity + lyrics resolution for a dropped audio file.
+ *  Reads ID3 tags straight off `file` (Blob.arrayBuffer() always hands
+ *  back a FRESH ArrayBuffer on every call -- unlike an AudioContext-decoded
+ *  buffer, it's never detached by decoding happening elsewhere), then runs
+ *  the identity/lyrics row on the audition panel already up for separation
+ *  progress. Resolves to `{identity, lyricSections}` -- lyricSections is
+ *  null whenever there's nothing usable, which every downstream consumer
+ *  (SectionFusion, BiomeManager, VibeDirector) already treats as a strict
+ *  no-op. Never throws. `vocalStem` ({name, buffer}), when given, is only
+ *  ever consulted by buildLyricSections, and only when the lyrics that come
+ *  back are plain-only -- see its doc comment for the StemAlign gate. */
+async function resolveLyricsForAudio(file, durationSec, vocalStem = null) {
+  let identity = { title: null, artist: null, album: null, durationSec, source: 'none', confidence: 0 };
+  try {
+    const tagBuffer = await file.arrayBuffer();
+    identity = resolveIdentity(file.name || '', tagBuffer, durationSec);
+  } catch (err) {
+    console.warn('[lyrics] identity resolution failed, continuing without it', err);
+  }
+  try {
+    const lyricResult = await promptForLyrics(identity, durationSec);
+    const lyricSections = buildLyricSections(lyricResult, Math.round((durationSec || 0) * 1000), vocalStem);
+    return { identity, lyricSections };
+  } catch (err) {
+    console.warn('[lyrics] lyrics resolution failed, continuing without it', err);
+    return { identity, lyricSections: null };
+  }
+}
+
 /** One audio file plays as itself; SEVERAL dropped together are treated as
  *  stems of one song -- summed into a mix for analysis/playback, with each
  *  file's NAME casting its notes to a character (see Casting.js). */
@@ -620,16 +829,47 @@ async function loadAudioFiles(files) {
   const isStemDrop = decoded.length > 1;
   const audioBuffer = isStemDrop ? sumToMixBuffer(decoded.map((d) => d.buffer)) : decoded[0].buffer;
 
-  showProgress(isStemDrop ? `Mixing ${decoded.length} stems…` : 'Separating into 7 frequency bands…');
-  const data = await audioToTimeline(audioBuffer, {
-    userStems: isStemDrop ? decoded : null,
-    onProgress: ({ phase, progress }) => {
-      if (phase === 'separate') showProgress(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`);
-      else if (phase === 'analyze') showProgress('Detecting onsets, tempo, and downbeat…');
-      else if (phase === 'pitch') showProgress('Tracing melody, bass, and harmony…');
-    },
-  });
-  progressEl.classList.add('hidden');
+  // A dropped audio file has real work ahead of it (band separation, onset/
+  // tempo detection, pitch tracing) with no timeline yet to drive the usual
+  // percussion loading show -- so it runs visual-only (star glyph +
+  // orbiters + bar, no beat) while staged progress narrates what's
+  // happening, instead of leaving the player looking at a bare text line.
+  loaderEl.classList.add('hidden');
+  hudEl.classList.add('hidden');
+  if (auditionHeadingEl) auditionHeadingEl.textContent = 'PULLING THE RECORDING APART';
+  auditionPanelEl?.classList.remove('hidden');
+  const loadShowSession = loadShow?.start(null);
+  loadShow?.setStage(isStemDrop ? `Mixing ${decoded.length} stems…` : 'Separating into 7 frequency bands…', 0);
+  // Identity + lyrics resolution runs concurrently with separation/analysis
+  // on the same audition panel (a distinct row within it, so the two never
+  // fight over the same text) -- the panel stays up until BOTH have
+  // settled, so the identity row can't flash and vanish before the player
+  // gets a chance to Find/Skip.
+  // StemAlign fallback gate (Task E of the lyrics plan): only relevant when
+  // several stems were dropped together and one of their filenames reads as
+  // an actual vocal track -- buildLyricSections only touches it if the
+  // lyrics that come back have no per-line timestamps of their own.
+  const vocalStem = isStemDrop ? decoded.find((d) => isVocalStemName(d.name)) : null;
+  const lyricsPromise = resolveLyricsForAudio(files[0], audioBuffer.duration, vocalStem);
+  let data;
+  try {
+    data = await audioToTimeline(audioBuffer, {
+      userStems: isStemDrop ? decoded : null,
+      onProgress: ({ phase, progress }) => {
+        if (phase === 'separate') loadShow?.setStage(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`, progress);
+        else if (phase === 'analyze') loadShow?.setStage('Detecting onsets, tempo, and downbeat…', 0.7);
+        else if (phase === 'pitch') loadShow?.setStage('Tracing melody, bass, and harmony…', 0.9);
+      },
+    });
+  } finally {
+    loadShow?.stop(loadShowSession);
+  }
+  const { identity: lyricIdentity, lyricSections } = await lyricsPromise;
+  data.lyricIdentity = lyricIdentity;
+  data.lyricSections = lyricSections;
+  if (auditionHeadingEl) auditionHeadingEl.textContent = 'TUNING THE ORCHESTRA';
+  auditionPanelEl?.classList.add('hidden');
+  lyricsRowEl?.classList.add('hidden');
 
   if (data.freeTime) {
     console.warn(`Low tempo confidence (${data.confidence.toFixed(2)}) — switching to free-time, kick-reactive jumps.`);
@@ -857,9 +1097,12 @@ function frame(tRaf) {
   if (!running) return;
   if (lastRafMs !== null) {
     const rafDeltaMs = tRaf - lastRafMs;
-    // While recording, the extra per-frame export blit must not read as
-    // "the game is struggling" and shed phenomena mid-video.
-    if (!exporting) perfGovernor.sample(rafDeltaMs, tRaf);
+    // A deliberate re-export replay must not read the extra per-frame
+    // export blit as "the game is struggling" and shed phenomena mid-video.
+    // The ordinary live play recording alongside a normal playthrough gets
+    // no such exemption -- it's real gameplay, and should perform (and
+    // shed) exactly as it would unrecorded.
+    if (!(exporting && recordingMode === 'replay')) perfGovernor.sample(rafDeltaMs, tRaf);
     fpsEma = emaFps(fpsEma, rafDeltaMs);
     if (fpsHudVisible && fpsHudEl) {
       fpsHudEl.textContent = `${Math.round(fpsEma)} fps  ·  perf ${perfGovernor.level}/${PERF_MAX_LEVEL}`;
@@ -1096,7 +1339,8 @@ function onSongComplete() {
   }
   renderFilmstrip(sim.highlightReel?.frames || []);
   completePanelEl.classList.remove('hidden');
-  if (exporting) finishExport();
+  if (exporting && recordingMode === 'replay') finishExport();
+  else if (exporting && recordingMode === 'live') finishLiveRecording();
 }
 
 /** Clean in-memory restart of the last-loaded song (MIDI/demo replay from
@@ -1104,14 +1348,15 @@ function onSongComplete() {
  *  is fully seeded and autoplay-driven, so this reproduces the same
  *  performance without a page reload. Falls back to reload if nothing was
  *  retained (e.g. a very first, still-loading session). */
-function replaySong() {
+function replaySong({ autoRecord = true } = {}) {
   if (!lastTimelineData) { window.location.reload(); return; }
-  startTimeline(lastTimelineData);
+  startTimeline(lastTimelineData, { autoRecord });
   if (lastAudioBuffer) audioEngine.playBuffer(lastAudioBuffer, 0);
 }
 
 async function finishExport() {
   exporting = false;
+  recordingMode = null;
   recordingHudEl?.classList.add('hidden');
   if (fpsHudEl) fpsHudEl.classList.toggle('hidden', !fpsHudVisible);
   if (!videoExporter) return;
@@ -1126,6 +1371,28 @@ async function finishExport() {
   exportDownloadEl.download = exportFilename(lastSongName, preset, fps, videoExporter.mime);
   exportDownloadEl.classList.remove('hidden');
   exportDownloadEl.click();
+}
+
+/** The ordinary play's recording, finished: unlike finishExport() this
+ *  does NOT auto-download -- it stashes the blob and offers a "Save video"
+ *  button on the complete panel, since the player didn't explicitly ask
+ *  for this one the way they would an export. */
+async function finishLiveRecording() {
+  exporting = false;
+  recordingMode = null;
+  liveRecHudEl?.classList.add('hidden');
+  if (!videoExporter) return;
+  const preset = Number(exportResEl?.value) || 1440;
+  const fps = Number(exportFpsEl?.value) || 60;
+  const { w, h } = exportDims(preset);
+  const mime = videoExporter.mime;
+  const blob = await videoExporter.stop();
+  if (!blob || !saveVideoBtnEl) return;
+  if (pendingSaveUrl) URL.revokeObjectURL(pendingSaveUrl);
+  pendingSaveUrl = URL.createObjectURL(blob);
+  pendingSaveLabel = exportFilename(lastSongName, preset, fps, mime);
+  saveVideoBtnEl.textContent = `Save video (${w}×${h} · ${fps}fps)`;
+  saveVideoBtnEl.classList.remove('hidden');
 }
 
 /** The Reel: the COMPLETE panel's highlight filmstrip -- proof of what the
@@ -1175,6 +1442,16 @@ if (filmstripModalEl) {
 
 playAgainBtnEl.addEventListener('click', () => replaySong());
 
+saveVideoBtnEl?.addEventListener('click', () => {
+  if (!pendingSaveUrl) return;
+  const a = document.createElement('a');
+  a.href = pendingSaveUrl;
+  a.download = pendingSaveLabel || 'super-midio-world.webm';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+});
+
 exportBtnEl?.addEventListener('click', () => {
   if (exporting || !lastTimelineData) return;
   const preset = Number(exportResEl?.value) || 1080;
@@ -1184,15 +1461,17 @@ exportBtnEl?.addEventListener('click', () => {
   exportDownloadEl?.classList.add('hidden');
   recordingHudEl?.classList.remove('hidden');
   fpsHudEl?.classList.add('hidden'); // the recording itself is the readout that matters here
-  replaySong();
+  replaySong({ autoRecord: false }); // this replay gets its OWN explicit exporter below, not the ordinary live one
   videoExporter = new VideoExporter({ audioEngine, sourceCanvas: canvas });
   videoExporter.start({ width: w, height: h, fps });
   exporting = true;
+  recordingMode = 'replay';
 });
 
 recordingCancelBtnEl?.addEventListener('click', () => {
   videoExporter?.abort();
   exporting = false;
+  recordingMode = null;
   recordingHudEl?.classList.add('hidden');
   if (fpsHudEl) fpsHudEl.classList.toggle('hidden', !fpsHudVisible);
   stopTimeline();

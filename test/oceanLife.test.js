@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   wrappedOffset, islands, ships, seaLifeSchedule, monsterSchedule,
-  tsunamiSchedule, tsunamiX, tsunamiLift, tsunamiProfile, fishArcY, serpentHumpY,
+  tsunamiSchedule, tsunamiX, tsunamiLift, tsunamiProfile, sprayFlecks, fishArcY, serpentHumpY,
   OCEAN_LIFE_WRAP_PX, TSUNAMI_WIDTH_PX, TSUNAMI_SWEEP_MS,
 } from '../src/world/OceanLife.js';
 
@@ -123,5 +123,17 @@ test('tsunamiProfile and shape helpers stay bounded and finite', () => {
   for (let u = 0; u <= 1; u += 0.1) {
     const y = serpentHumpY(u, 1.3);
     assert.ok(Number.isFinite(y) && Math.abs(y) <= 10 + 1e-9);
+  }
+});
+
+test('sprayFlecks is deterministic per seed and respects field ranges', () => {
+  const a = sprayFlecks(4, 7), b = sprayFlecks(4, 7), c = sprayFlecks(9, 7);
+  assert.equal(a.length, 7);
+  assert.deepEqual(a, b);
+  assert.notDeepEqual(a, c);
+  for (const f of a) {
+    assert.ok(f.sOff >= -0.25 && f.sOff <= 0.45);
+    assert.ok(f.riseFrac >= 0.15 && f.riseFrac <= 0.7);
+    assert.ok(f.phase >= 0 && f.phase < Math.PI * 2);
   }
 });

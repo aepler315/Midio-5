@@ -126,8 +126,8 @@ export function findCombatWindows(energies, opts = {}) {
  *  defenders mid-window) -- 1->2 at alive>=5, 2->3 at alive>=8. */
 export function escalationTargets(aliveCount, currentDefenders) {
   let d = Math.max(1, currentDefenders | 0);
-  if (d < 2 && aliveCount >= 5) d = 2;
-  if (d < 3 && aliveCount >= 8) d = 3;
+  if (d < 2 && aliveCount >= 4) d = 2;
+  if (d < 3 && aliveCount >= 6) d = 3;
   return d;
 }
 
@@ -166,14 +166,19 @@ export function dotU(vNowMs, departMs, travelMs) {
 
 // --- Drama constants -------------------------------------------------------
 
-const MAX_ALIVE_ENEMIES = 14;
-const ASSIGN_AGE_MS = 600; // an enemy must "arrive" a moment before it can be locked onto
-const SPAWN_GAP_NEAR = 1.0; // gap multiplier (of one bar) at window start
-const SPAWN_GAP_FAR = 0.30; // gap multiplier near window end (before finale cutoff)
+const MAX_ALIVE_ENEMIES = 8; // fewer, but each takes two hits -- a smaller, tougher crowd
+const ASSIGN_AGE_MS = 900; // an enemy must "arrive" a moment before it can be locked onto -- they menace a beat longer
+const SPAWN_GAP_NEAR = 2.0; // gap multiplier (of one bar) at window start
+const SPAWN_GAP_FAR = 0.75; // gap multiplier near window end (before finale cutoff)
 const FINALE_LEAD_BARS = 2; // stop spawning & start the finale this many bars before window end
 const RESCUE_COUNT = 3; // enemies handed to a freshly-joined defender immediately
 const PRESS_RADIUS_PX = 90;
-const BURST_SHARDS = 10;
+const BURST_SHARDS = 14;
+const ENEMY_HP = 2; // each enemy takes a stagger hit, then a finishing hit -- "more powerful"
+const STAGGER_KNOCKBACK_PX = 26;
+const SPAWN_MARGIN_PX = 60; // spawn point past the right edge -- offscreen, never conjured in view
+const GLIDE_IN_MS = 800; // pure leftward drift before pressure-homing kicks in
+const GLIDE_IN_SPEED_PX_S = 140;
 
 /** Fixed defender join order: Midasus first (solo), Broshi second (the
  *  save), Midio last (the hero's rescue). Index into the `anchors` array
@@ -226,12 +231,14 @@ export class BattleDirector {
   /** anchors: [{x,y} for MIDASUS, BROSHI, MIDIO] in screen space.
    *  visualLagMs: output-latency compensation (ChoreoClock convention) --
    *  kills are evaluated on the HEARD clock, same discipline as every other
-   *  apex-on-beat system in this codebase. */
-  update(nowMs, dtMs, anchors, visualLagMs = 0, reducedFlash = false) {
+   *  apex-on-beat system in this codebase. canvasWidth: stage width, so
+   *  enemies spawn hard offscreen past the right edge (default 1280 keeps
+   *  callers that don't pass it working exactly as before). */
+  update(nowMs, dtMs, anchors, visualLagMs = 0, reducedFlash = false, canvasWidth = 1280) {
     const vNow = nowMs - (visualLagMs || 0);
     this._advancePhase(nowMs, anchors);
-    if (this.phase === 'BATTLE') this._spawn(nowMs);
-    this._movePressure(dtMs, anchors);
+    if (this.phase === 'BATTLE') this._spawn(nowMs, canvasWidth);
+    this._movePressure(nowMs, dtMs, anchors);
     this._escalate(nowMs, anchors);
     if (this.phase !== 'IDLE') this._assign(nowMs, anchors);
     this._fireDots(vNow, anchors);
@@ -259,6 +266,12 @@ export class BattleDirector {
       if (nowMs >= w.endMs - FINALE_LEAD_BARS * w.barMs) {
         this.phase = 'FINALE';
         this.defenders = 3; // everyone joins for the finale cascade
+        // Extend the grid a few bars past the window's own end: at 2 hp per
+        // enemy, a stagger's finishing hit needs a slot too, and the
+        // original window-bounded grid can run out right at the cutoff --
+        // stranding an enemy that can never resolve. A cascade always has
+        // somewhere to land.
+        this._grid = sixteenthsInRange(this.barGrid, this.durationMs, w.startMs, Math.min(this.durationMs, w.endMs + 8 * w.barMs));
         this._finaleAssignAll(nowMs, anchors);
       }
       return;
@@ -273,7 +286,7 @@ export class BattleDirector {
     }
   }
 
-  _spawn(nowMs) {
+  _spawn(nowMs, canvasWidth) {
     if (nowMs < this._nextSpawnMs || this.enemies.active.length >= MAX_ALIVE_ENEMIES) return;
     const w = this._activeWindow;
     const winProgress = clamp01((nowMs - w.startMs) / Math.max(1, w.endMs - w.startMs));
@@ -281,7 +294,7 @@ export class BattleDirector {
     this._nextSpawnMs = nowMs + w.barMs * gapMul;
 
     const kind = (this._spawnAlt++ % 2 === 0) ? 'flyer' : 'crawler';
-    const fromRight = 1320;
+    const fromRight = canvasWidth + SPAWN_MARGIN_PX;
     const sy = kind === 'flyer' ? (170 + this.rand() * 240) : 540;
     this.enemies.spawn({
       id: this._enemySeq++,
@@ -293,14 +306,23 @@ export class BattleDirector {
       killMs: -1, departMs: -1, travelMs: 0,
       fired: false,
       locked: false,
+      hp: ENEMY_HP,
+      staggerMs: -Infinity,
     });
   }
 
-  _movePressure(dtMs, anchors) {
+  _movePressure(nowMs, dtMs, anchors) {
     const dtSec = dtMs / 1000;
     const leadIdx = Math.max(0, this.defenders - 1);
     const lead = anchors[leadIdx] || anchors[0];
     for (const e of this.enemies.active) {
+      // A fresh arrival glides in from offscreen first -- it doesn't home
+      // in until it's actually on the stage, so nothing appears to
+      // materialize mid-air already chasing a defender.
+      if (nowMs - e.spawnMs < GLIDE_IN_MS) {
+        e.sx -= GLIDE_IN_SPEED_PX_S * dtSec;
+        continue;
+      }
       const targetIdx = e.locked && e.shooterIdx >= 0 ? e.shooterIdx : leadIdx;
       const target = anchors[targetIdx] || lead;
       const dx = target.x - e.sx, dy = (e.kind === 'crawler' ? target.y : target.y) - e.sy;
@@ -386,29 +408,44 @@ export class BattleDirector {
   _advanceDots(vNow) {
     this.dots.step(0, (d) => {
       if (vNow < d.killMs) return true;
-      // Arrival: vaporize the target enemy.
+      // Arrival: a hit lands exactly on the grid time either way. At hp>1
+      // it's a stagger -- knocked back, unlocked, and re-queued for a
+      // finishing hit (also on-grid); only the finishing hit vaporizes and
+      // counts as a kill.
       const idx = this.enemies.active.findIndex((e) => e.id === d.enemyId);
       let ex = d.x0, ey = d.y0;
       if (idx >= 0) {
         const e = this.enemies.active[idx];
         ex = e.sx; ey = e.sy;
+        e.hp -= 1;
+        if (e.hp > 0) {
+          e.sx += STAGGER_KNOCKBACK_PX;
+          e.staggerMs = d.killMs;
+          e.shooterIdx = -1; e.locked = false; e.fired = false;
+          e.killMs = -1; e.departMs = -1; e.travelMs = 0;
+          this._spawnBurst(ex, ey, true);
+          return false; // this dot is spent; the enemy lives on for the next volley
+        }
         this.enemies.active.splice(idx, 1);
         if (this.enemies.free.length < this.enemies.capacity) this.enemies.free.push(e);
       }
-      this._spawnBurst(ex, ey);
+      this._spawnBurst(ex, ey, false);
       this.lastKills.push({ killMs: d.killMs });
       if (this.lastKills.length > 64) this.lastKills.shift();
       return false;
     });
   }
 
-  _spawnBurst(x, y) {
+  _spawnBurst(x, y, stagger = false) {
+    // A stagger is a hit landed, not a kill -- a small white flash + a
+    // couple of sparks, distinct from the full vaporize shatter.
+    const n = stagger ? 4 : BURST_SHARDS;
     const shards = [];
-    for (let i = 0; i < BURST_SHARDS; i++) {
-      const ang = (i / BURST_SHARDS) * Math.PI * 2 + this.rand() * 0.3;
-      shards.push({ ang, speed: 60 + this.rand() * 90 });
+    for (let i = 0; i < n; i++) {
+      const ang = (i / n) * Math.PI * 2 + this.rand() * 0.3;
+      shards.push({ ang, speed: (stagger ? 40 : 60) + this.rand() * 90 });
     }
-    this.bursts.spawn({ x, y, shards, age: 0, life: 0.35 });
+    this.bursts.spawn({ x, y, shards, age: 0, life: stagger ? 0.2 : 0.35, stagger });
   }
 
   _stepBursts(dtMs) {

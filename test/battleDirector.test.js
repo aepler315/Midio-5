@@ -82,12 +82,12 @@ test('findCombatWindows is deterministic', () => {
   assert.deepEqual(findCombatWindows(energies), findCombatWindows(energies));
 });
 
-test('escalationTargets: 1->2 at alive>=5, 2->3 at alive>=8, never de-escalates', () => {
+test('escalationTargets: 1->2 at alive>=4, 2->3 at alive>=6, never de-escalates', () => {
   assert.equal(escalationTargets(0, 1), 1);
-  assert.equal(escalationTargets(4, 1), 1);
-  assert.equal(escalationTargets(5, 1), 2);
-  assert.equal(escalationTargets(7, 2), 2);
-  assert.equal(escalationTargets(8, 2), 3);
+  assert.equal(escalationTargets(3, 1), 1);
+  assert.equal(escalationTargets(4, 1), 2);
+  assert.equal(escalationTargets(5, 2), 2);
+  assert.equal(escalationTargets(6, 2), 3);
   assert.equal(escalationTargets(1, 3), 3, 'must never drop back down within the same call');
   // A defender count never decreases across a plausible declining sequence.
   let d = 1;
@@ -173,4 +173,37 @@ test('BattleDirector: a full window runs the drama arc and every kill lands exac
     const onGrid = fullGrid.some((t) => Math.abs(t - killMs) < 1e-6);
     assert.ok(onGrid, `kill at ${killMs} is not on the 16th-note grid`);
   }
+  // Every enemy takes two hits (hp=2): the number of recorded kills must
+  // equal the number of enemies actually spawned, not double-count the
+  // stagger as a kill.
+  assert.equal(director.lastKills.length, director._enemySeq, 'exactly one kill per enemy spawned, despite two hits each');
+});
+
+test('BattleDirector: a stagger hit knocks back and re-queues the enemy; only the finishing hit vaporizes and records a kill', () => {
+  const barMs = 500;
+  const barGrid = Array.from({ length: 20 }, (_, i) => ({ tick: i * 1920, ms: i * barMs, numerator: 4, denominator: 4 }));
+  const director = new BattleDirector({ barGrid, durationMs: 10000, energyCurves: null, seed: 3 });
+
+  const enemy = director.enemies.spawn({
+    id: 999, kind: 'flyer', sx: 500, sy: 300, bobPhase: 0, spawnMs: 0,
+    shooterIdx: 0, killMs: 1000, departMs: 800, travelMs: 200,
+    fired: true, locked: true, hp: 2, staggerMs: -Infinity,
+  });
+  director.dots.spawn({ enemyId: 999, shooterIdx: 0, x0: 220, y0: 300, departMs: 800, travelMs: 200, killMs: 1000 });
+
+  director._advanceDots(1000); // the dot arrives exactly on killMs
+  assert.equal(director.enemies.active.length, 1, 'a stagger must not remove the enemy');
+  assert.equal(enemy.hp, 1, 'hp decrements on a stagger');
+  assert.equal(enemy.shooterIdx, -1, 'a staggered enemy is unassigned for reassignment');
+  assert.equal(enemy.sx, 526, 'a stagger knocks the enemy back');
+  assert.equal(director.dots.active.length, 0, 'the spent dot is consumed');
+  assert.equal(director.lastKills.length, 0, 'a stagger is not a kill');
+
+  // The finishing hit: re-lock and fire a second dot.
+  Object.assign(enemy, { shooterIdx: 1, killMs: 1500, departMs: 1300, travelMs: 200, fired: true, locked: true });
+  director.dots.spawn({ enemyId: 999, shooterIdx: 1, x0: 300, y0: 540, departMs: 1300, travelMs: 200, killMs: 1500 });
+  director._advanceDots(1500);
+  assert.equal(director.enemies.active.length, 0, 'the finishing hit vaporizes the enemy');
+  assert.equal(director.lastKills.length, 1, 'only the finishing hit records a kill');
+  assert.equal(director.lastKills[0].killMs, 1500);
 });
