@@ -26,6 +26,7 @@ import { FarVignettes } from './FarVignettes.js';
 import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, horizonFade } from './DayNight.js';
+import { fuseSections } from '../lyrics/SectionFusion.js';
 import { analyzeSongForm } from './SongForm.js';
 import { LightningFX } from './Lightning.js';
 import { MeteorShowerFX } from './MeteorShower.js';
@@ -58,13 +59,17 @@ const ACHROMATIC_SAT_THRESHOLD = 0.08;
 // KeyDirector's key-driven rotation via _rotated.
 const FORM_HUE_BIAS_MAX = 40;
 const FORM_HUE_TAU_SEC = 1.5; // section changes glide their hue, never snap
+// Lyric-structure intensity-budget multiplier by section kind (SectionFusion) --
+// a chorus/bridge reads louder, an intro/outro settles. Unrecognized/absent
+// kind (no lyric data at all) multiplies by exactly 1 -- a strict no-op.
+const KIND_BUDGET_MUL = { chorus: 1.15, bridge: 1.3, instrumental: 1.1, intro: 0.9, outro: 0.85, verse: 1.0 };
 const OCEAN_WATER_BLUE = '#55c8f0'; // always reads as water, blended into the biome palette
 const NIGHT_SKY_COLOR = '#0a0c1c'; // sky lerps toward this as the day/night cycle's `night` rises
 const MOON_COLOR = '#dfe6f2';
 const MOON_HALO_COLOR = '#aab8d8';
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, customBiome = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, customBiome = null, lyricSections = null }) {
     this.conductor = conductor;
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
@@ -81,6 +86,15 @@ export class BiomeManager {
     this._shutterStartMs = -Infinity;
     this._shutterBarMs = 500;
     this.cutFlashJustFired = false;
+    // Lyric-fused structure (SectionFusion): a section's `kind` (verse/
+    // chorus/bridge/instrumental/intro/outro) and its lyric intensity/
+    // valence, when lyrics were found and fused into the schedule below.
+    // Absent lyricSections -> currentKind stays null and every one of
+    // these stays at its neutral default, forever -- a strict no-op.
+    this._lyricSections = lyricSections;
+    this.currentKind = null;
+    this.lyricIntensityEased = 0.4;
+    this._kindBudgetMulEased = 1;
     this.budget = 1;
     this.hypeBoost = 1; // drop-surge multiplier from the HypeDirector
     this.mandalaScaleMul = 1; // swells while Midasus dances near the celestial
@@ -177,7 +191,7 @@ export class BiomeManager {
     // whale...) witnessed way out between the L2 and L3 ranges.
     this.farVignettes = new FarVignettes(songSeed);
 
-    this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed);
+    this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections);
     // MIDI custom biome: cast every section into the generated world so the
     // dropped file IS the place, while stock demos keep dramaturgical casting.
     if (this.customBiome) this.loadCustom(this.customBiome);
@@ -287,7 +301,7 @@ export class BiomeManager {
     conductor.on(Role.MELODY, (evt) => { this.weaver.onMelody(evt); });
   }
 
-  _buildSchedule(barGrid, energyCurves, durationMs, songSeed) {
+  _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null) {
     let barTimes = barGrid.length >= 8 ? barGrid.map((b) => b.ms) : this._evenSplit(durationMs, 8);
     if (barTimes.length < 2) barTimes = [0, durationMs];
 
@@ -393,6 +407,14 @@ export class BiomeManager {
       if (i > 0 && seenLabels.has(labels[i])) s.transition = 'cut';
       seenLabels.add(labels[i]);
     });
+
+    // Lyric fusion (SectionFusion): when lyrics were found and resolved,
+    // fold their structural read (verse/chorus/bridge/instrumental/intro/
+    // outro + per-section valence/intensity) onto this novelty-derived
+    // schedule -- synced lyrics can insert/merge boundaries snapped to the
+    // beat grid, plain lyrics only add labels. Absent lyricSections is a
+    // true no-op (fuseSections returns the exact same array).
+    this.sections = fuseSections(this.sections, lyricSections, barGrid, durationMs);
   }
 
   _evenSplit(durationMs, n) {
@@ -519,6 +541,10 @@ export class BiomeManager {
       if (this._lastSectionIdx != null) {
         if (sec.transition === 'cut') { this._cutFlash = 1; this.cutFlashJustFired = true; }
         else if (sec.transition === 'shutter') { this._shutterStartMs = nowMs; this._shutterBarMs = sec.barMs; }
+        // A lyric-identified instrumental/solo section gets the same
+        // spotlight snap a hype drop does -- the show notices the vocals
+        // stepping back just as much as it notices them stepping forward.
+        if (sec.kind === 'instrumental') this.lightRig.trigger(nowMs, this.midioX, this.midioY);
       }
       this._lastSectionIdx = sectionIdx;
     }
@@ -528,12 +554,32 @@ export class BiomeManager {
     // section's structural signature hue, so a returning chorus settles
     // back into the same shift it always wears (a recognizable "place")
     // rather than snapping. Constant, steady color -- reduced-flash safe.
-    const targetHueBias = this.sections[sectionIdx]?.hueBias || 0;
+    const activeSection = this.sections[sectionIdx];
+    let targetHueBias = activeSection?.hueBias || 0;
+    // The lyric-identified bridge is the one place asked to look
+    // unmistakably different from everything around it -- the "epic
+    // bridge" payoff -- so its hue swing is forced large regardless of
+    // how the seeded per-label bias happened to land.
+    if (activeSection?.kind === 'bridge') {
+      targetHueBias = Math.sign(targetHueBias || 1) * Math.max(Math.abs(targetHueBias), FORM_HUE_BIAS_MAX * 0.9) * 1.5;
+    }
     this.sectionHueBias += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetHueBias - this.sectionHueBias);
 
-    // Intensity budget: stage the show -- restrained intro, full finale.
+    // Lyric structure (SectionFusion): the active section's kind and its
+    // eased lyric intensity, both neutral defaults (null / 0.4) when no
+    // lyric data was ever fused in.
+    this.currentKind = activeSection?.kind || null;
+    const targetLyricIntensity = activeSection?.lyricIntensity ?? 0.4;
+    this.lyricIntensityEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetLyricIntensity - this.lyricIntensityEased);
+    const targetKindBudgetMul = KIND_BUDGET_MUL[this.currentKind] ?? 1;
+    this._kindBudgetMulEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetKindBudgetMul - this._kindBudgetMulEased);
+
+    // Intensity budget: stage the show -- restrained intro, full finale --
+    // additionally scaled by the lyric-structure kind (a chorus/bridge
+    // reads louder, an intro/outro settles), a no-op multiplier of 1 when
+    // there's no lyric data.
     this._progress = this.durationMs > 0 ? clamp01(nowMs / this.durationMs) : 0.5;
-    this.budget = intensityBudget(this._progress);
+    this.budget = intensityBudget(this._progress) * this._kindBudgetMulEased;
     const gain = this.budget * this.hypeBoost;
     this.mandala.intensity = gain;
     this.murmuration.intensity = gain;

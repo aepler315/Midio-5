@@ -66,6 +66,15 @@
       <p id="auditionText" class="sub">Auditioning SoundFonts…</p>
       <div id="auditionBar"><div id="auditionBarFill"></div></div>
       <p class="hint">Every loaded font is auditioned against this exact song and the best fit takes the stage — the show starts the moment the verdicts are in. The beat you're hearing is this song's percussion, distilled.</p>
+      <div id="lyricsRow" class="hidden">
+        <p id="lyricsStatus" class="sub"></p>
+        <div id="lyricsFields" class="hidden">
+          <input id="lyricsArtistInput" type="text" placeholder="Artist" autocomplete="off" />
+          <input id="lyricsTitleInput" type="text" placeholder="Title" autocomplete="off" />
+          <button id="lyricsFindBtn" class="ghostbtn" type="button">Find lyrics</button>
+          <button id="lyricsSkipBtn" class="ghostbtn" type="button">Skip</button>
+        </div>
+      </div>
     </div>
 
     <div id="dragOverlay">

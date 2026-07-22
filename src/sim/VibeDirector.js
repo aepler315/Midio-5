@@ -33,6 +33,12 @@ export class VibeDirector {
     // enough evidence (count>=3) rather than reset every thin-evidence eval.
     this.tonic = 0;
     this.tonicConfidence = 0;
+    // Additive external bias (-1..1), set each step by Simulation from the
+    // fused lyric structure's current section kind (SectionFusion.
+    // epicBiasForKind) -- the "epic bridge" reads as genuinely epic even
+    // when the music alone wouldn't have said so. Zero (no-op) when there's
+    // no lyric data at all.
+    this.epicBias = 0;
   }
 
   _evaluate(nowMs, energyCurves) {
@@ -82,6 +88,7 @@ export class VibeDirector {
       this._nextEvalMs = nowMs + EVAL_EVERY_MS;
     }
     this.valence += (1 - Math.exp(-dtSec / VAL_TAU)) * (this._rawValence - this.valence);
-    this.epic += (1 - Math.exp(-dtSec / EPIC_TAU)) * (this._rawEpic - this.epic);
+    const epicTarget = clamp01(this._rawEpic + this.epicBias);
+    this.epic += (1 - Math.exp(-dtSec / EPIC_TAU)) * (epicTarget - this.epic);
   }
 }

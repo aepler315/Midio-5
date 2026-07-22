@@ -21,6 +21,7 @@ import { CalmDirector } from './CalmDirector.js';
 import { GnatGag } from './GnatGag.js';
 import { HypeDirector } from './HypeDirector.js';
 import { VibeDirector } from './VibeDirector.js';
+import { epicBiasForKind } from '../lyrics/SectionFusion.js';
 import { EnsembleDirector } from './EnsembleDirector.js';
 import { ExcursionDirector } from './ExcursionDirector.js';
 import { ApotheosisDirector } from './ApotheosisDirector.js';
@@ -69,7 +70,7 @@ export function bassAirJumpSafe(obstacle, worldX, safetyPx = BASS_AIR_JUMP_SAFET
 export class Simulation {
   constructor(conductor, paramBus, {
     bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720,
-    customBiome = null, inputOffsetMs = 0, outputLatencyMs = null,
+    customBiome = null, inputOffsetMs = 0, outputLatencyMs = null, lyricSections = null,
   } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
@@ -177,6 +178,7 @@ export class Simulation {
       canvasWidth, canvasHeight, groundY: this.midio.groundY, songSeed,
       groundField: this.groundField,
       customBiome: this.customBiome,
+      lyricSections,
     });
     this.biomes.reducedFlash = this.reducedFlash;
     // Enemy-wave combat: flying/crawling enemies spawn during the song's
@@ -432,6 +434,11 @@ export class Simulation {
       this.camera.shake(9);
       this.beatZoom.onDrop(nowMs); // the beat zoom's own dramatic dive figure
     }
+    // Lyric structure's epic bias (SectionFusion): zero, and thus a strict
+    // no-op, whenever there's no lyric data (biomes.currentKind stays
+    // null). One-frame lag against biomes.update() (which runs later this
+    // same step) is inaudible against a signal already eased over ~1.5s.
+    this.vibe.epicBias = epicBiasForKind(this.biomes.currentKind, this.biomes.lyricIntensityEased);
     this.vibe.update(nowMs, dtSec, this.energyCurves);
     this.keyDirector.update(nowMs, dtSec, {
       tonic: this.vibe.tonic, tonicConfidence: this.vibe.tonicConfidence, conductor: this.conductor,
