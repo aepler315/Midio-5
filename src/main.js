@@ -201,7 +201,7 @@ async function bootAudio() {
   fontRecommender = new FontRecommender(fontLibrary, { onUpdate: () => { renderFontModal(); updateAuditionProgress(); } });
   fontLibrary.onAdded = (font) => fontRecommender.auditionFont(font);
   // Best-effort background load — never blocks song start (§ soundfonts/README.md).
-  fontLibrary.autoLoadFromServer('/soundfonts/');
+  fontLibrary.autoLoadFromServer('./soundfonts/');
   loadShow = new LoadingShow({
     canvasEl: auditionCanvasEl, textEl: auditionTextEl, barFillEl: auditionBarFillEl,
     audioEngine,

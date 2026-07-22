@@ -88,7 +88,7 @@ export class SoundfontLibrary {
    * that doesn't implement the manifest route.
    * @returns {Promise<number>} how many fonts were loaded
    */
-  async autoLoadFromServer(baseUrl = '/soundfonts/') {
+  async autoLoadFromServer(baseUrl = './soundfonts/') {
     let names;
     try {
       const res = await fetch(baseUrl);
