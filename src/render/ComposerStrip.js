@@ -235,7 +235,7 @@ export class ComposerStrip {
 
   draw(ctx, canvas, nowMs) {
     this._ensureIcons();
-    const x0 = 104;
+    const x0 = 12;
     const h = 72;
     const y0 = canvas.height - h - 12; // bottom-anchored, clear of the ground HUD
     const w = canvas.width - x0 - 12;

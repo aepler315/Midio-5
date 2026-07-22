@@ -10,6 +10,8 @@ import { JumpController, A, GAMMA, W, H_BASE, D_MIN } from './JumpController.js'
 import { CameraDirector } from '../render/CameraDirector.js';
 import { ComboSystem } from './ComboSystem.js';
 import { ImpactFX } from './ImpactFX.js';
+import { RippleFX } from './RippleFX.js';
+import { BattleDirector } from './BattleDirector.js';
 import { TelegraphScanner } from './TelegraphScanner.js';
 import { ObstacleSpawner } from './ObstacleSpawner.js';
 import { Midasus } from './Midasus.js';
@@ -113,6 +115,7 @@ export class Simulation {
     this.camera = new CameraDirector();
     this.comboSystem = new ComboSystem();
     this.impactFX = new ImpactFX();
+    this.rippleFX = new RippleFX();
     this.telegraph = new TelegraphScanner();
     this.obstacles = new ObstacleSpawner(paramBus);
 
@@ -175,6 +178,14 @@ export class Simulation {
       customBiome: this.customBiome,
     });
     this.biomes.reducedFlash = this.reducedFlash;
+    // Enemy-wave combat: flying/crawling enemies spawn during the song's
+    // identified high-energy/tension windows, and the three characters
+    // shoot them down with dots of light timed to vaporize exactly on the
+    // 16th-note grid -- one defender at a time, escalating as the backlog
+    // grows, per DEFENDER_ORDER (Midasus, Broshi, Midio).
+    this.battle = new BattleDirector({
+      barGrid: conductor.barGrid, durationMs: conductor.durationMs, energyCurves, seed: songSeed,
+    });
     this.highlightReel = new HighlightReel();
     this.fracture = new FractureEngine(conductor, {
       canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,
@@ -480,6 +491,7 @@ export class Simulation {
       this.scoreKeeper.noteStreak(this.comboSystem.streak);
       this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera);
       this.groundField.impulse(this.worldX, I, nowMs); // a shockwave ripples the terrain outward from the landing
+      this.rippleFX.trigger(this.worldX, this.midio.groundY, I); // the screen-space visual echo of that shockwave
       if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY);
       this.fracture.registerImpact(I);
 
@@ -522,6 +534,7 @@ export class Simulation {
       this.impactFX.sputter(this.worldX, this.midio.groundY, dtSec);
     }
     this.impactFX.step(dtSec);
+    this.rippleFX.update(dtSec * 1000);
 
     // Decides whether Midasus or Broshi leaves the ensemble this frame;
     // triggering here (before their own update() calls below) means a
@@ -560,6 +573,13 @@ export class Simulation {
     }, this.groundField);
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
+    // Enemy-wave combat: fixed defender join order (Midasus, Broshi, Midio)
+    // matches BattleDirector.DEFENDER_ORDER.
+    this.battle.update(nowMs, dtMs, [
+      { x: this.midasus.p.x, y: this.midasus.p.y },
+      { x: this.broshi.renderX, y: this.midio.groundY - this.broshi.hopY },
+      { x: this.midio.screenX, y: this.midio.renderY },
+    ], this.visualLagMs, this.reducedFlash);
     this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge + 1.1 * this.fever.level; // drops + player fever surge every phenomena system
     this.biomes.heatShimmer = this.hype.fast; // a hard hype spike shimmers the far range
     this.biomes.paletteRotation = this.keyDirector.paletteRotation; // the world transposes with the song's key

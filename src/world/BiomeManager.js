@@ -14,6 +14,11 @@ import { decorateStrip } from './Landmarks.js';
 import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul } from './MountainChoreo.js';
 import { ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, geoCrestOffset } from './GeoCrest.js';
 import { seaLineY, oceanRowYs, waveRows, rowAlpha, OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC } from './Ocean.js';
+import {
+  islands, ships, seaLifeSchedule, monsterSchedule, tsunamiSchedule,
+  tsunamiX, tsunamiLift, tsunamiProfile, fishArcY, serpentHumpY,
+  wrappedOffset, OCEAN_LIFE_WRAP_PX, OCEAN_LIFE_RATIO, TSUNAMI_WIDTH_PX,
+} from './OceanLife.js';
 import { ConstellationWeaver } from './ConstellationWeaver.js';
 import { SpaceRidge } from './SpaceRidge.js';
 import { SkyEnsemble } from './SkyEnsemble.js';
@@ -121,15 +126,15 @@ export class BiomeManager {
     for (const b of this.profiles) {
       const seed = hashSeed(b.name);
       const strips = {
-        L2: generateSilhouette({ seed: seed + 1, octaves: 1, amplitude: 0.20, baseline: 0.45, color: b.silhouette }),
-        L3: generateSilhouette({ seed: seed + 2, octaves: 2, amplitude: 0.26, baseline: 0.55, color: b.silhouette }),
+        L2: generateSilhouette({ seed: seed + 1, octaves: 1, amplitude: 0.36, baseline: 0.42, color: b.silhouette }),
+        L3: generateSilhouette({ seed: seed + 2, octaves: 2, amplitude: 0.46, baseline: 0.48, color: b.silhouette }),
         // No baked edgeLight here: the old baked stroke tore at every
         // dance-column seam (_drawDancingStrip blits in DANCE_COL_W slices,
         // each at its own bounce height). _drawCrest below strokes the same
         // neon line LIVE, continuous across every seam, and turns L4's into
         // the geological equalizer (GeoCrest.js).
-        L4: generateSilhouette({ seed: seed + 3, octaves: 3, amplitude: 0.34, baseline: 0.70, color: b.silhouette }),
-        L5: generateSilhouette({ seed: seed + 4, octaves: 2, amplitude: 0.22, baseline: 0.85, color: b.silhouette }),
+        L4: generateSilhouette({ seed: seed + 3, octaves: 3, amplitude: 0.56, baseline: 0.62, color: b.silhouette }),
+        L5: generateSilhouette({ seed: seed + 4, octaves: 2, amplitude: 0.38, baseline: 0.82, color: b.silhouette }),
       };
       // Landmarks: per-song placements (songSeed), baked into the strips,
       // each rooted on the noise ridge at its own x. Unknown biome names
@@ -171,6 +176,18 @@ export class BiomeManager {
     // MIDI custom biome: cast every section into the generated world so the
     // dropped file IS the place, while stock demos keep dramaturgical casting.
     if (this.customBiome) this.loadCustom(this.customBiome);
+
+    // Ocean ecosystem: islands + ships sit on the water always; sea life,
+    // the rare monster, and tsunamis (anchored on the song's loudest bars)
+    // are the phenomena-gated extras.
+    this._islands = islands(hashSeed(`${songSeed}:islands`));
+    this._ships = ships(hashSeed(`${songSeed}:ships`));
+    this._seaLife = seaLifeSchedule(hashSeed(`${songSeed}:sealife`), durationMs);
+    this._seaLifeIdx = 0;
+    this._monsters = monsterSchedule(hashSeed(`${songSeed}:monster`), durationMs);
+    this._monsterIdx = 0;
+    this._tsunamis = tsunamiSchedule(hashSeed(`${songSeed}:tsunami`), durationMs, this._oceanHotspotMs || []);
+    this._tsunamiIdx = 0;
     this.mandala = new Mandala(songSeed);
     this.cymatics = new CymaticField(songSeed);
     this.swarm = new KuramotoSwarm(songSeed);
@@ -269,6 +286,14 @@ export class BiomeManager {
     if (barTimes.length < 2) barTimes = [0, durationMs];
 
     const vectors = barTimes.map((ms) => (energyCurves ? energyCurves.sampleAll(ms) : new Array(7).fill(0)));
+    // Hotspot bar times (top-2 by scalar bar energy) -- anchors for things
+    // that should land where the song is actually loudest, e.g. tsunamis.
+    const barScalarEnergy = vectors.map((v) => v.reduce((a, x) => a + x, 0) / 7);
+    this._oceanHotspotMs = barTimes
+      .map((ms, i) => [barScalarEnergy[i], ms])
+      .sort((a, b) => b[0] - a[0])
+      .slice(0, 2)
+      .map((p) => p[1]);
     const means = barTimes.map((_, i) => {
       const start = Math.max(0, i - 3);
       const slice = vectors.slice(start, i + 1);
@@ -581,6 +606,12 @@ export class BiomeManager {
       this.lakeRing.excite(22);
       this.lightRig.trigger(nowMs, this.midioX, this.midioY);
       this._triggerMeteors(nowMs, DROP_METEOR_BASE);
+      // A drop also throws a bonus tsunami wall across the ocean, if one
+      // hasn't rolled through recently.
+      if (nowMs - (this._lastDropTsunamiMs ?? -Infinity) >= 30000) {
+        this._lastDropTsunamiMs = nowMs;
+        this._tsunamis.push({ tMs: nowMs, dir: this._tsunamis.length % 2 === 0 ? 1 : -1 });
+      }
     }
     // Combo milestones (streak 5/10/20) throw their own reward volley.
     if (Number.isFinite(this.milestoneAtMs) && this.milestoneAtMs !== this._lastSeenMilestoneMs) {
@@ -654,6 +685,7 @@ export class BiomeManager {
     if (phenomenaFull) this.weaver.draw(ctx, canvas, this.reducedFlash); // ambient connect-the-dots, same deep-sky depth
     if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
     this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull);
+    this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
     this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
 
@@ -1015,11 +1047,24 @@ export class BiomeManager {
    *  visible remainder (above/between the ridgelines) IS the ocean. The row
    *  stack always draws (visibility is the feature); it thins and drops the
    *  celestial glint at the deepest perf rung. */
+  /** Which tsunami (if any) is currently sweeping the screen, and where its
+   *  leading edge sits -- looked up once per frame and shared by the row
+   *  surge and the wall silhouette. */
+  _activeTsunami(canvasWidth) {
+    const nowMs = this.tSec * 1000;
+    for (const ev of this._tsunamis) {
+      const wallX = tsunamiX(ev, nowMs, canvasWidth);
+      if (wallX !== null) return { ev, wallX };
+    }
+    return null;
+  }
+
   _drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull) {
     const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
     const nearY = canvas.height * OCEAN_NEAR_FRAC;
     const bass = 0.5 * ((this._eqSmoothed[0] || 0) + (this._eqSmoothed[1] || 0));
     const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 250) * this._danceKickAmp;
+    const tsunami = this._activeTsunami(canvas.width);
 
     const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
     const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
@@ -1056,7 +1101,45 @@ export class BiomeManager {
       for (let i = 0; i <= N; i++) {
         const u = (i / N + row.uPhase + scroll / canvas.width) % 1;
         const x = (i / N) * canvas.width;
-        const y = rowYs[j] + seaLineY(u, this.tSec * row.speedMul, bass, kick) * ampScale;
+        let y = rowYs[j] + seaLineY(u, this.tSec * row.speedMul, bass, kick) * ampScale;
+        if (tsunami) y -= tsunamiLift(x - tsunami.wallX) * 42 * (0.6 + 0.4 * ampScale);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    if (tsunami) {
+      // The wave wall itself: a tall curling silhouette sweeping across the
+      // band, foam-bright at its crest.
+      const wallTop = horizonY + (nearY - horizonY) * 0.08;
+      const wallGrad = ctx.createLinearGradient(0, wallTop, 0, nearY);
+      wallGrad.addColorStop(0, `${water}00`);
+      wallGrad.addColorStop(0.5, water);
+      wallGrad.addColorStop(1, `${water}00`);
+      ctx.fillStyle = wallGrad;
+      ctx.beginPath();
+      const WS = TSUNAMI_WIDTH_PX;
+      for (let i = 0; i <= 24; i++) {
+        const s = -1 + (i / 24) * 2;
+        const x = tsunami.wallX + s * WS;
+        const prof = tsunamiProfile(s);
+        const y = nearY - prof * (nearY - wallTop);
+        if (i === 0) ctx.moveTo(x, nearY);
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(tsunami.wallX + WS, nearY);
+      ctx.closePath();
+      ctx.globalAlpha = capFlashAlpha(0.5 * this.budget, this.reducedFlash);
+      ctx.fill();
+      // Foam crest line.
+      ctx.strokeStyle = cap;
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = capFlashAlpha(0.6 * this.budget, this.reducedFlash);
+      ctx.beginPath();
+      for (let i = 0; i <= 24; i++) {
+        const s = -1 + (i / 24) * 2;
+        const x = tsunami.wallX + s * WS;
+        const y = nearY - tsunamiProfile(s) * (nearY - wallTop);
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.stroke();
@@ -1092,6 +1175,185 @@ export class BiomeManager {
       ctx.fillStyle = rGrad;
       ctx.globalAlpha = 0.10;
       ctx.fillRect(rx - 60, horizonY, 120, glintH);
+    }
+    ctx.restore();
+  }
+
+  /** Maps an OceanLife rowFrac (0=nearest .. 1=at the horizon) to a screen
+   *  y and a size scale, biased the same perspective direction as the wave
+   *  rows themselves. */
+  _oceanLifeRowY(canvas, rowFrac) {
+    const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
+    const nearY = canvas.height * OCEAN_NEAR_FRAC;
+    return horizonY + (nearY - horizonY) * Math.pow(1 - rowFrac, 1.6);
+  }
+
+  /** Everything living on/over the ocean: islands and ships always (a
+   *  handful of strokes each), sea life and the rare monster gated on
+   *  phenomenaFull -- witnessed set pieces, not core scenery. */
+  _drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull) {
+    const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
+    const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
+    const water = this._rotated(this.lerpCache.get(sil, skyMid, 0.45));
+    const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
+    const bass = 0.5 * ((this._eqSmoothed[0] || 0) + (this._eqSmoothed[1] || 0));
+    const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 250) * this._danceKickAmp;
+    const nowMs = this.tSec * 1000;
+    const scroll = worldX * OCEAN_LIFE_RATIO;
+    const pad = 200;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Islands -- static dark silhouettes with an optional blinking beacon.
+    for (const isl of this._islands) {
+      const x = wrappedOffset(isl.x0, scroll);
+      if (x < -pad || x > canvas.width + pad) continue;
+      const y = this._oceanLifeRowY(canvas, isl.rowFrac);
+      const scale = 1 - 0.65 * isl.rowFrac;
+      const w = isl.w * scale, h = isl.h * scale;
+      ctx.globalAlpha = capFlashAlpha(0.5 * this.budget, this.reducedFlash);
+      ctx.fillStyle = water;
+      ctx.beginPath();
+      if (isl.kind === 'cone') {
+        ctx.moveTo(x - w / 2, y);
+        ctx.lineTo(x, y - h);
+        ctx.lineTo(x + w / 2, y);
+      } else if (isl.kind === 'mesa') {
+        ctx.moveTo(x - w / 2, y);
+        ctx.lineTo(x - w / 3, y - h);
+        ctx.lineTo(x + w / 3, y - h);
+        ctx.lineTo(x + w / 2, y);
+      } else {
+        ctx.ellipse(x, y - h * 0.15, w / 2, h * 0.3, 0, 0, Math.PI * 2);
+      }
+      ctx.closePath();
+      ctx.fill();
+      if (isl.kind === 'palm') {
+        ctx.strokeStyle = water;
+        ctx.lineWidth = Math.max(1, 1.5 * scale);
+        ctx.beginPath();
+        ctx.moveTo(x - w * 0.1, y - h * 0.2);
+        ctx.lineTo(x - w * 0.05, y - h * 0.9);
+        ctx.stroke();
+      }
+      if (isl.beacon) {
+        const blink = 0.5 + 0.5 * Math.sin(this.tSec * 2.3 + isl.x0);
+        ctx.globalAlpha = capFlashAlpha(0.6 * blink * this.budget, this.reducedFlash);
+        ctx.fillStyle = cap;
+        ctx.beginPath();
+        ctx.arc(x, y - h - 2 * scale, 1.6 * scale, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Ships -- slow drifters, hull+mast, bobbing on the wave line at their u.
+    for (const ship of this._ships) {
+      const x = wrappedOffset(ship.x0 - ship.driftPxS * this.tSec, scroll);
+      if (x < -pad || x > canvas.width + pad) continue;
+      const y = this._oceanLifeRowY(canvas, ship.rowFrac);
+      const u = ((x / canvas.width) % 1 + 1) % 1;
+      const bob = seaLineY(u, this.tSec, bass, kick) * 0.3;
+      const s = ship.size * (1 - 0.5 * ship.rowFrac);
+      ctx.globalAlpha = capFlashAlpha(0.55 * this.budget, this.reducedFlash);
+      ctx.strokeStyle = water;
+      ctx.fillStyle = water;
+      ctx.lineWidth = Math.max(1, 1.2 * s);
+      ctx.beginPath(); // hull
+      ctx.moveTo(x - 14 * s, y + bob);
+      ctx.lineTo(x + 14 * s, y + bob);
+      ctx.lineTo(x + 10 * s, y + bob + 4 * s);
+      ctx.lineTo(x - 10 * s, y + bob + 4 * s);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath(); // mast + sail
+      ctx.moveTo(x, y + bob);
+      ctx.lineTo(x, y + bob - 16 * s);
+      ctx.lineTo(x + 9 * s, y + bob - 4 * s);
+      ctx.closePath();
+      ctx.stroke();
+    }
+
+    if (phenomenaFull) {
+      // Sea life: brief witnessed events -- fish leaps, dolphin pods, a
+      // whale spout. Placed by a fixed screen fraction, not world scroll
+      // (they're transient, like a meteor, not scenery).
+      while (this._seaLifeIdx < this._seaLife.length && this._seaLife[this._seaLifeIdx].tMs + this._seaLife[this._seaLifeIdx].durMs < nowMs) this._seaLifeIdx++;
+      for (let k = this._seaLifeIdx; k < this._seaLife.length; k++) {
+        const ev = this._seaLife[k];
+        if (ev.tMs > nowMs) break;
+        const age = nowMs - ev.tMs;
+        const u = clamp01(age / ev.durMs);
+        const x = ev.u * canvas.width;
+        const y = this._oceanLifeRowY(canvas, ev.rowFrac);
+        ctx.strokeStyle = water; ctx.fillStyle = water;
+        if (ev.kind === 'fish') {
+          const arc = fishArcY(u);
+          ctx.globalAlpha = capFlashAlpha((1 - Math.abs(u - 0.5) * 1.6) * this.budget, this.reducedFlash);
+          ctx.beginPath();
+          ctx.ellipse(x, y - arc, 5, 2, -0.5, 0, Math.PI * 2);
+          ctx.fill();
+          if (arc < 3) {
+            ctx.globalAlpha = capFlashAlpha(0.4 * this.budget, this.reducedFlash);
+            ctx.beginPath(); ctx.arc(x, y, 6 * (1 - u), 0, Math.PI * 2); ctx.stroke();
+          }
+        } else if (ev.kind === 'pod') {
+          ctx.globalAlpha = capFlashAlpha(0.7 * this.budget, this.reducedFlash);
+          for (let i = 0; i < 3; i++) {
+            const pu = clamp01(u * 3 - i * 0.6) % 1;
+            if (pu <= 0 || pu >= 1) continue;
+              const arc = fishArcY(pu);
+            ctx.beginPath();
+            ctx.ellipse(x + i * 26 - 26, y - arc, 7, 3, -0.4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else { // spout
+          const rise = clamp01(u * 3);
+          const h = 30 * (1 - Math.max(0, u - 0.35) / 0.65);
+          ctx.globalAlpha = capFlashAlpha(0.8 * this.budget * rise, this.reducedFlash);
+          ctx.beginPath();
+          ctx.ellipse(x, y, 20, 5, 0, 0, Math.PI * 2);
+          ctx.fill();
+          if (h > 0) {
+            ctx.strokeStyle = cap;
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.moveTo(x, y - 4);
+            ctx.lineTo(x, y - 4 - h);
+            ctx.stroke();
+          }
+        }
+      }
+
+      // The rare sea monster: a serpent that rises, undulates, and submerges.
+      while (this._monsterIdx < this._monsters.length && this._monsters[this._monsterIdx].tMs + this._monsters[this._monsterIdx].durMs < nowMs) this._monsterIdx++;
+      if (this._monsterIdx < this._monsters.length) {
+        const ev = this._monsters[this._monsterIdx];
+        const age = nowMs - ev.tMs;
+        if (age >= 0 && age <= ev.durMs) {
+          const u = age / ev.durMs;
+          const rise = Math.sin(clamp01(u * 3) * Math.PI * 0.5) * clamp01((1 - u) * 3 + 0.3);
+          const x = ev.u * canvas.width;
+          const y = this._oceanLifeRowY(canvas, 0.35);
+          ctx.globalAlpha = capFlashAlpha(0.75 * this.budget, this.reducedFlash);
+          ctx.strokeStyle = water;
+          ctx.lineWidth = 5;
+          ctx.lineCap = 'round';
+          for (let h = 0; h < 3; h++) {
+            const hx = x - 60 + h * 34;
+            const hy = y - rise * (26 - h * 5) + serpentHumpY(u, h * 2.1 + this.tSec * 2);
+            ctx.beginPath();
+            ctx.moveTo(hx - 12, y);
+            ctx.quadraticCurveTo(hx, hy, hx + 12, y);
+            ctx.stroke();
+          }
+          // Head.
+          ctx.fillStyle = water;
+          ctx.beginPath();
+          ctx.ellipse(x + 46, y - rise * 30, 9, 6, -0.3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
     }
     ctx.restore();
   }
@@ -1456,7 +1718,7 @@ export class BiomeManager {
     const baseY = this.groundY - 26;
     // The massif is the farthest solid thing in the scene -- it rides the
     // same orogeny arc as the L2 range (the far-most parallax layer).
-    const maxH = 234 * orogenyHeightMul('L2', clamp01((this.orogenyGrowth || 0) + 0.22 * (this.adaptSwell || 0)));
+    const maxH = 300 * orogenyHeightMul('L2', clamp01((this.orogenyGrowth || 0) + 0.22 * (this.adaptSwell || 0)));
     const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
     const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
     const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.55));
