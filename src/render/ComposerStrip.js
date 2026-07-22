@@ -1,4 +1,4 @@
-// A Mario Paint-composer-style staff strip across the top of the screen:
+// A Mario Paint-composer-style staff strip across the bottom of the screen:
 // the actual NoteEvent timeline laid out as chunky pixel icons on a cream
 // paper staff, four bars to a "page", with a red playhead sweeping left to
 // right and flipping to the next page at the bar -- exactly how the SNES
@@ -7,14 +7,60 @@
 // percussion = a drum, melody = star, bass = heart, pad = flower. All
 // sprites are original 9x9 pixel grids rendered to tiny offscreen
 // canvases once, lazily, so the constructor stays DOM-free for tests.
+//
+// Pitch placement is real diatonic sheet-music notation, not a flattened
+// percentile stretch: each pitch resolves to a scale degree (relative to
+// the song's estimated tonic) via diatonicIndex, so C < D < E always sit
+// in ascending staff order and an accidental gets its own tick. Percussion
+// (RHYTHM role) never shares the pitch staff -- GM drum pitches are
+// arbitrary, not musical -- it gets its own single rail along the bottom
+// edge.
 import { Role } from '../core/NoteEvent.js';
 import { clamp } from '../utils/math.js';
 
 const PAGE_BARS = 4;
 const MAX_ICONS_PER_PAGE = 64;
 const MIN_VEL = 0.15;
-const STAFF_ROWS = 11; // 5 lines + 4 spaces + one step above/below
+export const STAFF_ROWS = 13; // 5 lines + spaces, plus ledger room above/below
 const CELL_PX = 2;
+
+// Semitone (0-11, relative to the tonic pitch class) -> [diatonic degree
+// 0-6, accidental]. Degrees are non-decreasing across 0..11, so pitch and
+// diatonic step stay in lockstep -- ascending pitch always means ascending
+// (or equal, on an accidental) step.
+const SEMITONE_TABLE = [
+  [0, false], [0, true], [1, false], [1, true], [2, false], [3, false],
+  [3, true], [4, false], [4, true], [5, false], [5, true], [6, false],
+];
+
+/** Weighted (durMs * vel) pitch-class histogram over non-percussion notes;
+ *  the argmax is the estimated tonic. Empty/all-percussion input -> C (0). */
+export function estimateTonicPc(timeline) {
+  const weight = new Array(12).fill(0);
+  let any = false;
+  for (const evt of timeline) {
+    if (evt.role === Role.RHYTHM) continue;
+    const pc = ((evt.pitch % 12) + 12) % 12;
+    weight[pc] += (evt.durMs || 90) * Math.max(0.05, evt.vel ?? 0.5);
+    any = true;
+  }
+  if (!any) return 0;
+  let best = 0;
+  for (let pc = 1; pc < 12; pc++) if (weight[pc] > weight[best]) best = pc;
+  return best;
+}
+
+/** Absolute MIDI pitch -> { step, accidental } relative to tonicPc: step is
+ *  a diatonic scale-degree index (octave*7 + degree), monotone
+ *  non-decreasing in pitch; accidental marks a note that isn't in the
+ *  tonic's major scale. Pure. */
+export function diatonicIndex(pitch, tonicPc) {
+  const rel = pitch - tonicPc;
+  const octave = Math.floor(rel / 12);
+  const semitone = rel - octave * 12; // 0..11
+  const [degree, accidental] = SEMITONE_TABLE[semitone];
+  return { step: octave * 7 + degree, accidental };
+}
 
 // 9x9 sprite grids: 0 transparent, 1 fill, 2 shade.
 const SPRITES = {
@@ -117,11 +163,18 @@ export class ComposerStrip {
     this.barMs = barMs;
     this.durationMs = durationMs;
 
-    // Pitch range for staff placement, percentile-clipped like Midasus.
-    const pitches = timeline.map((e) => e.pitch).sort((a, b) => a - b);
-    this.pMin = pitches.length ? pitches[Math.floor(0.05 * pitches.length)] : 48;
-    this.pMax = pitches.length ? pitches[Math.min(pitches.length - 1, Math.floor(0.95 * pitches.length))] : 84;
-    if (this.pMax <= this.pMin) this.pMax = this.pMin + 12;
+    // Diatonic staff placement: estimate the song's tonic, then clip the
+    // (non-percussion) pitch range to its 5th-95th percentile the way
+    // Midasus does, converted into diatonic steps so the staff centers on
+    // the song's own melodic range rather than an arbitrary fixed span.
+    this.tonicPc = estimateTonicPc(timeline);
+    const pitches = timeline.filter((e) => e.role !== Role.RHYTHM).map((e) => e.pitch).sort((a, b) => a - b);
+    const pMin = pitches.length ? pitches[Math.floor(0.05 * pitches.length)] : 48;
+    let pMax = pitches.length ? pitches[Math.min(pitches.length - 1, Math.floor(0.95 * pitches.length))] : 84;
+    if (pMax <= pMin) pMax = pMin + 12;
+    const sMin = diatonicIndex(pMin, this.tonicPc).step;
+    const sMax = diatonicIndex(pMax, this.tonicPc).step;
+    this.sMid = Math.round((sMin + sMax) / 2);
 
     // Bucket notes into pages, loudest-first capped, then back in time order.
     this.pages = [];
@@ -143,10 +196,22 @@ export class ComposerStrip {
   pageIndexAt(nowMs) { return Math.max(0, Math.floor(nowMs / this.pageMs)); }
   playheadFrac(nowMs) { return (((nowMs % this.pageMs) + this.pageMs) % this.pageMs) / this.pageMs; }
 
-  /** Staff row (0 = top step, STAFF_ROWS-1 = bottom) from pitch -- quantized like sheet notation. */
+  /** Staff row (0 = top step, STAFF_ROWS-1 = bottom) from pitch: one row per
+   *  diatonic step, centered on the song's median step -- real sheet-music
+   *  ordering (C < D < E always ascend), clamped/ledgered at the edges. */
   staffRow(pitch) {
-    const t = clamp((pitch - this.pMin) / (this.pMax - this.pMin), 0, 1);
-    return Math.round((1 - t) * (STAFF_ROWS - 1));
+    return this.rowInfo(pitch).row;
+  }
+
+  /** Full placement for a pitch: the clamped staff row, whether it's an
+   *  accidental (off the tonic's major scale), and whether it fell outside
+   *  the drawn staff (needs a ledger mark). */
+  rowInfo(pitch) {
+    const { step, accidental } = diatonicIndex(pitch, this.tonicPc);
+    const rawRow = (STAFF_ROWS - 1) / 2 + (this.sMid - step);
+    const row = clamp(Math.round(rawRow), 0, STAFF_ROWS - 1);
+    const ledger = rawRow < 0 || rawRow > STAFF_ROWS - 1;
+    return { row, accidental, ledger };
   }
 
   _ensureIcons() {
@@ -170,8 +235,10 @@ export class ComposerStrip {
 
   draw(ctx, canvas, nowMs) {
     this._ensureIcons();
-    const x0 = 104, y0 = 10;
-    const w = canvas.width - x0 - 12, h = 66;
+    const x0 = 104;
+    const h = 72;
+    const y0 = canvas.height - h - 12; // bottom-anchored, clear of the ground HUD
+    const w = canvas.width - x0 - 12;
     const page = this.pages[this.pageIndexAt(nowMs)] || [];
     const pageStart = this.pageIndexAt(nowMs) * this.pageMs;
     const pageAge = nowMs - pageStart;
@@ -186,15 +253,20 @@ export class ComposerStrip {
     ctx.fill();
     ctx.stroke();
 
-    // Staff: 5 lines on the even rows of the middle of the strip.
-    const staffTop = y0 + 12, staffBottom = y0 + h - 12;
+    // Staff: pitched rows on top, a single percussion rail along the
+    // bottom edge (8px) so GM drum pitches never pollute the pitch staff.
+    const railY = y0 + h - 10;
+    const staffTop = y0 + 10, staffBottom = railY - 12;
     const rowH = (staffBottom - staffTop) / (STAFF_ROWS - 1);
     ctx.strokeStyle = 'rgba(120,95,70,0.45)';
     ctx.lineWidth = 1;
-    for (let line = 0; line < 5; line++) {
-      const y = staffTop + (1 + line * 2) * rowH;
+    for (const line of [2, 4, 6, 8, 10]) {
+      const y = staffTop + line * rowH;
       ctx.beginPath(); ctx.moveTo(x0 + 8, y); ctx.lineTo(x0 + w - 8, y); ctx.stroke();
     }
+    ctx.strokeStyle = 'rgba(120,95,70,0.28)';
+    ctx.beginPath(); ctx.moveTo(x0 + 8, railY); ctx.lineTo(x0 + w - 8, railY); ctx.stroke();
+
     // Beat ticks: one per beat, taller at the bar.
     const beats = PAGE_BARS * 4;
     for (let b = 0; b <= beats; b++) {
@@ -204,8 +276,9 @@ export class ComposerStrip {
       ctx.beginPath(); ctx.moveTo(x, staffTop + (isBar ? 0 : rowH * 2)); ctx.lineTo(x, staffBottom - (isBar ? 0 : rowH * 2)); ctx.stroke();
     }
 
-    // Hold bars: the slice of each hold note crossing this page, on the
-    // kick's staff row — press at the left edge, ride to the right.
+    // Hold bars: the slice of each hold note crossing this page, on their
+    // (fallback, hold spans carry no pitch) row — press at the left edge,
+    // ride to the right.
     if (this.holds.length) {
       const pageEnd = pageStart + this.pageMs;
       for (const hd of this.holds) {
@@ -214,7 +287,7 @@ export class ComposerStrip {
         const fb = Math.min(1, (hd.endMs - pageStart) / this.pageMs);
         const xa = x0 + 8 + fa * (w - 16);
         const xb = x0 + 8 + fb * (w - 16);
-        const y = staffTop + this.staffRow(36) * rowH;
+        const y = staffTop + this.staffRow(hd.pitch ?? 36) * rowH;
         ctx.fillStyle = 'rgba(255,180,58,0.34)';
         ctx.strokeStyle = 'rgba(255,180,58,0.7)';
         ctx.lineWidth = 1.5;
@@ -229,7 +302,9 @@ export class ComposerStrip {
     for (const evt of page) {
       const fx = (evt.tMs - pageStart) / this.pageMs;
       const x = x0 + 8 + fx * (w - 16);
-      const y = staffTop + this.staffRow(evt.pitch) * rowH;
+      const isRhythm = evt.role === Role.RHYTHM;
+      const info = isRhythm ? null : this.rowInfo(evt.pitch);
+      const y = isRhythm ? railY : staffTop + info.row * rowH;
       const dt = nowMs - evt.tMs;
       const pop = popBump(dt);
       const scaleIn = Math.min(1, pageAge / 90); // page flip: icons snap in fresh
@@ -237,7 +312,17 @@ export class ComposerStrip {
       const img = this._iconCanvases[iconFor(evt)];
       const s = img.width * scale;
       ctx.globalAlpha = dt > 0 && pop < 0.05 ? 0.78 : 1; // already-played notes rest dimmer
+      if (info && info.ledger) {
+        ctx.strokeStyle = 'rgba(90,70,50,0.6)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x - s / 2 - 3, y); ctx.lineTo(x + s / 2 + 3, y); ctx.stroke();
+      }
       ctx.drawImage(img, Math.round(x - s / 2), Math.round(y - s / 2), s, s);
+      if (info && info.accidental) {
+        ctx.fillStyle = 'rgba(90,70,50,0.75)';
+        ctx.fillRect(x - s / 2 - 5, y - 4, 1.5, 8);
+        ctx.fillRect(x - s / 2 - 2.5, y - 4, 1.5, 8);
+      }
       if (pop > 0.4) { // a tiny 4-point sparkle right on the hit
         ctx.globalAlpha = pop;
         ctx.fillStyle = '#ffffff';

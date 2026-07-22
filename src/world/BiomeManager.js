@@ -12,6 +12,10 @@ import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul } from './MountainChoreo.js';
+import { ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, geoCrestOffset } from './GeoCrest.js';
+import { seaLineY, shimmerBands, shimmerOffsetX } from './Ocean.js';
+import { ConstellationWeaver } from './ConstellationWeaver.js';
+import { SpaceRidge } from './SpaceRidge.js';
 import { SkyEnsemble } from './SkyEnsemble.js';
 import { FarVignettes } from './FarVignettes.js';
 import { RidgeRunners } from './RidgeRunners.js';
@@ -81,6 +85,16 @@ export class BiomeManager {
     this._scanlineY = 0;
     this._pylonFlash = 0;
     this._eqSmoothed = new Float32Array(BAND_COUNT);
+    // The geological equalizer: L4's crest reads the same 7 bands as the
+    // horizon EQ and the massif, but through per-song, per-band geological
+    // features (cliff/arete/knob/outcrop/terrace) pinned to fixed terrain
+    // positions -- a distinct silhouette vocabulary, "relevant" to the same
+    // music without repeating either sibling equalizer's look.
+    this._geoFeatures = assignBandFeatures(hashSeed(`${songSeed}:geocrest`));
+    // Far ocean: a sea line + shimmer rows behind the furthest ridgeline,
+    // in front of the sky. Seeded per song, same shimmerBands/seaLineY math
+    // the horizon EQ's siblings use as templates for band-driven motion.
+    this._oceanBands = shimmerBands(hashSeed(`${songSeed}:ocean`));
 
     // The mountains dance: a groove level (smoothed global energy) drives a
     // traveling ridge wave through every range, and each kick sends a
@@ -107,8 +121,13 @@ export class BiomeManager {
       const strips = {
         L2: generateSilhouette({ seed: seed + 1, octaves: 1, amplitude: 0.20, baseline: 0.45, color: b.silhouette }),
         L3: generateSilhouette({ seed: seed + 2, octaves: 2, amplitude: 0.26, baseline: 0.55, color: b.silhouette }),
-        L4: generateSilhouette({ seed: seed + 3, octaves: 3, amplitude: 0.34, baseline: 0.70, color: b.silhouette, edgeLight: b.edgeLight }),
-        L5: generateSilhouette({ seed: seed + 4, octaves: 2, amplitude: 0.22, baseline: 0.85, color: b.silhouette, edgeLight: b.edgeLight }),
+        // No baked edgeLight here: the old baked stroke tore at every
+        // dance-column seam (_drawDancingStrip blits in DANCE_COL_W slices,
+        // each at its own bounce height). _drawCrest below strokes the same
+        // neon line LIVE, continuous across every seam, and turns L4's into
+        // the geological equalizer (GeoCrest.js).
+        L4: generateSilhouette({ seed: seed + 3, octaves: 3, amplitude: 0.34, baseline: 0.70, color: b.silhouette }),
+        L5: generateSilhouette({ seed: seed + 4, octaves: 2, amplitude: 0.22, baseline: 0.85, color: b.silhouette }),
       };
       // Landmarks: per-song placements (songSeed), baked into the strips,
       // each rooted on the noise ridge at its own x. Unknown biome names
@@ -157,6 +176,12 @@ export class BiomeManager {
     this.rd = new ReactionDiffusion(songSeed);
     this.lightning = new LightningFX(songSeed);
     this.meteors = new MeteorShowerFX(songSeed);
+    // Ambient connect-the-dots: ordinary melody notes weave constellations
+    // all song long (unlike Midasus's rare, capped SkyVoyage).
+    this.weaver = new ConstellationWeaver(hashSeed(`${songSeed}:weaver`), canvasWidth, canvasHeight);
+    // The third equalizer: crystalline node-line + one tumbling wireframe,
+    // floating higher and further than everything else in the sky.
+    this.spaceRidge = new SpaceRidge(hashSeed(`${songSeed}:spaceridge`));
     this.lightRig = new LightRig(songSeed);
     // Concert beams anchor toward Midio on a drop; sane defaults so a
     // trigger before the first Simulation-set value still points somewhere
@@ -221,6 +246,7 @@ export class BiomeManager {
       this.swarm.kick(evt.vel);
       this.ribbon.kick();
       this.rd.onKick();
+      this.weaver.onKick(evt.vel);
       if (evt.vel > 0.78) this.murmuration.startle(evt.vel);
       // Heavy kicks strike lightning, but only while a storm is blowing.
       const active = this.currentBlend ? this._profile(this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from) : null;
@@ -233,6 +259,7 @@ export class BiomeManager {
       }
       this._lastKickMs = evt.tMs;
     });
+    conductor.on(Role.MELODY, (evt) => { this.weaver.onMelody(evt); });
   }
 
   _buildSchedule(barGrid, energyCurves, durationMs, songSeed) {
@@ -542,6 +569,8 @@ export class BiomeManager {
     this.lightning.update(dtSec);
     this.lightRig.update(nowMs, dtSec, this._beatMs, calmLevel, this.budget, this.fever || 0);
     this.meteors.update(dtSec);
+    this.weaver.update(nowMs, dtSec);
+    this.spaceRidge.update(nowMs, dtSec, this._eqSmoothed);
     // Drops send a heavy ring through the lake and snap every light-rig beam
     // onto Midio for a moment -- edge-detected off the externally-set
     // dropAtMs (same passthrough pattern as heatShimmer).
@@ -618,8 +647,11 @@ export class BiomeManager {
     if (phenomenaFull) this.cymatics.draw(ctx, canvas, mandalaColor);
     this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075 * (this._ribbonScaleMul || 1), mandalaColor);
     this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
+    if (phenomenaFull) this.spaceRidge.draw(ctx, canvas, worldX, this._rotated(rotateHueHex(mandalaColor, 45)), this.tSec, this.reducedFlash);
     this.drawDeepSky(ctx, skyVoyage); // Midasus's sky voyage, when she's away -- behind the mountains below
+    if (phenomenaFull) this.weaver.draw(ctx, canvas, this.reducedFlash); // ambient connect-the-dots, same deep-sky depth
     if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
+    this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull);
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
     this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
 
@@ -971,6 +1003,80 @@ export class BiomeManager {
     if (promAlpha > 0.02) this._drawProminence(ctx, cx, cy, promAlpha);
   }
 
+  /** A far ocean behind the furthest ridgeline, in front of the sky: a
+   *  filled band along a gently undulating sea line (seaLineY -- bass-scaled
+   *  amplitude, a kick presses it down) plus a handful of seeded dashed
+   *  shimmer rows. Sits behind the horizon EQ's glow, the spectrum massif,
+   *  and every mountain layer, so later draws naturally occlude most of it
+   *  -- reads as genuinely distant. The filled band is core scenery (always
+   *  drawn); the shimmer detail sheds at the deepest perf rung. */
+  _drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull) {
+    const seaTop = canvas.height * 0.585;
+    const seaBottom = canvas.height * 0.74;
+    const scroll = worldX * 0.025;
+    const bass = 0.5 * ((this._eqSmoothed[0] || 0) + (this._eqSmoothed[1] || 0));
+    const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 250) * this._danceKickAmp;
+
+    const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
+    const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
+    const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.45));
+    const deep = this._rotated(sil);
+    const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
+
+    const N = 48;
+    const pts = new Array(N + 1);
+    for (let i = 0; i <= N; i++) {
+      const u = ((i / N) + scroll / canvas.width) % 1;
+      pts[i] = { x: (i / N) * canvas.width, y: seaTop + seaLineY(u, this.tSec, bass, kick) };
+    }
+
+    ctx.save();
+    const grad = ctx.createLinearGradient(0, seaTop, 0, seaBottom);
+    grad.addColorStop(0, body);
+    grad.addColorStop(1, deep);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(0, seaBottom);
+    for (const p of pts) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(canvas.width, seaBottom);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = cap;
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i <= N; i++) {
+      if (i === 0) ctx.moveTo(pts[i].x, pts[i].y); else ctx.lineTo(pts[i].x, pts[i].y);
+    }
+    ctx.stroke();
+
+    if (phenomenaFull) {
+      const groove = clamp01(this._danceGroove);
+      for (const band of this._oceanBands) {
+        ctx.globalAlpha = band.alpha * (0.3 + 0.7 * groove);
+        ctx.lineWidth = 1;
+        ctx.setLineDash([band.dashLen, band.gapLen]);
+        ctx.lineDashOffset = shimmerOffsetX(band, this.tSec, worldX);
+        ctx.beginPath();
+        ctx.moveTo(0, seaTop + (seaBottom - seaTop) * band.yFrac);
+        ctx.lineTo(canvas.width, seaTop + (seaBottom - seaTop) * band.yFrac);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      // A soft celestial reflection column, under the sun/moon's screen x.
+      const rx = canvas.width * 0.78;
+      const rGrad = ctx.createLinearGradient(rx, seaTop, rx, seaBottom);
+      rGrad.addColorStop(0, `${cap}22`);
+      rGrad.addColorStop(1, `${cap}00`);
+      ctx.fillStyle = rGrad;
+      ctx.globalAlpha = 0.10;
+      ctx.fillRect(rx - 60, seaTop, 120, seaBottom - seaTop);
+    }
+    ctx.restore();
+  }
+
   /**
    * The spectrum as weather, not as bars: a continuous luminous ridge on
    * the horizon whose silhouette IS the 7-band spectrum -- cosine-
@@ -1176,11 +1282,17 @@ export class BiomeManager {
       this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX, yOff);
     } else {
       this._drawDancingStrip(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey);
+      if ((layerKey === 'L4' || layerKey === 'L5') && A.edgeLight) {
+        this._drawCrest(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.edgeLight, 1);
+      }
     }
     if (B !== A && t > 0.02) {
       ctx.globalAlpha = t;
       this._drawDancingStrip(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey);
       ctx.globalAlpha = 1;
+      if ((layerKey === 'L4' || layerKey === 'L5') && B.edgeLight) {
+        this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t);
+      }
     }
     // Miniature characters run along the two nearest ranges' ridges,
     // riding the same dance the columns do.
@@ -1235,6 +1347,74 @@ export class BiomeManager {
       }
       x += w;
     }
+  }
+
+  /** The neon ridge line, drawn LIVE instead of baked into the strip bitmap
+   *  (the old baked stroke tore at every 128px dance-column seam). Walks the
+   *  same danceOffset/growthMul/baseY math _drawDancingStrip uses, but
+   *  smoothly (GeoCrest's ridgeYSmooth/danceOffsetSmooth) so the line stays
+   *  one continuous polyline across every seam and every strip-tile wrap.
+   *  L4 additionally subtracts geoCrestOffset -- the 7-band spectrum,
+   *  sculpted into geological features (cliffs, aretes, knobs, outcrops,
+   *  terraces) fixed to terrain positions -- making it the third, distinct
+   *  equalizer alongside the horizon EQ and the spectrum massif. L5 keeps
+   *  the plain unbroken crest (today's look, minus the tear). */
+  _drawCrest(ctx, canvas, strip, scrollX, yOff, layerKey, edgeLight, alpha) {
+    if (!strip.ridge) return;
+    const cfg = DANCE_LAYERS[layerKey];
+    if (!cfg) return;
+    const nowMs = this.tSec * 1000;
+    const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
+    const adaptSwell = this.adaptSwell || 0;
+    const growthMul = orogenyHeightMul(layerKey, clamp01((this.orogenyGrowth || 0) + 0.22 * adaptSwell));
+    const dh = strip.height * growthMul;
+    const baseY = canvas.height - dh + yOff;
+    const danceAmpMul = 1 + 0.35 * Math.abs(adaptSwell);
+    const w = strip.width;
+    const isGeo = layerKey === 'L4';
+    const tSec = this.tSec;
+    const fever = this.fever || 0;
+    const groove = this._danceGroove;
+
+    const pts = new Array(Math.ceil(canvas.width / 8) + 3);
+    let n = 0;
+    for (let x = -8; x <= canvas.width + 8; x += 8) {
+      const stripX = scrollX + x;
+      const u = (((stripX % w) + w) % w);
+      const yR = ridgeYSmooth(strip.ridge, u) * growthMul;
+      const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever) * danceAmpMul;
+      const lift = isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0;
+      pts[n++] = { x, y: baseY + yR + dy - lift, lift };
+    }
+    pts.length = n;
+
+    ctx.save();
+    if (isGeo) {
+      let anyLift = false;
+      for (const p of pts) if (p.lift > 1) { anyLift = true; break; }
+      if (anyLift) {
+        ctx.globalAlpha = 0.10 * alpha;
+        ctx.fillStyle = edgeLight;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x, pts[i].y + pts[i].lift);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    // Two-pass glow, same weights as the old baked stroke.
+    for (const [lw, a] of [[4, 0.30], [1.5, 0.85]]) {
+      ctx.strokeStyle = edgeLight;
+      ctx.globalAlpha = a * alpha;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      for (let i = 0; i < pts.length; i++) {
+        if (i === 0) ctx.moveTo(pts[i].x, pts[i].y); else ctx.lineTo(pts[i].x, pts[i].y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   /** One super-distant mountain that IS the spectrum: seven chunky bars —

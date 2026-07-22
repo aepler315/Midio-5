@@ -127,3 +127,33 @@ test('offline predictJumpArcs stays in lockstep through the back-to-back + landi
     assert.ok(Math.abs(arcs[i].landMs - landings[i]) < 15, `arc ${i}: ${arcs[i].landMs} vs live ${landings[i]}`);
   }
 });
+
+// --- Regression: a near-duplicate kick inside a SHORT hop's retarget window
+// must not swallow the real target kick ("jumps when he should be landing") ---
+
+test('a near-duplicate kick just after a short double-step takeoff does not swallow the real target kick', () => {
+  // Kick@0 launches a short hop (D=280, landing on kick@280 -- kick@190 is
+  // under LANDING_MIN_GAP_MS so it's not itself a landing target). Before
+  // the fix, kick@190 fell inside that short arc's retarget window (r<0.3
+  // starts well under LANDING_MIN_GAP_MS after takeoff on a short arc) and
+  // opened a spurious compress with a fixed 120ms fall -- so kick@280, the
+  // arc's own honest landing target, arrived mid-compress and was silently
+  // dropped: no takeoff, Midio still visibly airborne on the beat that was
+  // supposed to be his landing.
+  const kicks = [0, 190, 280, 900, 1400].map((tMs) => ({ tMs, vel: 0.8 }));
+  const { takeoffs, landings } = stepController(kicks);
+  assert.ok(landings.some((l) => Math.abs(l - 280) < 15),
+    `expected a landing ON the 280 kick, landings: ${landings.map((l) => l.toFixed(0)).join(',')}`);
+  assert.ok(takeoffs.some((to) => Math.abs(to - 280) < 15),
+    `expected a takeoff on the 280 kick (must not be swallowed by a spurious retarget), takeoffs: ${takeoffs.map((t) => t.toFixed(0)).join(',')}`);
+});
+
+test('offline replicas (predictJumpArcs, NoteChart replay) agree: the near-duplicate kick never opens a retarget', () => {
+  const kicks = [0, 190, 280, 900, 1400].map((tMs) => ({ tMs, vel: 0.8 }));
+  const arcs = predictJumpArcs(kicks);
+  // An arc must take off from kick@280 -- if the bug were present, the
+  // in-flight arc from kick@0 would have its landMs truncated to
+  // 190+RETARGET_FALL_MS and no arc would ever take off at 280.
+  assert.ok(arcs.some((a) => Math.abs(a.takeoffMs - 280) < 1e-6),
+    `expected an arc taking off at 280, arcs: ${arcs.map((a) => `${a.takeoffMs}->${a.landMs}`).join(', ')}`);
+});

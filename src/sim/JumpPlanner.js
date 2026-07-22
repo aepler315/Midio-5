@@ -4,9 +4,11 @@
 // (kept in lockstep — see test/jumpPlanner.test.js, which cross-checks this
 // against a live JumpController stepped in real time) but as a pure,
 // non-realtime function over the whole kick list at once.
-import { A, B, GAMMA, H_BASE, jumpY, scheduledJumpD, nextLandingKickMs, shortHopHeightMul, LANDING_QUANT_EPS_MS } from './JumpController.js';
+import {
+  A, B, GAMMA, H_BASE, jumpY, scheduledJumpD, nextLandingKickMs, shortHopHeightMul,
+  LANDING_QUANT_EPS_MS, RETARGET_FALL_MS, canRetarget,
+} from './JumpController.js';
 
-const RETARGET_FALL_MS = 120;
 const HIGH_BPM_HALFTIME = 170;
 
 /**
@@ -59,7 +61,7 @@ export function predictJumpArcs(kicks, { hBase = H_BASE, jumpHeightMul = 1 } = {
     const u = (k.tMs - last.takeoffMs) / last.D;
     if (u >= A + B) {
       const r = (u - A - B) / GAMMA;
-      if (r < 0.3) {
+      if (r < 0.3 && canRetarget(k.tMs, last.takeoffMs, last.D)) {
         const compressLandMs = k.tMs + RETARGET_FALL_MS;
         const nextKickMs = nextLandingKickMs(kickTimes, compressLandMs, ki + 1);
         const D = scheduledJumpD(compressLandMs, nextKickMs, beatPeriodMs);

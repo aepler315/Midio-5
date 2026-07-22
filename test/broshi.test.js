@@ -25,6 +25,21 @@ function fakeConductor() {
 
 function fakeMidio() { return { screenX: 200 }; }
 
+function fakeCtx() {
+  const translates = [];
+  return {
+    translates,
+    save() {}, restore() {}, scale() {}, rotate() {}, beginPath() {}, closePath() {},
+    moveTo() {}, lineTo() {}, stroke() {}, fill() {}, fillRect() {}, arc() {}, ellipse() {},
+    quadraticCurveTo() {}, drawImage() {}, clearRect() {}, roundRect() {},
+    createRadialGradient(cx, cy) { translates.push({ cx, cy }); return { addColorStop() {} }; },
+    createLinearGradient() { return { addColorStop() {} }; },
+    translate(x, y) { translates.push({ x, y }); },
+    set globalAlpha(v) {}, set globalCompositeOperation(v) {}, set fillStyle(v) {},
+    set strokeStyle(v) {}, set lineWidth(v) {}, set lineCap(v) {}, set filter(v) {},
+  };
+}
+
 test('tail sway widens under sustained calm compared to energetic', () => {
   const conductorA = fakeConductor();
   const a = new Broshi(conductorA, {}, { seed: 1 });
@@ -190,4 +205,23 @@ test('bar density buckets by each note\'s own tMs, not by early delivery time', 
   conductor.fireBar(500);
   assert.equal(b._laneOnsetTimes.length, 2, 'the next bar\'s anticipated notes stay queued for it');
   assert.equal(b._barMelodyHistory.at(-1), 3, 'the closing bar counts only its own notes');
+});
+
+// --- Regression: draw() before the first update() must not crash ---
+// A fresh restart (Play again / video export -- both now possible without a
+// full page reload) can render the very first frame before any sim.step()
+// has run, interpolating the just-constructed state. renderX/screenX/
+// groundY used to be set only inside update() (they need `midio`'s live
+// position), so that first draw() translated to NaN/NaN and threw inside
+// ctx.createRadialGradient (drawGlowHalo), killing the whole render loop.
+
+test('draw() before any update() renders at finite coordinates instead of throwing', () => {
+  const conductor = fakeConductor();
+  const b = new Broshi(conductor, {}, { seed: 21 });
+  const ctx = fakeCtx();
+  assert.doesNotThrow(() => b.draw(ctx));
+  assert.ok(ctx.translates.length > 0, 'draw should have issued at least one canvas call');
+  for (const t of ctx.translates) {
+    for (const v of Object.values(t)) assert.ok(Number.isFinite(v), `non-finite coordinate: ${JSON.stringify(t)}`);
+  }
 });

@@ -21,6 +21,8 @@ import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
 import { pinchZoomDelta } from './sim/ZoomDirector.js';
+import { resolveDurationMs } from './core/SongDuration.js';
+import { VideoExporter, exportDims, exportFilename } from './export/VideoExporter.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -37,6 +39,13 @@ const completePanelEl = document.getElementById('completePanel');
 const completeStatsEl = document.getElementById('completeStats');
 const resultsGridEl = document.getElementById('resultsGrid');
 const playAgainBtnEl = document.getElementById('playAgainBtn');
+const exportResEl = document.getElementById('exportRes');
+const exportFpsEl = document.getElementById('exportFps');
+const exportBtnEl = document.getElementById('exportBtn');
+const exportDownloadEl = document.getElementById('exportDownload');
+const recordingHudEl = document.getElementById('recordingHud');
+const recordingTimeEl = document.getElementById('recordingTime');
+const recordingCancelBtnEl = document.getElementById('recordingCancelBtn');
 const debugOverlayEl = document.getElementById('debugOverlay');
 const fpsHudEl = document.getElementById('fpsHud');
 const sfFileInputEl = document.getElementById('sfFileInput');
@@ -96,6 +105,17 @@ let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted acces
 let muteTimelineSynth = false;
 let loadShow = null; // percussion loading show, created in bootAudio
 let loadGen = 0;     // a newer load cancels a stale audition gate's start
+
+// Retained so "Play again" and video export can replay the exact same song
+// without a page reload (the sim is fully seeded + autoplay-driven, so
+// replaying `lastTimelineData` reproduces the performance bit-for-bit).
+// `lastAudioBuffer` is only set on the raw-audio-file path (MIDI/demo
+// regenerate their sound from the timeline).
+let lastTimelineData = null;
+let lastAudioBuffer = null;
+let lastSongName = 'song';
+let videoExporter = null;
+let exporting = false;
 
 let simTime = 0;
 let acc = 0;
@@ -430,6 +450,12 @@ function stopTimeline() {
     cancelAnimationFrame(rafHandle);
     rafHandle = null;
   }
+  // A mid-export file drop or restart must not leave a live recorder behind.
+  if (videoExporter?.active) {
+    videoExporter.abort();
+    exporting = false;
+    recordingHudEl?.classList.add('hidden');
+  }
   audioEngine?.pause();
   synth?.stopAll?.();
   // Tear down optional WebGL overlay so a mid-song drop doesn't stack layers.
@@ -446,6 +472,12 @@ function startTimeline(timelineData) {
   stopTimeline();
   fitCanvas();
   applySynthMutePolicy();
+  // Guard a degenerate declared duration (<=0): without it, FractureEngine's
+  // idle -> about-to-freeze transition never fires and the song never
+  // completes -- the engine would just run forever.
+  timelineData.durationMs = resolveDurationMs(timelineData.timeline, timelineData.durationMs);
+  lastTimelineData = timelineData;
+  lastAudioBuffer = null; // audio-file path sets this itself, right after this call
   conductor.load(timelineData);
   perfGovernor = new PerfGovernor({ startLevel: perfStartLevel });
   sim = new Simulation(conductor, paramBus, {
@@ -510,6 +542,7 @@ async function loadMidiFile(file) {
     if (!data.timeline || data.timeline.length === 0) {
       throw new Error('MIDI parsed but contains no notes');
     }
+    lastSongName = file.name || 'song';
     data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
     // Custom biome generation lives inside the load path so every drop/upload
     // of a .mid produces a unique world without changing stock demo casting.
@@ -613,7 +646,12 @@ async function loadAudioFiles(files) {
   // stacking the synth's pseudo-onset voicing on top is the unwanted
   // synthetic hi-hat/click layer, so the timeline synth stays silent here.
   muteTimelineSynth = true;
+  lastSongName = files[0].name || 'song';
   startTimeline(data);
+  // Replaying this song (Play again / export) needs the actual decoded
+  // audio -- MIDI/demo regenerate their sound from the timeline, but a
+  // raw-audio song has none of its own to regenerate.
+  lastAudioBuffer = audioBuffer;
   // Raw audio is its own sound source — font fit scores from the previous
   // MIDI would be stale noise here, so drop them.
   fontRecommender?.clear();
@@ -625,6 +663,7 @@ async function loadDemo() {
   const gen = ++loadGen;
   const data = buildDemoTimeline({});
   data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
+  lastSongName = 'demo';
   // The demo is synth-voiced just like a MIDI file, so it gets the same gate.
   muteTimelineSynth = false;
   await startWithAuditionGate(data, gen);
@@ -818,7 +857,9 @@ function frame(tRaf) {
   if (!running) return;
   if (lastRafMs !== null) {
     const rafDeltaMs = tRaf - lastRafMs;
-    perfGovernor.sample(rafDeltaMs, tRaf);
+    // While recording, the extra per-frame export blit must not read as
+    // "the game is struggling" and shed phenomena mid-video.
+    if (!exporting) perfGovernor.sample(rafDeltaMs, tRaf);
     fpsEma = emaFps(fpsEma, rafDeltaMs);
     if (fpsHudVisible && fpsHudEl) {
       fpsHudEl.textContent = `${Math.round(fpsEma)} fps  ·  perf ${perfGovernor.level}/${PERF_MAX_LEVEL}`;
@@ -848,6 +889,13 @@ function frame(tRaf) {
 
   const alpha = acc / STEP_MS;
   renderer.draw(sim, alpha);
+  if (exporting && videoExporter) {
+    videoExporter.captureFrame();
+    if (recordingTimeEl) {
+      const total = conductor.durationMs || 0;
+      recordingTimeEl.textContent = `${formatClock(nowMs)} / ${formatClock(total)}`;
+    }
+  }
   comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
   if (scoreReadoutEl) scoreReadoutEl.textContent = sim.scoreKeeper.score.toLocaleString('en-US');
   if (milestoneFiredThisFrame) {
@@ -859,12 +907,29 @@ function frame(tRaf) {
   visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();
 
+  // Fallback completion: the normal path is FractureEngine's freeze+shatter
+  // sequence (see sim.fracture.isDone below), but its idle->about-to-freeze
+  // transition only fires inside Renderer.draw, so a stall there (or any
+  // other gap) would otherwise leave the engine running forever. 2500ms is
+  // comfortably past the freeze lead (300ms) + shatter (600ms).
+  const durationMs = conductor.durationMs || 0;
+  if (durationMs > 0 && nowMs > durationMs + 2500 && !sim.fracture.isDone) {
+    onSongComplete();
+    return;
+  }
   if (sim.fracture.isDone) {
     onSongComplete();
     return;
   }
 
   rafHandle = requestAnimationFrame(frame);
+}
+
+function formatClock(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
 }
 
 // --- The Lens: zoom controls ---------------------------------------------
@@ -992,6 +1057,11 @@ function onSongComplete() {
   running = false;
   zoomKeyDir = 0;
   hudEl.classList.add('hidden');
+  // Unlike stopTimeline() (a fresh-song teardown), natural completion never
+  // used to silence anything -- the decoded audio buffer (or any still-
+  // ringing SF2 voices) kept sounding right under the COMPLETE panel.
+  audioEngine?.pause();
+  synth?.stopAll?.();
   const combo = sim.comboSystem;
   const sk = sim.scoreKeeper;
   // The real high-water mark, not the live streak the freeze happened to catch.
@@ -1026,6 +1096,36 @@ function onSongComplete() {
   }
   renderFilmstrip(sim.highlightReel?.frames || []);
   completePanelEl.classList.remove('hidden');
+  if (exporting) finishExport();
+}
+
+/** Clean in-memory restart of the last-loaded song (MIDI/demo replay from
+ *  their timeline; raw audio replays the actual decoded buffer) -- the sim
+ *  is fully seeded and autoplay-driven, so this reproduces the same
+ *  performance without a page reload. Falls back to reload if nothing was
+ *  retained (e.g. a very first, still-loading session). */
+function replaySong() {
+  if (!lastTimelineData) { window.location.reload(); return; }
+  startTimeline(lastTimelineData);
+  if (lastAudioBuffer) audioEngine.playBuffer(lastAudioBuffer, 0);
+}
+
+async function finishExport() {
+  exporting = false;
+  recordingHudEl?.classList.add('hidden');
+  if (fpsHudEl) fpsHudEl.classList.toggle('hidden', !fpsHudVisible);
+  if (!videoExporter) return;
+  const blob = await videoExporter.stop();
+  if (!blob || !exportDownloadEl) return;
+  if (exportDownloadEl.dataset.url) URL.revokeObjectURL(exportDownloadEl.dataset.url);
+  const url = URL.createObjectURL(blob);
+  exportDownloadEl.dataset.url = url;
+  exportDownloadEl.href = url;
+  const preset = Number(exportResEl?.value) || 1080;
+  const fps = Number(exportFpsEl?.value) || 60;
+  exportDownloadEl.download = exportFilename(lastSongName, preset, fps, videoExporter.mime);
+  exportDownloadEl.classList.remove('hidden');
+  exportDownloadEl.click();
 }
 
 /** The Reel: the COMPLETE panel's highlight filmstrip -- proof of what the
@@ -1073,4 +1173,28 @@ if (filmstripModalEl) {
   filmstripModalEl.addEventListener('click', (e) => { if (e.target === filmstripModalEl) closeFilmstripModal(); });
 }
 
-playAgainBtnEl.addEventListener('click', () => window.location.reload());
+playAgainBtnEl.addEventListener('click', () => replaySong());
+
+exportBtnEl?.addEventListener('click', () => {
+  if (exporting || !lastTimelineData) return;
+  const preset = Number(exportResEl?.value) || 1080;
+  const fps = Number(exportFpsEl?.value) || 30;
+  const { w, h } = exportDims(preset);
+  completePanelEl.classList.add('hidden');
+  exportDownloadEl?.classList.add('hidden');
+  recordingHudEl?.classList.remove('hidden');
+  fpsHudEl?.classList.add('hidden'); // the recording itself is the readout that matters here
+  replaySong();
+  videoExporter = new VideoExporter({ audioEngine, sourceCanvas: canvas });
+  videoExporter.start({ width: w, height: h, fps });
+  exporting = true;
+});
+
+recordingCancelBtnEl?.addEventListener('click', () => {
+  videoExporter?.abort();
+  exporting = false;
+  recordingHudEl?.classList.add('hidden');
+  if (fpsHudEl) fpsHudEl.classList.toggle('hidden', !fpsHudVisible);
+  stopTimeline();
+  completePanelEl.classList.remove('hidden');
+});
