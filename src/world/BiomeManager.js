@@ -13,7 +13,7 @@ import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul } from './MountainChoreo.js';
 import { ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, geoCrestOffset } from './GeoCrest.js';
-import { seaLineY, shimmerBands, shimmerOffsetX } from './Ocean.js';
+import { seaLineY, oceanRowYs, waveRows, rowAlpha, OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC } from './Ocean.js';
 import { ConstellationWeaver } from './ConstellationWeaver.js';
 import { SpaceRidge } from './SpaceRidge.js';
 import { SkyEnsemble } from './SkyEnsemble.js';
@@ -52,6 +52,7 @@ const ACHROMATIC_SAT_THRESHOLD = 0.08;
 // KeyDirector's key-driven rotation via _rotated.
 const FORM_HUE_BIAS_MAX = 40;
 const FORM_HUE_TAU_SEC = 1.5; // section changes glide their hue, never snap
+const OCEAN_WATER_BLUE = '#55c8f0'; // always reads as water, blended into the biome palette
 
 export class BiomeManager {
   constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, customBiome = null }) {
@@ -91,10 +92,11 @@ export class BiomeManager {
     // positions -- a distinct silhouette vocabulary, "relevant" to the same
     // music without repeating either sibling equalizer's look.
     this._geoFeatures = assignBandFeatures(hashSeed(`${songSeed}:geocrest`));
-    // Far ocean: a sea line + shimmer rows behind the furthest ridgeline,
-    // in front of the sky. Seeded per song, same shimmerBands/seaLineY math
-    // the horizon EQ's siblings use as templates for band-driven motion.
-    this._oceanBands = shimmerBands(hashSeed(`${songSeed}:ocean`));
+    // Far ocean: an abstract field of wave-contour rows receding toward a
+    // high horizon, seen through/behind the mountain silhouettes -- an
+    // infinite flat plane of water in perspective, not a solid band (a
+    // solid band at ridge height is fully occluded by the opaque ridges).
+    this._oceanRows = waveRows(hashSeed(`${songSeed}:ocean`), 20);
 
     // The mountains dance: a groove level (smoothed global energy) drives a
     // traveling ridge wave through every range, and each kick sends a
@@ -1003,76 +1005,93 @@ export class BiomeManager {
     if (promAlpha > 0.02) this._drawProminence(ctx, cx, cy, promAlpha);
   }
 
-  /** A far ocean behind the furthest ridgeline, in front of the sky: a
-   *  filled band along a gently undulating sea line (seaLineY -- bass-scaled
-   *  amplitude, a kick presses it down) plus a handful of seeded dashed
-   *  shimmer rows. Sits behind the horizon EQ's glow, the spectrum massif,
-   *  and every mountain layer, so later draws naturally occlude most of it
-   *  -- reads as genuinely distant. The filled band is core scenery (always
-   *  drawn); the shimmer detail sheds at the deepest perf rung. */
+  /** A far ocean seen through/behind the mountain silhouettes: not a solid
+   *  band (which a ridge simply paints over) but an abstract field of
+   *  wave-contour rows receding toward a high horizon, like an infinite
+   *  flat plane of water in perspective -- rows compress and fade as they
+   *  approach the horizon, and the whole field fades at the left/right
+   *  screen edges. Drawn before the horizon EQ, spectrum massif, and every
+   *  mountain layer, so those naturally occlude the lower portion; the
+   *  visible remainder (above/between the ridgelines) IS the ocean. The row
+   *  stack always draws (visibility is the feature); it thins and drops the
+   *  celestial glint at the deepest perf rung. */
   _drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull) {
-    const seaTop = canvas.height * 0.585;
-    const seaBottom = canvas.height * 0.74;
-    const scroll = worldX * 0.025;
+    const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
+    const nearY = canvas.height * OCEAN_NEAR_FRAC;
     const bass = 0.5 * ((this._eqSmoothed[0] || 0) + (this._eqSmoothed[1] || 0));
     const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 250) * this._danceKickAmp;
 
     const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
     const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
-    const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.45));
-    const deep = this._rotated(sil);
+    const base = this.lerpCache.get(sil, skyMid, 0.45);
+    const water = this._rotated(this.lerpCache.get(base, OCEAN_WATER_BLUE, 0.4));
     const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
 
-    const N = 48;
-    const pts = new Array(N + 1);
-    for (let i = 0; i <= N; i++) {
-      const u = ((i / N) + scroll / canvas.width) % 1;
-      pts[i] = { x: (i / N) * canvas.width, y: seaTop + seaLineY(u, this.tSec, bass, kick) };
-    }
+    const rows = phenomenaFull ? this._oceanRows : this._oceanRows.slice(0, Math.ceil(this._oceanRows.length / 2));
+    const rowYs = oceanRowYs(horizonY, nearY, rows.length);
+
+    // Fade to transparent at the screen edges -- an infinite plane trails
+    // off sideways as much as it recedes into the distance.
+    const edgeFade = ctx.createLinearGradient(0, 0, canvas.width, 0);
+    edgeFade.addColorStop(0, `${water}00`);
+    edgeFade.addColorStop(0.14, water);
+    edgeFade.addColorStop(0.86, water);
+    edgeFade.addColorStop(1, `${water}00`);
 
     ctx.save();
-    const grad = ctx.createLinearGradient(0, seaTop, 0, seaBottom);
-    grad.addColorStop(0, body);
-    grad.addColorStop(1, deep);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(0, seaBottom);
-    for (const p of pts) ctx.lineTo(p.x, p.y);
-    ctx.lineTo(canvas.width, seaBottom);
-    ctx.closePath();
-    ctx.fill();
-
     ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = cap;
-    ctx.globalAlpha = 0.35;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    for (let i = 0; i <= N; i++) {
-      if (i === 0) ctx.moveTo(pts[i].x, pts[i].y); else ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.strokeStyle = edgeFade;
+
+    const N = 48;
+    for (let j = 0; j < rows.length; j++) {
+      const row = rows[j];
+      const alpha = rowAlpha(j, rows.length) * row.alphaMul * this.budget;
+      if (alpha <= 0.01) continue;
+      const gapAbove = j === 0 ? nearY - rowYs[0] : rowYs[j - 1] - rowYs[j];
+      const ampScale = row.ampMul * Math.max(0.2, clamp01(gapAbove / 24));
+      const scroll = worldX * (0.008 + 0.03 * (1 - j / rows.length));
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = 1.2 + 0.8 * (1 - j / rows.length);
+      ctx.beginPath();
+      for (let i = 0; i <= N; i++) {
+        const u = (i / N + row.uPhase + scroll / canvas.width) % 1;
+        const x = (i / N) * canvas.width;
+        const y = rowYs[j] + seaLineY(u, this.tSec * row.speedMul, bass, kick) * ampScale;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
+
+    // The horizon itself: where the water meets the sky.
+    for (const [lw, a] of [[3.5, 0.10], [1.2, 0.30]]) {
+      ctx.globalAlpha = a * this.budget;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.moveTo(0, horizonY);
+      ctx.lineTo(canvas.width, horizonY);
+      ctx.stroke();
+    }
+
+    // A faint body sheen just below the horizon, so the plane reads as
+    // water rather than a stack of loose lines.
+    const sheenH = Math.min(90, nearY - horizonY);
+    const sheen = ctx.createLinearGradient(0, horizonY, 0, horizonY + sheenH);
+    sheen.addColorStop(0, `${water}0f`);
+    sheen.addColorStop(1, `${water}00`);
+    ctx.fillStyle = sheen;
+    ctx.globalAlpha = this.budget;
+    ctx.fillRect(0, horizonY, canvas.width, sheenH);
 
     if (phenomenaFull) {
-      const groove = clamp01(this._danceGroove);
-      for (const band of this._oceanBands) {
-        ctx.globalAlpha = band.alpha * (0.3 + 0.7 * groove);
-        ctx.lineWidth = 1;
-        ctx.setLineDash([band.dashLen, band.gapLen]);
-        ctx.lineDashOffset = shimmerOffsetX(band, this.tSec, worldX);
-        ctx.beginPath();
-        ctx.moveTo(0, seaTop + (seaBottom - seaTop) * band.yFrac);
-        ctx.lineTo(canvas.width, seaTop + (seaBottom - seaTop) * band.yFrac);
-        ctx.stroke();
-      }
-      ctx.setLineDash([]);
       // A soft celestial reflection column, under the sun/moon's screen x.
       const rx = canvas.width * 0.78;
-      const rGrad = ctx.createLinearGradient(rx, seaTop, rx, seaBottom);
+      const glintH = canvas.height * 0.25;
+      const rGrad = ctx.createLinearGradient(rx, horizonY, rx, horizonY + glintH);
       rGrad.addColorStop(0, `${cap}22`);
       rGrad.addColorStop(1, `${cap}00`);
       ctx.fillStyle = rGrad;
       ctx.globalAlpha = 0.10;
-      ctx.fillRect(rx - 60, seaTop, 120, seaBottom - seaTop);
+      ctx.fillRect(rx - 60, horizonY, 120, glintH);
     }
     ctx.restore();
   }

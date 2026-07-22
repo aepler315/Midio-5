@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { seaLineY, shimmerBands, shimmerOffsetX } from '../src/world/Ocean.js';
+import { seaLineY, oceanRowYs, waveRows, rowAlpha } from '../src/world/Ocean.js';
 
 test('seaLineY is bounded, finite, and periodic in u', () => {
   for (let t = 0; t < 20; t += 1.3) {
@@ -29,28 +29,60 @@ test('seaLineY amplitude scales with bass, kick presses the line down', () => {
   assert.ok(withKick < noKick, 'a kick should press the sea line down');
 });
 
-test('shimmerBands is deterministic per seed and respects count/ranges', () => {
-  const a = shimmerBands(11, 5);
-  const b = shimmerBands(11, 5);
-  const c = shimmerBands(99, 5);
-  assert.equal(a.length, 5);
-  assert.deepEqual(a, b, 'same seed reproduces identical bands');
-  assert.notDeepEqual(a, c, 'different seeds should differ');
-  for (const band of a) {
-    assert.ok(band.yFrac > 0 && band.yFrac < 1);
-    assert.ok(band.speed > 0);
-    assert.ok(band.dashLen > 0 && band.gapLen > 0);
-    assert.ok(band.alpha > 0 && band.alpha < 1);
+test('oceanRowYs: rows stay within [horizon, near], recede monotonically, gaps shrink toward the horizon', () => {
+  const horizonY = 100, nearY = 500;
+  for (const count of [1, 2, 5, 14, 20]) {
+    const ys = oceanRowYs(horizonY, nearY, count);
+    assert.equal(ys.length, count);
+    for (const y of ys) {
+      assert.ok(Number.isFinite(y));
+      assert.ok(y > horizonY, `row must stay above (never reach) the horizon: ${y}`);
+      assert.ok(y <= nearY + 1e-9, `row must not exceed the near edge: ${y}`);
+    }
+    if (count >= 2) {
+      assert.equal(ys[0], nearY, 'nearest row sits at the near edge');
+      // Monotonically receding toward the horizon.
+      for (let j = 1; j < ys.length; j++) assert.ok(ys[j] < ys[j - 1], `row ${j} must be farther than row ${j - 1}`);
+      // Gaps between successive rows strictly shrink toward the horizon.
+      if (count >= 3) {
+        for (let j = 1; j < ys.length - 1; j++) {
+          const gapNear = ys[j - 1] - ys[j];
+          const gapFar = ys[j] - ys[j + 1];
+          assert.ok(gapFar < gapNear, `gap must shrink toward horizon at row ${j}: ${gapFar} vs ${gapNear}`);
+        }
+      }
+    }
   }
-  assert.equal(shimmerBands(1, 8).length, 8);
 });
 
-test('shimmerOffsetX stays within one dash period and is finite', () => {
-  const band = shimmerBands(3, 1)[0];
-  const period = band.dashLen + band.gapLen;
-  for (let t = 0; t < 50; t += 0.7) {
-    const off = shimmerOffsetX(band, t, t * 37);
-    assert.ok(Number.isFinite(off));
-    assert.ok(off >= 0 && off < period, `out of period range: ${off}`);
+test('waveRows is deterministic per seed and respects count/ranges', () => {
+  const a = waveRows(11, 14);
+  const b = waveRows(11, 14);
+  const c = waveRows(99, 14);
+  assert.equal(a.length, 14);
+  assert.deepEqual(a, b, 'same seed reproduces identical rows');
+  assert.notDeepEqual(a, c, 'different seeds should differ');
+  for (const row of a) {
+    assert.ok(row.uPhase >= 0 && row.uPhase < 1);
+    assert.ok(row.speedMul > 0);
+    assert.ok(row.ampMul > 0);
+    assert.ok(row.alphaMul > 0);
   }
+  assert.equal(waveRows(1, 8).length, 8);
+});
+
+test('rowAlpha is bounded, fades near the horizon, and peaks in the interior', () => {
+  const count = 14;
+  let maxAlpha = -1, maxIdx = -1;
+  for (let i = 0; i < count; i++) {
+    const a = rowAlpha(i, count);
+    assert.ok(Number.isFinite(a));
+    assert.ok(a >= 0 && a <= 1, `out of bounds at i=${i}: ${a}`);
+    if (a > maxAlpha) { maxAlpha = a; maxIdx = i; }
+  }
+  const horizonAlpha = rowAlpha(count - 1, count);
+  assert.ok(horizonAlpha <= 0.06, `row nearest the horizon must be nearly invisible, got ${horizonAlpha}`);
+  assert.ok(maxIdx > 0 && maxIdx < count - 1, 'peak must be interior, not at either endpoint');
+  assert.ok(maxAlpha > rowAlpha(0, count), 'interior peak must exceed the nearest row');
+  assert.ok(maxAlpha > horizonAlpha, 'interior peak must exceed the horizon row');
 });
