@@ -148,6 +148,8 @@ export class Renderer {
       });
     }
     if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
+    if (sim.rippleFX) sim.rippleFX.draw(ctx, pose.worldX, pose.midioX, sim.reducedFlash);
+    if (sim.battle) this._drawBattleEnemies(ctx, sim);
 
     // Rainbow brush: paint Midio's jump arcs, world-locked behind him.
     this.brush.update(sim.timeMs, pose.airborne, pose.worldX, pose.midioY);
@@ -187,6 +189,7 @@ export class Renderer {
       this._drawContactShadow(ctx, contactShadow(sim.midasus.p.x, sim.midasus.yFloor, heightAbove, sim.midasus.shadowWidthPx));
     }
     if (sim.midasus) sim.midasus.draw(ctx, particleMul);
+    if (sim.battle) this._drawBattleFX(ctx, sim);
     if (sim.gnat) sim.gnat.draw(ctx, sim.timeMs);
     if (sim.fracture) sim.fracture.draw(ctx, canvas, { glow: perf ? perf.crackGlowEnabled : true });
     if (biomeManager) biomeManager.drawForeground(ctx, canvas, pose.worldX, perf ? perf.veilEnabled : true);
@@ -287,6 +290,102 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Battle enemies: angular wireframe glyphs (flyers wobble in the air,
+   *  crawlers hug the ground), screen-locked like the characters -- world
+   *  scroll doesn't apply to them, they live where they're drawn. */
+  _drawBattleEnemies(ctx, sim) {
+    const battle = sim.battle;
+    const tSec = sim.timeMs / 1000;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const e of battle.enemies.active) {
+      const bob = e.kind === 'flyer' ? Math.sin(tSec * 5 + e.bobPhase) * 8 : 0;
+      const x = e.sx, y = e.sy + bob;
+      const hue = e.locked ? 350 : 5; // faint menace, brightens once locked/targeted
+      ctx.strokeStyle = `hsla(${hue}, 70%, 65%, ${capFlashAlpha(0.8, sim.reducedFlash).toFixed(3)})`;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      if (e.kind === 'flyer') {
+        const wingFlap = Math.sin(tSec * 14 + e.bobPhase);
+        ctx.moveTo(x, y - 10);
+        ctx.lineTo(x + 9, y + wingFlap * 4);
+        ctx.lineTo(x, y + 10);
+        ctx.lineTo(x - 9, y + wingFlap * 4);
+        ctx.closePath();
+        ctx.moveTo(x - 9, y); ctx.lineTo(x + 9, y);
+      } else {
+        ctx.moveTo(x - 10, y);
+        ctx.lineTo(x - 4, y - 9);
+        ctx.lineTo(x + 4, y - 9);
+        ctx.lineTo(x + 10, y);
+        ctx.lineTo(x + 6, y + 4);
+        ctx.lineTo(x - 6, y + 4);
+        ctx.closePath();
+        const leg = Math.sin(tSec * 16 + e.bobPhase) * 3;
+        ctx.moveTo(x - 6, y + 4); ctx.lineTo(x - 6 + leg, y + 9);
+        ctx.moveTo(x + 6, y + 4); ctx.lineTo(x + 6 - leg, y + 9);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Battle FX: muzzle glints, the dots of light in flight, and the
+   *  vaporize bursts when they arrive exactly on the 16th-note beat. Drawn
+   *  over all three characters so every shot reads as fired from them. */
+  _drawBattleFX(ctx, sim) {
+    const battle = sim.battle;
+    const vNow = sim.timeMs - (sim.visualLagMs || 0);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    const bezier = (u, x0, y0, lx, ly, tx, ty) => {
+      const omu = 1 - u;
+      return [
+        omu * omu * x0 + 2 * omu * u * lx + u * u * tx,
+        omu * omu * y0 + 2 * omu * u * ly + u * u * ty,
+      ];
+    };
+    for (const d of battle.dots.active) {
+      const u = clamp01((vNow - d.departMs) / Math.max(1e-6, d.travelMs));
+      const e = battle.enemies.active.find((en) => en.id === d.enemyId);
+      const tx = e ? e.sx : d.x0, ty = e ? e.sy : d.y0;
+      const liftX = (d.x0 + tx) / 2, liftY = Math.min(d.y0, ty) - 30;
+      const [x, y] = bezier(u, d.x0, d.y0, liftX, liftY, tx, ty);
+      // Muzzle glint at departure.
+      if (u < 0.15) {
+        ctx.fillStyle = `rgba(255,245,200,${capFlashAlpha(0.6 * (1 - u / 0.15), sim.reducedFlash).toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(d.x0, d.y0, 6, 0, Math.PI * 2); ctx.fill();
+      }
+      const [tailX, tailY] = bezier(Math.max(0, u - 0.08), d.x0, d.y0, liftX, liftY, tx, ty);
+      ctx.strokeStyle = `rgba(255,250,210,${capFlashAlpha(0.9, sim.reducedFlash).toFixed(3)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(tailX, tailY);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.fillStyle = `rgba(255,255,235,${capFlashAlpha(1, sim.reducedFlash).toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+    }
+
+    for (const b of battle.bursts.active) {
+      const t = b.age / b.life;
+      const alpha = capFlashAlpha((1 - t) ** 2, sim.reducedFlash);
+      ctx.strokeStyle = `rgba(255,235,190,${alpha.toFixed(3)})`;
+      ctx.lineWidth = 2;
+      for (const s of b.shards) {
+        const r = s.speed * b.age;
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(b.x + Math.cos(s.ang) * r, b.y + Math.sin(s.ang) * r);
+        ctx.stroke();
+      }
+      ctx.fillStyle = `rgba(255,255,240,${alpha.toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(b.x, b.y, 14 * (1 - t), 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
   }
