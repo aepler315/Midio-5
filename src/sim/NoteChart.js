@@ -10,7 +10,9 @@
 // following the chart can always clear what the auto-game could. Kicks the
 // predictor ignores (mid-air, halftime ghosts) simply aren't notes.
 import { Role } from '../core/NoteEvent.js';
-import { A, B, GAMMA, scheduledJumpD, nextLandingKickMs, LANDING_QUANT_EPS_MS } from './JumpController.js';
+import {
+  A, B, GAMMA, scheduledJumpD, nextLandingKickMs, LANDING_QUANT_EPS_MS, RETARGET_FALL_MS, canRetarget,
+} from './JumpController.js';
 
 export const HOLD_MAX_GAP_MS = 180; // consecutive kicks this close chain into a roll
 export const HOLD_MIN_HITS = 5;
@@ -22,7 +24,6 @@ export const HOLD_BONUS = 150;
 // durationMs - 300, and a hold must always be completable before that.
 export const SONG_END_KEEPOUT_MS = 500;
 const DEDUPE_EPS_MS = 5; // layered 35+36 kicks on the same moment collapse to one hit
-const RETARGET_FALL_MS = 120; // lockstep with JumpController/JumpPlanner
 const HIGH_BPM_HALFTIME = 170;
 
 /**
@@ -153,7 +154,7 @@ function replayTakeoffTriggers(kicks) {
     const u = (k.tMs - lastArc.takeoffMs) / lastArc.D;
     if (u >= A + B) {
       const r = (u - A - B) / GAMMA;
-      if (r < 0.3) {
+      if (r < 0.3 && canRetarget(k.tMs, lastArc.takeoffMs, lastArc.D)) {
         const compressLandMs = k.tMs + RETARGET_FALL_MS;
         const nextKickMs = nextLandingKickMs(kickTimes, compressLandMs, ki + 1);
         const D = scheduledJumpD(compressLandMs, nextKickMs, beatPeriodMs);

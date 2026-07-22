@@ -102,6 +102,17 @@ export class Broshi {
     this.jawOpen = 0; // 0..1
     this._jawUntilMs = -Infinity;
     this.hopY = 0;
+    // screenX/renderX/groundY are only ever computed inside update() (they
+    // need `midio`'s live position, not available at construction) -- but a
+    // fresh restart (Play again / video export) can render the very first
+    // frame before any step has run yet (zero completed sim.step() calls
+    // still gets rendered, interpolating the freshly-constructed state).
+    // Previously undefined here, so that first draw() translated to
+    // NaN/NaN and crashed the whole render loop; 0 is a safe placeholder,
+    // overwritten by the first real update() a step later.
+    this.screenX = 0;
+    this.renderX = 0;
+    this.groundY = 0;
     // Apex-on-beat hop (ChoreoClock): a parabola anchored so its peak lands
     // exactly ON the note's own tMs -- he leaves the ground before the note
     // sounds. Null when grounded.

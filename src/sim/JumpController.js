@@ -26,7 +26,7 @@ export function jumpY(u, H) {
 
 export const H_BASE = 190; // px -- the bigger stage (Midio.groundY moved from 480 to 540)
 export const D_MIN = 380, D_MAX = 1200; // ms
-const RETARGET_FALL_MS = 120;
+export const RETARGET_FALL_MS = 120;
 const HIGH_BPM_HALFTIME = 170;
 // A jump's landing lands ON the next audible kick whenever one falls in
 // range, rather than merely on the beat-period EMA -- the EMA is only ever
@@ -52,6 +52,28 @@ export const LANDING_MIN_GAP_MS = 200;
 // between the replicas' exact math and the live controller's fixed-step
 // landing/compress resolution.
 export const LANDING_QUANT_EPS_MS = 10;
+
+/**
+ * Whether a mid-air retarget may engage at `nowMs` for the current arc
+ * (launched at `jumpStartMs`, duration `D`): only when that arc isn't
+ * already about to land on its OWN correctly-scheduled kick within
+ * RETARGET_FALL_MS. Before double-step hops (D can now go below D_MIN),
+ * the retarget window (u in [A+B, A+B+0.3*GAMMA)) could never start earlier
+ * than ~247ms into an arc -- safely past LANDING_MIN_GAP_MS (200ms), the
+ * floor every other kick-consumption path in this file uses to recognize a
+ * near-duplicate onset. A short (<D_MIN) arc's retarget window can now
+ * start well under that floor: a near-duplicate kick the dedupe rule would
+ * otherwise ignore can land inside r<0.3 and hijack the schedule with a
+ * fixed-length compress -- which then SWALLOWS the real target kick if it
+ * arrives mid-compress (every branch is gated behind !this.compress),
+ * leaving Midio visibly airborne through the beat that was supposed to be
+ * his landing. Requiring the arc's own landing to still be comfortably
+ * ahead keeps a short hop's own honest touchdown from ever being preempted.
+ */
+export function canRetarget(nowMs, jumpStartMs, D) {
+  const remainingToOwnLanding = jumpStartMs + D - nowMs;
+  return remainingToOwnLanding > RETARGET_FALL_MS;
+}
 
 /**
  * The jump duration for a launch at `takeoffMs`: exactly the gap to
@@ -318,7 +340,7 @@ export class JumpController {
     const u = (nowMs - this.jumpStartMs) / this.D;
     if (u >= A + B) {
       const r = (u - A - B) / GAMMA;
-      if (r < 0.3 && !this.compress) {
+      if (r < 0.3 && !this.compress && canRetarget(nowMs, this.jumpStartMs, this.D)) {
         const retargetLaunchMs = nowMs + RETARGET_FALL_MS;
         const nextKickMs = nextLandingKickMs(this._kickTimes, retargetLaunchMs, this._kickIdx + 1);
         const D = scheduledJumpD(retargetLaunchMs, nextKickMs, this.beatPeriodMs);
