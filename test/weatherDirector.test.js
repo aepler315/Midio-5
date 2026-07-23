@@ -4,8 +4,8 @@ import { WeatherDirector, kindForMood, KINDS } from '../src/sim/WeatherDirector.
 
 const STEP = 1 / 120;
 
-test('KINDS lists all four weather kinds', () => {
-  assert.deepEqual([...KINDS], ['rain', 'snow', 'petals', 'embers']);
+test('KINDS lists all seven weather kinds', () => {
+  assert.deepEqual([...KINDS], ['rain', 'snow', 'petals', 'embers', 'sunshine', 'fog', 'wind']);
 });
 
 test('kindForMood: sad valence -> rain, neutral -> snow, happy -> petals', () => {
@@ -17,6 +17,26 @@ test('kindForMood: sad valence -> rain, neutral -> snow, happy -> petals', () =>
 test('kindForMood: high epic overrides valence to embers', () => {
   assert.equal(kindForMood(-0.8, 0.9, 'snow'), 'embers');
   assert.equal(kindForMood(0.8, 0.9, 'rain'), 'embers');
+});
+
+test('kindForMood: becalmed and happy -> sunshine, becalmed and sad -> fog', () => {
+  assert.equal(kindForMood(0.8, 0.1, 'snow'), 'sunshine');
+  assert.equal(kindForMood(-0.8, 0.1, 'snow'), 'fog');
+  // Becalmed but mood-neutral still falls through to the ordinary mapping.
+  assert.equal(kindForMood(0, 0.1, 'snow'), 'snow');
+});
+
+test('kindForMood: energetic and mood-neutral (short of embers) -> wind', () => {
+  assert.equal(kindForMood(0, 0.6, 'snow'), 'wind');
+  assert.equal(kindForMood(0.1, 0.6, 'rain'), 'wind');
+  // Too far from neutral valence, even at wind-range epic, falls through.
+  assert.equal(kindForMood(0.8, 0.6, 'snow'), 'petals');
+});
+
+test('kindForMood: none of the new dramatic kinds disturb the original rain/snow/petals/embers mapping at epic=0.3', () => {
+  assert.equal(kindForMood(-0.8, 0.3, 'snow'), 'rain');
+  assert.equal(kindForMood(0, 0.3, 'snow'), 'snow');
+  assert.equal(kindForMood(0.8, 0.3, 'snow'), 'petals');
 });
 
 test('kindForMood: hysteresis keeps the current kind near a boundary', () => {

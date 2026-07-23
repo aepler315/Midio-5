@@ -174,6 +174,9 @@ export class BiomeManager {
       ['snow', 70, '#ffffff', 45],
       ['petals', 45, '#ffb6d3', 35],
       ['embers', 55, '#ff7a3c', 60],
+      ['sunshine', 20, '#fff6c8', 0],
+      ['fog', 14, '#c9d6e0', 0],
+      ['wind', 40, '#dfe8ee', 0],
     ]) {
       this.weatherFields.set(kind, new ParticleField({ kind, color, count, speed }, canvasWidth, canvasHeight, hashSeed(`weather:${kind}`)));
     }
