@@ -96,14 +96,10 @@ export class Renderer {
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // The Lens: the player's own slow-eased zoom multiplies the camera's
-    // own zoom (landings/drops still punch on top of it) -- both pivot on
-    // screen center, so leaning in never scrolls the world sideways.
-    const lensZoom = sim.zoom ? sim.zoom.value : 1;
     // The world's own beat-synced breathing, composed alongside the
-    // player's lens and the camera's own shake/punch.
+    // camera's own shake/punch -- both pivot on screen center.
     const beatZoomVal = sim.beatZoom ? sim.beatZoom.value : 1;
-    const totalZoom = camera.zoom * lensZoom * beatZoomVal;
+    const totalZoom = camera.zoom * beatZoomVal;
 
     // Zooming out past 1.0 shrinks the whole composed scene toward screen
     // center, which would otherwise expose blank canvas at the edges (the

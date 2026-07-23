@@ -42,7 +42,6 @@ import { AirJumpSequencer } from './AirJumpSequencer.js';
 import { FeverMeter } from './FeverMeter.js';
 import { LatencyCalibrator } from './LatencyCalibrator.js';
 import { WeatherDirector } from './WeatherDirector.js';
-import { ZoomDirector } from './ZoomDirector.js';
 import { BeatZoomDirector } from './BeatZoomDirector.js';
 import { OrogenyDirector } from '../world/OrogenyDirector.js';
 
@@ -194,13 +193,9 @@ export class Simulation {
       canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,
     });
 
-    // The Lens: the player's real-time control over how close to lean into
-    // the world. Any lean eases back to the neutral overview a couple of
-    // seconds after input stops (see ZoomDirector's adaptation mechanism).
-    this.zoom = new ZoomDirector();
-    // The world's own automatic breathing on top of the player's lens --
-    // sometimes a slow subtle sway, sometimes a hard kick-synced snap or a
-    // dramatic dive right on a drop. Never touches ZoomDirector.
+    // The world's own automatic camera breathing -- sometimes a slow subtle
+    // sway, sometimes a hard kick-synced snap or a dramatic dive right on a
+    // drop.
     this.beatZoom = new BeatZoomDirector(songSeed);
     // Orogeny: the mountains visibly build across the song, peaking at its
     // energy climax, then subside through the rest of the runtime.
@@ -613,44 +608,26 @@ export class Simulation {
     if (this.biomes.cutFlashJustFired) { this.camera.punch(1.06); this.camera.shake(6); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
 
-    // Bar phase / next-bar-downbeat, computed once and shared by the beat
-    // zoom's phase-locked breath and the Lens's on-the-beat adaptation
-    // start. Falls back to a beatPeriod-derived phase for bar-less audio.
+    // Bar phase, computed once and shared by the beat zoom's phase-locked
+    // breath. Falls back to a beatPeriod-derived phase for bar-less audio.
     const phraseInfo = this.phrases.infoAt(nowMs);
     const barMs = this.phrases.barMs;
-    let barPhase01 = 0, nextBarMs = null;
+    let barPhase01 = 0;
     const barPeriodMs = Math.max(1, this.jump.beatPeriodMs * 4);
     if (barMs.length > 0 && phraseInfo.barIdx >= 0 && barMs[phraseInfo.barIdx + 1] != null) {
       const curBar = barMs[phraseInfo.barIdx], nxt = barMs[phraseInfo.barIdx + 1];
       barPhase01 = clamp01((nowMs - curBar) / Math.max(1, nxt - curBar));
-      nextBarMs = nxt;
     } else {
       barPhase01 = ((nowMs % barPeriodMs) + barPeriodMs) % barPeriodMs / barPeriodMs;
     }
 
-    // The Lens: any lean the player takes eases back to neutral a couple of
-    // seconds after input stops, deferred to the next downbeat so the
-    // world's own return starts on the beat rather than on a raw timeout.
-    this.zoom.update(nowMs, dtSec, nextBarMs);
-    // While adapting, the world visibly reorganizes around the returning
-    // view instead of just snapping the camera back -- the mountains swell
-    // taller/settle (BiomeManager.adaptSwell) and the ground resettles with
-    // gentle ripples, alternating ahead/behind, once per bar crossing.
-    this.biomes.adaptSwell = this.zoom.adaptEnv * this.zoom.adaptDir;
-    if (this.zoom.adaptEnv > 0.02 && phraseInfo.barIdx !== this._lastAdaptRippleBarIdx) {
-      this._lastAdaptRippleBarIdx = phraseInfo.barIdx;
-      this._adaptRippleSide = -(this._adaptRippleSide || 1);
-      this.groundField.impulse(this.worldX + this._adaptRippleSide * 300, 0.25 * this.zoom.adaptEnv, nowMs);
-    }
-
-    // The world's own automatic zoom-breathing, composed on top of the
-    // player's lens in Renderer -- figures change on phrase boundaries,
-    // phase-locked to the bar, and ducked while the Lens is adapting.
+    // The world's own automatic zoom-breathing -- figures change on phrase
+    // boundaries, phase-locked to the bar.
     this.beatZoom.fever = this.fever.level;
     this.beatZoom.update(nowMs, dtSec, {
       phraseIdx: phraseInfo.phraseIdx, barPhase01,
       calmLevel: this.calm.level, hypeFast: this.hype.fast, hypeSlow: this.hype.slow,
-      beatPeriodMs: this.jump.beatPeriodMs, adaptEnv: this.zoom.adaptEnv,
+      beatPeriodMs: this.jump.beatPeriodMs, adaptEnv: 0,
     });
 
     // Orogeny: the mountains build toward the song's energy climax, then

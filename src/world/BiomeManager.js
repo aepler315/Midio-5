@@ -130,10 +130,6 @@ export class BiomeManager {
     this._danceKickAmp = 0;
     this.fever = 0; // player fever (Simulation.fever.level): cranks the dance and the runners
     this.orogenyGrowth = 0.1; // mountain-building arc (Simulation.orogeny.growth), set externally each step
-    // The Lens's world-adaptation return: +1 while easing back from a
-    // zoom-IN, -1 while easing back from a zoom-OUT, 0 when idle (see
-    // Simulation.step -- zoom.adaptEnv * zoom.adaptDir).
-    this.adaptSwell = 0;
     // Miniature characters running along the near ranges' ridges — an
     // independent trio per range so the depths don't mirror each other.
     this.ridgeRunners = {
@@ -833,11 +829,7 @@ export class BiomeManager {
    *  cutout. Color pulls toward a warm dawn/dusk tone via the day arc;
    *  the per-biome PERSONALITY.haze dial and calmLevel both scale it. */
   _drawHaze(ctx, canvas, layerKey, A, B, t, arc) {
-    // Atmospheric inhale: the world-adaptation return thickens the haze
-    // mid-morph and clears it as the view settles -- a soft crossfade that
-    // masks the pure scale change with something that reads as air itself
-    // responding, not a camera reset.
-    const alpha = hazeAlpha(layerKey, this._hazeMul, this.calmLevel) * (1 + 0.4 * Math.abs(this.adaptSwell || 0));
+    const alpha = hazeAlpha(layerKey, this._hazeMul, this.calmLevel);
     if (alpha < HAZE_EPS) return;
     const skyTint = this.lerpCache.get(A.sky[2], B.sky[2], t);
     const hazeColor = this._rotated(this.lerpCache.get(skyTint, HAZE_WARM_COLOR, hazeWarmMix(arc.hazeWarm)));
@@ -1752,16 +1744,10 @@ export class BiomeManager {
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
     // Orogeny: the range grows taller toward the song's energy climax, then
     // subsides -- height only, anchored at the base so the ridge visibly
-    // rears up rather than the whole strip just scaling in place. The
-    // Lens's world-adaptation return rides the same knob: leaning back out
-    // from a zoom-in swells the ranges taller as the view widens, leaning
-    // back in from a zoom-out settles them shorter -- the skyline visibly
-    // meets the returning view instead of the camera just snapping back.
-    const adaptSwell = this.adaptSwell || 0;
-    const growthMul = orogenyHeightMul(layerKey, clamp01((this.orogenyGrowth || 0) + 0.22 * adaptSwell));
+    // rears up rather than the whole strip just scaling in place.
+    const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0));
     const dh = strip.height * growthMul;
     const baseY = canvas.height - dh + yOff;
-    const danceAmpMul = 1 + 0.35 * Math.abs(adaptSwell);
     const w = strip.width;
     let x = -(((scrollX % w) + w) % w);
     while (x < canvas.width) {
@@ -1769,7 +1755,7 @@ export class BiomeManager {
         const cw = Math.min(DANCE_COL_W, w - cx);
         const sx = x + cx;
         if (sx + cw < 0 || sx > canvas.width) continue;
-        const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0) * danceAmpMul;
+        const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0);
         ctx.drawImage(strip, cx, 0, cw, strip.height, sx, baseY + dy, cw, dh);
       }
       x += w;
@@ -1792,11 +1778,9 @@ export class BiomeManager {
     if (!cfg) return;
     const nowMs = this.tSec * 1000;
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
-    const adaptSwell = this.adaptSwell || 0;
-    const growthMul = orogenyHeightMul(layerKey, clamp01((this.orogenyGrowth || 0) + 0.22 * adaptSwell));
+    const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0));
     const dh = strip.height * growthMul;
     const baseY = canvas.height - dh + yOff;
-    const danceAmpMul = 1 + 0.35 * Math.abs(adaptSwell);
     const w = strip.width;
     const isGeo = layerKey === 'L4';
     const tSec = this.tSec;
@@ -1809,7 +1793,7 @@ export class BiomeManager {
       const stripX = scrollX + x;
       const u = (((stripX % w) + w) % w);
       const yR = ridgeYSmooth(strip.ridge, u) * growthMul;
-      const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever) * danceAmpMul;
+      const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever);
       const lift = isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0;
       pts[n++] = { x, y: baseY + yR + dy - lift, lift };
     }
@@ -1864,7 +1848,7 @@ export class BiomeManager {
     const baseY = this.groundY - 26;
     // The massif is the farthest solid thing in the scene -- it rides the
     // same orogeny arc as the L2 range (the far-most parallax layer).
-    const maxH = 300 * orogenyHeightMul('L2', clamp01((this.orogenyGrowth || 0) + 0.22 * (this.adaptSwell || 0)));
+    const maxH = 300 * orogenyHeightMul('L2', clamp01(this.orogenyGrowth || 0));
     const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
     const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
     const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.55));
