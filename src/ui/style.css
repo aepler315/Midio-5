@@ -305,6 +305,20 @@ html, body {
   margin-top: 10px;
 }
 
+.prefRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+/* The "No lyrics" toggle reads as engaged when on. */
+#noLyricsBtn[aria-pressed="true"] {
+  border-color: #7ad1ff;
+  color: #7ad1ff;
+}
+
 /* Ghost button (outline style) */
 .ghostbtn {
   background: transparent;
