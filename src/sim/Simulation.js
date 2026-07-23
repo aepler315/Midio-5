@@ -199,6 +199,12 @@ export class Simulation {
     this.worldX = 0;
     this.timeMs = 0;
 
+    // The user's cursor, in stage coordinates, fed by main.js. The baby
+    // stars are aware of it (they're aware of the user); nothing else reads
+    // it, and it never moves the camera. Inactive until the first move and
+    // after a couple of idle seconds.
+    this.pointer = { x: canvasWidth / 2, y: canvasHeight / 2, active: false, lastMoveMs: -Infinity };
+
     this.prev = this._snapshot();
     this.curr = this._snapshot();
 
@@ -346,6 +352,16 @@ export class Simulation {
       return e ? e.vel : 0;
     }
     return this.energyCurves ? clamp01(this.energyCurves.sample(1, tMs)) : 0;
+  }
+
+  /** The user's cursor position in stage coordinates (main.js maps client
+   *  coords through the canvas rect). Marks the pointer active; it idles out
+   *  after a couple of seconds of no movement (see step()). */
+  setPointer(x, y) {
+    this.pointer.x = x;
+    this.pointer.y = y;
+    this.pointer.active = true;
+    this.pointer.lastMoveMs = this.timeMs;
   }
 
   /** The Reel (Movement VI): live-toggle the reduced-flash accessibility
@@ -538,9 +554,24 @@ export class Simulation {
       conductor: this.conductor, midasus: this.midasus, broshi: this.broshi, worldX: this.worldX,
     });
 
+    // The cursor idles out after a couple of seconds of stillness.
+    if (this.pointer.active && nowMs - this.pointer.lastMoveMs > 2500) this.pointer.active = false;
+    // Points of interest for the hyper-curious baby stars: Midio, Broshi, and
+    // the nearest upcoming obstacle (Broshi's render pose is one frame stale
+    // here -- he updates below -- which is fine for a thing to be curious at).
+    const babyInterests = [
+      { x: this.midio.screenX, y: this.midio.groundY - this.midio.y - 40 },
+      { x: this.broshi.renderX, y: this.broshi.groundY - this.broshi.hopY - 20 },
+    ];
+    const nearestObs = this.obstacles.nearestAhead(this.worldX);
+    if (nearestObs) {
+      babyInterests.push({ x: nearestObs.wx - this.worldX + this.midio.screenX, y: this.midio.groundY - nearestObs.height / 2 });
+    }
+
     this.midasus.update(nowMs, dtSec, this.calm.level, {
       x: this.ensemble.anchors[2].x, y: this.ensemble.anchors[2].y,
       phase: this.ensemble.phase(2), melt: 2 + 4.5 * this.vibe.epic, epic: this.vibe.epic,
+      interests: babyInterests, pointer: this.pointer,
     }, this.perf.particleMul, this.biomes.wind);
     // She's off on a voyage -> the ensemble's Kuramoto math should feel the
     // hole (this takes effect next frame; the weight eases over ~1.5s

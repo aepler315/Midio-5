@@ -1201,8 +1201,17 @@ function formatClock(ms) {
 
 // Zoom has been removed from the game: there is no player Lens control and
 // no automatic camera zoom. The pointer is still tracked, but only so the
-// star-children can notice where the user is looking (see the pointer hook
-// further below); it never moves the camera.
+// star-children can notice where the user is (they're aware of the user); it
+// never moves the camera. Client coords are mapped through the canvas rect
+// into the 1280x720 stage space the sim draws in.
+canvas.addEventListener('pointermove', (e) => {
+  if (!running || !sim || !sim.setPointer) return;
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  const x = ((e.clientX - rect.left) / rect.width) * canvas.width;
+  const y = ((e.clientY - rect.top) / rect.height) * canvas.height;
+  sim.setPointer(x, y);
+});
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
