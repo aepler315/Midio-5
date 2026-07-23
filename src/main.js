@@ -60,6 +60,8 @@ const fontBarEl = document.getElementById('fontBar');
 const fontBarBtnEl = document.getElementById('fontBarBtn');
 const fontNameEl = document.getElementById('fontName');
 const settingsBtnEl = document.getElementById('settingsBtn');
+const pauseBtnEl = document.getElementById('pauseBtn');
+const stopBtnEl = document.getElementById('stopBtn');
 const fullscreenBtnEl = document.getElementById('fullscreenBtn');
 const trackBadgeEl = document.getElementById('trackBadge');
 const trackBadgeBtnEl = document.getElementById('trackBadgeBtn');
@@ -144,6 +146,7 @@ let simTime = 0;
 let acc = 0;
 let lastNowMs = 0;
 let running = false;
+let paused = false; // suspends the AudioContext itself -- the master clock everything derives from
 let fpsHudVisible = resolveFpsHudVisible(typeof location !== 'undefined' ? location.search : '');
 let fpsEma = null;
 fpsHudEl?.classList.toggle('hidden', !fpsHudVisible);
@@ -249,6 +252,8 @@ function updateFullscreenBtn() {
   fullscreenBtnEl.setAttribute('aria-pressed', isFullscreen() ? 'true' : 'false');
 }
 if (fullscreenBtnEl) fullscreenBtnEl.addEventListener('click', () => toggleFullscreen());
+if (pauseBtnEl) pauseBtnEl.addEventListener('click', () => togglePause());
+if (stopBtnEl) stopBtnEl.addEventListener('click', () => backToTitle());
 document.addEventListener('fullscreenchange', updateFullscreenBtn);
 document.addEventListener('webkitfullscreenchange', updateFullscreenBtn);
 
@@ -437,6 +442,15 @@ function toggleTrackList() {
  *  tolerates being idle). */
 function stopTimeline() {
   running = false;
+  // A stop/restart must never leave the AudioContext suspended -- its
+  // currentTime is the master clock every song's timing derives from
+  // (see AudioEngine.js header), and a still-suspended context would
+  // freeze the NEXT song before it even starts.
+  if (paused) {
+    paused = false;
+    audioEngine?.ctx?.resume();
+    updatePauseButtonUI();
+  }
   if (rafHandle !== null) {
     cancelAnimationFrame(rafHandle);
     rafHandle = null;
@@ -464,6 +478,37 @@ function stopTimeline() {
   completePanelEl.classList.add('hidden');
   debugOverlayEl.classList.add('hidden');
   auditionPanelEl?.classList.add('hidden');
+}
+
+function updatePauseButtonUI() {
+  if (!pauseBtnEl) return;
+  pauseBtnEl.innerHTML = paused ? '&#9654;' : '&#9208;'; // play triangle vs. pause bars
+  pauseBtnEl.title = paused ? 'Resume' : 'Pause';
+  pauseBtnEl.setAttribute('aria-pressed', paused ? 'true' : 'false');
+}
+
+/** Suspends/resumes the AudioContext itself -- since every clock in the
+ *  sim (jump timing, note dispatch, ChoreoClock) reads straight off
+ *  ctx.currentTime, freezing the context freezes the whole performance
+ *  in place with nothing extra to track, and resuming picks up exactly
+ *  where it left off. */
+function togglePause() {
+  if (!running || !sim || !audioEngine) return;
+  paused = !paused;
+  if (paused) audioEngine.ctx.suspend();
+  else { audioEngine.ctx.resume(); lastRafMs = null; }
+  updatePauseButtonUI();
+}
+
+/** Stop (and "Play again", which now means the same thing): back to the
+ *  title/drop screen so a different song can be chosen, rather than an
+ *  in-place replay of the same one (see replaySong, still used by the
+ *  "Re-export at these settings" flow on the complete panel). */
+function backToTitle() {
+  stopTimeline();
+  completePanelEl.classList.add('hidden');
+  hudEl.classList.add('hidden');
+  loaderEl.classList.remove('hidden');
 }
 
 function startTimeline(timelineData, { autoRecord = true } = {}) {
@@ -1058,6 +1103,7 @@ if (trackBadgeBtnEl) trackBadgeBtnEl.addEventListener('click', () => toggleTrack
 
 function frame(tRaf) {
   if (!running) return;
+  if (paused) { rafHandle = requestAnimationFrame(frame); return; }
   if (lastRafMs !== null) {
     const rafDeltaMs = tRaf - lastRafMs;
     // A deliberate re-export replay must not read the extra per-frame
@@ -1302,7 +1348,7 @@ if (filmstripModalEl) {
   filmstripModalEl.addEventListener('click', (e) => { if (e.target === filmstripModalEl) closeFilmstripModal(); });
 }
 
-playAgainBtnEl.addEventListener('click', () => replaySong());
+playAgainBtnEl.addEventListener('click', () => backToTitle());
 
 saveVideoBtnEl?.addEventListener('click', () => {
   if (!pendingSaveUrl) return;
