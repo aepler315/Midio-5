@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Broshi, keepOutTarget, cheerBumpY } from '../src/sim/Broshi.js';
+import { Broshi, keepOutTarget, cheerBumpY, phewBumpY } from '../src/sim/Broshi.js';
 import { Role } from '../src/core/NoteEvent.js';
 
 function fakeConductor() {
@@ -246,6 +246,55 @@ test('cheerBumpY produces two bounded bumps and is zero outside them', () => {
   assert.ok(cheerBumpY(205) > 5, 'second bump peak');
   assert.equal(cheerBumpY(400), 0);
   for (let t = -10; t < 300; t += 5) assert.ok(Number.isFinite(cheerBumpY(t)) && cheerBumpY(t) >= -1e-9);
+});
+
+test('phewBumpY produces one bounded bump and is zero outside it', () => {
+  assert.equal(phewBumpY(-5), 0);
+  assert.ok(phewBumpY(110) > 3, 'peaks mid-bump');
+  assert.equal(phewBumpY(300), 0, 'zero well past the bump');
+  for (let t = -10; t < 300; t += 5) assert.ok(Number.isFinite(phewBumpY(t)) && phewBumpY(t) >= -1e-9);
+});
+
+test('Broshi PANIC->TRAIL (a dodge clearing) fires the phew relief bump and a jaw tell', () => {
+  const conductor = fakeConductor();
+  const b = new Broshi(conductor, {}, { seed: 7 });
+  const midio = fakeMidio();
+  // An obstacle 200ms out puts him in PANIC (within PANIC_LOOKAHEAD_MS=300).
+  const nearObstacle = { nearestAhead: () => ({ tMs: 200, wx: 0 }) };
+  b.update(0, 1 / 60, midio, null, nearObstacle, 0, 480, 0);
+  assert.equal(b.state, 'PANIC');
+  // The obstacle recedes into the past (cleared) -- PANIC should release.
+  const clearedObstacle = { nearestAhead: () => ({ tMs: -500, wx: -1000 }) };
+  b.update(210, 1 / 60, midio, null, clearedObstacle, 0, 480, 0);
+  assert.equal(b.state, 'TRAIL');
+  assert.ok(b.jawOpen > 0, 'a quick "whew" jaw tell fires on release');
+  // The relief bump should be audible in hopY shortly after release.
+  b.update(260, 1 / 60, midio, null, clearedObstacle, 0, 480, 0);
+  assert.ok(b.hopY > 0, 'the phew bump lifts hopY shortly after the dodge clears');
+});
+
+test('Broshi shivers in snow and stays neutral without weather', () => {
+  const conductor = fakeConductor();
+  const midio = fakeMidio();
+  const noWeather = new Broshi(conductor, {}, { seed: 3 });
+  const snowy = new Broshi(conductor, {}, { seed: 3 });
+  for (let t = 0; t < 500; t += 16) {
+    noWeather.update(t, 1 / 60, midio, null, null, 0, 480, 0);
+    snowy.update(t, 1 / 60, midio, null, null, 0, 480, 0, { weatherKind: 'snow', weatherIntensity: 0.8 });
+  }
+  assert.notEqual(snowy.squashX, noWeather.squashX, 'a shiver must perturb squashX away from the calm baseline');
+});
+
+test('Broshi shakes off periodically in rain', () => {
+  const conductor = fakeConductor();
+  const midio = fakeMidio();
+  const b = new Broshi(conductor, {}, { seed: 11 });
+  let sawShake = false;
+  for (let t = 0; t < 6000; t += 16) {
+    b.update(t, 1 / 60, midio, null, null, 0, 480, 0, { weatherKind: 'rain', weatherIntensity: 0.8 });
+    if (Math.abs(b.squashX - 1) > 0.05) sawShake = true;
+  }
+  assert.ok(sawShake, 'a shake-off wobble must fire at least once over 6s of steady rain');
 });
 
 test('Broshi never renders inside Midio\'s landing column, across a scripted surge/trail/airborne stress sequence', () => {

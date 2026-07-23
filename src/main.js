@@ -60,6 +60,8 @@ const fontBarEl = document.getElementById('fontBar');
 const fontBarBtnEl = document.getElementById('fontBarBtn');
 const fontNameEl = document.getElementById('fontName');
 const settingsBtnEl = document.getElementById('settingsBtn');
+const pauseBtnEl = document.getElementById('pauseBtn');
+const stopBtnEl = document.getElementById('stopBtn');
 const fullscreenBtnEl = document.getElementById('fullscreenBtn');
 const trackBadgeEl = document.getElementById('trackBadge');
 const trackBadgeBtnEl = document.getElementById('trackBadgeBtn');
@@ -162,6 +164,7 @@ let simTime = 0;
 let acc = 0;
 let lastNowMs = 0;
 let running = false;
+let paused = false; // suspends the AudioContext itself -- the master clock everything derives from
 let fpsHudVisible = resolveFpsHudVisible(typeof location !== 'undefined' ? location.search : '');
 let fpsEma = null;
 fpsHudEl?.classList.toggle('hidden', !fpsHudVisible);
@@ -215,7 +218,7 @@ async function bootAudio() {
   // Auditions every font against each loaded MIDI and steers the library to
   // the best fit (see FontRecommender.js). Fonts dropped in mid-song get
   // auditioned against the current song as they land.
-  fontRecommender = new FontRecommender(fontLibrary, { onUpdate: () => { renderFontModal(); updateAuditionProgress(); } });
+  fontRecommender = new FontRecommender(fontLibrary, { onUpdate: () => renderFontModal() });
   fontLibrary.onAdded = (font) => fontRecommender.auditionFont(font);
   // Best-effort background load — never blocks song start (§ soundfonts/README.md).
   fontLibrary.autoLoadFromServer('./soundfonts/');
@@ -225,45 +228,13 @@ async function bootAudio() {
   });
 }
 
-/** The load screen's progress line/bar, fed by the recommender's onUpdate. */
-function updateAuditionProgress() {
-  if (!loadShow || !fontRecommender) return;
-  if (!auditionPanelEl || auditionPanelEl.classList.contains('hidden')) return;
-  const s = fontRecommender.status;
-  const pending = fontLibrary?.fonts.find((f) => !f.hidden && f.review?.status === 'pending');
-  loadShow.setProgress(s.done, s.total, pending ? pending.name : '');
-}
-
-/**
- * Font ratings used to run behind the live song and lagged it badly (each
- * audition is an offline render on this same thread). Now they gate the
- * start: the percussion loading show plays this song's distilled beat while
- * the verdicts land, and the game only starts once the ratings are done —
- * with the best-fit font already on stage. No fonts loaded → no gate.
- */
-async function startWithAuditionGate(data, gen) {
-  const hasFonts = fontRecommender?.available && fontLibrary
-    && fontLibrary.fonts.some((f) => !f.hidden);
-  if (!hasFonts) {
-    startTimeline(data);
-    // Still arms the audition plan so fonts dropped in mid-song get rated.
-    fontRecommender?.auditionForTimeline(data);
-    return;
-  }
-  stopTimeline(); // a mid-song drop goes quiet while its ratings run
-  hudEl.classList.add('hidden');
-  loaderEl.classList.add('hidden');
-  auditionPanelEl?.classList.remove('hidden');
-  const session = loadShow?.start(data);
-  loadShow?.setProgress(0, fontLibrary.fonts.filter((f) => !f.hidden).length, '');
-  try {
-    await fontRecommender.auditionForTimeline(data);
-  } finally {
-    loadShow?.stop(session);
-    if (gen === loadGen) auditionPanelEl?.classList.add('hidden');
-  }
-  if (gen !== loadGen) return; // another file dropped during the gate
+/** MIDI/demo loads start immediately -- no more waiting on a loading
+ *  screen for font ratings to land. FontRecommender still auditions every
+ *  loaded font against this song in the background and steers the library
+ *  to the best fit as verdicts arrive, same as fonts dropped mid-song. */
+function startImmediately(data) {
   startTimeline(data);
+  fontRecommender?.auditionForTimeline(data);
 }
 
 function applySynthMutePolicy() {
@@ -299,6 +270,8 @@ function updateFullscreenBtn() {
   fullscreenBtnEl.setAttribute('aria-pressed', isFullscreen() ? 'true' : 'false');
 }
 if (fullscreenBtnEl) fullscreenBtnEl.addEventListener('click', () => toggleFullscreen());
+if (pauseBtnEl) pauseBtnEl.addEventListener('click', () => togglePause());
+if (stopBtnEl) stopBtnEl.addEventListener('click', () => backToTitle());
 document.addEventListener('fullscreenchange', updateFullscreenBtn);
 document.addEventListener('webkitfullscreenchange', updateFullscreenBtn);
 
@@ -487,6 +460,15 @@ function toggleTrackList() {
  *  tolerates being idle). */
 function stopTimeline() {
   running = false;
+  // A stop/restart must never leave the AudioContext suspended -- its
+  // currentTime is the master clock every song's timing derives from
+  // (see AudioEngine.js header), and a still-suspended context would
+  // freeze the NEXT song before it even starts.
+  if (paused) {
+    paused = false;
+    audioEngine?.ctx?.resume();
+    updatePauseButtonUI();
+  }
   if (rafHandle !== null) {
     cancelAnimationFrame(rafHandle);
     rafHandle = null;
@@ -514,6 +496,37 @@ function stopTimeline() {
   completePanelEl.classList.add('hidden');
   debugOverlayEl.classList.add('hidden');
   auditionPanelEl?.classList.add('hidden');
+}
+
+function updatePauseButtonUI() {
+  if (!pauseBtnEl) return;
+  pauseBtnEl.innerHTML = paused ? '&#9654;' : '&#9208;'; // play triangle vs. pause bars
+  pauseBtnEl.title = paused ? 'Resume' : 'Pause';
+  pauseBtnEl.setAttribute('aria-pressed', paused ? 'true' : 'false');
+}
+
+/** Suspends/resumes the AudioContext itself -- since every clock in the
+ *  sim (jump timing, note dispatch, ChoreoClock) reads straight off
+ *  ctx.currentTime, freezing the context freezes the whole performance
+ *  in place with nothing extra to track, and resuming picks up exactly
+ *  where it left off. */
+function togglePause() {
+  if (!running || !sim || !audioEngine) return;
+  paused = !paused;
+  if (paused) audioEngine.ctx.suspend();
+  else { audioEngine.ctx.resume(); lastRafMs = null; }
+  updatePauseButtonUI();
+}
+
+/** Stop (and "Play again", which now means the same thing): back to the
+ *  title/drop screen so a different song can be chosen, rather than an
+ *  in-place replay of the same one (see replaySong, still used by the
+ *  "Re-export at these settings" flow on the complete panel). */
+function backToTitle() {
+  stopTimeline();
+  completePanelEl.classList.add('hidden');
+  hudEl.classList.add('hidden');
+  loaderEl.classList.remove('hidden');
 }
 
 function startTimeline(timelineData, { autoRecord = true } = {}) {
@@ -602,7 +615,7 @@ function startLiveRecording() {
 async function loadMidiFile(file) {
   try {
     await bootAudio();
-    const gen = ++loadGen;
+    loadGen++;
     const buf = await file.arrayBuffer();
     if (!buf || buf.byteLength < 14) {
       throw new Error('File is empty or too small to be a MIDI file');
@@ -617,10 +630,8 @@ async function loadMidiFile(file) {
     // of a .mid produces a unique world without changing stock demo casting.
     data.customBiome = generateCustomBiomeFromMidi(data, file.name || 'MIDI');
     rememberCustomBiome(paramBus, data.customBiome);
-    // Ratings gate the start (no more mid-song audition lag): the percussion
-    // loading show entertains while every font auditions against THIS midi.
     muteTimelineSynth = false;
-    await startWithAuditionGate(data, gen);
+    startImmediately(data);
   } catch (err) {
     console.error('[MIDI load failed]', err);
     progressEl.classList.add('hidden');
@@ -897,7 +908,7 @@ async function loadAudioFiles(files) {
   const { identity: lyricIdentity, lyricSections } = await lyricsPromise;
   data.lyricIdentity = lyricIdentity;
   data.lyricSections = lyricSections;
-  if (auditionHeadingEl) auditionHeadingEl.textContent = 'TUNING THE ORCHESTRA';
+  if (auditionHeadingEl) auditionHeadingEl.textContent = 'PULLING THE RECORDING APART';
   auditionPanelEl?.classList.add('hidden');
   lyricsRowEl?.classList.add('hidden');
 
@@ -930,13 +941,12 @@ async function loadAudioFiles(files) {
 
 async function loadDemo() {
   await bootAudio();
-  const gen = ++loadGen;
+  loadGen++;
   const data = buildDemoTimeline({});
   data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
   lastSongName = 'demo';
-  // The demo is synth-voiced just like a MIDI file, so it gets the same gate.
   muteTimelineSynth = false;
-  await startWithAuditionGate(data, gen);
+  startImmediately(data);
 }
 
 function isMidiFile(file) {
@@ -1125,6 +1135,7 @@ if (trackBadgeBtnEl) trackBadgeBtnEl.addEventListener('click', () => toggleTrack
 
 function frame(tRaf) {
   if (!running) return;
+  if (paused) { rafHandle = requestAnimationFrame(frame); return; }
   if (lastRafMs !== null) {
     const rafDeltaMs = tRaf - lastRafMs;
     // A deliberate re-export replay must not read the extra per-frame
@@ -1212,7 +1223,6 @@ canvas.addEventListener('pointermove', (e) => {
   const y = ((e.clientY - rect.top) / rect.height) * canvas.height;
   sim.setPointer(x, y);
 });
-
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (fontModalEl && !fontModalEl.classList.contains('hidden')) closeFontModal();
@@ -1383,7 +1393,7 @@ if (filmstripModalEl) {
   filmstripModalEl.addEventListener('click', (e) => { if (e.target === filmstripModalEl) closeFilmstripModal(); });
 }
 
-playAgainBtnEl.addEventListener('click', () => replaySong());
+playAgainBtnEl.addEventListener('click', () => backToTitle());
 
 saveVideoBtnEl?.addEventListener('click', () => {
   if (!pendingSaveUrl) return;

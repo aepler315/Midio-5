@@ -8,6 +8,7 @@ import { mulberry32, clamp, smoothstep } from '../utils/math.js';
 import { ModalRing } from '../render/oscillators.js';
 import { kickEnv } from '../world/MountainChoreo.js';
 import { visualNow } from '../core/ChoreoClock.js';
+import { obstacleInJumpWindow } from './ObstacleSpawner.js';
 
 const TRICK_HANG_START = 0.35; // matches JumpController's A
 const TRICK_HANG_END = 0.65;   // matches JumpController's A+B
@@ -140,17 +141,26 @@ export class MidioPerformer {
     }
   }
 
-  update(nowMs, dtSec, midio, jump, comboSystem, calmLevel = 0, ensemble = null, holdState = null) {
+  update(nowMs, dtSec, midio, jump, comboSystem, calmLevel = 0, ensemble = null, holdState = null, obstacleAhead = null) {
     this.modal.update(dtSec);
     const justLaunched = !this._wasAirborne && jump.airborne;
     if (justLaunched) {
       this.modal.excite(0.8 + 1.6 * jump.lastLaunchVel);
-      const shouldTrick = jump.lastLaunchVel > TRICK_VEL_THRESHOLD || comboSystem.displayM >= TRICK_COMBO_THRESHOLD;
+      // A launch that's airborne specifically to clear an obstacle always
+      // gets a trick -- a "spectacular dodge" is the point, not a coin
+      // flip on velocity/combo -- and is floored at the HOT tier so it
+      // reaches past the plain spin/backflip pair even on an otherwise
+      // quiet, low-combo run.
+      const dodging = obstacleInJumpWindow(jump, obstacleAhead);
+      const shouldTrick = dodging || jump.lastLaunchVel > TRICK_VEL_THRESHOLD || comboSystem.displayM >= TRICK_COMBO_THRESHOLD;
       if (shouldTrick) {
         // Heat decides how deep into the trick book he reaches: launch
         // velocity, combo, and section energy all feed it.
         const heat = clamp(
-          jump.lastLaunchVel * 0.5 + comboSystem.displayM / 8 + (1 - calmLevel) * 0.25,
+          Math.max(
+            dodging ? HEAT_HOT + 0.05 : 0,
+            jump.lastLaunchVel * 0.5 + comboSystem.displayM / 8 + (1 - calmLevel) * 0.25,
+          ),
           0, 1.2,
         );
         const pool = [...TRICKS_BASE];

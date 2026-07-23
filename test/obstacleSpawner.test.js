@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ObstacleSpawner, obstacleArchetype, emergenceEnvelope, dissolveEnvelope, ARCHETYPES, EMERGENCE_PX, DISSOLVE_PX,
-  geoRowTimes, GEO_SHAPES,
+  ObstacleSpawner, obstacleArchetype, emergenceEnvelope, dissolveEnvelope, obstacleInJumpWindow,
+  ARCHETYPES, EMERGENCE_PX, DISSOLVE_PX, geoRowTimes, GEO_SHAPES,
 } from '../src/sim/ObstacleSpawner.js';
 
 function fakeCtx() {
@@ -124,4 +124,22 @@ test('collision/placement math is untouched: checkCollision and nearestAhead beh
   assert.equal(spawner.nearestAhead(0).wx, 100);
   assert.equal(spawner.checkCollision(100, 23, 10), true, 'too low to clear should stumble');
   assert.equal(spawner.active[0].passed, true);
+});
+
+test('obstacleInJumpWindow: true when the obstacle\'s crossing time falls inside the jump\'s hang window', () => {
+  const jump = { jumpStartMs: 1000, D: 400 };
+  assert.equal(obstacleInJumpWindow(jump, { tMs: 1200 }), true, 'inside the window');
+  assert.equal(obstacleInJumpWindow(jump, { tMs: 1000 }), true, 'right at the start (inclusive)');
+  assert.equal(obstacleInJumpWindow(jump, { tMs: 1400 }), true, 'right at the end (inclusive)');
+  assert.equal(obstacleInJumpWindow(jump, { tMs: 999 }), false, 'just before');
+  assert.equal(obstacleInJumpWindow(jump, { tMs: 1401 }), false, 'just after');
+});
+
+test('obstacleInJumpWindow: false/never throws on missing or malformed input', () => {
+  const jump = { jumpStartMs: 1000, D: 400 };
+  assert.equal(obstacleInJumpWindow(null, { tMs: 1200 }), false);
+  assert.equal(obstacleInJumpWindow(jump, null), false);
+  assert.equal(obstacleInJumpWindow({ jumpStartMs: NaN, D: 400 }, { tMs: 1200 }), false);
+  assert.equal(obstacleInJumpWindow(jump, { tMs: NaN }), false);
+  assert.equal(obstacleInJumpWindow({}, {}), false);
 });

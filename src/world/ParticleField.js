@@ -52,6 +52,10 @@ export class ParticleField {
       p.ctrl = { x: p.origin.x + rand() * 200, y: p.origin.y - 80 - rand() * 80 };
       p.end = { x: p.origin.x + 150 + rand() * 250, y: p.origin.y + rand() * 100 - 50 };
     }
+    if (this.kind === 'wind') {
+      p.x = -rand() * this.w * 0.2;
+      p.vx = 140 + rand() * 90;
+    }
     return p;
   }
 
@@ -135,6 +139,28 @@ export class ParticleField {
           const speed = this.baseSpeed * (energyCurves ? 0.5 + energyCurves.sample(5, nowMs) : 1);
           p.y += speed * dtSec;
           if (p.y > this.h + 40) p.y = -40 - rand() * 200;
+          break;
+        }
+        case 'sunshine':
+          // Sparse bright motes drifting slowly, twinkling -- weather with
+          // no ground consequence, just a warm, calm read.
+          p.x += (Math.sin(tSec * 0.15 + p.phase) * 8 + wx * 0.3) * dtSec;
+          p.y += (-4 + Math.cos(tSec * 0.2 + p.phase) * 3 + wy * 0.2) * dtSec;
+          p.alpha = clamp01(0.5 + 0.5 * Math.sin(tSec * 0.6 + p.phase));
+          if (p.y < -20) Object.assign(p, this._spawn(rand() * this.w, this.h + 10));
+          break;
+        case 'wind':
+          // Directional streaks blown hard across the screen -- reads as
+          // its own weather (dust/debris on the gust) rather than bending
+          // whatever else might be falling.
+          p.x += (p.vx + wx * 2) * dtSec;
+          p.y += Math.sin(tSec * p.omega + p.phase) * 10 * dtSec;
+          if (p.x > this.w + 20) Object.assign(p, this._spawn(-20, rand() * this.h));
+          break;
+        case 'fog': {
+          // Slow, near-static drifting haze patches -- a still, becalmed sky.
+          p.x += (6 * Math.sin(tSec * 0.1 + p.phase) + wx * 0.5) * dtSec;
+          p.alpha = clamp01(0.3 + 0.15 * Math.sin(tSec * 0.2 + p.phase));
           break;
         }
       }
@@ -236,6 +262,37 @@ export class ParticleField {
           ctx.globalAlpha = 0.25 + 0.35 * flicker;
           ctx.fillStyle = color;
           ctx.fillRect(p.x, p.y, 2, 14);
+          break;
+        }
+        case 'sunshine': {
+          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 3);
+          grad.addColorStop(0, color);
+          grad.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.globalAlpha = (p.alpha ?? 1) * 0.7;
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size * 3, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        }
+        case 'wind':
+          ctx.globalAlpha = 0.4;
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(p.x - p.vx * 0.05, p.y);
+          ctx.stroke();
+          break;
+        case 'fog': {
+          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 14);
+          grad.addColorStop(0, color);
+          grad.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.globalAlpha = p.alpha ?? 0.3;
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size * 14, 0, Math.PI * 2);
+          ctx.fill();
           break;
         }
       }

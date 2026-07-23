@@ -13,6 +13,7 @@ import { contactShadow } from '../world/ContactShadow.js';
 import { clamp01 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { LerpCache, hexToRgb } from '../utils/color.js';
+import { nearestPaletteColor, pixelGridWidth, pixelGridHeight, SCANLINE_ALPHA, SCANLINE_PERIOD_PX } from './RetroFilter.js';
 
 const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
@@ -210,6 +211,13 @@ export class Renderer {
     // drawn before the freeze capture/highlight-reel grabs so both include it.
     this._drawBloom(ctx, canvas, sim);
     if (sim.filmFinish && (perf ? perf.heavyPostFx : true)) this._drawFilmFinish(ctx, canvas, sim);
+    // Modernized 8-bit retro filter: pixelation + palette quantization over
+    // the fully composed frame -- drawn last of all the post-passes so it
+    // reads as the screen's own output, not a layer under the bloom/film
+    // grain. Sheds (skips) under the same perf signal as film finish; the
+    // freeze capture/highlight reel and video export both read the canvas
+    // AFTER this, so they see exactly what the player saw.
+    if (perf ? perf.heavyPostFx : true) this._drawRetroFilter(ctx, canvas);
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
 
@@ -561,6 +569,44 @@ export class Renderer {
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = strength;
     ctx.drawImage(b, 0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+
+  /** Modernized 8-bit retro filter: downsamples the fully composed frame to
+   *  a coarse pixel grid (nearest-neighbor, no smoothing -- the pixelation
+   *  itself), quantizes every pixel to a limited retro palette (cheap,
+   *  since it runs on the small downsampled buffer rather than the full-res
+   *  frame -- coarser pixelation is CHEAPER, not more expensive, unlike
+   *  bloom/blur passes), then draws it back upscaled with a faint scanline
+   *  overlay for the CRT "nostalgia machine" read. Same offscreen-canvas
+   *  pattern as _drawBloom above. */
+  _drawRetroFilter(ctx, canvas) {
+    const gridW = pixelGridWidth(canvas.width);
+    const gridH = pixelGridHeight(canvas.width, canvas.height, gridW);
+    if (!this._retroSmall) this._retroSmall = document.createElement('canvas');
+    const small = this._retroSmall;
+    if (small.width !== gridW || small.height !== gridH) { small.width = gridW; small.height = gridH; }
+    const sctx = small.getContext('2d');
+    sctx.imageSmoothingEnabled = false;
+    sctx.clearRect(0, 0, gridW, gridH);
+    sctx.drawImage(canvas, 0, 0, gridW, gridH);
+
+    const imgData = sctx.getImageData(0, 0, gridW, gridH);
+    const data = imgData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const p = nearestPaletteColor(data[i], data[i + 1], data[i + 2]);
+      data[i] = p[0]; data[i + 1] = p[1]; data[i + 2] = p[2];
+    }
+    sctx.putImageData(imgData, 0, 0);
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalCompositeOperation = 'copy';
+    ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = SCANLINE_ALPHA;
+    ctx.fillStyle = '#000000';
+    for (let y = 0; y < canvas.height; y += SCANLINE_PERIOD_PX) ctx.fillRect(0, y, canvas.width, Math.ceil(SCANLINE_PERIOD_PX / 2));
     ctx.restore();
   }
 

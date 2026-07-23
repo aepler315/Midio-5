@@ -136,6 +136,30 @@ export function tsunamiLift(dx) {
   return clamp01(1 - d / TSUNAMI_WIDTH_PX);
 }
 
+// Fraction of the sweep spent rising to full crest height before easing
+// back down -- the "approaching from the far distance, getting closer and
+// closer" read, told purely through height over the SAME sweep timeline
+// tsunamiX already walks (no separate schedule/geometry needed).
+export const TSUNAMI_APPROACH_UP_FRAC = 0.6;
+// heightScale at/above this counts as "spilling over" -- BiomeManager arms
+// a temporary flood the first time a wall crosses it.
+export const TSUNAMI_OVERTOP_SCALE = 0.85;
+export const FLOOD_DURATION_MS = 5000;
+
+/** 0..1 envelope for how "arrived" the tsunami is at `ageMs` (nowMs -
+ *  event.tMs, same convention as tsunamiX/tsunamiLift): small and distant
+ *  at the start of its sweep, cresting tallest around
+ *  TSUNAMI_APPROACH_UP_FRAC of the way through, easing back down as it
+ *  passes. Pure/testable. */
+export function tsunamiHeightScale(ageMs) {
+  const half = TSUNAMI_SWEEP_MS / 2;
+  const u = clamp01((ageMs + half) / TSUNAMI_SWEEP_MS);
+  const rise = clamp01(u / TSUNAMI_APPROACH_UP_FRAC);
+  const pastPeak = u > TSUNAMI_APPROACH_UP_FRAC ? (u - TSUNAMI_APPROACH_UP_FRAC) / (1 - TSUNAMI_APPROACH_UP_FRAC) : 0;
+  const recede = 1 - 0.35 * clamp01(pastPeak);
+  return rise * recede;
+}
+
 /** Vertical profile (0..1) of the wave-wall silhouette across its own
  *  width, s in [-1,1] (0 = leading edge): a tall curl with a foam tip just
  *  past the edge, settling behind it. */

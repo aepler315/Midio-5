@@ -18,6 +18,7 @@ import {
   islands, ships, seaLifeSchedule, monsterSchedule, tsunamiSchedule,
   tsunamiX, tsunamiLift, tsunamiProfile, sprayFlecks, fishArcY, serpentHumpY,
   wrappedOffset, OCEAN_LIFE_WRAP_PX, OCEAN_LIFE_RATIO, TSUNAMI_WIDTH_PX,
+  tsunamiHeightScale, TSUNAMI_OVERTOP_SCALE, FLOOD_DURATION_MS,
 } from './OceanLife.js';
 import { ConstellationWeaver } from './ConstellationWeaver.js';
 import { SpaceRidge } from './SpaceRidge.js';
@@ -130,10 +131,6 @@ export class BiomeManager {
     this._danceKickAmp = 0;
     this.fever = 0; // player fever (Simulation.fever.level): cranks the dance and the runners
     this.orogenyGrowth = 0.1; // mountain-building arc (Simulation.orogeny.growth), set externally each step
-    // The Lens's world-adaptation return: +1 while easing back from a
-    // zoom-IN, -1 while easing back from a zoom-OUT, 0 when idle (see
-    // Simulation.step -- zoom.adaptEnv * zoom.adaptDir).
-    this.adaptSwell = 0;
     // Miniature characters running along the near ranges' ridges — an
     // independent trio per range so the depths don't mirror each other.
     this.ridgeRunners = {
@@ -177,6 +174,9 @@ export class BiomeManager {
       ['snow', 70, '#ffffff', 45],
       ['petals', 45, '#ffb6d3', 35],
       ['embers', 55, '#ff7a3c', 60],
+      ['sunshine', 20, '#fff6c8', 0],
+      ['fog', 14, '#c9d6e0', 0],
+      ['wind', 40, '#dfe8ee', 0],
     ]) {
       this.weatherFields.set(kind, new ParticleField({ kind, color, count, speed }, canvasWidth, canvasHeight, hashSeed(`weather:${kind}`)));
     }
@@ -208,6 +208,16 @@ export class BiomeManager {
     this._tsunamis = tsunamiSchedule(hashSeed(`${songSeed}:tsunami`), durationMs, this._oceanHotspotMs || []);
     this._tsunamiIdx = 0;
     this._tsunamiFlecks = sprayFlecks(hashSeed(`${songSeed}:tsunamispray`));
+    // Temporary flood: armed the first time a tsunami's height envelope
+    // crosses TSUNAMI_OVERTOP_SCALE (see update()) -- a translucent water
+    // level rises over the near ground plane for FLOOD_DURATION_MS, then
+    // recedes. `_floodArmedForTMs` guards against re-arming every frame
+    // while a single wall's crest sits above the threshold.
+    this._floodUntilMs = -Infinity;
+    this._floodStartMs = -Infinity;
+    this._floodArmedForTMs = null;
+    this.floodActive = false; // read by Simulation for wet-footing traction
+    this.floodLevel01 = 0;
     this.mandala = new Mandala(songSeed);
     this.cymatics = new CymaticField(songSeed);
     this.swarm = new KuramotoSwarm(songSeed);
@@ -509,6 +519,15 @@ export class BiomeManager {
     return this._profile(t > 0.5 ? to : from).particles.kind;
   }
 
+  /** The current blended ambient-particle color -- lets a landing puff
+   *  (RippleFX) or any other one-off effect read as "of this biome"
+   *  without needing its own per-biome color table. */
+  currentParticleColor() {
+    if (!this.currentBlend) return '#ffffff';
+    const { from, to, t } = this.currentBlend;
+    return this.lerpCache.get(this._profile(from).particles.color, this._profile(to).particles.color, t);
+  }
+
   currentSkyBase() {
     if (!this.currentBlend) return '#141428';
     const { from, to, t } = this.currentBlend;
@@ -664,6 +683,36 @@ export class BiomeManager {
         this._lastDropTsunamiMs = nowMs;
         this._tsunamis.push({ tMs: nowMs, dir: this._tsunamis.length % 2 === 0 ? 1 : -1 });
       }
+    }
+    // Spilling over: the first time ANY active tsunami's height envelope
+    // crosses TSUNAMI_OVERTOP_SCALE, arm a bounded flood over the near
+    // ground plane. Guarded per-event (_floodArmedForTMs) so a wall's
+    // crest sitting above the threshold across several frames only ever
+    // triggers one flood, not a new one every frame.
+    const activeNow = this._activeTsunami(this.w || 1280);
+    if (activeNow && tsunamiHeightScale(nowMs - activeNow.ev.tMs) >= TSUNAMI_OVERTOP_SCALE
+      && this._floodArmedForTMs !== activeNow.ev.tMs) {
+      this._floodArmedForTMs = activeNow.ev.tMs;
+      this._floodStartMs = nowMs;
+      this._floodUntilMs = nowMs + FLOOD_DURATION_MS;
+    }
+    // Flood level (0..1, rise -> hold -> recede): computed here, in
+    // update(), not at draw time -- Simulation reads floodLevel01/
+    // floodActive for wet-footing traction the same frame, without
+    // depending on draw() having already run.
+    if (nowMs >= this._floodUntilMs) {
+      this.floodActive = false;
+      this.floodLevel01 = 0;
+    } else {
+      const age = nowMs - this._floodStartMs;
+      const RISE_MS = 700, RECEDE_MS = 1200;
+      const holdEnd = FLOOD_DURATION_MS - RECEDE_MS;
+      let level01;
+      if (age < RISE_MS) level01 = clamp01(age / RISE_MS);
+      else if (age < holdEnd) level01 = 1;
+      else level01 = clamp01(1 - (age - holdEnd) / RECEDE_MS);
+      this.floodLevel01 = level01;
+      this.floodActive = level01 > 0.02;
     }
     // Combo milestones (streak 5/10/20) throw their own reward volley.
     if (Number.isFinite(this.milestoneAtMs) && this.milestoneAtMs !== this._lastSeenMilestoneMs) {
@@ -823,7 +872,42 @@ export class BiomeManager {
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
 
     this._drawGround(ctx, canvas, worldX, originX, A, B, t);
+    this._drawFlood(ctx, canvas);
     this._drawTransitionOverlays(ctx, canvas, B);
+  }
+
+  /** Temporary flood: the water a tsunami spilled over the mountains rises
+   *  across the near ground plane for FLOOD_DURATION_MS, then recedes --
+   *  drawn on top of the ground/mountain layers (unlike the ocean plane
+   *  itself, drawn far underneath everything in this same draw() call) so
+   *  it genuinely reads as submerging the foreground where Midio walks.
+   *  Pure rendering only -- floodActive/floodLevel01 are computed in
+   *  update(), not here, so Simulation can read them the same frame. */
+  _drawFlood(ctx, canvas) {
+    if (!this.floodActive) return;
+    const level01 = this.floodLevel01;
+    const FLOOD_RISE_PX = 46;
+    const levelY = this.groundY - FLOOD_RISE_PX * level01;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const grad = ctx.createLinearGradient(0, levelY - 20, 0, canvas.height);
+    grad.addColorStop(0, `${OCEAN_WATER_BLUE}00`);
+    grad.addColorStop(0.3, `${OCEAN_WATER_BLUE}55`);
+    grad.addColorStop(1, `${OCEAN_WATER_BLUE}33`);
+    ctx.fillStyle = grad;
+    ctx.globalAlpha = capFlashAlpha(0.85 * level01, this.reducedFlash);
+    ctx.beginPath();
+    const N = 40;
+    for (let i = 0; i <= N; i++) {
+      const x = (i / N) * canvas.width;
+      const y = levelY + Math.sin(x * 0.02 + this.tSec * 2) * 3;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.lineTo(canvas.width, canvas.height);
+    ctx.lineTo(0, canvas.height);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
 
   /** Aerial perspective: a translucent sky-colored wash after a mountain
@@ -833,11 +917,7 @@ export class BiomeManager {
    *  cutout. Color pulls toward a warm dawn/dusk tone via the day arc;
    *  the per-biome PERSONALITY.haze dial and calmLevel both scale it. */
   _drawHaze(ctx, canvas, layerKey, A, B, t, arc) {
-    // Atmospheric inhale: the world-adaptation return thickens the haze
-    // mid-morph and clears it as the view settles -- a soft crossfade that
-    // masks the pure scale change with something that reads as air itself
-    // responding, not a camera reset.
-    const alpha = hazeAlpha(layerKey, this._hazeMul, this.calmLevel) * (1 + 0.4 * Math.abs(this.adaptSwell || 0));
+    const alpha = hazeAlpha(layerKey, this._hazeMul, this.calmLevel);
     if (alpha < HAZE_EPS) return;
     const skyTint = this.lerpCache.get(A.sky[2], B.sky[2], t);
     const hazeColor = this._rotated(this.lerpCache.get(skyTint, HAZE_WARM_COLOR, hazeWarmMix(arc.hazeWarm)));
@@ -1227,10 +1307,17 @@ export class BiomeManager {
       // under the crest line, a bright foam crest stroke, and a few spray
       // flecks kicked up at the tip -- all additive, all see-through to the
       // wave rows underneath.
+      // Height envelope: small and distant at the start of the sweep,
+      // cresting tallest partway through, easing back down as it passes --
+      // "approaching from the far distance, getting closer and closer"
+      // told purely through how tall the wall reads, over the exact same
+      // sweep timeline tsunamiX already walks (see OceanLife.js).
+      const heightScale = tsunamiHeightScale(this.tSec * 1000 - tsunami.ev.tMs);
       const wallTop = horizonY + (nearY - horizonY) * 0.08;
-      const wallH = nearY - wallTop;
+      const wallH = (nearY - wallTop) * heightScale;
       const WS = TSUNAMI_WIDTH_PX;
       const crestY = (s) => nearY - tsunamiProfile(s) * wallH;
+      const alphaMul = this.budget * heightScale;
 
       // Watery veil: a soft gradient fill, translucent enough that the
       // wave rows keep showing through it.
@@ -1249,7 +1336,7 @@ export class BiomeManager {
       }
       ctx.lineTo(tsunami.wallX + WS, nearY);
       ctx.closePath();
-      ctx.globalAlpha = capFlashAlpha(0.6 * this.budget, this.reducedFlash);
+      ctx.globalAlpha = capFlashAlpha(0.6 * alphaMul, this.reducedFlash);
       ctx.fill();
 
       // Foam crest: wide faint halo under a bright line, same two-pass
@@ -1257,7 +1344,7 @@ export class BiomeManager {
       for (const [lw, a] of [[6, 0.14], [1.8, 0.55]]) {
         ctx.strokeStyle = cap;
         ctx.lineWidth = lw;
-        ctx.globalAlpha = capFlashAlpha(a * this.budget, this.reducedFlash);
+        ctx.globalAlpha = capFlashAlpha(a * alphaMul, this.reducedFlash);
         ctx.beginPath();
         for (let i = 0; i <= 24; i++) {
           const s = -1 + (i / 24) * 2;
@@ -1274,7 +1361,7 @@ export class BiomeManager {
         const x = tsunami.wallX + f.sOff * WS;
         const baseY = crestY(f.sOff);
         const bob = Math.sin(this.tSec * 4 + f.phase) * 3;
-        ctx.globalAlpha = capFlashAlpha(0.5 * this.budget, this.reducedFlash);
+        ctx.globalAlpha = capFlashAlpha(0.5 * alphaMul, this.reducedFlash);
         ctx.beginPath();
         ctx.arc(x, baseY - f.riseFrac * wallH * 0.4 + bob, 1.8, 0, Math.PI * 2);
         ctx.fill();
@@ -1708,17 +1795,17 @@ export class BiomeManager {
     if (applyBiomeShimmer || applyDynamicShimmer) {
       this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX, yOff);
     } else {
-      this._drawDancingStrip(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey);
+      this._drawDancingStrip(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.terrainEnergy ?? 1);
       if ((layerKey === 'L4' || layerKey === 'L5') && A.edgeLight) {
-        this._drawCrest(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.edgeLight, 1);
+        this._drawCrest(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.edgeLight, 1, A.terrainEnergy ?? 1);
       }
     }
     if (B !== A && t > 0.02) {
       ctx.globalAlpha = t;
-      this._drawDancingStrip(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey);
+      this._drawDancingStrip(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.terrainEnergy ?? 1);
       ctx.globalAlpha = 1;
       if ((layerKey === 'L4' || layerKey === 'L5') && B.edgeLight) {
-        this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t);
+        this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t, B.terrainEnergy ?? 1);
       }
     }
     // Miniature characters run along the two nearest ranges' ridges,
@@ -1742,7 +1829,7 @@ export class BiomeManager {
    *  with time, never jittering with camera scroll. The strips overhang
    *  the ground band by ~40px, which quietly swallows the bottom gap a
    *  lifted column would otherwise open. */
-  _drawDancingStrip(ctx, canvas, strip, scrollX, yOff, layerKey) {
+  _drawDancingStrip(ctx, canvas, strip, scrollX, yOff, layerKey, terrainEnergy = 1) {
     const cfg = DANCE_LAYERS[layerKey];
     if (!cfg) {
       drawTiledStrip(ctx, strip, scrollX, canvas.width, canvas.height, yOff);
@@ -1752,16 +1839,10 @@ export class BiomeManager {
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
     // Orogeny: the range grows taller toward the song's energy climax, then
     // subsides -- height only, anchored at the base so the ridge visibly
-    // rears up rather than the whole strip just scaling in place. The
-    // Lens's world-adaptation return rides the same knob: leaning back out
-    // from a zoom-in swells the ranges taller as the view widens, leaning
-    // back in from a zoom-out settles them shorter -- the skyline visibly
-    // meets the returning view instead of the camera just snapping back.
-    const adaptSwell = this.adaptSwell || 0;
-    const growthMul = orogenyHeightMul(layerKey, clamp01((this.orogenyGrowth || 0) + 0.22 * adaptSwell));
+    // rears up rather than the whole strip just scaling in place.
+    const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0));
     const dh = strip.height * growthMul;
     const baseY = canvas.height - dh + yOff;
-    const danceAmpMul = 1 + 0.35 * Math.abs(adaptSwell);
     const w = strip.width;
     let x = -(((scrollX % w) + w) % w);
     while (x < canvas.width) {
@@ -1769,7 +1850,7 @@ export class BiomeManager {
         const cw = Math.min(DANCE_COL_W, w - cx);
         const sx = x + cx;
         if (sx + cw < 0 || sx > canvas.width) continue;
-        const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0) * danceAmpMul;
+        const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0) * terrainEnergy;
         ctx.drawImage(strip, cx, 0, cw, strip.height, sx, baseY + dy, cw, dh);
       }
       x += w;
@@ -1786,17 +1867,15 @@ export class BiomeManager {
    *  terraces) fixed to terrain positions -- making it the third, distinct
    *  equalizer alongside the horizon EQ and the spectrum massif. L5 keeps
    *  the plain unbroken crest (today's look, minus the tear). */
-  _drawCrest(ctx, canvas, strip, scrollX, yOff, layerKey, edgeLight, alpha) {
+  _drawCrest(ctx, canvas, strip, scrollX, yOff, layerKey, edgeLight, alpha, terrainEnergy = 1) {
     if (!strip.ridge) return;
     const cfg = DANCE_LAYERS[layerKey];
     if (!cfg) return;
     const nowMs = this.tSec * 1000;
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
-    const adaptSwell = this.adaptSwell || 0;
-    const growthMul = orogenyHeightMul(layerKey, clamp01((this.orogenyGrowth || 0) + 0.22 * adaptSwell));
+    const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0));
     const dh = strip.height * growthMul;
     const baseY = canvas.height - dh + yOff;
-    const danceAmpMul = 1 + 0.35 * Math.abs(adaptSwell);
     const w = strip.width;
     const isGeo = layerKey === 'L4';
     const tSec = this.tSec;
@@ -1809,8 +1888,8 @@ export class BiomeManager {
       const stripX = scrollX + x;
       const u = (((stripX % w) + w) % w);
       const yR = ridgeYSmooth(strip.ridge, u) * growthMul;
-      const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever) * danceAmpMul;
-      const lift = isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0;
+      const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever) * terrainEnergy;
+      const lift = (isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
       pts[n++] = { x, y: baseY + yR + dy - lift, lift };
     }
     pts.length = n;
@@ -1864,7 +1943,7 @@ export class BiomeManager {
     const baseY = this.groundY - 26;
     // The massif is the farthest solid thing in the scene -- it rides the
     // same orogeny arc as the L2 range (the far-most parallax layer).
-    const maxH = 300 * orogenyHeightMul('L2', clamp01((this.orogenyGrowth || 0) + 0.22 * (this.adaptSwell || 0)));
+    const maxH = 300 * orogenyHeightMul('L2', clamp01(this.orogenyGrowth || 0));
     const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
     const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
     const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.55));

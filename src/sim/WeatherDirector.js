@@ -5,7 +5,7 @@
 // which kind is falling and how hard.
 import { clamp01 } from '../utils/math.js';
 
-export const KINDS = Object.freeze(['rain', 'snow', 'petals', 'embers']);
+export const KINDS = Object.freeze(['rain', 'snow', 'petals', 'embers', 'sunshine', 'fog', 'wind']);
 
 const KIND_REEVAL_MS = 8000;
 const VALENCE_HYSTERESIS = 0.08; // must clear the boundary by this much to switch
@@ -26,6 +26,16 @@ const COVER_MIN_INTENSITY = 0.15;
 const EPIC_EMBER_THRESHOLD = 0.75;
 const VALENCE_RAIN_BOUNDARY = -0.2;  // sad <-> neutral
 const VALENCE_PETALS_BOUNDARY = 0.3; // neutral <-> happy
+// Three more dramatic kinds, each gated to its own corner of the
+// valence/epic plane that the original four boundaries never touch (every
+// existing rain/snow/petals/embers test runs at epic=0.3, comfortably
+// outside CALM_EPIC_THRESHOLD and WIND_EPIC_MIN below) -- additive, not a
+// re-tuning of the original mapping.
+const CALM_EPIC_THRESHOLD = 0.15;   // becalmed enough for sunshine/fog to read, not just quiet
+const SUNSHINE_VALENCE_MIN = 0.5;   // becalmed AND quite happy
+const FOG_VALENCE_MAX = -0.5;       // becalmed AND quite sad -- a still, somber sky
+const WIND_EPIC_MIN = 0.5;          // energetic but short of the embers threshold
+const WIND_VALENCE_ABS_MAX = 0.15;  // and mood-neutral -- wind reads as weather, not a mood swing
 
 /** Which kind a mood reading maps to, given the currently-active kind (for
  *  hysteresis at the valence boundaries -- epic's ember override has none,
@@ -33,6 +43,11 @@ const VALENCE_PETALS_BOUNDARY = 0.3; // neutral <-> happy
  *  across). Exported for direct testing of the mapping in isolation. */
 export function kindForMood(valence, epic, currentKind) {
   if (epic >= EPIC_EMBER_THRESHOLD) return 'embers';
+  if (epic < CALM_EPIC_THRESHOLD) {
+    if (valence > SUNSHINE_VALENCE_MIN) return 'sunshine';
+    if (valence < FOG_VALENCE_MAX) return 'fog';
+  }
+  if (epic >= WIND_EPIC_MIN && Math.abs(valence) < WIND_VALENCE_ABS_MAX) return 'wind';
   // Schmitt trigger: already being in a state raises the bar to LEAVE it
   // (the exit threshold sits past the plain boundary); not being in it
   // raises the bar to ENTER it (the entry threshold sits short of the plain
