@@ -614,7 +614,7 @@ export class Simulation {
     }
 
     this.gnat.update(nowMs, dtSec, this.calm.level);
-    this.camera.update(dtSec, this.calm.level);
+    this.camera.update(dtSec, this.calm.level, this.reducedFlash);
     this.paramBus.step();
 
     this.curr = this._snapshot();

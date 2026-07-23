@@ -10,7 +10,7 @@ const ENERGY_TAU_SEC = 3; // gusts build and fade over seconds, not beats
 const GLOBAL_SCALE = 0.00028; // very low spatial frequency: one weather system spans the whole stage
 const DETAIL_SCALE = 0.0022;
 const DETAIL_WEIGHT = 0.35;
-const BASE_GUST_PX_S = 46;
+const BASE_GUST_PX_S = 64; // stronger weather -- particles and drift gust harder
 
 export class Atmosphere {
   constructor(seed = 0) {

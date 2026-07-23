@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ridgeYAt } from '../src/world/SilhouetteGenerator.js';
-import { DANCE_LAYERS, danceOffset, DANCE_COL_W } from '../src/world/MountainChoreo.js';
+import { DANCE_LAYERS, danceOffset, DANCE_COL_W, FEVER_DANCE_GAIN } from '../src/world/MountainChoreo.js';
 import {
   ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, featureShape,
   geoCrestOffset, GEO_FEATURE_TYPES, GEO_MAX_LIFT_PX,
@@ -64,7 +64,7 @@ test('danceOffsetSmooth equals danceOffset at column centers', () => {
 
 test('danceOffsetSmooth is continuous across every column seam and bounded', () => {
   const cfg = DANCE_LAYERS.L5;
-  const bound = (cfg.waveAmp + cfg.bounceAmp) * (1 + 1.8) + 1e-6; // FEVER_DANCE_GAIN=1.8
+  const bound = (cfg.waveAmp + cfg.bounceAmp) * (1 + FEVER_DANCE_GAIN) + 1e-6;
   let prev = danceOffsetSmooth(0, 3.1, 1, 1, cfg, 1);
   for (let x = 1; x < 2048; x += 1) {
     const v = danceOffsetSmooth(x, 3.1, 1, 1, cfg, 1);

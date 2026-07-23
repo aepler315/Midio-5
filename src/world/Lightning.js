@@ -46,7 +46,7 @@ export function generateBolt(x0, y0, x1, y1, { displace = 70, detail = 6, branch
   return { main: pts, branches: sideBranches };
 }
 
-const COOLDOWN_MS = 2600;
+const COOLDOWN_MS = 1800; // strikes more often
 const BOLT_MS = 260;
 const FLASH_DECAY_SEC = 0.16;
 
@@ -61,11 +61,11 @@ export class LightningFX {
   }
 
   maybeTrigger(nowMs, vel, canvasWidth, groundY) {
-    if (vel < 0.72 || nowMs < this._nextAllowedMs) return;
+    if (vel < 0.66 || nowMs < this._nextAllowedMs) return;
     this._nextAllowedMs = nowMs + COOLDOWN_MS * (0.8 + this.rand() * 0.5);
     const x = canvasWidth * (0.15 + this.rand() * 0.7);
-    this._bolt = generateBolt(x, -10, x + (this.rand() * 2 - 1) * 180, groundY, {
-      displace: 65, detail: 6, branches: 2 + Math.floor(this.rand() * 2), rand: this.rand,
+    this._bolt = generateBolt(x, -10, x + (this.rand() * 2 - 1) * 210, groundY, {
+      displace: 82, detail: 6, branches: 3 + Math.floor(this.rand() * 2), rand: this.rand,
     });
     this._boltUntilMs = nowMs + BOLT_MS;
     this.flash = 1;
@@ -78,7 +78,7 @@ export class LightningFX {
   draw(ctx, canvas, nowMs, reducedFlash = false) {
     if (this.flash > 0.01) {
       ctx.save();
-      ctx.globalAlpha = capFlashAlpha(0.22 * this.flash, reducedFlash);
+      ctx.globalAlpha = capFlashAlpha(0.30 * this.flash, reducedFlash);
       ctx.fillStyle = '#dfe9ff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.restore();

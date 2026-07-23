@@ -41,7 +41,7 @@ const SPEED_LINE_MAX_ALPHA = 0.35;
 const BLOOM_DOWNSCALE = 3;       // offscreen buffers render at 1/3 resolution
 const BLOOM_BLUR_PX = 7;         // blur radius AT that downsampled scale
 const BLOOM_THRESHOLD_PASSES = 2; // self-multiply passes: c^(2^passes)
-const BLOOM_BASE = 0.18;         // steady glow present even at rest -- never flash-capped
+export const BLOOM_BASE = 0.23;  // steady glow present even at rest -- never flash-capped (raised for a more luminous, dramatic frame)
 // Headroom above the base must clear FLASH_CAP (Accessibility.js) with
 // margin, or reduced-flash's own cap on the reactive term would be masked
 // by this ceiling clipping first -- the whole point of capping the
@@ -53,8 +53,8 @@ const FILM_GRADE_COOL = '#1f8fa3';       // muted teal -- calm push
 const FILM_GRADE_WARM = '#ff9a4d';       // muted amber -- hot/high-budget push
 const FILM_GRADE_ALPHA_BASE = 0.05;      // floor alpha for the grade wash -- a finish, not a filter
 const FILM_GRADE_ALPHA_RANGE = 0.03;     // extra alpha the further warmth sits from neutral
-const VIGNETTE_MIN_ALPHA = 0.10;         // edge darkness at maximum openness (full hype/drop)
-const VIGNETTE_MAX_ALPHA = 0.46;         // edge darkness at maximum depth (fully calm)
+const VIGNETTE_MIN_ALPHA = 0.12;         // edge darkness at maximum openness (full hype/drop)
+const VIGNETTE_MAX_ALPHA = 0.54;         // edge darkness at maximum depth (fully calm) -- deeper, moodier frame
 const VIGNETTE_ONSET_MIN = 0.34;         // onset fraction (of corner radius) at max depth -- a deep iris
 const VIGNETTE_ONSET_MAX = 0.62;         // onset fraction at min depth -- only the outer ring ever darkens
 
