@@ -4,6 +4,7 @@
 // each stage guards on the subsystem's presence so this file grows additively.
 import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE, MIDIO_APOTHEOSIS_FOLDED, MIDIO_APOTHEOSIS_UNFOLDED } from './meshes.js';
 import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, lerpMesh, applyTransform, drawGlowHalo } from './MeshDrawer.js';
+import { spectralHue, easeHueDeg } from './stellar.js';
 import { EpicycleShow } from './EpicycleShow.js';
 import { ComposerStrip } from './ComposerStrip.js';
 import { RainbowBrush } from './RainbowBrush.js';
@@ -42,7 +43,7 @@ const SPEED_LINE_MAX_ALPHA = 0.35;
 const BLOOM_DOWNSCALE = 3;       // offscreen buffers render at 1/3 resolution
 const BLOOM_BLUR_PX = 7;         // blur radius AT that downsampled scale
 const BLOOM_THRESHOLD_PASSES = 2; // self-multiply passes: c^(2^passes)
-const BLOOM_BASE = 0.18;         // steady glow present even at rest -- never flash-capped
+export const BLOOM_BASE = 0.23;  // steady glow present even at rest -- never flash-capped (raised for a more luminous, dramatic frame)
 // Headroom above the base must clear FLASH_CAP (Accessibility.js) with
 // margin, or reduced-flash's own cap on the reactive term would be masked
 // by this ceiling clipping first -- the whole point of capping the
@@ -54,8 +55,8 @@ const FILM_GRADE_COOL = '#1f8fa3';       // muted teal -- calm push
 const FILM_GRADE_WARM = '#ff9a4d';       // muted amber -- hot/high-budget push
 const FILM_GRADE_ALPHA_BASE = 0.05;      // floor alpha for the grade wash -- a finish, not a filter
 const FILM_GRADE_ALPHA_RANGE = 0.03;     // extra alpha the further warmth sits from neutral
-const VIGNETTE_MIN_ALPHA = 0.10;         // edge darkness at maximum openness (full hype/drop)
-const VIGNETTE_MAX_ALPHA = 0.46;         // edge darkness at maximum depth (fully calm)
+const VIGNETTE_MIN_ALPHA = 0.12;         // edge darkness at maximum openness (full hype/drop)
+const VIGNETTE_MAX_ALPHA = 0.54;         // edge darkness at maximum depth (fully calm) -- deeper, moodier frame
 const VIGNETTE_ONSET_MIN = 0.34;         // onset fraction (of corner radius) at max depth -- a deep iris
 const VIGNETTE_ONSET_MAX = 0.62;         // onset fraction at min depth -- only the outer ring ever darkens
 
@@ -97,24 +98,12 @@ export class Renderer {
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // The world's own beat-synced breathing, composed alongside the
-    // camera's own shake/punch -- both pivot on screen center.
-    const beatZoomVal = sim.beatZoom ? sim.beatZoom.value : 1;
-    const totalZoom = camera.zoom * beatZoomVal;
-
-    // Zooming out past 1.0 shrinks the whole composed scene toward screen
-    // center, which would otherwise expose blank canvas at the edges (the
-    // parallax layers aren't drawn wider than the viewport). A full-bleed
-    // sky-toned backdrop underneath reads as distant haze rather than a
-    // void -- cheap, and never wrong regardless of which biome is active.
-    if (totalZoom < 0.999) {
-      ctx.fillStyle = biomeManager && biomeManager.currentSkyBase ? biomeManager.currentSkyBase() : '#141428';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-
+    // Zoom has been removed entirely: the camera holds one fixed framing.
+    // Only the damped impact roll and the screen shake move the frame now,
+    // both pivoting on screen center so a shake/roll never scrolls the
+    // world sideways.
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
-    ctx.scale(totalZoom, totalZoom);
     ctx.rotate(camera.roll || 0); // damped impact roll, pivoting on screen center
     ctx.translate(-canvas.width / 2 + camera.shakeX, -canvas.height / 2 + camera.shakeY);
 
@@ -160,8 +149,14 @@ export class Renderer {
     }
     if (sim.broshi) sim.broshi.draw(ctx, pose);
 
+    // Midio wears Midasus's pale spectral treatment now: his base hue tracks
+    // the song's key (KeyDirector.tonic), eased so the color drifts between
+    // keys rather than snapping. His silhouette/rig are untouched.
+    const keyHue = spectralHue(sim.keyDirector ? sim.keyDirector.tonic : 0);
+    this._midioHue = this._midioHue == null ? keyHue : easeHueDeg(this._midioHue, keyHue, 0.04);
+
     if (sim.performer) {
-      this._drawMidioAfterimages(ctx, sim.performer, pose.midioDrawX);
+      this._drawMidioAfterimages(ctx, sim.performer, pose.midioDrawX, this._midioHue);
       this._drawGoldAfterimages(ctx, sim.performer, pose.midioDrawX, sim.timeMs);
     }
     const midioWidthPx = sim.midio.halfWidth * 2 * MIDIO_DRAW_SCALE * pose.scaleX;
@@ -170,7 +165,7 @@ export class Renderer {
     // Fever adds its own glow on top of the vibe's epic-ness -- a hot streak
     // makes Midio himself burn brighter, not just the world around him.
     const feverGlow = sim.fever ? 3.0 * sim.fever.level : 0;
-    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, (sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0) + feverGlow, sim.apotheosis, sim.reducedFlash);
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, (sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0) + feverGlow, sim.apotheosis, sim.reducedFlash, this._midioHue);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
@@ -687,7 +682,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false) {
+  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_BASE_HUE) {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
     const apoProgress = apotheosis ? apotheosis.progress : 0;
@@ -702,14 +697,16 @@ export class Renderer {
       scaleX: pose.scaleX * MIDIO_DRAW_SCALE * breathe * (1 + 0.25 * apoProgress),
       scaleY: pose.scaleY * MIDIO_DRAW_SCALE * breathe * (1 + 0.25 * apoProgress),
     };
-    const hue = flash > 0 ? MIDIO_BASE_HUE + (48 - MIDIO_BASE_HUE) * flash : MIDIO_BASE_HUE;
-    // Spectral treatment: near-white filament with a narrow warm fringe.
-    // The milestone gold flash reads as the glyph igniting into color; the
-    // Apotheosis widens the hue band further into a full sweep around the rim.
+    // Midasus style: he wears his eased spectral key-hue (baseHue); the
+    // milestone gold flash still ignites him toward gold (48) on top of it.
+    const hue = flash > 0 ? easeHueDeg(baseHue, 48, flash) : baseHue;
+    // Pale, bright, wider spectral spread -- the same "pale, never candy"
+    // treatment Midasus's core uses, not the old narrow near-white gold.
+    // The Apotheosis widens the hue band further into a full rim sweep.
     const options = {
-      satBase: 26 + flash * 45 + 20 * apoProgress,
-      lightBase: 68 + flash * 14 + 10 * apoProgress,
-      hueSpread: 16 + 60 * apoProgress,
+      satBase: 32 + flash * 40 + 18 * apoProgress,
+      lightBase: 72 + flash * 12 + 8 * apoProgress,
+      hueSpread: 28 + 46 * apoProgress,
     };
 
     // Modal vibration: rim vertices ride the performer's ring-down field.
@@ -775,7 +772,7 @@ export class Renderer {
   }
 
   /** Motion-streak ghosts trailing a fast jump (follow-up item 6). */
-  _drawMidioAfterimages(ctx, performer, midioX) {
+  _drawMidioAfterimages(ctx, performer, midioX, baseHue = MIDIO_BASE_HUE) {
     const frames = performer.afterimages;
     const n = frames.length;
     if (n === 0) return;
@@ -787,7 +784,7 @@ export class Renderer {
       drawMeshPart(ctx, MIDIO_MESH, this._midioRestLengths, {
         tx: midioX, ty: f.y, rot: (f.rot * Math.PI) / 180,
         scaleX: f.scaleX * MIDIO_DRAW_SCALE, scaleY: f.scaleY * MIDIO_DRAW_SCALE,
-      }, MIDIO_BASE_HUE, { alpha: 1, satBase: 18, lightBase: 60, hueSpread: 16 });
+      }, baseHue, { alpha: 1, satBase: 22, lightBase: 64, hueSpread: 24 });
     }
     ctx.restore();
   }

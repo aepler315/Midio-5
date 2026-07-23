@@ -1,9 +1,16 @@
-// Camera state: punch-zoom on landings (spec §2.2.2), pulse-zoom on bar 1,
-// screen shake (spec §2.2.1). Expanded in later stages; starts as identity.
+// Camera state: screen shake + a damped impact roll (spec §2.2.1). Zoom has
+// been removed from the game, so this no longer holds any zoom/punch state --
+// the Renderer applies a fixed framing and only reads shake/roll from here.
+
+// "More and harder" shake: a global multiplier on every shake() amplitude,
+// a longer decay time-constant so each jolt rings harder/longer, and a
+// beefier rotational coupling. Reduced-motion halves it all (see update()).
+const SHAKE_GAIN = 2.0;
+const SHAKE_DECAY_TAU = 0.10; // seconds (was 0.07) -- jolts persist noticeably longer
+const ROLL_COUPLING = 0.0014; // rotational kick per (gained) px of shake
+
 export class CameraDirector {
   constructor() {
-    this.zoom = 1;
-    this.targetZoom = 1;
     this.shakeX = 0;
     this.shakeY = 0;
     this._shakeAmp = 0;
@@ -16,28 +23,25 @@ export class CameraDirector {
     this._rollSign = 1;
   }
 
-  punch(scale) {
-    this.targetZoom = Math.max(this.targetZoom, scale);
-  }
-
   shake(amplitudePx) {
-    this._shakeAmp = Math.max(this._shakeAmp, amplitudePx);
+    const amp = amplitudePx * SHAKE_GAIN;
+    this._shakeAmp = Math.max(this._shakeAmp, amp);
     this._shakeT = 0;
-    // Impacts also kick a damped rotational oscillation -- a subtle roll
-    // (fractions of a degree) that alternates direction hit to hit.
-    this._rollAmp = Math.max(this._rollAmp, amplitudePx * 0.0011);
+    // Impacts also kick a damped rotational oscillation -- a roll (now up to
+    // a couple of degrees on the big hits) that alternates direction hit to hit.
+    this._rollAmp = Math.max(this._rollAmp, amp * ROLL_COUPLING);
     this._rollT = 0;
     this._rollSign = -this._rollSign;
   }
 
-  update(dtSec, calmLevel = 0) {
-    this.zoom += (this.targetZoom - this.zoom) * Math.min(1, dtSec * 10);
-    this.targetZoom += (1 - this.targetZoom) * Math.min(1, dtSec * 6);
-
+  update(dtSec, calmLevel = 0, reducedMotion = false) {
+    // Reduced-motion keeps the harder shake comfortable: half amplitude on
+    // both the translational shake and the rotational roll.
+    const motionMul = reducedMotion ? 0.5 : 1;
     let shakeX = 0, shakeY = 0;
     if (this._shakeAmp > 0.01) {
       this._shakeT += dtSec;
-      const decay = Math.exp(-this._shakeT / 0.07);
+      const decay = Math.exp(-this._shakeT / SHAKE_DECAY_TAU);
       const amp = this._shakeAmp * decay;
       // 2-octave value-noise direction, not pure sine (spec §2.2.1) — cheap approximation via
       // summed incommensurate sines seeded per-shake so it never reads as jello.
@@ -51,7 +55,7 @@ export class CameraDirector {
     if (this._rollAmp > 1e-4) {
       this._rollT += dtSec;
       const env = Math.exp(-this._rollT / 0.22);
-      this.roll = this._rollSign * this._rollAmp * env * Math.sin(2 * Math.PI * 6.5 * this._rollT);
+      this.roll = motionMul * this._rollSign * this._rollAmp * env * Math.sin(2 * Math.PI * 6.5 * this._rollT);
       if (env < 0.02) this._rollAmp = 0;
     } else {
       this.roll = 0;
@@ -65,7 +69,7 @@ export class CameraDirector {
     const driftX = driftAmp * Math.sin(2 * Math.PI * 0.1 * this._driftT);
     const driftY = driftAmp * Math.sin(2 * Math.PI * 0.1 * this._driftT * 0.7 + 1.3);
 
-    this.shakeX = shakeX + driftX;
-    this.shakeY = shakeY + driftY;
+    this.shakeX = shakeX * motionMul + driftX;
+    this.shakeY = shakeY * motionMul + driftY;
   }
 }

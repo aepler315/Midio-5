@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ObstacleSpawner } from '../src/sim/ObstacleSpawner.js';
+import { ObstacleSpawner, geoRowTimes } from '../src/sim/ObstacleSpawner.js';
 import { predictJumpArcs } from '../src/sim/JumpPlanner.js';
 import { jumpY } from '../src/sim/JumpController.js';
 import { GUARDRAIL_MIN } from '../src/core/ParamBus.js';
@@ -32,6 +32,16 @@ function assertCandidateIsSafe(candidateMs, kicks) {
   }
 }
 
+/** A candidate is either a single obstacle ({tMs}) or a lined-up geometric
+ *  row ({row}); assert every obstacle it produces is worst-case clearable. */
+function assertObstacleCandidateSafe(c, kicks) {
+  if (c.row) {
+    for (const t of geoRowTimes(c.row.fromMs, c.row.toMs, c.row.count)) assertCandidateIsSafe(t, kicks);
+  } else {
+    assertCandidateIsSafe(c.tMs, kicks);
+  }
+}
+
 function extractKicks(timeline) {
   return timeline.filter((e) => e.role === Role.RHYTHM && e.kick).map((e) => ({ tMs: e.tMs, vel: e.vel }));
 }
@@ -43,7 +53,7 @@ test('every obstacle candidate on the demo timeline sits in a verified worst-cas
 
   assert.ok(spawner.candidates.length > 0, 'expected at least some obstacle candidates on a 64-bar demo');
   const kicks = extractKicks(data.timeline);
-  for (const c of spawner.candidates) assertCandidateIsSafe(c.tMs, kicks);
+  for (const c of spawner.candidates) assertObstacleCandidateSafe(c, kicks);
 });
 
 test('obstacle candidates stay safe across a range of BPMs, including halftime territory', () => {
@@ -52,7 +62,7 @@ test('obstacle candidates stay safe across a range of BPMs, including halftime t
     const spawner = new ObstacleSpawner({ live: { obstacleDensity: 1 } });
     spawner.buildCandidates(data.timeline, 60000 / bpm, MIDIO_HALF_WIDTH);
     const kicks = extractKicks(data.timeline);
-    for (const c of spawner.candidates) assertCandidateIsSafe(c.tMs, kicks);
+    for (const c of spawner.candidates) assertObstacleCandidateSafe(c, kicks);
   }
 });
 
@@ -71,7 +81,7 @@ test('obstacle candidates stay safe with randomized velocities and irregular kic
   const spawner = new ObstacleSpawner({ live: { obstacleDensity: 1 } });
   spawner.buildCandidates(timeline, 500, MIDIO_HALF_WIDTH);
   const kicks = extractKicks(timeline);
-  for (const c of spawner.candidates) assertCandidateIsSafe(c.tMs, kicks);
+  for (const c of spawner.candidates) assertObstacleCandidateSafe(c, kicks);
 });
 
 test('no safe window is invented for an arc that never clears the obstacle height', () => {

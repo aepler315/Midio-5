@@ -271,9 +271,18 @@ export class Midasus {
       this.hue = this.voyage.hue;
     }
     // The babies track her wherever the frame puts her (ensemble, darts,
-    // even voyage return points); Midio is their favorite point of interest.
+    // even voyage return points). They render at the mains' intensity (her
+    // pulse + the song's epic-ness), are hyper curious about every point of
+    // interest the sim hands over (Midio, Broshi, obstacles, the user's
+    // cursor), and are aware of the user via that pointer.
     this.babies.update(nowMs, dtSec, this.p, calmLevel, {
-      x: this.midio.screenX, y: this.midio.groundY - this.midio.y - 40,
+      epic: this._ens ? (this._ens.epic || 0) : 0,
+      melt: this._ens ? (this._ens.melt || 0) : 0,
+      pulse: this.pulse,
+      interests: (this._ens && this._ens.interests && this._ens.interests.length)
+        ? this._ens.interests
+        : [{ x: this.midio.screenX, y: this.midio.groundY - this.midio.y - 40 }],
+      pointer: this._ens ? this._ens.pointer : null,
     });
 
     if (this.voyage.justLanded) {

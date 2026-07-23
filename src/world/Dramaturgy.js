@@ -63,8 +63,10 @@ export function classifyTransition(novelty, maxNovelty) {
  */
 export function intensityBudget(progress) {
   const p = clamp01(progress);
-  const ramp = 0.45 + 0.55 * smoothstep(0, 0.22, p);
-  return Math.min(1, ramp * (1 + 0.08 * smoothstep(0.85, 1, p)));
+  // Higher floor so even the intro carries more phenomena, and a bigger
+  // final push -- a more dramatic budget end to end.
+  const ramp = 0.55 + 0.45 * smoothstep(0, 0.22, p);
+  return Math.min(1, ramp * (1 + 0.12 * smoothstep(0.85, 1, p)));
 }
 
 /**

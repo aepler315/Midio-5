@@ -42,7 +42,6 @@ import { AirJumpSequencer } from './AirJumpSequencer.js';
 import { FeverMeter } from './FeverMeter.js';
 import { LatencyCalibrator } from './LatencyCalibrator.js';
 import { WeatherDirector } from './WeatherDirector.js';
-import { BeatZoomDirector } from './BeatZoomDirector.js';
 import { OrogenyDirector } from '../world/OrogenyDirector.js';
 
 const WORLD_SPEED_PX_S = 220;
@@ -193,16 +192,18 @@ export class Simulation {
       canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,
     });
 
-    // The world's own automatic camera breathing -- sometimes a slow subtle
-    // sway, sometimes a hard kick-synced snap or a dramatic dive right on a
-    // drop.
-    this.beatZoom = new BeatZoomDirector(songSeed);
     // Orogeny: the mountains visibly build across the song, peaking at its
     // energy climax, then subside through the rest of the runtime.
     this.orogeny = new OrogenyDirector(energyCurves, conductor.durationMs || 0, conductor.barGrid);
 
     this.worldX = 0;
     this.timeMs = 0;
+
+    // The user's cursor, in stage coordinates, fed by main.js. The baby
+    // stars are aware of it (they're aware of the user); nothing else reads
+    // it, and it never moves the camera. Inactive until the first move and
+    // after a couple of idle seconds.
+    this.pointer = { x: canvasWidth / 2, y: canvasHeight / 2, active: false, lastMoveMs: -Infinity };
 
     this.prev = this._snapshot();
     this.curr = this._snapshot();
@@ -234,7 +235,6 @@ export class Simulation {
         this.gnat.onKick(evt);
         this.performer.onKick(evt.tMs);
         this.hype.onKick(evt.vel);
-        this.beatZoom.onKick(evt.vel, evt.tMs);
         this.groundField.kickGlow(this.worldX, evt.tMs, evt.vel);
         this.midasus.voyage.onKick(evt.vel); // deep-space sparkle burst (self-gated on phase)
         if (this.apotheosis.active) this.performer.captureGoldAfterimage(this.midio, this.timeMs);
@@ -354,6 +354,16 @@ export class Simulation {
     return this.energyCurves ? clamp01(this.energyCurves.sample(1, tMs)) : 0;
   }
 
+  /** The user's cursor position in stage coordinates (main.js maps client
+   *  coords through the canvas rect). Marks the pointer active; it idles out
+   *  after a couple of seconds of no movement (see step()). */
+  setPointer(x, y) {
+    this.pointer.x = x;
+    this.pointer.y = y;
+    this.pointer.active = true;
+    this.pointer.lastMoveMs = this.timeMs;
+  }
+
   /** The Reel (Movement VI): live-toggle the reduced-flash accessibility
    *  setting, cascading to every consumer that caps its own flash alphas. */
   setReducedFlash(v) {
@@ -420,14 +430,12 @@ export class Simulation {
     this.fever.update(nowMs, dtSec, this.energyCurves);
     this.calm.update(nowMs, dtSec, this.energyCurves);
     this.hype.update(nowMs, dtSec, this.energyCurves);
-    // Drop impact pack: a fresh drop (dropCount ticking up) throws the
-    // camera into it -- a quick punch-in + shake, on top of the shockwave
-    // ring / chromatic shock / speed-lines the Renderer draws off dropAtMs.
+    // Drop impact pack: a fresh drop (dropCount ticking up) throws a hard
+    // shake, on top of the shockwave ring / chromatic shock / speed-lines
+    // the Renderer draws off dropAtMs.
     if (this.hype.dropCount !== this._lastDropCount) {
       this._lastDropCount = this.hype.dropCount;
-      this.camera.punch(1.07);
       this.camera.shake(9);
-      this.beatZoom.onDrop(nowMs); // the beat zoom's own dramatic dive figure
     }
     // Lyric structure's epic bias (SectionFusion): zero, and thus a strict
     // no-op, whenever there's no lyric data (biomes.currentKind stays
@@ -478,7 +486,6 @@ export class Simulation {
       const airY = this.midio.groundY - aj.y;
       this.impactFX.splat(this.worldX, airY);
       this.performer.modal.excite(aj.isFlourish ? 6 : 3);
-      this.camera.punch(aj.isFlourish ? 1.05 : 1.02);
       if (aj.isFlourish) {
         this.impactFX.ignite(this.worldX, airY);
         this.fever.spark(0.12); // the phrase's flourish stokes the fever directly
@@ -527,7 +534,6 @@ export class Simulation {
     }
 
     this.apotheosis.update(nowMs, dtSec, { vibe: this.vibe, hype: this.hype, calm: this.calm });
-    if (this.apotheosis.active) this.camera.punch(1.04);
     if (this.apotheosis.justEnded) {
       this.performer.modal.excite(8);
       this.impactFX.splat(this.worldX, this.midio.groundY);
@@ -563,15 +569,30 @@ export class Simulation {
       conductor: this.conductor, midasus: this.midasus, broshi: this.broshi, worldX: this.worldX,
     });
 
+    // The cursor idles out after a couple of seconds of stillness.
+    if (this.pointer.active && nowMs - this.pointer.lastMoveMs > 2500) this.pointer.active = false;
+    // Points of interest for the hyper-curious baby stars: Midio, Broshi, and
+    // the nearest upcoming obstacle (Broshi's render pose is one frame stale
+    // here -- he updates below -- which is fine for a thing to be curious at).
+    const babyInterests = [
+      { x: this.midio.screenX, y: this.midio.groundY - this.midio.y - 40 },
+      { x: this.broshi.renderX, y: this.broshi.groundY - this.broshi.hopY - 20 },
+    ];
+    const nearestObs = this.obstacles.nearestAhead(this.worldX);
+    if (nearestObs) {
+      babyInterests.push({ x: nearestObs.wx - this.worldX + this.midio.screenX, y: this.midio.groundY - nearestObs.height / 2 });
+    }
+
     this.midasus.update(nowMs, dtSec, this.calm.level, {
       x: this.ensemble.anchors[2].x, y: this.ensemble.anchors[2].y,
       phase: this.ensemble.phase(2), melt: 2 + 4.5 * this.vibe.epic, epic: this.vibe.epic,
+      interests: babyInterests, pointer: this.pointer,
     }, this.perf.particleMul, this.biomes.wind);
     // She's off on a voyage -> the ensemble's Kuramoto math should feel the
     // hole (this takes effect next frame; the weight eases over ~1.5s
     // regardless, so the one-step lag is inaudible/invisible).
     this.ensemble.setPresence(2, this.midasus.voyage.active ? 0 : 1);
-    if (this.midasus.voyage.justLanded) { this.camera.punch(1.05); this.camera.shake(7); }
+    if (this.midasus.voyage.justLanded) { this.camera.shake(7); }
     // The sky notices her presence: the celestial's mandala swells while
     // she's dancing around it, and the accumulated star atlas glints with
     // every beat for the rest of the song.
@@ -624,30 +645,8 @@ export class Simulation {
     }
     this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level, this.worldX);
     this.filmFinish.update(nowMs, dtSec, this.calm.level, this.biomes.budget, this.hype);
-    if (this.biomes.cutFlashJustFired) { this.camera.punch(1.06); this.camera.shake(6); }
+    if (this.biomes.cutFlashJustFired) { this.camera.shake(6); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
-
-    // Bar phase, computed once and shared by the beat zoom's phase-locked
-    // breath. Falls back to a beatPeriod-derived phase for bar-less audio.
-    const phraseInfo = this.phrases.infoAt(nowMs);
-    const barMs = this.phrases.barMs;
-    let barPhase01 = 0;
-    const barPeriodMs = Math.max(1, this.jump.beatPeriodMs * 4);
-    if (barMs.length > 0 && phraseInfo.barIdx >= 0 && barMs[phraseInfo.barIdx + 1] != null) {
-      const curBar = barMs[phraseInfo.barIdx], nxt = barMs[phraseInfo.barIdx + 1];
-      barPhase01 = clamp01((nowMs - curBar) / Math.max(1, nxt - curBar));
-    } else {
-      barPhase01 = ((nowMs % barPeriodMs) + barPeriodMs) % barPeriodMs / barPeriodMs;
-    }
-
-    // The world's own automatic zoom-breathing -- figures change on phrase
-    // boundaries, phase-locked to the bar.
-    this.beatZoom.fever = this.fever.level;
-    this.beatZoom.update(nowMs, dtSec, {
-      phraseIdx: phraseInfo.phraseIdx, barPhase01,
-      calmLevel: this.calm.level, hypeFast: this.hype.fast, hypeSlow: this.hype.slow,
-      beatPeriodMs: this.jump.beatPeriodMs, adaptEnv: 0,
-    });
 
     // Orogeny: the mountains build toward the song's energy climax, then
     // gradually subside through the rest of the runtime.
@@ -665,7 +664,7 @@ export class Simulation {
     }
 
     this.gnat.update(nowMs, dtSec, this.calm.level);
-    this.camera.update(dtSec, this.calm.level);
+    this.camera.update(dtSec, this.calm.level, this.reducedFlash);
     this.paramBus.step();
 
     this.curr = this._snapshot();

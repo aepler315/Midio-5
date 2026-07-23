@@ -142,15 +142,15 @@ export class BiomeManager {
     for (const b of this.profiles) {
       const seed = hashSeed(b.name);
       const strips = {
-        L2: generateSilhouette({ seed: seed + 1, octaves: 1, amplitude: 0.36, baseline: 0.42, color: b.silhouette }),
-        L3: generateSilhouette({ seed: seed + 2, octaves: 2, amplitude: 0.46, baseline: 0.48, color: b.silhouette }),
+        L2: generateSilhouette({ seed: seed + 1, octaves: 1, amplitude: 0.47, baseline: 0.42, color: b.silhouette }),
+        L3: generateSilhouette({ seed: seed + 2, octaves: 2, amplitude: 0.60, baseline: 0.48, color: b.silhouette }),
         // No baked edgeLight here: the old baked stroke tore at every
         // dance-column seam (_drawDancingStrip blits in DANCE_COL_W slices,
         // each at its own bounce height). _drawCrest below strokes the same
         // neon line LIVE, continuous across every seam, and turns L4's into
         // the geological equalizer (GeoCrest.js).
-        L4: generateSilhouette({ seed: seed + 3, octaves: 3, amplitude: 0.56, baseline: 0.62, color: b.silhouette }),
-        L5: generateSilhouette({ seed: seed + 4, octaves: 2, amplitude: 0.38, baseline: 0.82, color: b.silhouette }),
+        L4: generateSilhouette({ seed: seed + 3, octaves: 3, amplitude: 0.72, baseline: 0.62, color: b.silhouette }),
+        L5: generateSilhouette({ seed: seed + 4, octaves: 2, amplitude: 0.46, baseline: 0.82, color: b.silhouette }),
       };
       // Landmarks: per-song placements (songSeed), baked into the strips,
       // each rooted on the noise ridge at its own x. Unknown biome names

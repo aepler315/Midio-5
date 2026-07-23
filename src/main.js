@@ -16,7 +16,7 @@ import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
-import { getReducedFlash, setReducedFlash } from './ui/Accessibility.js';
+import { getReducedFlash, setReducedFlash, getLyricsDisabled, setLyricsDisabled } from './ui/Accessibility.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
@@ -94,6 +94,8 @@ const lyricsArtistInputEl = document.getElementById('lyricsArtistInput');
 const lyricsTitleInputEl = document.getElementById('lyricsTitleInput');
 const lyricsFindBtnEl = document.getElementById('lyricsFindBtn');
 const lyricsSkipBtnEl = document.getElementById('lyricsSkipBtn');
+const lyricsNoneBtnEl = document.getElementById('lyricsNoneBtn');
+const noLyricsBtnEl = document.getElementById('noLyricsBtn');
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -115,6 +117,22 @@ let rafHandle = null; // tracks the pending frame() call so a mid-song file
                        // second one alongside it
 let fontModalView = 'list'; // 'list' (visible fonts, click-to-hide) | 'hidden' (hidden fonts, click-to-unhide)
 let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted accessibility toggle
+let lyricsDisabled = getLyricsDisabled(); // "No lyrics": persisted opt-out from the lyric fetch/prompt
+
+/** Reflect the "No lyrics" preference on the loader toggle button. */
+function syncNoLyricsBtn() {
+  if (!noLyricsBtnEl) return;
+  noLyricsBtnEl.setAttribute('aria-pressed', lyricsDisabled ? 'true' : 'false');
+  noLyricsBtnEl.textContent = `No lyrics: ${lyricsDisabled ? 'on' : 'off'}`;
+}
+syncNoLyricsBtn();
+if (noLyricsBtnEl) {
+  noLyricsBtnEl.addEventListener('click', () => {
+    lyricsDisabled = !lyricsDisabled;
+    setLyricsDisabled(lyricsDisabled);
+    syncNoLyricsBtn();
+  });
+}
 // Set per load path (true only for raw decoded audio, which already has
 // every voice baked into the buffer) and read by applySynthMutePolicy().
 let muteTimelineSynth = false;
@@ -551,7 +569,7 @@ function startTimeline(timelineData, { autoRecord = true } = {}) {
   lastNowMs = audioEngine.nowMs;
   lastRafMs = null;
   // Fresh song, fresh button: the demo/play buttons must lose focus so a
-  // stray Space/Enter doesn't "click" them again mid-song.
+  // stray keypress never re-"clicks" them.
   document.activeElement?.blur?.();
   audioEngine.start(0);
   running = true;
@@ -741,6 +759,7 @@ function promptForLyrics(identity, durationSec) {
       if (skipTimer) clearTimeout(skipTimer);
       lyricsFindBtnEl?.removeEventListener('click', onFind);
       lyricsSkipBtnEl?.removeEventListener('click', onSkip);
+      lyricsNoneBtnEl?.removeEventListener('click', onNever);
     };
     const finish = (result) => {
       if (settled) return;
@@ -773,8 +792,17 @@ function promptForLyrics(identity, durationSec) {
     };
     const onFind = () => runFind(lyricsArtistInputEl?.value.trim(), lyricsTitleInputEl?.value.trim());
     const onSkip = () => finish(null);
+    // "No lyrics": skip this song AND remember the choice so future songs
+    // skip the fetch entirely (loadAudioFiles reads lyricsDisabled).
+    const onNever = () => {
+      lyricsDisabled = true;
+      setLyricsDisabled(true);
+      syncNoLyricsBtn();
+      finish(null);
+    };
     lyricsFindBtnEl?.addEventListener('click', onFind);
     lyricsSkipBtnEl?.addEventListener('click', onSkip);
+    lyricsNoneBtnEl?.addEventListener('click', onNever);
 
     lyricsRowEl.classList.remove('hidden');
     lyricsFieldsEl?.classList.add('hidden');
@@ -859,7 +887,11 @@ async function loadAudioFiles(files) {
   // an actual vocal track -- buildLyricSections only touches it if the
   // lyrics that come back have no per-line timestamps of their own.
   const vocalStem = isStemDrop ? decoded.find((d) => isVocalStemName(d.name)) : null;
-  const lyricsPromise = resolveLyricsForAudio(files[0], audioBuffer.duration, vocalStem);
+  // "No lyrics" preference: skip the whole identity/lyric fetch + prompt.
+  // Everything downstream already no-ops on null lyricSections.
+  const lyricsPromise = lyricsDisabled
+    ? Promise.resolve({ identity: null, lyricSections: null })
+    : resolveLyricsForAudio(files[0], audioBuffer.duration, vocalStem);
   let data;
   try {
     data = await audioToTimeline(audioBuffer, {
@@ -1178,6 +1210,19 @@ function formatClock(ms) {
   return `${m}:${String(r).padStart(2, '0')}`;
 }
 
+// Zoom has been removed from the game: there is no player Lens control and
+// no automatic camera zoom. The pointer is still tracked, but only so the
+// star-children can notice where the user is (they're aware of the user); it
+// never moves the camera. Client coords are mapped through the canvas rect
+// into the 1280x720 stage space the sim draws in.
+canvas.addEventListener('pointermove', (e) => {
+  if (!running || !sim || !sim.setPointer) return;
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  const x = ((e.clientX - rect.left) / rect.width) * canvas.width;
+  const y = ((e.clientY - rect.top) / rect.height) * canvas.height;
+  sim.setPointer(x, y);
+});
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (fontModalEl && !fontModalEl.classList.contains('hidden')) closeFontModal();

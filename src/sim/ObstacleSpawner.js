@@ -31,6 +31,32 @@ export const ARCHETYPES = Object.freeze(['thorn', 'veil', 'echo']);
 export const EMERGENCE_PX = 170; // condenses in over this much approach distance
 export const DISSOLVE_PX = 130;  // dissolves out over this much departure distance
 
+// The GEOMETRIC family: a distinct, hard-edged set of shapes (triangle,
+// square, hexagon) that spawn LINED UP in a row across a single jump arc's
+// safe window -- Midio takes off on the arc's kick, sails over the whole
+// row, and lands on the next kick. They never appear as random singles (the
+// organic thorn/veil/echo do that); a row only forms from an arc whose safe
+// window is wide enough, and every shape sits inside that window so each is
+// worst-case clearable exactly like a single obstacle.
+export const GEO_SHAPES = Object.freeze([3, 4, 6]); // polygon side counts
+const GEO_ROW_CHANCE = 0.3;   // fraction of wide-enough arcs that become a geometric row
+const GEO_MIN_SPAN_MS = 240;  // usable window must be at least this wide to lay a row
+const GEO_SPACING_MS = 120;   // nominal time gap between shapes in a row
+const GEO_ROW_MIN = 3, GEO_ROW_MAX = 6;
+
+/** The evenly-spaced onset times (ms) of the shapes in a geometric row that
+ *  spans [fromMs, toMs] with `count` shapes. Every time lies within the
+ *  window, so each shape inherits the window's worst-case clearance. Pure
+ *  and exported so the placement-safety test can verify the whole row. */
+export function geoRowTimes(fromMs, toMs, count) {
+  const times = [];
+  for (let i = 0; i < count; i++) {
+    const frac = count > 1 ? i / (count - 1) : 0;
+    times.push(fromMs + (toMs - fromMs) * frac);
+  }
+  return times;
+}
+
 /** Deterministic archetype pick from a 0..1 float (this.rand()'s own output). */
 export function obstacleArchetype(u) {
   if (u < 1 / 3) return 'thorn';
@@ -112,6 +138,21 @@ export class ObstacleSpawner {
       if (usableTo - usableFrom < MIN_SAFE_WINDOW_MS - 2 * crossHalfMs) continue; // too narrow once crossing time is reserved
       if (usableFrom > usableTo) continue;
 
+      // Occasionally lay a lined-up GEOMETRIC row across this whole safe
+      // window instead of a single ambient obstacle. Every shape's onset
+      // sits inside [usableFrom, usableTo] (see geoRowTimes), so the row
+      // inherits the same worst-case clearance guarantee a single obstacle
+      // gets -- Midio clears the entire line and lands on the next kick.
+      const span = usableTo - usableFrom;
+      if (span >= GEO_MIN_SPAN_MS && this.rand() < GEO_ROW_CHANCE) {
+        if (usableFrom - lastAccepted < minGap) continue;
+        const count = clamp(Math.round(span / GEO_SPACING_MS) + 1, GEO_ROW_MIN, GEO_ROW_MAX);
+        const shape = GEO_SHAPES[Math.floor(this.rand() * GEO_SHAPES.length)];
+        this.candidates.push({ tMs: usableFrom, row: { fromMs: usableFrom, toMs: usableTo, count, shape } });
+        lastAccepted = usableTo;
+        continue;
+      }
+
       // Anchor to the loudest nearby off-kick rhythm event for musical
       // correlation; fall back to the window's center if none qualify.
       while (ei < rhythmEvents.length && rhythmEvents[ei].tMs < usableFrom) ei++;
@@ -141,6 +182,19 @@ export class ObstacleSpawner {
       if (c.tMs < nowMs) continue;
       const p = clamp(SPAWN_PROB_BASE * this.P.live.obstacleDensity, 0, 1);
       if (this.rand() > p) continue;
+      if (c.row) {
+        // A lined-up geometric row: one shape per evenly-spaced onset, all
+        // the same polygon so the line reads as one deliberate formation.
+        const { fromMs, toMs, count, shape } = c.row;
+        for (const tMs of geoRowTimes(fromMs, toMs, count)) {
+          const wx = worldX + scrollSpeedPxMs * (tMs - nowMs);
+          this.active.push({
+            wx, tMs, height: this.height, width: this.width, passed: false,
+            archetype: 'geo', sides: shape, phase: this.rand() * Math.PI * 2,
+          });
+        }
+        continue;
+      }
       const wx = worldX + scrollSpeedPxMs * (c.tMs - nowMs);
       const archetype = obstacleArchetype(this.rand());
       const phase = this.rand() * Math.PI * 2;
@@ -203,6 +257,7 @@ export class ObstacleSpawner {
       switch (o.archetype) {
         case 'thorn': this._drawThorn(ctx, o, presence, emergence, rgb, tSec, reducedFlash, nearMoment); break;
         case 'veil': this._drawVeil(ctx, o, presence, distanceAhead, rgb, tSec, wind, reducedFlash); break;
+        case 'geo': this._drawGeo(ctx, o, presence, emergence, pulse, rgb, tSec, reducedFlash); break;
         default: this._drawEcho(ctx, o, presence, pulse, rgb, tSec, particleMul, reducedFlash, nearMoment); break;
       }
 
@@ -271,6 +326,43 @@ export class ObstacleSpawner {
       }
       ctx.stroke();
     }
+  }
+
+  /** A member of the lined-up geometric family: a crisp regular polygon
+   *  (triangle/square/hexagon) standing on the ground, with a dark solid
+   *  core and a bright, slowly-counter-rotating double edge -- deliberately
+   *  hard-edged so the row reads as engineered, not organic. */
+  _drawGeo(ctx, o, presence, emergence, pulse, rgb, tSec, reducedFlash) {
+    const scale = 0.3 + 0.7 * emergence;
+    ctx.scale(scale, scale);
+    const sides = o.sides || 4;
+    const r = o.height * 0.5;
+    const rot = tSec * 0.5 + o.phase;
+    const alpha = capFlashAlpha((0.55 + 0.25 * pulse) * presence, reducedFlash);
+
+    const poly = (radius, spin) => {
+      ctx.beginPath();
+      for (let i = 0; i <= sides; i++) {
+        const a = spin + (i / sides) * Math.PI * 2 - Math.PI / 2; // point-up
+        const px = Math.cos(a) * radius, py = Math.sin(a) * radius;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+    };
+
+    // Solid dark body so it reads as a real obstacle, not just a glint.
+    poly(r, rot);
+    ctx.fillStyle = `rgba(18,16,26,${0.72 * presence})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${rgb},${alpha})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Inner counter-rotating echo edge -- the geometric "signature".
+    poly(r * 0.55, -rot);
+    ctx.strokeStyle = `rgba(${rgb},${(0.5 * alpha).toFixed(3)})`;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
   }
 
   /** A floating cluster of orbiting shards around a core that inhales and

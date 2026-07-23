@@ -5,7 +5,7 @@
 import { Role } from '../core/NoteEvent.js';
 import { CHOREO_LEAD_MS, apexHopY, visualNow } from '../core/ChoreoClock.js';
 import { clamp, clamp01, smoothstep, mulberry32, lerp } from '../utils/math.js';
-import { hexLerp, hexToRgb, rgbToHsl } from '../utils/color.js';
+import { spectralHue, easeHueDeg, SlashBurst } from '../render/stellar.js';
 import { RABID_WEIGHTS } from '../audio/bands.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { BROSHI_BODY, BROSHI_HEAD, BROSHI_JAW, BROSHI_EYE, BROSHI_TAIL } from '../render/meshes.js';
@@ -179,6 +179,16 @@ export class Broshi {
     this.trail = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 120);
     this._trailAccum = 0;
 
+    // Midasus style: a pale pitch-class SPECTRAL color (eased toward the hue
+    // of his own line's latest note) replaces the old green->red raptor skin,
+    // plus additive note "slashes" on hard hops -- so he reads as the same
+    // luminous instrument she does, while keeping the raptor silhouette/rig.
+    // Rabid now reads as heat (brighter/whiter), not a color change.
+    this.hue = 210;
+    this._hueTarget = 210;
+    this.slashes = new SlashBurst();
+    this._slashPending = 0; // a hard hop's velocity, awaiting a slash once renderX is known
+
     this._bodyRest = computeRestLengths(BROSHI_BODY);
     this._headRest = computeRestLengths(BROSHI_HEAD);
     this._jawRest = computeRestLengths(BROSHI_JAW);
@@ -258,6 +268,7 @@ export class Broshi {
       if (Number.isFinite(evt.pitch)) {
         this._pitchMin = Math.min(this._pitchMin, evt.pitch);
         this._pitchMax = Math.max(this._pitchMax, evt.pitch);
+        this._hueTarget = spectralHue(evt.pitch); // his color tracks his own line, Midasus-style
       }
       this._laneOnsetTimes.push(evt.tMs ?? this._nowMs);
       if (evt.vel >= 0.3) this._onMiniHopTrigger(evt);
@@ -671,6 +682,18 @@ export class Broshi {
       this.renderX = midio.screenX + (side >= 0 ? RENDER_KEEPOUT_HALF : -RENDER_KEEPOUT_HALF);
     }
 
+    // Midasus style: ease his spectral color toward his line's latest note,
+    // advance the note-slashes, and -- now that his rendered position is
+    // known -- throw a fresh slash for any hard hop that just triggered.
+    this.hue = easeHueDeg(this.hue, this._hueTarget, 1 - Math.exp(-dtSec / 0.25));
+    this.slashes.update(dtSec);
+    if (this._slashPending > 0) {
+      const bodyY = this.groundY - this.hopY - 30;
+      const ang = Math.atan2(-1, this.xRelVel * 0.01); // up-ish, leaning with his drift
+      this.slashes.add(this.renderX, bodyY, ang, 30 + 46 * this._slashPending, this.hue);
+      this._slashPending = 0;
+    }
+
     // Locomotion/rendering above keeps running harmlessly underneath (so a
     // resurface never has to catch up on anything); once he's away,
     // draw() skips him here and Renderer draws the underground band
@@ -706,6 +729,8 @@ export class Broshi {
       h: (16 + 26 * vel) * liftMul * (1 - 0.5 * this._calmLevel),
       riseMs: 80 / Math.sqrt(liftMul),
     };
+    if (vel > 0.5) this._slashPending = vel; // a hard hop throws a Midasus-style slash
+
     // Hard hops sometimes come with a full barrel roll — likelier (and
     // occasionally doubled) the more rabid he's running.
     const rollU = (nowMs - this._rollStartMs) / this._rollDurMs;
@@ -739,9 +764,9 @@ export class Broshi {
 
   draw(ctx) {
     if (this.burrow.depth > 0.02) return; // he's underground; Renderer draws the Burrow band instead
-    const skinHex = hexLerp('#63c74d', '#e43b44', this.rho);
-    const skinRgb = hexToRgb(skinHex);
-    const baseHue = rgbToHsl(skinRgb.r, skinRgb.g, skinRgb.b).h;
+    // Midasus style: a pale pitch-class spectral hue (eased in update), not
+    // the old green->red raptor skin. Rabid reads as heat/brightness below.
+    const baseHue = this.hue;
     const x = this.renderX;
     const y = this.groundY - this.hopY;
 
@@ -815,14 +840,16 @@ export class Broshi {
       displaceMeshRadial(BROSHI_BODY, bodyHub.x, bodyHub.y, this.modal),
       bodyHub.x, bodyHub.y, this._nowMs / 1000, this._melt || 0, 2,
     );
-    const glyphOpts = { satBase: 30, lightBase: 56, hueSpread: 20 };
+    // Paler and brighter than the old raptor skin, with a wider spectral
+    // hue band -- and rabid heats him up (whiter/hotter) rather than reddening.
+    const glyphOpts = { satBase: 30 + 20 * this.rho, lightBase: 58 + 16 * this.rho, hueSpread: 26 };
 
     // Stellar under-glow (the same trick Midasus's core uses): a blurred,
     // larger, additive copy of the body drawn first so he catches light
     // like an instrument instead of reading flat next to her.
-    const glowAlpha = 0.16 + 0.24 * this.rho + 0.3 * this.beatFlash;
+    const glowAlpha = 0.2 + 0.28 * this.rho + 0.3 * this.beatFlash;
     const glowCenter = applyTransform(bodyHub, group);
-    drawGlowHalo(ctx, glowCenter.x, glowCenter.y, 28 * group.scaleX, 24 * group.scaleY, baseHue, glowAlpha, { sat: 30, light: 74 });
+    drawGlowHalo(ctx, glowCenter.x, glowCenter.y, 32 * group.scaleX, 27 * group.scaleY, baseHue, glowAlpha, { sat: 34, light: 78 });
 
     // Ink contour under the crisp strokes (outline): the raptor's
     // silhouette stays sharp against his own under-glow and comet trail.
@@ -850,9 +877,11 @@ export class Broshi {
     const tailMesh = { vertices: [tailBase, tailTip], edges: BROSHI_TAIL.edges };
     drawMeshPart(ctx, tailMesh, this._tailRest, group, baseHue - 10, { satBase: 24, lightBase: 48, widthBase: 1.2 });
 
+    // Rabid lights the eye white-hot (high lightness on his own spectral
+    // hue) rather than switching it to a predatory red.
     const eyeLit = this.rho > 0.3;
-    drawMeshPart(ctx, BROSHI_EYE, this._eyeRest, group, eyeLit ? 0 : baseHue, {
-      satBase: eyeLit ? 20 : 30, lightBase: eyeLit ? 80 : 15, alpha: eyeLit ? 0.5 + 0.4 * this.rho : 0.9,
+    drawMeshPart(ctx, BROSHI_EYE, this._eyeRest, group, baseHue, {
+      satBase: 30, lightBase: eyeLit ? 92 : 15, alpha: eyeLit ? 0.6 + 0.4 * this.rho : 0.9,
     });
 
     ctx.save();
@@ -866,5 +895,9 @@ export class Broshi {
     }
 
     ctx.restore();
+
+    // Midasus-style note slashes: bright additive cuts along his hops, drawn
+    // last in absolute space so they read over his silhouette.
+    this.slashes.draw(ctx);
   }
 }

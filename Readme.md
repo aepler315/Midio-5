@@ -24,24 +24,23 @@ a different `.mid`/audio file in at any time, even mid-song** — dragging one
 anywhere on the page (not just the loader screen) tears down whatever's
 currently playing and starts the new one immediately.
 
-**The Lens:** Midio performs the song himself — every jump, double-jump, and
-double-bass slide is played flawlessly, on the beat, automatically. Your
-control is how close you lean into the world: **scroll, drag, pinch, or
-hold an arrow key** to zoom in or out — including pulling back past the
-resting view, not just leaning in (slowly eased, on purpose — latency
-never reads as lag when the response itself is unhurried), and **Space or a
-click/tap** snaps you fully in or back to the resting view. **Any lean is
-temporary:** a couple of seconds after you stop, the world eases itself
-back to the overview over the next several seconds, timed to start on the
-next downbeat — and it performs that return rather than just resetting the
-camera, the mountains swelling taller and the haze thickening mid-morph as
-the skyline visibly meets the widening view, with a soft transit whoosh
-marking the moment it takes over. This sits on top of the world's own
-automatic beat-synced zoom (see below), never fighting it.
+**Watch it perform itself:** Midio performs the song himself — every jump,
+double-jump, and double-bass slide is played flawlessly, on the beat,
+automatically. There's nothing to fail and nothing to steer: the camera
+holds one fixed, cinematic framing (all zoom — the old player "Lens" and the
+automatic beat-zoom alike — has been removed), so you can sit back and take
+in the whole show. The one thing that still notices you is **Midasus's three
+star children**: move your mouse and the hyper-curious explorer drifts toward
+your cursor — they're aware you're there (see below).
 
 **Audio files** play the decoded buffer only — the synthetic hi-hat / click
 layer from the timeline synth is muted so it doesn't stack on the song. MIDI
-and the procedural demo still use the synth / SoundFont. **The audio
+and the procedural demo still use the synth / SoundFont. A dropped audio file
+also looks its lyrics up (from LRCLIB) to *shape the visuals* — song
+structure and emotion feed the world's intensity; the words are never drawn
+on screen. If a song has no lyrics, or you'd just rather skip the search,
+there's a **"No lyrics" toggle** on the loader (and in the lyric prompt); it's
+remembered, and when it's on the whole fetch is skipped. **The audio
 analysis now reaches MIDI parity:** beyond onset/tempo detection, the
 pipeline runs real pitch tracking on the samples themselves — FFT peak
 tracking (leakage-safe, parabolic-refined) gives melody notes their true
@@ -207,7 +206,15 @@ fonts loaded there is no gate at all.
 **Watch it perform itself:** Midio's autoplay engine walks the same
 offline-predicted takeoff schedule the world's obstacles are placed
 against, so every jump always lands and every double-bass roll is always
-ridden clean — there's nothing to fail. A jump queued **before the
+ridden clean — there's nothing to fail. The jump itself now has a tighter,
+more satisfying shape — a snappier launch, a longer float that visibly hangs
+at the apex on the beat, and a crisper drop — plus a deeper pre-jump wind-up
+and a landing "stick" that hits right on the beat. Alongside the ambient
+obstacles, a **geometric family** (triangles, squares, hexagons) now spawns
+**lined up in a row** across a single jump arc: Midio takes off on that arc's
+kick, sails over the whole formation, and lands on the next kick. Every shape
+sits inside the arc's proven-safe clearance window, so the row is worst-case
+clearable exactly like a single obstacle. A jump queued **before the
 character hits the ground is a double jump** — a C0-continuous relaunch
 from the current height — but not forever: the air-jump budget is paced by
 the song's *phrase structure*. The analysis engine autocorrelates the
@@ -220,18 +227,25 @@ song's live energy, and everything downstream — judgment particle bursts,
 phenomena intensity, meteor volleys, and the mountain dance amplitude (up
 to ~2.8×) — rides it: a lullaby stays elegant, a drop goes insane.
 
-**The trio went stellar:** the design language converged on Midasus — the
-star was perfect — so Midio is now a five-spike star glyph (crown, two
-shoulders, two ground-spike feet) and Broshi a low comet-star raked hard
-forward, both still wireframe instruments of the same deformation-driven
-glow, now with her own blurred stellar under-glow and a breathing pulse so
-they read as the same kind of instrument as her — Broshi picked up a
-comet-dust tail of his own, and all three cores are small hexagram sigils.
-The stage itself grew: the ground band is shorter, the sky taller, jumps
-arc higher, and everyone's drawn bigger. Midasus gained **three baby
-stars** that treat her as a secure base: they orbit close, exactly one at
-a time ventures out to explore in calm stretches (Midio is their favorite
-point of interest), and they rush home the moment the song turns loud.
+**The trio went fully stellar:** the design language converged on Midasus —
+the star was perfect — so Midio and Broshi now wear her whole treatment, not
+just her silhouette language. Both keep their own forms (Midio the five-spike
+star-hero, Broshi the raptor with snout/jaw/tail/tongue rig intact), but both
+now carry her **pale, pitch-class spectral color** — Midio's hue tracks the
+song's key, Broshi's tracks his own hop line — over a brighter stellar
+under-glow, a breathing pulse, and her additive note **slashes** on hard
+hits. Broshi's old green→red raptor skin is gone: rabid now reads as heat
+(whiter, hotter), not a color change. The stage itself grew: the ground band
+is shorter, the sky taller, jumps arc higher, and everyone's drawn bigger.
+Midasus's **three baby stars** still treat her as a secure base — exactly one
+at a time ventures out, the others stay safe — but they're now **hyper
+curious**: the explorer ventures readily and often, ranges far, and hops
+between points of interest mid-trip (Midio, Broshi, the nearest obstacle, and
+**your cursor** — they're aware of you). They render at the **same intensity
+as the mains** (a spectral glow halo breathing with Midasus's pulse, a
+stardust trail), rush home the moment the song turns loud, and every so often
+one **whispers a small fourth-wall line** — aware it's a digital artifact,
+and aware of the person watching.
 Meanwhile **miniature versions of all three characters run along the
 background mountain ridges** — riding the exact same ridge wave the
 mountains dance with, hopping on the layer-delayed kick, and sprinting
@@ -253,9 +267,11 @@ grow the most — toward the track's own energy climax, then subsides back
 down through the rest of the runtime, geology on a song's timescale. The
 ground itself keeps chasing the music's live band levels rather than a
 one-shot snapshot, breathes with a slow groove wave between individual
-hits, and the whole frame gets its own automatic beat-synced zoom on top
-of your own — sometimes a slow subtle sway, sometimes a hard kick-synced
-snap, sometimes a dramatic dive right on a drop. The Mario-Paint composer
+hits. Every impact now lands harder: screen shake is bigger and rings longer
+(a global gain plus a longer decay, tamed under reduced-flash), and the
+biomes are more dramatic across the board — taller, jaggier ranges that dance
+harder and build more, deeper haze, stronger wind, more frequent and brighter
+lightning, and a more luminous, deeper-vignetted frame. The Mario-Paint composer
 strip keeps its icons spread across the whole page even on dense,
 velocity-clamped MIDIs (time-stratified icon budget), and the trio's stage
 presence runs deeper: Midio's trick book grows with the heat of the run
@@ -278,8 +294,8 @@ running). Press `Escape` to close any open popup.
 src/
   core/      NoteEvent timeline, MIDI parser/adapter, Conductor, ParamBus
   audio/     7-band stem separation, onset/BPM detection, audio adapter
-  sim/       fixed-step simulation: jump physics, combo, companions, FX, autoplay, zoom
-  world/     biomes (8-layer parallax), interior realms (The Lens), fracture/shatter engine
+  sim/       fixed-step simulation: jump physics, combo, companions, FX, autoplay
+  world/     biomes (8-layer parallax), fracture/shatter engine
   render/    canvas compositor + camera
   vision/    Ollama-backed closed-loop self-tuning
   ui/        debug overlay, styles

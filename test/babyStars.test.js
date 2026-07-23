@@ -66,6 +66,29 @@ test('a loud song recalls the explorer to the base', () => {
   }
 });
 
+test('the new context (epic/pulse/interests/pointer) is accepted and the secure base stays one-at-a-time', () => {
+  const babies = new BabyStars(6);
+  const pointer = { x: BASE.x + 120, y: BASE.y - 40, active: true };
+  const interests = [{ x: BASE.x + 200, y: BASE.y }, { x: BASE.x - 150, y: BASE.y + 60 }];
+  for (let i = 0; i < 12 * 120; i++) {
+    babies.update(i * DT * 1000, DT, BASE, 0.9, { epic: 0.6, pulse: 1.4, interests, pointer });
+    const out = babies.stars.filter((s) => s.state !== 'nest').length;
+    assert.ok(out <= 1, `secure base is still one venture at a time with POIs, saw ${out}`);
+  }
+  assert.ok(babies.trail.active.length > 0, 'movement leaves a stardust trail (mains-level intensity)');
+});
+
+test('a baby whispers a fourth-wall line during a calm stretch (aware it is a digital artifact / of the user)', () => {
+  const babies = new BabyStars(8);
+  const pointer = { x: BASE.x, y: BASE.y, active: true };
+  let sawWhisper = false;
+  for (let i = 0; i < 25 * 120 && !sawWhisper; i++) {
+    babies.update(i * DT * 1000, DT, BASE, 0.9, { pointer });
+    if (babies._whisper && typeof babies._whisper.text === 'string') sawWhisper = true;
+  }
+  assert.ok(sawWhisper, 'expected a whisper within a long calm stretch');
+});
+
 test('the nest follows a moving base', () => {
   const babies = new BabyStars(5);
   run(babies, 1, 0.2);

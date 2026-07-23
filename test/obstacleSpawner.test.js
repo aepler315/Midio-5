@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ObstacleSpawner, obstacleArchetype, emergenceEnvelope, dissolveEnvelope, obstacleInJumpWindow,
-  ARCHETYPES, EMERGENCE_PX, DISSOLVE_PX,
+  ARCHETYPES, EMERGENCE_PX, DISSOLVE_PX, geoRowTimes, GEO_SHAPES,
 } from '../src/sim/ObstacleSpawner.js';
 
 function fakeCtx() {
@@ -84,6 +84,38 @@ test('draw() never throws with an energyCurves-driven pulse, reduced-flash, or f
   assert.doesNotThrow(() => spawner.draw(ctx, 0, 220, 480, {
     nowMs: 500, energyCurves: fakeEnergy, haloColor: '#00ffd0', particleMul: 0.4, reducedFlash: true,
   }));
+});
+
+test('geoRowTimes lays count shapes evenly across [from,to], endpoints inclusive and ascending', () => {
+  const times = geoRowTimes(1000, 1600, 4);
+  assert.equal(times.length, 4);
+  assert.equal(times[0], 1000, 'first shape sits at the window start');
+  assert.equal(times[3], 1600, 'last shape sits at the window end');
+  for (let i = 1; i < times.length; i++) assert.ok(times[i] > times[i - 1], 'strictly ascending');
+  // even spacing
+  const gaps = times.slice(1).map((t, i) => t - times[i]);
+  for (const g of gaps) assert.ok(Math.abs(g - gaps[0]) < 1e-9, 'evenly spaced');
+  // a single-shape row degenerates to the start, no divide-by-zero
+  assert.deepEqual(geoRowTimes(500, 900, 1), [500]);
+});
+
+test('a geometric row candidate spawns a full lined-up line of clean polygon obstacles', () => {
+  const spawner = new ObstacleSpawner({ live: { obstacleDensity: 1 } }, { seed: 5 });
+  spawner.candidates = [{ tMs: 1000, row: { fromMs: 1000, toMs: 1600, count: 4, shape: 6 } }];
+  spawner.update(0, 0, 0.22);
+  const geos = spawner.active.filter((o) => o.archetype === 'geo');
+  assert.equal(geos.length, 4, 'the whole row spawns at once');
+  for (const o of geos) {
+    assert.ok(GEO_SHAPES.includes(o.sides), 'each shape is from the geometric family');
+    assert.equal(o.sides, 6, 'a row is one uniform polygon');
+    assert.ok(Number.isFinite(o.phase));
+  }
+  const ctx = fakeCtx();
+  for (const worldX of [-500, geos[0].wx, geos[0].wx + 200]) {
+    assert.doesNotThrow(() => spawner.draw(ctx, worldX, 220, 480, {
+      nowMs: 1000, energyCurves: { globalEnergy: () => 0.6, sample: () => 0.4 }, haloColor: '#00ffd0', reducedFlash: false,
+    }));
+  }
 });
 
 test('collision/placement math is untouched: checkCollision and nearestAhead behave as before', () => {

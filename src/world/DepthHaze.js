@@ -12,8 +12,8 @@ import { clamp01 } from '../utils/math.js';
 // foreground anchor the eye calibrates depth against.
 export const HAZE_LAYER_FRAC = { L2: 1.00, L3: 0.55, L4: 0.24, L5: 0 };
 
-export const HAZE_BASE_ALPHA = 0.16;  // strongest wash (right after L2), dial=1, calm=0
-export const HAZE_CALM_BOOST = 0.35;  // calm sections thicken haze by up to +35%
+export const HAZE_BASE_ALPHA = 0.23;  // strongest wash (right after L2), dial=1, calm=0 -- deeper aerial perspective
+export const HAZE_CALM_BOOST = 0.45;  // calm sections thicken haze by up to +45%
 export const HAZE_WARM_MIX = 0.5;     // cap on how far haze color pulls toward warm dawn/dusk tone
 export const HAZE_WARM_COLOR = '#ffb37a'; // TWILIGHT's celestial.color -- warm peach, native to the palette
 export const HAZE_EPS = 0.004;        // below this, skip the fillRect entirely

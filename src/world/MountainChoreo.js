@@ -9,11 +9,13 @@ import { clamp01 } from '../utils/math.js';
  *  far layers follow a beat-fraction later — a crowd wave rolling into the
  *  distance. waveLen/phase are deliberately co-prime-ish across layers so
  *  the ranges never move in lockstep. */
+// Amplitudes cranked ~1.35x for a more dramatic dance (the ranges heave
+// harder on the groove and slam deeper on the kick).
 export const DANCE_LAYERS = {
-  L2: { waveAmp: 3.0, bounceAmp: 2.5, waveLen: 430, waveHz: 0.10, phase: 0.0, delaySec: 0.17 },
-  L3: { waveAmp: 4.5, bounceAmp: 4.0, waveLen: 350, waveHz: 0.12, phase: 1.3, delaySec: 0.11 },
-  L4: { waveAmp: 6.5, bounceAmp: 6.0, waveLen: 290, waveHz: 0.15, phase: 2.6, delaySec: 0.05 },
-  L5: { waveAmp: 8.5, bounceAmp: 8.0, waveLen: 250, waveHz: 0.18, phase: 4.0, delaySec: 0.0 },
+  L2: { waveAmp: 4.1, bounceAmp: 3.4, waveLen: 430, waveHz: 0.10, phase: 0.0, delaySec: 0.17 },
+  L3: { waveAmp: 6.1, bounceAmp: 5.4, waveLen: 350, waveHz: 0.12, phase: 1.3, delaySec: 0.11 },
+  L4: { waveAmp: 8.8, bounceAmp: 8.1, waveLen: 290, waveHz: 0.15, phase: 2.6, delaySec: 0.05 },
+  L5: { waveAmp: 11.5, bounceAmp: 10.8, waveLen: 250, waveHz: 0.18, phase: 4.0, delaySec: 0.0 },
 };
 
 export const DANCE_COL_W = 128; // strip-space slice width for the ridge wave
@@ -36,7 +38,7 @@ export function danceOffset(stripX, tSec, groove, kick, cfg, fever = 0) {
   return (cfg.waveAmp * drive * wave - cfg.bounceAmp * clamp01(kick)) * mul;
 }
 
-export const FEVER_DANCE_GAIN = 1.8;
+export const FEVER_DANCE_GAIN = 2.4; // fever now cranks the dance up to ~3.4x
 
 /**
  * Kick envelope at `tauMs` after the (layer-delayed) hit: a 40 ms snap up,
@@ -73,7 +75,7 @@ export function spectrumBars(eq) {
 // the song (see OrogenyDirector). Far layers grow the most -- a skyline
 // visibly rearing up behind everything -- near layers barely at all, so the
 // player's own scale reference never shifts underfoot.
-const OROGENY_GROWTH_MUL = { L2: 0.75, L3: 0.55, L4: 0.40, L5: 0.25 };
+const OROGENY_GROWTH_MUL = { L2: 0.98, L3: 0.74, L4: 0.55, L5: 0.34 };
 
 /** Height multiplier for a layer at orogeny growth g (0..1). g=0 -> 1.0
  *  (baseline height, "not yet built"); g=1 -> the layer's full grown height. */
