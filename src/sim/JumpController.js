@@ -4,9 +4,16 @@
 // mid-air retargeting so a new kick always lands Midio back on the grid.
 import { clamp } from '../utils/math.js';
 
-export const A = 0.35;   // LAUNCH fraction
-export const B = 0.30;   // APEX HANG fraction
-export const GAMMA = 0.35; // FALL fraction
+// Jump-curve shape (fractions of the total duration D; A+B+GAMMA = 1 so the
+// arc lands exactly at u=1). Tuned for a tighter, more satisfying timing:
+// a snappier launch, a longer/more readable float at the apex (so the peak
+// visibly hangs on the beat), and a crisper drop into the landing. The
+// offline replicas (JumpPlanner/NoteChart) import these, so they stay in
+// lockstep automatically, and a longer/higher hang only ever widens the
+// obstacle-clearance window (re-verified by obstacleSafety.test).
+export const A = 0.32;   // LAUNCH fraction -- snappier takeoff
+export const B = 0.36;   // APEX HANG fraction -- longer float at the top
+export const GAMMA = 0.32; // FALL fraction -- crisper drop
 export const W = 0.08;   // apex headroom fraction
 
 export function jumpY(u, H) {

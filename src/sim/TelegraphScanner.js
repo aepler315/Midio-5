@@ -6,11 +6,22 @@ import { clamp } from '../utils/math.js';
 
 const T_LOOK = 600; // ms
 
+// Jump-timing juice: a deeper anticipation wind-up before takeoff, a
+// snappier launch stretch, and a landing "stick" -- a hard compress right on
+// touchdown that springs back, so every jump visibly winds up and sticks its
+// landing on the beat. All render-only (pose deltas), physics untouched.
+const CROUCH_DEPTH = 0.30;       // was 0.22 -- a deeper pre-jump wind-up
+const LAUNCH_STRETCH_MS = 85;    // was 70
+const LAUNCH_STRETCH_Y = 1.38, LAUNCH_STRETCH_X = 0.74; // was 1.30 / 0.80
+const LAND_SQUASH_MS = 120;
+const LAND_SQUASH_DEPTH = 0.26;
+
 export class TelegraphScanner {
   constructor() {
     this.a = 0;
     this._wasAirborne = false;
     this._stretchStartMs = -Infinity;
+    this._landStartMs = -Infinity;
     this._scaleYVel = 0;
     this._lastMs = 0;
     this.glintActive = false;
@@ -42,15 +53,26 @@ export class TelegraphScanner {
     this.a = a;
 
     const justLaunched = !this._wasAirborne && jump.airborne;
+    const justLanded = this._wasAirborne && !jump.airborne;
     if (justLaunched) this._stretchStartMs = nowMs;
+    if (justLanded) this._landStartMs = nowMs;
     this._wasAirborne = jump.airborne;
 
-    if (jump.airborne && nowMs - this._stretchStartMs < 70) {
-      midio.scaleY = 1.30;
-      midio.scaleX = 0.80;
+    const landAge = nowMs - this._landStartMs;
+    if (jump.airborne && nowMs - this._stretchStartMs < LAUNCH_STRETCH_MS) {
+      midio.scaleY = LAUNCH_STRETCH_Y; // snap-to-stretch on launch
+      midio.scaleX = LAUNCH_STRETCH_X;
+      this._scaleYVel = 0;
+    } else if (!jump.airborne && landAge >= 0 && landAge < LAND_SQUASH_MS) {
+      // Landing "stick": a hard compress on the beat, quadratically easing
+      // back to neutral -- reads as sticking the landing right on the beat.
+      const u = landAge / LAND_SQUASH_MS;
+      const scaleY = 1 - LAND_SQUASH_DEPTH * (1 - u) * (1 - u);
+      midio.scaleY = scaleY;
+      midio.scaleX = 1 / scaleY;
       this._scaleYVel = 0;
     } else if (!jump.airborne && a > 0) {
-      const scaleY = 1 - 0.22 * a * a * a;
+      const scaleY = 1 - CROUCH_DEPTH * a * a * a;
       midio.scaleY = scaleY;
       midio.scaleX = 1 / scaleY;
       this._scaleYVel = 0;
