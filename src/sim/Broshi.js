@@ -212,6 +212,8 @@ export class Broshi {
     this._phewStartMs = -Infinity;
     this._dartUntilMs = -Infinity;
     this._nextDartCheckMs = 0;
+    this._nextShakeCheckMs = 0;
+    this._shakeUntilMs = -Infinity;
     this._watchLift = 0; // neck-up tilt while watching Midio fly, render-only
 
     // Barrel roll / pounce / tail-chase state (render-only, like the weave).
@@ -372,6 +374,8 @@ export class Broshi {
     const justClean = !!(ensemble && ensemble.justClean);
     const midioYNow = ensemble ? (ensemble.midioY || 0) : 0;
     const worldSpeed = ensemble ? (ensemble.worldSpeed || 0) : 0;
+    const weatherKind = ensemble ? ensemble.weatherKind : null;
+    const weatherIntensity = ensemble ? (ensemble.weatherIntensity || 0) : 0;
 
     // Watch him fly: the neck tilts up while Midio's airborne, tracking
     // roughly how high he is.
@@ -548,6 +552,29 @@ export class Broshi {
     const takeoffCrouch = takeoffU >= 0 && takeoffU < 1 ? Math.sin(takeoffU * Math.PI) : 0;
     this.squashY = 1 - 0.22 * crouch - 0.15 * takeoffCrouch;
     this.squashX = 1 + 0.16 * crouch + 0.10 * takeoffCrouch;
+
+    // --- weather reactions: he answers the sky, not just his hero ---
+    if (weatherKind === 'snow' && weatherIntensity > 0.15) {
+      // A quick continuous tremble, amplitude riding the snowfall's own
+      // intensity -- cold, not excited.
+      const shiver = 0.02 * weatherIntensity * Math.sin(nowMs * 0.09);
+      this.squashX += shiver;
+      this.squashY -= shiver * 0.6;
+    }
+    if (weatherKind === 'rain' && weatherIntensity > 0.15) {
+      // A periodic shake-off, like a wet dog -- a quick body wobble every
+      // few seconds, never more often than that so it reads as a tell,
+      // not a tic.
+      if (nowMs >= this._nextShakeCheckMs) {
+        this._nextShakeCheckMs = nowMs + 3500 + this.rand() * 2000;
+        this._shakeUntilMs = nowMs + 260;
+      }
+      const shakeAge = 260 - (this._shakeUntilMs - nowMs);
+      if (shakeAge >= 0 && shakeAge < 260) {
+        const u = shakeAge / 260;
+        this.squashX += 0.12 * Math.sin(u * Math.PI * 5) * (1 - u);
+      }
+    }
 
     // --- body vibration: continuous feed while rabid, ring-down otherwise ---
     if (this.rho > 0.05) this.modal.excite(4 * this.rho * dtSec);

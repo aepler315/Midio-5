@@ -495,6 +495,10 @@ export class Simulation {
       this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera);
       this.groundField.impulse(this.worldX, I, nowMs); // a shockwave ripples the terrain outward from the landing
       this.rippleFX.trigger(this.worldX, this.midio.groundY, I); // the screen-space visual echo of that shockwave
+      // The world visibly answers back: a landing kicks up whatever the
+      // active biome's ambient particle color is (snow, embers, pollen...)
+      // -- zero new per-biome code, just BiomeProfiles' existing palette.
+      this.rippleFX.landingPuff(this.worldX, this.midio.groundY, I, this.biomes.currentParticleColor());
       if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY);
       this.fracture.registerImpact(I);
 
@@ -582,6 +586,10 @@ export class Simulation {
       midioAirborne: this.jump.airborne, midioY: this.midio.y,
       justLanded: !!this.jump.pendingLanding, justClean: this.comboSystem.justClean,
       worldSpeed,
+      // He reacts to the sky, not just his hero: a shiver in snowfall, a
+      // shake-off flick in rain -- the same music-reactive weather layer
+      // BiomeManager/Traction already read, just also reaching Broshi.
+      weatherKind: this.weather.kind, weatherIntensity: this.weather.intensity,
     }, this.groundField);
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);

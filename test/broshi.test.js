@@ -273,6 +273,30 @@ test('Broshi PANIC->TRAIL (a dodge clearing) fires the phew relief bump and a ja
   assert.ok(b.hopY > 0, 'the phew bump lifts hopY shortly after the dodge clears');
 });
 
+test('Broshi shivers in snow and stays neutral without weather', () => {
+  const conductor = fakeConductor();
+  const midio = fakeMidio();
+  const noWeather = new Broshi(conductor, {}, { seed: 3 });
+  const snowy = new Broshi(conductor, {}, { seed: 3 });
+  for (let t = 0; t < 500; t += 16) {
+    noWeather.update(t, 1 / 60, midio, null, null, 0, 480, 0);
+    snowy.update(t, 1 / 60, midio, null, null, 0, 480, 0, { weatherKind: 'snow', weatherIntensity: 0.8 });
+  }
+  assert.notEqual(snowy.squashX, noWeather.squashX, 'a shiver must perturb squashX away from the calm baseline');
+});
+
+test('Broshi shakes off periodically in rain', () => {
+  const conductor = fakeConductor();
+  const midio = fakeMidio();
+  const b = new Broshi(conductor, {}, { seed: 11 });
+  let sawShake = false;
+  for (let t = 0; t < 6000; t += 16) {
+    b.update(t, 1 / 60, midio, null, null, 0, 480, 0, { weatherKind: 'rain', weatherIntensity: 0.8 });
+    if (Math.abs(b.squashX - 1) > 0.05) sawShake = true;
+  }
+  assert.ok(sawShake, 'a shake-off wobble must fire at least once over 6s of steady rain');
+});
+
 test('Broshi never renders inside Midio\'s landing column, across a scripted surge/trail/airborne stress sequence', () => {
   const conductor = fakeConductor();
   const b = new Broshi(conductor, {}, { seed: 42 });

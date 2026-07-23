@@ -505,6 +505,15 @@ export class BiomeManager {
     return this._profile(t > 0.5 ? to : from).particles.kind;
   }
 
+  /** The current blended ambient-particle color -- lets a landing puff
+   *  (RippleFX) or any other one-off effect read as "of this biome"
+   *  without needing its own per-biome color table. */
+  currentParticleColor() {
+    if (!this.currentBlend) return '#ffffff';
+    const { from, to, t } = this.currentBlend;
+    return this.lerpCache.get(this._profile(from).particles.color, this._profile(to).particles.color, t);
+  }
+
   currentSkyBase() {
     if (!this.currentBlend) return '#141428';
     const { from, to, t } = this.currentBlend;
