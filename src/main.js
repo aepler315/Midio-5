@@ -20,7 +20,6 @@ import { getReducedFlash, setReducedFlash } from './ui/Accessibility.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
-import { pinchZoomDelta } from './sim/ZoomDirector.js';
 import { resolveDurationMs } from './core/SongDuration.js';
 import { VideoExporter, exportDims, exportFilename } from './export/VideoExporter.js';
 import { resolveIdentity } from './lyrics/SongIdentity.js';
@@ -538,9 +537,8 @@ function startTimeline(timelineData, { autoRecord = true } = {}) {
   acc = 0;
   lastNowMs = audioEngine.nowMs;
   lastRafMs = null;
-  // Fresh song, fresh button: the demo/play buttons must lose focus or the
-  // first Space would "click" them again instead of toggling the zoom.
-  zoomKeyDir = 0;
+  // Fresh song, fresh button: the demo/play buttons must lose focus so a
+  // stray keypress never re-"clicks" them.
   document.activeElement?.blur?.();
   audioEngine.start(0);
   running = true;
@@ -1116,8 +1114,6 @@ function frame(tRaf) {
   if (deltaMs > 250) deltaMs = 250; // clamp huge gaps (tab backgrounded, breakpoint, etc.)
   acc += deltaMs;
 
-  if (zoomKeyDir && sim.zoom) sim.zoom.nudge(zoomKeyDir * KEY_ZOOM_RATE * (deltaMs / 1000));
-
   let milestoneFiredThisFrame = false;
   while (acc >= STEP_MS) {
     sim.step(STEP_MS, simTime + STEP_MS);
@@ -1125,10 +1121,6 @@ function frame(tRaf) {
     acc -= STEP_MS;
     if (sim.performer.milestoneFlash) milestoneFiredThisFrame = true;
   }
-
-  // The Lens: when the world starts adapting back to neutral, a soft
-  // transit whoosh -- direction-aware -- marks the moment it takes over.
-  if (sfx && sim.zoom && sim.zoom.adaptJustStarted) sfx.transit?.(sim.zoom.adaptDir);
 
   const alpha = acc / STEP_MS;
   renderer.draw(sim, alpha);
@@ -1175,99 +1167,10 @@ function formatClock(ms) {
   return `${m}:${String(r).padStart(2, '0')}`;
 }
 
-// --- The Lens: zoom controls ---------------------------------------------
-// Wheel and held arrow keys nudge the zoom TARGET continuously; Space/click
-// snap it fully in or out. Nothing here touches the sim's judgment/jump
-// machinery -- ZoomDirector eases the actual value on its own slow clock
-// (see ZoomDirector.js), so every one of these inputs feels immediate to
-// register but deliberately slow to arrive.
-const WHEEL_ZOOM_RATE = 0.0016; // zoom units per wheel-delta-px
-const KEY_ZOOM_RATE = 1.1;      // zoom units per second while an arrow key is held
-const PINCH_ZOOM_RATE = 0.006;  // zoom units per px of two-finger spread/pinch
-const TAP_MOVE_GUARD_PX = 8;    // more movement than this before pointerup -> not a tap-toggle
-let zoomKeyDir = 0; // -1 (ArrowDown, zooming out) | 0 | 1 (ArrowUp, zooming in)
-
-function anyModalOpen() {
-  return (fontModalEl && !fontModalEl.classList.contains('hidden'))
-    || (filmstripModalEl && !filmstripModalEl.classList.contains('hidden'));
-}
-
-canvas.addEventListener('wheel', (e) => {
-  if (!running || !sim || !sim.zoom || anyModalOpen()) return;
-  e.preventDefault();
-  sim.zoom.nudge(-e.deltaY * WHEEL_ZOOM_RATE);
-}, { passive: false });
-
-// Pinch to zoom: tracks every active pointer by id. With exactly two down,
-// the frame-to-frame change in their distance nudges the zoom target
-// (spreading = in, pinching = out); a single pointer instead toggles
-// fully in/out on release, guarded so a pinch's own down/up never fires a
-// spurious toggle.
-const activePointers = new Map(); // pointerId -> {x, y}
-let pinchPrevDist = null;
-let pinchOccurred = false;
-let tapStart = null;
-
-function pointerDistance() {
-  const pts = [...activePointers.values()];
-  if (pts.length < 2) return null;
-  return Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-}
-
-canvas.addEventListener('pointerdown', (e) => {
-  if (e.pointerType === 'mouse' && e.button !== 0) return;
-  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (activePointers.size === 2) {
-    pinchPrevDist = pointerDistance();
-    pinchOccurred = true;
-  } else if (activePointers.size === 1) {
-    tapStart = { x: e.clientX, y: e.clientY };
-    pinchOccurred = false;
-  }
-});
-
-canvas.addEventListener('pointermove', (e) => {
-  if (!activePointers.has(e.pointerId)) return;
-  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (!running || !sim || !sim.zoom || anyModalOpen()) return;
-  if (activePointers.size === 2) {
-    const dist = pointerDistance();
-    if (pinchPrevDist != null && dist != null) {
-      sim.zoom.nudge(pinchZoomDelta(pinchPrevDist, dist, PINCH_ZOOM_RATE));
-    }
-    pinchPrevDist = dist;
-  }
-});
-
-function endPointer(e) {
-  const wasSingle = activePointers.size === 1 && activePointers.has(e.pointerId);
-  activePointers.delete(e.pointerId);
-  if (activePointers.size < 2) pinchPrevDist = null;
-  if (wasSingle && !pinchOccurred && tapStart && running && sim && sim.zoom && !anyModalOpen()) {
-    const moved = Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y);
-    if (moved < TAP_MOVE_GUARD_PX) sim.zoom.toggle();
-  }
-  if (activePointers.size === 0) { pinchOccurred = false; tapStart = null; }
-}
-canvas.addEventListener('pointerup', endPointer);
-canvas.addEventListener('pointercancel', endPointer);
-
-window.addEventListener('keydown', (e) => {
-  if (e.code === 'Space') {
-    if (anyModalOpen()) return;
-    e.preventDefault(); // stops page scroll, and Space "clicking" a focused button
-    if (e.repeat || !running || !sim || !sim.zoom) return;
-    sim.zoom.toggle();
-    return;
-  }
-  if (e.code === 'ArrowUp') { zoomKeyDir = 1; e.preventDefault(); }
-  else if (e.code === 'ArrowDown') { zoomKeyDir = -1; e.preventDefault(); }
-});
-window.addEventListener('keyup', (e) => {
-  if (e.code === 'ArrowUp' && zoomKeyDir === 1) zoomKeyDir = 0;
-  else if (e.code === 'ArrowDown' && zoomKeyDir === -1) zoomKeyDir = 0;
-});
-window.addEventListener('blur', () => { zoomKeyDir = 0; });
+// Zoom has been removed from the game: there is no player Lens control and
+// no automatic camera zoom. The pointer is still tracked, but only so the
+// star-children can notice where the user is looking (see the pointer hook
+// further below); it never moves the camera.
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -1298,7 +1201,6 @@ function toggleReducedFlash() {
 
 function onSongComplete() {
   running = false;
-  zoomKeyDir = 0;
   hudEl.classList.add('hidden');
   // Unlike stopTimeline() (a fresh-song teardown), natural completion never
   // used to silence anything -- the decoded audio buffer (or any still-

@@ -96,28 +96,12 @@ export class Renderer {
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // The Lens: the player's own slow-eased zoom multiplies the camera's
-    // own zoom (landings/drops still punch on top of it) -- both pivot on
-    // screen center, so leaning in never scrolls the world sideways.
-    const lensZoom = sim.zoom ? sim.zoom.value : 1;
-    // The world's own beat-synced breathing, composed alongside the
-    // player's lens and the camera's own shake/punch.
-    const beatZoomVal = sim.beatZoom ? sim.beatZoom.value : 1;
-    const totalZoom = camera.zoom * lensZoom * beatZoomVal;
-
-    // Zooming out past 1.0 shrinks the whole composed scene toward screen
-    // center, which would otherwise expose blank canvas at the edges (the
-    // parallax layers aren't drawn wider than the viewport). A full-bleed
-    // sky-toned backdrop underneath reads as distant haze rather than a
-    // void -- cheap, and never wrong regardless of which biome is active.
-    if (totalZoom < 0.999) {
-      ctx.fillStyle = biomeManager && biomeManager.currentSkyBase ? biomeManager.currentSkyBase() : '#141428';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-
+    // Zoom has been removed entirely: the camera holds one fixed framing.
+    // Only the damped impact roll and the screen shake move the frame now,
+    // both pivoting on screen center so a shake/roll never scrolls the
+    // world sideways.
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
-    ctx.scale(totalZoom, totalZoom);
     ctx.rotate(camera.roll || 0); // damped impact roll, pivoting on screen center
     ctx.translate(-canvas.width / 2 + camera.shakeX, -canvas.height / 2 + camera.shakeY);
 

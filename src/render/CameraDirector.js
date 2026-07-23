@@ -1,9 +1,8 @@
-// Camera state: punch-zoom on landings (spec §2.2.2), pulse-zoom on bar 1,
-// screen shake (spec §2.2.1). Expanded in later stages; starts as identity.
+// Camera state: screen shake + a damped impact roll (spec §2.2.1). Zoom has
+// been removed from the game, so this no longer holds any zoom/punch state --
+// the Renderer applies a fixed framing and only reads shake/roll from here.
 export class CameraDirector {
   constructor() {
-    this.zoom = 1;
-    this.targetZoom = 1;
     this.shakeX = 0;
     this.shakeY = 0;
     this._shakeAmp = 0;
@@ -14,10 +13,6 @@ export class CameraDirector {
     this._rollAmp = 0;
     this._rollT = 0;
     this._rollSign = 1;
-  }
-
-  punch(scale) {
-    this.targetZoom = Math.max(this.targetZoom, scale);
   }
 
   shake(amplitudePx) {
@@ -31,9 +26,6 @@ export class CameraDirector {
   }
 
   update(dtSec, calmLevel = 0) {
-    this.zoom += (this.targetZoom - this.zoom) * Math.min(1, dtSec * 10);
-    this.targetZoom += (1 - this.targetZoom) * Math.min(1, dtSec * 6);
-
     let shakeX = 0, shakeY = 0;
     if (this._shakeAmp > 0.01) {
       this._shakeT += dtSec;
