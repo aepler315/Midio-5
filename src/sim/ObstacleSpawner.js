@@ -50,6 +50,19 @@ export function dissolveEnvelope(distanceBehindPx) {
   return clamp01(1 - distanceBehindPx / DISSOLVE_PX);
 }
 
+/** True when `obstacle` ({tMs}) is the one `jump` ({jumpStartMs, D}) is
+ *  airborne to clear -- its scheduled crossing sits inside the jump's own
+ *  hang window. Placement already guarantees every such jump clears (see
+ *  file header) -- this just tells MidioPerformer WHICH launch is a dodge,
+ *  so it can force a genuinely spectacular trick instead of leaving the
+ *  presentation to velocity/combo RNG. Pure. */
+export function obstacleInJumpWindow(jump, obstacle) {
+  if (!jump || !obstacle) return false;
+  if (!Number.isFinite(jump.jumpStartMs) || !Number.isFinite(jump.D)) return false;
+  if (!Number.isFinite(obstacle.tMs)) return false;
+  return obstacle.tMs >= jump.jumpStartMs && obstacle.tMs <= jump.jumpStartMs + jump.D;
+}
+
 export class ObstacleSpawner {
   constructor(paramBus, { seed = 99, height = 46, width = 28 } = {}) {
     this.P = paramBus;
@@ -176,15 +189,21 @@ export class ObstacleSpawner {
       const presence = emergence * dissolve;
       if (presence <= 0.01) continue;
 
+      // Telegraph: every archetype brightens right as it's about to be
+      // crossed -- the "jump window is now" cue that makes clearing it
+      // read as a deliberate, spectacular dodge rather than an ambient
+      // shape that happened to be there.
+      const nearMoment = o.passed ? 0 : clamp01(1 - Math.abs(distanceAhead) / 40);
+
       const cx = x, cy = groundY - o.height / 2;
       ctx.save();
       ctx.translate(cx, cy);
       ctx.globalCompositeOperation = 'lighter';
 
       switch (o.archetype) {
-        case 'thorn': this._drawThorn(ctx, o, presence, emergence, rgb, tSec, reducedFlash); break;
+        case 'thorn': this._drawThorn(ctx, o, presence, emergence, rgb, tSec, reducedFlash, nearMoment); break;
         case 'veil': this._drawVeil(ctx, o, presence, distanceAhead, rgb, tSec, wind, reducedFlash); break;
-        default: this._drawEcho(ctx, o, presence, pulse, rgb, tSec, particleMul, reducedFlash); break;
+        default: this._drawEcho(ctx, o, presence, pulse, rgb, tSec, particleMul, reducedFlash, nearMoment); break;
       }
 
       // Dissolve motes: a brief upward spray as the shape lets go, keyed off
@@ -207,12 +226,13 @@ export class ObstacleSpawner {
   }
 
   /** A dark crystalline growth condensing out of the ground: a superformula
-   *  spike with a slow internal shimmer riding its own hue. */
-  _drawThorn(ctx, o, presence, emergence, rgb, tSec, reducedFlash) {
+   *  spike with a slow internal shimmer riding its own hue, brightening as
+   *  the jump window to clear it opens (nearMoment). */
+  _drawThorn(ctx, o, presence, emergence, rgb, tSec, reducedFlash, nearMoment = 0) {
     const scale = 0.25 + 0.75 * emergence;
     ctx.scale(scale, scale);
     const shimmer = 0.5 + 0.5 * Math.sin(tSec * 1.6 + o.phase);
-    const alpha = capFlashAlpha(0.55 * presence, reducedFlash);
+    const alpha = capFlashAlpha((0.55 + 0.35 * nearMoment) * presence, reducedFlash);
     ctx.fillStyle = `rgba(20,14,22,${0.7 * presence})`;
     ctx.strokeStyle = `rgba(${rgb},${alpha + 0.2 * shimmer})`;
     ctx.lineWidth = 1.5;
@@ -254,10 +274,11 @@ export class ObstacleSpawner {
   }
 
   /** A floating cluster of orbiting shards around a core that inhales and
-   *  exhales with the song's global energy. */
-  _drawEcho(ctx, o, presence, pulse, rgb, tSec, particleMul, reducedFlash) {
-    const coreR = (6 + 5 * pulse) * (0.4 + 0.6 * presence);
-    const coreAlpha = capFlashAlpha((0.25 + 0.35 * pulse) * presence, reducedFlash);
+   *  exhales with the song's global energy, flaring as the jump window to
+   *  clear it opens (nearMoment). */
+  _drawEcho(ctx, o, presence, pulse, rgb, tSec, particleMul, reducedFlash, nearMoment = 0) {
+    const coreR = (6 + 5 * pulse) * (0.4 + 0.6 * presence) * (1 + 0.3 * nearMoment);
+    const coreAlpha = capFlashAlpha((0.25 + 0.35 * pulse + 0.3 * nearMoment) * presence, reducedFlash);
     ctx.fillStyle = `rgba(${rgb},${coreAlpha})`;
     ctx.beginPath();
     ctx.arc(0, 0, coreR, 0, Math.PI * 2);

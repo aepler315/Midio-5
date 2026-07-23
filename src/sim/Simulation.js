@@ -531,7 +531,10 @@ export class Simulation {
 
     this.obstacles.update(nowMs, this.worldX, worldSpeed / 1000);
     this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.obstacles, this.noteChart);
-    this.performer.update(nowMs, dtSec, this.midio, this.jump, this.comboSystem, this.calm.level, this.ensemble, this.judge.holdState);
+    this.performer.update(
+      nowMs, dtSec, this.midio, this.jump, this.comboSystem, this.calm.level, this.ensemble, this.judge.holdState,
+      this.obstacles.nearestAhead(this.worldX),
+    );
     // Riding a hold: heel dust streams from the slide the whole way.
     if (this.judge.holdState.active && !this.jump.airborne) {
       this.impactFX.sputter(this.worldX, this.midio.groundY, dtSec);

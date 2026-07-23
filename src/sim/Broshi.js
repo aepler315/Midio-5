@@ -30,6 +30,7 @@ const TAKEOFF_CROUCH_MS = 140;
 const CHEER_TAIL_MS = 600;
 const ECHO_HOP_RISE_MS = 70;
 const ECHO_HOP_H = 8;
+const PHEW_MS = 220;
 
 /** Two quick sine bumps ~160ms apart -- the cheer double-hop shape, added
  *  on top of whatever else hopY is doing. Pure/testable. */
@@ -40,6 +41,15 @@ export function cheerBumpY(ageMs) {
     if (u >= 0 && u <= 1) return H * Math.sin(u * Math.PI);
   }
   return 0;
+}
+
+/** One small relief bump, softer and slower than the cheer's -- the "phew"
+ *  that follows the instant PANIC (an obstacle bearing down) clears back
+ *  to TRAIL. Pure/testable. */
+export function phewBumpY(ageMs) {
+  const BUMP_MS = 220, H = 6;
+  const u = ageMs / BUMP_MS;
+  return u >= 0 && u <= 1 ? H * Math.sin(u * Math.PI) : 0;
 }
 
 /** Push a spring set-point out of the keep-out band around 0, snapping to
@@ -199,6 +209,7 @@ export class Broshi {
     this._takeoffCrouchStartMs = -Infinity;
     this._cheerStartMs = -Infinity;
     this._echoHopAnchorMs = -Infinity;
+    this._phewStartMs = -Infinity;
     this._dartUntilMs = -Infinity;
     this._nextDartCheckMs = 0;
     this._watchLift = 0; // neck-up tilt while watching Midio fly, render-only
@@ -409,7 +420,14 @@ export class Broshi {
     const obs = obstacles ? obstacles.nearestAhead(worldX) : null;
     const dangerNear = !!obs && obs.tMs - nowMs <= PANIC_LOOKAHEAD_MS && obs.tMs - nowMs >= -100;
     if (dangerNear) this.state = 'PANIC';
-    else if (this.state === 'PANIC') this.state = 'TRAIL';
+    else if (this.state === 'PANIC') {
+      // The dodge landed clean -- a small relief bump + a quick "whew" the
+      // instant the danger clears, the flinch's own payoff.
+      this.state = 'TRAIL';
+      this._phewStartMs = nowMs;
+      this.jawOpen = Math.max(this.jawOpen, 0.3);
+      this._jawUntilMs = nowMs + 150;
+    }
     else if (this.state === 'SURGE' && nowMs >= this.surgeUntilMs) this.state = 'TRAIL';
 
     // Pounce telegraph: the instant a surge starts he coils — a quick
@@ -552,6 +570,9 @@ export class Broshi {
     if (Math.abs(vNow - this._echoHopAnchorMs) < ECHO_HOP_RISE_MS * 2) {
       this.hopY += apexHopY(vNow, this._echoHopAnchorMs, ECHO_HOP_RISE_MS, ECHO_HOP_H);
     }
+    // Phew: the relief bump right after a dodge clears (PANIC -> TRAIL).
+    const phewAge = nowMs - this._phewStartMs;
+    if (phewAge >= 0 && phewAge < PHEW_MS) this.hopY += phewBumpY(phewAge);
     // Trot: a light stride bounce while his feet are on the ground, so
     // running never reads as pure gliding.
     if (!this._hop && this.hopY <= 0.5) {
