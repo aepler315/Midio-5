@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   wrappedOffset, islands, ships, seaLifeSchedule, monsterSchedule,
   tsunamiSchedule, tsunamiX, tsunamiLift, tsunamiProfile, sprayFlecks, fishArcY, serpentHumpY,
-  OCEAN_LIFE_WRAP_PX, TSUNAMI_WIDTH_PX, TSUNAMI_SWEEP_MS,
+  tsunamiHeightScale, OCEAN_LIFE_WRAP_PX, TSUNAMI_WIDTH_PX, TSUNAMI_SWEEP_MS,
+  TSUNAMI_APPROACH_UP_FRAC, TSUNAMI_OVERTOP_SCALE,
 } from '../src/world/OceanLife.js';
 
 test('wrappedOffset stays within (-wrap/2, wrap/2] and matches unwrapped difference near zero', () => {
@@ -124,6 +125,24 @@ test('tsunamiProfile and shape helpers stay bounded and finite', () => {
     const y = serpentHumpY(u, 1.3);
     assert.ok(Number.isFinite(y) && Math.abs(y) <= 10 + 1e-9);
   }
+});
+
+test('tsunamiHeightScale: 0 at the start of the sweep (far/distant), peaks at 1 approaching the crest, eases down as it passes', () => {
+  const half = TSUNAMI_SWEEP_MS / 2;
+  assert.ok(tsunamiHeightScale(-half) <= 1e-9, 'far away at the very start of the sweep');
+  const peakAge = -half + TSUNAMI_SWEEP_MS * TSUNAMI_APPROACH_UP_FRAC;
+  assert.ok(Math.abs(tsunamiHeightScale(peakAge) - 1) < 1e-9, 'full crest right at the approach fraction');
+  assert.ok(tsunamiHeightScale(half) < 1, 'settles back down after passing the crest');
+  assert.ok(tsunamiHeightScale(half) > 0, 'never drops to nothing right as the sweep ends');
+  // Monotonically grows on the approach, every value finite and in [0,1].
+  let prev = -1;
+  for (let age = -half; age <= peakAge; age += 100) {
+    const s = tsunamiHeightScale(age);
+    assert.ok(Number.isFinite(s) && s >= 0 && s <= 1);
+    assert.ok(s >= prev - 1e-9, `must grow monotonically approaching the crest: ${s} < ${prev} at age=${age}`);
+    prev = s;
+  }
+  assert.ok(TSUNAMI_OVERTOP_SCALE > 0 && TSUNAMI_OVERTOP_SCALE <= 1);
 });
 
 test('sprayFlecks is deterministic per seed and respects field ranges', () => {

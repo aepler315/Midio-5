@@ -18,6 +18,7 @@ import {
   islands, ships, seaLifeSchedule, monsterSchedule, tsunamiSchedule,
   tsunamiX, tsunamiLift, tsunamiProfile, sprayFlecks, fishArcY, serpentHumpY,
   wrappedOffset, OCEAN_LIFE_WRAP_PX, OCEAN_LIFE_RATIO, TSUNAMI_WIDTH_PX,
+  tsunamiHeightScale, TSUNAMI_OVERTOP_SCALE, FLOOD_DURATION_MS,
 } from './OceanLife.js';
 import { ConstellationWeaver } from './ConstellationWeaver.js';
 import { SpaceRidge } from './SpaceRidge.js';
@@ -204,6 +205,16 @@ export class BiomeManager {
     this._tsunamis = tsunamiSchedule(hashSeed(`${songSeed}:tsunami`), durationMs, this._oceanHotspotMs || []);
     this._tsunamiIdx = 0;
     this._tsunamiFlecks = sprayFlecks(hashSeed(`${songSeed}:tsunamispray`));
+    // Temporary flood: armed the first time a tsunami's height envelope
+    // crosses TSUNAMI_OVERTOP_SCALE (see update()) -- a translucent water
+    // level rises over the near ground plane for FLOOD_DURATION_MS, then
+    // recedes. `_floodArmedForTMs` guards against re-arming every frame
+    // while a single wall's crest sits above the threshold.
+    this._floodUntilMs = -Infinity;
+    this._floodStartMs = -Infinity;
+    this._floodArmedForTMs = null;
+    this.floodActive = false; // read by Simulation for wet-footing traction
+    this.floodLevel01 = 0;
     this.mandala = new Mandala(songSeed);
     this.cymatics = new CymaticField(songSeed);
     this.swarm = new KuramotoSwarm(songSeed);
@@ -670,6 +681,36 @@ export class BiomeManager {
         this._tsunamis.push({ tMs: nowMs, dir: this._tsunamis.length % 2 === 0 ? 1 : -1 });
       }
     }
+    // Spilling over: the first time ANY active tsunami's height envelope
+    // crosses TSUNAMI_OVERTOP_SCALE, arm a bounded flood over the near
+    // ground plane. Guarded per-event (_floodArmedForTMs) so a wall's
+    // crest sitting above the threshold across several frames only ever
+    // triggers one flood, not a new one every frame.
+    const activeNow = this._activeTsunami(this.w || 1280);
+    if (activeNow && tsunamiHeightScale(nowMs - activeNow.ev.tMs) >= TSUNAMI_OVERTOP_SCALE
+      && this._floodArmedForTMs !== activeNow.ev.tMs) {
+      this._floodArmedForTMs = activeNow.ev.tMs;
+      this._floodStartMs = nowMs;
+      this._floodUntilMs = nowMs + FLOOD_DURATION_MS;
+    }
+    // Flood level (0..1, rise -> hold -> recede): computed here, in
+    // update(), not at draw time -- Simulation reads floodLevel01/
+    // floodActive for wet-footing traction the same frame, without
+    // depending on draw() having already run.
+    if (nowMs >= this._floodUntilMs) {
+      this.floodActive = false;
+      this.floodLevel01 = 0;
+    } else {
+      const age = nowMs - this._floodStartMs;
+      const RISE_MS = 700, RECEDE_MS = 1200;
+      const holdEnd = FLOOD_DURATION_MS - RECEDE_MS;
+      let level01;
+      if (age < RISE_MS) level01 = clamp01(age / RISE_MS);
+      else if (age < holdEnd) level01 = 1;
+      else level01 = clamp01(1 - (age - holdEnd) / RECEDE_MS);
+      this.floodLevel01 = level01;
+      this.floodActive = level01 > 0.02;
+    }
     // Combo milestones (streak 5/10/20) throw their own reward volley.
     if (Number.isFinite(this.milestoneAtMs) && this.milestoneAtMs !== this._lastSeenMilestoneMs) {
       this._lastSeenMilestoneMs = this.milestoneAtMs;
@@ -828,7 +869,42 @@ export class BiomeManager {
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
 
     this._drawGround(ctx, canvas, worldX, originX, A, B, t);
+    this._drawFlood(ctx, canvas);
     this._drawTransitionOverlays(ctx, canvas, B);
+  }
+
+  /** Temporary flood: the water a tsunami spilled over the mountains rises
+   *  across the near ground plane for FLOOD_DURATION_MS, then recedes --
+   *  drawn on top of the ground/mountain layers (unlike the ocean plane
+   *  itself, drawn far underneath everything in this same draw() call) so
+   *  it genuinely reads as submerging the foreground where Midio walks.
+   *  Pure rendering only -- floodActive/floodLevel01 are computed in
+   *  update(), not here, so Simulation can read them the same frame. */
+  _drawFlood(ctx, canvas) {
+    if (!this.floodActive) return;
+    const level01 = this.floodLevel01;
+    const FLOOD_RISE_PX = 46;
+    const levelY = this.groundY - FLOOD_RISE_PX * level01;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const grad = ctx.createLinearGradient(0, levelY - 20, 0, canvas.height);
+    grad.addColorStop(0, `${OCEAN_WATER_BLUE}00`);
+    grad.addColorStop(0.3, `${OCEAN_WATER_BLUE}55`);
+    grad.addColorStop(1, `${OCEAN_WATER_BLUE}33`);
+    ctx.fillStyle = grad;
+    ctx.globalAlpha = capFlashAlpha(0.85 * level01, this.reducedFlash);
+    ctx.beginPath();
+    const N = 40;
+    for (let i = 0; i <= N; i++) {
+      const x = (i / N) * canvas.width;
+      const y = levelY + Math.sin(x * 0.02 + this.tSec * 2) * 3;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.lineTo(canvas.width, canvas.height);
+    ctx.lineTo(0, canvas.height);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
 
   /** Aerial perspective: a translucent sky-colored wash after a mountain
@@ -1228,10 +1304,17 @@ export class BiomeManager {
       // under the crest line, a bright foam crest stroke, and a few spray
       // flecks kicked up at the tip -- all additive, all see-through to the
       // wave rows underneath.
+      // Height envelope: small and distant at the start of the sweep,
+      // cresting tallest partway through, easing back down as it passes --
+      // "approaching from the far distance, getting closer and closer"
+      // told purely through how tall the wall reads, over the exact same
+      // sweep timeline tsunamiX already walks (see OceanLife.js).
+      const heightScale = tsunamiHeightScale(this.tSec * 1000 - tsunami.ev.tMs);
       const wallTop = horizonY + (nearY - horizonY) * 0.08;
-      const wallH = nearY - wallTop;
+      const wallH = (nearY - wallTop) * heightScale;
       const WS = TSUNAMI_WIDTH_PX;
       const crestY = (s) => nearY - tsunamiProfile(s) * wallH;
+      const alphaMul = this.budget * heightScale;
 
       // Watery veil: a soft gradient fill, translucent enough that the
       // wave rows keep showing through it.
@@ -1250,7 +1333,7 @@ export class BiomeManager {
       }
       ctx.lineTo(tsunami.wallX + WS, nearY);
       ctx.closePath();
-      ctx.globalAlpha = capFlashAlpha(0.6 * this.budget, this.reducedFlash);
+      ctx.globalAlpha = capFlashAlpha(0.6 * alphaMul, this.reducedFlash);
       ctx.fill();
 
       // Foam crest: wide faint halo under a bright line, same two-pass
@@ -1258,7 +1341,7 @@ export class BiomeManager {
       for (const [lw, a] of [[6, 0.14], [1.8, 0.55]]) {
         ctx.strokeStyle = cap;
         ctx.lineWidth = lw;
-        ctx.globalAlpha = capFlashAlpha(a * this.budget, this.reducedFlash);
+        ctx.globalAlpha = capFlashAlpha(a * alphaMul, this.reducedFlash);
         ctx.beginPath();
         for (let i = 0; i <= 24; i++) {
           const s = -1 + (i / 24) * 2;
@@ -1275,7 +1358,7 @@ export class BiomeManager {
         const x = tsunami.wallX + f.sOff * WS;
         const baseY = crestY(f.sOff);
         const bob = Math.sin(this.tSec * 4 + f.phase) * 3;
-        ctx.globalAlpha = capFlashAlpha(0.5 * this.budget, this.reducedFlash);
+        ctx.globalAlpha = capFlashAlpha(0.5 * alphaMul, this.reducedFlash);
         ctx.beginPath();
         ctx.arc(x, baseY - f.riseFrac * wallH * 0.4 + bob, 1.8, 0, Math.PI * 2);
         ctx.fill();

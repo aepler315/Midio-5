@@ -449,11 +449,14 @@ export class Simulation {
       energySlow: this.hype.slow, surge: this.hype.surge, unravel: this.coda.unravel,
     });
     // Slippery surfaces: settled snowfall OR a biome that is snow to begin
-    // with (ARCTIC's own particle signature) ices the footing. The skid this
-    // drives is render-only (see Traction.js); Broshi's trailing spring
-    // genuinely loses damping, so he visibly overshoots and slides back.
+    // with (ARCTIC's own particle signature) ices the footing; a tsunami's
+    // temporary flood (BiomeManager.floodLevel01) wets it the same way --
+    // Traction.js doesn't care WHY the ground lost its grip, just how much.
+    // The skid this drives is render-only (see Traction.js); Broshi's
+    // trailing spring genuinely loses damping, so he visibly overshoots
+    // and slides back.
     const biomeSnow = this.biomes.currentParticleKind && this.biomes.currentParticleKind() === 'snow' ? 0.8 : 0;
-    this.snowCover = Math.max(this.weather.groundCover, biomeSnow);
+    this.snowCover = Math.max(this.weather.groundCover, biomeSnow, this.biomes.floodLevel01 || 0);
     this.broshi.traction = tractionFrom(this.snowCover);
     this.biomes.snowCover = this.snowCover;
     this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs);
@@ -498,7 +501,12 @@ export class Simulation {
       // The world visibly answers back: a landing kicks up whatever the
       // active biome's ambient particle color is (snow, embers, pollen...)
       // -- zero new per-biome code, just BiomeProfiles' existing palette.
-      this.rippleFX.landingPuff(this.worldX, this.midio.groundY, I, this.biomes.currentParticleColor());
+      // Mid-flood, it's a splash instead -- same puff, water-blue tint
+      // (matching OceanLife/BiomeManager's own water color).
+      this.rippleFX.landingPuff(
+        this.worldX, this.midio.groundY, I,
+        this.biomes.floodActive ? '#55c8f0' : this.biomes.currentParticleColor(),
+      );
       if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY);
       this.fracture.registerImpact(I);
 
