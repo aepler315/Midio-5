@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Super Midio World</title>
+  <title>Super Maudio World</title>
   <link rel="stylesheet" href="./src/ui/style.css" />
 </head>
 <body>
@@ -11,7 +11,7 @@
     <canvas id="stage" width="1280" height="720"></canvas>
 
     <div id="loader" class="panel">
-      <h1>SUPER MIDIO WORLD</h1>
+      <h1>SUPER MAUDIO WORLD</h1>
       <p class="sub">Drop a .mid file or an audio file (mp3/wav/flac) to begin — Midio performs it himself.
         Drop <b>several audio stems at once</b> (bass.wav, piano.wav, lead.wav…) and their names decide who dances what.</p>
       <div id="dropzone" tabindex="0">
@@ -59,11 +59,10 @@
     </div>
 
     <div id="auditionPanel" class="panel hidden">
-      <h1 id="auditionHeading">TUNING THE ORCHESTRA</h1>
+      <h1 id="auditionHeading">PULLING THE RECORDING APART</h1>
       <canvas id="auditionCanvas" width="420" height="220"></canvas>
-      <p id="auditionText" class="sub">Auditioning SoundFonts…</p>
+      <p id="auditionText" class="sub">Separating into frequency bands…</p>
       <div id="auditionBar"><div id="auditionBarFill"></div></div>
-      <p class="hint">Every loaded font is auditioned against this exact song and the best fit takes the stage — the show starts the moment the verdicts are in. The beat you're hearing is this song's percussion, distilled.</p>
       <div id="lyricsRow" class="hidden">
         <p id="lyricsStatus" class="sub"></p>
         <div id="lyricsFields" class="hidden">
