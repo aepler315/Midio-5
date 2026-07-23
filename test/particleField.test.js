@@ -100,3 +100,35 @@ test('snow drifts downwind: position shifts further in the wind direction than w
   }
   assert.ok(anyFurtherRight, 'a sustained rightward gust should carry at least one snowflake further right');
 });
+
+function fakeCtxFull() {
+  return {
+    save() {}, restore() {}, beginPath() {}, closePath() {}, fill() {}, stroke() {},
+    arc() {}, moveTo() {}, lineTo() {}, fillRect() {},
+    createRadialGradient() { return { addColorStop() {} }; },
+    set fillStyle(_v) {}, set strokeStyle(_v) {}, set lineWidth(_v) {}, set globalAlpha(_v) {},
+  };
+}
+
+test('sunshine/wind/fog: update+draw run without throwing and stay finite across a windy stretch', () => {
+  for (const kind of ['sunshine', 'wind', 'fog']) {
+    const field = new ParticleField({ kind, color: '#fff', count: 8, speed: 20 }, 800, 600, 3);
+    const ctx = fakeCtxFull();
+    for (let i = 0; i < 120; i++) {
+      field.update(1 / 30, i / 30, null, i * 33, 0.4, { x: 40, y: -10 });
+      assert.doesNotThrow(() => field.draw(ctx, 1, '#0000ff', 0.3));
+    }
+    for (const p of field.particles) {
+      assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y), `${kind} particle position must stay finite`);
+    }
+  }
+});
+
+test('wind particles blow rightward with a strong tailwind', () => {
+  const field = new ParticleField({ kind: 'wind', color: '#fff', count: 10, speed: 20 }, 800, 600, 5);
+  const startX = field.particles.map((p) => p.x);
+  for (let i = 0; i < 30; i++) field.update(1 / 30, i / 30, null, i * 33, 0, { x: 200, y: 0 });
+  let anyMovedRight = false;
+  for (let i = 0; i < field.particles.length; i++) if (field.particles[i].x > startX[i]) anyMovedRight = true;
+  assert.ok(anyMovedRight, 'wind particles should advance rightward under a rightward gust');
+});

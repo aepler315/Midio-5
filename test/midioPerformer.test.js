@@ -38,6 +38,24 @@ test('a slow, low-combo launch does not trigger a trick', () => {
   assert.equal(perf.trick, null);
 });
 
+test('a slow, low-combo launch that is airborne to clear an obstacle ALWAYS gets a spectacular trick', () => {
+  const perf = new MidioPerformer(1);
+  const midio = fakeMidio();
+  const jump = fakeJump({ airborne: true, lastLaunchVel: 0.3, jumpStartMs: 0, D: 500 });
+  const obstacleAhead = { tMs: 250 }; // inside [jumpStartMs, jumpStartMs+D]
+  perf.update(0, 1 / 120, midio, jump, fakeCombo(1, 0), 0, null, null, obstacleAhead);
+  assert.ok(perf.trick, 'a dodge must always trigger a trick, regardless of velocity/combo');
+});
+
+test('an obstacle outside this jump\'s window does not force a trick on an otherwise slow launch', () => {
+  const perf = new MidioPerformer(1);
+  const midio = fakeMidio();
+  const jump = fakeJump({ airborne: true, lastLaunchVel: 0.3, jumpStartMs: 0, D: 500 });
+  const obstacleFar = { tMs: 5000 }; // well outside the window
+  perf.update(0, 1 / 120, midio, jump, fakeCombo(1, 0), 0, null, null, obstacleFar);
+  assert.equal(perf.trick, null);
+});
+
 test('trick type never repeats twice in a row across consecutive jumps', () => {
   const perf = new MidioPerformer(1);
   const midio = fakeMidio();

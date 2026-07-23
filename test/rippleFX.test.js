@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rippleRadius, rippleAlpha, rippleLifeMs, groundPulseX, RippleFX } from '../src/sim/RippleFX.js';
+import {
+  rippleRadius, rippleAlpha, rippleLifeMs, groundPulseX, puffOffset, puffAlpha, PUFF_COUNT, PUFF_LIFE_MS, RippleFX,
+} from '../src/sim/RippleFX.js';
 
 test('rippleRadius grows monotonically within life, scales with I, and is finite', () => {
   for (const I of [0, 0.3, 0.7, 1]) {
@@ -53,13 +55,47 @@ test('RippleFX: trigger spawns staggered rings and a pulse; they all drain over 
 test('RippleFX.draw runs without throwing and only draws finite geometry', () => {
   const fx = new RippleFX();
   fx.trigger(500, 540, 0.6);
+  fx.landingPuff(500, 540, 0.6, '#ffffff');
   const calls = [];
   const ctx = {
-    save() {}, restore() {}, beginPath() {}, stroke() {}, moveTo(x, y) { calls.push(x, y); }, lineTo(x, y) { calls.push(x, y); },
+    save() {}, restore() {}, beginPath() {}, stroke() {}, fill() {}, moveTo(x, y) { calls.push(x, y); }, lineTo(x, y) { calls.push(x, y); },
     ellipse(x, y, rx, ry) { calls.push(x, y, rx, ry); },
-    set globalCompositeOperation(v) {}, set strokeStyle(v) {}, set lineWidth(v) {},
+    arc(x, y, r) { calls.push(x, y, r); },
+    set globalCompositeOperation(v) {}, set strokeStyle(v) {}, set lineWidth(v) {}, set fillStyle(v) {}, set globalAlpha(v) {},
   };
   assert.doesNotThrow(() => fx.draw(ctx, 500, 220, false));
   assert.ok(calls.length > 0);
   for (const v of calls) assert.ok(Number.isFinite(v));
+});
+
+test('puffOffset: distance grows monotonically within life, rises then settles, finite', () => {
+  let prevDist = -1;
+  for (let age = 0; age <= PUFF_LIFE_MS; age += 40) {
+    const { dx, dy } = puffOffset(age, 0, 0.8);
+    assert.ok(Number.isFinite(dx) && Number.isFinite(dy));
+    const dist = Math.abs(dx);
+    assert.ok(dist >= prevDist - 1e-9, `radial distance must not shrink: ${dist} < ${prevDist} at age=${age}`);
+    prevDist = dist;
+  }
+  // Rise (negative dy contribution) peaks mid-life and returns toward 0.
+  const { dy: dyStart } = puffOffset(0, Math.PI / 2, 1);
+  const { dy: dyMid } = puffOffset(PUFF_LIFE_MS / 2, Math.PI / 2, 1);
+  const { dy: dyEnd } = puffOffset(PUFF_LIFE_MS, Math.PI / 2, 1);
+  assert.ok(dyMid < dyStart && dyMid < dyEnd, 'rises mid-life relative to start/end');
+});
+
+test('puffAlpha fades to zero by end of life and is bounded', () => {
+  const start = puffAlpha(0, 0.7);
+  assert.ok(start > 0 && start <= 1);
+  assert.equal(puffAlpha(PUFF_LIFE_MS, 0.7), 0);
+  assert.ok(puffAlpha(PUFF_LIFE_MS * 0.5, 0.7) < start);
+});
+
+test('RippleFX.landingPuff spawns PUFF_COUNT motes carrying the given color, which drain over time', () => {
+  const fx = new RippleFX();
+  fx.landingPuff(200, 540, 0.5, '#abc123');
+  assert.equal(fx.puffs.active.length, PUFF_COUNT);
+  for (const p of fx.puffs.active) assert.equal(p.color, '#abc123');
+  for (let i = 0; i < 30; i++) fx.update(50); // 1.5s, well past PUFF_LIFE_MS
+  assert.equal(fx.puffs.active.length, 0);
 });

@@ -11,6 +11,8 @@ import { capFlashAlpha } from '../ui/Accessibility.js';
 export const RIPPLE_RINGS = 3;
 export const RIPPLE_RING_STAGGER_MS = 90;
 export const RIPPLE_SQUASH = 0.28;
+export const PUFF_COUNT = 7;
+export const PUFF_LIFE_MS = 480;
 
 /** Outward radius (px) of a ring at `ageMs` for landing intensity I (0..1):
  *  eased out (fast start, settling), scaling both the final radius and the
@@ -42,10 +44,30 @@ export function groundPulseX(ageMs, I) {
   return (90 + 160 * clamp01(I)) * (1 - (1 - u) * (1 - u));
 }
 
+/** One landing-puff mote's {dx, dy} offset from the landing point at
+ *  `ageMs`, given its launch `angle` (radians, spread evenly around the
+ *  boot) and landing intensity I -- a quick radial kick that arcs up then
+ *  settles under a light "gravity", same eased-out cadence as the rest of
+ *  RippleFX. Pure/testable. */
+export function puffOffset(ageMs, angle, I) {
+  const u = clamp01(ageMs / PUFF_LIFE_MS);
+  const dist = (14 + 26 * clamp01(I)) * (1 - (1 - u) * (1 - u));
+  const rise = 22 * clamp01(I) * Math.sin(u * Math.PI); // up then back down
+  return { dx: Math.cos(angle) * dist, dy: Math.sin(angle) * dist * 0.35 - rise };
+}
+
+/** Puff mote opacity (0..1) across its life -- bright burst, fast fade. */
+export function puffAlpha(ageMs, I) {
+  const u = clamp01(ageMs / PUFF_LIFE_MS);
+  if (u >= 1) return 0;
+  return (0.35 + 0.35 * clamp01(I)) * (1 - u);
+}
+
 export class RippleFX {
   constructor() {
     this.rings = new ObjectPool(() => ({}), (o, i) => Object.assign(o, { age: 0 }, i), 12);
     this.pulses = new ObjectPool(() => ({}), (o, i) => Object.assign(o, { age: 0 }, i), 8);
+    this.puffs = new ObjectPool(() => ({}), (o, i) => Object.assign(o, { age: 0 }, i), 8);
   }
 
   trigger(worldX, groundY, I) {
@@ -55,10 +77,25 @@ export class RippleFX {
     this.pulses.spawn({ wx: worldX, y: groundY, I });
   }
 
+  /** A biome-tinted burst of dust/snow/ember motes at a landing -- the
+   *  world visibly answering back rather than just absorbing the impact.
+   *  `color` is whatever the active biome's ambient particle color is
+   *  (BiomeManager.currentParticleColor()); callers decide when a landing
+   *  is "wet" (flood/puddle) instead and reach for a splash look via the
+   *  same pool with a blue-toned color -- the puff itself doesn't know
+   *  the difference. */
+  landingPuff(worldX, groundY, I, color = '#ffffff') {
+    for (let i = 0; i < PUFF_COUNT; i++) {
+      const angle = -Math.PI / 2 + (i / PUFF_COUNT - 0.5) * Math.PI * 0.9;
+      this.puffs.spawn({ wx: worldX, y: groundY, I, angle, color });
+    }
+  }
+
   update(dtMs) {
     const dtSec = dtMs / 1000;
     this.rings.step(dtSec, (o, dt) => { o.age += dt * 1000; return o.age < rippleLifeMs(o.I); });
     this.pulses.step(dtSec, (o, dt) => { o.age += dt * 1000; return o.age < 500 + 200 * clamp01(o.I); });
+    this.puffs.step(dtSec, (o, dt) => { o.age += dt * 1000; return o.age < PUFF_LIFE_MS; });
   }
 
   draw(ctx, worldX, originX, reducedFlash) {
@@ -95,6 +132,19 @@ export class RippleFX {
       ctx.moveTo(x - dist + segLen, p.y);
       ctx.lineTo(x - dist, p.y);
       ctx.stroke();
+    }
+
+    for (const puff of this.puffs.active) {
+      const alpha = puffAlpha(puff.age, puff.I);
+      if (alpha <= 0.005) continue;
+      const { dx, dy } = puffOffset(puff.age, puff.angle, puff.I);
+      const r = 2 + 2.5 * clamp01(puff.I);
+      ctx.fillStyle = puff.color;
+      ctx.globalAlpha = capFlashAlpha(alpha, reducedFlash);
+      ctx.beginPath();
+      ctx.arc(toScreen(puff.wx) + dx, puff.y + dy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
     }
 
     ctx.restore();

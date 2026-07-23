@@ -1,11 +1,10 @@
 // The beat zoom: an automatic, music-driven camera breathing on top of
-// everything else (the player's own Lens zoom, camera shake/punch). It
-// picks a new "figure" -- a shape of motion, not just an amplitude -- at
-// every phrase boundary, weighted by the section's mood: calm phrases get
-// slow, subtle breathing or a long swell; energetic phrases get a sharp
-// kick-synced snap, or, right on a drop, the big dramatic dive. Never
-// touches ZoomDirector (the player's lens) or camera shake/punch --
-// composed multiplicatively alongside them in Renderer.
+// everything else (camera shake/punch). It picks a new "figure" -- a shape
+// of motion, not just an amplitude -- at every phrase boundary, weighted by
+// the section's mood: calm phrases get slow, subtle breathing or a long
+// swell; energetic phrases get a sharp kick-synced snap, or, right on a
+// drop, the big dramatic dive. Composed multiplicatively alongside camera
+// shake/punch in Renderer.
 //
 // Reads as intentional rather than glitchy for three reasons: every figure
 // produces a TARGET offset that the displayed value chases through a
