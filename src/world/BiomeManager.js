@@ -1795,17 +1795,17 @@ export class BiomeManager {
     if (applyBiomeShimmer || applyDynamicShimmer) {
       this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX, yOff);
     } else {
-      this._drawDancingStrip(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey);
+      this._drawDancingStrip(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.terrainEnergy ?? 1);
       if ((layerKey === 'L4' || layerKey === 'L5') && A.edgeLight) {
-        this._drawCrest(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.edgeLight, 1);
+        this._drawCrest(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.edgeLight, 1, A.terrainEnergy ?? 1);
       }
     }
     if (B !== A && t > 0.02) {
       ctx.globalAlpha = t;
-      this._drawDancingStrip(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey);
+      this._drawDancingStrip(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.terrainEnergy ?? 1);
       ctx.globalAlpha = 1;
       if ((layerKey === 'L4' || layerKey === 'L5') && B.edgeLight) {
-        this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t);
+        this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t, B.terrainEnergy ?? 1);
       }
     }
     // Miniature characters run along the two nearest ranges' ridges,
@@ -1829,7 +1829,7 @@ export class BiomeManager {
    *  with time, never jittering with camera scroll. The strips overhang
    *  the ground band by ~40px, which quietly swallows the bottom gap a
    *  lifted column would otherwise open. */
-  _drawDancingStrip(ctx, canvas, strip, scrollX, yOff, layerKey) {
+  _drawDancingStrip(ctx, canvas, strip, scrollX, yOff, layerKey, terrainEnergy = 1) {
     const cfg = DANCE_LAYERS[layerKey];
     if (!cfg) {
       drawTiledStrip(ctx, strip, scrollX, canvas.width, canvas.height, yOff);
@@ -1850,7 +1850,7 @@ export class BiomeManager {
         const cw = Math.min(DANCE_COL_W, w - cx);
         const sx = x + cx;
         if (sx + cw < 0 || sx > canvas.width) continue;
-        const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0);
+        const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0) * terrainEnergy;
         ctx.drawImage(strip, cx, 0, cw, strip.height, sx, baseY + dy, cw, dh);
       }
       x += w;
@@ -1867,7 +1867,7 @@ export class BiomeManager {
    *  terraces) fixed to terrain positions -- making it the third, distinct
    *  equalizer alongside the horizon EQ and the spectrum massif. L5 keeps
    *  the plain unbroken crest (today's look, minus the tear). */
-  _drawCrest(ctx, canvas, strip, scrollX, yOff, layerKey, edgeLight, alpha) {
+  _drawCrest(ctx, canvas, strip, scrollX, yOff, layerKey, edgeLight, alpha, terrainEnergy = 1) {
     if (!strip.ridge) return;
     const cfg = DANCE_LAYERS[layerKey];
     if (!cfg) return;
@@ -1888,8 +1888,8 @@ export class BiomeManager {
       const stripX = scrollX + x;
       const u = (((stripX % w) + w) % w);
       const yR = ridgeYSmooth(strip.ridge, u) * growthMul;
-      const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever);
-      const lift = isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0;
+      const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever) * terrainEnergy;
+      const lift = (isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
       pts[n++] = { x, y: baseY + yR + dy - lift, lift };
     }
     pts.length = n;
