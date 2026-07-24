@@ -13,17 +13,55 @@ export const OCEAN_HORIZON_FRAC = 0.30;
 // typically crest packs the whole field into the band that actually shows.
 export const OCEAN_NEAR_FRAC = 0.48;
 
+/** Peak absolute contribution of each harmonic in seaLineY (pre-amp). Kept
+ *  as named constants so tests can pin the bound without re-deriving. */
+export const SEA_H1 = 2.2;
+export const SEA_H2 = 1.4;
+export const SEA_H3 = 0.85;
+export const SEA_LINE_MAX = SEA_H1 + SEA_H2 + SEA_H3;
+
 /** Vertical offset (px) of a wave row at horizontal position u01 in [0,1)
- *  -- two summed sines, both integer multiples of 2*pi over u so the curve
+ *  -- three summed sines, all integer multiples of 2*pi over u so the curve
  *  is exactly periodic (no seam when a row wraps under parallax scroll).
  *  Amplitude breathes with the bass; a kick presses the whole line down
  *  slightly, like a distant swell settling. */
 export function seaLineY(u01, tSec, bass, kick = 0) {
   const b = clamp01(bass);
   const amp = 0.35 + 0.65 * b;
-  const wave = 2.2 * Math.sin(u01 * Math.PI * 2 * 3 + tSec * 0.5)
-    + 1.4 * Math.sin(u01 * Math.PI * 2 * 7 - tSec * 0.9);
+  const wave = SEA_H1 * Math.sin(u01 * Math.PI * 2 * 3 + tSec * 0.5)
+    + SEA_H2 * Math.sin(u01 * Math.PI * 2 * 7 - tSec * 0.9)
+    + SEA_H3 * Math.sin(u01 * Math.PI * 2 * 11 + tSec * 1.35);
   return wave * amp - 2.5 * clamp01(kick);
+}
+
+/** Extra crest lift (px, >=0) for occasional breakers on mid/near rows.
+ *  Integer cycles over u keep the field seamless; energy (0..1) opens the
+ *  peaks without ever exceeding the hard cap. */
+export function breakerLift(u01, tSec, energy = 0.5) {
+  const e = clamp01(energy);
+  // Sparse sharp peaks: high-frequency envelope, low-frequency gate.
+  const gate = Math.max(0, Math.sin(u01 * Math.PI * 2 * 2 + tSec * 0.35));
+  const spike = Math.pow(gate, 6);
+  return spike * (1.2 + 2.4 * e);
+}
+
+/** Foam/whitecap presence (0..1) at a sample -- denser on nearer rows
+ *  (low rowFrac) and only at crest-like phases so flecks read as foam, not
+ *  salt scatter. Pure and cheap for draw-side sampling. */
+export function whitecapMask(u01, tSec, rowFrac = 0.5) {
+  const near = clamp01(1 - rowFrac); // 1 nearest, 0 at horizon
+  const crest = 0.5 + 0.5 * Math.sin(u01 * Math.PI * 2 * 5 - tSec * 1.7);
+  // Soft threshold: only the upper crest third lights up.
+  const foam = clamp01((crest - 0.62) / 0.38);
+  return foam * foam * (0.25 + 0.75 * near);
+}
+
+/** Mild per-row phase drift (radians-ish, added into u) so stacked rows
+ *  don't lock into a single traveling pattern forever. Deterministic in
+ *  (row index, tSec). */
+export function rowPhaseDrift(rowIndex, tSec) {
+  return 0.04 * Math.sin(tSec * 0.17 + rowIndex * 1.7)
+    + 0.025 * Math.sin(tSec * 0.31 + rowIndex * 2.3);
 }
 
 /** Row baselines (screen y, px) for `count` wave rows receding from a near

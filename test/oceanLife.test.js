@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import {
   wrappedOffset, islands, ships, seaLifeSchedule, monsterSchedule,
   tsunamiSchedule, tsunamiX, tsunamiLift, tsunamiProfile, sprayFlecks, fishArcY, serpentHumpY,
-  tsunamiHeightScale, OCEAN_LIFE_WRAP_PX, TSUNAMI_WIDTH_PX, TSUNAMI_SWEEP_MS,
-  TSUNAMI_APPROACH_UP_FRAC, TSUNAMI_OVERTOP_SCALE,
+  tsunamiHeightScale, tsunamiActive, tsunamiProgress, tsunamiRowFrac,
+  tsunamiPerspectiveScale, tsunamiCenterX, tsunamiDepthLift,
+  OCEAN_LIFE_WRAP_PX, TSUNAMI_WIDTH_PX, TSUNAMI_SWEEP_MS,
+  TSUNAMI_APPROACH_UP_FRAC, TSUNAMI_OVERTOP_SCALE, TSUNAMI_ROW_FAR, TSUNAMI_ROW_NEAR,
 } from '../src/world/OceanLife.js';
 
 test('wrappedOffset stays within (-wrap/2, wrap/2] and matches unwrapped difference near zero', () => {
@@ -34,6 +36,7 @@ test('islands/ships are deterministic per seed, differ across seeds, and respect
     assert.ok(s.rowFrac >= 0 && s.rowFrac <= 1);
     assert.ok(s.driftPxS !== 0);
     assert.ok(s.size > 0);
+    assert.ok(['sail', 'wreck'].includes(s.kind));
   }
 });
 
@@ -45,7 +48,7 @@ test('seaLifeSchedule is sorted, deterministic, and spaced within [minGap, maxGa
   for (let i = 1; i < a.length; i++) {
     assert.ok(a[i].tMs > a[i - 1].tMs, 'events must be sorted');
     const gap = a[i].tMs - a[i - 1].tMs;
-    assert.ok(gap >= 8000 - 1e-6 && gap <= 20000 + 1e-6, `gap out of range: ${gap}`);
+    assert.ok(gap >= 7000 - 1e-6 && gap <= 18000 + 1e-6, `gap out of range: ${gap}`);
   }
   for (const ev of a) {
     assert.ok(['fish', 'pod', 'spout'].includes(ev.kind));
@@ -62,7 +65,6 @@ test('monsterSchedule keeps events clear of the margins and enforces the min gap
     assert.ok(e.tMs >= 20000 && e.tMs <= durationMs - 20000);
   }
   for (let i = 1; i < evs.length; i++) assert.ok(evs[i].tMs - evs[i - 1].tMs >= 45000 - 1e-6);
-  // A very short song shouldn't force an impossible schedule.
   assert.doesNotThrow(() => monsterSchedule(3, 10000));
 });
 
@@ -77,38 +79,58 @@ test('tsunamiSchedule anchors near supplied hotspots and stays sorted/determinis
   for (let i = 1; i < evs.length; i++) assert.ok(evs[i].tMs >= evs[i - 1].tMs);
   const again = tsunamiSchedule(1, durationMs, hotspots);
   assert.deepEqual(evs, again);
-  // Fallback with no hotspots still produces 1-2 events.
   const fallback = tsunamiSchedule(1, durationMs, []);
   assert.ok(fallback.length >= 1 && fallback.length <= 2);
 });
 
-test('tsunamiX sweeps monotonically across the screen and returns null outside its window', () => {
+test('tsunami approaches from far (horizon) toward the player (near edge)', () => {
+  const half = TSUNAMI_SWEEP_MS / 2;
   const ev = { tMs: 10000, dir: 1 };
+  assert.equal(tsunamiActive(ev, ev.tMs - half - 1), false);
+  assert.equal(tsunamiActive(ev, ev.tMs + half + 1), false);
+  assert.equal(tsunamiActive(ev, ev.tMs), true);
+
+  // Start of window: far / out-of-sight scale
+  assert.ok(tsunamiProgress(-half) <= 1e-9);
+  assert.ok(Math.abs(tsunamiRowFrac(0) - TSUNAMI_ROW_FAR) < 1e-9);
+  assert.ok(tsunamiPerspectiveScale(0) <= 1e-9, 'invisible at far start');
+
+  // End of window: near the player
+  assert.ok(Math.abs(tsunamiProgress(half) - 1) < 1e-9);
+  assert.ok(Math.abs(tsunamiRowFrac(1) - TSUNAMI_ROW_NEAR) < 1e-9);
+  assert.ok(Math.abs(tsunamiPerspectiveScale(1) - 1) < 1e-9);
+
+  // Monotonic approach: rowFrac decreases (far → near), scale grows
+  let prevRf = Infinity, prevScale = -1;
+  for (let p = 0; p <= 1; p += 0.05) {
+    const rf = tsunamiRowFrac(p);
+    const sc = tsunamiPerspectiveScale(p);
+    assert.ok(rf <= prevRf + 1e-9, `rowFrac must decrease toward player: ${rf} > ${prevRf}`);
+    assert.ok(sc >= prevScale - 1e-9, `scale must grow toward player: ${sc} < ${prevScale}`);
+    prevRf = rf;
+    prevScale = sc;
+  }
+  assert.ok(TSUNAMI_ROW_FAR > TSUNAMI_ROW_NEAR);
+
+  // Center X bias from dir; tsunamiX still returns a finite center while live
   const w = 1280;
+  const left = tsunamiCenterX({ dir: -1 }, w);
+  const right = tsunamiCenterX({ dir: 1 }, w);
+  assert.ok(left < w * 0.5 && right > w * 0.5);
   assert.equal(tsunamiX(ev, ev.tMs - TSUNAMI_SWEEP_MS, w), null);
-  assert.equal(tsunamiX(ev, ev.tMs + TSUNAMI_SWEEP_MS, w), null);
-  let prev = -Infinity;
-  for (let dt = -TSUNAMI_SWEEP_MS / 2; dt <= TSUNAMI_SWEEP_MS / 2; dt += 200) {
-    const x = tsunamiX(ev, ev.tMs + dt, w);
-    assert.ok(Number.isFinite(x));
-    assert.ok(x >= prev, 'dir=1 must sweep monotonically rightward');
-    prev = x;
-  }
-  const back = { tMs: 5000, dir: -1 };
-  let prevB = Infinity;
-  for (let dt = -TSUNAMI_SWEEP_MS / 2; dt <= TSUNAMI_SWEEP_MS / 2; dt += 200) {
-    const x = tsunamiX(back, back.tMs + dt, w);
-    assert.ok(x <= prevB, 'dir=-1 must sweep monotonically leftward');
-    prevB = x;
-  }
+  assert.ok(Number.isFinite(tsunamiX(ev, ev.tMs, w)));
 });
 
-test('tsunamiLift is bounded, peaks at the wall, and reaches zero beyond its width', () => {
+test('tsunamiLift and tsunamiDepthLift are bounded and peak at zero offset', () => {
   assert.equal(tsunamiLift(0), 1);
   assert.ok(tsunamiLift(TSUNAMI_WIDTH_PX / 2) < 1 && tsunamiLift(TSUNAMI_WIDTH_PX / 2) > 0);
   assert.equal(tsunamiLift(TSUNAMI_WIDTH_PX), 0);
   assert.equal(tsunamiLift(TSUNAMI_WIDTH_PX * 5), 0);
   assert.equal(tsunamiLift(-50), tsunamiLift(50));
+
+  assert.equal(tsunamiDepthLift(0.5, 0.5), 1);
+  assert.ok(tsunamiDepthLift(0.5, 0.55) > 0 && tsunamiDepthLift(0.5, 0.55) < 1);
+  assert.equal(tsunamiDepthLift(0.5, 0.9), 0);
 });
 
 test('tsunamiProfile and shape helpers stay bounded and finite', () => {
@@ -127,14 +149,13 @@ test('tsunamiProfile and shape helpers stay bounded and finite', () => {
   }
 });
 
-test('tsunamiHeightScale: 0 at the start of the sweep (far/distant), peaks at 1 approaching the crest, eases down as it passes', () => {
+test('tsunamiHeightScale: 0 at far start, peaks near arrival, eases as it breaks', () => {
   const half = TSUNAMI_SWEEP_MS / 2;
-  assert.ok(tsunamiHeightScale(-half) <= 1e-9, 'far away at the very start of the sweep');
+  assert.ok(tsunamiHeightScale(-half) <= 1e-9, 'far away at the very start of the approach');
   const peakAge = -half + TSUNAMI_SWEEP_MS * TSUNAMI_APPROACH_UP_FRAC;
-  assert.ok(Math.abs(tsunamiHeightScale(peakAge) - 1) < 1e-9, 'full crest right at the approach fraction');
-  assert.ok(tsunamiHeightScale(half) < 1, 'settles back down after passing the crest');
-  assert.ok(tsunamiHeightScale(half) > 0, 'never drops to nothing right as the sweep ends');
-  // Monotonically grows on the approach, every value finite and in [0,1].
+  assert.ok(Math.abs(tsunamiHeightScale(peakAge) - 1) < 1e-9, 'full crest at the approach fraction');
+  assert.ok(tsunamiHeightScale(half) < 1, 'settles back down after the break');
+  assert.ok(tsunamiHeightScale(half) > 0, 'never drops to nothing right as the window ends');
   let prev = -1;
   for (let age = -half; age <= peakAge; age += 100) {
     const s = tsunamiHeightScale(age);
@@ -142,6 +163,12 @@ test('tsunamiHeightScale: 0 at the start of the sweep (far/distant), peaks at 1 
     assert.ok(s >= prev - 1e-9, `must grow monotonically approaching the crest: ${s} < ${prev} at age=${age}`);
     prev = s;
   }
+  // Overtop threshold is reachable during the approach
+  let crossed = false;
+  for (let age = -half; age <= half; age += 50) {
+    if (tsunamiHeightScale(age) >= TSUNAMI_OVERTOP_SCALE) { crossed = true; break; }
+  }
+  assert.ok(crossed, 'heightScale must cross TSUNAMI_OVERTOP_SCALE so floods can arm');
   assert.ok(TSUNAMI_OVERTOP_SCALE > 0 && TSUNAMI_OVERTOP_SCALE <= 1);
 });
 

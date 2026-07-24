@@ -13,10 +13,15 @@ import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul } from './MountainChoreo.js';
 import { ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, geoCrestOffset } from './GeoCrest.js';
-import { seaLineY, oceanRowYs, waveRows, rowAlpha, OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC } from './Ocean.js';
+import {
+  seaLineY, oceanRowYs, waveRows, rowAlpha, OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC,
+  breakerLift, whitecapMask, rowPhaseDrift,
+} from './Ocean.js';
 import {
   islands, ships, seaLifeSchedule, monsterSchedule, tsunamiSchedule,
-  tsunamiX, tsunamiLift, tsunamiProfile, sprayFlecks, fishArcY, serpentHumpY,
+  tsunamiActive, tsunamiProgress, tsunamiRowFrac, tsunamiPerspectiveScale,
+  tsunamiCenterX, tsunamiLift, tsunamiDepthLift, tsunamiProfile, sprayFlecks,
+  fishArcY, serpentHumpY,
   wrappedOffset, OCEAN_LIFE_WRAP_PX, OCEAN_LIFE_RATIO, TSUNAMI_WIDTH_PX,
   tsunamiHeightScale, TSUNAMI_OVERTOP_SCALE, FLOOD_DURATION_MS,
 } from './OceanLife.js';
@@ -1237,14 +1242,23 @@ export class BiomeManager {
    *  visible remainder (above/between the ridgelines) IS the ocean. The row
    *  stack always draws (visibility is the feature); it thins and drops the
    *  celestial glint at the deepest perf rung. */
-  /** Which tsunami (if any) is currently sweeping the screen, and where its
-   *  leading edge sits -- looked up once per frame and shared by the row
-   *  surge and the wall silhouette. */
+  /** Which tsunami (if any) is currently approaching, with its depth /
+   *  perspective state -- looked up once per frame and shared by the row
+   *  swell and the wall silhouette. */
   _activeTsunami(canvasWidth) {
     const nowMs = this.tSec * 1000;
     for (const ev of this._tsunamis) {
-      const wallX = tsunamiX(ev, nowMs, canvasWidth);
-      if (wallX !== null) return { ev, wallX };
+      if (!tsunamiActive(ev, nowMs)) continue;
+      const age = nowMs - ev.tMs;
+      const progress = tsunamiProgress(age);
+      return {
+        ev,
+        progress,
+        rowFrac: tsunamiRowFrac(progress),
+        scale: tsunamiPerspectiveScale(progress),
+        heightScale: tsunamiHeightScale(age),
+        centerX: tsunamiCenterX(ev, canvasWidth),
+      };
     }
     return null;
   }
@@ -1253,6 +1267,7 @@ export class BiomeManager {
     const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
     const nearY = canvas.height * OCEAN_NEAR_FRAC;
     const bass = 0.5 * ((this._eqSmoothed[0] || 0) + (this._eqSmoothed[1] || 0));
+    const treble = 0.5 * ((this._eqSmoothed[5] || 0) + (this._eqSmoothed[6] || 0));
     const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 250) * this._danceKickAmp;
     const tsunami = this._activeTsunami(canvas.width);
 
@@ -1275,129 +1290,173 @@ export class BiomeManager {
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = edgeFade;
 
+    // Depth banding: soft fill strips between row baselines so the plane
+    // reads as a body of water, not only contour lines.
+    for (let j = 0; j < rows.length - 1; j++) {
+      const a0 = rowAlpha(j, rows.length) * this.budget;
+      if (a0 <= 0.02) continue;
+      const band = ctx.createLinearGradient(0, rowYs[j + 1], 0, rowYs[j]);
+      band.addColorStop(0, `${water}00`);
+      band.addColorStop(0.45, `${water}14`);
+      band.addColorStop(1, `${water}00`);
+      ctx.fillStyle = band;
+      ctx.globalAlpha = a0 * 0.55;
+      ctx.fillRect(0, rowYs[j + 1], canvas.width, Math.max(1, rowYs[j] - rowYs[j + 1]));
+    }
+
+    ctx.strokeStyle = edgeFade;
     const N = 48;
-    for (let j = 0; j < rows.length; j++) {
+    const nRows = rows.length;
+    for (let j = 0; j < nRows; j++) {
       const row = rows[j];
-      const alpha = rowAlpha(j, rows.length) * row.alphaMul * this.budget;
+      const alpha = rowAlpha(j, nRows) * row.alphaMul * this.budget;
       if (alpha <= 0.01) continue;
       const gapAbove = j === 0 ? nearY - rowYs[0] : rowYs[j - 1] - rowYs[j];
       const ampScale = row.ampMul * Math.max(0.2, clamp01(gapAbove / 24));
-      const scroll = worldX * (0.03 + 0.09 * (1 - j / rows.length));
+      const scroll = worldX * (0.03 + 0.09 * (1 - j / nRows));
+      const rowFrac = nRows <= 1 ? 0.5 : j / (nRows - 1); // 0 near .. 1 far
+      const depthSwell = tsunami
+        ? tsunamiDepthLift(rowFrac, tsunami.rowFrac) * tsunami.scale * tsunami.heightScale
+        : 0;
+      const drift = rowPhaseDrift(j, this.tSec);
       ctx.globalAlpha = alpha;
-      ctx.lineWidth = 1.2 + 0.8 * (1 - j / rows.length);
+      ctx.lineWidth = 1.2 + 0.8 * (1 - j / nRows);
       ctx.beginPath();
+      const samples = [];
       for (let i = 0; i <= N; i++) {
-        const u = (i / N + row.uPhase + scroll / canvas.width) % 1;
+        const u = ((i / N + row.uPhase + scroll / canvas.width + drift) % 1 + 1) % 1;
         const x = (i / N) * canvas.width;
-        let y = rowYs[j] + seaLineY(u, this.tSec * row.speedMul, bass, kick) * ampScale;
-        if (tsunami) y -= tsunamiLift(x - tsunami.wallX) * 70 * (0.6 + 0.4 * ampScale);
+        let y = rowYs[j]
+          + seaLineY(u, this.tSec * row.speedMul, bass, kick) * ampScale
+          - breakerLift(u, this.tSec * row.speedMul, 0.35 + 0.65 * treble) * ampScale * 0.55;
+        // Depth-localized swell under the approaching tsunami (not a side-swipe).
+        if (depthSwell > 0.01) {
+          const halfW = TSUNAMI_WIDTH_PX * (0.35 + 0.65 * tsunami.scale);
+          y -= tsunamiLift(x - tsunami.centerX, halfW) * depthSwell * 85 * (0.55 + 0.45 * ampScale);
+        }
+        samples.push({ x, y, u });
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.stroke();
+
+      // Whitecaps: sparse foam flecks on crest samples of nearer rows.
+      if (phenomenaFull && rowFrac < 0.72) {
+        ctx.fillStyle = cap;
+        for (let i = 0; i < samples.length; i += 2) {
+          const s = samples[i];
+          const m = whitecapMask(s.u, this.tSec * row.speedMul, rowFrac);
+          if (m < 0.35) continue;
+          ctx.globalAlpha = alpha * m * 0.55;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y - 1.2, 1.1 + 0.9 * m, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
     }
 
-    if (tsunami) {
-      // A rolling swell, not a solid wall -- it must read as WATER, never
-      // as a silhouette (a filled peaked shape in the biome's silhouette
-      // color is exactly what a distant mountain looks like, which is
-      // precisely the bug this replaced: a "mountain" sliding across the
-      // screen). So: no fill silhouette. Just a translucent watery veil
-      // under the crest line, a bright foam crest stroke, and a few spray
-      // flecks kicked up at the tip -- all additive, all see-through to the
-      // wave rows underneath.
-      // Height envelope: small and distant at the start of the sweep,
-      // cresting tallest partway through, easing back down as it passes --
-      // "approaching from the far distance, getting closer and closer"
-      // told purely through how tall the wall reads, over the exact same
-      // sweep timeline tsunamiX already walks (see OceanLife.js).
-      const heightScale = tsunamiHeightScale(this.tSec * 1000 - tsunami.ev.tMs);
-      const wallTop = horizonY + (nearY - horizonY) * 0.08;
-      const wallH = (nearY - wallTop) * heightScale;
-      const WS = TSUNAMI_WIDTH_PX;
-      const crestY = (s) => nearY - tsunamiProfile(s) * wallH;
-      const alphaMul = this.budget * heightScale;
+    if (tsunami && tsunami.scale > 0.02) {
+      // Approach from far horizon → near ocean edge. Size is perspective-
+      // driven (tiny while distant, large as it nears the player). Still a
+      // translucent watery veil + foam crest -- never a solid mountain
+      // silhouette sliding sideways.
+      const { centerX, scale: persp, heightScale, rowFrac: tRf } = tsunami;
+      const baseY = this._oceanLifeRowY(canvas, tRf);
+      const wallH = (nearY - horizonY) * 0.62 * heightScale * (0.12 + 0.88 * persp);
+      const WS = TSUNAMI_WIDTH_PX * (0.28 + 0.72 * persp);
+      const crestY = (s) => baseY - tsunamiProfile(s) * wallH;
+      const alphaMul = this.budget * heightScale * (0.2 + 0.8 * persp);
+      const footY = Math.min(nearY, baseY + wallH * 0.15);
 
-      // Watery veil: a soft gradient fill, translucent enough that the
-      // wave rows keep showing through it.
-      const veilGrad = ctx.createLinearGradient(0, wallTop, 0, nearY);
+      const veilGrad = ctx.createLinearGradient(0, baseY - wallH, 0, footY);
       veilGrad.addColorStop(0, `${water}00`);
-      veilGrad.addColorStop(0.55, `${water}26`);
+      veilGrad.addColorStop(0.45, `${water}2a`);
       veilGrad.addColorStop(1, `${water}00`);
       ctx.fillStyle = veilGrad;
       ctx.beginPath();
       for (let i = 0; i <= 24; i++) {
         const s = -1 + (i / 24) * 2;
-        const x = tsunami.wallX + s * WS;
+        const x = centerX + s * WS;
         const y = crestY(s);
-        if (i === 0) ctx.moveTo(x, nearY);
+        if (i === 0) ctx.moveTo(x, footY);
         ctx.lineTo(x, y);
       }
-      ctx.lineTo(tsunami.wallX + WS, nearY);
+      ctx.lineTo(centerX + WS, footY);
       ctx.closePath();
-      ctx.globalAlpha = capFlashAlpha(0.6 * alphaMul, this.reducedFlash);
+      ctx.globalAlpha = capFlashAlpha(0.65 * alphaMul, this.reducedFlash);
       ctx.fill();
 
-      // Foam crest: wide faint halo under a bright line, same two-pass
-      // language as the horizon EQ's aurora crest.
-      for (const [lw, a] of [[6, 0.14], [1.8, 0.55]]) {
+      for (const [lw, a] of [[6 * (0.5 + 0.5 * persp), 0.14], [1.8, 0.55]]) {
         ctx.strokeStyle = cap;
         ctx.lineWidth = lw;
         ctx.globalAlpha = capFlashAlpha(a * alphaMul, this.reducedFlash);
         ctx.beginPath();
         for (let i = 0; i <= 24; i++) {
           const s = -1 + (i / 24) * 2;
-          const x = tsunami.wallX + s * WS;
+          const x = centerX + s * WS;
           const y = crestY(s);
           if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         }
         ctx.stroke();
       }
 
-      // Spray flecks thrown up just above the crest tip.
       ctx.fillStyle = cap;
       for (const f of this._tsunamiFlecks) {
-        const x = tsunami.wallX + f.sOff * WS;
-        const baseY = crestY(f.sOff);
-        const bob = Math.sin(this.tSec * 4 + f.phase) * 3;
+        const x = centerX + f.sOff * WS;
+        const by = crestY(f.sOff);
+        const bob = Math.sin(this.tSec * 4 + f.phase) * 3 * persp;
         ctx.globalAlpha = capFlashAlpha(0.5 * alphaMul, this.reducedFlash);
         ctx.beginPath();
-        ctx.arc(x, baseY - f.riseFrac * wallH * 0.4 + bob, 1.8, 0, Math.PI * 2);
+        ctx.arc(x, by - f.riseFrac * wallH * 0.4 + bob, 1.2 + 1.2 * persp, 0, Math.PI * 2);
         ctx.fill();
       }
     }
 
-    // The horizon itself: where the water meets the sky.
-    for (const [lw, a] of [[3.5, 0.10], [1.2, 0.30]]) {
+    // Layered horizon: water meets sky, plus a faint secondary glint line.
+    for (const [lw, a, yOff] of [[4.0, 0.12, 0], [1.4, 0.34, 0], [2.2, 0.08, 3.5]]) {
       ctx.globalAlpha = a * this.budget;
       ctx.lineWidth = lw;
+      ctx.strokeStyle = edgeFade;
       ctx.beginPath();
-      ctx.moveTo(0, horizonY);
-      ctx.lineTo(canvas.width, horizonY);
+      ctx.moveTo(0, horizonY + yOff);
+      ctx.lineTo(canvas.width, horizonY + yOff);
       ctx.stroke();
     }
 
     // A faint body sheen just below the horizon, so the plane reads as
     // water rather than a stack of loose lines.
-    const sheenH = Math.min(90, nearY - horizonY);
+    const sheenH = Math.min(110, nearY - horizonY);
     const sheen = ctx.createLinearGradient(0, horizonY, 0, horizonY + sheenH);
-    sheen.addColorStop(0, `${water}0f`);
+    sheen.addColorStop(0, `${water}18`);
+    sheen.addColorStop(0.45, `${water}0a`);
     sheen.addColorStop(1, `${water}00`);
     ctx.fillStyle = sheen;
     ctx.globalAlpha = this.budget;
     ctx.fillRect(0, horizonY, canvas.width, sheenH);
 
     if (phenomenaFull) {
-      // A soft celestial reflection column, under the sun/moon's screen x.
+      // Stronger celestial reflection: taller column with a slight shimmer.
       const rx = canvas.width * 0.78;
-      const glintH = canvas.height * 0.25;
+      const glintH = canvas.height * 0.32;
+      const shimmer = 4 * Math.sin(this.tSec * 1.1);
       const rGrad = ctx.createLinearGradient(rx, horizonY, rx, horizonY + glintH);
-      rGrad.addColorStop(0, `${cap}22`);
+      rGrad.addColorStop(0, `${cap}33`);
+      rGrad.addColorStop(0.35, `${cap}14`);
       rGrad.addColorStop(1, `${cap}00`);
       ctx.fillStyle = rGrad;
-      ctx.globalAlpha = 0.10;
-      ctx.fillRect(rx - 60, horizonY, 120, glintH);
+      ctx.globalAlpha = 0.14;
+      ctx.fillRect(rx - 42 + shimmer * 0.3, horizonY, 84, glintH);
+      // Dashed secondary foam trail, slower parallax, for depth interest.
+      ctx.strokeStyle = cap;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.12 * this.budget;
+      const foamScroll = (worldX * 0.02) % 40;
+      ctx.setLineDash([6, 14]);
+      ctx.beginPath();
+      ctx.moveTo(-foamScroll, horizonY + sheenH * 0.35);
+      ctx.lineTo(canvas.width + 20, horizonY + sheenH * 0.35 + 6 * Math.sin(this.tSec * 0.4));
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
     ctx.restore();
   }
@@ -1492,19 +1551,34 @@ export class BiomeManager {
       ctx.strokeStyle = water;
       ctx.fillStyle = water;
       ctx.lineWidth = Math.max(1, 1.2 * s);
-      ctx.beginPath(); // hull
-      ctx.moveTo(x - 14 * s, y + bob);
-      ctx.lineTo(x + 14 * s, y + bob);
-      ctx.lineTo(x + 10 * s, y + bob + 4 * s);
-      ctx.lineTo(x - 10 * s, y + bob + 4 * s);
-      ctx.closePath();
-      ctx.fill();
-      ctx.beginPath(); // mast + sail
-      ctx.moveTo(x, y + bob);
-      ctx.lineTo(x, y + bob - 16 * s);
-      ctx.lineTo(x + 9 * s, y + bob - 4 * s);
-      ctx.closePath();
-      ctx.stroke();
+      if (ship.kind === 'wreck') {
+        // Half-sunken hull, broken mast -- still a few strokes, sits lower.
+        ctx.beginPath();
+        ctx.moveTo(x - 16 * s, y + bob + 2 * s);
+        ctx.lineTo(x + 10 * s, y + bob);
+        ctx.lineTo(x + 6 * s, y + bob + 5 * s);
+        ctx.lineTo(x - 12 * s, y + bob + 6 * s);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(x - 2 * s, y + bob);
+        ctx.lineTo(x + 4 * s, y + bob - 10 * s);
+        ctx.stroke();
+      } else {
+        ctx.beginPath(); // hull
+        ctx.moveTo(x - 14 * s, y + bob);
+        ctx.lineTo(x + 14 * s, y + bob);
+        ctx.lineTo(x + 10 * s, y + bob + 4 * s);
+        ctx.lineTo(x - 10 * s, y + bob + 4 * s);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath(); // mast + sail
+        ctx.moveTo(x, y + bob);
+        ctx.lineTo(x, y + bob - 16 * s);
+        ctx.lineTo(x + 9 * s, y + bob - 4 * s);
+        ctx.closePath();
+        ctx.stroke();
+      }
     }
 
     if (phenomenaFull) {

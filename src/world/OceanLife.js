@@ -1,11 +1,12 @@
 // Pure math for what lives on/over the far ocean: islands, drifting ships,
 // sea life (fish leaps, dolphin pods, whale spouts), a rare surfacing sea
-// monster, and occasional tsunami walls that sweep across the wave field.
+// monster, and occasional tsunami walls that approach from the far horizon
+// toward the player (near edge of the ocean plane).
 // No canvas here -- BiomeManager consumes these, tests exercise them
 // directly. Everything is seeded and deterministic per song, following the
 // same shape as MeteorShower/SkyEnsemble/FarVignettes: schedules built once
 // at construction, pure placement/shape functions evaluated per frame.
-import { clamp01, mulberry32, hashSeed } from '../utils/math.js';
+import { clamp01, mulberry32 } from '../utils/math.js';
 
 // World-x positions for islands/ships live in a periodic wrap space so a
 // handful of features can be scattered "out there" without needing an
@@ -25,7 +26,7 @@ export function wrappedOffset(x0, scroll, wrap = OCEAN_LIFE_WRAP_PX) {
 
 /** Seeded island placements: {x0, rowFrac, w, h, kind, beacon}. rowFrac 0
  *  (nearest) .. 1 (at the horizon) matches Ocean.js's row convention. */
-export function islands(seed, count = 3) {
+export function islands(seed, count = 4) {
   const rand = mulberry32(seed >>> 0);
   const out = [];
   const KINDS = ['cone', 'mesa', 'palm'];
@@ -42,16 +43,18 @@ export function islands(seed, count = 3) {
   return out;
 }
 
-/** Seeded slow-drifting ships: {x0, rowFrac, driftPxS, size}. */
-export function ships(seed, count = 2) {
+/** Seeded slow-drifting ships: {x0, rowFrac, driftPxS, size, kind}. */
+export function ships(seed, count = 3) {
   const rand = mulberry32(seed >>> 0);
   const out = [];
+  const KINDS = ['sail', 'sail', 'wreck'];
   for (let i = 0; i < count; i++) {
     out.push({
       x0: (i + 0.5 + rand()) * (OCEAN_LIFE_WRAP_PX / count),
       rowFrac: 0.15 + rand() * 0.45, // ships stay closer than islands
       driftPxS: (rand() < 0.5 ? -1 : 1) * (2 + rand() * 3),
       size: 0.7 + rand() * 0.6,
+      kind: KINDS[Math.floor(rand() * KINDS.length)],
     });
   }
   return out;
@@ -59,10 +62,10 @@ export function ships(seed, count = 2) {
 
 /** Sorted seeded sea-life events across the song: {tMs, kind, u, rowFrac}.
  *  u is a fixed 0..1 horizontal placement (fraction of screen width at the
- *  moment it plays), kind one of 'fish'|'pod'|'spout'. Spaced 8-20s apart. */
+ *  moment it plays), kind one of 'fish'|'pod'|'spout'. Spaced 7-18s apart. */
 export function seaLifeSchedule(seed, durationMs, opts = {}) {
   const rand = mulberry32(seed >>> 0);
-  const minGap = opts.minGapMs ?? 8000, maxGap = opts.maxGapMs ?? 20000;
+  const minGap = opts.minGapMs ?? 7000, maxGap = opts.maxGapMs ?? 18000;
   const KINDS = ['fish', 'pod', 'spout'];
   const DUR = { fish: 900, pod: 4000, spout: 2500 };
   const out = [];
@@ -96,7 +99,9 @@ export function monsterSchedule(seed, durationMs, opts = {}) {
 }
 
 /** 1-2 tsunami walls, anchored near the song's highest-energy moments
- *  (jittered) when hotspots are supplied, else spread seeded fallback. */
+ *  (jittered) when hotspots are supplied, else spread seeded fallback.
+ *  `dir` is a mild lateral bias for center X (-1 left, +1 right), not a
+ *  sweep direction -- the wall always approaches horizon → player. */
 export function tsunamiSchedule(seed, durationMs, hotspotMs = []) {
   const rand = mulberry32(seed >>> 0);
   const count = hotspotMs.length > 0 ? Math.min(2, hotspotMs.length) : (rand() < 0.5 ? 2 : 1);
@@ -112,61 +117,93 @@ export function tsunamiSchedule(seed, durationMs, hotspotMs = []) {
   return out;
 }
 
-export const TSUNAMI_SWEEP_MS = 6000; // a rolling swell, not a sliding cutout
+export const TSUNAMI_SWEEP_MS = 7000; // long enough to read the approach
 export const TSUNAMI_WIDTH_PX = 260;
-
-/** The wall's leading-edge x at `nowMs`, sweeping fully across a canvas of
- *  width `w` over TSUNAMI_SWEEP_MS, direction `event.dir` (+1 left-to-right,
- *  -1 the reverse). Returns null once the sweep has finished. */
-export function tsunamiX(event, nowMs, w) {
-  const age = nowMs - event.tMs;
-  const half = TSUNAMI_SWEEP_MS / 2;
-  if (age < -half || age > half) return null;
-  const u = (age + half) / TSUNAMI_SWEEP_MS; // 0..1
-  const span = w + TSUNAMI_WIDTH_PX * 2;
-  return event.dir >= 0 ? -TSUNAMI_WIDTH_PX + u * span : w + TSUNAMI_WIDTH_PX - u * span;
-}
-
-/** Falloff (0..1) of the tsunami's surge at horizontal distance `dx` (px)
- *  from the wall's leading edge -- 1 at the wall, tapering over one wall
- *  width, zero beyond it. Always bounded and finite. */
-export function tsunamiLift(dx) {
-  const d = Math.abs(dx);
-  if (d >= TSUNAMI_WIDTH_PX) return 0;
-  return clamp01(1 - d / TSUNAMI_WIDTH_PX);
-}
-
-// Fraction of the sweep spent rising to full crest height before easing
-// back down -- the "approaching from the far distance, getting closer and
-// closer" read, told purely through height over the SAME sweep timeline
-// tsunamiX already walks (no separate schedule/geometry needed).
-export const TSUNAMI_APPROACH_UP_FRAC = 0.6;
-// heightScale at/above this counts as "spilling over" -- BiomeManager arms
-// a temporary flood the first time a wall crosses it.
+// Depth approach: rowFrac 1 = horizon (far), 0 = nearest ocean edge (player).
+export const TSUNAMI_ROW_FAR = 0.98;
+export const TSUNAMI_ROW_NEAR = 0.06;
+// Crest envelope peaks near arrival; overtop arms the flood shortly before.
+export const TSUNAMI_APPROACH_UP_FRAC = 0.82;
 export const TSUNAMI_OVERTOP_SCALE = 0.85;
 export const FLOOD_DURATION_MS = 5000;
 
-/** 0..1 envelope for how "arrived" the tsunami is at `ageMs` (nowMs -
- *  event.tMs, same convention as tsunamiX/tsunamiLift): small and distant
- *  at the start of its sweep, cresting tallest around
- *  TSUNAMI_APPROACH_UP_FRAC of the way through, easing back down as it
- *  passes. Pure/testable. */
-export function tsunamiHeightScale(ageMs) {
+/** True when the event's approach window is live at `nowMs`. */
+export function tsunamiActive(event, nowMs) {
+  const age = nowMs - event.tMs;
   const half = TSUNAMI_SWEEP_MS / 2;
-  const u = clamp01((ageMs + half) / TSUNAMI_SWEEP_MS);
+  return age >= -half && age <= half;
+}
+
+/** 0..1 progress through the approach window (0 = far/out-of-sight,
+ *  1 = arrived at the near edge). Uses the same age convention as the old
+ *  lateral sweep: age 0 is mid-window, age ∈ [-half, half]. */
+export function tsunamiProgress(ageMs) {
+  const half = TSUNAMI_SWEEP_MS / 2;
+  return clamp01((ageMs + half) / TSUNAMI_SWEEP_MS);
+}
+
+/** Ocean-plane depth of the wall (rowFrac): starts at the far horizon and
+ *  monotonically moves toward the near (player-facing) edge. */
+export function tsunamiRowFrac(progress) {
+  const p = clamp01(progress);
+  return TSUNAMI_ROW_FAR + (TSUNAMI_ROW_NEAR - TSUNAMI_ROW_FAR) * p;
+}
+
+/** Perspective size (0..1): tiny while far, balloons as it nears the player.
+ *  Power curve keeps early frames effectively out of sight. */
+export function tsunamiPerspectiveScale(progress) {
+  return Math.pow(clamp01(progress), 1.55);
+}
+
+/** Screen-space center X for the wall. Mild lateral bias from `event.dir`
+ *  so successive walls don't always hit dead-center. */
+export function tsunamiCenterX(event, w) {
+  const bias = (event.dir || 0) * w * 0.12;
+  return w * 0.5 + bias;
+}
+
+/** @deprecated Lateral sweep — kept for any residual callers; prefer
+ *  tsunamiProgress / tsunamiRowFrac. Returns null outside the window, else
+ *  the wall's center X (no longer walks L→R across the screen). */
+export function tsunamiX(event, nowMs, w) {
+  if (!tsunamiActive(event, nowMs)) return null;
+  return tsunamiCenterX(event, w);
+}
+
+/** Falloff (0..1) of the wall's horizontal body at distance `dx` (px) from
+ *  center -- 1 at the spine, tapering over half-width. Width may be scaled
+ *  by perspective at the draw site. */
+export function tsunamiLift(dx, halfWidthPx = TSUNAMI_WIDTH_PX) {
+  const d = Math.abs(dx);
+  if (d >= halfWidthPx) return 0;
+  return clamp01(1 - d / halfWidthPx);
+}
+
+/** Falloff (0..1) of the swell along the depth axis: peaks when a wave
+ *  row's rowFrac matches the tsunami's current depth, zero outside a band. */
+export function tsunamiDepthLift(rowFrac, tsunamiRf, halfWidth = 0.18) {
+  const d = Math.abs(rowFrac - tsunamiRf);
+  if (d >= halfWidth) return 0;
+  return clamp01(1 - d / halfWidth);
+}
+
+/** 0..1 crest envelope: small/invisible at the far start, full near
+ *  arrival, slight recede as it "breaks" over the near edge. */
+export function tsunamiHeightScale(ageMs) {
+  const u = tsunamiProgress(ageMs);
   const rise = clamp01(u / TSUNAMI_APPROACH_UP_FRAC);
-  const pastPeak = u > TSUNAMI_APPROACH_UP_FRAC ? (u - TSUNAMI_APPROACH_UP_FRAC) / (1 - TSUNAMI_APPROACH_UP_FRAC) : 0;
+  const pastPeak = u > TSUNAMI_APPROACH_UP_FRAC
+    ? (u - TSUNAMI_APPROACH_UP_FRAC) / (1 - TSUNAMI_APPROACH_UP_FRAC)
+    : 0;
   const recede = 1 - 0.35 * clamp01(pastPeak);
   return rise * recede;
 }
 
 /** Vertical profile (0..1) of the wave-wall silhouette across its own
- *  width, s in [-1,1] (0 = leading edge): a tall curl with a foam tip just
- *  past the edge, settling behind it. */
+ *  width, s in [-1,1] (0 = spine): a tall curl with a foam tip, settling
+ *  toward the trailing edges. */
 export function tsunamiProfile(s) {
   const c = clamp01((s + 1) / 2);
-  // Sharp rise just ahead of the edge (s slightly negative == behind the
-  // direction of travel in our -1..1 parametrization), curling tip at s~0.15.
   const rise = Math.exp(-((c - 0.55) ** 2) / 0.02);
   const settle = clamp01(1 - Math.max(0, c - 0.55) * 1.6);
   return clamp01(Math.max(rise, settle * 0.35));
