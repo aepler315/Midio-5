@@ -58,3 +58,36 @@ export class HypeDirector {
     return age >= 0 && age < RING_MS ? age / RING_MS : null;
   }
 }
+
+/**
+ * Border-frame draw params from hype state, gated by calm.
+ * Calm sections nearly extinguish the idle rim and kick strobe (the "edge
+ * flash noise"); drop surges still read, just softer. Pure for tests.
+ *
+ * @returns {{ alpha:number, lineWidth:number, echo:number, inset:number }}
+ */
+export function hypeFrameStyle(hype, calmLevel = 0) {
+  const calm = clamp01(calmLevel);
+  // idleGate → 0 as calm rises: no steady rim glow on quiet stretches
+  // slamGate → small: kicks stop strobing the frame during calm
+  // surgeGate stays higher so a real drop still answers the edge
+  const idleGate = 1 - 0.94 * calm;
+  const slamGate = 1 - 0.90 * calm;
+  const surgeGate = 1 - 0.40 * calm;
+
+  const fast = hype ? clamp01(hype.fast) : 0;
+  const slam = (hype ? clamp01(hype.slam) : 0) * slamGate;
+  const surge = (hype ? clamp01(hype.surge) : 0) * surgeGate;
+
+  const alpha = Math.min(0.68,
+    0.02 * idleGate
+    + 0.11 * fast * idleGate
+    + 0.40 * slam
+    + 0.26 * surge);
+  const lineWidth = 1.15 + 7.0 * slam + 4.5 * surge;
+  const echo = Math.max(
+    surge > 0.45 ? surge : 0,
+    slam > 0.72 ? slam * 0.7 : 0,
+  );
+  return { alpha, lineWidth, echo, inset: 5 + 2.5 * slam };
+}

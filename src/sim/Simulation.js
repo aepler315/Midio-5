@@ -312,6 +312,12 @@ export class Simulation {
           this.scoreKeeper.noteStreak(this.comboSystem.streak);
         }
       }
+      // Hop on hold ticks when grounded so multi-second rolls don't freeze
+      // him after the opening jump lands. Obstacles are excluded from hold
+      // spans, so these hops stay clearable-safe.
+      if (evt.kind === 'holdTick' && !this.jump.airborne) {
+        this.jump.onPlayerTap({ tMs: evt.tMs, vel: 0.55 });
+      }
       this.scoreKeeper.applyEvent(evt, this.comboSystem.displayM);
 
       switch (evt.kind) {
@@ -392,35 +398,37 @@ export class Simulation {
     this.conductor.dispatchUpTo(nowMs);
     this._driveAutoplay(nowMs);
 
-    // Drain autoplay presses stamped up to this step's time. Hold starts
-    // suppress the physical jump (a hold is a grounded slide); everything
-    // else attempts a launch under the usual launch/retarget rules, with
-    // the matched kick's velocity when the press hit a chart note.
+    // Drain autoplay presses stamped up to this step's time. Hold notes
+    // still score as slides once grounded (performer hold pose), but the
+    // opening press of a roll ALWAYS launches — otherwise dense bass rolls
+    // plant Midio motionless for the whole hold span (often seconds).
+    // Chart/player taps never silently vanish mid-hang: onPlayerTap force-
+    // cuts the current arc if needed (see JumpController).
     while (this.inputQueue.length && this.inputQueue[0].tMs <= nowMs) {
       const ev = this.inputQueue.shift();
       if (ev.kind === 'down') {
         const res = this.judge.onTapDown(ev.tMs);
-        if (!res.startedHold) {
-          // Accent anchoring: the takeoff itself stays chart-timed
-          // (obstacles are placed against it), but its height rides his own
-          // line -- a lead-lane note under a jump (or, pre-casting, a heavy
-          // bass moment) makes that jump bigger, never smaller, so
-          // clearance only ever improves.
-          const accentAtTakeoff = this._takeoffAccent(ev.tMs);
-          const vel = Math.min(1, (res.matchedVel ?? 0.7) * (1 + 0.3 * accentAtTakeoff));
-          const tapEvt = { tMs: ev.tMs, vel };
-          // A tap before the character hits the ground is a double jump —
-          // budgeted per 4-/8-measure phrase, then feet-first physics again.
-          let performed = false;
-          if (this.jump.airborne) {
-            const grant = this.airSeq.tryConsume(ev.tMs);
-            if (grant) {
-              performed = this.jump.airJump(tapEvt, grant.boostMul, grant);
-              if (!performed) this.airSeq.refund(); // landed by tMs after all
-            }
+        // Accent anchoring: the takeoff itself stays chart-timed
+        // (obstacles are placed against it), but its height rides his own
+        // line -- a lead-lane note under a jump (or, pre-casting, a heavy
+        // bass moment) makes that jump bigger, never smaller, so
+        // clearance only ever improves.
+        const accentAtTakeoff = this._takeoffAccent(ev.tMs);
+        const vel = Math.min(1, (res.matchedVel ?? 0.7) * (1 + 0.3 * accentAtTakeoff));
+        const tapEvt = { tMs: ev.tMs, vel };
+        // A tap before the character hits the ground is a double jump —
+        // budgeted per 4-/8-measure phrase; if the budget is spent (or the
+        // air jump declines), force-relaunch via onPlayerTap so the chart
+        // beat is never swallowed.
+        let performed = false;
+        if (this.jump.airborne) {
+          const grant = this.airSeq.tryConsume(ev.tMs);
+          if (grant) {
+            performed = this.jump.airJump(tapEvt, grant.boostMul, grant);
+            if (!performed) this.airSeq.refund(); // landed by tMs after all
           }
-          if (!performed) this.jump.onPlayerTap(tapEvt);
         }
+        if (!performed) this.jump.onPlayerTap(tapEvt);
       } else {
         this.judge.onTapUp(ev.tMs);
       }

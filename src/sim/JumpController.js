@@ -216,7 +216,7 @@ export class JumpController {
       this.pendingGhostKick = { vel: evt.vel };
       return;
     }
-    this._launchOrRetarget(evt, tMs);
+    this._launchOrRetarget(evt, tMs); // kicks stay inert mid-hang; only player taps force
   }
 
   /** Player-driven mode: kicks no longer launch jumps, but the inter-kick
@@ -247,7 +247,7 @@ export class JumpController {
     const tMs = evt.tMs;
     this.update(tMs); // resolve any landing/compress transition due by tMs first
     this._advanceKickCursor(tMs);
-    this._launchOrRetarget(evt, tMs);
+    this._launchOrRetarget(evt, tMs, { forceTakeoff: true });
   }
 
   /**
@@ -307,7 +307,7 @@ export class JumpController {
     this.lastKickMs = nowMs;
   }
 
-  _launchOrRetarget(evt, nowMs) {
+  _launchOrRetarget(evt, nowMs, { forceTakeoff = false } = {}) {
     const H = this.hBase * (0.6 + 0.8 * evt.vel) * this.P.live.jumpHeight;
     // Land ON the next audible kick when one falls in range (searched
     // fresh from the cursor _advanceKickCursor just placed at THIS kick's
@@ -353,9 +353,25 @@ export class JumpController {
         const D = scheduledJumpD(retargetLaunchMs, nextKickMs, this.beatPeriodMs);
         this.compress = { startMs: nowMs, fromY: this.y, dur: RETARGET_FALL_MS };
         this._pendingLaunch = { H: H * shortHopHeightMul(D), D, vel: evt.vel };
+        return;
       }
     }
-    // Mid launch/hang: ignore — already committed, avoids impossible double-jumps.
+
+    // Mid launch/hang (or late fall past the retarget window): raw kicks stay
+    // inert — already committed, avoids impossible double-jumps from every
+    // layered onset. Player/chart taps (forceTakeoff) cut the arc and
+    // relaunch so a takeoff note is never silently dropped.
+    if (forceTakeoff && this.state === 'AIR') {
+      this.compress = null;
+      this._pendingLaunch = null;
+      const Ha = (1 - W) * this.H;
+      const remaining = Math.max(1, this.jumpStartMs + this.D - nowMs);
+      this._land((2 * Ha) / (GAMMA * Math.max(this.D * GAMMA, remaining)));
+      const nextKickMs = nextLandingKickMs(this._kickTimes, nowMs, this._kickIdx + 1);
+      const D = scheduledJumpD(nowMs, nextKickMs, this.beatPeriodMs);
+      this.lastLaunchVel = evt.vel;
+      this._launch(nowMs, H * shortHopHeightMul(D), D);
+    }
   }
 
   _launch(nowMs, H, D) {

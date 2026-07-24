@@ -2,7 +2,7 @@
 // rule 2, §6.1). Every subsystem's "now" derives from ctx.currentTime.
 // Because we query ctx.currentTime fresh every rAF frame rather than caching
 // a performance.now()-based mirror, there is no drift to IIR-correct here.
-import { outputLatencyMs } from '../core/ChoreoClock.js';
+import { outputLatencyMs, BLUETOOTH_LATENCY_FLOOR_MS } from '../core/ChoreoClock.js';
 
 export class AudioEngine {
   constructor() {
@@ -16,6 +16,10 @@ export class AudioEngine {
     this._pausedAtMs = 0;
     this.playing = false;
     this.sourceNode = null;
+    // When true, outputLatencyMs floors at BLUETOOTH_LATENCY_FLOOR_MS so
+    // beat-anchored visuals stay on the heard beat with BT headphones that
+    // under-report AudioContext.outputLatency.
+    this.bluetoothLatencyMode = false;
   }
 
   async resume() {
@@ -45,9 +49,11 @@ export class AudioEngine {
   /** How far the HEARD signal lags the clock above (see ChoreoClock.js):
    *  base (buffer) latency plus the device/output path. Decorative
    *  beat-anchored visuals subtract this so their peaks line up with the
-   *  sound as heard rather than as scheduled. */
+   *  sound as heard rather than as scheduled. Bluetooth latency mode
+   *  raises a floor when the browser under-reports the path. */
   get outputLatencyMs() {
-    return outputLatencyMs(this.ctx);
+    const floor = this.bluetoothLatencyMode ? BLUETOOTH_LATENCY_FLOOR_MS : 0;
+    return outputLatencyMs(this.ctx, floor);
   }
 
   decodeFile(arrayBuffer) {

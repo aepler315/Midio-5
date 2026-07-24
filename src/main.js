@@ -16,7 +16,10 @@ import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
-import { getReducedFlash, setReducedFlash, getLyricsDisabled, setLyricsDisabled } from './ui/Accessibility.js';
+import {
+  getReducedFlash, setReducedFlash, getLyricsDisabled, setLyricsDisabled,
+  getBluetoothLatency, setBluetoothLatency,
+} from './ui/Accessibility.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
@@ -96,6 +99,8 @@ const lyricsFindBtnEl = document.getElementById('lyricsFindBtn');
 const lyricsSkipBtnEl = document.getElementById('lyricsSkipBtn');
 const lyricsNoneBtnEl = document.getElementById('lyricsNoneBtn');
 const noLyricsBtnEl = document.getElementById('noLyricsBtn');
+const btLatencyBtnEl = document.getElementById('btLatencyBtn');
+const btLatencyHudBtnEl = document.getElementById('btLatencyHudBtn');
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -118,6 +123,7 @@ let rafHandle = null; // tracks the pending frame() call so a mid-song file
 let fontModalView = 'list'; // 'list' (visible fonts, click-to-hide) | 'hidden' (hidden fonts, click-to-unhide)
 let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted accessibility toggle
 let lyricsDisabled = getLyricsDisabled(); // "No lyrics": persisted opt-out from the lyric fetch/prompt
+let bluetoothLatency = getBluetoothLatency(); // floor output-latency for BT headphones
 
 /** Reflect the "No lyrics" preference on the loader toggle button. */
 function syncNoLyricsBtn() {
@@ -133,6 +139,31 @@ if (noLyricsBtnEl) {
     syncNoLyricsBtn();
   });
 }
+
+/** Reflect Bluetooth latency mode on loader + in-game HUD buttons and the AudioEngine. */
+function syncBtLatencyUi() {
+  const on = bluetoothLatency;
+  if (btLatencyBtnEl) {
+    btLatencyBtnEl.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btLatencyBtnEl.textContent = `BT latency: ${on ? 'on' : 'off'}`;
+  }
+  if (btLatencyHudBtnEl) {
+    btLatencyHudBtnEl.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btLatencyHudBtnEl.textContent = on ? 'BT lag on' : 'BT lag';
+    btLatencyHudBtnEl.title = on
+      ? 'Bluetooth latency mode on (~200 ms floor). Click to turn off.'
+      : 'Bluetooth latency mode (~200 ms floor for headphones). Remembered.';
+  }
+  if (audioEngine) audioEngine.bluetoothLatencyMode = on;
+}
+function toggleBluetoothLatency() {
+  bluetoothLatency = !bluetoothLatency;
+  setBluetoothLatency(bluetoothLatency);
+  syncBtLatencyUi();
+}
+syncBtLatencyUi();
+if (btLatencyBtnEl) btLatencyBtnEl.addEventListener('click', toggleBluetoothLatency);
+if (btLatencyHudBtnEl) btLatencyHudBtnEl.addEventListener('click', toggleBluetoothLatency);
 // Set per load path (true only for raw decoded audio, which already has
 // every voice baked into the buffer) and read by applySynthMutePolicy().
 let muteTimelineSynth = false;
@@ -201,6 +232,7 @@ function fitCanvas() {
 async function bootAudio() {
   if (audioEngine) return;
   audioEngine = new AudioEngine();
+  audioEngine.bluetoothLatencyMode = bluetoothLatency;
   await audioEngine.resume();
   const fallback = new SimpleSynth(audioEngine);
   sf2Engine = new Sf2Synth(audioEngine);

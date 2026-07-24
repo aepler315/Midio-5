@@ -74,26 +74,28 @@ export function mergeMeshes(meshes) {
   return { mesh: { vertices, edges }, offsets };
 }
 
-// --- Midio: the Astronaut Cowboy. Same angular spectral-glyph language as
-// the rest of the cast (irregular shard, sparse spokes/braces, nothing
-// round or cute) but less abstract: readable cowboy hat (crown + brim),
-// helmeted head (blink core sits on the visor axis), suit torso with a
-// backpack/tank brace, belt/holster cross-brace, and boots on the ground
-// line (y=0, half-width within his 23px collision body). Slightly
-// asymmetric so he stays a character, not clip-art. ---
-export const MIDIO_BODY = shardMesh({ x: 0, y: -26 }, [
-  { x: 0, y: -56 },    // hat crown tip
-  { x: 17, y: -46 },   // right hat brim
-  { x: 19, y: -32 },   // right helmet / shoulder pod
-  { x: 15, y: -15 },   // right holster / hip
-  { x: 12, y: 0 },     // right boot (ground contact)
-  { x: 0, y: -10 },    // keel notch between boots
-  { x: -12, y: 0 },    // left boot (ground contact)
-  { x: -18, y: -18 },  // left hip / tank lower
-  { x: -16, y: -44 },  // left hat brim (slightly higher: asymmetry)
-], { spokeEvery: 2, braces: [[1, 4], [3, 6], [6, 8]] });
+// --- Midio: the Astronaut Cowboy (refined). Same angular spectral-glyph
+// language (irregular shard, sparse spokes/braces — nothing round or cute)
+// with clearer figure landmarks:
+//   • tall hat crown + wide brim that overhangs the head
+//   • inset helmet/visor row (blink core sits on the visor axis)
+//   • narrower suit torso under the brim, holster hip, boot soles on y=0
+//   • rear oxygen tank as a left-back brace spike
+// Half-width stays inside the 23px collision body. Slight asymmetry so he
+// reads as a character, not clip-art. Nine rim verts so apotheosis fold still maps. ---
+export const MIDIO_BODY = shardMesh({ x: 0, y: -27 }, [
+  { x: 0, y: -58 },     // 0 hat crown tip
+  { x: 21, y: -45 },    // 1 right brim tip (wider than the body)
+  { x: 11, y: -36 },    // 2 right helmet temple (inset under brim)
+  { x: 16, y: -18 },    // 3 right shoulder / holster hip
+  { x: 11, y: 0 },      // 4 right boot sole
+  { x: 0, y: -11 },     // 5 keel between boots
+  { x: -11, y: 0 },     // 6 left boot sole
+  { x: -20, y: -28 },   // 7 oxygen tank spike (rear bulk)
+  { x: -19, y: -47 },   // 8 left brim (slightly higher: asymmetry)
+], { spokeEvery: 2, braces: [[1, 3], [3, 6], [6, 8]] });
 // Visor core: hexagram on the blink axis (MIDIO_EYE_CY = -31 in Renderer).
-export const MIDIO_EYE = hexagramMesh(5.5, 0, -31);
+export const MIDIO_EYE = hexagramMesh(5.2, 1, -31);
 export const MIDIO_MESH = mergeMeshes([MIDIO_BODY, MIDIO_EYE]).mesh;
 
 // --- Apotheosis: Midio's earned transformation (spec: charge earned by
@@ -114,8 +116,8 @@ for (let k = 0; k < _bodyRim.length; k++) {
   _foldedRim.push({ ..._bodyRim[k] });
   _foldedRim.push(midpoint(_bodyRim[k], _bodyRim[(k + 1) % _bodyRim.length]));
 }
-// original braces [[1,4],[3,6],[6,8]] rim-indices, doubled for 18-rim fold
-const _apoBraces = [[2, 8], [6, 12], [12, 16]];
+// original braces [[1,3],[3,6],[6,8]] rim-indices, doubled for 18-rim fold
+const _apoBraces = [[2, 6], [6, 12], [12, 16]];
 export const MIDIO_APOTHEOSIS_FOLDED = shardMesh(_apoHub, _foldedRim, {
   spokeEvery: 2, braces: _apoBraces,
 });

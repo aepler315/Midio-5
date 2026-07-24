@@ -14,6 +14,7 @@ import { clamp01 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { LerpCache, hexToRgb } from '../utils/color.js';
 import { nearestPaletteColor, pixelGridWidth, pixelGridHeight, SCANLINE_ALPHA, SCANLINE_PERIOD_PX } from './RetroFilter.js';
+import { hypeFrameStyle } from '../sim/HypeDirector.js';
 
 const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
@@ -611,33 +612,37 @@ export class Renderer {
   }
 
   /** The energy frame: a thin border that breathes with the track, slams on
-   * kicks, and echoes the whole frame during a drop surge -- the always-on,
-   * any-distance signal that the screen is running on the music. */
+   * kicks, and echoes the whole frame during a drop surge. Calm sections
+   * nearly extinguish the idle rim and kick strobe (see hypeFrameStyle) so
+   * quiet music doesn't flash the edges. */
   _drawHypeFrame(ctx, canvas, sim) {
     const hype = sim.hype;
     const color = sim.biomes && sim.biomes.currentHaloColor ? sim.biomes.currentHaloColor() : '#ffffff';
+    const calmLevel = sim.calm ? sim.calm.level : 0;
+    const style = hypeFrameStyle(hype, calmLevel);
 
     // Frame echo: on hard hits the previous frame ghosts outward once.
     // The Reel: reduced-flash disables it outright (a rapid self-blit
     // ghost is exactly the kind of flash the toggle exists to remove).
-    const echo = sim.reducedFlash ? 0 : Math.max(hype.surge > 0.45 ? hype.surge : 0, hype.slam > 0.7 ? hype.slam * 0.8 : 0);
+    // Calm also kills most of the echo via hypeFrameStyle.
+    const echo = sim.reducedFlash ? 0 : style.echo;
     if (echo > 0.05 && (sim.perf ? sim.perf.heavyPostFx : true)) {
       const off = 3 + 5 * echo;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.14 * echo;
+      ctx.globalAlpha = 0.12 * echo;
       ctx.drawImage(canvas, this._echoFlip ? off : -off, 0);
       ctx.restore();
       this._echoFlip = !this._echoFlip;
     }
 
-    const breathe = 0.08 + 0.20 * hype.fast + 0.45 * hype.slam + 0.3 * hype.surge;
+    if (style.alpha < 0.02) return; // fully calm, no rim stroke
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.strokeStyle = color;
-    ctx.globalAlpha = Math.min(0.75, breathe);
-    ctx.lineWidth = 2 + 9 * hype.slam + 6 * hype.surge;
-    const inset = 5 + 3 * hype.slam;
+    ctx.globalAlpha = style.alpha;
+    ctx.lineWidth = style.lineWidth;
+    const inset = style.inset;
     ctx.beginPath();
     ctx.roundRect(inset, inset, canvas.width - inset * 2, canvas.height - inset * 2, 14);
     ctx.stroke();

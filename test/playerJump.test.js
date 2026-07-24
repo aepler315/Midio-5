@@ -56,13 +56,27 @@ test('noteKickTiming moves the EMA without ever launching', () => {
   assert.equal(jump.y, 0);
 });
 
-test('a tap mid launch/hang is physically inert (no double-jump)', () => {
+test('a player tap mid launch/hang force-relaunches (chart takeoffs never vanish)', () => {
   const jump = makeJump();
   jump.onPlayerTap({ tMs: 0, vel: 0.7 }); // D = 500 at the default beat period
   const midHang = jump.D * (A + B / 2);
   jump.update(midHang);
   jump.onPlayerTap({ tMs: midHang, vel: 1 });
-  assert.equal(jump.jumpStartMs, 0, 'still riding the original arc');
+  assert.equal(jump.jumpStartMs, midHang, 'force-cut and relaunched on the press');
+  assert.equal(jump.lastLaunchVel, 1);
+  assert.equal(jump.compress, null);
+  assert.equal(jump.airborne, true);
+});
+
+test('raw onKick mid hang stays inert (only player taps force-relaunch)', () => {
+  const jump = makeJump();
+  jump.setKickTimes([0, 500, 1000, 1500]);
+  jump.onKick({ tMs: 0, vel: 0.7, kick: true });
+  const midHang = jump.D * (A + B / 2);
+  jump.update(midHang);
+  const start = jump.jumpStartMs;
+  jump.onKick({ tMs: midHang, vel: 1, kick: true });
+  assert.equal(jump.jumpStartMs, start, 'kick mid hang must not force-relaunch');
   assert.equal(jump.compress, null);
 });
 
