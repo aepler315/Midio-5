@@ -17,7 +17,7 @@ const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
 const KP = 90, KD = 12;
 const SNAP = 0.70;
-const DRAW_SCALE = 1.8; // the stage got bigger: render-only
+const DRAW_SCALE = 5.4; // 3× the previous 1.8 stage scale — she's the star of the sky
 const BANK_GAIN = 0.0016, BANK_MAX = 0.6; // she rolls into her darts
 const SLASH_LIFE_SEC = 0.18;
 // Anticipation (ChoreoClock): she launches her dart this far BEFORE each

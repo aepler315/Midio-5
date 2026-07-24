@@ -61,11 +61,32 @@ test('a player tap mid launch/hang force-relaunches (chart takeoffs never vanish
   jump.onPlayerTap({ tMs: 0, vel: 0.7 }); // D = 500 at the default beat period
   const midHang = jump.D * (A + B / 2);
   jump.update(midHang);
+  const yBefore = jump.y;
   jump.onPlayerTap({ tMs: midHang, vel: 1 });
-  assert.equal(jump.jumpStartMs, midHang, 'force-cut and relaunched on the press');
+  assert.ok(Math.abs(jump.y - yBefore) < 1e-6, 'y stays C0-continuous through the force-relaunch');
   assert.equal(jump.lastLaunchVel, 1);
   assert.equal(jump.compress, null);
   assert.equal(jump.airborne, true);
+  // Arc was re-seeded around the press (entry may sit mid-launch phase).
+  assert.ok(jump.jumpStartMs <= midHang, 'new arc is anchored at or before the press');
+  assert.ok(jump.jumpStartMs + jump.D > midHang, 'and still has airtime after the press');
+});
+
+test('force-relaunch at the apex never teleports to the ground', () => {
+  const jump = makeJump();
+  jump.onPlayerTap({ tMs: 0, vel: 0.8 });
+  // Apex hang sits at u in [A, A+B); sample the middle of the hang.
+  const apexMs = jump.D * (A + B / 2);
+  jump.update(apexMs);
+  assert.ok(jump.y > 100, `should be high at apex, got y=${jump.y}`);
+  const yApex = jump.y;
+  jump.onPlayerTap({ tMs: apexMs, vel: 0.9 });
+  assert.equal(jump.airborne, true);
+  assert.ok(Math.abs(jump.y - yApex) < 1e-6, `must not snap y to 0 at apex (y=${jump.y})`);
+  assert.ok(jump.y > 100, 'still high after the force-relaunch');
+  // A few steps later he should still be climbing or hanging, not grounded.
+  jump.update(apexMs + 40);
+  assert.ok(jump.y > 50, `must not have teleported to the ground (y=${jump.y})`);
 });
 
 test('raw onKick mid hang stays inert (only player taps force-relaunch)', () => {

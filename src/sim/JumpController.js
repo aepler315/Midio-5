@@ -361,16 +361,45 @@ export class JumpController {
     // inert — already committed, avoids impossible double-jumps from every
     // layered onset. Player/chart taps (forceTakeoff) cut the arc and
     // relaunch so a takeoff note is never silently dropped.
+    //
+    // CRITICAL: relaunch is C0-continuous from the CURRENT height — never
+    // _land() then _launch() from y=0. The old land-and-relaunch snapped
+    // Midio from the apex (or any mid-arc height) straight to the ground
+    // for a frame, which read as a teleport-to-ground at the top of the
+    // jump whenever a chart/player takeoff hit mid-hang after the air-jump
+    // budget was spent (or any other forceTakeoff mid-arc).
     if (forceTakeoff && this.state === 'AIR') {
       this.compress = null;
       this._pendingLaunch = null;
-      const Ha = (1 - W) * this.H;
-      const remaining = Math.max(1, this.jumpStartMs + this.D - nowMs);
-      this._land((2 * Ha) / (GAMMA * Math.max(this.D * GAMMA, remaining)));
+      const yNow = Math.max(0, this.y);
+      // Normal takeoff height, inflated only as much as needed so the
+      // launch phase can pass through the height we're already at.
+      const Htarget = H; // already includes vel * jumpHeight; short-hop applied below
       const nextKickMs = nextLandingKickMs(this._kickTimes, nowMs, this._kickIdx + 1);
-      const D = scheduledJumpD(nowMs, nextKickMs, this.beatPeriodMs);
+      const gap = nextKickMs != null ? nextKickMs - nowMs : NaN;
+      // Seed H from the target (or yNow if higher), invert launch phase for
+      // the entry point p, then solve D so the arc still lands on the next
+      // kick — same continuity math as airJump, without the double-jump boost.
+      let H2 = Math.max(Htarget, yNow / (1 - W));
+      let p = 1 - Math.sqrt(Math.max(0, 1 - yNow / ((1 - W) * H2)));
+      let D;
+      if (gap >= LANDING_MIN_GAP_MS && gap <= 2000) {
+        // Near the ground (p≈0) keep short-hop D < D_MIN so back-to-back
+        // chart notes still land on the next kick; mid-arc entries clamp
+        // to [D_MIN, D_MAX] like airJump.
+        const raw = gap / (1 - p * A);
+        D = p < 0.05 ? Math.min(raw, D_MAX) : clamp(raw, D_MIN, D_MAX);
+      } else {
+        D = clamp(this.beatPeriodMs, D_MIN, D_MAX);
+      }
+      H2 = Math.max(Htarget * shortHopHeightMul(D), yNow / (1 - W));
+      p = 1 - Math.sqrt(Math.max(0, 1 - yNow / ((1 - W) * H2)));
       this.lastLaunchVel = evt.vel;
-      this._launch(nowMs, H * shortHopHeightMul(D), D);
+      this.state = 'AIR';
+      this.jumpStartMs = nowMs - p * A * D;
+      this.H = H2;
+      this.D = D;
+      this.y = yNow;
     }
   }
 
