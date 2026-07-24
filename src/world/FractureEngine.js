@@ -9,8 +9,20 @@ import { ObjectPool } from '../utils/ObjectPool.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { Role } from '../core/NoteEvent.js';
 
-const THRESHOLDS = [0.15, 0.27, 0.39, 0.51, 0.63, 0.75, 0.85, 0.93];
-const GROW_MS = 1800;
+// Many small ridge pieces, spaced evenly across song progress so the
+// mountain draws itself gradually through the whole track (not a late pile-up).
+export const RIDGE_GEN_COUNT = 16;
+/** Even stress thresholds in [start, end] for progressive ridge birth. */
+export function buildStressThresholds(count = RIDGE_GEN_COUNT, start = 0.04, end = 0.92) {
+  const n = Math.max(1, count | 0);
+  if (n === 1) return [start];
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) out[i] = start + ((end - start) * i) / (n - 1);
+  return out;
+}
+const THRESHOLDS = buildStressThresholds(RIDGE_GEN_COUNT);
+// Slow grow: each ridge inks on over several seconds so births don't flash.
+const GROW_MS = 3400;
 const KICK_SYNC_WINDOW_MS = 120;
 const FREEZE_LEAD_MS = 300;
 // Shatter timing: a short hold on the frozen frame, then a long ease-out
@@ -61,17 +73,16 @@ function jaggedChord(a, b, nMids, rand, ampPx) {
 
 /**
  * Pure: a deterministic "impossible Denali" ridge plan for the screen.
- * Returns an array of polylines (one per progressive fracture generation),
- * each ready to grow as a crack tree. Peaks sit high (small canvas y);
- * foothills sit lower on the frame. Impossible geometry: floating spur
- * peaks, ridges that refuse to meet, a sky-hook summit above the massif.
+ * Returns many *small* polylines (one birth each) so the massif inks on
+ * gradually across the song. Peaks sit high (small canvas y); foothills
+ * sit lower. Impossible geometry: floating spur peak, sky-hook ridge.
  *
  * @param {number} w canvas width
  * @param {number} h canvas height
  * @param {number} seed
- * @param {number} [count=8] number of ridge polylines (matches THRESHOLDS)
+ * @param {number} [count] number of ridge polylines (matches THRESHOLDS)
  */
-export function buildMountainRidgePolylines(w, h, seed, count = THRESHOLDS.length) {
+export function buildMountainRidgePolylines(w, h, seed, count = RIDGE_GEN_COUNT) {
   const rand = mulberry32((seed ^ 0xde7a11) >>> 0 || 1);
   const foothills = h * 0.78;
   const midRidge = h * 0.48;
@@ -80,111 +91,87 @@ export function buildMountainRidgePolylines(w, h, seed, count = THRESHOLDS.lengt
 
   // Major summits (Denali massif bias: dominant central peak, satellite shoulders).
   const peaks = [
-    { x: w * 0.12, y: foothills - h * 0.08 }, // west foothill
-    { x: w * 0.22, y: midRidge + h * 0.06 },  // west shoulder
-    { x: w * 0.34, y: high + h * 0.10 },      // west false summit
-    { x: w * 0.46, y: high },                 // main summit (Denali)
-    { x: w * 0.55, y: high + h * 0.07 },      // east false summit
-    { x: w * 0.68, y: midRidge },             // east ridge peak
-    { x: w * 0.82, y: midRidge + h * 0.12 },  // east shoulder
-    { x: w * 0.94, y: foothills - h * 0.05 }, // far east foothill
+    { x: w * 0.12, y: foothills - h * 0.08 },
+    { x: w * 0.22, y: midRidge + h * 0.06 },
+    { x: w * 0.34, y: high + h * 0.10 },
+    { x: w * 0.46, y: high },
+    { x: w * 0.55, y: high + h * 0.07 },
+    { x: w * 0.68, y: midRidge },
+    { x: w * 0.82, y: midRidge + h * 0.12 },
+    { x: w * 0.94, y: foothills - h * 0.05 },
   ].map((p) => ({
     x: p.x + (rand() - 0.5) * w * 0.02,
     y: p.y + (rand() - 0.5) * h * 0.02,
   }));
 
-  // Impossible: a floating summit that never quite joins the massif.
   const floating = {
     x: w * (0.40 + rand() * 0.08),
     y: skyHook + rand() * h * 0.04,
   };
-  // Impossible: inverted spur that climbs *into* the sky from the main summit.
   const skySpur = {
     x: peaks[3].x + w * 0.06,
     y: skyHook + h * 0.02,
   };
 
+  // Small chord pieces — one birth each — so the range appears bit by bit.
   const plans = [];
+  const pushChord = (a, b, mids = 2, amp = 8) => {
+    plans.push(polylineFromPoints(jaggedChord(a, b, mids, rand, amp)));
+  };
 
-  // Gen 0: main crest west → main summit (the big silhouette edge)
-  plans.push(polylineFromPoints(
-    jaggedChord(peaks[0], peaks[1], 2, rand, 10)
-      .concat(jaggedChord(peaks[1], peaks[2], 3, rand, 14).slice(1))
-      .concat(jaggedChord(peaks[2], peaks[3], 3, rand, 16).slice(1)),
-  ));
+  // Main crest, peak-to-peak (west → summit → east)
+  for (let i = 0; i < peaks.length - 1; i++) {
+    pushChord(peaks[i], peaks[i + 1], 2 + (i % 2), 7 + (i % 3));
+  }
 
-  // Gen 1: main summit → east range
-  plans.push(polylineFromPoints(
-    jaggedChord(peaks[3], peaks[4], 3, rand, 14)
-      .concat(jaggedChord(peaks[4], peaks[5], 3, rand, 12).slice(1))
-      .concat(jaggedChord(peaks[5], peaks[6], 2, rand, 10).slice(1)),
-  ));
-
-  // Gen 2: east foothills close
-  plans.push(polylineFromPoints(
-    jaggedChord(peaks[6], peaks[7], 3, rand, 11),
-  ));
-
-  // Gen 3: lower continuous ridgeline (foothill traverse)
+  // Foothill traverse as several short segments
   {
     const base = [];
-    const n = 7;
+    const n = 6;
     for (let i = 0; i < n; i++) {
       const t = i / (n - 1);
       base.push({
-        x: w * (0.06 + 0.88 * t),
-        y: foothills - h * 0.04 * Math.sin(t * Math.PI * 2.2 + 0.4)
-          - h * 0.03 * Math.sin(t * Math.PI * 5)
-          + (rand() - 0.5) * 8,
+        x: w * (0.08 + 0.84 * t),
+        y: foothills - h * 0.035 * Math.sin(t * Math.PI * 2.2 + 0.4)
+          - h * 0.02 * Math.sin(t * Math.PI * 5)
+          + (rand() - 0.5) * 6,
       });
     }
-    plans.push(polylineFromPoints(base));
+    for (let i = 0; i < base.length - 1; i++) pushChord(base[i], base[i + 1], 1, 5);
   }
 
-  // Gen 4: south spur from main summit (steep couloir edge)
-  plans.push(polylineFromPoints(
-    jaggedChord(peaks[3], { x: peaks[3].x - w * 0.04, y: foothills - h * 0.02 }, 4, rand, 12),
-  ));
+  // Couloir / spur pieces (subtle interior structure)
+  pushChord(peaks[3], { x: peaks[3].x - w * 0.04, y: foothills - h * 0.02 }, 3, 7);
+  pushChord(peaks[4], { x: floating.x - w * 0.04, y: floating.y + h * 0.12 }, 2, 6);
+  pushChord(peaks[2], { x: peaks[2].x + w * 0.03, y: foothills - h * 0.06 }, 2, 6);
+  pushChord(peaks[5], { x: peaks[5].x - w * 0.05, y: foothills - h * 0.04 }, 2, 6);
 
-  // Gen 5: north-east spur + impossible non-join to floating peak (gap)
-  {
-    const approach = jaggedChord(peaks[4], { x: floating.x - w * 0.04, y: floating.y + h * 0.12 }, 3, rand, 11);
-    plans.push(polylineFromPoints(approach));
-  }
+  // Impossible floating peak (two short strokes, not a loud outline)
+  pushChord(
+    { x: floating.x - w * 0.04, y: floating.y + h * 0.05 },
+    floating,
+    1, 4,
+  );
+  pushChord(
+    floating,
+    { x: floating.x + w * 0.045, y: floating.y + h * 0.06 },
+    1, 4,
+  );
 
-  // Gen 6: floating peak outline (impossible island massif in the sky)
-  {
-    const fp = floating;
-    const island = [
-      { x: fp.x - w * 0.05, y: fp.y + h * 0.06 },
-      { x: fp.x - w * 0.02, y: fp.y + h * 0.01 },
-      fp,
-      { x: fp.x + w * 0.025, y: fp.y + h * 0.015 },
-      { x: fp.x + w * 0.055, y: fp.y + h * 0.07 },
-    ];
-    plans.push(polylineFromPoints(
-      island.flatMap((p, i, arr) => (i === 0 ? [p] : jaggedChord(arr[i - 1], p, 1, rand, 6).slice(1))),
-    ));
-  }
+  // Sky-hook spur (impossible climb off the massif)
+  pushChord(peaks[3], skySpur, 2, 5);
+  pushChord(skySpur, { x: skySpur.x + w * 0.07, y: high + h * 0.05 }, 1, 4);
 
-  // Gen 7: sky-hook spur from main summit (ridge that climbs off the massif)
-  plans.push(polylineFromPoints(
-    jaggedChord(peaks[3], skySpur, 4, rand, 10)
-      .concat(jaggedChord(skySpur, { x: skySpur.x + w * 0.08, y: high + h * 0.05 }, 2, rand, 8).slice(1)),
-  ));
-
-  // Pad / trim to requested count with minor interior ridgets if needed.
+  // Pad with faint mid-ridge connectors if we still need more generations
   while (plans.length < count) {
     const i = plans.length;
     const a = peaks[i % peaks.length];
-    const b = peaks[(i + 2) % peaks.length];
-    plans.push(polylineFromPoints(
-      jaggedChord(
-        { x: a.x, y: lerp(a.y, foothills, 0.35) },
-        { x: b.x, y: lerp(b.y, foothills, 0.45) },
-        3, rand, 9,
-      ),
-    ));
+    const b = peaks[(i + 3) % peaks.length];
+    pushChord(
+      { x: a.x, y: lerp(a.y, foothills, 0.4) },
+      { x: b.x, y: lerp(b.y, foothills, 0.5) },
+      2, 5,
+    );
   }
   return plans.slice(0, count);
 }
@@ -193,13 +180,13 @@ export function buildMountainRidgePolylines(w, h, seed, count = THRESHOLDS.lengt
  * Attach subtle branch cracks (couloirs / secondary spurs) along a ridge
  * polyline so it still reads as glass fracture, not a single stroked outline.
  */
-function attachRidgeBranches(poly, rand, maxDepth = 2, depth = 0) {
+function attachRidgeBranches(poly, rand, maxDepth = 1, depth = 0) {
   if (depth >= maxDepth || poly.nodes.length < 3) return poly;
   const children = [];
   let arc = 0;
   for (let i = 0; i < poly.lengths.length; i++) {
     arc += poly.lengths[i];
-    if (rand() > 0.22) continue;
+    if (rand() > 0.12) continue; // sparse couloirs — keep the ridge whisper-quiet
     const origin = poly.nodes[i + 1];
     const prev = poly.nodes[i];
     const heading = (Math.atan2(origin.y - prev.y, origin.x - prev.x) * 180) / Math.PI;
@@ -260,11 +247,11 @@ function drawRevealedPolyline(ctx, nodes, lengths, total, revealLen, glow = true
       break;
     }
   }
-  // Soft ice-blue ridge glow (perf governor can disable via glow=false).
+  // Hairline glass stroke — subtle enough to read as frost, not scaffolding.
   if (glow) {
     ctx.strokeStyle = '#9fd9ff';
-    ctx.globalAlpha = 0.18;
-    ctx.lineWidth = 2.6;
+    ctx.globalAlpha = 0.07;
+    ctx.lineWidth = 1.5;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.beginPath();
@@ -276,13 +263,13 @@ function drawRevealedPolyline(ctx, nodes, lengths, total, revealLen, glow = true
   }
 
   ctx.strokeStyle = '#ffffff';
-  ctx.globalAlpha = 0.48;
+  ctx.globalAlpha = 0.22;
   let s = 0;
   for (let i = 1; i < pts.length; i++) {
     const segLen = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
-    const wStart = lerp(1.8, 0.45, s / total);
+    const wStart = lerp(0.95, 0.3, s / total);
     s += segLen;
-    const wEnd = lerp(1.8, 0.45, Math.min(1, s / total));
+    const wEnd = lerp(0.95, 0.3, Math.min(1, s / total));
     ctx.lineWidth = (wStart + wEnd) / 2;
     ctx.beginPath();
     ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
@@ -329,7 +316,8 @@ export class FractureEngine {
     this._pendingBirths = [];
     this.cracks = [];
 
-    // Precomputed impossible-Denali ridge plan — progressive births walk it.
+    // Precomputed impossible-Denali ridge plan — progressive births walk it
+    // across the whole song (one small piece per stress threshold).
     this._ridgePlan = buildMountainRidgePolylines(this.w, this.h, songSeed, THRESHOLDS.length);
 
     this.flashAlpha = 0;
@@ -367,8 +355,11 @@ export class FractureEngine {
       ? this._barEnergyHistory.reduce((a, b) => a + b, 0) / this._barEnergyHistory.length
       : 0;
 
+    // Mostly linear song progress so ridge pieces birth evenly from ~4% to
+    // ~92% of the track. Energy and impacts only nudge timing slightly —
+    // they no longer clump all cracks into the loud final third.
     const tNorm = this.durationMs > 0 ? clamp01(nowMs / this.durationMs) : 0;
-    this.stress = clamp(0.70 * tNorm ** 1.4 + 0.25 * eBar + this.impactStress, 0, 1);
+    this.stress = clamp(0.90 * tNorm + 0.08 * eBar + 0.12 * this.impactStress, 0, 1);
 
     while (this._nextThresholdIdx < THRESHOLDS.length && this.stress >= THRESHOLDS[this._nextThresholdIdx]) {
       const generation = this._nextThresholdIdx;
@@ -405,9 +396,9 @@ export class FractureEngine {
     }, rand, 2, 0);
     assignBirthTimes(tree, birthMs);
     this.cracks.push(tree);
-    // Softer birth flash than the old full-frame blast — a ridge lighting up.
-    this.flashAlpha = 0.55;
-    if (camera) camera.shake(3);
+    // Barely-there birth cue — no white-out, minimal shake.
+    this.flashAlpha = 0.12;
+    if (camera) camera.shake(1.2);
   }
 
   draw(ctx, canvas, { glow = true } = {}) {
@@ -415,7 +406,7 @@ export class FractureEngine {
     ctx.save();
     for (const crack of this.cracks) drawCrackTree(ctx, crack, this._lastNowMs ?? 0, glow);
     if (this.flashAlpha > 0.01) {
-      ctx.globalAlpha = this.flashAlpha * 0.35;
+      ctx.globalAlpha = this.flashAlpha * 0.12;
       ctx.fillStyle = '#cfefff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }

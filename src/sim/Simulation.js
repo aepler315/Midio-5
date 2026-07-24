@@ -325,7 +325,7 @@ export class Simulation {
         case 'holdStart':
           if (evt.tier === 'sour') {
             this.impactFX.judgment(this.worldX, this.midio.groundY, 'sour', particleMul);
-            this.camera.shake(4);
+            this.camera.shake(2.5);
           } else if (evt.tier) { // tier null = late-armed hold: the glow ramp is its own cue
             this.impactFX.judgment(this.worldX, this.midio.groundY, evt.tier, particleMul);
             this.comboSystem.sustain(evt.tMs); // a clean press keeps the combo warm through its airtime
@@ -334,14 +334,14 @@ export class Simulation {
           break;
         case 'sour':
           this.impactFX.judgment(this.worldX, this.midio.groundY, 'sour', particleMul);
-          this.camera.shake(4);
+          this.camera.shake(2.5);
           break;
         case 'holdComplete':
           this.impactFX.splat(this.worldX, this.midio.groundY);
           this.impactFX.ignite(this.worldX, this.midio.groundY);
           break;
         case 'holdChoke':
-          this.camera.shake(5);
+          this.camera.shake(3);
           break;
         default: // 'miss' | 'holdTick': deliberately quiet on the visual side
           break;
@@ -443,7 +443,7 @@ export class Simulation {
     // the Renderer draws off dropAtMs.
     if (this.hype.dropCount !== this._lastDropCount) {
       this._lastDropCount = this.hype.dropCount;
-      this.camera.shake(9);
+      this.camera.shake(5);
     }
     // Lyric structure's epic bias (SectionFusion): zero, and thus a strict
     // no-op, whenever there's no lyric data (biomes.currentKind stays
@@ -456,7 +456,7 @@ export class Simulation {
     });
     if (this.keyDirector.justKeyChange) {
       this.biomes.mandala.reseed(this.keyDirector.lastKeyChange.to);
-      this.camera.shake(6);
+      this.camera.shake(3.5);
     }
     this.coda.update(nowMs);
     this.groundField.flatten = this.coda.unravel; // the ground lies down as the ending arc progresses
@@ -484,7 +484,7 @@ export class Simulation {
 
     this.groundField.update(nowMs, dtSec, this.worldX, this.energyCurves);
     this.midio.groundY = this.groundField.heightAt(this.worldX);
-    if (this.groundField.justRecovered) this.camera.shake(10);
+    if (this.groundField.justRecovered) this.camera.shake(5.5);
 
     if (this.jump.pendingAirJump) {
       // The double jump reads as its own beat: a burst at the character's
@@ -600,7 +600,7 @@ export class Simulation {
     // hole (this takes effect next frame; the weight eases over ~1.5s
     // regardless, so the one-step lag is inaudible/invisible).
     this.ensemble.setPresence(2, this.midasus.voyage.active ? 0 : 1);
-    if (this.midasus.voyage.justLanded) { this.camera.shake(7); }
+    if (this.midasus.voyage.justLanded) { this.camera.shake(4); }
     // The sky notices her presence: the celestial's mandala swells while
     // she's dancing around it, and the accumulated star atlas glints with
     // every beat for the rest of the song.
@@ -613,7 +613,7 @@ export class Simulation {
       && nowMs >= this.conductor.durationMs - 4000 && this.midasus.voyage.atlas.length > 0) {
       this._atlasDetonated = true;
       this.midasus.voyage.detonateAtlas(nowMs);
-      this.camera.shake(9);
+      this.camera.shake(5);
     }
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level, {
       trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
@@ -653,7 +653,7 @@ export class Simulation {
     }
     this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level, this.worldX);
     this.filmFinish.update(nowMs, dtSec, this.calm.level, this.biomes.budget, this.hype);
-    if (this.biomes.cutFlashJustFired) { this.camera.shake(6); }
+    if (this.biomes.cutFlashJustFired) { this.camera.shake(3.5); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
 
     // Orogeny: the mountains build toward the song's energy climax, then

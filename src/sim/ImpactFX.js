@@ -68,7 +68,7 @@ export class ImpactFX {
       });
     }
 
-    if (camera) camera.shake(9 * I);
+    if (camera) camera.shake(5.5 * I);
   }
 
   /** Mario Paint-style paint splat, stamped only on rhythm-clean landings:

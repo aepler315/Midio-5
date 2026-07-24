@@ -2,12 +2,12 @@
 // been removed from the game, so this no longer holds any zoom/punch state --
 // the Renderer applies a fixed framing and only reads shake/roll from here.
 
-// "More and harder" shake: a global multiplier on every shake() amplitude,
-// a longer decay time-constant so each jolt rings harder/longer, and a
-// beefier rotational coupling. Reduced-motion halves it all (see update()).
-const SHAKE_GAIN = 2.0;
-const SHAKE_DECAY_TAU = 0.10; // seconds (was 0.07) -- jolts persist noticeably longer
-const ROLL_COUPLING = 0.0014; // rotational kick per (gained) px of shake
+// Shake was dialed up for a "ferocity" pass (gain 2×, long ring, hard roll).
+// That reads as seasick on long songs -- pull it back so impacts still
+// register without thrashing the frame. Reduced-motion halves it further.
+const SHAKE_GAIN = 0.85;
+const SHAKE_DECAY_TAU = 0.07; // seconds -- short ring, doesn't hang
+const ROLL_COUPLING = 0.0007; // rotational kick per (gained) px of shake
 
 export class CameraDirector {
   constructor() {

@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import {
   FractureEngine,
   buildMountainRidgePolylines,
+  buildStressThresholds,
   polylineFromPoints,
   shatterFadeAlpha,
   shatterMotionU,
+  RIDGE_GEN_COUNT,
 } from '../src/world/FractureEngine.js';
 import { Conductor } from '../src/core/Conductor.js';
 import { makeNoteEvent, Role } from '../src/core/NoteEvent.js';
@@ -31,19 +33,32 @@ test('polylineFromPoints accumulates segment lengths', () => {
   assert.ok(Math.abs(p.total - 10) < 1e-9);
 });
 
+test('buildStressThresholds spreads evenly across the song progress axis', () => {
+  const t = buildStressThresholds(16, 0.04, 0.92);
+  assert.equal(t.length, 16);
+  assert.ok(Math.abs(t[0] - 0.04) < 1e-9);
+  assert.ok(Math.abs(t[t.length - 1] - 0.92) < 1e-9);
+  // Even spacing: each step is the same within float noise.
+  const step = t[1] - t[0];
+  for (let i = 2; i < t.length; i++) {
+    assert.ok(Math.abs((t[i] - t[i - 1]) - step) < 1e-9);
+  }
+  assert.equal(RIDGE_GEN_COUNT, 16);
+});
+
 test('buildMountainRidgePolylines: deterministic, count, and peak-like silhouette', () => {
   const w = 1280, h = 720;
-  const a = buildMountainRidgePolylines(w, h, 42, 8);
-  const b = buildMountainRidgePolylines(w, h, 42, 8);
-  const c = buildMountainRidgePolylines(w, h, 99, 8);
-  assert.equal(a.length, 8);
+  const a = buildMountainRidgePolylines(w, h, 42, RIDGE_GEN_COUNT);
+  const b = buildMountainRidgePolylines(w, h, 42, RIDGE_GEN_COUNT);
+  const c = buildMountainRidgePolylines(w, h, 99, RIDGE_GEN_COUNT);
+  assert.equal(a.length, RIDGE_GEN_COUNT);
   assert.deepEqual(a, b, 'same seed reproduces the ridge plan');
   assert.notDeepEqual(a, c, 'different seeds diverge');
 
   // Every polyline has real length and stays on/near the canvas.
   for (const poly of a) {
     assert.ok(poly.nodes.length >= 2);
-    assert.ok(poly.total > 20, 'ridge must have real length');
+    assert.ok(poly.total > 8, 'ridge piece must have real length');
     for (const n of poly.nodes) {
       assert.ok(n.x > -w * 0.1 && n.x < w * 1.1);
       assert.ok(n.y > -h * 0.05 && n.y < h * 1.05);
@@ -84,12 +99,34 @@ test('FractureEngine births cracks as the stress accumulator crosses thresholds 
 
   assert.ok(fx.cracks.length > 0, 'expected at least one crack to have been born');
   assert.ok(fx.stress > 0.15);
-  // Ridge plan is precomputed and cracks walk it.
-  assert.equal(fx._ridgePlan.length, 8);
+  // Ridge plan is precomputed and cracks walk it gradually.
+  assert.equal(fx._ridgePlan.length, RIDGE_GEN_COUNT);
+  // By late song (stress ~0.9 from linear tNorm) most ridge pieces should exist.
+  assert.ok(fx.cracks.length >= 10, `expected gradual full-track births, got ${fx.cracks.length}`);
   for (const crack of fx.cracks) {
     assert.ok(crack.nodes.length >= 2);
     assert.ok(crack.total > 0);
   }
+});
+
+test('ridge births are paced by song progress, not piled into the final third', () => {
+  const durationMs = 60000;
+  const conductor = buildConductorWithKicks(durationMs);
+  const fx = new FractureEngine(conductor, { canvasWidth: 1280, canvasHeight: 720, songSeed: 11, durationMs });
+  const dtMs = 1000 / 120;
+  const fakeEnergy = { globalEnergy: () => 0.4 };
+  let at25 = 0, at50 = 0, at75 = 0;
+  for (let t = 0; t < durationMs - 500; t += dtMs) {
+    conductor.dispatchUpTo(t);
+    fx.update(t, dtMs / 1000, fakeEnergy, null);
+    if (t >= durationMs * 0.25 && at25 === 0) at25 = fx.cracks.length;
+    if (t >= durationMs * 0.50 && at50 === 0) at50 = fx.cracks.length;
+    if (t >= durationMs * 0.75 && at75 === 0) at75 = fx.cracks.length;
+  }
+  assert.ok(at25 >= 2, `some ridges should appear by 25% of the song, got ${at25}`);
+  assert.ok(at50 > at25, `ridge count should grow mid-song (${at25} -> ${at50})`);
+  assert.ok(at75 > at50, `ridge count should keep growing late (${at50} -> ${at75})`);
+  assert.ok(fx.cracks.length > at75, 'final stretch should still add ridges');
 });
 
 test('FractureEngine transitions to about-to-freeze 300ms before the song ends', () => {
