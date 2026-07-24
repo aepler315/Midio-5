@@ -14,6 +14,10 @@ import { Burrow } from './Burrow.js';
 
 const K = 26, C = 3.4; // spring stiffness (s^-2), damping (s^-1)
 const D_TRAIL = -140, D_SURGE = 120, D_PANIC = -220;
+// Hard floor on how close the spring is allowed to settle to Midio while
+// trailing. SURGE still crosses past him (that's the gag); TRAIL/PANIC
+// must keep a readable gap so the duo never reads as a single blob.
+const MIN_TRAIL_SEP = 96;
 const PANIC_LOOKAHEAD_MS = 300;
 const RABID_ENTER_G = 0.75, RABID_EXIT_G = 0.60, RABID_ENTER_HOLD_MS = 1500;
 const RABID_FADE_SEC = 0.8;
@@ -231,10 +235,24 @@ export class Broshi {
     if (this.state === 'SURGE' && this._lastState !== 'SURGE') this._pounceStartMs = nowMs;
     this._lastState = this.state;
 
-    const dStar = this.state === 'SURGE' ? D_SURGE : this.state === 'PANIC' ? D_PANIC : this._trailTarget;
+    let dStar = this.state === 'SURGE' ? D_SURGE : this.state === 'PANIC' ? D_PANIC : this._trailTarget;
+    // Keep the TRAIL setpoint outside the minimum separation band so the
+    // spring never aims him into Midio's silhouette.
+    if (this.state === 'TRAIL' && Math.abs(dStar) < MIN_TRAIL_SEP) {
+      dStar = dStar >= 0 ? MIN_TRAIL_SEP : -MIN_TRAIL_SEP;
+    }
     const accel = -K * (this.xRel - dStar) - C * this.xRelVel;
     this.xRelVel += accel * dtSec;
     this.xRel += this.xRelVel * dtSec;
+    // Soft clamp while trailing: if damping overshoot lands him too close,
+    // push him back out without killing velocity entirely.
+    if (this.state === 'TRAIL' && Math.abs(this.xRel) < MIN_TRAIL_SEP) {
+      const sign = this.xRel >= 0 ? 1 : -1;
+      // Prefer the side the spring already wants (usually behind).
+      const prefer = dStar >= 0 ? 1 : -1;
+      this.xRel = (Math.abs(this.xRel) < 1e-3 ? prefer : sign) * MIN_TRAIL_SEP;
+      if (this.xRelVel * this.xRel < 0) this.xRelVel *= 0.4;
+    }
 
     // --- Rabid gate ---
     const alpha = 1 - Math.exp(-dtSec / G_EMA_TAU);

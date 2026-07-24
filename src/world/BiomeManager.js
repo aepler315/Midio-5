@@ -11,7 +11,7 @@ import { KuramotoSwarm } from './KuramotoSwarm.js';
 import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
-import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars } from './MountainChoreo.js';
+import { DANCE_LAYERS, DANCE_COL_W, danceSample, kickEnv, spectrumBars } from './MountainChoreo.js';
 import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { LightningFX } from './Lightning.js';
@@ -29,7 +29,9 @@ import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
 
-const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
+// L2b is an extra far-mid mountain range between L2 and L3 — more depth
+// without crowding the near hills. L6/L7 remain ground/foreground ratios.
+const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L2b: 0.14, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
 const LAYER_EQ_RATIO = 0.06; // between L1 (celestial) and L2 (far mountains)
 const WORLD_SPEED_PX_S = 220;
 const BAND_COUNT = 7;
@@ -87,14 +89,17 @@ export class BiomeManager {
       L5: new RidgeRunners(hashSeed(`${songSeed}:runners:L5`)),
     };
 
-    this.strips = new Map(); // biomeName -> { L2, L3, L4, L5 }
+    this.strips = new Map(); // biomeName -> { L2, L2b, L3, L4, L5 }
     for (const b of this.profiles) {
       const seed = hashSeed(b.name);
+      // Soft, low-octave far ranges; nearer ranges keep a bit more detail
+      // but still use softPeak shaping inside generateSilhouette.
       const strips = {
-        L2: generateSilhouette({ seed: seed + 1, octaves: 1, amplitude: 0.20, baseline: 0.45, color: b.silhouette }),
-        L3: generateSilhouette({ seed: seed + 2, octaves: 2, amplitude: 0.26, baseline: 0.55, color: b.silhouette }),
-        L4: generateSilhouette({ seed: seed + 3, octaves: 3, amplitude: 0.34, baseline: 0.70, color: b.silhouette, edgeLight: b.edgeLight }),
-        L5: generateSilhouette({ seed: seed + 4, octaves: 2, amplitude: 0.22, baseline: 0.85, color: b.silhouette, edgeLight: b.edgeLight }),
+        L2:  generateSilhouette({ seed: seed + 1, octaves: 1, amplitude: 0.18, baseline: 0.42, color: b.silhouette, softness: 1 }),
+        L2b: generateSilhouette({ seed: seed + 5, octaves: 1, amplitude: 0.22, baseline: 0.48, color: b.silhouette, softness: 1 }),
+        L3:  generateSilhouette({ seed: seed + 2, octaves: 2, amplitude: 0.24, baseline: 0.55, color: b.silhouette, softness: 0.9 }),
+        L4:  generateSilhouette({ seed: seed + 3, octaves: 2, amplitude: 0.30, baseline: 0.70, color: b.silhouette, edgeLight: b.edgeLight, softness: 0.85 }),
+        L5:  generateSilhouette({ seed: seed + 4, octaves: 2, amplitude: 0.20, baseline: 0.85, color: b.silhouette, edgeLight: b.edgeLight, softness: 0.8 }),
       };
       // Landmarks: per-song placements (songSeed), baked into the strips,
       // each rooted on the noise ridge at its own x. Unknown biome names
@@ -485,14 +490,17 @@ export class BiomeManager {
     // The Unraveling: each layer's scroll ratio drifts apart from the rest
     // as the world delaminates -- nearer layers race ahead more than far
     // ones (the ratio itself is the depth proxy, so no separate table).
-    const scrollX0 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L2, this.unravel);
-    const scrollX1 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L3, this.unravel);
-    const scrollX2 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L4, this.unravel);
-    const scrollX3 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L5, this.unravel);
+    const scrollX0  = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L2, this.unravel);
+    const scrollX0b = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L2b, this.unravel);
+    const scrollX1  = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L3, this.unravel);
+    const scrollX2  = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L4, this.unravel);
+    const scrollX3  = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L5, this.unravel);
     const tint = this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t));
 
     this._drawLayer(ctx, canvas, 'L2', scrollX0, tint, t, A, B);
     this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
+    this._drawLayer(ctx, canvas, 'L2b', scrollX0b, tint, t, A, B);
+    this._drawHaze(ctx, canvas, 'L2b', A, B, t, arc);
     this._drawLayer(ctx, canvas, 'L3', scrollX1, tint, t, A, B);
     this._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
 
@@ -835,15 +843,23 @@ export class BiomeManager {
     ctx.closePath();
     ctx.fill();
 
-    // Crest: wide faint halo under a bright aurora line.
+    // Crest: wide faint halo under a bright aurora line. Quadratic midpoints
+    // keep the ridge continuous even when band energy jumps hard.
     for (const [lw, a] of [[7, 0.14], [2.2, 0.6]]) {
       ctx.strokeStyle = color;
       ctx.globalAlpha = a * this.budget;
       ctx.lineWidth = lw;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
       ctx.beginPath();
       for (let i = 0; i <= N; i++) {
-        if (i === 0) ctx.moveTo(pts[i].x, pts[i].y); else ctx.lineTo(pts[i].x, pts[i].y);
+        if (i === 0) ctx.moveTo(pts[i].x, pts[i].y);
+        else {
+          const prev = pts[i - 1], p = pts[i];
+          ctx.quadraticCurveTo(prev.x, prev.y, (prev.x + p.x) * 0.5, (prev.y + p.y) * 0.5);
+        }
       }
+      ctx.lineTo(pts[N].x, pts[N].y);
       ctx.stroke();
     }
     ctx.restore();
@@ -991,7 +1007,9 @@ export class BiomeManager {
     // Movement II: heat shimmer isn't only SOLAR's signature anymore -- a
     // hard hype-fast spike reuses the exact same slice-offset trick on the
     // farthest range, above the horizon, regardless of biome.
-    const applyDynamicShimmer = layerKey === 'L2' && (this.heatShimmer || 0) > 0.7;
+    // Dynamic shimmer rides the farthest two ranges (L2 + new L2b) so the
+    // extra depth layer still participates in Movement II heat spikes.
+    const applyDynamicShimmer = (layerKey === 'L2' || layerKey === 'L2b') && (this.heatShimmer || 0) > 0.7;
     if (applyBiomeShimmer || applyDynamicShimmer) {
       this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX, yOff);
     } else {
@@ -1015,14 +1033,14 @@ export class BiomeManager {
     ctx.restore();
   }
 
-  /** The mountains dance: the strip is drawn in column slices, each riding
-   *  a groove-scaled traveling wave along the ridge, and the whole range
-   *  bounces on kicks — near hills first, far peaks a beat-fraction later
-   *  (per-layer delaySec), a crowd wave rolling into the distance. Column
-   *  phase is computed in scroll-stable strip space so the wave travels
-   *  with time, never jittering with camera scroll. The strips overhang
-   *  the ground band by ~40px, which quietly swallows the bottom gap a
-   *  lifted column would otherwise open. */
+  /** The mountains dance geometrically: each strip column rides a
+   *  groove-scaled multi-mode wave, bounces on kicks (near hills first,
+   *  far peaks a beat-fraction later), and also stretches/shears so the
+   *  silhouette morphs instead of only translating. Column phase is in
+   *  scroll-stable strip space so the wave travels with time, never
+   *  jittering with camera scroll. The strips overhang the ground band
+   *  by ~40px, which quietly swallows the bottom gap a lifted or
+   *  stretched column would otherwise open. */
   _drawDancingStrip(ctx, canvas, strip, scrollX, yOff, layerKey) {
     const cfg = DANCE_LAYERS[layerKey];
     if (!cfg) {
@@ -1033,30 +1051,36 @@ export class BiomeManager {
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
     const baseY = canvas.height - strip.height + yOff;
     const w = strip.width;
+    const h = strip.height;
     let x = -(((scrollX % w) + w) % w);
     while (x < canvas.width) {
       for (let cx = 0; cx < w; cx += DANCE_COL_W) {
         const cw = Math.min(DANCE_COL_W, w - cx);
         const sx = x + cx;
         if (sx + cw < 0 || sx > canvas.width) continue;
-        const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0);
-        ctx.drawImage(strip, cx, 0, cw, strip.height, sx, baseY + dy, cw, strip.height);
+        const { dy, scaleY, shear } = danceSample(
+          scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0,
+        );
+        // Stretch from the strip bottom so the ridge rises/falls while the
+        // ground seam stays glued; shear gives a gentle geometric sway.
+        const drawH = h * scaleY;
+        const dyBottom = h - drawH;
+        ctx.drawImage(strip, cx, 0, cw, h, sx + shear, baseY + dy + dyBottom, cw, drawH);
       }
       x += w;
     }
   }
 
-  /** One super-distant mountain that IS the spectrum: seven chunky bars —
-   *  bass building the summit at the center, treble falling away to the
-   *  flanks (see spectrumBars) — riding the same attack/release-smoothed
-   *  band levels as the horizon EQ. It sits on the slowest scroll ratio in
-   *  the scene and is haze-mixed toward the sky, so it reads as the
-   *  farthest solid thing in the world; a pedestal bell keeps it a
-   *  mountain even in total silence, and thin halo-colored crest caps are
-   *  the "this peak is an equalizer" tell. */
+  /** One super-distant mountain that IS the spectrum: seven soft-shouldered
+   *  peaks — bass building the summit at the center, treble falling away to
+   *  the flanks (see spectrumBars) — riding the same attack/release-smoothed
+   *  band levels as the horizon EQ. Drawn as a continuous rounded polygon
+   *  (not a bar graph of rectangles) so it matches the less-pointy ranges
+   *  in front of it. Haze-mixed toward the sky; pedestal bell keeps it a
+   *  mountain even in total silence; thin halo crest is the EQ tell. */
   _drawSpectrumMassif(ctx, canvas, worldX, A, B, t) {
     const bars = spectrumBars(this._eqSmoothed);
-    const barW = 46, gap = 3;
+    const barW = 48, gap = 2;
     const massifW = bars.length * (barW + gap) - gap;
     const period = canvas.width * 1.5;
     const scroll = worldX * CodaDirector.delaminateRatio(0.03, this.unravel);
@@ -1070,19 +1094,54 @@ export class BiomeManager {
     const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.55));
     const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
 
+    // Build a continuous ridge through the bar centers, then close under
+    // the baseline so the massif reads as one soft mountain, not seven
+    // pillars. Side tapers (inset) give each peak rounded shoulders.
+    const ridge = [];
+    for (let i = 0; i < bars.length; i++) {
+      const h = bars[i].h01 * maxH;
+      const cx = left + i * (barW + gap) + barW * 0.5;
+      const half = barW * 0.42;
+      ridge.push({ x: cx - half, y: baseY - h * 0.18 });
+      ridge.push({ x: cx, y: baseY - h });
+      ridge.push({ x: cx + half, y: baseY - h * 0.18 });
+    }
+
     ctx.save();
     ctx.fillStyle = body;
-    for (let i = 0; i < bars.length; i++) {
-      const h = bars[i].h01 * maxH;
-      const bx = left + i * (barW + gap);
-      ctx.fillRect(bx, baseY - h, barW, h);
+    ctx.beginPath();
+    ctx.moveTo(left - 8, baseY);
+    // Quadratic midpoints: continuous rounded skyline.
+    for (let i = 0; i < ridge.length; i++) {
+      const p = ridge[i];
+      if (i === 0) ctx.lineTo(p.x, p.y);
+      else {
+        const prev = ridge[i - 1];
+        ctx.quadraticCurveTo(prev.x, prev.y, (prev.x + p.x) * 0.5, (prev.y + p.y) * 0.5);
+      }
     }
-    ctx.fillStyle = cap;
-    ctx.globalAlpha = 0.32 * (0.5 + 0.5 * this.budget);
-    for (let i = 0; i < bars.length; i++) {
-      const h = bars[i].h01 * maxH;
-      ctx.fillRect(left + i * (barW + gap), baseY - h, barW, 2.5);
+    const last = ridge[ridge.length - 1];
+    ctx.lineTo(last.x, last.y);
+    ctx.lineTo(left + massifW + 8, baseY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Halo crest: stroke the same rounded path.
+    ctx.strokeStyle = cap;
+    ctx.globalAlpha = 0.34 * (0.5 + 0.5 * this.budget);
+    ctx.lineWidth = 2.2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < ridge.length; i++) {
+      const p = ridge[i];
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else {
+        const prev = ridge[i - 1];
+        ctx.quadraticCurveTo(prev.x, prev.y, (prev.x + p.x) * 0.5, (prev.y + p.y) * 0.5);
+      }
     }
+    ctx.lineTo(last.x, last.y);
+    ctx.stroke();
     ctx.restore();
   }
 

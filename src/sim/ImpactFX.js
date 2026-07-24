@@ -195,13 +195,21 @@ export class ImpactFX {
       const x = toScreen(r.wx);
       ctx.strokeStyle = `rgba(${r.color || '255,255,255'},${0.7 * alpha})`;
       ctx.lineWidth = Math.max(0.5, 3 * (1 - t));
-      ctx.beginPath();
-      for (let i = 0; i <= 24; i++) {
+      ctx.lineJoin = 'round';
+      // Jagged ellipse samples, stroked through mid-point quadratics so the
+      // dust ring reads soft rather than a hard 24-gon.
+      const pts = [];
+      for (let i = 0; i < 24; i++) {
         const ang = (i / 24) * Math.PI * 2;
-        const rad = radius + r.jitter[i % 24];
-        const px = x + Math.cos(ang) * rad;
-        const py = r.y + Math.sin(ang) * rad * 0.35;
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        const rad = radius + r.jitter[i];
+        pts.push({ x: x + Math.cos(ang) * rad, y: r.y + Math.sin(ang) * rad * 0.35 });
+      }
+      ctx.beginPath();
+      ctx.moveTo((pts[0].x + pts[1].x) * 0.5, (pts[0].y + pts[1].y) * 0.5);
+      for (let i = 1; i <= 24; i++) {
+        const p0 = pts[i % 24];
+        const p1 = pts[(i + 1) % 24];
+        ctx.quadraticCurveTo(p0.x, p0.y, (p0.x + p1.x) * 0.5, (p0.y + p1.y) * 0.5);
       }
       ctx.stroke();
     }

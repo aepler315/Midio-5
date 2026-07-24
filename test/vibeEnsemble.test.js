@@ -101,6 +101,19 @@ test('ensemble anchors stay inside their stage-safety windows', () => {
   }
 });
 
+test('ensemble maintains minimum pairwise distance between character anchors', () => {
+  // Even under full phase-lock (tightest formation) the trio must not stack.
+  const { ens } = runEnsemble(0.9, 0.9, 25);
+  assert.ok(ens.spread >= 200 - 1e-6, `spread floor violated: ${ens.spread}`);
+  const [a0, a1, a2] = ens.anchors;
+  const d01 = Math.abs(a0.x - a1.x);
+  const d02 = Math.abs(a0.x - a2.x);
+  const d12 = Math.abs(a1.x - a2.x);
+  assert.ok(d01 >= 118 - 1, `Midio–Broshi too close: ${d01.toFixed(1)}`);
+  assert.ok(d02 >= 72 - 1, `Midio–Midasus too close: ${d02.toFixed(1)}`);
+  assert.ok(d12 >= 72 - 1, `Broshi–Midasus too close: ${d12.toFixed(1)}`);
+});
+
 test('setPresence eases a weight toward its target rather than snapping', () => {
   const { ens } = runEnsemble(0.5, 0.5, 2);
   ens.setPresence(2, 0);

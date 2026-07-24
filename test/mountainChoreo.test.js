@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DANCE_LAYERS, danceOffset, kickEnv, spectrumBars } from '../src/world/MountainChoreo.js';
+import {
+  DANCE_LAYERS, danceOffset, danceGeom, danceSample, kickEnv, spectrumBars,
+} from '../src/world/MountainChoreo.js';
+import { softPeak01 } from '../src/world/SilhouetteGenerator.js';
+
+// Multi-mode wave peaks at ~1.35; bound every full-blast sample by that.
+const WAVE_PEAK = 1.35;
 
 test('danceOffset stays bounded and never goes fully still', () => {
   const cfg = DANCE_LAYERS.L4;
@@ -9,13 +15,13 @@ test('danceOffset stays bounded and never goes fully still', () => {
     for (let x = 0; x < 2048; x += 128) {
       const idle = danceOffset(x, t, 0, 0, cfg);
       const full = danceOffset(x, t, 1, 1, cfg);
-      assert.ok(Math.abs(full) <= cfg.waveAmp + cfg.bounceAmp + 1e-9);
+      assert.ok(Math.abs(full) <= cfg.waveAmp * WAVE_PEAK + cfg.bounceAmp + 1e-9);
       maxAbs = Math.max(maxAbs, Math.abs(idle));
       sumAbs += Math.abs(idle); n++;
     }
   }
-  // Idle: small (≤ 15% of the wave) but alive (nonzero on average).
-  assert.ok(maxAbs <= cfg.waveAmp * 0.15 + 1e-9, `idle too big: ${maxAbs}`);
+  // Idle: small (≤ 15% of multi-mode wave peak) but alive (nonzero on average).
+  assert.ok(maxAbs <= cfg.waveAmp * WAVE_PEAK * 0.15 + 1e-9, `idle too big: ${maxAbs}`);
   assert.ok(sumAbs / n > 0.05, 'mountains should always breathe a little');
 });
 
@@ -62,4 +68,53 @@ test('full-blast bars never exceed their bell profile ceiling', () => {
   const full = spectrumBars([1, 1, 1, 1, 1, 1, 1]);
   for (const b of full) assert.ok(b.h01 <= 1 + 1e-9);
   assert.ok(full[3].h01 > full[0].h01, 'center stays tallest even at full blast');
+});
+
+test('danceGeom stretches and shears within sane geometric bounds', () => {
+  const cfg = DANCE_LAYERS.L5;
+  for (let t = 0; t < 8; t += 0.2) {
+    for (let x = 0; x < 1024; x += 64) {
+      const g = danceGeom(x, t, 1, 1, cfg);
+      assert.ok(g.scaleY > 0.85 && g.scaleY < 1.25, `scaleY out of range: ${g.scaleY}`);
+      assert.ok(Math.abs(g.shear) <= (cfg.shearAmp ?? 4) + 1e-9);
+    }
+  }
+  // Idle still breathes geometrically (scale drifts off 1).
+  let sawBreath = false;
+  for (let t = 0; t < 10; t += 0.17) {
+    const g = danceGeom(200, t, 0, 0, cfg);
+    if (Math.abs(g.scaleY - 1) > 0.001) sawBreath = true;
+  }
+  assert.ok(sawBreath, 'idle should still geometrically breathe');
+});
+
+test('danceSample packages offset + geometry coherently', () => {
+  const cfg = DANCE_LAYERS.L3;
+  const s = danceSample(100, 1.5, 0.6, 0.4, cfg);
+  assert.equal(s.dy, danceOffset(100, 1.5, 0.6, 0.4, cfg));
+  const g = danceGeom(100, 1.5, 0.6, 0.4, cfg);
+  assert.equal(s.scaleY, g.scaleY);
+  assert.equal(s.shear, g.shear);
+});
+
+test('every mountain layer including the new L2b has a dance personality', () => {
+  for (const key of ['L2', 'L2b', 'L3', 'L4', 'L5']) {
+    assert.ok(DANCE_LAYERS[key], `missing DANCE_LAYERS.${key}`);
+    assert.ok(DANCE_LAYERS[key].scaleAmp > 0, `${key} needs geometric scale`);
+    assert.ok(DANCE_LAYERS[key].shearAmp > 0, `${key} needs geometric shear`);
+  }
+  // Far layers bounce later than near.
+  assert.ok(DANCE_LAYERS.L2.delaySec > DANCE_LAYERS.L2b.delaySec);
+  assert.ok(DANCE_LAYERS.L2b.delaySec > DANCE_LAYERS.L3.delaySec);
+  assert.ok(DANCE_LAYERS.L5.delaySec === 0);
+});
+
+test('softPeak01 rounds tops: high inputs compress, mid values stay readable', () => {
+  assert.equal(softPeak01(0), 0);
+  assert.equal(softPeak01(1), 1);
+  // Power > 1: tall outliers pull down (less pointy), shoulders remain.
+  assert.ok(softPeak01(0.9) < 0.9, 'tops should compress');
+  assert.ok(softPeak01(0.3) > 0.15, 'shoulders should stay present');
+  assert.ok(softPeak01(0.2) < softPeak01(0.5));
+  assert.ok(softPeak01(0.5) < softPeak01(0.8));
 });

@@ -17,8 +17,8 @@ export const SHADOW_WIDTH_FRAC = 0.42;
 export const SHADOW_ASPECT = 0.34;   // ry = rx * SHADOW_ASPECT -- a flattened ~1:3 oval
 export const SHADOW_RX_MIN = 9;      // px floor (guards Midasus's tiny hexagram)
 export const SHADOW_RX_MAX = 46;     // px ceiling (headroom against future width inputs)
-export const SHADOW_ALPHA_MAX = 0.32; // peak opacity directly underfoot
-export const SHADOW_HEIGHT_SHRINK = 0.35; // fraction the ellipse shrinks from grounded to fully faded
+export const SHADOW_ALPHA_MAX = 0.36; // peak opacity directly underfoot (slightly stronger grounding)
+export const SHADOW_HEIGHT_SHRINK = 0.40; // fraction the ellipse shrinks from grounded to fully faded
 
 /**
  * @param {number} screenX          character's screen-space x (shadow center)

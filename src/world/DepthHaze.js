@@ -9,8 +9,9 @@ import { clamp01 } from '../utils/math.js';
 // Relative share of the total atmosphere each layer sits behind -- a
 // geometric-ish falloff (not linear), matching how real haze thickens
 // faster than distance. L5 (nearest) never washes: it's the crisp
-// foreground anchor the eye calibrates depth against.
-export const HAZE_LAYER_FRAC = { L2: 1.00, L3: 0.55, L4: 0.24, L5: 0 };
+// foreground anchor the eye calibrates depth against. L2b is the extra
+// far-mid range between L2 and L3.
+export const HAZE_LAYER_FRAC = { L2: 1.00, L2b: 0.78, L3: 0.55, L4: 0.24, L5: 0 };
 
 export const HAZE_BASE_ALPHA = 0.16;  // strongest wash (right after L2), dial=1, calm=0
 export const HAZE_CALM_BOOST = 0.35;  // calm sections thicken haze by up to +35%

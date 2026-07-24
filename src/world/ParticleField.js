@@ -63,6 +63,10 @@ export class ParticleField {
         case 'fireflies':
           p.x += (Math.sin(tSec * 0.4 + p.phase) * this.baseSpeed + wx * 0.4) * dtSec;
           p.y += (Math.cos(tSec * 0.3 + p.phase * 1.3) * this.baseSpeed * 0.6 + wy * 0.4) * dtSec;
+          // Toroidal wrap: wind can advect them off-stage; re-enter the
+          // opposite edge so the field never thins out over long songs.
+          if (p.x < -12) p.x += this.w + 24; else if (p.x > this.w + 12) p.x -= this.w + 24;
+          if (p.y < -12) p.y += this.h * 0.65 + 24; else if (p.y > this.h * 0.65 + 12) p.y -= this.h * 0.65 + 24;
           // Calm sections: brighter, slightly faster blink -- ambient life
           // to lean on when the foreground has gone quiet.
           p.alpha = clamp01((0.5 + 0.5 * Math.sin((2 * Math.PI * tSec) / 3 * (1 + 0.3 * calmLevel) + p.phase)) * (1 + 0.4 * calmLevel));
@@ -89,6 +93,8 @@ export class ParticleField {
         case 'pollen': {
           p.x += (Math.sin(tSec * 0.5 + p.phase) * 6 + wx * 0.6) * dtSec;
           p.y += (Math.cos(tSec * 0.4 + p.phase * 1.7) * 6 + wy * 0.6) * dtSec;
+          if (p.x < -12) p.x += this.w + 24; else if (p.x > this.w + 12) p.x -= this.w + 24;
+          if (p.y < -12) p.y += this.h + 24; else if (p.y > this.h + 12) p.y -= this.h + 24;
           const air = energyCurves ? energyCurves.sample(6, nowMs) : 0.3;
           p.alpha = clamp01((0.3 + 0.5 * clamp01(air)) * (1 + 0.3 * calmLevel));
           break;

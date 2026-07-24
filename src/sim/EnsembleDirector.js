@@ -21,6 +21,16 @@ const R_TAU = 1.5;
 const SPREAD_TAU = 2.8;   // formation changes drift, never snap
 const CENTROID_SPEED = 0.041; // rad/s of the roam ellipse -- slow
 const PRESENCE_TAU = 1.5; // seconds for a presence weight to ease toward its target
+// Soft minimum pairwise distances (px). The formation is free to roam, but
+// characters must not stack on top of each other when coupling tightens or
+// curl wander happens to collide. Floor duo needs more clearance than
+// Midio↔Midasus (she's airborne and can pass "above" him).
+const MIN_SEP = [
+  [0, 1, 118], // Midio — Broshi (same ground plane)
+  [0, 2, 72],  // Midio — Midasus
+  [1, 2, 72],  // Broshi — Midasus
+];
+const MIN_SPREAD = 200; // never let the formation diameter collapse below this
 
 export class EnsembleDirector {
   constructor(seed = 1, { stageW = 1280, stageH = 720 } = {}) {
@@ -81,9 +91,10 @@ export class EnsembleDirector {
     this.r = R;
     this.rSmooth += (1 - Math.exp(-dtSec / R_TAU)) * (R - this.rSmooth);
 
-    // Formation: desync and sadness both push them apart.
+    // Formation: desync and sadness both push them apart. Floor is
+    // MIN_SPREAD so a full phase-lock never collapses the trio into a pile.
     const sadness = clamp01(-vibe.valence);
-    const spreadTarget = lerp(150, 540, clamp01(0.7 * (1 - this.rSmooth) + 0.5 * sadness));
+    const spreadTarget = Math.max(MIN_SPREAD, lerp(150, 540, clamp01(0.7 * (1 - this.rSmooth) + 0.5 * sadness)));
     this.spread += (1 - Math.exp(-dtSec / SPREAD_TAU)) * (spreadTarget - this.spread);
 
     // The formation's centroid roams the stage on a slow ellipse + curl drift.
@@ -99,6 +110,22 @@ export class EnsembleDirector {
       this.anchors[i].x = cx + Math.cos(ang) * this.spread * 0.5 + clamp(wob.x, -1, 1) * 34;
       this.anchors[i].y = clamp(wob.y, -1, 1) * 26; // consumers add their own base heights
     }
+
+    // Soft pairwise separation: if two anchors land too close, push them
+    // apart along their x-axis (the stage is a side-scroller; y is role-
+    // owned). Skipped when either performer is mostly away on an excursion.
+    for (const [i, j, minD] of MIN_SEP) {
+      if (this.weights[i] < 0.15 || this.weights[j] < 0.15) continue;
+      let dx = this.anchors[j].x - this.anchors[i].x;
+      if (Math.abs(dx) < 1e-3) dx = 1; // invent a side when exactly stacked
+      const dist = Math.abs(dx);
+      if (dist >= minD) continue;
+      const need = (minD - dist) * 0.5;
+      const dir = dx > 0 ? 1 : -1;
+      this.anchors[i].x -= dir * need;
+      this.anchors[j].x += dir * need;
+    }
+
     // Stage-safety clamps per character role.
     this.anchors[0].x = clamp(this.anchors[0].x, this.w * 0.12, this.w * 0.62); // Midio: gameplay window
     this.anchors[1].x = clamp(this.anchors[1].x, this.w * 0.06, this.w * 0.85); // Broshi: full floor

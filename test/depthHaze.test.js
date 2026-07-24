@@ -3,13 +3,17 @@ import assert from 'node:assert/strict';
 import { hazeAlpha, hazeWarmMix, HAZE_WARM_MIX } from '../src/world/DepthHaze.js';
 
 test('haze accumulates more atmosphere on farther layers', () => {
-  const l2 = hazeAlpha('L2', 1, 0), l3 = hazeAlpha('L3', 1, 0), l4 = hazeAlpha('L4', 1, 0), l5 = hazeAlpha('L5', 1, 0);
-  assert.ok(l2 > l3 && l3 > l4, `expected L2 > L3 > L4, got ${l2}, ${l3}, ${l4}`);
+  const l2 = hazeAlpha('L2', 1, 0);
+  const l2b = hazeAlpha('L2b', 1, 0);
+  const l3 = hazeAlpha('L3', 1, 0);
+  const l4 = hazeAlpha('L4', 1, 0);
+  const l5 = hazeAlpha('L5', 1, 0);
+  assert.ok(l2 > l2b && l2b > l3 && l3 > l4, `expected L2 > L2b > L3 > L4, got ${l2}, ${l2b}, ${l3}, ${l4}`);
   assert.equal(l5, 0, 'nearest range must never wash -- it stays the crisp foreground anchor');
 });
 
 test('hazeAlpha stays within a sane bound across the personality dial range', () => {
-  for (const layer of ['L2', 'L3', 'L4', 'L5']) {
+  for (const layer of ['L2', 'L2b', 'L3', 'L4', 'L5']) {
     for (const mul of [0, 0.3, 1, 1.6, 2.5]) {
       for (const calm of [0, 0.5, 1]) {
         const a = hazeAlpha(layer, mul, calm);
@@ -20,7 +24,7 @@ test('hazeAlpha stays within a sane bound across the personality dial range', ()
 });
 
 test('a higher haze dial thickens every hazed layer without inverting far>near order', () => {
-  for (const layer of ['L2', 'L3', 'L4']) {
+  for (const layer of ['L2', 'L2b', 'L3', 'L4']) {
     const crisp = hazeAlpha(layer, 0.3, 0); // CYBER-like
     const baked = hazeAlpha(layer, 1.6, 0); // SOLAR-like
     assert.ok(baked > crisp, `${layer}: baked (${baked}) should exceed crisp (${crisp})`);
