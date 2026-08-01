@@ -1,7 +1,14 @@
 // Biome profiles (spec §4.1.2) — pure data (Strategy pattern). Adding a
-// ninth biome is one object literal, zero engine code. `particles` config
-// feeds the generic ParticleField; `fx` names a small biome-specific
-// canvas trick BiomeManager knows how to run.
+// biome is mostly one object literal; pair it with BIOME_TEMPERATURE,
+// LANDMARKS, and optional PERSONALITY. `particles` feeds ParticleField;
+// `fx` names a BiomeManager canvas trick. `terrainEnergy` (default 1)
+// scales how sharply the shared ridge geometry reads for this biome --
+// its geological-feature lift and mountain-dance amplitude -- without
+// touching the underlying noise ridge itself (that stays one shared,
+// seeded shape so BiomeManager's crossfade never has to blend geometry,
+// only color/fx): calm biomes settle into gentler, rounder terrain, harsh
+// ones read jagged and dramatic, purely through how hard the same shape
+// gets pushed.
 export const BIOMES = [
   {
     name: 'TWILIGHT',
@@ -10,6 +17,7 @@ export const BIOMES = [
     celestial: { kind: 'sun', color: '#ffb37a', radius: 46, haloColor: '#ffdca0' },
     particles: { kind: 'fireflies', color: '#fff2a8', count: 26, speed: 14 },
     fx: 'starTwinkle',
+    terrainEnergy: 1.0,
   },
   {
     name: 'EMBER',
@@ -18,6 +26,7 @@ export const BIOMES = [
     celestial: { kind: 'sun', color: '#ff8a3c', radius: 50, haloColor: '#ffb37a', veiled: true },
     particles: { kind: 'embers', color: '#ff7a3c', count: 34, speed: 60 },
     fx: 'heatShimmer',
+    terrainEnergy: 1.2,
   },
   {
     name: 'ARCTIC',
@@ -26,6 +35,7 @@ export const BIOMES = [
     celestial: { kind: 'sun', color: '#eaf6ff', radius: 34, haloColor: '#ffffff', ring: true, shape: { m: 6, n1: 1, n2: 1.8, n3: 1.8 } },
     particles: { kind: 'snow', color: '#ffffff', count: 60, speed: 45 },
     fx: 'aurora',
+    terrainEnergy: 1.15,
   },
   {
     name: 'JADE',
@@ -34,6 +44,7 @@ export const BIOMES = [
     celestial: { kind: 'sun', color: '#eaffb0', radius: 40, haloColor: '#c8f2a0', shafts: true },
     particles: { kind: 'pollen', color: '#eaffb0', count: 40, speed: 8 },
     fx: 'canopyDapple',
+    terrainEnergy: 0.75,
   },
   {
     name: 'VOID',
@@ -42,6 +53,7 @@ export const BIOMES = [
     celestial: { kind: 'moon', color: '#cabfff', radius: 38, haloColor: '#7a5bd8', shattered: true, shape: { m: 5, n1: 0.35, n2: 0.35, n3: 0.35 } },
     particles: { kind: 'antigrav', color: '#b79bff', count: 30, speed: 20 },
     fx: 'glitchTear',
+    terrainEnergy: 1.3,
   },
   {
     name: 'SAKURA',
@@ -50,6 +62,7 @@ export const BIOMES = [
     celestial: { kind: 'moon', color: '#ffe9f2', radius: 62, haloColor: '#ffc9de', shape: { m: 5, n1: 3, n2: 6, n3: 6 } },
     particles: { kind: 'petals', color: '#ffb6d3', count: 46, speed: 35 },
     fx: 'petalPile',
+    terrainEnergy: 0.8,
   },
   {
     name: 'SOLAR',
@@ -58,6 +71,7 @@ export const BIOMES = [
     celestial: { kind: 'sun', color: '#ffe08a', radius: 78, haloColor: '#ffb347', dominant: true, shape: { m: 8, n1: 0.9, n2: 1.5, n3: 1.5 } },
     particles: { kind: 'flaresparks', color: '#ffcf6b', count: 18, speed: 90 },
     fx: 'prominence',
+    terrainEnergy: 1.25,
   },
   {
     name: 'STORM',
@@ -66,6 +80,7 @@ export const BIOMES = [
     celestial: { kind: 'moon', color: '#b9c7dd', radius: 34, haloColor: '#8fa5c8', veiled: true },
     particles: { kind: 'rain', color: '#9fb8d8', count: 70, speed: 0 },
     fx: 'lightning',
+    terrainEnergy: 1.35,
   },
   {
     name: 'MIRROR',
@@ -74,6 +89,7 @@ export const BIOMES = [
     celestial: { kind: 'moon', color: '#eaf6ff', radius: 44, haloColor: '#cfe8ff' },
     particles: { kind: 'fireflies', color: '#dff3ff', count: 18, speed: 6 },
     fx: 'lakeReflection',
+    terrainEnergy: 0.7,
   },
   {
     name: 'CYBER',
@@ -83,6 +99,86 @@ export const BIOMES = [
     celestial: { kind: 'sun', color: '#00ffd0', radius: 36, haloColor: '#00ffd0', wireframe: true },
     particles: { kind: 'digitalrain', color: '#00ffb0', count: 22, speed: 140 },
     fx: 'neonGrid',
+    terrainEnergy: 1.1,
+  },
+  {
+    name: 'ABYSS',
+    sky: ['#01060f', '#0a1f3a', '#1a6b7a'],
+    silhouette: '#061428',
+    edgeLight: '#3dffe8',
+    celestial: {
+      kind: 'moon',
+      color: '#a8fff0',
+      radius: 40,
+      haloColor: '#3dffe8',
+      ring: true,
+      shape: { m: 7, n1: 0.85, n2: 1.25, n3: 1.25 },
+    },
+    // Rising bioluminescent motes (reuses antigrav motion); curtains via aurora FX.
+    particles: { kind: 'antigrav', color: '#5cffd9', count: 38, speed: 16 },
+    fx: 'aurora',
+    terrainEnergy: 1.2,
+  },
+  {
+    name: 'DUNE',
+    sky: ['#1a0e08', '#8a4a18', '#f0c878'],
+    silhouette: '#3a2210',
+    celestial: { kind: 'sun', color: '#ffd27a', radius: 56, haloColor: '#ffb347', veiled: true },
+    particles: { kind: 'sand', color: '#e8c98a', count: 55, speed: 70 },
+    fx: 'heatShimmer',
+    terrainEnergy: 0.85,
+  },
+  {
+    name: 'CORAL',
+    sky: ['#041a28', '#0d6b7a', '#ffb89a'],
+    silhouette: '#0a3040',
+    edgeLight: '#ff7eb6',
+    celestial: { kind: 'sun', color: '#ffe0c0', radius: 44, haloColor: '#7ee8ff', shafts: true },
+    particles: { kind: 'bubbles', color: '#b8f0ff', count: 42, speed: 28 },
+    fx: 'godRays',
+    terrainEnergy: 0.9,
+  },
+  {
+    name: 'LUMEN',
+    sky: ['#0a0614', '#1a3a2a', '#6bffb0'],
+    silhouette: '#0e1a18',
+    edgeLight: '#7dffb0',
+    celestial: {
+      kind: 'moon',
+      color: '#c8ffe0',
+      radius: 36,
+      haloColor: '#5dffb0',
+      shape: { m: 9, n1: 0.6, n2: 1.4, n3: 1.4 },
+    },
+    particles: { kind: 'spores', color: '#9dffc8', count: 48, speed: 12 },
+    fx: 'starTwinkle',
+    terrainEnergy: 0.8,
+  },
+  {
+    name: 'AURUM',
+    sky: ['#1a1008', '#8a5020', '#ffd080'],
+    silhouette: '#2a1808',
+    celestial: { kind: 'sun', color: '#ffcc66', radius: 52, haloColor: '#ffaa44', shafts: true },
+    particles: { kind: 'petals', color: '#ff9a3c', count: 50, speed: 32 },
+    fx: 'petalPile',
+    terrainEnergy: 0.85,
+  },
+  {
+    name: 'NEBULA',
+    sky: ['#080414', '#3a1860', '#ff8ec8'],
+    silhouette: '#140a28',
+    edgeLight: '#c89bff',
+    celestial: {
+      kind: 'moon',
+      color: '#ffe0ff',
+      radius: 48,
+      haloColor: '#ff6ec7',
+      shattered: true,
+      shape: { m: 5, n1: 0.5, n2: 0.8, n3: 0.8 },
+    },
+    particles: { kind: 'fireflies', color: '#ffb0e8', count: 36, speed: 10 },
+    fx: 'nebulaBloom',
+    terrainEnergy: 1.05,
   },
 ];
 

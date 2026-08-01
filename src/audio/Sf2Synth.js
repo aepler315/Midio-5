@@ -90,7 +90,14 @@ export class Sf2Synth {
     return conductor.on('*', (evt) => this.noteOn(evt));
   }
 
-  noteOn(evt) {
+  /**
+   * @param {import('../core/NoteEvent.js').NoteEvent} evt
+   * @param {number|null} [whenSec] explicit ctx-time start. Live play omits
+   *   it (notes start "now"); the offline audition renderer passes each
+   *   event's timeline offset so a whole song excerpt can be scheduled up
+   *   front against an OfflineAudioContext.
+   */
+  noteOn(evt, whenSec = null) {
     if (!this.enabled || !this.sf2) return;
     const preset = this._findPreset(evt.role, evt.program ?? -1);
     if (!preset) return;
@@ -102,7 +109,7 @@ export class Sf2Synth {
     );
     // 2-layer cap: only the first two matching zones play.
     for (const zone of matching.slice(0, 2)) {
-      this._playZone(zone, evt);
+      this._playZone(zone, evt, whenSec);
     }
   }
 
@@ -181,7 +188,7 @@ export class Sf2Synth {
     return buf;
   }
 
-  _playZone(zone, evt) {
+  _playZone(zone, evt, whenSec = null) {
     const ctx = this.ae.ctx;
     const buf = this._getBuffer(zone.sampleIndex);
     if (!buf) return;
@@ -208,7 +215,7 @@ export class Sf2Synth {
 
     // Gain envelope (AHDSR: attack → hold → decay → sustain → release)
     const gain = ctx.createGain();
-    const t = ctx.currentTime;
+    const t = whenSec != null ? whenSec : ctx.currentTime;
     const peak = evt.vel * (zone.attenuation ?? 1) * 0.25; // scale to prevent clipping
     const sustainLevel = Math.max(0.0001, peak * (zone.sustain ?? 1));
     const atk = Math.max(0.0005, zone.attack ?? 0.005);
@@ -248,6 +255,13 @@ export class Sf2Synth {
     src.start(t);
     const stopAt = Math.max(relStart + rel + 0.05, decEnd);
     src.stop(stopAt);
+
+    // Offline (explicit-time) scheduling skips voice management entirely:
+    // stealing happens at SCHEDULE time against ctx.currentTime, so with the
+    // whole song scheduled up front it would fade voices at t≈0 regardless
+    // of when they were due to sound — and an OfflineAudioContext has no
+    // realtime polyphony budget to protect in the first place.
+    if (whenSec != null) return;
 
     // Voice management (oldest steal with quick fade to avoid clicks)
     const voice = { src, gain, t };

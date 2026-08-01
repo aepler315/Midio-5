@@ -238,3 +238,86 @@ export function buildBadSf2() {
   const bytes = [0x00, 0x01, 0x02, 0x03];
   return new Uint8Array(bytes).buffer;
 }
+
+/**
+ * Parameterized single-preset font for FontAudition tests: one preset
+ * (bank/program) -> one instrument -> one full-range zone -> one sample.
+ * The knobs express the real-world failure modes the recommender must
+ * catch: `silent` (all-zero PCM), `rootKey` off by octaves (wrong-register
+ * rumble), `loop:false` + tiny `seconds` (one-shot click = the
+ * percussion-only signature), narrow key/vel ranges.
+ *
+ * `toneHz` is snapped to an integer sample period so the loop is click-free
+ * and the rendered pitch is exact: played at `rootKey`, the note sounds at
+ * ~sampleRate/period Hz.
+ */
+export function buildAuditionSf2({
+  name = 'AuditionFont',
+  bank = 0,
+  program = 0,
+  rootKey = 60,
+  toneHz = 261.63,
+  seconds = 0.6,
+  sampleRate = 44100,
+  loop = true,
+  silent = false,
+  amp = 0.8,
+  keyRange = [0, 127],
+  velRange = [0, 127],
+} = {}) {
+  const period = Math.max(2, Math.round(sampleRate / toneHz));
+  const count = Math.max(period * 4, Math.round(sampleRate * seconds));
+  const pcm = [];
+  for (let i = 0; i < count; i++) {
+    const v = silent ? 0 : Math.round(Math.sin((2 * Math.PI * i) / period) * amp * 32767);
+    pcm.push(...i16(v));
+  }
+  const loopStart = period * 2;
+  const loopEnd = period * Math.max(3, Math.floor((count - 2) / period));
+  const smplChunk = cat(fourcc('smpl'), u32(pcm.length), pcm);
+
+  let inamRaw = cat(fourcc('INAM'), u32(name.length + 1), str(name, name.length + 1));
+  if (inamRaw.length & 1) inamRaw.push(0);
+  const infoBody = cat(fourcc('INFO'), inamRaw);
+  const infoList = cat(fourcc('LIST'), u32(infoBody.length), infoBody);
+  const sdtaBody = cat(fourcc('sdta'), smplChunk);
+  const sdtaList = cat(fourcc('LIST'), u32(sdtaBody.length), sdtaBody);
+
+  const phdrData = cat(
+    str('P', 20), u16(program), u16(bank), u16(0), u32(0), u32(0), u32(0),
+    str('EOP', 20), u16(0), u16(0), u16(1), u32(0), u32(0), u32(0),
+  );
+  const phdrChunk = cat(fourcc('phdr'), u32(phdrData.length), phdrData);
+  const pbagChunk = cat(fourcc('pbag'), u32(4), u16(0), u16(0));
+  const pmodChunk = cat(fourcc('pmod'), u32(10), new Array(10).fill(0));
+  const pgenChunk = cat(fourcc('pgen'), u32(4), u16(41), u16(0)); // instrument 0
+  const instData = cat(str('I', 20), u16(0), str('EOI', 20), u16(1));
+  const instChunk = cat(fourcc('inst'), u32(instData.length), instData);
+  const ibagChunk = cat(fourcc('ibag'), u32(4), u16(0), u16(0));
+  const imodChunk = cat(fourcc('imod'), u32(10), new Array(10).fill(0));
+  const igenData = cat(
+    u16(43), u16(keyRange[0] | (keyRange[1] << 8)), // keyRange
+    u16(44), u16(velRange[0] | (velRange[1] << 8)), // velRange
+    u16(55), u16(loop ? 1 : 0),                     // sampleModes
+    u16(53), u16(0),                                // sampleID (must stay last)
+  );
+  const igenChunk = cat(fourcc('igen'), u32(igenData.length), igenData);
+  const shdrData = cat(
+    str('S', 20),
+    u32(0), u32(count),
+    u32(loopStart), u32(loopEnd),
+    u32(sampleRate),
+    i8v(rootKey), i8v(0),
+    u16(0), u16(0),
+    str('EOS', 20), u32(0), u32(0), u32(0), u32(0), u32(44100), i8v(0), i8v(0), u16(0), u16(0),
+  );
+  const shdrChunk = cat(fourcc('shdr'), u32(shdrData.length), shdrData);
+
+  const pdtaBody = cat(fourcc('pdta'), phdrChunk, pbagChunk, pmodChunk, pgenChunk, instChunk, ibagChunk, imodChunk, igenChunk, shdrChunk);
+  const pdtaList = cat(fourcc('LIST'), u32(pdtaBody.length), pdtaBody);
+  const riffBody = cat(fourcc('sfbk'), infoList, sdtaList, pdtaList);
+  const riff = cat(fourcc('RIFF'), u32(riffBody.length), riffBody);
+  const buf = new ArrayBuffer(riff.length);
+  new Uint8Array(buf).set(riff);
+  return buf;
+}

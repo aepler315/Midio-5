@@ -36,16 +36,23 @@ export function applyTransform(v, { tx = 0, ty = 0, rot = 0, scaleX = 1, scaleY 
 export function drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, {
   satBase = 68, lightBase = 52, glowBoost = 34, alpha = 0.9, widthBase = 1.6, widthGlow = 2.0,
   hueSpread = 50, // edges vary within +/-hueSpread/2 of baseHueDeg, not the full wheel -- a cohesive character, not a rainbow
-  light = null, rimAmount = 0.6, // Movement VII: the celestial light modulates the angle-derived hue/lightness above, it never replaces it
+  outline = false, // true -> a near-black contour pass UNDER the spectral stroke: the silhouette reads razor-sharp against the glow underlays
 } = {}) {
-  // Resolved once per call, not per edge -- this is the only place a hex
-  // color gets parsed for the whole mesh part.
-  let lightHue = null;
-  if (light && light.intensity > 0.01 && rimAmount > 0) {
-    const rgb = hexToRgb(light.colorHex);
-    lightHue = rgbToHsl(rgb.r, rgb.g, rgb.b).h;
+  if (outline) {
+    const o = outline === true ? {} : outline;
+    ctx.save();
+    ctx.strokeStyle = o.color || 'rgba(7,10,20,0.85)';
+    ctx.lineWidth = widthBase + (o.widthAdd ?? 2.4);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (const [i, j] of mesh.edges) {
+      ctx.moveTo(points[i].x, points[i].y);
+      ctx.lineTo(points[j].x, points[j].y);
+    }
+    ctx.stroke();
+    ctx.restore();
   }
-
   for (let e = 0; e < mesh.edges.length; e++) {
     const [i, j] = mesh.edges[e];
     const a = points[i], b = points[j];
@@ -101,6 +108,29 @@ export function drawMeshPart(ctx, mesh, restLengths, transform, baseHueDeg, opti
   const points = mesh.vertices.map((v) => applyTransform(v, transform));
   drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, options);
   return points;
+}
+
+/**
+ * Additive soft halo: a hue-tinted radial gradient (opaque center -> fully
+ * transparent edge) filled into an ellipse. Stands in for the old "blurred,
+ * enlarged, additive mesh copy" under-glow trick without a `ctx.filter`
+ * blur -- on mobile Canvas2D every `filter` use forces an offscreen layer
+ * allocation + GPU flush, which a plain gradient fill avoids entirely.
+ */
+export function drawGlowHalo(ctx, cx, cy, rx, ry, hueDeg, alpha, { sat = 70, light = 74 } = {}) {
+  if (alpha <= 0.002 || rx <= 0.5 || ry <= 0.5) return;
+  const r = Math.max(rx, ry);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  g.addColorStop(0, `hsl(${hueDeg.toFixed(0)},${sat}%,${light}%)`);
+  g.addColorStop(1, `hsla(${hueDeg.toFixed(0)},${sat}%,${light}%,0)`);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 /**

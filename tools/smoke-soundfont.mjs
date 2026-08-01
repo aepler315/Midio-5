@@ -47,6 +47,11 @@ await page.goto(url, { waitUntil: 'load' });
 await page.click('#demoBtn');
 await page.waitForTimeout(1500);
 checkpoint('Demo started', await page.evaluate(() => !!window.__SMW));
+// Observe-only recommender: this test's fixture fonts are one-shot clicks
+// the audition (rightly) disqualifies, and its assertions script exact
+// active-font sequences. Recommendation policy is covered by
+// smoke-recommend.mjs.
+await page.evaluate(() => { window.__SMW.fontRecommender.autoApply = false; });
 
 // Step 2: Verify font library + SF2 engine are exposed
 checkpoint('fontLibrary exposed', await page.evaluate(() => !!window.__SMW.fontLibrary));

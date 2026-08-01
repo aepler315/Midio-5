@@ -75,6 +75,51 @@ export function buildMultiTrackPannedMidi(noteCount = 8) {
 }
 
 /**
+ * Four named SMF Type-1 tracks -- the casting fixture: a clean piano
+ * melody, a synth lead line, a bass line, and channel-10 drums. Track
+ * names + programs are exactly what Casting.laneForTrack keys on
+ * (piano -> Midasus, lead -> Midio, bass -> Broshi, drums -> nobody).
+ */
+export function buildNamedEnsembleMidi(noteCount = 8) {
+  const ppqn = 96;
+  const gap = 96, dur = 48;
+
+  const mkMelodic = (name, channel, program, basePitch) => {
+    const t = [];
+    t.push([...vlq(0), 0xff, 0x03, name.length, ...strBytes(name)]);
+    if (channel === 0) {
+      t.push([...vlq(0), 0xff, 0x51, 3, 0x07, 0xa1, 0x20]); // 120 BPM
+      t.push([...vlq(0), 0xff, 0x58, 4, 4, 2, 24, 8]);
+    }
+    t.push([...vlq(0), 0xc0 | channel, program]);
+    for (let i = 0; i < noteCount; i++) {
+      const pitch = basePitch + (i % 5) * 2;
+      t.push([...vlq(i === 0 ? 0 : gap - dur), 0x90 | channel, pitch, 100]);
+      t.push([...vlq(dur), 0x80 | channel, pitch, 0]);
+    }
+    t.push([...vlq(0), 0xff, 0x2f, 0]);
+    return t;
+  };
+
+  const drums = [];
+  drums.push([...vlq(0), 0xff, 0x03, 5, ...strBytes('Drums')]);
+  for (let i = 0; i < noteCount; i++) {
+    drums.push([...vlq(i === 0 ? 0 : gap - 24), 0x99, 36, 110]);
+    drums.push([...vlq(24), 0x89, 36, 0]);
+  }
+  drums.push([...vlq(0), 0xff, 0x2f, 0]);
+
+  const header = smfHeader(1, 4, ppqn);
+  return new Uint8Array([
+    ...header,
+    ...buildTrackChunk(mkMelodic('Grand Piano', 0, 0, 72)),
+    ...buildTrackChunk(mkMelodic('Lead Synth', 1, 81, 76)),
+    ...buildTrackChunk(mkMelodic('Bass', 2, 33, 36)),
+    ...buildTrackChunk(drums),
+  ]).buffer;
+}
+
+/**
  * A single SMF track multiplexing two channels (SMF Type 0 style): a
  * melodic voice on channel 0 interleaved with a drum hit on channel 9.
  */

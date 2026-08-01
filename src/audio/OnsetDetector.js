@@ -51,6 +51,35 @@ export function normalizeBands(raw, rate, tau = 4) {
   });
 }
 
+/**
+ * Per-band global loudness reference (95th percentile of the raw, un-AGC'd
+ * envelope) -- the "how loud does this band actually get across the whole
+ * song" scale that EnergyCurves needs. normalizeBands' running-max AGC
+ * deliberately erases this (a quiet intro decays the follower down to its
+ * own peak and reads full-scale; a loud chorus does the same and reads no
+ * louder), which is exactly right for onset DETECTION (loud and quiet
+ * passages must drive the flux detector identically) but wrong for
+ * anything that's supposed to answer "how energetic is the song right
+ * now" -- CalmDirector, HypeDirector, the section/biome schedule, the
+ * mountain groove, etc. all want TRUE relative loudness.
+ *
+ * A band that's nearly silent all song (say, no content above 8kHz) would
+ * otherwise have its noise floor's 95th percentile treated as "loud for
+ * this band" and read full-scale on the faintest hiss; floored at 25% of
+ * the loudest band's reference so a near-empty band can't claim more
+ * relative gain than a quarter of what the song's dominant band earns.
+ */
+export function globalBandReferences(raw) {
+  const p95s = raw.map((env) => {
+    if (env.length === 0) return 1e-6;
+    const sorted = Float32Array.from(env).sort();
+    const idx = Math.min(sorted.length - 1, Math.floor(0.95 * sorted.length));
+    return Math.max(1e-6, sorted[idx]);
+  });
+  const maxP95 = Math.max(1e-6, ...p95s);
+  return p95s.map((v) => Math.max(v, 0.25 * maxP95));
+}
+
 function positiveFlux(band) {
   const flux = new Float32Array(band.length);
   for (let i = 1; i < band.length; i++) flux[i] = Math.max(0, band[i] - band[i - 1]);
@@ -120,6 +149,18 @@ export function detectRhythmOnsets(normBands, rawBands, rate, onsetThreshold = 1
   const values = frames.map((i) => O[i]).sort((a, b) => a - b);
   const p95 = values.length ? Math.max(1e-6, values[Math.min(values.length - 1, Math.floor(0.95 * values.length))]) : 1;
 
+  // The flux-based strength above (O[i]/p95) is deliberately AGC-relative --
+  // it answers "how surprising was this onset against its OWN local
+  // dynamic range", which is what makes detection work identically in a
+  // whisper-quiet intro and a wall-of-sound chorus. But a jump's height and
+  // the world's kick-driven flashes should also know the song's TRUE
+  // loudness at that instant, or every onset (intro included) reads as a
+  // full-strength hit. This blends in true relative loudness: a soft
+  // section's kicks stay real hits (never fully silenced -- floor 0.5x)
+  // but a hard section's kicks earn their full punch on top.
+  const refBands = globalBandReferences(rawBands);
+  const refGlobalSum = refBands.reduce((a, b) => a + b, 0);
+
   const onsets = frames.map((i) => {
     let sum = 0;
     const e = new Array(rawBands.length);
@@ -130,7 +171,9 @@ export function detectRhythmOnsets(normBands, rawBands, rate, onsetThreshold = 1
     if (lowShare > 0.45) { type = 'KICK'; pitch = 36; kick = true; }
     else if (highShare > 0.40) { type = 'HAT'; pitch = 42; }
     else { type = 'SNARE'; pitch = 38; }
-    return { frame: i, tMs: (i / rate) * 1000, type, pitch, kick, vel: clamp(O[i] / p95, 0, 1) };
+    const trueLoudness = refGlobalSum > 1e-9 ? clamp(sum / refGlobalSum, 0, 1) : 0;
+    const vel = clamp((O[i] / p95) * (0.5 + 0.5 * trueLoudness), 0, 1);
+    return { frame: i, tMs: (i / rate) * 1000, type, pitch, kick, vel };
   });
 
   return { O, onsets };
@@ -237,10 +280,40 @@ function kickGridExplainScore(kickFrames, tau, rate) {
   return explained / kickFrames.length;
 }
 
-/** Pseudo-melody/bass lanes from sustained band energy (spec §1.2.4 final paragraph). */
-export function extractPseudoLane(normBands, rate, { bandIndices, pitchLo, pitchHi, role, onsetThreshold = 1 }) {
+/** The mean of a subset of band envelopes -- shared by extractPseudoLane's
+ *  onset picking and the adapter's sustain estimation, so both walk the
+ *  exact same curve. */
+export function mixBandEnvelopes(normBands, bandIndices) {
   const mix = new Float32Array(normBands[0].length);
   for (const b of bandIndices) for (let i = 0; i < mix.length; i++) mix[i] += normBands[b][i] / bandIndices.length;
+  return mix;
+}
+
+/**
+ * MIDI-like note duration from an envelope: walk forward from the onset
+ * frame while the energy stays above a fraction of its local peak. Gives
+ * audio notes real sustain lengths (feeding the composer strip's icon
+ * spans and Midasus's phrasing) instead of one fixed durMs for every note.
+ */
+export function estimateSustainMs(env, rate, frame, { floorRatio = 0.35, minMs = 120, maxMs = 1600 } = {}) {
+  const peakHold = Math.min(env.length - 1, frame + Math.round(rate * 0.08));
+  let peak = 0;
+  for (let i = frame; i <= peakHold; i++) if (env[i] > peak) peak = env[i];
+  if (peak < 1e-6) return minMs;
+  const floor = peak * floorRatio;
+  let end = frame;
+  const maxFrames = Math.round((maxMs / 1000) * rate);
+  while (end < env.length - 1 && end - frame < maxFrames && env[end] > floor) end++;
+  return clamp(((end - frame) / rate) * 1000, minMs, maxMs);
+}
+
+/** Pseudo-melody/bass lanes from sustained band energy (spec §1.2.4 final
+ *  paragraph). Each event carries its analysis `frame` so the adapter can
+ *  refine pitch/duration against the true spectrum (see PitchTracker) --
+ *  the band-centroid pitch here is only the fallback for moments the
+ *  spectral tracker finds no tonal content in. */
+export function extractPseudoLane(normBands, rate, { bandIndices, pitchLo, pitchHi, role, onsetThreshold = 1 }) {
+  const mix = mixBandEnvelopes(normBands, bandIndices);
 
   const flux = positiveFlux(mix);
   const theta = medianAdaptiveThreshold(flux, MEDIAN_HALF_WINDOW, onsetThreshold);
@@ -258,6 +331,6 @@ export function extractPseudoLane(normBands, rate, { bandIndices, pitchLo, pitch
     }
     const centroid = den > 0 ? num / den / Math.max(1, bandIndices.length - 1) : 0.5;
     const pitch = Math.round(pitchLo + (pitchHi - pitchLo) * clamp(centroid, 0, 1));
-    return { tMs: (i / rate) * 1000, pitch, vel: clamp(flux[i] / p95, 0, 1), role };
+    return { tMs: (i / rate) * 1000, pitch, vel: clamp(flux[i] / p95, 0, 1), role, frame: i };
   });
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HypeDirector } from '../src/sim/HypeDirector.js';
+import { HypeDirector, hypeFrameStyle } from '../src/sim/HypeDirector.js';
 
 function fakeEnergy(value) {
   return { globalEnergy: () => value };
@@ -51,4 +51,23 @@ test('kick slams spike and decay; surge decays; ring window opens then closes', 
   hype.dropAtMs = t;
   assert.ok(hype.ringU(t + 100) > 0 && hype.ringU(t + 100) < 1);
   assert.equal(hype.ringU(t + 2000), null, 'ring must close after its window');
+});
+
+test('hypeFrameStyle nearly extinguishes the rim during calm; energetic still reads', () => {
+  const hot = { fast: 0.6, slam: 1, surge: 0 };
+  const calmHot = hypeFrameStyle(hot, 1);
+  const wildHot = hypeFrameStyle(hot, 0);
+  assert.ok(calmHot.alpha < 0.08, `calm + kick slam should barely flash the rim, got ${calmHot.alpha}`);
+  assert.ok(wildHot.alpha > 0.35, `energetic slam should still light the frame, got ${wildHot.alpha}`);
+  assert.ok(calmHot.alpha < wildHot.alpha * 0.25, 'calm must cut most of the kick-strobe');
+
+  const drop = { fast: 0.2, slam: 0, surge: 1 };
+  const calmDrop = hypeFrameStyle(drop, 1);
+  const wildDrop = hypeFrameStyle(drop, 0);
+  assert.ok(calmDrop.alpha > calmHot.alpha, 'a drop surge should still peek through calm more than a kick');
+  assert.ok(wildDrop.alpha > calmDrop.alpha, 'full surge is brighter when not calm');
+  assert.ok(calmDrop.echo > 0 || wildDrop.echo > 0);
+
+  const idle = hypeFrameStyle({ fast: 0.15, slam: 0, surge: 0 }, 1);
+  assert.ok(idle.alpha < 0.03, 'fully calm idle rim should be almost gone');
 });

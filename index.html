@@ -3,24 +3,30 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Super Midio World</title>
-  <link rel="stylesheet" href="/src/ui/style.css" />
+  <title>Super Maudio World</title>
+  <link rel="stylesheet" href="./src/ui/style.css" />
 </head>
 <body>
   <div id="app">
     <canvas id="stage" width="1280" height="720"></canvas>
 
     <div id="loader" class="panel">
-      <h1>SUPER MIDIO WORLD</h1>
-      <p class="sub">Drop a .mid file or an audio file (mp3/wav/flac) to begin.</p>
+      <h1>SUPER MAUDIO WORLD</h1>
+      <p class="sub">Drop a .mid file or an audio file (mp3/wav/flac) to begin — Midio performs it himself.
+        Drop <b>several audio stems at once</b> (bass.wav, piano.wav, lead.wav…) and their names decide who dances what.<br />
+        Sit back and watch the show — every jump, combo, and biome is generated live from the music.</p>
       <div id="dropzone" tabindex="0">
-        <span>Drop file here, or</span>
+        <span>Drop file(s) here, or</span>
         <label class="filebtn">
           Choose file
-          <input id="fileInput" type="file" accept=".mid,.midi,audio/*,.mp3,.wav,.flac" hidden />
+          <input id="fileInput" type="file" accept=".mid,.midi,audio/*,.mp3,.wav,.flac" multiple hidden />
         </label>
       </div>
       <button id="demoBtn" type="button">Play procedural demo (no file needed)</button>
+      <div class="prefRow">
+        <button id="noLyricsBtn" class="ghostbtn" type="button" aria-pressed="false" title="Skip the lyric search for audio files (remembered)">No lyrics: off</button>
+        <button id="btLatencyBtn" class="ghostbtn" type="button" aria-pressed="false" title="Floor output-latency compensation for Bluetooth headphones (~200 ms). Remembered.">BT latency: off</button>
+      </div>
       <div class="sfRow">
         <label class="filebtn">
           Load .sf2 / .zip
@@ -34,12 +40,19 @@
       </div>
       <p class="hint">Or drop <code>.sf2</code>/<code>.zip</code> files into the <code>soundfonts/</code> folder next to <code>index.html</code> — they load automatically, no clicking required.</p>
       <p id="progressText" class="hint hidden"></p>
-      <p class="hint">You can drop a different MIDI/audio file in at any time, even mid-song, to switch instantly. Each MIDI builds a custom biome from its melody/energy. Optional WebGL post-FX: append <code>?renderer=webgl</code> to the URL. Press <kbd>`</kbd> during play to open the vision/tuning debug overlay, <kbd>T</kbd> to see loaded tracks, <kbd>F</kbd> for SoundFonts, <kbd>R</kbd> to toggle reduced-flash accessibility mode.</p>
+      <p class="hint">You can drop a different MIDI/audio file mid-song. Press <kbd>`</kbd> for debug, <kbd>T</kbd> tracks, <kbd>F</kbd> SoundFonts, fullscreen button for immersive play.</p>
     </div>
 
     <div id="hud" class="hidden">
-      <div id="comboReadout">×1.0</div>
+      <div id="hudLeft">
+        <div id="comboReadout">×1.0</div>
+        <div id="scoreReadout">0</div>
+      </div>
       <div id="hudRight">
+        <button id="pauseBtn" class="ghostbtn iconbtn" type="button" title="Pause">&#9208;</button>
+        <button id="stopBtn" class="ghostbtn iconbtn" type="button" title="Stop (back to title)">&#9209;</button>
+        <button id="fullscreenBtn" class="ghostbtn iconbtn" type="button" title="Fullscreen (F11)">&#9974;</button>
+        <button id="btLatencyHudBtn" class="ghostbtn" type="button" aria-pressed="false" title="Bluetooth latency mode (~200 ms floor). Remembered.">BT lag</button>
         <button id="settingsBtn" class="ghostbtn iconbtn" type="button" title="SoundFont settings (hidden fonts)">&#9881;</button>
         <div id="trackBadge" class="hidden">
           <button id="trackBadgeBtn" type="button"></button>
@@ -53,6 +66,23 @@
       </button>
     </div>
 
+    <div id="auditionPanel" class="panel hidden">
+      <h1 id="auditionHeading">PULLING THE RECORDING APART</h1>
+      <canvas id="auditionCanvas" width="420" height="220"></canvas>
+      <p id="auditionText" class="sub">Separating into frequency bands…</p>
+      <div id="auditionBar"><div id="auditionBarFill"></div></div>
+      <div id="lyricsRow" class="hidden">
+        <p id="lyricsStatus" class="sub"></p>
+        <div id="lyricsFields" class="hidden">
+          <input id="lyricsArtistInput" type="text" placeholder="Artist" autocomplete="off" />
+          <input id="lyricsTitleInput" type="text" placeholder="Title" autocomplete="off" />
+          <button id="lyricsFindBtn" class="ghostbtn" type="button">Find lyrics</button>
+          <button id="lyricsSkipBtn" class="ghostbtn" type="button">Skip</button>
+          <button id="lyricsNoneBtn" class="ghostbtn" type="button" title="Skip lyrics now and for every future song">No lyrics</button>
+        </div>
+      </div>
+    </div>
+
     <div id="dragOverlay">
       <div class="dragOverlayMsg">Drop to play</div>
     </div>
@@ -64,6 +94,7 @@
           <button id="fontModalClose" class="ghostbtn iconbtn" type="button" aria-label="Close">&times;</button>
         </div>
         <div id="fontModalList" class="fontList"></div>
+        <div id="fontAuditionStatus" class="auditionStatus hidden"></div>
         <div class="modalFooter">
           <label class="filebtn">
             Load .sf2 / .zip
@@ -82,8 +113,33 @@
     <div id="completePanel" class="panel hidden">
       <h1>COMPLETE</h1>
       <p id="completeStats" class="sub"></p>
+      <div id="resultsGrid" class="hidden"></div>
       <div id="filmstrip" class="hidden"></div>
       <button id="playAgainBtn" type="button">Play again</button>
+      <button id="saveVideoBtn" type="button" class="hidden">Save video</button>
+      <div id="exportRow">
+        <select id="exportRes">
+          <option value="720">720p (native)</option>
+          <option value="1080">1080p</option>
+          <option value="1440" selected>1440p</option>
+        </select>
+        <select id="exportFps">
+          <option value="30">30 fps</option>
+          <option value="60" selected>60 fps</option>
+        </select>
+        <button id="exportBtn" type="button" class="ghostbtn">Re-export at these settings</button>
+        <a id="exportDownload" class="ghostbtn hidden" download>Download video</a>
+        <p class="hint">Every play is already recorded at the settings above — hit "Save video" to keep it, or re-export a fresh replay at different settings (mp4 where the browser supports it, otherwise webm).</p>
+      </div>
+    </div>
+
+    <div id="recordingHud" class="hidden">
+      <span class="recDot">&#9679;</span> REC <span id="recordingTime"></span>
+      <button id="recordingCancelBtn" type="button" class="ghostbtn">Cancel</button>
+    </div>
+
+    <div id="liveRecHud" class="hidden" title="Recording this play — Save video when it ends">
+      <span class="recDot">&#9679;</span> REC
     </div>
 
     <div id="filmstripModal" class="modalBackdrop hidden">
@@ -100,8 +156,9 @@
     </div>
 
     <div id="debugOverlay" class="hidden"></div>
+    <div id="fpsHud" class="hidden"></div>
   </div>
 
-  <script type="module" src="/src/main.js"></script>
+  <script type="module" src="./src/main.js"></script>
 </body>
 </html>

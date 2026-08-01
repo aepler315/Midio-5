@@ -13,6 +13,10 @@
 // @property {number} channel  midi channel or band index
 // @property {number} pan      stereo placement, -1 (hard left) .. 1 (hard right), 0 = center
 // @property {number} program  GM instrument 0-127 from the source MIDI, -1 if unknown/non-MIDI
+// @property {?string} lane    which character performs this note (Casting.js:
+//                             'MIDASUS' clean melody | 'MIDIO' lead | 'BROSHI'
+//                             bass), null = nobody's line. Roles stay the
+//                             world's contract; lanes only route choreography.
 
 export const Role = Object.freeze({
   MELODY: 'MELODY',
@@ -31,11 +35,11 @@ export const GM_DRUM = Object.freeze({
 
 /** @returns {NoteEvent} */
 export function makeNoteEvent({
-  tMs, durMs = 90, pitch, vel, role, kick = false, src, channel = 0, pan = 0, program = -1,
+  tMs, durMs = 90, pitch, vel, role, kick = false, src, channel = 0, pan = 0, program = -1, lane = null,
 }) {
   return {
     tMs, durMs, pitch, vel: Math.max(0, Math.min(1, vel)), role, kick, src, channel,
-    pan: Math.max(-1, Math.min(1, pan)), program,
+    pan: Math.max(-1, Math.min(1, pan)), program, lane,
   };
 }
 

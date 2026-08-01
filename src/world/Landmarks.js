@@ -1,11 +1,10 @@
 // Landmark geometry baked into the parallax silhouettes: an L-system
-// engine plus eight biome-specific painters, drawn once into the L4/L5
+// engine plus biome-specific painters, drawn once into the L4/L5
 // strip canvases at generation time -- infinite per-song variety at zero
 // per-frame cost. This is what turns a palette into a place: JADE grows
-// bracketed L-system trees, ARCTIC erupts crystal clusters, SAKURA
-// raises torii gates under blossom trees, CYBER builds lattice masts,
-// VOID floats monoliths, EMBER sharpens charred spires, TWILIGHT stands
-// menhir rings beside a ruined tower, SOLAR plants twin obelisks.
+// trees, ARCTIC crystals, SAKURA torii, CYBER lattice masts, VOID monoliths,
+// EMBER spires, TWILIGHT menhirs, SOLAR obelisks, ABYSS chimneys, DUNE arches,
+// CORAL fans, LUMEN mushrooms, AURUM sheaves, NEBULA floating isles.
 import { mulberry32 } from '../utils/math.js';
 import { ridgeYAt } from './SilhouetteGenerator.js';
 
@@ -238,6 +237,177 @@ function paintObelisks(ctx, x, rootY, scale, rand, color) {
   }
 }
 
+/** Hydrothermal chimneys / black smokers for ABYSS — stacked irregular stacks. */
+function paintChimneys(ctx, x, rootY, scale, rand, color) {
+  ctx.fillStyle = color;
+  const n = 2 + Math.floor(rand() * 2);
+  for (let i = 0; i < n; i++) {
+    const H = (50 + rand() * 70) * scale;
+    const wB = (8 + rand() * 7) * scale;
+    const wT = wB * (0.45 + rand() * 0.25);
+    const cx = x + (i - (n - 1) / 2) * 22 * scale;
+    const lean = (rand() * 2 - 1) * 0.12;
+    ctx.save();
+    ctx.translate(cx, rootY);
+    ctx.rotate(lean);
+    // Main stack body, slightly waisted mid-height.
+    ctx.beginPath();
+    ctx.moveTo(-wB, 0);
+    ctx.lineTo(-wB * 0.85, -H * 0.45);
+    ctx.lineTo(-wT, -H);
+    ctx.lineTo(wT, -H);
+    ctx.lineTo(wB * 0.85, -H * 0.45);
+    ctx.lineTo(wB, 0);
+    ctx.closePath();
+    ctx.fill();
+    // Flared vent lip + a short mineral plume silhouette above.
+    const lip = wT * 1.55;
+    ctx.beginPath();
+    ctx.moveTo(-lip, -H);
+    ctx.lineTo(-wT * 0.7, -H - 6 * scale);
+    ctx.lineTo(wT * 0.7, -H - 6 * scale);
+    ctx.lineTo(lip, -H);
+    ctx.closePath();
+    ctx.fill();
+    const plumeH = (10 + rand() * 18) * scale;
+    ctx.beginPath();
+    ctx.moveTo(-wT * 0.35, -H - 5 * scale);
+    ctx.quadraticCurveTo(-wT * 0.9, -H - plumeH * 0.55, -wT * 0.2, -H - plumeH);
+    ctx.quadraticCurveTo(0, -H - plumeH * 0.7, wT * 0.2, -H - plumeH);
+    ctx.quadraticCurveTo(wT * 0.9, -H - plumeH * 0.55, wT * 0.35, -H - 5 * scale);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/** Desert sandstone arch for DUNE. */
+function paintArch(ctx, x, rootY, scale, rand, color) {
+  const H = (55 + rand() * 40) * scale;
+  const span = (36 + rand() * 20) * scale;
+  const thick = (10 + rand() * 6) * scale;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  // Outer horseshoe
+  ctx.moveTo(x - span, rootY);
+  ctx.lineTo(x - span - thick * 0.2, rootY - H * 0.55);
+  ctx.quadraticCurveTo(x, rootY - H - thick, x + span + thick * 0.2, rootY - H * 0.55);
+  ctx.lineTo(x + span, rootY);
+  ctx.lineTo(x + span - thick, rootY);
+  ctx.lineTo(x + span - thick * 0.85, rootY - H * 0.5);
+  ctx.quadraticCurveTo(x, rootY - H + thick * 0.6, x - span + thick * 0.85, rootY - H * 0.5);
+  ctx.lineTo(x - span + thick, rootY);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** Branching coral fan for CORAL. */
+function paintCoralFan(ctx, x, rootY, scale, rand, color) {
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  const branches = 5 + Math.floor(rand() * 4);
+  for (let i = 0; i < branches; i++) {
+    const ang = -Math.PI / 2 + (i - (branches - 1) / 2) * 0.28 + (rand() * 0.12 - 0.06);
+    const len = (28 + rand() * 36) * scale;
+    ctx.lineWidth = Math.max(1.2, (3.2 - i * 0.15) * scale);
+    ctx.beginPath();
+    ctx.moveTo(x, rootY);
+    const mx = x + Math.cos(ang) * len * 0.55 + (rand() * 2 - 1) * 4 * scale;
+    const my = rootY + Math.sin(ang) * len * 0.55;
+    const ex = x + Math.cos(ang) * len;
+    const ey = rootY + Math.sin(ang) * len;
+    ctx.quadraticCurveTo(mx, my, ex, ey);
+    ctx.stroke();
+    // Tip knobs
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(ex, ey, 2.2 * scale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/** Cluster of mushroom caps for LUMEN. */
+function paintMushrooms(ctx, x, rootY, scale, rand, color) {
+  ctx.fillStyle = color;
+  const n = 3 + Math.floor(rand() * 3);
+  for (let i = 0; i < n; i++) {
+    const stemH = (14 + rand() * 28) * scale;
+    const stemW = (2.5 + rand() * 2) * scale;
+    const capR = (8 + rand() * 12) * scale;
+    const cx = x + (i - (n - 1) / 2) * 16 * scale;
+    // Stem
+    ctx.fillRect(cx - stemW / 2, rootY - stemH, stemW, stemH);
+    // Cap (half-ellipse dome)
+    ctx.beginPath();
+    ctx.ellipse(cx, rootY - stemH, capR, capR * 0.55, 0, Math.PI, 0);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+/** Harvest sheaves / grain stacks for AURUM. */
+function paintSheaves(ctx, x, rootY, scale, rand, color) {
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  const bundles = 3 + Math.floor(rand() * 2);
+  for (let b = 0; b < bundles; b++) {
+    const bx = x + (b - (bundles - 1) / 2) * 14 * scale;
+    const stalks = 7 + Math.floor(rand() * 4);
+    for (let i = 0; i < stalks; i++) {
+      const lean = (i - stalks / 2) * 0.12 + (rand() * 0.08 - 0.04);
+      const h = (22 + rand() * 18) * scale;
+      ctx.lineWidth = Math.max(0.8, 1.3 * scale);
+      ctx.beginPath();
+      ctx.moveTo(bx, rootY);
+      ctx.quadraticCurveTo(bx + lean * h * 0.4, rootY - h * 0.55, bx + Math.sin(lean) * h * 0.35, rootY - h);
+      ctx.stroke();
+    }
+    // Binding band
+    ctx.lineWidth = 1.6 * scale;
+    ctx.beginPath();
+    ctx.moveTo(bx - 5 * scale, rootY - 12 * scale);
+    ctx.lineTo(bx + 5 * scale, rootY - 12 * scale);
+    ctx.stroke();
+  }
+}
+
+/** Floating rock isles for NEBULA. */
+function paintFloatIsles(ctx, x, rootY, scale, rand, color) {
+  ctx.fillStyle = color;
+  const n = 2 + Math.floor(rand() * 2);
+  for (let i = 0; i < n; i++) {
+    const floatY = -(20 + rand() * 50) * scale;
+    const w = (18 + rand() * 22) * scale;
+    const h = (8 + rand() * 10) * scale;
+    const cx = x + (i - (n - 1) / 2) * 36 * scale;
+    ctx.save();
+    ctx.translate(cx, rootY + floatY);
+    ctx.rotate((rand() * 2 - 1) * 0.15);
+    // Craggy top, flat-ish underside
+    ctx.beginPath();
+    ctx.moveTo(-w, 0);
+    ctx.lineTo(-w * 0.7, -h * 0.6);
+    ctx.lineTo(-w * 0.2, -h);
+    ctx.lineTo(w * 0.15, -h * 0.75);
+    ctx.lineTo(w * 0.65, -h * 0.9);
+    ctx.lineTo(w, -h * 0.2);
+    ctx.lineTo(w * 0.7, h * 0.35);
+    ctx.lineTo(-w * 0.5, h * 0.4);
+    ctx.closePath();
+    ctx.fill();
+    // Tiny dangling spire under one isle
+    if (rand() > 0.45) {
+      ctx.beginPath();
+      ctx.moveTo(-3 * scale, h * 0.3);
+      ctx.lineTo(0, h * 0.3 + 12 * scale);
+      ctx.lineTo(3 * scale, h * 0.3);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
 export const LANDMARKS = {
   JADE: [paintTree(4, 22.5)],
   ARCTIC: [paintCrystals],
@@ -249,6 +419,12 @@ export const LANDMARKS = {
   SOLAR: [paintObelisks],
   STORM: [paintTree(3, 32)], // sparse wind-blasted trees
   MIRROR: [paintReeds], // lakeside reeds, low enough to keep the water reads clear
+  ABYSS: [paintChimneys], // hydrothermal chimneys on the abyssal ridge
+  DUNE: [paintArch],
+  CORAL: [paintCoralFan],
+  LUMEN: [paintMushrooms],
+  AURUM: [paintSheaves, paintTree(3, 20)],
+  NEBULA: [paintFloatIsles],
 };
 
 /**

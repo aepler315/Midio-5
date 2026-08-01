@@ -3,6 +3,7 @@ import { parseMidi, pairNotes, rescaleVelocities } from './MidiParser.js';
 import { classifyTracks } from './TrackClassifier.js';
 import { Role, makeNoteEvent, sortNoteEvents } from './NoteEvent.js';
 import { assignPan, panAt, intertwinedPairs } from './PanAnalysis.js';
+import { laneForTrack } from './Casting.js';
 
 // Standard GM kick pitches on channel 10 (0-indexed channel 9).
 const GM_KICK_PITCHES = new Set([35, 36]);
@@ -83,9 +84,19 @@ export function midiToTimeline(arrayBuffer) {
   const panByChannel = assignPan(trackData);
 
   const timeline = [];
+  const lanesByTrack = new Map();
   for (const { track, notes } of trackData) {
     const role = roles.get(track.index);
     const panEntry = panByChannel.get(track.channel);
+    // Casting: the track's name/instrument/program decides which character
+    // performs this line (clean melody -> Midasus, bass -> Broshi, other
+    // leads -> Midio). Purely a choreography routing -- the role above
+    // stays the contract for the chart, obstacles, and every director.
+    const lane = laneForTrack({
+      name: track.name, instrumentName: track.instrumentName,
+      program: track.program, channel: track.channel, role,
+    });
+    lanesByTrack.set(track.index, lane);
     for (const n of notes) {
       const kick = role === Role.RHYTHM && (GM_KICK_PITCHES.has(n.pitch) || n.channel === 9 && n.pitch === 36);
       timeline.push(makeNoteEvent({
@@ -99,6 +110,7 @@ export function midiToTimeline(arrayBuffer) {
         channel: n.channel,
         pan: panAt(panEntry, n.startMs, durationMs),
         program: track.program,
+        lane,
       }));
     }
   }
@@ -115,6 +127,7 @@ export function midiToTimeline(arrayBuffer) {
       index: track.index,
       name: track.name,
       role: roles.get(track.index),
+      lane: lanesByTrack.get(track.index) ?? null,
       noteCount: notes.length,
       channel: track.channel,
       pan: panByChannel.get(track.channel)?.pan ?? track.pan ?? 0,

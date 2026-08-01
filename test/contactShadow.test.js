@@ -1,60 +1,61 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeShadow, drawContactShadow } from '../src/render/ContactShadow.js';
+import {
+  contactShadow, SHADOW_FADE_HEIGHT_PX, SHADOW_WIDTH_FRAC, SHADOW_ASPECT,
+  SHADOW_RX_MIN, SHADOW_RX_MAX, SHADOW_ALPHA_MAX,
+} from '../src/world/ContactShadow.js';
 
-function mockCtx() {
-  const calls = { createRadialGradient: 0 };
-  return {
-    calls,
-    save() {}, restore() {}, beginPath() {}, fill() {}, ellipse() {},
-    createRadialGradient(...args) {
-      for (const a of args) assert.ok(Number.isFinite(a), `createRadialGradient received a non-finite arg: ${args}`);
-      calls.createRadialGradient++;
-      return { addColorStop() {} };
-    },
-  };
-}
-
-const light = { x: 400, y: 100, intensity: 1 };
-
-test('shadow offsets away from the light, to the opposite side of the subject', () => {
-  const rightOfLight = computeShadow({ x: 900, groundY: 600, heightAboveGround: 80, width: 40, light });
-  assert.ok(rightOfLight.x > 900, 'subject right of the light should cast its shadow further right');
-
-  const leftOfLight = computeShadow({ x: 100, groundY: 600, heightAboveGround: 80, width: 40, light });
-  assert.ok(leftOfLight.x < 100, 'subject left of the light should cast its shadow further left');
-});
-
-test('alpha decreases and radius increases monotonically with height', () => {
-  const heights = [0, 40, 80, 160, 240];
-  const shadows = heights.map((h) => computeShadow({ x: 900, groundY: 600, heightAboveGround: h, width: 40, light }));
-  for (let i = 1; i < shadows.length; i++) {
-    assert.ok(shadows[i].alpha <= shadows[i - 1].alpha, `alpha should not increase at height ${heights[i]}`);
-    assert.ok(shadows[i].radiusX >= shadows[i - 1].radiusX, `radius should not shrink at height ${heights[i]}`);
+test('grounded (heightAbove=0, and slightly negative) is the alpha/size ceiling', () => {
+  for (const h of [0, -5, -0.01]) {
+    const s = contactShadow(100, 480, h, 60);
+    assert.equal(s.alpha, SHADOW_ALPHA_MAX);
+    const expectedRx = Math.min(SHADOW_RX_MAX, Math.max(SHADOW_RX_MIN, 60 * SHADOW_WIDTH_FRAC));
+    assert.ok(Math.abs(s.rx - expectedRx) < 1e-9, `h=${h}: rx ${s.rx} != ${expectedRx}`);
   }
 });
 
-test('alpha is 0 when the light has no intensity', () => {
-  const darkLight = { x: 400, y: 100, intensity: 0 };
-  const s = computeShadow({ x: 900, groundY: 600, heightAboveGround: 20, width: 40, light: darkLight });
-  assert.equal(s.alpha, 0);
+test('fully faded at and beyond SHADOW_FADE_HEIGHT_PX', () => {
+  for (const h of [SHADOW_FADE_HEIGHT_PX, SHADOW_FADE_HEIGHT_PX + 500]) {
+    const s = contactShadow(100, 480, h, 60);
+    assert.deepEqual(s, { cx: 100, cy: 480, rx: 0, ry: 0, alpha: 0 });
+  }
 });
 
-test('alpha is 0 when no light is passed at all (perf-gated / non-biome fallback)', () => {
-  const s = computeShadow({ x: 900, groundY: 600, heightAboveGround: 20, width: 40, light: null });
-  assert.equal(s.alpha, 0);
+test('alpha and rx are monotonically non-increasing as height rises, no discontinuity', () => {
+  let prevAlpha = Infinity, prevRx = Infinity;
+  for (let h = 0; h <= SHADOW_FADE_HEIGHT_PX + 20; h += 2) {
+    const s = contactShadow(0, 0, h, 60);
+    assert.ok(s.alpha <= prevAlpha + 1e-9, `alpha rose at h=${h}`);
+    assert.ok(s.rx <= prevRx + 1e-9, `rx rose at h=${h}`);
+    prevAlpha = s.alpha; prevRx = s.rx;
+  }
 });
 
-test('a grounded subject (height 0) sits directly beneath it, un-offset', () => {
-  const s = computeShadow({ x: 900, groundY: 600, heightAboveGround: 0, width: 40, light });
-  assert.equal(s.x, 900);
-  assert.equal(s.y, 600);
+test('ry/rx ratio is always exactly SHADOW_ASPECT regardless of height', () => {
+  for (const h of [0, 20, 60, 100]) {
+    const s = contactShadow(0, 0, h, 60);
+    if (s.rx > 0) assert.ok(Math.abs(s.ry / s.rx - SHADOW_ASPECT) < 1e-9);
+  }
 });
 
-test('drawContactShadow never calls createRadialGradient with a non-finite argument, even when the subject position is undefined (e.g. its first frame, before its own update() has run)', () => {
-  const ctx = mockCtx();
-  assert.doesNotThrow(() => {
-    drawContactShadow(ctx, { x: undefined, groundY: undefined, heightAboveGround: undefined, width: 40, light });
-  });
-  assert.equal(ctx.calls.createRadialGradient, 0, 'should skip drawing entirely rather than pass NaN through');
+test('width clamps both directions when grounded', () => {
+  const tiny = contactShadow(0, 0, 0, 5);
+  assert.equal(tiny.rx, SHADOW_RX_MIN);
+  const huge = contactShadow(0, 0, 0, 500);
+  assert.equal(huge.rx, SHADOW_RX_MAX);
+});
+
+test('cx/cy always equal the anchor exactly, independent of height/width', () => {
+  for (const h of [0, 40, 130, 300]) {
+    const s = contactShadow(321, 654, h, 80);
+    assert.equal(s.cx, 321);
+    assert.equal(s.cy, 654);
+  }
+});
+
+test('non-finite inputs are treated as safe defaults, never throw or NaN', () => {
+  const s1 = contactShadow(10, 20, NaN, 60);
+  assert.ok(Number.isFinite(s1.alpha) && Number.isFinite(s1.rx));
+  const s2 = contactShadow(10, 20, 0, undefined);
+  assert.ok(Number.isFinite(s2.rx) && s2.rx === SHADOW_RX_MIN);
 });

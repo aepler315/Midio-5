@@ -8,6 +8,7 @@
 // then recovers spectacularly" gag layered on top.
 import { clamp01, mulberry32, hashSeed, shuffle } from '../utils/math.js';
 import { Role } from '../core/NoteEvent.js';
+import { FLAT_WEIGHTS } from '../audio/bands.js';
 
 const SLICE_WIDTH_PX = 90;
 const NUM_BANDS = 7;
@@ -28,6 +29,81 @@ const GAG_STAGGER_MS = 90;
 const GAG_SAG_PX = 70;
 const GAG_HOLD_MS = 500;
 const GAG_KICK_SYNC_WINDOW_MS = 150;
+
+// Landing ripples (The Light Show, pass 5): a damped, radially-traveling
+// shockwave that bobs the render-only ground bars outward from an impact,
+// then settles -- never touching heightAt() (the physics reference), same
+// render-only discipline as the bass buzz above.
+const RIPPLE_WAVE_SPEED_PX_S = 700;  // how fast the shockwave front travels outward
+const RIPPLE_OSC_HZ = 5.5;           // local oscillation frequency once the front arrives
+const RIPPLE_DECAY_TAU_SEC = 0.10;   // local envelope decay (time since the front passed this point)
+const RIPPLE_LOCAL_LIFE_SEC = 0.32;  // beyond this, a point's contribution is treated as exactly 0
+const RIPPLE_TOTAL_LIFE_MS = 480;    // hard wall-clock cap on a ripple record's life
+const RIPPLE_AMPLITUDE_PX = 11;      // peak per-bar bob at strength=1
+const RIPPLE_MAX_ACTIVE = 4;         // hard cap on concurrently-tracked ripples (oldest shed first)
+const RIPPLE_SOFTCAP_PX = 20;        // tanh compressive ceiling on the SUMMED offset at a bar
+
+// Kick ground glow: a brightness pulse (not a height wave) that races
+// outward through the EQ-bar ground on every bass-drum hit, same traveling-
+// front shape as the landing ripple above, but painted as an emissive rim
+// on visibleBars() rather than a positional offset -- heightAt() (physics)
+// is untouched by design, same discipline as the ripple and the buzz.
+const GLOW_WAVE_SPEED_PX_S = 900;    // faster than the ripple -- a kick reads instantly, not a rolling thud
+const GLOW_DECAY_TAU_SEC = 0.09;     // local brightness decay once the front passes a bar
+const GLOW_LOCAL_LIFE_SEC = 0.30;    // beyond this a bar's contribution is exactly 0
+const GLOW_TOTAL_LIFE_MS = 380;      // hard wall-clock cap on a glow record's life
+const GLOW_MAX_ACTIVE = 3;           // hard cap on concurrently-tracked glow pulses (oldest shed first)
+
+// Live EQ tracking: a slice's spring target used to be baked once at
+// creation from a one-shot band sample; now it keeps chasing the same
+// band's live level (eased, not snapped, so it never buzzes), so the
+// terrain visibly rides the music passing through it rather than sitting
+// on a frozen snapshot. heightAt() (physics) is unaffected in kind -- it's
+// still just the spring's own output, same as it always was.
+const BASE_TARGET_TAU_SEC = 0.6;
+
+// Groove wave: a render-only traveling ripple (same discipline as buzz/
+// ripple/glow above) whose amplitude rides the song's overall energy, so
+// the ground visibly breathes with the track even between individual
+// kicks/bands. Never touches heightAt().
+const GROOVE_WAVE_AMPLITUDE_PX = 4;
+const GROOVE_WAVELENGTH_PX = 300;
+const GROOVE_HZ = 0.11;
+const GROOVE_TAU_SEC = 0.30;
+
+/**
+ * Pure per-ripple contribution at a given worldX/time. `ripple` =
+ * { originWorldX, startMs, strength } (0..1 strength). The wavefront
+ * travels outward at RIPPLE_WAVE_SPEED_PX_S; `tauLocal` is the elapsed
+ * time since that front passed THIS point -- rearranging the "distance
+ * traveled = speed * age" relationship into a per-point local clock.
+ * Returns 0 before the front arrives (causality) and 0 once it has long
+ * since passed (settled) -- continuous at both boundaries since
+ * sin(tauLocal=0) = 0.
+ */
+export function rippleOffsetAt(worldX, nowMs, ripple) {
+  const distancePx = Math.abs(worldX - ripple.originWorldX);
+  const ageSec = (nowMs - ripple.startMs) / 1000;
+  const tauLocal = ageSec - distancePx / RIPPLE_WAVE_SPEED_PX_S;
+  if (tauLocal < 0 || tauLocal > RIPPLE_LOCAL_LIFE_SEC) return 0;
+  const envelope = Math.exp(-tauLocal / RIPPLE_DECAY_TAU_SEC);
+  return ripple.strength * RIPPLE_AMPLITUDE_PX * envelope * Math.sin(tauLocal * RIPPLE_OSC_HZ * 2 * Math.PI);
+}
+
+/**
+ * Pure per-glow brightness contribution at a given worldX/time, 0..1.
+ * `glow` = { originWorldX, startMs, strength } (0..1 strength). Same
+ * traveling-front shape as rippleOffsetAt (causal, bounded local life) but
+ * a pure exponential decay instead of a damped oscillation -- a kick reads
+ * as a bright pulse racing outward, not a bob.
+ */
+export function kickGlowAt(worldX, nowMs, glow) {
+  const distancePx = Math.abs(worldX - glow.originWorldX);
+  const ageSec = (nowMs - glow.startMs) / 1000;
+  const tauLocal = ageSec - distancePx / GLOW_WAVE_SPEED_PX_S;
+  if (tauLocal < 0 || tauLocal > GLOW_LOCAL_LIFE_SEC) return 0;
+  return glow.strength * Math.exp(-tauLocal / GLOW_DECAY_TAU_SEC);
+}
 
 class Slice {
   constructor(index, worldXStart) {
@@ -56,6 +132,9 @@ export class GroundField {
 
     this._buzz = 0; // EMA of bass energy, driving a render-only micro-vibration
     this._nowMs = 0;
+    this._ripples = []; // active landing-ripple records, render-only (see impulse())
+    this._glows = []; // active kick-glow records, render-only (see kickGlow())
+    this._groove = 0; // EMA of global energy, driving the render-only groove wave
 
     // The Unraveling (Movement V): set externally from CodaDirector.unravel
     // each frame -- the terrain-EQ slices visually flatten toward
@@ -142,21 +221,75 @@ export class GroundField {
     s._recoveredFired = false;
   }
 
+  /** A one-off landing shockwave at a world-x: fire-and-forget, capped at
+   *  RIPPLE_MAX_ACTIVE concurrent records (oldest/most-decayed shed first).
+   *  Visual only -- never touches heightAt()'s physics. `strength` <= 0 is
+   *  a no-op (a soft hop's near-zero intensity shouldn't allocate dead
+   *  state). */
+  impulse(worldX, strength, nowMs) {
+    const s = clamp01(strength);
+    if (s <= 0) return;
+    if (this._ripples.length >= RIPPLE_MAX_ACTIVE) this._ripples.shift();
+    this._ripples.push({ originWorldX: worldX, startMs: nowMs, strength: s });
+  }
+
+  /** Sums every active ripple's contribution at worldX, then applies a
+   *  tanh compressive softcap so a pile-up of near-simultaneous landings
+   *  can never blow the terrain past a fixed visual ceiling. */
+  _rippleOffset(worldX, nowMs) {
+    if (this._ripples.length === 0) return 0;
+    let sum = 0;
+    for (const r of this._ripples) sum += rippleOffsetAt(worldX, nowMs, r);
+    return RIPPLE_SOFTCAP_PX * Math.tanh(sum / RIPPLE_SOFTCAP_PX);
+  }
+
+  /** A one-off kick-synced brightness pulse racing outward from worldX:
+   *  fire-and-forget, capped at GLOW_MAX_ACTIVE concurrent records (oldest
+   *  shed first). Visual only, read by visibleBars() -- never touches
+   *  heightAt()'s physics. `vel` <= 0 is a no-op. */
+  kickGlow(worldX, nowMs, vel = 1) {
+    const s = clamp01(vel);
+    if (s <= 0) return;
+    if (this._glows.length >= GLOW_MAX_ACTIVE) this._glows.shift();
+    this._glows.push({ originWorldX: worldX, startMs: nowMs, strength: s });
+  }
+
+  /** Sums every active glow's contribution at worldX, clamped to 1 -- a
+   *  simple ceiling (not softcap) since brightness, unlike a positional
+   *  offset, has no meaningful "overshoot" to compress. */
+  _glowAt(worldX, nowMs) {
+    if (this._glows.length === 0) return 0;
+    let sum = 0;
+    for (const g of this._glows) sum += kickGlowAt(worldX, nowMs, g);
+    return Math.min(1, sum);
+  }
+
   update(nowMs, dtSec, worldX, energyCurves) {
     this.justRecovered = false;
     this._nowMs = nowMs;
+    if (this._ripples.length) this._ripples = this._ripples.filter((r) => nowMs - r.startMs < RIPPLE_TOTAL_LIFE_MS);
+    if (this._glows.length) this._glows = this._glows.filter((g) => nowMs - g.startMs < GLOW_TOTAL_LIFE_MS);
     const bass = energyCurves ? clamp01(energyCurves.sample(1, nowMs)) : 0;
     this._buzz += (1 - Math.exp(-dtSec / 0.12)) * (bass - this._buzz);
+    const globalEnergy = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS)) : 0;
+    this._groove += (1 - Math.exp(-dtSec / GROOVE_TAU_SEC)) * (globalEnergy - this._groove);
     this._spawnSlicesUpTo(worldX + LOOKAHEAD_PX);
     this._trimBehind(worldX);
     this._maybeTriggerGag(nowMs, worldX);
 
+    const baseTargetAlpha = 1 - Math.exp(-dtSec / BASE_TARGET_TAU_SEC);
     for (const s of this.slices) {
+      const bandIdx = (s.index + BAND_SHIFT) % NUM_BANDS;
+      const e = energyCurves ? clamp01(energyCurves.sample(bandIdx, nowMs)) : 0.3;
+      const liveTarget = -e * RISE_AMPLITUDE_PX; // more energy -> ground rises to meet it
       if (!s._initialized) {
-        const bandIdx = (s.index + BAND_SHIFT) % NUM_BANDS;
-        const e = energyCurves ? clamp01(energyCurves.sample(bandIdx, nowMs)) : 0.3;
-        s.baseTarget = -e * RISE_AMPLITUDE_PX; // more energy -> ground rises to meet it
+        s.baseTarget = liveTarget;
         s._initialized = true;
+      } else {
+        // Keeps chasing the band's current level instead of the one-shot
+        // value it was born with -- the terrain is a live EQ, not a
+        // snapshot that just scrolls by.
+        s.baseTarget += baseTargetAlpha * (liveTarget - s.baseTarget);
       }
 
       let target = s.baseTarget;
@@ -213,7 +346,16 @@ export class GroundField {
       const screenXEnd = screenXStart + this.sliceWidth;
       if (screenXEnd < -20 || screenXStart > screenWidth + 20) continue;
       const buzz = buzzAmp > 0.15 ? buzzAmp * Math.sin(wt + s.index * 2.39996) : 0;
-      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + s.offset * settle + buzz });
+      const ripple = this._rippleOffset(s.worldXStart, this._nowMs);
+      const glow = this._glowAt(s.worldXStart, this._nowMs);
+      // Groove wave: a slow traveling ripple keyed off the song's global
+      // energy, phase-driven by world-x so it visibly rolls with scroll
+      // rather than bobbing in lockstep -- the ground breathing with the
+      // track between individual band/kick events.
+      const groove = this._groove > 0.02
+        ? GROOVE_WAVE_AMPLITUDE_PX * this._groove * Math.sin(s.worldXStart / GROOVE_WAVELENGTH_PX + this._nowMs / 1000 * GROOVE_HZ * 2 * Math.PI)
+        : 0;
+      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + (s.offset + ripple + groove) * settle + buzz, glow, groove: this._groove });
     }
     return bars;
   }

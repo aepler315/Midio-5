@@ -49,6 +49,7 @@ html, body {
 .panel {
   position: absolute;
   inset: 0;
+  z-index: 3;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -119,23 +120,32 @@ html, body {
   top: 16px;
   left: 16px;
   right: 16px;
+  z-index: 3;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   pointer-events: none;
   font-variant-numeric: tabular-nums;
+  z-index: 5;
 }
 
-/* Right-hand cluster of the HUD row: the settings gear + track badge sit
-   side by side. #hud disables pointer-events so the canvas underneath
-   stays clickable; this wrapper opts its interactive children back in. */
+#hudLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+/* Right-hand cluster of the HUD row: difficulty, fullscreen, settings gear,
+   track badge. #hud disables pointer-events so the canvas underneath stays
+   clickable; this wrapper opts its interactive children back in. */
 #hudRight {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   pointer-events: auto;
 }
-#settingsBtn {
+#settingsBtn, #fullscreenBtn {
   line-height: 1;
 }
 
@@ -158,6 +168,108 @@ html, body {
 }
 #comboReadout.milestone-pulse {
   animation: comboMilestone 0.55s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+/* On-device FPS HUD (mobile performance round): small, always-on-top,
+   toggled by the P key or the ?fps URL param -- deliberately much lighter
+   than #debugOverlay so it's cheap enough to leave on during play. */
+#fpsHud {
+  position: absolute;
+  left: 8px; bottom: 8px;
+  z-index: 20;
+  background: rgba(5, 5, 10, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #d8f7c8;
+  pointer-events: none;
+  white-space: pre;
+}
+
+/* Song-end video export row (inside #completePanel) and the top-level
+   recording HUD shown while a replay-and-capture export is in progress. */
+#exportRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+#exportRes, #exportFps {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8e6f0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+#exportRow .hint {
+  flex-basis: 100%;
+  margin-top: 4px;
+}
+
+#recordingHud {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 21;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(20, 4, 4, 0.78);
+  border: 1px solid rgba(255, 80, 80, 0.5);
+  border-radius: 999px;
+  padding: 6px 14px;
+  color: #ffdede;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+}
+#recordingHud .recDot {
+  color: #ff4d4d;
+  animation: recPulse 1.1s ease-in-out infinite;
+}
+@keyframes recPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+#recordingHud #recordingCancelBtn {
+  padding: 3px 10px;
+  font-size: 0.78rem;
+}
+
+/* The ordinary-play auto-recording indicator: small and out of the way in
+   a corner, unlike the big center HUD (#recordingHud) reserved for an
+   explicit replay export -- every play is already being recorded, so this
+   shouldn't compete for attention the way a deliberate export does. */
+#liveRecHud {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 21;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(20, 4, 4, 0.6);
+  border: 1px solid rgba(255, 80, 80, 0.35);
+  border-radius: 999px;
+  padding: 3px 10px;
+  color: #ffdede;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+#liveRecHud .recDot {
+  color: #ff4d4d;
+  animation: recPulse 1.1s ease-in-out infinite;
+}
+
+#saveVideoBtn {
+  margin-top: 4px;
 }
 
 #debugOverlay {
@@ -193,6 +305,22 @@ html, body {
   margin-top: 10px;
 }
 
+.prefRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+/* Preference toggles read as engaged when on. */
+#noLyricsBtn[aria-pressed="true"],
+#btLatencyBtn[aria-pressed="true"],
+#btLatencyHudBtn[aria-pressed="true"] {
+  border-color: #7ad1ff;
+  color: #7ad1ff;
+}
+
 /* Ghost button (outline style) */
 .ghostbtn {
   background: transparent;
@@ -220,7 +348,7 @@ html, body {
    popup (#fontModal). */
 #fontBar {
   position: absolute;
-  bottom: 20px;
+  bottom: 96px; /* clears the composer strip, now bottom-anchored */
   left: 50%;
   transform: translateX(-50%);
   opacity: 0;
@@ -319,6 +447,16 @@ html, body {
   flex: none;
   opacity: 0.55;
   font-variant-numeric: tabular-nums;
+}
+/* Casting tag: which character performs this track (Casting.js lanes). */
+.trackRow .laneTag {
+  flex: none;
+  font-size: 0.68rem;
+  opacity: 0.75;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
 }
 .trackRow .panGlyph {
   flex: none;
@@ -451,6 +589,36 @@ html, body {
    Unhide (+) reads as a restore — blue accent, matching the shared hover. */
 .fontRowAction[data-action="hide"]:hover { border-color: #ff5a7a; color: #ff5a7a; }
 .fontRowAction[data-action="unhide"]:hover { border-color: #7ad1ff; color: #7ad1ff; }
+
+/* Per-song audition verdicts (FontRecommender) */
+.fontRowStar {
+  flex: none;
+  color: #ffd76a;
+  font-size: 0.9rem;
+  cursor: default;
+}
+.fontRowBadge {
+  flex: none;
+  min-width: 30px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  text-align: center;
+  cursor: default;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.75);
+}
+.fontRowBadge.ok { border-color: rgba(122, 209, 255, 0.45); color: #7ad1ff; }
+.fontRowBadge.dq { border-color: rgba(255, 90, 122, 0.55); color: #ff5a7a; }
+.fontRowBadge.pending { opacity: 0.55; }
+.auditionStatus {
+  flex: none;
+  padding: 8px 16px;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.65);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.auditionStatus.hidden { display: none; }
 .modalFooter {
   display: flex;
   flex-wrap: wrap;
@@ -490,3 +658,76 @@ html, body {
 
 .filmstripModalPanel { width: min(720px, 92vw); }
 #filmstripModalImg { width: 100%; display: block; background: #000; }
+
+/* --- Player-driven rhythm layer: live score + end-of-song results --- */
+#hudLeft {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+#scoreReadout {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #e8e6f0;
+  text-shadow: 0 0 8px rgba(232, 230, 240, 0.35);
+}
+#resultsGrid {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  margin: 6px 0 10px;
+}
+#resultsGrid .rGrade {
+  font-size: 3.4rem;
+  font-weight: 800;
+  color: #ffd76a;
+  text-shadow: 0 0 24px rgba(255, 215, 106, 0.65);
+  min-width: 64px;
+}
+#resultsGrid .rRows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  font-size: 0.95rem;
+}
+#resultsGrid .rRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+#resultsGrid .rRow b { font-variant-numeric: tabular-nums; }
+#resultsGrid .rTiers {
+  justify-content: flex-start;
+  gap: 10px;
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+.tPerfect { color: #ffd76a; }
+.tGreat { color: #4fd8c4; }
+.tGood { color: #e8e6f0; }
+.tSour { color: #9e84a8; }
+.tMiss { color: #8a8794; }
+
+/* --- Audition load screen (font ratings gate the show) --- */
+#auditionCanvas {
+  display: block;
+  margin: 8px auto;
+  background: transparent;
+}
+#auditionBar {
+  width: min(420px, 80%);
+  height: 6px;
+  margin: 10px auto 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+#auditionBarFill {
+  width: 0%;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #4fd8c4, #ffd76a);
+  transition: width 0.25s ease;
+}

@@ -3,32 +3,46 @@
 // tracking with a 70% trajectory snap on each trigger, a PD pursuit
 // controller between triggers, and a Lissajous orbit during rests.
 import { Role } from '../core/NoteEvent.js';
+import { visualNow } from '../core/ChoreoClock.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { clamp, lerp, mulberry32 } from '../utils/math.js';
-import { MIDASUS_MESH } from '../render/meshes.js';
-import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh } from '../render/MeshDrawer.js';
+import { MIDASUS_MESH, MIDASUS_HEX_R } from '../render/meshes.js';
+import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, drawGlowHalo } from '../render/MeshDrawer.js';
 import { ModalRing } from '../render/oscillators.js';
 import { OrbitalDebris } from './OrbitalDebris.js';
 import { SkyVoyage } from './SkyVoyage.js';
+import { BabyStars } from './BabyStars.js';
 
 const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
 const KP = 90, KD = 12;
 const SNAP = 0.70;
-const DRAW_SCALE = 1.45; // ferocity pass: render-only
+const DRAW_SCALE = 5.4; // 3× the previous 1.8 stage scale — she's the star of the sky
 const BANK_GAIN = 0.0016, BANK_MAX = 0.6; // she rolls into her darts
 const SLASH_LIFE_SEC = 0.18;
+// Anticipation (ChoreoClock): she launches her dart this far BEFORE each
+// note so she's arriving as it sounds -- the impact FX (burst/slash/pulse)
+// wait for the note's own heard moment.
+const ANTICIPATE_MS = 140;
 
 export class Midasus {
-  constructor(timeline, midio, { groundY = 480, ceilingY = 40, seed = 777, stageW = 1280, stageH = 720 } = {}) {
+  /**
+   * @param {?Function} opts.noteFilter which timeline events are HER line
+   *   -- set by Simulation from the casting lanes (clean melodies when a
+   *   clean lane exists, every MELODY event otherwise).
+   */
+  constructor(timeline, midio, { groundY = 480, ceilingY = 40, seed = 777, stageW = 1280, stageH = 720, noteFilter = null } = {}) {
     this.midio = midio;
     this.yFloor = groundY;
     this.yCeiling = ceilingY;
     this.stageW = stageW;
     this.stageH = stageH;
 
-    this.q = timeline.filter((e) => e.role === Role.MELODY).sort((a, b) => a.tMs - b.tMs);
+    const filter = noteFilter || ((e) => e.role === Role.MELODY);
+    this.q = timeline.filter(filter).sort((a, b) => a.tMs - b.tMs);
     this.i = 0;
+    this._impacts = []; // scheduled note-impact FX, drained at each note's heard moment
+    this.visualLagMs = 0; // output-latency compensation, set by Simulation each step
 
     let pMin = 48, pMax = 84;
     if (this.q.length) {
@@ -62,6 +76,17 @@ export class Midasus {
     // Occasional deep-sky excursion: BiomeManager draws it (see
     // drawDeepSky), far behind the world, while this is active.
     this.voyage = new SkyVoyage(seed + 3);
+    // Three baby stars use her as their secure base: orbiting close,
+    // exploring one at a time in calm stretches, rushing home when loud.
+    this.babies = new BabyStars(seed + 4);
+
+    // Rest-flight repertoire: each time she settles into a rest she picks a
+    // fresh figure to trace (see _orbitAnchor), never the same one twice
+    // running. Hard melody accents also spin her into a brief pirouette.
+    this.orbitStyle = 'lissajous';
+    this._wasResting = false;
+    this.rollExtra = 0; // pirouette roll, added to her banking in draw()
+    this._pirouetteStartMs = -Infinity;
   }
 
   /** Test/debug hook: send her on a voyage right now regardless of natural
@@ -90,11 +115,30 @@ export class Midasus {
     const t = nowMs / 1000;
     // Calm sections: the orbit widens and slows -- a lazier, dreamier drift
     // instead of the tighter, quicker figure she traces when energetic.
-    const ampMul = 1 + 0.6 * calmLevel;
-    const rateMul = 1 - 0.5 * calmLevel;
-    const x = ax + 60 * ampMul * Math.sin(1.8 * rateMul * t + this.phi);
-    const y = ay + 34 * ampMul * Math.sin(1.2 * rateMul * t);
-    return { x, y };
+    const a = 1 + 0.6 * calmLevel;
+    const r = 1 - 0.5 * calmLevel;
+    switch (this.orbitStyle) {
+      case 'figure8': // a sideways 8, crossing right over the anchor
+        return {
+          x: ax + 82 * a * Math.sin(1.6 * r * t + this.phi),
+          y: ay + 48 * a * Math.sin(3.2 * r * t + 2 * this.phi),
+        };
+      case 'loop': // quick tight circles: loop-the-loops around the anchor
+        return {
+          x: ax + 55 * a * Math.cos(2.6 * r * t + this.phi),
+          y: ay + 55 * a * Math.sin(2.6 * r * t + this.phi),
+        };
+      case 'petal': { // a three-petal rose, dipping through the center
+        const th = 1.4 * r * t + this.phi;
+        const rho = 67 * a * (0.55 + 0.45 * Math.cos(3 * th));
+        return { x: ax + rho * Math.cos(th), y: ay + rho * Math.sin(th) * 0.7 };
+      }
+      default: // 'lissajous', the original drift
+        return {
+          x: ax + 72 * a * Math.sin(1.8 * r * t + this.phi),
+          y: ay + 41 * a * Math.sin(1.2 * r * t),
+        };
+    }
   }
 
   _hueOf(pitch) { return (((pitch % 12) + 12) % 12) * 30; }
@@ -126,7 +170,10 @@ export class Midasus {
     this._calmLevel = calmLevel;
     this._ens = ensemble;
     this._nowMs = nowMs;
-    while (this.i < this.q.length && this.q[this.i].tMs <= nowMs) {
+    // Apex-on-beat (ChoreoClock): the DART starts early -- cursor runs
+    // ANTICIPATE_MS ahead, so the 70% trajectory snap and the PD pursuit
+    // are already carrying her toward the perch as the note arrives...
+    while (this.i < this.q.length && this.q[this.i].tMs <= nowMs + ANTICIPATE_MS) {
       const n = this.q[this.i++];
       const t = this._target(n);
       this.p.x += SNAP * (t.x - this.p.x);
@@ -135,15 +182,28 @@ export class Midasus {
       this.v.y *= 0.4;
       this.hue = this._hueOf(n.pitch);
       if (this.voyage.active) this.voyage.onMelodyOnset(n); // deep space hears the melody too
-      this._burst(8 + 24 * n.vel, this.hue);
-      this.lastNoteMs = nowMs;
+      this._impacts.push(n);
+    }
+    // ...while the IMPACT (burst, slash, pulse, core ring) waits for the
+    // note's own heard moment: move early, hit exactly on time.
+    const vNowMs = visualNow(nowMs, this.visualLagMs);
+    while (this._impacts.length && this._impacts[0].tMs <= vNowMs) {
+      const n = this._impacts.shift();
+      // Stamped at the heard moment (not at dart time, which runs up to
+      // ANTICIPATE_MS ahead) so the silence clock never reads the future.
+      this.lastNoteMs = n.tMs;
+      if (n.vel > 0.85) this._pirouetteStartMs = nowMs; // hard accents spin her right around
+      // The impacting NOTE's own color -- this.hue has already darted ahead
+      // to a newer note on dense passages, same reason the slash below
+      // re-derives it from n.pitch.
+      this._burst(8 + 24 * n.vel, this._hueOf(n.pitch));
       this.pulse = 1.7 + 0.5 * n.vel; // a brief mesh flash on each note onset
       this.modal.excite(1.2 + 3 * n.vel);
       if (n.vel > 0.75) this.debris.burst(n.vel); // hard notes fling the shards outward
       // A slash: a bright cut through her position along her motion.
       const sp = Math.hypot(this.v.x, this.v.y);
       const ang = sp > 20 ? Math.atan2(this.v.y, this.v.x) : this.rand() * Math.PI * 2;
-      this.slashes.push({ x: this.p.x, y: this.p.y, ang, len: 26 + 60 * n.vel, age: 0, hue: this.hue });
+      this.slashes.push({ x: this.p.x, y: this.p.y, ang, len: 26 + 60 * n.vel, age: 0, hue: this._hueOf(n.pitch) });
       if (this.slashes.length > 8) this.slashes.shift();
     }
 
@@ -157,6 +217,21 @@ export class Midasus {
     const restTarget = silence ? 1 : 0;
     this.rest += clamp((restTarget - this.rest) * (dtSec / BLEND_SEC), -1, 1);
     this.rest = clamp(this.rest, 0, 1);
+
+    // Each time she settles into a rest she picks a fresh figure to trace —
+    // figure-8s, loop-the-loops, a petaled rose — never the same twice
+    // running, with a fresh phase so the entry point varies too.
+    const resting = this.rest >= 0.5;
+    if (resting && !this._wasResting) {
+      const styles = ['lissajous', 'figure8', 'loop', 'petal'].filter((s) => s !== this.orbitStyle);
+      this.orbitStyle = styles[Math.floor(this.rand() * styles.length)];
+      this.phi = this.rand() * Math.PI * 2;
+    }
+    this._wasResting = resting;
+
+    // Pirouette: a full roll, eased out, landing exactly back at her bank.
+    const pirU = (nowMs - this._pirouetteStartMs) / 320;
+    this.rollExtra = pirU >= 0 && pirU < 1 ? Math.PI * 2 * (1 - (1 - pirU) ** 3) : 0;
 
     this.v.x += (KP * (target.x - this.p.x) - KD * this.v.x) * dtSec;
     this.v.y += (KP * (target.y - this.p.y) - KD * this.v.y) * dtSec;
@@ -195,6 +270,21 @@ export class Midasus {
       this.p = { ...this.voyage.p };
       this.hue = this.voyage.hue;
     }
+    // The babies track her wherever the frame puts her (ensemble, darts,
+    // even voyage return points). They render at the mains' intensity (her
+    // pulse + the song's epic-ness), are hyper curious about every point of
+    // interest the sim hands over (Midio, Broshi, obstacles, the user's
+    // cursor), and are aware of the user via that pointer.
+    this.babies.update(nowMs, dtSec, this.p, calmLevel, {
+      epic: this._ens ? (this._ens.epic || 0) : 0,
+      melt: this._ens ? (this._ens.melt || 0) : 0,
+      pulse: this.pulse,
+      interests: (this._ens && this._ens.interests && this._ens.interests.length)
+        ? this._ens.interests
+        : [{ x: this.midio.screenX, y: this.midio.groundY - this.midio.y - 40 }],
+      pointer: this._ens ? this._ens.pointer : null,
+    });
+
     if (this.voyage.justLanded) {
       // Touchdown: her core rings hard, the shards fling, and a five-point
       // slash star marks the landing (drawn by her normal pass, which has
@@ -208,7 +298,13 @@ export class Midasus {
     }
   }
 
-  draw(ctx, particleMul = 1, light = null) {
+  /** Current on-screen width in px -- pulses in sync with her core on note
+   *  onsets (the same `pulse` value her mesh render uses), then settles. */
+  get shadowWidthPx() {
+    return 2 * MIDASUS_HEX_R * DRAW_SCALE * this.pulse;
+  }
+
+  draw(ctx, particleMul = 1) {
     if (this.voyage.depth > 0.02) return; // she's away; BiomeManager's deep-sky pass owns rendering
     const sat = Math.round(58 - 28 * this.rest); // spectral: pale, never candy
     this.debris.draw(ctx, this.hue, this.rest, particleMul); // behind her core and trail
@@ -251,12 +347,16 @@ export class Midasus {
     const bank = clamp(this.v.x * BANK_GAIN, -BANK_MAX, BANK_MAX)
       + (this._ens ? 0.08 * Math.sin(this._ens.phase) : 0);
 
-    ctx.save();
-    ctx.globalAlpha = 0.6;
-    ctx.filter = 'blur(1.5px)';
-    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot: bank, scaleX: this.pulse * 1.5 * DRAW_SCALE, scaleY: this.pulse * 1.5 * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 78, alpha: 1 });
-    ctx.restore();
+    const rot = bank + this.rollExtra; // pirouette rides on top of the banking
 
-    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot: bank, scaleX: this.pulse * DRAW_SCALE, scaleY: this.pulse * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 70, hueSpread: 26, light });
+    const coreGlowR = MIDASUS_HEX_R * 2.1 * this.pulse * DRAW_SCALE;
+    drawGlowHalo(ctx, this.p.x, this.p.y, coreGlowR, coreGlowR, this.hue, 0.6, { sat, light: 78 });
+
+    // Ink contour (outline) under the crisp pass: her diamond stays
+    // knife-edged against the blurred halo drawn just above.
+    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot, scaleX: this.pulse * DRAW_SCALE, scaleY: this.pulse * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 70, hueSpread: 26, outline: true });
+
+    // The baby stars ride on top of her pass — small enough never to mask her.
+    this.babies.draw(ctx, this.hue, this.rest);
   }
 }
