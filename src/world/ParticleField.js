@@ -56,6 +56,21 @@ export class ParticleField {
       p.x = -rand() * this.w * 0.2;
       p.vx = 140 + rand() * 90;
     }
+    if (this.kind === 'sand') {
+      p.y = rand() * this.h * 0.75;
+      p.size = 0.8 + rand() * 1.6;
+      p.vx = 40 + rand() * 50;
+    }
+    if (this.kind === 'bubbles') {
+      p.y = this.h * 0.4 + rand() * this.h * 0.55;
+      p.size = 1.2 + rand() * 3.5;
+      p.vy = -(18 + rand() * 28);
+      p.alpha = 0.25 + rand() * 0.45;
+    }
+    if (this.kind === 'spores') {
+      p.size = 1.8 + rand() * 3.2;
+      p.alpha = 0.35 + rand() * 0.5;
+    }
     return p;
   }
 
@@ -163,6 +178,34 @@ export class ParticleField {
           p.alpha = clamp01(0.3 + 0.15 * Math.sin(tSec * 0.2 + p.phase));
           break;
         }
+        case 'sand': {
+          // Horizontal sheet of grit: fast lateral drift, light vertical curl.
+          const fl = curl2(p.x * 0.005, p.y * 0.008, tSec * 0.25);
+          const gust = energyCurves ? 0.6 + clamp01(energyCurves.sample(2, nowMs)) : 1;
+          p.x += (this.baseSpeed * 0.55 * gust + fl.x * 30 + wx * 1.4) * dtSec;
+          p.y += (fl.y * 18 + Math.sin(tSec * p.omega + p.phase) * 8 + wy * 0.5) * dtSec;
+          if (p.x > this.w + 20) Object.assign(p, this._spawn(-10, rand() * this.h * 0.75));
+          if (p.y < -10 || p.y > this.h + 10) p.y = rand() * this.h * 0.75;
+          break;
+        }
+        case 'bubbles': {
+          p.x += (Math.sin(tSec * p.omega + p.phase) * 14 + wx * 0.5) * dtSec;
+          p.y += (p.vy + wy * 0.3) * dtSec;
+          p.alpha = clamp01((p.alpha ?? 0.5) + Math.sin(tSec * 2 + p.phase) * 0.02);
+          if (p.y < -20) Object.assign(p, this._spawn(rand() * this.w, this.h + 10));
+          break;
+        }
+        case 'spores': {
+          // Soft bioluminescent floaters — firefly motion, slower, with a glow pulse.
+          p.x += (Math.sin(tSec * 0.35 + p.phase) * this.baseSpeed + wx * 0.35) * dtSec;
+          p.y += (Math.cos(tSec * 0.28 + p.phase * 1.1) * this.baseSpeed * 0.7 + wy * 0.35) * dtSec;
+          p.alpha = clamp01(0.25 + 0.55 * (0.5 + 0.5 * Math.sin(tSec * 1.4 + p.phase)) * (1 + 0.3 * calmLevel));
+          if (p.x < -20) p.x += this.w + 40;
+          if (p.x > this.w + 20) p.x -= this.w + 40;
+          if (p.y < -20) p.y += this.h + 40;
+          if (p.y > this.h + 20) p.y -= this.h + 40;
+          break;
+        }
       }
     }
   }
@@ -199,12 +242,40 @@ export class ParticleField {
           break;
         }
         case 'snow':
-          ctx.globalAlpha = 0.85;
+        case 'sand':
+          ctx.globalAlpha = this.kind === 'sand' ? 0.45 : 0.85;
           ctx.fillStyle = color;
           ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size * 0.7, 0, Math.PI * 2);
+          ctx.arc(p.x, p.y, p.size * (this.kind === 'sand' ? 0.55 : 0.7), 0, Math.PI * 2);
           ctx.fill();
           break;
+        case 'bubbles': {
+          ctx.globalAlpha = p.alpha ?? 0.4;
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.1;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.stroke();
+          // Specular highlight
+          ctx.globalAlpha = (p.alpha ?? 0.4) * 0.7;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(p.x - p.size * 0.3, p.y - p.size * 0.3, p.size * 0.22, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        }
+        case 'spores': {
+          const r = p.size * 1.8;
+          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+          grad.addColorStop(0, color);
+          grad.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.globalAlpha = (p.alpha ?? 0.6) * 0.85;
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        }
         case 'petals': {
           ctx.globalAlpha = p.state === 'piled' ? Math.max(0, 1 - p.pileT / 1.2) * 0.7 : 0.9;
           ctx.fillStyle = color;

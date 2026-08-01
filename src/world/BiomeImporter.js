@@ -8,15 +8,18 @@ import { Role } from '../core/NoteEvent.js';
 const PARTICLE_KINDS = [
   'fireflies', 'embers', 'snow', 'pollen', 'antigrav',
   'petals', 'rain', 'flaresparks', 'digitalrain',
+  'sand', 'bubbles', 'spores',
 ];
 
 const FX_BY_TEMP = [
-  [0.15, 'aurora'],
-  [0.30, 'starTwinkle'],
-  [0.45, 'petalPile'],
-  [0.60, 'canopyDapple'],
-  [0.75, 'heatShimmer'],
-  [0.88, 'prominence'],
+  [0.12, 'aurora'],
+  [0.22, 'nebulaBloom'],
+  [0.32, 'starTwinkle'],
+  [0.44, 'godRays'],
+  [0.55, 'petalPile'],
+  [0.66, 'canopyDapple'],
+  [0.78, 'heatShimmer'],
+  [0.90, 'prominence'],
   [1.01, 'lightning'],
 ];
 

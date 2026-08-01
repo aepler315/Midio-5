@@ -1170,6 +1170,70 @@ export class BiomeManager {
       const auroraAlpha = (A.fx === 'aurora' ? 1 - t : 0) + (B.fx === 'aurora' ? t : 0);
       if (auroraAlpha > 0.02) this._drawAurora(ctx, canvas, auroraAlpha);
     }
+    if (A.fx === 'nebulaBloom' || B.fx === 'nebulaBloom') {
+      const alpha = (A.fx === 'nebulaBloom' ? 1 - t : 0) + (B.fx === 'nebulaBloom' ? t : 0);
+      if (alpha > 0.02) this._drawNebulaBloom(ctx, canvas, alpha, A, B, t);
+    }
+    if (A.fx === 'godRays' || B.fx === 'godRays') {
+      const alpha = (A.fx === 'godRays' ? 1 - t : 0) + (B.fx === 'godRays' ? t : 0);
+      if (alpha > 0.02) this._drawGodRays(ctx, canvas, alpha);
+    }
+  }
+
+  /** Soft pastel gas clouds for NEBULA — additive blobs that drift slowly. */
+  _drawNebulaBloom(ctx, canvas, alpha, A, B, t) {
+    const c0 = this._rotated(this.lerpCache.get(A.sky[2] || '#ff8ec8', B.sky[2] || '#ff8ec8', t));
+    const c1 = this._rotated(this.lerpCache.get(A.celestial?.haloColor || '#c89bff', B.celestial?.haloColor || '#c89bff', t));
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const blobs = [
+      { x: 0.22, y: 0.22, rx: 0.28, ry: 0.16, col: c0, ph: 0 },
+      { x: 0.62, y: 0.18, rx: 0.34, ry: 0.20, col: c1, ph: 1.7 },
+      { x: 0.45, y: 0.38, rx: 0.22, ry: 0.14, col: c0, ph: 3.1 },
+      { x: 0.78, y: 0.32, rx: 0.18, ry: 0.12, col: c1, ph: 4.4 },
+    ];
+    for (const b of blobs) {
+      const breathe = 0.75 + 0.25 * Math.sin(this.tSec * 0.35 + b.ph);
+      const cx = canvas.width * (b.x + 0.02 * Math.sin(this.tSec * 0.2 + b.ph));
+      const cy = canvas.height * (b.y + 0.015 * Math.cos(this.tSec * 0.25 + b.ph));
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, canvas.width * b.rx * breathe);
+      grad.addColorStop(0, `${b.col}55`);
+      grad.addColorStop(0.55, `${b.col}18`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = 0.55 * alpha * breathe;
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, canvas.width * b.rx * breathe, canvas.height * b.ry * breathe, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** Underwater / late-afternoon light shafts for CORAL (and similar). */
+  _drawGodRays(ctx, canvas, alpha) {
+    const cx = canvas.width * 0.72;
+    const cy = canvas.height * 0.08;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 7; i++) {
+      const ang = -0.55 + i * 0.16 + Math.sin(this.tSec * 0.4 + i) * 0.03;
+      const len = canvas.height * (0.55 + 0.1 * Math.sin(this.tSec * 0.5 + i * 0.7));
+      const half = 8 + i * 2.5;
+      const flick = 0.55 + 0.45 * Math.sin(this.tSec * (0.9 + i * 0.11) + i);
+      ctx.globalAlpha = 0.07 * alpha * flick;
+      ctx.fillStyle = '#ffe8c0';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(ang - 0.04) * half, cy + Math.sin(ang - 0.04) * half);
+      ctx.lineTo(cx + Math.cos(ang) * len + Math.cos(ang + Math.PI / 2) * half * 2.5,
+        cy + Math.sin(ang) * len + Math.sin(ang + Math.PI / 2) * half * 2.5);
+      ctx.lineTo(cx + Math.cos(ang) * len - Math.cos(ang + Math.PI / 2) * half * 2.5,
+        cy + Math.sin(ang) * len - Math.sin(ang + Math.PI / 2) * half * 2.5);
+      ctx.lineTo(cx + Math.cos(ang + 0.04) * half, cy + Math.sin(ang + 0.04) * half);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   _drawAurora(ctx, canvas, alpha) {
