@@ -37,7 +37,16 @@ export function drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, {
   satBase = 68, lightBase = 52, glowBoost = 34, alpha = 0.9, widthBase = 1.6, widthGlow = 2.0,
   hueSpread = 50, // edges vary within +/-hueSpread/2 of baseHueDeg, not the full wheel -- a cohesive character, not a rainbow
   outline = false, // true -> a near-black contour pass UNDER the spectral stroke: the silhouette reads razor-sharp against the glow underlays
+  light = null, rimAmount = 0.6, // Movement VII: the celestial light modulates the angle-derived hue/lightness above, it never replaces it
 } = {}) {
+  // Resolved once per call, not per edge -- this is the only place a hex
+  // color gets parsed for the whole mesh part.
+  let lightHue = null;
+  if (light && light.intensity > 0.01 && rimAmount > 0) {
+    const rgb = hexToRgb(light.colorHex);
+    lightHue = rgbToHsl(rgb.r, rgb.g, rgb.b).h;
+  }
+
   if (outline) {
     const o = outline === true ? {} : outline;
     ctx.save();

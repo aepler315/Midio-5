@@ -18,8 +18,6 @@ import { capFlashAlpha } from '../ui/Accessibility.js';
 import { hexToRgb } from '../utils/color.js';
 import { GUARDRAIL_MIN } from '../core/ParamBus.js';
 import { predictJumpArcs, safeWindowForArc } from './JumpPlanner.js';
-import { hexLerp } from '../utils/color.js';
-import { drawContactShadow } from '../render/ContactShadow.js';
 
 const WORLD_SPEED_PX_S = 220;
 const MIN_VEL = 0.55;

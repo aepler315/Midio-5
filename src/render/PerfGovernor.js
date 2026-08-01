@@ -75,6 +75,11 @@ export class PerfGovernor {
 
   get visionAllowed() { return this.level < 1; }
   get particleMul() { return this.level >= 2 ? 0.6 : 1; }
+  // Movement VII: the celestial-light passes join the same ladder -- rim
+  // light is the pricier per-edge work so it sheds at the particle-cap
+  // rung; contact shadows shed alongside crack glow, one rung later.
+  get rimLightEnabled() { return this.level < 2; }
+  get contactShadowsEnabled() { return this.level < 3; }
   get crackGlowEnabled() { return this.level < 3; }
   // Bloom (music-reactive post-pass, see Renderer._drawBloom): a few
   // downsampled offscreen draws plus one full-frame additive blit -- real

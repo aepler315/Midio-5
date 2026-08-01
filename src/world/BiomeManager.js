@@ -513,6 +513,11 @@ export class BiomeManager {
     return this.lerpCache.get(this._profile(from).celestial.haloColor, this._profile(to).celestial.haloColor, t);
   }
 
+  /** Movement VII: the celestial body as an actual light -- position, color, intensity. */
+  currentLight() {
+    return this.light || computeLight({ canvasWidth: this.w, canvasHeight: this.h, budget: this.budget });
+  }
+
   /** The current sky's base (horizon) tone -- used as a full-bleed backdrop
    *  fill so zooming out past 1.0 never exposes blank canvas at the edges
    *  of the (deliberately un-overscanned) parallax layers. */
@@ -762,6 +767,17 @@ export class BiomeManager {
     // arc (a separate, slower signal than the sunrise/moonrise cycle) --
     // only `.hazeWarm` from the old day-arc survives here.
     const arc = dayArc(this._progress);
+
+    // Movement VII: the celestial body doubles as a light -- every
+    // consumer downstream this frame (layers, characters, obstacles)
+    // reads the same `this.light` rather than re-deriving its position.
+    this.light = computeLight({
+      canvasWidth: canvas.width, canvasHeight: canvas.height,
+      celestialYFrac, haloColorHex: this.currentHaloColor(),
+      budget: this.budget, unravel: this.unravel,
+      dayArcAlpha: dn.dawnAlpha + dn.duskAlpha,
+      reducedFlash: this.reducedFlash,
+    });
 
     this._drawSky(ctx, canvas, A, B, t, dn.night);
 
@@ -1179,6 +1195,18 @@ export class BiomeManager {
       const alpha = (A.fx === 'godRays' ? 1 - t : 0) + (B.fx === 'godRays' ? t : 0);
       if (alpha > 0.02) this._drawGodRays(ctx, canvas, alpha);
     }
+    if (A.fx === 'sporeGlow' || B.fx === 'sporeGlow') {
+      const alpha = (A.fx === 'sporeGlow' ? 1 - t : 0) + (B.fx === 'sporeGlow' ? t : 0);
+      if (alpha > 0.02) this._drawSporeGlow(ctx, canvas, alpha, t > 0.5 ? B : A);
+    }
+    if (A.fx === 'bioluminescence' || B.fx === 'bioluminescence') {
+      const alpha = (A.fx === 'bioluminescence' ? 1 - t : 0) + (B.fx === 'bioluminescence' ? t : 0);
+      if (alpha > 0.02) this._drawBioluminescence(ctx, canvas, alpha);
+    }
+    if (A.fx === 'sunMotes' || B.fx === 'sunMotes') {
+      const alpha = (A.fx === 'sunMotes' ? 1 - t : 0) + (B.fx === 'sunMotes' ? t : 0);
+      if (alpha > 0.02) this._drawSunMotes(ctx, canvas, alpha, t > 0.5 ? B : A);
+    }
   }
 
   /** Soft pastel gas clouds for NEBULA — additive blobs that drift slowly. */
@@ -1250,6 +1278,75 @@ export class BiomeManager {
         if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Rising bioluminescent motes for LUMEN's spore-lit canopy: soft glow
+   *  patches that pulse and drift upward, distinct from starTwinkle's fixed
+   *  pinpoint dots. */
+  _drawSporeGlow(ctx, canvas, alpha, profile) {
+    const col = profile?.particles?.color || '#9dffc8';
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 10; i++) {
+      const phase = i * 1.3;
+      const x = canvas.width * ((i * 0.097 + 0.05) % 1);
+      const rise = (this.tSec * 8 + i * 37) % (canvas.height * 0.7);
+      const y = canvas.height * 0.85 - rise;
+      const pulse = 0.5 + 0.5 * Math.sin(this.tSec * 1.1 + phase);
+      const r = 3 + 4 * pulse;
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, r * 4);
+      grad.addColorStop(0, `${col}aa`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = alpha * (0.35 + 0.4 * pulse);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(x, y, r * 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** Vertical bioluminescent curtains rising from the deep for ABYSS --
+   *  aurora's cousin, but columns of light drifting upward instead of
+   *  horizontal wavy bands, so the two never read the same. */
+  _drawBioluminescence(ctx, canvas, alpha) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let col = 0; col < 5; col++) {
+      const hue = 175 + col * 8;
+      const x = canvas.width * (0.12 + col * 0.19) + Math.sin(this.tSec * 0.25 + col) * 14;
+      const sway = Math.sin(this.tSec * 0.3 + col * 1.7) * 18;
+      ctx.strokeStyle = `hsla(${hue},90%,65%,${0.14 * alpha})`;
+      ctx.lineWidth = 14;
+      ctx.beginPath();
+      for (let y = canvas.height; y >= canvas.height * 0.15; y -= 20) {
+        const drift = sway * (1 - y / canvas.height);
+        if (y === canvas.height) ctx.moveTo(x + drift, y); else ctx.lineTo(x + drift, y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Drifting golden light motes for AURUM -- an ambient sunlit haze
+   *  wandering the whole frame, unlike petalPile's grounded, shedding
+   *  piles. */
+  _drawSunMotes(ctx, canvas, alpha, profile) {
+    const col = profile?.particles?.color || '#ffcc66';
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 24; i++) {
+      const seed = i * 12.9898;
+      const x = canvas.width * ((Math.sin(seed) * 0.5 + 0.5 + this.tSec * 0.01 * (1 + (i % 3))) % 1);
+      const y = canvas.height * ((Math.cos(seed * 1.7) * 0.5 + 0.5 + Math.sin(this.tSec * 0.2 + i) * 0.05) % 1);
+      const twinkle = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(this.tSec * 1.4 + i * 2.1));
+      ctx.globalAlpha = alpha * 0.5 * twinkle;
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(x, y, 1.4 + 1.2 * twinkle, 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.restore();
   }
@@ -2102,39 +2199,6 @@ export class BiomeManager {
       ctx.fillRect(left + i * (barW + gap), baseY - h, barW, 2.5);
     }
     ctx.restore();
-
-    // Movement VII: aerial perspective -- distance has read only as scroll
-    // speed until now. Farther ranges (small LAYER_RATIOS entries) pick up
-    // heavier sky-color haze and a stronger light-side wash than near ones,
-    // drawn right after this layer's own strips so only THIS band is
-    // touched before the next, nearer layer paints over/beside it.
-    const strip = stripsA[layerKey];
-    const bandY = canvas.height - strip.height + yOff;
-    const bandH = strip.height;
-    const depthFactor = clamp01(1 - (LAYER_RATIOS[layerKey] - LAYER_RATIOS.L2) / (LAYER_RATIOS.L5 - LAYER_RATIOS.L2));
-
-    const hazeAlpha = 0.35 * depthFactor;
-    if (hazeAlpha > 0.01) {
-      ctx.save();
-      ctx.globalAlpha = hazeAlpha;
-      ctx.fillStyle = this._rotated(this.lerpCache.get(A.sky[2], B.sky[2], t));
-      ctx.fillRect(0, bandY, canvas.width, bandH);
-      ctx.restore();
-    }
-
-    const light = this.light;
-    const washAlpha = light ? 0.14 * depthFactor * light.intensity : 0;
-    if (washAlpha > 0.005) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = washAlpha;
-      const g = ctx.createRadialGradient(light.x, bandY + bandH / 2, 0, light.x, bandY + bandH / 2, canvas.width * 0.6);
-      g.addColorStop(0, light.colorHex);
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, bandY, canvas.width, bandH);
-      ctx.restore();
-    }
   }
 
   _drawShimmered(ctx, canvas, strip, scrollX, yOff = 0) {
@@ -2267,6 +2331,7 @@ export class BiomeManager {
     else if (activeFx === 'canopyDapple') this._drawCanopyDapple(ctx, canvas, localGroundY);
     else if (activeFx === 'glitchTear' && this._glitchActiveMs > 0) this._drawGlitchTear(ctx, canvas);
     else if (activeFx === 'petalPile') this._drawPetalPiles(ctx, canvas, worldX, localGroundY, t > 0.5 ? B : A);
+    else if (activeFx === 'mirage') this._drawMirage(ctx, canvas, worldX, localGroundY);
     else if (isLake) this._drawLakeReflection(ctx, canvas, localGroundY);
   }
 
@@ -2409,6 +2474,39 @@ export class BiomeManager {
       ctx.beginPath();
       ctx.ellipse(x, groundY + 30, 60, 18, 0, 0, Math.PI * 2);
       ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** DUNE's desert mirage: a faint, wavering duplicate of the horizon
+   *  hovering just above the sand -- distinct from heatShimmer's ridge-slice
+   *  distortion, since it reads as a false-water illusion sitting on the
+   *  ground rather than a haze over distant terrain. */
+  _drawMirage(ctx, canvas, worldX, groundY) {
+    const bandH = Math.min(26, canvas.height - groundY);
+    if (bandH <= 0) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, groundY - bandH, canvas.width, bandH);
+    ctx.clip();
+    ctx.globalAlpha = 0.22;
+    ctx.translate(0, 2 * (groundY - bandH));
+    ctx.scale(1, -1);
+    ctx.drawImage(canvas, 0, 0);
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,235,190,0.25)';
+    ctx.lineWidth = 2;
+    const waveOffset = worldX * 0.02;
+    for (let row = 0; row < bandH; row += 6) {
+      const y = groundY - bandH + row;
+      ctx.beginPath();
+      for (let x = 0; x <= canvas.width; x += 10) {
+        const yy = y + Math.sin(x * 0.05 + this.tSec * 2 + waveOffset) * 2;
+        if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+      }
+      ctx.stroke();
     }
     ctx.restore();
   }
