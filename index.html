@@ -3,44 +3,90 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Super Maudio World</title>
+  <title>Super Midio World</title>
   <link rel="stylesheet" href="./src/ui/style.css" />
 </head>
 <body>
   <div id="app">
     <canvas id="stage" width="1280" height="720"></canvas>
 
-    <div id="loader" class="panel">
-      <h1>SUPER MAUDIO WORLD</h1>
-      <p class="sub">Drop a .mid file or an audio file (mp3/wav/flac) to begin — Midio performs it himself.
-        Drop <b>several audio stems at once</b> (bass.wav, piano.wav, lead.wav…) and their names decide who dances what.<br />
-        Sit back and watch the show — every jump, combo, and biome is generated live from the music.</p>
-      <div id="dropzone" tabindex="0">
-        <span>Drop file(s) here, or</span>
-        <label class="filebtn">
-          Choose file
-          <input id="fileInput" type="file" accept=".mid,.midi,audio/*,.mp3,.wav,.flac" multiple hidden />
-        </label>
+    <div id="loader" class="panel titleScreen">
+      <div class="titleBg" aria-hidden="true">
+        <div class="titleStars"></div>
+        <div class="titleGlow titleGlowA"></div>
+        <div class="titleGlow titleGlowB"></div>
+        <div class="titleGlow titleGlowC"></div>
+        <div class="titleHills"></div>
       </div>
-      <button id="demoBtn" type="button">Play procedural demo (no file needed)</button>
-      <div class="prefRow">
-        <button id="noLyricsBtn" class="ghostbtn" type="button" aria-pressed="false" title="Skip the lyric search for audio files (remembered)">No lyrics: off</button>
-        <button id="btLatencyBtn" class="ghostbtn" type="button" aria-pressed="false" title="Floor output-latency compensation for Bluetooth headphones (~200 ms). Remembered.">BT latency: off</button>
+
+      <div class="titleCard">
+        <div class="titleHero">
+          <div class="titleMascot" aria-hidden="true">
+            <span class="mascotBody"></span>
+            <span class="mascotEye mascotEyeL"></span>
+            <span class="mascotEye mascotEyeR"></span>
+            <span class="mascotShine"></span>
+          </div>
+          <div class="titleBrand">
+            <p class="titleEyebrow">music becomes a world</p>
+            <h1>
+              <span class="titleWord titleWordSuper">SUPER</span>
+              <span class="titleWord titleWordMidio">MIDIO</span>
+              <span class="titleWord titleWordWorld">WORLD</span>
+            </h1>
+            <p class="titleTagline">Drop a song. Midio rides every jump, combo, and biome live from the beat.</p>
+          </div>
+        </div>
+
+        <div id="dropzone" tabindex="0" role="button" aria-label="Drop or choose a music file">
+          <div class="dropzoneInner">
+            <span class="dropIcon" aria-hidden="true">&#9834;</span>
+            <span class="dropPrimary">Drop MIDI or audio to play</span>
+            <span class="dropSecondary">.mid &middot; mp3 &middot; wav &middot; flac &mdash; multi-stem drops welcome</span>
+            <label class="filebtn" onclick="event.stopPropagation()">
+              Browse files
+              <input id="fileInput" type="file" accept=".mid,.midi,audio/*,.mp3,.wav,.flac" multiple hidden />
+            </label>
+          </div>
+        </div>
+
+        <button id="demoBtn" type="button" class="demoBtn">
+          <span class="demoBtnLabel">Play demo</span>
+          <span class="demoBtnHint">no file needed</span>
+        </button>
+
+        <div class="titleMeta">
+          <div class="prefRow">
+            <button id="noLyricsBtn" class="ghostbtn chipbtn" type="button" aria-pressed="false" title="Skip the lyric search for audio files (remembered)">No lyrics: off</button>
+            <button id="btLatencyBtn" class="ghostbtn chipbtn" type="button" aria-pressed="false" title="Floor output-latency compensation for Bluetooth headphones (~200 ms). Remembered.">BT latency: off</button>
+          </div>
+
+          <details class="titleAdvanced">
+            <summary>SoundFonts &amp; extras</summary>
+            <div class="sfRow">
+              <label class="filebtn">
+                Load .sf2 / .zip
+                <input id="sfFileInput" type="file" accept=".sf2,.zip" multiple hidden />
+              </label>
+              <label class="filebtn">
+                Folder
+                <input id="sfDirInput" type="file" webkitdirectory hidden />
+              </label>
+              <button id="sfDirBtn" type="button" class="ghostbtn">Open directory&hellip;</button>
+            </div>
+            <p class="hint">Auto-load: put <code>.sf2</code>/<code>.zip</code> in <code>soundfonts/</code> next to this page. Swap songs anytime by dropping a new file mid-run.</p>
+          </details>
+
+          <p id="progressText" class="hint progressHint hidden"></p>
+
+          <ul class="titleKeys" aria-label="Keyboard shortcuts">
+            <li><kbd>`</kbd> debug</li>
+            <li><kbd>T</kbd> tracks</li>
+            <li><kbd>F</kbd> fonts</li>
+            <li><kbd>R</kbd> reduced flash</li>
+          </ul>
+        </div>
       </div>
-      <div class="sfRow">
-        <label class="filebtn">
-          Load .sf2 / .zip
-          <input id="sfFileInput" type="file" accept=".sf2,.zip" multiple hidden />
-        </label>
-        <label class="filebtn">
-          Folder
-          <input id="sfDirInput" type="file" webkitdirectory hidden />
-        </label>
-        <button id="sfDirBtn" type="button" class="ghostbtn">Open directory…</button>
-      </div>
-      <p class="hint">Or drop <code>.sf2</code>/<code>.zip</code> files into the <code>soundfonts/</code> folder next to <code>index.html</code> — they load automatically, no clicking required.</p>
-      <p id="progressText" class="hint hidden"></p>
-      <p class="hint">You can drop a different MIDI/audio file mid-song. Press <kbd>`</kbd> for debug, <kbd>T</kbd> tracks, <kbd>F</kbd> SoundFonts, fullscreen button for immersive play.</p>
     </div>
 
     <div id="hud" class="hidden">
