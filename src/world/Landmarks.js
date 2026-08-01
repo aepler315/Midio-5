@@ -408,6 +408,53 @@ function paintFloatIsles(ctx, x, rootY, scale, rand, color) {
   }
 }
 
+/** Hollow geode rind with inward-pointing crystal teeth for GEODE. */
+function paintGeode(ctx, x, rootY, scale, rand, color) {
+  ctx.fillStyle = color;
+  const R = (22 + rand() * 16) * scale;
+  const teeth = 7 + Math.floor(rand() * 4);
+  // Outer stone shell (slightly flattened)
+  ctx.beginPath();
+  ctx.ellipse(x, rootY - R * 0.55, R * 1.15, R * 0.95, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Carve the hollow by overpainting is not available — instead draw the
+  // cavity as a ring of facet spikes pointing inward from the rim.
+  ctx.beginPath();
+  for (let i = 0; i < teeth; i++) {
+    const a0 = (i / teeth) * Math.PI * 2;
+    const a1 = ((i + 0.5) / teeth) * Math.PI * 2;
+    const a2 = ((i + 1) / teeth) * Math.PI * 2;
+    const outer = R * (0.95 + rand() * 0.08);
+    const inner = R * (0.35 + rand() * 0.2);
+    const ox = x + Math.cos(a0) * outer * 0.9;
+    const oy = rootY - R * 0.55 + Math.sin(a0) * outer * 0.75;
+    const tipX = x + Math.cos(a1) * inner * 0.7;
+    const tipY = rootY - R * 0.55 + Math.sin(a1) * inner * 0.55;
+    const ox2 = x + Math.cos(a2) * outer * 0.9;
+    const oy2 = rootY - R * 0.55 + Math.sin(a2) * outer * 0.75;
+    if (i === 0) ctx.moveTo(ox, oy);
+    ctx.lineTo(tipX, tipY);
+    ctx.lineTo(ox2, oy2);
+  }
+  ctx.closePath();
+  ctx.fill();
+  // A few freestanding crystal shards beside the shell
+  const shards = 2 + Math.floor(rand() * 2);
+  for (let i = 0; i < shards; i++) {
+    const sx = x + (i - shards / 2) * 18 * scale + R * 0.9;
+    const h = (16 + rand() * 22) * scale;
+    const w = (3 + rand() * 3) * scale;
+    ctx.beginPath();
+    ctx.moveTo(sx - w, rootY);
+    ctx.lineTo(sx - w * 0.4, rootY - h);
+    ctx.lineTo(sx, rootY - h - w * 1.4);
+    ctx.lineTo(sx + w * 0.4, rootY - h);
+    ctx.lineTo(sx + w, rootY);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
 export const LANDMARKS = {
   JADE: [paintTree(4, 22.5)],
   ARCTIC: [paintCrystals],
@@ -425,6 +472,7 @@ export const LANDMARKS = {
   LUMEN: [paintMushrooms],
   AURUM: [paintSheaves, paintTree(3, 20)],
   NEBULA: [paintFloatIsles],
+  GEODE: [paintGeode, paintCrystals],
 };
 
 /**

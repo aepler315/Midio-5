@@ -33,4 +33,6 @@ export const PERSONALITY = {
   LUMEN: { swarmBand: [0.18, 0.48], mandalaRate: 0.8, cymaticModes: [0, 3, 6], turbulence: 0.55, ribbonScale: 0.9, haze: 1.15 },
   AURUM: { swarmBand: [0.22, 0.55], mandalaRate: 0.95, rdBias: -0.05, turbulence: 0.9, haze: 1.2 },
   NEBULA: { swarmBand: [0.08, 0.35], mandalaRate: 1.25, cymaticModes: [4, 6, 7], ribbonScale: 1.4, turbulence: 0.7, haze: 0.75 },
+  // Still cave air, crystalline figures, motes low among the facets.
+  GEODE: { swarmBand: [0.35, 0.62], mandalaRate: 0.7, cymaticModes: [3, 5, 6], ribbonScale: 1.15, turbulence: 0.45, haze: 0.7 },
 };

@@ -6,7 +6,7 @@ import { LANDMARKS } from '../src/world/Landmarks.js';
 import { PERSONALITY } from '../src/world/BiomePersonality.js';
 import { ParticleField } from '../src/world/ParticleField.js';
 
-const PACK = ['DUNE', 'CORAL', 'LUMEN', 'AURUM', 'NEBULA', 'ABYSS'];
+const PACK = ['DUNE', 'CORAL', 'LUMEN', 'AURUM', 'NEBULA', 'ABYSS', 'GEODE'];
 
 const EXPECTED = {
   DUNE: { fx: 'heatShimmer', kind: 'sand' },
@@ -15,6 +15,7 @@ const EXPECTED = {
   AURUM: { fx: 'petalPile', kind: 'petals' },
   NEBULA: { fx: 'nebulaBloom', kind: 'fireflies' },
   ABYSS: { fx: 'aurora', kind: 'antigrav' },
+  GEODE: { fx: 'starTwinkle', kind: 'spores' },
 };
 
 test('every pack biome has a valid profile shape', () => {
@@ -84,12 +85,12 @@ test('new particle kinds spawn, update, and stay finite', () => {
   }
 });
 
-test('stock roster is the expected 16 biomes', () => {
-  assert.equal(BIOMES.length, 16);
+test('stock roster is the expected 17 biomes', () => {
+  assert.equal(BIOMES.length, 17);
   const names = new Set(BIOMES.map((b) => b.name));
   for (const name of [
     'TWILIGHT', 'EMBER', 'ARCTIC', 'JADE', 'VOID', 'SAKURA', 'SOLAR', 'STORM',
-    'MIRROR', 'CYBER', 'ABYSS', 'DUNE', 'CORAL', 'LUMEN', 'AURUM', 'NEBULA',
+    'MIRROR', 'CYBER', 'ABYSS', 'DUNE', 'CORAL', 'LUMEN', 'AURUM', 'NEBULA', 'GEODE',
   ]) {
     assert.ok(names.has(name), `missing ${name}`);
   }

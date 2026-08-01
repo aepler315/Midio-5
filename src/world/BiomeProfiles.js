@@ -180,6 +180,24 @@ export const BIOMES = [
     fx: 'nebulaBloom',
     terrainEnergy: 1.05,
   },
+  {
+    name: 'GEODE',
+    sky: ['#0c0618', '#3a1a5c', '#d4a0ff'],
+    silhouette: '#1a0e2e',
+    edgeLight: '#c48cff',
+    celestial: {
+      kind: 'moon',
+      color: '#f0d8ff',
+      radius: 38,
+      haloColor: '#b46cff',
+      ring: true,
+      shape: { m: 6, n1: 0.55, n2: 1.6, n3: 1.6 },
+    },
+    // Faceted sparkle: slow floating motes + starfield twinkle.
+    particles: { kind: 'spores', color: '#e0b0ff', count: 44, speed: 9 },
+    fx: 'starTwinkle',
+    terrainEnergy: 1.28,
+  },
 ];
 
 export function biomeByName(name) {
