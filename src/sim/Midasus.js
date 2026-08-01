@@ -208,7 +208,7 @@ export class Midasus {
     }
   }
 
-  draw(ctx, particleMul = 1) {
+  draw(ctx, particleMul = 1, light = null) {
     if (this.voyage.depth > 0.02) return; // she's away; BiomeManager's deep-sky pass owns rendering
     const sat = Math.round(58 - 28 * this.rest); // spectral: pale, never candy
     this.debris.draw(ctx, this.hue, this.rest, particleMul); // behind her core and trail
@@ -257,6 +257,6 @@ export class Midasus {
     drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot: bank, scaleX: this.pulse * 1.5 * DRAW_SCALE, scaleY: this.pulse * 1.5 * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 78, alpha: 1 });
     ctx.restore();
 
-    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot: bank, scaleX: this.pulse * DRAW_SCALE, scaleY: this.pulse * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 70, hueSpread: 26 });
+    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot: bank, scaleX: this.pulse * DRAW_SCALE, scaleY: this.pulse * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 70, hueSpread: 26, light });
   }
 }

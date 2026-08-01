@@ -16,6 +16,8 @@ test('stays at level 0 under a healthy frame budget', () => {
   assert.equal(gov.particleMul, 1);
   assert.equal(gov.crackGlowEnabled, true);
   assert.equal(gov.veilEnabled, true);
+  assert.equal(gov.rimLightEnabled, true);
+  assert.equal(gov.contactShadowsEnabled, true);
 });
 
 test('sheds one rung after ~60 consecutive over-budget frames, in spec order', () => {
@@ -26,6 +28,17 @@ test('sheds one rung after ~60 consecutive over-budget frames, in spec order', (
   assert.equal(gov.level, 1);
   assert.equal(gov.visionAllowed, false, 'vision loop sheds first');
   assert.equal(gov.particleMul, 1, 'particles untouched at level 1');
+  assert.equal(gov.rimLightEnabled, true, 'rim light untouched at level 1');
+  assert.equal(gov.contactShadowsEnabled, true, 'contact shadows untouched at level 1');
+});
+
+test('rim light sheds at level 2 alongside the particle cap; contact shadows survive one rung longer', () => {
+  const gov = new PerfGovernor();
+  feedFrames(gov, 120, 20); // two shed rungs -> level 2
+  assert.equal(gov.level, 2);
+  assert.equal(gov.particleMul, 0.6);
+  assert.equal(gov.rimLightEnabled, false);
+  assert.equal(gov.contactShadowsEnabled, true, 'contact shadows shed at level 3, not 2');
 });
 
 test('sheds progressively further under sustained pressure', () => {
@@ -40,6 +53,8 @@ test('sheds progressively further under sustained pressure', () => {
   assert.equal(gov.particleMul, 0.6);
   assert.equal(gov.crackGlowEnabled, false);
   assert.equal(gov.veilEnabled, false);
+  assert.equal(gov.rimLightEnabled, false);
+  assert.equal(gov.contactShadowsEnabled, false);
 
   // Further over-budget frames don't shed past MAX_LEVEL.
   feedFrames(gov, 200, 20, t);

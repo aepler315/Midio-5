@@ -19,6 +19,7 @@ import { Atmosphere } from './Atmosphere.js';
 import { CodaDirector } from '../sim/CodaDirector.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
+import { computeLight, celestialScreenPos } from '../render/LightField.js';
 import { clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
 import { LerpCache, rotateHueHex } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
@@ -288,6 +289,18 @@ export class BiomeManager {
     return this.lerpCache.get(this._profile(from).celestial.haloColor, this._profile(to).celestial.haloColor, t);
   }
 
+  /** Movement VII: the celestial body as an actual light -- position, color, intensity. */
+  currentLight() {
+    return this.light || computeLight({ canvasWidth: this.w, canvasHeight: this.h, budget: this.budget });
+  }
+
+  /** The current blended silhouette/ground color -- lets non-layer consumers (e.g. obstacles) belong to the biome. */
+  currentSilhouetteColor() {
+    if (!this.currentBlend) return '#2b2145';
+    const { from, to, t } = this.currentBlend;
+    return this._rotated(this.lerpCache.get(this._profile(from).silhouette, this._profile(to).silhouette, t));
+  }
+
   update(nowMs, dtSec, energyCurves, calmLevel = 0, worldX = 0) {
     this.tSec = nowMs / 1000;
     this.calmLevel = calmLevel;
@@ -394,6 +407,17 @@ export class BiomeManager {
         ctx.restore();
       }
     }
+
+    // Movement VII: the celestial body doubles as a light -- every
+    // consumer downstream this frame (layers, characters, obstacles)
+    // reads the same `this.light` rather than re-deriving its position.
+    this.light = computeLight({
+      canvasWidth: canvas.width, canvasHeight: canvas.height,
+      celestialYFrac: arc.celestialYFrac, haloColorHex: this.currentHaloColor(),
+      budget: this.budget, unravel: this.unravel,
+      dayArcAlpha: arc.dawn.alpha + arc.dusk.alpha,
+      reducedFlash: this.reducedFlash,
+    });
 
     this._drawCelestial(ctx, canvas, A, B, t, arc.celestialYFrac);
     // Spirograph resonance mandala, centered on the celestial body so it
@@ -681,7 +705,7 @@ export class BiomeManager {
   }
 
   _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22) {
-    const cx = canvas.width * 0.78, cy = canvas.height * cyFrac;
+    const { x: cx, y: cy } = celestialScreenPos(canvas.width, canvas.height, cyFrac);
     if (B === A) {
       this._drawOneCelestial(ctx, cx, cy, A.celestial, 1);
     } else {
@@ -905,6 +929,39 @@ export class BiomeManager {
       ctx.globalAlpha = 1;
     }
     ctx.restore();
+
+    // Movement VII: aerial perspective -- distance has read only as scroll
+    // speed until now. Farther ranges (small LAYER_RATIOS entries) pick up
+    // heavier sky-color haze and a stronger light-side wash than near ones,
+    // drawn right after this layer's own strips so only THIS band is
+    // touched before the next, nearer layer paints over/beside it.
+    const strip = stripsA[layerKey];
+    const bandY = canvas.height - strip.height + yOff;
+    const bandH = strip.height;
+    const depthFactor = clamp01(1 - (LAYER_RATIOS[layerKey] - LAYER_RATIOS.L2) / (LAYER_RATIOS.L5 - LAYER_RATIOS.L2));
+
+    const hazeAlpha = 0.35 * depthFactor;
+    if (hazeAlpha > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = hazeAlpha;
+      ctx.fillStyle = this._rotated(this.lerpCache.get(A.sky[2], B.sky[2], t));
+      ctx.fillRect(0, bandY, canvas.width, bandH);
+      ctx.restore();
+    }
+
+    const light = this.light;
+    const washAlpha = light ? 0.14 * depthFactor * light.intensity : 0;
+    if (washAlpha > 0.005) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = washAlpha;
+      const g = ctx.createRadialGradient(light.x, bandY + bandH / 2, 0, light.x, bandY + bandH / 2, canvas.width * 0.6);
+      g.addColorStop(0, light.colorHex);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, bandY, canvas.width, bandH);
+      ctx.restore();
+    }
   }
 
   _drawShimmered(ctx, canvas, strip, scrollX, yOff = 0) {

@@ -10,6 +10,8 @@ import { Role } from '../core/NoteEvent.js';
 import { clamp, mulberry32 } from '../utils/math.js';
 import { GUARDRAIL_MIN } from '../core/ParamBus.js';
 import { predictJumpArcs, safeWindowForArc } from './JumpPlanner.js';
+import { hexLerp } from '../utils/color.js';
+import { drawContactShadow } from '../render/ContactShadow.js';
 
 const WORLD_SPEED_PX_S = 220;
 const MIN_VEL = 0.55;
@@ -115,15 +117,40 @@ export class ObstacleSpawner {
     return stumbled;
   }
 
-  draw(ctx, worldX, originX, groundY) {
+  /**
+   * Movement VII: obstacles used to be a flat, hardcoded-magenta rect --
+   * the single most unfinished-looking thing on screen. `color` ties them
+   * to the current biome's silhouette instead of a fixed hex, and `light`
+   * splits the face into a lit/shadow half so they read as lit, not painted.
+   */
+  draw(ctx, worldX, originX, groundY, { light = null, color = '#8a3a6b' } = {}) {
+    const litColor = hexLerp(color, '#ffffff', 0.35);
+    const shadeColor = hexLerp(color, '#000000', 0.35);
     for (const o of this.active) {
       const x = o.wx - worldX + originX;
       if (x < -60 || x > 2200) continue;
-      ctx.fillStyle = '#8a3a6b';
-      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      const halfW = o.width / 2;
+      const top = groundY - o.height;
+
+      drawContactShadow(ctx, { x, groundY, heightAboveGround: 0, width: o.width * 0.9, light, opacity: 0.32 });
+
+      // The half of the face nearer the light reads lit; the far half
+      // reads shadowed -- a cheap wrap-light cue, not a real normal.
+      const litIsLeft = !light || light.x < x;
+      ctx.fillStyle = litIsLeft ? litColor : shadeColor;
+      ctx.fillRect(x - halfW, top, halfW, o.height);
+      ctx.fillStyle = litIsLeft ? shadeColor : litColor;
+      ctx.fillRect(x, top, halfW, o.height);
+
+      // Rim highlight on the lit outer edge only -- the old full white
+      // strokeRect becomes a directional cue instead of an outline.
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
       ctx.lineWidth = 1.5;
-      ctx.fillRect(x - o.width / 2, groundY - o.height, o.width, o.height);
-      ctx.strokeRect(x - o.width / 2, groundY - o.height, o.width, o.height);
+      ctx.beginPath();
+      const edgeX = litIsLeft ? x - halfW : x + halfW;
+      ctx.moveTo(edgeX, top);
+      ctx.lineTo(edgeX, groundY);
+      ctx.stroke();
     }
   }
 }

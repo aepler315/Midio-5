@@ -14,6 +14,8 @@ import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
+import { PerfGovernor } from './render/PerfGovernor.js';
+import { getReducedFlash, setReducedFlash } from './ui/Accessibility.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -273,11 +275,12 @@ function startTimeline(timelineData) {
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
     customBiome: timelineData.customBiome || null,
+    perfGovernor,
   });
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
   renderer = createRenderer(canvas, rendererMode);
-  visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false });
-  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop);
+  visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false, perfGovernor });
+  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop, perfGovernor);
   renderTracks(timelineData.tracks, timelineData.pairs);
   if (filmstripEl) { filmstripEl.innerHTML = ''; filmstripEl.classList.add('hidden'); }
 

@@ -83,3 +83,37 @@ test('no safe window is invented for an arc that never clears the obstacle heigh
   spawner.buildCandidates(timeline, 500, MIDIO_HALF_WIDTH);
   assert.equal(spawner.candidates.length, 0);
 });
+
+// --- Movement VII: obstacle lighting (draw() lit/shadow split) ---
+
+function mockDrawCtx() {
+  const fillStyles = [];
+  return {
+    fillStyles,
+    strokeStyle: null,
+    lineWidth: null,
+    fillStyle: null,
+    fillRect() { fillStyles.push(this.fillStyle); },
+    beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
+    createRadialGradient() { return { addColorStop() {} }; },
+    ellipse() {}, fill() {}, save() {}, restore() {},
+  };
+}
+
+test('draw(): the lit half flips to the other side of the obstacle when the light crosses its x', () => {
+  const spawner = new ObstacleSpawner({ live: { obstacleDensity: 1 } });
+  spawner.active.push({ wx: 500, tMs: 0, height: 46, width: 28, passed: false });
+
+  const ctxLightLeft = mockDrawCtx();
+  spawner.draw(ctxLightLeft, 0, 0, 480, { light: { x: 100, y: 50, intensity: 1, colorHex: '#ffffff' }, color: '#8a3a6b' });
+  const [firstFillLeft] = ctxLightLeft.fillStyles;
+
+  const ctxLightRight = mockDrawCtx();
+  spawner.draw(ctxLightRight, 0, 0, 480, { light: { x: 900, y: 50, intensity: 1, colorHex: '#ffffff' }, color: '#8a3a6b' });
+  const [firstFillRight] = ctxLightRight.fillStyles;
+
+  // The left half's fill is drawn first; it should be the lit color when
+  // the light sits to the left of the obstacle, and the shadow color when
+  // the light sits to the right -- i.e. the two runs must disagree.
+  assert.notEqual(firstFillLeft, firstFillRight);
+});

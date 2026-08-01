@@ -10,6 +10,7 @@ import { RainbowBrush } from './RainbowBrush.js';
 import { GOLD_AFTERIMAGE_LIFE_MS } from '../sim/MidioPerformer.js';
 import { clamp01 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
+import { drawContactShadow } from './ContactShadow.js';
 
 const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
@@ -59,6 +60,11 @@ export class Renderer {
       this._drawFallbackSky(ctx, canvas);
       this._drawGround(ctx, canvas, pose, sim.midio.groundY);
     }
+    // Movement VII: the celestial body as a light, resolved once per frame
+    // and shared by every contact shadow / rim light call below.
+    const light = biomeManager ? biomeManager.currentLight() : null;
+    const contactShadowsEnabled = perf ? perf.contactShadowsEnabled : true;
+    const rimLightEnabled = perf ? perf.rimLightEnabled : true;
 
     // Broshi's underground excursion: drawn beneath the world -- literally
     // inside the earth, under everything that walks on it -- rather than
@@ -72,20 +78,36 @@ export class Renderer {
     if (sim.coda) this._drawDesaturationOverlay(ctx, canvas, sim.coda);
 
     if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
-    if (sim.obstacles) sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY);
+    if (sim.obstacles) {
+      sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY, {
+        light: contactShadowsEnabled ? light : null,
+        color: biomeManager ? biomeManager.currentSilhouetteColor() : undefined,
+      });
+    }
     if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
 
     // Rainbow brush: paint Midio's jump arcs, world-locked behind him.
     this.brush.update(sim.timeMs, pose.airborne, pose.worldX, pose.midioY);
     this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs, sim.apotheosis && sim.apotheosis.active ? 2 : 1);
 
-    if (sim.broshi) sim.broshi.draw(ctx, pose);
+    if (sim.broshi && sim.broshi.burrow.depth <= 0.02 && contactShadowsEnabled) {
+      drawContactShadow(ctx, {
+        x: sim.broshi.screenX, groundY: sim.broshi.groundY, heightAboveGround: sim.broshi.hopY, width: 50, light,
+      });
+    }
+    if (sim.broshi) sim.broshi.draw(ctx, rimLightEnabled ? light : null);
 
     if (sim.performer) {
       this._drawMidioAfterimages(ctx, sim.performer, pose.midioX);
       this._drawGoldAfterimages(ctx, sim.performer, pose.midioX, sim.timeMs);
     }
-    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0, sim.apotheosis, sim.reducedFlash);
+    if (contactShadowsEnabled) {
+      drawContactShadow(ctx, {
+        x: pose.midioX, groundY: sim.midio.groundY, heightAboveGround: Math.max(0, sim.midio.groundY - pose.midioY),
+        width: sim.midio.halfWidth * 2 * pose.scaleX, light,
+      });
+    }
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0, sim.apotheosis, sim.reducedFlash, rimLightEnabled ? light : null);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
@@ -96,7 +118,13 @@ export class Renderer {
     this.epicycles.draw(ctx, sim.timeMs);
     this._drawDropShockwave(ctx, canvas, sim, pose);
 
-    if (sim.midasus) sim.midasus.draw(ctx, particleMul);
+    if (sim.midasus && sim.midasus.voyage.depth <= 0.02 && contactShadowsEnabled) {
+      drawContactShadow(ctx, {
+        x: sim.midasus.p.x, groundY: sim.midio.groundY, heightAboveGround: Math.max(0, sim.midio.groundY - sim.midasus.p.y),
+        width: 30, light, opacity: 0.22,
+      });
+    }
+    if (sim.midasus) sim.midasus.draw(ctx, particleMul, rimLightEnabled ? light : null);
     if (sim.gnat) sim.gnat.draw(ctx, sim.timeMs);
     if (sim.fracture) sim.fracture.draw(ctx, canvas, { glow: perf ? perf.crackGlowEnabled : true });
     if (biomeManager) biomeManager.drawForeground(ctx, canvas, pose.worldX, perf ? perf.veilEnabled : true);
@@ -244,7 +272,7 @@ export class Renderer {
     ctx.stroke();
   }
 
-  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false) {
+  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, light = null) {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
     const apoProgress = apotheosis ? apotheosis.progress : 0;
@@ -262,6 +290,7 @@ export class Renderer {
       satBase: 26 + flash * 45 + 20 * apoProgress,
       lightBase: 68 + flash * 14 + 10 * apoProgress,
       hueSpread: 16 + 60 * apoProgress,
+      light,
     };
 
     // Modal vibration: rim vertices ride the performer's ring-down field.

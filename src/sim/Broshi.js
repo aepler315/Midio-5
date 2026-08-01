@@ -323,7 +323,7 @@ export class Broshi {
     }
   }
 
-  draw(ctx) {
+  draw(ctx, light = null) {
     if (this.burrow.depth > 0.02) return; // he's underground; Renderer draws the Burrow band instead
     const skinHex = hexLerp('#63c74d', '#e43b44', this.rho);
     const skinRgb = hexToRgb(skinHex);
@@ -384,7 +384,7 @@ export class Broshi {
       displaceMeshRadial(BROSHI_BODY, bodyHub.x, bodyHub.y, this.modal),
       bodyHub.x, bodyHub.y, this._nowMs / 1000, this._melt || 0, 2,
     );
-    const glyphOpts = { satBase: 30, lightBase: 56, hueSpread: 20 };
+    const glyphOpts = { satBase: 30, lightBase: 56, hueSpread: 20, light };
     drawMeshPart(ctx, bodyMesh, this._bodyRest, group, baseHue, glyphOpts);
     drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue, glyphOpts);
     if (this.beatFlash > 0.03) {

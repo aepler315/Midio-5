@@ -47,4 +47,10 @@ export class PerfGovernor {
   get particleMul() { return this.level >= 2 ? 0.6 : 1; }
   get crackGlowEnabled() { return this.level < 3; }
   get veilEnabled() { return this.level < 4; }
+  // Movement VII: the two new lighting passes join the same ladder rather
+  // than getting their own rungs -- rim light is the pricier per-edge work
+  // so it sheds at the particle-cap rung; contact shadows shed alongside
+  // crack glow, one rung later.
+  get rimLightEnabled() { return this.level < 2; }
+  get contactShadowsEnabled() { return this.level < 3; }
 }

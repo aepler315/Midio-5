@@ -90,6 +90,50 @@ test('drawMeshPart end-to-end: a squashed mesh (scaleY<1) produces visible per-e
   assert.ok(ctx.calls.stroke > mesh.edges.length, 'squash/stretch should trigger at least one glow pass');
 });
 
+// --- Movement VII: rim light (drawMeshEdges `light` option) ---
+
+function mockCtxWithStrokeStyles() {
+  const ctx = mockCtx();
+  ctx.strokeStyles = [];
+  let _style = null;
+  Object.defineProperty(ctx, 'strokeStyle', {
+    get() { return _style; },
+    set(v) { _style = v; ctx.strokeStyles.push(v); },
+  });
+  return ctx;
+}
+
+function lightnessOf(hsla) {
+  return Number(hsla.match(/,\s*([\d.]+)%\s*,\s*[\d.]+\)/)[1]);
+}
+
+test('drawMeshEdges: omitting `light` produces identical output to before this feature existed', () => {
+  const mesh = radialMesh(10, 10, 6);
+  const rest = computeRestLengths(mesh);
+  const ctxNoLight = mockCtxWithStrokeStyles();
+  drawMeshEdges(ctxNoLight, mesh, rest, mesh.vertices, 40);
+  const ctxNullLight = mockCtxWithStrokeStyles();
+  drawMeshEdges(ctxNullLight, mesh, rest, mesh.vertices, 40, { light: null });
+  assert.deepEqual(ctxNullLight.strokeStyles, ctxNoLight.strokeStyles);
+});
+
+test('drawMeshEdges: an edge facing the light reads brighter than the same edge with the light mirrored away', () => {
+  const mesh = { vertices: [{ x: -10, y: 0 }, { x: 10, y: 0 }], edges: [[0, 1]] };
+  const rest = computeRestLengths(mesh);
+
+  const lightAbove = { x: 0, y: -200, colorHex: '#ffcc66', intensity: 1 };
+  const ctxLit = mockCtxWithStrokeStyles();
+  drawMeshEdges(ctxLit, mesh, rest, mesh.vertices, 40, { light: lightAbove, rimAmount: 1 });
+
+  const lightBelow = { x: 0, y: 200, colorHex: '#ffcc66', intensity: 1 };
+  const ctxUnlit = mockCtxWithStrokeStyles();
+  drawMeshEdges(ctxUnlit, mesh, rest, mesh.vertices, 40, { light: lightBelow, rimAmount: 1 });
+
+  const litLightness = lightnessOf(ctxLit.strokeStyles.at(-1));
+  const unlitLightness = lightnessOf(ctxUnlit.strokeStyles.at(-1));
+  assert.ok(litLightness > unlitLightness, `expected lit=${litLightness} > unlit=${unlitLightness}`);
+});
+
 // --- displaceMeshRadial (resonance geometry) ---
 import { displaceMeshRadial } from '../src/render/MeshDrawer.js';
 import { ModalRing } from '../src/render/oscillators.js';
