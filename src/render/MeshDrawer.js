@@ -4,6 +4,15 @@
 // its current length has deformed from rest. Squash-and-stretch, jaw
 // snaps, and neck bobs all become visible motion this way, for free.
 import { curl2 } from '../utils/fields.js';
+import { hexToRgb, rgbToHsl } from '../utils/color.js';
+
+const RIM_LIGHT_RANGE = 26; // max lightness swing (+/-) a fully-facing/fully-averted edge can pick up
+const RIM_HUE_BLEND = 0.35; // max fraction an edge's hue shifts toward the light's hue on its lit side
+
+/** Shortest signed hue delta from a to b, in degrees, through whichever direction around the wheel is shorter. */
+function hueDelta(a, b) {
+  return ((b - a + 540) % 360) - 180;
+}
 
 /** Precompute each edge's local (undeformed) length once per mesh. */
 export function computeRestLengths(mesh) {
@@ -52,16 +61,32 @@ export function drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, {
     // Fold angle into [0,180) first (an edge and its reverse are the same
     // line), then map that half-turn onto the hue band.
     const angleDeg = ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 180;
-    const hue = (baseHueDeg + (angleDeg / 180) * hueSpread - hueSpread / 2 + 360) % 360;
+    let hue = (baseHueDeg + (angleDeg / 180) * hueSpread - hueSpread / 2 + 360) % 360;
     const rest = restLengths[e];
     const deform = rest > 0.001 ? Math.abs(len - rest) / rest : 0;
     const glow = Math.min(1, deform * 3);
 
-    const light = Math.min(88, lightBase + glow * glowBoost);
+    let lightness = Math.min(88, lightBase + glow * glowBoost);
     const sat = Math.min(100, satBase + glow * 22);
 
+    if (lightHue !== null && len > 0.001) {
+      // Rim light: how much this edge faces the celestial versus turns
+      // away from it, from the edge's own normal -- a stylized cue, not a
+      // physically exact one, since these are open wireframe strokes with
+      // no defined front face.
+      const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+      const nx = dy / len, ny = -dx / len;
+      let tlx = light.x - midX, tly = light.y - midY;
+      const tlen = Math.hypot(tlx, tly) || 1;
+      tlx /= tlen; tly /= tlen;
+      const facing = nx * tlx + ny * tly; // -1 (fully averted) .. +1 (fully facing)
+      const amt = facing * light.intensity * rimAmount;
+      lightness = Math.max(4, Math.min(92, lightness + amt * RIM_LIGHT_RANGE));
+      if (amt > 0) hue = (hue + hueDelta(hue, lightHue) * Math.min(1, amt) * RIM_HUE_BLEND + 360) % 360;
+    }
+
     if (glow > 0.15) {
-      ctx.strokeStyle = `hsla(${hue.toFixed(0)}, ${sat.toFixed(0)}%, ${light.toFixed(0)}%, ${(alpha * 0.35).toFixed(2)})`;
+      ctx.strokeStyle = `hsla(${hue.toFixed(0)}, ${sat.toFixed(0)}%, ${lightness.toFixed(0)}%, ${(alpha * 0.35).toFixed(2)})`;
       ctx.lineWidth = widthBase + widthGlow * glow + 3;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
@@ -69,7 +94,7 @@ export function drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, {
       ctx.stroke();
     }
 
-    ctx.strokeStyle = `hsla(${hue.toFixed(0)}, ${sat.toFixed(0)}%, ${light.toFixed(0)}%, ${alpha})`;
+    ctx.strokeStyle = `hsla(${hue.toFixed(0)}, ${sat.toFixed(0)}%, ${lightness.toFixed(0)}%, ${alpha})`;
     ctx.lineWidth = widthBase + widthGlow * glow;
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);

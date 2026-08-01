@@ -114,6 +114,11 @@ export class Renderer {
       this._drawFallbackSky(ctx, canvas);
       this._drawGround(ctx, canvas, pose, sim.midio.groundY);
     }
+    // Movement VII: the celestial body as a light, resolved once per frame
+    // and shared by every contact shadow / rim light call below.
+    const light = biomeManager ? biomeManager.currentLight() : null;
+    const contactShadowsEnabled = perf ? perf.contactShadowsEnabled : true;
+    const rimLightEnabled = perf ? perf.rimLightEnabled : true;
 
     // Broshi's underground excursion: drawn beneath the world -- literally
     // inside the earth, under everything that walks on it -- rather than

@@ -591,8 +591,8 @@ function startTimeline(timelineData, { autoRecord = true } = {}) {
   sim.lyricIdentity = timelineData.lyricIdentity || null;
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
   renderer = createRenderer(canvas, rendererMode);
-  visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false });
-  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop);
+  visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false, perfGovernor });
+  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop, perfGovernor);
   renderTracks(timelineData.tracks, timelineData.pairs);
   if (filmstripEl) { filmstripEl.innerHTML = ''; filmstripEl.classList.add('hidden'); }
 

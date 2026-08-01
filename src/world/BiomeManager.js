@@ -44,6 +44,7 @@ import { Atmosphere } from './Atmosphere.js';
 import { CodaDirector } from '../sim/CodaDirector.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
+import { computeLight, celestialScreenPos } from '../render/LightField.js';
 import { clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
 import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
@@ -2101,6 +2102,39 @@ export class BiomeManager {
       ctx.fillRect(left + i * (barW + gap), baseY - h, barW, 2.5);
     }
     ctx.restore();
+
+    // Movement VII: aerial perspective -- distance has read only as scroll
+    // speed until now. Farther ranges (small LAYER_RATIOS entries) pick up
+    // heavier sky-color haze and a stronger light-side wash than near ones,
+    // drawn right after this layer's own strips so only THIS band is
+    // touched before the next, nearer layer paints over/beside it.
+    const strip = stripsA[layerKey];
+    const bandY = canvas.height - strip.height + yOff;
+    const bandH = strip.height;
+    const depthFactor = clamp01(1 - (LAYER_RATIOS[layerKey] - LAYER_RATIOS.L2) / (LAYER_RATIOS.L5 - LAYER_RATIOS.L2));
+
+    const hazeAlpha = 0.35 * depthFactor;
+    if (hazeAlpha > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = hazeAlpha;
+      ctx.fillStyle = this._rotated(this.lerpCache.get(A.sky[2], B.sky[2], t));
+      ctx.fillRect(0, bandY, canvas.width, bandH);
+      ctx.restore();
+    }
+
+    const light = this.light;
+    const washAlpha = light ? 0.14 * depthFactor * light.intensity : 0;
+    if (washAlpha > 0.005) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = washAlpha;
+      const g = ctx.createRadialGradient(light.x, bandY + bandH / 2, 0, light.x, bandY + bandH / 2, canvas.width * 0.6);
+      g.addColorStop(0, light.colorHex);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, bandY, canvas.width, bandH);
+      ctx.restore();
+    }
   }
 
   _drawShimmered(ctx, canvas, strip, scrollX, yOff = 0) {
