@@ -20,11 +20,15 @@ import {
   getReducedFlash, setReducedFlash, getLyricsDisabled, setLyricsDisabled,
   getBluetoothLatency, setBluetoothLatency,
 } from './ui/Accessibility.js';
+import {
+  getVisualStyle, setVisualStyle as persistVisualStyle,
+  resolveVisualStyle, STYLE_RENDERED,
+} from './render/VisualStyle.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
 import { resolveDurationMs } from './core/SongDuration.js';
-import { VideoExporter, exportDims, exportFilename } from './export/VideoExporter.js';
+import { formatSeed, parseSeed } from './utils/seed.js';
 import { resolveIdentity } from './lyrics/SongIdentity.js';
 import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
@@ -40,20 +44,18 @@ const demoBtnEl = document.getElementById('demoBtn');
 const progressEl = document.getElementById('progressText');
 const hudEl = document.getElementById('hud');
 const comboReadoutEl = document.getElementById('comboReadout');
-const scoreReadoutEl = document.getElementById('scoreReadout');
+const streakReadoutEl = document.getElementById('streakReadout');
 const completePanelEl = document.getElementById('completePanel');
-const completeStatsEl = document.getElementById('completeStats');
+const completeSongNameEl = document.getElementById('completeSongName');
+const completeSeedEl = document.getElementById('completeSeed');
+const copySeedBtnEl = document.getElementById('copySeedBtn');
 const resultsGridEl = document.getElementById('resultsGrid');
 const playAgainBtnEl = document.getElementById('playAgainBtn');
-const exportResEl = document.getElementById('exportRes');
-const exportFpsEl = document.getElementById('exportFps');
-const exportBtnEl = document.getElementById('exportBtn');
-const exportDownloadEl = document.getElementById('exportDownload');
-const recordingHudEl = document.getElementById('recordingHud');
-const recordingTimeEl = document.getElementById('recordingTime');
-const recordingCancelBtnEl = document.getElementById('recordingCancelBtn');
-const liveRecHudEl = document.getElementById('liveRecHud');
-const saveVideoBtnEl = document.getElementById('saveVideoBtn');
+const replaySameSeedBtnEl = document.getElementById('replaySameSeedBtn');
+const replayNewSeedBtnEl = document.getElementById('replayNewSeedBtn');
+const seedInputEl = document.getElementById('seedInput');
+const seedRandomBtnEl = document.getElementById('seedRandomBtn');
+const stageResEl = document.getElementById('stageRes');
 const debugOverlayEl = document.getElementById('debugOverlay');
 const fpsHudEl = document.getElementById('fpsHud');
 const sfFileInputEl = document.getElementById('sfFileInput');
@@ -101,6 +103,8 @@ const lyricsNoneBtnEl = document.getElementById('lyricsNoneBtn');
 const noLyricsBtnEl = document.getElementById('noLyricsBtn');
 const btLatencyBtnEl = document.getElementById('btLatencyBtn');
 const btLatencyHudBtnEl = document.getElementById('btLatencyHudBtn');
+const visualStyleBtnEl = document.getElementById('visualStyleBtn');
+const visualStyleHudBtnEl = document.getElementById('visualStyleHudBtn');
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -124,6 +128,29 @@ let fontModalView = 'list'; // 'list' (visible fonts, click-to-hide) | 'hidden' 
 let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted accessibility toggle
 let lyricsDisabled = getLyricsDisabled(); // "No lyrics": persisted opt-out from the lyric fetch/prompt
 let bluetoothLatency = getBluetoothLatency(); // floor output-latency for BT headphones
+// Graphics presentation: URL ?style=classic|rendered overrides storage.
+const _styleParam = new URLSearchParams(location.search).get('style');
+let visualStyle = _styleParam ? resolveVisualStyle(_styleParam) : getVisualStyle();
+paramBus.visualStyle = visualStyle;
+
+// One house look — no Soft/Neon toggle.
+function syncVisualStyleUi() {
+  if (visualStyleBtnEl) {
+    visualStyleBtnEl.classList.add('hidden');
+    visualStyleBtnEl.setAttribute('aria-hidden', 'true');
+  }
+  if (visualStyleHudBtnEl) {
+    visualStyleHudBtnEl.classList.add('hidden');
+    visualStyleHudBtnEl.setAttribute('aria-hidden', 'true');
+  }
+}
+function applyVisualStyle(next) {
+  visualStyle = persistVisualStyle(STYLE_RENDERED);
+  paramBus.visualStyle = visualStyle;
+  sim?.setVisualStyle(visualStyle);
+  syncVisualStyleUi();
+}
+syncVisualStyleUi();
 
 /** Reflect the "No lyrics" preference on the loader toggle button. */
 function syncNoLyricsBtn() {
@@ -170,26 +197,25 @@ let muteTimelineSynth = false;
 let loadShow = null; // percussion loading show, created in bootAudio
 let loadGen = 0;     // a newer load cancels a stale audition gate's start
 
-// Retained so "Play again" and video export can replay the exact same song
-// without a page reload (the sim is fully seeded + autoplay-driven, so
-// replaying `lastTimelineData` reproduces the performance bit-for-bit).
-// `lastAudioBuffer` is only set on the raw-audio-file path (MIDI/demo
-// regenerate their sound from the timeline).
+// Retained so "Replay seed" can restart the same song without a page reload
+// (sim is fully seeded + autoplay-driven). `lastAudioBuffer` is only set on
+// the raw-audio-file path (MIDI/demo regenerate sound from the timeline).
 let lastTimelineData = null;
 let lastAudioBuffer = null;
 let lastSongName = 'song';
-let videoExporter = null;
-let exporting = false;
-// 'live' = the ordinary play, auto-recorded at whatever the export row is
-// set to, offered as "Save video" at the end; 'replay' = the explicit
-// "Re-export at these settings" button's own replay -- that one still
-// auto-downloads on completion, same as before. Only 'replay' recordings
-// skip PerfGovernor sampling (a deliberate re-record should never shed
-// phenomena mid-video); the ordinary live play behaves exactly as it
-// always has, recording alongside it.
-let recordingMode = null;
-let pendingSaveUrl = null;
-let pendingSaveLabel = '';
+let lastSongSeed = null; // 32-bit seed used for the run that just finished
+
+// Stage: logical composition is always 1280×720; backing store scales up to
+// the chosen preset (720 / 1080 / 1440 / 4K) for sharper output.
+const STAGE_W = 1280;
+const STAGE_H = 720;
+const STAGE_PRESETS = {
+  720: { w: 1280, h: 720 },
+  1080: { w: 1920, h: 1080 },
+  1440: { w: 2560, h: 1440 },
+  2160: { w: 3840, h: 2160 },
+};
+const STAGE_RES_KEY = 'smw:stageRes';
 
 let simTime = 0;
 let acc = 0;
@@ -217,16 +243,61 @@ const perfStartLevel = resolvePerfStartLevel(
   },
 );
 
-// The Stage model: the game is composed for a fixed 1280x720 stage and the
-// browser scales that stage to fit the window (letterboxed via CSS
-// object-fit). Sizing the backing store to the window instead put every
-// fixed-pixel anchor (Midio at x=220, ground at y=480) in the top-left
-// corner of large screens while canvas-fraction systems spread across the
-// whole frame -- the composition only held together at one window size.
-const STAGE_W = 1280, STAGE_H = 720;
+function readStagePreset() {
+  const fromUi = Number(stageResEl?.value);
+  if (STAGE_PRESETS[fromUi]) return fromUi;
+  try {
+    const stored = Number(localStorage.getItem(STAGE_RES_KEY));
+    if (STAGE_PRESETS[stored]) return stored;
+  } catch { /* no storage */ }
+  return 1440; // house default: 1440p (display targets 60fps via rAF)
+}
+
+function persistStagePreset(preset) {
+  try { localStorage.setItem(STAGE_RES_KEY, String(preset)); } catch { /* no storage */ }
+}
+
+/** Backing-store size for the chosen preset (up to 4K). Sim stays logical 1280×720. */
 function fitCanvas() {
-  canvas.width = STAGE_W;
-  canvas.height = STAGE_H;
+  const preset = readStagePreset();
+  const dims = STAGE_PRESETS[preset] || STAGE_PRESETS[1440];
+  if (canvas.width !== dims.w || canvas.height !== dims.h) {
+    canvas.width = dims.w;
+    canvas.height = dims.h;
+  }
+}
+
+function readPinnedSeed() {
+  return parseSeed(seedInputEl?.value);
+}
+
+function setSeedInput(seed) {
+  if (!seedInputEl) return;
+  seedInputEl.value = seed == null ? '' : formatSeed(seed);
+}
+
+function randomizeSeed() {
+  const s = (Math.random() * 0x100000000) >>> 0;
+  setSeedInput(s);
+  return s;
+}
+
+// URL ?seed= and stored stage res on boot.
+{
+  try {
+    const params = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
+    const qSeed = parseSeed(params.get('seed'));
+    if (qSeed != null) setSeedInput(qSeed);
+  } catch { /* ignore */ }
+  if (stageResEl) {
+    stageResEl.value = String(readStagePreset());
+    stageResEl.addEventListener('change', () => {
+      persistStagePreset(Number(stageResEl.value) || 1440);
+      if (!running) fitCanvas();
+    });
+  }
+  seedRandomBtnEl?.addEventListener('click', () => randomizeSeed());
+  fitCanvas();
 }
 
 async function bootAudio() {
@@ -505,19 +576,6 @@ function stopTimeline() {
     cancelAnimationFrame(rafHandle);
     rafHandle = null;
   }
-  // A mid-export file drop or restart must not leave a live recorder behind.
-  if (videoExporter?.active) {
-    videoExporter.abort();
-    exporting = false;
-    recordingMode = null;
-    recordingHudEl?.classList.add('hidden');
-    liveRecHudEl?.classList.add('hidden');
-  }
-  // An unsaved recording from the play that just ended doesn't carry over --
-  // starting something new discards it (it was already offered via "Save
-  // video" on the complete panel, which is going away right now too).
-  if (pendingSaveUrl) { URL.revokeObjectURL(pendingSaveUrl); pendingSaveUrl = null; }
-  saveVideoBtnEl?.classList.add('hidden');
   audioEngine?.pause();
   synth?.stopAll?.();
   // Tear down optional WebGL overlay so a mid-song drop doesn't stack layers.
@@ -550,10 +608,7 @@ function togglePause() {
   updatePauseButtonUI();
 }
 
-/** Stop (and "Play again", which now means the same thing): back to the
- *  title/drop screen so a different song can be chosen, rather than an
- *  in-place replay of the same one (see replaySong, still used by the
- *  "Re-export at these settings" flow on the complete panel). */
+/** Back to the title/drop screen so a different song can be chosen. */
 function backToTitle() {
   stopTimeline();
   completePanelEl.classList.add('hidden');
@@ -561,7 +616,7 @@ function backToTitle() {
   loaderEl.classList.remove('hidden');
 }
 
-function startTimeline(timelineData, { autoRecord = true } = {}) {
+function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}) {
   stopTimeline();
   fitCanvas();
   applySynthMutePolicy();
@@ -570,21 +625,48 @@ function startTimeline(timelineData, { autoRecord = true } = {}) {
   // completes -- the engine would just run forever.
   timelineData.durationMs = resolveDurationMs(timelineData.timeline, timelineData.durationMs);
   lastTimelineData = timelineData;
-  lastAudioBuffer = null; // audio-file path sets this itself, right after this call
+  // Keep lastAudioBuffer across replays (same song, new/same seed). Loaders
+  // that switch song type clear it themselves — wiping it here made
+  // "New seed" / "Replay seed" start a silent level after any audio drop.
   conductor.load(timelineData);
   perfGovernor = new PerfGovernor({ startLevel: perfStartLevel });
-  sim = new Simulation(conductor, paramBus, {
-    bpm: timelineData.bpm || 120,
-    energyCurves: timelineData.energyCurves || null,
-    canvasWidth: canvas.width,
-    canvasHeight: canvas.height,
-    customBiome: timelineData.customBiome || null,
-    // ChoreoClock: live output-latency getter so beat-anchored envelopes
-    // peak when the EAR gets the beat (Bluetooth can lag 200ms+).
-    outputLatencyMs: () => audioEngine.outputLatencyMs,
-    lyricSections: timelineData.lyricSections || null,
-  });
+  // World construction (parallax strips, landmarks) is CPU-heavy; surface a
+  // progress line so a multi-second bake never looks like a dead freeze.
+  showProgress('Building world…');
+  // Seed: explicit override (replay), else pinned UI/URL input, else auto.
+  const pinned = seedOverride !== undefined ? seedOverride : readPinnedSeed();
+  try {
+    sim = new Simulation(conductor, paramBus, {
+      bpm: timelineData.bpm || 120,
+      energyCurves: timelineData.energyCurves || null,
+      // Logical stage always 1280×720 — canvas buffer may be 4K.
+      canvasWidth: STAGE_W,
+      canvasHeight: STAGE_H,
+      customBiome: timelineData.customBiome || null,
+      // ChoreoClock: live output-latency getter so beat-anchored envelopes
+      // peak when the EAR gets the beat (Bluetooth can lag 200ms+).
+      outputLatencyMs: () => audioEngine.outputLatencyMs,
+      lyricSections: timelineData.lyricSections || null,
+      songSeed: pinned,
+    });
+  } catch (err) {
+    console.error('[world build failed]', err);
+    progressEl.classList.add('hidden');
+    loaderEl.classList.remove('hidden');
+    alert('Could not build the world: ' + (err?.message || err));
+    return;
+  }
+  lastSongSeed = sim.songSeed;
+  setSeedInput(sim.songSeed);
   sim.perf = perfGovernor;
+  sim.setReducedFlash(reducedFlash);
+  sim.setVisualStyle(visualStyle);
+  // Prime one sim step so BiomeManager/update dials (haze, calm, etc.) are
+  // initialized before the first paint — a zero-dt first rAF used to draw
+  // with undefined multipliers and throw on rgba(...,NaN).
+  try { sim.step(STEP_MS, STEP_MS); simTime = STEP_MS; } catch (err) {
+    console.warn('[sim prime]', err);
+  }
   // Exposed for DebugOverlay only -- resolved song identity has no other
   // consumer in the sim itself (SectionFusion already folded the lyric
   // structure into BiomeManager.sections by this point).
@@ -603,13 +685,14 @@ function startTimeline(timelineData, { autoRecord = true } = {}) {
   // Fresh song, fresh button: the demo/play buttons must lose focus so a
   // stray keypress never re-"clicks" them.
   document.activeElement?.blur?.();
+  audioEngine.restoreLevel?.(0.85);
   audioEngine.start(0);
   running = true;
 
+  progressEl.classList.add('hidden');
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
   rafHandle = requestAnimationFrame(frame);
-  if (autoRecord) startLiveRecording();
 
   // Exposed for the debug overlay and for smoke-testing internals.
   // `rafHandle` is a live getter (not a snapshot) so smoke tests can
@@ -623,25 +706,10 @@ function startTimeline(timelineData, { autoRecord = true } = {}) {
     analysis: timelineData.analysis || null,
     stems: timelineData.stems || null,
     muteTimelineSynth,
+    songSeed: sim.songSeed,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
   };
-}
-
-/** Every ordinary play is recorded by default, at whatever the export row
- *  is set to (1440p/60fps out of the box) -- so there's always something
- *  to save at the end without the player having to think ahead and hit
- *  Export before starting. Small corner indicator only; the big center HUD
- *  stays reserved for a deliberate re-export. */
-function startLiveRecording() {
-  const preset = Number(exportResEl?.value) || 1440;
-  const fps = Number(exportFpsEl?.value) || 60;
-  const { w, h } = exportDims(preset);
-  videoExporter = new VideoExporter({ audioEngine, sourceCanvas: canvas });
-  videoExporter.start({ width: w, height: h, fps });
-  exporting = true;
-  recordingMode = 'live';
-  liveRecHudEl?.classList.remove('hidden');
 }
 
 async function loadMidiFile(file) {
@@ -663,6 +731,7 @@ async function loadMidiFile(file) {
     data.customBiome = generateCustomBiomeFromMidi(data, file.name || 'MIDI');
     rememberCustomBiome(paramBus, data.customBiome);
     muteTimelineSynth = false;
+    lastAudioBuffer = null; // MIDI is synth-driven; drop any prior decoded audio
     startImmediately(data);
   } catch (err) {
     console.error('[MIDI load failed]', err);
@@ -978,6 +1047,7 @@ async function loadDemo() {
   data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
   lastSongName = 'demo';
   muteTimelineSynth = false;
+  lastAudioBuffer = null; // demo is synth-driven
   startImmediately(data);
 }
 
@@ -1170,12 +1240,7 @@ function frame(tRaf) {
   if (paused) { rafHandle = requestAnimationFrame(frame); return; }
   if (lastRafMs !== null) {
     const rafDeltaMs = tRaf - lastRafMs;
-    // A deliberate re-export replay must not read the extra per-frame
-    // export blit as "the game is struggling" and shed phenomena mid-video.
-    // The ordinary live play recording alongside a normal playthrough gets
-    // no such exemption -- it's real gameplay, and should perform (and
-    // shed) exactly as it would unrecorded.
-    if (!(exporting && recordingMode === 'replay')) perfGovernor.sample(rafDeltaMs, tRaf);
+    perfGovernor.sample(rafDeltaMs, tRaf);
     fpsEma = emaFps(fpsEma, rafDeltaMs);
     if (fpsHudVisible && fpsHudEl) {
       fpsHudEl.textContent = `${Math.round(fpsEma)} fps  ·  perf ${perfGovernor.level}/${PERF_MAX_LEVEL}`;
@@ -1198,32 +1263,38 @@ function frame(tRaf) {
   }
 
   const alpha = acc / STEP_MS;
-  renderer.draw(sim, alpha);
-  if (exporting && videoExporter) {
-    videoExporter.captureFrame();
-    if (recordingTimeEl) {
-      const total = conductor.durationMs || 0;
-      recordingTimeEl.textContent = `${formatClock(nowMs)} / ${formatClock(total)}`;
-    }
+  try {
+    renderer.draw(sim, alpha);
+  } catch (err) {
+    // One bad frame must not kill the whole run (canvas NaN colors used to
+    // throw here and leave the world frozen on the last good paint).
+    console.error('[draw]', err);
   }
   comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
-  if (scoreReadoutEl) scoreReadoutEl.textContent = sim.scoreKeeper.score.toLocaleString('en-US');
+  if (streakReadoutEl) streakReadoutEl.textContent = `${sim.comboSystem.streak} streak`;
   if (milestoneFiredThisFrame) {
     comboReadoutEl.classList.remove('milestone-pulse');
     void comboReadoutEl.offsetWidth; // restart the CSS animation even if it's still mid-flight
     comboReadoutEl.classList.add('milestone-pulse');
   }
 
+  // Last impact notes → freeze/shatter: fade music out so the glass break
+  // lands in silence (not over a long empty pad after the real ending).
+  if (sim.fracture?.justEnteredFinale && !sim.fracture.audioSilenced) {
+    sim.fracture.audioSilenced = true;
+    audioEngine?.fadeToSilence?.(0.32);
+    synth?.stopAll?.();
+  }
+
   visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();
 
-  // Fallback completion: the normal path is FractureEngine's freeze+shatter
-  // sequence (see sim.fracture.isDone below), but its idle->about-to-freeze
-  // transition only fires inside Renderer.draw, so a stall there (or any
-  // other gap) would otherwise leave the engine running forever. 2500ms is
-  // comfortably past the freeze lead (300ms) + shatter (600ms).
+  // Fallback completion: FractureEngine finishes after musical last impact +
+  // shatter, not after silence-padded duration. Guard still uses declared
+  // duration so a stuck freeze never hangs forever.
   const durationMs = conductor.durationMs || 0;
-  if (durationMs > 0 && nowMs > durationMs + 2500 && !sim.fracture.isDone) {
+  const musicalEnd = sim.fracture?.finale?.musicalEndMs ?? durationMs;
+  if (durationMs > 0 && nowMs > Math.max(durationMs, musicalEnd) + 2500 && !sim.fracture.isDone) {
     onSongComplete();
     return;
   }
@@ -1242,27 +1313,133 @@ function formatClock(ms) {
   return `${m}:${String(r).padStart(2, '0')}`;
 }
 
-// Zoom has been removed from the game: there is no player Lens control and
-// no automatic camera zoom. The pointer is still tracked, but only so the
-// star-children can notice where the user is (they're aware of the user); it
-// never moves the camera. Client coords are mapped through the canvas rect
-// into the 1280x720 stage space the sim draws in.
+function formatDuration(ms) {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+/** Build end-of-run stats: measurable song/run facts, no grade or score. */
+function buildRunStats(sim) {
+  const combo = sim.comboSystem;
+  const sk = sim.scoreKeeper;
+  const chart = sim.noteChart || {};
+  const durationMs = sim.conductor?.durationMs || 0;
+  const sections = sim.biomes?.sections?.length || 0;
+  const holdsTotal = chart.holdCount || 0;
+  const taps = chart.tapCount || 0;
+  const jumps = combo.cleanLandings || 0;
+  const peakFever = sim.fever ? Math.round((sim.fever.peak || 0) * 100) : 0;
+  const peakMult = Math.min(3, combo.peakM || 1);
+  const bpm = sim.bpm || 0;
+
+  return [
+    { label: 'Duration', value: formatDuration(durationMs) },
+    { label: 'Tempo', value: bpm ? `${Math.round(bpm)} BPM` : '—' },
+    { label: 'Clean landings', value: String(jumps) },
+    { label: 'Peak streak', value: String(sk.peakStreak || 0) },
+    { label: 'Peak mult', value: `×${peakMult.toFixed(1)}` },
+    { label: 'Peak fever', value: `${peakFever}%` },
+    { label: 'Chart jumps', value: String(taps) },
+    {
+      label: 'Holds ridden',
+      value: holdsTotal > 0 ? `${sk.holdsCompleted} / ${holdsTotal}` : '—',
+    },
+    { label: 'Sections', value: String(sections) },
+    {
+      label: 'Stage',
+      value: `${canvas.width}×${canvas.height}`,
+      wide: true,
+    },
+  ];
+}
+
+function renderResultsGrid(stats) {
+  if (!resultsGridEl) return;
+  resultsGridEl.innerHTML = stats.map((s) => `
+    <div class="statCell${s.wide ? ' statWide' : ''}">
+      <span class="statLabel">${s.label}</span>
+      <span class="statValue">${s.value}</span>
+    </div>`).join('');
+}
+
+// Pointer is tracked so star-children can notice the user; never moves camera.
+// Map client coords through the CSS rect into logical 1280×720 stage space.
+function clientToStage(e) {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  return {
+    x: ((e.clientX - rect.left) / rect.width) * STAGE_W,
+    y: ((e.clientY - rect.top) / rect.height) * STAGE_H,
+  };
+}
+
 canvas.addEventListener('pointermove', (e) => {
   if (!running || !sim || !sim.setPointer) return;
-  const rect = canvas.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return;
-  const x = ((e.clientX - rect.left) / rect.width) * canvas.width;
-  const y = ((e.clientY - rect.top) / rect.height) * canvas.height;
-  sim.setPointer(x, y);
+  const p = clientToStage(e);
+  if (!p) return;
+  sim.setPointer(p.x, p.y);
 });
+
+/** Jump audio clock + conductor + sim time to `ms` (mountain seekbar). */
+function seekSong(ms) {
+  if (!running || !sim || !audioEngine) return;
+  const dur = Math.max(1, sim.conductor?.durationMs || audioEngine.nowMs + 1);
+  const t = Math.max(0, Math.min(ms, dur - 1));
+  synth?.stopAll?.();
+  audioEngine.seekToMs(t);
+  if (sim.conductor?.seekTo) sim.conductor.seekTo(t);
+  simTime = t;
+  lastNowMs = t;
+  acc = 0;
+  if (sim.timeMs != null) sim.timeMs = t;
+}
+
+// Mountain seekbar: click to seek; click a section to open its debug detail.
+canvas.addEventListener('pointerdown', (e) => {
+  if (!running || !sim || !renderer?.composer) return;
+  const p = clientToStage(e);
+  if (!p) return;
+  const hit = renderer.composer.hitTest(p.x, p.y, { width: STAGE_W, height: STAGE_H });
+  if (!hit) return;
+  e.preventDefault();
+  if (hit.type === 'detail') return; // keep overlay open
+  if (hit.type === 'strip') {
+    // Toggle section detail when re-clicking the same section; always seek.
+    if (hit.sectionIndex >= 0) {
+      if (renderer.composer.selectedSection === hit.sectionIndex) {
+        renderer.composer.selectedSection = -1;
+      } else {
+        renderer.composer.selectedSection = hit.sectionIndex;
+      }
+    }
+    seekSong(hit.tMs);
+  }
+});
+
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (fontModalEl && !fontModalEl.classList.contains('hidden')) closeFontModal();
     if (filmstripModalEl && !filmstripModalEl.classList.contains('hidden')) closeFilmstripModal();
+    // Close section detail overlay on the seekbar.
+    if (renderer?.composer && renderer.composer.selectedSection >= 0) {
+      renderer.composer.selectedSection = -1;
+    }
+    return;
+  }
+  // F3 — toggle how the engine labeled song sections on the mountain seekbar.
+  // Selection / detail overlay is independent (click a section; Esc to close).
+  if (e.key === 'F3') {
+    e.preventDefault();
+    if (!sim) return;
+    sim.showSectionLabels = !sim.showSectionLabels;
+    if (paramBus) paramBus.showSectionLabels = sim.showSectionLabels;
     return;
   }
   if (e.key === 'f' || e.key === 'F') { openFontModal('list'); return; }
   if (e.key === 'r' || e.key === 'R') { toggleReducedFlash(); return; }
+
   if (e.key === 'p' || e.key === 'P') {
     fpsHudVisible = !fpsHudVisible;
     fpsHudEl?.classList.toggle('hidden', !fpsHudVisible);
@@ -1285,99 +1462,40 @@ function toggleReducedFlash() {
 function onSongComplete() {
   running = false;
   hudEl.classList.add('hidden');
-  // Unlike stopTimeline() (a fresh-song teardown), natural completion never
-  // used to silence anything -- the decoded audio buffer (or any still-
-  // ringing SF2 voices) kept sounding right under the COMPLETE panel.
+  // Silence audio under the complete panel (otherwise the buffer/SF2 keeps going).
   audioEngine?.pause();
   synth?.stopAll?.();
-  const combo = sim.comboSystem;
-  const sk = sim.scoreKeeper;
-  // The real high-water mark, not the live streak the freeze happened to catch.
-  completeStatsEl.textContent = `Peak streak: ${sk.peakStreak} · Final combo: ×${combo.displayM.toFixed(1)}`;
-  if (resultsGridEl) {
-    const c = sk.counts;
-    const acc = sk.accuracyPct;
-    const holdsTotal = sim.noteChart.holdCount;
-    resultsGridEl.innerHTML = `
-      <div class="rGrade">${sk.grade ?? '—'}</div>
-      <div class="rRows">
-        <div class="rRow"><span>Score</span><b>${sk.score.toLocaleString('en-US')}</b></div>
-        <div class="rRow"><span>Timing</span><b>${acc === null ? '—' : acc.toFixed(1) + '%'}</b></div>
-        <div class="rRow rTiers">
-          <span class="tPerfect">${c.perfect} perfect</span>
-          <span class="tGreat">${c.great} great</span>
-          <span class="tGood">${c.good} good</span>
-          <span class="tSour">${c.sour} sour</span>
-          <span class="tMiss">${sk.misses} missed</span>
-        </div>
-        ${holdsTotal > 0 ? `<div class="rRow"><span>Holds ridden</span><b>${sk.holdsCompleted} / ${holdsTotal}</b></div>` : ''}
-      </div>`;
-    resultsGridEl.classList.remove('hidden');
+
+  lastSongSeed = sim.songSeed;
+  if (completeSongNameEl) {
+    const name = (lastSongName || 'Song').replace(/\.[a-z0-9]+$/i, '');
+    completeSongNameEl.textContent = name;
   }
-  // Mario Paint title-screen treatment: each letter wobbles on its own beat.
-  const title = completePanelEl.querySelector('h1');
-  if (title && !title.dataset.wobbled) {
-    title.dataset.wobbled = '1';
-    title.innerHTML = [...title.textContent].map((ch, i) =>
-      ch === ' ' ? ' ' : `<span class="wobble-letter" style="animation-delay:${i * 110}ms">${ch}</span>`,
-    ).join('');
-  }
+  if (completeSeedEl) completeSeedEl.textContent = formatSeed(sim.songSeed);
+  setSeedInput(sim.songSeed);
+  renderResultsGrid(buildRunStats(sim));
   renderFilmstrip(sim.highlightReel?.frames || []);
   completePanelEl.classList.remove('hidden');
-  if (exporting && recordingMode === 'replay') finishExport();
-  else if (exporting && recordingMode === 'live') finishLiveRecording();
 }
 
-/** Clean in-memory restart of the last-loaded song (MIDI/demo replay from
- *  their timeline; raw audio replays the actual decoded buffer) -- the sim
- *  is fully seeded and autoplay-driven, so this reproduces the same
- *  performance without a page reload. Falls back to reload if nothing was
- *  retained (e.g. a very first, still-loading session). */
-function replaySong({ autoRecord = true } = {}) {
+/** Restart the last-loaded song. Pass songSeed to pin the world; omit for
+ *  whatever is currently in the seed field (or auto if blank). */
+function replaySong({ songSeed } = {}) {
   if (!lastTimelineData) { window.location.reload(); return; }
-  startTimeline(lastTimelineData, { autoRecord });
-  if (lastAudioBuffer) audioEngine.playBuffer(lastAudioBuffer, 0);
-}
-
-async function finishExport() {
-  exporting = false;
-  recordingMode = null;
-  recordingHudEl?.classList.add('hidden');
-  if (fpsHudEl) fpsHudEl.classList.toggle('hidden', !fpsHudVisible);
-  if (!videoExporter) return;
-  const blob = await videoExporter.stop();
-  if (!blob || !exportDownloadEl) return;
-  if (exportDownloadEl.dataset.url) URL.revokeObjectURL(exportDownloadEl.dataset.url);
-  const url = URL.createObjectURL(blob);
-  exportDownloadEl.dataset.url = url;
-  exportDownloadEl.href = url;
-  const preset = Number(exportResEl?.value) || 1080;
-  const fps = Number(exportFpsEl?.value) || 60;
-  exportDownloadEl.download = exportFilename(lastSongName, preset, fps, videoExporter.mime);
-  exportDownloadEl.classList.remove('hidden');
-  exportDownloadEl.click();
-}
-
-/** The ordinary play's recording, finished: unlike finishExport() this
- *  does NOT auto-download -- it stashes the blob and offers a "Save video"
- *  button on the complete panel, since the player didn't explicitly ask
- *  for this one the way they would an export. */
-async function finishLiveRecording() {
-  exporting = false;
-  recordingMode = null;
-  liveRecHudEl?.classList.add('hidden');
-  if (!videoExporter) return;
-  const preset = Number(exportResEl?.value) || 1440;
-  const fps = Number(exportFpsEl?.value) || 60;
-  const { w, h } = exportDims(preset);
-  const mime = videoExporter.mime;
-  const blob = await videoExporter.stop();
-  if (!blob || !saveVideoBtnEl) return;
-  if (pendingSaveUrl) URL.revokeObjectURL(pendingSaveUrl);
-  pendingSaveUrl = URL.createObjectURL(blob);
-  pendingSaveLabel = exportFilename(lastSongName, preset, fps, mime);
-  saveVideoBtnEl.textContent = `Save video (${w}×${h} · ${fps}fps)`;
-  saveVideoBtnEl.classList.remove('hidden');
+  // Capture buffer before rebuild — startTimeline stops the AudioContext source
+  // via stopTimeline, but must not lose the decoded song for the restart.
+  const buffer = lastAudioBuffer;
+  startTimeline(lastTimelineData, { songSeed: songSeed !== undefined ? songSeed : readPinnedSeed() });
+  if (buffer) {
+    lastAudioBuffer = buffer;
+    audioEngine.playBuffer(buffer, 0);
+  }
+  // Seed field + complete readout stay in sync with the run that just started.
+  if (sim?.songSeed != null) {
+    lastSongSeed = sim.songSeed;
+    setSeedInput(sim.songSeed);
+    if (completeSeedEl) completeSeedEl.textContent = formatSeed(sim.songSeed);
+  }
 }
 
 /** The Reel: the COMPLETE panel's highlight filmstrip -- proof of what the
@@ -1425,40 +1543,29 @@ if (filmstripModalEl) {
   filmstripModalEl.addEventListener('click', (e) => { if (e.target === filmstripModalEl) closeFilmstripModal(); });
 }
 
-playAgainBtnEl.addEventListener('click', () => backToTitle());
+playAgainBtnEl?.addEventListener('click', () => backToTitle());
 
-saveVideoBtnEl?.addEventListener('click', () => {
-  if (!pendingSaveUrl) return;
-  const a = document.createElement('a');
-  a.href = pendingSaveUrl;
-  a.download = pendingSaveLabel || 'super-midio-world.webm';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+replaySameSeedBtnEl?.addEventListener('click', () => {
+  if (lastSongSeed != null) setSeedInput(lastSongSeed);
+  replaySong({ songSeed: lastSongSeed ?? readPinnedSeed() });
 });
 
-exportBtnEl?.addEventListener('click', () => {
-  if (exporting || !lastTimelineData) return;
-  const preset = Number(exportResEl?.value) || 1080;
-  const fps = Number(exportFpsEl?.value) || 30;
-  const { w, h } = exportDims(preset);
-  completePanelEl.classList.add('hidden');
-  exportDownloadEl?.classList.add('hidden');
-  recordingHudEl?.classList.remove('hidden');
-  fpsHudEl?.classList.add('hidden'); // the recording itself is the readout that matters here
-  replaySong({ autoRecord: false }); // this replay gets its OWN explicit exporter below, not the ordinary live one
-  videoExporter = new VideoExporter({ audioEngine, sourceCanvas: canvas });
-  videoExporter.start({ width: w, height: h, fps });
-  exporting = true;
-  recordingMode = 'replay';
+replayNewSeedBtnEl?.addEventListener('click', () => {
+  const s = randomizeSeed();
+  lastSongSeed = s;
+  if (completeSeedEl) completeSeedEl.textContent = formatSeed(s);
+  replaySong({ songSeed: s });
 });
 
-recordingCancelBtnEl?.addEventListener('click', () => {
-  videoExporter?.abort();
-  exporting = false;
-  recordingMode = null;
-  recordingHudEl?.classList.add('hidden');
-  if (fpsHudEl) fpsHudEl.classList.toggle('hidden', !fpsHudVisible);
-  stopTimeline();
-  completePanelEl.classList.remove('hidden');
+copySeedBtnEl?.addEventListener('click', async () => {
+  const text = completeSeedEl?.textContent?.trim() || formatSeed(lastSongSeed || 0);
+  try {
+    await navigator.clipboard.writeText(text);
+    copySeedBtnEl.textContent = 'Copied';
+    setTimeout(() => { copySeedBtnEl.textContent = 'Copy'; }, 1200);
+  } catch {
+    // Fallback: select into the title seed field.
+    setSeedInput(parseSeed(text) ?? lastSongSeed);
+    seedInputEl?.select?.();
+  }
 });

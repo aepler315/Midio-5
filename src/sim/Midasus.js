@@ -5,7 +5,7 @@
 import { Role } from '../core/NoteEvent.js';
 import { visualNow } from '../core/ChoreoClock.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
-import { clamp, lerp, mulberry32 } from '../utils/math.js';
+import { clamp, lerp, mulberry32, softRepel1D } from '../utils/math.js';
 import { MIDASUS_MESH, MIDASUS_HEX_R } from '../render/meshes.js';
 import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, drawGlowHalo } from '../render/MeshDrawer.js';
 import { ModalRing } from '../render/oscillators.js';
@@ -54,7 +54,7 @@ export class Midasus {
     this.pMin = pMin;
     this.pMax = pMax;
 
-    this.p = { x: midio.screenX + 90, y: groundY - 200 };
+    this.p = { x: midio.screenX + 150, y: groundY - 230 };
     this.v = { x: 0, y: 0 };
     this.lastNoteMs = -Infinity;
     this.hue = 200;
@@ -98,7 +98,7 @@ export class Midasus {
   _target(n) {
     const norm = clamp((n.pitch - this.pMin) / (this.pMax - this.pMin), 0, 1);
     const y = lerp(this.yFloor - 120, this.yCeiling + 60, norm);
-    const x = this.midio.screenX + 90 + 50 * n.vel;
+    const x = this.midio.screenX + 150 + 55 * n.vel;
     // The ensemble pulls her across the stage; pitch stays primary vertically.
     if (this._ens) {
       return {
@@ -235,6 +235,18 @@ export class Midasus {
 
     this.v.x += (KP * (target.x - this.p.x) - KD * this.v.x) * dtSec;
     this.v.y += (KP * (target.y - this.p.y) - KD * this.v.y) * dtSec;
+    // Soft personal space: drift off Midio and Broshi when she crowds them
+    // (quadratic falloff — never a hard shove).
+    const midioX = this.midio.screenX;
+    const midioY = this.midio.groundY - this.midio.y - 30;
+    this.v.x += softRepel1D(this.p.x, midioX, 150, 240) * dtSec;
+    this.v.y += softRepel1D(this.p.y, midioY, 100, 160) * dtSec;
+    if (this._ens && Number.isFinite(this._ens.broshiX)) {
+      this.v.x += softRepel1D(this.p.x, this._ens.broshiX, 140, 180) * dtSec;
+      if (Number.isFinite(this._ens.broshiY)) {
+        this.v.y += softRepel1D(this.p.y, this._ens.broshiY, 90, 120) * dtSec;
+      }
+    }
     this.p.x += this.v.x * dtSec;
     this.p.y += this.v.y * dtSec;
 
@@ -263,8 +275,8 @@ export class Midasus {
     // underneath (so a return never has to catch up on a backlog), but
     // once she's away the voyage fully owns where "she" is -- draw() skips
     // rendering her here and BiomeManager's deep-sky pass takes over.
-    const anchorX = this._ens ? this._ens.x : this.midio.screenX + 90;
-    const anchorY = this._ens ? this._ens.y : this.yFloor - 200;
+    const anchorX = this._ens ? this._ens.x : this.midio.screenX + 150;
+    const anchorY = this._ens ? this._ens.y : this.yFloor - 230;
     this.voyage.update(nowMs, dtSec, ensemble ? ensemble.epic || 0 : 0, { x: anchorX, y: anchorY });
     if (this.voyage.active) {
       this.p = { ...this.voyage.p };
@@ -349,12 +361,20 @@ export class Midasus {
 
     const rot = bank + this.rollExtra; // pirouette rides on top of the banking
 
-    const coreGlowR = MIDASUS_HEX_R * 2.1 * this.pulse * DRAW_SCALE;
-    drawGlowHalo(ctx, this.p.x, this.p.y, coreGlowR, coreGlowR, this.hue, 0.6, { sat, light: 78 });
+    // Keep the halo modest — a huge soft disc under the hexagram read as a
+    // broken white blob next to Broshi's clean wireframe.
+    const coreGlowR = MIDASUS_HEX_R * 1.55 * this.pulse * DRAW_SCALE;
+    drawGlowHalo(ctx, this.p.x, this.p.y, coreGlowR, coreGlowR, this.hue, 0.32, { sat, light: 74 });
 
     // Ink contour (outline) under the crisp pass: her diamond stays
     // knife-edged against the blurred halo drawn just above.
-    drawMeshPart(ctx, coreMesh, this._meshRest, { tx: this.p.x, ty: this.p.y, rot, scaleX: this.pulse * DRAW_SCALE, scaleY: this.pulse * DRAW_SCALE }, this.hue, { satBase: sat, lightBase: 70, hueSpread: 26, outline: true });
+    drawMeshPart(ctx, coreMesh, this._meshRest, {
+      tx: this.p.x, ty: this.p.y, rot,
+      scaleX: this.pulse * DRAW_SCALE, scaleY: this.pulse * DRAW_SCALE,
+    }, this.hue, {
+      satBase: sat, lightBase: 70, hueSpread: 26, outline: true,
+      widthBase: 1.7, widthGlow: 2.0,
+    });
 
     // The baby stars ride on top of her pass — small enough never to mask her.
     this.babies.draw(ctx, this.hue, this.rest);

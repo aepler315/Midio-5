@@ -329,10 +329,22 @@ export class ParticleField {
           break;
         }
         case 'digitalrain': {
+          // Soft falling mote (was a 2×14 hard rect — read as UI “vertical line” ticks).
           const flicker = 0.5 + 0.5 * Math.sin(p.glyphT * 9 + p.phase);
-          ctx.globalAlpha = 0.25 + 0.35 * flicker;
+          ctx.globalAlpha = 0.18 + 0.28 * flicker;
           ctx.fillStyle = color;
-          ctx.fillRect(p.x, p.y, 2, 14);
+          ctx.beginPath();
+          ctx.arc(p.x + 1, p.y + 3, 1.4 + 0.6 * flicker, 0, Math.PI * 2);
+          ctx.fill();
+          // Short soft trail above the mote, not a solid bar.
+          ctx.globalAlpha = 0.08 + 0.12 * flicker;
+          ctx.beginPath();
+          ctx.moveTo(p.x + 1, p.y);
+          ctx.lineTo(p.x + 1, p.y + 8);
+          ctx.lineWidth = 1.2;
+          ctx.lineCap = 'round';
+          ctx.strokeStyle = color;
+          ctx.stroke();
           break;
         }
         case 'sunshine': {

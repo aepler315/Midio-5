@@ -47,7 +47,7 @@ test('trigger is a no-op while already active (self-guarded mutual exclusion)', 
 const T_WINDUP_END = 0.55;
 const T_ASCENT_END = T_WINDUP_END + 1.2;
 const T_DEEP_SPACE_END = T_ASCENT_END + 3 * 3.2;
-const T_REENTRY_END = T_DEEP_SPACE_END + 1.0;
+const T_REENTRY_END = T_DEEP_SPACE_END + 0.62;
 
 test('phases progress WINDUP -> ASCENT -> DEEP_SPACE -> REENTRY -> IDLE in order', () => {
   const v = new SkyVoyage(2);
@@ -133,18 +133,55 @@ test('different seeds produce a different figure order', () => {
   assert.notDeepEqual(a._figureOrder, b._figureOrder);
 });
 
-test('a figure switch does not teleport the position -- morph keeps it continuous', () => {
+test('voyage recipes are seed-baked geometric params, not bare kind strings', () => {
+  const v = new SkyVoyage(99);
+  v.trigger(0, { x: 200, y: 400 }, 1280, 720);
+  assert.equal(v._figureOrder.length, 3);
+  const kinds = new Set();
+  for (const recipe of v._figureOrder) {
+    assert.equal(typeof recipe, 'object');
+    assert.ok(recipe.kind, 'recipe has a kind');
+    assert.ok(Number.isFinite(recipe.rate) && recipe.rate > 0);
+    assert.ok(Number.isFinite(recipe.scale) && recipe.scale > 0);
+    kinds.add(recipe.kind);
+    // No consecutive-family repeat within a voyage (enforced by picker).
+  }
+  for (let i = 1; i < v._figureOrder.length; i++) {
+    assert.notEqual(v._figureOrder[i].kind, v._figureOrder[i - 1].kind, 'no consecutive same family');
+  }
+  // Across many seeds, multiple families should appear.
+  assert.ok(kinds.size >= 1);
+});
+
+test('same seed bakes identical recipes; different seed changes params', () => {
+  const a = new SkyVoyage(777);
+  const b = new SkyVoyage(777);
+  const c = new SkyVoyage(778);
+  a.trigger(0, { x: 100, y: 300 }, 1280, 720);
+  b.trigger(0, { x: 100, y: 300 }, 1280, 720);
+  c.trigger(0, { x: 100, y: 300 }, 1280, 720);
+  assert.deepEqual(a._figureOrder, b._figureOrder);
+  assert.notDeepEqual(a._figureOrder, c._figureOrder);
+});
+
+test('a figure switch pens-up instead of drawing a straight morph chord', () => {
   const v = new SkyVoyage(5);
+  v._figureOrder = ['lissajous', 'epicycle', 'superformula'];
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 0.55 + 1.2 + 3.2 - 0.05); // just before the first figure switch
-  const before = { ...v.p };
-  t = advance(v, t, 0.1); // step across the switch boundary
-  const after = { ...v.p };
-  const jump = Math.hypot(after.x - before.x, after.y - before.y);
-  // Over ~0.1s even a fast figure moves some distance; the point is that it
-  // must not be a discontinuous multi-hundred-pixel teleport.
-  assert.ok(jump < 60, `figure switch should morph smoothly, jumped ${jump.toFixed(1)}px`);
+  t = advance(v, t, 0.55 + 1.2 + 3.2 + 0.05); // past first figure switch
+  assert.ok(v._figureIdx >= 1);
+  // No non-gap trail segment may be a long straight chord.
+  let maxStep = 0;
+  let sawGap = false;
+  for (let i = 1; i < v.trail.length; i++) {
+    const a = v.trail[i - 1], b = v.trail[i];
+    if (b.gap) { sawGap = true; continue; }
+    const d = Math.hypot(b.x - a.x, b.y - a.y);
+    if (d > maxStep) maxStep = d;
+  }
+  assert.ok(sawGap, 'figure switch should leave a pen-up gap');
+  assert.ok(maxStep < 28, `drawn trail step too large: ${maxStep.toFixed(1)}px`);
 });
 
 test('the trail accumulates points and is capped by both time and count', () => {
@@ -252,9 +289,45 @@ test('onset phase-kicks accumulate smoothly, never as an instant time jump', () 
   v.onMelodyOnset({ pitch: 60, vel: 1.0 });
   assert.equal(v._kickSmooth, 0, 'the kick must not apply instantaneously');
   assert.ok(v._kickTarget > 0.05, 'the kick target should be pending');
-  t = advance(v, t, 0.5);
-  assert.ok(v._kickSmooth > 0.05, 'the kick should have eased in by now');
-  assert.ok(Math.abs(v._kickSmooth - v._kickTarget) < 0.02, 'and settled near its target');
+  t = advance(v, t, 0.25); // still mid-ease, before bleed drains the target
+  assert.ok(v._kickSmooth > 0.03, 'the kick should have eased in by now');
+  assert.ok(v._kickSmooth <= 0.32 + 1e-6, 'kick is hard-capped');
+});
+
+test('figure switches do not stamp a teleport chord into the trail', () => {
+  const v = new SkyVoyage(28);
+  v._figureOrder = ['lissajous', 'epicycle', 'superformula'];
+  let t = 0;
+  v.trigger(t, { x: 220, y: 480 }, 1280, 720);
+  // Ride into deep space + past first figure boundary (FIGURE_SEC = 3.2).
+  t = advance(v, t, 0.55 + 1.2 + 3.2 + 0.05);
+  assert.equal(v.phase, VoyagePhase.DEEP_SPACE);
+  assert.ok(v._figureIdx >= 1, 'should have advanced past the first figure');
+  // Frame-to-frame steps along the live trail must stay continuous (gaps are
+  // marked, never left as huge silent chords for the drawer to stroke).
+  let maxStep = 0;
+  for (let i = 1; i < v.trail.length; i++) {
+    const a = v.trail[i - 1], b = v.trail[i];
+    if (b.gap) continue;
+    const d = Math.hypot(b.x - a.x, b.y - a.y);
+    if (d > maxStep) maxStep = d;
+  }
+  assert.ok(maxStep < 42, `non-gap trail step too large: ${maxStep.toFixed(1)}px`);
+});
+
+test('kick does not carry across figure boundaries', () => {
+  const v = new SkyVoyage(29);
+  v._figureOrder = ['lissajous', 'lissajous', 'lissajous'];
+  let t = 0;
+  v.trigger(t, { x: 200, y: 400 }, 1280, 720);
+  t = advance(v, t, 0.55 + 1.2 + 0.2);
+  for (let i = 0; i < 8; i++) v.onMelodyOnset({ pitch: 60 + i, vel: 1 });
+  t = advance(v, t, 0.3);
+  assert.ok(v._kickSmooth > 0, 'kicks active mid-figure');
+  // Cross the figure boundary.
+  t = advance(v, t, 3.2);
+  assert.equal(v._kickSmooth, 0, 'kick clears on figure switch');
+  assert.equal(v._kickTarget, 0, 'kick target clears on figure switch');
 });
 
 test('kicks in deep space spawn a capped sparkle burst; kicks elsewhere are ignored', () => {

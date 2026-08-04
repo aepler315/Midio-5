@@ -1,8 +1,16 @@
 // Generates tileable 2048px silhouette strips for parallax layers 2-5
 // (spec §4.1.1) from 1-D fractal value noise, cached to an offscreen canvas
 // so each biome pays the noise-generation cost only once.
-import { ValueNoise1D } from '../utils/noise.js';
-import { lerp } from '../utils/math.js';
+//
+// profile 'alpine' (far peaks L2/L3): Denali / Rainier / Shasta massif —
+// sharp summits, steep flanks, couloirs, ridged high-frequency crags.
+// profile 'rolling' (nearer hills L4/L5): softer fbm foothills.
+//
+// shadeMode 'rendered' bakes soft vertical CGI shading (DKC3 lineage):
+// dark foot, mid body, lit crest, faint ridge specular -- once, free forever.
+import { ValueNoise1D, ridged } from '../utils/noise.js';
+import { lerp, mulberry32, clamp01 } from '../utils/math.js';
+import { shiftLightness } from '../render/VisualStyle.js';
 
 function makeCanvas(width, height) {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
@@ -11,17 +19,109 @@ function makeCanvas(width, height) {
   return c;
 }
 
-export function generateSilhouette({
-  seed, width = 2048, height = 320, octaves = 2, baseline = 0.55, amplitude = 0.30, color, step = 4,
-  edgeLight = null, // optional neon ridge-line stroke (CYBER's edgeLight hook)
-}) {
-  const noise = new ValueNoise1D(seed, 256);
-  const n = Math.floor(width / step) + 1;
+/**
+ * Alpine massif height field 0..1 — dominant central summit, satellite
+ * peaks, steep power-law flanks, high-frequency ridgeline crags.
+ * Pure (no canvas); tests can exercise without a DOM.
+ */
+export function alpineHeightField(noise, n, step, seed, width) {
+  const rand = mulberry32((seed ^ 0xa1b1) >>> 0 || 1);
+  // 3–5 major peaks; one dominant (Denali-style) near center.
+  // Narrow bases + high sharpness → real summits, not table-tops.
+  const nPeaks = 3 + Math.floor(rand() * 3);
+  const peaks = [];
+  for (let i = 0; i < nPeaks; i++) {
+    const u = (i + 0.5) / nPeaks + (rand() - 0.5) * 0.08;
+    peaks.push({
+      x: clamp01(u) * width,
+      h: 0.52 + rand() * 0.38,
+      // Half-width of the base (px) — tighter = steeper pyramid flanks.
+      w: 70 + rand() * 110,
+      // Apex power: higher → needle summit (Shasta), not a plateau.
+      sharp: 1.9 + rand() * 1.1,
+    });
+  }
+  // Promote central peak to the massif king.
+  const main = peaks[Math.floor(nPeaks / 2)];
+  main.h = Math.max(main.h, 0.94 + rand() * 0.06);
+  main.w = Math.min(main.w, 130 + rand() * 40);
+  main.sharp = Math.max(main.sharp, 2.4);
+
+  // Secondary shoulders / subpeaks (Rainier-style multi-summit) — lower,
+  // never wide enough to fill the saddle into a mesa.
+  const shoulders = [];
+  for (const p of peaks) {
+    if (rand() < 0.5) {
+      shoulders.push({
+        x: p.x + (rand() < 0.5 ? -1 : 1) * (p.w * (0.32 + rand() * 0.2)),
+        h: p.h * (0.38 + rand() * 0.22),
+        w: p.w * (0.28 + rand() * 0.2),
+        sharp: 1.6 + rand() * 0.6,
+      });
+    }
+  }
+  const allPeaks = peaks.concat(shoulders);
+
   const heights = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const x = i * step;
-    heights[i] = noise.fbm(x * 0.006, octaves);
+    // Sparse low foothill bed — keep valleys deep so peaks read as peaks.
+    let h = ridged(noise, x * 0.0035, 3) * 0.14;
+    h += noise.fbm(x * 0.007, 2) * 0.05;
+
+    for (const p of allPeaks) {
+      const d = Math.abs(x - p.x) / Math.max(12, p.w);
+      if (d >= 1.15) continue;
+      // Power-law alpine flanks: steep near summit.
+      const core = Math.pow(Math.max(0, 1 - d), p.sharp) * p.h;
+      // Thin apron only — a fat apron was gluing peaks into plateaus.
+      const apron = Math.pow(Math.max(0, 1 - d * 0.9), 0.7) * p.h * 0.1;
+      h = Math.max(h, core + apron * 0.25);
+    }
+
+    // Couloir notches — carve V's into mid-flanks (craggy outline).
+    const notch = ridged(noise, x * 0.022 + 17, 2);
+    if (h > 0.28) {
+      h -= notch * 0.11 * (h - 0.18);
+    }
+
+    // High-frequency ridge teeth (arete / serac) — only near the skyline.
+    const teeth = ridged(noise, x * 0.05, 2);
+    h += teeth * 0.07 * clamp01((h - 0.35) * 2.2);
+
+    heights[i] = clamp01(h);
   }
+  return heights;
+}
+
+/** Rolling foothill field (nearer layers) — classic fbm. */
+export function rollingHeightField(noise, n, step, octaves) {
+  const heights = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = i * step;
+    // Map fbm from ~[-1,1] into a positive hill field.
+    const f = noise.fbm(x * 0.006, octaves);
+    heights[i] = clamp01(0.5 + 0.5 * f);
+  }
+  return heights;
+}
+
+export function generateSilhouette({
+  seed, width = 2048, height = 320, octaves = 2, baseline = 0.55, amplitude = 0.30, color, step = 4,
+  edgeLight = null, // optional neon ridge-line stroke (CYBER's edgeLight hook)
+  shadeMode = 'classic', // 'classic' flat fill | 'rendered' soft CGI volume
+  profile = 'rolling', // 'rolling' | 'alpine' (Denali / Rainier / Shasta massifs)
+}) {
+  const noise = new ValueNoise1D(seed, 256);
+  const n = Math.floor(width / step) + 1;
+
+  let heights;
+  if (profile === 'alpine') {
+    heights = alpineHeightField(noise, n, step, seed, width);
+  } else {
+    heights = rollingHeightField(noise, n, step, octaves);
+  }
+
   // Force a seamless horizontal wrap by blending the tail back to the head.
   const blendCount = Math.max(1, Math.floor(n * 0.12));
   for (let i = 0; i < blendCount; i++) {
@@ -30,18 +130,89 @@ export function generateSilhouette({
     heights[idx] = lerp(heights[idx], heights[0], t * t * (3 - 2 * t));
   }
 
+  // Precompute ridge y samples + the highest crest (for gradient top).
+  // Alpine: slightly more vertical throw so tall peaks really pierce the sky.
+  const amp = profile === 'alpine' ? amplitude * 1.12 : amplitude;
+  const footY = height * baseline;
+  const ridgeYs = new Float32Array(n);
+  let minY = height;
+  for (let i = 0; i < n; i++) {
+    ridgeYs[i] = footY - heights[i] * height * amp;
+    if (ridgeYs[i] < minY) minY = ridgeYs[i];
+  }
+
+  // CRITICAL: peaks that compute above the strip top (y < 0) are clipped by
+  // the canvas into flat mesas. Rescale the vertical throw so the tallest
+  // summit keeps headroom — shape stays pointy, nothing shears off.
+  const HEADROOM = profile === 'alpine' ? 14 : 6;
+  if (minY < HEADROOM) {
+    const span = footY - minY;
+    const target = footY - HEADROOM;
+    if (span > 1e-6 && target > 0) {
+      const s = target / span;
+      for (let i = 0; i < n; i++) {
+        ridgeYs[i] = footY - (footY - ridgeYs[i]) * s;
+      }
+      minY = HEADROOM;
+    } else {
+      minY = Math.max(HEADROOM, minY);
+    }
+  }
+  // Gradient crest starts a little above the skyline
+  const gradTop = Math.max(0, minY - 8);
+
+  // Fitted amplitude so ridgeYAt matches the painted (unclipped) skyline.
+  let hMax = 0;
+  for (let i = 0; i < n; i++) if (heights[i] > hMax) hMax = heights[i];
+  const ampFitted = hMax > 1e-6
+    ? (footY - minY) / (height * hMax)
+    : amp;
+
   const canvas = makeCanvas(width, height);
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(0, height);
-  for (let i = 0; i < n; i++) {
-    const y = height * baseline - heights[i] * height * amplitude;
-    ctx.lineTo(i * step, y);
-  }
+  for (let i = 0; i < n; i++) ctx.lineTo(i * step, ridgeYs[i]);
   ctx.lineTo(width, height);
   ctx.closePath();
-  ctx.fill();
+
+  if (shadeMode === 'rendered') {
+    // Soft volumetric mountain: vertical gradient only (no clip/source-atop
+    // pass) so baking dozens of strips at song start stays cheap on the
+    // main thread — the DKC pre-render read without a multi-second stall.
+    const foot = shiftLightness(color, -0.14);
+    const mid = shiftLightness(color, -0.02);
+    const crest = shiftLightness(color, 0.12);
+    const lit = shiftLightness(color, 0.18);
+    const grad = ctx.createLinearGradient(0, gradTop, 0, height);
+    grad.addColorStop(0, lit);
+    grad.addColorStop(0.2, crest);
+    grad.addColorStop(0.5, mid);
+    grad.addColorStop(0.85, foot);
+    grad.addColorStop(1, shiftLightness(color, -0.2));
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Soft specular catch-light along the skyline — very low alpha, no hard
+    // hairline (stacked strokes read as glitchy neon outlines through gaps).
+    // Alpine: slightly stronger rim so jagged summits read against the sky.
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = profile === 'alpine' ? 0.20 : 0.14;
+    ctx.strokeStyle = 'rgba(255, 248, 230, 0.45)';
+    ctx.lineWidth = profile === 'alpine' ? 2.0 : 2.4;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      if (i === 0) ctx.moveTo(0, ridgeYs[i]); else ctx.lineTo(i * step, ridgeYs[i]);
+    }
+    ctx.stroke();
+    ctx.restore();
+  } else {
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
 
   if (edgeLight) {
     // Two-pass glow along the ridge: a wide faint stroke under a thin
@@ -52,16 +223,16 @@ export function generateSilhouette({
       ctx.lineWidth = lw;
       ctx.beginPath();
       for (let i = 0; i < n; i++) {
-        const y = height * baseline - heights[i] * height * amplitude;
-        if (i === 0) ctx.moveTo(0, y); else ctx.lineTo(i * step, y);
+        if (i === 0) ctx.moveTo(0, ridgeYs[i]); else ctx.lineTo(i * step, ridgeYs[i]);
       }
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
   }
   // Ridge metadata: lets landmark decoration root itself on the actual
-  // skyline instead of the layer baseline.
-  canvas.ridge = { heights, step, baseline, amplitude, height };
+  // skyline instead of the layer baseline. amplitude is the *fitted*
+  // throw so ridgeYAt matches what was painted (no clipped-mesa ghost).
+  canvas.ridge = { heights, step, baseline, amplitude: ampFitted, height, profile };
   return canvas;
 }
 

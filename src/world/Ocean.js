@@ -5,13 +5,12 @@
 // them directly.
 import { clamp01, mulberry32 } from '../utils/math.js';
 
-export const OCEAN_HORIZON_FRAC = 0.30;
-// Deliberately NOT down at the mountains' feet: everything below the
-// tallest ridgelines is occluded by opaque foreground layers anyway, so a
-// near edge that reaches down there wastes most of the row stack on rows
-// nobody will ever see. Pulling the near edge up to just above where peaks
-// typically crest packs the whole field into the band that actually shows.
-export const OCEAN_NEAR_FRAC = 0.48;
+export const OCEAN_HORIZON_FRAC = 0.26;
+// Near edge sits mid-frame so water stays legible between mountain gaps
+// instead of living only as a thin strip under the sky. Rows still pack
+// denser toward the horizon; foreground L4/L5 occlude the lowest portion.
+// Slightly larger plane so the ocean vibe reads as a world, not a ribbon.
+export const OCEAN_NEAR_FRAC = 0.62;
 
 /** Peak absolute contribution of each harmonic in seaLineY (pre-amp). Kept
  *  as named constants so tests can pin the bound without re-deriving. */
@@ -103,11 +102,15 @@ export function waveRows(seed, count = 14) {
 export function rowAlpha(i, count) {
   const n = Math.max(1, count);
   const u = n <= 1 ? 0.35 : i / (n - 1); // 0 near, 1 far/horizon
-  const PEAK_U = 0.35;
+  const PEAK_U = 0.32;
+  // Presence floor keeps the plane readable even at the horizon / feet.
+  let a;
   if (u <= PEAK_U) {
     const t = u / PEAK_U;
-    return clamp01(0.3 + 0.7 * Math.sin(t * Math.PI / 2)); // nearest rows taper in
+    a = 0.42 + 0.58 * Math.sin(t * Math.PI / 2); // nearest rows taper in, but stay present
+  } else {
+    const t = (u - PEAK_U) / (1 - PEAK_U);
+    a = 0.14 + 0.86 * (1 - t) * (1 - t); // fades toward the horizon, never vanishing
   }
-  const t = (u - PEAK_U) / (1 - PEAK_U);
-  return clamp01(0.05 + 0.95 * (1 - t) * (1 - t)); // fades toward the horizon
+  return clamp01(a);
 }

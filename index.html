@@ -57,8 +57,25 @@
 
         <div class="titleMeta">
           <div class="prefRow">
+
             <button id="noLyricsBtn" class="ghostbtn chipbtn" type="button" aria-pressed="false" title="Skip the lyric search for audio files (remembered)">No lyrics: off</button>
             <button id="btLatencyBtn" class="ghostbtn chipbtn" type="button" aria-pressed="false" title="Floor output-latency compensation for Bluetooth headphones (~200 ms). Remembered.">BT latency: off</button>
+          </div>
+
+          <div class="seedRow" title="Pin a world seed. Leave blank for auto from the song.">
+            <label for="seedInput">Seed</label>
+            <input id="seedInput" type="text" spellcheck="false" autocomplete="off" placeholder="auto" maxlength="48" />
+            <button id="seedRandomBtn" class="ghostbtn chipbtn" type="button" title="Random seed">Random</button>
+          </div>
+
+          <div class="resRow" title="Stage render resolution (sim stays 16:9 logical; canvas upscales to this).">
+            <label for="stageRes">Stage</label>
+            <select id="stageRes" title="Internal stage resolution (sim is 1280×720; buffer upscales). Default 1440p @ display 60fps.">
+              <option value="720">720p</option>
+              <option value="1080">1080p</option>
+              <option value="1440" selected>1440p 60</option>
+              <option value="2160">4K</option>
+            </select>
           </div>
 
           <details class="titleAdvanced">
@@ -83,6 +100,7 @@
             <li><kbd>`</kbd> debug</li>
             <li><kbd>T</kbd> tracks</li>
             <li><kbd>F</kbd> fonts</li>
+
             <li><kbd>R</kbd> reduced flash</li>
           </ul>
         </div>
@@ -92,13 +110,14 @@
     <div id="hud" class="hidden">
       <div id="hudLeft">
         <div id="comboReadout">×1.0</div>
-        <div id="scoreReadout">0</div>
+        <div id="streakReadout">0 streak</div>
       </div>
       <div id="hudRight">
         <button id="pauseBtn" class="ghostbtn iconbtn" type="button" title="Pause">&#9208;</button>
         <button id="stopBtn" class="ghostbtn iconbtn" type="button" title="Stop (back to title)">&#9209;</button>
         <button id="fullscreenBtn" class="ghostbtn iconbtn" type="button" title="Fullscreen (F11)">&#9974;</button>
         <button id="btLatencyHudBtn" class="ghostbtn" type="button" aria-pressed="false" title="Bluetooth latency mode (~200 ms floor). Remembered.">BT lag</button>
+
         <button id="settingsBtn" class="ghostbtn iconbtn" type="button" title="SoundFont settings (hidden fonts)">&#9881;</button>
         <div id="trackBadge" class="hidden">
           <button id="trackBadgeBtn" type="button"></button>
@@ -156,36 +175,23 @@
       </div>
     </div>
 
-    <div id="completePanel" class="panel hidden">
-      <h1>COMPLETE</h1>
-      <p id="completeStats" class="sub"></p>
-      <div id="resultsGrid" class="hidden"></div>
-      <div id="filmstrip" class="hidden"></div>
-      <button id="playAgainBtn" type="button">Play again</button>
-      <button id="saveVideoBtn" type="button" class="hidden">Save video</button>
-      <div id="exportRow">
-        <select id="exportRes">
-          <option value="720">720p (native)</option>
-          <option value="1080">1080p</option>
-          <option value="1440" selected>1440p</option>
-        </select>
-        <select id="exportFps">
-          <option value="30">30 fps</option>
-          <option value="60" selected>60 fps</option>
-        </select>
-        <button id="exportBtn" type="button" class="ghostbtn">Re-export at these settings</button>
-        <a id="exportDownload" class="ghostbtn hidden" download>Download video</a>
-        <p class="hint">Every play is already recorded at the settings above — hit "Save video" to keep it, or re-export a fresh replay at different settings (mp4 where the browser supports it, otherwise webm).</p>
+    <div id="completePanel" class="panel completePanel hidden">
+      <div class="completeCard">
+        <p class="completeEyebrow" id="completeSongName">Song</p>
+        <h1>Complete</h1>
+        <div id="completeSeedRow" class="completeSeedRow">
+          <span class="seedLabel">Seed</span>
+          <code id="completeSeed">————————</code>
+          <button id="copySeedBtn" type="button" class="ghostbtn chipbtn" title="Copy seed">Copy</button>
+        </div>
+        <div id="resultsGrid" class="resultsGrid"></div>
+        <div id="filmstrip" class="hidden"></div>
+        <div class="completeActions">
+          <button id="replaySameSeedBtn" type="button">Replay seed</button>
+          <button id="replayNewSeedBtn" type="button" class="ghostbtn">New seed</button>
+          <button id="playAgainBtn" type="button" class="ghostbtn">Title</button>
+        </div>
       </div>
-    </div>
-
-    <div id="recordingHud" class="hidden">
-      <span class="recDot">&#9679;</span> REC <span id="recordingTime"></span>
-      <button id="recordingCancelBtn" type="button" class="ghostbtn">Cancel</button>
-    </div>
-
-    <div id="liveRecHud" class="hidden" title="Recording this play — Save video when it ends">
-      <span class="recDot">&#9679;</span> REC
     </div>
 
     <div id="filmstripModal" class="modalBackdrop hidden">

@@ -62,12 +62,78 @@ export class AudioEngine {
 
   /** Plays a decoded AudioBuffer and adopts it as the master clock's zero point. */
   playBuffer(audioBuffer, offsetSec = 0) {
+    this._audioBuffer = audioBuffer;
+    if (this.sourceNode) {
+      try { this.sourceNode.stop(); } catch { /* already stopped */ }
+      this.sourceNode = null;
+    }
     const src = this.ctx.createBufferSource();
     src.buffer = audioBuffer;
     src.connect(this.master);
     this.sourceNode = src;
     src.start(0, offsetSec);
     this.start(offsetSec * 1000);
+    // Restore level if a previous finale faded us out.
+    try {
+      this.master.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.master.gain.setValueAtTime(0.85, this.ctx.currentTime);
+    } catch { /* ignore */ }
     return src;
+  }
+
+  /**
+   * Seek the master clock (and buffer source, if any) to song time `ms`.
+   * MIDI/SF2 paths only move the clock; buffer audio restarts the source.
+   */
+  seekToMs(ms) {
+    const t = Math.max(0, ms);
+    const wasPlaying = this.playing;
+    if (this._audioBuffer) {
+      if (this.sourceNode) {
+        try { this.sourceNode.stop(); } catch { /* ignore */ }
+        this.sourceNode = null;
+      }
+      if (wasPlaying) {
+        const src = this.ctx.createBufferSource();
+        src.buffer = this._audioBuffer;
+        src.connect(this.master);
+        this.sourceNode = src;
+        const offsetSec = Math.min(t / 1000, Math.max(0, this._audioBuffer.duration - 0.01));
+        src.start(0, offsetSec);
+      }
+    }
+    this._startCtxTime = this.ctx.currentTime - t / 1000;
+    this._pausedAtMs = t;
+    this.playing = wasPlaying;
+    this.restoreLevel(0.85);
+  }
+
+  /**
+   * Fade master to silence over `durationSec` (song finale / shatter).
+   * Clock keeps running — only the audible level drops.
+   */
+  fadeToSilence(durationSec = 0.35) {
+    const g = this.master.gain;
+    const now = this.ctx.currentTime;
+    const dur = Math.max(0.05, durationSec);
+    try {
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(g.value, now);
+      g.linearRampToValueAtTime(0.0001, now + dur);
+    } catch {
+      g.value = 0;
+    }
+  }
+
+  /** Instant restore of master level (new song / replay). */
+  restoreLevel(level = 0.85) {
+    const g = this.master.gain;
+    const now = this.ctx.currentTime;
+    try {
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(level, now);
+    } catch {
+      g.value = level;
+    }
   }
 }

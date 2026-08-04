@@ -15,6 +15,7 @@ const RELEASE_SEC = 1.6;
 export class FeverMeter {
   constructor() {
     this.level = 0;    // 0..1 smoothed output
+    this.peak = 0;     // high-water mark of level this run
     this.accuracy = 0; // 0..1 tap quality × steadiness (pre-energy)
     this.energy = 0;   // last sampled song energy
     this._quality = 0; // EMA over judged tiers
@@ -67,5 +68,6 @@ export class FeverMeter {
     const tau = target > this.level ? ATTACK_SEC : RELEASE_SEC;
     this.level += (target - this.level) * Math.min(1, dtSec / tau);
     this.level = clamp(this.level, 0, 1);
+    if (this.level > this.peak) this.peak = this.level;
   }
 }

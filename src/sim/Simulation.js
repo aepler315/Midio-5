@@ -33,7 +33,8 @@ import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
 import { PerfGovernor } from '../render/PerfGovernor.js';
 import { HighlightReel } from '../render/HighlightReel.js';
-import { hashSeed, clamp01 } from '../utils/math.js';
+import { clamp01 } from '../utils/math.js';
+import { resolveSongSeed } from '../utils/seed.js';
 import { buildNoteChart } from './NoteChart.js';
 import { TapJudge } from './TapJudge.js';
 import { ScoreKeeper } from './ScoreKeeper.js';
@@ -69,12 +70,17 @@ export class Simulation {
   constructor(conductor, paramBus, {
     bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720,
     customBiome = null, inputOffsetMs = 0, outputLatencyMs = null, lyricSections = null,
+    songSeed: pinnedSeed = null,
   } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
     this.customBiome = customBiome || null;
     this.canvasWidth = canvasWidth;
+    this.canvasHeight = canvasHeight;
+    this.stageW = canvasWidth;
+    this.stageH = canvasHeight;
+    this.bpm = bpm;
     // Output-latency compensation (ChoreoClock): main.js passes a live
     // getter onto the AudioContext's reported latency; decorative
     // beat-anchored envelopes evaluate on the heard clock via visualLagMs.
@@ -154,7 +160,8 @@ export class Simulation {
     });
     this.broshi._lastBarPeriodMs = (60000 / bpm) * 4;
 
-    const songSeed = hashSeed(`${conductor.timeline.length}:${conductor.durationMs}:${conductor.timeline[0]?.tMs ?? 0}:${conductor.timeline.at(-1)?.tMs ?? 0}`);
+    const songSeed = resolveSongSeed(conductor, pinnedSeed);
+    this.songSeed = songSeed;
     this.performer = new MidioPerformer(songSeed);
     this.apotheosis = new ApotheosisDirector();
     this.calm = new CalmDirector();
@@ -178,7 +185,10 @@ export class Simulation {
       customBiome: this.customBiome,
       lyricSections,
     });
+    this.reducedFlash = false;
+    this.visualStyle = 'rendered';
     this.biomes.reducedFlash = this.reducedFlash;
+    this.biomes.setVisualStyle(this.visualStyle);
     // Enemy-wave combat: flying/crawling enemies spawn during the song's
     // identified high-energy/tension windows, and the three characters
     // shoot them down with dots of light timed to vaporize exactly on the
@@ -190,6 +200,7 @@ export class Simulation {
     this.highlightReel = new HighlightReel();
     this.fracture = new FractureEngine(conductor, {
       canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,
+      energyCurves,
     });
 
     // Orogeny: the mountains visibly build across the song, peaking at its
@@ -375,6 +386,12 @@ export class Simulation {
   setReducedFlash(v) {
     this.reducedFlash = v;
     this.biomes.reducedFlash = v;
+  }
+
+  /** Global graphics presentation: classic (SMW-flat) or rendered (DKC-CGI). */
+  setVisualStyle(v) {
+    this.visualStyle = v === 'classic' ? 'classic' : 'rendered';
+    this.biomes?.setVisualStyle?.(this.visualStyle);
   }
 
   step(dtMs, nowMs) {
@@ -595,6 +612,8 @@ export class Simulation {
       x: this.ensemble.anchors[2].x, y: this.ensemble.anchors[2].y,
       phase: this.ensemble.phase(2), melt: 2 + 4.5 * this.vibe.epic, epic: this.vibe.epic,
       interests: babyInterests, pointer: this.pointer,
+      // Soft spacing: last-frame Broshi position (good enough for gentle push).
+      broshiX: this.broshi.renderX, broshiY: this.midio.groundY - this.broshi.hopY - 20,
     }, this.perf.particleMul, this.biomes.wind);
     // She's off on a voyage -> the ensemble's Kuramoto math should feel the
     // hole (this takes effect next frame; the weight eases over ~1.5s
@@ -623,6 +642,8 @@ export class Simulation {
       midioAirborne: this.jump.airborne, midioY: this.midio.y,
       justLanded: !!this.jump.pendingLanding, justClean: this.comboSystem.justClean,
       worldSpeed,
+      // Soft spacing from Midasus when she dives into the floor band.
+      midasusX: this.midasus.p.x,
       // He reacts to the sky, not just his hero: a shiver in snowfall, a
       // shake-off flick in rain -- the same music-reactive weather layer
       // BiomeManager/Traction already read, just also reaching Broshi.
@@ -655,6 +676,7 @@ export class Simulation {
     this.filmFinish.update(nowMs, dtSec, this.calm.level, this.biomes.budget, this.hype);
     if (this.biomes.cutFlashJustFired) { this.camera.shake(3.5); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
+    // Finale silence is owned by main.js (has AudioEngine) — flag only here.
 
     // Orogeny: the mountains build toward the song's energy climax, then
     // gradually subside through the rest of the runtime.

@@ -8,6 +8,9 @@ import { delaunayTriangulate, poissonDiscSample } from '../utils/delaunay.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { Role } from '../core/NoteEvent.js';
+import {
+  analyzeSongFinale, buildPeakProgress, FINALE_FREEZE_LEAD_MS,
+} from '../core/SongFinale.js';
 
 // Many small ridge pieces, spaced evenly across song progress so the
 // mountain draws itself gradually through the whole track (not a late pile-up).
@@ -24,7 +27,7 @@ const THRESHOLDS = buildStressThresholds(RIDGE_GEN_COUNT);
 // Slow grow: each ridge inks on over several seconds so births don't flash.
 const GROW_MS = 3400;
 const KICK_SYNC_WINDOW_MS = 120;
-const FREEZE_LEAD_MS = 300;
+const FREEZE_LEAD_MS = FINALE_FREEZE_LEAD_MS;
 // Shatter timing: a short hold on the frozen frame, then a long ease-out
 // so the glass falls apart instead of exploding and vanishing in 600ms.
 const FREEZE_HOLD_MS = 90;
@@ -300,7 +303,7 @@ export function shatterMotionU(ageMs) {
 }
 
 export class FractureEngine {
-  constructor(conductor, { canvasWidth, canvasHeight, songSeed, durationMs }) {
+  constructor(conductor, { canvasWidth, canvasHeight, songSeed, durationMs, energyCurves = null }) {
     this.conductor = conductor;
     this.w = canvasWidth;
     this.h = canvasHeight;
@@ -327,6 +330,18 @@ export class FractureEngine {
     this.freezeFrame = null;
     this.fragments = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i), 256);
     this._flashFired = false;
+    // One-shot flags for Simulation / main (audio silence, etc.).
+    this.justEnteredFinale = false;
+    this.audioSilenced = false;
+
+    // Musical finale: last impact note + late build peak (not silence pad).
+    this.finale = analyzeSongFinale(
+      conductor.timeline || [],
+      durationMs,
+      energyCurves,
+    );
+    // about-to-freeze arms this far before freezeAtMs (last impact + ε).
+    this._freezeArmMs = Math.max(0, this.finale.freezeAtMs - FREEZE_LEAD_MS);
 
     conductor.onBar(() => {
       const e = this._barSamples > 0 ? this._barAccum / this._barSamples : 0;
@@ -358,8 +373,12 @@ export class FractureEngine {
     // Mostly linear song progress so ridge pieces birth evenly from ~4% to
     // ~92% of the track. Energy and impacts only nudge timing slightly —
     // they no longer clump all cracks into the loud final third.
-    const tNorm = this.durationMs > 0 ? clamp01(nowMs / this.durationMs) : 0;
-    this.stress = clamp(0.90 * tNorm + 0.08 * eBar + 0.12 * this.impactStress, 0, 1);
+    // Progress is relative to musical freeze (last impact), not silence pad.
+    const musicalDur = Math.max(1, this.finale.freezeAtMs || this.durationMs || 1);
+    const tNorm = clamp01(nowMs / musicalDur);
+    // Late build-up peak slightly accelerates crack birth near the climax.
+    const peakBoost = 0.10 * buildPeakProgress(nowMs, this.finale.buildPeakMs);
+    this.stress = clamp(0.88 * tNorm + 0.08 * eBar + 0.12 * this.impactStress + peakBoost, 0, 1);
 
     while (this._nextThresholdIdx < THRESHOLDS.length && this.stress >= THRESHOLDS[this._nextThresholdIdx]) {
       const generation = this._nextThresholdIdx;
@@ -378,9 +397,12 @@ export class FractureEngine {
     }
 
     this.flashAlpha = Math.max(0, this.flashAlpha - dtSec / 0.04);
+    this.justEnteredFinale = false;
 
-    if (this.durationMs > 0 && this.shatterState === 'idle' && nowMs >= this.durationMs - FREEZE_LEAD_MS) {
+    // Freeze arms on the last impact notes — not after empty duration padding.
+    if (this.shatterState === 'idle' && this._freezeArmMs >= 0 && nowMs >= this._freezeArmMs) {
       this.shatterState = 'about-to-freeze';
+      this.justEnteredFinale = true;
     }
   }
 

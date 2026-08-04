@@ -1,13 +1,13 @@
 // Midasus's deep-space excursion: she leaves the ensemble, climbs into the
-// far sky, and traces genuinely mathematical figures out there -- Lissajous
-// knots, an epicycle rosette, a superformula circuit, and (epic sections
-// only) a live Thomas-attractor projection -- while a persistent trail
-// sky-writes the geometry and completed figures freeze into fading
-// constellations. Pure phase/position logic here; BiomeManager draws it
-// (see drawDeepSky) behind the mountain silhouettes, and Midasus.js hides
+// far sky, and traces genuinely mathematical figures out there -- seed-baked
+// geometric recipes (Lissajous, epicycle, superformula, rose, hypotrochoid,
+// Thomas attractor) that stay intentional math while varying per voyage.
+// A persistent trail sky-writes the geometry; completed figures freeze into
+// fading constellations. Pure phase/position logic here; BiomeManager draws
+// it (see drawDeepSky) behind the mountain silhouettes, and Midasus.js hides
 // her normal glyph for the phases where she isn't "here."
 import { mulberry32, clamp, lerp } from '../utils/math.js';
-import { superformula, thomasDeriv, rk4Step3 } from '../render/oscillators.js';
+import { superformula, thomasDeriv, rk4Step3, hypotrochoid } from '../render/oscillators.js';
 
 export const VoyagePhase = Object.freeze({
   IDLE: 'IDLE', WINDUP: 'WINDUP', ASCENT: 'ASCENT', DEEP_SPACE: 'DEEP_SPACE', REENTRY: 'REENTRY',
@@ -15,13 +15,16 @@ export const VoyagePhase = Object.freeze({
 
 const WINDUP_SEC = 0.55;
 const ASCENT_SEC = 1.2;
-const REENTRY_SEC = 1.0;
+// Reentry used to hang ~1s at the station (cubic ease-in from station, not
+// from her last figure pose). Keep it brisk and continuous.
+const REENTRY_SEC = 0.62;
 const FIGURE_SEC = 3.2;
 const FIGURES_PER_VOYAGE = 3;
-const FIGURE_MORPH_SEC = 0.4;
 const FIGURE_RADIUS_PX = 130;
 const TRAIL_SEC = 3.2;
 const TRAIL_MAX_PTS = 400;
+// Trail segments longer than this are a teleport chord — skip them in draw.
+export const TRAIL_GAP_PX = 28;
 const CONSTELLATION_LIFE_SEC = 6;
 const CONSTELLATION_MAX = 4;
 const ATLAS_MAX = 8; // permanent star-map entries; oldest myths fade first
@@ -32,8 +35,8 @@ const NAV_PULL = 0.65; // how strongly the cluster overrides the random station
 // Supernova finale: each atlas star detonates on its own popcorn delay.
 const NOVA_STAGGER_MS = 900;
 const NOVA_LIFE_MS = 1100;
-// Default pairs per figure slot (no melody heard yet)...
-const LISSAJOUS_FREQS = [[3, 2], [5, 4], [2, 3], [4, 3]];
+// Fallback pairs when a recipe wasn't baked (tests that inject kind strings)...
+const LISSAJOUS_FREQS = [[3, 2], [5, 4], [2, 3], [4, 3], [5, 3], [7, 4], [8, 5], [5, 2]];
 // ...and the melody's own tuning: one coprime pair per pitch class, so a
 // C melody knots differently than an F# one -- the figure is literally
 // played by the notes.
@@ -41,8 +44,18 @@ const LISSAJOUS_BY_PITCH_CLASS = [
   [3, 2], [5, 4], [4, 3], [5, 2], [7, 4], [3, 1],
   [5, 3], [7, 5], [2, 1], [7, 3], [8, 3], [5, 1],
 ];
+// Geometric figure families available for seed-baked voyage recipes.
+const FIGURE_FAMILIES = ['lissajous', 'epicycle', 'superformula', 'rose', 'hypotrochoid', 'thomas'];
+// Coprime-ish frequency pairs for seed-picked Lissajous knots.
+const LISS_PAIR_POOL = [
+  [2, 1], [3, 1], [3, 2], [4, 1], [4, 3], [5, 2], [5, 3], [5, 4],
+  [6, 1], [6, 5], [7, 2], [7, 3], [7, 4], [7, 5], [8, 3], [8, 5], [9, 4], [9, 5],
+];
 const LISS_MORPH_SEC = 0.45; // parametric cross-fade between old/new tuning
 const KICK_TAU_SEC = 0.15;   // onset phase-kicks ease in, never teleport
+// Cap accumulated onset curve-time so hard note runs can't race her so far
+// along the figure that the next sample looks like a teleport.
+const KICK_MAX_SEC = 0.32;
 const SPARKLES_MAX = 36;
 const SPARKLE_LIFE_SEC = 0.6;
 const SLASH_MAX = 6;
@@ -50,7 +63,8 @@ const SLASH_LIFE_SEC = 0.25;
 
 export class SkyVoyage {
   constructor(seed = 1) {
-    this.rand = mulberry32((seed ^ 0x5117) >>> 0 || 1);
+    this.seed = (seed ^ 0x5117) >>> 0 || 1;
+    this.rand = mulberry32(this.seed);
     this.phase = VoyagePhase.IDLE;
     this.phaseStartMs = 0;
     this.p = { x: 0, y: 0 };
@@ -62,12 +76,15 @@ export class SkyVoyage {
     this._windUpFrom = { x: 0, y: 0 };
     this._diveTarget = { x: 0, y: 0 };
 
+    // Each entry is a full seed-baked recipe { kind, ...params }. Tests may
+    // inject plain kind strings; _recipeAt() normalizes both shapes.
     this._figureOrder = [];
     this._figureCount = 0;
     this._figureIdx = 0;
     this._figureStartMs = 0;
-    this._prevFigureEndOffset = { x: 0, y: 0 };
+    this._figureTime0 = 0; // phase alignment offset into the current figure
     this._attractor = { x: 0.12, y: 0, z: 0 };
+    this._voyageSerial = 0; // increments each trigger; mixes into recipe salt
 
     // Melody coupling: the current Lissajous tuning, the tuning it's
     // morphing away from, and a smoothed onset phase-kick (an eased burst
@@ -145,7 +162,7 @@ export class SkyVoyage {
       this._liss = next;
       this._lissMorphStartMs = this._nowMs ?? this._figureStartMs;
     }
-    this._kickTarget += 0.10 * (evt.vel ?? 0.7);
+    this._kickTarget = Math.min(KICK_MAX_SEC, this._kickTarget + 0.08 * (evt.vel ?? 0.7));
     const ang = this.rand() * Math.PI * 2;
     this.microSlashes.push({ x: this.p.x, y: this.p.y, ang, hue: this.hue, age: 0 });
     if (this.microSlashes.length > SLASH_MAX) this.microSlashes.shift();
@@ -169,7 +186,17 @@ export class SkyVoyage {
 
   _currentLiss() {
     if (this._liss) return this._liss;
+    const recipe = this._recipeAt(this._figureIdx);
+    if (recipe?.a != null && recipe?.b != null) return [recipe.a, recipe.b];
     return LISSAJOUS_FREQS[(this._figureIdx >= 0 ? this._figureIdx : 0) % LISSAJOUS_FREQS.length];
+  }
+
+  /** Normalize a figure-order slot to a recipe object. */
+  _recipeAt(idx) {
+    const raw = this._figureOrder[idx];
+    if (!raw) return defaultRecipe('lissajous', 0);
+    if (typeof raw === 'string') return defaultRecipe(raw, idx);
+    return raw;
   }
 
   get active() { return this.phase !== VoyagePhase.IDLE; }
@@ -192,7 +219,8 @@ export class SkyVoyage {
     this._startPos = { ...fromPos };
     this._windUpFrom = { ...fromPos };
     this.p = { ...fromPos };
-    this._station = { x: stageW * (0.52 + this.rand() * 0.22), y: stageH * 0.16 };
+    this._voyageSerial++;
+    this._station = { x: stageW * (0.48 + this.rand() * 0.30), y: stageH * (0.12 + this.rand() * 0.08) };
     // She revisits her myths: past voyages pull this one's station toward
     // the densest cluster of her own accumulated stars, clamped to a safe
     // sky band so the pull can never drag her down into the mountains.
@@ -207,7 +235,14 @@ export class SkyVoyage {
     this._figureOrder = this._pickFigureOrder();
     this._figureCount = 0;
     this._figureIdx = -1; // advanced to 0 on entering DEEP_SPACE
-    this._prevFigureEndOffset = { x: 0, y: 0 };
+    this._figureTime0 = 0;
+    // Seed the Thomas state from this voyage's RNG so chaos isn't the same orbit every time.
+    this._attractor = {
+      x: 0.05 + this.rand() * 0.4,
+      y: (this.rand() - 0.5) * 0.3,
+      z: (this.rand() - 0.5) * 0.3,
+    };
+    this.trail = []; // clean pen for this voyage
     return true;
   }
 
@@ -215,16 +250,99 @@ export class SkyVoyage {
    * (e.g. the song is ending and everyone needs to come home). No-op if idle. */
   forceEnd(nowMs) {
     if (!this.active || this.phase === VoyagePhase.REENTRY) return;
-    this.phase = VoyagePhase.REENTRY;
-    this.phaseStartMs = nowMs;
-    this._diveTarget = { ...this._startPos };
+    this._beginReentry(nowMs, this._startPos);
   }
 
+  /**
+   * Bake FIGURES_PER_VOYAGE seed-based geometric recipes for this voyage.
+   * Families never consecutive-repeat; each recipe carries its own
+   * intentional params (ratios, harmonics, petal count, rate, scale).
+   */
   _pickFigureOrder() {
-    const kinds = ['lissajous', 'epicycle', 'superformula', 'thomas'];
     const order = [];
-    for (let i = 0; i < FIGURES_PER_VOYAGE; i++) order.push(kinds[Math.floor(this.rand() * kinds.length)]);
+    let last = null;
+    for (let i = 0; i < FIGURES_PER_VOYAGE; i++) {
+      // Prefer unused families this voyage, then any except last.
+      const used = new Set(order.map((r) => r.kind));
+      let pool = FIGURE_FAMILIES.filter((k) => k !== last && !used.has(k));
+      if (!pool.length) pool = FIGURE_FAMILIES.filter((k) => k !== last);
+      if (!pool.length) pool = FIGURE_FAMILIES.slice();
+      const kind = pool[Math.floor(this.rand() * pool.length)];
+      order.push(this._bakeRecipe(kind, i));
+      last = kind;
+    }
     return order;
+  }
+
+  /**
+   * Intentional-but-varied parameters for one geometric family.
+   * Pure function of this.rand (already seed-mixed via voyage serial).
+   */
+  _bakeRecipe(kind, slot) {
+    const r = this.rand;
+    const rate = 1.25 + r() * 0.9; // curve speed
+    const scale = 0.82 + r() * 0.36; // radius scale relative to FIGURE_RADIUS_PX
+    const base = { kind, rate, scale, phase: r() * Math.PI * 2, slot };
+
+    if (kind === 'lissajous') {
+      const [a, b] = LISS_PAIR_POOL[Math.floor(r() * LISS_PAIR_POOL.length)];
+      // Occasionally swap axes so vertical-dominant knots appear too.
+      const swap = r() < 0.35;
+      return {
+        ...base,
+        a: swap ? b : a,
+        b: swap ? a : b,
+        delta: [0, Math.PI / 4, Math.PI / 2, Math.PI / 3, Math.PI / 6][Math.floor(r() * 5)],
+        aspect: 0.72 + r() * 0.5, // y stretch — ellipses, not only circles
+      };
+    }
+    if (kind === 'epicycle') {
+      // 2–4 nested circles; outer always k=1 so it stays a closed rosette.
+      const nTerms = 2 + Math.floor(r() * 3);
+      const terms = [{ r: 1.0, k: 1, s: r() < 0.5 ? 1 : -1 }];
+      const harmonics = [2, 3, 4, 5, 7, 8];
+      for (let i = harmonics.length - 1; i > 0; i--) {
+        const j = Math.floor(r() * (i + 1));
+        const tmp = harmonics[i]; harmonics[i] = harmonics[j]; harmonics[j] = tmp;
+      }
+      let rem = 0.55 + r() * 0.2;
+      for (let i = 0; i < nTerms - 1; i++) {
+        const share = rem * (0.45 + r() * 0.4);
+        rem -= share;
+        terms.push({
+          r: share,
+          k: harmonics[i % harmonics.length],
+          s: r() < 0.45 ? -1 : 1, // reverse spin on some shells
+        });
+      }
+      return { ...base, terms };
+    }
+    if (kind === 'superformula') {
+      // m controls lobes; n's keep the form star/flower rather than blob.
+      const m = 3 + Math.floor(r() * 6); // 3–8
+      const n1 = 0.3 + r() * 1.4;
+      const n2 = 0.8 + r() * 12;
+      const n3 = 0.8 + r() * 12;
+      return { ...base, m, n1, n2, n3, a: 1, bb: 1 };
+    }
+    if (kind === 'rose') {
+      // Rhodonea: r = cos(k θ). Integer k → k (or 2k) petals.
+      const k = 2 + Math.floor(r() * 6); // 2–7
+      const offset = r() * 0.25; // slight offset so it isn't a pure zero-at-origin star
+      return { ...base, k, offset, sinMode: r() < 0.5 };
+    }
+    if (kind === 'hypotrochoid') {
+      // Spirograph: integers R,r for a closed curve; d sets the pen throw.
+      const R = 4 + Math.floor(r() * 6); // 4–9
+      const rInner = 1 + Math.floor(r() * Math.min(4, R - 1)); // 1..R-1
+      const d = rInner * (0.45 + r() * 0.9);
+      return { ...base, R, r: rInner, d };
+    }
+    // thomas — live attractor; only rate/scale/phase salt vary.
+    return {
+      ...base,
+      attractorScale: 3.6 + r() * 1.4,
+    };
   }
 
   update(nowMs, dtSec, epicMood, ensembleAnchor) {
@@ -240,6 +358,12 @@ export class SkyVoyage {
     this.novae = this.novae.filter((n) => nowMs - n.bornMs < n.delayMs + NOVA_LIFE_MS);
     // Onset phase-kicks ease toward their target rather than jumping.
     this._kickSmooth += (1 - Math.exp(-dtSec / KICK_TAU_SEC)) * (this._kickTarget - this._kickSmooth);
+    this._kickSmooth = Math.min(KICK_MAX_SEC, this._kickSmooth);
+    // Slowly bleed spent kick so a run of onsets doesn't permanently race
+    // the parameter; keeps the "whip" without stacking forever.
+    if (this._kickTarget > 0) {
+      this._kickTarget = Math.max(0, this._kickTarget - dtSec * 0.12);
+    }
     if (!this.active) return;
     const elapsed = (nowMs - this.phaseStartMs) / 1000;
 
@@ -263,13 +387,17 @@ export class SkyVoyage {
         x: (1 - ease) * (1 - ease) * this._startPos.x + 2 * (1 - ease) * ease * ctrl.x + ease * ease * this._station.x,
         y: (1 - ease) * (1 - ease) * this._startPos.y + 2 * (1 - ease) * ease * ctrl.y + ease * ease * this._station.y,
       };
-      this._pushTrail(nowMs);
+      // Climb is travel, not sky-writing — don't stroke the ascent path.
       if (this._phaseU >= 1) {
         this.phase = VoyagePhase.DEEP_SPACE;
         this.phaseStartMs = nowMs;
         this._figureIdx = 0;
         this._figureStartMs = nowMs;
         this._figureCount = 1;
+        this._resetFigureMotion();
+        this._figureTime0 = this._phaseAlignFigure(this._figureOrder[0], this._offsetFromStation(this.p));
+        // Place her on the first figure and pen-up so climb doesn't chord into it.
+        this._placeOnFigure(nowMs, true);
       }
     } else if (this.phase === VoyagePhase.DEEP_SPACE) {
       // The Thomas attractor keeps integrating in the background regardless
@@ -285,42 +413,36 @@ export class SkyVoyage {
       const figElapsed = (nowMs - this._figureStartMs) / 1000;
       if (figElapsed >= FIGURE_SEC) {
         this._stampConstellation(nowMs);
-        this._prevFigureEndOffset = this._figureOffset(this._figureOrder[this._figureIdx], FIGURE_SEC);
+        const exitOff = this._offsetFromStation(this.p);
         this._figureIdx++;
         this._figureStartMs = nowMs;
         this._figureCount++;
+        this._resetFigureMotion();
         if (this._figureCount > FIGURES_PER_VOYAGE) {
-          this.phase = VoyagePhase.REENTRY;
-          this.phaseStartMs = nowMs;
-          this._diveTarget = ensembleAnchor ? { ...ensembleAnchor } : { ...this._startPos };
+          this._beginReentry(nowMs, ensembleAnchor);
+        } else {
+          // Next figure: phase-align so she resumes near the exit, pen-up so
+          // we NEVER lerp a straight chord between two different curves.
+          this._figureTime0 = this._phaseAlignFigure(this._figureOrder[this._figureIdx], exitOff);
+          this._placeOnFigure(nowMs, true);
         }
       }
       if (this.phase === VoyagePhase.DEEP_SPACE) {
-        const kind = this._figureOrder[this._figureIdx];
-        // Onset kicks add eased extra curve-time: hard notes visibly whip
-        // her along the figure without a positional discontinuity.
-        const localT = (nowMs - this._figureStartMs) / 1000 + this._kickSmooth;
-        const raw = this._figureOffset(kind, localT);
-        // Morph into the new figure from the previous one's exit point
-        // instead of teleporting -- a brief parametric cross-fade.
-        const morphU = clamp(((nowMs - this._figureStartMs) / 1000) / FIGURE_MORPH_SEC, 0, 1);
-        const blended = {
-          x: lerp(this._prevFigureEndOffset.x, raw.x, morphU),
-          y: lerp(this._prevFigureEndOffset.y, raw.y, morphU),
-        };
-        this.p = { x: this._station.x + blended.x * FIGURE_RADIUS_PX, y: this._station.y + blended.y * FIGURE_RADIUS_PX };
-        this._pushTrail(nowMs);
+        this._placeOnFigure(nowMs, false);
       }
     } else if (this.phase === VoyagePhase.REENTRY) {
       this._phaseU = clamp(elapsed / REENTRY_SEC, 0, 1);
       const u = this._phaseU;
-      const ease = u * u * u; // a dive accelerates in
+      // Smoothstep: moves immediately from her last sky-writing pose (not a
+      // cubic hang at the station for half a second).
+      const ease = u * u * (3 - 2 * u);
+      const from = this._reentryFrom || this._station;
       this.p = {
-        x: lerp(this._station.x, this._diveTarget.x, ease),
-        y: lerp(this._station.y, this._diveTarget.y, ease),
+        x: lerp(from.x, this._diveTarget.x, ease),
+        y: lerp(from.y, this._diveTarget.y, ease),
       };
-      this.hue = lerp(this.hue, 20, u); // blends toward re-entry orange
-      this._pushTrail(nowMs);
+      this.hue = lerp(this._reentryHue0 ?? this.hue, 20, u); // blends toward re-entry orange
+      // No trail during reentry — the dive home used to paint a long straight.
       if (this._phaseU >= 1) {
         this.phase = VoyagePhase.IDLE;
         this.trail = [];
@@ -333,46 +455,167 @@ export class SkyVoyage {
     }
   }
 
-  _figureOffset(kind, localT) {
-    const RATE = 1.6;
+  /** Start the dive home from her live sky position (never snap to station). */
+  _beginReentry(nowMs, ensembleAnchor) {
+    this.phase = VoyagePhase.REENTRY;
+    this.phaseStartMs = nowMs;
+    this._reentryFrom = { x: this.p.x, y: this.p.y };
+    this._reentryHue0 = this.hue;
+    this._diveTarget = ensembleAnchor ? { ...ensembleAnchor } : { ...this._startPos };
+    this._pushTrail(nowMs, true);
+  }
+
+  /** Unit offset of a screen point relative to the deep-sky station. */
+  _offsetFromStation(p) {
+    return {
+      x: (p.x - this._station.x) / FIGURE_RADIUS_PX,
+      y: (p.y - this._station.y) / FIGURE_RADIUS_PX,
+    };
+  }
+
+  /** Clear per-figure motion debt so the next figure starts clean. */
+  _resetFigureMotion() {
+    this._kickSmooth = 0;
+    this._kickTarget = 0;
+    // Don't carry a mid-retune blend into a brand-new figure kind.
+    this._lissPrev = null;
+  }
+
+  /**
+   * Pick a time offset so the new figure's pose is as close as possible to
+   * `targetOff` (previous exit). Avoids a visible teleport of the mote
+   * without drawing a straight morph chord between different curves.
+   */
+  _phaseAlignFigure(recipeOrKind, targetOff) {
+    const recipe = typeof recipeOrKind === 'string'
+      ? defaultRecipe(recipeOrKind, this._figureIdx)
+      : (recipeOrKind || this._recipeAt(this._figureIdx));
+    if (!recipe || recipe.kind === 'thomas') return 0;
+    let bestT = 0, bestD = Infinity;
+    // Sample ~1.5 periods of the parametric rate used in _figureOffset.
+    for (let i = 0; i < 48; i++) {
+      const t = (i / 48) * 4.0;
+      const o = this._figureOffset(recipe, t);
+      const d = (o.x - targetOff.x) ** 2 + (o.y - targetOff.y) ** 2;
+      if (d < bestD) { bestD = d; bestT = t; }
+    }
+    return bestT;
+  }
+
+  /** Evaluate the current figure at the live clock and write p (+ trail). */
+  _placeOnFigure(nowMs, penUp) {
+    const recipe = this._recipeAt(this._figureIdx);
+    const localT = (nowMs - this._figureStartMs) / 1000 + this._kickSmooth + (this._figureTime0 || 0);
+    const raw = this._figureOffset(recipe, localT);
+    const rad = FIGURE_RADIUS_PX * (recipe.scale ?? 1);
+    this.p = {
+      x: this._station.x + raw.x * rad,
+      y: this._station.y + raw.y * rad,
+    };
+    this._pushTrail(nowMs, penUp);
+  }
+
+  /**
+   * Unit-disk (roughly) offset for a recipe at parametric time localT.
+   * Accepts a recipe object or a bare kind string (tests).
+   */
+  _figureOffset(recipeOrKind, localT) {
+    const recipe = typeof recipeOrKind === 'string'
+      ? defaultRecipe(recipeOrKind, this._figureIdx)
+      : (recipeOrKind || defaultRecipe('lissajous', 0));
+    const kind = recipe.kind;
+    const RATE = recipe.rate ?? 1.6;
+    const phase0 = recipe.phase ?? 0;
+
     if (kind === 'lissajous') {
       const [a, b] = this._currentLiss();
-      const cur = { x: Math.sin(a * RATE * localT), y: Math.sin(b * RATE * localT + Math.PI / 4) };
+      const delta = recipe.delta ?? Math.PI / 4;
+      const aspect = recipe.aspect ?? 1;
+      const cur = {
+        x: Math.sin(a * RATE * localT + phase0),
+        y: Math.sin(b * RATE * localT + delta + phase0) * aspect,
+      };
       // Mid-retune: evaluate BOTH tunings at the same parameter and blend --
       // the same morph trick used at figure switches, here for the melody's
       // pitch-class retargeting.
       if (this._lissPrev) {
-        const u = clamp(((this._nowMs ?? 0) - this._lissMorphStartMs) / (LISS_MORPH_SEC * 1000), 0, 1);
-        if (u >= 1) { this._lissPrev = null; return cur; }
+        const uRaw = clamp(((this._nowMs ?? 0) - this._lissMorphStartMs) / (LISS_MORPH_SEC * 1000), 0, 1);
+        if (uRaw >= 1) { this._lissPrev = null; return cur; }
+        const u = uRaw * uRaw * (3 - 2 * uRaw);
         const [pa, pb] = this._lissPrev;
-        const prev = { x: Math.sin(pa * RATE * localT), y: Math.sin(pb * RATE * localT + Math.PI / 4) };
+        const prev = {
+          x: Math.sin(pa * RATE * localT + phase0),
+          y: Math.sin(pb * RATE * localT + delta + phase0) * aspect,
+        };
         return { x: lerp(prev.x, cur.x, u), y: lerp(prev.y, cur.y, u) };
       }
       return cur;
     }
     if (kind === 'epicycle') {
-      const terms = [{ r: 1.0, k: 1 }, { r: 0.48, k: 3 }, { r: 0.2, k: 7 }];
-      const norm = terms.reduce((s, t) => s + t.r, 0);
+      const terms = recipe.terms || [{ r: 1.0, k: 1, s: 1 }, { r: 0.48, k: 3, s: 1 }, { r: 0.2, k: 7, s: 1 }];
+      const norm = terms.reduce((s, t) => s + t.r, 0) || 1;
       let x = 0, y = 0;
       for (const t of terms) {
-        const ang = t.k * RATE * localT;
+        const ang = t.s * t.k * RATE * localT + phase0;
         x += t.r * Math.cos(ang);
         y += t.r * Math.sin(ang);
       }
       return { x: x / norm, y: y / norm };
     }
     if (kind === 'superformula') {
-      const phi = localT * RATE;
-      const r = clamp(superformula(phi, 6, 6, 10, 10), 0.05, 2.2);
+      const phi = localT * RATE + phase0;
+      const m = recipe.m ?? 6;
+      const n1 = recipe.n1 ?? 1;
+      const n2 = recipe.n2 ?? 10;
+      const n3 = recipe.n3 ?? 10;
+      const r = clamp(superformula(phi, m, n1, n2, n3), 0.05, 2.2);
       return { x: (r / 1.2) * Math.cos(phi), y: (r / 1.2) * Math.sin(phi) };
+    }
+    if (kind === 'rose') {
+      const k = recipe.k ?? 4;
+      const phi = localT * RATE + phase0;
+      const wave = recipe.sinMode ? Math.sin(k * phi) : Math.cos(k * phi);
+      const rr = Math.abs(wave) * (1 - (recipe.offset ?? 0)) + (recipe.offset ?? 0);
+      return { x: rr * Math.cos(phi), y: rr * Math.sin(phi) };
+    }
+    if (kind === 'hypotrochoid') {
+      const R = recipe.R ?? 5;
+      const rIn = recipe.r ?? 3;
+      const d = recipe.d ?? 2;
+      const theta = localT * RATE * 0.55 + phase0;
+      const p = hypotrochoid(theta, R, rIn, d);
+      // Normalize by outer radius so the figure sits near unit scale.
+      const norm = Math.max(1e-6, Math.abs(R - rIn) + Math.abs(d));
+      return { x: p.x / norm, y: p.y / norm };
     }
     // 'thomas': read the persistent chaotic state -- update() integrates it
     // once per frame in the background regardless of which figure is shown.
-    return { x: clamp(this._attractor.x / 4.2, -1.3, 1.3), y: clamp(this._attractor.y / 4.2, -1.3, 1.3) };
+    const as = recipe.attractorScale ?? 4.2;
+    return {
+      x: clamp(this._attractor.x / as, -1.3, 1.3),
+      y: clamp(this._attractor.y / as, -1.3, 1.3),
+    };
   }
 
-  _pushTrail(nowMs) {
-    this.trail.push({ x: this.p.x, y: this.p.y, hue: this.hue, tMs: nowMs });
+  /**
+   * @param {number} nowMs
+   * @param {boolean} [forceGap] pen-up — next segment won't stroke from previous point
+   */
+  _pushTrail(nowMs, forceGap = false) {
+    const last = this.trail[this.trail.length - 1];
+    let gap = !!forceGap;
+    if (last && !gap) {
+      const d = Math.hypot(this.p.x - last.x, this.p.y - last.y);
+      // Frame-to-frame teleport (phase bug / huge kick): break the stroke.
+      if (d > TRAIL_GAP_PX) gap = true;
+    }
+    // Skip near-duplicate samples so dense steps don't explode the buffer
+    // without adding shape (still record gaps so the pen lifts).
+    if (last && !gap) {
+      const d = Math.hypot(this.p.x - last.x, this.p.y - last.y);
+      if (d < 0.35 && nowMs - last.tMs < 12) return;
+    }
+    this.trail.push({ x: this.p.x, y: this.p.y, hue: this.hue, tMs: nowMs, gap });
     const cutoff = nowMs - TRAIL_SEC * 1000;
     while (this.trail.length && this.trail[0].tMs < cutoff) this.trail.shift();
     if (this.trail.length > TRAIL_MAX_PTS) this.trail.splice(0, this.trail.length - TRAIL_MAX_PTS);
@@ -380,13 +623,21 @@ export class SkyVoyage {
 
   _stampConstellation(nowMs) {
     const figStart = this._figureStartMs;
-    const points = this.trail.filter((pt) => pt.tMs >= figStart).map((pt) => ({ x: pt.x, y: pt.y }));
+    // Only continuous (non-gap) samples from this figure — no pen-up jumps.
+    const points = [];
+    for (const pt of this.trail) {
+      if (pt.tMs < figStart) continue;
+      if (pt.gap && points.length > 0) break; // stop at next pen-up
+      points.push({ x: pt.x, y: pt.y });
+    }
     if (points.length < 3) return;
-    // Keep it a legible constellation, not the whole dense trail: a sparse
-    // sample of the figure's path.
+    // Dense enough that consecutive samples stay on the curve (no long chords).
     const sampled = [];
-    const step = Math.max(1, Math.floor(points.length / 12));
+    const step = Math.max(1, Math.floor(points.length / 28));
     for (let i = 0; i < points.length; i += step) sampled.push(points[i]);
+    if (sampled[sampled.length - 1] !== points[points.length - 1]) {
+      sampled.push(points[points.length - 1]);
+    }
     this.constellations.push({ points: sampled, hue: this.hue, bornMs: nowMs });
     if (this.constellations.length > CONSTELLATION_MAX) this.constellations.shift();
   }
@@ -405,4 +656,28 @@ export class SkyVoyage {
     }
     this.constellations = keep;
   }
+}
+
+/** Fallback recipe when tests inject bare kind strings into _figureOrder. */
+function defaultRecipe(kind, slot = 0) {
+  const base = { kind, rate: 1.6, scale: 1, phase: 0, slot };
+  if (kind === 'lissajous') {
+    const [a, b] = LISSAJOUS_FREQS[slot % LISSAJOUS_FREQS.length];
+    return { ...base, a, b, delta: Math.PI / 4, aspect: 1 };
+  }
+  if (kind === 'epicycle') {
+    return {
+      ...base,
+      terms: [
+        { r: 1.0, k: 1, s: 1 },
+        { r: 0.48, k: 3, s: 1 },
+        { r: 0.2, k: 7, s: 1 },
+      ],
+    };
+  }
+  if (kind === 'superformula') return { ...base, m: 6, n1: 1, n2: 10, n3: 10 };
+  if (kind === 'rose') return { ...base, k: 4, offset: 0.08, sinMode: false };
+  if (kind === 'hypotrochoid') return { ...base, R: 5, r: 3, d: 2.2 };
+  if (kind === 'thomas') return { ...base, attractorScale: 4.2 };
+  return { ...base, kind: 'lissajous', a: 3, b: 2, delta: Math.PI / 4, aspect: 1 };
 }

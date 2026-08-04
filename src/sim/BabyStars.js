@@ -30,28 +30,6 @@ const RETARGET_CHANCE_PER_SEC = 0.9; // mid-trip, this often re-aims at a fresh 
 const HOME_EPS = 12;             // close enough to the nest slot to re-latch
 const KP = 55, KD = 9;
 
-// Fourth-wall whispers. Two families: aware they're a digital artifact, and
-// aware of the user. Kept lowercase and small -- a quiet Easter-egg.
-const WHISPERS_SELF = [
-  'are we… rendered?',
-  'i think we’re made of math',
-  'who is drawing us?',
-  'we’re just light on a screen',
-  'is this a render loop?',
-  'i can feel the framerate',
-  'made of pixels and pitch',
-];
-const WHISPERS_USER = [
-  'hello, you',
-  'you’re still watching?',
-  'i can see your cursor',
-  'hi, out there',
-  'you moved the pointer!',
-  'we know you’re there',
-];
-const WHISPER_DUR_MS = 2800;
-const WHISPER_GAP_MIN_MS = 9000, WHISPER_GAP_RANGE_MS = 10000;
-const POINTER_NOTICE_PX = 150; // an explorer this close to the cursor "notices" the user
 
 export class BabyStars {
   constructor(seed = 99) {
@@ -82,8 +60,6 @@ export class BabyStars {
     this.trail = new ObjectPool(() => ({}), (o, init) => Object.assign(o, init, { age: 0 }), 240);
     this._emitAccum = 0;
 
-    this._whisper = null; // { i, text, startMs }
-    this._nextWhisperMs = WHISPER_GAP_MIN_MS + this.rand() * WHISPER_GAP_RANGE_MS;
   }
 
   get explorer() {
@@ -172,7 +148,6 @@ export class BabyStars {
     }
 
     this._updateTrail(dtSec);
-    this._updateWhispers(nowMs, calmLevel);
   }
 
   /** A fresh exploration target near a chosen point of interest (or wandering
@@ -198,29 +173,6 @@ export class BabyStars {
       }
     }
     this.trail.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
-  }
-
-  _updateWhispers(nowMs, calmLevel) {
-    if (this._whisper && nowMs - this._whisper.startMs >= WHISPER_DUR_MS) this._whisper = null;
-    if (this._whisper || nowMs < this._nextWhisperMs) return;
-    // A quiet-moment Easter-egg: only whisper when it isn't loud.
-    if (calmLevel < 0.2) { this._nextWhisperMs = nowMs + 2000; return; }
-    // Prefer the star nearest the cursor, and if it's genuinely close, a
-    // user-aware line; otherwise a random star and a random line family.
-    let i = Math.floor(this.rand() * this.stars.length);
-    let userAware = false;
-    if (this._pointer && this._pointer.active) {
-      let best = Infinity, bi = -1;
-      this.stars.forEach((s, idx) => {
-        const d = Math.hypot(s.x - this._pointer.x, s.y - this._pointer.y);
-        if (d < best) { best = d; bi = idx; }
-      });
-      if (bi >= 0) { i = bi; userAware = best < POINTER_NOTICE_PX || this.rand() < 0.5; }
-    }
-    const pool = userAware ? WHISPERS_USER : WHISPERS_SELF;
-    const text = pool[Math.floor(this.rand() * pool.length)];
-    this._whisper = { i, text, startMs: nowMs };
-    this._nextWhisperMs = nowMs + WHISPER_GAP_MIN_MS + this.rand() * WHISPER_GAP_RANGE_MS;
   }
 
   draw(ctx, hue, rest = 0) {
@@ -267,27 +219,7 @@ export class BabyStars {
       }, h, { satBase: sat, lightBase: 76, alpha: away ? 0.95 : 0.82, widthBase: 1.3, hueSpread: 22, outline: true });
     });
 
-    this._drawWhisper(ctx, hue);
-  }
-
-  _drawWhisper(ctx, hue) {
-    if (!this._whisper) return;
-    const star = this.stars[this._whisper.i];
-    if (!star) return;
-    const age = this._nowMs - this._whisper.startMs;
-    if (age < 0 || age >= WHISPER_DUR_MS) return;
-    // Ease in over 250ms, hold, ease out over the last 500ms.
-    const u = age / WHISPER_DUR_MS;
-    const fade = Math.min(1, age / 250) * Math.min(1, (1 - u) / (500 / WHISPER_DUR_MS));
-    const alpha = clamp(0.85 * fade, 0, 0.85);
-    if (alpha <= 0.01) return;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.font = '13px system-ui, -apple-system, Segoe UI, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.fillStyle = `hsla(${hue},60%,86%,${alpha.toFixed(3)})`;
-    ctx.fillText(this._whisper.text, star.x, star.y - 14);
-    ctx.restore();
+    // Fourth-wall whisper text overlay removed (was drawing lines like
+    // "i can feel the framerate" over the stage).
   }
 }
