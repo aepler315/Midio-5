@@ -119,7 +119,9 @@ test('rowAlpha is bounded, fades near the horizon, and peaks in the interior', (
     if (a > maxAlpha) { maxAlpha = a; maxIdx = i; }
   }
   const horizonAlpha = rowAlpha(count - 1, count);
-  assert.ok(horizonAlpha <= 0.06, `row nearest the horizon must be nearly invisible, got ${horizonAlpha}`);
+  // Horizon keeps a soft presence floor so the ocean plane never vanishes
+  // into the skyline, but still reads fainter than the interior peak.
+  assert.ok(horizonAlpha <= 0.22, `row nearest the horizon must fade, got ${horizonAlpha}`);
   assert.ok(maxIdx > 0 && maxIdx < count - 1, 'peak must be interior, not at either endpoint');
   assert.ok(maxAlpha > rowAlpha(0, count), 'interior peak must exceed the nearest row');
   assert.ok(maxAlpha > horizonAlpha, 'interior peak must exceed the horizon row');

@@ -50,7 +50,7 @@ test('Broshi trails behind Midio by default (TRAIL setpoint)', () => {
   const b = new Broshi(conductor, paramBus);
   const midio = { screenX: 200, groundY: 480, y: 0 };
   stepFor((t, dt) => b.update(t, dt, midio, null, null, 0, 480), 5000);
-  assert.ok(b.xRel < -100 && b.xRel > -180); // settled near d*=-140
+  assert.ok(b.xRel < -140 && b.xRel > -260); // settled near d*=-200 (wider trail)
 });
 
 test('Broshi SURGEs on the scripted 8-bar timer', () => {

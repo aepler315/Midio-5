@@ -165,9 +165,13 @@ export class Burrow {
     this.phase = BurrowPhase.DIG_IN;
     this.phaseStartMs = nowMs;
     this._nowMs = nowMs;
-    this._diveTarget = { ...fromPos };
-    this._groundY = groundY;
+    // Surface pose in WORLD space — never screen-space (that desyncs as
+    // Midio scrolls and causes a teleport on resurface).
     this._holeWorldX = holeWorldX; // where HE actually digs (not Midio's world anchor)
+    this._surfaceWorldX = holeWorldX;
+    this._diveTarget = { x: holeWorldX, y: groundY };
+    this._groundY = groundY;
+    this.p = { x: holeWorldX, y: groundY };
     this._dugInPulseFired = false;
     this._geoCanvas = null; // rebuilt lazily on first draw() from the fresh geometry below
     this._generateCave(worldX);
@@ -175,10 +179,18 @@ export class Burrow {
     return true;
   }
 
+  /** World-x he should reappear at when justSurfaced fires (Broshi spring sync). */
+  get surfaceWorldX() {
+    return Number.isFinite(this._surfaceWorldX) ? this._surfaceWorldX : this._holeWorldX;
+  }
+
   forceEnd(nowMs) {
     if (!this.active || this.phase === BurrowPhase.ERUPT) return;
     this.phase = BurrowPhase.ERUPT;
     this.phaseStartMs = nowMs;
+    // Pop where he is right now (world-x), not a stale dig-in screen point.
+    this._surfaceWorldX = Number.isFinite(this.p?.x) ? this.p.x : this._holeWorldX;
+    this._diveTarget = { x: this._surfaceWorldX, y: this._groundY ?? this.p?.y ?? 0 };
   }
 
   _noiseAt(gx, gy) {
@@ -296,6 +308,9 @@ export class Burrow {
       if (nowMs - this.phaseStartMs >= TUNNEL_SEC * 1000) {
         this.phase = BurrowPhase.ERUPT;
         this.phaseStartMs = nowMs;
+        // Erupt where he is underground — that world-x is the surface pop.
+        this._surfaceWorldX = this.p.x;
+        this._diveTarget = { x: this.p.x, y: this._groundY ?? this.p.y };
         if (groundField) {
           groundField.pulseAt(nowMs, this.p.x, 46, nowMs + 480);
           groundField.impulse(this.p.x, ERUPT_RIPPLE_STRENGTH, nowMs);
@@ -304,7 +319,12 @@ export class Burrow {
       }
     } else if (this.phase === BurrowPhase.ERUPT) {
       const u = clamp01((nowMs - this.phaseStartMs) / (ERUPT_SEC * 1000));
-      this.p = { x: lerp(this.p.x, this._diveTarget.x, u), y: lerp(this.p.y, this._diveTarget.y, u) };
+      // Ease out of the dirt at the SAME world-x (no lerp to a stale dig point).
+      const ease = u * u * (3 - 2 * u);
+      this.p = {
+        x: this._surfaceWorldX,
+        y: lerp(this.p.y, this._diveTarget.y, ease),
+      };
       if (u >= 1) {
         this.phase = BurrowPhase.IDLE;
         this.contours = [];

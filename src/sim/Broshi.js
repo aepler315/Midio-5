@@ -4,7 +4,7 @@
 // and a Rabid overlay gated on global track energy.
 import { Role } from '../core/NoteEvent.js';
 import { CHOREO_LEAD_MS, apexHopY, visualNow } from '../core/ChoreoClock.js';
-import { clamp, clamp01, smoothstep, mulberry32, lerp } from '../utils/math.js';
+import { clamp, clamp01, smoothstep, mulberry32, lerp, softRepel1D } from '../utils/math.js';
 import { spectralHue, easeHueDeg, SlashBurst } from '../render/stellar.js';
 import { RABID_WEIGHTS } from '../audio/bands.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
@@ -14,8 +14,8 @@ import { kickEnv } from '../world/MountainChoreo.js';
 import { ModalRing } from '../render/oscillators.js';
 import { Burrow } from './Burrow.js';
 
-const K = 26, C = 3.4; // spring stiffness (s^-2), damping (s^-1)
-const D_TRAIL = -140, D_SURGE = 120, D_PANIC = -220;
+const K = 22, C = 3.6; // slightly softer spring so he settles further out
+const D_TRAIL = -200, D_SURGE = 150, D_PANIC = -280;
 const PANIC_LOOKAHEAD_MS = 300;
 
 // Midio always lands at his own fixed screenX -- so the danger zone is a
@@ -24,8 +24,14 @@ const PANIC_LOOKAHEAD_MS = 300;
 // his actual RENDERED position out of it too (see update()'s renderX
 // guard) so no upstream signal (ensemble roam, a mid-transition spring
 // crossing) can ever put him where the hero comes down.
-const KEEPOUT_HALF = 70;
-const RENDER_KEEPOUT_HALF = 55;
+// Wider than before: the trio was stacking on top of each other.
+const KEEPOUT_HALF = 100;
+const RENDER_KEEPOUT_HALF = 85;
+// Cap relative speed so SURGE/PANIC target jumps never hard-teleport him.
+const MAX_XREL_SPEED = 380; // px/s
+const RENDER_KEEPOUT_TAU = 0.09; // soft ease out of Midio's landing column
+const SOFT_REPEL_MIDIO = 110;   // start easing away from Midio inside this
+const SOFT_REPEL_MIDASUS = 130; // and from Midasus when she flies near
 const TAKEOFF_CROUCH_MS = 140;
 const CHEER_TAIL_MS = 600;
 const ECHO_HOP_RISE_MS = 70;
@@ -473,6 +479,16 @@ export class Broshi {
     const cEff = C * (0.35 + 0.65 * (this.traction ?? 1));
     const accel = -K * (this.xRel - dStar) - cEff * this.xRelVel;
     this.xRelVel += accel * dtSec;
+    // Soft personal space: ease off Midio (and Midasus when she crowds the
+    // floor band) without a hard teleport — strength falls off quadratically.
+    this.xRelVel += softRepel1D(this.xRel, 0, SOFT_REPEL_MIDIO, 220) * dtSec;
+    if (ensemble && Number.isFinite(ensemble.midasusX)) {
+      const midasusRel = ensemble.midasusX - midio.screenX;
+      this.xRelVel += softRepel1D(this.xRel, midasusRel, SOFT_REPEL_MIDASUS, 160) * dtSec;
+    }
+    // Speed clamp — large dStar jumps (SURGE/PANIC) stay continuous motion.
+    if (this.xRelVel > MAX_XREL_SPEED) this.xRelVel = MAX_XREL_SPEED;
+    else if (this.xRelVel < -MAX_XREL_SPEED) this.xRelVel = -MAX_XREL_SPEED;
     this.xRel += this.xRelVel * dtSec;
     if (Math.abs(this.xRel) >= KEEPOUT_HALF) this._lastSide = Math.sign(this.xRel);
 
@@ -670,16 +686,20 @@ export class Broshi {
     const weave = WEAVE_PX * (1 - 0.5 * this._calmLevel) * Math.sin(this._ensPhase != null ? this._ensPhase : nowMs * 0.006)
       + 3.5 * this.rho * Math.sin(nowMs * 0.031);
     this.renderX = this.screenX + weave;
-    // Last-resort render guard: whatever the spring/weave/dart/keep-out
-    // math above produced, the DRAWN position never sits inside Midio's
-    // landing column. This is the one guarantee that actually can't be
-    // defeated by a transient (a mid-transition spring crossing, a weave
-    // peak) -- it clamps the final screen position, not an intermediate
-    // target.
+    // Soft keep-out on the drawn pose: ease out of Midio's landing column
+    // instead of hard-clamping (instant clamp was a visible teleport).
     const renderOff = this.renderX - midio.screenX;
     if (Math.abs(renderOff) < RENDER_KEEPOUT_HALF) {
-      const side = renderOff === 0 ? this._lastSide : Math.sign(renderOff);
-      this.renderX = midio.screenX + (side >= 0 ? RENDER_KEEPOUT_HALF : -RENDER_KEEPOUT_HALF);
+      const side = renderOff === 0 ? (this._lastSide < 0 ? -1 : 1) : Math.sign(renderOff);
+      const target = midio.screenX + side * RENDER_KEEPOUT_HALF;
+      const k = 1 - Math.exp(-dtSec / RENDER_KEEPOUT_TAU);
+      this.renderX += (target - this.renderX) * k;
+      // Keep spring state near the soft edge so we don't fight the ease next frame.
+      const softXRel = this.renderX - midio.screenX - weave;
+      if (Math.abs(softXRel) > Math.abs(this.xRel) * 0.5 || Math.abs(this.xRel) < RENDER_KEEPOUT_HALF) {
+        this.xRel = softXRel;
+        this.xRelVel *= 0.85;
+      }
     }
 
     // Midasus style: ease his spectral color toward his line's latest note,
@@ -702,6 +722,17 @@ export class Broshi {
     // walls' vibration drive.
     this.burrow.update(nowMs, dtSec, worldX, groundField, e1);
     if (this.burrow.justSurfaced) {
+      // Resurface at the hole he actually exited — spring state was free to
+      // wander during the tunnel and used to snap him across the stage.
+      const exitWorldX = this.burrow.surfaceWorldX ?? (worldX + this.xRel);
+      this.xRel = exitWorldX - worldX;
+      this.xRelVel = 0;
+      if (Math.abs(this.xRel) < KEEPOUT_HALF) {
+        this.xRel = (this._lastSide < 0 ? -1 : 1) * KEEPOUT_HALF;
+      }
+      this._lastSide = Math.sign(this.xRel) || this._lastSide;
+      this.screenX = midio.screenX + this.xRel;
+      this.renderX = this.screenX;
       // The pop-out: a real hop arc, a hard body ring, and a beat flash --
       // he bursts out of the ground, he doesn't fade back in. And always
       // with a celebratory flip: he's proud of the tunnel. (A reaction, not
@@ -836,36 +867,42 @@ export class Broshi {
       scaleX: DRAW_SCALE * this.squashX, scaleY: DRAW_SCALE * this.squashY,
     };
     const bodyHub = BROSHI_BODY.vertices[0];
-    const bodyMesh = meltMesh(
+    // Crisper raptor glyph: cap melt so the body stays a raptor, not soup.
+    const meltAmt = Math.min(this._melt || 0, 1.2);
+    const bodyMeshClean = meltMesh(
       displaceMeshRadial(BROSHI_BODY, bodyHub.x, bodyHub.y, this.modal),
-      bodyHub.x, bodyHub.y, this._nowMs / 1000, this._melt || 0, 2,
+      bodyHub.x, bodyHub.y, this._nowMs / 1000, meltAmt, 2,
     );
-    // Paler and brighter than the old raptor skin, with a wider spectral
-    // hue band -- and rabid heats him up (whiter/hotter) rather than reddening.
-    const glyphOpts = { satBase: 30 + 20 * this.rho, lightBase: 58 + 16 * this.rho, hueSpread: 26 };
+    const glyphOpts = {
+      satBase: 38 + 18 * this.rho,
+      lightBase: 54 + 14 * this.rho,
+      hueSpread: 18,
+      widthBase: 1.85,
+      widthGlow: 2.1,
+    };
 
-    // Stellar under-glow (the same trick Midasus's core uses): a blurred,
-    // larger, additive copy of the body drawn first so he catches light
-    // like an instrument instead of reading flat next to her.
-    const glowAlpha = 0.2 + 0.28 * this.rho + 0.3 * this.beatFlash;
+    // Modest under-glow — big halos washed him out next to Midio.
+    const glowAlpha = 0.12 + 0.18 * this.rho + 0.22 * this.beatFlash;
     const glowCenter = applyTransform(bodyHub, group);
-    drawGlowHalo(ctx, glowCenter.x, glowCenter.y, 32 * group.scaleX, 27 * group.scaleY, baseHue, glowAlpha, { sat: 34, light: 78 });
+    drawGlowHalo(ctx, glowCenter.x, glowCenter.y, 22 * group.scaleX, 18 * group.scaleY, baseHue, glowAlpha, { sat: 36, light: 72 });
 
-    // Ink contour under the crisp strokes (outline): the raptor's
-    // silhouette stays sharp against his own under-glow and comet trail.
-    drawMeshPart(ctx, bodyMesh, this._bodyRest, group, baseHue, { ...glyphOpts, outline: true });
-    drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue, { ...glyphOpts, outline: true });
+    // Ink contour under the crisp strokes: silhouette stays sharp.
+    drawMeshPart(ctx, bodyMeshClean, this._bodyRest, group, baseHue, { ...glyphOpts, outline: { widthAdd: 2.4 } });
+    drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue, { ...glyphOpts, outline: { widthAdd: 2.2 } });
     if (this.beatFlash > 0.03) {
-      // Kick ignition: the whole glyph flashes additively with the beat.
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      drawMeshPart(ctx, bodyMesh, this._bodyRest, group, baseHue, { alpha: 0.6 * this.beatFlash, satBase: 65, lightBase: 72, widthBase: 2.2 });
+      drawMeshPart(ctx, bodyMeshClean, this._bodyRest, group, baseHue, {
+        alpha: 0.45 * this.beatFlash, satBase: 60, lightBase: 70, widthBase: 2.0,
+      });
       ctx.restore();
     }
 
     const jawTip = BROSHI_JAW.vertices[1];
     const jawMesh = { vertices: [BROSHI_JAW.vertices[0], { x: jawTip.x, y: jawTip.y + this.jawOpen * 10 }], edges: BROSHI_JAW.edges };
-    drawMeshPart(ctx, jawMesh, this._jawRest, group, baseHue + 15, { satBase: 22, lightBase: 62, widthBase: 1.2 });
+    drawMeshPart(ctx, jawMesh, this._jawRest, group, baseHue + 12, {
+      satBase: 28, lightBase: 58, widthBase: 1.5, outline: true,
+    });
 
     const tailRad = (this.tailAngle * Math.PI) / 180;
     const [tailBase, tailTip0] = BROSHI_TAIL.vertices;
@@ -875,13 +912,15 @@ export class Broshi {
       y: tailBase.y + tdx * Math.sin(tailRad) + tdy * Math.cos(tailRad),
     };
     const tailMesh = { vertices: [tailBase, tailTip], edges: BROSHI_TAIL.edges };
-    drawMeshPart(ctx, tailMesh, this._tailRest, group, baseHue - 10, { satBase: 24, lightBase: 48, widthBase: 1.2 });
+    drawMeshPart(ctx, tailMesh, this._tailRest, group, baseHue - 8, {
+      satBase: 30, lightBase: 50, widthBase: 1.6, outline: true,
+    });
 
-    // Rabid lights the eye white-hot (high lightness on his own spectral
-    // hue) rather than switching it to a predatory red.
+    // Rabid lights the eye white-hot rather than switching to predatory red.
     const eyeLit = this.rho > 0.3;
     drawMeshPart(ctx, BROSHI_EYE, this._eyeRest, group, baseHue, {
-      satBase: 30, lightBase: eyeLit ? 92 : 15, alpha: eyeLit ? 0.6 + 0.4 * this.rho : 0.9,
+      satBase: 28, lightBase: eyeLit ? 90 : 22, alpha: eyeLit ? 0.55 + 0.4 * this.rho : 0.95,
+      widthBase: 1.4,
     });
 
     ctx.save();

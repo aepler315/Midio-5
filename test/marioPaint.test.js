@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ComposerStrip, iconFor, popBump, stratifyCap, STAFF_ROWS, diatonicIndex, estimateTonicPc,
+  buildSongMountain, formLetter,
 } from '../src/render/ComposerStrip.js';
 import { RainbowBrush } from '../src/render/RainbowBrush.js';
 import { ImpactFX } from '../src/sim/ImpactFX.js';
@@ -12,51 +13,57 @@ function note(tMs, role, pitch = 60, vel = 0.7, kick = false) {
 }
 
 const BAR_GRID = Array.from({ length: 16 }, (_, i) => ({ ms: i * 2000 }));
+const STAGE = { width: 1280, height: 720 };
 
-test('ComposerStrip pages span four bars and bucket notes by time', () => {
+test('ComposerStrip builds a full-song mountain and reports playhead frac', () => {
   const timeline = [note(100, Role.MELODY), note(7900, Role.BASS), note(8100, Role.PAD)];
   const strip = new ComposerStrip(timeline, BAR_GRID, 32000);
-  assert.equal(strip.pageMs, 8000);
-  assert.equal(strip.pages[0].length, 2);
-  assert.equal(strip.pages[1].length, 1);
+  assert.equal(strip.durationMs, 32000);
+  assert.ok(strip.mountain.length >= 8);
   assert.equal(strip.pageIndexAt(7999), 0);
   assert.equal(strip.pageIndexAt(8000), 1);
-  assert.ok(Math.abs(strip.playheadFrac(4000) - 0.5) < 1e-9);
+  assert.ok(Math.abs(strip.playheadFrac(16000) - 0.5) < 1e-9);
+  assert.ok(Math.abs(strip.playheadFrac(0)) < 1e-9);
+  assert.ok(Math.abs(strip.playheadFrac(32000) - 1) < 1e-9);
 });
 
-test('ComposerStrip caps dense pages at 64 icons, keeping the loudest, back in time order', () => {
+test('buildSongMountain normalizes to 0..1 and peaks where energy is densest', () => {
   const timeline = [];
-  for (let i = 0; i < 200; i++) timeline.push(note(i * 30, Role.MELODY, 60 + (i % 12), (i % 100) / 100));
-  const strip = new ComposerStrip(timeline, BAR_GRID, 32000);
-  const page = strip.pages[0];
-  assert.equal(page.length, 64);
-  for (let i = 1; i < page.length; i++) assert.ok(page[i].tMs >= page[i - 1].tMs, 'page must stay in time order');
-  // Everything kept should be at least as loud as the loudest discarded... spot-check: no kept note below vel 0.15.
-  for (const evt of page) assert.ok(evt.vel >= 0.15);
-});
-
-test('a dense uniform-velocity page keeps notes across the WHOLE viewport, not just its first half', () => {
-  // Regression: velocity rescaling clamps many real MIDIs to vel=1.0 across
-  // the board; the old loudest-first cap (stable sort) then kept the first
-  // 64 notes IN TIME ORDER, so icons only ever appeared at the start of
-  // each page — the "strip only shows notes in its first half" bug.
-  const timeline = [];
-  for (let i = 0; i < 300; i++) timeline.push(note(i * 26, Role.MELODY, 60 + (i % 12), 1.0));
-  const strip = new ComposerStrip(timeline, BAR_GRID, 32000); // pageMs 8000
-  const page = strip.pages[0];
-  assert.equal(page.length, 64);
-  const fx = page.map((e) => e.tMs / strip.pageMs);
-  assert.ok(Math.max(...fx) > 0.85, `latest kept icon at fx=${Math.max(...fx)} — right side empty`);
-  for (let q = 0; q < 4; q++) {
-    const inQuarter = fx.filter((f) => f >= q / 4 && f < (q + 1) / 4).length;
-    assert.ok(inQuarter >= 8, `page quarter ${q} nearly empty (${inQuarter} icons)`);
+  // Dense cluster mid-song
+  for (let i = 0; i < 40; i++) timeline.push(note(16000 + i * 20, Role.MELODY, 60, 1));
+  // Sparse notes elsewhere
+  timeline.push(note(1000, Role.MELODY, 60, 0.3));
+  timeline.push(note(30000, Role.MELODY, 60, 0.3));
+  const h = buildSongMountain(timeline, 32000, 64);
+  assert.equal(h.length, 64);
+  let max = 0, maxI = 0;
+  for (let i = 0; i < h.length; i++) {
+    assert.ok(h[i] >= 0 && h[i] <= 1);
+    if (h[i] > max) { max = h[i]; maxI = i; }
   }
+  assert.ok(max > 0.5, 'peak should be strong');
+  // Mid-song cluster around sample 32
+  assert.ok(maxI > 20 && maxI < 45, `peak index ${maxI} should sit mid-song`);
+});
+
+test('buildSongMountain empty timeline still returns a soft silhouette', () => {
+  const h = buildSongMountain([], 10000, 32);
+  assert.equal(h.length, 32);
+  for (const v of h) assert.ok(v > 0 && v < 0.5);
+});
+
+test('formLetter maps 0,1,25,26 → A,B,Z,AA', () => {
+  assert.equal(formLetter(0), 'A');
+  assert.equal(formLetter(1), 'B');
+  assert.equal(formLetter(25), 'Z');
+  assert.equal(formLetter(26), 'AA');
+  assert.equal(formLetter(-1), '?');
 });
 
 test('stratifyCap still prefers the loudest notes within each time slot', () => {
   const events = [];
   for (let i = 0; i < 128; i++) {
-    events.push(note(i * 62.5, Role.MELODY, 60, i % 2 ? 0.9 : 0.3)); // loud/soft alternating
+    events.push(note(i * 62.5, Role.MELODY, 60, i % 2 ? 0.9 : 0.3));
   }
   const kept = stratifyCap(events, 32, 0, 8000);
   assert.equal(kept.length, 32);
@@ -64,42 +71,67 @@ test('stratifyCap still prefers the loudest notes within each time slot', () => 
   assert.ok(loudShare >= 0.9, `loud notes should dominate the kept set, got ${loudShare}`);
 });
 
-test('ComposerStrip staff rows quantize pitch: higher pitch sits higher on the staff', () => {
-  const timeline = [note(0, Role.MELODY, 50), note(10, Role.MELODY, 60), note(20, Role.MELODY, 70)];
-  const strip = new ComposerStrip(timeline, BAR_GRID, 32000);
-  const lo = strip.staffRow(50), mid = strip.staffRow(60), hi = strip.staffRow(70);
-  assert.ok(hi <= mid && mid <= lo, `expected descending rows, got ${hi}, ${mid}, ${lo}`);
-  for (const r of [lo, mid, hi]) assert.ok(Number.isInteger(r) && r >= 0 && r <= STAFF_ROWS - 1);
+test('hitTest maps strip x to song time and section index', () => {
+  const sections = [
+    { startMs: 0, endMs: 10000, label: 0, profile: 'meadow', transition: 'fade' },
+    { startMs: 10000, endMs: 32000, label: 1, profile: 'alpine', transition: 'cut', kind: 'chorus' },
+  ];
+  const strip = new ComposerStrip([note(0, Role.MELODY)], BAR_GRID, 32000, [], sections);
+  const L = strip.layout(STAGE);
+  // Left edge of strip → near t=0, section 0
+  const left = strip.hitTest(L.x0 + 8, L.y0 + L.h / 2, STAGE);
+  assert.equal(left.type, 'strip');
+  assert.ok(left.tMs < 2000, `left tMs=${left.tMs}`);
+  assert.equal(left.sectionIndex, 0);
+  // Past midpoint → second section
+  const mid = strip.hitTest(L.x0 + L.w * 0.75, L.y0 + L.h / 2, STAGE);
+  assert.equal(mid.type, 'strip');
+  assert.ok(mid.tMs > 20000, `mid tMs=${mid.tMs}`);
+  assert.equal(mid.sectionIndex, 1);
+  // Above strip, no selection → null
+  assert.equal(strip.hitTest(L.x0 + 10, L.y0 - 40, STAGE), null);
+});
+
+test('toggleLabels and selectedSection are independent', () => {
+  const sections = [
+    { startMs: 0, endMs: 16000, label: 0, profile: 'meadow', transition: 'fade' },
+    { startMs: 16000, endMs: 32000, label: 1, profile: 'ocean', transition: 'shutter' },
+  ];
+  const strip = new ComposerStrip([], BAR_GRID, 32000, [], sections);
+  assert.equal(strip.showLabels, false);
+  assert.equal(strip.toggleLabels(), true);
+  assert.equal(strip.showLabels, true);
+  strip.selectedSection = 1;
+  assert.equal(strip.toggleLabels(), false);
+  // Labels off does not clear a debug section selection.
+  assert.equal(strip.selectedSection, 1);
 });
 
 test('diatonicIndex: ascending pitch never decreases in diatonic step (C4 < D4 < E4)', () => {
   const tonicPc = 0; // C
-  const c4 = diatonicIndex(60, tonicPc); // C4
-  const d4 = diatonicIndex(62, tonicPc); // D4
-  const e4 = diatonicIndex(64, tonicPc); // E4
+  const c4 = diatonicIndex(60, tonicPc);
+  const d4 = diatonicIndex(62, tonicPc);
+  const e4 = diatonicIndex(64, tonicPc);
   assert.ok(c4.step < d4.step && d4.step < e4.step, `expected ascending steps, got ${c4.step}, ${d4.step}, ${e4.step}`);
   assert.equal(c4.accidental, false);
   assert.equal(d4.accidental, false);
   assert.equal(e4.accidental, false);
-  // A full octave up is exactly 7 diatonic steps.
   const c5 = diatonicIndex(72, tonicPc);
   assert.equal(c5.step - c4.step, 7);
 });
 
 test('diatonicIndex: accidentals flagged relative to the tonic\'s major scale', () => {
-  const tonicPc = 0; // C major: C D E F G A B natural, C#/D#/F#/G#/A# accidental
   assert.equal(diatonicIndex(60, 0).accidental, false); // C
   assert.equal(diatonicIndex(61, 0).accidental, true);  // C#
   assert.equal(diatonicIndex(62, 0).accidental, false); // D
   assert.equal(diatonicIndex(65, 0).accidental, false); // F
   assert.equal(diatonicIndex(66, 0).accidental, true);  // F#
-  void tonicPc;
 });
 
 test('diatonicIndex: step is monotone non-decreasing across a full chromatic run', () => {
   let prevStep = -Infinity;
   for (let p = 40; p <= 100; p++) {
-    const { step } = diatonicIndex(p, 3); // arbitrary tonic (D#/Eb)
+    const { step } = diatonicIndex(p, 3);
     assert.ok(step >= prevStep, `step decreased at pitch ${p}`);
     prevStep = step;
   }
@@ -108,35 +140,12 @@ test('diatonicIndex: step is monotone non-decreasing across a full chromatic run
 test('estimateTonicPc: weighted by duration*velocity, ignores RHYTHM, empty -> C', () => {
   assert.equal(estimateTonicPc([]), 0);
   assert.equal(estimateTonicPc([{ role: Role.RHYTHM, pitch: 36, durMs: 90, vel: 1 }]), 0);
-  // A long, loud C should dominate a handful of short, quiet others.
   const timeline = [
-    { role: Role.MELODY, pitch: 60, durMs: 4000, vel: 0.9 }, // C, dominant
-    { role: Role.MELODY, pitch: 67, durMs: 50, vel: 0.2 },   // G, brief
-    { role: Role.RHYTHM, pitch: 42, durMs: 4000, vel: 1 },   // percussion, must be ignored
+    { role: Role.MELODY, pitch: 60, durMs: 4000, vel: 0.9 },
+    { role: Role.MELODY, pitch: 67, durMs: 50, vel: 0.2 },
+    { role: Role.RHYTHM, pitch: 42, durMs: 4000, vel: 1 },
   ];
   assert.equal(estimateTonicPc(timeline), 0);
-});
-
-test('rowInfo: ledger flag fires only outside the drawn staff', () => {
-  const timeline = [note(0, Role.MELODY, 60), note(10, Role.MELODY, 62), note(20, Role.MELODY, 64)];
-  const strip = new ComposerStrip(timeline, BAR_GRID, 32000);
-  const near = strip.rowInfo(60);
-  assert.equal(near.ledger, false);
-  const farAbove = strip.rowInfo(60 + 12 * 6); // six octaves up
-  assert.equal(farAbove.ledger, true);
-  assert.ok(farAbove.row >= 0 && farAbove.row <= STAFF_ROWS - 1, 'row must still clamp into range');
-});
-
-test('RHYTHM notes are excluded from the pitch percentile clip', () => {
-  const timeline = [
-    note(0, Role.MELODY, 60), note(10, Role.MELODY, 62), note(20, Role.MELODY, 64),
-    note(30, Role.RHYTHM, 20, 0.8, true), // absurd low GM pitch, must not skew the staff
-  ];
-  const strip = new ComposerStrip(timeline, BAR_GRID, 32000);
-  const melodicRows = [60, 62, 64].map((p) => strip.staffRow(p));
-  for (const r of melodicRows) assert.ok(r >= 0 && r <= STAFF_ROWS - 1);
-  // The rhythm note's absurd pitch must not have widened pMin/pMax toward it.
-  assert.ok(strip.sMid > diatonicIndex(20, strip.tonicPc).step);
 });
 
 test('ComposerStrip constructor stays DOM-free', () => {
@@ -165,16 +174,13 @@ test('RainbowBrush paints only while airborne, respects stroke spacing, caps and
   brush.update(0, false, 0, 400);
   assert.equal(brush.dabs.length, 0);
 
-  // Airborne sweep: dabs at ~9px spacing along the stroke.
   for (let i = 0; i <= 90; i++) brush.update(i * 10, true, i * 3, 400 - i);
   const afterSweep = brush.dabs.length;
   assert.ok(afterSweep > 10 && afterSweep < 91, `spacing should thin the stroke, got ${afterSweep}`);
 
-  // Hovering in place adds nothing.
   for (let i = 0; i < 50; i++) brush.update(1000 + i, true, 270, 310);
   assert.equal(brush.dabs.length, afterSweep);
 
-  // Cap: an endless stroke can't exceed the ring buffer.
   for (let i = 0; i < 5000; i++) brush.update(2000 + i, true, 300 + i * 10, 400);
   assert.ok(brush.dabs.length <= 320);
 });
@@ -187,6 +193,11 @@ test('paint splats spawn chunky blobs and age out through the pool', () => {
   assert.ok(splat.blobs.length >= 6);
   for (const b of splat.blobs) assert.ok(Number.isFinite(b.dx + b.dy + b.s));
 
-  for (let i = 0; i < 400; i++) fx.step(1 / 120); // 3.3s > 2.8s life
+  for (let i = 0; i < 400; i++) fx.step(1 / 120);
   assert.equal(fx.splats.active.length, 0);
+});
+
+// Keep STAFF_ROWS exported for any remaining consumers.
+test('STAFF_ROWS is a positive odd staff height', () => {
+  assert.ok(STAFF_ROWS >= 5 && STAFF_ROWS % 2 === 1);
 });

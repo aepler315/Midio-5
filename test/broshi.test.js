@@ -229,14 +229,15 @@ test('draw() before any update() renders at finite coordinates instead of throwi
 // --- Keep-out: Midio must never land on Broshi ---
 
 test('keepOutTarget: pushes a target inside the band to the last-held side, leaves clear targets alone', () => {
-  assert.equal(keepOutTarget(0, -1), -70);
-  assert.equal(keepOutTarget(0, 1), 70);
-  assert.equal(keepOutTarget(40, -1), -70, 'inside the band snaps to lastSide regardless of the target\'s own sign');
-  assert.equal(keepOutTarget(-40, 1), 70);
+  // Default half is 100 (wider personal space around Midio's landing column).
+  assert.equal(keepOutTarget(0, -1), -100);
+  assert.equal(keepOutTarget(0, 1), 100);
+  assert.equal(keepOutTarget(40, -1), -100, 'inside the band snaps to lastSide regardless of the target\'s own sign');
+  assert.equal(keepOutTarget(-40, 1), 100);
   assert.equal(keepOutTarget(120, -1), 120, 'clear of the band, passes through unchanged');
   assert.equal(keepOutTarget(-140, 1), -140);
-  assert.equal(keepOutTarget(70, -1), 70, 'exactly at the edge counts as clear');
-  assert.equal(keepOutTarget(69.9, 1), 70);
+  assert.equal(keepOutTarget(100, -1), 100, 'exactly at the edge counts as clear');
+  assert.equal(keepOutTarget(99.9, 1), 100);
 });
 
 test('cheerBumpY produces two bounded bumps and is zero outside them', () => {

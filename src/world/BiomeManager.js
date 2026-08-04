@@ -11,7 +11,7 @@ import { KuramotoSwarm } from './KuramotoSwarm.js';
 import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
-import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul } from './MountainChoreo.js';
+import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul, mountainStripDrawHeight, MOUNTAIN_SKY_HEADROOM_FRAC } from './MountainChoreo.js';
 import { ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, geoCrestOffset } from './GeoCrest.js';
 import {
   seaLineY, oceanRowYs, waveRows, rowAlpha, OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC,
@@ -39,6 +39,7 @@ import { MeteorShowerFX } from './MeteorShower.js';
 import { LightRig } from './LightRig.js';
 import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS } from './DepthHaze.js';
 import { PERSONALITY } from './BiomePersonality.js';
+import { isRendered, styleDials } from '../render/VisualStyle.js';
 import { Murmuration } from './Murmuration.js';
 import { Atmosphere } from './Atmosphere.js';
 import { CodaDirector } from '../sim/CodaDirector.js';
@@ -70,8 +71,11 @@ const FORM_HUE_TAU_SEC = 1.5; // section changes glide their hue, never snap
 // a chorus/bridge reads louder, an intro/outro settles. Unrecognized/absent
 // kind (no lyric data at all) multiplies by exactly 1 -- a strict no-op.
 const KIND_BUDGET_MUL = { chorus: 1.15, bridge: 1.3, instrumental: 1.1, intro: 0.9, outro: 0.85, verse: 1.0 };
-const OCEAN_WATER_BLUE = '#55c8f0'; // always reads as water, blended into the biome palette
-const NIGHT_SKY_COLOR = '#0a0c1c'; // sky lerps toward this as the day/night cycle's `night` rises
+const OCEAN_WATER_BLUE = '#3ec8f5'; // vivid teal-cyan sea (ocean vibe first)
+const OCEAN_DEEP_BLUE = '#0d3a5c'; // abyssal under-tint
+const NIGHT_SKY_COLOR = '#060814'; // near-black space, slightly cool
+const SPACE_NEBULA_A = '#1a2850'; // deep indigo wash
+const SPACE_NEBULA_B = '#2a1860'; // violet space dust
 const MOON_COLOR = '#dfe6f2';
 const MOON_HALO_COLOR = '#aab8d8';
 
@@ -106,12 +110,38 @@ export class BiomeManager {
     this.hypeBoost = 1; // drop-surge multiplier from the HypeDirector
     this.mandalaScaleMul = 1; // swells while Midasus dances near the celestial
     this._progress = 0;
+    // Safe defaults before the first update() so a zero-dt first frame
+    // (draw before step) never feeds NaN into canvas gradients and kills rAF.
+    this.calmLevel = 0;
+    this._hazeMul = 1;
+    this._ribbonScaleMul = 1;
     this.lerpCache = new LerpCache();
     this.tSec = 0;
     this._starSeed = mulberry32(9001);
-    this.stars = Array.from({ length: 40 }, () => ({
-      x: this._starSeed() * this.w, y: this._starSeed() * this.h * 0.6, phase: this._starSeed() * Math.PI * 2,
-    }));
+    // Layered starfield: dense background motes + brighter mid + a few
+    // "hero" stars. Always present; night and starTwinkle only amplify them.
+    // Keep hero glow count small — radial gradients every frame are expensive.
+    this.stars = Array.from({ length: 96 }, () => {
+      const layer = this._starSeed() < 0.62 ? 0 : this._starSeed() < 0.9 ? 1 : 2;
+      const warm = this._starSeed();
+      return {
+        x: this._starSeed() * this.w,
+        y: this._starSeed() * this.h * (0.55 + 0.12 * layer),
+        phase: this._starSeed() * Math.PI * 2,
+        size: layer === 0 ? 0.8 + this._starSeed() * 0.9
+          : layer === 1 ? 1.15 + this._starSeed() * 1.2
+          : 1.8 + this._starSeed() * 1.8,
+        bright: layer === 0 ? 0.4 + this._starSeed() * 0.35
+          : layer === 1 ? 0.55 + this._starSeed() * 0.35
+          : 0.78 + this._starSeed() * 0.22,
+        layer,
+        // Bias cool/space tints (cyan-indigo) over warm gold.
+        hue: warm < 0.28 ? 195 + this._starSeed() * 55
+          : warm < 0.36 ? 265 + this._starSeed() * 30
+          : warm < 0.42 ? 40 + this._starSeed() * 20
+          : 0,
+      };
+    });
     this._glitchTimer = 2 + this._starSeed() * 3;
     this._glitchActiveMs = 0;
     this._scanlineY = 0;
@@ -123,11 +153,10 @@ export class BiomeManager {
     // positions -- a distinct silhouette vocabulary, "relevant" to the same
     // music without repeating either sibling equalizer's look.
     this._geoFeatures = assignBandFeatures(hashSeed(`${songSeed}:geocrest`));
-    // Far ocean: an abstract field of wave-contour rows receding toward a
-    // high horizon, seen through/behind the mountain silhouettes -- an
-    // infinite flat plane of water in perspective, not a solid band (a
+    // Far ocean: denser row stack for a readable water plane between ridges.
+    // Infinite flat plane of water in perspective, not a solid band (a
     // solid band at ridge height is fully occluded by the opaque ridges).
-    this._oceanRows = waveRows(hashSeed(`${songSeed}:ocean`), 20);
+    this._oceanRows = waveRows(hashSeed(`${songSeed}:ocean`), 28);
 
     // The mountains dance: a groove level (smoothed global energy) drives a
     // traveling ridge wave through every range, and each kick sends a
@@ -144,27 +173,10 @@ export class BiomeManager {
       L5: new RidgeRunners(hashSeed(`${songSeed}:runners:L5`)),
     };
 
+    this.songSeed = songSeed;
+    this.visualStyle = 'rendered'; // set via setVisualStyle from Simulation / main
     this.strips = new Map(); // biomeName -> { L2, L3, L4, L5 }
-    for (const b of this.profiles) {
-      const seed = hashSeed(b.name);
-      const strips = {
-        L2: generateSilhouette({ seed: seed + 1, octaves: 1, amplitude: 0.47, baseline: 0.42, color: b.silhouette }),
-        L3: generateSilhouette({ seed: seed + 2, octaves: 2, amplitude: 0.60, baseline: 0.48, color: b.silhouette }),
-        // No baked edgeLight here: the old baked stroke tore at every
-        // dance-column seam (_drawDancingStrip blits in DANCE_COL_W slices,
-        // each at its own bounce height). _drawCrest below strokes the same
-        // neon line LIVE, continuous across every seam, and turns L4's into
-        // the geological equalizer (GeoCrest.js).
-        L4: generateSilhouette({ seed: seed + 3, octaves: 3, amplitude: 0.72, baseline: 0.62, color: b.silhouette }),
-        L5: generateSilhouette({ seed: seed + 4, octaves: 2, amplitude: 0.46, baseline: 0.82, color: b.silhouette }),
-      };
-      // Landmarks: per-song placements (songSeed), baked into the strips,
-      // each rooted on the noise ridge at its own x. Unknown biome names
-      // (custom MIDI profiles) no-op inside decorateStrip — safe.
-      decorateStrip(strips.L4, b.name, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
-      decorateStrip(strips.L5, b.name, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
-      this.strips.set(b.name, strips);
-    }
+    this._rebuildStrips();
 
     this.fields = new Map(); // biomeName -> ParticleField
     for (const b of this.profiles) this.fields.set(b.name, new ParticleField(b.particles, canvasWidth, canvasHeight, hashSeed(b.name + 'p')));
@@ -460,6 +472,52 @@ export class BiomeManager {
     // otherwise its taller peaks and particles ghost through forever.
     if (t >= 0.999) return { from: sec.profile, to: sec.profile, t: 1 };
     return { from: this.sections[idx - 1].profile, to: sec.profile, t };
+  }
+
+  /**
+   * Global presentation mode (classic SMW-flat vs rendered DKC-CGI).
+   * Rebuilds silhouette strips when shade mode changes.
+   */
+  setVisualStyle(style) {
+    const next = style === 'classic' ? 'classic' : 'rendered';
+    if (this.visualStyle === next) return;
+    this.visualStyle = next;
+    this._rebuildStrips();
+  }
+
+  _rebuildStrips() {
+    const songSeed = this.songSeed ?? 1;
+    // Always soft CGI silhouettes (flat cutouts lost the DKC mass).
+    const shadeMode = 'rendered';
+    this.strips = new Map();
+    for (const b of this.profiles) {
+      const seed = hashSeed(b.name);
+      const strips = {
+        // Far ranges: alpine massifs (Denali / Rainier / Shasta silhouettes).
+        // Taller strip + moderate amp so peaks fit without clipping into mesas;
+        // generateSilhouette also rescales if a summit still pokes past headroom.
+        L2: generateSilhouette({
+          seed: seed + 1, height: 400, octaves: 4, amplitude: 0.52, baseline: 0.42,
+          color: b.silhouette, shadeMode, profile: 'alpine',
+        }),
+        L3: generateSilhouette({
+          seed: seed + 2, height: 360, octaves: 3, amplitude: 0.48, baseline: 0.48,
+          color: b.silhouette, shadeMode, profile: 'alpine',
+        }),
+        // Nearer hills stay rolling foothills.
+        L4: generateSilhouette({
+          seed: seed + 3, octaves: 3, amplitude: 0.72, baseline: 0.62,
+          color: b.silhouette, shadeMode, profile: 'rolling',
+        }),
+        L5: generateSilhouette({
+          seed: seed + 4, octaves: 2, amplitude: 0.46, baseline: 0.82,
+          color: b.silhouette, shadeMode, profile: 'rolling',
+        }),
+      };
+      decorateStrip(strips.L4, b.name, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
+      decorateStrip(strips.L5, b.name, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
+      this.strips.set(b.name, strips);
+    }
   }
 
   _profile(name) {
@@ -814,20 +872,44 @@ export class BiomeManager {
     // Spirograph resonance mandala, centered on the celestial body so it
     // reads as the sun/moon itself resonating with the track.
     const mandalaColor = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
-    this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * celestialYFrac, canvas.height * 0.30 * this.mandalaScaleMul, mandalaColor);
+    // Hybrid sky wire: mandala / ribbon / weaver scale with skyWireAlpha
+    // (Soft ~0.38, Neon ~0.72) so geometry feels musical without striping.
+    const skyA = styleDials(this.visualStyle).skyWireAlpha ?? 1;
+    if (skyA > 0.02) {
+      const prevM = this.mandala.intensity;
+      this.mandala.intensity = prevM * skyA;
+      this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * celestialYFrac, canvas.height * 0.30 * this.mandalaScaleMul, mandalaColor);
+      this.mandala.intensity = prevM;
+    }
     // Phenomena layer, deep sky: cymatic dust settling into Chladni
     // figures, and the chaos ribbon opposite the celestial for balance.
     if (phenomenaFull) this.cymatics.draw(ctx, canvas, mandalaColor);
-    this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075 * (this._ribbonScaleMul || 1), mandalaColor);
+    {
+      const ribbonA = Math.max(0.18, skyA);
+      const prevR = this.ribbon.intensity;
+      this.ribbon.intensity = prevR * ribbonA;
+      this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075 * (this._ribbonScaleMul || 1), mandalaColor);
+      this.ribbon.intensity = prevR;
+    }
     this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
-    if (phenomenaFull) this.spaceRidge.draw(ctx, canvas, worldX, this._rotated(rotateHueHex(mandalaColor, 45)), this.tSec, this.reducedFlash);
+    // Space ridge: orbital jewelry — faint in Soft, present in Neon.
+    {
+      const spaceCol = this._rotated(rotateHueHex(mandalaColor, 45));
+      const ridgeA = styleDials(this.visualStyle).spaceRidgeAlpha ?? 1;
+      if (ridgeA > 0.02) {
+        ctx.save();
+        ctx.globalAlpha = ridgeA * (phenomenaFull ? 1 : 0.4);
+        this.spaceRidge.draw(ctx, canvas, worldX, spaceCol, this.tSec, this.reducedFlash);
+        ctx.restore();
+      }
+    }
     this.drawDeepSky(ctx, skyVoyage); // Midasus's sky voyage, when she's away -- behind the mountains below
     // Ambient connect-the-dots + reward volleys read as starlight, so the
     // night sky brightens them the same way it brightens the atlas stars.
-    const nightAlphaMul = 1 + 1.2 * dn.night;
-    if (phenomenaFull) this.weaver.draw(ctx, canvas, this.reducedFlash, nightAlphaMul);
+    const nightAlphaMul = (1 + 1.2 * dn.night) * Math.max(0.25, skyA);
+    if (phenomenaFull && skyA > 0.02) this.weaver.draw(ctx, canvas, this.reducedFlash, nightAlphaMul);
     if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
-    this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull);
+    this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
     this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
     this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
@@ -894,8 +976,23 @@ export class BiomeManager {
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
 
     this._drawGround(ctx, canvas, worldX, originX, A, B, t);
+    // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
+    this._drawTerrainFooting(ctx, canvas, A, B, t);
     this._drawFlood(ctx, canvas);
     this._drawTransitionOverlays(ctx, canvas, B);
+  }
+
+  /** Subtle dark contact where ranges meet the walking ground. */
+  _drawTerrainFooting(ctx, canvas, A, B, t) {
+    const gy = this.groundY;
+    ctx.save();
+    const ao = ctx.createLinearGradient(0, gy - 28, 0, gy + 8);
+    ao.addColorStop(0, 'rgba(0,0,0,0)');
+    ao.addColorStop(0.7, 'rgba(0,0,0,0.12)');
+    ao.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = ao;
+    ctx.fillRect(0, gy - 28, canvas.width, 36);
+    ctx.restore();
   }
 
   /** Temporary flood: the water a tsunami spilled over the mountains rises
@@ -939,11 +1036,14 @@ export class BiomeManager {
    *  cutout. Color pulls toward a warm dawn/dusk tone via the day arc;
    *  the per-biome PERSONALITY.haze dial and calmLevel both scale it. */
   _drawHaze(ctx, canvas, layerKey, A, B, t, arc) {
-    const alpha = hazeAlpha(layerKey, this._hazeMul, this.calmLevel);
-    if (alpha < HAZE_EPS) return;
+    const styleHaze = styleDials(this.visualStyle).hazeMul || 1;
+    const hazeMul = (Number.isFinite(this._hazeMul) ? this._hazeMul : 1) * styleHaze;
+    const alpha = hazeAlpha(layerKey, hazeMul, this.calmLevel || 0);
+    if (!(alpha > HAZE_EPS) || !Number.isFinite(alpha)) return;
     const skyTint = this.lerpCache.get(A.sky[2], B.sky[2], t);
-    const hazeColor = this._rotated(this.lerpCache.get(skyTint, HAZE_WARM_COLOR, hazeWarmMix(arc.hazeWarm)));
+    const hazeColor = this._rotated(this.lerpCache.get(skyTint, HAZE_WARM_COLOR, hazeWarmMix(arc?.hazeWarm ?? 0)));
     const { r, g, b } = hexToRgb(hazeColor);
+    if (![r, g, b].every(Number.isFinite)) return;
     ctx.save();
     const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
     grad.addColorStop(0, `rgba(${r},${g},${b},0)`);
@@ -971,11 +1071,21 @@ export class BiomeManager {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       for (const entry of voyage.atlas) {
+        // Short neighbor edges only — full polyline over sparse stars made
+        // the "random straight line" sky triangles.
         ctx.strokeStyle = `hsla(${entry.hue}, 35%, 82%, ${0.09 * (1 + 1.2 * pulse)})`;
         ctx.lineWidth = 0.8;
-        ctx.beginPath();
-        entry.stars.forEach((s, i) => { if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y); });
-        ctx.stroke();
+        ctx.lineCap = 'round';
+        const ATLAS_EDGE = 20;
+        for (let i = 1; i < entry.stars.length; i++) {
+          const a = entry.stars[i - 1], b = entry.stars[i];
+          const dx = b.x - a.x, dy = b.y - a.y;
+          if (dx * dx + dy * dy > ATLAS_EDGE * ATLAS_EDGE) continue;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
         for (const s of entry.stars) {
           const twinkle = 0.5 + 0.5 * Math.sin(nowMs * 0.0013 + s.phase);
           ctx.fillStyle = `hsla(${entry.hue}, 45%, 88%, ${(0.16 + 0.16 * twinkle) * (1 + 1.6 * pulse)})`;
@@ -1029,31 +1139,50 @@ export class BiomeManager {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
 
+    // Frozen figures: short curve segments only (skip long chords that
+    // used to read as random straight lines across the sky).
+    const CONST_EDGE_MAX = 22;
     for (const c of voyage.constellations) {
       const life = 1 - clamp01((nowMs - c.bornMs) / 6000);
       if (life <= 0) continue;
-      ctx.strokeStyle = `hsla(${c.hue}, 60%, 80%, ${0.5 * life})`;
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      c.points.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
-      ctx.stroke();
+      ctx.strokeStyle = `hsla(${c.hue}, 60%, 80%, ${0.45 * life})`;
+      ctx.lineWidth = 1.3;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (let i = 1; i < c.points.length; i++) {
+        const a = c.points[i - 1], b = c.points[i];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        if (dx * dx + dy * dy > CONST_EDGE_MAX * CONST_EDGE_MAX) continue;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
       ctx.fillStyle = `hsla(${c.hue}, 75%, 90%, ${0.9 * life})`;
       for (const p of c.points) {
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 2.6, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 2.4, 0, Math.PI * 2);
         ctx.fill();
       }
     }
 
+    // Atlas crystal edges: only short links (same rule — no sky triangles).
+    // (Full atlas stroke is drawn above; keep stars, drop long polylines.)
+
     // Persistent trail: a soft wide glow pass underneath a bright thin
-    // core, the way a comet's tail actually reads -- this is the geometry
-    // she's sky-writing, so it needs to be legible, not a faint scratch.
+    // core. Skip gap / teleport chords so a phase jump never paints a
+    // straight line across the figure.
     const trail = voyage.trail;
+    const GAP = 28;
     for (let i = 1; i < trail.length; i++) {
       const a = trail[i - 1], b = trail[i];
+      if (b.gap) continue;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      if (dx * dx + dy * dy > GAP * GAP) continue;
       const u = i / trail.length; // older points fade toward transparent
       ctx.strokeStyle = `hsla(${b.hue}, 65%, 78%, ${0.22 * u})`;
       ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
       ctx.strokeStyle = `hsla(${b.hue}, 75%, 88%, ${0.85 * u})`;
       ctx.lineWidth = 1.6;
@@ -1153,36 +1282,21 @@ export class BiomeManager {
   }
 
   _drawSky(ctx, canvas, A, B, t, night = 0) {
+    const dials = styleDials(this.visualStyle);
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    // Night + rendered both pull toward deep space so stars/ocean have a stage.
+    const nightPull = 0.62 * night + (dials.spaceWash ? 0.14 : 0);
     for (let i = 0; i < 3; i++) {
       const stop = this._rotated(this.lerpCache.get(A.sky[i], B.sky[i], t));
-      g.addColorStop(i / 2, night > 0.005 ? this.lerpCache.get(stop, NIGHT_SKY_COLOR, 0.45 * night) : stop);
+      // Upper sky (i=0) goes more space-black; lower sky keeps more biome color.
+      const pull = nightPull * (i === 0 ? 1 : i === 1 ? 0.75 : 0.45);
+      g.addColorStop(i / 2, pull > 0.02
+        ? this.lerpCache.get(stop, NIGHT_SKY_COLOR, pull)
+        : stop);
     }
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // The stars always exist, faint under a day sky; the night deepens
-    // them well past the biome's own starTwinkle showcase.
-    const nightStarBoost = 1 + 1.2 * night;
-    const showStars = A.fx === 'starTwinkle' || B.fx === 'starTwinkle';
-    const starBaseAlpha = showStars
-      ? (A.fx === 'starTwinkle' ? 1 - t : 0) + (B.fx === 'starTwinkle' ? t : 0)
-      : 0.5 * night; // a starless biome still shows a hint of stars once night falls
-    const alpha = clamp01(starBaseAlpha) * nightStarBoost;
-    if (alpha > 0.02) {
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = '#ffffff';
-      // Calm sections twinkle faster -- a small, free source of motion
-      // for a layer that otherwise barely changes frame to frame.
-      const twinkleRate = 1.3 * (1 + 0.6 * (this.calmLevel || 0));
-      for (const s of this.stars) {
-        const a = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(this.tSec * twinkleRate + s.phase));
-        ctx.globalAlpha = alpha * a;
-        ctx.fillRect(s.x, s.y, 1.6, 1.6);
-      }
-      ctx.restore();
-    }
     if (A.fx === 'aurora' || B.fx === 'aurora') {
       const auroraAlpha = (A.fx === 'aurora' ? 1 - t : 0) + (B.fx === 'aurora' ? t : 0);
       if (auroraAlpha > 0.02) this._drawAurora(ctx, canvas, auroraAlpha);
@@ -1207,6 +1321,130 @@ export class BiomeManager {
       const alpha = (A.fx === 'sunMotes' ? 1 - t : 0) + (B.fx === 'sunMotes' ? t : 0);
       if (alpha > 0.02) this._drawSunMotes(ctx, canvas, alpha, t > 0.5 ? B : A);
     }
+    // Soft atmospheric + faint space-nebula wash (under stars).
+    {
+      const top = this._rotated(this.lerpCache.get(A.sky[0], B.sky[0], t));
+      const mid = this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t));
+      const { r: r0, g: g0, b: b0 } = hexToRgb(top);
+      const { r: r1, g: g1, b: b1 } = hexToRgb(mid);
+      const nebA = hexToRgb(SPACE_NEBULA_A);
+      const nebB = hexToRgb(SPACE_NEBULA_B);
+      ctx.save();
+      ctx.globalCompositeOperation = 'soft-light';
+      const plate = ctx.createRadialGradient(
+        canvas.width * 0.55, canvas.height * 0.16, 16,
+        canvas.width * 0.5, canvas.height * 0.32, canvas.height * 0.7,
+      );
+      plate.addColorStop(0, `rgba(${r1},${g1},${b1},0.4)`);
+      plate.addColorStop(0.5, `rgba(${r0},${g0},${b0},0.16)`);
+      plate.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = 0.42;
+      ctx.fillStyle = plate;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // Indigo / violet space dust — orbital, not pure daylight.
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.07 + 0.1 * night;
+      const dust = ctx.createRadialGradient(
+        canvas.width * 0.28, canvas.height * 0.12, 10,
+        canvas.width * 0.35, canvas.height * 0.22, canvas.width * 0.38,
+      );
+      dust.addColorStop(0, `rgba(${nebB.r},${nebB.g},${nebB.b},0.55)`);
+      dust.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = dust;
+      ctx.fillRect(0, 0, canvas.width, canvas.height * 0.55);
+      ctx.globalAlpha = 0.05 + 0.08 * night;
+      const dust2 = ctx.createRadialGradient(
+        canvas.width * 0.78, canvas.height * 0.18, 8,
+        canvas.width * 0.72, canvas.height * 0.28, canvas.width * 0.32,
+      );
+      dust2.addColorStop(0, `rgba(${nebA.r},${nebA.g},${nebA.b},0.5)`);
+      dust2.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = dust2;
+      ctx.fillRect(0, 0, canvas.width, canvas.height * 0.5);
+      ctx.restore();
+    }
+
+    // Star backdrop last in the sky stack so it always reads as depth behind
+    // the world, not a faint garnish wiped by washes above it.
+    this._drawStarfield(ctx, canvas, A, B, t, night);
+  }
+
+  /** Layered starfield: ambient by day, rich at night / starTwinkle biomes. */
+  _drawStarfield(ctx, canvas, A, B, t, night = 0) {
+    const dials = styleDials(this.visualStyle);
+    const showStars = A.fx === 'starTwinkle' || B.fx === 'starTwinkle';
+    const twinkleBlend = showStars
+      ? (A.fx === 'starTwinkle' ? 1 - t : 0) + (B.fx === 'starTwinkle' ? t : 0)
+      : 0;
+    // Always a living backdrop — night, space style, and star biomes amplify.
+    const starAmb = dials.starAmbient ?? 1;
+    const ambient = (0.34 + 0.16 * (this.calmLevel || 0)) * starAmb;
+    const nightBoost = 0.55 + 1.55 * night;
+    const biomeBoost = 0.95 * twinkleBlend;
+    const spaceFloor = dials.spaceWash ? 0.22 : 0;
+    const alpha = clamp01(ambient * nightBoost + biomeBoost + spaceFloor);
+    if (alpha < 0.04) return;
+
+    const twinkleRate = 1.15 + 0.7 * (this.calmLevel || 0) + 0.35 * night;
+    const scroll = (this.tSec * 1.8) % canvas.width; // glacial drift
+
+    // Soft milky / galactic wash — faint, never a hard horizontal bar.
+    {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const bandA = 0.05 + 0.06 * night;
+      const my = canvas.height * 0.14;
+      const band = ctx.createLinearGradient(0, my - 40, 0, my + 48);
+      band.addColorStop(0, 'rgba(160,190,255,0)');
+      band.addColorStop(0.45, `rgba(190,210,255,${bandA.toFixed(3)})`);
+      band.addColorStop(1, 'rgba(160,190,255,0)');
+      ctx.fillStyle = band;
+      ctx.fillRect(0, my - 40, canvas.width, 88);
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    // Cheap dots for the field; soft glow only for hero stars (layer 2).
+    for (const s of this.stars) {
+      const tw = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(this.tSec * twinkleRate * (0.7 + s.bright) + s.phase));
+      const a = alpha * s.bright * tw;
+      if (a < 0.03) continue;
+      const layerDrift = (1 + s.layer * 0.6) * scroll * 0.02;
+      let x = s.x + layerDrift;
+      if (x > canvas.width) x -= canvas.width;
+      else if (x < 0) x += canvas.width;
+      const y = s.y;
+      const sz = s.size;
+
+      if (s.layer === 2) {
+        const r = Math.max(1.2, sz * 1.6);
+        ctx.globalAlpha = a * 0.55;
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+        if (s.hue > 0) {
+          grad.addColorStop(0, `hsla(${s.hue},62%,92%,1)`);
+          grad.addColorStop(0.45, `hsla(${s.hue},50%,80%,0.3)`);
+          grad.addColorStop(1, `hsla(${s.hue},40%,70%,0)`);
+        } else {
+          grad.addColorStop(0, 'rgba(255,255,255,1)');
+          grad.addColorStop(0.4, 'rgba(220,230,255,0.35)');
+          grad.addColorStop(1, 'rgba(200,220,255,0)');
+        }
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = a;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x - 0.6, y - 0.6, 1.2, 1.2);
+      } else {
+        ctx.globalAlpha = a;
+        if (s.hue > 0) ctx.fillStyle = `hsl(${s.hue},55%,88%)`;
+        else ctx.fillStyle = s.layer === 1 ? '#f0f4ff' : '#d8e0f5';
+        ctx.fillRect(x, y, sz, sz);
+      }
+    }
+    ctx.restore();
   }
 
   /** Soft pastel gas clouds for NEBULA — additive blobs that drift slowly. */
@@ -1268,16 +1506,22 @@ export class BiomeManager {
   _drawAurora(ctx, canvas, alpha) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
+    // Soft filled ribbons (no hard stroke edges — stroke bands
+    // read as cyan sky-wide "line glitch" when stacked).
     for (let band = 0; band < 3; band++) {
       const hue = 160 + ((this.tSec * 12 + band * 40) % 140);
-      ctx.strokeStyle = `hsla(${hue},80%,60%,${0.16 * alpha})`;
-      ctx.lineWidth = 18;
+      ctx.fillStyle = `hsla(${hue},70%,58%,${0.07 * alpha})`;
       ctx.beginPath();
       for (let x = 0; x <= canvas.width; x += 16) {
         const y = 60 + band * 30 + Math.sin(x * 0.006 + this.tSec * 0.6 + band) * 26;
-        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        if (x === 0) ctx.moveTo(x, y - 14); else ctx.lineTo(x, y - 14);
       }
-      ctx.stroke();
+      for (let x = canvas.width; x >= 0; x -= 16) {
+        const y = 60 + band * 30 + Math.sin(x * 0.006 + this.tSec * 0.6 + band) * 26;
+        ctx.lineTo(x, y + 14);
+      }
+      ctx.closePath();
+      ctx.fill();
     }
     ctx.restore();
   }
@@ -1425,96 +1669,117 @@ export class BiomeManager {
     return null;
   }
 
-  _drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull) {
+  _drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, night = 0) {
     const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
     const nearY = canvas.height * OCEAN_NEAR_FRAC;
     const bass = 0.5 * ((this._eqSmoothed[0] || 0) + (this._eqSmoothed[1] || 0));
     const treble = 0.5 * ((this._eqSmoothed[5] || 0) + (this._eqSmoothed[6] || 0));
     const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 250) * this._danceKickAmp;
     const tsunami = this._activeTsunami(canvas.width);
+    const dials = styleDials(this.visualStyle);
+    const presence = 1.28 * (dials.oceanPresence ?? 1);
+    const lineMul = dials.oceanLineAlpha ?? 1;
+    const bodyMul = dials.oceanBodyAlpha ?? 1;
+    const reflectMul = dials.oceanReflect ?? 1;
 
     const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
     const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
-    const base = this.lerpCache.get(sil, skyMid, 0.45);
-    const water = this._rotated(this.lerpCache.get(base, OCEAN_WATER_BLUE, 0.4));
+    const base = this.lerpCache.get(sil, skyMid, 0.28);
+    // Lean hard into teal sea + abyssal deep so the plane reads as ocean.
+    const water = this._rotated(this.lerpCache.get(base, OCEAN_WATER_BLUE, 0.68));
+    const deepWater = this._rotated(this.lerpCache.get(base, OCEAN_DEEP_BLUE, 0.62));
     const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
 
-    const rows = phenomenaFull ? this._oceanRows : this._oceanRows.slice(0, Math.ceil(this._oceanRows.length / 2));
+    // Rendered: fewer contour rows so the plane reads as water mass, not a
+    // neon wireframe grid. Classic keeps the denser field.
+    const rowBudget = Math.max(8, Math.ceil(this._oceanRows.length * (dials.rowCountMul ?? 1)));
+    const fullRows = this._oceanRows.slice(0, rowBudget);
+    const rows = phenomenaFull ? fullRows : fullRows.slice(0, Math.ceil(fullRows.length * 0.65));
     const rowYs = oceanRowYs(horizonY, nearY, rows.length);
 
     // Fade to transparent at the screen edges -- an infinite plane trails
     // off sideways as much as it recedes into the distance.
     const edgeFade = ctx.createLinearGradient(0, 0, canvas.width, 0);
     edgeFade.addColorStop(0, `${water}00`);
-    edgeFade.addColorStop(0.14, water);
-    edgeFade.addColorStop(0.86, water);
+    edgeFade.addColorStop(0.1, water);
+    edgeFade.addColorStop(0.9, water);
     edgeFade.addColorStop(1, `${water}00`);
 
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    // Normal compositing so water sits as a soft plate instead of laser lines.
+    ctx.globalCompositeOperation = 'source-over';
 
-    // Depth banding: soft fill strips between row baselines so the plane
-    // reads as a body of water, not only contour lines.
-    for (let j = 0; j < rows.length - 1; j++) {
-      const a0 = rowAlpha(j, rows.length) * this.budget;
-      if (a0 <= 0.02) continue;
-      const band = ctx.createLinearGradient(0, rowYs[j + 1], 0, rowYs[j]);
-      band.addColorStop(0, `${water}00`);
-      band.addColorStop(0.45, `${water}14`);
-      band.addColorStop(1, `${water}00`);
-      ctx.fillStyle = band;
-      ctx.globalAlpha = a0 * 0.55;
-      ctx.fillRect(0, rowYs[j + 1], canvas.width, Math.max(1, rowYs[j] - rowYs[j + 1]));
+    // Body plate: a continuous water mass under the wave contours so the
+    // plane reads as ocean even when mountains occlude parts of the stack.
+    {
+      const body = ctx.createLinearGradient(0, horizonY, 0, nearY);
+      body.addColorStop(0, `${water}00`);
+      body.addColorStop(0.1, `${water}48`);
+      body.addColorStop(0.4, `${deepWater}55`);
+      body.addColorStop(0.75, `${water}36`);
+      body.addColorStop(1, `${water}00`);
+      ctx.globalAlpha = 0.78 * this.budget * presence * bodyMul;
+      ctx.fillStyle = body;
+      ctx.fillRect(0, horizonY, canvas.width, Math.max(1, nearY - horizonY));
     }
 
-    ctx.strokeStyle = edgeFade;
+    // Wave contour polylines — soft perspective lines on the water plate.
+    const drawContours = dials.oceanDrawContours !== false && lineMul > 0.02;
     const N = 48;
     const nRows = rows.length;
-    for (let j = 0; j < nRows; j++) {
-      const row = rows[j];
-      const alpha = rowAlpha(j, nRows) * row.alphaMul * this.budget;
-      if (alpha <= 0.01) continue;
-      const gapAbove = j === 0 ? nearY - rowYs[0] : rowYs[j - 1] - rowYs[j];
-      const ampScale = row.ampMul * Math.max(0.2, clamp01(gapAbove / 24));
-      const scroll = worldX * (0.03 + 0.09 * (1 - j / nRows));
-      const rowFrac = nRows <= 1 ? 0.5 : j / (nRows - 1); // 0 near .. 1 far
-      const depthSwell = tsunami
-        ? tsunamiDepthLift(rowFrac, tsunami.rowFrac) * tsunami.scale * tsunami.heightScale
-        : 0;
-      const drift = rowPhaseDrift(j, this.tSec);
-      ctx.globalAlpha = alpha;
-      ctx.lineWidth = 1.2 + 0.8 * (1 - j / nRows);
-      ctx.beginPath();
-      const samples = [];
-      for (let i = 0; i <= N; i++) {
-        const u = ((i / N + row.uPhase + scroll / canvas.width + drift) % 1 + 1) % 1;
-        const x = (i / N) * canvas.width;
-        let y = rowYs[j]
-          + seaLineY(u, this.tSec * row.speedMul, bass, kick) * ampScale
-          - breakerLift(u, this.tSec * row.speedMul, 0.35 + 0.65 * treble) * ampScale * 0.55;
-        // Depth-localized swell under the approaching tsunami (not a side-swipe).
-        if (depthSwell > 0.01) {
-          const halfW = TSUNAMI_WIDTH_PX * (0.35 + 0.65 * tsunami.scale);
-          y -= tsunamiLift(x - tsunami.centerX, halfW) * depthSwell * 85 * (0.55 + 0.45 * ampScale);
+    if (drawContours) {
+      // source-over so lines sit IN the water mass (not laser-cyan soup).
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = edgeFade;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (let j = 0; j < nRows; j++) {
+        const row = rows[j];
+        const alpha = rowAlpha(j, nRows) * row.alphaMul * this.budget * presence * lineMul * 0.7;
+        if (alpha <= 0.01) continue;
+        const gapAbove = j === 0 ? nearY - rowYs[0] : rowYs[j - 1] - rowYs[j];
+        const ampScale = row.ampMul * Math.max(0.2, clamp01(gapAbove / 24));
+        const scroll = worldX * (0.03 + 0.09 * (1 - j / nRows));
+        const rowFrac = nRows <= 1 ? 0.5 : j / (nRows - 1);
+        const depthSwell = tsunami
+          ? tsunamiDepthLift(rowFrac, tsunami.rowFrac) * tsunami.scale * tsunami.heightScale
+          : 0;
+        const drift = rowPhaseDrift(j, this.tSec);
+        ctx.globalAlpha = alpha * 0.75;
+        // Slightly thicker + lower contrast so lines read as water, not HUD rules.
+        ctx.lineWidth = 1.4 + 0.4 * (1 - j / nRows);
+        ctx.beginPath();
+        const samples = [];
+        for (let i = 0; i <= N; i++) {
+          const u = ((i / N + row.uPhase + scroll / canvas.width + drift) % 1 + 1) % 1;
+          const x = (i / N) * canvas.width;
+          let y = rowYs[j]
+            + seaLineY(u, this.tSec * row.speedMul, bass, kick) * ampScale
+            - breakerLift(u, this.tSec * row.speedMul, 0.35 + 0.65 * treble) * ampScale * 0.55;
+          if (depthSwell > 0.01) {
+            const halfW = TSUNAMI_WIDTH_PX * (0.35 + 0.65 * tsunami.scale);
+            y -= tsunamiLift(x - tsunami.centerX, halfW) * depthSwell * 85 * (0.55 + 0.45 * ampScale);
+          }
+          samples.push({ x, y, u });
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         }
-        samples.push({ x, y, u });
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
+        ctx.stroke();
 
-      // Whitecaps: sparse foam flecks on crest samples of nearer rows.
-      if (phenomenaFull && rowFrac < 0.72) {
-        ctx.fillStyle = cap;
-        for (let i = 0; i < samples.length; i += 2) {
-          const s = samples[i];
-          const m = whitecapMask(s.u, this.tSec * row.speedMul, rowFrac);
-          if (m < 0.35) continue;
-          ctx.globalAlpha = alpha * m * 0.55;
-          ctx.beginPath();
-          ctx.arc(s.x, s.y - 1.2, 1.1 + 0.9 * m, 0, Math.PI * 2);
-          ctx.fill();
+        if (phenomenaFull && rowFrac < 0.72) {
+          ctx.fillStyle = cap;
+          for (let i = 0; i < samples.length; i += 2) {
+            const s = samples[i];
+            const m = whitecapMask(s.u, this.tSec * row.speedMul, rowFrac);
+            if (m < 0.35) continue;
+            ctx.globalAlpha = alpha * m * 0.55;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y - 1.2, 1.1 + 0.9 * m, 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
       }
+    } else if (phenomenaFull && tsunami) {
+      // Still need tsunami geometry even when contours are off — swell the plate only.
     }
 
     if (tsunami && tsunami.scale > 0.02) {
@@ -1548,20 +1813,6 @@ export class BiomeManager {
       ctx.globalAlpha = capFlashAlpha(0.65 * alphaMul, this.reducedFlash);
       ctx.fill();
 
-      for (const [lw, a] of [[6 * (0.5 + 0.5 * persp), 0.14], [1.8, 0.55]]) {
-        ctx.strokeStyle = cap;
-        ctx.lineWidth = lw;
-        ctx.globalAlpha = capFlashAlpha(a * alphaMul, this.reducedFlash);
-        ctx.beginPath();
-        for (let i = 0; i <= 24; i++) {
-          const s = -1 + (i / 24) * 2;
-          const x = centerX + s * WS;
-          const y = crestY(s);
-          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-      }
-
       ctx.fillStyle = cap;
       for (const f of this._tsunamiFlecks) {
         const x = centerX + f.sOff * WS;
@@ -1574,51 +1825,74 @@ export class BiomeManager {
       }
     }
 
-    // Layered horizon: water meets sky, plus a faint secondary glint line.
-    for (const [lw, a, yOff] of [[4.0, 0.12, 0], [1.4, 0.34, 0], [2.2, 0.08, 3.5]]) {
-      ctx.globalAlpha = a * this.budget;
-      ctx.lineWidth = lw;
-      ctx.strokeStyle = edgeFade;
-      ctx.beginPath();
-      ctx.moveTo(0, horizonY + yOff);
-      ctx.lineTo(canvas.width, horizonY + yOff);
-      ctx.stroke();
+    // Horizon seam: very soft blend into sky (hard bar reads as a UI rule line).
+    {
+      const hz = ctx.createLinearGradient(0, horizonY - 14, 0, horizonY + 18);
+      hz.addColorStop(0, `${water}00`);
+      hz.addColorStop(0.5, `${water}18`);
+      hz.addColorStop(1, `${water}00`);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 0.35 * this.budget * presence;
+      ctx.fillStyle = hz;
+      ctx.fillRect(0, horizonY - 14, canvas.width, 32);
     }
 
-    // A faint body sheen just below the horizon, so the plane reads as
-    // water rather than a stack of loose lines.
-    const sheenH = Math.min(110, nearY - horizonY);
+    // Body sheen just below the horizon — soft water mass, not a bright stripe.
+    const sheenH = Math.min(120, nearY - horizonY);
     const sheen = ctx.createLinearGradient(0, horizonY, 0, horizonY + sheenH);
-    sheen.addColorStop(0, `${water}18`);
-    sheen.addColorStop(0.45, `${water}0a`);
+    sheen.addColorStop(0, `${water}22`);
+    sheen.addColorStop(0.4, `${water}12`);
     sheen.addColorStop(1, `${water}00`);
     ctx.fillStyle = sheen;
-    ctx.globalAlpha = this.budget;
+    ctx.globalAlpha = 0.7 * this.budget * presence;
     ctx.fillRect(0, horizonY, canvas.width, sheenH);
 
     if (phenomenaFull) {
-      // Stronger celestial reflection: taller column with a slight shimmer.
+      // Celestial reflection path: sun by day, cooler moon path at night.
       const rx = canvas.width * 0.78;
-      const glintH = canvas.height * 0.32;
-      const shimmer = 4 * Math.sin(this.tSec * 1.1);
+      const glintH = (nearY - horizonY) * 0.98;
+      const shimmer = 5 * Math.sin(this.tSec * 1.1);
+      const glintCol = night > 0.45 ? this._rotated(MOON_HALO_COLOR) : cap;
       const rGrad = ctx.createLinearGradient(rx, horizonY, rx, horizonY + glintH);
-      rGrad.addColorStop(0, `${cap}33`);
-      rGrad.addColorStop(0.35, `${cap}14`);
-      rGrad.addColorStop(1, `${cap}00`);
+      rGrad.addColorStop(0, `${glintCol}66`);
+      rGrad.addColorStop(0.25, `${glintCol}32`);
+      rGrad.addColorStop(0.65, `${glintCol}14`);
+      rGrad.addColorStop(1, `${glintCol}00`);
       ctx.fillStyle = rGrad;
-      ctx.globalAlpha = 0.14;
-      ctx.fillRect(rx - 42 + shimmer * 0.3, horizonY, 84, glintH);
-      // Dashed secondary foam trail, slower parallax, for depth interest.
-      ctx.strokeStyle = cap;
-      ctx.lineWidth = 1;
-      ctx.globalAlpha = 0.12 * this.budget;
-      const foamScroll = (worldX * 0.02) % 40;
-      ctx.setLineDash([6, 14]);
+      ctx.globalAlpha = (0.26 + 0.12 * night) * this.budget * reflectMul;
+      // Tapered column (wider at horizon, narrow toward near edge).
       ctx.beginPath();
-      ctx.moveTo(-foamScroll, horizonY + sheenH * 0.35);
-      ctx.lineTo(canvas.width + 20, horizonY + sheenH * 0.35 + 6 * Math.sin(this.tSec * 0.4));
-      ctx.stroke();
-      ctx.setLineDash([]);
+      ctx.moveTo(rx - 10 + shimmer * 0.2, horizonY + glintH);
+      ctx.lineTo(rx - 48 + shimmer * 0.3, horizonY);
+      ctx.lineTo(rx + 48 + shimmer * 0.3, horizonY);
+      ctx.lineTo(rx + 10 + shimmer * 0.2, horizonY + glintH);
+      ctx.closePath();
+      ctx.fill();
+
+      // Secondary sparkle along the reflection path: soft dots only
+      // (1px-tall rects read as dashed glitch).
+      const sparkleN = 5;
+      ctx.fillStyle = glintCol;
+      for (let i = 0; i < sparkleN; i++) {
+        const u = (i + 0.5) / sparkleN;
+        const sy = horizonY + glintH * u;
+        const bob = Math.sin(this.tSec * 2.2 + i * 1.3) * 2;
+        ctx.globalAlpha = (0.08 + 0.10 * (1 - u)) * this.budget * (0.6 + 0.4 * bass);
+        ctx.beginPath();
+        ctx.arc(rx + bob, sy, 1.6 + 1.2 * (1 - u), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Foam: soft flecks only.
+      ctx.fillStyle = cap;
+      for (let i = 0; i < 9; i++) {
+        const fx = ((i * 0.12 + worldX * 0.00008) % 1) * canvas.width;
+        const fy = horizonY + sheenH * (0.28 + 0.08 * Math.sin(this.tSec * 0.5 + i));
+        ctx.globalAlpha = 0.12 * this.budget * presence;
+        ctx.beginPath();
+        ctx.arc(fx, fy, 1.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     ctx.restore();
   }
@@ -1647,17 +1921,23 @@ export class BiomeManager {
     const pad = 200;
 
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    // Islands/ships sit on the water plate — normal composite, not additive
+    // "lighter" (that made mesa silhouettes float as purple diamonds in the sky).
+    ctx.globalCompositeOperation = 'source-over';
 
-    // Islands -- static dark silhouettes with an optional blinking beacon.
+    // Islands -- dark land masses grounded on the ocean rows.
+    const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
+    const nearY = canvas.height * OCEAN_NEAR_FRAC;
     for (const isl of this._islands) {
       const x = wrappedOffset(isl.x0, scroll);
       if (x < -pad || x > canvas.width + pad) continue;
       const y = this._oceanLifeRowY(canvas, isl.rowFrac);
+      // Only draw while the foot is on the ocean band (never free-float in sky).
+      if (y < horizonY - 4 || y > nearY + 20) continue;
       const scale = 1 - 0.65 * isl.rowFrac;
-      const w = isl.w * scale, h = isl.h * scale;
-      ctx.globalAlpha = capFlashAlpha(0.5 * this.budget, this.reducedFlash);
-      ctx.fillStyle = water;
+      const w = isl.w * scale, h = Math.max(8, isl.h * scale);
+      ctx.globalAlpha = capFlashAlpha(0.72 * this.budget, this.reducedFlash);
+      ctx.fillStyle = this._rotated(sil);
       ctx.beginPath();
       if (isl.kind === 'cone') {
         ctx.moveTo(x - w / 2, y);
@@ -1674,32 +1954,37 @@ export class BiomeManager {
       ctx.closePath();
       ctx.fill();
       if (isl.kind === 'palm') {
-        ctx.strokeStyle = water;
+        ctx.strokeStyle = this._rotated(sil);
         ctx.lineWidth = Math.max(1, 1.5 * scale);
         ctx.beginPath();
         ctx.moveTo(x - w * 0.1, y - h * 0.2);
         ctx.lineTo(x - w * 0.05, y - h * 0.9);
         ctx.stroke();
       }
-      // A bright waterline crossing the base -- reads as sitting IN the
-      // water, not floating over it (the tell that fixed the tsunami bug
-      // above applies here too: a silhouette needs a break at its foot).
+      // Thin wet foot into the water (flat, not a second “bun” dome).
+      ctx.globalAlpha = capFlashAlpha(0.22 * this.budget, this.reducedFlash);
+      ctx.fillStyle = water;
+      ctx.fillRect(x - w * 0.5, y - 1, w, Math.max(2, 2.5 * scale));
+      // Waterline cap — thin, not a neon laser.
       ctx.strokeStyle = cap;
       ctx.lineWidth = Math.max(0.8, 1 * scale);
-      ctx.globalAlpha = capFlashAlpha(0.35 * this.budget, this.reducedFlash);
+      ctx.globalAlpha = capFlashAlpha(0.22 * this.budget, this.reducedFlash);
       ctx.beginPath();
-      ctx.moveTo(x - w * 0.65, y);
-      ctx.lineTo(x + w * 0.65, y);
+      ctx.moveTo(x - w * 0.55, y);
+      ctx.lineTo(x + w * 0.55, y);
       ctx.stroke();
       if (isl.beacon) {
-        const blink = 0.5 + 0.5 * Math.sin(this.tSec * 2.3 + isl.x0);
-        ctx.globalAlpha = capFlashAlpha(0.6 * blink * this.budget, this.reducedFlash);
+        // Small lamp on the crest only — no skyward beam.
+        const blink = 0.45 + 0.55 * Math.sin(this.tSec * 2.3 + isl.x0);
+        ctx.globalAlpha = capFlashAlpha(0.5 * blink * this.budget, this.reducedFlash);
         ctx.fillStyle = cap;
         ctx.beginPath();
-        ctx.arc(x, y - h - 2 * scale, 1.6 * scale, 0, Math.PI * 2);
+        ctx.arc(x, y - h - 1.5 * scale, 1.4 * scale, 0, Math.PI * 2);
         ctx.fill();
       }
     }
+
+    ctx.globalCompositeOperation = 'lighter';
 
     // Ships -- slow drifters, hull+mast, bobbing on the wave line at their u.
     for (const ship of this._ships) {
@@ -1836,14 +2121,20 @@ export class BiomeManager {
    */
   _drawHorizonEQ(ctx, canvas, worldX, A, B, t) {
     const color = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
+    const eqMul = styleDials(this.visualStyle).horizonEqAlpha ?? 1;
+    if (eqMul < 0.05) return;
     const baseline = canvas.height * 0.60;
     const maxH = canvas.height * EQ_MAX_HEIGHT_FRAC;
     const scroll = worldX * 0.0018;
     const tS = this.tSec;
 
+    // One extra sample past each edge so the wave terminates off-screen
+    // instead of clipping mid-oscillation exactly on the canvas boundary.
     const N = 64;
-    const pts = new Array(N + 1);
-    for (let i = 0; i <= N; i++) {
+    const EDGE_STEPS = 1;
+    const pts = new Array(N + 1 + 2 * EDGE_STEPS);
+    for (let k = 0; k < pts.length; k++) {
+      const i = k - EDGE_STEPS;
       const u = i / N;
       // Which pair of bands this column sits between (wrapping, scrolling).
       const p = ((u * BAND_COUNT + scroll) % BAND_COUNT + BAND_COUNT) % BAND_COUNT;
@@ -1852,36 +2143,26 @@ export class BiomeManager {
       const c = (1 - Math.cos(f * Math.PI)) / 2; // cosine ease: no corners
       const v = clamp01(this._eqSmoothed[i0] * (1 - c) + this._eqSmoothed[i1] * c);
       const wave = Math.sin(u * Math.PI * 7 + tS * 1.6) * 7 * (0.25 + v);
-      pts[i] = { x: u * canvas.width, y: baseline - (v * maxH + wave) };
+      pts[k] = { x: u * canvas.width, y: baseline - (v * maxH + wave) };
     }
 
     ctx.save();
+    // Soft additive aurora glow over the CGI sky.
     ctx.globalCompositeOperation = 'lighter';
 
-    // Body: a soft filled glow from the crest down.
+    // Body: luminous fill from crest down — the musical weather mass.
     const grad = ctx.createLinearGradient(0, baseline - maxH, 0, baseline + 30);
-    grad.addColorStop(0, `${color}55`);
+    grad.addColorStop(0, `${color}44`);
+    grad.addColorStop(0.55, `${color}22`);
     grad.addColorStop(1, `${color}00`);
     ctx.fillStyle = grad;
-    ctx.globalAlpha = 0.5 * this.budget;
+    ctx.globalAlpha = 0.38 * this.budget * eqMul;
     ctx.beginPath();
-    ctx.moveTo(0, baseline + 30);
+    ctx.moveTo(pts[0].x, baseline + 30);
     for (const p of pts) ctx.lineTo(p.x, p.y);
-    ctx.lineTo(canvas.width, baseline + 30);
+    ctx.lineTo(pts[pts.length - 1].x, baseline + 30);
     ctx.closePath();
     ctx.fill();
-
-    // Crest: wide faint halo under a bright aurora line.
-    for (const [lw, a] of [[7, 0.14], [2.2, 0.6]]) {
-      ctx.strokeStyle = color;
-      ctx.globalAlpha = a * this.budget;
-      ctx.lineWidth = lw;
-      ctx.beginPath();
-      for (let i = 0; i <= N; i++) {
-        if (i === 0) ctx.moveTo(pts[i].x, pts[i].y); else ctx.lineTo(pts[i].x, pts[i].y);
-      }
-      ctx.stroke();
-    }
     ctx.restore();
   }
 
@@ -1998,7 +2279,10 @@ export class BiomeManager {
    *  as everything else, opacity proportional to how calm the section is
    *  -- calm stretches finally get weather, not just slower motion. */
   _drawFogBanks(ctx, canvas) {
-    const alpha = 0.16 * (this.calmLevel || 0);
+    const fogMul = styleDials(this.visualStyle).fogMul;
+    // Always carries a little atmosphere, more on calm stretches.
+    const calm = this.calmLevel || 0;
+    const alpha = 0.10 * fogMul + 0.14 * fogMul * calm;
     if (alpha < 0.01) return;
     const period = canvas.width * 1.6;
     const cy = canvas.height * 0.42, r = canvas.width * 0.45;
@@ -2022,12 +2306,14 @@ export class BiomeManager {
     // strip bottoms stay tucked safely beneath the ground fill.
     const yOff = this.groundY + 40 - canvas.height;
     ctx.save();
+    const wantShimmerSlices = styleDials(this.visualStyle).heatShimmerSlices !== false;
     const biomeShimmerAlpha = (A.fx === 'heatShimmer' ? 1 - t : 0) + (B.fx === 'heatShimmer' ? t : 0);
-    const applyBiomeShimmer = biomeShimmerAlpha > 0.05 && layerKey !== 'L5';
+    const applyBiomeShimmer = wantShimmerSlices && biomeShimmerAlpha > 0.05 && layerKey !== 'L5';
     // Movement II: heat shimmer isn't only SOLAR's signature anymore -- a
     // hard hype-fast spike reuses the exact same slice-offset trick on the
     // farthest range, above the horizon, regardless of biome.
-    const applyDynamicShimmer = layerKey === 'L2' && (this.heatShimmer || 0) > 0.7;
+    // Rendered skips the row-slice warp (it paints horizontal hairlines).
+    const applyDynamicShimmer = wantShimmerSlices && layerKey === 'L2' && (this.heatShimmer || 0) > 0.7;
     if (applyBiomeShimmer || applyDynamicShimmer) {
       this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX, yOff);
     } else {
@@ -2073,21 +2359,22 @@ export class BiomeManager {
     }
     const nowMs = this.tSec * 1000;
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
-    // Orogeny: the range grows taller toward the song's energy climax, then
-    // subsides -- height only, anchored at the base so the ridge visibly
-    // rears up rather than the whole strip just scaling in place.
+    // Orogeny grows the range, then mountainStripDrawHeight hard-caps so peaks
+    // stay on-frame (ocean/sky remain visible; off-screen summits are useless).
     const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0));
-    const dh = strip.height * growthMul;
+    const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this.groundY);
     const baseY = canvas.height - dh + yOff;
     const w = strip.width;
     let x = -(((scrollX % w) + w) % w);
     while (x < canvas.width) {
       for (let cx = 0; cx < w; cx += DANCE_COL_W) {
         const cw = Math.min(DANCE_COL_W, w - cx);
+        // 1px horizontal overlap hides hairline seams between dance columns.
+        const drawW = Math.min(cw + 1, w - cx);
         const sx = x + cx;
-        if (sx + cw < 0 || sx > canvas.width) continue;
+        if (sx + drawW < 0 || sx > canvas.width) continue;
         const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0) * terrainEnergy;
-        ctx.drawImage(strip, cx, 0, cw, strip.height, sx, baseY + dy, cw, dh);
+        ctx.drawImage(strip, cx, 0, drawW, strip.height, sx, baseY + dy, drawW, dh);
       }
       x += w;
     }
@@ -2110,7 +2397,8 @@ export class BiomeManager {
     const nowMs = this.tSec * 1000;
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
     const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0));
-    const dh = strip.height * growthMul;
+    const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this.groundY);
+    const scale = dh / Math.max(1, strip.height);
     const baseY = canvas.height - dh + yOff;
     const w = strip.width;
     const isGeo = layerKey === 'L4';
@@ -2123,7 +2411,7 @@ export class BiomeManager {
     for (let x = -8; x <= canvas.width + 8; x += 8) {
       const stripX = scrollX + x;
       const u = (((stripX % w) + w) % w);
-      const yR = ridgeYSmooth(strip.ridge, u) * growthMul;
+      const yR = ridgeYSmooth(strip.ridge, u) * scale;
       const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever) * terrainEnergy;
       const lift = (isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
       pts[n++] = { x, y: baseY + yR + dy - lift, lift };
@@ -2145,16 +2433,24 @@ export class BiomeManager {
         ctx.fill();
       }
     }
-    // Two-pass glow, same weights as the old baked stroke.
-    for (const [lw, a] of [[4, 0.30], [1.5, 0.85]]) {
-      ctx.strokeStyle = edgeLight;
-      ctx.globalAlpha = a * alpha;
-      ctx.lineWidth = lw;
-      ctx.beginPath();
-      for (let i = 0; i < pts.length; i++) {
-        if (i === 0) ctx.moveTo(pts[i].x, pts[i].y); else ctx.lineTo(pts[i].x, pts[i].y);
+    // Ridge glow: a soft wide pass (CGI catch-light) rather than stacked
+    // hairline polylines that stripe the sky.
+    const crestDials = styleDials(this.visualStyle);
+    const crestMul = crestDials.crestGlowAlpha ?? 1;
+    if (crestDials.crestStroke !== false && crestMul > 0.02) {
+      const passes = [[7.5, 0.10], [3.2, 0.22], [1.1, 0.38]];
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      for (const [lw, a] of passes) {
+        ctx.strokeStyle = edgeLight;
+        ctx.globalAlpha = a * alpha * crestMul;
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        for (let i = 0; i < pts.length; i++) {
+          if (i === 0) ctx.moveTo(pts[i].x, pts[i].y); else ctx.lineTo(pts[i].x, pts[i].y);
+        }
+        ctx.stroke();
       }
-      ctx.stroke();
     }
     ctx.restore();
   }
@@ -2177,9 +2473,11 @@ export class BiomeManager {
     if (left > canvas.width || left + massifW < 0) return;
 
     const baseY = this.groundY - 26;
-    // The massif is the farthest solid thing in the scene -- it rides the
-    // same orogeny arc as the L2 range (the far-most parallax layer).
-    const maxH = 300 * orogenyHeightMul('L2', clamp01(this.orogenyGrowth || 0));
+    // Massif rides L2 orogeny but is hard-capped so it never eats the sky /
+    // ocean band (same headroom philosophy as mountainStripDrawHeight).
+    const growth = orogenyHeightMul('L2', clamp01(this.orogenyGrowth || 0));
+    const skyCap = canvas.height * MOUNTAIN_SKY_HEADROOM_FRAC;
+    const maxH = Math.min(210 * growth, Math.max(80, baseY - skyCap));
     const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
     const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
     const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.55));
@@ -2192,11 +2490,14 @@ export class BiomeManager {
       const bx = left + i * (barW + gap);
       ctx.fillRect(bx, baseY - h, barW, h);
     }
-    ctx.fillStyle = cap;
-    ctx.globalAlpha = 0.32 * (0.5 + 0.5 * this.budget);
-    for (let i = 0; i < bars.length; i++) {
-      const h = bars[i].h01 * maxH;
-      ctx.fillRect(left + i * (barW + gap), baseY - h, barW, 2.5);
+    // Soft massif crest caps — musical equalizer tell.
+    if (styleDials(this.visualStyle).massifCrestCaps !== false) {
+      ctx.fillStyle = cap;
+      ctx.globalAlpha = 0.22 * (0.5 + 0.5 * this.budget);
+      for (let i = 0; i < bars.length; i++) {
+        const h = bars[i].h01 * maxH;
+        ctx.fillRect(left + i * (barW + gap), baseY - h, barW, 3.5);
+      }
     }
     ctx.restore();
   }
@@ -2236,15 +2537,16 @@ export class BiomeManager {
       const { r, g, b } = hexToRgb(haloColor);
       const rgb = `${r},${g},${b}`;
 
-      // Crest caps: the ground rhymes with the spectrum massif's own
-      // halo-tinted crest -- a thin bright line riding the groove wave,
-      // silent (skipped) whenever the track's global energy is near zero.
+      // Soft groove caps: music-terrain tell, soft alpha so they read as
+      // energy on the land — not cyan hairline glitches.
       const grooveNow = bars.length ? bars[0].groove || 0 : 0;
-      if (grooveNow > 0.05) {
+      const wantGroundCaps = styleDials(this.visualStyle).groundCrestCaps !== false;
+      if (grooveNow > 0.05 && wantGroundCaps) {
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
-        ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.28 * grooveNow, this.reducedFlash)})`;
-        for (const bar of bars) ctx.fillRect(bar.x, bar.y, bar.width + 1, 2);
+        const a = 0.16 * grooveNow;
+        ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(a, this.reducedFlash)})`;
+        for (const bar of bars) ctx.fillRect(bar.x, bar.y, bar.width + 1, 3);
         ctx.restore();
       }
 
@@ -2408,7 +2710,8 @@ export class BiomeManager {
   }
 
   /** SAKURA's dormant hook: soft petal drifts scrolling with the ground,
-   *  plus any petals actively shedding off the piles right now. */
+   *  plus any petals actively shedding off the piles right now.
+   *  (Was one giant half-ellipse per pile — read as hamburger buns under the ridge.) */
   _drawPetalPiles(ctx, canvas, worldX, groundY, profile) {
     ctx.save();
     ctx.fillStyle = profile.particles.color;
@@ -2416,10 +2719,18 @@ export class BiomeManager {
     for (let i = 0; i < 6; i++) {
       const x = ((i * spacing - worldX) % (canvas.width + spacing) + canvas.width + spacing) % (canvas.width + spacing) - spacing / 2;
       const breathe = 0.8 + 0.2 * Math.sin(this.tSec * 0.5 + i * 2.1);
-      ctx.globalAlpha = 0.22 * breathe;
-      ctx.beginPath();
-      ctx.ellipse(x, groundY + 3, 40 + (i % 3) * 16, 7 + (i % 2) * 3, 0, Math.PI, Math.PI * 2);
-      ctx.fill();
+      // Small stacked petal flecks on the ground line — not a dome under the cliff.
+      const n = 5 + (i % 3);
+      for (let k = 0; k < n; k++) {
+        const ox = (k - (n - 1) / 2) * 7 + Math.sin(i * 1.7 + k) * 2;
+        const oy = -2 - (k % 3) * 1.6;
+        const rw = 5 + (k % 3) * 1.4;
+        const rh = 2.2 + (k % 2) * 0.6;
+        ctx.globalAlpha = 0.18 * breathe * (0.7 + 0.3 * ((k + i) % 3) / 2);
+        ctx.beginPath();
+        ctx.ellipse(x + ox, groundY + oy, rw, rh, (k - 2) * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     for (const sp of this._shedPetals) {
       const sx = sp.wx - worldX;

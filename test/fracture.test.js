@@ -129,20 +129,24 @@ test('ridge births are paced by song progress, not piled into the final third', 
   assert.ok(fx.cracks.length > at75, 'final stretch should still add ridges');
 });
 
-test('FractureEngine transitions to about-to-freeze 300ms before the song ends', () => {
+test('FractureEngine transitions to about-to-freeze on the musical last-impact finale', () => {
   const durationMs = 5000;
   const conductor = buildConductorWithKicks(durationMs);
   const fx = new FractureEngine(conductor, { canvasWidth: 1280, canvasHeight: 720, songSeed: 1, durationMs });
+  const armAt = fx._freezeArmMs;
+  assert.ok(Number.isFinite(armAt) && armAt > 0, 'finale arm time is set from last impact notes');
+  assert.ok(fx.finale.lastImpactMs > 0, 'last impact note detected');
 
   const dtMs = 1000 / 120;
   let flippedAt = null;
-  for (let t = 0; t < durationMs; t += dtMs) {
+  for (let t = 0; t < durationMs + 500; t += dtMs) {
     conductor.dispatchUpTo(t);
     fx.update(t, dtMs / 1000, null, null);
     if (fx.isAboutToFreeze && flippedAt === null) flippedAt = t;
   }
   assert.ok(flippedAt !== null, 'expected shatterState to reach about-to-freeze');
-  assert.ok(Math.abs(flippedAt - (durationMs - 300)) < 50);
+  assert.ok(Math.abs(flippedAt - armAt) < 50, `freeze armed at ${flippedAt}, expected ~${armAt}`);
+  assert.ok(fx.justEnteredFinale === false || flippedAt !== null); // flag is one-frame; state persists
 });
 
 test('FractureEngine triangulates accumulated crack nodes into fragments with stagger', () => {

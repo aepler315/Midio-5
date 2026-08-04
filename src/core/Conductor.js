@@ -105,6 +105,37 @@ export class Conductor {
     for (const reg of this.aheadRegs) reg.cursor = 0;
   }
 
+  /**
+   * Jump dispatch cursors to `ms` without re-firing past events.
+   * Used by the mountain seekbar. Forward seeks skip silently; reverse
+   * seeks rewind cursors so future notes still fire once.
+   */
+  seekTo(ms) {
+    const t = Math.max(0, ms);
+    // On-time cursor: first event strictly after t
+    let lo = 0, hi = this.timeline.length;
+    while (lo < hi) {
+      const m = (lo + hi) >> 1;
+      if (this.timeline[m].tMs <= t) lo = m + 1; else hi = m;
+    }
+    this.cursor = lo;
+    lo = 0; hi = this.barGrid.length;
+    while (lo < hi) {
+      const m = (lo + hi) >> 1;
+      if (this.barGrid[m].ms <= t) lo = m + 1; else hi = m;
+    }
+    this.barCursor = lo;
+    for (const reg of this.aheadRegs) {
+      const horizon = t + reg.leadMs;
+      let a = 0, b = this.timeline.length;
+      while (a < b) {
+        const m = (a + b) >> 1;
+        if (this.timeline[m].tMs <= horizon) a = m + 1; else b = m;
+      }
+      reg.cursor = a;
+    }
+  }
+
   /** Nearest event (already-fired or upcoming) matching predicate, within +/-windowMs of nowMs. */
   nearestEventMs(predicate, nowMs, windowMs) {
     let lo = 0, hi = this.timeline.length - 1, idx = this.timeline.length;

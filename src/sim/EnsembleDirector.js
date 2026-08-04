@@ -34,7 +34,12 @@ export class EnsembleDirector {
     this.K = 1;
     this._phi = rand() * TWO_PI;
     this._t = 0;
-    this.anchors = [{ x: stageW * 0.26, y: 0 }, { x: stageW * 0.15, y: 0 }, { x: stageW * 0.4, y: stageH * 0.35 }];
+    // Wider default triangle so the trio doesn't spawn stacked.
+    this.anchors = [
+      { x: stageW * 0.28, y: 0 },
+      { x: stageW * 0.12, y: 0 },
+      { x: stageW * 0.48, y: stageH * 0.30 },
+    ];
     // Presence weights: 1 = fully in the ensemble, 0 = off on an excursion.
     // An excursion director eases these toward 0/1 rather than snapping, so
     // "leaving the band" and "coming home" both read as physical transitions.
@@ -81,9 +86,10 @@ export class EnsembleDirector {
     this.r = R;
     this.rSmooth += (1 - Math.exp(-dtSec / R_TAU)) * (R - this.rSmooth);
 
-    // Formation: desync and sadness both push them apart.
+    // Formation: desync and sadness both push them apart. Floor is higher
+    // so even a locked "happy" ensemble still has room to breathe.
     const sadness = clamp01(-vibe.valence);
-    const spreadTarget = lerp(150, 540, clamp01(0.7 * (1 - this.rSmooth) + 0.5 * sadness));
+    const spreadTarget = lerp(230, 620, clamp01(0.7 * (1 - this.rSmooth) + 0.5 * sadness));
     this.spread += (1 - Math.exp(-dtSec / SPREAD_TAU)) * (spreadTarget - this.spread);
 
     // The formation's centroid roams the stage on a slow ellipse + curl drift.
@@ -91,19 +97,29 @@ export class EnsembleDirector {
     const cx = this.w * (0.34 + 0.16 * Math.sin(this._t * CENTROID_SPEED * TWO_PI + this._phi) + 0.05 * clamp(flow.x, -1, 1));
     const formAng = this._t * 0.021 * TWO_PI * 0.3;
 
-    // Per-character anchors on a slowly rotating triangle, each with its
-    // own curl wander so nobody rides rails.
+    // Role bias: Broshi hangs back-left, Midasus high-right, Midio near
+    // center — equilateral alone let them collapse into one pile.
+    const roleBias = [
+      { x: 0.05, y: 0 },
+      { x: -0.42, y: 0.04 },
+      { x: 0.38, y: -0.28 },
+    ];
+
+    // Per-character anchors on a slowly rotating triangle + role bias.
     for (let i = 0; i < 3; i++) {
       const ang = formAng + (i * TWO_PI) / 3;
       const wob = curl2(this._t * 0.04 + i * 9.1, i * 3.7, this._t * 0.026);
-      this.anchors[i].x = cx + Math.cos(ang) * this.spread * 0.5 + clamp(wob.x, -1, 1) * 34;
-      this.anchors[i].y = clamp(wob.y, -1, 1) * 26; // consumers add their own base heights
+      this.anchors[i].x = cx
+        + Math.cos(ang) * this.spread * 0.55
+        + roleBias[i].x * this.spread
+        + clamp(wob.x, -1, 1) * 40;
+      this.anchors[i].y = roleBias[i].y * this.spread + clamp(wob.y, -1, 1) * 30;
     }
     // Stage-safety clamps per character role.
-    this.anchors[0].x = clamp(this.anchors[0].x, this.w * 0.12, this.w * 0.62); // Midio: gameplay window
-    this.anchors[1].x = clamp(this.anchors[1].x, this.w * 0.06, this.w * 0.85); // Broshi: full floor
-    this.anchors[2].x = clamp(this.anchors[2].x, this.w * 0.15, this.w * 0.88); // Midasus: full sky
-    this.anchors[2].y = this.h * 0.33 - this.spread * 0.10 + this.anchors[2].y * 2;
+    this.anchors[0].x = clamp(this.anchors[0].x, this.w * 0.14, this.w * 0.58); // Midio: gameplay window
+    this.anchors[1].x = clamp(this.anchors[1].x, this.w * 0.05, this.w * 0.78); // Broshi: prefers left floor
+    this.anchors[2].x = clamp(this.anchors[2].x, this.w * 0.22, this.w * 0.92); // Midasus: sky-right
+    this.anchors[2].y = this.h * 0.28 - this.spread * 0.12 + this.anchors[2].y * 2;
   }
 
   phase(i) { return this.theta[i]; }

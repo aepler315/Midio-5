@@ -14,7 +14,25 @@ export function smoothstep(edge0, edge1, x) {
 }
 
 export function clamp01(v) {
+  // Coerce non-finite values (undefined/NaN) to 0 so callers that run before
+  // their first update() never poison canvas alphas with "rgba(...,NaN)".
+  if (!Number.isFinite(v)) return 0;
   return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/**
+ * Soft 1-D separation impulse: 0 outside minDist, smooth quadratic push
+ * inside. Not a hard wall — characters ease apart when they crowd.
+ * Returns acceleration-like units (caller multiplies by dtSec).
+ */
+export function softRepel1D(myX, otherX, minDist, strength) {
+  if (!(minDist > 0) || !(strength > 0)) return 0;
+  const d = myX - otherX;
+  const ad = Math.abs(d);
+  if (ad >= minDist) return 0;
+  if (ad < 1e-4) return strength; // coincident: arbitrary + direction
+  const t = 1 - ad / minDist;
+  return Math.sign(d) * strength * t * t;
 }
 
 /** Mulberry32 seeded PRNG — deterministic, fast, good enough for visuals. */

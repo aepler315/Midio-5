@@ -1,17 +1,27 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SpaceRidge, projectWireframe, ICO_VERTS, ICO_EDGES } from '../src/world/SpaceRidge.js';
+import {
+  SpaceRidge, projectWireframe, ICO_VERTS, ICO_EDGES, N_NODES, nodeXFrac,
+} from '../src/world/SpaceRidge.js';
 
-test('node band assignment: 24 nodes, treble-weighted, deterministic per seed', () => {
+test('node band assignment: 26 nodes (+1 joint each edge), treble-weighted, deterministic', () => {
   const a = new SpaceRidge(5);
   const b = new SpaceRidge(5);
   const c = new SpaceRidge(99);
-  assert.equal(a.nodes.length, 24);
+  assert.equal(N_NODES, 26);
+  assert.equal(a.nodes.length, 26);
   const trebleCount = a.nodes.filter((n) => n.band >= 4).length;
-  assert.ok(trebleCount / a.nodes.length >= 0.55, `expected treble-heavy assignment, got ${trebleCount}/24`);
+  assert.ok(trebleCount / a.nodes.length >= 0.55, `expected treble-heavy assignment, got ${trebleCount}/26`);
   assert.deepEqual(a.nodes.map((n) => n.band), b.nodes.map((n) => n.band), 'same seed -> same bands');
   assert.notDeepEqual(a.nodes.map((n) => n.band), c.nodes.map((n) => n.band));
   for (const n of a.nodes) assert.ok(n.band >= 0 && n.band <= 6);
+});
+
+test('nodeXFrac extends one joint past each screen edge', () => {
+  assert.ok(nodeXFrac(0) < 0, 'leftmost joint sits past the left edge');
+  assert.ok(nodeXFrac(N_NODES - 1) > 1, 'rightmost joint sits past the right edge');
+  assert.ok(Math.abs(nodeXFrac(1)) < 0.08, 'first on-screen-ish joint near 0');
+  assert.ok(Math.abs(nodeXFrac(N_NODES - 2) - 1) < 0.08, 'last on-screen-ish joint near 1');
 });
 
 test('levels stay in [0,1], finite, after many random-band updates', () => {

@@ -6,6 +6,8 @@ export class ComboSystem {
   constructor() {
     this.streak = 0;
     this.M = 1;
+    this.peakM = 1;
+    this.cleanLandings = 0;
     this.lastCleanMs = -Infinity;
     this._lastUpdateMs = 0;
 
@@ -21,7 +23,9 @@ export class ComboSystem {
   onLanding(nowMs, isClean) {
     if (isClean) {
       this.streak += 1;
+      this.cleanLandings += 1;
       this.M = 1 + 0.1 * Math.min(this.streak, 20); // RULE 1
+      if (this.M > this.peakM) this.peakM = this.M;
       this.lastCleanMs = nowMs;
       this.justClean = true;
     }

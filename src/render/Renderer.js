@@ -15,6 +15,7 @@ import { capFlashAlpha } from '../ui/Accessibility.js';
 import { LerpCache, hexToRgb } from '../utils/color.js';
 import { nearestPaletteColor, pixelGridWidth, pixelGridHeight, SCANLINE_ALPHA, SCANLINE_PERIOD_PX } from './RetroFilter.js';
 import { hypeFrameStyle } from '../sim/HypeDirector.js';
+import { isRendered, styleDials } from './VisualStyle.js';
 
 const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
@@ -52,8 +53,9 @@ export const BLOOM_BASE = 0.23;  // steady glow present even at rest -- never fl
 const BLOOM_MAX = 0.75;          // hard ceiling so a maxed drop+fever never blows out
 
 // Film finish: breathing vignette + very-low-alpha color grade (see FilmFinish.js).
-const FILM_GRADE_COOL = '#1f8fa3';       // muted teal -- calm push
-const FILM_GRADE_WARM = '#ff9a4d';       // muted amber -- hot/high-budget push
+const FILM_GRADE_COOL = '#1a7a96';       // deeper ocean teal -- calm / space push
+const FILM_GRADE_WARM = '#e88a55';       // muted amber -- hot/high-budget push
+const FILM_GRADE_SPACE = '#2a2060';      // indigo space wash layered in rendered style
 const FILM_GRADE_ALPHA_BASE = 0.05;      // floor alpha for the grade wash -- a finish, not a filter
 const FILM_GRADE_ALPHA_RANGE = 0.03;     // extra alpha the further warmth sits from neutral
 const VIGNETTE_MIN_ALPHA = 0.12;         // edge darkness at maximum openness (full hype/drop)
@@ -81,9 +83,23 @@ export class Renderer {
   draw(sim, alpha) {
     const { ctx, canvas } = this;
     const fracture = sim.fracture || null;
+    this._styleDials = styleDials(sim.visualStyle);
+
+    // Logical stage (sim anchors) vs physical buffer (may be 720p–4K).
+    // All world drawing uses logical dimensions; the transform scales into
+    // the backing store so composition stays correct at every preset.
+    const stageW = sim.stageW || sim.canvasWidth || 1280;
+    const stageH = sim.stageH || sim.canvasHeight || 720;
+    const stage = this._stageView || (this._stageView = { width: stageW, height: stageH });
+    stage.width = stageW;
+    stage.height = stageH;
+    const sx = canvas.width / stageW;
+    const sy = canvas.height / stageH;
 
     if (fracture && (fracture.isFrozen || fracture.isDone)) {
-      fracture.drawShatter(ctx, canvas);
+      // Shatter geometry is logical-stage space; scale into the physical buffer.
+      ctx.setTransform(sx, 0, 0, sy, 0, 0);
+      fracture.drawShatter(ctx, stage);
       return;
     }
 
@@ -96,23 +112,24 @@ export class Renderer {
     // same current biome as everything else.
     const haloColor = biomeManager && biomeManager.currentHaloColor ? biomeManager.currentHaloColor() : '#ffdca0';
 
-    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(sx, 0, 0, sy, 0, 0);
 
     // Zoom has been removed entirely: the camera holds one fixed framing.
     // Only the damped impact roll and the screen shake move the frame now,
     // both pivoting on screen center so a shake/roll never scrolls the
     // world sideways.
     ctx.save();
-    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.translate(stageW / 2, stageH / 2);
     ctx.rotate(camera.roll || 0); // damped impact roll, pivoting on screen center
-    ctx.translate(-canvas.width / 2 + camera.shakeX, -canvas.height / 2 + camera.shakeY);
+    ctx.translate(-stageW / 2 + camera.shakeX, -stageH / 2 + camera.shakeY);
 
     if (biomeManager) {
-      biomeManager.draw(ctx, canvas, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul, perf);
+      biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul, perf);
     } else {
-      this._drawFallbackSky(ctx, canvas);
-      this._drawGround(ctx, canvas, pose, sim.midio.groundY);
+      this._drawFallbackSky(ctx, stage);
+      this._drawGround(ctx, stage, pose, sim.midio.groundY);
     }
     // Movement VII: the celestial body as a light, resolved once per frame
     // and shared by every contact shadow / rim light call below.
@@ -129,7 +146,7 @@ export class Renderer {
     // only touches the world painted so far (sky/phenomena/silhouettes/
     // burrow) -- telegraph, obstacles, and every character draw afterward,
     // fully saturated, exactly per the hard rule.
-    if (sim.coda) this._drawDesaturationOverlay(ctx, canvas, sim.coda);
+    if (sim.coda) this._drawDesaturationOverlay(ctx, stage, sim.coda);
 
     if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
     if (sim.obstacles) {
@@ -180,7 +197,7 @@ export class Renderer {
       this.epicycles.trigger(lm.idx, pose.midioDrawX + 30, sim.midio.groundY - 245, sim.timeMs);
     }
     this.epicycles.draw(ctx, sim.timeMs);
-    this._drawDropShockwave(ctx, canvas, sim, pose);
+    this._drawDropShockwave(ctx, stage, sim, pose);
 
     if (sim.midasus && sim.midasus.voyage.depth <= 0) {
       const heightAbove = sim.midasus.yFloor - sim.midasus.p.y;
@@ -189,41 +206,53 @@ export class Renderer {
     if (sim.midasus) sim.midasus.draw(ctx, particleMul);
     if (sim.battle) this._drawBattleFX(ctx, sim);
     if (sim.gnat) sim.gnat.draw(ctx, sim.timeMs);
-    if (sim.fracture) sim.fracture.draw(ctx, canvas, { glow: perf ? perf.crackGlowEnabled : true });
-    if (biomeManager) biomeManager.drawForeground(ctx, canvas, pose.worldX, perf ? perf.veilEnabled : true);
-    if (sim.keyDirector) this._drawTranspositionWave(ctx, canvas, sim.keyDirector);
+    if (sim.fracture) sim.fracture.draw(ctx, stage, { glow: perf ? perf.crackGlowEnabled : true });
+    if (biomeManager) biomeManager.drawForeground(ctx, stage, pose.worldX, perf ? perf.veilEnabled : true);
+    if (sim.keyDirector) this._drawTranspositionWave(ctx, stage, sim.keyDirector);
 
     ctx.restore(); // camera transform
-    ctx.restore();
 
-    // Mario Paint composer strip: fixed HUD layer, outside camera shake/zoom.
-    if (sim.conductor) {
-      if (!this.composer) {
-        const holds = sim.noteChart ? sim.noteChart.notes.filter((n) => n.type === 'hold') : [];
-        this.composer = new ComposerStrip(sim.conductor.timeline, sim.conductor.barGrid, sim.conductor.durationMs, holds);
-      }
-      this.composer.draw(ctx, canvas, sim.timeMs);
-    }
-
-    if (sim.fever) this._drawFeverAura(ctx, canvas, sim.fever.level, sim.biomes, sim.reducedFlash);
-    if (sim.hype) this._drawHypeFrame(ctx, canvas, sim);
+    if (sim.fever) this._drawFeverAura(ctx, stage, sim.fever.level, sim.biomes, sim.reducedFlash);
+    if (sim.hype) this._drawHypeFrame(ctx, stage, sim);
     // Drop impact pack: a chromatic shock + radial speed-lines from Midio,
     // both keyed off the same window as the shockwave rings -- drawn last so
     // they shock the fully composed frame, hype border and highway included.
-    if (sim.hype) this._drawDropImpact(ctx, canvas, sim, pose);
-    // Bloom: the final light-bleed pass over the fully composed frame --
-    // drawn last (after the drop shock, fever aura, hype frame) so every
-    // bright element in the finished shot, including those, bleeds light;
-    // drawn before the freeze capture/highlight-reel grabs so both include it.
+    if (sim.hype) this._drawDropImpact(ctx, stage, sim, pose);
+
+    // Post FX that sample the pixel buffer need identity transform + full
+    // physical canvas size (bloom / retro / freeze capture).
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     this._drawBloom(ctx, canvas, sim);
-    if (sim.filmFinish && (perf ? perf.heavyPostFx : true)) this._drawFilmFinish(ctx, canvas, sim);
-    // Modernized 8-bit retro filter: pixelation + palette quantization over
-    // the fully composed frame -- drawn last of all the post-passes so it
-    // reads as the screen's own output, not a layer under the bloom/film
-    // grain. Sheds (skips) under the same perf signal as film finish; the
-    // freeze capture/highlight reel and video export both read the canvas
-    // AFTER this, so they see exactly what the player saw.
-    if (perf ? perf.heavyPostFx : true) this._drawRetroFilter(ctx, canvas);
+    if (sim.filmFinish && (perf ? perf.heavyPostFx : true)) {
+      // Film finish was authored in logical space; scale its fill rects.
+      ctx.setTransform(sx, 0, 0, sy, 0, 0);
+      this._drawFilmFinish(ctx, stage, sim);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+    // Classic (SMW lineage) keeps the 8-bit retro finish. Rendered (DKC3
+    // lineage) skips it so soft CGI shading and bloom stay cinematic.
+    const dials = styleDials(sim.visualStyle);
+    if (dials.retroFilter && (perf ? perf.heavyPostFx : true)) this._drawRetroFilter(ctx, canvas);
+
+    // HUD seekbar AFTER post-FX so vignette/bloom never bury it. paramBus is
+    // optional (lives on sim); never reference a free variable here — a
+    // ReferenceError used to abort the draw and kill the strip entirely.
+    if (sim.conductor) {
+      ctx.setTransform(sx, 0, 0, sy, 0, 0);
+      if (!this.composer) {
+        const holds = sim.noteChart ? sim.noteChart.notes.filter((n) => n.type === 'hold') : [];
+        const sections = sim.biomes?.sections || [];
+        this.composer = new ComposerStrip(
+          sim.conductor.timeline, sim.conductor.barGrid, sim.conductor.durationMs, holds, sections,
+        );
+      } else if (sim.biomes?.sections) {
+        this.composer.setSections(sim.biomes.sections);
+      }
+      this.composer.draw(ctx, stage, sim.timeMs, {
+        showLabels: !!(sim.showSectionLabels || sim.paramBus?.showSectionLabels),
+      });
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
 
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
 
@@ -415,20 +444,31 @@ export class Renderer {
    *  routes through capFlashAlpha. */
   _drawFilmFinish(ctx, canvas, sim) {
     const ff = sim.filmFinish;
+    const dials = styleDials(sim.visualStyle);
+    const gradeMul = dials.filmGradeMul;
+    const vigMul = dials.vignetteDepthMul;
 
     const color = this._filmLerpCache.get(FILM_GRADE_COOL, FILM_GRADE_WARM, ff.warmth);
-    const gradeAlpha = FILM_GRADE_ALPHA_BASE + FILM_GRADE_ALPHA_RANGE * Math.abs(ff.warmth - 0.5) * 2;
+    const gradeAlpha = (FILM_GRADE_ALPHA_BASE + FILM_GRADE_ALPHA_RANGE * Math.abs(ff.warmth - 0.5) * 2) * gradeMul;
     ctx.save();
     ctx.globalCompositeOperation = 'soft-light';
-    ctx.globalAlpha = gradeAlpha;
+    ctx.globalAlpha = Math.min(0.22, gradeAlpha);
     ctx.fillStyle = color;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Rendered: a whisper of indigo space grade so the whole frame reads
+    // a little more orbital / deep-sea than pure warm daylight.
+    if (dials.spaceWash) {
+      ctx.globalAlpha = Math.min(0.12, 0.045 * gradeMul);
+      ctx.fillStyle = FILM_GRADE_SPACE;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
     ctx.restore();
 
     const cx = canvas.width / 2, cy = canvas.height / 2;
     const outerR = Math.hypot(cx, cy);
-    const onset = VIGNETTE_ONSET_MAX - (VIGNETTE_ONSET_MAX - VIGNETTE_ONSET_MIN) * ff.vignetteDepth;
-    const edgeAlpha = VIGNETTE_MIN_ALPHA + (VIGNETTE_MAX_ALPHA - VIGNETTE_MIN_ALPHA) * ff.vignetteDepth;
+    const depth = Math.min(1, ff.vignetteDepth * vigMul);
+    const onset = VIGNETTE_ONSET_MAX - (VIGNETTE_ONSET_MAX - VIGNETTE_ONSET_MIN) * depth;
+    const edgeAlpha = VIGNETTE_MIN_ALPHA + (VIGNETTE_MAX_ALPHA - VIGNETTE_MIN_ALPHA) * depth;
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
     const vg = ctx.createRadialGradient(cx, cy, outerR * onset, cx, cy, outerR);
@@ -538,7 +578,7 @@ export class Renderer {
   _drawBloom(ctx, canvas, sim) {
     const perf = sim.perf;
     if (perf && !perf.bloomEnabled) return;
-    const strength = bloomStrength(sim.hype, sim.fever, !!sim.reducedFlash);
+    const strength = bloomStrength(sim.hype, sim.fever, !!sim.reducedFlash, sim.visualStyle);
     if (strength <= 0.005) return;
 
     const wSmall = Math.max(1, Math.round(canvas.width / BLOOM_DOWNSCALE));
@@ -668,7 +708,7 @@ export class Renderer {
     ctx.strokeStyle = 'rgba(255,255,255,0.15)';
     ctx.lineWidth = 2;
     const spacing = 60;
-    const offset = pose.worldX % spacing;
+    const offset = ((pose.worldX % spacing) + spacing) % spacing;
     ctx.beginPath();
     for (let x = -offset; x < canvas.width; x += spacing) {
       ctx.moveTo(x, groundY);
@@ -678,8 +718,7 @@ export class Renderer {
   }
 
   /** One contact-shadow ellipse. 'multiply' darkens whatever terrain color
-   *  sits underneath (petal piles, neon grid, lake bed) instead of
-   *  flattening it to a fixed gray. */
+   *  sits underneath instead of flattening it to a fixed gray. */
   _drawContactShadow(ctx, s) {
     if (s.alpha <= 0.002 || s.rx <= 0.5) return;
     ctx.save();
@@ -713,11 +752,20 @@ export class Renderer {
     // Pale, bright, wider spectral spread -- the same "pale, never candy"
     // treatment Midasus's core uses, not the old narrow near-white gold.
     // The Apotheosis widens the hue band further into a full rim sweep.
+    const dials = this._styleDials || styleDials('classic');
+    // Match Broshi's clean wireframe language — no soft hull fill (it turned
+    // Midio into a smeared white blob over the glyph).
     const options = {
       satBase: 32 + flash * 40 + 18 * apoProgress,
       lightBase: 72 + flash * 12 + 8 * apoProgress,
       hueSpread: 28 + 46 * apoProgress,
+      widthBase: dials.widthBase,
+      widthGlow: dials.widthGlow,
+      rimAmount: dials.rimAmount,
+      softFill: false,
+      softFillAlpha: 0,
     };
+    const outlineOpts = { widthAdd: dials.outlineWidthAdd };
 
     // Modal vibration: rim vertices ride the performer's ring-down field.
     // Rest lengths stay the undisplaced ones, so the wobble reads as edge
@@ -738,23 +786,30 @@ export class Renderer {
     // copy of the body drawn first so he reads like an instrument catching
     // light, not a flat outline -- brighter on fever and right on the beat.
     const excitement = clamp01(melt / 8); // vibe/fever/apotheosis "melt" doubles as how hard he's glowing
-    const glowAlpha = capFlashAlpha(0.20 + 0.30 * excitement + 0.4 * breatheBeatFlash, reducedFlash);
+    const glowAlpha = capFlashAlpha(
+      (0.14 + 0.22 * excitement + 0.28 * breatheBeatFlash) * dials.glowHaloMul,
+      reducedFlash,
+    );
     if (glowAlpha > 0.02) {
       const glowCenter = applyTransform(hub, transform);
-      drawGlowHalo(ctx, glowCenter.x, glowCenter.y, 30 * transform.scaleX, 38 * transform.scaleY, hue, glowAlpha, { sat: 40, light: 78 });
+      drawGlowHalo(
+        ctx, glowCenter.x, glowCenter.y,
+        24 * transform.scaleX, 30 * transform.scaleY,
+        hue, glowAlpha, { sat: 38, light: 74 },
+      );
     }
-    // The crisp pass carries an ink contour underneath (outline: true) so
-    // his silhouette stays razor-edged against his own under-glow.
-    drawMeshPart(ctx, bodyMesh, bodyRest, transform, hue, { ...options, outline: true });
+    // The crisp pass carries an ink contour underneath so his silhouette
+    // stays razor-edged against his own under-glow (and soft sculpted fill).
+    drawMeshPart(ctx, bodyMesh, bodyRest, transform, hue, { ...options, outline: outlineOpts });
 
     if (blink < 0.98) {
       const blinkEye = {
         vertices: MIDIO_EYE.vertices.map((v) => ({ x: v.x, y: MIDIO_EYE_CY + (v.y - MIDIO_EYE_CY) * blink })),
         edges: MIDIO_EYE.edges,
       };
-      drawMeshPart(ctx, blinkEye, this._midioEyeRest, transform, hue, { ...options, outline: true });
+      drawMeshPart(ctx, blinkEye, this._midioEyeRest, transform, hue, { ...options, outline: outlineOpts });
     } else {
-      drawMeshPart(ctx, MIDIO_EYE, this._midioEyeRest, transform, hue, { ...options, outline: true });
+      drawMeshPart(ctx, MIDIO_EYE, this._midioEyeRest, transform, hue, { ...options, outline: outlineOpts });
     }
 
     // Kick ignition: the sigil flashes additively right on the beat.
@@ -830,12 +885,13 @@ export class Renderer {
  * the pulsing on drops/kicks while the base glow stays intact. Clamped to
  * BLOOM_MAX so a maxed-out drop-during-fever never blows the frame out.
  */
-export function bloomStrength(hype, fever, reducedFlash = false) {
+export function bloomStrength(hype, fever, reducedFlash = false, visualStyle = 'classic') {
   const slam = hype ? hype.slam : 0;
   const surge = hype ? hype.surge : 0;
   const feverLevel = fever ? fever.level : 0;
   const reactive = capFlashAlpha(0.45 * slam + 0.35 * surge + 0.3 * feverLevel, reducedFlash);
-  return Math.min(BLOOM_MAX, BLOOM_BASE + reactive);
+  const base = BLOOM_BASE * styleDials(visualStyle).bloomBaseMul;
+  return Math.min(BLOOM_MAX, base + reactive);
 }
 
 /** Drop impact envelope: 1 right at the drop, easing to 0 over

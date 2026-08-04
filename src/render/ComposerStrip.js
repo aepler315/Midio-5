@@ -1,44 +1,63 @@
-// A Mario Paint-composer-style staff strip across the bottom of the screen:
-// the actual NoteEvent timeline laid out as chunky pixel icons on a cream
-// paper staff, four bars to a "page", with a red playhead sweeping left to
-// right and flipping to the next page at the bar -- exactly how the SNES
-// composer read its sheet. Icons pop (scale bounce) the moment the
-// playhead crosses them. Icon language: kick = Midio's wheel, other
-// percussion = a drum, melody = star, bass = heart, pad = flower. All
-// sprites are original 9x9 pixel grids rendered to tiny offscreen
-// canvases once, lazily, so the constructor stays DOM-free for tests.
+// Full-song seekbar: the entire track as a mountain-range silhouette of
+// musical energy, with a sweeping playhead. Replaces the old Mario Paint
+// four-bar page strip.
 //
-// Pitch placement is real diatonic sheet-music notation, not a flattened
-// percentile stretch: each pitch resolves to a scale degree (relative to
-// the song's estimated tonic) via diatonicIndex, so C < D < E always sit
-// in ascending staff order and an accidental gets its own tick. Percussion
-// (RHYTHM role) never shares the pitch staff -- GM drum pitches are
-// arbitrary, not musical -- it gets its own single rail along the bottom
-// edge.
+//   F3  — toggle section labels (how BiomeManager / SongForm / lyrics
+//         labeled each stretch of the song)
+//   click strip — seek playback
+//   click a labeled section — open a detail overlay for debugging
+//
+// Pure helpers stay DOM-free for tests; draw() needs canvas 2D.
 import { Role } from '../core/NoteEvent.js';
-import { clamp } from '../utils/math.js';
+import { clamp, clamp01 } from '../utils/math.js';
 
-const PAGE_BARS = 4;
-const MAX_ICONS_PER_PAGE = 64;
-const MIN_VEL = 0.15;
-export const STAFF_ROWS = 13; // 5 lines + spaces, plus ledger room above/below
-const CELL_PX = 2;
+// Slim transport strip — reads as part of the HUD, not a second game.
+const STRIP_H = 72;
+const STRIP_PAD = 14;
+const STRIP_BOTTOM = 10;
+const MOUNTAIN_INSET_X = 2;
+const MOUNTAIN_SAMPLES = 320;
 
-// Semitone (0-11, relative to the tonic pitch class) -> [diatonic degree
-// 0-6, accidental]. Degrees are non-decreasing across 0..11, so pitch and
-// diatonic step stay in lockstep -- ascending pitch always means ascending
-// (or equal, on an accidental) step.
+// Quiet palette (matches #e8e6f0 / #ffd76a HUD language without the candy).
+const C = {
+  panel: 'rgba(8, 7, 14, 0.78)',
+  panelEdge: 'rgba(255, 255, 255, 0.07)',
+  ridge: 'rgba(232, 230, 240, 0.42)',
+  mountainTop: 'rgba(200, 190, 230, 0.38)',
+  mountainMid: 'rgba(90, 80, 130, 0.42)',
+  mountainBase: 'rgba(18, 16, 28, 0.88)',
+  played: 'rgba(4, 3, 10, 0.38)',
+  boundary: 'rgba(255, 255, 255, 0.12)',
+  select: 'rgba(255, 215, 106, 0.12)',
+  selectEdge: 'rgba(255, 215, 106, 0.55)',
+  playhead: 'rgba(255, 236, 200, 0.95)',
+  playheadGlow: 'rgba(255, 200, 120, 0.35)',
+  time: 'rgba(232, 230, 240, 0.45)',
+  timeNow: 'rgba(255, 215, 106, 0.85)',
+  label: 'rgba(255, 230, 180, 0.9)',
+  labelMuted: 'rgba(200, 205, 220, 0.55)',
+  detailBg: 'rgba(10, 9, 16, 0.94)',
+  detailEdge: 'rgba(255, 255, 255, 0.1)',
+  detailTitle: 'rgba(255, 215, 106, 0.92)',
+  detailKey: 'rgba(160, 165, 185, 0.75)',
+  detailVal: 'rgba(232, 230, 240, 0.9)',
+  font: 'system-ui, "Segoe UI", sans-serif',
+  mono: 'ui-monospace, "SF Mono", Consolas, monospace',
+};
+
+// Kept for tests / diatonic helpers that other modules still import.
+export const STAFF_ROWS = 13;
+
 const SEMITONE_TABLE = [
   [0, false], [0, true], [1, false], [1, true], [2, false], [3, false],
   [3, true], [4, false], [4, true], [5, false], [5, true], [6, false],
 ];
 
-/** Weighted (durMs * vel) pitch-class histogram over non-percussion notes;
- *  the argmax is the estimated tonic. Empty/all-percussion input -> C (0). */
+/** Weighted pitch-class histogram; argmax = estimated tonic. */
 export function estimateTonicPc(timeline) {
   const weight = new Array(12).fill(0);
   let any = false;
-  for (const evt of timeline) {
+  for (const evt of timeline || []) {
     if (evt.role === Role.RHYTHM) continue;
     const pc = ((evt.pitch % 12) + 12) % 12;
     weight[pc] += (evt.durMs || 90) * Math.max(0.05, evt.vel ?? 0.5);
@@ -50,81 +69,26 @@ export function estimateTonicPc(timeline) {
   return best;
 }
 
-/** Absolute MIDI pitch -> { step, accidental } relative to tonicPc: step is
- *  a diatonic scale-degree index (octave*7 + degree), monotone
- *  non-decreasing in pitch; accidental marks a note that isn't in the
- *  tonic's major scale. Pure. */
 export function diatonicIndex(pitch, tonicPc) {
   const rel = pitch - tonicPc;
   const octave = Math.floor(rel / 12);
-  const semitone = rel - octave * 12; // 0..11
+  const semitone = rel - octave * 12;
   const [degree, accidental] = SEMITONE_TABLE[semitone];
   return { step: octave * 7 + degree, accidental };
 }
-
-// 9x9 sprite grids: 0 transparent, 1 fill, 2 shade.
-const SPRITES = {
-  star: {
-    color: '#ffd23e', shade: '#c9931a',
-    grid: [
-      '000010000', '000111000', '000111000', '111111111', '011111110',
-      '001111100', '011101110', '011000110', '010000010',
-    ],
-  },
-  heart: {
-    color: '#ff5d7e', shade: '#c22b4e',
-    grid: [
-      '011000110', '111102111', '111111111', '111111111', '011111110',
-      '001111100', '000111000', '000010000', '000000000',
-    ],
-  },
-  flower: {
-    color: '#c77dff', shade: '#8a43cc',
-    grid: [
-      '001101100', '011111110', '011121110', '111222111', '011121110',
-      '001111100', '000101000', '000010000', '000000000',
-    ],
-  },
-  wheel: {
-    color: '#ffb43a', shade: '#c97a12',
-    grid: [
-      '001111100', '010010010', '100010001', '100010001', '111111111',
-      '100010001', '100010001', '010010010', '001111100',
-    ],
-  },
-  drum: {
-    color: '#4fd8c4', shade: '#1f9a89',
-    grid: [
-      '000000000', '011111110', '112222211', '111111111', '110111011',
-      '110111011', '011111110', '000000000', '000000000',
-    ],
-  },
-};
 
 export function iconFor(evt) {
   if (evt.role === Role.RHYTHM) return evt.kick ? 'wheel' : 'drum';
   if (evt.role === Role.MELODY) return 'star';
   if (evt.role === Role.BASS) return 'heart';
-  return 'flower'; // PAD and anything else
+  return 'flower';
 }
 
-/** Gaussian pop bump around the onset: 1 at the hit, ~0 outside +-120ms. */
 export function popBump(dtMs) {
   const u = (dtMs - 30) / 80;
   return dtMs > -80 && dtMs < 200 ? Math.exp(-u * u) : 0;
 }
 
-/**
- * Cap a dense page at `cap` icons WITHOUT losing temporal coverage. A plain
- * "loudest first" slice breaks on real MIDIs: velocity rescaling clamps the
- * top 5% of notes to exactly 1.0 (quantized files put EVERY note there), the
- * sort is stable, so equal velocities keep time order and the slice keeps
- * only the page's first `cap` notes — the strip then shows notes only in
- * the first half (or less) of its viewport. Instead: divide the page into
- * time slots, sort each slot loudest-first, and take rounds of one-per-slot
- * until the budget is spent — every part of the page keeps its loudest
- * material, and the full width stays populated.
- */
 export function stratifyCap(events, cap, pageStartMs, pageMs, slots = 32) {
   if (events.length <= cap) return events;
   const buckets = Array.from({ length: slots }, () => []);
@@ -144,206 +108,443 @@ export function stratifyCap(events, cap, pageStartMs, pageMs, slots = 32) {
   return kept.sort((a, b) => a.tMs - b.tMs);
 }
 
+/** Form label integer → A, B, C, … */
+export function formLetter(label) {
+  if (!Number.isFinite(label) || label < 0) return '?';
+  let n = Math.floor(label);
+  let s = '';
+  do {
+    s = String.fromCharCode(65 + (n % 26)) + s;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return s;
+}
+
+/**
+ * Build a 0..1 height field for the whole song from note density + kicks.
+ * Pure — tests can call without canvas.
+ */
+export function buildSongMountain(timeline, durationMs, samples = MOUNTAIN_SAMPLES) {
+  const n = Math.max(8, samples | 0);
+  const raw = new Float32Array(n);
+  const dur = Math.max(1, durationMs || 1);
+  for (const e of timeline || []) {
+    const t = e.tMs || 0;
+    if (t < 0 || t > dur + 50) continue;
+    const i = clamp(Math.floor((t / dur) * n), 0, n - 1);
+    const v = Math.max(0.05, e.vel ?? 0.5);
+    raw[i] += (e.kick ? 2.2 : e.role === Role.RHYTHM ? 1.1 : 0.85) * v;
+    // Short notes still paint a shoulder so sparse songs have silhouette.
+    if (i + 1 < n) raw[i + 1] += 0.25 * v;
+    if (i > 0) raw[i - 1] += 0.15 * v;
+  }
+  // Box blur (2 passes) for a continuous mountain range, not a comb.
+  const smooth = new Float32Array(n);
+  for (let pass = 0; pass < 2; pass++) {
+    const src = pass === 0 ? raw : smooth;
+    const dst = pass === 0 ? smooth : raw;
+    for (let i = 0; i < n; i++) {
+      let s = 0, c = 0;
+      for (let k = -3; k <= 3; k++) {
+        const j = i + k;
+        if (j < 0 || j >= n) continue;
+        s += src[j];
+        c++;
+      }
+      dst[i] = s / c;
+    }
+  }
+  const heights = passMaxNorm(raw);
+  return heights;
+}
+
+function passMaxNorm(arr) {
+  let max = 0;
+  for (let i = 0; i < arr.length; i++) if (arr[i] > max) max = arr[i];
+  const out = new Float32Array(arr.length);
+  if (max <= 1e-9) {
+    for (let i = 0; i < arr.length; i++) out[i] = 0.08 + 0.04 * Math.sin(i * 0.2);
+    return out;
+  }
+  for (let i = 0; i < arr.length; i++) out[i] = clamp01(arr[i] / max);
+  return out;
+}
+
 export class ComposerStrip {
-  constructor(timeline, barGrid, durationMs, holds = []) {
-    // Hold-note spans (player rhythm layer): painted as bars behind the
-    // icons so an upcoming press-and-hold is readable a full page ahead.
-    this.holds = holds;
-    // Page length: four median bars (robust to the odd tempo hiccup).
-    let barMs = 2000;
-    if (barGrid && barGrid.length >= 2) {
+  /**
+   * @param {object[]} timeline
+   * @param {object[]} barGrid
+   * @param {number} durationMs
+   * @param {object[]} [holds]
+   * @param {object[]} [sections] BiomeManager.sections after form + lyric fuse
+   */
+  constructor(timeline, barGrid, durationMs, holds = [], sections = null) {
+    this.timeline = timeline || [];
+    this.barGrid = barGrid || [];
+    this.durationMs = Math.max(1, durationMs || 1);
+    this.holds = holds || [];
+    this.sections = sections || [];
+    this.mountain = buildSongMountain(this.timeline, this.durationMs, MOUNTAIN_SAMPLES);
+
+    // Legacy fields some tests still poke.
+    let barMs = 500;
+    if (this.barGrid.length >= 2) {
       const gaps = [];
-      for (let i = 1; i < barGrid.length; i++) gaps.push(barGrid[i].ms - barGrid[i - 1].ms);
+      for (let i = 1; i < this.barGrid.length; i++) gaps.push(this.barGrid[i].ms - this.barGrid[i - 1].ms);
       gaps.sort((a, b) => a - b);
       barMs = gaps[Math.floor(gaps.length / 2)] || 500;
-    } else {
-      barMs = 500;
     }
-    this.pageMs = PAGE_BARS * barMs;
     this.barMs = barMs;
-    this.durationMs = durationMs;
-
-    // Diatonic staff placement: estimate the song's tonic, then clip the
-    // (non-percussion) pitch range to its 5th-95th percentile the way
-    // Midasus does, converted into diatonic steps so the staff centers on
-    // the song's own melodic range rather than an arbitrary fixed span.
-    this.tonicPc = estimateTonicPc(timeline);
-    const pitches = timeline.filter((e) => e.role !== Role.RHYTHM).map((e) => e.pitch).sort((a, b) => a - b);
-    const pMin = pitches.length ? pitches[Math.floor(0.05 * pitches.length)] : 48;
-    let pMax = pitches.length ? pitches[Math.min(pitches.length - 1, Math.floor(0.95 * pitches.length))] : 84;
-    if (pMax <= pMin) pMax = pMin + 12;
-    const sMin = diatonicIndex(pMin, this.tonicPc).step;
-    const sMax = diatonicIndex(pMax, this.tonicPc).step;
-    this.sMid = Math.round((sMin + sMax) / 2);
-
-    // Bucket notes into pages, loudest-first capped, then back in time order.
+    this.pageMs = 4 * barMs;
     this.pages = [];
-    for (const evt of timeline) {
-      if (evt.vel < MIN_VEL) continue;
-      const p = Math.floor(evt.tMs / this.pageMs);
-      (this.pages[p] ||= []).push(evt);
-    }
-    for (let p = 0; p < this.pages.length; p++) {
-      if (!this.pages[p]) { this.pages[p] = []; continue; }
-      if (this.pages[p].length > MAX_ICONS_PER_PAGE) {
-        this.pages[p] = stratifyCap(this.pages[p], MAX_ICONS_PER_PAGE, p * this.pageMs, this.pageMs);
-      }
-    }
+    this.tonicPc = estimateTonicPc(this.timeline);
+    this.sMid = 0;
 
-    this._iconCanvases = null; // built lazily in the browser
+    this.showLabels = false;
+    this.selectedSection = -1; // index into sections, or -1
+    this._layoutCache = null;
+  }
+
+  setSections(sections) {
+    this.sections = sections || [];
+    if (this.selectedSection >= this.sections.length) this.selectedSection = -1;
+  }
+
+  toggleLabels() {
+    this.showLabels = !this.showLabels;
+    return this.showLabels;
   }
 
   pageIndexAt(nowMs) { return Math.max(0, Math.floor(nowMs / this.pageMs)); }
-  playheadFrac(nowMs) { return (((nowMs % this.pageMs) + this.pageMs) % this.pageMs) / this.pageMs; }
-
-  /** Staff row (0 = top step, STAFF_ROWS-1 = bottom) from pitch: one row per
-   *  diatonic step, centered on the song's median step -- real sheet-music
-   *  ordering (C < D < E always ascend), clamped/ledgered at the edges. */
-  staffRow(pitch) {
-    return this.rowInfo(pitch).row;
+  playheadFrac(nowMs) {
+    return clamp01(nowMs / this.durationMs);
   }
 
-  /** Full placement for a pitch: the clamped staff row, whether it's an
-   *  accidental (off the tonic's major scale), and whether it fell outside
-   *  the drawn staff (needs a ledger mark). */
-  rowInfo(pitch) {
-    const { step, accidental } = diatonicIndex(pitch, this.tonicPc);
-    const rawRow = (STAFF_ROWS - 1) / 2 + (this.sMid - step);
-    const row = clamp(Math.round(rawRow), 0, STAFF_ROWS - 1);
-    const ledger = rawRow < 0 || rawRow > STAFF_ROWS - 1;
-    return { row, accidental, ledger };
+  staffRow() { return Math.floor(STAFF_ROWS / 2); }
+  rowInfo() { return { row: this.staffRow(), accidental: false, ledger: false }; }
+
+  /** Layout in stage pixels (logical 1280×720 space when drawn through stage transform). */
+  layout(canvas) {
+    const x0 = STRIP_PAD;
+    const h = STRIP_H;
+    const y0 = canvas.height - h - STRIP_BOTTOM;
+    const w = canvas.width - x0 * 2;
+    // Inner mountain rect (padding for time row + edge breathing room).
+    const mx0 = x0 + MOUNTAIN_INSET_X;
+    const mw = w - MOUNTAIN_INSET_X * 2;
+    const my0 = y0 + 4;
+    const mh = h - 18; // leave baseline for time
+    this._layoutCache = { x0, y0, w, h, mx0, mw, my0, mh };
+    return this._layoutCache;
   }
 
-  _ensureIcons() {
-    if (this._iconCanvases) return;
-    this._iconCanvases = {};
-    for (const [name, spec] of Object.entries(SPRITES)) {
-      const c = document.createElement('canvas');
-      c.width = 9 * CELL_PX; c.height = 9 * CELL_PX;
-      const g = c.getContext('2d');
-      for (let y = 0; y < 9; y++) {
-        for (let x = 0; x < 9; x++) {
-          const v = spec.grid[y][x];
-          if (v === '0') continue;
-          g.fillStyle = v === '2' ? spec.shade : spec.color;
-          g.fillRect(x * CELL_PX, y * CELL_PX, CELL_PX, CELL_PX);
+  /** Map time → x within the mountain track. */
+  _xAt(tMs, L) {
+    const dur = Math.max(1, this.durationMs);
+    return L.mx0 + clamp01(tMs / dur) * L.mw;
+  }
+
+  /** Hit-test stage coords. Returns null outside strip. */
+  hitTest(stageX, stageY, canvas) {
+    const L = this.layout(canvas);
+    if (stageX < L.x0 || stageX > L.x0 + L.w || stageY < L.y0 || stageY > L.y0 + L.h) {
+      if (this.selectedSection >= 0) {
+        const panel = this._detailPanelRect(L);
+        if (stageX >= panel.x && stageX <= panel.x + panel.w
+          && stageY >= panel.y && stageY <= panel.y + panel.h) {
+          return { type: 'detail', sectionIndex: this.selectedSection };
         }
       }
-      this._iconCanvases[name] = c;
+      return null;
     }
+    const u = clamp01((stageX - L.mx0) / Math.max(1, L.mw));
+    const tMs = u * this.durationMs;
+    return { type: 'strip', tMs, sectionIndex: this.sectionIndexAt(tMs), u };
   }
 
-  draw(ctx, canvas, nowMs) {
-    this._ensureIcons();
-    const x0 = 12;
-    const h = 72;
-    const y0 = canvas.height - h - 12; // bottom-anchored, clear of the ground HUD
-    const w = canvas.width - x0 - 12;
-    const page = this.pages[this.pageIndexAt(nowMs)] || [];
-    const pageStart = this.pageIndexAt(nowMs) * this.pageMs;
-    const pageAge = nowMs - pageStart;
+  sectionIndexAt(tMs) {
+    const secs = this.sections;
+    if (!secs.length) return -1;
+    for (let i = 0; i < secs.length; i++) {
+      if (tMs >= secs[i].startMs && tMs < secs[i].endMs) return i;
+    }
+    return secs.length - 1;
+  }
+
+  _detailPanelRect(L) {
+    const w = Math.min(340, L.w * 0.42);
+    const h = 132;
+    return {
+      x: L.x0 + 6,
+      y: L.y0 - h - 6,
+      w,
+      h,
+    };
+  }
+
+  /**
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {{width:number,height:number}} canvas
+   * @param {number} nowMs
+   * @param {{ showLabels?: boolean }} [opts]
+   */
+  draw(ctx, canvas, nowMs, opts = {}) {
+    if (opts.showLabels != null) this.showLabels = !!opts.showLabels;
+    const L = this.layout(canvas);
+    const { x0, y0, w, h, mx0, mw, my0, mh } = L;
+    const uNow = this.playheadFrac(nowMs);
+    const px = mx0 + uNow * mw;
+    const baseY = my0 + mh;
 
     ctx.save();
-    // Paper.
-    ctx.fillStyle = 'rgba(250,245,228,0.90)';
-    ctx.strokeStyle = 'rgba(90,70,50,0.55)';
-    ctx.lineWidth = 2;
+
+    // Plate — soft glass, hairline edge (no gold picture-frame).
     ctx.beginPath();
     ctx.roundRect(x0, y0, w, h, 8);
+    ctx.fillStyle = C.panel;
     ctx.fill();
+    ctx.strokeStyle = C.panelEdge;
+    ctx.lineWidth = 1;
     ctx.stroke();
 
-    // Staff: pitched rows on top, a single percussion rail along the
-    // bottom edge (8px) so GM drum pitches never pollute the pitch staff.
-    const railY = y0 + h - 10;
-    const staffTop = y0 + 10, staffBottom = railY - 12;
-    const rowH = (staffBottom - staffTop) / (STAFF_ROWS - 1);
-    ctx.strokeStyle = 'rgba(120,95,70,0.45)';
-    ctx.lineWidth = 1;
-    for (const line of [2, 4, 6, 8, 10]) {
-      const y = staffTop + line * rowH;
-      ctx.beginPath(); ctx.moveTo(x0 + 8, y); ctx.lineTo(x0 + w - 8, y); ctx.stroke();
-    }
-    ctx.strokeStyle = 'rgba(120,95,70,0.28)';
-    ctx.beginPath(); ctx.moveTo(x0 + 8, railY); ctx.lineTo(x0 + w - 8, railY); ctx.stroke();
-
-    // Beat ticks: one per beat, taller at the bar.
-    const beats = PAGE_BARS * 4;
-    for (let b = 0; b <= beats; b++) {
-      const x = x0 + 8 + (b / beats) * (w - 16);
-      const isBar = b % 4 === 0;
-      ctx.strokeStyle = isBar ? 'rgba(120,95,70,0.5)' : 'rgba(120,95,70,0.22)';
-      ctx.beginPath(); ctx.moveTo(x, staffTop + (isBar ? 0 : rowH * 2)); ctx.lineTo(x, staffBottom - (isBar ? 0 : rowH * 2)); ctx.stroke();
-    }
-
-    // Hold bars: the slice of each hold note crossing this page, on their
-    // (fallback, hold spans carry no pitch) row — press at the left edge,
-    // ride to the right.
-    if (this.holds.length) {
-      const pageEnd = pageStart + this.pageMs;
-      for (const hd of this.holds) {
-        if (hd.endMs <= pageStart || hd.tMs >= pageEnd) continue;
-        const fa = Math.max(0, (hd.tMs - pageStart) / this.pageMs);
-        const fb = Math.min(1, (hd.endMs - pageStart) / this.pageMs);
-        const xa = x0 + 8 + fa * (w - 16);
-        const xb = x0 + 8 + fb * (w - 16);
-        const y = staffTop + this.staffRow(hd.pitch ?? 36) * rowH;
-        ctx.fillStyle = 'rgba(255,180,58,0.34)';
-        ctx.strokeStyle = 'rgba(255,180,58,0.7)';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.roundRect(xa, y - 7, Math.max(6, xb - xa), 14, 7);
-        ctx.fill();
-        ctx.stroke();
-      }
-    }
-
-    // Icons.
-    for (const evt of page) {
-      const fx = (evt.tMs - pageStart) / this.pageMs;
-      const x = x0 + 8 + fx * (w - 16);
-      const isRhythm = evt.role === Role.RHYTHM;
-      const info = isRhythm ? null : this.rowInfo(evt.pitch);
-      const y = isRhythm ? railY : staffTop + info.row * rowH;
-      const dt = nowMs - evt.tMs;
-      const pop = popBump(dt);
-      const scaleIn = Math.min(1, pageAge / 90); // page flip: icons snap in fresh
-      const scale = (0.85 + 0.35 * evt.vel + 0.5 * pop) * scaleIn;
-      const img = this._iconCanvases[iconFor(evt)];
-      const s = img.width * scale;
-      ctx.globalAlpha = dt > 0 && pop < 0.05 ? 0.78 : 1; // already-played notes rest dimmer
-      if (info && info.ledger) {
-        ctx.strokeStyle = 'rgba(90,70,50,0.6)';
-        ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(x - s / 2 - 3, y); ctx.lineTo(x + s / 2 + 3, y); ctx.stroke();
-      }
-      ctx.drawImage(img, Math.round(x - s / 2), Math.round(y - s / 2), s, s);
-      if (info && info.accidental) {
-        ctx.fillStyle = 'rgba(90,70,50,0.75)';
-        ctx.fillRect(x - s / 2 - 5, y - 4, 1.5, 8);
-        ctx.fillRect(x - s / 2 - 2.5, y - 4, 1.5, 8);
-      }
-      if (pop > 0.4) { // a tiny 4-point sparkle right on the hit
-        ctx.globalAlpha = pop;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(x - 1, y - s / 2 - 5, 2, 4);
-        ctx.fillRect(x - 1, y + s / 2 + 1, 2, 4);
-        ctx.fillRect(x - s / 2 - 5, y - 1, 4, 2);
-        ctx.fillRect(x + s / 2 + 1, y - 1, 4, 2);
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    // Playhead: the sweeping red bar.
-    const px = x0 + 8 + this.playheadFrac(nowMs) * (w - 16);
-    ctx.strokeStyle = 'rgba(232,58,58,0.9)';
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(px, y0 + 4); ctx.lineTo(px, y0 + h - 4); ctx.stroke();
-    ctx.fillStyle = 'rgba(232,58,58,0.9)';
+    // Clip mountain + overlays into the plate interior.
+    ctx.save();
     ctx.beginPath();
-    ctx.moveTo(px - 5, y0 + 4); ctx.lineTo(px + 5, y0 + 4); ctx.lineTo(px, y0 + 11); ctx.closePath();
-    ctx.fill();
+    ctx.roundRect(x0 + 1, y0 + 1, w - 2, h - 2, 7);
+    ctx.clip();
+
+    // Mountain fill
+    this._drawMountain(ctx, L, baseY);
+
+    // Section structure (boundaries + selection) — under playhead, over fill
+    this._drawSections(ctx, L, baseY);
+
+    // Played region: cool the past without crushing the silhouette
+    if (uNow > 0.002) {
+      ctx.fillStyle = C.played;
+      ctx.fillRect(mx0, my0, Math.max(0, px - mx0), mh);
+    }
+
+    // Ridge outline on top of wash so the skyline stays sharp
+    this._drawMountainRidge(ctx, L, baseY);
+
+    // Labels sit above the mountain, below the playhead
+    if (this.showLabels) this._drawLabels(ctx, L);
+
+    // Playhead — thin luminous needle, no cartoon chevron
+    this._drawPlayhead(ctx, px, my0, baseY);
+
+    ctx.restore(); // clip
+
+    // Time: current left, duration right — outside the mountain clip, on the baseline
+    ctx.font = `10px ${C.mono}`;
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = C.timeNow;
+    ctx.textAlign = 'left';
+    ctx.fillText(formatClock(nowMs), x0 + 10, y0 + h - 6);
+    ctx.fillStyle = C.time;
+    ctx.textAlign = 'right';
+    ctx.fillText(formatClock(this.durationMs), x0 + w - 10, y0 + h - 6);
+
+    if (this.selectedSection >= 0 && this.selectedSection < this.sections.length) {
+      this._drawSectionDetail(ctx, L, this.sections[this.selectedSection], this.selectedSection);
+    }
 
     ctx.restore();
   }
+
+  _drawMountain(ctx, L, baseY) {
+    const { mx0, mw, my0, mh } = L;
+    const n = this.mountain.length;
+    const path = () => {
+      ctx.beginPath();
+      ctx.moveTo(mx0, baseY);
+      for (let i = 0; i < n; i++) {
+        const x = mx0 + (i / Math.max(1, n - 1)) * mw;
+        const y = baseY - this.mountain[i] * mh * 0.88;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(mx0 + mw, baseY);
+      ctx.closePath();
+    };
+    path();
+    const g = ctx.createLinearGradient(0, my0, 0, baseY);
+    g.addColorStop(0, C.mountainTop);
+    g.addColorStop(0.55, C.mountainMid);
+    g.addColorStop(1, C.mountainBase);
+    ctx.fillStyle = g;
+    ctx.fill();
+  }
+
+  _drawMountainRidge(ctx, L, baseY) {
+    const { mx0, mw, mh } = L;
+    const n = this.mountain.length;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const x = mx0 + (i / Math.max(1, n - 1)) * mw;
+      const y = baseY - this.mountain[i] * mh * 0.88;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = C.ridge;
+    ctx.lineWidth = 1;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
+
+  _drawSections(ctx, L, baseY) {
+    const secs = this.sections;
+    if (!secs.length) return;
+    const { my0, mh } = L;
+
+    for (let i = 0; i < secs.length; i++) {
+      const s = secs[i];
+      const xa = this._xAt(s.startMs, L);
+      const xb = this._xAt(s.endMs, L);
+      const sw = Math.max(1, xb - xa);
+
+      if (this.selectedSection === i) {
+        ctx.fillStyle = C.select;
+        ctx.fillRect(xa, my0, sw, mh);
+        // Top accent bar only — no full gold frame
+        ctx.fillStyle = C.selectEdge;
+        ctx.fillRect(xa, my0, sw, 2);
+      }
+
+      if (i > 0) {
+        // Hairline section cut
+        ctx.strokeStyle = C.boundary;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(Math.round(xa) + 0.5, my0 + 2);
+        ctx.lineTo(Math.round(xa) + 0.5, baseY - 2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  _drawPlayhead(ctx, px, top, bot) {
+    // Soft bloom
+    ctx.strokeStyle = C.playheadGlow;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(px, top + 1);
+    ctx.lineTo(px, bot - 1);
+    ctx.stroke();
+    // Core needle
+    ctx.strokeStyle = C.playhead;
+    ctx.lineWidth = 1.25;
+    ctx.beginPath();
+    ctx.moveTo(px, top + 1);
+    ctx.lineTo(px, bot - 1);
+    ctx.stroke();
+    // Small cap
+    ctx.fillStyle = C.playhead;
+    ctx.beginPath();
+    ctx.arc(px, top + 3, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  _drawLabels(ctx, L) {
+    const secs = this.sections;
+    if (!secs.length) return;
+    const { my0 } = L;
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.font = `600 9px ${C.font}`;
+
+    for (let i = 0; i < secs.length; i++) {
+      const s = secs[i];
+      const xa = this._xAt(s.startMs, L);
+      const xb = this._xAt(s.endMs, L);
+      const sw = xb - xa;
+      if (sw < 22) continue;
+
+      const mid = (xa + xb) / 2;
+      const letter = formLetter(s.label);
+      const kind = s.kind || s.lyricKind || '';
+      // Prefer form letter; append kind only when the band is wide enough.
+      let text = letter;
+      if (kind && sw >= 56) text = `${letter}  ${kind}`;
+      else if (kind && sw >= 36) text = `${letter}·${kind.slice(0, 3)}`;
+
+      // Soft shadow + glyph — no solid label bricks
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillText(text, mid + 0.5, my0 + 5.5, sw - 6);
+      ctx.fillStyle = this.selectedSection === i ? C.label : C.labelMuted;
+      ctx.fillText(text, mid, my0 + 5, sw - 6);
+    }
+  }
+
+  _drawSectionDetail(ctx, L, sec, index) {
+    const panel = this._detailPanelRect(L);
+    const { x, y, w, h } = panel;
+    const letter = formLetter(sec.label);
+    const biome = typeof sec.profile === 'string' ? sec.profile : (sec.profile?.name || '—');
+    const kind = sec.kind || sec.lyricKind || null;
+    const conf = sec.lyricConfidence ?? sec.confidence;
+    const valence = sec.lyricValence ?? sec.valence;
+    const intensity = sec.lyricIntensity ?? sec.intensity;
+    const rows = [
+      ['time', `${formatClock(sec.startMs)} – ${formatClock(sec.endMs)}  (${formatDur(sec.endMs - sec.startMs)})`],
+      ['form', letter],
+      ['biome', biome],
+      ['enter', sec.transition || '—'],
+      ['lyric', kind ? `${kind}  ·  conf ${fmt(conf)}` : '—'],
+      ['feel', `val ${fmt(valence)}   int ${fmt(intensity)}   hue ${fmt(sec.hueBias, 0)}°`],
+    ];
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 8);
+    ctx.fillStyle = C.detailBg;
+    ctx.fill();
+    ctx.strokeStyle = C.detailEdge;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // Left accent — selected section indicator, not a full gold border
+    ctx.fillStyle = C.selectEdge;
+    ctx.fillRect(x, y + 10, 2, h - 20);
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `600 11px ${C.font}`;
+    ctx.fillStyle = C.detailTitle;
+    ctx.fillText(`Section ${index + 1}`, x + 14, y + 18);
+
+    const keyX = x + 14;
+    const valX = x + 58;
+    const row0 = y + 36;
+    const rowH = 14;
+    for (let i = 0; i < rows.length; i++) {
+      const [k, v] = rows[i];
+      const yy = row0 + i * rowH;
+      ctx.font = `10px ${C.font}`;
+      ctx.fillStyle = C.detailKey;
+      ctx.fillText(k, keyX, yy);
+      ctx.font = `10px ${C.mono}`;
+      ctx.fillStyle = C.detailVal;
+      ctx.fillText(v, valX, yy, w - (valX - x) - 12);
+    }
+    ctx.restore();
+  }
+}
+
+function formatClock(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
+}
+
+function formatDur(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m${s % 60}s`;
+}
+
+function fmt(v, digits = 2) {
+  if (v == null || !Number.isFinite(v)) return '—';
+  return Number(v).toFixed(digits);
 }

@@ -25,8 +25,10 @@ export class ParamBus {
     // Non-KEY app state (not smoothed / not vision-tunable):
     // customBiomes — history of MIDI-derived biome profiles from this session
     // rendererMode — 'canvas' | 'webgl' (see createRenderer / ?renderer=webgl)
+    // visualStyle — 'classic' | 'rendered' (SMW-flat vs DKC3-CGI presentation)
     this.customBiomes = [];
     this.rendererMode = 'canvas';
+    this.visualStyle = 'rendered';
   }
 
   /** Vision (or any actuator) proposes new targets with a confidence and a trust weight. */

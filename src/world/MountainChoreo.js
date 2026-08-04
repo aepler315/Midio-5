@@ -75,11 +75,40 @@ export function spectrumBars(eq) {
 // the song (see OrogenyDirector). Far layers grow the most -- a skyline
 // visibly rearing up behind everything -- near layers barely at all, so the
 // player's own scale reference never shifts underfoot.
-const OROGENY_GROWTH_MUL = { L2: 0.98, L3: 0.74, L4: 0.55, L5: 0.34 };
+// Gains are modest: the hard frame-fit in mountainStripDrawHeight is the
+// real ceiling. Huge multipliers only ever made invisible off-screen mesas.
+const OROGENY_GROWTH_MUL = { L2: 0.42, L3: 0.32, L4: 0.22, L5: 0.12 };
 
 /** Height multiplier for a layer at orogeny growth g (0..1). g=0 -> 1.0
  *  (baseline height, "not yet built"); g=1 -> the layer's full grown height. */
 export function orogenyHeightMul(layerKey, g) {
   const gain = OROGENY_GROWTH_MUL[layerKey] ?? 0;
   return 1 + gain * clamp01(g);
+}
+
+/**
+ * Top of screen reserved for sky / celestial / upper ocean. Peaks that would
+ * sit above this are clipped by the frame — they may as well not exist.
+ * ~0.16 leaves the ocean horizon (≈0.26) and some open sky readable.
+ */
+export const MOUNTAIN_SKY_HEADROOM_FRAC = 0.16;
+
+/** Bounce/wave lift budget so a kick doesn't shove a fitted peak off the top. */
+const MOUNTAIN_DANCE_PAD_PX = 22;
+
+/**
+ * Screen-space strip draw height (px), anchored at groundY+40.
+ * Caps orogeny so the range top never leaves the frame.
+ *
+ * @param {number} stripHeight  baked strip bitmap height
+ * @param {number} growthMul    from orogenyHeightMul
+ * @param {number} canvasHeight stage height
+ * @param {number} groundY      playable ground line
+ */
+export function mountainStripDrawHeight(stripHeight, growthMul, canvasHeight, groundY) {
+  const desired = Math.max(1, stripHeight) * Math.max(0.05, growthMul);
+  const bottom = groundY + 40;
+  const topMin = canvasHeight * MOUNTAIN_SKY_HEADROOM_FRAC;
+  const maxDh = Math.max(96, bottom - topMin - MOUNTAIN_DANCE_PAD_PX);
+  return Math.min(desired, maxDh);
 }

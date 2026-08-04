@@ -77,3 +77,18 @@ test('orogenyHeightMul: far layers (L2) grow more than near layers (L5), and g=0
   assert.ok(l2 > l5, `expected far layer L2 (${l2}) to grow more than near layer L5 (${l5})`);
   assert.ok(l2 > 1 && l5 > 1);
 });
+
+test('mountainStripDrawHeight caps peaks so they stay on-frame', async () => {
+  const { mountainStripDrawHeight, MOUNTAIN_SKY_HEADROOM_FRAC, orogenyHeightMul } = await import('../src/world/MountainChoreo.js');
+  const canvasH = 720;
+  const groundY = 540;
+  const stripH = 400;
+  // Uncapped orogeny would shove the strip top above the sky line.
+  const growth = orogenyHeightMul('L2', 1);
+  const dh = mountainStripDrawHeight(stripH, growth * 3, canvasH, groundY); // absurd mul on purpose
+  const top = (groundY + 40) - dh;
+  assert.ok(top >= canvasH * MOUNTAIN_SKY_HEADROOM_FRAC - 1,
+    `strip top ${top} must sit below sky headroom ${canvasH * MOUNTAIN_SKY_HEADROOM_FRAC}`);
+  // Still taller than a tiny stub at baseline.
+  assert.ok(dh > 100);
+});
