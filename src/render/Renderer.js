@@ -739,7 +739,12 @@ export class Renderer {
     // "always slightly alive" pulse that makes Midasus's core read as an
     // instrument rather than a static glyph.
     const breatheBeatFlash = performer ? performer.beatFlash : 0;
-    const breathe = 1 + 0.025 * Math.sin(tSec * 2.4) + 0.05 * breatheBeatFlash;
+    // Shared build-up swell (EnsembleDirector.swell): during a crescendo,
+    // beat-phased with the same Kuramoto clock Broshi/Midasus read too, so
+    // the trio visibly swells together rather than each pulsing in
+    // isolation. 1 (no-op) outside a build-up.
+    const swell = ensemble ? ensemble.swell(0) : 1;
+    const breathe = (1 + 0.025 * Math.sin(tSec * 2.4) + 0.05 * breatheBeatFlash) * swell;
     const transform = {
       tx: pose.midioDrawX, ty: pose.midioY,
       rot: (pose.leanDeg * Math.PI) / 180,

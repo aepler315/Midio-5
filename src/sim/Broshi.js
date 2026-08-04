@@ -15,8 +15,7 @@ import { ModalRing } from '../render/oscillators.js';
 import { Burrow } from './Burrow.js';
 
 const K = 22, C = 3.6; // slightly softer spring so he settles further out
-const D_TRAIL = -200, D_SURGE = 150, D_PANIC = -280;
-const PANIC_LOOKAHEAD_MS = 300;
+const D_TRAIL = -200, D_SURGE = 150;
 
 // Midio always lands at his own fixed screenX -- so the danger zone is a
 // fixed band straddling xRel=0, not a moving target. Keep Broshi's spring
@@ -27,7 +26,7 @@ const PANIC_LOOKAHEAD_MS = 300;
 // Wider than before: the trio was stacking on top of each other.
 const KEEPOUT_HALF = 100;
 const RENDER_KEEPOUT_HALF = 85;
-// Cap relative speed so SURGE/PANIC target jumps never hard-teleport him.
+// Cap relative speed so a SURGE target jump never hard-teleports him.
 const MAX_XREL_SPEED = 380; // px/s
 const RENDER_KEEPOUT_TAU = 0.09; // soft ease out of Midio's landing column
 const SOFT_REPEL_MIDIO = 110;   // start easing away from Midio inside this
@@ -36,7 +35,6 @@ const TAKEOFF_CROUCH_MS = 140;
 const CHEER_TAIL_MS = 600;
 const ECHO_HOP_RISE_MS = 70;
 const ECHO_HOP_H = 8;
-const PHEW_MS = 220;
 
 /** Two quick sine bumps ~160ms apart -- the cheer double-hop shape, added
  *  on top of whatever else hopY is doing. Pure/testable. */
@@ -47,15 +45,6 @@ export function cheerBumpY(ageMs) {
     if (u >= 0 && u <= 1) return H * Math.sin(u * Math.PI);
   }
   return 0;
-}
-
-/** One small relief bump, softer and slower than the cheer's -- the "phew"
- *  that follows the instant PANIC (an obstacle bearing down) clears back
- *  to TRAIL. Pure/testable. */
-export function phewBumpY(ageMs) {
-  const BUMP_MS = 220, H = 6;
-  const u = ageMs / BUMP_MS;
-  return u >= 0 && u <= 1 ? H * Math.sin(u * Math.PI) : 0;
 }
 
 /** Push a spring set-point out of the keep-out band around 0, snapping to
@@ -132,7 +121,7 @@ export class Broshi {
     // step; every decorative envelope below evaluates on the heard clock.
     this.visualLagMs = 0;
 
-    this.state = 'TRAIL'; // TRAIL | SURGE | PANIC
+    this.state = 'TRAIL'; // TRAIL | SURGE
     this.surgeUntilMs = -Infinity;
     this._barEnergyAccum = 0;
     this._barEnergySamples = 0;
@@ -216,6 +205,7 @@ export class Broshi {
     this._trailTarget = D_TRAIL;
     this._ensPhase = null;
     this._melt = 0;
+    this._swell = 1; // shared build-up swell (EnsembleDirector.swell) -- 1 until the first update()
     // Keep-out hysteresis: which side of Midio he was last clearly on.
     this._lastSide = -1; // starts trailing behind (D_TRAIL is negative)
 
@@ -225,7 +215,6 @@ export class Broshi {
     this._takeoffCrouchStartMs = -Infinity;
     this._cheerStartMs = -Infinity;
     this._echoHopAnchorMs = -Infinity;
-    this._phewStartMs = -Infinity;
     this._dartUntilMs = -Infinity;
     this._nextDartCheckMs = 0;
     this._nextShakeCheckMs = 0;
@@ -349,7 +338,6 @@ export class Broshi {
   }
 
   _triggerSurge(nowMs) {
-    if (this.state === 'PANIC') return;
     this.state = 'SURGE';
     this.surgeUntilMs = nowMs + this._lastBarPeriodMs;
     this._barsSinceSurge = 0;
@@ -374,10 +362,13 @@ export class Broshi {
     this._neckPending = { vel: evt.vel };
   }
 
-  update(nowMs, dtSec, midio, energyCurves, obstacles, worldX, groundY, calmLevel = 0, ensemble = null, groundField = null) {
+  update(nowMs, dtSec, midio, energyCurves, worldX, groundY, calmLevel = 0, ensemble = null, groundField = null) {
     this._calmLevel = calmLevel;
     this._ensPhase = ensemble ? ensemble.phase : null;
     this._melt = ensemble ? ensemble.melt : 0;
+    // Shared build-up swell (EnsembleDirector.swell) -- see Midasus/Renderer
+    // for the other two; 1 (no-op) outside a build-up.
+    this._swell = ensemble && ensemble.swell != null ? ensemble.swell : 1;
     // Rare shared transition tumble (see EnsembleDirector.maybeTumble).
     this._tumbleRotX = ensemble ? (ensemble.tumbleRotX || 0) : 0;
     this._tumbleRotY = ensemble ? (ensemble.tumbleRotY || 0) : 0;
@@ -441,25 +432,14 @@ export class Broshi {
     if (this._neckPending) { const { vel } = this._neckPending; this._neckPending = null; this._neckStartMs = nowMs; this._neckAmp = 10 + 16 * vel; }
 
     // --- locomotion FSM ---
-    const obs = obstacles ? obstacles.nearestAhead(worldX) : null;
-    const dangerNear = !!obs && obs.tMs - nowMs <= PANIC_LOOKAHEAD_MS && obs.tMs - nowMs >= -100;
-    if (dangerNear) this.state = 'PANIC';
-    else if (this.state === 'PANIC') {
-      // The dodge landed clean -- a small relief bump + a quick "whew" the
-      // instant the danger clears, the flinch's own payoff.
-      this.state = 'TRAIL';
-      this._phewStartMs = nowMs;
-      this.jawOpen = Math.max(this.jawOpen, 0.3);
-      this._jawUntilMs = nowMs + 150;
-    }
-    else if (this.state === 'SURGE' && nowMs >= this.surgeUntilMs) this.state = 'TRAIL';
+    if (this.state === 'SURGE' && nowMs >= this.surgeUntilMs) this.state = 'TRAIL';
 
     // Pounce telegraph: the instant a surge starts he coils — a quick
     // crouch-and-release squash before the burst forward reads as intent.
     if (this.state === 'SURGE' && this._lastState !== 'SURGE') this._pounceStartMs = nowMs;
     this._lastState = this.state;
 
-    let rawDStar = this.state === 'SURGE' ? D_SURGE : this.state === 'PANIC' ? D_PANIC : this._trailTarget;
+    let rawDStar = this.state === 'SURGE' ? D_SURGE : this._trailTarget;
     if (darting && this.state === 'TRAIL') rawDStar = this._trailTarget + 180;
 
     // Side-crossing discipline: a target that would flip which side of
@@ -489,7 +469,7 @@ export class Broshi {
       const midasusRel = ensemble.midasusX - midio.screenX;
       this.xRelVel += softRepel1D(this.xRel, midasusRel, SOFT_REPEL_MIDASUS, 160) * dtSec;
     }
-    // Speed clamp — large dStar jumps (SURGE/PANIC) stay continuous motion.
+    // Speed clamp — a large dStar jump (SURGE) stays continuous motion.
     if (this.xRelVel > MAX_XREL_SPEED) this.xRelVel = MAX_XREL_SPEED;
     else if (this.xRelVel < -MAX_XREL_SPEED) this.xRelVel = -MAX_XREL_SPEED;
     this.xRel += this.xRelVel * dtSec;
@@ -627,9 +607,6 @@ export class Broshi {
     if (Math.abs(vNow - this._echoHopAnchorMs) < ECHO_HOP_RISE_MS * 2) {
       this.hopY += apexHopY(vNow, this._echoHopAnchorMs, ECHO_HOP_RISE_MS, ECHO_HOP_H);
     }
-    // Phew: the relief bump right after a dodge clears (PANIC -> TRAIL).
-    const phewAge = nowMs - this._phewStartMs;
-    if (phewAge >= 0 && phewAge < PHEW_MS) this.hopY += phewBumpY(phewAge);
     // Trot: a light stride bounce while his feet are on the ground, so
     // running never reads as pure gliding.
     if (!this._hop && this.hopY <= 0.5) {
@@ -867,7 +844,7 @@ export class Broshi {
     // pounce squash coils it. Both render-only, like everything else here.
     const group = {
       tx: x, ty: y, rot: neckRad + this.bodyRoll,
-      scaleX: DRAW_SCALE * this.squashX, scaleY: DRAW_SCALE * this.squashY,
+      scaleX: DRAW_SCALE * this.squashX * this._swell, scaleY: DRAW_SCALE * this.squashY * this._swell,
       rotX: this._tumbleRotX || 0, rotY: this._tumbleRotY || 0,
     };
     const bodyHub = BROSHI_BODY.vertices[0];

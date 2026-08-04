@@ -101,6 +101,43 @@ test('ensemble anchors stay inside their stage-safety windows', () => {
   }
 });
 
+test('swell(i) is a no-op (exactly 1) with no build-up, for every character', () => {
+  const ens = new EnsembleDirector(3);
+  ens.update(0, STEP, { valence: 0.2, epic: 0.3 }, 500, null, 0);
+  for (let i = 0; i < 3; i++) assert.equal(ens.swell(i), 1);
+});
+
+test('swell(i) rises above 1 during a build-up and is beat-phased (theta-dependent)', () => {
+  const ens = new EnsembleDirector(3);
+  let t = 0;
+  for (let i = 0; i < 3 * 120; i++) { ens.update(t, STEP, { valence: 0.2, epic: 0.3 }, 500, null, 1); t += 8.33; }
+  let sawAbove1 = false, sawDistinctValues = false;
+  const seen = new Set();
+  for (let i = 0; i < 60; i++) {
+    ens.update(t, STEP, { valence: 0.2, epic: 0.3 }, 500, null, 1);
+    t += 8.33;
+    const s = ens.swell(0);
+    if (s > 1.001) sawAbove1 = true;
+    seen.add(s.toFixed(3));
+  }
+  sawDistinctValues = seen.size > 1;
+  assert.ok(sawAbove1, 'swell should rise above 1 during a sustained build-up');
+  assert.ok(sawDistinctValues, 'swell should vary over time as theta advances (beat-phased, not a flat multiplier)');
+});
+
+test('swell(i) stays bounded in [1, 1+SWELL_GAIN] regardless of buildUp/theta', () => {
+  const ens = new EnsembleDirector(5);
+  let t = 0;
+  for (let i = 0; i < 8 * 120; i++) {
+    ens.update(t, STEP, { valence: 0.9, epic: 0.9 }, 500, null, 1);
+    t += 8.33;
+    for (let c = 0; c < 3; c++) {
+      const s = ens.swell(c);
+      assert.ok(s >= 1 - 1e-9 && s <= 1.4, `swell(${c})=${s} out of expected bound`);
+    }
+  }
+});
+
 test('setPresence eases a weight toward its target rather than snapping', () => {
   const { ens } = runEnsemble(0.5, 0.5, 2);
   ens.setPresence(2, 0);

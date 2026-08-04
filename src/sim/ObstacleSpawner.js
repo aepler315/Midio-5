@@ -1,16 +1,13 @@
-// World obstacles placed against a *predicted* jump schedule (spec §2.2.3
-// final paragraph: "never force an impossible double-jump"). Rather than
-// reactively nudging jumps at runtime, placement itself is built to be safe:
-// every candidate sits inside a window where predictJumpArcs guarantees
-// Midio clears it, computed against the worst case the live-tunable
-// ParamBus guardrails could ever produce (weakest jump height, slowest
-// scroll speed) — so a collision can only ever come from the vision loop
-// legitimately choosing to make the game harder, never from bad luck.
+// World obstacles: purely ambient, abstract manifestations of the music --
+// there is no collision, no avoidance, nothing to clear or fail. Placement
+// still rides the *predicted* jump schedule (reusing predictJumpArcs' safe-
+// window math below), which is what keeps every obstacle beat-locked to a
+// takeoff/landing pair instead of scattered arbitrarily.
 //
-// Visually, an obstacle isn't a platformer block: it's an ambient, abstract
-// manifestation of the music -- a shape that condenses into being as it
-// approaches and dissolves into motes once cleared. Placement/collision are
-// pure geometry (untouched below); only the presentation is reskinned.
+// A shape condenses into being as it approaches, then punctuates the exact
+// beat it was placed against with a burst of motes and dissolves -- the
+// burst fires on the obstacle's own scheduled tMs, not on Midio physically
+// reaching it, so it reads as the music landing a hit, not a hazard cleared.
 import { Role } from '../core/NoteEvent.js';
 import { clamp, clamp01, mulberry32 } from '../utils/math.js';
 import { superformula } from '../render/oscillators.js';
@@ -76,18 +73,23 @@ export function dissolveEnvelope(distanceBehindPx) {
   return clamp01(1 - distanceBehindPx / DISSOLVE_PX);
 }
 
-/** True when `obstacle` ({tMs}) is the one `jump` ({jumpStartMs, D}) is
- *  airborne to clear -- its scheduled crossing sits inside the jump's own
- *  hang window. Placement already guarantees every such jump clears (see
- *  file header) -- this just tells MidioPerformer WHICH launch is a dodge,
- *  so it can force a genuinely spectacular trick instead of leaving the
- *  presentation to velocity/combo RNG. Pure. */
-export function obstacleInJumpWindow(jump, obstacle) {
-  if (!jump || !obstacle) return false;
-  if (!Number.isFinite(jump.jumpStartMs) || !Number.isFinite(jump.D)) return false;
-  if (!Number.isFinite(obstacle.tMs)) return false;
-  return obstacle.tMs >= jump.jumpStartMs && obstacle.tMs <= jump.jumpStartMs + jump.D;
+/** Deterministic pseudo-random in [0,1) from a float seed -- burst motes
+ *  need to render identically every frame purely as a function of (obstacle,
+ *  mote index), with no per-instance RNG state to carry around. */
+function hash01(n) {
+  const x = Math.sin(n * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
 }
+
+// The beat-synced dissolve burst (ambience only now -- see file header: no
+// avoidance mechanic reads any of this). Fires once, exactly at the
+// obstacle's own scheduled tMs -- the moment it was placed against, not
+// whenever Midio happens to have scrolled past it -- so it reads as
+// punctuating the beat rather than a collision event.
+const BURST_MOTE_COUNT = 28;
+export const BURST_LIFE_MS = 650;
+const BURST_GRAVITY_PX_S2 = 260;
+const BURST_SPEED_MIN = 60, BURST_SPEED_RANGE = 140;
 
 export class ObstacleSpawner {
   constructor(paramBus, { seed = 99, height = 46, width = 28 } = {}) {
@@ -189,7 +191,7 @@ export class ObstacleSpawner {
         for (const tMs of geoRowTimes(fromMs, toMs, count)) {
           const wx = worldX + scrollSpeedPxMs * (tMs - nowMs);
           this.active.push({
-            wx, tMs, height: this.height, width: this.width, passed: false,
+            wx, tMs, height: this.height, width: this.width,
             archetype: 'geo', sides: shape, phase: this.rand() * Math.PI * 2,
           });
         }
@@ -199,7 +201,7 @@ export class ObstacleSpawner {
       const archetype = obstacleArchetype(this.rand());
       const phase = this.rand() * Math.PI * 2;
       this.active.push({
-        wx, tMs: c.tMs, height: this.height, width: this.width, passed: false, archetype, phase,
+        wx, tMs: c.tMs, height: this.height, width: this.width, archetype, phase,
       });
     }
     while (this.active.length && this.active[0].wx < worldX - 1000) this.active.shift(); // roam-safe cull margin
@@ -208,19 +210,6 @@ export class ObstacleSpawner {
   nearestAhead(worldX) {
     for (const o of this.active) if (o.wx >= worldX) return o;
     return null;
-  }
-
-  /** Marks crossed obstacles as passed; returns true if Midio was too low to clear one. */
-  checkCollision(worldX, halfWidth, jumpYPx) {
-    let stumbled = false;
-    for (const o of this.active) {
-      if (o.passed) continue;
-      if (Math.abs(o.wx - worldX) <= halfWidth + o.width / 2) {
-        if (jumpYPx < o.height) stumbled = true;
-        o.passed = true;
-      }
-    }
-    return stumbled;
   }
 
   draw(ctx, worldX, originX, groundY, {
@@ -238,53 +227,85 @@ export class ObstacleSpawner {
       if (x < -80 || x > 2280) continue;
 
       const distanceAhead = o.wx - worldX;
-      const emergence = o.passed ? 1 : emergenceEnvelope(Math.max(0, distanceAhead));
-      const dissolve = o.passed ? dissolveEnvelope(Math.max(0, worldX - o.wx)) : 1;
+      // "Passed" is now purely geometric (Midio's worldX has reached wx) --
+      // there's no collision to gate it on anymore.
+      const passed = distanceAhead <= 0;
+      const emergence = passed ? 1 : emergenceEnvelope(Math.max(0, distanceAhead));
+      const dissolve = passed ? dissolveEnvelope(Math.max(0, worldX - o.wx)) : 1;
       const presence = emergence * dissolve;
-      if (presence <= 0.01) continue;
 
-      // Telegraph: every archetype brightens right as it's about to be
-      // crossed -- the "jump window is now" cue that makes clearing it
-      // read as a deliberate, spectacular dodge rather than an ambient
-      // shape that happened to be there.
-      const nearMoment = o.passed ? 0 : clamp01(1 - Math.abs(distanceAhead) / 40);
+      // Pre-burst charge: every archetype brightens right as its own beat
+      // arrives -- the tell that a burst is about to punctuate it (see
+      // _drawBeatBurst below), not a "dodge window" cue.
+      const nearMoment = passed ? 0 : clamp01(1 - Math.abs(distanceAhead) / 40);
+      // Breathing pulse (energyCurves.globalEnergy): every archetype's own
+      // scale/alpha rides the track's overall energy, so the whole field
+      // visibly breathes with the music instead of just individually
+      // reacting to its own placement.
+      const breathe = 0.85 + 0.3 * pulse;
+
+      if (presence <= 0.01 && !(nowMs - o.tMs >= 0 && nowMs - o.tMs < BURST_LIFE_MS)) continue;
 
       const cx = x, cy = groundY - o.height / 2;
       ctx.save();
       ctx.translate(cx, cy);
       ctx.globalCompositeOperation = 'lighter';
 
-      switch (o.archetype) {
-        case 'thorn': this._drawThorn(ctx, o, presence, emergence, rgb, tSec, reducedFlash, nearMoment); break;
-        case 'veil': this._drawVeil(ctx, o, presence, distanceAhead, rgb, tSec, wind, reducedFlash); break;
-        case 'geo': this._drawGeo(ctx, o, presence, emergence, pulse, rgb, tSec, reducedFlash); break;
-        default: this._drawEcho(ctx, o, presence, pulse, rgb, tSec, particleMul, reducedFlash, nearMoment); break;
+      if (presence > 0.01) {
+        switch (o.archetype) {
+          case 'thorn': this._drawThorn(ctx, o, presence, emergence, rgb, tSec, reducedFlash, nearMoment, breathe); break;
+          case 'veil': this._drawVeil(ctx, o, presence, distanceAhead, rgb, tSec, wind, reducedFlash, breathe); break;
+          case 'geo': this._drawGeo(ctx, o, presence, emergence, pulse, rgb, tSec, reducedFlash); break;
+          default: this._drawEcho(ctx, o, presence, pulse, rgb, tSec, particleMul, reducedFlash, nearMoment); break;
+        }
       }
 
-      // Dissolve motes: a brief upward spray as the shape lets go, keyed off
-      // how far into dissolving it is (1 - dissolve rises from 0 to 1).
-      if (o.passed && dissolve < 0.99) {
-        const u = 1 - dissolve;
-        const n = Math.max(1, Math.round(6 * particleMul));
-        ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(0.5 * dissolve, reducedFlash)})`;
-        for (let i = 0; i < n; i++) {
-          const a = (i / n) * Math.PI * 2 + o.phase;
-          const r2 = 10 + u * 40;
-          ctx.beginPath();
-          ctx.arc(Math.cos(a) * r2, Math.sin(a) * r2 - u * 30, 1.6, 0, Math.PI * 2);
-          ctx.fill();
-        }
+      // The beat-synced burst: fires once, exactly at the obstacle's own
+      // tMs, regardless of exactly where Midio's worldX/screen position
+      // happens to sit -- it's the music landing a hit, not a "cleared"
+      // event.
+      const burstAgeMs = nowMs - o.tMs;
+      if (burstAgeMs >= 0 && burstAgeMs < BURST_LIFE_MS) {
+        this._drawBeatBurst(ctx, o, burstAgeMs, rgb, particleMul, reducedFlash);
       }
 
       ctx.restore();
     }
   }
 
+  /** A burst of motes radiating outward from the obstacle's center, timed
+   *  to the obstacle's own scheduled beat rather than Midio's position --
+   *  deterministic per (obstacle, mote index) via hash01 so it renders
+   *  identically every frame with no per-obstacle RNG state to carry. */
+  _drawBeatBurst(ctx, o, ageMs, rgb, particleMul, reducedFlash) {
+    const n = Math.max(1, Math.round(BURST_MOTE_COUNT * particleMul));
+    const ageSec = ageMs / 1000;
+    const globalLife = 1 - ageMs / BURST_LIFE_MS;
+    ctx.fillStyle = `rgba(${rgb},1)`;
+    for (let i = 0; i < n; i++) {
+      const seed = o.phase * 1000 + i * 7.31;
+      const ang = (i / n) * Math.PI * 2 + o.phase;
+      const speed = BURST_SPEED_MIN + BURST_SPEED_RANGE * hash01(seed);
+      const px = Math.cos(ang) * speed * ageSec;
+      const py = Math.sin(ang) * speed * ageSec * 0.6 - 0.5 * BURST_GRAVITY_PX_S2 * ageSec * ageSec;
+      // Staggered per-mote lifespan (some motes burn out sooner) so the
+      // burst thins out organically instead of every mote vanishing at once.
+      const moteLife = clamp01(globalLife - hash01(seed + 99) * 0.3);
+      if (moteLife <= 0) continue;
+      ctx.globalAlpha = capFlashAlpha(0.75 * moteLife, reducedFlash);
+      ctx.beginPath();
+      ctx.arc(px, py, 1.3 + 1.3 * moteLife, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   /** A dark crystalline growth condensing out of the ground: a superformula
    *  spike with a slow internal shimmer riding its own hue, brightening as
-   *  the jump window to clear it opens (nearMoment). */
-  _drawThorn(ctx, o, presence, emergence, rgb, tSec, reducedFlash, nearMoment = 0) {
-    const scale = 0.25 + 0.75 * emergence;
+   *  its own beat approaches (nearMoment, the pre-burst charge) and
+   *  breathing with the track's overall energy (breathe). */
+  _drawThorn(ctx, o, presence, emergence, rgb, tSec, reducedFlash, nearMoment = 0, breathe = 1) {
+    const scale = (0.25 + 0.75 * emergence) * breathe;
     ctx.scale(scale, scale);
     const shimmer = 0.5 + 0.5 * Math.sin(tSec * 1.6 + o.phase);
     const alpha = capFlashAlpha((0.55 + 0.35 * nearMoment) * presence, reducedFlash);
@@ -305,18 +326,19 @@ export class ObstacleSpawner {
   }
 
   /** A hanging ribbon of dissonance: nested translucent sine-curtains,
-   *  swaying on the global wind, brightest right at the jump moment. */
-  _drawVeil(ctx, o, presence, distanceAhead, rgb, tSec, wind, reducedFlash) {
+   *  swaying on the global wind, brightest as its own beat approaches, and
+   *  breathing with the track's overall energy (breathe). */
+  _drawVeil(ctx, o, presence, distanceAhead, rgb, tSec, wind, reducedFlash, breathe = 1) {
     const nearMoment = clamp01(1 - Math.abs(distanceAhead) / 40);
     const layers = 4;
     for (let li = 0; li < layers; li++) {
       const depth = li / (layers - 1);
       const sway = (wind.x || 0) * 0.02 + Math.sin(tSec * 0.8 + o.phase + li) * 6;
-      const alpha = capFlashAlpha((0.14 + 0.1 * depth + 0.35 * nearMoment) * presence, reducedFlash);
+      const alpha = capFlashAlpha((0.14 + 0.1 * depth + 0.35 * nearMoment) * presence * breathe, reducedFlash);
       ctx.strokeStyle = `rgba(${rgb},${alpha})`;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      const h = o.height * (0.7 + 0.3 * depth);
+      const h = o.height * (0.7 + 0.3 * depth) * breathe;
       const segs = 12;
       for (let i = 0; i <= segs; i++) {
         const u = i / segs;

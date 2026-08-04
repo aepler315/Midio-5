@@ -43,17 +43,43 @@ export function syllableCount(text) {
 
 // A gap this long between consecutive synced lines starts a new block --
 // either a phrase-per-phrase quick block (the fixed floor) or, on a slower
-// song, a multiple of its own typical line gap.
+// song, a multiple of its own typical line gap. MUL was 4, which (at a
+// typical ~3s median line gap) demanded a ~12s silence to ever split a
+// block -- real verses/choruses essentially never pause that long
+// mid-section, so a whole song routinely collapsed into one or two blocks.
 const BLOCK_GAP_FLOOR_MS = 2500;
-const BLOCK_GAP_MEDIAN_MUL = 4;
+const BLOCK_GAP_MEDIAN_MUL = 2;
 const INSTRUMENTAL_GAP_MS = 12000;
 const EDGE_SILENCE_MS = 8000; // an intro/outro must be at least this long to earn its own label
+// A block spanning longer than this is a whole song-section's worth of
+// lyrics glued together (e.g. one long verse-into-chorus run with no gap
+// wide enough to trip the threshold above) -- split it at its own largest
+// internal gap, recursively, rather than let one block swallow a third of
+// the song.
+const MAX_BLOCK_DURATION_MS = 40000;
 
 function median(nums) {
   if (nums.length === 0) return 0;
   const sorted = [...nums].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/** Recursively splits a run of synced lines at its own largest internal gap
+ *  until every resulting piece spans no more than `capMs` (or can't be
+ *  split further -- a single line always spans 0). Pure. */
+function splitOversizedBlock(lines, capMs) {
+  if (lines.length <= 1) return [lines];
+  const span = lines[lines.length - 1].tMs - lines[0].tMs;
+  if (span <= capMs) return [lines];
+  let bestIdx = 1, bestGap = -1;
+  for (let i = 1; i < lines.length; i++) {
+    const gap = lines[i].tMs - lines[i - 1].tMs;
+    if (gap > bestGap) { bestGap = gap; bestIdx = i; }
+  }
+  const left = lines.slice(0, bestIdx);
+  const right = lines.slice(bestIdx);
+  return [...splitOversizedBlock(left, capMs), ...splitOversizedBlock(right, capMs)];
 }
 
 /** Groups lyric lines into blocks (paragraphs). `lines` is either a synced
@@ -79,7 +105,8 @@ export function toBlocks(lines, { synced = false } = {}) {
       current.push(sorted[i]);
     }
     if (current.length) blocks.push(current);
-    return blocks.map((lns) => ({
+    const capped = blocks.flatMap((b) => splitOversizedBlock(b, MAX_BLOCK_DURATION_MS));
+    return capped.map((lns) => ({
       lines: lns.map((l) => l.text),
       startMs: lns[0].tMs,
       endMs: lns[lns.length - 1].tMs,

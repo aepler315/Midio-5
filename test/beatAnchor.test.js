@@ -89,3 +89,50 @@ test('a long gap starts a fresh session: phase snaps, period value is kept', () 
   assert.equal(a.anchorMs, freshTapMs, 'a session-gap tap should snap the anchor directly to it');
   assert.equal(a.periodMs, periodBefore, 'the period value itself should survive a session reset');
 });
+
+test('a real pass (>=8 metrical taps over >=6s) latches a confidence floor that silence does not decay away', () => {
+  const a = new BeatAnchor(SONG_BEAT_MS);
+  // 20 steady quarter-note taps spanning 9500ms -- comfortably past both
+  // the tap-count and time-span thresholds for earning the floor.
+  tapSteady(a, 0, SONG_BEAT_MS, 20);
+  const lastTapMs = a._lastTapMs;
+  assert.ok(a._confidenceFloor > 0, 'a genuine ~10s pass should have earned the confidence floor');
+  a.update(lastTapMs + 5 * 60 * 1000); // 5 minutes of silence
+  assert.ok(a.confidence >= 0.8, `a satisfied pass should not decay away after the player stops, got ${a.confidence}`);
+});
+
+test('a fresh tapping session after a latched floor must re-earn it -- silence alone never re-latches', () => {
+  const a = new BeatAnchor(SONG_BEAT_MS);
+  tapSteady(a, 0, SONG_BEAT_MS, 20);
+  assert.ok(a._confidenceFloor > 0, 'setup: floor should be earned');
+  // A single tap after a session-gap silence starts a brand new session --
+  // the floor resets and must be re-earned, it is not still "satisfied."
+  const freshTapMs = a._lastTapMs + 10000;
+  a.tap(freshTapMs);
+  assert.equal(a._confidenceFloor, 0, 'a new session should reset the floor, not inherit the old one');
+});
+
+test('a short flurry (too few taps or too little time) never latches the floor', () => {
+  const a = new BeatAnchor(SONG_BEAT_MS);
+  tapSteady(a, 0, SONG_BEAT_MS, 5); // well under both MIN_TAPS_FOR_FLOOR and the time span
+  assert.equal(a._confidenceFloor, 0, 'a handful of taps should not be treated as a satisfied pass');
+});
+
+test('setSongBeatMs scales periodMs with tempo (tempo-invariant level) and keeps the grid point nearest "now" fixed', () => {
+  const a = new BeatAnchor(SONG_BEAT_MS);
+  tapSteady(a, 0, SONG_BEAT_MS, 20);
+  const nowMs = a._lastTapMs;
+  const nearestBefore = a.anchorMs + Math.round((nowMs - a.anchorMs) / a.periodMs) * a.periodMs;
+
+  a.setSongBeatMs(SONG_BEAT_MS / 2, nowMs); // tempo doubles -> beat period halves
+  assert.ok(Math.abs(a.periodMs - SONG_BEAT_MS / 2) < 1e-9, 'periodMs should scale with the new song beat at the same committed level');
+
+  const nearestAfter = a.anchorMs + Math.round((nowMs - a.anchorMs) / a.periodMs) * a.periodMs;
+  assert.ok(Math.abs(nearestAfter - nearestBefore) < 1, `grid point nearest "now" should stay fixed across a tempo change, drifted by ${Math.abs(nearestAfter - nearestBefore)}ms`);
+});
+
+test('setSongBeatMs before any taps still tracks the raw song beat directly (untapped anchor)', () => {
+  const a = new BeatAnchor(SONG_BEAT_MS);
+  a.setSongBeatMs(SONG_BEAT_MS * 2);
+  assert.equal(a.periodMs, SONG_BEAT_MS * 2);
+});

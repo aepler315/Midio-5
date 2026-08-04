@@ -10,7 +10,7 @@ import { MIDASUS_MESH, MIDASUS_HEX_R } from '../render/meshes.js';
 import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, drawGlowHalo } from '../render/MeshDrawer.js';
 import { ModalRing } from '../render/oscillators.js';
 import { OrbitalDebris } from './OrbitalDebris.js';
-import { SkyVoyage } from './SkyVoyage.js';
+import { SkyVoyage, VoyagePhase } from './SkyVoyage.js';
 import { BabyStars } from './BabyStars.js';
 
 const SILENCE_MS = 800;
@@ -97,7 +97,9 @@ export class Midasus {
 
   _target(n) {
     const norm = clamp((n.pitch - this.pMin) / (this.pMax - this.pMin), 0, 1);
-    const y = lerp(this.yFloor - 120, this.yCeiling + 60, norm);
+    // Floor raised (was yFloor-120) -- her lowest notes used to sit inside
+    // Midio's own body; now even the deepest pitch keeps clear headroom.
+    const y = lerp(this.yFloor - 210, this.yCeiling + 60, norm);
     const x = this.midio.screenX + 150 + 55 * n.vel;
     // The ensemble pulls her across the stage; pitch stays primary vertically.
     if (this._ens) {
@@ -111,7 +113,9 @@ export class Midasus {
 
   _orbitAnchor(nowMs, calmLevel) {
     const ax = this._ens ? this._ens.x : this.midio.screenX;
-    const ay = this.midio.groundY - this.midio.y - 130;
+    // Raised (was -130) -- her rest orbit used to sit low enough to overlap
+    // Midio when he's grounded; now it clears him by a real margin.
+    const ay = this.midio.groundY - this.midio.y - 230;
     const t = nowMs / 1000;
     // Calm sections: the orbit widens and slows -- a lazier, dreamier drift
     // instead of the tighter, quicker figure she traces when energetic.
@@ -236,10 +240,14 @@ export class Midasus {
     this.v.x += (KP * (target.x - this.p.x) - KD * this.v.x) * dtSec;
     this.v.y += (KP * (target.y - this.p.y) - KD * this.v.y) * dtSec;
     // Soft personal space: drift off Midio and Broshi when she crowds them
-    // (quadratic falloff — never a hard shove).
+    // (quadratic falloff — never a hard shove). Strengthened on X (was 240)
+    // -- against the KP=90 target spring, 240 was negligible whenever a low
+    // note's target sat anywhere near his own x, so a low note could still
+    // slide her right through him; strong enough now to actually win a tug
+    // of war against the spring at close range.
     const midioX = this.midio.screenX;
     const midioY = this.midio.groundY - this.midio.y - 30;
-    this.v.x += softRepel1D(this.p.x, midioX, 150, 240) * dtSec;
+    this.v.x += softRepel1D(this.p.x, midioX, 170, 900) * dtSec;
     this.v.y += softRepel1D(this.p.y, midioY, 100, 160) * dtSec;
     if (this._ens && Number.isFinite(this._ens.broshiX)) {
       this.v.x += softRepel1D(this.p.x, this._ens.broshiX, 140, 180) * dtSec;
@@ -281,6 +289,25 @@ export class Midasus {
     if (this.voyage.active) {
       this.p = { ...this.voyage.p };
       this.hue = this.voyage.hue;
+      // A lengthened comet streak through the climb: the normal streak
+      // above rides `this.v`, the PD-pursuit velocity, which is stale/
+      // irrelevant once the voyage owns her position -- this one rides her
+      // TRUE frame-to-frame voyage displacement, with a longer life than
+      // the everyday trail so ASCENT specifically reads as racing away.
+      if (this.voyage.phase === VoyagePhase.ASCENT && this._prevVoyageP) {
+        const dt = Math.max(dtSec, 1e-4);
+        const vx = (this.p.x - this._prevVoyageP.x) / dt;
+        const vy = (this.p.y - this._prevVoyageP.y) / dt;
+        this.particles.spawn({
+          x: this.p.x, y: this.p.y,
+          vx: -vx * 0.25 + (this.rand() * 2 - 1) * 12,
+          vy: -vy * 0.25 + (this.rand() * 2 - 1) * 12,
+          size: 3, hue: this.hue, life: 0.6 + 0.3 * this.rand(),
+        });
+      }
+      this._prevVoyageP = { x: this.p.x, y: this.p.y };
+    } else {
+      this._prevVoyageP = null;
     }
     // The babies track her wherever the frame puts her (ensemble, darts,
     // even voyage return points). They render at the mains' intensity (her
@@ -308,6 +335,23 @@ export class Midasus {
       }
       while (this.slashes.length > 8) this.slashes.shift();
     }
+    if (this.voyage.justLaunched) {
+      // Send-off: the exact symmetric counterpart to the touchdown above --
+      // the spiral wind-up releases into a ring, a burst, and a slash star
+      // right as she breaks for ASCENT, so leaving reads as dramatic as
+      // arriving instead of just fading into a background dot.
+      this.modal.excite(6);
+      this.debris.burst(1);
+      for (let k = 0; k < 5; k++) {
+        this.slashes.push({ x: this.p.x, y: this.p.y, ang: (k / 5) * Math.PI, len: 64, age: 0, hue: this.hue });
+      }
+      while (this.slashes.length > 8) this.slashes.shift();
+    }
+    // A steady hum while she winds up -- the spiral itself vibrating with
+    // gathering power, growing as _phaseU approaches 1.
+    if (this.voyage.phase === VoyagePhase.WINDUP) {
+      this.modal.excite(2.2 * dtSec * (1 + this.voyage._phaseU));
+    }
   }
 
   /** Current on-screen width in px -- pulses in sync with her core on note
@@ -317,7 +361,17 @@ export class Midasus {
   }
 
   draw(ctx, particleMul = 1) {
-    if (this.voyage.depth > 0.02) return; // she's away; BiomeManager's deep-sky pass owns rendering
+    // Only DEEP_SPACE hands rendering to BiomeManager's tiny comet-head dot
+    // (drawDeepSky) -- WINDUP/ASCENT/REENTRY render right here, in the
+    // character layer, in front of the mountains, where the player is
+    // actually looking (previously all three were hidden the instant depth
+    // ticked past 0.02, ~24ms into a voyage -- the whole departure/return
+    // was invisible).
+    if (this.voyage.phase === VoyagePhase.DEEP_SPACE) return;
+    // Shared build-up swell (EnsembleDirector.swell) composes with her own
+    // voyage presentation scale -- 1 (no-op) outside a build-up.
+    const swell = this._ens && this._ens.swell != null ? this._ens.swell : 1;
+    const presScale = this.voyage.presentationScale * swell;
     const sat = Math.round(58 - 28 * this.rest); // spectral: pale, never candy
     this.debris.draw(ctx, this.hue, this.rest, particleMul); // behind her core and trail
     // Calm sections fade the ribbon rather than shortening it -- the longer
@@ -362,15 +416,17 @@ export class Midasus {
     const rot = bank + this.rollExtra; // pirouette rides on top of the banking
 
     // Keep the halo modest — a huge soft disc under the hexagram read as a
-    // broken white blob next to Broshi's clean wireframe.
-    const coreGlowR = MIDASUS_HEX_R * 1.55 * this.pulse * DRAW_SCALE;
+    // broken white blob next to Broshi's clean wireframe. presScale swells
+    // her before a voyage launch and recedes her through the climb (1
+    // outside a voyage, so ordinary performance is untouched).
+    const coreGlowR = MIDASUS_HEX_R * 1.55 * this.pulse * DRAW_SCALE * presScale;
     drawGlowHalo(ctx, this.p.x, this.p.y, coreGlowR, coreGlowR, this.hue, 0.32, { sat, light: 74 });
 
     // Ink contour (outline) under the crisp pass: her diamond stays
     // knife-edged against the blurred halo drawn just above.
     drawMeshPart(ctx, coreMesh, this._meshRest, {
       tx: this.p.x, ty: this.p.y, rot,
-      scaleX: this.pulse * DRAW_SCALE, scaleY: this.pulse * DRAW_SCALE,
+      scaleX: this.pulse * DRAW_SCALE * presScale, scaleY: this.pulse * DRAW_SCALE * presScale,
       // Rare shared transition tumble (see EnsembleDirector.maybeTumble).
       rotX: this._ens ? (this._ens.tumbleRotX || 0) : 0,
       rotY: this._ens ? (this._ens.tumbleRotY || 0) : 0,

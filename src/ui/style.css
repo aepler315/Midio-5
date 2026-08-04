@@ -778,45 +778,6 @@ html, body {
   border-radius: 6px;
 }
 
-/* Auto-hiding SoundFont pill (bottom-center) — click to open the switcher
-   popup (#fontModal). */
-#fontBar {
-  position: absolute;
-  bottom: 96px; /* clears the composer strip, now bottom-anchored */
-  left: 50%;
-  transform: translateX(-50%);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s ease;
-  z-index: 6;
-}
-#fontBar.visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-#fontBarBtn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  background: rgba(5, 5, 10, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 24px;
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.85);
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-}
-#fontBarBtn:hover { border-color: #7ad1ff; color: #7ad1ff; }
-#fontName {
-  min-width: 100px;
-  max-width: 220px;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* Track visibility badge (top-right of the HUD row) — click/tap or press T
    to expand the full per-track breakdown of the loaded MIDI. */
 #trackBadge {

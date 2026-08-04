@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GroundField, rippleOffsetAt, kickGlowAt } from '../src/world/GroundField.js';
+import { GroundField, rippleOffsetAt, kickGlowAt, triangularBandIndex } from '../src/world/GroundField.js';
 import { Conductor } from '../src/core/Conductor.js';
 import { makeNoteEvent, Role } from '../src/core/NoteEvent.js';
 
@@ -11,30 +11,37 @@ function fakeEnergyCurves(value) {
   return { sample: () => value, globalEnergy: () => value };
 }
 
-// Band 1 drives the bass-buzz micro-vibration; every other band drives the
-// EQ-bar height. Splitting them lets tests build a real EQ offset without
-// the buzz's own small jitter muddying flatten's exact-proportionality math.
+// Band 1 is held distinct from every other band so tests can isolate a
+// specific band's contribution to the EQ-bar height (the triangular ramp --
+// see triangularBandIndex -- means which slice reads band 1 shifts with
+// slice index, so this is only used where the test doesn't care which slice
+// gets which band, just that bass vs. non-bass differ).
 function fakeEnergyCurvesBanded(bassValue, otherValue) {
   return { sample: (band) => (band === 1 ? bassValue : otherValue), globalEnergy: () => otherValue };
 }
 
-test('bass buzz shivers the render bars over time but never touches the physics height', () => {
+test('no render-only shiver: with steady energy and no ripple/glow, render bar height stays essentially frame-to-frame constant', () => {
+  // Regression for reported ground jitter: visibleBars used to add its own
+  // 13Hz buzz the physics line (heightAt) never had, so the two visibly
+  // diverged. With that removed, a steady input should settle to an almost
+  // static bar height across consecutive frames -- any residual drift is
+  // only the slow groove wave, not a fast shiver.
   const gf = new GroundField(BASE_Y, { durationMs: 0 });
   let t = 0;
-  // Settle springs under sustained high bass so the buzz EMA charges up.
   for (let i = 0; i < 600; i++) { gf.update(t, STEP_S, 0, fakeEnergyCurves(1)); t += 8.33; }
 
   const physicsBefore = gf.heightAt(100);
-  const ySamples = new Set();
+  let prevY = null;
   for (let i = 0; i < 30; i++) {
     gf.update(t, STEP_S, 0, fakeEnergyCurves(1));
     const bars = gf.visibleBars(0, 220, 1280);
-    ySamples.add(bars[2].y.toFixed(3));
-    // Physics reference must stay put (modulo spring settle residue) while the visual bars shiver.
+    const y = bars[2].y;
+    if (prevY != null) assert.ok(Math.abs(y - prevY) < 0.05, `frame-to-frame bar height jumped by ${Math.abs(y - prevY)}, expected no fast shiver`);
+    prevY = y;
+    // Physics reference must stay put (modulo spring settle residue).
     assert.ok(Math.abs(gf.heightAt(100) - physicsBefore) < 0.01);
     t += 8.33;
   }
-  assert.ok(ySamples.size > 5, `expected the bar height to oscillate across steps, saw ${ySamples.size} distinct values`);
 });
 
 test('the Unraveling: flatten visually settles the EQ bars toward baseGroundY, but never touches heightAt (physics)', () => {
@@ -77,14 +84,17 @@ test('flatten interpolates smoothly between the offset and flat bar heights', ()
   assert.ok(Math.abs(yFlat - BASE_Y) < 0.05);
 });
 
-test('bass buzz is phase-staggered across neighboring slices, not lockstep', () => {
-  const gf = new GroundField(BASE_Y, { durationMs: 0 });
-  let t = 0;
-  for (let i = 0; i < 600; i++) { gf.update(t, STEP_S, 0, fakeEnergyCurves(1)); t += 8.33; }
-  const bars = gf.visibleBars(0, 220, 1280);
-  const offsets = bars.slice(0, 5).map((b) => b.y);
-  const distinct = new Set(offsets.map((y) => y.toFixed(2)));
-  assert.ok(distinct.size >= 4, 'neighboring slices should sit at different buzz phases');
+test('triangularBandIndex: neighboring slices always read spectrally adjacent bands', () => {
+  // Regression for reported ground stair-stepping: slices used to read
+  // (index + BAND_SHIFT) % 7, so neighbours could land on unrelated bands
+  // and differ by up to the full RISE_AMPLITUDE_PX at every slice edge. The
+  // triangular ramp guarantees a step of exactly 1 band between neighbours.
+  for (let i = 0; i < 40; i++) {
+    const a = triangularBandIndex(i);
+    const b = triangularBandIndex(i + 1);
+    assert.equal(Math.abs(a - b), 1, `slices ${i}/${i + 1} read bands ${a}/${b}, expected adjacent`);
+    assert.ok(a >= 0 && a <= 6);
+  }
 });
 
 function buildConductor(durationMs, kickPeriodMs = 500) {

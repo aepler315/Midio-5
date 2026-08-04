@@ -16,6 +16,12 @@ const DROP_COOLDOWN_MS = 6000;
 const SURGE_DECAY_SEC = 2.2;
 const SLAM_DECAY_SEC = 0.22;
 const RING_MS = 900;
+// Build-up: reads the same fast/slow EMAs the drop detector compares, but
+// for the RAMP rather than the BREAK -- rectified (only a rising fast-over-
+// slow counts) and smoothed so kick-to-kick flutter doesn't read as one,
+// firing on every sustained crescendo instead of drop's ~once-per-section.
+const BUILDUP_TAU = 0.6;
+const BUILDUP_GAIN = 4.0;
 
 export class HypeDirector {
   constructor() {
@@ -26,6 +32,8 @@ export class HypeDirector {
     this.dropAtMs = -Infinity;
     this._cooldownUntilMs = 0;
     this.dropCount = 0;
+    this.buildUp = 0;      // 0..1, smoothed rectified (fast-slow) rise -- fires on every crescendo
+    this._buildUpRaw = 0;
   }
 
   onKick(vel = 0.8) {
@@ -50,6 +58,10 @@ export class HypeDirector {
 
     this.surge = Math.max(0, this.surge - dtSec / SURGE_DECAY_SEC);
     this.slam = Math.max(0, this.slam - dtSec / SLAM_DECAY_SEC);
+
+    const rise = Math.max(0, this.fast - this.slow);
+    this._buildUpRaw += (1 - Math.exp(-dtSec / BUILDUP_TAU)) * (rise - this._buildUpRaw);
+    this.buildUp = clamp01(this._buildUpRaw * BUILDUP_GAIN);
   }
 
   /** Shockwave ring progress in [0,1), or null once the ring has passed. */

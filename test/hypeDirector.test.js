@@ -53,6 +53,39 @@ test('kick slams spike and decay; surge decays; ring window opens then closes', 
   assert.equal(hype.ringU(t + 2000), null, 'ring must close after its window');
 });
 
+test('buildUp rises on a sustained energy ramp without ever firing a drop', () => {
+  const hype = new HypeDirector();
+  let t = 0;
+  // Fully settle at a flat level first (~5 slow-EMA time constants) so the
+  // startup transient itself (slow catching up to fast from 0) isn't
+  // mistaken for a ramp.
+  for (let i = 0; i < 1500; i++) { hype.update(t, STEP, fakeEnergy(0.1)); t += 8.33; }
+  assert.ok(hype.buildUp < 0.05, 'no ramp yet -- buildUp should sit near 0');
+
+  // A gradual, sustained rise -- never a sudden attack, so no drop should fire.
+  for (let i = 0; i < 600; i++) {
+    const e = 0.1 + 0.6 * (i / 600);
+    hype.update(t, STEP, fakeEnergy(e));
+    t += 8.33;
+  }
+  assert.equal(hype.dropCount, 0, 'a gradual ramp is a build-up, not a drop');
+  assert.ok(hype.buildUp > 0.15, `expected buildUp to rise on a sustained crescendo, got ${hype.buildUp}`);
+});
+
+test('buildUp settles back toward 0 once the ramp plateaus', () => {
+  const hype = new HypeDirector();
+  let t = 0;
+  for (let i = 0; i < 600; i++) {
+    const e = 0.1 + 0.7 * Math.min(1, i / 400);
+    hype.update(t, STEP, fakeEnergy(e));
+    t += 8.33;
+  }
+  const peak = hype.buildUp;
+  // Hold steady at the plateau -- fast catches up to slow, delta -> 0.
+  for (let i = 0; i < 600; i++) { hype.update(t, STEP, fakeEnergy(0.8)); t += 8.33; }
+  assert.ok(hype.buildUp < peak * 0.3, `buildUp should decay once the ramp plateaus, was ${peak}, now ${hype.buildUp}`);
+});
+
 test('hypeFrameStyle nearly extinguishes the rim during calm; energetic still reads', () => {
   const hot = { fast: 0.6, slam: 1, surge: 0 };
   const calmHot = hypeFrameStyle(hot, 1);

@@ -46,6 +46,14 @@ const ANCHOR_OFFSET = [0, 0.55, -0.42]; // rad, per character
 const ANCHOR_PULL_RATE = 8; // rad/s per rad of phase error, scaled by confidence
 const ANCHOR_MIN_CONFIDENCE = 0.05; // below this the anchor is treated as absent
 
+// Shared build-up swell: HypeDirector.buildUp (a crescendo read, not just
+// the rare drop-triggered surge) modulates a scale term every character
+// reads off the SAME theta[i] this class already publishes -- so during a
+// build-up they visibly swell together as one body when the vibe locks
+// them in phase, and in a visible traveling wave when it doesn't, instead
+// of three characters each pulsing to their own private clock.
+const SWELL_GAIN = 0.38;
+
 export class EnsembleDirector {
   constructor(seed = 1, { stageW = 1280, stageH = 720 } = {}) {
     const rand = mulberry32((seed ^ 0x3a7e) >>> 0 || 1);
@@ -74,6 +82,7 @@ export class EnsembleDirector {
     this._tumble = { active: false, startMs: -Infinity, durMs: 850, axis: 'y', dir: 1, cooldownUntilMs: 0 };
     this._tumbleX = [0, 0, 0];
     this._tumbleY = [0, 0, 0];
+    this._buildUp = 0; // HypeDirector.buildUp, read by swell(i)
   }
 
   /** Ease this performer's presence weight toward w01 (0..1) over ~1.5s. */
@@ -122,8 +131,9 @@ export class EnsembleDirector {
     }
   }
 
-  update(nowMs, dtSec, vibe, beatPeriodMs = 500, anchor = null) {
+  update(nowMs, dtSec, vibe, beatPeriodMs = 500, anchor = null, buildUp = 0) {
     this._t += dtSec;
+    this._buildUp = clamp01(buildUp);
     this._updateTumble(nowMs);
     const anchorConf = anchor ? clamp01(anchor.confidence) : 0;
     const anchorLive = anchorConf > ANCHOR_MIN_CONFIDENCE;
@@ -194,7 +204,7 @@ export class EnsembleDirector {
     const roleBias = [
       { x: 0.05, y: 0 },
       { x: -0.42, y: 0.04 },
-      { x: 0.38, y: -0.28 },
+      { x: 0.52, y: -0.34 }, // pushed further from Midio (was 0.38/-0.28) -- they overlapped too much
     ];
 
     // Per-character anchors on a slowly rotating triangle + role bias.
@@ -210,9 +220,19 @@ export class EnsembleDirector {
     // Stage-safety clamps per character role.
     this.anchors[0].x = clamp(this.anchors[0].x, this.w * 0.14, this.w * 0.58); // Midio: gameplay window
     this.anchors[1].x = clamp(this.anchors[1].x, this.w * 0.05, this.w * 0.78); // Broshi: prefers left floor
-    this.anchors[2].x = clamp(this.anchors[2].x, this.w * 0.22, this.w * 0.92); // Midasus: sky-right
+    this.anchors[2].x = clamp(this.anchors[2].x, this.w * 0.34, this.w * 0.92); // Midasus: sky-right (floor raised from 0.22 -- kept her out of Midio's gameplay window)
     this.anchors[2].y = this.h * 0.28 - this.spread * 0.12 + this.anchors[2].y * 2;
   }
 
   phase(i) { return this.theta[i]; }
+
+  /** Scale multiplier (>=1) for character i, driven by the shared build-up
+   *  signal and that character's own place in the SAME Kuramoto phase this
+   *  class already publishes -- beat-synced because theta[i] already is,
+   *  and shared because all three read the same field: locked (happy+epic)
+   *  they swell as one body, unlocked they swell in a visible traveling
+   *  wave. 1 (no-op) whenever there's no build-up. */
+  swell(i) {
+    return 1 + SWELL_GAIN * this._buildUp * (0.5 + 0.5 * Math.cos(this.theta[i]));
+  }
 }

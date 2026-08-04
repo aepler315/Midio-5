@@ -66,9 +66,6 @@ const fpsHudEl = document.getElementById('fpsHud');
 const sfFileInputEl = document.getElementById('sfFileInput');
 const sfDirInputEl = document.getElementById('sfDirInput');
 const sfDirBtnEl = document.getElementById('sfDirBtn');
-const fontBarEl = document.getElementById('fontBar');
-const fontBarBtnEl = document.getElementById('fontBarBtn');
-const fontNameEl = document.getElementById('fontName');
 const settingsBtnEl = document.getElementById('settingsBtn');
 const pauseBtnEl = document.getElementById('pauseBtn');
 const stopBtnEl = document.getElementById('stopBtn');
@@ -125,7 +122,6 @@ let lastRafMs = null; // separate from lastNowMs (audio clock) -- tracks real rA
 let sf2Engine = null;
 let fontLibrary = null;
 let fontRecommender = null;
-let fontBarTimer = null;
 let rafHandle = null; // tracks the pending frame() call so a mid-song file
                        // drop can cancel the old loop instead of stacking a
                        // second one alongside it
@@ -391,18 +387,7 @@ function applyActiveFont(active) {
       sf2Engine.loadSf2(null);
     }
   }
-  if (fontNameEl) {
-    fontNameEl.textContent = active ? active.name : 'No font';
-  }
   renderFontModal();
-  pokeFontBar();
-}
-
-function pokeFontBar() {
-  if (!fontBarEl) return;
-  fontBarEl.classList.add('visible');
-  clearTimeout(fontBarTimer);
-  fontBarTimer = setTimeout(() => fontBarEl.classList.remove('visible'), 3000);
 }
 
 /** Renders the SoundFont switcher popup's current view: the visible-font
@@ -1166,9 +1151,8 @@ if (sfDirBtnEl) {
 
 // --- SoundFont switcher popup (§ replaces the old </>  cycler arrows,
 // which had no way to show *which* fonts exist or let you set any aside).
-// The pill in fontBar opens the visible-fonts list; the settings gear opens
-// straight to the hidden-fonts ("unhide") view.
-if (fontBarBtnEl) fontBarBtnEl.addEventListener('click', () => openFontModal('list'));
+// The settings gear opens straight to the hidden-fonts ("unhide") view; the
+// F key (below) opens the visible-fonts list.
 if (settingsBtnEl) settingsBtnEl.addEventListener('click', () => openFontModal('hidden'));
 if (fontModalCloseEl) fontModalCloseEl.addEventListener('click', () => closeFontModal());
 if (fontModalEl) {
@@ -1229,14 +1213,6 @@ if (fontModalDirBtnEl) {
     fontModalDirBtnEl.addEventListener('click', () => fontModalDirInputEl?.click());
   }
 }
-
-// §3 UX hardening: hover holds the bar open, mouse leave re-pokes
-if (fontBarEl) {
-  fontBarEl.addEventListener('mouseenter', () => clearTimeout(fontBarTimer));
-  fontBarEl.addEventListener('mouseleave', pokeFontBar);
-}
-// Mouse movement fades in the font bar during playback
-window.addEventListener('mousemove', () => { if (running) pokeFontBar(); });
 
 // --- Track visibility wiring ---
 if (trackBadgeBtnEl) trackBadgeBtnEl.addEventListener('click', () => toggleTrackList());

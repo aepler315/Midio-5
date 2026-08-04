@@ -51,7 +51,7 @@ test('Broshi trails behind Midio by default (TRAIL setpoint)', () => {
   const paramBus = new ParamBus();
   const b = new Broshi(conductor, paramBus);
   const midio = { screenX: 200, groundY: 480, y: 0 };
-  stepFor((t, dt) => b.update(t, dt, midio, null, null, 0, 480), 5000);
+  stepFor((t, dt) => b.update(t, dt, midio, null, 0, 480), 5000);
   assert.ok(b.xRel < -140 && b.xRel > -260); // settled near d*=-200 (wider trail)
 });
 
@@ -70,21 +70,10 @@ test('Broshi SURGEs on the scripted 8-bar timer', () => {
   const dtMs = 1000 / 120;
   for (let t = 0; t < 12 * barMs; t += dtMs) {
     conductor.dispatchUpTo(t);
-    b.update(t, dtMs / 1000, midio, null, null, 0, 480);
+    b.update(t, dtMs / 1000, midio, null, 0, 480);
     if (b.state === 'SURGE') sawSurge = true;
   }
   assert.equal(sawSurge, true);
-});
-
-test('Broshi PANICs when an obstacle is inside the 300ms lookahead', () => {
-  const conductor = new Conductor();
-  conductor.load({ timeline: [], barGrid: [], durationMs: 10000 });
-  const paramBus = new ParamBus();
-  const b = new Broshi(conductor, paramBus);
-  const midio = { screenX: 200, groundY: 480, y: 0 };
-  const fakeObstacles = { nearestAhead: () => ({ tMs: 1150, wx: 500 }) };
-  b.update(1000, 1 / 120, midio, null, fakeObstacles, 0, 480);
-  assert.equal(b.state, 'PANIC');
 });
 
 test('EnsembleDirector: a confident beat anchor pulls the trio toward its grid but keeps them mutually distinct', () => {

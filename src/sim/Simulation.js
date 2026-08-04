@@ -50,22 +50,6 @@ const WORLD_SPEED_PX_S = 220;
 const CLEAN_WINDOW_MS = 90;
 // v_ref = 2*Ha_max/(gamma*D_min) — the fastest "typical" landing (spec §2.2.1).
 const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
-// Bass-line air jumps: how far ahead (px) an upcoming obstacle must be
-// before an extra, non-charted air jump is allowed to retarget the arc --
-// the chart's own flawless schedule must never be put at risk for a beat
-// that's just decoration.
-const BASS_AIR_JUMP_SAFETY_PX = 260;
-
-/** Pure: is it safe to fire an extra bass-driven air jump right now, given
- *  the nearest upcoming obstacle (or null)? Safe when there's no obstacle
- *  ahead, or it's already behind, or it's far enough out that a retargeted
- *  arc has settled back onto the chart's own schedule well before Midio
- *  gets there. */
-export function bassAirJumpSafe(obstacle, worldX, safetyPx = BASS_AIR_JUMP_SAFETY_PX) {
-  if (!obstacle) return true;
-  const distancePx = obstacle.wx - worldX;
-  return distancePx < 0 || distancePx > safetyPx;
-}
 
 export class Simulation {
   constructor(conductor, paramBus, {
@@ -270,7 +254,6 @@ export class Simulation {
     conductor.on('*', (evt) => {
       if (!this._midioAccentFilter(evt)) return;
       if (!this.jump.airborne) return;
-      if (!bassAirJumpSafe(this.obstacles.nearestAhead(this.worldX), this.worldX)) return;
       const grant = this.airSeq.tryConsume(evt.tMs);
       if (!grant) return;
       const performed = this.jump.airJump({ tMs: evt.tMs, vel: evt.vel }, grant.boostMul * 0.8, grant);
@@ -514,9 +497,9 @@ export class Simulation {
     // Keep the anchor's notion of "the song's own beat" tracking the live
     // chart tempo (JumpController's own kick EMA), so its ladder-snap
     // reasoning stays meaningful across any mid-song tempo drift.
-    this.beatAnchor.setSongBeatMs(this.jump.beatPeriodMs);
+    this.beatAnchor.setSongBeatMs(this.jump.beatPeriodMs, nowMs);
     this.beatAnchor.update(nowMs);
-    this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs, this.beatAnchor);
+    this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs, this.beatAnchor, this.hype.buildUp);
     // A scene transition is a rare cue for the whole trio to share a brief
     // tumble accent (see EnsembleDirector.maybeTumble) -- one-frame lag
     // against biomes.update() below is inaudible/invisible at 16ms.
@@ -592,19 +575,15 @@ export class Simulation {
       this.impactFX.splat(this.worldX, this.midio.groundY);
     }
 
-    const stumbled = this.obstacles.checkCollision(this.worldX, this.midio.halfWidth, this.jump.y);
-    if (stumbled) this.comboSystem.onStumble();
-
     this.comboSystem.update(nowMs, this.jump.beatPeriodMs);
 
     const worldSpeed = WORLD_SPEED_PX_S * this.paramBus.live.scrollSpeed;
     this.worldX += worldSpeed * dtSec;
 
     this.obstacles.update(nowMs, this.worldX, worldSpeed / 1000);
-    this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.obstacles, this.noteChart);
+    this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.noteChart);
     this.performer.update(
       nowMs, dtSec, this.midio, this.jump, this.comboSystem, this.calm.level, this.ensemble, this.judge.holdState,
-      this.obstacles.nearestAhead(this.worldX),
     );
     // Riding a hold: heel dust streams from the slide the whole way.
     if (this.judge.holdState.active && !this.jump.airborne) {
@@ -644,12 +623,15 @@ export class Simulation {
       broshiX: this.broshi.renderX, broshiY: this.midio.groundY - this.broshi.hopY - 20,
       // Rare shared transition tumble (see EnsembleDirector.maybeTumble).
       tumbleRotX: this.ensemble.rotX(2), tumbleRotY: this.ensemble.rotY(2),
+      // Shared build-up swell (EnsembleDirector.swell) -- see Broshi/Renderer for the other two.
+      swell: this.ensemble.swell(2),
     }, this.perf.particleMul, this.biomes.wind);
     // She's off on a voyage -> the ensemble's Kuramoto math should feel the
     // hole (this takes effect next frame; the weight eases over ~1.5s
     // regardless, so the one-step lag is inaudible/invisible).
     this.ensemble.setPresence(2, this.midasus.voyage.active ? 0 : 1);
     if (this.midasus.voyage.justLanded) { this.camera.shake(4); }
+    if (this.midasus.voyage.justLaunched) { this.camera.shake(4); }
     // The sky notices her presence: the celestial's mandala swells while
     // she's dancing around it, and the accumulated star atlas glints with
     // every beat for the rest of the song.
@@ -664,7 +646,7 @@ export class Simulation {
       this.midasus.voyage.detonateAtlas(nowMs);
       this.camera.shake(5);
     }
-    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level, {
+    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.worldX, this.midio.groundY, this.calm.level, {
       trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
       // A true companion watches his hero: airborne state + height for the
       // "watch him fly" head-tilt and takeoff crouch, the landing/clean
@@ -680,6 +662,8 @@ export class Simulation {
       weatherKind: this.weather.kind, weatherIntensity: this.weather.intensity,
       // Rare shared transition tumble (see EnsembleDirector.maybeTumble).
       tumbleRotX: this.ensemble.rotX(1), tumbleRotY: this.ensemble.rotY(1),
+      // Shared build-up swell (EnsembleDirector.swell) -- see Midasus/Renderer for the other two.
+      swell: this.ensemble.swell(1),
     }, this.groundField);
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);

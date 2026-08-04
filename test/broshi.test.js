@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Broshi, keepOutTarget, cheerBumpY, phewBumpY } from '../src/sim/Broshi.js';
+import { Broshi, keepOutTarget, cheerBumpY } from '../src/sim/Broshi.js';
 import { Role } from '../src/core/NoteEvent.js';
 
 function fakeConductor() {
@@ -49,8 +49,8 @@ test('tail sway widens under sustained calm compared to energetic', () => {
   let maxA = 0, maxB = 0;
   for (let i = 0; i < 400; i++) {
     const t = i * 20;
-    a.update(t, 1 / 60, fakeMidio(), null, null, 0, 480, 0);
-    b.update(t, 1 / 60, fakeMidio(), null, null, 0, 480, 1);
+    a.update(t, 1 / 60, fakeMidio(), null, 0, 480, 0);
+    b.update(t, 1 / 60, fakeMidio(), null, 0, 480, 1);
     maxA = Math.max(maxA, Math.abs(a.tailAngle));
     maxB = Math.max(maxB, Math.abs(b.tailAngle));
   }
@@ -65,13 +65,13 @@ test('mini-hop height is softened during calm ("relaxed lope")', () => {
 
   conductorA.fireEvent(Role.MELODY, { kick: false, vel: 0.8, pitch: 64 });
   conductorB.fireEvent(Role.MELODY, { kick: false, vel: 0.8, pitch: 64 });
-  a.update(0, 1 / 60, fakeMidio(), null, null, 0, 480, 0);
-  b.update(0, 1 / 60, fakeMidio(), null, null, 0, 480, 1);
+  a.update(0, 1 / 60, fakeMidio(), null, 0, 480, 0);
+  b.update(0, 1 / 60, fakeMidio(), null, 0, 480, 1);
 
   let peakA = 0, peakB = 0;
   for (let t = 10; t <= 170; t += 10) {
-    a.update(t, 1 / 60, fakeMidio(), null, null, 0, 480, 0);
-    b.update(t, 1 / 60, fakeMidio(), null, null, 0, 480, 1);
+    a.update(t, 1 / 60, fakeMidio(), null, 0, 480, 0);
+    b.update(t, 1 / 60, fakeMidio(), null, 0, 480, 1);
     peakA = Math.max(peakA, a.hopY);
     peakB = Math.max(peakB, b.hopY);
   }
@@ -85,12 +85,12 @@ test('a sustained calm streak eventually triggers a yawn (slow jaw open, not the
   let t = 0;
   let sawYawn = false;
   for (let bar = 0; bar < 60 && !sawYawn; bar++) {
-    broshi.update(t, 1 / 60, fakeMidio(), null, null, 0, 480, 1);
+    broshi.update(t, 1 / 60, fakeMidio(), null, 0, 480, 1);
     conductor.fireBar(t);
     // Sample jawOpen across the bar for a slow (not instantaneous) rise typical of a yawn.
     for (let i = 1; i <= 20; i++) {
       const sampleT = t + i * 20;
-      broshi.update(sampleT, 1 / 60, fakeMidio(), null, null, 0, 480, 1);
+      broshi.update(sampleT, 1 / 60, fakeMidio(), null, 0, 480, 1);
       if (broshi.jawOpen > 0.3) { sawYawn = true; break; }
     }
     t += 500;
@@ -105,7 +105,7 @@ test('apex-on-beat: the hop peak lands exactly on the triggering note\'s tMs', (
   conductor.fireEvent(Role.MELODY, { vel: 0.8, pitch: 64, tMs: 1000 });
   let peakT = null, peak = -1;
   for (let t = 800; t <= 1200; t += 4) {
-    b.update(t, 1 / 240, fakeMidio(), null, null, 0, 480, 0);
+    b.update(t, 1 / 240, fakeMidio(), null, 0, 480, 0);
     if (b.hopY > peak) { peak = b.hopY; peakT = t; }
   }
   assert.ok(peak > 0, 'the hop must fire');
@@ -119,7 +119,7 @@ test('output latency shifts the hop apex onto the HEARD beat', () => {
   conductor.fireEvent(Role.MELODY, { vel: 0.8, pitch: 64, tMs: 1000 });
   let peakT = null, peak = -1;
   for (let t = 800; t <= 1400; t += 4) {
-    b.update(t, 1 / 240, fakeMidio(), null, null, 0, 480, 0);
+    b.update(t, 1 / 240, fakeMidio(), null, 0, 480, 0);
     if (b.hopY > peak) { peak = b.hopY; peakT = t; }
   }
   assert.ok(Math.abs(peakT - 1120) <= 8, `with 120ms output lag the apex waits for the ear (got ${peakT})`);
@@ -132,7 +132,7 @@ test('casting: a hopFilter routes his body to HIS lane only', () => {
   conductor.fireEvent(Role.MELODY, { vel: 0.9, pitch: 70, tMs: 500, lane: 'MIDASUS' });
   let hopped = 0;
   for (let t = 300; t <= 700; t += 10) {
-    b.update(t, 1 / 100, fakeMidio(), null, null, 0, 480, 0);
+    b.update(t, 1 / 100, fakeMidio(), null, 0, 480, 0);
     if (b.hopY > 0) hopped++;
   }
   assert.equal(hopped, 0, 'not his line, no hop');
@@ -140,7 +140,7 @@ test('casting: a hopFilter routes his body to HIS lane only', () => {
   conductor.fireEvent(Role.BASS, { vel: 0.9, pitch: 38, tMs: 1000, lane: 'BROSHI' });
   let peak = 0;
   for (let t = 850; t <= 1150; t += 10) {
-    b.update(t, 1 / 100, fakeMidio(), null, null, 0, 480, 0);
+    b.update(t, 1 / 100, fakeMidio(), null, 0, 480, 0);
     peak = Math.max(peak, b.hopY);
   }
   assert.ok(peak > 0, 'his bass line hops him');
@@ -154,7 +154,7 @@ test('lost traction (snow) makes the trailing spring visibly overshoot more', ()
     b.xRel = -300; // displaced hard from the trail point
     let overshoot = 0;
     for (let t = 0; t <= 6000; t += 16) {
-      b.update(t, 16 / 1000, fakeMidio(), null, null, 0, 480, 0);
+      b.update(t, 16 / 1000, fakeMidio(), null, 0, 480, 0);
       overshoot = Math.max(overshoot, b.xRel - b._trailTarget);
     }
     return overshoot;
@@ -173,7 +173,7 @@ test('kick flash queue: rapid kicks under Bluetooth-class latency still light ev
   for (const t of [1000, 1200, 1400, 1600]) conductor.fireEvent(Role.RHYTHM, { kick: true, vel: 0.9, tMs: t });
   let peak = 0;
   for (let t = 1000; t <= 2200; t += 8) {
-    b.update(t, 8 / 1000, fakeMidio(), null, null, 0, 480, 0);
+    b.update(t, 8 / 1000, fakeMidio(), null, 0, 480, 0);
     peak = Math.max(peak, b.beatFlash);
   }
   assert.ok(peak > 0.95, `expected full flashes despite latency >= kick interval, got peak ${peak}`);
@@ -189,7 +189,7 @@ test('dense runs: the busy guard finishes the current hop instead of flattening 
   conductor.fireEvent(Role.MELODY, { vel: 0.8, pitch: 66, tMs: 1100 });
   let peakAtA = 0;
   for (let t = 900; t <= 1080; t += 4) {
-    b.update(t, 4 / 1000, fakeMidio(), null, null, 0, 480, 0);
+    b.update(t, 4 / 1000, fakeMidio(), null, 0, 480, 0);
     peakAtA = Math.max(peakAtA, b.hopY);
   }
   assert.ok(peakAtA > 10, `note A's hop must reach a real apex, got ${peakAtA}`);
@@ -249,29 +249,14 @@ test('cheerBumpY produces two bounded bumps and is zero outside them', () => {
   for (let t = -10; t < 300; t += 5) assert.ok(Number.isFinite(cheerBumpY(t)) && cheerBumpY(t) >= -1e-9);
 });
 
-test('phewBumpY produces one bounded bump and is zero outside it', () => {
-  assert.equal(phewBumpY(-5), 0);
-  assert.ok(phewBumpY(110) > 3, 'peaks mid-bump');
-  assert.equal(phewBumpY(300), 0, 'zero well past the bump');
-  for (let t = -10; t < 300; t += 5) assert.ok(Number.isFinite(phewBumpY(t)) && phewBumpY(t) >= -1e-9);
-});
-
-test('Broshi PANIC->TRAIL (a dodge clearing) fires the phew relief bump and a jaw tell', () => {
+test('Broshi has no PANIC state -- obstacles are ambient only, his locomotion FSM is just TRAIL/SURGE', () => {
   const conductor = fakeConductor();
   const b = new Broshi(conductor, {}, { seed: 7 });
   const midio = fakeMidio();
-  // An obstacle 200ms out puts him in PANIC (within PANIC_LOOKAHEAD_MS=300).
-  const nearObstacle = { nearestAhead: () => ({ tMs: 200, wx: 0 }) };
-  b.update(0, 1 / 60, midio, null, nearObstacle, 0, 480, 0);
-  assert.equal(b.state, 'PANIC');
-  // The obstacle recedes into the past (cleared) -- PANIC should release.
-  const clearedObstacle = { nearestAhead: () => ({ tMs: -500, wx: -1000 }) };
-  b.update(210, 1 / 60, midio, null, clearedObstacle, 0, 480, 0);
-  assert.equal(b.state, 'TRAIL');
-  assert.ok(b.jawOpen > 0, 'a quick "whew" jaw tell fires on release');
-  // The relief bump should be audible in hopY shortly after release.
-  b.update(260, 1 / 60, midio, null, clearedObstacle, 0, 480, 0);
-  assert.ok(b.hopY > 0, 'the phew bump lifts hopY shortly after the dodge clears');
+  for (let t = 0; t < 5000; t += 16) {
+    b.update(t, 1 / 60, midio, null, 0, 480, 0);
+    assert.ok(b.state === 'TRAIL' || b.state === 'SURGE', `unexpected state ${b.state}`);
+  }
 });
 
 test('Broshi shivers in snow and stays neutral without weather', () => {
@@ -280,8 +265,8 @@ test('Broshi shivers in snow and stays neutral without weather', () => {
   const noWeather = new Broshi(conductor, {}, { seed: 3 });
   const snowy = new Broshi(conductor, {}, { seed: 3 });
   for (let t = 0; t < 500; t += 16) {
-    noWeather.update(t, 1 / 60, midio, null, null, 0, 480, 0);
-    snowy.update(t, 1 / 60, midio, null, null, 0, 480, 0, { weatherKind: 'snow', weatherIntensity: 0.8 });
+    noWeather.update(t, 1 / 60, midio, null, 0, 480, 0);
+    snowy.update(t, 1 / 60, midio, null, 0, 480, 0, { weatherKind: 'snow', weatherIntensity: 0.8 });
   }
   assert.notEqual(snowy.squashX, noWeather.squashX, 'a shiver must perturb squashX away from the calm baseline');
 });
@@ -292,7 +277,7 @@ test('Broshi shakes off periodically in rain', () => {
   const b = new Broshi(conductor, {}, { seed: 11 });
   let sawShake = false;
   for (let t = 0; t < 6000; t += 16) {
-    b.update(t, 1 / 60, midio, null, null, 0, 480, 0, { weatherKind: 'rain', weatherIntensity: 0.8 });
+    b.update(t, 1 / 60, midio, null, 0, 480, 0, { weatherKind: 'rain', weatherIntensity: 0.8 });
     if (Math.abs(b.squashX - 1) > 0.05) sawShake = true;
   }
   assert.ok(sawShake, 'a shake-off wobble must fire at least once over 6s of steady rain');
@@ -316,7 +301,7 @@ test('Broshi never renders inside Midio\'s landing column, across a scripted sur
       midioAirborne: airborne, midioY: airborne ? 150 : 0,
       justLanded: false, justClean: false, worldSpeed: 180,
     };
-    b.update(ms, 0.016, midio, null, null, ms * 3, 540, 0.2, ensemble, null);
+    b.update(ms, 0.016, midio, null, ms * 3, 540, 0.2, ensemble, null);
     worst = Math.min(worst, Math.abs(b.renderX - midio.screenX));
   }
   assert.ok(worst >= 55 - 1e-6, `renderX came within ${worst}px of the landing column`);
