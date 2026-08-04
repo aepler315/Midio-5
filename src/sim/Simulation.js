@@ -493,6 +493,10 @@ export class Simulation {
     this.broshi.traction = tractionFrom(this.snowCover);
     this.biomes.snowCover = this.snowCover;
     this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs);
+    // A scene transition is a rare cue for the whole trio to share a brief
+    // tumble accent (see EnsembleDirector.maybeTumble) -- one-frame lag
+    // against biomes.update() below is inaudible/invisible at 16ms.
+    if (this.biomes.sectionJustChanged) this.ensemble.maybeTumble(nowMs, this.biomes.lastTransitionStyle);
     // Midio roams toward his ensemble anchor -- slow, never gameplay-fast.
     const dxA = this.ensemble.anchors[0].x - this.midio.screenX;
     this.midio.screenX += Math.max(-30 * dtSec, Math.min(30 * dtSec, dxA));
@@ -614,6 +618,8 @@ export class Simulation {
       interests: babyInterests, pointer: this.pointer,
       // Soft spacing: last-frame Broshi position (good enough for gentle push).
       broshiX: this.broshi.renderX, broshiY: this.midio.groundY - this.broshi.hopY - 20,
+      // Rare shared transition tumble (see EnsembleDirector.maybeTumble).
+      tumbleRotX: this.ensemble.rotX(2), tumbleRotY: this.ensemble.rotY(2),
     }, this.perf.particleMul, this.biomes.wind);
     // She's off on a voyage -> the ensemble's Kuramoto math should feel the
     // hole (this takes effect next frame; the weight eases over ~1.5s
@@ -648,6 +654,8 @@ export class Simulation {
       // shake-off flick in rain -- the same music-reactive weather layer
       // BiomeManager/Traction already read, just also reaching Broshi.
       weatherKind: this.weather.kind, weatherIntensity: this.weather.intensity,
+      // Rare shared transition tumble (see EnsembleDirector.maybeTumble).
+      tumbleRotX: this.ensemble.rotX(1), tumbleRotY: this.ensemble.rotY(1),
     }, this.groundField);
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);

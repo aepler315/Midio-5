@@ -371,6 +371,9 @@ export class Midasus {
     drawMeshPart(ctx, coreMesh, this._meshRest, {
       tx: this.p.x, ty: this.p.y, rot,
       scaleX: this.pulse * DRAW_SCALE, scaleY: this.pulse * DRAW_SCALE,
+      // Rare shared transition tumble (see EnsembleDirector.maybeTumble).
+      rotX: this._ens ? (this._ens.tumbleRotX || 0) : 0,
+      rotY: this._ens ? (this._ens.tumbleRotY || 0) : 0,
     }, this.hue, {
       satBase: sat, lightBase: 70, hueSpread: 26, outline: true,
       widthBase: 1.7, widthGlow: 2.0,

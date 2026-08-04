@@ -97,6 +97,10 @@ export class BiomeManager {
     this._shutterStartMs = -Infinity;
     this._shutterBarMs = 500;
     this.cutFlashJustFired = false;
+    // Edge-triggered once per section boundary, any transition style -- other
+    // systems (character tumble choreography) hang a rare accent off this.
+    this.sectionJustChanged = false;
+    this.lastTransitionStyle = null;
     // Lyric-fused structure (SectionFusion): a section's `kind` (verse/
     // chorus/bridge/instrumental/intro/outro) and its lyric intensity/
     // valence, when lyrics were found and fused into the schedule below.
@@ -624,6 +628,7 @@ export class BiomeManager {
     // Dramaturgy: detect section boundaries and fire their transition FX.
     const sectionIdx = this._sectionAt(nowMs);
     this.cutFlashJustFired = false;
+    this.sectionJustChanged = false;
     if (sectionIdx !== this._lastSectionIdx) {
       const sec = this.sections[sectionIdx];
       if (this._lastSectionIdx != null) {
@@ -633,6 +638,8 @@ export class BiomeManager {
         // spotlight snap a hype drop does -- the show notices the vocals
         // stepping back just as much as it notices them stepping forward.
         if (sec.kind === 'instrumental') this.lightRig.trigger(nowMs, this.midioX, this.midioY);
+        this.sectionJustChanged = true;
+        this.lastTransitionStyle = sec.transition;
       }
       this._lastSectionIdx = sectionIdx;
     }

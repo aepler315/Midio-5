@@ -22,6 +22,15 @@ const SPREAD_TAU = 2.8;   // formation changes drift, never snap
 const CENTROID_SPEED = 0.041; // rad/s of the roam ellipse -- slow
 const PRESENCE_TAU = 1.5; // seconds for a presence weight to ease toward its target
 
+// Transition tumble: a rare, brief 3D-ish turn (see MeshDrawer.applyTransform
+// rotX/rotY) the whole trio shares on a scene-change beat, staggered like a
+// wave so it reads as one choreographed move rather than three characters
+// spinning independently. Deliberately sparse -- an accent, not a tic.
+const TUMBLE_STAGGER_MS = 110;      // delay between Midio -> Broshi -> Midasus
+const TUMBLE_PEAK = [0.56, 0.46, 0.64]; // per-character peak angle (rad)
+const TUMBLE_CHANCE = 0.5;          // not every eligible transition tumbles
+const TUMBLE_COOLDOWN_MIN_MS = 9000, TUMBLE_COOLDOWN_RANGE_MS = 9000;
+
 export class EnsembleDirector {
   constructor(seed = 1, { stageW = 1280, stageH = 720 } = {}) {
     const rand = mulberry32((seed ^ 0x3a7e) >>> 0 || 1);
@@ -45,6 +54,11 @@ export class EnsembleDirector {
     // "leaving the band" and "coming home" both read as physical transitions.
     this.weights = [1, 1, 1];
     this._targetWeights = [1, 1, 1];
+
+    this._rand = rand; // kept for later stochastic cues (e.g. tumble)
+    this._tumble = { active: false, startMs: -Infinity, durMs: 850, axis: 'y', dir: 1, cooldownUntilMs: 0 };
+    this._tumbleX = [0, 0, 0];
+    this._tumbleY = [0, 0, 0];
   }
 
   /** Ease this performer's presence weight toward w01 (0..1) over ~1.5s. */
@@ -52,8 +66,50 @@ export class EnsembleDirector {
     this._targetWeights[i] = clamp01(w01);
   }
 
+  /** Call on a scene-transition boundary. Only cut/shutter beats are
+   *  eligible (fades are slow crossfades, not a snap moment), it's further
+   *  gated by chance and a long cooldown, so the tumble stays a rare accent
+   *  rather than a per-transition tic. */
+  maybeTumble(nowMs, transitionStyle) {
+    if (nowMs < this._tumble.cooldownUntilMs) return;
+    if (transitionStyle !== 'cut' && transitionStyle !== 'shutter') return;
+    if (this._rand() > TUMBLE_CHANCE) return;
+    this._tumble.active = true;
+    this._tumble.startMs = nowMs;
+    this._tumble.durMs = 620 + this._rand() * 320;
+    this._tumble.axis = this._rand() < 0.7 ? 'y' : 'x'; // mostly a turn, sometimes a tip
+    this._tumble.dir = this._rand() < 0.5 ? 1 : -1;
+    this._tumble.cooldownUntilMs = nowMs + TUMBLE_COOLDOWN_MIN_MS + this._rand() * TUMBLE_COOLDOWN_RANGE_MS;
+  }
+
+  /** Current tumble angle for character i (radians), 0 outside a move. */
+  rotX(i) { return this._tumbleX[i] || 0; }
+  rotY(i) { return this._tumbleY[i] || 0; }
+
+  _updateTumble(nowMs) {
+    const tb = this._tumble;
+    if (!tb.active) return;
+    let allDone = true;
+    for (let i = 0; i < 3; i++) {
+      const uRaw = (nowMs - (tb.startMs + i * TUMBLE_STAGGER_MS)) / tb.durMs;
+      const inWindow = uRaw >= 0 && uRaw <= 1;
+      if (uRaw < 1) allDone = false;
+      // Out-and-back pulse (0 at both ends) so the glyph always lands back
+      // on its normal flat pose -- never left mid-tumble.
+      const peak = inWindow ? tb.dir * TUMBLE_PEAK[i] * Math.sin(Math.PI * uRaw) : 0;
+      this._tumbleY[i] = tb.axis === 'y' ? peak : 0;
+      this._tumbleX[i] = tb.axis === 'x' ? peak : 0;
+    }
+    if (allDone) {
+      tb.active = false;
+      this._tumbleX[0] = this._tumbleX[1] = this._tumbleX[2] = 0;
+      this._tumbleY[0] = this._tumbleY[1] = this._tumbleY[2] = 0;
+    }
+  }
+
   update(nowMs, dtSec, vibe, beatPeriodMs = 500) {
     this._t += dtSec;
+    this._updateTumble(nowMs);
     const omega0 = TWO_PI / Math.max(0.25, (beatPeriodMs || 500) / 1000);
 
     const wAlpha = 1 - Math.exp(-dtSec / PRESENCE_TAU);

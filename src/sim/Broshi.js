@@ -378,6 +378,9 @@ export class Broshi {
     this._calmLevel = calmLevel;
     this._ensPhase = ensemble ? ensemble.phase : null;
     this._melt = ensemble ? ensemble.melt : 0;
+    // Rare shared transition tumble (see EnsembleDirector.maybeTumble).
+    this._tumbleRotX = ensemble ? (ensemble.tumbleRotX || 0) : 0;
+    this._tumbleRotY = ensemble ? (ensemble.tumbleRotY || 0) : 0;
     // The ensemble roams him around the floor: his spring's TRAIL set-point
     // chases the formation anchor instead of a fixed -140px offset.
     this._trailTarget = ensemble ? clamp(ensemble.trailX - midio.screenX, -420, 320) : D_TRAIL;
@@ -865,6 +868,7 @@ export class Broshi {
     const group = {
       tx: x, ty: y, rot: neckRad + this.bodyRoll,
       scaleX: DRAW_SCALE * this.squashX, scaleY: DRAW_SCALE * this.squashY,
+      rotX: this._tumbleRotX || 0, rotY: this._tumbleRotY || 0,
     };
     const bodyHub = BROSHI_BODY.vertices[0];
     // Crisper raptor glyph: cap melt so the body stays a raptor, not soup.
