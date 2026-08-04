@@ -31,6 +31,21 @@ const TUMBLE_PEAK = [0.56, 0.46, 0.64]; // per-character peak angle (rad)
 const TUMBLE_CHANCE = 0.5;          // not every eligible transition tumbles
 const TUMBLE_COOLDOWN_MIN_MS = 9000, TUMBLE_COOLDOWN_RANGE_MS = 9000;
 
+// Player beat-anchor (BeatAnchor.js): a tap anywhere marks a phase/period
+// reference the trio pulls toward -- distinct, non-uniform per-character
+// offsets so they land near, but never ON, the same instant (the whole
+// point of "shouldn't sync to the same time as each other"). The pull is a
+// RATE, not a snap, and stacks on top of the existing Kuramoto coupling
+// above, so a low-K sad section still slips around the anchor instead of
+// locking dead to it.
+const ANCHOR_OFFSET = [0, 0.55, -0.42]; // rad, per character
+// Must comfortably outrun each character's own natural DETUNE (max 0.9
+// rad/s above) and the coupling force (up to ~K*R, K can reach ~3 at full
+// happy+epic) -- otherwise those forces fight the offsets themselves and
+// the "distinct per character" guarantee stops holding at some vibes.
+const ANCHOR_PULL_RATE = 8; // rad/s per rad of phase error, scaled by confidence
+const ANCHOR_MIN_CONFIDENCE = 0.05; // below this the anchor is treated as absent
+
 export class EnsembleDirector {
   constructor(seed = 1, { stageW = 1280, stageH = 720 } = {}) {
     const rand = mulberry32((seed ^ 0x3a7e) >>> 0 || 1);
@@ -107,10 +122,16 @@ export class EnsembleDirector {
     }
   }
 
-  update(nowMs, dtSec, vibe, beatPeriodMs = 500) {
+  update(nowMs, dtSec, vibe, beatPeriodMs = 500, anchor = null) {
     this._t += dtSec;
     this._updateTumble(nowMs);
-    const omega0 = TWO_PI / Math.max(0.25, (beatPeriodMs || 500) / 1000);
+    const anchorConf = anchor ? clamp01(anchor.confidence) : 0;
+    const anchorLive = anchorConf > ANCHOR_MIN_CONFIDENCE;
+    // A confident anchor gradually pulls the ensemble's own natural
+    // frequency toward the player's period too -- otherwise the phase pull
+    // below fights a base rate still set by the chart's beat.
+    const effectivePeriodMs = anchorLive ? lerp(beatPeriodMs || 500, anchor.periodMs, anchorConf) : (beatPeriodMs || 500);
+    const omega0 = TWO_PI / Math.max(0.25, effectivePeriodMs / 1000);
 
     const wAlpha = 1 - Math.exp(-dtSec / PRESENCE_TAU);
     for (let i = 0; i < 3; i++) this.weights[i] += wAlpha * (this._targetWeights[i] - this.weights[i]);
@@ -139,6 +160,21 @@ export class EnsembleDirector {
       if (this.theta[i] > TWO_PI) this.theta[i] -= TWO_PI;
       else if (this.theta[i] < 0) this.theta[i] += TWO_PI;
     }
+    // The anchor pull itself: each character eases toward basePhase +
+    // its own offset, at a rate scaled by how confident the anchor is.
+    if (anchorLive) {
+      const pullRate = ANCHOR_PULL_RATE * anchorConf;
+      const basePhase = anchor.phaseRad(nowMs);
+      for (let i = 0; i < 3; i++) {
+        const target = ((basePhase + ANCHOR_OFFSET[i]) % TWO_PI + TWO_PI) % TWO_PI;
+        let err = target - this.theta[i];
+        err = ((err + Math.PI) % TWO_PI + TWO_PI) % TWO_PI - Math.PI; // fold to [-PI, PI]
+        this.theta[i] += pullRate * err * dtSec;
+        if (this.theta[i] > TWO_PI) this.theta[i] -= TWO_PI;
+        else if (this.theta[i] < 0) this.theta[i] += TWO_PI;
+      }
+    }
+
     this.r = R;
     this.rSmooth += (1 - Math.exp(-dtSec / R_TAU)) * (R - this.rSmooth);
 

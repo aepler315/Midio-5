@@ -23,6 +23,7 @@ import { HypeDirector } from './HypeDirector.js';
 import { VibeDirector } from './VibeDirector.js';
 import { epicBiasForKind } from '../lyrics/SectionFusion.js';
 import { EnsembleDirector } from './EnsembleDirector.js';
+import { BeatAnchor } from './BeatAnchor.js';
 import { ExcursionDirector } from './ExcursionDirector.js';
 import { ApotheosisDirector } from './ApotheosisDirector.js';
 import { KeyDirector } from './KeyDirector.js';
@@ -111,6 +112,14 @@ export class Simulation {
 
     this.midio = new Midio();
     this.jump = new JumpController(paramBus);
+    // Player beat-anchor (BeatAnchor.js): a tap anywhere marks where the
+    // player feels the pulse. It's a phase/period REFERENCE the ensemble
+    // and jump scheduler pull toward, alongside (never replacing) the
+    // chart -- see onBeatTap. The anchor's own live reference stays a
+    // fixed object for the sim's lifetime; JumpController reads its current
+    // fields on every call, so wiring it in once here is enough.
+    this.beatAnchor = new BeatAnchor(60000 / bpm);
+    this.jump.setAnchor(this.beatAnchor);
     // Landing-on-the-next-kick (JumpController.scheduledJumpD): the same
     // raw kick-time list NoteChart/JumpPlanner replay, so live launches and
     // retargets schedule onto the real next onset instead of only ever
@@ -381,6 +390,16 @@ export class Simulation {
     this.pointer.lastMoveMs = this.timeMs;
   }
 
+  /** A player beat-tap (canvas click / almost-any-key), already stamped on
+   *  whatever clock main.js wants the anchor to reason in (visualNow --
+   *  "the clock the EAR is on"). Not a jump trigger: it only ever re-phases
+   *  the ensemble/jump scheduler toward wherever the player felt the beat.
+   *  The neutral splat is the only feedback -- no text overlay. */
+  onBeatTap(tMs) {
+    this.beatAnchor.tap(tMs);
+    this.impactFX.splat(this.worldX, this.midio.groundY);
+  }
+
   /** The Reel (Movement VI): live-toggle the reduced-flash accessibility
    *  setting, cascading to every consumer that caps its own flash alphas. */
   setReducedFlash(v) {
@@ -492,7 +511,12 @@ export class Simulation {
     this.snowCover = Math.max(this.weather.groundCover, biomeSnow, this.biomes.floodLevel01 || 0);
     this.broshi.traction = tractionFrom(this.snowCover);
     this.biomes.snowCover = this.snowCover;
-    this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs);
+    // Keep the anchor's notion of "the song's own beat" tracking the live
+    // chart tempo (JumpController's own kick EMA), so its ladder-snap
+    // reasoning stays meaningful across any mid-song tempo drift.
+    this.beatAnchor.setSongBeatMs(this.jump.beatPeriodMs);
+    this.beatAnchor.update(nowMs);
+    this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs, this.beatAnchor);
     // A scene transition is a rare cue for the whole trio to share a brief
     // tumble accent (see EnsembleDirector.maybeTumble) -- one-frame lag
     // against biomes.update() below is inaudible/invisible at 16ms.

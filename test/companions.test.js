@@ -5,6 +5,8 @@ import { Broshi } from '../src/sim/Broshi.js';
 import { Conductor } from '../src/core/Conductor.js';
 import { ParamBus } from '../src/core/ParamBus.js';
 import { makeNoteEvent, Role } from '../src/core/NoteEvent.js';
+import { EnsembleDirector } from '../src/sim/EnsembleDirector.js';
+import { BeatAnchor } from '../src/sim/BeatAnchor.js';
 
 function stepFor(fn, totalMs, dtMs = 1000 / 120) {
   for (let t = 0; t < totalMs; t += dtMs) fn(t, dtMs / 1000);
@@ -83,4 +85,46 @@ test('Broshi PANICs when an obstacle is inside the 300ms lookahead', () => {
   const fakeObstacles = { nearestAhead: () => ({ tMs: 1150, wx: 500 }) };
   b.update(1000, 1 / 120, midio, null, fakeObstacles, 0, 480);
   assert.equal(b.state, 'PANIC');
+});
+
+test('EnsembleDirector: a confident beat anchor pulls the trio toward its grid but keeps them mutually distinct', () => {
+  const ens = new EnsembleDirector(7, { stageW: 1280, stageH: 720 });
+  const anchor = new BeatAnchor(500);
+  let t = 0;
+  for (let i = 0; i < 40; i++) { anchor.tap(t); t += 500; } // a long steady run -> strong confidence
+  anchor.update(t);
+  assert.ok(anchor.confidence > 0.5, 'a long steady tap run should build strong confidence');
+
+  // Sad/low-drive vibe -> weak Kuramoto coupling (K near/below critical), so
+  // this isolates the anchor's own distinct per-character pull rather than
+  // competing against the ensemble's own "happy+epic -> phase-lock" mechanic
+  // (that lock is intentional design elsewhere, not something this feature
+  // needs to fight).
+  const vibe = { valence: -0.3, epic: 0.1 };
+  stepFor((elapsedMs, dtSec) => ens.update(t + elapsedMs, dtSec, vibe, 500, anchor), 8000);
+
+  const phases = [ens.phase(0), ens.phase(1), ens.phase(2)];
+  // "Shouldn't sync to the same time as each other": no two characters may
+  // land on (near) the same phase even once the anchor has taken hold.
+  for (let i = 0; i < 3; i++) {
+    for (let j = i + 1; j < 3; j++) {
+      let d = Math.abs(phases[i] - phases[j]);
+      d = Math.min(d, Math.PI * 2 - d);
+      assert.ok(d > 0.15, `characters ${i} and ${j} landed too close together: ${d.toFixed(3)} rad`);
+    }
+  }
+});
+
+test('EnsembleDirector: an unconfident (never-tapped) anchor behaves exactly like no anchor at all', () => {
+  const vibe = { valence: 0.4, epic: 0.4 };
+  const ensNoAnchor = new EnsembleDirector(7, { stageW: 1280, stageH: 720 });
+  const ensIdleAnchor = new EnsembleDirector(7, { stageW: 1280, stageH: 720 });
+  const idleAnchor = new BeatAnchor(500); // never tapped -> confidence stays 0
+  stepFor((nowMs, dtSec) => {
+    ensNoAnchor.update(nowMs, dtSec, vibe, 500);
+    ensIdleAnchor.update(nowMs, dtSec, vibe, 500, idleAnchor);
+  }, 2000);
+  for (let i = 0; i < 3; i++) {
+    assert.ok(Math.abs(ensNoAnchor.phase(i) - ensIdleAnchor.phase(i)) < 1e-9, `character ${i} diverged with an unconfident anchor present`);
+  }
 });

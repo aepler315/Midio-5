@@ -2,7 +2,11 @@
 // apex hang (sin^2 wobble, C1-continuous into/out of the hang), fall
 // (quadratic ease-in, accelerating/heavy). Kick-quantized takeoffs with
 // mid-air retargeting so a new kick always lands Midio back on the grid.
-import { clamp } from '../utils/math.js';
+import { clamp, clamp01 } from '../utils/math.js';
+
+// Player beat-anchor (BeatAnchor.js): below this confidence the anchor is
+// treated as absent everywhere it's consulted (JumpController, EnsembleDirector).
+const ANCHOR_MIN_CONFIDENCE = 0.05;
 
 // Jump-curve shape (fractions of the total duration D; A+B+GAMMA = 1 so the
 // arc lands exactly at u=1). Tuned for a tighter, more satisfying timing:
@@ -94,29 +98,62 @@ export function canRetarget(nowMs, jumpStartMs, D) {
  * NoteChart.replayTakeoffTriggers (the tap chart), and this class's own
  * live launch/retarget (see test/jumpPlanner.test.js's lockstep check).
  */
-export function scheduledJumpD(takeoffMs, nextKickMs, beatPeriodMs) {
-  // Landing target: the musical BEAT GRID first, not every raw kick.
-  // Chasing every onset made Midio stutter on dense drums and land off the
-  // pulse whenever a kick sat between beats. Now he aims for one (or two)
-  // beat-periods out; a kick only steals the landing when it is already
-  // near that grid point (or is a true short double-step hop).
-  const beat = Math.max(1, beatPeriodMs);
-  const gridD = clamp(beat, D_MIN, D_MAX);
+/**
+ * @param {object|null} [anchor] the player's BeatAnchor (see BeatAnchor.js),
+ *   optional and `null` by default so every existing caller -- the offline
+ *   replicas (JumpPlanner, NoteChart) and every internal call site that
+ *   doesn't pass one -- schedules byte-identically to before. When passed
+ *   and confident, the grid this function reasons about shifts from
+ *   "multiples of the song's beat-period EMA, anchored at THIS takeoff" to
+ *   "the anchor's own absolute grid (anchorMs + k*periodMs)" -- the whole
+ *   point of a player-felt beat anchor.
+ */
+export function scheduledJumpD(takeoffMs, nextKickMs, beatPeriodMs, anchor = null) {
+  const anchorConf = anchor ? clamp01(anchor.confidence) : 0;
+  const anchorLive = anchor != null && anchorConf > ANCHOR_MIN_CONFIDENCE;
+
+  if (!anchorLive) {
+    // Landing target: the musical BEAT GRID first, not every raw kick.
+    // Chasing every onset made Midio stutter on dense drums and land off
+    // the pulse whenever a kick sat between beats. Now he aims for one (or
+    // two) beat-periods out; a kick only steals the landing when it is
+    // already near that grid point (or is a true short double-step hop).
+    const beat = Math.max(1, beatPeriodMs);
+    const gridD = clamp(beat, D_MIN, D_MAX);
+    const gap = nextKickMs != null ? nextKickMs - takeoffMs : NaN;
+    if (!(gap >= LANDING_MIN_GAP_MS && gap <= 2000)) return gridD;
+
+    // Short double-step: keep landing on the nearby kick (low hop).
+    if (gap < D_MIN) return Math.min(gap, D_MAX);
+
+    // Snap to the kick only when it sits close to a beat multiple of the takeoff.
+    const beats = gap / beat;
+    const nearest = Math.max(1, Math.round(beats));
+    const gridGap = nearest * beat;
+    if (Math.abs(gap - gridGap) <= Math.max(70, beat * 0.18)) {
+      return Math.min(Math.max(gap, LANDING_MIN_GAP_MS), D_MAX);
+    }
+    // Off-grid kick: prefer the clean beat landing so his touchdowns feel
+    // planted on the pulse rather than yanked by every snare/hat-as-kick.
+    return gridD;
+  }
+
+  // Anchor-aware: blend the working beat toward the anchor's own period by
+  // confidence, and land on the anchor's own absolute grid point rather
+  // than the chart's -- so a landing genuinely lines up with where the
+  // player is tapping, not just wherever this takeoff happened to fall.
+  const beat = Math.max(1, beatPeriodMs * (1 - anchorConf) + anchor.periodMs * anchorConf);
+  const gridD = clamp(anchor.nextGridMs(takeoffMs) - takeoffMs, D_MIN, D_MAX);
   const gap = nextKickMs != null ? nextKickMs - takeoffMs : NaN;
   if (!(gap >= LANDING_MIN_GAP_MS && gap <= 2000)) return gridD;
 
-  // Short double-step: keep landing on the nearby kick (low hop).
   if (gap < D_MIN) return Math.min(gap, D_MAX);
 
-  // Snap to the kick only when it sits close to a beat multiple of the takeoff.
-  const beats = gap / beat;
-  const nearest = Math.max(1, Math.round(beats));
-  const gridGap = nearest * beat;
-  if (Math.abs(gap - gridGap) <= Math.max(70, beat * 0.18)) {
+  const kickMs = takeoffMs + gap;
+  const nearestGridMs = anchor.anchorMs + Math.round((kickMs - anchor.anchorMs) / beat) * beat;
+  if (Math.abs(kickMs - nearestGridMs) <= Math.max(70, beat * 0.18)) {
     return Math.min(Math.max(gap, LANDING_MIN_GAP_MS), D_MAX);
   }
-  // Off-grid kick: prefer the clean beat landing so his touchdowns feel
-  // planted on the pulse rather than yanked by every snare/hat-as-kick.
   return gridD;
 }
 
@@ -176,6 +213,11 @@ export class JumpController {
     this._kickTimes = [];
     this._kickIdx = 0;
 
+    // The player's beat anchor (BeatAnchor.js), set once per step by
+    // Simulation via setAnchor. Null (the default) reproduces today's
+    // chart-only scheduling exactly -- see scheduledJumpD's anchor param.
+    this._anchor = null;
+
     this.compress = null;      // {startMs, fromY, dur} — mid-air retarget in progress
     this._pendingLaunch = null;
 
@@ -188,6 +230,11 @@ export class JumpController {
   }
 
   get bpm() { return 60000 / this.beatPeriodMs; }
+
+  /** Wire in (or clear, with null) the player's beat anchor. */
+  setAnchor(anchor) {
+    this._anchor = anchor || null;
+  }
 
   /** The full raw kick-time list (sorted ascending, every RHYTHM kick --
    *  same source ObstacleSpawner/NoteChart feed JumpPlanner/replayTakeoff-
@@ -350,7 +397,7 @@ export class JumpController {
 
     if (this.state === 'GROUND') {
       const nextKickMs = nextLandingKickMs(this._kickTimes, nowMs, this._kickIdx + 1);
-      const D = scheduledJumpD(nowMs, nextKickMs, this.beatPeriodMs);
+      const D = scheduledJumpD(nowMs, nextKickMs, this.beatPeriodMs, this._anchor);
       this.lastLaunchVel = evt.vel;
       this._launch(nowMs, H * shortHopHeightMul(D), D);
       return;
@@ -362,7 +409,7 @@ export class JumpController {
       if (r < 0.3 && !this.compress && canRetarget(nowMs, this.jumpStartMs, this.D)) {
         const retargetLaunchMs = nowMs + RETARGET_FALL_MS;
         const nextKickMs = nextLandingKickMs(this._kickTimes, retargetLaunchMs, this._kickIdx + 1);
-        const D = scheduledJumpD(retargetLaunchMs, nextKickMs, this.beatPeriodMs);
+        const D = scheduledJumpD(retargetLaunchMs, nextKickMs, this.beatPeriodMs, this._anchor);
         this.compress = { startMs: nowMs, fromY: this.y, dur: RETARGET_FALL_MS };
         this._pendingLaunch = { H: H * shortHopHeightMul(D), D, vel: evt.vel };
         return;
