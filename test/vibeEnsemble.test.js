@@ -18,7 +18,8 @@ function loopedTimeline(pitches, gapMs, reps, vel = 0.7) {
 
 function runVibe(timeline, seconds, energy = null) {
   const vibe = new VibeDirector(timeline);
-  const curves = energy == null ? null : { globalEnergy: () => energy, sample: () => energy * 0.5 };
+  const curves = energy == null ? null
+    : { globalEnergy: () => energy, globalEnergyNorm: () => energy, sample: () => energy * 0.5 };
   let t = 0;
   for (let i = 0; i < seconds * 120; i++) { vibe.update(t, STEP, curves); t += 8.33; }
   return vibe;

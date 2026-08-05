@@ -12,6 +12,7 @@ import { ModalRing } from '../render/oscillators.js';
 import { OrbitalDebris } from './OrbitalDebris.js';
 import { SkyVoyage, VoyagePhase } from './SkyVoyage.js';
 import { BabyStars } from './BabyStars.js';
+import { FlourishGate } from './FlourishGate.js';
 
 const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
@@ -20,7 +21,12 @@ const SNAP = 0.70;
 const DRAW_SCALE = 5.4; // 3× the previous 1.8 stage scale — she's the star of the sky
 const BANK_GAIN = 0.0016, BANK_MAX = 0.6; // she rolls into her darts
 const SLASH_LIFE_SEC = 0.18;
-// Disc spin (clean-combo flourish -- see update()'s justClean gate):
+// Pirouette rate limit: a full 320ms roll on every vel>0.85 note meant a
+// loud passage restarted it before it ever landed. The floor comfortably
+// outlasts the move so each one resolves.
+const PIROUETTE_MIN_GAP_MS = 2500;
+const PIROUETTE_CHANCE = 0.5, PIROUETTE_CHANCE_HOT = 0.85;
+// Disc spin (trio flourish -- see update()'s discCue gate):
 // wider and longer than the single-accent pirouette so it reads as its own
 // distinct move, "turning into a spinning disc" rather than just a hard bank.
 const DISC_MS = 420;
@@ -93,8 +99,12 @@ export class Midasus {
     this._wasResting = false;
     this.rollExtra = 0; // pirouette roll, added to her banking in draw()
     this._pirouetteStartMs = -Infinity;
-    // Disc spin (mirrors Midio's clean-combo flourish, see MidioPerformer):
-    // a wide spinning-disc turn on the same trigger, but her disc grows
+    this._pirouetteGate = new FlourishGate({
+      minGapMs: PIROUETTE_MIN_GAP_MS, chance: PIROUETTE_CHANCE,
+      intensityChance: PIROUETTE_CHANCE_HOT, intensityScale: 0.5, rand: this.rand,
+    });
+    // Disc spin (the trio's shared flourish, see EnsembleDirector.maybeDisc):
+    // a wide spinning-disc turn on the same cue as Broshi's, but hers grows
     // BOTH axes together (presScale already drives scaleX/scaleY equally)
     // instead of Midio's single-axis pinch -- she flattens into a round
     // halo, not an ellipse edge-on.
@@ -188,10 +198,12 @@ export class Midasus {
     this._calmLevel = calmLevel;
     this._ens = ensemble;
     this._nowMs = nowMs;
-    // Disc spin: the same clean-combo flourish Midio celebrates with (see
-    // MidioPerformer's FLOURISH_COMBO_THRESHOLD gate), so the trio's send-up
-    // reads as one shared beat rather than three unrelated tics.
-    if (ensemble && ensemble.justClean) this._discStartMs = nowMs;
+    // Disc spin: a trio-wide flourish, cued and rate-limited by
+    // EnsembleDirector.maybeDisc on a section change / drop / combo
+    // milestone. It used to fire on ensemble.justClean -- but the show is
+    // autoplay, so every landing is clean, and a 420ms spin restarted every
+    // ~500ms left her permanently rotating.
+    if (ensemble && ensemble.discCue) this._discStartMs = nowMs;
     // Apex-on-beat (ChoreoClock): the DART starts early -- cursor runs
     // ANTICIPATE_MS ahead, so the 70% trajectory snap and the PD pursuit
     // are already carrying her toward the perch as the note arrives...
@@ -214,7 +226,13 @@ export class Midasus {
       // Stamped at the heard moment (not at dart time, which runs up to
       // ANTICIPATE_MS ahead) so the silence clock never reads the future.
       this.lastNoteMs = n.tMs;
-      if (n.vel > 0.85) this._pirouetteStartMs = nowMs; // hard accents spin her right around
+      // Hard accents spin her right around -- but rate-limited, and stamped
+      // on the note's own heard time. Ungated, any run of loud notes
+      // restarted the 320ms roll on every onset, so it never once reached
+      // its eased-out landing and read as continuous rotation.
+      if (n.vel > 0.85 && this._pirouetteGate.tryFire(n.tMs, { intensity: n.vel })) {
+        this._pirouetteStartMs = n.tMs;
+      }
       // The impacting NOTE's own color -- this.hue has already darted ahead
       // to a newer note on dense passages, same reason the slash below
       // re-derives it from n.pitch.
@@ -252,7 +270,11 @@ export class Midasus {
     this._wasResting = resting;
 
     // Pirouette: a full roll, eased out, landing exactly back at her bank.
-    const pirU = (nowMs - this._pirouetteStartMs) / 320;
+    // On the HEARD clock, like the impact FX it accompanies -- these rotation
+    // channels used to run on raw nowMs while the burst/slash/pulse beside
+    // them drained at vNowMs, so on a high-latency output her spins led the
+    // note they were reacting to.
+    const pirU = (vNowMs - this._pirouetteStartMs) / 320;
     this.rollExtra = pirU >= 0 && pirU < 1 ? Math.PI * 2 * (1 - (1 - pirU) ** 3) : 0;
 
     // Disc spin: a wide, fast turn distinct from the single-accent
@@ -260,7 +282,7 @@ export class Midasus {
     // own scale swell so she visibly widens into a spinning disc rather
     // than just banking harder. Smoothstep in and back out so she reads as
     // *turning into* the disc and back, not popping to it.
-    const discU = (nowMs - this._discStartMs) / DISC_MS;
+    const discU = (vNowMs - this._discStartMs) / DISC_MS;
     if (discU >= 0 && discU < 1) {
       const ease = Math.sin(discU * Math.PI); // 0 -> 1 -> 0 across the window
       this._discRoll = DISC_TURNS * Math.PI * 2 * (1 - (1 - discU) ** 3);

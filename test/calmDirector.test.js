@@ -2,8 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CalmDirector } from '../src/sim/CalmDirector.js';
 
+// CalmDirector reads globalEnergyNorm (energy relative to the song's own
+// dynamic range) -- a stub returning one fixed value stands for "this song
+// sits at this normalized level throughout", which is what these thresholds
+// are about. globalEnergy is kept for any absolute-signal consumer.
 function fakeEnergy(value) {
-  return { globalEnergy: () => value };
+  return { globalEnergy: () => value, globalEnergyNorm: () => value };
 }
 
 test('CalmDirector settles near full calm (1) under sustained low energy', () => {

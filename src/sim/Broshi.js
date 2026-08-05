@@ -12,6 +12,7 @@ import { BROSHI_BODY, BROSHI_HEAD, BROSHI_JAW, BROSHI_EYE, BROSHI_TAIL } from '.
 import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, applyTransform, drawGlowHalo } from '../render/MeshDrawer.js';
 import { kickEnv } from '../world/MountainChoreo.js';
 import { ModalRing } from '../render/oscillators.js';
+import { FlourishGate } from './FlourishGate.js';
 import { Burrow } from './Burrow.js';
 
 const K = 22, C = 3.6; // slightly softer spring so he settles further out
@@ -92,6 +93,8 @@ const YAWN_DUR_MS = 1400;
 // goofy tail-chase spin when things stay calm long enough, and a jittery
 // rabid skitter layered onto the predatory weave.
 const ROLL_CHANCE_BASE = 0.30;
+const ROLL_CHANCE_RABID = 0.70; // what ROLL_CHANCE_BASE + 0.4*rho used to reach at rho=1
+const ROLL_MIN_GAP_MS = 3000;   // he may be excited; he may not be a propeller
 const ROLL_DUR_MS = 340;
 const POUNCE_MS = 180;
 const TAILCHASE_DUR_MS = 900;
@@ -238,6 +241,10 @@ export class Broshi {
     this._rollDurMs = ROLL_DUR_MS;
     this._rollTurns = 1;
     this._rollDir = 1;
+    this._rollGate = new FlourishGate({
+      minGapMs: ROLL_MIN_GAP_MS, chance: ROLL_CHANCE_BASE, intensityChance: ROLL_CHANCE_RABID,
+      intensityScale: 0.6, rand: this.rand,
+    });
     this._pounceStartMs = -Infinity;
     this._lastState = 'TRAIL';
     this._barsSinceTailChase = Infinity;
@@ -397,7 +404,10 @@ export class Broshi {
     // The ensemble roams him around the floor: his spring's TRAIL set-point
     // chases the formation anchor instead of a fixed -140px offset.
     this._trailTarget = ensemble ? clamp(ensemble.trailX - midio.screenX, -420, 320) : D_TRAIL;
-    const gInstant = energyCurves ? energyCurves.globalEnergy(nowMs, RABID_WEIGHTS) : 0;
+    // Song-relative: RABID_ENTER_G/RABID_EXIT_G now ask "is this the top of
+    // THIS song?" -- otherwise he was permanently rabid on a loud master and
+    // never once rabid on a quiet one, whatever the arrangement did.
+    const gInstant = energyCurves ? energyCurves.globalEnergyNorm(nowMs, RABID_WEIGHTS) : 0;
     this._barEnergyAccum += gInstant;
     this._barEnergySamples++;
 
@@ -418,7 +428,14 @@ export class Broshi {
     if (midioAirborne && !this._wasAirborne) this._takeoffCrouchStartMs = nowMs;
 
     // Cheer on a clean landing: double mini-hop, tail flourish, happy jaw.
-    if (justClean) { this._cheerStartMs = nowMs; this.jawOpen = Math.max(this.jawOpen, 0.5); this._jawUntilMs = nowMs + 200; this._discStartMs = nowMs; }
+    // Small, cheap, and it should happen often -- that's the companionship.
+    if (justClean) { this._cheerStartMs = nowMs; this.jawOpen = Math.max(this.jawOpen, 0.5); this._jawUntilMs = nowMs + 200; }
+    // The disc spin is NOT part of that. It's a trio-wide flourish cued by
+    // EnsembleDirector.maybeDisc on a section change / drop / milestone and
+    // rate-limited there. It used to ride on justClean, which -- the show
+    // being autoplay, so every landing is clean -- restarted a 420ms spin
+    // every ~500ms and left him permanently rotating.
+    if (ensemble && ensemble.discCue) this._discStartMs = nowMs;
 
     // Echo hop: a half-beat after ANY landing, he hops right along with him.
     if (justLanded) this._echoHopAnchorMs = nowMs + Math.max(120, (this._lastBarPeriodMs || 500) / 8);
@@ -561,7 +578,12 @@ export class Broshi {
     this.tailAngle = tailDeg * Math.sin(2 * Math.PI * tailHz * (nowMs / 1000) + this._tailPhase);
 
     // --- barrel roll / tail-chase spin: one shared roll channel ---
-    const rollU = (nowMs - this._rollStartMs) / this._rollDurMs;
+    // On the HEARD clock (vNow), like the hop arc and beat flash below. These
+    // rotation channels used to evaluate on raw nowMs while everything they
+    // compose with used vNow, so on a high-latency output (Bluetooth, up to
+    // 350ms) his spins ran ahead of the beat his hops landed on -- and the
+    // disc's own hop term was summed with the note hop across two clocks.
+    const rollU = (vNow - this._rollStartMs) / this._rollDurMs;
     if (rollU >= 0 && rollU < 1) {
       this.bodyRoll = this._rollDir * this._rollTurns * Math.PI * 2 * easeOutCubic(rollU);
       // Mid-tail-chase his tail whips fast — he's chasing it, after all.
@@ -576,7 +598,7 @@ export class Broshi {
     }
 
     // --- disc spin: independent channel, composes with the roll above ---
-    const discU = (nowMs - this._discStartMs) / DISC_MS;
+    const discU = (vNow - this._discStartMs) / DISC_MS;
     if (discU >= 0 && discU < 1) {
       const ease = Math.sin(discU * Math.PI); // 0 -> 1 -> 0, turning in and back out
       this._discRoll = DISC_TURNS * Math.PI * 2 * (1 - (1 - discU) ** 3);
@@ -783,11 +805,18 @@ export class Broshi {
     if (vel > 0.5) this._slashPending = vel; // a hard hop throws a Midasus-style slash
 
     // Hard hops sometimes come with a full barrel roll — likelier (and
-    // occasionally doubled) the more rabid he's running.
-    const rollU = (nowMs - this._rollStartMs) / this._rollDurMs;
+    // occasionally doubled) the more rabid he's running. The gate carries a
+    // real cooldown now: "not already rolling" was the only limit before, so
+    // at high rho (chance up to 0.70 per hard hop) a dense line had him
+    // barrel-rolling essentially without pause.
+    const rollU = (anchorMs - this._rollStartMs) / this._rollDurMs;
     const rolling = rollU >= 0 && rollU < 1;
-    if (!rolling && vel > 0.6 && this.rand() < ROLL_CHANCE_BASE + 0.4 * this.rho) {
-      this._rollStartMs = nowMs;
+    if (!rolling && vel > 0.6 && this._rollGate.tryFire(anchorMs, { intensity: this.rho })) {
+      // Stamped on the note's OWN time, not dispatch time: this runs from a
+      // subscribeAhead channel that fires CHOREO_LEAD_MS early, and the
+      // envelope reads on the heard clock -- so the roll begins exactly when
+      // the hop it belongs to is heard.
+      this._rollStartMs = anchorMs;
       this._rollDurMs = ROLL_DUR_MS;
       this._rollTurns = this.rho > 0.6 && this.rand() < 0.5 ? 2 : 1;
       this._rollDir = this.xRelVel >= 0 ? 1 : -1;

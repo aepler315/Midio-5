@@ -72,6 +72,10 @@ const ANALYSIS_TARGET_STEP_MS = 2000; // ~1 analysis point every 2s for longer s
 const MIN_SECTION_CUT_GAP_MS = 11000; // minimum time between two section cuts
 const SECTION_CUT_BUDGET_MS = 24000;  // ~1 extra cut allowed per 24s of song
 const MIN_SECTION_CUTS = 3, MAX_SECTION_CUTS = 12;
+// How sure the SSM structure read (StructureAnalyzer) must be before it
+// replaces the band-energy schedule. A through-composed piece with no
+// repeats and no sharp boundaries scores below this and keeps the old path.
+const SSM_CONFIDENCE_FLOOR = 0.45;
 const WORLD_SPEED_PX_S = 220;
 const BAND_COUNT = 7;
 const EQ_ATTACK_SEC = 0.08;
@@ -99,7 +103,7 @@ const MOON_COLOR = '#dfe6f2';
 const MOON_HALO_COLOR = '#aab8d8';
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, customBiome = null, lyricSections = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, customBiome = null, lyricSections = null, structure = null }) {
     this.conductor = conductor;
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
@@ -232,7 +236,7 @@ export class BiomeManager {
     // whale...) witnessed way out between the L2 and L3 ranges.
     this.farVignettes = new FarVignettes(songSeed);
 
-    this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections);
+    this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections, structure);
     // MIDI custom biome: cast every section into the generated world so the
     // dropped file IS the place, while stock demos keep dramaturgical casting.
     if (this.customBiome) this.loadCustom(this.customBiome);
@@ -352,7 +356,7 @@ export class BiomeManager {
     conductor.on(Role.MELODY, (evt) => { this.weaver.onMelody(evt); });
   }
 
-  _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null) {
+  _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null, structure = null) {
     // Without a real bar grid (free-time / tempo-less audio), the analysis
     // resolution used to collapse to a fixed 9 points regardless of song
     // length -- with novelty forced to 0 for the first 4 and a minimum peak
@@ -412,7 +416,26 @@ export class BiomeManager {
     }
     peaks.sort((a, b) => a - b);
 
-    const cuts = [0, ...peaks, barTimes.length - 1];
+    // The SSM read (StructureAnalyzer) wins when it's confident: its
+    // boundaries come from a checkerboard kernel over a chroma+timbre
+    // self-similarity matrix rather than a difference of trailing band-energy
+    // means, and it hears harmony, which the novelty path above cannot. Its
+    // analysis grid is the same bar grid, so its cut INDICES drop straight in
+    // here and every downstream step (per-section energy, shapes, casting,
+    // hue signature, lyric fusion) runs unchanged.
+    //
+    // Everything falls back cleanly: MIDI, the demo timeline, free-time audio
+    // and any low-confidence read keep the band-energy schedule exactly as it
+    // was.
+    const ssmUsable = structure
+      && structure.confidence >= SSM_CONFIDENCE_FLOOR
+      && structure.cutIndices
+      && structure.cutIndices.length >= 2
+      && structure.cutIndices[structure.cutIndices.length - 1] <= barTimes.length - 1;
+    this.structureSource = ssmUsable ? 'ssm' : 'energy-novelty';
+    this.structureConfidence = structure ? structure.confidence : 0;
+
+    const cuts = ssmUsable ? structure.cutIndices : [0, ...peaks, barTimes.length - 1];
 
     this.sections = [];
     const meanEnergies = [];
@@ -447,7 +470,13 @@ export class BiomeManager {
     // Song-form recognition: which sections are the SAME music (SongForm).
     // A returning chorus gets the same structural label as its earlier
     // selves, so it can wear the same face instead of reading as new.
-    const labels = analyzeSongForm(this.sections.map((_, i) => ({ energy: meanEnergies[i], shape: shapes[i] })));
+    // Labels: the SSM's repetition pass finds material that literally recurs,
+    // which is what a returning chorus IS. analyzeSongForm's band-shape
+    // clustering is the fallback -- it can only ask whether two sections have
+    // a similar average spectrum.
+    const labels = ssmUsable && structure.labels && structure.labels.length === this.sections.length
+      ? structure.labels
+      : analyzeSongForm(this.sections.map((_, i) => ({ energy: meanEnergies[i], shape: shapes[i] })));
 
     // Cast the show by structural LABEL, not per-section: every recurrence
     // of a label shares a biome name (stock path), so the returning skyline

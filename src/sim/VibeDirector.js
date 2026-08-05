@@ -76,7 +76,7 @@ export class VibeDirector {
     }
     this._rawValence = clamp(0.72 * third + 0.28 * bright, -1, 1);
 
-    const E = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS)) : 0.3;
+    const E = energyCurves ? clamp01(energyCurves.globalEnergyNorm(nowMs, FLAT_WEIGHTS)) : 0.3;
     const density = count / (WINDOW_MS / 1000);
     const octaves = count >= 2 ? (maxP - minP) / 12 : 0;
     this._rawEpic = clamp01(0.45 * E + 0.25 * Math.min(1, density / 6) + 0.30 * Math.min(1, octaves / 3));
