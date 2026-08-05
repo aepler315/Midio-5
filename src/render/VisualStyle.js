@@ -88,3 +88,21 @@ export function shiftLightness(hex, delta) {
   const rgb = hslToRgb(hsl.h, s, l);
   return rgbToHex(rgb.r, rgb.g, rgb.b);
 }
+
+/** Guarantees a silhouette (mountains, ground) never washes out against
+ *  whatever it's sitting on -- a fixed authored color and a night-pulled sky
+ *  can converge toward the same near-black at full night, on any biome whose
+ *  palette happens to run dark. If the two are already within `minDelta` of
+ *  each other's lightness, nudge `hex` further along its existing side of
+ *  `againstHex` (lighter stays lighter, darker stays darker; a dead tie
+ *  breaks lighter, since a silhouette going *toward* pitch black is exactly
+ *  the failure this guards against) until the gap reopens. Already-readable
+ *  pairs pass through untouched. */
+export function ensureContrast(hex, againstHex, minDelta = 0.12) {
+  const hsl = rgbToHsl(...Object.values(hexToRgb(hex)));
+  const bgHsl = rgbToHsl(...Object.values(hexToRgb(againstHex)));
+  const gap = hsl.l - bgHsl.l;
+  if (Math.abs(gap) >= minDelta) return hex;
+  const dir = gap >= 0 ? 1 : -1;
+  return shiftLightness(hex, dir * (minDelta - Math.abs(gap)));
+}

@@ -1,4 +1,4 @@
-// Optional WebGL render path for Super Midio World.
+// Optional WebGL render path for Super Maudio World.
 //
 // SAFETY CONTRACT:
 //   - NEVER calls getContext('webgl*') on the main #stage canvas. That would

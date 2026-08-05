@@ -66,5 +66,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Super Midio World dev server running at http://localhost:${PORT}`);
+  console.log(`Super Maudio World dev server running at http://localhost:${PORT}`);
 });

@@ -23,14 +23,23 @@ const D_TRAIL = -200, D_SURGE = 150;
 // his actual RENDERED position out of it too (see update()'s renderX
 // guard) so no upstream signal (ensemble roam, a mid-transition spring
 // crossing) can ever put him where the hero comes down.
-// Wider than before: the trio was stacking on top of each other.
-const KEEPOUT_HALF = 100;
-const RENDER_KEEPOUT_HALF = 85;
+// Wider still: at the old 85/100 the two draw scales (each character's
+// own wireframe silhouette runs a good deal wider than its physics
+// halfWidth) still read as tangled meshes, not two distinct bodies.
+const KEEPOUT_HALF = 165;
+const RENDER_KEEPOUT_HALF = 150;
 // Cap relative speed so a SURGE target jump never hard-teleports him.
 const MAX_XREL_SPEED = 380; // px/s
 const RENDER_KEEPOUT_TAU = 0.09; // soft ease out of Midio's landing column
-const SOFT_REPEL_MIDIO = 110;   // start easing away from Midio inside this
-const SOFT_REPEL_MIDASUS = 130; // and from Midasus when she flies near
+const SOFT_REPEL_MIDIO = 170;   // start easing away from Midio inside this
+const SOFT_REPEL_MIDASUS = 160; // and from Midasus when she flies near
+// Disc spin: a wide vertical turn on a clean combo (mirrors Midio's own
+// flourish trigger), a temporary pair of wings, and the hop they explain.
+const DISC_MS = 420;
+const DISC_TURNS = 2.2;
+const DISC_SCALE_Y_PEAK = 2.0;  // spans the Y-axis -- tall, not wide
+const DISC_SCALE_X_DIP = 0.62;  // narrows as he goes edge-on, like a coin
+const DISC_HOP_H = 46;          // the "sudden vertical-travel inclinement"
 const TAKEOFF_CROUCH_MS = 140;
 const CHEER_TAIL_MS = 600;
 const ECHO_HOP_RISE_MS = 70;
@@ -232,6 +241,19 @@ export class Broshi {
     this._pounceStartMs = -Infinity;
     this._lastState = 'TRAIL';
     this._barsSinceTailChase = Infinity;
+
+    // Disc spin (same clean-combo flourish as the cheer above): unlike the
+    // barrel roll, this stretches tall instead of pinching wide -- a
+    // vertical disc, not Midio's horizontal one -- and grows a pair of
+    // wings for its duration to sell the sudden vertical launch that
+    // follows. Independent channels from bodyRoll/squashX/Y so it composes
+    // with whatever the roll/pounce/crouch systems are already doing rather
+    // than fighting them.
+    this._discStartMs = -Infinity;
+    this._discRoll = 0;
+    this._discScaleX = 1;
+    this._discScaleY = 1;
+    this._discWings = 0; // 0..1 wing extension, for draw()
     // Occasional underground excursion: drawn beneath the world (see
     // Renderer.js), fog-of-war dirt-sight owned entirely by Burrow.
     this.burrow = new Burrow(seed + 2);
@@ -396,7 +418,7 @@ export class Broshi {
     if (midioAirborne && !this._wasAirborne) this._takeoffCrouchStartMs = nowMs;
 
     // Cheer on a clean landing: double mini-hop, tail flourish, happy jaw.
-    if (justClean) { this._cheerStartMs = nowMs; this.jawOpen = Math.max(this.jawOpen, 0.5); this._jawUntilMs = nowMs + 200; }
+    if (justClean) { this._cheerStartMs = nowMs; this.jawOpen = Math.max(this.jawOpen, 0.5); this._jawUntilMs = nowMs + 200; this._discStartMs = nowMs; }
 
     // Echo hop: a half-beat after ANY landing, he hops right along with him.
     if (justLanded) this._echoHopAnchorMs = nowMs + Math.max(120, (this._lastBarPeriodMs || 500) / 8);
@@ -464,10 +486,10 @@ export class Broshi {
     this.xRelVel += accel * dtSec;
     // Soft personal space: ease off Midio (and Midasus when she crowds the
     // floor band) without a hard teleport — strength falls off quadratically.
-    this.xRelVel += softRepel1D(this.xRel, 0, SOFT_REPEL_MIDIO, 220) * dtSec;
+    this.xRelVel += softRepel1D(this.xRel, 0, SOFT_REPEL_MIDIO, 450) * dtSec;
     if (ensemble && Number.isFinite(ensemble.midasusX)) {
       const midasusRel = ensemble.midasusX - midio.screenX;
-      this.xRelVel += softRepel1D(this.xRel, midasusRel, SOFT_REPEL_MIDASUS, 160) * dtSec;
+      this.xRelVel += softRepel1D(this.xRel, midasusRel, SOFT_REPEL_MIDASUS, 350) * dtSec;
     }
     // Speed clamp — a large dStar jump (SURGE) stays continuous motion.
     if (this.xRelVel > MAX_XREL_SPEED) this.xRelVel = MAX_XREL_SPEED;
@@ -553,6 +575,21 @@ export class Broshi {
       this.bodyRoll = midioAirborne ? 0 : 0.02 * clamp(worldSpeed / 220, 0, 1) * Math.sin(worldX / 30);
     }
 
+    // --- disc spin: independent channel, composes with the roll above ---
+    const discU = (nowMs - this._discStartMs) / DISC_MS;
+    if (discU >= 0 && discU < 1) {
+      const ease = Math.sin(discU * Math.PI); // 0 -> 1 -> 0, turning in and back out
+      this._discRoll = DISC_TURNS * Math.PI * 2 * (1 - (1 - discU) ** 3);
+      this._discScaleY = 1 + (DISC_SCALE_Y_PEAK - 1) * ease;
+      this._discScaleX = 1 - (1 - DISC_SCALE_X_DIP) * ease;
+      this._discWings = ease;
+    } else {
+      this._discRoll = 0;
+      this._discScaleY = 1;
+      this._discScaleX = 1;
+      this._discWings = 0;
+    }
+
     // --- pounce crouch: sine in-out squash over POUNCE_MS ---
     const pounceU = (nowMs - this._pounceStartMs) / POUNCE_MS;
     const crouch = pounceU >= 0 && pounceU < 1 ? Math.sin(pounceU * Math.PI) : 0;
@@ -601,6 +638,9 @@ export class Broshi {
     }
     // Cheer double-hop, on top of whatever his line's own hop is doing.
     if (cheerAge >= 0 && cheerAge < CHEER_TAIL_MS) this.hopY += cheerBumpY(cheerAge);
+    // Disc spin's launch: the wings above are cosmetic without an actual
+    // vertical kick to justify them, so the same window lifts him for real.
+    if (discU >= 0 && discU < 1) this.hopY += DISC_HOP_H * Math.sin(discU * Math.PI);
     // Echo hop: a half-beat after Midio lands, he hops right along with
     // him -- a small apex-on-beat parabola anchored the same way as his
     // note hops, just triggered by a landing instead of a note.
@@ -843,8 +883,9 @@ export class Broshi {
     // bodyRoll tumbles the whole glyph (barrel roll / tail-chase); the
     // pounce squash coils it. Both render-only, like everything else here.
     const group = {
-      tx: x, ty: y, rot: neckRad + this.bodyRoll,
-      scaleX: DRAW_SCALE * this.squashX * this._swell, scaleY: DRAW_SCALE * this.squashY * this._swell,
+      tx: x, ty: y, rot: neckRad + this.bodyRoll + this._discRoll,
+      scaleX: DRAW_SCALE * this.squashX * this._swell * this._discScaleX,
+      scaleY: DRAW_SCALE * this.squashY * this._swell * this._discScaleY,
       rotX: this._tumbleRotX || 0, rotY: this._tumbleRotY || 0,
     };
     const bodyHub = BROSHI_BODY.vertices[0];
@@ -903,6 +944,43 @@ export class Broshi {
       satBase: 28, lightBase: eyeLit ? 90 : 22, alpha: eyeLit ? 0.55 + 0.4 * this.rho : 0.95,
       widthBase: 1.4,
     });
+
+    // Disc-spin wings: sprout only for the move's duration, folding back
+    // out as it ends -- they exist to explain the hop, not as a permanent
+    // feature. Rotate with the spin like the body does, but scale UNIFORMLY
+    // (DRAW_SCALE, not group.scaleX/Y) -- the body's own scale is wildly
+    // asymmetric during the disc (tall, pinched narrow), and reusing it here
+    // would squash the wingspan down to an unreadable sliver instead of a
+    // wide, angled span reaching out from the spin.
+    if (this._discWings > 0.02) {
+      const w = this._discWings;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(group.rot);
+      ctx.scale(DRAW_SCALE, DRAW_SCALE);
+      // Lightness kept well under the body's own near-white wireframe --
+      // at ~85% the hue barely reads at all, and the membrane vanished into
+      // "more wireframe" instead of standing out as its own translucent
+      // panel.
+      ctx.globalAlpha = 0.6 * w;
+      ctx.fillStyle = `hsla(${baseHue},75%,62%,0.6)`;
+      ctx.strokeStyle = `hsla(${baseHue - 10},85%,80%,1)`;
+      ctx.lineWidth = 2.2 / DRAW_SCALE;
+      for (const side of [-1, 1]) {
+        // A big, unmissable sweep reaching well clear of the body silhouette
+        // (his mesh spans roughly -20..20 local units) -- these are meant to
+        // read instantly as "wings," not as a subtle body-hugging detail.
+        const spanX = side * 48 * w, sweepY = -34 * w;
+        ctx.beginPath();
+        ctx.moveTo(0, -8);
+        ctx.quadraticCurveTo(side * 20, -12 + sweepY * 0.6, spanX, -6 + sweepY);
+        ctx.quadraticCurveTo(side * 22, 10, 0, 10);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
 
     ctx.save();
     ctx.translate(x, y);

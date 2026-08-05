@@ -625,6 +625,8 @@ export class Simulation {
       tumbleRotX: this.ensemble.rotX(2), tumbleRotY: this.ensemble.rotY(2),
       // Shared build-up swell (EnsembleDirector.swell) -- see Broshi/Renderer for the other two.
       swell: this.ensemble.swell(2),
+      // Same clean-combo flourish Broshi/Midio celebrate with -- her disc spin.
+      justClean: this.comboSystem.justClean,
     }, this.perf.particleMul, this.biomes.wind);
     // She's off on a voyage -> the ensemble's Kuramoto math should feel the
     // hole (this takes effect next frame; the weight eases over ~1.5s
