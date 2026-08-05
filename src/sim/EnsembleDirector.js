@@ -12,6 +12,8 @@
 //                    slip cycle, not a script
 import { mulberry32, clamp, clamp01, lerp } from '../utils/math.js';
 import { curl2 } from '../utils/fields.js';
+import { FlourishGate } from './FlourishGate.js';
+import { RingBuffer } from '../utils/RingBuffer.js';
 
 const TWO_PI = Math.PI * 2;
 // Distinct natural detunes (rad/s) so slip is visible and non-uniform.
@@ -30,6 +32,14 @@ const TUMBLE_STAGGER_MS = 110;      // delay between Midio -> Broshi -> Midasus
 const TUMBLE_PEAK = [0.56, 0.46, 0.64]; // per-character peak angle (rad)
 const TUMBLE_CHANCE = 0.5;          // not every eligible transition tumbles
 const TUMBLE_COOLDOWN_MIN_MS = 9000, TUMBLE_COOLDOWN_RANGE_MS = 9000;
+
+// Disc spin (see discCue below): sparser than the tumble is loose, denser
+// than the tumble is rare -- it's the trio's mid-tier punctuation. The floor
+// is many times the 420ms move length, so a spin always resolves before
+// anything can restart it.
+const DISC_MIN_GAP_MS = 6000;
+const DISC_CHANCE = 0.35;     // at rest: most eligible cues still pass
+const DISC_CHANCE_HOT = 0.7;  // at full song-relative intensity
 
 // Player beat-anchor (BeatAnchor.js): a tap anywhere marks a phase/period
 // reference the trio pulls toward -- distinct, non-uniform per-character
@@ -80,6 +90,21 @@ export class EnsembleDirector {
 
     this._rand = rand; // kept for later stochastic cues (e.g. tumble)
     this._tumble = { active: false, startMs: -Infinity, durMs: 850, axis: 'y', dir: 1, cooldownUntilMs: 0 };
+    // Disc-spin cue: the trio's shared "turn into a spinning disc" flourish.
+    // It used to be triggered by ComboSystem.justClean directly inside Broshi
+    // and Midasus, which -- the show being autoplay, so every landing is
+    // clean -- meant a fresh 420ms spin every landing and neither of them
+    // ever stopped rotating. It belongs here instead, next to the tumble,
+    // because it is the same KIND of event: a rare trio-wide punctuation
+    // that lands on something structural (a section change, a drop, a combo
+    // milestone), never on the metronome of ordinary landings.
+    this.discCue = false; // one-frame flag, cleared each update() like ComboSystem's
+    /** Recent flourish decisions, hits AND misses, for the debug overlay. */
+    this.moveLog = new RingBuffer(24);
+    this._discGate = new FlourishGate({
+      minGapMs: DISC_MIN_GAP_MS, chance: DISC_CHANCE, intensityChance: DISC_CHANCE_HOT,
+      intensityScale: 0.5, rand,
+    });
     this._tumbleX = [0, 0, 0];
     this._tumbleY = [0, 0, 0];
     this._buildUp = 0; // HypeDirector.buildUp, read by swell(i)
@@ -104,6 +129,37 @@ export class EnsembleDirector {
     this._tumble.axis = this._rand() < 0.7 ? 'y' : 'x'; // mostly a turn, sometimes a tip
     this._tumble.dir = this._rand() < 0.5 ? 1 : -1;
     this._tumble.cooldownUntilMs = nowMs + TUMBLE_COOLDOWN_MIN_MS + this._rand() * TUMBLE_COOLDOWN_RANGE_MS;
+  }
+
+  /**
+   * Offer the trio a reason to spin. Called on the things a flourish can
+   * legitimately punctuate -- a section transition, a drop, a combo
+   * milestone -- and NOT on ordinary landings, which under autoplay arrive
+   * on every kick and are what made the disc spin continuous in the first
+   * place. Raises `discCue` for one frame if the gate allows it.
+   *
+   * @param {number} nowMs
+   * @param {string} reason  'section' | 'drop' | 'milestone' (debug log only)
+   * @param {number} intensity song-relative energy 0..1: a calm passage
+   *   spins rarely even when something structural happens.
+   * @returns {boolean} whether the cue was raised
+   */
+  maybeDisc(nowMs, reason = 'section', intensity = 0) {
+    // A drop or a milestone IS the punctuation -- it skips the probability
+    // roll (never the hard floor). A plain section change still rolls.
+    const transition = reason === 'drop' || reason === 'milestone';
+    const fired = this._discGate.tryFire(nowMs, { intensity, transition });
+    // Denials are logged too -- an over-firing move is only visible in the
+    // debug readout if the attempts it made are recorded alongside the hits.
+    this.moveLog.push({
+      tMs: nowMs, who: 'trio', move: 'disc', reason,
+      allowed: fired, why: fired ? this._discGate.lastReason : this._discGate.lastReason,
+      intensity: Math.round(intensity * 100) / 100,
+    });
+    if (!fired) return false;
+    this.discCue = true;
+    this.lastDisc = { atMs: nowMs, reason };
+    return true;
   }
 
   /** Current tumble angle for character i (radians), 0 outside a move. */
@@ -132,6 +188,11 @@ export class EnsembleDirector {
   }
 
   update(nowMs, dtSec, vibe, beatPeriodMs = 500, anchor = null, buildUp = 0) {
+    // Clear last frame's cue here, at the TOP of the step: Simulation calls
+    // update() before the maybeDisc() cue points, and the characters read
+    // discCue after both -- so a cue raised this frame survives to be seen
+    // exactly once.
+    this.discCue = false;
     this._t += dtSec;
     this._buildUp = clamp01(buildUp);
     this._updateTumble(nowMs);

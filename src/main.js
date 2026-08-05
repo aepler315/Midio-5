@@ -15,6 +15,7 @@ import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
 import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
+import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
 import {
   getReducedFlash, setReducedFlash, getLyricsDisabled, setLyricsDisabled,
@@ -107,6 +108,18 @@ const btLatencyBtnEl = document.getElementById('btLatencyBtn');
 const btLatencyHudBtnEl = document.getElementById('btLatencyHudBtn');
 const visualStyleBtnEl = document.getElementById('visualStyleBtn');
 const visualStyleHudBtnEl = document.getElementById('visualStyleHudBtn');
+const recalNudgeEl = document.getElementById('recalNudge');
+const recalNudgeBtnEl = document.getElementById('recalNudgeBtn');
+const recalNudgeDismissEl = document.getElementById('recalNudgeDismiss');
+const recalibration = new RecalibrationOverlay({
+  panel: document.getElementById('recalPanel'),
+  number: document.getElementById('recalNumber'),
+  instruction: document.getElementById('recalInstruction'),
+  pips: document.getElementById('recalPips'),
+  confFill: document.getElementById('recalConfFill'),
+  status: document.getElementById('recalStatus'),
+});
+let recalNudgeHideAtMs = Infinity; // wall-clock auto-dismiss for the nudge
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -638,6 +651,10 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
       // peak when the EAR gets the beat (Bluetooth can lag 200ms+).
       outputLatencyMs: () => audioEngine.outputLatencyMs,
       lyricSections: timelineData.lyricSections || null,
+      // SSM structure read (StructureAnalyzer), audio path only. Null on
+      // MIDI/demo/free-time, where BiomeManager keeps its own band-energy
+      // novelty schedule.
+      structure: timelineData.structure || null,
       songSeed: pinned,
     });
   } catch (err) {
@@ -1268,6 +1285,20 @@ function frame(tRaf) {
     synth?.stopAll?.();
   }
 
+  // Tap recalibration: drive the count, and let SyncMonitor offer one when
+  // the grid has visibly stopped matching the music. Neither ever blocks the
+  // frame, pauses audio, or swallows input.
+  if (recalibration.active) {
+    const alive = recalibration.update(simTime, {
+      beatPeriodMs: sim.jump.beatPeriodMs,
+      confidence: sim.beatAnchor.confidence,
+    });
+    if (!alive) endRecalibration();
+  } else {
+    if (sim.syncMonitor?.consumePrompt()) showRecalNudge();
+    if (tRaf >= recalNudgeHideAtMs) hideRecalNudge();
+  }
+
   visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();
 
@@ -1386,6 +1417,39 @@ function beatTap() {
   sim.onBeatTap(visualNow(audioEngine.nowMs, audioEngine.outputLatencyMs));
 }
 
+/** Show / hide the auto-prompt nudge (SyncMonitor). Deliberately quiet: it
+ *  offers, waits a few seconds, and gets out of the way on its own. */
+const RECAL_NUDGE_MS = 8000;
+function showRecalNudge() {
+  if (!recalNudgeEl || recalibration.active) return;
+  recalNudgeEl.classList.remove('hidden');
+  recalNudgeHideAtMs = performance.now() + RECAL_NUDGE_MS;
+}
+function hideRecalNudge() {
+  recalNudgeEl?.classList.add('hidden');
+  recalNudgeHideAtMs = Infinity;
+}
+
+/** Open the eight-measure tap-recalibration count. Never pauses the song --
+ *  taps keep flowing through the canvas handler into BeatAnchor as usual. */
+function startRecalibration() {
+  if (!running || !sim || paused || recalibration.active) return;
+  hideRecalNudge();
+  recalibration.start(simTime, sim.jump.beatPeriodMs, sim.beatAnchor.confidence);
+  sim.recalibrating = true;
+  sim.syncMonitor.onCalibrated();
+}
+function endRecalibration() {
+  if (!recalibration.active) return;
+  const text = recalibration.resultText(sim ? sim.beatAnchor.confidence : 0);
+  recalibration.stop();
+  if (sim) sim.recalibrating = false;
+  console.info('[recalibrate]', text);
+}
+
+recalNudgeBtnEl?.addEventListener('click', startRecalibration);
+recalNudgeDismissEl?.addEventListener('click', hideRecalNudge);
+
 // Mountain seekbar: click to seek; click a section to open its debug detail.
 // Anywhere else on the canvas -- not a button, not the seekbar -- resyncs
 // the player's beat anchor instead.
@@ -1427,6 +1491,13 @@ window.addEventListener('keydown', (e) => {
     if (!sim) return;
     sim.showSectionLabels = !sim.showSectionLabels;
     if (paramBus) paramBus.showSectionLabels = sim.showSectionLabels;
+    return;
+  }
+  // Tap recalibration. Must return before the catch-all beat-tap branch at
+  // the bottom, or opening the overlay would also register a stray tap and
+  // start the anchor's session on a timestamp the player didn't mean.
+  if (e.key === 'c' || e.key === 'C') {
+    if (recalibration.active) endRecalibration(); else startRecalibration();
     return;
   }
   if (e.key === 'f' || e.key === 'F') { openFontModal('list'); return; }

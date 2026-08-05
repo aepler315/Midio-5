@@ -20,6 +20,7 @@ import {
   tonalityFrom, meanBrightness, brightnessAt, windowChroma,
 } from './PitchTracker.js';
 import { EnergyCurves } from './EnergyCurves.js';
+import { analyzeStructure } from './StructureAnalyzer.js';
 import { Role, makeNoteEvent, sortNoteEvents } from '../core/NoteEvent.js';
 import { Lane, melodyLaneForNote, laneForStemName, delegateByStemActivity } from '../core/Casting.js';
 import { clamp01 } from '../utils/math.js';
@@ -234,11 +235,24 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
     stereoWidth: stereoWidth(audioBuffer),
   };
 
+  // Song structure (StructureAnalyzer): a beat-synchronous chroma+timbre
+  // self-similarity matrix, Foote novelty for the boundaries and a repetition
+  // pass for the labels. Reuses the pitchFeatures FFT already computed above,
+  // so it costs one matrix and no new analysis. BiomeManager prefers this
+  // over its own band-energy novelty when the confidence clears its floor,
+  // and falls back otherwise -- MIDI and free-time audio never reach here.
+  const structurePoints = barGrid.length >= 8
+    ? barGrid.map((b) => b.ms)
+    : (() => { const p = []; for (let t = 0; t < durationMs; t += 2000) p.push(t); return p; })();
+  const structure = analyzeStructure({
+    pointsMs: structurePoints, pitchFeatures, energyCurves, durationMs,
+  });
+
   onProgress?.({ phase: 'done', progress: 1 });
 
   return {
     timeline, barGrid, durationMs,
     bpm: tempo.bpm, beatPeriodMs: tempo.beatPeriodMs, confidence: tempo.confidence, freeTime: tempo.freeTime,
-    energyCurves, analysis, stems: stemsSummary,
+    energyCurves, analysis, structure, stems: stemsSummary,
   };
 }

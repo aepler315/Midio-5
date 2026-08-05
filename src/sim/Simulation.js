@@ -43,6 +43,7 @@ import { PhraseTracker } from '../core/PhraseTracker.js';
 import { AirJumpSequencer } from './AirJumpSequencer.js';
 import { FeverMeter } from './FeverMeter.js';
 import { LatencyCalibrator } from './LatencyCalibrator.js';
+import { SyncMonitor } from './SyncMonitor.js';
 import { WeatherDirector } from './WeatherDirector.js';
 import { OrogenyDirector } from '../world/OrogenyDirector.js';
 
@@ -54,7 +55,7 @@ const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
 export class Simulation {
   constructor(conductor, paramBus, {
     bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720,
-    customBiome = null, inputOffsetMs = 0, outputLatencyMs = null, lyricSections = null,
+    customBiome = null, inputOffsetMs = 0, outputLatencyMs = null, lyricSections = null, structure = null,
     songSeed: pinnedSeed = null,
   } = {}) {
     this.conductor = conductor;
@@ -141,6 +142,9 @@ export class Simulation {
     // calibrator watches judged offsets and shifts the input offset to
     // cancel a consistent lag. main.js applies offsetMs at stamp time.
     this.latency = new LatencyCalibrator(inputOffsetMs);
+    // Watches whether the beat grid actually matches the music, and decides
+    // (timidly -- see its prompting policy) when to offer a tap recalibration.
+    this.syncMonitor = new SyncMonitor();
 
     this.obstacles.buildCandidates(conductor.timeline, 60000 / bpm, this.midio.halfWidth, this.noteChart.holdSpans);
 
@@ -161,6 +165,7 @@ export class Simulation {
     this.hype = new HypeDirector();
     this.weather = new WeatherDirector();
     this._lastDropCount = 0; // matches HypeDirector's own initial dropCount -- no spurious punch at t=0
+    this._pendingDiscReason = null; // drop-cued disc spin, deferred one phase (see step())
     this.filmFinish = new FilmFinish();
     this.vibe = new VibeDirector(conductor.timeline);
     this.keyDirector = new KeyDirector();
@@ -177,6 +182,7 @@ export class Simulation {
       groundField: this.groundField,
       customBiome: this.customBiome,
       lyricSections,
+      structure,
     });
     this.reducedFlash = false;
     this.visualStyle = 'rendered';
@@ -239,6 +245,11 @@ export class Simulation {
         this.gnat.onKick(evt);
         this.performer.onKick(evt.tMs);
         this.hype.onKick(evt.vel);
+        // Grid coherence (SyncMonitor): how well the song's own kicks line up
+        // with the beat grid everything is choreographed against. Scattered
+        // kicks mean the tempo read is wrong, which is what "the characters
+        // are moving randomly" actually looks like from the outside.
+        this.syncMonitor.onKick(evt.tMs, this.jump.beatPeriodMs, this.beatAnchor.anchorMs);
         this.groundField.kickGlow(this.worldX, evt.tMs, evt.vel);
         this.midasus.voyage.onKick(evt.vel); // deep-space sparkle burst (self-gated on phase)
         if (this.apotheosis.active) this.performer.captureGoldAfterimage(this.midio, this.timeMs);
@@ -381,6 +392,9 @@ export class Simulation {
   onBeatTap(tMs) {
     this.beatAnchor.tap(tMs);
     this.impactFX.splat(this.worldX, this.midio.groundY);
+    // A real tapped-in pass means the grid is being steered by the player,
+    // so stop measuring the stretch that would have prompted for one.
+    if (this.beatAnchor.confidence >= 0.5) this.syncMonitor.onCalibrated();
   }
 
   /** The Reel (Movement VI): live-toggle the reduced-flash accessibility
@@ -463,6 +477,10 @@ export class Simulation {
     if (this.hype.dropCount !== this._lastDropCount) {
       this._lastDropCount = this.hype.dropCount;
       this.camera.shake(5);
+      // A drop is the single best thing a disc spin can punctuate. Deferred
+      // rather than cued here because ensemble.update() (which clears the
+      // one-frame flag) hasn't run yet this step.
+      this._pendingDiscReason = 'drop';
     }
     // Lyric structure's epic bias (SectionFusion): zero, and thus a strict
     // no-op, whenever there's no lyric data (biomes.currentKind stays
@@ -499,11 +517,24 @@ export class Simulation {
     // reasoning stays meaningful across any mid-song tempo drift.
     this.beatAnchor.setSongBeatMs(this.jump.beatPeriodMs, nowMs);
     this.beatAnchor.update(nowMs);
+    this.syncMonitor.update(nowMs, {
+      anchorConfidence: this.beatAnchor.confidence,
+      suppress: this.recalibrating,
+    });
     this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs, this.beatAnchor, this.hype.buildUp);
     // A scene transition is a rare cue for the whole trio to share a brief
     // tumble accent (see EnsembleDirector.maybeTumble) -- one-frame lag
     // against biomes.update() below is inaudible/invisible at 16ms.
     if (this.biomes.sectionJustChanged) this.ensemble.maybeTumble(nowMs, this.biomes.lastTransitionStyle);
+    // ...and the same transition is the trio's main reason to spin into a
+    // disc. Song-relative intensity (VibeDirector.epic, now normalized
+    // against this song's own dynamic range) decides how eager they are:
+    // a quiet section change usually passes without a flourish.
+    if (this.biomes.sectionJustChanged) this.ensemble.maybeDisc(nowMs, 'section', this.vibe.epic);
+    if (this._pendingDiscReason) {
+      this.ensemble.maybeDisc(nowMs, this._pendingDiscReason, this.vibe.epic);
+      this._pendingDiscReason = null;
+    }
     // Midio roams toward his ensemble anchor -- slow, never gameplay-fast.
     const dxA = this.ensemble.anchors[0].x - this.midio.screenX;
     this.midio.screenX += Math.max(-30 * dtSec, Math.min(30 * dtSec, dxA));
@@ -565,7 +596,13 @@ export class Simulation {
       // The Apotheosis: gameplay precision powers the show -- every clean
       // landing and combo milestone literally charges the transformation.
       if (this.comboSystem.justClean) this.apotheosis.onCleanLanding();
-      if (this.performer.milestoneFlash) this.apotheosis.onMilestone();
+      if (this.performer.milestoneFlash) {
+        this.apotheosis.onMilestone();
+        // A combo milestone is a genuine event worth a trio flourish --
+        // unlike the plain clean landing this used to key off, which under
+        // autoplay arrives on every kick.
+        this.ensemble.maybeDisc(nowMs, 'milestone', this.vibe.epic);
+      }
       if (this.apotheosis.active) this.impactFX.ignite(this.worldX, this.midio.groundY);
     }
 
@@ -625,8 +662,10 @@ export class Simulation {
       tumbleRotX: this.ensemble.rotX(2), tumbleRotY: this.ensemble.rotY(2),
       // Shared build-up swell (EnsembleDirector.swell) -- see Broshi/Renderer for the other two.
       swell: this.ensemble.swell(2),
-      // Same clean-combo flourish Broshi/Midio celebrate with -- her disc spin.
-      justClean: this.comboSystem.justClean,
+      // Her disc spin. Cued by EnsembleDirector.maybeDisc (section change /
+      // drop / milestone, rate-limited), NOT by justClean -- under autoplay
+      // every landing is clean, which is why she used to spin nonstop.
+      discCue: this.ensemble.discCue,
     }, this.perf.particleMul, this.biomes.wind);
     // She's off on a voyage -> the ensemble's Kuramoto math should feel the
     // hole (this takes effect next frame; the weight eases over ~1.5s
@@ -654,7 +693,10 @@ export class Simulation {
       // "watch him fly" head-tilt and takeoff crouch, the landing/clean
       // edges for the cheer + echo hop, world speed for the trot shimmy.
       midioAirborne: this.jump.airborne, midioY: this.midio.y,
+      // justClean still drives his cheer/jaw/tail (cheap, and it reads as
+      // companionship). Only the disc SPIN moved to the rate-limited cue.
       justLanded: !!this.jump.pendingLanding, justClean: this.comboSystem.justClean,
+      discCue: this.ensemble.discCue,
       worldSpeed,
       // Soft spacing from Midasus when she dives into the floor band.
       midasusX: this.midasus.p.x,

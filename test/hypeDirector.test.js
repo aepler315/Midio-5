@@ -2,8 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { HypeDirector, hypeFrameStyle } from '../src/sim/HypeDirector.js';
 
+// HypeDirector's drop detector reads globalEnergyNorm -- see CalmDirector's
+// test for why a fixed-value stub is the right fixture for these thresholds.
 function fakeEnergy(value) {
-  return { globalEnergy: () => value };
+  return { globalEnergy: () => value, globalEnergyNorm: () => value };
 }
 
 const STEP = 1 / 120;

@@ -41,7 +41,11 @@ export class HypeDirector {
   }
 
   update(nowMs, dtSec, energyCurves) {
-    const e = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS)) : 0.3;
+    // Song-relative: a drop is the fast EMA tearing away from a QUIET context,
+    // and "quiet" has to be measured against this song's own floor -- on the
+    // absolute signal a compressed master never sat below DROP_QUIET_CEIL, so
+    // its drops could never fire at all.
+    const e = energyCurves ? clamp01(energyCurves.globalEnergyNorm(nowMs, FLAT_WEIGHTS)) : 0.3;
     this.fast += (1 - Math.exp(-dtSec / FAST_TAU)) * (e - this.fast);
     this.slow += (1 - Math.exp(-dtSec / SLOW_TAU)) * (e - this.slow);
 

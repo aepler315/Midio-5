@@ -16,7 +16,10 @@ export class CalmDirector {
   }
 
   update(nowMs, dtSec, energyCurves) {
-    const gInstant = energyCurves ? energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS) : 0;
+    // Song-relative (EnergyCurves.globalEnergyNorm): CALM_LOW/CALM_HIGH now
+    // mean "the quiet tenth / the loud tenth OF THIS SONG", so a quiet record
+    // still reaches its own energetic sections and a loud one still relaxes.
+    const gInstant = energyCurves ? energyCurves.globalEnergyNorm(nowMs, FLAT_WEIGHTS) : 0;
     const alpha = 1 - Math.exp(-dtSec / G_EMA_TAU);
     this.G += alpha * (gInstant - this.G);
     this.level = 1 - smoothstep(CALM_LOW, CALM_HIGH, this.G);
