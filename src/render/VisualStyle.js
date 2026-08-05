@@ -71,7 +71,7 @@ export function styleDials(_style) {
     groundCrestCaps: true,
     massifCrestCaps: true,
     // Sky music
-    horizonEqAlpha: 0.42,
+    horizonEqAlpha: 0.85,
     crestGlowAlpha: 0.55,
     crestStroke: true,
     spaceRidgeAlpha: 0.55,

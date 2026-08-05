@@ -2265,17 +2265,30 @@ export class BiomeManager {
 
     // Body: luminous fill from crest down — the musical weather mass.
     const grad = ctx.createLinearGradient(0, baseline - maxH, 0, baseline + 30);
-    grad.addColorStop(0, `${color}44`);
-    grad.addColorStop(0.55, `${color}22`);
+    grad.addColorStop(0, `${color}99`);
+    grad.addColorStop(0.55, `${color}4d`);
     grad.addColorStop(1, `${color}00`);
     ctx.fillStyle = grad;
-    ctx.globalAlpha = 0.38 * this.budget * eqMul;
+    ctx.globalAlpha = 0.75 * this.budget * eqMul;
     ctx.beginPath();
     ctx.moveTo(pts[0].x, baseline + 30);
     for (const p of pts) ctx.lineTo(p.x, p.y);
     ctx.lineTo(pts[pts.length - 1].x, baseline + 30);
     ctx.closePath();
     ctx.fill();
+
+    // Bright aurora crest line on top — the fill alone reads as a haze;
+    // this is what makes the spectrum's own shape legible against the sky.
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = color;
+    for (const [lw, alpha] of [[10, 0.16], [4, 0.32], [1.6, 0.85]]) {
+      ctx.globalAlpha = alpha * this.budget * eqMul;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
