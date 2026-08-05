@@ -197,6 +197,22 @@ export class DebugOverlay {
         lines.push(`current: label=${cur.label}  kind=${cur.kind || '(no lyric data)'}  transition=${cur.transition}  profile=${cur.profile}`);
       }
       lines.push(`lyricIntensity: ${b.lyricIntensityEased.toFixed(2)}`);
+      const cd = b.connectorDebug;
+      if (cd) lines.push(`connector hills: spans=${cd.spans}  buried=${cd.depth01.toFixed(2)}  alpha=${cd.alpha.toFixed(3)}`);
+    }
+
+    // What this player has taught the engine about their own groove
+    // (GrooveFingerprint) -- persisted across songs, so it is worth being
+    // able to see whether it is actually learning anything.
+    const gf = this.sim.groove;
+    if (gf) {
+      lines.push('');
+      lines.push('=== GROOVE PROFILE ===');
+      const pct = (v) => `${Math.round(v * 100)}%`;
+      lines.push(`low:  taps=${gf.low.count}  say=${pct(gf.strength('LOW'))}  [${gf.low.template.map((v) => v.toFixed(2)).join(' ')}]`);
+      lines.push(`high: taps=${gf.high.count}  say=${pct(gf.strength('HIGH'))}  [${gf.high.template.map((v) => v.toFixed(2)).join(' ')}]`);
+      lines.push(`feel offset: ${gf.offsetMs >= 0 ? '+' : ''}${gf.offsetMs.toFixed(0)}ms   taps at energy ${gf.intensity.toFixed(2)}`);
+      if (!gf.ready) lines.push('(cold -- tap F on the low hits and J on the hats to teach it)');
     }
 
     // --- rotation / flourish decisions, DENIALS included ---

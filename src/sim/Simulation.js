@@ -44,6 +44,7 @@ import { AirJumpSequencer } from './AirJumpSequencer.js';
 import { FeverMeter } from './FeverMeter.js';
 import { LatencyCalibrator } from './LatencyCalibrator.js';
 import { SyncMonitor } from './SyncMonitor.js';
+import { GrooveFingerprint } from './GrooveFingerprint.js';
 import { WeatherDirector } from './WeatherDirector.js';
 import { OrogenyDirector } from '../world/OrogenyDirector.js';
 
@@ -56,6 +57,7 @@ export class Simulation {
   constructor(conductor, paramBus, {
     bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720,
     customBiome = null, inputOffsetMs = 0, outputLatencyMs = null, lyricSections = null, structure = null,
+    groove = null,
     songSeed: pinnedSeed = null,
   } = {}) {
     this.conductor = conductor;
@@ -105,6 +107,13 @@ export class Simulation {
     // fields on every call, so wiring it in once here is enough.
     this.beatAnchor = new BeatAnchor(60000 / bpm);
     this.jump.setAnchor(this.beatAnchor);
+    // Cross-song memory of how this player hears a beat (GrooveFingerprint).
+    // Unlike the anchor, which is rebuilt per song, this one is handed in by
+    // main.js already carrying whatever previous sessions taught it.
+    this.groove = groove || new GrooveFingerprint();
+    // Set explicitly rather than left implicitly undefined: SyncMonitor reads
+    // it as `suppress` on every step.
+    this.recalibrating = false;
     // Landing-on-the-next-kick (JumpController.scheduledJumpD): the same
     // raw kick-time list NoteChart/JumpPlanner replay, so live launches and
     // retargets schedule onto the real next onset instead of only ever
@@ -389,12 +398,42 @@ export class Simulation {
    *  "the clock the EAR is on"). Not a jump trigger: it only ever re-phases
    *  the ensemble/jump scheduler toward wherever the player felt the beat.
    *  The neutral splat is the only feedback -- no text overlay. */
-  onBeatTap(tMs) {
+  onBeatTap(tMs, role = null) {
     this.beatAnchor.tap(tMs);
     this.impactFX.splat(this.worldX, this.midio.groundY);
     // A real tapped-in pass means the grid is being steered by the player,
     // so stop measuring the stretch that would have prompted for one.
     if (this.beatAnchor.confidence >= 0.5) this.syncMonitor.onCalibrated();
+    // ...and teach the fingerprint what this player was answering. The tap
+    // carries a role (which hand) and lands at a moment with a spectral
+    // signature; together those are what let the engine eventually tell a
+    // kick from a hat the way THIS player hears it, rather than by the one
+    // fixed band-share rule everybody currently shares.
+    this.groove.observe({
+      role,
+      tMs,
+      bands: this.energyCurves ? this.energyCurves.sampleAll(tMs) : null,
+      energyNorm: this.energyCurves ? this.energyCurves.globalEnergyNorm(tMs) : 0,
+      nearestOnsetMs: this._nearestKickMs(tMs),
+    });
+  }
+
+  /** The detected onset closest to `tMs`, or null when the chart has none in
+   *  reach. Feeds the fingerprint's timing offset: the gap between where the
+   *  player tapped and where the song actually hit is this player's feel. */
+  _nearestKickMs(tMs) {
+    const kicks = this.jump._kickTimes;
+    if (!kicks || !kicks.length) return null;
+    // Binary search -- this runs per tap, but the list is every kick in the
+    // song and a linear scan on a dense track is wasteful for no reason.
+    let lo = 0, hi = kicks.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (kicks[mid] < tMs) lo = mid + 1; else hi = mid;
+    }
+    let best = kicks[lo];
+    if (lo > 0 && Math.abs(kicks[lo - 1] - tMs) < Math.abs(best - tMs)) best = kicks[lo - 1];
+    return best;
   }
 
   /** The Reel (Movement VI): live-toggle the reduced-flash accessibility

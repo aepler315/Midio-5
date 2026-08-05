@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   analyzeStructure, selfSimilarity, footeNovelty, labelByRepetition, chromaBetween,
+  NO_STRUCTURE_CONFIDENCE,
 } from '../src/audio/StructureAnalyzer.js';
 import { SEMITONE_LO } from '../src/audio/PitchTracker.js';
 
@@ -134,5 +135,22 @@ test('boundaries honor the minimum gap', () => {
   for (let i = 1; i < res.boundariesMs.length; i++) {
     assert.ok(res.boundariesMs[i] - res.boundariesMs[i - 1] >= 11000 - stepMs,
       `boundaries ${res.boundariesMs[i - 1]} and ${res.boundariesMs[i]} are too close`);
+  }
+});
+
+test('a read that found no boundaries reports low confidence, not medium', () => {
+  // With one section there is nothing for the repeat bonus to reward (a lone
+  // label cannot recur), so novelty contrast alone used to carry a
+  // structureless read to ~0.6 -- over BiomeManager's acceptance floor, where
+  // it would flatten a good energy-novelty schedule to a single biome.
+  // A detector that found nothing has to say so.
+  const feats = fakeFeatures([[0, 4, 7]], 30); // one unchanging block
+  const res = analyzeStructure({
+    pointsMs: grid(40, 1000), pitchFeatures: feats, energyCurves: null, durationMs: 40000,
+  });
+  if (res === null) return; // bailing out entirely is also an acceptable answer
+  if (res.labels.length < 2) {
+    assert.ok(res.confidence <= NO_STRUCTURE_CONFIDENCE,
+      `single-section read should stay quiet, got ${res.confidence}`);
   }
 });

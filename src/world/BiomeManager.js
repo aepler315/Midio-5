@@ -13,6 +13,7 @@ import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul, mountainStripDrawHeight } from './MountainChoreo.js';
 import { ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, geoCrestOffset } from './GeoCrest.js';
+import { occludedSpans, hillCurve } from './ConnectorHills.js';
 import {
   seaLineY, oceanRowYs, waveRows, rowAlpha, OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC,
   breakerLift, whitecapMask, rowPhaseDrift,
@@ -34,6 +35,9 @@ import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Drama
 import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, horizonFade } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
 import { analyzeSongForm } from './SongForm.js';
+import {
+  MIN_SECTION_CUT_GAP_MS, SECTION_CUT_BUDGET_MS, MIN_SECTION_CUTS, sectionCutBudget,
+} from '../audio/sectionBudget.js';
 import { LightningFX } from './Lightning.js';
 import { MeteorShowerFX } from './MeteorShower.js';
 import { LightRig } from './LightRig.js';
@@ -69,13 +73,14 @@ const TERRAIN_FOOTING_AO_PASSES = [
 // fallback and the cut budget/spacing that apply either way.
 const ANALYSIS_MIN_POINTS = 64;       // fallback analysis-point floor regardless of duration
 const ANALYSIS_TARGET_STEP_MS = 2000; // ~1 analysis point every 2s for longer songs
-const MIN_SECTION_CUT_GAP_MS = 11000; // minimum time between two section cuts
-const SECTION_CUT_BUDGET_MS = 24000;  // ~1 extra cut allowed per 24s of song
-const MIN_SECTION_CUTS = 3, MAX_SECTION_CUTS = 12;
 // How sure the SSM structure read (StructureAnalyzer) must be before it
 // replaces the band-energy schedule. A through-composed piece with no
 // repeats and no sharp boundaries scores below this and keeps the old path.
 const SSM_CONFIDENCE_FLOOR = 0.45;
+// Novelty below this fraction of the song's strongest turn is noise, not a
+// section boundary. Mirrors the SSM path's own floor so the two detectors
+// refuse to manufacture boundaries on the same terms.
+const NOVELTY_NOISE_FLOOR = 0.15;
 const WORLD_SPEED_PX_S = 220;
 const BAND_COUNT = 7;
 const EQ_ATTACK_SEC = 0.08;
@@ -115,6 +120,28 @@ const SHOULDER_LIT = '#fff8e6';
 // as flat cutouts. L5 sits right behind the characters -- anything strong
 // there competes with them for attention.
 const RIDGE_VOLUME_STRENGTH = { L2: 1.0, L3: 0.85, L4: 0.6, L5: 0.4 };
+
+// --- Connector hills: green country bridging a hidden dancing skyline -----
+// A humble forest/grass green. The biome's own halo is dragged most of the
+// way toward it, so the country belongs to this world without ever becoming
+// the biome's accent colour.
+const CONNECTOR_GREEN = '#5f8f5a';
+const CONNECTOR_GREEN_MIX = 0.72;
+const CONNECTOR_MIN_LIGHTNESS = 0.26;
+// How far the country rolls down from the occluding crest at full burial.
+const CONNECTOR_DESCEND_PX = 90;
+// Quiet by design: this is the subtlest thing in the scene, and it has to
+// stay under the crest it's rescuing rather than becoming a second skyline.
+// But subtle is not the same as absent -- the first pass measured out at a
+// peak of 0.12 once the intensity budget had its say, which read as nothing
+// at all against a dark sky.
+const CONNECTOR_ALPHA = 0.55;
+// How far past its own foot the country keeps going before it dissolves.
+// Filling all the way down to the ground band instead reads as a broad wash
+// over a third of the frame rather than as hills -- the dead band this is
+// bridging is between the crest that hid the ridge and the range in front,
+// not everything below it.
+const CONNECTOR_BAND_PX = 120;
 
 // The ground must never sink into the void, whatever the biome's silhouette
 // started at. Chosen to clear the film-grade wash and the vignette that
@@ -445,37 +472,69 @@ export class BiomeManager {
     const minGap = Math.max(1, Math.round(MIN_SECTION_CUT_GAP_MS / Math.max(1, avgStepMs)));
     // Cut budget scales with song length instead of a flat 7 -- a 5-minute
     // song can now express close to a section every 24s.
-    const maxCuts = clamp(Math.round(durationMs / SECTION_CUT_BUDGET_MS), MIN_SECTION_CUTS, MAX_SECTION_CUTS);
-    const peaks = [];
-    const sorted = novelty.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]);
-    for (const [v, i] of sorted) {
-      if (peaks.length >= maxCuts) break;
-      if (v <= 1e-6) continue;
-      if (peaks.some((p) => Math.abs(p - i) < minGap)) continue;
-      peaks.push(i);
-    }
-    peaks.sort((a, b) => a - b);
+    const maxCuts = sectionCutBudget(durationMs);
+    const lastIdx = barTimes.length - 1;
+    const peakNovelty = Math.max(...novelty, 0);
+    /** Greedy strongest-first peak picking. `floorMul` is the noise floor as a
+     *  fraction of the strongest novelty: the normal pass refuses to
+     *  manufacture boundaries out of near-flat material, and the relaxation in
+     *  _ensureMinimumSections re-runs with it dropped. */
+    const pickPeaks = (floorMul) => {
+      const out = [];
+      const sorted = novelty.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]);
+      for (const [v, i] of sorted) {
+        if (out.length >= maxCuts) break;
+        if (v <= 1e-6) continue;
+        if (v <= peakNovelty * floorMul) break;
+        // Spaced against the song's own edges as well as against each other.
+        // Index 0 and the final index are ALWAYS cuts, so a peak crowding
+        // either one produces a runt section -- and a lone peak landing on the
+        // final index collapses the schedule to a single section outright
+        // (cuts [0, last, last], whose first pair is then dropped as empty).
+        // A big outro or fade-out makes that very reachable on real songs.
+        if (i < minGap || lastIdx - i < minGap) continue;
+        if (out.some((p) => Math.abs(p - i) < minGap)) continue;
+        out.push(i);
+      }
+      out.sort((a, b) => a - b);
+      return out;
+    };
+    const peaks = pickPeaks(NOVELTY_NOISE_FLOOR);
 
     // The SSM read (StructureAnalyzer) wins when it's confident: its
     // boundaries come from a checkerboard kernel over a chroma+timbre
     // self-similarity matrix rather than a difference of trailing band-energy
-    // means, and it hears harmony, which the novelty path above cannot. Its
-    // analysis grid is the same bar grid, so its cut INDICES drop straight in
-    // here and every downstream step (per-section energy, shapes, casting,
-    // hue signature, lyric fusion) runs unchanged.
+    // means, and it hears harmony, which the novelty path above cannot.
+    //
+    // Its boundaries arrive as TIMES, not as indices. They used to arrive as
+    // cut indices, which was silently wrong whenever the two sides built
+    // different analysis grids: with no bar grid, AudioAdapter steps a flat
+    // 2000ms while _evenSplit here returns n+1 points at a much finer step for
+    // songs under ~128s. Indices from one grid read against the other put every
+    // cut at the wrong time, bunched toward the song's start -- and the old
+    // `<= barTimes.length - 1` guard never caught it, because the array being
+    // indexed was the longer of the two. Times are unambiguous; indices are
+    // only meaningful next to the grid that produced them.
     //
     // Everything falls back cleanly: MIDI, the demo timeline, free-time audio
     // and any low-confidence read keep the band-energy schedule exactly as it
     // was.
+    const ssmCuts = structure && Array.isArray(structure.boundariesMs)
+      ? this._cutsFromTimes(structure.boundariesMs, barTimes)
+      : null;
     const ssmUsable = structure
       && structure.confidence >= SSM_CONFIDENCE_FLOOR
-      && structure.cutIndices
-      && structure.cutIndices.length >= 2
-      && structure.cutIndices[structure.cutIndices.length - 1] <= barTimes.length - 1;
+      // At least two sections. A one-section read is the detector reporting it
+      // found nothing, and must never displace an energy read that found real
+      // boundaries (StructureAnalyzer caps its confidence for this reason too).
+      && ssmCuts && ssmCuts.length >= 3;
     this.structureSource = ssmUsable ? 'ssm' : 'energy-novelty';
     this.structureConfidence = structure ? structure.confidence : 0;
 
-    const cuts = ssmUsable ? structure.cutIndices : [0, ...peaks, barTimes.length - 1];
+    const cuts = this._ensureMinimumSections(
+      ssmUsable ? ssmCuts : [0, ...peaks, lastIdx],
+      { pickPeaks, barTimes, durationMs, lastIdx },
+    );
 
     this.sections = [];
     const meanEnergies = [];
@@ -563,6 +622,72 @@ export class BiomeManager {
     const out = [];
     for (let i = 0; i <= n; i++) out.push((i / n) * durationMs);
     return out;
+  }
+
+  /** Boundary TIMES -> cut indices into this schedule's own `barTimes`, by
+   *  nearest point. This is the whole defence against the two sides
+   *  disagreeing about their analysis grid: whatever grid the detector ran on,
+   *  its answers land at the right moments in the song. Always closed with the
+   *  final index, which `boundariesMs` deliberately omits. */
+  _cutsFromTimes(boundariesMs, barTimes) {
+    const lastIdx = barTimes.length - 1;
+    const nearest = (ms) => {
+      let best = 0, bestD = Infinity;
+      for (let i = 0; i <= lastIdx; i++) {
+        const d = Math.abs(barTimes[i] - ms);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      return best;
+    };
+    const cuts = [];
+    for (const ms of boundariesMs) {
+      const i = nearest(ms);
+      if (i >= lastIdx) continue;              // would collapse against the tail
+      if (cuts.length && i <= cuts[cuts.length - 1]) continue; // keep it strictly rising
+      cuts.push(i);
+    }
+    if (cuts[0] !== 0) cuts.unshift(0);
+    cuts.push(lastIdx);
+    return cuts;
+  }
+
+  /**
+   * A minimum number of sections, for songs long enough to deserve them.
+   *
+   * MIN_SECTION_CUTS was previously only ever the lower bound of the clamp on
+   * `maxCuts` -- it guaranteed the section *budget* was at least 3, never that
+   * three cuts were actually made. Nothing anywhere counted the result, so a
+   * whole song could (and did) come out as a single biome: a heavily
+   * compressed master whose trailing-mean novelty barely moves clears the
+   * absolute 1e-6 test but nothing else, and every candidate gets rejected.
+   *
+   * So: count, and if the song is long enough to hold several sections but
+   * didn't get them, relax in order -- first re-pick with the noise floor
+   * dropped (the material is flat, but its *relative* peaks are still where
+   * the song actually turns), and only if that still fails, fall back to even
+   * time-splits. An even split is a poor read of the music, but it is a far
+   * better experience than four minutes of one unchanging world.
+   */
+  _ensureMinimumSections(cuts, { pickPeaks, barTimes, durationMs, lastIdx }) {
+    const deserved = Math.min(MIN_SECTION_CUTS, Math.floor(durationMs / SECTION_CUT_BUDGET_MS));
+    if (deserved < 2 || cuts.length - 1 >= deserved) return cuts;
+
+    const relaxed = pickPeaks(0);
+    if (relaxed.length + 1 >= deserved) return [0, ...relaxed, lastIdx];
+
+    // Nothing in the signal to go on: split the time evenly instead.
+    const want = Math.max(deserved, relaxed.length + 1);
+    const even = [];
+    for (let k = 1; k < want; k++) {
+      const ms = (k / want) * durationMs;
+      let best = 0, bestD = Infinity;
+      for (let i = 1; i < lastIdx; i++) {
+        const d = Math.abs(barTimes[i] - ms);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      if (best > 0 && (even.length === 0 || best > even[even.length - 1])) even.push(best);
+    }
+    return even.length ? [0, ...even, lastIdx] : cuts;
   }
 
   _sectionAt(nowMs) {
@@ -1101,6 +1226,11 @@ export class BiomeManager {
 
     this._drawLayer(ctx, canvas, 'L4', scrollX2, tint, t, A, B);
     if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L4', A, B, t, arc);
+    // Green country bridging the sightline wherever the dancing far skyline
+    // has ducked behind the hills in front of it. Between L4 and L5 so the
+    // nearest hills still overlap it and it reads as depth rather than as a
+    // pane laid over the scene.
+    this._drawConnectorHills(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t);
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
 
     this._drawGround(ctx, canvas, worldX, originX, A, B, t, tint);
@@ -2701,6 +2831,87 @@ export class BiomeManager {
         }
         ctx.stroke();
       }
+    }
+    ctx.restore();
+  }
+
+  /**
+   * The green connector country (ConnectorHills.js).
+   *
+   * The far range carries the biggest dance, which means it spends a lot of
+   * its time hidden behind the nearer hills -- and when it does, there's a
+   * dead band between whatever hid it and the ground, with nothing to carry
+   * the eye down through. These hills fill exactly that, only there, and only
+   * as much as the ridge is actually buried.
+   *
+   * Deliberately the quietest thing on screen: a soft forest/grass green at
+   * low alpha with no crest stroke of its own, so it reads as distance rather
+   * than as another skyline competing with the one it's rescuing.
+   */
+  _drawConnectorHills(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t) {
+    if (this._perf && !this._perf.heavyPostFx) return;
+    const profile = t > 0.5 ? B : A;
+    const strips = this.strips.get(profile.name);
+    if (!strips) return;
+    const yOff = this.groundY + 40 - canvas.height;
+    const dancy = this._crestPoints(canvas, strips.L2, scrollX0, yOff, 'L2', profile.terrainEnergy ?? 1);
+    if (!dancy) return;
+
+    // The skyline doing the hiding: whichever of the nearer ranges stands
+    // highest at each x (screen y, so the minimum).
+    const nearer = [
+      this._crestPoints(canvas, strips.L3, scrollX1, yOff, 'L3', profile.terrainEnergy ?? 1),
+      this._crestPoints(canvas, strips.L4, scrollX2, yOff, 'L4', profile.terrainEnergy ?? 1),
+    ].filter(Boolean);
+    if (!nearer.length) return;
+    const skyline = dancy.pts.map((_, i) => {
+      let top = Infinity;
+      for (const g of nearer) if (g.pts[i] && g.pts[i].y < top) top = g.pts[i].y;
+      return top;
+    });
+
+    const spans = occludedSpans(dancy.pts, skyline);
+    // Debug readout (DebugOverlay, backtick): what the pass actually saw this
+    // frame. Reconstructing it from outside means guessing the parallax
+    // ratios, which is its own source of wrong answers.
+    this.connectorDebug = { spans: spans.length, depth01: spans.length ? Math.max(...spans.map((x) => x.depth01)) : 0, alpha: 0 };
+    if (!spans.length) return;
+
+    // Forest/grass, pulled from the biome's own halo so it still belongs to
+    // this world, but dragged well toward green and desaturated. Floored so it
+    // survives the dark palettes, same lesson as the ground.
+    const base = ensureMinLightness(
+      this.lerpCache.get(this._rotated(profile.celestial.haloColor), CONNECTOR_GREEN, CONNECTOR_GREEN_MIX),
+      CONNECTOR_MIN_LIGHTNESS,
+    );
+    const { r, g, b } = hexToRgb(base);
+
+    ctx.save();
+    for (const span of spans) {
+      const pts = hillCurve(span, dancy.pts, skyline, { descendPx: CONNECTOR_DESCEND_PX });
+      if (pts.length < 2) continue;
+      const alpha = CONNECTOR_ALPHA * span.depth01 * this.budget;
+      this.connectorDebug.alpha = Math.max(this.connectorDebug.alpha, alpha);
+      if (alpha < 0.01) continue;
+
+      // A band that follows the hills down and dissolves, not a fill to the
+      // floor: it bridges the gap the hidden ridge left, then hands the eye
+      // over to the range in front.
+      let topY = Infinity, footY = -Infinity;
+      for (const q of pts) { if (q.y < topY) topY = q.y; if (q.y > footY) footY = q.y; }
+      const bottom = Math.min(this.groundY + 40, footY + CONNECTOR_BAND_PX);
+      const grad = ctx.createLinearGradient(0, topY, 0, bottom);
+      grad.addColorStop(0, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
+      grad.addColorStop(0.55, `rgba(${r},${g},${b},${(alpha * 0.6).toFixed(3)})`);
+      grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.lineTo(pts[pts.length - 1].x, bottom);
+      ctx.lineTo(pts[0].x, bottom);
+      ctx.closePath();
+      ctx.fill();
     }
     ctx.restore();
   }

@@ -21,6 +21,7 @@ import {
 } from './PitchTracker.js';
 import { EnergyCurves } from './EnergyCurves.js';
 import { analyzeStructure } from './StructureAnalyzer.js';
+import { MIN_SECTION_CUT_GAP_MS, sectionCutBudget } from './sectionBudget.js';
 import { Role, makeNoteEvent, sortNoteEvents } from '../core/NoteEvent.js';
 import { Lane, melodyLaneForNote, laneForStemName, delegateByStemActivity } from '../core/Casting.js';
 import { clamp01 } from '../utils/math.js';
@@ -95,14 +96,14 @@ export function activityEnvelope(mono, sampleRate, rate = 86) {
  *   FILENAMES cast the characters (Casting.laneForStemName) and their
  *   per-moment loudness decides which stem owns each melodic/bass note.
  */
-export async function audioToTimeline(audioBuffer, { onProgress = null, userStems = null } = {}) {
+export async function audioToTimeline(audioBuffer, { onProgress = null, userStems = null, groove = null } = {}) {
   const stems = await separateStems(audioBuffer, (p) => onProgress?.({ phase: 'separate', progress: p }));
   onProgress?.({ phase: 'analyze', progress: 0 });
 
   const { rate, raw } = computeBandEnvelopes(stems);
   const normBands = normalizeBands(raw, rate);
 
-  const { O, onsets: rhythmOnsets } = detectRhythmOnsets(normBands, raw, rate, 1);
+  const { O, onsets: rhythmOnsets } = detectRhythmOnsets(normBands, raw, rate, 1, groove);
   const kickFrames = rhythmOnsets.filter((o) => o.kick).map((o) => o.frame);
   const tempo = estimateTempo(O, rate, kickFrames);
 
@@ -240,12 +241,18 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
   // pass for the labels. Reuses the pitchFeatures FFT already computed above,
   // so it costs one matrix and no new analysis. BiomeManager prefers this
   // over its own band-energy novelty when the confidence clears its floor,
-  // and falls back otherwise -- MIDI and free-time audio never reach here.
+  // and falls back otherwise. MIDI and the demo timeline never reach here;
+  // free-time audio does, via the even-step fallback grid below.
   const structurePoints = barGrid.length >= 8
     ? barGrid.map((b) => b.ms)
     : (() => { const p = []; for (let t = 0; t < durationMs; t += 2000) p.push(t); return p; })();
+  // Section pacing is BiomeManager's call, not the analyzer's: pass its budget
+  // through rather than letting analyzeStructure fall back to its own defaults,
+  // so one set of constants governs both detectors and they can't drift apart.
   const structure = analyzeStructure({
     pointsMs: structurePoints, pitchFeatures, energyCurves, durationMs,
+    minGapMs: MIN_SECTION_CUT_GAP_MS,
+    maxCuts: sectionCutBudget(durationMs),
   });
 
   onProgress?.({ phase: 'done', progress: 1 });
