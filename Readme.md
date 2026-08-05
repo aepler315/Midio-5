@@ -1,4 +1,4 @@
-# Super Midio World
+# Super Maudio World
 
 A framework-free, audio-clock-mastered rhythm side-scroller. Drop in a MIDI
 file or an audio file (mp3/wav/flac) and the entire show — jumps, combos,
