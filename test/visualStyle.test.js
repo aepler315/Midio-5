@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { hexToRgb, rgbToHsl } from '../src/utils/color.js';
+
+const STEP_8BIT = 1 / 255;
 import {
   resolveVisualStyle, nextVisualStyle, styleDials, isRendered, styleLabel,
-  shiftLightness, STYLE_CLASSIC, STYLE_RENDERED,
+  shiftLightness, ensureMinLightness, STYLE_CLASSIC, STYLE_RENDERED,
 } from '../src/render/VisualStyle.js';
 import { bloomStrength } from '../src/render/Renderer.js';
 
@@ -48,4 +51,39 @@ test('bloomStrength is positive for house look', () => {
   assert.ok(b > 0);
   assert.ok(isRendered(STYLE_RENDERED));
   assert.ok(isRendered(STYLE_CLASSIC));
+});
+
+// --- ensureMinLightness: the ground must exist on every palette ----------
+
+test('ensureMinLightness leaves anything already bright enough untouched', () => {
+  assert.equal(ensureMinLightness('#4a3b71', 0.30), '#4a3b71');
+  assert.equal(ensureMinLightness('#ffffff', 0.30), '#ffffff');
+});
+
+test('ensureMinLightness lifts a near-black to the floor, keeping its hue', () => {
+  // CYBER's ground tone: the relative +0.14 lift still leaves it at 0.21,
+  // which is what let the darkest biomes read as no ground at all.
+  const lifted = ensureMinLightness('#0e365c', 0.30);
+  const before = rgbToHsl(...Object.values(hexToRgb('#0e365c')));
+  const after = rgbToHsl(...Object.values(hexToRgb(lifted)));
+  // One 8-bit channel step (1/255) of slack: the floor is applied in HSL
+  // and then quantized back into a hex triplet, so landing a shade under is
+  // rounding, not a miss.
+  assert.ok(after.l >= 0.30 - STEP_8BIT, `expected the floor, got ${after.l}`);
+  // Same rounding story as the lightness: a sub-degree drift is the hex
+  // quantization, not a hue shift.
+  assert.ok(Math.abs(after.h - before.h) < 1, `hue must survive the lift, ${before.h} -> ${after.h}`);
+});
+
+test('ensureMinLightness is idempotent and monotonic in the floor', () => {
+  const once = ensureMinLightness('#061428', 0.30);
+  assert.equal(ensureMinLightness(once, 0.30), once);
+  const higher = ensureMinLightness('#061428', 0.45);
+  const l = (h) => rgbToHsl(...Object.values(hexToRgb(h))).l;
+  assert.ok(l(higher) > l(once), 'a higher floor must lift further');
+});
+
+test('pure black gains lightness even with no hue to preserve', () => {
+  const lifted = ensureMinLightness('#000000', 0.30);
+  assert.ok(rgbToHsl(...Object.values(hexToRgb(lifted))).l >= 0.30 - STEP_8BIT);
 });
