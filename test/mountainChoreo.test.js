@@ -19,18 +19,31 @@ test('danceOffset stays bounded and never goes fully still', () => {
   assert.ok(sumAbs / n > 0.05, 'mountains should always breathe a little');
 });
 
-test('kicks lift every layer, near hills before far peaks', () => {
+test('kicks lift every layer, far peaks before near hills', () => {
   const near = DANCE_LAYERS.L5, far = DANCE_LAYERS.L2;
-  // 60 ms after the hit: the near layer is already bouncing…
-  const nearKick = kickEnv(60 - near.delaySec * 1000);
-  assert.ok(nearKick > 0.5, `near layer should be mid-bounce, got ${nearKick}`);
-  // …while the wave has not yet reached the far peaks.
+  // 60 ms after the hit: the far skyline is already bouncing…
   const farKick = kickEnv(60 - far.delaySec * 1000);
-  assert.equal(farKick, 0);
+  assert.ok(farKick > 0.5, `far layer should be mid-bounce, got ${farKick}`);
+  // …while the wave has not yet rolled forward to the near hills.
+  const nearKick = kickEnv(60 - near.delaySec * 1000);
+  assert.equal(nearKick, 0);
   // Bounce lifts (negative offset), scaled by the envelope.
-  const withKick = danceOffset(0, 0, 0, 1, near);
-  const without = danceOffset(0, 0, 0, 0, near);
+  const withKick = danceOffset(0, 0, 0, 1, far);
+  const without = danceOffset(0, 0, 0, 0, far);
   assert.ok(withKick < without, 'a kick must lift the range');
+});
+
+test('the dance gets bigger with distance -- the drama is in the BACK', () => {
+  // The whole point of the reversal: whatever sits closest to the camera
+  // must never be the thing moving most, or the foreground flaps while the
+  // horizon sits still.
+  const order = ['L5', 'L4', 'L3', 'L2']; // near -> far
+  for (let i = 1; i < order.length; i++) {
+    const nearer = DANCE_LAYERS[order[i - 1]], farther = DANCE_LAYERS[order[i]];
+    assert.ok(farther.waveAmp > nearer.waveAmp, `${order[i]} should heave more than ${order[i - 1]}`);
+    assert.ok(farther.bounceAmp > nearer.bounceAmp, `${order[i]} should bounce harder than ${order[i - 1]}`);
+    assert.ok(farther.delaySec < nearer.delaySec, `${order[i]} should lead ${order[i - 1]} on the kick`);
+  }
 });
 
 test('kickEnv snaps up fast and settles smoothly', () => {

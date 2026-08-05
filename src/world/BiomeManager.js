@@ -81,6 +81,40 @@ const BAND_COUNT = 7;
 const EQ_ATTACK_SEC = 0.08;
 const EQ_RELEASE_SEC = 0.6;
 const EQ_MAX_HEIGHT_FRAC = 0.4; // never exceed 40% of screen height, however excited the section is
+
+// --- Ridge volume: the dancing ranges read as MASS, not as flat cutouts ---
+// Sampling step (px) for the smooth crest polyline shared by the crest
+// stroke and the volume pass.
+const CREST_STEP_PX = 8;
+// A summit only earns shoulders if it stands this far (px) above the
+// saddles either side of it -- otherwise every ripple in the noise ridge
+// would sprout spurs and the skyline would turn to visual noise.
+const SHOULDER_MIN_PROMINENCE = 26;
+// ...and no two summits within this screen distance both get them.
+const SHOULDER_MIN_SPACING_PX = 190;
+const SHOULDER_MAX_PER_RANGE = 5;
+// The near spur runs this fraction of the summit's height out to the side
+// as it descends toward the viewer; the far one is shorter and fades out.
+const SHOULDER_NEAR_RUN = 0.62;
+const SHOULDER_FAR_RUN = 0.42;
+// How far a spur descends, as a multiple of its summit's own prominence.
+// Big near summits reach the ground band on their own account; small
+// distant ones stay local instead of streaking across the frame.
+const SHOULDER_RELIEF_RUN = 2.4;
+// Deliberately quieter than the crest line itself (which strokes at up to
+// 0.38): these are interior form, and reading them as a second skyline is
+// exactly the noise we're avoiding.
+const SHOULDER_FACET_ALPHA = 0.22;
+const SHOULDER_LINE_ALPHA = 0.20;
+// The same warm catch-light generateSilhouette bakes along the skyline, so
+// a spur's lit edge reads as the same sun striking the same rock.
+const SHOULDER_LIT = '#fff8e6';
+// How hard the volume pass leans on each range. Follows the dance ordering
+// (MountainChoreo.DANCE_LAYERS): the far skyline is the dramatic one, so it
+// gets the most sculpting, and the near hills only enough to stop reading
+// as flat cutouts. L5 sits right behind the characters -- anything strong
+// there competes with them for attention.
+const RIDGE_VOLUME_STRENGTH = { L2: 1.0, L3: 0.85, L4: 0.6, L5: 0.4 };
 const MILESTONE_METEOR_BASE = [5, 8, 14];
 const DROP_METEOR_BASE = 12;
 const ACHROMATIC_SAT_THRESHOLD = 0.08;
@@ -2509,6 +2543,9 @@ export class BiomeManager {
       this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX, yOff);
     } else {
       this._drawDancingStrip(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.terrainEnergy ?? 1);
+      // Volume before the crest: the skyline stroke has to sit on top of
+      // its own mountain's shading, not under it.
+      this._drawRidgeVolume(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, 1, A.terrainEnergy ?? 1);
       if ((layerKey === 'L4' || layerKey === 'L5') && A.edgeLight) {
         this._drawCrest(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.edgeLight, 1, A.terrainEnergy ?? 1);
       }
@@ -2517,6 +2554,7 @@ export class BiomeManager {
       ctx.globalAlpha = t;
       this._drawDancingStrip(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.terrainEnergy ?? 1);
       ctx.globalAlpha = 1;
+      this._drawRidgeVolume(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, t, B.terrainEnergy ?? 1);
       if ((layerKey === 'L4' || layerKey === 'L5') && B.edgeLight) {
         this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t, B.terrainEnergy ?? 1);
       }
@@ -2581,10 +2619,15 @@ export class BiomeManager {
    *  terraces) fixed to terrain positions -- making it the third, distinct
    *  equalizer alongside the horizon EQ and the spectrum massif. L5 keeps
    *  the plain unbroken crest (today's look, minus the tear). */
-  _drawCrest(ctx, canvas, strip, scrollX, yOff, layerKey, edgeLight, alpha, terrainEnergy = 1) {
-    if (!strip.ridge) return;
+  /** The smooth screen-space crest polyline for a dancing range, plus the
+   *  band it encloses. Extracted so the crest stroke and the volume pass
+   *  (depth gradient + peak shoulders) walk one identical curve -- if they
+   *  re-derived it separately, any drift between them would show up as the
+   *  shading peeling away from the skyline it is supposed to belong to. */
+  _crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy = 1) {
+    if (!strip.ridge) return null;
     const cfg = DANCE_LAYERS[layerKey];
-    if (!cfg) return;
+    if (!cfg) return null;
     const nowMs = this.tSec * 1000;
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
     const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0));
@@ -2597,17 +2640,27 @@ export class BiomeManager {
     const fever = this.fever || 0;
     const groove = this._danceGroove;
 
-    const pts = new Array(Math.ceil(canvas.width / 8) + 3);
+    const pts = new Array(Math.ceil(canvas.width / CREST_STEP_PX) + 3);
     let n = 0;
-    for (let x = -8; x <= canvas.width + 8; x += 8) {
+    for (let x = -CREST_STEP_PX; x <= canvas.width + CREST_STEP_PX; x += CREST_STEP_PX) {
       const stripX = scrollX + x;
       const u = (((stripX % w) + w) % w);
       const yR = ridgeYSmooth(strip.ridge, u) * scale;
       const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever) * terrainEnergy;
       const lift = (isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
-      pts[n++] = { x, y: baseY + yR + dy - lift, lift };
+      pts[n++] = { x, y: baseY + yR + dy - lift, lift, stripX };
     }
     pts.length = n;
+    // The strips are blitted from baseY down over `dh`, so this is where the
+    // range's body actually ends and the ground band swallows it.
+    return { pts, baseY, bottomY: baseY + dh };
+  }
+
+  _drawCrest(ctx, canvas, strip, scrollX, yOff, layerKey, edgeLight, alpha, terrainEnergy = 1) {
+    const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy);
+    if (!geom) return;
+    const { pts } = geom;
+    const isGeo = layerKey === 'L4';
 
     ctx.save();
     if (isGeo) {
@@ -2644,6 +2697,184 @@ export class BiomeManager {
       }
     }
     ctx.restore();
+  }
+
+  /** Summits worth sculpting: local maxima of the crest whose prominence
+   *  (height above the lower of the two saddles flanking them) clears
+   *  SHOULDER_MIN_PROMINENCE, thinned so no two sit closer than
+   *  SHOULDER_MIN_SPACING_PX and only the tallest few survive. Prominence
+   *  rather than a bare local-max test is the whole point: on a noise ridge
+   *  every third sample is a local max, and spurring all of them is how you
+   *  turn a mountain range into a hairball. */
+  _ridgePeaks(pts) {
+    const cands = [];
+    for (let i = 1; i < pts.length - 1; i++) {
+      if (!(pts[i].y < pts[i - 1].y && pts[i].y <= pts[i + 1].y)) continue;
+      // Walk out both ways to the saddle before the ground rises again.
+      let l = i, lo = pts[i].y;
+      while (l > 0 && pts[l - 1].y >= pts[l].y) { l--; lo = Math.max(lo, pts[l].y); }
+      let r = i, ro = pts[i].y;
+      while (r < pts.length - 1 && pts[r + 1].y >= pts[r].y) { r++; ro = Math.max(ro, pts[r].y); }
+      const prominence = Math.min(lo, ro) - pts[i].y;
+      if (prominence >= SHOULDER_MIN_PROMINENCE) cands.push({ i, prominence });
+    }
+    cands.sort((a, b) => b.prominence - a.prominence);
+    const kept = [];
+    for (const c of cands) {
+      if (kept.length >= SHOULDER_MAX_PER_RANGE) break;
+      if (kept.some((k) => Math.abs(pts[k.i].x - pts[c.i].x) < SHOULDER_MIN_SPACING_PX)) continue;
+      kept.push(c);
+    }
+    return kept;
+  }
+
+  /**
+   * Gives a dancing range its third dimension. Two things, both live over
+   * the blitted strip:
+   *
+   * 1. A depth gradient anchored to the SCREEN rather than to the strip
+   *    bitmap. The baked gradient inside each strip is shifted per dance
+   *    column (_drawDancingStrip blits in DANCE_COL_W slices, each at its
+   *    own vertical offset), so at every column boundary the same screen row
+   *    lands on a different part of that gradient -- a hard vertical shade
+   *    step every 128px, marching across the range as it dances. Re-laying
+   *    the gradient in screen space over the whole body restores one
+   *    continuous shade across all of them.
+   *
+   * 2. Shoulders on the summits: from each peak, a spur descending toward
+   *    the viewer all the way into the ground band, and a shorter one
+   *    running away from us that fades out before it lands. The facet
+   *    between the near spur and the skyline is shaded, which is what
+   *    actually turns the silhouette into a solid -- a ridge line with a
+   *    flat fill under it reads as a paper cutout no matter how nicely it
+   *    moves. Kept well under the crest's own contrast so the skyline stays
+   *    the thing you read first.
+   */
+  _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1) {
+    const strength = RIDGE_VOLUME_STRENGTH[layerKey] ?? 0;
+    if (strength <= 0) return;
+    const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy);
+    if (!geom) return;
+    const { pts, bottomY } = geom;
+    let crestY = Infinity;
+    for (const p of pts) if (p.y < crestY) crestY = p.y;
+    if (!(bottomY > crestY)) return;
+
+    // The body path: the skyline, then straight down and back along the
+    // range's own bottom edge.
+    const body = new Path2D();
+    body.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) body.lineTo(pts[i].x, pts[i].y);
+    body.lineTo(pts[pts.length - 1].x, bottomY);
+    body.lineTo(pts[0].x, bottomY);
+    body.closePath();
+
+    ctx.save();
+    ctx.clip(body);
+
+    // Screen-anchored depth: catch the light along the crest, sink the
+    // foot, leave the middle alone. Deliberately NOT a repaint in the
+    // biome's own color -- the strips are already haze-mixed toward the sky
+    // by distance, and re-filling them with a lightened silhouette hue
+    // throws that away (a saturated palette turns into a slab of neon).
+    // Just as deliberately not a pure darkening either: these scenes are
+    // already dim, and the complaint being answered here is that the ranges
+    // are hard to READ, so the pass has to add contrast without spending
+    // overall brightness to get it.
+    const grad = ctx.createLinearGradient(0, crestY, 0, bottomY);
+    grad.addColorStop(0, `rgba(255,250,240,${(0.11 * alpha * strength).toFixed(3)})`);
+    grad.addColorStop(0.34, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, `rgba(0,0,0,${(0.26 * alpha * strength).toFixed(3)})`);
+    ctx.fillStyle = grad;
+    ctx.fill(body);
+
+    // Cheap enough (a handful of path fills, no offscreen buffers) that it
+    // only sheds on the very bottom rung -- this is the form of the
+    // mountain, not optional atmosphere like the phenomena layer.
+    if (!this._perf || this._perf.heavyPostFx) {
+      this._drawShoulders(ctx, pts, bottomY, alpha * strength);
+    }
+    ctx.restore();
+  }
+
+  /** The spurs themselves. Called already clipped to the range's body, so a
+   *  facet can be built generously and still never spill past the skyline. */
+  _drawShoulders(ctx, pts, bottomY, alpha) {
+    // Neutral shading, not a tinted one. These have to read the same on all
+    // seventeen palettes -- an ARCTIC blue and a SOLAR orange both just want
+    // their shadowed face darker and their lit edge caught, and mixing the
+    // biome's own hue back in only muddies whatever the sky already did.
+    const shade = '#000';
+    const lit = SHOULDER_LIT;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+
+    for (const { i, prominence } of this._ridgePeaks(pts)) {
+      const p = pts[i];
+      // A spur descends to ITS OWN summit's base, not to the world's ground
+      // -- sizing it off the drop to the ground band instead made every
+      // distant bump throw a 250px streak across the whole scene, which is
+      // precisely the "visually noisy" failure this is trying to avoid. A
+      // genuinely big near summit still reaches the ground, because its own
+      // relief is that tall; a small far one keeps its spur to itself.
+      const drop = Math.min(bottomY - p.y, prominence * SHOULDER_RELIEF_RUN);
+      if (drop <= 10) continue;
+      const footY = p.y + drop;
+      // Which way the near spur leans is a property of the SUMMIT, not of
+      // where it currently sits on screen -- keyed off strip-space x so a
+      // peak keeps the same face the whole time it scrolls past.
+      const s = Math.sin(p.stripX * 0.0137) >= 0 ? 1 : -1;
+      const nearRun = drop * SHOULDER_NEAR_RUN * s;
+      const farRun = drop * SHOULDER_FAR_RUN * -s;
+
+      // --- the face between the skyline and the near spur ---------------
+      const facet = new Path2D();
+      facet.moveTo(p.x, p.y);
+      // Follow the real skyline out to where the spur's foot lands, so the
+      // facet's upper edge IS the mountain's own outline.
+      const stepDir = s > 0 ? 1 : -1;
+      for (let k = i + stepDir; k >= 0 && k < pts.length; k += stepDir) {
+        facet.lineTo(pts[k].x, pts[k].y);
+        if ((pts[k].x - p.x) * stepDir >= Math.abs(nearRun)) break;
+      }
+      facet.lineTo(p.x + nearRun, footY);
+      facet.lineTo(p.x, footY);
+      facet.closePath();
+      ctx.fillStyle = shade;
+      ctx.globalAlpha = alpha * SHOULDER_FACET_ALPHA;
+      ctx.fill(facet);
+
+      // The spur's own edge -- a catch-light along the top of the ridge
+      // running at us, which is what sells it as an edge rather than a
+      // shadow with a straight side. Faded out along its length so it
+      // dissolves into the body instead of ending on a hard tip.
+      const { r, g, b } = hexToRgb(lit);
+      const nearFade = ctx.createLinearGradient(p.x, p.y, p.x + nearRun, footY);
+      nearFade.addColorStop(0, `rgba(${r},${g},${b},${(alpha * SHOULDER_LINE_ALPHA).toFixed(3)})`);
+      nearFade.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.strokeStyle = nearFade;
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.quadraticCurveTo(p.x + nearRun * 0.34, p.y + drop * 0.58, p.x + nearRun, footY);
+      ctx.stroke();
+
+      // --- the shoulder running away from us ----------------------------
+      // Shorter, shallower, and faded out before it reaches the bottom:
+      // it's meant to leave the frame into depth, not to land.
+      const farEndY = p.y + drop * 0.62;
+      const fade = ctx.createLinearGradient(p.x, p.y, p.x + farRun, farEndY);
+      fade.addColorStop(0, `rgba(${r},${g},${b},${(alpha * SHOULDER_LINE_ALPHA * 0.7).toFixed(3)})`);
+      fade.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.strokeStyle = fade;
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.quadraticCurveTo(p.x + farRun * 0.45, p.y + drop * 0.22, p.x + farRun, farEndY);
+      ctx.stroke();
+    }
   }
 
   /** One super-distant mountain that IS the spectrum: seven chunky bars —
