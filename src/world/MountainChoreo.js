@@ -5,20 +5,35 @@
 // canvas: BiomeManager consumes these, tests exercise them directly.
 import { clamp01 } from '../utils/math.js';
 
-/** Per-layer dance personalities. Near layers move more and bounce sooner;
- *  far layers follow a beat-fraction later — a crowd wave rolling into the
- *  distance. waveLen/phase are deliberately co-prime-ish across layers so
- *  the ranges never move in lockstep. */
-// Amplitudes cranked ~1.35x for a more dramatic dance (the ranges heave
-// harder on the groove and slam deeper on the kick).
+/** Per-layer dance personalities.
+ *
+ *  The drama belongs to the FAR ranges. This used to run the other way --
+ *  the nearest hills heaved hardest and bounced first, with the wave
+ *  rolling away into the distance -- and it read badly: the biggest, most
+ *  violent motion was the thing sitting closest to the camera, right behind
+ *  the characters, so the foreground flapped while the horizon sat still.
+ *  Reversed, the same choreography reads as intended: a huge slow skyline
+ *  heaving away in the distance, the ground underfoot comparatively steady,
+ *  and the kick wave rolling FORWARD out of the back of the scene.
+ *
+ *  waveLen/waveHz/phase stay as they were and are deliberately co-prime-ish
+ *  across layers, so the ranges never move in lockstep. */
 export const DANCE_LAYERS = {
-  L2: { waveAmp: 4.1, bounceAmp: 3.4, waveLen: 430, waveHz: 0.10, phase: 0.0, delaySec: 0.17 },
-  L3: { waveAmp: 6.1, bounceAmp: 5.4, waveLen: 350, waveHz: 0.12, phase: 1.3, delaySec: 0.11 },
-  L4: { waveAmp: 8.8, bounceAmp: 8.1, waveLen: 290, waveHz: 0.15, phase: 2.6, delaySec: 0.05 },
-  L5: { waveAmp: 11.5, bounceAmp: 10.8, waveLen: 250, waveHz: 0.18, phase: 4.0, delaySec: 0.0 },
+  L2: { waveAmp: 11.5, bounceAmp: 10.8, waveLen: 430, waveHz: 0.10, phase: 0.0, delaySec: 0.0 },
+  L3: { waveAmp: 8.8, bounceAmp: 8.1, waveLen: 350, waveHz: 0.12, phase: 1.3, delaySec: 0.05 },
+  L4: { waveAmp: 6.1, bounceAmp: 5.4, waveLen: 290, waveHz: 0.15, phase: 2.6, delaySec: 0.11 },
+  L5: { waveAmp: 4.1, bounceAmp: 3.4, waveLen: 250, waveHz: 0.18, phase: 4.0, delaySec: 0.17 },
 };
 
-export const DANCE_COL_W = 128; // strip-space slice width for the ridge wave
+// Strip-space slice width for the ridge wave. Halved from 128: each slice
+// is blitted at its own vertical offset, which also shifts the depth
+// gradient baked into the strip, so at every slice boundary the same screen
+// row samples a different part of that gradient -- a hard vertical shade
+// step marching across the range as it dances. The step scales with the
+// offset difference between neighbours, so narrower slices shrink it
+// proportionally (the crest stroke and GeoCrest's danceOffsetSmooth both
+// derive from this constant, so they follow automatically).
+export const DANCE_COL_W = 64;
 const IDLE_DRIVE = 0.15;        // the ranges never stand perfectly still
 
 /**
