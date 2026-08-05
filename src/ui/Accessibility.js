@@ -44,3 +44,27 @@ export function setBluetoothLatency(v) {
 export function capFlashAlpha(alpha, reducedFlash) {
   return reducedFlash ? Math.min(alpha, FLASH_CAP) : alpha;
 }
+
+// The groove fingerprint (GrooveFingerprint.js): the one piece of state that
+// survives across SONGS, not just across sessions. Everything else in this
+// file is a preference the player set; this one the engine learned.
+//
+// Note the key namespace: `smw:` with a colon, matching every other key here.
+// InputCalibration.js uses `smw-` hyphens for its two keys -- those are the
+// odd ones out, and are left alone rather than migrated, since renaming them
+// would silently discard every existing player's audio-latency calibration.
+const GROOVE_KEY = 'smw:groove';
+
+/** The saved profile blob, or null. Parsing/validation is
+ *  GrooveFingerprint.load's job -- it tolerates anything. */
+export function getStoredGroove() {
+  try { return localStorage.getItem(GROOVE_KEY); } catch { return null; }
+}
+
+export function setStoredGroove(profile) {
+  try { localStorage.setItem(GROOVE_KEY, JSON.stringify(profile.toJSON())); } catch { /* no persistent storage available */ }
+}
+
+export function clearStoredGroove() {
+  try { localStorage.removeItem(GROOVE_KEY); } catch { /* no persistent storage available */ }
+}

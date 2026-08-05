@@ -5,6 +5,10 @@ import { BANDS, ONSET_WEIGHTS } from './bands.js';
 import { clamp } from '../utils/math.js';
 
 const WIN = 1024, HOP = 512;
+// How much more like the player's low template than their high template an
+// onset must look before the learned split overrides the fixed one. A real
+// margin, not a hair: near the boundary the built-in rule is the safer answer.
+const PROFILE_DECIDE_MARGIN = 0.12;
 const MEDIAN_HALF_WINDOW = 43; // ~+-0.5s at ~86 frames/s
 const MIN_ONSET_GAP_MS = 60;
 const LOCAL_MAX_WINDOW_MS = 30;
@@ -133,6 +137,11 @@ function pickPeaks(O, theta, rate, minGapMs = MIN_ONSET_GAP_MS, localWindowMs = 
 }
 
 /**
+ * @param {object|null} [profile] a GrooveFingerprint. Optional and null by
+ *   default, so every existing caller classifies exactly as before. When
+ *   supplied AND warm, the player's own low/high templates decide the split
+ *   instead of the fixed shares.
+ *
  * RHYTHM onsets classified into KICK/SNARE/HAT by band-energy dominance
  * (spec §1.2.4). Onset flux/threshold run on the AGC-normalized bands (loud
  * and quiet mixes drive the same detector identically), but "dominance"
@@ -141,7 +150,7 @@ function pickPeaks(O, theta, rate, minGapMs = MIN_ONSET_GAP_MS, localWindowMs = 
  * longer reflects true energy distribution (a mostly-silent band's noise
  * floor gets amplified to look as "loud" as a genuinely dominant one).
  */
-export function detectRhythmOnsets(normBands, rawBands, rate, onsetThreshold = 1) {
+export function detectRhythmOnsets(normBands, rawBands, rate, onsetThreshold = 1, profile = null) {
   const O = weightedFluxSum(normBands, ONSET_WEIGHTS);
   const theta = medianAdaptiveThreshold(O, MEDIAN_HALF_WINDOW, onsetThreshold);
   const frames = pickPeaks(O, theta, rate);
@@ -168,7 +177,20 @@ export function detectRhythmOnsets(normBands, rawBands, rate, onsetThreshold = 1
     const lowShare = sum > 0 ? (e[0] + e[1]) / sum : 0;
     const highShare = sum > 0 ? (e[5] + e[6]) / sum : 0;
     let type, pitch, kick = false;
-    if (lowShare > 0.45) { type = 'KICK'; pitch = 36; kick = true; }
+    // The player's own templates win where they've earned it. `score` returns
+    // null until enough roled taps exist, so a cold profile leaves the fixed
+    // thresholds below completely untouched -- and even once warm, its say
+    // scales with sample count, so nothing lurches mid-song. The fixed rule is
+    // one set of numbers for every genre and every listener; what a drum'n'bass
+    // track calls a kick and what a folk record does are not the same event.
+    const learned = profile ? profile.score(e) : null;
+    const margin = learned
+      ? (learned.low * learned.lowStrength) - (learned.high * learned.highStrength)
+      : 0;
+    if (learned && Math.abs(margin) > PROFILE_DECIDE_MARGIN) {
+      if (margin > 0) { type = 'KICK'; pitch = 36; kick = true; }
+      else { type = 'HAT'; pitch = 42; }
+    } else if (lowShare > 0.45) { type = 'KICK'; pitch = 36; kick = true; }
     else if (highShare > 0.40) { type = 'HAT'; pitch = 42; }
     else { type = 'SNARE'; pitch = 38; }
     const trueLoudness = refGlobalSum > 1e-9 ? clamp(sum / refGlobalSum, 0, 1) : 0;

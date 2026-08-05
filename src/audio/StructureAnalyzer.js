@@ -45,6 +45,10 @@ const CHROMA_WEIGHT = 0.65, TIMBRE_WEIGHT = 0.35;
 // cross-similarity clears this. Deliberately strict -- a false merge makes a
 // verse wear the chorus's biome, which reads far worse than a missed repeat.
 const REPEAT_THRESHOLD = 0.82;
+// Ceiling on the confidence of a read that produced a single section, i.e.
+// found no boundaries at all. Must sit below BiomeManager's
+// SSM_CONFIDENCE_FLOOR so such a read can never win over the energy path.
+export const NO_STRUCTURE_CONFIDENCE = 0.2;
 // Below this many analysis points the SSM is too small for a checkerboard
 // kernel to mean anything; the caller should fall back.
 const MIN_POINTS = 3 * KERNEL_RADIUS;
@@ -262,7 +266,16 @@ export function analyzeStructure({
   const contrast = mean > 1e-9 ? clamp01((peak / mean - 1) / 2) : 0;
   const repeats = labels.length - new Set(labels).size; // how much material recurs
   const repeatBonus = clamp01(repeats / Math.max(1, labels.length - 1));
-  const confidence = clamp01(0.6 * contrast + 0.4 * repeatBonus);
+  let confidence = clamp01(0.6 * contrast + 0.4 * repeatBonus);
+
+  // Finding NO structure is not a confident answer. When every candidate was
+  // rejected we return the degenerate [0, last] -- a single section covering
+  // the whole song -- and `repeatBonus` is structurally 0 there (one label
+  // cannot recur), so contrast alone could still carry this to 0.6 and clear
+  // BiomeManager's acceptance floor. It would then *override* an energy-novelty
+  // read that had found real boundaries, and the song would wear one biome
+  // start to finish. A detector that found nothing must say so.
+  if (labels.length < 2) confidence = Math.min(confidence, NO_STRUCTURE_CONFIDENCE);
 
   return { boundariesMs, labels, cutIndices, novelty, confidence };
 }

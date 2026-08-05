@@ -16,10 +16,11 @@ import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
+import { ROLE_LOW, ROLE_HIGH, GrooveFingerprint } from './sim/GrooveFingerprint.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
 import {
   getReducedFlash, setReducedFlash, getLyricsDisabled, setLyricsDisabled,
-  getBluetoothLatency, setBluetoothLatency,
+  getBluetoothLatency, setBluetoothLatency, getStoredGroove, setStoredGroove,
 } from './ui/Accessibility.js';
 import {
   getVisualStyle, setVisualStyle as persistVisualStyle,
@@ -119,7 +120,13 @@ const recalibration = new RecalibrationOverlay({
   confFill: document.getElementById('recalConfFill'),
   status: document.getElementById('recalStatus'),
 });
-let recalNudgeHideAtMs = Infinity; // wall-clock auto-dismiss for the nudge
+let recalNudgeHideAtMs = Infinity;
+// Cross-song groove profile (GrooveFingerprint), rehydrated once at startup
+// and handed to every Simulation built afterwards.
+const groove = new GrooveFingerprint(getStoredGroove());
+let grooveSaveDue = false;
+let grooveSaveAtMs = 0;
+const GROOVE_SAVE_DEBOUNCE_MS = 2000; // wall-clock auto-dismiss for the nudge
 
 const conductor = new Conductor();
 const paramBus = new ParamBus();
@@ -655,6 +662,9 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
       // MIDI/demo/free-time, where BiomeManager keeps its own band-energy
       // novelty schedule.
       structure: timelineData.structure || null,
+      // The one piece of state that outlives the song: what previous
+      // sessions learned about how this player hears a beat.
+      groove,
       songSeed: pinned,
     });
   } catch (err) {
@@ -1005,6 +1015,9 @@ async function loadAudioFiles(files) {
   try {
     data = await audioToTimeline(audioBuffer, {
       userStems: isStemDrop ? decoded : null,
+      // Everything previous sessions learned about how this player splits a
+      // kick from a hat, applied to a song they've never played.
+      groove,
       onProgress: ({ phase, progress }) => {
         if (phase === 'separate') loadShow?.setStage(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`, progress);
         else if (phase === 'analyze') loadShow?.setStage('Detecting onsets, tempo, and downbeat…', 0.7);
@@ -1299,6 +1312,13 @@ function frame(tRaf) {
     if (tRaf >= recalNudgeHideAtMs) hideRecalNudge();
   }
 
+  // Debounced profile write: a burst of tapping is one save, not thirty.
+  if (grooveSaveDue && tRaf >= grooveSaveAtMs) {
+    grooveSaveDue = false;
+    grooveSaveAtMs = tRaf + GROOVE_SAVE_DEBOUNCE_MS;
+    setStoredGroove(groove);
+  }
+
   visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();
 
@@ -1412,9 +1432,13 @@ function seekSong(ms) {
 /** The player's own sense of "where's the beat" (BeatAnchor.js): stamped on
  *  the clock the EAR is on (visualNow), same discipline as every other
  *  beat-anchored cue in the sim. */
-function beatTap() {
+function beatTap(role = null) {
   if (!running || !sim || paused || !audioEngine) return;
-  sim.onBeatTap(visualNow(audioEngine.nowMs, audioEngine.outputLatencyMs));
+  sim.onBeatTap(visualNow(audioEngine.nowMs, audioEngine.outputLatencyMs), role);
+  // Persist on a roled tap only. Unroled catch-all taps move the anchor but
+  // teach the templates nothing, and writing storage on every stray keypress
+  // would be a lot of churn for no new information.
+  if (role) grooveSaveDue = true;
 }
 
 /** Show / hide the auto-prompt nudge (SyncMonitor). Deliberately quiet: it
@@ -1453,12 +1477,19 @@ recalNudgeDismissEl?.addEventListener('click', hideRecalNudge);
 // Mountain seekbar: click to seek; click a section to open its debug detail.
 // Anywhere else on the canvas -- not a button, not the seekbar -- resyncs
 // the player's beat anchor instead.
+// Right-click is the high hand, so the browser's own menu has to stay out of
+// the way -- otherwise every high tap on the canvas pops it open.
+canvas.addEventListener('contextmenu', (e) => { if (running && sim) e.preventDefault(); });
+
 canvas.addEventListener('pointerdown', (e) => {
   if (!running || !sim) return;
   const p = clientToStage(e);
   if (!p) return;
   const hit = renderer?.composer ? renderer.composer.hitTest(p.x, p.y, { width: STAGE_W, height: STAGE_H }) : null;
-  if (!hit) { beatTap(); return; }
+  // Mouse buttons mirror the keys: left pairs with F (low), right with J
+  // (high). Anything else (middle, back/forward) stays an unroled tap rather
+  // than being silently filed as one of the two hands.
+  if (!hit) { beatTap(e.button === 2 ? ROLE_HIGH : e.button === 0 ? ROLE_LOW : null); return; }
   e.preventDefault();
   if (hit.type === 'detail') return; // keep overlay open
   if (hit.type === 'strip') {
@@ -1500,7 +1531,15 @@ window.addEventListener('keydown', (e) => {
     if (recalibration.active) endRecalibration(); else startRecalibration();
     return;
   }
-  if (e.key === 'f' || e.key === 'F') { openFontModal('list'); return; }
+  // The two calibration hands. Always live -- there is no mode to enter and
+  // nothing to open first; the overlay (C) is guidance, not a gate. Both feed
+  // the beat anchor exactly as any tap always has, and additionally tell the
+  // groove fingerprint WHICH drum the player was answering, which is the part
+  // an anonymous timestamp could never carry.
+  if (e.key === 'f' || e.key === 'F') { beatTap(ROLE_LOW); return; }
+  if (e.key === 'j' || e.key === 'J') { beatTap(ROLE_HIGH); return; }
+  // Fonts moved off F to free the left hand for calibration.
+  if (e.key === 'g' || e.key === 'G') { openFontModal('list'); return; }
   if (e.key === 'r' || e.key === 'R') { toggleReducedFlash(); return; }
 
   if (e.key === 'p' || e.key === 'P') {

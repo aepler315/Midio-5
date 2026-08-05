@@ -163,3 +163,56 @@ test('quiet-intro / loud-chorus: EnergyCurves built from raw+reference reads the
   assert.ok(agcIntro > 0.5, `AGC: the intro alone should have decayed its own follower down to near its own peak, got ${agcIntro}`);
   assert.ok(Math.abs(agcChorus - agcIntro) < 0.5, `AGC: intro and chorus should read similarly against their own local followers, got intro ${agcIntro} vs chorus ${agcChorus}`);
 });
+
+// --- The groove profile supervising the classifier ------------------------
+//
+// detectRhythmOnsets splits KICK/HAT/SNARE on fixed band shares -- one set of
+// numbers for every listener and every genre. A warm GrooveFingerprint gets
+// to override that with what the player themselves calls low and high. The
+// non-negotiable property is that a cold profile changes nothing at all.
+
+import { GrooveFingerprint, ROLE_LOW, ROLE_HIGH } from '../src/sim/GrooveFingerprint.js';
+
+/** Band envelopes with a hit every `every` frames, shaped by `shape`. */
+function pulseBands(frames, every, shape) {
+  const raw = Array.from({ length: 7 }, () => new Float32Array(frames));
+  for (let i = 0; i < frames; i++) {
+    const hit = i % every === 0;
+    for (let b = 0; b < 7; b++) raw[b][i] = (hit ? shape[b] : shape[b] * 0.02) + 1e-4;
+  }
+  return raw;
+}
+
+test('a cold groove profile classifies byte-identically to no profile at all', () => {
+  const raw = pulseBands(600, 20, [0.7, 0.6, 0.2, 0.1, 0.05, 0.03, 0.02]);
+  const norm = normalizeBands(raw, 86);
+  const plain = detectRhythmOnsets(norm, raw, 86, 1);
+  const cold = detectRhythmOnsets(norm, raw, 86, 1, new GrooveFingerprint());
+  assert.equal(cold.onsets.length, plain.onsets.length);
+  for (let i = 0; i < plain.onsets.length; i++) {
+    assert.equal(cold.onsets[i].type, plain.onsets[i].type, `onset ${i} must not change`);
+    assert.equal(cold.onsets[i].kick, plain.onsets[i].kick);
+  }
+});
+
+test('a warm profile can reclassify a hit the fixed thresholds call a SNARE', () => {
+  // A mid-heavy hit: low share ~0.33 and high share ~0.25 both miss the fixed
+  // cutoffs, so the built-in rule files it as SNARE. A player who has spent
+  // the song tapping F on exactly this sound means it as their kick.
+  const shape = [0.20, 0.15, 0.25, 0.25, 0.12, 0.08, 0.05];
+  const raw = pulseBands(600, 20, shape);
+  const norm = normalizeBands(raw, 86);
+
+  const plain = detectRhythmOnsets(norm, raw, 86, 1);
+  assert.ok(plain.onsets.length > 0, 'fixture should produce onsets');
+  assert.ok(plain.onsets.every((o) => o.type === 'SNARE'), 'the fixed rule hears snares here');
+
+  const fp = new GrooveFingerprint();
+  for (let i = 0; i < 40; i++) fp.observe({ role: ROLE_LOW, bands: shape, tMs: i * 100, energyNorm: 0.5 });
+  for (let i = 0; i < 40; i++) {
+    fp.observe({ role: ROLE_HIGH, bands: [0.02, 0.03, 0.05, 0.1, 0.3, 0.8, 0.7], tMs: i * 100, energyNorm: 0.5 });
+  }
+
+  const taught = detectRhythmOnsets(norm, raw, 86, 1, fp);
+  assert.ok(taught.onsets.some((o) => o.kick), 'the player taught it that this is their kick');
+});
