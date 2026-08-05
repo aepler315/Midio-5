@@ -25,7 +25,7 @@ export const BIOMES = [
     silhouette: '#3d120b',
     celestial: { kind: 'sun', color: '#ff8a3c', radius: 50, haloColor: '#ffb37a', veiled: true },
     particles: { kind: 'embers', color: '#ff7a3c', count: 34, speed: 60 },
-    fx: 'heatShimmer',
+    fx: 'emberGlow',
     terrainEnergy: 1.2,
   },
   {
@@ -114,9 +114,9 @@ export const BIOMES = [
       ring: true,
       shape: { m: 7, n1: 0.85, n2: 1.25, n3: 1.25 },
     },
-    // Rising bioluminescent motes (reuses antigrav motion); curtains via aurora FX.
+    // Rising bioluminescent motes (reuses antigrav motion) with matching curtains.
     particles: { kind: 'antigrav', color: '#5cffd9', count: 38, speed: 16 },
-    fx: 'aurora',
+    fx: 'bioluminescence',
     terrainEnergy: 1.2,
   },
   {
@@ -151,7 +151,7 @@ export const BIOMES = [
       shape: { m: 9, n1: 0.6, n2: 1.4, n3: 1.4 },
     },
     particles: { kind: 'spores', color: '#9dffc8', count: 48, speed: 12 },
-    fx: 'starTwinkle',
+    fx: 'sporeGlow',
     terrainEnergy: 0.8,
   },
   {
@@ -160,7 +160,7 @@ export const BIOMES = [
     silhouette: '#2a1808',
     celestial: { kind: 'sun', color: '#ffcc66', radius: 52, haloColor: '#ffaa44', shafts: true },
     particles: { kind: 'petals', color: '#ff9a3c', count: 50, speed: 32 },
-    fx: 'petalPile',
+    fx: 'sunMotes',
     terrainEnergy: 0.85,
   },
   {
@@ -195,7 +195,7 @@ export const BIOMES = [
     },
     // Faceted sparkle: slow floating motes + starfield twinkle.
     particles: { kind: 'spores', color: '#e0b0ff', count: 44, speed: 9 },
-    fx: 'starTwinkle',
+    fx: 'crystalGlint',
     terrainEnergy: 1.28,
   },
 ];

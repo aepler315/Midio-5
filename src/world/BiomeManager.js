@@ -1430,6 +1430,14 @@ export class BiomeManager {
       const alpha = (A.fx === 'sunMotes' ? 1 - t : 0) + (B.fx === 'sunMotes' ? t : 0);
       if (alpha > 0.02) this._drawSunMotes(ctx, canvas, alpha, t > 0.5 ? B : A);
     }
+    if (A.fx === 'crystalGlint' || B.fx === 'crystalGlint') {
+      const alpha = (A.fx === 'crystalGlint' ? 1 - t : 0) + (B.fx === 'crystalGlint' ? t : 0);
+      if (alpha > 0.02) this._drawCrystalGlint(ctx, canvas, alpha, t > 0.5 ? B : A);
+    }
+    if (A.fx === 'emberGlow' || B.fx === 'emberGlow') {
+      const alpha = (A.fx === 'emberGlow' ? 1 - t : 0) + (B.fx === 'emberGlow' ? t : 0);
+      if (alpha > 0.02) this._drawEmberGlow(ctx, canvas, alpha, t > 0.5 ? B : A);
+    }
     // Soft atmospheric + faint space-nebula wash (under stars).
     {
       const top = this._rotated(this.lerpCache.get(A.sky[0], B.sky[0], t));
@@ -1699,6 +1707,63 @@ export class BiomeManager {
       ctx.fillStyle = col;
       ctx.beginPath();
       ctx.arc(x, y, 1.4 + 1.2 * twinkle, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** Sharp four-point flare glints for GEODE -- faceted crystal catching
+   *  light at hard angles, unlike starTwinkle's soft round dots: each glint
+   *  is a thin cross flare that snaps to full brightness and decays, never
+   *  a smooth pulse. */
+  _drawCrystalGlint(ctx, canvas, alpha, profile) {
+    const col = profile?.particles?.color || '#e0b0ff';
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = col;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 14; i++) {
+      const seed = i * 7.234;
+      const x = canvas.width * ((Math.sin(seed) * 0.5 + 0.5));
+      const y = canvas.height * ((Math.cos(seed * 1.9) * 0.5 + 0.5) * 0.6);
+      const cyclePos = (this.tSec * 0.5 + i * 0.37) % 1;
+      const snap = Math.max(0, 1 - cyclePos * 4); // sharp attack, fast decay
+      if (snap <= 0.01) continue;
+      const len = 4 + 14 * snap;
+      ctx.globalAlpha = alpha * snap;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(x - len, y); ctx.lineTo(x + len, y);
+      ctx.moveTo(x, y - len); ctx.lineTo(x, y + len);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Rising cinders with a trailing streak for EMBER -- hotter and faster
+   *  than sporeGlow's slow drift, with a directional tail so it reads as
+   *  fire rather than bioluminescence. */
+  _drawEmberGlow(ctx, canvas, alpha, profile) {
+    const col = profile?.particles?.color || '#ff7a3c';
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 16; i++) {
+      const phase = i * 1.7;
+      const x = canvas.width * ((i * 0.083 + 0.03) % 1) + Math.sin(this.tSec * 2 + phase) * 10;
+      const rise = (this.tSec * 30 + i * 41) % (canvas.height * 0.75);
+      const y = canvas.height * 0.9 - rise;
+      const flicker = 0.5 + 0.5 * Math.sin(this.tSec * 5 + phase);
+      ctx.strokeStyle = col;
+      ctx.globalAlpha = alpha * (0.3 + 0.4 * flicker);
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 3, y + 12 + 6 * flicker);
+      ctx.stroke();
+      ctx.fillStyle = col;
+      ctx.globalAlpha = alpha * (0.5 + 0.5 * flicker);
+      ctx.beginPath();
+      ctx.arc(x, y, 1.4 + flicker, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();

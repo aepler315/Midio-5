@@ -45,7 +45,7 @@ const SPEED_LINE_MAX_ALPHA = 0.35;
 const BLOOM_DOWNSCALE = 3;       // offscreen buffers render at 1/3 resolution
 const BLOOM_BLUR_PX = 7;         // blur radius AT that downsampled scale
 const BLOOM_THRESHOLD_PASSES = 2; // self-multiply passes: c^(2^passes)
-export const BLOOM_BASE = 0.23;  // steady glow present even at rest -- never flash-capped (raised for a more luminous, dramatic frame)
+export const BLOOM_BASE = 0.322; // steady glow present even at rest -- never flash-capped (0.23 base * the house look's 1.4 bloomBaseMul, folded in now that there's only one style)
 // Headroom above the base must clear FLASH_CAP (Accessibility.js) with
 // margin, or reduced-flash's own cap on the reactive term would be masked
 // by this ceiling clipping first -- the whole point of capping the
@@ -578,7 +578,7 @@ export class Renderer {
   _drawBloom(ctx, canvas, sim) {
     const perf = sim.perf;
     if (perf && !perf.bloomEnabled) return;
-    const strength = bloomStrength(sim.hype, sim.fever, !!sim.reducedFlash, sim.visualStyle);
+    const strength = bloomStrength(sim.hype, sim.fever, !!sim.reducedFlash);
     if (strength <= 0.005) return;
 
     const wSmall = Math.max(1, Math.round(canvas.width / BLOOM_DOWNSCALE));
@@ -894,13 +894,12 @@ export class Renderer {
  * the pulsing on drops/kicks while the base glow stays intact. Clamped to
  * BLOOM_MAX so a maxed-out drop-during-fever never blows the frame out.
  */
-export function bloomStrength(hype, fever, reducedFlash = false, visualStyle = 'classic') {
+export function bloomStrength(hype, fever, reducedFlash = false) {
   const slam = hype ? hype.slam : 0;
   const surge = hype ? hype.surge : 0;
   const feverLevel = fever ? fever.level : 0;
   const reactive = capFlashAlpha(0.45 * slam + 0.35 * surge + 0.3 * feverLevel, reducedFlash);
-  const base = BLOOM_BASE * styleDials(visualStyle).bloomBaseMul;
-  return Math.min(BLOOM_MAX, base + reactive);
+  return Math.min(BLOOM_MAX, BLOOM_BASE + reactive);
 }
 
 /** Drop impact envelope: 1 right at the drop, easing to 0 over

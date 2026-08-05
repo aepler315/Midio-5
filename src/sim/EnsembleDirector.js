@@ -282,7 +282,9 @@ export class EnsembleDirector {
     this.anchors[0].x = clamp(this.anchors[0].x, this.w * 0.14, this.w * 0.58); // Midio: gameplay window
     this.anchors[1].x = clamp(this.anchors[1].x, this.w * 0.05, this.w * 0.78); // Broshi: prefers left floor
     this.anchors[2].x = clamp(this.anchors[2].x, this.w * 0.34, this.w * 0.92); // Midasus: sky-right (floor raised from 0.22 -- kept her out of Midio's gameplay window)
-    this.anchors[2].y = this.h * 0.28 - this.spread * 0.12 + this.anchors[2].y * 2;
+    // Midasus: sky-high but never off the top edge -- a wide formation
+    // spread could otherwise push her y negative (above the stage entirely).
+    this.anchors[2].y = clamp(this.h * 0.28 - this.spread * 0.12 + this.anchors[2].y * 2, this.h * 0.05, this.h * 0.7);
   }
 
   phase(i) { return this.theta[i]; }

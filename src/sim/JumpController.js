@@ -113,29 +113,24 @@ export function scheduledJumpD(takeoffMs, nextKickMs, beatPeriodMs, anchor = nul
   const anchorLive = anchor != null && anchorConf > ANCHOR_MIN_CONFIDENCE;
 
   if (!anchorLive) {
-    // Landing target: the musical BEAT GRID first, not every raw kick.
-    // Chasing every onset made Midio stutter on dense drums and land off
-    // the pulse whenever a kick sat between beats. Now he aims for one (or
-    // two) beat-periods out; a kick only steals the landing when it is
-    // already near that grid point (or is a true short double-step hop).
+    // Land ON the next real, plausible kick -- including a syncopated one
+    // that doesn't sit on a clean beat multiple of the takeoff. An earlier
+    // version of this branch preferred the beat grid over an off-grid kick
+    // (to avoid chasing every onset on dense drums), but that silently
+    // broke the double-step feature this file documents at length: a
+    // syncopated back-to-back pair like [1224, 1901] landed on a
+    // beat-period guess (~1641) instead of the real 1901 kick -- the exact
+    // "sails past the kick into musical no-man's-land" bug the double-step
+    // work fixed. See test/jumpScheduling.test.js for the covered cases.
     const beat = Math.max(1, beatPeriodMs);
     const gridD = clamp(beat, D_MIN, D_MAX);
     const gap = nextKickMs != null ? nextKickMs - takeoffMs : NaN;
     if (!(gap >= LANDING_MIN_GAP_MS && gap <= 2000)) return gridD;
 
-    // Short double-step: keep landing on the nearby kick (low hop).
+    // Short double-step: land on the nearby kick even below D_MIN (low hop).
     if (gap < D_MIN) return Math.min(gap, D_MAX);
 
-    // Snap to the kick only when it sits close to a beat multiple of the takeoff.
-    const beats = gap / beat;
-    const nearest = Math.max(1, Math.round(beats));
-    const gridGap = nearest * beat;
-    if (Math.abs(gap - gridGap) <= Math.max(70, beat * 0.18)) {
-      return Math.min(Math.max(gap, LANDING_MIN_GAP_MS), D_MAX);
-    }
-    // Off-grid kick: prefer the clean beat landing so his touchdowns feel
-    // planted on the pulse rather than yanked by every snare/hat-as-kick.
-    return gridD;
+    return Math.min(gap, D_MAX);
   }
 
   // Anchor-aware: blend the working beat toward the anchor's own period by

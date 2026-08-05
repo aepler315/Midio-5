@@ -19,7 +19,7 @@ test('ABYSS is a real biome with the same profile shape as every other biome', (
   assert.match(abyss.celestial.haloColor, /^#[0-9a-f]{6}$/i);
   assert.ok(abyss.celestial.ring);
   assert.ok(abyss.particles.kind && abyss.particles.count > 0);
-  assert.equal(abyss.fx, 'aurora');
+  assert.equal(abyss.fx, 'bioluminescence');
   assert.ok(BIOMES.some((b) => b.name === 'ABYSS'));
 });
 

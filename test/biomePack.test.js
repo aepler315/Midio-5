@@ -11,11 +11,11 @@ const PACK = ['DUNE', 'CORAL', 'LUMEN', 'AURUM', 'NEBULA', 'ABYSS', 'GEODE'];
 const EXPECTED = {
   DUNE: { fx: 'heatShimmer', kind: 'sand' },
   CORAL: { fx: 'godRays', kind: 'bubbles' },
-  LUMEN: { fx: 'starTwinkle', kind: 'spores' },
-  AURUM: { fx: 'petalPile', kind: 'petals' },
+  LUMEN: { fx: 'sporeGlow', kind: 'spores' },
+  AURUM: { fx: 'sunMotes', kind: 'petals' },
   NEBULA: { fx: 'nebulaBloom', kind: 'fireflies' },
-  ABYSS: { fx: 'aurora', kind: 'antigrav' },
-  GEODE: { fx: 'starTwinkle', kind: 'spores' },
+  ABYSS: { fx: 'bioluminescence', kind: 'antigrav' },
+  GEODE: { fx: 'crystalGlint', kind: 'spores' },
 };
 
 test('every pack biome has a valid profile shape', () => {
