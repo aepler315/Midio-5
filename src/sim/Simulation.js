@@ -23,6 +23,7 @@ import { HypeDirector } from './HypeDirector.js';
 import { VibeDirector } from './VibeDirector.js';
 import { epicBiasForKind } from '../lyrics/SectionFusion.js';
 import { EnsembleDirector } from './EnsembleDirector.js';
+import { BeatAnchor } from './BeatAnchor.js';
 import { ExcursionDirector } from './ExcursionDirector.js';
 import { ApotheosisDirector } from './ApotheosisDirector.js';
 import { KeyDirector } from './KeyDirector.js';
@@ -49,22 +50,6 @@ const WORLD_SPEED_PX_S = 220;
 const CLEAN_WINDOW_MS = 90;
 // v_ref = 2*Ha_max/(gamma*D_min) — the fastest "typical" landing (spec §2.2.1).
 const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
-// Bass-line air jumps: how far ahead (px) an upcoming obstacle must be
-// before an extra, non-charted air jump is allowed to retarget the arc --
-// the chart's own flawless schedule must never be put at risk for a beat
-// that's just decoration.
-const BASS_AIR_JUMP_SAFETY_PX = 260;
-
-/** Pure: is it safe to fire an extra bass-driven air jump right now, given
- *  the nearest upcoming obstacle (or null)? Safe when there's no obstacle
- *  ahead, or it's already behind, or it's far enough out that a retargeted
- *  arc has settled back onto the chart's own schedule well before Midio
- *  gets there. */
-export function bassAirJumpSafe(obstacle, worldX, safetyPx = BASS_AIR_JUMP_SAFETY_PX) {
-  if (!obstacle) return true;
-  const distancePx = obstacle.wx - worldX;
-  return distancePx < 0 || distancePx > safetyPx;
-}
 
 export class Simulation {
   constructor(conductor, paramBus, {
@@ -111,6 +96,14 @@ export class Simulation {
 
     this.midio = new Midio();
     this.jump = new JumpController(paramBus);
+    // Player beat-anchor (BeatAnchor.js): a tap anywhere marks where the
+    // player feels the pulse. It's a phase/period REFERENCE the ensemble
+    // and jump scheduler pull toward, alongside (never replacing) the
+    // chart -- see onBeatTap. The anchor's own live reference stays a
+    // fixed object for the sim's lifetime; JumpController reads its current
+    // fields on every call, so wiring it in once here is enough.
+    this.beatAnchor = new BeatAnchor(60000 / bpm);
+    this.jump.setAnchor(this.beatAnchor);
     // Landing-on-the-next-kick (JumpController.scheduledJumpD): the same
     // raw kick-time list NoteChart/JumpPlanner replay, so live launches and
     // retargets schedule onto the real next onset instead of only ever
@@ -261,7 +254,6 @@ export class Simulation {
     conductor.on('*', (evt) => {
       if (!this._midioAccentFilter(evt)) return;
       if (!this.jump.airborne) return;
-      if (!bassAirJumpSafe(this.obstacles.nearestAhead(this.worldX), this.worldX)) return;
       const grant = this.airSeq.tryConsume(evt.tMs);
       if (!grant) return;
       const performed = this.jump.airJump({ tMs: evt.tMs, vel: evt.vel }, grant.boostMul * 0.8, grant);
@@ -381,6 +373,16 @@ export class Simulation {
     this.pointer.lastMoveMs = this.timeMs;
   }
 
+  /** A player beat-tap (canvas click / almost-any-key), already stamped on
+   *  whatever clock main.js wants the anchor to reason in (visualNow --
+   *  "the clock the EAR is on"). Not a jump trigger: it only ever re-phases
+   *  the ensemble/jump scheduler toward wherever the player felt the beat.
+   *  The neutral splat is the only feedback -- no text overlay. */
+  onBeatTap(tMs) {
+    this.beatAnchor.tap(tMs);
+    this.impactFX.splat(this.worldX, this.midio.groundY);
+  }
+
   /** The Reel (Movement VI): live-toggle the reduced-flash accessibility
    *  setting, cascading to every consumer that caps its own flash alphas. */
   setReducedFlash(v) {
@@ -492,7 +494,16 @@ export class Simulation {
     this.snowCover = Math.max(this.weather.groundCover, biomeSnow, this.biomes.floodLevel01 || 0);
     this.broshi.traction = tractionFrom(this.snowCover);
     this.biomes.snowCover = this.snowCover;
-    this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs);
+    // Keep the anchor's notion of "the song's own beat" tracking the live
+    // chart tempo (JumpController's own kick EMA), so its ladder-snap
+    // reasoning stays meaningful across any mid-song tempo drift.
+    this.beatAnchor.setSongBeatMs(this.jump.beatPeriodMs, nowMs);
+    this.beatAnchor.update(nowMs);
+    this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs, this.beatAnchor, this.hype.buildUp);
+    // A scene transition is a rare cue for the whole trio to share a brief
+    // tumble accent (see EnsembleDirector.maybeTumble) -- one-frame lag
+    // against biomes.update() below is inaudible/invisible at 16ms.
+    if (this.biomes.sectionJustChanged) this.ensemble.maybeTumble(nowMs, this.biomes.lastTransitionStyle);
     // Midio roams toward his ensemble anchor -- slow, never gameplay-fast.
     const dxA = this.ensemble.anchors[0].x - this.midio.screenX;
     this.midio.screenX += Math.max(-30 * dtSec, Math.min(30 * dtSec, dxA));
@@ -564,19 +575,15 @@ export class Simulation {
       this.impactFX.splat(this.worldX, this.midio.groundY);
     }
 
-    const stumbled = this.obstacles.checkCollision(this.worldX, this.midio.halfWidth, this.jump.y);
-    if (stumbled) this.comboSystem.onStumble();
-
     this.comboSystem.update(nowMs, this.jump.beatPeriodMs);
 
     const worldSpeed = WORLD_SPEED_PX_S * this.paramBus.live.scrollSpeed;
     this.worldX += worldSpeed * dtSec;
 
     this.obstacles.update(nowMs, this.worldX, worldSpeed / 1000);
-    this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.obstacles, this.noteChart);
+    this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.noteChart);
     this.performer.update(
       nowMs, dtSec, this.midio, this.jump, this.comboSystem, this.calm.level, this.ensemble, this.judge.holdState,
-      this.obstacles.nearestAhead(this.worldX),
     );
     // Riding a hold: heel dust streams from the slide the whole way.
     if (this.judge.holdState.active && !this.jump.airborne) {
@@ -614,12 +621,17 @@ export class Simulation {
       interests: babyInterests, pointer: this.pointer,
       // Soft spacing: last-frame Broshi position (good enough for gentle push).
       broshiX: this.broshi.renderX, broshiY: this.midio.groundY - this.broshi.hopY - 20,
+      // Rare shared transition tumble (see EnsembleDirector.maybeTumble).
+      tumbleRotX: this.ensemble.rotX(2), tumbleRotY: this.ensemble.rotY(2),
+      // Shared build-up swell (EnsembleDirector.swell) -- see Broshi/Renderer for the other two.
+      swell: this.ensemble.swell(2),
     }, this.perf.particleMul, this.biomes.wind);
     // She's off on a voyage -> the ensemble's Kuramoto math should feel the
     // hole (this takes effect next frame; the weight eases over ~1.5s
     // regardless, so the one-step lag is inaudible/invisible).
     this.ensemble.setPresence(2, this.midasus.voyage.active ? 0 : 1);
     if (this.midasus.voyage.justLanded) { this.camera.shake(4); }
+    if (this.midasus.voyage.justLaunched) { this.camera.shake(4); }
     // The sky notices her presence: the celestial's mandala swells while
     // she's dancing around it, and the accumulated star atlas glints with
     // every beat for the rest of the song.
@@ -634,7 +646,7 @@ export class Simulation {
       this.midasus.voyage.detonateAtlas(nowMs);
       this.camera.shake(5);
     }
-    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.obstacles, this.worldX, this.midio.groundY, this.calm.level, {
+    this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.worldX, this.midio.groundY, this.calm.level, {
       trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
       // A true companion watches his hero: airborne state + height for the
       // "watch him fly" head-tilt and takeoff crouch, the landing/clean
@@ -648,6 +660,10 @@ export class Simulation {
       // shake-off flick in rain -- the same music-reactive weather layer
       // BiomeManager/Traction already read, just also reaching Broshi.
       weatherKind: this.weather.kind, weatherIntensity: this.weather.intensity,
+      // Rare shared transition tumble (see EnsembleDirector.maybeTumble).
+      tumbleRotX: this.ensemble.rotX(1), tumbleRotY: this.ensemble.rotY(1),
+      // Shared build-up swell (EnsembleDirector.swell) -- see Midasus/Renderer for the other two.
+      swell: this.ensemble.swell(1),
     }, this.groundField);
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);

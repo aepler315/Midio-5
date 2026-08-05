@@ -45,6 +45,41 @@ test('toBlocks (synced): a large gap between lines starts a new block; small gap
   assert.equal(blocks[0].endMs, 4000);
 });
 
+test('toBlocks (synced): realistic verse/chorus breathing gaps now split -- regression for songs collapsing into one giant block', () => {
+  // 8 song parts, each 5 lines ~2s apart (typical lyric pacing), separated
+  // by a 6s breath between parts. The old MUL=4 threshold (~8s off a ~2s
+  // median) never split on a 6s breath, so a real song's lyrics could
+  // collapse into a single block regardless of length.
+  const lines = [];
+  let t = 0;
+  for (let part = 0; part < 8; part++) {
+    for (let i = 0; i < 5; i++) {
+      lines.push({ tMs: t, text: `part${part}-line${i}` });
+      t += 2000;
+    }
+    t += 6000 - 2000; // the last in-part step already advanced 2000; land on a 6s gap
+  }
+  const blocks = toBlocks(lines, { synced: true });
+  assert.equal(blocks.length, 8, `expected one block per song part, got ${blocks.length}`);
+});
+
+test('toBlocks (synced): a block longer than the duration cap splits even with no single large gap', () => {
+  // 20 lines at a steady ~3s pace (57s total) -- no individual gap is large
+  // enough to trip the breathing-gap threshold, but the whole run is well
+  // past MAX_BLOCK_DURATION_MS and must still be split.
+  const lines = [];
+  let t = 0;
+  for (let i = 0; i < 20; i++) {
+    lines.push({ tMs: t, text: `line${i}` });
+    t += (i === 9) ? 3100 : 3000; // one marginally larger gap gives a clean split point
+  }
+  const blocks = toBlocks(lines, { synced: true });
+  assert.ok(blocks.length >= 2, `expected the oversized block to split, got ${blocks.length} block(s)`);
+  for (const b of blocks) {
+    assert.ok(b.endMs - b.startMs <= 40000, `block spans ${b.endMs - b.startMs}ms, expected <=40000ms`);
+  }
+});
+
 test('toBlocks: empty/degenerate input never throws', () => {
   assert.deepEqual(toBlocks([], { synced: true }), []);
   assert.deepEqual(toBlocks(null, { synced: false }), []);

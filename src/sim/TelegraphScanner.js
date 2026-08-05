@@ -1,10 +1,13 @@
 // Look-ahead telegraphing / proximity posture (spec §2.2.3). Squash-and-stretch
 // driven by anticipation phase a(t), snap-to-stretch on launch with a damped
-// spring relax, and a ground-line glint that sweeps toward upcoming obstacles.
+// spring relax, and a ground-line glint that sweeps in toward the next
+// scheduled takeoff (obstacles are purely ambient now -- nothing to avoid,
+// so the glint no longer seeks them).
 import { Role } from '../core/NoteEvent.js';
 import { clamp } from '../utils/math.js';
 
 const T_LOOK = 600; // ms
+const GLINT_LEAD_PX = 90; // how far ahead of Midio the glint starts its sweep in
 
 // Jump-timing juice: a deeper anticipation wind-up before takeoff, a
 // snappier launch stretch, and a landing "stick" -- a hard compress right on
@@ -29,7 +32,7 @@ export class TelegraphScanner {
     this._chartIdx = 0; // monotonic cursor into noteChart.notes (playback is seek-free)
   }
 
-  update(nowMs, conductor, midio, jump, impactFX, worldX, groundY, obstacles, noteChart = null) {
+  update(nowMs, conductor, midio, jump, impactFX, worldX, groundY, noteChart = null) {
     const dtSec = Math.max(0, (nowMs - this._lastMs) / 1000);
     this._lastMs = nowMs;
 
@@ -89,17 +92,12 @@ export class TelegraphScanner {
 
     if (a > 0.8 && !jump.airborne) impactFX.sputter(worldX, groundY, dtSec);
 
-    // Ground-line glint sweeping toward the nearest upcoming obstacle, timed
-    // to arrive exactly when the obstacle does (spec §2.2.3).
-    this.glintActive = false;
-    if (obstacles) {
-      const obs = obstacles.nearestAhead(worldX);
-      if (obs && obs.tMs - nowMs <= T_LOOK && obs.tMs - nowMs >= 0) {
-        const aObs = clamp(1 - (obs.tMs - nowMs) / T_LOOK, 0, 1);
-        const obsScreenX = obs.wx - worldX + midio.screenX;
-        this.glintScreenX = midio.screenX + (obsScreenX - midio.screenX) * aObs;
-        this.glintActive = true;
-      }
+    // Ground-line glint sweeping in toward Midio, timed to arrive exactly at
+    // the next scheduled takeoff (same anticipation phase `a` the crouch
+    // above already uses -- one shared "press now" cue, not two).
+    this.glintActive = nextOnsetMs !== null;
+    if (this.glintActive) {
+      this.glintScreenX = midio.screenX + GLINT_LEAD_PX * (1 - a);
     }
   }
 

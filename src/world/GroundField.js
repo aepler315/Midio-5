@@ -12,7 +12,12 @@ import { FLAT_WEIGHTS } from '../audio/bands.js';
 
 const SLICE_WIDTH_PX = 90;
 const NUM_BANDS = 7;
-const BAND_SHIFT = 3;
+// Adjacent slices read adjacent bands (a slow triangular sweep across the
+// band range, ~one full up-and-down every BAND_RAMP_PERIOD slices) instead
+// of a fixed modulo shift -- neighbours used to land on unrelated bands and
+// differ by up to the full RISE_AMPLITUDE_PX at every slice edge, reading as
+// a stair-stepped shuffle rather than coherent terrain.
+const BAND_RAMP_PERIOD = 2 * (NUM_BANDS - 1);
 const RISE_AMPLITUDE_PX = 30; // how far energy alone can lift a slice
 const SPRING_K = 40, SPRING_C = 12; // per-slice settle spring (critically-damped-ish)
 const RECOVER_C = 4; // reduced damping during recovery -> elastic overshoot
@@ -105,6 +110,16 @@ export function kickGlowAt(worldX, nowMs, glow) {
   return glow.strength * Math.exp(-tauLocal / GLOW_DECAY_TAU_SEC);
 }
 
+/** Triangular sweep across [0, NUM_BANDS-1] as `index` increases: 0..6..0,
+ *  each step exactly 1 apart, so consecutive slices always read spectrally
+ *  adjacent bands (a coherent rise/fall) instead of a fixed-shift modulo
+ *  scatter that could land neighbours on unrelated bands. Pure, exported for
+ *  tests. */
+export function triangularBandIndex(index, period = BAND_RAMP_PERIOD, numBands = NUM_BANDS) {
+  const m = ((index % period) + period) % period;
+  return m <= numBands - 1 ? m : period - m;
+}
+
 class Slice {
   constructor(index, worldXStart) {
     this.index = index;
@@ -130,7 +145,9 @@ export class GroundField {
     this._gagQueue = this._scheduleGags(durationMs, conductor?.barGrid, songSeed);
     this._activeGagSliceIdxs = null;
 
-    this._buzz = 0; // EMA of bass energy, driving a render-only micro-vibration
+    // A per-instance phase into the band ramp (see triangularBandIndex) so
+    // different songs don't all start their terrain sweep on the same band.
+    this._bandPhase = Math.floor(mulberry32(hashSeed(`${songSeed}:groundband`))() * BAND_RAMP_PERIOD);
     this._nowMs = 0;
     this._ripples = []; // active landing-ripple records, render-only (see impulse())
     this._glows = []; // active kick-glow records, render-only (see kickGlow())
@@ -269,8 +286,6 @@ export class GroundField {
     this._nowMs = nowMs;
     if (this._ripples.length) this._ripples = this._ripples.filter((r) => nowMs - r.startMs < RIPPLE_TOTAL_LIFE_MS);
     if (this._glows.length) this._glows = this._glows.filter((g) => nowMs - g.startMs < GLOW_TOTAL_LIFE_MS);
-    const bass = energyCurves ? clamp01(energyCurves.sample(1, nowMs)) : 0;
-    this._buzz += (1 - Math.exp(-dtSec / 0.12)) * (bass - this._buzz);
     const globalEnergy = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS)) : 0;
     this._groove += (1 - Math.exp(-dtSec / GROOVE_TAU_SEC)) * (globalEnergy - this._groove);
     this._spawnSlicesUpTo(worldX + LOOKAHEAD_PX);
@@ -279,7 +294,7 @@ export class GroundField {
 
     const baseTargetAlpha = 1 - Math.exp(-dtSec / BASE_TARGET_TAU_SEC);
     for (const s of this.slices) {
-      const bandIdx = (s.index + BAND_SHIFT) % NUM_BANDS;
+      const bandIdx = triangularBandIndex(s.index + this._bandPhase);
       const e = energyCurves ? clamp01(energyCurves.sample(bandIdx, nowMs)) : 0.3;
       const liveTarget = -e * RISE_AMPLITUDE_PX; // more energy -> ground rises to meet it
       if (!s._initialized) {
@@ -331,21 +346,17 @@ export class GroundField {
   }
 
   /** Rendering helper: slice rectangles visible across [worldX, worldX+screenWidth] in screen space.
-   * Includes a render-only bass buzz: a 13 Hz vertical shiver, phase-staggered
-   * across slices by the golden angle so it travels as a shimmer rather than
-   * the whole floor bouncing in lockstep. heightAt() (the physics reference)
-   * deliberately does NOT include it -- a 1-2px visual tremble is free, a
-   * trembling physics floor is not. */
+   * No independent render-only shiver here -- heightAt() (the physics
+   * reference) and this render path now agree on the same offset, so the
+   * line Midio actually stands on and the terrain drawn under him are the
+   * same line (a 13 Hz buzz previously desynced them, reading as jitter). */
   visibleBars(worldX, originX, screenWidth) {
     const bars = [];
-    const buzzAmp = 2.5 * this._buzz;
-    const wt = (this._nowMs / 1000) * 2 * Math.PI * 13;
     const settle = 1 - clamp01(this.flatten);
     for (const s of this.slices) {
       const screenXStart = s.worldXStart - worldX + originX;
       const screenXEnd = screenXStart + this.sliceWidth;
       if (screenXEnd < -20 || screenXStart > screenWidth + 20) continue;
-      const buzz = buzzAmp > 0.15 ? buzzAmp * Math.sin(wt + s.index * 2.39996) : 0;
       const ripple = this._rippleOffset(s.worldXStart, this._nowMs);
       const glow = this._glowAt(s.worldXStart, this._nowMs);
       // Groove wave: a slow traveling ripple keyed off the song's global
@@ -355,7 +366,7 @@ export class GroundField {
       const groove = this._groove > 0.02
         ? GROOVE_WAVE_AMPLITUDE_PX * this._groove * Math.sin(s.worldXStart / GROOVE_WAVELENGTH_PX + this._nowMs / 1000 * GROOVE_HZ * 2 * Math.PI)
         : 0;
-      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + (s.offset + ripple + groove) * settle + buzz, glow, groove: this._groove });
+      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + (s.offset + ripple + groove) * settle, glow, groove: this._groove });
     }
     return bars;
   }

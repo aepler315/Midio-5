@@ -33,6 +33,7 @@ import { resolveIdentity } from './lyrics/SongIdentity.js';
 import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
+import { visualNow } from './core/ChoreoClock.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -53,6 +54,10 @@ const resultsGridEl = document.getElementById('resultsGrid');
 const playAgainBtnEl = document.getElementById('playAgainBtn');
 const replaySameSeedBtnEl = document.getElementById('replaySameSeedBtn');
 const replayNewSeedBtnEl = document.getElementById('replayNewSeedBtn');
+const completeNewSeedRowEl = document.getElementById('completeNewSeedRow');
+const completeNewSeedInputEl = document.getElementById('completeNewSeedInput');
+const completeNewSeedStartBtnEl = document.getElementById('completeNewSeedStartBtn');
+const completeNewSeedCancelBtnEl = document.getElementById('completeNewSeedCancelBtn');
 const seedInputEl = document.getElementById('seedInput');
 const seedRandomBtnEl = document.getElementById('seedRandomBtn');
 const stageResEl = document.getElementById('stageRes');
@@ -61,9 +66,6 @@ const fpsHudEl = document.getElementById('fpsHud');
 const sfFileInputEl = document.getElementById('sfFileInput');
 const sfDirInputEl = document.getElementById('sfDirInput');
 const sfDirBtnEl = document.getElementById('sfDirBtn');
-const fontBarEl = document.getElementById('fontBar');
-const fontBarBtnEl = document.getElementById('fontBarBtn');
-const fontNameEl = document.getElementById('fontName');
 const settingsBtnEl = document.getElementById('settingsBtn');
 const pauseBtnEl = document.getElementById('pauseBtn');
 const stopBtnEl = document.getElementById('stopBtn');
@@ -120,7 +122,6 @@ let lastRafMs = null; // separate from lastNowMs (audio clock) -- tracks real rA
 let sf2Engine = null;
 let fontLibrary = null;
 let fontRecommender = null;
-let fontBarTimer = null;
 let rafHandle = null; // tracks the pending frame() call so a mid-song file
                        // drop can cancel the old loop instead of stacking a
                        // second one alongside it
@@ -386,18 +387,7 @@ function applyActiveFont(active) {
       sf2Engine.loadSf2(null);
     }
   }
-  if (fontNameEl) {
-    fontNameEl.textContent = active ? active.name : 'No font';
-  }
   renderFontModal();
-  pokeFontBar();
-}
-
-function pokeFontBar() {
-  if (!fontBarEl) return;
-  fontBarEl.classList.add('visible');
-  clearTimeout(fontBarTimer);
-  fontBarTimer = setTimeout(() => fontBarEl.classList.remove('visible'), 3000);
 }
 
 /** Renders the SoundFont switcher popup's current view: the visible-font
@@ -584,6 +574,7 @@ function stopTimeline() {
   }
   renderer = null;
   completePanelEl.classList.add('hidden');
+  completeNewSeedRowEl?.classList.add('hidden');
   debugOverlayEl.classList.add('hidden');
   auditionPanelEl?.classList.add('hidden');
 }
@@ -1160,9 +1151,8 @@ if (sfDirBtnEl) {
 
 // --- SoundFont switcher popup (§ replaces the old </>  cycler arrows,
 // which had no way to show *which* fonts exist or let you set any aside).
-// The pill in fontBar opens the visible-fonts list; the settings gear opens
-// straight to the hidden-fonts ("unhide") view.
-if (fontBarBtnEl) fontBarBtnEl.addEventListener('click', () => openFontModal('list'));
+// The settings gear opens straight to the hidden-fonts ("unhide") view; the
+// F key (below) opens the visible-fonts list.
 if (settingsBtnEl) settingsBtnEl.addEventListener('click', () => openFontModal('hidden'));
 if (fontModalCloseEl) fontModalCloseEl.addEventListener('click', () => closeFontModal());
 if (fontModalEl) {
@@ -1223,14 +1213,6 @@ if (fontModalDirBtnEl) {
     fontModalDirBtnEl.addEventListener('click', () => fontModalDirInputEl?.click());
   }
 }
-
-// §3 UX hardening: hover holds the bar open, mouse leave re-pokes
-if (fontBarEl) {
-  fontBarEl.addEventListener('mouseenter', () => clearTimeout(fontBarTimer));
-  fontBarEl.addEventListener('mouseleave', pokeFontBar);
-}
-// Mouse movement fades in the font bar during playback
-window.addEventListener('mousemove', () => { if (running) pokeFontBar(); });
 
 // --- Track visibility wiring ---
 if (trackBadgeBtnEl) trackBadgeBtnEl.addEventListener('click', () => toggleTrackList());
@@ -1396,13 +1378,23 @@ function seekSong(ms) {
   if (sim.timeMs != null) sim.timeMs = t;
 }
 
+/** The player's own sense of "where's the beat" (BeatAnchor.js): stamped on
+ *  the clock the EAR is on (visualNow), same discipline as every other
+ *  beat-anchored cue in the sim. */
+function beatTap() {
+  if (!running || !sim || paused || !audioEngine) return;
+  sim.onBeatTap(visualNow(audioEngine.nowMs, audioEngine.outputLatencyMs));
+}
+
 // Mountain seekbar: click to seek; click a section to open its debug detail.
+// Anywhere else on the canvas -- not a button, not the seekbar -- resyncs
+// the player's beat anchor instead.
 canvas.addEventListener('pointerdown', (e) => {
-  if (!running || !sim || !renderer?.composer) return;
+  if (!running || !sim) return;
   const p = clientToStage(e);
   if (!p) return;
-  const hit = renderer.composer.hitTest(p.x, p.y, { width: STAGE_W, height: STAGE_H });
-  if (!hit) return;
+  const hit = renderer?.composer ? renderer.composer.hitTest(p.x, p.y, { width: STAGE_W, height: STAGE_H }) : null;
+  if (!hit) { beatTap(); return; }
   e.preventDefault();
   if (hit.type === 'detail') return; // keep overlay open
   if (hit.type === 'strip') {
@@ -1445,10 +1437,20 @@ window.addEventListener('keydown', (e) => {
     fpsHudEl?.classList.toggle('hidden', !fpsHudVisible);
     return;
   }
-  if (!debugOverlay) return;
-  if (e.key === '`') { debugOverlay.toggle(); }
-  else if (e.key === 'v' || e.key === 'V') { debugOverlay.toggleVision(); }
-  else if (e.key === 't' || e.key === 'T') { toggleTrackList(); }
+  if (debugOverlay) {
+    if (e.key === '`') { debugOverlay.toggle(); return; }
+    if (e.key === 'v' || e.key === 'V') { debugOverlay.toggleVision(); return; }
+    if (e.key === 't' || e.key === 'T') { toggleTrackList(); return; }
+  }
+  // Reserved regardless of whether the debug overlay happens to be up yet.
+  if (e.key === '`' || e.key === 'v' || e.key === 'V' || e.key === 't' || e.key === 'T') return;
+
+  // Almost any other key resyncs the player's beat anchor (BeatAnchor.js) --
+  // ignore held-key auto-repeat, modifier chords, and typing into a field.
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const activeTag = document.activeElement?.tagName;
+  if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
+  beatTap();
 });
 
 /** The Reel (Movement VI): live-toggle + persist the reduced-flash
@@ -1545,16 +1547,34 @@ if (filmstripModalEl) {
 
 playAgainBtnEl?.addEventListener('click', () => backToTitle());
 
+// Replay seed: exactly the run that just played, nothing else in the mix.
 replaySameSeedBtnEl?.addEventListener('click', () => {
-  if (lastSongSeed != null) setSeedInput(lastSongSeed);
-  replaySong({ songSeed: lastSongSeed ?? readPinnedSeed() });
+  replaySong({ songSeed: lastSongSeed });
 });
 
+// New seed: prompt for one inline on the card, then replay with it.
 replayNewSeedBtnEl?.addEventListener('click', () => {
-  const s = randomizeSeed();
-  lastSongSeed = s;
-  if (completeSeedEl) completeSeedEl.textContent = formatSeed(s);
+  if (!completeNewSeedRowEl || !completeNewSeedInputEl) { replaySong({ songSeed: randomizeSeed() }); return; }
+  completeNewSeedInputEl.value = formatSeed((Math.random() * 0x100000000) >>> 0);
+  completeNewSeedRowEl.classList.remove('hidden');
+  completeNewSeedInputEl.focus();
+  completeNewSeedInputEl.select();
+});
+
+completeNewSeedCancelBtnEl?.addEventListener('click', () => {
+  completeNewSeedRowEl?.classList.add('hidden');
+});
+
+completeNewSeedStartBtnEl?.addEventListener('click', () => {
+  const parsed = parseSeed(completeNewSeedInputEl?.value);
+  const s = parsed != null ? parsed : (Math.random() * 0x100000000) >>> 0;
+  completeNewSeedRowEl?.classList.add('hidden');
   replaySong({ songSeed: s });
+});
+
+completeNewSeedInputEl?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); completeNewSeedStartBtnEl?.click(); }
+  else if (e.key === 'Escape') { e.preventDefault(); completeNewSeedCancelBtnEl?.click(); }
 });
 
 copySeedBtnEl?.addEventListener('click', async () => {

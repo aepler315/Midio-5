@@ -125,12 +125,6 @@
         </div>
       </div>
     </div>
-    <div id="fontBar">
-      <button id="fontBarBtn" type="button" title="SoundFonts (F)">
-        <span id="fontName">No font</span>
-      </button>
-    </div>
-
     <div id="auditionPanel" class="panel hidden">
       <h1 id="auditionHeading">PULLING THE RECORDING APART</h1>
       <canvas id="auditionCanvas" width="420" height="220"></canvas>
@@ -190,6 +184,12 @@
           <button id="replaySameSeedBtn" type="button">Replay seed</button>
           <button id="replayNewSeedBtn" type="button" class="ghostbtn">New seed</button>
           <button id="playAgainBtn" type="button" class="ghostbtn">Title</button>
+        </div>
+        <div id="completeNewSeedRow" class="seedRow completeNewSeedRow hidden" title="Pick a seed for the replay.">
+          <label for="completeNewSeedInput">Seed</label>
+          <input id="completeNewSeedInput" type="text" spellcheck="false" autocomplete="off" placeholder="auto" maxlength="48" />
+          <button id="completeNewSeedStartBtn" type="button" class="ghostbtn chipbtn">Start</button>
+          <button id="completeNewSeedCancelBtn" type="button" class="ghostbtn chipbtn">Cancel</button>
         </div>
       </div>
     </div>

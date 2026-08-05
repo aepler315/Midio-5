@@ -585,6 +585,9 @@ html, body {
 .completeActions button {
   min-width: 120px;
 }
+.completeNewSeedRow {
+  margin-top: 2px;
+}
 
 /* Title seed + stage resolution */
 .seedRow, .resRow {
@@ -602,7 +605,7 @@ html, body {
   text-transform: uppercase;
   font-size: 0.72rem;
 }
-#seedInput {
+#seedInput, #completeNewSeedInput {
   width: min(160px, 40vw);
   background: rgba(255, 255, 255, 0.06);
   color: #e8e6f0;
@@ -613,7 +616,7 @@ html, body {
   font-size: 0.85rem;
   letter-spacing: 0.06em;
 }
-#seedInput:focus {
+#seedInput:focus, #completeNewSeedInput:focus {
   outline: none;
   border-color: rgba(255, 215, 106, 0.55);
   box-shadow: 0 0 0 2px rgba(255, 215, 106, 0.15);
@@ -773,45 +776,6 @@ html, body {
   padding: 4px 10px;
   font-size: 1rem;
   border-radius: 6px;
-}
-
-/* Auto-hiding SoundFont pill (bottom-center) — click to open the switcher
-   popup (#fontModal). */
-#fontBar {
-  position: absolute;
-  bottom: 96px; /* clears the composer strip, now bottom-anchored */
-  left: 50%;
-  transform: translateX(-50%);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s ease;
-  z-index: 6;
-}
-#fontBar.visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-#fontBarBtn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  background: rgba(5, 5, 10, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 24px;
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.85);
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-}
-#fontBarBtn:hover { border-color: #7ad1ff; color: #7ad1ff; }
-#fontName {
-  min-width: 100px;
-  max-width: 220px;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Track visibility badge (top-right of the HUD row) — click/tap or press T

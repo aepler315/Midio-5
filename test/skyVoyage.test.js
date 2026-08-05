@@ -44,8 +44,8 @@ test('trigger is a no-op while already active (self-guarded mutual exclusion)', 
 // Exact phase boundaries (elapsed seconds since trigger), so test
 // checkpoints can land deliberately just past each transition instead of
 // guessing durations and accumulating arithmetic error across calls.
-const T_WINDUP_END = 0.55;
-const T_ASCENT_END = T_WINDUP_END + 1.2;
+const T_WINDUP_END = 0.9;
+const T_ASCENT_END = T_WINDUP_END + 1.6;
 const T_DEEP_SPACE_END = T_ASCENT_END + 3 * 3.2;
 const T_REENTRY_END = T_DEEP_SPACE_END + 0.62;
 
@@ -98,7 +98,7 @@ test('figure switches happen roughly every 3.2s and cycle through exactly 3 figu
   const v = new SkyVoyage(4);
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 0.55 + 1.2 + 0.05); // clear windup + ascent
+  t = advance(v, t, 0.9 + 1.6 + 0.05); // clear windup + ascent
   assert.equal(v.phase, VoyagePhase.DEEP_SPACE);
   const idx0 = v._figureIdx;
   t = advance(v, t, 3.3);
@@ -169,7 +169,7 @@ test('a figure switch pens-up instead of drawing a straight morph chord', () => 
   v._figureOrder = ['lissajous', 'epicycle', 'superformula'];
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 0.55 + 1.2 + 3.2 + 0.05); // past first figure switch
+  t = advance(v, t, 0.9 + 1.6 + 3.2 + 0.05); // past first figure switch
   assert.ok(v._figureIdx >= 1);
   // No non-gap trail segment may be a long straight chord.
   let maxStep = 0;
@@ -199,7 +199,7 @@ test('completed figures freeze into constellations, capped and eventually expiri
   const v = new SkyVoyage(7);
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 0.55 + 1.2 + 3.3); // clear one figure switch
+  t = advance(v, t, 0.9 + 1.6 + 3.3); // clear one figure switch
   assert.ok(v.constellations.length >= 1, 'a completed figure should freeze into a constellation');
   const first = v.constellations[0];
   assert.ok(first.points.length >= 3);
@@ -217,7 +217,7 @@ test('forceEnd immediately begins reentry from any active phase', () => {
   const v = new SkyVoyage(8);
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 0.55 + 1.2 + 1); // now in deep space
+  t = advance(v, t, 0.9 + 1.6 + 1); // now in deep space
   assert.equal(v.phase, VoyagePhase.DEEP_SPACE);
   v.forceEnd(t);
   assert.equal(v.phase, VoyagePhase.REENTRY);
@@ -246,7 +246,7 @@ test('a melody onset in deep space retunes her to the pitch class: hue and Lissa
   const v = new SkyVoyage(20);
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 0.55 + 1.2 + 0.1);
+  t = advance(v, t, 0.9 + 1.6 + 0.1);
   assert.equal(v.phase, VoyagePhase.DEEP_SPACE);
 
   v.onMelodyOnset({ pitch: 64, vel: 0.8 }); // E -> pitch class 4
@@ -272,7 +272,7 @@ test('a pitch-class retune morphs the position rather than teleporting it', () =
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
   // Force the first figure to be a Lissajous so the retune actually applies.
   v._figureOrder = ['lissajous', 'lissajous', 'lissajous'];
-  t = advance(v, t, 0.55 + 1.2 + 1.5); // mid-figure
+  t = advance(v, t, 0.9 + 1.6 + 1.5); // mid-figure
   const before = { ...v.p };
   v.onMelodyOnset({ pitch: 66, vel: 0.9 }); // F# -> [5,3], very different from default [3,2]
   t = advance(v, t, 1 / 60); // a single ~frame later
@@ -284,7 +284,7 @@ test('onset phase-kicks accumulate smoothly, never as an instant time jump', () 
   const v = new SkyVoyage(23);
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 0.55 + 1.2 + 0.5);
+  t = advance(v, t, 0.9 + 1.6 + 0.5);
   assert.equal(v._kickSmooth, 0);
   v.onMelodyOnset({ pitch: 60, vel: 1.0 });
   assert.equal(v._kickSmooth, 0, 'the kick must not apply instantaneously');
@@ -300,7 +300,7 @@ test('figure switches do not stamp a teleport chord into the trail', () => {
   let t = 0;
   v.trigger(t, { x: 220, y: 480 }, 1280, 720);
   // Ride into deep space + past first figure boundary (FIGURE_SEC = 3.2).
-  t = advance(v, t, 0.55 + 1.2 + 3.2 + 0.05);
+  t = advance(v, t, 0.9 + 1.6 + 3.2 + 0.05);
   assert.equal(v.phase, VoyagePhase.DEEP_SPACE);
   assert.ok(v._figureIdx >= 1, 'should have advanced past the first figure');
   // Frame-to-frame steps along the live trail must stay continuous (gaps are
@@ -320,7 +320,7 @@ test('kick does not carry across figure boundaries', () => {
   v._figureOrder = ['lissajous', 'lissajous', 'lissajous'];
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 0.55 + 1.2 + 0.2);
+  t = advance(v, t, 0.9 + 1.6 + 0.2);
   for (let i = 0; i < 8; i++) v.onMelodyOnset({ pitch: 60 + i, vel: 1 });
   t = advance(v, t, 0.3);
   assert.ok(v._kickSmooth > 0, 'kicks active mid-figure');
@@ -336,7 +336,7 @@ test('kicks in deep space spawn a capped sparkle burst; kicks elsewhere are igno
   assert.equal(v.sparkles.length, 0, 'idle: no sparkles');
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 0.55 + 1.2 + 0.1);
+  t = advance(v, t, 0.9 + 1.6 + 0.1);
   v.onKick(0.9);
   assert.ok(v.sparkles.length >= 5, 'deep space: a burst appears');
   for (let i = 0; i < 20; i++) v.onKick(1.0); // spam
@@ -349,7 +349,7 @@ test('melody onsets in deep space cut micro-slashes that expire', () => {
   const v = new SkyVoyage(25);
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 0.55 + 1.2 + 0.1);
+  t = advance(v, t, 0.9 + 1.6 + 0.1);
   v.onMelodyOnset({ pitch: 62, vel: 0.7 });
   assert.equal(v.microSlashes.length, 1);
   for (let i = 0; i < 12; i++) v.onMelodyOnset({ pitch: 62 + i, vel: 0.7 });
@@ -377,7 +377,7 @@ test('landing resets the melody tuning for the next voyage', () => {
   const v = new SkyVoyage(27);
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 0.55 + 1.2 + 0.1);
+  t = advance(v, t, 0.9 + 1.6 + 0.1);
   v.onMelodyOnset({ pitch: 66, vel: 0.9 });
   assert.ok(v._liss, 'tuning is live mid-voyage');
   t = advance(v, t, 14); // run the voyage out
@@ -390,7 +390,7 @@ test('expired constellations crystallize into the atlas instead of vanishing', (
   const v = new SkyVoyage(50);
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 0.55 + 1.2 + 3.3); // one figure completes -> one bright constellation
+  t = advance(v, t, 0.9 + 1.6 + 3.3); // one figure completes -> one bright constellation
   assert.ok(v.constellations.length >= 1);
   assert.equal(v.atlas.length, 0, 'nothing crystallized yet');
 
@@ -517,7 +517,7 @@ test('position stays within a sane radius of the sky station throughout deep spa
   const v = new SkyVoyage(12);
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 0.55 + 1.2 + 0.1);
+  t = advance(v, t, 0.9 + 1.6 + 0.1);
   for (let i = 0; i < 9 * 120; i++) {
     t += STEP_MS;
     v.update(t, STEP_MS / 1000, 0.6, { x: 300, y: 250 });

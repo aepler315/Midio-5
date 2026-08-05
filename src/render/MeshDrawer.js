@@ -22,9 +22,24 @@ export function computeRestLengths(mesh) {
   });
 }
 
-/** Matches canvas composition order translate*rotate*scale applied to v. */
-export function applyTransform(v, { tx = 0, ty = 0, rot = 0, scaleX = 1, scaleY = 1 }) {
-  const sx = v.x * scaleX, sy = v.y * scaleY;
+/** Matches canvas composition order translate*rotate*scale applied to v.
+ *  rotX/rotY add an optional orthographic tumble (same math as SpaceRidge's
+ *  wireframe projection, mesh z implicit 0) applied before the flat rotate/
+ *  scale/translate: rotY foreshortens width as the glyph turns to face a
+ *  new direction, rotX foreshortens height as it tips forward/back. Both
+ *  default to 0 (a no-op, zero extra cost) -- meant for rare, brief
+ *  transition accents, not a resting pose. */
+export function applyTransform(v, { tx = 0, ty = 0, rot = 0, scaleX = 1, scaleY = 1, rotX = 0, rotY = 0 }) {
+  let vx = v.x, vy = v.y;
+  if (rotX !== 0 || rotY !== 0) {
+    const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+    const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+    const y1 = vy * cosX;
+    const z1 = vy * sinX;
+    vx = vx * cosY + z1 * sinY;
+    vy = y1;
+  }
+  const sx = vx * scaleX, sy = vy * scaleY;
   const cos = Math.cos(rot), sin = Math.sin(rot);
   return { x: tx + sx * cos - sy * sin, y: ty + sx * sin + sy * cos };
 }

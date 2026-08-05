@@ -22,6 +22,38 @@ const SPREAD_TAU = 2.8;   // formation changes drift, never snap
 const CENTROID_SPEED = 0.041; // rad/s of the roam ellipse -- slow
 const PRESENCE_TAU = 1.5; // seconds for a presence weight to ease toward its target
 
+// Transition tumble: a rare, brief 3D-ish turn (see MeshDrawer.applyTransform
+// rotX/rotY) the whole trio shares on a scene-change beat, staggered like a
+// wave so it reads as one choreographed move rather than three characters
+// spinning independently. Deliberately sparse -- an accent, not a tic.
+const TUMBLE_STAGGER_MS = 110;      // delay between Midio -> Broshi -> Midasus
+const TUMBLE_PEAK = [0.56, 0.46, 0.64]; // per-character peak angle (rad)
+const TUMBLE_CHANCE = 0.5;          // not every eligible transition tumbles
+const TUMBLE_COOLDOWN_MIN_MS = 9000, TUMBLE_COOLDOWN_RANGE_MS = 9000;
+
+// Player beat-anchor (BeatAnchor.js): a tap anywhere marks a phase/period
+// reference the trio pulls toward -- distinct, non-uniform per-character
+// offsets so they land near, but never ON, the same instant (the whole
+// point of "shouldn't sync to the same time as each other"). The pull is a
+// RATE, not a snap, and stacks on top of the existing Kuramoto coupling
+// above, so a low-K sad section still slips around the anchor instead of
+// locking dead to it.
+const ANCHOR_OFFSET = [0, 0.55, -0.42]; // rad, per character
+// Must comfortably outrun each character's own natural DETUNE (max 0.9
+// rad/s above) and the coupling force (up to ~K*R, K can reach ~3 at full
+// happy+epic) -- otherwise those forces fight the offsets themselves and
+// the "distinct per character" guarantee stops holding at some vibes.
+const ANCHOR_PULL_RATE = 8; // rad/s per rad of phase error, scaled by confidence
+const ANCHOR_MIN_CONFIDENCE = 0.05; // below this the anchor is treated as absent
+
+// Shared build-up swell: HypeDirector.buildUp (a crescendo read, not just
+// the rare drop-triggered surge) modulates a scale term every character
+// reads off the SAME theta[i] this class already publishes -- so during a
+// build-up they visibly swell together as one body when the vibe locks
+// them in phase, and in a visible traveling wave when it doesn't, instead
+// of three characters each pulsing to their own private clock.
+const SWELL_GAIN = 0.38;
+
 export class EnsembleDirector {
   constructor(seed = 1, { stageW = 1280, stageH = 720 } = {}) {
     const rand = mulberry32((seed ^ 0x3a7e) >>> 0 || 1);
@@ -45,6 +77,12 @@ export class EnsembleDirector {
     // "leaving the band" and "coming home" both read as physical transitions.
     this.weights = [1, 1, 1];
     this._targetWeights = [1, 1, 1];
+
+    this._rand = rand; // kept for later stochastic cues (e.g. tumble)
+    this._tumble = { active: false, startMs: -Infinity, durMs: 850, axis: 'y', dir: 1, cooldownUntilMs: 0 };
+    this._tumbleX = [0, 0, 0];
+    this._tumbleY = [0, 0, 0];
+    this._buildUp = 0; // HypeDirector.buildUp, read by swell(i)
   }
 
   /** Ease this performer's presence weight toward w01 (0..1) over ~1.5s. */
@@ -52,9 +90,58 @@ export class EnsembleDirector {
     this._targetWeights[i] = clamp01(w01);
   }
 
-  update(nowMs, dtSec, vibe, beatPeriodMs = 500) {
+  /** Call on a scene-transition boundary. Only cut/shutter beats are
+   *  eligible (fades are slow crossfades, not a snap moment), it's further
+   *  gated by chance and a long cooldown, so the tumble stays a rare accent
+   *  rather than a per-transition tic. */
+  maybeTumble(nowMs, transitionStyle) {
+    if (nowMs < this._tumble.cooldownUntilMs) return;
+    if (transitionStyle !== 'cut' && transitionStyle !== 'shutter') return;
+    if (this._rand() > TUMBLE_CHANCE) return;
+    this._tumble.active = true;
+    this._tumble.startMs = nowMs;
+    this._tumble.durMs = 620 + this._rand() * 320;
+    this._tumble.axis = this._rand() < 0.7 ? 'y' : 'x'; // mostly a turn, sometimes a tip
+    this._tumble.dir = this._rand() < 0.5 ? 1 : -1;
+    this._tumble.cooldownUntilMs = nowMs + TUMBLE_COOLDOWN_MIN_MS + this._rand() * TUMBLE_COOLDOWN_RANGE_MS;
+  }
+
+  /** Current tumble angle for character i (radians), 0 outside a move. */
+  rotX(i) { return this._tumbleX[i] || 0; }
+  rotY(i) { return this._tumbleY[i] || 0; }
+
+  _updateTumble(nowMs) {
+    const tb = this._tumble;
+    if (!tb.active) return;
+    let allDone = true;
+    for (let i = 0; i < 3; i++) {
+      const uRaw = (nowMs - (tb.startMs + i * TUMBLE_STAGGER_MS)) / tb.durMs;
+      const inWindow = uRaw >= 0 && uRaw <= 1;
+      if (uRaw < 1) allDone = false;
+      // Out-and-back pulse (0 at both ends) so the glyph always lands back
+      // on its normal flat pose -- never left mid-tumble.
+      const peak = inWindow ? tb.dir * TUMBLE_PEAK[i] * Math.sin(Math.PI * uRaw) : 0;
+      this._tumbleY[i] = tb.axis === 'y' ? peak : 0;
+      this._tumbleX[i] = tb.axis === 'x' ? peak : 0;
+    }
+    if (allDone) {
+      tb.active = false;
+      this._tumbleX[0] = this._tumbleX[1] = this._tumbleX[2] = 0;
+      this._tumbleY[0] = this._tumbleY[1] = this._tumbleY[2] = 0;
+    }
+  }
+
+  update(nowMs, dtSec, vibe, beatPeriodMs = 500, anchor = null, buildUp = 0) {
     this._t += dtSec;
-    const omega0 = TWO_PI / Math.max(0.25, (beatPeriodMs || 500) / 1000);
+    this._buildUp = clamp01(buildUp);
+    this._updateTumble(nowMs);
+    const anchorConf = anchor ? clamp01(anchor.confidence) : 0;
+    const anchorLive = anchorConf > ANCHOR_MIN_CONFIDENCE;
+    // A confident anchor gradually pulls the ensemble's own natural
+    // frequency toward the player's period too -- otherwise the phase pull
+    // below fights a base rate still set by the chart's beat.
+    const effectivePeriodMs = anchorLive ? lerp(beatPeriodMs || 500, anchor.periodMs, anchorConf) : (beatPeriodMs || 500);
+    const omega0 = TWO_PI / Math.max(0.25, effectivePeriodMs / 1000);
 
     const wAlpha = 1 - Math.exp(-dtSec / PRESENCE_TAU);
     for (let i = 0; i < 3; i++) this.weights[i] += wAlpha * (this._targetWeights[i] - this.weights[i]);
@@ -83,6 +170,21 @@ export class EnsembleDirector {
       if (this.theta[i] > TWO_PI) this.theta[i] -= TWO_PI;
       else if (this.theta[i] < 0) this.theta[i] += TWO_PI;
     }
+    // The anchor pull itself: each character eases toward basePhase +
+    // its own offset, at a rate scaled by how confident the anchor is.
+    if (anchorLive) {
+      const pullRate = ANCHOR_PULL_RATE * anchorConf;
+      const basePhase = anchor.phaseRad(nowMs);
+      for (let i = 0; i < 3; i++) {
+        const target = ((basePhase + ANCHOR_OFFSET[i]) % TWO_PI + TWO_PI) % TWO_PI;
+        let err = target - this.theta[i];
+        err = ((err + Math.PI) % TWO_PI + TWO_PI) % TWO_PI - Math.PI; // fold to [-PI, PI]
+        this.theta[i] += pullRate * err * dtSec;
+        if (this.theta[i] > TWO_PI) this.theta[i] -= TWO_PI;
+        else if (this.theta[i] < 0) this.theta[i] += TWO_PI;
+      }
+    }
+
     this.r = R;
     this.rSmooth += (1 - Math.exp(-dtSec / R_TAU)) * (R - this.rSmooth);
 
@@ -102,7 +204,7 @@ export class EnsembleDirector {
     const roleBias = [
       { x: 0.05, y: 0 },
       { x: -0.42, y: 0.04 },
-      { x: 0.38, y: -0.28 },
+      { x: 0.52, y: -0.34 }, // pushed further from Midio (was 0.38/-0.28) -- they overlapped too much
     ];
 
     // Per-character anchors on a slowly rotating triangle + role bias.
@@ -118,9 +220,19 @@ export class EnsembleDirector {
     // Stage-safety clamps per character role.
     this.anchors[0].x = clamp(this.anchors[0].x, this.w * 0.14, this.w * 0.58); // Midio: gameplay window
     this.anchors[1].x = clamp(this.anchors[1].x, this.w * 0.05, this.w * 0.78); // Broshi: prefers left floor
-    this.anchors[2].x = clamp(this.anchors[2].x, this.w * 0.22, this.w * 0.92); // Midasus: sky-right
+    this.anchors[2].x = clamp(this.anchors[2].x, this.w * 0.34, this.w * 0.92); // Midasus: sky-right (floor raised from 0.22 -- kept her out of Midio's gameplay window)
     this.anchors[2].y = this.h * 0.28 - this.spread * 0.12 + this.anchors[2].y * 2;
   }
 
   phase(i) { return this.theta[i]; }
+
+  /** Scale multiplier (>=1) for character i, driven by the shared build-up
+   *  signal and that character's own place in the SAME Kuramoto phase this
+   *  class already publishes -- beat-synced because theta[i] already is,
+   *  and shared because all three read the same field: locked (happy+epic)
+   *  they swell as one body, unlocked they swell in a visible traveling
+   *  wave. 1 (no-op) whenever there's no build-up. */
+  swell(i) {
+    return 1 + SWELL_GAIN * this._buildUp * (0.5 + 0.5 * Math.cos(this.theta[i]));
+  }
 }

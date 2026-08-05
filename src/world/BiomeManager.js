@@ -11,7 +11,7 @@ import { KuramotoSwarm } from './KuramotoSwarm.js';
 import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
-import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul, mountainStripDrawHeight, MOUNTAIN_SKY_HEADROOM_FRAC } from './MountainChoreo.js';
+import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul, mountainStripDrawHeight } from './MountainChoreo.js';
 import { ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, geoCrestOffset } from './GeoCrest.js';
 import {
   seaLineY, oceanRowYs, waveRows, rowAlpha, OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC,
@@ -39,20 +39,39 @@ import { MeteorShowerFX } from './MeteorShower.js';
 import { LightRig } from './LightRig.js';
 import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS } from './DepthHaze.js';
 import { PERSONALITY } from './BiomePersonality.js';
-import { isRendered, styleDials } from '../render/VisualStyle.js';
+import { isRendered, styleDials, shiftLightness } from '../render/VisualStyle.js';
 import { Murmuration } from './Murmuration.js';
 import { Atmosphere } from './Atmosphere.js';
 import { CodaDirector } from '../sim/CodaDirector.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
 import { computeLight, celestialScreenPos } from '../render/LightField.js';
-import { clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
+import { clamp, clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
 import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { Role } from '../core/NoteEvent.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
+import { VoyagePhase } from '../sim/SkyVoyage.js';
 
 const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
 const LAYER_EQ_RATIO = 0.06; // between L1 (celestial) and L2 (far mountains)
+// Terrain footing contact shadow: layered strokes along the ridge's own
+// smooth curve approximate the soft vertical falloff a single gradient rect
+// used to give a flat ground line -- widest/faintest pass first so the
+// stack reads as one soft AO band, not three hard-edged strokes.
+const TERRAIN_FOOTING_AO_PASSES = [
+  { lw: 30, alpha: 0.035 },
+  { lw: 18, alpha: 0.06 },
+  { lw: 8, alpha: 0.10 },
+];
+
+// Section-detection schedule (_buildSchedule): a real bar grid already gives
+// plenty of analysis resolution; these only govern the free-time/no-tempo
+// fallback and the cut budget/spacing that apply either way.
+const ANALYSIS_MIN_POINTS = 64;       // fallback analysis-point floor regardless of duration
+const ANALYSIS_TARGET_STEP_MS = 2000; // ~1 analysis point every 2s for longer songs
+const MIN_SECTION_CUT_GAP_MS = 11000; // minimum time between two section cuts
+const SECTION_CUT_BUDGET_MS = 24000;  // ~1 extra cut allowed per 24s of song
+const MIN_SECTION_CUTS = 3, MAX_SECTION_CUTS = 12;
 const WORLD_SPEED_PX_S = 220;
 const BAND_COUNT = 7;
 const EQ_ATTACK_SEC = 0.08;
@@ -97,6 +116,10 @@ export class BiomeManager {
     this._shutterStartMs = -Infinity;
     this._shutterBarMs = 500;
     this.cutFlashJustFired = false;
+    // Edge-triggered once per section boundary, any transition style -- other
+    // systems (character tumble choreography) hang a rare accent off this.
+    this.sectionJustChanged = false;
+    this.lastTransitionStyle = null;
     // Lyric-fused structure (SectionFusion): a section's `kind` (verse/
     // chorus/bridge/instrumental/intro/outro) and its lyric intensity/
     // valence, when lyrics were found and fused into the schedule below.
@@ -330,7 +353,16 @@ export class BiomeManager {
   }
 
   _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null) {
-    let barTimes = barGrid.length >= 8 ? barGrid.map((b) => b.ms) : this._evenSplit(durationMs, 8);
+    // Without a real bar grid (free-time / tempo-less audio), the analysis
+    // resolution used to collapse to a fixed 9 points regardless of song
+    // length -- with novelty forced to 0 for the first 4 and a minimum peak
+    // spacing measured in THOSE 9 indices, at most one cut could ever be
+    // placed, so section detection silently bottomed out at exactly 3
+    // sections no matter how long or eventful the song was. Scale the
+    // fallback resolution with duration instead.
+    let barTimes = barGrid.length >= 8
+      ? barGrid.map((b) => b.ms)
+      : this._evenSplit(durationMs, Math.max(ANALYSIS_MIN_POINTS, Math.round(durationMs / ANALYSIS_TARGET_STEP_MS)));
     if (barTimes.length < 2) barTimes = [0, durationMs];
 
     const vectors = barTimes.map((ms) => (energyCurves ? energyCurves.sampleAll(ms) : new Array(7).fill(0)));
@@ -349,18 +381,31 @@ export class BiomeManager {
       for (const v of slice) for (let k = 0; k < 7; k++) avg[k] += v[k] / slice.length;
       return avg;
     });
+    // Compare each point against ~4 samples back, clamped to 0 instead of
+    // unconditionally returning 0 for the first 4 -- the opening material
+    // can now register as a boundary too, instead of being silently exempt.
     const novelty = barTimes.map((_, i) => {
-      if (i < 4) return 0;
+      const j = Math.max(0, i - 4);
+      if (j === i) return 0;
       let d = 0;
-      for (let k = 0; k < 7; k++) d += (means[i][k] - means[i - 4][k]) ** 2;
+      for (let k = 0; k < 7; k++) d += (means[i][k] - means[j][k]) ** 2;
       return Math.sqrt(d);
     });
 
-    const minGap = 8;
+    // Minimum spacing between cuts, expressed in TIME (not analysis-point
+    // indices) so it means the same thing regardless of whether barTimes
+    // came from a fine bar grid or the coarser even-split fallback above --
+    // an 8-index minimum was ~16s on a bar grid but only ~2 fallback points
+    // (its whole bug) in the other.
+    const avgStepMs = barTimes.length > 1 ? (barTimes[barTimes.length - 1] - barTimes[0]) / (barTimes.length - 1) : durationMs;
+    const minGap = Math.max(1, Math.round(MIN_SECTION_CUT_GAP_MS / Math.max(1, avgStepMs)));
+    // Cut budget scales with song length instead of a flat 7 -- a 5-minute
+    // song can now express close to a section every 24s.
+    const maxCuts = clamp(Math.round(durationMs / SECTION_CUT_BUDGET_MS), MIN_SECTION_CUTS, MAX_SECTION_CUTS);
     const peaks = [];
     const sorted = novelty.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]);
     for (const [v, i] of sorted) {
-      if (peaks.length >= 7) break;
+      if (peaks.length >= maxCuts) break;
       if (v <= 1e-6) continue;
       if (peaks.some((p) => Math.abs(p - i) < minGap)) continue;
       peaks.push(i);
@@ -624,6 +669,7 @@ export class BiomeManager {
     // Dramaturgy: detect section boundaries and fire their transition FX.
     const sectionIdx = this._sectionAt(nowMs);
     this.cutFlashJustFired = false;
+    this.sectionJustChanged = false;
     if (sectionIdx !== this._lastSectionIdx) {
       const sec = this.sections[sectionIdx];
       if (this._lastSectionIdx != null) {
@@ -633,6 +679,8 @@ export class BiomeManager {
         // spotlight snap a hype drop does -- the show notices the vocals
         // stepping back just as much as it notices them stepping forward.
         if (sec.kind === 'instrumental') this.lightRig.trigger(nowMs, this.midioX, this.midioY);
+        this.sectionJustChanged = true;
+        this.lastTransitionStyle = sec.transition;
       }
       this._lastSectionIdx = sectionIdx;
     }
@@ -868,7 +916,7 @@ export class BiomeManager {
     // over their last stretch of altitude rather than popping at the
     // horizon, and both rise from and set into the sea horizon.
     if (sunUp) this._drawCelestial(ctx, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt));
-    if (dn.moonAlt > 0.001) this._drawMoon(ctx, canvas, celestialYFracFor(dn.moonAlt), horizonFade(dn.moonAlt));
+    if (dn.moonAlt > 0.001) this._drawMoon(ctx, canvas, celestialYFracFor(dn.moonAlt), horizonFade(dn.moonAlt), 0.22 * this.spaceRidge.tidalOffsetPx(canvas.height));
     // Spirograph resonance mandala, centered on the celestial body so it
     // reads as the sun/moon itself resonating with the track.
     const mandalaColor = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
@@ -899,7 +947,7 @@ export class BiomeManager {
       if (ridgeA > 0.02) {
         ctx.save();
         ctx.globalAlpha = ridgeA * (phenomenaFull ? 1 : 0.4);
-        this.spaceRidge.draw(ctx, canvas, worldX, spaceCol, this.tSec, this.reducedFlash);
+        this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash);
         ctx.restore();
       }
     }
@@ -977,21 +1025,38 @@ export class BiomeManager {
 
     this._drawGround(ctx, canvas, worldX, originX, A, B, t);
     // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
-    this._drawTerrainFooting(ctx, canvas, A, B, t);
+    this._drawTerrainFooting(ctx, canvas, worldX, originX, A, B, t);
     this._drawFlood(ctx, canvas);
     this._drawTransitionOverlays(ctx, canvas, B);
   }
 
-  /** Subtle dark contact where ranges meet the walking ground. */
-  _drawTerrainFooting(ctx, canvas, A, B, t) {
-    const gy = this.groundY;
+  /** Subtle dark contact where ranges meet the walking ground -- follows the
+   *  ridge's own smooth top curve (same path _drawGround built) rather than
+   *  the flat physics reference, so the seam tracks the terrain instead of
+   *  floating over/under it whenever the EQ bars rise or fall. */
+  _drawTerrainFooting(ctx, canvas, worldX, originX, A, B, t) {
+    const activeFx = t > 0.5 ? B.fx : A.fx;
+    const isLake = activeFx === 'lakeReflection';
     ctx.save();
-    const ao = ctx.createLinearGradient(0, gy - 28, 0, gy + 8);
-    ao.addColorStop(0, 'rgba(0,0,0,0)');
-    ao.addColorStop(0.7, 'rgba(0,0,0,0.12)');
-    ao.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = ao;
-    ctx.fillRect(0, gy - 28, canvas.width, 36);
+    if (this.groundField && !isLake) {
+      const bars = this.groundField.visibleBars(worldX, originX, canvas.width);
+      const strokePath = this._terrainTopPath(bars, canvas.height, false);
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      for (const pass of TERRAIN_FOOTING_AO_PASSES) {
+        ctx.strokeStyle = `rgba(0,0,0,${pass.alpha})`;
+        ctx.lineWidth = pass.lw;
+        ctx.stroke(strokePath);
+      }
+    } else {
+      const gy = this.groundField ? this.groundField.heightAt(worldX) : this.groundY;
+      const ao = ctx.createLinearGradient(0, gy - 28, 0, gy + 8);
+      ao.addColorStop(0, 'rgba(0,0,0,0)');
+      ao.addColorStop(0.7, 'rgba(0,0,0,0.12)');
+      ao.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = ao;
+      ctx.fillRect(0, gy - 28, canvas.width, 36);
+    }
     ctx.restore();
   }
 
@@ -1212,17 +1277,21 @@ export class BiomeManager {
       ctx.stroke();
     }
 
-    // Her current position: fades in from nothing (still "here" at the
-    // start of ascent) to a small glowing comet-head once fully away.
-    const r = 2 + 3 * (1 - voyage.depth);
-    ctx.fillStyle = `hsla(${voyage.hue}, 60%, 85%, ${0.28 * voyage.depth})`;
-    ctx.beginPath();
-    ctx.arc(voyage.p.x, voyage.p.y, r * 3.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = `hsla(${voyage.hue}, 80%, 92%, ${0.6 + 0.4 * voyage.depth})`;
-    ctx.beginPath();
-    ctx.arc(voyage.p.x, voyage.p.y, r, 0, Math.PI * 2);
-    ctx.fill();
+    // Her current position: a small glowing comet-head, but ONLY once she's
+    // genuinely deep-sky -- WINDUP/ASCENT/REENTRY now render her real mesh
+    // in the character layer (see Midasus.draw()), so drawing this dot
+    // during those phases would double her up.
+    if (voyage.phase === VoyagePhase.DEEP_SPACE) {
+      const r = 2 + 3 * (1 - voyage.depth);
+      ctx.fillStyle = `hsla(${voyage.hue}, 60%, 85%, ${0.28 * voyage.depth})`;
+      ctx.beginPath();
+      ctx.arc(voyage.p.x, voyage.p.y, r * 3.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `hsla(${voyage.hue}, 80%, 92%, ${0.6 + 0.4 * voyage.depth})`;
+      ctx.beginPath();
+      ctx.arc(voyage.p.x, voyage.p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     ctx.restore();
   }
@@ -1610,10 +1679,14 @@ export class BiomeManager {
 
   /** A plain pale moon, taking over from the biome's own sun once it sets
    *  -- deliberately generic (not crossfaded between biomes) so it always
-   *  reads as "the moon," with a simple crescent bite for character. */
-  _drawMoon(ctx, canvas, cyFrac, alpha) {
+   *  reads as "the moon," with a simple crescent bite for character.
+   *  `tidalOffsetPx` lets the space ridge's own vast tidal drift (see
+   *  SpaceRidge.tidalOffsetPx) nudge the moon a little too -- a body small
+   *  enough to visibly yield to something far larger, kept subtle (a
+   *  fraction of the amplitude, hard-clamped) so it never reads as bouncing. */
+  _drawMoon(ctx, canvas, cyFrac, alpha, tidalOffsetPx = 0) {
     if (alpha <= 0.02) return;
-    const cx = canvas.width * 0.78, cy = canvas.height * cyFrac;
+    const cx = canvas.width * 0.78, cy = canvas.height * cyFrac + clamp(tidalOffsetPx, -6, 6);
     const R = 26;
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -2472,12 +2545,16 @@ export class BiomeManager {
     const left = ((((canvas.width * 0.58 - scroll) % period) + period) % period) - massifW;
     if (left > canvas.width || left + massifW < 0) return;
 
-    const baseY = this.groundY - 26;
-    // Massif rides L2 orogeny but is hard-capped so it never eats the sky /
-    // ocean band (same headroom philosophy as mountainStripDrawHeight).
+    // Same bottom anchor as L2's own strips (_drawLayer's yOff), so the
+    // massif reads as sitting at L2's altitude/layer instead of floating at
+    // its own -- vertical position only; paint order, parallax (the scroll
+    // above), and color stay untouched.
+    const baseY = this.groundY + 40;
+    // Massif rides L2 orogeny and is capped by the exact same headroom rule
+    // every L2/L3/L4/L5 strip obeys (mountainStripDrawHeight), instead of an
+    // ad hoc bound of its own.
     const growth = orogenyHeightMul('L2', clamp01(this.orogenyGrowth || 0));
-    const skyCap = canvas.height * MOUNTAIN_SKY_HEADROOM_FRAC;
-    const maxH = Math.min(210 * growth, Math.max(80, baseY - skyCap));
+    const maxH = mountainStripDrawHeight(210, growth, canvas.height, this.groundY);
     const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
     const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
     const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.55));
@@ -2515,8 +2592,43 @@ export class BiomeManager {
     }
   }
 
+  /** Builds a smooth curve through each bar's top-center point -- the
+   *  quadratic-midpoint technique (each segment's control point is the
+   *  sample itself, its endpoint the midpoint to the next sample) turns the
+   *  hard 90px staircase into a continuous ridge while the underlying
+   *  physics (GroundField.heightAt) stays exactly the discrete spring
+   *  simulation it always was; this is render-only. `closed` also draws the
+   *  two side edges down to `canvas.height` and closes the path, for fills
+   *  and clips; the open (stroke) form stops at the last top point. */
+  _terrainTopPath(bars, canvasHeight, closed) {
+    const path = new Path2D();
+    if (bars.length === 0) return path;
+    const pts = bars.map((b) => ({ x: b.x + b.width / 2, y: b.y }));
+    const firstBar = bars[0], lastBar = bars[bars.length - 1];
+    if (closed) path.moveTo(firstBar.x, canvasHeight);
+    if (closed) path.lineTo(pts[0].x, pts[0].y); else path.moveTo(pts[0].x, pts[0].y);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const cur = pts[i], next = pts[i + 1];
+      const midX = (cur.x + next.x) / 2, midY = (cur.y + next.y) / 2;
+      path.quadraticCurveTo(cur.x, cur.y, midX, midY);
+    }
+    const lastPt = pts[pts.length - 1];
+    path.lineTo(lastPt.x, lastPt.y);
+    if (closed) {
+      path.lineTo(lastBar.x + lastBar.width, lastPt.y);
+      path.lineTo(lastBar.x + lastBar.width, canvasHeight);
+      path.closePath();
+    }
+    return path;
+  }
+
   _drawGround(ctx, canvas, worldX, originX, A, B, t) {
-    const groundColor = this.lerpCache.get(A.silhouette, B.silhouette, t);
+    const groundColorRaw = this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t));
+    // Darkened a touch against the nearest range so the ground always keeps
+    // an edge, even at palettes where silhouette and ground would otherwise
+    // land on the exact same tone (previously the one silhouette-tinted
+    // element skipping the key/section hue rotation entirely).
+    const groundColor = shiftLightness(groundColorRaw, -0.08);
     const localGroundY = this.groundField ? this.groundField.heightAt(worldX) : this.groundY;
     const activeFx = t > 0.5 ? B.fx : A.fx;
     // The Mirror: GroundField's physics (collision height) are untouched,
@@ -2528,51 +2640,62 @@ export class BiomeManager {
       // Ground as shifted EQ-bar-shaped slices (follow-up item 5): each bar
       // echoes the horizon EQ's own per-band reading, just offset by a few
       // columns, so the terrain visually rhymes with the music playing far
-      // in the background.
+      // in the background. Rendered as one continuous smoothed ridge (see
+      // _terrainTopPath) rather than per-slice rects.
       const bars = this.groundField.visibleBars(worldX, originX, canvas.width);
+      const fillPath = this._terrainTopPath(bars, canvas.height, true);
+      const strokePath = this._terrainTopPath(bars, canvas.height, false);
       ctx.fillStyle = groundColor;
-      for (const bar of bars) ctx.fillRect(bar.x, bar.y, bar.width + 1, canvas.height - bar.y);
+      ctx.fill(fillPath);
 
       const haloColor = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
       const { r, g, b } = hexToRgb(haloColor);
       const rgb = `${r},${g},${b}`;
 
-      // Soft groove caps: music-terrain tell, soft alpha so they read as
-      // energy on the land — not cyan hairline glitches.
+      // Soft groove cap: music-terrain tell, soft alpha so it reads as
+      // energy riding the land — not a cyan hairline glitch. A thick stroke
+      // along the same ridge curve rather than a per-bar rect.
       const grooveNow = bars.length ? bars[0].groove || 0 : 0;
       const wantGroundCaps = styleDials(this.visualStyle).groundCrestCaps !== false;
       if (grooveNow > 0.05 && wantGroundCaps) {
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         const a = 0.16 * grooveNow;
-        ctx.fillStyle = `rgba(${rgb},${capFlashAlpha(a, this.reducedFlash)})`;
-        for (const bar of bars) ctx.fillRect(bar.x, bar.y, bar.width + 1, 3);
+        ctx.strokeStyle = `rgba(${rgb},${capFlashAlpha(a, this.reducedFlash)})`;
+        ctx.lineWidth = 4;
+        ctx.lineJoin = 'round';
+        ctx.stroke(strokePath);
         ctx.restore();
       }
 
-      // Settled snow: frost caps ride the bar tops -- a pale band whose
+      // Settled snow: a frost cap riding the ridge -- a pale band whose
       // thickness grows with cover, plus seeded glints so ice reads as ICE
       // (slippery, see Traction.js) rather than just pale paint. Melts to
       // zero cost the moment cover does.
       if ((this.snowCover || 0) > 0.03) {
         const cover = this.snowCover;
         ctx.save();
-        ctx.fillStyle = `rgba(230,242,255,${(0.34 * cover).toFixed(3)})`;
-        // One pass: caps for every bar, glinting bars collected as we go
-        // (usually 0-3) for the tiny additive pass below.
+        ctx.strokeStyle = `rgba(230,242,255,${(0.34 * cover).toFixed(3)})`;
+        ctx.lineWidth = 4 + 9 * cover;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.stroke(strokePath);
+        // Specular glints: a few bar-top points catch the light each moment,
+        // drifting with world scroll so the sheen slides underfoot.
         const glints = [];
         for (const bar of bars) {
-          ctx.fillRect(bar.x, bar.y, bar.width + 1, 4 + 9 * cover);
-          // Specular glints: a few bars catch the light each moment,
-          // drifting with world scroll so the sheen slides underfoot.
           const glint = 0.5 + 0.5 * Math.sin(bar.x * 0.13 + worldX * 0.011 + this.tSec * 1.7);
           if (glint > 0.86) glints.push([bar, 0.30 * cover * (glint - 0.86) / 0.14]);
         }
         ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = '#fff';
         for (const [bar, a] of glints) {
-          ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
-          ctx.fillRect(bar.x, bar.y, bar.width + 1, 1.6);
+          ctx.globalAlpha = a;
+          ctx.beginPath();
+          ctx.arc(bar.x + bar.width / 2, bar.y, 1.6, 0, Math.PI * 2);
+          ctx.fill();
         }
+        ctx.globalAlpha = 1;
         ctx.restore();
       }
 
@@ -2596,34 +2719,24 @@ export class BiomeManager {
         ctx.restore();
       }
 
-      // Gray-Scott texture living inside the ground: clip to the slice
-      // silhouette so the pattern rides the terrain's vertical motion.
-      // Purely decorative texture over the flat fill above it, so the
-      // deepest perf rung skips it outright rather than clip+draw for
-      // nothing.
+      // Gray-Scott texture living inside the ground: clip to the ridge's
+      // silhouette (one smooth Path2D, not a union of per-slice rects) so
+      // the pattern rides the terrain's own vertical motion. Purely
+      // decorative texture over the flat fill above it, so the deepest perf
+      // rung skips it outright rather than clip+draw for nothing.
       if (!this._perf || this._perf.phenomenaFull) {
         let minTop = canvas.height;
+        for (const bar of bars) if (bar.y < minTop) minTop = bar.y;
         ctx.save();
-        ctx.beginPath();
-        for (const bar of bars) {
-          ctx.rect(bar.x, bar.y, bar.width + 1, canvas.height - bar.y);
-          if (bar.y < minTop) minTop = bar.y;
-        }
-        ctx.clip();
+        ctx.clip(fillPath);
         this.rd.draw(ctx, canvas, worldX, minTop);
         ctx.restore();
       }
 
       ctx.strokeStyle = 'rgba(255,255,255,0.18)';
       ctx.lineWidth = 2;
-      ctx.beginPath();
-      for (let i = 0; i < bars.length; i++) {
-        const bar = bars[i];
-        ctx.moveTo(bar.x, bar.y);
-        ctx.lineTo(bar.x + bar.width, bar.y);
-        if (i + 1 < bars.length) ctx.lineTo(bar.x + bar.width, bars[i + 1].y); // vertical connector at the seam
-      }
-      ctx.stroke();
+      ctx.lineJoin = 'round';
+      ctx.stroke(strokePath);
     } else {
       ctx.fillStyle = groundColor;
       ctx.fillRect(0, localGroundY, canvas.width, canvas.height - localGroundY);

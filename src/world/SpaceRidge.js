@@ -1,25 +1,49 @@
 // The third equalizer: a crystalline/orbital node-and-segment line high in
-// the deep sky — deliberately MASSIVE but far back in the cosmos (megalophobia:
-// something too large to be nearby). Unlike the horizon EQ's soft aurora and
-// GeoCrest's terrain-pinned geology: stepped segments, treble-weighted band
-// reads, fast envelopes. Pure math + draw().
-import { mulberry32, clamp01 } from '../utils/math.js';
+// the deep sky — deliberately MASSIVE, far back in the cosmos (megalophobia:
+// something too large to be nearby), and traveling through DEPTH rather than
+// sliding sideways: it doesn't scroll with the world at all. A slow whole-
+// line tidal drift (like a body large enough to feel a distant gravitational
+// pull) rides underneath a per-node depth read off the same band energy that
+// drives its shimmer — active bands push their node out and larger, quiet
+// ones recede and shrink toward the vanishing point — plus a slow global
+// dolly so the whole structure breathes in and out over the better part of a
+// minute. Pure math + draw(). BiomeManager consumes it; tests exercise the
+// math directly.
+import { clamp, clamp01, mulberry32 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 
-// +1 joint past each edge vs the old 24-on-screen packing (26 total).
-export const N_NODES = 26;
+// +3 joints past each edge (was +1 vs. the old 24-on-screen packing) so the
+// widened depth spread never pulls the outermost joints on-screen.
+export const N_NODES = 30;
 const ATTACK_SEC = 0.05;
 const RELEASE_SEC = 0.25;
 const FLASH_JUMP_THRESHOLD = 0.35;
 const FLASH_LIFE_MS = 300;
 // Deep sky baseline — below the celestial band so it doesn't pin the top edge.
 const BASELINE_FRAC = 0.19;
-// Vertical throw: large but not half the frame (was 0.44 — too tall/high).
-const MAX_H_FRAC = 0.22;
+// Vertical throw from band energy alone is now just a residual shimmer --
+// the tidal drift owns the big vertical motion (was 0.22 -- read as its own
+// skyline, not a shimmer).
+const MAX_H_FRAC = 0.03;
 // Extra span past each screen edge (in units of one joint spacing).
-const EDGE_JOINTS = 1;
-// Glacial parallax — far cosmos barely tracks the world scroll.
-const PARALLAX = 0.011;
+const EDGE_JOINTS = 3;
+
+// Tidal drift: two slow incommensurate periods (seconds) summed so the whole
+// line's vertical position never repeats on a simple cycle -- reads as a
+// vague, massive external pull (distant gravity / a moon-on-tides analogue)
+// rather than a mechanical bob. Amplitude is a fraction of canvas height.
+const TIDAL_PERIOD_1_SEC = 19;
+const TIDAL_PERIOD_2_SEC = 47;
+export const TIDAL_AMPLITUDE_FRAC = 0.012;
+
+// Depth: each node eases its own z (0 far, 1 near) toward its band level on
+// the same attack/release dynamics as the level itself -- a second-order lag
+// so depth motion never snaps. A slow global dolly (its own long period)
+// breathes the whole structure in and out on top of the per-node reads.
+const DEPTH_GLOBAL_PERIOD_SEC = 31;
+const DEPTH_GAIN = 0.45;        // per-node depth contribution to size/spread/alpha
+const DEPTH_GLOBAL_GAIN = 0.30; // whole-structure dolly contribution
+const DEPTH_MUL_MIN = 0.42, DEPTH_MUL_MAX = 1.85;
 
 // Icosahedron: 12 vertices, 30 edges. Precomputed once (module scope).
 const PHI = (1 + Math.sqrt(5)) / 2;
@@ -60,11 +84,21 @@ export function projectWireframe(verts, edges, rotX, rotY, scale) {
   return { points, edges };
 }
 
-/** xFrac span: one joint past left and right of [0,1]. */
+/** xFrac span: three joints past left and right of [0,1]. */
 export function nodeXFrac(i, n = N_NODES, edgeJoints = EDGE_JOINTS) {
   const denom = Math.max(1, n - 1 - 2 * edgeJoints);
   // i=0 → -edgeJoints/denom units left of 0; i=n-1 → past 1 on the right.
   return (i - edgeJoints) / denom;
+}
+
+/** Whole-line tidal vertical offset (px) at a given song time -- exported
+ *  pure so the moon can ride the same drift at a fraction of the amplitude,
+ *  and so tests can pin the amplitude bound without a live instance. */
+export function tidalOffset(tSec, canvasHeight) {
+  const amp = TIDAL_AMPLITUDE_FRAC * canvasHeight;
+  const w1 = (2 * Math.PI) / TIDAL_PERIOD_1_SEC;
+  const w2 = (2 * Math.PI) / TIDAL_PERIOD_2_SEC;
+  return amp * (0.6 * Math.sin(tSec * w1) + 0.4 * Math.sin(tSec * w2 + 1.3));
 }
 
 export class SpaceRidge {
@@ -79,11 +113,14 @@ export class SpaceRidge {
       if (r < 0.10) band = rand() < 0.5 ? 0 : 1;
       else if (r < 0.35) band = 2 + Math.floor(rand() * 2); // 2-3
       else band = 4 + Math.floor(rand() * 3); // 4-6
-      this.nodes.push({ xFrac, band, phase: rand() * Math.PI * 2, level: 0 });
+      this.nodes.push({ xFrac, band, phase: rand() * Math.PI * 2, level: 0, z: 0 });
     }
     this._flashes = [];
     this._rotX = 0;
     this._rotY = 0;
+    this._tidalPx = 0;
+    this._zGlobal = 0;
+    this._tSec = 0;
   }
 
   update(nowMs, dtSec, eqBands) {
@@ -95,31 +132,51 @@ export class SpaceRidge {
       const prev = n.level;
       n.level += (1 - Math.exp(-dtSec / tau)) * (target - n.level);
       if (n.level - prev > FLASH_JUMP_THRESHOLD) this._flashes.push({ i, atMs: nowMs });
+
+      // Depth is a second-order lag behind level -- same attack/release
+      // shape, one step slower, so a node's push-out/recede never snaps.
+      const zTau = n.level > n.z ? ATTACK_SEC : RELEASE_SEC;
+      n.z += (1 - Math.exp(-dtSec / zTau)) * (n.level - n.z);
     }
     this._flashes = this._flashes.filter((f) => nowMs - f.atMs < FLASH_LIFE_MS);
-    this._rotX = nowMs * 0.001 * 0.04;
-    this._rotY = nowMs * 0.001 * 0.027;
+    const tSec = nowMs / 1000;
+    this._tSec = tSec;
+    this._rotX = tSec * 0.04;
+    this._rotY = tSec * 0.027;
+    this._tidalPx = tidalOffset(tSec, this._lastCanvasHeight || 720);
+    this._zGlobal = Math.sin((tSec * 2 * Math.PI) / DEPTH_GLOBAL_PERIOD_SEC);
   }
 
-  /** Screen-space samples for the ridge polyline (no wrap — extends past edges). */
-  _samples(canvas, worldX, tSec) {
-    const sx = worldX * PARALLAX;
-    const y0 = canvas.height * BASELINE_FRAC;
+  /** Current whole-line tidal offset in px, for the moon to partially ride.
+   *  Recomputed against the last canvas height `update()` saw (falls back to
+   *  720 before the first draw). */
+  tidalOffsetPx(canvasHeight) {
+    if (canvasHeight != null) return tidalOffset(this._tSec, canvasHeight);
+    return this._tidalPx;
+  }
+
+  /** Screen-space samples for the ridge polyline. No world scroll -- this
+   *  structure is deliberately too large/far to read as scrolling with the
+   *  world; it moves in depth (see depthMul) and on the tidal drift only. */
+  _samples(canvas) {
+    this._lastCanvasHeight = canvas.height;
+    const y0 = canvas.height * BASELINE_FRAC + this._tidalPx;
     const maxH = canvas.height * MAX_H_FRAC;
+    const cx = canvas.width / 2;
+    const tSec = this._tSec;
     const pts = this.nodes.map((n, i) => {
-      // Far structure: slight perspective scale (edges recede a hair).
-      const x = n.xFrac * canvas.width - sx;
-      const edgeFade = 1 - 0.12 * Math.min(1, Math.abs(n.xFrac - 0.5) * 1.6);
-      const y = y0 - n.level * maxH * edgeFade
+      const depthMul = clamp(1 + DEPTH_GAIN * n.z + DEPTH_GLOBAL_GAIN * this._zGlobal, DEPTH_MUL_MIN, DEPTH_MUL_MAX);
+      const xBase = n.xFrac * canvas.width;
+      const x = cx + (xBase - cx) * depthMul;
+      const y = y0 - n.level * maxH
         + 3.5 * Math.sin(tSec * 0.45 + n.phase) * (0.5 + 0.5 * n.level);
-      return { x, y, i, level: n.level };
+      return { x, y, i, level: n.level, depthMul };
     });
-    // Stable left→right order (xFrac is already ordered; scroll doesn't reorder).
     return { pts, y0, maxH };
   }
 
-  draw(ctx, canvas, worldX, color, tSec, reducedFlash = false) {
-    const { pts, y0, maxH } = this._samples(canvas, worldX, tSec);
+  draw(ctx, canvas, color, tSec, reducedFlash = false) {
+    const { pts, y0, maxH } = this._samples(canvas);
 
     const flashSet = new Map();
     const nowMs = tSec * 1000;
@@ -161,14 +218,17 @@ export class SpaceRidge {
     });
     ctx.stroke();
 
-    // Main ridge: thick soft underglow + thinner bright core (distant power).
+    // Main ridge: thick soft underglow + thinner bright core (distant power),
+    // scaled by each segment's average depth -- nodes pushing out read
+    // larger and brighter, receding ones thinner and dimmer.
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i], b = pts[i + 1];
       const flash = Math.max(flashSet.get(a.i) || 0, flashSet.get(b.i) || 0);
+      const dm = (a.depthMul + b.depthMul) / 2;
       for (const [lw, base] of [[11, 0.055], [4.5, 0.11], [1.6, 0.28]]) {
         ctx.strokeStyle = color;
-        ctx.globalAlpha = capFlashAlpha(base + 0.35 * flash, reducedFlash);
-        ctx.lineWidth = lw;
+        ctx.globalAlpha = capFlashAlpha((base + 0.35 * flash) * dm, reducedFlash);
+        ctx.lineWidth = lw * dm;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(b.x, b.y);
@@ -176,25 +236,27 @@ export class SpaceRidge {
       }
     }
 
-    // Node cores — larger, softer (star-stations on a structure too big).
+    // Node cores — larger, softer (star-stations on a structure too big),
+    // sized/lit by their own depth.
     for (const p of pts) {
       const n = this.nodes[p.i];
+      const dm = p.depthMul;
       ctx.fillStyle = color;
-      ctx.globalAlpha = capFlashAlpha(0.07, reducedFlash);
+      ctx.globalAlpha = capFlashAlpha(0.07 * dm, reducedFlash);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 7 + 4 * n.level, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, (7 + 4 * n.level) * dm, 0, Math.PI * 2);
       ctx.fill();
-      ctx.globalAlpha = capFlashAlpha(0.4 + 0.4 * n.level, reducedFlash);
+      ctx.globalAlpha = capFlashAlpha((0.4 + 0.4 * n.level) * dm, reducedFlash);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 2.2 * dm, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // Tumbling polyhedron — same deep-sky band as the ridge, not the top bezel.
-    const sx = worldX * PARALLAX;
-    const cx = canvas.width * 0.16 - sx * 0.35;
-    const cy = canvas.height * (BASELINE_FRAC - 0.04);
-    const icoScale = Math.max(36, canvas.height * 0.055);
+    // Tumbling polyhedron — same deep-sky band as the ridge, not the top
+    // bezel. No world scroll (matches the ridge); rides the same tidal drift.
+    const cx = canvas.width * 0.16;
+    const cy = canvas.height * (BASELINE_FRAC - 0.04) + this._tidalPx * 0.5;
+    const icoScale = Math.max(36, canvas.height * 0.055) * (1 + 0.15 * this._zGlobal);
     const wf = projectWireframe(ICO_VERTS, ICO_EDGES, this._rotX, this._rotY, icoScale);
     ctx.strokeStyle = color;
     ctx.globalAlpha = capFlashAlpha(0.055, reducedFlash);

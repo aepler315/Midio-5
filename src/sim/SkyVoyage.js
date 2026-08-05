@@ -13,11 +13,20 @@ export const VoyagePhase = Object.freeze({
   IDLE: 'IDLE', WINDUP: 'WINDUP', ASCENT: 'ASCENT', DEEP_SPACE: 'DEEP_SPACE', REENTRY: 'REENTRY',
 });
 
-const WINDUP_SEC = 0.55;
-const ASCENT_SEC = 1.2;
+// Lengthened (were 0.55/1.2) now that WINDUP/ASCENT render in the character
+// layer (see Midasus.draw()) instead of being hidden the instant she leaves
+// -- a real send-off needs room to read as a performance, not a blink.
+const WINDUP_SEC = 0.9;
+const ASCENT_SEC = 1.6;
 // Reentry used to hang ~1s at the station (cubic ease-in from station, not
 // from her last figure pose). Keep it brisk and continuous.
 const REENTRY_SEC = 0.62;
+// Presentation scale (Midasus.draw() multiplies this into her own
+// DRAW_SCALE): swells before launch ("gathering power," matching the
+// spiral's own framing below), then recedes through the climb so she reads
+// as traveling away rather than cutting to a dot.
+const WINDUP_SCALE_PEAK = 1.35;
+const ASCENT_SCALE_FAR = 0.25;
 const FIGURE_SEC = 3.2;
 const FIGURES_PER_VOYAGE = 3;
 const FIGURE_RADIUS_PX = 130;
@@ -96,6 +105,7 @@ export class SkyVoyage {
     this._kickSmooth = 0;   // seconds of accumulated eased curve-time
     this._kickTarget = 0;
     this.justLanded = false;
+    this.justLaunched = false; // one-frame flag: WINDUP -> ASCENT, the send-off's own punctuation
 
     this.sparkles = [];     // {x, y, vx, vy, hue, age}
     this.microSlashes = []; // {x, y, ang, hue, age}
@@ -209,6 +219,22 @@ export class SkyVoyage {
       case VoyagePhase.DEEP_SPACE: return 1;
       case VoyagePhase.REENTRY: return 1 - this._phaseU;
       default: return 0;
+    }
+  }
+
+  /** Multiplier onto Midasus's own draw scale during WINDUP/ASCENT/REENTRY
+   *  (DEEP_SPACE isn't drawn by her at all -- BiomeManager's tiny comet-head
+   *  dot takes over). Swells to WINDUP_SCALE_PEAK as she winds up, eases
+   *  down to ASCENT_SCALE_FAR through the climb (receding into the
+   *  distance, not cutting away), and grows back to 1 through reentry. */
+  get presentationScale() {
+    const u = this._phaseU ?? 0;
+    const smooth = u * u * (3 - 2 * u);
+    switch (this.phase) {
+      case VoyagePhase.WINDUP: return lerp(1, WINDUP_SCALE_PEAK, u * u);
+      case VoyagePhase.ASCENT: return lerp(WINDUP_SCALE_PEAK, ASCENT_SCALE_FAR, smooth);
+      case VoyagePhase.REENTRY: return lerp(ASCENT_SCALE_FAR, 1, smooth);
+      default: return 1;
     }
   }
 
@@ -348,6 +374,7 @@ export class SkyVoyage {
   update(nowMs, dtSec, epicMood, ensembleAnchor) {
     this._nowMs = nowMs;
     this.justLanded = false;
+    this.justLaunched = false;
     // Constellations, sparkles, and slashes keep fading even once she's home.
     this.pruneConstellations(nowMs);
     for (const s of this.sparkles) { s.x += s.vx * dtSec; s.y += s.vy * dtSec; s.age += dtSec; }
@@ -375,7 +402,12 @@ export class SkyVoyage {
       const rate = lerp(1.8, 9, this._phaseU);
       const ang = this._phaseU * rate * 6;
       this.p = { x: this._windUpFrom.x + radius * Math.cos(ang), y: this._windUpFrom.y + radius * Math.sin(ang) };
-      if (this._phaseU >= 1) { this.phase = VoyagePhase.ASCENT; this.phaseStartMs = nowMs; this._startPos = { ...this.p }; }
+      if (this._phaseU >= 1) {
+        this.phase = VoyagePhase.ASCENT;
+        this.phaseStartMs = nowMs;
+        this._startPos = { ...this.p };
+        this.justLaunched = true; // one-frame flag: Midasus/Simulation fire send-off FX off this
+      }
     } else if (this.phase === VoyagePhase.ASCENT) {
       this._phaseU = clamp(elapsed / ASCENT_SEC, 0, 1);
       const u = this._phaseU;

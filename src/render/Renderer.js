@@ -188,7 +188,7 @@ export class Renderer {
     // Fever adds its own glow on top of the vibe's epic-ness -- a hot streak
     // makes Midio himself burn brighter, not just the world around him.
     const feverGlow = sim.fever ? 3.0 * sim.fever.level : 0;
-    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, (sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0) + feverGlow, sim.apotheosis, sim.reducedFlash, this._midioHue);
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, (sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0) + feverGlow, sim.apotheosis, sim.reducedFlash, this._midioHue, sim.ensemble);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
@@ -731,7 +731,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_BASE_HUE) {
+  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_BASE_HUE, ensemble = null) {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
     const apoProgress = apotheosis ? apotheosis.progress : 0;
@@ -739,12 +739,21 @@ export class Renderer {
     // "always slightly alive" pulse that makes Midasus's core read as an
     // instrument rather than a static glyph.
     const breatheBeatFlash = performer ? performer.beatFlash : 0;
-    const breathe = 1 + 0.025 * Math.sin(tSec * 2.4) + 0.05 * breatheBeatFlash;
+    // Shared build-up swell (EnsembleDirector.swell): during a crescendo,
+    // beat-phased with the same Kuramoto clock Broshi/Midasus read too, so
+    // the trio visibly swells together rather than each pulsing in
+    // isolation. 1 (no-op) outside a build-up.
+    const swell = ensemble ? ensemble.swell(0) : 1;
+    const breathe = (1 + 0.025 * Math.sin(tSec * 2.4) + 0.05 * breatheBeatFlash) * swell;
     const transform = {
       tx: pose.midioDrawX, ty: pose.midioY,
       rot: (pose.leanDeg * Math.PI) / 180,
       scaleX: pose.scaleX * MIDIO_DRAW_SCALE * breathe * (1 + 0.25 * apoProgress),
       scaleY: pose.scaleY * MIDIO_DRAW_SCALE * breathe * (1 + 0.25 * apoProgress),
+      // Rare shared transition tumble (see EnsembleDirector.maybeTumble) --
+      // 0 outside of a move, so this is a no-op almost all the time.
+      rotX: ensemble ? ensemble.rotX(0) : 0,
+      rotY: ensemble ? ensemble.rotY(0) : 0,
     };
     // Midasus style: he wears his eased spectral key-hue (baseHue); the
     // milestone gold flash still ignites him toward gold (48) on top of it.

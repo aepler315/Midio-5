@@ -9,8 +9,10 @@ export const OCEAN_HORIZON_FRAC = 0.26;
 // Near edge sits mid-frame so water stays legible between mountain gaps
 // instead of living only as a thin strip under the sky. Rows still pack
 // denser toward the horizon; foreground L4/L5 occlude the lowest portion.
-// Slightly larger plane so the ocean vibe reads as a world, not a ribbon.
-export const OCEAN_NEAR_FRAC = 0.62;
+// Slightly larger plane so the ocean vibe reads as a world, not a ribbon --
+// enough survives behind L4/L5 to hold the middle distance between the
+// cosmos and the ground instead of reading as a thin band.
+export const OCEAN_NEAR_FRAC = 0.66;
 
 /** Peak absolute contribution of each harmonic in seaLineY (pre-amp). Kept
  *  as named constants so tests can pin the bound without re-deriving. */

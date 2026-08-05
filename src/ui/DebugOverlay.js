@@ -40,6 +40,10 @@ export class DebugOverlay {
       lines.push(`perf governor: level ${g.level}/${MAX_LEVEL}  (vision ${g.visionAllowed ? 'ok' : 'shed'}, particles ×${g.particleMul}, crackGlow ${g.crackGlowEnabled ? 'on' : 'off'}, veil ${g.veilEnabled ? 'on' : 'off'}, phenomena ${g.phenomenaFull ? 'on' : 'off'}, haze ${g.hazeLayers}, postFx ${g.heavyPostFx ? 'on' : 'off'})`);
     }
     lines.push(`reduced flash: ${this.sim.reducedFlash ? 'ON' : 'OFF'} (press R to toggle)`);
+    if (this.sim.beatAnchor) {
+      const ba = this.sim.beatAnchor;
+      lines.push(`beat anchor: period=${ba.periodMs.toFixed(0)}ms  confidence=${ba.confidence.toFixed(2)}  (click/tap anywhere to resync)`);
+    }
     lines.push(`visual style: Midio (single house look)`);
     if (this.sim.highlightReel) {
       lines.push(`highlight reel: ${this.sim.highlightReel.frames.length}/8 captured`);

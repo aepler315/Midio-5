@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ObstacleSpawner, obstacleArchetype, emergenceEnvelope, dissolveEnvelope, obstacleInJumpWindow,
-  ARCHETYPES, EMERGENCE_PX, DISSOLVE_PX, geoRowTimes, GEO_SHAPES,
+  ObstacleSpawner, obstacleArchetype, emergenceEnvelope, dissolveEnvelope,
+  ARCHETYPES, EMERGENCE_PX, DISSOLVE_PX, BURST_LIFE_MS, geoRowTimes, GEO_SHAPES,
 } from '../src/sim/ObstacleSpawner.js';
 
 function fakeCtx() {
@@ -118,28 +118,32 @@ test('a geometric row candidate spawns a full lined-up line of clean polygon obs
   }
 });
 
-test('collision/placement math is untouched: checkCollision and nearestAhead behave as before', () => {
+test('placement math is untouched: nearestAhead behaves as before (no collision -- obstacles are ambient only)', () => {
   const spawner = new ObstacleSpawner({ live: { obstacleDensity: 1 } });
-  spawner.active = [{ wx: 100, width: 28, height: 46, passed: false }];
+  spawner.active = [{ wx: 100, width: 28, height: 46 }];
   assert.equal(spawner.nearestAhead(0).wx, 100);
-  assert.equal(spawner.checkCollision(100, 23, 10), true, 'too low to clear should stumble');
-  assert.equal(spawner.active[0].passed, true);
 });
 
-test('obstacleInJumpWindow: true when the obstacle\'s crossing time falls inside the jump\'s hang window', () => {
-  const jump = { jumpStartMs: 1000, D: 400 };
-  assert.equal(obstacleInJumpWindow(jump, { tMs: 1200 }), true, 'inside the window');
-  assert.equal(obstacleInJumpWindow(jump, { tMs: 1000 }), true, 'right at the start (inclusive)');
-  assert.equal(obstacleInJumpWindow(jump, { tMs: 1400 }), true, 'right at the end (inclusive)');
-  assert.equal(obstacleInJumpWindow(jump, { tMs: 999 }), false, 'just before');
-  assert.equal(obstacleInJumpWindow(jump, { tMs: 1401 }), false, 'just after');
-});
+test('the beat-synced burst fires exactly at the obstacle\'s own scheduled tMs, independent of world position', () => {
+  const spawner = new ObstacleSpawner({ live: { obstacleDensity: 1 } }, { seed: 9 });
+  spawner.candidates = [{ tMs: 2000 }];
+  spawner.update(0, 0, 0.22);
+  const o = spawner.active[0];
+  // Far enough past in world-space that the shape itself has fully
+  // dissolved (worldX - o.wx > DISSOLVE_PX), but still on-screen -- any
+  // drawing left over can only be the burst, which reads its own tMs, not
+  // Midio's position.
+  const farWorldX = o.wx + 250;
 
-test('obstacleInJumpWindow: false/never throws on missing or malformed input', () => {
-  const jump = { jumpStartMs: 1000, D: 400 };
-  assert.equal(obstacleInJumpWindow(null, { tMs: 1200 }), false);
-  assert.equal(obstacleInJumpWindow(jump, null), false);
-  assert.equal(obstacleInJumpWindow({ jumpStartMs: NaN, D: 400 }, { tMs: 1200 }), false);
-  assert.equal(obstacleInJumpWindow(jump, { tMs: NaN }), false);
-  assert.equal(obstacleInJumpWindow({}, {}), false);
+  const before = fakeCtx();
+  spawner.draw(before, farWorldX, 220, 480, { nowMs: o.tMs - 50 });
+  assert.equal(before.calls.save, 0, 'nothing should draw before the burst, with the shape already dissolved');
+
+  const during = fakeCtx();
+  spawner.draw(during, farWorldX, 220, 480, { nowMs: o.tMs + 100, haloColor: '#8a3a6b' });
+  assert.ok(during.calls.fill > 0, 'the burst should be drawing motes right after its own tMs');
+
+  const after = fakeCtx();
+  spawner.draw(after, farWorldX, 220, 480, { nowMs: o.tMs + BURST_LIFE_MS + 500 });
+  assert.equal(after.calls.save, 0, 'the burst should be fully spent well after its life window');
 });

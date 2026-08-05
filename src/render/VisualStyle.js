@@ -52,19 +52,21 @@ export function styleDials(_style) {
     fogMul: 1.4,
     spaceWash: true,
     starAmbient: 1.3,
-    oceanPresence: 1.35,
+    oceanPresence: 1.55,
     // Characters — wireframe + glow
     glowHaloMul: 1.25,
     rimAmount: 0.9,
     widthBase: 1.8,
     widthGlow: 2.35,
     outlineWidthAdd: 2.7,
-    // Ocean — water mass + soft contours (keep them dim so they don't stripe mountains)
-    oceanLineAlpha: 0.18,
+    // Ocean — water mass + soft contours. It's meant to anchor the ambience
+    // between the cosmos and the ground, so it needs real contour
+    // definition, not just a wash -- raised from a near-invisible 0.18/0.28.
+    oceanLineAlpha: 0.42,
     oceanDrawContours: true,
     oceanBodyAlpha: 1.25,
-    oceanReflect: 1.15,
-    rowCountMul: 0.28,
+    oceanReflect: 1.4,
+    rowCountMul: 0.6,
     heatShimmerSlices: false,
     groundCrestCaps: true,
     massifCrestCaps: true,
