@@ -20,6 +20,12 @@ const SNAP = 0.70;
 const DRAW_SCALE = 5.4; // 3× the previous 1.8 stage scale — she's the star of the sky
 const BANK_GAIN = 0.0016, BANK_MAX = 0.6; // she rolls into her darts
 const SLASH_LIFE_SEC = 0.18;
+// Disc spin (clean-combo flourish -- see update()'s justClean gate):
+// wider and longer than the single-accent pirouette so it reads as its own
+// distinct move, "turning into a spinning disc" rather than just a hard bank.
+const DISC_MS = 420;
+const DISC_TURNS = 2.4;
+const DISC_SCALE_PEAK = 1.9; // both axes together -- see draw()'s presScale
 // Anticipation (ChoreoClock): she launches her dart this far BEFORE each
 // note so she's arriving as it sounds -- the impact FX (burst/slash/pulse)
 // wait for the note's own heard moment.
@@ -87,6 +93,14 @@ export class Midasus {
     this._wasResting = false;
     this.rollExtra = 0; // pirouette roll, added to her banking in draw()
     this._pirouetteStartMs = -Infinity;
+    // Disc spin (mirrors Midio's clean-combo flourish, see MidioPerformer):
+    // a wide spinning-disc turn on the same trigger, but her disc grows
+    // BOTH axes together (presScale already drives scaleX/scaleY equally)
+    // instead of Midio's single-axis pinch -- she flattens into a round
+    // halo, not an ellipse edge-on.
+    this._discStartMs = -Infinity;
+    this._discScale = 1;
+    this._discRoll = 0;
   }
 
   /** Test/debug hook: send her on a voyage right now regardless of natural
@@ -174,6 +188,10 @@ export class Midasus {
     this._calmLevel = calmLevel;
     this._ens = ensemble;
     this._nowMs = nowMs;
+    // Disc spin: the same clean-combo flourish Midio celebrates with (see
+    // MidioPerformer's FLOURISH_COMBO_THRESHOLD gate), so the trio's send-up
+    // reads as one shared beat rather than three unrelated tics.
+    if (ensemble && ensemble.justClean) this._discStartMs = nowMs;
     // Apex-on-beat (ChoreoClock): the DART starts early -- cursor runs
     // ANTICIPATE_MS ahead, so the 70% trajectory snap and the PD pursuit
     // are already carrying her toward the perch as the note arrives...
@@ -237,6 +255,21 @@ export class Midasus {
     const pirU = (nowMs - this._pirouetteStartMs) / 320;
     this.rollExtra = pirU >= 0 && pirU < 1 ? Math.PI * 2 * (1 - (1 - pirU) ** 3) : 0;
 
+    // Disc spin: a wide, fast turn distinct from the single-accent
+    // pirouette above -- more turns, and (unlike rollExtra) it carries its
+    // own scale swell so she visibly widens into a spinning disc rather
+    // than just banking harder. Smoothstep in and back out so she reads as
+    // *turning into* the disc and back, not popping to it.
+    const discU = (nowMs - this._discStartMs) / DISC_MS;
+    if (discU >= 0 && discU < 1) {
+      const ease = Math.sin(discU * Math.PI); // 0 -> 1 -> 0 across the window
+      this._discRoll = DISC_TURNS * Math.PI * 2 * (1 - (1 - discU) ** 3);
+      this._discScale = 1 + (DISC_SCALE_PEAK - 1) * ease;
+    } else {
+      this._discRoll = 0;
+      this._discScale = 1;
+    }
+
     this.v.x += (KP * (target.x - this.p.x) - KD * this.v.x) * dtSec;
     this.v.y += (KP * (target.y - this.p.y) - KD * this.v.y) * dtSec;
     // Soft personal space: drift off Midio and Broshi when she crowds them
@@ -250,9 +283,13 @@ export class Midasus {
     this.v.x += softRepel1D(this.p.x, midioX, 170, 900) * dtSec;
     this.v.y += softRepel1D(this.p.y, midioY, 100, 160) * dtSec;
     if (this._ens && Number.isFinite(this._ens.broshiX)) {
-      this.v.x += softRepel1D(this.p.x, this._ens.broshiX, 140, 180) * dtSec;
+      // Matched to Broshi's own repel-from-Midasus (Broshi.js SOFT_REPEL_MIDASUS)
+      // -- previously much weaker than the Midio repel above, so the trio's
+      // two "orbiting" characters still crowded each other even once each was
+      // separately well clear of Midio.
+      this.v.x += softRepel1D(this.p.x, this._ens.broshiX, 160, 450) * dtSec;
       if (Number.isFinite(this._ens.broshiY)) {
-        this.v.y += softRepel1D(this.p.y, this._ens.broshiY, 90, 120) * dtSec;
+        this.v.y += softRepel1D(this.p.y, this._ens.broshiY, 110, 200) * dtSec;
       }
     }
     this.p.x += this.v.x * dtSec;
@@ -371,7 +408,12 @@ export class Midasus {
     // Shared build-up swell (EnsembleDirector.swell) composes with her own
     // voyage presentation scale -- 1 (no-op) outside a build-up.
     const swell = this._ens && this._ens.swell != null ? this._ens.swell : 1;
-    const presScale = this.voyage.presentationScale * swell;
+    // _discScale composes here rather than replacing presScale, so a clean
+    // combo mid-voyage still widens her, on top of whatever the launch/climb
+    // is already doing -- and because scaleX/scaleY below both read this
+    // same value, growing it widens BOTH axes together (her disc, unlike
+    // Midio's single-axis pinch, spans x and y equally).
+    const presScale = this.voyage.presentationScale * swell * this._discScale;
     const sat = Math.round(58 - 28 * this.rest); // spectral: pale, never candy
     this.debris.draw(ctx, this.hue, this.rest, particleMul); // behind her core and trail
     // Calm sections fade the ribbon rather than shortening it -- the longer
@@ -413,7 +455,7 @@ export class Midasus {
     const bank = clamp(this.v.x * BANK_GAIN, -BANK_MAX, BANK_MAX)
       + (this._ens ? 0.08 * Math.sin(this._ens.phase) : 0);
 
-    const rot = bank + this.rollExtra; // pirouette rides on top of the banking
+    const rot = bank + this.rollExtra + this._discRoll; // pirouette + disc spin ride on top of the banking
 
     // Keep the halo modest — a huge soft disc under the hexagram read as a
     // broken white blob next to Broshi's clean wireframe. presScale swells

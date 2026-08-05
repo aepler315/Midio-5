@@ -39,7 +39,7 @@ import { MeteorShowerFX } from './MeteorShower.js';
 import { LightRig } from './LightRig.js';
 import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS } from './DepthHaze.js';
 import { PERSONALITY } from './BiomePersonality.js';
-import { isRendered, styleDials, shiftLightness } from '../render/VisualStyle.js';
+import { isRendered, styleDials, shiftLightness, ensureContrast } from '../render/VisualStyle.js';
 import { Murmuration } from './Murmuration.js';
 import { Atmosphere } from './Atmosphere.js';
 import { CodaDirector } from '../sim/CodaDirector.js';
@@ -975,7 +975,18 @@ export class BiomeManager {
     const scrollX1 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L3, this.unravel);
     const scrollX2 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L4, this.unravel);
     const scrollX3 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L5, this.unravel);
-    const tint = this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t));
+    // A biome's silhouette is one fixed authored color; the sky behind it
+    // pulls toward near-black at night (see _drawSky's nightPull). On a
+    // palette that already runs dark, those two can converge and the ranges
+    // read as barely-there smears instead of silhouettes -- so pin the
+    // mountain tint to stay legible against the actual horizon color it's
+    // about to sit in front of, at the same pull the sky gradient just used.
+    const horizonPull = (0.62 * (dn.night || 0) + (styleDials(this.visualStyle).spaceWash ? 0.14 : 0)) * 0.45;
+    const skyHorizon = this._rotated(this.lerpCache.get(A.sky[2], B.sky[2], t));
+    const skyHorizonNight = horizonPull > 0.02
+      ? this.lerpCache.get(skyHorizon, NIGHT_SKY_COLOR, horizonPull)
+      : skyHorizon;
+    const tint = ensureContrast(this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)), skyHorizonNight, 0.14);
     // Depth haze: three wash layers (L2/L3/L4) at healthy perf; the deepest
     // rung collapses to just L3, the middle layer -- enough of an
     // atmosphere cue to not read as flat, at a third of the cost.
@@ -1023,7 +1034,7 @@ export class BiomeManager {
     if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L4', A, B, t, arc);
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
 
-    this._drawGround(ctx, canvas, worldX, originX, A, B, t);
+    this._drawGround(ctx, canvas, worldX, originX, A, B, t, tint);
     // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
     this._drawTerrainFooting(ctx, canvas, worldX, originX, A, B, t);
     this._drawFlood(ctx, canvas);
@@ -2622,13 +2633,21 @@ export class BiomeManager {
     return path;
   }
 
-  _drawGround(ctx, canvas, worldX, originX, A, B, t) {
-    const groundColorRaw = this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t));
-    // Darkened a touch against the nearest range so the ground always keeps
-    // an edge, even at palettes where silhouette and ground would otherwise
-    // land on the exact same tone (previously the one silhouette-tinted
-    // element skipping the key/section hue rotation entirely).
-    const groundColor = shiftLightness(groundColorRaw, -0.08);
+  _drawGround(ctx, canvas, worldX, originX, A, B, t, mountainTint = null) {
+    // Match the mountains' own contrast-corrected tint when it's handed in
+    // (draw()'s per-frame guard against a dark palette washing out at
+    // night) rather than re-deriving the raw, uncorrected silhouette --
+    // otherwise the ground could end up *less* legible than the range it's
+    // standing in front of.
+    const groundColorRaw = mountainTint ?? this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t));
+    // Lifted a touch *lighter* than the nearest range -- not darker -- so
+    // the ground always keeps an edge (previously the one silhouette-tinted
+    // element skipping the key/section hue rotation entirely) and, just as
+    // important, so it has headroom to survive the film-finish vignette and
+    // fog wash still to come: those only ever push toward black, and the
+    // ground sits in their darkest (bottom, off-center) reach. A color that
+    // starts already dark has nothing left once they're through with it.
+    const groundColor = shiftLightness(groundColorRaw, 0.14);
     const localGroundY = this.groundField ? this.groundField.heightAt(worldX) : this.groundY;
     const activeFx = t > 0.5 ? B.fx : A.fx;
     // The Mirror: GroundField's physics (collision height) are untouched,
