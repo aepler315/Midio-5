@@ -39,7 +39,7 @@ import { MeteorShowerFX } from './MeteorShower.js';
 import { LightRig } from './LightRig.js';
 import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS } from './DepthHaze.js';
 import { PERSONALITY } from './BiomePersonality.js';
-import { isRendered, styleDials, shiftLightness, ensureContrast } from '../render/VisualStyle.js';
+import { isRendered, styleDials, shiftLightness, ensureContrast, ensureMinLightness } from '../render/VisualStyle.js';
 import { Murmuration } from './Murmuration.js';
 import { Atmosphere } from './Atmosphere.js';
 import { CodaDirector } from '../sim/CodaDirector.js';
@@ -115,6 +115,12 @@ const SHOULDER_LIT = '#fff8e6';
 // as flat cutouts. L5 sits right behind the characters -- anything strong
 // there competes with them for attention.
 const RIDGE_VOLUME_STRENGTH = { L2: 1.0, L3: 0.85, L4: 0.6, L5: 0.4 };
+
+// The ground must never sink into the void, whatever the biome's silhouette
+// started at. Chosen to clear the film-grade wash and the vignette that
+// still follow it -- both only ever push toward black, and the ground sits
+// in their darkest (bottom, off-centre) reach.
+const GROUND_MIN_LIGHTNESS = 0.30;
 const MILESTONE_METEOR_BASE = [5, 8, 14];
 const DROP_METEOR_BASE = 12;
 const ACHROMATIC_SAT_THRESHOLD = 0.08;
@@ -2985,7 +2991,16 @@ export class BiomeManager {
     // fog wash still to come: those only ever push toward black, and the
     // ground sits in their darkest (bottom, off-center) reach. A color that
     // starts already dark has nothing left once they're through with it.
-    const groundColor = shiftLightness(groundColorRaw, 0.14);
+    // ...and then floored outright. The relative lift alone is not enough:
+    // +0.14 from a near-black silhouette (CYBER, LUMEN, STORM, ABYSS all sit
+    // under 0.10 lightness) is still near-black, and under a bright ocean
+    // that reads as no ground at all -- just void below the water. The floor
+    // is what makes "there is ground here" true on every palette rather than
+    // only on the ones that started bright.
+    const groundColor = ensureMinLightness(
+      shiftLightness(groundColorRaw, 0.14),
+      GROUND_MIN_LIGHTNESS,
+    );
     const localGroundY = this.groundField ? this.groundField.heightAt(worldX) : this.groundY;
     const activeFx = t > 0.5 ? B.fx : A.fx;
     // The Mirror: GroundField's physics (collision height) are untouched,

@@ -89,6 +89,23 @@ export function shiftLightness(hex, delta) {
   return rgbToHex(rgb.r, rgb.g, rgb.b);
 }
 
+/** Raises `hex` to at least `minL` HSL lightness, leaving anything already
+ *  bright enough untouched.
+ *
+ *  A *relative* lift (shiftLightness) is not enough on its own for anything
+ *  that must stay readable on every palette: +0.14 from a near-black
+ *  silhouette is still near-black, so the darkest biomes' ground sank into
+ *  the void -- especially under a bright ocean, where the eye's reference
+ *  point is the water and everything below it reads as nothing at all.
+ *  A floor is the only thing that holds regardless of what it started from. */
+export function ensureMinLightness(hex, minL) {
+  const { r, g, b } = hexToRgb(hex);
+  const hsl = rgbToHsl(r, g, b);
+  if (hsl.l >= minL) return hex;
+  const rgb = hslToRgb(hsl.h, hsl.s, minL);
+  return rgbToHex(rgb.r, rgb.g, rgb.b);
+}
+
 /** Guarantees a silhouette (mountains, ground) never washes out against
  *  whatever it's sitting on -- a fixed authored color and a night-pulled sky
  *  can converge toward the same near-black at full night, on any biome whose
