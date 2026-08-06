@@ -619,6 +619,18 @@ export class Simulation {
       }
     }
 
+    if (this.jump.pendingGhostKick) {
+      // High-BPM halftime (JumpController.js, > HIGH_BPM_HALFTIME): every
+      // second kick is deliberately withheld from launching a jump --
+      // JumpPlanner.js calls it "routes to FX only" -- but nothing ever
+      // consumed the flag it set, so half the kicks in a fast song produced
+      // no visible response at all. A light ground splat, scaled by the
+      // kick's own velocity, is the promised FX without a full landing.
+      const gk = this.jump.pendingGhostKick;
+      this.impactFX.splat(this.worldX, this.midio.groundY);
+      this.performer.modal.excite(2 + 2 * gk.vel);
+    }
+
     if (this.jump.pendingLanding) {
       const nearestKick = this.conductor.nearestEventMs(
         (e) => e.role === Role.RHYTHM && e.kick, nowMs, CLEAN_WINDOW_MS + 20,

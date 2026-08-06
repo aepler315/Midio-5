@@ -41,6 +41,16 @@ export class AudioEngine {
     }
   }
 
+  /** Forget the decoded buffer from a previous raw-audio song. Without this,
+   *  loading a MIDI/demo after playing raw audio leaves _audioBuffer set to
+   *  the OLD song -- seekToMs (the mountain seekbar) would then start a
+   *  BufferSource playing that stale audio on top of the new synth-driven
+   *  song. MIDI/demo playback never calls playBuffer to set a fresh one, so
+   *  nothing else would ever clear it. */
+  clearBuffer() {
+    this._audioBuffer = null;
+  }
+
   get nowMs() {
     if (!this.playing || this._startCtxTime === null) return this._pausedAtMs;
     return (this.ctx.currentTime - this._startCtxTime) * 1000;
