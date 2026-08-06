@@ -31,12 +31,13 @@ function smooth(arr, halfWidth = TRACE_SMOOTH) {
 }
 
 export class DebugOverlay {
-  constructor(el, sim, paramBus, visionLoop, perfGovernor = null) {
+  constructor(el, sim, paramBus, visionLoop, perfGovernor = null, drawErrors = null) {
     this.el = el;
     this.sim = sim;
     this.paramBus = paramBus;
     this.visionLoop = visionLoop;
     this.perfGovernor = perfGovernor;
+    this.drawErrors = drawErrors;
     this.visible = false;
 
     // The overlay used to be a bare textContent write; it now owns a <pre>
@@ -187,6 +188,14 @@ export class DebugOverlay {
     lines.push(`broshi rabid=${this.sim.broshi.rabid ? 'YES' : 'no'} rho=${(this.sim.broshi.rho || 0).toFixed(2)}`);
 
     // --- structure ---
+    // A failing draw outranks every other reading here: whatever else the
+    // numbers say, part of the frame is not being painted.
+    const drawSummary = this.drawErrors ? this.drawErrors.summary : null;
+    if (drawSummary) {
+      lines.push('');
+      lines.push(`!!! ${drawSummary}`);
+    }
+
     lines.push('');
     lines.push('=== STRUCTURE ===');
     if (this.sim.biomes) {

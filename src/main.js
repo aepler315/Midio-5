@@ -16,6 +16,7 @@ import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
+import { DrawErrorLog } from './render/DrawErrorLog.js';
 import { ROLE_LOW, ROLE_HIGH, GrooveFingerprint } from './sim/GrooveFingerprint.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
 import {
@@ -105,6 +106,7 @@ const lyricsFindBtnEl = document.getElementById('lyricsFindBtn');
 const lyricsSkipBtnEl = document.getElementById('lyricsSkipBtn');
 const lyricsNoneBtnEl = document.getElementById('lyricsNoneBtn');
 const noLyricsBtnEl = document.getElementById('noLyricsBtn');
+const reducedFlashBtnEl = document.getElementById('reducedFlashBtn');
 const btLatencyBtnEl = document.getElementById('btLatencyBtn');
 const btLatencyHudBtnEl = document.getElementById('btLatencyHudBtn');
 const visualStyleBtnEl = document.getElementById('visualStyleBtn');
@@ -124,6 +126,8 @@ let recalNudgeHideAtMs = Infinity;
 // Cross-song groove profile (GrooveFingerprint), rehydrated once at startup
 // and handed to every Simulation built afterwards.
 const groove = new GrooveFingerprint(getStoredGroove());
+// Frame-loop failures, counted and shown rather than swallowed.
+const drawErrors = new DrawErrorLog();
 let grooveSaveDue = false;
 let grooveSaveAtMs = 0;
 const GROOVE_SAVE_DEBOUNCE_MS = 2000; // wall-clock auto-dismiss for the nudge
@@ -187,6 +191,17 @@ if (noLyricsBtnEl) {
     syncNoLyricsBtn();
   });
 }
+
+/** Reflect the reduced-flash accessibility preference on the loader toggle
+ *  button -- previously reachable only via the R key, so unusable on touch
+ *  and undiscoverable for anyone who doesn't already know the shortcut. */
+function syncReducedFlashBtn() {
+  if (!reducedFlashBtnEl) return;
+  reducedFlashBtnEl.setAttribute('aria-pressed', reducedFlash ? 'true' : 'false');
+  reducedFlashBtnEl.textContent = `Reduced flash: ${reducedFlash ? 'on' : 'off'}`;
+}
+syncReducedFlashBtn();
+if (reducedFlashBtnEl) reducedFlashBtnEl.addEventListener('click', () => toggleReducedFlash());
 
 /** Reflect Bluetooth latency mode on loader + in-game HUD buttons and the AudioEngine. */
 function syncBtLatencyUi() {
@@ -573,6 +588,13 @@ function toggleTrackList() {
  *  tolerates being idle). */
 function stopTimeline() {
   running = false;
+  // conductor is a single instance shared across every song (see its
+  // construction above); Simulation and its subsystems subscribe to it at
+  // construction and never unsubscribe on their own. Without this, a replay
+  // leaves the old sim's listeners registered forever -- each stacking on
+  // top of the next, still firing into torn-down state on every future
+  // dispatch for the rest of the session.
+  if (sim) { sim.dispose(); sim = null; }
   // A stop/restart must never leave the AudioContext suspended -- its
   // currentTime is the master clock every song's timing derives from
   // (see AudioEngine.js header), and a still-suspended context would
@@ -587,6 +609,16 @@ function stopTimeline() {
     rafHandle = null;
   }
   audioEngine?.pause();
+  // Forget any decoded buffer from a previous raw-audio song -- otherwise a
+  // MIDI/demo load right after one leaves the OLD song's buffer attached,
+  // and the mountain seekbar would start playing it on top of the new one.
+  // A raw-audio load re-attaches its own buffer via playBuffer() afterward.
+  audioEngine?.clearBuffer();
+  // The log-on-powers-of-two cadence is meant to keep a PERSISTENT failure
+  // legible without flooding the console. Carried across songs, it does the
+  // opposite: a brand new regression in song 2 inherits song 1's count and
+  // can stay silent until occurrence 1024. Each song gets a clean slate.
+  drawErrors.reset();
   synth?.stopAll?.();
   // Tear down optional WebGL overlay so a mid-song drop doesn't stack layers.
   if (renderer && typeof renderer.dispose === 'function') {
@@ -677,6 +709,11 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
   lastSongSeed = sim.songSeed;
   setSeedInput(sim.songSeed);
   sim.perf = perfGovernor;
+  // Judgment feedback (hit/miss/hold ticks/choke): SfxSynth is authored and
+  // fully tuned but was never wired to anything -- every judgment played in
+  // total silence. sfx is null until bootAudio() resolves; Simulation
+  // already guards every call with `this.sfx?.`.
+  sim.sfx = sfx;
   sim.setReducedFlash(reducedFlash);
   sim.setVisualStyle(visualStyle);
   // Prime one sim step so BiomeManager/update dials (haze, calm, etc.) are
@@ -692,7 +729,7 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
   renderer = createRenderer(canvas, rendererMode);
   visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false, perfGovernor });
-  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop, perfGovernor);
+  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop, perfGovernor, drawErrors);
   renderTracks(timelineData.tracks, timelineData.pairs);
   if (filmstripEl) { filmstripEl.innerHTML = ''; filmstripEl.classList.add('hidden'); }
 
@@ -733,7 +770,7 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
 async function loadMidiFile(file) {
   try {
     await bootAudio();
-    loadGen++;
+    const myGen = ++loadGen;
     const buf = await file.arrayBuffer();
     if (!buf || buf.byteLength < 14) {
       throw new Error('File is empty or too small to be a MIDI file');
@@ -742,6 +779,10 @@ async function loadMidiFile(file) {
     if (!data.timeline || data.timeline.length === 0) {
       throw new Error('MIDI parsed but contains no notes');
     }
+    // A second file dropped while this one was still awaiting arrayBuffer()
+    // has since bumped loadGen -- that load is the one the player actually
+    // wants now, so this stale one must not clobber it by starting anyway.
+    if (myGen !== loadGen) return;
     lastSongName = file.name || 'song';
     data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
     // Custom biome generation lives inside the load path so every drop/upload
@@ -972,7 +1013,13 @@ async function resolveLyricsForAudio(file, durationSec, vocalStem = null) {
  *  file's NAME casting its notes to a character (see Casting.js). */
 async function loadAudioFiles(files) {
   await bootAudio();
-  loadGen++; // raw audio never gates, but a pending gate must not start over us
+  // A second load started while this one is still analysing (another drop,
+  // a demo click, a MIDI drop) bumps loadGen -- that's the load the player
+  // actually wants now, so this one must bail before it commits rather than
+  // clobbering it. Analysis here is the longest of any load path (band
+  // separation + onset/tempo/pitch + an awaited lyrics prompt), so it's the
+  // one most likely to still be in flight when a second drop lands.
+  const myGen = ++loadGen;
   const decoded = [];
   for (const file of files) {
     try {
@@ -996,69 +1043,86 @@ async function loadAudioFiles(files) {
   auditionPanelEl?.classList.remove('hidden');
   const loadShowSession = loadShow?.start(null);
   loadShow?.setStage(isStemDrop ? `Mixing ${decoded.length} stems…` : 'Separating into 7 frequency bands…', 0);
-  // Identity + lyrics resolution runs concurrently with separation/analysis
-  // on the same audition panel (a distinct row within it, so the two never
-  // fight over the same text) -- the panel stays up until BOTH have
-  // settled, so the identity row can't flash and vanish before the player
-  // gets a chance to Find/Skip.
-  // StemAlign fallback gate (Task E of the lyrics plan): only relevant when
-  // several stems were dropped together and one of their filenames reads as
-  // an actual vocal track -- buildLyricSections only touches it if the
-  // lyrics that come back have no per-line timestamps of their own.
-  const vocalStem = isStemDrop ? decoded.find((d) => isVocalStemName(d.name)) : null;
-  // "No lyrics" preference: skip the whole identity/lyric fetch + prompt.
-  // Everything downstream already no-ops on null lyricSections.
-  const lyricsPromise = lyricsDisabled
-    ? Promise.resolve({ identity: null, lyricSections: null })
-    : resolveLyricsForAudio(files[0], audioBuffer.duration, vocalStem);
-  let data;
+  // Everything below can throw (analysis, lyric lookups, world build). The
+  // MIDI path next door catches and recovers; this one didn't -- a failure
+  // here left the loader hidden, the HUD hidden, and the audition panel
+  // stuck on screen forever with no alert and no way back but a reload.
   try {
-    data = await audioToTimeline(audioBuffer, {
-      userStems: isStemDrop ? decoded : null,
-      // Everything previous sessions learned about how this player splits a
-      // kick from a hat, applied to a song they've never played.
-      groove,
-      onProgress: ({ phase, progress }) => {
-        if (phase === 'separate') loadShow?.setStage(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`, progress);
-        else if (phase === 'analyze') loadShow?.setStage('Detecting onsets, tempo, and downbeat…', 0.7);
-        else if (phase === 'pitch') loadShow?.setStage('Tracing melody, bass, and harmony…', 0.9);
-      },
-    });
-  } finally {
-    loadShow?.stop(loadShowSession);
-  }
-  const { identity: lyricIdentity, lyricSections } = await lyricsPromise;
-  data.lyricIdentity = lyricIdentity;
-  data.lyricSections = lyricSections;
-  if (auditionHeadingEl) auditionHeadingEl.textContent = 'PULLING THE RECORDING APART';
-  auditionPanelEl?.classList.add('hidden');
-  lyricsRowEl?.classList.add('hidden');
+    // Identity + lyrics resolution runs concurrently with separation/analysis
+    // on the same audition panel (a distinct row within it, so the two never
+    // fight over the same text) -- the panel stays up until BOTH have
+    // settled, so the identity row can't flash and vanish before the player
+    // gets a chance to Find/Skip.
+    // StemAlign fallback gate (Task E of the lyrics plan): only relevant when
+    // several stems were dropped together and one of their filenames reads as
+    // an actual vocal track -- buildLyricSections only touches it if the
+    // lyrics that come back have no per-line timestamps of their own.
+    const vocalStem = isStemDrop ? decoded.find((d) => isVocalStemName(d.name)) : null;
+    // "No lyrics" preference: skip the whole identity/lyric fetch + prompt.
+    // Everything downstream already no-ops on null lyricSections.
+    const lyricsPromise = lyricsDisabled
+      ? Promise.resolve({ identity: null, lyricSections: null })
+      : resolveLyricsForAudio(files[0], audioBuffer.duration, vocalStem);
+    let data;
+    try {
+      data = await audioToTimeline(audioBuffer, {
+        userStems: isStemDrop ? decoded : null,
+        // Everything previous sessions learned about how this player splits a
+        // kick from a hat, applied to a song they've never played.
+        groove,
+        onProgress: ({ phase, progress }) => {
+          if (phase === 'separate') loadShow?.setStage(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`, progress);
+          else if (phase === 'analyze') loadShow?.setStage('Detecting onsets, tempo, and downbeat…', 0.7);
+          else if (phase === 'pitch') loadShow?.setStage('Tracing melody, bass, and harmony…', 0.9);
+        },
+      });
+    } finally {
+      loadShow?.stop(loadShowSession);
+    }
+    const { identity: lyricIdentity, lyricSections } = await lyricsPromise;
+    // A newer load has since started -- let it win. Its own flow owns the
+    // loader/audition/HUD visibility from here; this stale one touches none
+    // of it.
+    if (myGen !== loadGen) return;
+    data.lyricIdentity = lyricIdentity;
+    data.lyricSections = lyricSections;
+    if (auditionHeadingEl) auditionHeadingEl.textContent = 'PULLING THE RECORDING APART';
+    auditionPanelEl?.classList.add('hidden');
+    lyricsRowEl?.classList.add('hidden');
 
-  if (data.freeTime) {
-    console.warn(`Low tempo confidence (${data.confidence.toFixed(2)}) — switching to free-time, kick-reactive jumps.`);
+    if (data.freeTime) {
+      console.warn(`Low tempo confidence (${data.confidence.toFixed(2)}) — switching to free-time, kick-reactive jumps.`);
+    }
+    if (data.stems) {
+      console.info('[casting] stems:', data.stems.map((s) => `${s.name} -> ${s.lane || '(world)'}`).join(', '));
+    }
+    // Audio files get the same per-song visual fingerprint MIDI files do: a
+    // unique custom biome from the timeline plus the adapter's chroma/
+    // brightness/dynamics/width analysis (see BiomeImporter).
+    data.customBiome = generateCustomBiomeFromMidi(data, files[0].name || 'Audio');
+    rememberCustomBiome(paramBus, data.customBiome);
+    // Raw audio already has every voice baked into the decoded buffer —
+    // stacking the synth's pseudo-onset voicing on top is the unwanted
+    // synthetic hi-hat/click layer, so the timeline synth stays silent here.
+    muteTimelineSynth = true;
+    lastSongName = files[0].name || 'song';
+    startTimeline(data);
+    // Replaying this song (Play again / export) needs the actual decoded
+    // audio -- MIDI/demo regenerate their sound from the timeline, but a
+    // raw-audio song has none of its own to regenerate.
+    lastAudioBuffer = audioBuffer;
+    // Raw audio is its own sound source — font fit scores from the previous
+    // MIDI would be stale noise here, so drop them.
+    fontRecommender?.clear();
+    audioEngine.playBuffer(audioBuffer, 0);
+  } catch (err) {
+    console.error('[audio load failed]', err);
+    auditionPanelEl?.classList.add('hidden');
+    lyricsRowEl?.classList.add('hidden');
+    hudEl.classList.add('hidden');
+    loaderEl.classList.remove('hidden');
+    alert('Could not load audio file: ' + (err?.message || err));
   }
-  if (data.stems) {
-    console.info('[casting] stems:', data.stems.map((s) => `${s.name} -> ${s.lane || '(world)'}`).join(', '));
-  }
-  // Audio files get the same per-song visual fingerprint MIDI files do: a
-  // unique custom biome from the timeline plus the adapter's chroma/
-  // brightness/dynamics/width analysis (see BiomeImporter).
-  data.customBiome = generateCustomBiomeFromMidi(data, files[0].name || 'Audio');
-  rememberCustomBiome(paramBus, data.customBiome);
-  // Raw audio already has every voice baked into the decoded buffer —
-  // stacking the synth's pseudo-onset voicing on top is the unwanted
-  // synthetic hi-hat/click layer, so the timeline synth stays silent here.
-  muteTimelineSynth = true;
-  lastSongName = files[0].name || 'song';
-  startTimeline(data);
-  // Replaying this song (Play again / export) needs the actual decoded
-  // audio -- MIDI/demo regenerate their sound from the timeline, but a
-  // raw-audio song has none of its own to regenerate.
-  lastAudioBuffer = audioBuffer;
-  // Raw audio is its own sound source — font fit scores from the previous
-  // MIDI would be stale noise here, so drop them.
-  fontRecommender?.clear();
-  audioEngine.playBuffer(audioBuffer, 0);
 }
 
 async function loadDemo() {
@@ -1118,6 +1182,16 @@ demoBtnEl.addEventListener('click', () => loadDemo());
   dropzoneEl.classList.remove('drag');
 }));
 dropzoneEl.addEventListener('click', () => fileInputEl.click());
+// #dropzone is role="button" tabindex="0", but browsers don't synthesize a
+// click from Enter/Space on a plain div the way they do for a real
+// <button> -- without this the game's primary call-to-action isn't
+// keyboard-operable at all, and the keypress instead fell through to
+// beatTap() (the F/J calibration handler) once the loader is showing.
+dropzoneEl.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+  e.preventDefault(); // Space must not also scroll the page
+  fileInputEl.click();
+});
 
 // --- Global drag-and-drop: works at ANY time, not just from the initial
 // loader screen. Dropping a different .mid/audio file mid-song tears down
@@ -1267,11 +1341,23 @@ function frame(tRaf) {
   acc += deltaMs;
 
   let milestoneFiredThisFrame = false;
-  while (acc >= STEP_MS) {
-    sim.step(STEP_MS, simTime + STEP_MS);
-    simTime += STEP_MS;
-    acc -= STEP_MS;
-    if (sim.performer.milestoneFlash) milestoneFiredThisFrame = true;
+  try {
+    while (acc >= STEP_MS) {
+      sim.step(STEP_MS, simTime + STEP_MS);
+      simTime += STEP_MS;
+      acc -= STEP_MS;
+      if (sim.performer.milestoneFlash) milestoneFiredThisFrame = true;
+    }
+  } catch (err) {
+    // frame() has no wrapper of its own -- an uncaught throw here would abort
+    // BEFORE reaching the requestAnimationFrame() call at the bottom, which
+    // freezes the entire game loop forever on the last good paint. The prime
+    // step at song start already learned this the hard way (see its own
+    // try/catch above); this is the same failure mode on every later frame.
+    acc = 0; // drop the fractional remainder so a partial step doesn't compound
+    if (drawErrors.record(err, tRaf)) {
+      console.error(`[sim.step] (occurrence ${drawErrors.worst.count})`, err);
+    }
   }
 
   const alpha = acc / STEP_MS;
@@ -1279,8 +1365,15 @@ function frame(tRaf) {
     renderer.draw(sim, alpha);
   } catch (err) {
     // One bad frame must not kill the whole run (canvas NaN colors used to
-    // throw here and leave the world frozen on the last good paint).
-    console.error('[draw]', err);
+    // throw here and leave the world frozen on the last good paint). But it
+    // must not be invisible either: this catch hid two effects that threw on
+    // every invocation for months, silently dropping the rest of each
+    // affected frame with them. Counted always, surfaced in the debug
+    // readout, and logged on a log2 cadence so a per-frame throw reports its
+    // scale instead of burying the console.
+    if (drawErrors.record(err, tRaf)) {
+      console.error(`[draw] (occurrence ${drawErrors.worst.count})`, err);
+    }
   }
   comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
   if (streakReadoutEl) streakReadoutEl.textContent = `${sim.comboSystem.streak} streak`;
@@ -1574,6 +1667,7 @@ function toggleReducedFlash() {
   reducedFlash = !reducedFlash;
   setReducedFlash(reducedFlash);
   sim?.setReducedFlash(reducedFlash);
+  syncReducedFlashBtn();
 }
 
 function onSongComplete() {

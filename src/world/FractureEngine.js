@@ -11,6 +11,7 @@ import { Role } from '../core/NoteEvent.js';
 import {
   analyzeSongFinale, buildPeakProgress, FINALE_FREEZE_LEAD_MS,
 } from '../core/SongFinale.js';
+import { capFlashAlpha } from '../ui/Accessibility.js';
 
 // Many small ridge pieces, spaced evenly across song progress so the
 // mountain draws itself gradually through the whole track (not a late pile-up).
@@ -324,6 +325,9 @@ export class FractureEngine {
     this._ridgePlan = buildMountainRidgePolylines(this.w, this.h, songSeed, THRESHOLDS.length);
 
     this.flashAlpha = 0;
+    // The Reel (Movement VI): set externally, persisted accessibility
+    // toggle -- same field name/contract as BiomeManager.reducedFlash.
+    this.reducedFlash = false;
 
     this.shatterState = 'idle'; // idle | about-to-freeze | frozen | done
     this.freezeMs = null;
@@ -343,13 +347,22 @@ export class FractureEngine {
     // about-to-freeze arms this far before freezeAtMs (last impact + ε).
     this._freezeArmMs = Math.max(0, this.finale.freezeAtMs - FREEZE_LEAD_MS);
 
-    conductor.onBar(() => {
+    // conductor outlives every song (see main.js); dispose() must undo this
+    // or a replay stacks a fresh FractureEngine's listener on top of every
+    // previous one still firing.
+    this._unsub = [conductor.onBar(() => {
       const e = this._barSamples > 0 ? this._barAccum / this._barSamples : 0;
       this._barEnergyHistory.push(e);
       if (this._barEnergyHistory.length > 8) this._barEnergyHistory.shift();
       this._barAccum = 0;
       this._barSamples = 0;
-    });
+    })];
+  }
+
+  /** Undo the conductor subscription made at construction. */
+  dispose() {
+    for (const unsub of this._unsub) unsub();
+    this._unsub.length = 0;
   }
 
   registerImpact(I) {
@@ -428,7 +441,7 @@ export class FractureEngine {
     ctx.save();
     for (const crack of this.cracks) drawCrackTree(ctx, crack, this._lastNowMs ?? 0, glow);
     if (this.flashAlpha > 0.01) {
-      ctx.globalAlpha = this.flashAlpha * 0.12;
+      ctx.globalAlpha = capFlashAlpha(this.flashAlpha * 0.12, this.reducedFlash);
       ctx.fillStyle = '#cfefff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
@@ -547,7 +560,10 @@ export class FractureEngine {
     }
 
     if (this.flashAlpha > 0.01) {
-      ctx.globalAlpha = this.flashAlpha;
+      // The two full-viewport fills in this class are the only flashes in
+      // the game that bypassed capFlashAlpha -- this class didn't even
+      // import Accessibility.js, unlike every other module with a flash.
+      ctx.globalAlpha = capFlashAlpha(this.flashAlpha, this.reducedFlash);
       ctx.fillStyle = '#e8f4ff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }

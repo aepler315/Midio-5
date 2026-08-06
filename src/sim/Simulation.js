@@ -233,7 +233,12 @@ export class Simulation {
 
     this._holdSpanIdx = 0;
     this._skippedRollKick = false;
-    conductor.on(Role.RHYTHM, (evt) => {
+    // conductor is a single long-lived instance (see main.js) reused across
+    // every song load, so every subscription made here must be torn down in
+    // dispose() -- otherwise each replay leaves this sim's listeners firing
+    // forever, stacked on top of whichever sim replaces it.
+    this._unsub = [];
+    this._unsub.push(conductor.on(Role.RHYTHM, (evt) => {
       if (evt.kick) {
         // Kicks no longer launch jumps (the player does) — but the inter-kick
         // EMA must keep flowing: it drives jump duration, the combo grace/
@@ -267,7 +272,7 @@ export class Simulation {
         this.midasus.voyage.onKick(evt.vel); // deep-space sparkle burst (self-gated on phase)
         if (this.apotheosis.active) this.performer.captureGoldAfterimage(this.midio, this.timeMs);
       }
-    });
+    }));
 
     // Midio's accent line: when the casting found a lead lane (synth leads,
     // driven guitars, horns -- see Casting.js), his extra mid-air beats ride
@@ -275,14 +280,14 @@ export class Simulation {
     // way an onset while airborne can pop an extra beat mid-air -- a busy
     // line makes him fly busier, a sparse one leaves him be. Guarded so it
     // never risks the chart's own clearance guarantee.
-    conductor.on('*', (evt) => {
+    this._unsub.push(conductor.on('*', (evt) => {
       if (!this._midioAccentFilter(evt)) return;
       if (!this.jump.airborne) return;
       const grant = this.airSeq.tryConsume(evt.tMs);
       if (!grant) return;
       const performed = this.jump.airJump({ tMs: evt.tMs, vel: evt.vel }, grant.boostMul * 0.8, grant);
       if (!performed) this.airSeq.refund();
-    });
+    }));
 
     // Slippery surfaces (Traction.js): settled snow turns landings into
     // bounded render-only skids. Null when the ground grips.
@@ -353,24 +358,41 @@ export class Simulation {
           if (evt.tier === 'sour') {
             this.impactFX.judgment(this.worldX, this.midio.groundY, 'sour', particleMul);
             this.camera.shake(2.5);
+            this.sfx?.judgment('sour', this.vibe.tonic, this.vibe.tonicConfidence);
           } else if (evt.tier) { // tier null = late-armed hold: the glow ramp is its own cue
             this.impactFX.judgment(this.worldX, this.midio.groundY, evt.tier, particleMul);
             this.comboSystem.sustain(evt.tMs); // a clean press keeps the combo warm through its airtime
             if (evt.tier === 'perfect') this.performer.goldFlash = 1;
+            this.sfx?.judgment(evt.tier, this.vibe.tonic, this.vibe.tonicConfidence);
           }
           break;
         case 'sour':
           this.impactFX.judgment(this.worldX, this.midio.groundY, 'sour', particleMul);
           this.camera.shake(2.5);
+          this.sfx?.judgment('sour', this.vibe.tonic, this.vibe.tonicConfidence);
           break;
         case 'holdComplete':
           this.impactFX.splat(this.worldX, this.midio.groundY);
           this.impactFX.ignite(this.worldX, this.midio.groundY);
+          this.sfx?.holdComplete(this.vibe.tonic, this.vibe.tonicConfidence);
           break;
         case 'holdChoke':
           this.camera.shake(3);
+          this.sfx?.holdChoke();
           break;
-        default: // 'miss' | 'holdTick': deliberately quiet on the visual side
+        // 'miss' and 'holdTick' are deliberately quiet on the VISUAL side
+        // (see the comments above this switch), but SfxSynth authors a
+        // dedicated cue for each -- a soft downward slide for a note that
+        // slid past untapped, a pentatonic climb per paid tick -- and
+        // nothing was ever calling them. sfx is optional (null until
+        // bootAudio() finishes in main.js), same guard as every case above.
+        case 'miss':
+          this.sfx?.miss();
+          break;
+        case 'holdTick':
+          this.sfx?.holdTick(evt.tickIdx, this.vibe.tonic, this.vibe.tonicConfidence);
+          break;
+        default:
           break;
       }
     }
@@ -440,11 +462,24 @@ export class Simulation {
     return best;
   }
 
+  /** Tear down every subscription this sim (and its owned subsystems) made
+   *  on the shared conductor. Must run before the sim is discarded --
+   *  conductor outlives every song, so a replay that skips this leaves the
+   *  old sim's listeners firing forever, stacked on top of the new one's. */
+  dispose() {
+    for (const unsub of this._unsub) unsub();
+    this._unsub.length = 0;
+    this.broshi.dispose();
+    this.biomes.dispose();
+    this.fracture.dispose();
+  }
+
   /** The Reel (Movement VI): live-toggle the reduced-flash accessibility
    *  setting, cascading to every consumer that caps its own flash alphas. */
   setReducedFlash(v) {
     this.reducedFlash = v;
     this.biomes.reducedFlash = v;
+    this.fracture.reducedFlash = v;
   }
 
   /** Global graphics presentation: classic (SMW-flat) or rendered (DKC-CGI). */
@@ -600,6 +635,18 @@ export class Simulation {
         this.impactFX.ignite(this.worldX, airY);
         this.fever.spark(0.12); // the phrase's flourish stokes the fever directly
       }
+    }
+
+    if (this.jump.pendingGhostKick) {
+      // High-BPM halftime (JumpController.js, > HIGH_BPM_HALFTIME): every
+      // second kick is deliberately withheld from launching a jump --
+      // JumpPlanner.js calls it "routes to FX only" -- but nothing ever
+      // consumed the flag it set, so half the kicks in a fast song produced
+      // no visible response at all. A light ground splat, scaled by the
+      // kick's own velocity, is the promised FX without a full landing.
+      const gk = this.jump.pendingGhostKick;
+      this.impactFX.splat(this.worldX, this.midio.groundY);
+      this.performer.modal.excite(2 + 2 * gk.vel);
     }
 
     if (this.jump.pendingLanding) {

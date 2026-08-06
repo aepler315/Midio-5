@@ -278,31 +278,42 @@ export class Broshi {
     this._laneOnsetTimes = [];
     this._barMelodyHistory = [];
 
-    conductor.onBar((bar) => this._onBar(bar));
-    conductor.on(Role.RHYTHM, (evt) => {
-      if (evt.kick) { this._onKick(evt); this.burrow.onKick(evt.vel); }
-      // Kicks still snap the jaw and light the beat flash (see _onKick) --
-      // he still feels the drums, he just doesn't hop to them anymore.
-    });
-    // His hop line arrives EARLY (ChoreoClock's anticipation channel), each
-    // event carrying its true tMs, so the hop's apex can be anchored right
-    // on the note instead of starting rise-time late.
-    conductor.subscribeAhead('*', CHOREO_LEAD_MS, (evt) => {
-      if (!this._hopFilter(evt)) return;
-      if (Number.isFinite(evt.pitch)) {
-        this._pitchMin = Math.min(this._pitchMin, evt.pitch);
-        this._pitchMax = Math.max(this._pitchMax, evt.pitch);
-        this._hueTarget = spectralHue(evt.pitch); // his color tracks his own line, Midasus-style
-      }
-      this._laneOnsetTimes.push(evt.tMs ?? this._nowMs);
-      if (evt.vel >= 0.3) this._onMiniHopTrigger(evt);
-    });
-    // The head still nods to the tune regardless of which line his BODY
-    // answers to -- head to the melody, feet to his own instrument.
-    conductor.on(Role.MELODY, (evt) => {
-      this._onHeadBob(evt);
-      this.burrow.onMelodyOnset(evt);
-    });
+    // conductor outlives every song (see main.js); dispose() must undo
+    // exactly these four subscriptions or a replay stacks a fresh Broshi's
+    // listeners on top of every previous one still firing.
+    this._unsub = [
+      conductor.onBar((bar) => this._onBar(bar)),
+      conductor.on(Role.RHYTHM, (evt) => {
+        if (evt.kick) { this._onKick(evt); this.burrow.onKick(evt.vel); }
+        // Kicks still snap the jaw and light the beat flash (see _onKick) --
+        // he still feels the drums, he just doesn't hop to them anymore.
+      }),
+      // His hop line arrives EARLY (ChoreoClock's anticipation channel), each
+      // event carrying its true tMs, so the hop's apex can be anchored right
+      // on the note instead of starting rise-time late.
+      conductor.subscribeAhead('*', CHOREO_LEAD_MS, (evt) => {
+        if (!this._hopFilter(evt)) return;
+        if (Number.isFinite(evt.pitch)) {
+          this._pitchMin = Math.min(this._pitchMin, evt.pitch);
+          this._pitchMax = Math.max(this._pitchMax, evt.pitch);
+          this._hueTarget = spectralHue(evt.pitch); // his color tracks his own line, Midasus-style
+        }
+        this._laneOnsetTimes.push(evt.tMs ?? this._nowMs);
+        if (evt.vel >= 0.3) this._onMiniHopTrigger(evt);
+      }),
+      // The head still nods to the tune regardless of which line his BODY
+      // answers to -- head to the melody, feet to his own instrument.
+      conductor.on(Role.MELODY, (evt) => {
+        this._onHeadBob(evt);
+        this.burrow.onMelodyOnset(evt);
+      }),
+    ];
+  }
+
+  /** Undo every conductor subscription made at construction. */
+  dispose() {
+    for (const unsub of this._unsub) unsub();
+    this._unsub.length = 0;
   }
 
   /** Test/debug hook: send him underground right now regardless of natural
