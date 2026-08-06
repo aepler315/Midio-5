@@ -106,6 +106,7 @@ const lyricsFindBtnEl = document.getElementById('lyricsFindBtn');
 const lyricsSkipBtnEl = document.getElementById('lyricsSkipBtn');
 const lyricsNoneBtnEl = document.getElementById('lyricsNoneBtn');
 const noLyricsBtnEl = document.getElementById('noLyricsBtn');
+const reducedFlashBtnEl = document.getElementById('reducedFlashBtn');
 const btLatencyBtnEl = document.getElementById('btLatencyBtn');
 const btLatencyHudBtnEl = document.getElementById('btLatencyHudBtn');
 const visualStyleBtnEl = document.getElementById('visualStyleBtn');
@@ -190,6 +191,17 @@ if (noLyricsBtnEl) {
     syncNoLyricsBtn();
   });
 }
+
+/** Reflect the reduced-flash accessibility preference on the loader toggle
+ *  button -- previously reachable only via the R key, so unusable on touch
+ *  and undiscoverable for anyone who doesn't already know the shortcut. */
+function syncReducedFlashBtn() {
+  if (!reducedFlashBtnEl) return;
+  reducedFlashBtnEl.setAttribute('aria-pressed', reducedFlash ? 'true' : 'false');
+  reducedFlashBtnEl.textContent = `Reduced flash: ${reducedFlash ? 'on' : 'off'}`;
+}
+syncReducedFlashBtn();
+if (reducedFlashBtnEl) reducedFlashBtnEl.addEventListener('click', () => toggleReducedFlash());
 
 /** Reflect Bluetooth latency mode on loader + in-game HUD buttons and the AudioEngine. */
 function syncBtLatencyUi() {
@@ -1165,6 +1177,16 @@ demoBtnEl.addEventListener('click', () => loadDemo());
   dropzoneEl.classList.remove('drag');
 }));
 dropzoneEl.addEventListener('click', () => fileInputEl.click());
+// #dropzone is role="button" tabindex="0", but browsers don't synthesize a
+// click from Enter/Space on a plain div the way they do for a real
+// <button> -- without this the game's primary call-to-action isn't
+// keyboard-operable at all, and the keypress instead fell through to
+// beatTap() (the F/J calibration handler) once the loader is showing.
+dropzoneEl.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+  e.preventDefault(); // Space must not also scroll the page
+  fileInputEl.click();
+});
 
 // --- Global drag-and-drop: works at ANY time, not just from the initial
 // loader screen. Dropping a different .mid/audio file mid-song tears down
@@ -1640,6 +1662,7 @@ function toggleReducedFlash() {
   reducedFlash = !reducedFlash;
   setReducedFlash(reducedFlash);
   sim?.setReducedFlash(reducedFlash);
+  syncReducedFlashBtn();
 }
 
 function onSongComplete() {

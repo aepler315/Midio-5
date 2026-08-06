@@ -462,6 +462,7 @@ export class Simulation {
   setReducedFlash(v) {
     this.reducedFlash = v;
     this.biomes.reducedFlash = v;
+    this.fracture.reducedFlash = v;
   }
 
   /** Global graphics presentation: classic (SMW-flat) or rendered (DKC-CGI). */

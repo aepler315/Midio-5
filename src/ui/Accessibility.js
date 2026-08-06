@@ -8,8 +8,20 @@ const NO_LYRICS_KEY = 'smw:noLyrics';
 const BLUETOOTH_LATENCY_KEY = 'smw:bluetoothLatency';
 export const FLASH_CAP = 0.4;
 
+/** A player who has never touched this toggle gets the OS-level signal as
+ *  their default rather than a silent "off" -- prefers-reduced-motion was
+ *  never consulted here before. An explicit past choice (on OR off) always
+ *  wins over it; this only fills the gap before anyone has chosen. */
+function prefersReducedMotion() {
+  try { return !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
+}
+
 export function getReducedFlash() {
-  try { return localStorage.getItem(STORAGE_KEY) === '1'; } catch { return false; }
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored !== null) return stored === '1';
+    return prefersReducedMotion();
+  } catch { return false; }
 }
 
 export function setReducedFlash(v) {
