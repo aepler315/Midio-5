@@ -31,6 +31,7 @@ function recordingCtx() {
     save() {}, restore() {}, beginPath() {}, stroke() {}, fill() {},
     roundRect() {}, rect() {}, arc() {}, moveTo() {}, lineTo() {},
     fillRect() {}, closePath() {}, translate() {}, rotate() {}, setTransform() {},
+    clip() {}, scale() {}, quadraticCurveTo() {}, ellipse() {}, setLineDash() {},
     createLinearGradient: () => ({ addColorStop() {} }),
     createRadialGradient: () => ({ addColorStop() {} }),
     globalAlpha: 1, globalCompositeOperation: 'source-over',
@@ -145,4 +146,81 @@ test('no drop in flight means no shock at all', () => {
   sim.hype.dropAtMs = -Infinity; // HypeDirector's initial state
   r._drawDropImpact(ctx, stageView(), sim, { midioDrawX: 300 });
   assert.equal(calls.length, 0);
+});
+
+// --- The same bug class in BiomeManager ----------------------------------
+//
+// The hype echo and drop shock were two of FIVE sites that passed draw()'s
+// logical stage view to drawImage. Two more live in _drawLakeReflection,
+// which MIRROR -- a stock biome -- reaches on every frame via _drawGround.
+// Because _drawGround runs near the end of the world draw, that throw took
+// every character, the HUD, bloom and the film finish with it for the whole
+// duration of a MIRROR section.
+
+test('the lake reflection samples the real canvas, not the logical view', async () => {
+  const { BiomeManager } = await import('../src/world/BiomeManager.js');
+  const bm = Object.create(BiomeManager.prototype);
+  bm.lakeRing = { displacementAt: () => 1 }; // force the ripple blits to run
+  const { ctx, calls, backing } = recordingCtx();
+  const stage = stageView();
+
+  bm._drawLakeReflection(ctx, stage, 400);
+
+  assert.ok(calls.length > 0, 'the reflection should draw');
+  for (const [src] of calls) {
+    assert.notEqual(src, stage, 'the logical stage view is not a drawable');
+    assert.equal(src, backing, 'must sample the real backing store');
+  }
+});
+
+test('the lake reflection blits back in logical units at every stage resolution', async () => {
+  const { BiomeManager } = await import('../src/world/BiomeManager.js');
+  const bm = Object.create(BiomeManager.prototype);
+  bm.lakeRing = { displacementAt: () => 1 };
+  const { ctx, calls } = recordingCtx();
+  bm._drawLakeReflection(ctx, stageView(), 400);
+
+  const mirror = calls.find((c) => c.length === 5);
+  assert.ok(mirror, 'the mirrored pass should specify a destination size');
+  assert.equal(mirror[3], STAGE_W, 'destination width is logical');
+  assert.equal(mirror[4], STAGE_H, 'destination height is logical');
+
+  // The ripple pass takes a source rect, which must index the DEVICE buffer
+  // (2x here) while its destination stays logical -- getting that backwards
+  // samples the wrong strip on any non-1x stage preset.
+  for (const c of calls.filter((x) => x.length === 9)) {
+    const [, , , sw, , , , dw] = c;
+    assert.equal(sw, DEVICE_W, 'source rect indexes the backing store');
+    assert.equal(dw, STAGE_W, 'destination rect stays logical');
+  }
+});
+
+test('no drawImage anywhere is handed a plain {width,height}', async () => {
+  // A guard for the whole class rather than the five known sites.
+  const { readFileSync } = await import('node:fs');
+  const { globSync } = await import('node:fs');
+  const files = globSync('src/**/*.js');
+  const offenders = [];
+  for (const f of files) {
+    readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+      // `canvas` is the logical view in BiomeManager/Renderer draw helpers;
+      // the real backing store is always reached as ctx.canvas.
+      if (/drawImage\(\s*canvas\b/.test(line) && !/ctx\.canvas/.test(line)) {
+        offenders.push(`${f}:${i + 1}  ${line.trim()}`);
+      }
+    });
+  }
+  // Three survivors legitimately receive the real canvas as a PARAMETER named
+  // `canvas` (HighlightReel.capture, Renderer._drawBloom, _drawRetroFilter --
+  // draw() hands each of them the backing store, not the stage view).
+  // Matched on the call text rather than file or line so the exemption covers
+  // exactly these three: a new offender in the same file still fails, and
+  // unrelated edits shifting the line numbers don't.
+  const allowed = [
+    'ctx.drawImage(canvas, 0, 0, THUMB_W, THUMB_H);',
+    'actx.drawImage(canvas, 0, 0, wSmall, hSmall);',
+    'sctx.drawImage(canvas, 0, 0, gridW, gridH);',
+  ];
+  const bad = offenders.filter((o) => !allowed.some((a) => o.endsWith(a)));
+  assert.deepEqual(bad, [], `logical stage view reaching drawImage:\n${bad.join('\n')}`);
 });

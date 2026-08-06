@@ -3412,7 +3412,13 @@ export class BiomeManager {
     ctx.globalAlpha = 0.35;
     ctx.translate(0, 2 * groundY);
     ctx.scale(1, -1);
-    ctx.drawImage(canvas, 0, 0);
+    // `canvas` is draw()'s LOGICAL stage view -- a plain {width, height},
+    // not a drawable. Passing it to drawImage threw on every frame MIRROR
+    // was on screen, and since _drawGround runs near the END of the world
+    // draw, the swallowed throw took every character, the HUD, bloom and the
+    // film finish with it. Source the real backing store; destination stays
+    // in logical units because we are under the sx/sy transform.
+    ctx.drawImage(ctx.canvas, 0, 0, canvas.width, canvas.height);
     ctx.restore();
 
     // Vertical fade with depth: the reflection dissolves toward the far
@@ -3428,6 +3434,8 @@ export class BiomeManager {
     // Ripples.
     const SLICES = 8;
     const step = Math.max(1, Math.ceil(lakeHeight / SLICES));
+    // Backing store may be 1x-4x the logical stage (stage-resolution preset).
+    const dpr = ctx.canvas.height / Math.max(1, canvas.height);
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, groundY, canvas.width, lakeHeight);
@@ -3436,7 +3444,11 @@ export class BiomeManager {
       const theta = (i / SLICES) * Math.PI * 2;
       const offset = this.lakeRing.displacementAt(theta) * 3;
       if (Math.abs(offset) < 0.05) continue;
-      ctx.drawImage(canvas, 0, groundY + row, canvas.width, step, offset, groundY + row, canvas.width, step);
+      // Source rect is in DEVICE pixels (it indexes the backing store);
+      // destination stays logical. Same distinction as the mirror blit above.
+      ctx.drawImage(ctx.canvas,
+        0, (groundY + row) * dpr, ctx.canvas.width, step * dpr,
+        offset, groundY + row, canvas.width, step);
     }
     ctx.restore();
   }
@@ -3558,7 +3570,11 @@ export class BiomeManager {
     ctx.globalAlpha = 0.22;
     ctx.translate(0, 2 * (groundY - bandH));
     ctx.scale(1, -1);
-    ctx.drawImage(canvas, 0, 0);
+    // Same logical-view-vs-drawable fix as the lake reflection. This one is
+    // currently unreachable -- no profile emits fx:'mirage' -- but it would
+    // have thrown the instant one did, so it is corrected rather than left
+    // as a trap for whoever wires DUNE's mirage up.
+    ctx.drawImage(ctx.canvas, 0, 0, canvas.width, canvas.height);
     ctx.restore();
 
     ctx.save();
