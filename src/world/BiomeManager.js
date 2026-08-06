@@ -413,30 +413,41 @@ export class BiomeManager {
     // The Reel (Movement VI): set externally, persisted accessibility toggle.
     this.reducedFlash = false;
 
-    conductor.onBar(() => { this._scanlineActive = true; this._scanlineY = 0; this.cymatics.onBar(); });
-    conductor.on(Role.RHYTHM, (evt) => {
-      if (!evt.kick) return;
-      this._pylonFlash = 1;
-      this._danceKickMs = evt.tMs;
-      this._danceKickAmp = 0.4 + 0.6 * evt.vel;
-      this.mandala.kick();
-      this.swarm.kick(evt.vel);
-      this.ribbon.kick();
-      this.rd.onKick();
-      this.weaver.onKick(evt.vel);
-      if (evt.vel > 0.78) this.murmuration.startle(evt.vel);
-      // Heavy kicks strike lightning, but only while a storm is blowing.
-      const active = this.currentBlend ? this._profile(this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from) : null;
-      if (active && active.fx === 'lightning') this.lightning.maybeTrigger(evt.tMs, evt.vel, this.w, this.groundY);
-      // Beats ripple the water, but only while the lake is out.
-      if (active && active.fx === 'lakeReflection') this.lakeRing.excite(3 + 9 * evt.vel);
-      if (this._lastKickMs != null) {
-        const delta = evt.tMs - this._lastKickMs;
-        if (delta >= 240 && delta <= 1500) this._beatMs += 0.25 * (delta - this._beatMs);
-      }
-      this._lastKickMs = evt.tMs;
-    });
-    conductor.on(Role.MELODY, (evt) => { this.weaver.onMelody(evt); });
+    // conductor outlives every song (see main.js); dispose() must undo
+    // exactly these three subscriptions or a replay stacks a fresh
+    // BiomeManager's listeners on top of every previous one still firing.
+    this._unsub = [
+      conductor.onBar(() => { this._scanlineActive = true; this._scanlineY = 0; this.cymatics.onBar(); }),
+      conductor.on(Role.RHYTHM, (evt) => {
+        if (!evt.kick) return;
+        this._pylonFlash = 1;
+        this._danceKickMs = evt.tMs;
+        this._danceKickAmp = 0.4 + 0.6 * evt.vel;
+        this.mandala.kick();
+        this.swarm.kick(evt.vel);
+        this.ribbon.kick();
+        this.rd.onKick();
+        this.weaver.onKick(evt.vel);
+        if (evt.vel > 0.78) this.murmuration.startle(evt.vel);
+        // Heavy kicks strike lightning, but only while a storm is blowing.
+        const active = this.currentBlend ? this._profile(this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from) : null;
+        if (active && active.fx === 'lightning') this.lightning.maybeTrigger(evt.tMs, evt.vel, this.w, this.groundY);
+        // Beats ripple the water, but only while the lake is out.
+        if (active && active.fx === 'lakeReflection') this.lakeRing.excite(3 + 9 * evt.vel);
+        if (this._lastKickMs != null) {
+          const delta = evt.tMs - this._lastKickMs;
+          if (delta >= 240 && delta <= 1500) this._beatMs += 0.25 * (delta - this._beatMs);
+        }
+        this._lastKickMs = evt.tMs;
+      }),
+      conductor.on(Role.MELODY, (evt) => { this.weaver.onMelody(evt); }),
+    ];
+  }
+
+  /** Undo every conductor subscription made at construction. */
+  dispose() {
+    for (const unsub of this._unsub) unsub();
+    this._unsub.length = 0;
   }
 
   _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null, structure = null) {

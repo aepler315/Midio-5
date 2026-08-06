@@ -343,13 +343,22 @@ export class FractureEngine {
     // about-to-freeze arms this far before freezeAtMs (last impact + ε).
     this._freezeArmMs = Math.max(0, this.finale.freezeAtMs - FREEZE_LEAD_MS);
 
-    conductor.onBar(() => {
+    // conductor outlives every song (see main.js); dispose() must undo this
+    // or a replay stacks a fresh FractureEngine's listener on top of every
+    // previous one still firing.
+    this._unsub = [conductor.onBar(() => {
       const e = this._barSamples > 0 ? this._barAccum / this._barSamples : 0;
       this._barEnergyHistory.push(e);
       if (this._barEnergyHistory.length > 8) this._barEnergyHistory.shift();
       this._barAccum = 0;
       this._barSamples = 0;
-    });
+    })];
+  }
+
+  /** Undo the conductor subscription made at construction. */
+  dispose() {
+    for (const unsub of this._unsub) unsub();
+    this._unsub.length = 0;
   }
 
   registerImpact(I) {

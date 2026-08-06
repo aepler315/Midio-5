@@ -576,6 +576,13 @@ function toggleTrackList() {
  *  tolerates being idle). */
 function stopTimeline() {
   running = false;
+  // conductor is a single instance shared across every song (see its
+  // construction above); Simulation and its subsystems subscribe to it at
+  // construction and never unsubscribe on their own. Without this, a replay
+  // leaves the old sim's listeners registered forever -- each stacking on
+  // top of the next, still firing into torn-down state on every future
+  // dispatch for the rest of the session.
+  if (sim) { sim.dispose(); sim = null; }
   // A stop/restart must never leave the AudioContext suspended -- its
   // currentTime is the master clock every song's timing derives from
   // (see AudioEngine.js header), and a still-suspended context would
