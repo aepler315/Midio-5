@@ -43,6 +43,21 @@ export class KeyDirector {
     this._waveStartMs = -Infinity;
   }
 
+  /** Conductor-cued modulation (ConductorTrack.js): fire the key-change wave
+   *  at the next update regardless of what the pitch histogram thinks. The
+   *  detector above is a guess about the music; an authored cue is not, so
+   *  it bypasses the stability/confidence gates entirely -- but still routes
+   *  through the same _pendingChange path so the wave, the mandala reseed
+   *  and lastKeyChange all behave exactly as a detected modulation does. */
+  forceChange(nowMs, toTonic = null) {
+    const to = toTonic == null ? (this.tonic + 5) % 12 : ((toTonic % 12) + 12) % 12;
+    this._pendingChange = { from: this._stableTonic ?? this.tonic, to };
+    this._pendingWaveAtMs = nowMs;
+    this._stableTonic = to;
+    this._stableSinceMs = nowMs;
+    this._candidateTonic = null;
+  }
+
   update(nowMs, dtSec, { tonic = 0, tonicConfidence = 0, conductor = null } = {}) {
     this.justKeyChange = false;
     this.tonic = tonic;

@@ -48,6 +48,8 @@ import { GrooveFingerprint } from './GrooveFingerprint.js';
 import { OpeningDirector } from './OpeningDirector.js';
 import { WeatherDirector } from './WeatherDirector.js';
 import { OrogenyDirector } from '../world/OrogenyDirector.js';
+import { CueDirector } from './CueDirector.js';
+import { CueKind } from '../core/ConductorTrack.js';
 
 const WORLD_SPEED_PX_S = 220;
 const CLEAN_WINDOW_MS = 90;
@@ -60,6 +62,7 @@ export class Simulation {
     customBiome = null, inputOffsetMs = 0, outputLatencyMs = null, lyricSections = null, structure = null,
     groove = null,
     songSeed: pinnedSeed = null,
+    conductorCues = null,
   } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
@@ -177,6 +180,11 @@ export class Simulation {
     this.calm = new CalmDirector();
     this.hype = new HypeDirector();
     this.weather = new WeatherDirector();
+    // The conductor track's live half (ConductorTrack.js / CueDirector.js).
+    // Empty when the song brought no cue sheet, which is every MIDI without
+    // a track named "Conductor", every raw-audio drop, and the demo -- so
+    // the whole feature costs one no-op cursor advance per step when unused.
+    this.cues = new CueDirector(conductorCues ? conductorCues.liveCues : []);
     this._lastDropCount = 0; // matches HypeDirector's own initial dropCount -- no spurious punch at t=0
     this._pendingDiscReason = null; // drop-cued disc spin, deferred one phase (see step())
     this.filmFinish = new FilmFinish();
@@ -196,6 +204,7 @@ export class Simulation {
       customBiome: this.customBiome,
       lyricSections,
       structure,
+      conductorSchedule: conductorCues ? conductorCues.scheduleCues : null,
     });
     this.reducedFlash = false;
     this.visualStyle = 'rendered';
@@ -319,6 +328,69 @@ export class Simulation {
       const n = notes[this._autoplayCursor++];
       this.enqueueTap('down', n.tMs);
       this.enqueueTap('up', n.type === 'hold' ? n.endMs : n.tMs + 60);
+    }
+  }
+
+  /**
+   * Fan this step's conductor-track cues out into the engine
+   * (ConductorTrack.js for the schema, CueDirector.js for the dispatch).
+   *
+   * Every arm here reaches a director through a method built for authored
+   * input -- cueDrop, forceChange, cueCalm, cueKind, cueMeteors, strike --
+   * rather than the music-driven path next to it. That distinction is the
+   * whole point: the detectors are inferring things about the song and are
+   * allowed to be wrong or to decline, but a cue was written on purpose, so
+   * honoring it can't be conditional on a probability roll or on a threshold
+   * the author can't see. Hard floors that exist for physical reasons (a
+   * flourish can't restart mid-spin) still apply.
+   *
+   * SECTION/BIOME never arrive here -- they're schedule cues, already folded
+   * into BiomeManager's plan at construction (see applyConductorSchedule).
+   */
+  _applyCues(nowMs) {
+    for (const cue of this.cues.fired) {
+      const strength = typeof cue.value === 'number' ? cue.value : 1;
+      switch (cue.kind) {
+        case CueKind.DROP:
+          this.hype.cueDrop(nowMs, strength);
+          // Matches the drop-driven disc spin's own one-phase deferral so a
+          // cued drop punctuates exactly like a detected one (see step()).
+          this._pendingDiscReason = 'cue';
+          break;
+        case CueKind.APOTHEOSIS:
+          this.apotheosis.forceTrigger(nowMs);
+          break;
+        case CueKind.FLOURISH:
+          this.ensemble.maybeDisc(nowMs, 'cue', this.vibe.epic);
+          break;
+        case CueKind.KEY_CHANGE:
+          this.keyDirector.forceChange(nowMs);
+          break;
+        case CueKind.CALM:
+          this.calm.cueCalm(nowMs, strength);
+          break;
+        case CueKind.METEORS:
+          this.biomes.cueMeteors(nowMs, strength);
+          break;
+        case CueKind.LIGHTNING:
+          this.biomes.cueLightning(nowMs);
+          break;
+        case CueKind.WEATHER:
+          this.weather.cueKind(nowMs, cue.value);
+          break;
+        case CueKind.SHAKE:
+          this.camera.shake(3 + 9 * strength);
+          break;
+        case CueKind.GROUND_PULSE:
+          this.groundField.impulse(this.worldX, strength, nowMs);
+          this.rippleFX.trigger(this.worldX, this.midio.groundY, strength);
+          break;
+        case CueKind.FEVER:
+          this.fever.spark(0.25 * strength);
+          break;
+        default:
+          break;
+      }
     }
   }
 
@@ -505,8 +577,14 @@ export class Simulation {
     this.comboSystem.clearFrameFlags();
     this.performer.clearFrameFlags();
     this.judge.clearFrameFlags();
+    this.cues.clearFrameFlags();
 
     this.conductor.dispatchUpTo(nowMs);
+    // Conductor-track cues run alongside the timeline dispatch, before any
+    // director updates this step, so a cue and the music it was written
+    // against land on the same frame.
+    this.cues.update(nowMs);
+    this._applyCues(nowMs);
     this._driveAutoplay(nowMs);
 
     // Drain autoplay presses stamped up to this step's time. Hold notes

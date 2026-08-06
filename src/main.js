@@ -698,6 +698,10 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
       // sessions learned about how this player hears a beat.
       groove,
       songSeed: pinned,
+      // The conductor track's cue sheet (ConductorTrack.js), when the MIDI
+      // carried one. Null for raw audio, the demo, and any MIDI without a
+      // track named "Conductor".
+      conductorCues: timelineData.conductor || null,
     });
   } catch (err) {
     console.error('[world build failed]', err);
@@ -796,6 +800,83 @@ async function loadMidiFile(file) {
     console.error('[MIDI load failed]', err);
     progressEl.classList.add('hidden');
     alert('Could not load MIDI file: ' + (err?.message || err));
+  }
+}
+
+/**
+ * A MIDI and audio file dropped TOGETHER: the recording is what you hear,
+ * the score is what you see. This is the authoring path the conductor track
+ * (ConductorTrack.js) exists for -- export both from the same Guitar Pro
+ * project and the MIDI becomes an exact, hand-authorable description of the
+ * visuals for a song the engine would otherwise have to guess at from raw
+ * spectra.
+ *
+ * The two are assumed to share a t=0 origin, which is what exporting them
+ * from one project gives you. Nothing here tries to detect or correct an
+ * offset: a silently "corrected" sync that guessed wrong would be far worse
+ * to author against than one that is always literal.
+ *
+ * Analysis is skipped entirely (that's the raw-audio path's job) -- the MIDI
+ * already states every onset, so energy curves are synthesized from it just
+ * as they are for a MIDI-only load. That also makes this path near-instant
+ * where a raw-audio drop of the same song takes its separation/pitch pass.
+ */
+async function loadScoredAudio(midiFile, audioFiles) {
+  try {
+    await bootAudio();
+    const myGen = ++loadGen;
+    showProgress('Reading score and recording…');
+
+    const midiBuf = await midiFile.arrayBuffer();
+    if (!midiBuf || midiBuf.byteLength < 14) {
+      throw new Error('File is empty or too small to be a MIDI file');
+    }
+    const data = midiToTimeline(midiBuf);
+    if (!data.timeline || data.timeline.length === 0) {
+      throw new Error('MIDI parsed but contains no notes');
+    }
+
+    const decoded = [];
+    for (const file of audioFiles) {
+      decoded.push({
+        name: file.name || 'stem',
+        buffer: await audioEngine.decodeFile(await file.arrayBuffer()),
+      });
+    }
+    const audioBuffer = decoded.length > 1
+      ? sumToMixBuffer(decoded.map((d) => d.buffer))
+      : decoded[0].buffer;
+
+    if (myGen !== loadGen) return; // a newer load started while we decoded
+
+    // Whichever runs longer wins: a recording with a tail past the last
+    // notated bar must not be cut off, and cues written past the end of the
+    // audio must still get their chance to fire.
+    data.durationMs = Math.max(data.durationMs || 0, audioBuffer.duration * 1000);
+    data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
+    data.customBiome = generateCustomBiomeFromMidi(data, midiFile.name || 'MIDI');
+    rememberCustomBiome(paramBus, data.customBiome);
+
+    // The recording carries every voice already -- the timeline synth would
+    // double it, exactly as on the raw-audio path.
+    muteTimelineSynth = true;
+    lastSongName = audioFiles[0].name || midiFile.name || 'song';
+    if (data.conductor) {
+      console.info(
+        `[conductor] ${data.conductor.cues.length} cues from ${data.conductor.names.join(', ')}`
+        + ` (${data.conductor.scheduleCues.length} schedule, ${data.conductor.liveCues.length} live)`,
+      );
+    }
+    startTimeline(data);
+    lastAudioBuffer = audioBuffer;
+    fontRecommender?.clear(); // the recording is its own sound source
+    audioEngine.playBuffer(audioBuffer, 0);
+  } catch (err) {
+    console.error('[scored audio load failed]', err);
+    progressEl.classList.add('hidden');
+    hudEl.classList.add('hidden');
+    loaderEl.classList.remove('hidden');
+    alert('Could not load score + audio: ' + (err?.message || err));
   }
 }
 
@@ -1151,12 +1232,19 @@ function handleFile(file) {
 }
 
 /** One file plays as itself. Several AUDIO files dropped together are stems
- *  of one song (their filenames cast the characters); a MIDI in the batch
- *  wins outright since a MIDI is already a complete score. */
+ *  of one song (their filenames cast the characters). A MIDI **and** audio
+ *  dropped together is the scored path: the recording plays, the score
+ *  drives the visuals (see loadScoredAudio). A MIDI alone is a complete
+ *  score and performs itself. */
 function handleFiles(files) {
   const list = [...(files || [])].filter(Boolean);
   if (!list.length) return;
   const midi = list.find(isMidiFile);
+  const audio = list.filter((f) => !isMidiFile(f));
+  if (midi && audio.length) {
+    loadScoredAudio(midi, audio);
+    return;
+  }
   if (midi) {
     loadMidiFile(midi);
     return;
@@ -1516,6 +1604,10 @@ function seekSong(ms) {
   synth?.stopAll?.();
   audioEngine.seekToMs(t);
   if (sim.conductor?.seekTo) sim.conductor.seekTo(t);
+  // The conductor track's own cursor has to move with the playhead, or a
+  // backward scrub would replay the music with every cue behind the new
+  // position already spent (see CueDirector.seekTo).
+  sim.cues?.seekTo(t);
   simTime = t;
   lastNowMs = t;
   acc = 0;
