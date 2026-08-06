@@ -533,9 +533,14 @@ export class Renderer {
       this._shockCanvas = document.createElement('canvas');
     }
     const off = this._shockCanvas;
-    if (off.width !== canvas.width || off.height !== canvas.height) {
-      off.width = canvas.width;
-      off.height = canvas.height;
+    // Sized to the REAL backing store, not the logical stage: this buffer
+    // holds a pixel copy of the composed frame, so anything else resamples
+    // it twice. (Same logical-vs-drawable confusion as the hype echo above
+    // -- `canvas` is draw()'s {width, height} view.)
+    const src = ctx.canvas;
+    if (off.width !== src.width || off.height !== src.height) {
+      off.width = src.width;
+      off.height = src.height;
     }
     const offCtx = off.getContext('2d');
     // Reduced-flash halves the pixel split too -- what's left reads as
@@ -544,14 +549,17 @@ export class Renderer {
     const shockAlpha = capFlashAlpha(SHOCK_MAX_ALPHA * s, reducedFlash);
     for (const [color, dir] of [['rgba(255,60,60,1)', 1], ['rgba(60,220,255,1)', -1]]) {
       offCtx.globalCompositeOperation = 'copy';
-      offCtx.drawImage(canvas, 0, 0);
+      offCtx.drawImage(src, 0, 0);
       offCtx.globalCompositeOperation = 'multiply';
       offCtx.fillStyle = color;
       offCtx.fillRect(0, 0, off.width, off.height);
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = shockAlpha;
-      ctx.drawImage(off, dir * offsetPx, 0);
+      // Device-pixel source back into the logical rect the transform expects,
+      // shifted by a logical-space offset so the split is the same visual
+      // width at every stage resolution.
+      ctx.drawImage(off, dir * offsetPx, 0, canvas.width, canvas.height);
       ctx.restore();
     }
 
@@ -684,7 +692,16 @@ export class Renderer {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = 0.12 * echo;
-      ctx.drawImage(canvas, this._echoFlip ? off : -off, 0);
+      // `canvas` here is draw()'s LOGICAL stage view -- a plain
+      // {width, height}, not a drawable. Passing it to drawImage threw every
+      // time this branch ran, and because main.js wraps the whole draw in a
+      // try/catch, the throw silently took the entire rest of the frame with
+      // it: the drop-impact pack, bloom, the film finish and the HUD strip
+      // all vanished for that frame. On hard hits, which is precisely when
+      // the echo fires. The source is the real backing store; the
+      // destination rect is in logical units because we are under the sx/sy
+      // transform, which maps it back 1:1.
+      ctx.drawImage(ctx.canvas, this._echoFlip ? off : -off, 0, canvas.width, canvas.height);
       ctx.restore();
       this._echoFlip = !this._echoFlip;
     }

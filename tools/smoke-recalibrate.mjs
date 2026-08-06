@@ -67,20 +67,14 @@ const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromi
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push('[pageerror] ' + e.message));
-// Two PRE-EXISTING render bugs (present on main, unrelated to this smoke):
-// Renderer._drawHypeFrame and _drawDropImpact are handed draw()'s logical
-// `stage` view -- a plain {width, height} -- and pass it to drawImage, which
-// throws every time. Both effects are caught by draw()'s try/catch, so they
-// have simply never rendered. Filtered here so this smoke reports on the
-// recalibration flow rather than on them; they want their own fix, in the
-// right transform space (both run under the sx/sy logical transform, so the
-// destination rect has to be sized in logical units, not just the source
-// swapped for ctx.canvas).
-const KNOWN_PREEXISTING = /_drawHypeFrame|_drawDropImpact/;
+// No known-failure filter: the two render bugs this used to excuse
+// (_drawHypeFrame / _drawDropImpact handing draw()'s logical stage view to
+// drawImage) are fixed. A filter that outlives its bug is how the next one
+// hides -- these threw for months behind exactly this regex.
 page.on('console', (m) => {
   if (m.type() !== 'error') return;
   const t = m.text();
-  if (t.includes('favicon') || KNOWN_PREEXISTING.test(t)) return;
+  if (t.includes('favicon')) return;
   errors.push('[console] ' + t);
 });
 

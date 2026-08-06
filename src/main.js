@@ -16,6 +16,7 @@ import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
+import { DrawErrorLog } from './render/DrawErrorLog.js';
 import { ROLE_LOW, ROLE_HIGH, GrooveFingerprint } from './sim/GrooveFingerprint.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
 import {
@@ -124,6 +125,8 @@ let recalNudgeHideAtMs = Infinity;
 // Cross-song groove profile (GrooveFingerprint), rehydrated once at startup
 // and handed to every Simulation built afterwards.
 const groove = new GrooveFingerprint(getStoredGroove());
+// Frame-loop failures, counted and shown rather than swallowed.
+const drawErrors = new DrawErrorLog();
 let grooveSaveDue = false;
 let grooveSaveAtMs = 0;
 const GROOVE_SAVE_DEBOUNCE_MS = 2000; // wall-clock auto-dismiss for the nudge
@@ -692,7 +695,7 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
   renderer = createRenderer(canvas, rendererMode);
   visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false, perfGovernor });
-  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop, perfGovernor);
+  debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop, perfGovernor, drawErrors);
   renderTracks(timelineData.tracks, timelineData.pairs);
   if (filmstripEl) { filmstripEl.innerHTML = ''; filmstripEl.classList.add('hidden'); }
 
@@ -1279,8 +1282,15 @@ function frame(tRaf) {
     renderer.draw(sim, alpha);
   } catch (err) {
     // One bad frame must not kill the whole run (canvas NaN colors used to
-    // throw here and leave the world frozen on the last good paint).
-    console.error('[draw]', err);
+    // throw here and leave the world frozen on the last good paint). But it
+    // must not be invisible either: this catch hid two effects that threw on
+    // every invocation for months, silently dropping the rest of each
+    // affected frame with them. Counted always, surfaced in the debug
+    // readout, and logged on a log2 cadence so a per-frame throw reports its
+    // scale instead of burying the console.
+    if (drawErrors.record(err, tRaf)) {
+      console.error(`[draw] (occurrence ${drawErrors.worst.count})`, err);
+    }
   }
   comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
   if (streakReadoutEl) streakReadoutEl.textContent = `${sim.comboSystem.streak} streak`;
