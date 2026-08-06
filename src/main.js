@@ -1427,6 +1427,11 @@ function seekSong(ms) {
   lastNowMs = t;
   acc = 0;
   if (sim.timeMs != null) sim.timeMs = t;
+  // A milestone glyph belongs to the moment that earned it. Scrubbing away
+  // leaves it stranded (a backward seek puts the clock before its own start),
+  // so drop it and anything queued behind it rather than letting either
+  // surface at the wrong point in the song.
+  renderer?.epicycles?.reset();
 }
 
 /** The player's own sense of "where's the beat" (BeatAnchor.js): stamped on

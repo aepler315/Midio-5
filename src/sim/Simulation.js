@@ -45,6 +45,7 @@ import { FeverMeter } from './FeverMeter.js';
 import { LatencyCalibrator } from './LatencyCalibrator.js';
 import { SyncMonitor } from './SyncMonitor.js';
 import { GrooveFingerprint } from './GrooveFingerprint.js';
+import { OpeningDirector } from './OpeningDirector.js';
 import { WeatherDirector } from './WeatherDirector.js';
 import { OrogenyDirector } from '../world/OrogenyDirector.js';
 
@@ -114,6 +115,9 @@ export class Simulation {
     // Set explicitly rather than left implicitly undefined: SyncMonitor reads
     // it as `suppress` on every step.
     this.recalibrating = false;
+    // Holds the world back until the song has actually got going, judged
+    // from the audio rather than from elapsed time (OpeningDirector).
+    this.opening = new OpeningDirector();
     // Landing-on-the-next-kick (JumpController.scheduledJumpD): the same
     // raw kick-time list NoteChart/JumpPlanner replay, so live launches and
     // retargets schedule onto the real next onset instead of only ever
@@ -757,6 +761,8 @@ export class Simulation {
       { x: this.broshi.renderX, y: this.midio.groundY - this.broshi.hopY },
       { x: this.midio.screenX, y: this.midio.renderY },
     ], this.visualLagMs, this.reducedFlash, this.canvasWidth);
+    this.opening.update(nowMs, dtSec, this.energyCurves);
+    this.biomes.openingGain = this.opening.gain;
     this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge + 1.1 * this.fever.level; // drops + player fever surge every phenomena system
     this.biomes.heatShimmer = this.hype.fast; // a hard hype spike shimmers the far range
     this.biomes.paletteRotation = this.keyDirector.paletteRotation; // the world transposes with the song's key

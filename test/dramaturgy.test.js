@@ -27,11 +27,25 @@ test('castBiomes never repeats a biome back to back, and always returns valid na
   assert.deepEqual(castBiomes([], 1), []);
 });
 
-test('classifyTransition maps boundary sharpness to cut / shutter / fade', () => {
-  assert.equal(classifyTransition(0.9, 1), 'cut');
-  assert.equal(classifyTransition(0.5, 1), 'shutter');
+test('classifyTransition: the strongest effect goes to the strongest boundary', () => {
+  // The ladder used to run cut / shutter / fade downward, which had it
+  // backwards -- `cut` is a brief 0.35-alpha flash while `shutter` closes the
+  // screen for a whole bar, so the mildest visual sat on the sharpest musical
+  // turn and the most violent one on merely-moderate turns.
+  assert.equal(classifyTransition(0.9, 1), 'shutter', 'a sharp turn earns the shutter');
+  assert.equal(classifyTransition(0.5, 1), 'cut', 'a moderate one gets the flash');
   assert.equal(classifyTransition(0.1, 1), 'fade');
   assert.equal(classifyTransition(0.5, 0), 'fade'); // degenerate maxNovelty
+});
+
+test('the shutter is the rarest style -- most boundaries never earn one', () => {
+  // Sharpness is normalized against the song's own strongest turn, so a
+  // uniform sweep is a fair stand-in for "boundaries across a whole song".
+  const styles = [];
+  for (let s = 0; s <= 1.0001; s += 0.02) styles.push(classifyTransition(s, 1));
+  const shutters = styles.filter((x) => x === 'shutter').length;
+  assert.ok(shutters / styles.length < 0.28, `shutter should stay rare, got ${shutters}/${styles.length}`);
+  assert.ok(shutters > 0, 'but it must still be reachable');
 });
 
 test('intensityBudget stages the show: restrained start, full middle, bounded finale', () => {

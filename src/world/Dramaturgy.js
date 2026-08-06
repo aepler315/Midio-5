@@ -50,24 +50,49 @@ export function castBiomes(sectionEnergies, seed = 1) {
   return out;
 }
 
-/** Boundary sharpness -> transition style. */
+/**
+ * Boundary sharpness -> transition style.
+ *
+ * The ladder used to run cut / shutter / fade from the top down, which put
+ * the ladder's two ends the wrong way round: `cut` is a brief 0.35-alpha
+ * flash, while `shutter` closes the screen to near-black for a whole bar --
+ * so the *mildest* visual was reserved for the sharpest musical boundary and
+ * the most violent one for merely-moderate boundaries. The screen bit down
+ * hardest exactly where the music was least emphatic.
+ *
+ * Now the effect tracks the boundary: only the sharpest turns earn the
+ * shutter, the middle band gets the flash, and everything softer fades.
+ */
 export function classifyTransition(novelty, maxNovelty) {
   if (!(maxNovelty > 1e-9)) return 'fade';
   const s = novelty / maxNovelty;
-  return s > 0.66 ? 'cut' : s > 0.33 ? 'shutter' : 'fade';
+  return s > SHUTTER_SHARPNESS ? 'shutter' : s > CUT_SHARPNESS ? 'cut' : 'fade';
 }
+
+// Raised from the old 0.66 shutter cutoff: the shutter is now both the
+// rarest style and the strongest effect, so it has to be genuinely earned.
+const SHUTTER_SHARPNESS = 0.78;
+const CUT_SHARPNESS = 0.33;
 
 /**
  * Global phenomena gain across the song: restrained intro ramping over
- * the first ~22% of the song, full by the middle, a final push past 85%.
- * Always within [0.35, 1].
+ * the first ~22% of the song, then full. Always within [0.55, 1].
+ *
+ * Note this is a function of ELAPSED TIME only -- it stages the show, but it
+ * cannot hear the song. A track that fades in for forty seconds reaches full
+ * strength long before the music does, which is what OpeningDirector exists
+ * to correct; the two multiply together in BiomeManager.
  */
 export function intensityBudget(progress) {
   const p = clamp01(progress);
-  // Higher floor so even the intro carries more phenomena, and a bigger
-  // final push -- a more dramatic budget end to end.
-  const ramp = 0.55 + 0.45 * smoothstep(0, 0.22, p);
-  return Math.min(1, ramp * (1 + 0.12 * smoothstep(0.85, 1, p)));
+  // The intro floor. Previously documented as 0.35 while actually being 0.55.
+  //
+  // There was also a "final push past 85%" term here (`* (1 + 0.12 *
+  // smoothstep(0.85, 1, p))`) which could never do anything: `ramp` is
+  // already 1.0 from p=0.22 onward, so the outer Math.min(1, ...) clipped the
+  // push away every time. Removed rather than left as decoration -- a
+  // late-song lift belongs to hypeBoost, which is live and audible.
+  return 0.55 + 0.45 * smoothstep(0, 0.22, p);
 }
 
 /**
