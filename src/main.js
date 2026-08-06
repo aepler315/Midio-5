@@ -709,6 +709,11 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
   lastSongSeed = sim.songSeed;
   setSeedInput(sim.songSeed);
   sim.perf = perfGovernor;
+  // Judgment feedback (hit/miss/hold ticks/choke): SfxSynth is authored and
+  // fully tuned but was never wired to anything -- every judgment played in
+  // total silence. sfx is null until bootAudio() resolves; Simulation
+  // already guards every call with `this.sfx?.`.
+  sim.sfx = sfx;
   sim.setReducedFlash(reducedFlash);
   sim.setVisualStyle(visualStyle);
   // Prime one sim step so BiomeManager/update dials (haze, calm, etc.) are

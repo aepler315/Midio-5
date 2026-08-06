@@ -358,24 +358,41 @@ export class Simulation {
           if (evt.tier === 'sour') {
             this.impactFX.judgment(this.worldX, this.midio.groundY, 'sour', particleMul);
             this.camera.shake(2.5);
+            this.sfx?.judgment('sour', this.vibe.tonic, this.vibe.tonicConfidence);
           } else if (evt.tier) { // tier null = late-armed hold: the glow ramp is its own cue
             this.impactFX.judgment(this.worldX, this.midio.groundY, evt.tier, particleMul);
             this.comboSystem.sustain(evt.tMs); // a clean press keeps the combo warm through its airtime
             if (evt.tier === 'perfect') this.performer.goldFlash = 1;
+            this.sfx?.judgment(evt.tier, this.vibe.tonic, this.vibe.tonicConfidence);
           }
           break;
         case 'sour':
           this.impactFX.judgment(this.worldX, this.midio.groundY, 'sour', particleMul);
           this.camera.shake(2.5);
+          this.sfx?.judgment('sour', this.vibe.tonic, this.vibe.tonicConfidence);
           break;
         case 'holdComplete':
           this.impactFX.splat(this.worldX, this.midio.groundY);
           this.impactFX.ignite(this.worldX, this.midio.groundY);
+          this.sfx?.holdComplete(this.vibe.tonic, this.vibe.tonicConfidence);
           break;
         case 'holdChoke':
           this.camera.shake(3);
+          this.sfx?.holdChoke();
           break;
-        default: // 'miss' | 'holdTick': deliberately quiet on the visual side
+        // 'miss' and 'holdTick' are deliberately quiet on the VISUAL side
+        // (see the comments above this switch), but SfxSynth authors a
+        // dedicated cue for each -- a soft downward slide for a note that
+        // slid past untapped, a pentatonic climb per paid tick -- and
+        // nothing was ever calling them. sfx is optional (null until
+        // bootAudio() finishes in main.js), same guard as every case above.
+        case 'miss':
+          this.sfx?.miss();
+          break;
+        case 'holdTick':
+          this.sfx?.holdTick(evt.tickIdx, this.vibe.tonic, this.vibe.tonicConfidence);
+          break;
+        default:
           break;
       }
     }
