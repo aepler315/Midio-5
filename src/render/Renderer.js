@@ -72,7 +72,12 @@ export class Renderer {
     this._midioEyeRest = computeRestLengths(MIDIO_EYE);
     this._apoBodyRest = computeRestLengths(MIDIO_APOTHEOSIS_FOLDED);
     this.epicycles = new EpicycleShow();
+    // Seeded from whatever the performer already holds, not from null.
+    // `lastMilestone` persists for the whole Simulation, so a renderer rebuilt
+    // mid-song (a restart, a resize path) would otherwise see a milestone from
+    // minutes ago as "new" and replay it out of nowhere.
     this._lastMilestoneMs = null;
+    this._milestoneSeeded = false;
     this.composer = null; // lazy: needs the conductor's timeline at first draw
     this.brush = new RainbowBrush();
     // Renderer-owned (not sim.biomes.lerpCache) so the film finish still
@@ -192,7 +197,10 @@ export class Renderer {
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
-    if (lm && lm.atMs !== this._lastMilestoneMs) {
+    if (!this._milestoneSeeded) {
+      this._milestoneSeeded = true;
+      this._lastMilestoneMs = lm ? lm.atMs : null; // adopt, don't replay
+    } else if (lm && lm.atMs !== this._lastMilestoneMs) {
       this._lastMilestoneMs = lm.atMs;
       this.epicycles.trigger(lm.idx, pose.midioDrawX + 30, sim.midio.groundY - 245, sim.timeMs);
     }
@@ -578,7 +586,7 @@ export class Renderer {
   _drawBloom(ctx, canvas, sim) {
     const perf = sim.perf;
     if (perf && !perf.bloomEnabled) return;
-    const strength = bloomStrength(sim.hype, sim.fever, !!sim.reducedFlash);
+    const strength = bloomStrength(sim.hype, sim.fever, !!sim.reducedFlash, sim.opening ? sim.opening.gain : 1);
     if (strength <= 0.005) return;
 
     const wSmall = Math.max(1, Math.round(canvas.width / BLOOM_DOWNSCALE));
@@ -894,12 +902,16 @@ export class Renderer {
  * the pulsing on drops/kicks while the base glow stays intact. Clamped to
  * BLOOM_MAX so a maxed-out drop-during-fever never blows the frame out.
  */
-export function bloomStrength(hype, fever, reducedFlash = false) {
+export function bloomStrength(hype, fever, reducedFlash = false, openingGain = 1) {
   const slam = hype ? hype.slam : 0;
   const surge = hype ? hype.surge : 0;
   const feverLevel = fever ? fever.level : 0;
   const reactive = capFlashAlpha(0.45 * slam + 0.35 * surge + 0.3 * feverLevel, reducedFlash);
-  return Math.min(BLOOM_MAX, BLOOM_BASE + reactive);
+  // The base glow is unconditional, which meant a song fading in from silence
+  // still opened on a fully bloomed frame -- the single loudest thing on
+  // screen at t=0, and the one least justified by anything audible.
+  // OpeningDirector's gain scales it until the song has actually started.
+  return Math.min(BLOOM_MAX, BLOOM_BASE * openingGain + reactive);
 }
 
 /** Drop impact envelope: 1 right at the drop, easing to 0 over

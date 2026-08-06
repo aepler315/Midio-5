@@ -155,3 +155,81 @@ test('an unseeded uniform Gray-Scott plate stays uniform (no spontaneous noise)'
   for (let i = 0; i < 100; i++) rd.step(0.0367, 0.0649);
   for (let i = 0; i < rd.v.length; i++) assert.equal(rd.v[i], 0);
 });
+
+// --- Drawings must finish -------------------------------------------------
+//
+// The show slot used to be assigned unconditionally, so a milestone arriving
+// during a drawing wiped it mid-stroke. A full show is 1750ms (1100 of it
+// actually drawing) and, under autoplay, five more clean landings can be
+// earned in well under a second -- so the "5" being erased by the "10" was
+// guaranteed by construction, not bad luck.
+
+/** Minimal ctx stub: records nothing, tolerates everything. */
+function stubCtx() {
+  const noop = () => {};
+  return new Proxy({}, {
+    get: (_t, k) => (k === 'canvas' ? { width: 1280, height: 720 } : noop),
+    set: () => true,
+  });
+}
+
+const SHOW_MS = 1750; // DRAW_MS 1100 + HOLD_MS 350 + FADE_MS 300
+
+test('a milestone arriving mid-drawing does not replace the one in flight', () => {
+  const show = new EpicycleShow();
+  const ctx = stubCtx();
+  assert.equal(show.trigger(0, 0, 0, 0), true, 'first one starts immediately');
+  show.draw(ctx, 200);
+  const first = show.active;
+  assert.equal(show.trigger(1, 0, 0, 400), false, 'the second must not start yet');
+  show.draw(ctx, 500);
+  assert.equal(show.active, first, 'the first drawing survives untouched');
+  assert.equal(show.active.idx, 0);
+});
+
+test('the waiting milestone starts once the first one finishes, from the top', () => {
+  const show = new EpicycleShow();
+  const ctx = stubCtx();
+  show.trigger(0, 0, 0, 0);
+  show.trigger(2, 0, 0, 400);
+  show.draw(ctx, SHOW_MS + 10); // first expires; the queued one takes over
+  assert.ok(show.active, 'the pending milestone is not lost');
+  assert.equal(show.active.idx, 2);
+  assert.equal(show.active.startMs, SHOW_MS + 10, 'restamped, so it draws in full');
+  assert.equal(show.pending, null);
+});
+
+test('only one milestone ever waits, and the newest wins', () => {
+  const show = new EpicycleShow();
+  show.trigger(0, 0, 0, 0);
+  show.trigger(1, 0, 0, 100);
+  show.trigger(2, 0, 0, 200);
+  assert.equal(show.pending.idx, 2, 'milestones are monotonic -- the latest supersedes');
+});
+
+test('every drawing gets its full draw window before anything replaces it', () => {
+  // Hammer it with triggers at the rate a dense chart could actually produce
+  // and assert nothing is ever cut short.
+  const show = new EpicycleShow();
+  const ctx = stubCtx();
+  show.trigger(0, 0, 0, 0);
+  let started = show.active.startMs;
+  for (let t = 50; t < 6000; t += 50) {
+    show.trigger(t % 3, 0, 0, t);
+    show.draw(ctx, t);
+    if (show.active && show.active.startMs !== started) {
+      assert.ok(t - started >= SHOW_MS, `a drawing was replaced after only ${t - started}ms`);
+      started = show.active.startMs;
+    }
+  }
+});
+
+test('a backward seek clears the drawing and anything queued behind it', () => {
+  const show = new EpicycleShow();
+  const ctx = stubCtx();
+  show.trigger(0, 0, 0, 5000);
+  show.trigger(1, 0, 0, 5100);
+  show.draw(ctx, 2000); // scrubbed back before its own start
+  assert.equal(show.active, null);
+  assert.equal(show.pending, null, 'nothing stale left to surface later');
+});

@@ -14,6 +14,7 @@ import { decorateStrip } from './Landmarks.js';
 import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul, mountainStripDrawHeight } from './MountainChoreo.js';
 import { ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, geoCrestOffset } from './GeoCrest.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
+import { FlourishGate } from '../sim/FlourishGate.js';
 import {
   seaLineY, oceanRowYs, waveRows, rowAlpha, OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC,
   breakerLift, whitecapMask, rowPhaseDrift,
@@ -81,6 +82,16 @@ const SSM_CONFIDENCE_FLOOR = 0.45;
 // section boundary. Mirrors the SSM path's own floor so the two detectors
 // refuse to manufacture boundaries on the same terms.
 const NOVELTY_NOISE_FLOOR = 0.15;
+
+// --- The shutter: the screen closing down over a section boundary --------
+// A hard floor between bites. Section boundaries may legally sit 11s apart,
+// and two near-total blackouts that close together read as the game
+// malfunctioning rather than as punctuation.
+const SHUTTER_MIN_GAP_MS = 45000;
+// How much of the screen each half may swallow. Was 0.5 -- with both halves
+// closing that is a total blackout, which is more than any transition needs
+// to earn its point.
+const SHUTTER_MAX_COVER = 0.34;
 const WORLD_SPEED_PX_S = 220;
 const BAND_COUNT = 7;
 const EQ_ATTACK_SEC = 0.08;
@@ -186,6 +197,10 @@ export class BiomeManager {
     this._cutFlash = 0;
     this._shutterStartMs = -Infinity;
     this._shutterBarMs = 500;
+    // The shutter is the most aggressive thing on screen; it gets the same
+    // hard-floor rate limiter the character flourishes use.
+    this._shutterGate = new FlourishGate({ minGapMs: SHUTTER_MIN_GAP_MS, chance: 1 });
+    this.shutterDebug = null;
     this.cutFlashJustFired = false;
     // Edge-triggered once per section boundary, any transition style -- other
     // systems (character tumble choreography) hang a rare accent off this.
@@ -201,6 +216,7 @@ export class BiomeManager {
     this.lyricIntensityEased = 0.4;
     this._kindBudgetMulEased = 1;
     this.budget = 1;
+    this.openingGain = 1; // OpeningDirector, set per-step by Simulation
     this.hypeBoost = 1; // drop-surge multiplier from the HypeDirector
     this.mandalaScaleMul = 1; // swells while Midasus dances near the celestial
     this._progress = 0;
@@ -531,10 +547,17 @@ export class BiomeManager {
     this.structureSource = ssmUsable ? 'ssm' : 'energy-novelty';
     this.structureConfidence = structure ? structure.confidence : 0;
 
-    const cuts = this._ensureMinimumSections(
-      ssmUsable ? ssmCuts : [0, ...peaks, lastIdx],
-      { pickPeaks, barTimes, durationMs, lastIdx },
-    );
+    const chosen = ssmUsable ? ssmCuts : [0, ...peaks, lastIdx];
+    const cuts = this._ensureMinimumSections(chosen, { pickPeaks, barTimes, durationMs, lastIdx });
+    // Which cuts are genuine energy-novelty peaks, and so have a meaningful
+    // sharpness to classify from. Everything else -- an SSM boundary (found
+    // by a different detector, on a different signal) or an even time-split
+    // inserted by the minimum-sections floor -- has only whatever the energy
+    // novelty happened to read at that index, which is not that boundary's
+    // strength in any sense. Handing those an arbitrary value is how a
+    // boundary with no drama in it was assigned the most violent transition
+    // in the game, and is most of why the effect felt random.
+    const peakSet = new Set(peaks);
 
     this.sections = [];
     const meanEnergies = [];
@@ -555,8 +578,13 @@ export class BiomeManager {
       this.sections.push({
         startMs: barTimes[cuts[i]],
         endMs: i === cuts.length - 2 ? durationMs : barTimes[cuts[i + 1]],
-        // Boundary sharpness picks the transition style into this section.
-        transition: this.sections.length === 0 ? 'fade' : classifyTransition(novelty[cuts[i]], maxNovelty),
+        // Boundary sharpness picks the transition style into this section --
+        // but only where that sharpness is real. An unmeasured boundary
+        // fades: the gentlest option is the honest one when we do not
+        // actually know how hard the song turned.
+        transition: this.sections.length === 0 || !peakSet.has(cuts[i])
+          ? 'fade'
+          : classifyTransition(novelty[cuts[i]], maxNovelty),
         barMs: (barTimes[Math.min(barTimes.length - 1, cuts[i] + 1)] - barTimes[cuts[i]]) || 500,
       });
     }
@@ -868,7 +896,17 @@ export class BiomeManager {
       const sec = this.sections[sectionIdx];
       if (this._lastSectionIdx != null) {
         if (sec.transition === 'cut') { this._cutFlash = 1; this.cutFlashJustFired = true; }
-        else if (sec.transition === 'shutter') { this._shutterStartMs = nowMs; this._shutterBarMs = sec.barMs; }
+        else if (sec.transition === 'shutter') {
+          // Through a real rate limiter. Boundaries are allowed to sit
+          // MIN_SECTION_CUT_GAP_MS (11s) apart, so before this two near-total
+          // blackouts eleven seconds apart were a permitted outcome -- and
+          // nothing else in the game punctuates that hard. The gate's floor
+          // cannot be bypassed (transition: true skips only the probability
+          // roll), which is exactly the guarantee wanted here.
+          const fired = this._shutterGate.tryFire(nowMs, { intensity: this.vibeEpic || 0, transition: true });
+          this.shutterDebug = { fired, reason: this._shutterGate.lastReason, atMs: nowMs };
+          if (fired) { this._shutterStartMs = nowMs; this._shutterBarMs = sec.barMs; }
+        }
         // A lyric-identified instrumental/solo section gets the same
         // spotlight snap a hype drop does -- the show notices the vocals
         // stepping back just as much as it notices them stepping forward.
@@ -909,7 +947,10 @@ export class BiomeManager {
     // reads louder, an intro/outro settles), a no-op multiplier of 1 when
     // there's no lyric data.
     this._progress = this.durationMs > 0 ? clamp01(nowMs / this.durationMs) : 0.5;
-    this.budget = intensityBudget(this._progress) * this._kindBudgetMulEased;
+    // Staging (time) x lyric kind x whether the song has actually started
+    // (audio). The first two cannot hear the music; openingGain is what keeps
+    // a fade-in from opening on a fully-lit world.
+    this.budget = intensityBudget(this._progress) * this._kindBudgetMulEased * this.openingGain;
     const gain = this.budget * this.hypeBoost;
     this.mandala.intensity = gain;
     this.murmuration.intensity = gain;
@@ -1204,9 +1245,17 @@ export class BiomeManager {
     // Ambient particle field lives roughly at mid-depth. The Unraveling:
     // particle hues converge toward the biome's own halo color as the
     // ending arc progresses.
+    // Particle counts are fixed at construction and never saw the intensity
+    // budget, so a fading-in song still opened on a fully-populated frame.
+    // Fading the whole field is cheaper and less jarring than culling
+    // individual particles, which would pop as the gain rose.
+    const openA = this.openingGain;
+    ctx.save();
+    if (openA < 0.999) ctx.globalAlpha = openA;
     this.fields.get(from).draw(ctx, particleMul, mandalaColor, this.unravel);
+    ctx.restore();
     if (to !== from && t > 0.02) {
-      ctx.save(); ctx.globalAlpha = t;
+      ctx.save(); ctx.globalAlpha = t * openA;
       this.fields.get(to).draw(ctx, particleMul, mandalaColor, this.unravel);
       ctx.restore();
     }
@@ -1513,13 +1562,23 @@ export class BiomeManager {
     if (u >= 0 && u <= 1) {
       // Vertical shutter columns closing then reopening over one bar,
       // phase-staggered so the wipe ripples instead of slamming.
+      //
+      // Coverage is capped well short of meeting in the middle. At 0.5 per
+      // half these columns closed the frame to solid black for about a
+      // second -- the screen biting shut. It should read as the world
+      // narrowing on a moment, not as the picture being taken away.
+      //
+      // Reduced-flash halves it again. This is the largest, highest-contrast
+      // event in the game and it was the one thing in this file ignoring the
+      // accessibility cap entirely.
+      const cover = this.reducedFlash ? SHUTTER_MAX_COVER * 0.5 : SHUTTER_MAX_COVER;
       ctx.save();
       ctx.fillStyle = B.silhouette;
       const cols = 14;
       const colW = canvas.width / cols;
       for (let i = 0; i < cols; i++) {
         const stagger = 0.8 + 0.2 * Math.sin(i * 1.7);
-        const h = canvas.height * 0.5 * Math.sin(Math.PI * Math.min(1, u * 1.05)) * stagger;
+        const h = canvas.height * cover * Math.sin(Math.PI * Math.min(1, u * 1.05)) * stagger;
         ctx.fillRect(i * colW, 0, colW + 1, h);
         ctx.fillRect(i * colW, canvas.height - h, colW + 1, h);
       }
@@ -1669,7 +1728,7 @@ export class BiomeManager {
     const nightBoost = 0.55 + 1.55 * night;
     const biomeBoost = 0.95 * twinkleBlend;
     const spaceFloor = dials.spaceWash ? 0.22 : 0;
-    const alpha = clamp01(ambient * nightBoost + biomeBoost + spaceFloor);
+    const alpha = clamp01(ambient * nightBoost + biomeBoost + spaceFloor) * this.openingGain;
     if (alpha < 0.04) return;
 
     const twinkleRate = 1.15 + 0.7 * (this.calmLevel || 0) + 0.35 * night;

@@ -51,17 +51,55 @@ export class EpicycleShow {
       return dftCoefficients(resampleClosed(closed, SAMPLES), MAX_COEFFS);
     }));
     this.active = null;
+    this.pending = null;
   }
 
+  /**
+   * Ask for a glyph. A drawing already in flight is never interrupted.
+   *
+   * This slot used to be assigned unconditionally, and the show takes 1750ms
+   * (1100 of it actually drawing) while the streak needed to reach the next
+   * milestone can be earned in well under a second on a dense chart -- so the
+   * "5" was routinely wiped mid-stroke by the "10". That is the reported
+   * "drawings get abandoned before they're done", and it was guaranteed by
+   * construction rather than unlucky.
+   *
+   * The new arrival is held rather than dropped. There are only ever three
+   * milestones in an entire song (MidioPerformer ratchets on idx and never
+   * resets), so discarding one means the player simply never sees it.
+   * Milestones are monotonic, so a newer pending glyph supersedes an older
+   * pending one -- at most one waits, and it starts the moment the current
+   * drawing finishes.
+   */
   trigger(milestoneIdx, x, y, nowMs) {
     const idx = Math.max(0, Math.min(this.glyphs.length - 1, milestoneIdx));
-    this.active = { idx, x, y, startMs: nowMs };
+    const show = { idx, x, y, startMs: nowMs };
+    if (this.active) { this.pending = show; return false; }
+    this.active = show;
+    return true;
+  }
+
+  /** Drop everything, in flight and queued. For a seek or a teardown, where
+   *  finishing a drawing the player has scrubbed away from is meaningless. */
+  reset() {
+    this.active = null;
+    this.pending = null;
+  }
+
+  /** Promote a waiting glyph, restamped to start now: its original timestamp
+   *  is long past, and reusing it would open the new drawing part-finished. */
+  _advance(nowMs) {
+    this.active = this.pending ? { ...this.pending, startMs: nowMs } : null;
+    this.pending = null;
   }
 
   draw(ctx, nowMs) {
     if (!this.active) return;
     const elapsed = nowMs - this.active.startMs;
-    if (elapsed < 0 || elapsed > DRAW_MS + HOLD_MS + FADE_MS) { this.active = null; return; }
+    // A backward seek puts us before our own start: cancel outright rather
+    // than hold a glyph that belongs to a part of the song we have left.
+    if (elapsed < 0) { this.reset(); return; }
+    if (elapsed > DRAW_MS + HOLD_MS + FADE_MS) { this._advance(nowMs); return; }
 
     const progress = Math.min(1, elapsed / DRAW_MS);
     const fade = elapsed > DRAW_MS + HOLD_MS

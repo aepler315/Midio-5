@@ -199,6 +199,13 @@ export class DebugOverlay {
       lines.push(`lyricIntensity: ${b.lyricIntensityEased.toFixed(2)}`);
       const cd = b.connectorDebug;
       if (cd) lines.push(`connector hills: spans=${cd.spans}  buried=${cd.depth01.toFixed(2)}  alpha=${cd.alpha.toFixed(3)}`);
+      const sd = b.shutterDebug;
+      lines.push(`shutter: ${sd ? `${sd.fired ? 'FIRED' : 'denied'} (${sd.reason}) at ${(sd.atMs / 1000).toFixed(1)}s` : 'none yet'}`);
+    }
+
+    const op = this.sim.opening;
+    if (op) {
+      lines.push(`opening: ${op.status}  gain=${op.gain.toFixed(2)}  budget=${(this.sim.biomes?.budget ?? 1).toFixed(2)}`);
     }
 
     // What this player has taught the engine about their own groove
