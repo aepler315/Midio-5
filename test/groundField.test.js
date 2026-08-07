@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GroundField, rippleOffsetAt, kickGlowAt, triangularBandIndex } from '../src/world/GroundField.js';
+import { GroundField, rippleOffsetAt, kickGlowAt, triangularBandIndex, calmGrooveParams } from '../src/world/GroundField.js';
 import { Conductor } from '../src/core/Conductor.js';
 import { makeNoteEvent, Role } from '../src/core/NoteEvent.js';
 
@@ -406,4 +406,43 @@ test('kickGlow with zero or negative vel is a no-op', () => {
   gf.kickGlow(100, 0, 0);
   gf.kickGlow(100, 0, -1);
   assert.equal(gf._glows.length, 0);
+});
+
+// --- calmGrooveParams: the groove wave widens/slows with calm; heightAt()'s
+// physics (baseTarget/spring) must stay completely untouched, same
+// render/physics discipline as the buzz/ripple/glow effects above ---
+
+test('calmGrooveParams: identity at calm=0, widens/slows monotonically toward calm=1', () => {
+  const c0 = calmGrooveParams(0);
+  assert.equal(c0.wavelengthMul, 1);
+  assert.equal(c0.rateMul, 1);
+
+  let prevWave = -Infinity, prevRate = Infinity;
+  for (const c of [0, 0.25, 0.5, 0.75, 1]) {
+    const p = calmGrooveParams(c);
+    assert.ok(p.wavelengthMul >= prevWave - 1e-9, 'wavelength must not narrow as calm rises');
+    assert.ok(p.rateMul <= prevRate + 1e-9, 'rate must not speed up as calm rises');
+    prevWave = p.wavelengthMul; prevRate = p.rateMul;
+  }
+  assert.ok(calmGrooveParams(1).wavelengthMul > 1, 'full calm must genuinely broaden the swell');
+  assert.ok(calmGrooveParams(1).rateMul < 1, 'full calm must genuinely slow the roll');
+});
+
+test('calmGrooveParams clamps out-of-range input the same as clamp01', () => {
+  assert.deepEqual(calmGrooveParams(-1), calmGrooveParams(0));
+  assert.deepEqual(calmGrooveParams(2), calmGrooveParams(1));
+});
+
+test('calmLevel passed to update() never changes heightAt() -- the physics reference stays exactly as tuned regardless of mood, only the render-only groove wave reacts', () => {
+  const gfHot = new GroundField(BASE_Y, { durationMs: 0 });
+  const gfCalm = new GroundField(BASE_Y, { durationMs: 0 });
+  let t = 0;
+  for (let i = 0; i < 400; i++) {
+    gfHot.update(t, STEP_S, i * 5, fakeEnergyCurvesBanded(0.7, 0.5), 0);
+    gfCalm.update(t, STEP_S, i * 5, fakeEnergyCurvesBanded(0.7, 0.5), 1);
+    t += 8.33;
+  }
+  for (let x = 0; x < 2000; x += 137) {
+    assert.equal(gfHot.heightAt(x), gfCalm.heightAt(x), `heightAt(${x}) diverged between calm=0 and calm=1`);
+  }
 });

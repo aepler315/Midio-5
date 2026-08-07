@@ -45,6 +45,22 @@ const DEPTH_GAIN = 0.45;        // per-node depth contribution to size/spread/al
 const DEPTH_GLOBAL_GAIN = 0.30; // whole-structure dolly contribution
 const DEPTH_MUL_MIN = 0.42, DEPTH_MUL_MAX = 1.85;
 
+/**
+ * How calm stretches the ridge's own attack/release envelopes. This line
+ * used to chase eqBands at the SAME fast 0.05s/0.25s taus regardless of
+ * section energy -- a raw EQ readout stays a jumpy stepped EQ readout even
+ * in a calm section, reading as "the high-intensity visualization is still
+ * on," just quieter (bands themselves are lower, not the line's own
+ * behavior). Stretching both taus makes each node ease into its target over
+ * a much longer window, so the whole line rolls in slow, broad contours
+ * instead of ticking to every treble transient. Pure so it's testable
+ * without asserting on the segment-drawing/wireframe machinery.
+ */
+export function calmResponseParams(calmLevel) {
+  const c = clamp01(calmLevel);
+  return { tauMul: 1 + 3 * c }; // up to 4x slower attack/release at full calm
+}
+
 // Icosahedron: 12 vertices, 30 edges. Precomputed once (module scope).
 const PHI = (1 + Math.sqrt(5)) / 2;
 const ICO_RAW = [
@@ -123,12 +139,13 @@ export class SpaceRidge {
     this._tSec = 0;
   }
 
-  update(nowMs, dtSec, eqBands) {
+  update(nowMs, dtSec, eqBands, calmLevel = 0) {
+    const { tauMul } = calmResponseParams(calmLevel);
     for (let i = 0; i < this.nodes.length; i++) {
       const n = this.nodes[i];
       const raw = clamp01(eqBands ? (eqBands[n.band] ?? 0) : 0);
       const target = Math.pow(raw, 1.4);
-      const tau = target > n.level ? ATTACK_SEC : RELEASE_SEC;
+      const tau = (target > n.level ? ATTACK_SEC : RELEASE_SEC) * tauMul;
       const prev = n.level;
       n.level += (1 - Math.exp(-dtSec / tau)) * (target - n.level);
       if (n.level - prev > FLASH_JUMP_THRESHOLD) this._flashes.push({ i, atMs: nowMs });

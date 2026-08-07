@@ -30,10 +30,18 @@ export class RainbowBrush {
     while (this.dabs.length && nowMs - this.dabs[0].bornMs >= LIFE_MS) this.dabs.shift();
     if (this.dabs.length === 0) return;
     ctx.save();
+    // Additive, like every other trail/glow in the game (afterimages, beat
+    // flashes) -- overlapping dabs from a dense flurry of jumps melt into
+    // soft light instead of stacking as an opaque, hard-edged patchwork.
+    ctx.globalCompositeOperation = 'lighter';
     for (const d of this.dabs) {
       const age = (nowMs - d.bornMs) / LIFE_MS;
       const size = Math.max(3, Math.round((9 - 4 * age) * sizeMul));
-      ctx.globalAlpha = 0.72 * (1 - age);
+      // Lower peak alpha than the old opaque dabs used -- additive stacking
+      // saturates to white fast, and a dense flurry of jumps overlaps a LOT
+      // of dabs; this keeps the rainbow hue cycle visible instead of
+      // washing out to a pale blob wherever trails pile up.
+      ctx.globalAlpha = 0.4 * (1 - age);
       ctx.fillStyle = `hsl(${d.hue},90%,62%)`;
       const x = Math.round(d.wx - worldX + originX - size / 2);
       ctx.fillRect(x, Math.round(d.y - size / 2), size, size);

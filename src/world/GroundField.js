@@ -77,6 +77,24 @@ const GROOVE_HZ = 0.11;
 const GROOVE_TAU_SEC = 0.30;
 
 /**
+ * How calm reshapes the groove wave -- the one ground effect that's
+ * already a genuine traveling wave, not a jitter -- into a broader, slower
+ * roll. Deliberately does NOT touch heightAt()'s physics (baseTarget/spring,
+ * driven by live per-band energy) or the bass buzz (a shimmer, not a sweep;
+ * calm already thins it naturally since it's bass-EMA-driven): only the
+ * render-only groove's wavelength/rate, same render/physics split every
+ * other ground effect in this file already keeps. Pure so it's directly
+ * testable independent of the slice/spring machinery.
+ */
+export function calmGrooveParams(calmLevel) {
+  const c = clamp01(calmLevel);
+  return {
+    wavelengthMul: 1 + 1.6 * c, // a much broader swell instead of a tight ripple
+    rateMul: 1 - 0.55 * c,      // rolls across the ground more slowly
+  };
+}
+
+/**
  * Pure per-ripple contribution at a given worldX/time. `ripple` =
  * { originWorldX, startMs, strength } (0..1 strength). The wavefront
  * travels outward at RIPPLE_WAVE_SPEED_PX_S; `tauLocal` is the elapsed
@@ -281,9 +299,10 @@ export class GroundField {
     return Math.min(1, sum);
   }
 
-  update(nowMs, dtSec, worldX, energyCurves) {
+  update(nowMs, dtSec, worldX, energyCurves, calmLevel = 0) {
     this.justRecovered = false;
     this._nowMs = nowMs;
+    this._calmLevel = calmLevel; // visibleBars() reads this for the groove wave's shape
     if (this._ripples.length) this._ripples = this._ripples.filter((r) => nowMs - r.startMs < RIPPLE_TOTAL_LIFE_MS);
     if (this._glows.length) this._glows = this._glows.filter((g) => nowMs - g.startMs < GLOW_TOTAL_LIFE_MS);
     const globalEnergy = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS)) : 0;
@@ -353,6 +372,7 @@ export class GroundField {
   visibleBars(worldX, originX, screenWidth) {
     const bars = [];
     const settle = 1 - clamp01(this.flatten);
+    const { wavelengthMul, rateMul } = calmGrooveParams(this._calmLevel || 0);
     for (const s of this.slices) {
       const screenXStart = s.worldXStart - worldX + originX;
       const screenXEnd = screenXStart + this.sliceWidth;
@@ -364,7 +384,9 @@ export class GroundField {
       // rather than bobbing in lockstep -- the ground breathing with the
       // track between individual band/kick events.
       const groove = this._groove > 0.02
-        ? GROOVE_WAVE_AMPLITUDE_PX * this._groove * Math.sin(s.worldXStart / GROOVE_WAVELENGTH_PX + this._nowMs / 1000 * GROOVE_HZ * 2 * Math.PI)
+        ? GROOVE_WAVE_AMPLITUDE_PX * this._groove * Math.sin(
+          s.worldXStart / (GROOVE_WAVELENGTH_PX * wavelengthMul) + this._nowMs / 1000 * GROOVE_HZ * rateMul * 2 * Math.PI,
+        )
         : 0;
       bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + (s.offset + ripple + groove) * settle, glow, groove: this._groove });
     }

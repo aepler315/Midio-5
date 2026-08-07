@@ -20,6 +20,28 @@ const W_WIND = 0.5; // wind-assist: nudged, never overridden -- the flock still 
 const PANIC_DECAY_SEC = 0.8; // startle grants a brief overspeed allowance
 const E_EMA_TAU = 0.4;
 
+/**
+ * How calm reshapes the curl-noise wander term the flock steers by, pure
+ * so the mechanism is directly testable independent of the full N-boid
+ * emergent system (whose flocking/centering forces make behavioral
+ * statistics like path length noisy and hard to pin a bound on). Calm
+ * doesn't just cap top speed (that already existed) -- it samples the SAME
+ * noise field at a lower spatial frequency and slower time rate, which by
+ * construction widens the field's correlation length: nearby boids' steering
+ * agrees over a much larger area, so cohesion carries the whole flock
+ * through broad arcs instead of each boid making small, locally-independent
+ * corrections. Gain rises too, so the sweep has real reach rather than
+ * reading as merely "the same wander, throttled."
+ */
+export function calmNoiseParams(calmLevel) {
+  const c = clamp01(calmLevel);
+  return {
+    spatialScale: 1 - 0.55 * c, // lower -> larger-scale, more correlated swirls
+    temporalScale: 1 - 0.4 * c, // lower -> the field evolves more slowly
+    gainMul: 1 + 0.6 * c,       // higher -> the sweep reaches farther
+  };
+}
+
 export class Murmuration {
   constructor(canvasWidth, canvasHeight, seed = 1, { n = N, noiseGain = W_NOISE } = {}) {
     this.w = canvasWidth;
@@ -101,9 +123,10 @@ export class Murmuration {
         ax += (cohX / count) * W_COH;
         ay += (cohY / count) * W_COH;
       }
-      const flow = curl2(b.x * 0.0028, b.y * 0.0028, tSec * 0.08);
-      ax += flow.x * this.noiseGain;
-      ay += flow.y * this.noiseGain;
+      const { spatialScale, temporalScale, gainMul } = calmNoiseParams(calmLevel);
+      const flow = curl2(b.x * 0.0028 * spatialScale, b.y * 0.0028 * spatialScale, tSec * 0.08 * temporalScale);
+      ax += flow.x * this.noiseGain * gainMul;
+      ay += flow.y * this.noiseGain * gainMul;
       ax += this._wrapDx(cxAll - b.x) * W_GLOBAL;
       ay += (cyAll - b.y) * W_GLOBAL;
       if (wind) { ax += wind.x * W_WIND; ay += wind.y * W_WIND; }

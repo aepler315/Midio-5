@@ -1,18 +1,34 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CameraDirector } from '../src/render/CameraDirector.js';
+import { CameraDirector, CALM_DRIFT_AMP_PX, CALM_DRIFT_PERIOD_SEC } from '../src/render/CameraDirector.js';
 
-test('calm level introduces a slow drift when nothing else is shaking the camera', () => {
+test('calm level introduces a slow, wide drift when nothing else is shaking the camera', () => {
   const cam = new CameraDirector();
   let sawNonZero = false;
   let maxAbs = 0;
-  for (let i = 0; i < 200; i++) {
+  // Run a full sweep period so the sinusoid actually reaches its peak.
+  const steps = Math.ceil(CALM_DRIFT_PERIOD_SEC / (1 / 60));
+  for (let i = 0; i < steps; i++) {
     cam.update(1 / 60, 1);
     if (cam.shakeX !== 0 || cam.shakeY !== 0) sawNonZero = true;
     maxAbs = Math.max(maxAbs, Math.abs(cam.shakeX), Math.abs(cam.shakeY));
   }
   assert.ok(sawNonZero, 'expected calm drift to move the camera off dead-zero at some point');
-  assert.ok(maxAbs <= 3.01, `expected drift to stay within its ~3px amplitude, got ${maxAbs}`);
+  assert.ok(maxAbs <= CALM_DRIFT_AMP_PX + 0.01, `expected drift to stay within its amplitude, got ${maxAbs}`);
+  assert.ok(maxAbs > 10, `expected a genuinely wide sweep, not the old imperceptible 3px drift, got ${maxAbs}`);
+});
+
+test('calm drift amplitude scales with calmLevel (a partly-calm section sweeps proportionally less)', () => {
+  const full = new CameraDirector(), half = new CameraDirector();
+  let maxFull = 0, maxHalf = 0;
+  const steps = Math.ceil(CALM_DRIFT_PERIOD_SEC / (1 / 60));
+  for (let i = 0; i < steps; i++) {
+    full.update(1 / 60, 1);
+    half.update(1 / 60, 0.5);
+    maxFull = Math.max(maxFull, Math.abs(full.shakeX));
+    maxHalf = Math.max(maxHalf, Math.abs(half.shakeX));
+  }
+  assert.ok(Math.abs(maxHalf - maxFull * 0.5) < 1, `expected roughly half the amplitude, got full=${maxFull} half=${maxHalf}`);
 });
 
 test('with calmLevel 0, the camera stays at dead-zero absent any shake trigger', () => {

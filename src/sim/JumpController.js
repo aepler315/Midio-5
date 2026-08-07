@@ -164,6 +164,35 @@ export function shortHopHeightMul(D) {
   return D >= D_MIN ? 1 : (D / D_MIN) ** 2;
 }
 
+// Height tiers (§ jump feel): a jump's DURATION is tightly beat-quantized
+// (scheduledJumpD always lands on the next real kick), but height used to
+// be a raw, continuous function of each note's own MIDI velocity with zero
+// smoothing between consecutive jumps -- two notes at vel 0.58 and 0.63
+// produced two visibly different jumps back to back, even though the timing
+// underneath was rock-solid. That asymmetry (disciplined rhythm, jittery
+// height) is what reads as "random" rather than "on the beat": the ear says
+// steady, the eye sees noise. Four tiers -- quiet/normal/strong/accent --
+// give height the same discipline timing already has, while still letting
+// a genuinely harder hit read as a bigger jump (never smaller: floors are
+// ascending, so accent-boosted velocity can only round UP a tier, matching
+// the "clearance only ever improves" guarantee at the call site).
+const VEL_TIERS = [
+  { floor: 0.00, value: 0.30 },
+  { floor: 0.40, value: 0.55 },
+  { floor: 0.65, value: 0.80 },
+  { floor: 0.85, value: 1.00 },
+];
+
+/** Snaps a raw 0..1 velocity to the highest tier whose floor it clears. */
+export function quantizeJumpVel(vel) {
+  let out = VEL_TIERS[0].value;
+  for (const tier of VEL_TIERS) {
+    if (vel >= tier.floor) out = tier.value;
+    else break;
+  }
+  return out;
+}
+
 /**
  * The first entry in the ascending `kickTimes` (forward-scanned from
  * `fromIdx`) far enough past `takeoffMs` to be a plausible landing target
