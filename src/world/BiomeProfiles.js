@@ -125,7 +125,7 @@ export const BIOMES = [
     silhouette: '#3a2210',
     celestial: { kind: 'sun', color: '#ffd27a', radius: 56, haloColor: '#ffb347', veiled: true },
     particles: { kind: 'sand', color: '#e8c98a', count: 55, speed: 70 },
-    fx: 'heatShimmer',
+    fx: 'mirage',
     terrainEnergy: 0.85,
   },
   {

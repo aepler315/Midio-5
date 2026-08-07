@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chladni, thomasDeriv, rk4Step3 } from '../src/render/oscillators.js';
 import { valueNoise3, curl2 } from '../src/utils/fields.js';
 import { CymaticField } from '../src/world/CymaticField.js';
-import { KuramotoSwarm } from '../src/world/KuramotoSwarm.js';
+import { KuramotoSwarm, calmWanderParams } from '../src/world/KuramotoSwarm.js';
 import { ChaosRibbon } from '../src/world/ChaosRibbon.js';
 
 function fakeEnergy(value) {
@@ -67,6 +67,27 @@ test('Kuramoto swarm phase-locks under sustained high energy', () => {
   let t = 0;
   for (let i = 0; i < 1800; i++) { swarm.update(t, 1 / 120, fakeEnergy(1), 500, 0); t += 8.33; }
   assert.ok(swarm.r > 0.85, `expected phase-locked unison at full energy, got r=${swarm.r.toFixed(3)}`);
+});
+
+test('calmWanderParams: identity at calm=0, widens/slows monotonically toward calm=1', () => {
+  const c0 = calmWanderParams(0);
+  assert.equal(c0.ampMul, 1);
+  assert.equal(c0.rateMul, 1);
+
+  let prevAmp = -Infinity, prevRate = Infinity;
+  for (const c of [0, 0.25, 0.5, 0.75, 1]) {
+    const p = calmWanderParams(c);
+    assert.ok(p.ampMul >= prevAmp - 1e-9, 'orbit must not narrow as calm rises');
+    assert.ok(p.rateMul <= prevRate + 1e-9, 'orbit must not speed up as calm rises');
+    prevAmp = p.ampMul; prevRate = p.rateMul;
+  }
+  assert.ok(calmWanderParams(1).ampMul > 1, 'full calm must genuinely widen the orbit');
+  assert.ok(calmWanderParams(1).rateMul < 1, 'full calm must genuinely slow the sweep');
+});
+
+test('calmWanderParams clamps out-of-range input the same as clamp01', () => {
+  assert.deepEqual(calmWanderParams(-1), calmWanderParams(0));
+  assert.deepEqual(calmWanderParams(2), calmWanderParams(1));
 });
 
 test('kicks entrain the locked swarm toward phase zero', () => {

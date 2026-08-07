@@ -1,5 +1,18 @@
 * { box-sizing: border-box; }
 
+/* One Spectrum: the HUD chrome is keyed to the song like the world and
+   the characters -- these vars are rewritten from the live spectral
+   palette (main.js, cache-gated) so combo/score/roleDots/buttons all
+   shift hue with the song's key and section, as one family. */
+:root {
+  --spec-gold: #ffd76a;    /* combo, grade, hover accents */
+  --spec-cool: #7ad1ff;    /* BASS role, ghost-button hover */
+  --spec-warm: #ff7ab6;    /* primary file button, warm accents */
+  --spec-pad: #b9a3ff;     /* PAD role dot */
+  --spec-rhythm: #ff5a7a;  /* RHYTHM role dot, hide action */
+  --spec-hue: 45;
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -253,7 +266,7 @@ html, body {
 .titleWordMidio {
   font-size: clamp(2.1rem, 6vw, 2.75rem);
   letter-spacing: 0.1em;
-  background: linear-gradient(105deg, #ffd76a 0%, #ff9a5c 35%, #ff7ab6 70%, #7ad1ff 100%);
+  background: linear-gradient(90deg, var(--spec-gold), var(--spec-warm), var(--spec-cool));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -479,7 +492,7 @@ html, body {
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
 }
-#dropzone.drag { border-color: #ffd76a; background: rgba(255, 215, 106, 0.08); }
+#dropzone.drag { border-color: var(--spec-gold); background: rgba(255, 215, 106, 0.08); }
 
 /* ── Complete screen ─────────────────────────────────────────────────────── */
 #completePanel.completePanel {
@@ -513,11 +526,12 @@ html, body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+#demoBtn:hover, #playAgainBtn:hover { border-color: var(--spec-cool); color: var(--spec-cool); }
 #completePanel h1 {
   font-size: 2.4rem;
   letter-spacing: 0.08em;
   margin: 0;
-  color: #ffd76a;
+  color: var(--spec-gold);
   text-shadow: 0 0 28px rgba(255, 215, 106, 0.35);
 }
 .completeSeedRow {
@@ -667,7 +681,7 @@ html, body {
 #comboReadout {
   font-size: 1.6rem;
   font-weight: 700;
-  color: #ffd76a;
+  color: var(--spec-gold);
   text-shadow: 0 0 12px rgba(255, 215, 106, 0.6);
   display: inline-block;
 }
@@ -675,11 +689,11 @@ html, body {
 /* Combo-milestone flourish (follow-up item 6): a quick shatter-and-reform
    pulse, mirroring FractureEngine's terminal-shatter beat in miniature. */
 @keyframes comboMilestone {
-  0%   { transform: scale(1) rotate(0deg); color: #ffd76a; text-shadow: 0 0 12px rgba(255, 215, 106, 0.6); }
+  0%   { transform: scale(1) rotate(0deg); color: var(--spec-gold); text-shadow: 0 0 12px rgba(255, 215, 106, 0.6); }
   25%  { transform: scale(1.7) rotate(-8deg); color: #fff6cf; text-shadow: 0 0 34px rgba(255, 246, 207, 0.95); }
   50%  { transform: scale(0.82) rotate(5deg); }
   75%  { transform: scale(1.12) rotate(-2deg); }
-  100% { transform: scale(1) rotate(0deg); color: #ffd76a; text-shadow: 0 0 12px rgba(255, 215, 106, 0.6); }
+  100% { transform: scale(1) rotate(0deg); color: var(--spec-gold); text-shadow: 0 0 12px rgba(255, 215, 106, 0.6); }
 }
 #comboReadout.milestone-pulse {
   animation: comboMilestone 0.55s cubic-bezier(0.2, 0.8, 0.3, 1);
@@ -756,8 +770,8 @@ html, body {
 #btLatencyHudBtn[aria-pressed="true"],
 #visualStyleBtn[aria-pressed="true"],
 #visualStyleHudBtn[aria-pressed="true"] {
-  border-color: #7ad1ff;
-  color: #7ad1ff;
+  border-color: var(--spec-cool);
+  color: var(--spec-cool);
 }
 
 /* Ghost button (outline style) */
@@ -772,8 +786,8 @@ html, body {
   transition: border-color 0.15s, color 0.15s;
 }
 .ghostbtn:hover {
-  border-color: #7ad1ff;
-  color: #7ad1ff;
+  border-color: var(--spec-cool);
+  color: var(--spec-cool);
 }
 
 /* Compact square variant for single-glyph buttons (gear, ×). */
@@ -783,6 +797,44 @@ html, body {
   border-radius: 6px;
 }
 
+/* Auto-hiding SoundFont pill (bottom-center) — click to open the switcher
+   popup (#fontModal). */
+#fontBar {
+  position: absolute;
+  bottom: 96px; /* clears the composer strip, now bottom-anchored */
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  z-index: 6;
+}
+#fontBar.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+#fontBarBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(5, 5, 10, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+#fontBarBtn:hover { border-color: var(--spec-cool); color: var(--spec-cool); }
+#fontName {
+  min-width: 100px;
+  max-width: 220px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* Track visibility badge (top-right of the HUD row) — click/tap or press T
    to expand the full per-track breakdown of the loaded MIDI. */
 #trackBadge {
@@ -799,7 +851,7 @@ html, body {
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
 }
-#trackBadgeBtn:hover { border-color: #7ad1ff; color: #7ad1ff; }
+#trackBadgeBtn:hover { border-color: var(--spec-cool); color: var(--spec-cool); }
 
 #trackList {
   display: none;
@@ -832,10 +884,10 @@ html, body {
   border-radius: 50%;
   flex: none;
 }
-.roleDot.role-MELODY { background: #ffd76a; }
-.roleDot.role-BASS   { background: #7ad1ff; }
-.roleDot.role-PAD    { background: #b9a3ff; }
-.roleDot.role-RHYTHM { background: #ff5a7a; }
+.roleDot.role-MELODY { background: var(--spec-gold); }
+.roleDot.role-BASS   { background: var(--spec-cool); }
+.roleDot.role-PAD    { background: var(--spec-pad); }
+.roleDot.role-RHYTHM { background: var(--spec-rhythm); }
 
 .trackRow .trackName {
   flex: 1 1 auto;
@@ -896,9 +948,9 @@ html, body {
   font-weight: 700;
   letter-spacing: 0.08em;
   padding: 20px 40px;
-  border: 3px dashed #ffd76a;
+  border: 3px dashed var(--spec-gold);
   border-radius: 16px;
-  color: #ffd76a;
+  color: var(--spec-gold);
   background: rgba(5, 5, 10, 0.5);
 }
 
@@ -937,7 +989,7 @@ html, body {
   margin: 0;
   font-size: 1.05rem;
   letter-spacing: 0.04em;
-  color: #ffd76a;
+  color: var(--spec-gold);
 }
 .fontList {
   overflow-y: auto;
@@ -962,7 +1014,7 @@ html, body {
 }
 .fontRow:hover { background: rgba(255, 255, 255, 0.06); }
 .fontRow.active { background: rgba(255, 215, 106, 0.12); }
-.fontRow.active .fontRowName { color: #ffd76a; font-weight: 600; }
+.fontRow.active .fontRowName { color: var(--spec-gold); font-weight: 600; }
 .fontRowName {
   flex: 1 1 auto;
   overflow: hidden;
@@ -987,13 +1039,13 @@ html, body {
 }
 /* Hide (×) reads as a removal — red accent, matching RHYTHM's roleDot.
    Unhide (+) reads as a restore — blue accent, matching the shared hover. */
-.fontRowAction[data-action="hide"]:hover { border-color: #ff5a7a; color: #ff5a7a; }
-.fontRowAction[data-action="unhide"]:hover { border-color: #7ad1ff; color: #7ad1ff; }
+.fontRowAction[data-action="hide"]:hover { border-color: var(--spec-rhythm); color: var(--spec-rhythm); }
+.fontRowAction[data-action="unhide"]:hover { border-color: var(--spec-cool); color: var(--spec-cool); }
 
 /* Per-song audition verdicts (FontRecommender) */
 .fontRowStar {
   flex: none;
-  color: #ffd76a;
+  color: var(--spec-gold);
   font-size: 0.9rem;
   cursor: default;
 }
@@ -1008,8 +1060,8 @@ html, body {
   border: 1px solid rgba(255, 255, 255, 0.14);
   color: rgba(255, 255, 255, 0.75);
 }
-.fontRowBadge.ok { border-color: rgba(122, 209, 255, 0.45); color: #7ad1ff; }
-.fontRowBadge.dq { border-color: rgba(255, 90, 122, 0.55); color: #ff5a7a; }
+.fontRowBadge.ok { border-color: rgba(122, 209, 255, 0.45); color: var(--spec-cool); }
+.fontRowBadge.dq { border-color: rgba(255, 90, 122, 0.55); color: var(--spec-rhythm); }
 .fontRowBadge.pending { opacity: 0.55; }
 .auditionStatus {
   flex: none;
@@ -1053,7 +1105,7 @@ html, body {
   background: #000;
   transition: border-color 0.15s, transform 0.15s;
 }
-.filmstripFrame:hover { border-color: #ffd76a; transform: translateY(-2px); }
+.filmstripFrame:hover { border-color: var(--spec-gold); transform: translateY(-2px); }
 .filmstripFrame img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 .filmstripModalPanel { width: min(720px, 92vw); }
@@ -1062,6 +1114,50 @@ html, body {
 /* Live HUD: combo mult + clean streak (no score) */
 #hudLeft {
   display: flex;
+  align-items: flex-start;
+  gap: 2px;
+}
+#scoreReadout {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #e8e6f0;
+  text-shadow: 0 0 8px rgba(232, 230, 240, 0.35);
+}
+
+/* The fever gauge: a slim spectral bar under the combo/score readout,
+   cool teal at rest, gold as it climbs, hot pink at max -- the one
+   readout the player was missing for the meter that drives the whole
+   visual intensity stack. The fill color/glow are driven per-frame from
+   main.js (FeverGauge.js); this CSS owns only the static frame. */
+#feverGauge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+#feverLabel {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #e8e6f0;
+  opacity: 0.35;
+  transition: opacity 0.3s ease;
+}
+#feverBar {
+  width: 120px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+#feverFill {
+  width: 0%;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--spec-cool);
+  transition: width 0.12s linear, background 0.3s ease, box-shadow 0.3s ease;
+}
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
@@ -1073,6 +1169,7 @@ html, body {
   text-shadow: 0 0 8px rgba(232, 230, 240, 0.25);
   font-variant-numeric: tabular-nums;
 }
+
 
 /* --- Audition load screen (font ratings gate the show) --- */
 #auditionCanvas {
@@ -1092,7 +1189,7 @@ html, body {
   width: 0%;
   height: 100%;
   border-radius: 3px;
-  background: linear-gradient(90deg, #4fd8c4, #ffd76a);
+  background: linear-gradient(90deg, var(--spec-cool), var(--spec-gold));
   transition: width 0.25s ease;
 }
 

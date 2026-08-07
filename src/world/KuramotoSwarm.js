@@ -20,6 +20,23 @@ const K_MAX = 6; // coupling at full energy, comfortably past the sync threshold
 const OMEGA_JITTER = 1.2; // rad/s spread of natural frequencies
 const TWO_PI = Math.PI * 2;
 
+/**
+ * How calm reshapes each mote's positional wander around its anchor (draw()
+ * only -- phase coupling K already reacts to calm). Calm used to leave this
+ * untouched entirely: motes always traced the same small, quick Lissajous
+ * wobble regardless of section energy. Widening the orbit and slowing its
+ * rate (same radius+rate lerp Midasus's own orbit uses) makes a calm
+ * section's swarm drift in broad, lazy loops instead of a tight, busy
+ * shimmer that's merely dimmer/less synced. Pure so it's directly testable.
+ */
+export function calmWanderParams(calmLevel) {
+  const c = clamp01(calmLevel);
+  return {
+    ampMul: 1 + 1.8 * c,  // wider orbit
+    rateMul: 1 - 0.5 * c, // slower sweep
+  };
+}
+
 export class KuramotoSwarm {
   constructor(seed = 1) {
     this.rand = mulberry32((seed ^ 0x51f15e) >>> 0 || 1);
@@ -53,6 +70,7 @@ export class KuramotoSwarm {
 
   update(nowMs, dtSec, energyCurves, beatPeriodMs = 500, calmLevel = 0) {
     this._tSec = nowMs / 1000;
+    this._calmLevel = calmLevel; // draw() reads this for the wander orbit shape
     const eInstant = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS)) : 0.3;
     this.E += (1 - Math.exp(-dtSec / E_EMA_TAU)) * (eInstant - this.E);
 
@@ -80,6 +98,7 @@ export class KuramotoSwarm {
 
   draw(ctx, canvas, color) {
     const t = this._tSec || 0;
+    const { ampMul, rateMul } = calmWanderParams(this._calmLevel || 0);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = color;
@@ -87,8 +106,8 @@ export class KuramotoSwarm {
     for (const o of this.oscillators) {
       const bright = Math.max(0, Math.cos(o.theta)) ** 3; // flash at theta = 0
       if (bright < 0.03) continue;
-      const x = (o.ax + 0.06 * Math.sin(o.omega2 * t + o.phase)) * canvas.width;
-      const y = (o.ay + 0.04 * Math.sin(o.omega2 * 0.7 * t + o.phase * 1.7)) * canvas.height;
+      const x = (o.ax + 0.06 * ampMul * Math.sin(o.omega2 * rateMul * t + o.phase)) * canvas.width;
+      const y = (o.ay + 0.04 * ampMul * Math.sin(o.omega2 * rateMul * 0.7 * t + o.phase * 1.7)) * canvas.height;
       ctx.globalAlpha = 0.45 * bright * this.intensity;
       ctx.beginPath();
       ctx.arc(x, y, 1.6 + 1.4 * bright + 2 * unison * bright, 0, TWO_PI);

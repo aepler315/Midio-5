@@ -9,7 +9,7 @@ import { ParticleField } from '../src/world/ParticleField.js';
 const PACK = ['DUNE', 'CORAL', 'LUMEN', 'AURUM', 'NEBULA', 'ABYSS', 'GEODE'];
 
 const EXPECTED = {
-  DUNE: { fx: 'heatShimmer', kind: 'sand' },
+  DUNE: { fx: 'mirage', kind: 'sand' },
   CORAL: { fx: 'godRays', kind: 'bubbles' },
   LUMEN: { fx: 'sporeGlow', kind: 'spores' },
   AURUM: { fx: 'sunMotes', kind: 'petals' },
