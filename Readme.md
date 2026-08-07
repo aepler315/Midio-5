@@ -24,6 +24,15 @@ a different `.mid`/audio file in at any time, even mid-song** — dragging one
 anywhere on the page (not just the loader screen) tears down whatever's
 currently playing and starts the new one immediately.
 
+**Scored playback:** drop a **MIDI and an audio file together** and the
+recording is what you hear while the MIDI drives every visual — no audio
+analysis, no guessing. That's also the path for the
+[**conductor track**](docs/conductor-track.md): a percussion track you name
+`Conductor` in Guitar Pro whose notes are never played, but read as cues —
+*change the biome here, lightning here, this is the drop*. Drum choice picks
+the cue, note dynamic (`ppp`…`fff`) sets its parameter. See
+[`docs/conductor-track.md`](docs/conductor-track.md) for the full schema.
+
 **Watch it perform itself:** Midio performs the song himself — every jump,
 double-jump, and double-bass slide is played flawlessly, on the beat,
 automatically. There's nothing to fail and nothing to steer: the camera
@@ -291,8 +300,10 @@ running). Press `Escape` to close any open popup.
 ## Project layout
 
 ```
+docs/        conductor-track.md — the authored-cue schema (Guitar Pro)
 src/
-  core/      NoteEvent timeline, MIDI parser/adapter, Conductor, ParamBus
+  core/      NoteEvent timeline, MIDI parser/adapter, Conductor, ParamBus,
+             ConductorTrack (the authored cue schema)
   audio/     7-band stem separation, onset/BPM detection, audio adapter
   sim/       fixed-step simulation: jump physics, combo, companions, FX, autoplay
   world/     biomes (8-layer parallax), fracture/shatter engine

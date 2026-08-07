@@ -147,7 +147,10 @@ export class EnsembleDirector {
   maybeDisc(nowMs, reason = 'section', intensity = 0) {
     // A drop or a milestone IS the punctuation -- it skips the probability
     // roll (never the hard floor). A plain section change still rolls.
-    const transition = reason === 'drop' || reason === 'milestone';
+    // 'cue' joins them: a conductor-track flourish (ConductorTrack.js) was
+    // written deliberately, so rolling dice on whether to honor it would
+    // make the schema unreliable to author against.
+    const transition = reason === 'drop' || reason === 'milestone' || reason === 'cue';
     const fired = this._discGate.tryFire(nowMs, { intensity, transition });
     // Denials are logged too -- an over-firing move is only visible in the
     // debug readout if the attempts it made are recorded alongside the hits.

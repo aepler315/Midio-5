@@ -62,6 +62,16 @@ export class LightningFX {
 
   maybeTrigger(nowMs, vel, canvasWidth, groundY) {
     if (vel < 0.66 || nowMs < this._nextAllowedMs) return;
+    this.strike(nowMs, canvasWidth, groundY);
+  }
+
+  /** Unconditional strike. maybeTrigger above is the music-driven path and
+   *  keeps its velocity threshold and cooldown; a conductor-cued bolt
+   *  (ConductorTrack.js) is authored rather than inferred, so it goes
+   *  through here and always lands -- otherwise a bolt written at a soft
+   *  dynamic, or too soon after a previous one, would silently do nothing.
+   *  Still arms the cooldown so a cue can't machine-gun the music path. */
+  strike(nowMs, canvasWidth, groundY) {
     this._nextAllowedMs = nowMs + COOLDOWN_MS * (0.8 + this.rand() * 0.5);
     const x = canvasWidth * (0.15 + this.rand() * 0.7);
     this._bolt = generateBolt(x, -10, x + (this.rand() * 2 - 1) * 210, groundY, {

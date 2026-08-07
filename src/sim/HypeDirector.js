@@ -40,6 +40,19 @@ export class HypeDirector {
     this.slam = Math.max(this.slam, 0.35 + 0.65 * vel);
   }
 
+  /** Conductor-cued drop (ConductorTrack.js). The detector above infers a
+   *  drop from the energy envelope tearing away from a quiet context; a cue
+   *  asserts one outright, so it skips the quiet-ceiling and delta tests --
+   *  but still sets the same fields (and arms the same cooldown) so nothing
+   *  downstream can tell a cued drop from a detected one, and so a detected
+   *  drop can't immediately re-fire on top of a cued one. */
+  cueDrop(nowMs, strength = 1) {
+    this.dropAtMs = nowMs;
+    this._cooldownUntilMs = nowMs + DROP_COOLDOWN_MS;
+    this.surge = Math.max(this.surge, clamp01(strength));
+    this.dropCount++;
+  }
+
   update(nowMs, dtSec, energyCurves) {
     // Song-relative: a drop is the fast EMA tearing away from a QUIET context,
     // and "quiet" has to be measured against this song's own floor -- on the

@@ -4,6 +4,7 @@ import { classifyTracks } from './TrackClassifier.js';
 import { Role, makeNoteEvent, sortNoteEvents } from './NoteEvent.js';
 import { assignPan, panAt, intertwinedPairs } from './PanAnalysis.js';
 import { laneForTrack } from './Casting.js';
+import { isConductorTrackName, cuesFromNotes, splitCues } from './ConductorTrack.js';
 
 // Standard GM kick pitches on channel 10 (0-indexed channel 9).
 const GM_KICK_PITCHES = new Set([35, 36]);
@@ -45,8 +46,26 @@ export function midiToTimeline(arrayBuffer) {
   // exactly one channel and pass through as a single unchanged voice.
   let nextIndex = 0;
   const trackData = [];
+  const conductorCues = [];
+  const conductorTrackNames = [];
   for (const track of tracks) {
     const paired = pairNotes(track.rawEvents, lastTick);
+    // The conductor guide (ConductorTrack.js) is diverted BEFORE anything
+    // musical touches it: no role classification, no casting, no pan, no
+    // timeline entry -- so it can never be sounded, charted, or jumped on.
+    // Its cues read the RAW 0-127 velocity, which is why this runs ahead of
+    // rescaleVelocities (whose p95 normalization would smear the dynamic
+    // buckets the schema encodes its parameters in).
+    if (isConductorTrackName(track.name)) {
+      conductorTrackNames.push(track.name);
+      conductorCues.push(...cuesFromNotes(paired.map((n) => ({
+        pitch: n.pitch,
+        startMs: tempoMap.toMs(n.tick),
+        durMs: Math.max(0, tempoMap.toMs(n.tick + n.durTicks) - tempoMap.toMs(n.tick)),
+        vel: n.vel,
+      }))));
+      continue;
+    }
     rescaleVelocities(paired);
     const channelsUsed = [...new Set(paired.map((n) => n.channel))].sort((a, b) => a - b);
     const split = channelsUsed.length > 1;
@@ -118,10 +137,18 @@ export function midiToTimeline(arrayBuffer) {
 
   const barGrid = buildBarGrid(timeSigEvents, tempoMap, durationMs, parsed.ppqn);
 
+  // Merged across every conductor track (several are allowed; they read as
+  // one cue sheet), re-sorted since each was only sorted within its track.
+  conductorCues.sort((a, b) => a.tMs - b.tMs);
+  const { schedule: scheduleCues, live: liveCues } = splitCues(conductorCues);
+
   return {
     timeline,
     barGrid,
     durationMs,
+    conductor: conductorTrackNames.length
+      ? { names: conductorTrackNames, cues: conductorCues, scheduleCues, liveCues }
+      : null,
     bpm: tempoMap.bpmAt ? (tempoMap.bpmAt(0) || 120) : 120,
     tracks: trackData.map(({ track, notes }) => ({
       index: track.index,

@@ -35,6 +35,7 @@ import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, horizonFade } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
+import { applyConductorSchedule } from '../core/ConductorTrack.js';
 import { analyzeSongForm } from './SongForm.js';
 import {
   MIN_SECTION_CUT_GAP_MS, SECTION_CUT_BUDGET_MS, MIN_SECTION_CUTS, sectionCutBudget,
@@ -181,7 +182,7 @@ const MOON_COLOR = '#dfe6f2';
 const MOON_HALO_COLOR = '#aab8d8';
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, customBiome = null, lyricSections = null, structure = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, customBiome = null, lyricSections = null, structure = null, conductorSchedule = null }) {
     this.conductor = conductor;
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
@@ -319,7 +320,7 @@ export class BiomeManager {
     // whale...) witnessed way out between the L2 and L3 ranges.
     this.farVignettes = new FarVignettes(songSeed);
 
-    this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections, structure);
+    this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections, structure, conductorSchedule);
     // MIDI custom biome: cast every section into the generated world so the
     // dropped file IS the place, while stock demos keep dramaturgical casting.
     if (this.customBiome) this.loadCustom(this.customBiome);
@@ -450,7 +451,7 @@ export class BiomeManager {
     this._unsub.length = 0;
   }
 
-  _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null, structure = null) {
+  _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null, structure = null, conductorSchedule = null) {
     // Without a real bar grid (free-time / tempo-less audio), the analysis
     // resolution used to collapse to a fixed 9 points regardless of song
     // length -- with novelty forced to 0 for the first 4 and a minimum peak
@@ -655,6 +656,14 @@ export class BiomeManager {
     // beat grid, plain lyrics only add labels. Absent lyricSections is a
     // true no-op (fuseSections returns the exact same array).
     this.sections = fuseSections(this.sections, lyricSections, barGrid, durationMs);
+
+    // The conductor track has the last word (ConductorTrack.js). Everything
+    // above this line is INFERRED -- novelty cuts, form labels, lyric
+    // structure -- and every one of those reads can be wrong about a
+    // particular song. A cue is not a read: the player wrote it, so an
+    // authored boundary or biome overrides whatever was detected there.
+    // Absent cues is a true no-op (the same array reference comes back).
+    this.sections = applyConductorSchedule(this.sections, conductorSchedule, barGrid, durationMs);
   }
 
   _evenSplit(durationMs, n) {
@@ -885,6 +894,19 @@ export class BiomeManager {
    *  the song's staged intensity budget, colored from the current blended
    *  halo (an achromatic biome like ARCTIC's near-white sun gets a
    *  desaturated volley instead of an arbitrary hue). */
+  /** Conductor-cued phenomena (ConductorTrack.js). These reach past the
+   *  reward/storm gating the internal callers go through -- an authored cue
+   *  fires its volley or its bolt wherever it was written, including under a
+   *  clear sky -- but reuse the same FX objects and the same halo-derived
+   *  coloring, so a cued volley is indistinguishable from an earned one. */
+  cueMeteors(nowMs, strength = 1) {
+    this._triggerMeteors(nowMs, Math.max(2, Math.round(6 + 26 * strength)));
+  }
+
+  cueLightning(nowMs) {
+    this.lightning.strike(nowMs, this.w, this.groundY);
+  }
+
   _triggerMeteors(nowMs, baseCount) {
     const count = Math.max(2, Math.round(baseCount * this.particleMul * this.budget));
     const { r, g, b } = hexToRgb(this.currentHaloColor());

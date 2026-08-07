@@ -73,6 +73,19 @@ export class WeatherDirector {
     return { kind: this.kind, intensity: this.intensity, groundCover: this.groundCover };
   }
 
+  /** Conductor-cued weather (ConductorTrack.js). Queues the kind through the
+   *  same _pendingKind crossfade the mood evaluator uses -- one front passes
+   *  before the next arrives, so BiomeManager still never has two live
+   *  fields. Also pushes the next mood re-evaluation out past the crossfade,
+   *  or the evaluator would immediately queue the mood's own kind back on
+   *  top of the cue and the authored weather would never actually land. */
+  cueKind(nowMs, kind) {
+    if (!KINDS.includes(kind) || kind === this.kind) return false;
+    this._pendingKind = kind;
+    this._nextEvalMs = nowMs + KIND_REEVAL_MS;
+    return true;
+  }
+
   _stepCover(dtSec) {
     if (this.kind === 'snow' && this.intensity > COVER_MIN_INTENSITY && !this._pendingKind) {
       this.groundCover = clamp01(this.groundCover + (dtSec * this.intensity) / COVER_ACCUM_SEC);
