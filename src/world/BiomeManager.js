@@ -31,6 +31,7 @@ import { ConstellationWeaver } from './ConstellationWeaver.js';
 import { SpaceRidge } from './SpaceRidge.js';
 import { SkyEnsemble } from './SkyEnsemble.js';
 import { FarVignettes } from './FarVignettes.js';
+import { NearField, NEARFIELD_RATIO } from './NearField.js';
 import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, horizonFade } from './DayNight.js';
@@ -319,6 +320,11 @@ export class BiomeManager {
     // Far-distance vignettes: rare seeded scenes (aliens at dinner, a cloud
     // whale...) witnessed way out between the L2 and L3 ranges.
     this.farVignettes = new FarVignettes(songSeed);
+    // Near-field foreground occluders: the mirror image of farVignettes at
+    // the OTHER end of the depth stack -- huge biome-landmark silhouettes
+    // sweeping past faster than the characters, close enough to occlude
+    // them. Drawn in drawForeground(), after everything else.
+    this.nearField = new NearField(songSeed);
 
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections, structure, conductorSchedule);
     // MIDI custom biome: cast every section into the generated world so the
@@ -1650,6 +1656,19 @@ export class BiomeManager {
       ctx.fill();
     }
     ctx.restore();
+
+    // Near-field occluders: huge biome-landmark silhouettes sweeping past
+    // faster than the characters, close enough to occlude them. Gated on
+    // the same perf signal as the veil above -- costs a handful of vector
+    // shape draws per visible sector, cheaper than the veil's 3 gradients.
+    if (this.currentBlend) {
+      const dominant = this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from;
+      const ratio = CodaDirector.delaminateRatio(NEARFIELD_RATIO, this.unravel);
+      const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 60) * this._danceKickAmp;
+      this.nearField.draw(ctx, canvas, worldX, {
+        tSec: this.tSec, kick, biomeName: dominant, reducedMotion: !!this.reducedFlash, ratio,
+      });
+    }
   }
 
   _drawSky(ctx, canvas, A, B, t, night = 0) {

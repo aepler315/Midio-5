@@ -214,8 +214,12 @@ export class Renderer {
     if (sim.midasus) sim.midasus.draw(ctx, particleMul);
     if (sim.battle) this._drawBattleFX(ctx, sim);
     if (sim.gnat) sim.gnat.draw(ctx, sim.timeMs);
-    if (sim.fracture) sim.fracture.draw(ctx, stage, { glow: perf ? perf.crackGlowEnabled : true });
+    // drawForeground (the L7 veil + near-field occluders, NearField.js)
+    // before fracture: the cracks are the screen's own glass fracturing,
+    // so they belong on top of every world layer, near-field props included
+    // -- not occluded by something the world itself is drawing.
     if (biomeManager) biomeManager.drawForeground(ctx, stage, pose.worldX, perf ? perf.veilEnabled : true);
+    if (sim.fracture) sim.fracture.draw(ctx, stage, { glow: perf ? perf.crackGlowEnabled : true });
     if (sim.keyDirector) this._drawTranspositionWave(ctx, stage, sim.keyDirector);
 
     ctx.restore(); // camera transform
