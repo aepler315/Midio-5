@@ -20,6 +20,7 @@ import {
   breakerLift, whitecapMask, rowPhaseDrift,
 } from './Ocean.js';
 import { buildWaveComponents, waveFieldSample, windSpeedForSeaState, easeSeaState } from './WaveField.js';
+import { generateCatalogue, subPixelDraw, twinkleAmplitude } from './StarCatalogue.js';
 import {
   islands, ships, seaLifeSchedule, monsterSchedule, tsunamiSchedule,
   tsunamiActive, tsunamiProgress, tsunamiRowFrac, tsunamiPerspectiveScale,
@@ -268,28 +269,43 @@ export class BiomeManager {
     this.lerpCache = new LerpCache();
     this.tSec = 0;
     this._starSeed = mulberry32(9001);
-    // Layered starfield: dense background motes + brighter mid + a few
-    // "hero" stars. Always present; night and starTwinkle only amplify them.
-    // Keep hero glow count small — radial gradients every frame are expensive.
-    this.stars = Array.from({ length: 96 }, () => {
-      const layer = this._starSeed() < 0.62 ? 0 : this._starSeed() < 0.9 ? 1 : 2;
-      const warm = this._starSeed();
+    // Layered starfield generated from a real catalogue (StarCatalogue.js):
+    // luminosity function (faint stars vastly outnumber bright ones),
+    // spectral-class-weighted blackbody color, a galactic-plane density
+    // band, and sub-pixel stars that contribute partial light instead of
+    // vanishing or getting rounded up -- the "incomprehensibly distant"
+    // read the brief asked for. Generated once and cached, exactly like
+    // the silhouette strips, so the density costs nothing per frame; only
+    // twinkle (in _drawStarfield) is computed live. Bumped from a flat 96
+    // to 280 -- still cheap since only the brightest slice (layer 2) pays
+    // for a radial-gradient hero glow; the rest are one fillRect each.
+    const catalogue = generateCatalogue(hashSeed(`${songSeed}:starcat`), 280, this.w, this.h);
+    // The real astronomical flux relation (magnitudeToBrightness01, tested
+    // against its exact 2.512x/mag ratio in StarCatalogue.js) is honest but
+    // punishing for a screen: at this population size almost every star's
+    // TRUE brightness rounds down near zero, and true naked-eye "hero"
+    // stars are statistically ~0-in-280 -- realistic, but it reads as an
+    // empty sky rather than a dense one. A perceptual display stretch
+    // (any astro image needs one to be viewable) keeps every star's
+    // RELATIVE ordering and the real faint-dominated population shape,
+    // while giving faint ones a visible floor instead of vanishing.
+    const displayBrightness = (b01) => 0.12 + 0.88 * Math.pow(clamp01(b01), 0.35);
+    // Hero glow (layer 2) is reserved by RANK, not by an absolute magnitude
+    // cutoff -- the realistic population makes true hero-magnitude stars
+    // vanishingly rare at 280 samples, so a fixed threshold could easily
+    // reserve zero. A small guaranteed slice keeps the sky visually alive
+    // without touching the underlying (correctly faint-dominated) catalogue.
+    const byMag = catalogue.slice().sort((a, b) => a.mag - b.mag);
+    const heroCutMag = byMag[Math.min(byMag.length - 1, 5)].mag;
+    const midCutMag = byMag[Math.min(byMag.length - 1, Math.floor(byMag.length * 0.22))].mag;
+    this.stars = catalogue.map((s) => {
+      const { drawSize, drawAlpha } = subPixelDraw(s.sizePx, displayBrightness(s.brightness));
+      const layer = s.mag <= heroCutMag ? 2 : s.mag <= midCutMag ? 1 : 0;
       return {
-        x: this._starSeed() * this.w,
-        y: this._starSeed() * this.h * (0.55 + 0.12 * layer),
-        phase: this._starSeed() * Math.PI * 2,
-        size: layer === 0 ? 0.8 + this._starSeed() * 0.9
-          : layer === 1 ? 1.15 + this._starSeed() * 1.2
-          : 1.8 + this._starSeed() * 1.8,
-        bright: layer === 0 ? 0.4 + this._starSeed() * 0.35
-          : layer === 1 ? 0.55 + this._starSeed() * 0.35
-          : 0.78 + this._starSeed() * 0.22,
-        layer,
-        // Bias cool/space tints (cyan-indigo) over warm gold.
-        hue: warm < 0.28 ? 195 + this._starSeed() * 55
-          : warm < 0.36 ? 265 + this._starSeed() * 30
-          : warm < 0.42 ? 40 + this._starSeed() * 20
-          : 0,
+        x: s.x, y: s.y, phase: s.phase,
+        size: drawSize, bright: drawAlpha, layer,
+        hue: s.hue,
+        mag: s.mag, altitude01: s.altitude01, // read by twinkleAmplitude in _drawStarfield
       };
     });
     this._glitchTimer = 2 + this._starSeed() * 3;
@@ -1860,7 +1876,15 @@ export class BiomeManager {
     ctx.globalCompositeOperation = 'lighter';
     // Cheap dots for the field; soft glow only for hero stars (layer 2).
     for (const s of this.stars) {
-      const tw = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(this.tSec * twinkleRate * (0.7 + s.bright) + s.phase));
+      // Per-star scintillation depth (StarCatalogue.js): fainter, more
+      // point-like stars and stars nearer the horizon twinkle harder, real
+      // atmospheric stars do not all blink at the same depth. Falls back to
+      // a fixed mid-range depth for anything without catalogue fields (kept
+      // defensive since `stars` is public state some other path could feed).
+      const twDepth = s.mag != null
+        ? twinkleAmplitude(s.mag, s.altitude01 ?? 0.5)
+        : 0.4;
+      const tw = (1 - twDepth) + twDepth * (0.5 + 0.5 * Math.sin(this.tSec * twinkleRate * (0.7 + s.bright) + s.phase));
       const a = alpha * s.bright * tw;
       if (a < 0.03) continue;
       const layerDrift = (1 + s.layer * 0.6) * scroll * 0.02;
