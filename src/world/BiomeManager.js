@@ -182,6 +182,43 @@ const SPACE_NEBULA_B = '#2a1860'; // violet space dust
 const MOON_COLOR = '#dfe6f2';
 const MOON_HALO_COLOR = '#aab8d8';
 
+// Fog band geometry (_drawFogBanks). Pure and exported so the "the gradient
+// reaches zero before the band edge" property is directly testable, rather
+// than only checkable by eyeballing a screenshot.
+//
+// The bank used to pour a CIRCULAR gradient (radius 0.45*canvasWidth,
+// centered mid-band) straight into a fillRect spanning the band -- but the
+// band is far shorter than the gradient is tall, so both the top and bottom
+// edges sliced the falloff at ~65% alpha, leaving a dead-flat horizontal
+// line across the full canvas width (once per fog bank, stacked under
+// 'lighter' compositing). That was the hard line reported at ~0.15h, and
+// its fainter twin at ~0.70h, the band's other edge.
+//
+// Fix: paint an ELLIPSE instead of a circle, squashed just enough that it
+// reaches zero exactly at the band's own top/bottom -- same footprint,
+// same horizontal reach, nothing left for the rect to cut.
+export const FOG_BAND_TOP_FRAC = 0.15;
+export const FOG_BAND_HEIGHT_FRAC = 0.55;
+
+/** @returns {{cy:number, r:number, yScale:number, bandTop:number, bandBottom:number}} */
+export function fogBandGradientGeometry(canvasWidth, canvasHeight) {
+  const bandTop = canvasHeight * FOG_BAND_TOP_FRAC;
+  const bandH = canvasHeight * FOG_BAND_HEIGHT_FRAC;
+  const cy = bandTop + bandH * 0.5;
+  const r = canvasWidth * 0.45;
+  const yScale = (bandH * 0.5) / r;
+  return { cy, r, yScale, bandTop, bandBottom: bandTop + bandH };
+}
+
+/** The gradient's own alpha FRACTION (0..1, before the bank's overall alpha
+ *  multiplier) at absolute canvas y, for a bank centered per `geo`. Used by
+ *  the draw call's own math and directly by tests -- no canvas needed. */
+export function fogBandAlphaFractionAtY(geo, y) {
+  const dy = (y - geo.cy) / geo.yScale;
+  const d = Math.abs(dy);
+  return d >= geo.r ? 0 : 1 - d / geo.r;
+}
+
 export class BiomeManager {
   constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, customBiome = null, lyricSections = null, structure = null, conductorSchedule = null }) {
     this.conductor = conductor;
@@ -2757,16 +2794,25 @@ export class BiomeManager {
     const alpha = 0.10 * fogMul + 0.14 * fogMul * calm;
     if (alpha < 0.01) return;
     const period = canvas.width * 1.6;
-    const cy = canvas.height * 0.42, r = canvas.width * 0.45;
+    // See fogBandGradientGeometry's own doc comment: an ellipse fitted to
+    // the band, reaching zero at its top/bottom, in place of the old circle
+    // a shorter rect used to cut off mid-falloff.
+    const { cy, r, yScale } = fogBandGradientGeometry(canvas.width, canvas.height);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (const bank of this._fogBanks) {
       for (const x of bank.x < canvas.width * 0.5 ? [bank.x, bank.x + period] : [bank.x]) {
-        const g = ctx.createRadialGradient(x, cy, 0, x, cy, r);
+        ctx.save();
+        ctx.translate(x, cy);
+        ctx.scale(1, yScale);
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
         g.addColorStop(0, `rgba(255,255,255,${alpha})`);
         g.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.fillStyle = g;
-        ctx.fillRect(0, canvas.height * 0.15, canvas.width, canvas.height * 0.55);
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       }
     }
     ctx.restore();
@@ -3109,10 +3155,19 @@ export class BiomeManager {
     // already dim, and the complaint being answered here is that the ranges
     // are hard to READ, so the pass has to add contrast without spending
     // overall brightness to get it.
+    //
+    // Coefficients bumped from 0.11/0.26 -- the strip used to also carry a
+    // baked vertical gradient (SilhouetteGenerator's 'rendered' shadeMode),
+    // and this pass only ever ADDED contrast on top of that. The strip is
+    // now a flat mid-tone fill (see SilhouetteGenerator.js for why: a baked
+    // gradient sliced into independently-offset dance columns is a hard
+    // vertical seam at every column boundary), so this screen-space pass is
+    // the range's ONLY source of shading depth and has to carry the full
+    // load alone.
     const grad = ctx.createLinearGradient(0, crestY, 0, bottomY);
-    grad.addColorStop(0, `rgba(255,250,240,${(0.11 * alpha * strength).toFixed(3)})`);
+    grad.addColorStop(0, `rgba(255,250,240,${(0.17 * alpha * strength).toFixed(3)})`);
     grad.addColorStop(0.34, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, `rgba(0,0,0,${(0.26 * alpha * strength).toFixed(3)})`);
+    grad.addColorStop(1, `rgba(0,0,0,${(0.32 * alpha * strength).toFixed(3)})`);
     ctx.fillStyle = grad;
     ctx.fill(body);
 
