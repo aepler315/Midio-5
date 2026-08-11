@@ -1,6 +1,6 @@
-// Camera state: screen shake + a damped impact roll (spec §2.2.1). Zoom has
-// been removed from the game, so this no longer holds any zoom/punch state --
-// the Renderer applies a fixed framing and only reads shake/roll from here.
+// Camera state: screen shake, a damped impact roll (spec §2.2.1), and a
+// zoom that pulls back when a performer strays off-frame. The Renderer
+// reads shake/roll/zoom from here and applies a fixed framing otherwise.
 
 // Shake was dialed up for a "ferocity" pass (gain 2×, long ring, hard roll).
 // That reads as seasick on long songs -- pull it back so impacts still
@@ -8,6 +8,46 @@
 const SHAKE_GAIN = 0.85;
 const SHAKE_DECAY_TAU = 0.07; // seconds -- short ring, doesn't hang
 const ROLL_COUPLING = 0.0007; // rotational kick per (gained) px of shake
+
+// Off-frame pull-back: characters roam on their own drift/formation logic
+// and can genuinely wander toward an edge. This is for the UNINTENDED
+// case only -- a character deliberately sent off (Midasus's sky voyage,
+// Broshi's burrow) is excluded by the caller before this ever sees their
+// position, because chasing an authored exit with the camera fights the
+// exit's own effect.
+export const ZOOM_MARGIN_FRAC = 0.08; // how close to either edge is "still fine"
+export const ZOOM_MIN = 0.75; // hardest pull-back -- keeps the world legible, never a wide shot
+const ZOOM_TAU = 0.6; // seconds -- slow, deliberate ease, never a snap
+
+/**
+ * How zoomed out the camera should want to be (1 = normal framing, ZOOM_MIN
+ * = maximally pulled back) given a set of on-frame character screen X
+ * positions. Pure -- no state, no canvas -- CameraDirector eases `zoom`
+ * toward whatever this returns each frame.
+ * @param {number[]} screenXs already filtered by the caller to exclude any
+ *   character on an authored excursion
+ * @param {number} stageW
+ */
+export function zoomTargetForOffFrame(screenXs, stageW) {
+  if (!screenXs || screenXs.length === 0 || !(stageW > 0)) return 1;
+  const margin = stageW * ZOOM_MARGIN_FRAC;
+  let worst = 0; // grows the further anyone strays past either margin
+  for (const x of screenXs) {
+    const overLeft = margin - x;
+    const overRight = x - (stageW - margin);
+    const overshoot = Math.max(0, overLeft, overRight);
+    if (overshoot > worst) worst = overshoot;
+  }
+  // The ramp runs across the margin band itself: a character right at the
+  // margin (x = margin) has zero overshoot (still "fine"), and by the time
+  // they'd reach the true stage edge (x = 0) overshoot has already reached
+  // a full margin-width, which is enough to ask for the hardest pull-back
+  // the clamp allows -- the point being to pull back BEFORE anyone actually
+  // exits the frame, not react after the fact. Going further negative (or
+  // past stageW - margin, or stageW + margin on the right) just saturates.
+  const t = Math.max(0, Math.min(1, worst / margin));
+  return 1 - (1 - ZOOM_MIN) * t;
+}
 
 // Calm-section drift (see update()): a genuinely wide, slow pan rather than
 // a scaled-down version of impact shake. The original 3px/10s drift was
@@ -29,6 +69,15 @@ export class CameraDirector {
     this._rollAmp = 0;
     this._rollT = 0;
     this._rollSign = 1;
+
+    this.zoom = 1; // 1 = normal framing; the Renderer widens the logical stage view by 1/zoom
+    this._zoomTarget = 1;
+  }
+
+  /** Called once per frame before update(); sets what zoom() should ease
+   *  toward. See zoomTargetForOffFrame's doc for what to pass in. */
+  setZoomTarget(screenXs, stageW) {
+    this._zoomTarget = zoomTargetForOffFrame(screenXs, stageW);
   }
 
   shake(amplitudePx) {
@@ -85,5 +134,16 @@ export class CameraDirector {
 
     this.shakeX = shakeX * motionMul + driftX;
     this.shakeY = shakeY * motionMul + driftY;
+
+    // Zoom: critically-damped-ish exponential ease toward _zoomTarget, same
+    // discipline as the shake/roll ring-downs above -- it must never snap
+    // or oscillate, since a sudden framing change reads as a cut, not a
+    // camera move. Reduced-motion shrinks the travel rather than disabling
+    // it outright (the target still communicates "someone strayed off
+    // frame", just less dramatically).
+    const zoomTravelMul = reducedMotion ? 0.4 : 1;
+    const zoomTarget = 1 + (this._zoomTarget - 1) * zoomTravelMul;
+    const zoomAlpha = 1 - Math.exp(-dtSec / ZOOM_TAU);
+    this.zoom += zoomAlpha * (zoomTarget - this.zoom);
   }
 }

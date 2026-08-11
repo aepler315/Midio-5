@@ -13,6 +13,7 @@ import { OrbitalDebris } from './OrbitalDebris.js';
 import { SkyVoyage, VoyagePhase } from './SkyVoyage.js';
 import { BabyStars } from './BabyStars.js';
 import { FlourishGate } from './FlourishGate.js';
+import { MIDASUS_CURVES, MIDASUS_CURVE_NAMES, HARMONOGRAPH_DECAY_MS, normalizeCurveEnv } from './MidasusCurves.js';
 
 const SILENCE_MS = 800;
 const BLEND_SEC = 0.4;
@@ -96,6 +97,20 @@ export class Midasus {
     // fresh figure to trace (see _orbitAnchor), never the same one twice
     // running. Hard melody accents also spin her into a brief pirouette.
     this.orbitStyle = 'lissajous';
+    // Must be valid for orbitStyle from frame one: _orbitAnchor can be
+    // called on the very first silence, before any rest-transition has
+    // ever run to populate this properly (silence starts immediately, well
+    // before `rest` ramps past the 0.5 threshold that triggers a pick) --
+    // an empty {} here left lissajous's point() reading params.p/q as
+    // undefined, i.e. permanent NaN position from the first quiet beat.
+    this._curveParams = MIDASUS_CURVES.lissajous.params(normalizeCurveEnv({}));
+    this._restStartMs = -Infinity;
+    // Tracked purely to shape the NEXT rest figure (MidasusCurves.js): the
+    // interval between the last two notes and how hard the most recent one
+    // hit -- "the music that just played," not a music-theory model.
+    this._prevPitch = null;
+    this._lastIntervalSemitones = 0;
+    this._lastVel = 0.5;
     this._wasResting = false;
     this.rollExtra = 0; // pirouette roll, added to her banking in draw()
     this._pirouetteStartMs = -Infinity;
@@ -145,28 +160,12 @@ export class Midasus {
     // instead of the tighter, quicker figure she traces when energetic.
     const a = 1 + 0.6 * calmLevel;
     const r = 1 - 0.5 * calmLevel;
-    switch (this.orbitStyle) {
-      case 'figure8': // a sideways 8, crossing right over the anchor
-        return {
-          x: ax + 82 * a * Math.sin(1.6 * r * t + this.phi),
-          y: ay + 48 * a * Math.sin(3.2 * r * t + 2 * this.phi),
-        };
-      case 'loop': // quick tight circles: loop-the-loops around the anchor
-        return {
-          x: ax + 55 * a * Math.cos(2.6 * r * t + this.phi),
-          y: ay + 55 * a * Math.sin(2.6 * r * t + this.phi),
-        };
-      case 'petal': { // a three-petal rose, dipping through the center
-        const th = 1.4 * r * t + this.phi;
-        const rho = 67 * a * (0.55 + 0.45 * Math.cos(3 * th));
-        return { x: ax + rho * Math.cos(th), y: ay + rho * Math.sin(th) * 0.7 };
-      }
-      default: // 'lissajous', the original drift
-        return {
-          x: ax + 72 * a * Math.sin(1.8 * r * t + this.phi),
-          y: ay + 41 * a * Math.sin(1.2 * r * t),
-        };
-    }
+    const curve = MIDASUS_CURVES[this.orbitStyle] || MIDASUS_CURVES.lissajous;
+    const restU = this._restStartMs > -Infinity
+      ? clamp((nowMs - this._restStartMs) / HARMONOGRAPH_DECAY_MS, 0, 1)
+      : 0;
+    const p = curve.point(t, this.phi, a, r, this._curveParams, restU);
+    return { x: ax + p.x, y: ay + p.y };
   }
 
   _hueOf(pitch) { return (((pitch % 12) + 12) % 12) * 30; }
@@ -215,6 +214,9 @@ export class Midasus {
       this.v.x *= 0.4;
       this.v.y *= 0.4;
       this.hue = this._hueOf(n.pitch);
+      if (this._prevPitch != null) this._lastIntervalSemitones = n.pitch - this._prevPitch;
+      this._prevPitch = n.pitch;
+      this._lastVel = n.vel;
       if (this.voyage.active) this.voyage.onMelodyOnset(n); // deep space hears the melody too
       this._impacts.push(n);
     }
@@ -263,9 +265,18 @@ export class Midasus {
     // running, with a fresh phase so the entry point varies too.
     const resting = this.rest >= 0.5;
     if (resting && !this._wasResting) {
-      const styles = ['lissajous', 'figure8', 'loop', 'petal'].filter((s) => s !== this.orbitStyle);
+      const styles = MIDASUS_CURVE_NAMES.filter((s) => s !== this.orbitStyle);
       this.orbitStyle = styles[Math.floor(this.rand() * styles.length)];
       this.phi = this.rand() * Math.PI * 2;
+      this._restStartMs = nowMs;
+      // The figure is shaped by whatever she was just playing -- the
+      // interval into the last note and how hard it hit -- not fixed
+      // constants, so the same handful of families reads as real variety.
+      this._curveParams = MIDASUS_CURVES[this.orbitStyle].params(normalizeCurveEnv({
+        lastIntervalSemitones: this._lastIntervalSemitones,
+        lastPitchClass: this._prevPitch,
+        lastVel: this._lastVel,
+      }));
     }
     this._wasResting = resting;
 

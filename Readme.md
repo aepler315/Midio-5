@@ -36,11 +36,13 @@ the cue, note dynamic (`ppp`…`fff`) sets its parameter. See
 **Watch it perform itself:** Midio performs the song himself — every jump,
 double-jump, and double-bass slide is played flawlessly, on the beat,
 automatically. There's nothing to fail and nothing to steer: the camera
-holds one fixed, cinematic framing (all zoom — the old player "Lens" and the
-automatic beat-zoom alike — has been removed), so you can sit back and take
-in the whole show. The one thing that still notices you is **Midasus's three
-star children**: move your mouse and the hyper-curious explorer drifts toward
-your cursor — they're aware you're there (see below).
+holds a fixed, cinematic framing by default (the old player "Lens" and the
+automatic beat-zoom alike stay removed) and only pulls back on its own when
+a performer drifts unintentionally toward the edge of frame, easing back in
+once everyone's home — so you can sit back and take in the whole show. The
+one thing that still notices you is **Midasus's three star children**: move
+your mouse and the hyper-curious explorer drifts toward your cursor —
+they're aware you're there (see below).
 
 **Audio files** play the decoded buffer only — the synthetic hi-hat / click
 layer from the timeline synth is muted so it doesn't stack on the song. MIDI

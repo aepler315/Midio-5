@@ -109,8 +109,25 @@ export class Renderer {
     // Logical stage (sim anchors) vs physical buffer (may be 720p–4K).
     // All world drawing uses logical dimensions; the transform scales into
     // the backing store so composition stays correct at every preset.
-    const stageW = sim.stageW || sim.canvasWidth || 1280;
-    const stageH = sim.stageH || sim.canvasHeight || 720;
+    const nominalW = sim.stageW || sim.canvasWidth || 1280;
+    const nominalH = sim.stageH || sim.canvasHeight || 720;
+    // Off-frame camera pull-back (CameraDirector.zoom, 1 = normal, down to
+    // ZOOM_MIN when pulled back): NOT a ctx.scale on the physical transform
+    // -- that would shrink the world inside a fixed frame and leave empty
+    // margins, since every layer draws to canvas bounds. Instead the
+    // LOGICAL stage widens (viewW = nominalW / zoom) and the existing sx/sy
+    // derivation below does the rest -- every layer genuinely draws more
+    // world (tiled strips tile further, full-bleed fills span correctly).
+    // Pinned at the logical origin (no translate): guarantees the widened
+    // frame always exactly covers the physical canvas with no gap on any
+    // edge, at the cost of revealing the extra world toward bottom-right
+    // rather than symmetrically around the cast -- a real trade, but the
+    // alternative (translating to re-center) opens a gap on the opposite
+    // edge for every non-tiled full-bleed layer (sky gradient, vignette),
+    // which is a worse artifact than an off-center reveal.
+    const zoom = (sim.camera && sim.camera.zoom) || 1;
+    const stageW = zoom < 1 ? nominalW / zoom : nominalW;
+    const stageH = zoom < 1 ? nominalH / zoom : nominalH;
     const stage = this._stageView || (this._stageView = { width: stageW, height: stageH });
     stage.width = stageW;
     stage.height = stageH;
@@ -137,10 +154,9 @@ export class Renderer {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(sx, 0, 0, sy, 0, 0);
 
-    // Zoom has been removed entirely: the camera holds one fixed framing.
-    // Only the damped impact roll and the screen shake move the frame now,
-    // both pivoting on screen center so a shake/roll never scrolls the
-    // world sideways.
+    // Impact roll and screen shake both still pivot on the (widened, if
+    // zoomed) frame's own center, so they never scroll the world sideways
+    // regardless of the current zoom level.
     ctx.save();
     ctx.translate(stageW / 2, stageH / 2);
     ctx.rotate(camera.roll || 0); // damped impact roll, pivoting on screen center
@@ -265,8 +281,19 @@ export class Renderer {
     // HUD seekbar AFTER post-FX so vignette/bloom never bury it. paramBus is
     // optional (lives on sim); never reference a free variable here — a
     // ReferenceError used to abort the draw and kill the strip entirely.
+    // Deliberately drawn against the NOMINAL (unzoomed) stage, not the
+    // possibly-widened `stage` above: it's fixed HUD chrome, not world
+    // content, and main.js's hitTest already converts pointer coords into
+    // the nominal STAGE_W/STAGE_H space -- drawing it against the zoomed
+    // stage would desync the visible strip from where clicks land.
     if (sim.conductor) {
-      ctx.setTransform(sx, 0, 0, sy, 0, 0);
+      const sxN = canvas.width / nominalW;
+      const syN = canvas.height / nominalH;
+      const nominalStage = this._nominalStageView
+        || (this._nominalStageView = { width: nominalW, height: nominalH });
+      nominalStage.width = nominalW;
+      nominalStage.height = nominalH;
+      ctx.setTransform(sxN, 0, 0, syN, 0, 0);
       if (!this.composer) {
         const holds = sim.noteChart ? sim.noteChart.notes.filter((n) => n.type === 'hold') : [];
         const sections = sim.biomes?.sections || [];
@@ -276,7 +303,7 @@ export class Renderer {
       } else if (sim.biomes?.sections) {
         this.composer.setSections(sim.biomes.sections);
       }
-      this.composer.draw(ctx, stage, sim.timeMs, {
+      this.composer.draw(ctx, nominalStage, sim.timeMs, {
         showLabels: !!(sim.showSectionLabels || sim.paramBus?.showSectionLabels),
       });
       ctx.setTransform(1, 0, 0, 1, 0, 0);
