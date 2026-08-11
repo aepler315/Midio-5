@@ -19,6 +19,7 @@ import {
   seaLineY, oceanRowYs, waveRows, rowAlpha, OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC,
   breakerLift, whitecapMask, rowPhaseDrift,
 } from './Ocean.js';
+import { buildWaveComponents, waveFieldSample, windSpeedForSeaState, easeSeaState } from './WaveField.js';
 import {
   islands, ships, seaLifeSchedule, monsterSchedule, tsunamiSchedule,
   tsunamiActive, tsunamiProgress, tsunamiRowFrac, tsunamiPerspectiveScale,
@@ -306,6 +307,12 @@ export class BiomeManager {
     // Infinite flat plane of water in perspective, not a solid band (a
     // solid band at ridge height is fully occluded by the opaque ridges).
     this._oceanRows = waveRows(hashSeed(`${songSeed}:ocean`), 28);
+    // Spectral depth pass, layered under the rows above (see WaveField.js):
+    // a real Pierson-Moskowitz sea, re-sampled whenever the eased sea state
+    // moves. Seeded once so it's deterministic per song like everything else.
+    this._waveFieldSeed = hashSeed(`${songSeed}:wavefield`);
+    this._seaState = 0;
+    this._waveComponents = buildWaveComponents(this._waveFieldSeed, windSpeedForSeaState(0), 24);
 
     // The mountains dance: a groove level (smoothed global energy) drives a
     // traveling ridge wave through every range, and each kick sends a
@@ -1086,6 +1093,17 @@ export class BiomeManager {
       const tau = raw > this._eqSmoothed[b] ? EQ_ATTACK_SEC : EQ_RELEASE_SEC;
       this._eqSmoothed[b] += (1 - Math.exp(-dtSec / tau)) * (raw - this._eqSmoothed[b]);
     }
+
+    // Ocean weather (WaveField.js): overall low-band energy is the ONLY
+    // channel the music has into the spectral sea, and even that only ever
+    // shifts sea state, eased over ~10s -- a drop raises the sea state, it
+    // never makes a wave. The surface itself always obeys its own physics.
+    const targetSeaState = (this._eqSmoothed[0] + this._eqSmoothed[1] + this._eqSmoothed[2]) / 3;
+    const nextSeaState = easeSeaState(this._seaState, targetSeaState, dtSec, 10);
+    if (Math.abs(nextSeaState - this._seaState) > 0.01) {
+      this._waveComponents = buildWaveComponents(this._waveFieldSeed, windSpeedForSeaState(nextSeaState), 24);
+    }
+    this._seaState = nextSeaState;
 
     this.mandala.update(nowMs, dtSec, energyCurves, calmLevel);
     this.cymatics.update(nowMs, dtSec, energyCurves, calmLevel);
@@ -2248,10 +2266,20 @@ export class BiomeManager {
         const samples = [];
         for (let i = 0; i <= N; i++) {
           const u = ((i / N + row.uPhase + scroll / canvas.width + drift) % 1 + 1) % 1;
-          const x = (i / N) * canvas.width;
+          let x = (i / N) * canvas.width;
           let y = rowYs[j]
             + seaLineY(u, this.tSec * row.speedMul, bass, kick) * ampScale
             - breakerLift(u, this.tSec * row.speedMul, 0.35 + 0.65 * treble) * ampScale * 0.55;
+          // Spectral depth pass (WaveField.js), layered on top of the hand-
+          // tuned rows above -- deliberately subtle (small coefficients
+          // against seaLineY's own amplitude) so the vibe stays exactly
+          // what it was; only gated on phenomenaFull since the row count
+          // itself already trims for lower perf tiers.
+          if (phenomenaFull) {
+            const wave = waveFieldSample(this._waveComponents, x + scroll, this.tSec);
+            x += wave.dx * 0.6 * ampScale;
+            y += wave.dy * 0.4 * ampScale;
+          }
           if (depthSwell > 0.01) {
             const halfW = TSUNAMI_WIDTH_PX * (0.35 + 0.65 * tsunami.scale);
             y -= tsunamiLift(x - tsunami.centerX, halfW) * depthSwell * 85 * (0.55 + 0.45 * ampScale);
