@@ -165,8 +165,17 @@ export function detectRhythmOnsets(normBands, rawBands, rate, onsetThreshold = 1
   // the world's kick-driven flashes should also know the song's TRUE
   // loudness at that instant, or every onset (intro included) reads as a
   // full-strength hit. This blends in true relative loudness: a soft
-  // section's kicks stay real hits (never fully silenced -- floor 0.5x)
+  // section's kicks still register (never fully silenced -- floor 0.18x)
   // but a hard section's kicks earn their full punch on top.
+  //
+  // The floor used to sit at 0.5x, which meant a sharp accent inside a
+  // genuinely quiet, tense passage (dense but soft orchestral writing --
+  // the reported case, an "intense but subtle" section with no loud
+  // moments at all) could still land Midio a half-height jump on flux
+  // alone, reading as too energetic for music that's deliberately holding
+  // back. Lower floor + heavier true-loudness weight keeps loud sections
+  // at exactly the same punch (both terms agree there) while genuinely
+  // quiet ones stay restrained.
   const refBands = globalBandReferences(rawBands);
   const refGlobalSum = refBands.reduce((a, b) => a + b, 0);
 
@@ -194,7 +203,7 @@ export function detectRhythmOnsets(normBands, rawBands, rate, onsetThreshold = 1
     else if (highShare > 0.40) { type = 'HAT'; pitch = 42; }
     else { type = 'SNARE'; pitch = 38; }
     const trueLoudness = refGlobalSum > 1e-9 ? clamp(sum / refGlobalSum, 0, 1) : 0;
-    const vel = clamp((O[i] / p95) * (0.5 + 0.5 * trueLoudness), 0, 1);
+    const vel = clamp((O[i] / p95) * (0.18 + 0.82 * trueLoudness), 0, 1);
     return { frame: i, tMs: (i / rate) * 1000, type, pitch, kick, vel };
   });
 
