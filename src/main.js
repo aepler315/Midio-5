@@ -9,7 +9,6 @@ import { Simulation } from './sim/Simulation.js';
 import { createRenderer, resolveRendererMode } from './render/WebGLRenderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
-import { SfxSynth } from './audio/SfxSynth.js';
 import { Sf2Synth } from './audio/Sf2Synth.js';
 import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
 import { FontRecommender } from './audio/FontRecommender.js';
@@ -143,7 +142,6 @@ const conductor = new Conductor();
 const paramBus = new ParamBus();
 let audioEngine = null;
 let synth = null;
-let sfx = null; // judgment-feedback synth (SfxSynth), created in bootAudio
 let sim = null;
 let renderer = null;
 let titleBackdrop = null; // living title-screen backdrop (drawn while !running)
@@ -366,7 +364,6 @@ async function bootAudio() {
   // as used to happen on every dropped MIDI file — would add a duplicate
   // listener and fire every note twice.
   synth.connectConductor(conductor);
-  sfx = new SfxSynth(audioEngine);
   fontLibrary = new SoundfontLibrary();
   fontLibrary.onChange = (active) => applyActiveFont(active);
   // Auditions every font against each loaded MIDI and steers the library to
@@ -729,11 +726,6 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
   lastSongSeed = sim.songSeed;
   setSeedInput(sim.songSeed);
   sim.perf = perfGovernor;
-  // Judgment feedback (hit/miss/hold ticks/choke): SfxSynth is authored and
-  // fully tuned but was never wired to anything -- every judgment played in
-  // total silence. sfx is null until bootAudio() resolves; Simulation
-  // already guards every call with `this.sfx?.`.
-  sim.sfx = sfx;
   sim.setReducedFlash(reducedFlash);
   sim.setVisualStyle(visualStyle);
   // Prime one sim step so BiomeManager/update dials (haze, calm, etc.) are
