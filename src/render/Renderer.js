@@ -13,7 +13,8 @@ import { contactShadow } from '../world/ContactShadow.js';
 import { clamp01 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { LerpCache, hexToRgb } from '../utils/color.js';
-import { nearestPaletteColor, pixelGridWidth, pixelGridHeight, SCANLINE_ALPHA, SCANLINE_PERIOD_PX } from './RetroFilter.js';
+import { nearestPaletteColor, pixelGridWidth, pixelGridHeight, SCANLINE_ALPHA, SCANLINE_PERIOD_PX, RETRO_PALETTE } from './RetroFilter.js';
+import { keyedQuantRamp, spectralFamily } from './spectral.js';
 import { hypeFrameStyle } from '../sim/HypeDirector.js';
 import { isRendered, styleDials } from './VisualStyle.js';
 
@@ -83,6 +84,21 @@ export class Renderer {
     // Renderer-owned (not sim.biomes.lerpCache) so the film finish still
     // works if sim.biomes were ever null (the fallback-sky branch below).
     this._filmLerpCache = new LerpCache();
+    // One Spectrum: the keyed retro ramp, cached per tonic so the
+    // per-pixel quantizer never recomputes the ramp mid-song.
+    this._retroRampTonic = null;
+    this._retroRamp = RETRO_PALETTE;
+  }
+
+  /** The retro quantizer's palette, keyed to the song's tonic (cached).
+   *  Returns the stock ramp unchanged when there's no detected tonic yet
+   *  or the tonic hasn't moved. */
+  _keyedRamp(tonic) {
+    if (tonic == null) return RETRO_PALETTE;
+    if (this._retroRampTonic === tonic) return this._retroRamp;
+    this._retroRampTonic = tonic;
+    this._retroRamp = keyedQuantRamp(RETRO_PALETTE, tonic);
+    return this._retroRamp;
   }
 
   draw(sim, alpha) {
@@ -260,7 +276,7 @@ export class Renderer {
     // Classic (SMW lineage) keeps the 8-bit retro finish. Rendered (DKC3
     // lineage) skips it so soft CGI shading and bloom stay cinematic.
     const dials = styleDials(sim.visualStyle);
-    if (dials.retroFilter && (perf ? perf.heavyPostFx : true)) this._drawRetroFilter(ctx, canvas);
+    if (dials.retroFilter && (perf ? perf.heavyPostFx : true)) this._drawRetroFilter(ctx, canvas, sim);
 
     // HUD seekbar AFTER post-FX so vignette/bloom never bury it. paramBus is
     // optional (lives on sim); never reference a free variable here — a
@@ -487,7 +503,16 @@ export class Renderer {
     const gradeMul = dials.filmGradeMul;
     const vigMul = dials.vignetteDepthMul;
 
-    const color = this._filmLerpCache.get(FILM_GRADE_COOL, FILM_GRADE_WARM, ff.warmth);
+    // One Spectrum: the grade's cool/warm stops are derived from the
+    // current keyed halo family, so the calm-teal / hot-amber push rides
+    // the song's hue instead of a fixed palette. Falls back to the
+    // hand-tuned constants when there's no biome (fallback-sky branch).
+    const fam = sim.biomes && typeof sim.biomes.currentHaloColor === 'function'
+      ? spectralFamily(sim.biomes.currentHaloColor(), sim.keyDirector ? ((sim.keyDirector.tonic % 12) + 12) % 12 * 30 : 0)
+      : null;
+    const gradeCool = fam ? fam.coolHex : FILM_GRADE_COOL;
+    const gradeWarm = fam ? fam.warmHex : FILM_GRADE_WARM;
+    const color = this._filmLerpCache.get(gradeCool, gradeWarm, ff.warmth);
     const gradeAlpha = (FILM_GRADE_ALPHA_BASE + FILM_GRADE_ALPHA_RANGE * Math.abs(ff.warmth - 0.5) * 2) * gradeMul;
     ctx.save();
     ctx.globalCompositeOperation = 'soft-light';
@@ -673,7 +698,7 @@ export class Renderer {
    *  bloom/blur passes), then draws it back upscaled with a faint scanline
    *  overlay for the CRT "nostalgia machine" read. Same offscreen-canvas
    *  pattern as _drawBloom above. */
-  _drawRetroFilter(ctx, canvas) {
+  _drawRetroFilter(ctx, canvas, sim) {
     const gridW = pixelGridWidth(canvas.width);
     const gridH = pixelGridHeight(canvas.width, canvas.height, gridW);
     if (!this._retroSmall) this._retroSmall = document.createElement('canvas');
@@ -684,10 +709,17 @@ export class Renderer {
     sctx.clearRect(0, 0, gridW, gridH);
     sctx.drawImage(canvas, 0, 0, gridW, gridH);
 
+    // One Spectrum: the 8-bit quantizer maps to a keyed ramp so the
+    // palette filter stops introducing out-of-palette colors -- the
+    // retro read becomes the scene's native output language, tuned to
+    // the song. The ramp is cached per (tonic, amount) signature; the
+    // full RETRO_PALETTE ramp is preserved at amount=0.
+    const tonic = sim && sim.biomes && sim.biomes.tonic != null ? sim.biomes.tonic : null;
+    const ramp = this._keyedRamp(tonic);
     const imgData = sctx.getImageData(0, 0, gridW, gridH);
     const data = imgData.data;
     for (let i = 0; i < data.length; i += 4) {
-      const p = nearestPaletteColor(data[i], data[i + 1], data[i + 2]);
+      const p = nearestPaletteColor(data[i], data[i + 1], data[i + 2], ramp);
       data[i] = p[0]; data[i + 1] = p[1]; data[i + 2] = p[2];
     }
     sctx.putImageData(imgData, 0, 0);

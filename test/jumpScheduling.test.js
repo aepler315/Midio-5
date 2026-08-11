@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  scheduledJumpD, nextLandingKickMs, shortHopHeightMul, LANDING_MIN_GAP_MS, D_MIN, D_MAX,
+  scheduledJumpD, nextLandingKickMs, shortHopHeightMul, quantizeJumpVel, LANDING_MIN_GAP_MS, D_MIN, D_MAX,
 } from '../src/sim/JumpController.js';
 
 test('scheduledJumpD lands exactly on the next kick when the gap is a plausible target', () => {
@@ -156,4 +156,34 @@ test('offline replicas (predictJumpArcs, NoteChart replay) agree: the near-dupli
   // 190+RETARGET_FALL_MS and no arc would ever take off at 280.
   assert.ok(arcs.some((a) => Math.abs(a.takeoffMs - 280) < 1e-6),
     `expected an arc taking off at 280, arcs: ${arcs.map((a) => `${a.takeoffMs}->${a.landMs}`).join(', ')}`);
+});
+
+// --- quantizeJumpVel: height reads as a few readable tiers, not raw jitter ---
+
+test('quantizeJumpVel snaps nearby raw velocities to the SAME tier (no jitter between musically-similar hits)', () => {
+  assert.equal(quantizeJumpVel(0.58), quantizeJumpVel(0.63), 'both sit in the same tier');
+  assert.equal(quantizeJumpVel(0.41), quantizeJumpVel(0.5));
+  assert.equal(quantizeJumpVel(0.86), quantizeJumpVel(0.99));
+});
+
+test('quantizeJumpVel is non-decreasing in the input (a harder hit never snaps to a smaller tier)', () => {
+  const samples = Array.from({ length: 101 }, (_, i) => i / 100);
+  let prev = -Infinity;
+  for (const v of samples) {
+    const out = quantizeJumpVel(v);
+    assert.ok(out >= prev, `tier value dropped at vel=${v}: ${out} < ${prev}`);
+    prev = out;
+  }
+});
+
+test('quantizeJumpVel: only a handful of distinct output values exist across the whole 0..1 range', () => {
+  const samples = Array.from({ length: 101 }, (_, i) => i / 100);
+  const distinct = new Set(samples.map(quantizeJumpVel));
+  assert.ok(distinct.size <= 4, `expected a small number of readable tiers, got ${distinct.size}: ${[...distinct]}`);
+});
+
+test('quantizeJumpVel: boundary values snap up, never down (accent-boosted velocity only ever rounds a tier UP)', () => {
+  assert.equal(quantizeJumpVel(0), quantizeJumpVel(0.05), 'below the first floor stays at the floor tier');
+  assert.equal(quantizeJumpVel(1), quantizeJumpVel(0.98), 'clamped input at the top stays in the top tier');
+  assert.ok(quantizeJumpVel(0.85) > quantizeJumpVel(0.84), 'crossing a floor moves to the next tier up');
 });

@@ -30,6 +30,9 @@ import {
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
+import { TitleBackdrop } from './ui/TitleBackdrop.js';
+import { feverFillPct, feverColor, feverGlowAlpha, feverLabelAlpha, setFeverStops } from './ui/FeverGauge.js';
+import { cssVarMap } from './render/spectral.js';
 import { resolveDurationMs } from './core/SongDuration.js';
 import { formatSeed, parseSeed } from './utils/seed.js';
 import { resolveIdentity } from './lyrics/SongIdentity.js';
@@ -49,6 +52,10 @@ const progressEl = document.getElementById('progressText');
 const hudEl = document.getElementById('hud');
 const comboReadoutEl = document.getElementById('comboReadout');
 const streakReadoutEl = document.getElementById('streakReadout');
+const scoreReadoutEl = document.getElementById('scoreReadout');
+const feverGaugeEl = document.getElementById('feverGauge');
+const feverLabelEl = document.getElementById('feverLabel');
+const feverFillEl = document.getElementById('feverFill');
 const completePanelEl = document.getElementById('completePanel');
 const completeSongNameEl = document.getElementById('completeSongName');
 const completeSeedEl = document.getElementById('completeSeed');
@@ -139,6 +146,9 @@ let synth = null;
 let sfx = null; // judgment-feedback synth (SfxSynth), created in bootAudio
 let sim = null;
 let renderer = null;
+let titleBackdrop = null; // living title-screen backdrop (drawn while !running)
+let titleRafHandle = null;
+let lastSpecSig = null; // cache-gate for the One-Spectrum CSS var sync (write only on key/form change)
 let visionLoop = null;
 let debugOverlay = null;
 let perfGovernor = null;
@@ -267,6 +277,11 @@ const rendererMode = resolveRendererMode(
   typeof location !== 'undefined' ? location.search : '',
 );
 paramBus.rendererMode = rendererMode;
+
+// The title screen is alive from the very first frame: a living backdrop
+// (starfield + nebula + the trio) runs on its own rAF loop until a song
+// starts, so the loader is never a dead gradient.
+startTitleBackdrop();
 
 // Perf tier: ?perf=lite|high overrides; otherwise a coarse-pointer/small-
 // viewport device heuristic starts a phone a rung down so the first
@@ -657,6 +672,7 @@ function backToTitle() {
   completePanelEl.classList.add('hidden');
   hudEl.classList.add('hidden');
   loaderEl.classList.remove('hidden');
+  startTitleBackdrop();
 }
 
 function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}) {
@@ -747,6 +763,7 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
   audioEngine.restoreLevel?.(0.85);
   audioEngine.start(0);
   running = true;
+  stopTitleBackdrop();
 
   progressEl.classList.add('hidden');
   loaderEl.classList.add('hidden');
@@ -1465,6 +1482,43 @@ function frame(tRaf) {
   }
   comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
   if (streakReadoutEl) streakReadoutEl.textContent = `${sim.comboSystem.streak} streak`;
+  if (scoreReadoutEl) scoreReadoutEl.textContent = sim.scoreKeeper.score.toLocaleString('en-US');
+  // The fever gauge: the one readout for the meter that drives the whole
+  // visual intensity stack. Fill, color, and glow all come from the same
+  // pure helpers (FeverGauge.js) so the HUD and the world can never drift
+  // apart. Hidden entirely when there's no fever system (defensive).
+  if (feverGaugeEl && sim.fever) {
+    const level = sim.fever.level || 0;
+    feverGaugeEl.classList.remove('hidden');
+    if (feverFillEl) {
+      feverFillEl.style.width = `${feverFillPct(level)}%`;
+      feverFillEl.style.background = feverColor(level);
+      const glow = feverGlowAlpha(level);
+      feverFillEl.style.boxShadow = glow > 0.01
+        ? `0 0 ${(4 + 10 * glow).toFixed(1)}px ${feverColor(level)}`
+        : 'none';
+    }
+    if (feverLabelEl) feverLabelEl.style.opacity = String(feverLabelAlpha(level));
+  } else if (feverGaugeEl) {
+    feverGaugeEl.classList.add('hidden');
+  }
+  // One Spectrum, the chrome half: sync the HUD CSS custom properties to
+  // the live spectral palette. Cache-gated on the quantized shift so the
+  // DOM is only touched when the song's key/form actually moves -- never
+  // per-frame style thrash. The fever gauge's own stops follow the tonic
+  // so the meter reads the song's key too.
+  if (sim.biomes && typeof sim.biomes.currentHaloColor === 'function') {
+    const sig = `${sim.biomes.tonic ?? '?'}|${sim.biomes._spectralShift ? Math.round(sim.biomes._spectralShift() / 3) : 0}|${sim.biomes.currentBlend ? sim.biomes.currentBlend.to : ''}`;
+    if (sig !== lastSpecSig) {
+      lastSpecSig = sig;
+      const halo = sim.biomes.currentHaloColor();
+      const tokens = { baseHue: sim.keyDirector ? ((sim.keyDirector.tonic % 12) + 12) % 12 * 30 : 0, halo };
+      const vars = cssVarMap(tokens);
+      const root = document.documentElement;
+      for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+      if (sim.keyDirector) setFeverStops((sim.keyDirector.tonic % 12 + 12) % 12, halo);
+    }
+  }
   if (milestoneFiredThisFrame) {
     comboReadoutEl.classList.remove('milestone-pulse');
     void comboReadoutEl.offsetWidth; // restart the CSS animation even if it's still mid-flight
@@ -1589,6 +1643,39 @@ function clientToStage(e) {
   };
 }
 
+/** The title screen's living backdrop: a slow, seeded starfield + nebula +
+ *  the trio's spectral glyphs drifting and breathing, drawn to the stage
+ *  canvas while no song is running. Runs on its own rAF loop so the very
+ *  first frame a visitor sees is already a Midio world, not a flat
+ *  gradient. Cheap (a few gradient fills + mesh strokes) and stops the
+ *  instant a song starts. */
+function titleFrame(tRaf) {
+  if (running) return;
+  if (!titleBackdrop) {
+    titleBackdrop = new TitleBackdrop({ seed: 1, width: canvas.width, height: canvas.height });
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  titleBackdrop.draw(ctx, tRaf / 1000);
+  titleRafHandle = requestAnimationFrame(titleFrame);
+}
+
+function startTitleBackdrop() {
+  if (titleRafHandle == null) titleRafHandle = requestAnimationFrame(titleFrame);
+}
+
+function stopTitleBackdrop() {
+  if (titleRafHandle != null) {
+    cancelAnimationFrame(titleRafHandle);
+    titleRafHandle = null;
+  }
+}
+
+// Zoom has been removed from the game: there is no player Lens control and
+// no automatic camera zoom. The pointer is still tracked, but only so the
+// star-children can notice where the user is (they're aware of the user); it
+// never moves the camera. Client coords are mapped through the canvas rect
+// into the 1280x720 stage space the sim draws in.
 canvas.addEventListener('pointermove', (e) => {
   if (!running || !sim || !sim.setPointer) return;
   const p = clientToStage(e);

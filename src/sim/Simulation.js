@@ -6,7 +6,7 @@ import { Lane, laneCounts } from '../core/Casting.js';
 import { MAX_LATENCY_MS } from '../core/ChoreoClock.js';
 import { skidOffset, skidParams, tractionFrom } from './Traction.js';
 import { Midio } from './Midio.js';
-import { JumpController, A, GAMMA, W, H_BASE, D_MIN } from './JumpController.js';
+import { JumpController, A, GAMMA, W, H_BASE, D_MIN, quantizeJumpVel } from './JumpController.js';
 import { CameraDirector } from '../render/CameraDirector.js';
 import { ComboSystem } from './ComboSystem.js';
 import { ImpactFX } from './ImpactFX.js';
@@ -603,7 +603,15 @@ export class Simulation {
         // bass moment) makes that jump bigger, never smaller, so
         // clearance only ever improves.
         const accentAtTakeoff = this._takeoffAccent(ev.tMs);
-        const vel = Math.min(1, (res.matchedVel ?? 0.7) * (1 + 0.3 * accentAtTakeoff));
+        const rawVel = Math.min(1, (res.matchedVel ?? 0.7) * (1 + 0.3 * accentAtTakeoff));
+        // Quantized to a few readable height tiers (see quantizeJumpVel):
+        // duration is already beat-locked, this brings height up to the
+        // same discipline instead of jittering with every note's raw
+        // dynamics. Everything downstream that reads jump "intensity"
+        // (lastLaunchVel, trick selection, modal excite) rides the same
+        // tiered signal, so the performance layer reinforces the read
+        // instead of adding its own independent noise on top.
+        const vel = quantizeJumpVel(rawVel);
         const tapEvt = { tMs: ev.tMs, vel };
         // A tap before the character hits the ground is a double jump —
         // budgeted per 4-/8-measure phrase; if the budget is spent (or the
@@ -697,7 +705,7 @@ export class Simulation {
     this.jump.update(nowMs);
     this.midio.y = this.jump.y;
 
-    this.groundField.update(nowMs, dtSec, this.worldX, this.energyCurves);
+    this.groundField.update(nowMs, dtSec, this.worldX, this.energyCurves, this.calm.level);
     this.midio.groundY = this.groundField.heightAt(this.worldX);
     if (this.groundField.justRecovered) this.camera.shake(5.5);
 
@@ -891,6 +899,10 @@ export class Simulation {
     this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge + 1.1 * this.fever.level; // drops + player fever surge every phenomena system
     this.biomes.heatShimmer = this.hype.fast; // a hard hype spike shimmers the far range
     this.biomes.paletteRotation = this.keyDirector.paletteRotation; // the world transposes with the song's key
+    // One Spectrum: the world keys to the same tonic the characters do --
+    // but only once a tonic is actually DETECTED (confidence cleared the
+    // margin), so the first beat of a song never snaps the palette to C.
+    this.biomes.tonic = this.vibe.tonicConfidence >= 0.15 ? this.keyDirector.tonic : null;
     this.biomes.dropAtMs = this.hype.dropAtMs; // drops send a heavy ring through the lake
     this.biomes.unravel = this.coda.unravel; // parallax delaminates, particle hues converge to the halo
     this.biomes.particleMul = this.perf.particleMul * (1 + this.fever.level); // perf headroom × player fever

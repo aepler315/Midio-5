@@ -49,6 +49,14 @@ export function zoomTargetForOffFrame(screenXs, stageW) {
   return 1 - (1 - ZOOM_MIN) * t;
 }
 
+// Calm-section drift (see update()): a genuinely wide, slow pan rather than
+// a scaled-down version of impact shake. The original 3px/10s drift was
+// imperceptible -- this is sized to actually read as the camera sweeping
+// across the frame during a relaxed stretch, exported so the test can pin
+// the bound without hardcoding it twice.
+export const CALM_DRIFT_AMP_PX = 26;
+export const CALM_DRIFT_PERIOD_SEC = 15; // one full lazy sweep
+
 export class CameraDirector {
   constructor() {
     this.shakeX = 0;
@@ -110,13 +118,19 @@ export class CameraDirector {
       this.roll = 0;
     }
 
-    // Calm sections (follow-up item 3): a slow drift layered on top of
-    // impact shake (additive, so a landing during a calm stretch still
-    // reads correctly) -- keeps the frame from ever feeling frozen.
+    // Calm sections: a wide, slow sweeping pan layered on top of impact
+    // shake (additive, so a landing during a calm stretch still reads
+    // correctly) -- a genuine long-range drift across the frame, not a
+    // scaled-down shake, so a relaxed section reads as sweeping rather than
+    // just "the same motion, smaller." Horizontal leads (fuller amplitude,
+    // matching how a side-scroller camera actually pans); vertical trails
+    // at a slower, smaller sub-sweep so the path traces a lazy ellipse
+    // rather than a tight circle.
     this._driftT = (this._driftT || 0) + dtSec;
-    const driftAmp = 3 * calmLevel;
-    const driftX = driftAmp * Math.sin(2 * Math.PI * 0.1 * this._driftT);
-    const driftY = driftAmp * Math.sin(2 * Math.PI * 0.1 * this._driftT * 0.7 + 1.3);
+    const driftOmega = 2 * Math.PI / CALM_DRIFT_PERIOD_SEC;
+    const driftAmp = CALM_DRIFT_AMP_PX * calmLevel;
+    const driftX = driftAmp * Math.sin(driftOmega * this._driftT);
+    const driftY = driftAmp * 0.55 * Math.sin(driftOmega * this._driftT * 0.7 + 1.3);
 
     this.shakeX = shakeX * motionMul + driftX;
     this.shakeY = shakeY * motionMul + driftY;

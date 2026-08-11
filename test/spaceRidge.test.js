@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   SpaceRidge, projectWireframe, ICO_VERTS, ICO_EDGES, N_NODES, nodeXFrac,
-  tidalOffset, TIDAL_AMPLITUDE_FRAC,
+  tidalOffset, TIDAL_AMPLITUDE_FRAC, calmResponseParams,
 } from '../src/world/SpaceRidge.js';
 
 test('node band assignment: 30 nodes (+3 joints each edge), treble-weighted, deterministic', () => {
@@ -53,6 +53,34 @@ test('attack is faster than release (step response)', () => {
 
   assert.ok(levelAfterAttackStep > 0.3, `attack should move quickly, got ${levelAfterAttackStep}`);
   assert.ok(levelAfterReleaseStep > 0.5, `release should move slowly, got ${levelAfterReleaseStep}`);
+});
+
+// --- calmResponseParams: calm stretches attack/release so the line rolls
+// in slow, broad contours instead of ticking to every treble transient ---
+
+test('calmResponseParams: identity at calm=0, stretches monotonically toward calm=1', () => {
+  assert.equal(calmResponseParams(0).tauMul, 1);
+  let prev = -Infinity;
+  for (const c of [0, 0.25, 0.5, 0.75, 1]) {
+    const { tauMul } = calmResponseParams(c);
+    assert.ok(tauMul >= prev - 1e-9, 'tau must not shrink as calm rises');
+    prev = tauMul;
+  }
+  assert.ok(calmResponseParams(1).tauMul > 1, 'full calm must genuinely stretch the envelope');
+});
+
+test('calmResponseParams clamps out-of-range input the same as clamp01', () => {
+  assert.deepEqual(calmResponseParams(-1), calmResponseParams(0));
+  assert.deepEqual(calmResponseParams(2), calmResponseParams(1));
+});
+
+test('a calm section reacts to the same step input more slowly than a hot one (attack)', () => {
+  const hot = new SpaceRidge(1), calm = new SpaceRidge(1);
+  const bandUp = [1, 1, 1, 1, 1, 1, 1];
+  hot.update(0, 0.02, bandUp, 0);
+  calm.update(0, 0.02, bandUp, 1);
+  assert.ok(calm.nodes[0].level < hot.nodes[0].level,
+    `expected the calm line to ease in more slowly, got hot=${hot.nodes[0].level} calm=${calm.nodes[0].level}`);
 });
 
 test('flashes fire on a big jump and drain within their life window', () => {

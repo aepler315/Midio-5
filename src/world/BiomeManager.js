@@ -57,6 +57,7 @@ import { superformula, ModalRing } from '../render/oscillators.js';
 import { computeLight, celestialScreenPos } from '../render/LightField.js';
 import { clamp, clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
 import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
+import { spectralShiftDeg, easeSpectralShift } from '../render/spectral.js';
 import { Role } from '../core/NoteEvent.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { VoyagePhase } from '../sim/SkyVoyage.js';
@@ -458,6 +459,18 @@ export class BiomeManager {
     // steps before rotating so the LerpCache-style cache below stays hot.
     this.paletteRotation = 0;
     this._rotationCache = new Map();
+    // One Spectrum: the song's detected key (pitch class 0..11, fed from
+    // KeyDirector) plus how far the world should key to it (0..1). The
+    // spectral key shift is eased (one-pole, characters-style) so a key
+    // change GLIDES the whole frame as one body -- the world and the
+    // characters never disagree, and nothing ever snaps (reduced-flash
+    // safe). This subsumes the old slow paletteRotation drift (same tonic
+    // signal at 7.5deg/semitone); the spectral shift lands the anchor ON
+    // the key at the full 30deg/semitone.
+    this.tonic = null;
+    this.spectralAmount = 1;
+    this._specShift = 0;       // eased degrees, read by _rotated
+    this._specShiftTarget = 0;
     // Song-form recognition (SongForm): the active section's structural
     // signature hue, eased so a section change glides the whole palette by
     // its label's bias -- the chorus always the same shift, the verse
@@ -903,10 +916,10 @@ export class BiomeManager {
    *  same handful of rotated hex strings recur across many frames, so this
    *  small cache actually hits instead of growing unbounded. */
   _rotated(hex) {
-    // The key-driven rotation and the song-form section signature compose
-    // into one hue offset (both quantized together to 3deg steps so the
-    // cache stays hot).
-    const deg = Math.round(((this.paletteRotation || 0) + (this.sectionHueBias || 0)) / 3) * 3;
+    // The One-Spectrum key shift (eased, landing the anchor on the tonic)
+    // and the song-form section signature compose into one hue offset --
+    // quantized together to 3deg steps so the cache stays hot.
+    const deg = Math.round((this._spectralShift() + (this.sectionHueBias || 0)) / 3) * 3;
     if (deg === 0) return hex;
     const key = hex + '|' + deg;
     let v = this._rotationCache.get(key);
@@ -917,11 +930,41 @@ export class BiomeManager {
     return v;
   }
 
+  /** One Spectrum: how far the world's color should rotate so its anchor
+   *  hue lands on the song's key. Anchor = the active biome's halo hue
+   *  (identity-bearing). Eased in update() so a key change glides; the
+   *  target is zero when there's no detected tonic yet (the first beat of
+   *  a song) so the world never snaps on boot. */
+  _spectralShift() {
+    return this._specShift || 0;
+  }
+
+  /** Ease the One-Spectrum key shift toward its target: the active
+   *  biome's anchor hue must land on the song's tonic, at 30deg/semitone
+   *  (the characters' own spectral spacing). Same one-pole timescale as
+   *  the characters' hue glide (FORM_HUE_TAU_SEC class), so the world and
+   *  the characters move together and reduced-flash sees a glide, never
+   *  a snap. */
+  _updateSpectralShift(dtSec) {
+    const tonic = this.tonic;
+    let target = 0;
+    if (tonic != null && this.currentBlend) {
+      const { from, to, t } = this.currentBlend;
+      const active = this._profile(t > 0.5 ? to : from);
+      const anchorHex = (active && active.celestial && active.celestial.haloColor) || '#ffdca0';
+      const { r, g, b } = hexToRgb(anchorHex);
+      const { h } = rgbToHsl(r, g, b);
+      target = spectralShiftDeg(h, tonic) * (this.spectralAmount ?? 1);
+    }
+    this._specShiftTarget = target;
+    this._specShift = easeSpectralShift(this._specShift, target, dtSec);
+  }
+
   /** The current blended halo color -- shared accent for HUD-level effects. */
   currentHaloColor() {
     if (!this.currentBlend) return '#ffffff';
     const { from, to, t } = this.currentBlend;
-    return this.lerpCache.get(this._profile(from).celestial.haloColor, this._profile(to).celestial.haloColor, t);
+    return this._rotated(this.lerpCache.get(this._profile(from).celestial.haloColor, this._profile(to).celestial.haloColor, t));
   }
 
   /** Movement VII: the celestial body as an actual light -- position, color, intensity. */
@@ -947,13 +990,13 @@ export class BiomeManager {
   currentParticleColor() {
     if (!this.currentBlend) return '#ffffff';
     const { from, to, t } = this.currentBlend;
-    return this.lerpCache.get(this._profile(from).particles.color, this._profile(to).particles.color, t);
+    return this._rotated(this.lerpCache.get(this._profile(from).particles.color, this._profile(to).particles.color, t));
   }
 
   currentSkyBase() {
     if (!this.currentBlend) return '#141428';
     const { from, to, t } = this.currentBlend;
-    return this.lerpCache.get(this._profile(from).sky[1], this._profile(to).sky[1], t);
+    return this._rotated(this.lerpCache.get(this._profile(from).sky[1], this._profile(to).sky[1], t));
   }
 
   /** Fires a reward meteor volley sized by both PerfGovernor headroom and
@@ -986,6 +1029,8 @@ export class BiomeManager {
     this.calmLevel = calmLevel;
     const { from, to, t } = this._blend(nowMs);
     this.currentBlend = { from, to, t };
+    // One Spectrum: glide the key shift (needs the blend just resolved).
+    this._updateSpectralShift(dtSec);
 
     // Dramaturgy: detect section boundaries and fire their transition FX.
     const sectionIdx = this._sectionAt(nowMs);
@@ -1130,7 +1175,7 @@ export class BiomeManager {
     this.lightRig.update(nowMs, dtSec, this._beatMs, calmLevel, this.budget, this.fever || 0);
     this.meteors.update(dtSec);
     this.weaver.update(nowMs, dtSec);
-    this.spaceRidge.update(nowMs, dtSec, this._eqSmoothed);
+    this.spaceRidge.update(nowMs, dtSec, this._eqSmoothed, this.calmLevel);
     // Drops send a heavy ring through the lake and snap every light-rig beam
     // onto Midio for a moment -- edge-detected off the externally-set
     // dropAtMs (same passthrough pattern as heatShimmer).
@@ -1264,7 +1309,7 @@ export class BiomeManager {
     if (dn.moonAlt > 0.001) this._drawMoon(ctx, canvas, celestialYFracFor(dn.moonAlt), horizonFade(dn.moonAlt), 0.22 * this.spaceRidge.tidalOffsetPx(canvas.height));
     // Spirograph resonance mandala, centered on the celestial body so it
     // reads as the sun/moon itself resonating with the track.
-    const mandalaColor = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
+    const mandalaColor = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
     // Hybrid sky wire: mandala / ribbon / weaver scale with skyWireAlpha
     // (Soft ~0.38, Neon ~0.72) so geometry feels musical without striping.
     const skyA = styleDials(this.visualStyle).skyWireAlpha ?? 1;
@@ -1758,6 +1803,7 @@ export class BiomeManager {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+
     if (A.fx === 'aurora' || B.fx === 'aurora') {
       const auroraAlpha = (A.fx === 'aurora' ? 1 - t : 0) + (B.fx === 'aurora' ? t : 0);
       if (auroraAlpha > 0.02) this._drawAurora(ctx, canvas, auroraAlpha);
@@ -2131,11 +2177,16 @@ export class BiomeManager {
 
   _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22, alpha = 1) {
     const cx = canvas.width * 0.78, cy = canvas.height * cyFrac;
+    const rotCel = (c) => ({
+      ...c,
+      color: this._rotated(c.color),
+      haloColor: this._rotated(c.haloColor),
+    });
     if (B === A) {
-      this._drawOneCelestial(ctx, cx, cy, A.celestial, alpha);
+      this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), alpha);
     } else {
-      this._drawOneCelestial(ctx, cx, cy, A.celestial, (1 - t) * alpha);
-      this._drawOneCelestial(ctx, cx, cy, B.celestial, t * alpha);
+      this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), (1 - t) * alpha);
+      this._drawOneCelestial(ctx, cx, cy, rotCel(B.celestial), t * alpha);
     }
 
     const promAlpha = ((A.fx === 'prominence' ? 1 - t : 0) + (B.fx === 'prominence' ? t : 0)) * alpha;
@@ -2668,7 +2719,7 @@ export class BiomeManager {
    * the crest. Filled glow below, a bright aurora crest line on top.
    */
   _drawHorizonEQ(ctx, canvas, worldX, A, B, t) {
-    const color = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
+    const color = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
     const eqMul = styleDials(this.visualStyle).horizonEqAlpha ?? 1;
     if (eqMul < 0.05) return;
     const baseline = canvas.height * 0.60;
@@ -2763,7 +2814,22 @@ export class BiomeManager {
         if (rs[i] > rMax) rMax = rs[i];
       }
       const rot = this.tSec * 0.05;
-      ctx.fillStyle = c.color;
+      // A single flat fill read as a plain pale disc no matter how faceted
+      // the outline is -- especially for shallow superformula params
+      // (GEODE's hexagon barely dips below its own peak radius) where the
+      // silhouette alone is too subtle to notice against the halo glow. A
+      // simple off-center sphere-shaded gradient gives every faceted
+      // celestial actual depth instead of relying on the outline to sell it.
+      const rgb = hexToRgb(c.color);
+      const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
+      const shade = ctx.createRadialGradient(
+        cx - c.radius * 0.35, cy - c.radius * 0.35, 0,
+        cx, cy, c.radius * 1.15,
+      );
+      shade.addColorStop(0, `hsl(${h.toFixed(0)},${s.toFixed(0)}%,${Math.min(94, l + 14).toFixed(0)}%)`);
+      shade.addColorStop(0.6, c.color);
+      shade.addColorStop(1, `hsl(${h.toFixed(0)},${s.toFixed(0)}%,${Math.max(4, l - 20).toFixed(0)}%)`);
+      ctx.fillStyle = shade;
       ctx.globalAlpha = alpha * (c.veiled ? 0.6 : 1);
       ctx.beginPath();
       for (let i = 0; i <= steps; i++) {
@@ -3449,7 +3515,7 @@ export class BiomeManager {
       ctx.fillStyle = groundColor;
       ctx.fill(fillPath);
 
-      const haloColor = this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t);
+      const haloColor = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
       const { r, g, b } = hexToRgb(haloColor);
       const rgb = `${r},${g},${b}`;
 

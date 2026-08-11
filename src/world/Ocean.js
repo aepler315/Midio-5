@@ -15,10 +15,14 @@ export const OCEAN_HORIZON_FRAC = 0.26;
 export const OCEAN_NEAR_FRAC = 0.66;
 
 /** Peak absolute contribution of each harmonic in seaLineY (pre-amp). Kept
- *  as named constants so tests can pin the bound without re-deriving. */
-export const SEA_H1 = 2.2;
-export const SEA_H2 = 1.4;
-export const SEA_H3 = 0.85;
+ *  as named constants so tests can pin the bound without re-deriving.
+ *  Large enough that the three summed sines read as actual undulating
+ *  waves at a glance -- the original magnitudes (2.2/1.4/0.85, ~4.5px sum)
+ *  were nearly invisible against the perspective row spacing and read as
+ *  flat lines with a faint wobble, not waves. */
+export const SEA_H1 = 6.5;
+export const SEA_H2 = 4.0;
+export const SEA_H3 = 2.4;
 export const SEA_LINE_MAX = SEA_H1 + SEA_H2 + SEA_H3;
 
 /** Vertical offset (px) of a wave row at horizontal position u01 in [0,1)
