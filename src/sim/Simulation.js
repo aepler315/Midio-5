@@ -924,6 +924,14 @@ export class Simulation {
     }
 
     this.gnat.update(nowMs, dtSec, this.calm.level);
+    // Off-frame pull-back: only the UNINTENDED case counts, so a performer
+    // mid-excursion (Midasus's voyage, Broshi's burrow) is left out here --
+    // those are authored departures and chasing them with the camera would
+    // fight the exit's own effect.
+    const onFrameXs = [this.midio.screenX];
+    if (!this.broshi.burrow.active) onFrameXs.push(this.broshi.screenX);
+    if (!this.midasus.voyage.active) onFrameXs.push(this.midasus.p.x);
+    this.camera.setZoomTarget(onFrameXs, this.stageW);
     this.camera.update(dtSec, this.calm.level, this.reducedFlash);
     this.paramBus.step();
 
