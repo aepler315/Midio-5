@@ -3,12 +3,13 @@
  *
  * Backends (first match wins):
  *   1. Runtime config from the UI (POST /api/soulseek/config)
- *   2. Env: SLSKD_URL + SLSKD_API_KEY  →  proxy to a local/remote slskd
- *   3. Env: SLSK_USER + SLSK_PASS      →  direct Soulseek via slsk-client
- *   4. Demo catalog of free/public-domain audio (always available as fallback)
+ *   2. Env: SLSK_USER + SLSK_PASS      →  direct Soulseek (default)
+ *   3. Env: SLSKD_URL + SLSKD_API_KEY  →  proxy to slskd
+ *   4. Demo catalog (explicit only — free/public-domain fallback)
  *
  * Normalized result shape (client-facing):
- *   { id, title, artist, filename, size, bitrate, speed, slots, user, source, ext }
+ *   { id, title, artist, album, lengthSec, lengthLabel, filename, size,
+ *     bitrate, speed, slots, user, source, ext, versionKey, baseTitle }
  */
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
@@ -16,25 +17,32 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import {
+  parsePathMetadata,
+  formatLength,
+  dedupeResults,
+  enrichWithMusicBrainz,
+  AUDIO_EXT,
+  basename as metaBasename,
+} from './song-meta.mjs';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const AUDIO_EXT = /\.(mp3|flac|wav|ogg|m4a|aac|opus|mid|midi)$/i;
 const searches = new Map(); // id → { mode, query, status, results, createdAt, raw }
 let runtimeConfig = null; // { mode, slskdUrl, slskdKey, slskUser, slskPass }
 let directClient = null;
 let directClientPromise = null;
 
-// ── Free / demo-permitted catalog (demo backend) ───────────────────────────
-// Reliable hosts only (SoundHelix royalty-free demos). Remote fetch has a
-// local procedural-WAV fallback if a URL is ever unreachable.
+// ── Free / demo-permitted catalog (explicit fallback only) ─────────────────
 const DEMO_CATALOG = [
   {
     id: 'demo-helix-1',
     title: 'Neon Skyline',
     artist: 'SoundHelix',
-    filename: 'SoundHelix - Neon Skyline.mp3',
+    album: 'SoundHelix Demos',
+    lengthSec: 372,
+    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Neon Skyline.mp3',
     size: 8_945_229,
     bitrate: 128,
     speed: 5_000_000,
@@ -48,7 +56,9 @@ const DEMO_CATALOG = [
     id: 'demo-helix-2',
     title: 'Midnight Express',
     artist: 'SoundHelix',
-    filename: 'SoundHelix - Midnight Express.mp3',
+    album: 'SoundHelix Demos',
+    lengthSec: 426,
+    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Midnight Express.mp3',
     size: 10_222_911,
     bitrate: 128,
     speed: 5_000_000,
@@ -62,7 +72,9 @@ const DEMO_CATALOG = [
     id: 'demo-helix-3',
     title: 'Crystal Garden',
     artist: 'SoundHelix',
-    filename: 'SoundHelix - Crystal Garden.mp3',
+    album: 'SoundHelix Demos',
+    lengthSec: 360,
+    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Crystal Garden.mp3',
     size: 7_500_000,
     bitrate: 128,
     speed: 5_000_000,
@@ -76,7 +88,9 @@ const DEMO_CATALOG = [
     id: 'demo-helix-4',
     title: 'Pulse City',
     artist: 'SoundHelix',
-    filename: 'SoundHelix - Pulse City.mp3',
+    album: 'SoundHelix Demos',
+    lengthSec: 340,
+    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Pulse City.mp3',
     size: 8_000_000,
     bitrate: 128,
     speed: 5_000_000,
@@ -90,7 +104,9 @@ const DEMO_CATALOG = [
     id: 'demo-helix-5',
     title: 'Aurora Drive',
     artist: 'SoundHelix',
-    filename: 'SoundHelix - Aurora Drive.mp3',
+    album: 'SoundHelix Demos',
+    lengthSec: 350,
+    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Aurora Drive.mp3',
     size: 8_200_000,
     bitrate: 128,
     speed: 5_000_000,
@@ -104,7 +120,9 @@ const DEMO_CATALOG = [
     id: 'demo-helix-6',
     title: 'Deep Orbit',
     artist: 'SoundHelix',
-    filename: 'SoundHelix - Deep Orbit.mp3',
+    album: 'SoundHelix Demos',
+    lengthSec: 330,
+    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Deep Orbit.mp3',
     size: 7_800_000,
     bitrate: 128,
     speed: 5_000_000,
@@ -118,7 +136,9 @@ const DEMO_CATALOG = [
     id: 'demo-helix-7',
     title: 'Velvet Static',
     artist: 'SoundHelix',
-    filename: 'SoundHelix - Velvet Static.mp3',
+    album: 'SoundHelix Demos',
+    lengthSec: 345,
+    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Velvet Static.mp3',
     size: 8_100_000,
     bitrate: 128,
     speed: 5_000_000,
@@ -132,7 +152,9 @@ const DEMO_CATALOG = [
     id: 'demo-helix-8',
     title: 'Glass Horizon',
     artist: 'SoundHelix',
-    filename: 'SoundHelix - Glass Horizon.mp3',
+    album: 'SoundHelix Demos',
+    lengthSec: 335,
+    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Glass Horizon.mp3',
     size: 7_900_000,
     bitrate: 128,
     speed: 5_000_000,
@@ -146,7 +168,9 @@ const DEMO_CATALOG = [
     id: 'demo-helix-9',
     title: 'Chrome Ballet',
     artist: 'SoundHelix',
-    filename: 'SoundHelix - Chrome Ballet.mp3',
+    album: 'SoundHelix Demos',
+    lengthSec: 355,
+    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Chrome Ballet.mp3',
     size: 8_400_000,
     bitrate: 128,
     speed: 5_000_000,
@@ -160,7 +184,9 @@ const DEMO_CATALOG = [
     id: 'demo-helix-10',
     title: 'Solar Flare',
     artist: 'SoundHelix',
-    filename: 'SoundHelix - Solar Flare.mp3',
+    album: 'SoundHelix Demos',
+    lengthSec: 360,
+    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Solar Flare.mp3',
     size: 8_600_000,
     bitrate: 128,
     speed: 5_000_000,
@@ -174,7 +200,9 @@ const DEMO_CATALOG = [
     id: 'demo-helix-16',
     title: 'Night Market',
     artist: 'SoundHelix',
-    filename: 'SoundHelix - Night Market.mp3',
+    album: 'SoundHelix Demos',
+    lengthSec: 480,
+    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Night Market.mp3',
     size: 11_602_841,
     bitrate: 128,
     speed: 5_000_000,
@@ -188,7 +216,9 @@ const DEMO_CATALOG = [
     id: 'demo-helix-17',
     title: 'Paper Planets',
     artist: 'SoundHelix',
-    filename: 'SoundHelix - Paper Planets.mp3',
+    album: 'SoundHelix Demos',
+    lengthSec: 390,
+    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Paper Planets.mp3',
     size: 9_000_000,
     bitrate: 128,
     speed: 5_000_000,
@@ -202,13 +232,7 @@ const DEMO_CATALOG = [
 
 function activeConfig() {
   if (runtimeConfig) return runtimeConfig;
-  if (process.env.SLSKD_URL && process.env.SLSKD_API_KEY) {
-    return {
-      mode: 'slskd',
-      slskdUrl: process.env.SLSKD_URL.replace(/\/$/, ''),
-      slskdKey: process.env.SLSKD_API_KEY,
-    };
-  }
+  // Soulseek login is the default backend when env is set
   if (process.env.SLSK_USER && process.env.SLSK_PASS) {
     return {
       mode: 'direct',
@@ -216,7 +240,15 @@ function activeConfig() {
       slskPass: process.env.SLSK_PASS,
     };
   }
-  return { mode: 'demo' };
+  if (process.env.SLSKD_URL && process.env.SLSKD_API_KEY) {
+    return {
+      mode: 'slskd',
+      slskdUrl: process.env.SLSKD_URL.replace(/\/$/, ''),
+      slskdKey: process.env.SLSKD_API_KEY,
+    };
+  }
+  // Default: direct Soulseek — needs credentials (not auto-demo)
+  return { mode: 'direct', needsLogin: true };
 }
 
 export function setConfig(cfg) {
@@ -227,11 +259,17 @@ export function setConfig(cfg) {
     return activeConfig();
   }
   const mode = String(cfg.mode || '').toLowerCase();
-  if (mode === 'demo' || mode === 'off' || mode === 'clear') {
+  if (mode === 'off' || mode === 'clear') {
     runtimeConfig = null;
     directClient = null;
     directClientPromise = null;
     return activeConfig();
+  }
+  if (mode === 'demo') {
+    runtimeConfig = { mode: 'demo' };
+    directClient = null;
+    directClientPromise = null;
+    return { mode: 'demo', connected: true };
   }
   if (mode === 'slskd') {
     const url = String(cfg.slskdUrl || cfg.url || '').trim().replace(/\/$/, '');
@@ -245,7 +283,7 @@ export function setConfig(cfg) {
   if (mode === 'direct') {
     const user = String(cfg.slskUser || cfg.user || '').trim();
     const pass = String(cfg.slskPass || cfg.pass || cfg.password || '').trim();
-    if (!user || !pass) throw new Error('direct mode needs slskUser and slskPass');
+    if (!user || !pass) throw new Error('Soulseek login needs username and password');
     runtimeConfig = { mode: 'direct', slskUser: user, slskPass: pass };
     directClient = null;
     directClientPromise = null;
@@ -256,34 +294,27 @@ export function setConfig(cfg) {
 
 export function getStatus() {
   const cfg = activeConfig();
+  const needsLogin = !!(cfg.needsLogin || (cfg.mode === 'direct' && !cfg.slskUser));
   return {
     mode: cfg.mode,
-    connected: cfg.mode !== 'demo',
+    defaultMode: 'direct',
+    connected: cfg.mode === 'demo' || (cfg.mode === 'slskd' && !!cfg.slskdUrl) || (cfg.mode === 'direct' && !!cfg.slskUser),
+    needsLogin,
     slskdUrl: cfg.mode === 'slskd' ? cfg.slskdUrl : null,
-    user: cfg.mode === 'direct' ? cfg.slskUser : null,
+    user: cfg.mode === 'direct' ? cfg.slskUser || null : null,
     demoTracks: DEMO_CATALOG.length,
-    note:
-      cfg.mode === 'demo'
-        ? 'Demo catalog of free music. Connect slskd or a Soulseek account for live network search.'
+    note: needsLogin
+      ? 'Sign in with your Soulseek account to search the network. slskd is also available under Connect.'
+      : cfg.mode === 'demo'
+        ? 'Free demo catalog. Switch to Soulseek login for the live network.'
         : cfg.mode === 'slskd'
           ? `Proxying searches through slskd at ${cfg.slskdUrl}`
-          : `Direct Soulseek client as ${cfg.slskUser}`,
+          : `Soulseek login as ${cfg.slskUser}`,
   };
 }
 
 function basename(p) {
-  if (!p) return 'unknown';
-  const parts = String(p).replace(/\\/g, '/').split('/');
-  return parts[parts.length - 1] || p;
-}
-
-function parseTitleArtist(filename) {
-  const base = basename(filename).replace(/\.[^.]+$/, '');
-  // Common patterns: "Artist - Title", "Artist_-_Title", "01 Artist - Title"
-  const cleaned = base.replace(/^\d{1,3}[\s._-]+/, '').replace(/_/g, ' ').trim();
-  const m = cleaned.match(/^(.+?)\s*[-–—]\s*(.+)$/);
-  if (m) return { artist: m[1].trim(), title: m[2].trim() };
-  return { artist: '', title: cleaned };
+  return metaBasename(p);
 }
 
 function formatBytes(n) {
@@ -295,25 +326,44 @@ function formatBytes(n) {
 
 function normalizeFile(raw, source) {
   const filename = raw.filename || raw.file || raw.name || 'unknown';
-  const { artist, title } = parseTitleArtist(filename);
-  const ext = (filename.match(/\.([^.]+)$/) || [, ''])[1].toLowerCase();
+  const size = Number(raw.size || 0);
+  const bitrate = Number(raw.bitRate || raw.bitrate || 0) || null;
+  const meta = parsePathMetadata(filename, {
+    size,
+    bitrate,
+    bitRate: bitrate,
+    length: raw.length || raw.duration || raw.lengthSeconds,
+    artist: raw.artist,
+    album: raw.album,
+    title: raw.title,
+  });
   return {
     id: raw.id || `${source}:${raw.user || raw.username || 'x'}:${filename}`,
-    title: raw.title || title,
-    artist: raw.artist || artist,
+    title: meta.title,
+    baseTitle: meta.baseTitle,
+    versionKey: meta.versionKey,
+    versionLabel: meta.versionLabel,
+    artist: meta.artist,
+    album: meta.album,
+    lengthSec: meta.lengthSec,
+    lengthLabel: formatLength(meta.lengthSec),
     filename,
-    size: Number(raw.size || 0),
-    sizeLabel: formatBytes(Number(raw.size || 0)),
-    bitrate: Number(raw.bitRate || raw.bitrate || 0) || null,
+    size,
+    sizeLabel: formatBytes(size),
+    bitrate,
     speed: Number(raw.speed || raw.uploadSpeed || 0) || null,
     slots: raw.slots !== false && raw.hasFreeUploadSlot !== false,
     user: raw.user || raw.username || 'unknown',
     source,
-    ext,
+    ext: meta.ext,
     // keep raw fields needed for download
     _file: filename,
     _code: raw.code,
   };
+}
+
+function finalizeResults(files) {
+  return dedupeResults(files).slice(0, 60);
 }
 
 // ── Demo search ────────────────────────────────────────────────────────────
@@ -323,16 +373,30 @@ function demoSearch(query) {
   let hits = DEMO_CATALOG;
   if (terms.length) {
     hits = DEMO_CATALOG.filter((t) => {
-      const hay = `${t.title} ${t.artist} ${t.filename}`.toLowerCase();
+      const hay = `${t.title} ${t.artist} ${t.album || ''} ${t.filename}`.toLowerCase();
       return terms.every((term) => hay.includes(term));
     });
   }
-  // If nothing matched, still return a few suggestions so the UI isn't empty
   if (!hits.length) hits = DEMO_CATALOG.slice(0, 4);
-  return hits.map((t) => ({
-    ...t,
-    sizeLabel: formatBytes(t.size),
-  }));
+  const mapped = hits.map((t) => {
+    const row = normalizeFile(
+      {
+        ...t,
+        filename: t.filename,
+        size: t.size,
+        bitrate: t.bitrate,
+        length: t.lengthSec,
+        artist: t.artist,
+        album: t.album,
+        title: t.title,
+        user: t.user,
+        slots: true,
+      },
+      'demo',
+    );
+    return { ...row, id: t.id, url: t.url };
+  });
+  return finalizeResults(mapped);
 }
 
 // ── slskd proxy ────────────────────────────────────────────────────────────
@@ -366,11 +430,11 @@ async function startSlskdSearch(cfg, query) {
   const body = {
     id,
     searchText: query,
-    fileLimit: 200,
+    fileLimit: 400,
     filterResponses: true,
     minimumPeerUploadSpeed: 0,
     minimumResponseFileCount: 1,
-    responseLimit: 50,
+    responseLimit: 80,
     searchTimeout: 12_000,
   };
   await slskdFetch(cfg, '/searches', { method: 'POST', body });
@@ -381,7 +445,6 @@ async function startSlskdSearch(cfg, query) {
     results: [],
     createdAt: Date.now(),
   });
-  // Kick off polling in background
   pollSlskdSearch(cfg, id).catch((err) => {
     const s = searches.get(id);
     if (s) {
@@ -400,7 +463,6 @@ async function pollSlskdSearch(cfg, id) {
     try {
       responses = await slskdFetch(cfg, `/searches/${id}/responses`);
     } catch {
-      // search may not have responses yet
       const state = await slskdFetch(cfg, `/searches/${id}`).catch(() => null);
       if (state?.isComplete) break;
       continue;
@@ -413,36 +475,48 @@ async function pollSlskdSearch(cfg, id) {
       for (const f of resp.files || []) {
         const name = f.filename || f.file || '';
         if (!AUDIO_EXT.test(name)) continue;
+        // slskd attributes: bitRate, length, etc. may be on f.attributes array
+        let length = f.length || f.duration;
+        let bitrate = f.bitRate || f.bitrate;
+        if (Array.isArray(f.attributes)) {
+          for (const a of f.attributes) {
+            if (/bit ?rate/i.test(a.key || a.name || '')) bitrate = bitrate || Number(a.value);
+            if (/length|duration/i.test(a.key || a.name || '')) length = length || Number(a.value);
+          }
+        }
         files.push(
           normalizeFile(
             {
               ...f,
+              filename: name,
               user,
               speed,
               slots: freeSlot,
-              bitrate: f.bitRate || f.bitrate,
+              bitrate,
+              length,
             },
             'slskd',
           ),
         );
       }
     }
-    // Prefer free slots + higher bitrate, cap list
-    files.sort((a, b) => {
-      if (a.slots !== b.slots) return a.slots ? -1 : 1;
-      return (b.bitrate || 0) - (a.bitrate || 0) || (b.speed || 0) - (a.speed || 0);
-    });
     const s = searches.get(id);
     if (!s) return;
-    s.results = files.slice(0, 80);
+    s.results = finalizeResults(files);
+    // Fire-and-forget enrichment (album/length gaps)
+    enrichWithMusicBrainz(s.results, { limit: 10 }).catch(() => {});
     const state = await slskdFetch(cfg, `/searches/${id}`).catch(() => null);
     if (state?.isComplete || state?.state === 'Completed') {
       s.status = 'completed';
+      await enrichWithMusicBrainz(s.results, { limit: 12 }).catch(() => {});
       return;
     }
   }
   const s = searches.get(id);
-  if (s && s.status === 'inProgress') s.status = 'completed';
+  if (s && s.status === 'inProgress') {
+    s.status = 'completed';
+    await enrichWithMusicBrainz(s.results, { limit: 12 }).catch(() => {});
+  }
 }
 
 async function downloadViaSlskd(cfg, item) {
@@ -458,7 +532,6 @@ async function downloadViaSlskd(cfg, item) {
     body: filePayload,
   });
 
-  // Poll downloads for this user until the matching file completes
   const deadline = Date.now() + 120_000;
   const target = basename(item._file || item.filename).toLowerCase();
   while (Date.now() < deadline) {
@@ -474,13 +547,7 @@ async function downloadViaSlskd(cfg, item) {
         if (name !== target && !(f.filename || '').toLowerCase().endsWith(target)) continue;
         const state = String(f.state || f.transferState || '').toLowerCase();
         if (state.includes('complete') && !state.includes('incomplete')) {
-          // Try to fetch file bytes via slskd files API (path-based)
           const localPath = f.filename || item.filename;
-          // slskd serves completed downloads; try common endpoints
-          const candidates = [
-            `/transfers/downloads/${encodeURIComponent(username)}/${encodeURIComponent(f.id)}`,
-          ];
-          // Prefer reading from known download directories if co-located (env)
           const dlRoot =
             process.env.SLSKD_DOWNLOADS ||
             process.env.SLSKD_DOWNLOAD_DIR ||
@@ -500,7 +567,6 @@ async function downloadViaSlskd(cfg, item) {
               }
             }
           }
-          // Last resort: return metadata so UI can tell user file is in slskd downloads
           throw new Error(
             `Download completed in slskd for "${basename(localPath)}" but file bytes are not reachable from Midio. ` +
               `Set SLSKD_DOWNLOADS to your slskd downloads folder, or drop the file manually.`,
@@ -519,11 +585,14 @@ async function downloadViaSlskd(cfg, item) {
 async function getDirectClient(cfg) {
   if (directClient) return directClient;
   if (directClientPromise) return directClientPromise;
+  if (!cfg.slskUser || !cfg.slskPass) {
+    throw new Error('Sign in with your Soulseek username and password first.');
+  }
   directClientPromise = new Promise((resolve, reject) => {
     let slsk;
     try {
       slsk = require('slsk-client');
-    } catch (err) {
+    } catch {
       reject(new Error('slsk-client is not installed. Run: npm install slsk-client'));
       return;
     }
@@ -547,6 +616,9 @@ async function getDirectClient(cfg) {
 }
 
 async function startDirectSearch(cfg, query) {
+  if (cfg.needsLogin || !cfg.slskUser) {
+    throw new Error('Sign in with your Soulseek account (Connect → Soulseek login).');
+  }
   const id = randomUUID();
   searches.set(id, {
     mode: 'direct',
@@ -559,7 +631,7 @@ async function startDirectSearch(cfg, query) {
     try {
       const client = await getDirectClient(cfg);
       const res = await new Promise((resolve, reject) => {
-        client.search({ req: query, timeout: 8000 }, (err, data) => {
+        client.search({ req: query, timeout: 10000 }, (err, data) => {
           if (err) reject(err);
           else resolve(data || []);
         });
@@ -575,21 +647,17 @@ async function startDirectSearch(cfg, query) {
               speed: r.speed,
               slots: r.slots,
               user: r.user,
+              length: r.length,
             },
             'direct',
           ),
         );
-      files.sort((a, b) => {
-        if (a.slots !== b.slots) return a.slots ? -1 : 1;
-        return (b.bitrate || 0) - (a.bitrate || 0) || (b.speed || 0) - (a.speed || 0);
-      });
       const s = searches.get(id);
       if (s) {
-        s.results = files.slice(0, 80);
+        s.results = finalizeResults(files);
         s.status = 'completed';
-        // stash raw for download
-        s._rawById = new Map(files.map((f, i) => [f.id, res.filter((r) => AUDIO_EXT.test(r.file || ''))[i]]));
         s._rawList = res.filter((r) => AUDIO_EXT.test(r.file || ''));
+        await enrichWithMusicBrainz(s.results, { limit: 12 }).catch(() => {});
       }
     } catch (err) {
       const s = searches.get(id);
@@ -635,7 +703,6 @@ async function downloadViaDirect(cfg, item) {
 
 // ── Demo download ──────────────────────────────────────────────────────────
 function makeProceduralWav(seedStr = 'midio', seconds = 24) {
-  // Tiny multi-tone loop so Midio always has something to visualize offline.
   const sr = 22050;
   const n = Math.floor(sr * seconds);
   const dataSize = n * 2;
@@ -676,7 +743,8 @@ function makeProceduralWav(seedStr = 'midio', seconds = 24) {
 async function downloadViaDemo(item) {
   const track =
     DEMO_CATALOG.find((t) => t.id === item.id) ||
-    DEMO_CATALOG.find((t) => t.filename === item.filename);
+    DEMO_CATALOG.find((t) => t.filename === item.filename) ||
+    DEMO_CATALOG.find((t) => t.title === item.title && t.artist === item.artist);
   if (track?.url) {
     try {
       const res = await fetch(track.url, {
@@ -688,19 +756,19 @@ async function downloadViaDemo(item) {
         if (buffer.length > 1000) {
           return {
             buffer,
-            filename: track.filename,
+            filename: basename(track.filename),
             contentType: mimeFor(track.filename),
           };
         }
       }
     } catch {
-      /* fall through to procedural */
+      /* fall through */
     }
   }
   const name = (track?.filename || item.filename || 'midio-demo.wav').replace(/\.mp3$/i, '.wav');
   return {
     buffer: makeProceduralWav(track?.id || item.id || name),
-    filename: name.endsWith('.wav') ? name : `${name}.wav`,
+    filename: basename(name).endsWith('.wav') ? basename(name) : `${basename(name)}.wav`,
     contentType: 'audio/wav',
   };
 }
@@ -785,8 +853,5 @@ export async function downloadResult(item) {
 }
 
 export function listDemoCatalog() {
-  return DEMO_CATALOG.map((t) => ({
-    ...t,
-    sizeLabel: formatBytes(t.size),
-  }));
+  return demoSearch('');
 }

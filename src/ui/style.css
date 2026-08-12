@@ -1487,11 +1487,18 @@ html, body {
   padding: 8px 4px 2px;
 }
 
+/* needs-login badge state */
+.slskModeBadge[data-mode="needs-login"] {
+  color: #ffb86b;
+  border-color: rgba(255, 184, 107, 0.45);
+  background: rgba(255, 184, 107, 0.12);
+}
+
 .slskResults {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: min(220px, 32vh);
+  max-height: min(280px, 38vh);
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 2px;
@@ -1503,9 +1510,9 @@ html, body {
   display: grid;
   grid-template-columns: 28px 1fr auto;
   gap: 8px;
-  align-items: center;
+  align-items: start;
   width: 100%;
-  padding: 8px 10px;
+  padding: 10px 10px;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
@@ -1527,34 +1534,56 @@ html, body {
   font-size: 1.05rem;
   opacity: 0.85;
   text-align: center;
+  margin-top: 2px;
 }
 .slskResultBody {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 3px;
   min-width: 0;
 }
 .slskResultTitle {
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: 0.92rem;
+  font-weight: 700;
   color: #f6f0ff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: 0.01em;
 }
-.slskResultArtist {
-  font-size: 0.75rem;
-  color: rgba(200, 190, 235, 0.75);
+.slskResultFields {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1px;
+}
+.slskFieldLine {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+}
+.slskFieldLabel {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(180, 170, 210, 0.5);
+}
+.slskFieldValue {
+  font-size: 0.78rem;
+  color: rgba(220, 210, 245, 0.88);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .slskResultMeta {
-  font-size: 0.68rem;
-  color: rgba(180, 170, 210, 0.55);
+  font-size: 0.65rem;
+  color: rgba(180, 170, 210, 0.5);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin-top: 1px;
 }
 .slskResultAction {
   font-size: 0.72rem;
@@ -1566,6 +1595,7 @@ html, body {
   border-radius: 6px;
   background: rgba(255, 215, 106, 0.1);
   border: 1px solid rgba(255, 215, 106, 0.25);
+  align-self: center;
 }
 
 .slskLegal {
@@ -1594,7 +1624,8 @@ html, body {
 }
 
 @media (max-width: 420px) {
-  .slskResults { max-height: min(180px, 28vh); }
+  .slskResults { max-height: min(220px, 34vh); }
   .slskSearchForm { flex-direction: column; }
   .slskSearchBtn { width: 100%; }
+  .slskFieldLine { grid-template-columns: 48px 1fr; }
 }

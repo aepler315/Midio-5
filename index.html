@@ -43,9 +43,9 @@
           <div class="slskHeader">
             <div class="slskTitleRow">
               <h2 class="slskHeading">Find a song</h2>
-              <span id="slskModeBadge" class="slskModeBadge" data-mode="demo" title="">demo</span>
+              <span id="slskModeBadge" class="slskModeBadge" data-mode="direct" title="">Soulseek</span>
             </div>
-            <button id="slskSettingsBtn" type="button" class="ghostbtn chipbtn slskSettingsBtn" title="Soulseek / slskd connection">Connect</button>
+            <button id="slskSettingsBtn" type="button" class="ghostbtn chipbtn slskSettingsBtn" title="Soulseek login or slskd">Sign in</button>
           </div>
 
           <form id="slskSearchForm" class="slskSearchForm" autocomplete="off">
@@ -61,15 +61,25 @@
             <button id="slskSearchBtn" type="submit" class="slskSearchBtn">Search</button>
           </form>
 
-          <div id="slskSettings" class="slskSettings hidden">
+          <div id="slskSettings" class="slskSettings">
             <label class="slskField">
-              <span>Backend</span>
+              <span>Connection</span>
               <select id="slskModeSelect">
-                <option value="demo">Demo catalog (free music)</option>
-                <option value="slskd">slskd (recommended)</option>
-                <option value="direct">Direct Soulseek login</option>
+                <option value="direct" selected>Soulseek login (default)</option>
+                <option value="slskd">slskd server</option>
+                <option value="demo">Free demo catalog</option>
               </select>
             </label>
+            <div id="slskDirectFields" class="slskFieldGroup">
+              <label class="slskField">
+                <span>Soulseek user</span>
+                <input id="slskUser" type="text" placeholder="username" spellcheck="false" autocomplete="username" />
+              </label>
+              <label class="slskField">
+                <span>Password</span>
+                <input id="slskPass" type="password" placeholder="password" spellcheck="false" autocomplete="current-password" />
+              </label>
+            </div>
             <div id="slskdFields" class="slskFieldGroup hidden">
               <label class="slskField">
                 <span>slskd URL</span>
@@ -80,27 +90,17 @@
                 <input id="slskdKey" type="password" placeholder="X-API-Key from slskd.yml" spellcheck="false" autocomplete="off" />
               </label>
             </div>
-            <div id="slskDirectFields" class="slskFieldGroup hidden">
-              <label class="slskField">
-                <span>Soulseek user</span>
-                <input id="slskUser" type="text" placeholder="username" spellcheck="false" autocomplete="username" />
-              </label>
-              <label class="slskField">
-                <span>Password</span>
-                <input id="slskPass" type="password" placeholder="password" spellcheck="false" autocomplete="current-password" />
-              </label>
-            </div>
             <div class="slskSettingsActions">
-              <button id="slskSaveCfg" type="button" class="slskSearchBtn">Save</button>
-              <button id="slskClearCfg" type="button" class="ghostbtn chipbtn">Use demo</button>
+              <button id="slskSaveCfg" type="button" class="slskSearchBtn">Save & connect</button>
+              <button id="slskClearCfg" type="button" class="ghostbtn chipbtn">Sign out</button>
             </div>
-            <p class="slskHint">Or set env <code>SLSKD_URL</code> + <code>SLSKD_API_KEY</code>, or <code>SLSK_USER</code> + <code>SLSK_PASS</code>, on the server.</p>
+            <p class="slskHint">Default is a direct Soulseek login. Prefer running behind your own account. Env: <code>SLSK_USER</code>/<code>SLSK_PASS</code> or <code>SLSKD_URL</code>/<code>SLSKD_API_KEY</code>.</p>
           </div>
 
           <p id="slskStatus" class="slskStatus" role="status"></p>
-          <p id="slskEmpty" class="slskEmpty">Search the network, then hit <strong>Play</strong> to drop the track into Midio.</p>
+          <p id="slskEmpty" class="slskEmpty">Sign in, search the network, then hit <strong>Play</strong> — each song version shows once (remixes & instrumentals kept).</p>
           <div id="slskResults" class="slskResults" role="list"></div>
-          <p id="slskLegal" class="slskLegal">Demo mode: free / public-domain tracks only. Connect your own slskd or Soulseek account for live network search.</p>
+          <p id="slskLegal" class="slskLegal">Only download files you have the right to use. Results show Title · Artist · Album · Length.</p>
         </section>
 
         <div class="slskDivider"><span>or load your own file</span></div>
