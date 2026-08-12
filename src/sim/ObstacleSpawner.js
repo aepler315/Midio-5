@@ -8,6 +8,13 @@
 // beat it was placed against with a burst of motes and dissolves -- the
 // burst fires on the obstacle's own scheduled tMs, not on Midio physically
 // reaching it, so it reads as the music landing a hit, not a hazard cleared.
+//
+// 'pipe' (warp-pipe silhouette) is the same ambient family, just shaped like
+// a landmark instead of an organic/geometric form -- it appears ahead, holds
+// its ground while the world scrolls it toward and then past the camera, and
+// leaves off the left edge exactly like everything else here. Still nothing
+// to actually collide with; the "dodge" is purely visual, guaranteed by the
+// same safe-window placement every archetype already gets.
 import { Role } from '../core/NoteEvent.js';
 import { clamp, clamp01, mulberry32 } from '../utils/math.js';
 import { superformula } from '../render/oscillators.js';
@@ -24,7 +31,7 @@ const EDGE_KEEPOUT_MS = 40; // stay this far off a window's own edges before cro
 const SPAWN_LEAD_MS = 2500;
 const SPAWN_PROB_BASE = 0.75; // was 0.5 -- ambient forms read better with more of them present
 
-export const ARCHETYPES = Object.freeze(['thorn', 'veil', 'echo']);
+export const ARCHETYPES = Object.freeze(['thorn', 'veil', 'echo', 'pipe']);
 export const EMERGENCE_PX = 170; // condenses in over this much approach distance
 export const DISSOLVE_PX = 130;  // dissolves out over this much departure distance
 
@@ -56,9 +63,10 @@ export function geoRowTimes(fromMs, toMs, count) {
 
 /** Deterministic archetype pick from a 0..1 float (this.rand()'s own output). */
 export function obstacleArchetype(u) {
-  if (u < 1 / 3) return 'thorn';
-  if (u < 2 / 3) return 'veil';
-  return 'echo';
+  if (u < 0.25) return 'thorn';
+  if (u < 0.5) return 'veil';
+  if (u < 0.75) return 'echo';
+  return 'pipe';
 }
 
 /** 0 far ahead, ramps to 1 over the last EMERGENCE_PX of approach. Clamped
@@ -256,6 +264,7 @@ export class ObstacleSpawner {
           case 'thorn': this._drawThorn(ctx, o, presence, emergence, rgb, tSec, reducedFlash, nearMoment, breathe); break;
           case 'veil': this._drawVeil(ctx, o, presence, distanceAhead, rgb, tSec, wind, reducedFlash, breathe); break;
           case 'geo': this._drawGeo(ctx, o, presence, emergence, pulse, rgb, tSec, reducedFlash); break;
+          case 'pipe': this._drawPipe(ctx, o, presence, emergence, nearMoment, rgb, tSec, reducedFlash, breathe); break;
           default: this._drawEcho(ctx, o, presence, pulse, rgb, tSec, particleMul, reducedFlash, nearMoment); break;
         }
       }
@@ -383,6 +392,57 @@ export class ObstacleSpawner {
     // Inner counter-rotating echo edge -- the geometric "signature".
     poly(r * 0.55, -rot);
     ctx.strokeStyle = `rgba(${rgb},${(0.5 * alpha).toFixed(3)})`;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  }
+
+  /** A warp-pipe silhouette standing on the ground: a narrow stem under a
+   *  wider collar, with a dark mouth glowing faintly from within -- reads as
+   *  a landmark/portal rather than a wall, in keeping with "obstacle, not
+   *  enemy": it never threatens, it's just something the jump timing places
+   *  itself safely over. Same solid-dark-body-plus-halo-stroke language as
+   *  `geo` (hard-edged, engineered), brightening as its own beat approaches
+   *  and breathing with the track's overall energy like every archetype here. */
+  _drawPipe(ctx, o, presence, emergence, nearMoment, rgb, tSec, reducedFlash, breathe = 1) {
+    const scale = (0.3 + 0.7 * emergence) * breathe;
+    ctx.scale(scale, scale);
+    const h = o.height, w = o.width;
+    const stemW = w * 0.62, collarW = w, collarH = h * 0.22;
+    const top = -h / 2, bottom = h / 2, collarBottom = top + collarH;
+    const alpha = capFlashAlpha((0.55 + 0.3 * nearMoment) * presence, reducedFlash);
+
+    ctx.fillStyle = `rgba(18,16,26,${0.78 * presence})`;
+    ctx.strokeStyle = `rgba(${rgb},${alpha})`;
+    ctx.lineWidth = 2;
+
+    // Stem: the long body below the collar.
+    ctx.beginPath();
+    ctx.moveTo(-stemW / 2, collarBottom);
+    ctx.lineTo(-stemW / 2, bottom);
+    ctx.lineTo(stemW / 2, bottom);
+    ctx.lineTo(stemW / 2, collarBottom);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Collar: the wider lip at the very top.
+    ctx.beginPath();
+    ctx.moveTo(-collarW / 2, top);
+    ctx.lineTo(collarW / 2, top);
+    ctx.lineTo(collarW / 2, collarBottom);
+    ctx.lineTo(-collarW / 2, collarBottom);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // The mouth: a dark portal with a slow internal shimmer -- the one bit
+    // of "warp" identity, distinct from a plain pipe cap.
+    const shimmer = 0.5 + 0.5 * Math.sin(tSec * 1.4 + o.phase);
+    ctx.beginPath();
+    ctx.arc(0, top + collarH * 0.5, stemW * 0.34, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(4,3,8,${0.85 * presence})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${rgb},${(alpha * (0.4 + 0.6 * shimmer)).toFixed(3)})`;
     ctx.lineWidth = 1.2;
     ctx.stroke();
   }
