@@ -5,9 +5,9 @@ file or an audio file (mp3/wav/flac) and the entire show — jumps, combos,
 two companions, eight parallax biomes, screen fracturing — is generated live
 from the music, no authored levels involved. Canvas 2D + Web Audio API only.
 
-**Soulseek song search** is built in: find a track on the title screen (via
-your [slskd](https://github.com/slskd/slskd) instance, a direct Soulseek
-login, or the free demo catalog) and hit **Play** to load it into Midio.
+**Soulseek song search** is built in: **sign in with Soulseek** (default),
+use slskd, or the free demo catalog — then hit **Play** to load a track.
+Results show Title · Artist · Album · Length; duplicate versions are collapsed.
 See [`docs/soulseek.md`](docs/soulseek.md).
 
 Full design spec: see the original technical specification this repo
@@ -33,15 +33,15 @@ whatever's currently playing and starts the new one immediately.
 
 ### Soulseek backends
 
-| Env | Effect |
+| Env / UI | Effect |
 | --- | --- |
-| `SLSKD_URL` + `SLSKD_API_KEY` | Proxy search/download through [slskd](https://github.com/slskd/slskd) |
+| **Soulseek login** (default) / `SLSK_USER` + `SLSK_PASS` | Direct Soulseek client in the Node server |
+| **slskd** / `SLSKD_URL` + `SLSKD_API_KEY` | Proxy through [slskd](https://github.com/slskd/slskd) |
 | `SLSKD_DOWNLOADS` | Folder of completed slskd downloads (so **Play** can load bytes) |
-| `SLSK_USER` + `SLSK_PASS` | Direct Soulseek client in the Node server |
-| *(none)* | Free / public-domain **demo catalog** — search still works |
+| **Free demo catalog** | Explicit UI choice only — free tracks for offline tryout |
 
-You can also configure the connection from the title screen **Connect** button
-(stored in `localStorage` and applied to the server).
+Sign in from the title screen (**Sign in** opens automatically when logged out).
+Results list **Title, Artist, Album, Length** (from peer folder trees + MusicBrainz).
 
 **Scored playback:** drop a **MIDI and an audio file together** and the
 recording is what you hear while the MIDI drives every visual — no audio
