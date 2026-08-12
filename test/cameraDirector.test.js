@@ -208,3 +208,24 @@ test('consecutive shifts alternate which way the reframe tilts', () => {
   const secondSign = cam._universeRollSign;
   assert.equal(secondSign, -firstSign);
 });
+
+test('a pulse held elevated across many frames never runs the zoom away -- regression for a real bug', () => {
+  // The dip must be read off the eased base fresh each frame, not
+  // accumulated into zoom/_zoomBase itself, or holding pulse=1 across the
+  // ~100+ frames a real rise-and-settle spans compounds into a huge,
+  // nonsensical negative zoom (a real Renderer.js stageW = nominalW/zoom
+  // would go negative too). Walk a realistic full pulse cycle using
+  // ParallelUniverseDirector's own shape, not a synthetic held-at-1 pulse.
+  const cam = new CameraDirector();
+  const dtSec = 1 / 60;
+  let minZoom = Infinity;
+  for (let i = 0; i < 400; i++) {
+    // Same rise-then-settle shape ParallelUniverseDirector.update() produces.
+    const u = (i * dtSec) / 0.9;
+    const pulse = u < 1 ? Math.sin(u * Math.PI * 0.5) : Math.max(0, 2 - u) ** 2;
+    cam.update(dtSec, 0, false, null, 0, pulse);
+    minZoom = Math.min(minZoom, cam.zoom);
+  }
+  assert.ok(minZoom > 1 - UNIVERSE_ZOOM_DIP - 0.01, `zoom dipped far past its documented bound: ${minZoom}`);
+  assert.ok(minZoom > 0, 'zoom must never go non-positive -- Renderer divides the stage width by it');
+});

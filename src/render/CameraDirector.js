@@ -109,6 +109,7 @@ export class CameraDirector {
 
     this.zoom = 1; // 1 = normal framing; the Renderer widens the logical stage view by 1/zoom
     this._zoomTarget = 1;
+    this._zoomBase = 1; // the eased off-frame-pullback value, BEFORE the universe-pulse dip below
 
     this._lastBeatTauMs = null;
     this._beatSwaySign = 1;
@@ -206,17 +207,23 @@ export class CameraDirector {
     const zoomTravelMul = reducedMotion ? 0.4 : 1;
     const zoomTarget = 1 + (this._zoomTarget - 1) * zoomTravelMul;
     const zoomAlpha = 1 - Math.exp(-dtSec / ZOOM_TAU);
-    this.zoom += zoomAlpha * (zoomTarget - this.zoom);
+    this._zoomBase += zoomAlpha * (zoomTarget - this._zoomBase);
 
-    // Universe-shift reframe: a brief additive pull-back + tilt on top of
-    // whatever zoom/roll the frame already has, riding the director's own
-    // pulse envelope. New sign each time a fresh pulse starts, same
-    // alternating-side discipline as the beat sway above.
+    // Universe-shift reframe: a brief pull-back + tilt on top of whatever
+    // zoom/roll the frame already has, riding the director's own pulse
+    // envelope. New sign each time a fresh pulse starts, same alternating-
+    // side discipline as the beat sway above.
+    //
+    // The dip is computed fresh from _zoomBase every frame (never
+    // accumulated into this.zoom/_zoomBase itself) -- pulse stays elevated
+    // for many frames as it rises and settles, so subtracting into a value
+    // that persists frame to frame would compound across the whole pulse
+    // instead of tracking it, and briefly send the zoom wildly negative.
     const pulse = clamp01(universePulse);
     if (pulse > 0 && (this._lastUniversePulse ?? 0) <= 0) this._universeRollSign = -this._universeRollSign;
     this._lastUniversePulse = pulse;
+    this.zoom = this._zoomBase - UNIVERSE_ZOOM_DIP * pulse * zoomTravelMul;
     if (pulse > 0) {
-      this.zoom -= UNIVERSE_ZOOM_DIP * pulse * zoomTravelMul;
       this.roll += UNIVERSE_ROLL_MAX * pulse * this._universeRollSign * motionMul;
     }
   }
