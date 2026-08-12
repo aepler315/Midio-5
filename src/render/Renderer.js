@@ -228,6 +228,16 @@ export class Renderer {
       this._drawContactShadow(ctx, contactShadow(sim.midasus.p.x, sim.midasus.yFloor, heightAbove, sim.midasus.shadowWidthPx));
     }
     if (sim.midasus) sim.midasus.draw(ctx, particleMul);
+    // Faint reflections in the Mirror lake: has to wait until here, after the
+    // trio's live screen positions/hues are known -- the water itself draws
+    // (and reflects the sky/terrain) long before any of them do.
+    if (biomeManager && biomeManager.drawCharacterReflections) {
+      biomeManager.drawCharacterReflections(ctx, stage, [
+        { x: pose.midioDrawX, hue: this._midioHue, active: true },
+        { x: sim.broshi ? sim.broshi.renderX : NaN, hue: sim.broshi ? sim.broshi.hue : 0, active: !!sim.broshi && sim.broshi.burrow.depth <= 0.02 },
+        { x: sim.midasus ? sim.midasus.p.x : NaN, hue: sim.midasus ? sim.midasus.hue : 0, active: !!sim.midasus && sim.midasus.voyage.depth <= 0 },
+      ]);
+    }
     if (sim.battle) this._drawBattleFX(ctx, sim);
     if (sim.gnat) sim.gnat.draw(ctx, sim.timeMs);
     // drawForeground (the L7 veil + near-field occluders, NearField.js)

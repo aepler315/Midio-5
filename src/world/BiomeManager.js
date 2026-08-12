@@ -483,6 +483,7 @@ export class BiomeManager {
     // gentle mode reuse of the same ModalRing driving Midio's body vibration
     // elsewhere, just tuned slower/softer for water instead of a body strike.
     this.lakeRing = new ModalRing({ modes: 3, baseHz: 1.1, decaySec: 1.4, seed: hashSeed('lake' + songSeed) });
+    this._lakeReflectGroundY = null; // set each frame by _drawGround; read by drawCharacterReflections
     this.dropAtMs = -Infinity; // set externally from HypeDirector.dropAtMs each frame
     this._lastSeenDropAtMs = -Infinity;
 
@@ -3622,6 +3623,11 @@ export class BiomeManager {
     else if (activeFx === 'petalPile') this._drawPetalPiles(ctx, canvas, worldX, localGroundY, t > 0.5 ? B : A);
     else if (activeFx === 'mirage') this._drawMirage(ctx, canvas, worldX, localGroundY);
     else if (isLake) this._drawLakeReflection(ctx, canvas, localGroundY);
+    // Remembered for drawCharacterReflections: Renderer calls that AFTER the
+    // trio draws (their live screen positions aren't known this early), but
+    // only the lake band -- and only THIS frame's ground line -- is a valid
+    // surface to reflect them into.
+    this._lakeReflectGroundY = isLake ? localGroundY : null;
   }
 
   /** The Mirror (Movement IV): flip the sky/phenomena/silhouette region
@@ -3681,6 +3687,48 @@ export class BiomeManager {
       ctx.drawImage(ctx.canvas,
         0, (groundY + row) * dpr, ctx.canvas.width, step * dpr,
         offset, groundY + row, canvas.width, step);
+    }
+    ctx.restore();
+  }
+
+  /** Faint character reflections in the Mirror lake (Movement IV): the sky
+   *  and terrain already reflect for free (see _drawLakeReflection above),
+   *  but that pass runs before the trio is drawn, so it can never pick them
+   *  up from the backing store the way it does everything else. Called by
+   *  Renderer right after the trio draws, when their live screen positions
+   *  and hues are finally known -- a soft color-matched glow standing in for
+   *  each present character, not a full mirrored sprite (there's no cheap
+   *  way to re-render their mesh a second time, and a colored echo already
+   *  reads as "reflected" against the rippling water beneath it).
+   *  `entries`: [{x, hue, active}] in screen space; inactive entries
+   *  (burrowed, voyaging) are skipped so nothing reflects a performer who
+   *  isn't actually standing on the shore. */
+  drawCharacterReflections(ctx, canvas, entries) {
+    const groundY = this._lakeReflectGroundY;
+    if (groundY == null) return;
+    const lakeHeight = canvas.height - groundY;
+    if (lakeHeight <= 0) return;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, groundY, canvas.width, lakeHeight);
+    ctx.clip();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const e of entries) {
+      if (!e || !e.active || !Number.isFinite(e.x)) continue;
+      // Same ring the water ripples borrow from _drawLakeReflection, sampled
+      // at this character's own horizontal position so their reflection
+      // wobbles in sync with the water right under them, not in lockstep
+      // with everyone else's.
+      const theta = ((e.x / canvas.width) % 1 + 1) * Math.PI * 2;
+      const ripple = this.lakeRing.displacementAt(theta) * 3;
+      const grad = ctx.createLinearGradient(0, groundY, 0, groundY + 74);
+      grad.addColorStop(0, `hsla(${e.hue}, 70%, 68%, 0.28)`);
+      grad.addColorStop(1, `hsla(${e.hue}, 70%, 68%, 0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.ellipse(e.x + ripple, groundY + 30, 18, 30, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.restore();
   }
