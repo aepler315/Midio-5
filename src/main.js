@@ -42,6 +42,8 @@ import {
   fetchTrackAsFile as jamendoFetchTrackAsFile, JamendoError,
 } from './net/JamendoSource.js';
 import { visualNow } from './core/ChoreoClock.js';
+import { SoulseekSearch } from './soulseek/SoulseekSearch.js';
+
 
 const STEP_MS = 1000 / 120;
 
@@ -663,6 +665,7 @@ function backToTitle() {
   completePanelEl.classList.add('hidden');
   hudEl.classList.add('hidden');
   loaderEl.classList.remove('hidden');
+  soulseekSearch?.resetBusy();
   startTitleBackdrop();
 }
 
@@ -1260,6 +1263,25 @@ fileInputEl.addEventListener('change', (e) => {
   if (e.target.files.length) handleFiles(e.target.files);
 });
 demoBtnEl.addEventListener('click', () => loadDemo());
+
+// Soulseek-powered song search on the title screen. Results download through
+// the local bridge (/api/soulseek/*) and feed the same handleFiles path as drops.
+const slskPanelEl = document.getElementById('slskPanel');
+let soulseekSearch = null;
+if (slskPanelEl) {
+  soulseekSearch = new SoulseekSearch({
+    root: slskPanelEl,
+    onFiles: (files) => {
+      soulseekSearch?.resetBusy();
+      handleFiles(files);
+    },
+    onStatus: (msg) => {
+      if (msg && progressEl && !progressEl.classList.contains('hidden')) {
+        // keep progress text for active loads; search has its own status line
+      }
+    },
+  });
+}
 
 // Jamendo search (JamendoSource.js): a legal alternative to dropping a
 // local file -- free, Creative-Commons-licensed tracks, fetched and handed

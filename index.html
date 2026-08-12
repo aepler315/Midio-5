@@ -38,6 +38,73 @@
           </div>
         </div>
 
+        <!-- Soulseek-powered song search -->
+        <section id="slskPanel" class="slskPanel" aria-label="Soulseek song search">
+          <div class="slskHeader">
+            <div class="slskTitleRow">
+              <h2 class="slskHeading">Find a song</h2>
+              <span id="slskModeBadge" class="slskModeBadge" data-mode="direct" title="">Soulseek</span>
+            </div>
+            <button id="slskSettingsBtn" type="button" class="ghostbtn chipbtn slskSettingsBtn" title="Soulseek login or slskd">Sign in</button>
+          </div>
+
+          <form id="slskSearchForm" class="slskSearchForm" autocomplete="off">
+            <input
+              id="slskQuery"
+              type="search"
+              name="q"
+              placeholder="Artist, album, or track…"
+              maxlength="200"
+              spellcheck="false"
+              enterkeyhint="search"
+            />
+            <button id="slskSearchBtn" type="submit" class="slskSearchBtn">Search</button>
+          </form>
+
+          <div id="slskSettings" class="slskSettings">
+            <label class="slskField">
+              <span>Connection</span>
+              <select id="slskModeSelect">
+                <option value="direct" selected>Soulseek login (default)</option>
+                <option value="slskd">slskd server</option>
+                <option value="demo">Free demo catalog</option>
+              </select>
+            </label>
+            <div id="slskDirectFields" class="slskFieldGroup">
+              <label class="slskField">
+                <span>Soulseek user</span>
+                <input id="slskUser" type="text" placeholder="username" spellcheck="false" autocomplete="username" />
+              </label>
+              <label class="slskField">
+                <span>Password</span>
+                <input id="slskPass" type="password" placeholder="password" spellcheck="false" autocomplete="current-password" />
+              </label>
+            </div>
+            <div id="slskdFields" class="slskFieldGroup hidden">
+              <label class="slskField">
+                <span>slskd URL</span>
+                <input id="slskdUrl" type="url" placeholder="http://127.0.0.1:5030" spellcheck="false" />
+              </label>
+              <label class="slskField">
+                <span>API key</span>
+                <input id="slskdKey" type="password" placeholder="X-API-Key from slskd.yml" spellcheck="false" autocomplete="off" />
+              </label>
+            </div>
+            <div class="slskSettingsActions">
+              <button id="slskSaveCfg" type="button" class="slskSearchBtn">Save & connect</button>
+              <button id="slskClearCfg" type="button" class="ghostbtn chipbtn">Sign out</button>
+            </div>
+            <p class="slskHint">Default is a direct Soulseek login. Prefer running behind your own account. Env: <code>SLSK_USER</code>/<code>SLSK_PASS</code> or <code>SLSKD_URL</code>/<code>SLSKD_API_KEY</code>.</p>
+          </div>
+
+          <p id="slskStatus" class="slskStatus" role="status"></p>
+          <p id="slskEmpty" class="slskEmpty">Sign in, search the network, then hit <strong>Play</strong> — each song version shows once (remixes & instrumentals kept).</p>
+          <div id="slskResults" class="slskResults" role="list"></div>
+          <p id="slskLegal" class="slskLegal">Only download files you have the right to use. Results show Title · Artist · Album · Length.</p>
+        </section>
+
+        <div class="slskDivider"><span>or load your own file</span></div>
+
         <div id="dropzone" tabindex="0" role="button" aria-label="Drop or choose a music file">
           <div class="dropzoneInner">
             <span class="dropIcon" aria-hidden="true">&#9834;</span>
@@ -100,7 +167,7 @@
           </details>
 
           <details class="titleAdvanced">
-            <summary>SoundFonts &amp; extras</summary>
+            <summary>SoundFonts & extras</summary>
             <div class="sfRow">
               <label class="filebtn">
                 Load .sf2 / .zip
