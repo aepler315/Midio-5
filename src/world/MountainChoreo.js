@@ -55,6 +55,34 @@ export function danceOffset(stripX, tSec, groove, kick, cfg, fever = 0) {
 
 export const FEVER_DANCE_GAIN = 2.4; // fever now cranks the dance up to ~3.4x
 
+/** The range Midio takes his cue from: the furthest, biggest-moving skyline
+ *  (see DANCE_LAYERS -- L2 has the largest waveAmp/bounceAmp of the four). */
+export const FAR_DANCE_LAYER = 'L2';
+
+/** How much of a kick the swell reading gives away. Small on purpose: the
+ *  beat gets a vote on exactly when the gate opens, the slow swell decides
+ *  whether it opens at all. */
+export const SWELL_KICK_GAIN = 0.18;
+
+/**
+ * How high one column of a range is heaved right now, as a scale-free 0..1
+ * ("0 = this column is at the bottom of its own swing, 1 = at the top").
+ *
+ * This is danceOffset's own lift, normalized: the wave term is the same
+ * sine, read with the sign flipped so up reads high, and the kick term is
+ * the same envelope (a kick lifts the range, hence a positive contribution).
+ * What is deliberately dropped is every amplitude factor -- waveAmp,
+ * bounceAmp, groove, fever, terrainEnergy, orogeny. A gate built on absolute
+ * pixels would swing wide open under fever and clamp shut in a flat, low-
+ * energy biome (terrainEnergy near 0 flattens the dance to nothing); read in
+ * phase instead, "the skyline near the top of its current swing" means the
+ * same thing in every section of every song.
+ */
+export function ridgeSwell01(stripX, tSec, cfg, kick = 0) {
+  const wave = Math.sin(stripX / cfg.waveLen + tSec * cfg.waveHz * 2 * Math.PI + cfg.phase);
+  return clamp01(0.5 - 0.5 * wave + SWELL_KICK_GAIN * clamp01(kick));
+}
+
 /**
  * Kick envelope at `tauMs` after the (layer-delayed) hit: a 40 ms snap up,
  * then a ~180 ms exponential settle. 0 before the hit reaches this layer.
