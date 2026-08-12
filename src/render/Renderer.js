@@ -25,7 +25,7 @@ import { isRendered, styleDials } from './VisualStyle.js';
 // headroom to spare. See Renderer.draw's stageW/stageH derivation.
 const SHAKE_MARGIN_PX = 64;
 
-const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
+const MIDIO_BASE_HUE = 178; // cool aquamarine -- the startup default before the song's key eases in and takes over (see this._midioHue)
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
 const MIDIO_DRAW_SCALE = 1.8; // the stage got bigger: render-only, physics untouched
 
