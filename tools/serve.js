@@ -87,20 +87,20 @@ async function handleApi(req, res, reqPath) {
 
   try {
     if (reqPath === '/api/soulseek/status' && req.method === 'GET') {
-      sendJson(res, 200, getStatus());
+      sendJson(res, 200, await getStatus());
       return true;
     }
 
     if (reqPath === '/api/soulseek/config' && req.method === 'POST') {
       const body = await readBody(req);
       const status = setConfig(body || {});
-      sendJson(res, 200, { ok: true, ...status, ...getStatus() });
+      sendJson(res, 200, { ok: true, ...status, ...(await getStatus()) });
       return true;
     }
 
     if (reqPath === '/api/soulseek/config' && req.method === 'DELETE') {
       setConfig({ mode: 'clear' });
-      sendJson(res, 200, { ok: true, ...getStatus() });
+      sendJson(res, 200, { ok: true, ...(await getStatus()) });
       return true;
     }
 

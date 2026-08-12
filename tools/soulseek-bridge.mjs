@@ -1,15 +1,20 @@
 /**
- * Soulseek bridge for Midio.
+ * Soulseek / free-music bridge for Midio.
  *
- * Backends (first match wins):
- *   1. Runtime config from the UI (POST /api/soulseek/config)
- *   2. Env: SLSK_USER + SLSK_PASS      →  direct Soulseek (default)
- *   3. Env: SLSKD_URL + SLSKD_API_KEY  →  proxy to slskd
- *   4. Demo catalog (explicit only — free/public-domain fallback)
+ * Smooth UX defaults:
+ *   • Free music (SoundHelix + Internet Archive) always works — no login, no API keys.
+ *   • Bundled slskd (docker compose) auto-detected at 127.0.0.1:5030 with fixed local key.
+ *   • Optional Soulseek username/password (direct or via slskd) for the full network.
  *
- * Normalized result shape (client-facing):
- *   { id, title, artist, album, lengthSec, lengthLabel, filename, size,
- *     bitrate, speed, slots, user, source, ext, versionKey, baseTitle }
+ * Backends:
+ *   1. Runtime UI config (POST /api/soulseek/config)
+ *   2. Auto-detected local slskd (docker compose up -d slskd)
+ *   3. Env SLSK_USER + SLSK_PASS → direct
+ *   4. Env SLSKD_URL + SLSKD_API_KEY → slskd
+ *   5. Free catalog (default when nothing else is ready)
+ *
+ * Result shape: { id, title, artist, album, lengthSec, lengthLabel, filename, size,
+ *   bitrate, speed, slots, user, source, ext, versionKey, baseTitle }
  */
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
@@ -25,214 +30,65 @@ import {
   AUDIO_EXT,
   basename as metaBasename,
 } from './song-meta.mjs';
+import {
+  DEMO_CATALOG,
+  searchFreeMusic,
+  downloadFreeTrack,
+  searchDemoCatalog,
+} from './free-music.mjs';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..');
 
-const searches = new Map(); // id → { mode, query, status, results, createdAt, raw }
-let runtimeConfig = null; // { mode, slskdUrl, slskdKey, slskUser, slskPass }
+/** Fixed local key matching slskd/slskd.yml — never shown to the player. */
+export const BUNDLED_SLSKD_KEY = process.env.SLSKD_API_KEY || 'midio-local-dev-key';
+export const BUNDLED_SLSKD_URL = (process.env.SLSKD_URL || 'http://127.0.0.1:5030').replace(/\/$/, '');
+export const DEFAULT_SLSKD_DOWNLOADS =
+  process.env.SLSKD_DOWNLOADS ||
+  process.env.SLSKD_DOWNLOAD_DIR ||
+  path.join(ROOT, 'data', 'slskd-downloads');
+
+const searches = new Map();
+let runtimeConfig = null;
 let directClient = null;
 let directClientPromise = null;
+/** @type {null | { ok: boolean, url: string, checkedAt: number, loggedIn?: boolean }} */
+let slskdProbe = null;
 
-// ── Free / demo-permitted catalog (explicit fallback only) ─────────────────
-const DEMO_CATALOG = [
-  {
-    id: 'demo-helix-1',
-    title: 'Neon Skyline',
-    artist: 'SoundHelix',
-    album: 'SoundHelix Demos',
-    lengthSec: 372,
-    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Neon Skyline.mp3',
-    size: 8_945_229,
-    bitrate: 128,
-    speed: 5_000_000,
-    slots: true,
-    user: 'midio-demo',
-    source: 'demo',
-    ext: 'mp3',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
-  },
-  {
-    id: 'demo-helix-2',
-    title: 'Midnight Express',
-    artist: 'SoundHelix',
-    album: 'SoundHelix Demos',
-    lengthSec: 426,
-    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Midnight Express.mp3',
-    size: 10_222_911,
-    bitrate: 128,
-    speed: 5_000_000,
-    slots: true,
-    user: 'midio-demo',
-    source: 'demo',
-    ext: 'mp3',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
-  },
-  {
-    id: 'demo-helix-3',
-    title: 'Crystal Garden',
-    artist: 'SoundHelix',
-    album: 'SoundHelix Demos',
-    lengthSec: 360,
-    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Crystal Garden.mp3',
-    size: 7_500_000,
-    bitrate: 128,
-    speed: 5_000_000,
-    slots: true,
-    user: 'midio-demo',
-    source: 'demo',
-    ext: 'mp3',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
-  },
-  {
-    id: 'demo-helix-4',
-    title: 'Pulse City',
-    artist: 'SoundHelix',
-    album: 'SoundHelix Demos',
-    lengthSec: 340,
-    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Pulse City.mp3',
-    size: 8_000_000,
-    bitrate: 128,
-    speed: 5_000_000,
-    slots: true,
-    user: 'midio-demo',
-    source: 'demo',
-    ext: 'mp3',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3',
-  },
-  {
-    id: 'demo-helix-5',
-    title: 'Aurora Drive',
-    artist: 'SoundHelix',
-    album: 'SoundHelix Demos',
-    lengthSec: 350,
-    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Aurora Drive.mp3',
-    size: 8_200_000,
-    bitrate: 128,
-    speed: 5_000_000,
-    slots: true,
-    user: 'midio-demo',
-    source: 'demo',
-    ext: 'mp3',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3',
-  },
-  {
-    id: 'demo-helix-6',
-    title: 'Deep Orbit',
-    artist: 'SoundHelix',
-    album: 'SoundHelix Demos',
-    lengthSec: 330,
-    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Deep Orbit.mp3',
-    size: 7_800_000,
-    bitrate: 128,
-    speed: 5_000_000,
-    slots: true,
-    user: 'midio-demo',
-    source: 'demo',
-    ext: 'mp3',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3',
-  },
-  {
-    id: 'demo-helix-7',
-    title: 'Velvet Static',
-    artist: 'SoundHelix',
-    album: 'SoundHelix Demos',
-    lengthSec: 345,
-    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Velvet Static.mp3',
-    size: 8_100_000,
-    bitrate: 128,
-    speed: 5_000_000,
-    slots: true,
-    user: 'midio-demo',
-    source: 'demo',
-    ext: 'mp3',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3',
-  },
-  {
-    id: 'demo-helix-8',
-    title: 'Glass Horizon',
-    artist: 'SoundHelix',
-    album: 'SoundHelix Demos',
-    lengthSec: 335,
-    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Glass Horizon.mp3',
-    size: 7_900_000,
-    bitrate: 128,
-    speed: 5_000_000,
-    slots: true,
-    user: 'midio-demo',
-    source: 'demo',
-    ext: 'mp3',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3',
-  },
-  {
-    id: 'demo-helix-9',
-    title: 'Chrome Ballet',
-    artist: 'SoundHelix',
-    album: 'SoundHelix Demos',
-    lengthSec: 355,
-    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Chrome Ballet.mp3',
-    size: 8_400_000,
-    bitrate: 128,
-    speed: 5_000_000,
-    slots: true,
-    user: 'midio-demo',
-    source: 'demo',
-    ext: 'mp3',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3',
-  },
-  {
-    id: 'demo-helix-10',
-    title: 'Solar Flare',
-    artist: 'SoundHelix',
-    album: 'SoundHelix Demos',
-    lengthSec: 360,
-    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Solar Flare.mp3',
-    size: 8_600_000,
-    bitrate: 128,
-    speed: 5_000_000,
-    slots: true,
-    user: 'midio-demo',
-    source: 'demo',
-    ext: 'mp3',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3',
-  },
-  {
-    id: 'demo-helix-16',
-    title: 'Night Market',
-    artist: 'SoundHelix',
-    album: 'SoundHelix Demos',
-    lengthSec: 480,
-    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Night Market.mp3',
-    size: 11_602_841,
-    bitrate: 128,
-    speed: 5_000_000,
-    slots: true,
-    user: 'midio-demo',
-    source: 'demo',
-    ext: 'mp3',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-16.mp3',
-  },
-  {
-    id: 'demo-helix-17',
-    title: 'Paper Planets',
-    artist: 'SoundHelix',
-    album: 'SoundHelix Demos',
-    lengthSec: 390,
-    filename: 'SoundHelix/SoundHelix Demos/SoundHelix - Paper Planets.mp3',
-    size: 9_000_000,
-    bitrate: 128,
-    speed: 5_000_000,
-    slots: true,
-    user: 'midio-demo',
-    source: 'demo',
-    ext: 'mp3',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-17.mp3',
-  },
-];
+// ── Config resolution ──────────────────────────────────────────────────────
 
-function activeConfig() {
+async function probeSlskd(url = BUNDLED_SLSKD_URL, key = BUNDLED_SLSKD_KEY) {
+  const now = Date.now();
+  if (slskdProbe && slskdProbe.url === url && now - slskdProbe.checkedAt < 8_000) {
+    return slskdProbe;
+  }
+  try {
+    const res = await fetch(`${url}/api/v0/application`, {
+      headers: { Accept: 'application/json', 'X-API-Key': key },
+      signal: AbortSignal.timeout(2_500),
+    });
+    if (!res.ok) {
+      slskdProbe = { ok: false, url, checkedAt: now };
+      return slskdProbe;
+    }
+    const data = await res.json().catch(() => ({}));
+    const loggedIn = !!(
+      data?.server?.isConnected ||
+      data?.server?.isLoggedIn ||
+      data?.state?.isConnected ||
+      data?.soulseek?.isConnected
+    );
+    slskdProbe = { ok: true, url, key, checkedAt: now, loggedIn, raw: data };
+    return slskdProbe;
+  } catch {
+    slskdProbe = { ok: false, url, checkedAt: now };
+    return slskdProbe;
+  }
+}
+
+function activeConfigSync() {
   if (runtimeConfig) return runtimeConfig;
-  // Soulseek login is the default backend when env is set
   if (process.env.SLSK_USER && process.env.SLSK_PASS) {
     return {
       mode: 'direct',
@@ -247,8 +103,21 @@ function activeConfig() {
       slskdKey: process.env.SLSKD_API_KEY,
     };
   }
-  // Default: direct Soulseek — needs credentials (not auto-demo)
-  return { mode: 'direct', needsLogin: true };
+  // Prefer auto-detected bundled slskd when last probe succeeded
+  if (slskdProbe?.ok) {
+    return {
+      mode: 'slskd',
+      slskdUrl: slskdProbe.url,
+      slskdKey: BUNDLED_SLSKD_KEY,
+      auto: true,
+    };
+  }
+  // Default: free music — works with zero setup
+  return { mode: 'free' };
+}
+
+function activeConfig() {
+  return activeConfigSync();
 }
 
 export function setConfig(cfg) {
@@ -256,28 +125,30 @@ export function setConfig(cfg) {
     runtimeConfig = null;
     directClient = null;
     directClientPromise = null;
-    return activeConfig();
+    return activeConfigSync();
   }
   const mode = String(cfg.mode || '').toLowerCase();
-  if (mode === 'off' || mode === 'clear') {
+  if (mode === 'off' || mode === 'clear' || mode === 'auto') {
     runtimeConfig = null;
     directClient = null;
     directClientPromise = null;
-    return activeConfig();
+    return activeConfigSync();
   }
-  if (mode === 'demo') {
-    runtimeConfig = { mode: 'demo' };
+  if (mode === 'demo' || mode === 'free') {
+    runtimeConfig = { mode: 'free' };
     directClient = null;
     directClientPromise = null;
-    return { mode: 'demo', connected: true };
+    return { mode: 'free', connected: true };
   }
   if (mode === 'slskd') {
-    const url = String(cfg.slskdUrl || cfg.url || '').trim().replace(/\/$/, '');
-    const key = String(cfg.slskdKey || cfg.apiKey || '').trim();
-    if (!url || !key) throw new Error('slskd mode needs slskdUrl and slskdKey');
+    const url = String(cfg.slskdUrl || cfg.url || BUNDLED_SLSKD_URL).trim().replace(/\/$/, '');
+    // API key optional — fall back to bundled local key
+    const key = String(cfg.slskdKey || cfg.apiKey || BUNDLED_SLSKD_KEY).trim();
+    if (!url) throw new Error('slskd mode needs a URL');
     runtimeConfig = { mode: 'slskd', slskdUrl: url, slskdKey: key };
     directClient = null;
     directClientPromise = null;
+    slskdProbe = null;
     return { mode: 'slskd', slskdUrl: url, connected: true };
   }
   if (mode === 'direct') {
@@ -292,24 +163,47 @@ export function setConfig(cfg) {
   throw new Error(`Unknown Soulseek mode: ${mode}`);
 }
 
-export function getStatus() {
-  const cfg = activeConfig();
-  const needsLogin = !!(cfg.needsLogin || (cfg.mode === 'direct' && !cfg.slskUser));
+export async function getStatus() {
+  // Always probe bundled slskd so we can upgrade free → slskd silently
+  const probe = await probeSlskd();
+  const cfg = activeConfigSync();
+  const mode = cfg.mode;
+  const connected =
+    mode === 'free' ||
+    mode === 'demo' ||
+    (mode === 'slskd' && !!cfg.slskdUrl) ||
+    (mode === 'direct' && !!cfg.slskUser);
+  const needsLogin = false; // free mode always works; Soulseek is optional upgrade
+  const slskdReady = !!probe.ok;
+  const slskdLoggedIn = !!probe.loggedIn;
+
+  let note;
+  if (mode === 'slskd' && cfg.auto) {
+    note = slskdLoggedIn
+      ? 'Connected via local slskd — searching the Soulseek network.'
+      : 'Local slskd is up. Add your Soulseek account in Connect (or set SLSK_USER/SLSK_PASS) to search the network. Free music works now.';
+  } else if (mode === 'slskd') {
+    note = `Proxying through slskd at ${cfg.slskdUrl}`;
+  } else if (mode === 'direct') {
+    note = `Soulseek login as ${cfg.slskUser}`;
+  } else {
+    note = slskdReady
+      ? 'Free music ready. Local slskd detected — optional: add Soulseek login for the full network.'
+      : 'Free music ready (no account needed). Optional: docker compose up -d slskd + Soulseek login for the network.';
+  }
+
   return {
-    mode: cfg.mode,
-    defaultMode: 'direct',
-    connected: cfg.mode === 'demo' || (cfg.mode === 'slskd' && !!cfg.slskdUrl) || (cfg.mode === 'direct' && !!cfg.slskUser),
+    mode,
+    defaultMode: 'free',
+    connected,
     needsLogin,
-    slskdUrl: cfg.mode === 'slskd' ? cfg.slskdUrl : null,
-    user: cfg.mode === 'direct' ? cfg.slskUser || null : null,
+    slskdReady,
+    slskdLoggedIn,
+    slskdUrl: mode === 'slskd' ? cfg.slskdUrl : slskdReady ? BUNDLED_SLSKD_URL : null,
+    user: mode === 'direct' ? cfg.slskUser || null : null,
     demoTracks: DEMO_CATALOG.length,
-    note: needsLogin
-      ? 'Sign in with your Soulseek account to search the network. slskd is also available under Connect.'
-      : cfg.mode === 'demo'
-        ? 'Free demo catalog. Switch to Soulseek login for the live network.'
-        : cfg.mode === 'slskd'
-          ? `Proxying searches through slskd at ${cfg.slskdUrl}`
-          : `Soulseek login as ${cfg.slskUser}`,
+    freeSearch: true,
+    note,
   };
 }
 
@@ -356,7 +250,6 @@ function normalizeFile(raw, source) {
     user: raw.user || raw.username || 'unknown',
     source,
     ext: meta.ext,
-    // keep raw fields needed for download
     _file: filename,
     _code: raw.code,
   };
@@ -366,38 +259,10 @@ function finalizeResults(files) {
   return dedupeResults(files).slice(0, 60);
 }
 
-// ── Demo search ────────────────────────────────────────────────────────────
 function demoSearch(query) {
-  const q = String(query || '').trim().toLowerCase();
-  const terms = q ? q.split(/\s+/).filter(Boolean) : [];
-  let hits = DEMO_CATALOG;
-  if (terms.length) {
-    hits = DEMO_CATALOG.filter((t) => {
-      const hay = `${t.title} ${t.artist} ${t.album || ''} ${t.filename}`.toLowerCase();
-      return terms.every((term) => hay.includes(term));
-    });
-  }
-  if (!hits.length) hits = DEMO_CATALOG.slice(0, 4);
-  const mapped = hits.map((t) => {
-    const row = normalizeFile(
-      {
-        ...t,
-        filename: t.filename,
-        size: t.size,
-        bitrate: t.bitrate,
-        length: t.lengthSec,
-        artist: t.artist,
-        album: t.album,
-        title: t.title,
-        user: t.user,
-        slots: true,
-      },
-      'demo',
-    );
-    return { ...row, id: t.id, url: t.url };
-  });
-  return finalizeResults(mapped);
+  return searchDemoCatalog(query);
 }
+
 
 // ── slskd proxy ────────────────────────────────────────────────────────────
 async function slskdFetch(cfg, apiPath, opts = {}) {
@@ -551,7 +416,7 @@ async function downloadViaSlskd(cfg, item) {
           const dlRoot =
             process.env.SLSKD_DOWNLOADS ||
             process.env.SLSKD_DOWNLOAD_DIR ||
-            '';
+            DEFAULT_SLSKD_DOWNLOADS;
           if (dlRoot) {
             const tryPaths = [
               path.join(dlRoot, basename(localPath)),
@@ -701,77 +566,6 @@ async function downloadViaDirect(cfg, item) {
   };
 }
 
-// ── Demo download ──────────────────────────────────────────────────────────
-function makeProceduralWav(seedStr = 'midio', seconds = 24) {
-  const sr = 22050;
-  const n = Math.floor(sr * seconds);
-  const dataSize = n * 2;
-  const buf = Buffer.alloc(44 + dataSize);
-  buf.write('RIFF', 0);
-  buf.writeUInt32LE(36 + dataSize, 4);
-  buf.write('WAVE', 8);
-  buf.write('fmt ', 12);
-  buf.writeUInt32LE(16, 16);
-  buf.writeUInt16LE(1, 20);
-  buf.writeUInt16LE(1, 22);
-  buf.writeUInt32LE(sr, 24);
-  buf.writeUInt32LE(sr * 2, 28);
-  buf.writeUInt16LE(2, 32);
-  buf.writeUInt16LE(16, 34);
-  buf.write('data', 36);
-  buf.writeUInt32LE(dataSize, 40);
-  let h = 2166136261;
-  for (let i = 0; i < seedStr.length; i++) {
-    h ^= seedStr.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  const root = 110 + (h % 40);
-  for (let i = 0; i < n; i++) {
-    const t = i / sr;
-    const beat = Math.floor(t * 2) % 8;
-    const f1 = root * (beat % 2 === 0 ? 1 : 1.25);
-    const f2 = root * 1.5;
-    const env = Math.min(1, t * 4) * Math.min(1, (seconds - t) * 2);
-    const kick = Math.exp(-((t % 0.5) * 18)) * Math.sin(2 * Math.PI * 55 * (t % 0.5));
-    const lead = Math.sin(2 * Math.PI * f1 * t) * 0.35 + Math.sin(2 * Math.PI * f2 * t) * 0.2;
-    const s = Math.max(-1, Math.min(1, (lead + kick * 0.5) * env));
-    buf.writeInt16LE((s * 30000) | 0, 44 + i * 2);
-  }
-  return buf;
-}
-
-async function downloadViaDemo(item) {
-  const track =
-    DEMO_CATALOG.find((t) => t.id === item.id) ||
-    DEMO_CATALOG.find((t) => t.filename === item.filename) ||
-    DEMO_CATALOG.find((t) => t.title === item.title && t.artist === item.artist);
-  if (track?.url) {
-    try {
-      const res = await fetch(track.url, {
-        headers: { 'User-Agent': 'Midio-Soulseek-Demo/1.0' },
-        redirect: 'follow',
-      });
-      if (res.ok) {
-        const buffer = Buffer.from(await res.arrayBuffer());
-        if (buffer.length > 1000) {
-          return {
-            buffer,
-            filename: basename(track.filename),
-            contentType: mimeFor(track.filename),
-          };
-        }
-      }
-    } catch {
-      /* fall through */
-    }
-  }
-  const name = (track?.filename || item.filename || 'midio-demo.wav').replace(/\.mp3$/i, '.wav');
-  return {
-    buffer: makeProceduralWav(track?.id || item.id || name),
-    filename: basename(name).endsWith('.wav') ? basename(name) : `${basename(name)}.wav`,
-    contentType: 'audio/wav',
-  };
-}
 
 function mimeFor(name) {
   const ext = (name.match(/\.([^.]+)$/) || [, ''])[1].toLowerCase();
@@ -794,31 +588,63 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+
 // ── Public API ─────────────────────────────────────────────────────────────
 export async function startSearch(query) {
   const q = String(query || '').trim();
   if (!q) throw new Error('Empty search query');
   if (q.length > 200) throw new Error('Query too long');
 
-  const cfg = activeConfig();
-  if (cfg.mode === 'slskd') {
-    const id = await startSlskdSearch(cfg, q);
-    return { id, mode: 'slskd' };
+  await probeSlskd();
+  const cfg = activeConfigSync();
+
+  // Prefer live Soulseek when the user (or auto-detected slskd) is ready
+  if (cfg.mode === 'slskd' && cfg.slskdUrl) {
+    const probe = slskdProbe;
+    const canSearchNetwork = !cfg.auto || probe?.loggedIn !== false;
+    if (canSearchNetwork) {
+      try {
+        const id = await startSlskdSearch(cfg, q);
+        return { id, mode: 'slskd' };
+      } catch {
+        // fall through to free music
+      }
+    }
+  } else if (cfg.mode === 'direct' && cfg.slskUser) {
+    try {
+      const id = await startDirectSearch(cfg, q);
+      return { id, mode: 'direct' };
+    } catch {
+      // fall through to free music
+    }
   }
-  if (cfg.mode === 'direct') {
-    const id = await startDirectSearch(cfg, q);
-    return { id, mode: 'direct' };
-  }
-  // Demo — instant
+
+  // Free music — always available, no keys / no sign-in
   const id = randomUUID();
   searches.set(id, {
-    mode: 'demo',
+    mode: 'free',
     query: q,
-    status: 'completed',
-    results: demoSearch(q),
+    status: 'inProgress',
+    results: [],
     createdAt: Date.now(),
   });
-  return { id, mode: 'demo' };
+  (async () => {
+    try {
+      const results = await searchFreeMusic(q);
+      const s = searches.get(id);
+      if (s) {
+        s.results = results;
+        s.status = 'completed';
+      }
+    } catch (err) {
+      const s = searches.get(id);
+      if (s) {
+        s.status = 'error';
+        s.error = err.message || String(err);
+      }
+    }
+  })();
+  return { id, mode: 'free' };
 }
 
 export function getSearch(id) {
@@ -837,21 +663,25 @@ export function getSearch(id) {
 
 export async function downloadResult(item) {
   if (!item || typeof item !== 'object') throw new Error('Missing download item');
-  const cfg = activeConfig();
+  const cfg = activeConfigSync();
   const source = item.source || cfg.mode;
 
-  if (source === 'demo' || cfg.mode === 'demo') {
-    return downloadViaDemo(item);
+  if (source === 'slskd') {
+    const slskdCfg =
+      cfg.mode === 'slskd'
+        ? cfg
+        : { slskdUrl: BUNDLED_SLSKD_URL, slskdKey: BUNDLED_SLSKD_KEY };
+    return downloadViaSlskd(slskdCfg, item);
   }
-  if (source === 'slskd' || cfg.mode === 'slskd') {
-    return downloadViaSlskd(cfg, item);
+  if (source === 'direct') {
+    return downloadViaDirect(cfg.mode === 'direct' ? cfg : activeConfigSync(), item);
   }
-  if (source === 'direct' || cfg.mode === 'direct') {
-    return downloadViaDirect(cfg, item);
-  }
-  return downloadViaDemo(item);
+  // free | demo | archive | anything else
+  return downloadFreeTrack(item, DEMO_CATALOG);
 }
 
 export function listDemoCatalog() {
   return demoSearch('');
 }
+
+export { probeSlskd, BUNDLED_SLSKD_URL as defaultSlskdUrl };

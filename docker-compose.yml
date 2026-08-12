@@ -1,0 +1,39 @@
+# Midio + slskd (Soulseek) — zero API-key UX
+#
+#   docker compose up -d slskd   # Soulseek daemon only
+#   npm start                   # Midio auto-detects slskd on :5030
+#
+# Optional .env:
+#   SLSK_USER=your_soulseek_name
+#   SLSK_PASS=your_soulseek_password
+#
+# Midio talks to slskd with the fixed local key in slskd/slskd.yml.
+# You never type an API key in the game UI.
+
+services:
+  slskd:
+    image: slskd/slskd:latest
+    container_name: midio-slskd
+    restart: unless-stopped
+    ports:
+      - "5030:5030"     # HTTP API + web UI
+      - "50300:50300"   # Soulseek listen
+    environment:
+      SLSKD_REMOTE_CONFIGURATION: "true"
+      SLSKD_SLSK_USERNAME: ${SLSK_USER:-}
+      SLSKD_SLSK_PASSWORD: ${SLSK_PASS:-}
+      SLSKD_SLSK_DESCRIPTION: "Midio companion"
+    volumes:
+      - ./slskd/slskd.yml:/app/slskd.yml:ro
+      - midio-slskd-data:/data
+      # Shared downloads so Midio can read finished files without extra config
+      - ./data/slskd-downloads:/data/downloads
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5030/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+volumes:
+  midio-slskd-data:

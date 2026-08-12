@@ -5,8 +5,8 @@ file or an audio file (mp3/wav/flac) and the entire show — jumps, combos,
 two companions, eight parallax biomes, screen fracturing — is generated live
 from the music, no authored levels involved. Canvas 2D + Web Audio API only.
 
-**Soulseek song search** is built in: **sign in with Soulseek** (default),
-use slskd, or the free demo catalog — then hit **Play** to load a track.
+**Song search** is built in: **free music works with zero setup** (no API keys),
+optional Soulseek via bundled slskd or direct login — then hit **Play**.
 Results show Title · Artist · Album · Length; duplicate versions are collapsed.
 See [`docs/soulseek.md`](docs/soulseek.md).
 
@@ -17,13 +17,17 @@ visual system is a pure consumer of it).
 ## Running it
 
 ```sh
-npm install   # slsk-client (direct Soulseek) + Playwright for tests
+npm install   # slsk-client (optional Soulseek) + Playwright for tests
 npm start     # serves the app at http://localhost:8080  (0.0.0.0)
+
+# Optional — full Soulseek network via bundled slskd (no API key in the UI):
+# cp .env.example .env   # set SLSK_USER / SLSK_PASS
+docker compose up -d slskd
 ```
 
 Then open the app and either:
 
-- **Search** for a song in the Soulseek panel on the title screen,
+- **Search** for a song on the title screen (free music works immediately),
 - drop a `.mid`/audio file, or
 - click **"Play demo"** to run with zero file input.
 
@@ -31,17 +35,17 @@ Then open the app and either:
 — dragging one anywhere on the page (not just the loader screen) tears down
 whatever's currently playing and starts the new one immediately.
 
-### Soulseek backends
+### Music backends
 
-| Env / UI | Effect |
-| --- | --- |
-| **Soulseek login** (default) / `SLSK_USER` + `SLSK_PASS` | Direct Soulseek client in the Node server |
-| **slskd** / `SLSKD_URL` + `SLSKD_API_KEY` | Proxy through [slskd](https://github.com/slskd/slskd) |
-| `SLSKD_DOWNLOADS` | Folder of completed slskd downloads (so **Play** can load bytes) |
-| **Free demo catalog** | Explicit UI choice only — free tracks for offline tryout |
+| Path | Effect | Player friction |
+| --- | --- | --- |
+| **Free music** (default) | SoundHelix demos + Internet Archive open audio | None |
+| **Bundled slskd** | `docker compose up -d slskd` — Midio auto-detects it | Soulseek account only (optional `.env`) |
+| **Direct Soulseek** | Connect panel → username + password | Soulseek account |
+| Custom slskd | Advanced panel or `SLSKD_URL` (API key optional / bundled) | Rare |
 
-Sign in from the title screen (**Sign in** opens automatically when logged out).
-Results list **Title, Artist, Album, Length** (from peer folder trees + MusicBrainz).
+API keys for slskd are **not** shown in the default UI — the repo ships a fixed
+local key shared between Midio and `slskd/slskd.yml`.
 
 **Scored playback:** drop a **MIDI and an audio file together** and the
 recording is what you hear while the MIDI drives every visual — no audio

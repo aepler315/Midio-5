@@ -3,11 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A framework-free, audio-clock-mastered rhythm side-scroller. Canvas 2D + Web Audio API. Soulseek-powered song search via slskd or direct client.",
+  "description": "Rhythm side-scroller with free song search + optional Soulseek (bundled slskd, no API keys in the UI).",
   "scripts": {
     "start": "node tools/serve.js",
     "dev": "node tools/serve.js 8080",
-    "test": "node --test"
+    "test": "node --test",
+    "slskd": "docker compose up -d slskd",
+    "slskd:down": "docker compose down",
+    "slskd:logs": "docker compose logs -f slskd",
+    "start:full": "docker compose up -d slskd && node tools/serve.js"
   },
   "dependencies": {
     "slsk-client": "^1.1.0"

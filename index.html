@@ -38,14 +38,14 @@
           </div>
         </div>
 
-        <!-- Soulseek-powered song search -->
-        <section id="slskPanel" class="slskPanel" aria-label="Soulseek song search">
+        <!-- Song search: free music by default, optional Soulseek via slskd -->
+        <section id="slskPanel" class="slskPanel" aria-label="Song search">
           <div class="slskHeader">
             <div class="slskTitleRow">
               <h2 class="slskHeading">Find a song</h2>
-              <span id="slskModeBadge" class="slskModeBadge" data-mode="direct" title="">Soulseek</span>
+              <span id="slskModeBadge" class="slskModeBadge" data-mode="free" title="">free music</span>
             </div>
-            <button id="slskSettingsBtn" type="button" class="ghostbtn chipbtn slskSettingsBtn" title="Soulseek login or slskd">Sign in</button>
+            <button id="slskSettingsBtn" type="button" class="ghostbtn chipbtn slskSettingsBtn" title="Optional Soulseek login">Soulseek</button>
           </div>
 
           <form id="slskSearchForm" class="slskSearchForm" autocomplete="off">
@@ -53,7 +53,7 @@
               id="slskQuery"
               type="search"
               name="q"
-              placeholder="Artist, album, or track…"
+              placeholder="Search free music or the network…"
               maxlength="200"
               spellcheck="false"
               enterkeyhint="search"
@@ -61,46 +61,54 @@
             <button id="slskSearchBtn" type="submit" class="slskSearchBtn">Search</button>
           </form>
 
-          <div id="slskSettings" class="slskSettings">
+          <div id="slskSettings" class="slskSettings hidden">
+            <p class="slskHint slskHintLead">
+              Search works right away on <strong>free music</strong> (no account).
+              Optional: unlock the Soulseek network with your account.
+            </p>
             <label class="slskField">
-              <span>Connection</span>
-              <select id="slskModeSelect">
-                <option value="direct" selected>Soulseek login (default)</option>
-                <option value="slskd">slskd server</option>
-                <option value="demo">Free demo catalog</option>
-              </select>
+              <span>Soulseek user</span>
+              <input id="slskUser" type="text" placeholder="username" spellcheck="false" autocomplete="username" />
             </label>
-            <div id="slskDirectFields" class="slskFieldGroup">
-              <label class="slskField">
-                <span>Soulseek user</span>
-                <input id="slskUser" type="text" placeholder="username" spellcheck="false" autocomplete="username" />
-              </label>
-              <label class="slskField">
-                <span>Password</span>
-                <input id="slskPass" type="password" placeholder="password" spellcheck="false" autocomplete="current-password" />
-              </label>
-            </div>
-            <div id="slskdFields" class="slskFieldGroup hidden">
-              <label class="slskField">
-                <span>slskd URL</span>
-                <input id="slskdUrl" type="url" placeholder="http://127.0.0.1:5030" spellcheck="false" />
-              </label>
-              <label class="slskField">
-                <span>API key</span>
-                <input id="slskdKey" type="password" placeholder="X-API-Key from slskd.yml" spellcheck="false" autocomplete="off" />
-              </label>
-            </div>
+            <label class="slskField">
+              <span>Password</span>
+              <input id="slskPass" type="password" placeholder="password" spellcheck="false" autocomplete="current-password" />
+            </label>
             <div class="slskSettingsActions">
-              <button id="slskSaveCfg" type="button" class="slskSearchBtn">Save & connect</button>
-              <button id="slskClearCfg" type="button" class="ghostbtn chipbtn">Sign out</button>
+              <button id="slskSaveCfg" type="button" class="slskSearchBtn">Connect Soulseek</button>
+              <button id="slskClearCfg" type="button" class="ghostbtn chipbtn">Use free music</button>
             </div>
-            <p class="slskHint">Default is a direct Soulseek login. Prefer running behind your own account. Env: <code>SLSK_USER</code>/<code>SLSK_PASS</code> or <code>SLSKD_URL</code>/<code>SLSKD_API_KEY</code>.</p>
+            <details class="slskAdvanced">
+              <summary>Advanced (slskd)</summary>
+              <p class="slskHint">
+                Bundled daemon: <code>docker compose up -d slskd</code>.
+                Midio auto-detects it — leave these blank unless you run slskd elsewhere.
+              </p>
+              <label class="slskField">
+                <span>Connection</span>
+                <select id="slskModeSelect">
+                  <option value="free" selected>Free music (default)</option>
+                  <option value="direct">Direct Soulseek login</option>
+                  <option value="slskd">slskd server</option>
+                </select>
+              </label>
+              <div id="slskdFields" class="slskFieldGroup">
+                <label class="slskField">
+                  <span>slskd URL</span>
+                  <input id="slskdUrl" type="url" placeholder="http://127.0.0.1:5030" spellcheck="false" value="http://127.0.0.1:5030" />
+                </label>
+                <label class="slskField">
+                  <span>API key <em>(leave blank for bundled)</em></span>
+                  <input id="slskdKey" type="password" placeholder="auto (midio-local-dev-key)" spellcheck="false" autocomplete="off" />
+                </label>
+              </div>
+            </details>
           </div>
 
           <p id="slskStatus" class="slskStatus" role="status"></p>
-          <p id="slskEmpty" class="slskEmpty">Sign in, search the network, then hit <strong>Play</strong> — each song version shows once (remixes & instrumentals kept).</p>
+          <p id="slskEmpty" class="slskEmpty">Type a song or artist and hit <strong>Search</strong> — free tracks work with zero setup. Title · Artist · Album · Length.</p>
           <div id="slskResults" class="slskResults" role="list"></div>
-          <p id="slskLegal" class="slskLegal">Only download files you have the right to use. Results show Title · Artist · Album · Length.</p>
+          <p id="slskLegal" class="slskLegal">Free results are open / demo audio. Soulseek downloads: only take files you have the right to use.</p>
         </section>
 
         <div class="slskDivider"><span>or load your own file</span></div>
