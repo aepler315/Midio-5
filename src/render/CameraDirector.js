@@ -85,6 +85,15 @@ export function beatSwayOffset(tauMs, sign, energy01, motionMul = 1) {
   return { x: env * lateral * (sign < 0 ? -1 : 1), y: env * dip };
 }
 
+// Universe-shift reframe (ParallelUniverseDirector): a brief, gentle pull-
+// back + tilt right at a section boundary, riding that director's own
+// pulse envelope (0..1, rises then settles over ~0.9s). Reads as the camera
+// catching its breath as the world resettles into its next "parallel"
+// variant -- small enough to never compete with an impact shake, and it
+// composes additively so a landing mid-reframe still reads correctly.
+export const UNIVERSE_ZOOM_DIP = 0.05;   // fraction pulled back at full pulse
+export const UNIVERSE_ROLL_MAX = 0.025;  // radians of extra tilt at full pulse
+
 export class CameraDirector {
   constructor() {
     this.shakeX = 0;
@@ -100,9 +109,11 @@ export class CameraDirector {
 
     this.zoom = 1; // 1 = normal framing; the Renderer widens the logical stage view by 1/zoom
     this._zoomTarget = 1;
+    this._zoomBase = 1; // the eased off-frame-pullback value, BEFORE the universe-pulse dip below
 
     this._lastBeatTauMs = null;
     this._beatSwaySign = 1;
+    this._universeRollSign = 1;
   }
 
   /** Called once per frame before update(); sets what zoom() should ease
@@ -125,8 +136,10 @@ export class CameraDirector {
   /** @param beatTauMs ms since the most recent beat-grid crossing (from
    *    BeatAnchor), or null if no beat clock is available yet (e.g. the
    *    very first frame). @param beatEnergy 0..1 how much the current
-   *    section musically justifies extra motion (vibe.epic/hype.surge). */
-  update(dtSec, calmLevel = 0, reducedMotion = false, beatTauMs = null, beatEnergy = 0) {
+   *    section musically justifies extra motion (vibe.epic/hype.surge).
+   *  @param universePulse 0..1, ParallelUniverseDirector.pulse -- rises then
+   *    settles right at a section boundary. */
+  update(dtSec, calmLevel = 0, reducedMotion = false, beatTauMs = null, beatEnergy = 0, universePulse = 0) {
     // Reduced-motion keeps the harder shake comfortable: half amplitude on
     // both the translational shake and the rotational roll.
     const motionMul = reducedMotion ? 0.5 : 1;
@@ -194,6 +207,24 @@ export class CameraDirector {
     const zoomTravelMul = reducedMotion ? 0.4 : 1;
     const zoomTarget = 1 + (this._zoomTarget - 1) * zoomTravelMul;
     const zoomAlpha = 1 - Math.exp(-dtSec / ZOOM_TAU);
-    this.zoom += zoomAlpha * (zoomTarget - this.zoom);
+    this._zoomBase += zoomAlpha * (zoomTarget - this._zoomBase);
+
+    // Universe-shift reframe: a brief pull-back + tilt on top of whatever
+    // zoom/roll the frame already has, riding the director's own pulse
+    // envelope. New sign each time a fresh pulse starts, same alternating-
+    // side discipline as the beat sway above.
+    //
+    // The dip is computed fresh from _zoomBase every frame (never
+    // accumulated into this.zoom/_zoomBase itself) -- pulse stays elevated
+    // for many frames as it rises and settles, so subtracting into a value
+    // that persists frame to frame would compound across the whole pulse
+    // instead of tracking it, and briefly send the zoom wildly negative.
+    const pulse = clamp01(universePulse);
+    if (pulse > 0 && (this._lastUniversePulse ?? 0) <= 0) this._universeRollSign = -this._universeRollSign;
+    this._lastUniversePulse = pulse;
+    this.zoom = this._zoomBase - UNIVERSE_ZOOM_DIP * pulse * zoomTravelMul;
+    if (pulse > 0) {
+      this.roll += UNIVERSE_ROLL_MAX * pulse * this._universeRollSign * motionMul;
+    }
   }
 }

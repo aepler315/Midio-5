@@ -43,6 +43,7 @@ import { ScoreKeeper } from './ScoreKeeper.js';
 import { PhraseTracker } from '../core/PhraseTracker.js';
 import { AirJumpSequencer } from './AirJumpSequencer.js';
 import { RidgeAnchor } from './RidgeAnchor.js';
+import { ParallelUniverseDirector } from './ParallelUniverseDirector.js';
 import { FeverMeter } from './FeverMeter.js';
 import { LatencyCalibrator } from './LatencyCalibrator.js';
 import { SyncMonitor } from './SyncMonitor.js';
@@ -158,6 +159,12 @@ export class Simulation {
     // while that skyline is heaved up near the top of its swing, and performs
     // the rest of the chart on foot. See RidgeAnchor.js for why.
     this.ridgeAnchor = new RidgeAnchor();
+    // Each section drifts into a slightly different "parallel" universe --
+    // same biome, cosmetically different constants (haze/wind/hue/terrain
+    // dance amplitude), plus a brief camera reframe right at the boundary.
+    // See ParallelUniverseDirector.js for why nothing here touches jump
+    // clearance physics.
+    this.parallelUniverse = new ParallelUniverseDirector();
     // Steady accurate taps × song energy = how insane the visuals get.
     this.fever = new FeverMeter();
     // Steady-but-biased taps are pipeline latency, not player error: the
@@ -703,6 +710,12 @@ export class Simulation {
     // against this song's own dynamic range) decides how eager they are:
     // a quiet section change usually passes without a flourish.
     if (this.biomes.sectionJustChanged) this.ensemble.maybeDisc(nowMs, 'section', this.vibe.epic);
+    // Same cue rolls the world into its next "parallel universe" (see
+    // ParallelUniverseDirector.js): a seed keyed off the song seed and the
+    // section index, so the same song always drifts through the same
+    // sequence of universes on replay.
+    if (this.biomes.sectionJustChanged) this.parallelUniverse.shift(`${this.songSeed}:${this.biomes._lastSectionIdx}`);
+    this.parallelUniverse.update(dtSec);
     if (this._pendingDiscReason) {
       this.ensemble.maybeDisc(nowMs, this._pendingDiscReason, this.vibe.epic);
       this._pendingDiscReason = null;
@@ -931,6 +944,12 @@ export class Simulation {
     this.biomes.midioX = this.midio.screenX; // the light rig's drop-snap points at him
     this.biomes.midioY = this.midio.renderY;
     this.biomes.weatherState = this.weather.state; // music-reactive rain/snow/petals/embers, decoupled from biome
+    // Parallel-universe drift (ParallelUniverseDirector): a per-section,
+    // cosmetics-only variation on top of everything above.
+    this.biomes.universeHueDeg = this.parallelUniverse.hueDeg;
+    this.biomes.universeHazeMul = this.parallelUniverse.hazeMul;
+    this.biomes.universeWindMul = this.parallelUniverse.windMul;
+    this.biomes.universeTerrainMul = this.parallelUniverse.terrainMul;
     if (this.performer.lastMilestone) {
       this.biomes.milestoneAtMs = this.performer.lastMilestone.atMs;
       this.biomes.milestoneIdx = this.performer.lastMilestone.idx;
@@ -972,7 +991,7 @@ export class Simulation {
     const beatPeriodMs = Math.max(1, this.beatAnchor.periodMs);
     const beatTauMs = ((nowMs - this.beatAnchor.anchorMs) % beatPeriodMs + beatPeriodMs) % beatPeriodMs;
     const beatEnergy = Math.max(this.vibe.epic, this.hype.surge);
-    this.camera.update(dtSec, this.calm.level, this.reducedFlash, beatTauMs, beatEnergy);
+    this.camera.update(dtSec, this.calm.level, this.reducedFlash, beatTauMs, beatEnergy, this.parallelUniverse.pulse);
     this.paramBus.step();
 
     this.curr = this._snapshot();

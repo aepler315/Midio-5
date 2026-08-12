@@ -439,7 +439,22 @@ export class SkyVoyage {
       const b = lerp(0.32, 0.19, clamp(epicMood, 0, 1));
       const speed = 1.6;
       const substeps = 3;
-      const h = (speed * dtSec) / substeps;
+      // Thomas' system genuinely has slow "laminar" stretches near its
+      // unstable fixed points where the state barely moves for a real
+      // second or two before bursting away again -- mathematically
+      // correct chaos, but for a single point being watched live (not a
+      // whole trail, like ChaosRibbon draws) it reads as Midasus visibly
+      // stopping mid-figure. Reparametrize closer to arc length than wall-
+      // clock time: when the local velocity is slow, walk more attractor-
+      // time this frame so the ON-SCREEN pace stays roughly even, without
+      // ever slowing an already-fast stretch further. The path drawn is
+      // still the real Thomas attractor -- only the real-time pacing evens out.
+      const deriv0 = thomasDeriv(this._attractor, b);
+      const localSpeed = Math.hypot(deriv0.x, deriv0.y, deriv0.z);
+      const SPEED_FLOOR = 0.4; // below this, start compensating
+      const MAX_BOOST = 6;     // cap how hard a dead-still patch gets sped through
+      const boost = clamp(SPEED_FLOOR / Math.max(localSpeed, 1e-3), 1, MAX_BOOST);
+      const h = (speed * dtSec * boost) / substeps;
       for (let i = 0; i < substeps; i++) this._attractor = rk4Step3(thomasDeriv, this._attractor, h, b);
 
       const figElapsed = (nowMs - this._figureStartMs) / 1000;
