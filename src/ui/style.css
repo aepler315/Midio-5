@@ -1295,6 +1295,7 @@ html, body {
   background: rgba(0, 0, 0, 0.28);
   color: #c8b8e8;
 }
+.slskModeBadge[data-mode="free"],
 .slskModeBadge[data-mode="demo"] {
   color: #ffd76a;
   border-color: rgba(255, 215, 106, 0.35);
@@ -1573,4 +1574,28 @@ html, body {
   .slskSearchForm { flex-direction: column; }
   .slskSearchBtn { width: 100%; }
   .slskFieldLine { grid-template-columns: 48px 1fr; }
+}
+
+
+/* Free-first search: advanced slskd stays collapsed */
+.slskAdvanced {
+  margin-top: 0.65rem;
+  border-top: 1px solid color-mix(in srgb, var(--line, #3a3a4a) 70%, transparent);
+  padding-top: 0.5rem;
+}
+.slskAdvanced > summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  opacity: 0.75;
+  list-style: none;
+}
+.slskAdvanced > summary::-webkit-details-marker { display: none; }
+.slskHintLead {
+  margin: 0 0 0.55rem;
+  line-height: 1.35;
+}
+.slskField em {
+  font-style: normal;
+  opacity: 0.6;
+  font-weight: 400;
 }

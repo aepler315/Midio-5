@@ -1,75 +1,89 @@
-# Soulseek song search
+# Song search (free music + Soulseek)
 
-Midio can search for songs and load them straight into the show.
+Midio’s **Find a song** panel works with **zero setup**. Free music is the
+default — no accounts, no API keys. Soulseek is an optional upgrade.
 
-## How it works
+## What players see
 
-The title screen has a **Find a song** panel. **Soulseek login is the default** —
-enter your account under **Sign in**. Results show **Title · Artist · Album · Length**,
-parsed from each peer’s folder tree (and filled in via [MusicBrainz](https://musicbrainz.org/)
-when a field is missing).
+1. Type a song / artist → **Search**
+2. Results show **Title · Artist · Album · Length**
+3. Hit **Play** — the track loads into the same path as a drag-and-drop
 
-Duplicate files of the *same version* are collapsed to the best peer (bitrate / free
-slot / FLAC). **Distinct versions stay** — instrumental, remix, live, acoustic, radio
-edit, etc. each appear once. Remasters collapse into the original.
+Same version of a track is shown once (best quality). Instrumentals, remixes,
+lives, etc. stay as separate rows.
 
-| Mode | When | What it talks to |
+| Source | When | Needs |
 | --- | --- | --- |
-| **Soulseek login** (default) | UI credentials or `SLSK_USER` + `SLSK_PASS` | Soulseek network via [`slsk-client`](https://www.npmjs.com/package/slsk-client) |
-| **slskd** | UI config or `SLSKD_URL` + `SLSKD_API_KEY` | Your [slskd](https://github.com/slskd/slskd) instance |
-| **demo** | Explicit choice only | Free SoundHelix catalog |
+| **Free music** (default) | Always | Nothing |
+| SoundHelix demos | Always | Nothing |
+| Internet Archive open audio | Free search | Nothing (no API key) |
+| **Soulseek via slskd** | `docker compose up -d slskd` + optional login | Soulseek account only |
+| **Direct Soulseek** | Connect panel | Soulseek username + password |
 
-Hitting **Play** downloads through the Midio server (`/api/soulseek/download`) and
-feeds the same path as a drag-and-drop.
+## Free music (default)
 
-## Sign in (default)
+No sign-in. Search hits a small curated demo catalog plus
+[Internet Archive](https://archive.org) open audio. Perfect for trying Midio
+or playing when you don’t want network P2P.
 
-1. Open **Sign in** on the title search panel (shown automatically when logged out).
-2. Keep **Soulseek login (default)** selected.
-3. Enter username + password → **Save & connect**.
+## Bundled slskd (recommended for Soulseek)
 
-Or:
+The repo ships a ready-to-run [slskd](https://github.com/slskd/slskd) config.
+API keys are **pre-shared between Midio and slskd** — players never paste one.
+
+```sh
+# optional: put your Soulseek account in .env (see .env.example)
+cp .env.example .env   # then edit SLSK_USER / SLSK_PASS
+
+docker compose up -d slskd
+npm start
+```
+
+- slskd UI: http://127.0.0.1:5030 (user/pass `midio` / `midio` for the web UI only)
+- Midio auto-detects `http://127.0.0.1:5030` with key `midio-local-dev-key`
+- Finished downloads land in `data/slskd-downloads/` (shared volume)
+
+Files:
+
+| Path | Purpose |
+| --- | --- |
+| [`docker-compose.yml`](../docker-compose.yml) | slskd service |
+| [`slskd/slskd.yml`](../slskd/slskd.yml) | fixed local API key + dirs |
+| [`.env.example`](../.env.example) | optional Soulseek creds |
+
+## Optional: Soulseek login in the game
+
+Open **Soulseek** on the title search panel → enter username + password →
+**Connect Soulseek**. That uses the direct client (or your auto-detected slskd).
+
+Advanced → slskd: only if you run slskd on another host. Leave the API key
+blank to use the bundled local key.
+
+Env overrides (server):
 
 ```sh
 export SLSK_USER=yourname
 export SLSK_PASS=yourpass
-npm start
-```
-
-## slskd (alternate)
-
-1. Run [slskd](https://github.com/slskd/slskd) with a Soulseek account and API key.
-2. In Midio **Account**, choose **slskd server**, enter URL + API key, **Save & connect**.
-
-```sh
+# or custom slskd:
 export SLSKD_URL=http://127.0.0.1:5030
-export SLSKD_API_KEY=your-key-here
-export SLSKD_DOWNLOADS=/path/to/slskd/downloads   # so Play can load completed files
+export SLSKD_API_KEY=midio-local-dev-key
+export SLSKD_DOWNLOADS=./data/slskd-downloads
 npm start
 ```
 
-## Metadata
-
-| Field | Source |
-| --- | --- |
-| **Title** | Filename (track number stripped) + version tags |
-| **Artist** | Parent folders (`Artist/Album/track`) or `Artist - Title` filename |
-| **Album** | Folder above the file (disc folders skipped) |
-| **Length** | Peer attributes, or size÷bitrate estimate, or MusicBrainz |
-
-## API surface (local server)
+## API surface
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/soulseek/status` | Active backend + `needsLogin` |
-| `POST` | `/api/soulseek/config` | Set backend (`mode`: `direct` \| `slskd` \| `demo`) |
-| `DELETE` | `/api/soulseek/config` | Clear runtime config → direct (needs login) |
-| `POST` | `/api/soulseek/search` | `{ "query": "…" }` → `{ id, mode }` |
-| `GET` | `/api/soulseek/search/:id` | Poll results (deduped, with meta) |
+| `GET` | `/api/soulseek/status` | Active backend + `slskdReady` / `freeSearch` |
+| `POST` | `/api/soulseek/config` | Set backend (`free` \| `direct` \| `slskd`) |
+| `DELETE` | `/api/soulseek/config` | Clear → free |
+| `POST` | `/api/soulseek/search` | `{ "query": "…" }` |
+| `GET` | `/api/soulseek/search/:id` | Poll results |
 | `POST` | `/api/soulseek/download` | `{ item }` → audio bytes |
-| `GET` | `/api/soulseek/demo` | List demo catalog |
+| `GET` | `/api/soulseek/demo` | Free catalog snapshot |
 
 ## Copyright
 
-Soulseek is a peer-to-peer network. **Only download files you have the right
-to use.** The demo catalog is free / demo-permitted audio for trying Midio offline.
+- **Free results**: open / demo-permitted audio.
+- **Soulseek**: peer-to-peer. **Only download files you have the right to use.**

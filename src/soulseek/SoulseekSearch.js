@@ -1,9 +1,8 @@
 /**
- * Soulseek-powered song search UI for Midio.
+ * Song search UI for Midio.
  *
- * Talks to the local bridge at /api/soulseek/* (see tools/soulseek-bridge.mjs).
- * Default connection is a direct Soulseek login; slskd is the alternate backend.
- * Results show Title / Artist / Album / Length and are version-deduped server-side.
+ * Free music works with zero setup. Soulseek is optional (username/password).
+ * Bundled slskd is auto-detected — API keys stay hidden.
  */
 
 const STORAGE_KEY = 'midio.soulseek.config';
@@ -19,7 +18,7 @@ export class SoulseekSearch {
     this.root = root;
     this.onFiles = onFiles;
     this.onStatus = onStatus || (() => {});
-    this.status = { mode: 'direct', connected: false, needsLogin: true };
+    this.status = { mode: 'free', connected: true, needsLogin: false, freeSearch: true };
     this.searchId = null;
     this.pollTimer = null;
     this.busy = false;
@@ -36,7 +35,6 @@ export class SoulseekSearch {
       settings: root.querySelector('#slskSettings'),
       modeSelect: root.querySelector('#slskModeSelect'),
       slskdFields: root.querySelector('#slskdFields'),
-      directFields: root.querySelector('#slskDirectFields'),
       slskdUrl: root.querySelector('#slskdUrl'),
       slskdKey: root.querySelector('#slskdKey'),
       slskUser: root.querySelector('#slskUser'),
@@ -46,10 +44,7 @@ export class SoulseekSearch {
       legal: root.querySelector('#slskLegal'),
     };
 
-    // Default UI: Soulseek login
-    if (this.els.modeSelect) this.els.modeSelect.value = 'direct';
-    this._syncSettingsFields();
-
+    if (this.els.modeSelect) this.els.modeSelect.value = 'free';
     this._bind();
     this._restoreLocalConfig();
     this.refreshStatus();
@@ -62,22 +57,10 @@ export class SoulseekSearch {
       this.search(e.input?.value || '');
     });
     e.settingsBtn?.addEventListener('click', () => this.toggleSettings());
-    e.modeSelect?.addEventListener('change', () => this._syncSettingsFields());
     e.saveCfg?.addEventListener('click', () => this.saveConfig());
     e.clearCfg?.addEventListener('click', () => this.clearConfig());
-    // Stop title-screen keyboard shortcuts from stealing typing
     for (const el of [e.input, e.slskdUrl, e.slskdKey, e.slskUser, e.slskPass]) {
       el?.addEventListener('keydown', (ev) => ev.stopPropagation());
-    }
-  }
-
-  _syncSettingsFields() {
-    const mode = this.els.modeSelect?.value || 'direct';
-    if (this.els.slskdFields) {
-      this.els.slskdFields.classList.toggle('hidden', mode !== 'slskd');
-    }
-    if (this.els.directFields) {
-      this.els.directFields.classList.toggle('hidden', mode !== 'direct');
     }
   }
 
@@ -86,7 +69,6 @@ export class SoulseekSearch {
     const currentlyHidden = this.els.settings.classList.contains('hidden');
     const open = force ?? currentlyHidden;
     this.els.settings.classList.toggle('hidden', !open);
-    if (open) this._syncSettingsFields();
   }
 
   _restoreLocalConfig() {
@@ -94,20 +76,20 @@ export class SoulseekSearch {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const cfg = JSON.parse(raw);
-      // Migrate old default "demo" → prefer direct if no explicit choice with creds
-      if (this.els.modeSelect) {
-        this.els.modeSelect.value = cfg.mode || 'direct';
+      // Migrate old defaults: demo/direct-without-creds → free
+      if (!cfg.mode || cfg.mode === 'demo' || (cfg.mode === 'direct' && !cfg.slskUser)) {
+        cfg.mode = 'free';
       }
+      if (this.els.modeSelect) this.els.modeSelect.value = cfg.mode || 'free';
       if (this.els.slskdUrl && cfg.slskdUrl) this.els.slskdUrl.value = cfg.slskdUrl;
       if (this.els.slskdKey && cfg.slskdKey) this.els.slskdKey.value = cfg.slskdKey;
       if (this.els.slskUser && cfg.slskUser) this.els.slskUser.value = cfg.slskUser;
       if (this.els.slskPass && cfg.slskPass) this.els.slskPass.value = cfg.slskPass;
-      this._syncSettingsFields();
-      if ((cfg.mode && cfg.mode !== 'direct') || (cfg.slskUser && cfg.slskPass) || (cfg.slskdUrl && cfg.slskdKey)) {
+      if ((cfg.slskUser && cfg.slskPass) || cfg.mode === 'slskd' || cfg.mode === 'direct') {
         this._pushConfig(cfg).catch(() => {});
       }
     } catch {
-      /* ignore corrupt storage */
+      /* ignore */
     }
   }
 
@@ -123,18 +105,32 @@ export class SoulseekSearch {
   }
 
   async saveConfig() {
-    const mode = this.els.modeSelect?.value || 'direct';
-    const cfg = { mode };
-    if (mode === 'slskd') {
-      cfg.slskdUrl = this.els.slskdUrl?.value?.trim() || '';
-      cfg.slskdKey = this.els.slskdKey?.value?.trim() || '';
-    } else if (mode === 'direct') {
-      cfg.slskUser = this.els.slskUser?.value?.trim() || '';
-      cfg.slskPass = this.els.slskPass?.value?.trim() || '';
+    const user = this.els.slskUser?.value?.trim() || '';
+    const pass = this.els.slskPass?.value?.trim() || '';
+    const advancedMode = this.els.modeSelect?.value || 'free';
+
+    let cfg;
+    if (advancedMode === 'slskd') {
+      cfg = {
+        mode: 'slskd',
+        slskdUrl: this.els.slskdUrl?.value?.trim() || 'http://127.0.0.1:5030',
+        // blank key → server uses bundled midio-local-dev-key
+        slskdKey: this.els.slskdKey?.value?.trim() || '',
+      };
+    } else if (user && pass) {
+      cfg = { mode: 'direct', slskUser: user, slskPass: pass };
+    } else if (advancedMode === 'direct' && (!user || !pass)) {
+      this._setStatusLine('Enter your Soulseek username and password.');
+      this.els.slskUser?.focus();
+      return;
+    } else {
+      cfg = { mode: 'free' };
     }
+
     try {
-      this._setStatusLine(mode === 'direct' ? 'Signing in…' : 'Saving connection…');
+      this._setStatusLine(cfg.mode === 'free' ? 'Switching to free music…' : 'Connecting…');
       const data = await this._pushConfig(cfg);
+      // Don't persist password in plain text if user prefers — still do for convenience in this app
       localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
       this.status = data;
       this._renderBadge();
@@ -147,20 +143,21 @@ export class SoulseekSearch {
 
   async clearConfig() {
     try {
-      await fetch('/api/soulseek/config', { method: 'DELETE' });
+      await this._pushConfig({ mode: 'free' });
     } catch {
-      /* ignore */
+      try {
+        await fetch('/api/soulseek/config', { method: 'DELETE' });
+      } catch {
+        /* ignore */
+      }
     }
-    localStorage.removeItem(STORAGE_KEY);
-    if (this.els.modeSelect) this.els.modeSelect.value = 'direct';
-    if (this.els.slskdUrl) this.els.slskdUrl.value = '';
-    if (this.els.slskdKey) this.els.slskdKey.value = '';
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode: 'free' }));
+    if (this.els.modeSelect) this.els.modeSelect.value = 'free';
     if (this.els.slskUser) this.els.slskUser.value = '';
     if (this.els.slskPass) this.els.slskPass.value = '';
-    this._syncSettingsFields();
     await this.refreshStatus();
-    this.toggleSettings(true);
-    this._setStatusLine('Signed out. Enter your Soulseek login to search.');
+    this.toggleSettings(false);
+    this._setStatusLine('Free music ready — search anything.');
   }
 
   async refreshStatus() {
@@ -172,53 +169,51 @@ export class SoulseekSearch {
       this.status = {
         mode: 'offline',
         connected: false,
-        needsLogin: true,
-        note: 'Soulseek bridge unreachable — is the Midio server running?',
+        needsLogin: false,
+        note: 'Server unreachable — is Midio running?',
       };
     }
-    // Keep the Connect panel in sync with the active backend
     if (this.els.modeSelect && this.status.mode && this.status.mode !== 'offline') {
-      this.els.modeSelect.value = this.status.mode;
-      this._syncSettingsFields();
+      // Map demo → free in the advanced select
+      const m = this.status.mode === 'demo' ? 'free' : this.status.mode;
+      if ([...this.els.modeSelect.options].some((o) => o.value === m)) {
+        this.els.modeSelect.value = m;
+      }
     }
     this._renderBadge();
-    // Open sign-in when not connected (Soulseek default)
-    if (this.status.needsLogin || !this.status.connected) {
-      this.toggleSettings(true);
-    } else {
-      this.toggleSettings(false);
-    }
+    // Never force the settings panel open — free search works without it
     if (this.els.settingsBtn) {
-      this.els.settingsBtn.textContent = this.status.connected ? 'Account' : 'Sign in';
+      const soulseekOn =
+        (this.status.mode === 'direct' || this.status.mode === 'slskd') && this.status.connected;
+      this.els.settingsBtn.textContent = soulseekOn ? 'Soulseek ✓' : 'Soulseek';
     }
     if (this.els.legal) {
       this.els.legal.textContent =
-        this.status.mode === 'demo'
-          ? 'Demo catalog (free music). Title · Artist · Album · Length. Switch to Soulseek login for the live network.'
+        this.status.mode === 'free' || this.status.mode === 'demo'
+          ? 'Free results are open / demo audio. Optional Soulseek: only download files you have the right to use.'
           : 'Only download files you have the right to use. Duplicates collapsed — remixes & instrumentals kept once each.';
     }
-    if (this.status.needsLogin) {
-      this._setStatusLine(this.status.note || 'Sign in with your Soulseek account to search.');
+    if (!this.busy) {
+      this._setStatusLine(this.status.note || '');
     }
   }
 
   _renderBadge() {
     const b = this.els.badge;
     if (!b) return;
-    const mode = this.status.mode || 'direct';
-    const needs = this.status.needsLogin && mode === 'direct';
-    b.dataset.mode = needs ? 'needs-login' : mode;
-    b.textContent = needs
-      ? 'sign in'
-      : mode === 'slskd'
-        ? 'slskd'
+    let mode = this.status.mode || 'free';
+    if (mode === 'demo') mode = 'free';
+    b.dataset.mode = mode;
+    b.textContent =
+      mode === 'slskd'
+        ? this.status.slskdLoggedIn
+          ? 'Soulseek'
+          : 'slskd'
         : mode === 'direct'
           ? 'Soulseek'
           : mode === 'offline'
             ? 'offline'
-            : mode === 'demo'
-              ? 'demo'
-              : mode;
+            : 'free music';
     b.title = this.status.note || '';
   }
 
@@ -240,20 +235,16 @@ export class SoulseekSearch {
       this._setStatusLine('Type a song, artist, or album.');
       return;
     }
-    if (this.status.needsLogin || (!this.status.connected && this.status.mode === 'direct')) {
-      this.toggleSettings(true);
-      this._setStatusLine('Sign in with your Soulseek account first.');
-      this.els.slskUser?.focus();
-      return;
-    }
+    // Free search always allowed — no login wall
     if (this.busy) return;
     this.busy = true;
     this._stopPoll();
     this._renderResults([]);
+    const mode = this.status.mode || 'free';
     this._setStatusLine(
-      this.status.mode === 'demo'
-        ? `Searching free catalog for “${q}”…`
-        : `Searching Soulseek for “${q}”…`,
+      mode === 'direct' || mode === 'slskd'
+        ? `Searching Soulseek for “${q}”…`
+        : `Searching free music for “${q}”…`,
     );
     if (this.els.submit) this.els.submit.disabled = true;
 
@@ -267,12 +258,11 @@ export class SoulseekSearch {
       if (!res.ok) throw new Error(data.error || `Search failed (${res.status})`);
       this.searchId = data.id;
       await this._pollOnce();
-      this.pollTimer = setInterval(() => this._pollOnce(), 1000);
+      this.pollTimer = setInterval(() => this._pollOnce(), 900);
     } catch (err) {
       this._setStatusLine(err.message || 'Search failed');
       this.busy = false;
       if (this.els.submit) this.els.submit.disabled = false;
-      if (/sign in|login/i.test(err.message || '')) this.toggleSettings(true);
     }
   }
 
@@ -288,22 +278,23 @@ export class SoulseekSearch {
         this.busy = false;
         if (this.els.submit) this.els.submit.disabled = false;
         const n = data.resultCount ?? (data.results || []).length;
+        const src =
+          data.mode === 'free' || data.mode === 'demo'
+            ? 'free music'
+            : data.mode === 'slskd' || data.mode === 'direct'
+              ? 'Soulseek'
+              : data.mode || 'search';
         this._setStatusLine(
-          n
-            ? `${n} unique version${n === 1 ? '' : 's'} · ${data.mode === 'demo' ? 'free catalog' : 'Soulseek'}`
-            : 'No audio matches — try a shorter query.',
+          n ? `${n} unique version${n === 1 ? '' : 's'} · ${src}` : 'No matches — try another query.',
         );
       } else if (data.status === 'error') {
         this._stopPoll();
         this.busy = false;
         if (this.els.submit) this.els.submit.disabled = false;
         this._setStatusLine(data.error || 'Search error');
-        if (/sign in|login/i.test(data.error || '')) this.toggleSettings(true);
       } else {
         const n = (data.results || []).length;
-        this._setStatusLine(
-          n ? `Listening… ${n} unique so far` : 'Listening on the network…',
-        );
+        this._setStatusLine(n ? `Listening… ${n} unique so far` : 'Searching…');
       }
     } catch (err) {
       this._stopPoll();
@@ -335,8 +326,7 @@ export class SoulseekSearch {
     const artist = item.artist || 'Unknown artist';
     const album = item.album || '—';
     const length =
-      item.lengthLabel ||
-      (item.lengthSec ? formatLength(item.lengthSec) : '—');
+      item.lengthLabel || (item.lengthSec ? formatLength(item.lengthSec) : '—');
 
     row.innerHTML = `
       <span class="slskResultIcon" aria-hidden="true">${item.ext === 'mid' || item.ext === 'midi' ? '🎹' : '♪'}</span>
@@ -349,36 +339,31 @@ export class SoulseekSearch {
         </span>
         <span class="slskResultMeta"></span>
       </span>
-      <span class="slskResultAction">Play</span>
+      <span class="slskResultPlay">Play</span>
     `;
     row.querySelector('.slskResultTitle').textContent = title;
     row.querySelector('.slskArtist').textContent = artist;
     row.querySelector('.slskAlbum').textContent = album;
     row.querySelector('.slskLength').textContent = length;
 
-    const meta = [];
-    if (item.versionLabel) meta.push(item.versionLabel);
-    if (item.ext) meta.push(String(item.ext).toUpperCase());
-    if (item.bitrate) meta.push(`${item.bitrate} kbps`);
-    if (item.sizeLabel) meta.push(item.sizeLabel);
-    if (item.user && item.source !== 'demo') meta.push(item.user);
-    if (item.slots === false) meta.push('queued');
-    row.querySelector('.slskResultMeta').textContent = meta.join(' · ');
+    const bits = [];
+    if (item.source === 'archive') bits.push('Archive.org');
+    else if (item.source === 'free' || item.source === 'demo') bits.push('free');
+    else if (item.user) bits.push(item.user);
+    if (item.bitrate) bits.push(`${item.bitrate} kbps`);
+    if (item.ext) bits.push(String(item.ext).toUpperCase());
+    if (item.sizeLabel) bits.push(item.sizeLabel);
+    row.querySelector('.slskResultMeta').textContent = bits.join(' · ');
 
     row.addEventListener('click', () => this.play(item, row));
     return row;
   }
 
-  async play(item, row) {
+  async play(item, rowEl) {
     if (this.busy) return;
     this.busy = true;
-    if (row) {
-      row.classList.add('loading');
-      const act = row.querySelector('.slskResultAction');
-      if (act) act.textContent = '…';
-    }
-    this._setStatusLine(`Fetching “${item.title || item.filename}”…`);
-
+    if (rowEl) rowEl.classList.add('slskResultLoading');
+    this._setStatusLine(`Loading “${item.title || item.filename}”…`);
     try {
       const res = await fetch('/api/soulseek/download', {
         method: 'POST',
@@ -392,20 +377,17 @@ export class SoulseekSearch {
       const buf = await res.arrayBuffer();
       const name =
         decodeURIComponent(res.headers.get('X-Filename') || '') ||
-        item.filename ||
+        basename(item.filename) ||
         'track.mp3';
-      const type = res.headers.get('Content-Type') || guessMime(name);
-      const file = new File([buf], basename(name), { type });
-      this._setStatusLine(`Loading “${file.name}” into Midio…`);
+      const type = res.headers.get('Content-Type') || 'audio/mpeg';
+      const file = new File([buf], name, { type });
+      this._setStatusLine(`Loaded ${name}`);
       this.onFiles([file]);
     } catch (err) {
       this._setStatusLine(err.message || 'Download failed');
       this.busy = false;
-      if (row) {
-        row.classList.remove('loading');
-        const act = row.querySelector('.slskResultAction');
-        if (act) act.textContent = 'Play';
-      }
+    } finally {
+      if (rowEl) rowEl.classList.remove('slskResultLoading');
     }
   }
 
@@ -413,37 +395,19 @@ export class SoulseekSearch {
     this.busy = false;
     if (this.els.submit) this.els.submit.disabled = false;
   }
-
-  destroy() {
-    this._stopPoll();
-  }
 }
 
 function basename(p) {
-  if (!p) return 'track';
-  const parts = String(p).replace(/\\/g, '/').split('/');
-  return parts[parts.length - 1] || p;
+  if (!p) return '';
+  const s = String(p).replace(/\\/g, '/');
+  const i = s.lastIndexOf('/');
+  return i >= 0 ? s.slice(i + 1) : s;
 }
 
 function formatLength(sec) {
-  const s = Math.round(Number(sec) || 0);
-  if (s <= 0) return '—';
+  if (sec == null || !Number.isFinite(sec) || sec <= 0) return '—';
+  const s = Math.round(sec);
   const m = Math.floor(s / 60);
   const r = s % 60;
   return `${m}:${String(r).padStart(2, '0')}`;
-}
-
-function guessMime(name) {
-  const ext = (name.match(/\.([^.]+)$/) || [, ''])[1].toLowerCase();
-  return (
-    {
-      mp3: 'audio/mpeg',
-      flac: 'audio/flac',
-      wav: 'audio/wav',
-      ogg: 'audio/ogg',
-      m4a: 'audio/mp4',
-      mid: 'audio/midi',
-      midi: 'audio/midi',
-    }[ext] || 'application/octet-stream'
-  );
 }
