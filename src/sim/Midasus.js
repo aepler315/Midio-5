@@ -209,10 +209,19 @@ export class Midasus {
     while (this.i < this.q.length && this.q[this.i].tMs <= nowMs + ANTICIPATE_MS) {
       const n = this.q[this.i++];
       const t = this._target(n);
-      this.p.x += SNAP * (t.x - this.p.x);
-      this.p.y += SNAP * (t.y - this.p.y);
-      this.v.x *= 0.4;
-      this.v.y *= 0.4;
+      // Dart toward the target as a VELOCITY kick, not an instant position
+      // jump. This used to move her SNAP of the remaining distance in a
+      // single frame -- a real teleport, one per note, which on a normal
+      // melody (a note roughly every second) read as a twitchy stutter
+      // rather than the fast dart the surrounding comments describe. Sized
+      // so she covers SNAP of the distance over the anticipation window,
+      // then the PD pursuit below (already running every frame) takes over
+      // and eases her the rest of the way -- same destination, same
+      // "arriving as the note sounds" timing, but the travel is now an
+      // actual, visible motion instead of a pop.
+      const boostSec = ANTICIPATE_MS / 1000;
+      this.v.x = SNAP * (t.x - this.p.x) / boostSec;
+      this.v.y = SNAP * (t.y - this.p.y) / boostSec;
       this.hue = this._hueOf(n.pitch);
       if (this._prevPitch != null) this._lastIntervalSemitones = n.pitch - this._prevPitch;
       this._prevPitch = n.pitch;
