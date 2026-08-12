@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   CameraDirector, CALM_DRIFT_AMP_PX, CALM_DRIFT_PERIOD_SEC,
   beatSwayOffset, BEAT_SWAY_BASE_PX, BEAT_SWAY_ENERGY_PX, BEAT_SWAY_LATERAL_PX,
+  UNIVERSE_ZOOM_DIP, UNIVERSE_ROLL_MAX,
 } from '../src/render/CameraDirector.js';
 
 test('calm level introduces a slow, wide drift when nothing else is shaking the camera', () => {
@@ -157,4 +158,53 @@ test('calm sections keep only a fraction of the beat sway, never the full-energy
 
   assert.ok(calmSwayY < active.shakeY, 'deep calm should visibly damp the beat nod');
   assert.ok(calmSwayY > 0, 'but not silence it completely');
+});
+
+// --- Universe-shift reframe ---
+
+test('a zero universePulse is a complete no-op, same as omitting it', () => {
+  const withZero = new CameraDirector();
+  const omitted = new CameraDirector();
+  withZero.update(1 / 60, 0, false, null, 0, 0);
+  omitted.update(1 / 60, 0, false, null, 0);
+  assert.equal(withZero.zoom, omitted.zoom);
+  assert.equal(withZero.roll, omitted.roll);
+});
+
+test('a full-strength universePulse pulls the zoom back by UNIVERSE_ZOOM_DIP and adds roll', () => {
+  const cam = new CameraDirector();
+  // Run zoom's own ease up to (near) 1 first with no pulse, so the dip below
+  // is measured against a settled baseline rather than the initial transient.
+  for (let i = 0; i < 300; i++) cam.update(1 / 60, 0, false, null, 0, 0);
+  const baseZoom = cam.zoom;
+  const baseRoll = cam.roll;
+  cam.update(1 / 60, 0, false, null, 0, 1);
+  assert.ok(Math.abs(cam.zoom - (baseZoom - UNIVERSE_ZOOM_DIP)) < 1e-6, `expected the full dip, got zoom ${cam.zoom}`);
+  assert.ok(Math.abs(cam.roll - baseRoll) <= UNIVERSE_ROLL_MAX + 1e-9, 'roll tilt stays within its documented max');
+  assert.notEqual(cam.roll, baseRoll, 'a full pulse should visibly tilt the frame');
+});
+
+test('the reframe scales linearly with pulse strength, and reduced motion shrinks (not silences) it', () => {
+  const full = new CameraDirector();
+  const half = new CameraDirector();
+  const reduced = new CameraDirector();
+  full.update(1 / 60, 0, false, null, 0, 1);
+  half.update(1 / 60, 0, false, null, 0, 0.5);
+  reduced.update(1 / 60, 0, true, null, 0, 1);
+  const fullDip = 1 - full.zoom;
+  const halfDip = 1 - half.zoom;
+  assert.ok(Math.abs(halfDip - fullDip / 2) < 1e-6, `expected half the dip at half pulse, got ${halfDip} vs ${fullDip}`);
+  assert.ok(Math.abs(reduced.roll) < Math.abs(full.roll), 'reduced motion should shrink the roll tilt');
+  assert.ok(Math.abs(reduced.roll) > 0, 'but not eliminate it outright');
+});
+
+test('consecutive shifts alternate which way the reframe tilts', () => {
+  const cam = new CameraDirector();
+  cam.update(1 / 60, 0, false, null, 0, 0); // pulse starts at 0 -- no shift yet
+  cam.update(1 / 60, 0, false, null, 0, 1); // pulse rises from 0 -- first shift
+  const firstSign = cam._universeRollSign;
+  cam.update(1 / 60, 0, false, null, 0, 0); // pulse falls back toward 0
+  cam.update(1 / 60, 0, false, null, 0, 1); // rises from 0 again -- second shift
+  const secondSign = cam._universeRollSign;
+  assert.equal(secondSign, -firstSign);
 });

@@ -342,6 +342,12 @@ export class BiomeManager {
     this._danceKickAmp = 0;
     this._danceWorldX = 0;
     this.fever = 0; // player fever (Simulation.fever.level): cranks the dance and the runners
+    // Parallel-universe drift (ParallelUniverseDirector, set externally each
+    // step): cosmetic-only per-section variation. Neutral until the first shift.
+    this.universeHueDeg = 0;
+    this.universeHazeMul = 1;
+    this.universeWindMul = 1;
+    this.universeTerrainMul = 1;
     this.orogenyGrowth = 0.1; // mountain-building arc (Simulation.orogeny.growth), set externally each step
     // Miniature characters running along the near ranges' ridges — an
     // independent trio per range so the depths don't mirror each other.
@@ -1081,6 +1087,10 @@ export class BiomeManager {
     if (activeSection?.kind === 'bridge') {
       targetHueBias = Math.sign(targetHueBias || 1) * Math.max(Math.abs(targetHueBias), FORM_HUE_BIAS_MAX * 0.9) * 1.5;
     }
+    // The current "parallel universe"'s own small hue drift rides the same
+    // easing as the structural hue bias above -- one smooth glide, not two
+    // competing color systems.
+    targetHueBias += this.universeHueDeg || 0;
     this.sectionHueBias += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetHueBias - this.sectionHueBias);
 
     // Lyric structure (SectionFusion): the active section's kind and its
@@ -1117,17 +1127,19 @@ export class BiomeManager {
     this.mandala.rateMul = pers.mandalaRate ?? 1;
     this.rd.bias = pers.rdBias ?? 0;
     this._ribbonScaleMul = pers.ribbonScale ?? 1;
-    this._hazeMul = pers.haze ?? 1;
+    this._hazeMul = (pers.haze ?? 1) * (this.universeHazeMul || 1);
 
     // The Wind: one sample per frame, shared by every consumer below --
     // never re-derived per particle. An active weather front gusts it up:
     // rain and snow arrive WITH wind, not into still air.
-    this.atmosphere.turbulence = (pers.turbulence ?? 1) * (1 + 0.6 * this._activeWeatherIntensity);
+    this.atmosphere.turbulence = (pers.turbulence ?? 1) * (this.universeWindMul || 1) * (1 + 0.6 * this._activeWeatherIntensity);
     const energyInstant = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS)) : 0;
     this.atmosphere.update(dtSec, energyInstant);
 
-    // Groove for the dancing ranges: energy-driven, calmed sections settle.
-    const grooveTarget = energyInstant * (1 - 0.55 * calmLevel);
+    // Groove for the dancing ranges: energy-driven, calmed sections settle,
+    // the current universe's terrain drift nudges the amplitude a little
+    // further either way.
+    const grooveTarget = energyInstant * (1 - 0.55 * calmLevel) * (this.universeTerrainMul || 1);
     this._danceGroove += (1 - Math.exp(-dtSec / 0.30)) * (grooveTarget - this._danceGroove);
     const wind = this.atmosphere.at(worldX, this.h * 0.4);
     this.wind = wind;
