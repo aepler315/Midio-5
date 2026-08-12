@@ -950,6 +950,12 @@ export class Simulation {
     this.biomes.universeHazeMul = this.parallelUniverse.hazeMul;
     this.biomes.universeWindMul = this.parallelUniverse.windMul;
     this.biomes.universeTerrainMul = this.parallelUniverse.terrainMul;
+    // As the camera pulls back, the layers lean as if the vantage point
+    // itself is rising past them (BiomeManager scales this per layer by
+    // depth) -- read after camera.update() runs later this step, one frame
+    // behind like every other biomes.* field set here, same as the
+    // camera-driven fields above.
+    this.biomes.floatTilt = this.camera.floatTilt;
     if (this.performer.lastMilestone) {
       this.biomes.milestoneAtMs = this.performer.lastMilestone.atMs;
       this.biomes.milestoneIdx = this.performer.lastMilestone.idx;
