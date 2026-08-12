@@ -81,6 +81,25 @@
           </div>
 
           <details class="titleAdvanced">
+            <summary>Find music (Jamendo)</summary>
+            <p class="hint">
+              Free, Creative-Commons-licensed tracks via
+              <a href="https://www.jamendo.com" target="_blank" rel="noopener">Jamendo</a>
+              &mdash; non-commercial use only under their API terms. Paste a free
+              key from <a href="https://devportal.jamendo.com" target="_blank" rel="noopener">devportal.jamendo.com</a>.
+            </p>
+            <div class="jamendoRow">
+              <input id="jamendoClientIdInput" type="text" spellcheck="false" autocomplete="off" placeholder="Jamendo client_id" />
+            </div>
+            <div class="jamendoRow">
+              <input id="jamendoSearchInput" type="text" spellcheck="false" autocomplete="off" placeholder="Search songs, artists, genres&hellip;" />
+              <button id="jamendoSearchBtn" type="button" class="ghostbtn chipbtn">Search</button>
+            </div>
+            <p id="jamendoStatus" class="hint jamendoStatus hidden"></p>
+            <ul id="jamendoResults" class="jamendoResults"></ul>
+          </details>
+
+          <details class="titleAdvanced">
             <summary>SoundFonts &amp; extras</summary>
             <div class="sfRow">
               <label class="filebtn">

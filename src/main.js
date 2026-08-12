@@ -37,6 +37,10 @@ import { resolveIdentity } from './lyrics/SongIdentity.js';
 import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
+import {
+  getJamendoClientId, setJamendoClientId, searchTracks as jamendoSearchTracks,
+  fetchTrackAsFile as jamendoFetchTrackAsFile, JamendoError,
+} from './net/JamendoSource.js';
 import { visualNow } from './core/ChoreoClock.js';
 
 const STEP_MS = 1000 / 120;
@@ -1256,6 +1260,80 @@ fileInputEl.addEventListener('change', (e) => {
   if (e.target.files.length) handleFiles(e.target.files);
 });
 demoBtnEl.addEventListener('click', () => loadDemo());
+
+// Jamendo search (JamendoSource.js): a legal alternative to dropping a
+// local file -- free, Creative-Commons-licensed tracks, fetched and handed
+// to the exact same handleFiles() path a local drop uses, so nothing
+// downstream needs to know the audio came from the network.
+const jamendoClientIdInputEl = document.getElementById('jamendoClientIdInput');
+const jamendoSearchInputEl = document.getElementById('jamendoSearchInput');
+const jamendoSearchBtnEl = document.getElementById('jamendoSearchBtn');
+const jamendoStatusEl = document.getElementById('jamendoStatus');
+const jamendoResultsEl = document.getElementById('jamendoResults');
+
+if (jamendoClientIdInputEl) jamendoClientIdInputEl.value = getJamendoClientId();
+jamendoClientIdInputEl?.addEventListener('change', () => {
+  setJamendoClientId(jamendoClientIdInputEl.value.trim());
+});
+
+function setJamendoStatus(text, isError = false) {
+  if (!jamendoStatusEl) return;
+  jamendoStatusEl.textContent = text || '';
+  jamendoStatusEl.classList.toggle('hidden', !text);
+  jamendoStatusEl.classList.toggle('jamendoStatusError', !!isError);
+}
+
+function formatTrackDuration(seconds) {
+  const s = Math.max(0, Math.round(seconds || 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+async function runJamendoSearch() {
+  const q = jamendoSearchInputEl?.value.trim();
+  if (!q || !jamendoResultsEl) return;
+  jamendoResultsEl.innerHTML = '';
+  setJamendoStatus('Searching…');
+  let tracks;
+  try {
+    tracks = await jamendoSearchTracks(q, { clientId: getJamendoClientId() });
+  } catch (err) {
+    setJamendoStatus(err instanceof JamendoError ? err.message : `Search failed: ${err.message}`, true);
+    return;
+  }
+  if (!tracks.length) { setJamendoStatus('No results.'); return; }
+  setJamendoStatus('');
+  for (const track of tracks) {
+    const li = document.createElement('li');
+    li.className = 'jamendoResult';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ghostbtn jamendoResultBtn';
+    btn.title = track.licenseCcUrl ? `Creative Commons license: ${track.licenseCcUrl}` : '';
+    btn.textContent = `${track.name} — ${track.artist} (${formatTrackDuration(track.duration)})`;
+    btn.addEventListener('click', () => playJamendoTrack(track, btn));
+    li.appendChild(btn);
+    jamendoResultsEl.appendChild(li);
+  }
+}
+
+async function playJamendoTrack(track, btnEl) {
+  setJamendoStatus(`Downloading "${track.name}"…`);
+  if (btnEl) btnEl.disabled = true;
+  try {
+    const file = await jamendoFetchTrackAsFile(track);
+    setJamendoStatus('');
+    handleFiles([file]);
+  } catch (err) {
+    setJamendoStatus(err instanceof JamendoError ? err.message : `Could not load "${track.name}": ${err.message}`, true);
+  } finally {
+    if (btnEl) btnEl.disabled = false;
+  }
+}
+
+jamendoSearchBtnEl?.addEventListener('click', runJamendoSearch);
+jamendoSearchInputEl?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); runJamendoSearch(); }
+});
 
 // Dropzone-local visual feedback only (pre-game loader screen) — the actual
 // file handling lives in the window-level listeners below so a drop lands

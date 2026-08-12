@@ -441,6 +441,50 @@ html, body {
   padding: 4px 14px 12px;
   text-align: center;
 }
+.titleAdvanced .hint a { color: rgba(255, 215, 106, 0.85); }
+
+.jamendoRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 14px;
+}
+.jamendoRow input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8e6f0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+}
+.jamendoRow input:focus {
+  outline: none;
+  border-color: rgba(255, 215, 106, 0.55);
+  box-shadow: 0 0 0 2px rgba(255, 215, 106, 0.15);
+}
+.jamendoStatus.hidden { display: none; }
+.jamendoStatus { color: rgba(232, 230, 240, 0.6); }
+.jamendoStatusError { color: #ff9a9a; }
+.jamendoResults {
+  list-style: none;
+  margin: 0;
+  padding: 0 14px 12px;
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jamendoResultBtn {
+  width: 100%;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .progressHint {
   min-height: 1.2em;
   color: #7ad1ff !important;
