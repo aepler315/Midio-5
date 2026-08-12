@@ -31,6 +31,7 @@ import { CodaDirector } from './CodaDirector.js';
 import { FilmFinish } from '../render/FilmFinish.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
+import { WorldAssembly } from '../world/WorldAssembly.js';
 import { GroundField } from '../world/GroundField.js';
 import { PerfGovernor } from '../render/PerfGovernor.js';
 import { HighlightReel } from '../render/HighlightReel.js';
@@ -223,6 +224,8 @@ export class Simulation {
       canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,
       energyCurves,
     });
+    // The opening's counterpart to the finale's shatter -- see WorldAssembly.js.
+    this.assembly = new WorldAssembly({ canvasWidth, canvasHeight, songSeed });
 
     // Orogeny: the mountains visibly build across the song, peaking at its
     // energy climax, then subside through the rest of the runtime.
@@ -914,6 +917,7 @@ export class Simulation {
     this.filmFinish.update(nowMs, dtSec, this.calm.level, this.biomes.budget, this.hype);
     if (this.biomes.cutFlashJustFired) { this.camera.shake(3.5); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
+    this.assembly.update(nowMs);
     // Finale silence is owned by main.js (has AudioEngine) — flag only here.
 
     // Orogeny: the mountains build toward the song's energy climax, then

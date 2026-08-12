@@ -250,6 +250,13 @@ export class Renderer {
 
     ctx.restore(); // camera transform
 
+    // The opening assembly's target frame: grabbed right here, once, so it's
+    // the clean world+characters composite -- not last frame's bloom/vignette
+    // riding along, and not a HUD strip that hasn't drawn yet this frame.
+    if (sim.assembly && sim.assembly.wantsCapture(sim.timeMs)) {
+      sim.assembly.captureFrame(canvas, sim.timeMs);
+    }
+
     if (sim.fever) this._drawFeverAura(ctx, stage, sim.fever.level, sim.biomes, sim.reducedFlash);
     if (sim.hype) this._drawHypeFrame(ctx, stage, sim);
     // Drop impact pack: a chromatic shock + radial speed-lines from Midio,
@@ -295,6 +302,15 @@ export class Renderer {
       this.composer.draw(ctx, nominalStage, sim.timeMs, {
         showLabels: !!(sim.showSectionLabels || sim.paramBus?.showSectionLabels),
       });
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+
+    // The reassembling shards sit on top of the fully composed live frame
+    // (HUD included) and dissolve away once landed, revealing whatever the
+    // actually-live game looks like by then -- not a freeze, just a veil.
+    if (sim.assembly && sim.assembly.active) {
+      ctx.setTransform(sx, 0, 0, sy, 0, 0);
+      sim.assembly.draw(ctx, sim.timeMs);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
 
