@@ -14,6 +14,8 @@ import { decorateStrip } from './Landmarks.js';
 import {
   DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul,
   mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER,
+  massifDrawHeight, massifRidgeHeight01, massifRidgeJagPx, massifClearing01,
+  MASSIF_MARKER_SPEED_PX_S, MASSIF_MARKER_LIFE_SEC, nextMassifMarkerDelaySec,
 } from './MountainChoreo.js';
 import { ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, geoCrestOffset } from './GeoCrest.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
@@ -349,6 +351,13 @@ export class BiomeManager {
     this.universeWindMul = 1;
     this.universeTerrainMul = 1;
     this.orogenyGrowth = 0.1; // mountain-building arc (Simulation.orogeny.growth), set externally each step
+    // The massif's scale markers (MountainChoreo.js): tiny, ordinary-parallax
+    // silhouettes that occasionally drift across its face -- the comparison
+    // against something the eye already knows the size of is what actually
+    // sells "this is unfathomably huge," not raw height alone.
+    this._massifRand = mulberry32(hashSeed(`${songSeed}:massif`));
+    this._massifMarkers = []; // {x0, y, bornMs}
+    this._massifNextSpawnMs = nextMassifMarkerDelaySec(this._massifRand) * 1000;
     // Miniature characters running along the near ranges' ridges — an
     // independent trio per range so the depths don't mirror each other.
     this.ridgeRunners = {
@@ -3418,14 +3427,21 @@ export class BiomeManager {
     }
   }
 
-  /** One super-distant mountain that IS the spectrum: seven chunky bars —
-   *  bass building the summit at the center, treble falling away to the
-   *  flanks (see spectrumBars) — riding the same attack/release-smoothed
-   *  band levels as the horizon EQ. It sits on the slowest scroll ratio in
-   *  the scene and is haze-mixed toward the sky, so it reads as the
-   *  farthest solid thing in the world; a pedestal bell keeps it a
-   *  mountain even in total silence, and thin halo-colored crest caps are
-   *  the "this peak is an equalizer" tell. */
+  /** One super-distant mountain range that IS the spectrum: seven chunky
+   *  bars — bass building the summit at the center, treble falling away to
+   *  the flanks (see spectrumBars) — riding the same attack/release-
+   *  smoothed band levels as the horizon EQ. It sits on the slowest scroll
+   *  ratio in the scene, so it reads as the single farthest, most ancient
+   *  thing in the world -- which is the whole basis for letting it loom far
+   *  taller than any ordinary range (massifDrawHeight) without reading as
+   *  absurd: something that far away is allowed to simply BE that big.
+   *  A jagged (not flat) crest, a permanent haze veil near its own summit
+   *  that only rarely thins into a full clearing, and the occasional tiny
+   *  scale marker drifting across its face (_drawMassifMarkers) are what
+   *  turn "very tall bar graph" into something that induces real
+   *  megalophobia -- the raw height alone was never going to do that on
+   *  its own. Thin halo-colored crest caps stay the "this peak is an
+   *  equalizer" tell, same as always. */
   _drawSpectrumMassif(ctx, canvas, worldX, A, B, t) {
     const bars = spectrumBars(this._eqSmoothed);
     const barW = 46, gap = 3;
@@ -3440,32 +3456,129 @@ export class BiomeManager {
     // its own -- vertical position only; paint order, parallax (the scroll
     // above), and color stay untouched.
     const baseY = this.groundY + 40;
-    // Massif rides L2 orogeny and is capped by the exact same headroom rule
-    // every L2/L3/L4/L5 strip obeys (mountainStripDrawHeight), instead of an
-    // ad hoc bound of its own.
+    // Massif rides L2 orogeny, but answers to its OWN far taller ceiling
+    // (massifDrawHeight, not the ordinary-range mountainStripDrawHeight) --
+    // see MountainChoreo.js's MASSIF_SKY_HEADROOM_FRAC for why that's safe
+    // here specifically and nowhere else. The nominal height fed in is
+    // deliberately way beyond anything growth could produce on its own
+    // (unlike the ordinary ranges' 210, sized to their own strip bitmap) --
+    // this massif isn't SCALED into its size by orogeny the way the
+    // foreground ranges are, it simply already IS that size, so the real
+    // ceiling (ordinary frame geometry) is always what actually binds.
     const growth = orogenyHeightMul('L2', clamp01(this.orogenyGrowth || 0));
-    const maxH = mountainStripDrawHeight(210, growth, canvas.height, this.groundY);
+    const maxH = massifDrawHeight(2000, growth, canvas.height, this.groundY);
     const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
     const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
     const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.55));
     const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
 
+    const nowMs = this.tSec * 1000;
+    // The clearing: mostly veiled near its own crest, rarely fully bared --
+    // see massifClearing01's doc for why the window is deliberately narrow.
+    const clearing = massifClearing01(this.tSec);
+
+    // ONE continuous ridge line across the whole width -- not seven
+    // separate rectangles with gaps between them. At genuinely towering
+    // heights, narrow gapped columns stop reading as terrain and start
+    // reading as a picket fence of skyscrapers; a single smoothly
+    // interpolated (massifRidgeHeight01), jaggedly roughened
+    // (massifRidgeJagPx) skyline reads as one impossibly large mountain
+    // RANGE instead, while the bass-builds-the-summit EQ shape survives
+    // completely intact -- it's still exactly the same seven peaks, just
+    // connected.
+    const RIDGE_STEP_PX = 8;
+    const ridgePts = [];
+    for (let x = 0; x <= massifW; x += RIDGE_STEP_PX) {
+      const u = x / massifW;
+      ridgePts.push({ x: left + x, y: baseY - massifRidgeHeight01(bars, u) * maxH + massifRidgeJagPx(u) });
+    }
+    const lastX = ridgePts[ridgePts.length - 1].x;
+    if (lastX < left + massifW - 0.01) {
+      ridgePts.push({ x: left + massifW, y: baseY - massifRidgeHeight01(bars, 1) * maxH + massifRidgeJagPx(1) });
+    }
+
     ctx.save();
     ctx.fillStyle = body;
-    for (let i = 0; i < bars.length; i++) {
-      const h = bars[i].h01 * maxH;
-      const bx = left + i * (barW + gap);
-      ctx.fillRect(bx, baseY - h, barW, h);
+    ctx.beginPath();
+    ctx.moveTo(ridgePts[0].x, baseY);
+    for (const p of ridgePts) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(ridgePts[ridgePts.length - 1].x, baseY);
+    ctx.closePath();
+    ctx.fill();
+
+    // The haze veil: a permanent wash sitting at a fixed altitude band near
+    // the massif's own highest possible peak, thinning only during a rare
+    // clearing. Real distant summits vanish into their own atmosphere long
+    // before you'd ever reach one -- "can't quite see all of it, even now"
+    // is itself doing scale work that raw height never could alone.
+    const veilAlpha = 0.55 * (1 - clearing);
+    if (veilAlpha > 0.01) {
+      const skyRgb = hexToRgb(skyMid);
+      const veilTopY = baseY - maxH;
+      const veilBottomY = baseY - maxH * 0.45;
+      const veil = ctx.createLinearGradient(0, veilTopY, 0, veilBottomY);
+      veil.addColorStop(0, `rgba(${skyRgb.r},${skyRgb.g},${skyRgb.b},${veilAlpha.toFixed(3)})`);
+      veil.addColorStop(1, `rgba(${skyRgb.r},${skyRgb.g},${skyRgb.b},0)`);
+      ctx.fillStyle = veil;
+      ctx.fillRect(left, veilTopY, massifW, veilBottomY - veilTopY);
     }
-    // Soft massif crest caps — musical equalizer tell.
+
+    // Soft massif crest cap — musical equalizer tell — traced along the
+    // exact same ridge path so it never drifts off the silhouette it's
+    // supposed to be capping.
     if (styleDials(this.visualStyle).massifCrestCaps !== false) {
-      ctx.fillStyle = cap;
-      ctx.globalAlpha = 0.22 * (0.5 + 0.5 * this.budget);
-      for (let i = 0; i < bars.length; i++) {
-        const h = bars[i].h01 * maxH;
-        ctx.fillRect(left + i * (barW + gap), baseY - h, barW, 3.5);
-      }
+      ctx.strokeStyle = cap;
+      ctx.globalAlpha = 0.28 * (0.5 + 0.5 * this.budget);
+      ctx.lineWidth = 3.5;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(ridgePts[0].x, ridgePts[0].y);
+      for (const p of ridgePts) ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
     }
+    ctx.restore();
+
+    this._drawMassifMarkers(ctx, nowMs, left, massifW, baseY - maxH, baseY - maxH * 0.4);
+  }
+
+  /** Tiny, ordinary-parallax silhouettes drifting across the massif's face
+   *  on a seeded timer (MountainChoreo.js's marker constants). This is the
+   *  actual "occasionally perceived in a way that makes its raw size
+   *  known" mechanic: a shape crossing in front of the massif at a normal,
+   *  everyday speed, while the massif itself barely seems to move at all,
+   *  IS the scale reveal -- the comparison does work no amount of raw
+   *  height alone ever could. */
+  _drawMassifMarkers(ctx, nowMs, left, massifW, topY, bottomY) {
+    if (nowMs >= this._massifNextSpawnMs && massifW > 40) {
+      this._massifMarkers.push({
+        x0: left + this._massifRand() * massifW * 0.3,
+        y: topY + this._massifRand() * Math.max(1, bottomY - topY),
+        bornMs: nowMs,
+      });
+      this._massifNextSpawnMs = nowMs + nextMassifMarkerDelaySec(this._massifRand) * 1000;
+    }
+    if (!this._massifMarkers.length) return;
+    ctx.save();
+    ctx.fillStyle = 'rgba(6,6,12,0.6)';
+    this._massifMarkers = this._massifMarkers.filter((m) => {
+      const ageSec = (nowMs - m.bornMs) / 1000;
+      if (ageSec > MASSIF_MARKER_LIFE_SEC) return false;
+      const x = m.x0 + MASSIF_MARKER_SPEED_PX_S * ageSec;
+      // Eases in and out of visibility rather than popping -- a hard cut at
+      // either end would read as a glitch, not a distant bird/ship passing.
+      const fade = Math.min(1, ageSec * 3) * Math.min(1, (MASSIF_MARKER_LIFE_SEC - ageSec) * 3);
+      const wobble = Math.sin(ageSec * 3 + m.bornMs * 0.001) * 2;
+      ctx.globalAlpha = 0.55 * fade;
+      ctx.beginPath();
+      ctx.moveTo(x, m.y + wobble);
+      ctx.lineTo(x - 5, m.y + wobble + 2.2);
+      ctx.lineTo(x - 5, m.y + wobble - 2.2);
+      ctx.closePath();
+      ctx.fill();
+      return true;
+    });
+    ctx.globalAlpha = 1;
     ctx.restore();
   }
 
