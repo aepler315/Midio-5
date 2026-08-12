@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A framework-free, audio-clock-mastered rhythm side-scroller. Canvas 2D + Web Audio API.",
+  "description": "A framework-free, audio-clock-mastered rhythm side-scroller. Canvas 2D + Web Audio API. Soulseek-powered song search via slskd or direct client.",
   "scripts": {
     "start": "node tools/serve.js",
+    "dev": "node tools/serve.js 8080",
     "test": "node --test"
+  },
+  "dependencies": {
+    "slsk-client": "^1.1.0"
   },
   "devDependencies": {
     "playwright": "^1.48.0"
