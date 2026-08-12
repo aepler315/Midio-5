@@ -944,7 +944,13 @@ export class Simulation {
     if (!this.broshi.burrow.active) onFrameXs.push(this.broshi.screenX);
     if (!this.midasus.voyage.active) onFrameXs.push(this.midasus.p.x);
     this.camera.setZoomTarget(onFrameXs, this.stageW);
-    this.camera.update(dtSec, this.calm.level, this.reducedFlash);
+    // Beat sway input: ms since the most recent beat-grid crossing, from the
+    // SAME anchor (live song tempo from the first beat, refined by any
+    // player taps) everything else that locks to the beat already reads.
+    const beatPeriodMs = Math.max(1, this.beatAnchor.periodMs);
+    const beatTauMs = ((nowMs - this.beatAnchor.anchorMs) % beatPeriodMs + beatPeriodMs) % beatPeriodMs;
+    const beatEnergy = Math.max(this.vibe.epic, this.hype.surge);
+    this.camera.update(dtSec, this.calm.level, this.reducedFlash, beatTauMs, beatEnergy);
     this.paramBus.step();
 
     this.curr = this._snapshot();

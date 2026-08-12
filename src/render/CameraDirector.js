@@ -1,6 +1,9 @@
-// Camera state: screen shake, a damped impact roll (spec §2.2.1), and a
-// zoom that pulls back when a performer strays off-frame. The Renderer
-// reads shake/roll/zoom from here and applies a fixed framing otherwise.
+// Camera state: screen shake, a damped impact roll (spec §2.2.1), a zoom
+// that pulls back when a performer strays off-frame, and a small beat sway.
+// The Renderer reads shake/roll/zoom from here and applies a fixed framing
+// otherwise.
+import { clamp01 } from '../utils/math.js';
+import { kickEnv } from '../world/MountainChoreo.js';
 
 // Shake was dialed up for a "ferocity" pass (gain 2×, long ring, hard roll).
 // That reads as seasick on long songs -- pull it back so impacts still
@@ -57,6 +60,31 @@ export function zoomTargetForOffFrame(screenXs, stageW) {
 export const CALM_DRIFT_AMP_PX = 26;
 export const CALM_DRIFT_PERIOD_SEC = 15; // one full lazy sweep
 
+// Beat sway: a small, continuous camera nod retriggered on every beat-grid
+// crossing (from BeatAnchor, which tracks the song's own live tempo from
+// the very first beat regardless of whether the player has ever tapped) --
+// the frame used to only move around impacts and (in calm sections) the
+// slow free-running drift above, so a long steady stretch could read as
+// dead-static. Reuses the same snap-then-settle kickEnv shape everything
+// else in the game beats to, rather than a smooth sine, so it reads as
+// "on the beat" instead of a generic wobble. A downward dip carries most of
+// the motion (like a head nodding to the music); a smaller lateral nudge
+// alternates side to side beat to beat for a touch more life.
+export const BEAT_SWAY_BASE_PX = 3;    // dip present even in the quietest section
+export const BEAT_SWAY_ENERGY_PX = 9;  // additional dip amplitude at full musical energy
+export const BEAT_SWAY_LATERAL_PX = 4; // alternating left/right nudge at full energy
+
+/** Pure: the beat sway's {x, y} offset given `tauMs` (ms since the most
+ *  recent beat-grid crossing), the alternating sign for this beat, current
+ *  musical energy (0..1), and the reduced-motion multiplier. */
+export function beatSwayOffset(tauMs, sign, energy01, motionMul = 1) {
+  const env = kickEnv(tauMs);
+  const e = clamp01(energy01);
+  const dip = (BEAT_SWAY_BASE_PX + BEAT_SWAY_ENERGY_PX * e) * motionMul;
+  const lateral = BEAT_SWAY_LATERAL_PX * e * motionMul;
+  return { x: env * lateral * (sign < 0 ? -1 : 1), y: env * dip };
+}
+
 export class CameraDirector {
   constructor() {
     this.shakeX = 0;
@@ -72,6 +100,9 @@ export class CameraDirector {
 
     this.zoom = 1; // 1 = normal framing; the Renderer widens the logical stage view by 1/zoom
     this._zoomTarget = 1;
+
+    this._lastBeatTauMs = null;
+    this._beatSwaySign = 1;
   }
 
   /** Called once per frame before update(); sets what zoom() should ease
@@ -91,7 +122,11 @@ export class CameraDirector {
     this._rollSign = -this._rollSign;
   }
 
-  update(dtSec, calmLevel = 0, reducedMotion = false) {
+  /** @param beatTauMs ms since the most recent beat-grid crossing (from
+   *    BeatAnchor), or null if no beat clock is available yet (e.g. the
+   *    very first frame). @param beatEnergy 0..1 how much the current
+   *    section musically justifies extra motion (vibe.epic/hype.surge). */
+  update(dtSec, calmLevel = 0, reducedMotion = false, beatTauMs = null, beatEnergy = 0) {
     // Reduced-motion keeps the harder shake comfortable: half amplitude on
     // both the translational shake and the rotational roll.
     const motionMul = reducedMotion ? 0.5 : 1;
@@ -132,8 +167,23 @@ export class CameraDirector {
     const driftX = driftAmp * Math.sin(driftOmega * this._driftT);
     const driftY = driftAmp * 0.55 * Math.sin(driftOmega * this._driftT * 0.7 + 1.3);
 
-    this.shakeX = shakeX * motionMul + driftX;
-    this.shakeY = shakeY * motionMul + driftY;
+    // Beat sway: retriggers every time the beat clock wraps back to 0 (a
+    // fresh beat), alternating its lateral nudge left/right beat to beat.
+    // Calm sections keep only a whisper of it -- the slow drift above is
+    // already doing that section's work, and a beat-locked nod on top of it
+    // would fight the "held breath" read calm is going for.
+    let swayX = 0, swayY = 0;
+    if (beatTauMs != null) {
+      if (this._lastBeatTauMs != null && beatTauMs < this._lastBeatTauMs) this._beatSwaySign = -this._beatSwaySign;
+      this._lastBeatTauMs = beatTauMs;
+      const calmMul = 1 - 0.5 * calmLevel;
+      const sway = beatSwayOffset(beatTauMs, this._beatSwaySign, beatEnergy * calmMul, motionMul);
+      swayX = sway.x;
+      swayY = sway.y;
+    }
+
+    this.shakeX = shakeX * motionMul + driftX + swayX;
+    this.shakeY = shakeY * motionMul + driftY + swayY;
 
     // Zoom: critically-damped-ish exponential ease toward _zoomTarget, same
     // discipline as the shake/roll ring-downs above -- it must never snap
