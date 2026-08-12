@@ -38,6 +38,18 @@ const FADE_START_MS = 520;
 const SHATTER_TOTAL_MS = 1600;
 const SHATTER_BURST_MS = 380; // velocity eases from 0 → full over this window after hold
 
+// Surface cracks: a small, short-lived burst where Broshi's burrow punches
+// through the glass (dig-in and eruption) -- distinct from the permanent
+// ridge cracks above (those accumulate for the whole song and feed the
+// finale triangulation). These are a quick "he just broke the pane" tell,
+// grown and faded independently, and never added to `cracks` so they never
+// pollute the shatter geometry.
+const SURFACE_CRACK_LEGS_MIN = 3, SURFACE_CRACK_LEGS_MAX = 4;
+const SURFACE_CRACK_GROW_MS = 220;
+const SURFACE_CRACK_FADE_MS = 650;
+const SURFACE_CRACK_LIFE_MS = SURFACE_CRACK_GROW_MS + SURFACE_CRACK_FADE_MS;
+const MAX_SURFACE_CRACKS = 6;
+
 /**
  * Build polyline geometry from an ordered list of points.
  * @returns {{nodes:{x:number,y:number}[], lengths:number[], total:number, children:any[]}}
@@ -238,7 +250,7 @@ function collectNodes(crack, out) {
   for (const c of crack.children || []) collectNodes(c, out);
 }
 
-function drawRevealedPolyline(ctx, nodes, lengths, total, revealLen, glow = true) {
+function drawRevealedPolyline(ctx, nodes, lengths, total, revealLen, glow = true, alphaMul = 1) {
   if (revealLen <= 0 || total <= 0) return;
   const pts = [nodes[0]];
   let acc = 0;
@@ -254,7 +266,7 @@ function drawRevealedPolyline(ctx, nodes, lengths, total, revealLen, glow = true
   // Hairline glass stroke — subtle enough to read as frost, not scaffolding.
   if (glow) {
     ctx.strokeStyle = '#9fd9ff';
-    ctx.globalAlpha = 0.07;
+    ctx.globalAlpha = 0.07 * alphaMul;
     ctx.lineWidth = 1.5;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
@@ -267,7 +279,7 @@ function drawRevealedPolyline(ctx, nodes, lengths, total, revealLen, glow = true
   }
 
   ctx.strokeStyle = '#ffffff';
-  ctx.globalAlpha = 0.22;
+  ctx.globalAlpha = 0.22 * alphaMul;
   let s = 0;
   for (let i = 1; i < pts.length; i++) {
     const segLen = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
@@ -319,6 +331,8 @@ export class FractureEngine {
     this._nextThresholdIdx = 0;
     this._pendingBirths = [];
     this.cracks = [];
+    this.surfaceCracks = []; // transient punch-through bursts (see spawnSurfaceCrack)
+    this._surfaceCrackSeed = 0;
 
     // Precomputed impossible-Denali ridge plan — progressive births walk it
     // across the whole song (one small piece per stress threshold).
@@ -369,8 +383,31 @@ export class FractureEngine {
     this.impactStress = Math.min(1, this.impactStress + 0.02 * I);
   }
 
+  /** A small, quick-fading crack burst radiating from (screenX, screenY) --
+   *  the pane visibly taking a hit where Broshi's burrow punches through it
+   *  (dig-in and eruption). Independent of the permanent ridge cracks: never
+   *  added to `this.cracks`, so it never reaches the finale triangulation. */
+  spawnSurfaceCrack(screenX, screenY, camera) {
+    if (this.shatterState !== 'idle' && this.shatterState !== 'about-to-freeze') return;
+    const rand = mulberry32(hashSeed(`${this.songSeed}:surface:${this._surfaceCrackSeed++}`));
+    const legs = SURFACE_CRACK_LEGS_MIN + Math.floor(rand() * (SURFACE_CRACK_LEGS_MAX - SURFACE_CRACK_LEGS_MIN + 1));
+    const trees = [];
+    for (let i = 0; i < legs; i++) {
+      const ang = (i / legs) * Math.PI * 2 + rand() * 0.7;
+      const len = 24 + rand() * 30;
+      const b = { x: screenX + Math.cos(ang) * len, y: screenY + Math.sin(ang) * len };
+      trees.push(polylineFromPoints(jaggedChord({ x: screenX, y: screenY }, b, 2, rand, 4)));
+    }
+    this.surfaceCracks.push({ trees, bornMs: this._lastNowMs ?? 0 });
+    if (this.surfaceCracks.length > MAX_SURFACE_CRACKS) this.surfaceCracks.shift();
+    if (camera) camera.shake(1.4);
+  }
+
   update(nowMs, dtSec, energyCurves, camera) {
     this._lastNowMs = nowMs;
+    if (this.surfaceCracks.length) {
+      this.surfaceCracks = this.surfaceCracks.filter((c) => nowMs - c.bornMs < SURFACE_CRACK_LIFE_MS);
+    }
     if (this.shatterState === 'frozen' || this.shatterState === 'done') {
       this._updateShatter(nowMs, dtSec);
       return;
@@ -440,12 +477,30 @@ export class FractureEngine {
     if (this.shatterState === 'frozen' || this.shatterState === 'done') return;
     ctx.save();
     for (const crack of this.cracks) drawCrackTree(ctx, crack, this._lastNowMs ?? 0, glow);
+    this._drawSurfaceCracks(ctx, glow);
     if (this.flashAlpha > 0.01) {
       ctx.globalAlpha = capFlashAlpha(this.flashAlpha * 0.12, this.reducedFlash);
       ctx.fillStyle = '#cfefff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
     ctx.restore();
+  }
+
+  _drawSurfaceCracks(ctx, glow) {
+    if (!this.surfaceCracks.length) return;
+    const nowMs = this._lastNowMs ?? 0;
+    for (const sc of this.surfaceCracks) {
+      const age = nowMs - sc.bornMs;
+      const growU = clamp01(age / SURFACE_CRACK_GROW_MS);
+      const eased = 1 - (1 - growU) ** 3;
+      const fade = age < SURFACE_CRACK_GROW_MS
+        ? 1
+        : 1 - smoothstep(SURFACE_CRACK_GROW_MS, SURFACE_CRACK_GROW_MS + SURFACE_CRACK_FADE_MS, age);
+      if (fade <= 0.01) continue;
+      for (const leg of sc.trees) {
+        drawRevealedPolyline(ctx, leg.nodes, leg.lengths, leg.total, leg.total * eased, glow, fade);
+      }
+    }
   }
 
   /** Renderer calls this once, right after drawing the frame the freeze should capture. */

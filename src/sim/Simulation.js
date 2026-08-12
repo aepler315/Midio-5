@@ -793,10 +793,18 @@ export class Simulation {
     // triggering here (before their own update() calls below) means a
     // freshly-launched excursion starts animating in this very frame
     // rather than waiting one extra tick.
+    const burrowWasActive = this.broshi.burrow.active;
     this.excursions.update(nowMs, dtSec, {
       vibe: this.vibe, calm: this.calm, hype: this.hype, energyCurves: this.energyCurves,
       conductor: this.conductor, midasus: this.midasus, broshi: this.broshi, worldX: this.worldX,
     });
+    // He punches through the ground on the way down -- the screen itself
+    // takes a small crack where he broke the surface, same glass-fracture
+    // language FractureEngine already draws elsewhere (see also justSurfaced
+    // below, the eruption's matching crack on the way back up).
+    if (!burrowWasActive && this.broshi.burrow.active) {
+      this.fracture.spawnSurfaceCrack(this.broshi.screenX, this.midio.groundY, this.camera);
+    }
 
     // The cursor idles out after a couple of seconds of stillness.
     if (this.pointer.active && nowMs - this.pointer.lastMoveMs > 2500) this.pointer.active = false;
@@ -869,6 +877,10 @@ export class Simulation {
       // Shared build-up swell (EnsembleDirector.swell) -- see Midasus/Renderer for the other two.
       swell: this.ensemble.swell(1),
     }, this.groundField, this.perf.particleMul);
+    // The eruption's matching crack, on his way back up through the pane.
+    if (this.broshi.burrow.justSurfaced) {
+      this.fracture.spawnSurfaceCrack(this.broshi.screenX, this.midio.groundY, this.camera);
+    }
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
     // Enemy-wave combat: fixed defender join order (Midasus, Broshi, Midio)
