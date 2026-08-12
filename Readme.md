@@ -5,24 +5,43 @@ file or an audio file (mp3/wav/flac) and the entire show — jumps, combos,
 two companions, eight parallax biomes, screen fracturing — is generated live
 from the music, no authored levels involved. Canvas 2D + Web Audio API only.
 
+**Soulseek song search** is built in: find a track on the title screen (via
+your [slskd](https://github.com/slskd/slskd) instance, a direct Soulseek
+login, or the free demo catalog) and hit **Play** to load it into Midio.
+See [`docs/soulseek.md`](docs/soulseek.md).
+
 Full design spec: see the original technical specification this repo
 implements (MIDI/audio adapters unify into one NoteEvent timeline; every
 visual system is a pure consumer of it).
 
 ## Running it
 
-No build step. Any static file server works:
-
 ```sh
-npm install   # only pulls in Playwright, for the test harness below
-npm start     # serves the app at http://localhost:5173
+npm install   # slsk-client (direct Soulseek) + Playwright for tests
+npm start     # serves the app at http://localhost:8080  (0.0.0.0)
 ```
 
-Then open `http://localhost:5173` and either drop a `.mid`/audio file, or
-click **"Play procedural demo"** to run with zero file input. **You can drop
-a different `.mid`/audio file in at any time, even mid-song** — dragging one
-anywhere on the page (not just the loader screen) tears down whatever's
-currently playing and starts the new one immediately.
+Then open the app and either:
+
+- **Search** for a song in the Soulseek panel on the title screen,
+- drop a `.mid`/audio file, or
+- click **"Play demo"** to run with zero file input.
+
+**You can drop a different `.mid`/audio file in at any time, even mid-song**
+— dragging one anywhere on the page (not just the loader screen) tears down
+whatever's currently playing and starts the new one immediately.
+
+### Soulseek backends
+
+| Env | Effect |
+| --- | --- |
+| `SLSKD_URL` + `SLSKD_API_KEY` | Proxy search/download through [slskd](https://github.com/slskd/slskd) |
+| `SLSKD_DOWNLOADS` | Folder of completed slskd downloads (so **Play** can load bytes) |
+| `SLSK_USER` + `SLSK_PASS` | Direct Soulseek client in the Node server |
+| *(none)* | Free / public-domain **demo catalog** — search still works |
+
+You can also configure the connection from the title screen **Connect** button
+(stored in `localStorage` and applied to the server).
 
 **Scored playback:** drop a **MIDI and an audio file together** and the
 recording is what you hear while the MIDI drives every visual — no audio

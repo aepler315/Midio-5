@@ -39,6 +39,8 @@ import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
 import { visualNow } from './core/ChoreoClock.js';
+import { SoulseekSearch } from './soulseek/SoulseekSearch.js';
+
 
 const STEP_MS = 1000 / 120;
 
@@ -669,6 +671,7 @@ function backToTitle() {
   completePanelEl.classList.add('hidden');
   hudEl.classList.add('hidden');
   loaderEl.classList.remove('hidden');
+  soulseekSearch?.resetBusy();
   startTitleBackdrop();
 }
 
@@ -1265,6 +1268,26 @@ fileInputEl.addEventListener('change', (e) => {
   if (e.target.files.length) handleFiles(e.target.files);
 });
 demoBtnEl.addEventListener('click', () => loadDemo());
+
+// Soulseek-powered song search on the title screen. Results download through
+// the local bridge (/api/soulseek/*) and feed the same handleFiles path as drops.
+const slskPanelEl = document.getElementById('slskPanel');
+let soulseekSearch = null;
+if (slskPanelEl) {
+  soulseekSearch = new SoulseekSearch({
+    root: slskPanelEl,
+    onFiles: (files) => {
+      soulseekSearch?.resetBusy();
+      handleFiles(files);
+    },
+    onStatus: (msg) => {
+      if (msg && progressEl && !progressEl.classList.contains('hidden')) {
+        // keep progress text for active loads; search has its own status line
+      }
+    },
+  });
+}
+
 
 // Dropzone-local visual feedback only (pre-game loader screen) — the actual
 // file handling lives in the window-level listeners below so a drop lands

@@ -163,7 +163,8 @@ html, body {
 .titleCard {
   position: relative;
   z-index: 1;
-  width: min(520px, 100%);
+  width: min(560px, 100%);
+
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1299,4 +1300,301 @@ html, body {
 
 @media (prefers-reduced-motion: reduce) {
   #recalPanel, #recalNudge { animation: none; }
+}
+
+/* ── Soulseek search panel ────────────────────────────────────────────────── */
+.slskPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  padding: 12px 12px 10px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(40, 18, 72, 0.55), rgba(12, 18, 40, 0.65));
+  border: 1px solid rgba(186, 140, 255, 0.22);
+  box-shadow: 0 0 0 1px rgba(255, 215, 106, 0.04) inset;
+}
+
+.slskHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.slskTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.slskHeading {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #f0e8ff;
+}
+
+.slskModeBadge {
+  flex: 0 0 auto;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.28);
+  color: #c8b8e8;
+}
+.slskModeBadge[data-mode="demo"] {
+  color: #ffd76a;
+  border-color: rgba(255, 215, 106, 0.35);
+  background: rgba(255, 215, 106, 0.1);
+}
+.slskModeBadge[data-mode="slskd"] {
+  color: #7ad1ff;
+  border-color: rgba(122, 209, 255, 0.4);
+  background: rgba(122, 209, 255, 0.12);
+}
+.slskModeBadge[data-mode="direct"] {
+  color: #ff7ab6;
+  border-color: rgba(255, 122, 182, 0.4);
+  background: rgba(255, 122, 182, 0.12);
+}
+.slskModeBadge[data-mode="offline"] {
+  color: #ff8a8a;
+  border-color: rgba(255, 100, 100, 0.35);
+}
+
+.slskSearchForm {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.slskSearchForm input[type="search"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f4f0ff;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.slskSearchForm input[type="search"]::placeholder {
+  color: rgba(220, 210, 255, 0.4);
+}
+.slskSearchForm input[type="search"]:focus {
+  border-color: rgba(186, 140, 255, 0.65);
+  box-shadow: 0 0 0 3px rgba(140, 90, 220, 0.22);
+}
+
+.slskSearchBtn {
+  flex: 0 0 auto;
+  height: 40px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  color: #1a1020;
+  background: linear-gradient(135deg, var(--spec-warm, #ff7ab6), #ffb86b 120%);
+  box-shadow: 0 4px 16px rgba(255, 122, 182, 0.28);
+  transition: transform 0.12s, filter 0.12s, opacity 0.12s;
+}
+.slskSearchBtn:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.slskSearchBtn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.slskSettings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.slskField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: rgba(230, 220, 255, 0.7);
+  text-align: left;
+}
+.slskField input,
+.slskField select {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f0eaff;
+  font-size: 0.85rem;
+}
+.slskFieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.slskSettingsActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.slskHint {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: rgba(200, 190, 230, 0.55);
+}
+.slskHint code {
+  font-size: 0.68rem;
+  color: #c9b6ff;
+}
+
+.slskStatus {
+  margin: 0;
+  min-height: 1.1em;
+  font-size: 0.78rem;
+  color: rgba(210, 200, 245, 0.75);
+}
+
+.slskEmpty {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: rgba(200, 190, 230, 0.55);
+  text-align: center;
+  padding: 8px 4px 2px;
+}
+
+.slskResults {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(220px, 32vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(180, 140, 255, 0.35) transparent;
+}
+
+.slskResult {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.12s;
+}
+.slskResult:hover {
+  background: rgba(160, 100, 255, 0.14);
+  border-color: rgba(186, 140, 255, 0.35);
+  transform: translateY(-1px);
+}
+.slskResult.loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+.slskResultIcon {
+  font-size: 1.05rem;
+  opacity: 0.85;
+  text-align: center;
+}
+.slskResultBody {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.slskResultTitle {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #f6f0ff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slskResultArtist {
+  font-size: 0.75rem;
+  color: rgba(200, 190, 235, 0.75);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slskResultMeta {
+  font-size: 0.68rem;
+  color: rgba(180, 170, 210, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slskResultAction {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--spec-gold, #ffd76a);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 215, 106, 0.1);
+  border: 1px solid rgba(255, 215, 106, 0.25);
+}
+
+.slskLegal {
+  margin: 0;
+  font-size: 0.65rem;
+  line-height: 1.35;
+  color: rgba(180, 170, 210, 0.45);
+  text-align: center;
+}
+
+.slskDivider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(200, 190, 230, 0.4);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.slskDivider::before,
+.slskDivider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+}
+
+@media (max-width: 420px) {
+  .slskResults { max-height: min(180px, 28vh); }
+  .slskSearchForm { flex-direction: column; }
+  .slskSearchBtn { width: 100%; }
 }
