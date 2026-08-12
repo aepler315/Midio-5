@@ -350,6 +350,11 @@ export class BiomeManager {
     this.universeHazeMul = 1;
     this.universeWindMul = 1;
     this.universeTerrainMul = 1;
+    // Float tilt (CameraDirector.floatTilt, set externally each step): a
+    // small per-layer-scaled rotation applied in _drawLayer while the
+    // camera is pulled back, so nearer ranges lean more than far ones --
+    // see LAYER_TILT_PIVOT_KEY below for why the ground itself never tilts.
+    this.floatTilt = 0;
     this.orogenyGrowth = 0.1; // mountain-building arc (Simulation.orogeny.growth), set externally each step
     // The massif's scale markers (MountainChoreo.js): tiny, ordinary-parallax
     // silhouettes that occasionally drift across its face -- the comparison
@@ -1268,7 +1273,7 @@ export class BiomeManager {
     if (this._glitchTimer <= 0) { this._glitchActiveMs = 60; this._glitchTimer = 2.5 + this._starSeed() * 3.5; }
   }
 
-  draw(ctx, canvas, worldX, originX = 0, skyVoyage = null, particleMul = 1, perf = null) {
+  draw(ctx, canvas, worldX, originX = 0, skyVoyage = null, particleMul = 1, perf = null, groundView = null) {
     // Deeper PerfGovernor rungs (mobile performance round): the optional
     // phenomena layer and the depth-haze layer count both read this for
     // the rest of the frame, so it's stashed on `this` rather than threaded
@@ -1471,11 +1476,23 @@ export class BiomeManager {
     this._drawConnectorHills(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t);
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
 
-    this._drawGround(ctx, canvas, worldX, originX, A, B, t, tint);
+    // Ground view: switch to the fixed, never-zoomed transform for the
+    // ground and everything painted from here on (see Renderer.draw's
+    // groundView comment for the full reasoning). Everything above this
+    // point -- sky, massif, L2-L5 -- stays on the zoomed transform that was
+    // already active when draw() was called, which is exactly what makes a
+    // camera pull-back read as "more sky and mountain becomes visible
+    // above a ground that never moves" instead of "everything, ground
+    // included, shrinks in place." No-ops (keeps the caller's transform)
+    // when no groundView was handed in -- tests and any caller that hasn't
+    // opted in still get the old, single-transform behavior.
+    const groundCanvas = groundView ? groundView.stage : canvas;
+    if (groundView) groundView.apply();
+    this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
     // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
-    this._drawTerrainFooting(ctx, canvas, worldX, originX, A, B, t);
-    this._drawFlood(ctx, canvas);
-    this._drawTransitionOverlays(ctx, canvas, B);
+    this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
+    this._drawFlood(ctx, groundCanvas);
+    this._drawTransitionOverlays(ctx, groundCanvas, B);
   }
 
   /** Subtle dark contact where ranges meet the walking ground -- follows the
@@ -2976,6 +2993,23 @@ export class BiomeManager {
     // strip bottoms stay tucked safely beneath the ground fill.
     const yOff = this.groundY + 40 - canvas.height;
     ctx.save();
+    // Float tilt (CameraDirector.floatTilt): as the camera pulls back, each
+    // range leans as if the vantage point itself is rising past it -- scaled
+    // by the SAME depth ratio that already governs its parallax scroll
+    // speed, so the nearest range (L5) gets the full tilt and the farthest
+    // (L2) barely moves, exactly like their scroll speeds already do.
+    // Pivoted near the range's own base (the ground line) so its foot stays
+    // put and its peak is what visibly swings -- the ground itself never
+    // tilts (see the separate fixed ground transform in draw()), so this
+    // reads as the mountains leaning away from a level floor, not the
+    // floor tilting under them.
+    const tilt = (this.floatTilt || 0) * (LAYER_RATIOS[layerKey] / LAYER_RATIOS.L5);
+    if (tilt) {
+      const pivotX = canvas.width / 2, pivotY = this.groundY;
+      ctx.translate(pivotX, pivotY);
+      ctx.rotate(tilt);
+      ctx.translate(-pivotX, -pivotY);
+    }
     const wantShimmerSlices = styleDials(this.visualStyle).heatShimmerSlices !== false;
     const biomeShimmerAlpha = (A.fx === 'heatShimmer' ? 1 - t : 0) + (B.fx === 'heatShimmer' ? t : 0);
     const applyBiomeShimmer = wantShimmerSlices && biomeShimmerAlpha > 0.05 && layerKey !== 'L5';

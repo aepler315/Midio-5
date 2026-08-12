@@ -94,6 +94,15 @@ export function beatSwayOffset(tauMs, sign, energy01, motionMul = 1) {
 export const UNIVERSE_ZOOM_DIP = 0.05;   // fraction pulled back at full pulse
 export const UNIVERSE_ROLL_MAX = 0.025;  // radians of extra tilt at full pulse
 
+// Float tilt: while the camera is pulled back, the world reads as though
+// the vantage point itself is rising past it, not just shrinking in place.
+// This alone doesn't tilt anything -- it's the single knob (0 at zoom=1, max
+// at ZOOM_MIN) that BiomeManager scales per-layer by depth (nearer ranges
+// lean more than far ones), so "the angle of the different layers" genuinely
+// differs layer to layer rather than being one flat frame-wide rotation
+// (which is what `roll`, above, already is).
+export const FLOAT_TILT_MAX = 0.05; // radians, at the single nearest range, at full pull-back
+
 export class CameraDirector {
   constructor() {
     this.shakeX = 0;
@@ -110,6 +119,7 @@ export class CameraDirector {
     this.zoom = 1; // 1 = normal framing; the Renderer widens the logical stage view by 1/zoom
     this._zoomTarget = 1;
     this._zoomBase = 1; // the eased off-frame-pullback value, BEFORE the universe-pulse dip below
+    this.floatTilt = 0; // radians, the per-layer-scaled base value -- see FLOAT_TILT_MAX
 
     this._lastBeatTauMs = null;
     this._beatSwaySign = 1;
@@ -226,5 +236,14 @@ export class CameraDirector {
     if (pulse > 0) {
       this.roll += UNIVERSE_ROLL_MAX * pulse * this._universeRollSign * motionMul;
     }
+
+    // Float tilt: 0 at zoom=1 (normal framing), ramping to FLOAT_TILT_MAX as
+    // the camera pulls all the way back to ZOOM_MIN. Deliberately reads off
+    // the FINAL this.zoom (post universe-dip), not _zoomBase -- a universe
+    // reframe pulse is itself a small, brief pull-back, and it should tilt
+    // the layers exactly as an off-frame pull-back would, not be ignored.
+    const tiltTravelMul = reducedMotion ? 0.4 : 1;
+    const tiltT = clamp01((1 - this.zoom) / (1 - ZOOM_MIN));
+    this.floatTilt = FLOAT_TILT_MAX * tiltT * tiltTravelMul;
   }
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   CameraDirector, CALM_DRIFT_AMP_PX, CALM_DRIFT_PERIOD_SEC,
   beatSwayOffset, BEAT_SWAY_BASE_PX, BEAT_SWAY_ENERGY_PX, BEAT_SWAY_LATERAL_PX,
-  UNIVERSE_ZOOM_DIP, UNIVERSE_ROLL_MAX,
+  UNIVERSE_ZOOM_DIP, UNIVERSE_ROLL_MAX, FLOAT_TILT_MAX, ZOOM_MIN,
 } from '../src/render/CameraDirector.js';
 
 test('calm level introduces a slow, wide drift when nothing else is shaking the camera', () => {
@@ -228,4 +228,51 @@ test('a pulse held elevated across many frames never runs the zoom away -- regre
   }
   assert.ok(minZoom > 1 - UNIVERSE_ZOOM_DIP - 0.01, `zoom dipped far past its documented bound: ${minZoom}`);
   assert.ok(minZoom > 0, 'zoom must never go non-positive -- Renderer divides the stage width by it');
+});
+
+// --- Float tilt (per-layer differential tilt while pulled back) ---
+
+test('floatTilt is 0 at normal framing (zoom=1) and rises smoothly as the camera pulls back', () => {
+  const cam = new CameraDirector();
+  cam.update(1 / 60, 0, false); // zoom starts at (and stays near) 1 with no target set
+  assert.ok(Math.abs(cam.floatTilt) < 1e-6, `expected ~0 floatTilt at rest, got ${cam.floatTilt}`);
+
+  cam._zoomTarget = ZOOM_MIN;
+  let last = 0;
+  for (let i = 0; i < 600; i++) {
+    cam.update(1 / 60, 0, false);
+    assert.ok(cam.floatTilt >= last - 1e-9, `floatTilt should rise monotonically as zoom eases down, dipped at frame ${i}`);
+    last = cam.floatTilt;
+  }
+  assert.ok(Math.abs(cam.floatTilt - FLOAT_TILT_MAX) < 1e-3, `expected floatTilt to settle near its max, got ${cam.floatTilt}`);
+});
+
+test('floatTilt never exceeds FLOAT_TILT_MAX even at the hardest pull-back', () => {
+  const cam = new CameraDirector();
+  cam._zoomTarget = ZOOM_MIN;
+  for (let i = 0; i < 1000; i++) {
+    cam.update(1 / 60, 0, false);
+    assert.ok(cam.floatTilt <= FLOAT_TILT_MAX + 1e-6, `floatTilt overshot: ${cam.floatTilt}`);
+    assert.ok(cam.floatTilt >= 0, `floatTilt went negative: ${cam.floatTilt}`);
+  }
+});
+
+test('reduced motion shrinks floatTilt rather than eliminating it', () => {
+  const full = new CameraDirector();
+  const reduced = new CameraDirector();
+  full._zoomTarget = ZOOM_MIN;
+  reduced._zoomTarget = ZOOM_MIN;
+  for (let i = 0; i < 300; i++) {
+    full.update(1 / 60, 0, false);
+    reduced.update(1 / 60, 0, true);
+  }
+  assert.ok(reduced.floatTilt < full.floatTilt, 'reduced motion should tilt less');
+  assert.ok(reduced.floatTilt > 0, 'but not zero -- the cue should still communicate the pull-back');
+});
+
+test('a universe-shift pull-back also drives floatTilt, not just off-frame pull-back', () => {
+  const cam = new CameraDirector();
+  // No off-frame target set (_zoomTarget stays 1); only the universe pulse dips zoom.
+  for (let i = 0; i < 5; i++) cam.update(1 / 60, 0, false, null, 0, 1);
+  assert.ok(cam.floatTilt > 0, 'a universe-reframe pull-back should tilt the layers too, not be ignored');
 });

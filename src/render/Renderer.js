@@ -193,11 +193,48 @@ export class Renderer {
     ctx.rotate(camera.roll || 0); // damped impact roll, pivoting on screen center
     ctx.translate(-viewCx + camera.shakeX - SHAKE_MARGIN_PX, -viewCy + camera.shakeY - SHAKE_MARGIN_PX);
 
+    // Ground view: a SECOND, never-zoomed transform that BiomeManager.draw()
+    // switches to right before painting the ground and everything from
+    // there forward (ground, footing, flood, and -- since nothing after
+    // biomeManager.draw() returns touches the transform again until the
+    // big restore below -- obstacles, contact shadows, every character,
+    // reflections, the foreground veil, and fracture cracks too).
+    //
+    // Pulling back used to widen the SAME zoomed transform the sky and
+    // mountains use, which shrinks literally everything uniformly -- the
+    // ground included, so it visibly slid up and off-true as you zoomed
+    // out. This instead leaves the ground-and-forward layers rendering at
+    // permanently fixed, zoom=1 scale and screen position; only the sky/
+    // mountain pass above (already drawn by the time this switches) uses
+    // the wider, more-compressed zoomed view. Since that pass is drawn
+    // FIRST and the ground pass paints over it afterward at a fixed
+    // position, the net effect is exactly "the ground stays put and more
+    // sky/mountain becomes visible above it" -- no new blank space is ever
+    // exposed, because the sky/mountain pass already safely covers its own
+    // (zoomed, wider) bounds the same way it always has.
+    const sxFixed = canvas.width / nominalW;
+    const syFixed = canvas.height / nominalH;
+    const groundViewCx = nominalW / 2 + SHAKE_MARGIN_PX;
+    const groundViewCy = nominalH / 2 + SHAKE_MARGIN_PX;
+    const groundStage = this._groundStageView || (this._groundStageView = { width: 0, height: 0 });
+    groundStage.width = nominalW + 2 * SHAKE_MARGIN_PX;
+    groundStage.height = nominalH + 2 * SHAKE_MARGIN_PX;
+    const groundView = {
+      stage: groundStage,
+      apply: () => {
+        ctx.setTransform(sxFixed, 0, 0, syFixed, 0, 0);
+        ctx.translate(groundViewCx, groundViewCy);
+        ctx.rotate(camera.roll || 0);
+        ctx.translate(-groundViewCx + camera.shakeX - SHAKE_MARGIN_PX, -groundViewCy + camera.shakeY - SHAKE_MARGIN_PX);
+      },
+    };
+
     if (biomeManager) {
-      biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul, perf);
+      biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul, perf, groundView);
     } else {
       this._drawFallbackSky(ctx, stage);
-      this._drawGround(ctx, stage, pose, sim.midio.groundY);
+      groundView.apply();
+      this._drawGround(ctx, groundView.stage, pose, sim.midio.groundY);
     }
     // Movement VII: the celestial body as a light, resolved once per frame
     // and shared by every contact shadow / rim light call below.
@@ -268,7 +305,12 @@ export class Renderer {
       this.epicycles.trigger(lm.idx, pose.midioDrawX + 30, sim.midio.groundY - 245, sim.timeMs);
     }
     this.epicycles.draw(ctx, sim.timeMs);
-    this._drawDropShockwave(ctx, stage, sim, pose);
+    // Everything from here down draws under the fixed ground transform
+    // biomeManager.draw() switched to before painting the ground -- see
+    // groundView's own comment above. Sized to groundView.stage (also
+    // fixed), not the zoomed `stage`, so full-bleed effects match the
+    // transform actually in effect.
+    this._drawDropShockwave(ctx, groundView.stage, sim, pose);
 
     if (sim.midasus && sim.midasus.voyage.depth <= 0) {
       const heightAbove = sim.midasus.yFloor - sim.midasus.p.y;
@@ -279,7 +321,7 @@ export class Renderer {
     // trio's live screen positions/hues are known -- the water itself draws
     // (and reflects the sky/terrain) long before any of them do.
     if (biomeManager && biomeManager.drawCharacterReflections) {
-      biomeManager.drawCharacterReflections(ctx, stage, [
+      biomeManager.drawCharacterReflections(ctx, groundView.stage, [
         { x: pose.midioDrawX, hue: this._midioHue, active: true },
         { x: sim.broshi ? sim.broshi.renderX : NaN, hue: sim.broshi ? sim.broshi.hue : 0, active: !!sim.broshi && sim.broshi.burrow.depth <= 0.02 },
         { x: sim.midasus ? sim.midasus.p.x : NaN, hue: sim.midasus ? sim.midasus.hue : 0, active: !!sim.midasus && sim.midasus.voyage.depth <= 0 },
@@ -291,9 +333,9 @@ export class Renderer {
     // before fracture: the cracks are the screen's own glass fracturing,
     // so they belong on top of every world layer, near-field props included
     // -- not occluded by something the world itself is drawing.
-    if (biomeManager) biomeManager.drawForeground(ctx, stage, pose.worldX, perf ? perf.veilEnabled : true);
-    if (sim.fracture) sim.fracture.draw(ctx, stage, { glow: perf ? perf.crackGlowEnabled : true });
-    if (sim.keyDirector) this._drawTranspositionWave(ctx, stage, sim.keyDirector);
+    if (biomeManager) biomeManager.drawForeground(ctx, groundView.stage, pose.worldX, perf ? perf.veilEnabled : true);
+    if (sim.fracture) sim.fracture.draw(ctx, groundView.stage, { glow: perf ? perf.crackGlowEnabled : true });
+    if (sim.keyDirector) this._drawTranspositionWave(ctx, groundView.stage, sim.keyDirector);
 
     ctx.restore(); // camera transform
 
