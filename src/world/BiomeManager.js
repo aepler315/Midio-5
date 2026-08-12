@@ -1313,7 +1313,12 @@ export class BiomeManager {
     // Hybrid sky wire: mandala / ribbon / weaver scale with skyWireAlpha
     // (Soft ~0.38, Neon ~0.72) so geometry feels musical without striping.
     const skyA = styleDials(this.visualStyle).skyWireAlpha ?? 1;
-    if (skyA > 0.02) {
+    // Both are pure background phenomena (a ~700-point spirograph path and a
+    // ~420-point attractor trail redrawn every frame) -- real atmosphere but
+    // never gameplay, so they shed at the same rung as the rest of the
+    // optional phenomena layer below rather than paying full cost regardless
+    // of perf level.
+    if (phenomenaFull && skyA > 0.02) {
       const prevM = this.mandala.intensity;
       this.mandala.intensity = prevM * skyA;
       this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * celestialYFrac, canvas.height * 0.30 * this.mandalaScaleMul, mandalaColor);
@@ -1322,7 +1327,7 @@ export class BiomeManager {
     // Phenomena layer, deep sky: cymatic dust settling into Chladni
     // figures, and the chaos ribbon opposite the celestial for balance.
     if (phenomenaFull) this.cymatics.draw(ctx, canvas, mandalaColor);
-    {
+    if (phenomenaFull) {
       const ribbonA = Math.max(0.18, skyA);
       const prevR = this.ribbon.intensity;
       this.ribbon.intensity = prevR * ribbonA;
@@ -1423,8 +1428,10 @@ export class BiomeManager {
     }
 
     // The Kuramoto swarm shares this depth: synchronized flashing motes,
-    // with the murmuration wheeling among them.
-    this.swarm.draw(ctx, canvas, mandalaColor);
+    // with the murmuration wheeling among them. Same optional-phenomena rung
+    // as the murmuration it flies with -- 48 individually stroked arcs a
+    // frame, atmosphere rather than gameplay.
+    if (phenomenaFull) this.swarm.draw(ctx, canvas, mandalaColor);
     if (phenomenaFull) this.murmuration.draw(ctx, this.tSec * 1000, mandalaColor, particleMul);
     this._drawFogBanks(ctx, canvas);
 

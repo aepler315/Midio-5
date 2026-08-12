@@ -728,7 +728,7 @@ export class Simulation {
       this.performer.onLanding(nowMs, this.comboSystem.justClean, this.comboSystem.displayM, I);
       this.performer.onStreak(this.comboSystem.streak, nowMs);
       this.scoreKeeper.noteStreak(this.comboSystem.streak);
-      this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera);
+      this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera, this.perf.particleMul);
       this.groundField.impulse(this.worldX, I, nowMs); // a shockwave ripples the terrain outward from the landing
       this.rippleFX.trigger(this.worldX, this.midio.groundY, I); // the screen-space visual echo of that shockwave
       // The world visibly answers back: a landing kicks up whatever the
@@ -739,6 +739,7 @@ export class Simulation {
       this.rippleFX.landingPuff(
         this.worldX, this.midio.groundY, I,
         this.biomes.floodActive ? '#55c8f0' : this.biomes.currentParticleColor(),
+        this.perf.particleMul,
       );
       if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY);
       this.fracture.registerImpact(I);
@@ -867,7 +868,7 @@ export class Simulation {
       tumbleRotX: this.ensemble.rotX(1), tumbleRotY: this.ensemble.rotY(1),
       // Shared build-up swell (EnsembleDirector.swell) -- see Midasus/Renderer for the other two.
       swell: this.ensemble.swell(1),
-    }, this.groundField);
+    }, this.groundField, this.perf.particleMul);
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
     // Enemy-wave combat: fixed defender join order (Midasus, Broshi, Midio)

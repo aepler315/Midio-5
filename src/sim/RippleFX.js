@@ -84,9 +84,10 @@ export class RippleFX {
    *  is "wet" (flood/puddle) instead and reach for a splash look via the
    *  same pool with a blue-toned color -- the puff itself doesn't know
    *  the difference. */
-  landingPuff(worldX, groundY, I, color = '#ffffff') {
-    for (let i = 0; i < PUFF_COUNT; i++) {
-      const angle = -Math.PI / 2 + (i / PUFF_COUNT - 0.5) * Math.PI * 0.9;
+  landingPuff(worldX, groundY, I, color = '#ffffff', particleMul = 1) {
+    const n = Math.max(2, Math.round(PUFF_COUNT * particleMul));
+    for (let i = 0; i < n; i++) {
+      const angle = -Math.PI / 2 + (i / n - 0.5) * Math.PI * 0.9;
       this.puffs.spawn({ wx: worldX, y: groundY, I, angle, color });
     }
   }
