@@ -176,7 +176,7 @@ export async function searchInternetArchive(query, { rows = 24 } = {}) {
     const iaId = String(r.id || '').startsWith('ia:') ? String(r.id).slice(3) : r.iaId;
     return { ...r, iaId, source: 'archive' };
   });
-
+}
 
 function parseRuntime(runtime) {
   if (runtime == null) return null;
