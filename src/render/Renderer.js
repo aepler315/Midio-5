@@ -17,7 +17,15 @@ import { spectralFamily } from './spectral.js';
 import { hypeFrameStyle } from '../sim/HypeDirector.js';
 import { isRendered, styleDials } from './VisualStyle.js';
 
-const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
+// Reserve margin (logical stage px) around the visible frame that camera
+// shake/drift/sway/roll are free to pan into without ever exposing raw,
+// undrawn canvas. Covers the worst realistic combined displacement: a
+// maxed impact shake (~10px) + full calm drift (26px) + full beat sway
+// (12px) plus a few px of corner reveal from the small impact roll, with
+// headroom to spare. See Renderer.draw's stageW/stageH derivation.
+const SHAKE_MARGIN_PX = 64;
+
+const MIDIO_BASE_HUE = 178; // cool aquamarine -- the startup default before the song's key eases in and takes over (see this._midioHue)
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
 const MIDIO_DRAW_SCALE = 1.8; // the stage got bigger: render-only, physics untouched
 
@@ -110,18 +118,42 @@ export class Renderer {
     // edge for every non-tiled full-bleed layer (sky gradient, vignette),
     // which is a worse artifact than an off-center reveal.
     const zoom = (sim.camera && sim.camera.zoom) || 1;
-    const stageW = zoom < 1 ? nominalW / zoom : nominalW;
-    const stageH = zoom < 1 ? nominalH / zoom : nominalH;
+    const baseStageW = zoom < 1 ? nominalW / zoom : nominalW;
+    const baseStageH = zoom < 1 ? nominalH / zoom : nominalH;
+    // Shake overscan: camera.shakeX/Y (impact shake, calm drift, beat sway)
+    // and roll all move the world by translating/rotating it against a
+    // frame that, without this, has content painted flush to its edges --
+    // any nonzero shake exposed raw, undrawn canvas as a hard black bar on
+    // whichever edge the content moved away from. The fix is the same trick
+    // zoom uses above, but symmetric: pad the logical stage by SHAKE_MARGIN_PX
+    // on every side (every layer paints the wider buffer, same as a zoom
+    // pull-back), then inset the visible window by that same margin so it
+    // sits centered inside the padded buffer rather than flush at its
+    // origin. camera.shakeX/Y then pan within the margin instead of past the
+    // edge of what was ever drawn. sx/sy (below) stay derived from the
+    // UNPADDED dims, so at shake=0 nothing about the framing changes --
+    // the margin is pure reserve, invisible until a shake reaches into it.
+    const stageW = baseStageW + 2 * SHAKE_MARGIN_PX;
+    const stageH = baseStageH + 2 * SHAKE_MARGIN_PX;
     const stage = this._stageView || (this._stageView = { width: stageW, height: stageH });
     stage.width = stageW;
     stage.height = stageH;
-    const sx = canvas.width / stageW;
-    const sy = canvas.height / stageH;
+    const sx = canvas.width / baseStageW;
+    const sy = canvas.height / baseStageH;
+    // Unpadded counterpart for everything drawn AFTER the shake transform is
+    // restored below (vignette/fever aura/hype frame/film finish) -- those
+    // are screen-edge-hugging effects, not world content, so they must size
+    // to the true visible frame, not the padded reserve margin.
+    const viewStage = this._viewStageView || (this._viewStageView = { width: baseStageW, height: baseStageH });
+    viewStage.width = baseStageW;
+    viewStage.height = baseStageH;
 
     if (fracture && (fracture.isFrozen || fracture.isDone)) {
-      // Shatter geometry is logical-stage space; scale into the physical buffer.
+      // Shatter geometry is logical-stage space; scale into the physical
+      // buffer. Unpadded dims -- the shake overscan margin above is for the
+      // live camera transform only, and sx/sy already assume it away.
       ctx.setTransform(sx, 0, 0, sy, 0, 0);
-      fracture.drawShatter(ctx, stage);
+      fracture.drawShatter(ctx, { width: baseStageW, height: baseStageH });
       return;
     }
 
@@ -138,13 +170,28 @@ export class Renderer {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(sx, 0, 0, sy, 0, 0);
 
-    // Impact roll and screen shake both still pivot on the (widened, if
-    // zoomed) frame's own center, so they never scroll the world sideways
-    // regardless of the current zoom level.
+    // Impact roll and screen shake both still pivot on the visible window's
+    // own center -- which now sits SHAKE_MARGIN_PX inside the padded stage,
+    // not at the stage's own center -- so they never scroll the world
+    // sideways regardless of the current zoom level, and shakeX/Y pan
+    // within the reserve margin instead of past the edge of drawn content.
+    //
+    // The two translates below are NOT a no-op pair around the rotate: for
+    // pure translation they'd cancel back to just (shakeX, shakeY) regardless
+    // of viewCx/viewCy (translate(a) then translate(-a+s) nets to translate(s)
+    // for any a) -- which is exactly the bug an earlier version of this had.
+    // Content is still only ever painted over stage-space [0, stageW], so
+    // that cancellation left the visible window flush against content's own
+    // origin, using none of the padding on the negative/left or negative/top
+    // side -- a positive shakeX still exposed raw canvas on the left. The
+    // explicit "- SHAKE_MARGIN_PX" term below is the real, non-cancelling
+    // shift that seats the visible window inset by the margin on every side.
+    const viewCx = baseStageW / 2 + SHAKE_MARGIN_PX;
+    const viewCy = baseStageH / 2 + SHAKE_MARGIN_PX;
     ctx.save();
-    ctx.translate(stageW / 2, stageH / 2);
+    ctx.translate(viewCx, viewCy);
     ctx.rotate(camera.roll || 0); // damped impact roll, pivoting on screen center
-    ctx.translate(-stageW / 2 + camera.shakeX, -stageH / 2 + camera.shakeY);
+    ctx.translate(-viewCx + camera.shakeX - SHAKE_MARGIN_PX, -viewCy + camera.shakeY - SHAKE_MARGIN_PX);
 
     if (biomeManager) {
       biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul, perf);
@@ -257,12 +304,12 @@ export class Renderer {
       sim.assembly.captureFrame(canvas, sim.timeMs);
     }
 
-    if (sim.fever) this._drawFeverAura(ctx, stage, sim.fever.level, sim.biomes, sim.reducedFlash);
-    if (sim.hype) this._drawHypeFrame(ctx, stage, sim);
+    if (sim.fever) this._drawFeverAura(ctx, viewStage, sim.fever.level, sim.biomes, sim.reducedFlash);
+    if (sim.hype) this._drawHypeFrame(ctx, viewStage, sim);
     // Drop impact pack: a chromatic shock + radial speed-lines from Midio,
     // both keyed off the same window as the shockwave rings -- drawn last so
     // they shock the fully composed frame, hype border and highway included.
-    if (sim.hype) this._drawDropImpact(ctx, stage, sim, pose);
+    if (sim.hype) this._drawDropImpact(ctx, viewStage, sim, pose);
 
     // Post FX that sample the pixel buffer need identity transform + full
     // physical canvas size (bloom / retro / freeze capture).
@@ -271,7 +318,7 @@ export class Renderer {
     if (sim.filmFinish && (perf ? perf.heavyPostFx : true)) {
       // Film finish was authored in logical space; scale its fill rects.
       ctx.setTransform(sx, 0, 0, sy, 0, 0);
-      this._drawFilmFinish(ctx, stage, sim);
+      this._drawFilmFinish(ctx, viewStage, sim);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
     // HUD seekbar AFTER post-FX so vignette/bloom never bury it. paramBus is

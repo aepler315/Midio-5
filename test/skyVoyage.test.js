@@ -526,3 +526,32 @@ test('position stays within a sane radius of the sky station throughout deep spa
     assert.ok(d < 400, `figure offset should stay near the station, got ${d.toFixed(0)}px`);
   }
 });
+
+// --- Thomas attractor "getting stuck" (reported: she stops for a few
+// seconds mid-figure, then comes back) ---
+
+test('a Thomas figure never sits visibly still for a long stretch, even starting near the attractor\'s slow fixed point', () => {
+  const v = new SkyVoyage(7);
+  let t = 0;
+  v.trigger(t, { x: 200, y: 400 }, 1280, 720);
+  v._figureOrder = ['thomas', 'thomas', 'thomas'];
+  t = advance(v, t, 0.9 + 1.6 + 0.05); // land just into DEEP_SPACE, first figure
+  assert.equal(v.phase, VoyagePhase.DEEP_SPACE);
+  // The origin is an exact fixed point of Thomas' system (sin(0)-b*0=0 on
+  // every axis) -- starting a hair off it lands squarely in the slow
+  // "laminar" stretch that reads as her getting stuck.
+  v._attractor = { x: 0.01, y: 0.01, z: 0.01 };
+
+  let stillFrames = 0, worstStillStreakSec = 0;
+  const dtSec = STEP_MS / 1000;
+  for (let i = 0; i < 3 * 120; i++) { // one whole figure's worth (3.2s) plus margin
+    const before = { ...v.p };
+    t += STEP_MS;
+    v.update(t, dtSec, 0.5, { x: 300, y: 250 });
+    const moved = Math.hypot(v.p.x - before.x, v.p.y - before.y);
+    if (moved < 0.05) { stillFrames++; worstStillStreakSec = Math.max(worstStillStreakSec, stillFrames * dtSec); }
+    else stillFrames = 0;
+  }
+  assert.ok(worstStillStreakSec < 0.5,
+    `she visibly stopped moving for ${worstStillStreakSec.toFixed(2)}s -- this is the reported "gets stuck" bug`);
+});

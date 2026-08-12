@@ -441,6 +441,50 @@ html, body {
   padding: 4px 14px 12px;
   text-align: center;
 }
+.titleAdvanced .hint a { color: rgba(255, 215, 106, 0.85); }
+
+.jamendoRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 14px;
+}
+.jamendoRow input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8e6f0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+}
+.jamendoRow input:focus {
+  outline: none;
+  border-color: rgba(255, 215, 106, 0.55);
+  box-shadow: 0 0 0 2px rgba(255, 215, 106, 0.15);
+}
+.jamendoStatus.hidden { display: none; }
+.jamendoStatus { color: rgba(232, 230, 240, 0.6); }
+.jamendoStatusError { color: #ff9a9a; }
+.jamendoResults {
+  list-style: none;
+  margin: 0;
+  padding: 0 14px 12px;
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jamendoResultBtn {
+  width: 100%;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .progressHint {
   min-height: 1.2em;
   color: #7ad1ff !important;
@@ -651,52 +695,36 @@ html, body {
   right: 16px;
   z-index: 3;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: flex-start;
   pointer-events: none;
   font-variant-numeric: tabular-nums;
   z-index: 5;
 }
 
-#hudLeft {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: flex-start;
-}
-
 /* Right-hand cluster of the HUD row: difficulty, fullscreen, settings gear,
    track badge. #hud disables pointer-events so the canvas underneath stays
-   clickable; this wrapper opts its interactive children back in. */
+   clickable; this wrapper opts its interactive children back in.
+   Auto-fades after a few seconds of inactivity (main.js); while faded it's
+   both invisible and unclickable, and the first tap anywhere just wakes it
+   back up rather than also acting on whatever's underneath. */
 #hudRight {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   pointer-events: auto;
+  opacity: 1;
+  transition: opacity 260ms ease;
+}
+#hudRight.hud-faded {
+  opacity: 0;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  #hudRight { transition: none; }
 }
 #settingsBtn, #fullscreenBtn {
   line-height: 1;
-}
-
-#comboReadout {
-  font-size: 1.6rem;
-  font-weight: 700;
-  color: var(--spec-gold);
-  text-shadow: 0 0 12px rgba(255, 215, 106, 0.6);
-  display: inline-block;
-}
-
-/* Combo-milestone flourish (follow-up item 6): a quick shatter-and-reform
-   pulse, mirroring FractureEngine's terminal-shatter beat in miniature. */
-@keyframes comboMilestone {
-  0%   { transform: scale(1) rotate(0deg); color: var(--spec-gold); text-shadow: 0 0 12px rgba(255, 215, 106, 0.6); }
-  25%  { transform: scale(1.7) rotate(-8deg); color: #fff6cf; text-shadow: 0 0 34px rgba(255, 246, 207, 0.95); }
-  50%  { transform: scale(0.82) rotate(5deg); }
-  75%  { transform: scale(1.12) rotate(-2deg); }
-  100% { transform: scale(1) rotate(0deg); color: var(--spec-gold); text-shadow: 0 0 12px rgba(255, 215, 106, 0.6); }
-}
-#comboReadout.milestone-pulse {
-  animation: comboMilestone 0.55s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
 /* On-device FPS HUD (mobile performance round): small, always-on-top,
@@ -1111,66 +1139,6 @@ html, body {
 .filmstripModalPanel { width: min(720px, 92vw); }
 #filmstripModalImg { width: 100%; display: block; background: #000; }
 
-/* Live HUD: combo mult + clean streak (no score) */
-#hudLeft {
-  display: flex;
-  align-items: flex-start;
-  gap: 2px;
-}
-#scoreReadout {
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: #e8e6f0;
-  text-shadow: 0 0 8px rgba(232, 230, 240, 0.35);
-}
-
-/* The fever gauge: a slim spectral bar under the combo/score readout,
-   cool teal at rest, gold as it climbs, hot pink at max -- the one
-   readout the player was missing for the meter that drives the whole
-   visual intensity stack. The fill color/glow are driven per-frame from
-   main.js (FeverGauge.js); this CSS owns only the static frame. */
-#feverGauge {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 2px;
-}
-#feverLabel {
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: #e8e6f0;
-  opacity: 0.35;
-  transition: opacity 0.3s ease;
-}
-#feverBar {
-  width: 120px;
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.1);
-  overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-#feverFill {
-  width: 0%;
-  height: 100%;
-  border-radius: 3px;
-  background: var(--spec-cool);
-  transition: width 0.12s linear, background 0.3s ease, box-shadow 0.3s ease;
-}
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
-#streakReadout {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: rgba(232, 230, 240, 0.85);
-  text-shadow: 0 0 8px rgba(232, 230, 240, 0.25);
-  font-variant-numeric: tabular-nums;
-}
-
-
 /* --- Audition load screen (font ratings gate the show) --- */
 #auditionCanvas {
   display: block;
@@ -1274,29 +1242,6 @@ html, body {
 
 @keyframes recalFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-/* The nudge: corner-anchored, small, and it takes clicks (unlike the
-   overlay) because it has buttons. */
-#recalNudge {
-  position: absolute;
-  left: 16px; bottom: 16px;
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px 8px 14px;
-  border-radius: 10px;
-  background: rgba(14, 20, 32, 0.82);
-  border: 1px solid rgba(140, 200, 255, 0.22);
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(6px);
-  animation: recalNudgeIn 320ms cubic-bezier(0.2, 0.9, 0.3, 1);
-}
-.recalNudgeText { font-size: 13px; color: rgba(226, 238, 252, 0.9); }
-@keyframes recalNudgeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  #recalPanel, #recalNudge { animation: none; }
+  #recalPanel { animation: none; }
 }
