@@ -11,7 +11,10 @@ import { KuramotoSwarm } from './KuramotoSwarm.js';
 import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
-import { DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul, mountainStripDrawHeight } from './MountainChoreo.js';
+import {
+  DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul,
+  mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER,
+} from './MountainChoreo.js';
 import { ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, geoCrestOffset } from './GeoCrest.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
 import { FlourishGate } from '../sim/FlourishGate.js';
@@ -337,6 +340,7 @@ export class BiomeManager {
     this._danceGroove = 0;
     this._danceKickMs = -Infinity;
     this._danceKickAmp = 0;
+    this._danceWorldX = 0;
     this.fever = 0; // player fever (Simulation.fever.level): cranks the dance and the runners
     this.orogenyGrowth = 0.1; // mountain-building arc (Simulation.orogeny.growth), set externally each step
     // Miniature characters running along the near ranges' ridges — an
@@ -1028,6 +1032,7 @@ export class BiomeManager {
   update(nowMs, dtSec, energyCurves, calmLevel = 0, worldX = 0) {
     this.tSec = nowMs / 1000;
     this.calmLevel = calmLevel;
+    this._danceWorldX = worldX; // kept for farRidgeSwell01(), read by the sim
     const { from, to, t } = this._blend(nowMs);
     this.currentBlend = { from, to, t };
     // One Spectrum: glide the key shift (needs the blend just resolved).
@@ -2989,6 +2994,21 @@ export class BiomeManager {
       }, layerKey === 'L5' ? 0.55 : 0.4);
     }
     ctx.restore();
+  }
+
+  /** How heaved the furthest range is right now at one screen column, 0..1
+   *  (see MountainChoreo.ridgeSwell01). Midio's jump gate rides this, so it
+   *  is read from the sim rather than from a draw pass -- it deliberately
+   *  re-derives the same strip-space column position _drawDancingStrip uses
+   *  (worldX through the L2 parallax ratio, delamination included) so the
+   *  number describes the range the player is actually looking at.
+   *  @param {number} screenX the column to read, in stage space */
+  farRidgeSwell01(screenX = 0) {
+    const cfg = DANCE_LAYERS[FAR_DANCE_LAYER];
+    if (!cfg) return 0;
+    const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
+    const scrollX = this._danceWorldX * CodaDirector.delaminateRatio(LAYER_RATIOS[FAR_DANCE_LAYER], this.unravel);
+    return ridgeSwell01(scrollX + screenX, this.tSec, cfg, kick);
   }
 
   /** The mountains dance: the strip is drawn in column slices, each riding

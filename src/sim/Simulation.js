@@ -42,6 +42,7 @@ import { TapJudge } from './TapJudge.js';
 import { ScoreKeeper } from './ScoreKeeper.js';
 import { PhraseTracker } from '../core/PhraseTracker.js';
 import { AirJumpSequencer } from './AirJumpSequencer.js';
+import { RidgeAnchor } from './RidgeAnchor.js';
 import { FeverMeter } from './FeverMeter.js';
 import { LatencyCalibrator } from './LatencyCalibrator.js';
 import { SyncMonitor } from './SyncMonitor.js';
@@ -153,6 +154,10 @@ export class Simulation {
     // autocorrelation upgrade in PhraseTracker) paces the double-jump budget.
     this.phrases = new PhraseTracker(conductor.barGrid, energyCurves);
     this.airSeq = new AirJumpSequencer(this.phrases);
+    // Midio takes his cue from the furthest range: he only leaves the ground
+    // while that skyline is heaved up near the top of its swing, and performs
+    // the rest of the chart on foot. See RidgeAnchor.js for why.
+    this.ridgeAnchor = new RidgeAnchor();
     // Steady accurate taps × song energy = how insane the visuals get.
     this.fever = new FeverMeter();
     // Steady-but-biased taps are pipeline latency, not player error: the
@@ -422,7 +427,9 @@ export class Simulation {
       // Hop on hold ticks when grounded so multi-second rolls don't freeze
       // him after the opening jump lands. Obstacles are excluded from hold
       // spans, so these hops stay clearable-safe.
-      if (evt.kind === 'holdTick' && !this.jump.airborne) {
+      // Same far-range gate the chart taps go through (RidgeAnchor.js): a
+      // roll under a sunk skyline is danced out on the ground, not hopped.
+      if (evt.kind === 'holdTick' && !this.jump.airborne && this.ridgeAnchor.open) {
         this.jump.onPlayerTap({ tMs: evt.tMs, vel: 0.55 });
       }
       this.scoreKeeper.applyEvent(evt, this.comboSystem.displayM);
@@ -573,6 +580,13 @@ export class Simulation {
     this._applyCues(nowMs);
     this._driveAutoplay(nowMs);
 
+    // The far skyline's swell at Midio's own column decides whether the
+    // notes about to drain become leaps or footwork. Read off last frame's
+    // biome state (biomes.update runs later in this step) -- a 16ms lag on a
+    // ~9s swell is not a thing anyone can see.
+    this.ridgeAnchor.update(this.biomes.farRidgeSwell01(this.midio.screenX), dtSec);
+    this.midio.ridgeBob = this.ridgeAnchor.bobPx;
+
     // Drain autoplay presses stamped up to this step's time. Hold notes
     // still score as slides once grounded (performer hold pose), but the
     // opening press of a roll ALWAYS launches — otherwise dense bass rolls
@@ -603,15 +617,23 @@ export class Simulation {
         // budgeted per 4-/8-measure phrase; if the budget is spent (or the
         // air jump declines), force-relaunch via onPlayerTap so the chart
         // beat is never swallowed.
+        // Gated on the far range (RidgeAnchor.js): while that skyline has
+        // sunk away, the note is still judged above -- perfect, combo
+        // intact -- but he stays on the ground and performs it there
+        // (MidioPerformer's grounded strut/stomp dip picks it up for free).
+        // An arc already in the air is never cut short by the gate closing;
+        // it lands on schedule as always.
         let performed = false;
-        if (this.jump.airborne) {
-          const grant = this.airSeq.tryConsume(ev.tMs);
-          if (grant) {
-            performed = this.jump.airJump(tapEvt, grant.boostMul, grant);
-            if (!performed) this.airSeq.refund(); // landed by tMs after all
+        if (this.ridgeAnchor.open) {
+          if (this.jump.airborne) {
+            const grant = this.airSeq.tryConsume(ev.tMs);
+            if (grant) {
+              performed = this.jump.airJump(tapEvt, grant.boostMul, grant);
+              if (!performed) this.airSeq.refund(); // landed by tMs after all
+            }
           }
+          if (!performed) this.jump.onPlayerTap(tapEvt);
         }
-        if (!performed) this.jump.onPlayerTap(tapEvt);
       } else {
         this.judge.onTapUp(ev.tMs);
       }
