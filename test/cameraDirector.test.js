@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CameraDirector, CALM_DRIFT_AMP_PX, CALM_DRIFT_PERIOD_SEC } from '../src/render/CameraDirector.js';
+import {
+  CameraDirector, CALM_DRIFT_AMP_PX, CALM_DRIFT_PERIOD_SEC,
+  beatSwayOffset, BEAT_SWAY_BASE_PX, BEAT_SWAY_ENERGY_PX, BEAT_SWAY_LATERAL_PX,
+} from '../src/render/CameraDirector.js';
 
 test('calm level introduces a slow, wide drift when nothing else is shaking the camera', () => {
   const cam = new CameraDirector();
@@ -69,4 +72,89 @@ test('consecutive impacts alternate roll direction', () => {
   first.shake(10); // re-strike: direction flips
   first.update(0.02, 0);
   assert.equal(Math.sign(first.roll), -firstSign);
+});
+
+// --- Beat sway ------------------------------------------------------------
+
+// kickEnv's own attack ramps 0->1 over its first 40ms (see MountainChoreo.js),
+// so tauMs=0 is the very instant of the beat (envelope still 0) -- these
+// tests sample at tauMs=40, the envelope's peak, to check amplitudes.
+test('beatSwayOffset snaps up right on the beat and settles back down, scaled by energy', () => {
+  const quiet = beatSwayOffset(40, 1, 0, 1);
+  const loud = beatSwayOffset(40, 1, 1, 1);
+  assert.ok(Math.abs(quiet.y - BEAT_SWAY_BASE_PX) < 1e-6, 'even at zero energy, the base dip is present');
+  assert.ok(Math.abs(loud.y - (BEAT_SWAY_BASE_PX + BEAT_SWAY_ENERGY_PX)) < 1e-6, 'full energy adds the full extra dip');
+
+  const atBeat = beatSwayOffset(0, 1, 1, 1);
+  assert.equal(atBeat.y, 0, 'the very instant of the beat is still the start of the attack, not the peak');
+
+  const settled = beatSwayOffset(700, 1, 1, 1); // well past kickEnv's settle window
+  assert.ok(settled.y < loud.y * 0.1, 'should have rung most of the way back down by 700ms');
+});
+
+test('beatSwayOffset\'s lateral nudge only appears with real musical energy, and flips with sign', () => {
+  const stillCalm = beatSwayOffset(40, 1, 0, 1);
+  assert.equal(stillCalm.x, 0, 'no lateral nudge at zero energy');
+
+  const right = beatSwayOffset(40, 1, 1, 1);
+  const left = beatSwayOffset(40, -1, 1, 1);
+  assert.ok(right.x > 0);
+  assert.ok(Math.abs(left.x + right.x) < 1e-9, 'the sign flips the nudge, magnitude unchanged');
+});
+
+test('beatSwayOffset is scaled down by the reduced-motion multiplier', () => {
+  const full = beatSwayOffset(40, 1, 1, 1);
+  const half = beatSwayOffset(40, 1, 1, 0.5);
+  assert.ok(Math.abs(half.y - full.y * 0.5) < 1e-9);
+  assert.ok(Math.abs(half.x - full.x * 0.5) < 1e-9);
+});
+
+test('CameraDirector ignores beat sway entirely when no beat clock is supplied (default null)', () => {
+  const cam = new CameraDirector();
+  for (let i = 0; i < 10; i++) cam.update(1 / 60, 0, false);
+  assert.equal(cam.shakeX, 0);
+  assert.equal(cam.shakeY, 0);
+});
+
+test('CameraDirector applies a beat-locked sway that moves the frame even with no impact/calm active', () => {
+  const cam = new CameraDirector();
+  let sawMotion = false;
+  // Walk a beat clock at a plausible tempo (500ms/beat) across several beats.
+  const periodMs = 500;
+  let tMs = 0;
+  for (let i = 0; i < 300; i++) {
+    const dtMs = 1000 / 60;
+    tMs += dtMs;
+    const tau = tMs % periodMs;
+    cam.update(dtMs / 1000, 0, false, tau, 1);
+    if (Math.abs(cam.shakeY) > 0.5) sawMotion = true;
+  }
+  assert.ok(sawMotion, 'a beat-locked section with real energy should visibly move the camera');
+});
+
+test('a fresh beat crossing (tau wraps back toward 0) flips the lateral sway sign', () => {
+  const cam = new CameraDirector();
+  cam.update(0.001, 0, false, 490, 1); // just before a beat at period 500
+  const xBefore = Math.sign(cam.shakeX) || cam._beatSwaySign;
+  cam.update(0.001, 0, false, 5, 1); // wrapped: a new beat just landed
+  cam.update(0.001, 0, false, 6, 1); // same beat, one tick later
+  assert.equal(cam._beatSwaySign, -xBefore || cam._beatSwaySign, 'sign should have flipped across the wrap');
+});
+
+test('calm sections keep only a fraction of the beat sway, never the full-energy amount', () => {
+  const calm = new CameraDirector(), active = new CameraDirector();
+  const dtSec = 0.001;
+  calm.update(dtSec, 1, false, 40, 1);
+  active.update(dtSec, 0, false, 40, 1);
+
+  // Isolate the beat-sway term from calm's own additive drift (a nonzero
+  // offset from frame one, since its sine carries a fixed phase) by
+  // subtracting that drift's own formula -- same one CameraDirector.update()
+  // computes it with.
+  const driftOmega = 2 * Math.PI / CALM_DRIFT_PERIOD_SEC;
+  const calmDriftY = CALM_DRIFT_AMP_PX * 1 * 0.55 * Math.sin(driftOmega * dtSec * 0.7 + 1.3);
+  const calmSwayY = calm.shakeY - calmDriftY;
+
+  assert.ok(calmSwayY < active.shakeY, 'deep calm should visibly damp the beat nod');
+  assert.ok(calmSwayY > 0, 'but not silence it completely');
 });
