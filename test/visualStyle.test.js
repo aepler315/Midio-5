@@ -21,9 +21,8 @@ test('nextVisualStyle is a no-op', () => {
   assert.equal(nextVisualStyle(STYLE_CLASSIC), STYLE_RENDERED);
 });
 
-test('house dials: CGI terrain + ocean contours, no retro', () => {
+test('house dials: CGI terrain + ocean contours', () => {
   const d = styleDials(STYLE_RENDERED);
-  assert.equal(d.retroFilter, false);
   assert.equal(d.spaceWash, true);
   assert.equal(d.oceanDrawContours, true);
   assert.ok(d.oceanLineAlpha > 0);

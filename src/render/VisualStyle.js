@@ -43,7 +43,6 @@ export function styleDials(_style) {
   return {
     id: STYLE_RENDERED,
     // Post
-    retroFilter: false,
     bloomBaseMul: 1.4,
     filmGradeMul: 1.45,
     vignetteDepthMul: 1.08,

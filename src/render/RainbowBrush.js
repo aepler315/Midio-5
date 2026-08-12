@@ -16,11 +16,14 @@ export class RainbowBrush {
     this._lastY = NaN;
   }
 
-  /** Feed Midio's world-space position each frame; dabs drop at fixed stroke spacing. */
-  update(nowMs, airborne, wx, y) {
+  /** Feed Midio's world-space position each frame; dabs drop at fixed stroke
+   *  spacing, widened under perf pressure (`particleMul`) so a shed device
+   *  spawns a sparser trail instead of paying for the full dab count. */
+  update(nowMs, airborne, wx, y, particleMul = 1) {
     if (!airborne) { this._lastX = NaN; return; }
+    const spacing = SPACING_PX / Math.max(0.35, particleMul);
     const dx = wx - this._lastX, dy = y - this._lastY;
-    if (Number.isFinite(this._lastX) && dx * dx + dy * dy < SPACING_PX * SPACING_PX) return;
+    if (Number.isFinite(this._lastX) && dx * dx + dy * dy < spacing * spacing) return;
     this.dabs.push({ wx, y, hue: (this._hueIdx++ * HUE_STEP_DEG) % 360, bornMs: nowMs });
     this._lastX = wx; this._lastY = y;
     if (this.dabs.length > MAX_DABS) this.dabs.shift();

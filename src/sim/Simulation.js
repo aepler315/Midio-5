@@ -31,6 +31,7 @@ import { CodaDirector } from './CodaDirector.js';
 import { FilmFinish } from '../render/FilmFinish.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
+import { WorldAssembly } from '../world/WorldAssembly.js';
 import { GroundField } from '../world/GroundField.js';
 import { PerfGovernor } from '../render/PerfGovernor.js';
 import { HighlightReel } from '../render/HighlightReel.js';
@@ -223,6 +224,8 @@ export class Simulation {
       canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,
       energyCurves,
     });
+    // The opening's counterpart to the finale's shatter -- see WorldAssembly.js.
+    this.assembly = new WorldAssembly({ canvasWidth, canvasHeight, songSeed });
 
     // Orogeny: the mountains visibly build across the song, peaking at its
     // energy climax, then subside through the rest of the runtime.
@@ -728,7 +731,7 @@ export class Simulation {
       this.performer.onLanding(nowMs, this.comboSystem.justClean, this.comboSystem.displayM, I);
       this.performer.onStreak(this.comboSystem.streak, nowMs);
       this.scoreKeeper.noteStreak(this.comboSystem.streak);
-      this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera);
+      this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera, this.perf.particleMul);
       this.groundField.impulse(this.worldX, I, nowMs); // a shockwave ripples the terrain outward from the landing
       this.rippleFX.trigger(this.worldX, this.midio.groundY, I); // the screen-space visual echo of that shockwave
       // The world visibly answers back: a landing kicks up whatever the
@@ -739,6 +742,7 @@ export class Simulation {
       this.rippleFX.landingPuff(
         this.worldX, this.midio.groundY, I,
         this.biomes.floodActive ? '#55c8f0' : this.biomes.currentParticleColor(),
+        this.perf.particleMul,
       );
       if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY);
       this.fracture.registerImpact(I);
@@ -792,10 +796,18 @@ export class Simulation {
     // triggering here (before their own update() calls below) means a
     // freshly-launched excursion starts animating in this very frame
     // rather than waiting one extra tick.
+    const burrowWasActive = this.broshi.burrow.active;
     this.excursions.update(nowMs, dtSec, {
       vibe: this.vibe, calm: this.calm, hype: this.hype, energyCurves: this.energyCurves,
       conductor: this.conductor, midasus: this.midasus, broshi: this.broshi, worldX: this.worldX,
     });
+    // He punches through the ground on the way down -- the screen itself
+    // takes a small crack where he broke the surface, same glass-fracture
+    // language FractureEngine already draws elsewhere (see also justSurfaced
+    // below, the eruption's matching crack on the way back up).
+    if (!burrowWasActive && this.broshi.burrow.active) {
+      this.fracture.spawnSurfaceCrack(this.broshi.screenX, this.midio.groundY, this.camera);
+    }
 
     // The cursor idles out after a couple of seconds of stillness.
     if (this.pointer.active && nowMs - this.pointer.lastMoveMs > 2500) this.pointer.active = false;
@@ -867,7 +879,11 @@ export class Simulation {
       tumbleRotX: this.ensemble.rotX(1), tumbleRotY: this.ensemble.rotY(1),
       // Shared build-up swell (EnsembleDirector.swell) -- see Midasus/Renderer for the other two.
       swell: this.ensemble.swell(1),
-    }, this.groundField);
+    }, this.groundField, this.perf.particleMul);
+    // The eruption's matching crack, on his way back up through the pane.
+    if (this.broshi.burrow.justSurfaced) {
+      this.fracture.spawnSurfaceCrack(this.broshi.screenX, this.midio.groundY, this.camera);
+    }
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
     // Enemy-wave combat: fixed defender join order (Midasus, Broshi, Midio)
@@ -901,6 +917,7 @@ export class Simulation {
     this.filmFinish.update(nowMs, dtSec, this.calm.level, this.biomes.budget, this.hype);
     if (this.biomes.cutFlashJustFired) { this.camera.shake(3.5); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
+    this.assembly.update(nowMs);
     // Finale silence is owned by main.js (has AudioEngine) — flag only here.
 
     // Orogeny: the mountains build toward the song's energy climax, then

@@ -195,6 +195,67 @@ test('the lake reflection blits back in logical units at every stage resolution'
   }
 });
 
+// --- Character reflections in the Mirror lake -----------------------------
+//
+// _drawLakeReflection runs during the world pass, before the trio is drawn,
+// so it can never pick up their live screen positions the way it does the
+// sky/terrain already on the backing store. drawCharacterReflections is the
+// separate call Renderer makes right after they draw, gated on whatever
+// _drawGround decided about the lake THIS frame.
+
+function fillRecordingCtx() {
+  const ellipses = [];
+  const ctx = {
+    save() {}, restore() {}, beginPath() {}, closePath() {}, rect() {}, clip() {},
+    ellipse: (...a) => ellipses.push(a),
+    fill() {}, createLinearGradient: () => ({ addColorStop() {} }),
+    set fillStyle(v) {}, set globalCompositeOperation(v) {},
+  };
+  return { ctx, ellipses };
+}
+
+test('drawCharacterReflections draws nothing outside a Mirror lake section', async () => {
+  const { BiomeManager } = await import('../src/world/BiomeManager.js');
+  const bm = Object.create(BiomeManager.prototype);
+  bm.lakeRing = { displacementAt: () => 0 };
+  bm._lakeReflectGroundY = null; // set by _drawGround only when the active biome is MIRROR
+  const { ctx, ellipses } = fillRecordingCtx();
+
+  bm.drawCharacterReflections(ctx, stageView(), [{ x: 300, hue: 40, active: true }]);
+  assert.equal(ellipses.length, 0, 'no lake this frame, no reflection to draw');
+});
+
+test('drawCharacterReflections skips inactive entries (burrowed/voyaging) and non-finite positions', async () => {
+  const { BiomeManager } = await import('../src/world/BiomeManager.js');
+  const bm = Object.create(BiomeManager.prototype);
+  bm.lakeRing = { displacementAt: () => 0 };
+  bm._lakeReflectGroundY = 400;
+  const { ctx, ellipses } = fillRecordingCtx();
+
+  bm.drawCharacterReflections(ctx, stageView(), [
+    { x: 300, hue: 40, active: true },
+    { x: 500, hue: 200, active: false }, // e.g. Broshi underground
+    { x: NaN, hue: 90, active: true },   // e.g. Midasus mid-voyage, no real position
+  ]);
+
+  assert.equal(ellipses.length, 1, 'only the one present, positioned character reflects');
+  assert.equal(ellipses[0][0], 300, 'reflection is anchored at that character\'s own x (plus ripple)');
+});
+
+test('drawCharacterReflections offsets each reflection by that character\'s own ripple sample', async () => {
+  const { BiomeManager } = await import('../src/world/BiomeManager.js');
+  const bm = Object.create(BiomeManager.prototype);
+  bm._lakeReflectGroundY = 400;
+  const seen = [];
+  bm.lakeRing = { displacementAt: (theta) => { seen.push(theta); return 7; } };
+  const { ctx, ellipses } = fillRecordingCtx();
+
+  bm.drawCharacterReflections(ctx, stageView(), [{ x: 300, hue: 40, active: true }]);
+
+  assert.equal(ellipses[0][0], 321, 'ripple displacement (x3, matching the water\'s own ripple scale) nudges the reflection x');
+  assert.ok(seen.length > 0 && Number.isFinite(seen[0]), 'sampled the ring at a real angle');
+});
+
 test('no drawImage anywhere is handed a plain {width,height}', async () => {
   // A guard for the whole class rather than the five known sites.
   const { readFileSync } = await import('node:fs');
@@ -210,16 +271,15 @@ test('no drawImage anywhere is handed a plain {width,height}', async () => {
       }
     });
   }
-  // Three survivors legitimately receive the real canvas as a PARAMETER named
-  // `canvas` (HighlightReel.capture, Renderer._drawBloom, _drawRetroFilter --
-  // draw() hands each of them the backing store, not the stage view).
+  // Two survivors legitimately receive the real canvas as a PARAMETER named
+  // `canvas` (HighlightReel.capture, Renderer._drawBloom -- draw() hands
+  // each of them the backing store, not the stage view).
   // Matched on the call text rather than file or line so the exemption covers
-  // exactly these three: a new offender in the same file still fails, and
+  // exactly these two: a new offender in the same file still fails, and
   // unrelated edits shifting the line numbers don't.
   const allowed = [
     'ctx.drawImage(canvas, 0, 0, THUMB_W, THUMB_H);',
     'actx.drawImage(canvas, 0, 0, wSmall, hSmall);',
-    'sctx.drawImage(canvas, 0, 0, gridW, gridH);',
   ];
   const bad = offenders.filter((o) => !allowed.some((a) => o.endsWith(a)));
   assert.deepEqual(bad, [], `logical stage view reaching drawImage:\n${bad.join('\n')}`);
