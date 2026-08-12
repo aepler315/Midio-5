@@ -210,16 +210,15 @@ test('no drawImage anywhere is handed a plain {width,height}', async () => {
       }
     });
   }
-  // Three survivors legitimately receive the real canvas as a PARAMETER named
-  // `canvas` (HighlightReel.capture, Renderer._drawBloom, _drawRetroFilter --
-  // draw() hands each of them the backing store, not the stage view).
+  // Two survivors legitimately receive the real canvas as a PARAMETER named
+  // `canvas` (HighlightReel.capture, Renderer._drawBloom -- draw() hands
+  // each of them the backing store, not the stage view).
   // Matched on the call text rather than file or line so the exemption covers
-  // exactly these three: a new offender in the same file still fails, and
+  // exactly these two: a new offender in the same file still fails, and
   // unrelated edits shifting the line numbers don't.
   const allowed = [
     'ctx.drawImage(canvas, 0, 0, THUMB_W, THUMB_H);',
     'actx.drawImage(canvas, 0, 0, wSmall, hSmall);',
-    'sctx.drawImage(canvas, 0, 0, gridW, gridH);',
   ];
   const bad = offenders.filter((o) => !allowed.some((a) => o.endsWith(a)));
   assert.deepEqual(bad, [], `logical stage view reaching drawImage:\n${bad.join('\n')}`);

@@ -101,39 +101,6 @@ export function spectralTokens({
   };
 }
 
-/** A hue-rotated copy of the retro quantizer ramp, so the 8-bit palette
- *  filter quantizes toward the song's key instead of an out-of-palette
- *  fixed ramp. The ramp keeps its fixed lightness steps (that's what makes
- *  it read as constrained-palette pixel art); only the hues rotate.
- * @param {Array<[number,number,number]>} ramp the base RETRO_PALETTE
- * @param {number} tonic pitch class 0..11
- * @param {number} [amount=1] 0..1 how far toward the key the ramp rotates
- *   (0 = unchanged, 1 = fully keyed) -- lets reduced-flash or calm dial it
- *   back without removing the filter.
- * @returns {Array<[number,number,number]>} a NEW ramp (never mutates input)
- */
-export function keyedQuantRamp(ramp, tonic, amount = 1) {
-  const k = clamp01(amount);
-  if (k <= 0.001) return ramp;
-  const target = spectralHue(tonic || 0);
-  return ramp.map(([r, g, b]) => {
-    const { h, s, l } = rgbToHsl(r, g, b);
-    const deg = hueDelta(h, target) * k;
-    // rotateHueHex works on hex strings; re-derive a color with the
-    // rotated hue and return it as a triple. (Palette entries are already
-    // quantized, so a tiny round-trip is acceptable here -- the ramp is
-    // recomputed rarely, per key change, not per frame.)
-    const rotated = rotateHueHex(rgbToHexTriple(r, g, b), deg);
-    const rr = hexToRgb(rotated);
-    return [rr.r, rr.g, rr.b];
-  });
-}
-
-function rgbToHexTriple(r, g, b) {
-  const to = (v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
-  return `#${to(r)}${to(g)}${to(b)}`;
-}
-
 /** The HUD/film family: cool/warm/pad/rhythm accents derived from the
  *  song's current halo color. When the halo is achromatic (ARCTIC's white
  *  sun), the family falls back to the song's spectral base hue so the

@@ -13,8 +13,7 @@ import { contactShadow } from '../world/ContactShadow.js';
 import { clamp01 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { LerpCache, hexToRgb } from '../utils/color.js';
-import { nearestPaletteColor, pixelGridWidth, pixelGridHeight, SCANLINE_ALPHA, SCANLINE_PERIOD_PX, RETRO_PALETTE } from './RetroFilter.js';
-import { keyedQuantRamp, spectralFamily } from './spectral.js';
+import { spectralFamily } from './spectral.js';
 import { hypeFrameStyle } from '../sim/HypeDirector.js';
 import { isRendered, styleDials } from './VisualStyle.js';
 
@@ -84,21 +83,6 @@ export class Renderer {
     // Renderer-owned (not sim.biomes.lerpCache) so the film finish still
     // works if sim.biomes were ever null (the fallback-sky branch below).
     this._filmLerpCache = new LerpCache();
-    // One Spectrum: the keyed retro ramp, cached per tonic so the
-    // per-pixel quantizer never recomputes the ramp mid-song.
-    this._retroRampTonic = null;
-    this._retroRamp = RETRO_PALETTE;
-  }
-
-  /** The retro quantizer's palette, keyed to the song's tonic (cached).
-   *  Returns the stock ramp unchanged when there's no detected tonic yet
-   *  or the tonic hasn't moved. */
-  _keyedRamp(tonic) {
-    if (tonic == null) return RETRO_PALETTE;
-    if (this._retroRampTonic === tonic) return this._retroRamp;
-    this._retroRampTonic = tonic;
-    this._retroRamp = keyedQuantRamp(RETRO_PALETTE, tonic);
-    return this._retroRamp;
   }
 
   draw(sim, alpha) {
@@ -273,11 +257,6 @@ export class Renderer {
       this._drawFilmFinish(ctx, stage, sim);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
-    // Classic (SMW lineage) keeps the 8-bit retro finish. Rendered (DKC3
-    // lineage) skips it so soft CGI shading and bloom stay cinematic.
-    const dials = styleDials(sim.visualStyle);
-    if (dials.retroFilter && (perf ? perf.heavyPostFx : true)) this._drawRetroFilter(ctx, canvas, sim);
-
     // HUD seekbar AFTER post-FX so vignette/bloom never bury it. paramBus is
     // optional (lives on sim); never reference a free variable here — a
     // ReferenceError used to abort the draw and kill the strip entirely.
@@ -690,51 +669,6 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Modernized 8-bit retro filter: downsamples the fully composed frame to
-   *  a coarse pixel grid (nearest-neighbor, no smoothing -- the pixelation
-   *  itself), quantizes every pixel to a limited retro palette (cheap,
-   *  since it runs on the small downsampled buffer rather than the full-res
-   *  frame -- coarser pixelation is CHEAPER, not more expensive, unlike
-   *  bloom/blur passes), then draws it back upscaled with a faint scanline
-   *  overlay for the CRT "nostalgia machine" read. Same offscreen-canvas
-   *  pattern as _drawBloom above. */
-  _drawRetroFilter(ctx, canvas, sim) {
-    const gridW = pixelGridWidth(canvas.width);
-    const gridH = pixelGridHeight(canvas.width, canvas.height, gridW);
-    if (!this._retroSmall) this._retroSmall = document.createElement('canvas');
-    const small = this._retroSmall;
-    if (small.width !== gridW || small.height !== gridH) { small.width = gridW; small.height = gridH; }
-    const sctx = small.getContext('2d');
-    sctx.imageSmoothingEnabled = false;
-    sctx.clearRect(0, 0, gridW, gridH);
-    sctx.drawImage(canvas, 0, 0, gridW, gridH);
-
-    // One Spectrum: the 8-bit quantizer maps to a keyed ramp so the
-    // palette filter stops introducing out-of-palette colors -- the
-    // retro read becomes the scene's native output language, tuned to
-    // the song. The ramp is cached per (tonic, amount) signature; the
-    // full RETRO_PALETTE ramp is preserved at amount=0.
-    const tonic = sim && sim.biomes && sim.biomes.tonic != null ? sim.biomes.tonic : null;
-    const ramp = this._keyedRamp(tonic);
-    const imgData = sctx.getImageData(0, 0, gridW, gridH);
-    const data = imgData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      const p = nearestPaletteColor(data[i], data[i + 1], data[i + 2], ramp);
-      data[i] = p[0]; data[i + 1] = p[1]; data[i + 2] = p[2];
-    }
-    sctx.putImageData(imgData, 0, 0);
-
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    ctx.globalCompositeOperation = 'copy';
-    ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = SCANLINE_ALPHA;
-    ctx.fillStyle = '#000000';
-    for (let y = 0; y < canvas.height; y += SCANLINE_PERIOD_PX) ctx.fillRect(0, y, canvas.width, Math.ceil(SCANLINE_PERIOD_PX / 2));
-    ctx.restore();
-  }
-
   /** The energy frame: a thin border that breathes with the track, slams on
    * kicks, and echoes the whole frame during a drop surge. Calm sections
    * nearly extinguish the idle rim and kick strobe (see hypeFrameStyle) so
@@ -850,8 +784,6 @@ export class Renderer {
     // treatment Midasus's core uses, not the old narrow near-white gold.
     // The Apotheosis widens the hue band further into a full rim sweep.
     const dials = this._styleDials || styleDials('classic');
-    // Match Broshi's clean wireframe language — no soft hull fill (it turned
-    // Midio into a smeared white blob over the glyph).
     const options = {
       satBase: 32 + flash * 40 + 18 * apoProgress,
       lightBase: 72 + flash * 12 + 8 * apoProgress,
@@ -859,8 +791,6 @@ export class Renderer {
       widthBase: dials.widthBase,
       widthGlow: dials.widthGlow,
       rimAmount: dials.rimAmount,
-      softFill: false,
-      softFillAlpha: 0,
     };
     const outlineOpts = { widthAdd: dials.outlineWidthAdd };
 

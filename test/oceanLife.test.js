@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   wrappedOffset, islands, ships, seaLifeSchedule, monsterSchedule,
-  tsunamiSchedule, tsunamiX, tsunamiLift, tsunamiProfile, sprayFlecks, fishArcY, serpentHumpY,
+  tsunamiSchedule, tsunamiLift, tsunamiProfile, sprayFlecks, fishArcY, serpentHumpY,
   tsunamiHeightScale, tsunamiActive, tsunamiProgress, tsunamiRowFrac,
   tsunamiPerspectiveScale, tsunamiCenterX, tsunamiDepthLift,
   OCEAN_LIFE_WRAP_PX, TSUNAMI_WIDTH_PX, TSUNAMI_SWEEP_MS,
@@ -112,13 +112,11 @@ test('tsunami approaches from far (horizon) toward the player (near edge)', () =
   }
   assert.ok(TSUNAMI_ROW_FAR > TSUNAMI_ROW_NEAR);
 
-  // Center X bias from dir; tsunamiX still returns a finite center while live
+  // Center X bias from dir.
   const w = 1280;
   const left = tsunamiCenterX({ dir: -1 }, w);
   const right = tsunamiCenterX({ dir: 1 }, w);
   assert.ok(left < w * 0.5 && right > w * 0.5);
-  assert.equal(tsunamiX(ev, ev.tMs - TSUNAMI_SWEEP_MS, w), null);
-  assert.ok(Number.isFinite(tsunamiX(ev, ev.tMs, w)));
 });
 
 test('tsunamiLift and tsunamiDepthLift are bounded and peak at zero offset', () => {
