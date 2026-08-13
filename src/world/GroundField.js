@@ -392,4 +392,24 @@ export class GroundField {
     }
     return bars;
   }
+
+  /** Screen-space light sources for currently-active kick-glow pulses (see
+   *  LightField.groundGlowLights) -- so a pulse racing through the ground
+   *  doesn't just brighten the terrain, it visibly lights up whichever
+   *  character happens to be standing near it. Positioned at each pulse's
+   *  own origin (where heightAt() already says the ground is), intensity
+   *  from the same envelope visibleBars() uses -- just resolved at one
+   *  point instead of summed across every visible bar. Empty whenever no
+   *  pulse is active. */
+  activeGlowScreenLights(worldX, originX) {
+    if (!this._glows.length) return [];
+    const out = [];
+    for (const g of this._glows) {
+      const intensity = kickGlowAt(g.originWorldX, this._nowMs, g);
+      if (intensity > 0.02) {
+        out.push({ x: g.originWorldX - worldX + originX, y: this.heightAt(g.originWorldX), intensity });
+      }
+    }
+    return out;
+  }
 }

@@ -192,6 +192,36 @@ export function massifDrawHeight(stripHeight, growthMul, canvasHeight, groundY) 
 const JAG_AMP_PX = 14;
 const JAG_FREQ = [2, 5, 11, 23]; // co-prime-ish harmonics -- irregular and non-repeating across the whole ridge
 
+// Fine surface grain: a second, much higher-frequency and lower-amplitude
+// octave layered on top of the coarse jag -- the up-close weathered texture
+// a genuinely ancient ridge would show even while its overall silhouette
+// barely seems to move at all. Deliberately small relative to the coarse
+// jag so it reads as grain, not a second competing skyline.
+const FINE_JAG_AMP_PX = 3;
+const FINE_JAG_FREQ = [53, 101, 181];
+
+// The massif's own EQ response. spectrumBars everywhere else (horizon EQ,
+// etc.) reads _eqSmoothed, which reacts on a musical timescale --
+// EQ_ATTACK_SEC/EQ_RELEASE_SEC in BiomeManager are fractions of a second,
+// fine for something that's meant to pulse with the beat. The massif is
+// the opposite pitch: everything else about it (0.03 parallax -- an order
+// of magnitude slower than the nearest range, a permanent haze veil, tiny
+// ordinary-speed scale markers) exists to sell "impossibly, geologically
+// vast." A silhouette that size visibly hopping on every kick breaks that
+// story outright -- something that big cannot perceptibly move on a
+// musical timescale. These constants are seconds, not fractions of a
+// second: the ridge crawls, it never dances.
+export const MASSIF_EQ_ATTACK_SEC = 4.5;
+export const MASSIF_EQ_RELEASE_SEC = 9.0;
+
+/** One-pole smoothing step toward `raw` -- same exponential-approach shape
+ *  as the general EQ smoother, just with the massif's own glacially slower
+ *  multi-second time constants. */
+export function massifEqStep(prev, raw, dtSec) {
+  const tau = raw > prev ? MASSIF_EQ_ATTACK_SEC : MASSIF_EQ_RELEASE_SEC;
+  return prev + (1 - Math.exp(-dtSec / tau)) * (raw - prev);
+}
+
 /**
  * The ridge's smooth 0..1 height profile at fractional position u (0..1)
  * across the WHOLE massif width -- smoothstep-interpolated between
@@ -219,9 +249,15 @@ export function massifRidgeHeight01(bars, u) {
  * or seams at a bar boundary.
  */
 export function massifRidgeJagPx(u) {
-  let s = 0;
-  for (const f of JAG_FREQ) s += Math.sin(u * f * Math.PI * 2 + f * 1.913);
-  return Math.max(0, s / JAG_FREQ.length) * JAG_AMP_PX;
+  let coarse = 0;
+  for (const f of JAG_FREQ) coarse += Math.sin(u * f * Math.PI * 2 + f * 1.913);
+  coarse = Math.max(0, coarse / JAG_FREQ.length) * JAG_AMP_PX;
+
+  let fine = 0;
+  for (const f of FINE_JAG_FREQ) fine += Math.sin(u * f * Math.PI * 2 + f * 0.617);
+  fine = Math.max(0, fine / FINE_JAG_FREQ.length) * FINE_JAG_AMP_PX;
+
+  return coarse + fine;
 }
 
 // Clearing: the massif sits under a permanent haze veil near its own crest

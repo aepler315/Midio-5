@@ -439,7 +439,7 @@ export class Midasus {
     return 2 * MIDASUS_HEX_R * DRAW_SCALE * this.pulse;
   }
 
-  draw(ctx, particleMul = 1) {
+  draw(ctx, particleMul = 1, lights = null) {
     // Only DEEP_SPACE hands rendering to BiomeManager's tiny comet-head dot
     // (drawDeepSky) -- WINDUP/ASCENT/REENTRY render right here, in the
     // character layer, in front of the mountains, where the player is
@@ -517,6 +517,7 @@ export class Midasus {
     }, this.hue, {
       satBase: sat, lightBase: 70, hueSpread: 26, outline: true,
       widthBase: 1.7, widthGlow: 2.0,
+      lights, // Movement VII: celestial + ground pulses (never her own glow -- see Renderer.draw)
     });
 
     // The baby stars ride on top of her pass — small enough never to mask her.

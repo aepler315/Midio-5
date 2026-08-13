@@ -43,3 +43,42 @@ export function lightDirTo(light, x, y) {
   const len = Math.hypot(dx, dy) || 1;
   return { x: dx / len, y: dy / len };
 }
+
+// Secondary lights: the celestial above is the only thing that has ever
+// illuminated anything else in this scene -- every character and event
+// (Midasus's core, a kick-synced ground pulse) reads as bright on its own,
+// but none of them casts light. These are small, local, falloff-limited
+// sources (see MeshDrawer's `lights` param) that fix that in kind, not in
+// scale: they light up whoever's nearby, they don't relight the world.
+
+const GLOW_LIGHT_RADIUS_PX = 130; // a ground pulse's reach -- roughly one slice's neighbors, not the whole screen
+const GLOW_LIGHT_INTENSITY_MUL = 0.55; // modest next to the celestial's own budget-scaled intensity
+
+/** Kick-synced ground-glow pulses as MeshDrawer light sources, in screen
+ *  space. `glows` is GroundField.activeGlowScreenLights()'s own output
+ *  (already resolved to screen x/y + current 0..1 envelope) -- this just
+ *  reshapes each into the {x,y,colorHex,intensity,radius} MeshDrawer
+ *  expects. Empty in, empty out: silent (zero cost) whenever no pulse is
+ *  active, same discipline as the glow itself. */
+export function groundGlowLights(glows, haloColorHex) {
+  if (!glows || !glows.length) return [];
+  const out = [];
+  for (const g of glows) {
+    const intensity = GLOW_LIGHT_INTENSITY_MUL * g.intensity;
+    if (intensity > 0.02) out.push({ x: g.x, y: g.y, colorHex: haloColorHex, intensity, radius: GLOW_LIGHT_RADIUS_PX });
+  }
+  return out;
+}
+
+const CHARACTER_LIGHT_RADIUS_PX = 100;
+
+/** A character's own glow as a light on whoever else is nearby -- e.g.
+ *  Midasus's core lighting up Midio when she's drawing close beside him,
+ *  not just glowing at him. `hueDeg` (not colorHex) since characters
+ *  already work in hue-degrees internally; MeshDrawer reads either.
+ *  Returns null below a negligible intensity so callers can push the
+ *  result straight into a lights array with a plain truthy filter. */
+export function characterGlowLight(x, y, hueDeg, intensity, radius = CHARACTER_LIGHT_RADIUS_PX) {
+  if (!(intensity > 0.02)) return null;
+  return { x, y, hueDeg, intensity, radius };
+}

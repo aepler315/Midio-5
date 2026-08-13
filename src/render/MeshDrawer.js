@@ -14,6 +14,19 @@ function hueDelta(a, b) {
   return ((b - a + 540) % 360) - 180;
 }
 
+/** A light's hue, read directly off `hueDeg` when a source already works in
+ *  hue-degrees (a character's own glow) rather than round-tripping through
+ *  a hex color it never otherwise needed. Falls back to parsing `colorHex`
+ *  (the celestial's own light shape) so both kinds of source work here. */
+function lightHueOf(light) {
+  if (typeof light.hueDeg === 'number') return light.hueDeg;
+  if (light.colorHex) {
+    const rgb = hexToRgb(light.colorHex);
+    return rgbToHsl(rgb.r, rgb.g, rgb.b).h;
+  }
+  return null;
+}
+
 /** Precompute each edge's local (undeformed) length once per mesh. */
 export function computeRestLengths(mesh) {
   return mesh.edges.map(([i, j]) => {
@@ -52,14 +65,25 @@ export function drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, {
   satBase = 68, lightBase = 52, glowBoost = 34, alpha = 0.9, widthBase = 1.6, widthGlow = 2.0,
   hueSpread = 50, // edges vary within +/-hueSpread/2 of baseHueDeg, not the full wheel -- a cohesive character, not a rainbow
   outline = false, // true -> a near-black contour pass UNDER the spectral stroke: the silhouette reads razor-sharp against the glow underlays
-  light = null, rimAmount = 0.6, // Movement VII: the celestial light modulates the angle-derived hue/lightness above, it never replaces it
+  light = null, // Movement VII: the celestial light modulates the angle-derived hue/lightness above, it never replaces it
+  lights = null, // secondary, local, falloff-limited sources (a kick-synced ground pulse, a nearby character's own glow) -- see LightField.js
+  rimAmount = 0.6,
 } = {}) {
-  // Resolved once per call, not per edge -- this is the only place a hex
-  // color gets parsed for the whole mesh part.
-  let lightHue = null;
-  if (light && light.intensity > 0.01 && rimAmount > 0) {
-    const rgb = hexToRgb(light.colorHex);
-    lightHue = rgbToHsl(rgb.r, rgb.g, rgb.b).h;
+  // Normalized to a flat list once per call, not per edge. `light` (the
+  // celestial) has no radius, so it never falls off with distance --
+  // exactly its old, single-source behavior when `lights` is omitted.
+  // Anything in `lights` DOES fall off, since it's meant to light up
+  // whoever's nearby, not the whole scene.
+  const litMeta = [];
+  if (rimAmount > 0) {
+    const collect = (L) => {
+      if (!L || !(L.intensity > 0.01)) return;
+      const hue = lightHueOf(L);
+      if (hue === null) return;
+      litMeta.push({ x: L.x, y: L.y, intensity: L.intensity, radius: L.radius ?? Infinity, hue });
+    };
+    collect(light);
+    if (lights) for (const L of lights) collect(L);
   }
 
   if (outline) {
@@ -93,20 +117,31 @@ export function drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, {
     let lightness = Math.min(88, lightBase + glow * glowBoost);
     const sat = Math.min(100, satBase + glow * 22);
 
-    if (lightHue !== null && len > 0.001) {
-      // Rim light: how much this edge faces the celestial versus turns
-      // away from it, from the edge's own normal -- a stylized cue, not a
+    if (litMeta.length && len > 0.001) {
+      // Rim light: how much this edge faces each source versus turns away
+      // from it, from the edge's own normal -- a stylized cue, not a
       // physically exact one, since these are open wireframe strokes with
-      // no defined front face.
+      // no defined front face. Summed across every source in range; the
+      // single strongest contributor's hue is what the edge tints toward,
+      // so overlapping lights don't muddy into an average color.
       const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
       const nx = dy / len, ny = -dx / len;
-      let tlx = light.x - midX, tly = light.y - midY;
-      const tlen = Math.hypot(tlx, tly) || 1;
-      tlx /= tlen; tly /= tlen;
-      const facing = nx * tlx + ny * tly; // -1 (fully averted) .. +1 (fully facing)
-      const amt = facing * light.intensity * rimAmount;
-      lightness = Math.max(4, Math.min(92, lightness + amt * RIM_LIGHT_RANGE));
-      if (amt > 0) hue = (hue + hueDelta(hue, lightHue) * Math.min(1, amt) * RIM_HUE_BLEND + 360) % 360;
+      let totalAmt = 0, domAmt = 0, domHue = null;
+      for (const L of litMeta) {
+        let tlx = L.x - midX, tly = L.y - midY;
+        const dist = Math.hypot(tlx, tly) || 1;
+        if (dist > L.radius) continue; // out of a local light's reach
+        tlx /= dist; tly /= dist;
+        const facing = nx * tlx + ny * tly; // -1 (fully averted) .. +1 (fully facing)
+        const falloff = L.radius === Infinity ? 1 : Math.max(0, 1 - dist / L.radius);
+        const amt = facing * L.intensity * rimAmount * falloff;
+        totalAmt += amt;
+        if (Math.abs(amt) > Math.abs(domAmt)) { domAmt = amt; domHue = L.hue; }
+      }
+      if (totalAmt !== 0) {
+        lightness = Math.max(4, Math.min(92, lightness + totalAmt * RIM_LIGHT_RANGE));
+        if (domAmt > 0 && domHue !== null) hue = (hue + hueDelta(hue, domHue) * Math.min(1, domAmt) * RIM_HUE_BLEND + 360) % 360;
+      }
     }
 
     if (glow > 0.15) {
