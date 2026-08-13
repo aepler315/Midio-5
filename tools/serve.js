@@ -190,7 +190,8 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, HOST, () => {
+server.listen(PORT, HOST, async () => {
   console.log(`Super Maudio World + Soulseek at http://${HOST}:${PORT}`);
-  console.log(`Soulseek backend: ${getStatus().mode} — ${getStatus().note}`);
+  const status = await getStatus();
+  console.log(`Soulseek backend: ${status.mode} — ${status.note}`);
 });
