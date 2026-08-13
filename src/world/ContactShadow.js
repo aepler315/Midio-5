@@ -4,6 +4,7 @@
 // floating. Pure and stateless -- mirrors MountainChoreo's danceOffset
 // (numbers in, a plain object out; the caller owns ctx).
 import { clamp, smoothstep } from '../utils/math.js';
+import { lightDirTo } from '../render/LightField.js';
 
 // Absolute px above ground at which the shadow has fully vanished. Chosen
 // so a soft hop (Midio's weakest kick, apex ~83px) keeps a dimming-but-
@@ -19,15 +20,29 @@ export const SHADOW_RX_MIN = 10;     // px floor (guards Midasus's tiny hexagram
 export const SHADOW_RX_MAX = 48;     // px ceiling (headroom against future width inputs)
 export const SHADOW_ALPHA_MAX = 0.36; // peak opacity directly underfoot
 export const SHADOW_HEIGHT_SHRINK = 0.35; // fraction the ellipse shrinks from grounded to fully faded
+// How far the ellipse slides along the light's travel direction, per px of
+// height above the ground. Grounded characters keep the shadow at their
+// feet; a mid-jump throws it further away from the celestial.
+export const SHADOW_CAST_PER_PX = 0.38;
+// Sunset elongation: at the horizon the ellipse is this fraction longer
+// than at zenith. The celestial's own y-frac range is small (DayNight
+// parks zenith at 0.12 and the sea horizon at 0.26), so the stretch is
+// keyed off that full span rather than raw screen y.
+export const SHADOW_HORIZON_STRETCH = 0.55;
+export const SHADOW_ZENITH_YFRAC = 0.12;
+export const SHADOW_HORIZON_YFRAC = 0.26;
 
 /**
  * @param {number} screenX          character's screen-space x (shadow center)
  * @param {number} groundY          local ground y at screenX (shadow center)
  * @param {number} heightAbove      px above ground the character currently is
  * @param {number} characterWidthPx character's current on-screen width
+ * @param {{x:number,y:number,celestialYFrac?:number}|null} [light]
+ *        optional celestial (or any screen-space light). Omitted / null
+ *        reproduces the original underfoot ellipse exactly.
  * @returns {{cx:number, cy:number, rx:number, ry:number, alpha:number}}
  */
-export function contactShadow(screenX, groundY, heightAbove, characterWidthPx) {
+export function contactShadow(screenX, groundY, heightAbove, characterWidthPx, light = null) {
   const h = Number.isFinite(heightAbove) ? Math.max(0, heightAbove) : 0;
   const visibility = 1 - smoothstep(0, SHADOW_FADE_HEIGHT_PX, h);
   if (visibility <= 0) {
@@ -37,8 +52,23 @@ export function contactShadow(screenX, groundY, heightAbove, characterWidthPx) {
   const w = Number.isFinite(characterWidthPx) ? Math.max(0, characterWidthPx) : 0;
   const rxBase = clamp(w * SHADOW_WIDTH_FRAC, SHADOW_RX_MIN, SHADOW_RX_MAX);
   const shrink = 1 - SHADOW_HEIGHT_SHRINK * (1 - visibility);
-  const rx = rxBase * shrink;
-  const ry = rx * SHADOW_ASPECT;
+  let rx = rxBase * shrink;
+  let cx = screenX;
 
-  return { cx: screenX, cy: groundY, rx, ry, alpha: SHADOW_ALPHA_MAX * visibility };
+  if (light && Number.isFinite(light.x) && Number.isFinite(light.y)) {
+    // lightDirTo points FROM the light TOWARD the feet -- the direction
+    // the shadow is thrown. cy stays on the ground plane: a contact
+    // shadow that climbed into the air would read as a floating stain.
+    const dir = lightDirTo(light, screenX, groundY);
+    cx = screenX + dir.x * SHADOW_CAST_PER_PX * h;
+    const yFrac = light.celestialYFrac;
+    if (Number.isFinite(yFrac)) {
+      const span = SHADOW_HORIZON_YFRAC - SHADOW_ZENITH_YFRAC;
+      const low = span > 0 ? clamp((yFrac - SHADOW_ZENITH_YFRAC) / span, 0, 1) : 0;
+      rx *= 1 + SHADOW_HORIZON_STRETCH * low;
+    }
+  }
+
+  const ry = rx * SHADOW_ASPECT;
+  return { cx, cy: groundY, rx, ry, alpha: SHADOW_ALPHA_MAX * visibility };
 }

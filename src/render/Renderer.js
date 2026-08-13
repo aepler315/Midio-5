@@ -289,8 +289,8 @@ export class Renderer {
     // Contact shadows: grounds the trio to the terrain instead of letting
     // them read as floating. Drawn just before each character so the
     // shadow always sits directly underneath its owner in paint order.
-    if (sim.broshi && sim.broshi.burrow.depth <= 0.02) {
-      this._drawContactShadow(ctx, contactShadow(sim.broshi.renderX, sim.broshi.groundY, sim.broshi.hopY, sim.broshi.shadowWidthPx));
+    if (contactShadowsEnabled && sim.broshi && sim.broshi.burrow.depth <= 0.02) {
+      this._drawContactShadow(ctx, contactShadow(sim.broshi.renderX, sim.broshi.groundY, sim.broshi.hopY, sim.broshi.shadowWidthPx, light));
     }
     if (sim.broshi) sim.broshi.draw(ctx, pose, companionLights);
 
@@ -306,7 +306,9 @@ export class Renderer {
     }
     const midioWidthPx = sim.midio.halfWidth * 2 * MIDIO_DRAW_SCALE * pose.scaleX;
     const midioHeightAbove = sim.midio.groundY - pose.midioY;
-    this._drawContactShadow(ctx, contactShadow(pose.midioDrawX, sim.midio.groundY, midioHeightAbove, midioWidthPx));
+    if (contactShadowsEnabled) {
+      this._drawContactShadow(ctx, contactShadow(pose.midioDrawX, sim.midio.groundY, midioHeightAbove, midioWidthPx, light));
+    }
     // Fever adds its own glow on top of the vibe's epic-ness -- a hot streak
     // makes Midio himself burn brighter, not just the world around him.
     const feverGlow = sim.fever ? 3.0 * sim.fever.level : 0;
@@ -329,9 +331,9 @@ export class Renderer {
     // transform actually in effect.
     this._drawDropShockwave(ctx, groundView.stage, sim, pose);
 
-    if (sim.midasus && sim.midasus.voyage.depth <= 0) {
+    if (contactShadowsEnabled && sim.midasus && sim.midasus.voyage.depth <= 0) {
       const heightAbove = sim.midasus.yFloor - sim.midasus.p.y;
-      this._drawContactShadow(ctx, contactShadow(sim.midasus.p.x, sim.midasus.yFloor, heightAbove, sim.midasus.shadowWidthPx));
+      this._drawContactShadow(ctx, contactShadow(sim.midasus.p.x, sim.midasus.yFloor, heightAbove, sim.midasus.shadowWidthPx, light));
     }
     if (sim.midasus) sim.midasus.draw(ctx, particleMul, worldLights);
     // Faint reflections in the Mirror lake: has to wait until here, after the

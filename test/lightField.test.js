@@ -2,6 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { computeLight, celestialScreenPos, lightDirTo, groundGlowLights, characterGlowLight } from '../src/render/LightField.js';
 
+test('computeLight carries celestialYFrac through so contact shadows can stretch at the horizon', () => {
+  const light = computeLight({ canvasWidth: 1280, canvasHeight: 720, celestialYFrac: 0.22, budget: 1 });
+  assert.equal(light.celestialYFrac, 0.22);
+});
+
 test('light position tracks celestialYFrac and matches the celestial\'s own screen anchor', () => {
   const params = { canvasWidth: 1280, canvasHeight: 720, celestialYFrac: 0.22, budget: 1 };
   const light = computeLight(params);
