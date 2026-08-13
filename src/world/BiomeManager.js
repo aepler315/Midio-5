@@ -16,6 +16,7 @@ import {
   mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER,
   massifDrawHeight, massifRidgeHeight01, massifRidgeJagPx, massifClearing01,
   MASSIF_MARKER_SPEED_PX_S, MASSIF_MARKER_LIFE_SEC, nextMassifMarkerDelaySec,
+  massifEqStep,
 } from './MountainChoreo.js';
 import { ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, geoCrestOffset } from './GeoCrest.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
@@ -319,6 +320,11 @@ export class BiomeManager {
     this._scanlineY = 0;
     this._pylonFlash = 0;
     this._eqSmoothed = new Float32Array(BAND_COUNT);
+    // The massif reads the same 7 raw bands but through its own far slower
+    // attack/release (massifEqStep) -- see MountainChoreo.js's
+    // MASSIF_EQ_ATTACK_SEC/MASSIF_EQ_RELEASE_SEC doc for why a mountain
+    // range sold as impossibly vast can't be allowed to hop on every kick.
+    this._massifEqSmoothed = new Float32Array(BAND_COUNT);
     // The geological equalizer: L4's crest reads the same 7 bands as the
     // horizon EQ and the massif, but through per-song, per-band geological
     // features (cliff/arete/knob/outcrop/terrace) pinned to fixed terrain
@@ -1185,6 +1191,7 @@ export class BiomeManager {
       const raw = energyCurves ? clamp01(energyCurves.sample(b, nowMs)) : 0;
       const tau = raw > this._eqSmoothed[b] ? EQ_ATTACK_SEC : EQ_RELEASE_SEC;
       this._eqSmoothed[b] += (1 - Math.exp(-dtSec / tau)) * (raw - this._eqSmoothed[b]);
+      this._massifEqSmoothed[b] = massifEqStep(this._massifEqSmoothed[b], raw, dtSec);
     }
 
     // Ocean weather (WaveField.js): overall low-band energy is the ONLY
@@ -3463,12 +3470,15 @@ export class BiomeManager {
 
   /** One super-distant mountain range that IS the spectrum: seven chunky
    *  bars — bass building the summit at the center, treble falling away to
-   *  the flanks (see spectrumBars) — riding the same attack/release-
-   *  smoothed band levels as the horizon EQ. It sits on the slowest scroll
-   *  ratio in the scene, so it reads as the single farthest, most ancient
-   *  thing in the world -- which is the whole basis for letting it loom far
-   *  taller than any ordinary range (massifDrawHeight) without reading as
-   *  absurd: something that far away is allowed to simply BE that big.
+   *  the flanks (see spectrumBars) — riding the SAME 7 raw bands as the
+   *  horizon EQ but through their own far slower attack/release
+   *  (massifEqStep, seconds not fractions of a second): the horizon EQ can
+   *  hop with the beat, the massif can only ever crawl. It sits on the
+   *  slowest scroll ratio in the scene, so it reads as the single farthest,
+   *  most ancient thing in the world -- which is the whole basis for
+   *  letting it loom far taller than any ordinary range (massifDrawHeight)
+   *  without reading as absurd: something that far away, and that vast, is
+   *  allowed to simply BE that big and barely seem to move at all.
    *  A jagged (not flat) crest, a permanent haze veil near its own summit
    *  that only rarely thins into a full clearing, and the occasional tiny
    *  scale marker drifting across its face (_drawMassifMarkers) are what
@@ -3477,7 +3487,7 @@ export class BiomeManager {
    *  its own. Thin halo-colored crest caps stay the "this peak is an
    *  equalizer" tell, same as always. */
   _drawSpectrumMassif(ctx, canvas, worldX, A, B, t) {
-    const bars = spectrumBars(this._eqSmoothed);
+    const bars = spectrumBars(this._massifEqSmoothed);
     const barW = 46, gap = 3;
     const massifW = bars.length * (barW + gap) - gap;
     const period = canvas.width * 1.5;

@@ -6,6 +6,7 @@ import {
   massifDrawHeight, MASSIF_SKY_HEADROOM_FRAC,
   massifRidgeHeight01, massifRidgeJagPx, massifClearing01, MASSIF_CLEARING_PERIOD_SEC,
   nextMassifMarkerDelaySec, MASSIF_MARKER_MIN_GAP_SEC, MASSIF_MARKER_MAX_GAP_SEC,
+  massifEqStep, MASSIF_EQ_ATTACK_SEC, MASSIF_EQ_RELEASE_SEC,
 } from '../src/world/MountainChoreo.js';
 import { mulberry32 } from '../src/utils/math.js';
 
@@ -182,4 +183,55 @@ test('nextMassifMarkerDelaySec stays within its documented gap band and varies w
     assert.ok(d >= MASSIF_MARKER_MIN_GAP_SEC && d <= MASSIF_MARKER_MAX_GAP_SEC, `delay ${d} out of band`);
   }
   assert.ok(new Set(delays).size > 1, 'should not always return the same delay');
+});
+
+test('massifEqStep is far slower than a musical-timescale smoother -- a mountain that vast cannot hop on every kick', () => {
+  // Something genuinely this size, sold as the most ancient thing in the
+  // world via a 0.03 parallax ratio and a permanent haze veil, cannot
+  // visibly react to a single beat the way an ordinary UI-speed equalizer
+  // does. The massif's own time constants must dwarf a normal EQ's.
+  const ordinaryAttackSec = 0.08; // BiomeManager's EQ_ATTACK_SEC
+  const ordinaryReleaseSec = 0.6; // BiomeManager's EQ_RELEASE_SEC
+  assert.ok(MASSIF_EQ_ATTACK_SEC > ordinaryAttackSec * 10,
+    `massif attack (${MASSIF_EQ_ATTACK_SEC}s) should dwarf an ordinary EQ's (${ordinaryAttackSec}s)`);
+  assert.ok(MASSIF_EQ_RELEASE_SEC > ordinaryReleaseSec * 10,
+    `massif release (${MASSIF_EQ_RELEASE_SEC}s) should dwarf an ordinary EQ's (${ordinaryReleaseSec}s)`);
+
+  // One frame after a hard kick (raw jumps 0 -> 1), the massif has barely
+  // budged, while an ordinary-speed smoother is already most of the way up.
+  const dtSec = 1 / 60;
+  const massifAfterOneFrame = massifEqStep(0, 1, dtSec);
+  const ordinaryAfterOneFrame = 0 + (1 - Math.exp(-dtSec / ordinaryAttackSec)) * (1 - 0);
+  assert.ok(massifAfterOneFrame < ordinaryAfterOneFrame / 20,
+    `massif should barely move in one frame (${massifAfterOneFrame} vs ordinary ${ordinaryAfterOneFrame})`);
+});
+
+test('massifEqStep still eventually tracks a sustained level -- it crawls, it does not freeze', () => {
+  let level = 0;
+  for (let i = 0; i < 60 * 30; i++) level = massifEqStep(level, 1, 1 / 60); // 30s of sustained energy
+  assert.ok(level > 0.95, `massif EQ should converge on a long sustained level, got ${level}`);
+});
+
+test('massifEqStep never leaves the raw signal\'s range and is a pure step function of its inputs', () => {
+  assert.equal(massifEqStep(0.3, 0.3, 1), 0.3, 'no movement when already at the target');
+  assert.equal(massifEqStep(0.2, 0.8, 0), 0.2, 'zero dt must not move the value');
+  const up = massifEqStep(0.2, 0.8, 0.5);
+  assert.ok(up > 0.2 && up < 0.8, `should move toward but not reach the target: ${up}`);
+});
+
+test('massifRidgeJagPx layers fine grain on top of the coarse jag without ever notching up past the smooth ridge', () => {
+  let sawFineGrain = false;
+  let prevCoarseOnly;
+  for (let u = 0; u <= 1; u += 0.005) {
+    const j = massifRidgeJagPx(u);
+    assert.ok(j >= 0, `jag must only ever notch down, never up: ${j} at u=${u}`);
+    // Fine grain shows up as small-scale wiggle even between coarse-scale
+    // sample points -- check against a slightly offset u for a genuinely
+    // higher-frequency signature (the coarse octave alone barely moves over
+    // a 0.005 step; noticeable movement at that resolution comes from the
+    // added fine octave).
+    if (prevCoarseOnly !== undefined && Math.abs(j - prevCoarseOnly) > 0.05) sawFineGrain = true;
+    prevCoarseOnly = j;
+  }
+  assert.ok(sawFineGrain, 'expected visible fine-grained texture between coarse sample points');
 });
