@@ -3550,11 +3550,26 @@ export class BiomeManager {
       const skyRgb = hexToRgb(skyMid);
       const veilTopY = baseY - maxH;
       const veilBottomY = baseY - maxH * 0.45;
-      const veil = ctx.createLinearGradient(0, veilTopY, 0, veilBottomY);
+      // An elliptical (not rectangular) falloff -- a plain vertical-only
+      // gradient inside a fillRect fades top-to-bottom but leaves the
+      // rect's own left/right edges perfectly hard, which read as a
+      // conspicuous straight-sided box floating in the sky. Radial gradient
+      // + a non-uniform scale turns that same falloff into an ellipse that
+      // fades on every side.
+      const cx = left + massifW / 2;
+      const cy = (veilTopY + veilBottomY) / 2;
+      const ry = Math.max(1, (veilBottomY - veilTopY) / 2) * 1.15;
+      const rx = massifW / 2 + 50;
+      const sx = rx / ry;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(sx, 1);
+      const veil = ctx.createRadialGradient(0, 0, 0, 0, 0, ry);
       veil.addColorStop(0, `rgba(${skyRgb.r},${skyRgb.g},${skyRgb.b},${veilAlpha.toFixed(3)})`);
       veil.addColorStop(1, `rgba(${skyRgb.r},${skyRgb.g},${skyRgb.b},0)`);
       ctx.fillStyle = veil;
-      ctx.fillRect(left, veilTopY, massifW, veilBottomY - veilTopY);
+      ctx.fillRect(-ry * 1.3, -ry * 1.3, ry * 2.6, ry * 2.6);
+      ctx.restore();
     }
 
     // Soft massif crest cap — musical equalizer tell — traced along the
@@ -3764,11 +3779,27 @@ export class BiomeManager {
         for (const bar of glowBars) {
           const alpha = capFlashAlpha(0.5 * bar.glow, this.reducedFlash);
           const rimH = Math.min(60, canvas.height - bar.y);
-          const grad = ctx.createLinearGradient(0, bar.y, 0, bar.y + rimH);
+          // An elliptical falloff centered on the bar, not a rect filled with
+          // a vertical-only gradient -- the old version faded top-to-bottom
+          // but left the bar's own width as a hard-edged box (flat top, hard
+          // left/right sides) sitting right on the ground line every time a
+          // kick pulse raced through, exactly the "straight lined box" /
+          // "hard cutoff" artifact this fades away on every side instead.
+          const cx = bar.x + bar.width / 2, cy = bar.y;
+          const ry = rimH;
+          const rx = bar.width / 2 + 6;
+          const sx = rx / ry;
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.scale(sx, 1);
+          const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, ry);
           grad.addColorStop(0, `rgba(${rgb},${alpha})`);
           grad.addColorStop(1, `rgba(${rgb},0)`);
           ctx.fillStyle = grad;
-          ctx.fillRect(bar.x, bar.y, bar.width + 1, rimH);
+          ctx.beginPath();
+          ctx.arc(0, 0, ry, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
         }
         ctx.restore();
       }
