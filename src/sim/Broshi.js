@@ -854,7 +854,7 @@ export class Broshi {
     return BODY_WIDTH_LOCAL * DRAW_SCALE * this.squashX;
   }
 
-  draw(ctx) {
+  draw(ctx, pose, lights = null) {
     if (this.burrow.depth > 0.02) return; // he's underground; Renderer draws the Burrow band instead
     // Midasus style: a pale pitch-class spectral hue (eased in update), not
     // the old green->red raptor skin. Rabid reads as heat/brightness below.
@@ -942,6 +942,7 @@ export class Broshi {
       hueSpread: 18,
       widthBase: 1.85,
       widthGlow: 2.1,
+      lights, // Movement VII: celestial + any nearby secondary lights (see LightField.js)
     };
 
     // Modest under-glow — big halos washed him out next to Midio.

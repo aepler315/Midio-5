@@ -408,6 +408,38 @@ test('kickGlow with zero or negative vel is a no-op', () => {
   assert.equal(gf._glows.length, 0);
 });
 
+test('activeGlowScreenLights is empty with no active glow', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  gf.update(0, STEP_S, 0, fakeEnergyCurves(0));
+  assert.deepEqual(gf.activeGlowScreenLights(0, 220), []);
+});
+
+test('activeGlowScreenLights resolves an active glow to its screen-space position, matching visibleBars\' own worldX->screenX convention', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  gf.update(0, STEP_S, 0, fakeEnergyCurves(0));
+  gf.kickGlow(100, 0, 1);
+  gf.update(8, STEP_S, 0, fakeEnergyCurves(0));
+
+  const [l] = gf.activeGlowScreenLights(0, 220);
+  assert.ok(l, 'expected one active glow light');
+  assert.equal(l.x, 100 - 0 + 220); // originWorldX - worldX + originX, same formula visibleBars uses
+  assert.ok(l.intensity > 0 && l.intensity <= 1);
+  assert.equal(l.y, gf.heightAt(100));
+});
+
+test('activeGlowScreenLights fades out and disappears once the glow\'s life ends, same lifetime as the bars\' own glow field', () => {
+  const gf = new GroundField(BASE_Y, { durationMs: 0 });
+  gf.update(0, STEP_S, 0, fakeEnergyCurves(0));
+  gf.kickGlow(100, 0, 1);
+
+  let t = 0;
+  while (t < 1000) {
+    t += 8.33;
+    gf.update(t, STEP_S, 0, fakeEnergyCurves(0));
+  }
+  assert.deepEqual(gf.activeGlowScreenLights(0, 220), []);
+});
+
 // --- calmGrooveParams: the groove wave widens/slows with calm; heightAt()'s
 // physics (baseTarget/spring) must stay completely untouched, same
 // render/physics discipline as the buzz/ripple/glow effects above ---

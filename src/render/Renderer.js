@@ -16,6 +16,7 @@ import { LerpCache, hexToRgb } from '../utils/color.js';
 import { spectralFamily } from './spectral.js';
 import { hypeFrameStyle } from '../sim/HypeDirector.js';
 import { isRendered, styleDials } from './VisualStyle.js';
+import { groundGlowLights, characterGlowLight } from './LightField.js';
 
 // Reserve margin (logical stage px) around the visible frame that camera
 // shake/drift/sway/roll are free to pan into without ever exposing raw,
@@ -241,6 +242,22 @@ export class Renderer {
     const light = biomeManager ? biomeManager.currentLight() : null;
     const contactShadowsEnabled = perf ? perf.contactShadowsEnabled : true;
     const rimLightEnabled = perf ? perf.rimLightEnabled : true;
+    // Secondary lights: a kick-synced ground pulse or Midasus's own core
+    // now actually casts light on whoever's nearby, not just looks bright
+    // itself (see LightField.js). Empty whenever nothing's active, and
+    // skipped outright under perf pressure like the celestial light itself.
+    const groundField = biomeManager ? biomeManager.groundField : null;
+    const groundLights = (rimLightEnabled && groundField)
+      ? groundGlowLights(groundField.activeGlowScreenLights(pose.worldX, pose.midioX), biomeManager.currentHaloColor())
+      : [];
+    // What she sees: the celestial and the ground pulses, not her own light.
+    const worldLights = rimLightEnabled ? [light, ...groundLights].filter(Boolean) : (light ? [light] : []);
+    // What everyone ELSE sees: the above, plus her own glow if she's out
+    // and visible (not off mid-voyage in deep space, drawn as a tiny dot).
+    const midasusGlowLight = (rimLightEnabled && sim.midasus && sim.midasus.voyage.depth <= 0)
+      ? characterGlowLight(sim.midasus.p.x, sim.midasus.p.y, sim.midasus.hue, 0.25 + 0.35 * clamp01(sim.midasus.pulse - 1))
+      : null;
+    const companionLights = midasusGlowLight ? [...worldLights, midasusGlowLight] : worldLights;
 
     // Broshi's underground excursion: drawn beneath the world -- literally
     // inside the earth, under everything that walks on it -- rather than
@@ -275,7 +292,7 @@ export class Renderer {
     if (sim.broshi && sim.broshi.burrow.depth <= 0.02) {
       this._drawContactShadow(ctx, contactShadow(sim.broshi.renderX, sim.broshi.groundY, sim.broshi.hopY, sim.broshi.shadowWidthPx));
     }
-    if (sim.broshi) sim.broshi.draw(ctx, pose);
+    if (sim.broshi) sim.broshi.draw(ctx, pose, companionLights);
 
     // Midio wears Midasus's pale spectral treatment now: his base hue tracks
     // the song's key (KeyDirector.tonic), eased so the color drifts between
@@ -293,7 +310,7 @@ export class Renderer {
     // Fever adds its own glow on top of the vibe's epic-ness -- a hot streak
     // makes Midio himself burn brighter, not just the world around him.
     const feverGlow = sim.fever ? 3.0 * sim.fever.level : 0;
-    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, (sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0) + feverGlow, sim.apotheosis, sim.reducedFlash, this._midioHue, sim.ensemble);
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, (sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0) + feverGlow, sim.apotheosis, sim.reducedFlash, this._midioHue, sim.ensemble, companionLights);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
@@ -316,7 +333,7 @@ export class Renderer {
       const heightAbove = sim.midasus.yFloor - sim.midasus.p.y;
       this._drawContactShadow(ctx, contactShadow(sim.midasus.p.x, sim.midasus.yFloor, heightAbove, sim.midasus.shadowWidthPx));
     }
-    if (sim.midasus) sim.midasus.draw(ctx, particleMul);
+    if (sim.midasus) sim.midasus.draw(ctx, particleMul, worldLights);
     // Faint reflections in the Mirror lake: has to wait until here, after the
     // trio's live screen positions/hues are known -- the water itself draws
     // (and reflects the sky/terrain) long before any of them do.
@@ -868,7 +885,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_BASE_HUE, ensemble = null) {
+  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_BASE_HUE, ensemble = null, lights = null) {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
     const apoProgress = apotheosis ? apotheosis.progress : 0;
@@ -906,6 +923,10 @@ export class Renderer {
       widthBase: dials.widthBase,
       widthGlow: dials.widthGlow,
       rimAmount: dials.rimAmount,
+      // Movement VII: the celestial (and, per LightField's secondary
+      // sources, a nearby kick-glow pulse or Midasus's own core) actually
+      // lights him now instead of this array only ever being computed.
+      lights,
     };
     const outlineOpts = { widthAdd: dials.outlineWidthAdd };
 
