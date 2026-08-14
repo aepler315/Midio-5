@@ -5,6 +5,7 @@
 import { BIOMES } from './BiomeProfiles.js';
 import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
 import { ParticleField } from './ParticleField.js';
+import { terrainFacing, RELIEF_LIT_ALPHA, RELIEF_SHADE_ALPHA, CREST_BASE_ALPHA, CREST_FACING_K } from './TerrainRelief.js';
 import { Mandala } from './Mandala.js';
 import { CymaticField } from './CymaticField.js';
 import { KuramotoSwarm } from './KuramotoSwarm.js';
@@ -52,7 +53,7 @@ import {
 import { LightningFX } from './Lightning.js';
 import { MeteorShowerFX } from './MeteorShower.js';
 import { LightRig } from './LightRig.js';
-import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS } from './DepthHaze.js';
+import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS, hazeScatter } from './DepthHaze.js';
 import { PERSONALITY } from './BiomePersonality.js';
 import { isRendered, styleDials, shiftLightness, ensureContrast, ensureMinLightness } from '../render/VisualStyle.js';
 import { Murmuration } from './Murmuration.js';
@@ -1633,6 +1634,21 @@ export class BiomeManager {
     grad.addColorStop(1, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Forward scatter: one additive radial fill centred on the celestial,
+    // so the air brightens toward the light instead of reading as a flat
+    // tint. Dies with the layer (hazeLayers already collapses L2/L4 at
+    // the deep rung) and is a hard skip when hazeScatter returns null.
+    const scatter = hazeScatter(layerKey, this.light, hazeMul, canvas.height);
+    if (scatter) {
+      ctx.globalCompositeOperation = 'lighter';
+      const halo = ctx.createRadialGradient(scatter.cx, scatter.cy, 0, scatter.cx, scatter.cy, scatter.radius);
+      halo.addColorStop(0, `rgba(${r},${g},${b},${scatter.alpha.toFixed(3)})`);
+      halo.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(scatter.cx, scatter.cy, scatter.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -3775,6 +3791,29 @@ export class BiomeManager {
       ctx.fillStyle = groundColor;
       ctx.fill(fillPath);
 
+      // Terrain relief: the ground plane answers the same light the
+      // mountains already do. Clip to the ridge (same discipline as
+      // `_drawRidgeVolume`) and paint a per-bar column, lifted toward
+      // SHOULDER_LIT where the slope faces the celestial and sunk toward
+      // black where it turns away. Gated on rimLightEnabled so the deep
+      // rungs pay nothing; omit the light and this is a no-op.
+      const rimOn = this._perf ? this._perf.rimLightEnabled : true;
+      const facing = (rimOn && this.light) ? terrainFacing(bars, this.light) : null;
+      if (facing) {
+        ctx.save();
+        ctx.clip(fillPath);
+        for (let i = 0; i < bars.length; i++) {
+          const f = facing[i];
+          if (!(Math.abs(f) > 0.01)) continue;
+          const bar = bars[i];
+          ctx.fillStyle = f > 0
+            ? `rgba(255,248,230,${(RELIEF_LIT_ALPHA * f).toFixed(3)})`
+            : `rgba(0,0,0,${(RELIEF_SHADE_ALPHA * -f).toFixed(3)})`;
+          ctx.fillRect(bar.x, bar.y, bar.width, canvas.height - bar.y);
+        }
+        ctx.restore();
+      }
+
       const haloColor = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
       const { r, g, b } = hexToRgb(haloColor);
       const rgb = `${r},${g},${b}`;
@@ -3876,10 +3915,30 @@ export class BiomeManager {
         ctx.restore();
       }
 
-      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-      ctx.lineWidth = 2;
-      ctx.lineJoin = 'round';
-      ctx.stroke(strokePath);
+      if (facing) {
+        // Crest catch: today's 0.18 stroke, per-segment, brightened on the
+        // sun's side of each hump and dimmed on the other. Segmented so a
+        // single path isn't restroked N times at N alphas.
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        for (let i = 0; i < bars.length - 1; i++) {
+          const f = 0.5 * (facing[i] + facing[i + 1]);
+          const a = CREST_BASE_ALPHA * (1 + CREST_FACING_K * f);
+          if (!(a > 0.002)) continue;
+          const a0 = bars[i], a1 = bars[i + 1];
+          ctx.strokeStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+          ctx.beginPath();
+          ctx.moveTo(a0.x + a0.width * 0.5, a0.y);
+          ctx.lineTo(a1.x + a1.width * 0.5, a1.y);
+          ctx.stroke();
+        }
+      } else {
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.stroke(strokePath);
+      }
     } else {
       ctx.fillStyle = groundColor;
       ctx.fillRect(0, localGroundY, canvas.width, canvas.height - localGroundY);
