@@ -35,6 +35,16 @@ export const ARCHETYPES = Object.freeze(['thorn', 'veil', 'echo', 'pipe']);
 export const EMERGENCE_PX = 170; // condenses in over this much approach distance
 export const DISSOLVE_PX = 130;  // dissolves out over this much departure distance
 
+// Solid archetypes that actually occlude the ground. `veil` is a drifting
+// sheet and `echo` is a mote cloud; neither is an object that would cast
+// a contact shadow, and shadowing them would read as a bug.
+export const SHADOW_ARCHETYPES = Object.freeze(['thorn', 'geo', 'pipe']);
+const SHADOW_ARCHETYPE_SET = new Set(SHADOW_ARCHETYPES);
+// Same screen-cull window `draw()` uses — a shadow for something the
+// player can't see is wasted work and a pop-in waiting to happen.
+const SHADOW_CULL_LEFT = -80;
+const SHADOW_CULL_RIGHT = 2280;
+
 // The GEOMETRIC family: a distinct, hard-edged set of shapes (triangle,
 // square, hexagon) that spawn LINED UP in a row across a single jump arc's
 // safe window -- Midio takes off on the arc's kick, sails over the whole
@@ -218,6 +228,29 @@ export class ObstacleSpawner {
   nearestAhead(worldX) {
     for (const o of this.active) if (o.wx >= worldX) return o;
     return null;
+  }
+
+  /** Grounded obstacles worth a contact shadow, in screen space. `groundYAt`
+   *  is a worldX -> y function (GroundField.heightAt, remapped) so a shadow
+   *  sits on the real terrain under its obstacle rather than on one flat
+   *  reference line -- the same fix PR #58 made for rain splashes. */
+  groundedShadows(worldX, originX, groundYAt) {
+    const out = [];
+    if (!this.active.length) return out;
+    for (const o of this.active) {
+      if (!SHADOW_ARCHETYPE_SET.has(o.archetype)) continue;
+      const x = o.wx - worldX + originX;
+      if (x < SHADOW_CULL_LEFT || x > SHADOW_CULL_RIGHT) continue;
+      const distanceAhead = o.wx - worldX;
+      const passed = distanceAhead <= 0;
+      const emergence = passed ? 1 : emergenceEnvelope(Math.max(0, distanceAhead));
+      const dissolve = passed ? dissolveEnvelope(Math.max(0, worldX - o.wx)) : 1;
+      const presence = emergence * dissolve;
+      if (presence <= 0.01) continue;
+      const groundY = typeof groundYAt === 'function' ? groundYAt(x) : 0;
+      out.push({ x, width: o.width, groundY, presence });
+    }
+    return out;
   }
 
   draw(ctx, worldX, originX, groundY, {

@@ -271,6 +271,15 @@ export class Renderer {
     if (sim.coda) this._drawDesaturationOverlay(ctx, stage, sim.coda);
 
     if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
+    if (contactShadowsEnabled && sim.obstacles) {
+      const groundYAt = groundField
+        ? (sx) => groundField.heightAt(pose.worldX + (sx - pose.midioX))
+        : () => sim.midio.groundY;
+      for (const o of sim.obstacles.groundedShadows(pose.worldX, pose.midioX, groundYAt)) {
+        const s = contactShadow(o.x, o.groundY, 0, o.width, light);
+        this._drawContactShadow(ctx, { ...s, alpha: s.alpha * o.presence });
+      }
+    }
     if (sim.obstacles) {
       sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY, {
         nowMs: sim.timeMs, energyCurves: sim.energyCurves, haloColor,
