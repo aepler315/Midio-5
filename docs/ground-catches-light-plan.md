@@ -90,8 +90,8 @@ shape (a handful of exported constants plus one function, everything testable in
 ```js
 /**
  * Per-bar surface facing against a light, for the ground ridge.
- * @param {{x:number,width:number,y:number}[]} bars  GroundField.visibleBars() output (screen space)
- * @param {{x:number,y:number,intensity:number}|null} light
+ * @param {Array<{x:number,width:number,y:number}>} bars  GroundField.visibleBars() output (screen space)
+ * @param {(null|{x:number,y:number,intensity:number})} light
  * @returns {number[]} one value per bar in -1..1: +1 fully facing the light,
  *   -1 fully turned away, 0 edge-on. All zeros when `light` is null/degenerate,
  *   which is what makes every consumer's "no light" path the current look.
