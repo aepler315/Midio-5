@@ -60,7 +60,7 @@ import { Atmosphere } from './Atmosphere.js';
 import { CodaDirector } from '../sim/CodaDirector.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
-import { computeLight, celestialScreenPos } from '../render/LightField.js';
+import { computeLight, celestialScreenPos, groundGlowLights } from '../render/LightField.js';
 import { clamp, clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
 import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { spectralShiftDeg, easeSpectralShift } from '../render/spectral.js';
@@ -136,6 +136,30 @@ const SHOULDER_LINE_ALPHA = 0.20;
 // The same warm catch-light generateSilhouette bakes along the skyline, so
 // a spur's lit edge reads as the same sun striking the same rock.
 const SHOULDER_LIT = '#fff8e6';
+// Facet facing: the celestial owns the side, the existing stripX hash is a
+// small per-summit perturbation so a whole range doesn't flatten into one
+// uniformly-lit wall. A summit only flips against the sun when its hash is
+// strongly opposed (sin past this threshold).
+export const FACET_SUN_FLIP = 0.62;
+
+/**
+ * Which way a summit's near (shaded) facet leans. +1 = right, -1 = left.
+ * Omitting the light falls back to the original stripX coin-flip so any
+ * caller that hasn't been handed a celestial keeps today's look.
+ *
+ * The shaded face is the one AWAY from the light (sun on the right shades
+ * the left). The hash is allowed to overturn that on a minority of
+ * summits -- enough variety that ridges stay ridges, not a lit slab.
+ */
+export function shoulderFacetSide(stripX, lightX = null, summitX = null) {
+  const hash = Math.sin(stripX * 0.0137);
+  if (!Number.isFinite(lightX) || !Number.isFinite(summitX)) {
+    return hash >= 0 ? 1 : -1;
+  }
+  const sunBias = summitX < lightX ? -1 : 1;
+  if (hash * -sunBias > FACET_SUN_FLIP) return -sunBias;
+  return sunBias;
+}
 // How hard the volume pass leans on each range. Follows the dance ordering
 // (MountainChoreo.DANCE_LAYERS): the far skyline is the dramatic one, so it
 // gets the most sculpting, and the near hills only enough to stop reading
@@ -1172,13 +1196,22 @@ export class BiomeManager {
     const suppressTarget = activeProfile.particles.kind === this.weatherState.kind ? 0 : 1;
     this._weatherSuppress += (1 - Math.exp(-dtSec / 1.0)) * (suppressTarget - this._weatherSuppress);
     this._activeWeatherIntensity = this.weatherState.intensity * this._weatherSuppress;
+    // Rain (and any other ground-colliding particle) lands on the real
+    // terrain, not a hardcoded screen-fraction shelf. Screen x -> world x
+    // via the same origin Midio is drawn at, so a drop over a valley
+    // actually falls into it.
+    const originX = Number.isFinite(this.midioX) ? this.midioX : this.w * 0.5;
+    const groundYAt = this.groundField
+      ? (sx) => this.groundField.heightAt(worldX + (sx - originX))
+      : null;
+
     if (this._activeWeatherIntensity > 0.01) {
       const weatherField = this.weatherFields.get(this.weatherState.kind);
-      if (weatherField) weatherField.update(dtSec, this.tSec, energyCurves, nowMs, calmLevel, wind);
+      if (weatherField) weatherField.update(dtSec, this.tSec, energyCurves, nowMs, calmLevel, wind, groundYAt);
     }
 
-    this.fields.get(from).update(dtSec, this.tSec, energyCurves, nowMs, calmLevel, wind);
-    if (to !== from) this.fields.get(to).update(dtSec, this.tSec, energyCurves, nowMs, calmLevel, wind);
+    this.fields.get(from).update(dtSec, this.tSec, energyCurves, nowMs, calmLevel, wind, groundYAt);
+    if (to !== from) this.fields.get(to).update(dtSec, this.tSec, energyCurves, nowMs, calmLevel, wind, groundYAt);
     this._updateShedPetals(dtSec, worldX, wind, this._profile(t > 0.5 ? to : from));
     for (const bank of this._fogBanks) {
       const period = this.w * 1.6;
@@ -1449,13 +1482,26 @@ export class BiomeManager {
     // Fading the whole field is cheaper and less jarring than culling
     // individual particles, which would pop as the gain rose.
     const openA = this.openingGain;
+    // Same secondary-light assembly characters use (Renderer.js), gated on
+    // the same rim-light rung -- particles are the largest draw-call
+    // population in the frame and must pay nothing on the deep rungs.
+    const rimOn = this._perf ? this._perf.rimLightEnabled : true;
+    const particleLights = rimOn
+      ? [
+        this.light,
+        ...groundGlowLights(
+          this.groundField ? this.groundField.activeGlowScreenLights(worldX, originX) : [],
+          mandalaColor,
+        ),
+      ].filter(Boolean)
+      : null;
     ctx.save();
     if (openA < 0.999) ctx.globalAlpha = openA;
-    this.fields.get(from).draw(ctx, particleMul, mandalaColor, this.unravel);
+    this.fields.get(from).draw(ctx, particleMul, mandalaColor, this.unravel, particleLights);
     ctx.restore();
     if (to !== from && t > 0.02) {
       ctx.save(); ctx.globalAlpha = t * openA;
-      this.fields.get(to).draw(ctx, particleMul, mandalaColor, this.unravel);
+      this.fields.get(to).draw(ctx, particleMul, mandalaColor, this.unravel, particleLights);
       ctx.restore();
     }
     // Music-reactive weather, same mid-depth as the ambient field above --
@@ -1463,7 +1509,7 @@ export class BiomeManager {
     // convergence at the coda comes free from `this.unravel`.
     if (this._activeWeatherIntensity > 0.01) {
       const weatherField = this.weatherFields.get(this.weatherState.kind);
-      if (weatherField) weatherField.draw(ctx, this._activeWeatherIntensity * particleMul, mandalaColor, this.unravel);
+      if (weatherField) weatherField.draw(ctx, this._activeWeatherIntensity * particleMul, mandalaColor, this.unravel, particleLights);
     }
 
     // The Kuramoto swarm shares this depth: synchronized flashing motes,
@@ -3411,10 +3457,12 @@ export class BiomeManager {
       const drop = Math.min(bottomY - p.y, prominence * SHOULDER_RELIEF_RUN);
       if (drop <= 10) continue;
       const footY = p.y + drop;
-      // Which way the near spur leans is a property of the SUMMIT, not of
-      // where it currently sits on screen -- keyed off strip-space x so a
-      // peak keeps the same face the whole time it scrolls past.
-      const s = Math.sin(p.stripX * 0.0137) >= 0 ? 1 : -1;
+      // Facing follows the celestial, with the original stripX hash kept as
+      // a per-summit perturbation so a whole range doesn't flatten into one
+      // uniformly-lit wall. Falls back to the hash alone when no light is
+      // on `this` (tests, and any caller that hasn't computed one yet).
+      const lightX = this.light && Number.isFinite(this.light.x) ? this.light.x : null;
+      const s = shoulderFacetSide(p.stripX, lightX, p.x);
       const nearRun = drop * SHOULDER_NEAR_RUN * s;
       const farRun = drop * SHOULDER_FAR_RUN * -s;
 

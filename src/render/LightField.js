@@ -20,7 +20,7 @@ export function celestialScreenPos(canvasWidth, canvasHeight, celestialYFrac = 0
  * @param {number} [p.dayArcAlpha]   combined dawn/dusk wash alpha, dims the light during transitions
  * @param {boolean} [p.reducedFlash] accessibility toggle -- compresses intensity swings toward a steady
  *   baseline instead of capping a peak, since nothing here is a single flash to clamp
- * @returns {{x:number, y:number, colorHex:string, intensity:number, dirX:number, dirY:number}}
+ * @returns {{x:number, y:number, colorHex:string, intensity:number, dirX:number, dirY:number, celestialYFrac:number}}
  */
 const REDUCED_FLASH_BASELINE = 0.6;
 
@@ -34,7 +34,7 @@ export function computeLight({
   // Generic downward-ish direction toward the ground, for consumers that
   // want "which way the light falls" without a specific subject position.
   const dir = lightDirTo({ x, y }, canvasWidth * 0.5, canvasHeight);
-  return { x, y, colorHex: haloColorHex, intensity, dirX: dir.x, dirY: dir.y };
+  return { x, y, colorHex: haloColorHex, intensity, dirX: dir.x, dirY: dir.y, celestialYFrac };
 }
 
 /** Normalized vector pointing FROM the light TOWARD a screen point -- the direction light travels to reach it. */

@@ -4,7 +4,7 @@
 // prominence and spacing, not by local-maximum-ness.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BiomeManager } from '../src/world/BiomeManager.js';
+import { BiomeManager, shoulderFacetSide, FACET_SUN_FLIP } from '../src/world/BiomeManager.js';
 
 // _ridgePeaks reads nothing off `this`, so a bare prototype call keeps this
 // away from the constructor's canvas/audio dependencies (same trick as
@@ -73,4 +73,32 @@ test('peaks come back tallest-first, so the cap keeps the mountains that matter'
   const proms = peaksOf(ridge(ys)).map((p) => p.prominence);
   const sorted = [...proms].sort((a, b) => b - a);
   assert.deepEqual(proms, sorted, `expected descending prominence, got ${proms}`);
+});
+
+test('facet side flips when the light crosses the vertical of the summit', () => {
+  const stripX = 0; // hash = 0, so the sun bias is never overturned
+  assert.ok(Math.abs(Math.sin(stripX * 0.0137)) < FACET_SUN_FLIP);
+  const left = shoulderFacetSide(stripX, 100, 200);  // light left of summit
+  const right = shoulderFacetSide(stripX, 300, 200); // light right of summit
+  assert.notEqual(left, right, 'crossing the summit must flip the shaded face');
+  assert.equal(left, 1, 'light on the left shades the right face');
+  assert.equal(right, -1, 'light on the right shades the left face');
+});
+
+test('per-summit variation still produces both facet values across a range of stripX', () => {
+  const lightX = 800, summitX = 200; // sun always to the right
+  const seen = new Set();
+  for (let stripX = 0; stripX < 20000; stripX += 17) {
+    seen.add(shoulderFacetSide(stripX, lightX, summitX));
+    if (seen.size === 2) break;
+  }
+  assert.ok(seen.has(1) && seen.has(-1), `ridges must not go uniform, got ${[...seen]}`);
+});
+
+test('omitting the light falls back to the original stripX coin-flip', () => {
+  for (const stripX of [0, 50, 120, 400, 1800]) {
+    const expected = Math.sin(stripX * 0.0137) >= 0 ? 1 : -1;
+    assert.equal(shoulderFacetSide(stripX), expected);
+    assert.equal(shoulderFacetSide(stripX, null, 100), expected);
+  }
 });

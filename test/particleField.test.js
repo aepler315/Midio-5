@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ParticleField } from '../src/world/ParticleField.js';
+import { ParticleField, particleLightAmount, PARTICLE_LIGHT_CAP } from '../src/world/ParticleField.js';
 
 test('firefly alpha is boosted during calm sections', () => {
   const a = new ParticleField({ kind: 'fireflies', color: '#fff', count: 10, speed: 10 }, 800, 600, 1);
@@ -131,4 +131,63 @@ test('wind particles blow rightward with a strong tailwind', () => {
   let anyMovedRight = false;
   for (let i = 0; i < field.particles.length; i++) if (field.particles[i].x > startX[i]) anyMovedRight = true;
   assert.ok(anyMovedRight, 'wind particles should advance rightward under a rightward gust');
+});
+
+// --- Finish the Light: local lighting + rain that lands on the ground ---
+
+test('particleLightAmount is a no-op on an empty or missing lights array', () => {
+  assert.equal(particleLightAmount([], 10, 10), 0);
+  assert.equal(particleLightAmount(null, 10, 10), 0);
+  assert.equal(particleLightAmount(undefined, 10, 10), 0);
+});
+
+test('particleLightAmount is bounded, never negative, and ignores infinite-radius washes', () => {
+  const local = { x: 0, y: 0, intensity: 4, radius: 80 };
+  const onTop = particleLightAmount([local], 0, 0);
+  assert.ok(onTop > 0, 'a local light at the particle should add some alpha');
+  assert.ok(onTop <= PARTICLE_LIGHT_CAP, `boost must stay capped, got ${onTop}`);
+  assert.ok(onTop >= 0, 'never negative');
+  const far = particleLightAmount([local], 500, 500);
+  assert.equal(far, 0, 'outside the radius contributes nothing');
+  const celestial = particleLightAmount([{ x: 0, y: 0, intensity: 1 }], 0, 0); // no radius = Infinity
+  assert.equal(celestial, 0, 'the celestial wash is not a particle catch');
+});
+
+test('draw() with no lights is a no-op on alpha (identical styles to today)', () => {
+  const field = new ParticleField({ kind: 'snow', color: '#fff', count: 8, speed: 10 }, 800, 600, 3);
+  const alphasA = [], alphasB = [];
+  const ctxA = { ...fakeCtxFull(), set globalAlpha(v) { alphasA.push(v); } };
+  const ctxB = { ...fakeCtxFull(), set globalAlpha(v) { alphasB.push(v); } };
+  field.draw(ctxA, 1, null, 0);
+  field.draw(ctxB, 1, null, 0, []);
+  assert.deepEqual(alphasB, alphasA);
+});
+
+test('rain splash y-coordinate tracks a mocked heightAt() rather than a constant', () => {
+  const field = new ParticleField({ kind: 'rain', color: '#fff', count: 12, speed: 10 }, 800, 600, 9);
+  const shelf = 600 * 0.667;
+  const terrainY = 510; // well off the old shelf, and above where rain will be after a few frames
+  for (const p of field.particles) {
+    p.y = 0;
+    p.state = 'fall';
+    p.splashT = 0;
+  }
+  // One long step so every drop crosses the mocked ground.
+  field.update(2, 0, null, 0, 0, null, () => terrainY);
+  for (const p of field.particles) {
+    assert.equal(p.state, 'splash', 'every drop should have landed');
+    assert.equal(p.y, terrainY, `splash y must follow heightAt, got ${p.y} (old shelf would be ${shelf})`);
+    assert.notEqual(p.y, shelf);
+  }
+});
+
+test('rain without a heightAt still lands on the original screen-fraction shelf', () => {
+  const field = new ParticleField({ kind: 'rain', color: '#fff', count: 8, speed: 10 }, 800, 600, 4);
+  for (const p of field.particles) { p.y = 0; p.state = 'fall'; }
+  field.update(2, 0, null, 0, 0, null);
+  const shelf = 600 * 0.667;
+  for (const p of field.particles) {
+    assert.equal(p.state, 'splash');
+    assert.equal(p.y, shelf);
+  }
 });

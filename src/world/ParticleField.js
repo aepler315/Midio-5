@@ -5,6 +5,33 @@ import { mulberry32, clamp01 } from '../utils/math.js';
 import { curl2 } from '../utils/fields.js';
 import { hexLerpHsl } from '../utils/color.js';
 
+// Particle lighting is a proximity wash, not a rim: motes have no edge
+// normal to face a source. Same radius-falloff MeshDrawer uses on
+// character edges, minus the facing term, and capped well below a full
+// wash so a kick-glow warms nearby snow without announcing itself.
+// Infinite-radius sources (the celestial) are skipped -- a scene-wide
+// alpha bump is invisible as lighting and expensive at particle counts.
+export const PARTICLE_LIGHT_GAIN = 0.16;
+export const PARTICLE_LIGHT_CAP = 0.22;
+
+/** Bounded 0..PARTICLE_LIGHT_CAP alpha add from local lights at (x, y).
+ *  Empty / missing lights is a hard 0 (the draw path then becomes a
+ *  no-op on alpha). Never negative. */
+export function particleLightAmount(lights, x, y) {
+  if (!lights || !lights.length) return 0;
+  let total = 0;
+  for (const L of lights) {
+    if (!L || !(L.intensity > 0.01)) continue;
+    const radius = L.radius ?? Infinity;
+    if (!(radius < Infinity)) continue; // celestial wash -- not a catch
+    const dist = Math.hypot(x - L.x, y - L.y) || 1;
+    if (dist > radius) continue;
+    total += L.intensity * Math.max(0, 1 - dist / radius);
+  }
+  if (!(total > 0)) return 0;
+  return Math.min(PARTICLE_LIGHT_CAP, total * PARTICLE_LIGHT_GAIN);
+}
+
 export class ParticleField {
   constructor(config, canvasWidth, canvasHeight, seed = 1) {
     this.kind = config.kind;
@@ -74,7 +101,7 @@ export class ParticleField {
     return p;
   }
 
-  update(dtSec, tSec, energyCurves, nowMs, calmLevel = 0, wind = null) {
+  update(dtSec, tSec, energyCurves, nowMs, calmLevel = 0, wind = null, groundYAt = null) {
     const rand = this.rand;
     const wx = wind ? wind.x : 0, wy = wind ? wind.y : 0;
     for (const p of this.particles) {
@@ -142,7 +169,12 @@ export class ParticleField {
           p.x += p.vx * dtSec;
           p.y += p.vy * dtSec;
           if (p.x < -20) p.x += this.w + 40;
-          if (p.y >= this.h * 0.667) { p.state = 'splash'; p.splashT = 0; p.y = this.h * 0.667; }
+          // Land on the real terrain when the caller handed us a height
+          // function (BiomeManager passes GroundField.heightAt, remapped
+          // to screen x). Fall back to the old screen-fraction shelf so
+          // existing callers and tests stay byte-identical.
+          const splashY = typeof groundYAt === 'function' ? groundYAt(p.x) : this.h * 0.667;
+          if (p.y >= splashY) { p.state = 'splash'; p.splashT = 0; p.y = splashY; }
           break;
         }
         case 'flaresparks':
@@ -214,17 +246,20 @@ export class ParticleField {
    *  Unraveling (Movement V) -- as the song ends, particle hues converge
    *  toward the biome's own halo color. Blended once per draw call, not
    *  per particle. */
-  draw(ctx, mul = 1, haloColor = null, hueBlend = 0) {
+  draw(ctx, mul = 1, haloColor = null, hueBlend = 0, lights = null) {
     const color = haloColor && hueBlend > 0.001 ? hexLerpHsl(this.color, haloColor, clamp01(hueBlend)) : this.color;
+    const lighting = !!(lights && lights.length);
     ctx.save();
     const n = Math.max(1, Math.ceil(this.particles.length * mul));
     for (let idx = 0; idx < n; idx++) {
       const p = this.particles[idx];
+      const boost = lighting ? particleLightAmount(lights, p.x, p.y) : 0;
+      const setAlpha = (a) => { ctx.globalAlpha = boost ? clamp01(a + boost) : a; };
       switch (this.kind) {
         case 'fireflies':
         case 'pollen':
         case 'antigrav':
-          ctx.globalAlpha = p.alpha ?? 1;
+          setAlpha(p.alpha ?? 1);
           ctx.fillStyle = color;
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
@@ -234,7 +269,7 @@ export class ParticleField {
           const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 2.4);
           grad.addColorStop(0, color);
           grad.addColorStop(1, 'rgba(0,0,0,0)');
-          ctx.globalAlpha = 0.85;
+          setAlpha(0.85);
           ctx.fillStyle = grad;
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.size * 2.4, 0, Math.PI * 2);
@@ -243,21 +278,21 @@ export class ParticleField {
         }
         case 'snow':
         case 'sand':
-          ctx.globalAlpha = this.kind === 'sand' ? 0.45 : 0.85;
+          setAlpha(this.kind === 'sand' ? 0.45 : 0.85);
           ctx.fillStyle = color;
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.size * (this.kind === 'sand' ? 0.55 : 0.7), 0, Math.PI * 2);
           ctx.fill();
           break;
         case 'bubbles': {
-          ctx.globalAlpha = p.alpha ?? 0.4;
+          setAlpha(p.alpha ?? 0.4);
           ctx.strokeStyle = color;
           ctx.lineWidth = 1.1;
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
           ctx.stroke();
           // Specular highlight
-          ctx.globalAlpha = (p.alpha ?? 0.4) * 0.7;
+          setAlpha((p.alpha ?? 0.4) * 0.7);
           ctx.fillStyle = color;
           ctx.beginPath();
           ctx.arc(p.x - p.size * 0.3, p.y - p.size * 0.3, p.size * 0.22, 0, Math.PI * 2);
@@ -269,7 +304,7 @@ export class ParticleField {
           const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
           grad.addColorStop(0, color);
           grad.addColorStop(1, 'rgba(0,0,0,0)');
-          ctx.globalAlpha = (p.alpha ?? 0.6) * 0.85;
+          setAlpha((p.alpha ?? 0.6) * 0.85);
           ctx.fillStyle = grad;
           ctx.beginPath();
           ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
@@ -277,7 +312,7 @@ export class ParticleField {
           break;
         }
         case 'petals': {
-          ctx.globalAlpha = p.state === 'piled' ? Math.max(0, 1 - p.pileT / 1.2) * 0.7 : 0.9;
+          setAlpha(p.state === 'piled' ? Math.max(0, 1 - p.pileT / 1.2) * 0.7 : 0.9);
           ctx.fillStyle = color;
           ctx.save();
           ctx.translate(p.x, p.y);
@@ -298,14 +333,14 @@ export class ParticleField {
           if (p.state === 'splash') {
             // A widening half-ring where the drop hit the ground plane.
             const t = p.splashT / 0.16;
-            ctx.globalAlpha = 0.5 * (1 - t);
+            setAlpha(0.5 * (1 - t));
             ctx.strokeStyle = color;
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.ellipse(p.x, p.y, 3 + 7 * t, 1 + 2.2 * t, 0, Math.PI, Math.PI * 2);
             ctx.stroke();
           } else {
-            ctx.globalAlpha = 0.55;
+            setAlpha(0.55);
             ctx.strokeStyle = color;
             ctx.lineWidth = 1.2;
             ctx.beginPath();
@@ -316,7 +351,7 @@ export class ParticleField {
           break;
         }
         case 'flaresparks': {
-          ctx.globalAlpha = clamp01(1 - Math.abs(p.t - 0.5) * 2) * 0.9;
+          setAlpha(clamp01(1 - Math.abs(p.t - 0.5) * 2) * 0.9);
           ctx.strokeStyle = color;
           ctx.lineWidth = 1.5;
           ctx.beginPath();
@@ -331,13 +366,13 @@ export class ParticleField {
         case 'digitalrain': {
           // Soft falling mote (was a 2×14 hard rect — read as UI “vertical line” ticks).
           const flicker = 0.5 + 0.5 * Math.sin(p.glyphT * 9 + p.phase);
-          ctx.globalAlpha = 0.18 + 0.28 * flicker;
+          setAlpha(0.18 + 0.28 * flicker);
           ctx.fillStyle = color;
           ctx.beginPath();
           ctx.arc(p.x + 1, p.y + 3, 1.4 + 0.6 * flicker, 0, Math.PI * 2);
           ctx.fill();
           // Short soft trail above the mote, not a solid bar.
-          ctx.globalAlpha = 0.08 + 0.12 * flicker;
+          setAlpha(0.08 + 0.12 * flicker);
           ctx.beginPath();
           ctx.moveTo(p.x + 1, p.y);
           ctx.lineTo(p.x + 1, p.y + 8);
@@ -351,7 +386,7 @@ export class ParticleField {
           const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 3);
           grad.addColorStop(0, color);
           grad.addColorStop(1, 'rgba(0,0,0,0)');
-          ctx.globalAlpha = (p.alpha ?? 1) * 0.7;
+          setAlpha((p.alpha ?? 1) * 0.7);
           ctx.fillStyle = grad;
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.size * 3, 0, Math.PI * 2);
@@ -359,7 +394,7 @@ export class ParticleField {
           break;
         }
         case 'wind':
-          ctx.globalAlpha = 0.4;
+          setAlpha(0.4);
           ctx.strokeStyle = color;
           ctx.lineWidth = 1;
           ctx.beginPath();
@@ -371,7 +406,7 @@ export class ParticleField {
           const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 14);
           grad.addColorStop(0, color);
           grad.addColorStop(1, 'rgba(0,0,0,0)');
-          ctx.globalAlpha = p.alpha ?? 0.3;
+          setAlpha(p.alpha ?? 0.3);
           ctx.fillStyle = grad;
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.size * 14, 0, Math.PI * 2);
