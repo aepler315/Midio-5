@@ -52,13 +52,17 @@ export function zoomTargetForOffFrame(screenXs, stageW) {
   return 1 - (1 - ZOOM_MIN) * t;
 }
 
-// Calm-section drift (see update()): a genuinely wide, slow pan rather than
-// a scaled-down version of impact shake. The original 3px/10s drift was
-// imperceptible -- this is sized to actually read as the camera sweeping
-// across the frame during a relaxed stretch, exported so the test can pin
-// the bound without hardcoding it twice.
-export const CALM_DRIFT_AMP_PX = 26;
+// Calm-section drift (see update()): a slow, subtle pan that keeps a
+// relaxed frame from ever feeling frozen -- NOT a trembling one. The first
+// wide-sweep attempt (26px, One Spectrum) read as the whole scene shaking:
+// calmLevel swings 0<->1 at section boundaries, so the raw amplitude
+// snapped the camera tens of pixels, and even at steady calm a 26px pan
+// visibly shivered every ridge and character on screen. This is sized to
+// read as gentle life (a couple of px), and the amplitude is first-order
+// smoothed so section changes ease the pan in/out instead of jumping it.
+export const CALM_DRIFT_AMP_PX = 8;
 export const CALM_DRIFT_PERIOD_SEC = 15; // one full lazy sweep
+const CALM_DRIFT_SMOOTH_TAU = 1.5; // seconds -- amplitude eases, never snaps
 
 // Beat sway: a small, continuous camera nod retriggered on every beat-grid
 // crossing (from BeatAnchor, which tracks the song's own live tempo from
@@ -166,29 +170,35 @@ export class CameraDirector {
       this._shakeAmp = amp < 0.05 ? 0 : this._shakeAmp;
     }
 
-    // Damped 6.5 Hz roll ring-down from the last impact.
+    // Damped 6.5 Hz roll ring-down from the last impact. The decay is short
+    // so the roll actually settles between landings -- with a long ring and
+    // beat-synced landings the 6.5 Hz oscillation never died, and the whole
+    // frame shivered continuously instead of kicking per impact.
     if (this._rollAmp > 1e-4) {
       this._rollT += dtSec;
-      const env = Math.exp(-this._rollT / 0.22);
+      const env = Math.exp(-this._rollT / 0.12);
       this.roll = motionMul * this._rollSign * this._rollAmp * env * Math.sin(2 * Math.PI * 6.5 * this._rollT);
       if (env < 0.02) this._rollAmp = 0;
     } else {
       this.roll = 0;
     }
 
-    // Calm sections: a wide, slow sweeping pan layered on top of impact
+    // Calm sections: a slow, subtle sweeping pan layered on top of impact
     // shake (additive, so a landing during a calm stretch still reads
-    // correctly) -- a genuine long-range drift across the frame, not a
-    // scaled-down shake, so a relaxed section reads as sweeping rather than
-    // just "the same motion, smaller." Horizontal leads (fuller amplitude,
+    // correctly). The amplitude is first-order smoothed -- calmLevel jumps
+    // at section boundaries, and a raw multiply would snap the camera tens
+    // of pixels (the trembling everyone could see); easing it keeps the
+    // pan alive without the jolt. Horizontal leads (fuller amplitude,
     // matching how a side-scroller camera actually pans); vertical trails
     // at a slower, smaller sub-sweep so the path traces a lazy ellipse
     // rather than a tight circle.
     this._driftT = (this._driftT || 0) + dtSec;
     const driftOmega = 2 * Math.PI / CALM_DRIFT_PERIOD_SEC;
-    const driftAmp = CALM_DRIFT_AMP_PX * calmLevel;
-    const driftX = driftAmp * Math.sin(driftOmega * this._driftT);
-    const driftY = driftAmp * 0.55 * Math.sin(driftOmega * this._driftT * 0.7 + 1.3);
+    const driftTarget = CALM_DRIFT_AMP_PX * calmLevel;
+    this._driftAmp = (this._driftAmp || 0)
+      + (1 - Math.exp(-dtSec / CALM_DRIFT_SMOOTH_TAU)) * (driftTarget - (this._driftAmp || 0));
+    const driftX = this._driftAmp * Math.sin(driftOmega * this._driftT);
+    const driftY = this._driftAmp * 0.55 * Math.sin(driftOmega * this._driftT * 0.7 + 1.3);
 
     // Beat sway: retriggers every time the beat clock wraps back to 0 (a
     // fresh beat), alternating its lateral nudge left/right beat to beat.

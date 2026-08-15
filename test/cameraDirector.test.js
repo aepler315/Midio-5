@@ -6,12 +6,13 @@ import {
   UNIVERSE_ZOOM_DIP, UNIVERSE_ROLL_MAX, FLOAT_TILT_MAX, ZOOM_MIN,
 } from '../src/render/CameraDirector.js';
 
-test('calm level introduces a slow, wide drift when nothing else is shaking the camera', () => {
+test('calm level introduces a slow, subtle drift when nothing else is shaking the camera', () => {
   const cam = new CameraDirector();
   let sawNonZero = false;
   let maxAbs = 0;
-  // Run a full sweep period so the sinusoid actually reaches its peak.
-  const steps = Math.ceil(CALM_DRIFT_PERIOD_SEC / (1 / 60));
+  // Run several full sweep periods so the smoothed amplitude reaches its
+  // steady peak and the sinusoid actually swings through it.
+  const steps = Math.ceil(CALM_DRIFT_PERIOD_SEC * 3 / (1 / 60));
   for (let i = 0; i < steps; i++) {
     cam.update(1 / 60, 1);
     if (cam.shakeX !== 0 || cam.shakeY !== 0) sawNonZero = true;
@@ -19,12 +20,19 @@ test('calm level introduces a slow, wide drift when nothing else is shaking the 
   }
   assert.ok(sawNonZero, 'expected calm drift to move the camera off dead-zero at some point');
   assert.ok(maxAbs <= CALM_DRIFT_AMP_PX + 0.01, `expected drift to stay within its amplitude, got ${maxAbs}`);
-  assert.ok(maxAbs > 10, `expected a genuinely wide sweep, not the old imperceptible 3px drift, got ${maxAbs}`);
+  // Subtle by design: enough to read as gentle life, nowhere near the 26px
+  // wide-sweep that read as the whole scene trembling.
+  assert.ok(maxAbs > 3, `expected a small-but-visible drift, got ${maxAbs}`);
+  assert.ok(maxAbs < 10, `drift must not tremble the frame (was 26px), got ${maxAbs}`);
 });
 
 test('calm drift amplitude scales with calmLevel (a partly-calm section sweeps proportionally less)', () => {
   const full = new CameraDirector(), half = new CameraDirector();
   let maxFull = 0, maxHalf = 0;
+  // Let both reach steady amplitude (smoothing converges within ~3 tau),
+  // then measure over a full period.
+  const warmup = Math.ceil(4 / (1 / 60));
+  for (let i = 0; i < warmup; i++) { full.update(1 / 60, 1); half.update(1 / 60, 0.5); }
   const steps = Math.ceil(CALM_DRIFT_PERIOD_SEC / (1 / 60));
   for (let i = 0; i < steps; i++) {
     full.update(1 / 60, 1);
@@ -32,7 +40,23 @@ test('calm drift amplitude scales with calmLevel (a partly-calm section sweeps p
     maxFull = Math.max(maxFull, Math.abs(full.shakeX));
     maxHalf = Math.max(maxHalf, Math.abs(half.shakeX));
   }
+  assert.ok(maxFull > 0 && maxHalf > 0, 'both should drift');
   assert.ok(Math.abs(maxHalf - maxFull * 0.5) < 1, `expected roughly half the amplitude, got full=${maxFull} half=${maxHalf}`);
+});
+
+test('calm drift amplitude eases smoothly when calmLevel jumps (no camera snap)', () => {
+  const cam = new CameraDirector();
+  // Sudden calm onset: a 0->1 jump must not translate the camera tens of
+  // pixels in one frame (the trembling bug).
+  for (let i = 0; i < 30; i++) cam.update(1 / 60, 0);
+  cam.update(1 / 60, 1);
+  const snapX = cam.shakeX, snapY = cam.shakeY;
+  assert.ok(Math.abs(snapX) < 2, `expected a small eased first step, got ${snapX}`);
+  assert.ok(Math.abs(snapY) < 2, `expected a small eased first step, got ${snapY}`);
+  // ...and the amplitude ramps up over a couple seconds rather than arriving instantly.
+  let earlyMax = 0;
+  for (let i = 0; i < 60; i++) { cam.update(1 / 60, 1); earlyMax = Math.max(earlyMax, Math.abs(cam.shakeX)); }
+  assert.ok(earlyMax < CALM_DRIFT_AMP_PX * 0.6, `amplitude should ramp, not jump to full (got ${earlyMax})`);
 });
 
 test('with calmLevel 0, the camera stays at dead-zero absent any shake trigger', () => {
@@ -143,18 +167,17 @@ test('a fresh beat crossing (tau wraps back toward 0) flips the lateral sway sig
 });
 
 test('calm sections keep only a fraction of the beat sway, never the full-energy amount', () => {
-  const calm = new CameraDirector(), active = new CameraDirector();
+  const calm = new CameraDirector(), active = new CameraDirector(), calmNoBeat = new CameraDirector();
   const dtSec = 0.001;
+  // Isolate the beat-sway term from calm's own additive drift by running a
+  // same-calm camera with no beat clock and subtracting its frame -- the
+  // drift state (smoothed amplitude + phase) is identical between the two,
+  // so it cancels exactly without re-deriving the drift formula.
+  calmNoBeat.update(dtSec, 1, false, null, 1);
   calm.update(dtSec, 1, false, 40, 1);
   active.update(dtSec, 0, false, 40, 1);
 
-  // Isolate the beat-sway term from calm's own additive drift (a nonzero
-  // offset from frame one, since its sine carries a fixed phase) by
-  // subtracting that drift's own formula -- same one CameraDirector.update()
-  // computes it with.
-  const driftOmega = 2 * Math.PI / CALM_DRIFT_PERIOD_SEC;
-  const calmDriftY = CALM_DRIFT_AMP_PX * 1 * 0.55 * Math.sin(driftOmega * dtSec * 0.7 + 1.3);
-  const calmSwayY = calm.shakeY - calmDriftY;
+  const calmSwayY = calm.shakeY - calmNoBeat.shakeY;
 
   assert.ok(calmSwayY < active.shakeY, 'deep calm should visibly damp the beat nod');
   assert.ok(calmSwayY > 0, 'but not silence it completely');
