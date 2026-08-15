@@ -304,3 +304,52 @@ function quadTForX(seg, x) {
   }
   return clamp((x - seg.x0) / (seg.x1 - seg.x0 || 1), 0, 1);
 }
+
+/**
+ * Facing at a screen x, linearly interpolated between curve samples.
+ * Edge-clamped. 0 when there is no curve.
+ */
+export function facingAtX(samples, facing, x) {
+  const n = samples && facing ? Math.min(samples.length, facing.length) : 0;
+  if (!n) return 0;
+  if (x <= samples[0].x) return facing[0] || 0;
+  if (x >= samples[n - 1].x) return facing[n - 1] || 0;
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (samples[mid].x <= x) lo = mid; else hi = mid;
+  }
+  const x0 = samples[lo].x, x1 = samples[hi].x;
+  const t = x1 === x0 ? 0 : (x - x0) / (x1 - x0);
+  const f0 = facing[lo] || 0, f1 = facing[hi] || 0;
+  return f0 + (f1 - f0) * t;
+}
+
+/**
+ * 1×N RGBA strip of the relief body. A pixel is lit *or* shade, never a
+ * muddy mix. Painting this and stretching it is what keeps the fill
+ * continuous — a CanvasGradient with a stop per sample was still capable
+ * of a hard vertical cut when neighbouring stops collapsed.
+ */
+export function reliefStripRGBA(samples, facing, width) {
+  const n = Math.max(0, width | 0);
+  const out = new Uint8ClampedArray(n * 4);
+  if (!n) return out;
+  for (let x = 0; x < n; x++) {
+    const f = facingAtX(samples, facing, x);
+    const o = x * 4;
+    if (f >= 0) {
+      out[o] = 255;
+      out[o + 1] = 248;
+      out[o + 2] = 230;
+      out[o + 3] = Math.round(RELIEF_LIT_ALPHA * f * 255);
+    } else {
+      out[o] = 0;
+      out[o + 1] = 0;
+      out[o + 2] = 0;
+      out[o + 3] = Math.round(RELIEF_SHADE_ALPHA * -f * 255);
+    }
+  }
+  return out;
+}
+

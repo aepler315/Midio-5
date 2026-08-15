@@ -6,7 +6,7 @@ import { BIOMES } from './BiomeProfiles.js';
 import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
 import { ParticleField } from './ParticleField.js';
 import {
-  sampleTerrainCurve, curveFacing, facingColorStops,
+  sampleTerrainCurve, curveFacing, facingColorStops, reliefStripRGBA,
   RELIEF_FALLOFF_PX,
 } from './TerrainRelief.js';
 import { Mandala } from './Mandala.js';
@@ -1562,7 +1562,7 @@ export class BiomeManager {
     ctx.save();
     if (this.groundField && !isLake) {
       const bars = this.groundField.visibleBars(worldX, originX, canvas.width);
-      const strokePath = this._terrainTopPath(bars, canvas.height, false);
+      const strokePath = this._terrainTopPath(bars, canvas.height, false, canvas.width);
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
       for (const pass of TERRAIN_FOOTING_AO_PASSES) {
@@ -3721,6 +3721,28 @@ export class BiomeManager {
     }
   }
 
+  /** Reused 1×W facing strip + W×falloff band for the ground relief. */
+  _reliefBand(width) {
+    const w = Math.max(1, width | 0);
+    if (typeof document === 'undefined' || !document.createElement) return null;
+    if (!this._reliefScratch || this._reliefScratch.w !== w) {
+      const strip = document.createElement('canvas');
+      strip.width = w;
+      strip.height = 1;
+      const band = document.createElement('canvas');
+      band.width = w;
+      band.height = RELIEF_FALLOFF_PX;
+      this._reliefScratch = {
+        w,
+        strip,
+        stripCtx: strip.getContext('2d', { willReadFrequently: true }),
+        band,
+        bandCtx: band.getContext('2d'),
+      };
+    }
+    return this._reliefScratch;
+  }
+
   /** Builds a smooth curve through each bar's top-center point -- the
    *  quadratic-midpoint technique (each segment's control point is the
    *  sample itself, its endpoint the midpoint to the next sample) turns the
@@ -3729,12 +3751,15 @@ export class BiomeManager {
    *  simulation it always was; this is render-only. `closed` also draws the
    *  two side edges down to `canvas.height` and closes the path, for fills
    *  and clips; the open (stroke) form stops at the last top point. */
-  _terrainTopPath(bars, canvasHeight, closed) {
+  _terrainTopPath(bars, canvasHeight, closed, canvasWidth = null) {
     const path = new Path2D();
     if (bars.length === 0) return path;
     const pts = bars.map((b) => ({ x: b.x + b.width / 2, y: b.y }));
-    const firstBar = bars[0], lastBar = bars[bars.length - 1];
-    if (closed) path.moveTo(firstBar.x, canvasHeight);
+    const lastBar = bars[bars.length - 1];
+    const right = Number.isFinite(canvasWidth)
+      ? Math.max(canvasWidth, lastBar.x + lastBar.width)
+      : lastBar.x + lastBar.width;
+    if (closed) path.moveTo(0, canvasHeight);
     if (closed) path.lineTo(pts[0].x, pts[0].y); else path.moveTo(pts[0].x, pts[0].y);
     for (let i = 0; i < pts.length - 1; i++) {
       const cur = pts[i], next = pts[i + 1];
@@ -3744,8 +3769,8 @@ export class BiomeManager {
     const lastPt = pts[pts.length - 1];
     path.lineTo(lastPt.x, lastPt.y);
     if (closed) {
-      path.lineTo(lastBar.x + lastBar.width, lastPt.y);
-      path.lineTo(lastBar.x + lastBar.width, canvasHeight);
+      path.lineTo(right, lastPt.y);
+      path.lineTo(right, canvasHeight);
       path.closePath();
     }
     return path;
@@ -3789,23 +3814,16 @@ export class BiomeManager {
       // in the background. Rendered as one continuous smoothed ridge (see
       // _terrainTopPath) rather than per-slice rects.
       const bars = this.groundField.visibleBars(worldX, originX, canvas.width);
-      const fillPath = this._terrainTopPath(bars, canvas.height, true);
-      const strokePath = this._terrainTopPath(bars, canvas.height, false);
+      const fillPath = this._terrainTopPath(bars, canvas.height, true, canvas.width);
+      const strokePath = this._terrainTopPath(bars, canvas.height, false, canvas.width);
       ctx.fillStyle = groundColor;
       ctx.fill(fillPath);
 
-      // Terrain relief: the ground plane answers the same light the
-      // mountains already do. Clip to the ridge (same discipline as
-      // `_drawRidgeVolume`) and paint two horizontal gradients -- lit
-      // and shade as separate passes, so the zero-crossing stays
-      // transparent instead of interpolating through muddy grey.
-      // Facing is sampled off the same quadratic `_terrainTopPath`
-      // draws, every ~10px, so the gradient has no slice-boundary
-      // step. A cover-repaint of `groundColor` then fades the shading
-      // out within RELIEF_FALLOFF_PX of the ridge: surface catch, not
-      // a wall of tint to the bottom of the frame. Gated on
-      // rimLightEnabled so the deep rungs pay nothing; omit the light
-      // and this is a no-op (byte-identical to the flat fill above).
+      // Terrain relief: clip to the ridge and stamp a 1px-tall facing
+      // strip, stretched and faded with depth. A per-pixel strip cannot
+      // grow a hard vertical cut the way a many-stop CanvasGradient can
+      // when neighbouring stops collapse. Gated on rimLightEnabled; omit
+      // the light and this is a no-op (byte-identical to the flat fill).
       const rimOn = this._perf ? this._perf.rimLightEnabled : true;
       const reliefSamples = (rimOn && this.light)
         ? sampleTerrainCurve(bars)
@@ -3816,30 +3834,23 @@ export class BiomeManager {
         ctx.clip(fillPath);
         let minTop = canvas.height;
         for (const bar of bars) if (bar.y < minTop) minTop = bar.y;
-        const x0 = 0;
-        const x1 = canvas.width;
-        const litStops = facingColorStops(reliefSamples, facing, x0, x1, 'lit');
-        const shadeStops = facingColorStops(reliefSamples, facing, x0, x1, 'shade');
-        if (litStops.length >= 2) {
-          const lit = ctx.createLinearGradient(x0, minTop, x1, minTop);
-          for (const s of litStops) lit.addColorStop(s.offset, s.color);
-          ctx.fillStyle = lit;
-          ctx.fillRect(0, minTop, canvas.width, canvas.height - minTop);
+        const band = this._reliefBand(canvas.width);
+        if (band) {
+          const rgba = reliefStripRGBA(reliefSamples, facing, canvas.width);
+          band.stripCtx.putImageData(new ImageData(rgba, canvas.width, 1), 0, 0);
+          const bctx = band.bandCtx;
+          bctx.setTransform(1, 0, 0, 1, 0, 0);
+          bctx.clearRect(0, 0, band.band.width, band.band.height);
+          bctx.drawImage(band.strip, 0, 0, canvas.width, RELIEF_FALLOFF_PX);
+          bctx.globalCompositeOperation = 'destination-in';
+          const fade = bctx.createLinearGradient(0, 0, 0, RELIEF_FALLOFF_PX);
+          fade.addColorStop(0, 'rgba(0,0,0,1)');
+          fade.addColorStop(1, 'rgba(0,0,0,0)');
+          bctx.fillStyle = fade;
+          bctx.fillRect(0, 0, canvas.width, RELIEF_FALLOFF_PX);
+          bctx.globalCompositeOperation = 'source-over';
+          ctx.drawImage(band.band, 0, minTop);
         }
-        if (shadeStops.length >= 2) {
-          const shade = ctx.createLinearGradient(x0, minTop, x1, minTop);
-          for (const s of shadeStops) shade.addColorStop(s.offset, s.color);
-          ctx.fillStyle = shade;
-          ctx.fillRect(0, minTop, canvas.width, canvas.height - minTop);
-        }
-        const { r: gr, g: gg, b: gb } = hexToRgb(groundColor);
-        const fade = ctx.createLinearGradient(0, minTop, 0, minTop + RELIEF_FALLOFF_PX);
-        fade.addColorStop(0, `rgba(${gr},${gg},${gb},0)`);
-        fade.addColorStop(1, `rgba(${gr},${gg},${gb},1)`);
-        ctx.fillStyle = fade;
-        ctx.fillRect(0, minTop, canvas.width, RELIEF_FALLOFF_PX);
-        ctx.fillStyle = groundColor;
-        ctx.fillRect(0, minTop + RELIEF_FALLOFF_PX, canvas.width, canvas.height);
         ctx.restore();
       }
 

@@ -6,6 +6,8 @@ import {
   curveFacing,
   reliefDepthFade,
   facingColorStops,
+  facingAtX,
+  reliefStripRGBA,
   RELIEF_FALLOFF_PX,
   RELIEF_SAMPLE_PX,
   RELIEF_LIT_ALPHA,
@@ -206,4 +208,33 @@ test('crest stops stay near the legacy 0.18 when facing is 0', () => {
   for (const s of stops) {
     assert.ok(Math.abs(alpha(s.color) - CREST_BASE_ALPHA) < 1e-9, s.color);
   }
+});
+
+test('facingAtX interpolates and clamps, 0 without a curve', () => {
+  assert.equal(facingAtX([], [], 10), 0);
+  assert.equal(facingAtX(null, null, 10), 0);
+  const samples = [{ x: 0 }, { x: 100 }];
+  const facing = [-0.4, 0.6];
+  assert.equal(facingAtX(samples, facing, -10), -0.4);
+  assert.equal(facingAtX(samples, facing, 200), 0.6);
+  assert.ok(Math.abs(facingAtX(samples, facing, 50) - 0.1) < 1e-9);
+});
+
+test('reliefStripRGBA is continuous — no adjacent-pixel alpha jump above a small epsilon', () => {
+  const bars = wideHill();
+  const samples = sampleTerrainCurve(bars, RELIEF_SAMPLE_PX);
+  const facing = curveFacing(samples, { x: 0, y: 80, intensity: 1 });
+  const rgba = reliefStripRGBA(samples, facing, 450);
+  assert.equal(rgba.length, 450 * 4);
+  let maxJump = 0;
+  for (let x = 1; x < 450; x++) {
+    const a0 = rgba[(x - 1) * 4 + 3];
+    const a1 = rgba[x * 4 + 3];
+    maxJump = Math.max(maxJump, Math.abs(a1 - a0));
+  }
+  assert.ok(maxJump < 12, `strip alpha jumped ${maxJump} between adjacent pixels`);
+  // A hill under a side light must actually paint something.
+  let painted = 0;
+  for (let x = 0; x < 450; x++) painted += rgba[x * 4 + 3];
+  assert.ok(painted > 0);
 });
