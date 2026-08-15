@@ -164,8 +164,12 @@ const server = http.createServer(async (req, res) => {
   // Soulseek bridge API: the browser cannot speak the Soulseek TCP protocol,
   // so the dev server holds the connection. Credentials are sent to the
   // local bridge only (which forwards them to server.slsknet.org).
+  // Two integrations merged onto main both live behind /api/soulseek/*:
+  // the zero-config bridge (soulseek-bridge.mjs, config/demo/poll + free
+  // music) and PR #64's connect-based bridge (soulseek-bridge.js). The
+  // dispatcher routes each request by its path/body shape so both UIs work.
   if (reqPath.startsWith('/api/soulseek/')) {
-    handleSoulseekApi(req, res, reqPath);
+    await handleSoulseekRoute(req, res, reqPath);
     return;
   }
 
@@ -222,11 +226,6 @@ function readJsonBody(req) {
   });
 }
 
-function sendJson(res, status, payload) {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
-  res.end(JSON.stringify(payload));
-}
-
 async function handleSoulseekApi(req, res, reqPath) {
   const action = reqPath.slice('/api/soulseek/'.length);
   if (req.method === 'GET' && action === 'status') {
@@ -274,8 +273,140 @@ async function handleSoulseekApi(req, res, reqPath) {
   }
 }
 
-server.listen(PORT, () => {
-  console.log(`Super Maudio World dev server running at http://localhost:${PORT}`);
+/** Routes the merged /api/soulseek/* surface. Two integrations coexist on
+ *  main behind these paths: the zero-config mjs bridge (slskPanel /
+ *  SoulseekSearch.js: /config, /demo, /search/:id polling, binary downloads)
+ *  and the PR #64 connect-based js bridge (SoulseekSource.js: /connect,
+ *  /disconnect, synchronous {results} search, base64 downloads). Where the
+ *  two overlap (/search, /download, /status) the request body disambiguates:
+ *  SoulseekSource always sends `timeoutMs` on search and `file` on download;
+ *  SoulseekSearch sends neither. /status returns the mjs superset, which
+ *  carries both the `mode`/`note` fields the slskPanel reads and the
+ *  `connected`/`user` fields SoulseekSource reads. */
+async function handleSoulseekRoute(req, res, reqPath) {
+  const action = reqPath.slice('/api/soulseek/'.length);
+
+  // Zero-config bridge only (slskPanel / SoulseekSearch.js)
+  if (action === 'config') {
+    if (req.method === 'POST') {
+      try {
+        const body = await readJsonBody(req);
+        const status = setConfig(body || {});
+        sendJson(res, 200, { ok: true, ...status, ...(await getStatus()) });
+      } catch (err) {
+        sendJson(res, 400, { error: err.message || String(err) });
+      }
+      return;
+    }
+    if (req.method === 'DELETE') {
+      setConfig({ mode: 'clear' });
+      try {
+        sendJson(res, 200, { ok: true, ...(await getStatus()) });
+      } catch (err) {
+        sendJson(res, 500, { ok: true, error: err.message || String(err) });
+      }
+      return;
+    }
+    sendJson(res, 405, { error: 'Method not allowed' });
+    return;
+  }
+
+  if (action === 'demo' && req.method === 'GET') {
+    sendJson(res, 200, { tracks: listDemoCatalog() });
+    return;
+  }
+
+  const searchMatch = reqPath.match(/^\/api\/soulseek\/search\/([^/]+)$/);
+  if (searchMatch && req.method === 'GET') {
+    const data = getSearch(decodeURIComponent(searchMatch[1]));
+    if (!data) {
+      sendJson(res, 404, { error: 'Search not found' });
+      return;
+    }
+    sendJson(res, 200, data);
+    return;
+  }
+
+  // Connect-based bridge only (SoulseekSource.js)
+  if (action === 'connect' || action === 'disconnect') {
+    return handleSoulseekApi(req, res, reqPath);
+  }
+
+  if (req.method !== 'POST') {
+    if (action === 'status' && req.method === 'GET') {
+      // Superset: both clients read what they need from it.
+      try {
+        sendJson(res, 200, await getStatus());
+      } catch (err) {
+        sendJson(res, 500, { mode: 'offline', connected: false, note: err.message || String(err) });
+      }
+      return;
+    }
+    sendJson(res, 405, { error: 'Method not allowed' });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (err) {
+    sendJson(res, 400, { error: err.message });
+    return;
+  }
+
+  if (action === 'search') {
+    if (body && typeof body.timeoutMs === 'number') {
+      // SoulseekSource: synchronous {results} search.
+      try {
+        const r = await soulseek.search({ query: body.query, timeoutMs: body.timeoutMs });
+        sendJson(res, 200, { results: r });
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof SoulseekBridgeError ? err.message : `Soulseek error: ${err.message}` });
+      }
+    } else {
+      // SoulseekSearch: start an async search, poll /search/:id for results.
+      const query = body?.query || body?.q || body?.searchText || '';
+      try {
+        const started = await startSearch(query);
+        sendJson(res, 200, started);
+      } catch (err) {
+        sendJson(res, 500, { error: err.message || String(err) });
+      }
+    }
+    return;
+  }
+
+  if (action === 'download') {
+    if (body && body.file) {
+      // SoulseekSource: base64 download.
+      try {
+        const r = await soulseek.download({ file: body.file });
+        sendJson(res, 200, { name: r.name, data: r.buffer.toString('base64') });
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof SoulseekBridgeError ? err.message : `Soulseek error: ${err.message}` });
+      }
+    } else {
+      // SoulseekSearch: binary attachment download.
+      const item = body?.item || body;
+      try {
+        const result = await downloadResult(item);
+        res.writeHead(200, {
+          'Content-Type': result.contentType || 'application/octet-stream',
+          'Content-Disposition': `attachment; filename="${result.filename.replace(/"/g, '')}"`,
+          'X-Filename': encodeURIComponent(result.filename),
+          'Cache-Control': 'no-store',
+        });
+        res.end(result.buffer);
+      } catch (err) {
+        sendJson(res, 500, { error: err.message || String(err) });
+      }
+    }
+    return;
+  }
+
+  sendJson(res, 404, { error: `Unknown action: ${action}` });
+}
+
 server.listen(PORT, HOST, async () => {
   console.log(`Super Maudio World + Soulseek at http://${HOST}:${PORT}`);
   const status = await getStatus();

@@ -41,6 +41,7 @@ import {
   getSoulseekUser, setSoulseekUser, soulseekConnect, soulseekStatus,
   soulseekSearch, soulseekFetchAsFile, SoulseekError,
 } from './net/SoulseekSource.js';
+import {
   getJamendoClientId, setJamendoClientId, searchTracks as jamendoSearchTracks,
   fetchTrackAsFile as jamendoFetchTrackAsFile, JamendoError,
 } from './net/JamendoSource.js';
@@ -668,7 +669,7 @@ function backToTitle() {
   completePanelEl.classList.add('hidden');
   hudEl.classList.add('hidden');
   loaderEl.classList.remove('hidden');
-  soulseekSearch?.resetBusy();
+  slskPanelSearch?.resetBusy();
   startTitleBackdrop();
 }
 
@@ -1336,15 +1337,37 @@ async function runSoulseekSearch() {
   if (!results.length) { setSoulseekStatus('No results.'); return; }
   setSoulseekStatus(`${results.length} result${results.length === 1 ? '' : 's'} — pick one to download & play.`);
   for (const r of results) {
-// Soulseek-powered song search on the title screen. Results download through
-// the local bridge (/api/soulseek/*) and feed the same handleFiles path as drops.
+    const li = document.createElement('li');
+    li.className = 'jamendoResult';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ghostbtn jamendoResultBtn';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'slskResultName';
+    nameSpan.textContent = r.name;
+    const metaSpan = document.createElement('span');
+    metaSpan.className = 'slskResultMeta';
+    const bits = r.bitrate ? ` · ${r.bitrate} kbps` : '';
+    const size = formatFileSize(r.size);
+    metaSpan.textContent = `${r.user}${bits}${size ? ` · ${size}` : ''}${r.slots ? '' : ' · no free slot'}`;
+    btn.appendChild(nameSpan);
+    btn.appendChild(metaSpan);
+    btn.addEventListener('click', () => playSoulseekResult(r, btn));
+    li.appendChild(btn);
+    soulseekResultsEl.appendChild(li);
+  }
+}
+
+// Soulseek-powered song search on the title screen (free music by default,
+// optional Soulseek via slskd). Results download through the local bridge
+// (/api/soulseek/*) and feed the same handleFiles path as drops.
 const slskPanelEl = document.getElementById('slskPanel');
-let soulseekSearch = null;
+let slskPanelSearch = null;
 if (slskPanelEl) {
-  soulseekSearch = new SoulseekSearch({
+  slskPanelSearch = new SoulseekSearch({
     root: slskPanelEl,
     onFiles: (files) => {
-      soulseekSearch?.resetBusy();
+      slskPanelSearch?.resetBusy();
       handleFiles(files);
     },
     onStatus: (msg) => {
@@ -1402,19 +1425,11 @@ async function runJamendoSearch() {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'ghostbtn jamendoResultBtn';
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'slskResultName';
-    nameSpan.textContent = r.name;
-    const metaSpan = document.createElement('span');
-    metaSpan.className = 'slskResultMeta';
-    const bits = r.bitrate ? ` · ${r.bitrate} kbps` : '';
-    const size = formatFileSize(r.size);
-    metaSpan.textContent = `${r.user}${bits}${size ? ` · ${size}` : ''}${r.slots ? '' : ' · no free slot'}`;
-    btn.appendChild(nameSpan);
-    btn.appendChild(metaSpan);
-    btn.addEventListener('click', () => playSoulseekResult(r, btn));
+    btn.title = track.licenseCcUrl ? `Creative Commons license: ${track.licenseCcUrl}` : '';
+    btn.textContent = `${track.name} — ${track.artist} (${formatTrackDuration(track.duration)})`;
+    btn.addEventListener('click', () => playJamendoTrack(track, btn));
     li.appendChild(btn);
-    soulseekResultsEl.appendChild(li);
+    jamendoResultsEl.appendChild(li);
   }
 }
 
@@ -1427,11 +1442,8 @@ async function playSoulseekResult(result, btnEl) {
     handleFiles([file]);
   } catch (err) {
     setSoulseekStatus(err instanceof SoulseekError ? err.message : `Could not load "${result.name}": ${err.message}`, true);
-    btn.title = track.licenseCcUrl ? `Creative Commons license: ${track.licenseCcUrl}` : '';
-    btn.textContent = `${track.name} — ${track.artist} (${formatTrackDuration(track.duration)})`;
-    btn.addEventListener('click', () => playJamendoTrack(track, btn));
-    li.appendChild(btn);
-    jamendoResultsEl.appendChild(li);
+  } finally {
+    if (btnEl) btnEl.disabled = false;
   }
 }
 
@@ -1456,6 +1468,7 @@ soulseekSearchInputEl?.addEventListener('keydown', (e) => {
 });
 soulseekPassInputEl?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); runSoulseekConnect(); }
+});
 jamendoSearchBtnEl?.addEventListener('click', runJamendoSearch);
 jamendoSearchInputEl?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); runJamendoSearch(); }
