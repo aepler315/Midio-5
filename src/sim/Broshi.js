@@ -402,8 +402,9 @@ export class Broshi {
     this._neckPending = { vel: evt.vel };
   }
 
-  update(nowMs, dtSec, midio, energyCurves, worldX, groundY, calmLevel = 0, ensemble = null, groundField = null) {
+  update(nowMs, dtSec, midio, energyCurves, worldX, groundY, calmLevel = 0, ensemble = null, groundField = null, particleMul = 1) {
     this._calmLevel = calmLevel;
+    this._particleMul = particleMul;
     this._ensPhase = ensemble ? ensemble.phase : null;
     this._melt = ensemble ? ensemble.melt : 0;
     // Shared build-up swell (EnsembleDirector.swell) -- see Midasus/Renderer
@@ -696,7 +697,7 @@ export class Broshi {
 
     // --- rabid aura / drool ---
     if (this.rabid) {
-      this._droolAccum += 4 * this.rho * dtSec;
+      this._droolAccum += 4 * this.rho * this._particleMul * dtSec;
       while (this._droolAccum >= 1) {
         this._droolAccum -= 1;
         this.drool.spawn({ x: 0, y: 0, vy: 40, life: 0.6 + 0.3 * this.rand() });
@@ -710,7 +711,7 @@ export class Broshi {
     // behind him (world-relative, since they should stay in place as he
     // runs on) and fade over ~0.4s.
     const trailSpeed = Math.abs(this.xRelVel);
-    const trailRate = (4 + 26 * Math.min(1, trailSpeed / 250)) * (1 + 1.2 * this.rho);
+    const trailRate = (4 + 26 * Math.min(1, trailSpeed / 250)) * (1 + 1.2 * this.rho) * this._particleMul;
     this._trailAccum += trailRate * dtSec;
     while (this._trailAccum >= 1) {
       this._trailAccum -= 1;
@@ -853,7 +854,7 @@ export class Broshi {
     return BODY_WIDTH_LOCAL * DRAW_SCALE * this.squashX;
   }
 
-  draw(ctx) {
+  draw(ctx, pose, lights = null) {
     if (this.burrow.depth > 0.02) return; // he's underground; Renderer draws the Burrow band instead
     // Midasus style: a pale pitch-class spectral hue (eased in update), not
     // the old green->red raptor skin. Rabid reads as heat/brightness below.
@@ -941,6 +942,7 @@ export class Broshi {
       hueSpread: 18,
       widthBase: 1.85,
       widthGlow: 2.1,
+      lights, // Movement VII: celestial + any nearby secondary lights (see LightField.js)
     };
 
     // Modest under-glow — big halos washed him out next to Midio.

@@ -13,12 +13,20 @@ import { contactShadow } from '../world/ContactShadow.js';
 import { clamp01 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { LerpCache, hexToRgb } from '../utils/color.js';
-import { nearestPaletteColor, pixelGridWidth, pixelGridHeight, SCANLINE_ALPHA, SCANLINE_PERIOD_PX, RETRO_PALETTE } from './RetroFilter.js';
-import { keyedQuantRamp, spectralFamily } from './spectral.js';
+import { spectralFamily } from './spectral.js';
 import { hypeFrameStyle } from '../sim/HypeDirector.js';
 import { isRendered, styleDials } from './VisualStyle.js';
+import { groundGlowLights, characterGlowLight } from './LightField.js';
 
-const MIDIO_BASE_HUE = 42; // warm gold, matching his original color
+// Reserve margin (logical stage px) around the visible frame that camera
+// shake/drift/sway/roll are free to pan into without ever exposing raw,
+// undrawn canvas. Covers the worst realistic combined displacement: a
+// maxed impact shake (~10px) + full calm drift (26px) + full beat sway
+// (12px) plus a few px of corner reveal from the small impact roll, with
+// headroom to spare. See Renderer.draw's stageW/stageH derivation.
+const SHAKE_MARGIN_PX = 64;
+
+const MIDIO_BASE_HUE = 178; // cool aquamarine -- the startup default before the song's key eases in and takes over (see this._midioHue)
 const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
 const MIDIO_DRAW_SCALE = 1.8; // the stage got bigger: render-only, physics untouched
 
@@ -84,21 +92,6 @@ export class Renderer {
     // Renderer-owned (not sim.biomes.lerpCache) so the film finish still
     // works if sim.biomes were ever null (the fallback-sky branch below).
     this._filmLerpCache = new LerpCache();
-    // One Spectrum: the keyed retro ramp, cached per tonic so the
-    // per-pixel quantizer never recomputes the ramp mid-song.
-    this._retroRampTonic = null;
-    this._retroRamp = RETRO_PALETTE;
-  }
-
-  /** The retro quantizer's palette, keyed to the song's tonic (cached).
-   *  Returns the stock ramp unchanged when there's no detected tonic yet
-   *  or the tonic hasn't moved. */
-  _keyedRamp(tonic) {
-    if (tonic == null) return RETRO_PALETTE;
-    if (this._retroRampTonic === tonic) return this._retroRamp;
-    this._retroRampTonic = tonic;
-    this._retroRamp = keyedQuantRamp(RETRO_PALETTE, tonic);
-    return this._retroRamp;
   }
 
   draw(sim, alpha) {
@@ -109,18 +102,59 @@ export class Renderer {
     // Logical stage (sim anchors) vs physical buffer (may be 720p–4K).
     // All world drawing uses logical dimensions; the transform scales into
     // the backing store so composition stays correct at every preset.
-    const stageW = sim.stageW || sim.canvasWidth || 1280;
-    const stageH = sim.stageH || sim.canvasHeight || 720;
+    const nominalW = sim.stageW || sim.canvasWidth || 1280;
+    const nominalH = sim.stageH || sim.canvasHeight || 720;
+    // Off-frame camera pull-back (CameraDirector.zoom, 1 = normal, down to
+    // ZOOM_MIN when pulled back): NOT a ctx.scale on the physical transform
+    // -- that would shrink the world inside a fixed frame and leave empty
+    // margins, since every layer draws to canvas bounds. Instead the
+    // LOGICAL stage widens (viewW = nominalW / zoom) and the existing sx/sy
+    // derivation below does the rest -- every layer genuinely draws more
+    // world (tiled strips tile further, full-bleed fills span correctly).
+    // Pinned at the logical origin (no translate): guarantees the widened
+    // frame always exactly covers the physical canvas with no gap on any
+    // edge, at the cost of revealing the extra world toward bottom-right
+    // rather than symmetrically around the cast -- a real trade, but the
+    // alternative (translating to re-center) opens a gap on the opposite
+    // edge for every non-tiled full-bleed layer (sky gradient, vignette),
+    // which is a worse artifact than an off-center reveal.
+    const zoom = (sim.camera && sim.camera.zoom) || 1;
+    const baseStageW = zoom < 1 ? nominalW / zoom : nominalW;
+    const baseStageH = zoom < 1 ? nominalH / zoom : nominalH;
+    // Shake overscan: camera.shakeX/Y (impact shake, calm drift, beat sway)
+    // and roll all move the world by translating/rotating it against a
+    // frame that, without this, has content painted flush to its edges --
+    // any nonzero shake exposed raw, undrawn canvas as a hard black bar on
+    // whichever edge the content moved away from. The fix is the same trick
+    // zoom uses above, but symmetric: pad the logical stage by SHAKE_MARGIN_PX
+    // on every side (every layer paints the wider buffer, same as a zoom
+    // pull-back), then inset the visible window by that same margin so it
+    // sits centered inside the padded buffer rather than flush at its
+    // origin. camera.shakeX/Y then pan within the margin instead of past the
+    // edge of what was ever drawn. sx/sy (below) stay derived from the
+    // UNPADDED dims, so at shake=0 nothing about the framing changes --
+    // the margin is pure reserve, invisible until a shake reaches into it.
+    const stageW = baseStageW + 2 * SHAKE_MARGIN_PX;
+    const stageH = baseStageH + 2 * SHAKE_MARGIN_PX;
     const stage = this._stageView || (this._stageView = { width: stageW, height: stageH });
     stage.width = stageW;
     stage.height = stageH;
-    const sx = canvas.width / stageW;
-    const sy = canvas.height / stageH;
+    const sx = canvas.width / baseStageW;
+    const sy = canvas.height / baseStageH;
+    // Unpadded counterpart for everything drawn AFTER the shake transform is
+    // restored below (vignette/fever aura/hype frame/film finish) -- those
+    // are screen-edge-hugging effects, not world content, so they must size
+    // to the true visible frame, not the padded reserve margin.
+    const viewStage = this._viewStageView || (this._viewStageView = { width: baseStageW, height: baseStageH });
+    viewStage.width = baseStageW;
+    viewStage.height = baseStageH;
 
     if (fracture && (fracture.isFrozen || fracture.isDone)) {
-      // Shatter geometry is logical-stage space; scale into the physical buffer.
+      // Shatter geometry is logical-stage space; scale into the physical
+      // buffer. Unpadded dims -- the shake overscan margin above is for the
+      // live camera transform only, and sx/sy already assume it away.
       ctx.setTransform(sx, 0, 0, sy, 0, 0);
-      fracture.drawShatter(ctx, stage);
+      fracture.drawShatter(ctx, { width: baseStageW, height: baseStageH });
       return;
     }
 
@@ -137,26 +171,93 @@ export class Renderer {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(sx, 0, 0, sy, 0, 0);
 
-    // Zoom has been removed entirely: the camera holds one fixed framing.
-    // Only the damped impact roll and the screen shake move the frame now,
-    // both pivoting on screen center so a shake/roll never scrolls the
-    // world sideways.
+    // Impact roll and screen shake both still pivot on the visible window's
+    // own center -- which now sits SHAKE_MARGIN_PX inside the padded stage,
+    // not at the stage's own center -- so they never scroll the world
+    // sideways regardless of the current zoom level, and shakeX/Y pan
+    // within the reserve margin instead of past the edge of drawn content.
+    //
+    // The two translates below are NOT a no-op pair around the rotate: for
+    // pure translation they'd cancel back to just (shakeX, shakeY) regardless
+    // of viewCx/viewCy (translate(a) then translate(-a+s) nets to translate(s)
+    // for any a) -- which is exactly the bug an earlier version of this had.
+    // Content is still only ever painted over stage-space [0, stageW], so
+    // that cancellation left the visible window flush against content's own
+    // origin, using none of the padding on the negative/left or negative/top
+    // side -- a positive shakeX still exposed raw canvas on the left. The
+    // explicit "- SHAKE_MARGIN_PX" term below is the real, non-cancelling
+    // shift that seats the visible window inset by the margin on every side.
+    const viewCx = baseStageW / 2 + SHAKE_MARGIN_PX;
+    const viewCy = baseStageH / 2 + SHAKE_MARGIN_PX;
     ctx.save();
-    ctx.translate(stageW / 2, stageH / 2);
+    ctx.translate(viewCx, viewCy);
     ctx.rotate(camera.roll || 0); // damped impact roll, pivoting on screen center
-    ctx.translate(-stageW / 2 + camera.shakeX, -stageH / 2 + camera.shakeY);
+    ctx.translate(-viewCx + camera.shakeX - SHAKE_MARGIN_PX, -viewCy + camera.shakeY - SHAKE_MARGIN_PX);
+
+    // Ground view: a SECOND, never-zoomed transform that BiomeManager.draw()
+    // switches to right before painting the ground and everything from
+    // there forward (ground, footing, flood, and -- since nothing after
+    // biomeManager.draw() returns touches the transform again until the
+    // big restore below -- obstacles, contact shadows, every character,
+    // reflections, the foreground veil, and fracture cracks too).
+    //
+    // Pulling back used to widen the SAME zoomed transform the sky and
+    // mountains use, which shrinks literally everything uniformly -- the
+    // ground included, so it visibly slid up and off-true as you zoomed
+    // out. This instead leaves the ground-and-forward layers rendering at
+    // permanently fixed, zoom=1 scale and screen position; only the sky/
+    // mountain pass above (already drawn by the time this switches) uses
+    // the wider, more-compressed zoomed view. Since that pass is drawn
+    // FIRST and the ground pass paints over it afterward at a fixed
+    // position, the net effect is exactly "the ground stays put and more
+    // sky/mountain becomes visible above it" -- no new blank space is ever
+    // exposed, because the sky/mountain pass already safely covers its own
+    // (zoomed, wider) bounds the same way it always has.
+    const sxFixed = canvas.width / nominalW;
+    const syFixed = canvas.height / nominalH;
+    const groundViewCx = nominalW / 2 + SHAKE_MARGIN_PX;
+    const groundViewCy = nominalH / 2 + SHAKE_MARGIN_PX;
+    const groundStage = this._groundStageView || (this._groundStageView = { width: 0, height: 0 });
+    groundStage.width = nominalW + 2 * SHAKE_MARGIN_PX;
+    groundStage.height = nominalH + 2 * SHAKE_MARGIN_PX;
+    const groundView = {
+      stage: groundStage,
+      apply: () => {
+        ctx.setTransform(sxFixed, 0, 0, syFixed, 0, 0);
+        ctx.translate(groundViewCx, groundViewCy);
+        ctx.rotate(camera.roll || 0);
+        ctx.translate(-groundViewCx + camera.shakeX - SHAKE_MARGIN_PX, -groundViewCy + camera.shakeY - SHAKE_MARGIN_PX);
+      },
+    };
 
     if (biomeManager) {
-      biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul, perf);
+      biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul, perf, groundView);
     } else {
       this._drawFallbackSky(ctx, stage);
-      this._drawGround(ctx, stage, pose, sim.midio.groundY);
+      groundView.apply();
+      this._drawGround(ctx, groundView.stage, pose, sim.midio.groundY);
     }
     // Movement VII: the celestial body as a light, resolved once per frame
     // and shared by every contact shadow / rim light call below.
     const light = biomeManager ? biomeManager.currentLight() : null;
     const contactShadowsEnabled = perf ? perf.contactShadowsEnabled : true;
     const rimLightEnabled = perf ? perf.rimLightEnabled : true;
+    // Secondary lights: a kick-synced ground pulse or Midasus's own core
+    // now actually casts light on whoever's nearby, not just looks bright
+    // itself (see LightField.js). Empty whenever nothing's active, and
+    // skipped outright under perf pressure like the celestial light itself.
+    const groundField = biomeManager ? biomeManager.groundField : null;
+    const groundLights = (rimLightEnabled && groundField)
+      ? groundGlowLights(groundField.activeGlowScreenLights(pose.worldX, pose.midioX), biomeManager.currentHaloColor())
+      : [];
+    // What she sees: the celestial and the ground pulses, not her own light.
+    const worldLights = rimLightEnabled ? [light, ...groundLights].filter(Boolean) : (light ? [light] : []);
+    // What everyone ELSE sees: the above, plus her own glow if she's out
+    // and visible (not off mid-voyage in deep space, drawn as a tiny dot).
+    const midasusGlowLight = (rimLightEnabled && sim.midasus && sim.midasus.voyage.depth <= 0)
+      ? characterGlowLight(sim.midasus.p.x, sim.midasus.p.y, sim.midasus.hue, 0.25 + 0.35 * clamp01(sim.midasus.pulse - 1))
+      : null;
+    const companionLights = midasusGlowLight ? [...worldLights, midasusGlowLight] : worldLights;
 
     // Broshi's underground excursion: drawn beneath the world -- literally
     // inside the earth, under everything that walks on it -- rather than
@@ -170,6 +271,15 @@ export class Renderer {
     if (sim.coda) this._drawDesaturationOverlay(ctx, stage, sim.coda);
 
     if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
+    if (contactShadowsEnabled && sim.obstacles) {
+      const groundYAt = groundField
+        ? (sx) => groundField.heightAt(pose.worldX + (sx - pose.midioX))
+        : () => sim.midio.groundY;
+      for (const o of sim.obstacles.groundedShadows(pose.worldX, pose.midioX, groundYAt)) {
+        const s = contactShadow(o.x, o.groundY, 0, o.width, light);
+        this._drawContactShadow(ctx, { ...s, alpha: s.alpha * o.presence });
+      }
+    }
     if (sim.obstacles) {
       sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY, {
         nowMs: sim.timeMs, energyCurves: sim.energyCurves, haloColor,
@@ -182,16 +292,16 @@ export class Renderer {
     if (sim.battle) this._drawBattleEnemies(ctx, sim);
 
     // Rainbow brush: paint Midio's jump arcs, world-locked behind him.
-    this.brush.update(sim.timeMs, pose.airborne, pose.worldX, pose.midioY);
+    this.brush.update(sim.timeMs, pose.airborne, pose.worldX, pose.midioY, particleMul);
     this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs, sim.apotheosis && sim.apotheosis.active ? 2 : 1);
 
     // Contact shadows: grounds the trio to the terrain instead of letting
     // them read as floating. Drawn just before each character so the
     // shadow always sits directly underneath its owner in paint order.
-    if (sim.broshi && sim.broshi.burrow.depth <= 0.02) {
-      this._drawContactShadow(ctx, contactShadow(sim.broshi.renderX, sim.broshi.groundY, sim.broshi.hopY, sim.broshi.shadowWidthPx));
+    if (contactShadowsEnabled && sim.broshi && sim.broshi.burrow.depth <= 0.02) {
+      this._drawContactShadow(ctx, contactShadow(sim.broshi.renderX, sim.broshi.groundY, sim.broshi.hopY, sim.broshi.shadowWidthPx, light));
     }
-    if (sim.broshi) sim.broshi.draw(ctx, pose);
+    if (sim.broshi) sim.broshi.draw(ctx, pose, companionLights);
 
     // Midio wears Midasus's pale spectral treatment now: his base hue tracks
     // the song's key (KeyDirector.tonic), eased so the color drifts between
@@ -205,11 +315,13 @@ export class Renderer {
     }
     const midioWidthPx = sim.midio.halfWidth * 2 * MIDIO_DRAW_SCALE * pose.scaleX;
     const midioHeightAbove = sim.midio.groundY - pose.midioY;
-    this._drawContactShadow(ctx, contactShadow(pose.midioDrawX, sim.midio.groundY, midioHeightAbove, midioWidthPx));
+    if (contactShadowsEnabled) {
+      this._drawContactShadow(ctx, contactShadow(pose.midioDrawX, sim.midio.groundY, midioHeightAbove, midioWidthPx, light));
+    }
     // Fever adds its own glow on top of the vibe's epic-ness -- a hot streak
     // makes Midio himself burn brighter, not just the world around him.
     const feverGlow = sim.fever ? 3.0 * sim.fever.level : 0;
-    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, (sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0) + feverGlow, sim.apotheosis, sim.reducedFlash, this._midioHue, sim.ensemble);
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, (sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0) + feverGlow, sim.apotheosis, sim.reducedFlash, this._midioHue, sim.ensemble, companionLights);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
@@ -221,31 +333,53 @@ export class Renderer {
       this.epicycles.trigger(lm.idx, pose.midioDrawX + 30, sim.midio.groundY - 245, sim.timeMs);
     }
     this.epicycles.draw(ctx, sim.timeMs);
-    this._drawDropShockwave(ctx, stage, sim, pose);
+    // Everything from here down draws under the fixed ground transform
+    // biomeManager.draw() switched to before painting the ground -- see
+    // groundView's own comment above. Sized to groundView.stage (also
+    // fixed), not the zoomed `stage`, so full-bleed effects match the
+    // transform actually in effect.
+    this._drawDropShockwave(ctx, groundView.stage, sim, pose);
 
-    if (sim.midasus && sim.midasus.voyage.depth <= 0) {
+    if (contactShadowsEnabled && sim.midasus && sim.midasus.voyage.depth <= 0) {
       const heightAbove = sim.midasus.yFloor - sim.midasus.p.y;
-      this._drawContactShadow(ctx, contactShadow(sim.midasus.p.x, sim.midasus.yFloor, heightAbove, sim.midasus.shadowWidthPx));
+      this._drawContactShadow(ctx, contactShadow(sim.midasus.p.x, sim.midasus.yFloor, heightAbove, sim.midasus.shadowWidthPx, light));
     }
-    if (sim.midasus) sim.midasus.draw(ctx, particleMul);
+    if (sim.midasus) sim.midasus.draw(ctx, particleMul, worldLights);
+    // Faint reflections in the Mirror lake: has to wait until here, after the
+    // trio's live screen positions/hues are known -- the water itself draws
+    // (and reflects the sky/terrain) long before any of them do.
+    if (biomeManager && biomeManager.drawCharacterReflections) {
+      biomeManager.drawCharacterReflections(ctx, groundView.stage, [
+        { x: pose.midioDrawX, hue: this._midioHue, active: true },
+        { x: sim.broshi ? sim.broshi.renderX : NaN, hue: sim.broshi ? sim.broshi.hue : 0, active: !!sim.broshi && sim.broshi.burrow.depth <= 0.02 },
+        { x: sim.midasus ? sim.midasus.p.x : NaN, hue: sim.midasus ? sim.midasus.hue : 0, active: !!sim.midasus && sim.midasus.voyage.depth <= 0 },
+      ]);
+    }
     if (sim.battle) this._drawBattleFX(ctx, sim);
     if (sim.gnat) sim.gnat.draw(ctx, sim.timeMs);
     // drawForeground (the L7 veil + near-field occluders, NearField.js)
     // before fracture: the cracks are the screen's own glass fracturing,
     // so they belong on top of every world layer, near-field props included
     // -- not occluded by something the world itself is drawing.
-    if (biomeManager) biomeManager.drawForeground(ctx, stage, pose.worldX, perf ? perf.veilEnabled : true);
-    if (sim.fracture) sim.fracture.draw(ctx, stage, { glow: perf ? perf.crackGlowEnabled : true });
-    if (sim.keyDirector) this._drawTranspositionWave(ctx, stage, sim.keyDirector);
+    if (biomeManager) biomeManager.drawForeground(ctx, groundView.stage, pose.worldX, perf ? perf.veilEnabled : true);
+    if (sim.fracture) sim.fracture.draw(ctx, groundView.stage, { glow: perf ? perf.crackGlowEnabled : true });
+    if (sim.keyDirector) this._drawTranspositionWave(ctx, groundView.stage, sim.keyDirector);
 
     ctx.restore(); // camera transform
 
-    if (sim.fever) this._drawFeverAura(ctx, stage, sim.fever.level, sim.biomes, sim.reducedFlash);
-    if (sim.hype) this._drawHypeFrame(ctx, stage, sim);
+    // The opening assembly's target frame: grabbed right here, once, so it's
+    // the clean world+characters composite -- not last frame's bloom/vignette
+    // riding along, and not a HUD strip that hasn't drawn yet this frame.
+    if (sim.assembly && sim.assembly.wantsCapture(sim.timeMs)) {
+      sim.assembly.captureFrame(canvas, sim.timeMs);
+    }
+
+    if (sim.fever) this._drawFeverAura(ctx, viewStage, sim.fever.level, sim.biomes, sim.reducedFlash);
+    if (sim.hype) this._drawHypeFrame(ctx, viewStage, sim);
     // Drop impact pack: a chromatic shock + radial speed-lines from Midio,
     // both keyed off the same window as the shockwave rings -- drawn last so
     // they shock the fully composed frame, hype border and highway included.
-    if (sim.hype) this._drawDropImpact(ctx, stage, sim, pose);
+    if (sim.hype) this._drawDropImpact(ctx, viewStage, sim, pose);
 
     // Post FX that sample the pixel buffer need identity transform + full
     // physical canvas size (bloom / retro / freeze capture).
@@ -254,19 +388,25 @@ export class Renderer {
     if (sim.filmFinish && (perf ? perf.heavyPostFx : true)) {
       // Film finish was authored in logical space; scale its fill rects.
       ctx.setTransform(sx, 0, 0, sy, 0, 0);
-      this._drawFilmFinish(ctx, stage, sim);
+      this._drawFilmFinish(ctx, viewStage, sim);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
-    // Classic (SMW lineage) keeps the 8-bit retro finish. Rendered (DKC3
-    // lineage) skips it so soft CGI shading and bloom stay cinematic.
-    const dials = styleDials(sim.visualStyle);
-    if (dials.retroFilter && (perf ? perf.heavyPostFx : true)) this._drawRetroFilter(ctx, canvas, sim);
-
     // HUD seekbar AFTER post-FX so vignette/bloom never bury it. paramBus is
     // optional (lives on sim); never reference a free variable here — a
     // ReferenceError used to abort the draw and kill the strip entirely.
+    // Deliberately drawn against the NOMINAL (unzoomed) stage, not the
+    // possibly-widened `stage` above: it's fixed HUD chrome, not world
+    // content, and main.js's hitTest already converts pointer coords into
+    // the nominal STAGE_W/STAGE_H space -- drawing it against the zoomed
+    // stage would desync the visible strip from where clicks land.
     if (sim.conductor) {
-      ctx.setTransform(sx, 0, 0, sy, 0, 0);
+      const sxN = canvas.width / nominalW;
+      const syN = canvas.height / nominalH;
+      const nominalStage = this._nominalStageView
+        || (this._nominalStageView = { width: nominalW, height: nominalH });
+      nominalStage.width = nominalW;
+      nominalStage.height = nominalH;
+      ctx.setTransform(sxN, 0, 0, syN, 0, 0);
       if (!this.composer) {
         const holds = sim.noteChart ? sim.noteChart.notes.filter((n) => n.type === 'hold') : [];
         const sections = sim.biomes?.sections || [];
@@ -276,9 +416,18 @@ export class Renderer {
       } else if (sim.biomes?.sections) {
         this.composer.setSections(sim.biomes.sections);
       }
-      this.composer.draw(ctx, stage, sim.timeMs, {
+      this.composer.draw(ctx, nominalStage, sim.timeMs, {
         showLabels: !!(sim.showSectionLabels || sim.paramBus?.showSectionLabels),
       });
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+
+    // The reassembling shards sit on top of the fully composed live frame
+    // (HUD included) and dissolve away once landed, revealing whatever the
+    // actually-live game looks like by then -- not a freeze, just a veil.
+    if (sim.assembly && sim.assembly.active) {
+      ctx.setTransform(sx, 0, 0, sy, 0, 0);
+      sim.assembly.draw(ctx, sim.timeMs);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
 
@@ -663,51 +812,6 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Modernized 8-bit retro filter: downsamples the fully composed frame to
-   *  a coarse pixel grid (nearest-neighbor, no smoothing -- the pixelation
-   *  itself), quantizes every pixel to a limited retro palette (cheap,
-   *  since it runs on the small downsampled buffer rather than the full-res
-   *  frame -- coarser pixelation is CHEAPER, not more expensive, unlike
-   *  bloom/blur passes), then draws it back upscaled with a faint scanline
-   *  overlay for the CRT "nostalgia machine" read. Same offscreen-canvas
-   *  pattern as _drawBloom above. */
-  _drawRetroFilter(ctx, canvas, sim) {
-    const gridW = pixelGridWidth(canvas.width);
-    const gridH = pixelGridHeight(canvas.width, canvas.height, gridW);
-    if (!this._retroSmall) this._retroSmall = document.createElement('canvas');
-    const small = this._retroSmall;
-    if (small.width !== gridW || small.height !== gridH) { small.width = gridW; small.height = gridH; }
-    const sctx = small.getContext('2d');
-    sctx.imageSmoothingEnabled = false;
-    sctx.clearRect(0, 0, gridW, gridH);
-    sctx.drawImage(canvas, 0, 0, gridW, gridH);
-
-    // One Spectrum: the 8-bit quantizer maps to a keyed ramp so the
-    // palette filter stops introducing out-of-palette colors -- the
-    // retro read becomes the scene's native output language, tuned to
-    // the song. The ramp is cached per (tonic, amount) signature; the
-    // full RETRO_PALETTE ramp is preserved at amount=0.
-    const tonic = sim && sim.biomes && sim.biomes.tonic != null ? sim.biomes.tonic : null;
-    const ramp = this._keyedRamp(tonic);
-    const imgData = sctx.getImageData(0, 0, gridW, gridH);
-    const data = imgData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      const p = nearestPaletteColor(data[i], data[i + 1], data[i + 2], ramp);
-      data[i] = p[0]; data[i + 1] = p[1]; data[i + 2] = p[2];
-    }
-    sctx.putImageData(imgData, 0, 0);
-
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    ctx.globalCompositeOperation = 'copy';
-    ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = SCANLINE_ALPHA;
-    ctx.fillStyle = '#000000';
-    for (let y = 0; y < canvas.height; y += SCANLINE_PERIOD_PX) ctx.fillRect(0, y, canvas.width, Math.ceil(SCANLINE_PERIOD_PX / 2));
-    ctx.restore();
-  }
-
   /** The energy frame: a thin border that breathes with the track, slams on
    * kicks, and echoes the whole frame during a drop surge. Calm sections
    * nearly extinguish the idle rim and kick strobe (see hypeFrameStyle) so
@@ -792,7 +896,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_BASE_HUE, ensemble = null) {
+  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_BASE_HUE, ensemble = null, lights = null) {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
     const apoProgress = apotheosis ? apotheosis.progress : 0;
@@ -823,8 +927,6 @@ export class Renderer {
     // treatment Midasus's core uses, not the old narrow near-white gold.
     // The Apotheosis widens the hue band further into a full rim sweep.
     const dials = this._styleDials || styleDials('classic');
-    // Match Broshi's clean wireframe language — no soft hull fill (it turned
-    // Midio into a smeared white blob over the glyph).
     const options = {
       satBase: 32 + flash * 40 + 18 * apoProgress,
       lightBase: 72 + flash * 12 + 8 * apoProgress,
@@ -832,8 +934,10 @@ export class Renderer {
       widthBase: dials.widthBase,
       widthGlow: dials.widthGlow,
       rimAmount: dials.rimAmount,
-      softFill: false,
-      softFillAlpha: 0,
+      // Movement VII: the celestial (and, per LightField's secondary
+      // sources, a nearby kick-glow pulse or Midasus's own core) actually
+      // lights him now instead of this array only ever being computed.
+      lights,
     };
     const outlineOpts = { widthAdd: dials.outlineWidthAdd };
 

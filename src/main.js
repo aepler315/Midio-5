@@ -9,7 +9,6 @@ import { Simulation } from './sim/Simulation.js';
 import { createRenderer, resolveRendererMode } from './render/WebGLRenderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
-import { SfxSynth } from './audio/SfxSynth.js';
 import { Sf2Synth } from './audio/Sf2Synth.js';
 import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
 import { FontRecommender } from './audio/FontRecommender.js';
@@ -31,7 +30,6 @@ import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
 import { TitleBackdrop } from './ui/TitleBackdrop.js';
-import { feverFillPct, feverColor, feverGlowAlpha, feverLabelAlpha, setFeverStops } from './ui/FeverGauge.js';
 import { cssVarMap } from './render/spectral.js';
 import { resolveDurationMs } from './core/SongDuration.js';
 import { formatSeed, parseSeed } from './utils/seed.js';
@@ -43,7 +41,12 @@ import {
   getSoulseekUser, setSoulseekUser, soulseekConnect, soulseekStatus,
   soulseekSearch, soulseekFetchAsFile, SoulseekError,
 } from './net/SoulseekSource.js';
+  getJamendoClientId, setJamendoClientId, searchTracks as jamendoSearchTracks,
+  fetchTrackAsFile as jamendoFetchTrackAsFile, JamendoError,
+} from './net/JamendoSource.js';
 import { visualNow } from './core/ChoreoClock.js';
+import { SoulseekSearch } from './soulseek/SoulseekSearch.js';
+
 
 const STEP_MS = 1000 / 120;
 
@@ -54,12 +57,7 @@ const fileInputEl = document.getElementById('fileInput');
 const demoBtnEl = document.getElementById('demoBtn');
 const progressEl = document.getElementById('progressText');
 const hudEl = document.getElementById('hud');
-const comboReadoutEl = document.getElementById('comboReadout');
-const streakReadoutEl = document.getElementById('streakReadout');
-const scoreReadoutEl = document.getElementById('scoreReadout');
-const feverGaugeEl = document.getElementById('feverGauge');
-const feverLabelEl = document.getElementById('feverLabel');
-const feverFillEl = document.getElementById('feverFill');
+const hudRightEl = document.getElementById('hudRight');
 const completePanelEl = document.getElementById('completePanel');
 const completeSongNameEl = document.getElementById('completeSongName');
 const completeSeedEl = document.getElementById('completeSeed');
@@ -122,9 +120,6 @@ const btLatencyBtnEl = document.getElementById('btLatencyBtn');
 const btLatencyHudBtnEl = document.getElementById('btLatencyHudBtn');
 const visualStyleBtnEl = document.getElementById('visualStyleBtn');
 const visualStyleHudBtnEl = document.getElementById('visualStyleHudBtn');
-const recalNudgeEl = document.getElementById('recalNudge');
-const recalNudgeBtnEl = document.getElementById('recalNudgeBtn');
-const recalNudgeDismissEl = document.getElementById('recalNudgeDismiss');
 const recalibration = new RecalibrationOverlay({
   panel: document.getElementById('recalPanel'),
   number: document.getElementById('recalNumber'),
@@ -133,7 +128,6 @@ const recalibration = new RecalibrationOverlay({
   confFill: document.getElementById('recalConfFill'),
   status: document.getElementById('recalStatus'),
 });
-let recalNudgeHideAtMs = Infinity;
 // Cross-song groove profile (GrooveFingerprint), rehydrated once at startup
 // and handed to every Simulation built afterwards.
 const groove = new GrooveFingerprint(getStoredGroove());
@@ -147,7 +141,6 @@ const conductor = new Conductor();
 const paramBus = new ParamBus();
 let audioEngine = null;
 let synth = null;
-let sfx = null; // judgment-feedback synth (SfxSynth), created in bootAudio
 let sim = null;
 let renderer = null;
 let titleBackdrop = null; // living title-screen backdrop (drawn while !running)
@@ -370,7 +363,6 @@ async function bootAudio() {
   // as used to happen on every dropped MIDI file — would add a duplicate
   // listener and fire every note twice.
   synth.connectConductor(conductor);
-  sfx = new SfxSynth(audioEngine);
   fontLibrary = new SoundfontLibrary();
   fontLibrary.onChange = (active) => applyActiveFont(active);
   // Auditions every font against each loaded MIDI and steers the library to
@@ -676,6 +668,7 @@ function backToTitle() {
   completePanelEl.classList.add('hidden');
   hudEl.classList.add('hidden');
   loaderEl.classList.remove('hidden');
+  soulseekSearch?.resetBusy();
   startTitleBackdrop();
 }
 
@@ -733,11 +726,6 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
   lastSongSeed = sim.songSeed;
   setSeedInput(sim.songSeed);
   sim.perf = perfGovernor;
-  // Judgment feedback (hit/miss/hold ticks/choke): SfxSynth is authored and
-  // fully tuned but was never wired to anything -- every judgment played in
-  // total silence. sfx is null until bootAudio() resolves; Simulation
-  // already guards every call with `this.sfx?.`.
-  sim.sfx = sfx;
   sim.setReducedFlash(reducedFlash);
   sim.setVisualStyle(visualStyle);
   // Prime one sim step so BiomeManager/update dials (haze, calm, etc.) are
@@ -772,6 +760,7 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
   progressEl.classList.add('hidden');
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
+  wakeHud();
   rafHandle = requestAnimationFrame(frame);
 
   // Exposed for the debug overlay and for smoke-testing internals.
@@ -1347,6 +1336,67 @@ async function runSoulseekSearch() {
   if (!results.length) { setSoulseekStatus('No results.'); return; }
   setSoulseekStatus(`${results.length} result${results.length === 1 ? '' : 's'} — pick one to download & play.`);
   for (const r of results) {
+// Soulseek-powered song search on the title screen. Results download through
+// the local bridge (/api/soulseek/*) and feed the same handleFiles path as drops.
+const slskPanelEl = document.getElementById('slskPanel');
+let soulseekSearch = null;
+if (slskPanelEl) {
+  soulseekSearch = new SoulseekSearch({
+    root: slskPanelEl,
+    onFiles: (files) => {
+      soulseekSearch?.resetBusy();
+      handleFiles(files);
+    },
+    onStatus: (msg) => {
+      if (msg && progressEl && !progressEl.classList.contains('hidden')) {
+        // keep progress text for active loads; search has its own status line
+      }
+    },
+  });
+}
+
+// Jamendo search (JamendoSource.js): a legal alternative to dropping a
+// local file -- free, Creative-Commons-licensed tracks, fetched and handed
+// to the exact same handleFiles() path a local drop uses, so nothing
+// downstream needs to know the audio came from the network.
+const jamendoClientIdInputEl = document.getElementById('jamendoClientIdInput');
+const jamendoSearchInputEl = document.getElementById('jamendoSearchInput');
+const jamendoSearchBtnEl = document.getElementById('jamendoSearchBtn');
+const jamendoStatusEl = document.getElementById('jamendoStatus');
+const jamendoResultsEl = document.getElementById('jamendoResults');
+
+if (jamendoClientIdInputEl) jamendoClientIdInputEl.value = getJamendoClientId();
+jamendoClientIdInputEl?.addEventListener('change', () => {
+  setJamendoClientId(jamendoClientIdInputEl.value.trim());
+});
+
+function setJamendoStatus(text, isError = false) {
+  if (!jamendoStatusEl) return;
+  jamendoStatusEl.textContent = text || '';
+  jamendoStatusEl.classList.toggle('hidden', !text);
+  jamendoStatusEl.classList.toggle('jamendoStatusError', !!isError);
+}
+
+function formatTrackDuration(seconds) {
+  const s = Math.max(0, Math.round(seconds || 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+async function runJamendoSearch() {
+  const q = jamendoSearchInputEl?.value.trim();
+  if (!q || !jamendoResultsEl) return;
+  jamendoResultsEl.innerHTML = '';
+  setJamendoStatus('Searching…');
+  let tracks;
+  try {
+    tracks = await jamendoSearchTracks(q, { clientId: getJamendoClientId() });
+  } catch (err) {
+    setJamendoStatus(err instanceof JamendoError ? err.message : `Search failed: ${err.message}`, true);
+    return;
+  }
+  if (!tracks.length) { setJamendoStatus('No results.'); return; }
+  setJamendoStatus('');
+  for (const track of tracks) {
     const li = document.createElement('li');
     li.className = 'jamendoResult';
     const btn = document.createElement('button');
@@ -1377,6 +1427,23 @@ async function playSoulseekResult(result, btnEl) {
     handleFiles([file]);
   } catch (err) {
     setSoulseekStatus(err instanceof SoulseekError ? err.message : `Could not load "${result.name}": ${err.message}`, true);
+    btn.title = track.licenseCcUrl ? `Creative Commons license: ${track.licenseCcUrl}` : '';
+    btn.textContent = `${track.name} — ${track.artist} (${formatTrackDuration(track.duration)})`;
+    btn.addEventListener('click', () => playJamendoTrack(track, btn));
+    li.appendChild(btn);
+    jamendoResultsEl.appendChild(li);
+  }
+}
+
+async function playJamendoTrack(track, btnEl) {
+  setJamendoStatus(`Downloading "${track.name}"…`);
+  if (btnEl) btnEl.disabled = true;
+  try {
+    const file = await jamendoFetchTrackAsFile(track);
+    setJamendoStatus('');
+    handleFiles([file]);
+  } catch (err) {
+    setJamendoStatus(err instanceof JamendoError ? err.message : `Could not load "${track.name}": ${err.message}`, true);
   } finally {
     if (btnEl) btnEl.disabled = false;
   }
@@ -1389,6 +1456,9 @@ soulseekSearchInputEl?.addEventListener('keydown', (e) => {
 });
 soulseekPassInputEl?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); runSoulseekConnect(); }
+jamendoSearchBtnEl?.addEventListener('click', runJamendoSearch);
+jamendoSearchInputEl?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); runJamendoSearch(); }
 });
 
 // Dropzone-local visual feedback only (pre-game loader screen) — the actual
@@ -1555,6 +1625,7 @@ function frame(tRaf) {
     }
   }
   lastRafMs = tRaf;
+  hudIdleTick(tRaf);
   const nowMs = audioEngine.nowMs;
   let deltaMs = nowMs - lastNowMs;
   lastNowMs = nowMs;
@@ -1562,13 +1633,11 @@ function frame(tRaf) {
   if (deltaMs > 250) deltaMs = 250; // clamp huge gaps (tab backgrounded, breakpoint, etc.)
   acc += deltaMs;
 
-  let milestoneFiredThisFrame = false;
   try {
     while (acc >= STEP_MS) {
       sim.step(STEP_MS, simTime + STEP_MS);
       simTime += STEP_MS;
       acc -= STEP_MS;
-      if (sim.performer.milestoneFlash) milestoneFiredThisFrame = true;
     }
   } catch (err) {
     // frame() has no wrapper of its own -- an uncaught throw here would abort
@@ -1597,33 +1666,10 @@ function frame(tRaf) {
       console.error(`[draw] (occurrence ${drawErrors.worst.count})`, err);
     }
   }
-  comboReadoutEl.textContent = `×${sim.comboSystem.displayM.toFixed(1)}`;
-  if (streakReadoutEl) streakReadoutEl.textContent = `${sim.comboSystem.streak} streak`;
-  if (scoreReadoutEl) scoreReadoutEl.textContent = sim.scoreKeeper.score.toLocaleString('en-US');
-  // The fever gauge: the one readout for the meter that drives the whole
-  // visual intensity stack. Fill, color, and glow all come from the same
-  // pure helpers (FeverGauge.js) so the HUD and the world can never drift
-  // apart. Hidden entirely when there's no fever system (defensive).
-  if (feverGaugeEl && sim.fever) {
-    const level = sim.fever.level || 0;
-    feverGaugeEl.classList.remove('hidden');
-    if (feverFillEl) {
-      feverFillEl.style.width = `${feverFillPct(level)}%`;
-      feverFillEl.style.background = feverColor(level);
-      const glow = feverGlowAlpha(level);
-      feverFillEl.style.boxShadow = glow > 0.01
-        ? `0 0 ${(4 + 10 * glow).toFixed(1)}px ${feverColor(level)}`
-        : 'none';
-    }
-    if (feverLabelEl) feverLabelEl.style.opacity = String(feverLabelAlpha(level));
-  } else if (feverGaugeEl) {
-    feverGaugeEl.classList.add('hidden');
-  }
   // One Spectrum, the chrome half: sync the HUD CSS custom properties to
   // the live spectral palette. Cache-gated on the quantized shift so the
   // DOM is only touched when the song's key/form actually moves -- never
-  // per-frame style thrash. The fever gauge's own stops follow the tonic
-  // so the meter reads the song's key too.
+  // per-frame style thrash.
   if (sim.biomes && typeof sim.biomes.currentHaloColor === 'function') {
     const sig = `${sim.biomes.tonic ?? '?'}|${sim.biomes._spectralShift ? Math.round(sim.biomes._spectralShift() / 3) : 0}|${sim.biomes.currentBlend ? sim.biomes.currentBlend.to : ''}`;
     if (sig !== lastSpecSig) {
@@ -1633,13 +1679,7 @@ function frame(tRaf) {
       const vars = cssVarMap(tokens);
       const root = document.documentElement;
       for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
-      if (sim.keyDirector) setFeverStops((sim.keyDirector.tonic % 12 + 12) % 12, halo);
     }
-  }
-  if (milestoneFiredThisFrame) {
-    comboReadoutEl.classList.remove('milestone-pulse');
-    void comboReadoutEl.offsetWidth; // restart the CSS animation even if it's still mid-flight
-    comboReadoutEl.classList.add('milestone-pulse');
   }
 
   // Last impact notes → freeze/shatter: fade music out so the glass break
@@ -1650,18 +1690,14 @@ function frame(tRaf) {
     synth?.stopAll?.();
   }
 
-  // Tap recalibration: drive the count, and let SyncMonitor offer one when
-  // the grid has visibly stopped matching the music. Neither ever blocks the
-  // frame, pauses audio, or swallows input.
+  // Tap recalibration: drive the count while an (opt-in, 'C'-key-triggered)
+  // pass is running. Never blocks the frame, pauses audio, or swallows input.
   if (recalibration.active) {
     const alive = recalibration.update(simTime, {
       beatPeriodMs: sim.jump.beatPeriodMs,
       confidence: sim.beatAnchor.confidence,
     });
     if (!alive) endRecalibration();
-  } else {
-    if (sim.syncMonitor?.consumePrompt()) showRecalNudge();
-    if (tRaf >= recalNudgeHideAtMs) hideRecalNudge();
   }
 
   // Debounced profile write: a burst of tapping is one save, not thirty.
@@ -1835,24 +1871,11 @@ function beatTap(role = null) {
   if (role) grooveSaveDue = true;
 }
 
-/** Show / hide the auto-prompt nudge (SyncMonitor). Deliberately quiet: it
- *  offers, waits a few seconds, and gets out of the way on its own. */
-const RECAL_NUDGE_MS = 8000;
-function showRecalNudge() {
-  if (!recalNudgeEl || recalibration.active) return;
-  recalNudgeEl.classList.remove('hidden');
-  recalNudgeHideAtMs = performance.now() + RECAL_NUDGE_MS;
-}
-function hideRecalNudge() {
-  recalNudgeEl?.classList.add('hidden');
-  recalNudgeHideAtMs = Infinity;
-}
-
 /** Open the eight-measure tap-recalibration count. Never pauses the song --
- *  taps keep flowing through the canvas handler into BeatAnchor as usual. */
+ *  taps keep flowing through the canvas handler into BeatAnchor as usual.
+ *  Opt-in only (the 'C' key) -- there is no automatic prompt. */
 function startRecalibration() {
   if (!running || !sim || paused || recalibration.active) return;
-  hideRecalNudge();
   recalibration.start(simTime, sim.jump.beatPeriodMs, sim.beatAnchor.confidence);
   sim.recalibrating = true;
   sim.syncMonitor.onCalibrated();
@@ -1865,8 +1888,29 @@ function endRecalibration() {
   console.info('[recalibrate]', text);
 }
 
-recalNudgeBtnEl?.addEventListener('click', startRecalibration);
-recalNudgeDismissEl?.addEventListener('click', hideRecalNudge);
+// HUD auto-fade: the button cluster (#hudRight) fades out after a few
+// seconds with no interaction, and comes back awake on the next one. While
+// asleep, a tap on the canvas is spent entirely on waking the HUD back up --
+// it never also acts as a gameplay tap or a seek/section click, exactly the
+// same "tap to unlock" beat a phone screen uses. Buttons themselves can't be
+// hit while faded at all (CSS pointer-events:none on .hud-faded), so only
+// the canvas path needs an explicit gate.
+const HUD_FADE_MS = 3000;
+let hudAwake = true;
+let hudSleepAtMs = 0;
+function wakeHud() {
+  hudSleepAtMs = performance.now() + HUD_FADE_MS;
+  if (hudAwake) return;
+  hudAwake = true;
+  hudRightEl?.classList.remove('hud-faded');
+}
+function hudIdleTick(nowRafMs) {
+  if (hudAwake && nowRafMs >= hudSleepAtMs) {
+    hudAwake = false;
+    hudRightEl?.classList.add('hud-faded');
+  }
+}
+hudRightEl?.addEventListener('pointerdown', wakeHud);
 
 // Mountain seekbar: click to seek; click a section to open its debug detail.
 // Anywhere else on the canvas -- not a button, not the seekbar -- resyncs
@@ -1877,6 +1921,8 @@ canvas.addEventListener('contextmenu', (e) => { if (running && sim) e.preventDef
 
 canvas.addEventListener('pointerdown', (e) => {
   if (!running || !sim) return;
+  if (!hudAwake) { wakeHud(); return; }
+  wakeHud();
   const p = clientToStage(e);
   if (!p) return;
   const hit = renderer?.composer ? renderer.composer.hitTest(p.x, p.y, { width: STAGE_W, height: STAGE_H }) : null;
@@ -1900,6 +1946,7 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 
 window.addEventListener('keydown', (e) => {
+  if (running) wakeHud();
   if (e.key === 'Escape') {
     if (fontModalEl && !fontModalEl.classList.contains('hidden')) closeFontModal();
     if (filmstripModalEl && !filmstripModalEl.classList.contains('hidden')) closeFilmstripModal();

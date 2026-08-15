@@ -14,6 +14,19 @@ function hueDelta(a, b) {
   return ((b - a + 540) % 360) - 180;
 }
 
+/** A light's hue, read directly off `hueDeg` when a source already works in
+ *  hue-degrees (a character's own glow) rather than round-tripping through
+ *  a hex color it never otherwise needed. Falls back to parsing `colorHex`
+ *  (the celestial's own light shape) so both kinds of source work here. */
+function lightHueOf(light) {
+  if (typeof light.hueDeg === 'number') return light.hueDeg;
+  if (light.colorHex) {
+    const rgb = hexToRgb(light.colorHex);
+    return rgbToHsl(rgb.r, rgb.g, rgb.b).h;
+  }
+  return null;
+}
+
 /** Precompute each edge's local (undeformed) length once per mesh. */
 export function computeRestLengths(mesh) {
   return mesh.edges.map(([i, j]) => {
@@ -52,65 +65,25 @@ export function drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, {
   satBase = 68, lightBase = 52, glowBoost = 34, alpha = 0.9, widthBase = 1.6, widthGlow = 2.0,
   hueSpread = 50, // edges vary within +/-hueSpread/2 of baseHueDeg, not the full wheel -- a cohesive character, not a rainbow
   outline = false, // true -> a near-black contour pass UNDER the spectral stroke: the silhouette reads razor-sharp against the glow underlays
-  light = null, rimAmount = 0.6, // Movement VII: the celestial light modulates the angle-derived hue/lightness above, it never replaces it
-  softFill = false, // rendered style: soft sculpted body under the wireframe (DKC pre-render mascot)
-  softFillAlpha = 0.4,
+  light = null, // Movement VII: the celestial light modulates the angle-derived hue/lightness above, it never replaces it
+  lights = null, // secondary, local, falloff-limited sources (a kick-synced ground pulse, a nearby character's own glow) -- see LightField.js
+  rimAmount = 0.6,
 } = {}) {
-  // Resolved once per call, not per edge -- this is the only place a hex
-  // color gets parsed for the whole mesh part.
-  let lightHue = null;
-  if (light && light.intensity > 0.01 && rimAmount > 0) {
-    const rgb = hexToRgb(light.colorHex);
-    lightHue = rgbToHsl(rgb.r, rgb.g, rgb.b).h;
-  }
-
-  // Soft volumetric underpaint: a filled blob through the mesh vertices
-  // with a radial highlight -- plastic CGI body mass under the wireframe.
-  if (softFill && softFillAlpha > 0.02 && points.length >= 3) {
-    let cx = 0, cy = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const p of points) {
-      cx += p.x; cy += p.y;
-      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
-      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
-    }
-    cx /= points.length; cy /= points.length;
-    const rx = Math.max(8, (maxX - minX) * 0.55);
-    const ry = Math.max(8, (maxY - minY) * 0.55);
-    // Specular bias toward light if available.
-    let hx = cx - rx * 0.25, hy = cy - ry * 0.3;
-    if (light && light.intensity > 0.01) {
-      const tlx = light.x - cx, tly = light.y - cy;
-      const tlen = Math.hypot(tlx, tly) || 1;
-      hx = cx + (tlx / tlen) * rx * 0.28;
-      hy = cy + (tly / tlen) * ry * 0.28;
-    }
-    ctx.save();
-    ctx.globalAlpha = softFillAlpha * alpha;
-    const body = ctx.createRadialGradient(hx, hy, 0, cx, cy, Math.max(rx, ry));
-    body.addColorStop(0, `hsla(${baseHueDeg.toFixed(0)}, ${Math.min(100, satBase + 10)}%, ${Math.min(92, lightBase + 18)}%, 0.95)`);
-    body.addColorStop(0.45, `hsla(${baseHueDeg.toFixed(0)}, ${satBase}%, ${lightBase}%, 0.75)`);
-    body.addColorStop(1, `hsla(${baseHueDeg.toFixed(0)}, ${Math.max(20, satBase - 15)}%, ${Math.max(18, lightBase - 28)}%, 0.35)`);
-    ctx.fillStyle = body;
-    ctx.beginPath();
-    // Angular sort around centroid so the fill is a simple fan hull, not
-    // edge-order dependent (mesh edges are open wireframe, not a polygon loop).
-    const ordered = points
-      .map((p) => ({ p, a: Math.atan2(p.y - cy, p.x - cx) }))
-      .sort((u, v) => u.a - v.a);
-    ordered.forEach(({ p }, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
-    ctx.closePath();
-    ctx.fill();
-    // Specular hot-spot (glossy plastic catch light).
-    const spec = ctx.createRadialGradient(hx, hy, 0, hx, hy, Math.max(rx, ry) * 0.45);
-    spec.addColorStop(0, 'rgba(255,255,245,0.55)');
-    spec.addColorStop(1, 'rgba(255,255,245,0)');
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = softFillAlpha * alpha * 0.7;
-    ctx.fillStyle = spec;
-    ctx.beginPath();
-    ctx.ellipse(hx, hy, rx * 0.35, ry * 0.28, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+  // Normalized to a flat list once per call, not per edge. `light` (the
+  // celestial) has no radius, so it never falls off with distance --
+  // exactly its old, single-source behavior when `lights` is omitted.
+  // Anything in `lights` DOES fall off, since it's meant to light up
+  // whoever's nearby, not the whole scene.
+  const litMeta = [];
+  if (rimAmount > 0) {
+    const collect = (L) => {
+      if (!L || !(L.intensity > 0.01)) return;
+      const hue = lightHueOf(L);
+      if (hue === null) return;
+      litMeta.push({ x: L.x, y: L.y, intensity: L.intensity, radius: L.radius ?? Infinity, hue });
+    };
+    collect(light);
+    if (lights) for (const L of lights) collect(L);
   }
 
   if (outline) {
@@ -144,20 +117,31 @@ export function drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, {
     let lightness = Math.min(88, lightBase + glow * glowBoost);
     const sat = Math.min(100, satBase + glow * 22);
 
-    if (lightHue !== null && len > 0.001) {
-      // Rim light: how much this edge faces the celestial versus turns
-      // away from it, from the edge's own normal -- a stylized cue, not a
+    if (litMeta.length && len > 0.001) {
+      // Rim light: how much this edge faces each source versus turns away
+      // from it, from the edge's own normal -- a stylized cue, not a
       // physically exact one, since these are open wireframe strokes with
-      // no defined front face.
+      // no defined front face. Summed across every source in range; the
+      // single strongest contributor's hue is what the edge tints toward,
+      // so overlapping lights don't muddy into an average color.
       const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
       const nx = dy / len, ny = -dx / len;
-      let tlx = light.x - midX, tly = light.y - midY;
-      const tlen = Math.hypot(tlx, tly) || 1;
-      tlx /= tlen; tly /= tlen;
-      const facing = nx * tlx + ny * tly; // -1 (fully averted) .. +1 (fully facing)
-      const amt = facing * light.intensity * rimAmount;
-      lightness = Math.max(4, Math.min(92, lightness + amt * RIM_LIGHT_RANGE));
-      if (amt > 0) hue = (hue + hueDelta(hue, lightHue) * Math.min(1, amt) * RIM_HUE_BLEND + 360) % 360;
+      let totalAmt = 0, domAmt = 0, domHue = null;
+      for (const L of litMeta) {
+        let tlx = L.x - midX, tly = L.y - midY;
+        const dist = Math.hypot(tlx, tly) || 1;
+        if (dist > L.radius) continue; // out of a local light's reach
+        tlx /= dist; tly /= dist;
+        const facing = nx * tlx + ny * tly; // -1 (fully averted) .. +1 (fully facing)
+        const falloff = L.radius === Infinity ? 1 : Math.max(0, 1 - dist / L.radius);
+        const amt = facing * L.intensity * rimAmount * falloff;
+        totalAmt += amt;
+        if (Math.abs(amt) > Math.abs(domAmt)) { domAmt = amt; domHue = L.hue; }
+      }
+      if (totalAmt !== 0) {
+        lightness = Math.max(4, Math.min(92, lightness + totalAmt * RIM_LIGHT_RANGE));
+        if (domAmt > 0 && domHue !== null) hue = (hue + hueDelta(hue, domHue) * Math.min(1, domAmt) * RIM_HUE_BLEND + 360) % 360;
+      }
     }
 
     if (glow > 0.15) {

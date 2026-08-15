@@ -162,14 +162,6 @@ export function tsunamiCenterX(event, w) {
   return w * 0.5 + bias;
 }
 
-/** @deprecated Lateral sweep — kept for any residual callers; prefer
- *  tsunamiProgress / tsunamiRowFrac. Returns null outside the window, else
- *  the wall's center X (no longer walks L→R across the screen). */
-export function tsunamiX(event, nowMs, w) {
-  if (!tsunamiActive(event, nowMs)) return null;
-  return tsunamiCenterX(event, w);
-}
-
 /** Falloff (0..1) of the wall's horizontal body at distance `dx` (px) from
  *  center -- 1 at the spine, tapering over half-width. Width may be scaled
  *  by perspective at the draw site. */

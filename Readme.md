@@ -5,24 +5,47 @@ file or an audio file (mp3/wav/flac) and the entire show — jumps, combos,
 two companions, eight parallax biomes, screen fracturing — is generated live
 from the music, no authored levels involved. Canvas 2D + Web Audio API only.
 
+**Song search** is built in: **free music works with zero setup** (no API keys),
+optional Soulseek via bundled slskd or direct login — then hit **Play**.
+Results show Title · Artist · Album · Length; duplicate versions are collapsed.
+See [`docs/soulseek.md`](docs/soulseek.md).
+
 Full design spec: see the original technical specification this repo
 implements (MIDI/audio adapters unify into one NoteEvent timeline; every
 visual system is a pure consumer of it).
 
 ## Running it
 
-No build step. Any static file server works:
-
 ```sh
-npm install   # only pulls in Playwright, for the test harness below
-npm start     # serves the app at http://localhost:5173
+npm install   # slsk-client (optional Soulseek) + Playwright for tests
+npm start     # serves the app at http://localhost:8080  (0.0.0.0)
+
+# Optional — full Soulseek network via bundled slskd (no API key in the UI):
+# cp .env.example .env   # set SLSK_USER / SLSK_PASS
+docker compose up -d slskd
 ```
 
-Then open `http://localhost:5173` and either drop a `.mid`/audio file, or
-click **"Play procedural demo"** to run with zero file input. **You can drop
-a different `.mid`/audio file in at any time, even mid-song** — dragging one
-anywhere on the page (not just the loader screen) tears down whatever's
-currently playing and starts the new one immediately.
+Then open the app and either:
+
+- **Search** for a song on the title screen (free music works immediately),
+- drop a `.mid`/audio file, or
+- click **"Play demo"** to run with zero file input.
+
+**You can drop a different `.mid`/audio file in at any time, even mid-song**
+— dragging one anywhere on the page (not just the loader screen) tears down
+whatever's currently playing and starts the new one immediately.
+
+### Music backends
+
+| Path | Effect | Player friction |
+| --- | --- | --- |
+| **Free music** (default) | SoundHelix demos + Internet Archive open audio | None |
+| **Bundled slskd** | `docker compose up -d slskd` — Midio auto-detects it | Soulseek account only (optional `.env`) |
+| **Direct Soulseek** | Connect panel → username + password | Soulseek account |
+| Custom slskd | Advanced panel or `SLSKD_URL` (API key optional / bundled) | Rare |
+
+API keys for slskd are **not** shown in the default UI — the repo ships a fixed
+local key shared between Midio and `slskd/slskd.yml`.
 
 **Scored playback:** drop a **MIDI and an audio file together** and the
 recording is what you hear while the MIDI drives every visual — no audio
@@ -36,11 +59,13 @@ the cue, note dynamic (`ppp`…`fff`) sets its parameter. See
 **Watch it perform itself:** Midio performs the song himself — every jump,
 double-jump, and double-bass slide is played flawlessly, on the beat,
 automatically. There's nothing to fail and nothing to steer: the camera
-holds one fixed, cinematic framing (all zoom — the old player "Lens" and the
-automatic beat-zoom alike — has been removed), so you can sit back and take
-in the whole show. The one thing that still notices you is **Midasus's three
-star children**: move your mouse and the hyper-curious explorer drifts toward
-your cursor — they're aware you're there (see below).
+holds a fixed, cinematic framing by default (the old player "Lens" and the
+automatic beat-zoom alike stay removed) and only pulls back on its own when
+a performer drifts unintentionally toward the edge of frame, easing back in
+once everyone's home — so you can sit back and take in the whole show. The
+one thing that still notices you is **Midasus's three star children**: move
+your mouse and the hyper-curious explorer drifts toward your cursor —
+they're aware you're there (see below).
 
 **Audio files** play the decoded buffer only — the synthetic hi-hat / click
 layer from the timeline synth is muted so it doesn't stack on the song. MIDI

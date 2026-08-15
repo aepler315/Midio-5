@@ -74,25 +74,35 @@ export function mergeMeshes(meshes) {
   return { mesh: { vertices, edges }, offsets };
 }
 
-// --- Midio: the Star-Hero. Same angular spectral-glyph language (irregular
-// shard, sparse spokes/braces — nothing round or cute) refined into a tall,
-// slender five-spike silhouette rather than the old boxy cowboy/astronaut:
-//   • single needle crest (hero spire, not a hat brim)
-//   • two high shoulder blades that read as star points
-//   • narrow waist / hip facets, clean boot soles on y=0
-//   • a light trailing cape-point (left rear) for motion, not bulk
-// Half-width stays inside the 23px collision body. Slight asymmetry so he
-// reads as a character, not clip-art. Nine rim verts so apotheosis fold still maps. ---
+// --- Midio: not the spiky star-hero he used to be. Same angular
+// spectral-glyph language (irregular shard, sparse spokes/braces — nothing
+// round or cute), but refit into something that reads as an ancient,
+// composed presence rather than a mascot brandishing weapons: a slender,
+// close-to-symmetric crystal-obelisk silhouette --
+//   • one tall crest spire (a standing facet, not a blade or a crown)
+//   • gently sloped shoulder facets, mirrored left/right rather than
+//     jutting out as star points -- the "wings" of a robed figure, not
+//     spikes
+//   • a narrow waist and a soft keel notch between his feet
+//   • only a whisper of asymmetry (the left side sits fractionally
+//     narrower) so he still reads as a character, not clip-art, without
+//     ever tipping back into "aggressive"
+// His core sigil (MIDIO_EYE, a small hexagram at the blink axis) already
+// sits right where a third eye would -- left untouched, since the new
+// silhouette gives it more room to read as exactly that, rather than
+// changing it too and losing the thing that already worked.
+// Half-width stays inside the 23px collision body. Nine rim verts so
+// apotheosis fold still maps. ---
 export const MIDIO_BODY = shardMesh({ x: 0, y: -30 }, [
   { x: 0, y: -62 },     // 0 crest spire
-  { x: 11, y: -48 },    // 1 upper-right star blade
-  { x: 15, y: -30 },    // 2 right shoulder point
-  { x: 9, y: -14 },     // 3 right hip facet (narrow waist)
-  { x: 7, y: 0 },       // 4 right boot sole
-  { x: 0, y: -9 },      // 5 keel between boots
-  { x: -7, y: 0 },      // 6 left boot sole
-  { x: -12, y: -16 },   // 7 left hip / trailing cape point
-  { x: -10, y: -46 },   // 8 upper-left blade (slightly higher: asymmetry)
+  { x: 10, y: -46 },    // 1 upper-right shoulder facet
+  { x: 13, y: -28 },    // 2 right flank, tapering smoothly (not a jutting point)
+  { x: 8, y: -14 },     // 3 right waist facet
+  { x: 7, y: 0 },       // 4 right foot
+  { x: 0, y: -8 },      // 5 keel between feet
+  { x: -7, y: 0 },      // 6 left foot
+  { x: -9, y: -15 },    // 7 left waist facet (near-mirror of 3)
+  { x: -10, y: -46 },   // 8 upper-left shoulder facet (mirror of 1)
 ], { spokeEvery: 2, braces: [[1, 3], [3, 6], [6, 8]] });
 // Core sigil: hexagram on the blink axis (MIDIO_EYE_CY = -31 in Renderer).
 export const MIDIO_EYE = hexagramMesh(4.6, 0, -31);

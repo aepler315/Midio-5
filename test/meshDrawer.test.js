@@ -134,6 +134,81 @@ test('drawMeshEdges: an edge facing the light reads brighter than the same edge 
   assert.ok(litLightness > unlitLightness, `expected lit=${litLightness} > unlit=${unlitLightness}`);
 });
 
+test('drawMeshEdges: `lights` (secondary sources) combine with `light` (the celestial) rather than replacing it', () => {
+  const mesh = { vertices: [{ x: -10, y: 0 }, { x: 10, y: 0 }], edges: [[0, 1]] };
+  const rest = computeRestLengths(mesh);
+
+  const ctxCelestialOnly = mockCtxWithStrokeStyles();
+  drawMeshEdges(ctxCelestialOnly, mesh, rest, mesh.vertices, 40, {
+    light: { x: 0, y: -200, colorHex: '#ffcc66', intensity: 1 }, rimAmount: 1,
+  });
+
+  const ctxBoth = mockCtxWithStrokeStyles();
+  drawMeshEdges(ctxBoth, mesh, rest, mesh.vertices, 40, {
+    light: { x: 0, y: -200, colorHex: '#ffcc66', intensity: 1 },
+    lights: [{ x: 0, y: -5, hueDeg: 40, intensity: 1, radius: 50 }], // very close, small local light, same hue -> pure additive lightness check
+    rimAmount: 1,
+  });
+
+  const litOnly = lightnessOf(ctxCelestialOnly.strokeStyles.at(-1));
+  const litBoth = lightnessOf(ctxBoth.strokeStyles.at(-1));
+  assert.ok(litBoth > litOnly, `adding a nearby secondary light should brighten further: only=${litOnly} both=${litBoth}`);
+});
+
+test('drawMeshEdges: a secondary light outside its radius contributes nothing', () => {
+  const mesh = { vertices: [{ x: -10, y: 0 }, { x: 10, y: 0 }], edges: [[0, 1]] };
+  const rest = computeRestLengths(mesh);
+
+  const ctxNoLight = mockCtxWithStrokeStyles();
+  drawMeshEdges(ctxNoLight, mesh, rest, mesh.vertices, 40);
+
+  const ctxFarLight = mockCtxWithStrokeStyles();
+  drawMeshEdges(ctxFarLight, mesh, rest, mesh.vertices, 40, {
+    lights: [{ x: 0, y: -5000, hueDeg: 40, intensity: 1, radius: 50 }], // way outside its own radius
+    rimAmount: 1,
+  });
+
+  assert.deepEqual(ctxFarLight.strokeStyles, ctxNoLight.strokeStyles);
+});
+
+test('drawMeshEdges: the single strongest light\'s hue wins the tint, not an average of every source in range', () => {
+  const mesh = { vertices: [{ x: -10, y: 0 }, { x: 10, y: 0 }], edges: [[0, 1]] };
+  const rest = computeRestLengths(mesh);
+
+  const ctxStrongOnly = mockCtxWithStrokeStyles();
+  drawMeshEdges(ctxStrongOnly, mesh, rest, mesh.vertices, 40, {
+    lights: [{ x: 0, y: -20, hueDeg: 300, intensity: 1, radius: 500 }],
+    rimAmount: 1,
+  });
+  const ctxStrongPlusWeak = mockCtxWithStrokeStyles();
+  drawMeshEdges(ctxStrongPlusWeak, mesh, rest, mesh.vertices, 40, {
+    lights: [
+      { x: 0, y: -20, hueDeg: 300, intensity: 1, radius: 500 }, // dominant
+      { x: 0, y: -20, hueDeg: 100, intensity: 0.01, radius: 500 }, // negligible
+    ],
+    rimAmount: 1,
+  });
+
+  const hueOf = (s) => Number(s.match(/^hsla\((\d+)/)[1]);
+  assert.equal(hueOf(ctxStrongPlusWeak.strokeStyles.at(-1)), hueOf(ctxStrongOnly.strokeStyles.at(-1)));
+});
+
+test('drawMeshEdges: `lights` alone (no `light`) still lights an edge, same math path as the single-`light` param', () => {
+  const mesh = { vertices: [{ x: -10, y: 0 }, { x: 10, y: 0 }], edges: [[0, 1]] };
+  const rest = computeRestLengths(mesh);
+
+  const ctxViaLight = mockCtxWithStrokeStyles();
+  drawMeshEdges(ctxViaLight, mesh, rest, mesh.vertices, 40, {
+    light: { x: 0, y: -200, colorHex: '#ffcc66', intensity: 1, radius: Infinity }, rimAmount: 1,
+  });
+  const ctxViaLights = mockCtxWithStrokeStyles();
+  drawMeshEdges(ctxViaLights, mesh, rest, mesh.vertices, 40, {
+    lights: [{ x: 0, y: -200, colorHex: '#ffcc66', intensity: 1, radius: Infinity }], rimAmount: 1,
+  });
+
+  assert.deepEqual(ctxViaLights.strokeStyles, ctxViaLight.strokeStyles);
+});
+
 // --- displaceMeshRadial (resonance geometry) ---
 import { displaceMeshRadial } from '../src/render/MeshDrawer.js';
 import { ModalRing } from '../src/render/oscillators.js';

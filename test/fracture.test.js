@@ -194,6 +194,74 @@ test('shatter update eases fragments then settles to done without a hard pop', (
   assert.equal(fx.fragments.count, 0);
 });
 
+// --- Surface cracks: Broshi's burrow punching through the pane -----------
+
+test('spawnSurfaceCrack adds a transient burst without touching the permanent ridge cracks', () => {
+  const durationMs = 30000;
+  const conductor = buildConductorWithKicks(durationMs);
+  const fx = new FractureEngine(conductor, { canvasWidth: 1280, canvasHeight: 720, songSeed: 5, durationMs });
+  fx._lastNowMs = 1000;
+
+  fx.spawnSurfaceCrack(300, 500, null);
+
+  assert.equal(fx.surfaceCracks.length, 1);
+  assert.equal(fx.cracks.length, 0, 'surface cracks must never join the permanent ridge crack list');
+  const sc = fx.surfaceCracks[0];
+  assert.ok(sc.trees.length >= 3, 'a small radial burst, not a single stroke');
+  for (const leg of sc.trees) {
+    assert.ok(leg.total > 0);
+    assert.ok(Number.isFinite(leg.nodes[0].x) && Number.isFinite(leg.nodes[0].y));
+  }
+});
+
+test('surface cracks grow in, then fade out and prune themselves via update()', () => {
+  const durationMs = 30000;
+  const conductor = buildConductorWithKicks(durationMs);
+  const fx = new FractureEngine(conductor, { canvasWidth: 1280, canvasHeight: 720, songSeed: 5, durationMs });
+  fx._lastNowMs = 0;
+  fx.spawnSurfaceCrack(300, 500, null);
+  const born = fx.surfaceCracks[0].bornMs;
+
+  fx.update(born + 100, 0.1, null, null);
+  assert.equal(fx.surfaceCracks.length, 1, 'still alive shortly after spawning');
+
+  fx.update(born + 5000, 0.1, null, null);
+  assert.equal(fx.surfaceCracks.length, 0, 'a burst this old must have pruned itself');
+});
+
+test('spawnSurfaceCrack is deterministic per seed and does not spawn once the finale has taken over', () => {
+  const durationMs = 30000;
+  const conductor = buildConductorWithKicks(durationMs);
+  const a = new FractureEngine(conductor, { canvasWidth: 1280, canvasHeight: 720, songSeed: 9, durationMs });
+  const b = new FractureEngine(conductor, { canvasWidth: 1280, canvasHeight: 720, songSeed: 9, durationMs });
+  a._lastNowMs = 500; b._lastNowMs = 500;
+  a.spawnSurfaceCrack(200, 400, null);
+  b.spawnSurfaceCrack(200, 400, null);
+  assert.deepEqual(a.surfaceCracks, b.surfaceCracks, 'same seed reproduces the same burst geometry');
+
+  a.shatterState = 'frozen';
+  a.spawnSurfaceCrack(200, 400, null);
+  assert.equal(a.surfaceCracks.length, 1, 'no new bursts once the shatter has taken over the screen');
+});
+
+test('draw() renders surface cracks at full alpha through their fade envelope without throwing', () => {
+  const durationMs = 30000;
+  const conductor = buildConductorWithKicks(durationMs);
+  const fx = new FractureEngine(conductor, { canvasWidth: 1280, canvasHeight: 720, songSeed: 5, durationMs });
+  fx._lastNowMs = 0;
+  fx.spawnSurfaceCrack(300, 500, null);
+
+  const { ctx, alphas } = alphaRecordingCtx();
+  fx._lastNowMs = 50; // mid-growth
+  fx.draw(ctx, { width: 1280, height: 720 });
+  assert.ok(alphas.length > 0, 'mid-growth burst should draw something');
+
+  const { ctx: ctx2, alphas: alphas2 } = alphaRecordingCtx();
+  fx._lastNowMs = 10000; // long past its life
+  fx.draw(ctx2, { width: 1280, height: 720 });
+  assert.equal(alphas2.length, 0, 'a fully aged-out burst (pruned by update()) should draw nothing');
+});
+
 // --- Reduced-flash accessibility -----------------------------------------
 //
 // draw() and drawShatter() each fill the whole viewport at flashAlpha. This
@@ -204,10 +272,10 @@ test('shatter update eases fragments then settles to done without a hard pop', (
 function alphaRecordingCtx() {
   const alphas = [];
   const ctx = {
-    save() {}, restore() {}, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {},
+    save() {}, restore() {}, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, stroke() {},
     translate() {}, rotate() {}, scale() {}, clip() {}, drawImage() {}, fillRect() {},
     set globalAlpha(v) { alphas.push(v); }, get globalAlpha() { return alphas[alphas.length - 1]; },
-    set fillStyle(v) {},
+    set fillStyle(v) {}, set strokeStyle(v) {}, set lineWidth(v) {}, set lineJoin(v) {}, set lineCap(v) {},
   };
   return { ctx, alphas };
 }

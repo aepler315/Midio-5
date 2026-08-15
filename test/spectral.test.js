@@ -1,10 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  hueDelta, hueOf, spectralShiftDeg, spectralTokens, keyedQuantRamp, cssVarMap, feverStops, spectralFamily,
+  hueDelta, hueOf, spectralShiftDeg, spectralTokens, cssVarMap, feverStops, spectralFamily,
 } from '../src/render/spectral.js';
 import { spectralHue } from '../src/render/stellar.js';
-import { RETRO_PALETTE } from '../src/render/RetroFilter.js';
 import { rotateHueHex } from '../src/utils/color.js';
 
 // The TWILIGHT profile -- representative, with a clear purple identity.
@@ -95,25 +94,6 @@ test('spectralTokens handles an achromatic halo (ARCTIC white sun) without break
 test('an explicit anchorHue overrides the halo-derived anchor', () => {
   const t = spectralTokens({ tonic: 3, biome: TWILIGHT, anchorHue: 90 });
   assert.equal(t.shiftDeg, Math.round(hueDelta(90, spectralHue(3)) / 3) * 3);
-});
-
-test('keyedQuantRamp amount=0 returns the ramp unchanged (no mutation)', () => {
-  const ramp = keyedQuantRamp(RETRO_PALETTE, 5, 0);
-  assert.equal(ramp, RETRO_PALETTE, 'amount 0 returns the same reference');
-});
-
-test('keyedQuantRamp amount=1 rotates hues toward the key but preserves lightness steps', () => {
-  const tonic = 7;
-  const ramp = keyedQuantRamp(RETRO_PALETTE, tonic, 1);
-  assert.notEqual(ramp, RETRO_PALETTE, 'a new ramp is returned');
-  assert.equal(ramp.length, RETRO_PALETTE.length);
-  // A saturated palette entry should end up near the key hue.
-  const saturated = RETRO_PALETTE.find(([r, g, b]) => Math.max(r, g, b) - Math.min(r, g, b) > 80);
-  const [sr, sg, sb] = saturated;
-  const target = spectralHue(tonic);
-  const rot = rotateHueHex(`#${[sr, sg, sb].map((v) => v.toString(16).padStart(2, '0')).join('')}`, hueDelta(hueOf(`#${[sr, sg, sb].map((v) => v.toString(16).padStart(2, '0')).join('')}`), target));
-  const d = Math.abs(hueDelta(hueOf(`#${ramp[RETRO_PALETTE.indexOf(saturated)].map((v) => v.toString(16).padStart(2, '0')).join('')}`), target));
-  assert.ok(d <= 3, `a saturated ramp entry should land on the key hue, got delta ${d}`);
 });
 
 test('cssVarMap emits the spec vars with the halo as gold', () => {

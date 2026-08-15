@@ -29,7 +29,7 @@ export class ImpactFX {
     return Math.pow(clamp(vLandPxMs / vRefPxMs, 0, 1), 0.7);
   }
 
-  trigger(worldX, groundY, I, camera) {
+  trigger(worldX, groundY, I, camera, particleMul = 1) {
     const rand = this.rand;
 
     this.craters.spawn({ wx: worldX, y: groundY, R: 14 + 66 * I, alpha: 0.85 * I, life: 0.12 });
@@ -39,7 +39,7 @@ export class ImpactFX {
     const ring = this.rings.spawn({ wx: worldX, y: groundY, Rd: 40 + 120 * I, tau: 0.09, life: 0.42, color: null });
     for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * 4 * I;
 
-    const n = Math.round(6 + 18 * I);
+    const n = Math.round((6 + 18 * I) * particleMul);
     for (let i = 0; i < n; i++) {
       const theta = (rand() * 2 - 1) * (35 * Math.PI / 180);
       const dir = rand() < 0.5 ? -1 : 1;

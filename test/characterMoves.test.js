@@ -145,7 +145,7 @@ test('settling into a rest picks a fresh flight figure, never repeating', () => 
   // Long silence after the single note: she enters rest and picks a figure.
   for (let t = 0; t <= 3000; t += 50) m.update(t, 0.05, 0, null, 1, null);
   assert.notEqual(m.orbitStyle, 'lissajous', 'rest entry must pick a fresh figure');
-  assert.ok(['figure8', 'loop', 'petal', 'lissajous'].includes(m.orbitStyle));
+  assert.ok(['figure8', 'loop', 'petal', 'lissajous', 'harmonograph', 'spirograph'].includes(m.orbitStyle));
   styles.push(m.orbitStyle);
   assert.notEqual(styles[1], styles[0]);
 });

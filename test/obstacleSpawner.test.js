@@ -19,17 +19,19 @@ function fakeCtx() {
   };
 }
 
-test('ARCHETYPES lists all three ambient obstacle kinds', () => {
-  assert.deepEqual([...ARCHETYPES], ['thorn', 'veil', 'echo']);
+test('ARCHETYPES lists all four ambient obstacle kinds', () => {
+  assert.deepEqual([...ARCHETYPES], ['thorn', 'veil', 'echo', 'pipe']);
 });
 
-test('obstacleArchetype partitions [0,1) evenly across the three kinds, deterministically', () => {
+test('obstacleArchetype partitions [0,1) evenly across the four kinds, deterministically', () => {
   assert.equal(obstacleArchetype(0), 'thorn');
-  assert.equal(obstacleArchetype(0.32), 'thorn');
-  assert.equal(obstacleArchetype(0.34), 'veil');
-  assert.equal(obstacleArchetype(0.65), 'veil');
-  assert.equal(obstacleArchetype(0.67), 'echo');
-  assert.equal(obstacleArchetype(0.99), 'echo');
+  assert.equal(obstacleArchetype(0.24), 'thorn');
+  assert.equal(obstacleArchetype(0.26), 'veil');
+  assert.equal(obstacleArchetype(0.49), 'veil');
+  assert.equal(obstacleArchetype(0.51), 'echo');
+  assert.equal(obstacleArchetype(0.74), 'echo');
+  assert.equal(obstacleArchetype(0.76), 'pipe');
+  assert.equal(obstacleArchetype(0.99), 'pipe');
 });
 
 test('emergenceEnvelope: 0 far ahead, ramps to 1 by the time it arrives, clamped both ends', () => {
@@ -62,7 +64,7 @@ test('spawned obstacles carry a deterministic archetype/phase and draw without t
   spawner.update(0, 0, 0.22); // scrollSpeedPxMs ~ WORLD_SPEED_PX_S/1000
   assert.ok(spawner.active.length > 0, 'expected at least one obstacle to spawn at density=1');
   for (const o of spawner.active) {
-    assert.ok(['thorn', 'veil', 'echo'].includes(o.archetype));
+    assert.ok(['thorn', 'veil', 'echo', 'pipe'].includes(o.archetype));
     assert.ok(Number.isFinite(o.phase));
   }
 
@@ -73,6 +75,19 @@ test('spawned obstacles carry a deterministic archetype/phase and draw without t
       nowMs: 1000, energyCurves: null, haloColor: '#8a3a6b', wind: { x: 5, y: 0 }, particleMul: 1, reducedFlash: false,
     }));
   }
+});
+
+test('a pipe obstacle draws without throwing across its full approach/arrival/dissolve lifecycle', () => {
+  const spawner = new ObstacleSpawner({ live: { obstacleDensity: 1 } }, { seed: 11 });
+  spawner.active = [{ wx: 1000, tMs: 5000, height: 46, width: 28, archetype: 'pipe', phase: 1.7 }];
+  const ctx = fakeCtx();
+  for (const worldX of [1000 - 500, 1000, 1000 + 200]) {
+    assert.doesNotThrow(() => spawner.draw(ctx, worldX, 220, 480, {
+      nowMs: 5000, haloColor: '#8a3a6b', reducedFlash: false,
+    }));
+  }
+  assert.ok(ctx.calls.fill > 0, 'the pipe body/collar/mouth should have painted something');
+  assert.ok(ctx.calls.stroke > 0, 'the halo-tinted outline should have stroked');
 });
 
 test('draw() never throws with an energyCurves-driven pulse, reduced-flash, or fractional particleMul', () => {

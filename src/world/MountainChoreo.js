@@ -55,6 +55,34 @@ export function danceOffset(stripX, tSec, groove, kick, cfg, fever = 0) {
 
 export const FEVER_DANCE_GAIN = 2.4; // fever now cranks the dance up to ~3.4x
 
+/** The range Midio takes his cue from: the furthest, biggest-moving skyline
+ *  (see DANCE_LAYERS -- L2 has the largest waveAmp/bounceAmp of the four). */
+export const FAR_DANCE_LAYER = 'L2';
+
+/** How much of a kick the swell reading gives away. Small on purpose: the
+ *  beat gets a vote on exactly when the gate opens, the slow swell decides
+ *  whether it opens at all. */
+export const SWELL_KICK_GAIN = 0.18;
+
+/**
+ * How high one column of a range is heaved right now, as a scale-free 0..1
+ * ("0 = this column is at the bottom of its own swing, 1 = at the top").
+ *
+ * This is danceOffset's own lift, normalized: the wave term is the same
+ * sine, read with the sign flipped so up reads high, and the kick term is
+ * the same envelope (a kick lifts the range, hence a positive contribution).
+ * What is deliberately dropped is every amplitude factor -- waveAmp,
+ * bounceAmp, groove, fever, terrainEnergy, orogeny. A gate built on absolute
+ * pixels would swing wide open under fever and clamp shut in a flat, low-
+ * energy biome (terrainEnergy near 0 flattens the dance to nothing); read in
+ * phase instead, "the skyline near the top of its current swing" means the
+ * same thing in every section of every song.
+ */
+export function ridgeSwell01(stripX, tSec, cfg, kick = 0) {
+  const wave = Math.sin(stripX / cfg.waveLen + tSec * cfg.waveHz * 2 * Math.PI + cfg.phase);
+  return clamp01(0.5 - 0.5 * wave + SWELL_KICK_GAIN * clamp01(kick));
+}
+
 /**
  * Kick envelope at `tauMs` after the (layer-delayed) hit: a 40 ms snap up,
  * then a ~180 ms exponential settle. 0 before the hit reaches this layer.
@@ -126,4 +154,143 @@ export function mountainStripDrawHeight(stripHeight, growthMul, canvasHeight, gr
   const topMin = canvasHeight * MOUNTAIN_SKY_HEADROOM_FRAC;
   const maxDh = Math.max(96, bottom - topMin - MOUNTAIN_DANCE_PAD_PX);
   return Math.min(desired, maxDh);
+}
+
+// --- The spectrum massif's scale (megalophobia pass) -----------------------
+//
+// Every other range obeys MOUNTAIN_SKY_HEADROOM_FRAC so the sky/ocean stay
+// readable above it. The massif is deliberately let off that leash: it is
+// the single farthest, slowest-scrolling solid thing in the world (see
+// BiomeManager._drawSpectrumMassif's 0.03 parallax ratio -- an order of
+// magnitude slower than the nearest range), so a size that would look
+// absurd on L2 reads instead as "this is simply how big something that far
+// away, and that old, gets to be." A tiny headroom (not zero -- the very
+// top edge should still occasionally graze the frame rather than always
+// sit flush against it, which is the actual "too big to see the top of"
+// sensation) is reserved instead of the normal generous band.
+export const MASSIF_SKY_HEADROOM_FRAC = 0.03;
+const MASSIF_DANCE_PAD_PX = 10;
+
+/** Same shape as mountainStripDrawHeight, but for the massif's own much
+ *  taller ceiling -- @see MASSIF_SKY_HEADROOM_FRAC. */
+export function massifDrawHeight(stripHeight, growthMul, canvasHeight, groundY) {
+  const desired = Math.max(1, stripHeight) * Math.max(0.05, growthMul);
+  const bottom = groundY + 40;
+  const topMin = canvasHeight * MASSIF_SKY_HEADROOM_FRAC;
+  const maxDh = Math.max(96, bottom - topMin - MASSIF_DANCE_PAD_PX);
+  return Math.min(desired, maxDh);
+}
+
+// The massif reads as ONE continuous mountain RANGE, not seven separate
+// columns with gaps between them -- at genuinely towering heights, narrow
+// gapped rectangles stop reading as terrain entirely and start reading as
+// a picket fence of skyscrapers. So its silhouette is a single ridge line
+// spanning the whole width, smoothly interpolated between the seven bars'
+// peaks (still bass-builds-the-summit, still the live EQ) with a
+// deterministic, closed-form jag layered on top for a wind-scoured, ancient
+// edge instead of a clean sine.
+const JAG_AMP_PX = 14;
+const JAG_FREQ = [2, 5, 11, 23]; // co-prime-ish harmonics -- irregular and non-repeating across the whole ridge
+
+// Fine surface grain: a second, much higher-frequency and lower-amplitude
+// octave layered on top of the coarse jag -- the up-close weathered texture
+// a genuinely ancient ridge would show even while its overall silhouette
+// barely seems to move at all. Deliberately small relative to the coarse
+// jag so it reads as grain, not a second competing skyline.
+const FINE_JAG_AMP_PX = 3;
+const FINE_JAG_FREQ = [53, 101, 181];
+
+// The massif's own EQ response. spectrumBars everywhere else (horizon EQ,
+// etc.) reads _eqSmoothed, which reacts on a musical timescale --
+// EQ_ATTACK_SEC/EQ_RELEASE_SEC in BiomeManager are fractions of a second,
+// fine for something that's meant to pulse with the beat. The massif is
+// the opposite pitch: everything else about it (0.03 parallax -- an order
+// of magnitude slower than the nearest range, a permanent haze veil, tiny
+// ordinary-speed scale markers) exists to sell "impossibly, geologically
+// vast." A silhouette that size visibly hopping on every kick breaks that
+// story outright -- something that big cannot perceptibly move on a
+// musical timescale. These constants are seconds, not fractions of a
+// second: the ridge crawls, it never dances.
+export const MASSIF_EQ_ATTACK_SEC = 4.5;
+export const MASSIF_EQ_RELEASE_SEC = 9.0;
+
+/** One-pole smoothing step toward `raw` -- same exponential-approach shape
+ *  as the general EQ smoother, just with the massif's own glacially slower
+ *  multi-second time constants. */
+export function massifEqStep(prev, raw, dtSec) {
+  const tau = raw > prev ? MASSIF_EQ_ATTACK_SEC : MASSIF_EQ_RELEASE_SEC;
+  return prev + (1 - Math.exp(-dtSec / tau)) * (raw - prev);
+}
+
+/**
+ * The ridge's smooth 0..1 height profile at fractional position u (0..1)
+ * across the WHOLE massif width -- smoothstep-interpolated between
+ * neighboring bar peaks (spectrumBars), so seven discrete columns read as
+ * one continuous skyline with gentle saddles between peaks, not sharp V's.
+ * @param {Array<{h01:number}>} bars from spectrumBars, left to right
+ * @param {number} u 0..1 across the whole ridge
+ */
+export function massifRidgeHeight01(bars, u) {
+  const n = bars.length;
+  if (n === 0) return 0;
+  if (n === 1) return bars[0].h01;
+  const pos = Math.min(n - 1 - 1e-9, Math.max(0, u * (n - 1)));
+  const i0 = Math.floor(pos);
+  const i1 = Math.min(n - 1, i0 + 1);
+  const frac = pos - i0;
+  const s = frac * frac * (3 - 2 * frac); // smoothstep -- gentle saddles, not linear V's
+  return bars[i0].h01 * (1 - s) + bars[i1].h01 * s;
+}
+
+/**
+ * Vertical jag offset (px, positive = notched down from the smooth ridge)
+ * at fractional position u (0..1) across the WHOLE massif width -- a
+ * single continuous roughness field, not a per-bar one, so it never resets
+ * or seams at a bar boundary.
+ */
+export function massifRidgeJagPx(u) {
+  let coarse = 0;
+  for (const f of JAG_FREQ) coarse += Math.sin(u * f * Math.PI * 2 + f * 1.913);
+  coarse = Math.max(0, coarse / JAG_FREQ.length) * JAG_AMP_PX;
+
+  let fine = 0;
+  for (const f of FINE_JAG_FREQ) fine += Math.sin(u * f * Math.PI * 2 + f * 0.617);
+  fine = Math.max(0, fine / FINE_JAG_FREQ.length) * FINE_JAG_AMP_PX;
+
+  return coarse + fine;
+}
+
+// Clearing: the massif sits under a permanent haze veil near its own crest
+// (drawn in BiomeManager -- "can't quite see all of it" is doing real work
+// for the megalophobia read on its own), but a rare, brief window lets that
+// veil thin all the way out and hands the player its full, uninterrupted
+// silhouette. Sized to land once or twice in a typical song rather than
+// never (too rare to ever land) or constantly (a permanent clearing is just
+// the new baseline, not an event).
+export const MASSIF_CLEARING_PERIOD_SEC = 80;
+
+/** 0..1, mostly 0 (hazy) with a brief, rare rise to 1 (fully clear) once per
+ *  MASSIF_CLEARING_PERIOD_SEC. The high power keeps the clear window narrow
+ *  -- a spike, not half the cycle spent clearing. */
+export function massifClearing01(tSec) {
+  const phase = (((tSec % MASSIF_CLEARING_PERIOD_SEC) + MASSIF_CLEARING_PERIOD_SEC) % MASSIF_CLEARING_PERIOD_SEC) / MASSIF_CLEARING_PERIOD_SEC;
+  return Math.max(0, Math.sin(phase * Math.PI)) ** 10;
+}
+
+// Scale markers: the actual "occasionally perceived in a way that makes its
+// raw size known" mechanic. A tiny, fast-drifting silhouette (a bird, a
+// ship -- something the player's eye already knows the true size of)
+// crossing the massif's face at ordinary parallax speed, against a backdrop
+// crawling at 1/30th that rate, IS the scale reveal: the comparison does the
+// work no amount of raw height ever could on its own.
+export const MASSIF_MARKER_SPEED_PX_S = 240;
+export const MASSIF_MARKER_LIFE_SEC = 7;
+export const MASSIF_MARKER_MIN_GAP_SEC = 16;
+export const MASSIF_MARKER_MAX_GAP_SEC = 40;
+
+/** Seconds until the next marker should spawn, drawn from the seeded RNG
+ *  the caller owns (so it's deterministic per song/seed like everything
+ *  else here, not Math.random). */
+export function nextMassifMarkerDelaySec(rand) {
+  return MASSIF_MARKER_MIN_GAP_SEC + rand() * (MASSIF_MARKER_MAX_GAP_SEC - MASSIF_MARKER_MIN_GAP_SEC);
 }

@@ -31,6 +31,7 @@ import { CodaDirector } from './CodaDirector.js';
 import { FilmFinish } from '../render/FilmFinish.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { FractureEngine } from '../world/FractureEngine.js';
+import { WorldAssembly } from '../world/WorldAssembly.js';
 import { GroundField } from '../world/GroundField.js';
 import { PerfGovernor } from '../render/PerfGovernor.js';
 import { HighlightReel } from '../render/HighlightReel.js';
@@ -41,6 +42,8 @@ import { TapJudge } from './TapJudge.js';
 import { ScoreKeeper } from './ScoreKeeper.js';
 import { PhraseTracker } from '../core/PhraseTracker.js';
 import { AirJumpSequencer } from './AirJumpSequencer.js';
+import { RidgeAnchor } from './RidgeAnchor.js';
+import { ParallelUniverseDirector } from './ParallelUniverseDirector.js';
 import { FeverMeter } from './FeverMeter.js';
 import { LatencyCalibrator } from './LatencyCalibrator.js';
 import { SyncMonitor } from './SyncMonitor.js';
@@ -152,6 +155,16 @@ export class Simulation {
     // autocorrelation upgrade in PhraseTracker) paces the double-jump budget.
     this.phrases = new PhraseTracker(conductor.barGrid, energyCurves);
     this.airSeq = new AirJumpSequencer(this.phrases);
+    // Midio takes his cue from the furthest range: he only leaves the ground
+    // while that skyline is heaved up near the top of its swing, and performs
+    // the rest of the chart on foot. See RidgeAnchor.js for why.
+    this.ridgeAnchor = new RidgeAnchor();
+    // Each section drifts into a slightly different "parallel" universe --
+    // same biome, cosmetically different constants (haze/wind/hue/terrain
+    // dance amplitude), plus a brief camera reframe right at the boundary.
+    // See ParallelUniverseDirector.js for why nothing here touches jump
+    // clearance physics.
+    this.parallelUniverse = new ParallelUniverseDirector();
     // Steady accurate taps × song energy = how insane the visuals get.
     this.fever = new FeverMeter();
     // Steady-but-biased taps are pipeline latency, not player error: the
@@ -223,6 +236,8 @@ export class Simulation {
       canvasWidth, canvasHeight, songSeed, durationMs: conductor.durationMs,
       energyCurves,
     });
+    // The opening's counterpart to the finale's shatter -- see WorldAssembly.js.
+    this.assembly = new WorldAssembly({ canvasWidth, canvasHeight, songSeed });
 
     // Orogeny: the mountains visibly build across the song, peaking at its
     // energy climax, then subside through the rest of the runtime.
@@ -419,7 +434,9 @@ export class Simulation {
       // Hop on hold ticks when grounded so multi-second rolls don't freeze
       // him after the opening jump lands. Obstacles are excluded from hold
       // spans, so these hops stay clearable-safe.
-      if (evt.kind === 'holdTick' && !this.jump.airborne) {
+      // Same far-range gate the chart taps go through (RidgeAnchor.js): a
+      // roll under a sunk skyline is danced out on the ground, not hopped.
+      if (evt.kind === 'holdTick' && !this.jump.airborne && this.ridgeAnchor.open) {
         this.jump.onPlayerTap({ tMs: evt.tMs, vel: 0.55 });
       }
       this.scoreKeeper.applyEvent(evt, this.comboSystem.displayM);
@@ -430,39 +447,22 @@ export class Simulation {
           if (evt.tier === 'sour') {
             this.impactFX.judgment(this.worldX, this.midio.groundY, 'sour', particleMul);
             this.camera.shake(2.5);
-            this.sfx?.judgment('sour', this.vibe.tonic, this.vibe.tonicConfidence);
           } else if (evt.tier) { // tier null = late-armed hold: the glow ramp is its own cue
             this.impactFX.judgment(this.worldX, this.midio.groundY, evt.tier, particleMul);
             this.comboSystem.sustain(evt.tMs); // a clean press keeps the combo warm through its airtime
             if (evt.tier === 'perfect') this.performer.goldFlash = 1;
-            this.sfx?.judgment(evt.tier, this.vibe.tonic, this.vibe.tonicConfidence);
           }
           break;
         case 'sour':
           this.impactFX.judgment(this.worldX, this.midio.groundY, 'sour', particleMul);
           this.camera.shake(2.5);
-          this.sfx?.judgment('sour', this.vibe.tonic, this.vibe.tonicConfidence);
           break;
         case 'holdComplete':
           this.impactFX.splat(this.worldX, this.midio.groundY);
           this.impactFX.ignite(this.worldX, this.midio.groundY);
-          this.sfx?.holdComplete(this.vibe.tonic, this.vibe.tonicConfidence);
           break;
         case 'holdChoke':
           this.camera.shake(3);
-          this.sfx?.holdChoke();
-          break;
-        // 'miss' and 'holdTick' are deliberately quiet on the VISUAL side
-        // (see the comments above this switch), but SfxSynth authors a
-        // dedicated cue for each -- a soft downward slide for a note that
-        // slid past untapped, a pentatonic climb per paid tick -- and
-        // nothing was ever calling them. sfx is optional (null until
-        // bootAudio() finishes in main.js), same guard as every case above.
-        case 'miss':
-          this.sfx?.miss();
-          break;
-        case 'holdTick':
-          this.sfx?.holdTick(evt.tickIdx, this.vibe.tonic, this.vibe.tonicConfidence);
           break;
         default:
           break;
@@ -587,6 +587,13 @@ export class Simulation {
     this._applyCues(nowMs);
     this._driveAutoplay(nowMs);
 
+    // The far skyline's swell at Midio's own column decides whether the
+    // notes about to drain become leaps or footwork. Read off last frame's
+    // biome state (biomes.update runs later in this step) -- a 16ms lag on a
+    // ~9s swell is not a thing anyone can see.
+    this.ridgeAnchor.update(this.biomes.farRidgeSwell01(this.midio.screenX), dtSec);
+    this.midio.ridgeBob = this.ridgeAnchor.bobPx;
+
     // Drain autoplay presses stamped up to this step's time. Hold notes
     // still score as slides once grounded (performer hold pose), but the
     // opening press of a roll ALWAYS launches — otherwise dense bass rolls
@@ -617,15 +624,23 @@ export class Simulation {
         // budgeted per 4-/8-measure phrase; if the budget is spent (or the
         // air jump declines), force-relaunch via onPlayerTap so the chart
         // beat is never swallowed.
+        // Gated on the far range (RidgeAnchor.js): while that skyline has
+        // sunk away, the note is still judged above -- perfect, combo
+        // intact -- but he stays on the ground and performs it there
+        // (MidioPerformer's grounded strut/stomp dip picks it up for free).
+        // An arc already in the air is never cut short by the gate closing;
+        // it lands on schedule as always.
         let performed = false;
-        if (this.jump.airborne) {
-          const grant = this.airSeq.tryConsume(ev.tMs);
-          if (grant) {
-            performed = this.jump.airJump(tapEvt, grant.boostMul, grant);
-            if (!performed) this.airSeq.refund(); // landed by tMs after all
+        if (this.ridgeAnchor.open) {
+          if (this.jump.airborne) {
+            const grant = this.airSeq.tryConsume(ev.tMs);
+            if (grant) {
+              performed = this.jump.airJump(tapEvt, grant.boostMul, grant);
+              if (!performed) this.airSeq.refund(); // landed by tMs after all
+            }
           }
+          if (!performed) this.jump.onPlayerTap(tapEvt);
         }
-        if (!performed) this.jump.onPlayerTap(tapEvt);
       } else {
         this.judge.onTapUp(ev.tMs);
       }
@@ -695,6 +710,12 @@ export class Simulation {
     // against this song's own dynamic range) decides how eager they are:
     // a quiet section change usually passes without a flourish.
     if (this.biomes.sectionJustChanged) this.ensemble.maybeDisc(nowMs, 'section', this.vibe.epic);
+    // Same cue rolls the world into its next "parallel universe" (see
+    // ParallelUniverseDirector.js): a seed keyed off the song seed and the
+    // section index, so the same song always drifts through the same
+    // sequence of universes on replay.
+    if (this.biomes.sectionJustChanged) this.parallelUniverse.shift(`${this.songSeed}:${this.biomes._lastSectionIdx}`);
+    this.parallelUniverse.update(dtSec);
     if (this._pendingDiscReason) {
       this.ensemble.maybeDisc(nowMs, this._pendingDiscReason, this.vibe.epic);
       this._pendingDiscReason = null;
@@ -745,7 +766,7 @@ export class Simulation {
       this.performer.onLanding(nowMs, this.comboSystem.justClean, this.comboSystem.displayM, I);
       this.performer.onStreak(this.comboSystem.streak, nowMs);
       this.scoreKeeper.noteStreak(this.comboSystem.streak);
-      this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera);
+      this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera, this.perf.particleMul);
       this.groundField.impulse(this.worldX, I, nowMs); // a shockwave ripples the terrain outward from the landing
       this.rippleFX.trigger(this.worldX, this.midio.groundY, I); // the screen-space visual echo of that shockwave
       // The world visibly answers back: a landing kicks up whatever the
@@ -756,6 +777,7 @@ export class Simulation {
       this.rippleFX.landingPuff(
         this.worldX, this.midio.groundY, I,
         this.biomes.floodActive ? '#55c8f0' : this.biomes.currentParticleColor(),
+        this.perf.particleMul,
       );
       if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY);
       this.fracture.registerImpact(I);
@@ -809,10 +831,18 @@ export class Simulation {
     // triggering here (before their own update() calls below) means a
     // freshly-launched excursion starts animating in this very frame
     // rather than waiting one extra tick.
+    const burrowWasActive = this.broshi.burrow.active;
     this.excursions.update(nowMs, dtSec, {
       vibe: this.vibe, calm: this.calm, hype: this.hype, energyCurves: this.energyCurves,
       conductor: this.conductor, midasus: this.midasus, broshi: this.broshi, worldX: this.worldX,
     });
+    // He punches through the ground on the way down -- the screen itself
+    // takes a small crack where he broke the surface, same glass-fracture
+    // language FractureEngine already draws elsewhere (see also justSurfaced
+    // below, the eruption's matching crack on the way back up).
+    if (!burrowWasActive && this.broshi.burrow.active) {
+      this.fracture.spawnSurfaceCrack(this.broshi.screenX, this.midio.groundY, this.camera);
+    }
 
     // The cursor idles out after a couple of seconds of stillness.
     if (this.pointer.active && nowMs - this.pointer.lastMoveMs > 2500) this.pointer.active = false;
@@ -884,7 +914,11 @@ export class Simulation {
       tumbleRotX: this.ensemble.rotX(1), tumbleRotY: this.ensemble.rotY(1),
       // Shared build-up swell (EnsembleDirector.swell) -- see Midasus/Renderer for the other two.
       swell: this.ensemble.swell(1),
-    }, this.groundField);
+    }, this.groundField, this.perf.particleMul);
+    // The eruption's matching crack, on his way back up through the pane.
+    if (this.broshi.burrow.justSurfaced) {
+      this.fracture.spawnSurfaceCrack(this.broshi.screenX, this.midio.groundY, this.camera);
+    }
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
     // Enemy-wave combat: fixed defender join order (Midasus, Broshi, Midio)
@@ -910,6 +944,18 @@ export class Simulation {
     this.biomes.midioX = this.midio.screenX; // the light rig's drop-snap points at him
     this.biomes.midioY = this.midio.renderY;
     this.biomes.weatherState = this.weather.state; // music-reactive rain/snow/petals/embers, decoupled from biome
+    // Parallel-universe drift (ParallelUniverseDirector): a per-section,
+    // cosmetics-only variation on top of everything above.
+    this.biomes.universeHueDeg = this.parallelUniverse.hueDeg;
+    this.biomes.universeHazeMul = this.parallelUniverse.hazeMul;
+    this.biomes.universeWindMul = this.parallelUniverse.windMul;
+    this.biomes.universeTerrainMul = this.parallelUniverse.terrainMul;
+    // As the camera pulls back, the layers lean as if the vantage point
+    // itself is rising past them (BiomeManager scales this per layer by
+    // depth) -- read after camera.update() runs later this step, one frame
+    // behind like every other biomes.* field set here, same as the
+    // camera-driven fields above.
+    this.biomes.floatTilt = this.camera.floatTilt;
     if (this.performer.lastMilestone) {
       this.biomes.milestoneAtMs = this.performer.lastMilestone.atMs;
       this.biomes.milestoneIdx = this.performer.lastMilestone.idx;
@@ -918,6 +964,7 @@ export class Simulation {
     this.filmFinish.update(nowMs, dtSec, this.calm.level, this.biomes.budget, this.hype);
     if (this.biomes.cutFlashJustFired) { this.camera.shake(3.5); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
+    this.assembly.update(nowMs);
     // Finale silence is owned by main.js (has AudioEngine) — flag only here.
 
     // Orogeny: the mountains build toward the song's energy climax, then
@@ -936,7 +983,21 @@ export class Simulation {
     }
 
     this.gnat.update(nowMs, dtSec, this.calm.level);
-    this.camera.update(dtSec, this.calm.level, this.reducedFlash);
+    // Off-frame pull-back: only the UNINTENDED case counts, so a performer
+    // mid-excursion (Midasus's voyage, Broshi's burrow) is left out here --
+    // those are authored departures and chasing them with the camera would
+    // fight the exit's own effect.
+    const onFrameXs = [this.midio.screenX];
+    if (!this.broshi.burrow.active) onFrameXs.push(this.broshi.screenX);
+    if (!this.midasus.voyage.active) onFrameXs.push(this.midasus.p.x);
+    this.camera.setZoomTarget(onFrameXs, this.stageW);
+    // Beat sway input: ms since the most recent beat-grid crossing, from the
+    // SAME anchor (live song tempo from the first beat, refined by any
+    // player taps) everything else that locks to the beat already reads.
+    const beatPeriodMs = Math.max(1, this.beatAnchor.periodMs);
+    const beatTauMs = ((nowMs - this.beatAnchor.anchorMs) % beatPeriodMs + beatPeriodMs) % beatPeriodMs;
+    const beatEnergy = Math.max(this.vibe.epic, this.hype.surge);
+    this.camera.update(dtSec, this.calm.level, this.reducedFlash, beatTauMs, beatEnergy, this.parallelUniverse.pulse);
     this.paramBus.step();
 
     this.curr = this._snapshot();

@@ -11,3 +11,8 @@ node_modules/
 # fonts; the folder itself stays tracked via the README.
 /soundfonts/*.sf2
 /soundfonts/*.zip
+
+# slskd downloads / local secrets
+/data/slskd-downloads/**
+!/data/slskd-downloads/.gitkeep
+.env

@@ -177,20 +177,25 @@ export function generateSilhouette({
   ctx.closePath();
 
   if (shadeMode === 'rendered') {
-    // Soft volumetric mountain: vertical gradient only (no clip/source-atop
-    // pass) so baking dozens of strips at song start stays cheap on the
-    // main thread — the DKC pre-render read without a multi-second stall.
-    const foot = shiftLightness(color, -0.14);
-    const mid = shiftLightness(color, -0.02);
-    const crest = shiftLightness(color, 0.12);
-    const lit = shiftLightness(color, 0.18);
-    const grad = ctx.createLinearGradient(0, gradTop, 0, height);
-    grad.addColorStop(0, lit);
-    grad.addColorStop(0.2, crest);
-    grad.addColorStop(0.5, mid);
-    grad.addColorStop(0.85, foot);
-    grad.addColorStop(1, shiftLightness(color, -0.2));
-    ctx.fillStyle = grad;
+    // Flat mid-tone fill -- NOT a baked vertical gradient. This bitmap gets
+    // sliced into DANCE_COL_W columns and each column is blitted at its own
+    // vertical offset (BiomeManager._drawDancingStrip, the mountains'
+    // dance). A gradient baked in here has its color keyed to LOCAL strip Y;
+    // once two neighbouring columns are offset differently, the same
+    // on-screen row samples two different points of that gradient, which is
+    // a hard vertical shade step marching across the range as it dances
+    // (worse exactly when the dance is strongest, e.g. mid-transition with
+    // two ranges cross-fading and both dancing). Halving the column width
+    // once already shrank the step; it could never remove it, because the
+    // cause is the bake, not the slicing.
+    //
+    // The depth this gradient used to provide is now painted LIVE, in
+    // screen space, by BiomeManager._drawRidgeVolume right after this strip
+    // is blitted -- it already existed for exactly this reason (see its own
+    // doc comment) and now carries the full shading load instead of merely
+    // adding contrast on top of a still-seamed bake. A flat fill has no
+    // per-row color variation at all, so there is nothing left to seam.
+    ctx.fillStyle = shiftLightness(color, -0.02); // same "mid" tone as before
     ctx.fill();
 
     // Soft specular catch-light along the skyline — very low alpha, no hard

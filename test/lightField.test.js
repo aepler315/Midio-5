@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeLight, celestialScreenPos, lightDirTo } from '../src/render/LightField.js';
+import { computeLight, celestialScreenPos, lightDirTo, groundGlowLights, characterGlowLight } from '../src/render/LightField.js';
+
+test('computeLight carries celestialYFrac through so contact shadows can stretch at the horizon', () => {
+  const light = computeLight({ canvasWidth: 1280, canvasHeight: 720, celestialYFrac: 0.22, budget: 1 });
+  assert.equal(light.celestialYFrac, 0.22);
+});
 
 test('light position tracks celestialYFrac and matches the celestial\'s own screen anchor', () => {
   const params = { canvasWidth: 1280, canvasHeight: 720, celestialYFrac: 0.22, budget: 1 };
@@ -49,4 +54,38 @@ test('lightDirTo returns a unit vector pointing from the light toward the target
   assert.ok(Math.abs(dir.x - 0.6) < 1e-9);
   assert.ok(Math.abs(dir.y - 0.8) < 1e-9);
   assert.ok(Math.abs(Math.hypot(dir.x, dir.y) - 1) < 1e-9);
+});
+
+// --- Secondary lights (dynamic ground-glow / character glow) ---
+
+test('groundGlowLights is empty when no glow is active, and never throws on missing input', () => {
+  assert.deepEqual(groundGlowLights([], '#ffcc66'), []);
+  assert.deepEqual(groundGlowLights(null, '#ffcc66'), []);
+});
+
+test('groundGlowLights carries each glow\'s screen position and the halo color, scaled down from the raw envelope', () => {
+  const [l] = groundGlowLights([{ x: 200, y: 480, intensity: 1 }], '#ffcc66');
+  assert.equal(l.x, 200);
+  assert.equal(l.y, 480);
+  assert.equal(l.colorHex, '#ffcc66');
+  assert.ok(l.intensity > 0 && l.intensity < 1, 'a ground pulse should be modest, not as strong as a raw envelope of 1');
+  assert.ok(l.radius > 0 && Number.isFinite(l.radius), 'a ground light must have a bounded, finite reach');
+});
+
+test('groundGlowLights drops glows below a negligible intensity instead of emitting a dead light', () => {
+  const lights = groundGlowLights([{ x: 0, y: 0, intensity: 0.001 }], '#ffcc66');
+  assert.deepEqual(lights, []);
+});
+
+test('characterGlowLight returns null below a negligible intensity, so callers can filter with a plain truthy check', () => {
+  assert.equal(characterGlowLight(10, 20, 200, 0.01), null);
+});
+
+test('characterGlowLight carries hueDeg directly (no hex round-trip) plus a bounded radius', () => {
+  const l = characterGlowLight(10, 20, 200, 0.5);
+  assert.equal(l.x, 10);
+  assert.equal(l.y, 20);
+  assert.equal(l.hueDeg, 200);
+  assert.equal(l.intensity, 0.5);
+  assert.ok(l.radius > 0 && Number.isFinite(l.radius));
 });
