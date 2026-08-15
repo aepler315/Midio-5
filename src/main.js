@@ -38,6 +38,9 @@ import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
 import {
+  getSoulseekUser, setSoulseekUser, soulseekConnect, soulseekStatus,
+  soulseekSearch, soulseekFetchAsFile, SoulseekError,
+} from './net/SoulseekSource.js';
   getJamendoClientId, setJamendoClientId, searchTracks as jamendoSearchTracks,
   fetchTrackAsFile as jamendoFetchTrackAsFile, JamendoError,
 } from './net/JamendoSource.js';
@@ -1264,6 +1267,75 @@ fileInputEl.addEventListener('change', (e) => {
 });
 demoBtnEl.addEventListener('click', () => loadDemo());
 
+// Soulseek search (SoulseekSource.js): a peer-network alternative to
+// dropping a local file. The browser talks to the local dev-server bridge
+// (tools/serve.js), which holds the Soulseek connection; downloaded audio
+// is handed to the exact same handleFiles() path a local drop uses.
+const soulseekUserInputEl = document.getElementById('soulseekUserInput');
+const soulseekPassInputEl = document.getElementById('soulseekPassInput');
+const soulseekConnectBtnEl = document.getElementById('soulseekConnectBtn');
+const soulseekSearchInputEl = document.getElementById('soulseekSearchInput');
+const soulseekSearchBtnEl = document.getElementById('soulseekSearchBtn');
+const soulseekStatusEl = document.getElementById('soulseekStatus');
+const soulseekResultsEl = document.getElementById('soulseekResults');
+
+if (soulseekUserInputEl) soulseekUserInputEl.value = getSoulseekUser();
+
+// Reflect the bridge's connection state on load (the server may already be
+// connected from a previous session's search).
+soulseekStatus().then((s) => {
+  if (s && s.connected && soulseekConnectBtnEl) {
+    soulseekConnectBtnEl.textContent = 'Connected';
+  }
+}).catch(() => { /* bridge unreachable — the connect button stays as-is */ });
+
+function setSoulseekStatus(text, isError = false) {
+  if (!soulseekStatusEl) return;
+  soulseekStatusEl.textContent = text || '';
+  soulseekStatusEl.classList.toggle('hidden', !text);
+  soulseekStatusEl.classList.toggle('jamendoStatusError', !!isError);
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return '';
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
+}
+
+async function runSoulseekConnect() {
+  const user = soulseekUserInputEl?.value.trim();
+  const pass = soulseekPassInputEl?.value || '';
+  if (!user || !pass) {
+    setSoulseekStatus('Enter your Soulseek username and password.', true);
+    return;
+  }
+  setSoulseekStatus('Connecting…');
+  if (soulseekConnectBtnEl) soulseekConnectBtnEl.disabled = true;
+  try {
+    await soulseekConnect(user, pass);
+    setSoulseekStatus(`Connected as ${user}.`);
+  } catch (err) {
+    setSoulseekStatus(err instanceof SoulseekError ? err.message : `Connect failed: ${err.message}`, true);
+  } finally {
+    if (soulseekConnectBtnEl) soulseekConnectBtnEl.disabled = false;
+  }
+}
+
+async function runSoulseekSearch() {
+  const q = soulseekSearchInputEl?.value.trim();
+  if (!q || !soulseekResultsEl) return;
+  soulseekResultsEl.innerHTML = '';
+  setSoulseekStatus('Searching…');
+  let results;
+  try {
+    results = await soulseekSearch(q);
+  } catch (err) {
+    setSoulseekStatus(err instanceof SoulseekError ? err.message : `Search failed: ${err.message}`, true);
+    return;
+  }
+  if (!results.length) { setSoulseekStatus('No results.'); return; }
+  setSoulseekStatus(`${results.length} result${results.length === 1 ? '' : 's'} — pick one to download & play.`);
+  for (const r of results) {
 // Soulseek-powered song search on the title screen. Results download through
 // the local bridge (/api/soulseek/*) and feed the same handleFiles path as drops.
 const slskPanelEl = document.getElementById('slskPanel');
@@ -1330,6 +1402,31 @@ async function runJamendoSearch() {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'ghostbtn jamendoResultBtn';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'slskResultName';
+    nameSpan.textContent = r.name;
+    const metaSpan = document.createElement('span');
+    metaSpan.className = 'slskResultMeta';
+    const bits = r.bitrate ? ` · ${r.bitrate} kbps` : '';
+    const size = formatFileSize(r.size);
+    metaSpan.textContent = `${r.user}${bits}${size ? ` · ${size}` : ''}${r.slots ? '' : ' · no free slot'}`;
+    btn.appendChild(nameSpan);
+    btn.appendChild(metaSpan);
+    btn.addEventListener('click', () => playSoulseekResult(r, btn));
+    li.appendChild(btn);
+    soulseekResultsEl.appendChild(li);
+  }
+}
+
+async function playSoulseekResult(result, btnEl) {
+  setSoulseekStatus(`Downloading "${result.name}"…`);
+  if (btnEl) btnEl.disabled = true;
+  try {
+    const file = await soulseekFetchAsFile(result);
+    setSoulseekStatus('');
+    handleFiles([file]);
+  } catch (err) {
+    setSoulseekStatus(err instanceof SoulseekError ? err.message : `Could not load "${result.name}": ${err.message}`, true);
     btn.title = track.licenseCcUrl ? `Creative Commons license: ${track.licenseCcUrl}` : '';
     btn.textContent = `${track.name} — ${track.artist} (${formatTrackDuration(track.duration)})`;
     btn.addEventListener('click', () => playJamendoTrack(track, btn));
@@ -1352,6 +1449,13 @@ async function playJamendoTrack(track, btnEl) {
   }
 }
 
+soulseekConnectBtnEl?.addEventListener('click', runSoulseekConnect);
+soulseekSearchBtnEl?.addEventListener('click', runSoulseekSearch);
+soulseekSearchInputEl?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); runSoulseekSearch(); }
+});
+soulseekPassInputEl?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); runSoulseekConnect(); }
 jamendoSearchBtnEl?.addEventListener('click', runJamendoSearch);
 jamendoSearchInputEl?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); runJamendoSearch(); }

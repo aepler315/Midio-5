@@ -444,6 +444,7 @@ html, body {
 }
 .titleAdvanced .hint a { color: rgba(255, 215, 106, 0.85); }
 
+/* Music-search rows (Jamendo/Soulseek panels) */
 .jamendoRow {
   display: flex;
   align-items: center;
@@ -482,6 +483,28 @@ html, body {
 .jamendoResultBtn {
   width: 100%;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Soulseek results carry peer metadata (user, bitrate, speed) — keep the
+   button label on one line and show the peer line beneath it. */
+.slskResult {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  overflow: hidden;
+}
+.slskResultName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slskResultMeta {
+  font-size: 0.7rem;
+  opacity: 0.55;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
