@@ -46,7 +46,6 @@ import {
   fetchTrackAsFile as jamendoFetchTrackAsFile, JamendoError,
 } from './net/JamendoSource.js';
 import { visualNow } from './core/ChoreoClock.js';
-import { SoulseekSearch } from './soulseek/SoulseekSearch.js';
 
 
 const STEP_MS = 1000 / 120;

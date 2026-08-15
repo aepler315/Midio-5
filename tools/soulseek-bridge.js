@@ -23,7 +23,16 @@ export class SoulseekBridgeError extends Error {}
  *   tests; `tmpDir` is where downloads land (defaults to the OS temp dir).
  */
 export function createSoulseekBridge({ slsk = null, tmpDir = os.tmpdir() } = {}) {
-  const clientLib = slsk || require('slsk-client');
+  // slsk-client is an optional dependency (the feature is a bonus source of
+  // songs, not core to the app), so it's only required at first actual use —
+  // never at server startup. A dev box that never installed it can still
+  // boot and play local/dropped files; only the Soulseek panel itself fails,
+  // with a clear error, instead of the whole server crashing on import.
+  let requiredLib = slsk;
+  function lib() {
+    if (!requiredLib) requiredLib = require('slsk-client');
+    return requiredLib;
+  }
   let client = null;
   let user = '';
 
@@ -41,6 +50,13 @@ export function createSoulseekBridge({ slsk = null, tmpDir = os.tmpdir() } = {})
       }
       if (client && user === u) {
         resolve({ user: u });
+        return;
+      }
+      let clientLib;
+      try {
+        clientLib = lib();
+      } catch (err) {
+        reject(new SoulseekBridgeError(`Soulseek support is not installed on this server: ${err.message}`));
         return;
       }
       if (client) {
@@ -131,7 +147,7 @@ export function createSoulseekBridge({ slsk = null, tmpDir = os.tmpdir() } = {})
 
   function disconnect() {
     if (client) {
-      try { clientLib.disconnect(); } catch { /* ignore */ }
+      try { requiredLib.disconnect(); } catch { /* ignore */ }
       client = null;
       user = '';
     }
