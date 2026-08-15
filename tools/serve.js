@@ -6,14 +6,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSoulseekBridge, SoulseekBridgeError } from './soulseek-bridge.js';
-import {
-  getStatus,
-  setConfig,
-  startSearch,
-  getSearch,
-  downloadResult,
-  listDemoCatalog,
-} from './soulseek-bridge.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -51,32 +43,6 @@ function sendJson(res, status, obj) {
   res.end(body);
 }
 
-function readBody(req, limit = 2_000_000) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    req.on('data', (c) => {
-      size += c.length;
-      if (size > limit) {
-        reject(new Error('Body too large'));
-        req.destroy();
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf8');
-      if (!raw) return resolve(null);
-      try {
-        resolve(JSON.parse(raw));
-      } catch {
-        reject(new Error('Invalid JSON body'));
-      }
-    });
-    req.on('error', reject);
-  });
-}
-
 async function handleApi(req, res, reqPath) {
   // CORS for local tooling
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -88,70 +54,8 @@ async function handleApi(req, res, reqPath) {
     return true;
   }
 
-  try {
-    if (reqPath === '/api/soulseek/status' && req.method === 'GET') {
-      sendJson(res, 200, await getStatus());
-      return true;
-    }
-
-    if (reqPath === '/api/soulseek/config' && req.method === 'POST') {
-      const body = await readBody(req);
-      const status = setConfig(body || {});
-      sendJson(res, 200, { ok: true, ...status, ...(await getStatus()) });
-      return true;
-    }
-
-    if (reqPath === '/api/soulseek/config' && req.method === 'DELETE') {
-      setConfig({ mode: 'clear' });
-      sendJson(res, 200, { ok: true, ...(await getStatus()) });
-      return true;
-    }
-
-    if (reqPath === '/api/soulseek/demo' && req.method === 'GET') {
-      sendJson(res, 200, { tracks: listDemoCatalog() });
-      return true;
-    }
-
-    if (reqPath === '/api/soulseek/search' && req.method === 'POST') {
-      const body = await readBody(req);
-      const query = body?.query || body?.q || body?.searchText || '';
-      const started = await startSearch(query);
-      sendJson(res, 200, started);
-      return true;
-    }
-
-    // GET /api/soulseek/search/:id
-    const searchMatch = reqPath.match(/^\/api\/soulseek\/search\/([^/]+)$/);
-    if (searchMatch && req.method === 'GET') {
-      const data = getSearch(decodeURIComponent(searchMatch[1]));
-      if (!data) {
-        sendJson(res, 404, { error: 'Search not found' });
-        return true;
-      }
-      sendJson(res, 200, data);
-      return true;
-    }
-
-    if (reqPath === '/api/soulseek/download' && req.method === 'POST') {
-      const body = await readBody(req);
-      const item = body?.item || body;
-      const result = await downloadResult(item);
-      res.writeHead(200, {
-        'Content-Type': result.contentType || 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="${result.filename.replace(/"/g, '')}"`,
-        'X-Filename': encodeURIComponent(result.filename),
-        'Cache-Control': 'no-store',
-      });
-      res.end(result.buffer);
-      return true;
-    }
-
-    if (reqPath.startsWith('/api/')) {
-      sendJson(res, 404, { error: 'Not found', path: reqPath });
-      return true;
-    }
-  } catch (err) {
-    sendJson(res, 500, { error: err.message || String(err) });
+  if (reqPath.startsWith('/api/')) {
+    sendJson(res, 404, { error: 'Not found', path: reqPath });
     return true;
   }
   return false;
@@ -222,11 +126,6 @@ function readJsonBody(req) {
   });
 }
 
-function sendJson(res, status, payload) {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
-  res.end(JSON.stringify(payload));
-}
-
 async function handleSoulseekApi(req, res, reqPath) {
   const action = reqPath.slice('/api/soulseek/'.length);
   if (req.method === 'GET' && action === 'status') {
@@ -274,10 +173,7 @@ async function handleSoulseekApi(req, res, reqPath) {
   }
 }
 
-server.listen(PORT, () => {
-  console.log(`Super Maudio World dev server running at http://localhost:${PORT}`);
-server.listen(PORT, HOST, async () => {
+server.listen(PORT, HOST, () => {
   console.log(`Super Maudio World + Soulseek at http://${HOST}:${PORT}`);
-  const status = await getStatus();
-  console.log(`Soulseek backend: ${status.mode} — ${status.note}`);
+  console.log(`Soulseek backend: ${soulseek.isConnected() ? 'connected' : 'not connected — use the loader panel to sign in'}`);
 });
