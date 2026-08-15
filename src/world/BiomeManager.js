@@ -5,7 +5,10 @@
 import { BIOMES } from './BiomeProfiles.js';
 import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
 import { ParticleField } from './ParticleField.js';
-import { terrainFacing, RELIEF_LIT_ALPHA, RELIEF_SHADE_ALPHA, CREST_BASE_ALPHA, CREST_FACING_K } from './TerrainRelief.js';
+import {
+  sampleTerrainCurve, curveFacing, facingColorStops,
+  RELIEF_FALLOFF_PX,
+} from './TerrainRelief.js';
 import { Mandala } from './Mandala.js';
 import { CymaticField } from './CymaticField.js';
 import { KuramotoSwarm } from './KuramotoSwarm.js';
@@ -3793,24 +3796,50 @@ export class BiomeManager {
 
       // Terrain relief: the ground plane answers the same light the
       // mountains already do. Clip to the ridge (same discipline as
-      // `_drawRidgeVolume`) and paint a per-bar column, lifted toward
-      // SHOULDER_LIT where the slope faces the celestial and sunk toward
-      // black where it turns away. Gated on rimLightEnabled so the deep
-      // rungs pay nothing; omit the light and this is a no-op.
+      // `_drawRidgeVolume`) and paint two horizontal gradients -- lit
+      // and shade as separate passes, so the zero-crossing stays
+      // transparent instead of interpolating through muddy grey.
+      // Facing is sampled off the same quadratic `_terrainTopPath`
+      // draws, every ~10px, so the gradient has no slice-boundary
+      // step. A cover-repaint of `groundColor` then fades the shading
+      // out within RELIEF_FALLOFF_PX of the ridge: surface catch, not
+      // a wall of tint to the bottom of the frame. Gated on
+      // rimLightEnabled so the deep rungs pay nothing; omit the light
+      // and this is a no-op (byte-identical to the flat fill above).
       const rimOn = this._perf ? this._perf.rimLightEnabled : true;
-      const facing = (rimOn && this.light) ? terrainFacing(bars, this.light) : null;
-      if (facing) {
+      const reliefSamples = (rimOn && this.light)
+        ? sampleTerrainCurve(bars)
+        : null;
+      const facing = reliefSamples ? curveFacing(reliefSamples, this.light) : null;
+      if (facing && facing.some((f) => Math.abs(f) > 0.01)) {
         ctx.save();
         ctx.clip(fillPath);
-        for (let i = 0; i < bars.length; i++) {
-          const f = facing[i];
-          if (!(Math.abs(f) > 0.01)) continue;
-          const bar = bars[i];
-          ctx.fillStyle = f > 0
-            ? `rgba(255,248,230,${(RELIEF_LIT_ALPHA * f).toFixed(3)})`
-            : `rgba(0,0,0,${(RELIEF_SHADE_ALPHA * -f).toFixed(3)})`;
-          ctx.fillRect(bar.x, bar.y, bar.width, canvas.height - bar.y);
+        let minTop = canvas.height;
+        for (const bar of bars) if (bar.y < minTop) minTop = bar.y;
+        const x0 = 0;
+        const x1 = canvas.width;
+        const litStops = facingColorStops(reliefSamples, facing, x0, x1, 'lit');
+        const shadeStops = facingColorStops(reliefSamples, facing, x0, x1, 'shade');
+        if (litStops.length >= 2) {
+          const lit = ctx.createLinearGradient(x0, minTop, x1, minTop);
+          for (const s of litStops) lit.addColorStop(s.offset, s.color);
+          ctx.fillStyle = lit;
+          ctx.fillRect(0, minTop, canvas.width, canvas.height - minTop);
         }
+        if (shadeStops.length >= 2) {
+          const shade = ctx.createLinearGradient(x0, minTop, x1, minTop);
+          for (const s of shadeStops) shade.addColorStop(s.offset, s.color);
+          ctx.fillStyle = shade;
+          ctx.fillRect(0, minTop, canvas.width, canvas.height - minTop);
+        }
+        const { r: gr, g: gg, b: gb } = hexToRgb(groundColor);
+        const fade = ctx.createLinearGradient(0, minTop, 0, minTop + RELIEF_FALLOFF_PX);
+        fade.addColorStop(0, `rgba(${gr},${gg},${gb},0)`);
+        fade.addColorStop(1, `rgba(${gr},${gg},${gb},1)`);
+        ctx.fillStyle = fade;
+        ctx.fillRect(0, minTop, canvas.width, RELIEF_FALLOFF_PX);
+        ctx.fillStyle = groundColor;
+        ctx.fillRect(0, minTop + RELIEF_FALLOFF_PX, canvas.width, canvas.height);
         ctx.restore();
       }
 
@@ -3916,23 +3945,25 @@ export class BiomeManager {
       }
 
       if (facing) {
-        // Crest catch: today's 0.18 stroke, per-segment, brightened on the
-        // sun's side of each hump and dimmed on the other. Segmented so a
-        // single path isn't restroked N times at N alphas.
+        // Crest catch: today's 0.18 stroke, one smoothed path, alpha
+        // modulated along the same horizontal gradient the body uses.
+        // A single stroke of `strokePath` keeps the rim on the ridge
+        // it belongs to, instead of N straight segments between bar
+        // centres that don't match the quadratic fill.
+        const crestStops = facingColorStops(
+          reliefSamples, facing, 0, canvas.width, 'crest',
+        );
+        if (crestStops.length >= 2) {
+          const crest = ctx.createLinearGradient(0, 0, canvas.width, 0);
+          for (const s of crestStops) crest.addColorStop(s.offset, s.color);
+          ctx.strokeStyle = crest;
+        } else {
+          ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        }
         ctx.lineWidth = 2;
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
-        for (let i = 0; i < bars.length - 1; i++) {
-          const f = 0.5 * (facing[i] + facing[i + 1]);
-          const a = CREST_BASE_ALPHA * (1 + CREST_FACING_K * f);
-          if (!(a > 0.002)) continue;
-          const a0 = bars[i], a1 = bars[i + 1];
-          ctx.strokeStyle = `rgba(255,255,255,${a.toFixed(3)})`;
-          ctx.beginPath();
-          ctx.moveTo(a0.x + a0.width * 0.5, a0.y);
-          ctx.lineTo(a1.x + a1.width * 0.5, a1.y);
-          ctx.stroke();
-        }
+        ctx.stroke(strokePath);
       } else {
         ctx.strokeStyle = 'rgba(255,255,255,0.18)';
         ctx.lineWidth = 2;
