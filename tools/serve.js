@@ -68,8 +68,12 @@ const server = http.createServer(async (req, res) => {
   // Soulseek bridge API: the browser cannot speak the Soulseek TCP protocol,
   // so the dev server holds the connection. Credentials are sent to the
   // local bridge only (which forwards them to server.slsknet.org).
+  // Two integrations merged onto main both live behind /api/soulseek/*:
+  // the zero-config bridge (soulseek-bridge.mjs, config/demo/poll + free
+  // music) and PR #64's connect-based bridge (soulseek-bridge.js). The
+  // dispatcher routes each request by its path/body shape so both UIs work.
   if (reqPath.startsWith('/api/soulseek/')) {
-    handleSoulseekApi(req, res, reqPath);
+    await handleSoulseekRoute(req, res, reqPath);
     return;
   }
 

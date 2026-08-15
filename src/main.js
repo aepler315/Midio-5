@@ -668,7 +668,7 @@ function backToTitle() {
   completePanelEl.classList.add('hidden');
   hudEl.classList.add('hidden');
   loaderEl.classList.remove('hidden');
-  soulseekSearch?.resetBusy();
+  slskPanelSearch?.resetBusy();
   startTitleBackdrop();
 }
 
@@ -1357,6 +1357,26 @@ async function runSoulseekSearch() {
   }
 }
 
+// Soulseek-powered song search on the title screen (free music by default,
+// optional Soulseek via slskd). Results download through the local bridge
+// (/api/soulseek/*) and feed the same handleFiles path as drops.
+const slskPanelEl = document.getElementById('slskPanel');
+let slskPanelSearch = null;
+if (slskPanelEl) {
+  slskPanelSearch = new SoulseekSearch({
+    root: slskPanelEl,
+    onFiles: (files) => {
+      slskPanelSearch?.resetBusy();
+      handleFiles(files);
+    },
+    onStatus: (msg) => {
+      if (msg && progressEl && !progressEl.classList.contains('hidden')) {
+        // keep progress text for active loads; search has its own status line
+      }
+    },
+  });
+}
+
 // Jamendo search (JamendoSource.js): a legal alternative to dropping a
 // local file -- free, Creative-Commons-licensed tracks, fetched and handed
 // to the exact same handleFiles() path a local drop uses, so nothing
@@ -1448,7 +1468,6 @@ soulseekSearchInputEl?.addEventListener('keydown', (e) => {
 soulseekPassInputEl?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); runSoulseekConnect(); }
 });
-
 jamendoSearchBtnEl?.addEventListener('click', runJamendoSearch);
 jamendoSearchInputEl?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); runJamendoSearch(); }
