@@ -5,7 +5,10 @@
 import { BIOMES } from './BiomeProfiles.js';
 import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
 import { ParticleField } from './ParticleField.js';
-import { terrainFacing, RELIEF_LIT_ALPHA, RELIEF_SHADE_ALPHA, CREST_BASE_ALPHA, CREST_FACING_K } from './TerrainRelief.js';
+import {
+  sampleTerrainCurve, curveFacing, facingColorStops, reliefStripRGBA,
+  RELIEF_FALLOFF_PX,
+} from './TerrainRelief.js';
 import { Mandala } from './Mandala.js';
 import { CymaticField } from './CymaticField.js';
 import { KuramotoSwarm } from './KuramotoSwarm.js';
@@ -1559,7 +1562,7 @@ export class BiomeManager {
     ctx.save();
     if (this.groundField && !isLake) {
       const bars = this.groundField.visibleBars(worldX, originX, canvas.width);
-      const strokePath = this._terrainTopPath(bars, canvas.height, false);
+      const strokePath = this._terrainTopPath(bars, canvas.height, false, canvas.width);
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
       for (const pass of TERRAIN_FOOTING_AO_PASSES) {
@@ -3718,6 +3721,28 @@ export class BiomeManager {
     }
   }
 
+  /** Reused 1×W facing strip + W×falloff band for the ground relief. */
+  _reliefBand(width) {
+    const w = Math.max(1, width | 0);
+    if (typeof document === 'undefined' || !document.createElement) return null;
+    if (!this._reliefScratch || this._reliefScratch.w !== w) {
+      const strip = document.createElement('canvas');
+      strip.width = w;
+      strip.height = 1;
+      const band = document.createElement('canvas');
+      band.width = w;
+      band.height = RELIEF_FALLOFF_PX;
+      this._reliefScratch = {
+        w,
+        strip,
+        stripCtx: strip.getContext('2d', { willReadFrequently: true }),
+        band,
+        bandCtx: band.getContext('2d'),
+      };
+    }
+    return this._reliefScratch;
+  }
+
   /** Builds a smooth curve through each bar's top-center point -- the
    *  quadratic-midpoint technique (each segment's control point is the
    *  sample itself, its endpoint the midpoint to the next sample) turns the
@@ -3726,12 +3751,15 @@ export class BiomeManager {
    *  simulation it always was; this is render-only. `closed` also draws the
    *  two side edges down to `canvas.height` and closes the path, for fills
    *  and clips; the open (stroke) form stops at the last top point. */
-  _terrainTopPath(bars, canvasHeight, closed) {
+  _terrainTopPath(bars, canvasHeight, closed, canvasWidth = null) {
     const path = new Path2D();
     if (bars.length === 0) return path;
     const pts = bars.map((b) => ({ x: b.x + b.width / 2, y: b.y }));
-    const firstBar = bars[0], lastBar = bars[bars.length - 1];
-    if (closed) path.moveTo(firstBar.x, canvasHeight);
+    const lastBar = bars[bars.length - 1];
+    const right = Number.isFinite(canvasWidth)
+      ? Math.max(canvasWidth, lastBar.x + lastBar.width)
+      : lastBar.x + lastBar.width;
+    if (closed) path.moveTo(0, canvasHeight);
     if (closed) path.lineTo(pts[0].x, pts[0].y); else path.moveTo(pts[0].x, pts[0].y);
     for (let i = 0; i < pts.length - 1; i++) {
       const cur = pts[i], next = pts[i + 1];
@@ -3741,8 +3769,8 @@ export class BiomeManager {
     const lastPt = pts[pts.length - 1];
     path.lineTo(lastPt.x, lastPt.y);
     if (closed) {
-      path.lineTo(lastBar.x + lastBar.width, lastPt.y);
-      path.lineTo(lastBar.x + lastBar.width, canvasHeight);
+      path.lineTo(right, lastPt.y);
+      path.lineTo(right, canvasHeight);
       path.closePath();
     }
     return path;
@@ -3786,30 +3814,42 @@ export class BiomeManager {
       // in the background. Rendered as one continuous smoothed ridge (see
       // _terrainTopPath) rather than per-slice rects.
       const bars = this.groundField.visibleBars(worldX, originX, canvas.width);
-      const fillPath = this._terrainTopPath(bars, canvas.height, true);
-      const strokePath = this._terrainTopPath(bars, canvas.height, false);
+      const fillPath = this._terrainTopPath(bars, canvas.height, true, canvas.width);
+      const strokePath = this._terrainTopPath(bars, canvas.height, false, canvas.width);
       ctx.fillStyle = groundColor;
       ctx.fill(fillPath);
 
-      // Terrain relief: the ground plane answers the same light the
-      // mountains already do. Clip to the ridge (same discipline as
-      // `_drawRidgeVolume`) and paint a per-bar column, lifted toward
-      // SHOULDER_LIT where the slope faces the celestial and sunk toward
-      // black where it turns away. Gated on rimLightEnabled so the deep
-      // rungs pay nothing; omit the light and this is a no-op.
+      // Terrain relief: clip to the ridge and stamp a 1px-tall facing
+      // strip, stretched and faded with depth. A per-pixel strip cannot
+      // grow a hard vertical cut the way a many-stop CanvasGradient can
+      // when neighbouring stops collapse. Gated on rimLightEnabled; omit
+      // the light and this is a no-op (byte-identical to the flat fill).
       const rimOn = this._perf ? this._perf.rimLightEnabled : true;
-      const facing = (rimOn && this.light) ? terrainFacing(bars, this.light) : null;
-      if (facing) {
+      const reliefSamples = (rimOn && this.light)
+        ? sampleTerrainCurve(bars)
+        : null;
+      const facing = reliefSamples ? curveFacing(reliefSamples, this.light) : null;
+      if (facing && facing.some((f) => Math.abs(f) > 0.01)) {
         ctx.save();
         ctx.clip(fillPath);
-        for (let i = 0; i < bars.length; i++) {
-          const f = facing[i];
-          if (!(Math.abs(f) > 0.01)) continue;
-          const bar = bars[i];
-          ctx.fillStyle = f > 0
-            ? `rgba(255,248,230,${(RELIEF_LIT_ALPHA * f).toFixed(3)})`
-            : `rgba(0,0,0,${(RELIEF_SHADE_ALPHA * -f).toFixed(3)})`;
-          ctx.fillRect(bar.x, bar.y, bar.width, canvas.height - bar.y);
+        let minTop = canvas.height;
+        for (const bar of bars) if (bar.y < minTop) minTop = bar.y;
+        const band = this._reliefBand(canvas.width);
+        if (band) {
+          const rgba = reliefStripRGBA(reliefSamples, facing, canvas.width);
+          band.stripCtx.putImageData(new ImageData(rgba, canvas.width, 1), 0, 0);
+          const bctx = band.bandCtx;
+          bctx.setTransform(1, 0, 0, 1, 0, 0);
+          bctx.clearRect(0, 0, band.band.width, band.band.height);
+          bctx.drawImage(band.strip, 0, 0, canvas.width, RELIEF_FALLOFF_PX);
+          bctx.globalCompositeOperation = 'destination-in';
+          const fade = bctx.createLinearGradient(0, 0, 0, RELIEF_FALLOFF_PX);
+          fade.addColorStop(0, 'rgba(0,0,0,1)');
+          fade.addColorStop(1, 'rgba(0,0,0,0)');
+          bctx.fillStyle = fade;
+          bctx.fillRect(0, 0, canvas.width, RELIEF_FALLOFF_PX);
+          bctx.globalCompositeOperation = 'source-over';
+          ctx.drawImage(band.band, 0, minTop);
         }
         ctx.restore();
       }
@@ -3916,23 +3956,25 @@ export class BiomeManager {
       }
 
       if (facing) {
-        // Crest catch: today's 0.18 stroke, per-segment, brightened on the
-        // sun's side of each hump and dimmed on the other. Segmented so a
-        // single path isn't restroked N times at N alphas.
+        // Crest catch: today's 0.18 stroke, one smoothed path, alpha
+        // modulated along the same horizontal gradient the body uses.
+        // A single stroke of `strokePath` keeps the rim on the ridge
+        // it belongs to, instead of N straight segments between bar
+        // centres that don't match the quadratic fill.
+        const crestStops = facingColorStops(
+          reliefSamples, facing, 0, canvas.width, 'crest',
+        );
+        if (crestStops.length >= 2) {
+          const crest = ctx.createLinearGradient(0, 0, canvas.width, 0);
+          for (const s of crestStops) crest.addColorStop(s.offset, s.color);
+          ctx.strokeStyle = crest;
+        } else {
+          ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        }
         ctx.lineWidth = 2;
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
-        for (let i = 0; i < bars.length - 1; i++) {
-          const f = 0.5 * (facing[i] + facing[i + 1]);
-          const a = CREST_BASE_ALPHA * (1 + CREST_FACING_K * f);
-          if (!(a > 0.002)) continue;
-          const a0 = bars[i], a1 = bars[i + 1];
-          ctx.strokeStyle = `rgba(255,255,255,${a.toFixed(3)})`;
-          ctx.beginPath();
-          ctx.moveTo(a0.x + a0.width * 0.5, a0.y);
-          ctx.lineTo(a1.x + a1.width * 0.5, a1.y);
-          ctx.stroke();
-        }
+        ctx.stroke(strokePath);
       } else {
         ctx.strokeStyle = 'rgba(255,255,255,0.18)';
         ctx.lineWidth = 2;
