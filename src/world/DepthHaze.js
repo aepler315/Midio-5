@@ -32,3 +32,30 @@ export function hazeAlpha(layerKey, hazeMul = 1, calmLevel = 0) {
 export function hazeWarmMix(hazeWarm) {
   return clamp01(hazeWarm) * HAZE_WARM_MIX;
 }
+
+// The Ground Catches It, item 3: forward scattering. Real atmosphere is far
+// brighter looking toward the light than away from it -- the strongest
+// single cue that a landscape is lit rather than tinted. Capped low because
+// this stacks across up to three haze layers on top of an already-bloomed
+// frame.
+export const HAZE_SCATTER_MAX = HAZE_BASE_ALPHA * 0.6;
+export const HAZE_SCATTER_RADIUS_FRAC = 0.9; // of canvasHeight
+
+/** The scatter halo for one haze layer: a radial glow centered on the
+ *  celestial, additive on top of the vertical wash. `alpha` scales with
+ *  HAZE_LAYER_FRAC[layerKey] (the far layers sit behind more air, so they
+ *  scatter more), light.intensity, and hazeMul; `radius` scales off
+ *  canvasHeight. Returns null -- a hard skip, no fill -- with no light, no
+ *  intensity, or a layer that carries no haze (matching hazeAlpha's own
+ *  early-out). */
+export function hazeScatter(layerKey, light, hazeMul = 1, canvasHeight = 0) {
+  const frac = HAZE_LAYER_FRAC[layerKey] ?? 0;
+  if (frac <= 0) return null;
+  if (!light || !Number.isFinite(light.x) || !Number.isFinite(light.y)) return null;
+  const intensity = Number.isFinite(light.intensity) ? clamp01(light.intensity) : 0;
+  if (intensity <= 0) return null;
+
+  const alpha = HAZE_SCATTER_MAX * frac * intensity * Math.max(0, hazeMul);
+  if (!(alpha > HAZE_EPS)) return null;
+  return { cx: light.x, cy: light.y, radius: canvasHeight * HAZE_SCATTER_RADIUS_FRAC, alpha };
+}

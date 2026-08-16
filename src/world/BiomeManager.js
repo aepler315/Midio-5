@@ -52,7 +52,7 @@ import {
 import { LightningFX } from './Lightning.js';
 import { MeteorShowerFX } from './MeteorShower.js';
 import { LightRig } from './LightRig.js';
-import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS } from './DepthHaze.js';
+import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS, hazeScatter } from './DepthHaze.js';
 import { PERSONALITY } from './BiomePersonality.js';
 import { isRendered, styleDials, shiftLightness, ensureContrast, ensureMinLightness } from '../render/VisualStyle.js';
 import { Murmuration } from './Murmuration.js';
@@ -60,6 +60,7 @@ import { Atmosphere } from './Atmosphere.js';
 import { CodaDirector } from '../sim/CodaDirector.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
+import { terrainFacing } from './TerrainRelief.js';
 import { computeLight, celestialScreenPos, groundGlowLights } from '../render/LightField.js';
 import { clamp, clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
 import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
@@ -141,6 +142,13 @@ const SHOULDER_LIT = '#fff8e6';
 // uniformly-lit wall. A summit only flips against the sun when its hash is
 // strongly opposed (sin past this threshold).
 export const FACET_SUN_FLIP = 0.62;
+// Ground relief (The Ground Catches It, item 1): the ground is nearer and
+// larger than any mountain range, so its coefficients stay AT OR BELOW the
+// mountains' own (0.17 lit / 0.32 shade, see _drawRidgeVolume) -- equal
+// coefficients would read as *more* contrast on the bigger, closer surface.
+const GROUND_RELIEF_LIT = 0.15;
+const GROUND_RELIEF_SHADE = 0.28;
+const GROUND_CREST_CATCH_MUL = 0.6; // crest alpha swing as a fraction of the base 0.18
 
 /**
  * Which way a summit's near (shaded) facet leans. +1 = right, -1 = left.
@@ -1633,6 +1641,23 @@ export class BiomeManager {
     grad.addColorStop(1, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Forward scattering (The Ground Catches It, item 3): the atmosphere
+    // itself brightens toward the light, on top of the vertical wash above.
+    // Free-riding on this layer's own hazeLayers rung -- callers already
+    // skip _drawHaze under perf pressure, so this dies with the layer it
+    // belongs to.
+    const scatter = this.light ? hazeScatter(layerKey, this.light, hazeMul, canvas.height) : null;
+    if (scatter) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const sGrad = ctx.createRadialGradient(scatter.cx, scatter.cy, 0, scatter.cx, scatter.cy, scatter.radius);
+      sGrad.addColorStop(0, `rgba(${r},${g},${b},${scatter.alpha.toFixed(3)})`);
+      sGrad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = sGrad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    }
     ctx.restore();
   }
 
@@ -3775,6 +3800,30 @@ export class BiomeManager {
       ctx.fillStyle = groundColor;
       ctx.fill(fillPath);
 
+      // Ground relief (The Ground Catches It, item 1): the flat fill above
+      // is the ONLY shading the nearer, larger surface the whole cast
+      // stands on ever got -- the mountains catch the light on their
+      // crests and facets, the ground didn't. `facing` is 0 (byte-identical
+      // to today) whenever there's no light or the terrain is flat, so this
+      // is purely additive. Gated with the same rung as the mountains'
+      // shoulder facets (rim light).
+      const relief = this.light ? terrainFacing(bars, this.light) : null;
+      const rimOnGround = this._perf ? this._perf.rimLightEnabled : true;
+      if (relief && rimOnGround) {
+        ctx.save();
+        ctx.clip(fillPath);
+        for (let i = 0; i < bars.length; i++) {
+          const f = relief[i];
+          if (Math.abs(f) < 0.01) continue;
+          const bar = bars[i];
+          const coeff = f > 0 ? GROUND_RELIEF_LIT : GROUND_RELIEF_SHADE;
+          const alpha = Math.abs(f) * coeff;
+          ctx.fillStyle = f > 0 ? `rgba(255,248,230,${alpha.toFixed(3)})` : `rgba(0,0,0,${alpha.toFixed(3)})`;
+          ctx.fillRect(bar.x, bar.y, bar.width, canvas.height - bar.y);
+        }
+        ctx.restore();
+      }
+
       const haloColor = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
       const { r, g, b } = hexToRgb(haloColor);
       const rgb = `${r},${g},${b}`;
@@ -3876,10 +3925,34 @@ export class BiomeManager {
         ctx.restore();
       }
 
-      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-      ctx.lineWidth = 2;
-      ctx.lineJoin = 'round';
-      ctx.stroke(strokePath);
+      if (relief && rimOnGround) {
+        // Crest catch: the same 0.18 base alpha, swung per-segment by that
+        // bar's facing so the rim brightens on the sun's side and dims on
+        // the other as the celestial arcs across the song -- the pass that
+        // reads instantly, same idea as the mountains' own crest catch.
+        // Segmented (one short stroke per bar, following the exact curve
+        // _terrainTopPath builds) rather than stroking the whole path once
+        // per bar, which would restroke N times over.
+        const pts = bars.map((b) => ({ x: b.x + b.width / 2, y: b.y }));
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        for (let i = 0; i < pts.length; i++) {
+          const cur = pts[i];
+          const prevMid = i > 0 ? { x: (pts[i - 1].x + cur.x) / 2, y: (pts[i - 1].y + cur.y) / 2 } : cur;
+          const nextMid = i < pts.length - 1 ? { x: (cur.x + pts[i + 1].x) / 2, y: (cur.y + pts[i + 1].y) / 2 } : cur;
+          const alpha = 0.18 * (1 + GROUND_CREST_CATCH_MUL * relief[i]);
+          ctx.strokeStyle = `rgba(255,255,255,${Math.max(0, alpha).toFixed(3)})`;
+          const seg = new Path2D();
+          seg.moveTo(prevMid.x, prevMid.y);
+          seg.quadraticCurveTo(cur.x, cur.y, nextMid.x, nextMid.y);
+          ctx.stroke(seg);
+        }
+      } else {
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.stroke(strokePath);
+      }
     } else {
       ctx.fillStyle = groundColor;
       ctx.fillRect(0, localGroundY, canvas.width, canvas.height - localGroundY);

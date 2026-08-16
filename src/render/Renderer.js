@@ -271,6 +271,18 @@ export class Renderer {
     if (sim.coda) this._drawDesaturationOverlay(ctx, stage, sim.coda);
 
     if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
+    // Obstacle contact shadows (The Ground Catches It, item 2): things that
+    // share a floor should share its rules -- the trio standing on the
+    // ground already cast shadows, obstacles sitting on that same ground
+    // didn't. Must paint before obstacles.draw so shadows sit under their
+    // owner, same ordering rule the character shadows follow above.
+    if (contactShadowsEnabled && sim.obstacles && groundField) {
+      const groundYAt = (wx) => groundField.heightAt(wx);
+      for (const o of sim.obstacles.groundedShadows(pose.worldX, pose.midioX, groundYAt)) {
+        const s = contactShadow(o.x, o.groundY, 0, o.width, light);
+        this._drawContactShadow(ctx, { ...s, alpha: s.alpha * o.presence });
+      }
+    }
     if (sim.obstacles) {
       sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY, {
         nowMs: sim.timeMs, energyCurves: sim.energyCurves, haloColor,

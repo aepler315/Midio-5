@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hazeAlpha, hazeWarmMix, HAZE_WARM_MIX } from '../src/world/DepthHaze.js';
+import { hazeAlpha, hazeWarmMix, HAZE_WARM_MIX, hazeScatter, HAZE_SCATTER_MAX } from '../src/world/DepthHaze.js';
 
 test('haze accumulates more atmosphere on farther layers', () => {
   const l2 = hazeAlpha('L2', 1, 0), l3 = hazeAlpha('L3', 1, 0), l4 = hazeAlpha('L4', 1, 0), l5 = hazeAlpha('L5', 1, 0);
@@ -42,4 +42,37 @@ test('hazeWarmMix is 0 at hazeWarm=0, rises monotonically, and never exceeds HAZ
   assert.equal(hazeWarmMix(0), 0);
   assert.ok(hazeWarmMix(1) > hazeWarmMix(0.3));
   assert.ok(hazeWarmMix(1) <= HAZE_WARM_MIX + 1e-9);
+});
+
+const LIGHT = { x: 900, y: 100, intensity: 1 };
+
+test('hazeScatter returns null for L5 (zero haze frac)', () => {
+  assert.equal(hazeScatter('L5', LIGHT, 1, 720), null);
+});
+
+test('hazeScatter returns null for a null light', () => {
+  assert.equal(hazeScatter('L2', null, 1, 720), null);
+});
+
+test('hazeScatter returns null for zero intensity', () => {
+  assert.equal(hazeScatter('L2', { ...LIGHT, intensity: 0 }, 1, 720), null);
+});
+
+test('hazeScatter alpha is monotonic in light.intensity and never exceeds HAZE_SCATTER_MAX', () => {
+  let prev = 0;
+  for (const intensity of [0.2, 0.5, 0.8, 1]) {
+    const s = hazeScatter('L2', { ...LIGHT, intensity }, 1, 720);
+    assert.ok(s.alpha > prev, `alpha should rise with intensity: ${s.alpha} vs prev ${prev}`);
+    assert.ok(s.alpha <= HAZE_SCATTER_MAX + 1e-9);
+    prev = s.alpha;
+  }
+});
+
+test('hazeScatter is centered on the light and scales radius off canvasHeight', () => {
+  const s = hazeScatter('L2', LIGHT, 1, 720);
+  assert.equal(s.cx, LIGHT.x);
+  assert.equal(s.cy, LIGHT.y);
+  assert.ok(s.radius > 0);
+  const s2 = hazeScatter('L2', LIGHT, 1, 1440);
+  assert.ok(s2.radius > s.radius);
 });

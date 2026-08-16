@@ -32,6 +32,10 @@ const SPAWN_LEAD_MS = 2500;
 const SPAWN_PROB_BASE = 0.75; // was 0.5 -- ambient forms read better with more of them present
 
 export const ARCHETYPES = Object.freeze(['thorn', 'veil', 'echo', 'pipe']);
+// Which archetypes get a contact shadow (The Ground Catches It, item 2):
+// solid, grounded silhouettes only -- 'veil' drifts as a sheet and 'echo' is
+// a mote cloud, and shadowing either would read as a bug, not a fix.
+const SHADOW_ARCHETYPES = new Set(['thorn', 'geo', 'pipe']);
 export const EMERGENCE_PX = 170; // condenses in over this much approach distance
 export const DISSOLVE_PX = 130;  // dissolves out over this much departure distance
 
@@ -218,6 +222,33 @@ export class ObstacleSpawner {
   nearestAhead(worldX) {
     for (const o of this.active) if (o.wx >= worldX) return o;
     return null;
+  }
+
+  /** Grounded obstacles worth a contact shadow, in screen space (The Ground
+   *  Catches It, item 2). `groundYAt` is a worldX -> y function
+   *  (GroundField.heightAt) so a shadow sits on the real terrain under its
+   *  obstacle rather than on one flat reference line -- the same fix PR #58
+   *  made for rain splashes. Restricted to the solid archetypes: 'veil' is
+   *  a drifting sheet and 'echo' is a mote cloud, neither an object that
+   *  would occlude anything, so shadowing them would read as a bug. */
+  groundedShadows(worldX, originX, groundYAt) {
+    if (this.active.length === 0) return [];
+    const out = [];
+    for (const o of this.active) {
+      if (!SHADOW_ARCHETYPES.has(o.archetype)) continue;
+      const x = o.wx - worldX + originX;
+      if (x < -80 || x > 2280) continue;
+
+      const distanceAhead = o.wx - worldX;
+      const passed = distanceAhead <= 0;
+      const emergence = passed ? 1 : emergenceEnvelope(Math.max(0, distanceAhead));
+      const dissolve = passed ? dissolveEnvelope(Math.max(0, worldX - o.wx)) : 1;
+      const presence = emergence * dissolve;
+      if (presence <= 0.01) continue;
+
+      out.push({ x, width: o.width, groundY: groundYAt(o.wx), presence });
+    }
+    return out;
   }
 
   draw(ctx, worldX, originX, groundY, {
