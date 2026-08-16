@@ -6,6 +6,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSoulseekBridge, SoulseekBridgeError } from './soulseek-bridge.js';
+import {
+  getStatus,
+  setConfig,
+  startSearch,
+  getSearch,
+  downloadResult,
+  listDemoCatalog,
+} from './soulseek-bridge.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -43,6 +51,32 @@ function sendJson(res, status, obj) {
   res.end(body);
 }
 
+function readBody(req, limit = 2_000_000) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > limit) {
+        reject(new Error('Body too large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      if (!raw) return resolve(null);
+      try {
+        resolve(JSON.parse(raw));
+      } catch {
+        reject(new Error('Invalid JSON body'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
 async function handleApi(req, res, reqPath) {
   // CORS for local tooling
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -54,8 +88,70 @@ async function handleApi(req, res, reqPath) {
     return true;
   }
 
-  if (reqPath.startsWith('/api/')) {
-    sendJson(res, 404, { error: 'Not found', path: reqPath });
+  try {
+    if (reqPath === '/api/soulseek/status' && req.method === 'GET') {
+      sendJson(res, 200, await getStatus());
+      return true;
+    }
+
+    if (reqPath === '/api/soulseek/config' && req.method === 'POST') {
+      const body = await readBody(req);
+      const status = setConfig(body || {});
+      sendJson(res, 200, { ok: true, ...status, ...(await getStatus()) });
+      return true;
+    }
+
+    if (reqPath === '/api/soulseek/config' && req.method === 'DELETE') {
+      setConfig({ mode: 'clear' });
+      sendJson(res, 200, { ok: true, ...(await getStatus()) });
+      return true;
+    }
+
+    if (reqPath === '/api/soulseek/demo' && req.method === 'GET') {
+      sendJson(res, 200, { tracks: listDemoCatalog() });
+      return true;
+    }
+
+    if (reqPath === '/api/soulseek/search' && req.method === 'POST') {
+      const body = await readBody(req);
+      const query = body?.query || body?.q || body?.searchText || '';
+      const started = await startSearch(query);
+      sendJson(res, 200, started);
+      return true;
+    }
+
+    // GET /api/soulseek/search/:id
+    const searchMatch = reqPath.match(/^\/api\/soulseek\/search\/([^/]+)$/);
+    if (searchMatch && req.method === 'GET') {
+      const data = getSearch(decodeURIComponent(searchMatch[1]));
+      if (!data) {
+        sendJson(res, 404, { error: 'Search not found' });
+        return true;
+      }
+      sendJson(res, 200, data);
+      return true;
+    }
+
+    if (reqPath === '/api/soulseek/download' && req.method === 'POST') {
+      const body = await readBody(req);
+      const item = body?.item || body;
+      const result = await downloadResult(item);
+      res.writeHead(200, {
+        'Content-Type': result.contentType || 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${result.filename.replace(/"/g, '')}"`,
+        'X-Filename': encodeURIComponent(result.filename),
+        'Cache-Control': 'no-store',
+      });
+      res.end(result.buffer);
+      return true;
+    }
+
+    if (reqPath.startsWith('/api/')) {
+      sendJson(res, 404, { error: 'Not found', path: reqPath });
+      return true;
+    }
+  } catch (err) {
+    sendJson(res, 500, { error: err.message || String(err) });
     return true;
   }
   return false;
@@ -177,7 +273,142 @@ async function handleSoulseekApi(req, res, reqPath) {
   }
 }
 
-server.listen(PORT, HOST, () => {
+/** Routes the merged /api/soulseek/* surface. Two integrations coexist on
+ *  main behind these paths: the zero-config mjs bridge (slskPanel /
+ *  SoulseekSearch.js: /config, /demo, /search/:id polling, binary downloads)
+ *  and the PR #64 connect-based js bridge (SoulseekSource.js: /connect,
+ *  /disconnect, synchronous {results} search, base64 downloads). Where the
+ *  two overlap (/search, /download, /status) the request body disambiguates:
+ *  SoulseekSource always sends `timeoutMs` on search and `file` on download;
+ *  SoulseekSearch sends neither. /status returns the mjs superset, which
+ *  carries both the `mode`/`note` fields the slskPanel reads and the
+ *  `connected`/`user` fields SoulseekSource reads. */
+async function handleSoulseekRoute(req, res, reqPath) {
+  const action = reqPath.slice('/api/soulseek/'.length);
+
+  // Zero-config bridge only (slskPanel / SoulseekSearch.js)
+  if (action === 'config') {
+    if (req.method === 'POST') {
+      try {
+        const body = await readJsonBody(req);
+        const status = setConfig(body || {});
+        sendJson(res, 200, { ok: true, ...status, ...(await getStatus()) });
+      } catch (err) {
+        sendJson(res, 400, { error: err.message || String(err) });
+      }
+      return;
+    }
+    if (req.method === 'DELETE') {
+      setConfig({ mode: 'clear' });
+      try {
+        sendJson(res, 200, { ok: true, ...(await getStatus()) });
+      } catch (err) {
+        sendJson(res, 500, { ok: true, error: err.message || String(err) });
+      }
+      return;
+    }
+    sendJson(res, 405, { error: 'Method not allowed' });
+    return;
+  }
+
+  if (action === 'demo' && req.method === 'GET') {
+    sendJson(res, 200, { tracks: listDemoCatalog() });
+    return;
+  }
+
+  const searchMatch = reqPath.match(/^\/api\/soulseek\/search\/([^/]+)$/);
+  if (searchMatch && req.method === 'GET') {
+    const data = getSearch(decodeURIComponent(searchMatch[1]));
+    if (!data) {
+      sendJson(res, 404, { error: 'Search not found' });
+      return;
+    }
+    sendJson(res, 200, data);
+    return;
+  }
+
+  // Connect-based bridge only (SoulseekSource.js)
+  if (action === 'connect' || action === 'disconnect') {
+    return handleSoulseekApi(req, res, reqPath);
+  }
+
+  if (req.method !== 'POST') {
+    if (action === 'status' && req.method === 'GET') {
+      // Superset: both clients read what they need from it.
+      try {
+        sendJson(res, 200, await getStatus());
+      } catch (err) {
+        sendJson(res, 500, { mode: 'offline', connected: false, note: err.message || String(err) });
+      }
+      return;
+    }
+    sendJson(res, 405, { error: 'Method not allowed' });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (err) {
+    sendJson(res, 400, { error: err.message });
+    return;
+  }
+
+  if (action === 'search') {
+    if (body && typeof body.timeoutMs === 'number') {
+      // SoulseekSource: synchronous {results} search.
+      try {
+        const r = await soulseek.search({ query: body.query, timeoutMs: body.timeoutMs });
+        sendJson(res, 200, { results: r });
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof SoulseekBridgeError ? err.message : `Soulseek error: ${err.message}` });
+      }
+    } else {
+      // SoulseekSearch: start an async search, poll /search/:id for results.
+      const query = body?.query || body?.q || body?.searchText || '';
+      try {
+        const started = await startSearch(query);
+        sendJson(res, 200, started);
+      } catch (err) {
+        sendJson(res, 500, { error: err.message || String(err) });
+      }
+    }
+    return;
+  }
+
+  if (action === 'download') {
+    if (body && body.file) {
+      // SoulseekSource: base64 download.
+      try {
+        const r = await soulseek.download({ file: body.file });
+        sendJson(res, 200, { name: r.name, data: r.buffer.toString('base64') });
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof SoulseekBridgeError ? err.message : `Soulseek error: ${err.message}` });
+      }
+    } else {
+      // SoulseekSearch: binary attachment download.
+      const item = body?.item || body;
+      try {
+        const result = await downloadResult(item);
+        res.writeHead(200, {
+          'Content-Type': result.contentType || 'application/octet-stream',
+          'Content-Disposition': `attachment; filename="${result.filename.replace(/"/g, '')}"`,
+          'X-Filename': encodeURIComponent(result.filename),
+          'Cache-Control': 'no-store',
+        });
+        res.end(result.buffer);
+      } catch (err) {
+        sendJson(res, 500, { error: err.message || String(err) });
+      }
+    }
+    return;
+  }
+
+  sendJson(res, 404, { error: `Unknown action: ${action}` });
+}
+
+server.listen(PORT, HOST, async () => {
   console.log(`Super Maudio World + Soulseek at http://${HOST}:${PORT}`);
-  console.log(`Soulseek backend: ${soulseek.isConnected() ? 'connected' : 'not connected — use the loader panel to sign in'}`);
+  const status = await getStatus();
+  console.log(`Soulseek backend: ${status.mode} — ${status.note}`);
 });
