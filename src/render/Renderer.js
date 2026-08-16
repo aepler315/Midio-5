@@ -54,7 +54,14 @@ const SPEED_LINE_MAX_ALPHA = 0.35;
 const BLOOM_DOWNSCALE = 3;       // offscreen buffers render at 1/3 resolution
 const BLOOM_BLUR_PX = 7;         // blur radius AT that downsampled scale
 const BLOOM_THRESHOLD_PASSES = 2; // self-multiply passes: c^(2^passes)
-export const BLOOM_BASE = 0.322; // steady glow present even at rest -- never flash-capped (0.23 base * the house look's 1.4 bloomBaseMul, folded in now that there's only one style)
+// A low resting glow, not a floor that eats the reactive range: at
+// BLOOM_BASE=0.322 the base alone already used 43% of BLOOM_MAX, so a
+// slam/surge/fever swell only ever had the remaining 57% to move through --
+// a quiet verse and a full drop read as barely different. Cut deep enough
+// that "nothing is happening" genuinely looks like nothing is happening,
+// so the reactive term (up to 1.1, capped by BLOOM_MAX) is what a drop
+// actually detonates against.
+export const BLOOM_BASE = 0.06; // steady glow present even at rest -- never flash-capped
 // Headroom above the base must clear FLASH_CAP (Accessibility.js) with
 // margin, or reduced-flash's own cap on the reactive term would be masked
 // by this ceiling clipping first -- the whole point of capping the
@@ -65,9 +72,17 @@ const BLOOM_MAX = 0.75;          // hard ceiling so a maxed drop+fever never blo
 const FILM_GRADE_COOL = '#1a7a96';       // deeper ocean teal -- calm / space push
 const FILM_GRADE_WARM = '#e88a55';       // muted amber -- hot/high-budget push
 const FILM_GRADE_SPACE = '#2a2060';      // indigo space wash layered in rendered style
-const FILM_GRADE_ALPHA_BASE = 0.05;      // floor alpha for the grade wash -- a finish, not a filter
+// Both floors below used to sit high enough that the grade/vignette were
+// never really OFF -- a full-surge drop (vignetteDepth -> 0) still carried
+// 22% of the calm frame's edge darkness, and the coolest/neutral grade
+// still washed every pixel through soft-light. A frame that's always at
+// least a little graded and a little vignetted can't sell the moment it's
+// neither -- cut close to zero so an actually open, ungraded frame reads
+// as exactly that, and the calm-driven build back up to VIGNETTE_MAX_ALPHA
+// has real distance to travel.
+const FILM_GRADE_ALPHA_BASE = 0.012;     // floor alpha for the grade wash -- a finish, not a filter
 const FILM_GRADE_ALPHA_RANGE = 0.03;     // extra alpha the further warmth sits from neutral
-const VIGNETTE_MIN_ALPHA = 0.12;         // edge darkness at maximum openness (full hype/drop)
+const VIGNETTE_MIN_ALPHA = 0.02;         // edge darkness at maximum openness (full hype/drop)
 const VIGNETTE_MAX_ALPHA = 0.54;         // edge darkness at maximum depth (fully calm) -- deeper, moodier frame
 const VIGNETTE_ONSET_MIN = 0.34;         // onset fraction (of corner radius) at max depth -- a deep iris
 const VIGNETTE_ONSET_MAX = 0.62;         // onset fraction at min depth -- only the outer ring ever darkens
@@ -321,7 +336,16 @@ export class Renderer {
     // Fever adds its own glow on top of the vibe's epic-ness -- a hot streak
     // makes Midio himself burn brighter, not just the world around him.
     const feverGlow = sim.fever ? 3.0 * sim.fever.level : 0;
-    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, (sim.vibe ? 2.5 + 4.5 * sim.vibe.epic : 0) + feverGlow, sim.apotheosis, sim.reducedFlash, this._midioHue, sim.ensemble, companionLights);
+    // The old 2.5 floor melted him well past meltMesh's 0.02 no-op threshold
+    // even at epic=0, so he was always visibly liquid regardless of what the
+    // music was doing -- a quiet verse and an epic passage looked like the
+    // same character. Trading most of that floor for range (epic still
+    // reaches its old ~7.0 ceiling at 1) lets a genuinely quiet section
+    // bring him close to rest, so the swell into an epic passage is
+    // something that actually happens rather than something that was
+    // always half-happening.
+    const vibeMelt = sim.vibe ? 0.3 + 6.7 * sim.vibe.epic : 0;
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, vibeMelt + feverGlow, sim.apotheosis, sim.reducedFlash, this._midioHue, sim.ensemble, companionLights);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
