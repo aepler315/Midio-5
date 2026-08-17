@@ -1703,6 +1703,11 @@ function frame(tRaf) {
     synth?.stopAll?.();
   }
 
+  // Authored cuts: the drop and the apotheosis duck the mix for a beat,
+  // the sound half of the same snap the camera/color already get (CutDirector).
+  if (sim.cut?.dropJustCut) audioEngine?.duck?.();
+  if (sim.cut?.apotheosisJustCut) audioEngine?.duck?.(0.6, 0.04, 0.3);
+
   // Tap recalibration: drive the count while an (opt-in, 'C'-key-triggered)
   // pass is running. Never blocks the frame, pauses audio, or swallows input.
   if (recalibration.active) {

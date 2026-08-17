@@ -87,3 +87,31 @@ test('FilmFinish.update tolerates a missing hype (defensive only)', () => {
   assert.doesNotThrow(() => ff.update(0, 1 / 60, 0.5, 0.5, null));
   assert.ok(Number.isFinite(ff.vignetteDepth));
 });
+
+test('FilmFinish.hit: an authored cut snaps immediately, bypassing the lowpass', () => {
+  const ff = new FilmFinish();
+  for (let i = 0; i < 300; i++) ff.update(i * 16.7, 1 / 60, 0, 0, fakeHype()); // settle open/cool
+  const preDepth = ff.vignetteDepth;
+  const preWarmth = ff.warmth;
+
+  ff.hit('drop');
+  assert.equal(ff.vignetteDepth, 1, 'vignette snaps to the hard extreme on the hit call itself');
+  assert.notEqual(ff.warmth, preWarmth, 'warmth also snaps, not just vignette');
+  assert.ok(preDepth < 1, 'sanity: it really was not already at 1 before the hit');
+});
+
+test('FilmFinish.hit: the frame right after a hit resumes easing toward the normal target, not stuck', () => {
+  const ff = new FilmFinish();
+  ff.hit('apotheosis');
+  const hitWarmth = ff.warmth;
+  ff.update(0, 1 / 60, 0, 0, fakeHype());
+  assert.notEqual(ff.warmth, hitWarmth, 'update() must move it off the snapped value again');
+});
+
+test('FilmFinish.hit: an unknown kind snaps the vignette but leaves warmth untouched', () => {
+  const ff = new FilmFinish();
+  const before = ff.warmth;
+  ff.hit('not-a-real-moment');
+  assert.equal(ff.vignetteDepth, 1);
+  assert.equal(ff.warmth, before);
+});
