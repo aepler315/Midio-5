@@ -251,3 +251,163 @@ export function generateCatalogue(seed, count, width, height) {
   }
   return out;
 }
+
+// --- Atmospheric extinction ------------------------------------------------
+// The one cue the field was still missing at the bottom of the sky: real
+// starlight has to cross more air the lower it sits, so low stars are both
+// DIMMER and REDDER than the same star overhead. Twinkle already varied with
+// altitude (twinkleAmplitude); brightness and color did not, which is why the
+// field read as uniformly bright right down to the ridgeline -- a flat wall
+// of stars rather than a sky fading into its own horizon haze.
+
+/** Relative air path at a given altitude (1 at the zenith, rising toward the
+ *  horizon). The plane-parallel 1/sin(alt) form, capped where that
+ *  approximation blows up. */
+export function airmass(altitude01) {
+  const altRad = clamp01(altitude01) * (Math.PI / 2);
+  return Math.min(38, 1 / Math.max(Math.sin(altRad), 1 / 38));
+}
+
+const EXTINCTION_K = 0.11;     // magnitudes of light lost per unit air path
+const EXTINCTION_FLOOR = 0.12; // horizon stars thin out, but never vanish entirely
+
+/** Fraction of a star's light that survives the air path: 1 at the zenith,
+ *  falling toward EXTINCTION_FLOOR at the horizon. */
+export function extinction01(altitude01) {
+  const dm = EXTINCTION_K * (airmass(altitude01) - 1);
+  return Math.max(EXTINCTION_FLOOR, Math.pow(10, -0.4 * dm));
+}
+
+/** How far toward "horizon red" a star at this altitude should be pushed
+ *  (0 overhead, →1 at the horizon). Blue light scatters out of the beam
+ *  first, so what survives a long air path is the warm end -- the same
+ *  physics that makes a setting sun orange. */
+export function reddening01(altitude01) {
+  return clamp01(1 - extinction01(altitude01));
+}
+
+// --- Dust lanes ------------------------------------------------------------
+// The painted milky wash is one smooth gradient, which is the single most
+// "computer-generated" thing about the night sky: the real plane is shot
+// through with dark nebulae that occlude the glow behind them (the Great
+// Rift). These are the occluders -- soft dark ellipses strung ALONG the
+// plane's own axis, so the band gains structure instead of being a airbrush
+// stripe.
+
+/** Dark dust clouds lying along the galactic plane. Returned in field
+ *  coordinates like the stars, with `alpha` as an occlusion strength. */
+export function generateDustLanes(seed, count, width, height) {
+  const rand = mulberry32((seed ^ 0x0d057) >>> 0 || 1);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const xFrac = rand();
+    // Clouds hug the plane much more tightly than the stars do -- the rift
+    // is a feature OF the band, not of the general sky.
+    const off = ((rand() + rand()) - 1) * height * GALACTIC_BAND.halfFrac * 0.5;
+    out.push({
+      x: xFrac * width,
+      y: galacticBandCenterY(xFrac, height) + off,
+      // Long and thin, and lying along the plane's own tilt rather than flat.
+      rx: width * (0.06 + rand() * 0.13),
+      ry: height * (0.018 + rand() * 0.05),
+      rot: Math.atan2(GALACTIC_BAND.tiltFrac * height, width) + (rand() - 0.5) * 0.5,
+      alpha: 0.20 + rand() * 0.38,
+      phase: rand() * Math.PI * 2,
+    });
+  }
+  return out;
+}
+
+// --- Deep-sky objects ------------------------------------------------------
+// A handful of faint non-stellar smudges. The astronomy that makes this read
+// as a real sky rather than set dressing is WHERE each kind is allowed to
+// live: open clusters and emission nebulae belong to our own galaxy's disc
+// and therefore sit ON the plane, while external galaxies are hidden behind
+// that same dust everywhere near it -- the zone of avoidance -- so they only
+// ever appear well off the band.
+export const DEEP_SKY_KINDS = ['cluster', 'nebula', 'galaxy'];
+
+/** Faint deep-sky objects in field coordinates. Each carries the geometry
+ *  and tint the renderer needs; none of them twinkle (they are resolved
+ *  extended sources, not point sources). */
+export function generateDeepSky(seed, count, width, height) {
+  const rand = mulberry32((seed ^ 0xdee5) >>> 0 || 1);
+  const half = height * GALACTIC_BAND.halfFrac;
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    // Cycle the kinds so a small count still gets one of each.
+    const kind = DEEP_SKY_KINDS[i % DEEP_SKY_KINDS.length];
+    const xFrac = rand();
+    const centerY = galacticBandCenterY(xFrac, height);
+    let y;
+    if (kind === 'galaxy') {
+      // Zone of avoidance: pushed clear of the band, either side.
+      const side = rand() < 0.5 ? -1 : 1;
+      y = centerY + side * half * (1.15 + rand() * 0.9);
+    } else {
+      y = centerY + ((rand() + rand()) - 1) * half * 0.6;
+    }
+    const r = height * (kind === 'cluster' ? 0.020 + rand() * 0.022
+      : kind === 'nebula' ? 0.030 + rand() * 0.045
+        : 0.016 + rand() * 0.022);
+    out.push({
+      kind,
+      x: xFrac * width,
+      y: clamp01(y / height) * height,
+      r,
+      // Galaxies are the only ones that read as flattened discs.
+      squash: kind === 'galaxy' ? 0.30 + rand() * 0.22 : 0.72 + rand() * 0.28,
+      rot: rand() * Math.PI,
+      // Emission nebulae run hydrogen-red; clusters are hot young blue;
+      // distant galaxies average out to an old, dim yellow-white.
+      hue: kind === 'nebula' ? 340 + rand() * 30
+        : kind === 'cluster' ? 205 + rand() * 30
+          : 40 + rand() * 20,
+      alpha: 0.05 + rand() * 0.07,
+      phase: rand() * Math.PI * 2,
+    });
+  }
+  return out;
+}
+
+// --- Planets ---------------------------------------------------------------
+// Planets are what sell a sky as a sky rather than a starfield: they are
+// noticeably brighter than anything around them, they are obviously COLORED,
+// and -- because they present a resolved disc instead of a point -- they do
+// not twinkle. They also share one line across the sky, the ecliptic, which
+// is nothing like the galactic plane's tilt, so their alignment reads as a
+// second, independent structure overlaid on the first.
+const ECLIPTIC = { centerFrac: 0.52, tiltFrac: -0.30 };
+
+/** Ecliptic height at horizontal position `xFrac`. */
+export function eclipticY(xFrac, height) {
+  return (ECLIPTIC.centerFrac + (xFrac - 0.5) * ECLIPTIC.tiltFrac) * height;
+}
+
+const PLANET_PALETTE = [
+  { name: 'rust', hue: 14, sat: 62, bright: 0.72, size: 1.5 },
+  { name: 'cream', hue: 42, sat: 34, bright: 1.00, size: 2.1 },
+  { name: 'gold', hue: 50, sat: 46, bright: 0.80, size: 1.7 },
+  { name: 'pearl', hue: 48, sat: 12, bright: 0.95, size: 1.9 },
+  { name: 'ice', hue: 186, sat: 40, bright: 0.55, size: 1.3 },
+];
+
+/** Bright, steady, colored points strung along the ecliptic. */
+export function generatePlanets(seed, count, width, height) {
+  const rand = mulberry32((seed ^ 0x91a7e7) >>> 0 || 1);
+  const out = [];
+  const picks = PLANET_PALETTE.slice();
+  for (let i = 0; i < count && picks.length > 0; i++) {
+    const p = picks.splice(Math.floor(rand() * picks.length), 1)[0];
+    const xFrac = (i + 0.5 + (rand() - 0.5) * 0.7) / Math.max(1, count);
+    const y = eclipticY(xFrac, height) + (rand() - 0.5) * height * 0.05;
+    out.push({
+      ...p,
+      x: clamp01(xFrac) * width,
+      y: clamp01(y / height) * height,
+      altitude01: 1 - clamp01(y / height),
+      phase: rand() * Math.PI * 2,
+    });
+  }
+  return out;
+}

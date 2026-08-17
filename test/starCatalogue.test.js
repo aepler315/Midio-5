@@ -4,6 +4,8 @@ import {
   SPECTRAL_CLASSES, sampleSpectralClass, blackbodyRGB, rgbToHue,
   sampleMagnitude, magnitudeToBrightness01, sizeForMagnitude, subPixelDraw,
   twinkleAmplitude, generateCatalogue, galacticBandCenterY, GALACTIC_BAND,
+  airmass, extinction01, reddening01, generateDustLanes, generateDeepSky,
+  generatePlanets, eclipticY,
 } from '../src/world/StarCatalogue.js';
 import { mulberry32 } from '../src/utils/math.js';
 
@@ -162,4 +164,99 @@ test('the galactic plane is tilted, not a horizontal stripe', () => {
   assert.ok(Math.abs(right - left) > 720 * 0.1, 'the plane should visibly rise across the field');
   assert.ok(Math.abs(galacticBandCenterY(0.5, 720) - GALACTIC_BAND.centerFrac * 720) < 1e-6,
     'mid-field should sit exactly on the nominal center');
+});
+
+// --- Atmospheric extinction ------------------------------------------------
+
+test('airmass is 1 overhead and rises steeply toward the horizon', () => {
+  assert.ok(Math.abs(airmass(1) - 1) < 1e-9, 'the zenith is exactly one air path');
+  assert.ok(airmass(0.5) > 1, 'halfway down is more air than overhead');
+  assert.ok(airmass(0.1) > airmass(0.5), 'lower still is more air again');
+  assert.ok(airmass(0) <= 38, 'the plane-parallel form is capped, never infinite');
+});
+
+test('extinction dims monotonically toward the horizon and never fully extinguishes', () => {
+  assert.ok(Math.abs(extinction01(1) - 1) < 1e-9, 'nothing is lost at the zenith');
+  let prev = extinction01(1);
+  for (let a = 0.9; a >= 0; a -= 0.1) {
+    const cur = extinction01(a);
+    assert.ok(cur <= prev + 1e-9, `extinction must not brighten going down (at ${a})`);
+    prev = cur;
+  }
+  assert.ok(extinction01(0) > 0, 'horizon stars thin out but do not vanish');
+  assert.ok(extinction01(0) < 0.5, 'the horizon should still be a big loss');
+});
+
+test('reddening is the complement of what survives -- zero overhead, strong at the horizon', () => {
+  assert.ok(Math.abs(reddening01(1)) < 1e-9);
+  assert.ok(reddening01(0) > reddening01(0.5));
+  for (const a of [0, 0.25, 0.5, 0.75, 1]) {
+    const r = reddening01(a);
+    assert.ok(r >= 0 && r <= 1, `reddening must stay in [0,1], got ${r} at ${a}`);
+  }
+});
+
+// --- Dust lanes ------------------------------------------------------------
+
+test('dust lanes are deterministic and hug the galactic plane', () => {
+  const w = 1280, h = 440;
+  const a = generateDustLanes(5, 8, w, h);
+  assert.deepEqual(a, generateDustLanes(5, 8, w, h), 'same seed reproduces the lanes');
+  assert.equal(a.length, 8);
+  const half = h * GALACTIC_BAND.halfFrac;
+  for (const d of a) {
+    const centerY = galacticBandCenterY(d.x / w, h);
+    assert.ok(Math.abs(d.y - centerY) <= half * 0.55,
+      'a rift belongs to the band, not the open sky');
+    assert.ok(d.rx > d.ry, 'lanes lie along the plane, not across it');
+    assert.ok(d.alpha > 0 && d.alpha < 1);
+  }
+});
+
+// --- Deep-sky objects ------------------------------------------------------
+
+test('deep sky: clusters and nebulae sit on the plane, galaxies avoid it', () => {
+  const w = 1280, h = 440;
+  const objs = generateDeepSky(9, 12, w, h);
+  assert.deepEqual(objs, generateDeepSky(9, 12, w, h), 'deterministic per seed');
+  const half = h * GALACTIC_BAND.halfFrac;
+  let galaxies = 0;
+  for (const o of objs) {
+    const off = Math.abs(o.y - galacticBandCenterY(o.x / w, h));
+    if (o.kind === 'galaxy') {
+      galaxies++;
+      // The zone of avoidance: our own galaxy's dust hides external ones
+      // anywhere near the plane, so they may only appear well clear of it.
+      assert.ok(off > half, `a galaxy must sit clear of the band, off=${off} half=${half}`);
+    } else {
+      assert.ok(off <= half * 0.65, `${o.kind} belongs to the disc, off=${off}`);
+    }
+    assert.ok(o.r > 0 && o.alpha > 0);
+  }
+  assert.ok(galaxies > 0, 'the mix should actually contain galaxies');
+});
+
+// --- Planets ---------------------------------------------------------------
+
+test('planets are distinct, spread out, and strung along the ecliptic', () => {
+  const w = 1280, h = 440;
+  const ps = generatePlanets(3, 4, w, h);
+  assert.deepEqual(ps, generatePlanets(3, 4, w, h), 'deterministic per seed');
+  assert.equal(ps.length, 4);
+  assert.equal(new Set(ps.map((p) => p.name)).size, ps.length, 'no planet repeats');
+  for (const p of ps) {
+    // Near the ecliptic -- a separate axis from the galactic plane, so the
+    // two structures read as independent rather than one restated.
+    assert.ok(Math.abs(p.y - eclipticY(p.x / w, h)) < h * 0.06,
+      'a planet should sit close to the ecliptic');
+    assert.ok(p.bright > 0 && p.size > 0);
+  }
+});
+
+test('the ecliptic is a different axis from the galactic plane', () => {
+  const h = 440;
+  const eclRise = eclipticY(1, h) - eclipticY(0, h);
+  const galRise = galacticBandCenterY(1, h) - galacticBandCenterY(0, h);
+  assert.ok(eclRise * galRise < 0,
+    'the two planes should tilt opposite ways, not restate each other');
 });

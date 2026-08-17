@@ -20,7 +20,10 @@ const RELEASE_SEC = 0.25;
 const FLASH_JUMP_THRESHOLD = 0.35;
 const FLASH_LIFE_MS = 300;
 // Deep sky baseline — below the celestial band so it doesn't pin the top edge.
-const BASELINE_FRAC = 0.19;
+// Exported so anything that needs to MEET this structure (the monolith in
+// FractureEngine ties into it) can anchor to the real altitude rather than
+// re-deriving it from a magic number that would silently drift out of sync.
+export const BASELINE_FRAC = 0.19;
 // Vertical throw from band energy alone is now just a residual shimmer --
 // the tidal drift owns the big vertical motion (was 0.22 -- read as its own
 // skyline, not a shimmer).
