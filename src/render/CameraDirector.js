@@ -19,7 +19,7 @@ const ROLL_COUPLING = 0.0007; // rotational kick per (gained) px of shake
 // position, because chasing an authored exit with the camera fights the
 // exit's own effect.
 export const ZOOM_MARGIN_FRAC = 0.08; // how close to either edge is "still fine"
-export const ZOOM_MIN = 0.75; // hardest pull-back -- keeps the world legible, never a wide shot
+export const ZOOM_MIN = 0.66; // hardest pull-back -- keeps the world legible, never a wide shot
 const ZOOM_TAU = 0.6; // seconds -- slow, deliberate ease, never a snap
 
 /**
