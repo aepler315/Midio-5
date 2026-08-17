@@ -541,4 +541,19 @@ export class JumpController {
   }
 
   get airborne() { return this.state === 'AIR'; }
+
+  /** True for the ~3 sim steps immediately before a predictable, kick-
+   *  scheduled ground launch -- a brief lead window the renderer can use
+   *  for an anticipation beat (eye-widen, brace) genuinely ahead of
+   *  liftoff. A player TAP has no such lead time to give -- the tap IS
+   *  the launch, and delaying it to manufacture one would cost input
+   *  feel in a game scored on tap accuracy -- so this is only ever true
+   *  ahead of a scheduled kick-launch, never a manual one; callers that
+   *  want an anticipation beat on tap-launches instead key it off the
+   *  first few steps of `airborne` right after `_wasAirborne` flips. */
+  anticipatingLaunch(nowMs, leadMs = 25) {
+    if (this.state !== 'GROUND' || !this._kickTimes.length) return false;
+    const nextKickMs = nextLandingKickMs(this._kickTimes, nowMs, this._kickIdx);
+    return nextKickMs != null && nextKickMs - nowMs > 0 && nextKickMs - nowMs <= leadMs;
+  }
 }

@@ -21,6 +21,7 @@ import { CalmDirector } from './CalmDirector.js';
 import { GnatGag } from './GnatGag.js';
 import { HypeDirector } from './HypeDirector.js';
 import { FocusDirector } from './FocusDirector.js';
+import { GazeDirector } from './Gaze.js';
 import { VibeDirector } from './VibeDirector.js';
 import { epicBiasForKind } from '../lyrics/SectionFusion.js';
 import { EnsembleDirector } from './EnsembleDirector.js';
@@ -194,6 +195,7 @@ export class Simulation {
     this.calm = new CalmDirector();
     this.hype = new HypeDirector();
     this.focus = new FocusDirector();
+    this.gaze = new GazeDirector();
     this.weather = new WeatherDirector();
     // The conductor track's live half (ConductorTrack.js / CueDirector.js).
     // Empty when the song brought no cue sheet, which is every MIDI without
@@ -937,6 +939,9 @@ export class Simulation {
     // fresh state. sky's own mul feeds biomes.focusMul below; the others are
     // read directly off sim.focus by Renderer.js at each relevant draw call.
     this.focus.update(this, dtSec, nowMs);
+    // Gaze: what Midio is looking at -- reads focus.subject (for the
+    // voyage case) so it must run after focus.update() above.
+    this.gaze.update(this, dtSec, nowMs);
     this.biomes.openingGain = this.opening.gain;
     this.biomes.focusMul = this.focus.mul('sky'); // folded into budget below -- dampens every ambient phenomena system for free when some other subject has focus
     this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge + 1.1 * this.fever.level; // drops + player fever surge every phenomena system
