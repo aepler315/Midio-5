@@ -295,6 +295,7 @@ export class BiomeManager {
     this.openingGain = 1; // OpeningDirector, set per-step by Simulation
     this.hypeBoost = 1; // drop-surge multiplier from the HypeDirector
     this.focusMul = 1; // FocusDirector's 'sky' dampener -- 1 unless some other subject has focus
+    this.stillnessMul = 1; // CutDirector's held-breath dip right after an authored drop/apotheosis cut
     this.mandalaScaleMul = 1; // swells while Midasus dances near the celestial
     this._progress = 0;
     // Safe defaults before the first update() so a zero-dt first frame
@@ -1169,7 +1170,7 @@ export class BiomeManager {
     // below, plus LightRig's own budget param) dampens for free whenever
     // some other subject has focus, with no per-site changes needed.
     this._lightBudget = intensityBudget(this._progress) * this._kindBudgetMulEased * this.openingGain;
-    this.budget = this._lightBudget * this.focusMul;
+    this.budget = this._lightBudget * this.focusMul * this.stillnessMul;
     const gain = this.budget * this.hypeBoost;
     this.mandala.intensity = gain;
     this.murmuration.intensity = gain;

@@ -22,6 +22,7 @@ import { GnatGag } from './GnatGag.js';
 import { HypeDirector } from './HypeDirector.js';
 import { FocusDirector } from './FocusDirector.js';
 import { GazeDirector } from './Gaze.js';
+import { CutDirector } from './CutDirector.js';
 import { VibeDirector } from './VibeDirector.js';
 import { epicBiasForKind } from '../lyrics/SectionFusion.js';
 import { EnsembleDirector } from './EnsembleDirector.js';
@@ -196,6 +197,7 @@ export class Simulation {
     this.hype = new HypeDirector();
     this.focus = new FocusDirector();
     this.gaze = new GazeDirector();
+    this.cut = new CutDirector();
     this.weather = new WeatherDirector();
     // The conductor track's live half (ConductorTrack.js / CueDirector.js).
     // Empty when the song brought no cue sheet, which is every MIDI without
@@ -944,6 +946,7 @@ export class Simulation {
     this.gaze.update(this, dtSec, nowMs);
     this.biomes.openingGain = this.opening.gain;
     this.biomes.focusMul = this.focus.mul('sky'); // folded into budget below -- dampens every ambient phenomena system for free when some other subject has focus
+    this.biomes.stillnessMul = this.cut.stillnessMul(nowMs); // a brief held-breath dip on the drop/apotheosis cut, folded the same way
     this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge + 1.1 * this.fever.level; // drops + player fever surge every phenomena system
     this.biomes.heatShimmer = this.hype.fast; // a hard hype spike shimmers the far range
     this.biomes.paletteRotation = this.keyDirector.paletteRotation; // the world transposes with the song's key
@@ -978,6 +981,13 @@ export class Simulation {
     this.filmFinish.update(nowMs, dtSec, this.calm.level, this.biomes.budget, this.hype);
     if (this.biomes.cutFlashJustFired) { this.camera.shake(3.5); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
+    // Authored cuts: the drop and the (first) apotheosis get camera+color
+    // snaps here; called after filmFinish.update() above so a hit() this
+    // frame isn't immediately overwritten by that same update() call. The
+    // finale reuses fracture's own trigger rather than duplicating timing --
+    // FractureEngine's freeze/shatter/silence is already an authored cut.
+    this.cut.update(this, dtSec, nowMs);
+    if (this.fracture.justEnteredFinale) { this.filmFinish.hit('finale'); }
     this.assembly.update(nowMs);
     // Finale silence is owned by main.js (has AudioEngine) — flag only here.
 

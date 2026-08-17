@@ -135,6 +135,25 @@ export class AudioEngine {
     }
   }
 
+  /**
+   * A brief ducked dip then recovery -- the sound half of an authored cut
+   * (drop / apotheosis): the mix visibly flinches on the hit frame instead
+   * of just riding the continuous mix. Clock and playback are untouched.
+   */
+  duck(strength = 0.85, holdSec = 0.06, recoverSec = 0.25) {
+    const g = this.master.gain;
+    const now = this.ctx.currentTime;
+    const level = g.value;
+    try {
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(level * (1 - strength), now);
+      g.setValueAtTime(level * (1 - strength), now + holdSec);
+      g.linearRampToValueAtTime(level, now + holdSec + recoverSec);
+    } catch {
+      g.value = level;
+    }
+  }
+
   /** Instant restore of master level (new song / replay). */
   restoreLevel(level = 0.85) {
     const g = this.master.gain;

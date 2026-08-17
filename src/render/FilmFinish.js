@@ -14,6 +14,8 @@ const GRADE_TAU_SEC = 1.2;    // a slow film-stock shift tied to song section, n
 const HYPE_OPEN_WEIGHT = 0.85; // fraction of calm-driven depth a full surge can punch away (never to 0)
 const GRADE_CALM_WEIGHT = 0.5;
 const GRADE_BUDGET_WEIGHT = 0.5;
+const HIT_VIGNETTE = 1;
+const HIT_WARMTH = { drop: 0.05, apotheosis: 0.95, finale: 0 };
 
 /** Vignette depth target: calmLevel builds it, a hype/drop surge punches a
  *  PROPORTION of the current depth away (never subtractively -- can't
@@ -55,5 +57,14 @@ export class FilmFinish {
     const kw = 1 - Math.exp(-dtSec / GRADE_TAU_SEC);
     this.vignetteDepth += kd * (depthTarget - this.vignetteDepth);
     this.warmth += kw * (warmTarget - this.warmth);
+  }
+
+  /** An authored cut (drop / apotheosis / finale): snap straight to a hard
+   *  extreme on this call, bypassing the lowpass entirely, then let the next
+   *  update() ease back toward its normal target -- a hit followed by a
+   *  natural relax, instead of just another point on the continuous swell. */
+  hit(kind) {
+    this.vignetteDepth = HIT_VIGNETTE;
+    this.warmth = HIT_WARMTH[kind] ?? this.warmth;
   }
 }
