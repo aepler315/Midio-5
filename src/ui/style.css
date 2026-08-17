@@ -3,7 +3,8 @@
 /* One Spectrum: the HUD chrome is keyed to the song like the world and
    the characters -- these vars are rewritten from the live spectral
    palette (main.js, cache-gated) so combo/score/roleDots/buttons all
-   shift hue with the song's key and section, as one family. */
+   shift hue with the song's key and section, as one family. DO NOT
+   rename -- main.js writes to these exact custom-property names. */
 :root {
   --spec-gold: #ffd76a;    /* combo, grade, hover accents */
   --spec-cool: #7ad1ff;    /* BASS role, ghost-button hover */
@@ -11,14 +12,46 @@
   --spec-pad: #b9a3ff;     /* PAD role dot */
   --spec-rhythm: #ff5a7a;  /* RHYTHM role dot, hide action */
   --spec-hue: 45;
+
+  /* Structural design tokens -- static, not song-driven. Every color,
+     spacing, radius, and motion value in this file is built on these so
+     the whole chrome reads as one deliberately-designed surface instead
+     of each panel drifting to its own nearby purple. */
+  --bg-void: #050308;                    /* page/stage background */
+  --bg-surface: rgba(14, 11, 22, 0.86);  /* card background */
+  --bg-surface-2: rgba(255, 255, 255, 0.05); /* nested/raised surface: inputs, chips, rows */
+  --bg-surface-3: rgba(0, 0, 0, 0.3);    /* recessed surface: settings wells */
+  --bg-scrim: rgba(5, 3, 8, 0.72);       /* modal/drag backdrop */
+
+  --border-subtle: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.22);
+  --line: var(--border-subtle);
+
+  --text-primary: #f2f0f8;
+  --text-secondary: rgba(242, 240, 248, 0.65);
+  --text-tertiary: rgba(242, 240, 248, 0.45);
+
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-7: 32px; --space-8: 40px;
+
+  --radius-sm: 8px; --radius-md: 12px; --radius-lg: 20px; --radius-pill: 999px;
+
+  --ease-standard: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --dur-fast: 120ms; --dur-base: 200ms; --dur-slow: 320ms;
+
+  --font-sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'SF Mono', Consolas, ui-monospace, monospace;
+
+  --shadow-card: 0 24px 64px rgba(0, 0, 0, 0.45);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
 html, body {
   margin: 0;
   padding: 0;
-  background: #050308;
-  color: #e8e6f0;
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
   overflow: hidden;
   height: 100%;
 }
@@ -67,10 +100,10 @@ html, body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
-  background: radial-gradient(circle at 50% 40%, rgba(60, 30, 90, 0.55), rgba(5, 3, 8, 0.92));
+  gap: var(--space-4);
+  background: radial-gradient(circle at 50% 40%, rgba(60, 30, 90, 0.5), rgba(5, 3, 8, 0.92));
   text-align: center;
-  padding: 24px;
+  padding: var(--space-6);
 }
 
 .panel.hidden, .hidden { display: none !important; }
@@ -78,9 +111,9 @@ html, body {
 /* ── Title screen ─────────────────────────────────────────────────────────── */
 #loader.titleScreen {
   gap: 0;
-  padding: 20px;
+  padding: var(--space-5);
   overflow: auto;
-  background: #06040c;
+  background: var(--bg-void);
 }
 
 .titleBg {
@@ -91,8 +124,8 @@ html, body {
   z-index: 0;
   background:
     radial-gradient(ellipse 90% 70% at 50% 110%, rgba(20, 40, 70, 0.9), transparent 55%),
-    radial-gradient(ellipse 60% 40% at 20% 20%, rgba(120, 40, 160, 0.28), transparent 50%),
-    radial-gradient(ellipse 50% 35% at 80% 25%, rgba(40, 120, 180, 0.22), transparent 50%),
+    radial-gradient(ellipse 60% 40% at 20% 20%, rgba(120, 40, 160, 0.26), transparent 50%),
+    radial-gradient(ellipse 50% 35% at 80% 25%, rgba(40, 120, 180, 0.2), transparent 50%),
     linear-gradient(180deg, #0a0614 0%, #12081f 45%, #0a1424 100%);
 }
 
@@ -123,30 +156,34 @@ html, body {
   position: absolute;
   border-radius: 50%;
   filter: blur(48px);
-  opacity: 0.55;
+  opacity: 0.5;
   animation: titleDrift 14s ease-in-out infinite alternate;
 }
 .titleGlowA {
   width: 42vw; height: 42vw; max-width: 420px; max-height: 420px;
   left: 8%; top: 12%;
-  background: rgba(255, 122, 182, 0.35);
+  background: color-mix(in srgb, var(--spec-warm) 60%, transparent);
 }
 .titleGlowB {
   width: 36vw; height: 36vw; max-width: 360px; max-height: 360px;
   right: 6%; top: 18%;
-  background: rgba(122, 209, 255, 0.3);
+  background: color-mix(in srgb, var(--spec-cool) 55%, transparent);
   animation-delay: -4s;
 }
 .titleGlowC {
   width: 50vw; height: 28vw; max-width: 520px; max-height: 280px;
   left: 28%; bottom: 8%;
-  background: rgba(255, 215, 106, 0.18);
+  background: color-mix(in srgb, var(--spec-gold) 32%, transparent);
   animation-delay: -8s;
 }
 
 @keyframes titleDrift {
   from { transform: translate(0, 0) scale(1); }
   to { transform: translate(18px, -22px) scale(1.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .titleStars, .titleGlow { animation: none; }
 }
 
 .titleHills {
@@ -160,6 +197,10 @@ html, body {
   opacity: 0.9;
 }
 
+/* Shared card language -- .titleCard, .completeCard, and .slskPanel all
+   read as the same family of surface now (same radius/border/blur/shadow
+   recipe), differentiated only by content, not by three near-identical
+   but slightly different purples. */
 .titleCard {
   position: relative;
   z-index: 1;
@@ -168,24 +209,24 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 18px;
+  gap: var(--space-4);
   margin: auto;
-  padding: 28px 26px 22px;
-  border-radius: 22px;
-  background: linear-gradient(165deg, rgba(22, 14, 36, 0.82), rgba(8, 10, 22, 0.88));
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: var(--space-6) var(--space-6) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(165deg, rgba(24, 16, 38, 0.86), var(--bg-surface));
+  border: 1px solid var(--border-subtle);
   box-shadow:
-    0 0 0 1px rgba(255, 215, 106, 0.06) inset,
-    0 24px 64px rgba(0, 0, 0, 0.45),
-    0 0 80px rgba(120, 60, 180, 0.12);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+    0 0 0 1px color-mix(in srgb, var(--spec-gold) 6%, transparent) inset,
+    var(--shadow-card),
+    0 0 80px rgba(120, 60, 180, 0.1);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .titleHero {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
   text-align: left;
 }
 
@@ -194,14 +235,14 @@ html, body {
   flex: 0 0 72px;
   width: 72px;
   height: 72px;
-  filter: drop-shadow(0 0 14px rgba(255, 215, 106, 0.45));
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--spec-gold) 45%, transparent));
   animation: mascotBob 2.8s ease-in-out infinite;
 }
 .mascotBody {
   position: absolute;
   inset: 8px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fff6cf, #ffd76a 45%, #e8a020 100%);
+  background: radial-gradient(circle at 35% 30%, #fff6cf, var(--spec-gold) 45%, #e8a020 100%);
   box-shadow: inset 0 -6px 12px rgba(120, 60, 0, 0.25);
 }
 .mascotEye {
@@ -232,14 +273,17 @@ html, body {
   0%, 92%, 100% { transform: scaleY(1); }
   95% { transform: scaleY(0.12); }
 }
+@media (prefers-reduced-motion: reduce) {
+  .titleMascot, .mascotEye { animation: none; }
+}
 
 .titleBrand { flex: 1; min-width: 0; }
 .titleEyebrow {
-  margin: 0 0 4px;
+  margin: 0 0 var(--space-1);
   font-size: 0.72rem;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: rgba(255, 215, 106, 0.75);
+  color: color-mix(in srgb, var(--spec-gold) 75%, transparent);
 }
 #loader.titleScreen h1 {
   display: flex;
@@ -262,7 +306,7 @@ html, body {
 .titleWordSuper {
   font-size: 0.95rem;
   letter-spacing: 0.28em;
-  color: rgba(232, 230, 240, 0.7);
+  color: var(--text-secondary);
 }
 .titleWordMidio {
   font-size: clamp(2.1rem, 6vw, 2.75rem);
@@ -271,86 +315,91 @@ html, body {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 0 18px rgba(255, 122, 182, 0.35));
+  filter: drop-shadow(0 0 18px color-mix(in srgb, var(--spec-warm) 35%, transparent));
 }
 .titleWordWorld {
   font-size: 1.05rem;
   letter-spacing: 0.32em;
-  color: rgba(200, 220, 255, 0.85);
+  color: color-mix(in srgb, var(--spec-cool) 80%, var(--text-primary));
 }
 .titleTagline {
-  margin: 10px 0 0;
+  margin: var(--space-3) 0 0;
   font-size: 0.92rem;
   line-height: 1.4;
-  color: rgba(232, 230, 240, 0.72);
+  color: var(--text-secondary);
 }
 
 #loader #dropzone {
-  border: 1.5px dashed rgba(255, 215, 106, 0.35);
-  border-radius: 16px;
+  border: 1.5px dashed color-mix(in srgb, var(--spec-gold) 35%, transparent);
+  border-radius: var(--radius-md);
   padding: 0;
   display: block;
   cursor: pointer;
-  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s, transform 0.2s;
+  transition: border-color var(--dur-base) var(--ease-standard), background var(--dur-base), box-shadow var(--dur-base), transform var(--dur-base);
   background: rgba(255, 255, 255, 0.03);
   outline: none;
 }
 #loader #dropzone:hover,
 #loader #dropzone:focus-visible {
-  border-color: rgba(255, 215, 106, 0.7);
-  background: rgba(255, 215, 106, 0.06);
-  box-shadow: 0 0 0 4px rgba(255, 215, 106, 0.08);
+  border-color: color-mix(in srgb, var(--spec-gold) 70%, transparent);
+  background: color-mix(in srgb, var(--spec-gold) 6%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--spec-gold) 8%, transparent);
 }
 #loader #dropzone.drag {
-  border-color: #ffd76a;
+  border-color: var(--spec-gold);
   border-style: solid;
-  background: rgba(255, 215, 106, 0.12);
-  box-shadow: 0 0 32px rgba(255, 215, 106, 0.2);
+  background: color-mix(in srgb, var(--spec-gold) 12%, transparent);
+  box-shadow: 0 0 32px color-mix(in srgb, var(--spec-gold) 20%, transparent);
   transform: scale(1.015);
 }
 .dropzoneInner {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 26px 20px 22px;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-5) var(--space-5);
 }
 .dropIcon {
   font-size: 1.8rem;
   line-height: 1;
-  color: #ffd76a;
-  text-shadow: 0 0 16px rgba(255, 215, 106, 0.55);
+  color: var(--spec-gold);
+  text-shadow: 0 0 16px color-mix(in srgb, var(--spec-gold) 55%, transparent);
   animation: dropNote 2.2s ease-in-out infinite;
 }
 @keyframes dropNote {
   0%, 100% { transform: translateY(0) rotate(-6deg); }
   50% { transform: translateY(-4px) rotate(6deg); }
 }
+@media (prefers-reduced-motion: reduce) {
+  .dropIcon { animation: none; }
+}
 .dropPrimary {
   font-size: 1.05rem;
   font-weight: 650;
-  color: #f4f0ff;
+  color: var(--text-primary);
 }
 .dropSecondary {
   font-size: 0.78rem;
-  color: rgba(232, 230, 240, 0.5);
-  margin-bottom: 6px;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-2);
 }
 
+/* Primary/action pill button (file picker, Soulseek search). One recipe
+   reused wherever an accent-filled call-to-action is needed. */
 .filebtn {
-  background: linear-gradient(135deg, #ff7ab6, #ff9a6a);
+  background: linear-gradient(135deg, var(--spec-warm), #ff9a6a);
   color: #1a0d16;
-  padding: 8px 18px;
-  border-radius: 999px;
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-pill);
   font-weight: 650;
   cursor: pointer;
   display: inline-block;
-  box-shadow: 0 4px 16px rgba(255, 122, 182, 0.3);
-  transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--spec-warm) 30%, transparent);
+  transition: transform var(--dur-base) var(--ease-standard), box-shadow var(--dur-base);
 }
 .filebtn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(255, 122, 182, 0.4);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--spec-warm) 40%, transparent);
 }
 
 #demoBtn.demoBtn {
@@ -360,38 +409,38 @@ html, body {
   gap: 2px;
   width: 100%;
   background: transparent;
-  border: 1px solid rgba(122, 209, 255, 0.4);
-  color: #e8f6ff;
-  padding: 12px 18px;
-  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--spec-cool) 40%, transparent);
+  color: var(--text-primary);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-pill);
   cursor: pointer;
   font-size: 0.95rem;
-  transition: border-color 0.15s, color 0.15s, background 0.15s, box-shadow 0.15s;
+  transition: border-color var(--dur-base), color var(--dur-base), background var(--dur-base), box-shadow var(--dur-base);
 }
-#demoBtn.demoBtn:hover {
-  border-color: #7ad1ff;
-  color: #7ad1ff;
-  background: rgba(122, 209, 255, 0.08);
-  box-shadow: 0 0 24px rgba(122, 209, 255, 0.12);
+#demoBtn.demoBtn:hover, #playAgainBtn:hover {
+  border-color: var(--spec-cool);
+  color: var(--spec-cool);
+  background: color-mix(in srgb, var(--spec-cool) 8%, transparent);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--spec-cool) 12%, transparent);
 }
 .demoBtnLabel { font-weight: 650; letter-spacing: 0.04em; }
 .demoBtnHint { font-size: 0.72rem; opacity: 0.55; font-weight: 400; }
 
 #playAgainBtn {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  color: #e8e6f0;
-  padding: 8px 18px;
-  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-pill);
   cursor: pointer;
   font-size: 0.9rem;
+  transition: border-color var(--dur-base), color var(--dur-base);
 }
-#playAgainBtn:hover { border-color: #7ad1ff; color: #7ad1ff; }
 
 .titleMeta {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   align-items: center;
 }
 #loader .prefRow {
@@ -399,81 +448,82 @@ html, body {
   flex-wrap: wrap;
 }
 .chipbtn {
-  border-radius: 999px !important;
+  border-radius: var(--radius-pill) !important;
   font-size: 0.78rem !important;
-  padding: 5px 12px !important;
+  padding: 5px var(--space-3) !important;
 }
 
 .titleAdvanced {
   width: 100%;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-3);
   text-align: left;
   overflow: hidden;
 }
 .titleAdvanced summary {
   cursor: pointer;
   list-style: none;
-  padding: 10px 14px;
+  padding: var(--space-2) var(--space-4);
   font-size: 0.8rem;
   letter-spacing: 0.04em;
-  color: rgba(232, 230, 240, 0.65);
+  color: var(--text-secondary);
   user-select: none;
+  transition: color var(--dur-fast);
 }
 .titleAdvanced summary::-webkit-details-marker { display: none; }
 .titleAdvanced summary::before {
   content: '▸ ';
-  color: rgba(255, 215, 106, 0.7);
+  color: color-mix(in srgb, var(--spec-gold) 70%, transparent);
 }
 .titleAdvanced[open] summary::before { content: '▾ '; }
 .titleAdvanced[open] summary {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  color: rgba(232, 230, 240, 0.85);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
 }
 .titleAdvanced .sfRow {
   margin: 0;
-  padding: 12px 14px 4px;
+  padding: var(--space-3) var(--space-4) var(--space-1);
   flex-wrap: wrap;
   justify-content: center;
 }
 .titleAdvanced .hint {
   margin: 0;
-  padding: 4px 14px 12px;
+  padding: var(--space-1) var(--space-4) var(--space-3);
   text-align: center;
 }
-.titleAdvanced .hint a { color: rgba(255, 215, 106, 0.85); }
+.titleAdvanced .hint a { color: color-mix(in srgb, var(--spec-gold) 85%, transparent); }
 
 /* Music-search rows (Jamendo/Soulseek panels) */
 .jamendoRow {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 4px 14px;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-4);
 }
 .jamendoRow input {
   flex: 1;
   min-width: 0;
-  background: rgba(255, 255, 255, 0.06);
-  color: #e8e6f0;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 999px;
-  padding: 6px 12px;
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  padding: 6px var(--space-3);
   font-size: 0.82rem;
 }
 .jamendoRow input:focus {
   outline: none;
-  border-color: rgba(255, 215, 106, 0.55);
-  box-shadow: 0 0 0 2px rgba(255, 215, 106, 0.15);
+  border-color: color-mix(in srgb, var(--spec-gold) 55%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--spec-gold) 15%, transparent);
 }
 .jamendoStatus.hidden { display: none; }
-.jamendoStatus { color: rgba(232, 230, 240, 0.6); }
-.jamendoStatusError { color: #ff9a9a; }
+.jamendoStatus { color: var(--text-secondary); }
+.jamendoStatusError { color: var(--spec-rhythm); }
 .jamendoResults {
   list-style: none;
   margin: 0;
-  padding: 0 14px 12px;
+  padding: 0 var(--space-4) var(--space-3);
   max-height: 180px;
   overflow-y: auto;
   display: flex;
@@ -488,7 +538,12 @@ html, body {
   white-space: nowrap;
 }
 /* Soulseek results carry peer metadata (user, bitrate, speed) — keep the
-   button label on one line and show the peer line beneath it. */
+   button label on one line and show the peer line beneath it. This is a
+   simpler fallback shape; the richer icon/title/fields grid layout for
+   .slskResult (used by the live Soulseek panel UI) is defined further
+   below and wins on shared properties since it comes later in the
+   cascade -- both are kept intentionally (different result-render paths
+   in main.js), only retinted here, not restructured. */
 .slskResult {
   display: flex;
   flex-direction: column;
@@ -511,7 +566,7 @@ html, body {
 }
 .progressHint {
   min-height: 1.2em;
-  color: #7ad1ff !important;
+  color: var(--spec-cool) !important;
   opacity: 0.9 !important;
 }
 
@@ -519,12 +574,12 @@ html, body {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px 14px;
+  gap: var(--space-2) var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
   font-size: 0.72rem;
-  color: rgba(232, 230, 240, 0.45);
+  color: var(--text-tertiary);
 }
 .titleKeys kbd {
   display: inline-block;
@@ -532,55 +587,55 @@ html, body {
   padding: 1px 6px;
   margin-right: 3px;
   border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.06);
-  font-family: 'SF Mono', Consolas, monospace;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface-2);
+  font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: rgba(255, 215, 106, 0.85);
+  color: color-mix(in srgb, var(--spec-gold) 85%, transparent);
 }
 
 @media (max-width: 540px) {
   .titleHero { flex-direction: column; text-align: center; }
   #loader.titleScreen h1 { align-items: center; }
-  .titleCard { padding: 22px 16px 18px; }
+  .titleCard { padding: var(--space-5) var(--space-4) var(--space-4); }
 }
 
 .sub { opacity: 0.8; margin: 0; }
-.hint { opacity: 0.5; font-size: 0.8rem; margin-top: 10px; }
+.hint { opacity: 0.5; font-size: 0.8rem; margin-top: var(--space-3); }
 
 /* Generic dropzone (also used if non-title contexts ever share the id) */
 #dropzone {
-  border: 2px dashed rgba(255, 255, 255, 0.35);
-  border-radius: 12px;
-  padding: 28px 40px;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-7) var(--space-8);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-3);
   cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
+  transition: border-color var(--dur-base), background var(--dur-base);
 }
-#dropzone.drag { border-color: var(--spec-gold); background: rgba(255, 215, 106, 0.08); }
+#dropzone.drag { border-color: var(--spec-gold); background: color-mix(in srgb, var(--spec-gold) 8%, transparent); }
 
 /* ── Complete screen ─────────────────────────────────────────────────────── */
 #completePanel.completePanel {
   gap: 0;
-  padding: 24px;
+  padding: var(--space-6);
   background:
-    radial-gradient(ellipse 80% 60% at 50% 30%, rgba(70, 40, 110, 0.45), transparent 60%),
-    radial-gradient(circle at 50% 100%, rgba(10, 30, 50, 0.55), rgba(5, 3, 8, 0.94));
+    radial-gradient(ellipse 80% 60% at 50% 30%, rgba(70, 40, 110, 0.4), transparent 60%),
+    radial-gradient(circle at 50% 100%, rgba(10, 30, 50, 0.5), rgba(5, 3, 8, 0.94));
 }
 .completeCard {
   width: min(520px, 94vw);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  padding: 28px 28px 24px;
-  border-radius: 18px;
-  background: rgba(12, 10, 22, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-6) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-card);
   backdrop-filter: blur(10px);
 }
 .completeEyebrow {
@@ -588,24 +643,23 @@ html, body {
   font-size: 0.78rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(232, 230, 240, 0.55);
+  color: var(--text-secondary);
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-#demoBtn:hover, #playAgainBtn:hover { border-color: var(--spec-cool); color: var(--spec-cool); }
 #completePanel h1 {
   font-size: 2.4rem;
   letter-spacing: 0.08em;
   margin: 0;
   color: var(--spec-gold);
-  text-shadow: 0 0 28px rgba(255, 215, 106, 0.35);
+  text-shadow: 0 0 28px color-mix(in srgb, var(--spec-gold) 35%, transparent);
 }
 .completeSeedRow {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   flex-wrap: wrap;
   justify-content: center;
   font-size: 0.9rem;
@@ -617,55 +671,75 @@ html, body {
   font-size: 0.72rem;
 }
 .completeSeedRow code {
-  font-family: 'SF Mono', Consolas, ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 1.05rem;
   letter-spacing: 0.12em;
-  color: #c8f0ff;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  padding: 6px 12px;
+  color: color-mix(in srgb, var(--spec-cool) 88%, var(--text-primary));
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 6px var(--space-3);
 }
 .resultsGrid {
   width: 100%;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px 14px;
-  margin: 4px 0 2px;
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-1) 0 2px;
   text-align: left;
 }
 .statCell {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  padding: var(--space-3) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
 }
 .statCell .statLabel {
   font-size: 0.68rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(232, 230, 240, 0.5);
+  color: var(--text-tertiary);
 }
 .statCell .statValue {
   font-size: 1.15rem;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
-  color: #f2f0fa;
+  color: var(--text-primary);
 }
 .statCell.statWide { grid-column: 1 / -1; }
 .completeActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--space-3);
   justify-content: center;
   width: 100%;
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 .completeActions button {
   min-width: 120px;
+}
+/* #replaySameSeedBtn ships with no class in the markup (browser-default
+   button otherwise) -- give it the same primary-pill treatment as the
+   title screen's #demoBtn/.filebtn family so the results screen's main
+   call-to-action doesn't read as an unstyled leftover. */
+#replaySameSeedBtn {
+  background: linear-gradient(135deg, var(--spec-warm), var(--spec-gold));
+  color: #1a0d16;
+  border: none;
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-pill);
+  font-weight: 650;
+  font-size: 0.9rem;
+  cursor: pointer;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--spec-warm) 30%, transparent);
+  transition: transform var(--dur-base) var(--ease-standard), box-shadow var(--dur-base);
+}
+#replaySameSeedBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--spec-warm) 40%, transparent);
 }
 .completeNewSeedRow {
   margin-top: 2px;
@@ -676,9 +750,9 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: 0.85rem;
 }
 .seedRow label, .resRow label {
@@ -689,35 +763,34 @@ html, body {
 }
 #seedInput, #completeNewSeedInput {
   width: min(160px, 40vw);
-  background: rgba(255, 255, 255, 0.06);
-  color: #e8e6f0;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 999px;
-  padding: 6px 12px;
-  font-family: 'SF Mono', Consolas, ui-monospace, monospace;
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  padding: 6px var(--space-3);
+  font-family: var(--font-mono);
   font-size: 0.85rem;
   letter-spacing: 0.06em;
 }
 #seedInput:focus, #completeNewSeedInput:focus {
   outline: none;
-  border-color: rgba(255, 215, 106, 0.55);
-  box-shadow: 0 0 0 2px rgba(255, 215, 106, 0.15);
+  border-color: color-mix(in srgb, var(--spec-gold) 55%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--spec-gold) 15%, transparent);
 }
 #stageRes {
-  background: rgba(255, 255, 255, 0.06);
-  color: #e8e6f0;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 999px;
-  padding: 6px 12px;
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  padding: 6px var(--space-3);
   font-size: 0.85rem;
 }
 
 #hud {
   position: absolute;
-  top: 16px;
-  left: 16px;
-  right: 16px;
-  z-index: 3;
+  top: var(--space-4);
+  left: var(--space-4);
+  right: var(--space-4);
   display: flex;
   justify-content: flex-end;
   align-items: flex-start;
@@ -735,10 +808,10 @@ html, body {
 #hudRight {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
   pointer-events: auto;
   opacity: 1;
-  transition: opacity 260ms ease;
+  transition: opacity var(--dur-slow) ease;
 }
 #hudRight.hud-faded {
   opacity: 0;
@@ -756,13 +829,13 @@ html, body {
    than #debugOverlay so it's cheap enough to leave on during play. */
 #fpsHud {
   position: absolute;
-  left: 8px; bottom: 8px;
+  left: var(--space-2); bottom: var(--space-2);
   z-index: 20;
-  background: rgba(5, 5, 10, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(5, 5, 10, 0.75);
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
-  padding: 4px 8px;
-  font-family: 'SF Mono', Consolas, monospace;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.4;
   color: #d8f7c8;
@@ -780,11 +853,11 @@ html, body {
   color: #d8f7c8;
   width: 380px;
   height: 100%;
-  background: rgba(5, 5, 10, 0.88);
-  border-left: 1px solid rgba(255, 255, 255, 0.15);
-  padding: 14px;
+  background: rgba(5, 5, 10, 0.9);
+  border-left: 1px solid var(--border-strong);
+  padding: var(--space-4);
   overflow-y: auto;
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -799,21 +872,24 @@ html, body {
   0%, 100% { transform: rotate(-5deg) translateY(0); }
   50% { transform: rotate(5deg) translateY(-5px); }
 }
+@media (prefers-reduced-motion: reduce) {
+  .wobble-letter { animation: none; }
+}
 
 /* SoundFont loader row */
 .sfRow {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
-  margin-top: 10px;
+  margin-top: var(--space-3);
 }
 
 .prefRow {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
   justify-content: center;
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 
 /* Preference toggles read as engaged when on. */
@@ -826,16 +902,17 @@ html, body {
   color: var(--spec-cool);
 }
 
-/* Ghost button (outline style) */
+/* Ghost button (outline style) -- the shared secondary-action recipe used
+   across the title screen, HUD, and every modal footer. */
 .ghostbtn {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.7);
-  padding: 6px 12px;
-  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.85rem;
-  transition: border-color 0.15s, color 0.15s;
+  transition: border-color var(--dur-base), color var(--dur-base);
 }
 .ghostbtn:hover {
   border-color: var(--spec-cool);
@@ -844,9 +921,9 @@ html, body {
 
 /* Compact square variant for single-glyph buttons (gear, ×). */
 .iconbtn {
-  padding: 4px 10px;
+  padding: var(--space-1) 10px;
   font-size: 1rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 /* Auto-hiding SoundFont pill (bottom-center) — click to open the switcher
@@ -858,7 +935,7 @@ html, body {
   transform: translateX(-50%);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.3s ease;
+  transition: opacity var(--dur-slow) ease;
   z-index: 6;
 }
 #fontBar.visible {
@@ -868,15 +945,15 @@ html, body {
 #fontBarBtn {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  background: rgba(5, 5, 10, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 24px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: rgba(5, 5, 10, 0.72);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
   font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
+  transition: border-color var(--dur-base), color var(--dur-base);
 }
 #fontBarBtn:hover { border-color: var(--spec-cool); color: var(--spec-cool); }
 #fontName {
@@ -894,30 +971,30 @@ html, body {
   pointer-events: auto;
 }
 #trackBadgeBtn {
-  background: rgba(5, 5, 10, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.85);
-  padding: 6px 14px;
-  border-radius: 999px;
+  background: rgba(5, 5, 10, 0.72);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  padding: 6px var(--space-4);
+  border-radius: var(--radius-pill);
   font-size: 0.8rem;
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
+  transition: border-color var(--dur-base), color var(--dur-base);
 }
 #trackBadgeBtn:hover { border-color: var(--spec-cool); color: var(--spec-cool); }
 
 #trackList {
   display: none;
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + var(--space-2));
   right: 0;
   min-width: 260px;
   max-width: 340px;
   max-height: 320px;
   overflow-y: auto;
-  background: rgba(5, 5, 10, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 10px;
-  padding: 8px;
+  background: rgba(5, 5, 10, 0.94);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
   font-size: 0.78rem;
 }
 #trackBadge.expanded #trackList { display: block; }
@@ -925,11 +1002,11 @@ html, body {
 .trackRow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   padding: 4px 6px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
-.trackRow.intertwined { background: rgba(255, 255, 255, 0.05); }
+.trackRow.intertwined { background: var(--bg-surface-2); }
 .trackRow .roleDot {
   width: 8px;
   height: 8px;
@@ -958,8 +1035,8 @@ html, body {
   font-size: 0.68rem;
   opacity: 0.75;
   padding: 0 5px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
   white-space: nowrap;
 }
 .trackRow .panGlyph {
@@ -972,7 +1049,7 @@ html, body {
   opacity: 0.5;
   font-size: 0.72rem;
   padding: 4px 6px 2px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--border-subtle);
   margin-top: 4px;
 }
 
@@ -988,10 +1065,10 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(5, 3, 8, 0.55);
+  background: var(--bg-scrim);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--dur-base) ease;
   z-index: 20;
 }
 #dragOverlay.visible { opacity: 1; }
@@ -999,23 +1076,25 @@ html, body {
   font-size: 2rem;
   font-weight: 700;
   letter-spacing: 0.08em;
-  padding: 20px 40px;
+  padding: var(--space-5) var(--space-7);
   border: 3px dashed var(--spec-gold);
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   color: var(--spec-gold);
   background: rgba(5, 5, 10, 0.5);
 }
 
 /* SoundFont switcher popup — lists every loaded font with a click-to-
    activate row and a × (hide) action; #fontHiddenToggle swaps the same
-   list into the "settings" view of hidden fonts with a + (unhide) action. */
+   list into the "settings" view of hidden fonts with a + (unhide) action.
+   Shared modal shell (.modalBackdrop/.modalPanel) reused by the filmstrip
+   modal below -- one recipe instead of two near-duplicates. */
 .modalBackdrop {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(5, 3, 8, 0.72);
+  background: var(--bg-scrim);
   z-index: 30;
 }
 .modalPanel {
@@ -1023,18 +1102,18 @@ html, body {
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  background: rgba(8, 6, 14, 0.96);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 14px;
+  background: rgba(10, 8, 16, 0.97);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-modal);
 }
 .modalHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
   flex: none;
 }
 .modalHeader h2 {
@@ -1045,27 +1124,27 @@ html, body {
 }
 .fontList {
   overflow-y: auto;
-  padding: 8px;
+  padding: var(--space-2);
   flex: 1 1 auto;
   min-height: 60px;
 }
 .fontListEmpty {
   opacity: 0.55;
   font-size: 0.85rem;
-  padding: 20px 12px;
+  padding: var(--space-5) var(--space-3);
   text-align: center;
 }
 .fontRow {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 8px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--dur-base);
 }
-.fontRow:hover { background: rgba(255, 255, 255, 0.06); }
-.fontRow.active { background: rgba(255, 215, 106, 0.12); }
+.fontRow:hover { background: var(--bg-surface-2); }
+.fontRow.active { background: color-mix(in srgb, var(--spec-gold) 12%, transparent); }
 .fontRow.active .fontRowName { color: var(--spec-gold); font-weight: 600; }
 .fontRowName {
   flex: 1 1 auto;
@@ -1081,13 +1160,13 @@ html, body {
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 50%;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 0.9rem;
   line-height: 1;
-  transition: border-color 0.15s, color 0.15s;
+  transition: border-color var(--dur-base), color var(--dur-base);
 }
 /* Hide (×) reads as a removal — red accent, matching RHYTHM's roleDot.
    Unhide (+) reads as a restore — blue accent, matching the shared hover. */
@@ -1105,36 +1184,36 @@ html, body {
   flex: none;
   min-width: 30px;
   padding: 2px 7px;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   font-size: 0.72rem;
   text-align: center;
   cursor: default;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: rgba(255, 255, 255, 0.75);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
 }
-.fontRowBadge.ok { border-color: rgba(122, 209, 255, 0.45); color: var(--spec-cool); }
-.fontRowBadge.dq { border-color: rgba(255, 90, 122, 0.55); color: var(--spec-rhythm); }
+.fontRowBadge.ok { border-color: color-mix(in srgb, var(--spec-cool) 45%, transparent); color: var(--spec-cool); }
+.fontRowBadge.dq { border-color: color-mix(in srgb, var(--spec-rhythm) 55%, transparent); color: var(--spec-rhythm); }
 .fontRowBadge.pending { opacity: 0.55; }
 .auditionStatus {
   flex: none;
-  padding: 8px 16px;
+  padding: var(--space-2) var(--space-4);
   font-size: 0.78rem;
-  color: rgba(255, 255, 255, 0.65);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-subtle);
 }
 .auditionStatus.hidden { display: none; }
 .modalFooter {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
-  padding: 12px 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
   flex: none;
 }
 .modalFooter .filebtn, .modalFooter .ghostbtn {
   font-size: 0.78rem;
-  padding: 6px 12px;
+  padding: 6px var(--space-3);
 }
 #fontHiddenToggle { margin-left: auto; }
 
@@ -1143,19 +1222,19 @@ html, body {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
   max-width: min(560px, 84vw);
 }
 .filmstripFrame {
   width: 96px;
   height: 54px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
   overflow: hidden;
   cursor: pointer;
   background: #000;
-  transition: border-color 0.15s, transform 0.15s;
+  transition: border-color var(--dur-base), transform var(--dur-base);
 }
 .filmstripFrame:hover { border-color: var(--spec-gold); transform: translateY(-2px); }
 .filmstripFrame img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -1166,15 +1245,15 @@ html, body {
 /* --- Audition load screen (font ratings gate the show) --- */
 #auditionCanvas {
   display: block;
-  margin: 8px auto;
+  margin: var(--space-2) auto;
   background: transparent;
 }
 #auditionBar {
   width: min(420px, 80%);
   height: 6px;
-  margin: 10px auto 4px;
+  margin: var(--space-3) auto 4px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--bg-surface-2);
   overflow: hidden;
 }
 #auditionBarFill {
@@ -1182,7 +1261,7 @@ html, body {
   height: 100%;
   border-radius: 3px;
   background: linear-gradient(90deg, var(--spec-cool), var(--spec-gold));
-  transition: width 0.25s ease;
+  transition: width var(--dur-slow) ease;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1202,7 +1281,7 @@ html, body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: var(--space-4);
   pointer-events: none;
   animation: recalFadeIn 260ms ease-out;
 }
@@ -1210,13 +1289,13 @@ html, body {
 /* The big block count. Sized off the viewport so it reads at any stage
    resolution, and translucent enough that the show is never hidden. */
 #recalNumber {
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 40vh;
   line-height: 0.82;
   font-weight: 900;
   letter-spacing: -0.04em;
   color: rgba(255, 255, 255, 0.16);
-  text-shadow: 0 0 60px rgba(120, 200, 255, 0.22);
+  text-shadow: 0 0 60px color-mix(in srgb, var(--spec-cool) 22%, transparent);
   font-variant-numeric: tabular-nums;
   /* Scale/opacity are driven per-beat from JS (same swell-then-snap shape as
      the old calibration beacon), so no CSS transition -- it would smear it. */
@@ -1229,7 +1308,8 @@ html, body {
   text-align: center;
   font-size: 15px;
   line-height: 1.55;
-  color: rgba(232, 240, 255, 0.82);
+  color: var(--text-primary);
+  opacity: 0.82;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
   transition: opacity 700ms ease;
 }
@@ -1237,30 +1317,30 @@ html, body {
 #recalInstruction.faded { opacity: 0.2; }
 
 /* Beat pips within the current measure. */
-#recalPips { display: flex; gap: 10px; }
+#recalPips { display: flex; gap: var(--space-3); }
 #recalPips span {
   width: 10px; height: 10px; border-radius: 50%;
   background: rgba(255, 255, 255, 0.18);
   transition: background 90ms linear, transform 90ms linear;
 }
-#recalPips span.on { background: rgba(140, 215, 255, 0.95); transform: scale(1.45); }
+#recalPips span.on { background: color-mix(in srgb, var(--spec-cool) 95%, white); transform: scale(1.45); }
 
 /* Live BeatAnchor.confidence -- the player can watch the tapping land. */
 .recalConf {
   width: 220px; height: 4px; border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--bg-surface-2);
   overflow: hidden;
 }
 .recalConfFill {
   height: 100%; width: 0%;
-  background: linear-gradient(90deg, #4fb0ff, #8ef0c8);
+  background: linear-gradient(90deg, var(--spec-cool), #8ef0c8);
   transition: width 160ms ease-out;
 }
 
 #recalStatus {
   margin: 0; min-height: 1.2em;
   font-size: 13px;
-  color: rgba(210, 226, 245, 0.75);
+  color: var(--text-secondary);
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
 }
 
@@ -1271,29 +1351,32 @@ html, body {
 }
 
 /* ── Soulseek search panel ────────────────────────────────────────────────── */
+/* Same card language as .titleCard/.completeCard/.modalPanel now -- it used
+   to be a visually distinct violet-only block; the accent still comes
+   through (border tint, badge colors) without a whole separate palette. */
 .slskPanel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
   text-align: left;
-  padding: 12px 12px 10px;
-  border-radius: 14px;
-  background: linear-gradient(160deg, rgba(40, 18, 72, 0.55), rgba(12, 18, 40, 0.65));
-  border: 1px solid rgba(186, 140, 255, 0.22);
-  box-shadow: 0 0 0 1px rgba(255, 215, 106, 0.04) inset;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--spec-pad) 8%, transparent) inset;
 }
 
 .slskHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .slskTitleRow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -1303,7 +1386,7 @@ html, body {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #f0e8ff;
+  color: var(--text-primary);
 }
 
 .slskModeBadge {
@@ -1312,36 +1395,36 @@ html, body {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.28);
-  color: #c8b8e8;
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-3);
+  color: var(--text-secondary);
 }
 .slskModeBadge[data-mode="free"],
 .slskModeBadge[data-mode="demo"] {
-  color: #ffd76a;
-  border-color: rgba(255, 215, 106, 0.35);
-  background: rgba(255, 215, 106, 0.1);
+  color: var(--spec-gold);
+  border-color: color-mix(in srgb, var(--spec-gold) 35%, transparent);
+  background: color-mix(in srgb, var(--spec-gold) 10%, transparent);
 }
 .slskModeBadge[data-mode="slskd"] {
-  color: #7ad1ff;
-  border-color: rgba(122, 209, 255, 0.4);
-  background: rgba(122, 209, 255, 0.12);
+  color: var(--spec-cool);
+  border-color: color-mix(in srgb, var(--spec-cool) 40%, transparent);
+  background: color-mix(in srgb, var(--spec-cool) 12%, transparent);
 }
 .slskModeBadge[data-mode="direct"] {
-  color: #ff7ab6;
-  border-color: rgba(255, 122, 182, 0.4);
-  background: rgba(255, 122, 182, 0.12);
+  color: var(--spec-warm);
+  border-color: color-mix(in srgb, var(--spec-warm) 40%, transparent);
+  background: color-mix(in srgb, var(--spec-warm) 12%, transparent);
 }
 .slskModeBadge[data-mode="offline"] {
-  color: #ff8a8a;
-  border-color: rgba(255, 100, 100, 0.35);
+  color: var(--spec-rhythm);
+  border-color: color-mix(in srgb, var(--spec-rhythm) 40%, transparent);
 }
 
 .slskSearchForm {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: stretch;
 }
 
@@ -1349,37 +1432,37 @@ html, body {
   flex: 1 1 auto;
   min-width: 0;
   height: 40px;
-  padding: 0 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.35);
-  color: #f4f0ff;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-3);
+  color: var(--text-primary);
   font-size: 0.95rem;
   outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--dur-base), box-shadow var(--dur-base);
 }
 .slskSearchForm input[type="search"]::placeholder {
-  color: rgba(220, 210, 255, 0.4);
+  color: var(--text-tertiary);
 }
 .slskSearchForm input[type="search"]:focus {
-  border-color: rgba(186, 140, 255, 0.65);
-  box-shadow: 0 0 0 3px rgba(140, 90, 220, 0.22);
+  border-color: color-mix(in srgb, var(--spec-pad) 65%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--spec-pad) 20%, transparent);
 }
 
 .slskSearchBtn {
   flex: 0 0 auto;
   height: 40px;
-  padding: 0 16px;
+  padding: 0 var(--space-4);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   font-weight: 700;
   font-size: 0.88rem;
   letter-spacing: 0.03em;
   cursor: pointer;
   color: #1a1020;
-  background: linear-gradient(135deg, var(--spec-warm, #ff7ab6), #ffb86b 120%);
-  box-shadow: 0 4px 16px rgba(255, 122, 182, 0.28);
-  transition: transform 0.12s, filter 0.12s, opacity 0.12s;
+  background: linear-gradient(135deg, var(--spec-warm), var(--spec-gold) 120%);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--spec-warm) 28%, transparent);
+  transition: transform var(--dur-fast), filter var(--dur-fast), opacity var(--dur-fast);
 }
 .slskSearchBtn:hover:not(:disabled) {
   filter: brightness(1.08);
@@ -1393,11 +1476,11 @@ html, body {
 .slskSettings {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.28);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-subtle);
 }
 
 .slskField {
@@ -1405,27 +1488,27 @@ html, body {
   flex-direction: column;
   gap: 4px;
   font-size: 0.75rem;
-  color: rgba(230, 220, 255, 0.7);
+  color: var(--text-secondary);
   text-align: left;
 }
 .slskField input,
 .slskField select {
   height: 34px;
-  padding: 0 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.35);
-  color: #f0eaff;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-3);
+  color: var(--text-primary);
   font-size: 0.85rem;
 }
 .slskFieldGroup {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .slskSettingsActions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
   flex-wrap: wrap;
 }
@@ -1433,34 +1516,34 @@ html, body {
   margin: 0;
   font-size: 0.7rem;
   line-height: 1.35;
-  color: rgba(200, 190, 230, 0.55);
+  color: var(--text-tertiary);
 }
 .slskHint code {
   font-size: 0.68rem;
-  color: #c9b6ff;
+  color: color-mix(in srgb, var(--spec-pad) 85%, var(--text-primary));
 }
 
 .slskStatus {
   margin: 0;
   min-height: 1.1em;
   font-size: 0.78rem;
-  color: rgba(210, 200, 245, 0.75);
+  color: var(--text-secondary);
 }
 
 .slskEmpty {
   margin: 0;
   font-size: 0.8rem;
   line-height: 1.4;
-  color: rgba(200, 190, 230, 0.55);
+  color: var(--text-tertiary);
   text-align: center;
-  padding: 8px 4px 2px;
+  padding: var(--space-2) 4px 2px;
 }
 
 /* needs-login badge state */
 .slskModeBadge[data-mode="needs-login"] {
-  color: #ffb86b;
-  border-color: rgba(255, 184, 107, 0.45);
-  background: rgba(255, 184, 107, 0.12);
+  color: var(--spec-gold);
+  border-color: color-mix(in srgb, var(--spec-gold) 45%, transparent);
+  background: color-mix(in srgb, var(--spec-gold) 12%, transparent);
 }
 
 .slskResults {
@@ -1472,27 +1555,27 @@ html, body {
   overscroll-behavior: contain;
   padding-right: 2px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(180, 140, 255, 0.35) transparent;
+  scrollbar-color: color-mix(in srgb, var(--spec-pad) 35%, transparent) transparent;
 }
 
 .slskResult {
   display: grid;
   grid-template-columns: 28px 1fr auto;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: start;
   width: 100%;
-  padding: 10px 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
+  padding: var(--space-3) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-2);
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, transform 0.12s;
+  transition: background var(--dur-fast), border-color var(--dur-fast), transform var(--dur-fast);
 }
 .slskResult:hover {
-  background: rgba(160, 100, 255, 0.14);
-  border-color: rgba(186, 140, 255, 0.35);
+  background: color-mix(in srgb, var(--spec-pad) 14%, transparent);
+  border-color: color-mix(in srgb, var(--spec-pad) 35%, transparent);
   transform: translateY(-1px);
 }
 .slskResult.loading {
@@ -1514,7 +1597,7 @@ html, body {
 .slskResultTitle {
   font-size: 0.92rem;
   font-weight: 700;
-  color: #f6f0ff;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1537,18 +1620,18 @@ html, body {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: rgba(180, 170, 210, 0.5);
+  color: var(--text-tertiary);
 }
 .slskFieldValue {
   font-size: 0.78rem;
-  color: rgba(220, 210, 245, 0.88);
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .slskResultMeta {
   font-size: 0.65rem;
-  color: rgba(180, 170, 210, 0.5);
+  color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1559,11 +1642,11 @@ html, body {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--spec-gold, #ffd76a);
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: rgba(255, 215, 106, 0.1);
-  border: 1px solid rgba(255, 215, 106, 0.25);
+  color: var(--spec-gold);
+  padding: 4px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--spec-gold) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--spec-gold) 25%, transparent);
   align-self: center;
 }
 
@@ -1571,15 +1654,15 @@ html, body {
   margin: 0;
   font-size: 0.65rem;
   line-height: 1.35;
-  color: rgba(180, 170, 210, 0.45);
+  color: var(--text-tertiary);
   text-align: center;
 }
 
 .slskDivider {
   display: flex;
   align-items: center;
-  gap: 10px;
-  color: rgba(200, 190, 230, 0.4);
+  gap: var(--space-3);
+  color: var(--text-tertiary);
   font-size: 0.72rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1589,7 +1672,7 @@ html, body {
   content: '';
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+  background: linear-gradient(90deg, transparent, var(--border-subtle), transparent);
 }
 
 @media (max-width: 420px) {
@@ -1602,9 +1685,9 @@ html, body {
 
 /* Free-first search: advanced slskd stays collapsed */
 .slskAdvanced {
-  margin-top: 0.65rem;
-  border-top: 1px solid color-mix(in srgb, var(--line, #3a3a4a) 70%, transparent);
-  padding-top: 0.5rem;
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-2);
 }
 .slskAdvanced > summary {
   cursor: pointer;
@@ -1614,7 +1697,7 @@ html, body {
 }
 .slskAdvanced > summary::-webkit-details-marker { display: none; }
 .slskHintLead {
-  margin: 0 0 0.55rem;
+  margin: 0 0 var(--space-2);
   line-height: 1.35;
 }
 .slskField em {
