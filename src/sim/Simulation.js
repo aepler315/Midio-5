@@ -20,6 +20,7 @@ import { MidioPerformer } from './MidioPerformer.js';
 import { CalmDirector } from './CalmDirector.js';
 import { GnatGag } from './GnatGag.js';
 import { HypeDirector } from './HypeDirector.js';
+import { FocusDirector } from './FocusDirector.js';
 import { VibeDirector } from './VibeDirector.js';
 import { epicBiasForKind } from '../lyrics/SectionFusion.js';
 import { EnsembleDirector } from './EnsembleDirector.js';
@@ -192,6 +193,7 @@ export class Simulation {
     this.apotheosis = new ApotheosisDirector();
     this.calm = new CalmDirector();
     this.hype = new HypeDirector();
+    this.focus = new FocusDirector();
     this.weather = new WeatherDirector();
     // The conductor track's live half (ConductorTrack.js / CueDirector.js).
     // Empty when the song brought no cue sheet, which is every MIDI without
@@ -929,7 +931,14 @@ export class Simulation {
       { x: this.midio.screenX, y: this.midio.renderY },
     ], this.visualLagMs, this.reducedFlash, this.canvasWidth);
     this.opening.update(nowMs, dtSec, this.energyCurves);
+    // Focus: who's the primary dramatic subject right now (the drop, the
+    // voyage, the burrow, Midio himself, or the ambient sky), read AFTER
+    // hype/apotheosis/midasus/broshi have all updated this step so bids see
+    // fresh state. sky's own mul feeds biomes.focusMul below; the others are
+    // read directly off sim.focus by Renderer.js at each relevant draw call.
+    this.focus.update(this, dtSec, nowMs);
     this.biomes.openingGain = this.opening.gain;
+    this.biomes.focusMul = this.focus.mul('sky'); // folded into budget below -- dampens every ambient phenomena system for free when some other subject has focus
     this.biomes.hypeBoost = 1 + 0.6 * this.hype.surge + 1.1 * this.fever.level; // drops + player fever surge every phenomena system
     this.biomes.heatShimmer = this.hype.fast; // a hard hype spike shimmers the far range
     this.biomes.paletteRotation = this.keyDirector.paletteRotation; // the world transposes with the song's key

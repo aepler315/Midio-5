@@ -854,7 +854,7 @@ export class Broshi {
     return BODY_WIDTH_LOCAL * DRAW_SCALE * this.squashX;
   }
 
-  draw(ctx, pose, lights = null) {
+  draw(ctx, pose, lights = null, focusMul = 1) {
     if (this.burrow.depth > 0.02) return; // he's underground; Renderer draws the Burrow band instead
     // Midasus style: a pale pitch-class spectral hue (eased in update), not
     // the old green->red raptor skin. Rabid reads as heat/brightness below.
@@ -863,12 +863,18 @@ export class Broshi {
     const y = this.groundY - this.hopY;
 
     ctx.save();
+    // Baseline for FocusDirector's dampening -- everything below that
+    // doesn't explicitly reset globalAlpha inherits this. The two spots
+    // that DO set an absolute value (rho ring, disc wings) multiply
+    // focusMul back in explicitly since an absolute assignment would
+    // otherwise clobber this baseline.
+    ctx.globalAlpha = focusMul;
     ctx.translate(x, y);
     ctx.scale(DRAW_SCALE, DRAW_SCALE);
 
     if (this.rho > 0.02) {
       ctx.save();
-      ctx.globalAlpha = 0.38 * this.rho;
+      ctx.globalAlpha = 0.38 * this.rho * focusMul;
       ctx.strokeStyle = '#e8f2ff';
       ctx.lineWidth = 1.4;
       ctx.beginPath();
@@ -1004,7 +1010,7 @@ export class Broshi {
       // at ~85% the hue barely reads at all, and the membrane vanished into
       // "more wireframe" instead of standing out as its own translucent
       // panel.
-      ctx.globalAlpha = 0.6 * w;
+      ctx.globalAlpha = 0.6 * w * focusMul;
       ctx.fillStyle = `hsla(${baseHue},75%,62%,0.6)`;
       ctx.strokeStyle = `hsla(${baseHue - 10},85%,80%,1)`;
       ctx.lineWidth = 2.2 / DRAW_SCALE;

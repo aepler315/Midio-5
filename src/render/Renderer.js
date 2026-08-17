@@ -316,7 +316,7 @@ export class Renderer {
     if (contactShadowsEnabled && sim.broshi && sim.broshi.burrow.depth <= 0.02) {
       this._drawContactShadow(ctx, contactShadow(sim.broshi.renderX, sim.broshi.groundY, sim.broshi.hopY, sim.broshi.shadowWidthPx, light));
     }
-    if (sim.broshi) sim.broshi.draw(ctx, pose, companionLights);
+    if (sim.broshi) sim.broshi.draw(ctx, pose, companionLights, sim.focus ? sim.focus.mul('burrow') : 1);
 
     // Midio wears Midasus's pale spectral treatment now: his base hue tracks
     // the song's key (KeyDirector.tonic), eased so the color drifts between
@@ -368,7 +368,15 @@ export class Renderer {
       const heightAbove = sim.midasus.yFloor - sim.midasus.p.y;
       this._drawContactShadow(ctx, contactShadow(sim.midasus.p.x, sim.midasus.yFloor, heightAbove, sim.midasus.shadowWidthPx, light));
     }
-    if (sim.midasus) sim.midasus.draw(ctx, particleMul, worldLights);
+    if (sim.midasus) {
+      // Midasus.draw never sets ctx.globalAlpha to an absolute value
+      // internally (verified directly), so an outer multiply here is safe
+      // and cheaper than threading a new param through her whole draw path.
+      const voyageMul = sim.focus ? sim.focus.mul('voyage') : 1;
+      if (voyageMul < 1) { ctx.save(); ctx.globalAlpha *= voyageMul; }
+      sim.midasus.draw(ctx, particleMul, worldLights);
+      if (voyageMul < 1) ctx.restore();
+    }
     // Faint reflections in the Mirror lake: has to wait until here, after the
     // trio's live screen positions/hues are known -- the water itself draws
     // (and reflects the sky/terrain) long before any of them do.
@@ -513,6 +521,7 @@ export class Renderer {
     if (u == null) return;
     const cx = pose.midioDrawX, cy = sim.midio.groundY - 60;
     const maxR = Math.hypot(canvas.width, canvas.height) * 0.75;
+    const focusMul = sim.focus ? sim.focus.mul('drop') : 1;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (const [lag, alphaMul, lw] of [[0, 1, 3.5], [0.12, 0.5, 1.8]]) {
@@ -520,7 +529,7 @@ export class Renderer {
       if (uu <= 0) continue;
       const r = maxR * (1 - (1 - uu) ** 2); // ease-out: it detonates, then coasts
       ctx.strokeStyle = '#ffffff';
-      ctx.globalAlpha = (1 - uu) ** 2 * 0.55 * alphaMul;
+      ctx.globalAlpha = (1 - uu) ** 2 * 0.55 * alphaMul * focusMul;
       ctx.lineWidth = lw + 10 * (1 - uu);
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -724,7 +733,10 @@ export class Renderer {
    *  allowing" flourish, not core feedback. */
   _drawDropImpact(ctx, canvas, sim, pose) {
     const hype = sim.hype;
-    const s = dropImpactStrength(sim.timeMs, hype.dropAtMs);
+    // This IS the drop's own vocabulary, so folding focusMul into the
+    // source strength scales every downstream alpha in this function at
+    // once (the RGB-split shock and the speed-lines both derive from `s`).
+    const s = dropImpactStrength(sim.timeMs, hype.dropAtMs) * (sim.focus ? sim.focus.mul('drop') : 1);
     if (s <= 0) return;
     const perf = sim.perf;
     if (perf && perf.particleMul < 1) return;
@@ -845,6 +857,9 @@ export class Renderer {
     const color = sim.biomes && sim.biomes.currentHaloColor ? sim.biomes.currentHaloColor() : '#ffffff';
     const calmLevel = sim.calm ? sim.calm.level : 0;
     const style = hypeFrameStyle(hype, calmLevel);
+    // This IS the drop's own vocabulary, so it reads full strength when
+    // focus picks 'drop' and dampens like everything else otherwise.
+    const focusMul = sim.focus ? sim.focus.mul('drop') : 1;
 
     // Frame echo: on hard hits the previous frame ghosts outward once.
     // The Reel: reduced-flash disables it outright (a rapid self-blit
@@ -855,7 +870,7 @@ export class Renderer {
       const off = 3 + 5 * echo;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.12 * echo;
+      ctx.globalAlpha = 0.12 * echo * focusMul;
       // `canvas` here is draw()'s LOGICAL stage view -- a plain
       // {width, height}, not a drawable. Passing it to drawImage threw every
       // time this branch ran, and because main.js wraps the whole draw in a
@@ -874,7 +889,7 @@ export class Renderer {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.strokeStyle = color;
-    ctx.globalAlpha = style.alpha;
+    ctx.globalAlpha = style.alpha * focusMul;
     ctx.lineWidth = style.lineWidth;
     const inset = style.inset;
     ctx.beginPath();
@@ -920,7 +935,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_BASE_HUE, ensemble = null, lights = null) {
+  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_BASE_HUE, ensemble = null, lights = null, focusMul = 1) {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
     const apoProgress = apotheosis ? apotheosis.progress : 0;
@@ -985,7 +1000,7 @@ export class Renderer {
     // light, not a flat outline -- brighter on fever and right on the beat.
     const excitement = clamp01(melt / 8); // vibe/fever/apotheosis "melt" doubles as how hard he's glowing
     const glowAlpha = capFlashAlpha(
-      (0.14 + 0.22 * excitement + 0.28 * breatheBeatFlash) * dials.glowHaloMul,
+      (0.14 + 0.22 * excitement + 0.28 * breatheBeatFlash) * dials.glowHaloMul * focusMul,
       reducedFlash,
     );
     if (glowAlpha > 0.02) {
