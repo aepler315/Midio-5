@@ -33,9 +33,23 @@ const AFTERIMAGE_INTERVAL_MS = 28;
 const AFTERIMAGE_COUNT = 4;
 export const GOLD_AFTERIMAGE_LIFE_MS = 1000;
 const GOLD_AFTERIMAGE_MAX = 6;
-const STRUT_DEG = 4.5;   // ferocity pass: the strut is a stomp, not a sway
-const STOMP_DIP = 0.10;  // scaleY dip landing exactly on the beat
+// Restraint pass. A "ferocity pass" had pushed the always-on grounded
+// motion up until every one of these ran near its own maximum at the same
+// time -- a 4.5deg stomp lean, a second-harmonic skip on top of it, a 10%
+// scale dip every beat, and a 26% landing squash, all compounding on a
+// character who is on the ground most of the song. Individually each was
+// defensible; together they read as hyperactive rather than confident.
+//
+// These are the ALWAYS-ON terms, so they're the ones that pay: the strut,
+// its offbeat skip, and the per-beat dip are all pulled back roughly a
+// third. Event-driven punctuation (tricks, milestone dances, pirouettes)
+// is deliberately left alone -- it's rare enough to stay a highlight, and
+// muting it too would leave him inert instead of composed.
+const STRUT_DEG = 3.0;   // was 4.5
+const STOMP_DIP = 0.065; // was 0.10 -- per-beat scaleY dip
+const SKIP_DEG = 1.0;    // was an inline 1.6 -- offbeat second-harmonic skip
 const RECOIL_MS = 200;   // universal landing recoil: squash -> overshoot -> settle
+const RECOIL_AMP = 0.19; // was 0.26 -- landing squash depth
 
 // Calm/idle behavior (follow-up item 3): distinctly relaxed vs. energetic
 // sections, but never inert. Gated to !airborne so it never fights a trick.
@@ -242,7 +256,7 @@ export class MidioPerformer {
       const swayAmp = CALM_SWAY_DEG * calmLevel;
       // Second harmonic: a little offbeat skip that only shows when the
       // section is running hot — the strut turns into a groove.
-      const skip = 1.6 * (1 - calmLevel) * Math.sin(2 * theta + 0.6);
+      const skip = SKIP_DEG * (1 - calmLevel) * Math.sin(2 * theta + 0.6);
       midio.leanDeg += strutAmp * s * s * s + swayAmp * Math.sin(theta / 2 + 1.7) + skip;
       // The scale dip yields to the flourish window, which owns scale outright.
       if (nowMs >= this._flourishUntilMs) {
@@ -256,7 +270,7 @@ export class MidioPerformer {
     const sinceLand = nowMs - this._landMs;
     if (!jump.airborne && sinceLand >= 0 && sinceLand < RECOIL_MS && nowMs >= this._flourishUntilMs) {
       const u = sinceLand / RECOIL_MS;
-      const recoil = -0.26 * Math.exp(-3.2 * u) * Math.cos(Math.PI * 1.4 * u);
+      const recoil = -RECOIL_AMP * Math.exp(-3.2 * u) * Math.cos(Math.PI * 1.4 * u);
       midio.scaleY *= 1 + recoil;
       midio.scaleX *= 1 - recoil * 0.7;
     }

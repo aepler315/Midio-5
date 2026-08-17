@@ -30,7 +30,9 @@ import {
   breakerLift, whitecapMask, rowPhaseDrift,
 } from './Ocean.js';
 import { buildWaveComponents, waveFieldSample, windSpeedForSeaState, easeSeaState } from './WaveField.js';
-import { generateCatalogue, subPixelDraw, twinkleAmplitude } from './StarCatalogue.js';
+import {
+  generateCatalogue, subPixelDraw, twinkleAmplitude, galacticBandCenterY, GALACTIC_BAND,
+} from './StarCatalogue.js';
 import {
   islands, ships, seaLifeSchedule, monsterSchedule, tsunamiSchedule,
   tsunamiActive, tsunamiProgress, tsunamiRowFrac, tsunamiPerspectiveScale,
@@ -73,6 +75,15 @@ import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { VoyagePhase } from '../sim/SkyVoyage.js';
 
 const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
+// How much of the frame is sky rather than mountain stack -- the region the
+// star catalogue is generated across (see the generateCatalogue call).
+const STAR_SKY_FRAC = 0.62;
+// Aerial perspective per parallax layer: how far each range's own fill is
+// pulled toward the sky-horizon color before it is drawn. L5 is the
+// nearest range and keeps the biome's authored silhouette color exactly;
+// L2 is the furthest and sits nearly half way to the sky. See the
+// layerTint() comment in draw() for why this exists.
+const AERIAL_PULL = { L2: 0.46, L3: 0.29, L4: 0.13, L5: 0 };
 const LAYER_EQ_RATIO = 0.06; // between L1 (celestial) and L2 (far mountains)
 // Terrain footing contact shadow: layered strokes along the ridge's own
 // smooth curve approximate the soft vertical falloff a single gradient rect
@@ -316,7 +327,13 @@ export class BiomeManager {
     // twinkle (in _drawStarfield) is computed live. Bumped from a flat 96
     // to 280 -- still cheap since only the brightest slice (layer 2) pays
     // for a radial-gradient hero glow; the rest are one fillRect each.
-    const catalogue = generateCatalogue(hashSeed(`${songSeed}:starcat`), 280, this.w, this.h);
+    // The field is generated over the SKY, not the whole canvas: everything
+    // below STAR_SKY_FRAC is behind the mountain stack for the entire song,
+    // so stars generated down there were pure waste -- roughly half the
+    // catalogue was invisible, which is half of why the sky read thin above
+    // the (previously far too narrow) galactic band. Passing the sky region
+    // also makes altitude01 honest: 0 is the ridgeline horizon, 1 the zenith.
+    const catalogue = generateCatalogue(hashSeed(`${songSeed}:starcat`), 420, this.w, this.h * STAR_SKY_FRAC);
     // The real astronomical flux relation (magnitudeToBrightness01, tested
     // against its exact 2.512x/mag ratio in StarCatalogue.js) is honest but
     // punishing for a screen: at this population size almost every star's
@@ -923,19 +940,27 @@ export class BiomeManager {
         // Far ranges: alpine massifs (Denali / Rainier / Shasta silhouettes).
         // Taller strip + moderate amp so peaks fit without clipping into mesas;
         // generateSilhouette also rescales if a summit still pokes past headroom.
+        // Each depth gets its OWN landform, not the same massif four times
+        // (see ALPINE_CHARACTERS): a far skyline of a few enormous
+        // needle-summits, a busier mid-distance working range in front of
+        // it, a band of near foothill crags, then soft rolling hills last.
+        // Together with AERIAL_PULL's per-layer color this is what turns
+        // the stack from one repeated silhouette into readable depth.
         L2: generateSilhouette({
           seed: seed + 1, height: 400, octaves: 4, amplitude: 0.52, baseline: 0.42,
-          color: b.silhouette, shadeMode, profile: 'alpine',
+          color: b.silhouette, shadeMode, profile: 'alpine', character: 'massif',
         }),
         L3: generateSilhouette({
-          seed: seed + 2, height: 360, octaves: 3, amplitude: 0.48, baseline: 0.48,
-          color: b.silhouette, shadeMode, profile: 'alpine',
+          seed: seed + 2, height: 360, octaves: 3, amplitude: 0.44, baseline: 0.50,
+          color: b.silhouette, shadeMode, profile: 'alpine', character: 'range',
         }),
-        // Nearer hills stay rolling foothills.
         L4: generateSilhouette({
-          seed: seed + 3, octaves: 3, amplitude: 0.72, baseline: 0.62,
-          color: b.silhouette, shadeMode, profile: 'rolling',
+          seed: seed + 3, height: 330, octaves: 3, amplitude: 0.34, baseline: 0.64,
+          color: b.silhouette, shadeMode, profile: 'alpine', character: 'crags',
         }),
+        // Nearest band stays soft rolling foothills -- the one layer that
+        // should NOT be jagged, so the near ground reads as land rather
+        // than as yet another row of teeth.
         L5: generateSilhouette({
           seed: seed + 4, octaves: 2, amplitude: 0.46, baseline: 0.82,
           color: b.silhouette, shadeMode, profile: 'rolling',
@@ -1470,12 +1495,30 @@ export class BiomeManager {
       ? this.lerpCache.get(skyHorizon, NIGHT_SKY_COLOR, horizonPull)
       : skyHorizon;
     const tint = ensureContrast(this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)), skyHorizonNight, 0.14);
+    // Aerial perspective. Every range used to be painted in this ONE tint,
+    // which is the single biggest reason the four layers read as the same
+    // mountain repeated four times: depth was carried entirely by the haze
+    // washes drawn BETWEEN them, and nothing about the ranges themselves
+    // said "this one is further away."
+    //
+    // Real distance desaturates a silhouette toward the color of the air
+    // in front of it, so each layer's own fill is pulled toward the sky
+    // horizon by its depth fraction: L5 (nearest) keeps the authored
+    // silhouette color outright, L2 (furthest) sits nearly half way to the
+    // sky. Cheap -- four cached hex lerps per frame -- and it stacks with
+    // the existing haze rather than replacing it.
+    const layerTint = (layerKey) => {
+      const pull = AERIAL_PULL[layerKey] || 0;
+      return pull > 0.001 ? this.lerpCache.get(tint, skyHorizonNight, pull) : tint;
+    };
+    const tintL2 = layerTint('L2'), tintL3 = layerTint('L3');
+    const tintL4 = layerTint('L4'), tintL5 = layerTint('L5');
     // Depth haze: three wash layers (L2/L3/L4) at healthy perf; the deepest
     // rung collapses to just L3, the middle layer -- enough of an
     // atmosphere cue to not read as flat, at a third of the cost.
     const hazeLayers = this._perf ? this._perf.hazeLayers : 3;
 
-    this._drawLayer(ctx, canvas, 'L2', scrollX0, tint, t, A, B);
+    this._drawLayer(ctx, canvas, 'L2', scrollX0, tintL2, t, A, B);
     if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
     // Far-distance vignettes: between the farthest range and everything
     // nearer, so the L3/L4/L5 ridges partially occlude them -- genuinely
@@ -1483,11 +1526,11 @@ export class BiomeManager {
     if (phenomenaFull) this.farVignettes.draw(ctx, canvas, worldX, {
       tSec: this.tSec,
       kick: kickEnv(this.tSec * 1000 - this._danceKickMs - 170) * this._danceKickAmp,
-      silhouette: tint,
+      silhouette: tintL2, // they sit at L2's depth, so they wear L2's air
       sky: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
       halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
     });
-    this._drawLayer(ctx, canvas, 'L3', scrollX1, tint, t, A, B);
+    this._drawLayer(ctx, canvas, 'L3', scrollX1, tintL3, t, A, B);
     this._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
 
     // Ambient particle field lives roughly at mid-depth. The Unraveling:
@@ -1536,14 +1579,14 @@ export class BiomeManager {
     if (phenomenaFull) this.murmuration.draw(ctx, this.tSec * 1000, mandalaColor, particleMul);
     this._drawFogBanks(ctx, canvas);
 
-    this._drawLayer(ctx, canvas, 'L4', scrollX2, tint, t, A, B);
+    this._drawLayer(ctx, canvas, 'L4', scrollX2, tintL4, t, A, B);
     if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L4', A, B, t, arc);
     // Green country bridging the sightline wherever the dancing far skyline
     // has ducked behind the hills in front of it. Between L4 and L5 so the
     // nearest hills still overlap it and it reads as depth rather than as a
     // pane laid over the scene.
     this._drawConnectorHills(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t);
-    this._drawLayer(ctx, canvas, 'L5', scrollX3, tint, t, A, B);
+    this._drawLayer(ctx, canvas, 'L5', scrollX3, tintL5, t, A, B);
 
     // Ground view: switch to the fixed, never-zoomed transform for the
     // ground and everything painted from here on (see Renderer.draw's
@@ -2038,18 +2081,31 @@ export class BiomeManager {
     const twinkleRate = 1.15 + 0.7 * (this.calmLevel || 0) + 0.35 * night;
     const scroll = (this.tSec * 1.8) % canvas.width; // glacial drift
 
-    // Soft milky / galactic wash — faint, never a hard horizontal bar.
+    // Soft milky / galactic wash. Sits on the SAME tilted axis the star
+    // density does (GALACTIC_BAND, shared with StarCatalogue) -- it used to
+    // be a horizontal bar pinned at 0.14 of the canvas while the density
+    // ridge sat at 0.32, so the painted galaxy and the actual stars
+    // disagreed about where the plane was.
     {
+      const skyH = canvas.height * STAR_SKY_FRAC;
+      const yL = galacticBandCenterY(0, skyH);
+      const yR = galacticBandCenterY(1, skyH);
+      const half = skyH * GALACTIC_BAND.halfFrac;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       const bandA = 0.05 + 0.06 * night;
-      const my = canvas.height * 0.14;
-      const band = ctx.createLinearGradient(0, my - 40, 0, my + 48);
+      // Rotate into the band's own frame so the gradient runs perpendicular
+      // to the plane rather than straight down the screen.
+      const ang = Math.atan2(yR - yL, canvas.width);
+      const diag = Math.hypot(canvas.width, yR - yL);
+      ctx.translate(0, yL);
+      ctx.rotate(ang);
+      const band = ctx.createLinearGradient(0, -half, 0, half);
       band.addColorStop(0, 'rgba(160,190,255,0)');
-      band.addColorStop(0.45, `rgba(190,210,255,${bandA.toFixed(3)})`);
+      band.addColorStop(0.5, `rgba(190,210,255,${bandA.toFixed(3)})`);
       band.addColorStop(1, 'rgba(160,190,255,0)');
       ctx.fillStyle = band;
-      ctx.fillRect(0, my - 40, canvas.width, 88);
+      ctx.fillRect(0, -half, diag, half * 2);
       ctx.restore();
     }
 
@@ -3818,6 +3874,114 @@ export class BiomeManager {
     return path;
   }
 
+  /**
+   * The inside of the ground. Everything below the crest used to be one
+   * flat fillRect of a single color -- the terrain relief pass lit the top
+   * ~14px and the rest of the frame's entire lower third was a poster-flat
+   * slab, which is exactly as boring as it sounds and gave the eye nothing
+   * to read the world's speed against.
+   *
+   * Two cheap passes, both clipped to the terrain path so they can never
+   * spill into the sky:
+   *  1. a vertical light falloff -- ground gets darker the deeper it goes,
+   *     the same way any lit solid does, which alone kills the flat read;
+   *  2. sparse seeded strata scrolling at world speed, so the ground has
+   *     visible grain and you can actually see the land moving past.
+   *
+   * Strata are generated once per song and drawn as a handful of wavy
+   * strokes, so this costs a fixed few draw calls regardless of scroll.
+   */
+  _drawGroundInterior(ctx, canvas, fillPath, bars, groundColor, worldX) {
+    if (this._perf && this._perf.hazeLayers < 2) return; // deepest perf rung: skip outright
+    let crest = canvas.height;
+    for (const b of bars) if (b.y < crest) crest = b.y;
+    const depth = canvas.height - crest;
+    if (depth < 8) return;
+
+    ctx.save();
+    ctx.clip(fillPath);
+
+    // 1. Soil horizon. The single most legible "this is ground, not a
+    // colored region" cue: a crust of surface material hugging the terrain
+    // contour with denser subsoil beneath it, exactly the topsoil/bedrock
+    // boundary you see in any road cutting. Built by re-running the same
+    // terrain path a fixed distance lower and filling everything below it
+    // darker -- so the crust automatically follows every bump the ridge
+    // has, for one extra path fill.
+    const soilPx = Math.min(26, Math.max(9, depth * 0.06));
+    const sunk = this._terrainTopPath(
+      bars.map((b) => ({ ...b, y: b.y + soilPx })), canvas.height, true, canvas.width,
+    );
+    ctx.fillStyle = shiftLightness(groundColor, -0.07);
+    ctx.fill(sunk);
+
+    // 2. Strata. Drawn in WORLD space (phase driven by worldX) so they
+    // travel with the terrain instead of sitting still on the screen --
+    // that motion is the whole point, it's what makes the ground read as
+    // ground being crossed rather than as a colored region.
+    const strata = this._strata || (this._strata = this._buildStrata());
+    ctx.lineCap = 'round';
+    for (const s of strata) {
+      const y = crest + soilPx + (depth - soilPx) * s.depth01;
+      if (y > canvas.height + 4) continue;
+      // Nearer-to-surface strata scroll slightly faster: a little internal
+      // parallax inside the solid, so it has thickness rather than being
+      // one sheet of wallpaper.
+      const sx = worldX * (0.85 + 0.3 * (1 - s.depth01));
+      ctx.strokeStyle = s.light ? 'rgba(255,255,255,1)' : 'rgba(0,0,0,1)';
+      ctx.globalAlpha = s.alpha;
+      ctx.lineWidth = s.width;
+      ctx.beginPath();
+      for (let x = 0; x <= canvas.width; x += 16) {
+        const yy = y + Math.sin((x + sx) / s.wavelength + s.phase) * s.amp
+          + Math.sin((x + sx) / (s.wavelength * 0.37) + s.phase * 1.7) * s.amp * 0.45;
+        if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // 3. Light falls off with depth into the solid -- drawn LAST so it
+    // sinks the strata into the dark with distance from the surface
+    // rather than sitting under them.
+    const grad = ctx.createLinearGradient(0, crest, 0, canvas.height);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, shiftLightness(groundColor, -0.18));
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, crest, canvas.width, depth);
+    ctx.restore();
+  }
+
+  /** Seeded strata definitions -- fixed per song, so the same seed always
+   *  produces the same ground grain (a replay can be pointed at). */
+  _buildStrata() {
+    const rand = mulberry32(hashSeed(`${this.songSeed}:strata`));
+    const out = [];
+    const COUNT = 9;
+    for (let i = 0; i < COUNT; i++) {
+      // Bias toward the upper half of the solid: that's the part actually
+      // on screen most of the time, and real bedding planes crowd nearer
+      // the surface rather than spreading evenly to the core.
+      const d = Math.pow(rand(), 1.6);
+      out.push({
+        depth01: 0.04 + d * 0.94,
+        // Short enough to visibly undulate across a 1280px frame -- long
+        // wavelengths read as dead straight scratches, not bedding planes.
+        wavelength: 150 + rand() * 260,
+        amp: 4 + rand() * 16,
+        phase: rand() * Math.PI * 2,
+        width: 1.4 + rand() * 3.2,
+        // A few pale bedding planes among mostly dark ones -- pure dark
+        // strata on a dark ground read as smudges, the light ones are what
+        // actually make the layering legible.
+        light: rand() < 0.34,
+        alpha: 0.09 + rand() * 0.11,
+      });
+    }
+    return out.sort((a, b) => a.depth01 - b.depth01);
+  }
+
   _drawGround(ctx, canvas, worldX, originX, A, B, t, mountainTint = null) {
     // Match the mountains' own contrast-corrected tint when it's handed in
     // (draw()'s per-frame guard against a dark palette washing out at
@@ -3860,6 +4024,7 @@ export class BiomeManager {
       const strokePath = this._terrainTopPath(bars, canvas.height, false, canvas.width);
       ctx.fillStyle = groundColor;
       ctx.fill(fillPath);
+      this._drawGroundInterior(ctx, canvas, fillPath, bars, groundColor, worldX);
 
       // Terrain relief: clip to the ridge and stamp a 1px-tall facing
       // strip, stretched and faded with depth. A per-pixel strip cannot

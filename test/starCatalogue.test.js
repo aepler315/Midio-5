@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   SPECTRAL_CLASSES, sampleSpectralClass, blackbodyRGB, rgbToHue,
   sampleMagnitude, magnitudeToBrightness01, sizeForMagnitude, subPixelDraw,
-  twinkleAmplitude, generateCatalogue,
+  twinkleAmplitude, generateCatalogue, galacticBandCenterY, GALACTIC_BAND,
 } from '../src/world/StarCatalogue.js';
 import { mulberry32 } from '../src/utils/math.js';
 
@@ -126,12 +126,40 @@ test('generateCatalogue produces the requested count, all finite/bounded, positi
 
 test('the galactic-plane band genuinely has higher star density than the rest of the field', () => {
   const cat = generateCatalogue(13, 4000, 1280, 720);
-  const bandY = 720 * 0.32, bandHalf = 720 * 0.08;
-  let inBand = 0, outBand = 0;
+  // Measured on the band's own tilted axis (galacticBandCenterY), not a
+  // fixed screen row -- the plane is tilted, so a horizontal window would
+  // be measuring the wrong thing.
+  const bandHalf = 720 * 0.08;
+  let inBand = 0;
   for (const s of cat) {
-    if (Math.abs(s.y - bandY) <= bandHalf) inBand++; else outBand++;
+    if (Math.abs(s.y - galacticBandCenterY(s.x / 1280, 720)) <= bandHalf) inBand++;
   }
-  const bandFracOfField = (bandHalf * 2) / 720;
-  const expectedUniform = cat.length * bandFracOfField;
+  const expectedUniform = cat.length * ((bandHalf * 2) / 720);
   assert.ok(inBand > expectedUniform * 2, `band should be denser than uniform: inBand=${inBand} expected~${expectedUniform}`);
+});
+
+test('the whole sky is populated -- no empty region above the plane', () => {
+  // The regression this exists for: the band used to take 90% of every
+  // star into a stripe 16% of the height tall, so the sky above it was
+  // visibly empty and the field read as a belt across the middle of the
+  // screen rather than as a sky.
+  const cat = generateCatalogue(13, 4000, 1280, 720);
+  const BANDS = 8;
+  const counts = new Array(BANDS).fill(0);
+  for (const s of cat) counts[Math.min(BANDS - 1, Math.floor((s.y / 720) * BANDS))]++;
+  const uniform = cat.length / BANDS;
+  for (let i = 0; i < BANDS; i++) {
+    assert.ok(counts[i] > uniform * 0.3,
+      `horizontal band ${i} has ${counts[i]} stars, far below the ${uniform.toFixed(0)} a populated sky needs`);
+  }
+  // ...and no single band may hoard the field either.
+  assert.ok(Math.max(...counts) < uniform * 2.6, `no band should hoard the sky: ${counts.join(',')}`);
+});
+
+test('the galactic plane is tilted, not a horizontal stripe', () => {
+  const left = galacticBandCenterY(0, 720);
+  const right = galacticBandCenterY(1, 720);
+  assert.ok(Math.abs(right - left) > 720 * 0.1, 'the plane should visibly rise across the field');
+  assert.ok(Math.abs(galacticBandCenterY(0.5, 720) - GALACTIC_BAND.centerFrac * 720) < 1e-6,
+    'mid-field should sit exactly on the nominal center');
 });
