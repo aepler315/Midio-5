@@ -123,7 +123,7 @@ export class TitleBackdrop {
     drawGlowHalo(ctx, mx, my, 30 * mScale, 30 * mScale, midasusHue, 0.5, { sat: 58, light: 78 });
     drawMeshPart(ctx, MIDASUS_MESH, this._midasusRest, {
       tx: mx, ty: my, rot: tSec * 0.1, scaleX: mScale, scaleY: mScale,
-    }, midasusHue, { satBase: 58, lightBase: 70, hueSpread: 26, outline: true });
+    }, midasusHue, { satBase: 58, lightBase: 70, outline: true });
 
     // Midio: the star-hero, right of center, warm gold.
     const midioHue = rot(spectralHue(7));
@@ -132,7 +132,7 @@ export class TitleBackdrop {
     drawGlowHalo(ctx, jx, jy, 26 * jScale, 30 * jScale, midioHue, 0.45, { sat: 60, light: 76 });
     drawMeshPart(ctx, MIDIO_MESH, this._midioRest, {
       tx: jx, ty: jy, rot: Math.sin(tSec * 0.3) * 0.06, scaleX: jScale, scaleY: jScale,
-    }, midioHue, { satBase: 60, lightBase: 68, hueSpread: 30, outline: true });
+    }, midioHue, { satBase: 60, lightBase: 68, outline: true });
 
     // Broshi: the comet star, far left, raked forward.
     const broshiHue = rot(spectralHue(2));
@@ -140,8 +140,8 @@ export class TitleBackdrop {
     const bScale = 1.3 * breathe(2.1);
     const group = { tx: bx, ty: by, rot: 0.12, scaleX: bScale, scaleY: bScale };
     drawGlowHalo(ctx, bx, by, 30 * bScale, 24 * bScale, broshiHue, 0.4, { sat: 34, light: 78 });
-    drawMeshPart(ctx, BROSHI_BODY, this._broshiBodyRest, group, broshiHue, { satBase: 40, lightBase: 66, hueSpread: 24, outline: true });
-    drawMeshPart(ctx, BROSHI_HEAD, this._broshiHeadRest, group, broshiHue, { satBase: 40, lightBase: 66, hueSpread: 24, outline: true });
+    drawMeshPart(ctx, BROSHI_BODY, this._broshiBodyRest, group, broshiHue, { satBase: 40, lightBase: 66, outline: true });
+    drawMeshPart(ctx, BROSHI_HEAD, this._broshiHeadRest, group, broshiHue, { satBase: 40, lightBase: 66, outline: true });
     drawMeshPart(ctx, BROSHI_EYE, this._broshiEyeRest, group, broshiHue, { satBase: 30, lightBase: 15, alpha: 0.9 });
     const tailTip = { x: -48 * bScale, y: -6 * bScale };
     const tailMesh = { vertices: [{ x: -26 * bScale, y: -16 * bScale }, tailTip], edges: [[0, 1]] };

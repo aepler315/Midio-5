@@ -6,6 +6,7 @@
 // re-evaluated from the coefficients each draw, so there is nothing to
 // reset or leak between shows.
 import { closeStroke, resampleClosed, dftCoefficients, chainPoints, penPoint } from './epicycles.js';
+import { REWARD_HEX } from './ColorLaw.js';
 
 // Single-stroke digits in a [-1,1] box, drawn the way a signwriter would.
 const DIGIT_5 = [
@@ -39,7 +40,7 @@ const MAX_COEFFS = 36;
 const DRAW_MS = 1100, HOLD_MS = 350, FADE_MS = 300;
 const SCALE_PX = 68;
 const TRAIL_STEPS = 90;
-const GOLD = '#ffd75e';
+const GOLD = REWARD_HEX; // the color law's protected reward hue -- combo milestones ARE the reward this glyph celebrates
 
 export class EpicycleShow {
   constructor() {

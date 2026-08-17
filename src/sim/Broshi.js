@@ -945,7 +945,6 @@ export class Broshi {
     const glyphOpts = {
       satBase: 38 + 18 * this.rho,
       lightBase: 54 + 14 * this.rho,
-      hueSpread: 18,
       widthBase: 1.85,
       widthGlow: 2.1,
       lights, // Movement VII: celestial + any nearby secondary lights (see LightField.js)
