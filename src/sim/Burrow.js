@@ -587,7 +587,7 @@ export class Burrow {
     const bodyMesh = meltMesh(BROSHI_BODY, hub.x, hub.y, nowMs / 1000, 2.5, 2);
     drawMeshPart(ctx, bodyMesh, this._bodyRest, {
       tx: bx, ty: by, rot: swimRoll + pitchTilt, scaleX: 0.8 * facing, scaleY: 0.8,
-    }, 110, { satBase: 42, lightBase: 62, hueSpread: 20 });
+    }, 110, { satBase: 42, lightBase: 62 });
 
     ctx.restore();
 

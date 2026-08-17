@@ -4,7 +4,8 @@
 // each stage guards on the subsystem's presence so this file grows additively.
 import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE, MIDIO_EYE_CY, MIDIO_EYE_SOCKET_R, midioEyeMesh, MIDIO_APOTHEOSIS_FOLDED, MIDIO_APOTHEOSIS_UNFOLDED } from './meshes.js';
 import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, lerpMesh, applyTransform, drawGlowHalo } from './MeshDrawer.js';
-import { spectralHue, easeHueDeg } from './stellar.js';
+import { easeHueDeg } from './stellar.js';
+import { MIDIO_IDENTITY_HUE, REWARD_HUE } from './ColorLaw.js';
 import { EpicycleShow } from './EpicycleShow.js';
 import { ComposerStrip } from './ComposerStrip.js';
 import { RainbowBrush } from './RainbowBrush.js';
@@ -26,7 +27,6 @@ import { groundGlowLights, characterGlowLight } from './LightField.js';
 // headroom to spare. See Renderer.draw's stageW/stageH derivation.
 const SHAKE_MARGIN_PX = 64;
 
-const MIDIO_BASE_HUE = 178; // cool aquamarine -- the startup default before the song's key eases in and takes over (see this._midioHue)
 const MIDIO_DRAW_SCALE = 1.8; // the stage got bigger: render-only, physics untouched
 
 // Fever aura: a screen-edge glow that only shows up once the player's earned
@@ -177,9 +177,6 @@ export class Renderer {
     const biomeManager = sim.biomes || null;
     const perf = sim.perf || null;
     const particleMul = perf ? perf.particleMul : 1;
-    // Shared by the ambient obstacles, so they tint themselves off the
-    // same current biome as everything else.
-    const haloColor = biomeManager && biomeManager.currentHaloColor ? biomeManager.currentHaloColor() : '#ffdca0';
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -296,7 +293,7 @@ export class Renderer {
     }
     if (sim.obstacles) {
       sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY, {
-        nowMs: sim.timeMs, energyCurves: sim.energyCurves, haloColor,
+        nowMs: sim.timeMs, energyCurves: sim.energyCurves,
         wind: sim.biomes ? sim.biomes.wind : { x: 0, y: 0 },
         particleMul, reducedFlash: !!sim.reducedFlash,
       });
@@ -317,14 +314,8 @@ export class Renderer {
     }
     if (sim.broshi) sim.broshi.draw(ctx, pose, companionLights, sim.focus ? sim.focus.mul('burrow') : 1);
 
-    // Midio wears Midasus's pale spectral treatment now: his base hue tracks
-    // the song's key (KeyDirector.tonic), eased so the color drifts between
-    // keys rather than snapping. His silhouette/rig are untouched.
-    const keyHue = spectralHue(sim.keyDirector ? sim.keyDirector.tonic : 0);
-    this._midioHue = this._midioHue == null ? keyHue : easeHueDeg(this._midioHue, keyHue, 0.04);
-
     if (sim.performer) {
-      this._drawMidioAfterimages(ctx, sim.performer, pose.midioDrawX, this._midioHue);
+      this._drawMidioAfterimages(ctx, sim.performer, pose.midioDrawX, MIDIO_IDENTITY_HUE);
       this._drawGoldAfterimages(ctx, sim.performer, pose.midioDrawX, sim.timeMs);
     }
     const midioWidthPx = sim.midio.halfWidth * 2 * MIDIO_DRAW_SCALE * pose.scaleX;
@@ -344,7 +335,7 @@ export class Renderer {
     // something that actually happens rather than something that was
     // always half-happening.
     const vibeMelt = sim.vibe ? 0.3 + 6.7 * sim.vibe.epic : 0;
-    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, vibeMelt + feverGlow, sim.apotheosis, sim.reducedFlash, this._midioHue, sim.ensemble, companionLights, sim.focus ? sim.focus.mul('midio') : 1, sim.gaze);
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, vibeMelt + feverGlow, sim.apotheosis, sim.reducedFlash, MIDIO_IDENTITY_HUE, sim.ensemble, companionLights, sim.focus ? sim.focus.mul('midio') : 1, sim.gaze);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
@@ -381,7 +372,7 @@ export class Renderer {
     // (and reflects the sky/terrain) long before any of them do.
     if (biomeManager && biomeManager.drawCharacterReflections) {
       biomeManager.drawCharacterReflections(ctx, groundView.stage, [
-        { x: pose.midioDrawX, hue: this._midioHue, active: true },
+        { x: pose.midioDrawX, hue: MIDIO_IDENTITY_HUE, active: true },
         { x: sim.broshi ? sim.broshi.renderX : NaN, hue: sim.broshi ? sim.broshi.hue : 0, active: !!sim.broshi && sim.broshi.burrow.depth <= 0.02 },
         { x: sim.midasus ? sim.midasus.p.x : NaN, hue: sim.midasus ? sim.midasus.hue : 0, active: !!sim.midasus && sim.midasus.voyage.depth <= 0 },
       ]);
@@ -934,7 +925,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_BASE_HUE, ensemble = null, lights = null, focusMul = 1, gaze = null) {
+  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_IDENTITY_HUE, ensemble = null, lights = null, focusMul = 1, gaze = null) {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
     const apoProgress = apotheosis ? apotheosis.progress : 0;
@@ -960,15 +951,15 @@ export class Renderer {
     };
     // Midasus style: he wears his eased spectral key-hue (baseHue); the
     // milestone gold flash still ignites him toward gold (48) on top of it.
-    const hue = flash > 0 ? easeHueDeg(baseHue, 48, flash) : baseHue;
-    // Pale, bright, wider spectral spread -- the same "pale, never candy"
-    // treatment Midasus's core uses, not the old narrow near-white gold.
-    // The Apotheosis widens the hue band further into a full rim sweep.
+    const hue = flash > 0 ? easeHueDeg(baseHue, REWARD_HUE, flash) : baseHue;
+    // Pale, bright -- the same "pale, never candy" treatment Midasus's
+    // core uses, not the old narrow near-white gold. The color law: his
+    // hue itself (baseHue, above) stays MIDIO_IDENTITY_HUE even through
+    // the Apotheosis -- only saturation/lightness climb with it now.
     const dials = this._styleDials || styleDials('classic');
     const options = {
       satBase: 32 + flash * 40 + 18 * apoProgress,
       lightBase: 72 + flash * 12 + 8 * apoProgress,
-      hueSpread: 28 + 46 * apoProgress,
       widthBase: dials.widthBase,
       widthGlow: dials.widthGlow,
       rimAmount: dials.rimAmount,
@@ -1057,7 +1048,7 @@ export class Renderer {
   }
 
   /** Motion-streak ghosts trailing a fast jump (follow-up item 6). */
-  _drawMidioAfterimages(ctx, performer, midioX, baseHue = MIDIO_BASE_HUE) {
+  _drawMidioAfterimages(ctx, performer, midioX, baseHue = MIDIO_IDENTITY_HUE) {
     const frames = performer.afterimages;
     const n = frames.length;
     if (n === 0) return;
@@ -1069,7 +1060,7 @@ export class Renderer {
       drawMeshPart(ctx, MIDIO_MESH, this._midioRestLengths, {
         tx: midioX, ty: f.y, rot: (f.rot * Math.PI) / 180,
         scaleX: f.scaleX * MIDIO_DRAW_SCALE, scaleY: f.scaleY * MIDIO_DRAW_SCALE,
-      }, baseHue, { alpha: 1, satBase: 22, lightBase: 64, hueSpread: 24 });
+      }, baseHue, { alpha: 1, satBase: 22, lightBase: 64 });
     }
     ctx.restore();
   }
@@ -1090,7 +1081,7 @@ export class Renderer {
       drawMeshPart(ctx, MIDIO_MESH, this._midioRestLengths, {
         tx: midioX, ty: f.y, rot: (f.rot * Math.PI) / 180,
         scaleX: f.scaleX * MIDIO_DRAW_SCALE, scaleY: f.scaleY * MIDIO_DRAW_SCALE,
-      }, 46, { alpha: 1, satBase: 85, lightBase: 68, hueSpread: 10 });
+      }, REWARD_HUE, { alpha: 1, satBase: 85, lightBase: 68 });
     }
     ctx.restore();
   }

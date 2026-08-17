@@ -186,7 +186,7 @@ export class LoadingShow {
     const pulse = 1 + 0.55 * env;
     drawMeshPart(ctx2d, MIDASUS_MESH, this._meshRest, {
       tx: cx, ty: cy, rot: nowSec * 0.5, scaleX: 4.4 * pulse, scaleY: 4.4 * pulse,
-    }, this._hue, { satBase: 55, lightBase: 70, hueSpread: 24, widthBase: 1.8 });
+    }, this._hue, { satBase: 55, lightBase: 70, widthBase: 1.8 });
     // The three babies circle the show while the grown-ups audition.
     for (let i = 0; i < 3; i++) {
       const a = nowSec * (0.7 + 0.12 * i) + (i * Math.PI * 2) / 3;

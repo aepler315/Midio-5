@@ -86,7 +86,7 @@ export class RidgeRunners {
         scaleX: p.cast.scale * p.dir, scaleY: p.cast.scale,
       }, p.cast.hue, {
         satBase: 45 + 25 * fever, lightBase: 58 + 14 * fever,
-        alpha: Math.min(1, alpha + 0.35 * fever), widthBase: 1, widthGlow: 1.2, hueSpread: 20,
+        alpha: Math.min(1, alpha + 0.35 * fever), widthBase: 1, widthGlow: 1.2,
       });
     }
   }

@@ -63,7 +63,6 @@ export function applyTransform(v, { tx = 0, ty = 0, rot = 0, scaleX = 1, scaleY 
  */
 export function drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, {
   satBase = 68, lightBase = 52, glowBoost = 34, alpha = 0.9, widthBase = 1.6, widthGlow = 2.0,
-  hueSpread = 50, // edges vary within +/-hueSpread/2 of baseHueDeg, not the full wheel -- a cohesive character, not a rainbow
   outline = false, // true -> a near-black contour pass UNDER the spectral stroke: the silhouette reads razor-sharp against the glow underlays
   light = null, // Movement VII: the celestial light modulates the angle-derived hue/lightness above, it never replaces it
   lights = null, // secondary, local, falloff-limited sources (a kick-synced ground pulse, a nearby character's own glow) -- see LightField.js
@@ -106,10 +105,15 @@ export function drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, {
     const a = points[i], b = points[j];
     const dx = b.x - a.x, dy = b.y - a.y;
     const len = Math.hypot(dx, dy);
-    // Fold angle into [0,180) first (an edge and its reverse are the same
-    // line), then map that half-turn onto the hue band.
-    const angleDeg = ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 180;
-    let hue = (baseHueDeg + (angleDeg / 180) * hueSpread - hueSpread / 2 + 360) % 360;
+    // The color law: a character's hue is a constant the player can
+    // trust, not a function of which way an edge happens to be pointing
+    // on screen. Used to derive part of `hue` from the edge's own
+    // screen-space angle (+/-hueSpread/2 around baseHueDeg) -- every mesh-
+    // drawn character read as a spectral gradient across its own edges
+    // instead of one flat, identifiable color. Rim lighting (below) is a
+    // different, legitimate mechanism -- it still modulates hue toward a
+    // real light source -- and is untouched.
+    let hue = baseHueDeg;
     const rest = restLengths[e];
     const deform = rest > 0.001 ? Math.abs(len - rest) / rest : 0;
     const glow = Math.min(1, deform * 3);

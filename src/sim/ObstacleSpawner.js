@@ -20,6 +20,7 @@ import { clamp, clamp01, mulberry32 } from '../utils/math.js';
 import { superformula } from '../render/oscillators.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { hexToRgb } from '../utils/color.js';
+import { HAZARD_HEX } from '../render/ColorLaw.js';
 import { GUARDRAIL_MIN } from '../core/ParamBus.js';
 import { predictJumpArcs, safeWindowForArc } from './JumpPlanner.js';
 
@@ -254,11 +255,17 @@ export class ObstacleSpawner {
   }
 
   draw(ctx, worldX, originX, groundY, {
-    nowMs = 0, energyCurves = null, haloColor = '#8a3a6b', wind = { x: 0, y: 0 },
+    nowMs = 0, energyCurves = null, wind = { x: 0, y: 0 },
     particleMul = 1, reducedFlash = false,
   } = {}) {
     if (this.active.length === 0) return;
-    const { r, g, b } = hexToRgb(haloColor);
+    // The color law: hazard is a protected hue, not the ambient biome's
+    // halo color -- "this is dangerous" must read the same regardless of
+    // which biome or key the world happens to be in right now. Used to
+    // take a `haloColor` param sourced from BiomeManager.currentHaloColor()
+    // (itself already key-rotated), so an obstacle's own color drifted
+    // with the world instead of staying a fixed, learnable signal.
+    const { r, g, b } = hexToRgb(HAZARD_HEX);
     const rgb = `${r},${g},${b}`;
     const pulse = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs)) : 0.5 + 0.5 * Math.sin(nowMs / 900);
     const tSec = nowMs / 1000;

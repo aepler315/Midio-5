@@ -216,7 +216,7 @@ export class BabyStars {
       const scale = (away ? 1.15 : 1) * pulse;
       drawMeshPart(ctx, BABY_STAR_MESH, this._meshRest, {
         tx: cx, ty: cy, rot: star.spin, scaleX: scale, scaleY: scale,
-      }, h, { satBase: sat, lightBase: 76, alpha: away ? 0.95 : 0.82, widthBase: 1.3, hueSpread: 22, outline: true });
+      }, h, { satBase: sat, lightBase: 76, alpha: away ? 0.95 : 0.82, widthBase: 1.3, outline: true });
     });
 
     // Fourth-wall whisper text overlay removed (was drawing lines like
