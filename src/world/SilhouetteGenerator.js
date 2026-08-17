@@ -24,11 +24,31 @@ function makeCanvas(width, height) {
  * peaks, steep power-law flanks, high-frequency ridgeline crags.
  * Pure (no canvas); tests can exercise without a DOM.
  */
-export function alpineHeightField(noise, n, step, seed, width) {
+/**
+ * Per-layer geological character. Every alpine range used to be generated
+ * from one hardcoded set of numbers, so the far massif and the mid range
+ * were the same mountain drawn twice at different scales -- the biggest
+ * reason the stack read as one repeated shape. These let each depth carry
+ * a genuinely different landform:
+ *
+ *  - `massif`   few, enormous, needle-sharp giants with deep saddles: the
+ *               kind of skyline you only get from very far away.
+ *  - `range`    more numerous, broader, craggier summits with busier
+ *               couloir notching -- a mid-distance working range.
+ *  - `crags`    many small, sharp, irregular teeth: near foothill rock.
+ */
+export const ALPINE_CHARACTERS = {
+  massif: { peakMin: 3, peakSpan: 2, wBase: 100, wSpan: 120, sharpMin: 2.2, sharpSpan: 1.2, notch: 0.09, teeth: 0.05, bed: 0.10 },
+  range: { peakMin: 5, peakSpan: 3, wBase: 62, wSpan: 78, sharpMin: 1.7, sharpSpan: 0.9, notch: 0.14, teeth: 0.09, bed: 0.16 },
+  crags: { peakMin: 8, peakSpan: 5, wBase: 34, wSpan: 46, sharpMin: 1.4, sharpSpan: 0.8, notch: 0.17, teeth: 0.12, bed: 0.22 },
+};
+
+export function alpineHeightField(noise, n, step, seed, width, character = 'massif') {
+  const cfg = ALPINE_CHARACTERS[character] || ALPINE_CHARACTERS.massif;
   const rand = mulberry32((seed ^ 0xa1b1) >>> 0 || 1);
-  // 3–5 major peaks; one dominant (Denali-style) near center.
+  // Major peaks; one dominant (Denali-style) near center.
   // Narrow bases + high sharpness → real summits, not table-tops.
-  const nPeaks = 3 + Math.floor(rand() * 3);
+  const nPeaks = cfg.peakMin + Math.floor(rand() * cfg.peakSpan);
   const peaks = [];
   for (let i = 0; i < nPeaks; i++) {
     const u = (i + 0.5) / nPeaks + (rand() - 0.5) * 0.08;
@@ -36,16 +56,19 @@ export function alpineHeightField(noise, n, step, seed, width) {
       x: clamp01(u) * width,
       h: 0.52 + rand() * 0.38,
       // Half-width of the base (px) — tighter = steeper pyramid flanks.
-      w: 70 + rand() * 110,
+      w: cfg.wBase + rand() * cfg.wSpan,
       // Apex power: higher → needle summit (Shasta), not a plateau.
-      sharp: 1.9 + rand() * 1.1,
+      sharp: cfg.sharpMin + rand() * cfg.sharpSpan,
     });
   }
-  // Promote central peak to the massif king.
+  // Promote central peak to this range's king. Scaled to the character's
+  // own peak width rather than a fixed 130-170px: on `crags` (34-80px
+  // peaks) a hardcoded massif-sized king was the one landform every layer
+  // still shared, which kept them looking alike no matter what else moved.
   const main = peaks[Math.floor(nPeaks / 2)];
   main.h = Math.max(main.h, 0.94 + rand() * 0.06);
-  main.w = Math.min(main.w, 130 + rand() * 40);
-  main.sharp = Math.max(main.sharp, 2.4);
+  main.w = Math.min(main.w, cfg.wBase * (1.05 + rand() * 0.35));
+  main.sharp = Math.max(main.sharp, cfg.sharpMin + 0.3);
 
   // Secondary shoulders / subpeaks (Rainier-style multi-summit) — lower,
   // never wide enough to fill the saddle into a mesa.
@@ -66,7 +89,7 @@ export function alpineHeightField(noise, n, step, seed, width) {
   for (let i = 0; i < n; i++) {
     const x = i * step;
     // Sparse low foothill bed — keep valleys deep so peaks read as peaks.
-    let h = ridged(noise, x * 0.0035, 3) * 0.14;
+    let h = ridged(noise, x * 0.0035, 3) * cfg.bed;
     h += noise.fbm(x * 0.007, 2) * 0.05;
 
     for (const p of allPeaks) {
@@ -82,12 +105,12 @@ export function alpineHeightField(noise, n, step, seed, width) {
     // Couloir notches — carve V's into mid-flanks (craggy outline).
     const notch = ridged(noise, x * 0.022 + 17, 2);
     if (h > 0.28) {
-      h -= notch * 0.11 * (h - 0.18);
+      h -= notch * cfg.notch * (h - 0.18);
     }
 
     // High-frequency ridge teeth (arete / serac) — only near the skyline.
     const teeth = ridged(noise, x * 0.05, 2);
-    h += teeth * 0.07 * clamp01((h - 0.35) * 2.2);
+    h += teeth * cfg.teeth * clamp01((h - 0.35) * 2.2);
 
     heights[i] = clamp01(h);
   }
@@ -111,13 +134,14 @@ export function generateSilhouette({
   edgeLight = null, // optional neon ridge-line stroke (CYBER's edgeLight hook)
   shadeMode = 'classic', // 'classic' flat fill | 'rendered' soft CGI volume
   profile = 'rolling', // 'rolling' | 'alpine' (Denali / Rainier / Shasta massifs)
+  character = 'massif', // alpine only -- see ALPINE_CHARACTERS
 }) {
   const noise = new ValueNoise1D(seed, 256);
   const n = Math.floor(width / step) + 1;
 
   let heights;
   if (profile === 'alpine') {
-    heights = alpineHeightField(noise, n, step, seed, width);
+    heights = alpineHeightField(noise, n, step, seed, width, character);
   } else {
     heights = rollingHeightField(noise, n, step, octaves);
   }

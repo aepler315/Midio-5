@@ -7,10 +7,30 @@ import {
 
 const L2 = DANCE_LAYERS[FAR_DANCE_LAYER];
 
-test('FAR_DANCE_LAYER names the range that actually moves most', () => {
-  const amps = Object.entries(DANCE_LAYERS).map(([k, c]) => [k, c.waveAmp + c.bounceAmp]);
-  amps.sort((a, b) => b[1] - a[1]);
-  assert.equal(amps[0][0], FAR_DANCE_LAYER, 'the gate should read the biggest-moving skyline');
+test('FAR_DANCE_LAYER names the furthest range -- the one that leads on the kick', () => {
+  // The gate reads the HORIZON, which is the layer the kick reaches first
+  // (smallest delaySec), not the layer with the biggest swing. Those used
+  // to be the same layer; damping the far ranges for depth separated them.
+  const byDelay = Object.entries(DANCE_LAYERS).sort((a, b) => a[1].delaySec - b[1].delaySec);
+  assert.equal(byDelay[0][0], FAR_DANCE_LAYER, 'the gate should read the furthest skyline');
+});
+
+test('the swell gate is amplitude-free, so damping a range for depth never moves the gate', () => {
+  // This is what makes DANCE_LAYERS safe to retune for looks: ridgeSwell01
+  // deliberately drops every amplitude factor and reads the swing in phase,
+  // so a far range that barely moves in pixels still gates identically to
+  // one that heaves. Guarded because the alternative -- a gate built on
+  // absolute pixels -- would silently retime gameplay on a visual tweak.
+  const loud = { ...DANCE_LAYERS[FAR_DANCE_LAYER], waveAmp: 40, bounceAmp: 40 };
+  const quiet = { ...DANCE_LAYERS[FAR_DANCE_LAYER], waveAmp: 0.1, bounceAmp: 0.1 };
+  for (let x = -2000; x <= 2000; x += 211) {
+    for (let t = 0; t < 8; t += 0.29) {
+      for (const kick of [0, 0.5, 1]) {
+        assert.equal(ridgeSwell01(x, t, loud, kick), ridgeSwell01(x, t, quiet, kick),
+          `swell must not depend on amplitude (x=${x} t=${t} kick=${kick})`);
+      }
+    }
+  }
 });
 
 test('ridgeSwell01 stays in 0..1 across a full sweep of position, time and kick', () => {

@@ -153,27 +153,83 @@ export function twinkleAmplitude(mag, altitude01) {
 }
 
 /**
- * Generate `count` stars across a width x height field. A galactic-plane
- * band (a fixed fraction of the height, density-weighted rather than a
- * hard cutout) carries an order-of-magnitude higher density than the rest
- * of the sky, same as the real Milky Way band against the general field.
+ * The galactic plane, as it actually presents: a broad band tilted across
+ * the sky, not a horizontal stripe through the middle. Exported so the
+ * painted milky wash (BiomeManager._drawStarfield) can sit on exactly the
+ * same axis the star density does -- previously the wash was pinned at
+ * 0.14 of the canvas height while the density ridge sat at 0.32, so the
+ * two cues disagreed about where the galaxy even was.
+ *
+ * `halfFrac` is deliberately wide and the falloff below is soft: a real
+ * plane thins out gradually into the general field, and a narrow band at
+ * high density is exactly what reads as "the stars are only in the middle."
+ */
+export const GALACTIC_BAND = {
+  centerFrac: 0.34, // band center at mid-screen-x, as a fraction of field height
+  halfFrac: 0.26,   // half-thickness -- the band spans 52% of the field
+  tiltFrac: 0.22,   // rise from left edge to right edge, as a fraction of height
+};
+
+/** Band center height at horizontal position `xFrac` (0..1 across the field). */
+export function galacticBandCenterY(xFrac, height) {
+  const { centerFrac, tiltFrac } = GALACTIC_BAND;
+  return (centerFrac + (xFrac - 0.5) * tiltFrac) * height;
+}
+
+// How much denser the plane is than the general field, PER UNIT AREA.
+// The mixture weight below converts this to a probability using the band's
+// own area fraction -- the previous code used D/(D+1) directly, which is
+// only correct if the band covers half the sky. At the old D=9 that meant
+// 90% of every star landed in a stripe 16% of the height tall (measured:
+// 72% of the field inside a single eighth of the frame, against ~1.4% in
+// each of the bands below it). The sky above and below was empty and the
+// whole field read as a belt across the middle rather than as a sky.
+//
+// Kept deliberately gentle: the triangular falloff below already doubles
+// the density at the plane's core relative to the band's own average, so a
+// modest ratio here still reads as a distinct Milky Way without letting
+// the plane eat the rest of the sky again.
+const BAND_DENSITY_MUL = 1.5;
+
+/**
+ * Generate `count` stars across a width x height field. `height` is the
+ * SKY region (horizon to zenith), not necessarily the whole canvas -- the
+ * caller passes the part of the frame that isn't behind terrain, so
+ * altitude01 means what it says and no star is generated only to be
+ * occluded by a mountain.
+ *
+ * A galactic-plane band (see GALACTIC_BAND) carries a genuinely higher
+ * density than the rest of the sky, with a soft triangular falloff so it
+ * reads as a ridge thinning into the field rather than a hard stripe.
  * Deterministic per seed.
  */
 export function generateCatalogue(seed, count, width, height) {
   const rand = mulberry32((seed ^ 0x57a2c47) >>> 0 || 1);
-  const bandY = height * 0.32;   // galactic-plane band center
-  const bandWidth = height * 0.16;
-  const BAND_DENSITY_MUL = 9; // order of magnitude, per the plan's brief
+  const bandHalf = height * GALACTIC_BAND.halfFrac;
+  // P(band) from a real density ratio: the band's share of the sky's AREA
+  // times its density, against the remaining area at unit density.
+  const bandAreaFrac = clamp01((bandHalf * 2) / height);
+  const bandWeight = bandAreaFrac * BAND_DENSITY_MUL;
+  const pBand = bandWeight / (bandWeight + (1 - bandAreaFrac));
   const out = [];
   for (let i = 0; i < count; i++) {
     const x = rand() * width;
-    // Mixture sample: most draws land in the band (weighted by
-    // BAND_DENSITY_MUL against the field), the rest spread uniformly --
-    // gives a visible density RIDGE rather than a hard-edged stripe.
-    const inBand = rand() < BAND_DENSITY_MUL / (BAND_DENSITY_MUL + 1);
-    const y = inBand
-      ? clamp01((bandY + (rand() - 0.5) * bandWidth) / height) * height
-      : rand() * height;
+    // Mixture sample: a band draw lands near the (tilted) plane, the rest
+    // spread uniformly across the whole sky -- so the field is populated
+    // everywhere and the plane is a density ridge on top of it, not a belt
+    // with emptiness above and below.
+    const inBand = rand() < pBand;
+    let y;
+    if (inBand) {
+      // Sum of two uniforms = triangular distribution: peaks on the plane
+      // and falls off smoothly to zero at +/- bandHalf, instead of the flat
+      // draw that gave the old band its hard edges.
+      const tri = (rand() + rand()) - 1; // -1..1, peaked at 0
+      y = galacticBandCenterY(x / Math.max(1, width), height) + tri * bandHalf;
+      y = clamp01(y / height) * height;
+    } else {
+      y = rand() * height;
+    }
 
     const { cls, tempK } = sampleSpectralClass(rand);
     const mag = sampleMagnitude(rand);

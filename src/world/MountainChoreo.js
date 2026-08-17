@@ -18,11 +18,23 @@ import { clamp01 } from '../utils/math.js';
  *
  *  waveLen/waveHz/phase stay as they were and are deliberately co-prime-ish
  *  across layers, so the ranges never move in lockstep. */
+// Amplitude now falls off WITH DISTANCE, not toward it. The old table gave
+// the furthest range (L2) the biggest swing of the four -- 11.5px of wave
+// plus a 10.8px drop on every kick, up to ~3.4x that under fever -- on a
+// layer that scrolls at 0.10 ratio. Something that far away moving that
+// hard doesn't read as a mountain range breathing; it reads as the back
+// ridge vibrating, because parallax has already told the eye it should be
+// nearly still. Near ranges may move; distant ones may only barely.
+//
+// Kick bounce falls off harder than the wave: a per-beat drop is the most
+// legible motion of the two, so it's the one that has to nearly vanish at
+// depth. waveLen/waveHz/phase are unchanged and still co-prime-ish across
+// layers, so the ranges never move in lockstep.
 export const DANCE_LAYERS = {
-  L2: { waveAmp: 11.5, bounceAmp: 10.8, waveLen: 430, waveHz: 0.10, phase: 0.0, delaySec: 0.0 },
-  L3: { waveAmp: 8.8, bounceAmp: 8.1, waveLen: 350, waveHz: 0.12, phase: 1.3, delaySec: 0.05 },
-  L4: { waveAmp: 6.1, bounceAmp: 5.4, waveLen: 290, waveHz: 0.15, phase: 2.6, delaySec: 0.11 },
-  L5: { waveAmp: 4.1, bounceAmp: 3.4, waveLen: 250, waveHz: 0.18, phase: 4.0, delaySec: 0.17 },
+  L2: { waveAmp: 2.6, bounceAmp: 1.1, waveLen: 430, waveHz: 0.10, phase: 0.0, delaySec: 0.0 },
+  L3: { waveAmp: 4.4, bounceAmp: 2.8, waveLen: 350, waveHz: 0.12, phase: 1.3, delaySec: 0.05 },
+  L4: { waveAmp: 6.6, bounceAmp: 5.6, waveLen: 290, waveHz: 0.15, phase: 2.6, delaySec: 0.11 },
+  L5: { waveAmp: 8.4, bounceAmp: 8.0, waveLen: 250, waveHz: 0.18, phase: 4.0, delaySec: 0.17 },
 };
 
 // Strip-space slice width for the ridge wave. Halved from 128: each slice
@@ -56,7 +68,9 @@ export function danceOffset(stripX, tSec, groove, kick, cfg, fever = 0) {
 export const FEVER_DANCE_GAIN = 2.4; // fever now cranks the dance up to ~3.4x
 
 /** The range Midio takes his cue from: the furthest, biggest-moving skyline
- *  (see DANCE_LAYERS -- L2 has the largest waveAmp/bounceAmp of the four). */
+ *  (see DANCE_LAYERS -- L2 is the furthest, and leads the others on the
+ *  kick). Note this reads the swing in PHASE, not pixels, so damping L2's
+ *  amplitude for depth doesn't move the gameplay gate at all. */
 export const FAR_DANCE_LAYER = 'L2';
 
 /** How much of a kick the swell reading gives away. Small on purpose: the

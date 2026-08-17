@@ -41,17 +41,32 @@ test('kicks lift every layer, far peaks before near hills', () => {
   assert.ok(withKick < without, 'a kick must lift the range');
 });
 
-test('the dance gets bigger with distance -- the drama is in the BACK', () => {
-  // The whole point of the reversal: whatever sits closest to the camera
-  // must never be the thing moving most, or the foreground flaps while the
-  // horizon sits still.
+test('the dance damps with distance -- a far range may only barely move', () => {
+  // Parallax has already told the eye the back range is enormously far
+  // away. Anything that distant moving hard reads as the ridge VIBRATING,
+  // not as a mountain range breathing, so amplitude has to fall off with
+  // depth even though the kick still ARRIVES at the far range first.
   const order = ['L5', 'L4', 'L3', 'L2']; // near -> far
   for (let i = 1; i < order.length; i++) {
     const nearer = DANCE_LAYERS[order[i - 1]], farther = DANCE_LAYERS[order[i]];
-    assert.ok(farther.waveAmp > nearer.waveAmp, `${order[i]} should heave more than ${order[i - 1]}`);
-    assert.ok(farther.bounceAmp > nearer.bounceAmp, `${order[i]} should bounce harder than ${order[i - 1]}`);
-    assert.ok(farther.delaySec < nearer.delaySec, `${order[i]} should lead ${order[i - 1]} on the kick`);
+    assert.ok(farther.waveAmp < nearer.waveAmp, `${order[i]} should heave less than ${order[i - 1]}`);
+    assert.ok(farther.bounceAmp < nearer.bounceAmp, `${order[i]} should bounce less than ${order[i - 1]}`);
+    assert.ok(farther.delaySec < nearer.delaySec, `${order[i]} should still lead ${order[i - 1]} on the kick`);
   }
+});
+
+test('the furthest range is nearly still even at full fever -- no vibrating horizon', () => {
+  // The specific artifact this guards: L2 used to drop 10.8px per kick and
+  // up to ~3.4x that under fever, on a layer scrolling at 0.10 ratio.
+  const far = DANCE_LAYERS.L2;
+  let peak = 0;
+  for (let x = 0; x < 900; x += 7) {
+    for (let tMs = 0; tMs < 2000; tMs += 10) {
+      const d = danceOffset(x, tMs / 1000, 1, 1, far, 1); // full groove, full kick, full fever
+      peak = Math.max(peak, Math.abs(d));
+    }
+  }
+  assert.ok(peak < 14, `far range peak excursion ${peak.toFixed(1)}px should stay subtle even at full fever`);
 });
 
 test('kickEnv snaps up fast and settles smoothly', () => {
