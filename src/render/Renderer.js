@@ -2,7 +2,7 @@
 // telegraph glints -> world FX -> companions -> Midio -> foreground veil ->
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
 // each stage guards on the subsystem's presence so this file grows additively.
-import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE, MIDIO_APOTHEOSIS_FOLDED, MIDIO_APOTHEOSIS_UNFOLDED } from './meshes.js';
+import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE, MIDIO_EYE_CY, MIDIO_EYE_SOCKET_R, midioEyeMesh, MIDIO_APOTHEOSIS_FOLDED, MIDIO_APOTHEOSIS_UNFOLDED } from './meshes.js';
 import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, lerpMesh, applyTransform, drawGlowHalo } from './MeshDrawer.js';
 import { spectralHue, easeHueDeg } from './stellar.js';
 import { EpicycleShow } from './EpicycleShow.js';
@@ -27,7 +27,6 @@ import { groundGlowLights, characterGlowLight } from './LightField.js';
 const SHAKE_MARGIN_PX = 64;
 
 const MIDIO_BASE_HUE = 178; // cool aquamarine -- the startup default before the song's key eases in and takes over (see this._midioHue)
-const MIDIO_EYE_CY = -31; // MIDIO_EYE's local center, for blink scaling around its own middle
 const MIDIO_DRAW_SCALE = 1.8; // the stage got bigger: render-only, physics untouched
 
 // Fever aura: a screen-edge glow that only shows up once the player's earned
@@ -345,7 +344,7 @@ export class Renderer {
     // something that actually happens rather than something that was
     // always half-happening.
     const vibeMelt = sim.vibe ? 0.3 + 6.7 * sim.vibe.epic : 0;
-    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, vibeMelt + feverGlow, sim.apotheosis, sim.reducedFlash, this._midioHue, sim.ensemble, companionLights);
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, vibeMelt + feverGlow, sim.apotheosis, sim.reducedFlash, this._midioHue, sim.ensemble, companionLights, sim.focus ? sim.focus.mul('midio') : 1, sim.gaze);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
@@ -935,7 +934,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_BASE_HUE, ensemble = null, lights = null, focusMul = 1) {
+  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_BASE_HUE, ensemble = null, lights = null, focusMul = 1, gaze = null) {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
     const apoProgress = apotheosis ? apotheosis.progress : 0;
@@ -1015,12 +1014,20 @@ export class Renderer {
     // stays razor-edged against his own under-glow (and soft sculpted fill).
     drawMeshPart(ctx, bodyMesh, bodyRest, transform, hue, { ...options, outline: outlineOpts });
 
-    if (blink < 0.98) {
-      const blinkEye = {
-        vertices: MIDIO_EYE.vertices.map((v) => ({ x: v.x, y: MIDIO_EYE_CY + (v.y - MIDIO_EYE_CY) * blink })),
-        edges: MIDIO_EYE.edges,
-      };
-      drawMeshPart(ctx, blinkEye, this._midioEyeRest, transform, hue, { ...options, outline: outlineOpts });
+    // The iris leans toward whatever Gaze picked this step (the incoming
+    // obstacle, Midasus, or the celestial), scaled by blink * openness --
+    // the same offset-from-hub scale blink alone used to own, generalized
+    // so a closing eye also neutralizes gaze (nothing to look at while
+    // shut) and an anticipation/flinch pulse widens the socket a little.
+    // The moved iris's own edge naturally reads a touch brighter too (its
+    // length now differs from MIDIO_EYE's neutral rest length) -- a free
+    // "caught the light" cue that needed no extra code.
+    const gazeOpen = gaze ? gaze.openness : 1;
+    const eyeScale = blink * gazeOpen;
+    const iris = gaze ? gaze.irisOffset(MIDIO_EYE_SOCKET_R) : { x: 0, y: 0 };
+    if (eyeScale < 0.999 || iris.x !== 0 || iris.y !== 0) {
+      const liveEye = midioEyeMesh(iris.x * eyeScale, iris.y * eyeScale);
+      drawMeshPart(ctx, liveEye, this._midioEyeRest, transform, hue, { ...options, outline: outlineOpts });
     } else {
       drawMeshPart(ctx, MIDIO_EYE, this._midioEyeRest, transform, hue, { ...options, outline: outlineOpts });
     }

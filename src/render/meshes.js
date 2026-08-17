@@ -87,10 +87,9 @@ export function mergeMeshes(meshes) {
 //   • only a whisper of asymmetry (the left side sits fractionally
 //     narrower) so he still reads as a character, not clip-art, without
 //     ever tipping back into "aggressive"
-// His core sigil (MIDIO_EYE, a small hexagram at the blink axis) already
-// sits right where a third eye would -- left untouched, since the new
-// silhouette gives it more room to read as exactly that, rather than
-// changing it too and losing the thing that already worked.
+// His core sigil (MIDIO_EYE, an eye at the blink axis) already sits right
+// where a third eye would -- the new silhouette gives it room to read as
+// exactly that.
 // Half-width stays inside the 23px collision body. Nine rim verts so
 // apotheosis fold still maps. ---
 export const MIDIO_BODY = shardMesh({ x: 0, y: -30 }, [
@@ -104,8 +103,22 @@ export const MIDIO_BODY = shardMesh({ x: 0, y: -30 }, [
   { x: -9, y: -15 },    // 7 left waist facet (near-mirror of 3)
   { x: -10, y: -46 },   // 8 upper-left shoulder facet (mirror of 1)
 ], { spokeEvery: 2, braces: [[1, 3], [3, 6], [6, 8]] });
-// Core sigil: hexagram on the blink axis (MIDIO_EYE_CY = -31 in Renderer).
-export const MIDIO_EYE = hexagramMesh(4.6, 0, -31);
+// Core sigil: hub + a single offset iris vertex, on the blink axis. Was a
+// static hexagram; nothing on screen looking at anything was where his
+// lack of presence most literally lived, so the eye now has a live pupil
+// that leans toward whatever he's looking at each frame (see Gaze.js,
+// which computes irisDx/irisDy in this same local-mesh space). midioEyeMesh
+// with no args (MIDIO_EYE below) is the neutral, centered gaze used for
+// MIDIO_MESH/rest-length computation and everywhere a static eye is fine.
+export const MIDIO_EYE_CY = -31;
+export const MIDIO_EYE_SOCKET_R = 4.6; // max iris travel from the hub -- same visual scale as the old hexagram's radius
+export function midioEyeMesh(irisDx = 0, irisDy = 0) {
+  return {
+    vertices: [{ x: 0, y: MIDIO_EYE_CY }, { x: irisDx, y: MIDIO_EYE_CY + irisDy }],
+    edges: [[0, 1]],
+  };
+}
+export const MIDIO_EYE = midioEyeMesh();
 export const MIDIO_MESH = mergeMeshes([MIDIO_BODY, MIDIO_EYE]).mesh;
 
 // --- Apotheosis: Midio's earned transformation (spec: charge earned by
