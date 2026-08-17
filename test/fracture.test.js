@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   FractureEngine,
-  buildMountainRidgePolylines,
+  buildMonolithPolylines,
   buildStressThresholds,
   polylineFromPoints,
   shatterFadeAlpha,
@@ -10,6 +10,8 @@ import {
   RIDGE_GEN_COUNT,
 } from '../src/world/FractureEngine.js';
 import { Conductor } from '../src/core/Conductor.js';
+import { OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC } from '../src/world/Ocean.js';
+import { BASELINE_FRAC as SPACE_RIDGE_BASELINE_FRAC } from '../src/world/SpaceRidge.js';
 import { makeNoteEvent, Role } from '../src/core/NoteEvent.js';
 import { FLASH_CAP } from '../src/ui/Accessibility.js';
 
@@ -47,31 +49,79 @@ test('buildStressThresholds spreads evenly across the song progress axis', () =>
   assert.equal(RIDGE_GEN_COUNT, 16);
 });
 
-test('buildMountainRidgePolylines: deterministic, count, and peak-like silhouette', () => {
+test('buildMonolithPolylines: deterministic, counted, and on-canvas', () => {
   const w = 1280, h = 720;
-  const a = buildMountainRidgePolylines(w, h, 42, RIDGE_GEN_COUNT);
-  const b = buildMountainRidgePolylines(w, h, 42, RIDGE_GEN_COUNT);
-  const c = buildMountainRidgePolylines(w, h, 99, RIDGE_GEN_COUNT);
+  const a = buildMonolithPolylines(w, h, 42, RIDGE_GEN_COUNT);
+  const b = buildMonolithPolylines(w, h, 42, RIDGE_GEN_COUNT);
+  const c = buildMonolithPolylines(w, h, 99, RIDGE_GEN_COUNT);
   assert.equal(a.length, RIDGE_GEN_COUNT);
-  assert.deepEqual(a, b, 'same seed reproduces the ridge plan');
+  assert.deepEqual(a, b, 'same seed reproduces the monolith plan');
   assert.notDeepEqual(a, c, 'different seeds diverge');
 
-  // Every polyline has real length and stays on/near the canvas.
   for (const poly of a) {
     assert.ok(poly.nodes.length >= 2);
-    assert.ok(poly.total > 8, 'ridge piece must have real length');
+    assert.ok(poly.total > 8, 'each piece must have real length');
     for (const n of poly.nodes) {
       assert.ok(n.x > -w * 0.1 && n.x < w * 1.1);
       assert.ok(n.y > -h * 0.05 && n.y < h * 1.05);
     }
   }
+});
 
-  // The massif should reach high on the frame (small y) and rest lower (large y).
-  const allY = a.flatMap((p) => p.nodes.map((n) => n.y));
+test('the monolith spans the ocean plane to above the space ridge', () => {
+  const w = 1280, h = 720;
+  const plan = buildMonolithPolylines(w, h, 7, RIDGE_GEN_COUNT);
+  const allY = plan.flatMap((p) => p.nodes.map((n) => n.y));
   const minY = Math.min(...allY);
   const maxY = Math.max(...allY);
-  assert.ok(minY < h * 0.35, `peaks should crest high on the frame, minY=${minY}`);
-  assert.ok(maxY > h * 0.55, `foothills should sit lower on the frame, maxY=${maxY}`);
+
+  // Its foot stands on the ocean plane -- between the far horizon and the
+  // plane's near edge, not on the ground and not floating in the sky.
+  const oceanTop = h * OCEAN_HORIZON_FRAC;
+  const oceanBottom = h * OCEAN_NEAR_FRAC;
+  assert.ok(maxY > oceanTop && maxY < oceanBottom,
+    `the base must sit in the water (${oceanTop}..${oceanBottom}), got ${maxY}`);
+
+  // Its crown reaches past the altitude the space ridge hangs at.
+  const ridgeY = h * SPACE_RIDGE_BASELINE_FRAC;
+  assert.ok(minY < ridgeY, `the crown must pierce above the ridge (${ridgeY}), got ${minY}`);
+});
+
+test('the monolith is planned bottom-up, so births make it RISE across the song', () => {
+  const w = 1280, h = 720;
+  const plan = buildMonolithPolylines(w, h, 3, RIDGE_GEN_COUNT);
+  // Highest point (smallest y) reached by each piece, in birth order.
+  const tops = plan.map((p) => Math.min(...p.nodes.map((n) => n.y)));
+
+  // The ship is the lowest thing in the plan and is born first; the crown is
+  // the highest and is born last. Assert the trend rather than strict
+  // monotonicity -- pieces alternate left/right edge within a course.
+  const firstThird = tops.slice(0, 5).reduce((s, v) => s + v, 0) / 5;
+  const lastThird = tops.slice(-5).reduce((s, v) => s + v, 0) / 5;
+  assert.ok(lastThird < firstThird - h * 0.15,
+    `late pieces must sit far higher than early ones, got ${firstThird} -> ${lastThird}`);
+
+  // The very first piece is the ship's hull, on the water; the very last is
+  // the tie into the ridge.
+  assert.ok(tops[0] > h * 0.30, `the first birth is the hull on the water, got ${tops[0]}`);
+});
+
+test('the last birth ties the monolith into the space ridge altitude', () => {
+  const w = 1280, h = 720;
+  const plan = buildMonolithPolylines(w, h, 11, RIDGE_GEN_COUNT);
+  const tie = plan[plan.length - 1];
+  const ridgeY = h * SPACE_RIDGE_BASELINE_FRAC;
+
+  // It sits at the ridge's own altitude...
+  for (const n of tie.nodes) {
+    assert.ok(Math.abs(n.y - ridgeY) < h * 0.03,
+      `tie node should hug the ridge altitude ${ridgeY}, got ${n.y}`);
+  }
+  // ...and reaches out sideways far enough to read as joining it, rather
+  // than being one more piece of the shaft.
+  const xs = tie.nodes.map((n) => n.x);
+  assert.ok(Math.max(...xs) - Math.min(...xs) > w * 0.5,
+    'the tie line must reach out along the ridge, not just span the shaft');
 });
 
 test('shatterFadeAlpha / shatterMotionU are smooth hold-then-ease envelopes', () => {
@@ -100,9 +150,9 @@ test('FractureEngine births cracks as the stress accumulator crosses thresholds 
 
   assert.ok(fx.cracks.length > 0, 'expected at least one crack to have been born');
   assert.ok(fx.stress > 0.15);
-  // Ridge plan is precomputed and cracks walk it gradually.
-  assert.equal(fx._ridgePlan.length, RIDGE_GEN_COUNT);
-  // By late song (stress ~0.9 from linear tNorm) most ridge pieces should exist.
+  // The monolith plan is precomputed and cracks walk it gradually.
+  assert.equal(fx._monolithPlan.length, RIDGE_GEN_COUNT);
+  // By late song (stress ~0.9 from linear tNorm) most pieces should exist.
   assert.ok(fx.cracks.length >= 10, `expected gradual full-track births, got ${fx.cracks.length}`);
   for (const crack of fx.cracks) {
     assert.ok(crack.nodes.length >= 2);

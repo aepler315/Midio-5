@@ -564,8 +564,6 @@ export class Burrow {
     const screenY = this._groundY;
 
     ctx.save();
-    ctx.fillStyle = '#140d1c';
-    ctx.fillRect(screenX, screenY, w, h);
     ctx.drawImage(this._scratchCanvas, screenX, screenY);
 
     // Broshi himself: his actual body glyph at 0.8 scale, melted and

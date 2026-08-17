@@ -32,6 +32,7 @@ import {
 import { buildWaveComponents, waveFieldSample, windSpeedForSeaState, easeSeaState } from './WaveField.js';
 import {
   generateCatalogue, subPixelDraw, twinkleAmplitude, galacticBandCenterY, GALACTIC_BAND,
+  extinction01, reddening01, generateDustLanes, generateDeepSky, generatePlanets,
 } from './StarCatalogue.js';
 import {
   islands, ships, seaLifeSchedule, monsterSchedule, tsunamiSchedule,
@@ -67,7 +68,7 @@ import { CodaDirector } from '../sim/CodaDirector.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
 import { computeLight, celestialScreenPos, groundGlowLights } from '../render/LightField.js';
-import { clamp, clamp01, smoothstep, mulberry32, hashSeed } from '../utils/math.js';
+import { clamp, clamp01, smoothstep, mulberry32, hashSeed, lerpHue } from '../utils/math.js';
 import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { spectralShiftDeg, easeSpectralShift } from '../render/spectral.js';
 import { Role } from '../core/NoteEvent.js';
@@ -360,8 +361,20 @@ export class BiomeManager {
         size: drawSize, bright: drawAlpha, layer,
         hue: s.hue,
         mag: s.mag, altitude01: s.altitude01, // read by twinkleAmplitude in _drawStarfield
+        // Air path, resolved once: low stars are permanently dimmer and
+        // redder than the same star overhead (StarCatalogue.extinction01).
+        // Constant per star, so it belongs in the cache, not the frame loop.
+        ext: extinction01(s.altitude01),
+        redden: reddening01(s.altitude01),
       };
     });
+    // The rest of the sky's furniture, all generated over the same sky
+    // region and cached alongside the stars: dark nebulae that break up the
+    // milky wash, a few resolved deep-sky smudges, and the planets.
+    const skyH = this.h * STAR_SKY_FRAC;
+    this.dustLanes = generateDustLanes(hashSeed(`${songSeed}:dust`), 7, this.w, skyH);
+    this.deepSky = generateDeepSky(hashSeed(`${songSeed}:deepsky`), 6, this.w, skyH);
+    this.planets = generatePlanets(hashSeed(`${songSeed}:planets`), 3, this.w, skyH);
     this._glitchTimer = 2 + this._starSeed() * 3;
     this._glitchActiveMs = 0;
     this._scanlineY = 0;
@@ -2106,6 +2119,71 @@ export class BiomeManager {
       band.addColorStop(1, 'rgba(160,190,255,0)');
       ctx.fillStyle = band;
       ctx.fillRect(0, -half, diag, half * 2);
+      // Dark nebulae, drawn INSIDE the band's own rotated frame and clipped
+      // to the wash they occlude. A smooth airbrushed stripe is the most
+      // synthetic thing a night sky can do; the real plane is broken up by
+      // dust clouds that block the glow behind them (the Great Rift), so the
+      // band gets its structure from what's missing, not from more light.
+      // 'multiply' against black, NOT destination-out: these have to darken
+      // the sky they sit in front of, and destination-out would punch a hole
+      // clean through the backdrop to transparent instead.
+      ctx.globalCompositeOperation = 'multiply';
+      for (const d of this.dustLanes) {
+        // The lanes were generated in field space against the same tilted
+        // axis, so undo the band's own tilt to place them in this frame.
+        const dy = d.y - galacticBandCenterY(d.x / Math.max(1, canvas.width), skyH);
+        const breathe = 0.85 + 0.15 * Math.sin(this.tSec * 0.06 + d.phase);
+        ctx.save();
+        ctx.translate(d.x, dy);
+        ctx.rotate(d.rot - ang);
+        const g2 = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+        g2.addColorStop(0, `rgba(0,0,0,${(d.alpha * breathe).toFixed(3)})`);
+        g2.addColorStop(0.55, `rgba(0,0,0,${(d.alpha * breathe * 0.5).toFixed(3)})`);
+        g2.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.scale(d.rx, d.ry);
+        ctx.fillStyle = g2;
+        ctx.beginPath();
+        ctx.arc(0, 0, 1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    // Deep-sky objects: faint resolved smudges, under the stars so a star
+    // can sit in front of one. These do not twinkle -- an extended source
+    // averages scintillation away, which is exactly the cue that separates
+    // "a nebula" from "a bright star" at a glance.
+    {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const o of this.deepSky) {
+        const a = alpha * o.alpha * (0.85 + 0.15 * Math.sin(this.tSec * 0.09 + o.phase));
+        if (a < 0.004) continue;
+        ctx.save();
+        ctx.translate(o.x, o.y);
+        ctx.rotate(o.rot);
+        ctx.scale(1, o.squash);
+        const g3 = ctx.createRadialGradient(0, 0, 0, 0, 0, o.r);
+        g3.addColorStop(0, `hsla(${o.hue},58%,80%,${(a * 1.6).toFixed(4)})`);
+        g3.addColorStop(0.45, `hsla(${o.hue},52%,68%,${(a * 0.7).toFixed(4)})`);
+        g3.addColorStop(1, `hsla(${o.hue},48%,60%,0)`);
+        ctx.fillStyle = g3;
+        ctx.beginPath();
+        ctx.arc(0, 0, o.r, 0, Math.PI * 2);
+        ctx.fill();
+        // A cluster is granular, not a smooth blob -- a few resolved
+        // members are what make it read as a swarm of stars.
+        if (o.kind === 'cluster') {
+          ctx.fillStyle = `hsla(${o.hue},40%,92%,${(a * 2.2).toFixed(4)})`;
+          for (let k = 0; k < 9; k++) {
+            const ang2 = (k / 9) * Math.PI * 2 + o.phase;
+            const rr = o.r * (0.15 + 0.65 * ((k * 7919) % 100) / 100);
+            ctx.fillRect(Math.cos(ang2) * rr, Math.sin(ang2) * rr, 1, 1);
+          }
+        }
+        ctx.restore();
+      }
       ctx.restore();
     }
 
@@ -2122,7 +2200,10 @@ export class BiomeManager {
         ? twinkleAmplitude(s.mag, s.altitude01 ?? 0.5)
         : 0.4;
       const tw = (1 - twDepth) + twDepth * (0.5 + 0.5 * Math.sin(this.tSec * twinkleRate * (0.7 + s.bright) + s.phase));
-      const a = alpha * s.bright * tw;
+      // Air path: low stars lose real light before they ever reach the eye,
+      // so the field thins and warms toward the ridgeline instead of walling
+      // off at full brightness the way a flat scatter does.
+      const a = alpha * s.bright * tw * (s.ext ?? 1);
       if (a < 0.03) continue;
       const layerDrift = (1 + s.layer * 0.6) * scroll * 0.02;
       let x = s.x + layerDrift;
@@ -2131,14 +2212,21 @@ export class BiomeManager {
       const y = s.y;
       const sz = s.size;
 
+      // The same air path that dimmed it also scatters its blue out first,
+      // so what survives is warmer. Pull the star's own spectral hue toward
+      // horizon-orange in proportion to how much light it lost.
+      const red = s.redden ?? 0;
+      const hue = s.hue > 0 ? lerpHue(s.hue, 24, red * 0.6) : 24;
+      const useHue = s.hue > 0 || red > 0.35;
+
       if (s.layer === 2) {
         const r = Math.max(1.2, sz * 1.6);
         ctx.globalAlpha = a * 0.55;
         const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-        if (s.hue > 0) {
-          grad.addColorStop(0, `hsla(${s.hue},62%,92%,1)`);
-          grad.addColorStop(0.45, `hsla(${s.hue},50%,80%,0.3)`);
-          grad.addColorStop(1, `hsla(${s.hue},40%,70%,0)`);
+        if (useHue) {
+          grad.addColorStop(0, `hsla(${hue},62%,92%,1)`);
+          grad.addColorStop(0.45, `hsla(${hue},50%,80%,0.3)`);
+          grad.addColorStop(1, `hsla(${hue},40%,70%,0)`);
         } else {
           grad.addColorStop(0, 'rgba(255,255,255,1)');
           grad.addColorStop(0.4, 'rgba(220,230,255,0.35)');
@@ -2148,15 +2236,68 @@ export class BiomeManager {
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
         ctx.fill();
+
+        // Diffraction spikes, only on the ones bright enough to earn them.
+        // They have to TAPER -- a constant-width, constant-alpha cross reads
+        // as a drawn crosshair rather than as light -- so each arm runs
+        // through a gradient that is solid only at the core and reaches zero
+        // at the tip, which is the shape real spikes actually have.
+        if (a > 0.34) {
+          const spike = r * (1.6 + 1.0 * tw);
+          const tint = useHue ? `hsla(${hue},45%,94%,` : 'rgba(226,236,255,';
+          ctx.globalAlpha = a * 0.45;
+          ctx.lineWidth = 0.7;
+          for (const [dx, dy] of [[1, 0], [0, 1]]) {
+            const gS = ctx.createLinearGradient(
+              x - dx * spike, y - dy * spike, x + dx * spike, y + dy * spike,
+            );
+            gS.addColorStop(0, `${tint}0)`);
+            gS.addColorStop(0.5, `${tint}1)`);
+            gS.addColorStop(1, `${tint}0)`);
+            ctx.strokeStyle = gS;
+            ctx.beginPath();
+            ctx.moveTo(x - dx * spike, y - dy * spike);
+            ctx.lineTo(x + dx * spike, y + dy * spike);
+            ctx.stroke();
+          }
+        }
+
         ctx.globalAlpha = a;
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(x - 0.6, y - 0.6, 1.2, 1.2);
       } else {
         ctx.globalAlpha = a;
-        if (s.hue > 0) ctx.fillStyle = `hsl(${s.hue},55%,88%)`;
+        if (useHue) ctx.fillStyle = `hsl(${hue},55%,88%)`;
         else ctx.fillStyle = s.layer === 1 ? '#f0f4ff' : '#d8e0f5';
         ctx.fillRect(x, y, sz, sz);
       }
+    }
+
+    // Planets, over the stars: brighter than anything near them, obviously
+    // colored, and deliberately NOT twinkling -- a resolved disc averages
+    // scintillation away, so holding perfectly steady in a field of
+    // shivering points is the whole tell.
+    for (const p of this.planets) {
+      const pa = alpha * p.bright * extinction01(p.altitude01) * 1.15;
+      if (pa < 0.03) continue;
+      let px = p.x + scroll * 0.02;
+      if (px > canvas.width) px -= canvas.width;
+      const r = 3.2 * p.size;
+      ctx.globalAlpha = pa * 0.5;
+      const pg = ctx.createRadialGradient(px, p.y, 0, px, p.y, r);
+      pg.addColorStop(0, `hsla(${p.hue},${p.sat}%,88%,1)`);
+      pg.addColorStop(0.4, `hsla(${p.hue},${p.sat}%,76%,0.35)`);
+      pg.addColorStop(1, `hsla(${p.hue},${p.sat}%,70%,0)`);
+      ctx.fillStyle = pg;
+      ctx.beginPath();
+      ctx.arc(px, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      // The disc itself -- a couple of px across, not a point.
+      ctx.globalAlpha = pa;
+      ctx.fillStyle = `hsl(${p.hue},${Math.round(p.sat * 0.8)}%,92%)`;
+      ctx.beginPath();
+      ctx.arc(px, p.y, Math.max(0.9, p.size * 0.62), 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.restore();
   }

@@ -1,8 +1,9 @@
 // Progressive screen fracturing + terminal shatter (spec §4.2). The screen
 // is a pane of glass the song slowly destroys: a stress accumulator births
-// crack trees that subtly outline the ridges of a massive, impossible
-// Denali-like mountain range. The final lead freezes the last frame, then
-// shards ease apart and fade rather than detonating in a hard flash.
+// crack trees that subtly outline THE MONOLITH -- a single structure rising
+// out of the far ocean over the length of the track. The final lead freezes
+// the last frame, then shards ease apart and fade rather than detonating in
+// a hard flash.
 import { clamp, clamp01, mulberry32, hashSeed, lerp, smoothstep } from '../utils/math.js';
 import { delaunayTriangulate, poissonDiscSample } from '../utils/delaunay.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
@@ -12,9 +13,11 @@ import {
   analyzeSongFinale, buildPeakProgress, FINALE_FREEZE_LEAD_MS,
 } from '../core/SongFinale.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
+import { OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC } from './Ocean.js';
+import { BASELINE_FRAC as SPACE_RIDGE_BASELINE_FRAC } from './SpaceRidge.js';
 
 // Many small ridge pieces, spaced evenly across song progress so the
-// mountain draws itself gradually through the whole track (not a late pile-up).
+// monolith draws itself gradually through the whole track (not a late pile-up).
 export const RIDGE_GEN_COUNT = 16;
 /** Even stress thresholds in [start, end] for progressive ridge birth. */
 export function buildStressThresholds(count = RIDGE_GEN_COUNT, start = 0.04, end = 0.92) {
@@ -87,114 +90,170 @@ function jaggedChord(a, b, nMids, rand, ampPx) {
   return pts;
 }
 
+// --- The Monolith ----------------------------------------------------------
+// The glass used to ink an impossible mountain range spread across the whole
+// frame. It now inks ONE structure, and because the pieces are ordered
+// bottom-to-top and birth in that order as the song's stress accumulates,
+// the thing genuinely RISES over the length of the track rather than merely
+// fading up in place:
+//
+//   1. It breaks the water as a large ship -- hull, deck, a single mast.
+//      At that distance there is nothing else it could be.
+//   2. The hull keeps going down and the flanks keep going up. It was never
+//      a ship; that was the exposed tip of something with no visible bottom.
+//   3. The shaft climbs, course by course, out of the ocean and through the
+//      whole sky.
+//   4. It crosses the deep-sky altitude where the SpaceRidge hangs -- and
+//      the last birth of the song is the tie line that joins them.
+//
+// Every altitude here is derived from the constants that actually define the
+// world's vertical extremes -- the ocean plane (Ocean.js) and the space
+// ridge's own baseline (SpaceRidge.js) -- so the structure genuinely spans
+// "ocean to outer space" and genuinely meets the ridge, instead of
+// approximating both with magic numbers that would drift out of sync the
+// moment either system was retuned.
+
+// How far down the ocean plane (0 = far horizon, 1 = near edge) it stands.
+// Sits well out on the plane rather than right at the horizon line: anchored
+// up at the horizon the whole structure crams into the top quarter of the
+// frame and reads as a stubby lump, which is the opposite of the point. Out
+// here it has most of the frame to climb through, and it is the SLENDERNESS
+// (below), not the anchor, that keeps it reading as impossibly distant.
+const MONOLITH_OCEAN_ANCHOR = 0.72;
+// The crown carries on ABOVE the ridge -- meeting it is the story beat, but
+// the structure does not stop there.
+const MONOLITH_TOP_FRAC = 0.05;
+// How far the final tie line reaches out along the ridge, each way.
+const MONOLITH_TIE_REACH = 0.34;
+
 /**
- * Pure: a deterministic "impossible Denali" ridge plan for the screen.
- * Returns many *small* polylines (one birth each) so the massif inks on
- * gradually across the song. Peaks sit high (small canvas y); foothills
- * sit lower. Impossible geometry: floating spur peak, sky-hook ridge.
+ * Pure: a deterministic plan for the monolith, as many *small* polylines
+ * (one birth each) ordered from the waterline upward.
  *
  * @param {number} w canvas width
  * @param {number} h canvas height
  * @param {number} seed
- * @param {number} [count] number of ridge polylines (matches THRESHOLDS)
+ * @param {number} [count] number of polylines (matches THRESHOLDS)
  */
-export function buildMountainRidgePolylines(w, h, seed, count = RIDGE_GEN_COUNT) {
+export function buildMonolithPolylines(w, h, seed, count = RIDGE_GEN_COUNT) {
   const rand = mulberry32((seed ^ 0xde7a11) >>> 0 || 1);
-  const foothills = h * 0.78;
-  const midRidge = h * 0.48;
-  const high = h * 0.18;
-  const skyHook = h * 0.08;
 
-  // Major summits (Denali massif bias: dominant central peak, satellite shoulders).
-  const peaks = [
-    { x: w * 0.12, y: foothills - h * 0.08 },
-    { x: w * 0.22, y: midRidge + h * 0.06 },
-    { x: w * 0.34, y: high + h * 0.10 },
-    { x: w * 0.46, y: high },
-    { x: w * 0.55, y: high + h * 0.07 },
-    { x: w * 0.68, y: midRidge },
-    { x: w * 0.82, y: midRidge + h * 0.12 },
-    { x: w * 0.94, y: foothills - h * 0.05 },
-  ].map((p) => ({
-    x: p.x + (rand() - 0.5) * w * 0.02,
-    y: p.y + (rand() - 0.5) * h * 0.02,
-  }));
+  // The three altitudes the whole structure is hung from.
+  const waterY = h * (OCEAN_HORIZON_FRAC
+    + MONOLITH_OCEAN_ANCHOR * (OCEAN_NEAR_FRAC - OCEAN_HORIZON_FRAC));
+  const ridgeY = h * SPACE_RIDGE_BASELINE_FRAC;
+  const topY = h * MONOLITH_TOP_FRAC;
 
-  const floating = {
-    x: w * (0.40 + rand() * 0.08),
-    y: skyHook + rand() * h * 0.04,
-  };
-  const skySpur = {
-    x: peaks[3].x + w * 0.06,
-    y: skyHook + h * 0.02,
-  };
+  const cx = w * (0.38 + rand() * 0.24);
+  // Slender on purpose: the shaft is a fraction of its own height, which is
+  // what sells "too far away to judge, too large to be near" once it starts
+  // climbing. A thicker column just reads as a nearby tower.
+  const shipHW = w * 0.038;  // half-width of the vessel it pretends to be
+  const shaftHW = w * 0.021; // ...once it stops pretending
+  const crownHW = w * 0.013; // narrowing as it climbs out of the air
 
-  // Small chord pieces — one birth each — so the range appears bit by bit.
   const plans = [];
-  const pushChord = (a, b, mids = 2, amp = 8) => {
+  // Every piece gets re-jittered so it still reads as fracture in glass
+  // rather than a drafted technical line.
+  const pushPts = (pts, amp = 3) => {
+    plans.push(polylineFromPoints(pts.map((p, i) => (i === 0 || i === pts.length - 1
+      ? { x: p.x, y: p.y }
+      : { x: p.x + (rand() - 0.5) * amp, y: p.y + (rand() - 0.5) * amp }))));
+  };
+  const pushChord = (a, b, mids = 2, amp = 5) => {
     plans.push(polylineFromPoints(jaggedChord(a, b, mids, rand, amp)));
   };
 
-  // Main crest, peak-to-peak (west → summit → east)
-  for (let i = 0; i < peaks.length - 1; i++) {
-    pushChord(peaks[i], peaks[i + 1], 2 + (i % 2), 7 + (i % 3));
-  }
+  // --- 1. A large ship (pieces 0-2) ---------------------------------------
+  const deckY = waterY - h * 0.016;
+  const mastY = waterY - h * 0.052;
+  // Hull: waterline down to the keel and back -- the unmistakable vessel curve.
+  pushPts([
+    { x: cx - shipHW, y: waterY },
+    { x: cx - shipHW * 0.62, y: waterY + h * 0.008 },
+    { x: cx, y: waterY + h * 0.011 },
+    { x: cx + shipHW * 0.62, y: waterY + h * 0.008 },
+    { x: cx + shipHW, y: waterY },
+  ], 2.5);
+  // Deck and the short sides that make it read as a superstructure.
+  pushPts([
+    { x: cx - shipHW, y: waterY },
+    { x: cx - shipHW * 0.60, y: deckY },
+    { x: cx + shipHW * 0.60, y: deckY },
+    { x: cx + shipHW, y: waterY },
+  ], 2.5);
+  // The mast.
+  pushChord({ x: cx, y: deckY }, { x: cx, y: mastY }, 2, 2.5);
 
-  // Foothill traverse as several short segments
-  {
-    const base = [];
-    const n = 6;
-    for (let i = 0; i < n; i++) {
-      const t = i / (n - 1);
-      base.push({
-        x: w * (0.08 + 0.84 * t),
-        y: foothills - h * 0.035 * Math.sin(t * Math.PI * 2.2 + 0.4)
-          - h * 0.02 * Math.sin(t * Math.PI * 5)
-          + (rand() - 0.5) * 6,
-      });
+  // --- 2. It was never a ship (pieces 3-5) --------------------------------
+  const plinthY = waterY - h * 0.075;
+  pushChord({ x: cx - shipHW, y: waterY }, { x: cx - shaftHW, y: plinthY }, 3, 5);
+  pushChord({ x: cx + shipHW, y: waterY }, { x: cx + shaftHW, y: plinthY }, 3, 5);
+  // The mast was an edge, and the edge has strata.
+  pushChord({ x: cx - shaftHW, y: plinthY }, { x: cx + shaftHW, y: plinthY }, 2, 3);
+
+  // --- 3. The shaft climbs (pieces 6-11) ----------------------------------
+  // Three courses, each a left edge then a right edge, walking the structure
+  // from the plinth up to the ridge's own altitude. Each edge ends on a short
+  // inward course-tick, so banding accumulates with height for free.
+  const COURSES = 3;
+  for (let c = 0; c < COURSES; c++) {
+    const y0 = lerp(plinthY, ridgeY, c / COURSES);
+    const y1 = lerp(plinthY, ridgeY, (c + 1) / COURSES);
+    const hw0 = lerp(shaftHW, crownHW, c / COURSES);
+    const hw1 = lerp(shaftHW, crownHW, (c + 1) / COURSES);
+    for (const side of [-1, 1]) {
+      const edge = jaggedChord(
+        { x: cx + side * hw0, y: y0 },
+        { x: cx + side * hw1, y: y1 },
+        3, rand, 4,
+      );
+      edge.push({ x: cx + side * hw1 * 0.45, y: y1 - h * 0.004 });
+      pushPts(edge, 0);
     }
-    for (let i = 0; i < base.length - 1; i++) pushChord(base[i], base[i + 1], 1, 5);
   }
 
-  // Couloir / spur pieces (subtle interior structure)
-  pushChord(peaks[3], { x: peaks[3].x - w * 0.04, y: foothills - h * 0.02 }, 3, 7);
-  pushChord(peaks[4], { x: floating.x - w * 0.04, y: floating.y + h * 0.12 }, 2, 6);
-  pushChord(peaks[2], { x: peaks[2].x + w * 0.03, y: foothills - h * 0.06 }, 2, 6);
-  pushChord(peaks[5], { x: peaks[5].x - w * 0.05, y: foothills - h * 0.04 }, 2, 6);
+  // --- 4. The crown, out past the ridge (pieces 12-14) --------------------
+  pushChord({ x: cx - crownHW, y: ridgeY }, { x: cx - crownHW * 0.72, y: topY }, 3, 4);
+  pushChord({ x: cx + crownHW, y: ridgeY }, { x: cx + crownHW * 0.72, y: topY }, 3, 4);
+  pushChord({ x: cx - crownHW * 0.72, y: topY }, { x: cx + crownHW * 0.72, y: topY }, 2, 3);
 
-  // Impossible floating peak (two short strokes, not a loud outline)
-  pushChord(
-    { x: floating.x - w * 0.04, y: floating.y + h * 0.05 },
-    floating,
-    1, 4,
-  );
-  pushChord(
-    floating,
-    { x: floating.x + w * 0.045, y: floating.y + h * 0.06 },
-    1, 4,
-  );
+  // --- 5. It connects (piece 15) -----------------------------------------
+  // The last birth of the song, at exactly the altitude the SpaceRidge hangs
+  // at: the monolith stops being a thing in the world's sky and becomes part
+  // of the structure out there.
+  pushPts([
+    { x: cx - w * MONOLITH_TIE_REACH, y: ridgeY + h * 0.012 },
+    { x: cx - crownHW, y: ridgeY },
+    { x: cx + crownHW, y: ridgeY },
+    { x: cx + w * MONOLITH_TIE_REACH, y: ridgeY + h * 0.012 },
+  ], 4);
 
-  // Sky-hook spur (impossible climb off the massif)
-  pushChord(peaks[3], skySpur, 2, 5);
-  pushChord(skySpur, { x: skySpur.x + w * 0.07, y: high + h * 0.05 }, 1, 4);
-
-  // Pad with faint mid-ridge connectors if we still need more generations
+  // Pad only if a caller asks for more generations than the script provides:
+  // faint interior striations up the shaft.
   while (plans.length < count) {
-    const i = plans.length;
-    const a = peaks[i % peaks.length];
-    const b = peaks[(i + 3) % peaks.length];
+    const f = (plans.length * 0.37) % 1;
+    const xo = (rand() - 0.5) * shaftHW * 1.2;
     pushChord(
-      { x: a.x, y: lerp(a.y, foothills, 0.4) },
-      { x: b.x, y: lerp(b.y, foothills, 0.5) },
-      2, 5,
+      { x: cx + xo, y: lerp(plinthY, ridgeY, f) },
+      { x: cx + xo * 0.7, y: lerp(plinthY, ridgeY, Math.min(1, f + 0.18)) },
+      2, 3,
     );
   }
   return plans.slice(0, count);
 }
 
+// Branch density. This was tuned when the plan drew a mountain RANGE, where
+// diagonal spurs read as couloirs running off a ridge. Against the monolith
+// they read as noise: they spray off a structure whose whole legibility is
+// its clean vertical silhouette, and at the ship stage a single long diagonal
+// is enough to stop the hull reading as a hull. Kept non-zero so each piece
+// is still visibly fracture in glass rather than a drafted outline.
+const BRANCH_CHANCE = 0.05;
+
 /**
- * Attach subtle branch cracks (couloirs / secondary spurs) along a ridge
- * polyline so it still reads as glass fracture, not a single stroked outline.
+ * Attach subtle branch cracks along a polyline so it still reads as glass
+ * fracture, not a single stroked outline.
  */
 function attachRidgeBranches(poly, rand, maxDepth = 1, depth = 0) {
   if (depth >= maxDepth || poly.nodes.length < 3) return poly;
@@ -202,7 +261,7 @@ function attachRidgeBranches(poly, rand, maxDepth = 1, depth = 0) {
   let arc = 0;
   for (let i = 0; i < poly.lengths.length; i++) {
     arc += poly.lengths[i];
-    if (rand() > 0.12) continue; // sparse couloirs — keep the ridge whisper-quiet
+    if (rand() > BRANCH_CHANCE) continue; // keep the silhouette whisper-quiet
     const origin = poly.nodes[i + 1];
     const prev = poly.nodes[i];
     const heading = (Math.atan2(origin.y - prev.y, origin.x - prev.x) * 180) / Math.PI;
@@ -334,9 +393,10 @@ export class FractureEngine {
     this.surfaceCracks = []; // transient punch-through bursts (see spawnSurfaceCrack)
     this._surfaceCrackSeed = 0;
 
-    // Precomputed impossible-Denali ridge plan — progressive births walk it
-    // across the whole song (one small piece per stress threshold).
-    this._ridgePlan = buildMountainRidgePolylines(this.w, this.h, songSeed, THRESHOLDS.length);
+    // Precomputed monolith plan, ordered waterline-upward — progressive
+    // births walk it across the whole song (one small piece per stress
+    // threshold), so the structure rises as the track plays.
+    this._monolithPlan = buildMonolithPolylines(this.w, this.h, songSeed, THRESHOLDS.length);
 
     this.flashAlpha = 0;
     // The Reel (Movement VI): set externally, persisted accessibility
@@ -458,14 +518,14 @@ export class FractureEngine {
 
   _birthCrack(generation, birthMs, camera) {
     const rand = mulberry32(hashSeed(`${this.songSeed}:crack:${generation}`));
-    const plan = this._ridgePlan[generation] || this._ridgePlan[this._ridgePlan.length - 1];
+    const plan = this._monolithPlan[generation] || this._monolithPlan[this._monolithPlan.length - 1];
     // Clone plan geometry so birth/grow state is per-instance.
     const tree = attachRidgeBranches({
       nodes: plan.nodes.map((n) => ({ x: n.x, y: n.y })),
       lengths: plan.lengths.slice(),
       total: plan.total,
       children: [],
-    }, rand, 2, 0);
+    }, rand, 1, 0);
     assignBirthTimes(tree, birthMs);
     this.cracks.push(tree);
     // Barely-there birth cue — no white-out, minimal shake.
