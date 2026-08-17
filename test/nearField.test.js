@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  nearFieldForSector, NearField, PROP_CHANCE, SECTOR_PX, NEARFIELD_RATIO,
+  nearFieldForSector, NearField, PROP_CHANCE, SECTOR_PX, NEARFIELD_RATIO, OUTLINE_COLOR,
 } from '../src/world/NearField.js';
 import { LANDMARKS } from '../src/world/Landmarks.js';
 import { BIOMES } from '../src/world/BiomeProfiles.js';
@@ -151,6 +151,38 @@ test('every biome\'s landmark painters draw at near-field scale without throwing
           }, 640, { tSec: 3, kick: 0.6, biomeName: b.name });
         }, `${b.name} painter ${pIdx} (hang=${hang}) threw`);
       }
+    }
+  }
+});
+
+function styleRecordingCtx() {
+  const styles = [];
+  return {
+    styles,
+    save() {}, restore() {}, translate() {}, scale() {}, rotate() {}, fillRect() {},
+    beginPath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, closePath() {},
+    fill() {}, stroke() {}, arc() {}, ellipse() {},
+    set fillStyle(v) { styles.push(v); }, set strokeStyle(v) { styles.push(v); },
+    set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {}, set globalAlpha(v) {},
+  };
+}
+
+test('every biome\'s landmark painters draw a near-black outline UNDER the real color, same vocabulary MeshDrawer gives the characters', () => {
+  const nf = new NearField(1);
+  const canvas = { width: 1280, height: 720 };
+  for (const b of BIOMES) {
+    const painters = LANDMARKS[b.name];
+    for (let pIdx = 0; pIdx < painters.length; pIdx++) {
+      const ctx = styleRecordingCtx();
+      nf._drawOne(ctx, canvas, {
+        biomeName: b.name, hang: false, painterIdx: pIdx, flip: false, scale: 5, seed: 777,
+      }, 640, { tSec: 3, kick: 0, biomeName: b.name });
+      const realColor = nf._colorFor(b.name);
+      const firstOutlineAt = ctx.styles.indexOf(OUTLINE_COLOR);
+      const firstRealAt = ctx.styles.indexOf(realColor);
+      assert.ok(firstOutlineAt !== -1, `${b.name} painter ${pIdx}: outline color never used`);
+      assert.ok(firstRealAt !== -1, `${b.name} painter ${pIdx}: real color never used`);
+      assert.ok(firstOutlineAt < firstRealAt, `${b.name} painter ${pIdx}: outline must draw UNDER (before) the real color`);
     }
   }
 });

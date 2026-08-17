@@ -137,10 +137,13 @@ export function reliefDepthFade(depthPx, falloffPx = RELIEF_FALLOFF_PX) {
 
 /**
  * Colour-stop list for a Canvas linear gradient along x in [x0, x1].
- * Two channels (lit / shade) rather than one, because a single gradient
- * interpolating a white stop to a black stop passes through muddy
- * mid-grey at the zero crossing, where the correct value is transparent.
- * `crest` is the rim stroke's white-alpha modulation.
+ * `crest` (the rim stroke's white-alpha modulation) is the only channel
+ * this codebase actually draws with today -- the ground body's own fill
+ * uses reliefLitStripRGBA/reliefShadeStripRGBA below instead, a per-pixel
+ * strip rather than a gradient, for the same reason those exist (a many-
+ * stop CanvasGradient can still grow a hard cut when neighbouring stops
+ * collapse). `lit`/`shade` are kept as tested, working pure functions for
+ * any future gradient-based consumer, but nothing currently calls them.
  *
  * @param {{x:number}[]} samples
  * @param {number[]} facing
@@ -326,29 +329,64 @@ export function facingAtX(samples, facing, x) {
 }
 
 /**
- * 1×N RGBA strip of the relief body. A pixel is lit *or* shade, never a
- * muddy mix. Painting this and stretching it is what keeps the fill
- * continuous — a CanvasGradient with a stop per sample was still capable
- * of a hard vertical cut when neighbouring stops collapsed.
+ * 1×N RGBA strip of the relief body's LIT half only (shade pixels are
+ * fully transparent here — see reliefShadeStripRGBA for the other half).
+ * Split in two because they draw under different composite operations:
+ * this one is a warm-white catch-light, meant to ADD brightness, so it
+ * belongs under the default/'lighter' compositing the caller already
+ * uses for glow. Painting a strip and stretching it (rather than a
+ * CanvasGradient with a stop per sample) is what keeps the fill
+ * continuous — a many-stop gradient was still capable of a hard vertical
+ * cut when neighbouring stops collapsed.
  */
-export function reliefStripRGBA(samples, facing, width) {
+export function reliefLitStripRGBA(samples, facing, width) {
   const n = Math.max(0, width | 0);
   const out = new Uint8ClampedArray(n * 4);
   if (!n) return out;
   for (let x = 0; x < n; x++) {
     const f = facingAtX(samples, facing, x);
     const o = x * 4;
-    if (f >= 0) {
-      out[o] = 255;
-      out[o + 1] = 248;
-      out[o + 2] = 230;
-      out[o + 3] = Math.round(RELIEF_LIT_ALPHA * f * 255);
-    } else {
-      out[o] = 0;
-      out[o + 1] = 0;
-      out[o + 2] = 0;
-      out[o + 3] = Math.round(RELIEF_SHADE_ALPHA * -f * 255);
-    }
+    out[o] = 255;
+    out[o + 1] = 248;
+    out[o + 2] = 230;
+    out[o + 3] = f > 0 ? Math.round(RELIEF_LIT_ALPHA * f * 255) : 0;
+  }
+  return out;
+}
+
+/**
+ * 1×N RGBA strip of the relief body's SHADE half — genuine multiply
+ * occlusion instead of an alpha-blended black wash. A translucent-black
+ * pixel composited under the default source-over is indistinguishable
+ * from the same pixel under 'multiply': both reduce to
+ * `result = destination*(1-alpha)`, since multiplying by black (0) is 0
+ * regardless of alpha. That's why the old combined strip could only ever
+ * wash the ground toward black, never darken it while keeping its own
+ * hue -- which is what made it read flat.
+ *
+ * The fix carries the darkening amount in the PIXEL'S OWN GRAY VALUE
+ * instead of its alpha, with alpha pinned to 255 everywhere: under
+ * 'multiply', `result = destination * (gray/255)`, a genuine proportional
+ * darken that preserves whatever hue the surface already had. Alpha
+ * stays fully opaque throughout (255 even where there's no shade at all,
+ * gray=255 there too, so multiplying by white is a no-op) specifically
+ * so the strip is continuous in the channel that actually carries the
+ * signal now (gray) — varying alpha instead would just re-import the
+ * same discontinuity risk in a different channel.
+ */
+export function reliefShadeStripRGBA(samples, facing, width) {
+  const n = Math.max(0, width | 0);
+  const out = new Uint8ClampedArray(n * 4);
+  if (!n) return out;
+  for (let x = 0; x < n; x++) {
+    const f = facingAtX(samples, facing, x);
+    const o = x * 4;
+    const shadeStrength = RELIEF_SHADE_ALPHA * Math.max(0, -f);
+    const g = Math.max(0, Math.min(255, Math.round(255 * (1 - shadeStrength))));
+    out[o] = g;
+    out[o + 1] = g;
+    out[o + 2] = g;
+    out[o + 3] = 255;
   }
   return out;
 }

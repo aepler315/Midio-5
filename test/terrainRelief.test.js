@@ -7,7 +7,8 @@ import {
   reliefDepthFade,
   facingColorStops,
   facingAtX,
-  reliefStripRGBA,
+  reliefLitStripRGBA,
+  reliefShadeStripRGBA,
   RELIEF_FALLOFF_PX,
   RELIEF_SAMPLE_PX,
   RELIEF_LIT_ALPHA,
@@ -220,11 +221,11 @@ test('facingAtX interpolates and clamps, 0 without a curve', () => {
   assert.ok(Math.abs(facingAtX(samples, facing, 50) - 0.1) < 1e-9);
 });
 
-test('reliefStripRGBA is continuous — no adjacent-pixel alpha jump above a small epsilon', () => {
+test('reliefLitStripRGBA is continuous — no adjacent-pixel alpha jump above a small epsilon', () => {
   const bars = wideHill();
   const samples = sampleTerrainCurve(bars, RELIEF_SAMPLE_PX);
   const facing = curveFacing(samples, { x: 0, y: 80, intensity: 1 });
-  const rgba = reliefStripRGBA(samples, facing, 450);
+  const rgba = reliefLitStripRGBA(samples, facing, 450);
   assert.equal(rgba.length, 450 * 4);
   let maxJump = 0;
   for (let x = 1; x < 450; x++) {
@@ -232,9 +233,45 @@ test('reliefStripRGBA is continuous — no adjacent-pixel alpha jump above a sma
     const a1 = rgba[x * 4 + 3];
     maxJump = Math.max(maxJump, Math.abs(a1 - a0));
   }
-  assert.ok(maxJump < 12, `strip alpha jumped ${maxJump} between adjacent pixels`);
-  // A hill under a side light must actually paint something.
+  assert.ok(maxJump < 12, `lit strip alpha jumped ${maxJump} between adjacent pixels`);
+  // A hill under a side light must actually paint something on its lit face.
   let painted = 0;
   for (let x = 0; x < 450; x++) painted += rgba[x * 4 + 3];
   assert.ok(painted > 0);
+});
+
+test('reliefShadeStripRGBA is genuine multiply occlusion: full alpha throughout, darkening carried entirely in the gray value', () => {
+  const bars = wideHill();
+  const samples = sampleTerrainCurve(bars, RELIEF_SAMPLE_PX);
+  const facing = curveFacing(samples, { x: 0, y: 80, intensity: 1 });
+  const rgba = reliefShadeStripRGBA(samples, facing, 450);
+  assert.equal(rgba.length, 450 * 4);
+  for (let x = 0; x < 450; x++) {
+    const o = x * 4;
+    assert.equal(rgba[o + 3], 255, `alpha must stay fully opaque at x=${x} for multiply's math to apply`);
+    assert.equal(rgba[o], rgba[o + 1], 'gray channels must agree (r=g)');
+    assert.equal(rgba[o + 1], rgba[o + 2], 'gray channels must agree (g=b)');
+    assert.ok(rgba[o] <= 255 && rgba[o] >= 0);
+  }
+  // Continuity now lives in the gray channel, not alpha (which is constant).
+  let maxJump = 0;
+  for (let x = 1; x < 450; x++) {
+    maxJump = Math.max(maxJump, Math.abs(rgba[x * 4] - rgba[(x - 1) * 4]));
+  }
+  assert.ok(maxJump < 12, `shade strip gray value jumped ${maxJump} between adjacent pixels`);
+  // A hill under a side light must actually darken somewhere (gray < 255).
+  assert.ok(Array.from({ length: 450 }, (_, x) => rgba[x * 4]).some((g) => g < 255));
+});
+
+test('reliefShadeStripRGBA never darkens where the lit strip is painting (no pixel is both lit and shaded)', () => {
+  const bars = wideHill();
+  const samples = sampleTerrainCurve(bars, RELIEF_SAMPLE_PX);
+  const facing = curveFacing(samples, { x: 0, y: 80, intensity: 1 });
+  const lit = reliefLitStripRGBA(samples, facing, 450);
+  const shade = reliefShadeStripRGBA(samples, facing, 450);
+  for (let x = 0; x < 450; x++) {
+    const litAlpha = lit[x * 4 + 3];
+    const shadeGray = shade[x * 4];
+    assert.ok(litAlpha === 0 || shadeGray === 255, `x=${x}: lit alpha ${litAlpha} and shade gray ${shadeGray} both active`);
+  }
 });

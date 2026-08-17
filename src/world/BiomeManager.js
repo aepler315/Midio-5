@@ -6,7 +6,7 @@ import { BIOMES } from './BiomeProfiles.js';
 import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
 import { ParticleField } from './ParticleField.js';
 import {
-  sampleTerrainCurve, curveFacing, facingColorStops, reliefStripRGBA,
+  sampleTerrainCurve, curveFacing, facingColorStops, reliefLitStripRGBA, reliefShadeStripRGBA,
   RELIEF_FALLOFF_PX,
 } from './TerrainRelief.js';
 import { Mandala } from './Mandala.js';
@@ -3451,9 +3451,31 @@ export class BiomeManager {
     const grad = ctx.createLinearGradient(0, crestY, 0, bottomY);
     grad.addColorStop(0, `rgba(255,250,240,${(0.17 * alpha * strength).toFixed(3)})`);
     grad.addColorStop(0.34, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, `rgba(0,0,0,${(0.32 * alpha * strength).toFixed(3)})`);
     ctx.fillStyle = grad;
     ctx.fill(body);
+
+    // The shade half: genuine multiply occlusion instead of an alpha-
+    // blended black wash. A translucent black fill under the default
+    // source-over composites IDENTICALLY to true multiply when the
+    // source is pure black (co = cb*(1-a) either way) -- it can only ever
+    // wash the surface toward black, never darken it while keeping its
+    // own hue, which is why the shaded half always read flat. A fully-
+    // OPAQUE gray fill under 'multiply' instead scales the destination by
+    // that gray value (co = cb*g), so whatever hue/saturation the strip
+    // already carries survives into its own shadow. Multiply can only
+    // ever darken (g<=1 always), which is exactly why this has to be a
+    // second pass rather than folded into the lit gradient above.
+    const shadeStrength = 0.32 * alpha * strength;
+    const g = Math.max(0, Math.min(255, Math.round(255 * (1 - shadeStrength))));
+    const shadeGrad = ctx.createLinearGradient(0, crestY, 0, bottomY);
+    shadeGrad.addColorStop(0, 'rgb(255,255,255)');
+    shadeGrad.addColorStop(0.34, 'rgb(255,255,255)');
+    shadeGrad.addColorStop(1, `rgb(${g},${g},${g})`);
+    ctx.save();
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = shadeGrad;
+    ctx.fill(body);
+    ctx.restore();
 
     // Cheap enough (a handful of path fills, no offscreen buffers) that it
     // only sheds on the very bottom rung -- this is the form of the
@@ -3471,7 +3493,6 @@ export class BiomeManager {
     // seventeen palettes -- an ARCTIC blue and a SOLAR orange both just want
     // their shadowed face darker and their lit edge caught, and mixing the
     // biome's own hue back in only muddies whatever the sky already did.
-    const shade = '#000';
     const lit = SHOULDER_LIT;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
@@ -3509,9 +3530,18 @@ export class BiomeManager {
       facet.lineTo(p.x + nearRun, footY);
       facet.lineTo(p.x, footY);
       facet.closePath();
-      ctx.fillStyle = shade;
-      ctx.globalAlpha = alpha * SHOULDER_FACET_ALPHA;
-      ctx.fill(facet);
+      // Same multiply-occlusion treatment as the range body's own shade
+      // pass above: an opaque gray under 'multiply' scales the surface
+      // down rather than washing it toward black over top of it.
+      {
+        const shadeStrength = alpha * SHOULDER_FACET_ALPHA;
+        const sg = Math.max(0, Math.min(255, Math.round(255 * (1 - shadeStrength))));
+        ctx.save();
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillStyle = `rgb(${sg},${sg},${sg})`;
+        ctx.fill(facet);
+        ctx.restore();
+      }
 
       // The spur's own edge -- a catch-light along the top of the ridge
       // running at us, which is what sells it as an edge rather than a
@@ -3847,20 +3877,31 @@ export class BiomeManager {
         for (const bar of bars) if (bar.y < minTop) minTop = bar.y;
         const band = this._reliefBand(canvas.width);
         if (band) {
-          const rgba = reliefStripRGBA(reliefSamples, facing, canvas.width);
-          band.stripCtx.putImageData(new ImageData(rgba, canvas.width, 1), 0, 0);
+          // Lit and shade are two separate strips now, not one combined
+          // pass: they need different final composite operations onto
+          // the real canvas (a warm-white catch-light adds brightness
+          // under the default source-over; the shade half needs
+          // 'multiply' for genuine occlusion -- see reliefShadeStripRGBA).
+          // Same strip+band scratch buffers, reused sequentially for each.
           const bctx = band.bandCtx;
-          bctx.setTransform(1, 0, 0, 1, 0, 0);
-          bctx.clearRect(0, 0, band.band.width, band.band.height);
-          bctx.drawImage(band.strip, 0, 0, canvas.width, RELIEF_FALLOFF_PX);
-          bctx.globalCompositeOperation = 'destination-in';
-          const fade = bctx.createLinearGradient(0, 0, 0, RELIEF_FALLOFF_PX);
-          fade.addColorStop(0, 'rgba(0,0,0,1)');
-          fade.addColorStop(1, 'rgba(0,0,0,0)');
-          bctx.fillStyle = fade;
-          bctx.fillRect(0, 0, canvas.width, RELIEF_FALLOFF_PX);
-          bctx.globalCompositeOperation = 'source-over';
-          ctx.drawImage(band.band, 0, minTop);
+          const paintBand = (rgba, finalComposite) => {
+            band.stripCtx.putImageData(new ImageData(rgba, canvas.width, 1), 0, 0);
+            bctx.setTransform(1, 0, 0, 1, 0, 0);
+            bctx.clearRect(0, 0, band.band.width, band.band.height);
+            bctx.globalCompositeOperation = 'source-over';
+            bctx.drawImage(band.strip, 0, 0, canvas.width, RELIEF_FALLOFF_PX);
+            bctx.globalCompositeOperation = 'destination-in';
+            const fade = bctx.createLinearGradient(0, 0, 0, RELIEF_FALLOFF_PX);
+            fade.addColorStop(0, 'rgba(0,0,0,1)');
+            fade.addColorStop(1, 'rgba(0,0,0,0)');
+            bctx.fillStyle = fade;
+            bctx.fillRect(0, 0, canvas.width, RELIEF_FALLOFF_PX);
+            ctx.globalCompositeOperation = finalComposite;
+            ctx.drawImage(band.band, 0, minTop);
+          };
+          paintBand(reliefLitStripRGBA(reliefSamples, facing, canvas.width), 'source-over');
+          paintBand(reliefShadeStripRGBA(reliefSamples, facing, canvas.width), 'multiply');
+          ctx.globalCompositeOperation = 'source-over';
         }
         ctx.restore();
       }
