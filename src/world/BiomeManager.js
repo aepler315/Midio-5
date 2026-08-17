@@ -294,6 +294,7 @@ export class BiomeManager {
     this.budget = 1;
     this.openingGain = 1; // OpeningDirector, set per-step by Simulation
     this.hypeBoost = 1; // drop-surge multiplier from the HypeDirector
+    this.focusMul = 1; // FocusDirector's 'sky' dampener -- 1 unless some other subject has focus
     this.mandalaScaleMul = 1; // swells while Midasus dances near the celestial
     this._progress = 0;
     // Safe defaults before the first update() so a zero-dt first frame
@@ -1028,7 +1029,7 @@ export class BiomeManager {
 
   /** Movement VII: the celestial body as an actual light -- position, color, intensity. */
   currentLight() {
-    return this.light || computeLight({ canvasWidth: this.w, canvasHeight: this.h, budget: this.budget });
+    return this.light || computeLight({ canvasWidth: this.w, canvasHeight: this.h, budget: this._lightBudget ?? this.budget });
   }
 
   /** The current sky's base (horizon) tone -- used as a full-bleed backdrop
@@ -1158,7 +1159,17 @@ export class BiomeManager {
     // Staging (time) x lyric kind x whether the song has actually started
     // (audio). The first two cannot hear the music; openingGain is what keeps
     // a fade-in from opening on a fully-lit world.
-    this.budget = intensityBudget(this._progress) * this._kindBudgetMulEased * this.openingGain;
+    // this._lightBudget is the undampened base: the celestial LIGHT itself
+    // (rim-lighting, contact shadows -- computed below into this.light) must
+    // never dim just because focus picked a subject other than 'sky', or
+    // the very subject focus is emphasizing (Midio mid-apotheosis, Midasus
+    // mid-voyage) would visibly dim along with everything else. focusMul
+    // folds into the PUBLIC this.budget instead -- every existing decorative
+    // budget-scaled site (the many ctx.globalAlpha = X * this.budget draws
+    // below, plus LightRig's own budget param) dampens for free whenever
+    // some other subject has focus, with no per-site changes needed.
+    this._lightBudget = intensityBudget(this._progress) * this._kindBudgetMulEased * this.openingGain;
+    this.budget = this._lightBudget * this.focusMul;
     const gain = this.budget * this.hypeBoost;
     this.mandala.intensity = gain;
     this.murmuration.intensity = gain;
@@ -1346,7 +1357,7 @@ export class BiomeManager {
     this.light = computeLight({
       canvasWidth: canvas.width, canvasHeight: canvas.height,
       celestialYFrac, haloColorHex: this.currentHaloColor(),
-      budget: this.budget, unravel: this.unravel,
+      budget: this._lightBudget, unravel: this.unravel,
       dayArcAlpha: dn.dawnAlpha + dn.duskAlpha,
       reducedFlash: this.reducedFlash,
     });
