@@ -31,6 +31,19 @@ export const PROP_CHANCE = 0.4;
 // pure black. Lerping preserves each biome's hue even this close to black.
 const TINT_TOWARD_BLACK = 0.55;
 const MIN_SCALE = 3.2, MAX_SCALE = 5.2; // vs. ~1 for the baked L4/L5 landmarks
+// The same near-black outline vocabulary MeshDrawer's `outline` option
+// gives the characters (rgba(7,10,20,0.85), drawn UNDER the real color) --
+// so the frontmost occluders read with the same razor-sharp-against-glow
+// silhouette quality the trio already has, instead of a flat, soft-edged
+// cutout. Landmark painters build and fill/stroke their own paths
+// internally rather than returning them for a caller to re-stroke, so
+// this reuses them as-is: the same deterministic painter (same seed, so
+// identical shape) run once bigger in near-black underneath, then once
+// at normal scale in the real color on top -- a rim, not a true uniform-
+// width stroke, but self-contained to this file rather than touching
+// every shared painter in Landmarks.js.
+export const OUTLINE_COLOR = 'rgba(7,10,20,0.85)';
+const OUTLINE_SCALE_MUL = 1.08;
 
 /**
  * What (if anything) occupies one sector, given whichever biome is showing
@@ -109,13 +122,21 @@ export class NearField {
     const painters = LANDMARKS[d.biomeName];
     const painter = painters[d.painterIdx % painters.length];
     const color = this._colorFor(d.biomeName);
-    const rand = mulberry32(d.seed);
     // A little life so a huge static silhouette doesn't read as a cardboard
     // cutout: a slow sway, plus a small kick-synced nudge like everything
     // else in this file reacts to the beat.
     const motionMul = env.reducedMotion ? 0.35 : 1;
     const sway = Math.sin(env.tSec * 0.6 + d.seed) * 3 * motionMul;
     const kickNudge = (env.kick || 0) * 4 * motionMul;
+
+    const paint = () => {
+      // Outline first (bigger, near-black), real color on top at normal
+      // scale -- see OUTLINE_COLOR's comment above. Both calls get a
+      // freshly re-seeded generator so their random structure (branch
+      // counts, proportions) matches exactly; only the scale differs.
+      painter(ctx, 0, 0, d.scale * OUTLINE_SCALE_MUL, mulberry32(d.seed), OUTLINE_COLOR);
+      painter(ctx, 0, 0, d.scale, mulberry32(d.seed), color);
+    };
 
     ctx.save();
     ctx.translate(x + sway, 0);
@@ -127,12 +148,12 @@ export class NearField {
       // the floor -- the same painters L4/L5 already use, just inverted.
       ctx.translate(0, kickNudge); // a small downward dip on the beat, like a swing
       ctx.scale(1, -1);
-      painter(ctx, 0, 0, d.scale, rand, color);
+      paint();
     } else {
       // Root pinned near the bottom edge; the painter's own "grow up" is
       // already the right direction here, no flip needed.
       ctx.translate(0, canvas.height - kickNudge); // a small lift on the beat, like a footfall
-      painter(ctx, 0, 0, d.scale, rand, color);
+      paint();
     }
     ctx.restore();
   }
