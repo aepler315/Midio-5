@@ -135,6 +135,34 @@ export function generateSilhouette({
   shadeMode = 'classic', // 'classic' flat fill | 'rendered' soft CGI volume
   profile = 'rolling', // 'rolling' | 'alpine' (Denali / Rainier / Shasta massifs)
   character = 'massif', // alpine only -- see ALPINE_CHARACTERS
+  // Aerial perspective, optical half (The Light Show, pass 7): DepthHaze
+  // already washes far layers toward the sky color, but color alone isn't
+  // the cue a distant object actually gives -- it also loses edge acuity.
+  // Every layer used to bake pixel-crisp regardless of depth, so a massif
+  // rendered "too far away to judge" had the identical edge sharpness as
+  // ground six feet from the camera; the sharpness cue was winning against
+  // the haze cue rather than agreeing with it.
+  //
+  // 1 = bake at full resolution (today's behavior, unchanged). <1 bakes
+  // the ENTIRE strip (fill, specular, edgeLight -- everything below) onto a
+  // canvas smaller by this factor, then stretches that bitmap back up into
+  // a canvas of the requested width/height, letting the browser's own
+  // bilinear filtering do the softening. This happens once per biome per
+  // layer at strip-build time, never per frame -- a real blur() filter was
+  // deliberately ruled out earlier in this file's history for exactly the
+  // per-frame GPU-flush cost this sidesteps (see BiomeManager.js's
+  // drawForeground comment on the same tradeoff).
+  //
+  // Softening touches ONLY the returned canvas's pixels. `heights`/`step`/
+  // `amplitude` below -- the vector ridge data ridgeYAt/ridgeYSmooth read,
+  // and everything downstream of them (dance-column offsets, landmark
+  // placement, and BiomeManager._drawRidgeVolume/_drawCrest's live
+  // screen-space shading) -- are computed at full precision regardless of
+  // softenScale and returned unchanged. So the shading gradients painted on
+  // top each frame stay exactly aligned to the true skyline; only the baked
+  // silhouette body blurs under them, which reads as a soft, backlit edge
+  // rather than a mismatch.
+  softenScale = 1,
 }) {
   const noise = new ValueNoise1D(seed, 256);
   const n = Math.floor(width / step) + 1;
@@ -192,8 +220,16 @@ export function generateSilhouette({
     ? (footY - minY) / (height * hMax)
     : amp;
 
-  const canvas = makeCanvas(width, height);
-  const ctx = canvas.getContext('2d');
+  // Softened bakes draw at a reduced physical size; everything below still
+  // addresses coordinates in full logical width/height, so a plain
+  // ctx.scale() is enough to redirect the identical drawing calls onto the
+  // smaller backing store with no other changes.
+  const soften = Math.min(1, Math.max(0.1, softenScale));
+  const bakeW = soften < 1 ? Math.max(1, Math.round(width * soften)) : width;
+  const bakeH = soften < 1 ? Math.max(1, Math.round(height * soften)) : height;
+  const bakeCanvas = makeCanvas(bakeW, bakeH);
+  const ctx = bakeCanvas.getContext('2d');
+  if (soften < 1) ctx.scale(soften, soften);
   ctx.beginPath();
   ctx.moveTo(0, height);
   for (let i = 0; i < n; i++) ctx.lineTo(i * step, ridgeYs[i]);
@@ -258,9 +294,23 @@ export function generateSilhouette({
     }
     ctx.globalAlpha = 1;
   }
+
+  // Stretch the reduced-resolution bake back up to the requested logical
+  // size in one shot -- the browser's own bilinear upscale is the entire
+  // softening effect, and it costs exactly one drawImage call made once at
+  // strip-build time, never per frame.
+  let canvas = bakeCanvas;
+  if (soften < 1) {
+    canvas = makeCanvas(width, height);
+    const upCtx = canvas.getContext('2d');
+    upCtx.drawImage(bakeCanvas, 0, 0, width, height);
+  }
+
   // Ridge metadata: lets landmark decoration root itself on the actual
   // skyline instead of the layer baseline. amplitude is the *fitted*
   // throw so ridgeYAt matches what was painted (no clipped-mesa ghost).
+  // Full precision regardless of softenScale -- see the softenScale doc
+  // above for why the vector data and the baked pixels are independent.
   canvas.ridge = { heights, step, baseline, amplitude: ampFitted, height, profile };
   return canvas;
 }
