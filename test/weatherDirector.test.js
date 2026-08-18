@@ -125,4 +125,55 @@ test('WeatherDirector.state exposes exactly one live kind', () => {
   const s = w.state;
   assert.ok(KINDS.includes(s.kind));
   assert.equal(typeof s.intensity, 'number');
+  assert.equal(typeof s.dryness01, 'number');
+  assert.equal(typeof s.rainAccum01, 'number');
+  assert.equal(typeof s.severity, 'number');
+});
+
+test('dryness01 rises under sustained sunshine and falls back under rain', () => {
+  const w = new WeatherDirector();
+  w.kind = 'sunshine';
+  w.intensity = 1;
+  w.dryness01 = 0.3;
+  let t = 0;
+  for (let i = 0; i < 600; i++) { w._stepReservoirs(STEP); t += 8.33; }
+  const driedOut = w.dryness01;
+  assert.ok(driedOut > 0.3, `dryness should have risen under sun, got ${driedOut}`);
+
+  w.kind = 'rain';
+  for (let i = 0; i < 600; i++) w._stepReservoirs(STEP);
+  assert.ok(w.dryness01 < driedOut, 'rain should dampen dryness back down');
+});
+
+test('rainAccum01 rises only under actual rain, and drains under anything else', () => {
+  const w = new WeatherDirector();
+  w.kind = 'rain';
+  w.intensity = 1;
+  for (let i = 0; i < 3600; i++) w._stepReservoirs(STEP);
+  assert.ok(w.rainAccum01 > 0.3, `expected accumulation under rain, got ${w.rainAccum01}`);
+
+  w.kind = 'sunshine';
+  const wet = w.rainAccum01;
+  for (let i = 0; i < 600; i++) w._stepReservoirs(STEP);
+  assert.ok(w.rainAccum01 < wet, 'rain accumulation should drain once the rain stops');
+});
+
+test('both reservoirs stay bounded 0..1', () => {
+  const w = new WeatherDirector();
+  w.kind = 'rain';
+  w.intensity = 1;
+  for (let i = 0; i < 5000; i++) w._stepReservoirs(STEP);
+  assert.ok(w.rainAccum01 <= 1 && w.rainAccum01 >= 0);
+  assert.ok(w.dryness01 <= 1 && w.dryness01 >= 0);
+});
+
+test('severity rises harder under a surge than under sustained energy alone', () => {
+  const steady = new WeatherDirector(), surging = new WeatherDirector();
+  let t = 0;
+  for (let i = 0; i < 300; i++) {
+    steady.update(t, STEP, { valence: 0, epic: 0.3, energySlow: 0.9, surge: 0 });
+    surging.update(t, STEP, { valence: 0, epic: 0.3, energySlow: 0.9, surge: 1 });
+    t += 8.33;
+  }
+  assert.ok(surging.severity > steady.severity, `surge (${surging.severity}) should exceed steady (${steady.severity})`);
 });

@@ -323,6 +323,7 @@ export class BiomeManager {
     // (draw before step) never feeds NaN into canvas gradients and kills rAF.
     this.calmLevel = 0;
     this._hazeMul = 1;
+    this.dustLevel01 = 0; // set externally each frame from Simulation.quake.dustLevel01
     this._ribbonScaleMul = 1;
     this.lerpCache = new LerpCache();
     this.tSec = 0;
@@ -1266,7 +1267,11 @@ export class BiomeManager {
     this.mandala.rateMul = pers.mandalaRate ?? 1;
     this.rd.bias = pers.rdBias ?? 0;
     this._ribbonScaleMul = pers.ribbonScale ?? 1;
-    this._hazeMul = (pers.haze ?? 1) * (this.universeHazeMul || 1);
+    // Quake dust: the air stays hazy for a while after the shaking stops
+    // (QuakeDirector.dustLevel01, pushed in each frame by Simulation) --
+    // folded into the same haze multiplier every other dial already feeds,
+    // so it costs nothing new at draw time.
+    this._hazeMul = (pers.haze ?? 1) * (this.universeHazeMul || 1) * (1 + 2 * clamp01(this.dustLevel01 || 0));
 
     // The Wind: one sample per frame, shared by every consumer below --
     // never re-derived per particle. An active weather front gusts it up:
