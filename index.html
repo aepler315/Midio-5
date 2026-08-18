@@ -10,6 +10,14 @@
   <div id="app">
     <canvas id="stage" width="1280" height="720"></canvas>
 
+    <!-- Every user-facing failure (bad file, decode error, no audio
+         support) surfaces here instead of a native alert() -- see
+         showErrorBanner() in main.js. Always mounted, hidden by default. -->
+    <div id="errorBanner" class="errorBanner hidden" role="alert">
+      <span id="errorBannerText" class="errorBannerText"></span>
+      <button id="errorBannerClose" type="button" class="errorBannerClose" aria-label="Dismiss">&times;</button>
+    </div>
+
     <div id="loader" class="panel titleScreen">
       <div class="titleBg" aria-hidden="true">
         <div class="titleStars"></div>
@@ -35,6 +43,7 @@
               <span class="titleWord titleWordWorld">WORLD</span>
             </h1>
             <p class="titleTagline">Drop a song. Midio rides every jump, combo, and biome live from the beat.</p>
+            <p class="titleSub">Midio plays himself — just sit back and watch, or tap <kbd>F</kbd>/<kbd>J</kbd> along with the beat if you want to.</p>
           </div>
         </div>
 
@@ -132,11 +141,12 @@
         </button>
 
         <div class="titleMeta">
+          <p class="titleFlashNote">Contains flashing lights, camera shake, and sudden scene cuts — the <strong>Reduced flash &amp; motion</strong> toggle below dampens all three.</p>
           <div class="prefRow">
 
             <button id="noLyricsBtn" class="ghostbtn chipbtn" type="button" aria-pressed="false" title="Skip the lyric search for audio files (remembered)">No lyrics: off</button>
             <button id="btLatencyBtn" class="ghostbtn chipbtn" type="button" aria-pressed="false" title="Floor output-latency compensation for Bluetooth headphones (~200 ms). Remembered.">BT latency: off</button>
-            <button id="reducedFlashBtn" class="ghostbtn chipbtn" type="button" aria-pressed="false" title="Cap screen flashes and full-viewport effects for photosensitivity. Remembered. Also toggleable with R.">Reduced flash: off</button>
+            <button id="reducedFlashBtn" class="ghostbtn chipbtn" type="button" aria-pressed="false" title="Caps screen flashes AND dampens camera shake/zoom for photosensitivity or motion sensitivity. Defaults on if your system's own reduced-motion setting is on. Remembered. Also toggleable with R.">Reduced flash &amp; motion: off</button>
           </div>
 
           <div class="seedRow" title="Pin a world seed. Leave blank for auto from the song.">
@@ -147,10 +157,10 @@
 
           <div class="resRow" title="Stage render resolution (sim stays 16:9 logical; canvas upscales to this).">
             <label for="stageRes">Stage</label>
-            <select id="stageRes" title="Internal stage resolution (sim is 1280×720; buffer upscales). Default 1440p @ display 60fps.">
+            <select id="stageRes" title="Internal stage resolution (sim is 1280×720; buffer upscales). Default 1080p.">
               <option value="720">720p</option>
-              <option value="1080">1080p</option>
-              <option value="1440" selected>1440p 60</option>
+              <option value="1080" selected>1080p</option>
+              <option value="1440">1440p 60</option>
               <option value="2160">4K</option>
             </select>
           </div>
@@ -195,7 +205,6 @@
           <ul class="titleKeys" aria-label="Keyboard shortcuts">
             <li><kbd>F</kbd>/<kbd>J</kbd> tap the groove &mdash; low / high</li>
             <li><kbd>C</kbd> guided calibration</li>
-            <li><kbd>`</kbd> debug</li>
             <li><kbd>T</kbd> tracks</li>
             <li><kbd>G</kbd> fonts</li>
             <li><kbd>P</kbd> fps</li>
@@ -211,6 +220,7 @@
         <button id="stopBtn" class="ghostbtn iconbtn" type="button" title="Stop (back to title)">&#9209;</button>
         <button id="fullscreenBtn" class="ghostbtn iconbtn" type="button" title="Fullscreen (F11)">&#9974;</button>
         <button id="btLatencyHudBtn" class="ghostbtn" type="button" aria-pressed="false" title="Bluetooth latency mode (~200 ms floor). Remembered.">BT lag</button>
+        <button id="calibrateBtn" class="ghostbtn" type="button" title="Guided tap calibration -- tap along with the beat so taps register right on time. Same as the C key. The only way to reach this on a phone.">Sync</button>
 
         <button id="settingsBtn" class="ghostbtn iconbtn" type="button" title="SoundFont settings (hidden fonts)">&#9881;</button>
         <div id="trackBadge" class="hidden">
@@ -234,6 +244,17 @@
       <p id="recalStatus" class="recalStatus"></p>
     </div>
 
+    <!-- A non-blocking offer, not an interruption: SyncMonitor detects when
+         the chart's own beat grid reads as scattered against the player's
+         kicks (the "characters are moving randomly" failure) and raises
+         this at most twice per song. Music never stops; dismissing it just
+         goes away. -->
+    <div id="syncPrompt" class="syncPrompt hidden" role="status">
+      <span class="syncPromptText">The sync looks a little off — want to tap it in?</span>
+      <button id="syncPromptFixBtn" type="button" class="syncPromptFixBtn">Tap to fix</button>
+      <button id="syncPromptDismissBtn" type="button" class="syncPromptDismissBtn" aria-label="Dismiss">&times;</button>
+    </div>
+
     <div id="auditionPanel" class="panel hidden">
       <h1 id="auditionHeading">PULLING THE RECORDING APART</h1>
       <canvas id="auditionCanvas" width="420" height="220"></canvas>
@@ -254,6 +275,11 @@
     <div id="dragOverlay">
       <div class="dragOverlayMsg">Drop to play</div>
     </div>
+
+    <!-- CSS-only, no JS: a portrait phone letterboxes the 16:9 stage down
+         to a thin strip (see #stage's object-fit: contain). Shown only
+         under the narrow-portrait media query below; never blocks input. -->
+    <div id="landscapeHint" class="landscapeHint" aria-hidden="true">Rotate your device for the full view</div>
 
     <div id="fontModal" class="modalBackdrop hidden">
       <div id="fontModalPanel" class="modalPanel">

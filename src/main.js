@@ -45,6 +45,40 @@ import { SoulseekSearch } from './soulseek/SoulseekSearch.js';
 const STEP_MS = 1000 / 120;
 
 const canvas = document.getElementById('stage');
+const errorBannerEl = document.getElementById('errorBanner');
+const errorBannerTextEl = document.getElementById('errorBannerText');
+const errorBannerCloseEl = document.getElementById('errorBannerClose');
+let errorBannerTimer = null;
+/** The one user-facing failure surface for this whole app -- replaces the
+ *  five native alert() calls that used to dump raw exception text into a
+ *  browser dialog. Auto-dismisses after a while but stays reachable via
+ *  the close button; a second failure just restarts the timer/text rather
+ *  than stacking banners. */
+function showErrorBanner(message) {
+  if (!errorBannerEl || !errorBannerTextEl) { window.alert(message); return; } // defensive: markup missing
+  errorBannerTextEl.textContent = message;
+  errorBannerEl.classList.remove('hidden');
+  clearTimeout(errorBannerTimer);
+  errorBannerTimer = setTimeout(() => errorBannerEl.classList.add('hidden'), 9000);
+}
+errorBannerCloseEl?.addEventListener('click', () => {
+  clearTimeout(errorBannerTimer);
+  errorBannerEl?.classList.add('hidden');
+});
+
+// Any failure that escapes every local try/catch still reaches the player
+// as a plain-language banner instead of vanishing into the console --
+// previously the only user-facing error surface was five specific
+// alert() call sites, so anything outside those was invisible.
+window.addEventListener('error', (e) => {
+  console.error('[unhandled error]', e.error || e.message);
+  showErrorBanner('Something went wrong. Try reloading, or drop your file again.');
+});
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[unhandled rejection]', e.reason);
+  showErrorBanner('Something went wrong. Try reloading, or drop your file again.');
+});
+
 const loaderEl = document.getElementById('loader');
 const dropzoneEl = document.getElementById('dropzone');
 const fileInputEl = document.getElementById('fileInput');
@@ -112,6 +146,12 @@ const noLyricsBtnEl = document.getElementById('noLyricsBtn');
 const reducedFlashBtnEl = document.getElementById('reducedFlashBtn');
 const btLatencyBtnEl = document.getElementById('btLatencyBtn');
 const btLatencyHudBtnEl = document.getElementById('btLatencyHudBtn');
+const calibrateBtnEl = document.getElementById('calibrateBtn');
+const syncPromptEl = document.getElementById('syncPrompt');
+const syncPromptFixBtnEl = document.getElementById('syncPromptFixBtn');
+const syncPromptDismissBtnEl = document.getElementById('syncPromptDismissBtn');
+const visualStyleBtnEl = document.getElementById('visualStyleBtn');
+const visualStyleHudBtnEl = document.getElementById('visualStyleHudBtn');
 const recalibration = new RecalibrationOverlay({
   panel: document.getElementById('recalPanel'),
   number: document.getElementById('recalNumber'),
@@ -152,6 +192,14 @@ let fontModalView = 'list'; // 'list' (visible fonts, click-to-hide) | 'hidden' 
 let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted accessibility toggle
 let lyricsDisabled = getLyricsDisabled(); // "No lyrics": persisted opt-out from the lyric fetch/prompt
 let bluetoothLatency = getBluetoothLatency(); // floor output-latency for BT headphones
+// Dev surfaces (the `` ` ``/V/T debug overlay + its per-frame render cost,
+// and the developer-oriented half of the title screen's key legend) are
+// gated behind ?dev=1. V and T sit on bare letter keys right next to the
+// gameplay keys F/J -- a player mashing during a hard section, or on a
+// non-QWERTY layout, can land on them by accident and silently change
+// engine behavior with no visible indication of what happened. Ungated:
+// P (fps) and F3 (section labels), both self-explanatory and reversible.
+const DEV_MODE = new URLSearchParams(location.search).get('dev') === '1';
 // Graphics presentation: URL ?style=classic|rendered overrides storage.
 const _styleParam = new URLSearchParams(location.search).get('style');
 let visualStyle = _styleParam ? resolveVisualStyle(_styleParam) : getVisualStyle();
@@ -178,7 +226,7 @@ if (noLyricsBtnEl) {
 function syncReducedFlashBtn() {
   if (!reducedFlashBtnEl) return;
   reducedFlashBtnEl.setAttribute('aria-pressed', reducedFlash ? 'true' : 'false');
-  reducedFlashBtnEl.textContent = `Reduced flash: ${reducedFlash ? 'on' : 'off'}`;
+  reducedFlashBtnEl.textContent = `Reduced flash & motion: ${reducedFlash ? 'on' : 'off'}`;
 }
 syncReducedFlashBtn();
 if (reducedFlashBtnEl) reducedFlashBtnEl.addEventListener('click', () => toggleReducedFlash());
@@ -207,6 +255,23 @@ function toggleBluetoothLatency() {
 syncBtLatencyUi();
 if (btLatencyBtnEl) btLatencyBtnEl.addEventListener('click', toggleBluetoothLatency);
 if (btLatencyHudBtnEl) btLatencyHudBtnEl.addEventListener('click', toggleBluetoothLatency);
+// Guided calibration was previously reachable only via the C key -- this
+// is the only way to reach it on a phone or tablet, same gap the reduced-
+// flash toggle already had a button for.
+if (calibrateBtnEl) {
+  calibrateBtnEl.addEventListener('click', () => {
+    if (recalibration.active) endRecalibration(); else startRecalibration();
+  });
+}
+if (syncPromptFixBtnEl) {
+  syncPromptFixBtnEl.addEventListener('click', () => {
+    syncPromptEl?.classList.add('hidden');
+    startRecalibration();
+  });
+}
+if (syncPromptDismissBtnEl) {
+  syncPromptDismissBtnEl.addEventListener('click', () => syncPromptEl?.classList.add('hidden'));
+}
 // Set per load path (true only for raw decoded audio, which already has
 // every voice baked into the buffer) and read by applySynthMutePolicy().
 let muteTimelineSynth = false;
@@ -271,7 +336,7 @@ function readStagePreset() {
     const stored = Number(localStorage.getItem(STAGE_RES_KEY));
     if (STAGE_PRESETS[stored]) return stored;
   } catch { /* no storage */ }
-  return 1440; // house default: 1440p (display targets 60fps via rAF)
+  return 1080; // house default: 1080p -- a real perf floor for a friend's laptop iGPU
 }
 
 function persistStagePreset(preset) {
@@ -313,7 +378,7 @@ function randomizeSeed() {
   if (stageResEl) {
     stageResEl.value = String(readStagePreset());
     stageResEl.addEventListener('change', () => {
-      persistStagePreset(Number(stageResEl.value) || 1440);
+      persistStagePreset(Number(stageResEl.value) || 1080);
       if (!running) fitCanvas();
     });
   }
@@ -325,7 +390,17 @@ async function bootAudio() {
   if (audioEngine) return;
   audioEngine = new AudioEngine();
   audioEngine.bluetoothLatencyMode = bluetoothLatency;
-  await audioEngine.resume();
+  const running = await audioEngine.resume();
+  if (!running) {
+    // A stuck-suspended context used to fail silently here: the game would
+    // still start, but ctx.currentTime never advances, so it renders its
+    // first frame forever with no indication why. Fail loudly instead --
+    // audioEngine stays set so a later user gesture (a click) can still
+    // resume it via the browser's own autoplay-unlock behavior, but this
+    // load attempt surfaces the real problem now.
+    audioEngine = null;
+    throw new Error('Audio is blocked by the browser. Try clicking the page first, then retry.');
+  }
   const fallback = new SimpleSynth(audioEngine);
   sf2Engine = new Sf2Synth(audioEngine);
   synth = new SynthRouter(fallback);
@@ -572,6 +647,7 @@ function toggleTrackList() {
  *  tolerates being idle). */
 function stopTimeline() {
   running = false;
+  syncPromptEl?.classList.add('hidden');
   // conductor is a single instance shared across every song (see its
   // construction above); Simulation and its subsystems subscribe to it at
   // construction and never unsubscribe on their own. Without this, a replay
@@ -693,7 +769,7 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
     console.error('[world build failed]', err);
     progressEl.classList.add('hidden');
     loaderEl.classList.remove('hidden');
-    alert('Could not build the world: ' + (err?.message || err));
+    showErrorBanner('Could not build the world: ' + (err?.message || err));
     return;
   }
   lastSongSeed = sim.songSeed;
@@ -782,7 +858,7 @@ async function loadMidiFile(file) {
   } catch (err) {
     console.error('[MIDI load failed]', err);
     progressEl.classList.add('hidden');
-    alert('Could not load MIDI file: ' + (err?.message || err));
+    showErrorBanner('Could not load MIDI file: ' + (err?.message || err));
   }
 }
 
@@ -859,7 +935,7 @@ async function loadScoredAudio(midiFile, audioFiles) {
     progressEl.classList.add('hidden');
     hudEl.classList.add('hidden');
     loaderEl.classList.remove('hidden');
-    alert('Could not load score + audio: ' + (err?.message || err));
+    showErrorBanner('Could not load score + audio: ' + (err?.message || err));
   }
 }
 
@@ -1076,7 +1152,12 @@ async function resolveLyricsForAudio(file, durationSec, vocalStem = null) {
  *  stems of one song -- summed into a mix for analysis/playback, with each
  *  file's NAME casting its notes to a character (see Casting.js). */
 async function loadAudioFiles(files) {
-  await bootAudio();
+  try {
+    await bootAudio();
+  } catch (err) {
+    showErrorBanner('Could not start audio: ' + (err?.message || err));
+    return;
+  }
   // A second load started while this one is still analysing (another drop,
   // a demo click, a MIDI drop) bumps loadGen -- that's the load the player
   // actually wants now, so this one must bail before it commits rather than
@@ -1089,7 +1170,7 @@ async function loadAudioFiles(files) {
     try {
       decoded.push({ name: file.name || 'stem', buffer: await audioEngine.decodeFile(await file.arrayBuffer()) });
     } catch (err) {
-      alert(`Could not decode audio file "${file.name}": ` + err.message);
+      showErrorBanner(`Could not decode audio file "${file.name}": ` + err.message);
       return;
     }
   }
@@ -1187,12 +1268,21 @@ async function loadAudioFiles(files) {
     lyricsRowEl?.classList.add('hidden');
     hudEl.classList.add('hidden');
     loaderEl.classList.remove('hidden');
-    alert('Could not load audio file: ' + (err?.message || err));
+    showErrorBanner('Could not load audio file: ' + (err?.message || err));
   }
 }
 
 async function loadDemo() {
-  await bootAudio();
+  // The primary zero-setup CTA -- previously had no try/catch here and no
+  // .catch() at its call site, so a boot failure (no Web Audio support, a
+  // suspended AudioContext, anything bootAudio touches) left the button
+  // looking simply dead with zero feedback.
+  try {
+    await bootAudio();
+  } catch (err) {
+    showErrorBanner('Could not start audio: ' + (err?.message || err));
+    return;
+  }
   loadGen++;
   const data = buildDemoTimeline({});
   data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
@@ -1574,6 +1664,16 @@ function frame(tRaf) {
   if (sim.disasters?.justStruck && sim.disasters.struckKind === 'quake') audioEngine?.duck?.(0.7, 0.08, 0.4);
   if (sim.biomes?.tsunamiJustArrived) audioEngine?.duck?.(0.5, 0.05, 0.35);
 
+  // SyncMonitor's own offer: the chart's kicks read as scattered against
+  // the beat grid for a sustained stretch (the "characters are moving
+  // randomly" failure) -- previously detected but never surfaced anywhere.
+  // A non-blocking invitation, not an interruption: never fires during the
+  // opening, at most twice a song, and never while the overlay is already
+  // up (SyncMonitor.update's own suppress flag handles that).
+  if (sim.syncMonitor?.consumePrompt()) {
+    syncPromptEl?.classList.remove('hidden');
+  }
+
   // Tap recalibration: drive the count while an (opt-in, 'C'-key-triggered)
   // pass is running. Never blocks the frame, pauses audio, or swallows input.
   if (recalibration.active) {
@@ -1805,6 +1905,11 @@ canvas.addEventListener('contextmenu', (e) => { if (running && sim) e.preventDef
 
 canvas.addEventListener('pointerdown', (e) => {
   if (!running || !sim) return;
+  // Every canvas tap prevents default -- previously only the seekbar-hit
+  // branch below did, so a plain tap-to-beat-tap (the common case, and the
+  // only input touch has at all) left double-tap-to-zoom and the ~300ms
+  // synthetic-click delay in play on mobile.
+  e.preventDefault();
   if (!hudAwake) { wakeHud(); return; }
   wakeHud();
   const p = clientToStage(e);
@@ -1814,7 +1919,6 @@ canvas.addEventListener('pointerdown', (e) => {
   // (high). Anything else (middle, back/forward) stays an unroled tap rather
   // than being silently filed as one of the two hands.
   if (!hit) { beatTap(e.button === 2 ? ROLE_HIGH : e.button === 0 ? ROLE_LOW : null); return; }
-  e.preventDefault();
   if (hit.type === 'detail') return; // keep overlay open
   if (hit.type === 'strip') {
     // Toggle section detail when re-clicking the same section; always seek.
@@ -1828,6 +1932,13 @@ canvas.addEventListener('pointerdown', (e) => {
     seekSong(hit.tMs);
   }
 });
+
+// The keys a player unfamiliar with the autoplay premise reaches for
+// expecting direct control -- see the keydown handler below.
+const INERT_KEYS = new Set([
+  ' ', 'Spacebar', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'w', 'W', 'a', 'A', 's', 'S', 'd', 'D',
+]);
 
 window.addEventListener('keydown', (e) => {
   if (running) wakeHud();
@@ -1872,13 +1983,28 @@ window.addEventListener('keydown', (e) => {
     fpsHudEl?.classList.toggle('hidden', !fpsHudVisible);
     return;
   }
-  if (debugOverlay) {
+  // `T` toggles the always-present, player-facing track badge (index.html's
+  // #trackBadge) -- visible, self-explanatory, fully reversible, so it
+  // stays ungated like P/F3. `` ` `` (the full telemetry overlay) and V
+  // (silently toggles the Ollama vision loop -- changes engine behavior
+  // with zero visible indication) are the two that read as "the controls
+  // are broken" if hit by accident, so those are dev-gated.
+  if (e.key === 't' || e.key === 'T') { toggleTrackList(); return; }
+  if (DEV_MODE && debugOverlay) {
     if (e.key === '`') { debugOverlay.toggle(); return; }
     if (e.key === 'v' || e.key === 'V') { debugOverlay.toggleVision(); return; }
-    if (e.key === 't' || e.key === 'T') { toggleTrackList(); return; }
   }
   // Reserved regardless of whether the debug overlay happens to be up yet.
   if (e.key === '`' || e.key === 'v' || e.key === 'V' || e.key === 't' || e.key === 'T') return;
+
+  // Midio plays himself -- these are the keys a first-time player reaches
+  // for expecting to control him directly (no jump key exists). Letting
+  // them fall through to the catch-all beat-tap below used to mean mashing
+  // Space/arrows/WASD didn't just do nothing, it actively nudged the beat
+  // anchor and degraded sync -- the exact behavior that reads as "the
+  // controls are broken." Inert here, and preventDefault so Space/arrows
+  // don't also scroll the page.
+  if (INERT_KEYS.has(e.key)) { e.preventDefault(); return; }
 
   // Almost any other key resyncs the player's beat anchor (BeatAnchor.js) --
   // ignore held-key auto-repeat, modifier chords, and typing into a field.

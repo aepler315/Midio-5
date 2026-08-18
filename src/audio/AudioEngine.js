@@ -7,6 +7,7 @@ import { outputLatencyMs, BLUETOOTH_LATENCY_FLOOR_MS } from '../core/ChoreoClock
 export class AudioEngine {
   constructor() {
     const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) throw new Error('This browser does not support Web Audio.');
     this.ctx = new AC();
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.85;
@@ -22,8 +23,20 @@ export class AudioEngine {
     this.bluetoothLatencyMode = false;
   }
 
+  /** @returns {Promise<boolean>} whether the context is actually running
+   *  afterward -- previously unchecked, so a resume() that silently failed
+   *  (or a context stuck 'suspended' for any reason) left the game
+   *  rendering its first frame forever with no message, since ctx.currentTime
+   *  never advances. Callers can check this and surface a real error. */
   async resume() {
-    if (this.ctx.state === 'suspended') await this.ctx.resume();
+    if (this.ctx.state === 'suspended') {
+      try {
+        await this.ctx.resume();
+      } catch (err) {
+        console.warn('[AudioEngine] resume() failed', err);
+      }
+    }
+    return this.ctx.state === 'running';
   }
 
   start(offsetMs = 0) {
