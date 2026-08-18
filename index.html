@@ -190,29 +190,6 @@
             <p class="hint">Auto-load: put <code>.sf2</code>/<code>.zip</code> in <code>soundfonts/</code> next to this page. Swap songs anytime by dropping a new file mid-run.</p>
           </details>
 
-          <details class="titleAdvanced">
-            <summary>Find music (Soulseek)</summary>
-            <p class="hint">
-              Search the
-              <a href="https://www.slsknet.org" target="_blank" rel="noopener">Soulseek</a>
-              peer network for any song. Requires a free Soulseek account
-              (slsknet.org) and the local dev server (<code>npm start</code>)
-              — the browser can't speak the Soulseek protocol directly, so the
-              server bridges it. Your password is sent only to the local bridge.
-            </p>
-            <div class="jamendoRow">
-              <input id="soulseekUserInput" type="text" spellcheck="false" autocomplete="username" placeholder="Soulseek username" />
-              <input id="soulseekPassInput" type="password" spellcheck="false" autocomplete="current-password" placeholder="Password" />
-              <button id="soulseekConnectBtn" type="button" class="ghostbtn chipbtn">Connect</button>
-            </div>
-            <div class="jamendoRow">
-              <input id="soulseekSearchInput" type="text" spellcheck="false" autocomplete="off" placeholder="Search songs, artists&hellip;" />
-              <button id="soulseekSearchBtn" type="button" class="ghostbtn chipbtn">Search</button>
-            </div>
-            <p id="soulseekStatus" class="hint jamendoStatus hidden"></p>
-            <ul id="soulseekResults" class="jamendoResults"></ul>
-          </details>
-
           <p id="progressText" class="hint progressHint hidden"></p>
 
           <ul class="titleKeys" aria-label="Keyboard shortcuts">
