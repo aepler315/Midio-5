@@ -26,6 +26,26 @@ const COVER_MIN_INTENSITY = 0.15;
 const EPIC_EMBER_THRESHOLD = 0.75;
 const VALENCE_RAIN_BOUNDARY = -0.2;  // sad <-> neutral
 const VALENCE_PETALS_BOUNDARY = 0.3; // neutral <-> happy
+
+// Dryness/rain accumulation: the same accum/melt shape as groundCover above,
+// but tracking two OPPOSING slow reservoirs instead of one -- these are the
+// substrate DisasterDirector reads to gate wildfire (needs sustained dryness)
+// and rain-flood (needs sustained rainfall) on top of a single instant's
+// weather kind. Kept here rather than in DisasterDirector because they are
+// properties of the weather history, exactly like groundCover.
+const DRY_ACCUM_SEC = 45;   // dries out over the better part of a minute of sun/embers/wind
+const DRY_MELT_SEC = 20;    // and dampens back down faster under rain/snow/fog
+const RAIN_ACCUM_SEC = 30;
+const RAIN_DRAIN_SEC = 25;
+const DRYING_KINDS = new Set(['sunshine', 'embers', 'wind']);
+const DAMPENING_KINDS = new Set(['rain', 'snow', 'fog']);
+// Severity: how HARD the active kind is hitting, separate from `intensity`
+// (which only says a kind is present at all). A drizzle and a downpour are
+// both "rain" at intensity~1; severity is what tells Lightning/Atmosphere/
+// the precipitation streak angle which one it actually is. Follows the
+// same energy target the base intensity chases, just with a harder curve
+// so quiet-but-present weather doesn't read as severe.
+const SEVERITY_TAU_SEC = 4;
 // Three more dramatic kinds, each gated to its own corner of the
 // valence/epic plane that the original four boundaries never touch (every
 // existing rain/snow/petals/embers test runs at epic=0.3, comfortably
@@ -63,14 +83,20 @@ export class WeatherDirector {
   constructor() {
     this.kind = 'snow'; // stable default until the first evaluation lands
     this.intensity = 0;      // 0..1, the ACTIVE kind's own level
+    this.severity = 0;       // 0..1, how hard the active kind is hitting (see SEVERITY_TAU_SEC)
     this.groundCover = 0;    // 0..1 settled snow -- accumulates during snowfall, melts otherwise
+    this.dryness01 = 0.3;    // slow reservoir: rises under sun/embers/wind, gates wildfire
+    this.rainAccum01 = 0;    // slow reservoir: rises under sustained rain, gates rain-flood
     this._nextEvalMs = 0;
     this._pendingKind = null; // queued kind, held while the current one fades to 0
   }
 
   /** Only one kind is ever live at a time -- {kind, intensity}. */
   get state() {
-    return { kind: this.kind, intensity: this.intensity, groundCover: this.groundCover };
+    return {
+      kind: this.kind, intensity: this.intensity, severity: this.severity, groundCover: this.groundCover,
+      dryness01: this.dryness01, rainAccum01: this.rainAccum01,
+    };
   }
 
   /** Conductor-cued weather (ConductorTrack.js). Queues the kind through the
@@ -94,6 +120,23 @@ export class WeatherDirector {
     }
   }
 
+  /** Dryness/rain accumulation read the ACTIVE kind directly (not the
+   *  pending crossfade) -- a kind mid-crossfade-out is still the kind
+   *  that's actually been falling, so it should keep charging its
+   *  reservoir right up until the swap lands. */
+  _stepReservoirs(dtSec) {
+    if (DRYING_KINDS.has(this.kind) && this.intensity > 0.1) {
+      this.dryness01 = clamp01(this.dryness01 + (dtSec * this.intensity) / DRY_ACCUM_SEC);
+    } else if (DAMPENING_KINDS.has(this.kind) && this.intensity > 0.1) {
+      this.dryness01 = clamp01(this.dryness01 - (dtSec * this.intensity) / DRY_MELT_SEC);
+    }
+    if (this.kind === 'rain' && this.intensity > COVER_MIN_INTENSITY) {
+      this.rainAccum01 = clamp01(this.rainAccum01 + (dtSec * this.intensity) / RAIN_ACCUM_SEC);
+    } else {
+      this.rainAccum01 = clamp01(this.rainAccum01 - dtSec / RAIN_DRAIN_SEC);
+    }
+  }
+
   update(nowMs, dtSec, { valence = 0, epic = 0, calm = 0, energySlow = 0, surge = 0, unravel = 0 } = {}) {
     if (nowMs >= this._nextEvalMs) {
       this._nextEvalMs = nowMs + KIND_REEVAL_MS;
@@ -106,12 +149,14 @@ export class WeatherDirector {
       // the next arrives, so only one weather field is ever live to update
       // or draw (BiomeManager never has to blend two).
       this.intensity -= (1 - Math.exp(-dtSec / CROSSFADE_OUT_TAU_SEC)) * this.intensity;
+      this.severity += (1 - Math.exp(-dtSec / SEVERITY_TAU_SEC)) * (0 - this.severity);
       if (this.intensity < 0.01) {
         this.intensity = 0;
         this.kind = this._pendingKind;
         this._pendingKind = null;
       }
       this._stepCover(dtSec);
+      this._stepReservoirs(dtSec);
       return;
     }
 
@@ -127,6 +172,13 @@ export class WeatherDirector {
     // "nothing to reach for," so snapping off there is safe and saves the
     // draw cost of an imperceptible sprinkle.
     if (target < DORMANT_GATE && this.intensity < DORMANT_GATE) this.intensity = 0;
+    // Severity chases the surge-heavy part of the same target harder than
+    // intensity does -- a drop's surge should read as a squall, not just
+    // "still raining." energySlow alone barely moves it.
+    const severityTarget = clamp01(0.4 * target + 0.9 * surge);
+    this.severity += (1 - Math.exp(-dtSec / SEVERITY_TAU_SEC)) * (severityTarget - this.severity);
+    this.severity = clamp01(this.severity);
     this._stepCover(dtSec);
+    this._stepReservoirs(dtSec);
   }
 }

@@ -178,6 +178,13 @@ export class GroundField {
     // reference) never reads this, so landings stay exactly as tuned even
     // while the ground appears to lie down.
     this.flatten = 0;
+
+    // Earthquake ground shake: set externally (Simulation) to a
+    // QuakeDirector instance (or null) each frame. Render-only, read in
+    // visibleBars() alongside the existing ripple/groove terms -- never
+    // touches heightAt(), same discipline as every other effect in this
+    // file.
+    this.quake = null;
   }
 
   _scheduleGags(durationMs, barGrid, seed) {
@@ -379,6 +386,7 @@ export class GroundField {
       if (screenXEnd < -20 || screenXStart > screenWidth + 20) continue;
       const ripple = this._rippleOffset(s.worldXStart, this._nowMs);
       const glow = this._glowAt(s.worldXStart, this._nowMs);
+      const quakeOffset = this.quake ? this.quake.groundOffsetAt(s.worldXStart) : 0;
       // Groove wave: a slow traveling ripple keyed off the song's global
       // energy, phase-driven by world-x so it visibly rolls with scroll
       // rather than bobbing in lockstep -- the ground breathing with the
@@ -388,7 +396,7 @@ export class GroundField {
           s.worldXStart / (GROOVE_WAVELENGTH_PX * wavelengthMul) + this._nowMs / 1000 * GROOVE_HZ * rateMul * 2 * Math.PI,
         )
         : 0;
-      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + (s.offset + ripple + groove) * settle, glow, groove: this._groove });
+      bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + (s.offset + ripple + groove + quakeOffset) * settle, glow, groove: this._groove });
     }
     return bars;
   }

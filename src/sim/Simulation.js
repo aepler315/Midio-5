@@ -54,6 +54,8 @@ import { GrooveFingerprint } from './GrooveFingerprint.js';
 import { OpeningDirector } from './OpeningDirector.js';
 import { WeatherDirector } from './WeatherDirector.js';
 import { OrogenyDirector } from '../world/OrogenyDirector.js';
+import { QuakeDirector } from './QuakeDirector.js';
+import { DisasterDirector } from './DisasterDirector.js';
 import { CueDirector } from './CueDirector.js';
 import { CueKind } from '../core/ConductorTrack.js';
 
@@ -248,6 +250,14 @@ export class Simulation {
     // Orogeny: the mountains visibly build across the song, peaking at its
     // energy climax, then subside through the rest of the runtime.
     this.orogeny = new OrogenyDirector(energyCurves, conductor.durationMs || 0, conductor.barGrid);
+
+    // Disasters: large-scale hazard events, arbitrated by DisasterDirector
+    // and anchored to the song's own energy climax (the same one orogeny
+    // just found) so a quake lands where the song is actually loudest
+    // rather than on a wall-clock timer.
+    this.quake = new QuakeDirector(songSeed);
+    this.groundField.quake = this.quake; // render-only shake, read in visibleBars()
+    this.disasters = new DisasterDirector(songSeed, conductor.durationMs || 0, [this.orogeny.climaxMs]);
 
     this.worldX = 0;
     this.timeMs = 0;
@@ -686,6 +696,13 @@ export class Simulation {
       valence: this.vibe.valence, epic: this.vibe.epic, calm: this.calm.level,
       energySlow: this.hype.slow, surge: this.hype.surge, unravel: this.coda.unravel,
     });
+    // Disasters: the arbiter decides WHEN/IF a hazard starts (reading the
+    // still-live QuakeDirector for exclusivity), then each hazard's own
+    // director owns its actual envelope. Order matters: the arbiter may
+    // call quake.strike() this same frame, so quake.update() runs right
+    // after and picks up ageSec=0 immediately rather than one frame late.
+    this.disasters.update(nowMs, this.worldX, { quake: this.quake });
+    this.quake.update(nowMs, dtSec, this.camera);
     // Slippery surfaces: settled snowfall OR a biome that is snow to begin
     // with (ARCTIC's own particle signature) ices the footing; a tsunami's
     // temporary flood (BiomeManager.floodLevel01) wets it the same way --
@@ -961,6 +978,7 @@ export class Simulation {
     this.biomes.midioX = this.midio.screenX; // the light rig's drop-snap points at him
     this.biomes.midioY = this.midio.renderY;
     this.biomes.weatherState = this.weather.state; // music-reactive rain/snow/petals/embers, decoupled from biome
+    this.biomes.dustLevel01 = this.quake.dustLevel01; // the air stays hazy for a while after a quake settles
     // Parallel-universe drift (ParallelUniverseDirector): a per-section,
     // cosmetics-only variation on top of everything above.
     this.biomes.universeHueDeg = this.parallelUniverse.hueDeg;
