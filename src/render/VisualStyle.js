@@ -5,9 +5,6 @@ import { hexToRgb, rgbToHsl, hslToRgb, rgbToHex } from '../utils/color.js';
 
 export const STYLE_CLASSIC = 'classic'; // kept for URL/storage compat → maps to house
 export const STYLE_RENDERED = 'rendered';
-export const VISUAL_STYLES = [STYLE_RENDERED];
-
-const STORAGE_KEY = 'smw:visualStyle';
 
 /** Everything resolves to the one house look. */
 export function resolveVisualStyle(_raw) {
@@ -15,11 +12,6 @@ export function resolveVisualStyle(_raw) {
 }
 
 export function getVisualStyle() {
-  return STYLE_RENDERED;
-}
-
-export function setVisualStyle(_v) {
-  try { localStorage.setItem(STORAGE_KEY, STYLE_RENDERED); } catch { /* no storage */ }
   return STYLE_RENDERED;
 }
 

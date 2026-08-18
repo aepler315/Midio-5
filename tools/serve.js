@@ -48,34 +48,12 @@ function sendJson(res, status, obj) {
   res.end(body);
 }
 
-function readBody(req, limit = 2_000_000) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    req.on('data', (c) => {
-      size += c.length;
-      if (size > limit) {
-        reject(new Error('Body too large'));
-        req.destroy();
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf8');
-      if (!raw) return resolve(null);
-      try {
-        resolve(JSON.parse(raw));
-      } catch {
-        reject(new Error('Invalid JSON body'));
-      }
-    });
-    req.on('error', reject);
-  });
-}
-
+// CORS + a generic 404 for any /api/* path that isn't /api/soulseek/*
+// (routed away earlier in the dispatcher, see server.createServer below).
+// Previously duplicated the entire soulseek route table here too -- those
+// branches were unreachable dead code, since every /api/soulseek/* request
+// is already intercepted by handleSoulseekRoute before handleApi ever runs.
 async function handleApi(req, res, reqPath) {
-  // CORS for local tooling
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -84,71 +62,8 @@ async function handleApi(req, res, reqPath) {
     res.end();
     return true;
   }
-
-  try {
-    if (reqPath === '/api/soulseek/status' && req.method === 'GET') {
-      sendJson(res, 200, await getStatus());
-      return true;
-    }
-
-    if (reqPath === '/api/soulseek/config' && req.method === 'POST') {
-      const body = await readBody(req);
-      const status = setConfig(body || {});
-      sendJson(res, 200, { ok: true, ...status, ...(await getStatus()) });
-      return true;
-    }
-
-    if (reqPath === '/api/soulseek/config' && req.method === 'DELETE') {
-      setConfig({ mode: 'clear' });
-      sendJson(res, 200, { ok: true, ...(await getStatus()) });
-      return true;
-    }
-
-    if (reqPath === '/api/soulseek/demo' && req.method === 'GET') {
-      sendJson(res, 200, { tracks: listDemoCatalog() });
-      return true;
-    }
-
-    if (reqPath === '/api/soulseek/search' && req.method === 'POST') {
-      const body = await readBody(req);
-      const query = body?.query || body?.q || body?.searchText || '';
-      const started = await startSearch(query);
-      sendJson(res, 200, started);
-      return true;
-    }
-
-    // GET /api/soulseek/search/:id
-    const searchMatch = reqPath.match(/^\/api\/soulseek\/search\/([^/]+)$/);
-    if (searchMatch && req.method === 'GET') {
-      const data = getSearch(decodeURIComponent(searchMatch[1]));
-      if (!data) {
-        sendJson(res, 404, { error: 'Search not found' });
-        return true;
-      }
-      sendJson(res, 200, data);
-      return true;
-    }
-
-    if (reqPath === '/api/soulseek/download' && req.method === 'POST') {
-      const body = await readBody(req);
-      const item = body?.item || body;
-      const result = await downloadResult(item);
-      res.writeHead(200, {
-        'Content-Type': result.contentType || 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="${result.filename.replace(/"/g, '')}"`,
-        'X-Filename': encodeURIComponent(result.filename),
-        'Cache-Control': 'no-store',
-      });
-      res.end(result.buffer);
-      return true;
-    }
-
-    if (reqPath.startsWith('/api/')) {
-      sendJson(res, 404, { error: 'Not found', path: reqPath });
-      return true;
-    }
-  } catch (err) {
-    sendJson(res, 500, { error: err.message || String(err) });
+  if (reqPath.startsWith('/api/')) {
+    sendJson(res, 404, { error: 'Not found', path: reqPath });
     return true;
   }
   return false;

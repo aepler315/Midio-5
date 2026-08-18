@@ -22,10 +22,7 @@ import {
   getReducedFlash, setReducedFlash, getLyricsDisabled, setLyricsDisabled,
   getBluetoothLatency, setBluetoothLatency, getStoredGroove, setStoredGroove,
 } from './ui/Accessibility.js';
-import {
-  getVisualStyle, setVisualStyle as persistVisualStyle,
-  resolveVisualStyle, STYLE_RENDERED,
-} from './render/VisualStyle.js';
+import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
@@ -207,25 +204,6 @@ const DEV_MODE = new URLSearchParams(location.search).get('dev') === '1';
 const _styleParam = new URLSearchParams(location.search).get('style');
 let visualStyle = _styleParam ? resolveVisualStyle(_styleParam) : getVisualStyle();
 paramBus.visualStyle = visualStyle;
-
-// One house look — no Soft/Neon toggle.
-function syncVisualStyleUi() {
-  if (visualStyleBtnEl) {
-    visualStyleBtnEl.classList.add('hidden');
-    visualStyleBtnEl.setAttribute('aria-hidden', 'true');
-  }
-  if (visualStyleHudBtnEl) {
-    visualStyleHudBtnEl.classList.add('hidden');
-    visualStyleHudBtnEl.setAttribute('aria-hidden', 'true');
-  }
-}
-function applyVisualStyle(next) {
-  visualStyle = persistVisualStyle(STYLE_RENDERED);
-  paramBus.visualStyle = visualStyle;
-  sim?.setVisualStyle(visualStyle);
-  syncVisualStyleUi();
-}
-syncVisualStyleUi();
 
 /** Reflect the "No lyrics" preference on the loader toggle button. */
 function syncNoLyricsBtn() {
@@ -1258,7 +1236,9 @@ async function loadAudioFiles(files) {
     lyricsRowEl?.classList.add('hidden');
 
     if (data.freeTime) {
-      console.warn(`Low tempo confidence (${data.confidence.toFixed(2)}) — switching to free-time, kick-reactive jumps.`);
+      // A handled mode switch, not a warning -- free-time/kick-reactive
+      // jumps are a normal, fully-supported fallback for rubato tracks.
+      console.info(`Low tempo confidence (${data.confidence.toFixed(2)}) — switching to free-time, kick-reactive jumps.`);
     }
     if (data.stems) {
       console.info('[casting] stems:', data.stems.map((s) => `${s.name} -> ${s.lane || '(world)'}`).join(', '));
