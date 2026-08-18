@@ -353,11 +353,25 @@ export class BiomeManager {
     const byMag = catalogue.slice().sort((a, b) => a.mag - b.mag);
     const heroCutMag = byMag[Math.min(byMag.length - 1, 5)].mag;
     const midCutMag = byMag[Math.min(byMag.length - 1, Math.floor(byMag.length * 0.22))].mag;
+    // Every position below is cached as a FRACTION of the field it was
+    // generated over (xFrac/yFrac), not an absolute pixel -- the canvas
+    // BiomeManager actually draws into is not always this.w x this.h. The
+    // camera's off-frame pull-back (CameraDirector.zoom) widens the logical
+    // stage Renderer hands to draw() (stage.width = nominalW/zoom, plus a
+    // shake margin), so a live game frame can be meaningfully wider than
+    // the dimensions the catalogue was built against. Baking absolute pixel
+    // coordinates here meant every star, dust lane, deep-sky smudge, and
+    // planet stayed pinned to their ORIGINAL narrower span while the sky
+    // around them widened -- reading as the whole field crammed into a
+    // band down the middle instead of spread edge to edge. Storing a
+    // fraction and rescaling against the real canvas at draw time (see
+    // _drawStarfield) fixes that at every zoom level and every resize.
+    const skyH = this.h * STAR_SKY_FRAC;
     this.stars = catalogue.map((s) => {
       const { drawSize, drawAlpha } = subPixelDraw(s.sizePx, displayBrightness(s.brightness));
       const layer = s.mag <= heroCutMag ? 2 : s.mag <= midCutMag ? 1 : 0;
       return {
-        x: s.x, y: s.y, phase: s.phase,
+        xFrac: s.x / this.w, yFrac: s.y / skyH, phase: s.phase,
         size: drawSize, bright: drawAlpha, layer,
         hue: s.hue,
         mag: s.mag, altitude01: s.altitude01, // read by twinkleAmplitude in _drawStarfield
@@ -369,12 +383,17 @@ export class BiomeManager {
       };
     });
     // The rest of the sky's furniture, all generated over the same sky
-    // region and cached alongside the stars: dark nebulae that break up the
-    // milky wash, a few resolved deep-sky smudges, and the planets.
-    const skyH = this.h * STAR_SKY_FRAC;
-    this.dustLanes = generateDustLanes(hashSeed(`${songSeed}:dust`), 7, this.w, skyH);
-    this.deepSky = generateDeepSky(hashSeed(`${songSeed}:deepsky`), 6, this.w, skyH);
-    this.planets = generatePlanets(hashSeed(`${songSeed}:planets`), 3, this.w, skyH);
+    // region and cached alongside the stars (same fraction convention):
+    // dark nebulae that break up the milky wash, a few resolved deep-sky
+    // smudges, and the planets.
+    const toFrac = (list) => list.map((o) => ({
+      ...o, xFrac: o.x / this.w, yFrac: o.y / skyH,
+    }));
+    this.dustLanes = toFrac(generateDustLanes(hashSeed(`${songSeed}:dust`), 7, this.w, skyH))
+      .map((d) => ({ ...d, rxFrac: d.rx / this.w, ryFrac: d.ry / skyH }));
+    this.deepSky = toFrac(generateDeepSky(hashSeed(`${songSeed}:deepsky`), 6, this.w, skyH))
+      .map((o) => ({ ...o, rFrac: o.r / skyH }));
+    this.planets = toFrac(generatePlanets(hashSeed(`${songSeed}:planets`), 3, this.w, skyH));
     this._glitchTimer = 2 + this._starSeed() * 3;
     this._glitchActiveMs = 0;
     this._scanlineY = 0;
@@ -2093,6 +2112,10 @@ export class BiomeManager {
 
     const twinkleRate = 1.15 + 0.7 * (this.calmLevel || 0) + 0.35 * night;
     const scroll = (this.tSec * 1.8) % canvas.width; // glacial drift
+    // The sky field's height on the ACTUAL canvas being drawn to -- shared
+    // by every rescale below (stars, dust lanes, deep sky) so they all
+    // agree on where the field ends, no matter how wide the stage is.
+    const skyH = canvas.height * STAR_SKY_FRAC;
 
     // Soft milky / galactic wash. Sits on the SAME tilted axis the star
     // density does (GALACTIC_BAND, shared with StarCatalogue) -- it used to
@@ -2100,7 +2123,6 @@ export class BiomeManager {
     // ridge sat at 0.32, so the painted galaxy and the actual stars
     // disagreed about where the plane was.
     {
-      const skyH = canvas.height * STAR_SKY_FRAC;
       const yL = galacticBandCenterY(0, skyH);
       const yR = galacticBandCenterY(1, skyH);
       const half = skyH * GALACTIC_BAND.halfFrac;
@@ -2129,18 +2151,23 @@ export class BiomeManager {
       // clean through the backdrop to transparent instead.
       ctx.globalCompositeOperation = 'multiply';
       for (const d of this.dustLanes) {
+        // Rescaled from the cached fraction against the ACTUAL canvas, not
+        // the field the catalogue was generated over -- see the comment at
+        // the star cache above for why that distinction matters.
+        const dx = d.xFrac * canvas.width;
+        const dyAbs = d.yFrac * skyH;
         // The lanes were generated in field space against the same tilted
         // axis, so undo the band's own tilt to place them in this frame.
-        const dy = d.y - galacticBandCenterY(d.x / Math.max(1, canvas.width), skyH);
+        const dy = dyAbs - galacticBandCenterY(dx / Math.max(1, canvas.width), skyH);
         const breathe = 0.85 + 0.15 * Math.sin(this.tSec * 0.06 + d.phase);
         ctx.save();
-        ctx.translate(d.x, dy);
+        ctx.translate(dx, dy);
         ctx.rotate(d.rot - ang);
         const g2 = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
         g2.addColorStop(0, `rgba(0,0,0,${(d.alpha * breathe).toFixed(3)})`);
         g2.addColorStop(0.55, `rgba(0,0,0,${(d.alpha * breathe * 0.5).toFixed(3)})`);
         g2.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.scale(d.rx, d.ry);
+        ctx.scale(d.rxFrac * canvas.width, d.ryFrac * skyH);
         ctx.fillStyle = g2;
         ctx.beginPath();
         ctx.arc(0, 0, 1, 0, Math.PI * 2);
@@ -2160,17 +2187,18 @@ export class BiomeManager {
       for (const o of this.deepSky) {
         const a = alpha * o.alpha * (0.85 + 0.15 * Math.sin(this.tSec * 0.09 + o.phase));
         if (a < 0.004) continue;
+        const ox = o.xFrac * canvas.width, oy = o.yFrac * skyH, or_ = o.rFrac * skyH;
         ctx.save();
-        ctx.translate(o.x, o.y);
+        ctx.translate(ox, oy);
         ctx.rotate(o.rot);
         ctx.scale(1, o.squash);
-        const g3 = ctx.createRadialGradient(0, 0, 0, 0, 0, o.r);
+        const g3 = ctx.createRadialGradient(0, 0, 0, 0, 0, or_);
         g3.addColorStop(0, `hsla(${o.hue},58%,80%,${(a * 1.6).toFixed(4)})`);
         g3.addColorStop(0.45, `hsla(${o.hue},52%,68%,${(a * 0.7).toFixed(4)})`);
         g3.addColorStop(1, `hsla(${o.hue},48%,60%,0)`);
         ctx.fillStyle = g3;
         ctx.beginPath();
-        ctx.arc(0, 0, o.r, 0, Math.PI * 2);
+        ctx.arc(0, 0, or_, 0, Math.PI * 2);
         ctx.fill();
         // A cluster is granular, not a smooth blob -- a few resolved
         // members are what make it read as a swarm of stars.
@@ -2178,7 +2206,7 @@ export class BiomeManager {
           ctx.fillStyle = `hsla(${o.hue},40%,92%,${(a * 2.2).toFixed(4)})`;
           for (let k = 0; k < 9; k++) {
             const ang2 = (k / 9) * Math.PI * 2 + o.phase;
-            const rr = o.r * (0.15 + 0.65 * ((k * 7919) % 100) / 100);
+            const rr = or_ * (0.15 + 0.65 * ((k * 7919) % 100) / 100);
             ctx.fillRect(Math.cos(ang2) * rr, Math.sin(ang2) * rr, 1, 1);
           }
         }
@@ -2206,10 +2234,15 @@ export class BiomeManager {
       const a = alpha * s.bright * tw * (s.ext ?? 1);
       if (a < 0.03) continue;
       const layerDrift = (1 + s.layer * 0.6) * scroll * 0.02;
-      let x = s.x + layerDrift;
+      // Rescaled from the cached fraction against the ACTUAL canvas, not the
+      // (possibly narrower) field the catalogue was generated over -- a
+      // camera pull-back widens the stage BiomeManager draws into, and an
+      // absolute pixel baked in at generation time would stay pinned to its
+      // original span while the sky around it widened.
+      let x = s.xFrac * canvas.width + layerDrift;
       if (x > canvas.width) x -= canvas.width;
       else if (x < 0) x += canvas.width;
-      const y = s.y;
+      const y = s.yFrac * skyH;
       const sz = s.size;
 
       // The same air path that dimmed it also scatters its blue out first,
@@ -2280,23 +2313,24 @@ export class BiomeManager {
     for (const p of this.planets) {
       const pa = alpha * p.bright * extinction01(p.altitude01) * 1.15;
       if (pa < 0.03) continue;
-      let px = p.x + scroll * 0.02;
+      const py = p.yFrac * skyH;
+      let px = p.xFrac * canvas.width + scroll * 0.02;
       if (px > canvas.width) px -= canvas.width;
       const r = 3.2 * p.size;
       ctx.globalAlpha = pa * 0.5;
-      const pg = ctx.createRadialGradient(px, p.y, 0, px, p.y, r);
+      const pg = ctx.createRadialGradient(px, py, 0, px, py, r);
       pg.addColorStop(0, `hsla(${p.hue},${p.sat}%,88%,1)`);
       pg.addColorStop(0.4, `hsla(${p.hue},${p.sat}%,76%,0.35)`);
       pg.addColorStop(1, `hsla(${p.hue},${p.sat}%,70%,0)`);
       ctx.fillStyle = pg;
       ctx.beginPath();
-      ctx.arc(px, p.y, r, 0, Math.PI * 2);
+      ctx.arc(px, py, r, 0, Math.PI * 2);
       ctx.fill();
       // The disc itself -- a couple of px across, not a point.
       ctx.globalAlpha = pa;
       ctx.fillStyle = `hsl(${p.hue},${Math.round(p.sat * 0.8)}%,92%)`;
       ctx.beginPath();
-      ctx.arc(px, p.y, Math.max(0.9, p.size * 0.62), 0, Math.PI * 2);
+      ctx.arc(px, py, Math.max(0.9, p.size * 0.62), 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -2629,6 +2663,34 @@ export class BiomeManager {
     ctx.save();
     // Normal compositing so water sits as a soft plate instead of laser lines.
     ctx.globalCompositeOperation = 'source-over';
+
+    // Opaque backing, UNDER the translucent body plate below: water is a
+    // solid surface, and the glassy gradient/contour layers on top of this
+    // were the ocean's entire visible thickness -- at their own peak alpha
+    // (~26%, the body plate's `55` stop times its multipliers) that let the
+    // sky's stars/nebulae/planets, generated as low as 62% of the canvas,
+    // shine straight through the water anywhere past its own horizon. A
+    // real ocean is opaque; no amount of translucency tuning on the pretty
+    // layers fixes that, so this fill guarantees nothing behind ever shows
+    // through, and everything else keeps its existing glassy look on top of
+    // it. Feathers only at the horizon seam (where sky and water always
+    // blend in reality) -- solid everywhere else on the plane.
+    {
+      const backing = ctx.createLinearGradient(0, horizonY, 0, nearY);
+      backing.addColorStop(0, `${water}00`);
+      backing.addColorStop(0.08, deepWater);
+      backing.addColorStop(1, deepWater);
+      // Deliberately NOT scaled by this.budget (the ambient light-budget
+      // dimmer that fades decorative elements down in quiet sections) --
+      // that system governs how VIVID things read, not whether physical
+      // opacity holds. Gating this on it reintroduced the exact leak this
+      // layer exists to close: budget dips as low as ~0.1 in calm stretches,
+      // which would have dropped the backing back to near-transparent right
+      // when the sky is otherwise at its most visible.
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = backing;
+      ctx.fillRect(0, horizonY, canvas.width, Math.max(1, nearY - horizonY));
+    }
 
     // Body plate: a continuous water mass under the wave contours so the
     // plane reads as ocean even when mountains occlude parts of the stack.
