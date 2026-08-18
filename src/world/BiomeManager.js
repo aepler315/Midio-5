@@ -48,6 +48,7 @@ import { SpaceRidge } from './SpaceRidge.js';
 import { SkyEnsemble } from './SkyEnsemble.js';
 import { FarVignettes } from './FarVignettes.js';
 import { NearField, NEARFIELD_RATIO } from './NearField.js';
+import { GroundScatter, SCATTER_RATIO } from './GroundScatter.js';
 import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, horizonFade } from './DayNight.js';
@@ -502,6 +503,7 @@ export class BiomeManager {
     // sweeping past faster than the characters, close enough to occlude
     // them. Drawn in drawForeground(), after everything else.
     this.nearField = new NearField(songSeed);
+    this.groundScatter = new GroundScatter(songSeed);
 
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections, structure, conductorSchedule);
     // MIDI custom biome: cast every section into the generated world so the
@@ -2000,6 +2002,22 @@ export class BiomeManager {
       const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 60) * this._danceKickAmp;
       this.nearField.draw(ctx, canvas, worldX, {
         tSec: this.tSec, kick, biomeName: dominant, reducedMotion: !!this.reducedFlash, ratio,
+      });
+
+      // Ground scatter: the frontmost plane's small detail, drawn after
+      // NearField so the two near-field layers stack near-to-camera last.
+      // This is the only layer in the scene that outruns the characters by
+      // this much, and that is what finally gives the ground a read on how
+      // fast the world is going past. Sheds on the same perf rung as the
+      // rest of the foreground (this whole method is already gated on it).
+      this.groundScatter.draw(ctx, canvas, worldX, {
+        groundY: this.groundY,
+        kick,
+        ratio: CodaDirector.delaminateRatio(SCATTER_RATIO, this.unravel),
+        // Rides the ambient light budget like every other decorative layer,
+        // so a quiet section quiets the ground too instead of leaving grit
+        // at full contrast against a faded world.
+        alpha: 0.55 + 0.45 * clamp01(this.budget),
       });
     }
   }
