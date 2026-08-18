@@ -108,6 +108,49 @@ html, body {
 
 .panel.hidden, .hidden { display: none !important; }
 
+/* ── Error banner ─────────────────────────────────────────────────────────── */
+/* Replaces the old native alert() surface (see showErrorBanner in main.js):
+   a dismissible, styled-in-frame message instead of a browser dialog
+   dumping raw exception text. Sits above every other layer, including
+   modals, since a failure can happen mid-modal too. */
+.errorBanner {
+  position: absolute;
+  top: var(--space-4);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: min(560px, calc(100% - var(--space-6)));
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--spec-rhythm);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+.errorBanner.hidden { display: none !important; }
+.errorBannerText { flex: 1; }
+.errorBannerClose {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 var(--space-1);
+}
+.errorBannerClose:hover { color: var(--text-primary); }
+
+@media (max-width: 540px) {
+  .errorBanner { top: var(--space-2); font-size: 0.8rem; }
+}
+
 /* ── Title screen ─────────────────────────────────────────────────────────── */
 #loader.titleScreen {
   gap: 0;
@@ -327,6 +370,29 @@ html, body {
   font-size: 0.92rem;
   line-height: 1.4;
   color: var(--text-secondary);
+}
+
+/* The game is autoplay -- Midio performs the song himself, and every key
+   that isn't F/J/C/etc. otherwise falls through to an unroled beat-anchor
+   tap (see main.js's keydown handler). Without this line a first-time
+   visitor reaches for arrows/WASD/Space expecting to control him, gets no
+   feedback, and concludes the controls are broken. */
+.titleSub {
+  margin: var(--space-2) 0 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
+.titleSub kbd {
+  display: inline-block;
+  min-width: 1.2em;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface-2);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: color-mix(in srgb, var(--spec-gold) 85%, transparent);
 }
 
 #loader #dropzone {

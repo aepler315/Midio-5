@@ -48,6 +48,40 @@ import { SoulseekSearch } from './soulseek/SoulseekSearch.js';
 const STEP_MS = 1000 / 120;
 
 const canvas = document.getElementById('stage');
+const errorBannerEl = document.getElementById('errorBanner');
+const errorBannerTextEl = document.getElementById('errorBannerText');
+const errorBannerCloseEl = document.getElementById('errorBannerClose');
+let errorBannerTimer = null;
+/** The one user-facing failure surface for this whole app -- replaces the
+ *  five native alert() calls that used to dump raw exception text into a
+ *  browser dialog. Auto-dismisses after a while but stays reachable via
+ *  the close button; a second failure just restarts the timer/text rather
+ *  than stacking banners. */
+function showErrorBanner(message) {
+  if (!errorBannerEl || !errorBannerTextEl) { window.alert(message); return; } // defensive: markup missing
+  errorBannerTextEl.textContent = message;
+  errorBannerEl.classList.remove('hidden');
+  clearTimeout(errorBannerTimer);
+  errorBannerTimer = setTimeout(() => errorBannerEl.classList.add('hidden'), 9000);
+}
+errorBannerCloseEl?.addEventListener('click', () => {
+  clearTimeout(errorBannerTimer);
+  errorBannerEl?.classList.add('hidden');
+});
+
+// Any failure that escapes every local try/catch still reaches the player
+// as a plain-language banner instead of vanishing into the console --
+// previously the only user-facing error surface was five specific
+// alert() call sites, so anything outside those was invisible.
+window.addEventListener('error', (e) => {
+  console.error('[unhandled error]', e.error || e.message);
+  showErrorBanner('Something went wrong. Try reloading, or drop your file again.');
+});
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[unhandled rejection]', e.reason);
+  showErrorBanner('Something went wrong. Try reloading, or drop your file again.');
+});
+
 const loaderEl = document.getElementById('loader');
 const dropzoneEl = document.getElementById('dropzone');
 const fileInputEl = document.getElementById('fileInput');
@@ -157,6 +191,14 @@ let fontModalView = 'list'; // 'list' (visible fonts, click-to-hide) | 'hidden' 
 let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted accessibility toggle
 let lyricsDisabled = getLyricsDisabled(); // "No lyrics": persisted opt-out from the lyric fetch/prompt
 let bluetoothLatency = getBluetoothLatency(); // floor output-latency for BT headphones
+// Dev surfaces (the `` ` ``/V/T debug overlay + its per-frame render cost,
+// and the developer-oriented half of the title screen's key legend) are
+// gated behind ?dev=1. V and T sit on bare letter keys right next to the
+// gameplay keys F/J -- a player mashing during a hard section, or on a
+// non-QWERTY layout, can land on them by accident and silently change
+// engine behavior with no visible indication of what happened. Ungated:
+// P (fps) and F3 (section labels), both self-explanatory and reversible.
+const DEV_MODE = new URLSearchParams(location.search).get('dev') === '1';
 // Graphics presentation: URL ?style=classic|rendered overrides storage.
 const _styleParam = new URLSearchParams(location.search).get('style');
 let visualStyle = _styleParam ? resolveVisualStyle(_styleParam) : getVisualStyle();
@@ -295,7 +337,7 @@ function readStagePreset() {
     const stored = Number(localStorage.getItem(STAGE_RES_KEY));
     if (STAGE_PRESETS[stored]) return stored;
   } catch { /* no storage */ }
-  return 1440; // house default: 1440p (display targets 60fps via rAF)
+  return 1080; // house default: 1080p -- a real perf floor for a friend's laptop iGPU
 }
 
 function persistStagePreset(preset) {
@@ -337,7 +379,7 @@ function randomizeSeed() {
   if (stageResEl) {
     stageResEl.value = String(readStagePreset());
     stageResEl.addEventListener('change', () => {
-      persistStagePreset(Number(stageResEl.value) || 1440);
+      persistStagePreset(Number(stageResEl.value) || 1080);
       if (!running) fitCanvas();
     });
   }
@@ -349,7 +391,17 @@ async function bootAudio() {
   if (audioEngine) return;
   audioEngine = new AudioEngine();
   audioEngine.bluetoothLatencyMode = bluetoothLatency;
-  await audioEngine.resume();
+  const running = await audioEngine.resume();
+  if (!running) {
+    // A stuck-suspended context used to fail silently here: the game would
+    // still start, but ctx.currentTime never advances, so it renders its
+    // first frame forever with no indication why. Fail loudly instead --
+    // audioEngine stays set so a later user gesture (a click) can still
+    // resume it via the browser's own autoplay-unlock behavior, but this
+    // load attempt surfaces the real problem now.
+    audioEngine = null;
+    throw new Error('Audio is blocked by the browser. Try clicking the page first, then retry.');
+  }
   const fallback = new SimpleSynth(audioEngine);
   sf2Engine = new Sf2Synth(audioEngine);
   synth = new SynthRouter(fallback);
@@ -717,7 +769,7 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
     console.error('[world build failed]', err);
     progressEl.classList.add('hidden');
     loaderEl.classList.remove('hidden');
-    alert('Could not build the world: ' + (err?.message || err));
+    showErrorBanner('Could not build the world: ' + (err?.message || err));
     return;
   }
   lastSongSeed = sim.songSeed;
@@ -806,7 +858,7 @@ async function loadMidiFile(file) {
   } catch (err) {
     console.error('[MIDI load failed]', err);
     progressEl.classList.add('hidden');
-    alert('Could not load MIDI file: ' + (err?.message || err));
+    showErrorBanner('Could not load MIDI file: ' + (err?.message || err));
   }
 }
 
@@ -883,7 +935,7 @@ async function loadScoredAudio(midiFile, audioFiles) {
     progressEl.classList.add('hidden');
     hudEl.classList.add('hidden');
     loaderEl.classList.remove('hidden');
-    alert('Could not load score + audio: ' + (err?.message || err));
+    showErrorBanner('Could not load score + audio: ' + (err?.message || err));
   }
 }
 
@@ -1100,7 +1152,12 @@ async function resolveLyricsForAudio(file, durationSec, vocalStem = null) {
  *  stems of one song -- summed into a mix for analysis/playback, with each
  *  file's NAME casting its notes to a character (see Casting.js). */
 async function loadAudioFiles(files) {
-  await bootAudio();
+  try {
+    await bootAudio();
+  } catch (err) {
+    showErrorBanner('Could not start audio: ' + (err?.message || err));
+    return;
+  }
   // A second load started while this one is still analysing (another drop,
   // a demo click, a MIDI drop) bumps loadGen -- that's the load the player
   // actually wants now, so this one must bail before it commits rather than
@@ -1113,7 +1170,7 @@ async function loadAudioFiles(files) {
     try {
       decoded.push({ name: file.name || 'stem', buffer: await audioEngine.decodeFile(await file.arrayBuffer()) });
     } catch (err) {
-      alert(`Could not decode audio file "${file.name}": ` + err.message);
+      showErrorBanner(`Could not decode audio file "${file.name}": ` + err.message);
       return;
     }
   }
@@ -1209,12 +1266,21 @@ async function loadAudioFiles(files) {
     lyricsRowEl?.classList.add('hidden');
     hudEl.classList.add('hidden');
     loaderEl.classList.remove('hidden');
-    alert('Could not load audio file: ' + (err?.message || err));
+    showErrorBanner('Could not load audio file: ' + (err?.message || err));
   }
 }
 
 async function loadDemo() {
-  await bootAudio();
+  // The primary zero-setup CTA -- previously had no try/catch here and no
+  // .catch() at its call site, so a boot failure (no Web Audio support, a
+  // suspended AudioContext, anything bootAudio touches) left the button
+  // looking simply dead with zero feedback.
+  try {
+    await bootAudio();
+  } catch (err) {
+    showErrorBanner('Could not start audio: ' + (err?.message || err));
+    return;
+  }
   loadGen++;
   const data = buildDemoTimeline({});
   data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
@@ -1847,6 +1913,13 @@ canvas.addEventListener('pointerdown', (e) => {
   }
 });
 
+// The keys a player unfamiliar with the autoplay premise reaches for
+// expecting direct control -- see the keydown handler below.
+const INERT_KEYS = new Set([
+  ' ', 'Spacebar', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'w', 'W', 'a', 'A', 's', 'S', 'd', 'D',
+]);
+
 window.addEventListener('keydown', (e) => {
   if (running) wakeHud();
   if (e.key === 'Escape') {
@@ -1890,13 +1963,28 @@ window.addEventListener('keydown', (e) => {
     fpsHudEl?.classList.toggle('hidden', !fpsHudVisible);
     return;
   }
-  if (debugOverlay) {
+  // `T` toggles the always-present, player-facing track badge (index.html's
+  // #trackBadge) -- visible, self-explanatory, fully reversible, so it
+  // stays ungated like P/F3. `` ` `` (the full telemetry overlay) and V
+  // (silently toggles the Ollama vision loop -- changes engine behavior
+  // with zero visible indication) are the two that read as "the controls
+  // are broken" if hit by accident, so those are dev-gated.
+  if (e.key === 't' || e.key === 'T') { toggleTrackList(); return; }
+  if (DEV_MODE && debugOverlay) {
     if (e.key === '`') { debugOverlay.toggle(); return; }
     if (e.key === 'v' || e.key === 'V') { debugOverlay.toggleVision(); return; }
-    if (e.key === 't' || e.key === 'T') { toggleTrackList(); return; }
   }
   // Reserved regardless of whether the debug overlay happens to be up yet.
   if (e.key === '`' || e.key === 'v' || e.key === 'V' || e.key === 't' || e.key === 'T') return;
+
+  // Midio plays himself -- these are the keys a first-time player reaches
+  // for expecting to control him directly (no jump key exists). Letting
+  // them fall through to the catch-all beat-tap below used to mean mashing
+  // Space/arrows/WASD didn't just do nothing, it actively nudged the beat
+  // anchor and degraded sync -- the exact behavior that reads as "the
+  // controls are broken." Inert here, and preventDefault so Space/arrows
+  // don't also scroll the page.
+  if (INERT_KEYS.has(e.key)) { e.preventDefault(); return; }
 
   // Almost any other key resyncs the player's beat anchor (BeatAnchor.js) --
   // ignore held-key auto-repeat, modifier chords, and typing into a field.

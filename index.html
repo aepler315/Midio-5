@@ -10,6 +10,14 @@
   <div id="app">
     <canvas id="stage" width="1280" height="720"></canvas>
 
+    <!-- Every user-facing failure (bad file, decode error, no audio
+         support) surfaces here instead of a native alert() -- see
+         showErrorBanner() in main.js. Always mounted, hidden by default. -->
+    <div id="errorBanner" class="errorBanner hidden" role="alert">
+      <span id="errorBannerText" class="errorBannerText"></span>
+      <button id="errorBannerClose" type="button" class="errorBannerClose" aria-label="Dismiss">&times;</button>
+    </div>
+
     <div id="loader" class="panel titleScreen">
       <div class="titleBg" aria-hidden="true">
         <div class="titleStars"></div>
@@ -35,6 +43,7 @@
               <span class="titleWord titleWordWorld">WORLD</span>
             </h1>
             <p class="titleTagline">Drop a song. Midio rides every jump, combo, and biome live from the beat.</p>
+            <p class="titleSub">Midio plays himself — just sit back and watch, or tap <kbd>F</kbd>/<kbd>J</kbd> along with the beat if you want to.</p>
           </div>
         </div>
 
@@ -147,10 +156,10 @@
 
           <div class="resRow" title="Stage render resolution (sim stays 16:9 logical; canvas upscales to this).">
             <label for="stageRes">Stage</label>
-            <select id="stageRes" title="Internal stage resolution (sim is 1280×720; buffer upscales). Default 1440p @ display 60fps.">
+            <select id="stageRes" title="Internal stage resolution (sim is 1280×720; buffer upscales). Default 1080p.">
               <option value="720">720p</option>
-              <option value="1080">1080p</option>
-              <option value="1440" selected>1440p 60</option>
+              <option value="1080" selected>1080p</option>
+              <option value="1440">1440p 60</option>
               <option value="2160">4K</option>
             </select>
           </div>
@@ -195,7 +204,6 @@
           <ul class="titleKeys" aria-label="Keyboard shortcuts">
             <li><kbd>F</kbd>/<kbd>J</kbd> tap the groove &mdash; low / high</li>
             <li><kbd>C</kbd> guided calibration</li>
-            <li><kbd>`</kbd> debug</li>
             <li><kbd>T</kbd> tracks</li>
             <li><kbd>G</kbd> fonts</li>
             <li><kbd>P</kbd> fps</li>
