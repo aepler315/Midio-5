@@ -17,6 +17,7 @@ import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import {
   DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul,
+  pullbackHeightMul,
   mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER,
   massifDrawHeight, massifRidgeHeight01, massifRidgeJagPx, massifClearing01,
   MASSIF_MARKER_SPEED_PX_S, MASSIF_MARKER_LIFE_SEC, nextMassifMarkerDelaySec,
@@ -441,6 +442,12 @@ export class BiomeManager {
     // see LAYER_TILT_PIVOT_KEY below for why the ground itself never tilts.
     this.floatTilt = 0;
     this.orogenyGrowth = 0.1; // mountain-building arc (Simulation.orogeny.growth), set externally each step
+    // Off-frame pull-back (CameraDirector.zoom, set externally each step): 0
+    // at normal framing, 1 at the hardest pull-back (ZOOM_MIN). Grows the
+    // nearer ranges (see MountainChoreo.pullbackHeightMul) so a wide shot
+    // doesn't just shrink the world in place -- the ridges nearest the
+    // player rise up to close the flat gap a pull-back would otherwise open.
+    this.pullback01 = 0;
     // The massif's scale markers (MountainChoreo.js): tiny, ordinary-parallax
     // silhouettes that occasionally drift across its face -- the comparison
     // against something the eye already knows the size of is what actually
@@ -2937,15 +2944,40 @@ export class BiomeManager {
         ctx.lineTo(x, y - h);
         ctx.lineTo(x + w / 2, y);
       } else if (isl.kind === 'mesa') {
+        // A steep table-mountain, not a gentle trapezoid: the plateau is
+        // much narrower than the base, the cliff faces are concave (near-
+        // vertical rock, not a sloped berm), and the crest is a ragged
+        // forested treeline rather than a flat table edge -- Forest Haven,
+        // not a sandbar.
+        const topHalf = w * 0.30;
+        const jag = isl.crownJag || [0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
         ctx.moveTo(x - w / 2, y);
-        ctx.lineTo(x - w / 3, y - h);
-        ctx.lineTo(x + w / 3, y - h);
-        ctx.lineTo(x + w / 2, y);
+        ctx.quadraticCurveTo(x - w * 0.42, y - h * 0.55, x - topHalf, y - h);
+        const crownN = jag.length;
+        for (let k = 0; k <= crownN; k++) {
+          const cx = x - topHalf + (k / crownN) * (topHalf * 2);
+          const bump = k === 0 || k === crownN ? 0 : (jag[k - 1] - 0.5) * h * 0.26;
+          ctx.lineTo(cx, y - h - bump);
+        }
+        ctx.quadraticCurveTo(x + w * 0.42, y - h * 0.55, x + w / 2, y);
       } else {
         ctx.ellipse(x, y - h * 0.15, w / 2, h * 0.3, 0, 0, Math.PI * 2);
       }
       ctx.closePath();
       ctx.fill();
+      if (isl.kind === 'mesa') {
+        // Faint cliff striations on the near cliff face -- just enough
+        // texture to read as rock, not a flat cutout.
+        ctx.globalAlpha = capFlashAlpha(0.16 * this.budget, this.reducedFlash);
+        ctx.strokeStyle = water;
+        ctx.lineWidth = Math.max(0.8, 1 * scale);
+        ctx.beginPath();
+        ctx.moveTo(x - w * 0.34, y - h * 0.12);
+        ctx.lineTo(x - w * 0.22, y - h * 0.72);
+        ctx.moveTo(x + w * 0.20, y - h * 0.08);
+        ctx.lineTo(x + w * 0.30, y - h * 0.6);
+        ctx.stroke();
+      }
       if (isl.kind === 'palm') {
         ctx.strokeStyle = this._rotated(sil);
         ctx.lineWidth = Math.max(1, 1.5 * scale);
@@ -3427,7 +3459,8 @@ export class BiomeManager {
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
     // Orogeny grows the range, then mountainStripDrawHeight hard-caps so peaks
     // stay on-frame (ocean/sky remain visible; off-screen summits are useless).
-    const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0));
+    const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
+      * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0));
     const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this.groundY);
     const baseY = canvas.height - dh + yOff;
     const w = strip.width;
@@ -3467,7 +3500,8 @@ export class BiomeManager {
     if (!cfg) return null;
     const nowMs = this.tSec * 1000;
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
-    const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0));
+    const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
+      * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0));
     const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this.groundY);
     const scale = dh / Math.max(1, strip.height);
     const baseY = canvas.height - dh + yOff;
@@ -3591,7 +3625,9 @@ export class BiomeManager {
     for (const span of spans) {
       const pts = hillCurve(span, dancy.pts, skyline, { descendPx: CONNECTOR_DESCEND_PX });
       if (pts.length < 2) continue;
-      const alpha = CONNECTOR_ALPHA * span.depth01 * this.budget;
+      // Wider camera pull-back also earns a stronger connector wash -- the
+      // wide shot is exactly where the flat gap it bridges is most visible.
+      const alpha = CONNECTOR_ALPHA * span.depth01 * this.budget * (1 + 0.5 * clamp01(this.pullback01 || 0));
       this.connectorDebug.alpha = Math.max(this.connectorDebug.alpha, alpha);
       if (alpha < 0.01) continue;
 

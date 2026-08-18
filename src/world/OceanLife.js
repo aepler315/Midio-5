@@ -24,20 +24,28 @@ export function wrappedOffset(x0, scroll, wrap = OCEAN_LIFE_WRAP_PX) {
   return d;
 }
 
-/** Seeded island placements: {x0, rowFrac, w, h, kind, beacon}. rowFrac 0
- *  (nearest) .. 1 (at the horizon) matches Ocean.js's row convention. */
+/** Seeded island placements: {x0, rowFrac, w, h, kind, beacon, crownJag}.
+ *  rowFrac 0 (nearest) .. 1 (at the horizon) matches Ocean.js's row
+ *  convention. 'mesa' is weighted heavier than the others and stands much
+ *  taller/steeper -- a solitary forested rock plateau rearing out of the
+ *  sea (Forest Haven, not a gentle sandbar), the sea's signature landmark.
+ *  crownJag bakes the mesa's ragged treeline deterministically so the draw
+ *  path never needs its own per-frame RNG. */
 export function islands(seed, count = 4) {
   const rand = mulberry32(seed >>> 0);
   const out = [];
-  const KINDS = ['cone', 'mesa', 'palm'];
+  const KINDS = ['cone', 'mesa', 'mesa', 'palm'];
   for (let i = 0; i < count; i++) {
+    const kind = KINDS[Math.floor(rand() * KINDS.length)];
+    const isMesa = kind === 'mesa';
     out.push({
       x0: (i + rand()) * (OCEAN_LIFE_WRAP_PX / count),
       rowFrac: 0.25 + rand() * 0.6,
-      w: 40 + rand() * 70,
-      h: 10 + rand() * 12,
-      kind: KINDS[Math.floor(rand() * KINDS.length)],
+      w: (isMesa ? 34 : 40) + rand() * (isMesa ? 60 : 70),
+      h: isMesa ? 26 + rand() * 30 : 10 + rand() * 12,
+      kind,
       beacon: rand() < 0.35,
+      crownJag: isMesa ? Array.from({ length: 6 }, () => rand()) : null,
     });
   }
   return out;

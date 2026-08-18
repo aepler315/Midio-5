@@ -7,7 +7,7 @@ import { MAX_LATENCY_MS } from '../core/ChoreoClock.js';
 import { skidOffset, skidParams, tractionFrom } from './Traction.js';
 import { Midio } from './Midio.js';
 import { JumpController, A, GAMMA, W, H_BASE, D_MIN, quantizeJumpVel } from './JumpController.js';
-import { CameraDirector } from '../render/CameraDirector.js';
+import { CameraDirector, ZOOM_MIN } from '../render/CameraDirector.js';
 import { ComboSystem } from './ComboSystem.js';
 import { ImpactFX } from './ImpactFX.js';
 import { RippleFX } from './RippleFX.js';
@@ -973,6 +973,10 @@ export class Simulation {
     // behind like every other biomes.* field set here, same as the
     // camera-driven fields above.
     this.biomes.floatTilt = this.camera.floatTilt;
+    // Same one-frame-behind read as floatTilt above, normalized so 0 is
+    // normal framing and 1 is the hardest pull-back (ZOOM_MIN) -- lets the
+    // nearer ridges grow to close the flat gap on a wide shot.
+    this.biomes.pullback01 = (1 - this.camera.zoom) / (1 - ZOOM_MIN);
     if (this.performer.lastMilestone) {
       this.biomes.milestoneAtMs = this.performer.lastMilestone.atMs;
       this.biomes.milestoneIdx = this.performer.lastMilestone.idx;
