@@ -56,6 +56,7 @@ import { WeatherDirector } from './WeatherDirector.js';
 import { OrogenyDirector } from '../world/OrogenyDirector.js';
 import { QuakeDirector } from './QuakeDirector.js';
 import { DisasterDirector } from './DisasterDirector.js';
+import { FloodDirector } from './FloodDirector.js';
 import { CueDirector } from './CueDirector.js';
 import { CueKind } from '../core/ConductorTrack.js';
 
@@ -218,10 +219,18 @@ export class Simulation {
     this.groundField = new GroundField(this.midio.groundY, {
       conductor, durationMs: conductor.durationMs, songSeed,
     });
+    // Flood state (a tsunami spilling over, or the ground waterlogging
+    // under sustained rain) is gameplay-affecting -- it drives wet-footing
+    // traction -- so it's owned here, not by BiomeManager. BiomeManager
+    // still detects the tsunami-overtop trigger (it already owns tsunami
+    // scheduling) and calls flood.armFromTsunami(); everything else about
+    // the envelope lives in FloodDirector.
+    this.flood = new FloodDirector();
     this.biomes = new BiomeManager({
       conductor, energyCurves, durationMs: conductor.durationMs,
       canvasWidth, canvasHeight, groundY: this.midio.groundY, songSeed,
       groundField: this.groundField,
+      flood: this.flood,
       customBiome: this.customBiome,
       lyricSections,
       structure,
@@ -704,14 +713,16 @@ export class Simulation {
     this.disasters.update(nowMs, this.worldX, { quake: this.quake });
     this.quake.update(nowMs, dtSec, this.camera);
     // Slippery surfaces: settled snowfall OR a biome that is snow to begin
-    // with (ARCTIC's own particle signature) ices the footing; a tsunami's
-    // temporary flood (BiomeManager.floodLevel01) wets it the same way --
-    // Traction.js doesn't care WHY the ground lost its grip, just how much.
-    // The skid this drives is render-only (see Traction.js); Broshi's
-    // trailing spring genuinely loses damping, so he visibly overshoots
-    // and slides back.
+    // with (ARCTIC's own particle signature) ices the footing; a temporary
+    // flood (FloodDirector.level01 -- one frame behind, same as every other
+    // biomes.*-adjacent read in this block, since flood.update() runs after
+    // biomes.update() later this step) wets it the same way -- Traction.js
+    // doesn't care WHY the ground lost its grip, just how much. The skid
+    // this drives is render-only (see Traction.js); Broshi's trailing
+    // spring genuinely loses damping, so he visibly overshoots and slides
+    // back.
     const biomeSnow = this.biomes.currentParticleKind && this.biomes.currentParticleKind() === 'snow' ? 0.8 : 0;
-    this.snowCover = Math.max(this.weather.groundCover, biomeSnow, this.biomes.floodLevel01 || 0);
+    this.snowCover = Math.max(this.weather.groundCover, biomeSnow, this.flood.level01 || 0);
     this.broshi.traction = tractionFrom(this.snowCover);
     this.biomes.snowCover = this.snowCover;
     // Keep the anchor's notion of "the song's own beat" tracking the live
@@ -799,7 +810,7 @@ export class Simulation {
       // (matching OceanLife/BiomeManager's own water color).
       this.rippleFX.landingPuff(
         this.worldX, this.midio.groundY, I,
-        this.biomes.floodActive ? '#55c8f0' : this.biomes.currentParticleColor(),
+        this.flood.active ? '#55c8f0' : this.biomes.currentParticleColor(),
         this.perf.particleMul,
       );
       if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY);
@@ -1000,6 +1011,11 @@ export class Simulation {
       this.biomes.milestoneIdx = this.performer.lastMilestone.idx;
     }
     this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level, this.worldX);
+    // Flood: runs right after biomes.update() so a tsunami-overtop arm
+    // called from inside that update (BiomeManager already owns tsunami
+    // scheduling) lands in this same frame's envelope, not one frame late
+    // -- same ordering discipline as disasters.update() -> quake.update().
+    this.flood.update(nowMs, dtSec, { rainAccum01: this.weather.rainAccum01 });
     this.filmFinish.update(nowMs, dtSec, this.calm.level, this.biomes.budget, this.hype);
     if (this.biomes.cutFlashJustFired) { this.camera.shake(3.5); }
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);

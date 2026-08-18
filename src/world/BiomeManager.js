@@ -41,7 +41,7 @@ import {
   tsunamiCenterX, tsunamiLift, tsunamiDepthLift, tsunamiProfile, sprayFlecks,
   fishArcY, serpentHumpY,
   wrappedOffset, OCEAN_LIFE_WRAP_PX, OCEAN_LIFE_RATIO, TSUNAMI_WIDTH_PX,
-  tsunamiHeightScale, TSUNAMI_OVERTOP_SCALE, FLOOD_DURATION_MS,
+  tsunamiHeightScale, TSUNAMI_OVERTOP_SCALE,
 } from './OceanLife.js';
 import { ConstellationWeaver } from './ConstellationWeaver.js';
 import { SpaceRidge } from './SpaceRidge.js';
@@ -278,7 +278,7 @@ export function fogBandAlphaFractionAtY(geo, y) {
 }
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, customBiome = null, lyricSections = null, structure = null, conductorSchedule = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, flood = null, customBiome = null, lyricSections = null, structure = null, conductorSchedule = null }) {
     this.conductor = conductor;
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
@@ -287,6 +287,7 @@ export class BiomeManager {
     this.h = canvasHeight;
     this.groundY = groundY;
     this.groundField = groundField;
+    this.flood = flood; // FloodDirector (src/sim/FloodDirector.js), owned by Simulation -- see armFromTsunami() in update() and _drawFlood()
     this.customBiome = customBiome || null;
     // Instance profile list: stock BIOMES plus an optional MIDI-derived profile.
     this.profiles = customBiome ? [...BIOMES, customBiome] : BIOMES.slice();
@@ -530,16 +531,6 @@ export class BiomeManager {
     this._tsunamis = tsunamiSchedule(hashSeed(`${songSeed}:tsunami`), durationMs, this._oceanHotspotMs || []);
     this._tsunamiIdx = 0;
     this._tsunamiFlecks = sprayFlecks(hashSeed(`${songSeed}:tsunamispray`));
-    // Temporary flood: armed the first time a tsunami's height envelope
-    // crosses TSUNAMI_OVERTOP_SCALE (see update()) -- a translucent water
-    // level rises over the near ground plane for FLOOD_DURATION_MS, then
-    // recedes. `_floodArmedForTMs` guards against re-arming every frame
-    // while a single wall's crest sits above the threshold.
-    this._floodUntilMs = -Infinity;
-    this._floodStartMs = -Infinity;
-    this._floodArmedForTMs = null;
-    this.floodActive = false; // read by Simulation for wet-footing traction
-    this.floodLevel01 = 0;
     this.mandala = new Mandala(songSeed);
     this.cymatics = new CymaticField(songSeed);
     this.swarm = new KuramotoSwarm(songSeed);
@@ -1364,34 +1355,16 @@ export class BiomeManager {
       }
     }
     // Spilling over: the first time ANY active tsunami's height envelope
-    // crosses TSUNAMI_OVERTOP_SCALE, arm a bounded flood over the near
-    // ground plane. Guarded per-event (_floodArmedForTMs) so a wall's
-    // crest sitting above the threshold across several frames only ever
-    // triggers one flood, not a new one every frame.
+    // crosses TSUNAMI_OVERTOP_SCALE, arm a flood over the near ground
+    // plane. The envelope itself (rise -> hold -> recede) lives in
+    // FloodDirector (src/sim/FloodDirector.js, owned by Simulation) --
+    // this only detects the trigger, since tsunami scheduling/state is
+    // BiomeManager's own domain. armFromTsunami() is itself guarded
+    // per-event, so a wall's crest sitting above the threshold across
+    // several frames only ever arms once.
     const activeNow = this._activeTsunami(this.w || 1280);
-    if (activeNow && tsunamiHeightScale(nowMs - activeNow.ev.tMs) >= TSUNAMI_OVERTOP_SCALE
-      && this._floodArmedForTMs !== activeNow.ev.tMs) {
-      this._floodArmedForTMs = activeNow.ev.tMs;
-      this._floodStartMs = nowMs;
-      this._floodUntilMs = nowMs + FLOOD_DURATION_MS;
-    }
-    // Flood level (0..1, rise -> hold -> recede): computed here, in
-    // update(), not at draw time -- Simulation reads floodLevel01/
-    // floodActive for wet-footing traction the same frame, without
-    // depending on draw() having already run.
-    if (nowMs >= this._floodUntilMs) {
-      this.floodActive = false;
-      this.floodLevel01 = 0;
-    } else {
-      const age = nowMs - this._floodStartMs;
-      const RISE_MS = 700, RECEDE_MS = 1200;
-      const holdEnd = FLOOD_DURATION_MS - RECEDE_MS;
-      let level01;
-      if (age < RISE_MS) level01 = clamp01(age / RISE_MS);
-      else if (age < holdEnd) level01 = 1;
-      else level01 = clamp01(1 - (age - holdEnd) / RECEDE_MS);
-      this.floodLevel01 = level01;
-      this.floodActive = level01 > 0.02;
+    if (activeNow && tsunamiHeightScale(nowMs - activeNow.ev.tMs) >= TSUNAMI_OVERTOP_SCALE) {
+      this.flood?.armFromTsunami(nowMs, activeNow.ev.tMs);
     }
     // Combo milestones (streak 5/10/20) throw their own reward volley.
     if (Number.isFinite(this.milestoneAtMs) && this.milestoneAtMs !== this._lastSeenMilestoneMs) {
@@ -1696,16 +1669,19 @@ export class BiomeManager {
     ctx.restore();
   }
 
-  /** Temporary flood: the water a tsunami spilled over the mountains rises
-   *  across the near ground plane for FLOOD_DURATION_MS, then recedes --
-   *  drawn on top of the ground/mountain layers (unlike the ocean plane
-   *  itself, drawn far underneath everything in this same draw() call) so
-   *  it genuinely reads as submerging the foreground where Midio walks.
+  /** Temporary flood: rising water (a tsunami spilling over, or the ground
+   *  waterlogging under sustained rain -- see FloodDirector) across the
+   *  near ground plane, then receding -- drawn on top of the ground/
+   *  mountain layers (unlike the ocean plane itself, drawn far underneath
+   *  everything in this same draw() call) so it genuinely reads as
+   *  submerging the foreground where Midio walks.
    *  Pure rendering only -- floodActive/floodLevel01 are computed in
-   *  update(), not here, so Simulation can read them the same frame. */
+   *  FloodDirector (src/sim/FloodDirector.js), not here -- Simulation reads
+   *  flood.level01/active for wet-footing traction the same frame,
+   *  without depending on draw() having already run. */
   _drawFlood(ctx, canvas) {
-    if (!this.floodActive) return;
-    const level01 = this.floodLevel01;
+    if (!this.flood?.active) return;
+    const level01 = this.flood.level01;
     const FLOOD_RISE_PX = 46;
     const levelY = this.groundY - FLOOD_RISE_PX * level01;
     ctx.save();
