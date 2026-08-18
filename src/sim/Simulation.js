@@ -55,6 +55,7 @@ import { OpeningDirector } from './OpeningDirector.js';
 import { WeatherDirector } from './WeatherDirector.js';
 import { OrogenyDirector } from '../world/OrogenyDirector.js';
 import { QuakeDirector } from './QuakeDirector.js';
+import { FireDirector } from './FireDirector.js';
 import { DisasterDirector } from './DisasterDirector.js';
 import { CueDirector } from './CueDirector.js';
 import { CueKind } from '../core/ConductorTrack.js';
@@ -218,10 +219,15 @@ export class Simulation {
     this.groundField = new GroundField(this.midio.groundY, {
       conductor, durationMs: conductor.durationMs, songSeed,
     });
+    // Constructed ahead of biomes (below) so BiomeManager can hold a direct
+    // reference for reading live fire state at draw time (near flames,
+    // smoke column, burn-scar darkening) -- same pattern as groundField.
+    this.fire = new FireDirector();
     this.biomes = new BiomeManager({
       conductor, energyCurves, durationMs: conductor.durationMs,
       canvasWidth, canvasHeight, groundY: this.midio.groundY, songSeed,
       groundField: this.groundField,
+      fire: this.fire,
       customBiome: this.customBiome,
       lyricSections,
       structure,
@@ -697,12 +703,25 @@ export class Simulation {
       energySlow: this.hype.slow, surge: this.hype.surge, unravel: this.coda.unravel,
     });
     // Disasters: the arbiter decides WHEN/IF a hazard starts (reading the
-    // still-live QuakeDirector for exclusivity), then each hazard's own
-    // director owns its actual envelope. Order matters: the arbiter may
-    // call quake.strike() this same frame, so quake.update() runs right
-    // after and picks up ageSec=0 immediately rather than one frame late.
-    this.disasters.update(nowMs, this.worldX, { quake: this.quake });
+    // still-live directors for exclusivity, and live weather for fire's
+    // dryness precondition), then each hazard's own director owns its
+    // actual envelope. Order matters: the arbiter may call strike() this
+    // same frame, so each director's own update() runs right after and
+    // picks up age=0 immediately rather than one frame late.
+    this.disasters.update(nowMs, this.worldX, {
+      quake: this.quake, fire: this.fire, weather: this.weather,
+      windAngle: this.biomes.atmosphere ? this.biomes.atmosphere.prevailingAngle() : 0,
+    });
     this.quake.update(nowMs, dtSec, this.camera);
+    this.fire.update(nowMs, dtSec);
+    // A wildfire forces the music-reactive weather layer to embers for its
+    // whole life -- reuses the existing particle kind/crossfade machinery
+    // rather than a parallel fire-particle system. One-shot on the frame
+    // the arbiter actually strikes it, matching cueKind's own one-cue-per-
+    // call contract.
+    if (this.disasters.justStruck && this.disasters.struckKind === 'fire') {
+      this.weather.cueKind(nowMs, 'embers');
+    }
     // Slippery surfaces: settled snowfall OR a biome that is snow to begin
     // with (ARCTIC's own particle signature) ices the footing; a tsunami's
     // temporary flood (BiomeManager.floodLevel01) wets it the same way --
@@ -979,6 +998,7 @@ export class Simulation {
     this.biomes.midioY = this.midio.renderY;
     this.biomes.weatherState = this.weather.state; // music-reactive rain/snow/petals/embers, decoupled from biome
     this.biomes.dustLevel01 = this.quake.dustLevel01; // the air stays hazy for a while after a quake settles
+    this.biomes.smokeLevel01 = this.fire.smokeLevel01; // the sky stays smoke-reddened for a while after a fire dies down
     // Parallel-universe drift (ParallelUniverseDirector): a per-section,
     // cosmetics-only variation on top of everything above.
     this.biomes.universeHueDeg = this.parallelUniverse.hueDeg;
