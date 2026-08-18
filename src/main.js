@@ -150,8 +150,6 @@ const calibrateBtnEl = document.getElementById('calibrateBtn');
 const syncPromptEl = document.getElementById('syncPrompt');
 const syncPromptFixBtnEl = document.getElementById('syncPromptFixBtn');
 const syncPromptDismissBtnEl = document.getElementById('syncPromptDismissBtn');
-const visualStyleBtnEl = document.getElementById('visualStyleBtn');
-const visualStyleHudBtnEl = document.getElementById('visualStyleHudBtn');
 const recalibration = new RecalibrationOverlay({
   panel: document.getElementById('recalPanel'),
   number: document.getElementById('recalNumber'),
@@ -920,7 +918,7 @@ async function loadScoredAudio(midiFile, audioFiles) {
     // double it, exactly as on the raw-audio path.
     muteTimelineSynth = true;
     lastSongName = audioFiles[0].name || midiFile.name || 'song';
-    if (data.conductor) {
+    if (data.conductor && DEV_MODE) {
       console.info(
         `[conductor] ${data.conductor.cues.length} cues from ${data.conductor.names.join(', ')}`
         + ` (${data.conductor.scheduleCues.length} schedule, ${data.conductor.liveCues.length} live)`,
@@ -1240,7 +1238,7 @@ async function loadAudioFiles(files) {
       // jumps are a normal, fully-supported fallback for rubato tracks.
       console.info(`Low tempo confidence (${data.confidence.toFixed(2)}) — switching to free-time, kick-reactive jumps.`);
     }
-    if (data.stems) {
+    if (data.stems && DEV_MODE) {
       console.info('[casting] stems:', data.stems.map((s) => `${s.name} -> ${s.lane || '(world)'}`).join(', '));
     }
     // Audio files get the same per-song visual fingerprint MIDI files do: a
