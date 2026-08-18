@@ -1591,6 +1591,10 @@ function frame(tRaf) {
   // the sound half of the same snap the camera/color already get (CutDirector).
   if (sim.cut?.dropJustCut) audioEngine?.duck?.();
   if (sim.cut?.apotheosisJustCut) audioEngine?.duck?.(0.6, 0.04, 0.3);
+  // Disaster cuts get the same sound-half treatment as the authored ones
+  // above -- a quake strike and a tsunami wall's arrival both duck the mix.
+  if (sim.disasters?.justStruck && sim.disasters.struckKind === 'quake') audioEngine?.duck?.(0.7, 0.08, 0.4);
+  if (sim.biomes?.tsunamiJustArrived) audioEngine?.duck?.(0.5, 0.05, 0.35);
 
   // Tap recalibration: drive the count while an (opt-in, 'C'-key-triggered)
   // pass is running. Never blocks the frame, pauses audio, or swallows input.

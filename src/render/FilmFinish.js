@@ -15,7 +15,13 @@ const HYPE_OPEN_WEIGHT = 0.85; // fraction of calm-driven depth a full surge can
 const GRADE_CALM_WEIGHT = 0.5;
 const GRADE_BUDGET_WEIGHT = 0.5;
 const HIT_VIGNETTE = 1;
-const HIT_WARMTH = { drop: 0.05, apotheosis: 0.95, finale: 0 };
+const HIT_WARMTH = {
+  drop: 0.05, apotheosis: 0.95, finale: 0,
+  // Disaster cuts (DisasterDirector/QuakeDirector/tsunami arrival): a quake
+  // grades neutral-cool (dust, not warmth), a tsunami grades cold (a wall
+  // of water arriving is the coldest moment in the palette).
+  quake: 0.2, tsunami: 0.05,
+};
 
 /** Vignette depth target: calmLevel builds it, a hype/drop surge punches a
  *  PROPORTION of the current depth away (never subtractively -- can't

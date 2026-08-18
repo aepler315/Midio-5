@@ -38,7 +38,7 @@ import { WorldAssembly } from '../world/WorldAssembly.js';
 import { GroundField } from '../world/GroundField.js';
 import { PerfGovernor } from '../render/PerfGovernor.js';
 import { HighlightReel } from '../render/HighlightReel.js';
-import { clamp01 } from '../utils/math.js';
+import { clamp01, hashSeed } from '../utils/math.js';
 import { resolveSongSeed } from '../utils/seed.js';
 import { buildNoteChart } from './NoteChart.js';
 import { TapJudge } from './TapJudge.js';
@@ -258,6 +258,7 @@ export class Simulation {
     this.quake = new QuakeDirector(songSeed);
     this.groundField.quake = this.quake; // render-only shake, read in visibleBars()
     this.disasters = new DisasterDirector(songSeed, conductor.durationMs || 0, [this.orogeny.climaxMs]);
+    this._pendingQuakeTsunamiAtMs = -Infinity; // the linked event -- see the disasters.justStruck block in step()
 
     this.worldX = 0;
     this.timeMs = 0;
@@ -703,6 +704,20 @@ export class Simulation {
     // after and picks up ageSec=0 immediately rather than one frame late.
     this.disasters.update(nowMs, this.worldX, { quake: this.quake });
     this.quake.update(nowMs, dtSec, this.camera);
+    // The linked event: a quake at sea kicks up a real wave. Armed once,
+    // 20-40s after the strike (deterministic per-song jitter, not
+    // wall-clock random) -- BiomeManager.armTsunami() just pushes a real
+    // entry onto the same schedule every other tsunami wall goes through,
+    // so withdrawal telegraph/approach/run-up/flood all fire exactly as
+    // they would for any other wall.
+    if (this.disasters.justStruck && this.disasters.struckKind === 'quake') {
+      const delayMs = 20000 + (hashSeed(`${this.songSeed}:seaQuakeTsunami:${nowMs}`) % 20000);
+      this._pendingQuakeTsunamiAtMs = nowMs + delayMs;
+    }
+    if (Number.isFinite(this._pendingQuakeTsunamiAtMs) && nowMs >= this._pendingQuakeTsunamiAtMs) {
+      this.biomes.armTsunami(nowMs, this.quake.epicenterWorldX >= this.worldX ? 1 : -1);
+      this._pendingQuakeTsunamiAtMs = -Infinity;
+    }
     // Slippery surfaces: settled snowfall OR a biome that is snow to begin
     // with (ARCTIC's own particle signature) ices the footing; a tsunami's
     // temporary flood (BiomeManager.floodLevel01) wets it the same way --
@@ -1010,6 +1025,12 @@ export class Simulation {
     // FractureEngine's freeze/shatter/silence is already an authored cut.
     this.cut.update(this, dtSec, nowMs);
     if (this.fracture.justEnteredFinale) { this.filmFinish.hit('finale'); }
+    // Disaster cuts: a quake strike and a tsunami wall's arrival get the
+    // same authored camera+color snap the drop/apotheosis/finale already
+    // do -- same "called after filmFinish.update() above" ordering as
+    // those, so the hit() isn't immediately overwritten this same frame.
+    if (this.disasters.justStruck && this.disasters.struckKind === 'quake') this.filmFinish.hit('quake');
+    if (this.biomes.tsunamiJustArrived) { this.filmFinish.hit('tsunami'); this.camera.shake(4); }
     this.assembly.update(nowMs);
     // Finale silence is owned by main.js (has AudioEngine) — flag only here.
 
