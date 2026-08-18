@@ -5,7 +5,6 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createSoulseekBridge, SoulseekBridgeError } from './soulseek-bridge.js';
 import {
   getStatus,
   setConfig,
@@ -19,8 +18,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.env.PORT || process.argv[2]) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
-
-const soulseek = createSoulseekBridge();
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -164,10 +161,6 @@ const server = http.createServer(async (req, res) => {
   // Soulseek bridge API: the browser cannot speak the Soulseek TCP protocol,
   // so the dev server holds the connection. Credentials are sent to the
   // local bridge only (which forwards them to server.slsknet.org).
-  // Two integrations merged onto main both live behind /api/soulseek/*:
-  // the zero-config bridge (soulseek-bridge.mjs, config/demo/poll + free
-  // music) and PR #64's connect-based bridge (soulseek-bridge.js). The
-  // dispatcher routes each request by its path/body shape so both UIs work.
   if (reqPath.startsWith('/api/soulseek/')) {
     await handleSoulseekRoute(req, res, reqPath);
     return;
@@ -210,11 +203,23 @@ const server = http.createServer(async (req, res) => {
 });
 
 // --- Soulseek bridge API -------------------------------------------------
-// POST /api/soulseek/connect   {user, pass}          -> {user}
-// POST /api/soulseek/search    {query, timeoutMs?}   -> [result]
-// POST /api/soulseek/download  {file}                -> {name, data(base64)}
-// POST /api/soulseek/disconnect                     -> {ok:true}
-// GET  /api/soulseek/status                         -> {connected, user}
+// GET  /api/soulseek/status                -> mode/connected/note (see getStatus)
+// GET  /api/soulseek/demo                  -> {tracks}
+// POST /api/soulseek/config  {mode, ...}   -> switch backend (free/slskd/direct)
+// DELETE /api/soulseek/config              -> reset to free
+// POST /api/soulseek/search  {query}       -> {id, mode} — poll /search/:id
+// GET  /api/soulseek/search/:id            -> {status, results, error}
+// POST /api/soulseek/download {item}       -> binary attachment
+//
+// A previous, now-removed integration (PR #64's connect-based bridge,
+// tools/soulseek-bridge.js + src/net/SoulseekSource.js) mounted a second,
+// incompatible client onto these same paths, disambiguated by guessing at
+// each request body's shape. That was the actual bridge failure: /status
+// returned one shared `connected` field that meant "free music is ready"
+// to this client and "logged into the Soulseek network" to that one, so a
+// page load could show "Connected" while every search then failed with
+// "enter your username and password first." One bridge now owns this
+// surface outright; there is no longer anything to disambiguate.
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -226,67 +231,12 @@ function readJsonBody(req) {
   });
 }
 
-async function handleSoulseekApi(req, res, reqPath) {
-  const action = reqPath.slice('/api/soulseek/'.length);
-  if (req.method === 'GET' && action === 'status') {
-    sendJson(res, 200, { connected: soulseek.isConnected(), user: '' });
-    return;
-  }
-  if (req.method !== 'POST') {
-    sendJson(res, 405, { error: 'Method not allowed' });
-    return;
-  }
-  let body;
-  try {
-    body = await readJsonBody(req);
-  } catch (err) {
-    sendJson(res, 400, { error: err.message });
-    return;
-  }
-  try {
-    switch (action) {
-      case 'connect': {
-        const r = await soulseek.connect({ user: body.user, pass: body.pass });
-        sendJson(res, 200, r);
-        return;
-      }
-      case 'search': {
-        const r = await soulseek.search({ query: body.query, timeoutMs: body.timeoutMs });
-        sendJson(res, 200, { results: r });
-        return;
-      }
-      case 'download': {
-        const r = await soulseek.download({ file: body.file });
-        sendJson(res, 200, { name: r.name, data: r.buffer.toString('base64') });
-        return;
-      }
-      case 'disconnect': {
-        soulseek.disconnect();
-        sendJson(res, 200, { ok: true });
-        return;
-      }
-      default:
-        sendJson(res, 404, { error: `Unknown action: ${action}` });
-    }
-  } catch (err) {
-    sendJson(res, 500, { error: err instanceof SoulseekBridgeError ? err.message : `Soulseek error: ${err.message}` });
-  }
-}
-
-/** Routes the merged /api/soulseek/* surface. Two integrations coexist on
- *  main behind these paths: the zero-config mjs bridge (slskPanel /
- *  SoulseekSearch.js: /config, /demo, /search/:id polling, binary downloads)
- *  and the PR #64 connect-based js bridge (SoulseekSource.js: /connect,
- *  /disconnect, synchronous {results} search, base64 downloads). Where the
- *  two overlap (/search, /download, /status) the request body disambiguates:
- *  SoulseekSource always sends `timeoutMs` on search and `file` on download;
- *  SoulseekSearch sends neither. /status returns the mjs superset, which
- *  carries both the `mode`/`note` fields the slskPanel reads and the
- *  `connected`/`user` fields SoulseekSource reads. */
+/** Routes /api/soulseek/* to the zero-config bridge (slskPanel /
+ *  SoulseekSearch.js): free music with no login, optional bundled slskd or
+ *  a direct Soulseek account layered on top via /config. */
 async function handleSoulseekRoute(req, res, reqPath) {
   const action = reqPath.slice('/api/soulseek/'.length);
 
-  // Zero-config bridge only (slskPanel / SoulseekSearch.js)
   if (action === 'config') {
     if (req.method === 'POST') {
       try {
@@ -327,14 +277,8 @@ async function handleSoulseekRoute(req, res, reqPath) {
     return;
   }
 
-  // Connect-based bridge only (SoulseekSource.js)
-  if (action === 'connect' || action === 'disconnect') {
-    return handleSoulseekApi(req, res, reqPath);
-  }
-
   if (req.method !== 'POST') {
     if (action === 'status' && req.method === 'GET') {
-      // Superset: both clients read what they need from it.
       try {
         sendJson(res, 200, await getStatus());
       } catch (err) {
@@ -355,51 +299,30 @@ async function handleSoulseekRoute(req, res, reqPath) {
   }
 
   if (action === 'search') {
-    if (body && typeof body.timeoutMs === 'number') {
-      // SoulseekSource: synchronous {results} search.
-      try {
-        const r = await soulseek.search({ query: body.query, timeoutMs: body.timeoutMs });
-        sendJson(res, 200, { results: r });
-      } catch (err) {
-        sendJson(res, 500, { error: err instanceof SoulseekBridgeError ? err.message : `Soulseek error: ${err.message}` });
-      }
-    } else {
-      // SoulseekSearch: start an async search, poll /search/:id for results.
-      const query = body?.query || body?.q || body?.searchText || '';
-      try {
-        const started = await startSearch(query);
-        sendJson(res, 200, started);
-      } catch (err) {
-        sendJson(res, 500, { error: err.message || String(err) });
-      }
+    // Start an async search; the client polls GET /search/:id for results.
+    const query = body?.query || body?.q || body?.searchText || '';
+    try {
+      const started = await startSearch(query);
+      sendJson(res, 200, started);
+    } catch (err) {
+      sendJson(res, 500, { error: err.message || String(err) });
     }
     return;
   }
 
   if (action === 'download') {
-    if (body && body.file) {
-      // SoulseekSource: base64 download.
-      try {
-        const r = await soulseek.download({ file: body.file });
-        sendJson(res, 200, { name: r.name, data: r.buffer.toString('base64') });
-      } catch (err) {
-        sendJson(res, 500, { error: err instanceof SoulseekBridgeError ? err.message : `Soulseek error: ${err.message}` });
-      }
-    } else {
-      // SoulseekSearch: binary attachment download.
-      const item = body?.item || body;
-      try {
-        const result = await downloadResult(item);
-        res.writeHead(200, {
-          'Content-Type': result.contentType || 'application/octet-stream',
-          'Content-Disposition': `attachment; filename="${result.filename.replace(/"/g, '')}"`,
-          'X-Filename': encodeURIComponent(result.filename),
-          'Cache-Control': 'no-store',
-        });
-        res.end(result.buffer);
-      } catch (err) {
-        sendJson(res, 500, { error: err.message || String(err) });
-      }
+    const item = body?.item || body;
+    try {
+      const result = await downloadResult(item);
+      res.writeHead(200, {
+        'Content-Type': result.contentType || 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${result.filename.replace(/"/g, '')}"`,
+        'X-Filename': encodeURIComponent(result.filename),
+        'Cache-Control': 'no-store',
+      });
+      res.end(result.buffer);
+    } catch (err) {
+      sendJson(res, 500, { error: err.message || String(err) });
     }
     return;
   }
