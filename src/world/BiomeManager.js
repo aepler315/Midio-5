@@ -41,7 +41,7 @@ import {
   tsunamiCenterX, tsunamiLift, tsunamiDepthLift, tsunamiProfile, sprayFlecks,
   fishArcY, serpentHumpY,
   wrappedOffset, OCEAN_LIFE_WRAP_PX, OCEAN_LIFE_RATIO, TSUNAMI_WIDTH_PX,
-  tsunamiHeightScale, TSUNAMI_OVERTOP_SCALE, FLOOD_DURATION_MS,
+  tsunamiHeightScale, TSUNAMI_OVERTOP_SCALE,
   tsunamiWithdrawalActive, tsunamiWithdrawal01,
 } from './OceanLife.js';
 import { ConstellationWeaver } from './ConstellationWeaver.js';
@@ -50,6 +50,7 @@ import { SkyEnsemble } from './SkyEnsemble.js';
 import { FarVignettes } from './FarVignettes.js';
 import { NearField, NEARFIELD_RATIO } from './NearField.js';
 import { GroundScatter, SCATTER_RATIO } from './GroundScatter.js';
+import { flameFlicker, smokeDrift } from './Wildfire.js';
 import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, horizonFade } from './DayNight.js';
@@ -279,7 +280,7 @@ export function fogBandAlphaFractionAtY(geo, y) {
 }
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, flood = null, customBiome = null, lyricSections = null, structure = null, conductorSchedule = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, structure = null, conductorSchedule = null }) {
     this.conductor = conductor;
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
@@ -288,6 +289,7 @@ export class BiomeManager {
     this.h = canvasHeight;
     this.groundY = groundY;
     this.groundField = groundField;
+    this.fire = fire; // FireDirector (src/sim/FireDirector.js), owned by Simulation -- see _drawWildfire()
     this.flood = flood; // FloodDirector (src/sim/FloodDirector.js), owned by Simulation -- see armFromTsunami() in update() and _drawFlood()
     this.customBiome = customBiome || null;
     // Instance profile list: stock BIOMES plus an optional MIDI-derived profile.
@@ -326,6 +328,7 @@ export class BiomeManager {
     this.calmLevel = 0;
     this._hazeMul = 1;
     this.dustLevel01 = 0; // set externally each frame from Simulation.quake.dustLevel01
+    this.smokeLevel01 = 0; // set externally each frame from Simulation.fire.smokeLevel01
     this._ribbonScaleMul = 1;
     this.lerpCache = new LerpCache();
     this.tSec = 0;
@@ -1259,11 +1262,16 @@ export class BiomeManager {
     this.mandala.rateMul = pers.mandalaRate ?? 1;
     this.rd.bias = pers.rdBias ?? 0;
     this._ribbonScaleMul = pers.ribbonScale ?? 1;
-    // Quake dust: the air stays hazy for a while after the shaking stops
-    // (QuakeDirector.dustLevel01, pushed in each frame by Simulation) --
-    // folded into the same haze multiplier every other dial already feeds,
-    // so it costs nothing new at draw time.
-    this._hazeMul = (pers.haze ?? 1) * (this.universeHazeMul || 1) * (1 + 2 * clamp01(this.dustLevel01 || 0));
+    // Quake dust and wildfire smoke: the air stays hazy/reddened for a
+    // while after either settles (QuakeDirector.dustLevel01,
+    // FireDirector.smokeLevel01, both pushed in each frame by Simulation)
+    // -- folded into the same haze multiplier every other dial already
+    // feeds, so this costs nothing new at draw time. Smoke pushes harder
+    // than dust (3x vs 2x) -- a wildfire should visibly choke the sky, not
+    // just tint it.
+    this._hazeMul = (pers.haze ?? 1) * (this.universeHazeMul || 1)
+      * (1 + 2 * clamp01(this.dustLevel01 || 0))
+      * (1 + 3 * clamp01(this.smokeLevel01 || 0));
 
     // The Wind: one sample per frame, shared by every consumer below --
     // never re-derived per particle. An active weather front gusts it up:
@@ -1364,11 +1372,8 @@ export class BiomeManager {
     // per-event, so a wall's crest sitting above the threshold across
     // several frames only ever arms once.
     const activeNow = this._activeTsunami(this.w || 1280);
-    if (activeNow && tsunamiHeightScale(nowMs - activeNow.ev.tMs) >= TSUNAMI_OVERTOP_SCALE
-      && this._floodArmedForTMs !== activeNow.ev.tMs) {
-      this._floodArmedForTMs = activeNow.ev.tMs;
-      this._floodStartMs = nowMs;
-      this._floodUntilMs = nowMs + FLOOD_DURATION_MS;
+    if (activeNow && tsunamiHeightScale(nowMs - activeNow.ev.tMs) >= TSUNAMI_OVERTOP_SCALE) {
+      this.flood?.armFromTsunami(nowMs, activeNow.ev.tMs);
     }
     // Edge-triggered one-frame flag for the moment a wall's approach
     // window actually begins (not the withdrawal lead-up) -- Simulation
@@ -1376,24 +1381,6 @@ export class BiomeManager {
     // the drop/apotheosis/finale already get.
     this.tsunamiJustArrived = !!activeNow && !this._wasTsunamiActive;
     this._wasTsunamiActive = !!activeNow;
-    // Flood level (0..1, rise -> hold -> recede): computed here, in
-    // update(), not at draw time -- Simulation reads floodLevel01/
-    // floodActive for wet-footing traction the same frame, without
-    // depending on draw() having already run.
-    if (nowMs >= this._floodUntilMs) {
-      this.floodActive = false;
-      this.floodLevel01 = 0;
-    } else {
-      const age = nowMs - this._floodStartMs;
-      const RISE_MS = 700, RECEDE_MS = 1200;
-      const holdEnd = FLOOD_DURATION_MS - RECEDE_MS;
-      let level01;
-      if (age < RISE_MS) level01 = clamp01(age / RISE_MS);
-      else if (age < holdEnd) level01 = 1;
-      else level01 = clamp01(1 - (age - holdEnd) / RECEDE_MS);
-      this.floodLevel01 = level01;
-      this.floodActive = level01 > 0.02;
-    }
     // Combo milestones (streak 5/10/20) throw their own reward volley.
     if (Number.isFinite(this.milestoneAtMs) && this.milestoneAtMs !== this._lastSeenMilestoneMs) {
       this._lastSeenMilestoneMs = this.milestoneAtMs;
@@ -2042,6 +2029,94 @@ export class BiomeManager {
         alpha: 0.55 + 0.45 * clamp01(this.budget),
       });
     }
+
+    this._drawWildfire(ctx, canvas, worldX);
+  }
+
+  /** Wildfire: near flames tracking the burn front's real world-x extent,
+   *  a wind-sheared smoke column, and a permanent dark scorch strip left
+   *  behind on the ground -- "weather with consequences," the same
+   *  pattern groundCover (frost) and floodLevel01 (wet footing) already
+   *  established. Ground-locked (screen-x uses the same
+   *  Midio-anchored origin as everything else drawn on the walking
+   *  ground), unlike GroundScatter's own independently-scrolling
+   *  parallax address space, so the burn genuinely tracks a real
+   *  location Midio walks through rather than a decorative texture. */
+  _drawWildfire(ctx, canvas, worldX) {
+    if (!this.fire) return;
+    const originX = Number.isFinite(this.midioX) ? this.midioX : this.w * 0.5;
+    const toScreen = (wx) => wx - worldX + originX;
+
+    // Permanent scorch: every recorded burned interval, drawn regardless
+    // of whether the fire itself is still active, so walking back through
+    // an old burn still reads as scarred ground.
+    if (this.fire.burnedIntervals.length) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(20,12,8,0.4)';
+      for (const iv of this.fire.burnedIntervals) {
+        const sx0 = toScreen(iv.x0), sx1 = toScreen(iv.x1);
+        if (sx1 < -20 || sx0 > canvas.width + 20) continue;
+        ctx.fillRect(Math.max(-20, sx0), this.groundY - 3, Math.min(canvas.width + 20, sx1) - Math.max(-20, sx0), 10);
+      }
+      ctx.restore();
+    }
+
+    const I = this.fire.intensity01;
+    if (!(I > 0.02)) return;
+    const sx0 = toScreen(this.fire.x0), sx1 = toScreen(this.fire.x1);
+    if (sx1 < -60 || sx0 > canvas.width + 60) return; // whole front off-screen
+
+    // Near flames: a bounded number of flickering columns spread evenly
+    // across the front's visible span, regardless of how wide the real
+    // world extent has grown -- draw cost never scales with fire age.
+    const spanPx = Math.max(1, sx1 - sx0);
+    const count = Math.max(3, Math.min(28, Math.round(spanPx / 40)));
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < count; i++) {
+      const sx = sx0 + (spanPx * (i + 0.5)) / count;
+      if (sx < -20 || sx > canvas.width + 20) continue;
+      const worldXAt = worldX + (sx - originX);
+      const flick = flameFlicker(worldXAt, this.tSec);
+      const h = (14 + 20 * flick) * I;
+      const w = 8 + 5 * flick;
+      const grad = ctx.createLinearGradient(sx, this.groundY, sx, this.groundY - h);
+      grad.addColorStop(0, `rgba(255,120,30,${(0.85 * I).toFixed(3)})`);
+      grad.addColorStop(0.55, `rgba(255,70,20,${(0.6 * I).toFixed(3)})`);
+      grad.addColorStop(1, 'rgba(255,210,60,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(sx - w / 2, this.groundY);
+      ctx.quadraticCurveTo(sx - w * 0.15, this.groundY - h * 0.6, sx, this.groundY - h);
+      ctx.quadraticCurveTo(sx + w * 0.15, this.groundY - h * 0.6, sx + w / 2, this.groundY);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Smoke column: a handful of soft, upward-drifting puffs rising from
+    // the front's midpoint, sheared by the same wind that shapes the
+    // front's own asymmetry -- the sky-grade half of this is the haze
+    // multiplier boost in the personality update block, this is the
+    // visible plume itself.
+    const midSx = (sx0 + sx1) / 2;
+    const windLeanPx = 40 * (this.fire.windProjectionValue || 0);
+    ctx.save();
+    ctx.globalAlpha = 0.5 * I;
+    for (let i = 0; i < 5; i++) {
+      const h01 = i / 4;
+      const puffY = this.groundY - 30 - h01 * 220;
+      const puffX = midSx + smokeDrift(h01, this.tSec, windLeanPx);
+      const r = 26 + 34 * h01;
+      const g = ctx.createRadialGradient(puffX, puffY, 0, puffX, puffY, r);
+      g.addColorStop(0, `rgba(70,60,55,${(0.5 * (1 - h01 * 0.6)).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(70,60,55,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(puffX, puffY, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   _drawSky(ctx, canvas, A, B, t, night = 0) {
