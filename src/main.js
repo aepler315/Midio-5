@@ -149,6 +149,10 @@ const noLyricsBtnEl = document.getElementById('noLyricsBtn');
 const reducedFlashBtnEl = document.getElementById('reducedFlashBtn');
 const btLatencyBtnEl = document.getElementById('btLatencyBtn');
 const btLatencyHudBtnEl = document.getElementById('btLatencyHudBtn');
+const calibrateBtnEl = document.getElementById('calibrateBtn');
+const syncPromptEl = document.getElementById('syncPrompt');
+const syncPromptFixBtnEl = document.getElementById('syncPromptFixBtn');
+const syncPromptDismissBtnEl = document.getElementById('syncPromptDismissBtn');
 const visualStyleBtnEl = document.getElementById('visualStyleBtn');
 const visualStyleHudBtnEl = document.getElementById('visualStyleHudBtn');
 const recalibration = new RecalibrationOverlay({
@@ -244,7 +248,7 @@ if (noLyricsBtnEl) {
 function syncReducedFlashBtn() {
   if (!reducedFlashBtnEl) return;
   reducedFlashBtnEl.setAttribute('aria-pressed', reducedFlash ? 'true' : 'false');
-  reducedFlashBtnEl.textContent = `Reduced flash: ${reducedFlash ? 'on' : 'off'}`;
+  reducedFlashBtnEl.textContent = `Reduced flash & motion: ${reducedFlash ? 'on' : 'off'}`;
 }
 syncReducedFlashBtn();
 if (reducedFlashBtnEl) reducedFlashBtnEl.addEventListener('click', () => toggleReducedFlash());
@@ -273,6 +277,23 @@ function toggleBluetoothLatency() {
 syncBtLatencyUi();
 if (btLatencyBtnEl) btLatencyBtnEl.addEventListener('click', toggleBluetoothLatency);
 if (btLatencyHudBtnEl) btLatencyHudBtnEl.addEventListener('click', toggleBluetoothLatency);
+// Guided calibration was previously reachable only via the C key -- this
+// is the only way to reach it on a phone or tablet, same gap the reduced-
+// flash toggle already had a button for.
+if (calibrateBtnEl) {
+  calibrateBtnEl.addEventListener('click', () => {
+    if (recalibration.active) endRecalibration(); else startRecalibration();
+  });
+}
+if (syncPromptFixBtnEl) {
+  syncPromptFixBtnEl.addEventListener('click', () => {
+    syncPromptEl?.classList.add('hidden');
+    startRecalibration();
+  });
+}
+if (syncPromptDismissBtnEl) {
+  syncPromptDismissBtnEl.addEventListener('click', () => syncPromptEl?.classList.add('hidden'));
+}
 // Set per load path (true only for raw decoded audio, which already has
 // every voice baked into the buffer) and read by applySynthMutePolicy().
 let muteTimelineSynth = false;
@@ -648,6 +669,7 @@ function toggleTrackList() {
  *  tolerates being idle). */
 function stopTimeline() {
   running = false;
+  syncPromptEl?.classList.add('hidden');
   // conductor is a single instance shared across every song (see its
   // construction above); Simulation and its subsystems subscribe to it at
   // construction and never unsubscribe on their own. Without this, a replay
@@ -1662,6 +1684,16 @@ function frame(tRaf) {
   if (sim.disasters?.justStruck && sim.disasters.struckKind === 'quake') audioEngine?.duck?.(0.7, 0.08, 0.4);
   if (sim.biomes?.tsunamiJustArrived) audioEngine?.duck?.(0.5, 0.05, 0.35);
 
+  // SyncMonitor's own offer: the chart's kicks read as scattered against
+  // the beat grid for a sustained stretch (the "characters are moving
+  // randomly" failure) -- previously detected but never surfaced anywhere.
+  // A non-blocking invitation, not an interruption: never fires during the
+  // opening, at most twice a song, and never while the overlay is already
+  // up (SyncMonitor.update's own suppress flag handles that).
+  if (sim.syncMonitor?.consumePrompt()) {
+    syncPromptEl?.classList.remove('hidden');
+  }
+
   // Tap recalibration: drive the count while an (opt-in, 'C'-key-triggered)
   // pass is running. Never blocks the frame, pauses audio, or swallows input.
   if (recalibration.active) {
@@ -1893,6 +1925,11 @@ canvas.addEventListener('contextmenu', (e) => { if (running && sim) e.preventDef
 
 canvas.addEventListener('pointerdown', (e) => {
   if (!running || !sim) return;
+  // Every canvas tap prevents default -- previously only the seekbar-hit
+  // branch below did, so a plain tap-to-beat-tap (the common case, and the
+  // only input touch has at all) left double-tap-to-zoom and the ~300ms
+  // synthetic-click delay in play on mobile.
+  e.preventDefault();
   if (!hudAwake) { wakeHud(); return; }
   wakeHud();
   const p = clientToStage(e);
@@ -1902,7 +1939,6 @@ canvas.addEventListener('pointerdown', (e) => {
   // (high). Anything else (middle, back/forward) stays an unroled tap rather
   // than being silently filed as one of the two hands.
   if (!hit) { beatTap(e.button === 2 ? ROLE_HIGH : e.button === 0 ? ROLE_LOW : null); return; }
-  e.preventDefault();
   if (hit.type === 'detail') return; // keep overlay open
   if (hit.type === 'strip') {
     // Toggle section detail when re-clicking the same section; always seek.

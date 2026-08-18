@@ -151,6 +151,60 @@ html, body {
   .errorBanner { top: var(--space-2); font-size: 0.8rem; }
 }
 
+/* ── Sync prompt ──────────────────────────────────────────────────────────── */
+/* An offer, not a failure -- gold-toned rather than the error banner's red,
+   and anchored at the bottom so it never competes with it for the same
+   space. See SyncMonitor.js / the consumePrompt() check in main.js. */
+.syncPrompt {
+  position: absolute;
+  bottom: var(--space-6);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: min(480px, calc(100% - var(--space-6)));
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  border: 1px solid color-mix(in srgb, var(--spec-gold) 55%, transparent);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+.syncPrompt.hidden { display: none !important; }
+.syncPromptText { flex: 1; }
+.syncPromptFixBtn {
+  flex: none;
+  border: 1px solid color-mix(in srgb, var(--spec-gold) 55%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--spec-gold) 18%, transparent);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 5px var(--space-3);
+  cursor: pointer;
+}
+.syncPromptFixBtn:hover { background: color-mix(in srgb, var(--spec-gold) 28%, transparent); }
+.syncPromptDismissBtn {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 var(--space-1);
+}
+.syncPromptDismissBtn:hover { color: var(--text-primary); }
+
+@media (max-width: 540px) {
+  .syncPrompt { bottom: var(--space-3); font-size: 0.8rem; }
+}
+
 /* ── Title screen ─────────────────────────────────────────────────────────── */
 #loader.titleScreen {
   gap: 0;
@@ -509,6 +563,14 @@ html, body {
   gap: var(--space-3);
   align-items: center;
 }
+.titleFlashNote {
+  margin: 0;
+  max-width: 44ch;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
+.titleFlashNote strong { color: var(--text-secondary); font-weight: 600; }
 #loader .prefRow {
   margin-top: 0;
   flex-wrap: wrap;
@@ -1147,6 +1209,30 @@ html, body {
   border-radius: var(--radius-md);
   color: var(--spec-gold);
   background: rgba(5, 5, 10, 0.5);
+}
+
+.landscapeHint {
+  display: none;
+  position: absolute;
+  top: var(--space-2);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  pointer-events: none;
+  padding: 4px var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+/* A portrait phone letterboxes the 16:9 stage down to a thin strip
+   (#stage's object-fit: contain against a tall viewport) -- narrow AND
+   portrait AND short enough that landscape would meaningfully help,
+   so a wide-but-portrait tablet doesn't get nagged for no reason. */
+@media (orientation: portrait) and (max-width: 540px) and (max-height: 820px) {
+  .landscapeHint { display: block; }
 }
 
 /* SoundFont switcher popup — lists every loaded font with a click-to-
