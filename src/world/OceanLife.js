@@ -142,6 +142,32 @@ export function tsunamiActive(event, nowMs) {
   return age >= -half && age <= half;
 }
 
+// Withdrawal telegraph: real tsunamis pull the water OUT first -- the sea
+// drains from the shoreline in the seconds before the wave itself arrives,
+// the single most legible real-world tell that one is coming. This window
+// sits immediately BEFORE tsunamiActive's own approach window, so a wall's
+// wave visibility and its withdrawal never overlap.
+export const TSUNAMI_WITHDRAWAL_LEAD_MS = 2400;
+
+/** True during the withdrawal window that immediately precedes the wall's
+ *  own approach (tsunamiActive). */
+export function tsunamiWithdrawalActive(event, nowMs) {
+  const age = nowMs - event.tMs;
+  const half = TSUNAMI_SWEEP_MS / 2;
+  return age >= -(half + TSUNAMI_WITHDRAWAL_LEAD_MS) && age < -half;
+}
+
+/** 0..1 how far the sea has drawn back, 0 at the start of the withdrawal
+ *  window, easing up to 1 right as the wall's own approach begins -- a
+ *  held tension right before the payoff, not a linear drain. */
+export function tsunamiWithdrawal01(event, nowMs) {
+  if (!tsunamiWithdrawalActive(event, nowMs)) return 0;
+  const age = nowMs - event.tMs;
+  const half = TSUNAMI_SWEEP_MS / 2;
+  const u = clamp01((age + half + TSUNAMI_WITHDRAWAL_LEAD_MS) / TSUNAMI_WITHDRAWAL_LEAD_MS);
+  return Math.sin(u * Math.PI / 2); // ease-in: slow at first, sharp right before the wall appears
+}
+
 /** 0..1 progress through the approach window (0 = far/out-of-sight,
  *  1 = arrived at the near edge). Uses the same age convention as the old
  *  lateral sweep: age 0 is mid-window, age ∈ [-half, half]. */

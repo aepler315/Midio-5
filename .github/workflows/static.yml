@@ -1,4 +1,15 @@
-# Simple workflow for deploying static content to GitHub Pages
+# Deploy the static game to GitHub Pages. Only what the page actually
+# needs (index.html, src/, soundfonts/) plus CNAME/.nojekyll get staged
+# and uploaded -- not the whole repo. Previously `path: '.'` published the
+# entire checkout, including test/ (a third of the tracked payload),
+# tools/ (readable Node source for the local dev bridge), docs/,
+# docker-compose.yml, and slskd/slskd.yml (a local-dev API key/credentials
+# file, not a real secret but not something that belongs on the public
+# site either). This also used to run without a .nojekyll marker, so
+# GitHub's Jekyll processor silently touched the upload (confirmed:
+# /soundfonts/ rendered as a Jekyll-templated page of its README) -- a
+# latent trap for any future `_`-prefixed file. Both are fixed by staging
+# explicitly rather than uploading the raw checkout.
 name: Deploy static content to Pages
 
 on:
@@ -33,11 +44,18 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Pages
         uses: actions/configure-pages@v5
+      - name: Stage public site
+        run: |
+          mkdir -p _site
+          cp index.html _site/
+          cp CNAME _site/
+          touch _site/.nojekyll
+          cp -r src _site/src
+          cp -r soundfonts _site/soundfonts
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
-          path: '.'
+          path: '_site'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
