@@ -87,6 +87,13 @@ const STAR_SKY_FRAC = 0.62;
 // L2 is the furthest and sits nearly half way to the sky. See the
 // layerTint() comment in draw() for why this exists.
 const AERIAL_PULL = { L2: 0.46, L3: 0.29, L4: 0.13, L5: 0 };
+// Aerial perspective, optical half: how much each layer's strip bake is
+// downsampled before being stretched back up (generateSilhouette's
+// softenScale), so distant ranges lose edge acuity the same way AERIAL_PULL
+// already pulls their color toward the sky. L5 stays at 1 (full crisp) --
+// DepthHaze already never washes it, for the same reason: it's the
+// foreground anchor the eye calibrates every other layer's depth against.
+const AERIAL_SOFTEN = { L2: 0.40, L3: 0.62, L4: 0.85, L5: 1 };
 const LAYER_EQ_RATIO = 0.06; // between L1 (celestial) and L2 (far mountains)
 // Terrain footing contact shadow: layered strokes along the ridge's own
 // smooth curve approximate the soft vertical falloff a single gradient rect
@@ -990,21 +997,27 @@ export class BiomeManager {
         L2: generateSilhouette({
           seed: seed + 1, height: 400, octaves: 4, amplitude: 0.52, baseline: 0.42,
           color: b.silhouette, shadeMode, profile: 'alpine', character: 'massif',
+          softenScale: AERIAL_SOFTEN.L2,
         }),
         L3: generateSilhouette({
           seed: seed + 2, height: 360, octaves: 3, amplitude: 0.44, baseline: 0.50,
           color: b.silhouette, shadeMode, profile: 'alpine', character: 'range',
+          softenScale: AERIAL_SOFTEN.L3,
         }),
         L4: generateSilhouette({
           seed: seed + 3, height: 330, octaves: 3, amplitude: 0.34, baseline: 0.64,
           color: b.silhouette, shadeMode, profile: 'alpine', character: 'crags',
+          softenScale: AERIAL_SOFTEN.L4,
         }),
         // Nearest band stays soft rolling foothills -- the one layer that
         // should NOT be jagged, so the near ground reads as land rather
-        // than as yet another row of teeth.
+        // than as yet another row of teeth. Also stays at full resolution
+        // (AERIAL_SOFTEN.L5 === 1): the crisp anchor everything else softens
+        // relative to.
         L5: generateSilhouette({
           seed: seed + 4, octaves: 2, amplitude: 0.46, baseline: 0.82,
           color: b.silhouette, shadeMode, profile: 'rolling',
+          softenScale: AERIAL_SOFTEN.L5,
         }),
       };
       decorateStrip(strips.L4, b.name, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
