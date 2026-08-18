@@ -5,6 +5,7 @@ import {
   tsunamiSchedule, tsunamiLift, tsunamiProfile, sprayFlecks, fishArcY, serpentHumpY,
   tsunamiHeightScale, tsunamiActive, tsunamiProgress, tsunamiRowFrac,
   tsunamiPerspectiveScale, tsunamiCenterX, tsunamiDepthLift,
+  tsunamiWithdrawalActive, tsunamiWithdrawal01, TSUNAMI_WITHDRAWAL_LEAD_MS,
   OCEAN_LIFE_WRAP_PX, TSUNAMI_WIDTH_PX, TSUNAMI_SWEEP_MS,
   TSUNAMI_APPROACH_UP_FRAC, TSUNAMI_OVERTOP_SCALE, TSUNAMI_ROW_FAR, TSUNAMI_ROW_NEAR,
 } from '../src/world/OceanLife.js';
@@ -180,4 +181,32 @@ test('sprayFlecks is deterministic per seed and respects field ranges', () => {
     assert.ok(f.riseFrac >= 0.15 && f.riseFrac <= 0.7);
     assert.ok(f.phase >= 0 && f.phase < Math.PI * 2);
   }
+});
+
+test('the withdrawal window sits immediately before the approach window, never overlapping it', () => {
+  const ev = { tMs: 100000 };
+  const half = TSUNAMI_SWEEP_MS / 2;
+  // Right at the boundary (start of approach): withdrawal must be off, approach on.
+  assert.equal(tsunamiWithdrawalActive(ev, ev.tMs - half), false);
+  assert.equal(tsunamiActive(ev, ev.tMs - half), true);
+  // Just before that boundary: withdrawal on, approach off.
+  assert.equal(tsunamiWithdrawalActive(ev, ev.tMs - half - 1), true);
+  assert.equal(tsunamiActive(ev, ev.tMs - half - 1), false);
+  // Before the withdrawal window even opens: both off.
+  assert.equal(tsunamiWithdrawalActive(ev, ev.tMs - half - TSUNAMI_WITHDRAWAL_LEAD_MS - 1), false);
+});
+
+test('tsunamiWithdrawal01 is 0 outside its window and rises monotonically toward 1 inside it', () => {
+  const ev = { tMs: 50000 };
+  const half = TSUNAMI_SWEEP_MS / 2;
+  assert.equal(tsunamiWithdrawal01(ev, ev.tMs - half - TSUNAMI_WITHDRAWAL_LEAD_MS - 500), 0);
+  assert.equal(tsunamiWithdrawal01(ev, ev.tMs - half + 500), 0, 'zero once the approach window has started');
+  let prev = -1;
+  for (let age = -(half + TSUNAMI_WITHDRAWAL_LEAD_MS); age < -half; age += 100) {
+    const v = tsunamiWithdrawal01(ev, ev.tMs + age);
+    assert.ok(v >= prev - 1e-9, `withdrawal01 should rise monotonically, dropped at age=${age}`);
+    assert.ok(v >= 0 && v <= 1);
+    prev = v;
+  }
+  assert.ok(prev > 0.9, `expected withdrawal01 to approach 1 right before the approach window, got ${prev}`);
 });
