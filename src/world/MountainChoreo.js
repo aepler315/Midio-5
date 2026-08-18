@@ -143,6 +143,23 @@ export function orogenyHeightMul(layerKey, g) {
   return 1 + gain * clamp01(g);
 }
 
+// Off-frame pull-back (CameraDirector.zoom easing toward ZOOM_MIN): the
+// nearer ranges grow the most as the camera backs away, the opposite bias
+// from orogeny above. This is what closes the dead flat gap between the
+// player and the first ridge on a wide shot -- L5/L4 rise up to meet it
+// instead of the world just shrinking in place. Far layers get a much
+// smaller nudge, enough to keep the whole skyline reading as one gesture
+// without the horizon itself visibly lurching.
+const PULLBACK_GROWTH_MUL = { L2: 0.06, L3: 0.14, L4: 0.26, L5: 0.36 };
+
+/** Height multiplier for a layer at camera pull-back p (0..1, 0 = normal
+ *  framing, 1 = hardest pull-back / ZOOM_MIN). Same shape as
+ *  orogenyHeightMul -- multiply the two together, they stack independently. */
+export function pullbackHeightMul(layerKey, p) {
+  const gain = PULLBACK_GROWTH_MUL[layerKey] ?? 0;
+  return 1 + gain * clamp01(p);
+}
+
 /**
  * Top of screen reserved for sky / celestial / upper ocean. Peaks that would
  * sit above this are clipped by the frame — they may as well not exist.
