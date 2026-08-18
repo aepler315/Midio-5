@@ -25,7 +25,6 @@
 
   --border-subtle: rgba(255, 255, 255, 0.1);
   --border-strong: rgba(255, 255, 255, 0.22);
-  --line: var(--border-subtle);
 
   --text-primary: #f2f0f8;
   --text-secondary: rgba(242, 240, 248, 0.65);
@@ -537,33 +536,6 @@ html, body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Soulseek results carry peer metadata (user, bitrate, speed) — keep the
-   button label on one line and show the peer line beneath it. This is a
-   simpler fallback shape; the richer icon/title/fields grid layout for
-   .slskResult (used by the live Soulseek panel UI) is defined further
-   below and wins on shared properties since it comes later in the
-   cascade -- both are kept intentionally (different result-render paths
-   in main.js), only retinted here, not restructured. */
-.slskResult {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  text-align: left;
-  overflow: hidden;
-}
-.slskResultName {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.slskResultMeta {
-  font-size: 0.7rem;
-  opacity: 0.55;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .progressHint {
   min-height: 1.2em;
   color: var(--spec-cool) !important;
@@ -895,9 +867,7 @@ html, body {
 /* Preference toggles read as engaged when on. */
 #noLyricsBtn[aria-pressed="true"],
 #btLatencyBtn[aria-pressed="true"],
-#btLatencyHudBtn[aria-pressed="true"],
-#visualStyleBtn[aria-pressed="true"],
-#visualStyleHudBtn[aria-pressed="true"] {
+#btLatencyHudBtn[aria-pressed="true"] {
   border-color: var(--spec-cool);
   color: var(--spec-cool);
 }

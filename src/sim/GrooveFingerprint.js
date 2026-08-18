@@ -44,7 +44,7 @@ export const OFFSET_MATCH_WINDOW_MS = 180;
 // than fossilizing around a session from last month.
 const OFFSET_HISTORY_MAX = 64;
 // Cap on the learned timing bias. This is musical feel, not audio latency
-// (that's InputCalibration's smw-input-offset-ms), so it has no business
+// (that's LatencyCalibrator's own persisted offset), so it has no business
 // applying a huge shift.
 export const MAX_OFFSET_MS = 120;
 

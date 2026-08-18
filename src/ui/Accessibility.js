@@ -62,9 +62,6 @@ export function capFlashAlpha(alpha, reducedFlash) {
 // file is a preference the player set; this one the engine learned.
 //
 // Note the key namespace: `smw:` with a colon, matching every other key here.
-// InputCalibration.js uses `smw-` hyphens for its two keys -- those are the
-// odd ones out, and are left alone rather than migrated, since renaming them
-// would silently discard every existing player's audio-latency calibration.
 const GROOVE_KEY = 'smw:groove';
 
 /** The saved profile blob, or null. Parsing/validation is

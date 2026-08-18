@@ -129,9 +129,9 @@ function cacheKey(artist, title, durationSec) {
 }
 
 /** localStorage-cached wrapper around fetchLyrics -- same try/catch-guarded
- *  pattern as Accessibility.js/InputCalibration.js so a private-mode
- *  browser (or Node, for tests) degrades to "just fetch every time"
- *  instead of throwing. Only successful (non-null) results are cached. */
+ *  pattern as Accessibility.js so a private-mode browser (or Node, for
+ *  tests) degrades to "just fetch every time" instead of throwing. Only
+ *  successful (non-null) results are cached. */
 export async function fetchLyricsCached(identity, fetchFn) {
   const key = cacheKey(identity?.artist, identity?.title, identity?.durationSec);
   try {
