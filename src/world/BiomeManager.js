@@ -41,7 +41,8 @@ import {
   tsunamiCenterX, tsunamiLift, tsunamiDepthLift, tsunamiProfile, sprayFlecks,
   fishArcY, serpentHumpY,
   wrappedOffset, OCEAN_LIFE_WRAP_PX, OCEAN_LIFE_RATIO, TSUNAMI_WIDTH_PX,
-  tsunamiHeightScale, TSUNAMI_OVERTOP_SCALE,
+  tsunamiHeightScale, TSUNAMI_OVERTOP_SCALE, FLOOD_DURATION_MS,
+  tsunamiWithdrawalActive, tsunamiWithdrawal01,
 } from './OceanLife.js';
 import { ConstellationWeaver } from './ConstellationWeaver.js';
 import { SpaceRidge } from './SpaceRidge.js';
@@ -1363,8 +1364,35 @@ export class BiomeManager {
     // per-event, so a wall's crest sitting above the threshold across
     // several frames only ever arms once.
     const activeNow = this._activeTsunami(this.w || 1280);
-    if (activeNow && tsunamiHeightScale(nowMs - activeNow.ev.tMs) >= TSUNAMI_OVERTOP_SCALE) {
-      this.flood?.armFromTsunami(nowMs, activeNow.ev.tMs);
+    if (activeNow && tsunamiHeightScale(nowMs - activeNow.ev.tMs) >= TSUNAMI_OVERTOP_SCALE
+      && this._floodArmedForTMs !== activeNow.ev.tMs) {
+      this._floodArmedForTMs = activeNow.ev.tMs;
+      this._floodStartMs = nowMs;
+      this._floodUntilMs = nowMs + FLOOD_DURATION_MS;
+    }
+    // Edge-triggered one-frame flag for the moment a wall's approach
+    // window actually begins (not the withdrawal lead-up) -- Simulation
+    // reads this to fire the same authored-cut treatment (FilmFinish.hit)
+    // the drop/apotheosis/finale already get.
+    this.tsunamiJustArrived = !!activeNow && !this._wasTsunamiActive;
+    this._wasTsunamiActive = !!activeNow;
+    // Flood level (0..1, rise -> hold -> recede): computed here, in
+    // update(), not at draw time -- Simulation reads floodLevel01/
+    // floodActive for wet-footing traction the same frame, without
+    // depending on draw() having already run.
+    if (nowMs >= this._floodUntilMs) {
+      this.floodActive = false;
+      this.floodLevel01 = 0;
+    } else {
+      const age = nowMs - this._floodStartMs;
+      const RISE_MS = 700, RECEDE_MS = 1200;
+      const holdEnd = FLOOD_DURATION_MS - RECEDE_MS;
+      let level01;
+      if (age < RISE_MS) level01 = clamp01(age / RISE_MS);
+      else if (age < holdEnd) level01 = 1;
+      else level01 = clamp01(1 - (age - holdEnd) / RECEDE_MS);
+      this.floodLevel01 = level01;
+      this.floodActive = level01 > 0.02;
     }
     // Combo milestones (streak 5/10/20) throw their own reward volley.
     if (Number.isFinite(this.milestoneAtMs) && this.milestoneAtMs !== this._lastSeenMilestoneMs) {
@@ -2643,9 +2671,39 @@ export class BiomeManager {
     return null;
   }
 
+  /** Schedules a new tsunami wall, same shape as the existing drop-cued
+   *  bonus wall (see the dropAtMs block in update()) -- used by Simulation
+   *  for the quake -> tsunami linked event (DisasterDirector arms a
+   *  sea-epicenter quake, then calls this ~20-40s later so the aftershock
+   *  reads as having kicked up a real wave). Keeps `_tsunamis` sorted so
+   *  `_activeTsunami`'s first-match scan stays correct. */
+  armTsunami(tMs, dir = 1) {
+    this._tsunamis.push({ tMs, dir });
+    this._tsunamis.sort((a, b) => a.tMs - b.tMs);
+  }
+
+  /** 0..1 withdrawal depth across every scheduled tsunami -- at most one
+   *  can be in its withdrawal window at a time in practice (the schedule
+   *  spaces walls well apart), but this takes the max rather than assuming
+   *  that to stay correct either way. */
+  _activeWithdrawal() {
+    const nowMs = this.tSec * 1000;
+    let level = 0;
+    for (const ev of this._tsunamis) {
+      if (tsunamiWithdrawalActive(ev, nowMs)) level = Math.max(level, tsunamiWithdrawal01(ev, nowMs));
+    }
+    return level;
+  }
+
   _drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, night = 0) {
     const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
-    const nearY = canvas.height * OCEAN_NEAR_FRAC;
+    // Withdrawal telegraph: the sea visibly drains back toward the horizon
+    // in the seconds before a tsunami wall's own approach begins -- pulling
+    // the near edge of the WHOLE plane up toward the horizon shrinks every
+    // downstream draw (the backing fill, the body plate, every contour row
+    // via oceanRowYs) for free, since they all key off nearY.
+    const withdrawal01 = this._activeWithdrawal();
+    const nearY = canvas.height * OCEAN_NEAR_FRAC - (canvas.height * (OCEAN_NEAR_FRAC - OCEAN_HORIZON_FRAC)) * 0.4 * withdrawal01;
     const bass = 0.5 * ((this._eqSmoothed[0] || 0) + (this._eqSmoothed[1] || 0));
     const treble = 0.5 * ((this._eqSmoothed[5] || 0) + (this._eqSmoothed[6] || 0));
     const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 250) * this._danceKickAmp;
@@ -3023,13 +3081,24 @@ export class BiomeManager {
 
     ctx.globalCompositeOperation = 'lighter';
 
+    // Run-up: a tsunami wall's swell lifts and rocks any ship sitting near
+    // its current depth row, same tsunamiDepthLift/scale/heightScale math
+    // _drawOcean already uses for the wave rows themselves -- ships
+    // visibly answer the wall passing beneath them instead of drifting on
+    // obliviously.
+    const tsunami = this._activeTsunami(canvas.width);
+
     // Ships -- slow drifters, hull+mast, bobbing on the wave line at their u.
     for (const ship of this._ships) {
       const x = wrappedOffset(ship.x0 - ship.driftPxS * this.tSec, scroll);
       if (x < -pad || x > canvas.width + pad) continue;
       const y = this._oceanLifeRowY(canvas, ship.rowFrac);
       const u = ((x / canvas.width) % 1 + 1) % 1;
-      const bob = seaLineY(u, this.tSec, bass, kick) * 0.3;
+      let bob = seaLineY(u, this.tSec, bass, kick) * 0.3;
+      if (tsunami) {
+        const runUp = tsunamiDepthLift(ship.rowFrac, tsunami.rowFrac) * tsunami.scale * tsunami.heightScale;
+        bob -= runUp * 22; // lifts the hull as the swell passes beneath it
+      }
       const s = ship.size * (1 - 0.5 * ship.rowFrac);
       ctx.globalAlpha = capFlashAlpha(0.55 * this.budget, this.reducedFlash);
       ctx.strokeStyle = water;

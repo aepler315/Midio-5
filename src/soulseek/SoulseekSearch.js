@@ -22,6 +22,14 @@ export class SoulseekSearch {
     this.searchId = null;
     this.pollTimer = null;
     this.busy = false;
+    // True once refreshStatus() has confirmed the /api/soulseek/* bridge
+    // doesn't exist at all (a 404/405, or the fetch itself failing) --
+    // the signature of a static host like GitHub Pages, where tools/serve.js
+    // never ran. Distinct from the bridge existing but returning an error:
+    // that's a real status worth showing; a route that isn't there at all
+    // means this whole panel should not be on the page, not announce
+    // itself as broken (see _setUnavailable).
+    this.unavailable = false;
 
     this.els = {
       form: root.querySelector('#slskSearchForm'),
@@ -163,15 +171,20 @@ export class SoulseekSearch {
   async refreshStatus() {
     try {
       const res = await fetch('/api/soulseek/status');
+      // 404/405 is the bridge simply not existing at this origin (a static
+      // host) -- not an error condition to report, a feature to hide.
+      if (res.status === 404 || res.status === 405) {
+        this._setUnavailable();
+        return;
+      }
       if (!res.ok) throw new Error('status ' + res.status);
       this.status = await res.json();
     } catch {
-      this.status = {
-        mode: 'offline',
-        connected: false,
-        needsLogin: false,
-        note: 'Server unreachable — is Midio running?',
-      };
+      // A thrown fetch (connection refused, DNS failure, etc.) reads the
+      // same way to a visitor as a 404: there's no server here. Treat it
+      // identically rather than surfacing a developer-facing error.
+      this._setUnavailable();
+      return;
     }
     if (this.els.modeSelect && this.status.mode && this.status.mode !== 'offline') {
       // Map demo → free in the advanced select
@@ -196,6 +209,18 @@ export class SoulseekSearch {
     if (!this.busy) {
       this._setStatusLine(this.status.note || '');
     }
+  }
+
+  /** The bridge doesn't exist at this origin -- hide the whole panel
+   *  (and the "or load your own file" divider above the dropzone) rather
+   *  than rendering an "offline"/"unreachable" message a non-technical
+   *  visitor has no way to act on. The dropzone and demo button, which
+   *  actually work with zero setup, become the top of the card. */
+  _setUnavailable() {
+    this.unavailable = true;
+    this.status = { mode: 'offline', connected: false, needsLogin: false, note: '' };
+    this.root?.classList.add('hidden');
+    this.root?.parentElement?.querySelector('.slskDivider')?.classList.add('hidden');
   }
 
   _renderBadge() {
@@ -230,6 +255,7 @@ export class SoulseekSearch {
   }
 
   async search(query) {
+    if (this.unavailable) return; // no bridge at this origin -- see _setUnavailable
     const q = String(query || '').trim();
     if (!q) {
       this._setStatusLine('Type a song, artist, or album.');
