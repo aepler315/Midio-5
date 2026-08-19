@@ -3533,11 +3533,34 @@ export class BiomeManager {
     ctx.restore();
   }
 
+  /** `this.groundY` is fixed at construction against the NOMINAL
+   *  (unzoomed) frame, but during a camera pull-back this method's caller
+   *  is drawing into the wider/taller zoomed logical stage instead
+   *  (CameraDirector.zoom < 1 -- see Renderer.js). Combining the two
+   *  directly -- `this.groundY + 40 - canvas.height` -- has canvas.height
+   *  cancel out exactly, pinning the ranges to a fixed absolute Y
+   *  regardless of zoom. mountainStripDrawHeight's headroom cap
+   *  (`canvas.height * HEADROOM_FRAC`) then GROWS as the frame widens
+   *  while its "bottom" anchor (groundY+40) stays fixed and small, so the
+   *  allowed strip height actively SHRINKS the further the camera pulls
+   *  back -- ranges collapse to a thin sliver near the bottom of frame
+   *  instead of growing to fill the newly revealed space, leaving the sky
+   *  and ocean (which correctly scale off plain canvas.height fractions)
+   *  to cover a much bigger, under-detailed area than intended. Scaling
+   *  groundY by the same ratio canvas.height/this.h that the zoomed stage
+   *  itself grew by keeps the ranges' anchor and headroom growing in step
+   *  with the pull-back, exactly like the sky and ocean already do. */
+  _zoomedGroundY(canvas) {
+    const zoomScale = this.h > 0 ? canvas.height / this.h : 1;
+    return this.groundY * zoomScale;
+  }
+
   _drawLayer(ctx, canvas, layerKey, scrollX, tint, t, A, B) {
     const stripsA = this.strips.get(A.name), stripsB = this.strips.get(B.name);
+    const zGroundY = this._zoomedGroundY(canvas);
     // Lift the ranges so their ridges actually clear the ground band --
     // strip bottoms stay tucked safely beneath the ground fill.
-    const yOff = this.groundY + 40 - canvas.height;
+    const yOff = zGroundY + 40 - canvas.height;
     ctx.save();
     // Float tilt (CameraDirector.floatTilt): as the camera pulls back, each
     // range leans as if the vantage point itself is rising past it -- scaled
@@ -3551,7 +3574,7 @@ export class BiomeManager {
     // floor tilting under them.
     const tilt = (this.floatTilt || 0) * (LAYER_RATIOS[layerKey] / LAYER_RATIOS.L5);
     if (tilt) {
-      const pivotX = canvas.width / 2, pivotY = this.groundY;
+      const pivotX = canvas.width / 2, pivotY = zGroundY;
       ctx.translate(pivotX, pivotY);
       ctx.rotate(tilt);
       ctx.translate(-pivotX, -pivotY);
@@ -3632,7 +3655,7 @@ export class BiomeManager {
     // stay on-frame (ocean/sky remain visible; off-screen summits are useless).
     const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
       * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0));
-    const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this.groundY);
+    const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this._zoomedGroundY(canvas));
     const baseY = canvas.height - dh + yOff;
     const w = strip.width;
     let x = -(((scrollX % w) + w) % w);
@@ -3673,7 +3696,7 @@ export class BiomeManager {
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
     const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
       * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0));
-    const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this.groundY);
+    const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this._zoomedGroundY(canvas));
     const scale = dh / Math.max(1, strip.height);
     const baseY = canvas.height - dh + yOff;
     const w = strip.width;
@@ -3759,7 +3782,7 @@ export class BiomeManager {
     const profile = t > 0.5 ? B : A;
     const strips = this.strips.get(profile.name);
     if (!strips) return;
-    const yOff = this.groundY + 40 - canvas.height;
+    const yOff = this._zoomedGroundY(canvas) + 40 - canvas.height;
     const dancy = this._crestPoints(canvas, strips.L2, scrollX0, yOff, 'L2', profile.terrainEnergy ?? 1);
     if (!dancy) return;
 
@@ -3807,7 +3830,7 @@ export class BiomeManager {
       // over to the range in front.
       let topY = Infinity, footY = -Infinity;
       for (const q of pts) { if (q.y < topY) topY = q.y; if (q.y > footY) footY = q.y; }
-      const bottom = Math.min(this.groundY + 40, footY + CONNECTOR_BAND_PX);
+      const bottom = Math.min(this._zoomedGroundY(canvas) + 40, footY + CONNECTOR_BAND_PX);
       const grad = ctx.createLinearGradient(0, topY, 0, bottom);
       grad.addColorStop(0, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
       grad.addColorStop(0.55, `rgba(${r},${g},${b},${(alpha * 0.6).toFixed(3)})`);
@@ -4074,7 +4097,7 @@ export class BiomeManager {
     // massif reads as sitting at L2's altitude/layer instead of floating at
     // its own -- vertical position only; paint order, parallax (the scroll
     // above), and color stay untouched.
-    const baseY = this.groundY + 40;
+    const baseY = this._zoomedGroundY(canvas) + 40;
     // Massif rides L2 orogeny, but answers to its OWN far taller ceiling
     // (massifDrawHeight, not the ordinary-range mountainStripDrawHeight) --
     // see MountainChoreo.js's MASSIF_SKY_HEADROOM_FRAC for why that's safe
@@ -4085,7 +4108,7 @@ export class BiomeManager {
     // foreground ranges are, it simply already IS that size, so the real
     // ceiling (ordinary frame geometry) is always what actually binds.
     const growth = orogenyHeightMul('L2', clamp01(this.orogenyGrowth || 0));
-    const maxH = massifDrawHeight(2000, growth, canvas.height, this.groundY);
+    const maxH = massifDrawHeight(2000, growth, canvas.height, this._zoomedGroundY(canvas));
     const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
     const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
     const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.55));
