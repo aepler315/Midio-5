@@ -3,7 +3,8 @@
 // so each biome pays the noise-generation cost only once.
 //
 // profile 'alpine' (far peaks L2/L3): Denali / Rainier / Shasta massif —
-// sharp summits, steep flanks, couloirs, ridged high-frequency crags.
+// broad-shouldered summits joined by high saddles, couloirs, ridged
+// high-frequency crags.
 // profile 'rolling' (nearer hills L4/L5): softer fbm foothills.
 //
 // shadeMode 'rendered' bakes soft vertical CGI shading (DKC3 lineage):
@@ -21,7 +22,8 @@ function makeCanvas(width, height) {
 
 /**
  * Alpine massif height field 0..1 — dominant central summit, satellite
- * peaks, steep power-law flanks, high-frequency ridgeline crags.
+ * peaks, asymmetric broad-shouldered flanks joined by saddles, and
+ * high-frequency ridgeline crags.
  * Pure (no canvas); tests can exercise without a DOM.
  */
 /**
@@ -31,55 +33,112 @@ function makeCanvas(width, height) {
  * reason the stack read as one repeated shape. These let each depth carry
  * a genuinely different landform:
  *
- *  - `massif`   few, enormous, needle-sharp giants with deep saddles: the
- *               kind of skyline you only get from very far away.
- *  - `range`    more numerous, broader, craggier summits with busier
- *               couloir notching -- a mid-distance working range.
- *  - `crags`    many small, sharp, irregular teeth: near foothill rock.
+ *  - `massif`   a few enormous summits riding one continuous body of high
+ *               ground: the kind of skyline you only get from very far away.
+ *  - `range`    more numerous, craggier summits with busier couloir
+ *               notching -- a mid-distance working range.
+ *  - `crags`    many smaller, rougher summits: near foothill rock.
+ *
+ * Each entry carries its own flank shape (`shoulder`/`spire`/`spireMix`, see
+ * peakProfile), how far off-centre its summits sit (`asym`), and how much
+ * connective mass piles up around their feet (`apron*`) -- that last group is
+ * what decides whether a character reads as a joined-up range or as separate
+ * hills standing on a plain.
  */
 export const ALPINE_CHARACTERS = {
-  massif: { peakMin: 3, peakSpan: 2, wBase: 100, wSpan: 120, sharpMin: 2.2, sharpSpan: 1.2, notch: 0.09, teeth: 0.05, bed: 0.10 },
-  range: { peakMin: 5, peakSpan: 3, wBase: 62, wSpan: 78, sharpMin: 1.7, sharpSpan: 0.9, notch: 0.14, teeth: 0.09, bed: 0.16 },
-  crags: { peakMin: 8, peakSpan: 5, wBase: 34, wSpan: 46, sharpMin: 1.4, sharpSpan: 0.8, notch: 0.17, teeth: 0.12, bed: 0.22 },
+  massif: {
+    peakMin: 3, peakSpan: 2, wBase: 116, wSpan: 130,
+    shoulder: 0.62, spire: 3.0, spireMix: 0.20, asym: 0.42,
+    apronSpread: 2.6, apronGain: 0.38, apronCap: 0.50,
+    notch: 0.09, teeth: 0.05, bed: 0.10,
+  },
+  range: {
+    peakMin: 5, peakSpan: 3, wBase: 74, wSpan: 86,
+    shoulder: 0.70, spire: 2.7, spireMix: 0.24, asym: 0.38,
+    apronSpread: 2.3, apronGain: 0.40, apronCap: 0.52,
+    notch: 0.14, teeth: 0.09, bed: 0.16,
+  },
+  crags: {
+    peakMin: 8, peakSpan: 5, wBase: 48, wSpan: 58,
+    shoulder: 0.66, spire: 2.0, spireMix: 0.18, asym: 0.34,
+    apronSpread: 2.6, apronGain: 0.46, apronCap: 0.52,
+    notch: 0.17, teeth: 0.12, bed: 0.22,
+  },
 };
+
+/**
+ * One peak's unit-height profile at normalized flank distance `d` (0 at the
+ * summit, 1 at the foot of that flank).
+ *
+ * A single power `(1-d)^k` was the whole profile before, and with k > 1 --
+ * which every character used -- it sits BELOW the straight line from summit
+ * to foot for the entire flank. That is a pinched, concave-sided cone with a
+ * flared skirt: a circus tent, or a witch's hat. Real massifs carry their
+ * bulk high; buttresses and spurs fill the shoulders out to at least a
+ * triangle, and often past it.
+ *
+ * So the profile is a blend instead: a broad shoulder term with an exponent
+ * BELOW 1 (fuller than a triangle) carrying most of the mass, plus a small
+ * high-exponent spire term that restores a genuine summit rather than a
+ * dome. Broad body, defined top -- which is what a mountain actually is.
+ */
+export function peakProfile(d, shoulder, spire, spireMix) {
+  const t = Math.max(0, 1 - d);
+  if (t <= 0) return 0;
+  return (1 - spireMix) * Math.pow(t, shoulder) + spireMix * Math.pow(t, spire);
+}
 
 export function alpineHeightField(noise, n, step, seed, width, character = 'massif') {
   const cfg = ALPINE_CHARACTERS[character] || ALPINE_CHARACTERS.massif;
   const rand = mulberry32((seed ^ 0xa1b1) >>> 0 || 1);
   // Major peaks; one dominant (Denali-style) near center.
-  // Narrow bases + high sharpness → real summits, not table-tops.
   const nPeaks = cfg.peakMin + Math.floor(rand() * cfg.peakSpan);
   const peaks = [];
   for (let i = 0; i < nPeaks; i++) {
     const u = (i + 0.5) / nPeaks + (rand() - 0.5) * 0.08;
+    const w = cfg.wBase + rand() * cfg.wSpan;
+    // Asymmetric flanks. A real summit almost never sits centred over its
+    // own base -- one side drops as a headwall, the other trails off down a
+    // ridge -- and mirror-symmetric peaks were a large part of why these
+    // read as manufactured cones however jagged their edges got.
+    const lean = 1 + (rand() * 2 - 1) * cfg.asym;
     peaks.push({
       x: clamp01(u) * width,
       h: 0.52 + rand() * 0.38,
-      // Half-width of the base (px) — tighter = steeper pyramid flanks.
-      w: cfg.wBase + rand() * cfg.wSpan,
-      // Apex power: higher → needle summit (Shasta), not a plateau.
-      sharp: cfg.sharpMin + rand() * cfg.sharpSpan,
+      // Half-width of each flank (px) -- larger = broader, gentler slope.
+      wL: w * lean,
+      wR: w / lean,
+      w,
     });
   }
   // Promote central peak to this range's king. Scaled to the character's
   // own peak width rather than a fixed 130-170px: on `crags` (34-80px
   // peaks) a hardcoded massif-sized king was the one landform every layer
   // still shared, which kept them looking alike no matter what else moved.
+  //
+  // The king is now made BROADER, not narrower. Clamping its width down
+  // meant the tallest summit in every range was also the thinnest, so the
+  // one peak the eye goes to first was the spikiest thing on screen. Great
+  // mountains are massive in both directions at once.
   const main = peaks[Math.floor(nPeaks / 2)];
   main.h = Math.max(main.h, 0.94 + rand() * 0.06);
-  main.w = Math.min(main.w, cfg.wBase * (1.05 + rand() * 0.35));
-  main.sharp = Math.max(main.sharp, cfg.sharpMin + 0.3);
+  const kingW = Math.max(main.w, cfg.wBase * (1.25 + rand() * 0.4));
+  const kingLean = 1 + (rand() * 2 - 1) * cfg.asym;
+  main.w = kingW;
+  main.wL = kingW * kingLean;
+  main.wR = kingW / kingLean;
 
   // Secondary shoulders / subpeaks (Rainier-style multi-summit) — lower,
   // never wide enough to fill the saddle into a mesa.
   const shoulders = [];
   for (const p of peaks) {
     if (rand() < 0.5) {
+      const sw = p.w * (0.28 + rand() * 0.2);
+      const sLean = 1 + (rand() * 2 - 1) * cfg.asym;
       shoulders.push({
         x: p.x + (rand() < 0.5 ? -1 : 1) * (p.w * (0.32 + rand() * 0.2)),
         h: p.h * (0.38 + rand() * 0.22),
-        w: p.w * (0.28 + rand() * 0.2),
-        sharp: 1.6 + rand() * 0.6,
+        w: sw, wL: sw * sLean, wR: sw / sLean,
       });
     }
   }
@@ -89,18 +148,30 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
   for (let i = 0; i < n; i++) {
     const x = i * step;
     // Sparse low foothill bed — keep valleys deep so peaks read as peaks.
-    let h = ridged(noise, x * 0.0035, 3) * cfg.bed;
-    h += noise.fbm(x * 0.007, 2) * 0.05;
+    const bed = ridged(noise, x * 0.0035, 3) * cfg.bed + noise.fbm(x * 0.007, 2) * 0.05;
 
+    // Summits take the max (they must stay separate landforms), but the
+    // connective mass around their feet ADDS up. That distinction is what
+    // builds a range: before, every peak was an independent cone maxed
+    // against a near-flat bed, so between any two of them the ground fell
+    // all the way back to the plain and each summit read as a lone traffic
+    // cone standing on a table. Overlapping aprons instead pile into real
+    // saddles, so neighbouring peaks are joined by high ground the way a
+    // ridgeline actually joins them -- capped below summit height so the
+    // range never fills in flat.
+    let coreMax = 0;
+    let apronSum = 0;
     for (const p of allPeaks) {
-      const d = Math.abs(x - p.x) / Math.max(12, p.w);
-      if (d >= 1.15) continue;
-      // Power-law alpine flanks: steep near summit.
-      const core = Math.pow(Math.max(0, 1 - d), p.sharp) * p.h;
-      // Thin apron only — a fat apron was gluing peaks into plateaus.
-      const apron = Math.pow(Math.max(0, 1 - d * 0.9), 0.7) * p.h * 0.1;
-      h = Math.max(h, core + apron * 0.25);
+      const flank = Math.max(12, x < p.x ? p.wL : p.wR);
+      const d = Math.abs(x - p.x) / flank;
+      if (d < 1) {
+        const core = peakProfile(d, cfg.shoulder, cfg.spire, cfg.spireMix) * p.h;
+        if (core > coreMax) coreMax = core;
+      }
+      const ad = Math.abs(x - p.x) / (flank * cfg.apronSpread);
+      if (ad < 1) apronSum += Math.pow(1 - ad, 1.7) * p.h * cfg.apronGain;
     }
+    let h = Math.max(coreMax, bed + Math.min(apronSum, cfg.apronCap));
 
     // Couloir notches — carve V's into mid-flanks (craggy outline).
     const notch = ridged(noise, x * 0.022 + 17, 2);
