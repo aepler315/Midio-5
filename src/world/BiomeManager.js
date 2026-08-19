@@ -2702,16 +2702,31 @@ export class BiomeManager {
     ctx.arc(cx, cy, R * 2.2, 0, Math.PI * 2);
     ctx.fill();
 
+    // Crescent: clip to (disc) AND (NOT bite-circle), then fill -- moon
+    // color is only ever painted into the crescent sliver itself, so the
+    // halo underneath is never touched. The previous approach drew a full
+    // disc then erased an offset circle out of it with destination-out;
+    // canvas compositing is destructive (each pixel holds only its final
+    // blended color, nothing to "reveal" underneath), so that erase
+    // didn't restore the halo -- it zeroed the pixels to transparent,
+    // exposing the page background as a hard-edged void that read as a
+    // second solid disc rather than a shaded crescent.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.rect(cx - R * 3, cy - R * 3, R * 6, R * 6);
+    // Second subpath punches a hole in the clip via the evenodd rule,
+    // which counts edge crossings rather than winding direction, so the
+    // arc's direction here doesn't need to be deliberately opposed.
+    ctx.arc(cx + R * 0.42, cy - R * 0.12, R * 0.92, 0, Math.PI * 2);
+    ctx.clip('evenodd');
     ctx.fillStyle = MOON_COLOR;
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, Math.PI * 2);
     ctx.fill();
-
-    // Crescent bite: punch a transparent offset circle out of the disc.
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.beginPath();
-    ctx.arc(cx + R * 0.42, cy - R * 0.12, R * 0.92, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.restore();
     ctx.restore();
   }
 

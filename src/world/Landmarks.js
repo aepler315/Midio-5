@@ -70,18 +70,28 @@ function paintCrystals(ctx, x, rootY, scale, rand, color) {
   ctx.fillStyle = color;
   const n = 3 + Math.floor(rand() * 3);
   for (let i = 0; i < n; i++) {
-    const w = (4 + rand() * 5) * scale;
-    const h = (30 + rand() * 55) * scale;
-    const tilt = (rand() * 2 - 1) * 0.45;
-    const cx = x + (i - n / 2) * 9 * scale;
+    // Wider, stubbier facets, and a short tip relative to the body -- the
+    // old proportions (4-9px half-width against a body up to 85px tall,
+    // topped with a tip facet stretched out to 2.2x that width again)
+    // read as a bare needle at NearField's 3-5x foreground blowup, with
+    // the long thin tip facet reading as a stray thread off the point.
+    // A real crystal cluster is faceted and stout, not threadlike.
+    const w = (9 + rand() * 9) * scale;
+    const h = (26 + rand() * 40) * scale;
+    const tilt = (rand() * 2 - 1) * 0.4;
+    const cx = x + (i - n / 2) * 13 * scale;
     ctx.save();
     ctx.translate(cx, rootY);
     ctx.rotate(tilt);
+    // Two shoulder facets before the tip, not one long taper straight to
+    // a point -- reads as a faceted mineral rather than a cone.
     ctx.beginPath();
     ctx.moveTo(-w, 0);
-    ctx.lineTo(-w * 0.55, -h);
-    ctx.lineTo(0, -h - w * 2.2); // the tip facet
-    ctx.lineTo(w * 0.55, -h);
+    ctx.lineTo(-w * 0.62, -h * 0.55);
+    ctx.lineTo(-w * 0.28, -h);
+    ctx.lineTo(0, -h - w * 0.9); // the tip facet
+    ctx.lineTo(w * 0.28, -h);
+    ctx.lineTo(w * 0.62, -h * 0.55);
     ctx.lineTo(w, 0);
     ctx.closePath();
     ctx.fill();
@@ -155,18 +165,34 @@ function paintMonoliths(ctx, x, rootY, scale, rand, color) {
 function paintSpires(ctx, x, rootY, scale, rand, color) {
   ctx.fillStyle = color;
   const n = 2 + Math.floor(rand() * 2);
+  const SEGS = 6;
   for (let i = 0; i < n; i++) {
-    const H = (55 + rand() * 60) * scale, w = (14 + rand() * 8) * scale;
+    const H = (55 + rand() * 60) * scale;
+    const wBase = (17 + rand() * 9) * scale;
     const cx = x + (i - n / 2) * 26 * scale;
-    ctx.beginPath();
-    ctx.moveTo(cx - w, rootY);
-    for (let k = 1; k <= 4; k++) {
-      const t = k / 5;
-      const side = k % 2 === 0 ? 1 : -1;
-      ctx.lineTo(cx + side * w * (1 - t) * (0.6 + rand() * 0.5), rootY - H * t);
+    // A real eroded rock spire doesn't summit dead center over its own
+    // base -- offsetting the apex is what breaks the "cone" read a
+    // dead-center peak always gives, regardless of how jagged its flanks
+    // are.
+    const apexX = cx + (rand() - 0.5) * wBase * 0.8;
+    const left = [], right = [];
+    for (let k = 0; k <= SEGS; k++) {
+      const t = k / SEGS; // 0 at base, 1 at apex
+      // Bulging taper -- widest through the lower-mid body, not a
+      // straight-sided cone -- so the silhouette reads as a weathered
+      // column, and per-side jitter so left/right never mirror each
+      // other into a symmetric hat outline.
+      const bodyW = wBase * Math.pow(1 - t, 0.8) * (0.82 + 0.32 * Math.sin(t * Math.PI));
+      const midX = cx + (apexX - cx) * t;
+      const y = rootY - H * t;
+      left.push({ x: midX - bodyW * (0.5 + (rand() - 0.5) * 0.35), y });
+      right.push({ x: midX + bodyW * (0.5 + (rand() - 0.5) * 0.35), y });
     }
-    ctx.lineTo(cx, rootY - H);
-    ctx.lineTo(cx + w, rootY);
+    ctx.beginPath();
+    ctx.moveTo(left[0].x, left[0].y);
+    for (let k = 1; k < left.length; k++) ctx.lineTo(left[k].x, left[k].y);
+    ctx.lineTo(apexX, rootY - H);
+    for (let k = right.length - 1; k >= 0; k--) ctx.lineTo(right[k].x, right[k].y);
     ctx.closePath();
     ctx.fill();
   }
