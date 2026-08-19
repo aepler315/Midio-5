@@ -53,7 +53,7 @@ import { GroundScatter, SCATTER_RATIO } from './GroundScatter.js';
 import { flameFlicker, smokeDrift } from './Wildfire.js';
 import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
-import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, horizonFade } from './DayNight.js';
+import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
 import { applyConductorSchedule } from '../core/ConductorTrack.js';
 import { analyzeSongForm } from './SongForm.js';
@@ -71,7 +71,7 @@ import { Atmosphere } from './Atmosphere.js';
 import { CodaDirector } from '../sim/CodaDirector.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
-import { computeLight, celestialScreenPos, groundGlowLights } from '../render/LightField.js';
+import { computeLight, celestialScreenPos, groundGlowLights, CELESTIAL_DEFAULT_XFRAC } from '../render/LightField.js';
 import { clamp, clamp01, smoothstep, mulberry32, hashSeed, lerpHue } from '../utils/math.js';
 import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { spectralShiftDeg, easeSpectralShift } from '../render/spectral.js';
@@ -1419,6 +1419,11 @@ export class BiomeManager {
     const sunUp = dn.sunAlt > 0.001;
     const activeAlt = sunUp ? dn.sunAlt : dn.moonAlt;
     const celestialYFrac = celestialYFracFor(activeAlt);
+    // ...and how far across the sky it has travelled. Whichever body is up
+    // owns the light, so the light's anchor follows that body's own arc --
+    // which is what makes shadows swing through the day instead of pointing
+    // one fixed direction from dawn to dusk.
+    const celestialXFrac = celestialXFracFor(sunUp ? dn.sunAz01 : dn.moonAz01);
     // Aerial-perspective haze still warms/cools on the song's own progress
     // arc (a separate, slower signal than the sunrise/moonrise cycle) --
     // only `.hazeWarm` from the old day-arc survives here.
@@ -1429,7 +1434,7 @@ export class BiomeManager {
     // reads the same `this.light` rather than re-deriving its position.
     this.light = computeLight({
       canvasWidth: canvas.width, canvasHeight: canvas.height,
-      celestialYFrac, haloColorHex: this.currentHaloColor(),
+      celestialYFrac, celestialXFrac, haloColorHex: this.currentHaloColor(),
       budget: this._lightBudget, unravel: this.unravel,
       dayArcAlpha: dn.dawnAlpha + dn.duskAlpha,
       reducedFlash: this.reducedFlash,
@@ -1465,8 +1470,18 @@ export class BiomeManager {
     // it's up; a plain pale moon takes over once it sets. Both fade in/out
     // over their last stretch of altitude rather than popping at the
     // horizon, and both rise from and set into the sea horizon.
-    if (sunUp) this._drawCelestial(ctx, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt));
-    if (dn.moonAlt > 0.001) this._drawMoon(ctx, canvas, celestialYFracFor(dn.moonAlt), horizonFade(dn.moonAlt), 0.22 * this.spaceRidge.tidalOffsetPx(canvas.height));
+    if (sunUp) this._drawCelestial(ctx, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt), celestialXFrac);
+    if (dn.moonAlt > 0.001) {
+      // Where the sun really is -- below the horizon all night, which is the
+      // whole point: it's what makes the moon read as lit from underneath.
+      const sun = sunScreenFrac(cyclePhase01(this.tSec * 1000, this._dayNightCycleMs));
+      this._drawMoon(
+        ctx, canvas, celestialYFracFor(dn.moonAlt), horizonFade(dn.moonAlt),
+        0.22 * this.spaceRidge.tidalOffsetPx(canvas.height),
+        celestialXFracFor(dn.moonAz01),
+        sun.xFrac, sun.yFrac, this._moonPhase01(),
+      );
+    }
     // Spirograph resonance mandala, centered on the celestial body so it
     // reads as the sun/moon itself resonating with the track.
     const mandalaColor = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
@@ -1481,7 +1496,7 @@ export class BiomeManager {
     if (phenomenaFull && skyA > 0.02) {
       const prevM = this.mandala.intensity;
       this.mandala.intensity = prevM * skyA;
-      this.mandala.draw(ctx, canvas.width * 0.78, canvas.height * celestialYFrac, canvas.height * 0.30 * this.mandalaScaleMul, mandalaColor);
+      this.mandala.draw(ctx, canvas.width * celestialXFrac, canvas.height * celestialYFrac, canvas.height * 0.30 * this.mandalaScaleMul, mandalaColor);
       this.mandala.intensity = prevM;
     }
     // Phenomena layer, deep sky: cymatic dust settling into Chladni
@@ -1520,7 +1535,7 @@ export class BiomeManager {
     // Concert beams: anchored at the celestial, drawn before the mountain
     // silhouettes so the ranges occlude their lower reach the same way
     // Lightning's bolts do.
-    const cx = canvas.width * 0.78, cy = canvas.height * celestialYFrac;
+    const cx = canvas.width * celestialXFrac, cy = canvas.height * celestialYFrac;
     this.lightRig.draw(ctx, canvas, cx, cy, mandalaColor, particleMul, this.reducedFlash);
 
     // The Unraveling: each layer's scroll ratio drifts apart from the rest
@@ -2663,8 +2678,8 @@ export class BiomeManager {
     ctx.restore();
   }
 
-  _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22, alpha = 1) {
-    const cx = canvas.width * 0.78, cy = canvas.height * cyFrac;
+  _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22, alpha = 1, cxFrac = CELESTIAL_DEFAULT_XFRAC) {
+    const cx = canvas.width * cxFrac, cy = canvas.height * cyFrac;
     const rotCel = (c) => ({
       ...c,
       color: this._rotated(c.color),
@@ -2688,10 +2703,48 @@ export class BiomeManager {
    *  SpaceRidge.tidalOffsetPx) nudge the moon a little too -- a body small
    *  enough to visibly yield to something far larger, kept subtle (a
    *  fraction of the amplitude, hard-clamped) so it never reads as bouncing. */
-  _drawMoon(ctx, canvas, cyFrac, alpha, tidalOffsetPx = 0) {
+  /** Illuminated fraction of the moon's disc this frame, 0..1.
+   *
+   *  The day/night cycle here runs sun and moon in strict opposition (the
+   *  moon rises exactly as the sun sets), and a body at opposition is, in
+   *  reality, always FULL -- so reading a phase off this cycle's own
+   *  geometry would only ever produce a full moon. The phase is therefore
+   *  its own slow term, one synodic cycle across the song: a real lunar
+   *  phenomenon on a compressed clock, the same compression the 90-second
+   *  "day" already is.
+   *
+   *  The song opens near new and waxes to full at the midpoint. See
+   *  MOON_MIN_ILLUM in _drawMoon for why it never actually reaches new. */
+  _moonPhase01() {
+    return clamp01(this._progress || 0);
+  }
+
+  /**
+   * The moon: a lit sphere, drawn as one.
+   *
+   * The phase boundary on a sphere lit from the side is not a circular bite
+   * out of the disc -- it is the sphere's own great-circle terminator seen in
+   * projection, which is a HALF-ELLIPSE sharing the disc's poles, its width
+   * shrinking to nothing at quarter phase and bulging the opposite way
+   * through gibbous. The previous offset-circle cut could only ever produce
+   * crescents (never a correct gibbous), and even its crescents had the wrong
+   * limb curvature, because two circles of different radii don't meet the way
+   * a limb and a terminator do. Building the lit region out of a true limb
+   * arc plus a true terminator ellipse is both simpler and actually right.
+   *
+   * The whole construction is then rotated so its lit side faces the sun's
+   * real position (`sunXFrac`/`sunYFrac`, continued below the horizon by
+   * DayNight.sunScreenFrac) -- at night that sun is underneath, so the moon
+   * is lit from below, which is exactly what it does in the sky.
+   */
+  _drawMoon(ctx, canvas, cyFrac, alpha, tidalOffsetPx = 0, cxFrac = CELESTIAL_DEFAULT_XFRAC,
+    sunXFrac = null, sunYFrac = null, phase01 = 0.5) {
     if (alpha <= 0.02) return;
-    const cx = canvas.width * 0.78, cy = canvas.height * cyFrac + clamp(tidalOffsetPx, -6, 6);
-    const R = 26;
+    const cx = canvas.width * cxFrac, cy = canvas.height * cyFrac + clamp(tidalOffsetPx, -6, 6);
+    // Scales with the frame like every other sky element, instead of staying
+    // a fixed 26px while a camera pull-back widens the stage around it.
+    // Matches the old constant exactly at the nominal 720-tall stage.
+    const R = Math.max(14, canvas.height * 0.0361);
     ctx.save();
     ctx.globalAlpha = alpha;
     const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 2.2);
@@ -2702,31 +2755,47 @@ export class BiomeManager {
     ctx.arc(cx, cy, R * 2.2, 0, Math.PI * 2);
     ctx.fill();
 
-    // Crescent: clip to (disc) AND (NOT bite-circle), then fill -- moon
-    // color is only ever painted into the crescent sliver itself, so the
-    // halo underneath is never touched. The previous approach drew a full
-    // disc then erased an offset circle out of it with destination-out;
-    // canvas compositing is destructive (each pixel holds only its final
-    // blended color, nothing to "reveal" underneath), so that erase
-    // didn't restore the halo -- it zeroed the pixels to transparent,
-    // exposing the page background as a hard-edged void that read as a
-    // second solid disc rather than a shaded crescent.
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, R, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.beginPath();
-    ctx.rect(cx - R * 3, cy - R * 3, R * 6, R * 6);
-    // Second subpath punches a hole in the clip via the evenodd rule,
-    // which counts edge crossings rather than winding direction, so the
-    // arc's direction here doesn't need to be deliberately opposed.
-    ctx.arc(cx + R * 0.42, cy - R * 0.12, R * 0.92, 0, Math.PI * 2);
-    ctx.clip('evenodd');
+    // Earthshine: the unlit part of a real moon is not empty sky -- it's
+    // dimly lit by light bouncing off the planet, which is why you can make
+    // out the whole disc behind a thin crescent. Also keeps the moon reading
+    // as a sphere at slim phases instead of a detached sliver.
+    ctx.globalAlpha = alpha * 0.13;
     ctx.fillStyle = MOON_COLOR;
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, Math.PI * 2);
     ctx.fill();
-    ctx.restore();
+
+    // Illuminated fraction -> terminator half-width. k = R at new (terminator
+    // hugs the lit limb, nothing showing), 0 at quarter (a straight edge),
+    // -R at full (terminator hugs the far limb, whole disc showing).
+    //
+    // Floored short of a true new moon: at f = 0 the moon is genuinely
+    // invisible, and since the phase here is tied to song progress that
+    // would mean no moon at all through the opening of every song, which
+    // reads as a missing feature rather than as astronomy. A thin crescent
+    // is the same shape a new moon is a day either side of new, so this
+    // costs nothing in fidelity.
+    const MOON_MIN_ILLUM = 0.16;
+    const f = Math.max(MOON_MIN_ILLUM, 0.5 - 0.5 * Math.cos(2 * Math.PI * clamp01(phase01)));
+    const k = R * (1 - 2 * f);
+
+    // Point +x at the sun, so the bright limb faces it.
+    const sunX = sunXFrac == null ? cx + R : canvas.width * sunXFrac;
+    const sunY = sunYFrac == null ? cy : canvas.height * sunYFrac;
+    const toSun = Math.atan2(sunY - cy, sunX - cx);
+
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy);
+    ctx.rotate(toSun);
+    ctx.beginPath();
+    // Lit limb: the sunward half of the disc, top -> right -> bottom.
+    ctx.arc(0, 0, R, -Math.PI / 2, Math.PI / 2, false);
+    // Terminator: back from bottom to top along the projected great circle.
+    // Sweep direction follows k's sign, which is what turns the same two
+    // curves into a crescent (bulging sunward) or a gibbous (bulging away).
+    ctx.ellipse(0, 0, Math.abs(k), R, 0, Math.PI / 2, -Math.PI / 2, k > 0);
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
 

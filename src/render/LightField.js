@@ -4,9 +4,19 @@
 // color (used by HUD-level effects); this module turns that into a light
 // every other draw call can react to, instead of each consumer re-deriving it.
 
-/** The celestial body's fixed screen anchor -- shared by _drawCelestial and computeLight so the light is always exactly where the sun/moon is drawn. */
-export function celestialScreenPos(canvasWidth, canvasHeight, celestialYFrac = 0.22) {
-  return { x: canvasWidth * 0.78, y: canvasHeight * celestialYFrac };
+/** The celestial body's screen anchor -- shared by _drawCelestial and
+ *  computeLight so the light is always exactly where the sun/moon is drawn.
+ *
+ *  `celestialXFrac` is the body's horizontal position along its arc (see
+ *  DayNight.celestialXFracFor). It used to be pinned at a constant 0.78,
+ *  which meant the sun and moon rose and set vertically at one fixed spot
+ *  instead of crossing the sky -- and, because every shadow and rim light in
+ *  the scene is thrown FROM this point (lightDirTo), it also meant the light
+ *  came from the same direction at dawn, noon and dusk. Defaulted to the old
+ *  constant so a caller that hasn't opted in is unchanged. */
+export const CELESTIAL_DEFAULT_XFRAC = 0.78;
+export function celestialScreenPos(canvasWidth, canvasHeight, celestialYFrac = 0.22, celestialXFrac = CELESTIAL_DEFAULT_XFRAC) {
+  return { x: canvasWidth * celestialXFrac, y: canvasHeight * celestialYFrac };
 }
 
 /**
@@ -14,6 +24,9 @@ export function celestialScreenPos(canvasWidth, canvasHeight, celestialYFrac = 0
  * @param {number} p.canvasWidth
  * @param {number} p.canvasHeight
  * @param {number} p.celestialYFrac  vertical position from Dramaturgy's day arc
+ * @param {number} [p.celestialXFrac] horizontal position along the body's arc
+ *   (DayNight.celestialXFracFor) -- this is what swings the light, and every
+ *   shadow thrown from it, across the sky over the course of the cycle
  * @param {string} p.haloColorHex    crossfaded biome halo color (currentHaloColor())
  * @param {number} p.budget          intensityBudget(progress), 0..1
  * @param {number} [p.unravel]       CodaDirector.unravel, 0..1 -- the light goes out with the ending
@@ -27,8 +40,9 @@ const REDUCED_FLASH_BASELINE = 0.6;
 export function computeLight({
   canvasWidth, canvasHeight, celestialYFrac = 0.22, haloColorHex = '#ffffff',
   budget = 1, unravel = 0, dayArcAlpha = 0, reducedFlash = false,
+  celestialXFrac = CELESTIAL_DEFAULT_XFRAC,
 }) {
-  const { x, y } = celestialScreenPos(canvasWidth, canvasHeight, celestialYFrac);
+  const { x, y } = celestialScreenPos(canvasWidth, canvasHeight, celestialYFrac, celestialXFrac);
   let intensity = Math.max(0, budget * (1 - unravel) * (1 - 0.5 * dayArcAlpha));
   if (reducedFlash) intensity = 0.5 * intensity + 0.5 * REDUCED_FLASH_BASELINE;
   // Generic downward-ish direction toward the ground, for consumers that
