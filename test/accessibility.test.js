@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getReducedFlash, setReducedFlash, capFlashAlpha, FLASH_CAP,
-  getBluetoothLatency, setBluetoothLatency,
 } from '../src/ui/Accessibility.js';
 
 test('getReducedFlash defaults to false when no persisted value exists (or storage is unavailable)', () => {
@@ -37,15 +36,6 @@ test('capFlashAlpha never raises a value that was already below the cap', () => 
 test('capFlashAlpha at exactly FLASH_CAP is a no-op either way', () => {
   assert.equal(capFlashAlpha(FLASH_CAP, true), FLASH_CAP);
   assert.equal(capFlashAlpha(FLASH_CAP, false), FLASH_CAP);
-});
-
-test('getBluetoothLatency defaults to false when storage is unavailable', () => {
-  assert.equal(getBluetoothLatency(), false);
-});
-
-test('setBluetoothLatency does not throw even with no persistent storage available', () => {
-  assert.doesNotThrow(() => setBluetoothLatency(true));
-  assert.doesNotThrow(() => setBluetoothLatency(false));
 });
 
 // --- prefers-reduced-motion fallback --------------------------------------

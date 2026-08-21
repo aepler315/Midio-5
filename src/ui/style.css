@@ -993,9 +993,7 @@ html, body {
 }
 
 /* Preference toggles read as engaged when on. */
-#noLyricsBtn[aria-pressed="true"],
-#btLatencyBtn[aria-pressed="true"],
-#btLatencyHudBtn[aria-pressed="true"] {
+#noLyricsBtn[aria-pressed="true"] {
   border-color: var(--spec-cool);
   color: var(--spec-cool);
 }

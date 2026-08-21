@@ -3,8 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  apexHopY, outputLatencyMs, visualNow, CHOREO_LEAD_MS,
-  BLUETOOTH_LATENCY_FLOOR_MS, MAX_LATENCY_MS,
+  apexHopY, outputLatencyMs, visualNow, CHOREO_LEAD_MS, MAX_LATENCY_MS,
 } from '../src/core/ChoreoClock.js';
 import { Conductor } from '../src/core/Conductor.js';
 import { Role, makeNoteEvent } from '../src/core/NoteEvent.js';
@@ -29,18 +28,6 @@ test('outputLatencyMs is defensive: absent fields, NaN, and absurd values are co
   assert.equal(outputLatencyMs({ baseLatency: NaN, outputLatency: undefined }), 0);
   assert.ok(Math.abs(outputLatencyMs({ baseLatency: 0.01, outputLatency: 0.15 }) - 160) < 1e-6);
   assert.equal(outputLatencyMs({ baseLatency: 5, outputLatency: 5 }), 350, 'clamped: a glitch must never throw choreography seconds off');
-});
-
-test('outputLatencyMs floors at the Bluetooth floor when requested, but never below a higher measured value', () => {
-  assert.equal(outputLatencyMs(null, BLUETOOTH_LATENCY_FLOOR_MS), BLUETOOTH_LATENCY_FLOOR_MS);
-  assert.equal(outputLatencyMs({}, BLUETOOTH_LATENCY_FLOOR_MS), BLUETOOTH_LATENCY_FLOOR_MS);
-  // Measured path under-reports (common on BT) → floor wins.
-  assert.equal(outputLatencyMs({ baseLatency: 0.005, outputLatency: 0 }, BLUETOOTH_LATENCY_FLOOR_MS), BLUETOOTH_LATENCY_FLOOR_MS);
-  // Higher measured latency still wins over the floor.
-  assert.ok(Math.abs(outputLatencyMs({ baseLatency: 0.1, outputLatency: 0.2 }, BLUETOOTH_LATENCY_FLOOR_MS) - 300) < 1e-6);
-  // Floor itself is still clamped by MAX_LATENCY_MS.
-  assert.equal(outputLatencyMs({}, 9999), MAX_LATENCY_MS);
-  assert.ok(BLUETOOTH_LATENCY_FLOOR_MS > 0 && BLUETOOTH_LATENCY_FLOOR_MS < MAX_LATENCY_MS);
 });
 
 test('visualNow subtracts a clamped lag from the song clock', () => {

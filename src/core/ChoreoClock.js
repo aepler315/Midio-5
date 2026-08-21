@@ -35,12 +35,6 @@
  *  outputs, nowhere else. */
 export const MAX_LATENCY_MS = 350;
 
-/** Floor applied when "Bluetooth latency mode" is on. Many browsers report
- *  ~0 for baseLatency+outputLatency on BT headphones even when the ear is
- *  150–250 ms behind the AudioContext clock; this floor keeps beat-anchored
- *  visuals on the heard beat. Measured device latency still wins when higher. */
-export const BLUETOOTH_LATENCY_FLOOR_MS = 200;
-
 /** How early ahead-subscriptions deliver character-choreography events.
  *  Must cover the longest anticipation rise plus a couple of sim steps of
  *  dispatch slack; output latency only ever ADDS margin (visualNow lags
@@ -67,16 +61,13 @@ export function apexHopY(nowMs, anchorMs, riseMs, height) {
  * throw the choreography seconds off.
  *
  * @param {object|null} ctx AudioContext-like { baseLatency, outputLatency }
- * @param {number} [floorMs=0] optional minimum (Bluetooth latency mode uses
- *   BLUETOOTH_LATENCY_FLOOR_MS). Measured latency still wins when higher.
  */
-export function outputLatencyMs(ctx, floorMs = 0) {
-  if (!ctx) return Math.min(MAX_LATENCY_MS, Math.max(0, Number.isFinite(floorMs) ? floorMs : 0));
+export function outputLatencyMs(ctx) {
+  if (!ctx) return 0;
   const base = Number.isFinite(ctx.baseLatency) ? ctx.baseLatency : 0;
   const out = Number.isFinite(ctx.outputLatency) ? ctx.outputLatency : 0;
   const measured = Math.max(0, (base + out) * 1000);
-  const floor = Number.isFinite(floorMs) ? Math.max(0, floorMs) : 0;
-  return Math.min(MAX_LATENCY_MS, Math.max(measured, floor));
+  return Math.min(MAX_LATENCY_MS, measured);
 }
 
 /** Convenience shared by every consumer: the clock the EAR is on. */
