@@ -126,36 +126,37 @@ test('generateCatalogue produces the requested count, all finite/bounded, positi
   }
 });
 
-test('the galactic-plane band genuinely has higher star density than the rest of the field', () => {
+test('star positions are genuinely uniform, not concentrated on the galactic-plane axis', () => {
+  // A previous version biased a fraction of stars toward the band -- even
+  // a "gentle" bias measured a 7:1+ peak-to-edge density ratio and read as
+  // stars confined to the middle of the sky. Positions are uniform now;
+  // the "this is a galaxy" cue comes entirely from the separately-painted
+  // milky wash and dust lanes, not from where individual stars sit.
   const cat = generateCatalogue(13, 4000, 1280, 720);
-  // Measured on the band's own tilted axis (galacticBandCenterY), not a
-  // fixed screen row -- the plane is tilted, so a horizontal window would
-  // be measuring the wrong thing.
   const bandHalf = 720 * 0.08;
   let inBand = 0;
   for (const s of cat) {
     if (Math.abs(s.y - galacticBandCenterY(s.x / 1280, 720)) <= bandHalf) inBand++;
   }
   const expectedUniform = cat.length * ((bandHalf * 2) / 720);
-  assert.ok(inBand > expectedUniform * 2, `band should be denser than uniform: inBand=${inBand} expected~${expectedUniform}`);
+  assert.ok(Math.abs(inBand - expectedUniform) < expectedUniform * 0.35,
+    `band-axis count should track uniform density: inBand=${inBand} expected~${expectedUniform}`);
 });
 
-test('the whole sky is populated -- no empty region above the plane', () => {
-  // The regression this exists for: the band used to take 90% of every
-  // star into a stripe 16% of the height tall, so the sky above it was
-  // visibly empty and the field read as a belt across the middle of the
-  // screen rather than as a sky.
+test('the whole sky is populated evenly -- no empty region and no band hoarding it', () => {
+  // The regression this exists for: a galactic-plane bias used to take up
+  // to 90% of every star into a stripe of the height, so the sky above and
+  // below it was visibly empty and the field read as a belt across the
+  // middle of the screen rather than as a sky.
   const cat = generateCatalogue(13, 4000, 1280, 720);
   const BANDS = 8;
   const counts = new Array(BANDS).fill(0);
   for (const s of cat) counts[Math.min(BANDS - 1, Math.floor((s.y / 720) * BANDS))]++;
   const uniform = cat.length / BANDS;
   for (let i = 0; i < BANDS; i++) {
-    assert.ok(counts[i] > uniform * 0.3,
-      `horizontal band ${i} has ${counts[i]} stars, far below the ${uniform.toFixed(0)} a populated sky needs`);
+    assert.ok(counts[i] > uniform * 0.7 && counts[i] < uniform * 1.3,
+      `horizontal band ${i} has ${counts[i]} stars, expected close to the uniform ${uniform.toFixed(0)}`);
   }
-  // ...and no single band may hoard the field either.
-  assert.ok(Math.max(...counts) < uniform * 2.6, `no band should hoard the sky: ${counts.join(',')}`);
 });
 
 test('the galactic plane is tilted, not a horizontal stripe', () => {
