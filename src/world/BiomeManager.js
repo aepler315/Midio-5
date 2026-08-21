@@ -82,7 +82,11 @@ import { VoyagePhase } from '../sim/SkyVoyage.js';
 const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
 // How much of the frame is sky rather than mountain stack -- the region the
 // star catalogue is generated across (see the generateCatalogue call).
-const STAR_SKY_FRAC = 0.62;
+// Wider than the tallest peak strictly requires: valleys between peaks (and
+// gaps in shorter biomes) expose real sky well below any fixed "always
+// occluded" line, and a catalogue that stopped short of that left stars
+// visibly absent from those gaps even though they were legitimately sky.
+const STAR_SKY_FRAC = 0.78;
 // Aerial perspective per parallax layer: how far each range's own fill is
 // pulled toward the sky-horizon color before it is drawn. L5 is the
 // nearest range and keeps the biome's authored silhouette color exactly;
@@ -526,9 +530,9 @@ export class BiomeManager {
     // Ocean ecosystem: islands + ships sit on the water always; sea life,
     // the rare monster, and tsunamis (anchored on the song's loudest bars)
     // are the phenomena-gated extras.
-    this._islands = islands(hashSeed(`${songSeed}:islands`));
-    this._ships = ships(hashSeed(`${songSeed}:ships`));
-    this._seaLife = seaLifeSchedule(hashSeed(`${songSeed}:sealife`), durationMs);
+    this._islands = islands(hashSeed(`${songSeed}:islands`), 7);
+    this._ships = ships(hashSeed(`${songSeed}:ships`), 5);
+    this._seaLife = seaLifeSchedule(hashSeed(`${songSeed}:sealife`), durationMs, { minGapMs: 3500, maxGapMs: 9000 });
     this._seaLifeIdx = 0;
     this._monsters = monsterSchedule(hashSeed(`${songSeed}:monster`), durationMs);
     this._monsterIdx = 0;
@@ -4443,16 +4447,122 @@ export class BiomeManager {
     }
     ctx.globalAlpha = 1;
 
-    // 3. Light falls off with depth into the solid -- drawn LAST so it
-    // sinks the strata into the dark with distance from the surface
-    // rather than sitting under them.
+    // 3. Roots and ore: persistent dressing so the band has something in it
+    // beyond flat dirt and Broshi's occasional cave. Both are seeded once
+    // per song and drawn in WORLD space like the strata above, so they
+    // scroll with the terrain instead of sitting pinned to the screen.
+    this._drawRoots(ctx, canvas, crest, depth, worldX);
+    this._drawOreFlecks(ctx, canvas, crest, depth, worldX);
+
+    // 4. Light falls off with depth into the solid -- drawn LAST so it
+    // sinks everything above into the dark with distance from the surface.
+    // Runs all the way to true black well before the canvas edge: the goal
+    // isn't just a darker slab, it's for the band to visually run out and
+    // disappear into an unlit abyss rather than presenting as a big flat
+    // colored rectangle down to the bottom of the frame.
     const grad = ctx.createLinearGradient(0, crest, 0, canvas.height);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, shiftLightness(groundColor, -0.18));
-    ctx.globalAlpha = 0.8;
+    grad.addColorStop(0.55, shiftLightness(groundColor, -0.22));
+    grad.addColorStop(1, '#000000');
     ctx.fillStyle = grad;
     ctx.fillRect(0, crest, canvas.width, depth);
     ctx.restore();
+  }
+
+  /** Seeded root definitions -- fixed per song. Each is a short, tapering,
+   *  gently forking tendril hanging from a point on the soil horizon,
+   *  reading as the underside of surface foliage rather than anything
+   *  planted at generation time (there's no per-plant correlation --
+   *  purely ambient texture, cheap because it's baked once). */
+  _buildRoots() {
+    const rand = mulberry32(hashSeed(`${this.songSeed}:roots`));
+    const out = [];
+    const SPAN = 2400; // world-x period the pattern repeats over
+    const COUNT = 22;
+    for (let i = 0; i < COUNT; i++) {
+      out.push({
+        worldX: rand() * SPAN,
+        len: 14 + rand() * 34,
+        lean: (rand() - 0.5) * 0.6,
+        forkAt: 0.4 + rand() * 0.4,
+        forkLen: 8 + rand() * 16,
+        forkSide: rand() < 0.5 ? -1 : 1,
+        width: 1.1 + rand() * 1.3,
+      });
+    }
+    return { span: SPAN, roots: out };
+  }
+
+  _drawRoots(ctx, canvas, crest, depth, worldX) {
+    const { span, roots } = this._roots || (this._roots = this._buildRoots());
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineCap = 'round';
+    const phase = worldX % span;
+    for (let rep = -1; rep <= Math.ceil(canvas.width / span) + 1; rep++) {
+      for (const r of roots) {
+        const x = r.worldX + rep * span - phase;
+        if (x < -20 || x > canvas.width + 20) continue;
+        const reach = Math.min(r.len, depth * 0.7);
+        if (reach < 6) continue;
+        ctx.lineWidth = r.width;
+        ctx.beginPath();
+        ctx.moveTo(x, crest);
+        const midX = x + r.lean * reach;
+        const midY = crest + reach * r.forkAt;
+        ctx.lineTo(midX, midY);
+        ctx.lineTo(midX + r.lean * (reach - reach * r.forkAt), crest + reach);
+        ctx.stroke();
+        // A short fork off the main tendril -- keeps it reading as roots,
+        // not a single straight scratch.
+        ctx.beginPath();
+        ctx.moveTo(midX, midY);
+        ctx.lineTo(midX + r.forkSide * r.forkLen * 0.6, midY + r.forkLen);
+        ctx.stroke();
+      }
+    }
+  }
+
+  /** Seeded ore-fleck definitions -- small glints buried in the soil,
+   *  reacting faintly to the melody band like the strata's light passes
+   *  already do elsewhere in this class, so the band never reads as fully
+   *  inert even between cave events. */
+  _buildOreFlecks() {
+    const rand = mulberry32(hashSeed(`${this.songSeed}:ore`));
+    const out = [];
+    const SPAN = 1800;
+    const COUNT = 14;
+    const HUES = ['#ffe08a', '#8ad9ff', '#c9a4ff'];
+    for (let i = 0; i < COUNT; i++) {
+      out.push({
+        worldX: rand() * SPAN,
+        depth01: 0.15 + rand() * 0.75,
+        r: 1.4 + rand() * 2.2,
+        color: HUES[(rand() * HUES.length) | 0],
+        phase: rand() * Math.PI * 2,
+      });
+    }
+    return { span: SPAN, flecks: out };
+  }
+
+  _drawOreFlecks(ctx, canvas, crest, depth, worldX) {
+    const { span, flecks } = this._oreFlecks || (this._oreFlecks = this._buildOreFlecks());
+    const phase = worldX % span;
+    const nowMs = this.tSec * 1000;
+    for (let rep = -1; rep <= Math.ceil(canvas.width / span) + 1; rep++) {
+      for (const f of flecks) {
+        const x = f.worldX + rep * span - phase;
+        if (x < -6 || x > canvas.width + 6) continue;
+        const y = crest + depth * f.depth01;
+        if (y > canvas.height - 4) continue;
+        const twinkle = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(nowMs / 900 + f.phase));
+        ctx.globalAlpha = 0.5 * twinkle;
+        ctx.fillStyle = f.color;
+        ctx.beginPath();
+        ctx.arc(x, y, f.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
   }
 
   /** Seeded strata definitions -- fixed per song, so the same seed always

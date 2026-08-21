@@ -5,7 +5,6 @@
 // back to "off" rather than throwing.
 const STORAGE_KEY = 'smw:reducedFlash';
 const NO_LYRICS_KEY = 'smw:noLyrics';
-const BLUETOOTH_LATENCY_KEY = 'smw:bluetoothLatency';
 export const FLASH_CAP = 0.4;
 
 /** A player who has never touched this toggle gets the OS-level signal as
@@ -38,18 +37,6 @@ export function getLyricsDisabled() {
 
 export function setLyricsDisabled(v) {
   try { localStorage.setItem(NO_LYRICS_KEY, v ? '1' : '0'); } catch { /* no persistent storage available */ }
-}
-
-// "Bluetooth latency mode": floors the heard-clock lag at
-// BLUETOOTH_LATENCY_FLOOR_MS (ChoreoClock) so beat-anchored visuals stay
-// on the ear when AudioContext.outputLatency under-reports BT headphones.
-// Same storage-guarded pattern as reduced-flash / no-lyrics above.
-export function getBluetoothLatency() {
-  try { return localStorage.getItem(BLUETOOTH_LATENCY_KEY) === '1'; } catch { return false; }
-}
-
-export function setBluetoothLatency(v) {
-  try { localStorage.setItem(BLUETOOTH_LATENCY_KEY, v ? '1' : '0'); } catch { /* no persistent storage available */ }
 }
 
 /** Caps a flash alpha at FLASH_CAP when reduced-flash is active; a pure pass-through otherwise. */

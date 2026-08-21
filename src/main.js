@@ -20,7 +20,7 @@ import { ROLE_LOW, ROLE_HIGH, GrooveFingerprint } from './sim/GrooveFingerprint.
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
 import {
   getReducedFlash, setReducedFlash, getLyricsDisabled, setLyricsDisabled,
-  getBluetoothLatency, setBluetoothLatency, getStoredGroove, setStoredGroove,
+  getStoredGroove, setStoredGroove,
 } from './ui/Accessibility.js';
 import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
@@ -144,8 +144,6 @@ const lyricsSkipBtnEl = document.getElementById('lyricsSkipBtn');
 const lyricsNoneBtnEl = document.getElementById('lyricsNoneBtn');
 const noLyricsBtnEl = document.getElementById('noLyricsBtn');
 const reducedFlashBtnEl = document.getElementById('reducedFlashBtn');
-const btLatencyBtnEl = document.getElementById('btLatencyBtn');
-const btLatencyHudBtnEl = document.getElementById('btLatencyHudBtn');
 const calibrateBtnEl = document.getElementById('calibrateBtn');
 const syncPromptEl = document.getElementById('syncPrompt');
 const syncPromptFixBtnEl = document.getElementById('syncPromptFixBtn');
@@ -189,7 +187,6 @@ let rafHandle = null; // tracks the pending frame() call so a mid-song file
 let fontModalView = 'list'; // 'list' (visible fonts, click-to-hide) | 'hidden' (hidden fonts, click-to-unhide)
 let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted accessibility toggle
 let lyricsDisabled = getLyricsDisabled(); // "No lyrics": persisted opt-out from the lyric fetch/prompt
-let bluetoothLatency = getBluetoothLatency(); // floor output-latency for BT headphones
 // Dev surfaces (the `` ` ``/V/T debug overlay + its per-frame render cost,
 // and the developer-oriented half of the title screen's key legend) are
 // gated behind ?dev=1. V and T sit on bare letter keys right next to the
@@ -229,30 +226,6 @@ function syncReducedFlashBtn() {
 syncReducedFlashBtn();
 if (reducedFlashBtnEl) reducedFlashBtnEl.addEventListener('click', () => toggleReducedFlash());
 
-/** Reflect Bluetooth latency mode on loader + in-game HUD buttons and the AudioEngine. */
-function syncBtLatencyUi() {
-  const on = bluetoothLatency;
-  if (btLatencyBtnEl) {
-    btLatencyBtnEl.setAttribute('aria-pressed', on ? 'true' : 'false');
-    btLatencyBtnEl.textContent = `BT latency: ${on ? 'on' : 'off'}`;
-  }
-  if (btLatencyHudBtnEl) {
-    btLatencyHudBtnEl.setAttribute('aria-pressed', on ? 'true' : 'false');
-    btLatencyHudBtnEl.textContent = on ? 'BT lag on' : 'BT lag';
-    btLatencyHudBtnEl.title = on
-      ? 'Bluetooth latency mode on (~200 ms floor). Click to turn off.'
-      : 'Bluetooth latency mode (~200 ms floor for headphones). Remembered.';
-  }
-  if (audioEngine) audioEngine.bluetoothLatencyMode = on;
-}
-function toggleBluetoothLatency() {
-  bluetoothLatency = !bluetoothLatency;
-  setBluetoothLatency(bluetoothLatency);
-  syncBtLatencyUi();
-}
-syncBtLatencyUi();
-if (btLatencyBtnEl) btLatencyBtnEl.addEventListener('click', toggleBluetoothLatency);
-if (btLatencyHudBtnEl) btLatencyHudBtnEl.addEventListener('click', toggleBluetoothLatency);
 // Guided calibration was previously reachable only via the C key -- this
 // is the only way to reach it on a phone or tablet, same gap the reduced-
 // flash toggle already had a button for.
@@ -387,7 +360,6 @@ function randomizeSeed() {
 async function bootAudio() {
   if (audioEngine) return;
   audioEngine = new AudioEngine();
-  audioEngine.bluetoothLatencyMode = bluetoothLatency;
   const running = await audioEngine.resume();
   if (!running) {
     // A stuck-suspended context used to fail silently here: the game would

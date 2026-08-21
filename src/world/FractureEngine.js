@@ -95,14 +95,20 @@ function jaggedChord(a, b, nMids, rand, ampPx) {
 // frame. It now inks ONE structure, and because the pieces are ordered
 // bottom-to-top and birth in that order as the song's stress accumulates,
 // the thing genuinely RISES over the length of the track rather than merely
-// fading up in place:
+// fading up in place. The whole point is a scale reveal, not a portrait: a
+// player should never be sure they're looking at an actual ship, only that
+// whatever it is, it's ABOUT that size -- so the moment it turns out to be
+// vastly bigger lands as a surprise instead of confirming a drawing.
 //
-//   1. It breaks the water as a large ship -- hull, deck, a single mast.
-//      At that distance there is nothing else it could be.
-//   2. The hull keeps going down and the flanks keep going up. It was never
-//      a ship; that was the exposed tip of something with no visible bottom.
+//   1. A small, rough, barely-there mark breaks the water -- roughly
+//      ship-sized, ambiguous in shape. Not a technical hull/deck/mast
+//      illustration; just something small out there.
+//   2. It keeps going down, and keeps going UP, wider each course. It was
+//      never boat-sized; that was the exposed tip of something with no
+//      visible bottom, and it swells far past its first impression as it climbs.
 //   3. The shaft climbs, course by course, out of the ocean and through the
-//      whole sky.
+//      whole sky, widening well past anything a ship could be before it
+//      finally narrows to a spire.
 //   4. It crosses the deep-sky altitude where the SpaceRidge hangs -- and
 //      the last birth of the song is the tie line that joins them.
 //
@@ -145,12 +151,17 @@ export function buildMonolithPolylines(w, h, seed, count = RIDGE_GEN_COUNT) {
   const topY = h * MONOLITH_TOP_FRAC;
 
   const cx = w * (0.38 + rand() * 0.24);
-  // Slender on purpose: the shaft is a fraction of its own height, which is
-  // what sells "too far away to judge, too large to be near" once it starts
-  // climbing. A thicker column just reads as a nearby tower.
-  const shipHW = w * 0.038;  // half-width of the vessel it pretends to be
-  const shaftHW = w * 0.021; // ...once it stops pretending
-  const crownHW = w * 0.013; // narrowing as it climbs out of the air
+  // The scale reveal lives entirely in this progression: SEED is small
+  // enough to read as "something roughly ship-sized," not a drawing of one.
+  // PLINTH is already past what a ship's footprint could be. GIRTH is the
+  // payoff -- by the time the shaft reaches the ridge's altitude it has
+  // swollen far past anything nearby could be, before CROWN tapers the very
+  // top back down to a needle so it still pierces the sky like a spire
+  // rather than staying a wide slab.
+  const seedHW = w * 0.011;   // the first, ambiguous mark on the water
+  const plinthHW = w * 0.030; // already ~3x the first impression
+  const girthHW = w * 0.115;  // the swell -- this is the "it's THAT big" beat
+  const crownHW = w * 0.020;  // tapering to a spire above the ridge
 
   const plans = [];
   // Every piece gets re-jittered so it still reads as fracture in glass
@@ -164,44 +175,44 @@ export function buildMonolithPolylines(w, h, seed, count = RIDGE_GEN_COUNT) {
     plans.push(polylineFromPoints(jaggedChord(a, b, mids, rand, amp)));
   };
 
-  // --- 1. A large ship (pieces 0-2) ---------------------------------------
-  const deckY = waterY - h * 0.016;
-  const mastY = waterY - h * 0.052;
-  // Hull: waterline down to the keel and back -- the unmistakable vessel curve.
+  // --- 1. A small, ambiguous mark (pieces 0-2) ----------------------------
+  // Rough and small on purpose: two low, irregular bumps and a short stub,
+  // jittered hard relative to their own size so nothing here reads as a
+  // clean hull curve or a technical mast line. Roughly ship-sized, never
+  // confirmed as a ship.
+  const stubY = waterY - h * 0.02;
   pushPts([
-    { x: cx - shipHW, y: waterY },
-    { x: cx - shipHW * 0.62, y: waterY + h * 0.008 },
-    { x: cx, y: waterY + h * 0.011 },
-    { x: cx + shipHW * 0.62, y: waterY + h * 0.008 },
-    { x: cx + shipHW, y: waterY },
-  ], 2.5);
-  // Deck and the short sides that make it read as a superstructure.
+    { x: cx - seedHW, y: waterY },
+    { x: cx - seedHW * 0.5, y: waterY + h * 0.005 },
+    { x: cx + seedHW * 0.3, y: waterY + h * 0.006 },
+    { x: cx + seedHW, y: waterY },
+  ], 3.5);
   pushPts([
-    { x: cx - shipHW, y: waterY },
-    { x: cx - shipHW * 0.60, y: deckY },
-    { x: cx + shipHW * 0.60, y: deckY },
-    { x: cx + shipHW, y: waterY },
-  ], 2.5);
-  // The mast.
-  pushChord({ x: cx, y: deckY }, { x: cx, y: mastY }, 2, 2.5);
+    { x: cx - seedHW * 0.7, y: waterY },
+    { x: cx - seedHW * 0.3, y: waterY - h * 0.009 },
+    { x: cx + seedHW * 0.5, y: waterY - h * 0.007 },
+  ], 3);
+  pushChord({ x: cx + seedHW * 0.1, y: waterY - h * 0.006 }, { x: cx, y: stubY }, 1, 3);
 
-  // --- 2. It was never a ship (pieces 3-5) --------------------------------
+  // --- 2. Already bigger than that (pieces 3-5) ---------------------------
   const plinthY = waterY - h * 0.075;
-  pushChord({ x: cx - shipHW, y: waterY }, { x: cx - shaftHW, y: plinthY }, 3, 5);
-  pushChord({ x: cx + shipHW, y: waterY }, { x: cx + shaftHW, y: plinthY }, 3, 5);
-  // The mast was an edge, and the edge has strata.
-  pushChord({ x: cx - shaftHW, y: plinthY }, { x: cx + shaftHW, y: plinthY }, 2, 3);
+  pushChord({ x: cx - seedHW, y: waterY }, { x: cx - plinthHW, y: plinthY }, 3, 5);
+  pushChord({ x: cx + seedHW, y: waterY }, { x: cx + plinthHW, y: plinthY }, 3, 5);
+  pushChord({ x: cx - plinthHW, y: plinthY }, { x: cx + plinthHW, y: plinthY }, 2, 3);
 
-  // --- 3. The shaft climbs (pieces 6-11) ----------------------------------
+  // --- 3. The shaft climbs, swelling (pieces 6-11) ------------------------
   // Three courses, each a left edge then a right edge, walking the structure
-  // from the plinth up to the ridge's own altitude. Each edge ends on a short
-  // inward course-tick, so banding accumulates with height for free.
+  // from the plinth up to the ridge's own altitude -- widening from plinth
+  // width to full GIRTH as it goes, so the last course arrives at the
+  // ridge already dwarfing anything the first mark could have been. Each
+  // edge ends on a short inward course-tick, so banding accumulates with
+  // height for free.
   const COURSES = 3;
   for (let c = 0; c < COURSES; c++) {
     const y0 = lerp(plinthY, ridgeY, c / COURSES);
     const y1 = lerp(plinthY, ridgeY, (c + 1) / COURSES);
-    const hw0 = lerp(shaftHW, crownHW, c / COURSES);
-    const hw1 = lerp(shaftHW, crownHW, (c + 1) / COURSES);
+    const hw0 = lerp(plinthHW, girthHW, c / COURSES);
+    const hw1 = lerp(plinthHW, girthHW, (c + 1) / COURSES);
     for (const side of [-1, 1]) {
       const edge = jaggedChord(
         { x: cx + side * hw0, y: y0 },
@@ -214,8 +225,11 @@ export function buildMonolithPolylines(w, h, seed, count = RIDGE_GEN_COUNT) {
   }
 
   // --- 4. The crown, out past the ridge (pieces 12-14) --------------------
-  pushChord({ x: cx - crownHW, y: ridgeY }, { x: cx - crownHW * 0.72, y: topY }, 3, 4);
-  pushChord({ x: cx + crownHW, y: ridgeY }, { x: cx + crownHW * 0.72, y: topY }, 3, 4);
+  // Tapers back down from the full GIRTH swell to a spire tip -- still
+  // reads as impossibly large (it just crossed the ridge at full width),
+  // but narrows so it pierces the sky rather than staying a wide slab.
+  pushChord({ x: cx - girthHW, y: ridgeY }, { x: cx - crownHW * 0.72, y: topY }, 3, 4);
+  pushChord({ x: cx + girthHW, y: ridgeY }, { x: cx + crownHW * 0.72, y: topY }, 3, 4);
   pushChord({ x: cx - crownHW * 0.72, y: topY }, { x: cx + crownHW * 0.72, y: topY }, 2, 3);
 
   // --- 5. It connects (piece 15) -----------------------------------------
@@ -224,8 +238,8 @@ export function buildMonolithPolylines(w, h, seed, count = RIDGE_GEN_COUNT) {
   // of the structure out there.
   pushPts([
     { x: cx - w * MONOLITH_TIE_REACH, y: ridgeY + h * 0.012 },
-    { x: cx - crownHW, y: ridgeY },
-    { x: cx + crownHW, y: ridgeY },
+    { x: cx - girthHW, y: ridgeY },
+    { x: cx + girthHW, y: ridgeY },
     { x: cx + w * MONOLITH_TIE_REACH, y: ridgeY + h * 0.012 },
   ], 4);
 
@@ -233,7 +247,7 @@ export function buildMonolithPolylines(w, h, seed, count = RIDGE_GEN_COUNT) {
   // faint interior striations up the shaft.
   while (plans.length < count) {
     const f = (plans.length * 0.37) % 1;
-    const xo = (rand() - 0.5) * shaftHW * 1.2;
+    const xo = (rand() - 0.5) * girthHW * 1.2;
     pushChord(
       { x: cx + xo, y: lerp(plinthY, ridgeY, f) },
       { x: cx + xo * 0.7, y: lerp(plinthY, ridgeY, Math.min(1, f + 0.18)) },
