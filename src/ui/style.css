@@ -207,22 +207,19 @@ html, body {
 /* ── Title screen ─────────────────────────────────────────────────────────── */
 #loader.titleScreen {
   gap: 0;
-  padding: var(--space-5);
+  padding: var(--space-4) var(--space-5) var(--space-3);
   overflow: auto;
-  background: var(--bg-void);
+  /* The stage canvas already draws TitleBackdrop (stars, nebula, the trio).
+     An opaque void here was covering that entire living world, so the first
+     impression was a flat card on black instead of a Midio stage. */
+  background: transparent;
+  justify-content: flex-start;
 }
 
 .titleBg {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    radial-gradient(ellipse 90% 70% at 50% 110%, rgba(20, 40, 70, 0.9), transparent 55%),
-    radial-gradient(ellipse 60% 40% at 20% 20%, rgba(120, 40, 160, 0.26), transparent 50%),
-    radial-gradient(ellipse 50% 35% at 80% 25%, rgba(40, 120, 180, 0.2), transparent 50%),
-    linear-gradient(180deg, #0a0614 0%, #12081f 45%, #0a1424 100%);
+  /* CSS hills/stars are a no-JS fallback only. Once the canvas backdrop is
+     painting, showing both doubles the sky and muddies the glyphs. */
+  display: none;
 }
 
 .titleStars {
@@ -300,16 +297,16 @@ html, body {
 .titleCard {
   position: relative;
   z-index: 1;
-  width: min(560px, 100%);
+  width: min(520px, 100%);
 
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--space-4);
-  margin: auto;
-  padding: var(--space-6) var(--space-6) var(--space-5);
+  gap: var(--space-3);
+  margin: 0 auto var(--space-4);
+  padding: var(--space-5) var(--space-5) var(--space-4);
   border-radius: var(--radius-lg);
-  background: linear-gradient(165deg, rgba(24, 16, 38, 0.86), var(--bg-surface));
+  background: linear-gradient(165deg, rgba(24, 16, 38, 0.78), rgba(14, 11, 22, 0.82));
   border: 1px solid var(--border-subtle);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--spec-gold) 6%, transparent) inset,
@@ -330,35 +327,28 @@ html, body {
   position: relative;
   flex: 0 0 72px;
   width: 72px;
-  height: 72px;
+  height: 88px;
   filter: drop-shadow(0 0 14px color-mix(in srgb, var(--spec-gold) 45%, transparent));
   animation: mascotBob 2.8s ease-in-out infinite;
 }
-.mascotBody {
+/* Same angular shard language as Midio's in-game glyph -- the old round
+   gold blob read as a cartoon mascot on a title card for a wireframe world. */
+.mascotShard {
   position: absolute;
-  inset: 8px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fff6cf, var(--spec-gold) 45%, #e8a020 100%);
-  box-shadow: inset 0 -6px 12px rgba(120, 60, 0, 0.25);
+  inset: 0 10px 8px;
+  background: linear-gradient(165deg, #fff6cf 0%, var(--spec-gold) 42%, #e08a18 100%);
+  clip-path: polygon(50% 0%, 72% 20%, 80% 48%, 66% 78%, 62% 100%, 50% 88%, 38% 100%, 34% 76%, 20% 48%, 28% 20%);
 }
-.mascotEye {
+.mascotCore {
   position: absolute;
-  top: 30px;
-  width: 9px;
-  height: 12px;
+  top: 42%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
   border-radius: 50%;
   background: #1a1020;
-  animation: mascotBlink 5s ease-in-out infinite;
-}
-.mascotEyeL { left: 24px; }
-.mascotEyeR { right: 24px; }
-.mascotShine {
-  position: absolute;
-  top: 16px; left: 20px;
-  width: 14px; height: 10px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.55);
-  transform: rotate(-25deg);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--spec-warm) 70%, transparent);
 }
 
 @keyframes mascotBob {
@@ -370,7 +360,7 @@ html, body {
   95% { transform: scaleY(0.12); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .titleMascot, .mascotEye { animation: none; }
+  .titleMascot { animation: none; }
 }
 
 .titleBrand { flex: 1; min-width: 0; }
@@ -476,7 +466,7 @@ html, body {
   flex-direction: column;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-6) var(--space-5) var(--space-5);
+  padding: var(--space-4) var(--space-5) var(--space-4);
 }
 .dropIcon {
   font-size: 1.8rem;
@@ -527,23 +517,29 @@ html, body {
   align-items: center;
   gap: 2px;
   width: 100%;
-  background: transparent;
-  border: 1px solid color-mix(in srgb, var(--spec-cool) 40%, transparent);
-  color: var(--text-primary);
+  background: linear-gradient(135deg, var(--spec-warm), var(--spec-gold) 120%);
+  border: none;
+  color: #1a0d16;
   padding: var(--space-3) var(--space-5);
   border-radius: var(--radius-pill);
   cursor: pointer;
   font-size: 0.95rem;
-  transition: border-color var(--dur-base), color var(--dur-base), background var(--dur-base), box-shadow var(--dur-base);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--spec-warm) 30%, transparent);
+  transition: transform var(--dur-base) var(--ease-standard), box-shadow var(--dur-base), filter var(--dur-base);
 }
-#demoBtn.demoBtn:hover, #playAgainBtn:hover {
+#demoBtn.demoBtn:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--spec-warm) 40%, transparent);
+}
+#playAgainBtn:hover {
   border-color: var(--spec-cool);
   color: var(--spec-cool);
   background: color-mix(in srgb, var(--spec-cool) 8%, transparent);
   box-shadow: 0 0 24px color-mix(in srgb, var(--spec-cool) 12%, transparent);
 }
-.demoBtnLabel { font-weight: 650; letter-spacing: 0.04em; }
-.demoBtnHint { font-size: 0.72rem; opacity: 0.55; font-weight: 400; }
+.demoBtnLabel { font-weight: 700; letter-spacing: 0.04em; }
+.demoBtnHint { font-size: 0.72rem; opacity: 0.7; font-weight: 400; color: #3a1a16; }
 
 #playAgainBtn {
   background: transparent;
@@ -1652,11 +1648,11 @@ html, body {
 
 .slskEmpty {
   margin: 0;
-  font-size: 0.8rem;
-  line-height: 1.4;
+  font-size: 0.78rem;
+  line-height: 1.35;
   color: var(--text-tertiary);
   text-align: center;
-  padding: var(--space-2) 4px 2px;
+  padding: 4px 4px 0;
 }
 
 /* needs-login badge state */

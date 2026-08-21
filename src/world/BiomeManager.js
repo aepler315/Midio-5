@@ -4463,14 +4463,14 @@ export class BiomeManager {
 
     // 4. Light falls off with depth into the solid -- drawn LAST so it
     // sinks everything above into the dark with distance from the surface.
-    // Runs all the way to true black well before the canvas edge: the goal
-    // isn't just a darker slab, it's for the band to visually run out and
-    // disappear into an unlit abyss rather than presenting as a big flat
-    // colored rectangle down to the bottom of the frame.
+    // Recedes toward an unlit lower band, but the surface (where the trio
+    // actually stands) stays a real, lit material -- going to true black
+    // by ~55% of the band made the footing under the characters read as
+    // void, which is the opposite of "the ground catches the light".
     const grad = ctx.createLinearGradient(0, crest, 0, canvas.height);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(0.55, shiftLightness(groundColor, -0.22));
-    grad.addColorStop(1, '#000000');
+    grad.addColorStop(0.38, shiftLightness(groundColor, -0.10));
+    grad.addColorStop(1, 'rgba(0,0,0,0.72)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, crest, canvas.width, depth);
     ctx.restore();

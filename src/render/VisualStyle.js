@@ -44,12 +44,15 @@ export function styleDials(_style) {
     spaceWash: true,
     starAmbient: 1.3,
     oceanPresence: 1.55,
-    // Characters — wireframe + glow
-    glowHaloMul: 1.25,
-    rimAmount: 0.9,
-    widthBase: 1.8,
-    widthGlow: 2.35,
-    outlineWidthAdd: 2.7,
+    // Characters — wireframe + glow. The world is a dense painterly stack
+    // (haze, ocean, mountains, particles); strokes that look fine in
+    // isolation vanish into it. These sit just above the previous 1.8/2.7
+    // so the trio reads as figures on the ground, not scratches on it.
+    glowHaloMul: 1.55,
+    rimAmount: 0.95,
+    widthBase: 2.2,
+    widthGlow: 2.6,
+    outlineWidthAdd: 3.4,
     // Ocean — water mass + soft contours. It's meant to anchor the ambience
     // between the cosmos and the ground, so it needs real contour
     // definition, not just a wash -- raised from a near-invisible 0.18/0.28.

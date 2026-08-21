@@ -21,6 +21,16 @@ export const STAR_COUNT = 90;
 export const NEBULA_COUNT = 3;
 const STAR_TWINKLE_PERIOD_SEC = 3.2;
 
+/** Where the trio stands on the title stage. Kept in the lower band so
+ *  they read around (not under) the title card, which sits top-center. */
+export function trioLayout(w = 1280, h = 720) {
+  return {
+    midasus: { x: w * 0.78, y: h * 0.70, scale: 3.1 },
+    midio:   { x: w * 0.50, y: h * 0.78, scale: 2.2 },
+    broshi:  { x: w * 0.22, y: h * 0.80, scale: 1.9 },
+  };
+}
+
 /** Build the deterministic starfield + nebula layout for a given seed. */
 export function buildBackdropLayout(seed = 1, w = 1280, h = 720) {
   const rand = mulberry32(seed >>> 0);
@@ -112,32 +122,37 @@ export class TitleBackdrop {
     // pulse the characters carry in-game, so the title reads as a stage
     // they're already standing on, not a poster. Under One Spectrum the
     // glyphs' hues all shift by the title's key shift as one body.
+    //
+    // They stand in the lower band (see trioLayout): the title card used
+    // to cover the old center-stage placement completely, so the living
+    // glyphs were drawn and then immediately hidden by an opaque panel.
     const breathe = (phase) => 1 + 0.03 * Math.sin(tSec * 1.6 + phase);
     const driftY = (phase) => Math.sin(tSec * 0.4 + phase) * 6;
     const rot = (h) => (((h + this._titleShift) % 360) + 360) % 360;
+    const layout = trioLayout(this.width, this.height);
 
-    // Midasus: the hexagram, center-left, spectral hue from a fixed pitch.
+    // Midasus: the hexagram, stage-right.
     const midasusHue = rot(spectralHue(0));
-    const mx = this.width * 0.5, my = this.height * 0.42 + driftY(0);
-    const mScale = 2.6 * breathe(0);
+    const mx = layout.midasus.x, my = layout.midasus.y + driftY(0);
+    const mScale = layout.midasus.scale * breathe(0);
     drawGlowHalo(ctx, mx, my, 30 * mScale, 30 * mScale, midasusHue, 0.5, { sat: 58, light: 78 });
     drawMeshPart(ctx, MIDASUS_MESH, this._midasusRest, {
       tx: mx, ty: my, rot: tSec * 0.1, scaleX: mScale, scaleY: mScale,
     }, midasusHue, { satBase: 58, lightBase: 70, outline: true });
 
-    // Midio: the star-hero, right of center, warm gold.
+    // Midio: the crystal-obelisk, center-front of the stage.
     const midioHue = rot(spectralHue(7));
-    const jx = this.width * 0.66, jy = this.height * 0.5 + driftY(1.3);
-    const jScale = 1.5 * breathe(1.3);
+    const jx = layout.midio.x, jy = layout.midio.y + driftY(1.3);
+    const jScale = layout.midio.scale * breathe(1.3);
     drawGlowHalo(ctx, jx, jy, 26 * jScale, 30 * jScale, midioHue, 0.45, { sat: 60, light: 76 });
     drawMeshPart(ctx, MIDIO_MESH, this._midioRest, {
       tx: jx, ty: jy, rot: Math.sin(tSec * 0.3) * 0.06, scaleX: jScale, scaleY: jScale,
     }, midioHue, { satBase: 60, lightBase: 68, outline: true });
 
-    // Broshi: the comet star, far left, raked forward.
+    // Broshi: the comet star, stage-left, raked forward.
     const broshiHue = rot(spectralHue(2));
-    const bx = this.width * 0.3, by = this.height * 0.56 + driftY(2.1);
-    const bScale = 1.3 * breathe(2.1);
+    const bx = layout.broshi.x, by = layout.broshi.y + driftY(2.1);
+    const bScale = layout.broshi.scale * breathe(2.1);
     const group = { tx: bx, ty: by, rot: 0.12, scaleX: bScale, scaleY: bScale };
     drawGlowHalo(ctx, bx, by, 30 * bScale, 24 * bScale, broshiHue, 0.4, { sat: 34, light: 78 });
     drawMeshPart(ctx, BROSHI_BODY, this._broshiBodyRest, group, broshiHue, { satBase: 40, lightBase: 66, outline: true });
