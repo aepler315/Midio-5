@@ -165,8 +165,10 @@ export function twinkleAmplitude(mag, altitude01) {
  * high density is exactly what reads as "the stars are only in the middle."
  */
 export const GALACTIC_BAND = {
-  centerFrac: 0.34, // band center at mid-screen-x, as a fraction of field height
-  halfFrac: 0.26,   // half-thickness -- the band spans 52% of the field
+  centerFrac: 0.45, // band center at mid-screen-x, as a fraction of field height
+  halfFrac: 0.32,   // half-thickness -- the band spans 64% of the field,
+                     // centered further down than before so it no longer
+                     // reads as a stripe hugging the top of the sky
   tiltFrac: 0.22,   // rise from left edge to right edge, as a fraction of height
 };
 
@@ -189,7 +191,7 @@ export function galacticBandCenterY(xFrac, height) {
 // the density at the plane's core relative to the band's own average, so a
 // modest ratio here still reads as a distinct Milky Way without letting
 // the plane eat the rest of the sky again.
-const BAND_DENSITY_MUL = 1.5;
+const BAND_DENSITY_MUL = 1.2;
 
 /**
  * Generate `count` stars across a width x height field. `height` is the

@@ -12,12 +12,12 @@ test('nextDotPos: first dot lands in region, subsequent dots stay in region and 
   const w = 1280, h = 720;
   const p0 = nextDotPos(null, rand, w, h);
   assert.ok(p0.x >= 0.06 * w && p0.x <= 0.94 * w);
-  assert.ok(p0.y >= 0.05 * h && p0.y <= 0.32 * h);
+  assert.ok(p0.y >= 0.05 * h && p0.y <= 0.58 * h);
   let prev = p0;
   for (let i = 0; i < 50; i++) {
     const p = nextDotPos(prev, rand, w, h);
     assert.ok(p.x >= 0.06 * w - 1e-6 && p.x <= 0.94 * w + 1e-6);
-    assert.ok(p.y >= 0.05 * h - 1e-6 && p.y <= 0.32 * h + 1e-6);
+    assert.ok(p.y >= 0.05 * h - 1e-6 && p.y <= 0.58 * h + 1e-6);
     assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
     prev = p;
   }
