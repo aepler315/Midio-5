@@ -516,7 +516,7 @@ export class Midasus {
       rotY: this._ens ? (this._ens.tumbleRotY || 0) : 0,
     }, this.hue, {
       satBase: sat, lightBase: 70, outline: true,
-      widthBase: 1.7, widthGlow: 2.0,
+      widthBase: 2.1, widthGlow: 2.4,
       lights, // Movement VII: celestial + ground pulses (never her own glow -- see Renderer.draw)
     });
 

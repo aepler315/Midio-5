@@ -30,10 +30,8 @@
       <div class="titleCard">
         <div class="titleHero">
           <div class="titleMascot" aria-hidden="true">
-            <span class="mascotBody"></span>
-            <span class="mascotEye mascotEyeL"></span>
-            <span class="mascotEye mascotEyeR"></span>
-            <span class="mascotShine"></span>
+            <span class="mascotShard"></span>
+            <span class="mascotCore"></span>
           </div>
           <div class="titleBrand">
             <p class="titleEyebrow">music becomes a world</p>
@@ -44,6 +42,25 @@
             </h1>
             <p class="titleTagline">Drop a song. Midio rides every jump, combo, and biome live from the beat.</p>
             <p class="titleSub">Midio plays himself — just sit back and watch, or tap <kbd>F</kbd>/<kbd>J</kbd> along with the beat if you want to.</p>
+          </div>
+        </div>
+
+        <button id="demoBtn" type="button" class="demoBtn">
+          <span class="demoBtnLabel">Play demo</span>
+          <span class="demoBtnHint">no file needed</span>
+        </button>
+
+        <div class="slskDivider"><span>or load your own file</span></div>
+
+        <div id="dropzone" tabindex="0" role="button" aria-label="Drop or choose a music file">
+          <div class="dropzoneInner">
+            <span class="dropIcon" aria-hidden="true">&#9834;</span>
+            <span class="dropPrimary">Drop MIDI or audio to play</span>
+            <span class="dropSecondary">.mid &middot; mp3 &middot; wav &middot; flac &mdash; multi-stem drops welcome</span>
+            <label class="filebtn" onclick="event.stopPropagation()">
+              Browse files
+              <input id="fileInput" type="file" accept=".mid,.midi,audio/*,.mp3,.wav,.flac" multiple hidden />
+            </label>
           </div>
         </div>
 
@@ -119,26 +136,6 @@
           <div id="slskResults" class="slskResults" role="list"></div>
           <p id="slskLegal" class="slskLegal">Free results are open / demo audio. Soulseek downloads: only take files you have the right to use.</p>
         </section>
-
-        <div class="slskDivider"><span>or load your own file</span></div>
-
-        <div id="dropzone" tabindex="0" role="button" aria-label="Drop or choose a music file">
-          <div class="dropzoneInner">
-            <span class="dropIcon" aria-hidden="true">&#9834;</span>
-            <span class="dropPrimary">Drop MIDI or audio to play</span>
-            <span class="dropSecondary">.mid &middot; mp3 &middot; wav &middot; flac &mdash; multi-stem drops welcome</span>
-            <span class="dropSecondary">drop a MIDI <em>and</em> audio together: the recording plays, the score drives the visuals</span>
-            <label class="filebtn" onclick="event.stopPropagation()">
-              Browse files
-              <input id="fileInput" type="file" accept=".mid,.midi,audio/*,.mp3,.wav,.flac" multiple hidden />
-            </label>
-          </div>
-        </div>
-
-        <button id="demoBtn" type="button" class="demoBtn">
-          <span class="demoBtnLabel">Play demo</span>
-          <span class="demoBtnHint">no file needed</span>
-        </button>
 
         <div class="titleMeta">
           <p class="titleFlashNote">Contains flashing lights, camera shake, and sudden scene cuts — the <strong>Reduced flash &amp; motion</strong> toggle below dampens all three.</p>

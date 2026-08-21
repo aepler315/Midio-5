@@ -76,7 +76,7 @@ const TONGUE_COOLDOWN_MS = 350;
 // stretches, so low-intensity sections still feel alive.
 const TAIL_BASE_HZ = 1.3, TAIL_CALM_HZ = 0.32;
 const TAIL_BASE_DEG = 9, TAIL_CALM_DEG = 18;
-const DRAW_SCALE = 1.8; // the stage got bigger: render-only, physics untouched
+const DRAW_SCALE = 2.15; // render-only; physics footprint stays the mesh's local span
 const WEAVE_PX = 6;      // predatory side-to-side drift while trailing
 // BROSHI_BODY+BROSHI_HEAD combined local-space x-span (snout spike to
 // swept tail spike, see meshes.js) -- the only source of truth for his
@@ -945,7 +945,7 @@ export class Broshi {
     const glyphOpts = {
       satBase: 38 + 18 * this.rho,
       lightBase: 54 + 14 * this.rho,
-      widthBase: 1.85,
+      widthBase: 2.2,
       widthGlow: 2.1,
       lights, // Movement VII: celestial + any nearby secondary lights (see LightField.js)
     };
@@ -956,8 +956,8 @@ export class Broshi {
     drawGlowHalo(ctx, glowCenter.x, glowCenter.y, 22 * group.scaleX, 18 * group.scaleY, baseHue, glowAlpha, { sat: 36, light: 72 });
 
     // Ink contour under the crisp strokes: silhouette stays sharp.
-    drawMeshPart(ctx, bodyMeshClean, this._bodyRest, group, baseHue, { ...glyphOpts, outline: { widthAdd: 2.4 } });
-    drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue, { ...glyphOpts, outline: { widthAdd: 2.2 } });
+    drawMeshPart(ctx, bodyMeshClean, this._bodyRest, group, baseHue, { ...glyphOpts, outline: { widthAdd: 3.2 } });
+    drawMeshPart(ctx, BROSHI_HEAD, this._headRest, group, baseHue, { ...glyphOpts, outline: { widthAdd: 3.0 } });
     if (this.beatFlash > 0.03) {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
