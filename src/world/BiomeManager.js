@@ -4398,7 +4398,14 @@ export class BiomeManager {
    * strokes, so this costs a fixed few draw calls regardless of scroll.
    */
   _drawGroundInterior(ctx, canvas, fillPath, bars, groundColor, worldX) {
-    if (this._perf && this._perf.hazeLayers < 2) return; // deepest perf rung: skip outright
+    // Deliberately NOT gated on the perf ladder: every pass in here is a
+    // fixed, small number of draw calls regardless of scroll or scene
+    // complexity (a handful of strata strokes, a couple dozen root/ore
+    // marks, one gradient fill), not a per-frame cost that scales with
+    // load. It used to skip outright at the deepest perf rung, which meant
+    // the ground went completely flat and textureless in exactly the
+    // scenes heavy enough to trigger that rung -- the moment everything
+    // ELSE on screen was busiest, the ground was blankest.
     let crest = canvas.height;
     for (const b of bars) if (b.y < crest) crest = b.y;
     const depth = canvas.height - crest;
