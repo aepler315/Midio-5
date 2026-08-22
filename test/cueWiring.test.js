@@ -47,7 +47,6 @@ const cue = (kind, value = 1, tMs = 1000) => ({ tMs, kind, value, bucket: 8 });
 test('each live cue kind reaches its own engine entry point', () => {
   const cases = [
     [CueKind.APOTHEOSIS, 'forceTrigger'],
-    [CueKind.FLOURISH, 'maybeDisc'],
     [CueKind.KEY_CHANGE, 'forceChange'],
     [CueKind.CALM, 'cueCalm'],
     [CueKind.METEORS, 'cueMeteors'],
@@ -60,6 +59,15 @@ test('each live cue kind reaches its own engine entry point', () => {
     sim._applyCues(1000);
     assert.ok(calls.some((c) => c[0] === expected), `${kind} should call ${expected}`);
   }
+});
+
+test('a flourish cue defers the disc until after ensemble.update, like a drop', () => {
+  // maybeDisc used to run here, then ensemble.update() cleared discCue in
+  // the same step and the trio never spun. Same deferral as DROP.
+  const { sim, calls } = bareSimWithCues([cue(CueKind.FLOURISH)]);
+  sim._applyCues(1000);
+  assert.equal(sim._pendingDiscReason, 'cue');
+  assert.ok(!calls.some((c) => c[0] === 'maybeDisc'), 'maybeDisc waits for the pending slot after ensemble.update');
 });
 
 test('a drop cue both surges the hype and arms the deferred disc flourish', () => {

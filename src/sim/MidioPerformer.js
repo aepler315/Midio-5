@@ -108,6 +108,7 @@ export class MidioPerformer {
 
     this._danceStartMs = -Infinity;     // milestone victory shimmy (grounded)
     this._pirouetteStartMs = -Infinity; // hot clean landing: full ground spin
+    this._lastJumpStartMs = -Infinity;  // landing-tie relaunches never un-air, but they are still new jumps
   }
 
   /** @param {number} [tMs] the kick's true musical onset; the flash is
@@ -156,7 +157,9 @@ export class MidioPerformer {
 
   update(nowMs, dtSec, midio, jump, comboSystem, calmLevel = 0, ensemble = null, holdState = null) {
     this.modal.update(dtSec);
-    const justLaunched = !this._wasAirborne && jump.airborne;
+    const justLaunched = jump.airborne && jump.jumpStartMs !== this._lastJumpStartMs;
+    if (jump.airborne) this._lastJumpStartMs = jump.jumpStartMs;
+    else this._lastJumpStartMs = -Infinity;
     if (justLaunched) {
       this.modal.excite(0.8 + 1.6 * jump.lastLaunchVel);
       const shouldTrick = jump.lastLaunchVel > TRICK_VEL_THRESHOLD || comboSystem.displayM >= TRICK_COMBO_THRESHOLD;

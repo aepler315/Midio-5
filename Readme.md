@@ -37,7 +37,7 @@ Then open the app and either:
 
 - **Search** for a song on the title screen (free music works immediately),
 - drop a `.mid`/audio file, or
-- click **"Play demo"** to run with zero file input.
+- click **"Play demo"** to run *Proof*, an authored 48-bar song whose kicks, drop, double-jumps and disc spins are known to the test suite.
 
 **You can drop a different `.mid`/audio file in at any time, even mid-song**
 — dragging one anywhere on the page (not just the loader screen) tears down
