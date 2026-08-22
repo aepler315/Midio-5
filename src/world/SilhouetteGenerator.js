@@ -1,6 +1,8 @@
 // Generates tileable 2048px silhouette strips for parallax layers 2-5
-// (spec §4.1.1) from 1-D fractal value noise, cached to an offscreen canvas
-// so each biome pays the noise-generation cost only once.
+// (spec §4.1.1). Named summits come from the song's ridge portrait
+// (RidgePortrait.js — spectral mass + phrase-scale energy landmarks);
+// 1-D fractal value noise weathers the skyline and fills the bed. Cached
+// to an offscreen canvas so each biome pays the cost only once.
 //
 // profile 'alpine' (far peaks L2/L3): Denali / Rainier / Shasta massif —
 // broad-shouldered summits joined by high saddles, couloirs, ridged
@@ -12,6 +14,9 @@
 import { ValueNoise1D, ridged } from '../utils/noise.js';
 import { lerp, mulberry32, clamp01 } from '../utils/math.js';
 import { shiftLightness } from '../render/VisualStyle.js';
+import {
+  composeAlpinePeaks, seedPeaks, layerWeathering, spineAt, phraseAt,
+} from './RidgePortrait.js';
 
 function makeCanvas(width, height) {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
@@ -88,51 +93,30 @@ export function peakProfile(d, shoulder, spire, spireMix) {
   return (1 - spireMix) * Math.pow(t, shoulder) + spireMix * Math.pow(t, spire);
 }
 
-export function alpineHeightField(noise, n, step, seed, width, character = 'massif') {
+export function alpineHeightField(noise, n, step, seed, width, character = 'massif', portrait = null, layerKey = 'L2') {
   const cfg = ALPINE_CHARACTERS[character] || ALPINE_CHARACTERS.massif;
   const rand = mulberry32((seed ^ 0xa1b1) >>> 0 || 1);
-  // Major peaks; one dominant (Denali-style) near center.
-  const nPeaks = cfg.peakMin + Math.floor(rand() * cfg.peakSpan);
-  const peaks = [];
-  for (let i = 0; i < nPeaks; i++) {
-    const u = (i + 0.5) / nPeaks + (rand() - 0.5) * 0.08;
-    const w = cfg.wBase + rand() * cfg.wSpan;
-    // Asymmetric flanks. A real summit almost never sits centred over its
-    // own base -- one side drops as a headwall, the other trails off down a
-    // ridge -- and mirror-symmetric peaks were a large part of why these
-    // read as manufactured cones however jagged their edges got.
-    const lean = 1 + (rand() * 2 - 1) * cfg.asym;
-    peaks.push({
-      x: clamp01(u) * width,
-      h: 0.52 + rand() * 0.38,
-      // Half-width of each flank (px) -- larger = broader, gentler slope.
-      wL: w * lean,
-      wR: w / lean,
-      w,
-    });
-  }
-  // Promote central peak to this range's king. Scaled to the character's
-  // own peak width rather than a fixed 130-170px: on `crags` (34-80px
-  // peaks) a hardcoded massif-sized king was the one landform every layer
-  // still shared, which kept them looking alike no matter what else moved.
-  //
-  // The king is now made BROADER, not narrower. Clamping its width down
-  // meant the tallest summit in every range was also the thinnest, so the
-  // one peak the eye goes to first was the spikiest thing on screen. Great
-  // mountains are massive in both directions at once.
-  const main = peaks[Math.floor(nPeaks / 2)];
-  main.h = Math.max(main.h, 0.94 + rand() * 0.06);
-  const kingW = Math.max(main.w, cfg.wBase * (1.25 + rand() * 0.4));
-  const kingLean = 1 + (rand() * 2 - 1) * cfg.asym;
-  main.w = kingW;
-  main.wL = kingW * kingLean;
-  main.wR = kingW / kingLean;
+  const weather = portrait ? layerWeathering(portrait, cfg, layerKey) : {
+    notch: cfg.notch, teeth: cfg.teeth, bed: cfg.bed, apronGain: cfg.apronGain, spineAmp: 0,
+  };
+
+  // Named summits: song portrait when we have one, dart-throwing seed
+  // otherwise. Either way the king is the tallest peak, never a forced
+  // centre — a range with its high point dead-centre of the tile was
+  // half of why every biome's skyline felt manufactured.
+  let peaks = (portrait && portrait.landmarks && portrait.landmarks.length)
+    ? composeAlpinePeaks({ portrait, cfg, layerKey, seed, width })
+    : seedPeaks(cfg, seed, width);
+  if (!peaks.length) peaks = seedPeaks(cfg, seed, width);
 
   // Secondary shoulders / subpeaks (Rainier-style multi-summit) — lower,
-  // never wide enough to fill the saddle into a mesa.
+  // never wide enough to fill the saddle into a mesa. Fewer of them when
+  // the portrait already supplied a busy skyline, so L4 doesn't become a
+  // hairball of fill on top of fill.
+  const shoulderChance = portrait && peaks.length >= 6 ? 0.28 : 0.5;
   const shoulders = [];
   for (const p of peaks) {
-    if (rand() < 0.5) {
+    if (rand() < shoulderChance) {
       const sw = p.w * (0.28 + rand() * 0.2);
       const sLean = 1 + (rand() * 2 - 1) * cfg.asym;
       shoulders.push({
@@ -143,12 +127,19 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
     }
   }
   const allPeaks = peaks.concat(shoulders);
+  const spineAmp = (weather.spineAmp ?? 0) * 0.12;
 
   const heights = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const x = i * step;
+    const u = width > 0 ? x / width : 0;
     // Sparse low foothill bed — keep valleys deep so peaks read as peaks.
-    const bed = ridged(noise, x * 0.0035, 3) * cfg.bed + noise.fbm(x * 0.007, 2) * 0.05;
+    // The song spine is a *family resemblance* under the named summits
+    // (the whole energy arc, heavily smoothed, amplitude tiny), not a
+    // second skyline and not a scrolling spectrogram.
+    const bed = ridged(noise, x * 0.0035, 3) * weather.bed
+      + noise.fbm(x * 0.007, 2) * 0.05
+      + spineAt(portrait, u, spineAmp);
 
     // Summits take the max (they must stay separate landforms), but the
     // connective mass around their feet ADDS up. That distinction is what
@@ -169,33 +160,45 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
         if (core > coreMax) coreMax = core;
       }
       const ad = Math.abs(x - p.x) / (flank * cfg.apronSpread);
-      if (ad < 1) apronSum += Math.pow(1 - ad, 1.7) * p.h * cfg.apronGain;
+      if (ad < 1) apronSum += Math.pow(1 - ad, 1.7) * p.h * weather.apronGain;
     }
     let h = Math.max(coreMax, bed + Math.min(apronSum, cfg.apronCap));
 
     // Couloir notches — carve V's into mid-flanks (craggy outline).
+    // Portrait weathering scales this down so the named summits read;
+    // a pad-heavy song is almost smooth, a bright one still has grain
+    // without turning the skyline into noise.
     const notch = ridged(noise, x * 0.022 + 17, 2);
     if (h > 0.28) {
-      h -= notch * cfg.notch * (h - 0.18);
+      h -= notch * weather.notch * (h - 0.18);
     }
 
     // High-frequency ridge teeth (arete / serac) — only near the skyline.
     const teeth = ridged(noise, x * 0.05, 2);
-    h += teeth * cfg.teeth * clamp01((h - 0.35) * 2.2);
+    h += teeth * weather.teeth * clamp01((h - 0.35) * 2.2);
 
     heights[i] = clamp01(h);
   }
   return heights;
 }
 
-/** Rolling foothill field (nearer layers) — classic fbm. */
-export function rollingHeightField(noise, n, step, octaves) {
+/** Rolling foothill field (nearer layers) — classic fbm, with a gentle
+ *  phrase-scale bass undulation when a portrait is present. The phrase
+ *  wave is one period of the song's energy loop, not the full envelope,
+ *  so the hills breathe at the song's scale without tracing a spectrogram. */
+export function rollingHeightField(noise, n, step, octaves, portrait = null, width = 0) {
   const heights = new Float32Array(n);
+  const stripW = width > 0 ? width : Math.max(1, (n - 1) * step);
+  const bass = portrait?.bassShare ?? 0;
+  const phraseAmp = 0.16 * bass * (0.45 + 0.55 * (portrait?.phraseStrength ?? 0));
   for (let i = 0; i < n; i++) {
     const x = i * step;
     // Map fbm from ~[-1,1] into a positive hill field.
     const f = noise.fbm(x * 0.006, octaves);
-    heights[i] = clamp01(0.5 + 0.5 * f);
+    const u = x / stripW;
+    const phrase = phraseAmp > 0 ? (phraseAt(portrait, u) * 2 - 1) * phraseAmp : 0;
+    const spine = spineAt(portrait, u, 0.04 * (portrait?.bassShare ?? 0));
+    heights[i] = clamp01(0.5 + 0.5 * f + phrase * 0.5 + spine);
   }
   return heights;
 }
@@ -206,6 +209,12 @@ export function generateSilhouette({
   shadeMode = 'classic', // 'classic' flat fill | 'rendered' soft CGI volume
   profile = 'rolling', // 'rolling' | 'alpine' (Denali / Rainier / Shasta massifs)
   character = 'massif', // alpine only -- see ALPINE_CHARACTERS
+  // Song-anchored outline (RidgePortrait). Null keeps the seeded fallback
+  // so tests and anything without energy curves still get a range. layerKey
+  // picks which facet of the portrait this depth reads (L2 form / L3
+  // timbre / L4 grain / L5 phrase hills).
+  portrait = null,
+  layerKey = 'L2',
   // Aerial perspective, optical half (The Light Show, pass 7): DepthHaze
   // already washes far layers toward the sky color, but color alone isn't
   // the cue a distant object actually gives -- it also loses edge acuity.
@@ -240,9 +249,9 @@ export function generateSilhouette({
 
   let heights;
   if (profile === 'alpine') {
-    heights = alpineHeightField(noise, n, step, seed, width, character);
+    heights = alpineHeightField(noise, n, step, seed, width, character, portrait, layerKey);
   } else {
-    heights = rollingHeightField(noise, n, step, octaves);
+    heights = rollingHeightField(noise, n, step, octaves, portrait, width);
   }
 
   // Force a seamless horizontal wrap by blending the tail back to the head.
