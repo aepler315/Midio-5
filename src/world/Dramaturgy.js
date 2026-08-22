@@ -26,11 +26,12 @@ export const BIOME_TEMPERATURE = {
  * section's energy percentile rank. Seeded jitter keeps different songs
  * from casting identically; immediate repeats are forbidden.
  */
-export function castBiomes(sectionEnergies, seed = 1) {
+export function castBiomes(sectionEnergies, seed = 1, temperature = BIOME_TEMPERATURE) {
   const n = sectionEnergies.length;
   if (n === 0) return [];
   const rand = mulberry32(seed >>> 0 || 1);
-  const names = Object.keys(BIOME_TEMPERATURE);
+  const names = Object.keys(temperature);
+  if (names.length === 0) return [];
 
   // Percentile rank of each section's energy (ties broken by index).
   const order = sectionEnergies.map((e, i) => [e, i]).sort((a, b) => a[0] - b[0]);
@@ -42,7 +43,7 @@ export function castBiomes(sectionEnergies, seed = 1) {
     let best = null, bestScore = Infinity;
     for (const name of names) {
       if (out[i - 1] === name) continue; // no immediate repeats
-      const score = Math.abs(BIOME_TEMPERATURE[name] - rank[i]) + rand() * 0.15;
+      const score = Math.abs(temperature[name] - rank[i]) + rand() * 0.15;
       if (score < bestScore) { bestScore = score; best = name; }
     }
     out.push(best);

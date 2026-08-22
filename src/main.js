@@ -40,6 +40,8 @@ import {
 } from './net/JamendoSource.js';
 import { visualNow } from './core/ChoreoClock.js';
 import { SoulseekSearch } from './soulseek/SoulseekSearch.js';
+import { extractWatchFeatures, scoreWorlds } from './world/WorldScore.js';
+import { DEFAULT_WORLD_ID } from './world/Worlds.js';
 
 
 const STEP_MS = 1000 / 120;
@@ -83,6 +85,8 @@ const loaderEl = document.getElementById('loader');
 const dropzoneEl = document.getElementById('dropzone');
 const fileInputEl = document.getElementById('fileInput');
 const demoBtnEl = document.getElementById('demoBtn');
+const worldSelectEl = document.getElementById('worldSelect');
+const worldSelectGridEl = document.getElementById('worldSelectGrid');
 const progressEl = document.getElementById('progressText');
 const hudEl = document.getElementById('hud');
 const hudRightEl = document.getElementById('hudRight');
@@ -254,6 +258,8 @@ let loadGen = 0;     // a newer load cancels a stale audition gate's start
 // the raw-audio-file path (MIDI/demo regenerate sound from the timeline).
 let lastTimelineData = null;
 let lastAudioBuffer = null;
+let lastWorldId = DEFAULT_WORLD_ID;
+let pendingWorldStart = null;
 let lastSongName = 'song';
 let lastSongSeed = null; // 32-bit seed used for the run that just finished
 
@@ -401,7 +407,7 @@ async function bootAudio() {
  *  loaded font against this song in the background and steers the library
  *  to the best fit as verdicts arrive, same as fonts dropped mid-song. */
 function startImmediately(data) {
-  startTimeline(data);
+  offerWorldsThenStart(data);
   fontRecommender?.auditionForTimeline(data);
 }
 
@@ -659,6 +665,7 @@ function stopTimeline() {
   completeNewSeedRowEl?.classList.add('hidden');
   debugOverlayEl.classList.add('hidden');
   auditionPanelEl?.classList.add('hidden');
+  worldSelectEl?.classList.add('hidden');
 }
 
 function updatePauseButtonUI() {
@@ -686,9 +693,65 @@ function backToTitle() {
   stopTimeline();
   completePanelEl.classList.add('hidden');
   hudEl.classList.add('hidden');
+  worldSelectEl?.classList.add('hidden');
+  pendingWorldStart = null;
   loaderEl.classList.remove('hidden');
   slskPanelSearch?.resetBusy();
   startTitleBackdrop();
+}
+
+function offerWorldsThenStart(data, extra = {}) {
+  pendingWorldStart = { data, extra };
+  const features = extractWatchFeatures({
+    energyCurves: data.energyCurves,
+    durationMs: data.durationMs,
+    bpm: data.bpm,
+    analysis: data.analysis,
+    structure: data.structure,
+  });
+  const ranked = scoreWorlds(features);
+  renderWorldSelect(ranked);
+  progressEl.classList.add('hidden');
+  loaderEl.classList.add('hidden');
+  auditionPanelEl?.classList.add('hidden');
+  worldSelectEl?.classList.remove('hidden');
+  startTitleBackdrop();
+}
+
+function renderWorldSelect(ranked) {
+  if (!worldSelectGridEl) return;
+  worldSelectGridEl.innerHTML = '';
+  for (const w of ranked) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'worldCard' + (w.recommended ? ' is-best' : '');
+    btn.dataset.worldId = w.id;
+    btn.innerHTML = `
+      <div class="worldCardPreview ${w.kind === 'city' ? 'city' : 'alpine'}" aria-hidden="true"></div>
+      <div class="worldCardTop">
+        <span class="worldCardName">${w.name}</span>
+        <span class="worldCardScore">${w.score}%</span>
+      </div>
+      <p class="worldCardTag">${w.tagline}</p>
+      ${w.recommended ? '<span class="worldCardBadge">best fit</span>' : ''}
+    `;
+    btn.addEventListener('click', () => confirmWorld(w.id));
+    worldSelectGridEl.appendChild(btn);
+  }
+}
+
+function confirmWorld(id) {
+  const pending = pendingWorldStart;
+  pendingWorldStart = null;
+  if (!pending) return;
+  lastWorldId = id;
+  pending.data.worldId = id;
+  worldSelectEl?.classList.add('hidden');
+  startTimeline(pending.data, pending.extra);
+  if (pending.extra.playBuffer) {
+    lastAudioBuffer = pending.extra.playBuffer;
+    audioEngine.playBuffer(pending.extra.playBuffer, 0);
+  }
 }
 
 function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}) {
@@ -734,6 +797,7 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
       // carried one. Null for raw audio, the demo, and any MIDI without a
       // track named "Conductor".
       conductorCues: timelineData.conductor || null,
+      worldId: timelineData.worldId || lastWorldId || DEFAULT_WORLD_ID,
     });
   } catch (err) {
     console.error('[world build failed]', err);
@@ -795,6 +859,7 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
     stems: timelineData.stems || null,
     muteTimelineSynth,
     songSeed: sim.songSeed,
+    worldId: sim.worldId,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
   };
@@ -896,10 +961,9 @@ async function loadScoredAudio(midiFile, audioFiles) {
         + ` (${data.conductor.scheduleCues.length} schedule, ${data.conductor.liveCues.length} live)`,
       );
     }
-    startTimeline(data);
     lastAudioBuffer = audioBuffer;
-    fontRecommender?.clear(); // the recording is its own sound source
-    audioEngine.playBuffer(audioBuffer, 0);
+    fontRecommender?.clear();
+    offerWorldsThenStart(data, { playBuffer: audioBuffer });
   } catch (err) {
     console.error('[scored audio load failed]', err);
     progressEl.classList.add('hidden');
@@ -1224,13 +1288,8 @@ async function loadAudioFiles(files) {
     muteTimelineSynth = true;
     lastSongName = files[0].name || 'song';
     startTimeline(data);
-    // Replaying this song (Play again / export) needs the actual decoded
-    // audio -- MIDI/demo regenerate their sound from the timeline, but a
-    // raw-audio song has none of its own to regenerate.
     lastAudioBuffer = audioBuffer;
-    // Raw audio is its own sound source — font fit scores from the previous
-    // MIDI would be stale noise here, so drop them.
-    fontRecommender?.clear();
+    fontRecommender?.clear(); // the recording is its own sound source
     audioEngine.playBuffer(audioBuffer, 0);
   } catch (err) {
     console.error('[audio load failed]', err);

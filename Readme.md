@@ -2,8 +2,16 @@
 
 A framework-free, audio-clock-mastered rhythm side-scroller. Drop in a MIDI
 file or an audio file (mp3/wav/flac) and the entire show — jumps, combos,
-two companions, eight parallax biomes, screen fracturing — is generated live
-from the music, no authored levels involved. Canvas 2D + Web Audio API only.
+companions, worlds — is generated live from the music, no authored levels
+involved. Canvas 2D + Web Audio API only.
+
+**Worlds** are graphic styles, not palettes. After a song loads you pick
+**The Range** (alpine mountains that breathe with the mix) or **After Hours**
+(a nighttime lo-fi cityscape). Each world shows a match percentage: how well
+that visual suite would play *this* song — enough going on to watch, not so
+much it clips. Palettes still rotate *inside* a world (biomes in the Range,
+sodium/rain/district in the city). Adding a world is a registry entry + a
+silhouette profile + a draw path.
 
 **Song search** is built in: **free music works with zero setup** (no API keys),
 optional Soulseek via bundled slskd or direct login — then hit **Play**.

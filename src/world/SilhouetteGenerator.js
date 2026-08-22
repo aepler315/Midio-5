@@ -17,6 +17,7 @@ import { shiftLightness } from '../render/VisualStyle.js';
 import {
   composeAlpinePeaks, seedPeaks, layerWeathering, spineAt, phraseAt, massProfile,
 } from './RidgePortrait.js';
+import { cityHeightField, bakeWindowStrip } from './city/CitySilhouette.js';
 
 function makeCanvas(width, height) {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
@@ -264,6 +265,8 @@ export function generateSilhouette({
   let heights;
   if (profile === 'alpine') {
     heights = alpineHeightField(noise, n, step, seed, width, character, portrait, layerKey);
+  } else if (profile === 'city') {
+    heights = cityHeightField(n, step, seed, width, portrait, layerKey);
   } else {
     heights = rollingHeightField(noise, n, step, octaves, portrait, width);
   }
@@ -290,7 +293,7 @@ export function generateSilhouette({
   // CRITICAL: peaks that compute above the strip top (y < 0) are clipped by
   // the canvas into flat mesas. Rescale the vertical throw so the tallest
   // summit keeps headroom — shape stays pointy, nothing shears off.
-  const HEADROOM = profile === 'alpine' ? 14 : 6;
+  const HEADROOM = profile === 'alpine' ? 14 : profile === 'city' ? 10 : 6;
   if (minY < HEADROOM) {
     const span = footY - minY;
     const target = footY - HEADROOM;
@@ -357,9 +360,9 @@ export function generateSilhouette({
     // Alpine: slightly stronger rim so jagged summits read against the sky.
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = profile === 'alpine' ? 0.20 : 0.14;
+    ctx.globalAlpha = profile === 'alpine' ? 0.20 : profile === 'city' ? 0.10 : 0.14;
     ctx.strokeStyle = 'rgba(255, 248, 230, 0.45)';
-    ctx.lineWidth = profile === 'alpine' ? 2.0 : 2.4;
+    ctx.lineWidth = profile === 'alpine' ? 2.0 : profile === 'city' ? 1.2 : 2.4;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.beginPath();
@@ -406,6 +409,11 @@ export function generateSilhouette({
   // Full precision regardless of softenScale -- see the softenScale doc
   // above for why the vector data and the baked pixels are independent.
   canvas.ridge = { heights, step, baseline, amplitude: ampFitted, height, profile };
+  if (profile === 'city') {
+    canvas.windows = bakeWindowStrip(ridgeYs, {
+      width, height, step, seed, color: '#f2d090',
+    });
+  }
   return canvas;
 }
 
