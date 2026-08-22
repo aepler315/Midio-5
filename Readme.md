@@ -2,8 +2,16 @@
 
 A framework-free, audio-clock-mastered rhythm side-scroller. Drop in a MIDI
 file or an audio file (mp3/wav/flac) and the entire show — jumps, combos,
-two companions, eight parallax biomes, screen fracturing — is generated live
-from the music, no authored levels involved. Canvas 2D + Web Audio API only.
+companions, worlds — is generated live from the music, no authored levels
+involved. Canvas 2D + Web Audio API only.
+
+**Worlds** are graphic styles, not palettes. After a song loads you pick
+**The Range** (alpine mountains that breathe with the mix) or **After Hours**
+(a nighttime lo-fi cityscape). Each world shows a match percentage: how well
+that visual suite would play *this* song — enough going on to watch, not so
+much it clips. Palettes still rotate *inside* a world (biomes in the Range,
+sodium/rain/district in the city). Adding a world is a registry entry + a
+silhouette profile + a draw path.
 
 **Song search** is built in: **free music works with zero setup** (no API keys),
 optional Soulseek via bundled slskd or direct login — then hit **Play**.
@@ -297,12 +305,15 @@ super-distant massif whose skyline IS a live bar graph of the current
 7-band spectrum (bass builds the summit at the center, treble falls away
 to the flanks), haze-tinted and on the slowest scroll in the scene.
 The parallax ranges' *baked outlines* are no longer a seeded picket fence:
-each song gets a ridge portrait from its mean spectral mass (bass-heavy
-tracks grow a few broad summits on high saddles; bright ones grow more,
-thinner peaks) and its phrase-scale energy landmarks (a drop, a chorus —
-not every kick). Far/mid/near layers read different facets of that same
-genome so the stack rhymes without cloning, and the outline never hops on
-the beat — that's still the dance.
+each song gets a ridge portrait from its mean spectral mass and its
+phrase-scale energy landmarks. The 7-band mix is a *vertical* mass
+distribution — foot to crest, not left-to-right (that's the live massif):
+bass-heavy tracks grow a few broad summits on high saddles (an altiplano);
+a mid-forward mix is a classic alpine triangle; a scooped mix (bass + air,
+empty mids) is a plateau with horns; bright/treble tracks grow more,
+thinner peaks with deeper valleys. Far/mid/near layers read different
+facets of that same genome so the stack rhymes without cloning, and the
+outline never hops on the beat — that's still the dance.
 **Orogeny:** every range visibly builds across the song — far peaks
 grow the most — toward the track's own energy climax, then subsides back
 down through the rest of the runtime, geology on a song's timescale. The

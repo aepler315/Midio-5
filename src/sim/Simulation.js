@@ -73,11 +73,13 @@ export class Simulation {
     groove = null,
     songSeed: pinnedSeed = null,
     conductorCues = null,
+    worldId = null,
   } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
     this.customBiome = customBiome || null;
+    this.worldId = worldId || 'alpine';
     this.canvasWidth = canvasWidth;
     this.canvasHeight = canvasHeight;
     this.stageW = canvasWidth;
@@ -240,6 +242,7 @@ export class Simulation {
       lyricSections,
       structure,
       conductorSchedule: conductorCues ? conductorCues.scheduleCues : null,
+      worldId: this.worldId,
     });
     this.reducedFlash = false;
     this.visualStyle = 'rendered';

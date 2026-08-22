@@ -5,6 +5,7 @@ import { ValueNoise1D } from '../src/utils/noise.js';
 import {
   extractRidgePortrait, findLandmarks, sampleEnergyWave, phrasePeriod,
   composeAlpinePeaks, seedPeaks, layerWeathering, spineAt, phraseAt,
+  lithologyFromShares, layerLithology, massProfile,
   PORTRAIT_SAMPLES, MAX_LANDMARKS,
 } from '../src/world/RidgePortrait.js';
 import { ALPINE_CHARACTERS, alpineHeightField, rollingHeightField } from '../src/world/SilhouetteGenerator.js';
@@ -331,3 +332,118 @@ test('no-portrait alpineHeightField remains deterministic', () => {
   assert.equal(a.length, n);
   for (let i = 0; i < n; i++) assert.equal(a[i], b[i]);
 });
+
+// --- Spectral mass geology -------------------------------------------------
+// Same energy envelope, different 7-band shape: the FORM (landmarks) stays
+// put and the ROCK changes. That's the whole point of treating the spectrum
+// as a vertical mass distribution instead of another timeline.
+
+function sameForm(bandsAt) {
+  return makeCurves({
+    energyAt: (t) => 0.16
+      + bump(t, 0.22, 0.07, 0.50)
+      + bump(t, 0.52, 0.07, 0.78)
+      + bump(t, 0.78, 0.08, 0.92),
+    bandsAt,
+  });
+}
+
+const BASS_MIX = () => [1.8, 1.5, 0.25, 0.18, 0.10, 0.05, 0.02];
+const MID_MIX = () => [0.35, 0.45, 1.25, 1.35, 0.70, 0.28, 0.12];
+const BRIGHT_MIX = () => [0.10, 0.14, 0.28, 0.48, 1.15, 1.40, 1.25];
+const SCOOP_MIX = () => [1.55, 1.35, 0.12, 0.10, 0.18, 1.15, 1.05];
+
+test('lithologyFromShares: bass loads the foot, bright loads the tip, scoop loads both', () => {
+  const bass = lithologyFromShares(BASS_MIX());
+  const mid = lithologyFromShares(MID_MIX());
+  const bright = lithologyFromShares(BRIGHT_MIX());
+  const scoop = lithologyFromShares(SCOOP_MIX());
+
+  assert.ok(bass.foot > bright.foot, `bass foot ${bass.foot} vs bright ${bright.foot}`);
+  assert.ok(bright.tip > bass.tip, `bright tip ${bright.tip} vs bass ${bass.tip}`);
+  assert.ok(mid.mid > bass.mid && mid.mid > bright.mid, `mid-forward should own the body: ${mid.mid}`);
+  assert.ok(scoop.scoop > 0.3, `scoop ${scoop.scoop}`);
+  assert.ok(scoop.foot > mid.foot, `scooped mix still has basement: ${scoop.foot} vs ${mid.foot}`);
+  assert.ok(scoop.tip > mid.tip, `scooped mix still has a horn: ${scoop.tip} vs ${mid.tip}`);
+  assert.ok(Math.abs(bass.foot + bass.mid + bass.tip - 1) < 1e-6);
+});
+
+test('massProfile is 1 at the summit, 0 at the foot, and bass is bulkier at mid-flank than bright', () => {
+  const bass = lithologyFromShares(BASS_MIX());
+  const bright = lithologyFromShares(BRIGHT_MIX());
+  assert.ok(Math.abs(massProfile(0, bass) - 1) < 1e-6);
+  assert.equal(massProfile(1, bass), 0);
+  assert.equal(massProfile(1.2, bass), 0);
+  // d=0.55 is the lower flank: a shield still has mass there, a horn doesn't.
+  assert.ok(massProfile(0.55, bass) > massProfile(0.55, bright) * 1.15,
+    `bass ${massProfile(0.55, bass)} vs bright ${massProfile(0.55, bright)}`);
+  // Near the summit (d=0.12) the horn holds more of its height as a spike;
+  // the shield has already started spreading. Relative to d=0.55, bright
+  // drops faster.
+  const bassDrop = massProfile(0.12, bass) - massProfile(0.55, bass);
+  const brightDrop = massProfile(0.12, bright) - massProfile(0.55, bright);
+  assert.ok(brightDrop > bassDrop, `bright should fall off faster: ${brightDrop} vs ${bassDrop}`);
+});
+
+test('a scooped mix is a plateau with horns, not a triangle', () => {
+  const scoop = lithologyFromShares(SCOOP_MIX());
+  const mid = lithologyFromShares(MID_MIX());
+  // Far flank (d=0.78): scoop's basement keeps mass out on the plain.
+  assert.ok(massProfile(0.78, scoop) > massProfile(0.78, mid),
+    `plateau foot: scoop ${massProfile(0.78, scoop)} vs mid ${massProfile(0.78, mid)}`);
+  // Upper flank near the tip (d=0.08): both near 1, but the scoop's extra
+  // tip weight vs mid's body weight shows as a sharper last bit — the
+  // derivative from 0.04 to 0.16 should be steeper for scoop.
+  const scoopSlope = massProfile(0.04, scoop) - massProfile(0.18, scoop);
+  const midSlope = massProfile(0.04, mid) - massProfile(0.18, mid);
+  assert.ok(scoopSlope > midSlope * 0.95, `horn: scoop slope ${scoopSlope} vs mid ${midSlope}`);
+});
+
+test('layerLithology: L2 tilts to the foot, L4 tilts to the tip', () => {
+  const litho = lithologyFromShares(MID_MIX());
+  const l2 = layerLithology(litho, 'L2');
+  const l3 = layerLithology(litho, 'L3');
+  const l4 = layerLithology(litho, 'L4');
+  assert.ok(l2.foot > l3.foot, `L2 foot ${l2.foot} vs L3 ${l3.foot}`);
+  assert.ok(l4.tip > l3.tip, `L4 tip ${l4.tip} vs L3 ${l3.tip}`);
+  assert.ok(Math.abs(l2.foot + l2.mid + l2.tip - 1) < 1e-6);
+});
+
+test('same form, different spectrum: saddles sit higher under bass than under treble', () => {
+  const bassP = extractRidgePortrait(sameForm(BASS_MIX).ec, 120000);
+  const brightP = extractRidgePortrait(sameForm(BRIGHT_MIX).ec, 120000);
+  assert.equal(bassP.landmarks.length, brightP.landmarks.length, 'form (landmarks) must match');
+  const cfg = ALPINE_CHARACTERS.massif;
+  const bw = layerWeathering(bassP, cfg, 'L3');
+  const tw = layerWeathering(brightP, cfg, 'L3');
+  assert.ok(bw.apronCap > tw.apronCap, `apronCap bass ${bw.apronCap} vs bright ${tw.apronCap}`);
+  assert.ok(bw.apronSpread > tw.apronSpread, `apronSpread bass ${bw.apronSpread} vs bright ${tw.apronSpread}`);
+  assert.ok(bw.litho.foot > tw.litho.foot);
+
+  const noise = new ValueNoise1D(9, 256);
+  const n = 400, step = 5, width = n * step;
+  const bassH = alpineHeightField(noise, n, step, 44, width, 'range', bassP, 'L3');
+  const brightH = alpineHeightField(noise, n, step, 44, width, 'range', brightP, 'L3');
+  // Mean of the lower half of samples ≈ connecting mass. Bass should sit
+  // higher (altiplano); bright should drop into deeper valleys.
+  const lowerMean = (h) => {
+    const sorted = Float32Array.from(h).slice().sort((a, b) => a - b);
+    let s = 0, c = Math.floor(sorted.length * 0.5);
+    for (let i = 0; i < c; i++) s += sorted[i];
+    return s / c;
+  };
+  const bassSaddle = lowerMean(bassH);
+  const brightSaddle = lowerMean(brightH);
+  assert.ok(bassSaddle > brightSaddle, `saddle bass ${bassSaddle} vs bright ${brightSaddle}`);
+});
+
+test('extractRidgePortrait carries lithology, and L3 leans on it harder than L4', () => {
+  const p = extractRidgePortrait(sameForm(SCOOP_MIX).ec, 120000);
+  assert.ok(p.lithology);
+  assert.ok(p.lithology.scoop > 0.2);
+  const cfg = ALPINE_CHARACTERS.range;
+  const l3 = layerWeathering(p, cfg, 'L3');
+  const l4 = layerWeathering(p, cfg, 'L4');
+  assert.ok(l3.profileMix > l4.profileMix, 'timbre layer should lean on spectral geology more than crags');
+});
+

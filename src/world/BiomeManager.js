@@ -5,6 +5,8 @@
 import { BIOMES } from './BiomeProfiles.js';
 import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
 import { extractRidgePortrait } from './RidgePortrait.js';
+import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
+import { drawCityWorld } from './city/drawCity.js';
 import { ParticleField } from './ParticleField.js';
 import {
   sampleTerrainCurve, curveFacing, facingColorStops, reliefLitStripRGBA, reliefShadeStripRGBA,
@@ -285,7 +287,7 @@ export function fogBandAlphaFractionAtY(geo, y) {
 }
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, structure = null, conductorSchedule = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, structure = null, conductorSchedule = null, worldId = null }) {
     this.conductor = conductor;
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
@@ -297,8 +299,16 @@ export class BiomeManager {
     this.fire = fire; // FireDirector (src/sim/FireDirector.js), owned by Simulation -- see _drawWildfire()
     this.flood = flood; // FloodDirector (src/sim/FloodDirector.js), owned by Simulation -- see armFromTsunami() in update() and _drawFlood()
     this.customBiome = customBiome || null;
-    // Instance profile list: stock BIOMES plus an optional MIDI-derived profile.
-    this.profiles = customBiome ? [...BIOMES, customBiome] : BIOMES.slice();
+    this.world = getWorld(worldId || DEFAULT_WORLD_ID);
+    this.worldId = this.world.id;
+    // Palettes live on the world. Alpine keeps the stock biomes (+ optional
+    // MIDI-derived custom). City worlds bring their own night palettes and
+    // ignore the alpine custom biome so a generated mountain skin never
+    // paints itself onto a skyline.
+    this.profiles = this.world.palettes.slice();
+    if (customBiome && this.world.kind === 'alpine') {
+      this.profiles = [...this.profiles, customBiome];
+    }
     this._lastSectionIdx = null;
     this._cutFlash = 0;
     this._shutterStartMs = -Infinity;
@@ -526,7 +536,8 @@ export class BiomeManager {
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections, structure, conductorSchedule);
     // MIDI custom biome: cast every section into the generated world so the
     // dropped file IS the place, while stock demos keep dramaturgical casting.
-    if (this.customBiome) this.loadCustom(this.customBiome);
+    // MIDI custom biome: alpine only — city worlds keep their own palettes.
+    if (this.customBiome && this.world.kind === 'alpine') this.loadCustom(this.customBiome);
 
     // Ocean ecosystem: islands + ships sit on the water always; sea life,
     // the rare monster, and tsunamis (anchored on the song's loudest bars)
@@ -832,7 +843,9 @@ export class BiomeManager {
       labels.forEach((l, i) => { if (l === lab) { s += meanEnergies[i]; n++; } });
       return n > 0 ? s / n : 0;
     });
-    const labelCast = castBiomes(labelEnergy, songSeed);
+    const labelCast = this.world?.cast
+      ? this.world.cast(labelEnergy, songSeed)
+      : castBiomes(labelEnergy, songSeed);
     const biomeByLabel = new Map(uniqueLabels.map((lab, i) => [lab, labelCast[i]]));
 
     // Each label also gets a deterministic color signature (a hue bias),
@@ -990,25 +1003,35 @@ export class BiomeManager {
       this._ridgePortrait = extractRidgePortrait(this.energyCurves, this.durationMs);
     }
     const portrait = this._ridgePortrait;
+    const city = this.world?.kind === 'city';
     this.strips = new Map();
     for (const b of this.profiles) {
       const seed = hashSeed(b.name);
-      const strips = {
-        // Far ranges: alpine massifs (Denali / Rainier / Shasta silhouettes).
-        // Taller strip + moderate amp so peaks fit without clipping into mesas;
-        // generateSilhouette also rescales if a summit still pokes past headroom.
-        // Each depth gets its OWN landform, not the same massif four times
-        // (see ALPINE_CHARACTERS): a far skyline of a few enormous
-        // needle-summits, a busier mid-distance working range in front of
-        // it, a band of near foothill crags, then soft rolling hills last.
-        // Together with AERIAL_PULL's per-layer color this is what turns
-        // the stack from one repeated silhouette into readable depth.
-        //
-        // The outline itself is now the song's ridge portrait (RidgePortrait)
-        // rather than even-spaced random peaks: L2 reads macro form, L3
-        // timbre, L4 grain, L5 the phrase-scale bass undulation. Same
-        // genome, four geological registers — not a live EQ (that's the
-        // massif / GeoCrest) and not a spectrogram.
+      const strips = city ? {
+        L2: generateSilhouette({
+          seed: seed + 1, height: 400, octaves: 3, amplitude: 0.56, baseline: 0.38,
+          color: b.silhouette, shadeMode, profile: 'city',
+          softenScale: 0.88, portrait, layerKey: 'L2',
+          edgeLight: b.edgeLight || null,
+        }),
+        L3: generateSilhouette({
+          seed: seed + 2, height: 360, octaves: 3, amplitude: 0.46, baseline: 0.46,
+          color: b.silhouette, shadeMode, profile: 'city',
+          softenScale: 0.94, portrait, layerKey: 'L3',
+          edgeLight: b.edgeLight || null,
+        }),
+        L4: generateSilhouette({
+          seed: seed + 3, height: 300, octaves: 2, amplitude: 0.30, baseline: 0.66,
+          color: b.silhouette, shadeMode, profile: 'city',
+          softenScale: 1, portrait, layerKey: 'L4',
+          edgeLight: b.edgeLight || null,
+        }),
+        L5: generateSilhouette({
+          seed: seed + 4, height: 220, octaves: 2, amplitude: 0.12, baseline: 0.92,
+          color: b.silhouette, shadeMode, profile: 'city',
+          softenScale: 1, portrait, layerKey: 'L5',
+        }),
+      } : {
         L2: generateSilhouette({
           seed: seed + 1, height: 400, octaves: 4, amplitude: 0.52, baseline: 0.42,
           color: b.silhouette, shadeMode, profile: 'alpine', character: 'massif',
@@ -1024,21 +1047,16 @@ export class BiomeManager {
           color: b.silhouette, shadeMode, profile: 'alpine', character: 'crags',
           softenScale: AERIAL_SOFTEN.L4, portrait, layerKey: 'L4',
         }),
-        // Nearest band stays soft rolling foothills -- the one layer that
-        // should NOT be jagged, so the near ground reads as land rather
-        // than as yet another row of teeth. Also stays at full resolution
-        // (AERIAL_SOFTEN.L5 === 1): the crisp anchor everything else softens
-        // relative to. Phrase-scale bass undulation rides under the fbm
-        // when a portrait is present, at an amplitude that reads as land
-        // breathing, not as a waveform.
         L5: generateSilhouette({
           seed: seed + 4, octaves: 2, amplitude: 0.46, baseline: 0.82,
           color: b.silhouette, shadeMode, profile: 'rolling',
           softenScale: AERIAL_SOFTEN.L5, portrait, layerKey: 'L5',
         }),
       };
-      decorateStrip(strips.L4, b.name, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
-      decorateStrip(strips.L5, b.name, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
+      if (!city) {
+        decorateStrip(strips.L4, b.name, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
+        decorateStrip(strips.L5, b.name, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
+      }
       this.strips.set(b.name, strips);
     }
   }
@@ -1460,6 +1478,11 @@ export class BiomeManager {
       dayArcAlpha: dn.dawnAlpha + dn.duskAlpha,
       reducedFlash: this.reducedFlash,
     });
+
+    if (this.world?.kind === 'city') {
+      drawCityWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
+      return;
+    }
 
     this._drawSky(ctx, canvas, A, B, t, dn.night);
 
