@@ -297,12 +297,15 @@ super-distant massif whose skyline IS a live bar graph of the current
 7-band spectrum (bass builds the summit at the center, treble falls away
 to the flanks), haze-tinted and on the slowest scroll in the scene.
 The parallax ranges' *baked outlines* are no longer a seeded picket fence:
-each song gets a ridge portrait from its mean spectral mass (bass-heavy
-tracks grow a few broad summits on high saddles; bright ones grow more,
-thinner peaks) and its phrase-scale energy landmarks (a drop, a chorus —
-not every kick). Far/mid/near layers read different facets of that same
-genome so the stack rhymes without cloning, and the outline never hops on
-the beat — that's still the dance.
+each song gets a ridge portrait from its mean spectral mass and its
+phrase-scale energy landmarks. The 7-band mix is a *vertical* mass
+distribution — foot to crest, not left-to-right (that's the live massif):
+bass-heavy tracks grow a few broad summits on high saddles (an altiplano);
+a mid-forward mix is a classic alpine triangle; a scooped mix (bass + air,
+empty mids) is a plateau with horns; bright/treble tracks grow more,
+thinner peaks with deeper valleys. Far/mid/near layers read different
+facets of that same genome so the stack rhymes without cloning, and the
+outline never hops on the beat — that's still the dance.
 **Orogeny:** every range visibly builds across the song — far peaks
 grow the most — toward the track's own energy climax, then subsides back
 down through the rest of the runtime, geology on a song's timescale. The

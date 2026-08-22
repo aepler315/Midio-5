@@ -15,7 +15,7 @@ import { ValueNoise1D, ridged } from '../utils/noise.js';
 import { lerp, mulberry32, clamp01 } from '../utils/math.js';
 import { shiftLightness } from '../render/VisualStyle.js';
 import {
-  composeAlpinePeaks, seedPeaks, layerWeathering, spineAt, phraseAt,
+  composeAlpinePeaks, seedPeaks, layerWeathering, spineAt, phraseAt, massProfile,
 } from './RidgePortrait.js';
 
 function makeCanvas(width, height) {
@@ -97,7 +97,9 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
   const cfg = ALPINE_CHARACTERS[character] || ALPINE_CHARACTERS.massif;
   const rand = mulberry32((seed ^ 0xa1b1) >>> 0 || 1);
   const weather = portrait ? layerWeathering(portrait, cfg, layerKey) : {
-    notch: cfg.notch, teeth: cfg.teeth, bed: cfg.bed, apronGain: cfg.apronGain, spineAmp: 0,
+    notch: cfg.notch, teeth: cfg.teeth, bed: cfg.bed, apronGain: cfg.apronGain,
+    apronCap: cfg.apronCap, apronSpread: cfg.apronSpread,
+    spineAmp: 0, profileMix: 0, litho: null,
   };
 
   // Named summits: song portrait when we have one, dart-throwing seed
@@ -113,7 +115,10 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
   // never wide enough to fill the saddle into a mesa. Fewer of them when
   // the portrait already supplied a busy skyline, so L4 doesn't become a
   // hairball of fill on top of fill.
-  const shoulderChance = portrait && peaks.length >= 6 ? 0.28 : 0.5;
+  const lithoCrest = weather.litho?.crest ?? 0;
+  const shoulderChance = portrait
+    ? clamp01(0.20 + lithoCrest * 0.40 - (peaks.length >= 6 ? 0.12 : 0))
+    : 0.5;
   const shoulders = [];
   for (const p of peaks) {
     if (rand() < shoulderChance) {
@@ -128,6 +133,9 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
   }
   const allPeaks = peaks.concat(shoulders);
   const spineAmp = (weather.spineAmp ?? 0) * 0.12;
+  const profileMix = weather.profileMix ?? 0;
+  const apronSpread = weather.apronSpread ?? cfg.apronSpread;
+  const apronCap = weather.apronCap ?? cfg.apronCap;
 
   const heights = new Float32Array(n);
   for (let i = 0; i < n; i++) {
@@ -156,13 +164,19 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
       const flank = Math.max(12, x < p.x ? p.wL : p.wR);
       const d = Math.abs(x - p.x) / flank;
       if (d < 1) {
-        const core = peakProfile(d, cfg.shoulder, cfg.spire, cfg.spireMix) * p.h;
+        // Spectral mass as the mountain's cross-section, blended with the
+        // landform type so a massif is still a massif. L3 (the timbre
+        // layer) leans hardest on the song; L4 keeps more of the crag
+        // character. See RidgePortrait.massProfile.
+        const land = peakProfile(d, cfg.shoulder, cfg.spire, cfg.spireMix);
+        const song = weather.litho ? massProfile(d, weather.litho) : land;
+        const core = (land * (1 - profileMix) + song * profileMix) * p.h;
         if (core > coreMax) coreMax = core;
       }
-      const ad = Math.abs(x - p.x) / (flank * cfg.apronSpread);
+      const ad = Math.abs(x - p.x) / (flank * apronSpread);
       if (ad < 1) apronSum += Math.pow(1 - ad, 1.7) * p.h * weather.apronGain;
     }
-    let h = Math.max(coreMax, bed + Math.min(apronSum, cfg.apronCap));
+    let h = Math.max(coreMax, bed + Math.min(apronSum, apronCap));
 
     // Couloir notches — carve V's into mid-flanks (craggy outline).
     // Portrait weathering scales this down so the named summits read;
