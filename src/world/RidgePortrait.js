@@ -11,12 +11,15 @@
 // What this does instead is an orogenic inversion of two stable parts of
 // the sonic profile, neither of which is a waveform or a live EQ:
 //
-//   1. SPECTRAL MASS (timbre as geology). The song-mean 7-band shape
-//      decides the range's body type: bass-heavy songs grow a few broad
-//      summits on high saddles (an altiplano); bright/treble songs grow
-//      more, thinner peaks with deeper valleys. Dynamic range sets how
-//      far heights are allowed to spread. High-frequency share sets how
-//      weathered the skyline is — and even then, quietly.
+//   1. SPECTRAL MASS (timbre as geology). The 7-band shape is a VERTICAL
+//      mass distribution, foot to crest — not a left-to-right spectrogram
+//      (that's the massif). Bass is basement rock: broad flanks, high
+//      saddles, an altiplano. Mids are the working triangle. Presence/air
+//      are the horn at the top. Two songs can share a centroid and still
+//      be different rock: a scooped mix (bass+air, empty mids) is a
+//      plateau with horns; a mid-forward mix is a classic alpine triangle.
+//      Dynamic range sets how far heights spread. Weathering (couloirs,
+//      arete teeth) is the high-frequency leftover, and even then, quietly.
 //
 //   2. ENERGY LANDMARKS (form as composition). The song is sampled at
 //      phrase scale (~64 points), prominence-filtered down to a handful
@@ -31,9 +34,9 @@
 // Layers read different facets of the same genome so the stack rhymes
 // without cloning (L2 = macro form, L3 = timbre, L4 = grain, L5 =
 // phrase-scale bass undulation under rolling fbm). Intensity is capped
-// on purpose: music decides WHERE the mountains are and HOW they lean;
-// the peakProfile / apron / weathering already in SilhouetteGenerator
-// still decides what a mountain IS.
+// on purpose: music decides WHERE the mountains are, HOW they lean, and
+// what ROCK they are (the flank's hypsometry). The landform type
+// (massif/range/crags) still decides the register.
 //
 // Pure, DOM-free, deterministic. BiomeManager builds one portrait per
 // song and hands it to generateSilhouette; tests exercise every step
@@ -54,11 +57,103 @@ const SPINE_SMOOTH_PASSES = 3;
  *  ranges don't clone; width/height/spine/weather set the geological
  *  register (far = huge and few, near = grainy and many). */
 export const LAYER_ROLES = {
-  L2: { take: 0.42, minPeaks: 3, maxPeaks: 5, phase: 0.00, widthMul: 1.18, heightMul: 1.00, spineAmp: 0.10, notchMul: 0.55, teethMul: 0.40 },
-  L3: { take: 0.72, minPeaks: 4, maxPeaks: 7, phase: 0.07, widthMul: 1.00, heightMul: 0.96, spineAmp: 0.08, notchMul: 0.80, teethMul: 0.70 },
-  L4: { take: 1.00, minPeaks: 6, maxPeaks: 11, phase: -0.05, widthMul: 0.82, heightMul: 0.90, spineAmp: 0.06, notchMul: 1.05, teethMul: 1.10 },
-  L5: { take: 0, minPeaks: 0, maxPeaks: 0, phase: 0.11, widthMul: 1, heightMul: 1, spineAmp: 0.22, notchMul: 0, teethMul: 0 },
+  L2: { take: 0.42, minPeaks: 3, maxPeaks: 5, phase: 0.00, widthMul: 1.18, heightMul: 1.00, spineAmp: 0.10, notchMul: 0.55, teethMul: 0.40, profileMix: 0.55 },
+  L3: { take: 0.72, minPeaks: 4, maxPeaks: 7, phase: 0.07, widthMul: 1.00, heightMul: 0.96, spineAmp: 0.08, notchMul: 0.80, teethMul: 0.70, profileMix: 0.72 },
+  L4: { take: 1.00, minPeaks: 6, maxPeaks: 11, phase: -0.05, widthMul: 0.82, heightMul: 0.90, spineAmp: 0.06, notchMul: 1.05, teethMul: 1.10, profileMix: 0.38 },
+  L5: { take: 0, minPeaks: 0, maxPeaks: 0, phase: 0.11, widthMul: 1, heightMul: 1, spineAmp: 0.22, notchMul: 0, teethMul: 0, profileMix: 0.20 },
 };
+
+// Three-term flank, foot → crest. Exponents chosen so the FOOT term is
+// fuller than a triangle (mass carried out onto the plain — a shield or
+// a plateau), the BODY term is a working alpine shoulder, and the TIP
+// is a horn. Weights come from the spectrum; the shape of the mountain
+// IS the shape of the mix.
+const MASS_FOOT_K = 0.34;
+const MASS_BODY_K = 1.05;
+const MASS_TIP_K = 2.85;
+
+/** Per-layer tilt of the three-term mass. Distant ranges show basement
+ *  (you read the bulk from far away, not the seracs). The mid range is
+ *  the timbre layer — spectral geology speaks loudest there. Near crags
+ *  tilt toward the crest, where you're close enough to see the horns. */
+const LAYER_LITH_TILT = {
+  L2: [1.28, 1.04, 0.62],
+  L3: [1.00, 1.08, 1.00],
+  L4: [0.78, 0.92, 1.35],
+  L5: [1.22, 0.90, 0.48],
+};
+
+/**
+ * Spectral mass as lithology. The 7 bands are a VERTICAL mass distribution
+ * from foot (sub/bass) to crest (presence/air). This is the opposite of
+ * the spectrum massif, which spreads bands left-to-right; here the mix
+ * decides how a single mountain is built, not where the EQ bars sit.
+ *
+ *   0 SUB       basement / plateau — connecting saddles
+ *   1 BASS      body width / bulk  — lower-mid flanks
+ *   2 LOW-MID   shoulders          — mass carried high
+ *   3 MID       primary structure  — the working triangle
+ *   4 HIGH-MID  couloirs           — mid-flank carving
+ *   5 PRESENCE  aretes / sub-spires
+ *   6 AIR       seracs at the crest
+ *
+ * `foot`/`mid`/`tip` are the three-term flank weights (sum to 1). A
+ * scooped mix (bass+air, empty mids) loads foot AND tip — a plateau with
+ * horns. A mid-forward mix loads `mid` — a classic alpine triangle.
+ * Floors keep a pure-bass track from losing its summit and a pure-air
+ * track from losing its foot.
+ */
+export function lithologyFromShares(shares) {
+  const raw = shares && shares.length >= 7 ? shares : [1, 1, 1, 1, 1, 1, 1];
+  let tot = 0;
+  for (let i = 0; i < 7; i++) tot += Math.max(0, raw[i] || 0);
+  const n = tot > 1e-9 ? tot : 7;
+  const b = new Float32Array(7);
+  for (let i = 0; i < 7; i++) b[i] = Math.max(0, raw[i] || 0) / n;
+
+  const basement = b[0] + b[1];
+  const body = b[2] + b[3];
+  const edge = b[4] + b[5];
+  const crest = b[5] + b[6];
+  const air = b[6];
+  // Positive = hollow mids (electronic scoop). Negative = mid-forward.
+  const scoop = clamp((basement + crest) - (b[2] + b[3] + b[4]), -1, 1);
+  let hypso = 0;
+  for (let i = 0; i < 7; i++) hypso += b[i] * (i / 6);
+
+  let foot = Math.max(0.12, basement * 1.18);
+  let mid = Math.max(0.16, body * 1.12 + edge * 0.16);
+  let tip = Math.max(0.08, crest * 1.22 + air * 0.35);
+  const wsum = foot + mid + tip;
+  foot /= wsum; mid /= wsum; tip /= wsum;
+
+  return { basement, body, edge, crest, air, scoop, hypso, foot, mid, tip, bands: b };
+}
+
+/** Tilt the three-term mass toward the layer's geological register. */
+export function layerLithology(litho, layerKey = 'L2') {
+  const src = litho || lithologyFromShares(null);
+  const tilt = LAYER_LITH_TILT[layerKey] || LAYER_LITH_TILT.L2;
+  let foot = src.foot * tilt[0];
+  let mid = src.mid * tilt[1];
+  let tip = src.tip * tilt[2];
+  const s = foot + mid + tip;
+  if (s > 1e-9) { foot /= s; mid /= s; tip /= s; }
+  return { ...src, foot, mid, tip };
+}
+
+/**
+ * Unit-height flank at normalized distance `d` (0 at the summit, 1 at the
+ * foot). Three power laws, weighted by the song's lithology — the spectrum
+ * IS the mountain's cross-section. Always 1 at d=0 and 0 at d>=1.
+ */
+export function massProfile(d, litho) {
+  const t = Math.max(0, 1 - Math.max(0, d));
+  if (t <= 0 || !litho) return 0;
+  return litho.foot * Math.pow(t, MASS_FOOT_K)
+    + litho.mid * Math.pow(t, MASS_BODY_K)
+    + litho.tip * Math.pow(t, MASS_TIP_K);
+}
 
 function boxBlur(src, radius = 1) {
   const n = src.length;
@@ -317,10 +412,11 @@ export function extractRidgePortrait(energyCurves, durationMs) {
   }
 
   const phrase = phrasePeriod(wave);
-  const bassShare = shares[0] + shares[1];
-  const bodyShare = shares[2] + shares[3];
-  const edgeShare = shares[4] + shares[5];
-  const airShare = shares[6];
+  const lithology = lithologyFromShares(shares);
+  const bassShare = lithology.basement;
+  const bodyShare = lithology.body;
+  const edgeShare = lithology.edge;
+  const airShare = lithology.air;
 
   return {
     shares,
@@ -330,6 +426,7 @@ export function extractRidgePortrait(energyCurves, durationMs) {
     bodyShare,
     edgeShare,
     airShare,
+    lithology,
     dynamicRange: dyn,
     landmarks,
     phrasePeriod01: phrase.period01,
@@ -538,23 +635,30 @@ export function composeAlpinePeaks({ portrait, cfg, layerKey = 'L2', seed, width
 }
 
 /**
- * Weathering amounts for a layer. Bass lifts the connecting bed (high
- * saddles); air/edge add couloirs and arete teeth — scaled down from the
- * old constants so the named summits actually read, and even a bright
- * song never turns the skyline into noise.
+ * Weathering + lithology for a layer. Bass lifts the connecting bed and
+ * the apron cap (high saddles — an altiplano). Air/edge add couloirs and
+ * arete teeth — scaled down from the old constants so the named summits
+ * actually read. `litho` and `profileMix` are what alpineHeightField
+ * uses to blend the song's three-term flank onto the landform type.
  */
 export function layerWeathering(portrait, cfg, layerKey = 'L2') {
   const role = LAYER_ROLES[layerKey] || LAYER_ROLES.L2;
-  const edge = portrait?.edgeShare ?? 0.25;
-  const air = portrait?.airShare ?? 0.1;
-  const bass = portrait?.bassShare ?? 0.3;
+  const litho = layerLithology(portrait?.lithology || lithologyFromShares(portrait?.shares), layerKey);
+  const basement = litho.basement;
+  const edge = litho.edge;
+  const air = litho.air;
+  const crest = litho.crest;
   const spread = portrait?.spread01 ?? 0.5;
   return {
-    notch: cfg.notch * role.notchMul * (0.40 + 0.75 * edge),
-    teeth: cfg.teeth * role.teethMul * (0.30 + 0.85 * air + 0.15 * spread),
-    bed: cfg.bed * (0.75 + 0.85 * bass),
-    apronGain: cfg.apronGain * (0.92 + 0.18 * bass),
+    notch: cfg.notch * role.notchMul * (0.38 + 0.85 * edge),
+    teeth: cfg.teeth * role.teethMul * (0.28 + 0.90 * air + 0.12 * spread),
+    bed: cfg.bed * (0.70 + 0.95 * basement),
+    apronGain: cfg.apronGain * (0.85 + 0.42 * basement),
+    apronCap: clamp(cfg.apronCap + basement * 0.20 - crest * 0.14, 0.36, 0.64),
+    apronSpread: clamp(cfg.apronSpread + basement * 0.50 - edge * 0.28, 1.8, 3.4),
     spineAmp: role.spineAmp,
+    profileMix: role.profileMix ?? 0.55,
+    litho,
   };
 }
 

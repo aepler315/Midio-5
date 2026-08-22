@@ -1,0 +1,114 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { EnergyCurves } from '../src/audio/EnergyCurves.js';
+import { extractWatchFeatures, scoreWorlds } from '../src/world/WorldScore.js';
+import { getWorld, listWorlds, DEFAULT_WORLD_ID } from '../src/world/Worlds.js';
+import { buildingProfile, cityHeightField, windowOccupancy } from '../src/world/city/CitySilhouette.js';
+import { extractRidgePortrait } from '../src/world/RidgePortrait.js';
+import { castBiomes } from '../src/world/Dramaturgy.js';
+import { CITY_TEMPERATURE } from '../src/world/city/CityPalettes.js';
+
+function makeCurves({ durationMs = 120000, rateHz = 50, energyAt, bandsAt } = {}) {
+  const ec = new EnergyCurves(durationMs, rateHz);
+  for (let i = 0; i < ec.n; i++) {
+    const t01 = ec.n > 1 ? i / (ec.n - 1) : 0;
+    const e = energyAt ? energyAt(t01) : 0.4;
+    const shares = bandsAt ? bandsAt(t01) : [1, 1, 1, 1, 1, 1, 1];
+    let sum = 0;
+    for (const s of shares) sum += s;
+    const frame = shares.map((s) => Math.max(0, e * s / (sum || 1)));
+    ec.setFrame(i, frame);
+  }
+  return { ec, durationMs };
+}
+
+const bump = (t, at, w, h) => h * Math.exp(-(((t - at) / w) ** 2) * 4);
+
+function metal() {
+  return makeCurves({
+    energyAt: (t) => 0.08 + bump(t, 0.22, 0.07, 0.82) + bump(t, 0.48, 0.06, 0.9) + bump(t, 0.75, 0.08, 0.85),
+    bandsAt: () => [0.35, 0.55, 0.9, 1.25, 1.45, 1.35, 1.2],
+  });
+}
+
+function lofi() {
+  return makeCurves({
+    energyAt: (t) => 0.28 + bump(t, 0.35, 0.18, 0.22) + bump(t, 0.7, 0.16, 0.18),
+    bandsAt: () => [1.4, 1.3, 0.8, 0.55, 0.28, 0.16, 0.08],
+  });
+}
+
+test('world registry: alpine default, nocturne present, unknown falls back', () => {
+  assert.equal(DEFAULT_WORLD_ID, 'alpine');
+  assert.equal(getWorld('nocturne').kind, 'city');
+  assert.equal(getWorld('nope').id, 'alpine');
+  assert.ok(listWorlds().length >= 2);
+});
+
+test('castBiomes accepts a city temperature map', () => {
+  const names = castBiomes([0.1, 0.9], 7, CITY_TEMPERATURE);
+  assert.equal(names.length, 2);
+  assert.ok(names.every((n) => CITY_TEMPERATURE[n] != null));
+  assert.notEqual(names[0], names[1]);
+});
+
+test('a wall-of-sound mix prefers The Range; a warm mid-tempo mix prefers After Hours', () => {
+  const loud = metal();
+  const quiet = lofi();
+  const loudF = extractWatchFeatures({ energyCurves: loud.ec, durationMs: loud.durationMs, bpm: 160 });
+  const quietF = extractWatchFeatures({ energyCurves: quiet.ec, durationMs: quiet.durationMs, bpm: 86 });
+  const loudR = scoreWorlds(loudF);
+  const quietR = scoreWorlds(quietF);
+  const pick = (ranked, id) => ranked.find((r) => r.id === id).score;
+  assert.ok(pick(loudR, 'alpine') > pick(loudR, 'nocturne'),
+    `metal alpine ${pick(loudR, 'alpine')} vs city ${pick(loudR, 'nocturne')}`);
+  assert.ok(pick(quietR, 'nocturne') > pick(quietR, 'alpine'),
+    `lofi city ${pick(quietR, 'nocturne')} vs alpine ${pick(quietR, 'alpine')}`);
+  assert.ok(loudR[0].recommended);
+  assert.ok(loudR.every((r) => r.score >= 1 && r.score <= 99));
+});
+
+test('buildingProfile is rectangular with setbacks, not a mountain cone', () => {
+  assert.equal(buildingProfile(0), 1);
+  assert.equal(buildingProfile(0.4), 1);
+  assert.ok(buildingProfile(0.7) < 1 && buildingProfile(0.7) > 0.7);
+  assert.equal(buildingProfile(1), 0);
+  // A cone would be ~0.5 at d=0.5; a building is still full height.
+  assert.equal(buildingProfile(0.5), 1);
+});
+
+test('cityHeightField stays in 0..1, has flat-topped mass, and is deterministic', () => {
+  const { ec, durationMs } = lofi();
+  const portrait = extractRidgePortrait(ec, durationMs);
+  const n = 256, step = 8, width = n * step;
+  const a = cityHeightField(n, step, 42, width, portrait, 'L2');
+  const b = cityHeightField(n, step, 42, width, portrait, 'L2');
+  for (let i = 0; i < n; i++) {
+    assert.equal(a[i], b[i]);
+    assert.ok(a[i] >= 0 && a[i] <= 1);
+  }
+  // Flat roofs: a run of nearly-equal samples should exist (a building top).
+  let longest = 1, run = 1;
+  for (let i = 1; i < n; i++) {
+    run = Math.abs(a[i] - a[i - 1]) < 0.02 ? run + 1 : 1;
+    if (run > longest) longest = run;
+  }
+  assert.ok(longest >= 4, `expected a flat roof run, got ${longest}`);
+});
+
+test('generateSilhouette city profile returns a window strip', async () => {
+  if (typeof OffscreenCanvas === 'undefined' && typeof document === 'undefined') return;
+  const { generateSilhouette } = await import('../src/world/SilhouetteGenerator.js');
+  const strip = generateSilhouette({
+    seed: 9, width: 512, height: 160, color: '#101018', profile: 'city', step: 4,
+  });
+  assert.ok(strip.windows);
+  assert.equal(strip.ridge.profile, 'city');
+});
+
+test('window occupancy sits down on a quiet open and up on a fevered drop', () => {
+  const quiet = windowOccupancy({ energy: 0.1, openingGain: 0.4, orogeny: 0.1, fever: 0 });
+  const drop = windowOccupancy({ energy: 0.85, openingGain: 1, orogeny: 0.8, fever: 0.6 });
+  assert.ok(drop > quiet * 1.5, `drop ${drop} vs quiet ${quiet}`);
+  assert.ok(quiet > 0.05 && drop < 1);
+});

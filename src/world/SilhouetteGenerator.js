@@ -15,8 +15,9 @@ import { ValueNoise1D, ridged } from '../utils/noise.js';
 import { lerp, mulberry32, clamp01 } from '../utils/math.js';
 import { shiftLightness } from '../render/VisualStyle.js';
 import {
-  composeAlpinePeaks, seedPeaks, layerWeathering, spineAt, phraseAt,
+  composeAlpinePeaks, seedPeaks, layerWeathering, spineAt, phraseAt, massProfile,
 } from './RidgePortrait.js';
+import { cityHeightField, bakeWindowStrip } from './city/CitySilhouette.js';
 
 function makeCanvas(width, height) {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
@@ -97,7 +98,9 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
   const cfg = ALPINE_CHARACTERS[character] || ALPINE_CHARACTERS.massif;
   const rand = mulberry32((seed ^ 0xa1b1) >>> 0 || 1);
   const weather = portrait ? layerWeathering(portrait, cfg, layerKey) : {
-    notch: cfg.notch, teeth: cfg.teeth, bed: cfg.bed, apronGain: cfg.apronGain, spineAmp: 0,
+    notch: cfg.notch, teeth: cfg.teeth, bed: cfg.bed, apronGain: cfg.apronGain,
+    apronCap: cfg.apronCap, apronSpread: cfg.apronSpread,
+    spineAmp: 0, profileMix: 0, litho: null,
   };
 
   // Named summits: song portrait when we have one, dart-throwing seed
@@ -113,7 +116,10 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
   // never wide enough to fill the saddle into a mesa. Fewer of them when
   // the portrait already supplied a busy skyline, so L4 doesn't become a
   // hairball of fill on top of fill.
-  const shoulderChance = portrait && peaks.length >= 6 ? 0.28 : 0.5;
+  const lithoCrest = weather.litho?.crest ?? 0;
+  const shoulderChance = portrait
+    ? clamp01(0.20 + lithoCrest * 0.40 - (peaks.length >= 6 ? 0.12 : 0))
+    : 0.5;
   const shoulders = [];
   for (const p of peaks) {
     if (rand() < shoulderChance) {
@@ -128,6 +134,9 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
   }
   const allPeaks = peaks.concat(shoulders);
   const spineAmp = (weather.spineAmp ?? 0) * 0.12;
+  const profileMix = weather.profileMix ?? 0;
+  const apronSpread = weather.apronSpread ?? cfg.apronSpread;
+  const apronCap = weather.apronCap ?? cfg.apronCap;
 
   const heights = new Float32Array(n);
   for (let i = 0; i < n; i++) {
@@ -156,13 +165,19 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
       const flank = Math.max(12, x < p.x ? p.wL : p.wR);
       const d = Math.abs(x - p.x) / flank;
       if (d < 1) {
-        const core = peakProfile(d, cfg.shoulder, cfg.spire, cfg.spireMix) * p.h;
+        // Spectral mass as the mountain's cross-section, blended with the
+        // landform type so a massif is still a massif. L3 (the timbre
+        // layer) leans hardest on the song; L4 keeps more of the crag
+        // character. See RidgePortrait.massProfile.
+        const land = peakProfile(d, cfg.shoulder, cfg.spire, cfg.spireMix);
+        const song = weather.litho ? massProfile(d, weather.litho) : land;
+        const core = (land * (1 - profileMix) + song * profileMix) * p.h;
         if (core > coreMax) coreMax = core;
       }
-      const ad = Math.abs(x - p.x) / (flank * cfg.apronSpread);
+      const ad = Math.abs(x - p.x) / (flank * apronSpread);
       if (ad < 1) apronSum += Math.pow(1 - ad, 1.7) * p.h * weather.apronGain;
     }
-    let h = Math.max(coreMax, bed + Math.min(apronSum, cfg.apronCap));
+    let h = Math.max(coreMax, bed + Math.min(apronSum, apronCap));
 
     // Couloir notches — carve V's into mid-flanks (craggy outline).
     // Portrait weathering scales this down so the named summits read;
@@ -250,6 +265,8 @@ export function generateSilhouette({
   let heights;
   if (profile === 'alpine') {
     heights = alpineHeightField(noise, n, step, seed, width, character, portrait, layerKey);
+  } else if (profile === 'city') {
+    heights = cityHeightField(n, step, seed, width, portrait, layerKey);
   } else {
     heights = rollingHeightField(noise, n, step, octaves, portrait, width);
   }
@@ -276,7 +293,7 @@ export function generateSilhouette({
   // CRITICAL: peaks that compute above the strip top (y < 0) are clipped by
   // the canvas into flat mesas. Rescale the vertical throw so the tallest
   // summit keeps headroom — shape stays pointy, nothing shears off.
-  const HEADROOM = profile === 'alpine' ? 14 : 6;
+  const HEADROOM = profile === 'alpine' ? 14 : profile === 'city' ? 10 : 6;
   if (minY < HEADROOM) {
     const span = footY - minY;
     const target = footY - HEADROOM;
@@ -343,9 +360,9 @@ export function generateSilhouette({
     // Alpine: slightly stronger rim so jagged summits read against the sky.
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = profile === 'alpine' ? 0.20 : 0.14;
+    ctx.globalAlpha = profile === 'alpine' ? 0.20 : profile === 'city' ? 0.10 : 0.14;
     ctx.strokeStyle = 'rgba(255, 248, 230, 0.45)';
-    ctx.lineWidth = profile === 'alpine' ? 2.0 : 2.4;
+    ctx.lineWidth = profile === 'alpine' ? 2.0 : profile === 'city' ? 1.2 : 2.4;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.beginPath();
@@ -392,6 +409,11 @@ export function generateSilhouette({
   // Full precision regardless of softenScale -- see the softenScale doc
   // above for why the vector data and the baked pixels are independent.
   canvas.ridge = { heights, step, baseline, amplitude: ampFitted, height, profile };
+  if (profile === 'city') {
+    canvas.windows = bakeWindowStrip(ridgeYs, {
+      width, height, step, seed, color: '#f2d090',
+    });
+  }
   return canvas;
 }
 

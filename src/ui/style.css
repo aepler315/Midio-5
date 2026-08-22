@@ -1821,3 +1821,149 @@ html, body {
   opacity: 0.6;
   font-weight: 400;
 }
+
+/* --- World select ------------------------------------------------------- */
+.worldSelect {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  background: var(--bg-scrim);
+  pointer-events: auto;
+}
+.worldSelect.hidden { display: none; }
+.worldSelectInner {
+  width: min(720px, 100%);
+  padding: var(--space-6) var(--space-6) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(165deg, rgba(24, 16, 38, 0.88), rgba(14, 11, 22, 0.92));
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.worldSelectEyebrow {
+  margin: 0 0 var(--space-2);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.worldSelectInner h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xl, 1.6rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.worldSelectHint {
+  margin: 0 0 var(--space-5);
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.45;
+  max-width: 52ch;
+}
+.worldSelectGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-4);
+}
+.worldCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-height: 44px;
+  transition: border-color var(--dur-base) var(--ease-standard),
+              transform var(--dur-fast) var(--ease-standard),
+              background var(--dur-base) var(--ease-standard);
+}
+.worldCard:hover,
+.worldCard:focus-visible {
+  border-color: var(--border-strong);
+  background: rgba(255, 255, 255, 0.07);
+  transform: translateY(-1px);
+  outline: none;
+}
+.worldCard.is-best {
+  border-color: color-mix(in srgb, var(--spec-gold) 45%, var(--border-subtle));
+}
+.worldCardPreview {
+  height: 72px;
+  border-radius: var(--radius-sm);
+  position: relative;
+  overflow: hidden;
+}
+.worldCardPreview.alpine {
+  background: linear-gradient(180deg, #1a1a3e 0%, #4a3b6b 55%, #2b2145 100%);
+}
+.worldCardPreview.alpine::after {
+  content: '';
+  position: absolute;
+  left: -8%; right: -8%; bottom: 0;
+  height: 58%;
+  background: #1a1428;
+  clip-path: polygon(0 100%, 0 62%, 12% 28%, 22% 48%, 38% 8%, 52% 42%, 64% 22%, 78% 50%, 90% 30%, 100% 70%, 100% 100%);
+}
+.worldCardPreview.city {
+  background: linear-gradient(180deg, #05060c 0%, #12182a 70%, #1a2233 100%);
+}
+.worldCardPreview.city::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 72%;
+  background:
+    linear-gradient(90deg,
+      transparent 6%, #0a0e18 6%, #0a0e18 18%, transparent 18%,
+      transparent 22%, #0c121c 22%, #0c121c 31%, transparent 31%,
+      transparent 36%, #0a1018 36%, #0a1018 58%, transparent 58%,
+      transparent 64%, #0e141e 64%, #0e141e 72%, transparent 72%,
+      transparent 78%, #0a0e16 78%, #0a0e16 94%, transparent 94%);
+  clip-path: polygon(0 100%, 6% 100%, 6% 42%, 18% 42%, 18% 100%, 22% 100%, 22% 28%, 31% 28%, 31% 100%, 36% 100%, 36% 18%, 58% 18%, 58% 100%, 64% 100%, 64% 36%, 72% 36%, 72% 100%, 78% 100%, 78% 24%, 94% 24%, 94% 100%, 100% 100%);
+}
+.worldCardTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.worldCardName {
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.worldCardScore {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 1.15rem;
+  color: var(--text-primary);
+}
+.worldCardTag {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.worldCardBadge {
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+@media (max-width: 560px) {
+  .worldSelectInner { padding: var(--space-5) var(--space-4); }
+  .worldSelectGrid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .worldCard { transition: none; }
+}
+
