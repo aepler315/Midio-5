@@ -87,6 +87,7 @@ const fileInputEl = document.getElementById('fileInput');
 const demoBtnEl = document.getElementById('demoBtn');
 const worldSelectEl = document.getElementById('worldSelect');
 const worldSelectGridEl = document.getElementById('worldSelectGrid');
+const worldSelectBackEl = document.getElementById('worldSelectBack');
 const progressEl = document.getElementById('progressText');
 const hudEl = document.getElementById('hud');
 const hudRightEl = document.getElementById('hudRight');
@@ -695,27 +696,36 @@ function backToTitle() {
   hudEl.classList.add('hidden');
   worldSelectEl?.classList.add('hidden');
   pendingWorldStart = null;
+  progressEl.classList.add('hidden');
   loaderEl.classList.remove('hidden');
   slskPanelSearch?.resetBusy();
   startTitleBackdrop();
 }
 
 function offerWorldsThenStart(data, extra = {}) {
-  pendingWorldStart = { data, extra };
-  const features = extractWatchFeatures({
-    energyCurves: data.energyCurves,
-    durationMs: data.durationMs,
-    bpm: data.bpm,
-    analysis: data.analysis,
-    structure: data.structure,
-  });
-  const ranked = scoreWorlds(features);
-  renderWorldSelect(ranked);
-  progressEl.classList.add('hidden');
-  loaderEl.classList.add('hidden');
-  auditionPanelEl?.classList.add('hidden');
-  worldSelectEl?.classList.remove('hidden');
-  startTitleBackdrop();
+  try {
+    pendingWorldStart = { data, extra };
+    const features = extractWatchFeatures({
+      energyCurves: data.energyCurves,
+      durationMs: data.durationMs,
+      bpm: data.bpm,
+      analysis: data.analysis,
+      structure: data.structure,
+    });
+    const ranked = scoreWorlds(features);
+    renderWorldSelect(ranked);
+    progressEl.classList.add('hidden');
+    loaderEl.classList.add('hidden');
+    auditionPanelEl?.classList.add('hidden');
+    lyricsRowEl?.classList.add('hidden');
+    worldSelectEl?.classList.remove('hidden');
+    startTitleBackdrop();
+  } catch (err) {
+    // Scoring must never swallow a successful load -- fall through to alpine.
+    console.error('[world score]', err);
+    pendingWorldStart = { data, extra };
+    confirmWorld(data.worldId || lastWorldId || DEFAULT_WORLD_ID);
+  }
 }
 
 function renderWorldSelect(ranked) {
@@ -747,6 +757,9 @@ function confirmWorld(id) {
   lastWorldId = id;
   pending.data.worldId = id;
   worldSelectEl?.classList.add('hidden');
+  // World select can sit for a while; a suspended context would start a
+  // silent, frozen first frame that reads as "upload did nothing."
+  audioEngine?.resume?.();
   startTimeline(pending.data, pending.extra);
   if (pending.extra.playBuffer) {
     lastAudioBuffer = pending.extra.playBuffer;
@@ -867,6 +880,8 @@ function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}
 
 async function loadMidiFile(file) {
   try {
+    showProgress('Reading MIDI…');
+    worldSelectEl?.classList.add('hidden');
     await bootAudio();
     const myGen = ++loadGen;
     const buf = await file.arrayBuffer();
@@ -1156,15 +1171,16 @@ function promptForLyrics(identity, durationSec) {
 /** Best-effort identity + lyrics resolution for a dropped audio file.
  *  Reads ID3 tags straight off `file` (Blob.arrayBuffer() always hands
  *  back a FRESH ArrayBuffer on every call -- unlike an AudioContext-decoded
- *  buffer, it's never detached by decoding happening elsewhere), then runs
- *  the identity/lyrics row on the audition panel already up for separation
- *  progress. Resolves to `{identity, lyricSections}` -- lyricSections is
- *  null whenever there's nothing usable, which every downstream consumer
- *  (SectionFusion, BiomeManager, VibeDirector) already treats as a strict
- *  no-op. Never throws. `vocalStem` ({name, buffer}), when given, is only
+ *  buffer, it's never detached by decoding happening elsewhere).
+ *
+ *  `opts.prompt` (default false on the load path): the old 15s Find/Skip
+ *  modal made audio drops look dead after analysis finished. Silent mode
+ *  auto-fetches when identity is strong and otherwise continues with
+ *  null lyrics -- every downstream consumer already no-ops on that.
+ *  Never throws. `vocalStem` ({name, buffer}), when given, is only
  *  ever consulted by buildLyricSections, and only when the lyrics that come
  *  back are plain-only -- see its doc comment for the StemAlign gate. */
-async function resolveLyricsForAudio(file, durationSec, vocalStem = null) {
+async function resolveLyricsForAudio(file, durationSec, vocalStem = null, { prompt = false } = {}) {
   let identity = { title: null, artist: null, album: null, durationSec, source: 'none', confidence: 0 };
   try {
     const tagBuffer = await file.arrayBuffer();
@@ -1173,7 +1189,15 @@ async function resolveLyricsForAudio(file, durationSec, vocalStem = null) {
     console.warn('[lyrics] identity resolution failed, continuing without it', err);
   }
   try {
-    const lyricResult = await promptForLyrics(identity, durationSec);
+    let lyricResult = null;
+    if (prompt) {
+      lyricResult = await promptForLyrics(identity, durationSec);
+    } else if (identity.title && !lyricsDisabled) {
+      lyricResult = await fetchLyricsCached(
+        { artist: identity.artist, title: identity.title, album: identity.album, durationSec },
+        typeof fetch !== 'undefined' ? fetch : null,
+      );
+    }
     const lyricSections = buildLyricSections(lyricResult, Math.round((durationSec || 0) * 1000), vocalStem);
     return { identity, lyricSections };
   } catch (err) {
@@ -1186,10 +1210,14 @@ async function resolveLyricsForAudio(file, durationSec, vocalStem = null) {
  *  stems of one song -- summed into a mix for analysis/playback, with each
  *  file's NAME casting its notes to a character (see Casting.js). */
 async function loadAudioFiles(files) {
+  showProgress('Reading file…');
+  worldSelectEl?.classList.add('hidden');
   try {
     await bootAudio();
   } catch (err) {
     showErrorBanner('Could not start audio: ' + (err?.message || err));
+    progressEl.classList.add('hidden');
+    loaderEl.classList.remove('hidden');
     return;
   }
   // A second load started while this one is still analysing (another drop,
@@ -1241,7 +1269,7 @@ async function loadAudioFiles(files) {
     // Everything downstream already no-ops on null lyricSections.
     const lyricsPromise = lyricsDisabled
       ? Promise.resolve({ identity: null, lyricSections: null })
-      : resolveLyricsForAudio(files[0], audioBuffer.duration, vocalStem);
+      : resolveLyricsForAudio(files[0], audioBuffer.duration, vocalStem, { prompt: false });
     let data;
     try {
       data = await audioToTimeline(audioBuffer, {
@@ -1287,10 +1315,9 @@ async function loadAudioFiles(files) {
     // synthetic hi-hat/click layer, so the timeline synth stays silent here.
     muteTimelineSynth = true;
     lastSongName = files[0].name || 'song';
-    startTimeline(data);
     lastAudioBuffer = audioBuffer;
     fontRecommender?.clear(); // the recording is its own sound source
-    audioEngine.playBuffer(audioBuffer, 0);
+    offerWorldsThenStart(data, { playBuffer: audioBuffer });
   } catch (err) {
     console.error('[audio load failed]', err);
     auditionPanelEl?.classList.add('hidden');
@@ -1343,6 +1370,9 @@ function handleFile(file) {
 function handleFiles(files) {
   const list = [...(files || [])].filter(Boolean);
   if (!list.length) return;
+  worldSelectEl?.classList.add('hidden');
+  pendingWorldStart = null;
+  showProgress('Reading file…');
   const midi = list.find(isMidiFile);
   const audio = list.filter((f) => !isMidiFile(f));
   if (midi && audio.length) {
@@ -1356,10 +1386,22 @@ function handleFiles(files) {
   loadAudioFiles(list);
 }
 
-fileInputEl.addEventListener('change', (e) => {
+fileInputEl?.addEventListener('change', (e) => {
   if (e.target.files.length) handleFiles(e.target.files);
+  // Same-file re-upload doesn't fire `change` unless we clear the value.
+  e.target.value = '';
 });
-demoBtnEl.addEventListener('click', () => loadDemo());
+demoBtnEl?.addEventListener('click', () => loadDemo());
+worldSelectBackEl?.addEventListener('click', () => backToTitle());
+
+// Unlock the AudioContext on the gesture that opens the picker, not on
+// the later `change` event -- browsers often don't treat file-picker
+// confirmation as a user activation, so bootAudio() on change used to
+// throw "Audio is blocked" and the drop looked like it did nothing.
+function unlockAudio() { bootAudio().catch(() => {}); }
+dropzoneEl?.addEventListener('pointerdown', unlockAudio, { passive: true });
+demoBtnEl?.addEventListener('pointerdown', unlockAudio, { passive: true });
+worldSelectEl?.addEventListener('pointerdown', unlockAudio, { passive: true });
 
 // Soulseek-powered song search on the title screen (free music by default,
 // optional Soulseek via slskd). Results download through the local bridge
