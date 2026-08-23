@@ -189,10 +189,9 @@ export function galacticBandCenterY(xFrac, height) {
 //
 /**
  * Generate `count` stars across a width x height field. `height` is the
- * SKY region (horizon to zenith), not necessarily the whole canvas -- the
- * caller passes the part of the frame that isn't behind terrain, so
- * altitude01 means what it says and no star is generated only to be
- * occluded by a mountain.
+ * full sky the caller wants populated — typically the whole canvas.
+ * Terrain paints over stars that fall behind a mountain or tower; the
+ * catalogue itself must not leave a dead band anywhere a gap can open.
  *
  * Star POSITIONS are uniform across the whole field -- an earlier version
  * biased a fraction of stars toward the galactic plane (GALACTIC_BAND),

@@ -16,13 +16,18 @@ test('different seeds produce different compositions', () => {
   assert.notDeepEqual(a.stars, b.stars, 'different seeds should scatter stars differently');
 });
 
-test('stars stay within the stage and clear the lower band for the trio', () => {
+test('stars fill the entire stage, including behind the trio', () => {
   const { stars } = buildBackdropLayout(7, 1280, 720);
+  let low = 0, high = 0;
   for (const s of stars) {
     assert.ok(s.x >= 0 && s.x <= 1280, `star x out of range: ${s.x}`);
-    assert.ok(s.y >= 0 && s.y <= 720 * 0.72, `star y should stay in the upper band: ${s.y}`);
+    assert.ok(s.y >= 0 && s.y <= 720, `star y out of range: ${s.y}`);
     assert.ok(s.r > 0, 'star radius must be positive');
+    if (s.y > 720 * 0.65) low++;
+    if (s.y < 720 * 0.35) high++;
   }
+  assert.ok(low >= 12, `expected stars in the lower sky, got ${low}`);
+  assert.ok(high >= 12, `expected stars in the upper sky, got ${high}`);
 });
 
 test('nebula hues span the wheel and stay faint', () => {
