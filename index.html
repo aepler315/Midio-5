@@ -59,7 +59,7 @@
             <span class="dropSecondary">.mid &middot; mp3 &middot; wav &middot; flac &mdash; multi-stem drops welcome</span>
             <label class="filebtn" onclick="event.stopPropagation()">
               Browse files
-              <input id="fileInput" type="file" accept=".mid,.midi,audio/*,.mp3,.wav,.flac" multiple hidden />
+              <input id="fileInput" type="file" accept=".mid,.midi,.mp3,.wav,.flac,.ogg,.m4a,.aac,audio/*" multiple class="fileInputVisuallyHidden" />
             </label>
           </div>
         </div>
@@ -216,6 +216,7 @@
         <h2 id="worldSelectTitle">Choose a world</h2>
         <p class="worldSelectHint">The score is how well this song would play in that visual suite — enough to watch, not so much it clips.</p>
         <div id="worldSelectGrid" class="worldSelectGrid"></div>
+        <button id="worldSelectBack" type="button" class="ghostbtn worldSelectBack">Different song</button>
       </div>
     </div>
 
