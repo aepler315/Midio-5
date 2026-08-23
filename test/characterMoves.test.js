@@ -68,6 +68,21 @@ test('cool, low-combo launches stay on the classic spin/backflip', () => {
   }
 });
 
+test('a landing-tie relaunch (never un-airs) still starts a new trick', () => {
+  // Four-on-the-floor never returns to GROUND: each kick force-relaunches
+  // while still airborne. Tricks used to key off grounded→air, so a whole
+  // chorus of jumps served none. The jumpStartMs change is the launch.
+  const perf = new MidioPerformer(4);
+  const combo = fakeCombo(8);
+  perf.update(0, DT, fakeMidio(), fakeJump({ airborne: true, lastLaunchVel: 0.95, jumpStartMs: 0, D: 500 }), combo);
+  assert.ok(perf.trick, 'first launch tricks');
+  const first = perf.trick.type;
+  perf.update(500, DT, fakeMidio(), fakeJump({ airborne: true, lastLaunchVel: 0.95, jumpStartMs: 500, D: 500 }), combo);
+  assert.ok(perf.trick, 'relaunch must trick too');
+  assert.equal(perf.trick.jumpStartMs, 500);
+  assert.notEqual(perf.trick.type, first, 'never the same trick twice in a row');
+});
+
 test('a combo milestone triggers a grounded victory dance that dies back out', () => {
   const perf = new MidioPerformer(3);
   perf.onStreak(5, 1000);

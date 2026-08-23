@@ -2,7 +2,8 @@
 import { Conductor } from './core/Conductor.js';
 import { ParamBus } from './core/ParamBus.js';
 import { midiToTimeline } from './core/MidiAdapter.js';
-import { buildDemoTimeline } from './core/DemoTimeline.js';
+import { buildDemoSong } from './core/DemoSong.js';
+import { renderDemoSongToAudioBuffer } from './audio/DemoSongRender.js';
 import { synthesizeEnergyCurves } from './core/EnergyCurvesSynth.js';
 import { audioToTimeline } from './audio/AudioAdapter.js';
 import { Simulation } from './sim/Simulation.js';
@@ -414,7 +415,8 @@ function startImmediately(data) {
 function applySynthMutePolicy() {
   // Audio-file playback already has the song in the buffer — stacking the
   // synthetic hi-hat / click / kick voices on top is what the player hears as
-  // the unwanted metronome layer. MIDI and the procedural demo need the synth.
+  // the unwanted metronome layer. MIDI still needs the synth; the authored
+  // demo renders its own buffer (see loadDemo) and mutes the same way.
   if (synth) synth.enabled = !muteTimelineSynth;
 }
 
@@ -1302,10 +1304,9 @@ async function loadAudioFiles(files) {
 }
 
 async function loadDemo() {
-  // The primary zero-setup CTA -- previously had no try/catch here and no
-  // .catch() at its call site, so a boot failure (no Web Audio support, a
-  // suspended AudioContext, anything bootAudio touches) left the button
-  // looking simply dead with zero feedback.
+  // Authored song (DemoSong.js): we know every jump, double-jump, and disc
+  // because we wrote the notes. Rendered to a buffer so Play demo is the
+  // scored-audio path (recording plays, timeline drives the show).
   try {
     await bootAudio();
   } catch (err) {
@@ -1313,12 +1314,24 @@ async function loadDemo() {
     return;
   }
   loadGen++;
-  const data = buildDemoTimeline({});
+  showProgress('Composing demo…');
+  const data = buildDemoSong();
   data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
-  lastSongName = 'demo';
-  muteTimelineSynth = false;
-  lastAudioBuffer = null; // demo is synth-driven
-  startImmediately(data);
+  lastSongName = data.title || 'Proof';
+  muteTimelineSynth = true;
+  let audioBuffer;
+  try {
+    audioBuffer = renderDemoSongToAudioBuffer(audioEngine.ctx, data);
+  } catch (err) {
+    console.error('[demo render failed]', err);
+    showProgress('');
+    progressEl.classList.add('hidden');
+    showErrorBanner('Could not render the demo song: ' + (err?.message || err));
+    return;
+  }
+  lastAudioBuffer = audioBuffer;
+  fontRecommender?.clear();
+  offerWorldsThenStart(data, { playBuffer: audioBuffer });
 }
 
 function isMidiFile(file) {
