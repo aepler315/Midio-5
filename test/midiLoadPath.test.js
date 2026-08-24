@@ -50,6 +50,19 @@ test('MIDI load pipeline: parse → energy curves → custom biome (drag/upload 
   assert.ok(data.customBiome.derived.noteCount === data.timeline.length);
 });
 
+test('playing a decoded recording mutes the timeline synth (no keyboard/click layer)', () => {
+  const text = readFileSync(join(root, 'src/main.js'), 'utf8');
+  assert.ok(
+    text.includes('if (playBuffer) muteTimelineSynth = true'),
+    'startTimeline must mute the synth whenever a recording is about to play',
+  );
+  const confirm = text.slice(text.indexOf('function confirmWorld'), text.indexOf('function startTimeline'));
+  assert.ok(
+    confirm.includes('muteTimelineSynth = true'),
+    'confirming a world on a recording must mute the synth before start',
+  );
+});
+
 test('audio load path in main.js offers worlds instead of starting immediately', () => {
   const text = readFileSync(join(root, 'src/main.js'), 'utf8');
   const start = text.indexOf('async function loadAudioFiles');

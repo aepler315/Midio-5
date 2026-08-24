@@ -89,15 +89,24 @@ test('LoadingShow: start(null) runs visual-only, with no percussion timer', () =
   }
 });
 
-test('LoadingShow: start(timelineData) still schedules the percussion loop as before', () => {
+test('LoadingShow: start(timelineData) schedules the visual pulse without voicing clicks', () => {
   const savedRAF = globalThis.requestAnimationFrame, savedCAF = globalThis.cancelAnimationFrame;
   globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 16);
   globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
   try {
-    const show = new LoadingShow(fakeLoadingShowDeps());
+    const deps = fakeLoadingShowDeps();
+    let osc = 0, src = 0;
+    const ctx = deps.audioEngine.ctx;
+    const origOsc = ctx.createOscillator;
+    const origSrc = ctx.createBufferSource;
+    ctx.createOscillator = (...args) => { osc++; return origOsc(...args); };
+    ctx.createBufferSource = (...args) => { src++; return origSrc(...args); };
+    const show = new LoadingShow(deps);
     const session = show.start({ timeline: [kick(0), kick(500)], bpm: 120 });
     assert.equal(show.active, true);
     assert.notEqual(show._timer, null);
+    assert.equal(osc, 0, 'loader percussion must not voice oscillator thumps');
+    assert.equal(src, 0, 'loader percussion must not voice hat bursts');
     show.stop(session);
   } finally {
     globalThis.requestAnimationFrame = savedRAF;

@@ -2,8 +2,10 @@
 // THIS song's percussion — its kicks distilled to thumps on the pulse with
 // the in-between hits demoted to soft hats — looping under a star glyph
 // that flinches on every thump, while the font auditions grind through
-// offline renders. buildPercussionPattern is pure and unit-tested; the
-// LoadingShow class owns scheduling (Web Audio lookahead) and the canvas.
+// offline renders. Audio for those hits used to voice into the master bus
+// and leak oscillator clicks into the song (scheduled Web Audio nodes
+// survive stop()). The pulse is visual-only now. buildPercussionPattern is
+// pure and unit-tested; the LoadingShow class owns scheduling and the canvas.
 import { Role } from '../core/NoteEvent.js';
 import { MIDASUS_MESH, BABY_STAR_MESH } from '../render/meshes.js';
 import { computeRestLengths, drawMeshPart } from '../render/MeshDrawer.js';
@@ -77,8 +79,10 @@ export class LoadingShow {
       let cursor = 0; // absolute pattern time scheduled so far, ms
 
       const scheduleHit = (h, whenSec) => {
-        if (h.kind === 'thump') this._thump(whenSec, h.vel);
-        else this._hat(whenSec, h.vel);
+        // Visual flinch only — never voice thumps/hats into the master
+        // bus. Those oscillator clicks are what the player hears as a
+        // "keyboard / SFX layer" once the real song starts, because
+        // already-scheduled Web Audio nodes survive stop().
         if (h.kind === 'thump') {
           this._thumps.push(whenSec);
           if (this._thumps.length > 64) this._thumps.splice(0, 32);
@@ -136,41 +140,6 @@ export class LoadingShow {
     if (this._timer) { clearInterval(this._timer); this._timer = null; }
     cancelAnimationFrame(this._raf);
     this._active = false;
-  }
-
-  _thump(t, vel) {
-    const ctx = this.ae.ctx;
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(150, t);
-    osc.frequency.exponentialRampToValueAtTime(46, t + 0.11);
-    const g = ctx.createGain();
-    const peak = 0.22 + 0.2 * vel;
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(peak, t + 0.006);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-    osc.connect(g);
-    g.connect(this.ae.master);
-    osc.start(t);
-    osc.stop(t + 0.2);
-  }
-
-  _hat(t, vel) {
-    const ctx = this.ae.ctx;
-    const dur = 0.03;
-    const buf = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * dur)), ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'highpass';
-    hp.frequency.value = 6000;
-    const g = ctx.createGain();
-    g.gain.value = 0.1 + 0.12 * vel;
-    src.connect(hp).connect(g);
-    g.connect(this.ae.master);
-    src.start(t);
   }
 
   _draw(nowSec) {

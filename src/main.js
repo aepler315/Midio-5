@@ -762,6 +762,9 @@ function confirmWorld(id) {
   // World select can sit for a while; a suspended context would start a
   // silent, frozen first frame that reads as "upload did nothing."
   audioEngine?.resume?.();
+  // A recording already has every voice. The timeline synth (oscillator
+  // "keyboard" tones + hat/kick clicks) must not sit on top of it.
+  if (pending.extra?.playBuffer) muteTimelineSynth = true;
   startTimeline(pending.data, pending.extra);
   if (pending.extra.playBuffer) {
     lastAudioBuffer = pending.extra.playBuffer;
@@ -769,9 +772,14 @@ function confirmWorld(id) {
   }
 }
 
-function startTimeline(timelineData, { songSeed: seedOverride = undefined } = {}) {
+function startTimeline(timelineData, extra = {}) {
+  const { songSeed: seedOverride = undefined, playBuffer } = extra;
   stopTimeline();
   fitCanvas();
+  // Any path that is about to play a decoded recording (confirmWorld,
+  // replay) mutes the timeline synth. MIDI and the procedural demo pass
+  // no buffer and keep it.
+  if (playBuffer) muteTimelineSynth = true;
   applySynthMutePolicy();
   // Guard a degenerate declared duration (<=0): without it, FractureEngine's
   // idle -> about-to-freeze transition never fires and the song never
@@ -2133,7 +2141,11 @@ function replaySong({ songSeed } = {}) {
   // Capture buffer before rebuild — startTimeline stops the AudioContext source
   // via stopTimeline, but must not lose the decoded song for the restart.
   const buffer = lastAudioBuffer;
-  startTimeline(lastTimelineData, { songSeed: songSeed !== undefined ? songSeed : readPinnedSeed() });
+  if (buffer) muteTimelineSynth = true;
+  startTimeline(lastTimelineData, {
+    songSeed: songSeed !== undefined ? songSeed : readPinnedSeed(),
+    playBuffer: buffer || undefined,
+  });
   if (buffer) {
     lastAudioBuffer = buffer;
     audioEngine.playBuffer(buffer, 0);
