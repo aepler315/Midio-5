@@ -67,6 +67,7 @@ import { LightningFX } from './Lightning.js';
 import { MeteorShowerFX } from './MeteorShower.js';
 import { LightRig } from './LightRig.js';
 import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS, hazeScatter } from './DepthHaze.js';
+import { scatterSky } from './Scattering.js';
 import { PERSONALITY } from './BiomePersonality.js';
 import { isRendered, styleDials, shiftLightness, ensureContrast, ensureMinLightness } from '../render/VisualStyle.js';
 import { Murmuration } from './Murmuration.js';
@@ -76,7 +77,7 @@ import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
 import { computeLight, celestialScreenPos, groundGlowLights, CELESTIAL_DEFAULT_XFRAC } from '../render/LightField.js';
 import { clamp, clamp01, smoothstep, mulberry32, hashSeed, lerpHue } from '../utils/math.js';
-import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
+import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl, rgbToHex } from '../utils/color.js';
 import { spectralShiftDeg, easeSpectralShift } from '../render/spectral.js';
 import { Role } from '../core/NoteEvent.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
@@ -1479,6 +1480,20 @@ export class BiomeManager {
       reducedFlash: this.reducedFlash,
     });
 
+    // Rayleigh + Mie field for this frame. Signed sun altitude (including
+    // the twilight tail below the horizon) is what makes dawn/dusk a sky
+    // rather than a flat color slap; city leans the night horizon toward
+    // sodium Mie. Painted in _drawSky, sampled again by _drawHaze so the
+    // aerial-perspective wash is the same air.
+    const sunSigned = sunScreenFrac(cyclePhase01(this.tSec * 1000, this._dayNightCycleMs)).altSigned;
+    const styleHaze = styleDials(this.visualStyle).hazeMul || 1;
+    this._scatter = scatterSky({
+      sunAlt: sunSigned,
+      night: this.world?.kind === 'city' ? 1 : dn.night,
+      hazeMul: (Number.isFinite(this._hazeMul) ? this._hazeMul : 1) * styleHaze,
+      city: this.world?.kind === 'city',
+    });
+
     if (this.world?.kind === 'city') {
       drawCityWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
       return;
@@ -1499,16 +1514,8 @@ export class BiomeManager {
       reducedFlash: this.reducedFlash,
     });
 
-    // Dawn/dusk tint washes bracket the sun's own rise and set.
-    for (const wash of [{ color: '#ff9a6b', alpha: dn.dawnAlpha }, { color: '#141040', alpha: dn.duskAlpha }]) {
-      if (wash.alpha > 0.005) {
-        ctx.save();
-        ctx.globalAlpha = wash.alpha;
-        ctx.fillStyle = wash.color;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.restore();
-      }
-    }
+    // Dawn/dusk is the scattering field now (painted inside _drawSky): a
+    // directional Rayleigh/Mie sky instead of a flat full-rect color slap.
 
     // The sun (this biome's celestial, crossfaded A->B as usual) while
     // it's up; a plain pale moon takes over once it sets. Both fade in/out
@@ -1792,7 +1799,17 @@ export class BiomeManager {
     const alpha = hazeAlpha(layerKey, hazeMul, this.calmLevel || 0);
     if (!(alpha > HAZE_EPS) || !Number.isFinite(alpha)) return;
     const skyTint = this.lerpCache.get(A.sky[2], B.sky[2], t);
-    const hazeColor = this._rotated(this.lerpCache.get(skyTint, HAZE_WARM_COLOR, hazeWarmMix(arc?.hazeWarm ?? 0)));
+    const warmMix = hazeWarmMix(arc?.hazeWarm ?? 0);
+    const warmBase = this.lerpCache.get(skyTint, HAZE_WARM_COLOR, warmMix);
+    // Pull the wash toward this frame's actual in-scatter so distant ranges
+    // sit in the same air the sky is made of (blue at noon, peach at dusk)
+    // instead of a fixed peach that disagreed with the sun.
+    const scatterHex = this._scatter
+      ? rgbToHex(this._scatter.horizon.r, this._scatter.horizon.g, this._scatter.horizon.b)
+      : null;
+    const hazeColor = this._rotated(scatterHex
+      ? this.lerpCache.get(warmBase, scatterHex, 0.5)
+      : warmBase);
     const { r, g, b } = hexToRgb(hazeColor);
     if (![r, g, b].every(Number.isFinite)) return;
     ctx.save();
@@ -2273,6 +2290,127 @@ export class BiomeManager {
     // Star backdrop last in the sky stack so it always reads as depth behind
     // the world, not a faint garnish wiped by washes above it.
     this._drawStarfield(ctx, canvas, A, B, t, night);
+
+    // Air in front of the stars: Rayleigh vertical, Mie radial on the light,
+    // a horizon limb, and (when the sun is low) a few crepuscular shafts.
+    // This is the atmosphere — stars sit behind it the way they do in the
+    // real sky, and the biome gradient underneath keeps its identity.
+    this._drawScatter(ctx, canvas);
+  }
+
+  /**
+   * Paint this frame's scattering field. Cheap: three gradients + optional
+   * shafts. Hard-skips when the field is too faint to read (deep night,
+   * opening fade).
+   */
+  _drawScatter(ctx, canvas) {
+    const f = this._scatter;
+    if (!f || !this.light) return;
+    const open = this.openingGain ?? 1;
+    if (open < 0.04) return;
+    const zA = f.zenith.a * open;
+    const hA = f.horizon.a * open;
+    if (zA < 0.012 && hA < 0.012 && f.mie.a * open < 0.012) return;
+
+    const light = this.light;
+    ctx.save();
+    // Screen: add sky-light without crushing the biome's own gradient.
+    ctx.globalCompositeOperation = 'screen';
+    const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    sky.addColorStop(0, `rgba(${f.zenith.r},${f.zenith.g},${f.zenith.b},${zA.toFixed(3)})`);
+    sky.addColorStop(0.52, `rgba(${Math.round((f.zenith.r + f.horizon.r) / 2)},${Math.round((f.zenith.g + f.horizon.g) / 2)},${Math.round((f.zenith.b + f.horizon.b) / 2)},${((zA + hA) * 0.45).toFixed(3)})`);
+    sky.addColorStop(1, `rgba(${f.horizon.r},${f.horizon.g},${f.horizon.b},${hA.toFixed(3)})`);
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Directional: the air is brighter looking toward the light than away
+    // from it. This is the cue a vertical tint cannot make.
+    const glowA = capFlashAlpha(f.sunGlowA * open, this.reducedFlash);
+    if (glowA > 0.012) {
+      ctx.globalCompositeOperation = 'lighter';
+      const rad = f.sunGlowRadiusFrac * Math.hypot(canvas.width, canvas.height);
+      const glow = ctx.createRadialGradient(light.x, light.y, 0, light.x, light.y, rad);
+      glow.addColorStop(0, `rgba(${f.mie.r},${f.mie.g},${f.mie.b},${glowA.toFixed(3)})`);
+      glow.addColorStop(0.42, `rgba(${f.horizon.r},${f.horizon.g},${f.horizon.b},${(glowA * 0.4).toFixed(3)})`);
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // Mie corona: tighter than the directional glow, the disc of air around
+    // the sun/moon itself. Sits behind the celestial (drawn later).
+    const mieA = capFlashAlpha(f.mie.a * open, this.reducedFlash);
+    if (mieA > 0.012) {
+      ctx.globalCompositeOperation = 'lighter';
+      const r = f.mieRadiusFrac * canvas.height;
+      const corona = ctx.createRadialGradient(light.x, light.y, 0, light.x, light.y, r);
+      corona.addColorStop(0, `rgba(${f.mie.r},${f.mie.g},${f.mie.b},${mieA.toFixed(3)})`);
+      corona.addColorStop(0.35, `rgba(${f.mie.r},${f.mie.g},${f.mie.b},${(mieA * 0.45).toFixed(3)})`);
+      corona.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = corona;
+      ctx.beginPath();
+      ctx.arc(light.x, light.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Horizon limb: the bright, often warm band where the air column is
+    // thickest. Climbs further at low sun. Not pinned to the ocean line —
+    // mountains and the city skyline both meet the sky well below it.
+    const limbA = f.limb.a * open;
+    if (limbA > 0.012) {
+      ctx.globalCompositeOperation = 'screen';
+      const y0 = canvas.height * (1 - f.limbHeightFrac);
+      const limb = ctx.createLinearGradient(0, y0, 0, canvas.height);
+      limb.addColorStop(0, 'rgba(0,0,0,0)');
+      limb.addColorStop(0.55, `rgba(${f.limb.r},${f.limb.g},${f.limb.b},${(limbA * 0.7).toFixed(3)})`);
+      limb.addColorStop(1, `rgba(${f.limb.r},${f.limb.g},${f.limb.b},${limbA.toFixed(3)})`);
+      ctx.fillStyle = limb;
+      ctx.fillRect(0, y0, canvas.width, canvas.height - y0);
+    }
+    ctx.restore();
+
+    if (f.shaft > 0.04) this._drawScatterShafts(ctx, canvas, f, light, open);
+  }
+
+  /** Crepuscular shafts: a few long, faint wedges from the sun when it's
+   *  low. Not the concert LightRig and not the CORAL biome FX — those are
+   *  staged lights. This is the air catching a long path. */
+  _drawScatterShafts(ctx, canvas, field, light, open) {
+    const env = capFlashAlpha(field.shaft * 0.09 * open, this.reducedFlash);
+    if (env < 0.012) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const len = canvas.height * 1.15;
+    const n = 5;
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n - 0.5;
+      const ang = 0.22 + t * 0.95 + Math.sin(this.tSec * 0.11 + i * 1.7) * 0.03;
+      const half = 0.018 + Math.abs(t) * 0.012;
+      const flick = 0.7 + 0.3 * Math.sin(this.tSec * (0.17 + i * 0.05) + i);
+      ctx.globalAlpha = env * flick * (1 - Math.abs(t) * 0.45);
+      ctx.fillStyle = `rgb(${field.mie.r},${field.mie.g},${field.mie.b})`;
+      ctx.beginPath();
+      ctx.moveTo(light.x, light.y);
+      ctx.lineTo(
+        light.x + Math.sin(ang - half) * 18,
+        light.y + Math.cos(ang - half) * 18,
+      );
+      ctx.lineTo(
+        light.x + Math.sin(ang - half) * len,
+        light.y + Math.cos(ang - half) * len,
+      );
+      ctx.lineTo(
+        light.x + Math.sin(ang + half) * len,
+        light.y + Math.cos(ang + half) * len,
+      );
+      ctx.lineTo(
+        light.x + Math.sin(ang + half) * 18,
+        light.y + Math.cos(ang + half) * 18,
+      );
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   /** Layered starfield: ambient by day, rich at night / starTwinkle biomes. */
