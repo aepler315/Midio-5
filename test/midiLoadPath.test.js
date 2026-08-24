@@ -62,3 +62,16 @@ test('playing a decoded recording mutes the timeline synth (no keyboard/click la
     'confirming a world on a recording must mute the synth before start',
   );
 });
+
+test('audio load path in main.js offers worlds instead of starting immediately', () => {
+  const text = readFileSync(join(root, 'src/main.js'), 'utf8');
+  const start = text.indexOf('async function loadAudioFiles');
+  const end = text.indexOf('async function loadDemo');
+  assert.ok(start >= 0 && end > start, 'loadAudioFiles should precede loadDemo');
+  const body = text.slice(start, end);
+  assert.ok(body.includes('offerWorldsThenStart'), 'dropped audio must reach the world select screen');
+  assert.ok(
+    !/startTimeline\(data\);/.test(body),
+    'dropped audio must not skip world select by calling startTimeline directly',
+  );
+});

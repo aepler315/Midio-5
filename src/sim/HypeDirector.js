@@ -13,6 +13,8 @@ const FAST_TAU = 0.15, SLOW_TAU = 2.5;
 const DROP_DELTA = 0.26;      // fast must exceed slow by this much...
 const DROP_QUIET_CEIL = 0.5;  // ...while the slow context is still this quiet
 const DROP_COOLDOWN_MS = 6000;
+const DROP_ARM_MS = 2500;     // EMAs must have heard the song; t=0 is not a drop
+const DROP_HOLD_MS = 220;     // tear-away must persist — a kick spike is not a drop
 const SURGE_DECAY_SEC = 2.2;
 const SLAM_DECAY_SEC = 0.22;
 const RING_MS = 900;
@@ -34,6 +36,7 @@ export class HypeDirector {
     this.dropCount = 0;
     this.buildUp = 0;      // 0..1, smoothed rectified (fast-slow) rise -- fires on every crescendo
     this._buildUpRaw = 0;
+    this._tearMs = 0;      // how long fast-slow has been above DROP_DELTA
   }
 
   onKick(vel = 0.8) {
@@ -51,6 +54,7 @@ export class HypeDirector {
     this._cooldownUntilMs = nowMs + DROP_COOLDOWN_MS;
     this.surge = Math.max(this.surge, clamp01(strength));
     this.dropCount++;
+    this._tearMs = 0;
   }
 
   update(nowMs, dtSec, energyCurves) {
@@ -62,15 +66,21 @@ export class HypeDirector {
     this.fast += (1 - Math.exp(-dtSec / FAST_TAU)) * (e - this.fast);
     this.slow += (1 - Math.exp(-dtSec / SLOW_TAU)) * (e - this.slow);
 
-    if (
-      nowMs >= this._cooldownUntilMs &&
-      this.slow < DROP_QUIET_CEIL &&
-      this.fast - this.slow > DROP_DELTA
-    ) {
-      this.dropAtMs = nowMs;
-      this._cooldownUntilMs = nowMs + DROP_COOLDOWN_MS;
-      this.surge = 1;
-      this.dropCount++;
+    const tearing = nowMs >= DROP_ARM_MS
+      && nowMs >= this._cooldownUntilMs
+      && this.slow < DROP_QUIET_CEIL
+      && this.fast - this.slow > DROP_DELTA;
+    if (tearing) {
+      this._tearMs += dtSec * 1000;
+      if (this._tearMs >= DROP_HOLD_MS) {
+        this.dropAtMs = nowMs;
+        this._cooldownUntilMs = nowMs + DROP_COOLDOWN_MS;
+        this.surge = 1;
+        this.dropCount++;
+        this._tearMs = 0;
+      }
+    } else {
+      this._tearMs = 0;
     }
 
     this.surge = Math.max(0, this.surge - dtSec / SURGE_DECAY_SEC);

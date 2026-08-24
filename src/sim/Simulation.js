@@ -410,7 +410,10 @@ export class Simulation {
           this.apotheosis.forceTrigger(nowMs);
           break;
         case CueKind.FLOURISH:
-          this.ensemble.maybeDisc(nowMs, 'cue', this.vibe.epic);
+          // Defer to after ensemble.update() like DROP: maybeDisc here would
+          // raise discCue, then ensemble.update() would clear it at the top
+          // of the same step, and the characters would never see the spin.
+          this._pendingDiscReason = 'cue';
           break;
         case CueKind.KEY_CHANGE:
           this.keyDirector.forceChange(nowMs);
@@ -667,10 +670,17 @@ export class Simulation {
         let performed = false;
         if (this.ridgeAnchor.open) {
           if (this.jump.airborne) {
-            const grant = this.airSeq.tryConsume(ev.tMs);
-            if (grant) {
-              performed = this.jump.airJump(tapEvt, grant.boostMul, grant);
-              if (!performed) this.airSeq.refund(); // landed by tMs after all
+            // A tap in the last ~80ms of an arc IS the landing, not a
+            // double-jump. Autoplay's next chart note is almost always that
+            // landing-tie kick; spending the air-jump budget on it ate the
+            // authored fill stabs (see test/demoSongChoreo.test.js).
+            const remaining = this.jump.jumpStartMs + this.jump.D - ev.tMs;
+            if (remaining > 80) {
+              const grant = this.airSeq.tryConsume(ev.tMs);
+              if (grant) {
+                performed = this.jump.airJump(tapEvt, grant.boostMul, grant);
+                if (!performed) this.airSeq.refund();
+              }
             }
           }
           if (!performed) this.jump.onPlayerTap(tapEvt);

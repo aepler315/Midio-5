@@ -235,7 +235,11 @@ html, body {
     radial-gradient(1.4px 1.4px at 92% 16%, rgba(255,255,255,0.65), transparent),
     radial-gradient(1px 1px at 14% 62%, rgba(255,255,255,0.35), transparent),
     radial-gradient(1px 1px at 48% 55%, rgba(255,255,255,0.4), transparent),
-    radial-gradient(1.2px 1.2px at 66% 48%, rgba(255,255,255,0.55), transparent);
+    radial-gradient(1.2px 1.2px at 66% 48%, rgba(255,255,255,0.55), transparent),
+    radial-gradient(1px 1px at 6% 78%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1.2px 1.2px at 33% 86%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 61% 74%, rgba(255,255,255,0.35), transparent),
+    radial-gradient(1.3px 1.3px at 88% 82%, rgba(255,255,255,0.45), transparent);
   animation: titleTwinkle 4.5s ease-in-out infinite alternate;
   opacity: 0.85;
 }
@@ -1869,6 +1873,22 @@ html, body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--space-4);
+}
+.worldSelectBack {
+  margin-top: var(--space-5);
+  min-height: 44px;
+}
+.fileInputVisuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 .worldCard {
   display: flex;

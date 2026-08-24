@@ -11,7 +11,10 @@ involved. Canvas 2D + Web Audio API only.
 that visual suite would play *this* song — enough going on to watch, not so
 much it clips. Palettes still rotate *inside* a world (biomes in the Range,
 sodium/rain/district in the city). Adding a world is a registry entry + a
-silhouette profile + a draw path.
+silhouette profile + a draw path. The six worlds that complete the set are
+specified in [`docs/worlds.md`](docs/worlds.md) — The Fathom, Far Side,
+Understory, The Nave, Redline, and The Foundry, each claiming a different
+region of the watchability space so the match scores actually spread.
 
 **Song search** is built in: **free music works with zero setup** (no API keys),
 optional Soulseek via bundled slskd or direct login — then hit **Play**.
@@ -37,7 +40,7 @@ Then open the app and either:
 
 - **Search** for a song on the title screen (free music works immediately),
 - drop a `.mid`/audio file, or
-- click **"Play demo"** to run with zero file input.
+- click **"Play demo"** to run *Proof*, an authored 48-bar song whose kicks, drop, double-jumps and disc spins are known to the test suite.
 
 **You can drop a different `.mid`/audio file in at any time, even mid-song**
 — dragging one anywhere on the page (not just the loader screen) tears down
