@@ -11,7 +11,10 @@ involved. Canvas 2D + Web Audio API only.
 that visual suite would play *this* song — enough going on to watch, not so
 much it clips. Palettes still rotate *inside* a world (biomes in the Range,
 sodium/rain/district in the city). Adding a world is a registry entry + a
-silhouette profile + a draw path.
+silhouette profile + a draw path. The six worlds that complete the set are
+specified in [`docs/worlds.md`](docs/worlds.md) — The Fathom, Far Side,
+Understory, The Nave, Redline, and The Foundry, each claiming a different
+region of the watchability space so the match scores actually spread.
 
 **Song search** is built in: **free music works with zero setup** (no API keys),
 optional Soulseek via bundled slskd or direct login — then hit **Play**.
