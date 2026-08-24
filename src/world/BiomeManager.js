@@ -7,6 +7,12 @@ import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
 import { extractRidgePortrait } from './RidgePortrait.js';
 import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
 import { drawCityWorld } from './city/drawCity.js';
+import { drawFarsideWorld } from './farside/drawFarside.js';
+import { drawFathomWorld } from './fathom/drawFathom.js';
+import { drawRedlineWorld } from './redline/drawRedline.js';
+import { drawFoundryWorld } from './foundry/drawFoundry.js';
+import { drawUnderstoryWorld } from './understory/drawUnderstory.js';
+import { drawNaveWorld } from './nave/drawNave.js';
 import { ParticleField } from './ParticleField.js';
 import {
   sampleTerrainCurve, curveFacing, facingColorStops, reliefLitStripRGBA, reliefShadeStripRGBA,
@@ -1003,57 +1009,69 @@ export class BiomeManager {
       this._ridgePortrait = extractRidgePortrait(this.energyCurves, this.durationMs);
     }
     const portrait = this._ridgePortrait;
-    const city = this.world?.kind === 'city';
+    const worldKind = this.world?.kind || 'alpine';
+    const noAerial = this.world?.aerial === false;
     this.strips = new Map();
     for (const b of this.profiles) {
       const seed = hashSeed(b.name);
-      const strips = city ? {
-        L2: generateSilhouette({
-          seed: seed + 1, height: 400, octaves: 3, amplitude: 0.56, baseline: 0.38,
-          color: b.silhouette, shadeMode, profile: 'city',
-          softenScale: 0.88, portrait, layerKey: 'L2',
-          edgeLight: b.edgeLight || null,
-        }),
-        L3: generateSilhouette({
-          seed: seed + 2, height: 360, octaves: 3, amplitude: 0.46, baseline: 0.46,
-          color: b.silhouette, shadeMode, profile: 'city',
-          softenScale: 0.94, portrait, layerKey: 'L3',
-          edgeLight: b.edgeLight || null,
-        }),
-        L4: generateSilhouette({
-          seed: seed + 3, height: 300, octaves: 2, amplitude: 0.30, baseline: 0.66,
-          color: b.silhouette, shadeMode, profile: 'city',
-          softenScale: 1, portrait, layerKey: 'L4',
-          edgeLight: b.edgeLight || null,
-        }),
-        L5: generateSilhouette({
-          seed: seed + 4, height: 220, octaves: 2, amplitude: 0.12, baseline: 0.92,
-          color: b.silhouette, shadeMode, profile: 'city',
-          softenScale: 1, portrait, layerKey: 'L5',
-        }),
-      } : {
-        L2: generateSilhouette({
-          seed: seed + 1, height: 400, octaves: 4, amplitude: 0.52, baseline: 0.42,
-          color: b.silhouette, shadeMode, profile: 'alpine', character: 'massif',
-          softenScale: AERIAL_SOFTEN.L2, portrait, layerKey: 'L2',
-        }),
-        L3: generateSilhouette({
-          seed: seed + 2, height: 360, octaves: 3, amplitude: 0.44, baseline: 0.50,
-          color: b.silhouette, shadeMode, profile: 'alpine', character: 'range',
-          softenScale: AERIAL_SOFTEN.L3, portrait, layerKey: 'L3',
-        }),
-        L4: generateSilhouette({
-          seed: seed + 3, height: 330, octaves: 3, amplitude: 0.34, baseline: 0.64,
-          color: b.silhouette, shadeMode, profile: 'alpine', character: 'crags',
-          softenScale: AERIAL_SOFTEN.L4, portrait, layerKey: 'L4',
-        }),
-        L5: generateSilhouette({
-          seed: seed + 4, octaves: 2, amplitude: 0.46, baseline: 0.82,
-          color: b.silhouette, shadeMode, profile: 'rolling',
-          softenScale: AERIAL_SOFTEN.L5, portrait, layerKey: 'L5',
-        }),
-      };
-      if (!city) {
+      const el = b.edgeLight || null;
+      let strips;
+      if (worldKind === 'city') {
+        strips = {
+          L2: generateSilhouette({
+            seed: seed + 1, height: 400, octaves: 3, amplitude: 0.56, baseline: 0.38,
+            color: b.silhouette, shadeMode, profile: 'city',
+            softenScale: 0.88, portrait, layerKey: 'L2',
+            edgeLight: el,
+          }),
+          L3: generateSilhouette({
+            seed: seed + 2, height: 360, octaves: 3, amplitude: 0.46, baseline: 0.46,
+            color: b.silhouette, shadeMode, profile: 'city',
+            softenScale: 0.94, portrait, layerKey: 'L3',
+            edgeLight: el,
+          }),
+          L4: generateSilhouette({
+            seed: seed + 3, height: 300, octaves: 2, amplitude: 0.30, baseline: 0.66,
+            color: b.silhouette, shadeMode, profile: 'city',
+            softenScale: 1, portrait, layerKey: 'L4',
+            edgeLight: el,
+          }),
+          L5: generateSilhouette({
+            seed: seed + 4, height: 220, octaves: 2, amplitude: 0.12, baseline: 0.92,
+            color: b.silhouette, shadeMode, profile: 'city',
+            softenScale: 1, portrait, layerKey: 'L5',
+          }),
+        };
+      } else {
+        const soften = noAerial
+          ? { L2: 0.75, L3: 0.85, L4: 0.95, L5: 1 }
+          : AERIAL_SOFTEN;
+        const prof = worldKind === 'strip' ? 'rolling' : 'alpine';
+        strips = {
+          L2: generateSilhouette({
+            seed: seed + 1, height: 400, octaves: 4, amplitude: 0.52, baseline: 0.42,
+            color: b.silhouette, shadeMode, profile: prof, character: 'massif',
+            softenScale: soften.L2, portrait, layerKey: 'L2',
+            edgeLight: el,
+          }),
+          L3: generateSilhouette({
+            seed: seed + 2, height: 360, octaves: 3, amplitude: 0.44, baseline: 0.50,
+            color: b.silhouette, shadeMode, profile: prof, character: 'range',
+            softenScale: soften.L3, portrait, layerKey: 'L3',
+            edgeLight: el,
+          }),
+          L4: generateSilhouette({
+            seed: seed + 3, height: 330, octaves: 3, amplitude: 0.34, baseline: 0.64,
+            color: b.silhouette, shadeMode, profile: prof, character: 'crags',
+            softenScale: soften.L4, portrait, layerKey: 'L4',
+            edgeLight: el,
+          }),
+          L5: generateSilhouette({
+            seed: seed + 4, octaves: 2, amplitude: 0.46, baseline: 0.82,
+            color: b.silhouette, shadeMode, profile: 'rolling',
+            softenScale: soften.L5, portrait, layerKey: 'L5',
+          }),
+        };
         decorateStrip(strips.L4, b.name, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
         decorateStrip(strips.L5, b.name, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
       }
@@ -1479,8 +1497,33 @@ export class BiomeManager {
       reducedFlash: this.reducedFlash,
     });
 
-    if (this.world?.kind === 'city') {
+    const _kind = this.world?.kind;
+    if (_kind === 'city') {
       drawCityWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
+      return;
+    }
+    if (_kind === 'airless') {
+      drawFarsideWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
+      return;
+    }
+    if (_kind === 'abyssal') {
+      drawFathomWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
+      return;
+    }
+    if (_kind === 'strip') {
+      drawRedlineWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
+      return;
+    }
+    if (_kind === 'foundry') {
+      drawFoundryWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
+      return;
+    }
+    if (_kind === 'overgrowth') {
+      drawUnderstoryWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
+      return;
+    }
+    if (_kind === 'nave') {
+      drawNaveWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
       return;
     }
 

@@ -106,6 +106,67 @@ test('generateSilhouette city profile returns a window strip', async () => {
   assert.equal(strip.ridge.profile, 'city');
 });
 
+test('all 8 worlds are registered and have required fields', () => {
+  const worlds = listWorlds();
+  assert.equal(worlds.length, 8);
+  for (const w of worlds) {
+    assert.ok(w.id, `missing id`);
+    assert.ok(w.name, `${w.id} missing name`);
+    assert.ok(w.kind, `${w.id} missing kind`);
+    assert.ok(w.comfort && typeof w.comfort.lo === 'number', `${w.id} missing comfort`);
+    assert.ok(w.channels?.length >= 4, `${w.id} channels too few`);
+    assert.ok(w.affinity && Object.keys(w.affinity).length >= 2, `${w.id} missing affinity`);
+    assert.ok(w.palettes?.length >= 3, `${w.id} missing palettes`);
+    assert.ok(typeof w.cast === 'function', `${w.id} missing cast`);
+  }
+});
+
+test('farside wins for sparse, bright, cold songs', () => {
+  const { ec, durationMs } = makeCurves({
+    energyAt: () => 0.12,
+    bandsAt: () => [0.1, 0.2, 0.4, 0.8, 1.3, 1.5, 1.4],
+  });
+  const feat = extractWatchFeatures({ energyCurves: ec, durationMs, bpm: 72 });
+  const ranked = scoreWorlds(feat);
+  const farside = ranked.find((r) => r.id === 'farside');
+  assert.ok(farside, 'farside should be in rankings');
+  assert.ok(farside.score >= 50, `farside score ${farside.score} too low for sparse bright song`);
+});
+
+test('redline wins for fast, driving, groovy songs', () => {
+  const { ec, durationMs } = makeCurves({
+    energyAt: (t) => 0.5 + 0.4 * Math.sin(t * Math.PI),
+    bandsAt: () => [0.6, 0.8, 1.2, 1.4, 1.3, 1.0, 0.7],
+  });
+  const feat = extractWatchFeatures({ energyCurves: ec, durationMs, bpm: 155 });
+  const ranked = scoreWorlds(feat);
+  const redline = ranked.find((r) => r.id === 'redline');
+  const foundry = ranked.find((r) => r.id === 'foundry');
+  assert.ok(redline.score >= 55, `redline score ${redline.score} too low for fast song`);
+  assert.ok(foundry.score >= 55, `foundry score ${foundry.score} too low for energetic song`);
+});
+
+test('understory wins for textured, spread, low-contrast songs', () => {
+  const { ec, durationMs } = makeCurves({
+    energyAt: () => 0.32,
+    bandsAt: () => [0.8, 0.9, 1.0, 1.1, 1.1, 1.0, 0.9],
+  });
+  const feat = extractWatchFeatures({ energyCurves: ec, durationMs, bpm: 96 });
+  const ranked = scoreWorlds(feat);
+  const understory = ranked.find((r) => r.id === 'understory');
+  assert.ok(understory, 'understory should be in rankings');
+  assert.ok(understory.score >= 50, `understory score ${understory.score} too low for textured song`);
+});
+
+test('comfort bands partition drive space — no world covers full range', () => {
+  const worlds = listWorlds();
+  for (const w of worlds) {
+    const span = w.comfort.hi - w.comfort.lo;
+    assert.ok(span < 0.7, `${w.id} comfort range ${span} too wide`);
+    assert.ok(span > 0.15, `${w.id} comfort range ${span} too narrow`);
+  }
+});
+
 test('window occupancy sits down on a quiet open and up on a fevered drop', () => {
   const quiet = windowOccupancy({ energy: 0.1, openingGain: 0.4, orogeny: 0.1, fever: 0 });
   const drop = windowOccupancy({ energy: 0.85, openingGain: 1, orogeny: 0.8, fever: 0.6 });
