@@ -17,7 +17,7 @@ import { spectralHue } from '../render/stellar.js';
 import { spectralTokens } from '../render/spectral.js';
 import { mulberry32, clamp } from '../utils/math.js';
 
-export const STAR_COUNT = 90;
+export const STAR_COUNT = 140;
 export const NEBULA_COUNT = 3;
 const STAR_TWINKLE_PERIOD_SEC = 3.2;
 
@@ -38,7 +38,10 @@ export function buildBackdropLayout(seed = 1, w = 1280, h = 720) {
   for (let i = 0; i < STAR_COUNT; i++) {
     stars.push({
       x: rand() * w,
-      y: rand() * h * 0.72, // keep the lower band clear for the trio
+      // Full stage: the trio is wireframe, so stars behind them still read
+      // as sky. A 0.72 cut left the lower third empty and the field looked
+      // like a cluster hovering in the middle of the title.
+      y: rand() * h,
       r: 0.4 + rand() * 1.3,
       phase: rand() * Math.PI * 2,
       speed: 0.6 + rand() * 1.4,

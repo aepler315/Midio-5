@@ -83,13 +83,14 @@ import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { VoyagePhase } from '../sim/SkyVoyage.js';
 
 const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
-// How much of the frame is sky rather than mountain stack -- the region the
-// star catalogue is generated across (see the generateCatalogue call).
-// Wider than the tallest peak strictly requires: valleys between peaks (and
-// gaps in shorter biomes) expose real sky well below any fixed "always
-// occluded" line, and a catalogue that stopped short of that left stars
-// visibly absent from those gaps even though they were legitimately sky.
-const STAR_SKY_FRAC = 0.78;
+// Star catalogue spans the WHOLE frame. An earlier cut generated only over
+// the top 78% so stars "behind" the mountains were not wasted — but valleys,
+// shorter biomes, and the city skyline all expose sky well below that line,
+// and the field read as a chunk sitting in the middle of the sky with a
+// dead band above the ridgeline. Terrain occludes what it occludes; the
+// catalogue has to cover every pixel that can ever be sky.
+const STAR_SKY_FRAC = 1;
+const STAR_CATALOGUE_COUNT = 560;
 // Aerial perspective per parallax layer: how far each range's own fill is
 // pulled toward the sky-horizon color before it is drawn. L5 is the
 // nearest range and keeps the biome's authored silhouette color exactly;
@@ -358,13 +359,12 @@ export class BiomeManager {
     // twinkle (in _drawStarfield) is computed live. Bumped from a flat 96
     // to 280 -- still cheap since only the brightest slice (layer 2) pays
     // for a radial-gradient hero glow; the rest are one fillRect each.
-    // The field is generated over the SKY, not the whole canvas: everything
-    // below STAR_SKY_FRAC is behind the mountain stack for the entire song,
-    // so stars generated down there were pure waste -- roughly half the
-    // catalogue was invisible, which is half of why the sky read thin above
-    // the (previously far too narrow) galactic band. Passing the sky region
-    // also makes altitude01 honest: 0 is the ridgeline horizon, 1 the zenith.
-    const catalogue = generateCatalogue(hashSeed(`${songSeed}:starcat`), 420, this.w, this.h * STAR_SKY_FRAC);
+    // The field is generated over the full frame: every pixel that can ever
+    // be sky (valleys, city streets of sky between towers, the zenith) gets
+    // stars, and the mountain / skyline stack paints over the rest. A
+    // shorter catalogue left a dead band above the ridgeline that read as
+    // "the stars are a chunk in the middle of the sky."
+    const catalogue = generateCatalogue(hashSeed(`${songSeed}:starcat`), STAR_CATALOGUE_COUNT, this.w, this.h * STAR_SKY_FRAC);
     // The real astronomical flux relation (magnitudeToBrightness01, tested
     // against its exact 2.512x/mag ratio in StarCatalogue.js) is honest but
     // punishing for a screen: at this population size almost every star's
@@ -2413,7 +2413,10 @@ export class BiomeManager {
       // so the field thins and warms toward the ridgeline instead of walling
       // off at full brightness the way a flat scatter does.
       const a = alpha * s.bright * tw * (s.ext ?? 1);
-      if (a < 0.03) continue;
+      // Faint floor: a 0.03 cut used to wipe the dimmer half of the field
+      // (especially near the horizon, after extinction), leaving only the
+      // brighter mid-sky survivors — another way the stars read as a chunk.
+      if (a < 0.01) continue;
       const layerDrift = (1 + s.layer * 0.6) * scroll * 0.02;
       // Rescaled from the cached fraction against the ACTUAL canvas, not the
       // (possibly narrower) field the catalogue was generated over -- a
