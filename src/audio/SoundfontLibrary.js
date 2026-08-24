@@ -234,10 +234,16 @@ export class SynthRouter {
   constructor(fallback) {
     this.fallback = fallback;
     this.sf2 = null; // Sf2Synth instance (may have no loaded font)
+    // Router-level gate: the source of truth for "is the timeline allowed
+    // to make sound." Child engines also get the flag, but noteOn checks
+    // THIS first so a forgetful engine (or a newly-attached font) cannot
+    // start voicing over a playing audio file.
+    this._enabled = true;
   }
 
   setSf2Engine(sf2Engine) {
     this.sf2 = sf2Engine;
+    if (this.sf2) this.sf2.enabled = this._enabled;
   }
 
   /** The active engine: SF2 synth if a font is loaded, else fallback. */
@@ -250,14 +256,16 @@ export class SynthRouter {
   }
 
   noteOn(evt) {
+    if (!this._enabled) return;
     const engine = this.current;
     if (engine) engine.noteOn(evt);
   }
 
-  get enabled() { return this.current?.enabled ?? true; }
+  get enabled() { return this._enabled; }
   set enabled(v) {
-    if (this.fallback) this.fallback.enabled = v;
-    if (this.sf2) this.sf2.enabled = v;
+    this._enabled = !!v;
+    if (this.fallback) this.fallback.enabled = this._enabled;
+    if (this.sf2) this.sf2.enabled = this._enabled;
   }
 
   /** Silences every currently-sounding voice. The SF2 engine tracks voices

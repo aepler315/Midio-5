@@ -368,3 +368,27 @@ test('SynthRouter.stopAll is a no-op (never throws) before an SF2 engine is set'
   const router = new SynthRouter(fallback);
   assert.doesNotThrow(() => router.stopAll());
 });
+
+test('SynthRouter.enabled=false blocks noteOn at the router, even if a child would voice', () => {
+  const fallback = makeMockSynth();
+  const router = new SynthRouter(fallback);
+  router.enabled = false;
+  router.noteOn({ pitch: 60, vel: 0.8, role: 'MELODY', durMs: 200 });
+  assert.equal(fallback.calls, 0, 'muted router must not reach the engine');
+  assert.equal(router.enabled, false);
+  router.enabled = true;
+  router.noteOn({ pitch: 60, vel: 0.8, role: 'MELODY', durMs: 200 });
+  assert.equal(fallback.calls, 1);
+});
+
+test('SynthRouter.enabled=false still holds after an SF2 font is attached', () => {
+  const fallback = makeMockSynth();
+  const sf2Engine = makeMockSynth();
+  const router = new SynthRouter(fallback);
+  router.enabled = false;
+  sf2Engine.sf2 = { presets: new Map() };
+  router.setSf2Engine(sf2Engine);
+  router.noteOn({ pitch: 36, vel: 1, role: 'RHYTHM', durMs: 90 });
+  assert.equal(fallback.calls, 0);
+  assert.equal(sf2Engine.calls, 0, 'a late-loaded font must not start voicing over a muted song');
+});
