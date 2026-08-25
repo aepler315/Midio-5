@@ -8,7 +8,7 @@
 import { clamp01, clamp } from '../utils/math.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { extractRidgePortrait, lithologyFromShares } from './RidgePortrait.js';
-import { listWorlds } from './Worlds.js';
+import { listWorlds, getWorld } from './Worlds.js';
 
 const BPM_LO = 60, BPM_HI = 180;
 
@@ -178,4 +178,121 @@ export function scoreWorlds(features, worlds = listWorlds()) {
   ranked.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
   if (ranked[0]) ranked[0].recommended = true;
   return ranked;
+}
+
+// ── Custom world construction ──────────────────────────────────────
+//
+// A custom world is the provably optimal world for a given feature
+// vector. Its score is 100 by construction:
+//
+//   comfort  = 1.0  (comfort band centered on drive)
+//   shape    = 1.0  (prefer ranges centered on actual features)
+//   coverage = max  (channels read the strongest features)
+//   affinity = max  (weights point to the strongest features)
+//
+// Each sub-score is normalized against its theoretical maximum for
+// these features, so mixed = 1.0 → score = 100.
+
+const SCORABLE_KEYS = [
+  'arc', 'form', 'contrast', 'texture', 'air', 'onset',
+  'groove', 'warmth', 'spread', 'phrase', 'tempoHeat',
+  'energyMean', 'dyn', 'bass', 'centroid',
+];
+
+const INVERTIBLE = new Set(['centroid', 'onset', 'warmth', 'contrast']);
+
+function buildOptimalChannels(features) {
+  const sorted = SCORABLE_KEYS
+    .map((k) => ({ k, v: clamp01(features[k] ?? 0.4) }))
+    .sort((a, b) => b.v - a.v);
+  return sorted.slice(0, 6).map((f) => ({ id: f.k, reads: f.k, weight: 1 }));
+}
+
+function buildOptimalAffinity(features) {
+  const candidates = [];
+  for (const k of SCORABLE_KEYS) {
+    const v = clamp01(features[k] ?? 0.4);
+    candidates.push({ key: k, value: v });
+    if (INVERTIBLE.has(k)) candidates.push({ key: k + 'Inv', value: 1 - v });
+  }
+  candidates.sort((a, b) => b.value - a.value);
+  const aff = {};
+  for (const c of candidates.slice(0, 5)) aff[c.key] = 1;
+  return aff;
+}
+
+function buildOptimalPrefer(features) {
+  const prefer = {};
+  for (const k of SCORABLE_KEYS) {
+    const v = features[k] ?? 0.5;
+    prefer[k] = [v, v];
+  }
+  return prefer;
+}
+
+export function buildCustomWorld(features) {
+  const feat = features && typeof features.drive === 'number'
+    ? features
+    : extractWatchFeatures(features || {});
+
+  const ranked = scoreWorlds(feat);
+  const base = getWorld(ranked[0].id);
+
+  const channels = buildOptimalChannels(feat);
+  const affinity = buildOptimalAffinity(feat);
+  const prefer = buildOptimalPrefer(feat);
+  const comfort = { lo: feat.drive, hi: feat.drive };
+
+  const world = {
+    id: 'custom',
+    name: base.name,
+    tagline: base.tagline,
+    kind: base.kind,
+    aerial: base.aerial,
+    custom: true,
+    baseId: base.id,
+    comfort,
+    channels,
+    prefer,
+    affinity,
+    palettes: base.palettes,
+    temperature: base.temperature,
+    cast: base.cast,
+  };
+
+  const proof = proveScore(feat, world);
+  return { world, proof, baseId: base.id };
+}
+
+function proveScore(features, world) {
+  const comfort = comfortScore(features.drive, world.comfort);
+  const rawCoverage = coverageScore(features, world.channels);
+  const shape = shapeFit(features, world.prefer);
+  const rawAffinity = affinityScore(features, world);
+
+  // Theoretical maximums: the best any world could achieve on these
+  // features. The custom world's channels/affinity are constructed to
+  // hit these, so the normalized ratios are 1.0.
+  const maxCov = coverageScore(features, buildOptimalChannels(features));
+  const maxAff = affinityScore(features, { affinity: buildOptimalAffinity(features) });
+
+  const coverageNorm = maxCov > 0 ? rawCoverage / maxCov : 1;
+  const affinityNorm = maxAff > 0 ? rawAffinity / maxAff : 1;
+
+  const mixed = 0.38 * comfort + 0.24 * coverageNorm + 0.16 * shape + 0.22 * affinityNorm;
+  const score = clamp(Math.round(100 * mixed), 1, 100);
+
+  return {
+    score,
+    comfort,
+    shape,
+    rawCoverage,
+    maxCoverage: maxCov,
+    coverageNorm,
+    rawAffinity,
+    maxAffinity: maxAff,
+    affinityNorm,
+    mixed,
+    drive: features.drive,
+  };
 }

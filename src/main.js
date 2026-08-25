@@ -41,8 +41,8 @@ import {
 } from './net/JamendoSource.js';
 import { visualNow } from './core/ChoreoClock.js';
 import { SoulseekSearch } from './soulseek/SoulseekSearch.js';
-import { extractWatchFeatures, scoreWorlds } from './world/WorldScore.js';
-import { DEFAULT_WORLD_ID } from './world/Worlds.js';
+import { extractWatchFeatures, buildCustomWorld } from './world/WorldScore.js';
+import { DEFAULT_WORLD_ID, setCustomWorld } from './world/Worlds.js';
 
 
 const STEP_MS = 1000 / 120;
@@ -714,51 +714,17 @@ function offerWorldsThenStart(data, extra = {}) {
       analysis: data.analysis,
       structure: data.structure,
     });
-    const ranked = scoreWorlds(features);
-    renderWorldSelect(ranked);
-    progressEl.classList.add('hidden');
-    loaderEl.classList.add('hidden');
-    auditionPanelEl?.classList.add('hidden');
-    lyricsRowEl?.classList.add('hidden');
-    worldSelectEl?.classList.remove('hidden');
-    startTitleBackdrop();
+    const { world, proof } = buildCustomWorld(features);
+    setCustomWorld(world);
+    console.log('[custom world] %s (base: %s) score: %d proof:', world.kind, world.baseId, proof.score, proof);
+    confirmWorld(world.id);
   } catch (err) {
-    // Scoring must never swallow a successful load -- fall through to alpine.
     console.error('[world score]', err);
     pendingWorldStart = { data, extra };
     confirmWorld(data.worldId || lastWorldId || DEFAULT_WORLD_ID);
   }
 }
 
-const WORLD_PREVIEW_CLASS = {
-  alpine: 'alpine', city: 'city', airless: 'airless', abyssal: 'abyssal',
-  strip: 'strip', foundry: 'foundry', overgrowth: 'overgrowth', nave: 'nave',
-};
-function worldPreviewClass(kind) {
-  return WORLD_PREVIEW_CLASS[kind] || 'alpine';
-}
-
-function renderWorldSelect(ranked) {
-  if (!worldSelectGridEl) return;
-  worldSelectGridEl.innerHTML = '';
-  for (const w of ranked) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'worldCard' + (w.recommended ? ' is-best' : '');
-    btn.dataset.worldId = w.id;
-    btn.innerHTML = `
-      <div class="worldCardPreview ${worldPreviewClass(w.kind)}" aria-hidden="true"></div>
-      <div class="worldCardTop">
-        <span class="worldCardName">${w.name}</span>
-        <span class="worldCardScore">${w.score}%</span>
-      </div>
-      <p class="worldCardTag">${w.tagline}</p>
-      ${w.recommended ? '<span class="worldCardBadge">best fit</span>' : ''}
-    `;
-    btn.addEventListener('click', () => confirmWorld(w.id));
-    worldSelectGridEl.appendChild(btn);
-  }
-}
 
 function confirmWorld(id) {
   const pending = pendingWorldStart;
