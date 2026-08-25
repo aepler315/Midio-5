@@ -714,7 +714,7 @@ function offerWorldsThenStart(data, extra = {}) {
       analysis: data.analysis,
       structure: data.structure,
     });
-    const { world, proof } = buildCustomWorld(features);
+    const { world, proof } = buildCustomWorld(features, data);
     setCustomWorld(world);
     console.log('[custom world] %s (base: %s) score: %d proof:', world.kind, world.baseId, proof.score, proof);
     confirmWorld(world.id);
