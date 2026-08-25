@@ -730,6 +730,14 @@ function offerWorldsThenStart(data, extra = {}) {
   }
 }
 
+const WORLD_PREVIEW_CLASS = {
+  alpine: 'alpine', city: 'city', airless: 'airless', abyssal: 'abyssal',
+  strip: 'strip', foundry: 'foundry', overgrowth: 'overgrowth', nave: 'nave',
+};
+function worldPreviewClass(kind) {
+  return WORLD_PREVIEW_CLASS[kind] || 'alpine';
+}
+
 function renderWorldSelect(ranked) {
   if (!worldSelectGridEl) return;
   worldSelectGridEl.innerHTML = '';
@@ -739,7 +747,7 @@ function renderWorldSelect(ranked) {
     btn.className = 'worldCard' + (w.recommended ? ' is-best' : '');
     btn.dataset.worldId = w.id;
     btn.innerHTML = `
-      <div class="worldCardPreview ${w.kind === 'city' ? 'city' : 'alpine'}" aria-hidden="true"></div>
+      <div class="worldCardPreview ${worldPreviewClass(w.kind)}" aria-hidden="true"></div>
       <div class="worldCardTop">
         <span class="worldCardName">${w.name}</span>
         <span class="worldCardScore">${w.score}%</span>

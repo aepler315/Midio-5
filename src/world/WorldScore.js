@@ -113,11 +113,19 @@ function comfortScore(drive, comfort) {
   return clamp01(0.78 - dist * 1.35) * 0.92 + 0.08;
 }
 
+const INVERTED = { centroidInv: 'centroid', onsetInv: 'onset', warmthInv: 'warmth', contrastInv: 'contrast' };
+
 function affinityScore(features, world) {
-  if (world.kind === 'city') {
-    return clamp01(0.42 * (features.groove ?? 0) + 0.38 * (features.warmth ?? 0) + 0.20 * (1 - (features.centroid ?? 0.5)));
+  const w = world.affinity;
+  if (!w) return 0.5;
+  let acc = 0, sum = 0;
+  for (const [key, weight] of Object.entries(w)) {
+    const src = INVERTED[key];
+    const v = clamp01(src ? 1 - (features[src] ?? 0.5) : (features[key] ?? 0.4));
+    acc += v * weight;
+    sum += weight;
   }
-  return clamp01(0.40 * (features.arc ?? 0) + 0.25 * (features.contrast ?? 0) + 0.35 * (features.tempoHeat ?? 0));
+  return sum > 0 ? clamp01(acc / sum) : 0.5;
 }
 
 function coverageScore(features, channels) {
