@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EnergyCurves } from '../src/audio/EnergyCurves.js';
-import { extractWatchFeatures, scoreWorlds } from '../src/world/WorldScore.js';
-import { getWorld, listWorlds, DEFAULT_WORLD_ID } from '../src/world/Worlds.js';
+import { extractWatchFeatures, scoreWorlds, buildCustomWorld } from '../src/world/WorldScore.js';
+import { getWorld, listWorlds, setCustomWorld, clearCustomWorld, DEFAULT_WORLD_ID } from '../src/world/Worlds.js';
 import { buildingProfile, cityHeightField, windowOccupancy } from '../src/world/city/CitySilhouette.js';
 import { extractRidgePortrait } from '../src/world/RidgePortrait.js';
 import { castBiomes } from '../src/world/Dramaturgy.js';
@@ -172,4 +172,58 @@ test('window occupancy sits down on a quiet open and up on a fevered drop', () =
   const drop = windowOccupancy({ energy: 0.85, openingGain: 1, orogeny: 0.8, fever: 0.6 });
   assert.ok(drop > quiet * 1.5, `drop ${drop} vs quiet ${quiet}`);
   assert.ok(quiet > 0.05 && drop < 1);
+});
+
+test('buildCustomWorld scores 100 for any song — proven by construction', () => {
+  // Test across four very different songs: quiet ambient, loud metal,
+  // mid-tempo groove, sparse high-frequency.
+  const songs = [
+    { label: 'ambient', energyAt: () => 0.12, bands: () => [1.4, 1.0, 0.6, 0.3, 0.1, 0.05, 0.02], bpm: 68 },
+    { label: 'metal', energyAt: (t) => 0.08 + bump(t, 0.5, 0.1, 0.85), bands: () => [0.3, 0.5, 0.9, 1.3, 1.5, 1.3, 1.1], bpm: 175 },
+    { label: 'groove', energyAt: () => 0.45, bands: () => [0.9, 1.1, 1.2, 1.0, 0.8, 0.5, 0.3], bpm: 96 },
+    { label: 'sparse', energyAt: () => 0.08, bands: () => [0.1, 0.1, 0.3, 0.6, 1.2, 1.5, 1.6], bpm: 60 },
+  ];
+
+  for (const song of songs) {
+    const { ec, durationMs } = makeCurves({
+      energyAt: song.energyAt,
+      bandsAt: song.bands,
+    });
+    const feat = extractWatchFeatures({ energyCurves: ec, durationMs, bpm: song.bpm });
+    const { world, proof } = buildCustomWorld(feat);
+
+    // The proof must hold:
+    assert.equal(proof.score, 100, `${song.label}: score ${proof.score} !== 100`);
+    assert.ok(Math.abs(proof.comfort - 1.0) < 1e-9, `${song.label}: comfort ${proof.comfort} !== 1.0`);
+    assert.ok(Math.abs(proof.shape - 1.0) < 1e-9, `${song.label}: shape ${proof.shape} !== 1.0`);
+    assert.ok(Math.abs(proof.coverageNorm - 1.0) < 1e-9, `${song.label}: coverageNorm ${proof.coverageNorm} !== 1.0`);
+    assert.ok(Math.abs(proof.affinityNorm - 1.0) < 1e-9, `${song.label}: affinityNorm ${proof.affinityNorm} !== 1.0`);
+    assert.ok(Math.abs(proof.mixed - 1.0) < 1e-9, `${song.label}: mixed ${proof.mixed} !== 1.0`);
+
+    // The world must be usable: has all fields BiomeManager needs.
+    assert.ok(world.kind, `${song.label}: missing kind`);
+    assert.ok(world.palettes?.length >= 3, `${song.label}: missing palettes`);
+    assert.ok(typeof world.cast === 'function', `${song.label}: missing cast`);
+    assert.equal(world.custom, true);
+
+    // Registering and retrieving must work.
+    setCustomWorld(world);
+    assert.equal(getWorld('custom').kind, world.kind);
+    clearCustomWorld();
+    assert.notEqual(getWorld('custom').id, 'custom');
+  }
+});
+
+test('custom world inherits best base world kind', () => {
+  // A loud, fast song should inherit a high-energy base world.
+  const { ec, durationMs } = makeCurves({
+    energyAt: (t) => 0.5 + 0.4 * Math.sin(t * Math.PI),
+    bandsAt: () => [0.6, 0.8, 1.2, 1.4, 1.3, 1.0, 0.7],
+  });
+  const feat = extractWatchFeatures({ energyCurves: ec, durationMs, bpm: 155 });
+  const ranked = scoreWorlds(feat);
+  const { world } = buildCustomWorld(feat);
+  assert.equal(world.baseId, ranked[0].id,
+    `custom base ${world.baseId} !== top ranked ${ranked[0].id}`);
+  assert.equal(world.kind, ranked[0].kind);
 });

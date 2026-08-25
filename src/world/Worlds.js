@@ -249,12 +249,23 @@ export const WORLDS = [
 
 const BY_ID = new Map(WORLDS.map((w) => [w.id, w]));
 
+let _custom = null;
+
 export function getWorld(id) {
+  if (_custom && _custom.id === id) return _custom;
   return BY_ID.get(id) || WORLDS[0];
 }
 
 export function listWorlds() {
   return WORLDS;
+}
+
+export function setCustomWorld(world) {
+  _custom = world;
+}
+
+export function clearCustomWorld() {
+  _custom = null;
 }
 
 export const DEFAULT_WORLD_ID = WORLDS[0].id;
