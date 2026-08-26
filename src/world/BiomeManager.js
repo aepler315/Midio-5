@@ -81,7 +81,9 @@ import { CodaDirector } from '../sim/CodaDirector.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
 import { computeLight, celestialScreenPos, groundGlowLights, CELESTIAL_DEFAULT_XFRAC } from '../render/LightField.js';
-import { clamp, clamp01, smoothstep, mulberry32, hashSeed, lerpHue } from '../utils/math.js';
+import {
+  clamp, clamp01, smoothstep, mulberry32, hashSeed, lerpHue, lerp,
+} from '../utils/math.js';
 import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { spectralShiftDeg, easeSpectralShift } from '../render/spectral.js';
 import { Role } from '../core/NoteEvent.js';
@@ -2227,11 +2229,32 @@ export class BiomeManager {
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
     // Night + rendered both pull toward deep space so stars/ocean have a stage.
     const nightPull = 0.62 * night + (dials.spaceWash ? 0.14 : 0);
-    for (let i = 0; i < 3; i++) {
-      const stop = this._rotated(this.lerpCache.get(A.sky[i], B.sky[i], t));
-      // Upper sky (i=0) goes more space-black; lower sky keeps more biome color.
-      const pull = nightPull * (i === 0 ? 1 : i === 1 ? 0.75 : 0.45);
-      g.addColorStop(i / 2, pull > 0.02
+    // Variable stop count (SongDNA.harmonicComplexity, via PaletteSynth's
+    // skyStops): a harmonically richer song gets a subtler, more banded sky
+    // gradient instead of the flat 3-stop default. Only takes effect when
+    // BOTH sides of a transition carry skyStops of the same length --
+    // crossfading against a stock biome or the older customBiome importer
+    // (neither sets skyStops) falls back to the original fixed 3-stop
+    // A.sky/B.sky exactly as before, so nothing else that reads sky[0..2]
+    // for its own purposes (fire glow, water reflection, light rig, etc.)
+    // is affected either way.
+    const stopsA = A.skyStops, stopsB = B.skyStops;
+    const useVariable = Array.isArray(stopsA) && Array.isArray(stopsB)
+      && stopsA.length === stopsB.length && stopsA.length >= 3;
+    const n = useVariable ? stopsA.length : 3;
+    for (let i = 0; i < n; i++) {
+      const from = useVariable ? stopsA[i] : A.sky[i];
+      const to = useVariable ? stopsB[i] : B.sky[i];
+      const stop = this._rotated(this.lerpCache.get(from, to, t));
+      // Upper sky (i=0) goes more space-black; lower sky keeps more biome
+      // color. n===3 keeps the exact original 1/0.75/0.45 steps (byte-
+      // identical for every biome that doesn't opt into extra stops); a
+      // richer n interpolates the same curve continuously across more stops.
+      const posFrac = n > 1 ? i / (n - 1) : 0;
+      const pull = n === 3
+        ? nightPull * (i === 0 ? 1 : i === 1 ? 0.75 : 0.45)
+        : nightPull * lerp(1, 0.45, posFrac);
+      g.addColorStop(posFrac, pull > 0.02
         ? this.lerpCache.get(stop, NIGHT_SKY_COLOR, pull)
         : stop);
     }
@@ -2778,13 +2801,39 @@ export class BiomeManager {
     });
     if (B === A) {
       this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), alpha);
+      this._drawCompanions(ctx, canvas, cx, cy, A.celestial.companions, alpha);
     } else {
       this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), (1 - t) * alpha);
       this._drawOneCelestial(ctx, cx, cy, rotCel(B.celestial), t * alpha);
+      this._drawCompanions(ctx, canvas, cx, cy, A.celestial.companions, (1 - t) * alpha);
+      this._drawCompanions(ctx, canvas, cx, cy, B.celestial.companions, t * alpha);
     }
 
     const promAlpha = ((A.fx === 'prominence' ? 1 - t : 0) + (B.fx === 'prominence' ? t : 0)) * alpha;
     if (promAlpha > 0.02) this._drawProminence(ctx, cx, cy, promAlpha);
+  }
+
+  /**
+   * Small decorative bodies near the primary celestial (PaletteSynth's
+   * buildCompanions -- more of them for a harmonically richer song).
+   * Deliberately drawn as plain _drawOneCelestial discs paired with the
+   * primary's own crossfade alpha: no day/night light contribution, no
+   * mandala anchoring, no occlusion. A biome without companions (every
+   * stock world, and any custom world for a harmonically simple song)
+   * draws nothing here -- today's single-body sky is unchanged.
+   */
+  _drawCompanions(ctx, canvas, cx, cy, companions, alpha) {
+    if (!Array.isArray(companions) || !companions.length || alpha <= 0.02) return;
+    const primaryR = Math.max(14, canvas.height * 0.0361);
+    for (const co of companions) {
+      const ccx = cx + co.dxFrac * canvas.width;
+      const ccy = cy + co.dyFrac * canvas.height;
+      this._drawOneCelestial(ctx, ccx, ccy, {
+        color: this._rotated(co.color),
+        haloColor: this._rotated(co.haloColor),
+        radius: Math.max(3, primaryR * co.radiusFrac),
+      }, alpha * 0.85);
+    }
   }
 
   /** A plain pale moon, taking over from the biome's own sun once it sets

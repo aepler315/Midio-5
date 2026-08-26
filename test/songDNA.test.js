@@ -160,6 +160,51 @@ test('synthesizePalette is deterministic for the same DNA', () => {
   assert.equal(a.profile.silhouette, b.profile.silhouette);
 });
 
+test('skyStops: a harmonically simple song gets the plain 3-stop sky, a rich one gets 5 legible stops', () => {
+  const simpleDna = buildSongDNA(synthTimeline({ pitches: [60, 64, 67] }));
+  simpleDna.harmonicComplexity = 0.2;
+  const richDna = buildSongDNA(synthTimeline({ pitches: [60, 62, 64, 65, 67, 69, 71], program: 73 }));
+  richDna.harmonicComplexity = 0.85;
+
+  const { profile: simple } = synthesizePalette(simpleDna);
+  const { profile: rich } = synthesizePalette(richDna);
+
+  assert.equal(simple.skyStops.length, 3);
+  assert.deepEqual(simple.skyStops, simple.sky);
+  assert.equal(rich.skyStops.length, 5);
+  // The canonical dark/mid/hot stops still appear (at the new positions),
+  // so every other reader that still indexes A.sky[0..2] sees the exact
+  // same values as before.
+  assert.equal(rich.sky[0], rich.skyStops[0]);
+  assert.equal(rich.sky[1], rich.skyStops[2]);
+  assert.equal(rich.sky[2], rich.skyStops[4]);
+
+  // Every adjacent pair in the richer gradient stays visually distinguishable.
+  const labs = rich.skyStops.map(hexToOklab);
+  for (let i = 1; i < labs.length; i++) {
+    assert.ok(oklabDelta(labs[i - 1], labs[i]) > 0.008, `stops ${i - 1}/${i} too close`);
+  }
+});
+
+test('celestial companions: none for a simple song, more for a harmonically rich one, always paired with a valid color', () => {
+  const simpleDna = buildSongDNA(synthTimeline({ pitches: [60, 64, 67] }));
+  simpleDna.harmonicComplexity = 0.15;
+  const richDna = buildSongDNA(synthTimeline({ pitches: [60, 62, 64, 65, 67, 69, 71], program: 73 }));
+  richDna.harmonicComplexity = 0.9;
+
+  const { profile: simple } = synthesizePalette(simpleDna);
+  const { profile: rich } = synthesizePalette(richDna);
+
+  assert.equal(simple.celestial.companions.length, 0);
+  assert.ok(rich.celestial.companions.length >= 1 && rich.celestial.companions.length <= 3);
+  for (const co of rich.celestial.companions) {
+    assert.match(co.color, /^#[0-9a-f]{6}$/);
+    assert.match(co.haloColor, /^#[0-9a-f]{6}$/);
+    assert.ok(co.radiusFrac > 0 && co.radiusFrac < 1);
+    assert.ok(Number.isFinite(co.dxFrac) && Number.isFinite(co.dyFrac));
+  }
+});
+
 test('synthesizeSectionPalettes always yields >=2 distinctly-named entries so castBiomes never strands a section without a repeat-free choice', () => {
   const dna = buildSongDNA(synthTimeline({ pitches: [60, 64, 67, 71] }));
   const { palettes, temperature } = synthesizeSectionPalettes(dna, 'testworld');
