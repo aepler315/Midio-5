@@ -7,7 +7,9 @@
 import { clamp01, lerp, lerpHue, mulberry32 } from '../../utils/math.js';
 import { oklchToHex, hexToOklab, oklabDelta } from './OklchColor.js';
 import { FIFTHS_ORDER } from './SongDNA.js';
-import { buildShapeGrammar, computeTemperature, pickFx, pickParticleKind, pickCelestialKind } from './ShapeGrammar.js';
+import {
+  buildShapeGrammar, computeTemperature, pickFx, pickParticleKind, pickCelestialKind, deriveParticleMotion,
+} from './ShapeGrammar.js';
 
 const N_CANDIDATES = 400;
 
@@ -169,6 +171,7 @@ export function synthesizePalette(dna, temperatureOverride = null) {
 
   const fx = pickFx(temp);
   const particleKind = pickParticleKind(grammar, temp);
+  const { direction: particleDirection, driftBias } = deriveParticleMotion(dna);
   const celestialKind = pickCelestialKind(dna);
   const isMoon = celestialKind === 'moon';
 
@@ -189,6 +192,8 @@ export function synthesizePalette(dna, temperatureOverride = null) {
       color: best.hex.particle,
       count: Math.round(16 + temp * 46 + dna.noteDensity * 22),
       speed: Math.round(10 + temp * 110 + dna.percussionDensity * 40),
+      direction: particleDirection,
+      driftBias,
     },
     fx,
     // BiomeManager scales the ridge-dance amplitude by this directly

@@ -38,6 +38,13 @@ export class ParticleField {
     this.color = config.color;
     this.count = config.count;
     this.baseSpeed = config.speed;
+    // Song-derived global drift (ShapeGrammar.deriveParticleMotion): a
+    // constant px/s nudge layered on top of each kind's own physics, so a
+    // song's register trajectory (rising/falling/bursty/neutral) is legible
+    // across every particle kind rather than only the kinds whose baked-in
+    // motion happens to already go up or down. Zero by default -- existing
+    // callers that don't pass driftBias get byte-identical motion.
+    this.driftBias = config.driftBias || null;
     this.w = canvasWidth;
     this.h = canvasHeight;
     this.rand = mulberry32(seed);
@@ -105,6 +112,10 @@ export class ParticleField {
     const rand = this.rand;
     const wx = wind ? wind.x : 0, wy = wind ? wind.y : 0;
     for (const p of this.particles) {
+      if (this.driftBias) {
+        p.x += this.driftBias.vx * dtSec;
+        p.y += this.driftBias.vy * dtSec;
+      }
       switch (this.kind) {
         case 'fireflies':
           p.x += (Math.sin(tSec * 0.4 + p.phase) * this.baseSpeed + wx * 0.4) * dtSec;

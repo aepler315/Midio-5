@@ -77,6 +77,45 @@ export function pickParticleKind(grammar, temperature) {
   return pool[idx];
 }
 
+/**
+ * Particle motion from the song's register trajectory (SongDNA.registerTrend:
+ * -1 falling..1 rising, from MIDI pitch-over-time or the audio-only energy-
+ * wave proxy) plus how percussive/dense the song is. Returns a named
+ * `direction` (informational/testable) and a `driftBias` velocity in px/s
+ * that ParticleField adds on top of each particle kind's own physics —
+ * so a song that climbs in register visibly lifts its particle field, one
+ * that falls settles it, and a driving, non-trending song reads as bursty
+ * rather than merely ambient.
+ */
+export function deriveParticleMotion(dna) {
+  const trend = dna.registerTrend || 0;
+  const burstiness = clamp01(0.6 * (dna.percussionDensity || 0) + 0.4 * (dna.noteDensity || 0));
+
+  let direction;
+  if (burstiness > 0.62 && Math.abs(trend) < 0.35) direction = 'burst';
+  else if (trend > 0.18) direction = 'rise';
+  else if (trend < -0.18) direction = 'fall';
+  else direction = 'drift';
+
+  let vx = 0, vy = 0;
+  if (direction === 'rise') {
+    vy = -(8 + 26 * Math.abs(trend));
+  } else if (direction === 'fall') {
+    vy = 8 + 26 * Math.abs(trend);
+  } else if (direction === 'burst') {
+    const m = 14 + 34 * burstiness;
+    vx = m * 0.5; vy = -m * 0.5;
+  } else {
+    // Neutral trajectory: gentle lateral drift, direction set by a
+    // deterministic (not random) feature so the same song always drifts
+    // the same way -- brighter songs drift right, darker ones left.
+    const sign = (dna.centroid ?? 0.5) >= 0.5 ? 1 : -1;
+    vx = sign * (6 + 14 * Math.abs((dna.centroid ?? 0.5) - 0.5) * 2);
+  }
+
+  return { direction, driftBias: { vx, vy } };
+}
+
 export function pickCelestialKind(dna) {
   return (dna.meanPitch01 < 0.42 || dna.isMajor === false) && dna.energyMean < 0.55 ? 'moon' : 'sun';
 }
