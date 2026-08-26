@@ -141,7 +141,9 @@ test('synthesizePalette satisfies its own hard constraints: silhouette dark, sky
     assert.ok(['sun', 'moon'].includes(profile.celestial.kind));
     assert.ok(profile.celestial.color && profile.celestial.haloColor);
     assert.ok(profile.particles.color);
-    assert.ok(profile.terrainEnergy >= 0 && profile.terrainEnergy <= 1);
+    // Matches the range stock worlds actually use (BiomeManager scales the
+    // ridge-dance amplitude by this directly) -- not 0..1.
+    assert.ok(profile.terrainEnergy >= 0.6 && profile.terrainEnergy <= 1.35);
   }
 });
 

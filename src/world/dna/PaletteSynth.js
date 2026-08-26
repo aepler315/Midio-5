@@ -191,7 +191,11 @@ export function synthesizePalette(dna, temperatureOverride = null) {
       speed: Math.round(10 + temp * 110 + dna.percussionDensity * 40),
     },
     fx,
-    terrainEnergy: clamp01(0.3 * grammar.spikeCluster + 0.3 * grammar.verticalStack + 0.2 * temp + 0.2 * dna.dyn),
+    // BiomeManager scales the ridge-dance amplitude by this directly
+    // (BiomeManager.js:3828 etc.) — stock worlds span roughly 0.6-1.35, not
+    // 0-1, so clamping to 0-1 here would make every generated world dance
+    // visibly less than a stock one at the same energy.
+    terrainEnergy: lerp(0.6, 1.35, clamp01(0.3 * grammar.spikeCluster + 0.3 * grammar.verticalStack + 0.2 * temp + 0.2 * dna.dyn)),
   };
 
   return {
