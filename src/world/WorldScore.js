@@ -9,6 +9,9 @@ import { clamp01, clamp } from '../utils/math.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { extractRidgePortrait, lithologyFromShares } from './RidgePortrait.js';
 import { listWorlds, getWorld } from './Worlds.js';
+import { buildSongDNA } from './dna/SongDNA.js';
+import { synthesizeSectionPalettes } from './dna/PaletteSynth.js';
+import { castBiomes } from './Dramaturgy.js';
 
 const BPM_LO = 60, BPM_HI = 180;
 
@@ -230,7 +233,15 @@ function buildOptimalPrefer(features) {
   return prefer;
 }
 
-export function buildCustomWorld(features) {
+/**
+ * `data`, when given, is the same object threaded through
+ * offerWorldsThenStart (energyCurves/durationMs/bpm/analysis/structure,
+ * plus timeline/barGrid on the MIDI path) — it drives palette synthesis.
+ * Score-affecting fields (channels/affinity/prefer/comfort) are built from
+ * `features` alone, same as before: palette generation never touches the
+ * 100% proof.
+ */
+export function buildCustomWorld(features, data = null) {
   const feat = features && typeof features.drive === 'number'
     ? features
     : extractWatchFeatures(features || {});
@@ -242,6 +253,27 @@ export function buildCustomWorld(features) {
   const affinity = buildOptimalAffinity(feat);
   const prefer = buildOptimalPrefer(feat);
   const comfort = { lo: feat.drive, hi: feat.drive };
+
+  let palettes = base.palettes;
+  let temperature = base.temperature;
+  let cast = base.cast;
+  let dna = null;
+  let paletteProof = null;
+
+  try {
+    dna = buildSongDNA({ ...(data || {}), structure: data?.structure ?? null });
+    const synth = synthesizeSectionPalettes(dna, base.kind || 'world');
+    if (synth.palettes.length) {
+      palettes = synth.palettes;
+      temperature = synth.temperature;
+      cast = (energies, seed) => castBiomes(energies, seed, temperature);
+      paletteProof = { seed: dna.seed, tonicPc: dna.tonicPc, isMajor: dna.isMajor, sections: synth.palettes.length };
+    }
+  } catch (err) {
+    // Palette synthesis is additive — a failure here must never break world
+    // selection. Fall back to the base world's stock palette silently.
+    paletteProof = { error: String(err?.message || err) };
+  }
 
   const world = {
     id: 'custom',
@@ -255,12 +287,13 @@ export function buildCustomWorld(features) {
     channels,
     prefer,
     affinity,
-    palettes: base.palettes,
-    temperature: base.temperature,
-    cast: base.cast,
+    palettes,
+    temperature,
+    cast,
   };
 
   const proof = proveScore(feat, world);
+  proof.dna = paletteProof;
   return { world, proof, baseId: base.id };
 }
 
