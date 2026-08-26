@@ -10,6 +10,7 @@ import { Simulation } from './sim/Simulation.js';
 import { createRenderer, resolveRendererMode } from './render/WebGLRenderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
+import { designSynthPatches } from './audio/SynthPatchDesigner.js';
 import { Sf2Synth } from './audio/Sf2Synth.js';
 import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
 import { FontRecommender } from './audio/FontRecommender.js';
@@ -886,6 +887,10 @@ async function loadMidiFile(file) {
     // of a .mid produces a unique world without changing stock demo casting.
     data.customBiome = generateCustomBiomeFromMidi(data, file.name || 'MIDI');
     rememberCustomBiome(paramBus, data.customBiome);
+    // One oscillator-synth patch per channel, tuned to that channel's own
+    // register/density/phrasing in THIS song -- the SF2 path (a real font
+    // loaded) ignores these; this is what plays when there's no soundfont.
+    synth?.fallback?.setPatches?.(designSynthPatches(data.timeline, data.durationMs));
     muteTimelineSynth = false;
     lastAudioBuffer = null; // MIDI is synth-driven; drop any prior decoded audio
     startImmediately(data);
