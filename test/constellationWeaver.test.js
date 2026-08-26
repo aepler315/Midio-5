@@ -10,14 +10,18 @@ function melodyEvt(tMs, pitch = 60, vel = 0.7) {
 test('nextDotPos: first dot lands in region, subsequent dots stay in region and step 40-110px', () => {
   const rand = mulberry32(1);
   const w = 1280, h = 720;
+  // Region now spans nearly the whole sky (0.03-0.97 x, 0.04-0.95 y) --
+  // terrain is drawn after this layer and safely occludes anything below a
+  // ridge, exactly like the ambient star catalogue, so there's no reason to
+  // hold constellations back to the upper half of the screen.
   const p0 = nextDotPos(null, rand, w, h);
-  assert.ok(p0.x >= 0.06 * w && p0.x <= 0.94 * w);
-  assert.ok(p0.y >= 0.05 * h && p0.y <= 0.58 * h);
+  assert.ok(p0.x >= 0.03 * w && p0.x <= 0.97 * w);
+  assert.ok(p0.y >= 0.04 * h && p0.y <= 0.95 * h);
   let prev = p0;
   for (let i = 0; i < 50; i++) {
     const p = nextDotPos(prev, rand, w, h);
-    assert.ok(p.x >= 0.06 * w - 1e-6 && p.x <= 0.94 * w + 1e-6);
-    assert.ok(p.y >= 0.05 * h - 1e-6 && p.y <= 0.58 * h + 1e-6);
+    assert.ok(p.x >= 0.03 * w - 1e-6 && p.x <= 0.97 * w + 1e-6);
+    assert.ok(p.y >= 0.04 * h - 1e-6 && p.y <= 0.95 * h + 1e-6);
     assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
     prev = p;
   }
@@ -100,6 +104,42 @@ test('edgeRevealFrac is monotone in nowMs and bounded 0..1', () => {
     assert.ok(f >= prev - 1e-9, 'must be monotone non-decreasing');
     prev = f;
   }
+});
+
+function fakeCtx2d() {
+  const noop = () => {};
+  const arcs = [];
+  return {
+    arcs,
+    save: noop, restore: noop, beginPath: noop, moveTo: noop, lineTo: noop, stroke: noop, fill: noop,
+    set strokeStyle(v) {}, set fillStyle(v) {}, set lineWidth(v) {}, set globalCompositeOperation(v) {},
+    arc(x, y) { arcs.push({ x, y }); },
+  };
+}
+
+test('draw() rescales dots against the ACTUAL canvas, not the construction-time field size', () => {
+  // Built at 1280x720 (a plausible nominal/logical stage size), but the
+  // canvas actually handed to draw() is larger -- a camera pull-back or a
+  // higher-resolution render target, exactly the mismatch that used to pin
+  // every dot to a shrunken box in a corner of the real frame.
+  const weaver = new ConstellationWeaver(4, 1280, 720);
+  let t = 0;
+  while (!weaver.figures.length) { weaver.onMelody(melodyEvt(t, 64)); t += 50; }
+  const fig = weaver.figures[0];
+  const rawDot = fig.dots[0];
+
+  const ctx = fakeCtx2d();
+  const canvas = { width: 1920, height: 1080 };
+  weaver.draw(ctx, canvas, false, 1);
+
+  const sx = canvas.width / weaver.w, sy = canvas.height / weaver.h;
+  const expectedX = rawDot.x * sx, expectedY = rawDot.y * sy;
+  const found = ctx.arcs.some((p) => Math.abs(p.x - expectedX) < 1e-6 && Math.abs(p.y - expectedY) < 1e-6);
+  assert.ok(found, `expected an arc at the rescaled position (${expectedX}, ${expectedY}); got ${JSON.stringify(ctx.arcs)}`);
+  // And it must NOT have drawn at the raw, unscaled field coordinate
+  // (unless sx/sy happen to be 1, which they aren't here).
+  const drewUnscaled = ctx.arcs.some((p) => Math.abs(p.x - rawDot.x) < 1e-6 && Math.abs(p.y - rawDot.y) < 1e-6);
+  assert.equal(drewUnscaled, false, 'must not draw at the un-rescaled field coordinate');
 });
 
 test('onKick pulse rises then decays toward 0', () => {
