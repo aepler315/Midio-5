@@ -1,11 +1,11 @@
 // Shape grammar — instrumentation drives continuous production-rule
 // weights instead of a fixed "if distorted guitar -> spiky" lookup.
-// These weights don't generate new terrain geometry yet (that's a
-// renderer-level project of its own — see docs/worlds.md); today they
-// pick the closest-matching particle/fx/celestial enum values and a
-// terrainEnergy scalar, so a song's instrumentation is legible in the
-// one part of the render the DNA pipeline currently owns: the palette.
-import { clamp01 } from '../../utils/math.js';
+// They pick the closest-matching particle/fx/celestial enum values, a
+// terrainEnergy scalar, and (via deriveTerrainParams below) continuous
+// nudges to the alpine ridgeline's own shape parameters -- so a song's
+// instrumentation is legible in both the palette and the skyline it
+// generates, not just a fixed massif/range/crags cutout per depth.
+import { clamp, clamp01 } from '../../utils/math.js';
 
 const PARTICLE_KINDS = [
   'fireflies', 'embers', 'snow', 'pollen', 'antigrav',
@@ -79,4 +79,48 @@ export function pickParticleKind(grammar, temperature) {
 
 export function pickCelestialKind(dna) {
   return (dna.meanPitch01 < 0.42 || dna.isMajor === false) && dna.energyMean < 0.55 ? 'moon' : 'sun';
+}
+
+/**
+ * Continuous nudges to ALPINE_CHARACTERS' shape params (SilhouetteGenerator
+ * applyTerrainMods), derived from the shape-grammar weights. Every category
+ * averages 1/6 across a normalized grammar, so each bias is centered on
+ * that baseline rather than on zero -- a song that's exactly "average" in a
+ * category leaves that character untouched.
+ *
+ *  - spike/vertical-stack heavy songs pinch flanks toward a spire (higher
+ *    shoulder/spire exponents, more spireMix, more notch/teeth grain) and
+ *    pull peaks apart (less apron fill, so they read as separate spikes
+ *    rather than a joined range).
+ *  - trunk-branch/mound heavy songs do the opposite: fuller domed flanks,
+ *    smoother edges, more connective apron so neighbours merge into one
+ *    body of high ground.
+ *  - arch heavy songs widen the apron spread further still (broad saddles
+ *    between summits) without pinching the flanks.
+ *  - geometricRegularity narrows how far off-centre summits sit, so a
+ *    regular song's range reads more evenly spaced.
+ */
+export function deriveTerrainParams(grammar) {
+  const g = grammar || {};
+  const spiky = (g.spikeCluster || 0) + (g.verticalStack || 0); // baseline ~1/3
+  const organic = (g.trunkBranch || 0) + (g.mound || 0); // baseline ~1/3
+  const archy = g.arch || 0; // baseline ~1/6
+  const regular = g.geometricRegularity || 0; // baseline ~1/6
+
+  const spikeBias = clamp(spiky - 1 / 3, -1 / 3, 1 / 3) * 3; // -1..1
+  const organicBias = clamp(organic - 1 / 3, -1 / 3, 1 / 3) * 3; // -1..1
+  const archBias = clamp(archy - 1 / 6, -1 / 6, 1 / 6) * 6; // -1..1
+  const regularBias = clamp(regular - 1 / 6, -1 / 6, 1 / 6) * 6; // -1..1
+
+  return {
+    shoulderMul: 1 + 0.35 * spikeBias - 0.30 * organicBias,
+    spireMul: 1 + 0.35 * spikeBias - 0.20 * organicBias,
+    spireMixAdd: 0.08 * spikeBias - 0.06 * organicBias,
+    notchAdd: 0.05 * spikeBias - 0.04 * organicBias + 0.03 * archBias,
+    teethAdd: 0.05 * spikeBias - 0.03 * organicBias,
+    apronGainAdd: -0.08 * spikeBias + 0.10 * organicBias + 0.04 * archBias,
+    apronSpreadAdd: -0.3 * spikeBias + 0.4 * organicBias + 0.5 * archBias,
+    apronCapAdd: -0.04 * spikeBias + 0.06 * organicBias,
+    asymMul: 1 + 0.3 * spikeBias - 0.35 * regularBias,
+  };
 }
