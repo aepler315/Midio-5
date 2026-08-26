@@ -12,7 +12,9 @@
 // shadeMode 'rendered' bakes soft vertical CGI shading (DKC3 lineage):
 // dark foot, mid body, lit crest, faint ridge specular -- once, free forever.
 import { ValueNoise1D, ridged } from '../utils/noise.js';
-import { lerp, mulberry32, clamp01 } from '../utils/math.js';
+import {
+  lerp, mulberry32, clamp01, clamp,
+} from '../utils/math.js';
 import { shiftLightness } from '../render/VisualStyle.js';
 import {
   composeAlpinePeaks, seedPeaks, layerWeathering, spineAt, phraseAt, massProfile,
@@ -94,8 +96,32 @@ export function peakProfile(d, shoulder, spire, spireMix) {
   return (1 - spireMix) * Math.pow(t, shoulder) + spireMix * Math.pow(t, spire);
 }
 
-export function alpineHeightField(noise, n, step, seed, width, character = 'massif', portrait = null, layerKey = 'L2') {
-  const cfg = ALPINE_CHARACTERS[character] || ALPINE_CHARACTERS.massif;
+/**
+ * Applies a song's deriveTerrainParams() nudges to one ALPINE_CHARACTERS
+ * entry. Clamped well inside the range where peakProfile/apron math stays
+ * sane (spireMix/notch/teeth in [0,1]; the rest bounded around the spread
+ * ALPINE_CHARACTERS itself already uses) so an extreme song can push a
+ * range noticeably spikier or moundier without ever producing degenerate
+ * geometry (inverted flanks, negative apron, etc).
+ */
+function applyTerrainMods(cfg, mods) {
+  if (!mods) return cfg;
+  return {
+    ...cfg,
+    shoulder: clamp(cfg.shoulder * (mods.shoulderMul ?? 1), 0.35, 1.3),
+    spire: clamp(cfg.spire * (mods.spireMul ?? 1), 1.6, 4.2),
+    spireMix: clamp01(cfg.spireMix + (mods.spireMixAdd ?? 0)),
+    asym: clamp(cfg.asym * (mods.asymMul ?? 1), 0.15, 0.55),
+    apronGain: clamp(cfg.apronGain + (mods.apronGainAdd ?? 0), 0.20, 0.60),
+    apronCap: clamp(cfg.apronCap + (mods.apronCapAdd ?? 0), 0.35, 0.62),
+    apronSpread: clamp(cfg.apronSpread + (mods.apronSpreadAdd ?? 0), 1.8, 3.2),
+    notch: clamp01(cfg.notch + (mods.notchAdd ?? 0)),
+    teeth: clamp01(cfg.teeth + (mods.teethAdd ?? 0)),
+  };
+}
+
+export function alpineHeightField(noise, n, step, seed, width, character = 'massif', portrait = null, layerKey = 'L2', terrainMods = null) {
+  const cfg = applyTerrainMods(ALPINE_CHARACTERS[character] || ALPINE_CHARACTERS.massif, terrainMods);
   const rand = mulberry32((seed ^ 0xa1b1) >>> 0 || 1);
   const weather = portrait ? layerWeathering(portrait, cfg, layerKey) : {
     notch: cfg.notch, teeth: cfg.teeth, bed: cfg.bed, apronGain: cfg.apronGain,
@@ -230,6 +256,9 @@ export function generateSilhouette({
   // timbre / L4 grain / L5 phrase hills).
   portrait = null,
   layerKey = 'L2',
+  // Continuous song-shape nudges to the alpine character (deriveTerrainParams
+  // in ShapeGrammar.js). Alpine-profile only; ignored otherwise.
+  terrainMods = null,
   // Aerial perspective, optical half (The Light Show, pass 7): DepthHaze
   // already washes far layers toward the sky color, but color alone isn't
   // the cue a distant object actually gives -- it also loses edge acuity.
@@ -264,7 +293,7 @@ export function generateSilhouette({
 
   let heights;
   if (profile === 'alpine') {
-    heights = alpineHeightField(noise, n, step, seed, width, character, portrait, layerKey);
+    heights = alpineHeightField(noise, n, step, seed, width, character, portrait, layerKey, terrainMods);
   } else if (profile === 'city') {
     heights = cityHeightField(n, step, seed, width, portrait, layerKey);
   } else {

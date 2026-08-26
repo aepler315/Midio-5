@@ -2,8 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { estimateKey, buildSongDNA, FIFTHS_ORDER } from '../src/world/dna/SongDNA.js';
 import { oklchToHex, hexToOklab, oklabDelta } from '../src/world/dna/OklchColor.js';
-import { buildShapeGrammar, computeTemperature, pickFx, pickParticleKind } from '../src/world/dna/ShapeGrammar.js';
+import {
+  buildShapeGrammar, computeTemperature, pickFx, pickParticleKind, deriveTerrainParams,
+} from '../src/world/dna/ShapeGrammar.js';
 import { synthesizePalette, synthesizeSectionPalettes } from '../src/world/dna/PaletteSynth.js';
+import { ValueNoise1D } from '../src/utils/noise.js';
+import { alpineHeightField } from '../src/world/SilhouetteGenerator.js';
 
 // The published Krumhansl-Schmuckler tonal-hierarchy profiles, rooted at C.
 const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
@@ -164,6 +168,42 @@ test('synthesizeSectionPalettes always yields >=2 distinctly-named entries so ca
   for (const name of names) {
     assert.ok(Number.isFinite(temperature[name]), `${name} missing a temperature entry`);
     assert.ok(temperature[name] >= 0 && temperature[name] <= 1);
+  }
+});
+
+test('deriveTerrainParams: a spike/vertical-stack heavy grammar pinches flanks and pulls peaks apart, a mound/trunk heavy grammar does the opposite', () => {
+  const spiky = { trunkBranch: 0.03, verticalStack: 0.35, spikeCluster: 0.40, arch: 0.05, mound: 0.02, geometricRegularity: 0.15 };
+  const mound = { trunkBranch: 0.35, verticalStack: 0.03, spikeCluster: 0.02, arch: 0.05, mound: 0.40, geometricRegularity: 0.15 };
+  const spikyMods = deriveTerrainParams(spiky);
+  const moundMods = deriveTerrainParams(mound);
+  assert.ok(spikyMods.shoulderMul > 1, `expected pinched flanks, got shoulderMul=${spikyMods.shoulderMul}`);
+  assert.ok(spikyMods.spireMixAdd > 0, `expected more spire, got ${spikyMods.spireMixAdd}`);
+  assert.ok(spikyMods.apronGainAdd < 0, `expected peaks pulled apart, got apronGainAdd=${spikyMods.apronGainAdd}`);
+  assert.ok(moundMods.shoulderMul < 1, `expected fuller flanks, got shoulderMul=${moundMods.shoulderMul}`);
+  assert.ok(moundMods.apronGainAdd > 0, `expected connective apron, got apronGainAdd=${moundMods.apronGainAdd}`);
+  assert.ok(spikyMods.shoulderMul > moundMods.shoulderMul);
+});
+
+test('deriveTerrainParams on a real song DNA actually changes the rendered ridgeline geometry', () => {
+  const spikyDna = buildSongDNA(synthTimeline({ pitches: [40, 43, 46, 49], program: 30, n: 400 })); // distorted, dense
+  const moundDna = buildSongDNA({ durationMs: 60000, bpm: 70 }); // sparse fallback, low percussion/density
+  const spikyMods = deriveTerrainParams(buildShapeGrammar(spikyDna));
+  const moundMods = deriveTerrainParams(buildShapeGrammar(moundDna));
+
+  const noise = new ValueNoise1D(11, 256);
+  const n = 400, step = 5, width = n * step;
+  const plain = alpineHeightField(noise, n, step, 11, width, 'massif', null, 'L2', null);
+  const withSpiky = alpineHeightField(noise, n, step, 11, width, 'massif', null, 'L2', spikyMods);
+  const withMound = alpineHeightField(noise, n, step, 11, width, 'massif', null, 'L2', moundMods);
+
+  let same = true;
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(plain[i] - withSpiky[i]) > 1e-9 || Math.abs(plain[i] - withMound[i]) > 1e-9) { same = false; break; }
+  }
+  assert.equal(same, false, 'terrainMods had no measurable effect on the height field');
+  for (let i = 0; i < n; i++) {
+    assert.ok(withSpiky[i] >= 0 && withSpiky[i] <= 1);
+    assert.ok(withMound[i] >= 0 && withMound[i] <= 1);
   }
 });
 

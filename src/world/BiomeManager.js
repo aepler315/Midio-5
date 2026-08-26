@@ -1047,23 +1047,24 @@ export class BiomeManager {
           ? { L2: 0.75, L3: 0.85, L4: 0.95, L5: 1 }
           : AERIAL_SOFTEN;
         const prof = worldKind === 'strip' ? 'rolling' : 'alpine';
+        const terrainMods = this.world?.terrainMods || null;
         strips = {
           L2: generateSilhouette({
             seed: seed + 1, height: 400, octaves: 4, amplitude: 0.52, baseline: 0.42,
             color: b.silhouette, shadeMode, profile: prof, character: 'massif',
-            softenScale: soften.L2, portrait, layerKey: 'L2',
+            softenScale: soften.L2, portrait, layerKey: 'L2', terrainMods,
             edgeLight: el,
           }),
           L3: generateSilhouette({
             seed: seed + 2, height: 360, octaves: 3, amplitude: 0.44, baseline: 0.50,
             color: b.silhouette, shadeMode, profile: prof, character: 'range',
-            softenScale: soften.L3, portrait, layerKey: 'L3',
+            softenScale: soften.L3, portrait, layerKey: 'L3', terrainMods,
             edgeLight: el,
           }),
           L4: generateSilhouette({
             seed: seed + 3, height: 330, octaves: 3, amplitude: 0.34, baseline: 0.64,
             color: b.silhouette, shadeMode, profile: prof, character: 'crags',
-            softenScale: soften.L4, portrait, layerKey: 'L4',
+            softenScale: soften.L4, portrait, layerKey: 'L4', terrainMods,
             edgeLight: el,
           }),
           L5: generateSilhouette({

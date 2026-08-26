@@ -11,6 +11,7 @@ import { extractRidgePortrait, lithologyFromShares } from './RidgePortrait.js';
 import { listWorlds, getWorld } from './Worlds.js';
 import { buildSongDNA } from './dna/SongDNA.js';
 import { synthesizeSectionPalettes } from './dna/PaletteSynth.js';
+import { buildShapeGrammar, deriveTerrainParams } from './dna/ShapeGrammar.js';
 import { castBiomes } from './Dramaturgy.js';
 
 const BPM_LO = 60, BPM_HI = 180;
@@ -257,6 +258,7 @@ export function buildCustomWorld(features, data = null) {
   let palettes = base.palettes;
   let temperature = base.temperature;
   let cast = base.cast;
+  let terrainMods = null;
   let dna = null;
   let paletteProof = null;
 
@@ -269,6 +271,11 @@ export function buildCustomWorld(features, data = null) {
       cast = (energies, seed) => castBiomes(energies, seed, temperature);
       paletteProof = { seed: dna.seed, tonicPc: dna.tonicPc, isMajor: dna.isMajor, sections: synth.palettes.length };
     }
+    // Continuous nudges to the alpine ridgeline's own shape params, so a
+    // song's instrumentation shows up in the skyline it generates and not
+    // only its colors. Additive/optional: BiomeManager falls back to the
+    // stock per-depth character (massif/range/crags) untouched when absent.
+    terrainMods = deriveTerrainParams(buildShapeGrammar(dna));
   } catch (err) {
     // Palette synthesis is additive — a failure here must never break world
     // selection. Fall back to the base world's stock palette silently.
@@ -290,6 +297,7 @@ export function buildCustomWorld(features, data = null) {
     palettes,
     temperature,
     cast,
+    terrainMods,
   };
 
   const proof = proveScore(feat, world);
