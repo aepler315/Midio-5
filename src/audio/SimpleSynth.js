@@ -11,6 +11,17 @@ export class SimpleSynth {
   constructor(audioEngine) {
     this.ae = audioEngine;
     this.enabled = true;
+    // Per-channel patches from SynthPatchDesigner.designSynthPatches, set
+    // once per MIDI load (main.js's loadMidiFile). null (the default, and
+    // what every non-MIDI/no-timeline caller keeps) means "no composition
+    // to optimize for" -- _tone falls back to the original fixed
+    // sine/sawtooth/triangle-by-role voicing, byte-identical to before.
+    this.patches = null;
+  }
+
+  /** @param {Object<number, object>|null} patches keyed by MIDI channel */
+  setPatches(patches) {
+    this.patches = patches && Object.keys(patches).length ? patches : null;
   }
 
   connectConductor(conductor) {
@@ -37,6 +48,11 @@ export class SimpleSynth {
   }
 
   _tone(evt) {
+    const patch = this.patches?.[evt.channel];
+    if (patch) this._patchedTone(evt, patch); else this._plainTone(evt);
+  }
+
+  _plainTone(evt) {
     const ctx = this.ae.ctx;
     const t = ctx.currentTime;
     const freq = 440 * Math.pow(2, (evt.pitch - 69) / 12);
@@ -53,6 +69,64 @@ export class SimpleSynth {
     this._connectOut(gain, evt.pan);
     osc.start(t);
     osc.stop(t + dur + 0.05);
+  }
+
+  /** Voices a note through a patch designed for this song's own channel
+   *  (SynthPatchDesigner): a primary oscillator, an optional detuned unison
+   *  voice for chordal lines, a lowpass shaped for that channel's register/
+   *  brightness, an attack/release scaled to how legato the line reads, and
+   *  vibrato on sustained melodic lines. */
+  _patchedTone(evt, patch) {
+    const ctx = this.ae.ctx;
+    const t = ctx.currentTime;
+    const freq = 440 * Math.pow(2, (evt.pitch - 69) / 12);
+    const dur = Math.max(0.08, evt.durMs / 1000);
+    const stopAt = t + dur + patch.release + 0.05;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = patch.cutoffHz;
+    filter.Q.value = patch.resonanceQ;
+
+    const gain = ctx.createGain();
+    const peak = patch.peakGain * evt.vel;
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(peak, t + patch.attack);
+    gain.gain.setValueAtTime(peak, Math.max(t + patch.attack, t + dur));
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur + patch.release);
+
+    const osc = ctx.createOscillator();
+    osc.type = patch.type;
+    osc.frequency.value = freq;
+    osc.connect(filter);
+
+    if (patch.vibratoDepthCents > 0) {
+      const lfo = ctx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.value = patch.vibratoRateHz;
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.value = patch.vibratoDepthCents;
+      lfo.connect(lfoGain).connect(osc.detune);
+      lfo.start(t);
+      lfo.stop(stopAt);
+    }
+
+    let unison = null;
+    if (patch.unisonGain > 0) {
+      unison = ctx.createOscillator();
+      unison.type = patch.type;
+      unison.frequency.value = freq;
+      unison.detune.value = patch.unisonDetuneCents;
+      const unisonGain = ctx.createGain();
+      unisonGain.gain.value = patch.unisonGain;
+      unison.connect(unisonGain).connect(filter);
+    }
+
+    filter.connect(gain);
+    this._connectOut(gain, evt.pan);
+    osc.start(t);
+    osc.stop(stopAt);
+    if (unison) { unison.start(t); unison.stop(stopAt); }
   }
 
   _drum(evt) {
