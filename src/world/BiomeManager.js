@@ -1019,29 +1019,30 @@ export class BiomeManager {
       const el = b.edgeLight || null;
       let strips;
       if (worldKind === 'city') {
+        const terrainMods = this.world?.terrainMods || null;
         strips = {
           L2: generateSilhouette({
             seed: seed + 1, height: 400, octaves: 3, amplitude: 0.56, baseline: 0.38,
             color: b.silhouette, shadeMode, profile: 'city',
-            softenScale: 0.88, portrait, layerKey: 'L2',
+            softenScale: 0.88, portrait, layerKey: 'L2', terrainMods,
             edgeLight: el,
           }),
           L3: generateSilhouette({
             seed: seed + 2, height: 360, octaves: 3, amplitude: 0.46, baseline: 0.46,
             color: b.silhouette, shadeMode, profile: 'city',
-            softenScale: 0.94, portrait, layerKey: 'L3',
+            softenScale: 0.94, portrait, layerKey: 'L3', terrainMods,
             edgeLight: el,
           }),
           L4: generateSilhouette({
             seed: seed + 3, height: 300, octaves: 2, amplitude: 0.30, baseline: 0.66,
             color: b.silhouette, shadeMode, profile: 'city',
-            softenScale: 1, portrait, layerKey: 'L4',
+            softenScale: 1, portrait, layerKey: 'L4', terrainMods,
             edgeLight: el,
           }),
           L5: generateSilhouette({
             seed: seed + 4, height: 220, octaves: 2, amplitude: 0.12, baseline: 0.92,
             color: b.silhouette, shadeMode, profile: 'city',
-            softenScale: 1, portrait, layerKey: 'L5',
+            softenScale: 1, portrait, layerKey: 'L5', terrainMods,
           }),
         };
       } else {
@@ -1072,7 +1073,7 @@ export class BiomeManager {
           L5: generateSilhouette({
             seed: seed + 4, octaves: 2, amplitude: 0.46, baseline: 0.82,
             color: b.silhouette, shadeMode, profile: 'rolling',
-            softenScale: soften.L5, portrait, layerKey: 'L5',
+            softenScale: soften.L5, portrait, layerKey: 'L5', terrainMods,
           }),
         };
         decorateStrip(strips.L4, b.name, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
