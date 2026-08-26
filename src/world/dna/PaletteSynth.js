@@ -41,7 +41,15 @@ const ROLES = {
   // just the slow ones, so Midio silhouettes cleanly against it.
   silhouette: { hueFrac: -0.22, chromaBase: 0.06, lightBase: 0.02, lightGain: 0.05, jitterMul: 0.15 },
   skyDark: { hueFrac: 0, chromaBase: 0.11, lightBase: 0.14, lightGain: 0.26, jitterMul: 0.2 },
+  // Intermediate sky-gradient stops (halfway between the ROLES either side of
+  // them, same recipe just interpolated) -- only used when a harmonically
+  // rich song earns a 5-stop skyStops gradient (see skyStopCountFor below).
+  // Kept out of hardConstraintViolation (which only checks dark/mid/hot)
+  // since a mid-gradient stop reading close to its neighbours isn't a
+  // legibility problem the way silhouette/sky-vs-sky contrast is.
+  skyDarkMid: { hueFrac: 0.08, chromaBase: 0.13, lightBase: 0.15, lightGain: 0.40, jitterMul: 0.3 },
   skyMid: { hueFrac: 0.16, chromaBase: 0.15, lightBase: 0.16, lightGain: 0.55, jitterMul: 0.4 },
+  skyMidHot: { hueFrac: 0.26, chromaBase: 0.17, lightBase: 0.23, lightGain: 0.80, jitterMul: 0.5 },
   skyHot: { hueFrac: 0.36, chromaBase: 0.19, lightBase: 0.30, lightGain: 1.05, jitterMul: 0.6 },
   halo: { hueFrac: 0.5, chromaBase: 0.15, lightBase: 0.80, lightGain: 0.14, jitterMul: 0.5 },
   celestial: { hueFrac: 0.55, chromaBase: 0.17, lightBase: 0.85, lightGain: 0.10, jitterMul: 0.5 },
@@ -88,6 +96,44 @@ function hardConstraintViolation(hex, lch) {
   if (dSilSky < SILHOUETTE_SKY_MIN_DELTA) violation += (SILHOUETTE_SKY_MIN_DELTA - dSilSky) * 5;
 
   return violation;
+}
+
+/** 3 stops by default; 5 for a harmonically rich song (more distinct chords
+ *  in play per bar -- see SongDNA.harmonicComplexity) so its sky reads as a
+ *  subtler, more banded gradient instead of the flat default. */
+function skyStopCountFor(dna) {
+  return (dna.harmonicComplexity || 0) > 0.55 ? 5 : 3;
+}
+
+/**
+ * Small decorative companion bodies near the primary celestial -- more of
+ * them for a harmonically richer song (more distinct chords in play, same
+ * signal skyStopCountFor reads). Deliberately NOT wired into the day/night
+ * light rig, mandala anchoring, or occlusion the primary celestial owns:
+ * BiomeManager draws them as plain faint discs paired with the primary's
+ * own crossfade alpha, so they can't perturb any of that machinery.
+ * `dxFrac`/`dyFrac` are canvas-fraction offsets from the primary's center;
+ * `radiusFrac` scales the primary's own radius.
+ */
+function buildCompanions(dna, anchor, rand) {
+  const richness = clamp01(dna.harmonicComplexity || 0);
+  const count = richness > 0.35 ? Math.min(3, Math.round(richness * 4)) : 0;
+  const companions = [];
+  for (let i = 0; i < count; i++) {
+    const angle = rand() * Math.PI * 2;
+    const dist = 0.06 + rand() * 0.10;
+    const H = (anchor.baseHue + (rand() - 0.5) * 40 + 360) % 360;
+    const C = Math.max(0.01, 0.14 * (0.7 + 0.6 * rand()));
+    const L = 0.72 + rand() * 0.18;
+    companions.push({
+      dxFrac: Math.cos(angle) * dist,
+      dyFrac: Math.sin(angle) * dist * 0.6,
+      radiusFrac: 0.16 + rand() * 0.22,
+      color: oklchToHex(L, C, H),
+      haloColor: oklchToHex(Math.min(0.95, L + 0.12), C * 0.7, H),
+    });
+  }
+  return companions;
 }
 
 function warmthOf(hue) {
@@ -175,8 +221,19 @@ export function synthesizePalette(dna, temperatureOverride = null) {
   const celestialKind = pickCelestialKind(dna);
   const isMoon = celestialKind === 'moon';
 
+  const skyStopCount = skyStopCountFor(dna);
+  const skyStops = skyStopCount === 5
+    ? [best.hex.skyDark, best.hex.skyDarkMid, best.hex.skyMid, best.hex.skyMidHot, best.hex.skyHot]
+    : [best.hex.skyDark, best.hex.skyMid, best.hex.skyHot];
+  const companions = buildCompanions(dna, best.anchor, rand);
+
   const profile = {
     sky: [best.hex.skyDark, best.hex.skyMid, best.hex.skyHot],
+    // Only consumed by BiomeManager._drawSky's own gradient loop (and only
+    // when both sides of a transition carry the same length) -- every other
+    // reader of `sky` keeps using the fixed 3-entry array above by index, so
+    // this is purely additive.
+    skyStops,
     silhouette: best.hex.silhouette,
     celestial: {
       kind: celestialKind,
@@ -186,6 +243,9 @@ export function synthesizePalette(dna, temperatureOverride = null) {
       veiled: temp > 0.72 && grammar.spikeCluster > 0.3,
       ring: isMoon && grammar.arch > 0.3,
       shafts: !isMoon && (temp > 0.55 || dna.air > 0.6),
+      // Purely decorative -- see buildCompanions above. Empty for a
+      // harmonically simple song (single sun/moon, today's look unchanged).
+      companions,
     },
     particles: {
       kind: particleKind,
