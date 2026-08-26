@@ -69,6 +69,40 @@ function familyOf(program) {
   return null;
 }
 
+/**
+ * Audio-only fallback for familyShare (the organic/geometric/distorted mix
+ * that drives ShapeGrammar's production-rule weights). A MIDI timeline
+ * reads this straight from GM program numbers; audio has no programs, but
+ * extractWatchFeatures already derives real spectral texture from the
+ * energy-curve lithology (RidgePortrait.lithologyFromShares) that this was
+ * simply never plugged into -- every audio upload got the same constant
+ * {organic:0.34, geometric:0.33, distorted:0.33}, silently flattening a
+ * large chunk of the terrain shape-grammar signal for the most common
+ * upload path (most users drop an MP3/WAV, not an authored .mid).
+ *
+ *  - litho.scoop: positive = hollow-mid "electronic scoop" (bass+treble
+ *    heavy, mids carved out -- EDM/metal-shaped spectra), negative =
+ *    mid-forward (vocals/acoustic). Scoop + high transient contrast reads
+ *    as `distorted`.
+ *  - Narrow spectral spread (regular, synthetic-leaning timbre) plus low
+ *    warmth reads as `geometric`.
+ *  - Warm, wide-spread, mid-forward timbre reads as `organic`.
+ */
+export function familyShareFromWatch(watch) {
+  const scoop01 = clamp01(0.5 + 0.5 * (watch.litho?.scoop ?? 0));
+  const contrast = clamp01(watch.contrast ?? 0.3);
+  const spread = clamp01(watch.spread ?? 0.5);
+  const warmth = clamp01(watch.warmth ?? 0.4);
+
+  const distorted = clamp01(0.55 * scoop01 + 0.45 * contrast);
+  const geometric = clamp01(0.6 * (1 - spread) + 0.25 * (1 - warmth) + 0.15 * (1 - contrast));
+  const organic = clamp01(0.5 * warmth + 0.3 * spread + 0.2 * (1 - scoop01));
+
+  const sum = organic + geometric + distorted;
+  if (sum < 1e-6) return { organic: 0.34, geometric: 0.33, distorted: 0.33 };
+  return { organic: organic / sum, geometric: geometric / sum, distorted: distorted / sum };
+}
+
 function bucketByBar(timeline, barGrid, durationMs) {
   if (Array.isArray(barGrid) && barGrid.length > 1) {
     const bounds = barGrid.map((b) => b.ms).sort((a, b) => a - b);
@@ -177,6 +211,7 @@ export function buildSongDNA(data = {}) {
     harmonicComplexity = clamp01(watch.contrast);
     percussionDensity = clamp01(watch.onset * 0.6);
     registerTrend = watch.trend ?? 0;
+    familyShare = familyShareFromWatch(watch);
   }
 
   const dna = {

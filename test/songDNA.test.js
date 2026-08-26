@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { estimateKey, buildSongDNA, FIFTHS_ORDER } from '../src/world/dna/SongDNA.js';
+import {
+  estimateKey, buildSongDNA, FIFTHS_ORDER, familyShareFromWatch,
+} from '../src/world/dna/SongDNA.js';
 import { oklchToHex, hexToOklab, oklabDelta } from '../src/world/dna/OklchColor.js';
 import {
   buildShapeGrammar, computeTemperature, pickFx, pickParticleKind, deriveTerrainParams, deriveParticleMotion,
@@ -83,6 +85,39 @@ test('buildSongDNA falls back to spectral proxies with no timeline (audio-only u
   assert.equal(dna.hasTimeline, false);
   assert.ok(Number.isFinite(dna.seed));
   assert.ok(dna.tonicPc >= 0 && dna.tonicPc <= 11);
+});
+
+test('familyShareFromWatch reads real spectral texture into organic/geometric/distorted, not a constant', () => {
+  const organic = familyShareFromWatch({ litho: { scoop: -0.6 }, contrast: 0.15, spread: 0.75, warmth: 0.8 });
+  const geometric = familyShareFromWatch({ litho: { scoop: 0.1 }, contrast: 0.3, spread: 0.15, warmth: 0.25 });
+  const distorted = familyShareFromWatch({ litho: { scoop: 0.85 }, contrast: 0.85, spread: 0.5, warmth: 0.3 });
+  for (const fs of [organic, geometric, distorted]) {
+    const sum = fs.organic + fs.geometric + fs.distorted;
+    assert.ok(Math.abs(sum - 1) < 1e-6, `shares should sum to 1, got ${sum}`);
+  }
+  // Each profile's own category should come out on top.
+  assert.ok(organic.organic > organic.geometric && organic.organic > organic.distorted);
+  assert.ok(geometric.geometric > geometric.organic && geometric.geometric > geometric.distorted);
+  assert.ok(distorted.distorted > distorted.organic && distorted.distorted > distorted.geometric);
+  // No litho at all (energyCurves-null default) still returns something
+  // finite and normalized rather than NaN/undefined.
+  const noLitho = familyShareFromWatch({});
+  const sum = noLitho.organic + noLitho.geometric + noLitho.distorted;
+  assert.ok(Math.abs(sum - 1) < 1e-6);
+});
+
+test('buildSongDNA (audio-only) actually varies familyShare with the song\'s spectral character instead of a fixed default', () => {
+  // analysis.brightness/dynamicRange are the one lever extractWatchFeatures
+  // exposes without a full fake EnergyCurves object -- they still move
+  // centroid/warmth/dyn/contrast, which is enough to prove familyShare is
+  // no longer pinned to {organic:0.34, geometric:0.33, distorted:0.33} for
+  // every audio upload regardless of how the song actually sounds.
+  const dark = buildSongDNA({ durationMs: 60000, bpm: 100, analysis: { brightness: 0.1, dynamicRange: 0.1 } });
+  const bright = buildSongDNA({ durationMs: 60000, bpm: 100, analysis: { brightness: 0.95, dynamicRange: 0.9 } });
+  assert.notDeepEqual(dark.familyShare, bright.familyShare);
+  const grammarDark = buildShapeGrammar(dark);
+  const grammarBright = buildShapeGrammar(bright);
+  assert.notDeepEqual(grammarDark, grammarBright);
 });
 
 test('oklchToHex always returns a valid 6-digit hex, even at extreme out-of-gamut chroma', () => {
