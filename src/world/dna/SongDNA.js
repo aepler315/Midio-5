@@ -108,12 +108,17 @@ export function buildSongDNA(data = {}) {
 
   let tonicPc = 0, isMajor = true, keyConfidence = 0.3;
   let meanPitch01 = 0.5, registerSpread = 0.3, noteDensity = 0.3, velocityRange = 0.3;
-  let harmonicComplexity = 0.3, percussionDensity = 0.2;
+  let harmonicComplexity = 0.3, percussionDensity = 0.2, registerTrend = 0;
   let familyShare = { organic: 0.34, geometric: 0.33, distorted: 0.33 };
 
   if (timeline.length >= 4) {
     const hist = new Array(12).fill(0);
     let pitchSum = 0, pitchSqSum = 0, velMin = 1, velMax = 0, percCount = 0;
+    // Register trajectory: mean pitch of the song's first third vs its last
+    // third, so particle direction can read whether the song climbs or
+    // descends in register rather than only its instantaneous register.
+    let firstSum = 0, firstN = 0, lastSum = 0, lastN = 0;
+    const firstCut = dur / 3, lastCut = (dur * 2) / 3;
     const fam = { organic: 0, geometric: 0, distorted: 0, total: 0 };
     for (const e of timeline) {
       const pc = ((e.pitch ?? 60) % 12 + 12) % 12;
@@ -121,6 +126,8 @@ export function buildSongDNA(data = {}) {
       hist[pc] += weight;
       pitchSum += e.pitch ?? 60;
       pitchSqSum += (e.pitch ?? 60) ** 2;
+      if (e.tMs <= firstCut) { firstSum += e.pitch ?? 60; firstN++; }
+      else if (e.tMs >= lastCut) { lastSum += e.pitch ?? 60; lastN++; }
       const v = e.vel ?? 0.5;
       if (v < velMin) velMin = v;
       if (v > velMax) velMax = v;
@@ -139,6 +146,9 @@ export function buildSongDNA(data = {}) {
     noteDensity = clamp01((n / (dur / 1000)) / 8);
     velocityRange = clamp01(velMax - velMin);
     percussionDensity = clamp01(percCount / n);
+    if (firstN > 0 && lastN > 0) {
+      registerTrend = Math.max(-1, Math.min(1, (lastSum / lastN - firstSum / firstN) / 14));
+    }
 
     if (fam.total > 0) {
       familyShare = {
@@ -166,11 +176,12 @@ export function buildSongDNA(data = {}) {
     velocityRange = watch.dyn;
     harmonicComplexity = clamp01(watch.contrast);
     percussionDensity = clamp01(watch.onset * 0.6);
+    registerTrend = watch.trend ?? 0;
   }
 
   const dna = {
     tonicPc, isMajor, keyConfidence,
-    meanPitch01, registerSpread, noteDensity, velocityRange,
+    meanPitch01, registerSpread, noteDensity, velocityRange, registerTrend,
     harmonicComplexity, percussionDensity, familyShare,
     tempo: bpm || watch.bpm || 100,
     tempoHeat: watch.tempoHeat,
@@ -188,7 +199,7 @@ export function buildSongDNA(data = {}) {
     Math.round(noteDensity * 100), Math.round(velocityRange * 100),
     Math.round(harmonicComplexity * 100), Math.round(percussionDensity * 100),
     Math.round(dna.tempo), Math.round(dna.dyn * 100), Math.round(dna.centroid * 100),
-    Math.round(dur),
+    Math.round(registerTrend * 100), Math.round(dur),
   ].join(':');
   dna.seed = hashSeed(seedKey);
 

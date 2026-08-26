@@ -25,7 +25,7 @@ export function extractWatchFeatures({
 } = {}) {
   const dur = Math.max(1, durationMs || 1);
   let centroid = 0.5, bass = 0.3, air = 0.1, spread = 0.5, litho = null;
-  let dyn = 0.4, energyMean = 0.4, phrase = 0.3, landmarks = 4;
+  let dyn = 0.4, energyMean = 0.4, phrase = 0.3, landmarks = 4, trend = 0;
 
   if (energyCurves && energyCurves.n >= 8) {
     const portrait = extractRidgePortrait(energyCurves, dur);
@@ -47,6 +47,15 @@ export function extractWatchFeatures({
           if (v > wMax) wMax = v;
         }
         dyn = Math.max(dyn, clamp01(wMax - wMin));
+        // Coarse rise/fall trajectory across the whole song: mean energy of
+        // the last third vs the first third. Used (via SongDNA) as the
+        // audio-only fallback for particle direction when there's no MIDI
+        // pitch timeline to read a register trend from directly.
+        const third = Math.max(1, Math.floor(wave.length / 3));
+        let a = 0, b = 0;
+        for (let i = 0; i < third; i++) a += wave[i];
+        for (let i = wave.length - third; i < wave.length; i++) b += wave[i];
+        trend = clamp((b / third - a / third) * 2.5, -1, 1);
       }
     } else {
       litho = lithologyFromShares(null);
@@ -89,7 +98,7 @@ export function extractWatchFeatures({
   return {
     centroid, bass, air, spread, dyn, energyMean, phrase, landmarks,
     onset, contrast, groove, warmth, texture, form, arc, drive, bpm: bpm || 0,
-    tempoHeat, litho,
+    tempoHeat, litho, trend,
   };
 }
 

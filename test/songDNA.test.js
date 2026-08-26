@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { estimateKey, buildSongDNA, FIFTHS_ORDER } from '../src/world/dna/SongDNA.js';
 import { oklchToHex, hexToOklab, oklabDelta } from '../src/world/dna/OklchColor.js';
 import {
-  buildShapeGrammar, computeTemperature, pickFx, pickParticleKind, deriveTerrainParams,
+  buildShapeGrammar, computeTemperature, pickFx, pickParticleKind, deriveTerrainParams, deriveParticleMotion,
 } from '../src/world/dna/ShapeGrammar.js';
 import { synthesizePalette, synthesizeSectionPalettes } from '../src/world/dna/PaletteSynth.js';
 import { ValueNoise1D } from '../src/utils/noise.js';
 import { alpineHeightField } from '../src/world/SilhouetteGenerator.js';
+import { ParticleField } from '../src/world/ParticleField.js';
 
 // The published Krumhansl-Schmuckler tonal-hierarchy profiles, rooted at C.
 const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
@@ -204,6 +205,65 @@ test('deriveTerrainParams on a real song DNA actually changes the rendered ridge
   for (let i = 0; i < n; i++) {
     assert.ok(withSpiky[i] >= 0 && withSpiky[i] <= 1);
     assert.ok(withMound[i] >= 0 && withMound[i] <= 1);
+  }
+});
+
+function synthRisingTimeline({ startPitch, endPitch, n = 200, durationMs = 60000 }) {
+  const timeline = [];
+  for (let i = 0; i < n; i++) {
+    const t01 = i / (n - 1);
+    timeline.push({
+      tMs: t01 * durationMs,
+      durMs: 200,
+      pitch: Math.round(startPitch + (endPitch - startPitch) * t01),
+      vel: 0.6,
+      role: 'MELODY',
+      channel: 0,
+      program: 0,
+    });
+  }
+  return { timeline, durationMs, bpm: 120 };
+}
+
+test('buildSongDNA reads registerTrend from how pitch moves across the song', () => {
+  const rising = buildSongDNA(synthRisingTimeline({ startPitch: 48, endPitch: 84 }));
+  const falling = buildSongDNA(synthRisingTimeline({ startPitch: 84, endPitch: 48 }));
+  const flat = buildSongDNA(synthTimeline({ pitches: [60, 64, 67] }));
+  assert.ok(rising.registerTrend > 0.3, `expected a rising trend, got ${rising.registerTrend}`);
+  assert.ok(falling.registerTrend < -0.3, `expected a falling trend, got ${falling.registerTrend}`);
+  assert.ok(Math.abs(flat.registerTrend) < 0.15, `expected ~flat trend, got ${flat.registerTrend}`);
+});
+
+test('deriveParticleMotion: rising/falling register picks rise/fall direction with an opposing vertical driftBias', () => {
+  const rising = buildSongDNA(synthRisingTimeline({ startPitch: 48, endPitch: 84 }));
+  const falling = buildSongDNA(synthRisingTimeline({ startPitch: 84, endPitch: 48 }));
+  const riseMotion = deriveParticleMotion(rising);
+  const fallMotion = deriveParticleMotion(falling);
+  assert.equal(riseMotion.direction, 'rise');
+  assert.equal(fallMotion.direction, 'fall');
+  assert.ok(riseMotion.driftBias.vy < 0, `rise should drift upward, got vy=${riseMotion.driftBias.vy}`);
+  assert.ok(fallMotion.driftBias.vy > 0, `fall should drift downward, got vy=${fallMotion.driftBias.vy}`);
+});
+
+test('deriveParticleMotion: dense percussive song with no register trend reads as burst', () => {
+  const dna = buildSongDNA(synthTimeline({ pitches: [36, 38, 42, 45], program: 0, channel: 9, n: 400 }));
+  dna.registerTrend = 0;
+  dna.percussionDensity = 0.9;
+  dna.noteDensity = 0.85;
+  const motion = deriveParticleMotion(dna);
+  assert.equal(motion.direction, 'burst');
+});
+
+test('ParticleField driftBias is a uniform per-frame nudge applied on top of a kind\'s own physics', () => {
+  const withoutBias = new ParticleField({ kind: 'fireflies', color: '#fff', count: 5, speed: 20 }, 400, 300, 7);
+  const withBias = new ParticleField({
+    kind: 'fireflies', color: '#fff', count: 5, speed: 20, driftBias: { vx: 0, vy: -50 },
+  }, 400, 300, 7);
+  withoutBias.update(1, 0, null, 0);
+  withBias.update(1, 0, null, 0);
+  for (let i = 0; i < 5; i++) {
+    assert.ok(withBias.particles[i].y < withoutBias.particles[i].y - 40,
+      `particle ${i} should have drifted up by ~50px more than the unbiased field`);
   }
 });
 
