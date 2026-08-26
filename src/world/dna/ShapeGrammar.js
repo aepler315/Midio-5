@@ -161,5 +161,20 @@ export function deriveTerrainParams(grammar) {
     apronSpreadAdd: -0.3 * spikeBias + 0.4 * organicBias + 0.5 * archBias,
     apronCapAdd: -0.04 * spikeBias + 0.06 * organicBias,
     asymMul: 1 + 0.3 * spikeBias - 0.35 * regularBias,
+
+    // City-kind worlds (CitySilhouette.cityHeightField) read these the same
+    // way the alpine fields above are read: spiky/vertical-stack songs get
+    // narrower, more isolated towers with a more pronounced setback step;
+    // organic/mound songs get broader, denser, gentler-tapered fabric.
+    cityWidthMul: 1 - 0.25 * spikeBias + 0.20 * organicBias,
+    citySetbackFrac: clamp01(0.62 + 0.10 * regularBias - 0.08 * organicBias),
+    cityTaperMul: 1 + 0.25 * spikeBias - 0.20 * organicBias,
+    cityDensityMul: 1 + 0.35 * organicBias - 0.25 * spikeBias,
+
+    // 'rolling' profile (strip worlds' L2-L4, and every world's nearest L5
+    // layer): spiky/vertical-stack songs get more pronounced, grainier
+    // hills; organic/regular songs stay smoother.
+    rollingAmpMul: 1 + 0.3 * spikeBias - 0.25 * organicBias,
+    rollingOctaveBias: spikeBias > 0.3 ? 1 : regularBias > 0.3 ? -1 : 0,
   };
 }

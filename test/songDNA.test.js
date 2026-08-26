@@ -7,8 +7,9 @@ import {
 } from '../src/world/dna/ShapeGrammar.js';
 import { synthesizePalette, synthesizeSectionPalettes } from '../src/world/dna/PaletteSynth.js';
 import { ValueNoise1D } from '../src/utils/noise.js';
-import { alpineHeightField } from '../src/world/SilhouetteGenerator.js';
+import { alpineHeightField, rollingHeightField } from '../src/world/SilhouetteGenerator.js';
 import { ParticleField } from '../src/world/ParticleField.js';
+import { cityHeightField, buildingProfile } from '../src/world/city/CitySilhouette.js';
 
 // The published Krumhansl-Schmuckler tonal-hierarchy profiles, rooted at C.
 const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
@@ -251,6 +252,68 @@ test('deriveTerrainParams on a real song DNA actually changes the rendered ridge
     assert.ok(withSpiky[i] >= 0 && withSpiky[i] <= 1);
     assert.ok(withMound[i] >= 0 && withMound[i] <= 1);
   }
+});
+
+test('deriveTerrainParams city/rolling fields: spiky songs get narrower isolated towers and grainier hills, mound songs the opposite', () => {
+  const spiky = { trunkBranch: 0.03, verticalStack: 0.35, spikeCluster: 0.40, arch: 0.05, mound: 0.02, geometricRegularity: 0.15 };
+  const mound = { trunkBranch: 0.35, verticalStack: 0.03, spikeCluster: 0.02, arch: 0.05, mound: 0.40, geometricRegularity: 0.15 };
+  const spikyMods = deriveTerrainParams(spiky);
+  const moundMods = deriveTerrainParams(mound);
+
+  assert.ok(spikyMods.cityWidthMul < 1, `expected narrower towers, got ${spikyMods.cityWidthMul}`);
+  assert.ok(moundMods.cityWidthMul > 1, `expected broader blocks, got ${moundMods.cityWidthMul}`);
+  assert.ok(spikyMods.cityTaperMul > moundMods.cityTaperMul, 'spiky should taper more sharply than mound');
+  assert.ok(spikyMods.cityDensityMul < moundMods.cityDensityMul, 'mound should pack denser fabric than spiky');
+  assert.ok(spikyMods.rollingAmpMul > moundMods.rollingAmpMul, 'spiky should read taller/grainier hills than mound');
+});
+
+test('buildingProfile: default params reproduce the original fixed setback exactly; DNA params move it', () => {
+  assert.equal(buildingProfile(0.4), 1);
+  assert.ok(Math.abs(buildingProfile(0.7) - 0.84) < 1e-9);
+  assert.ok(Math.abs(buildingProfile(0.9) - 0.58) < 1e-9);
+  // A sharper setback (higher taper) drops further at the same width.
+  assert.ok(buildingProfile(0.7, 0.62, 1.6) < buildingProfile(0.7, 0.62, 1));
+  // A later setbackFrac keeps full height further out.
+  assert.equal(buildingProfile(0.7, 0.85, 1), 1);
+});
+
+test('cityHeightField: terrainMods measurably changes the rendered skyline and stays in 0..1', () => {
+  const spikyDna = buildSongDNA(synthTimeline({ pitches: [40, 43, 46, 49], program: 30, n: 400 }));
+  const moundDna = buildSongDNA({ durationMs: 60000, bpm: 70 });
+  const spikyMods = deriveTerrainParams(buildShapeGrammar(spikyDna));
+  const moundMods = deriveTerrainParams(buildShapeGrammar(moundDna));
+
+  const n = 400, step = 5, width = n * step;
+  const plain = cityHeightField(n, step, 11, width, null, 'L2', null);
+  const withSpiky = cityHeightField(n, step, 11, width, null, 'L2', spikyMods);
+  const withMound = cityHeightField(n, step, 11, width, null, 'L2', moundMods);
+
+  let same = true;
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(plain[i] - withSpiky[i]) > 1e-9 || Math.abs(plain[i] - withMound[i]) > 1e-9) { same = false; break; }
+  }
+  assert.equal(same, false, 'terrainMods had no measurable effect on the city height field');
+  for (let i = 0; i < n; i++) {
+    assert.ok(withSpiky[i] >= 0 && withSpiky[i] <= 1);
+    assert.ok(withMound[i] >= 0 && withMound[i] <= 1);
+  }
+});
+
+test('rollingHeightField: terrainMods measurably changes the rendered hills and stays in 0..1', () => {
+  const spikyDna = buildSongDNA(synthTimeline({ pitches: [40, 43, 46, 49], program: 30, n: 400 }));
+  const spikyMods = deriveTerrainParams(buildShapeGrammar(spikyDna));
+
+  const noise = new ValueNoise1D(11, 256);
+  const n = 400, step = 5, width = n * step;
+  const plain = rollingHeightField(noise, n, step, 2, null, width, null);
+  const withMods = rollingHeightField(noise, n, step, 2, null, width, spikyMods);
+
+  let same = true;
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(plain[i] - withMods[i]) > 1e-9) { same = false; break; }
+  }
+  assert.equal(same, false, 'terrainMods had no measurable effect on the rolling height field');
+  for (let i = 0; i < n; i++) assert.ok(withMods[i] >= 0 && withMods[i] <= 1);
 });
 
 function synthRisingTimeline({ startPitch, endPitch, n = 200, durationMs = 60000 }) {

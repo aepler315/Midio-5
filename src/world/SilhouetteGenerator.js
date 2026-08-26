@@ -227,19 +227,25 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
  *  phrase-scale bass undulation when a portrait is present. The phrase
  *  wave is one period of the song's energy loop, not the full envelope,
  *  so the hills breathe at the song's scale without tracing a spectrogram. */
-export function rollingHeightField(noise, n, step, octaves, portrait = null, width = 0) {
+export function rollingHeightField(noise, n, step, octaves, portrait = null, width = 0, terrainMods = null) {
   const heights = new Float32Array(n);
   const stripW = width > 0 ? width : Math.max(1, (n - 1) * step);
   const bass = portrait?.bassShare ?? 0;
   const phraseAmp = 0.16 * bass * (0.45 + 0.55 * (portrait?.phraseStrength ?? 0));
+  // A spiky/vertical-stack-heavy song reads grainier hills even in this
+  // soft 'rolling' profile (strip worlds' L2-L4, and every world's nearest
+  // L5 layer); an organic/regular one stays smoother. Both default to a
+  // no-op so a caller with no DNA gets byte-identical output.
+  const octAdj = clamp(octaves + Math.round(terrainMods?.rollingOctaveBias ?? 0), 1, 5);
+  const ampMul = terrainMods?.rollingAmpMul ?? 1;
   for (let i = 0; i < n; i++) {
     const x = i * step;
     // Map fbm from ~[-1,1] into a positive hill field.
-    const f = noise.fbm(x * 0.006, octaves);
+    const f = noise.fbm(x * 0.006, octAdj);
     const u = x / stripW;
     const phrase = phraseAmp > 0 ? (phraseAt(portrait, u) * 2 - 1) * phraseAmp : 0;
     const spine = spineAt(portrait, u, 0.04 * (portrait?.bassShare ?? 0));
-    heights[i] = clamp01(0.5 + 0.5 * f + phrase * 0.5 + spine);
+    heights[i] = clamp01(0.5 + 0.5 * f * ampMul + phrase * 0.5 + spine);
   }
   return heights;
 }
@@ -295,9 +301,9 @@ export function generateSilhouette({
   if (profile === 'alpine') {
     heights = alpineHeightField(noise, n, step, seed, width, character, portrait, layerKey, terrainMods);
   } else if (profile === 'city') {
-    heights = cityHeightField(n, step, seed, width, portrait, layerKey);
+    heights = cityHeightField(n, step, seed, width, portrait, layerKey, terrainMods);
   } else {
-    heights = rollingHeightField(noise, n, step, octaves, portrait, width);
+    heights = rollingHeightField(noise, n, step, octaves, portrait, width, terrainMods);
   }
 
   // Force a seamless horizontal wrap by blending the tail back to the head.

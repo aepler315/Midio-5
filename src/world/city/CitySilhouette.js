@@ -7,13 +7,23 @@ import { composeAlpinePeaks, seedPeaks, layerWeathering } from '../RidgePortrait
 
 const MARGIN = 0.12;
 
-/** Unit-height building at normalized half-width `d` (0 centre, 1 edge). */
-export function buildingProfile(d) {
+/**
+ * Unit-height building at normalized half-width `d` (0 centre, 1 edge).
+ * `setbackFrac` is where the first step-down starts (default 0.62, the
+ * original fixed value); `taper` scales how much each step drops (1 = the
+ * original 0.84/0.58 levels exactly). Both come from a song's shape grammar
+ * (ShapeGrammar.deriveTerrainParams) so a spiky/vertical-stack-heavy song
+ * gets a sharper, more pronounced setback and an organic/mound-heavy one a
+ * gentler, later taper -- default params reproduce the original building
+ * shape exactly.
+ */
+export function buildingProfile(d, setbackFrac = 0.62, taper = 1) {
   const t = Math.max(0, d);
   if (t >= 1) return 0;
-  if (t < 0.62) return 1;
-  if (t < 0.82) return 0.84; // setback
-  return 0.58;               // cornice
+  const cornice = clamp(setbackFrac + 0.20, setbackFrac + 0.05, 0.96);
+  if (t < setbackFrac) return 1;
+  if (t < cornice) return clamp01(1 - 0.16 * taper); // setback
+  return clamp01(1 - 0.42 * taper);                  // cornice
 }
 
 function terraceHeight(portrait, layerKey) {
@@ -28,10 +38,11 @@ function terraceHeight(portrait, layerKey) {
  * generator consumes, interpreted as buildings. Between them a terrace of
  * lower fabric — the altiplano reading, as blocks not saddles.
  */
-export function cityHeightField(n, step, seed, width, portrait = null, layerKey = 'L2') {
+export function cityHeightField(n, step, seed, width, portrait = null, layerKey = 'L2', terrainMods = null) {
+  const widthMul = terrainMods?.cityWidthMul ?? 1;
   const cfg = {
-    wBase: layerKey === 'L2' ? 56 : layerKey === 'L3' ? 48 : layerKey === 'L4' ? 40 : 28,
-    wSpan: layerKey === 'L2' ? 44 : 32,
+    wBase: clamp((layerKey === 'L2' ? 56 : layerKey === 'L3' ? 48 : layerKey === 'L4' ? 40 : 28) * widthMul, 14, 100),
+    wSpan: clamp((layerKey === 'L2' ? 44 : 32) * widthMul, 10, 70),
     peakMin: 5, peakSpan: 5, asym: 0.08,
     notch: 0.02, teeth: 0.01, bed: 0.08, apronGain: 0.12,
   };
@@ -41,10 +52,13 @@ export function cityHeightField(n, step, seed, width, portrait = null, layerKey 
   const weather = portrait ? layerWeathering(portrait, cfg, layerKey) : { bed: cfg.bed };
   const terrace = terraceHeight(portrait, layerKey);
   const rand = mulberry32((seed ^ 0xb1d) >>> 0 || 1);
+  const setbackFrac = terrainMods?.citySetbackFrac ?? 0.62;
+  const taper = terrainMods?.cityTaperMul ?? 1;
 
   // Extra mid-rise fillers so the skyline is a city, not three towers.
   const extras = [];
-  const want = layerKey === 'L2' ? 8 : layerKey === 'L3' ? 9 : layerKey === 'L4' ? 6 : 4;
+  const baseWant = layerKey === 'L2' ? 8 : layerKey === 'L3' ? 9 : layerKey === 'L4' ? 6 : 4;
+  const want = Math.round(clamp(baseWant * (terrainMods?.cityDensityMul ?? 1), 2, 16));
   let attempts = 0;
   while (extras.length < want && attempts < 40) {
     attempts++;
@@ -66,7 +80,7 @@ export function cityHeightField(n, step, seed, width, portrait = null, layerKey 
       const half = Math.max(10, p.w * 0.5);
       const d = Math.abs(x - p.x) / half;
       if (d < 1) {
-        const core = buildingProfile(d) * p.h;
+        const core = buildingProfile(d, setbackFrac, taper) * p.h;
         if (core > h) h = core;
       }
     }
