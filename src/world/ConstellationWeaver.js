@@ -9,7 +9,15 @@
 import { mulberry32, clamp01 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 
-const REGION = { xMin: 0.06, xMax: 0.94, yMin: 0.05, yMax: 0.58 };
+// yMax used to stop at 0.58 -- barely past mid-screen -- which confined
+// every figure and every crystallized "permanent" star to a band across the
+// upper-middle of the sky no matter how much open sky sat below it. Terrain
+// is drawn AFTER this layer (BiomeManager.draw calls weaver.draw before the
+// L2 mountain silhouette), exactly like the ambient star catalogue, so
+// anything that lands behind a ridge or a tower is already safely painted
+// over -- there was never a reason to hold the region back from the real
+// horizon the way the ambient field doesn't.
+const REGION = { xMin: 0.03, xMax: 0.97, yMin: 0.04, yMax: 0.95 };
 const FIGURE_DOTS_MIN = 5;
 const FIGURE_DOTS_MAX = 8;
 const EDGE_GROW_MS = 250;
@@ -160,6 +168,17 @@ export class ConstellationWeaver {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
 
+    // Dots are generated (nextDotPos) in this.w x this.h field space. A
+    // camera pull-back or a canvas resize after construction means the
+    // ACTUAL canvas handed to draw() is often a different size -- exactly
+    // the mismatch StarCatalogue's xFrac/yFrac rescale already solves for
+    // the ambient field. Without this, every dot stayed pinned to its
+    // original span while the sky around it widened, shrinking every
+    // constellation and every crystallized star into a box in one corner
+    // of the real frame instead of the region they were actually seeded
+    // across.
+    const sx = canvas.width / this.w, sy = canvas.height / this.h;
+
     // Crystallized stars: dim and persistent, atlas-style. alphaMul lets
     // the night sky brighten them without touching the active figures
     // below (those are event-driven, not ambient starlight).
@@ -167,12 +186,15 @@ export class ConstellationWeaver {
       ctx.strokeStyle = `hsla(${star.hue}, 32%, 80%, ${capFlashAlpha(0.07 * alphaMul, reducedFlash)})`;
       ctx.lineWidth = 0.8;
       ctx.beginPath();
-      star.dots.forEach((s, i) => { if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y); });
+      star.dots.forEach((s, i) => {
+        const x = s.x * sx, y = s.y * sy;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
       ctx.stroke();
       for (const s of star.dots) {
         ctx.fillStyle = `hsla(${star.hue}, 40%, 86%, ${capFlashAlpha(0.14 * alphaMul, reducedFlash)})`;
         ctx.beginPath();
-        ctx.arc(s.x, s.y, 1.0, 0, Math.PI * 2);
+        ctx.arc(s.x * sx, s.y * sy, 1.0, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -181,14 +203,14 @@ export class ConstellationWeaver {
       const holdOrFadeFrac = fig.phase === 'fading'
         ? 1 - clamp01((this._lastNowMs - fig.fadeStartMs) / FADE_MS)
         : 1;
-      this._drawFigure(ctx, fig, this._lastNowMs, holdOrFadeFrac, reducedFlash);
+      this._drawFigure(ctx, fig, this._lastNowMs, holdOrFadeFrac, reducedFlash, sx, sy);
     }
-    if (this.building) this._drawFigure(ctx, this.building, this._lastNowMs, 1, reducedFlash);
+    if (this.building) this._drawFigure(ctx, this.building, this._lastNowMs, 1, reducedFlash, sx, sy);
 
     ctx.restore();
   }
 
-  _drawFigure(ctx, fig, nowMs, lifeAlpha, reducedFlash) {
+  _drawFigure(ctx, fig, nowMs, lifeAlpha, reducedFlash, sx = 1, sy = 1) {
     const pulseBoost = 1 + 1.2 * this.pulse;
     const frac = edgeRevealFrac(fig, nowMs);
     const edgeCount = fig.dots.length - 1;
@@ -198,12 +220,13 @@ export class ConstellationWeaver {
         const edgeAlpha = clamp01(revealedEdges - i);
         if (edgeAlpha <= 0) break;
         const a = fig.dots[i], b = fig.dots[i + 1];
-        const x = a.x + (b.x - a.x) * edgeAlpha, y = a.y + (b.y - a.y) * edgeAlpha;
+        const ax = a.x * sx, ay = a.y * sy, bx = b.x * sx, by = b.y * sy;
+        const x = ax + (bx - ax) * edgeAlpha, y = ay + (by - ay) * edgeAlpha;
         for (const [lw, base] of [[3, 0.08], [1, 0.30]]) {
           ctx.strokeStyle = `hsla(${fig.hue}, 60%, 82%, ${capFlashAlpha(base * lifeAlpha * pulseBoost, reducedFlash)})`;
           ctx.lineWidth = lw;
           ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
+          ctx.moveTo(ax, ay);
           ctx.lineTo(x, y);
           ctx.stroke();
         }
@@ -211,13 +234,14 @@ export class ConstellationWeaver {
     }
     for (let i = 0; i < fig.dots.length; i++) {
       const d = fig.dots[i];
+      const dx = d.x * sx, dy = d.y * sy;
       ctx.fillStyle = `hsla(${fig.hue}, 70%, 88%, ${capFlashAlpha(0.5 * lifeAlpha * pulseBoost, reducedFlash)})`;
       ctx.beginPath();
-      ctx.arc(d.x, d.y, 1.8, 0, Math.PI * 2);
+      ctx.arc(dx, dy, 1.8, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = `hsla(${fig.hue}, 40%, 90%, ${capFlashAlpha(0.12 * lifeAlpha, reducedFlash)})`;
       ctx.beginPath();
-      ctx.arc(d.x, d.y, 4, 0, Math.PI * 2);
+      ctx.arc(dx, dy, 4, 0, Math.PI * 2);
       ctx.fill();
     }
   }
