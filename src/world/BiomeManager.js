@@ -42,7 +42,7 @@ import {
 import { buildWaveComponents, waveFieldSample, windSpeedForSeaState, easeSeaState } from './WaveField.js';
 import {
   generateCatalogue, subPixelDraw, twinkleAmplitude, galacticBandCenterY, GALACTIC_BAND,
-  extinction01, reddening01, generateDustLanes, generateDeepSky, generatePlanets,
+  extinction01, reddening01, generateDustLanes, generateDeepSky, generatePlanets, perceptualStretch,
 } from './StarCatalogue.js';
 import { CHARACTER_SCHEMES } from './dna/ShapeGrammar.js';
 import {
@@ -374,24 +374,22 @@ export class BiomeManager {
     // shorter catalogue left a dead band above the ridgeline that read as
     // "the stars are a chunk in the middle of the sky."
     const catalogue = generateCatalogue(hashSeed(`${songSeed}:starcat`), STAR_CATALOGUE_COUNT, this.w, this.h * STAR_SKY_FRAC);
-    // The real astronomical flux relation (magnitudeToBrightness01, tested
-    // against its exact 2.512x/mag ratio in StarCatalogue.js) is honest but
-    // punishing for a screen: at this population size almost every star's
-    // TRUE brightness rounds down near zero, and true naked-eye "hero"
-    // stars are statistically ~0-in-280 -- realistic, but it reads as an
-    // empty sky rather than a dense one. A perceptual display stretch
-    // (any astro image needs one to be viewable) keeps every star's
-    // RELATIVE ordering and the real faint-dominated population shape,
-    // while giving faint ones a visible floor instead of vanishing.
-    const displayBrightness = (b01) => 0.12 + 0.88 * Math.pow(clamp01(b01), 0.35);
+    // See StarCatalogue.perceptualStretch for why this is applied to
+    // subPixelDraw's OUTPUT below, never fed in as its input.
     // Hero glow (layer 2) is reserved by RANK, not by an absolute magnitude
     // cutoff -- the realistic population makes true hero-magnitude stars
-    // vanishingly rare at 280 samples, so a fixed threshold could easily
-    // reserve zero. A small guaranteed slice keeps the sky visually alive
+    // vanishingly rare at this sample size, so a fixed threshold could
+    // easily reserve zero. A guaranteed slice keeps the sky visually alive
     // without touching the underlying (correctly faint-dominated) catalogue.
+    // A fixed 6 (regardless of population) read as a sparse scatter of
+    // glow-dots rather than "a sky full of stars" -- the un-glowed cheap
+    // dots that make up the rest are real (see perceptualStretch) but
+    // small and easily washed out by anything drawn over them (haze,
+    // cloud, nebula washes), so most of a genuinely full-looking sky needs
+    // to come from the reliably-visible glow tier, not the faint majority.
     const byMag = catalogue.slice().sort((a, b) => a.mag - b.mag);
-    const heroCutMag = byMag[Math.min(byMag.length - 1, 5)].mag;
-    const midCutMag = byMag[Math.min(byMag.length - 1, Math.floor(byMag.length * 0.22))].mag;
+    const heroCutMag = byMag[Math.min(byMag.length - 1, Math.floor(byMag.length * 0.08))].mag;
+    const midCutMag = byMag[Math.min(byMag.length - 1, Math.floor(byMag.length * 0.35))].mag;
     // Every position below is cached as a FRACTION of the field it was
     // generated over (xFrac/yFrac), not an absolute pixel -- the canvas
     // BiomeManager actually draws into is not always this.w x this.h. The
@@ -407,7 +405,8 @@ export class BiomeManager {
     // _drawStarfield) fixes that at every zoom level and every resize.
     const skyH = this.h * STAR_SKY_FRAC;
     this.stars = catalogue.map((s) => {
-      const { drawSize, drawAlpha } = subPixelDraw(s.sizePx, displayBrightness(s.brightness));
+      const { drawSize, drawAlpha: rawAlpha } = subPixelDraw(s.sizePx, s.brightness);
+      const drawAlpha = perceptualStretch(rawAlpha);
       const layer = s.mag <= heroCutMag ? 2 : s.mag <= midCutMag ? 1 : 0;
       return {
         xFrac: s.x / this.w, yFrac: s.y / skyH, phase: s.phase,

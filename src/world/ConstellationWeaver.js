@@ -30,6 +30,18 @@ const MAX_STAR_FIGURES = 6;
 const CRYSTALLIZE_CHANCE = 0.45;
 const PULSE_TAU_SEC = 0.25;
 
+// Terrain is drawn AFTER this layer and clips anything below its silhouette
+// with a hard edge (see the REGION comment above). A star-atlas ambient dot
+// just vanishes into that clip -- but a figure's edge or a crystallized
+// star's polyline is a solid stroke, so a straight line sailing into the
+// ground gets guillotined at a dead-flat height and reads as a glitch, not
+// an occlusion. Since terrain height varies per song and isn't known here,
+// fade every edge/dot toward the bottom of the field on a fixed curve so
+// any clip lands on already-near-invisible content instead of a crisp line.
+function groundFadeAlpha(yFrac) {
+  return 1 - 0.85 * clamp01((yFrac - 0.55) / 0.4);
+}
+
 /** Seeded next dot position, 40-110px from `prev` in a drifting direction,
  *  reflected back into the upper-sky region if it would step outside.
  *  `prev` null places the first dot anywhere in the region. Pure. */
@@ -183,16 +195,19 @@ export class ConstellationWeaver {
     // the night sky brighten them without touching the active figures
     // below (those are event-driven, not ambient starlight).
     for (const star of this.stars) {
-      ctx.strokeStyle = `hsla(${star.hue}, 32%, 80%, ${capFlashAlpha(0.07 * alphaMul, reducedFlash)})`;
       ctx.lineWidth = 0.8;
-      ctx.beginPath();
-      star.dots.forEach((s, i) => {
-        const x = s.x * sx, y = s.y * sy;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
+      for (let i = 0; i < star.dots.length - 1; i++) {
+        const a = star.dots[i], b = star.dots[i + 1];
+        const fade = groundFadeAlpha(Math.max(a.y, b.y) / this.h);
+        ctx.strokeStyle = `hsla(${star.hue}, 32%, 80%, ${capFlashAlpha(0.07 * alphaMul * fade, reducedFlash)})`;
+        ctx.beginPath();
+        ctx.moveTo(a.x * sx, a.y * sy);
+        ctx.lineTo(b.x * sx, b.y * sy);
+        ctx.stroke();
+      }
       for (const s of star.dots) {
-        ctx.fillStyle = `hsla(${star.hue}, 40%, 86%, ${capFlashAlpha(0.14 * alphaMul, reducedFlash)})`;
+        const fade = groundFadeAlpha(s.y / this.h);
+        ctx.fillStyle = `hsla(${star.hue}, 40%, 86%, ${capFlashAlpha(0.14 * alphaMul * fade, reducedFlash)})`;
         ctx.beginPath();
         ctx.arc(s.x * sx, s.y * sy, 1.0, 0, Math.PI * 2);
         ctx.fill();
@@ -222,8 +237,9 @@ export class ConstellationWeaver {
         const a = fig.dots[i], b = fig.dots[i + 1];
         const ax = a.x * sx, ay = a.y * sy, bx = b.x * sx, by = b.y * sy;
         const x = ax + (bx - ax) * edgeAlpha, y = ay + (by - ay) * edgeAlpha;
+        const fade = groundFadeAlpha(Math.max(a.y, b.y) / this.h);
         for (const [lw, base] of [[3, 0.08], [1, 0.30]]) {
-          ctx.strokeStyle = `hsla(${fig.hue}, 60%, 82%, ${capFlashAlpha(base * lifeAlpha * pulseBoost, reducedFlash)})`;
+          ctx.strokeStyle = `hsla(${fig.hue}, 60%, 82%, ${capFlashAlpha(base * lifeAlpha * pulseBoost * fade, reducedFlash)})`;
           ctx.lineWidth = lw;
           ctx.beginPath();
           ctx.moveTo(ax, ay);
@@ -235,11 +251,12 @@ export class ConstellationWeaver {
     for (let i = 0; i < fig.dots.length; i++) {
       const d = fig.dots[i];
       const dx = d.x * sx, dy = d.y * sy;
-      ctx.fillStyle = `hsla(${fig.hue}, 70%, 88%, ${capFlashAlpha(0.5 * lifeAlpha * pulseBoost, reducedFlash)})`;
+      const fade = groundFadeAlpha(d.y / this.h);
+      ctx.fillStyle = `hsla(${fig.hue}, 70%, 88%, ${capFlashAlpha(0.5 * lifeAlpha * pulseBoost * fade, reducedFlash)})`;
       ctx.beginPath();
       ctx.arc(dx, dy, 1.8, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = `hsla(${fig.hue}, 40%, 90%, ${capFlashAlpha(0.12 * lifeAlpha, reducedFlash)})`;
+      ctx.fillStyle = `hsla(${fig.hue}, 40%, 90%, ${capFlashAlpha(0.12 * lifeAlpha * fade, reducedFlash)})`;
       ctx.beginPath();
       ctx.arc(dx, dy, 4, 0, Math.PI * 2);
       ctx.fill();
