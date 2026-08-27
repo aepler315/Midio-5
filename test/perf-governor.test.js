@@ -107,6 +107,20 @@ test('a single over-budget frame does not reset recovery progress unnecessarily,
   assert.equal(gov.level, 0);
 });
 
+test('judder -- frames alternating just above and below budget -- still sheds a rung eventually', () => {
+  const gov = new PerfGovernor();
+  let t = 0;
+  // Alternate one badly-over-budget frame (severity 2) with one clean frame.
+  // A hard reset-to-zero on every clean frame would erase all accumulated
+  // severity and this loop would never shed; decaying instead lets it
+  // net-accumulate every pair.
+  for (let i = 0; i < 400 && gov.level === 0; i++) {
+    gov.sample(30, t); t += 16.6;
+    gov.sample(5, t); t += 16.6;
+  }
+  assert.equal(gov.level, 1, 'sustained judder should shed a rung, not stay at 0 forever');
+});
+
 test('deeper rungs (5-6) gate phenomena and the overlay-pass stack, past the original four', () => {
   const gov = new PerfGovernor();
   gov.level = 4;

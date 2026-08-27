@@ -29,6 +29,14 @@ const FRAME_BUDGET_MS = 15; // spec §6.2: 16.6ms frame budget, ~15ms of it
 const SHED_AFTER_FRAMES = 60; // ~1s sustained overage at 60fps, at exactly-at-budget severity
 const SHED_WEIGHT_CAP = 6; // one catastrophic frame (tab hitch, GC pause) can't shed more than ~6 "normal" frames' worth
 const RECOVER_AFTER_MS = 10000; // 10 clean seconds
+// A clean frame used to zero the accumulator outright, so judder --
+// frames alternating just above and below budget, the exact pattern that
+// reads as visible stutter -- never built up the 60 units needed to shed
+// a rung: every other frame wiped out the previous one's contribution.
+// Decaying instead (by less than a single over-budget frame's minimum
+// severity of 1) lets that alternating pattern still net-accumulate,
+// while a genuinely sustained clean run still drains it to zero.
+const OVER_DECAY_PER_CLEAN_FRAME = 0.5;
 export const MAX_LEVEL = 6;
 
 /** Resolve the initial shed level: a `?perf=lite|high` URL override wins;
@@ -64,7 +72,7 @@ export class PerfGovernor {
         this._overCount = 0;
       }
     } else {
-      this._overCount = 0;
+      this._overCount = Math.max(0, this._overCount - OVER_DECAY_PER_CLEAN_FRAME);
       if (this._cleanSinceMs === null) this._cleanSinceMs = nowMs;
       else if (this.level > 0 && nowMs - this._cleanSinceMs >= RECOVER_AFTER_MS) {
         this.level--;

@@ -4,6 +4,7 @@
 // the ground point where they were spawned as the world scrolls under them.
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { clamp, mulberry32 } from '../utils/math.js';
+import { capFlashAlpha } from '../ui/Accessibility.js';
 
 export class ImpactFX {
   constructor(seed = 1) {
@@ -37,7 +38,7 @@ export class ImpactFX {
     // color: null — pooled objects keep old fields across reuse, and this
     // slot may have last served a tier-tinted judgment ring.
     const ring = this.rings.spawn({ wx: worldX, y: groundY, Rd: 40 + 120 * I, tau: 0.09, life: 0.42, color: null });
-    for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * 4 * I;
+    if (ring) for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * 4 * I;
 
     const n = Math.round((6 + 18 * I) * particleMul);
     for (let i = 0; i < n; i++) {
@@ -107,7 +108,7 @@ export class ImpactFX {
     if (!style) return;
     const rand = this.rand;
     const ring = this.rings.spawn({ wx: worldX, y: groundY - 42, Rd: style.Rd, tau: 0.09, life: 0.38, color: style.col });
-    for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * style.jag;
+    if (ring) for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * style.jag;
     const n = Math.round(style.motes * particleMul);
     for (let i = 0; i < n; i++) {
       this.motes.spawn({
@@ -154,7 +155,7 @@ export class ImpactFX {
   }
 
   /** worldX: current scroll distance; originX: screen-space x that worldX=0 maps to (Midio's screenX). */
-  draw(ctx, worldX, originX) {
+  draw(ctx, worldX, originX, reducedFlash = false) {
     const toScreen = (wx) => wx - worldX + originX;
 
     for (const s of this.scars) {
@@ -179,7 +180,7 @@ export class ImpactFX {
       const t = c.age / c.life;
       const x = toScreen(c.wx);
       const g = ctx.createRadialGradient(x, c.y, 0, x, c.y, c.R);
-      const a = c.alpha * (1 - t);
+      const a = capFlashAlpha(c.alpha * (1 - t), reducedFlash);
       g.addColorStop(0, `rgba(255,240,200,${a})`);
       g.addColorStop(1, 'rgba(255,240,200,0)');
       ctx.fillStyle = g;
@@ -191,7 +192,7 @@ export class ImpactFX {
     for (const r of this.rings.active) {
       const t = r.age / r.life;
       const radius = r.Rd * (1 - Math.exp(-r.age / r.tau));
-      const alpha = Math.pow(1 - t, 2);
+      const alpha = capFlashAlpha(Math.pow(1 - t, 2), reducedFlash);
       const x = toScreen(r.wx);
       ctx.strokeStyle = `rgba(${r.color || '255,255,255'},${0.7 * alpha})`;
       ctx.lineWidth = Math.max(0.5, 3 * (1 - t));
@@ -212,7 +213,7 @@ export class ImpactFX {
     for (const p of this.polyRings.active) {
       const t = p.age / p.life;
       const envelope = p.Rd * (1 - Math.exp(-p.age / p.tau));
-      const alpha = Math.pow(1 - t, 2) * 0.55 * p.I;
+      const alpha = capFlashAlpha(Math.pow(1 - t, 2) * 0.55 * p.I, reducedFlash);
       const x = toScreen(p.wx);
       const rot = p.rot0 + p.spin * p.age;
       ctx.strokeStyle = `rgba(255,235,170,${alpha})`;
@@ -236,7 +237,7 @@ export class ImpactFX {
     for (const g of this.ignitions.active) {
       const t = g.age / g.life;
       const radius = g.Rd * (1 - (1 - t) ** 3);
-      const alpha = (1 - t) ** 2;
+      const alpha = capFlashAlpha((1 - t) ** 2, reducedFlash);
       const x = toScreen(g.wx);
       ctx.strokeStyle = `rgba(255,225,140,${(0.8 * alpha).toFixed(3)})`;
       ctx.lineWidth = Math.max(0.5, 4 * (1 - t));

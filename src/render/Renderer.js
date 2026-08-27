@@ -298,7 +298,7 @@ export class Renderer {
         particleMul, reducedFlash: !!sim.reducedFlash,
       });
     }
-    if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX);
+    if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX, !!sim.reducedFlash);
     if (sim.rippleFX) sim.rippleFX.draw(ctx, pose.worldX, pose.midioX, sim.reducedFlash);
     if (sim.battle) this._drawBattleEnemies(ctx, sim);
 
