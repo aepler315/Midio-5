@@ -44,6 +44,7 @@ import {
   generateCatalogue, subPixelDraw, twinkleAmplitude, galacticBandCenterY, GALACTIC_BAND,
   extinction01, reddening01, generateDustLanes, generateDeepSky, generatePlanets,
 } from './StarCatalogue.js';
+import { CHARACTER_SCHEMES } from './dna/ShapeGrammar.js';
 import {
   islands, ships, seaLifeSchedule, monsterSchedule, tsunamiSchedule,
   tsunamiActive, tsunamiProgress, tsunamiRowFrac, tsunamiPerspectiveScale,
@@ -1051,22 +1052,32 @@ export class BiomeManager {
           : AERIAL_SOFTEN;
         const prof = worldKind === 'strip' ? 'rolling' : 'alpine';
         const terrainMods = this.world?.terrainMods || null;
+        // Which landform each depth gets (not just how that landform is
+        // shaped -- terrainMods above still does that): a song's own
+        // spike/organic bias picks between the classic massif/range/crags
+        // triple and two more distinct schemes (ShapeGrammar.
+        // pickCharacterScheme), so a spiky song's whole stack skews toward
+        // true needle spires up close and an organic song's toward a
+        // joined tableland at the horizon, instead of every world reaching
+        // for the identical three landforms regardless of what generated
+        // it. Falls back to the original fixed triple when absent.
+        const scheme = this.world?.characterScheme || CHARACTER_SCHEMES.classic;
         strips = {
           L2: generateSilhouette({
             seed: seed + 1, height: 400, octaves: 4, amplitude: 0.52, baseline: 0.42,
-            color: b.silhouette, shadeMode, profile: prof, character: 'massif',
+            color: b.silhouette, shadeMode, profile: prof, character: scheme[0],
             softenScale: soften.L2, portrait, layerKey: 'L2', terrainMods,
             edgeLight: el,
           }),
           L3: generateSilhouette({
             seed: seed + 2, height: 360, octaves: 3, amplitude: 0.44, baseline: 0.50,
-            color: b.silhouette, shadeMode, profile: prof, character: 'range',
+            color: b.silhouette, shadeMode, profile: prof, character: scheme[1],
             softenScale: soften.L3, portrait, layerKey: 'L3', terrainMods,
             edgeLight: el,
           }),
           L4: generateSilhouette({
             seed: seed + 3, height: 330, octaves: 3, amplitude: 0.34, baseline: 0.64,
-            color: b.silhouette, shadeMode, profile: prof, character: 'crags',
+            color: b.silhouette, shadeMode, profile: prof, character: scheme[2],
             softenScale: soften.L4, portrait, layerKey: 'L4', terrainMods,
             edgeLight: el,
           }),

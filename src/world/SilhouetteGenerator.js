@@ -72,6 +72,25 @@ export const ALPINE_CHARACTERS = {
     apronSpread: 2.6, apronGain: 0.46, apronCap: 0.52,
     notch: 0.17, teeth: 0.12, bed: 0.22,
   },
+  // spires/plateau exist so ShapeGrammar.pickCharacterScheme (a song's own
+  // spike/organic bias) has genuinely different landforms to reach for, not
+  // just the depth-ordered massif/range/crags triple every world used to
+  // get regardless of song. spires: many, narrow, sharply pinched, minimal
+  // apron -- isolated needles reading as their OWN landform, not a busier
+  // crags. plateau: a handful of very broad, fully domed, heavily-joined
+  // summits -- a high tableland, not a bigger massif.
+  spires: {
+    peakMin: 10, peakSpan: 6, wBase: 34, wSpan: 40,
+    shoulder: 0.85, spire: 3.6, spireMix: 0.34, asym: 0.30,
+    apronSpread: 1.9, apronGain: 0.28, apronCap: 0.40,
+    notch: 0.20, teeth: 0.16, bed: 0.26,
+  },
+  plateau: {
+    peakMin: 2, peakSpan: 2, wBase: 150, wSpan: 170,
+    shoulder: 0.45, spire: 2.2, spireMix: 0.08, asym: 0.48,
+    apronSpread: 3.2, apronGain: 0.50, apronCap: 0.62,
+    notch: 0.05, teeth: 0.02, bed: 0.06,
+  },
 };
 
 /**

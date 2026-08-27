@@ -11,7 +11,9 @@ import { extractRidgePortrait, lithologyFromShares } from './RidgePortrait.js';
 import { listWorlds, getWorld } from './Worlds.js';
 import { buildSongDNA } from './dna/SongDNA.js';
 import { synthesizeSectionPalettes } from './dna/PaletteSynth.js';
-import { buildShapeGrammar, deriveTerrainParams } from './dna/ShapeGrammar.js';
+import {
+  buildShapeGrammar, deriveTerrainParams, pickCharacterScheme, CHARACTER_SCHEMES,
+} from './dna/ShapeGrammar.js';
 import { castBiomes } from './Dramaturgy.js';
 
 const BPM_LO = 60, BPM_HI = 180;
@@ -268,6 +270,7 @@ export function buildCustomWorld(features, data = null) {
   let temperature = base.temperature;
   let cast = base.cast;
   let terrainMods = null;
+  let characterScheme = null;
   let dna = null;
   let paletteProof = null;
 
@@ -284,7 +287,12 @@ export function buildCustomWorld(features, data = null) {
     // song's instrumentation shows up in the skyline it generates and not
     // only its colors. Additive/optional: BiomeManager falls back to the
     // stock per-depth character (massif/range/crags) untouched when absent.
-    terrainMods = deriveTerrainParams(buildShapeGrammar(dna));
+    const grammar = buildShapeGrammar(dna);
+    terrainMods = deriveTerrainParams(grammar);
+    // WHICH landform each depth layer gets, not just how that landform is
+    // shaped -- see ShapeGrammar.pickCharacterScheme. Also falls back to
+    // the stock massif/range/crags triple when absent.
+    characterScheme = CHARACTER_SCHEMES[pickCharacterScheme(grammar)];
   } catch (err) {
     // Palette synthesis is additive — a failure here must never break world
     // selection. Fall back to the base world's stock palette silently.
@@ -307,6 +315,7 @@ export function buildCustomWorld(features, data = null) {
     temperature,
     cast,
     terrainMods,
+    characterScheme,
   };
 
   const proof = proveScore(feat, world);

@@ -178,3 +178,41 @@ export function deriveTerrainParams(grammar) {
     rollingOctaveBias: spikeBias > 0.3 ? 1 : regularBias > 0.3 ? -1 : 0,
   };
 }
+
+/**
+ * Which ALPINE_CHARACTERS (SilhouetteGenerator.js) get assigned to the
+ * L2/L3/L4 depth layers, in far-to-near order. Every world used to get the
+ * exact same triple (massif, range, crags) regardless of the song --
+ * deriveTerrainParams above reshapes each layer's flanks/apron/grain, but
+ * the underlying LANDFORM never changed, so at a glance every world's L2
+ * still read as "a few broad peaks" and every L4 as "many small crags."
+ *
+ * Three schemes, each still far-to-near ordered broadest-and-fewest to
+ * narrowest-and-most (the real depth cue every character progression
+ * relies on -- see ALPINE_CHARACTERS' own comment) so layers stay
+ * genuinely distinct from EACH OTHER within a song; which scheme a song
+ * lands on is what varies ACROSS songs:
+ *  - 'classic' (the original triple): massif -> range -> crags.
+ *  - 'jagged', for spike/vertical-stack-heavy songs: range -> crags ->
+ *    spires -- the whole stack skews sharper, capped by true needle peaks
+ *    up close.
+ *  - 'monumental', for organic/mound-heavy songs: plateau -> massif ->
+ *    range -- the whole stack skews broader, anchored by a joined
+ *    tableland at the horizon.
+ */
+export const CHARACTER_SCHEMES = {
+  classic: ['massif', 'range', 'crags'],
+  jagged: ['range', 'crags', 'spires'],
+  monumental: ['plateau', 'massif', 'range'],
+};
+
+export function pickCharacterScheme(grammar) {
+  const g = grammar || {};
+  const spiky = (g.spikeCluster || 0) + (g.verticalStack || 0);
+  const organic = (g.trunkBranch || 0) + (g.mound || 0);
+  const spikeBias = clamp(spiky - 1 / 3, -1 / 3, 1 / 3) * 3;
+  const organicBias = clamp(organic - 1 / 3, -1 / 3, 1 / 3) * 3;
+  if (spikeBias > 0.18 && spikeBias > organicBias) return 'jagged';
+  if (organicBias > 0.18 && organicBias > spikeBias) return 'monumental';
+  return 'classic';
+}

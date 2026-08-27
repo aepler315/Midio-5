@@ -6,10 +6,11 @@ import {
 import { oklchToHex, hexToOklab, oklabDelta } from '../src/world/dna/OklchColor.js';
 import {
   buildShapeGrammar, computeTemperature, pickFx, pickParticleKind, deriveTerrainParams, deriveParticleMotion,
+  pickCharacterScheme, CHARACTER_SCHEMES,
 } from '../src/world/dna/ShapeGrammar.js';
 import { synthesizePalette, synthesizeSectionPalettes } from '../src/world/dna/PaletteSynth.js';
 import { ValueNoise1D } from '../src/utils/noise.js';
-import { alpineHeightField, rollingHeightField } from '../src/world/SilhouetteGenerator.js';
+import { alpineHeightField, rollingHeightField, ALPINE_CHARACTERS } from '../src/world/SilhouetteGenerator.js';
 import { ParticleField } from '../src/world/ParticleField.js';
 import { cityHeightField, buildingProfile } from '../src/world/city/CitySilhouette.js';
 
@@ -310,6 +311,51 @@ test('buildingProfile: default params reproduce the original fixed setback exact
   assert.ok(buildingProfile(0.7, 0.62, 1.6) < buildingProfile(0.7, 0.62, 1));
   // A later setbackFrac keeps full height further out.
   assert.equal(buildingProfile(0.7, 0.85, 1), 1);
+});
+
+test('pickCharacterScheme: spiky songs get the jagged scheme, organic songs the monumental scheme, balanced songs the classic scheme', () => {
+  const spiky = { trunkBranch: 0.03, verticalStack: 0.35, spikeCluster: 0.40, arch: 0.05, mound: 0.02, geometricRegularity: 0.15 };
+  const mound = { trunkBranch: 0.35, verticalStack: 0.03, spikeCluster: 0.02, arch: 0.05, mound: 0.40, geometricRegularity: 0.15 };
+  const balanced = { trunkBranch: 1 / 6, verticalStack: 1 / 6, spikeCluster: 1 / 6, arch: 1 / 6, mound: 1 / 6, geometricRegularity: 1 / 6 };
+  assert.equal(pickCharacterScheme(spiky), 'jagged');
+  assert.equal(pickCharacterScheme(mound), 'monumental');
+  assert.equal(pickCharacterScheme(balanced), 'classic');
+});
+
+test('CHARACTER_SCHEMES: every scheme is a 3-tuple of real ALPINE_CHARACTERS keys, far-to-near ordered broadest-to-narrowest', () => {
+  for (const [name, scheme] of Object.entries(CHARACTER_SCHEMES)) {
+    assert.equal(scheme.length, 3, `${name} should have exactly 3 layers`);
+    const widths = scheme.map((c) => {
+      assert.ok(ALPINE_CHARACTERS[c], `${name}'s "${c}" is not a real ALPINE_CHARACTERS entry`);
+      return ALPINE_CHARACTERS[c].wBase;
+    });
+    assert.ok(widths[0] > widths[1] && widths[1] > widths[2],
+      `${name} should narrow far-to-near, got wBase ${widths.join(',')}`);
+  }
+  assert.deepEqual(CHARACTER_SCHEMES.classic, ['massif', 'range', 'crags']);
+});
+
+test('a spiky vs. an organic song render measurably different L2 geometry via their character schemes, not just terrainMods', () => {
+  const spikyDna = buildSongDNA(synthTimeline({ pitches: [40, 43, 46, 49], program: 30, n: 400 }));
+  const moundDna = buildSongDNA({ durationMs: 60000, bpm: 70 });
+  const spikyGrammar = buildShapeGrammar(spikyDna);
+  const moundGrammar = buildShapeGrammar(moundDna);
+  const spikyScheme = CHARACTER_SCHEMES[pickCharacterScheme(spikyGrammar)];
+  const moundScheme = CHARACTER_SCHEMES[pickCharacterScheme(moundGrammar)];
+
+  const noise = new ValueNoise1D(11, 256);
+  const n = 400, step = 5, width = n * step;
+  // Same seed, same terrainMods, ONLY the character (landform) differs --
+  // isolates the scheme's own contribution from the shape-nudge one.
+  const spikyMods = deriveTerrainParams(spikyGrammar);
+  const withSpikyScheme = alpineHeightField(noise, n, step, 11, width, spikyScheme[0], null, 'L2', spikyMods);
+  const withMoundScheme = alpineHeightField(noise, n, step, 11, width, moundScheme[0], null, 'L2', spikyMods);
+
+  let same = true;
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(withSpikyScheme[i] - withMoundScheme[i]) > 1e-9) { same = false; break; }
+  }
+  assert.equal(same, false, 'different character schemes produced identical L2 geometry');
 });
 
 test('cityHeightField: terrainMods measurably changes the rendered skyline and stays in 0..1', () => {
