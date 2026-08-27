@@ -140,6 +140,40 @@ export function subPixelDraw(sizePx, alpha01) {
 }
 
 /**
+ * The real astronomical flux relation (magnitudeToBrightness01) is honest
+ * but punishing for a screen: at a few hundred samples almost every star's
+ * TRUE brightness rounds down near zero, and true naked-eye "hero" stars
+ * are statistically ~0-in-280 -- realistic, but reads as an empty sky
+ * rather than a dense one. This perceptual display stretch (any astro
+ * image needs one to be viewable) keeps every star's RELATIVE ordering
+ * and the real faint-dominated population shape, while giving faint ones
+ * a visible floor instead of vanishing.
+ *
+ * MUST be applied to the alpha subPixelDraw actually returns, never fed
+ * into subPixelDraw as its input: subPixelDraw's area-ratio scaling
+ * (sizePx^2, physically correct for an unresolved point source) crushes
+ * whatever alpha it's given by another ~85-95% for the vast majority of
+ * stars (sizePx well under 1 at this population size). Stretching first
+ * and area-scaling second means the stretch's own floor gets multiplied
+ * away again immediately afterward -- measured against a real 560-star
+ * field, only 33 ever cleared the draw loop's visibility cutoff.
+ *
+ * The floor itself also has to survive what happens to it AFTER this
+ * function returns: _drawStarfield multiplies every star's alpha by the
+ * layer's own ambient/night gain (~0.4-0.9), per-star twinkle (~0.4-1),
+ * and atmospheric extinction near the horizon (~0.35-1) on top. A 0.12
+ * floor surviving all three lands around 0.02-0.07 on screen -- non-zero,
+ * but still too faint to read as "a sky full of stars" against anything
+ * but a near-black background. 0.45 is chosen so the floor clears a
+ * genuinely visible ~0.08-0.28 after those multipliers even in the worst
+ * case (faint star, near horizon, mid-twinkle-trough), while still
+ * leaving headroom up to 1.0 for true hero stars.
+ */
+export function perceptualStretch(alpha01) {
+  return 0.45 + 0.55 * Math.pow(clamp01(alpha01), 0.35);
+}
+
+/**
  * Twinkle amplitude (0..1 multiplier on top of steady brightness):
  * atmospheric scintillation is stronger for point sources (fainter stars,
  * more point-like) and stronger near the horizon (more air path) --

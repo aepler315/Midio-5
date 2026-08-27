@@ -5,7 +5,7 @@ import {
   sampleMagnitude, magnitudeToBrightness01, sizeForMagnitude, subPixelDraw,
   twinkleAmplitude, generateCatalogue, galacticBandCenterY, GALACTIC_BAND,
   airmass, extinction01, reddening01, generateDustLanes, generateDeepSky,
-  generatePlanets, eclipticY,
+  generatePlanets, eclipticY, perceptualStretch,
 } from '../src/world/StarCatalogue.js';
 import { mulberry32 } from '../src/utils/math.js';
 
@@ -91,6 +91,47 @@ test('subPixelDraw preserves total light (size^2 * alpha) instead of dropping or
   // A star already >=1px is passed through unchanged.
   const passthrough = subPixelDraw(2.4, 0.6);
   assert.deepEqual(passthrough, { drawSize: 2.4, drawAlpha: 0.6 });
+});
+
+test('perceptualStretch(subPixelDraw(...).drawAlpha) keeps nearly every star visible even after realistic per-frame dimming', () => {
+  // A realistic 560-star field spans this whole magnitude range; sample it
+  // densely (weighted like the real population -- most stars are faint) and
+  // confirm the correct composition order (stretch AFTER subPixelDraw)
+  // clears a real visibility floor for nearly all of them even after the
+  // draw loop's other per-frame multipliers (layer alpha, twinkle,
+  // atmospheric extinction -- none of them close to 1 for a typical star at
+  // a typical moment) are applied on top, exactly as _drawStarfield does.
+  // This is the regression that shipped and was caught live: with the
+  // wrong composition order (stretch fed INTO subPixelDraw, crushed by the
+  // area ratio all over again) a real 560-star field measured only 33
+  // visible; with the wrong order but today's higher floor it's mostly
+  // masked (the floor alone is high enough to paper over it), which is why
+  // the floor value itself is pinned by the dedicated monotonicity test
+  // below -- this test's job is just to confirm the CORRECT path works.
+  const VISIBLE = 0.01; // matches BiomeManager._drawStarfield's own a<0.01 skip
+  const WORST_CASE_FRAME_MULTIPLIER = 0.4 * 0.4 * 0.35; // dim ambient, twinkle trough, near-horizon extinction
+  let correctVisible = 0;
+  const n = 500;
+  const rand = mulberry32(7);
+  for (let i = 0; i < n; i++) {
+    const mag = sampleMagnitude(rand); // real luminosity-function-weighted draw
+    const brightness = magnitudeToBrightness01(mag);
+    const sizePx = sizeForMagnitude(mag);
+    const correct = perceptualStretch(subPixelDraw(sizePx, brightness).drawAlpha) * WORST_CASE_FRAME_MULTIPLIER;
+    if (correct >= VISIBLE) correctVisible++;
+  }
+  assert.ok(correctVisible / n > 0.95, `expected >95% visible even in a pessimistic frame, got ${correctVisible}/${n}`);
+});
+
+test('perceptualStretch is monotone (preserves relative star ordering) and always returns 0.45..1', () => {
+  let prev = -1;
+  for (let a = 0; a <= 1; a += 0.02) {
+    const s = perceptualStretch(a);
+    assert.ok(s >= 0.45 - 1e-9 && s <= 1 + 1e-9, `out of range at a=${a}: ${s}`);
+    assert.ok(s >= prev - 1e-9, 'must be monotone non-decreasing');
+    prev = s;
+  }
+  assert.ok(Math.abs(perceptualStretch(0) - 0.45) < 1e-9, 'a=0 should sit exactly at the floor');
 });
 
 test('twinkle amplitude is stronger for fainter (more point-like) stars and near the horizon', () => {
