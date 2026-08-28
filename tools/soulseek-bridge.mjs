@@ -53,6 +53,9 @@ const searches = new Map();
 let runtimeConfig = null;
 let directClient = null;
 let directClientPromise = null;
+/** Last direct-mode login failure message, cleared on success — lets
+ *  getStatus() say "login failed: X" instead of pretending connected. */
+let directLoginError = null;
 /** @type {null | { ok: boolean, url: string, checkedAt: number, loggedIn?: boolean }} */
 let slskdProbe = null;
 
@@ -120,24 +123,26 @@ function activeConfig() {
   return activeConfigSync();
 }
 
-export function setConfig(cfg) {
-  if (!cfg || typeof cfg !== 'object') {
-    runtimeConfig = null;
+export async function setConfig(cfg) {
+  const resetDirect = () => {
     directClient = null;
     directClientPromise = null;
+    directLoginError = null;
+  };
+  if (!cfg || typeof cfg !== 'object') {
+    runtimeConfig = null;
+    resetDirect();
     return activeConfigSync();
   }
   const mode = String(cfg.mode || '').toLowerCase();
   if (mode === 'off' || mode === 'clear' || mode === 'auto') {
     runtimeConfig = null;
-    directClient = null;
-    directClientPromise = null;
+    resetDirect();
     return activeConfigSync();
   }
   if (mode === 'demo' || mode === 'free') {
     runtimeConfig = { mode: 'free' };
-    directClient = null;
-    directClientPromise = null;
+    resetDirect();
     return { mode: 'free', connected: true };
   }
   if (mode === 'slskd') {
@@ -146,8 +151,7 @@ export function setConfig(cfg) {
     const key = String(cfg.slskdKey || cfg.apiKey || BUNDLED_SLSKD_KEY).trim();
     if (!url) throw new Error('slskd mode needs a URL');
     runtimeConfig = { mode: 'slskd', slskdUrl: url, slskdKey: key };
-    directClient = null;
-    directClientPromise = null;
+    resetDirect();
     slskdProbe = null;
     return { mode: 'slskd', slskdUrl: url, connected: true };
   }
@@ -156,9 +160,22 @@ export function setConfig(cfg) {
     const pass = String(cfg.slskPass || cfg.pass || cfg.password || '').trim();
     if (!user || !pass) throw new Error('Soulseek login needs username and password');
     runtimeConfig = { mode: 'direct', slskUser: user, slskPass: pass };
-    directClient = null;
-    directClientPromise = null;
-    return { mode: 'direct', user, connected: true };
+    resetDirect();
+    // Actually attempt the login now, so the response tells the truth:
+    // connected:true only once server.slsknet.org accepted the credentials.
+    // Previously this returned connected:true unconditionally, so the UI
+    // said "Connected" right up until the first search failed.
+    try {
+      await getDirectClient(runtimeConfig);
+      return { mode: 'direct', user, connected: true, note: `Soulseek login as ${user}` };
+    } catch (err) {
+      return {
+        mode: 'direct',
+        user,
+        connected: false,
+        note: err.message || String(err),
+      };
+    }
   }
   throw new Error(`Unknown Soulseek mode: ${mode}`);
 }
@@ -172,7 +189,7 @@ export async function getStatus() {
     mode === 'free' ||
     mode === 'demo' ||
     (mode === 'slskd' && !!cfg.slskdUrl) ||
-    (mode === 'direct' && !!cfg.slskUser);
+    (mode === 'direct' && !!directClient);
   const needsLogin = false; // free mode always works; Soulseek is optional upgrade
   const slskdReady = !!probe.ok;
   const slskdLoggedIn = !!probe.loggedIn;
@@ -185,7 +202,11 @@ export async function getStatus() {
   } else if (mode === 'slskd') {
     note = `Proxying through slskd at ${cfg.slskdUrl}`;
   } else if (mode === 'direct') {
-    note = `Soulseek login as ${cfg.slskUser}`;
+    note = directClient
+      ? `Soulseek login as ${cfg.slskUser}`
+      : directLoginError
+        ? directLoginError
+        : `Soulseek account ${cfg.slskUser} — connecting`;
   } else {
     note = slskdReady
       ? 'Free music ready. Local slskd detected — optional: add Soulseek login for the full network.'
@@ -453,7 +474,15 @@ async function getDirectClient(cfg) {
   if (!cfg.slskUser || !cfg.slskPass) {
     throw new Error('Sign in with your Soulseek username and password first.');
   }
-  directClientPromise = new Promise((resolve, reject) => {
+  // slsk-client unconditionally mkdirs '/tmp/slsk' (non-recursively), which
+  // resolves to C:\tmp\slsk on Windows and ENOENTs when C:\tmp doesn't exist.
+  // Pre-create it so connect() can't crash on a stock machine.
+  try {
+    fs.mkdirSync(path.resolve('/tmp/slsk'), { recursive: true });
+  } catch {
+    /* best effort — POSIX always has /tmp */
+  }
+  const attempt = new Promise((resolve, reject) => {
     let slsk;
     try {
       slsk = require('slsk-client');
@@ -465,10 +494,15 @@ async function getDirectClient(cfg) {
       {
         user: cfg.slskUser,
         pass: cfg.slskPass,
+        // slsk-client's login watchdog defaults to a brutal 2000ms — a slow
+        // handshake to server.slsknet.org fails with "timeout login" even
+        // with valid credentials. Allow a realistic round-trip.
+        timeout: 15_000,
+        ...(process.env.SLSK_HOST ? { host: process.env.SLSK_HOST } : {}),
+        ...(process.env.SLSK_PORT ? { port: Number(process.env.SLSK_PORT) } : {}),
       },
       (err, client) => {
         if (err) {
-          directClientPromise = null;
           reject(new Error(`Soulseek login failed: ${err.message || err}`));
           return;
         }
@@ -477,7 +511,20 @@ async function getDirectClient(cfg) {
       },
     );
   });
-  return directClientPromise;
+  directClientPromise = attempt;
+  attempt
+    .then(() => {
+      directLoginError = null;
+    })
+    .catch((err) => {
+      directLoginError = err.message || String(err);
+      // Clear the cache on failure so the NEXT search retries instead of
+      // replaying this rejection forever (the old code kept a rejected
+      // promise cached until process restart — one "not installed" error
+      // poisoned every search after it).
+      if (directClientPromise === attempt) directClientPromise = null;
+    });
+  return attempt;
 }
 
 async function startDirectSearch(cfg, query) {
