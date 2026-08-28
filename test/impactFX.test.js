@@ -6,13 +6,17 @@ function fakeCtx2d() {
   const noop = () => {};
   const strokeAlphas = [];
   const compositeOps = [];
+  const fillStyles = [];
+  const gradientStops = [];
   return {
     strokeAlphas,
     compositeOps,
+    fillStyles,
+    gradientStops,
     save: noop, restore: noop, beginPath: noop, moveTo: noop, lineTo: noop, stroke: noop, fill: noop,
     fillRect: noop, ellipse: noop, arc: noop,
-    createRadialGradient() { return { addColorStop: noop }; },
-    set fillStyle(v) {},
+    createRadialGradient() { return { addColorStop: (offset, color) => gradientStops.push(color) }; },
+    set fillStyle(v) { fillStyles.push(v); },
     set lineWidth(v) {},
     set globalAlpha(v) {},
     set globalCompositeOperation(v) { compositeOps.push(v); },
@@ -87,6 +91,63 @@ test('splat() thins its blob count under a lower particleMul', () => {
   shed.splat(0, 500, 0.6);
   assert.ok(shed.splats.active[0].blobs.length < full.splats.active[0].blobs.length);
   assert.ok(shed.splats.active[0].blobs.length >= 2, 'never thins below a visible minimum');
+});
+
+test('trigger() tints the crater and landing dust with the given color', () => {
+  const fx = new ImpactFX(1);
+  fx.trigger(0, 500, 1, null, 1, '10,200,80');
+  assert.equal(fx.craters.active[0].color, '10,200,80');
+  for (const m of fx.motes.active) assert.equal(m.color, '10,200,80');
+});
+
+test('trigger() with no color falls back to the default warm-white, not a stale pooled color', () => {
+  // ObjectPool reuses objects across spawns, so a crater/mote slot that
+  // last served a colored landing must not leak that color into an
+  // uncolored one -- color must be explicitly reset, not just omitted.
+  const fx = new ImpactFX(1);
+  fx.trigger(0, 500, 1, null, 1, '10,200,80');
+  fx.step(1); // expire everything so the next trigger reuses the same pool slots
+  fx.trigger(0, 500, 1, null, 1, null);
+  assert.equal(fx.craters.active[0].color, null);
+  for (const m of fx.motes.active) assert.equal(m.color, null);
+});
+
+test("judgment() and sputter() motes are never biome-tinted, even after a colored trigger()", () => {
+  // The ring alone carries the verdict; a judgment/sputter mote reusing a
+  // pool slot that last held a colored landing-dust mote must not inherit
+  // that color.
+  const fx = new ImpactFX(1);
+  fx.trigger(0, 500, 1, null, 1, '10,200,80');
+  fx.step(1);
+  fx.judgment(0, 500, 'perfect');
+  for (const m of fx.motes.active) assert.equal(m.color, null);
+  fx.step(1);
+  fx.sputter(0, 500, 1, 1);
+  for (const m of fx.motes.active) assert.equal(m.color, null);
+});
+
+test('draw() renders the crater gradient and dust motes in the tinted color', () => {
+  const fx = new ImpactFX(1);
+  fx.trigger(0, 500, 1, null, 1, '10,200,80');
+  fx.step(0.01);
+
+  const ctx = fakeCtx2d();
+  fx.draw(ctx, 0, 0, false);
+
+  assert.ok(ctx.gradientStops.some((s) => s.startsWith('rgba(10,200,80,')), 'crater gradient uses the tinted color');
+  assert.ok(ctx.fillStyles.some((s) => s === 'rgba(10,200,80,0.9)'), 'landing dust motes use the tinted color');
+});
+
+test('draw() falls back to the default warm-white when trigger() was given no color', () => {
+  const fx = new ImpactFX(1);
+  fx.trigger(0, 500, 1, null, 1, null);
+  fx.step(0.01);
+
+  const ctx = fakeCtx2d();
+  fx.draw(ctx, 0, 0, false);
+
+  assert.ok(ctx.gradientStops.some((s) => s.startsWith('rgba(255,240,200,')), 'crater gradient falls back to warm-white');
+  assert.ok(ctx.fillStyles.some((s) => s === 'rgba(230,220,200,0.9)'), 'motes fall back to warm-white');
 });
 
 test('sputter() accumulates motes slower under a lower particleMul', () => {

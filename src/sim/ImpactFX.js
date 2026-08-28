@@ -30,10 +30,19 @@ export class ImpactFX {
     return Math.pow(clamp(vLandPxMs / vRefPxMs, 0, 1), 0.7);
   }
 
-  trigger(worldX, groundY, I, camera, particleMul = 1) {
+  /** `color` (an "r,g,b" triplet, matching the judgment ring color format):
+   *  tints the crater flash and landing dust with the active biome's
+   *  ambient particle color, the same "world visibly answers back" color
+   *  RippleFX's landingPuff already pulls from BiomeManager -- so a snowy
+   *  world kicks up pale dust and a lava world kicks up embers, not the
+   *  same warm-white regardless of song/world. Falls back to that
+   *  warm-white when no color is given (e.g. sputter's tests, or callers
+   *  that don't have a biome to ask). Judgment-tier and hazard/reward hues
+   *  are untouched -- those carry verdict language and stay protected. */
+  trigger(worldX, groundY, I, camera, particleMul = 1, color = null) {
     const rand = this.rand;
 
-    this.craters.spawn({ wx: worldX, y: groundY, R: 14 + 66 * I, alpha: 0.85 * I, life: 0.12 });
+    this.craters.spawn({ wx: worldX, y: groundY, R: 14 + 66 * I, alpha: 0.85 * I, life: 0.12, color });
 
     // color: null — pooled objects keep old fields across reuse, and this
     // slot may have last served a tier-tinted judgment ring.
@@ -49,7 +58,7 @@ export class ImpactFX {
         wx: worldX, y: groundY,
         vx: Math.cos(theta) * speed * dir,
         vy: -Math.abs(Math.sin(theta) * speed) - 20,
-        size: 3, life: 0.26 + 0.16 * rand(),
+        size: 3, life: 0.26 + 0.16 * rand(), color,
       });
     }
 
@@ -116,7 +125,7 @@ export class ImpactFX {
         y: groundY - (style.up ? 6 : 46),
         vx: (rand() * 2 - 1) * 50,
         vy: style.up ? -70 - rand() * 90 : 10 + rand() * 30,
-        size: 2.2, life: 0.3 + 0.2 * rand(),
+        size: 2.2, life: 0.3 + 0.2 * rand(), color: null, // never biome-tinted -- the ring alone carries the verdict
       });
     }
   }
@@ -133,7 +142,7 @@ export class ImpactFX {
       this.motes.spawn({
         wx: worldX + (rand() * 2 - 1) * 10, y: groundY,
         vx: (rand() * 2 - 1) * 20, vy: -20 - rand() * 20,
-        size: 1.5, life: 0.15 + 0.1 * rand(),
+        size: 1.5, life: 0.15 + 0.1 * rand(), color: null,
       });
     }
   }
@@ -184,8 +193,9 @@ export class ImpactFX {
       const x = toScreen(c.wx);
       const g = ctx.createRadialGradient(x, c.y, 0, x, c.y, c.R);
       const a = capFlashAlpha(c.alpha * (1 - t), reducedFlash);
-      g.addColorStop(0, `rgba(255,240,200,${a})`);
-      g.addColorStop(1, 'rgba(255,240,200,0)');
+      const rgb = c.color || '255,240,200';
+      g.addColorStop(0, `rgba(${rgb},${a})`);
+      g.addColorStop(1, `rgba(${rgb},0)`);
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.ellipse(x, c.y, c.R, c.R * 0.4, 0, 0, Math.PI * 2);
@@ -250,12 +260,12 @@ export class ImpactFX {
     }
     ctx.restore();
 
-    ctx.fillStyle = 'rgba(230,220,200,0.9)';
     for (const m of this.motes.active) {
       const t = m.age / m.life;
       const x = toScreen(m.wx);
       const size = m.size * (1 - t);
       if (size <= 0) continue;
+      ctx.fillStyle = `rgba(${m.color || '230,220,200'},0.9)`;
       ctx.globalAlpha = 1 - t;
       ctx.beginPath();
       ctx.arc(x, m.y, size, 0, Math.PI * 2);
