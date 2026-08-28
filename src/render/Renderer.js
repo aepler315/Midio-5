@@ -304,7 +304,7 @@ export class Renderer {
 
     // Rainbow brush: paint Midio's jump arcs, world-locked behind him.
     this.brush.update(sim.timeMs, pose.airborne, pose.worldX, pose.midioY, particleMul);
-    this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs, sim.apotheosis && sim.apotheosis.active ? 2 : 1);
+    this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs, sim.apotheosis && sim.apotheosis.active ? 2 : 1, !!sim.reducedFlash);
 
     // Contact shadows: grounds the trio to the terrain instead of letting
     // them read as floating. Drawn just before each character so the

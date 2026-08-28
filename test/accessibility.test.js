@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  getReducedFlash, setReducedFlash, capFlashAlpha, FLASH_CAP,
+  getReducedFlash, setReducedFlash, capFlashAlpha, FLASH_CAP, flashCompositeOp,
 } from '../src/ui/Accessibility.js';
 
 test('getReducedFlash defaults to false when no persisted value exists (or storage is unavailable)', () => {
@@ -36,6 +36,24 @@ test('capFlashAlpha never raises a value that was already below the cap', () => 
 test('capFlashAlpha at exactly FLASH_CAP is a no-op either way', () => {
   assert.equal(capFlashAlpha(FLASH_CAP, true), FLASH_CAP);
   assert.equal(capFlashAlpha(FLASH_CAP, false), FLASH_CAP);
+});
+
+// --- flashCompositeOp -------------------------------------------------
+//
+// Per-layer capFlashAlpha alone doesn't stop several capped-at-0.4 layers
+// from summing to a blown-out white under additive ('lighter') blending --
+// exactly the stacked-flash pattern a landing throws (ImpactFX ignition +
+// RippleFX rings/pulses/puffs + RainbowBrush dabs all overlapping the same
+// ground point). flashCompositeOp falls those effects back to normal
+// ('source-over') compositing under reduced-flash so capped layers occlude
+// instead of stacking.
+
+test('flashCompositeOp is additive (lighter) when reducedFlash is off', () => {
+  assert.equal(flashCompositeOp(false), 'lighter');
+});
+
+test('flashCompositeOp falls back to source-over when reducedFlash is on', () => {
+  assert.equal(flashCompositeOp(true), 'source-over');
 });
 
 // --- prefers-reduced-motion fallback --------------------------------------

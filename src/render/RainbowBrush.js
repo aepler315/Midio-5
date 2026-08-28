@@ -3,6 +3,8 @@
 // the hue wheel, world-locked so the stroke stays where he drew it and
 // scrolls away with the terrain. Deliberately unsmoothed -- crisp square
 // dabs snapped to pixels are the whole aesthetic.
+import { flashCompositeOp } from '../ui/Accessibility.js';
+
 const MAX_DABS = 320;
 const LIFE_MS = 3200;
 const SPACING_PX = 8;
@@ -29,14 +31,17 @@ export class RainbowBrush {
     if (this.dabs.length > MAX_DABS) this.dabs.shift();
   }
 
-  draw(ctx, worldX, originX, nowMs, sizeMul = 1) {
+  draw(ctx, worldX, originX, nowMs, sizeMul = 1, reducedFlash = false) {
     while (this.dabs.length && nowMs - this.dabs[0].bornMs >= LIFE_MS) this.dabs.shift();
     if (this.dabs.length === 0) return;
     ctx.save();
     // Additive, like every other trail/glow in the game (afterimages, beat
     // flashes) -- overlapping dabs from a dense flurry of jumps melt into
     // soft light instead of stacking as an opaque, hard-edged patchwork.
-    ctx.globalCompositeOperation = 'lighter';
+    // Under reduced-flash a dense flurry piling up dabs additively is
+    // exactly the kind of stacked-flash this toggle exists to prevent, so
+    // fall back to normal compositing (see Accessibility.js:flashCompositeOp).
+    ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
     for (const d of this.dabs) {
       const age = (nowMs - d.bornMs) / LIFE_MS;
       const size = Math.max(3, Math.round((9 - 4 * age) * sizeMul));
