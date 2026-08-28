@@ -44,6 +44,29 @@ test('judgment() never throws once the ring pool is exhausted', () => {
   });
 });
 
+test('judgment rings are never starved by a saturated landing-ring pool', () => {
+  // Landing dust rings and judgment (verdict) rings used to share one
+  // 16-slot pool, so a dense passage of landings could exhaust it and
+  // silently drop the player's judgment ring feedback. They're now
+  // separate pools -- saturating the landing pool must not stop a
+  // judgment ring from spawning.
+  const fx = new ImpactFX(1);
+  for (let i = 0; i < 40; i++) fx.trigger(i * 10, 500, 0.8, null);
+  assert.equal(fx.rings.active.length, 16, 'landing ring pool is saturated');
+
+  fx.judgment(0, 500, 'perfect');
+  assert.equal(fx.judgmentRings.active.length, 1, 'judgment ring still spawns despite the saturated landing pool');
+});
+
+test('landing rings are never starved by a saturated judgment-ring pool', () => {
+  const fx = new ImpactFX(1);
+  for (let i = 0; i < 40; i++) fx.judgment(i * 10, 500, 'perfect');
+  assert.equal(fx.judgmentRings.active.length, 16, 'judgment ring pool is saturated');
+
+  fx.trigger(0, 500, 0.8, null);
+  assert.equal(fx.rings.active.length, 1, 'landing ring still spawns despite the saturated judgment pool');
+});
+
 test('draw() caps flash-heavy alpha (crater, dust ring, ignition) when reducedFlash is set', () => {
   const fx = new ImpactFX(1);
   fx.trigger(0, 500, 1, null);
@@ -60,6 +83,19 @@ test('draw() caps flash-heavy alpha (crater, dust ring, ignition) when reducedFl
   const reducedMax = Math.max(...reducedCtx.strokeAlphas);
   assert.ok(reducedMax <= normalMax, 'reducedFlash must never exceed the normal alpha');
   assert.ok(reducedMax <= 0.4 + 1e-9, 'reducedFlash must cap alpha at the flash cap');
+});
+
+test('draw() renders judgment rings from their own pool alongside landing rings', () => {
+  const fx = new ImpactFX(1);
+  fx.trigger(0, 500, 0.3, null); // I <= 0.5 -- no star-polygon shockwave, isolating the two ring pools
+  fx.judgment(0, 500, 'perfect');
+  fx.step(0.01);
+
+  const ctx = fakeCtx2d();
+  fx.draw(ctx, 0, 0, false);
+  // One stroke per ring (landing + judgment) -- strokeAlphas records one
+  // entry per strokeStyle assignment, so both pools' rings show up here.
+  assert.equal(ctx.strokeAlphas.length, 2, 'both the landing ring and the judgment ring are drawn');
 });
 
 test('draw() falls the ignition ring back to source-over compositing under reducedFlash', () => {

@@ -11,11 +11,16 @@ export class ImpactFX {
     this.rand = mulberry32(seed);
 
     this.craters = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 16);
-    this.rings = new ObjectPool(
-      () => ({ jitter: new Float32Array(24) }),
-      (o, i) => { Object.assign(o, i, { age: 0 }); },
-      16,
-    );
+    // Landing dust rings and judgment (tap-verdict) rings used to share one
+    // 16-slot pool. In a dense passage -- judgment rings firing per note --
+    // the ambient landing rings could exhaust it, and ObjectPool.spawn()
+    // silently returns null at capacity: the player's "perfect" verdict
+    // would just not appear, with no signal anything was dropped. Feedback
+    // must never be starved by decoration, so it gets its own pool.
+    const ringFactory = () => ({ jitter: new Float32Array(24) });
+    const ringInit = (o, i) => { Object.assign(o, i, { age: 0 }); };
+    this.rings = new ObjectPool(ringFactory, ringInit, 16);
+    this.judgmentRings = new ObjectPool(ringFactory, ringInit, 16);
     this.motes = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 400);
     this.polyRings = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 8);
     this.splats = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 20);
@@ -44,8 +49,9 @@ export class ImpactFX {
 
     this.craters.spawn({ wx: worldX, y: groundY, R: 14 + 66 * I, alpha: 0.85 * I, life: 0.12, color });
 
-    // color: null — pooled objects keep old fields across reuse, and this
-    // slot may have last served a tier-tinted judgment ring.
+    // color: null — the dust ring itself is never biome-tinted (only the
+    // crater/motes are); explicit since ObjectPool objects keep old fields
+    // across reuse.
     const ring = this.rings.spawn({ wx: worldX, y: groundY, Rd: 40 + 120 * I, tau: 0.09, life: 0.42, color: null });
     if (ring) for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * 4 * I;
 
@@ -103,8 +109,10 @@ export class ImpactFX {
     this.ignitions.spawn({ wx: worldX, y: groundY, Rd: 150, life: 0.5 });
   }
 
-  /** Tap-judgment burst at Midio: a tier-colored halo ring (reusing the
-   * pooled dust rings, lifted to body height) plus a few motes — rising for
+  /** Tap-judgment burst at Midio: a tier-colored halo ring (its own pool,
+   * separate from the ambient landing dust rings so a dense passage of
+   * landings can never starve the player's verdict feedback -- see the
+   * constructor -- lifted to body height) plus a few motes — rising for
    * hits, drooping for a sour press. The color alone carries the verdict,
    * so the shape stays language-free. */
   judgment(worldX, groundY, tier, particleMul = 1) {
@@ -116,7 +124,7 @@ export class ImpactFX {
     }[tier];
     if (!style) return;
     const rand = this.rand;
-    const ring = this.rings.spawn({ wx: worldX, y: groundY - 42, Rd: style.Rd, tau: 0.09, life: 0.38, color: style.col });
+    const ring = this.judgmentRings.spawn({ wx: worldX, y: groundY - 42, Rd: style.Rd, tau: 0.09, life: 0.38, color: style.col });
     if (ring) for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * style.jag;
     const n = Math.round(style.motes * particleMul);
     for (let i = 0; i < n; i++) {
@@ -150,6 +158,7 @@ export class ImpactFX {
   step(dtSec) {
     this.craters.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.rings.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
+    this.judgmentRings.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.polyRings.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.splats.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.ignitions.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
@@ -202,7 +211,10 @@ export class ImpactFX {
       ctx.fill();
     }
 
-    for (const r of this.rings.active) {
+    // Landing dust rings and judgment rings are drawn from separate pools
+    // (see the constructor) but render identically, so both pools feed the
+    // same loop here.
+    for (const r of [...this.rings.active, ...this.judgmentRings.active]) {
       const t = r.age / r.life;
       const radius = r.Rd * (1 - Math.exp(-r.age / r.tau));
       const alpha = capFlashAlpha(Math.pow(1 - t, 2), reducedFlash);
