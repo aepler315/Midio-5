@@ -7,7 +7,7 @@ function melodyEvt(tMs, pitch = 60, vel = 0.7) {
   return { tMs, pitch, vel, role: 'MELODY' };
 }
 
-test('nextDotPos: first dot lands in region, subsequent dots stay in region and step 40-110px', () => {
+test('nextDotPos: first dot lands in region, subsequent dots stay in region and hop scales with the field diagonal', () => {
   const rand = mulberry32(1);
   const w = 1280, h = 720;
   // Region now spans nearly the whole sky (0.03-0.97 x, 0.04-0.95 y) --
@@ -18,13 +18,44 @@ test('nextDotPos: first dot lands in region, subsequent dots stay in region and 
   assert.ok(p0.x >= 0.03 * w && p0.x <= 0.97 * w);
   assert.ok(p0.y >= 0.04 * h && p0.y <= 0.95 * h);
   let prev = p0;
+  const diag = Math.hypot(w, h);
   for (let i = 0; i < 50; i++) {
     const p = nextDotPos(prev, rand, w, h);
     assert.ok(p.x >= 0.03 * w - 1e-6 && p.x <= 0.97 * w + 1e-6);
     assert.ok(p.y >= 0.04 * h - 1e-6 && p.y <= 0.95 * h + 1e-6);
     assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
+    // Hop distance (pre-reflection) is 5%-11% of the field diagonal, not a
+    // fixed pixel range -- verify it against an interior prev (away from
+    // REGION's edges, so reflection can't shorten the observed distance).
+    if (prev.x > 0.2 * w && prev.x < 0.8 * w && prev.y > 0.2 * h && prev.y < 0.8 * h) {
+      const stepDist = Math.hypot(p.x - prev.x, p.y - prev.y);
+      assert.ok(stepDist >= 0.05 * diag - 1e-6 && stepDist <= 0.11 * diag + 1e-6,
+        `step ${stepDist} should be within 5%-11% of the diagonal (${diag})`);
+    }
     prev = p;
   }
+});
+
+test('nextDotPos: hop distance scales up on a larger field, keeping the same proportion of the diagonal', () => {
+  // A figure used to stay within ~150px regardless of screen size --
+  // averaging out to a small "chunk" on a large canvas. The hop must widen
+  // proportionally, not stay pinned to a fixed pixel range.
+  const small = { w: 1280, h: 720 };
+  const large = { w: 2560, h: 1440 }; // exactly double
+  const smallDiag = Math.hypot(small.w, small.h);
+  const largeDiag = Math.hypot(large.w, large.h);
+  assert.ok(largeDiag > smallDiag * 1.9); // sanity: the field really did grow
+
+  // Same seed, same interior starting point (as a fraction of the field) on
+  // both fields, so the only difference is scale.
+  const randSmall = mulberry32(7), randLarge = mulberry32(7);
+  const prevSmall = { x: 0.5 * small.w, y: 0.5 * small.h };
+  const prevLarge = { x: 0.5 * large.w, y: 0.5 * large.h };
+  const pSmall = nextDotPos(prevSmall, randSmall, small.w, small.h);
+  const pLarge = nextDotPos(prevLarge, randLarge, large.w, large.h);
+  const stepSmall = Math.hypot(pSmall.x - prevSmall.x, pSmall.y - prevSmall.y);
+  const stepLarge = Math.hypot(pLarge.x - prevLarge.x, pLarge.y - prevLarge.y);
+  assert.ok(stepLarge > stepSmall * 1.5, `step on the larger field (${stepLarge}) should scale up from (${stepSmall})`);
 });
 
 test('a full figure seeds then connects, closing after targetCount-1 edge-revealing onsets', () => {
