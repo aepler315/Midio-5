@@ -1622,7 +1622,7 @@ export class BiomeManager {
         ctx.restore();
       }
     }
-    this.drawDeepSky(ctx, skyVoyage); // Midasus's sky voyage, when she's away -- behind the mountains below
+    this.drawDeepSky(ctx, skyVoyage, canvas); // Midasus's sky voyage, when she's away -- behind the mountains below
     // Ambient connect-the-dots + reward volleys read as starlight, so the
     // night sky brightens them the same way it brightens the atlas stars.
     const nightAlphaMul = (1 + 1.2 * dn.night) * Math.max(0.25, skyA);
@@ -1882,9 +1882,29 @@ export class BiomeManager {
    * constellations (completed figures frozen into the sky), the live
    * persistent trail sky-writing the current figure, and a small mote of
    * light at her current position. A no-op whenever she isn't away. */
-  drawDeepSky(ctx, voyage) {
+  drawDeepSky(ctx, voyage, canvas) {
     if (!voyage) return;
     const nowMs = this.tSec * 1000;
+    // Every position SkyVoyage stores (station, trail, constellations, the
+    // permanent atlas, novae, sparkles, micro-slashes) is baked as an
+    // ABSOLUTE pixel against Midasus's own stageW/stageH -- the nominal
+    // canvasWidth/Height Simulation was constructed with (see Midasus.js),
+    // which is NOT the same frame this draws into: Renderer pads the stage
+    // by SHAKE_MARGIN_PX on every side and widens it further under camera
+    // pull-back (CameraDirector.zoom), so the live canvas is routinely
+    // wider/taller than the nominal dims these points were computed
+    // against. Every other sky object in this file (stars, constellation
+    // weaver, dust lanes...) stores a FRACTION and rescales against the
+    // actual canvas at draw time for exactly this reason; SkyVoyage never
+    // did, so her whole sky-writing trail sat pinned to the nominal span
+    // while the live frame around it grew -- reading as drawn in the wrong
+    // part of the screen, and (since the terrain silhouette below IS
+    // rescaled to the live canvas every frame) landing in front of terrain
+    // it should have been safely behind. This.w/this.h are the same
+    // canvasWidth/canvasHeight Midasus was constructed with, so they're the
+    // correct reference frame to rescale against.
+    const sx = canvas.width / this.w, sy = canvas.height / this.h;
+    const X = (x) => x * sx, Y = (y) => y * sy;
 
     // The Star Atlas draws whether or not she's away: every crystallized
     // constellation stays in the sky for the rest of the song, twinkling
@@ -1905,15 +1925,15 @@ export class BiomeManager {
           const dx = b.x - a.x, dy = b.y - a.y;
           if (dx * dx + dy * dy > ATLAS_EDGE * ATLAS_EDGE) continue;
           ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
+          ctx.moveTo(X(a.x), Y(a.y));
+          ctx.lineTo(X(b.x), Y(b.y));
           ctx.stroke();
         }
         for (const s of entry.stars) {
           const twinkle = 0.5 + 0.5 * Math.sin(nowMs * 0.0013 + s.phase);
           ctx.fillStyle = `hsla(${entry.hue}, 45%, 88%, ${(0.16 + 0.16 * twinkle) * (1 + 1.6 * pulse)})`;
           ctx.beginPath();
-          ctx.arc(s.x, s.y, 1.1 + 0.5 * twinkle, 0, Math.PI * 2);
+          ctx.arc(X(s.x), Y(s.y), 1.1 + 0.5 * twinkle, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -1932,16 +1952,17 @@ export class BiomeManager {
         const u = Math.min(1, age / 1100);
         const easeOut = 1 - (1 - u) ** 3;
         const fade = 1 - u;
+        const nx = X(n.x), ny = Y(n.y);
 
         ctx.strokeStyle = `hsla(${n.hue}, 70%, 85%, ${capFlashAlpha(0.7 * fade, this.reducedFlash)})`;
         ctx.lineWidth = 0.5 + 2 * fade;
         ctx.beginPath();
-        ctx.arc(n.x, n.y, 4 + 62 * easeOut, 0, Math.PI * 2);
+        ctx.arc(nx, ny, 4 + 62 * easeOut, 0, Math.PI * 2);
         ctx.stroke();
 
         ctx.fillStyle = `hsla(${n.hue}, 30%, 96%, ${capFlashAlpha(fade, this.reducedFlash)})`;
         ctx.beginPath();
-        ctx.arc(n.x, n.y, 1 + 3 * fade, 0, Math.PI * 2);
+        ctx.arc(nx, ny, 1 + 3 * fade, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.strokeStyle = `hsla(${n.hue}, 60%, 90%, ${capFlashAlpha(0.5 * fade, this.reducedFlash)})`;
@@ -1950,8 +1971,8 @@ export class BiomeManager {
           const ang = n.phase + (k / 5) * Math.PI * 2;
           const len = 10 + 42 * easeOut;
           ctx.beginPath();
-          ctx.moveTo(n.x + Math.cos(ang) * 5, n.y + Math.sin(ang) * 5);
-          ctx.lineTo(n.x + Math.cos(ang) * len, n.y + Math.sin(ang) * len);
+          ctx.moveTo(nx + Math.cos(ang) * 5, ny + Math.sin(ang) * 5);
+          ctx.lineTo(nx + Math.cos(ang) * len, ny + Math.sin(ang) * len);
           ctx.stroke();
         }
       }
@@ -1977,14 +1998,14 @@ export class BiomeManager {
         const dx = b.x - a.x, dy = b.y - a.y;
         if (dx * dx + dy * dy > CONST_EDGE_MAX * CONST_EDGE_MAX) continue;
         ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
+        ctx.moveTo(X(a.x), Y(a.y));
+        ctx.lineTo(X(b.x), Y(b.y));
         ctx.stroke();
       }
       ctx.fillStyle = `hsla(${c.hue}, 75%, 90%, ${0.9 * life})`;
       for (const p of c.points) {
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 2.4, 0, Math.PI * 2);
+        ctx.arc(X(p.x), Y(p.y), 2.4, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -2003,13 +2024,14 @@ export class BiomeManager {
       const dx = b.x - a.x, dy = b.y - a.y;
       if (dx * dx + dy * dy > GAP * GAP) continue;
       const u = i / trail.length; // older points fade toward transparent
+      const ax = X(a.x), ay = Y(a.y), bx = X(b.x), by = Y(b.y);
       ctx.strokeStyle = `hsla(${b.hue}, 65%, 78%, ${0.22 * u})`;
       ctx.lineWidth = 6;
       ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
       ctx.strokeStyle = `hsla(${b.hue}, 75%, 88%, ${0.85 * u})`;
       ctx.lineWidth = 1.6;
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
     }
 
     // Kick sparkles: radial bursts flung off her on every beat out there.
@@ -2017,7 +2039,7 @@ export class BiomeManager {
       const life = 1 - s.age / 0.6;
       if (life <= 0) continue;
       ctx.fillStyle = `hsla(${s.hue}, 80%, 88%, ${0.85 * life})`;
-      ctx.fillRect(s.x - 1, s.y - 1, 2.2, 2.2);
+      ctx.fillRect(X(s.x) - 1, Y(s.y) - 1, 2.2, 2.2);
     }
 
     // Micro-slashes: each melody onset cuts a brief bright line at her
@@ -2027,11 +2049,12 @@ export class BiomeManager {
       const u = s.age / 0.25;
       if (u >= 1) continue;
       const ext = 8 + 14 * u;
+      const sx2 = X(s.x), sy2 = Y(s.y);
       ctx.strokeStyle = `hsla(${s.hue}, 75%, 85%, ${0.9 * (1 - u)})`;
       ctx.lineWidth = 1.6 * (1 - u * 0.5);
       ctx.beginPath();
-      ctx.moveTo(s.x - Math.cos(s.ang) * ext, s.y - Math.sin(s.ang) * ext);
-      ctx.lineTo(s.x + Math.cos(s.ang) * ext, s.y + Math.sin(s.ang) * ext);
+      ctx.moveTo(sx2 - Math.cos(s.ang) * ext, sy2 - Math.sin(s.ang) * ext);
+      ctx.lineTo(sx2 + Math.cos(s.ang) * ext, sy2 + Math.sin(s.ang) * ext);
       ctx.stroke();
     }
 
@@ -2041,13 +2064,14 @@ export class BiomeManager {
     // during those phases would double her up.
     if (voyage.phase === VoyagePhase.DEEP_SPACE) {
       const r = 2 + 3 * (1 - voyage.depth);
+      const px = X(voyage.p.x), py = Y(voyage.p.y);
       ctx.fillStyle = `hsla(${voyage.hue}, 60%, 85%, ${0.28 * voyage.depth})`;
       ctx.beginPath();
-      ctx.arc(voyage.p.x, voyage.p.y, r * 3.4, 0, Math.PI * 2);
+      ctx.arc(px, py, r * 3.4, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = `hsla(${voyage.hue}, 80%, 92%, ${0.6 + 0.4 * voyage.depth})`;
       ctx.beginPath();
-      ctx.arc(voyage.p.x, voyage.p.y, r, 0, Math.PI * 2);
+      ctx.arc(px, py, r, 0, Math.PI * 2);
       ctx.fill();
     }
 
