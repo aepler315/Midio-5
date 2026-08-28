@@ -40,6 +40,7 @@ import { PerfGovernor } from '../render/PerfGovernor.js';
 import { HighlightReel } from '../render/HighlightReel.js';
 import { clamp01, hashSeed } from '../utils/math.js';
 import { resolveSongSeed } from '../utils/seed.js';
+import { hexToRgb } from '../utils/color.js';
 import { buildNoteChart } from './NoteChart.js';
 import { TapJudge } from './TapJudge.js';
 import { ScoreKeeper } from './ScoreKeeper.js';
@@ -142,7 +143,12 @@ export class Simulation {
     this.jump.setKickTimes(conductor.timeline.filter((e) => e.role === Role.RHYTHM && e.kick).map((e) => e.tMs));
     this.camera = new CameraDirector();
     this.comboSystem = new ComboSystem();
-    this.impactFX = new ImpactFX();
+    // Resolved early (only needs conductor/pinnedSeed) so ImpactFX -- splat
+    // color pick, mote spread -- is seeded per-song instead of always
+    // replaying identically off the ImpactFX default seed.
+    const songSeed = resolveSongSeed(conductor, pinnedSeed);
+    this.songSeed = songSeed;
+    this.impactFX = new ImpactFX(songSeed);
     this.rippleFX = new RippleFX();
     this.telegraph = new TelegraphScanner();
     this.obstacles = new ObstacleSpawner(paramBus);
@@ -195,8 +201,6 @@ export class Simulation {
     });
     this.broshi._lastBarPeriodMs = (60000 / bpm) * 4;
 
-    const songSeed = resolveSongSeed(conductor, pinnedSeed);
-    this.songSeed = songSeed;
     this.performer = new MidioPerformer(songSeed);
     this.apotheosis = new ApotheosisDirector();
     this.calm = new CalmDirector();
@@ -846,19 +850,22 @@ export class Simulation {
       this.performer.onLanding(nowMs, this.comboSystem.justClean, this.comboSystem.displayM, I);
       this.performer.onStreak(this.comboSystem.streak, nowMs);
       this.scoreKeeper.noteStreak(this.comboSystem.streak);
-      this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera, this.perf.particleMul);
-      this.groundField.impulse(this.worldX, I, nowMs); // a shockwave ripples the terrain outward from the landing
-      this.rippleFX.trigger(this.worldX, this.midio.groundY, I, this.perf.particleMul); // the screen-space visual echo of that shockwave
       // The world visibly answers back: a landing kicks up whatever the
       // active biome's ambient particle color is (snow, embers, pollen...)
       // -- zero new per-biome code, just BiomeProfiles' existing palette.
       // Mid-flood, it's a splash instead -- same puff, water-blue tint
-      // (matching OceanLife/BiomeManager's own water color).
-      this.rippleFX.landingPuff(
-        this.worldX, this.midio.groundY, I,
-        this.flood.active ? '#55c8f0' : this.biomes.currentParticleColor(),
-        this.perf.particleMul,
+      // (matching OceanLife/BiomeManager's own water color). ImpactFX's
+      // crater flash and landing dust share the exact same color, in the
+      // same "r,g,b" triplet format its judgment rings already use.
+      const landingColor = this.flood.active ? '#55c8f0' : this.biomes.currentParticleColor();
+      const landingRgb = hexToRgb(landingColor);
+      this.impactFX.trigger(
+        this.worldX, this.midio.groundY, I, this.camera, this.perf.particleMul,
+        `${landingRgb.r},${landingRgb.g},${landingRgb.b}`,
       );
+      this.groundField.impulse(this.worldX, I, nowMs); // a shockwave ripples the terrain outward from the landing
+      this.rippleFX.trigger(this.worldX, this.midio.groundY, I, this.perf.particleMul); // the screen-space visual echo of that shockwave
+      this.rippleFX.landingPuff(this.worldX, this.midio.groundY, I, landingColor, this.perf.particleMul);
       if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY, this.perf.particleMul);
       this.fracture.registerImpact(I);
 

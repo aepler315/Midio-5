@@ -11,11 +11,16 @@ export class ImpactFX {
     this.rand = mulberry32(seed);
 
     this.craters = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 16);
-    this.rings = new ObjectPool(
-      () => ({ jitter: new Float32Array(24) }),
-      (o, i) => { Object.assign(o, i, { age: 0 }); },
-      16,
-    );
+    // Landing dust rings and judgment (tap-verdict) rings used to share one
+    // 16-slot pool. In a dense passage -- judgment rings firing per note --
+    // the ambient landing rings could exhaust it, and ObjectPool.spawn()
+    // silently returns null at capacity: the player's "perfect" verdict
+    // would just not appear, with no signal anything was dropped. Feedback
+    // must never be starved by decoration, so it gets its own pool.
+    const ringFactory = () => ({ jitter: new Float32Array(24) });
+    const ringInit = (o, i) => { Object.assign(o, i, { age: 0 }); };
+    this.rings = new ObjectPool(ringFactory, ringInit, 16);
+    this.judgmentRings = new ObjectPool(ringFactory, ringInit, 16);
     this.motes = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 400);
     this.polyRings = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 8);
     this.splats = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i, { age: 0 }), 20);
@@ -30,13 +35,23 @@ export class ImpactFX {
     return Math.pow(clamp(vLandPxMs / vRefPxMs, 0, 1), 0.7);
   }
 
-  trigger(worldX, groundY, I, camera, particleMul = 1) {
+  /** `color` (an "r,g,b" triplet, matching the judgment ring color format):
+   *  tints the crater flash and landing dust with the active biome's
+   *  ambient particle color, the same "world visibly answers back" color
+   *  RippleFX's landingPuff already pulls from BiomeManager -- so a snowy
+   *  world kicks up pale dust and a lava world kicks up embers, not the
+   *  same warm-white regardless of song/world. Falls back to that
+   *  warm-white when no color is given (e.g. sputter's tests, or callers
+   *  that don't have a biome to ask). Judgment-tier and hazard/reward hues
+   *  are untouched -- those carry verdict language and stay protected. */
+  trigger(worldX, groundY, I, camera, particleMul = 1, color = null) {
     const rand = this.rand;
 
-    this.craters.spawn({ wx: worldX, y: groundY, R: 14 + 66 * I, alpha: 0.85 * I, life: 0.12 });
+    this.craters.spawn({ wx: worldX, y: groundY, R: 14 + 66 * I, alpha: 0.85 * I, life: 0.12, color });
 
-    // color: null — pooled objects keep old fields across reuse, and this
-    // slot may have last served a tier-tinted judgment ring.
+    // color: null — the dust ring itself is never biome-tinted (only the
+    // crater/motes are); explicit since ObjectPool objects keep old fields
+    // across reuse.
     const ring = this.rings.spawn({ wx: worldX, y: groundY, Rd: 40 + 120 * I, tau: 0.09, life: 0.42, color: null });
     if (ring) for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * 4 * I;
 
@@ -49,7 +64,7 @@ export class ImpactFX {
         wx: worldX, y: groundY,
         vx: Math.cos(theta) * speed * dir,
         vy: -Math.abs(Math.sin(theta) * speed) - 20,
-        size: 3, life: 0.26 + 0.16 * rand(),
+        size: 3, life: 0.26 + 0.16 * rand(), color,
       });
     }
 
@@ -94,8 +109,10 @@ export class ImpactFX {
     this.ignitions.spawn({ wx: worldX, y: groundY, Rd: 150, life: 0.5 });
   }
 
-  /** Tap-judgment burst at Midio: a tier-colored halo ring (reusing the
-   * pooled dust rings, lifted to body height) plus a few motes — rising for
+  /** Tap-judgment burst at Midio: a tier-colored halo ring (its own pool,
+   * separate from the ambient landing dust rings so a dense passage of
+   * landings can never starve the player's verdict feedback -- see the
+   * constructor -- lifted to body height) plus a few motes — rising for
    * hits, drooping for a sour press. The color alone carries the verdict,
    * so the shape stays language-free. */
   judgment(worldX, groundY, tier, particleMul = 1) {
@@ -107,7 +124,7 @@ export class ImpactFX {
     }[tier];
     if (!style) return;
     const rand = this.rand;
-    const ring = this.rings.spawn({ wx: worldX, y: groundY - 42, Rd: style.Rd, tau: 0.09, life: 0.38, color: style.col });
+    const ring = this.judgmentRings.spawn({ wx: worldX, y: groundY - 42, Rd: style.Rd, tau: 0.09, life: 0.38, color: style.col });
     if (ring) for (let i = 0; i < 24; i++) ring.jitter[i] = (rand() * 2 - 1) * style.jag;
     const n = Math.round(style.motes * particleMul);
     for (let i = 0; i < n; i++) {
@@ -116,7 +133,7 @@ export class ImpactFX {
         y: groundY - (style.up ? 6 : 46),
         vx: (rand() * 2 - 1) * 50,
         vy: style.up ? -70 - rand() * 90 : 10 + rand() * 30,
-        size: 2.2, life: 0.3 + 0.2 * rand(),
+        size: 2.2, life: 0.3 + 0.2 * rand(), color: null, // never biome-tinted -- the ring alone carries the verdict
       });
     }
   }
@@ -133,7 +150,7 @@ export class ImpactFX {
       this.motes.spawn({
         wx: worldX + (rand() * 2 - 1) * 10, y: groundY,
         vx: (rand() * 2 - 1) * 20, vy: -20 - rand() * 20,
-        size: 1.5, life: 0.15 + 0.1 * rand(),
+        size: 1.5, life: 0.15 + 0.1 * rand(), color: null,
       });
     }
   }
@@ -141,6 +158,7 @@ export class ImpactFX {
   step(dtSec) {
     this.craters.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.rings.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
+    this.judgmentRings.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.polyRings.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.splats.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
     this.ignitions.step(dtSec, (o, dt) => { o.age += dt; return o.age < o.life; });
@@ -157,20 +175,30 @@ export class ImpactFX {
     }
   }
 
-  /** worldX: current scroll distance; originX: screen-space x that worldX=0 maps to (Midio's screenX). */
-  draw(ctx, worldX, originX, reducedFlash = false) {
+  /** worldX: current scroll distance; originX: screen-space x that worldX=0
+   *  maps to (Midio's screenX); canvasWidth: the visible logical width, so
+   *  bursts scrolled well off-screen are skipped instead of drawn every
+   *  frame regardless -- during a fast passage a large share of the pools
+   *  (400 motes, 60 scars, 20 splats...) can be off-canvas. Defaults to
+   *  Infinity (cull nothing) for callers that don't have a canvas width
+   *  handy. Margin sized to each effect's own max radius/spread so nothing
+   *  visibly pops in/out at the cull boundary. */
+  draw(ctx, worldX, originX, reducedFlash = false, canvasWidth = Infinity) {
     const toScreen = (wx) => wx - worldX + originX;
+    const inView = (x, margin) => x > -margin && x < canvasWidth + margin;
 
     for (const s of this.scars) {
+      const x = toScreen(s.wx);
+      if (!inView(x, s.width)) continue;
       const t = s.age / s.maxAge;
       ctx.fillStyle = `rgba(20,10,25,${0.35 * (1 - t)})`;
-      const x = toScreen(s.wx);
       ctx.fillRect(x - s.width / 2, s.y, s.width, 4);
     }
 
     for (const sp of this.splats.active) {
-      const t = sp.age / sp.life;
       const x = toScreen(sp.wx);
+      if (!inView(x, 40)) continue; // blobs spread up to ~28px + their own size
+      const t = sp.age / sp.life;
       ctx.fillStyle = sp.color;
       ctx.globalAlpha = 0.8 * (1 - t);
       for (const b of sp.blobs) {
@@ -180,23 +208,29 @@ export class ImpactFX {
     ctx.globalAlpha = 1;
 
     for (const c of this.craters.active) {
-      const t = c.age / c.life;
       const x = toScreen(c.wx);
+      if (!inView(x, c.R)) continue;
+      const t = c.age / c.life;
       const g = ctx.createRadialGradient(x, c.y, 0, x, c.y, c.R);
       const a = capFlashAlpha(c.alpha * (1 - t), reducedFlash);
-      g.addColorStop(0, `rgba(255,240,200,${a})`);
-      g.addColorStop(1, 'rgba(255,240,200,0)');
+      const rgb = c.color || '255,240,200';
+      g.addColorStop(0, `rgba(${rgb},${a})`);
+      g.addColorStop(1, `rgba(${rgb},0)`);
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.ellipse(x, c.y, c.R, c.R * 0.4, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    for (const r of this.rings.active) {
+    // Landing dust rings and judgment rings are drawn from separate pools
+    // (see the constructor) but render identically, so both pools feed the
+    // same loop here.
+    for (const r of [...this.rings.active, ...this.judgmentRings.active]) {
+      const x = toScreen(r.wx);
+      if (!inView(x, r.Rd)) continue;
       const t = r.age / r.life;
       const radius = r.Rd * (1 - Math.exp(-r.age / r.tau));
       const alpha = capFlashAlpha(Math.pow(1 - t, 2), reducedFlash);
-      const x = toScreen(r.wx);
       ctx.strokeStyle = `rgba(${r.color || '255,255,255'},${0.7 * alpha})`;
       ctx.lineWidth = Math.max(0.5, 3 * (1 - t));
       ctx.beginPath();
@@ -214,10 +248,11 @@ export class ImpactFX {
     // spinning as they expand, spikes rippling with a 3-lobe wobble --
     // same ground-plane perspective squash as the dust ring above.
     for (const p of this.polyRings.active) {
+      const x = toScreen(p.wx);
+      if (!inView(x, p.Rd)) continue;
       const t = p.age / p.life;
       const envelope = p.Rd * (1 - Math.exp(-p.age / p.tau));
       const alpha = capFlashAlpha(Math.pow(1 - t, 2) * 0.55 * p.I, reducedFlash);
-      const x = toScreen(p.wx);
       const rot = p.rot0 + p.spin * p.age;
       ctx.strokeStyle = `rgba(255,235,170,${alpha})`;
       ctx.lineWidth = Math.max(0.5, 2.2 * (1 - t));
@@ -238,10 +273,11 @@ export class ImpactFX {
     ctx.save();
     ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
     for (const g of this.ignitions.active) {
+      const x = toScreen(g.wx);
+      if (!inView(x, g.Rd)) continue;
       const t = g.age / g.life;
       const radius = g.Rd * (1 - (1 - t) ** 3);
       const alpha = capFlashAlpha((1 - t) ** 2, reducedFlash);
-      const x = toScreen(g.wx);
       ctx.strokeStyle = `rgba(255,225,140,${(0.8 * alpha).toFixed(3)})`;
       ctx.lineWidth = Math.max(0.5, 4 * (1 - t));
       ctx.beginPath();
@@ -250,12 +286,13 @@ export class ImpactFX {
     }
     ctx.restore();
 
-    ctx.fillStyle = 'rgba(230,220,200,0.9)';
     for (const m of this.motes.active) {
-      const t = m.age / m.life;
       const x = toScreen(m.wx);
+      if (!inView(x, 6)) continue; // motes are small and never drift far
+      const t = m.age / m.life;
       const size = m.size * (1 - t);
       if (size <= 0) continue;
+      ctx.fillStyle = `rgba(${m.color || '230,220,200'},0.9)`;
       ctx.globalAlpha = 1 - t;
       ctx.beginPath();
       ctx.arc(x, m.y, size, 0, Math.PI * 2);

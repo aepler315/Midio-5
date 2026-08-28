@@ -42,15 +42,31 @@ function groundFadeAlpha(yFrac) {
   return 1 - 0.85 * clamp01((yFrac - 0.55) / 0.4);
 }
 
-/** Seeded next dot position, 40-110px from `prev` in a drifting direction,
- *  reflected back into the upper-sky region if it would step outside.
- *  `prev` null places the first dot anywhere in the region. Pure. */
+// Hop distance as a fraction of the field's diagonal, not a fixed pixel
+// range: a fixed 40-110px hop produced a figure whose dots stayed within
+// ~150px of each other regardless of screen size -- averaging out to only
+// ~12-13% of the sky's width. A tight cluster of dots is exactly what reads
+// as "the constellations are a chunk," even though REGION itself already
+// spans nearly the whole sky (see above) -- the individual FIGURES were the
+// chunk, wherever they landed. Scaling by the diagonal instead roughly
+// doubles a figure's average span (~19-20% of width) and keeps that
+// proportion consistent across any resolution/aspect ratio, matching how
+// every other position in this file is stored as a fraction rather than an
+// absolute pixel.
+const HOP_DIST_FRAC_MIN = 0.05;
+const HOP_DIST_FRAC_MAX = 0.11;
+
+/** Seeded next dot position, a hop scaled to the field's diagonal from
+ *  `prev` in a drifting direction, reflected back into the upper-sky region
+ *  if it would step outside. `prev` null places the first dot anywhere in
+ *  the region. Pure. */
 export function nextDotPos(prev, rand, w, h) {
   const xMin = REGION.xMin * w, xMax = REGION.xMax * w;
   const yMin = REGION.yMin * h, yMax = REGION.yMax * h;
   if (!prev) return { x: xMin + rand() * (xMax - xMin), y: yMin + rand() * (yMax - yMin) };
+  const diag = Math.hypot(w, h);
   const angle = rand() * Math.PI * 2;
-  const dist = 40 + rand() * 70;
+  const dist = HOP_DIST_FRAC_MIN * diag + rand() * (HOP_DIST_FRAC_MAX - HOP_DIST_FRAC_MIN) * diag;
   let x = prev.x + Math.cos(angle) * dist;
   let y = prev.y + Math.sin(angle) * dist;
   if (x < xMin) x = xMin + (xMin - x);
