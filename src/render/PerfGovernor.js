@@ -98,6 +98,10 @@ export class PerfGovernor {
   // texture, CymaticField, Murmuration, SkyEnsemble planets, FarVignettes,
   // MeteorShower) -- all genuinely optional atmosphere, none of it gameplay.
   get phenomenaFull() { return this.level < 5; }
+  // RainbowBrush: up to 320 additive dabs redrawn every frame, purely
+  // cosmetic trail decoration -- widened spacing via particleMul but never
+  // actually gated by a rung. Sheds alongside the other optional atmosphere.
+  get brushEnabled() { return this.level < 5; }
   // Collapse the three depth-haze layers to one once still over budget past
   // the phenomena cut.
   get hazeLayers() { return this.level < 6 ? 3 : 1; }

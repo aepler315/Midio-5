@@ -52,6 +52,19 @@ test('RippleFX: trigger spawns staggered rings and a pulse; they all drain over 
   assert.equal(fx.pulses.active.length, 0);
 });
 
+test('RippleFX.trigger spawns fewer rings under a lower particleMul, never below one', () => {
+  // Previously trigger() ignored particleMul entirely, always spawning the
+  // fixed RIPPLE_RINGS count regardless of perf level.
+  const full = new RippleFX();
+  full.trigger(1000, 540, 0.9, 1);
+  assert.equal(full.rings.active.length, 3);
+
+  const shed = new RippleFX();
+  shed.trigger(1000, 540, 0.9, 0.6);
+  assert.ok(shed.rings.active.length < 3, 'a lower particleMul should spawn fewer rings');
+  assert.ok(shed.rings.active.length >= 1, 'never sheds down to zero rings');
+});
+
 test('RippleFX.draw runs without throwing and only draws finite geometry', () => {
   const fx = new RippleFX();
   fx.trigger(500, 540, 0.6);

@@ -303,8 +303,14 @@ export class Renderer {
     if (sim.battle) this._drawBattleEnemies(ctx, sim);
 
     // Rainbow brush: paint Midio's jump arcs, world-locked behind him.
+    // Purely cosmetic trail decoration -- sheds outright under sustained
+    // perf pressure (see PerfGovernor.brushEnabled) rather than just
+    // thinning, since up to 320 additive dabs redrawn every frame is real
+    // cost for zero gameplay content.
     this.brush.update(sim.timeMs, pose.airborne, pose.worldX, pose.midioY, particleMul);
-    this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs, sim.apotheosis && sim.apotheosis.active ? 2 : 1, !!sim.reducedFlash);
+    if (!sim.perf || sim.perf.brushEnabled) {
+      this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs, sim.apotheosis && sim.apotheosis.active ? 2 : 1, !!sim.reducedFlash);
+    }
 
     // Contact shadows: grounds the trio to the terrain instead of letting
     // them read as floating. Drawn just before each character so the

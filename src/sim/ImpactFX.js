@@ -74,11 +74,11 @@ export class ImpactFX {
 
   /** Mario Paint-style paint splat, stamped only on rhythm-clean landings:
    * a handful of chunky square blobs in one bright paint-pot color. */
-  splat(worldX, groundY) {
+  splat(worldX, groundY, particleMul = 1) {
     const rand = this.rand;
     const colors = ['#ff4d4d', '#ffd400', '#39c8ff', '#63e04d', '#ff7ad9', '#b06bff'];
     const blobs = [];
-    const n = 6 + Math.floor(rand() * 4);
+    const n = Math.max(2, Math.round((6 + Math.floor(rand() * 4)) * particleMul));
     for (let i = 0; i < n; i++) {
       blobs.push({
         dx: (rand() * 2 - 1) * 28,
@@ -121,9 +121,12 @@ export class ImpactFX {
     }
   }
 
-  /** Pre-kick sputter dust at Midio's feet during telegraph anticipation (spec §2.2.3). */
-  sputter(worldX, groundY, dtSec) {
-    this._sputterAccum += dtSec * 120; // ~2 per rendered frame at 60fps == ~1 per sim step at 120Hz
+  /** Pre-kick sputter dust at Midio's feet during telegraph anticipation (spec §2.2.3).
+   *  `particleMul`: this is continuous/ambient, not a one-shot feedback burst, so it must
+   *  shed under perf pressure the same as everything else rather than keeping a fixed rate
+   *  while landing/judgment bursts around it thin out. */
+  sputter(worldX, groundY, dtSec, particleMul = 1) {
+    this._sputterAccum += dtSec * 120 * particleMul; // ~2 per rendered frame at 60fps == ~1 per sim step at 120Hz
     while (this._sputterAccum >= 1) {
       this._sputterAccum -= 1;
       const rand = this.rand;

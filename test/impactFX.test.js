@@ -77,3 +77,29 @@ test('draw() falls the ignition ring back to source-over compositing under reduc
   assert.ok(!reducedCtx.compositeOps.includes('lighter'), 'reducedFlash must not use additive compositing');
   assert.ok(reducedCtx.compositeOps.includes('source-over'), 'reducedFlash falls back to source-over');
 });
+
+test('splat() thins its blob count under a lower particleMul', () => {
+  // Previously splat() ignored particleMul entirely -- a shed device kept
+  // full splat cost while trigger()/judgment() thinned by 40%.
+  const full = new ImpactFX(3);
+  full.splat(0, 500, 1);
+  const shed = new ImpactFX(3);
+  shed.splat(0, 500, 0.6);
+  assert.ok(shed.splats.active[0].blobs.length < full.splats.active[0].blobs.length);
+  assert.ok(shed.splats.active[0].blobs.length >= 2, 'never thins below a visible minimum');
+});
+
+test('sputter() accumulates motes slower under a lower particleMul', () => {
+  // Previously the telegraph sputter ran at a fixed rate regardless of perf
+  // level -- the ambient effect keeping full spawn rate while the landing
+  // burst it surrounds thinned out is exactly backwards.
+  const full = new ImpactFX(4);
+  full.sputter(0, 500, 1, 1); // 1 sim-second at full rate
+  const fullCount = full.motes.active.length;
+
+  const shed = new ImpactFX(4);
+  shed.sputter(0, 500, 1, 0.6);
+  const shedCount = shed.motes.active.length;
+
+  assert.ok(shedCount < fullCount, `shed sputter (${shedCount}) should spawn fewer motes than full (${fullCount})`);
+});

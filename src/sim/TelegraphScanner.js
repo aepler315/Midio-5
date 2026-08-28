@@ -32,7 +32,7 @@ export class TelegraphScanner {
     this._chartIdx = 0; // monotonic cursor into noteChart.notes (playback is seek-free)
   }
 
-  update(nowMs, conductor, midio, jump, impactFX, worldX, groundY, noteChart = null) {
+  update(nowMs, conductor, midio, jump, impactFX, worldX, groundY, noteChart = null, particleMul = 1) {
     const dtSec = Math.max(0, (nowMs - this._lastMs) / 1000);
     this._lastMs = nowMs;
 
@@ -90,7 +90,7 @@ export class TelegraphScanner {
 
     midio.leanDeg = 6 * a;
 
-    if (a > 0.8 && !jump.airborne) impactFX.sputter(worldX, groundY, dtSec);
+    if (a > 0.8 && !jump.airborne) impactFX.sputter(worldX, groundY, dtSec, particleMul);
 
     // Ground-line glint sweeping in toward Midio, timed to arrive exactly at
     // the next scheduled takeoff (same anticipation phase `a` the crouch
