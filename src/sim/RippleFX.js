@@ -70,8 +70,9 @@ export class RippleFX {
     this.puffs = new ObjectPool(() => ({}), (o, i) => Object.assign(o, { age: 0 }, i), 8);
   }
 
-  trigger(worldX, groundY, I) {
-    for (let i = 0; i < RIPPLE_RINGS; i++) {
+  trigger(worldX, groundY, I, particleMul = 1) {
+    const ringCount = Math.max(1, Math.round(RIPPLE_RINGS * particleMul));
+    for (let i = 0; i < ringCount; i++) {
       this.rings.spawn({ wx: worldX, y: groundY, I, delayMs: i * RIPPLE_RING_STAGGER_MS, age: -i * RIPPLE_RING_STAGGER_MS });
     }
     this.pulses.spawn({ wx: worldX, y: groundY, I });

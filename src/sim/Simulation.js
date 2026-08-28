@@ -435,7 +435,7 @@ export class Simulation {
           break;
         case CueKind.GROUND_PULSE:
           this.groundField.impulse(this.worldX, strength, nowMs);
-          this.rippleFX.trigger(this.worldX, this.midio.groundY, strength);
+          this.rippleFX.trigger(this.worldX, this.midio.groundY, strength, this.perf.particleMul);
           break;
         case CueKind.FEVER:
           this.fever.spark(0.25 * strength);
@@ -495,7 +495,7 @@ export class Simulation {
           this.camera.shake(2.5);
           break;
         case 'holdComplete':
-          this.impactFX.splat(this.worldX, this.midio.groundY);
+          this.impactFX.splat(this.worldX, this.midio.groundY, particleMul);
           this.impactFX.ignite(this.worldX, this.midio.groundY);
           break;
         case 'holdChoke':
@@ -816,7 +816,7 @@ export class Simulation {
       // phrase's last air jump) hits harder.
       const aj = this.jump.pendingAirJump;
       const airY = this.midio.groundY - aj.y;
-      this.impactFX.splat(this.worldX, airY);
+      this.impactFX.splat(this.worldX, airY, this.perf.particleMul);
       this.performer.modal.excite(aj.isFlourish ? 6 : 3);
       if (aj.isFlourish) {
         this.impactFX.ignite(this.worldX, airY);
@@ -832,7 +832,7 @@ export class Simulation {
       // no visible response at all. A light ground splat, scaled by the
       // kick's own velocity, is the promised FX without a full landing.
       const gk = this.jump.pendingGhostKick;
-      this.impactFX.splat(this.worldX, this.midio.groundY);
+      this.impactFX.splat(this.worldX, this.midio.groundY, this.perf.particleMul);
       this.performer.modal.excite(2 + 2 * gk.vel);
     }
 
@@ -848,7 +848,7 @@ export class Simulation {
       this.scoreKeeper.noteStreak(this.comboSystem.streak);
       this.impactFX.trigger(this.worldX, this.midio.groundY, I, this.camera, this.perf.particleMul);
       this.groundField.impulse(this.worldX, I, nowMs); // a shockwave ripples the terrain outward from the landing
-      this.rippleFX.trigger(this.worldX, this.midio.groundY, I); // the screen-space visual echo of that shockwave
+      this.rippleFX.trigger(this.worldX, this.midio.groundY, I, this.perf.particleMul); // the screen-space visual echo of that shockwave
       // The world visibly answers back: a landing kicks up whatever the
       // active biome's ambient particle color is (snow, embers, pollen...)
       // -- zero new per-biome code, just BiomeProfiles' existing palette.
@@ -859,7 +859,7 @@ export class Simulation {
         this.flood.active ? '#55c8f0' : this.biomes.currentParticleColor(),
         this.perf.particleMul,
       );
-      if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY);
+      if (this.comboSystem.justClean) this.impactFX.splat(this.worldX, this.midio.groundY, this.perf.particleMul);
       this.fracture.registerImpact(I);
 
       // Iced footing: a hard landing on settled snow starts a bounded,
@@ -867,8 +867,8 @@ export class Simulation {
       const skid = skidParams(this.snowCover, I);
       if (skid) {
         this._skid = { startMs: nowMs, ...skid };
-        this.impactFX.splat(this.worldX, this.midio.groundY);
-        this.impactFX.sputter(this.worldX, this.midio.groundY, 0.06);
+        this.impactFX.splat(this.worldX, this.midio.groundY, this.perf.particleMul);
+        this.impactFX.sputter(this.worldX, this.midio.groundY, 0.06, this.perf.particleMul);
       }
 
       // The Apotheosis: gameplay precision powers the show -- every clean
@@ -887,7 +887,7 @@ export class Simulation {
     this.apotheosis.update(nowMs, dtSec, { vibe: this.vibe, hype: this.hype, calm: this.calm });
     if (this.apotheosis.justEnded) {
       this.performer.modal.excite(8);
-      this.impactFX.splat(this.worldX, this.midio.groundY);
+      this.impactFX.splat(this.worldX, this.midio.groundY, this.perf.particleMul);
     }
 
     this.comboSystem.update(nowMs, this.jump.beatPeriodMs);
@@ -896,13 +896,13 @@ export class Simulation {
     this.worldX += worldSpeed * dtSec;
 
     this.obstacles.update(nowMs, this.worldX, worldSpeed / 1000);
-    this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.noteChart);
+    this.telegraph.update(nowMs, this.conductor, this.midio, this.jump, this.impactFX, this.worldX, this.midio.groundY, this.noteChart, this.perf.particleMul);
     this.performer.update(
       nowMs, dtSec, this.midio, this.jump, this.comboSystem, this.calm.level, this.ensemble, this.judge.holdState,
     );
     // Riding a hold: heel dust streams from the slide the whole way.
     if (this.judge.holdState.active && !this.jump.airborne) {
-      this.impactFX.sputter(this.worldX, this.midio.groundY, dtSec);
+      this.impactFX.sputter(this.worldX, this.midio.groundY, dtSec, this.perf.particleMul);
     }
     this.impactFX.step(dtSec);
     this.rippleFX.update(dtSec * 1000);

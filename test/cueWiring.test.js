@@ -35,6 +35,7 @@ function bareSimWithCues(cues) {
   sim.groundField = { impulse: rec('impulse') };
   sim.rippleFX = { trigger: rec('trigger') };
   sim.fever = { spark: rec('spark') };
+  sim.perf = { particleMul: 1 };
   sim.vibe = { epic: 0.5 };
   sim.worldX = 100;
   sim.midio = { groundY: 500 };

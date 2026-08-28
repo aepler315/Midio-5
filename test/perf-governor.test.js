@@ -87,6 +87,7 @@ test('sheds progressively further under sustained pressure', () => {
   assert.equal(gov.phenomenaFull, false);
   assert.equal(gov.hazeLayers, 1);
   assert.equal(gov.heavyPostFx, false);
+  assert.equal(gov.brushEnabled, false);
 
   // Further over-budget frames don't shed past MAX_LEVEL.
   feedFrames(gov, 200, 20, t);
@@ -127,16 +128,19 @@ test('deeper rungs (5-6) gate phenomena and the overlay-pass stack, past the ori
   assert.equal(gov.phenomenaFull, true, 'still full at the end of the original ladder');
   assert.equal(gov.hazeLayers, 3);
   assert.equal(gov.heavyPostFx, true);
+  assert.equal(gov.brushEnabled, true, 'brush still on at the end of the original ladder');
 
   gov.level = 5;
   assert.equal(gov.phenomenaFull, false, 'rung 5 sheds optional phenomena');
   assert.equal(gov.hazeLayers, 3, 'haze still full at rung 5');
   assert.equal(gov.heavyPostFx, true);
+  assert.equal(gov.brushEnabled, false, 'rung 5 sheds the rainbow brush alongside phenomena');
 
   gov.level = 6;
   assert.equal(gov.phenomenaFull, false);
   assert.equal(gov.hazeLayers, 1, 'rung 6 collapses haze to a single layer');
   assert.equal(gov.heavyPostFx, false, 'rung 6 also drops the heaviest overlay passes');
+  assert.equal(gov.brushEnabled, false);
 });
 
 test('constructor accepts a proactive startLevel, clamped to [0, MAX_LEVEL]', () => {
