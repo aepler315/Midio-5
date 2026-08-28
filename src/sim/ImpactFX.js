@@ -175,20 +175,30 @@ export class ImpactFX {
     }
   }
 
-  /** worldX: current scroll distance; originX: screen-space x that worldX=0 maps to (Midio's screenX). */
-  draw(ctx, worldX, originX, reducedFlash = false) {
+  /** worldX: current scroll distance; originX: screen-space x that worldX=0
+   *  maps to (Midio's screenX); canvasWidth: the visible logical width, so
+   *  bursts scrolled well off-screen are skipped instead of drawn every
+   *  frame regardless -- during a fast passage a large share of the pools
+   *  (400 motes, 60 scars, 20 splats...) can be off-canvas. Defaults to
+   *  Infinity (cull nothing) for callers that don't have a canvas width
+   *  handy. Margin sized to each effect's own max radius/spread so nothing
+   *  visibly pops in/out at the cull boundary. */
+  draw(ctx, worldX, originX, reducedFlash = false, canvasWidth = Infinity) {
     const toScreen = (wx) => wx - worldX + originX;
+    const inView = (x, margin) => x > -margin && x < canvasWidth + margin;
 
     for (const s of this.scars) {
+      const x = toScreen(s.wx);
+      if (!inView(x, s.width)) continue;
       const t = s.age / s.maxAge;
       ctx.fillStyle = `rgba(20,10,25,${0.35 * (1 - t)})`;
-      const x = toScreen(s.wx);
       ctx.fillRect(x - s.width / 2, s.y, s.width, 4);
     }
 
     for (const sp of this.splats.active) {
-      const t = sp.age / sp.life;
       const x = toScreen(sp.wx);
+      if (!inView(x, 40)) continue; // blobs spread up to ~28px + their own size
+      const t = sp.age / sp.life;
       ctx.fillStyle = sp.color;
       ctx.globalAlpha = 0.8 * (1 - t);
       for (const b of sp.blobs) {
@@ -198,8 +208,9 @@ export class ImpactFX {
     ctx.globalAlpha = 1;
 
     for (const c of this.craters.active) {
-      const t = c.age / c.life;
       const x = toScreen(c.wx);
+      if (!inView(x, c.R)) continue;
+      const t = c.age / c.life;
       const g = ctx.createRadialGradient(x, c.y, 0, x, c.y, c.R);
       const a = capFlashAlpha(c.alpha * (1 - t), reducedFlash);
       const rgb = c.color || '255,240,200';
@@ -215,10 +226,11 @@ export class ImpactFX {
     // (see the constructor) but render identically, so both pools feed the
     // same loop here.
     for (const r of [...this.rings.active, ...this.judgmentRings.active]) {
+      const x = toScreen(r.wx);
+      if (!inView(x, r.Rd)) continue;
       const t = r.age / r.life;
       const radius = r.Rd * (1 - Math.exp(-r.age / r.tau));
       const alpha = capFlashAlpha(Math.pow(1 - t, 2), reducedFlash);
-      const x = toScreen(r.wx);
       ctx.strokeStyle = `rgba(${r.color || '255,255,255'},${0.7 * alpha})`;
       ctx.lineWidth = Math.max(0.5, 3 * (1 - t));
       ctx.beginPath();
@@ -236,10 +248,11 @@ export class ImpactFX {
     // spinning as they expand, spikes rippling with a 3-lobe wobble --
     // same ground-plane perspective squash as the dust ring above.
     for (const p of this.polyRings.active) {
+      const x = toScreen(p.wx);
+      if (!inView(x, p.Rd)) continue;
       const t = p.age / p.life;
       const envelope = p.Rd * (1 - Math.exp(-p.age / p.tau));
       const alpha = capFlashAlpha(Math.pow(1 - t, 2) * 0.55 * p.I, reducedFlash);
-      const x = toScreen(p.wx);
       const rot = p.rot0 + p.spin * p.age;
       ctx.strokeStyle = `rgba(255,235,170,${alpha})`;
       ctx.lineWidth = Math.max(0.5, 2.2 * (1 - t));
@@ -260,10 +273,11 @@ export class ImpactFX {
     ctx.save();
     ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
     for (const g of this.ignitions.active) {
+      const x = toScreen(g.wx);
+      if (!inView(x, g.Rd)) continue;
       const t = g.age / g.life;
       const radius = g.Rd * (1 - (1 - t) ** 3);
       const alpha = capFlashAlpha((1 - t) ** 2, reducedFlash);
-      const x = toScreen(g.wx);
       ctx.strokeStyle = `rgba(255,225,140,${(0.8 * alpha).toFixed(3)})`;
       ctx.lineWidth = Math.max(0.5, 4 * (1 - t));
       ctx.beginPath();
@@ -273,8 +287,9 @@ export class ImpactFX {
     ctx.restore();
 
     for (const m of this.motes.active) {
-      const t = m.age / m.life;
       const x = toScreen(m.wx);
+      if (!inView(x, 6)) continue; // motes are small and never drift far
+      const t = m.age / m.life;
       const size = m.size * (1 - t);
       if (size <= 0) continue;
       ctx.fillStyle = `rgba(${m.color || '230,220,200'},0.9)`;

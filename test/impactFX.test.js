@@ -8,13 +8,17 @@ function fakeCtx2d() {
   const compositeOps = [];
   const fillStyles = [];
   const gradientStops = [];
+  let ellipseCalls = 0, arcCalls = 0, fillRectCalls = 0;
   return {
     strokeAlphas,
     compositeOps,
     fillStyles,
     gradientStops,
+    get ellipseCalls() { return ellipseCalls; },
+    get arcCalls() { return arcCalls; },
+    get fillRectCalls() { return fillRectCalls; },
     save: noop, restore: noop, beginPath: noop, moveTo: noop, lineTo: noop, stroke: noop, fill: noop,
-    fillRect: noop, ellipse: noop, arc: noop,
+    fillRect: () => { fillRectCalls++; }, ellipse: () => { ellipseCalls++; }, arc: () => { arcCalls++; },
     createRadialGradient() { return { addColorStop: (offset, color) => gradientStops.push(color) }; },
     set fillStyle(v) { fillStyles.push(v); },
     set lineWidth(v) {},
@@ -184,6 +188,47 @@ test('draw() falls back to the default warm-white when trigger() was given no co
 
   assert.ok(ctx.gradientStops.some((s) => s.startsWith('rgba(255,240,200,')), 'crater gradient falls back to warm-white');
   assert.ok(ctx.fillStyles.some((s) => s === 'rgba(230,220,200,0.9)'), 'motes fall back to warm-white');
+});
+
+test('draw() culls craters, rings, motes, and splats/scars that have scrolled off-screen', () => {
+  // During a fast passage a large share of these pools (400 motes, 60
+  // scars, 20 splats...) can be well outside the visible frame; drawing
+  // them every frame regardless is wasted cost.
+  const canvasWidth = 800;
+
+  const near = new ImpactFX(1);
+  near.trigger(400, 500, 0.3, null); // I <= 0.5 -- no star-polygon shockwave
+  near.splat(400, 500);
+  near.step(0.01);
+
+  const far = new ImpactFX(1);
+  far.trigger(50000, 500, 0.3, null);
+  far.splat(50000, 500);
+  far.step(0.01);
+
+  const nearCtx = fakeCtx2d();
+  near.draw(nearCtx, 0, 0, false, canvasWidth);
+  const farCtx = fakeCtx2d();
+  far.draw(farCtx, 0, 0, false, canvasWidth);
+
+  assert.ok(nearCtx.ellipseCalls > 0, 'on-screen crater should draw');
+  assert.equal(farCtx.ellipseCalls, 0, 'off-screen crater should be culled');
+  assert.ok(nearCtx.arcCalls > 0, 'on-screen motes should draw');
+  assert.equal(farCtx.arcCalls, 0, 'off-screen motes should be culled');
+  assert.ok(nearCtx.fillRectCalls > 0, 'on-screen scar/splat should draw');
+  assert.equal(farCtx.fillRectCalls, 0, 'off-screen scar/splat should be culled');
+  assert.ok(nearCtx.strokeAlphas.length > 0, 'on-screen ring should draw');
+  assert.equal(farCtx.strokeAlphas.length, 0, 'off-screen ring should be culled');
+});
+
+test('draw() with no canvasWidth given draws everything regardless of scroll distance', () => {
+  const fx = new ImpactFX(1);
+  fx.trigger(50000, 500, 0.3, null);
+  fx.step(0.01);
+  const ctx = fakeCtx2d();
+  fx.draw(ctx, 0, 0, false); // canvasWidth omitted -- defaults to Infinity
+  assert.ok(ctx.ellipseCalls > 0);
+  assert.ok(ctx.arcCalls > 0);
 });
 
 test('sputter() accumulates motes slower under a lower particleMul', () => {

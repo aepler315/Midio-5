@@ -31,7 +31,11 @@ export class RainbowBrush {
     if (this.dabs.length > MAX_DABS) this.dabs.shift();
   }
 
-  draw(ctx, worldX, originX, nowMs, sizeMul = 1, reducedFlash = false) {
+  /** canvasWidth: the visible logical width, so dabs scrolled well off-screen
+   *  are skipped -- up to 320 dabs redrawn every frame is real cost even
+   *  when most of a dense flurry's trail has scrolled out of view. Defaults
+   *  to Infinity (cull nothing) for callers with no canvas width handy. */
+  draw(ctx, worldX, originX, nowMs, sizeMul = 1, reducedFlash = false, canvasWidth = Infinity) {
     while (this.dabs.length && nowMs - this.dabs[0].bornMs >= LIFE_MS) this.dabs.shift();
     if (this.dabs.length === 0) return;
     ctx.save();
@@ -42,7 +46,10 @@ export class RainbowBrush {
     // exactly the kind of stacked-flash this toggle exists to prevent, so
     // fall back to normal compositing (see Accessibility.js:flashCompositeOp).
     ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
+    const margin = 20; // largest dab is ~9 * sizeMul(2 during Apotheosis) across
     for (const d of this.dabs) {
+      const cx = d.wx - worldX + originX;
+      if (cx < -margin || cx > canvasWidth + margin) continue;
       const age = (nowMs - d.bornMs) / LIFE_MS;
       const size = Math.max(3, Math.round((9 - 4 * age) * sizeMul));
       // Lower peak alpha than the old opaque dabs used -- additive stacking
@@ -51,7 +58,7 @@ export class RainbowBrush {
       // washing out to a pale blob wherever trails pile up.
       ctx.globalAlpha = 0.4 * (1 - age);
       ctx.fillStyle = `hsl(${d.hue},90%,62%)`;
-      const x = Math.round(d.wx - worldX + originX - size / 2);
+      const x = Math.round(cx - size / 2);
       ctx.fillRect(x, Math.round(d.y - size / 2), size, size);
     }
     ctx.restore();

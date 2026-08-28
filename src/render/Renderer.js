@@ -298,8 +298,8 @@ export class Renderer {
         particleMul, reducedFlash: !!sim.reducedFlash,
       });
     }
-    if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX, !!sim.reducedFlash);
-    if (sim.rippleFX) sim.rippleFX.draw(ctx, pose.worldX, pose.midioX, sim.reducedFlash);
+    if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX, !!sim.reducedFlash, stage.width);
+    if (sim.rippleFX) sim.rippleFX.draw(ctx, pose.worldX, pose.midioX, sim.reducedFlash, stage.width);
     if (sim.battle) this._drawBattleEnemies(ctx, sim);
 
     // Rainbow brush: paint Midio's jump arcs, world-locked behind him.
@@ -309,7 +309,7 @@ export class Renderer {
     // cost for zero gameplay content.
     this.brush.update(sim.timeMs, pose.airborne, pose.worldX, pose.midioY, particleMul);
     if (!sim.perf || sim.perf.brushEnabled) {
-      this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs, sim.apotheosis && sim.apotheosis.active ? 2 : 1, !!sim.reducedFlash);
+      this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs, sim.apotheosis && sim.apotheosis.active ? 2 : 1, !!sim.reducedFlash, stage.width);
     }
 
     // Contact shadows: grounds the trio to the terrain instead of letting

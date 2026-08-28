@@ -81,6 +81,42 @@ test('RippleFX.draw runs without throwing and only draws finite geometry', () =>
   for (const v of calls) assert.ok(Number.isFinite(v));
 });
 
+test('RippleFX.draw culls rings, pulses, and puffs that have scrolled off-screen', () => {
+  const canvasWidth = 800;
+  const near = new RippleFX();
+  near.trigger(400, 540, 0.6);
+  near.landingPuff(400, 540, 0.6, '#ffffff');
+
+  const far = new RippleFX();
+  far.trigger(50000, 540, 0.6);
+  far.landingPuff(50000, 540, 0.6, '#ffffff');
+
+  let nearCalls = 0, farCalls = 0;
+  const makeCtx = (counter) => ({
+    save() {}, restore() {}, beginPath() {}, stroke() {}, fill() {}, moveTo() {}, lineTo() {},
+    ellipse() { counter(); }, arc() { counter(); },
+    set globalCompositeOperation(v) {}, set strokeStyle(v) {}, set lineWidth(v) {}, set fillStyle(v) {}, set globalAlpha(v) {},
+  });
+  near.draw(makeCtx(() => nearCalls++), 0, 0, false, canvasWidth);
+  far.draw(makeCtx(() => farCalls++), 0, 0, false, canvasWidth);
+
+  assert.ok(nearCalls > 0, 'on-screen rings/pulses/puffs should draw');
+  assert.equal(farCalls, 0, 'off-screen rings/pulses/puffs should be culled');
+});
+
+test('RippleFX.draw with no canvasWidth given draws everything regardless of scroll distance', () => {
+  const fx = new RippleFX();
+  fx.trigger(50000, 540, 0.6);
+  let calls = 0;
+  const ctx = {
+    save() {}, restore() {}, beginPath() {}, stroke() {}, fill() {}, moveTo() {}, lineTo() {},
+    ellipse() { calls++; }, arc() { calls++; },
+    set globalCompositeOperation(v) {}, set strokeStyle(v) {}, set lineWidth(v) {}, set fillStyle(v) {}, set globalAlpha(v) {},
+  };
+  fx.draw(ctx, 0, 0, false); // canvasWidth omitted -- defaults to Infinity
+  assert.ok(calls > 0);
+});
+
 test('RippleFX.draw falls back to source-over compositing under reducedFlash', () => {
   // Rings, pulses and puffs all draw additively at the same landing point;
   // stacked with ImpactFX's ignition ring and RainbowBrush's dabs, capped

@@ -100,8 +100,13 @@ export class RippleFX {
     this.puffs.step(dtSec, (o, dt) => { o.age += dt * 1000; return o.age < PUFF_LIFE_MS; });
   }
 
-  draw(ctx, worldX, originX, reducedFlash) {
+  /** canvasWidth: the visible logical width, so rings/pulses/puffs scrolled
+   *  well off-screen are skipped rather than drawn every frame regardless.
+   *  Defaults to Infinity (cull nothing) for callers with no canvas width
+   *  handy. */
+  draw(ctx, worldX, originX, reducedFlash, canvasWidth = Infinity) {
     const toScreen = (wx) => wx - worldX + originX;
+    const inView = (x, margin) => x > -margin && x < canvasWidth + margin;
     ctx.save();
     ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
 
@@ -111,6 +116,7 @@ export class RippleFX {
       if (alpha <= 0.005) continue;
       const radius = rippleRadius(r.age, r.I);
       const x = toScreen(r.wx);
+      if (!inView(x, radius)) continue;
       ctx.strokeStyle = `hsla(42, 85%, 65%, ${capFlashAlpha(alpha, reducedFlash).toFixed(3)})`;
       ctx.lineWidth = Math.max(0.6, 3 * (1 - r.age / rippleLifeMs(r.I)));
       ctx.beginPath();
@@ -125,9 +131,10 @@ export class RippleFX {
       if (alpha <= 0.005) continue;
       const dist = groundPulseX(p.age, p.I);
       const x = toScreen(p.wx);
+      const segLen = 16 + 20 * clamp01(p.I);
+      if (!inView(x, dist + segLen)) continue;
       ctx.strokeStyle = `hsla(42, 95%, 75%, ${capFlashAlpha(alpha, reducedFlash).toFixed(3)})`;
       ctx.lineWidth = 2;
-      const segLen = 16 + 20 * clamp01(p.I);
       ctx.beginPath();
       ctx.moveTo(x + dist - segLen, p.y);
       ctx.lineTo(x + dist, p.y);
@@ -140,6 +147,7 @@ export class RippleFX {
       const alpha = puffAlpha(puff.age, puff.I);
       if (alpha <= 0.005) continue;
       const { dx, dy } = puffOffset(puff.age, puff.angle, puff.I);
+      if (!inView(toScreen(puff.wx) + dx, 8)) continue;
       const r = 2 + 2.5 * clamp01(puff.I);
       ctx.fillStyle = puff.color;
       ctx.globalAlpha = capFlashAlpha(alpha, reducedFlash);
