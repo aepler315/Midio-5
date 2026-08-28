@@ -44,6 +44,20 @@ export function capFlashAlpha(alpha, reducedFlash) {
   return reducedFlash ? Math.min(alpha, FLASH_CAP) : alpha;
 }
 
+// capFlashAlpha caps each layer independently, but several landing effects
+// (ImpactFX's ignition ring, RippleFX's rings/pulses/puffs, RainbowBrush's
+// dabs) draw additively ('lighter') and pile up on the same ground point at
+// the same moment -- several independently-capped-at-0.4 layers still sum
+// to a blown-out white under additive blending, which is exactly the flash
+// reduced-flash is supposed to prevent. Falling back to normal ('source-over')
+// compositing for those effects when the toggle is on means overlapping
+// layers occlude instead of summing, so the per-layer cap actually holds.
+/** Composite operation for a flash-heavy additive effect: 'lighter' normally,
+ *  'source-over' under reduced-flash so overlapping capped layers can't sum past the cap. */
+export function flashCompositeOp(reducedFlash) {
+  return reducedFlash ? 'source-over' : 'lighter';
+}
+
 // The groove fingerprint (GrooveFingerprint.js): the one piece of state that
 // survives across SONGS, not just across sessions. Everything else in this
 // file is a preference the player set; this one the engine learned.

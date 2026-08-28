@@ -4,7 +4,7 @@
 // the ground point where they were spawned as the world scrolls under them.
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { clamp, mulberry32 } from '../utils/math.js';
-import { capFlashAlpha } from '../ui/Accessibility.js';
+import { capFlashAlpha, flashCompositeOp } from '../ui/Accessibility.js';
 
 export class ImpactFX {
   constructor(seed = 1) {
@@ -233,7 +233,7 @@ export class ImpactFX {
     }
 
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
     for (const g of this.ignitions.active) {
       const t = g.age / g.life;
       const radius = g.Rd * (1 - (1 - t) ** 3);

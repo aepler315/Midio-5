@@ -6,7 +6,7 @@
 // draw time via worldX/originX).
 import { ObjectPool } from '../utils/ObjectPool.js';
 import { clamp01 } from '../utils/math.js';
-import { capFlashAlpha } from '../ui/Accessibility.js';
+import { capFlashAlpha, flashCompositeOp } from '../ui/Accessibility.js';
 
 export const RIPPLE_RINGS = 3;
 export const RIPPLE_RING_STAGGER_MS = 90;
@@ -102,7 +102,7 @@ export class RippleFX {
   draw(ctx, worldX, originX, reducedFlash) {
     const toScreen = (wx) => wx - worldX + originX;
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
 
     for (const r of this.rings.active) {
       if (r.age < 0) continue; // staggered start not yet reached
