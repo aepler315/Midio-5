@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   detectRhythmOnsets, estimateTempo, extractPseudoLane, estimateSustainMs, mixBandEnvelopes,
-  globalBandReferences, normalizeBands,
+  globalBandReferences, normalizeBands, estimateTempoCurve, buildDriftAwareBarGrid,
 } from '../src/audio/OnsetDetector.js';
 import { Role } from '../src/core/NoteEvent.js';
 import { clamp } from '../src/utils/math.js';
@@ -215,4 +215,142 @@ test('a warm profile can reclassify a hit the fixed thresholds call a SNARE', ()
 
   const taught = detectRhythmOnsets(norm, raw, 86, 1, fp);
   assert.ok(taught.onsets.some((o) => o.kick), 'the player taught it that this is their kick');
+});
+
+// ── Meter detection ────────────────────────────────────────────────
+//
+// estimateTempo's downbeat search used to assume 4 beats/bar unconditionally
+// -- `for (let m = 0; m < 4; m++)` -- so 4/4 was not just the default, it was
+// the only reachable answer. A 3/4 waltz got bars 33% too long, throwing off
+// every downstream consumer of the bar grid.
+
+test('estimateTempo reads a 3/4 waltz (accented downbeat) as 3 beats/bar', () => {
+  const rate = 86, bpm = 150, tau = Math.round((rate * 60) / bpm);
+  const n = rate * 60;
+  const O = new Float32Array(n);
+  const kickFrames = [];
+  let beat = 0;
+  for (let f = 0; f < n; f += tau, beat++) {
+    O[f] = beat % 3 === 0 ? 1.0 : 0.3; // strong downbeat, weaker 2 and 3
+    if (beat % 3 === 0) kickFrames.push(f);
+  }
+  const tempo = estimateTempo(O, rate, kickFrames);
+  assert.equal(tempo.beatsPerBar, 3);
+  assert.ok(Math.abs(tempo.barPeriodMs - tau / rate * 1000 * 3) < 5);
+});
+
+test('estimateTempo keeps the 4/4 default when the kick pattern does not clearly favor 3', () => {
+  const rate = 86, bpm = 128, tau = Math.round((rate * 60) / bpm);
+  const n = rate * 60;
+  // Every beat carries a kick, equally -- nothing in the signal distinguishes
+  // downbeat 3 from downbeat 4, so the safer, far more common default must win.
+  const O = new Float32Array(n);
+  const kickFrames = [];
+  for (let f = 0; f < n; f += tau) { O[f] = 1; kickFrames.push(f); }
+  const tempo = estimateTempo(O, rate, kickFrames);
+  assert.equal(tempo.beatsPerBar, 4);
+});
+
+// ── Drift-aware bar grid ────────────────────────────────────────────
+//
+// AudioAdapter used to extrapolate ONE beatPeriodMs, taken from a single
+// global autocorrelation search, across the entire song. A live or acoustic
+// recording's tempo routinely drifts a little over its length; extrapolating
+// a fixed period lets that drift accumulate LINEARLY with duration instead
+// of bounding it to whatever one window drifted by.
+
+/** A song whose true tempo rises linearly from `bpmLo` to `bpmHi` over its
+ *  length, with an onset on every beat (matching real spectral-flux shape --
+ *  not just downbeats, which the local correlation search is tuned for). */
+function acceleratingBeatEnvelope(rate, durSec, bpmLo, bpmHi) {
+  const n = rate * durSec;
+  const O = new Float32Array(n);
+  const trueBeatFrames = [];
+  for (let f = 0; f < n;) {
+    const bpm = bpmLo + (f / n) * (bpmHi - bpmLo);
+    trueBeatFrames.push(f);
+    O[Math.round(f)] = 1;
+    f += (rate * 60) / bpm;
+  }
+  return { O, trueBeatFrames };
+}
+
+test('buildDriftAwareBarGrid tracks a real tempo drift far more closely than one fixed period would', () => {
+  const rate = 86, durSec = 240, beatsPerBar = 4;
+  const { O, trueBeatFrames } = acceleratingBeatEnvelope(rate, durSec, 120, 126); // 5% drift
+  const trueBarMs = trueBeatFrames.filter((_, i) => i % beatsPerBar === 0).map((fr) => (fr / rate) * 1000);
+
+  // The realistic failure mode: a single global correlation search locks onto
+  // one tempo (here, the song's start) rather than tracking the drift.
+  const globalTau = Math.round((rate * 60) / 120);
+  const curve = estimateTempoCurve(O, rate, globalTau);
+  const driftGrid = buildDriftAwareBarGrid(0, durSec * 1000, beatsPerBar, rate, curve, globalTau).map((b) => b.ms);
+
+  const fixedGrid = [];
+  for (let t = 0; t < durSec * 1000; t += ((globalTau / rate) * 1000) * beatsPerBar) fixedGrid.push(t);
+
+  // By the second half of the song the drift has accumulated enough that a
+  // fixed-period grid is off by more than a beat, while the drift-aware one
+  // -- re-locking its local tempo read every window -- stays close.
+  const k = Math.floor(trueBarMs.length * 0.75);
+  const beatMs = (globalTau / rate) * 1000;
+  assert.ok(Math.abs(fixedGrid[k] - trueBarMs[k]) > beatMs,
+    'fixture should actually exercise real drift (fixed grid must be off by more than a beat)');
+  assert.ok(Math.abs(driftGrid[k] - trueBarMs[k]) < Math.abs(fixedGrid[k] - trueBarMs[k]) / 4,
+    `drift-aware bar ${k} at ${driftGrid[k]}ms should track true ${trueBarMs[k]}ms far more closely than the fixed grid's ${fixedGrid[k]}ms`);
+
+  // And the fixed grid's accumulated error is bad enough it doesn't even
+  // reach the true number of bars in the song -- the drift-aware one does.
+  assert.ok(driftGrid.length >= trueBarMs.length - 1);
+  assert.ok(fixedGrid.length < trueBarMs.length,
+    'fixture should also demonstrate the fixed grid running short, which is the more visible half of this bug');
+});
+
+test('buildDriftAwareBarGrid falls back to the global tau where a window is not confident', () => {
+  const rate = 86, globalTau = 43;
+  // One high-confidence window, one all-silent (unreadable) window.
+  const curve = [
+    { startFrame: 0, tau: 40, confidence: 0.9 },
+    { startFrame: 2000, tau: 999, confidence: 0.01 }, // an obviously-wrong lock a silent window could produce
+  ];
+  const grid = buildDriftAwareBarGrid(0, 60000, 4, rate, curve, globalTau);
+  // No bar should ever be spaced by the untrustworthy window's absurd tau.
+  for (let i = 1; i < grid.length; i++) {
+    const gap = grid[i].ms - grid[i - 1].ms;
+    assert.ok(gap < 5000, `bar gap ${gap}ms should never reflect the untrusted tau=999 segment`);
+  }
+});
+
+// ── Sliding-median threshold, at the window edges ──────────────────
+//
+// medianAdaptiveThreshold used to re-copy and re-sort the whole ~87-element
+// window from scratch on every one of a song's ~20000 analysis frames, three
+// times over (rhythm onsets plus both pseudo-lanes) -- about 1.1s of pure
+// allocation+sort on a 4-minute song. It's now a single sorted array updated
+// incrementally (remove the frame leaving the window, insert the one
+// entering it), which makes the two ends of the signal -- where the window
+// is asymmetric (still growing on the left, or already clipped on the
+// right) -- the part most likely to go wrong in a rewrite.
+
+test('detectRhythmOnsets still finds an onset sitting at frame 1 (the window has barely started growing)', () => {
+  // Frame 0 can never itself be an onset (positiveFlux leaves flux[0] = 0 by
+  // construction, regardless of the median), so frame 1 is the earliest real
+  // edge case for the sliding median's incremental seeding.
+  const rate = 86;
+  const n = rate * 4;
+  const bands = silentBands(n);
+  bands[0][1] = 0.9; bands[1][1] = 0.6; // a kick at the earliest reachable frame
+  for (let f = 100; f < n; f += 90) { bands[0][f] = 0.9; bands[1][f] = 0.6; } // keep the median non-trivial
+  const { onsets } = detectRhythmOnsets(bands, bands, rate, 1);
+  assert.ok(onsets.some((o) => o.frame === 1), 'an onset at frame 1 must still be detected');
+});
+
+test('detectRhythmOnsets still finds an onset sitting at the last frame (the window has stopped growing)', () => {
+  const rate = 86;
+  const n = rate * 4;
+  const bands = silentBands(n);
+  for (let f = 0; f < n - 90; f += 90) { bands[0][f] = 0.9; bands[1][f] = 0.6; }
+  bands[0][n - 1] = 0.9; bands[1][n - 1] = 0.6; // a kick at the very last frame
+  const { onsets } = detectRhythmOnsets(bands, bands, rate, 1);
+  assert.ok(onsets.some((o) => o.frame === n - 1), 'an onset at the final frame must still be detected');
 });

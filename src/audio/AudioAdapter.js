@@ -10,10 +10,12 @@
 // fingerprint's dominant-class hue) behaves the same as it does on MIDI.
 // The adapter also returns an `analysis` fingerprint (chroma, tonality,
 // brightness, dynamic range, stereo width) for the custom-biome importer.
-import { separateStems } from './StemSeparator.js';
+import { separateStemsSequential } from './StemSeparator.js';
+import { BANDS } from './bands.js';
 import {
-  computeBandEnvelopes, normalizeBands, detectRhythmOnsets, estimateTempo,
+  bandEnvelope, envelopeFrameCount, normalizeBands, detectRhythmOnsets, estimateTempo,
   extractPseudoLane, mixBandEnvelopes, estimateSustainMs, globalBandReferences,
+  buildDriftAwareBarGrid,
 } from './OnsetDetector.js';
 import {
   computePitchFeatures, chromaHistogram, melodyPitchAt, estimateBassPitchAt,
@@ -97,10 +99,23 @@ export function activityEnvelope(mono, sampleRate, rate = 86) {
  *   per-moment loudness decides which stem owns each melodic/bass note.
  */
 export async function audioToTimeline(audioBuffer, { onProgress = null, userStems = null, groove = null } = {}) {
-  const stems = await separateStems(audioBuffer, (p) => onProgress?.({ phase: 'separate', progress: p }));
+  // Stream the 7 bands one at a time rather than holding all of them fully
+  // decoded at once (~565MB for a 4-minute 44.1kHz song, held simultaneously
+  // by the old separateStems+computeBandEnvelopes pairing) -- everything
+  // past this point needs only each band's compact envelope, not the raw
+  // audio. The one exception is the BASS band, whose actual samples feed
+  // estimateBassPitchAt's autocorrelation later; that one buffer's mono
+  // mixdown is kept, every other band's buffer is released as soon as its
+  // envelope is extracted.
+  let rate, numFrames, bassMono = null;
+  const raw = new Array(BANDS.length);
+  await separateStemsSequential(audioBuffer, (i, buf) => {
+    if (numFrames === undefined) ({ numFrames, rate } = envelopeFrameCount(buf.length, buf.sampleRate));
+    raw[i] = bandEnvelope(buf, numFrames);
+    if (i === 1) bassMono = mixToMono(buf); // the BASS band: 60-250 Hz, already isolated
+  }, (p) => onProgress?.({ phase: 'separate', progress: p }));
   onProgress?.({ phase: 'analyze', progress: 0 });
 
-  const { rate, raw } = computeBandEnvelopes(stems);
   const normBands = normalizeBands(raw, rate);
 
   const { O, onsets: rhythmOnsets } = detectRhythmOnsets(normBands, raw, rate, 1, groove);
@@ -108,12 +123,11 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
   const tempo = estimateTempo(O, rate, kickFrames);
 
   // Real pitch analysis on the actual samples: FFT peak tracking over the
-  // full mix for melody/harmony, autocorrelation over the bass stems (FFT
+  // full mix for melody/harmony, autocorrelation over the bass stem (FFT
   // bins are far too coarse below ~100 Hz to separate semitones).
   onProgress?.({ phase: 'pitch', progress: 0 });
   const mono = mixToMono(audioBuffer);
   const pitchFeatures = computePitchFeatures(mono, audioBuffer.sampleRate);
-  const bassMono = mixToMono(stems[1]); // the BASS band stem: 60-250 Hz, already isolated
 
   const melodyLane = extractPseudoLane(normBands, rate, {
     bandIndices: [2, 3, 4], pitchLo: 60, pitchHi: 96, role: Role.MELODY, onsetThreshold: 1,
@@ -154,13 +168,15 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
   const durationMs = (raw[0].length / rate) * 1000;
 
   // tempo.firstBarMs is already the first downbeat at/after t=0 (spec §1.2.5).
-  const barGrid = [];
-  if (!tempo.freeTime) {
-    let bar = 0;
-    for (let t = tempo.firstBarMs; t < durationMs; t += tempo.barPeriodMs, bar++) {
-      barGrid.push({ tick: bar * 4, ms: t, numerator: 4, denominator: 4 });
-    }
-  }
+  // Walked with each window's own locally re-estimated period (tempo.curve)
+  // rather than one period extrapolated across the whole song: a fixed
+  // period accumulates drift error linearly with duration, and a live or
+  // acoustic take not tracked to a click routinely drifts past what a rigid
+  // grid can absorb. tempo.beatsPerBar carries a detected 3/4 (see
+  // estimateTempo's meter search) instead of assuming 4/4 unconditionally.
+  const barGrid = tempo.freeTime
+    ? []
+    : buildDriftAwareBarGrid(tempo.firstBarMs, durationMs, tempo.beatsPerBar, rate, tempo.curve, tempo.tau);
 
   // PAD chords: each bar's sustained harmonic content collapsed to its
   // strongest pitch classes and emitted as long chord tones -- the same
