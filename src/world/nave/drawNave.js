@@ -24,6 +24,13 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
 export function drawNaveWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView) {
   mgr._drawSky(ctx, canvas, A, B, t, 0.8);
 
+  // Deliberately NOT wired here: BiomeManager's classic path draws
+  // drawDeepSky/weaver/meteors (Midasus's sky-writing trail, ambient
+  // constellations, reward-volley meteors) for the other newer world kinds,
+  // but this file's own header says the "sky" here is an interior vault
+  // ceiling, not open air -- open-sky constellations sailing across a
+  // cathedral roof would contradict the space, not fill a gap in it.
+
   // The rose window: a stained-glass celestial, always visible. Use the
   // existing celestial renderer at moderate scale.
   const celestialAlt = 0.65;

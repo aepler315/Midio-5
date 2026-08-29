@@ -22,6 +22,13 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
 export function drawFathomWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView) {
   mgr._drawSky(ctx, canvas, A, B, t, 1);
 
+  // Deliberately NOT wired here: BiomeManager's classic path draws
+  // drawDeepSky/weaver/meteors (Midasus's sky-writing trail, ambient
+  // constellations, reward-volley meteors) for the other newer world kinds,
+  // but this file's own header already says "No stars... the sky is the
+  // water surface overhead" -- adding them would contradict what this world
+  // says about itself, not fill a gap.
+
   // The "celestial" is the sun seen through the surface — always veiled,
   // always high, shimmer-distorted by the water column.
   const sunAlt = Math.max(dn.sunAlt ?? 0.6, 0.55);

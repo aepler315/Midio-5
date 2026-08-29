@@ -3,7 +3,7 @@
 // road infrastructure — gantries, guardrails, billboards — not mountains.
 import { drawTiledStrip } from '../SilhouetteGenerator.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
-import { ensureContrast } from '../../render/VisualStyle.js';
+import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
 import { capFlashAlpha } from '../../ui/Accessibility.js';
@@ -21,8 +21,21 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
   ctx.restore();
 }
 
-export function drawRedlineWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView) {
+export function drawRedlineWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage = null) {
   mgr._drawSky(ctx, canvas, A, B, t, 0.6);
+
+  // Deep-sky layer ported in from BiomeManager's classic path -- a desert
+  // highway at night gets the same open, star-heavy sky as the alpine
+  // biomes: Midasus's sky-writing trail, the ambient constellations, and
+  // reward-volley meteors. Missing here only because Redline got its own
+  // draw function without carrying these calls along.
+  mgr.drawDeepSky(ctx, skyVoyage, canvas);
+  const skyA = styleDials(mgr.visualStyle).skyWireAlpha ?? 1;
+  if (phenomenaFull && skyA > 0.02) {
+    const nightAlphaMul = (1 + 1.2 * 0.6) * Math.max(0.25, skyA);
+    mgr.weaver.draw(ctx, canvas, mgr.reducedFlash, nightAlphaMul);
+  }
+  if (phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
 
   // Big sun or moon — always a dominant presence on the horizon.
   const sunUp = (dn.sunAlt ?? 0) > 0.01;
