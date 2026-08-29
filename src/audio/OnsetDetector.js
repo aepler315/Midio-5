@@ -13,31 +13,44 @@ const MEDIAN_HALF_WINDOW = 43; // ~+-0.5s at ~86 frames/s
 const MIN_ONSET_GAP_MS = 60;
 const LOCAL_MAX_WINDOW_MS = 30;
 
-/** Per-band RMS envelope at ~86 frames/s (44.1kHz/512). Mixes down to mono first. */
+/** RMS envelope of one band-limited AudioBuffer, mixed down to mono first.
+ *  Pulled out of computeBandEnvelopes so a caller processing stems one at a
+ *  time (see AudioAdapter's streaming path) can compute each band's envelope
+ *  and let the full-length buffer be released before rendering the next,
+ *  rather than needing all of them decoded and resident at once purely to
+ *  call one function. */
+export function bandEnvelope(buf, numFrames) {
+  const chans = [];
+  for (let c = 0; c < buf.numberOfChannels; c++) chans.push(buf.getChannelData(c));
+  const env = new Float32Array(numFrames);
+  for (let n = 0; n < numFrames; n++) {
+    const start = n * HOP;
+    let sum = 0;
+    for (let k = 0; k < WIN; k++) {
+      let s = 0;
+      for (let c = 0; c < chans.length; c++) s += chans[c][start + k] || 0;
+      s /= chans.length;
+      sum += s * s;
+    }
+    env[n] = Math.sqrt(sum / WIN);
+  }
+  return env;
+}
+
+/** How many analysis frames a buffer of this length yields, and the frame
+ *  rate that follows from it -- the one thing every per-band envelope call
+ *  must agree on, whether computed all at once or streamed one band at a
+ *  time. */
+export function envelopeFrameCount(length, sampleRate) {
+  return { numFrames: Math.max(1, Math.floor((length - WIN) / HOP) + 1), rate: sampleRate / HOP };
+}
+
+/** Per-band RMS envelope at ~86 frames/s (44.1kHz/512) for every stem at
+ *  once. Mixes each down to mono first. */
 export function computeBandEnvelopes(stemBuffers) {
   const sampleRate = stemBuffers[0].sampleRate;
-  const length = stemBuffers[0].length;
-  const numFrames = Math.max(1, Math.floor((length - WIN) / HOP) + 1);
-  const rate = sampleRate / HOP;
-
-  const raw = stemBuffers.map((buf) => {
-    const chans = [];
-    for (let c = 0; c < buf.numberOfChannels; c++) chans.push(buf.getChannelData(c));
-    const env = new Float32Array(numFrames);
-    for (let n = 0; n < numFrames; n++) {
-      const start = n * HOP;
-      let sum = 0;
-      for (let k = 0; k < WIN; k++) {
-        let s = 0;
-        for (let c = 0; c < chans.length; c++) s += chans[c][start + k] || 0;
-        s /= chans.length;
-        sum += s * s;
-      }
-      env[n] = Math.sqrt(sum / WIN);
-    }
-    return env;
-  });
-
+  const { numFrames, rate } = envelopeFrameCount(stemBuffers[0].length, sampleRate);
+  const raw = stemBuffers.map((buf) => bandEnvelope(buf, numFrames));
   return { rate, numFrames, raw, sampleRate };
 }
 
@@ -102,16 +115,65 @@ function weightedFluxSum(normBands, weights) {
   return O;
 }
 
+/**
+ * A running median over a window that slides by exactly one element per
+ * step, backed by one array kept sorted at all times. Each step removes the
+ * value leaving the window and inserts the one entering it, each by binary
+ * search + splice (O(log w) to locate, O(w) to shift) -- there is no reason
+ * to re-copy and re-sort all ~87 elements of the window from scratch on
+ * every one of a song's ~20000 analysis frames, three times over (rhythm
+ * onsets plus both pseudo-lanes), which is what medianAdaptiveThreshold did.
+ * The window is built incrementally (insert-only) for the first `halfWindow`
+ * steps, then becomes slide (remove+insert) once it's full, matching the
+ * asymmetric lo/hi clamping medianAdaptiveThreshold applies at both edges.
+ */
+class SlidingMedian {
+  constructor() {
+    this.sorted = [];
+  }
+  _indexOf(v) {
+    // First index whose value is >= v (lower_bound) -- exact for insertion;
+    // removal additionally trusts this points AT the value being removed,
+    // which holds because every value ever inserted is removed at most once,
+    // by the exact reference frame that added it.
+    let lo = 0, hi = this.sorted.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.sorted[mid] < v) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+  }
+  insert(v) {
+    this.sorted.splice(this._indexOf(v), 0, v);
+  }
+  remove(v) {
+    this.sorted.splice(this._indexOf(v), 1);
+  }
+  median() {
+    return this.sorted[this.sorted.length >> 1];
+  }
+}
+
 function medianAdaptiveThreshold(O, halfWindow, onsetThreshold) {
   const delta = 0.02 * onsetThreshold;
   const lambda = 1.6 * onsetThreshold;
   const n = O.length;
   const theta = new Float32Array(n);
+  const sm = new SlidingMedian();
+  // Seed the very first window ([0, halfWindow]) by insertion.
+  for (let k = 0; k <= Math.min(halfWindow, n - 1); k++) sm.insert(O[k]);
   for (let i = 0; i < n; i++) {
     const lo = Math.max(0, i - halfWindow), hi = Math.min(n - 1, i + halfWindow);
-    const window = Array.from(O.subarray(lo, hi + 1)).sort((a, b) => a - b);
-    const med = window[Math.floor(window.length / 2)];
-    theta[i] = delta + lambda * med;
+    if (i > 0) {
+      // The window boundary that just moved past this step, relative to the
+      // PREVIOUS i: an element leaves when its lo bound advanced past it, one
+      // enters when this step's hi bound reaches a new index.
+      const prevLo = Math.max(0, i - 1 - halfWindow);
+      if (lo > prevLo) sm.remove(O[prevLo]);
+      const prevHi = Math.min(n - 1, i - 1 + halfWindow);
+      if (hi > prevHi) sm.insert(O[hi]);
+    }
+    theta[i] = delta + lambda * sm.median();
   }
   return theta;
 }
@@ -267,28 +329,133 @@ export function estimateTempo(O, rate, kickFrames) {
     if (s > phiScore) { phiScore = s; phiStar = phi; }
   }
 
-  // Downbeat: assume 4 beats/bar, pick which of the 4 beat-phases holds the most kick energy.
+  // Downbeat: for a candidate beats/bar count, pick which beat-phase holds
+  // the most kick energy PER PHASE ON AVERAGE (not summed) -- summed would
+  // systematically favor whichever candidate happens to sample fewer, larger
+  // groups over the same span, which has nothing to do with where the actual
+  // downbeat falls.
   const kickOnly = new Float32Array(n);
   for (const kf of kickFrames) if (kf < n) kickOnly[kf] = O[kf];
-  let mStar = 0, mScore = -Infinity;
-  for (let m = 0; m < 4; m++) {
-    let s = 0;
-    for (let j = 0; phiStar + (m + 4 * j) * tauFinal < n; j++) s += kickOnly[phiStar + (m + 4 * j) * tauFinal];
-    if (s > mScore) { mScore = s; mStar = m; }
+  const pickDownbeat = (beatsPerBar) => {
+    let mStar = 0, mScore = -Infinity;
+    for (let m = 0; m < beatsPerBar; m++) {
+      let s = 0, count = 0;
+      for (let j = 0; phiStar + (m + beatsPerBar * j) * tauFinal < n; j++, count++) {
+        s += kickOnly[phiStar + (m + beatsPerBar * j) * tauFinal];
+      }
+      const mean = count > 0 ? s / count : 0;
+      if (mean > mScore) { mScore = mean; mStar = m; }
+    }
+    return { mStar, mScore };
+  };
+
+  // Meter: 4/4 is the default engineered into every downstream consumer
+  // (StructureAnalyzer's checkerboard kernel, BattleDirector's per-bar step
+  // count, the demo timeline) and by far the more common case, so 3/4 must
+  // win by a real margin to override it -- the same "a real margin, not a
+  // hair" discipline PROFILE_DECIDE_MARGIN applies to the kick/hat split
+  // above. Without this, a 4/4 song whose downbeat kick happens to line up
+  // no better than chance across the 4 phases can spuriously read as a
+  // waltz. Trying only {3, 4}: compound/asymmetric meters (6/8, 5/4, 7/8)
+  // are real but rare enough in this app's music that guessing among them
+  // from kick energy alone would cost more false positives than it's worth.
+  const METER_MARGIN = 1.15;
+  const meter4 = pickDownbeat(4);
+  let beatsPerBar = 4, mStar = meter4.mStar;
+  if (kickFrames.length > 0) {
+    const meter3 = pickDownbeat(3);
+    if (meter3.mScore > meter4.mScore * METER_MARGIN) { beatsPerBar = 3; mStar = meter3.mStar; }
   }
 
-  // phiStar in [0,tauFinal) and mStar in {0,1,2,3} => downbeatFrame in [0, 4*tauFinal),
-  // i.e. exactly the first downbeat at or after t=0.
+  // phiStar in [0,tauFinal) and mStar in [0,beatsPerBar) => downbeatFrame in
+  // [0, beatsPerBar*tauFinal), i.e. exactly the first downbeat at or after t=0.
   const downbeatFrame = phiStar + mStar * tauFinal;
+
+  // Local tempo curve for drift tracking (see estimateTempoCurve): a single
+  // beatPeriodMs extrapolated across the whole song accumulates error
+  // linearly with duration, which real (non-quantized) performances --
+  // especially anything not tracked to a click -- routinely drift past.
+  const curve = estimateTempoCurve(O, rate, tauFinal);
 
   return {
     bpm,
     beatPeriodMs,
     confidence: clamp(rHatFinal, 0, 1),
     freeTime: rHatFinal < 0.25,
-    barPeriodMs: beatPeriodMs * 4,
+    beatsPerBar,
+    barPeriodMs: beatPeriodMs * beatsPerBar,
     firstBarMs: (downbeatFrame / rate) * 1000,
+    tau: tauFinal,
+    curve,
   };
+}
+
+/**
+ * Re-estimate the beat period in a sequence of windows, each restricted to a
+ * narrow search range around the globally estimated period -- a bounded
+ * "how much did the tempo drift, locally" rather than a fresh global search
+ * (which would be free to lock onto an unrelated harmonic in a quiet or
+ * sparse window). Each window re-demeans itself rather than reusing the
+ * whole-song mean, so a window's own local dynamics decide its own read.
+ *
+ * @returns {{startFrame: number, tau: number, confidence: number}[]} one
+ *   segment per window, covering [0, O.length). `confidence` is the local
+ *   autocorrelation score at that segment's chosen tau, in [0,1] -- a caller
+ *   walking the bar grid should fall back to the global tau wherever this is
+ *   too low to trust (near-silence, a fill with no clear pulse).
+ */
+export function estimateTempoCurve(O, rate, globalTau, { windowSec = 20, driftTolerance = 0.12 } = {}) {
+  const n = O.length;
+  const windowFrames = Math.max(globalTau * 8, Math.round(windowSec * rate));
+  const tauLo = Math.max(1, Math.round(globalTau * (1 - driftTolerance)));
+  const tauHi = Math.max(tauLo + 1, Math.round(globalTau * (1 + driftTolerance)));
+  const segments = [];
+  for (let start = 0; start < n; start += windowFrames) {
+    const end = Math.min(n, start + windowFrames);
+    const slice = O.subarray(start, end);
+    let mean = 0;
+    for (let i = 0; i < slice.length; i++) mean += slice[i];
+    mean /= Math.max(1, slice.length);
+    const bar = new Float32Array(slice.length);
+    for (let i = 0; i < slice.length; i++) bar[i] = slice[i] - mean;
+    let r0 = 0;
+    for (let i = 0; i < bar.length; i++) r0 += bar[i] * bar[i];
+    r0 = Math.max(r0, 1e-9);
+    let bestTau = globalTau, bestScore = -Infinity;
+    for (let tau = tauLo; tau <= tauHi && tau < bar.length; tau++) {
+      const score = correlationAt(bar, r0, tau);
+      if (score > bestScore) { bestScore = score; bestTau = tau; }
+    }
+    segments.push({ startFrame: start, tau: bestTau, confidence: clamp(bestScore, 0, 1) });
+  }
+  return segments.length ? segments : [{ startFrame: 0, tau: globalTau, confidence: 0 }];
+}
+
+/**
+ * Walk the bar grid forward from `firstBarMs` using each window's LOCALLY
+ * re-estimated beat period (estimateTempoCurve) instead of one period
+ * extrapolated across the whole song -- bounding drift error to at most one
+ * window's worth instead of letting it accumulate linearly to the end of the
+ * track. A 0.4% real-world tempo drift, entirely plausible in a live or
+ * acoustic recording, already puts a fixed-period grid half a beat off by
+ * the four-minute mark at 120 BPM; StructureAnalyzer's checkerboard kernel
+ * and every PAD chord window both trust bar boundaries to be where they say.
+ * Falls back to `globalTau` wherever a window's local read is not confident
+ * enough to trust (near-silence, a fill with no clear pulse).
+ */
+export function buildDriftAwareBarGrid(firstBarMs, durationMs, beatsPerBar, rate, curve, globalTau, confidenceFloor = 0.2) {
+  const barGrid = [];
+  let t = firstBarMs, bar = 0, segIdx = 0;
+  while (t < durationMs) {
+    barGrid.push({ tick: bar * 4, ms: t, numerator: beatsPerBar, denominator: 4 });
+    const frame = (t / 1000) * rate;
+    while (segIdx + 1 < curve.length && curve[segIdx + 1].startFrame <= frame) segIdx++;
+    const seg = curve[segIdx];
+    const tau = seg && seg.confidence >= confidenceFloor ? seg.tau : globalTau;
+    t += ((tau / rate) * 1000) * beatsPerBar;
+    bar++;
+  }
+  return barGrid;
 }
 
 function kickGridExplainScore(kickFrames, tau, rate) {

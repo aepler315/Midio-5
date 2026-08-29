@@ -38,3 +38,30 @@ export async function separateStems(sourceBuffer, onProgress = null) {
     }));
   return Promise.all(renders);
 }
+
+/**
+ * Renders the 7 bands ONE AT A TIME rather than all in parallel, handing
+ * each to `onBand(index, buffer)` as soon as it's ready. separateStems'
+ * Promise.all keeps every band's full-length AudioBuffer resident
+ * simultaneously purely so the caller can iterate them together afterward
+ * -- 7 stereo buffers the length of the source track, ~565MB for a 4-minute
+ * 44.1kHz song, and a real OOM risk on mobile. A caller that only needs each
+ * band's compact envelope (a few hundred bytes/second, not the raw audio)
+ * can extract it inside `onBand` and let the buffer fall out of scope before
+ * the next render starts, so peak memory is bounded by ONE band's buffer
+ * rather than all seven.
+ *
+ * Sequential rather than parallel: OfflineAudioContext rendering is native
+ * and reasonably fast on its own, so the loss from giving up 7-way
+ * concurrency is a rendering-time cost; the 565MB simultaneous peak is a
+ * memory-budget cost that can crash the tab outright. The former is the
+ * safer trade.
+ */
+export async function separateStemsSequential(sourceBuffer, onBand, onProgress = null) {
+  for (let i = 0; i < BANDS.length; i++) {
+    const [lo, hi] = BANDS[i];
+    const buf = await renderBand(sourceBuffer, lo, hi);
+    await onBand(i, buf);
+    if (onProgress) onProgress((i + 1) / BANDS.length);
+  }
+}
