@@ -10,24 +10,31 @@ function melodyEvt(tMs, pitch = 60, vel = 0.7) {
 test('nextDotPos: first dot lands in region, subsequent dots stay in region and hop scales with the field diagonal', () => {
   const rand = mulberry32(1);
   const w = 1280, h = 720;
-  // Region now spans nearly the whole sky (0.03-0.97 x, 0.04-0.95 y) --
-  // terrain is drawn after this layer and safely occludes anything below a
-  // ridge, exactly like the ambient star catalogue, so there's no reason to
-  // hold constellations back to the upper half of the screen.
+  // Region spans nearly the whole WIDTH (0.03-0.97 x) but stops well short
+  // of the ground vertically (0.04-0.58 y): ground-level landmarks
+  // (Landmarks.js) are drawn as unfilled stroked wireframes, so unlike the
+  // ambient star catalogue, nothing near the ground actually occludes a
+  // figure that lands there -- and Midio's own groundY sits at 0.75 of the
+  // nominal stage, so anything past that is visibly below the horizon, not
+  // behind it. See the REGION comment in ConstellationWeaver.js.
   const p0 = nextDotPos(null, rand, w, h);
   assert.ok(p0.x >= 0.03 * w && p0.x <= 0.97 * w);
-  assert.ok(p0.y >= 0.04 * h && p0.y <= 0.95 * h);
+  assert.ok(p0.y >= 0.04 * h && p0.y <= 0.58 * h);
   let prev = p0;
   const diag = Math.hypot(w, h);
   for (let i = 0; i < 50; i++) {
     const p = nextDotPos(prev, rand, w, h);
     assert.ok(p.x >= 0.03 * w - 1e-6 && p.x <= 0.97 * w + 1e-6);
-    assert.ok(p.y >= 0.04 * h - 1e-6 && p.y <= 0.95 * h + 1e-6);
+    assert.ok(p.y >= 0.04 * h - 1e-6 && p.y <= 0.58 * h + 1e-6);
     assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
     // Hop distance (pre-reflection) is 5%-11% of the field diagonal, not a
-    // fixed pixel range -- verify it against an interior prev (away from
-    // REGION's edges, so reflection can't shorten the observed distance).
-    if (prev.x > 0.2 * w && prev.x < 0.8 * w && prev.y > 0.2 * h && prev.y < 0.8 * h) {
+    // fixed pixel range -- verify it against an interior prev far enough from
+    // EVERY REGION edge that the max possible hop (11% of the diagonal,
+    // ~161px at this w/h) can't reach it, so reflection can't shorten the
+    // observed distance. REGION's y range (0.04-0.58) is far narrower than
+    // its x range (0.03-0.97), so the interior y band that clears a 161px
+    // hop from both edges is correspondingly narrow: roughly [0.264, 0.356].
+    if (prev.x > 0.2 * w && prev.x < 0.8 * w && prev.y > 0.27 * h && prev.y < 0.35 * h) {
       const stepDist = Math.hypot(p.x - prev.x, p.y - prev.y);
       assert.ok(stepDist >= 0.05 * diag - 1e-6 && stepDist <= 0.11 * diag + 1e-6,
         `step ${stepDist} should be within 5%-11% of the diagonal (${diag})`);
@@ -179,4 +186,47 @@ test('onKick pulse rises then decays toward 0', () => {
   assert.ok(weaver.pulse > 0.8);
   for (let i = 0; i < 40; i++) weaver.update(i * 50, 0.05);
   assert.ok(weaver.pulse < 0.05, `pulse should have decayed, got ${weaver.pulse}`);
+});
+
+// ── Figures must not reach the ground line ──────────────────────────
+//
+// Reproduced live: yMax=0.95 let a figure's lowest dot land right at (or
+// past) Midio's actual ground line (groundY=0.75 of the nominal stage), and
+// since Landmarks.js draws ground-level decoration as unfilled STROKED
+// wireframes (paintLatticeTower et al.), nothing there actually occludes it
+// the way the "terrain occludes anything below a ridge" reasoning assumed.
+// With up to 3 figures alive at once, two both resting on the grass line
+// read as exactly the "stars bunched together" complaint this was meant to
+// fix -- just bunched on the ground instead of on the X axis.
+const GROUND_FRAC = 0.75; // Midio.groundY (540) / Midasus's nominal stageH (720)
+
+test('nextDotPos never lands at or past the ground line, regardless of prior position', () => {
+  const rand = mulberry32(2024);
+  const w = 1920, h = 1080;
+  let prev = null;
+  for (let i = 0; i < 200; i++) {
+    prev = nextDotPos(prev, rand, w, h);
+    assert.ok(prev.y < GROUND_FRAC * h,
+      `dot at y=${(prev.y / h).toFixed(3)} of height should stay clear of the ground line at ${GROUND_FRAC}`);
+  }
+});
+
+test('a full song of figures never produces a dot at or past the ground line', () => {
+  const weaver = new ConstellationWeaver(55, 1920, 1080);
+  let t = 0;
+  for (let i = 0; i < 400; i++) {
+    weaver.onMelody(melodyEvt(t, 60 + (i * 5) % 24, 0.6));
+    weaver.update(t, 0.5);
+    t += 500;
+  }
+  const allDots = [
+    ...(weaver.building ? weaver.building.dots : []),
+    ...weaver.figures.flatMap((f) => f.dots),
+    ...weaver.stars.flatMap((s) => s.dots),
+  ];
+  assert.ok(allDots.length > 0, 'fixture should have produced some dots');
+  for (const d of allDots) {
+    assert.ok(d.y < GROUND_FRAC * 1080,
+      `a dot at y=${(d.y / 1080).toFixed(3)} of height sits at or past the ground line`);
+  }
 });

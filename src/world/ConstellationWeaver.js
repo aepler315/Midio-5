@@ -9,15 +9,24 @@
 import { mulberry32, clamp01 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 
-// yMax used to stop at 0.58 -- barely past mid-screen -- which confined
-// every figure and every crystallized "permanent" star to a band across the
-// upper-middle of the sky no matter how much open sky sat below it. Terrain
-// is drawn AFTER this layer (BiomeManager.draw calls weaver.draw before the
-// L2 mountain silhouette), exactly like the ambient star catalogue, so
-// anything that lands behind a ridge or a tower is already safely painted
-// over -- there was never a reason to hold the region back from the real
-// horizon the way the ambient field doesn't.
-const REGION = { xMin: 0.03, xMax: 0.97, yMin: 0.04, yMax: 0.95 };
+// yMax used to stop at 0.58 -- barely past mid-screen -- and was widened to
+// 0.95 on the theory that terrain, drawn after this layer, would occlude
+// anything that dipped low. That reasoning doesn't hold for this game's
+// actual look: ground-level landmarks (paintLatticeTower and friends,
+// Landmarks.js) are drawn as bright STROKED wireframes, not filled
+// silhouettes, so they never occlude anything behind them either -- and
+// Midio's own groundY sits at 0.75 of the nominal stage, so 0.95 let dots
+// land BELOW the ground line outright. The visible result: a figure's own
+// lowest dot routinely plants itself right at the grass horizon, and since
+// up to 3 figures can be alive at once (MAX_ACTIVE_FIGURES) for ~8 seconds
+// each (HOLD_MS + FADE_MS), two of them doing that near the same moment reads
+// as exactly the "stars bunched together" complaint this was meant to fix --
+// now bunched by both resting on the same ground line instead of by X
+// position. Pulled back to comfortably clear real terrain peaks (which reach
+// roughly 0.55 in practice) and the ground line itself, while keeping the
+// wide X range and diagonal-scaled hop distance from the same investigation
+// -- those measurably fixed real problems and aren't implicated here.
+const REGION = { xMin: 0.03, xMax: 0.97, yMin: 0.04, yMax: 0.58 };
 const FIGURE_DOTS_MIN = 5;
 const FIGURE_DOTS_MAX = 8;
 const EDGE_GROW_MS = 250;
