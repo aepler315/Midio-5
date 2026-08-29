@@ -156,7 +156,7 @@ async function handleSoulseekRoute(req, res, reqPath) {
     if (req.method === 'POST') {
       try {
         const body = await readJsonBody(req);
-        const status = setConfig(body || {});
+        const status = await setConfig(body || {});
         sendJson(res, 200, { ok: true, ...status, ...(await getStatus()) });
       } catch (err) {
         sendJson(res, 400, { error: err.message || String(err) });
@@ -164,7 +164,7 @@ async function handleSoulseekRoute(req, res, reqPath) {
       return;
     }
     if (req.method === 'DELETE') {
-      setConfig({ mode: 'clear' });
+      setConfig({ mode: 'clear' }).catch(() => {});
       try {
         sendJson(res, 200, { ok: true, ...(await getStatus()) });
       } catch (err) {
