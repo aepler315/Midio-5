@@ -157,3 +157,81 @@ test('SSM boundaries land at the right TIMES even when its grid differs from our
       `section ${i} should start near ${wantMs[i]}ms, got ${fake.sections[i].startMs}`);
   }
 });
+
+// --- The SSM read being discarded without saying so ----------------------
+//
+// _buildSchedule set structureSource from `ssmUsable` BEFORE running
+// _ensureMinimumSections, which is allowed to throw the chosen cuts away
+// entirely -- re-picking from the energy novelty with the noise floor
+// dropped, or splitting the clock evenly. A schedule with no SSM content in
+// it at all still reported itself as 'ssm', which is what kept the whole
+// class of "we ignored the analyzer" bug out of the debug overlay.
+//
+// Separately, the SSM's repetition LABELS -- the half of the read that knows
+// a returning chorus is literally the same music -- were only used when
+// `labels.length === sections.length`. The section list is not a copy of the
+// analyzer's segment list (boundaries get dropped on the tail or collapsed
+// onto one grid point, empty spans are skipped), so a single dropped
+// boundary threw away every label.
+
+test('a schedule the minimum-sections floor rebuilt does not claim to be the SSM read', () => {
+  const durationMs = 4 * 60 * 1000;
+  // Confident, but only two sections -- below the floor for a song this long,
+  // so _ensureMinimumSections re-picks from the energy novelty and the SSM's
+  // cuts do not survive into the schedule at all.
+  const fake = buildWithStructure([], fakeEnergyCurves(durationMs), durationMs, {
+    boundariesMs: [0, 100000], labels: [0, 1], cutIndices: [0, 50, 120], confidence: 0.9,
+  });
+  assert.ok(fake.sections.length > 2, 'the floor should have rebuilt the schedule');
+  assert.equal(fake.structureSource, 'energy-novelty',
+    'the schedule is made of energy peaks, so that is what it must report');
+});
+
+test('an even-split schedule says so, rather than borrowing the credit of a detector', () => {
+  // Nothing in the signal to pick peaks from: the floor falls all the way
+  // through to even time-splits. That is a real degradation and the overlay
+  // should be able to show it.
+  const durationMs = 4 * 60 * 1000;
+  const sections = buildSchedule([], flatEnergyCurves(), durationMs, 1);
+  const fake = Object.create(BiomeManager.prototype);
+  fake._buildSchedule([], flatEnergyCurves(), durationMs, 1, null);
+  assert.ok(sections.length >= 3);
+  assert.equal(fake.structureSource, 'even-split');
+});
+
+/** Three spans with mutually orthogonal one-hot spectra, so the band-shape
+ *  fallback (SongForm, cosine >= 0.9) is guaranteed to call all three
+ *  different music -- even though the outer two are the same section
+ *  returning. Chroma hears the recurrence; band shape alone cannot. */
+function orthogonalSpanCurves() {
+  const oneHot = (b) => new Array(7).fill(0).map((_, k) => (k === b ? 0.9 : 0.05));
+  return {
+    sampleAll(ms) {
+      if (ms < 60000) return oneHot(0);
+      return ms < 150000 ? oneHot(3) : oneHot(6);
+    },
+  };
+}
+
+test('the SSM keeps its repetition labels when a boundary is dropped and the counts stop matching', () => {
+  const durationMs = 4 * 60 * 1000;
+  // Two boundaries 500ms apart collapse onto the same point of this
+  // schedule's ~2s grid, so _cutsFromTimes drops the second: 4 labels, 3
+  // sections. The song is chorus/verse/chorus -- material that RECURS, which
+  // is exactly what the band-shape fallback cannot see here (the three spans
+  // are spectrally orthogonal by construction, so it labels them 0,1,2).
+  const fake = buildWithStructure([], orthogonalSpanCurves(), durationMs, {
+    boundariesMs: [0, 60000, 60500, 150000],
+    labels: [0, 1, 2, 0],
+    cutIndices: [0, 30, 30, 75, 120],
+    confidence: 0.8,
+  });
+  assert.equal(fake.structureSource, 'ssm');
+  assert.equal(fake.sections.length, 3, 'the near-duplicate boundary should have been dropped');
+  const labels = fake.sections.map((s) => s.label);
+  assert.equal(labels[0], labels[2], `the returning chorus must share a label, got [${labels}]`);
+  assert.notEqual(labels[0], labels[1], 'and the verse between them must not');
+  // Same label means the same cast biome, which is the point: the returning
+  // chorus wears the face it wore the first time.
+  assert.equal(fake.sections[0].profile, fake.sections[2].profile);
+});

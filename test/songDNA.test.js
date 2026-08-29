@@ -121,6 +121,99 @@ test('buildSongDNA (audio-only) actually varies familyShare with the song\'s spe
   assert.notDeepEqual(grammarDark, grammarBright);
 });
 
+// ── The audio upload path ──────────────────────────────────────────
+//
+// AudioAdapter produces a real NoteEvent timeline (rhythm/melody/bass/PAD),
+// so `timeline.length >= 4` is TRUE for an audio upload -- it is not the
+// "no timeline" case the tests above cover. Two things followed from that:
+//
+//  * familyShare's spectral fallback was gated on timeline length rather
+//    than on whether GM programs actually existed, and audio events carry
+//    program -1. So every audio upload took the MIDI branch, found no
+//    family for any event, and kept the hardcoded even split -- the exact
+//    constant familyShareFromWatch was written to replace. The test above
+//    passed throughout because it calls the no-timeline path.
+//  * every rhythm onset is emitted at a fixed placeholder pitch (36/38/42
+//    for KICK/SNARE/HAT), and those were folded into the register and
+//    harmony statistics as if they were notes.
+
+/** An AudioAdapter-shaped timeline: no programs anywhere, plus the fixed
+ *  placeholder-pitch drum lane, which is typically the most numerous role. */
+function audioTimeline({ melody, withDrums = true, durationMs = 120000 }) {
+  const timeline = [];
+  for (let t = 0, i = 0; t < durationMs; t += 600, i++) {
+    timeline.push({
+      tMs: t, durMs: 550, pitch: melody[i % melody.length], vel: 0.7,
+      role: 'MELODY', channel: 3, program: -1,
+    });
+  }
+  if (withDrums) {
+    for (let t = 0; t < durationMs; t += 250) {
+      timeline.push({
+        tMs: t, durMs: 90, pitch: t % 500 === 0 ? 36 : 42, vel: 0.8,
+        role: 'RHYTHM', channel: 0, program: -1,
+      });
+    }
+  }
+  return { timeline, durationMs, bpm: 120 };
+}
+
+test('familyShare falls back to the spectral read for an audio timeline, which has no GM programs', () => {
+  const melody = [67, 71, 74, 67, 62, 71, 66, 67];
+  const dark = buildSongDNA({ ...audioTimeline({ melody }), analysis: { brightness: 0.1, dynamicRange: 0.1 } });
+  const bright = buildSongDNA({ ...audioTimeline({ melody }), analysis: { brightness: 0.95, dynamicRange: 0.9 } });
+
+  const FLAT = { organic: 0.34, geometric: 0.33, distorted: 0.33 };
+  assert.notDeepEqual(dark.familyShare, FLAT, 'an audio upload must not wear the hardcoded even split');
+  assert.notDeepEqual(dark.familyShare, bright.familyShare, 'and it must track the song, not be constant');
+  // It reaches the skyline: five of buildShapeGrammar's six production rules
+  // put familyShare in their dominant term, so a pinned share flattens them.
+  assert.notDeepEqual(buildShapeGrammar(dark), buildShapeGrammar(bright));
+});
+
+test('a MIDI timeline with real GM programs still reads family from the programs, not the spectrum', () => {
+  // The fallback must not steal the case it was never meant to cover.
+  const distorted = buildSongDNA(synthTimeline({ pitches: [40, 43, 47], program: 30 }));
+  const organic = buildSongDNA(synthTimeline({ pitches: [60, 64, 67], program: 0 }));
+  assert.ok(distorted.familyShare.distorted > 0.99, 'a wholly distorted-program song is 100% distorted');
+  assert.ok(organic.familyShare.organic > 0.99);
+});
+
+test('the drum lane does not move register or harmony, but still counts as density and percussion', () => {
+  const melody = [67, 71, 74, 67, 62, 71, 66, 67];
+  const dry = buildSongDNA(audioTimeline({ melody, withDrums: false }));
+  const wet = buildSongDNA(audioTimeline({ melody, withDrums: true }));
+
+  // Pitch classes 0/2/6 and the bottom-two-octaves pitches 36/38/42 are the
+  // drum MAP, not the music. Adding drums to the same melody must not move
+  // what the song's register or harmony reads as.
+  assert.equal(wet.tonicPc, dry.tonicPc, 'key must come from the pitched material alone');
+  assert.ok(Math.abs(wet.meanPitch01 - dry.meanPitch01) < 1e-9,
+    `register moved ${dry.meanPitch01} -> ${wet.meanPitch01} on drums alone`);
+  assert.ok(Math.abs(wet.registerSpread - dry.registerSpread) < 1e-9);
+  assert.ok(Math.abs(wet.harmonicComplexity - dry.harmonicComplexity) < 1e-9,
+    `harmony moved ${dry.harmonicComplexity} -> ${wet.harmonicComplexity} on drums alone`);
+
+  // But drums are genuinely part of the arrangement: density and percussion
+  // share must still see them, or this trades one wrong answer for another.
+  assert.ok(wet.noteDensity > dry.noteDensity, 'drums add notes');
+  assert.ok(wet.percussionDensity > 0.4, `drums are percussion, got ${wet.percussionDensity}`);
+  assert.equal(dry.percussionDensity, 0);
+});
+
+test('a drum-only timeline reports no tonal read rather than the drum map as a key', () => {
+  const drums = audioTimeline({ melody: [], withDrums: true });
+  drums.timeline = drums.timeline.filter((e) => e.role === 'RHYTHM');
+  const dna = buildSongDNA({ ...drums, analysis: { brightness: 0.6 } });
+  assert.ok(dna.timeline === undefined);
+  assert.equal(dna.hasTimeline, true, 'there IS a timeline -- it just has no pitches');
+  assert.equal(dna.hasTonalTimeline, false, 'and nothing tonal in it to read');
+  // Falls through to the spectral proxies, which are bounded and finite.
+  assert.ok(dna.tonicPc >= 0 && dna.tonicPc <= 11);
+  assert.ok(Number.isFinite(dna.meanPitch01) && Number.isFinite(dna.harmonicComplexity));
+  assert.ok(dna.percussionDensity > 0.99, 'a drum-only song is all percussion');
+});
+
 test('oklchToHex always returns a valid 6-digit hex, even at extreme out-of-gamut chroma', () => {
   for (const [L, C, H] of [[0.5, 0.4, 0], [0.9, 0.5, 120], [0.1, 0.3, 250], [0.5, 0, 90]]) {
     const hex = oklchToHex(L, C, H);

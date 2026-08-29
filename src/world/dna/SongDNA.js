@@ -103,6 +103,25 @@ export function familyShareFromWatch(watch) {
   return { organic: organic / sum, geometric: geometric / sum, distorted: distorted / sum };
 }
 
+/**
+ * Whether an event carries real pitch information.
+ *
+ * The audio path emits every rhythm onset at a fixed placeholder pitch --
+ * 36/38/42 for KICK/SNARE/HAT (AudioAdapter, via OnsetDetector's classifier)
+ * -- and MIDI drums live on channel 9, where the "pitch" is a GM drum-kit
+ * slot, not a note. Either way the number is not a pitch. Folding it into a
+ * pitch-class histogram or a register statistic does not add noise, it adds a
+ * large spike of CONSTANT, wrong shape: 36/38/42 fold to pitch classes 0, 2
+ * and 6, so every audio upload gets a C/D/F# bias pushed into
+ * Krumhansl-Schmuckler, and every mean-pitch reading gets dragged toward the
+ * bottom two octaves. Rhythm onsets also use a 60ms minimum gap against the
+ * pseudo-lanes' 120ms (OnsetDetector), so on most real music they are the
+ * single most numerous role -- they outvote the actual notes.
+ */
+export function isPitched(e) {
+  return e.channel !== 9 && e.role !== Role.RHYTHM;
+}
+
 function bucketByBar(timeline, barGrid, durationMs) {
   if (Array.isArray(barGrid) && barGrid.length > 1) {
     const bounds = barGrid.map((b) => b.ms).sort((a, b) => a - b);
@@ -145,23 +164,19 @@ export function buildSongDNA(data = {}) {
   let harmonicComplexity = 0.3, percussionDensity = 0.2, registerTrend = 0;
   let familyShare = { organic: 0.34, geometric: 0.33, distorted: 0.33 };
 
+  // The tonal fields (key, register, harmony) may only be read off events
+  // that actually carry a pitch -- see isPitched. A drum-only timeline has a
+  // rhythm to report but no key, and saying so is better than reporting the
+  // drum map's own pitch classes as the song's harmony.
+  const pitched = timeline.filter(isPitched);
+  const hasTonal = pitched.length >= 4;
+
   if (timeline.length >= 4) {
-    const hist = new Array(12).fill(0);
-    let pitchSum = 0, pitchSqSum = 0, velMin = 1, velMax = 0, percCount = 0;
-    // Register trajectory: mean pitch of the song's first third vs its last
-    // third, so particle direction can read whether the song climbs or
-    // descends in register rather than only its instantaneous register.
-    let firstSum = 0, firstN = 0, lastSum = 0, lastN = 0;
-    const firstCut = dur / 3, lastCut = (dur * 2) / 3;
+    let velMin = 1, velMax = 0, percCount = 0;
     const fam = { organic: 0, geometric: 0, distorted: 0, total: 0 };
+    // Density, dynamics, percussion share and instrument family are
+    // properties of the WHOLE arrangement -- drums belong in all four.
     for (const e of timeline) {
-      const pc = ((e.pitch ?? 60) % 12 + 12) % 12;
-      const weight = Math.max(0.05, (e.durMs ?? 90)) * Math.max(0.05, e.vel ?? 0.5);
-      hist[pc] += weight;
-      pitchSum += e.pitch ?? 60;
-      pitchSqSum += (e.pitch ?? 60) ** 2;
-      if (e.tMs <= firstCut) { firstSum += e.pitch ?? 60; firstN++; }
-      else if (e.tMs >= lastCut) { lastSum += e.pitch ?? 60; lastN++; }
       const v = e.vel ?? 0.5;
       if (v < velMin) velMin = v;
       if (v > velMax) velMax = v;
@@ -170,48 +185,79 @@ export function buildSongDNA(data = {}) {
       if (f) { fam[f]++; fam.total++; }
     }
     const n = timeline.length;
-    const key = estimateKey(hist);
-    tonicPc = key.tonicPc; isMajor = key.isMajor; keyConfidence = key.confidence;
-
-    const meanPitch = pitchSum / n;
-    const variance = Math.max(0, pitchSqSum / n - meanPitch * meanPitch);
-    meanPitch01 = clamp01((meanPitch - 30) / 66);
-    registerSpread = clamp01(Math.sqrt(variance) / 24);
     noteDensity = clamp01((n / (dur / 1000)) / 8);
     velocityRange = clamp01(velMax - velMin);
     percussionDensity = clamp01(percCount / n);
+
+    // GM program numbers, when the source actually had any. Audio uploads
+    // never do (NoteEvent defaults program to -1, so familyOf returns null
+    // for every event and fam.total stays 0) -- they fall through to the
+    // spectral read below instead of to a hardcoded even split, which is the
+    // whole reason familyShareFromWatch exists. Keying that fallback off
+    // `timeline.length` rather than off the programs is what left every audio
+    // upload wearing the constant: the audio path DOES build a timeline
+    // (rhythm/melody/bass/PAD events), so it never reached the fallback.
+    familyShare = fam.total > 0
+      ? {
+        organic: fam.organic / fam.total,
+        geometric: fam.geometric / fam.total,
+        distorted: fam.distorted / fam.total,
+      }
+      : familyShareFromWatch(watch);
+  } else {
+    familyShare = familyShareFromWatch(watch);
+    noteDensity = watch.onset;
+    velocityRange = watch.dyn;
+    percussionDensity = clamp01(watch.onset * 0.6);
+  }
+
+  if (hasTonal) {
+    const hist = new Array(12).fill(0);
+    let pitchSum = 0, pitchSqSum = 0;
+    // Register trajectory: mean pitch of the song's first third vs its last
+    // third, so particle direction can read whether the song climbs or
+    // descends in register rather than only its instantaneous register.
+    let firstSum = 0, firstN = 0, lastSum = 0, lastN = 0;
+    const firstCut = dur / 3, lastCut = (dur * 2) / 3;
+    for (const e of pitched) {
+      const pitch = e.pitch ?? 60;
+      hist[((pitch % 12) + 12) % 12] += Math.max(0.05, (e.durMs ?? 90)) * Math.max(0.05, e.vel ?? 0.5);
+      pitchSum += pitch;
+      pitchSqSum += pitch ** 2;
+      if (e.tMs <= firstCut) { firstSum += pitch; firstN++; }
+      else if (e.tMs >= lastCut) { lastSum += pitch; lastN++; }
+    }
+    const key = estimateKey(hist);
+    tonicPc = key.tonicPc; isMajor = key.isMajor; keyConfidence = key.confidence;
+
+    const meanPitch = pitchSum / pitched.length;
+    const variance = Math.max(0, pitchSqSum / pitched.length - meanPitch * meanPitch);
+    meanPitch01 = clamp01((meanPitch - 30) / 66);
+    registerSpread = clamp01(Math.sqrt(variance) / 24);
     if (firstN > 0 && lastN > 0) {
       registerTrend = Math.max(-1, Math.min(1, (lastSum / lastN - firstSum / firstN) / 14));
     }
 
-    if (fam.total > 0) {
-      familyShare = {
-        organic: fam.organic / fam.total,
-        geometric: fam.geometric / fam.total,
-        distorted: fam.distorted / fam.total,
-      };
-    }
-
-    const buckets = bucketByBar(timeline, barGrid, dur);
+    // Harmony too: a drum hit is not a chord tone, and three fixed drum
+    // classes per bar would inflate every bar's distinct-pitch-class count
+    // toward the "rich harmony" end of a /7 scale on rhythm alone.
+    const buckets = bucketByBar(pitched, barGrid, dur);
     const nonEmpty = buckets.filter((b) => b.size > 0);
     if (nonEmpty.length) {
       const avgDistinct = nonEmpty.reduce((s, b) => s + b.size, 0) / nonEmpty.length;
       harmonicComplexity = clamp01(avgDistinct / 7);
     }
   } else {
-    // No MIDI timeline (audio-only upload): derive tonal-ish proxies from
-    // spectral features rather than pretending we detected a key.
+    // Nothing pitched to read (audio-only upload with no melodic content, or
+    // a drum-only timeline): derive tonal-ish proxies from spectral features
+    // rather than pretending we detected a key.
     tonicPc = Math.round(watch.centroid * 11) % 12;
     isMajor = watch.warmth < 0.5;
     keyConfidence = 0.15;
     meanPitch01 = watch.centroid;
     registerSpread = watch.spread;
-    noteDensity = watch.onset;
-    velocityRange = watch.dyn;
     harmonicComplexity = clamp01(watch.contrast);
-    percussionDensity = clamp01(watch.onset * 0.6);
     registerTrend = watch.trend ?? 0;
-    familyShare = familyShareFromWatch(watch);
   }
 
   const dna = {
@@ -226,6 +272,10 @@ export function buildSongDNA(data = {}) {
     energyMean: watch.energyMean, arc: watch.arc, onset: watch.onset,
     sectionLabels: structure?.labels || null,
     hasTimeline: timeline.length >= 4,
+    // Whether the tonal fields above came from real pitches or from the
+    // spectral fallback -- the two are not equally trustworthy, and only this
+    // says which one you got.
+    hasTonalTimeline: hasTonal,
   };
 
   const seedKey = [

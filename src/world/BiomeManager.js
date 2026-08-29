@@ -781,11 +781,23 @@ export class BiomeManager {
       // found nothing, and must never displace an energy read that found real
       // boundaries (StructureAnalyzer caps its confidence for this reason too).
       && ssmCuts && ssmCuts.length >= 3;
-    this.structureSource = ssmUsable ? 'ssm' : 'energy-novelty';
     this.structureConfidence = structure ? structure.confidence : 0;
 
     const chosen = ssmUsable ? ssmCuts : [0, ...peaks, lastIdx];
-    const cuts = this._ensureMinimumSections(chosen, { pickPeaks, barTimes, durationMs, lastIdx });
+    // _ensureMinimumSections can DISCARD `chosen` wholesale -- re-picking from
+    // the energy novelty with the noise floor dropped, or falling back to even
+    // time-splits. So provenance cannot be decided before it runs: this used to
+    // be set from `ssmUsable` alone, one line above, and a schedule built
+    // entirely from relaxed energy peaks (or from the clock) still reported
+    // itself as 'ssm'. That made the whole class of "the SSM read was thrown
+    // away" bug invisible in debug output, including the label loss below.
+    const { cuts, source: floorSource } = this._ensureMinimumSections(
+      chosen, { pickPeaks, barTimes, durationMs, lastIdx },
+    );
+    // The floor's own answer wins when it intervened, because that IS what the
+    // schedule is now made of; otherwise the chosen detector gets the credit.
+    const ssmKept = ssmUsable && !floorSource;
+    this.structureSource = floorSource || (ssmUsable ? 'ssm' : 'energy-novelty');
     // Which cuts are genuine energy-novelty peaks, and so have a meaningful
     // sharpness to classify from. Everything else -- an SSM boundary (found
     // by a different detector, on a different signal) or an even time-split
@@ -838,9 +850,22 @@ export class BiomeManager {
     // which is what a returning chorus IS. analyzeSongForm's band-shape
     // clustering is the fallback -- it can only ask whether two sections have
     // a similar average spectrum.
-    const labels = ssmUsable && structure.labels && structure.labels.length === this.sections.length
-      ? structure.labels
-      : analyzeSongForm(this.sections.map((_, i) => ({ energy: meanEnergies[i], shape: shapes[i] })));
+    //
+    // Matching them up used to require `structure.labels.length ===
+    // this.sections.length`, which is far more fragile than it looks: the
+    // section list is not a copy of the SSM's segment list. _cutsFromTimes
+    // drops any boundary that lands on the tail or fails to advance the index
+    // (two boundaries collapsing onto one point of a coarser grid), the loop
+    // above skips empty spans, and lyric fusion has yet to run. Any one of
+    // those makes the counts differ by one and throws away the ENTIRE
+    // repetition read -- the better half of the SSM, and the only thing in the
+    // pipeline that knows a returning chorus is literally the same music --
+    // falling back to band-shape clustering with no signal that it happened.
+    // Map each section back to its nearest SSM boundary instead, so a dropped
+    // or merged boundary costs one label rather than all of them.
+    const ssmLabels = ssmKept ? this._labelsFromSsm(structure) : null;
+    const labels = ssmLabels
+      || analyzeSongForm(this.sections.map((_, i) => ({ energy: meanEnergies[i], shape: shapes[i] })));
 
     // Cast the show by structural LABEL, not per-section: every recurrence
     // of a label shares a biome name (stock path), so the returning skyline
@@ -927,6 +952,35 @@ export class BiomeManager {
   }
 
   /**
+   * One structural label per built section, read off the SSM's repetition
+   * pass by nearest boundary.
+   *
+   * Nearest rather than containment: a section's startMs is `barTimes[cut]`,
+   * i.e. the SSM boundary already snapped to the nearest point of THIS
+   * schedule's grid (_cutsFromTimes), so it can land a few milliseconds
+   * either side of the boundary it came from. Containment would hand a
+   * section that rounded down the previous segment's label; nearest is the
+   * exact inverse of the snap that produced it, and reproduces the old 1:1
+   * mapping whenever the counts do line up.
+   *
+   * @returns {?number[]} null when the analyzer's own labels/boundaries are
+   *   missing or disagree with each other -- caller falls back to SongForm.
+   */
+  _labelsFromSsm(structure) {
+    const bounds = structure?.boundariesMs, labels = structure?.labels;
+    if (!Array.isArray(bounds) || !Array.isArray(labels) || !bounds.length
+      || bounds.length !== labels.length) return null;
+    return this.sections.map((s) => {
+      let best = 0, bestD = Infinity;
+      for (let k = 0; k < bounds.length; k++) {
+        const d = Math.abs(bounds[k] - s.startMs);
+        if (d < bestD) { bestD = d; best = k; }
+      }
+      return labels[best];
+    });
+  }
+
+  /**
    * A minimum number of sections, for songs long enough to deserve them.
    *
    * MIN_SECTION_CUTS was previously only ever the lower bound of the clamp on
@@ -942,13 +996,20 @@ export class BiomeManager {
    * the song actually turns), and only if that still fails, fall back to even
    * time-splits. An even split is a poor read of the music, but it is a far
    * better experience than four minutes of one unchanging world.
+   *
+   * @returns {{cuts: number[], source: ?string}} `source` names what the
+   *   returned cuts are actually made of when this intervened, and is null
+   *   when it left `cuts` alone. The caller cannot tell otherwise -- both
+   *   relaxation paths REPLACE the schedule it was given, including a
+   *   confident SSM one -- and reporting the discarded detector as the
+   *   schedule's source is how that went unnoticed.
    */
   _ensureMinimumSections(cuts, { pickPeaks, barTimes, durationMs, lastIdx }) {
     const deserved = Math.min(MIN_SECTION_CUTS, Math.floor(durationMs / SECTION_CUT_BUDGET_MS));
-    if (deserved < 2 || cuts.length - 1 >= deserved) return cuts;
+    if (deserved < 2 || cuts.length - 1 >= deserved) return { cuts, source: null };
 
     const relaxed = pickPeaks(0);
-    if (relaxed.length + 1 >= deserved) return [0, ...relaxed, lastIdx];
+    if (relaxed.length + 1 >= deserved) return { cuts: [0, ...relaxed, lastIdx], source: 'energy-novelty' };
 
     // Nothing in the signal to go on: split the time evenly instead.
     const want = Math.max(deserved, relaxed.length + 1);
@@ -962,7 +1023,9 @@ export class BiomeManager {
       }
       if (best > 0 && (even.length === 0 || best > even[even.length - 1])) even.push(best);
     }
-    return even.length ? [0, ...even, lastIdx] : cuts;
+    return even.length
+      ? { cuts: [0, ...even, lastIdx], source: 'even-split' }
+      : { cuts, source: null };
   }
 
   _sectionAt(nowMs) {
