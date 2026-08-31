@@ -41,6 +41,46 @@ test('trigger is a no-op while already active (self-guarded mutual exclusion)', 
   assert.deepEqual(v._station, stationBefore, 'a second trigger must not reset voyage state');
 });
 
+// ── The station used to be confined to a small right-of-center, near-top
+// zone (x in [0.48,0.78], y in [0.12,0.20]) -- every voyage, every song,
+// performed its whole bright multi-figure show anchored to that one small
+// patch of sky. Confirmed live against the actual deployed game that this
+// reads exactly as "the [bright things] are clustered in the middle,"
+// independent of (and not fixed by) the ambient-star and constellation-
+// weaver clustering fixes elsewhere. See the comment in trigger().
+test('an unguided voyage station uses BOTH halves of the sky width, not just right-of-center', () => {
+  const w = 1920, h = 1080;
+  // Clearly left/right of center, not just a hair either side of 0.5 --
+  // the old [0.48, 0.78] range technically dipped 2% below center, which
+  // would pass a naive "< 0.5" check without the station ever really
+  // reading as being in the left half.
+  let sawClearlyLeft = false, sawClearlyRight = false;
+  for (let seed = 1; seed <= 60; seed++) {
+    const v = new SkyVoyage(seed);
+    v.trigger(0, { x: 200, y: 400 }, w, h);
+    if (v._station.x < w * 0.40) sawClearlyLeft = true;
+    if (v._station.x > w * 0.60) sawClearlyRight = true;
+  }
+  assert.ok(sawClearlyLeft, 'across many seeds, the station should sometimes land clearly left of center');
+  assert.ok(sawClearlyRight, 'across many seeds, the station should sometimes land clearly right of center');
+});
+
+test('an unguided voyage station uses a real vertical spread, not a sliver near the top', () => {
+  const w = 1920, h = 1080;
+  const ys = [];
+  for (let seed = 1; seed <= 60; seed++) {
+    const v = new SkyVoyage(seed);
+    v.trigger(0, { x: 200, y: 400 }, w, h);
+    ys.push(v._station.y / h);
+  }
+  const spread = Math.max(...ys) - Math.min(...ys);
+  assert.ok(spread > 0.15, `station y-fraction spread across seeds was only ${spread.toFixed(3)}, still reads as a thin band`);
+  // And it must never approach real terrain (peaks ~0.55): the largest
+  // figure orbit is roughly 0.21 of stageH, so station.y itself should stay
+  // comfortably below 0.55 - 0.21.
+  for (const y of ys) assert.ok(y <= 0.34, `station y-fraction ${y.toFixed(3)} risks dipping into terrain once the figure orbit is added`);
+});
+
 // Exact phase boundaries (elapsed seconds since trigger), so test
 // checkpoints can land deliberately just past each transition instead of
 // guessing durations and accumulating arithmetic error across calls.
@@ -470,8 +510,8 @@ test('past voyages pull the next station toward the densest cluster (she revisit
   assert.ok(dGuided < dPlain, `guided station should sit closer to the cluster (${dGuided.toFixed(0)} vs ${dPlain.toFixed(0)})`);
 
   // And the pull can never drag her out of the safe sky band.
-  assert.ok(guided._station.x >= 1280 * 0.30 - 1 && guided._station.x <= 1280 * 0.86 + 1);
-  assert.ok(guided._station.y >= 720 * 0.09 - 1 && guided._station.y <= 720 * 0.24 + 1);
+  assert.ok(guided._station.x >= 1280 * 0.08 - 1 && guided._station.x <= 1280 * 0.92 + 1);
+  assert.ok(guided._station.y >= 720 * 0.08 - 1 && guided._station.y <= 720 * 0.32 + 1);
 });
 
 test('detonateAtlas converts every atlas star into a staggered nova and spends the map', () => {
