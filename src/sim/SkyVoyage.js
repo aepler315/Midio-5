@@ -246,15 +246,29 @@ export class SkyVoyage {
     this._windUpFrom = { ...fromPos };
     this.p = { ...fromPos };
     this._voyageSerial++;
-    this._station = { x: stageW * (0.48 + this.rand() * 0.30), y: stageH * (0.12 + this.rand() * 0.08) };
+    // The station used to roll x in [0.48, 0.78] and y in [0.12, 0.20] --
+    // right-of-center only (never the left half of the sky at all) and a
+    // band under a tenth of the screen tall. Confirmed live: during
+    // DEEP_SPACE, the whole ~3-figure, ~10-second performance (a large,
+    // bright, densely-dotted orbit shape, FIGURE_RADIUS_PX~130-150px)
+    // happens anchored to that one small, almost-dead-center-and-up zone
+    // every single voyage, for every song -- a real, structural instance of
+    // "the [bright things in the sky] are clustered in the middle," on top
+    // of and independent from the ambient-star and constellation-weaver
+    // clustering already fixed elsewhere in this file's siblings. Widened
+    // to use most of the sky's width (both halves, not just the right) and
+    // triple the vertical band, while keeping the lowest point of the
+    // biggest possible figure (station.y + ~0.21 of stageH for the largest
+    // scaled radius) comfortably above where terrain peaks (~0.55).
+    this._station = { x: stageW * (0.12 + this.rand() * 0.76), y: stageH * (0.10 + this.rand() * 0.20) };
     // She revisits her myths: past voyages pull this one's station toward
     // the densest cluster of her own accumulated stars, clamped to a safe
     // sky band so the pull can never drag her down into the mountains.
     const nav = this._navTarget();
     if (nav) {
       this._station = {
-        x: clamp(lerp(this._station.x, nav.x, NAV_PULL), stageW * 0.30, stageW * 0.86),
-        y: clamp(lerp(this._station.y, nav.y, NAV_PULL), stageH * 0.09, stageH * 0.24),
+        x: clamp(lerp(this._station.x, nav.x, NAV_PULL), stageW * 0.08, stageW * 0.92),
+        y: clamp(lerp(this._station.y, nav.y, NAV_PULL), stageH * 0.08, stageH * 0.32),
       };
     }
 
