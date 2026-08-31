@@ -1,11 +1,12 @@
 import { create } from "zustand";
-import type { PhysicsMode } from "./types";
+import type { Abstraction, PhysicsMode } from "./types";
 
 interface HudState {
   started: boolean;
   muted: boolean;
   showSystems: boolean;
   mode: PhysicsMode;
+  abstraction: Abstraction;
   fps: number;
   energy: number;
   strain: number;
@@ -18,6 +19,7 @@ interface HudState {
   setStarted: (v: boolean) => void;
   setMuted: (v: boolean) => void;
   setMode: (v: PhysicsMode) => void;
+  setAbstraction: (v: Abstraction) => void;
   toggleSystems: () => void;
   patch: (p: Partial<HudState>) => void;
 }
@@ -27,6 +29,7 @@ export const useMidioStore = create<HudState>((set) => ({
   muted: false,
   showSystems: false,
   mode: "crystal",
+  abstraction: "lattice",
   fps: 60,
   energy: 0,
   strain: 0,
@@ -39,6 +42,7 @@ export const useMidioStore = create<HudState>((set) => ({
   setStarted: (started) => set({ started }),
   setMuted: (muted) => set({ muted }),
   setMode: (mode) => set({ mode }),
+  setAbstraction: (abstraction) => set({ abstraction }),
   toggleSystems: () => set((s) => ({ showSystems: !s.showSystems })),
   patch: (p) => set(p),
 }));

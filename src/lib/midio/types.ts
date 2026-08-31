@@ -1,6 +1,15 @@
 export type ParticleKind = "hub" | "hull" | "interior" | "core" | "debris" | "dust";
 export type ConstraintKind = "hull" | "edge" | "spoke" | "core";
 export type PhysicsMode = "crystal" | "visco" | "shatter" | "swarm";
+export type Abstraction = "lattice" | "facet" | "voronoi" | "construct" | "orbit";
+
+export const ABSTRACTIONS: { id: Abstraction; label: string; key: string; blurb: string }[] = [
+  { id: "lattice", label: "Lattice", key: "Q", blurb: "Point-line-plane. Hull contour + interior braces." },
+  { id: "facet", label: "Facet", key: "W", blurb: "Analytical cubism. Strain-tinted Delaunay planes, ghosted viewpoints." },
+  { id: "voronoi", label: "Voronoi", key: "E", blurb: "Tessellation dual. Each vertex owns the cell of nearest space." },
+  { id: "construct", label: "Construct", key: "R", blurb: "Constructivist beams and suprematist planes. Mass as bars." },
+  { id: "orbit", label: "Orbit", key: "T", blurb: "Polar reduction. Concentric hulls and radial spokes from the hub." },
+];
 
 export interface Particle {
   x: number;

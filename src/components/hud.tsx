@@ -1,6 +1,6 @@
-import { liveEngine, setMode, startEngine, toggleMute } from "@/lib/midio/engine";
+import { liveEngine, setAbstraction, setMode, startEngine, toggleMute } from "@/lib/midio/engine";
 import { useMidioStore } from "@/lib/midio/store";
-import type { PhysicsMode } from "@/lib/midio/types";
+import { ABSTRACTIONS, type PhysicsMode } from "@/lib/midio/types";
 
 const MODES: { id: PhysicsMode; label: string; key: string }[] = [
   { id: "crystal", label: "Crystal", key: "1" },
@@ -21,6 +21,7 @@ function Stat({ k, v }: { k: string; v: string }) {
 export function Hud() {
   const started = useMidioStore((s) => s.started);
   const mode = useMidioStore((s) => s.mode);
+  const abstraction = useMidioStore((s) => s.abstraction);
   const fps = useMidioStore((s) => s.fps);
   const energy = useMidioStore((s) => s.energy);
   const strain = useMidioStore((s) => s.strain);
@@ -40,7 +41,9 @@ export function Hud() {
         <header className="flex items-start justify-between gap-3">
           <div>
             <p className="font-display text-lg font-semibold tracking-tight text-fg md:text-xl">Midio</p>
-            <p className="font-mono text-[0.65rem] tracking-[0.22em] text-muted uppercase">Particle polygon</p>
+            <p className="font-mono text-[0.65rem] tracking-[0.22em] text-muted uppercase">
+              {ABSTRACTIONS.find((a) => a.id === abstraction)?.label} · particle polygon
+            </p>
           </div>
           <div className="pointer-events-auto flex items-center gap-2">
             <button
@@ -74,7 +77,32 @@ export function Hud() {
             <Stat k="State" v={airborne ? "Apex" : "Ground"} />
           </div>
 
-          <div className="pointer-events-auto grid grid-cols-2 gap-2 sm:flex">
+          <div className="pointer-events-auto flex flex-col gap-2">
+            <div className="grid grid-cols-5 gap-1 sm:flex">
+              {ABSTRACTIONS.map((a) => {
+                const on = abstraction === a.id;
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    title={a.blurb}
+                    onClick={() => {
+                      if (liveEngine) setAbstraction(liveEngine, a.id);
+                    }}
+                    className={
+                      "min-h-11 rounded-md border px-2 py-2 text-center transition-opacity duration-150 " +
+                      (on
+                        ? "border-accent bg-accent text-bg"
+                        : "border-border bg-surface text-fg hover:opacity-80")
+                    }
+                  >
+                    <span className="block font-display text-xs font-semibold sm:text-sm">{a.label}</span>
+                    <span className="font-mono text-[0.6rem] text-current opacity-70">Key {a.key}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:flex">
             {MODES.map((m) => {
               const on = mode === m.id;
               return (
@@ -96,6 +124,7 @@ export function Hud() {
                 </button>
               );
             })}
+            </div>
           </div>
         </div>
       </div>
@@ -113,8 +142,9 @@ function TitleGate({ started }: { started: boolean }) {
           Midio Polygon
         </h1>
         <p className="mt-4 text-sm leading-normal text-muted">
-          The crystal glyph is now a living lattice: Delaunay facets, XPBD constraints, and four
-          material laws. Drag a vertex. Space to jump. The song is the clock.
+          The crystal glyph is now a living lattice. Five geometric abstractions
+          (lattice, cubist facet, Voronoi dual, constructivist beam, polar orbit)
+          run over the same XPBD body. Drag a vertex. Space to jump. Q–T to recut.
         </p>
         <button
           type="button"
@@ -126,7 +156,7 @@ function TitleGate({ started }: { started: boolean }) {
           Begin performance
         </button>
         <p className="mt-3 font-mono text-[0.7rem] tracking-wide text-subtle">
-          Drag · Space · 1–4 materials
+          Drag · Space · 1–4 materials · Q–T abstractions
         </p>
       </div>
     </div>

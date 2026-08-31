@@ -77,7 +77,7 @@ function addConstraint(
 
 export function buildMidioMesh(seed = 0x5eed): MeshBuild {
   const rand = mulberry32(seed);
-  const rim = denseRim(1);
+  const rim = denseRim(2);
   const hub = { x: HUB.x, y: HUB.y };
 
   let minX = Infinity,
@@ -94,14 +94,14 @@ export function buildMidioMesh(seed = 0x5eed): MeshBuild {
   const interior = poissonDisc(
     maxX - minX + pad * 2,
     maxY - minY + pad * 2,
-    9.2,
+    12.5,
     rand,
     minX - pad,
     minY - pad,
     (x, y) => {
       if (!pointInPoly({ x, y }, rim)) return false;
       for (const h of rim) {
-        if ((h.x - x) ** 2 + (h.y - y) ** 2 < 7 * 7) return false;
+        if ((h.x - x) ** 2 + (h.y - y) ** 2 < 9 * 9) return false;
       }
       if ((hub.x - x) ** 2 + (hub.y - y) ** 2 < 9 * 9) return false;
       return true;

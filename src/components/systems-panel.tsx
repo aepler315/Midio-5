@@ -3,7 +3,7 @@ import { useMidioStore } from "@/lib/midio/store";
 const SECTIONS = [
   {
     title: "1. Tessellated hull",
-    body: "Midio is a crystal figure — faceted head, hanging arm-shards, two planted feet — tessellated into a particle lattice. The hull is Poisson-sampled and Delaunay-triangulated so the body is a polygonal field (hull, spokes, hexagram core), not a sprite.",
+    body: "Midio is an abstract crystal shard — short crest, shoulder facets, two feet — tessellated into a particle field. The hull is Poisson-sampled and Delaunay-triangulated so the body is polygonal (hull, spokes, hexagram core), not a sprite.",
   },
   {
     title: "2. XPBD solver",
@@ -20,6 +20,10 @@ const SECTIONS = [
   {
     title: "5. Music coupling",
     body: "A scheduled Web Audio transport (kick, hat, bass, pad) is the clock. Onsets launch the three-phase jump curve, radial impulses, beat flash, and trauma-squared camera shake. High energy unfolds the hull toward apotheosis.",
+  },
+  {
+    title: "6. Geometric abstraction",
+    body: "Five recuts of the same particle body: Lattice (Kandinsky point-line-plane), Facet (analytical cubism — overlapping Delaunay planes), Voronoi (tessellation dual), Construct (beams and suprematist planes), Orbit (polar reduction to concentric hulls). Keys Q–T. Physics does not change; only the law that draws the field.",
   },
 ];
 

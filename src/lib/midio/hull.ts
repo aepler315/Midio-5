@@ -1,37 +1,25 @@
 import type { Vec2 } from "./types";
 
-const RAW_HUB: Vec2 = { x: 0, y: -28 };
+const RAW_HUB: Vec2 = { x: 0, y: -30 };
 const RAW_RIM: Vec2[] = [
-  { x: 1.4, y: -80 },
-  { x: 9.2, y: -75 },
-  { x: 14.6, y: -64 },
-  { x: 12.0, y: -52 },
-  { x: 4.4, y: -46 },
-  { x: 18.8, y: -44 },
-  { x: 25.2, y: -34 },
-  { x: 19.6, y: -28 },
-  { x: 6.6, y: -34 },
-  { x: 8.8, y: -16 },
-  { x: 14.8, y: 0 },
-  { x: 5.8, y: 0 },
-  { x: 0.0, y: -19 },
-  { x: -5.6, y: 0 },
-  { x: -14.2, y: 0 },
-  { x: -8.0, y: -16 },
-  { x: -6.2, y: -35 },
-  { x: -18.8, y: -29 },
-  { x: -24.2, y: -35 },
-  { x: -18.4, y: -45 },
-  { x: -4.0, y: -47 },
-  { x: -11.6, y: -53 },
-  { x: -13.8, y: -65 },
-  { x: -8.2, y: -76 },
+  { x: 0.6, y: -64 },
+  { x: 6.2, y: -54 },
+  { x: 11.4, y: -40 },
+  { x: 10.2, y: -24 },
+  { x: 8.0, y: -10 },
+  { x: 6.8, y: 0 },
+  { x: 0.0, y: -3.2 },
+  { x: -6.2, y: 0 },
+  { x: -7.4, y: -11 },
+  { x: -9.4, y: -25 },
+  { x: -10.4, y: -41 },
+  { x: -5.4, y: -55 },
 ];
 
-export const HULL_SCALE = 4.35;
+export const HULL_SCALE = 4.6;
 export const HUB: Vec2 = { x: RAW_HUB.x * HULL_SCALE, y: RAW_HUB.y * HULL_SCALE };
-export const EYE_CY = -63 * HULL_SCALE;
-export const EYE_R = 5.6 * HULL_SCALE;
+export const EYE_CY = -38 * HULL_SCALE;
+export const EYE_R = 4.4 * HULL_SCALE;
 
 export function scalePt(p: Vec2, s = HULL_SCALE): Vec2 {
   return { x: p.x * s, y: p.y * s };

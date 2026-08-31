@@ -3,7 +3,7 @@ import { createConductor, launchJump, stepConductor, type ConductorState } from 
 import { computeIris, drawScene } from "./draw";
 import { applyApotheosis, createWorld, nearestParticle, physicsStep, placeParticles, type PhysicsWorld } from "./physics";
 import { buildMidioMesh } from "./tessellate";
-import { PHYSICS_DT, type PhysicsMode } from "./types";
+import { PHYSICS_DT, type Abstraction, type PhysicsMode } from "./types";
 import { useMidioStore } from "./store";
 
 export interface MidioEngine {
@@ -13,6 +13,7 @@ export interface MidioEngine {
   conductor: ConductorState;
   audio: AudioEngine | null;
   mode: PhysicsMode;
+  abstraction: Abstraction;
   running: boolean;
   started: boolean;
   pointer: { x: number; y: number; down: boolean; grab: number };
@@ -49,6 +50,7 @@ export function attachEngine(canvas: HTMLCanvasElement): MidioEngine {
     conductor,
     audio: null,
     mode: "crystal",
+    abstraction: "lattice",
     running: true,
     started: false,
     pointer: { x: 0, y: 0, down: false, grab: -1 },
@@ -94,6 +96,11 @@ export function attachEngine(canvas: HTMLCanvasElement): MidioEngine {
     else if (e.key === "2") setMode(engine, "visco");
     else if (e.key === "3") setMode(engine, "shatter");
     else if (e.key === "4") setMode(engine, "swarm");
+    else if (e.key === "q" || e.key === "Q") setAbstraction(engine, "lattice");
+    else if (e.key === "w" || e.key === "W") setAbstraction(engine, "facet");
+    else if (e.key === "e" || e.key === "E") setAbstraction(engine, "voronoi");
+    else if (e.key === "r" || e.key === "R") setAbstraction(engine, "construct");
+    else if (e.key === "t" || e.key === "T") setAbstraction(engine, "orbit");
     else if (e.key === "m" || e.key === "M") toggleMute(engine);
     else if (e.key === "i" || e.key === "I") useMidioStore.getState().toggleSystems();
   };
@@ -148,6 +155,11 @@ export function startEngine(engine: MidioEngine) {
 export function setMode(engine: MidioEngine, mode: PhysicsMode) {
   engine.mode = mode;
   useMidioStore.getState().setMode(mode);
+}
+
+export function setAbstraction(engine: MidioEngine, abstraction: Abstraction) {
+  engine.abstraction = abstraction;
+  useMidioStore.getState().setAbstraction(abstraction);
 }
 
 export function toggleMute(engine: MidioEngine) {
@@ -261,6 +273,7 @@ function tick(engine: MidioEngine, dt: number, now: number) {
     world: engine.world,
     conductor: engine.conductor,
     mode: engine.mode,
+    abstraction: engine.abstraction,
     pointer: engine.pointer,
     reduced: engine.reduced,
     iris,
