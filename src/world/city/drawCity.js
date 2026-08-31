@@ -13,7 +13,7 @@ import { CodaDirector } from '../../sim/CodaDirector.js';
 import { capFlashAlpha } from '../../ui/Accessibility.js';
 import { hexToRgb } from '../../utils/color.js';
 import { groundGlowLights } from '../../render/LightField.js';
-import { ensureContrast } from '../../render/VisualStyle.js';
+import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
 
 const LAYER_RATIOS = { L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65 };
@@ -50,9 +50,22 @@ function blitWindows(ctx, canvas, strip, scrollX, yOff, occ, neonHex) {
   ctx.restore();
 }
 
-export function drawCityWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView) {
+export function drawCityWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage = null) {
   const night = 1;
   mgr._drawSky(ctx, canvas, A, B, t, night);
+
+  // Deep-sky layer ported in from BiomeManager's classic path (see its
+  // `draw()`) -- a night skyline still shows Midasus's sky-writing trail,
+  // the ambient per-note constellations, and reward-volley meteors above
+  // it. Not in this file's own "scrapped" list up top, so its absence here
+  // was a gap from the city split, not a deliberate style choice.
+  mgr.drawDeepSky(ctx, skyVoyage, canvas);
+  const skyA = styleDials(mgr.visualStyle).skyWireAlpha ?? 1;
+  if (phenomenaFull && skyA > 0.02) {
+    const nightAlphaMul = (1 + 1.2 * night) * Math.max(0.25, skyA);
+    mgr.weaver.draw(ctx, canvas, mgr.reducedFlash, nightAlphaMul);
+  }
+  if (phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
 
   const moonAlt = Math.max(dn.moonAlt, 0.35);
   const celestialYFrac = celestialYFracFor(moonAlt);

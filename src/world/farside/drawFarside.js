@@ -4,7 +4,7 @@
 // The primary (a gas giant) occupies a quarter of the frame.
 import { drawTiledStrip } from '../SilhouetteGenerator.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
-import { ensureContrast } from '../../render/VisualStyle.js';
+import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
 
@@ -19,8 +19,21 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
   ctx.restore();
 }
 
-export function drawFarsideWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView) {
+export function drawFarsideWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage = null) {
   mgr._drawSky(ctx, canvas, A, B, t, 1);
+
+  // Deep-sky layer ported in from BiomeManager's classic path -- an airless
+  // sky "full of stars" is exactly where Midasus's sky-writing trail, the
+  // ambient per-note constellations, and reward-volley meteors belong most.
+  // This never rendered here before: the classic path's calls were left
+  // behind when Far Side got its own draw function.
+  mgr.drawDeepSky(ctx, skyVoyage, canvas);
+  const skyA = styleDials(mgr.visualStyle).skyWireAlpha ?? 1;
+  if (phenomenaFull && skyA > 0.02) {
+    const nightAlphaMul = (1 + 1.2 * 1) * Math.max(0.25, skyA);
+    mgr.weaver.draw(ctx, canvas, mgr.reducedFlash, nightAlphaMul);
+  }
+  if (phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
 
   // Stars: always at full brightness, never twinkle (no atmosphere).
   // Use the existing star catalogue at full fidelity.

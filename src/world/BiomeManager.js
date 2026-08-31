@@ -1575,12 +1575,22 @@ export class BiomeManager {
     });
 
     const _kind = this.world?.kind;
+    // Five of these six newer world kinds get the same deep-sky star layer
+    // (drawDeepSky/weaver/meteors) the classic path below draws -- it was
+    // simply never ported when each kind got split into its own draw
+    // function, so ConstellationWeaver, SkyVoyage's sky-writing trail, and
+    // meteor-shower reward volleys never rendered at all for a song assigned
+    // one of these kinds. Two are deliberately left out because showing
+    // stars there contradicts what the world already says about itself:
+    // drawFathomWorld's own header states "No stars... the sky is the water
+    // surface overhead", and drawNaveWorld's sky is an interior vault
+    // ceiling, not open air.
     if (_kind === 'city') {
-      drawCityWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
+      drawCityWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage);
       return;
     }
     if (_kind === 'airless') {
-      drawFarsideWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
+      drawFarsideWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage);
       return;
     }
     if (_kind === 'abyssal') {
@@ -1588,15 +1598,15 @@ export class BiomeManager {
       return;
     }
     if (_kind === 'strip') {
-      drawRedlineWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
+      drawRedlineWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage);
       return;
     }
     if (_kind === 'foundry') {
-      drawFoundryWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
+      drawFoundryWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage);
       return;
     }
     if (_kind === 'overgrowth') {
-      drawUnderstoryWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
+      drawUnderstoryWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage);
       return;
     }
     if (_kind === 'nave') {

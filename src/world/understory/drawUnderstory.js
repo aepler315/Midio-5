@@ -4,7 +4,7 @@
 // and fireflies instead of weather.
 import { drawTiledStrip } from '../SilhouetteGenerator.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
-import { ensureContrast } from '../../render/VisualStyle.js';
+import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
 
@@ -19,8 +19,23 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
   ctx.restore();
 }
 
-export function drawUnderstoryWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView) {
+export function drawUnderstoryWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage = null) {
   mgr._drawSky(ctx, canvas, A, B, t, 0.7);
+
+  // Deep-sky layer ported in from BiomeManager's classic path. The canopy
+  // blocks direct view of the SUN (see the veiled-celestial draw below),
+  // but says nothing about the rest of the sky -- gaps in the canopy are
+  // exactly what the god-ray shafts a few lines down are already showing.
+  // Midasus's sky-writing trail, the ambient per-note constellations, and
+  // reward-volley meteors never rendered here at all: the calls were left
+  // behind when Understory got its own draw function.
+  mgr.drawDeepSky(ctx, skyVoyage, canvas);
+  const skyA = styleDials(mgr.visualStyle).skyWireAlpha ?? 1;
+  if (phenomenaFull && skyA > 0.02) {
+    const nightAlphaMul = (1 + 1.2 * 0.7) * Math.max(0.25, skyA);
+    mgr.weaver.draw(ctx, canvas, mgr.reducedFlash, nightAlphaMul);
+  }
+  if (phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
 
   // The sun filters through the canopy — never directly visible, but its
   // presence is felt through god rays and dappled light patches.
