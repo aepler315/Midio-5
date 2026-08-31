@@ -14,6 +14,7 @@
 // or dropped -- the thing that makes a field read as "deep" rather than
 // "speckled."
 import { clamp01, mulberry32 } from '../utils/math.js';
+import { poissonDiscSample } from '../utils/delaunay.js';
 
 // Real main-sequence spectral-class relative frequencies (roughly the
 // actual solar-neighborhood stellar census) and their blackbody
@@ -227,26 +228,59 @@ export function galacticBandCenterY(xFrac, height) {
  * Terrain paints over stars that fall behind a mountain or tower; the
  * catalogue itself must not leave a dead band anywhere a gap can open.
  *
- * Star POSITIONS are uniform across the whole field -- an earlier version
- * biased a fraction of stars toward the galactic plane (GALACTIC_BAND),
- * but even a "gentle" bias measurably concentrated density (a peak-to-edge
+ * Star POSITIONS are spread across the whole field via Poisson-disc (blue
+ * noise) sampling, not independent uniform draws -- an earlier version
+ * biased a fraction of stars toward the galactic plane (GALACTIC_BAND), but
+ * even a "gentle" bias measurably concentrated density (a peak-to-edge
  * ratio upward of 7:1 at the values that were supposed to be conservative)
- * and read as a band confined to the middle of the sky, the exact
- * complaint this was meant to fix. The "this is a galaxy, not a random
- * field" cue now comes entirely from the separately-painted milky wash and
- * dust lanes (_drawStarfield, generateDustLanes) and from deep-sky objects
- * clustering on the plane (generateDeepSky) -- neither of which touches
- * where individual stars actually sit. Deterministic per seed.
+ * and read as a band confined to the middle of the sky. Removing the bias
+ * in favor of `rand()*width, rand()*height` per star fixed THAT, but traded
+ * it for a different version of the same complaint: independent uniform
+ * sampling is exactly what "random" means statistically, but it is not what
+ * "evenly spread" looks like -- it produces real clumps and real empty gaps
+ * (measured: one seed put 9 of the 45 brightest stars in a bin holding 2.3
+ * on average, with the two neighboring bins at zero), and since only the
+ * brightest ~8% of a realistic magnitude-count population reliably clears
+ * the screen's visibility floor (perceptualStretch), THAT sparse subset is
+ * what a viewer actually sees and reads as "the stars are bunched in the
+ * middle" -- a true report about a true clump, just not the one the
+ * galactic-plane fix addressed.
+ *
+ * Spacing the WHOLE population by Poisson-disc alone does not fix this: the
+ * bright tier is a random THINNING of that field (each star's magnitude is
+ * drawn independently of its position), and randomly thinning a blue-noise
+ * set degrades it back toward the same Poisson clumping being fixed
+ * (measured -- variance on the bright tier barely moved). What has to be
+ * blue-noise-spaced is specifically the subset that ends up bright, so this
+ * pairs the brightest ~8% of a normal magnitude draw (HERO_FRAC, matching
+ * BiomeManager's own hero-tier cut) with their own dedicated, generously-
+ * spaced Poisson-disc positions, and lets the faint majority -- individually
+ * near-invisible against any sky brightness -- fall back to plain uniform
+ * placement, which costs nothing and where clumping was never visible to
+ * begin with. The magnitude distribution itself (sampleMagnitude) is
+ * untouched either way; only which position each drawn magnitude lands on
+ * changes. Deterministic per seed.
  */
+const HERO_FRAC = 0.08;
+
 export function generateCatalogue(seed, count, width, height) {
   const rand = mulberry32((seed ^ 0x57a2c47) >>> 0 || 1);
-  const out = [];
-  for (let i = 0; i < count; i++) {
-    const x = rand() * width;
-    const y = rand() * height;
+  const heroCount = Math.max(1, Math.round(count * HERO_FRAC));
+  // Calibrated (see StarCatalogue.test.js) so the packing yields close to
+  // `heroCount` well-separated points for a field this size.
+  const heroRadius = Math.sqrt((2 * width * height) / (heroCount * Math.PI));
+  const heroPositions = poissonDiscSample(width, height, heroRadius, rand);
 
+  // One magnitude draw per star, exactly as before -- sorted so the
+  // brightest ones (lowest mag) are the ones paired with the spaced-out
+  // hero positions; the astrophysical shape of the draw is unaffected by
+  // this reordering, only its pairing with position is.
+  const magnitudes = Array.from({ length: count }, () => sampleMagnitude(rand));
+  magnitudes.sort((a, b) => a - b);
+
+  const out = [];
+  const place = (x, y, mag) => {
     const { cls, tempK } = sampleSpectralClass(rand);
-    const mag = sampleMagnitude(rand);
     const rgb = blackbodyRGB(tempK);
     out.push({
       x, y,
@@ -262,7 +296,11 @@ export function generateCatalogue(seed, count, width, height) {
       // twinkle-near-the-horizon effect needs, just borrowed from layout.
       altitude01: 1 - clamp01(y / height),
     });
-  }
+  };
+
+  let m = 0;
+  for (const { x, y } of heroPositions) { place(x, y, magnitudes[m]); m++; }
+  for (; m < magnitudes.length; m++) place(rand() * width, rand() * height, magnitudes[m]);
   return out;
 }
 
