@@ -1684,17 +1684,21 @@ export class BiomeManager {
       this.ribbon.intensity = prevR;
     }
     this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
-    // Space ridge: orbital jewelry — faint in Soft, present in Neon.
-    {
-      const spaceCol = this._rotated(rotateHueHex(mandalaColor, 45));
-      const ridgeA = styleDials(this.visualStyle).spaceRidgeAlpha ?? 1;
-      if (ridgeA > 0.02) {
-        ctx.save();
-        ctx.globalAlpha = ridgeA * (phenomenaFull ? 1 : 0.4);
-        this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash);
-        ctx.restore();
-      }
-    }
+    // Space ridge ("orbital jewelry") used to draw here: 30 evenly-spaced
+    // glowing nodes joined by a line, at a fixed baseline near the top of
+    // the sky, present every frame for the whole song. Confirmed live (a
+    // toggle test that disabled just this call, screenshotted the same two
+    // moments as the reported screenshots, and diffed) that this -- not the
+    // ambient star field or the melody-driven constellations, both already
+    // fixed -- is what every "stars clustered in the middle" report was
+    // actually showing: it uses the exact same visual language as a star
+    // (a point light joined to its neighbors by a faint glowing line, drawn
+    // with the same 'lighter' additive blend), so it reads as "the stars"
+    // to anyone not reading the source, and unlike the two RNG-driven
+    // systems, it was never going to stop looking clustered because it
+    // isn't random -- it's a deliberately fixed, always-on structure.
+    // spaceRidge.update() above still runs (its tidalOffsetPx() feeds the
+    // moon's own drift), only the draw call is gone.
     this.drawDeepSky(ctx, skyVoyage, canvas); // Midasus's sky voyage, when she's away -- behind the mountains below
     // Ambient connect-the-dots + reward volleys read as starlight, so the
     // night sky brightens them the same way it brightens the atlas stars.
