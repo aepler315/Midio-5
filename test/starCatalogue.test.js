@@ -123,15 +123,15 @@ test('perceptualStretch(subPixelDraw(...).drawAlpha) keeps nearly every star vis
   assert.ok(correctVisible / n > 0.95, `expected >95% visible even in a pessimistic frame, got ${correctVisible}/${n}`);
 });
 
-test('perceptualStretch is monotone (preserves relative star ordering) and always returns 0.45..1', () => {
+test('perceptualStretch is monotone (preserves relative star ordering) and always returns 0.60..1', () => {
   let prev = -1;
   for (let a = 0; a <= 1; a += 0.02) {
     const s = perceptualStretch(a);
-    assert.ok(s >= 0.45 - 1e-9 && s <= 1 + 1e-9, `out of range at a=${a}: ${s}`);
+    assert.ok(s >= 0.60 - 1e-9 && s <= 1 + 1e-9, `out of range at a=${a}: ${s}`);
     assert.ok(s >= prev - 1e-9, 'must be monotone non-decreasing');
     prev = s;
   }
-  assert.ok(Math.abs(perceptualStretch(0) - 0.45) < 1e-9, 'a=0 should sit exactly at the floor');
+  assert.ok(Math.abs(perceptualStretch(0) - 0.60) < 1e-9, 'a=0 should sit exactly at the (raised) floor');
 });
 
 test('twinkle amplitude is stronger for fainter (more point-like) stars and near the horizon', () => {
