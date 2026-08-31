@@ -9,6 +9,8 @@ import {
   pickCharacterScheme, CHARACTER_SCHEMES,
 } from '../src/world/dna/ShapeGrammar.js';
 import { synthesizePalette, synthesizeSectionPalettes } from '../src/world/dna/PaletteSynth.js';
+import { LANDMARKS } from '../src/world/Landmarks.js';
+import { biomeByName } from '../src/world/BiomeProfiles.js';
 import { ValueNoise1D } from '../src/utils/noise.js';
 import { alpineHeightField, rollingHeightField, ALPINE_CHARACTERS } from '../src/world/SilhouetteGenerator.js';
 import { ParticleField } from '../src/world/ParticleField.js';
@@ -288,6 +290,46 @@ test('synthesizePalette is deterministic for the same DNA', () => {
   const b = synthesizePalette(dna);
   assert.deepEqual(a.profile.sky, b.profile.sky);
   assert.equal(a.profile.silhouette, b.profile.silhouette);
+});
+
+// A synthesized palette's own display `name` (e.g. "NAVE_A_0", set by
+// synthesizeSectionPalettes) never matches a LANDMARKS/BIOMES key -- ground
+// clutter (decorateStrip), near-field occluders, and NearField's silhouette-
+// darkening color (biomeByName) all keyed off that display name and silently
+// found nothing for every generated world. landmarkKey is the fix: it must
+// always resolve to a real archetype, for every DNA shape this pipeline can
+// produce, not just the handful covered by the deterministic tests above.
+test('every synthesized palette carries a landmarkKey that LANDMARKS and biomeByName actually recognize', () => {
+  const songs = [
+    synthTimeline({ pitches: [60, 64, 67] }),
+    synthTimeline({ pitches: [57, 60, 63, 67], program: 30 }),
+    synthTimeline({ pitches: [72, 76, 79, 84], program: 73 }),
+    synthTimeline({ pitches: [36, 40, 43], program: 112 }), // distorted/percussive-leaning
+    { durationMs: 90000, bpm: 70 }, // audio-only, no timeline
+    { durationMs: 240000, bpm: 175 }, // audio-only, fast/hot
+  ];
+  for (const data of songs) {
+    const dna = buildSongDNA(data);
+    const { profile } = synthesizePalette(dna);
+    assert.ok(profile.landmarkKey, `song seed ${dna.seed} produced no landmarkKey`);
+    assert.ok(Array.isArray(LANDMARKS[profile.landmarkKey]) && LANDMARKS[profile.landmarkKey].length > 0,
+      `landmarkKey "${profile.landmarkKey}" (song seed ${dna.seed}) has no LANDMARKS entry`);
+    assert.ok(biomeByName(profile.landmarkKey).name === profile.landmarkKey,
+      `landmarkKey "${profile.landmarkKey}" doesn't resolve via biomeByName`);
+  }
+});
+
+test('synthesizeSectionPalettes: every section palette carries its own valid landmarkKey', () => {
+  const dna = buildSongDNA(synthTimeline({ pitches: [60, 62, 64, 65, 67, 69, 71], program: 73 }));
+  dna.sectionLabels = ['intro', 'verse', 'chorus', 'verse', 'chorus', 'outro'];
+  const { palettes } = synthesizeSectionPalettes(dna, 'nave');
+  assert.ok(palettes.length >= 2);
+  for (const p of palettes) {
+    assert.ok(LANDMARKS[p.landmarkKey], `${p.name} has invalid landmarkKey "${p.landmarkKey}"`);
+    // The generated display name must NOT itself be a landmark key -- this
+    // is exactly the mismatch that made decorateStrip a silent no-op.
+    assert.ok(!LANDMARKS[p.name], `${p.name} unexpectedly collides with a real LANDMARKS key`);
+  }
 });
 
 test('skyStops: a harmonically simple song gets the plain 3-stop sky, a rich one gets 5 legible stops', () => {

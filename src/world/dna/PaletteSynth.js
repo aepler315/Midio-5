@@ -98,6 +98,32 @@ function hardConstraintViolation(hex, lch) {
   return violation;
 }
 
+// Every synthesized palette gets a display name like "NAVE_A_0" (see
+// synthesizeSectionPalettes) so replays can point at "the second chorus" --
+// but Landmarks.js and NearField.js key their ground-clutter painters and
+// silhouette-darkening color off a biome NAME string, expecting one of the
+// stock archetypes (JADE, ARCTIC, CYBER...). Those names never matched a
+// synthesized palette's own name, so decorateStrip/nearFieldForSector
+// silently found no painters for every generated world (LANDMARKS[name] is
+// undefined) and NearField._colorFor's biomeByName fallback silently reused
+// TWILIGHT's silhouette color for every one of them too -- ground clutter,
+// props, and near-field occluders only ever appeared for the stock/fallback
+// path, never for a real generated world.
+//
+// pickFx(temperature) already lands on one of exactly 12 values that are
+// each also a stock BIOME's own `fx` -- the same temperature axis, just
+// read twice. Piggybacking a landmarkKey off that fx value (rather than
+// adding a whole second classifier) gets every generated palette a real,
+// pre-existing archetype to borrow trees/crystals/spires and a real
+// silhouette color from, matched on the same visual register (frosty aurora
+// reads as ARCTIC's landmarks, humid canopy dapple as JADE's, etc.).
+const FX_TO_LANDMARK_KEY = {
+  aurora: 'ARCTIC', nebulaBloom: 'NEBULA', starTwinkle: 'TWILIGHT',
+  bioluminescence: 'ABYSS', canopyDapple: 'JADE', godRays: 'CORAL',
+  mirage: 'DUNE', petalPile: 'SAKURA', sunMotes: 'AURUM',
+  crystalGlint: 'GEODE', prominence: 'SOLAR', lightning: 'STORM',
+};
+
 /** 3 stops by default; 5 for a harmonically rich song (more distinct chords
  *  in play per bar -- see SongDNA.harmonicComplexity) so its sky reads as a
  *  subtler, more banded gradient instead of the flat default. */
@@ -234,6 +260,11 @@ export function synthesizePalette(dna, temperatureOverride = null) {
     // reader of `sky` keeps using the fixed 3-entry array above by index, so
     // this is purely additive.
     skyStops,
+    // See FX_TO_LANDMARK_KEY above: this palette's own display `name` (set
+    // by synthesizeSectionPalettes) never matches a LANDMARKS/BIOMES key, so
+    // ground clutter and near-field occluders need a real archetype to
+    // borrow from.
+    landmarkKey: FX_TO_LANDMARK_KEY[fx] || 'TWILIGHT',
     silhouette: best.hex.silhouette,
     celestial: {
       kind: celestialKind,

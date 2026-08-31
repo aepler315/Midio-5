@@ -1149,8 +1149,13 @@ export class BiomeManager {
             softenScale: soften.L5, portrait, layerKey: 'L5', terrainMods,
           }),
         };
-        decorateStrip(strips.L4, b.name, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
-        decorateStrip(strips.L5, b.name, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
+        // b.landmarkKey (PaletteSynth.js) is the archetype LANDMARKS is
+        // actually keyed by; a synthesized palette's own display `name`
+        // (e.g. "NAVE_A_0") never matches, and falls back to b.name for the
+        // stock path where name IS already an archetype key.
+        const landmarkKey = b.landmarkKey || b.name;
+        decorateStrip(strips.L4, landmarkKey, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
+        decorateStrip(strips.L5, landmarkKey, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
       }
       this.strips.set(b.name, strips);
     }
@@ -2224,10 +2229,14 @@ export class BiomeManager {
     // shape draws per visible sector, cheaper than the veil's 3 gradients.
     if (this.currentBlend) {
       const dominant = this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from;
+      // Same name/archetype mismatch as decorateStrip above: NearField keys
+      // LANDMARKS and (via biomeByName) its silhouette-darkening color off
+      // an archetype name, not a synthesized palette's own display name.
+      const dominantLandmarkKey = this._profile(dominant)?.landmarkKey || dominant;
       const ratio = CodaDirector.delaminateRatio(NEARFIELD_RATIO, this.unravel);
       const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 60) * this._danceKickAmp;
       this.nearField.draw(ctx, canvas, worldX, {
-        tSec: this.tSec, kick, biomeName: dominant, reducedMotion: !!this.reducedFlash, ratio,
+        tSec: this.tSec, kick, biomeName: dominantLandmarkKey, reducedMotion: !!this.reducedFlash, ratio,
       });
 
       // Ground scatter: the frontmost plane's small detail, drawn after
