@@ -42,7 +42,7 @@ export function styleDials(_style) {
     hazeMul: 1.2,
     fogMul: 1.4,
     spaceWash: true,
-    starAmbient: 1.3,
+    starAmbient: 1.6,
     oceanPresence: 1.55,
     // Characters — wireframe + glow. The world is a dense painterly stack
     // (haze, ocean, mountains, particles); strokes that look fine in

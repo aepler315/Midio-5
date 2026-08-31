@@ -162,16 +162,16 @@ export function subPixelDraw(sizePx, alpha01) {
  * The floor itself also has to survive what happens to it AFTER this
  * function returns: _drawStarfield multiplies every star's alpha by the
  * layer's own ambient/night gain (~0.4-0.9), per-star twinkle (~0.4-1),
- * and atmospheric extinction near the horizon (~0.35-1) on top. A 0.12
- * floor surviving all three lands around 0.02-0.07 on screen -- non-zero,
- * but still too faint to read as "a sky full of stars" against anything
- * but a near-black background. 0.45 is chosen so the floor clears a
- * genuinely visible ~0.08-0.28 after those multipliers even in the worst
- * case (faint star, near horizon, mid-twinkle-trough), while still
- * leaving headroom up to 1.0 for true hero stars.
+ * and atmospheric extinction near the horizon (~0.35-1) on top. Even the
+ * old 0.45 floor left the worst case (faint star, near horizon,
+ * mid-twinkle-trough) sitting right on top of _drawStarfield's own 0.01
+ * visibility cutoff -- reported live as the sky reading like "a dull band
+ * of mostly nothing" outside the best conditions. Raised to 0.60 for real
+ * headroom in that worst case, while still leaving room up to 1.0 for true
+ * hero stars to stand out above the rest.
  */
 export function perceptualStretch(alpha01) {
-  return 0.45 + 0.55 * Math.pow(clamp01(alpha01), 0.35);
+  return 0.60 + 0.40 * Math.pow(clamp01(alpha01), 0.35);
 }
 
 /**
