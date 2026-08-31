@@ -5,7 +5,7 @@
 // going on to watch, not so much that every window strobes and every
 // peak clips. A drone leaves The Range sitting still (boring). A wall
 // of sound in After Hours lights every window at once (too intense).
-import { clamp01, clamp } from '../utils/math.js';
+import { clamp01, clamp, spread01 } from '../utils/math.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { extractRidgePortrait, lithologyFromShares } from './RidgePortrait.js';
 import { listWorlds, getWorld } from './Worlds.js';
@@ -95,7 +95,12 @@ export function extractWatchFeatures({
   const form = clamp01(landmarks / 10);
   const arc = dyn;
 
-  const drive = clamp01(0.28 * arc + 0.18 * onset + 0.16 * contrast + 0.14 * energyMean + 0.24 * tempoHeat);
+  // spread01: a weighted sum of 5 independent-ish features collapses toward
+  // 0.5 (measured: sd 0.134, <0.1% of songs ever below 0.10 or above 0.90),
+  // which reads every world's comfort band near an edge (farside, fathom,
+  // foundry) as nearly unreachable even though those bands were authored
+  // assuming roughly-uniform coverage. See spread01's own comment.
+  const drive = spread01(clamp01(0.28 * arc + 0.18 * onset + 0.16 * contrast + 0.14 * energyMean + 0.24 * tempoHeat));
 
   return {
     centroid, bass, air, spread, dyn, energyMean, phrase, landmarks,

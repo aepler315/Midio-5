@@ -7,6 +7,7 @@ import { buildingProfile, cityHeightField, windowOccupancy } from '../src/world/
 import { extractRidgePortrait } from '../src/world/RidgePortrait.js';
 import { castBiomes } from '../src/world/Dramaturgy.js';
 import { CITY_TEMPERATURE } from '../src/world/city/CityPalettes.js';
+import { clamp01, spread01 } from '../src/utils/math.js';
 
 function makeCurves({ durationMs = 120000, rateHz = 50, energyAt, bandsAt } = {}) {
   const ec = new EnergyCurves(durationMs, rateHz);
@@ -156,6 +157,35 @@ test('understory wins for textured, spread, low-contrast songs', () => {
   const understory = ranked.find((r) => r.id === 'understory');
   assert.ok(understory, 'understory should be in rankings');
   assert.ok(understory.score >= 50, `understory score ${understory.score} too low for textured song`);
+});
+
+test('drive is actually spread01-corrected in the real pipeline, not just in isolation', () => {
+  // extractWatchFeatures' `drive` is a 5-term weighted sum of arc/onset/
+  // contrast/energyMean/tempoHeat, which collapses toward 0.5 by the
+  // central limit theorem far more than the world comfort bands (authored
+  // assuming rough 0..1 coverage) expect -- see spread01's own comment and
+  // the dedicated reachability proof in test/spread01.test.js. That proof
+  // is against the formula in isolation; this confirms the real production
+  // code path actually applies it, by reconstructing the pre-spread raw
+  // value from extractWatchFeatures' own returned sub-features and checking
+  // `drive` is the spread01 of that, not the raw sum itself, across a real
+  // spread of song shapes (so this doesn't just pin one lucky sample).
+  const songs = [
+    metal(), lofi(),
+    makeCurves({ energyAt: (t) => 0.15 + bump(t, 0.5, 0.2, 0.4), bandsAt: () => [0.6, 0.7, 0.8, 0.9, 0.8, 0.7, 0.6] }),
+    makeCurves({ energyAt: (t) => 0.05 + bump(t, 0.3, 0.08, 0.15), bandsAt: () => [0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3] }),
+  ];
+  const bpms = [140, 72, 128, 90];
+  let sawRealDivergence = false;
+  songs.forEach(({ ec, durationMs }, i) => {
+    const feat = extractWatchFeatures({ energyCurves: ec, durationMs, bpm: bpms[i] });
+    const raw = clamp01(0.28 * feat.arc + 0.18 * feat.onset + 0.16 * feat.contrast + 0.14 * feat.energyMean + 0.24 * feat.tempoHeat);
+    const expected = spread01(raw);
+    assert.ok(Math.abs(feat.drive - expected) < 1e-9,
+      `drive (${feat.drive}) should equal spread01 of its own raw sub-features (${expected}), raw=${raw}`);
+    if (Math.abs(feat.drive - raw) > 0.01) sawRealDivergence = true;
+  });
+  assert.ok(sawRealDivergence, 'spread01 should visibly move drive away from the raw sum for at least one real song shape');
 });
 
 test('comfort bands partition drive space — no world covers full range', () => {
