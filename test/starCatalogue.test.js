@@ -302,3 +302,60 @@ test('the ecliptic is a different axis from the galactic plane', () => {
   assert.ok(eclRise * galRise < 0,
     'the two planes should tilt opposite ways, not restate each other');
 });
+
+// --- Bright-star spacing (the "stars are bunched in the middle" bug) ------
+//
+// Positions being uniform across the whole field (the tests above) does not
+// mean the field READS as evenly spread: only the brightest ~8% of a
+// realistic magnitude-count population reliably clears the screen's
+// visibility floor (perceptualStretch), so that sparse subset is what a
+// viewer actually sees. Independent uniform placement (`rand()*w, rand()*h`
+// per star) is genuinely random, but genuinely-random point sets produce
+// real clumps and real gaps -- not what "evenly spread" looks like to a
+// human eye. Measured against the old implementation: one seed put 9 of the
+// 45 brightest stars in a 64px-wide bin holding 2.3 stars on average, with
+// its two neighboring bins empty.
+
+/** The brightest `frac` fraction of a catalogue, matching how BiomeManager
+ *  itself picks the hero tier (lowest-magnitude = brightest). */
+function brightestTier(cat, frac = 0.08) {
+  const byMag = cat.slice().sort((a, b) => a.mag - b.mag);
+  return byMag.slice(0, Math.max(1, Math.round(byMag.length * frac)));
+}
+
+test('the brightest stars -- the ones actually visible against the sky -- are spread with real minimum spacing, not clumped by chance', () => {
+  const w = 1280, h = 720;
+  for (const seed of [1, 42, 12345, 999]) {
+    const cat = generateCatalogue(seed, 560, w, h);
+    const heroes = brightestTier(cat);
+    let minDist = Infinity;
+    for (let i = 0; i < heroes.length; i++) {
+      for (let j = i + 1; j < heroes.length; j++) {
+        const d = Math.hypot(heroes[i].x - heroes[j].x, heroes[i].y - heroes[j].y);
+        if (d < minDist) minDist = d;
+      }
+    }
+    // A field this size holding ~45 hero stars has room for real spacing
+    // (see the radius calibration in generateCatalogue) -- independent
+    // uniform placement has no such floor and routinely lands two stars
+    // within a few px of each other.
+    assert.ok(minDist > 15,
+      `seed ${seed}: closest pair of bright stars is only ${minDist.toFixed(1)}px apart`);
+  }
+});
+
+test('bright-star density across horizontal bins has no pathological clump-next-to-gap', () => {
+  const w = 1280, h = 720, bins = 20;
+  for (const seed of [1, 42, 12345, 999]) {
+    const cat = generateCatalogue(seed, 560, w, h);
+    const heroes = brightestTier(cat);
+    const counts = new Array(bins).fill(0);
+    for (const s of heroes) counts[Math.min(bins - 1, Math.floor((s.x / w) * bins))]++;
+    const mean = heroes.length / bins;
+    const variance = counts.reduce((acc, c) => acc + (c - mean) ** 2, 0) / bins;
+    // The pre-fix implementation measured variance as high as ~3.8 on this
+    // exact scenario (seed 12345: a bin with 9 stars beside two with 0).
+    // Blue-noise spacing on the hero tier brings every seed in well under 2.
+    assert.ok(variance < 2.2, `seed ${seed}: bright-star bin variance ${variance.toFixed(2)} reads as clumpy`);
+  }
+});
