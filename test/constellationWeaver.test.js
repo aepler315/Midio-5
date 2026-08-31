@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ConstellationWeaver, nextDotPos, edgeRevealFrac } from '../src/world/ConstellationWeaver.js';
+import { ConstellationWeaver, nextDotPos, edgeRevealFrac, groundFadeAlpha } from '../src/world/ConstellationWeaver.js';
 import { mulberry32 } from '../src/utils/math.js';
 
 function melodyEvt(tMs, pitch = 60, vel = 0.7) {
@@ -10,31 +10,33 @@ function melodyEvt(tMs, pitch = 60, vel = 0.7) {
 test('nextDotPos: first dot lands in region, subsequent dots stay in region and hop scales with the field diagonal', () => {
   const rand = mulberry32(1);
   const w = 1280, h = 720;
-  // Region spans nearly the whole WIDTH (0.03-0.97 x) but stops well short
-  // of the ground vertically (0.04-0.58 y): ground-level landmarks
-  // (Landmarks.js) are drawn as unfilled stroked wireframes, so unlike the
-  // ambient star catalogue, nothing near the ground actually occludes a
-  // figure that lands there -- and Midio's own groundY sits at 0.75 of the
-  // nominal stage, so anything past that is visibly below the horizon, not
-  // behind it. See the REGION comment in ConstellationWeaver.js.
+  // Region spans nearly the whole WIDTH (0.03-0.97 x) and, since the
+  // "vertical clustering" investigation (see ConstellationWeaver.js's REGION
+  // comment), most of the open sky vertically too (0.04-0.70 y): ground-level
+  // landmarks (Landmarks.js) are drawn as unfilled stroked wireframes, so
+  // unlike the ambient star catalogue, nothing near the ground actually
+  // occludes a figure that lands there -- and Midio's own groundY sits at
+  // 0.75 of the nominal stage, so anything past that is visibly below the
+  // horizon, not behind it. The ground-fade curve (groundFadeAlpha) handles
+  // the actual safety margin now, reaching true 0 by yMax itself.
   const p0 = nextDotPos(null, rand, w, h);
   assert.ok(p0.x >= 0.03 * w && p0.x <= 0.97 * w);
-  assert.ok(p0.y >= 0.04 * h && p0.y <= 0.58 * h);
+  assert.ok(p0.y >= 0.04 * h && p0.y <= 0.70 * h);
   let prev = p0;
   const diag = Math.hypot(w, h);
   for (let i = 0; i < 50; i++) {
     const p = nextDotPos(prev, rand, w, h);
     assert.ok(p.x >= 0.03 * w - 1e-6 && p.x <= 0.97 * w + 1e-6);
-    assert.ok(p.y >= 0.04 * h - 1e-6 && p.y <= 0.58 * h + 1e-6);
+    assert.ok(p.y >= 0.04 * h - 1e-6 && p.y <= 0.70 * h + 1e-6);
     assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
     // Hop distance (pre-reflection) is 5%-11% of the field diagonal, not a
     // fixed pixel range -- verify it against an interior prev far enough from
     // EVERY REGION edge that the max possible hop (11% of the diagonal,
     // ~161px at this w/h) can't reach it, so reflection can't shorten the
-    // observed distance. REGION's y range (0.04-0.58) is far narrower than
-    // its x range (0.03-0.97), so the interior y band that clears a 161px
-    // hop from both edges is correspondingly narrow: roughly [0.264, 0.356].
-    if (prev.x > 0.2 * w && prev.x < 0.8 * w && prev.y > 0.27 * h && prev.y < 0.35 * h) {
+    // observed distance. REGION's y range (0.04-0.70) is narrower than its x
+    // range (0.03-0.97), so the interior y band that clears a 161px hop from
+    // both edges is correspondingly narrow: roughly [0.264, 0.476].
+    if (prev.x > 0.2 * w && prev.x < 0.8 * w && prev.y > 0.27 * h && prev.y < 0.45 * h) {
       const stepDist = Math.hypot(p.x - prev.x, p.y - prev.y);
       assert.ok(stepDist >= 0.05 * diag - 1e-6 && stepDist <= 0.11 * diag + 1e-6,
         `step ${stepDist} should be within 5%-11% of the diagonal (${diag})`);
@@ -229,4 +231,52 @@ test('a full song of figures never produces a dot at or past the ground line', (
     assert.ok(d.y < GROUND_FRAC * 1080,
       `a dot at y=${(d.y / 1080).toFixed(3)} of height sits at or past the ground line`);
   }
+});
+
+// ── The vertical-clustering fix ──────────────────────────────────────
+//
+// A live 3-minute session showed every single dot (figures and crystallized
+// stars alike) landing between y=0.05 and y=0.575 of the frame -- never once
+// below 58%, no matter how long the song ran. That's the same "stars are
+// clustered in the middle" complaint the ambient star catalogue fix (see
+// StarCatalogue.js) didn't touch, because this system's dots are far
+// brighter and more eye-catching than the ambient field. Fixed by raising
+// REGION.yMax and tying groundFadeAlpha's fade-to-zero point to it directly,
+// so the region can safely use most of the real open sky.
+
+test('groundFadeAlpha reaches exactly 0 at REGION.yMax, never a visible floor', () => {
+  assert.equal(groundFadeAlpha(0.70), 0);
+  assert.equal(groundFadeAlpha(0.85), 0, 'past yMax should stay fully faded, not climb back up');
+  assert.equal(groundFadeAlpha(0.40), 1, 'well above real terrain peaks should be fully visible');
+});
+
+test('nextDotPos now reaches deep into the previously-unused lower sky (past the old 0.58 cap)', () => {
+  const rand = mulberry32(7);
+  const w = 1920, h = 1080;
+  let prev = null;
+  let sawBelowOldCap = false;
+  for (let i = 0; i < 300; i++) {
+    prev = nextDotPos(prev, rand, w, h);
+    if (prev.y / h > 0.58) sawBelowOldCap = true;
+  }
+  assert.ok(sawBelowOldCap, 'placement should now use sky below the old 0.58 ceiling');
+});
+
+test('a full song of figures actually uses the lower half of REGION, not just the old 0.58 band', () => {
+  const weaver = new ConstellationWeaver(909, 1920, 1080);
+  let t = 0;
+  for (let i = 0; i < 400; i++) {
+    weaver.onMelody(melodyEvt(t, 60 + (i * 5) % 24, 0.6));
+    weaver.update(t, 0.5);
+    t += 500;
+  }
+  const allDots = [
+    ...(weaver.building ? weaver.building.dots : []),
+    ...weaver.figures.flatMap((f) => f.dots),
+    ...weaver.stars.flatMap((s) => s.dots),
+  ];
+  assert.ok(allDots.length > 0, 'fixture should have produced some dots');
+  const belowOldCap = allDots.filter((d) => d.y / 1080 > 0.58).length;
+  assert.ok(belowOldCap > 0,
+    'a full song should place at least some dots below the old 0.58 cap, in the now-open sky');
 });

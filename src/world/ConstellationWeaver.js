@@ -22,11 +22,24 @@ import { capFlashAlpha } from '../ui/Accessibility.js';
 // each (HOLD_MS + FADE_MS), two of them doing that near the same moment reads
 // as exactly the "stars bunched together" complaint this was meant to fix --
 // now bunched by both resting on the same ground line instead of by X
-// position. Pulled back to comfortably clear real terrain peaks (which reach
-// roughly 0.55 in practice) and the ground line itself, while keeping the
-// wide X range and diagonal-scaled hop distance from the same investigation
-// -- those measurably fixed real problems and aren't implicated here.
-const REGION = { xMin: 0.03, xMax: 0.97, yMin: 0.04, yMax: 0.58 };
+// position. That regression got pulled back to 0.58, which killed the ground
+// glitch but overcorrected: instrumenting a live 3-minute session (dumping
+// every figure's and every crystallized star's own y-fraction) showed 100%
+// of ~1600 dots landing between 0.05 and 0.575 -- literally zero dots ever
+// below 58% of the frame, for the entire song, every time, by construction.
+// Meanwhile actual terrain only peaks around 0.55 in valleys well below
+// that; most of the screen's real open sky (roughly 0.58 up to the 0.75
+// ground line) was sitting permanently empty. That's a second, independent
+// mechanism for the exact same "everything's bunched in the middle"
+// complaint: not a positional RNG bug, but every bright figure and star
+// being structurally barred from most of the lower sky. Fixed properly this
+// time by decoupling "how far down dots may be placed" from "how far down
+// they render at full brightness": groundFadeAlpha (below) now fades
+// exactly to 0 by yMax instead of flooring at a still-visible 0.15, so
+// raising yMax back up to actually use the open sky can never reproduce the
+// original grass-line glitch -- anything that drifts toward the new lower
+// boundary just fades out first.
+const REGION = { xMin: 0.03, xMax: 0.97, yMin: 0.04, yMax: 0.70 };
 const FIGURE_DOTS_MIN = 5;
 const FIGURE_DOTS_MAX = 8;
 const EDGE_GROW_MS = 250;
@@ -47,8 +60,20 @@ const PULSE_TAU_SEC = 0.25;
 // an occlusion. Since terrain height varies per song and isn't known here,
 // fade every edge/dot toward the bottom of the field on a fixed curve so
 // any clip lands on already-near-invisible content instead of a crisp line.
-function groundFadeAlpha(yFrac) {
-  return 1 - 0.85 * clamp01((yFrac - 0.55) / 0.4);
+//
+// This used to floor at 0.15 (never fully invisible), which is exactly what
+// let a dot sitting at the old yMax=0.95 read as "resting on the grass"
+// instead of fading away -- a real, visible artifact, not just a clipped
+// line. It's the reason yMax got pulled defensively all the way back to
+// 0.58 rather than just being trimmed. Tying the fade's endpoint to
+// REGION.yMax itself (instead of a fixed denominator) means it always
+// reaches true 0 exactly at the region's own lower boundary, so yMax can
+// safely sit much closer to the real ground line -- nothing can ever again
+// visibly plant itself there, because by definition nothing is visible
+// there.
+const GROUND_FADE_START = 0.55; // real terrain peaks, per the investigation above
+export function groundFadeAlpha(yFrac) {
+  return 1 - clamp01((yFrac - GROUND_FADE_START) / (REGION.yMax - GROUND_FADE_START));
 }
 
 // Hop distance as a fraction of the field's diagonal, not a fixed pixel
