@@ -190,22 +190,46 @@ function softScore(dna, anchor, lch) {
   return 0.55 * vibeAlignment + 0.45 * internalHarmony;
 }
 
-function noveltyPenalty(seedKey) {
-  if (typeof localStorage === 'undefined') return 0;
+/** Read the recent-palette-hue history once (not per candidate -- see the
+ *  call site in synthesizePalette, which used to hit localStorage.getItem +
+ *  JSON.parse 400 times per palette, once per candidate, for a value that
+ *  never changes within a single synthesizePalette call). Best-effort: any
+ *  storage/parse failure just means no novelty signal this run. */
+function readDnaHistory() {
+  if (typeof localStorage === 'undefined') return [];
   try {
     const raw = localStorage.getItem('midio.worldDnaHistory');
     const history = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(history) || !history.length) return 0;
-    let minDist = Infinity;
-    for (const h of history) {
-      const d = Math.abs((h.baseHue ?? 0) - (seedKey.baseHue ?? 0));
-      const wrapped = Math.min(d, 360 - d);
-      minDist = Math.min(minDist, wrapped);
-    }
-    return clamp01(1 - minDist / 40) * 0.15; // small nudge, never overrides song identity
+    return Array.isArray(history) ? history : [];
   } catch {
-    return 0;
+    return [];
   }
+}
+
+/** How close `hue` sits to the nearest recently-used hue in `history`, 0
+ *  (far from anything recent) to 0.15 (sitting right on top of one) --
+ *  "penalty" names what a HIGH return means (this candidate repeats recent
+ *  history), so callers must SUBTRACT it from a score, not add it.
+ *
+ *  `hue` must vary per candidate for this to do anything: it used to be
+ *  keyed on anchor.baseHue, which is derived from dna.tonicPc alone and is
+ *  therefore IDENTICAL across all N_CANDIDATES candidates for one song --
+ *  a constant added the same amount to every candidate's score can never
+ *  change which one wins. Each role's post-jitter hue (e.g. skyMid.H) does
+ *  vary candidate-to-candidate (rotationDeg and hueJitter are both
+ *  re-rolled per candidate) while still tracking the song's own tonic
+ *  closely enough to compare meaningfully against past songs' stored
+ *  baseHue -- both are "roughly what hue is this world," just measured at
+ *  the anchor vs. at one jittered role. */
+function noveltyPenalty(history, hue) {
+  if (!history.length) return 0;
+  let minDist = Infinity;
+  for (const h of history) {
+    const d = Math.abs((h.baseHue ?? 0) - hue);
+    const wrapped = Math.min(d, 360 - d);
+    minDist = Math.min(minDist, wrapped);
+  }
+  return clamp01(1 - minDist / 40) * 0.15; // small nudge, never overrides song identity
 }
 
 function rememberDna(seedKey) {
@@ -226,6 +250,7 @@ export function synthesizePalette(dna, temperatureOverride = null) {
   const grammar = buildShapeGrammar(dna);
   const temp = temperatureOverride ?? computeTemperature(dna);
   const rand = mulberry32((dna.seed ^ 0x9e3779b9) >>> 0);
+  const dnaHistory = readDnaHistory(); // once per palette, not once per candidate
 
   let best = null, bestScore = -Infinity, bestValid = false;
   for (let i = 0; i < N_CANDIDATES; i++) {
@@ -233,8 +258,14 @@ export function synthesizePalette(dna, temperatureOverride = null) {
     const violation = hardConstraintViolation(c.hex, c.lch);
     const valid = violation === 0;
     const soft = softScore(dna, c.anchor, c.lch);
-    const novelty = valid ? noveltyPenalty({ baseHue: c.anchor.baseHue }) : 0;
-    const score = soft + novelty - 1000 * violation;
+    // c.lch.skyMid.H, not c.anchor.baseHue: baseHue is fixed by dna.tonicPc
+    // alone and is identical for every candidate this song generates, so a
+    // penalty keyed on it can never affect which candidate wins. skyMid.H
+    // varies per candidate (rotationDeg/hueJitter are re-rolled each time)
+    // while still tracking the song's own tonic closely enough to compare
+    // against history meaningfully.
+    const novelty = valid ? noveltyPenalty(dnaHistory, c.lch.skyMid.H) : 0;
+    const score = soft - novelty - 1000 * violation;
     const better = best === null || (valid && !bestValid) || (valid === bestValid && score > bestScore);
     if (better) { best = c; bestScore = score; bestValid = valid; }
   }

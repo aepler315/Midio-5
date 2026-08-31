@@ -341,6 +341,78 @@ test('synthesizePalette is deterministic for the same DNA', () => {
   assert.equal(a.profile.silhouette, b.profile.silhouette);
 });
 
+// The novelty mechanism (recent-hue history nudging candidate selection
+// away from what recently played) was provably inert two ways at once:
+// (1) it was keyed on anchor.baseHue, which is fixed by dna.tonicPc alone
+// and therefore IDENTICAL across every one of the 400 candidates a single
+// song generates, so a constant added equally to every candidate's score
+// can never change which one wins; (2) even if it had varied, the score
+// line ADDED it (`soft + novelty`), and noveltyPenalty returns its LARGEST
+// value for the candidate CLOSEST to recent history -- so a working
+// version would have rewarded repeating recent palettes, not avoiding
+// them. Meanwhile it cost a localStorage.getItem+JSON.parse on every one
+// of those 400 iterations for a value that never changed within the call.
+function withMockLocalStorage(fn) {
+  const store = new Map();
+  const prev = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, v),
+  };
+  try {
+    return fn(store);
+  } finally {
+    globalThis.localStorage = prev;
+  }
+}
+
+test('novelty history genuinely penalizes (not rewards) landing near a recently-used hue', () => {
+  const dna = { ...buildSongDNA(synthTimeline({ pitches: [64, 67, 71] })), seed: 4242 };
+  withMockLocalStorage((store) => {
+    const noHistory = synthesizePalette(dna);
+    // Seed history at exactly the hue this song would otherwise land on --
+    // the case the mechanism exists for.
+    store.set('midio.worldDnaHistory', JSON.stringify([{ baseHue: noHistory.proof.baseHue }]));
+    const withHistory = synthesizePalette(dna);
+    // The old (additive, inverted) formula could only ever RAISE the score
+    // for a candidate near history. A real penalty must lower it.
+    assert.ok(withHistory.proof.softScore < noHistory.proof.softScore - 1e-6,
+      `matching history should lower the winning score (was ${noHistory.proof.softScore}, now ${withHistory.proof.softScore})`);
+  });
+});
+
+test('novelty history is read once per palette, not once per candidate', () => {
+  withMockLocalStorage((store) => {
+    let reads = 0;
+    const real = store.get.bind(store);
+    globalThis.localStorage.getItem = (k) => { reads++; return store.has(k) ? real(k) : null; };
+    store.set('midio.worldDnaHistory', JSON.stringify([{ baseHue: 90 }, { baseHue: 200 }]));
+    reads = 0;
+    const dna = buildSongDNA(synthTimeline({ pitches: [60, 64, 67] }));
+    synthesizePalette(dna);
+    assert.ok(reads <= 2, `expected at most a couple localStorage reads per palette, got ${reads} (N_CANDIDATES=400 would mean it's back in the loop)`);
+  });
+});
+
+test('novelty history measurably steers selection away from a recently-used hue across many songs', () => {
+  // A real, observable effect on WHICH candidate wins, not just its score --
+  // sampled across many seeds since any single song's softScore landscape
+  // can happen to have the same top candidate survive a small penalty.
+  let flips = 0;
+  const N = 40;
+  withMockLocalStorage((store) => {
+    for (let s = 1; s <= N; s++) {
+      const dna = { ...buildSongDNA(synthTimeline({ pitches: [60, 64, 67] })), seed: s * 1000 + 7 };
+      store.clear();
+      const a = synthesizePalette(dna);
+      store.set('midio.worldDnaHistory', JSON.stringify([{ baseHue: a.proof.baseHue }]));
+      const b = synthesizePalette(dna);
+      if (JSON.stringify(a.profile.sky) !== JSON.stringify(b.profile.sky)) flips++;
+    }
+  });
+  assert.ok(flips > 0, 'matching history should change the winning palette for at least some songs');
+});
+
 // A synthesized palette's own display `name` (e.g. "NAVE_A_0", set by
 // synthesizeSectionPalettes) never matches a LANDMARKS/BIOMES key -- ground
 // clutter (decorateStrip), near-field occluders, and NearField's silhouette-
