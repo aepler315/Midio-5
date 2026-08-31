@@ -279,29 +279,54 @@ export function buildCustomWorld(features, data = null) {
   let dna = null;
   let paletteProof = null;
 
+  // Three independent try/catches, not one wrapping all of DNA + palette +
+  // terrain: a single shared catch meant ANY failure -- even one confined
+  // to palette color synthesis -- silently discarded terrainMods and
+  // characterScheme too, even though deriveTerrainParams/pickCharacterScheme
+  // never throw for any dna that buildSongDNA itself successfully returned
+  // and don't depend on palette synthesis having succeeded. A song could
+  // quietly lose its entire generated identity (both color AND terrain
+  // shape) over a failure in only one of the two. Each catch also used to
+  // record its error in paletteProof.error and nothing ever read or logged
+  // it -- a failure here was invisible even to someone looking for it.
   try {
     dna = buildSongDNA({ ...(data || {}), structure: data?.structure ?? null });
-    const synth = synthesizeSectionPalettes(dna, base.kind || 'world');
-    if (synth.palettes.length) {
-      palettes = synth.palettes;
-      temperature = synth.temperature;
-      cast = (energies, seed) => castBiomes(energies, seed, temperature);
-      paletteProof = { seed: dna.seed, tonicPc: dna.tonicPc, isMajor: dna.isMajor, sections: synth.palettes.length };
-    }
-    // Continuous nudges to the alpine ridgeline's own shape params, so a
-    // song's instrumentation shows up in the skyline it generates and not
-    // only its colors. Additive/optional: BiomeManager falls back to the
-    // stock per-depth character (massif/range/crags) untouched when absent.
-    const grammar = buildShapeGrammar(dna);
-    terrainMods = deriveTerrainParams(grammar);
-    // WHICH landform each depth layer gets, not just how that landform is
-    // shaped -- see ShapeGrammar.pickCharacterScheme. Also falls back to
-    // the stock massif/range/crags triple when absent.
-    characterScheme = CHARACTER_SCHEMES[pickCharacterScheme(grammar)];
   } catch (err) {
-    // Palette synthesis is additive — a failure here must never break world
-    // selection. Fall back to the base world's stock palette silently.
+    console.warn('[WorldScore] buildSongDNA failed; falling back to the stock world entirely:', err);
     paletteProof = { error: String(err?.message || err) };
+  }
+
+  if (dna) {
+    try {
+      const synth = synthesizeSectionPalettes(dna, base.kind || 'world');
+      if (synth.palettes.length) {
+        palettes = synth.palettes;
+        temperature = synth.temperature;
+        cast = (energies, seed) => castBiomes(energies, seed, temperature);
+        paletteProof = { seed: dna.seed, tonicPc: dna.tonicPc, isMajor: dna.isMajor, sections: synth.palettes.length };
+      }
+    } catch (err) {
+      // Palette synthesis is additive — a failure here must never break
+      // world selection, and (see above) must not take terrain shaping
+      // down with it either. Falls back to the base world's stock palette.
+      console.warn('[WorldScore] palette synthesis failed; falling back to the stock palette:', err);
+      paletteProof = { error: String(err?.message || err) };
+    }
+
+    try {
+      // Continuous nudges to the alpine ridgeline's own shape params, so a
+      // song's instrumentation shows up in the skyline it generates and not
+      // only its colors. Additive/optional: BiomeManager falls back to the
+      // stock per-depth character (massif/range/crags) untouched when absent.
+      const grammar = buildShapeGrammar(dna);
+      terrainMods = deriveTerrainParams(grammar);
+      // WHICH landform each depth layer gets, not just how that landform is
+      // shaped -- see ShapeGrammar.pickCharacterScheme. Also falls back to
+      // the stock massif/range/crags triple when absent.
+      characterScheme = CHARACTER_SCHEMES[pickCharacterScheme(grammar)];
+    } catch (err) {
+      console.warn('[WorldScore] terrain-shape derivation failed; falling back to the stock terrain:', err);
+    }
   }
 
   const world = {

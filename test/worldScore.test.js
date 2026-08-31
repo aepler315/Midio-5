@@ -204,6 +204,49 @@ test('window occupancy sits down on a quiet open and up on a fevered drop', () =
   assert.ok(quiet > 0.05 && drop < 1);
 });
 
+// buildCustomWorld used to wrap DNA + palette synthesis + terrain shaping
+// in ONE shared try/catch: any failure, even one confined to palette color
+// synthesis, silently discarded terrainMods/characterScheme too, even
+// though deriveTerrainParams/pickCharacterScheme never depend on palette
+// synthesis having succeeded. A song could quietly lose its entire
+// generated identity (both color AND terrain shape) over a failure in only
+// one of the two -- and the error was recorded in proof.dna.error, which
+// nothing ever read or logged, so the failure was invisible even to
+// someone looking for it.
+test('a palette-synthesis-only failure still leaves terrain shaping intact, and is now logged', () => {
+  // A "label" that throws when coerced to a string -- hashOfLabel in
+  // PaletteSynth.js does exactly that (String(label)) but ShapeGrammar.js's
+  // buildShapeGrammar/deriveTerrainParams/pickCharacterScheme never touch
+  // sectionLabels at all, so this reaches ONLY the palette path.
+  const poison = {
+    [Symbol.toPrimitive]() { throw new Error('poisoned label'); },
+    toString() { throw new Error('poisoned label'); },
+  };
+  const feat = {
+    centroid: 0.5, bass: 0.4, air: 0.3, spread: 0.5, dyn: 0.5, energyMean: 0.5,
+    phrase: 0.4, landmarks: 5, onset: 0.4, contrast: 0.4, groove: 0.5, warmth: 0.5,
+    texture: 0.4, form: 0.5, arc: 0.5, drive: 0.5, bpm: 120, tempoHeat: 0.5, trend: 0,
+  };
+  const data = { durationMs: 180000, bpm: 120, structure: { labels: [poison, 'B', poison, 'B'] } };
+
+  const warnCalls = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnCalls.push(args);
+  let result;
+  try {
+    result = buildCustomWorld(feat, data);
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.ok(result.proof.dna?.error, 'the failure should still be recorded');
+  assert.ok(result.world.terrainMods, 'terrain shaping must survive a palette-only failure');
+  assert.ok(result.world.characterScheme, 'character scheme must survive a palette-only failure');
+  assert.ok(warnCalls.length > 0, 'the captured error must actually be logged, not just recorded and ignored');
+  assert.ok(warnCalls.some((args) => String(args[0]).includes('palette')),
+    'the warning should identify which stage failed');
+});
+
 test('buildCustomWorld scores 100 for any song — proven by construction', () => {
   // Test across four very different songs: quiet ambient, loud metal,
   // mid-tempo groove, sparse high-frequency.
