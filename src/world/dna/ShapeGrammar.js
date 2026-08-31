@@ -5,7 +5,7 @@
 // nudges to the alpine ridgeline's own shape parameters -- so a song's
 // instrumentation is legible in both the palette and the skyline it
 // generates, not just a fixed massif/range/crags cutout per depth.
-import { clamp, clamp01 } from '../../utils/math.js';
+import { clamp, clamp01, spread01 } from '../../utils/math.js';
 
 const PARTICLE_KINDS = [
   'fireflies', 'embers', 'snow', 'pollen', 'antigrav',
@@ -42,15 +42,20 @@ function dominantFamily(grammar) {
   return best;
 }
 
-/** temperature 0..1: how hot/driving the song reads, independent of hue. */
+/** temperature 0..1: how hot/driving the song reads, independent of hue.
+ *  spread01 (see its own comment) counters the central-limit collapse a
+ *  5-term weighted sum has toward 0.5 -- measured, this pushed FX_BY_TEMP's
+ *  extreme bands (aurora below 0.10, lightning at/above 0.94) to under
+ *  0.05% reachability even though every one of the 12 bands was authored
+ *  assuming real coverage across the full range. */
 export function computeTemperature(dna) {
-  return clamp01(
+  return spread01(clamp01(
     0.28 * dna.percussionDensity
     + 0.24 * dna.energyMean
     + 0.24 * dna.tempoHeat
     + 0.14 * dna.noteDensity
     + 0.10 * dna.dyn,
-  );
+  ));
 }
 
 export function pickFx(temperature) {

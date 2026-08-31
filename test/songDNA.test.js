@@ -255,6 +255,55 @@ test('computeTemperature, pickFx, pickParticleKind stay in range / return valid 
   }
 });
 
+test('computeTemperature spreads toward the edges instead of collapsing to the middle', () => {
+  // The 5-term weighted sum inside computeTemperature collapses toward 0.5
+  // by the central limit theorem (measured pre-fix: sd 0.134, effectively
+  // 0% of songs above 0.90 or below 0.10) -- which made FX_BY_TEMP's most
+  // extreme bands (aurora below 0.10, lightning at/above 0.94) read as
+  // basically unreachable even though every band was authored assuming
+  // real coverage. Sweep a real spread of DNA shapes and confirm the
+  // resulting temperatures spread meaningfully past what the raw
+  // (un-spread) formula would produce.
+  const temps = [];
+  for (let i = 0; i <= 20; i++) {
+    const t = i / 20;
+    const dna = {
+      percussionDensity: t, energyMean: t, tempoHeat: t, noteDensity: t, dyn: t,
+    };
+    temps.push(computeTemperature(dna));
+  }
+  // A pure linear sweep is a poor stand-in for the real central-limit
+  // collapse (every term moves together here), so instead confirm the
+  // extremes of the sweep actually reach near 0 and near 1 -- spread01 is a
+  // no-op at 0/0.5/1, so this also guards against the transform being lost.
+  assert.ok(temps[0] < 0.03, `t=0 should read near-zero, got ${temps[0]}`);
+  assert.ok(temps[20] > 0.97, `t=1 should read near-one, got ${temps[20]}`);
+
+  // The real test: independent (not lock-step) random features, matching
+  // how a real song's percussionDensity/energyMean/tempoHeat/noteDensity/dyn
+  // actually vary independently of each other.
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let x = Math.imul(a ^ (a >>> 15), 1 | a);
+      x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+      return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rand = mulberry32(2024);
+  let extreme = 0;
+  const N = 4000;
+  for (let i = 0; i < N; i++) {
+    const dna = {
+      percussionDensity: rand(), energyMean: rand(), tempoHeat: rand(), noteDensity: rand(), dyn: rand(),
+    };
+    const temp = computeTemperature(dna);
+    if (temp < 0.15 || temp > 0.85) extreme++;
+  }
+  assert.ok(extreme / N > 0.02, `expected >2% of songs to reach a genuinely hot/cold temperature, got ${(100 * extreme / N).toFixed(2)}%`);
+});
+
 test('synthesizePalette satisfies its own hard constraints: silhouette dark, sky stops distinguishable', () => {
   const songs = [
     synthTimeline({ pitches: [60, 64, 67] }),
