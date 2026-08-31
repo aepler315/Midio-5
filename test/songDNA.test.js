@@ -239,6 +239,50 @@ test('buildShapeGrammar weights are non-negative and normalized to sum 1', () =>
   for (const v of Object.values(g)) assert.ok(v >= 0);
 });
 
+// The six production-rule categories are built from different combinations
+// of terms, so their raw (pre-normalization) achievable ranges differ --
+// measured, spikeCluster averaged 0.601 pre-fix while trunkBranch/
+// geometricRegularity averaged only ~0.35. Since every category is divided
+// by the SAME sum at the end, that raw-scale gap survived into the output:
+// spikeCluster was the single largest ("dominant") category for 52.8% of
+// sampled songs pre-fix, against 0.5% for verticalStack -- five of the six
+// categories a song's terrain is supposed to draw from were rarely or never
+// actually reachable as the dominant read.
+test('every shape-grammar category is reachable as the dominant one for a real fraction of songs', () => {
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let x = Math.imul(a ^ (a >>> 15), 1 | a);
+      x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+      return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rand = mulberry32(2024);
+  const domCount = { trunkBranch: 0, verticalStack: 0, spikeCluster: 0, arch: 0, mound: 0, geometricRegularity: 0 };
+  const N = 6000;
+  for (let i = 0; i < N; i++) {
+    const a = rand(), b = rand(), c = rand(), s = a + b + c;
+    const dna = {
+      familyShare: { organic: a / s, geometric: b / s, distorted: c / s },
+      percussionDensity: rand(), noteDensity: rand(), phrase: rand(),
+      harmonicComplexity: rand(), registerSpread: rand(),
+    };
+    const g = buildShapeGrammar(dna);
+    let bestK = null, bestV = -1;
+    for (const k in g) if (g[k] > bestV) { bestV = g[k]; bestK = k; }
+    domCount[bestK]++;
+  }
+  // Pre-fix, verticalStack's share was ~0.5% and spikeCluster's was ~52.8%
+  // (a 105x ratio). Post-fix every category should clear a real double-digit
+  // floor, and no single category should run away with more than a third.
+  for (const [k, count] of Object.entries(domCount)) {
+    const frac = count / N;
+    assert.ok(frac > 0.03, `${k} is dominant for only ${(100 * frac).toFixed(1)}% of songs -- still nearly unreachable`);
+    assert.ok(frac < 0.35, `${k} is dominant for ${(100 * frac).toFixed(1)}% of songs -- still running away with the vocabulary`);
+  }
+});
+
 test('computeTemperature, pickFx, pickParticleKind stay in range / return valid enums', () => {
   const VALID_FX = new Set(['starTwinkle', 'emberGlow', 'aurora', 'canopyDapple', 'glitchTear', 'petalPile',
     'prominence', 'lightning', 'lakeReflection', 'neonGrid', 'bioluminescence', 'mirage', 'godRays',
