@@ -33,20 +33,31 @@ test('notchAdd measurably deepens the couloir carving -- height can only fall, n
   assert.ok(sumNotched < sumBase - 1, `expected a clearly lower mean height, base=${sumBase} notched=${sumNotched}`);
 });
 
-test('teethAdd measurably adds high-frequency arete texture -- height can only rise, never fall', () => {
+test('teethAdd measurably serrates the crest -- signed, and its magnitude scales with the parameter', () => {
+  // This assertion USED to be "height can only rise, never fall", which was
+  // true of the old purely-additive `ridged()` teeth term. The ridge rewrite
+  // (RidgeShape.crenellation) made serration SIGNED on purpose: a crest is
+  // chewed both ways, and a teeth term that can only add just inflates the
+  // ridge -- which is part of why the old skyline read as noise bumps sitting
+  // on a mountain rather than as rock. What still has to hold, and is what
+  // this pins, is that the parameter genuinely reaches the field and that
+  // turning it up produces MORE serration, not merely different serration.
   const noise = new ValueNoise1D(11, 256);
   const n = 512, step = 4, width = n * step;
   const seed = 321;
   const base = alpineHeightField(noise, n, step, seed, width, 'crags', null, 'L4', null);
-  const toothy = alpineHeightField(noise, n, step, seed, width, 'crags', null, 'L4', { teethAdd: 0.4 });
-  let anyHigher = false;
-  for (let i = 0; i < n; i++) {
-    // teeth only ever adds (h += teeth * weather.teeth * clamp01(...), and
-    // every factor there is non-negative too).
-    assert.ok(toothy[i] >= base[i] - 1e-6, `point ${i} fell under teethAdd: base=${base[i]} toothy=${toothy[i]}`);
-    if (toothy[i] > base[i] + 1e-4) anyHigher = true;
-  }
-  assert.ok(anyHigher, 'teethAdd should measurably raise at least some points near the skyline');
+  const some = alpineHeightField(noise, n, step, seed, width, 'crags', null, 'L4', { teethAdd: 0.2 });
+  const lots = alpineHeightField(noise, n, step, seed, width, 'crags', null, 'L4', { teethAdd: 0.5 });
+
+  const deviation = (a, b) => {
+    let s = 0;
+    for (let i = 0; i < n; i++) s += Math.abs(a[i] - b[i]);
+    return s;
+  };
+  const dSome = deviation(base, some);
+  const dLots = deviation(base, lots);
+  assert.ok(dSome > 0.5, `teethAdd should measurably reach the field, got ${dSome}`);
+  assert.ok(dLots > dSome, `more teethAdd should mean more serration: ${dSome} -> ${dLots}`);
 });
 
 test('spireMixAdd and asymMul also measurably reach the final field (the whole mods table composes, not just notch/teeth)', () => {

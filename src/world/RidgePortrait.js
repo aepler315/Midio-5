@@ -563,6 +563,53 @@ function resolveCollisions(placed, minSep) {
   return kept;
 }
 
+/**
+ * Coverage pass for a TILING strip: insert subordinate summits until no
+ * circular gap exceeds `maxGap`. Distinct from fillGaps above, which fills
+ * to a peak COUNT and so happily leaves a range bunched in one half of the
+ * tile. Gaps are measured around the wrap (the last summit's gap to the
+ * first crosses the seam), because a scrolling tile has no first or last.
+ */
+function fillWideGaps(placed, maxGap, rand) {
+  const out = placed.slice();
+  let guard = 0;
+  while (guard++ < 24) {
+    out.sort((a, b) => a.u - b.u);
+    if (out.length === 0) break;
+    // Circular gaps: the pair (last, first) wraps across the tile seam.
+    let bestGap = -1, bestAt = 0.5, parent = out[0];
+    for (let i = 0; i < out.length; i++) {
+      const a = out[i];
+      const b = out[(i + 1) % out.length];
+      const gap = i === out.length - 1 ? (b.u + 1) - a.u : b.u - a.u;
+      if (gap > bestGap) {
+        bestGap = gap;
+        bestAt = ((a.u + gap / 2) % 1 + 1) % 1;
+        parent = a.prominence >= b.prominence ? a : b;
+      }
+    }
+    if (bestGap <= maxGap) break;
+    // Split the gap OFF-CENTRE, hard. Repeatedly halving the widest gap is
+    // an even subdivision, and evenly-spaced summits of similar size read
+    // as a picket fence just as badly as random ones read as noise -- it
+    // was the first thing wrong with this pass once coverage was fixed.
+    // A wide asymmetric split lets clusters and passes emerge instead: the
+    // rhythm real ranges have.
+    const frac = 0.26 + rand() * 0.48;
+    const at = ((parent === undefined ? bestAt : bestAt - bestGap / 2 + bestGap * frac) % 1 + 1) % 1;
+    out.push({
+      ...parent,
+      u: at,
+      // Wide spread of subordinate heights, so neighbouring fills never
+      // read as a repeated tooth.
+      prominence: parent.prominence * (0.22 + rand() * 0.42),
+      width01: clamp01((parent.width01 ?? 0.2) * (0.55 + rand() * 0.9)),
+      fill: true,
+    });
+  }
+  return out;
+}
+
 function fillGaps(placed, need, rand, minSep) {
   const out = placed.slice();
   let guard = 0;
@@ -649,14 +696,33 @@ export function composeAlpinePeaks({ portrait, cfg, layerKey = 'L2', seed, width
   const uRaw = (t) => MARGIN + ((t - tMin) / span) * usable;
   const shift = kingU - uRaw(king.t01) + role.phase + slide;
 
+  // WRAP, don't clamp. The strip tiles and scrolls forever, so there is no
+  // privileged "frame" to compose inside -- every x is equally likely to be
+  // the one on screen. Clamping was actively harmful: `shift` slides the
+  // whole composition to put the king at kingU, and clamping then piled
+  // every summit that fell outside [MARGIN, 1-MARGIN] onto one edge and
+  // left the opposite side of the tile empty. That empty side is the long
+  // dead-flat stretch the rendered field showed across ~40% of every tile.
+  // Wrapping preserves the song's relative spacing AND keeps the whole
+  // tile occupied.
+  const wrap01 = (v) => ((v % 1) + 1) % 1;
   const placed = taken.map((lm) => ({
     ...lm,
-    u: clamp(uRaw(lm.t01) + shift + (rand() - 0.5) * 0.02, MARGIN, 1 - MARGIN),
+    u: wrap01(uRaw(lm.t01) + shift + (rand() - 0.5) * 0.02),
   }));
 
-  const minSep = layerKey === 'L2' ? 0.11 : layerKey === 'L3' ? 0.08 : 0.055;
+  const minSep = layerKey === 'L2' ? 0.075 : layerKey === 'L3' ? 0.055 : 0.038;
   let resolved = resolveCollisions(placed, minSep);
   if (resolved.length < want) resolved = fillGaps(resolved, want, rand, minSep);
+  // Coverage, not just count: fillGaps above stops the moment it has `want`
+  // summits, which let a range call itself finished with every one of them
+  // crowded into one half of the tile. A range has to actually span the
+  // strip, so any remaining gap wider than maxGap gets a subordinate
+  // summit -- these are geological extras (`fill`), already scored down to
+  // 0.62 height below, so coverage never costs the song's own landmarks
+  // their prominence.
+  const maxGap = layerKey === 'L2' ? 0.30 : layerKey === 'L3' ? 0.24 : 0.18;
+  resolved = fillWideGaps(resolved, maxGap, rand);
   resolved = resolveCollisions(resolved, minSep);
 
   const maxProm = Math.max(...resolved.map((p) => p.prominence), 1e-6);

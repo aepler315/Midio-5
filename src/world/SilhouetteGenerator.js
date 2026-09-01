@@ -17,8 +17,12 @@ import {
 } from '../utils/math.js';
 import { shiftLightness } from '../render/VisualStyle.js';
 import {
-  composeAlpinePeaks, seedPeaks, layerWeathering, spineAt, phraseAt, massProfile,
+  composeAlpinePeaks, seedPeaks, layerWeathering, spineAt, phraseAt,
 } from './RidgePortrait.js';
+import {
+  summitMass, apronMass, massingEnvelope, crenellation, couloirCarve, regionalDip, flankQs,
+  shapeDials, flankness,
+} from './RidgeShape.js';
 import { cityHeightField, bakeWindowStrip } from './city/CitySilhouette.js';
 
 function makeCanvas(width, height) {
@@ -47,9 +51,9 @@ function makeCanvas(width, height) {
  *               notching -- a mid-distance working range.
  *  - `crags`    many smaller, rougher summits: near foothill rock.
  *
- * Each entry carries its own flank shape (`shoulder`/`spire`/`spireMix`, see
- * peakProfile), how far off-centre its summits sit (`asym`), and how much
- * connective mass piles up around their feet (`apron*`) -- that last group is
+ * Each entry carries its own flank shape (`shoulder`/`spire`/`spireMix`,
+ * consumed by RidgeShape.flankQs), how far off-centre its summits sit
+ * (`asym`), and how much connective mass piles up around their feet (`apron*`) -- that last group is
  * what decides whether a character reads as a joined-up range or as separate
  * hills standing on a plain.
  */
@@ -94,30 +98,8 @@ export const ALPINE_CHARACTERS = {
 };
 
 /**
- * One peak's unit-height profile at normalized flank distance `d` (0 at the
- * summit, 1 at the foot of that flank).
- *
- * A single power `(1-d)^k` was the whole profile before, and with k > 1 --
- * which every character used -- it sits BELOW the straight line from summit
- * to foot for the entire flank. That is a pinched, concave-sided cone with a
- * flared skirt: a circus tent, or a witch's hat. Real massifs carry their
- * bulk high; buttresses and spurs fill the shoulders out to at least a
- * triangle, and often past it.
- *
- * So the profile is a blend instead: a broad shoulder term with an exponent
- * BELOW 1 (fuller than a triangle) carrying most of the mass, plus a small
- * high-exponent spire term that restores a genuine summit rather than a
- * dome. Broad body, defined top -- which is what a mountain actually is.
- */
-export function peakProfile(d, shoulder, spire, spireMix) {
-  const t = Math.max(0, 1 - d);
-  if (t <= 0) return 0;
-  return (1 - spireMix) * Math.pow(t, shoulder) + spireMix * Math.pow(t, spire);
-}
-
-/**
  * Applies a song's deriveTerrainParams() nudges to one ALPINE_CHARACTERS
- * entry. Clamped well inside the range where peakProfile/apron math stays
+ * entry. Clamped well inside the range where flank/apron math stays
  * sane (spireMix/notch/teeth in [0,1]; the rest bounded around the spread
  * ALPINE_CHARACTERS itself already uses) so an extreme song can push a
  * range noticeably spikier or moundier without ever producing degenerate
@@ -138,6 +120,15 @@ function applyTerrainMods(cfg, mods) {
     teeth: clamp01(cfg.teeth + (mods.teethAdd ?? 0)),
   };
 }
+
+// The tallest a summit may reach, and the highest its base may sit. Both
+// stay under 1 so nothing in the field is ever resolved by clamp01 -- a
+// clipped summit is a flat-topped mesa, which is the one shape a peak must
+// never be. generateSilhouette's own HEADROOM refit rescales the finished
+// ridge to fill the strip anyway, so leaving this margin costs no height
+// on screen.
+const SUMMIT_CEIL = 0.97;
+const BASE_CEIL = 0.50;
 
 export function alpineHeightField(noise, n, step, seed, width, character = 'massif', portrait = null, layerKey = 'L2', terrainMods = null) {
   const cfg = applyTerrainMods(ALPINE_CHARACTERS[character] || ALPINE_CHARACTERS.massif, terrainMods);
@@ -179,63 +170,104 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
   }
   const allPeaks = peaks.concat(shoulders);
   const spineAmp = (weather.spineAmp ?? 0) * 0.12;
-  const profileMix = weather.profileMix ?? 0;
-  const apronSpread = weather.apronSpread ?? cfg.apronSpread;
   const apronCap = weather.apronCap ?? cfg.apronCap;
 
-  const heights = new Float32Array(n);
+  // A range is a CREST that runs the whole tile, with summits raising it --
+  // not a set of separate cones standing on a plain. See RidgeShape.js for
+  // the full diagnosis; the short version is that the old field fell to a
+  // bare noise floor wherever no summit landed, which left a long dead-flat
+  // stretch in every (tiling, endlessly scrolling) strip and made saddles
+  // collapse so neighbours never read as one range.
+  const dials = shapeDials(cfg, weather.litho);
+  const dip = regionalDip(rand);
+  // Which summits buck the regional steep-side. A few, not none and not
+  // half: all-same reads stamped, half-and-half reads random.
+  for (const p of allPeaks) p.flip = rand() < 0.22;
+  const spinePhase = rand() * 10;
+  // Flank curvature from the character's own shoulder/spire/spireMix --
+  // this is the path a song's spike-vs-organic DNA takes into the shape.
+  const flankQ = flankQs(cfg, weather.litho, weather.profileMix ?? 0);
+  const apronSpread = dials.apronSpread;
+
+  // Pass 1: the summit field alone -- every named summit's own mass, plus
+  // the aprons that join neighbouring feet into saddles. No base yet.
+  const summitField = new Float32Array(n);
+  const apronField = new Float32Array(n);
+  // The strip tiles, so distance to a summit has to wrap: without this a
+  // summit sitting near x=0 contributes nothing at x=width-1, which pins a
+  // permanent low point at the tile seam -- the one place the eye is
+  // guaranteed to keep seeing, since the seam scrolls past on repeat.
+  const halfW = Math.max(1, width) / 2;
+  const wrapDx = (d) => (d > halfW ? d - width : d < -halfW ? d + width : d);
+  for (let i = 0; i < n; i++) {
+    const x = i * step;
+    let summit = 0;
+    let apronSum = 0;
+    for (const p of allPeaks) {
+      const dx = wrapDx(x - p.x);
+      const m = summitMass(dx, p, dip, flankQ);
+      // Max, not sum: summits must stay separate landforms rather than
+      // adding into one dome.
+      if (m > summit) summit = m;
+      apronSum += apronMass(dx, p, apronSpread) * weather.apronGain;
+    }
+    summitField[i] = summit;
+    apronField[i] = Math.min(apronSum, apronCap);
+  }
+
+  // Pass 2: the massing envelope -- a heavily blurred copy of the summit
+  // field, so the ground swells under clusters of peaks and subsides
+  // between them. This is what makes foothills descend OUT of the high
+  // country instead of the high country standing on a flat plinth.
+  // Radius is a real fraction of the tile: this is massing, not detail.
+  const massRadius = Math.max(4, Math.round(n * 0.085));
+  const envelope = massingEnvelope(summitField, dials.spineFloor, dials.spineSwing, massRadius);
+
+  // Pass 3: assemble the structure. Detail is deliberately NOT applied
+  // here -- it needs known relief and known local slope, and neither
+  // exists until this pass has run. That ordering is what lets couloirs
+  // sit on flanks and crenellation sit on crests, instead of both being
+  // sprayed at a fixed rate across the whole tile the way the old
+  // single-pass field did.
+  const structure = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const x = i * step;
     const u = width > 0 ? x / width : 0;
-    // Sparse low foothill bed — keep valleys deep so peaks read as peaks.
-    // The song spine is a *family resemblance* under the named summits
-    // (the whole energy arc, heavily smoothed, amplitude tiny), not a
-    // second skyline and not a scrolling spectrogram.
-    const bed = ridged(noise, x * 0.0035, 3) * weather.bed
-      + noise.fbm(x * 0.007, 2) * 0.05
-      + spineAt(portrait, u, spineAmp);
+    // Valley floors must not be dead level. Where no summit is near, the
+    // envelope alone is flat, which left a ruler-straight horizon across
+    // every pass between masses. A little low-frequency roll (and it has
+    // to be low-frequency -- this is the valley's own drift, not the
+    // crenellation that lives up on the crests) is enough to break it.
+    const roll = noise.fbm(x * 0.0016 + 53.7, 2) * 0.045;
+    // Capped so there is ALWAYS headroom left for a summit to rise into.
+    const base = Math.min(
+      BASE_CEIL,
+      Math.max(envelope[i], envelope[i] * 0.55 + apronField[i] * 0.62)
+        + spineAt(portrait, u, spineAmp) + roll,
+    );
+    // A full-height summit lands exactly on SUMMIT_CEIL, never past it.
+    // The previous cut let base + summit overshoot 1 and relied on clamp01
+    // to catch it, which sawed the tops off the tallest summits into flat
+    // mesas -- the most conspicuous artifact left in the rendered field,
+    // and precisely the wrong shape for the peaks that matter most.
+    structure[i] = base + summitField[i] * (SUMMIT_CEIL - base);
+  }
 
-    // Summits take the max (they must stay separate landforms), but the
-    // connective mass around their feet ADDS up. That distinction is what
-    // builds a range: before, every peak was an independent cone maxed
-    // against a near-flat bed, so between any two of them the ground fell
-    // all the way back to the plain and each summit read as a lone traffic
-    // cone standing on a table. Overlapping aprons instead pile into real
-    // saddles, so neighbouring peaks are joined by high ground the way a
-    // ridgeline actually joins them -- capped below summit height so the
-    // range never fills in flat.
-    let coreMax = 0;
-    let apronSum = 0;
-    for (const p of allPeaks) {
-      const flank = Math.max(12, x < p.x ? p.wL : p.wR);
-      const d = Math.abs(x - p.x) / flank;
-      if (d < 1) {
-        // Spectral mass as the mountain's cross-section, blended with the
-        // landform type so a massif is still a massif. L3 (the timbre
-        // layer) leans hardest on the song; L4 keeps more of the crag
-        // character. See RidgePortrait.massProfile.
-        const land = peakProfile(d, cfg.shoulder, cfg.spire, cfg.spireMix);
-        const song = weather.litho ? massProfile(d, weather.litho) : land;
-        const core = (land * (1 - profileMix) + song * profileMix) * p.h;
-        if (core > coreMax) coreMax = core;
-      }
-      const ad = Math.abs(x - p.x) / (flank * apronSpread);
-      if (ad < 1) apronSum += Math.pow(1 - ad, 1.7) * p.h * weather.apronGain;
-    }
-    let h = Math.max(coreMax, bed + Math.min(apronSum, apronCap));
+  // Pass 4: detail, anchored to the structure it sits on.
+  const heights = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = i * step;
+    let h = structure[i];
+    // Relief measured against THIS point's own local base (the envelope),
+    // not a global floor -- so a summit standing on high country still
+    // reads as having real relief, and the high country itself doesn't.
+    const relief = clamp01((h - envelope[i]) / 0.34);
+    const prev = structure[i > 0 ? i - 1 : n - 1];
+    const next = structure[i < n - 1 ? i + 1 : 0];
+    const slope = (next - prev) / (2 * Math.max(1, step));
 
-    // Couloir notches — carve V's into mid-flanks (craggy outline).
-    // Portrait weathering scales this down so the named summits read;
-    // a pad-heavy song is almost smooth, a bright one still has grain
-    // without turning the skyline into noise.
-    const notch = ridged(noise, x * 0.022 + 17, 2);
-    if (h > 0.28) {
-      h -= notch * weather.notch * (h - 0.18);
-    }
-
-    // High-frequency ridge teeth (arete / serac) — only near the skyline.
-    const teeth = ridged(noise, x * 0.05, 2);
-    h += teeth * weather.teeth * clamp01((h - 0.35) * 2.2);
+    h -= couloirCarve(noise, x, relief, flankness(slope), dials.couloir);
+    h += crenellation(noise, x, relief, dials.crenel);
 
     heights[i] = clamp01(h);
   }

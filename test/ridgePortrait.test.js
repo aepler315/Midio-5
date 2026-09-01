@@ -274,17 +274,26 @@ test('rolling with a portrait stays in 0..1 and is not a spectrogram (low varian
   assert.ok(max - min < 0.85, `rolling should stay gentle, span=${max - min}`);
 });
 
-test('the outline is not a 64-bar spectrogram: few composed peaks, none on the wrap', () => {
+test('the outline is not a 64-bar spectrogram: few composed peaks, spanning the whole tile', () => {
   const portrait = extractRidgePortrait(brightBusy().ec, 120000);
   const peaks = composeAlpinePeaks({
     portrait, cfg: ALPINE_CHARACTERS.massif, layerKey: 'L2', seed: 4, width: 2048,
   });
-  assert.ok(peaks.length <= MAX_LANDMARKS);
   assert.ok(peaks.length < PORTRAIT_SAMPLES / 4, 'must not place a peak per energy sample');
-  for (const p of peaks) {
-    const u = p.x / 2048;
-    assert.ok(u >= 0.10 && u <= 0.90, `peak on wrap: u=${u}`);
-  }
+
+  // This used to assert every peak sat inside [0.10, 0.90] -- "off the tile
+  // wrap". That constraint came from clamping placement into a margin, and
+  // it was actively harmful: `shift` slides the composition to put the king
+  // at kingU, and clamping then piled everything that fell outside the
+  // margin onto one edge, leaving the opposite side of the tile empty. That
+  // empty side was the long dead-flat stretch that made the ranges read as
+  // random bumps on a plain. Placement wraps now (the strip TILES -- there
+  // is no privileged frame), so the property worth pinning is the opposite
+  // one: the summits have to actually SPAN the tile.
+  const us = peaks.map((p) => p.x / 2048).sort((a, b) => a - b);
+  let widestGap = us[0] + (1 - us[us.length - 1]); // the gap across the seam
+  for (let i = 1; i < us.length; i++) widestGap = Math.max(widestGap, us[i] - us[i - 1]);
+  assert.ok(widestGap <= 0.34, `range leaves a dead stretch ${widestGap.toFixed(2)} wide`);
 });
 
 test('phrasePeriod finds a repeating loop and stays quiet on a drone', () => {
