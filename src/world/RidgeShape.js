@@ -262,8 +262,17 @@ export function shapeDials(cfg, litho) {
     // footing by barely a quarter of the strip. Relief -- summit height
     // ABOVE local base -- is the thing that makes a mountain read as a
     // mountain, so the envelope has to stay well down and leave it room.
-    spineFloor: clamp(0.07 + basement * 0.07 + (cfg.bed ?? 0.12) * 0.22, 0.05, 0.20),
-    spineSwing: clamp(0.13 + basement * 0.10, 0.10, 0.26),
+    // Kept deliberately low. Every unit of envelope is opaque silhouette
+    // across the WHOLE tile, and the strips are blitted per frame per layer:
+    // profiling the running game put drawImage at ~63% of frame time, and an
+    // earlier cut of these numbers raised mean strip coverage ~30% (L2
+    // 0.29 -> 0.38), which alone pushed the frame budget over and made the
+    // perf governor shed every optional pass within seconds. Deep passes
+    // between the masses are both cheaper AND better looking than a high
+    // continuous plinth -- the range still never dies to a flat plain,
+    // which was the actual defect being fixed.
+    spineFloor: clamp(0.04 + basement * 0.05 + (cfg.bed ?? 0.12) * 0.16, 0.03, 0.13),
+    spineSwing: clamp(0.11 + basement * 0.09, 0.09, 0.22),
     // Presence/edge cuts gullies; air serrates the crest.
     couloir: clamp((cfg.notch ?? 0.12) * (0.55 + 1.15 * edge), 0, 0.34),
     crenel: clamp((cfg.teeth ?? 0.08) * (0.50 + 1.30 * air), 0, 0.26),

@@ -4,6 +4,7 @@
 // each stage guards on the subsystem's presence so this file grows additively.
 import { MIDIO_MESH, MIDIO_BODY, MIDIO_EYE, MIDIO_EYE_CY, MIDIO_EYE_SOCKET_R, midioEyeMesh, MIDIO_APOTHEOSIS_FOLDED, MIDIO_APOTHEOSIS_UNFOLDED } from './meshes.js';
 import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, lerpMesh, applyTransform, drawGlowHalo } from './MeshDrawer.js';
+import { midioMotion } from './MidioMotion.js';
 import { easeHueDeg } from './stellar.js';
 import { MIDIO_IDENTITY_HUE, REWARD_HUE } from './ColorLaw.js';
 import { EpicycleShow } from './EpicycleShow.js';
@@ -945,9 +946,20 @@ export class Renderer {
     // isolation. 1 (no-op) outside a build-up.
     const swell = ensemble ? ensemble.swell(0) : 1;
     const breathe = (1 + 0.025 * Math.sin(tSec * 2.4) + 0.05 * breatheBeatFlash) * swell;
+    // Always-on motion (MidioMotion.js): he hovers and precesses whether or
+    // not anything is happening, which is what makes him a sibling of
+    // Midasus and Broshi rather than the one standing still between events.
+    // Applied HERE, in the draw transform only -- pose.midioY stays the true
+    // physical position, so the jump reads unchanged and his contact shadow
+    // stays anchored to the ground instead of bobbing with the float (which
+    // is what actually sells the hover).
+    // Reduced-flash is the accessibility setting for exactly this, so it
+    // scales the whole thing to rest.
+    const motionScale = reducedFlash ? 0.25 : 1;
+    const motion = midioMotion(tSec, clamp01(melt / 8), motionScale);
     const transform = {
-      tx: pose.midioDrawX, ty: pose.midioY,
-      rot: (pose.leanDeg * Math.PI) / 180,
+      tx: pose.midioDrawX, ty: pose.midioY + motion.hoverPx,
+      rot: ((pose.leanDeg + motion.precessDeg) * Math.PI) / 180,
       scaleX: pose.scaleX * MIDIO_DRAW_SCALE * breathe * (1 + 0.25 * apoProgress),
       scaleY: pose.scaleY * MIDIO_DRAW_SCALE * breathe * (1 + 0.25 * apoProgress),
       // Rare shared transition tumble (see EnsembleDirector.maybeTumble) --
@@ -1027,6 +1039,39 @@ export class Renderer {
       drawMeshPart(ctx, liveEye, this._midioEyeRest, transform, hue, { ...options, outline: outlineOpts });
     } else {
       drawMeshPart(ctx, MIDIO_EYE, this._midioEyeRest, transform, hue, { ...options, outline: outlineOpts });
+    }
+
+    // The gyre: three motes orbiting his core, turning continuously and
+    // AGAINST the body's precession. This is the term that reads as
+    // "powered" rather than merely "adrift" -- the same job Midasus's
+    // orbiting baby stars do for her, in the same visual vocabulary, and
+    // the reason it lives out here instead of on the eye is that the eye
+    // carries Gaze: a spinning pupil would be pointing at nothing.
+    // Three short arcs, so it costs a rounding error next to the body's
+    // own glow passes.
+    if (motionScale > 0.01) {
+      const spin = (motion.coreSpinDeg * Math.PI) / 180;
+      const rBase = MIDIO_EYE_SOCKET_R * 2.9;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 3; i++) {
+        const a = -spin + (i * Math.PI * 2) / 3;
+        // Elliptical, so the ring reads as a tilted orbit rather than a
+        // flat circle stuck to the screen.
+        const ox = Math.cos(a) * rBase;
+        const oy = Math.sin(a) * rBase * 0.42 + MIDIO_EYE_CY;
+        const p = applyTransform({ x: ox, y: oy }, transform);
+        const depth = 0.55 + 0.45 * Math.sin(a); // far side dims
+        ctx.globalAlpha = capFlashAlpha(0.5 * depth * focusMul * motionScale, reducedFlash);
+        ctx.strokeStyle = `hsl(${hue} 70% 82%)`;
+        ctx.lineWidth = 1.6 * depth;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x + Math.cos(a + Math.PI / 2) * 3.4, p.y + Math.sin(a + Math.PI / 2) * 1.6);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     // Kick ignition: the sigil flashes additively right on the beat.

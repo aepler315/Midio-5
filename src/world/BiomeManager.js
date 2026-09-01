@@ -130,6 +130,10 @@ const STRATA_SPACING_PX = 34;
 const STRATA_BAND_PX = 9;
 const STRATA_MAX_BANDS = 4;
 const STRATA_DARKEN = 0.16;
+// Bands are broad and sit below the skyline, so they do not need the crest's
+// own point resolution -- tracing every 3rd point is indistinguishable and a
+// third of the path work.
+const STRATA_STRIDE = 3;
 // Aerial perspective, optical half: how much each layer's strip bake is
 // downsampled before being stretched back up (generateSilhouette's
 // softenScale), so distant ranges lose edge acuity the same way AERIAL_PULL
@@ -4696,15 +4700,31 @@ export class BiomeManager {
         ctx.globalCompositeOperation = 'multiply';
         const g = Math.max(0, Math.min(255, Math.round(255 * (1 - STRATA_DARKEN * alpha * strength))));
         ctx.fillStyle = `rgb(${g},${g},${g})`;
+        // Every band as SUBPATHS of one Path2D, filled once. Four separate
+        // fills of a full-width polygon per layer was the single most
+        // expensive thing this overhaul added to the frame, and the frame is
+        // already dominated by compositing (a CPU profile of the running
+        // game put drawImage at ~63%). Same pixels, a quarter of the fill
+        // calls. Bands are broad, so they are also traced at STRATA_STRIDE
+        // rather than at the skyline's own resolution -- the crest stroke
+        // needs every point; a 9px band 30px below it does not.
+        const band = new Path2D();
         for (let b = 1; b <= bandCount; b++) {
           const off = b * STRATA_SPACING_PX;
-          const band = new Path2D();
           band.moveTo(pts[0].x, pts[0].y + off);
-          for (let i = 1; i < pts.length; i++) band.lineTo(pts[i].x, pts[i].y + off);
-          for (let i = pts.length - 1; i >= 0; i--) band.lineTo(pts[i].x, pts[i].y + off + STRATA_BAND_PX);
+          for (let i = STRATA_STRIDE; i < pts.length; i += STRATA_STRIDE) {
+            band.lineTo(pts[i].x, pts[i].y + off);
+          }
+          const last = pts[pts.length - 1];
+          band.lineTo(last.x, last.y + off);
+          band.lineTo(last.x, last.y + off + STRATA_BAND_PX);
+          for (let i = pts.length - 1 - STRATA_STRIDE; i > 0; i -= STRATA_STRIDE) {
+            band.lineTo(pts[i].x, pts[i].y + off + STRATA_BAND_PX);
+          }
+          band.lineTo(pts[0].x, pts[0].y + off + STRATA_BAND_PX);
           band.closePath();
-          ctx.fill(band);
         }
+        ctx.fill(band);
         ctx.restore();
       }
     }

@@ -54,15 +54,46 @@ export function resolvePerfStartLevel(search = '', { isCoarsePointer = false, is
   return (isCoarsePointer || isSmallViewport) ? 1 : 0;
 }
 
+// Warm-up grace. Starting a song is inherently janky for a moment: two dozen
+// 2048px silhouette strips get baked, shaders and fonts warm up, the first
+// frames touch cold paths. None of that is steady-state overdraw, but the
+// accumulator could not tell the difference -- at a catastrophic severity of
+// 6 per frame it takes only ten such frames to shed a rung, so a load hitch
+// alone could cascade several rungs before the scene had settled. That is
+// exactly the "all the terrain detail is there for two seconds and then
+// gone, permanently" report this exists to fix: everything gated on the
+// deeper rungs (phenomena, the heavy overlay passes) was being switched off
+// by the load, not by the frame cost of actually running.
+//
+// Frames inside the window still RENDER normally -- they simply do not vote
+// on the shed level. Recovery is unaffected, so a machine that genuinely
+// cannot afford the scene still sheds, just a moment later and on evidence
+// from a settled frame rather than from its own loading screen.
+export const WARMUP_MS = 2500;
+
 export class PerfGovernor {
   constructor({ startLevel = 0 } = {}) {
     this.level = Math.max(0, Math.min(MAX_LEVEL, startLevel));
+    this._overCount = 0;
+    this._cleanSinceMs = null;
+    this._warmUntilMs = null;
+  }
+
+  /** Restart the warm-up grace: call when a new song starts (or the world is
+   *  rebuilt), since that is when the expensive one-off bake happens. */
+  beginWarmup(nowMs) {
+    this._warmUntilMs = nowMs + WARMUP_MS;
     this._overCount = 0;
     this._cleanSinceMs = null;
   }
 
   /** Call once per rendered frame with the raw rAF-to-rAF delta. */
   sample(deltaMs, nowMs) {
+    // Opt-in, not automatic: a governor that has never been told a song is
+    // starting behaves exactly as it always did. Seeding this implicitly on
+    // the first sample would quietly change the meaning of every existing
+    // caller and test for the sake of one call site that can just say so.
+    if (this._warmUntilMs !== null && nowMs < this._warmUntilMs) return;
     if (deltaMs > FRAME_BUDGET_MS) {
       const severity = Math.min(SHED_WEIGHT_CAP, deltaMs / FRAME_BUDGET_MS);
       this._overCount += severity;

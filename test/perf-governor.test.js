@@ -177,3 +177,42 @@ test('an over-budget frame during a clean streak resets the recovery timer', () 
   t = feedFrames(gov, 100, 5, t, 90); // another ~9s clean — still shy of 10s since reset
   assert.equal(gov.level, 1, 'recovery timer should have restarted after the interruption');
 });
+
+// --- Warm-up grace -------------------------------------------------------
+// Starting a song bakes two dozen 2048px strips and touches every cold path
+// in the renderer. Those frames are catastrophically long but say nothing
+// about steady-state cost, and at severity 6 apiece only ten of them shed a
+// rung -- so a load hitch alone used to cascade the governor several rungs
+// deep and switch off every optional pass permanently, which is what "the
+// terrain detail is only there for the first two seconds" actually was.
+
+test('a load hitch does not vote: the warm-up window absorbs it', async () => {
+  const { PerfGovernor, WARMUP_MS } = await import('../src/render/PerfGovernor.js');
+  const g = new PerfGovernor({ startLevel: 0 });
+  let t = 0;
+  g.beginWarmup(t);   // what main.js does the moment a song starts
+  // 120 catastrophic frames, all inside the warm-up window.
+  for (let i = 0; i < 120; i++) { g.sample(200, t); t += 12; }
+  assert.equal(g.level, 0, 'the bake must not shed a single rung');
+  assert.ok(t < WARMUP_MS, 'sanity: this burst really was inside the window');
+});
+
+test('a genuinely over-budget scene still sheds, just after the window', async () => {
+  const { PerfGovernor, WARMUP_MS } = await import('../src/render/PerfGovernor.js');
+  const g = new PerfGovernor({ startLevel: 0 });
+  g.beginWarmup(0);
+  let t = WARMUP_MS + 1;
+  for (let i = 0; i < 400; i++) { g.sample(45, t); t += 16; }
+  assert.ok(g.level > 0, 'a sustained real overage must still shed');
+});
+
+test('beginWarmup re-arms the grace for a new song', async () => {
+  const { PerfGovernor, WARMUP_MS } = await import('../src/render/PerfGovernor.js');
+  const g = new PerfGovernor({ startLevel: 0 });
+  let t = 0;
+  g.beginWarmup(t);
+  t += WARMUP_MS + 1;
+  g.beginWarmup(t);                       // new song loads here
+  for (let i = 0; i < 120; i++) { g.sample(200, t); t += 12; }
+  assert.equal(g.level, 0, 'the second song\'s bake must be absorbed too');
+});

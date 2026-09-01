@@ -42,13 +42,18 @@ test('the glyphs are irregular shards, not wheels: rim radius variation is high'
     `Broshi reads too round: cv=${coefficientOfVariation(rimRadii(BROSHI_BODY)).toFixed(3)}`);
 });
 
-test('Midio keeps his physics footprint: 23px half-width, feet on the ground line', () => {
+test('Midio keeps his physics footprint: 23px half-width, bottom apex on the origin line', () => {
   let minY = Infinity, maxY = -Infinity;
   for (const v of MIDIO_BODY.vertices) {
     assert.ok(Math.abs(v.x) <= 23 + 1e-9, `vertex escapes the collision body at x=${v.x}`);
     minY = Math.min(minY, v.y); maxY = Math.max(maxY, v.y);
   }
-  assert.ok(Math.abs(maxY) < 1e-9, 'feet must rest exactly on y=0');
+  // Was a pair of FEET at y=0 with a keel notch between them; it is a single
+  // spindle apex now (he hovers -- see MidioMotion.js -- so there is no gait
+  // to animate). The invariant itself still matters and is unchanged: the
+  // mesh bottoms out exactly on its own origin line, which is what the draw
+  // transform, the contact shadow and the ground anchor all measure from.
+  assert.ok(Math.abs(maxY) < 1e-9, 'the bottom apex must sit exactly on y=0');
   assert.ok(minY < -50, 'the crown spike must give him real height');
 });
 
