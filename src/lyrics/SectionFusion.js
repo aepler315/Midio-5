@@ -91,7 +91,12 @@ export function fuseSections(noveltySections, lyricSections, barGrid, durationMs
     const noveltyMatch = sectionAt(noveltySections, (startMs + Math.min(endMs, startMs + 1)) / 2);
     const lyricMatch = sectionAt(lyricSections, (startMs + endMs) / 2);
     return withLyric(
-      { startMs, endMs, transition: noveltyMatch.transition, barMs: noveltyMatch.barMs, label: noveltyMatch.label, profile: noveltyMatch.profile, hueBias: noveltyMatch.hueBias },
+      {
+        startMs, endMs, transition: noveltyMatch.transition, barMs: noveltyMatch.barMs,
+        label: noveltyMatch.label, profile: noveltyMatch.profile, hueBias: noveltyMatch.hueBias,
+        meanEnergy: noveltyMatch.meanEnergy, shape: noveltyMatch.shape,
+        relEnergy01: noveltyMatch.relEnergy01, heightMul: noveltyMatch.heightMul,
+      },
       lyricMatch,
     );
   });
