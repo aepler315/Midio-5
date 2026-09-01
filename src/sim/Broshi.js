@@ -17,6 +17,10 @@ import { Burrow } from './Burrow.js';
 
 const K = 22, C = 3.6; // slightly softer spring so he settles further out
 const D_TRAIL = -200, D_SURGE = 150;
+// How close to the frame edge he is allowed to get. Roughly his own drawn
+// half-width plus a little air, so he reads as "at the edge of shot" rather
+// than half-cropped by it.
+const EDGE_MARGIN_PX = 70;
 
 // Midio always lands at his own fixed screenX -- so the danger zone is a
 // fixed band straddling xRel=0, not a moving target. Keep Broshi's spring
@@ -142,6 +146,9 @@ export class Broshi {
     this._lastBarPeriodMs = 500;
 
     this.xRel = D_TRAIL;
+    // Overwritten from the ensemble payload every frame; this is only the
+    // value used before the first update lands.
+    this._stageW = 1280;
     this.xRelVel = 0;
 
     this.G = 0;
@@ -415,7 +422,23 @@ export class Broshi {
     this._tumbleRotY = ensemble ? (ensemble.tumbleRotY || 0) : 0;
     // The ensemble roams him around the floor: his spring's TRAIL set-point
     // chases the formation anchor instead of a fixed -140px offset.
-    this._trailTarget = ensemble ? clamp(ensemble.trailX - midio.screenX, -420, 320) : D_TRAIL;
+    // Keep the set-point on-frame. The ensemble roams him around the floor,
+    // and -420px of trail puts him off the left edge whenever Midio is
+    // standing anywhere near it -- he "falls back off the screen" and there
+    // is nothing to pull him in, because the spring is happily sitting on
+    // its target. Clamping the TARGET (rather than only the final position)
+    // means the spring never fights a wall it can't see.
+    this._stageW = ensemble && ensemble.stageW > 0 ? ensemble.stageW : this._stageW;
+    const roam = ensemble ? clamp(ensemble.trailX - midio.screenX, -420, 320) : D_TRAIL;
+    // Clamp the set-point in BOTH cases, not just when an ensemble is roaming
+    // him: the fixed -200 default already puts him at screen x=0 whenever
+    // Midio stands at 200, which is the "falls back off the screen" report.
+    // Clamping the TARGET rather than only the drawn position is what stops
+    // the spring from parking against the edge and fighting the backstop
+    // below every frame -- it simply aims somewhere it can actually sit.
+    const lo = EDGE_MARGIN_PX - midio.screenX;
+    const hi = this._stageW - EDGE_MARGIN_PX - midio.screenX;
+    this._trailTarget = lo <= hi ? clamp(roam, lo, hi) : roam;
     // Song-relative: RABID_ENTER_G/RABID_EXIT_G now ask "is this the top of
     // THIS song?" -- otherwise he was permanently rabid on a loud master and
     // never once rabid on a quiet one, whatever the arrangement did.
@@ -754,6 +777,21 @@ export class Broshi {
         this.xRel = softXRel;
         this.xRelVel *= 0.85;
       }
+    }
+    // Backstop: the set-point above keeps him aiming on-frame, but a hop, the
+    // weave, a panic burst or a keep-out ease can still carry him past the
+    // edge. Bring the spring's own state back with him and kill the outward
+    // velocity, so he stops AT the edge instead of pressing into it and
+    // snapping back the moment the force relents.
+    const minX = EDGE_MARGIN_PX, maxX = Math.max(minX, this._stageW - EDGE_MARGIN_PX);
+    if (this.renderX < minX || this.renderX > maxX) {
+      const clamped = clamp(this.renderX, minX, maxX);
+      const pushedOut = (this.renderX < minX && this.xRelVel < 0)
+        || (this.renderX > maxX && this.xRelVel > 0);
+      this.renderX = clamped;
+      this.xRel = clamped - midio.screenX - weave;
+      this.screenX = midio.screenX + this.xRel;
+      if (pushedOut) this.xRelVel = 0;
     }
 
     // Midasus style: ease his spectral color toward his line's latest note,

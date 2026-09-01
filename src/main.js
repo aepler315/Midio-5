@@ -32,7 +32,7 @@ import { TitleBackdrop } from './ui/TitleBackdrop.js';
 import { cssVarMap } from './render/spectral.js';
 import { resolveDurationMs } from './core/SongDuration.js';
 import { formatSeed, parseSeed } from './utils/seed.js';
-import { resolveIdentity } from './lyrics/SongIdentity.js';
+import { resolveIdentity, stripSearchNoise } from './lyrics/SongIdentity.js';
 import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
@@ -150,7 +150,6 @@ const lyricsFindBtnEl = document.getElementById('lyricsFindBtn');
 const lyricsSkipBtnEl = document.getElementById('lyricsSkipBtn');
 const lyricsNoneBtnEl = document.getElementById('lyricsNoneBtn');
 const noLyricsBtnEl = document.getElementById('noLyricsBtn');
-const reducedFlashBtnEl = document.getElementById('reducedFlashBtn');
 const calibrateBtnEl = document.getElementById('calibrateBtn');
 const syncPromptEl = document.getElementById('syncPrompt');
 const syncPromptFixBtnEl = document.getElementById('syncPromptFixBtn');
@@ -222,16 +221,6 @@ if (noLyricsBtnEl) {
   });
 }
 
-/** Reflect the reduced-flash accessibility preference on the loader toggle
- *  button -- previously reachable only via the R key, so unusable on touch
- *  and undiscoverable for anyone who doesn't already know the shortcut. */
-function syncReducedFlashBtn() {
-  if (!reducedFlashBtnEl) return;
-  reducedFlashBtnEl.setAttribute('aria-pressed', reducedFlash ? 'true' : 'false');
-  reducedFlashBtnEl.textContent = `Reduced flash & motion: ${reducedFlash ? 'on' : 'off'}`;
-}
-syncReducedFlashBtn();
-if (reducedFlashBtnEl) reducedFlashBtnEl.addEventListener('click', () => toggleReducedFlash());
 
 // Guided calibration was previously reachable only via the C key -- this
 // is the only way to reach it on a phone or tablet, same gap the reduced-
@@ -1119,13 +1108,38 @@ function promptForLyrics(identity, durationSec) {
       if (skipTimer) clearTimeout(skipTimer);
       skipTimer = setTimeout(() => finish(null), LYRICS_AUTO_SKIP_MS);
     };
+    const lookup = (artist, title) => fetchLyricsCached(
+      { artist, title, album: identity.album, durationSec },
+      typeof fetch !== 'undefined' ? fetch : null,
+    );
+    const textOf = (r) => (r && !r.instrumental
+      && ((r.synced && r.synced.length) || (r.plain && r.plain.length)));
     const runFind = async (artist, title) => {
       if (skipTimer) { clearTimeout(skipTimer); skipTimer = null; }
       if (lyricsStatusEl) lyricsStatusEl.textContent = 'Searching for lyrics…';
       lyricsFieldsEl?.classList.add('hidden');
-      const result = await fetchLyricsCached({ artist, title, album: identity.album, durationSec }, typeof fetch !== 'undefined' ? fetch : null);
+      let result = await lookup(artist, title);
       if (settled) return;
-      const hasText = result && !result.instrumental && ((result.synced && result.synced.length) || (result.plain && result.plain.length));
+      // Second pass on a miss: taggers and rips wedge qualifiers into the
+      // title that no lyrics provider has ever indexed -- "(Instrumental)",
+      // "(Guitar)", "- 2011 Remaster". The provider has the plain title. The
+      // original tag is always tried FIRST and wins if it resolves; this only
+      // runs when that came back empty, and only when stripping actually
+      // changes the string (stripSearchNoise returns null otherwise, so a
+      // clean title costs no extra request).
+      if (!textOf(result)) {
+        const retryTitle = stripSearchNoise(title);
+        const retryArtist = stripSearchNoise(artist);
+        if (retryTitle || retryArtist) {
+          const t2 = retryTitle || title;
+          const a2 = retryArtist || artist;
+          if (lyricsStatusEl) lyricsStatusEl.textContent = `Retrying as “${t2}”…`;
+          const retried = await lookup(a2, t2);
+          if (settled) return;
+          if (textOf(retried)) { result = retried; artist = a2; title = t2; }
+        }
+      }
+      const hasText = textOf(result);
       if (hasText) {
         if (lyricsStatusEl) lyricsStatusEl.textContent = `✓ ${result.synced ? 'synced' : 'plain'} lyrics found — ${artist || '?'} — ${title || '?'}`;
         setTimeout(() => finish(result), 700);
@@ -2100,7 +2114,6 @@ function toggleReducedFlash() {
   reducedFlash = !reducedFlash;
   setReducedFlash(reducedFlash);
   sim?.setReducedFlash(reducedFlash);
-  syncReducedFlashBtn();
 }
 
 function onSongComplete() {

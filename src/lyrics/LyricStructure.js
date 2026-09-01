@@ -57,6 +57,12 @@ const EDGE_SILENCE_MS = 8000; // an intro/outro must be at least this long to ea
 // internal gap, recursively, rather than let one block swallow a third of
 // the song.
 const MAX_BLOCK_DURATION_MS = 40000;
+// Longest duration credited to a block's final line. The estimate comes from
+// the surrounding line pacing, which on a sparse or irregular block can be
+// wildly high (three lines at 0s/2s/30s have a 15s median gap) -- and a sung
+// line does not last fifteen seconds. Past this it is silence, and silence is
+// labelBlocks' job to name, not this block's to absorb.
+const LAST_LINE_MAX_MS = 8000;
 
 function median(nums) {
   if (nums.length === 0) return 0;
@@ -106,11 +112,35 @@ export function toBlocks(lines, { synced = false } = {}) {
     }
     if (current.length) blocks.push(current);
     const capped = blocks.flatMap((b) => splitOversizedBlock(b, MAX_BLOCK_DURATION_MS));
-    return capped.map((lns) => ({
-      lines: lns.map((l) => l.text),
-      startMs: lns[0].tMs,
-      endMs: lns[lns.length - 1].tMs,
-    }));
+    // A line's timestamp is when it STARTS being sung, so a block that ends
+    // at its last line's timestamp ends where that line begins -- the line
+    // itself gets no duration at all. For a multi-line block that only
+    // clipped the tail; for a SINGLE-line block (a one-line hook, a spoken
+    // intro, a final line -- all common) it made startMs === endMs, and
+    // SectionFusion's sectionAt matches on `t >= startMs && t < endMs`, so
+    // such a block could never match anything. Its kind, intensity and
+    // valence were computed and then silently unreachable.
+    //
+    // So give the last line a duration: the block's own median line gap
+    // (how long its other lines each lasted), or the song's median when the
+    // block has only one line. Capped by the real gap to whatever comes
+    // next, so a block can never swallow the instrumental silence after it
+    // -- labelBlocks still sees that gap and still fills it.
+    const songMedianGap = median(gaps.filter((g) => g > 0)) || BLOCK_GAP_FLOOR_MS;
+    return capped.map((lns) => {
+      const startMs = lns[0].tMs;
+      const lastMs = lns[lns.length - 1].tMs;
+      const inner = [];
+      for (let i = 1; i < lns.length; i++) inner.push(lns[i].tMs - lns[i - 1].tMs);
+      const own = median(inner.filter((g) => g > 0)) || songMedianGap;
+      const nextLine = sorted.find((l) => l.tMs > lastMs);
+      const room = nextLine ? nextLine.tMs - lastMs : own;
+      return {
+        lines: lns.map((l) => l.text),
+        startMs,
+        endMs: lastMs + Math.max(1, Math.min(own, room, LAST_LINE_MAX_MS)),
+      };
+    });
   }
 
   const blocks = [];

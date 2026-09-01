@@ -18,17 +18,30 @@ import { PerfGovernor, MAX_LEVEL } from '../src/render/PerfGovernor.js';
 
 const cfg = DANCE_LAYERS.L2;
 
-test('columns are the ground truth: the smooth curve hits each center exactly', () => {
-  // This is the contract that lets the crest stroke sit on the blitted
+test('column boundaries are the ground truth, at every width', () => {
+  // This is the contract that lets the crest stroke sit ON the blitted
   // silhouette instead of floating near it. It has to hold at EVERY width,
-  // because the width now varies with the perf level.
-  for (const colW of [16, 20, 32, 64, DANCE_COL_W]) {
-    for (let c = colW / 2; c < 900; c += colW) {
-      const smooth = danceOffsetSmooth(c, 4.2, 0.5, 0.3, cfg, 0, colW);
-      const truth = danceOffset(c, 4.2, 0.5, 0.3, cfg, 0);
+  // because the width varies with the perf level.
+  for (const colW of [16, 32, 64, DANCE_COL_W]) {
+    for (let b = 0; b < 900; b += colW) {
+      const smooth = danceOffsetSmooth(b, 4.2, 0.5, 0.3, cfg, 0, colW);
+      const truth = danceOffset(b, 4.2, 0.5, 0.3, cfg, 0);
       assert.ok(Math.abs(smooth - truth) < 1e-9,
-        `colW=${colW} center=${c}: crest ${smooth} vs blit ${truth}`);
+        `colW=${colW} boundary=${b}: crest ${smooth} vs blit ${truth}`);
     }
+  }
+});
+
+test('every slice width divides the strip evenly', () => {
+  // A width that does not leaves a ragged narrow column at the end of every
+  // tile, carrying its own offset -- a discontinuity reintroduced once per
+  // tile, which is exactly what the shear exists to remove. 20px was tried
+  // and did this (2048/20 = 102.4).
+  const g = new PerfGovernor();
+  for (let level = 0; level <= MAX_LEVEL; level++) {
+    g.level = level;
+    assert.equal(2048 % g.danceColumnWidth, 0,
+      `level ${level} width ${g.danceColumnWidth} leaves a ragged column each tile`);
   }
 });
 

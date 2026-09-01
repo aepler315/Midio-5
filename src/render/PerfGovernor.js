@@ -144,8 +144,13 @@ export class PerfGovernor {
   // calls on a machine that has them, keep the old width on one that does
   // not. Same rung as the rim light, which is the other thing that makes an
   // edge read as sharp.
+  //
+  // Must divide the 2048px strip width evenly. A width that does not (20 was
+  // tried) leaves a ragged narrow column at the end of every tile, carrying
+  // its own offset -- a discontinuity reintroduced once per tile, which is
+  // the opposite of the point. Powers of two only.
   get danceColumnWidth() {
-    if (this.level < 1) return 20;
+    if (this.level < 1) return 16;
     if (this.level < 3) return 32;
     return 64;
   }

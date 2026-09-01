@@ -160,10 +160,19 @@ const STRATA_DARKEN = 0.17;
 // the brightest thing that can appear on a range, and a range must stay darker
 // than the sky it is silhouetted against -- aerial perspective moves a distant
 // object TOWARD the sky's value, it never takes it past.
-const SNOW_ALPHA = 0.42;
+// Ridge shading. The catch-light is a near-white ADDITIVE wash at the crest,
+// so it is the range pass's largest single contribution to overall
+// brightness; the shade is a multiply, so raising it costs nothing in hue.
+// Trading a little catch-light for a little more shade lowers the scene's
+// overall value while keeping -- slightly increasing -- the contrast that
+// makes the ranges readable. Both were set when this pass was the ONLY
+// shading a range got; it is now one of several.
+const RIDGE_CATCHLIGHT_ALPHA = 0.13;
+const RIDGE_SHADE_STRENGTH = 0.36;
+const SNOW_ALPHA = 0.34;
 const RIM_LIGHT_MIX = 0.35;
 const RIM_GRADIENT_STOPS = 8;
-const GROUND_AERIAL_ALPHA = 0.42;
+const GROUND_AERIAL_ALPHA = 0.34;
 const GROUND_AERIAL_FALLOFF = 0.38;
 // Aerial perspective, optical half: how much each layer's strip bake is
 // downsampled before being stretched back up (generateSilhouette's
@@ -222,8 +231,9 @@ const EQ_MAX_HEIGHT_FRAC = 0.4; // never exceed 40% of screen height, however ex
 // stroke and the volume pass.
 // The slice width used when no PerfGovernor is present (tests, and any
 // caller that never wired one up). Matches the governor's own level-0 value:
-// with nothing telling us to economize, render at full resolution.
-const DANCE_COL_FINE = 20;
+// with nothing telling us to economize, render at full resolution. Must
+// divide the 2048px strip evenly -- see PerfGovernor.danceColumnWidth.
+const DANCE_COL_FINE = 16;
 const CREST_STEP_PX = 8;
 // A summit only earns shoulders if it stands this far (px) above the
 // saddles either side of it -- otherwise every ripple in the noise ridge
@@ -4321,7 +4331,20 @@ export class BiomeManager {
         const drawW = Math.min(cw + 1, w - cx);
         const sx = x + cx;
         if (sx + drawW < 0 || sx > canvas.width) continue;
-        const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0) * terrainEnergy;
+        // Offsets at this column's own two BOUNDARIES, not one sample held
+        // flat across it. Drawn with a vertical shear between them, the
+        // column's left edge lands exactly where its left neighbour's right
+        // edge did, so the silhouette is piecewise-linear instead of a
+        // staircase and there is no seam left to hide.
+        //
+        // The old code sampled the LEFT EDGE and held it constant, while the
+        // live crest stroke blended between column CENTERS -- a ramp phase-
+        // shifted half a column from a staircase. That is why the neon ridge
+        // line floated off the fill it traces.
+        const dyL = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0) * terrainEnergy;
+        const dyR = danceOffset(scrollX + sx + cw, this.tSec, this._danceGroove, kick, cfg, this.fever || 0) * terrainEnergy;
+        const dy = dyL;
+        const shear = (dyR - dyL) / Math.max(1, cw);
         // Foot-anchored: this column's own foot (baseY + dh + dy, the same
         // translation the offset dance already applies) never moves: only
         // the elevation above it stretches, so a squat foothill barely
@@ -4330,7 +4353,21 @@ export class BiomeManager {
         const rawScale = danceScale(h01, kick, sustain, cfg);
         const colDh = dh * (1 + (rawScale - 1) * terrainEnergy);
         const footY = baseY + dh + dy;
-        ctx.drawImage(strip, cx, 0, drawW, strip.height, sx, footY - colDh, drawW, colDh);
+        if (Math.abs(shear) < 1e-6) {
+          ctx.drawImage(strip, cx, 0, drawW, strip.height, sx, footY - colDh, drawW, colDh);
+        } else {
+          // transform(1, k, 0, 1, 0, 0) maps (x, y) -> (x, y + k*x), so the
+          // destination y is pre-compensated by -k*sx to put the column's
+          // LEFT edge exactly on footY - colDh; the shear then carries it to
+          // footY - colDh + (dyR - dyL) at the right edge. A pure vertical
+          // shear translates the column continuously, which is exactly what
+          // the offset dance is -- the foot stays as glued as it ever was,
+          // it simply arrives at each x by a ramp rather than a jump.
+          ctx.save();
+          ctx.transform(1, shear, 0, 1, 0, 0);
+          ctx.drawImage(strip, cx, 0, drawW, strip.height, sx, footY - colDh - shear * sx, drawW, colDh);
+          ctx.restore();
+        }
       }
       x += w;
     }
@@ -4862,7 +4899,7 @@ export class BiomeManager {
     // the range's ONLY source of shading depth and has to carry the full
     // load alone.
     const grad = ctx.createLinearGradient(0, crestY, 0, bottomY);
-    grad.addColorStop(0, `rgba(255,250,240,${(0.17 * alpha * strength).toFixed(3)})`);
+    grad.addColorStop(0, `rgba(255,250,240,${(RIDGE_CATCHLIGHT_ALPHA * alpha * strength).toFixed(3)})`);
     grad.addColorStop(0.34, 'rgba(0,0,0,0)');
     ctx.fillStyle = grad;
     ctx.fill(body);
@@ -4878,7 +4915,7 @@ export class BiomeManager {
     // already carries survives into its own shadow. Multiply can only
     // ever darken (g<=1 always), which is exactly why this has to be a
     // second pass rather than folded into the lit gradient above.
-    const shadeStrength = 0.32 * alpha * strength;
+    const shadeStrength = RIDGE_SHADE_STRENGTH * alpha * strength;
     const g = Math.max(0, Math.min(255, Math.round(255 * (1 - shadeStrength))));
     const shadeGrad = ctx.createLinearGradient(0, crestY, 0, bottomY);
     shadeGrad.addColorStop(0, 'rgb(255,255,255)');
