@@ -156,6 +156,11 @@ const STRATA_DARKEN = 0.17;
 // color, and how many stops the falloff gradient gets. Nine is well past the
 // point where the ramp is visually smooth; the falloff is quadratic and the
 // stroke is at most 7.5px wide, so nothing here needs fine resolution.
+// Snow cap opacity at the summit, fading to nothing at the snow line. Snow is
+// the brightest thing that can appear on a range, and a range must stay darker
+// than the sky it is silhouetted against -- aerial perspective moves a distant
+// object TOWARD the sky's value, it never takes it past.
+const SNOW_ALPHA = 0.42;
 const RIM_LIGHT_MIX = 0.35;
 const RIM_GRADIENT_STOPS = 8;
 const GROUND_AERIAL_ALPHA = 0.42;
@@ -4893,7 +4898,19 @@ export class BiomeManager {
       // is continuous by construction: where the ridge crosses the altitude
       // the cap's top and bottom edges meet and the polygon simply closes.
       // Nothing to step, so there is no cliff to draw.
-      const snowAltY = bottomY - (bottomY - crestY) * (1 - snowLine01);
+      // ...and the altitude itself was inverted. `snowLine01` is a
+      // height-RANK threshold in [0.55, 1] (snowLine01For: "column-height-rank
+      // above which a column's own peak is capped"), so snow belongs on the
+      // top `1 - snowLine01` of the relief -- at 0.8, the top fifth. Measuring
+      // `(1 - snowLine01)` UP FROM THE FOOT instead put the line at a fifth of
+      // the way up and buried four fifths of every range in snow.
+      //
+      // That inversion has been here since the snowline landed, but it was
+      // masked: while the per-column h01 test gated which columns got any snow
+      // at all, this altitude only ever clamped them. Removing that test (it
+      // was the cause of the vertical snow cliffs) promoted the bug to the
+      // whole behavior, and the ranges went white.
+      const snowAltY = bottomY - snowLine01 * (bottomY - crestY);
       // ...and the line itself gets a gentle wander, so it doesn't read as a
       // ruler laid across the range. Small next to the relief it sits in.
       const wobble = (stripX) => 6 * Math.sin(stripX / 260) + 3 * Math.sin(stripX / 97 + 1.7);
@@ -4921,7 +4938,7 @@ export class BiomeManager {
         // meets bare rock, and that edge was reading as the bottom of a slab.
         const snowTop = Math.max(crestY - 8, 0);
         const { r: sr, g: sg, b: sb } = hexToRgb(snowColor);
-        const a0 = 0.55 * alpha * strength;
+        const a0 = SNOW_ALPHA * alpha * strength;
         const snowGrad = ctx.createLinearGradient(0, snowTop, 0, snowAltY + 10);
         snowGrad.addColorStop(0, `rgba(${sr},${sg},${sb},${a0.toFixed(3)})`);
         snowGrad.addColorStop(0.65, `rgba(${sr},${sg},${sb},${(a0 * 0.72).toFixed(3)})`);
