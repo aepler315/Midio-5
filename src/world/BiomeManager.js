@@ -5,7 +5,7 @@
 import { BIOMES } from './BiomeProfiles.js';
 import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
 import {
-  extractRidgePortrait, lithologyFromShares, landformWindow, relEnergyLadder,
+  extractRidgePortrait, lithologyFromShares, landformWindow, relEnergyLadder, snowLine01For,
 } from './RidgePortrait.js';
 import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
 import { drawCityWorld } from './city/drawCity.js';
@@ -956,6 +956,8 @@ export class BiomeManager {
         character: landformWindow(spectralPos01, rel),
         portrait: windowedPortrait,
         heightMul: lerp(SECTION_HEIGHT_MUL[0], SECTION_HEIGHT_MUL[1], rel),
+        relEnergy01: rel,
+        snowLine01: snowLine01For(litho.crest, rel),
       };
     } : null;
     // Keyed by BIOME NAME, not label: biomeByLabel maps labels 1:1 to a
@@ -982,6 +984,7 @@ export class BiomeManager {
       s.relEnergy01 = relEnergyByLabel.get(labels[i]) ?? 0.5;
       s.heightMul = this._profileVariants?.get(s.profile)?.heightMul
         ?? lerp(SECTION_HEIGHT_MUL[0], SECTION_HEIGHT_MUL[1], s.relEnergy01);
+      s.snowLine01 = this._profileVariants?.get(s.profile)?.snowLine01 ?? 1;
       // Recognition: re-entering a label seen earlier snaps back into the
       // familiar place (a cut of recognition) rather than fading somewhere
       // new. First occurrence keeps its novelty-derived transition.
@@ -1128,7 +1131,13 @@ export class BiomeManager {
     const idx = this._sectionAt(nowMs);
     const sec = this.sections[idx];
     const hm = sec.heightMul ?? 1;
-    if (idx === 0) return { from: sec.profile, to: sec.profile, t: 1, fromHeightMul: hm, toHeightMul: hm };
+    const sl = sec.snowLine01 ?? 1;
+    if (idx === 0) {
+      return {
+        from: sec.profile, to: sec.profile, t: 1,
+        fromHeightMul: hm, toHeightMul: hm, fromSnowLine01: sl, toSnowLine01: sl,
+      };
+    }
     // Transition style sets the crossfade length: a hard cut lands in a
     // small fraction of a bar, a shutter wipes over one bar, a fade
     // breathes across four.
@@ -1136,9 +1145,18 @@ export class BiomeManager {
     const t = smoothstep(0, 1, (nowMs - sec.startMs) / (bars * sec.barMs));
     // Once the crossfade completes, retire the old biome entirely --
     // otherwise its taller peaks and particles ghost through forever.
-    if (t >= 0.999) return { from: sec.profile, to: sec.profile, t: 1, fromHeightMul: hm, toHeightMul: hm };
+    if (t >= 0.999) {
+      return {
+        from: sec.profile, to: sec.profile, t: 1,
+        fromHeightMul: hm, toHeightMul: hm, fromSnowLine01: sl, toSnowLine01: sl,
+      };
+    }
     const prevHm = this.sections[idx - 1].heightMul ?? 1;
-    return { from: this.sections[idx - 1].profile, to: sec.profile, t, fromHeightMul: prevHm, toHeightMul: hm };
+    const prevSl = this.sections[idx - 1].snowLine01 ?? 1;
+    return {
+      from: this.sections[idx - 1].profile, to: sec.profile, t,
+      fromHeightMul: prevHm, toHeightMul: hm, fromSnowLine01: prevSl, toSnowLine01: sl,
+    };
   }
 
   /**
@@ -1429,8 +1447,12 @@ export class BiomeManager {
     this.tSec = nowMs / 1000;
     this.calmLevel = calmLevel;
     this._danceWorldX = worldX; // kept for farRidgeSwell01(), read by the sim
-    const { from, to, t, fromHeightMul, toHeightMul } = this._blend(nowMs);
-    this.currentBlend = { from, to, t, fromHeightMul, toHeightMul };
+    const {
+      from, to, t, fromHeightMul, toHeightMul, fromSnowLine01, toSnowLine01,
+    } = this._blend(nowMs);
+    this.currentBlend = {
+      from, to, t, fromHeightMul, toHeightMul, fromSnowLine01, toSnowLine01,
+    };
     // One Spectrum: glide the key shift (needs the blend just resolved).
     this._updateSpectralShift(dtSec);
 
@@ -1681,10 +1703,13 @@ export class BiomeManager {
     // let every caller below share one derivation per unique input.
     this._crestCache = new Map();
     const phenomenaFull = perf ? perf.phenomenaFull : true;
-    const { from, to, t, fromHeightMul = 1, toHeightMul = 1 } = this.currentBlend
+    const {
+      from, to, t, fromHeightMul = 1, toHeightMul = 1, fromSnowLine01 = 1, toSnowLine01 = 1,
+    } = this.currentBlend
       || { from: this.sections[0].profile, to: this.sections[0].profile, t: 1 };
     const A = this._profile(from), B = this._profile(to);
     this._drawHeightMul = { from: fromHeightMul, to: toHeightMul };
+    this._drawSnowLine = { from: fromSnowLine01, to: toSnowLine01 };
 
     // Sunrise/moonrise cycle: which body is up, how high, and how dark the
     // sky should read. Computed once per frame -- feeds the sky gradient,
@@ -4035,6 +4060,8 @@ export class BiomeManager {
     // frame in draw() from the active section(s) -- never baked, since
     // generateSilhouette's own HEADROOM refit would erase it on L2/L3.
     const { from: heightMulA = 1, to: heightMulB = 1 } = this._drawHeightMul || {};
+    // Snowline (Stage 4): also a per-section value, read the same way.
+    const { from: snowLineA = 1, to: snowLineB = 1 } = this._drawSnowLine || {};
     const zGroundY = this._zoomedGroundY(canvas);
     // Lift the ranges so their ridges actually clear the ground band --
     // strip bottoms stay tucked safely beneath the ground fill.
@@ -4071,7 +4098,7 @@ export class BiomeManager {
       this._drawDancingStrip(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.terrainEnergy ?? 1, heightMulA);
       // Volume before the crest: the skyline stroke has to sit on top of
       // its own mountain's shading, not under it.
-      this._drawRidgeVolume(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, 1, A.terrainEnergy ?? 1, heightMulA);
+      this._drawRidgeVolume(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, 1, A.terrainEnergy ?? 1, heightMulA, snowLineA);
       // Crest rim: full strength at the near anchors (L4/L5), extended to
       // L2/L3 at reduced alpha (Stage 3) -- gated on heavyPostFx there since
       // it's a wider live pass across the two biggest ranges on screen.
@@ -4084,7 +4111,7 @@ export class BiomeManager {
       ctx.globalAlpha = t;
       this._drawDancingStrip(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.terrainEnergy ?? 1, heightMulB);
       ctx.globalAlpha = 1;
-      this._drawRidgeVolume(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, t, B.terrainEnergy ?? 1, heightMulB);
+      this._drawRidgeVolume(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, t, B.terrainEnergy ?? 1, heightMulB, snowLineB);
       const rimOkB = layerKey === 'L4' || layerKey === 'L5' || !this._perf || this._perf.heavyPostFx;
       if (rimOkB && B.edgeLight) {
         this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t * (CREST_RIM_ALPHA[layerKey] ?? 1), B.terrainEnergy ?? 1, heightMulB);
@@ -4447,7 +4474,7 @@ export class BiomeManager {
    *    moves. Kept well under the crest's own contrast so the skyline stays
    *    the thing you read first.
    */
-  _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1, heightMul = 1) {
+  _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1, heightMul = 1, snowLine01 = 1) {
     const strength = RIDGE_VOLUME_STRENGTH[layerKey] ?? 0;
     if (strength <= 0) return;
     const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy, heightMul);
@@ -4533,6 +4560,42 @@ export class BiomeManager {
       aerialGrad.addColorStop(1, `rgba(${air.r},${air.g},${air.b},${aerialAlpha.toFixed(3)})`);
       ctx.fillStyle = aerialGrad;
       ctx.fill(body);
+    }
+
+    // Snowline (Stage 4): song-grounded caps riding the same per-column
+    // h01 Stage 2 already computes for this exact crest -- a summit whose
+    // OWN relative height (h01, 0..1 within this range) clears the active
+    // section's snowLine01 threshold gets capped, one that doesn't stays
+    // bare rock. Free clip (already inside `body`), free deformation (h01
+    // already reflects Stage 2's dance), gated on phenomenaFull since it's
+    // atmosphere rather than the mountain's own form.
+    const wantSnow = !this._perf || this._perf.phenomenaFull;
+    if (wantSnow && snowLine01 < 1) {
+      const snowAltY = bottomY - (bottomY - crestY) * (1 - snowLine01);
+      const cap = new Path2D();
+      let anyCap = false;
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i];
+        const capped = p.h01 > snowLine01;
+        const y = capped ? Math.min(p.y, snowAltY) : snowAltY;
+        if (i === 0) cap.moveTo(p.x, y); else cap.lineTo(p.x, y);
+        if (capped) anyCap = true;
+      }
+      if (anyCap) {
+        for (let i = pts.length - 1; i >= 0; i--) cap.lineTo(pts[i].x, snowAltY);
+        cap.closePath();
+        // Pulled toward this._airColor (Stage 3) rather than pure white --
+        // otherwise a snow cap pops out of the haze that's supposed to be
+        // receding it into the distance along with everything else at
+        // this depth.
+        const snowColor = this._airColor
+          ? this.lerpCache.get('#f5f9ff', this._airColor, 0.22)
+          : '#f5f9ff';
+        ctx.fillStyle = snowColor;
+        ctx.globalAlpha = 0.6 * alpha * strength;
+        ctx.fill(cap);
+        ctx.globalAlpha = 1;
+      }
     }
 
     // Cheap enough (a handful of path fills, no offscreen buffers) that it

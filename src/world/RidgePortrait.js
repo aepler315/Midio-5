@@ -161,6 +161,32 @@ export function relEnergyLadder(energies) {
   return energies.map((e) => (span > 1e-6 ? clamp01((e - lo) / span) : 0.5));
 }
 
+// Snowline (mountain overhaul Stage 4): how much of a range's own crest
+// reads as capped, 0..1 in COLUMN-HEIGHT-RANK space (see
+// MountainChoreo.columnHeight01At) -- 1 means only the single tallest
+// column in the range could ever cap, 0 means every column would. A
+// bright, airy mix (crest+air-heavy lithology) and a section that's loud
+// relative to the rest of its own song both push this down (more of the
+// range reads as snowbound), matching how an icy, energetic passage
+// should visually read glacial rather than merely tall.
+const SNOWLINE_CREST_WEIGHT = 0.55;
+const SNOWLINE_ENERGY_WEIGHT = 0.45;
+// A hard floor: even the airiest, loudest section leaves most columns
+// uncapped -- snow reads as an accent on the true summits, never a blanket
+// over the whole range (that would just repaint every layer white).
+export const SNOWLINE_MIN = 0.55;
+
+/** Column-height-rank threshold above which a column's own peak is capped.
+ *  @param {number} crestAirShare litho.crest (or .air) -- the section's
+ *    own bright/high-frequency spectral mass, 0..1
+ *  @param {number} relEnergy01 the section's energy relative to the rest
+ *    of its own song, 0..1 (relEnergyLadder)
+ */
+export function snowLine01For(crestAirShare, relEnergy01) {
+  const bias = SNOWLINE_CREST_WEIGHT * clamp01(crestAirShare) + SNOWLINE_ENERGY_WEIGHT * clamp01(relEnergy01);
+  return Math.max(SNOWLINE_MIN, 1 - bias);
+}
+
 /** Tilt the three-term mass toward the layer's geological register. */
 export function layerLithology(litho, layerKey = 'L2') {
   const src = litho || lithologyFromShares(null);
