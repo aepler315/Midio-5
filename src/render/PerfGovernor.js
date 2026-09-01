@@ -130,6 +130,26 @@ export class PerfGovernor {
     }
   }
 
+  // Ridge resolution. _drawDancingStrip blits the silhouette in vertical
+  // slices, each at its own offset and scale, so the slice width IS the
+  // sampling resolution of the dance: neighbouring slices differ by the
+  // offset curve's slope times the width, and that difference is a hard
+  // vertical step in the skyline. At 64px those steps terrace the mountains
+  // visibly -- reported as the ridges looking low-resolution, which is
+  // exactly what they were.
+  //
+  // Total pixels blitted is IDENTICAL at any width -- same strip, same area,
+  // just sliced finer -- so the cost of narrowing is per-drawImage-call
+  // overhead, not rasterization. That makes it a good ladder rung: spend the
+  // calls on a machine that has them, keep the old width on one that does
+  // not. Same rung as the rim light, which is the other thing that makes an
+  // edge read as sharp.
+  get danceColumnWidth() {
+    if (this.level < 1) return 20;
+    if (this.level < 3) return 32;
+    return 64;
+  }
+
   get visionAllowed() { return this.level < 1; }
   get particleMul() { return this.level >= 2 ? 0.6 : 1; }
   // Movement VII: the celestial-light passes join the same ladder -- rim

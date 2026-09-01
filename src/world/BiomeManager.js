@@ -220,6 +220,10 @@ const EQ_MAX_HEIGHT_FRAC = 0.4; // never exceed 40% of screen height, however ex
 // --- Ridge volume: the dancing ranges read as MASS, not as flat cutouts ---
 // Sampling step (px) for the smooth crest polyline shared by the crest
 // stroke and the volume pass.
+// The slice width used when no PerfGovernor is present (tests, and any
+// caller that never wired one up). Matches the governor's own level-0 value:
+// with nothing telling us to economize, render at full resolution.
+const DANCE_COL_FINE = 20;
 const CREST_STEP_PX = 8;
 // A summit only earns shoulders if it stands this far (px) above the
 // saddles either side of it -- otherwise every ripple in the noise ridge
@@ -4302,11 +4306,17 @@ export class BiomeManager {
     // on sustained energy -- gated by terrainEnergy exactly like the offset
     // dance above, so a flat/calm biome doesn't deform either.
     const sustain = this._danceSustain || 0;
+    // Slice width is the dance's sampling resolution, and a quality setting
+    // (PerfGovernor.danceColumnWidth): the step between neighbouring slices
+    // is the offset curve's slope times this width, so narrowing it shrinks
+    // the staircase in the skyline proportionally. _crestPoints must read the
+    // SAME width, or the live crest polyline lands where the blit didn't.
+    const colW = this._danceColW();
     const w = strip.width;
     let x = -(((scrollX % w) + w) % w);
     while (x < canvas.width) {
-      for (let cx = 0; cx < w; cx += DANCE_COL_W) {
-        const cw = Math.min(DANCE_COL_W, w - cx);
+      for (let cx = 0; cx < w; cx += colW) {
+        const cw = Math.min(colW, w - cx);
         // 1px horizontal overlap hides hairline seams between dance columns.
         const drawW = Math.min(cw + 1, w - cx);
         const sx = x + cx;
@@ -4341,6 +4351,15 @@ export class BiomeManager {
    *  (depth gradient + peak shoulders) walk one identical curve -- if they
    *  re-derived it separately, any drift between them would show up as the
    *  shading peeling away from the skyline it is supposed to belong to. */
+  /** The width _drawDancingStrip is slicing the strip at this frame -- the
+   *  dance's sampling resolution, and a quality setting (see
+   *  PerfGovernor.danceColumnWidth). Read through one accessor so the blit
+   *  and the live crest polyline can never disagree about it: they are the
+   *  same silhouette, and a mismatch puts the crest where the blit isn't. */
+  _danceColW() {
+    return this._perf ? this._perf.danceColumnWidth : DANCE_COL_FINE;
+  }
+
   _crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy = 1, heightMul = 1) {
     if (!strip.ridge) return null;
     const cfg = DANCE_LAYERS[layerKey];
@@ -4353,7 +4372,8 @@ export class BiomeManager {
     // need to be in the key.
     const cache = this._crestCache;
     let byStrip = cache && cache.get(strip);
-    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}`;
+    const colW = this._danceColW();
+    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}|${colW}`;
     if (byStrip) {
       const hit = byStrip.get(cacheKey);
       if (hit) return hit;
@@ -4380,7 +4400,7 @@ export class BiomeManager {
       const stripX = scrollX + x;
       const u = (((stripX % w) + w) % w);
       const yR = ridgeYSmooth(strip.ridge, u) * scale;
-      const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever) * terrainEnergy;
+      const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever, colW) * terrainEnergy;
       const lift = (isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
       // Stage 2 (ridge deformation): foot-anchored per-column scale -- the
       // strip's foot (screen y = baseY + dh) never moves; only the
@@ -4389,7 +4409,7 @@ export class BiomeManager {
       // but smoothly blended across column seams like the rest of this
       // live curve already is).
       const h01 = columnHeight01At(strip.ridge, stripX);
-      const rawScale = danceScaleSmooth(strip.ridge, stripX, kick, sustain, cfg);
+      const rawScale = danceScaleSmooth(strip.ridge, stripX, kick, sustain, cfg, colW);
       const localScale = 1 + (rawScale - 1) * terrainEnergy;
       const heightAboveFoot = dh - yR;
       const yRDeformed = dh - heightAboveFoot * localScale;

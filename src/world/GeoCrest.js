@@ -33,13 +33,20 @@ export function ridgeYSmooth(ridge, x) {
  *  between the two neighboring column centers: exactly equal to each
  *  column's own offset at that column's center, continuous everywhere
  *  (including across every 128px seam), never re-introducing the tear. */
-export function danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever = 0) {
+export function danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever = 0, colW = DANCE_COL_W) {
   // c0 = the column center at or before stripX; c1 = the next one. f=0 at
   // c0, f=1 at c1, so the blend reproduces each column's own offset exactly
   // at that column's own center (the ground truth _drawDancingStrip paints).
-  const c0 = Math.floor((stripX - DANCE_COL_W / 2) / DANCE_COL_W) * DANCE_COL_W + DANCE_COL_W / 2;
-  const c1 = c0 + DANCE_COL_W;
-  const f = (stripX - c0) / DANCE_COL_W;
+  //
+  // `colW` MUST be the same width _drawDancingStrip is slicing at this frame
+  // -- the column centers are the ground truth, so a mismatch puts the live
+  // crest polyline somewhere the blitted silhouette isn't. It is a parameter
+  // rather than the constant because the slice width is now a quality
+  // setting (PerfGovernor.danceColumnWidth): narrower slices sample the
+  // offset curve more finely and shrink the staircase proportionally.
+  const c0 = Math.floor((stripX - colW / 2) / colW) * colW + colW / 2;
+  const c1 = c0 + colW;
+  const f = (stripX - c0) / colW;
   const w = (1 - Math.cos(clamp01(f) * Math.PI)) / 2;
   const o0 = danceOffset(c0, tSec, groove, kick, cfg, fever);
   const o1 = danceOffset(c1, tSec, groove, kick, cfg, fever);
@@ -50,10 +57,10 @@ export function danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever = 0) {
  *  mountain overhaul) -- same cosine-blend-across-column-centers pattern as
  *  danceOffsetSmooth above, so the live crest polyline's per-column scale
  *  matches the blitted columns exactly at every seam instead of stepping. */
-export function danceScaleSmooth(ridge, stripX, transient, sustain, cfg) {
-  const c0 = Math.floor((stripX - DANCE_COL_W / 2) / DANCE_COL_W) * DANCE_COL_W + DANCE_COL_W / 2;
-  const c1 = c0 + DANCE_COL_W;
-  const f = (stripX - c0) / DANCE_COL_W;
+export function danceScaleSmooth(ridge, stripX, transient, sustain, cfg, colW = DANCE_COL_W) {
+  const c0 = Math.floor((stripX - colW / 2) / colW) * colW + colW / 2;
+  const c1 = c0 + colW;
+  const f = (stripX - c0) / colW;
   const w = (1 - Math.cos(clamp01(f) * Math.PI)) / 2;
   const s0 = danceScale(columnHeight01At(ridge, c0), transient, sustain, cfg);
   const s1 = danceScale(columnHeight01At(ridge, c1), transient, sustain, cfg);
