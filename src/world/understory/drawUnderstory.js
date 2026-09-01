@@ -81,11 +81,27 @@ export function drawUnderstoryWorld(mgr, ctx, canvas, worldX, originX, A, B, t, 
   const stripsA = mgr.stripsFor(from);
   const stripsB = mgr.stripsFor(to);
 
+  // The strip bake is a single FLAT fill by design (SilhouetteGenerator: a
+  // baked gradient sliced into independently-offset dance columns is a hard
+  // seam at every column boundary), so a bare blit is a bare flat shape --
+  // which is exactly what these ranges were. _drawRidgeVolume is the only
+  // source of shading depth a range has in any world, and it was reachable
+  // only from the classic alpine path; every kind with its own draw function
+  // returned before it. Geology off: trunks and canopy are not sedimentary,
+  // and snowcaps in a forest understory would be nonsense. The shading is
+  // universal, the rock is not.
   const drawRange = (key) => {
     const yOff = Y_OFF[key] || 0;
     const sx = scroll(key);
-    if (stripsA) blit(ctx, canvas, stripsA[key], sx, yOff, to === from ? 1 : 1 - t);
-    if (to !== from && t > 0.02 && stripsB) blit(ctx, canvas, stripsB[key], sx, yOff, t);
+    if (stripsA) {
+      const a = to === from ? 1 : 1 - t;
+      blit(ctx, canvas, stripsA[key], sx, yOff, a);
+      mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false });
+    }
+    if (to !== from && t > 0.02 && stripsB) {
+      blit(ctx, canvas, stripsB[key], sx, yOff, t);
+      mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false });
+    }
   };
 
   drawRange('L2');

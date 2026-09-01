@@ -156,6 +156,11 @@ const STRATA_DARKEN = 0.17;
 // color, and how many stops the falloff gradient gets. Nine is well past the
 // point where the ramp is visually smooth; the falloff is quadratic and the
 // stroke is at most 7.5px wide, so nothing here needs fine resolution.
+// Snow cap opacity at the summit, fading to nothing at the snow line. Snow is
+// the brightest thing that can appear on a range, and a range must stay darker
+// than the sky it is silhouetted against -- aerial perspective moves a distant
+// object TOWARD the sky's value, it never takes it past.
+const SNOW_ALPHA = 0.42;
 const RIM_LIGHT_MIX = 0.35;
 const RIM_GRADIENT_STOPS = 8;
 const GROUND_AERIAL_ALPHA = 0.42;
@@ -215,6 +220,10 @@ const EQ_MAX_HEIGHT_FRAC = 0.4; // never exceed 40% of screen height, however ex
 // --- Ridge volume: the dancing ranges read as MASS, not as flat cutouts ---
 // Sampling step (px) for the smooth crest polyline shared by the crest
 // stroke and the volume pass.
+// The slice width used when no PerfGovernor is present (tests, and any
+// caller that never wired one up). Matches the governor's own level-0 value:
+// with nothing telling us to economize, render at full resolution.
+const DANCE_COL_FINE = 20;
 const CREST_STEP_PX = 8;
 // A summit only earns shoulders if it stands this far (px) above the
 // saddles either side of it -- otherwise every ripple in the noise ridge
@@ -1841,6 +1850,18 @@ export class BiomeManager {
       reducedFlash: this.reducedFlash,
     });
 
+    // The horizon color, and from it the air color every range body and the
+    // ground are washed toward. Computed HERE, above the world-kind dispatch
+    // below, rather than further down in the classic path -- seven of the
+    // eight kinds return before that point, so `_airColor` was simply never
+    // set for any of them and every consumer silently fell back.
+    const horizonPull = (0.62 * (dn.night || 0) + (styleDials(this.visualStyle).spaceWash ? 0.14 : 0)) * 0.45;
+    const skyHorizon = this._rotated(this.lerpCache.get(A.sky[2], B.sky[2], t));
+    const skyHorizonNight = horizonPull > 0.02
+      ? this.lerpCache.get(skyHorizon, NIGHT_SKY_COLOR, horizonPull)
+      : skyHorizon;
+    this._airColor = skyHorizonNight;
+
     const _kind = this.world?.kind;
     // Five of these six newer world kinds get the same deep-sky star layer
     // (drawDeepSky/weaver/meteors) the classic path below draws -- it was
@@ -1996,16 +2017,6 @@ export class BiomeManager {
     // read as barely-there smears instead of silhouettes -- so pin the
     // mountain tint to stay legible against the actual horizon color it's
     // about to sit in front of, at the same pull the sky gradient just used.
-    const horizonPull = (0.62 * (dn.night || 0) + (styleDials(this.visualStyle).spaceWash ? 0.14 : 0)) * 0.45;
-    const skyHorizon = this._rotated(this.lerpCache.get(A.sky[2], B.sky[2], t));
-    const skyHorizonNight = horizonPull > 0.02
-      ? this.lerpCache.get(skyHorizon, NIGHT_SKY_COLOR, horizonPull)
-      : skyHorizon;
-    // Stage 3 of the mountain overhaul: the sky-horizon color every layer's
-    // fill is pulled toward, read once per frame so _drawRidgeVolume can
-    // wash each range's body toward it directly instead of only baking the
-    // pull into the (until now, never-read -- see layerTint below) tint arg.
-    this._airColor = skyHorizonNight;
     const tint = ensureContrast(this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)), skyHorizonNight, 0.14);
     // Aerial perspective. Every range used to be painted in this ONE tint,
     // which is the single biggest reason the four layers read as the same
@@ -4295,11 +4306,17 @@ export class BiomeManager {
     // on sustained energy -- gated by terrainEnergy exactly like the offset
     // dance above, so a flat/calm biome doesn't deform either.
     const sustain = this._danceSustain || 0;
+    // Slice width is the dance's sampling resolution, and a quality setting
+    // (PerfGovernor.danceColumnWidth): the step between neighbouring slices
+    // is the offset curve's slope times this width, so narrowing it shrinks
+    // the staircase in the skyline proportionally. _crestPoints must read the
+    // SAME width, or the live crest polyline lands where the blit didn't.
+    const colW = this._danceColW();
     const w = strip.width;
     let x = -(((scrollX % w) + w) % w);
     while (x < canvas.width) {
-      for (let cx = 0; cx < w; cx += DANCE_COL_W) {
-        const cw = Math.min(DANCE_COL_W, w - cx);
+      for (let cx = 0; cx < w; cx += colW) {
+        const cw = Math.min(colW, w - cx);
         // 1px horizontal overlap hides hairline seams between dance columns.
         const drawW = Math.min(cw + 1, w - cx);
         const sx = x + cx;
@@ -4334,6 +4351,15 @@ export class BiomeManager {
    *  (depth gradient + peak shoulders) walk one identical curve -- if they
    *  re-derived it separately, any drift between them would show up as the
    *  shading peeling away from the skyline it is supposed to belong to. */
+  /** The width _drawDancingStrip is slicing the strip at this frame -- the
+   *  dance's sampling resolution, and a quality setting (see
+   *  PerfGovernor.danceColumnWidth). Read through one accessor so the blit
+   *  and the live crest polyline can never disagree about it: they are the
+   *  same silhouette, and a mismatch puts the crest where the blit isn't. */
+  _danceColW() {
+    return this._perf ? this._perf.danceColumnWidth : DANCE_COL_FINE;
+  }
+
   _crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy = 1, heightMul = 1) {
     if (!strip.ridge) return null;
     const cfg = DANCE_LAYERS[layerKey];
@@ -4346,7 +4372,8 @@ export class BiomeManager {
     // need to be in the key.
     const cache = this._crestCache;
     let byStrip = cache && cache.get(strip);
-    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}`;
+    const colW = this._danceColW();
+    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}|${colW}`;
     if (byStrip) {
       const hit = byStrip.get(cacheKey);
       if (hit) return hit;
@@ -4373,7 +4400,7 @@ export class BiomeManager {
       const stripX = scrollX + x;
       const u = (((stripX % w) + w) % w);
       const yR = ridgeYSmooth(strip.ridge, u) * scale;
-      const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever) * terrainEnergy;
+      const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever, colW) * terrainEnergy;
       const lift = (isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
       // Stage 2 (ridge deformation): foot-anchored per-column scale -- the
       // strip's foot (screen y = baseY + dh) never moves; only the
@@ -4382,7 +4409,7 @@ export class BiomeManager {
       // but smoothly blended across column seams like the rest of this
       // live curve already is).
       const h01 = columnHeight01At(strip.ridge, stripX);
-      const rawScale = danceScaleSmooth(strip.ridge, stripX, kick, sustain, cfg);
+      const rawScale = danceScaleSmooth(strip.ridge, stripX, kick, sustain, cfg, colW);
       const localScale = 1 + (rawScale - 1) * terrainEnergy;
       const heightAboveFoot = dh - yR;
       const yRDeformed = dh - heightAboveFoot * localScale;
@@ -4784,7 +4811,19 @@ export class BiomeManager {
    *    moves. Kept well under the crest's own contrast so the skyline stays
    *    the thing you read first.
    */
-  _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1, heightMul = 1, snowLine01 = 1) {
+  /**
+   * Shading and depth for one range body.
+   *
+   * `geology` (snow caps, sedimentary bedding) is alpine-specific and off by
+   * default for callers that opt in from another world kind: a city skyline
+   * or a foundry's stacks have silhouettes that need shading just as much,
+   * but snowcaps and rock strata on them would be nonsense. The SHADING half
+   * is universal -- the strip bake is a single flat fill by design (see
+   * SilhouetteGenerator: a baked gradient sliced into independently-offset
+   * dance columns is a hard seam at every column boundary), so this pass is
+   * the only source of shading depth any range has, in any world.
+   */
+  _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1, heightMul = 1, snowLine01 = 1, { geology = true } = {}) {
     const strength = RIDGE_VOLUME_STRENGTH[layerKey] ?? 0;
     if (strength <= 0) return;
     const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy, heightMul);
@@ -4879,7 +4918,7 @@ export class BiomeManager {
     // bare rock. Free clip (already inside `body`), free deformation (h01
     // already reflects Stage 2's dance), gated on phenomenaFull since it's
     // atmosphere rather than the mountain's own form.
-    const wantSnow = !this._perf || this._perf.phenomenaFull;
+    const wantSnow = geology && (!this._perf || this._perf.phenomenaFull);
     if (wantSnow && snowLine01 < 1) {
       // Snow is an ALTITUDE, and this used to ask the wrong question of the
       // wrong variable: `p.h01 > snowLine01` tests a column's relative height
@@ -4893,7 +4932,19 @@ export class BiomeManager {
       // is continuous by construction: where the ridge crosses the altitude
       // the cap's top and bottom edges meet and the polygon simply closes.
       // Nothing to step, so there is no cliff to draw.
-      const snowAltY = bottomY - (bottomY - crestY) * (1 - snowLine01);
+      // ...and the altitude itself was inverted. `snowLine01` is a
+      // height-RANK threshold in [0.55, 1] (snowLine01For: "column-height-rank
+      // above which a column's own peak is capped"), so snow belongs on the
+      // top `1 - snowLine01` of the relief -- at 0.8, the top fifth. Measuring
+      // `(1 - snowLine01)` UP FROM THE FOOT instead put the line at a fifth of
+      // the way up and buried four fifths of every range in snow.
+      //
+      // That inversion has been here since the snowline landed, but it was
+      // masked: while the per-column h01 test gated which columns got any snow
+      // at all, this altitude only ever clamped them. Removing that test (it
+      // was the cause of the vertical snow cliffs) promoted the bug to the
+      // whole behavior, and the ranges went white.
+      const snowAltY = bottomY - snowLine01 * (bottomY - crestY);
       // ...and the line itself gets a gentle wander, so it doesn't read as a
       // ruler laid across the range. Small next to the relief it sits in.
       const wobble = (stripX) => 6 * Math.sin(stripX / 260) + 3 * Math.sin(stripX / 97 + 1.7);
@@ -4921,7 +4972,7 @@ export class BiomeManager {
         // meets bare rock, and that edge was reading as the bottom of a slab.
         const snowTop = Math.max(crestY - 8, 0);
         const { r: sr, g: sg, b: sb } = hexToRgb(snowColor);
-        const a0 = 0.55 * alpha * strength;
+        const a0 = SNOW_ALPHA * alpha * strength;
         const snowGrad = ctx.createLinearGradient(0, snowTop, 0, snowAltY + 10);
         snowGrad.addColorStop(0, `rgba(${sr},${sg},${sb},${a0.toFixed(3)})`);
         snowGrad.addColorStop(0.65, `rgba(${sr},${sg},${sb},${(a0 * 0.72).toFixed(3)})`);
@@ -4943,7 +4994,7 @@ export class BiomeManager {
     // a live but screen-horizontal stripe would still crawl unnaturally
     // against a dancing, foot-anchored ridge. Tracing the polyline means
     // every band moves WITH the ridge, so there is no seam to reintroduce.
-    if ((layerKey === 'L2' || layerKey === 'L3') && (!this._perf || this._perf.heavyPostFx)) {
+    if (geology && (layerKey === 'L2' || layerKey === 'L3') && (!this._perf || this._perf.heavyPostFx)) {
       // Beds dip opposite ways on the two layers so the ranges read as two
       // separate pieces of country rather than one structure drawn twice.
       const beds = strataBeds({

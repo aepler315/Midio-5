@@ -108,12 +108,27 @@ export function drawCityWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, ph
     ctx.save();
     ctx.fillStyle = lt; // unused; strips are pre-tinted. keep transform clean.
     ctx.restore();
+    // Shading goes BETWEEN the silhouette and its windows, not after both:
+    // the windows are self-lit, and a shade pass over them would darken the
+    // one thing in a skyline that is supposed to be its own light source.
+    //
+    // The strip bake is a single FLAT fill by design (SilhouetteGenerator: a
+    // baked gradient sliced into independently-offset dance columns is a hard
+    // seam at every column boundary), so a bare blit is a bare flat shape.
+    // _drawRidgeVolume is the only source of shading depth a range has in ANY
+    // world, and it was reachable only from the classic alpine path; every
+    // kind with its own draw function returned before reaching it. Geology
+    // (snowcaps, sedimentary bedding) stays off -- a skyline is not
+    // sedimentary. The shading half is universal.
     if (stripsA) {
-      blit(ctx, canvas, stripsA[key], sx, yOff, to === from ? 1 : 1 - t);
-      blitWindows(ctx, canvas, stripsA[key], sx, yOff, occ * (to === from ? 1 : 1 - t), key === 'L4' ? neonHex : null);
+      const a = to === from ? 1 : 1 - t;
+      blit(ctx, canvas, stripsA[key], sx, yOff, a);
+      mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false });
+      blitWindows(ctx, canvas, stripsA[key], sx, yOff, occ * a, key === 'L4' ? neonHex : null);
     }
     if (to !== from && t > 0.02 && stripsB) {
       blit(ctx, canvas, stripsB[key], sx, yOff, t);
+      mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false });
       blitWindows(ctx, canvas, stripsB[key], sx, yOff, occ * t, key === 'L4' ? neonHex : null);
     }
   };

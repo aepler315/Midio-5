@@ -73,8 +73,23 @@ export function drawNaveWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, ph
   const drawRange = (key) => {
     const yOff = Y_OFF[key] || 0;
     const sx = scroll(key);
-    if (stripsA) blit(ctx, canvas, stripsA[key], sx, yOff, to === from ? 1 : 1 - t);
-    if (to !== from && t > 0.02 && stripsB) blit(ctx, canvas, stripsB[key], sx, yOff, t);
+    // The strip bake is a single FLAT fill by design (SilhouetteGenerator: a
+    // baked gradient sliced into independently-offset dance columns is a hard
+    // seam at every column boundary), so a bare blit is a bare flat shape --
+    // which is what these ranges were. _drawRidgeVolume is the only source of
+    // shading depth a range has in ANY world, and it was reachable only from
+    // the classic alpine path; every kind with its own draw function returned
+    // before reaching it. Geology (snowcaps, sedimentary bedding) stays off
+    // -- that half is alpine-specific. The shading half is not.
+    if (stripsA) {
+      const a = to === from ? 1 : 1 - t;
+      blit(ctx, canvas, stripsA[key], sx, yOff, a);
+      mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false });
+    }
+    if (to !== from && t > 0.02 && stripsB) {
+      blit(ctx, canvas, stripsB[key], sx, yOff, t);
+      mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false });
+    }
   };
 
   drawRange('L2');
