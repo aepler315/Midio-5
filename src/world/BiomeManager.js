@@ -1846,6 +1846,18 @@ export class BiomeManager {
       reducedFlash: this.reducedFlash,
     });
 
+    // The horizon color, and from it the air color every range body and the
+    // ground are washed toward. Computed HERE, above the world-kind dispatch
+    // below, rather than further down in the classic path -- seven of the
+    // eight kinds return before that point, so `_airColor` was simply never
+    // set for any of them and every consumer silently fell back.
+    const horizonPull = (0.62 * (dn.night || 0) + (styleDials(this.visualStyle).spaceWash ? 0.14 : 0)) * 0.45;
+    const skyHorizon = this._rotated(this.lerpCache.get(A.sky[2], B.sky[2], t));
+    const skyHorizonNight = horizonPull > 0.02
+      ? this.lerpCache.get(skyHorizon, NIGHT_SKY_COLOR, horizonPull)
+      : skyHorizon;
+    this._airColor = skyHorizonNight;
+
     const _kind = this.world?.kind;
     // Five of these six newer world kinds get the same deep-sky star layer
     // (drawDeepSky/weaver/meteors) the classic path below draws -- it was
@@ -2001,16 +2013,6 @@ export class BiomeManager {
     // read as barely-there smears instead of silhouettes -- so pin the
     // mountain tint to stay legible against the actual horizon color it's
     // about to sit in front of, at the same pull the sky gradient just used.
-    const horizonPull = (0.62 * (dn.night || 0) + (styleDials(this.visualStyle).spaceWash ? 0.14 : 0)) * 0.45;
-    const skyHorizon = this._rotated(this.lerpCache.get(A.sky[2], B.sky[2], t));
-    const skyHorizonNight = horizonPull > 0.02
-      ? this.lerpCache.get(skyHorizon, NIGHT_SKY_COLOR, horizonPull)
-      : skyHorizon;
-    // Stage 3 of the mountain overhaul: the sky-horizon color every layer's
-    // fill is pulled toward, read once per frame so _drawRidgeVolume can
-    // wash each range's body toward it directly instead of only baking the
-    // pull into the (until now, never-read -- see layerTint below) tint arg.
-    this._airColor = skyHorizonNight;
     const tint = ensureContrast(this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)), skyHorizonNight, 0.14);
     // Aerial perspective. Every range used to be painted in this ONE tint,
     // which is the single biggest reason the four layers read as the same
@@ -4789,7 +4791,19 @@ export class BiomeManager {
    *    moves. Kept well under the crest's own contrast so the skyline stays
    *    the thing you read first.
    */
-  _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1, heightMul = 1, snowLine01 = 1) {
+  /**
+   * Shading and depth for one range body.
+   *
+   * `geology` (snow caps, sedimentary bedding) is alpine-specific and off by
+   * default for callers that opt in from another world kind: a city skyline
+   * or a foundry's stacks have silhouettes that need shading just as much,
+   * but snowcaps and rock strata on them would be nonsense. The SHADING half
+   * is universal -- the strip bake is a single flat fill by design (see
+   * SilhouetteGenerator: a baked gradient sliced into independently-offset
+   * dance columns is a hard seam at every column boundary), so this pass is
+   * the only source of shading depth any range has, in any world.
+   */
+  _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1, heightMul = 1, snowLine01 = 1, { geology = true } = {}) {
     const strength = RIDGE_VOLUME_STRENGTH[layerKey] ?? 0;
     if (strength <= 0) return;
     const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy, heightMul);
@@ -4884,7 +4898,7 @@ export class BiomeManager {
     // bare rock. Free clip (already inside `body`), free deformation (h01
     // already reflects Stage 2's dance), gated on phenomenaFull since it's
     // atmosphere rather than the mountain's own form.
-    const wantSnow = !this._perf || this._perf.phenomenaFull;
+    const wantSnow = geology && (!this._perf || this._perf.phenomenaFull);
     if (wantSnow && snowLine01 < 1) {
       // Snow is an ALTITUDE, and this used to ask the wrong question of the
       // wrong variable: `p.h01 > snowLine01` tests a column's relative height
@@ -4960,7 +4974,7 @@ export class BiomeManager {
     // a live but screen-horizontal stripe would still crawl unnaturally
     // against a dancing, foot-anchored ridge. Tracing the polyline means
     // every band moves WITH the ridge, so there is no seam to reintroduce.
-    if ((layerKey === 'L2' || layerKey === 'L3') && (!this._perf || this._perf.heavyPostFx)) {
+    if (geology && (layerKey === 'L2' || layerKey === 'L3') && (!this._perf || this._perf.heavyPostFx)) {
       // Beds dip opposite ways on the two layers so the ranges read as two
       // separate pieces of country rather than one structure drawn twice.
       const beds = strataBeds({
