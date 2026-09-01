@@ -123,6 +123,13 @@ const CREST_RIM_ALPHA = { L2: 0.35, L3: 0.55, L4: 1, L5: 1 };
 // silhouette of one range printed onto another.
 const CAST_SHADOW_MAX = 0.18;
 const CAST_SHADOW_BAND_PX = 46;
+// Rock strata (Stage 6, ship-last/cuttable): thin bands, kept well under the
+// crest/shoulder contrast so the skyline and the shoulder facets -- both
+// already established depth cues -- stay the things you read first.
+const STRATA_SPACING_PX = 34;
+const STRATA_BAND_PX = 9;
+const STRATA_MAX_BANDS = 4;
+const STRATA_DARKEN = 0.16;
 // Aerial perspective, optical half: how much each layer's strip bake is
 // downsampled before being stretched back up (generateSilhouette's
 // softenScale), so distant ranges lose edge acuity the same way AERIAL_PULL
@@ -4666,6 +4673,39 @@ export class BiomeManager {
         ctx.globalAlpha = 0.6 * alpha * strength;
         ctx.fill(cap);
         ctx.globalAlpha = 1;
+      }
+    }
+
+    // Rock strata (Stage 6 -- highest-risk/most cuttable stage of the
+    // mountain overhaul, L2/L3 only: L4 already carries GeoCrest + shoulders,
+    // L5 is rolling hills). Thin multiply bands PARALLEL TO THE LOCAL CREST
+    // -- each one traces the same live `pts` polyline everything else in
+    // this pass already reads (already carrying Stage 2's per-column
+    // deformation), just offset further down -- rather than a fixed
+    // screen-horizontal stripe. That distinction is the whole safety case:
+    // a horizontal stripe baked into the strip bitmap is exactly the family
+    // the original column-seam bug came from (SilhouetteGenerator.js), and
+    // a live but screen-horizontal stripe would still crawl unnaturally
+    // against a dancing, foot-anchored ridge. Tracing the polyline means
+    // every band moves WITH the ridge, so there is no seam to reintroduce.
+    if ((layerKey === 'L2' || layerKey === 'L3') && (!this._perf || this._perf.heavyPostFx)) {
+      const span = bottomY - crestY;
+      const bandCount = Math.min(STRATA_MAX_BANDS, Math.floor(span / STRATA_SPACING_PX) - 1);
+      if (bandCount >= 1) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'multiply';
+        const g = Math.max(0, Math.min(255, Math.round(255 * (1 - STRATA_DARKEN * alpha * strength))));
+        ctx.fillStyle = `rgb(${g},${g},${g})`;
+        for (let b = 1; b <= bandCount; b++) {
+          const off = b * STRATA_SPACING_PX;
+          const band = new Path2D();
+          band.moveTo(pts[0].x, pts[0].y + off);
+          for (let i = 1; i < pts.length; i++) band.lineTo(pts[i].x, pts[i].y + off);
+          for (let i = pts.length - 1; i >= 0; i--) band.lineTo(pts[i].x, pts[i].y + off + STRATA_BAND_PX);
+          band.closePath();
+          ctx.fill(band);
+        }
+        ctx.restore();
       }
     }
 
