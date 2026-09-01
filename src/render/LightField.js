@@ -58,6 +58,39 @@ export function lightDirTo(light, x, y) {
   return { x: dx / len, y: dy / len };
 }
 
+// How far around the frame a crest rim keeps its strength, as a fraction of
+// canvas width, and how much of it survives on the far side. The floor is not
+// zero on purpose: a ridge whose rim vanished entirely on its dark side would
+// lose the edge that makes it readable against the range behind it. This is a
+// lighting falloff, not an on/off mask.
+const RIM_REACH_FRAC = 0.55;
+const RIM_FAR_FLOOR = 0.18;
+
+/**
+ * How brightly a backlit crest rim should burn at one screen x.
+ *
+ * A rim is LIGHT spilling over an edge, so its strength depends on where the
+ * source is. Stroked at a constant alpha all the way across the frame -- which
+ * is what this used to be -- it stops reading as light at all and becomes
+ * neon piping drawn around the mountain: a uniform saturated outline is the
+ * one thing a real rim never looks like.
+ *
+ * Falls off with horizontal distance from the light, squared so the bright
+ * region stays tight around the source rather than smearing halfway across
+ * the sky.
+ *
+ * @param {number} screenX
+ * @param {number} lightX  the celestial's own screen x (see computeLight)
+ * @param {number} canvasWidth
+ * @returns {number} 0..1 multiplier, never below RIM_FAR_FLOOR
+ */
+export function rimGain(screenX, lightX, canvasWidth) {
+  const w = Math.max(1, canvasWidth);
+  const d = Math.abs(screenX - lightX) / w / RIM_REACH_FRAC;
+  const near = Math.max(0, 1 - Math.min(1, d) ** 2);
+  return RIM_FAR_FLOOR + (1 - RIM_FAR_FLOOR) * near;
+}
+
 // Secondary lights: the celestial above is the only thing that has ever
 // illuminated anything else in this scene -- every character and event
 // (Midasus's core, a kick-synced ground pulse) reads as bright on its own,
