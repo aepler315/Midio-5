@@ -52,7 +52,30 @@ test('Broshi trails behind Midio by default (TRAIL setpoint)', () => {
   const b = new Broshi(conductor, paramBus);
   const midio = { screenX: 200, groundY: 480, y: 0 };
   stepFor((t, dt) => b.update(t, dt, midio, null, 0, 480), 5000);
-  assert.ok(b.xRel < -140 && b.xRel > -260); // settled near d*=-200 (wider trail)
+  // He trails BEHIND Midio -- but only as far back as the frame allows. With
+  // Midio at screenX=200 the old fixed -200 set-point parked him at screen
+  // x=0, half out of shot with nothing to pull him back, which is what
+  // "Broshi falls back off the screen" was. The set-point is now clamped
+  // against the stage, so he settles at the edge margin instead.
+  assert.ok(b.xRel < -20, `should still trail behind Midio, got ${b.xRel}`);
+  const screenX = midio.screenX + b.xRel;
+  assert.ok(screenX >= 60 && screenX <= 1220, `should stay on frame, got screen x=${screenX}`);
+});
+
+test('Broshi never settles off the left edge, wherever Midio stands', () => {
+  // The regression itself: Midio near the left of frame used to leave the
+  // trail set-point pointing off-screen, and a spring sitting happily on its
+  // target has no reason to come back.
+  for (const midioX of [120, 200, 340, 640]) {
+    const conductor = new Conductor();
+    conductor.load({ timeline: [], barGrid: [], durationMs: 10000 });
+    const b = new Broshi(conductor, new ParamBus());
+    const midio = { screenX: midioX, groundY: 480, y: 0 };
+    stepFor((t, dt) => b.update(t, dt, midio, null, 0, 480), 5000);
+    const screenX = midio.screenX + b.xRel;
+    assert.ok(screenX >= 60, `Midio at ${midioX}: Broshi settled at screen x=${screenX}`);
+    assert.ok(b.renderX >= 60, `Midio at ${midioX}: Broshi DREW at x=${b.renderX}`);
+  }
 });
 
 test('Broshi SURGEs on the scripted 8-bar timer', () => {

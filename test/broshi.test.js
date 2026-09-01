@@ -151,10 +151,16 @@ test('lost traction (snow) makes the trailing spring visibly overshoot more', ()
     const conductor = fakeConductor();
     const b = new Broshi(conductor, {}, { seed: 9 });
     b.traction = traction;
+    // Midio stands mid-frame here rather than at the default 200: a -300
+    // displacement from screenX=200 is screen x=-100, which Broshi now
+    // refuses to occupy (he is kept on frame). This test is about the
+    // SPRING's behavior under traction, so give it room to swing in
+    // legal space instead of measuring against the edge clamp.
+    b._stageW = 1280;
     b.xRel = -300; // displaced hard from the trail point
     let overshoot = 0;
     for (let t = 0; t <= 6000; t += 16) {
-      b.update(t, 16 / 1000, fakeMidio(), null, 0, 480, 0);
+      b.update(t, 16 / 1000, { screenX: 640 }, null, 0, 480, 0);
       overshoot = Math.max(overshoot, b.xRel - b._trailTarget);
     }
     return overshoot;

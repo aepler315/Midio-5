@@ -27,30 +27,33 @@ export function ridgeYSmooth(ridge, x) {
   return height * baseline - hVal * height * amplitude;
 }
 
-/** Smooth counterpart of MountainChoreo's danceOffset -- _drawDancingStrip
- *  blits the strip in DANCE_COL_W column slices, each evaluated at its own
- *  offset, so the columns' own centers are the ground truth. Cosine-blend
- *  between the two neighboring column centers: exactly equal to each
- *  column's own offset at that column's center, continuous everywhere
- *  (including across every 128px seam), never re-introducing the tear. */
+/**
+ * The offset curve the blit actually paints.
+ *
+ * _drawDancingStrip draws each column with a vertical SHEAR: the column's
+ * left edge sits at danceOffset(left boundary), its right edge at
+ * danceOffset(right boundary), and everything between is the straight line
+ * joining them. So the silhouette's offset is a piecewise-linear
+ * interpolation of danceOffset sampled on the column-boundary grid, and this
+ * function is that same interpolation -- not an approximation of it.
+ *
+ * It replaces a cosine blend between column CENTERS, which was wrong twice
+ * over. The blit sampled each column's LEFT EDGE and held it constant across
+ * the column, so the stroke was a ramp phase-shifted half a column from a
+ * staircase: the two only touched by accident, and everywhere else the neon
+ * crest line floated off the fill it was supposed to be tracing. That is the
+ * "ridges not lining up with themselves" artifact.
+ *
+ * `colW` must be the width the blit is slicing at this frame
+ * (PerfGovernor.danceColumnWidth), and must divide the strip width evenly --
+ * see DANCE_COL_W's note on why.
+ */
 export function danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever = 0, colW = DANCE_COL_W) {
-  // c0 = the column center at or before stripX; c1 = the next one. f=0 at
-  // c0, f=1 at c1, so the blend reproduces each column's own offset exactly
-  // at that column's own center (the ground truth _drawDancingStrip paints).
-  //
-  // `colW` MUST be the same width _drawDancingStrip is slicing at this frame
-  // -- the column centers are the ground truth, so a mismatch puts the live
-  // crest polyline somewhere the blitted silhouette isn't. It is a parameter
-  // rather than the constant because the slice width is now a quality
-  // setting (PerfGovernor.danceColumnWidth): narrower slices sample the
-  // offset curve more finely and shrink the staircase proportionally.
-  const c0 = Math.floor((stripX - colW / 2) / colW) * colW + colW / 2;
-  const c1 = c0 + colW;
-  const f = (stripX - c0) / colW;
-  const w = (1 - Math.cos(clamp01(f) * Math.PI)) / 2;
-  const o0 = danceOffset(c0, tSec, groove, kick, cfg, fever);
-  const o1 = danceOffset(c1, tSec, groove, kick, cfg, fever);
-  return o0 * (1 - w) + o1 * w;
+  const b0 = Math.floor(stripX / colW) * colW;
+  const f = (stripX - b0) / colW;
+  const o0 = danceOffset(b0, tSec, groove, kick, cfg, fever);
+  const o1 = danceOffset(b0 + colW, tSec, groove, kick, cfg, fever);
+  return o0 + (o1 - o0) * clamp01(f);
 }
 
 /** Smooth counterpart of MountainChoreo's danceScale (Stage 2 of the

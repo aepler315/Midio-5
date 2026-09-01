@@ -982,6 +982,9 @@ export class Simulation {
     }
     this.broshi.update(nowMs, dtSec, this.midio, this.energyCurves, this.worldX, this.midio.groundY, this.calm.level, {
       trailX: this.ensemble.anchors[1].x, phase: this.ensemble.phase(1), melt: 1.8 + 4 * this.vibe.epic,
+      // He needs to know how wide the shot is, or he cannot tell that the
+      // formation anchor has roamed him off the left edge.
+      stageW: this.stageW,
       // A true companion watches his hero: airborne state + height for the
       // "watch him fly" head-tilt and takeoff crouch, the landing/clean
       // edges for the cheer + echo hop, world speed for the trot shimmy.

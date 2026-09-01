@@ -52,13 +52,38 @@ test('ridgeYSmooth wraps seamlessly across the strip edge', () => {
   assert.ok(Math.abs(yEnd - yStart) < 2, 'wrap should be near-continuous (noise tail is head-blended)');
 });
 
-test('danceOffsetSmooth equals danceOffset at column centers', () => {
+test('danceOffsetSmooth equals danceOffset at column boundaries', () => {
+  // The ground truth moved from column CENTERS to column BOUNDARIES when the
+  // blit started shearing each column between its two edges instead of
+  // holding one sample flat across it. Under the old model the stroke was a
+  // cosine ramp phase-shifted half a column from the blit's staircase, so it
+  // matched the fill only where the two happened to cross -- the "ridges not
+  // lining up with themselves" artifact. Boundaries are now the sample
+  // points for both, which is why the next test can assert they agree
+  // EVERYWHERE rather than only at sample points.
   const cfg = DANCE_LAYERS.L4;
-  for (let col = 0; col < 2048; col += DANCE_COL_W) {
-    const center = col + DANCE_COL_W / 2;
-    const exact = danceOffset(center, 1.7, 0.6, 0.3, cfg, 0.2);
-    const smooth = danceOffsetSmooth(center, 1.7, 0.6, 0.3, cfg, 0.2);
-    assert.ok(Math.abs(exact - smooth) < 1e-9, `column ${col} center mismatch`);
+  for (let col = 0; col <= 2048; col += DANCE_COL_W) {
+    const exact = danceOffset(col, 1.7, 0.6, 0.3, cfg, 0.2);
+    const smooth = danceOffsetSmooth(col, 1.7, 0.6, 0.3, cfg, 0.2);
+    assert.ok(Math.abs(exact - smooth) < 1e-9, `column boundary ${col} mismatch`);
+  }
+});
+
+test('and is exactly the straight line the shear paints between them', () => {
+  // The blit shears each column linearly between its edge offsets, so the
+  // crest polyline has to be that same straight line -- not near it.
+  const cfg = DANCE_LAYERS.L4;
+  for (const colW of [16, 32, 64]) {
+    for (let b = 0; b < 600; b += colW) {
+      const o0 = danceOffset(b, 2.4, 0.5, 0.4, cfg, 0);
+      const o1 = danceOffset(b + colW, 2.4, 0.5, 0.4, cfg, 0);
+      for (let f = 0; f <= 1.0001; f += 0.125) {
+        const want = o0 + (o1 - o0) * f;
+        const got = danceOffsetSmooth(b + f * colW, 2.4, 0.5, 0.4, cfg, 0, colW);
+        assert.ok(Math.abs(want - got) < 1e-9,
+          `colW=${colW} b=${b} f=${f}: ${got} is not on the line ${want}`);
+      }
+    }
   }
 });
 

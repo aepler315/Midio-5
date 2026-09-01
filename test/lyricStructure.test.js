@@ -42,7 +42,44 @@ test('toBlocks (synced): a large gap between lines starts a new block; small gap
   assert.deepEqual(blocks[0].lines, ['a', 'b', 'c']);
   assert.deepEqual(blocks[1].lines, ['d', 'e']);
   assert.equal(blocks[0].startMs, 0);
-  assert.equal(blocks[0].endMs, 4000);
+  // The block ends after its LAST LINE has been sung, not at the instant that
+  // line begins. Its lines are 2s apart, so the last one is given 2s of its
+  // own: 4000 + 2000. Ending at 4000 (the old behavior) gave the final line
+  // of every block zero duration -- harmless-looking on a multi-line block,
+  // fatal on a one-line one (see the next test).
+  assert.equal(blocks[0].endMs, 6000);
+});
+
+test('toBlocks (synced): a ONE-LINE block still has a real duration', () => {
+  // A single-line block -- a one-line hook, a spoken intro, a last line --
+  // used to come out with startMs === endMs. SectionFusion's sectionAt
+  // matches on `tMs >= startMs && tMs < endMs`, so a zero-width section can
+  // never match anything: the block's kind, intensity and valence were all
+  // computed and then silently unreachable.
+  // Enough tightly-paced lines that the median gap is a real 2s -- then one
+  // line stranded far past the split threshold, on its own.
+  const lines = [];
+  for (let i = 0; i < 6; i++) lines.push({ tMs: i * 2000, text: `line${i}` });
+  lines.push({ tMs: 40000, text: 'the one-line hook' });
+  const blocks = toBlocks(lines, { synced: true });
+  assert.equal(blocks.length, 2, `expected the stranded line to be its own block, got ${blocks.length}`);
+  const solo = blocks[1];
+  assert.deepEqual(solo.lines, ['the one-line hook']);
+  assert.ok(solo.endMs > solo.startMs,
+    `a one-line block must have positive duration, got ${solo.startMs}..${solo.endMs}`);
+});
+
+test('toBlocks (synced): a block never swallows the silence after it', () => {
+  // The last line's duration is capped by the real gap to whatever comes
+  // next, so labelBlocks still sees long gaps and can still fill them with
+  // instrumental sections.
+  const lines = [
+    { tMs: 0, text: 'a' }, { tMs: 2000, text: 'b' },
+    { tMs: 60000, text: 'c' }, { tMs: 62000, text: 'd' },
+  ];
+  const [first] = toBlocks(lines, { synced: true });
+  assert.ok(first.endMs <= 60000, `block ran into the next block's start: ${first.endMs}`);
+  assert.ok(first.endMs - first.startMs < 30000, 'and did not span the whole gap');
 });
 
 test('toBlocks (synced): realistic verse/chorus breathing gaps now split -- regression for songs collapsing into one giant block', () => {
