@@ -27,14 +27,16 @@ import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import {
-  DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul,
+  DANCE_LAYERS, DANCE_COL_W, danceOffset, danceScale, columnHeight01At, kickEnv, spectrumBars, orogenyHeightMul,
   pullbackHeightMul,
   mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER,
   massifDrawHeight, massifRidgeHeight01, massifRidgeJagPx, massifClearing01,
   MASSIF_MARKER_SPEED_PX_S, MASSIF_MARKER_LIFE_SEC, nextMassifMarkerDelaySec,
   massifEqStep,
 } from './MountainChoreo.js';
-import { ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, geoCrestOffset } from './GeoCrest.js';
+import {
+  ridgeYSmooth, danceOffsetSmooth, danceScaleSmooth, assignBandFeatures, geoCrestOffset,
+} from './GeoCrest.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
 import { FlourishGate } from '../sim/FlourishGate.js';
 import {
@@ -470,6 +472,10 @@ export class BiomeManager {
     // traveling ridge wave through every range, and each kick sends a
     // bounce rolling from the near hills out to the far peaks.
     this._danceGroove = 0;
+    // Stage 2 (ridge deformation): a slower one-pole on _danceGroove itself
+    // -- "has this section been loud for a while", distinct from the kick's
+    // instant transient. Flanks swell on this; summits sharpen on the kick.
+    this._danceSustain = 0;
     this._danceKickMs = -Infinity;
     this._danceKickAmp = 0;
     this._danceWorldX = 0;
@@ -1537,6 +1543,7 @@ export class BiomeManager {
     // further either way.
     const grooveTarget = energyInstant * (1 - 0.55 * calmLevel) * (this.universeTerrainMul || 1);
     this._danceGroove += (1 - Math.exp(-dtSec / 0.30)) * (grooveTarget - this._danceGroove);
+    this._danceSustain += (1 - Math.exp(-dtSec / 1.1)) * (this._danceGroove - this._danceSustain);
     const wind = this.atmosphere.at(worldX, this.h * 0.4);
     this.wind = wind;
 
@@ -4131,6 +4138,10 @@ export class BiomeManager {
       * Math.max(0, heightMul);
     const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this._zoomedGroundY(canvas));
     const baseY = canvas.height - dh + yOff;
+    // Stage 2 (ridge deformation): summits sharpen on the kick, flanks swell
+    // on sustained energy -- gated by terrainEnergy exactly like the offset
+    // dance above, so a flat/calm biome doesn't deform either.
+    const sustain = this._danceSustain || 0;
     const w = strip.width;
     let x = -(((scrollX % w) + w) % w);
     while (x < canvas.width) {
@@ -4141,7 +4152,15 @@ export class BiomeManager {
         const sx = x + cx;
         if (sx + drawW < 0 || sx > canvas.width) continue;
         const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0) * terrainEnergy;
-        ctx.drawImage(strip, cx, 0, drawW, strip.height, sx, baseY + dy, drawW, dh);
+        // Foot-anchored: this column's own foot (baseY + dh + dy, the same
+        // translation the offset dance already applies) never moves: only
+        // the elevation above it stretches, so a squat foothill barely
+        // grows while this range's own summit visibly heaves.
+        const h01 = columnHeight01At(strip.ridge, cx);
+        const rawScale = danceScale(h01, kick, sustain, cfg);
+        const colDh = dh * (1 + (rawScale - 1) * terrainEnergy);
+        const footY = baseY + dh + dy;
+        ctx.drawImage(strip, cx, 0, drawW, strip.height, sx, footY - colDh, drawW, colDh);
       }
       x += w;
     }
@@ -4192,6 +4211,7 @@ export class BiomeManager {
     const tSec = this.tSec;
     const fever = this.fever || 0;
     const groove = this._danceGroove;
+    const sustain = this._danceSustain || 0;
 
     const pts = new Array(Math.ceil(canvas.width / CREST_STEP_PX) + 3);
     let n = 0;
@@ -4202,13 +4222,20 @@ export class BiomeManager {
       const yR = ridgeYSmooth(strip.ridge, u) * scale;
       const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever) * terrainEnergy;
       const lift = (isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
-      const y = baseY + yR + dy - lift;
+      // Stage 2 (ridge deformation): foot-anchored per-column scale -- the
+      // strip's foot (screen y = baseY + dh) never moves; only the
+      // elevation above it stretches, by this column's own relative peak
+      // height (h01, mirroring _drawDancingStrip's raw per-column read,
+      // but smoothly blended across column seams like the rest of this
+      // live curve already is).
+      const h01 = columnHeight01At(strip.ridge, stripX);
+      const rawScale = danceScaleSmooth(strip.ridge, stripX, kick, sustain, cfg);
+      const localScale = 1 + (rawScale - 1) * terrainEnergy;
+      const heightAboveFoot = dh - yR;
+      const yRDeformed = dh - heightAboveFoot * localScale;
+      const y = baseY + yRDeformed + dy - lift;
       if (y < crestY) crestY = y;
-      // scale/h01 are stubbed here (uniform per-strip scale, no per-column
-      // height read) -- Stage 2 (ridge deformation) is what makes both
-      // genuinely per-column; every Stage 3+ atmospheric pass reads them
-      // through this same field so it inherits that change for free later.
-      pts[n++] = { x, y, lift, stripX, dy, scale, h01: 0 };
+      pts[n++] = { x, y, lift, stripX, dy, scale: scale * localScale, h01 };
     }
     pts.length = n;
     // The strips are blitted from baseY down over `dh`, so this is where the

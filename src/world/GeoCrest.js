@@ -4,7 +4,9 @@
 // driven by the 7-band spectrum -- the "geological equalizer". No canvas
 // here; BiomeManager consumes these, tests exercise them directly.
 import { clamp01, mulberry32 } from '../utils/math.js';
-import { danceOffset, DANCE_COL_W } from './MountainChoreo.js';
+import {
+  danceOffset, danceScale, columnHeight01At, DANCE_COL_W,
+} from './MountainChoreo.js';
 
 /** Smooth (cosine-interpolated) counterpart of SilhouetteGenerator's
  *  ridgeYAt -- that one rounds to the nearest sample (a visible step at
@@ -42,6 +44,20 @@ export function danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever = 0) {
   const o0 = danceOffset(c0, tSec, groove, kick, cfg, fever);
   const o1 = danceOffset(c1, tSec, groove, kick, cfg, fever);
   return o0 * (1 - w) + o1 * w;
+}
+
+/** Smooth counterpart of MountainChoreo's danceScale (Stage 2 of the
+ *  mountain overhaul) -- same cosine-blend-across-column-centers pattern as
+ *  danceOffsetSmooth above, so the live crest polyline's per-column scale
+ *  matches the blitted columns exactly at every seam instead of stepping. */
+export function danceScaleSmooth(ridge, stripX, transient, sustain, cfg) {
+  const c0 = Math.floor((stripX - DANCE_COL_W / 2) / DANCE_COL_W) * DANCE_COL_W + DANCE_COL_W / 2;
+  const c1 = c0 + DANCE_COL_W;
+  const f = (stripX - c0) / DANCE_COL_W;
+  const w = (1 - Math.cos(clamp01(f) * Math.PI)) / 2;
+  const s0 = danceScale(columnHeight01At(ridge, c0), transient, sustain, cfg);
+  const s1 = danceScale(columnHeight01At(ridge, c1), transient, sustain, cfg);
+  return s0 * (1 - w) + s1 * w;
 }
 
 export const GEO_FEATURE_TYPES = ['cliff', 'arete', 'knob', 'outcrop', 'terrace'];

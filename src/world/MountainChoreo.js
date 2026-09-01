@@ -30,11 +30,18 @@ import { clamp01 } from '../utils/math.js';
 // legible motion of the two, so it's the one that has to nearly vanish at
 // depth. waveLen/waveHz/phase are unchanged and still co-prime-ish across
 // layers, so the ranges never move in lockstep.
+// sharpen/swell (mountain overhaul Stage 2): per-column VERTICAL SCALE gain,
+// on top of the waveAmp/bounceAmp offset dance above -- a summit sharpens on
+// the kick, a flank swells on sustained energy, foot-anchored so bases stay
+// glued to the ground. Same far-is-calmer bias as the offset dance for the
+// same reason (parallax already tells the eye a distant range should barely
+// move), but a full order of magnitude smaller: this is a shape change on
+// top of an existing motion, not a second competing dance.
 export const DANCE_LAYERS = {
-  L2: { waveAmp: 2.6, bounceAmp: 1.1, waveLen: 430, waveHz: 0.10, phase: 0.0, delaySec: 0.0 },
-  L3: { waveAmp: 4.4, bounceAmp: 2.8, waveLen: 350, waveHz: 0.12, phase: 1.3, delaySec: 0.05 },
-  L4: { waveAmp: 6.6, bounceAmp: 5.6, waveLen: 290, waveHz: 0.15, phase: 2.6, delaySec: 0.11 },
-  L5: { waveAmp: 8.4, bounceAmp: 8.0, waveLen: 250, waveHz: 0.18, phase: 4.0, delaySec: 0.17 },
+  L2: { waveAmp: 2.6, bounceAmp: 1.1, waveLen: 430, waveHz: 0.10, phase: 0.0, delaySec: 0.0, sharpen: 0.04, swell: 0.03 },
+  L3: { waveAmp: 4.4, bounceAmp: 2.8, waveLen: 350, waveHz: 0.12, phase: 1.3, delaySec: 0.05, sharpen: 0.07, swell: 0.05 },
+  L4: { waveAmp: 6.6, bounceAmp: 5.6, waveLen: 290, waveHz: 0.15, phase: 2.6, delaySec: 0.11, sharpen: 0.11, swell: 0.07 },
+  L5: { waveAmp: 8.4, bounceAmp: 8.0, waveLen: 250, waveHz: 0.18, phase: 4.0, delaySec: 0.17, sharpen: 0.14, swell: 0.09 },
 };
 
 // Strip-space slice width for the ridge wave. Halved from 128: each slice
@@ -66,6 +73,82 @@ export function danceOffset(stripX, tSec, groove, kick, cfg, fever = 0) {
 }
 
 export const FEVER_DANCE_GAIN = 2.4; // fever now cranks the dance up to ~3.4x
+
+/** Per-DANCE_COL_W-wide column, how tall that column's own peak reads
+ *  relative to the rest of THIS ridge, 0..1 (0 = this range's own flattest
+ *  column, 1 = its tallest). Stage 2's per-column deformation reads this so
+ *  a squat foothill barely deforms while this range's own summit sharpens
+ *  hardest, regardless of how tall the range is overall (already handled
+ *  separately by growthMul/scale). Circularly blurred across column seams
+ *  -- the strip tiles, so column 0's neighbor on one side is the last
+ *  column -- and memoized directly on the ridge object: it's derived
+ *  purely from the baked noise, so it can never change after the strip is
+ *  baked, and every caller (blit loop, smooth crest) shares one array. */
+export function columnHeights01(ridge) {
+  if (!ridge) return null;
+  if (ridge._colH01) return ridge._colH01;
+  const { heights, step } = ridge;
+  const width = heights.length * step;
+  const nCols = Math.max(1, Math.round(width / DANCE_COL_W));
+  const raw = new Float32Array(nCols);
+  for (let c = 0; c < nCols; c++) {
+    const x0 = c * DANCE_COL_W;
+    const x1 = x0 + DANCE_COL_W;
+    let peak = -Infinity;
+    for (let x = x0; x < x1; x += Math.max(1, step)) {
+      const i = Math.min(heights.length - 1, Math.floor(x / step));
+      if (heights[i] > peak) peak = heights[i];
+    }
+    raw[c] = peak === -Infinity ? 0 : peak;
+  }
+  // Circular box blur, radius 1 -- wraps at both ends since the strip tiles.
+  const blurred = new Float32Array(nCols);
+  for (let c = 0; c < nCols; c++) {
+    blurred[c] = (raw[(c - 1 + nCols) % nCols] + raw[c] + raw[(c + 1) % nCols]) / 3;
+  }
+  let lo = Infinity, hi = -Infinity;
+  for (const v of blurred) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  const span = hi - lo;
+  const out = new Float32Array(nCols);
+  for (let c = 0; c < nCols; c++) out[c] = span > 1e-6 ? (blurred[c] - lo) / span : 0.5;
+  ridge._colH01 = out;
+  return out;
+}
+
+/** columnHeights01, sampled at strip-space x (wraps at the ridge's own
+ *  width -- any real x, including negative or scrolled-past-the-tile,
+ *  reads the correct column). */
+export function columnHeight01At(ridge, x) {
+  const cols = columnHeights01(ridge);
+  if (!cols) return 0;
+  const n = cols.length;
+  const c = ((Math.floor(x / DANCE_COL_W) % n) + n) % n;
+  return cols[c];
+}
+
+/**
+ * Per-column vertical SCALE multiplier (Stage 2 of the mountain overhaul):
+ * >=1 always, so a column can only grow, never invert or shrink below its
+ * baked height -- foot-anchored growth reads as the range breathing, a
+ * shrink would read as it sinking into the ground. Both terms are strictly
+ * non-negative and non-oscillating (h01, transient, sustain all live in
+ * 0..1, and h01^2.2 / h01*(1-h01) never go negative), which is what keeps
+ * this safely independent of ridgeSwell01's phase-only gate -- nothing
+ * about this function's OWN timing decides when a column is at the top of
+ * its swing, only how far THIS column specifically grows once it's there.
+ * @param {number} h01 this column's own relative peak height (columnHeight01At)
+ * @param {number} transient 0..1, the kick envelope (sharpens summits)
+ * @param {number} sustain 0..1, slow-settled energy (swells flanks)
+ * @param {object} cfg a DANCE_LAYERS entry (reads .sharpen/.swell)
+ */
+export function danceScale(h01, transient, sustain, cfg) {
+  const hh = clamp01(h01);
+  const t = clamp01(transient);
+  const s = clamp01(sustain);
+  const sharpen = cfg?.sharpen ?? 0;
+  const swell = cfg?.swell ?? 0;
+  return 1 + sharpen * t * Math.pow(hh, 2.2) + swell * s * 4 * hh * (1 - hh);
+}
 
 /** The range Midio takes his cue from: the furthest, biggest-moving skyline
  *  (see DANCE_LAYERS -- L2 is the furthest, and leads the others on the
