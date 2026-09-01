@@ -38,6 +38,9 @@ import {
   ridgeYSmooth, danceOffsetSmooth, danceScaleSmooth, assignBandFeatures, geoCrestOffset,
 } from './GeoCrest.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
+import {
+  occludedFraction, stepDistantWave, swellCrest,
+} from './DistantWave.js';
 import { FlourishGate } from '../sim/FlourishGate.js';
 import {
   seaLineY, oceanRowYs, waveRows, rowAlpha, OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC,
@@ -266,6 +269,28 @@ const CONNECTOR_ALPHA = 0.55;
 // not everything below it.
 const CONNECTOR_BAND_PX = 120;
 
+// --- Distant wave: what stands in for a buried dancing ridge --------------
+// See DistantWave.js. Amplitude is a fraction of the far range's own relief,
+// so the swell is scaled to the scene it replaces rather than to a fixed px
+// number that would read as a ripple in one framing and a tidal wave in
+// another. Floored/capped so it survives a flat range and can't tower.
+const WAVE_AMP_FRAC = 0.20;
+const WAVE_AMP_MIN_PX = 10;
+const WAVE_AMP_MAX_PX = 46;
+// Where the swell sits: a little above the ridge's mean crest, so the water's
+// own crests break the near skyline (which is the entire point -- a wave
+// drawn where the ridge already lost the argument would be invisible too).
+const WAVE_LIFT_PX = 26;
+// Quiet, like the connector country: this is the back of the scene seen
+// through a lot of air, not a feature competing with the ranges in front.
+const WAVE_ALPHA = 0.40;
+// How far below its crest the body fills before dissolving. The near ranges
+// cover most of it; this only has to reach past their skyline.
+const WAVE_BAND_PX = 150;
+// A thin sunlit line on the crest itself -- the one cue that reads as water
+// rather than as another hazy ridge.
+const WAVE_GLINT_ALPHA = 0.30;
+
 // The ground must never sink into the void, whatever the biome's silhouette
 // started at. Chosen to clear the film-grade wash and the vignette that
 // still follow it -- both only ever push toward black, and the ground sits
@@ -353,6 +378,14 @@ export class BiomeManager {
       this.profiles = [...this.profiles, customBiome];
     }
     this._lastSectionIdx = null;
+    // Distant wave (DistantWave.js): how buried L2 currently is, whether the
+    // swell has taken its place, and how far through the crossfade we are.
+    // The occlusion figure is refreshed every frame from draw()'s geometry,
+    // but only ever ACTED on at a section boundary.
+    this._ridgeOcclusionRaw = 0;
+    this._ridgeOcclusion01 = 0;
+    this._distantWaveOn = false;
+    this._distantWaveMix = 0;
     this._cutFlash = 0;
     this._shutterStartMs = -Infinity;
     this._shutterBarMs = 500;
@@ -1501,6 +1534,28 @@ export class BiomeManager {
       }
       this._lastSectionIdx = sectionIdx;
     }
+    // The crossfade the boundary started (the decision above is the only
+    // thing that moves the target; this just walks toward it).
+    // Smooth the raw per-frame occlusion draw() measured. The ridge is
+    // dancing, so any single frame's figure is noisy; a ~1s one-pole means
+    // the number a boundary reads describes the FRAMING rather than whichever
+    // part of the swing the boundary happened to land on.
+    if (typeof this._ridgeOcclusionRaw === 'number') {
+      const k = 1 - Math.exp(-dtSec / 1.0);
+      this._ridgeOcclusion01 += (this._ridgeOcclusionRaw - this._ridgeOcclusion01) * k;
+    }
+    // Distant wave. `sectionJustChanged` is the ONE gate on the horizon
+    // changing its mind about being rock or water: asking per-frame would
+    // flip the back of the scene every time a tall column danced past the
+    // threshold, whereas this lands every swap on a musical boundary,
+    // alongside the transition FX that already cover it. Every other frame
+    // only walks the crossfade the last boundary started.
+    const wave = stepDistantWave(
+      { on: this._distantWaveOn, mix: this._distantWaveMix },
+      { occlusion01: this._ridgeOcclusion01, sectionChanged: this.sectionJustChanged, dtSec },
+    );
+    this._distantWaveOn = wave.on;
+    this._distantWaveMix = wave.mix;
     this._cutFlash = Math.max(0, this._cutFlash - dtSec / 0.25);
 
     // Song-form recognition: glide the whole palette toward the active
@@ -1952,6 +2007,11 @@ export class BiomeManager {
     // atmosphere cue to not read as flat, at a third of the cost.
     const hazeLayers = this._perf ? this._perf.hazeLayers : 3;
 
+    // Behind every range: the swell that takes over the horizon when the
+    // view angle has buried the dancing ridge. Also where L2's occlusion is
+    // measured for the next section boundary's decision, so this has to run
+    // whether or not the wave is currently up.
+    this._drawDistantWave(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t);
     this._drawLayer(ctx, canvas, 'L2', scrollX0, tintL2, t, A, B);
     if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
     // Far-distance vignettes: between the farthest range and everything
@@ -4377,6 +4437,122 @@ export class BiomeManager {
    * low alpha with no crest stroke of its own, so it reads as distance rather
    * than as another skyline competing with the one it's rescuing.
    */
+  /**
+   * The distant swell that stands in for the dancing ridge when the view
+   * angle has buried it (DistantWave.js).
+   *
+   * Two jobs, deliberately in one pass because both need the same geometry:
+   *
+   *  1. **Measure.** Every frame, how much of L2 the nearer ranges are
+   *     eating, into `_ridgeOcclusionRaw`. update() smooths it and, at a
+   *     section boundary and nowhere else, lets it decide the swap.
+   *  2. **Draw.** Whatever the crossfade currently says. Drawn BEFORE L2 --
+   *     behind every range -- so the near hills occlude the swell's body and
+   *     only its crests break their skyline. That's what makes it read as
+   *     water seen past the mountains rather than a band laid over the sky.
+   *
+   * The measurement is never gated: the decision has to be made on the same
+   * evidence at every shed level, or dropping a rung mid-song would silently
+   * change what the next boundary decides. Only the drawing sheds, on the
+   * same rung as the connector country it partners with.
+   */
+  _drawDistantWave(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t) {
+    const profile = t > 0.5 ? B : A;
+    const strips = this.stripsFor(profile.name);
+    if (!strips) return;
+    const { from: heightMulA = 1, to: heightMulB = 1 } = this._drawHeightMul || {};
+    const heightMul = t > 0.5 ? heightMulB : heightMulA;
+    const energy = profile.terrainEnergy ?? 1;
+    const yOff = this._zoomedGroundY(canvas) + 40 - canvas.height;
+    const dancy = this._crestPoints(canvas, strips.L2, scrollX0, yOff, 'L2', energy, heightMul);
+    if (!dancy) return;
+    const nearer = [
+      this._crestPoints(canvas, strips.L3, scrollX1, yOff, 'L3', energy, heightMul),
+      this._crestPoints(canvas, strips.L4, scrollX2, yOff, 'L4', energy, heightMul),
+    ].filter(Boolean);
+    if (!nearer.length) return;
+    const skyline = dancy.pts.map((_, i) => {
+      let top = Infinity;
+      for (const g of nearer) if (g.pts[i] && g.pts[i].y < top) top = g.pts[i].y;
+      return top;
+    });
+    this._ridgeOcclusionRaw = occludedFraction(dancy.pts, skyline);
+
+    const mix = this._distantWaveMix || 0;
+    this.distantWaveDebug = { occlusion01: this._ridgeOcclusion01, on: this._distantWaveOn, mix };
+    if (mix < 0.01) return;
+    if (this._perf && !this._perf.heavyPostFx) return;
+
+    let sumY = 0, minY = Infinity, maxY = -Infinity;
+    for (const p of dancy.pts) { sumY += p.y; if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y; }
+    const meanY = sumY / dancy.pts.length;
+    const relief = Math.max(0, maxY - minY);
+    const ampPx = Math.min(WAVE_AMP_MAX_PX, Math.max(WAVE_AMP_MIN_PX, relief * WAVE_AMP_FRAC));
+    // Where the swell sits. The obvious answer -- the ridge's own crest line
+    // -- is wrong, and wrong for the same reason the feature exists: a ridge
+    // this pass has just decided is BURIED is, by definition, below the
+    // skyline that buried it, so a wave drawn there is hidden too. So the
+    // baseline is taken from whichever line is higher on screen, the ridge's
+    // mean crest or the occluding skyline's, with the skyline candidate
+    // lifted by a full amplitude so the swell's troughs clear it rather than
+    // only its crests. Clamped out of the upper sky band so a very tall near
+    // range can't push the sea up among the stars.
+    let sumSky = 0;
+    for (const y of skyline) sumSky += y;
+    const meanSky = sumSky / skyline.length;
+    const baselineY = Math.max(
+      canvas.height * 0.15,
+      Math.min(meanY - WAVE_LIFT_PX, meanSky - ampPx - WAVE_LIFT_PX),
+    );
+
+    const pts = swellCrest({
+      width: canvas.width, baselineY, ampPx, tSec: this.tSec,
+      scrollX: scrollX0, stepPx: CREST_STEP_PX, energy01: clamp01(energy),
+    });
+    if (pts.length < 2) return;
+
+    // Water at this distance is mostly sky: the same air color every range's
+    // body is washed toward (Stage 3), nudged toward the biome's own halo so
+    // the sea belongs to this world rather than being one grey everywhere.
+    const base = ensureMinLightness(
+      this.lerpCache.get(this._airColor || '#5a6b80', this._rotated(profile.celestial.haloColor), 0.22),
+      0.22,
+    );
+    const { r, g, b } = hexToRgb(base);
+    const alpha = WAVE_ALPHA * mix * this.budget;
+    if (alpha < 0.01) return;
+
+    ctx.save();
+    const bottom = baselineY + ampPx + WAVE_BAND_PX;
+    const grad = ctx.createLinearGradient(0, baselineY - ampPx, 0, bottom);
+    grad.addColorStop(0, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
+    grad.addColorStop(0.5, `rgba(${r},${g},${b},${(alpha * 0.7).toFixed(3)})`);
+    grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.lineTo(pts[pts.length - 1].x, bottom);
+    ctx.lineTo(pts[0].x, bottom);
+    ctx.closePath();
+    ctx.fill();
+
+    // The crest glint. Without it this is just another hazy ridge -- the
+    // moving highlight on the swell is the whole reason the eye reads water
+    // and keeps watching the back of the scene.
+    if (!this.reducedFlash) {
+      ctx.globalAlpha = WAVE_GLINT_ALPHA * mix * this.budget;
+      ctx.strokeStyle = this._rotated(profile.celestial.haloColor);
+      ctx.lineWidth = 1.4;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   _drawConnectorHills(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t) {
     if (this._perf && !this._perf.heavyPostFx) return;
     const profile = t > 0.5 ? B : A;
@@ -4423,7 +4599,12 @@ export class BiomeManager {
       if (pts.length < 2) continue;
       // Wider camera pull-back also earns a stronger connector wash -- the
       // wide shot is exactly where the flat gap it bridges is most visible.
-      const alpha = CONNECTOR_ALPHA * span.depth01 * this.budget * (1 + 0.5 * clamp01(this.pullback01 || 0));
+      // The distant wave answers the same complaint these hills do -- a
+      // sightline broken by a buried ridge -- so when the swell has taken
+      // the horizon, the country stands down rather than stacking a second
+      // fix on top of the first.
+      const alpha = CONNECTOR_ALPHA * span.depth01 * this.budget
+        * (1 + 0.5 * clamp01(this.pullback01 || 0)) * (1 - (this._distantWaveMix || 0));
       this.connectorDebug.alpha = Math.max(this.connectorDebug.alpha, alpha);
       if (alpha < 0.01) continue;
 
