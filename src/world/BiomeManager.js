@@ -89,7 +89,9 @@ import { Atmosphere } from './Atmosphere.js';
 import { CodaDirector } from '../sim/CodaDirector.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
-import { computeLight, celestialScreenPos, groundGlowLights, CELESTIAL_DEFAULT_XFRAC } from '../render/LightField.js';
+import {
+  computeLight, celestialScreenPos, groundGlowLights, rimGain, CELESTIAL_DEFAULT_XFRAC,
+} from '../render/LightField.js';
 import {
   clamp, clamp01, smoothstep, mulberry32, hashSeed, lerpHue, lerp,
 } from '../utils/math.js';
@@ -150,6 +152,12 @@ const STRATA_DARKEN = 0.17;
 // before the ground is at its own full color. Kept lighter than any range's
 // AERIAL_PULL -- the ground is the NEAREST thing in the scene, so it should
 // only lose color right at the horizon where it meets the ranges.
+// Crest rim: how far the biome's accent is dragged toward the light's own
+// color, and how many stops the falloff gradient gets. Nine is well past the
+// point where the ramp is visually smooth; the falloff is quadratic and the
+// stroke is at most 7.5px wide, so nothing here needs fine resolution.
+const RIM_LIGHT_MIX = 0.35;
+const RIM_GRADIENT_STOPS = 8;
 const GROUND_AERIAL_ALPHA = 0.42;
 const GROUND_AERIAL_FALLOFF = 0.38;
 // Aerial perspective, optical half: how much each layer's strip bake is
@@ -4425,9 +4433,33 @@ export class BiomeManager {
       const passes = [[7.5, 0.10], [3.2, 0.22], [1.1, 0.38]];
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
+      // A rim is light spilling over an edge, so it takes its color from the
+      // LIGHT as much as from the biome's own accent. Stroked in raw
+      // `edgeLight` it was a marker pen tracing the mountain in whatever
+      // saturated hue the palette happened to name -- which on a bright
+      // palette reads as neon piping rather than as a backlit ridge.
+      const rimColor = this.light
+        ? this.lerpCache.get(edgeLight, this.light.colorHex, RIM_LIGHT_MIX)
+        : edgeLight;
+      const { r: rr, g: rg, b: rb } = hexToRgb(rimColor);
+      // ...and it has to fall off away from the source. A constant alpha all
+      // the way across the frame is the other half of why it read as an
+      // outline: real rim light is strongest where the ridge faces the light
+      // and nearly gone on the far side. One horizontal gradient per pass
+      // does that in the same single stroke call the flat version cost.
+      const lightX = this.light ? this.light.x : canvas.width * 0.5;
+      const rimGrad = (baseA) => {
+        const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
+        for (let s = 0; s <= RIM_GRADIENT_STOPS; s++) {
+          const u = s / RIM_GRADIENT_STOPS;
+          const a = baseA * rimGain(u * canvas.width, lightX, canvas.width);
+          grad.addColorStop(u, `rgba(${rr},${rg},${rb},${a.toFixed(4)})`);
+        }
+        return grad;
+      };
       for (const [lw, a] of passes) {
-        ctx.strokeStyle = edgeLight;
-        ctx.globalAlpha = a * alpha * crestMul;
+        ctx.strokeStyle = rimGrad(a * alpha * crestMul);
+        ctx.globalAlpha = 1;
         ctx.lineWidth = lw;
         ctx.beginPath();
         for (let i = 0; i < pts.length; i++) {
