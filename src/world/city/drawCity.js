@@ -96,8 +96,8 @@ export function drawCityWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, ph
   });
   const neonHex = A.edgeLight || B.edgeLight || null;
 
-  const stripsA = mgr.strips.get(from);
-  const stripsB = mgr.strips.get(to);
+  const stripsA = mgr.stripsFor(from);
+  const stripsB = mgr.stripsFor(to);
   const hazeLayers = mgr._perf ? mgr._perf.hazeLayers : 3;
   const arc = { hazeWarm: 0.15 };
 

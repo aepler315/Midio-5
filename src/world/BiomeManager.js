@@ -1073,11 +1073,25 @@ export class BiomeManager {
     if (!this._ridgePortrait) {
       this._ridgePortrait = extractRidgePortrait(this.energyCurves, this.durationMs);
     }
+    this.strips = new Map();
+    for (const b of this.profiles) {
+      this.strips.set(b.name, this._buildStripSet(b));
+    }
+  }
+
+  /** Bake one profile's L2-L5 strip set. Extracted from _rebuildStrips so
+   *  stripsFor() can lazily build the same thing on a cache miss (a profile
+   *  name not eagerly baked -- see Stage 1's "only bake what's cast"). */
+  _buildStripSet(b) {
+    const songSeed = this.songSeed ?? 1;
+    const shadeMode = 'rendered';
+    if (!this._ridgePortrait) {
+      this._ridgePortrait = extractRidgePortrait(this.energyCurves, this.durationMs);
+    }
     const portrait = this._ridgePortrait;
     const worldKind = this.world?.kind || 'alpine';
     const noAerial = this.world?.aerial === false;
-    this.strips = new Map();
-    for (const b of this.profiles) {
+    {
       const seed = hashSeed(b.name);
       const el = b.edgeLight || null;
       let strips;
@@ -1157,8 +1171,22 @@ export class BiomeManager {
         decorateStrip(strips.L4, landmarkKey, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
         decorateStrip(strips.L5, landmarkKey, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
       }
-      this.strips.set(b.name, strips);
+      return strips;
     }
+  }
+
+  /** Lazy-bake indirection over this.strips: a profile name eagerly baked by
+   *  _rebuildStrips() is a plain lookup; a name not yet baked (Stage 1's
+   *  "only bake what's cast" -- a variant not chosen for any section) is
+   *  built on first use and cached, so every call site gets the same strip
+   *  set whether it was baked up front or on demand. */
+  stripsFor(key) {
+    let strips = this.strips.get(key);
+    if (strips) return strips;
+    const profile = this._profile(key);
+    strips = this._buildStripSet(profile);
+    this.strips.set(key, strips);
+    return strips;
   }
 
   _profile(name) {
@@ -1546,6 +1574,13 @@ export class BiomeManager {
     // the rest of the frame, so it's stashed on `this` rather than threaded
     // through every helper's signature.
     this._perf = perf;
+    // _crestPoints is re-derived by _drawRidgeVolume, _drawCrest, and
+    // _drawConnectorHills for the same layer -- up to ~14x/frame across
+    // L2-L5 with a crossfade active. Everything within one frame that would
+    // make it recompute (strip identity, scrollX, layerKey, terrainEnergy)
+    // is captured in the cache key, so this is safe to clear once here and
+    // let every caller below share one derivation per unique input.
+    this._crestCache = new Map();
     const phenomenaFull = perf ? perf.phenomenaFull : true;
     const { from, to, t } = this.currentBlend || { from: this.sections[0].profile, to: this.sections[0].profile, t: 1 };
     const A = this._profile(from), B = this._profile(to);
@@ -3889,7 +3924,7 @@ export class BiomeManager {
   }
 
   _drawLayer(ctx, canvas, layerKey, scrollX, tint, t, A, B) {
-    const stripsA = this.strips.get(A.name), stripsB = this.strips.get(B.name);
+    const stripsA = this.stripsFor(A.name), stripsB = this.stripsFor(B.name);
     const zGroundY = this._zoomedGroundY(canvas);
     // Lift the ranges so their ridges actually clear the ground band --
     // strip bottoms stay tucked safely beneath the ground fill.
@@ -4025,6 +4060,18 @@ export class BiomeManager {
     if (!strip.ridge) return null;
     const cfg = DANCE_LAYERS[layerKey];
     if (!cfg) return null;
+    // Shared per-frame cache (cleared once at the top of draw()): this same
+    // (strip, layerKey, scrollX, terrainEnergy) combination is re-derived by
+    // _drawRidgeVolume, _drawCrest, and _drawConnectorHills for the same
+    // frame -- up to ~14x across L2-L5 with a crossfade active. yOff/canvas
+    // are constant for the whole frame so they don't need to be in the key.
+    const cache = this._crestCache;
+    let byStrip = cache && cache.get(strip);
+    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}`;
+    if (byStrip) {
+      const hit = byStrip.get(cacheKey);
+      if (hit) return hit;
+    }
     const nowMs = this.tSec * 1000;
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
     const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
@@ -4040,18 +4087,33 @@ export class BiomeManager {
 
     const pts = new Array(Math.ceil(canvas.width / CREST_STEP_PX) + 3);
     let n = 0;
+    let crestY = Infinity;
     for (let x = -CREST_STEP_PX; x <= canvas.width + CREST_STEP_PX; x += CREST_STEP_PX) {
       const stripX = scrollX + x;
       const u = (((stripX % w) + w) % w);
       const yR = ridgeYSmooth(strip.ridge, u) * scale;
       const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever) * terrainEnergy;
       const lift = (isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
-      pts[n++] = { x, y: baseY + yR + dy - lift, lift, stripX };
+      const y = baseY + yR + dy - lift;
+      if (y < crestY) crestY = y;
+      // scale/h01 are stubbed here (uniform per-strip scale, no per-column
+      // height read) -- Stage 2 (ridge deformation) is what makes both
+      // genuinely per-column; every Stage 3+ atmospheric pass reads them
+      // through this same field so it inherits that change for free later.
+      pts[n++] = { x, y, lift, stripX, dy, scale, h01: 0 };
     }
     pts.length = n;
     // The strips are blitted from baseY down over `dh`, so this is where the
     // range's body actually ends and the ground band swallows it.
-    return { pts, baseY, bottomY: baseY + dh };
+    const geom = {
+      pts, baseY, bottomY: baseY + dh,
+      footY: baseY + dh, crestY, dh, stripHeight: strip.height,
+    };
+    if (cache) {
+      if (!byStrip) { byStrip = new Map(); cache.set(strip, byStrip); }
+      byStrip.set(cacheKey, geom);
+    }
+    return geom;
   }
 
   _drawCrest(ctx, canvas, strip, scrollX, yOff, layerKey, edgeLight, alpha, terrainEnergy = 1) {
@@ -4113,7 +4175,7 @@ export class BiomeManager {
   _drawConnectorHills(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t) {
     if (this._perf && !this._perf.heavyPostFx) return;
     const profile = t > 0.5 ? B : A;
-    const strips = this.strips.get(profile.name);
+    const strips = this.stripsFor(profile.name);
     if (!strips) return;
     const yOff = this._zoomedGroundY(canvas) + 40 - canvas.height;
     const dancy = this._crestPoints(canvas, strips.L2, scrollX0, yOff, 'L2', profile.terrainEnergy ?? 1);
@@ -4236,9 +4298,7 @@ export class BiomeManager {
     if (strength <= 0) return;
     const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy);
     if (!geom) return;
-    const { pts, bottomY } = geom;
-    let crestY = Infinity;
-    for (const p of pts) if (p.y < crestY) crestY = p.y;
+    const { pts, bottomY, crestY } = geom;
     if (!(bottomY > crestY)) return;
 
     // The body path: the skyline, then straight down and back along the
