@@ -57,8 +57,8 @@ export function drawFathomWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, 
   const unravel = mgr.unravel || 0;
   const scroll = (key) => worldX * CodaDirector.delaminateRatio(LAYER_RATIOS[key], unravel);
 
-  const stripsA = mgr.strips.get(from);
-  const stripsB = mgr.strips.get(to);
+  const stripsA = mgr.stripsFor(from);
+  const stripsB = mgr.stripsFor(to);
 
   // Depth darkening instead of aerial perspective: far layers darken
   // toward the deep water color rather than fading toward sky.

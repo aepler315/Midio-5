@@ -130,6 +130,37 @@ export function lithologyFromShares(shares) {
   return { basement, body, edge, crest, air, scoop, hypso, foot, mid, tip, bands: b };
 }
 
+// Per-section landform (mountain overhaul Stage 1): the same 5-rung ladder
+// CHARACTER_SCHEMES' three named triples already window into (monumental =
+// rungs 0-2, classic = 1-3, jagged = 2-4) -- a section's own spectral
+// position + relative energy picks which 3-rung window it gets, so a
+// bright, energetic chorus can land on true spires while a dark, quiet
+// verse settles on plateau/massif, without inventing a second landform
+// vocabulary the rest of the game doesn't already know.
+export const LANDFORM_LADDER = ['plateau', 'massif', 'range', 'crags', 'spires'];
+
+/** Which 3-rung window of LANDFORM_LADDER a section lands on, from its
+ *  spectral position (bass-heavy 0 .. bright 1) and its energy relative to
+ *  the rest of the song (quiet 0 .. loud 1). Both bias the window the same
+ *  direction (brighter/louder -> higher rungs -> spires) so the two signals
+ *  reinforce rather than fight. */
+export function landformWindow(spectralPos01 = 0.5, relEnergy01 = 0.5) {
+  const offset = Math.round(clamp01(0.5 * clamp01(spectralPos01) + 0.5 * clamp01(relEnergy01)) * 2);
+  return LANDFORM_LADDER.slice(offset, offset + 3);
+}
+
+/** Each value's rank against the group's own min..max, 0..1 -- scale
+ *  invariant: doubling every input changes none of the outputs, so a quiet
+ *  song's chorus still reads as its biggest section and a loud song's
+ *  bridge still reads as a lull. A group with no spread (every value
+ *  equal) reads as 0.5 everywhere rather than an arbitrary 0 or 1. */
+export function relEnergyLadder(energies) {
+  if (!energies || energies.length === 0) return [];
+  const lo = Math.min(...energies), hi = Math.max(...energies);
+  const span = hi - lo;
+  return energies.map((e) => (span > 1e-6 ? clamp01((e - lo) / span) : 0.5));
+}
+
 /** Tilt the three-term mass toward the layer's geological register. */
 export function layerLithology(litho, layerKey = 'L2') {
   const src = litho || lithologyFromShares(null);
@@ -202,14 +233,23 @@ function brightnessOf(bands) {
  * Phrase-scale energy wave, 0..1, length PORTRAIT_SAMPLES. Uses the song's
  * own normalized energy so a quiet master and a brickwalled one draw the
  * same landmarks.
+ *
+ * `window` ({startMs, endMs}), when given, samples only that span of the
+ * song (a single section's own timeline) instead of the whole track --
+ * everything else about the read (normalization, blur) is identical, so a
+ * windowed read and a whole-song read differ only in WHERE they look.
+ * Omitted (the default), this is byte-identical to the original whole-song
+ * call -- existing callers/tests are unaffected.
  */
-export function sampleEnergyWave(energyCurves, durationMs, samples = PORTRAIT_SAMPLES) {
+export function sampleEnergyWave(energyCurves, durationMs, samples = PORTRAIT_SAMPLES, window = null) {
   const n = Math.max(8, samples | 0);
   const wave = new Float32Array(n);
-  const dur = Math.max(1, durationMs);
+  const winStart = window ? Math.max(0, window.startMs) : 0;
+  const winEnd = window ? Math.min(durationMs, window.endMs) : durationMs;
+  const dur = Math.max(1, winEnd - winStart);
   const hasNorm = typeof energyCurves.globalEnergyNorm === 'function';
   for (let i = 0; i < n; i++) {
-    const tMs = (i / Math.max(1, n - 1)) * dur;
+    const tMs = winStart + (i / Math.max(1, n - 1)) * dur;
     const e = hasNorm
       ? energyCurves.globalEnergyNorm(tMs, FLAT_WEIGHTS)
       : energyCurves.globalEnergy(tMs, FLAT_WEIGHTS);
@@ -381,19 +421,26 @@ function smoothSpine(wave) {
  *
  * @param {import('../audio/EnergyCurves.js').EnergyCurves|null} energyCurves
  * @param {number} durationMs
+ * @param {{startMs:number,endMs:number}|null} window restrict the read to
+ *   one span of the song (a section's own timeline) instead of the whole
+ *   track. Omitted (the default) is byte-identical to a whole-song read.
  */
-export function extractRidgePortrait(energyCurves, durationMs) {
+export function extractRidgePortrait(energyCurves, durationMs, window = null) {
   if (!energyCurves || !(durationMs > 1000)) return null;
   if (!energyCurves.bands || !(energyCurves.n >= 8)) return null;
 
+  const winStart = window ? Math.max(0, window.startMs) : 0;
+  const winEnd = window ? Math.min(durationMs, window.endMs) : durationMs;
+  const winDur = Math.max(1, winEnd - winStart);
+
   const shares = meanShares(energyCurves);
-  const wave = sampleEnergyWave(energyCurves, durationMs);
+  const wave = sampleEnergyWave(energyCurves, durationMs, PORTRAIT_SAMPLES, window);
   const rawLandmarks = findLandmarks(wave);
   const hasSampleAll = typeof energyCurves.sampleAll === 'function';
 
   const landmarks = rawLandmarks.map((lm) => {
     const t01 = lm.i / Math.max(1, wave.length - 1);
-    const tMs = t01 * durationMs;
+    const tMs = winStart + t01 * winDur;
     const bands = hasSampleAll ? energyCurves.sampleAll(tMs) : null;
     return {
       t01,

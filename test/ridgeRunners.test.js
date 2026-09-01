@@ -73,3 +73,36 @@ test('off-screen runners are culled against the canvas width', () => {
   const ps = rr.positionsAt(strip, 0, 200, 0, DANCE); // tiny viewport
   for (const p of ps) assert.ok(p.x >= -40 && p.x <= 240);
 });
+
+// Mountain overhaul Stage 1/2 fix: runners used to always read the ridge at
+// scale=1 (ridgeYAt returns raw, unscaled strip pixels) while the range
+// itself is drawn at `dh = strip.height * growthMul` -- so whenever orogeny
+// growth, camera pull-back, or now per-section heightMul scales the range
+// away from its baked height, the runners visibly drifted off the ridge
+// they're supposed to be standing on. positionsAt's new `scale` param
+// (BiomeManager passes the same scale _crestPoints computed for that exact
+// strip that frame) fixes it: the ridge reading itself has to be scaled,
+// not just baseY.
+test('runners track a scaled range (growthMul != 1) -- the pre-existing drift bug', () => {
+  // Compare the SAME runners (same seed, same tSec, so stride/hop/dance are
+  // identical) at two different scales. Everything about positionsAt's
+  // formula except the `ridgeYAt(...) * scale` term is scale-independent,
+  // so the y delta between the two calls must equal exactly the delta that
+  // term produces -- if the ridge reading were still hard-coded to scale=1
+  // (the pre-existing bug), this delta would be ~0 instead, and runners
+  // would visibly drift off a range drawn at anything but its baked height.
+  const strip = fakeStrip();
+  const baseY = 400;
+  const scaleA = 0.85, scaleB = 1.25;
+  const psA = new RidgeRunners(6).positionsAt(strip, 0, 1280, baseY, { ...DANCE, kick: 0 }, scaleA);
+  const psB = new RidgeRunners(6).positionsAt(strip, 0, 1280, baseY, { ...DANCE, kick: 0 }, scaleB);
+  assert.equal(psA.length, psB.length);
+  assert.ok(psA.length > 0);
+  for (let i = 0; i < psA.length; i++) {
+    const localX = ((psA[i].x % strip.width) + strip.width) % strip.width;
+    const expectedDelta = ridgeYAt(strip, localX) * (scaleB - scaleA);
+    const actualDelta = psB[i].y - psA[i].y;
+    assert.ok(Math.abs(actualDelta - expectedDelta) < 1,
+      `runner ${i}: expected the scaled-ridge delta ${expectedDelta}, got ${actualDelta}`);
+  }
+});

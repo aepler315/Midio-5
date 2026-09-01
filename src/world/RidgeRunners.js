@@ -47,8 +47,14 @@ export class RidgeRunners {
    * @param {number} canvasW visible width
    * @param {number} baseY screen-space y of the strip's top edge
    * @param {{tSec:number, groove:number, kick:number, cfg:object, fever:number}} dance
+   * @param {number} scale the same screen/strip scale _crestPoints computed
+   *   for this strip this frame (dh / strip.height) -- ridgeYAt reads raw,
+   *   unscaled strip pixels, so it has to be scaled explicitly whenever the
+   *   range is drawn taller or shorter than its baked height (orogeny growth,
+   *   pull-back, and the mountain overhaul's per-section heightMul all do
+   *   this now). Defaults to 1 for any caller that hasn't computed one.
    */
-  positionsAt(strip, scrollX, canvasW, baseY, dance) {
+  positionsAt(strip, scrollX, canvasW, baseY, dance, scale = 1) {
     const w = strip.width;
     const fever = dance.fever || 0;
     const out = [];
@@ -68,19 +74,19 @@ export class RidgeRunners {
         cast: r.cast,
         dir: r.dir,
         x: screenX,
-        y: baseY + dy + ridgeYAt(strip, localX) - stride - hop - r.cast.footY * r.cast.scale,
+        y: baseY + dy + ridgeYAt(strip, localX) * scale - stride - hop - r.cast.footY * r.cast.scale,
       });
     }
     return out;
   }
 
-  draw(ctx, strip, scrollX, canvasW, baseY, dance, alpha = 0.6) {
+  draw(ctx, strip, scrollX, canvasW, baseY, dance, alpha = 0.6, scale = 1) {
     if (!strip.ridge) return;
     if (!this._rest) {
       this._rest = new Map(RUNNER_CAST.map((c) => [c.name, computeRestLengths(c.mesh)]));
     }
     const fever = dance.fever || 0;
-    for (const p of this.positionsAt(strip, scrollX, canvasW, baseY, dance)) {
+    for (const p of this.positionsAt(strip, scrollX, canvasW, baseY, dance, scale)) {
       drawMeshPart(ctx, p.cast.mesh, this._rest.get(p.cast.name), {
         tx: p.x, ty: p.y,
         scaleX: p.cast.scale * p.dir, scaleY: p.cast.scale,

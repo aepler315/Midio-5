@@ -4,7 +4,9 @@
 // this file is the one place that knows how to render the contract.
 import { BIOMES } from './BiomeProfiles.js';
 import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
-import { extractRidgePortrait } from './RidgePortrait.js';
+import {
+  extractRidgePortrait, lithologyFromShares, landformWindow, relEnergyLadder,
+} from './RidgePortrait.js';
 import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
 import { drawCityWorld } from './city/drawCity.js';
 import { drawFarsideWorld } from './farside/drawFarside.js';
@@ -25,14 +27,16 @@ import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import {
-  DANCE_LAYERS, DANCE_COL_W, danceOffset, kickEnv, spectrumBars, orogenyHeightMul,
+  DANCE_LAYERS, DANCE_COL_W, danceOffset, danceScale, columnHeight01At, kickEnv, spectrumBars, orogenyHeightMul,
   pullbackHeightMul,
   mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER,
   massifDrawHeight, massifRidgeHeight01, massifRidgeJagPx, massifClearing01,
   MASSIF_MARKER_SPEED_PX_S, MASSIF_MARKER_LIFE_SEC, nextMassifMarkerDelaySec,
   massifEqStep,
 } from './MountainChoreo.js';
-import { ridgeYSmooth, danceOffsetSmooth, assignBandFeatures, geoCrestOffset } from './GeoCrest.js';
+import {
+  ridgeYSmooth, danceOffsetSmooth, danceScaleSmooth, assignBandFeatures, geoCrestOffset,
+} from './GeoCrest.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
 import { FlourishGate } from '../sim/FlourishGate.js';
 import {
@@ -106,6 +110,13 @@ const STAR_CATALOGUE_COUNT = 560;
 // L2 is the furthest and sits nearly half way to the sky. See the
 // layerTint() comment in draw() for why this exists.
 const AERIAL_PULL = { L2: 0.46, L3: 0.29, L4: 0.13, L5: 0 };
+// Crest rim (Stage 3 of the mountain overhaul): the backlit skyline edge
+// used to be L4/L5-only, so the two BIGGEST ranges on screen got the LEAST
+// depth treatment of the stack. Extended to L2/L3 at reduced,
+// depth-appropriate alpha -- full strength stays reserved for the near
+// anchors so the crest rim itself still reads as a depth cue, not a flat
+// outline repeated at every layer.
+const CREST_RIM_ALPHA = { L2: 0.35, L3: 0.55, L4: 1, L5: 1 };
 // Aerial perspective, optical half: how much each layer's strip bake is
 // downsampled before being stretched back up (generateSilhouette's
 // softenScale), so distant ranges lose edge acuity the same way AERIAL_PULL
@@ -113,6 +124,11 @@ const AERIAL_PULL = { L2: 0.46, L3: 0.29, L4: 0.13, L5: 0 };
 // DepthHaze already never washes it, for the same reason: it's the
 // foreground anchor the eye calibrates every other layer's depth against.
 const AERIAL_SOFTEN = { L2: 0.40, L3: 0.62, L4: 0.85, L5: 1 };
+// Section height is a draw-time multiplier, never baked (generateSilhouette's
+// own HEADROOM refit erases in-strip height changes on L2/L3 -- see the
+// mountain-overhaul plan). Range chosen so the quietest section is visibly
+// smaller and the loudest visibly taller without either reading as broken.
+const SECTION_HEIGHT_MUL = [0.88, 1.16];
 const LAYER_EQ_RATIO = 0.06; // between L1 (celestial) and L2 (far mountains)
 // Terrain footing contact shadow: layered strokes along the ridge's own
 // smooth curve approximate the soft vertical falloff a single gradient rect
@@ -463,6 +479,10 @@ export class BiomeManager {
     // traveling ridge wave through every range, and each kick sends a
     // bounce rolling from the near hills out to the far peaks.
     this._danceGroove = 0;
+    // Stage 2 (ridge deformation): a slower one-pole on _danceGroove itself
+    // -- "has this section been loud for a while", distinct from the kick's
+    // instant transient. Flanks swell on this; summits sharpen on the kick.
+    this._danceSustain = 0;
     this._danceKickMs = -Infinity;
     this._danceKickAmp = 0;
     this._danceWorldX = 0;
@@ -502,7 +522,6 @@ export class BiomeManager {
     this.songSeed = songSeed;
     this.visualStyle = 'rendered'; // set via setVisualStyle from Simulation / main
     this.strips = new Map(); // biomeName -> { L2, L3, L4, L5 }
-    this._rebuildStrips();
 
     this.fields = new Map(); // biomeName -> ParticleField
     for (const b of this.profiles) this.fields.set(b.name, new ParticleField(b.particles, canvasWidth, canvasHeight, hashSeed(b.name + 'p')));
@@ -542,6 +561,14 @@ export class BiomeManager {
     this.groundScatter = new GroundScatter(songSeed);
 
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections, structure, conductorSchedule);
+    // Strips are baked AFTER the schedule exists (moved here from right
+    // after construction's field init) so _buildStripSet can key each
+    // profile's per-label variant (lithology/landform/landmarks/heightMul --
+    // see _buildSchedule's this._profileVariants) off sections that now
+    // actually exist. setVisualStyle() also calls _rebuildStrips() directly,
+    // standalone, after this -- this._profileVariants is still whatever
+    // _buildSchedule last computed, so that path is unaffected.
+    this._rebuildStrips();
     // MIDI custom biome: cast every section into the generated world so the
     // dropped file IS the place, while stock demos keep dramaturgical casting.
     // MIDI custom biome: alpine only — city worlds keep their own palettes.
@@ -889,11 +916,72 @@ export class BiomeManager {
       return [lab, (r() * 2 - 1) * FORM_HUE_BIAS_MAX];
     }));
 
+    // Relative energy rank across THIS song's own labels (min-max, not an
+    // absolute threshold) -- so a quiet song's chorus still reads as its
+    // biggest, and a loud song's bridge still reads as a lull, regardless
+    // of the track's overall loudness.
+    const relEnergyValues = relEnergyLadder(labelEnergy);
+    const relEnergyByLabel = new Map(uniqueLabels.map((lab, i) => [lab, relEnergyValues[i]]));
+
+    // One shape recomposition per label (Stage 1 of the mountain overhaul):
+    // lithology from the label's own averaged spectrum, a landform-ladder
+    // window from spectral position + relative energy, and landmarks
+    // resampled from just that label's own first occurrence in the song
+    // (a representative instance) instead of the whole track. Alpine only --
+    // city/farside/etc. worlds keep their own single-variant look.
+    const labelShape = new Map(uniqueLabels.map((lab) => {
+      const idxs = [];
+      labels.forEach((l, i) => { if (l === lab) idxs.push(i); });
+      const shape = new Array(7).fill(0);
+      for (const i of idxs) for (let k = 0; k < 7; k++) shape[k] += shapes[i][k];
+      for (let k = 0; k < 7; k++) shape[k] /= Math.max(1, idxs.length);
+      return [lab, shape];
+    }));
+    const worldKindForVariants = this.world?.kind || 'alpine';
+    const buildVariant = worldKindForVariants === 'alpine' ? (lab) => {
+      const shape = labelShape.get(lab);
+      const rel = relEnergyByLabel.get(lab) ?? 0.5;
+      let wsum = 0, wtot = 0;
+      for (let k = 0; k < 7; k++) { wsum += shape[k] * k; wtot += shape[k]; }
+      const spectralPos01 = wtot > 1e-9 ? clamp01(wsum / (6 * wtot)) : 0.5;
+      const firstIdx = labels.indexOf(lab);
+      const window = firstIdx >= 0
+        ? { startMs: this.sections[firstIdx].startMs, endMs: this.sections[firstIdx].endMs }
+        : null;
+      const windowedPortrait = extractRidgePortrait(energyCurves, durationMs, window);
+      const litho = lithologyFromShares(shape);
+      if (windowedPortrait) windowedPortrait.lithology = litho;
+      return {
+        lithology: litho,
+        character: landformWindow(spectralPos01, rel),
+        portrait: windowedPortrait,
+        heightMul: lerp(SECTION_HEIGHT_MUL[0], SECTION_HEIGHT_MUL[1], rel),
+      };
+    } : null;
+    // Keyed by BIOME NAME, not label: biomeByLabel maps labels 1:1 to a
+    // cast biome in the common case, so a variant per name costs exactly
+    // what the cast already implies. On the rare tie (two labels casting
+    // the same biome), the first label to claim the name wins -- an
+    // acceptable, deterministic edge case rather than a second keying
+    // scheme threaded through every strip consumer.
+    this._profileVariants = buildVariant ? new Map() : null;
+    if (buildVariant) {
+      for (const lab of uniqueLabels) {
+        const name = biomeByLabel.get(lab);
+        if (!this._profileVariants.has(name)) this._profileVariants.set(name, buildVariant(lab));
+      }
+    }
+
     const seenLabels = new Set();
     this.sections.forEach((s, i) => {
       s.label = labels[i];
       s.profile = biomeByLabel.get(labels[i]);
       s.hueBias = hueByLabel.get(labels[i]);
+      s.meanEnergy = meanEnergies[i];
+      s.shape = shapes[i];
+      s.relEnergy01 = relEnergyByLabel.get(labels[i]) ?? 0.5;
+      s.heightMul = this._profileVariants?.get(s.profile)?.heightMul
+        ?? lerp(SECTION_HEIGHT_MUL[0], SECTION_HEIGHT_MUL[1], s.relEnergy01);
       // Recognition: re-entering a label seen earlier snaps back into the
       // familiar place (a cut of recognition) rather than fading somewhere
       // new. First occurrence keeps its novelty-derived transition.
@@ -1039,7 +1127,8 @@ export class BiomeManager {
   _blend(nowMs) {
     const idx = this._sectionAt(nowMs);
     const sec = this.sections[idx];
-    if (idx === 0) return { from: sec.profile, to: sec.profile, t: 1 };
+    const hm = sec.heightMul ?? 1;
+    if (idx === 0) return { from: sec.profile, to: sec.profile, t: 1, fromHeightMul: hm, toHeightMul: hm };
     // Transition style sets the crossfade length: a hard cut lands in a
     // small fraction of a bar, a shutter wipes over one bar, a fade
     // breathes across four.
@@ -1047,8 +1136,9 @@ export class BiomeManager {
     const t = smoothstep(0, 1, (nowMs - sec.startMs) / (bars * sec.barMs));
     // Once the crossfade completes, retire the old biome entirely --
     // otherwise its taller peaks and particles ghost through forever.
-    if (t >= 0.999) return { from: sec.profile, to: sec.profile, t: 1 };
-    return { from: this.sections[idx - 1].profile, to: sec.profile, t };
+    if (t >= 0.999) return { from: sec.profile, to: sec.profile, t: 1, fromHeightMul: hm, toHeightMul: hm };
+    const prevHm = this.sections[idx - 1].heightMul ?? 1;
+    return { from: this.sections[idx - 1].profile, to: sec.profile, t, fromHeightMul: prevHm, toHeightMul: hm };
   }
 
   /**
@@ -1073,11 +1163,33 @@ export class BiomeManager {
     if (!this._ridgePortrait) {
       this._ridgePortrait = extractRidgePortrait(this.energyCurves, this.durationMs);
     }
-    const portrait = this._ridgePortrait;
-    const worldKind = this.world?.kind || 'alpine';
-    const noAerial = this.world?.aerial === false;
     this.strips = new Map();
     for (const b of this.profiles) {
+      this.strips.set(b.name, this._buildStripSet(b));
+    }
+  }
+
+  /** Bake one profile's L2-L5 strip set. Extracted from _rebuildStrips so
+   *  stripsFor() can lazily build the same thing on a cache miss (a profile
+   *  name not eagerly baked -- see Stage 1's "only bake what's cast"). */
+  _buildStripSet(b) {
+    const songSeed = this.songSeed ?? 1;
+    const shadeMode = 'rendered';
+    if (!this._ridgePortrait) {
+      this._ridgePortrait = extractRidgePortrait(this.energyCurves, this.durationMs);
+    }
+    // Per-section recomposition (Stage 1): a profile cast for a specific
+    // structural label gets that label's own windowed portrait/lithology
+    // instead of the whole-song aggregate, so a chorus and a verse sharing
+    // a biome's color palette still get structurally different mountains.
+    // Absent for city/farside/etc. worlds, and for any profile not tied to
+    // a label yet (setVisualStyle's pre-schedule fallback) -- both fall
+    // back to the whole-song portrait exactly as before this stage.
+    const variant = this._profileVariants?.get(b.name) || null;
+    const portrait = variant?.portrait || this._ridgePortrait;
+    const worldKind = this.world?.kind || 'alpine';
+    const noAerial = this.world?.aerial === false;
+    {
       const seed = hashSeed(b.name);
       const el = b.edgeLight || null;
       let strips;
@@ -1123,7 +1235,7 @@ export class BiomeManager {
         // joined tableland at the horizon, instead of every world reaching
         // for the identical three landforms regardless of what generated
         // it. Falls back to the original fixed triple when absent.
-        const scheme = this.world?.characterScheme || CHARACTER_SCHEMES.classic;
+        const scheme = variant?.character || this.world?.characterScheme || CHARACTER_SCHEMES.classic;
         strips = {
           L2: generateSilhouette({
             seed: seed + 1, height: 400, octaves: 4, amplitude: 0.52, baseline: 0.42,
@@ -1157,8 +1269,22 @@ export class BiomeManager {
         decorateStrip(strips.L4, landmarkKey, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
         decorateStrip(strips.L5, landmarkKey, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
       }
-      this.strips.set(b.name, strips);
+      return strips;
     }
+  }
+
+  /** Lazy-bake indirection over this.strips: a profile name eagerly baked by
+   *  _rebuildStrips() is a plain lookup; a name not yet baked (Stage 1's
+   *  "only bake what's cast" -- a variant not chosen for any section) is
+   *  built on first use and cached, so every call site gets the same strip
+   *  set whether it was baked up front or on demand. */
+  stripsFor(key) {
+    let strips = this.strips.get(key);
+    if (strips) return strips;
+    const profile = this._profile(key);
+    strips = this._buildStripSet(profile);
+    this.strips.set(key, strips);
+    return strips;
   }
 
   _profile(name) {
@@ -1303,8 +1429,8 @@ export class BiomeManager {
     this.tSec = nowMs / 1000;
     this.calmLevel = calmLevel;
     this._danceWorldX = worldX; // kept for farRidgeSwell01(), read by the sim
-    const { from, to, t } = this._blend(nowMs);
-    this.currentBlend = { from, to, t };
+    const { from, to, t, fromHeightMul, toHeightMul } = this._blend(nowMs);
+    this.currentBlend = { from, to, t, fromHeightMul, toHeightMul };
     // One Spectrum: glide the key shift (needs the blend just resolved).
     this._updateSpectralShift(dtSec);
 
@@ -1424,6 +1550,7 @@ export class BiomeManager {
     // further either way.
     const grooveTarget = energyInstant * (1 - 0.55 * calmLevel) * (this.universeTerrainMul || 1);
     this._danceGroove += (1 - Math.exp(-dtSec / 0.30)) * (grooveTarget - this._danceGroove);
+    this._danceSustain += (1 - Math.exp(-dtSec / 1.1)) * (this._danceGroove - this._danceSustain);
     const wind = this.atmosphere.at(worldX, this.h * 0.4);
     this.wind = wind;
 
@@ -1546,9 +1673,18 @@ export class BiomeManager {
     // the rest of the frame, so it's stashed on `this` rather than threaded
     // through every helper's signature.
     this._perf = perf;
+    // _crestPoints is re-derived by _drawRidgeVolume, _drawCrest, and
+    // _drawConnectorHills for the same layer -- up to ~14x/frame across
+    // L2-L5 with a crossfade active. Everything within one frame that would
+    // make it recompute (strip identity, scrollX, layerKey, terrainEnergy)
+    // is captured in the cache key, so this is safe to clear once here and
+    // let every caller below share one derivation per unique input.
+    this._crestCache = new Map();
     const phenomenaFull = perf ? perf.phenomenaFull : true;
-    const { from, to, t } = this.currentBlend || { from: this.sections[0].profile, to: this.sections[0].profile, t: 1 };
+    const { from, to, t, fromHeightMul = 1, toHeightMul = 1 } = this.currentBlend
+      || { from: this.sections[0].profile, to: this.sections[0].profile, t: 1 };
     const A = this._profile(from), B = this._profile(to);
+    this._drawHeightMul = { from: fromHeightMul, to: toHeightMul };
 
     // Sunrise/moonrise cycle: which body is up, how high, and how dark the
     // sky should read. Computed once per frame -- feeds the sky gradient,
@@ -1739,6 +1875,11 @@ export class BiomeManager {
     const skyHorizonNight = horizonPull > 0.02
       ? this.lerpCache.get(skyHorizon, NIGHT_SKY_COLOR, horizonPull)
       : skyHorizon;
+    // Stage 3 of the mountain overhaul: the sky-horizon color every layer's
+    // fill is pulled toward, read once per frame so _drawRidgeVolume can
+    // wash each range's body toward it directly instead of only baking the
+    // pull into the (until now, never-read -- see layerTint below) tint arg.
+    this._airColor = skyHorizonNight;
     const tint = ensureContrast(this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)), skyHorizonNight, 0.14);
     // Aerial perspective. Every range used to be painted in this ONE tint,
     // which is the single biggest reason the four layers read as the same
@@ -3889,7 +4030,11 @@ export class BiomeManager {
   }
 
   _drawLayer(ctx, canvas, layerKey, scrollX, tint, t, A, B) {
-    const stripsA = this.strips.get(A.name), stripsB = this.strips.get(B.name);
+    const stripsA = this.stripsFor(A.name), stripsB = this.stripsFor(B.name);
+    // Per-section height (Stage 1): a draw-time multiplier, set once per
+    // frame in draw() from the active section(s) -- never baked, since
+    // generateSilhouette's own HEADROOM refit would erase it on L2/L3.
+    const { from: heightMulA = 1, to: heightMulB = 1 } = this._drawHeightMul || {};
     const zGroundY = this._zoomedGroundY(canvas);
     // Lift the ranges so their ridges actually clear the ground band --
     // strip bottoms stay tucked safely beneath the ground fill.
@@ -3923,32 +4068,48 @@ export class BiomeManager {
     if (applyBiomeShimmer || applyDynamicShimmer) {
       this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX, yOff);
     } else {
-      this._drawDancingStrip(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.terrainEnergy ?? 1);
+      this._drawDancingStrip(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.terrainEnergy ?? 1, heightMulA);
       // Volume before the crest: the skyline stroke has to sit on top of
       // its own mountain's shading, not under it.
-      this._drawRidgeVolume(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, 1, A.terrainEnergy ?? 1);
-      if ((layerKey === 'L4' || layerKey === 'L5') && A.edgeLight) {
-        this._drawCrest(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.edgeLight, 1, A.terrainEnergy ?? 1);
+      this._drawRidgeVolume(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, 1, A.terrainEnergy ?? 1, heightMulA);
+      // Crest rim: full strength at the near anchors (L4/L5), extended to
+      // L2/L3 at reduced alpha (Stage 3) -- gated on heavyPostFx there since
+      // it's a wider live pass across the two biggest ranges on screen.
+      const rimOkA = layerKey === 'L4' || layerKey === 'L5' || !this._perf || this._perf.heavyPostFx;
+      if (rimOkA && A.edgeLight) {
+        this._drawCrest(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.edgeLight, CREST_RIM_ALPHA[layerKey] ?? 1, A.terrainEnergy ?? 1, heightMulA);
       }
     }
     if (B !== A && t > 0.02) {
       ctx.globalAlpha = t;
-      this._drawDancingStrip(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.terrainEnergy ?? 1);
+      this._drawDancingStrip(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.terrainEnergy ?? 1, heightMulB);
       ctx.globalAlpha = 1;
-      this._drawRidgeVolume(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, t, B.terrainEnergy ?? 1);
-      if ((layerKey === 'L4' || layerKey === 'L5') && B.edgeLight) {
-        this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t, B.terrainEnergy ?? 1);
+      this._drawRidgeVolume(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, t, B.terrainEnergy ?? 1, heightMulB);
+      const rimOkB = layerKey === 'L4' || layerKey === 'L5' || !this._perf || this._perf.heavyPostFx;
+      if (rimOkB && B.edgeLight) {
+        this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t * (CREST_RIM_ALPHA[layerKey] ?? 1), B.terrainEnergy ?? 1, heightMulB);
       }
     }
     // Miniature characters run along the two nearest ranges' ridges,
     // riding the same dance the columns do.
     if (layerKey === 'L4' || layerKey === 'L5') {
       const strip = (t > 0.5 ? stripsB : stripsA)[layerKey];
+      const runnerHeightMul = t > 0.5 ? heightMulB : heightMulA;
+      const runnerEnergy = (t > 0.5 ? B.terrainEnergy : A.terrainEnergy) ?? 1;
       const cfg = DANCE_LAYERS[layerKey];
       const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
-      this.ridgeRunners[layerKey].draw(ctx, strip, scrollX, canvas.width, canvas.height - strip.height + yOff, {
+      // Read the same scale _crestPoints computed for this exact strip this
+      // frame (cache hit -- both are keyed identically) so the runners'
+      // baseY/ridge reading matches the mountain they're standing on
+      // instead of drifting whenever growth/pullback/heightMul scale the
+      // strip away from its raw baked height (a pre-existing bug: this used
+      // to always assume scale===1).
+      const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, runnerEnergy, runnerHeightMul);
+      const runnerBaseY = geom ? canvas.height - geom.dh + yOff : canvas.height - strip.height + yOff;
+      const runnerScale = geom ? geom.scale : 1;
+      this.ridgeRunners[layerKey].draw(ctx, strip, scrollX, canvas.width, runnerBaseY, {
         tSec: this.tSec, groove: this._danceGroove, kick, cfg, fever: this.fever || 0,
-      }, layerKey === 'L5' ? 0.55 : 0.4);
+      }, layerKey === 'L5' ? 0.55 : 0.4, runnerScale);
     }
     ctx.restore();
   }
@@ -3976,7 +4137,7 @@ export class BiomeManager {
    *  with time, never jittering with camera scroll. The strips overhang
    *  the ground band by ~40px, which quietly swallows the bottom gap a
    *  lifted column would otherwise open. */
-  _drawDancingStrip(ctx, canvas, strip, scrollX, yOff, layerKey, terrainEnergy = 1) {
+  _drawDancingStrip(ctx, canvas, strip, scrollX, yOff, layerKey, terrainEnergy = 1, heightMul = 1) {
     const cfg = DANCE_LAYERS[layerKey];
     if (!cfg) {
       drawTiledStrip(ctx, strip, scrollX, canvas.width, canvas.height, yOff);
@@ -3986,10 +4147,18 @@ export class BiomeManager {
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
     // Orogeny grows the range, then mountainStripDrawHeight hard-caps so peaks
     // stay on-frame (ocean/sky remain visible; off-screen summits are useless).
+    // heightMul is the per-section draw-time multiplier (Stage 1 of the
+    // mountain overhaul) -- never baked, since generateSilhouette's own
+    // HEADROOM refit would erase an in-strip height change on L2/L3.
     const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
-      * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0));
+      * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0))
+      * Math.max(0, heightMul);
     const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this._zoomedGroundY(canvas));
     const baseY = canvas.height - dh + yOff;
+    // Stage 2 (ridge deformation): summits sharpen on the kick, flanks swell
+    // on sustained energy -- gated by terrainEnergy exactly like the offset
+    // dance above, so a flat/calm biome doesn't deform either.
+    const sustain = this._danceSustain || 0;
     const w = strip.width;
     let x = -(((scrollX % w) + w) % w);
     while (x < canvas.width) {
@@ -4000,7 +4169,15 @@ export class BiomeManager {
         const sx = x + cx;
         if (sx + drawW < 0 || sx > canvas.width) continue;
         const dy = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0) * terrainEnergy;
-        ctx.drawImage(strip, cx, 0, drawW, strip.height, sx, baseY + dy, drawW, dh);
+        // Foot-anchored: this column's own foot (baseY + dh + dy, the same
+        // translation the offset dance already applies) never moves: only
+        // the elevation above it stretches, so a squat foothill barely
+        // grows while this range's own summit visibly heaves.
+        const h01 = columnHeight01At(strip.ridge, cx);
+        const rawScale = danceScale(h01, kick, sustain, cfg);
+        const colDh = dh * (1 + (rawScale - 1) * terrainEnergy);
+        const footY = baseY + dh + dy;
+        ctx.drawImage(strip, cx, 0, drawW, strip.height, sx, footY - colDh, drawW, colDh);
       }
       x += w;
     }
@@ -4021,14 +4198,28 @@ export class BiomeManager {
    *  (depth gradient + peak shoulders) walk one identical curve -- if they
    *  re-derived it separately, any drift between them would show up as the
    *  shading peeling away from the skyline it is supposed to belong to. */
-  _crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy = 1) {
+  _crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy = 1, heightMul = 1) {
     if (!strip.ridge) return null;
     const cfg = DANCE_LAYERS[layerKey];
     if (!cfg) return null;
+    // Shared per-frame cache (cleared once at the top of draw()): this same
+    // (strip, layerKey, scrollX, terrainEnergy, heightMul) combination is
+    // re-derived by _drawRidgeVolume, _drawCrest, and _drawConnectorHills
+    // for the same frame -- up to ~14x across L2-L5 with a crossfade
+    // active. yOff/canvas are constant for the whole frame so they don't
+    // need to be in the key.
+    const cache = this._crestCache;
+    let byStrip = cache && cache.get(strip);
+    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}`;
+    if (byStrip) {
+      const hit = byStrip.get(cacheKey);
+      if (hit) return hit;
+    }
     const nowMs = this.tSec * 1000;
     const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
     const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
-      * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0));
+      * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0))
+      * Math.max(0, heightMul);
     const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this._zoomedGroundY(canvas));
     const scale = dh / Math.max(1, strip.height);
     const baseY = canvas.height - dh + yOff;
@@ -4037,25 +4228,48 @@ export class BiomeManager {
     const tSec = this.tSec;
     const fever = this.fever || 0;
     const groove = this._danceGroove;
+    const sustain = this._danceSustain || 0;
 
     const pts = new Array(Math.ceil(canvas.width / CREST_STEP_PX) + 3);
     let n = 0;
+    let crestY = Infinity;
     for (let x = -CREST_STEP_PX; x <= canvas.width + CREST_STEP_PX; x += CREST_STEP_PX) {
       const stripX = scrollX + x;
       const u = (((stripX % w) + w) % w);
       const yR = ridgeYSmooth(strip.ridge, u) * scale;
       const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever) * terrainEnergy;
       const lift = (isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
-      pts[n++] = { x, y: baseY + yR + dy - lift, lift, stripX };
+      // Stage 2 (ridge deformation): foot-anchored per-column scale -- the
+      // strip's foot (screen y = baseY + dh) never moves; only the
+      // elevation above it stretches, by this column's own relative peak
+      // height (h01, mirroring _drawDancingStrip's raw per-column read,
+      // but smoothly blended across column seams like the rest of this
+      // live curve already is).
+      const h01 = columnHeight01At(strip.ridge, stripX);
+      const rawScale = danceScaleSmooth(strip.ridge, stripX, kick, sustain, cfg);
+      const localScale = 1 + (rawScale - 1) * terrainEnergy;
+      const heightAboveFoot = dh - yR;
+      const yRDeformed = dh - heightAboveFoot * localScale;
+      const y = baseY + yRDeformed + dy - lift;
+      if (y < crestY) crestY = y;
+      pts[n++] = { x, y, lift, stripX, dy, scale: scale * localScale, h01 };
     }
     pts.length = n;
     // The strips are blitted from baseY down over `dh`, so this is where the
     // range's body actually ends and the ground band swallows it.
-    return { pts, baseY, bottomY: baseY + dh };
+    const geom = {
+      pts, baseY, bottomY: baseY + dh,
+      footY: baseY + dh, crestY, dh, stripHeight: strip.height,
+    };
+    if (cache) {
+      if (!byStrip) { byStrip = new Map(); cache.set(strip, byStrip); }
+      byStrip.set(cacheKey, geom);
+    }
+    return geom;
   }
 
-  _drawCrest(ctx, canvas, strip, scrollX, yOff, layerKey, edgeLight, alpha, terrainEnergy = 1) {
-    const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy);
+  _drawCrest(ctx, canvas, strip, scrollX, yOff, layerKey, edgeLight, alpha, terrainEnergy = 1, heightMul = 1) {
+    const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy, heightMul);
     if (!geom) return;
     const { pts } = geom;
     const isGeo = layerKey === 'L4';
@@ -4113,17 +4327,19 @@ export class BiomeManager {
   _drawConnectorHills(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t) {
     if (this._perf && !this._perf.heavyPostFx) return;
     const profile = t > 0.5 ? B : A;
-    const strips = this.strips.get(profile.name);
+    const strips = this.stripsFor(profile.name);
     if (!strips) return;
+    const { from: heightMulA = 1, to: heightMulB = 1 } = this._drawHeightMul || {};
+    const heightMul = t > 0.5 ? heightMulB : heightMulA;
     const yOff = this._zoomedGroundY(canvas) + 40 - canvas.height;
-    const dancy = this._crestPoints(canvas, strips.L2, scrollX0, yOff, 'L2', profile.terrainEnergy ?? 1);
+    const dancy = this._crestPoints(canvas, strips.L2, scrollX0, yOff, 'L2', profile.terrainEnergy ?? 1, heightMul);
     if (!dancy) return;
 
     // The skyline doing the hiding: whichever of the nearer ranges stands
     // highest at each x (screen y, so the minimum).
     const nearer = [
-      this._crestPoints(canvas, strips.L3, scrollX1, yOff, 'L3', profile.terrainEnergy ?? 1),
-      this._crestPoints(canvas, strips.L4, scrollX2, yOff, 'L4', profile.terrainEnergy ?? 1),
+      this._crestPoints(canvas, strips.L3, scrollX1, yOff, 'L3', profile.terrainEnergy ?? 1, heightMul),
+      this._crestPoints(canvas, strips.L4, scrollX2, yOff, 'L4', profile.terrainEnergy ?? 1, heightMul),
     ].filter(Boolean);
     if (!nearer.length) return;
     const skyline = dancy.pts.map((_, i) => {
@@ -4231,14 +4447,12 @@ export class BiomeManager {
    *    moves. Kept well under the crest's own contrast so the skyline stays
    *    the thing you read first.
    */
-  _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1) {
+  _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1, heightMul = 1) {
     const strength = RIDGE_VOLUME_STRENGTH[layerKey] ?? 0;
     if (strength <= 0) return;
-    const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy);
+    const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy, heightMul);
     if (!geom) return;
-    const { pts, bottomY } = geom;
-    let crestY = Infinity;
-    for (const p of pts) if (p.y < crestY) crestY = p.y;
+    const { pts, bottomY, crestY } = geom;
     if (!(bottomY > crestY)) return;
 
     // The body path: the skyline, then straight down and back along the
@@ -4299,6 +4513,27 @@ export class BiomeManager {
     ctx.fillStyle = shadeGrad;
     ctx.fill(body);
     ctx.restore();
+
+    // Aerial perspective (Stage 3 of the mountain overhaul): AERIAL_PULL was
+    // already computed once per frame into tintL2..tintL5 (see draw()) and
+    // handed to _drawLayer as its `tint` argument -- which this function
+    // never read, so the whole table was dead code, tuned against a scene
+    // where it never touched a pixel. This is the first live use of it: a
+    // wash toward this._airColor (the same sky-horizon color the tint pull
+    // targets), bottom-weighted since haze pools in valleys rather than
+    // clinging to a summit. L5 gets AERIAL_PULL.L5 === 0, so this is a
+    // guaranteed no-op there -- the near anchor stays exactly as crisp as
+    // its authored color.
+    const aerialPull = AERIAL_PULL[layerKey] || 0;
+    if (aerialPull > 0.001 && this._airColor) {
+      const air = hexToRgb(this._airColor);
+      const aerialAlpha = aerialPull * alpha * strength;
+      const aerialGrad = ctx.createLinearGradient(0, crestY, 0, bottomY);
+      aerialGrad.addColorStop(0, `rgba(${air.r},${air.g},${air.b},${(aerialAlpha * 0.35).toFixed(3)})`);
+      aerialGrad.addColorStop(1, `rgba(${air.r},${air.g},${air.b},${aerialAlpha.toFixed(3)})`);
+      ctx.fillStyle = aerialGrad;
+      ctx.fill(body);
+    }
 
     // Cheap enough (a handful of path fills, no offscreen buffers) that it
     // only sheds on the very bottom rung -- this is the form of the

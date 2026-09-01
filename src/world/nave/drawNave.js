@@ -67,8 +67,8 @@ export function drawNaveWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, ph
   const unravel = mgr.unravel || 0;
   const scroll = (key) => worldX * CodaDirector.delaminateRatio(LAYER_RATIOS[key], unravel);
 
-  const stripsA = mgr.strips.get(from);
-  const stripsB = mgr.strips.get(to);
+  const stripsA = mgr.stripsFor(from);
+  const stripsB = mgr.stripsFor(to);
 
   const drawRange = (key) => {
     const yOff = Y_OFF[key] || 0;
