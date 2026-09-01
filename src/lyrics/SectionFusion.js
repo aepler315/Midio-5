@@ -96,6 +96,7 @@ export function fuseSections(noveltySections, lyricSections, barGrid, durationMs
         label: noveltyMatch.label, profile: noveltyMatch.profile, hueBias: noveltyMatch.hueBias,
         meanEnergy: noveltyMatch.meanEnergy, shape: noveltyMatch.shape,
         relEnergy01: noveltyMatch.relEnergy01, heightMul: noveltyMatch.heightMul,
+        snowLine01: noveltyMatch.snowLine01,
       },
       lyricMatch,
     );

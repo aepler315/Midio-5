@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { EnergyCurves } from '../src/audio/EnergyCurves.js';
 import {
   extractRidgePortrait, landformWindow, relEnergyLadder, LANDFORM_LADDER,
-  lithologyFromShares,
+  lithologyFromShares, snowLine01For, SNOWLINE_MIN,
 } from '../src/world/RidgePortrait.js';
 
 function makeCurves({ durationMs = 120000, rateHz = 50, energyAt, bandsAt } = {}) {
@@ -137,4 +137,35 @@ test('two sections with clearly different spectra get clearly different litholog
     JSON.stringify(Array.from(bassy.bands)),
     JSON.stringify(Array.from(airy.bands)),
   );
+});
+
+// Stage 4 (snowline): song-grounded, not tied to landformWindow/heightMul,
+// so pinned separately even though it reads the same lithology/relEnergy01
+// inputs the other Stage 1 variant fields do.
+test('snowLine01For: a bright, loud section snows lower (more of the range capped) than a dark, quiet one', () => {
+  const darkQuiet = snowLine01For(0, 0);
+  const brightLoud = snowLine01For(1, 1);
+  assert.ok(brightLoud < darkQuiet, 'bright+loud should push the threshold down (more coverage)');
+  assert.equal(darkQuiet, 1, 'a fully dark, fully quiet section caps nothing');
+});
+
+test('snowLine01For never goes below its floor -- snow is always an accent, never a blanket', () => {
+  for (let crest = 0; crest <= 1; crest += 0.1) {
+    for (let rel = 0; rel <= 1; rel += 0.1) {
+      const line = snowLine01For(crest, rel);
+      assert.ok(line >= SNOWLINE_MIN - 1e-9, `snowLine01For(${crest},${rel})=${line} below floor ${SNOWLINE_MIN}`);
+      assert.ok(line <= 1, `snowLine01For(${crest},${rel})=${line} above 1`);
+    }
+  }
+});
+
+test('snowLine01For is monotonic in both crest/air share and relative energy', () => {
+  for (let rel = 0; rel <= 1; rel += 0.25) {
+    let prev = snowLine01For(0, rel);
+    for (let crest = 0.1; crest <= 1; crest += 0.1) {
+      const cur = snowLine01For(crest, rel);
+      assert.ok(cur <= prev + 1e-9, 'more crest/air share must never raise the threshold');
+      prev = cur;
+    }
+  }
 });
