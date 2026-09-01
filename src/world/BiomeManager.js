@@ -110,6 +110,13 @@ const STAR_CATALOGUE_COUNT = 560;
 // L2 is the furthest and sits nearly half way to the sky. See the
 // layerTint() comment in draw() for why this exists.
 const AERIAL_PULL = { L2: 0.46, L3: 0.29, L4: 0.13, L5: 0 };
+// Crest rim (Stage 3 of the mountain overhaul): the backlit skyline edge
+// used to be L4/L5-only, so the two BIGGEST ranges on screen got the LEAST
+// depth treatment of the stack. Extended to L2/L3 at reduced,
+// depth-appropriate alpha -- full strength stays reserved for the near
+// anchors so the crest rim itself still reads as a depth cue, not a flat
+// outline repeated at every layer.
+const CREST_RIM_ALPHA = { L2: 0.35, L3: 0.55, L4: 1, L5: 1 };
 // Aerial perspective, optical half: how much each layer's strip bake is
 // downsampled before being stretched back up (generateSilhouette's
 // softenScale), so distant ranges lose edge acuity the same way AERIAL_PULL
@@ -1868,6 +1875,11 @@ export class BiomeManager {
     const skyHorizonNight = horizonPull > 0.02
       ? this.lerpCache.get(skyHorizon, NIGHT_SKY_COLOR, horizonPull)
       : skyHorizon;
+    // Stage 3 of the mountain overhaul: the sky-horizon color every layer's
+    // fill is pulled toward, read once per frame so _drawRidgeVolume can
+    // wash each range's body toward it directly instead of only baking the
+    // pull into the (until now, never-read -- see layerTint below) tint arg.
+    this._airColor = skyHorizonNight;
     const tint = ensureContrast(this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)), skyHorizonNight, 0.14);
     // Aerial perspective. Every range used to be painted in this ONE tint,
     // which is the single biggest reason the four layers read as the same
@@ -4060,8 +4072,12 @@ export class BiomeManager {
       // Volume before the crest: the skyline stroke has to sit on top of
       // its own mountain's shading, not under it.
       this._drawRidgeVolume(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, 1, A.terrainEnergy ?? 1, heightMulA);
-      if ((layerKey === 'L4' || layerKey === 'L5') && A.edgeLight) {
-        this._drawCrest(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.edgeLight, 1, A.terrainEnergy ?? 1, heightMulA);
+      // Crest rim: full strength at the near anchors (L4/L5), extended to
+      // L2/L3 at reduced alpha (Stage 3) -- gated on heavyPostFx there since
+      // it's a wider live pass across the two biggest ranges on screen.
+      const rimOkA = layerKey === 'L4' || layerKey === 'L5' || !this._perf || this._perf.heavyPostFx;
+      if (rimOkA && A.edgeLight) {
+        this._drawCrest(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.edgeLight, CREST_RIM_ALPHA[layerKey] ?? 1, A.terrainEnergy ?? 1, heightMulA);
       }
     }
     if (B !== A && t > 0.02) {
@@ -4069,8 +4085,9 @@ export class BiomeManager {
       this._drawDancingStrip(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.terrainEnergy ?? 1, heightMulB);
       ctx.globalAlpha = 1;
       this._drawRidgeVolume(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, t, B.terrainEnergy ?? 1, heightMulB);
-      if ((layerKey === 'L4' || layerKey === 'L5') && B.edgeLight) {
-        this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t, B.terrainEnergy ?? 1, heightMulB);
+      const rimOkB = layerKey === 'L4' || layerKey === 'L5' || !this._perf || this._perf.heavyPostFx;
+      if (rimOkB && B.edgeLight) {
+        this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t * (CREST_RIM_ALPHA[layerKey] ?? 1), B.terrainEnergy ?? 1, heightMulB);
       }
     }
     // Miniature characters run along the two nearest ranges' ridges,
@@ -4496,6 +4513,27 @@ export class BiomeManager {
     ctx.fillStyle = shadeGrad;
     ctx.fill(body);
     ctx.restore();
+
+    // Aerial perspective (Stage 3 of the mountain overhaul): AERIAL_PULL was
+    // already computed once per frame into tintL2..tintL5 (see draw()) and
+    // handed to _drawLayer as its `tint` argument -- which this function
+    // never read, so the whole table was dead code, tuned against a scene
+    // where it never touched a pixel. This is the first live use of it: a
+    // wash toward this._airColor (the same sky-horizon color the tint pull
+    // targets), bottom-weighted since haze pools in valleys rather than
+    // clinging to a summit. L5 gets AERIAL_PULL.L5 === 0, so this is a
+    // guaranteed no-op there -- the near anchor stays exactly as crisp as
+    // its authored color.
+    const aerialPull = AERIAL_PULL[layerKey] || 0;
+    if (aerialPull > 0.001 && this._airColor) {
+      const air = hexToRgb(this._airColor);
+      const aerialAlpha = aerialPull * alpha * strength;
+      const aerialGrad = ctx.createLinearGradient(0, crestY, 0, bottomY);
+      aerialGrad.addColorStop(0, `rgba(${air.r},${air.g},${air.b},${(aerialAlpha * 0.35).toFixed(3)})`);
+      aerialGrad.addColorStop(1, `rgba(${air.r},${air.g},${air.b},${aerialAlpha.toFixed(3)})`);
+      ctx.fillStyle = aerialGrad;
+      ctx.fill(body);
+    }
 
     // Cheap enough (a handful of path fills, no offscreen buffers) that it
     // only sheds on the very bottom rung -- this is the form of the
