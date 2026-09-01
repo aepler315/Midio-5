@@ -1,11 +1,18 @@
-// Mountain overhaul Stage 6 (ship-last, most cuttable): thin multiply bands
-// PARALLEL TO THE LOCAL CREST -- each one traces the same live `pts`
-// polyline _drawRidgeVolume already reads (already carrying Stage 2's
-// per-column deformation), just offset further down, rather than a fixed
-// screen-horizontal stripe. L2/L3 only (L4 already carries GeoCrest +
-// shoulders, L5 is rolling hills), gated on heavyPostFx.
+// Sedimentary beds in the mountain faces: thin multiply bands, L2/L3 only
+// (L4 already carries GeoCrest + shoulders, L5 is rolling hills), gated on
+// heavyPostFx.
+//
+// These bands were originally traced from the crest polyline and offset
+// downward, which drew a contour map -- every band exactly parallel to the
+// summit above it -- and made the ranges read as topographic wallpaper. They
+// are now near-horizontal beds (RockStrata.js) that the range's own
+// silhouette truncates via the clip _drawRidgeVolume already establishes.
+// The draw-level tests below are unchanged by that (they count multiply
+// fills, which is still the right question); the geometry tests at the bottom
+// pin the properties the rewrite turns on.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { strataBeds, bedOffsetAt } from '../src/world/RockStrata.js';
 
 globalThis.Path2D = class Path2D {
   moveTo() {} lineTo() {} closePath() {} bezierCurveTo() {} quadraticCurveTo() {} arc() {} rect() {}
@@ -111,4 +118,90 @@ test('never throws on a very short range (not enough span for any band)', async 
   const ctx = new RecordingCtx();
   const strip = makeStrip({ height: 20 });
   assert.doesNotThrow(() => bm._drawRidgeVolume(ctx, canvas, strip, 0, 40, 'L2', 1, 1, 1, 1));
+});
+
+// --- Bed geometry (RockStrata.js) ----------------------------------------
+
+const bedsAt = (o = {}) => strataBeds({
+  width: 960, crestY: 120, bottomY: 480, scrollX: 0, spacingPx: 34, ...o,
+});
+
+test('beds do not parallel the crest -- that was the contour-map bug', () => {
+  // The whole defect: bands traced from the skyline are concentric copies of
+  // it, which reads as a topographic map printed on the rock. A bed's shape
+  // must therefore be independent of whatever the summit above it is doing.
+  const flat = bedsAt();
+  // Same range, same everything, asked twice: the bed is a function of x and
+  // the range's foot only, so nothing about the crest can appear in it.
+  const jagged = strataBeds({ width: 960, crestY: 40, bottomY: 480, spacingPx: 34 });
+  const shared = Math.min(flat.length, jagged.length);
+  assert.ok(shared >= 3, 'need a few beds to compare');
+  for (let b = 0; b < shared; b++) {
+    for (let i = 0; i < flat[b].pts.length; i++) {
+      assert.equal(flat[b].pts[i].y, jagged[b].pts[i].y,
+        `bed ${b} moved when only the crest changed -- it is tracking the skyline`);
+    }
+  }
+});
+
+test('rock does not breathe with the kick drum', () => {
+  // Beds anchor upward from the range's FOOT, which is the stable edge. The
+  // crest is deformed every frame by the dance; if beds anchored there, the
+  // whole rock face would pump on every beat.
+  const still = bedsAt({ crestY: 120 });
+  const danced = bedsAt({ crestY: 96 }); // summit sharpened by a transient
+  assert.equal(still.length, danced.length);
+  for (let b = 0; b < still.length; b++) {
+    assert.equal(still[b].y0, danced[b].y0);
+  }
+});
+
+test('beds are near-horizontal, never a slanted stripe', () => {
+  const beds = bedsAt();
+  for (const bed of beds) {
+    const ys = bed.pts.map((p) => p.y);
+    const drop = Math.max(...ys) - Math.min(...ys);
+    // Across a 960px width: dip plus fold. Much past this and it reads as a
+    // diagonal band rather than as bedding.
+    assert.ok(drop < 960 * 0.09, `bed at y0=${bed.y0} spanned ${drop.toFixed(1)}px vertically`);
+    assert.ok(drop > 1, 'but not a perfectly straight ruler line either');
+  }
+});
+
+test('dip reverses with dipSign, so neighbouring ranges are not one structure', () => {
+  const down = bedsAt({ dipSign: 1 })[0].pts;
+  const up = bedsAt({ dipSign: -1 })[0].pts;
+  const slope = (p) => p[p.length - 1].y - p[0].y;
+  assert.ok(Math.sign(slope(down)) !== Math.sign(slope(up)),
+    'L2 and L3 should not dip the same way');
+});
+
+test('beds are planted in the world, not smeared across the screen', () => {
+  // Same discipline as ConnectorHills.rollAt and DistantWave.swellAt: the
+  // fold has to travel with the range's parallax, or the rock texture slides
+  // over the mountain as the camera pans.
+  const a = bedOffsetAt(0, 0, 0, 960);
+  const b = bedOffsetAt(500, 0, 0, 960);
+  assert.notEqual(a, b, 'the fold must depend on world x');
+  // With no dip, offset is purely the fold, so it is periodic in world x
+  // and independent of where on screen the sample happens to fall.
+  assert.equal(bedOffsetAt(123, 0, 0, 960), bedOffsetAt(123, 400, 0, 960));
+});
+
+test('alternating competence: beds are not a uniform comb', () => {
+  const tones = bedsAt().map((b) => b.tone);
+  assert.ok(new Set(tones.map((t) => t.toFixed(3))).size > 1,
+    'every bed the same darkness is the other way to read as wallpaper');
+  for (const t of tones) assert.ok(t >= 0 && t <= 1, `tone ${t} out of range`);
+});
+
+test('a range too short for a single bed yields none, and never throws', () => {
+  assert.deepEqual(strataBeds({ width: 960, crestY: 400, bottomY: 420, spacingPx: 34 }), []);
+  assert.deepEqual(strataBeds({ width: 0, crestY: 0, bottomY: 500, spacingPx: 34 }), []);
+  assert.deepEqual(strataBeds({ width: 960, crestY: 480, bottomY: 480, spacingPx: 34 }), []);
+});
+
+test('a very deep range is capped rather than turning into a comb', () => {
+  const deep = strataBeds({ width: 960, crestY: -4000, bottomY: 480, spacingPx: 34, maxBeds: 8 });
+  assert.equal(deep.length, 8);
 });

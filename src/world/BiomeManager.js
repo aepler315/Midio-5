@@ -38,6 +38,7 @@ import {
   ridgeYSmooth, danceOffsetSmooth, danceScaleSmooth, assignBandFeatures, geoCrestOffset,
 } from './GeoCrest.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
+import { strataBeds } from './RockStrata.js';
 import {
   occludedFraction, stepDistantWave, swellCrest,
 } from './DistantWave.js';
@@ -131,12 +132,26 @@ const CAST_SHADOW_BAND_PX = 46;
 // already established depth cues -- stay the things you read first.
 const STRATA_SPACING_PX = 34;
 const STRATA_BAND_PX = 9;
-const STRATA_MAX_BANDS = 4;
-const STRATA_DARKEN = 0.16;
-// Bands are broad and sit below the skyline, so they do not need the crest's
-// own point resolution -- tracing every 3rd point is indistinguishable and a
-// third of the path work.
-const STRATA_STRIDE = 3;
+// Beds now run near-horizontally and are truncated by the range's own
+// silhouette (see RockStrata.js), so a tall summit legitimately shows several
+// while a low shoulder shows one.
+//
+// Beds are counted UP FROM THE FOOT (the foot is the stable edge -- the crest
+// dances), so this cap decides how far up the range they reach. The first
+// value tried here was 8, which on a normal range stopped ~90px short of the
+// crest and left every summit bare -- and the summits are the part of a range
+// that is actually on screen, everything lower being behind the range in
+// front of it. High enough to reach the top of a tall range; a runaway guard
+// rather than a look control.
+const STRATA_MAX_BEDS = 18;
+const STRATA_DARKEN = 0.17;
+// Ground aerial perspective: how strongly the far edge of the walking ground
+// washes toward the air color, and how far down the frame that wash reaches
+// before the ground is at its own full color. Kept lighter than any range's
+// AERIAL_PULL -- the ground is the NEAREST thing in the scene, so it should
+// only lose color right at the horizon where it meets the ranges.
+const GROUND_AERIAL_ALPHA = 0.42;
+const GROUND_AERIAL_FALLOFF = 0.38;
 // Aerial perspective, optical half: how much each layer's strip bake is
 // downsampled before being stretched back up (generateSilhouette's
 // softenScale), so distant ranges lose edge acuity the same way AERIAL_PULL
@@ -4834,18 +4849,33 @@ export class BiomeManager {
     // atmosphere rather than the mountain's own form.
     const wantSnow = !this._perf || this._perf.phenomenaFull;
     if (wantSnow && snowLine01 < 1) {
+      // Snow is an ALTITUDE, and this used to ask the wrong question of the
+      // wrong variable: `p.h01 > snowLine01` tests a column's relative height
+      // within the range, and h01 is a per-64px-column figure, so the answer
+      // stepped between neighbouring crest samples. A cap therefore began and
+      // ended in a single sample's width -- a vertical white cliff dropped
+      // down the mountainside, which is what the "flat-topped slabs with
+      // straight sides" in the report actually were.
+      //
+      // The honest test is whether the SURFACE is above the snow line, which
+      // is continuous by construction: where the ridge crosses the altitude
+      // the cap's top and bottom edges meet and the polygon simply closes.
+      // Nothing to step, so there is no cliff to draw.
       const snowAltY = bottomY - (bottomY - crestY) * (1 - snowLine01);
-      const cap = new Path2D();
+      // ...and the line itself gets a gentle wander, so it doesn't read as a
+      // ruler laid across the range. Small next to the relief it sits in.
+      const wobble = (stripX) => 6 * Math.sin(stripX / 260) + 3 * Math.sin(stripX / 97 + 1.7);
+      const altAt = (p) => snowAltY + wobble(p.stripX);
       let anyCap = false;
-      for (let i = 0; i < pts.length; i++) {
-        const p = pts[i];
-        const capped = p.h01 > snowLine01;
-        const y = capped ? Math.min(p.y, snowAltY) : snowAltY;
-        if (i === 0) cap.moveTo(p.x, y); else cap.lineTo(p.x, y);
-        if (capped) anyCap = true;
-      }
+      for (const p of pts) if (p.y < altAt(p)) { anyCap = true; break; }
       if (anyCap) {
-        for (let i = pts.length - 1; i >= 0; i--) cap.lineTo(pts[i].x, snowAltY);
+        const cap = new Path2D();
+        for (let i = 0; i < pts.length; i++) {
+          const p = pts[i];
+          const y = Math.min(p.y, altAt(p));
+          if (i === 0) cap.moveTo(p.x, y); else cap.lineTo(p.x, y);
+        }
+        for (let i = pts.length - 1; i >= 0; i--) cap.lineTo(pts[i].x, altAt(pts[i]));
         cap.closePath();
         // Pulled toward this._airColor (Stage 3) rather than pure white --
         // otherwise a snow cap pops out of the haze that's supposed to be
@@ -4854,10 +4884,18 @@ export class BiomeManager {
         const snowColor = this._airColor
           ? this.lerpCache.get('#f5f9ff', this._airColor, 0.22)
           : '#f5f9ff';
-        ctx.fillStyle = snowColor;
-        ctx.globalAlpha = 0.6 * alpha * strength;
+        // Fading out toward the snow line rather than filling flat: a
+        // constant alpha ends on a hard horizontal edge right where the cap
+        // meets bare rock, and that edge was reading as the bottom of a slab.
+        const snowTop = Math.max(crestY - 8, 0);
+        const { r: sr, g: sg, b: sb } = hexToRgb(snowColor);
+        const a0 = 0.55 * alpha * strength;
+        const snowGrad = ctx.createLinearGradient(0, snowTop, 0, snowAltY + 10);
+        snowGrad.addColorStop(0, `rgba(${sr},${sg},${sb},${a0.toFixed(3)})`);
+        snowGrad.addColorStop(0.65, `rgba(${sr},${sg},${sb},${(a0 * 0.72).toFixed(3)})`);
+        snowGrad.addColorStop(1, `rgba(${sr},${sg},${sb},0)`);
+        ctx.fillStyle = snowGrad;
         ctx.fill(cap);
-        ctx.globalAlpha = 1;
       }
     }
 
@@ -4874,38 +4912,46 @@ export class BiomeManager {
     // against a dancing, foot-anchored ridge. Tracing the polyline means
     // every band moves WITH the ridge, so there is no seam to reintroduce.
     if ((layerKey === 'L2' || layerKey === 'L3') && (!this._perf || this._perf.heavyPostFx)) {
-      const span = bottomY - crestY;
-      const bandCount = Math.min(STRATA_MAX_BANDS, Math.floor(span / STRATA_SPACING_PX) - 1);
-      if (bandCount >= 1) {
+      // Beds dip opposite ways on the two layers so the ranges read as two
+      // separate pieces of country rather than one structure drawn twice.
+      const beds = strataBeds({
+        width: canvas.width, crestY, bottomY, scrollX,
+        spacingPx: STRATA_SPACING_PX, maxBeds: STRATA_MAX_BEDS,
+        dipSign: layerKey === 'L2' ? 1 : -1,
+      });
+      if (beds.length) {
         ctx.save();
         ctx.globalCompositeOperation = 'multiply';
-        const g = Math.max(0, Math.min(255, Math.round(255 * (1 - STRATA_DARKEN * alpha * strength))));
-        ctx.fillStyle = `rgb(${g},${g},${g})`;
-        // Every band as SUBPATHS of one Path2D, filled once. Four separate
-        // fills of a full-width polygon per layer was the single most
-        // expensive thing this overhaul added to the frame, and the frame is
-        // already dominated by compositing (a CPU profile of the running
-        // game put drawImage at ~63%). Same pixels, a quarter of the fill
-        // calls. Bands are broad, so they are also traced at STRATA_STRIDE
-        // rather than at the skyline's own resolution -- the crest stroke
-        // needs every point; a 9px band 30px below it does not.
-        const band = new Path2D();
-        for (let b = 1; b <= bandCount; b++) {
-          const off = b * STRATA_SPACING_PX;
-          band.moveTo(pts[0].x, pts[0].y + off);
-          for (let i = STRATA_STRIDE; i < pts.length; i += STRATA_STRIDE) {
-            band.lineTo(pts[i].x, pts[i].y + off);
-          }
-          const last = pts[pts.length - 1];
-          band.lineTo(last.x, last.y + off);
-          band.lineTo(last.x, last.y + off + STRATA_BAND_PX);
-          for (let i = pts.length - 1 - STRATA_STRIDE; i > 0; i -= STRATA_STRIDE) {
-            band.lineTo(pts[i].x, pts[i].y + off + STRATA_BAND_PX);
-          }
-          band.lineTo(pts[0].x, pts[0].y + off + STRATA_BAND_PX);
-          band.closePath();
+        // One Path2D per DISTINCT TONE rather than one for everything: beds
+        // differ in darkness now (see strataBeds' `tone`) and a single fill
+        // can only carry one color. `tone` takes a small fixed set of values
+        // by construction, so this is three fills for a whole range -- still
+        // fewer than the four full-width polygon fills this replaced, and the
+        // frame is dominated by compositing rather than by path work.
+        //
+        // Grouped by exact value, not by bucket-and-take-the-midpoint: that
+        // first attempt rendered a 0.71 bed at 0.4 and washed the bedding out
+        // to nearly nothing.
+        const byTone = new Map();
+        for (const bed of beds) {
+          const key = bed.tone.toFixed(4);
+          if (!byTone.has(key)) byTone.set(key, { tone: bed.tone, beds: [] });
+          byTone.get(key).beds.push(bed);
         }
-        ctx.fill(band);
+        for (const { tone, beds: inBucket } of byTone.values()) {
+          const g = Math.max(0, Math.min(255,
+            Math.round(255 * (1 - STRATA_DARKEN * tone * alpha * strength))));
+          ctx.fillStyle = `rgb(${g},${g},${g})`;
+          const band = new Path2D();
+          for (const bed of inBucket) {
+            const bp = bed.pts;
+            band.moveTo(bp[0].x, bp[0].y);
+            for (let i = 1; i < bp.length; i++) band.lineTo(bp[i].x, bp[i].y);
+            for (let i = bp.length - 1; i >= 0; i--) band.lineTo(bp[i].x, bp[i].y + STRATA_BAND_PX);
+            band.closePath();
+          }
+          ctx.fill(band);
+        }
         ctx.restore();
       }
     }
@@ -5513,6 +5559,31 @@ export class BiomeManager {
       const strokePath = this._terrainTopPath(bars, canvas.height, false, canvas.width);
       ctx.fillStyle = groundColor;
       ctx.fill(fillPath);
+      // Aerial perspective for the ground.
+      //
+      // Every range got this in Stage 3 of the mountain overhaul; the ground
+      // never did, so it stayed ONE flat color from the horizon line all the
+      // way to the bottom of the frame -- the single biggest reason it reads
+      // as a sheet of construction paper laid under the scene rather than as
+      // land receding away from you. It is also the largest continuous area
+      // on screen, so it is where a missing depth cue costs the most.
+      //
+      // Same vocabulary as _drawRidgeVolume's aerial pass: wash the FAR edge
+      // (the top, where the ground meets the ranges) toward this._airColor,
+      // and leave the near edge alone at full color. Runs before
+      // _drawGroundInterior so the interior detail still reads on top of it.
+      if (this._airColor && bars.length) {
+        let minTop = canvas.height;
+        for (const bar of bars) if (bar.y < minTop) minTop = bar.y;
+        const near = Math.max(minTop + 1, canvas.height);
+        const { r: ar, g: ag, b: ab } = hexToRgb(this._airColor);
+        const depth = ctx.createLinearGradient(0, minTop, 0, near);
+        depth.addColorStop(0, `rgba(${ar},${ag},${ab},${GROUND_AERIAL_ALPHA})`);
+        depth.addColorStop(GROUND_AERIAL_FALLOFF, `rgba(${ar},${ag},${ab},0)`);
+        depth.addColorStop(1, `rgba(${ar},${ag},${ab},0)`);
+        ctx.fillStyle = depth;
+        ctx.fill(fillPath);
+      }
       this._drawGroundInterior(ctx, canvas, fillPath, bars, groundColor, worldX);
 
       // Terrain relief: clip to the ridge and stamp a 1px-tall facing
