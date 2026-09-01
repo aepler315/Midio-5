@@ -807,6 +807,9 @@ function startTimeline(timelineData, extra = {}) {
   lastSongSeed = sim.songSeed;
   setSeedInput(sim.songSeed);
   sim.perf = perfGovernor;
+  // A song start is the expensive moment (strip bakes, cold paths); don't let
+  // that hitch vote on the shed level -- see PerfGovernor.WARMUP_MS.
+  perfGovernor.beginWarmup(performance.now());
   sim.setReducedFlash(reducedFlash);
   sim.setVisualStyle(visualStyle);
   // Prime one sim step so BiomeManager/update dials (haze, calm, etc.) are
@@ -860,6 +863,12 @@ function startTimeline(timelineData, extra = {}) {
     worldId: sim.worldId,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
+    // The shed level decides which passes are running at all (rim light,
+    // contact shadows, phenomena, the heavy overlay passes), so "why did
+    // that effect disappear a few seconds in" is unanswerable from outside
+    // without it. Live getters, not a snapshot: the governor mutates.
+    get perfLevel() { return perfGovernor?.level ?? null; },
+    get perf() { return perfGovernor || null; },
   };
 }
 

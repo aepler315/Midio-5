@@ -164,9 +164,20 @@ test("cli: relative paths follow the script's root, not the caller's cwd", () =>
   assert.equal(existsSync(join(root, "public/og.jpg")), false);
 });
 
-test("every hand-over the og skill prints is one this script accepts", () => {
+// Pins the og skill's prompts to this CLI's argument parser. Only meaningful
+// where that skill is installed: `.grok/` is gitignored (installed tooling,
+// not source), so in a plain checkout this was failing on an absent directory
+// rather than on any real drift between the docs and the parser. Authoring the
+// skill here to satisfy it would be circular -- the assertion would only be
+// checking prose written to satisfy the assertion.
+const OG_SKILL_DIR = join(TEMPLATE_ROOT, ".grok/skills/og");
+test("every hand-over the og skill prints is one this script accepts", {
+  skip: existsSync(join(OG_SKILL_DIR, "references"))
+    ? false
+    : "the og skill is not installed in this checkout (.grok/ is gitignored)",
+}, () => {
   // The card and banner recipes live in the skill's references/, not SKILL.md.
-  const skillDir = join(TEMPLATE_ROOT, ".grok/skills/og");
+  const skillDir = OG_SKILL_DIR;
   const docs = [
     join(skillDir, "SKILL.md"),
     ...readdirSync(join(skillDir, "references")).map((f) => join(skillDir, "references", f)),

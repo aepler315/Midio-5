@@ -4,7 +4,16 @@ dist/
 .vercel/
 .tanstack/
 .nitro/
-.grok/
+.grok/*
+# ...except the template's own shipped app env. The auth invariant
+# (scripts/check-auth-invariant.mjs) resolves VITE_AUTH_ENABLED from this
+# file, and authEnabledFromEnvValue treats ANY value but the string "false"
+# as auth-on -- so when this file is absent the template silently builds
+# with auth ENABLED, which is the opposite of what it ships. The value is a
+# committed default, not per-developer config: an explicit process-env entry
+# still overrides it (see mergeAppEnv).
+!.grok/
+!.grok/app-env.json
 artifacts/
 screenshots/
 *.log

@@ -83,23 +83,34 @@ export function mergeMeshes(meshes) {
 //   • gently sloped shoulder facets, mirrored left/right rather than
 //     jutting out as star points -- the "wings" of a robed figure, not
 //     spikes
-//   • a narrow waist and a soft keel notch between his feet
+//   • a narrow waist tapering to a single spindle apex (he hovers --
+//     there are no feet; see the base note below)
 //   • only a whisper of asymmetry (the left side sits fractionally
 //     narrower) so he still reads as a character, not clip-art, without
 //     ever tipping back into "aggressive"
 // His core sigil (MIDIO_EYE, an eye at the blink axis) already sits right
 // where a third eye would -- the new silhouette gives it room to read as
 // exactly that.
-// Half-width stays inside the 23px collision body. Nine rim verts so
-// apotheosis fold still maps. ---
+// The base was a pair of FEET with a keel notch between them, which committed
+// him to standing on the ground and therefore to a gait -- and a nine-vertex
+// crystal shard cannot waddle attractively, so every frame spent trying was
+// wasted. The lower three verts are now a spindle: a mirrored taper down to a
+// single bottom apex. Nothing left to plant, nothing left to alternate. He
+// hovers instead (see MidioMotion.js), which is both cheaper to animate and
+// the thing that finally makes him read like Midasus's and Broshi's sibling
+// rather than the one walking to keep up.
+//
+// Still nine rim verts, in the same order and rough angular positions, so
+// the Apotheosis fold (MIDIO_APOTHEOSIS_*) still maps onto it unchanged.
+// Half-width stays inside the 23px collision body.
 export const MIDIO_BODY = shardMesh({ x: 0, y: -30 }, [
   { x: 0, y: -62 },     // 0 crest spire
   { x: 10, y: -46 },    // 1 upper-right shoulder facet
   { x: 13, y: -28 },    // 2 right flank, tapering smoothly (not a jutting point)
-  { x: 8, y: -14 },     // 3 right waist facet
-  { x: 7, y: 0 },       // 4 right foot
-  { x: 0, y: -8 },      // 5 keel between feet
-  { x: -7, y: 0 },      // 6 left foot
+  { x: 9, y: -14 },     // 3 right waist facet
+  { x: 5, y: -6 },      // 4 lower-right taper (was the right foot)
+  { x: 0, y: 0 },       // 5 bottom apex (was the keel notch between the feet)
+  { x: -5, y: -6 },     // 6 lower-left taper (was the left foot)
   { x: -9, y: -15 },    // 7 left waist facet (near-mirror of 3)
   { x: -10, y: -46 },   // 8 upper-left shoulder facet (mirror of 1)
 ], { spokeEvery: 2, braces: [[1, 3], [3, 6], [6, 8]] });
