@@ -25,7 +25,25 @@
 //    overlay-pass stack, so a device that's still over budget after the
 //    original four rungs degrades to a clean core instead of stuttering.
 
-const FRAME_BUDGET_MS = 15; // spec §6.2: 16.6ms frame budget, ~15ms of it
+// What sample() actually receives is the raw rAF-to-rAF delta: the frame
+// PERIOD, vsync wait included -- not the time spent working inside it. So
+// this threshold has to be a frame-period threshold, and the old value (15,
+// described in its own comment as "16.6ms frame budget, ~15ms of it") was a
+// WORK budget being compared against a period. On any 60Hz display that made
+// every healthy frame ~16.67ms "over budget" and no frame ever clean: the
+// accumulator reached 60 in about 54 frames, shed a rung, reset, and did it
+// again -- MAX_LEVEL in roughly five seconds, on hardware that was keeping up
+// perfectly, with recovery impossible because a clean frame could never
+// occur. Everything gated on the deeper rungs (phenomena, the heavy overlay
+// passes, the terrain's own detail) switched itself off a few seconds into
+// every song on every machine.
+//
+// 18.5ms sits clear of a 60Hz period (16.67) plus its ordinary vsync jitter,
+// and below the 20ms one bad frame is elsewhere taken to mean. Crossing it
+// means the frame period slipped past ~54fps, which is a real dropped frame.
+// A 120Hz display (8.3ms) is comfortably clean; a 30fps scene (33ms) still
+// sheds, as it should.
+export const FRAME_BUDGET_MS = 18.5;
 const SHED_AFTER_FRAMES = 60; // ~1s sustained overage at 60fps, at exactly-at-budget severity
 const SHED_WEIGHT_CAP = 6; // one catastrophic frame (tab hitch, GC pause) can't shed more than ~6 "normal" frames' worth
 const RECOVER_AFTER_MS = 10000; // 10 clean seconds

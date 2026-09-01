@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PerfGovernor, MAX_LEVEL, resolvePerfStartLevel } from '../src/render/PerfGovernor.js';
+import { PerfGovernor, MAX_LEVEL, resolvePerfStartLevel, FRAME_BUDGET_MS } from '../src/render/PerfGovernor.js';
+
+// Derived from the budget rather than hardcoded, so these test the
+// severity-weighted shedding BEHAVIOUR and not a particular threshold --
+// the old literals silently encoded a 15ms budget that turned out to be
+// measuring the wrong quantity entirely (see FRAME_BUDGET_MS).
+const BARELY_OVER = FRAME_BUDGET_MS + 0.1;   // severity ~1.0
+const TRIPLE = FRAME_BUDGET_MS * 3;          // severity 3.0
+const framesToShed = (deltaMs) => Math.ceil(60 / Math.min(6, deltaMs / FRAME_BUDGET_MS));
 
 function feedFrames(gov, n, deltaMs, startMs = 0, stepMs = 16.6) {
   let t = startMs;
@@ -23,12 +31,13 @@ test('stays at level 0 under a healthy frame budget', () => {
 
 test('sheds one rung after sustained over-budget frames, in spec order', () => {
   const gov = new PerfGovernor();
-  // deltaMs=20 is 20/15 of budget -- with severity-weighted shedding this
-  // crosses the threshold at frame 45, not 60 (see the scaled-shedding
-  // tests below for the "barely over budget still takes ~1s" case).
-  feedFrames(gov, 44, 20);
+  // A modest overage: severity-weighted shedding crosses the threshold
+  // sooner than the 60-frame nominal (see the scaled-shedding tests below).
+  const over = FRAME_BUDGET_MS * (20 / 15); // same proportional overage as before
+  const n = framesToShed(over);
+  feedFrames(gov, n - 1, over);
   assert.equal(gov.level, 0, 'should not shed before the sustained-severity threshold');
-  feedFrames(gov, 1, 20);
+  feedFrames(gov, 1, over);
   assert.equal(gov.level, 1);
   assert.equal(gov.visionAllowed, false, 'vision loop sheds first');
   assert.equal(gov.particleMul, 1, 'particles untouched at level 1');
@@ -38,7 +47,8 @@ test('sheds one rung after sustained over-budget frames, in spec order', () => {
 
 test('rim light sheds at level 2 alongside the particle cap; contact shadows survive one rung longer', () => {
   const gov = new PerfGovernor();
-  feedFrames(gov, 120, 20); // two shed rungs -> level 2
+  const over2 = FRAME_BUDGET_MS * (20 / 15);
+  feedFrames(gov, framesToShed(over2) * 2, over2); // two shed rungs -> level 2
   assert.equal(gov.level, 2);
   assert.equal(gov.particleMul, 0.6);
   assert.equal(gov.rimLightEnabled, false);
@@ -47,18 +57,18 @@ test('rim light sheds at level 2 alongside the particle cap; contact shadows sur
 
 test('a frame barely over budget still takes ~60 frames (~1s) to shed', () => {
   const gov = new PerfGovernor();
-  feedFrames(gov, 59, 15.1);
+  feedFrames(gov, 59, BARELY_OVER);
   assert.equal(gov.level, 0);
-  feedFrames(gov, 1, 15.1);
+  feedFrames(gov, 1, BARELY_OVER);
   assert.equal(gov.level, 1);
 });
 
 test('a badly over-budget frame sheds a rung in far fewer frames', () => {
   const gov = new PerfGovernor();
-  // deltaMs=45 is 3x budget -- severity 3, so 20 frames (not 60) sheds.
-  feedFrames(gov, 19, 45);
+  // 3x budget -- severity 3, so 20 frames (not 60) sheds.
+  feedFrames(gov, 19, TRIPLE);
   assert.equal(gov.level, 0);
-  feedFrames(gov, 1, 45);
+  feedFrames(gov, 1, TRIPLE);
   assert.equal(gov.level, 1);
 });
 
@@ -75,7 +85,7 @@ test('sheds progressively further under sustained pressure', () => {
   // one rung with no carry-over into the next, isolating "does the ladder
   // walk down in order" from the severity-scaling behavior (tested above).
   for (let lvl = 1; lvl <= MAX_LEVEL; lvl++) {
-    t = feedFrames(gov, 60, 15.1, t);
+    t = feedFrames(gov, 60, BARELY_OVER, t);
     assert.equal(gov.level, lvl);
   }
   // Fully shed: every lever off.
@@ -215,4 +225,35 @@ test('beginWarmup re-arms the grace for a new song', async () => {
   g.beginWarmup(t);                       // new song loads here
   for (let i = 0; i < 120; i++) { g.sample(200, t); t += 12; }
   assert.equal(g.level, 0, 'the second song\'s bake must be absorbed too');
+});
+
+test('a machine holding a steady 60fps must never shed a rung', () => {
+  // sample() is fed the raw rAF-to-rAF delta, which is the frame PERIOD
+  // (~16.67ms on a 60Hz display), not the time spent working inside it.
+  // Compared against a 15ms *work* budget, every healthy frame counted as
+  // over budget and no frame was ever clean, so the accumulator marched to
+  // 60 in under a second, shed a rung, and repeated -- reaching MAX_LEVEL in
+  // ~5s and never recovering, on hardware that was keeping up perfectly.
+  // That is what "the textures disappear after 2 seconds" actually was.
+  const gov = new PerfGovernor({ startLevel: 0 });
+  let t = 0;
+  for (let i = 0; i < 60 * 20; i++) { gov.sample(1000 / 60, t); t += 1000 / 60; }
+  assert.equal(gov.level, 0, `shed to ${gov.level} while holding 60fps`);
+});
+
+test('ordinary vsync jitter at 60fps is not an overage either', () => {
+  const gov = new PerfGovernor({ startLevel: 0 });
+  let t = 0;
+  for (let i = 0; i < 60 * 20; i++) {
+    const d = i % 7 === 0 ? 17.6 : 16.7; // the usual ragged edge of a 60Hz vsync
+    gov.sample(d, t); t += d;
+  }
+  assert.equal(gov.level, 0, `jitter alone shed to ${gov.level}`);
+});
+
+test('a machine genuinely missing frames still sheds', () => {
+  const gov = new PerfGovernor({ startLevel: 0 });
+  let t = 0;
+  for (let i = 0; i < 60 * 20; i++) { gov.sample(33.3, t); t += 33.3; } // a hard 30fps
+  assert.ok(gov.level > 0, 'a real 30fps scene must still degrade');
 });
