@@ -157,3 +157,78 @@ export function swellCrest({
   }
   return pts;
 }
+
+// --- Foreground swell: the isthmus reveal ---------------------------------
+//
+// The distant wave above answers "the back of the scene lost its motion".
+// This answers a different question: WHERE ARE THEY, actually?
+//
+// At normal framing the trio run along a strip of ground with mountains
+// behind, and the ground could be a continent. Pull the camera back and
+// there is room below the ground line to answer it -- so the near water
+// comes into frame, and the strip turns out to be an isthmus: a narrow neck
+// of land with sea on the near side too.
+//
+// It is the same swell mathematics as the distant wave, at the other end of
+// the depth scale. Nearer water has longer visible wavelengths, larger
+// amplitude and faster apparent travel, all of which is just perspective --
+// and matching the FORM while scaling those three is exactly what makes the
+// two read as one ocean at two distances rather than two unrelated effects.
+export const FG_REVEAL_START = 0.30; // pullback below this shows nothing
+export const FG_REVEAL_FULL = 0.85;  // ...and at this it is fully in frame
+// Perspective multipliers against the distant swell's own numbers.
+// Only slightly longer than the horizon's. The first attempt used 2.6, which
+// put less than one wavelength across the frame -- a single smooth hump that
+// reads as a DUNE, not as sea. Water is legible as water because you can see
+// several crests at once; the depth cue has to come from amplitude and speed,
+// not from stretching the wavelength until the waves stop being waves.
+const FG_LEN_MUL = 1.15;
+const FG_SPEED_MUL = 1.9; // and they pass the eye faster
+const FG_AMP_MUL = 3.4;
+
+/**
+ * How present the foreground water is at a given camera pull-back, 0..1.
+ *
+ * Deliberately a ramp with a dead zone rather than a switch: the reveal is
+ * the point of the effect, so it has to happen *as* the camera moves. A
+ * hard cut would just be water appearing.
+ */
+export function isthmusReveal01(pullback01) {
+  const p = clamp01(pullback01);
+  if (p <= FG_REVEAL_START) return 0;
+  const t = (p - FG_REVEAL_START) / Math.max(1e-6, FG_REVEAL_FULL - FG_REVEAL_START);
+  const c = clamp01(t);
+  return c * c * (3 - 2 * c); // smoothstep -- eases in and settles
+}
+
+/** The near swell's height at one world x, in [-1, 1] before amplitude. */
+export function foregroundSwellAt(worldX, tSec) {
+  let s = 0;
+  for (const c of COMPONENTS) {
+    s += c.amp * Math.sin(
+      (worldX / (c.len * FG_LEN_MUL)) * 2 * Math.PI + tSec * c.speed * FG_SPEED_MUL + c.phase,
+    );
+  }
+  const set = 1 - SET_DEPTH + SET_DEPTH * Math.sin(tSec * SET_SPEED * FG_SPEED_MUL + worldX / SET_LEN);
+  return s * set;
+}
+
+/**
+ * The near shore's water line across the screen.
+ *
+ * `scrollX` should be the NEAR ground's own scroll, not a far layer's --
+ * this water is at the viewer's feet, so it has to travel with the fastest
+ * parallax in the scene or it will read as painted on.
+ *
+ * @returns {Array<{x:number,y:number}>} left to right, one sample past each edge
+ */
+export function foregroundSwellCrest({
+  width, baselineY, ampPx, tSec, scrollX = 0, stepPx = 12, energy01 = 1,
+}) {
+  const pts = [];
+  const amp = ampPx * FG_AMP_MUL * (0.6 + 0.4 * clamp01(energy01));
+  for (let x = -stepPx; x <= width + stepPx; x += stepPx) {
+    pts.push({ x, y: baselineY - amp * foregroundSwellAt(scrollX + x, tSec) });
+  }
+  return pts;
+}

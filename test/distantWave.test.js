@@ -177,3 +177,74 @@ test('the crest spans past both edges so the water never ends on screen', () => 
   assert.ok(pts[0].x < 0);
   assert.ok(pts[pts.length - 1].x > 640);
 });
+
+// --- Foreground swell: the isthmus reveal --------------------------------
+// A different question from the distant wave's. That one replaces lost
+// motion at the horizon; this one answers "where are they actually?" -- pull
+// the camera back and the strip of ground turns out to be a neck of land
+// with sea on the near side too.
+import {
+  isthmusReveal01, foregroundSwellAt, foregroundSwellCrest,
+  FG_REVEAL_START, FG_REVEAL_FULL,
+} from '../src/world/DistantWave.js';
+
+test('the near water is absent at normal framing and only a wide shot reveals it', () => {
+  assert.equal(isthmusReveal01(0), 0);
+  assert.equal(isthmusReveal01(FG_REVEAL_START), 0, 'the dead zone is closed at its top');
+  assert.ok(isthmusReveal01(FG_REVEAL_START + 0.01) > 0, 'and opens immediately past it');
+  assert.equal(isthmusReveal01(FG_REVEAL_FULL), 1);
+  assert.equal(isthmusReveal01(1), 1, 'saturates rather than overshooting');
+});
+
+test('it eases in with the camera rather than switching on', () => {
+  // The reveal IS the effect -- a hard cut would just be water appearing.
+  let prev = -1;
+  for (let p = 0; p <= 1.0001; p += 0.02) {
+    const v = isthmusReveal01(p);
+    assert.ok(v >= prev - 1e-9, `reveal went backwards at pullback ${p}`);
+    assert.ok(v >= 0 && v <= 1, `out of range at ${p}: ${v}`);
+    prev = v;
+  }
+  // Smoothstep: the midpoint of the ramp is near half, and the ends are flat.
+  const mid = (FG_REVEAL_START + FG_REVEAL_FULL) / 2;
+  assert.ok(Math.abs(isthmusReveal01(mid) - 0.5) < 0.05);
+});
+
+test('near water is bigger and faster than the horizon swell -- that is the depth cue', () => {
+  const span = (fn) => {
+    let lo = Infinity, hi = -Infinity;
+    for (let x = 0; x < 4000; x += 7) { const v = fn(x, 3.5); if (v < lo) lo = v; if (v > hi) hi = v; }
+    return hi - lo;
+  };
+  assert.ok(span(foregroundSwellAt) > 0.5, 'it has to actually swell');
+  // Faster: the same world point changes more over the same short interval.
+  const move = (fn) => {
+    let sum = 0;
+    for (let x = 0; x < 2000; x += 11) sum += Math.abs(fn(x, 1.0) - fn(x, 1.3));
+    return sum;
+  };
+  assert.ok(move(foregroundSwellAt) > move(swellAt) * 1.2,
+    'near water should pass the eye faster than the horizon does');
+});
+
+test('the near crest is bounded and planted in the world', () => {
+  const pts = foregroundSwellCrest({ width: 800, baselineY: 700, ampPx: 26, tSec: 5.5 });
+  for (const p of pts) assert.ok(Number.isFinite(p.y));
+  assert.ok(pts[0].x < 0 && pts[pts.length - 1].x > 800, 'must span past both edges');
+  // Scrolling shifts the same water rather than deforming it.
+  const step = 12, dx = step * 4;
+  const a = foregroundSwellCrest({ width: 600, baselineY: 700, ampPx: 26, tSec: 2, scrollX: 0, stepPx: step });
+  const b = foregroundSwellCrest({ width: 600, baselineY: 700, ampPx: 26, tSec: 2, scrollX: dx, stepPx: step });
+  for (let i = 4; i < a.length; i++) {
+    assert.ok(Math.abs(a[i].y - b[i - 4].y) < 1e-9, `sample ${i} did not shift with the scroll`);
+  }
+});
+
+test('louder sections raise the near swell without inverting it', () => {
+  const spanAt = (e) => {
+    const ys = foregroundSwellCrest({ width: 800, baselineY: 700, ampPx: 26, tSec: 4, energy01: e })
+      .map((p) => p.y);
+    return Math.max(...ys) - Math.min(...ys);
+  };
+  assert.ok(spanAt(1) > spanAt(0));
+});
