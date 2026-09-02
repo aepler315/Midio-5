@@ -60,53 +60,20 @@
           </div>
         </div>
 
-        <!-- Song search: free music by default, optional Soulseek via slskd -->
-        <section id="slskPanel" class="slskPanel" aria-label="Song search">
-          <div class="slskHeader">
-            <div class="slskTitleRow">
-              <h2 class="slskHeading">Find a song</h2>
-              <span id="slskModeBadge" class="slskModeBadge" data-mode="free" title="">free music</span>
-            </div>
-            <button id="slskSettingsBtn" type="button" class="ghostbtn chipbtn slskSettingsBtn" title="Optional Soulseek login">Soulseek</button>
-          </div>
-
-          <form id="slskSearchForm" class="slskSearchForm" autocomplete="off">
-            <input
-              id="slskQuery"
-              type="search"
-              name="q"
-              placeholder="Search free music or the network…"
-              maxlength="200"
-              spellcheck="false"
-              enterkeyhint="search"
-            />
-            <button id="slskSearchBtn" type="submit" class="slskSearchBtn">Search</button>
-          </form>
-
-          <div id="slskSettings" class="slskSettings hidden">
-            <p class="slskHint slskHintLead">
-              Search works right away on <strong>free music</strong> (no account).
-              Optional: unlock the Soulseek network with your account.
-            </p>
-            <label class="slskField">
-              <span>Soulseek user</span>
-              <input id="slskUser" type="text" placeholder="username" spellcheck="false" autocomplete="username" />
-            </label>
-            <label class="slskField">
-              <span>Password</span>
-              <input id="slskPass" type="password" placeholder="password" spellcheck="false" autocomplete="current-password" />
-            </label>
-            <div class="slskSettingsActions">
-              <button id="slskSaveCfg" type="button" class="slskSearchBtn">Connect Soulseek</button>
-              <button id="slskClearCfg" type="button" class="ghostbtn chipbtn">Use free music</button>
-            </div>
-            
-          </div>
-
-          <p id="slskStatus" class="slskStatus" role="status"></p>
-          <p id="slskEmpty" class="slskEmpty">Type a song or artist and hit <strong>Search</strong> — free tracks work with zero setup. Title · Artist · Album · Length.</p>
-          <div id="slskResults" class="slskResults" role="list"></div>
-          <p id="slskLegal" class="slskLegal">Free results are open / demo audio. Soulseek downloads: only take files you have the right to use.</p>
+        <section class="listenPanel" aria-label="Listen to what is playing">
+          <h2 class="listenHeading">Or just play a song</h2>
+          <p class="listenLead">
+            Put anything on &mdash; Spotify, YouTube, whatever you already use &mdash;
+            and tap Listen. Midio builds the world out of what it hears.
+          </p>
+          <button id="listenBtn" type="button" class="listenBtn">Listen</button>
+          <p class="listenNote">
+            Uses your microphone, so the music needs to be coming from a speaker
+            rather than headphones. Nothing is recorded or sent anywhere. A
+            listen runs about three and a half minutes &mdash; it can&rsquo;t know
+            how long your song is, so it plays an arc that length and then ends.
+          </p>
+          <p id="listenStatus" class="hint listenStatus hidden" role="status"></p>
         </section>
 
         <div class="titleMeta">
@@ -128,24 +95,7 @@
             </select>
           </div>
 
-          <details class="titleAdvanced">
-            <summary>Find music (Jamendo)</summary>
-            <p class="hint">
-              Free, Creative-Commons-licensed tracks via
-              <a href="https://www.jamendo.com" target="_blank" rel="noopener">Jamendo</a>
-              &mdash; non-commercial use only under their API terms. Paste a free
-              key from <a href="https://devportal.jamendo.com" target="_blank" rel="noopener">devportal.jamendo.com</a>.
-            </p>
-            <div class="jamendoRow">
-              <input id="jamendoClientIdInput" type="text" spellcheck="false" autocomplete="off" placeholder="Jamendo client_id" />
-            </div>
-            <div class="jamendoRow">
-              <input id="jamendoSearchInput" type="text" spellcheck="false" autocomplete="off" placeholder="Search songs, artists, genres&hellip;" />
-              <button id="jamendoSearchBtn" type="button" class="ghostbtn chipbtn">Search</button>
-            </div>
-            <p id="jamendoStatus" class="hint jamendoStatus hidden"></p>
-            <ul id="jamendoResults" class="jamendoResults"></ul>
-          </details>
+          
 
           
 

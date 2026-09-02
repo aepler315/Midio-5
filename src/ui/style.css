@@ -515,35 +515,62 @@ html, body {
   box-shadow: 0 6px 20px color-mix(in srgb, var(--spec-warm) 40%, transparent);
 }
 
-#demoBtn.demoBtn {
+/* Live listening: the mobile entry point. A phone cannot read a streaming
+   service's audio (DRM, cross-origin embeds, no tab capture), but its
+   speaker is already playing the song -- so this is the primary path on a
+   phone and is styled as the confident option, not as a fallback. */
+.listenPanel {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-2);
+  text-align: center;
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+  border-radius: var(--radius-lg, 14px);
+  background: color-mix(in srgb, var(--spec-cool) 6%, transparent);
+}
+.listenHeading {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+.listenLead { margin: 0; font-size: 0.9rem; opacity: 0.8; max-width: 42ch; }
+.listenNote { margin: 0; font-size: 0.76rem; opacity: 0.6; max-width: 46ch; }
+.listenStatus { margin: 0; font-size: 0.8rem; }
+
+#listenBtn.listenBtn {
   width: 100%;
+  max-width: 22rem;
   background: linear-gradient(135deg, var(--spec-warm), var(--spec-gold) 120%);
   border: none;
   color: #1a0d16;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   padding: var(--space-3) var(--space-5);
   border-radius: var(--radius-pill);
   cursor: pointer;
-  font-size: 0.95rem;
+  font-size: 1rem;
+  /* Comfortably past the 44px touch-target floor: this is the one control
+     that matters on a phone. */
+  min-height: 48px;
   box-shadow: 0 4px 16px color-mix(in srgb, var(--spec-warm) 30%, transparent);
   transition: transform var(--dur-base) var(--ease-standard), box-shadow var(--dur-base), filter var(--dur-base);
 }
-#demoBtn.demoBtn:hover {
+#listenBtn.listenBtn:hover {
   filter: brightness(1.06);
   transform: translateY(-1px);
   box-shadow: 0 6px 20px color-mix(in srgb, var(--spec-warm) 40%, transparent);
 }
+#listenBtn.listenBtn[disabled] { opacity: 0.55; cursor: default; transform: none; }
 #playAgainBtn:hover {
   border-color: var(--spec-cool);
   color: var(--spec-cool);
   background: color-mix(in srgb, var(--spec-cool) 8%, transparent);
   box-shadow: 0 0 24px color-mix(in srgb, var(--spec-cool) 12%, transparent);
 }
-.demoBtnLabel { font-weight: 700; letter-spacing: 0.04em; }
-.demoBtnHint { font-size: 0.72rem; opacity: 0.7; font-weight: 400; color: #3a1a16; }
 
 #playAgainBtn {
   background: transparent;

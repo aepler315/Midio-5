@@ -185,6 +185,10 @@ export class ComposerStrip {
     this.holds = holds || [];
     this.sections = sections || [];
     this.mountain = buildSongMountain(this.timeline, this.durationMs, MOUNTAIN_SAMPLES);
+    /** True when `durationMs` is a nominal guess rather than a measured
+     *  length -- set by the live-listening path, where the song has not
+     *  finished happening yet. Only affects how the clock is labelled. */
+    this.estimatedDuration = false;
 
     // Legacy fields some tests still poke.
     let barMs = 500;
@@ -344,7 +348,14 @@ export class ComposerStrip {
     ctx.fillText(formatClock(nowMs), x0 + 10, y0 + h - 6);
     ctx.fillStyle = C.time;
     ctx.textAlign = 'right';
-    ctx.fillText(formatClock(this.durationMs), x0 + w - 10, y0 + h - 6);
+    // Live listening cannot know how long the song is -- it is watching one
+    // happen. The nominal length it runs its arc against is a guess, and a
+    // guess drawn in the same type as a measured duration is a lie the rest
+    // of this readout does not tell.
+    ctx.fillText(
+      (this.estimatedDuration ? '~' : '') + formatClock(this.durationMs),
+      x0 + w - 10, y0 + h - 6,
+    );
 
     if (this.selectedSection >= 0 && this.selectedSection < this.sections.length) {
       this._drawSectionDetail(ctx, L, this.sections[this.selectedSection], this.selectedSection);
