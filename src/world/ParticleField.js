@@ -260,6 +260,13 @@ export class ParticleField {
   draw(ctx, mul = 1, haloColor = null, hueBlend = 0, lights = null) {
     const color = haloColor && hueBlend > 0.001 ? hexLerpHsl(this.color, haloColor, clamp01(hueBlend)) : this.color;
     const lighting = !!(lights && lights.length);
+    // An empty field has nothing to draw. Without this the Math.max below
+    // floors the count at 1, `particles[0]` is undefined, and the first
+    // property read off it throws -- which aborts the REST of the frame,
+    // every frame, for whatever world happens to hold an empty field. It
+    // only surfaced under lighting, because that is the first branch that
+    // dereferences the particle.
+    if (this.particles.length === 0) return;
     ctx.save();
     const n = Math.max(1, Math.ceil(this.particles.length * mul));
     for (let idx = 0; idx < n; idx++) {
