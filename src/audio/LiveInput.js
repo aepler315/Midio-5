@@ -31,6 +31,11 @@
 //
 // This module owns only the getUserMedia/AnalyserNode plumbing. The DSP is
 // LiveAnalyser.js, which is pure and tested separately.
+import { RollingCapture } from './RollingCapture.js';
+
+/** Must match BATCH in capture-worklet.js -- it decides how stale the newest
+ *  captured sample is, which is a term in every position measurement. */
+export const CAPTURE_BATCH = 4096;
 
 /** Constraints that ask for the raw signal rather than a cleaned-up voice. */
 export const RAW_AUDIO_CONSTRAINTS = {
@@ -91,6 +96,53 @@ export class LiveInput {
     this.sampleRate = 48000;
     this._bins = null;
     this.active = false;
+    /** Rolling time-domain history, present only once enableCapture()
+     *  succeeds. Null means song recognition is unavailable on this device
+     *  and the show falls back to reacting rather than syncing. */
+    this.capture = null;
+    this._captureNode = null;
+    this.captureLatencyMs = 0;
+  }
+
+  /**
+   * Start keeping the last `seconds` of raw samples, for song recognition.
+   *
+   * Separate from start() and allowed to fail on its own: the reactive live
+   * mode works without it, so a browser with no AudioWorklet loses matching
+   * rather than losing the whole feature.
+   *
+   * @returns {Promise<boolean>} whether capture is running
+   */
+  async enableCapture(seconds = 10) {
+    if (!this.active || !this.ctx || !this._source) return false;
+    if (this.capture) return true;
+    if (!this.ctx.audioWorklet) return false;
+    try {
+      // Resolved against this module's own URL so it survives being served
+      // from any path.
+      await this.ctx.audioWorklet.addModule(new URL('./capture-worklet.js', import.meta.url));
+      const node = new AudioWorkletNode(this.ctx, 'midio-capture', {
+        numberOfInputs: 1, numberOfOutputs: 0,
+      });
+      const ring = new RollingCapture(seconds, this.sampleRate);
+      // How old the newest sample in the ring already is by the time anyone
+      // reads it: the worklet batches CAPTURE_BATCH samples before posting,
+      // and the device itself buffers before that. Song position is measured
+      // from that newest sample, so without this the music always appears
+      // slightly further back than it is.
+      this.captureLatencyMs = (CAPTURE_BATCH / this.sampleRate) * 1000
+        + (this.ctx.baseLatency || 0) * 1000;
+      node.port.onmessage = (e) => ring.push(e.data);
+      this._source.connect(node);
+      this._captureNode = node;
+      this.capture = ring;
+      return true;
+    } catch (err) {
+      // A worklet that will not load is a capability gap, not a failure worth
+      // interrupting anyone over.
+      console.warn('[LiveInput] capture unavailable', err);
+      return false;
+    }
   }
 
   /**
@@ -113,6 +165,8 @@ export class LiveInput {
     this.sampleRate = this.ctx.sampleRate || 48000;
 
     const source = this.ctx.createMediaStreamSource(this.stream);
+    // Retained so enableCapture() can tap the same source later.
+    this._source = source;
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = this.fftSize;
     this.analyser.smoothingTimeConstant = this.smoothing;
@@ -143,6 +197,13 @@ export class LiveInput {
    *  indicator and costs battery, so this is not optional housekeeping. */
   stop() {
     this.active = false;
+    if (this._captureNode) {
+      this._captureNode.port.onmessage = null;
+      try { this._captureNode.disconnect(); } catch { /* already gone */ }
+      this._captureNode = null;
+    }
+    this.capture = null;
+    this._source = null;
     if (this.stream) {
       for (const track of this.stream.getTracks()) track.stop();
       this.stream = null;
