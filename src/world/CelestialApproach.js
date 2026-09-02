@@ -65,14 +65,37 @@ export function approachScale(t01) {
   return Math.min(MAX_SCALE, D_FAR / Math.max(1e-6, d));
 }
 
+// How much of the observer's own vertical motion the body's apparent position
+// picks up, at closest approach. Parallax is real -- a nearer object shifts
+// more against the background as you move -- but for something this far away
+// it is almost nothing, and it GROWS as the body closes rather than being
+// constant. 2% of a jump is a couple of pixels: present in the model, and
+// nothing you could point at.
+//
+// The first version of this had no such term and simply used Midio's live
+// render Y as the anchor, which is a 1:1 hard anchor: he jumped three feet
+// and the sun jumped three feet with him, welding a body at astronomical
+// distance to a character's pose. The fix is not a smaller number on that
+// coupling -- it is anchoring to the GROUND, which does not move, and then
+// adding back the small amount of parallax that should have been there.
+export const OBSERVER_PARALLAX = 0.02;
+
 /**
- * The convergence point, in screen space, for a given Midio position.
+ * The convergence point, in screen space.
  *
- * @param {number} midioX Midio's screen x
- * @param {number} midioY Midio's screen y (his feet)
+ * @param {number} anchorX  Midio's screen x -- stable, he holds his column
+ * @param {number} groundY  the GROUND line, not his live render Y. An
+ *   observer's jump does not move the sun.
+ * @param {number} [observerDy] how far above the ground the observer
+ *   currently is (positive = airborne), for the parallax term
+ * @param {number} [t01] song progress, since parallax grows as it nears
  */
-export function convergencePoint(midioX, midioY) {
-  return { x: midioX + CONVERGE_DX, y: midioY + CONVERGE_DY };
+export function convergencePoint(anchorX, groundY, observerDy = 0, t01 = 0) {
+  const closeness = clamp01(1 - approachDistance(t01) / D_FAR);
+  return {
+    x: anchorX + CONVERGE_DX,
+    y: groundY + CONVERGE_DY + observerDy * OBSERVER_PARALLAX * closeness,
+  };
 }
 
 /**
@@ -105,12 +128,15 @@ export function approachedPos(orbitX, orbitY, targetX, targetY, t01) {
  * @param {number} p.orbitX current orbital screen x
  * @param {number} p.orbitY current orbital screen y
  * @param {number} p.midioX
- * @param {number} p.midioY
+ * @param {number} p.groundY the ground line -- NOT Midio's live render y
+ * @param {number} [p.observerDy] his height above the ground, for parallax
  * @param {number} p.progress01 song progress
  * @returns {{x:number, y:number, scale:number, distance:number}}
  */
-export function celestialApproach({ orbitX, orbitY, midioX, midioY, progress01 }) {
-  const target = convergencePoint(midioX, midioY);
+export function celestialApproach({
+  orbitX, orbitY, midioX, groundY, observerDy = 0, progress01,
+}) {
+  const target = convergencePoint(midioX, groundY, observerDy, progress01);
   const pos = approachedPos(orbitX, orbitY, target.x, target.y, progress01);
   return {
     x: pos.x,

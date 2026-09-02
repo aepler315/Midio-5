@@ -74,6 +74,7 @@ import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Drama
 import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
 import { celestialApproach } from './CelestialApproach.js';
+import { snapCutsToReleases } from './BoundarySnap.js';
 import { applyConductorSchedule } from '../core/ConductorTrack.js';
 import { analyzeSongForm } from './SongForm.js';
 import {
@@ -130,6 +131,11 @@ const CREST_RIM_ALPHA = { L2: 0.35, L3: 0.55, L4: 1, L5: 1 };
 // silhouette of one range printed onto another.
 const CAST_SHADOW_MAX = 0.18;
 const CAST_SHADOW_BAND_PX = 46;
+// Sub-bands the falloff is built from. Each traces the near crest at its own
+// offset, so the fade is measured from the LOCAL crest everywhere rather than
+// from one global extremum -- see _drawCastShadow for why that mattered.
+// Four is enough that the steps are invisible at this contrast.
+const CAST_SHADOW_STEPS = 4;
 // Rock strata (Stage 6, ship-last/cuttable): thin bands, kept well under the
 // crest/shoulder contrast so the skyline and the shoulder facets -- both
 // already established depth cues -- stay the things you read first.
@@ -916,9 +922,21 @@ export class BiomeManager {
     // entirely from relaxed energy peaks (or from the clock) still reported
     // itself as 'ssm'. That made the whole class of "the SSM read was thrown
     // away" bug invisible in debug output, including the label loss below.
-    const { cuts, source: floorSource } = this._ensureMinimumSections(
+    const { cuts: rawCuts, source: floorSource } = this._ensureMinimumSections(
       chosen, { pickPeaks, barTimes, durationMs, lastIdx },
     );
+    // Put each boundary on the RELEASE rather than on the run-up to it
+    // (BoundarySnap.js). Both detectors answer "where does the material
+    // change?" -- but in produced music a drop is preceded by a build, the
+    // energy vector changes when the BUILD starts, and the detector marks the
+    // build. The show then fired its release about a bar early, over material
+    // still winding up. The same correction also pulls back the band-energy
+    // fallback's trailing-window lag, since it looks both ways for the step.
+    // The song's first and last cuts are pinned: they are the edges of the
+    // schedule, not releases, and moving one leaves a gap.
+    const cuts = snapCutsToReleases(rawCuts, barScalarEnergy, {
+      pinned: [rawCuts[0], rawCuts[rawCuts.length - 1]],
+    });
     // The floor's own answer wins when it intervened, because that IS what the
     // schedule is now made of; otherwise the chosen detector gets the credit.
     const ssmKept = ssmUsable && !floorSource;
@@ -3324,9 +3342,14 @@ export class BiomeManager {
    *  the moon, the light rig and the mandala all read the same body. */
   _celestialApproachAt(canvas, cx, cy) {
     const midioX = this.midioX ?? canvas.width * 0.32;
-    const midioY = this.midioY ?? this._zoomedGroundY(canvas);
+    // Anchored to the GROUND, not to Midio's live render y. He jumps; the sun
+    // does not. `observerDy` feeds back only the small, distance-scaled
+    // parallax a real observer's motion would produce.
+    const groundY = this._zoomedGroundY(canvas);
+    const observerDy = Number.isFinite(this.midioY) ? this.midioY - groundY : 0;
     return celestialApproach({
-      orbitX: cx, orbitY: cy, midioX, midioY, progress01: clamp01(this._progress || 0),
+      orbitX: cx, orbitY: cy, midioX, groundY, observerDy,
+      progress01: clamp01(this._progress || 0),
     });
   }
 
@@ -4890,21 +4913,37 @@ export class BiomeManager {
     farBody.lineTo(farGeom.pts[0].x, farGeom.bottomY);
     farBody.closePath();
 
+    // The fade used to come from a vertical gradient anchored at
+    // `nearGeom.crestY` -- the single highest point of the near range across
+    // the whole screen. That is a global extremum over a DANCING ridge:
+    // whichever column happens to be tallest changes abruptly frame to frame,
+    // so the gradient's position snapped around and the shadow flickered.
+    //
+    // A screen-vertical gradient was the wrong instrument anyway. The band
+    // follows a wavy crest, so one gradient can only be correct at whatever
+    // height it was anchored to and is wrong everywhere else. Stacked
+    // sub-bands, each tracing the crest polyline at its own offset, put the
+    // falloff where it belongs -- measured from the LOCAL crest at every x --
+    // and depend on no extremum at all, so there is nothing left to snap.
     const nPts = nearGeom.pts;
-    const band = new Path2D();
-    band.moveTo(nPts[0].x, nPts[0].y);
-    for (let i = 1; i < nPts.length; i++) band.lineTo(nPts[i].x, nPts[i].y);
-    for (let i = nPts.length - 1; i >= 0; i--) band.lineTo(nPts[i].x, nPts[i].y - CAST_SHADOW_BAND_PX);
-    band.closePath();
-
     ctx.save();
     ctx.clip(farBody);
-    const grad = ctx.createLinearGradient(0, nearGeom.crestY - CAST_SHADOW_BAND_PX, 0, nearGeom.crestY);
-    grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, `rgba(0,0,0,${strength.toFixed(3)})`);
     ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = grad;
-    ctx.fill(band);
+    const step = CAST_SHADOW_BAND_PX / CAST_SHADOW_STEPS;
+    for (let s2 = 0; s2 < CAST_SHADOW_STEPS; s2++) {
+      // Darkest against the crest, fading upward away from it.
+      const a = strength * (1 - s2 / CAST_SHADOW_STEPS);
+      if (a < 0.004) continue;
+      const g = Math.max(0, Math.min(255, Math.round(255 * (1 - a))));
+      ctx.fillStyle = `rgb(${g},${g},${g})`;
+      const lo = -s2 * step, hi = -(s2 + 1) * step;
+      const band = new Path2D();
+      band.moveTo(nPts[0].x, nPts[0].y + lo);
+      for (let i = 1; i < nPts.length; i++) band.lineTo(nPts[i].x, nPts[i].y + lo);
+      for (let i = nPts.length - 1; i >= 0; i--) band.lineTo(nPts[i].x, nPts[i].y + hi);
+      band.closePath();
+      ctx.fill(band);
+    }
     ctx.restore();
   }
 

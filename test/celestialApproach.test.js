@@ -68,6 +68,7 @@ test('it converges up and to the left of Midio, and never onto him', () => {
   const c = convergencePoint(640, 500);
   assert.equal(c.x, 640 + CONVERGE_DX);
   assert.equal(c.y, 500 + CONVERGE_DY);
+  // The second argument is the GROUND line, not Midio's live render y.
   assert.ok(CONVERGE_DX < 0 && CONVERGE_DY < 0, 'up and to the left');
   // A body on a collision course reads as a threat; this one passes by.
   assert.ok(Math.hypot(CONVERGE_DX, CONVERGE_DY) > 400, 'must not aim at him');
@@ -106,8 +107,30 @@ test('progress outside 0..1 is clamped, not extrapolated', () => {
   assert.equal(approachScale(99), approachScale(1));
 });
 
+test('a jump does not move the sun', () => {
+  // The regression this replaced: the anchor was Midio's live render y, so a
+  // three-foot jump moved a body at astronomical distance by the same number
+  // of pixels. Parallax on something that far away is nearly nothing, and it
+  // GROWS as the body closes rather than being a rigid 1:1 weld.
+  const at = (observerDy, t01) => celestialApproach({
+    orbitX: 900, orbitY: 120, midioX: 400, groundY: 520, observerDy, progress01: t01,
+  });
+  for (const t of [0, 0.5, 1]) {
+    const standing = at(0, t);
+    const jumping = at(-180, t); // 180px in the air
+    const shift = Math.abs(jumping.y - standing.y);
+    assert.ok(shift < 180 * 0.05,
+      `t=${t}: a 180px jump moved the body ${shift}px -- that is an anchor, not parallax`);
+  }
+  // Non-zero, and larger when it is closer: that is what parallax does.
+  const near = Math.abs(at(-180, 1).y - at(0, 1).y);
+  const far = Math.abs(at(-180, 0).y - at(0, 0).y);
+  assert.ok(near > far, 'parallax should grow as the body approaches');
+  assert.equal(far, 0, 'at full distance an observer moving changes nothing at all');
+});
+
 test('the composite hands back everything a frame needs', () => {
-  const a = celestialApproach({ orbitX: 900, orbitY: 120, midioX: 400, midioY: 520, progress01: 0.8 });
+  const a = celestialApproach({ orbitX: 900, orbitY: 120, midioX: 400, groundY: 520, progress01: 0.8 });
   assert.ok(Number.isFinite(a.x) && Number.isFinite(a.y));
   assert.ok(a.scale > 1 && a.scale <= MAX_SCALE);
   assert.ok(a.distance > 0 && a.distance < D_FAR);
