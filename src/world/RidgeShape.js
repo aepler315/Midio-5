@@ -168,14 +168,33 @@ export function flankness01(qs) {
   return clamp01((0.85 - steep) / Math.max(1e-6, 0.85 - (FLANK_Q_STEEP - 0.13)));
 }
 
+/**
+ * One formation's contribution to the height field.
+ *
+ * The profile alone cannot carry the variety: a fin and a mesa can have
+ * completely different cross-sections and still read as the same object if
+ * they are drawn the same width and the same height. So the form's own
+ * `widthMul`, `heightMul` and `asym` are applied here, and they do as much
+ * work as the profile does.
+ *
+ * `asym` is the cuesta lever. A monocline -- Comb Ridge, the Waterpocket
+ * Fold -- has one plumb face and a dip slope running several times longer.
+ * Splitting it as a square root about the existing steep/shallow multipliers
+ * keeps the formation's total footprint roughly fixed while the two sides
+ * trade length, so a reef leans without also becoming twice the landform.
+ */
 export function plateauMass(dx, peak, dip = 1) {
+  const form = peak.form;
   const steepIsLeft = (peak.flip ? -dip : dip) > 0;
   const onLeft = dx < 0;
   const steepSide = onLeft === steepIsLeft;
-  const halfWidth = Math.max(8, peak.w * (steepSide ? PLATEAU_STEEP_MUL : PLATEAU_SHALLOW_MUL));
+  const base = steepSide ? PLATEAU_STEEP_MUL : PLATEAU_SHALLOW_MUL;
+  const asym = Math.max(1, form?.asym ?? 1);
+  const lean = steepSide ? 1 / Math.sqrt(asym) : Math.sqrt(asym);
+  const halfWidth = Math.max(6, peak.w * (form?.widthMul ?? 1) * base * lean);
   const d = Math.abs(dx) / halfWidth;
   if (d >= 1) return 0;
-  return plateauProfile(d, peak.form) * peak.h;
+  return plateauProfile(d, form) * peak.h * (form?.heightMul ?? 1);
 }
 
 /**

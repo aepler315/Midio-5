@@ -24,7 +24,7 @@ import {
   shapeDials, flankness,
 } from './RidgeShape.js';
 import { cityHeightField, bakeWindowStrip } from './city/CitySilhouette.js';
-import { pickFormation, plateauProfile } from './ColoradoPlateau.js';
+import { pickFormation, varyFormation, plateauProfile } from './ColoradoPlateau.js';
 
 function makeCanvas(width, height) {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
@@ -192,7 +192,10 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
   // layer by layer. Assigned once per summit so a formation keeps its
   // identity, and driven by the section's own lithology where it can be.
   for (const p of allPeaks) {
-    p.form = pickFormation(rand, {
+    // Varied per summit, not just per section: two formations built from one
+    // parameter set are the same rock twice, and a ridge of them reads as a
+    // repeated stamp however good the individual shape is.
+    p.form = varyFormation(pickFormation(rand, {
       crest: weather.litho?.crest ?? 0.5,
       foot: weather.litho?.foot ?? 0.5,
       tilt: weather.profileMix ?? 0,
@@ -201,7 +204,7 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
       // the only place it can land once summits are formations. flankQ is
       // still computed above and still drives the detail passes.
       spiky: flankness01(flankQEarly),
-    });
+    }), rand);
   }
   const spinePhase = rand() * 10;
   // Flank curvature from the character's own shoulder/spire/spireMix --
