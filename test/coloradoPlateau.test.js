@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  plateauProfile, pickFormation, isolationFor,
+  plateauProfile, pickFormation, varyFormation, isolationFor,
   PLATEAU_FORMS, PLATEAU_FORM_NAMES,
 } from '../src/world/ColoradoPlateau.js';
 
@@ -111,16 +111,114 @@ test('Monument Valley stands apart -- the empty floor is the read', () => {
 });
 
 test('formation choice is song-driven and deterministic', () => {
+  // The lithology decides what a section LEANS toward, not what it is limited
+  // to. The first version branched instead of weighting -- `if (crest > 0.62)
+  // return r < 0.55 ? MONUMENT : SPIRE` -- and because lithology is constant
+  // across a section, every summit in it drew from the same two forms. That
+  // is why the country read as a row of trapezoids. So these assert the
+  // FAMILY, which is the real intent; pinning two names is what enforced the
+  // sameness.
   const fixed = () => 0.5;
   assert.equal(pickFormation(fixed, { crest: 0.9 }), pickFormation(fixed, { crest: 0.9 }),
     'same inputs must build the same country');
   // A bright, high-crest section erodes down to towers.
-  assert.ok([PLATEAU_FORMS.MONUMENT, PLATEAU_FORMS.SPIRE].includes(pickFormation(fixed, { crest: 0.9 })));
+  assert.equal(pickFormation(fixed, { crest: 0.9 }).family, 'tower');
   // A bass-heavy one leaves broad layered tables.
-  assert.ok([PLATEAU_FORMS.MESA, PLATEAU_FORMS.STAIRCASE].includes(
-    pickFormation(fixed, { crest: 0.2, foot: 0.8, spiky: 0.2 })));
+  assert.equal(pickFormation(fixed, { crest: 0.2, foot: 0.8, spiky: 0.2 }).family, 'table');
   // A leaning section reefs.
   assert.equal(pickFormation(() => 0.1, { tilt: 0.8 }), PLATEAU_FORMS.REEF);
+});
+
+test('a section reaches many formations, not two', () => {
+  // The regression that matters for how this looks on screen. One section
+  // means one lithology, so if the choice is a branch on lithology every
+  // summit in view is one of two shapes.
+  const seen = new Set();
+  for (let i = 0; i < 200; i++) {
+    const r = () => (i + 0.5) / 200;
+    seen.add(pickFormation(r, { crest: 0.7, foot: 0.4, spiky: 0.6 }));
+  }
+  assert.ok(seen.size >= 6,
+    `a single section should reach many landforms, only found ${seen.size}`);
+});
+
+test('the vocabulary is skeletons, not one skeleton with parameters', () => {
+  // A row of trapezoids is what you get when every form is a caprock over a
+  // cliff stack. Domes, cones, badlands and towers are different FUNCTIONS.
+  const kinds = new Set(PLATEAU_FORM_NAMES.map((n) => PLATEAU_FORMS[n].kind));
+  assert.ok(kinds.size >= 5, `expected several distinct skeletons, got ${[...kinds].join(', ')}`);
+});
+
+test('width and height vary as much as shape does', () => {
+  // Two formations with different cross-sections still read as the same
+  // object if they are drawn the same width and the same height.
+  const widths = PLATEAU_FORM_NAMES.map((n) => PLATEAU_FORMS[n].widthMul);
+  const heights = PLATEAU_FORM_NAMES.map((n) => PLATEAU_FORMS[n].heightMul);
+  // Around 7x. Not the real geology -- a true fin is a hundred times longer
+  // than it is thick -- because drawn honestly at this scale a fin is one
+  // pixel across and reads as a render artifact rather than as rock. See the
+  // module header: this is the one place the vocabulary knowingly lies.
+  assert.ok(Math.max(...widths) / Math.min(...widths) > 5,
+    'a fin and a mesa must not be the same width');
+  // Bounded at both ends: wide enough that a goblin reads as squat beside a
+  // laccolith, floored so that a field drawing only short forms still spans
+  // its own range rather than coming out flat.
+  assert.ok(Math.max(...heights) / Math.min(...heights) > 2.4,
+    'a laccolith and a goblin must not be the same height');
+  assert.ok(Math.min(...heights) > 0.3, 'nor may the short forms vanish');
+});
+
+test('a laccolith is a mountain: rounded summit, no flat top, no cliff band', () => {
+  // The Henry Mountains are 11,000ft and look nothing like a butte. This is
+  // the one silhouette the butte vocabulary cannot approximate.
+  const f = PLATEAU_FORMS.LACCOLITH;
+  assert.equal(plateauProfile(0, f), 1);
+  assert.ok(plateauProfile(0.04, f) > 0.995, 'the summit is rounded, not a cusp');
+  assert.ok(plateauProfile(0.5, f) < 0.85 && plateauProfile(0.5, f) > 0.5, 'steep flanks');
+  // No shelf on the FLANKS: a mountain has no bench to stand on. The crown
+  // itself is excluded, because a rounded summit has near-zero slope by
+  // definition -- that is what makes it rounded, not a bench.
+  let flatRuns = 0, run = 0;
+  const h = sample(f, 2000);
+  for (let i = Math.floor(h.length * 0.15); i < h.length; i++) {
+    if (h[i - 1] - h[i] < 0.0002) run++; else { if (run > 40) flatRuns++; run = 0; }
+  }
+  assert.equal(flatRuns, 0, 'a laccolith has no benches on its flanks');
+});
+
+test('a tower spends its height immediately below the cap', () => {
+  // What makes a hoodoo a column rather than a cone: the wall.
+  const f = PLATEAU_FORMS.NEEDLE;
+  const belowCap = plateauProfile(f.cap + 0.001, f);
+  const quarterOut = plateauProfile(f.cap + (1 - f.cap) * 0.25, f);
+  assert.ok(belowCap > 0.9, 'still full height just under the cap');
+  assert.ok(quarterOut < 0.55,
+    `a quarter of the way down the wall it should have lost most of its height, got ${quarterOut}`);
+});
+
+test('varying a formation keeps it monotonic and keeps its family', () => {
+  // Per-summit jitter must not be able to bite a notch out of the rock.
+  let seed = 7;
+  const rand = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (const name of PLATEAU_FORM_NAMES) {
+    for (let k = 0; k < 25; k++) {
+      const v = varyFormation(PLATEAU_FORMS[name], rand);
+      assert.equal(v.kind, PLATEAU_FORMS[name].kind, `${name} changed skeleton`);
+      assert.equal(v.family, PLATEAU_FORMS[name].family);
+      const h = sample(v, 1200);
+      for (let i = 1; i < h.length; i++) {
+        assert.ok(h[i] <= h[i - 1] + 1e-9, `varied ${name} rises at ${i}`);
+      }
+    }
+  }
+});
+
+test('varying actually varies -- no two summits are the same rock', () => {
+  let seed = 11;
+  const rand = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const widths = new Set();
+  for (let i = 0; i < 30; i++) widths.add(varyFormation(PLATEAU_FORMS.MESA, rand).widthMul);
+  assert.ok(widths.size > 25, 'each summit should get its own copy');
 });
 
 test('spikiness chooses towers over tables -- the shape grammar still reaches the rock', () => {
@@ -146,4 +244,22 @@ test('degenerate input never throws or escapes 0..1', () => {
     }
   }
   assert.ok(Number.isFinite(plateauProfile(0.5, null)), 'a missing form falls back');
+});
+
+test('no form overshoots the height ceiling', () => {
+  // Anything above 1 is resolved by clamp01 in the height field, which saws
+  // the tops off exactly the formations that most need them -- the same bug
+  // silhouetteAlpine's "summits are not clipped into flat-topped mesas"
+  // exists to catch. Caught by that test when LACCOLITH was first given a
+  // heightMul of 1.48.
+  let seed = 3;
+  const rand = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (const name of PLATEAU_FORM_NAMES) {
+    assert.ok(PLATEAU_FORMS[name].heightMul <= 1,
+      `${name} would clip at ${PLATEAU_FORMS[name].heightMul}`);
+    for (let k = 0; k < 40; k++) {
+      assert.ok(varyFormation(PLATEAU_FORMS[name], rand).heightMul <= 1,
+        `${name} clips once varied`);
+    }
+  }
 });
