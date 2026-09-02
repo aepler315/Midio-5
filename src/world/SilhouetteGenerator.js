@@ -20,10 +20,11 @@ import {
   composeAlpinePeaks, seedPeaks, layerWeathering, spineAt, phraseAt,
 } from './RidgePortrait.js';
 import {
-  summitMass, apronMass, massingEnvelope, crenellation, couloirCarve, regionalDip, flankQs,
+  summitMass, plateauMass, flankness01, apronMass, massingEnvelope, crenellation, couloirCarve, regionalDip, flankQs,
   shapeDials, flankness,
 } from './RidgeShape.js';
 import { cityHeightField, bakeWindowStrip } from './city/CitySilhouette.js';
+import { pickFormation, plateauProfile } from './ColoradoPlateau.js';
 
 function makeCanvas(width, height) {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
@@ -183,6 +184,25 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
   // Which summits buck the regional steep-side. A few, not none and not
   // half: all-same reads stamped, half-and-half reads random.
   for (const p of allPeaks) p.flip = rand() < 0.22;
+  const flankQEarly = flankQs(cfg, weather.litho, weather.profileMix ?? 0);
+  // Southern-Utah shape language (ColoradoPlateau.js). Every summit is a
+  // FORMATION -- flat caprock, near-vertical cliff bands, benches, a talus
+  // apron -- rather than an alpine flank, because the rock here is flat-lying
+  // sedimentary layers of alternating hardness and erosion works on them
+  // layer by layer. Assigned once per summit so a formation keeps its
+  // identity, and driven by the section's own lithology where it can be.
+  for (const p of allPeaks) {
+    p.form = pickFormation(rand, {
+      crest: weather.litho?.crest ?? 0.5,
+      foot: weather.litho?.foot ?? 0.5,
+      tilt: weather.profileMix ?? 0,
+      // The song's spike-vs-organic DNA still reaches the shape -- it now
+      // chooses the FORMATION rather than bending a flank exponent, which is
+      // the only place it can land once summits are formations. flankQ is
+      // still computed above and still drives the detail passes.
+      spiky: flankness01(flankQEarly),
+    });
+  }
   const spinePhase = rand() * 10;
   // Flank curvature from the character's own shoulder/spire/spireMix --
   // this is the path a song's spike-vs-organic DNA takes into the shape.
@@ -205,7 +225,7 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
     let apronSum = 0;
     for (const p of allPeaks) {
       const dx = wrapDx(x - p.x);
-      const m = summitMass(dx, p, dip, flankQ);
+      const m = plateauMass(dx, p, dip);
       // Max, not sum: summits must stay separate landforms rather than
       // adding into one dome.
       if (m > summit) summit = m;
