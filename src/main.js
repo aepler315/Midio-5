@@ -41,6 +41,9 @@ import { LiveInput, liveInputSupported, describeMicError, looksLikeSilence } fro
 import { LiveSession } from './audio/LiveSession.js';
 import { LiveEnergyCurves } from './audio/LiveEnergyCurves.js';
 import { LiveFeed } from './audio/LiveFeed.js';
+import { fingerprintBuffer } from './audio/SongFingerprint.js';
+import { packBundle, unpackBundle } from './audio/AnalysisBundle.js';
+import { getBundle, putBundle } from './audio/AnalysisCache.js';
 
 
 const STEP_MS = 1000 / 120;
@@ -1308,9 +1311,29 @@ async function loadAudioFiles(files) {
     const lyricsPromise = lyricsDisabled
       ? Promise.resolve({ identity: null, lyricSections: null })
       : resolveLyricsForAudio(files[0], audioBuffer.duration, vocalStem, { prompt: false });
-    let data;
+    // Has this exact recording been analysed before? The fingerprint names
+    // it by what it SOUNDS like, so the same master as mp3 and as flac hit
+    // the same entry -- a file hash could never do that. A hit skips tens of
+    // seconds of separation, onset and pitch work.
+    let fingerprint = null;
+    let data = null;
     try {
-      data = await audioToTimeline(audioBuffer, {
+      loadShow?.setStage('Recognising the recording…', 0.05);
+      fingerprint = fingerprintBuffer(audioBuffer);
+      const cached = await getBundle(fingerprint.key);
+      if (cached) {
+        data = unpackBundle(cached);
+        // An unreadable bundle (older layout, truncated, hand-edited) is not
+        // an error worth surfacing: unpackBundle returns null and we analyse
+        // from scratch, which is slow but always correct.
+        if (data) console.info('[analysis] restored from cache:', fingerprint.key);
+      }
+    } catch (err) {
+      // Fingerprinting must never be able to stop a song from playing.
+      console.warn('[analysis] fingerprint/cache lookup failed', err);
+    }
+    try {
+      if (!data) data = await audioToTimeline(audioBuffer, {
         userStems: isStemDrop ? decoded : null,
         // Everything previous sessions learned about how this player splits a
         // kick from a hat, applied to a song they've never played.
@@ -1331,6 +1354,18 @@ async function loadAudioFiles(files) {
     if (myGen !== loadGen) return;
     data.lyricIdentity = lyricIdentity;
     data.lyricSections = lyricSections;
+    // Remember this analysis for next time. Stored after identity resolves so
+    // the bundle carries the artist/title it was matched to. Not awaited: the
+    // show must not wait on a disk write, and a failed one costs only a
+    // re-analysis later. Lyrics are deliberately NOT in the bundle -- they
+    // are fetched per play and the preference can change between plays.
+    if (fingerprint && !data.fromBundle) {
+      Promise.resolve()
+        .then(() => putBundle(fingerprint.key, packBundle(data, {
+          fingerprint, name: files[0].name || '', identity: lyricIdentity,
+        })))
+        .catch((err) => console.warn('[analysis] could not cache bundle', err));
+    }
     if (auditionHeadingEl) auditionHeadingEl.textContent = 'PULLING THE RECORDING APART';
     auditionPanelEl?.classList.add('hidden');
     lyricsRowEl?.classList.add('hidden');

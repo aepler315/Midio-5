@@ -191,3 +191,24 @@ test('rain without a heightAt still lands on the original screen-fraction shelf'
     assert.equal(p.y, shelf);
   }
 });
+
+test('an empty field draws nothing instead of throwing', () => {
+  // The count is floored at 1 further down so a heavily shed field still
+  // shows something. On an EMPTY field that floor read particles[0], which is
+  // undefined, and the throw aborted the rest of the frame -- every frame,
+  // for whatever world was holding the empty field. It only surfaced under
+  // lighting, because that is the first branch to dereference the particle.
+  const f = new ParticleField({ kind: 'fireflies', color: '#fff', count: 4, speed: 10 }, 800, 600, 1);
+  f.particles = [];
+  const calls = [];
+  const ctx = new Proxy({}, {
+    get: (_, prop) => (typeof prop === 'string' && prop !== 'then'
+      ? (...args) => { calls.push(prop); return args[0]; }
+      : undefined),
+    set: () => true,
+  });
+  const lights = [{ x: 10, y: 10, r: 200, strength: 1 }];
+  assert.doesNotThrow(() => f.draw(ctx, 1, null, 0, lights));
+  assert.doesNotThrow(() => f.draw(ctx, 1));
+  assert.equal(calls.length, 0, 'an empty field should not even open a save/restore pair');
+});
