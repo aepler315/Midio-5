@@ -69,7 +69,6 @@ import { FarVignettes } from './FarVignettes.js';
 import { NearField, NEARFIELD_RATIO } from './NearField.js';
 import { GroundScatter, SCATTER_RATIO } from './GroundScatter.js';
 import { flameFlicker, smokeDrift } from './Wildfire.js';
-import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
@@ -606,10 +605,6 @@ export class BiomeManager {
     this._massifNextSpawnMs = nextMassifMarkerDelaySec(this._massifRand) * 1000;
     // Miniature characters running along the near ranges' ridges — an
     // independent trio per range so the depths don't mirror each other.
-    this.ridgeRunners = {
-      L4: new RidgeRunners(hashSeed(`${songSeed}:runners:L4`)),
-      L5: new RidgeRunners(hashSeed(`${songSeed}:runners:L5`)),
-    };
 
     this.songSeed = songSeed;
     this.visualStyle = 'rendered'; // set via setVisualStyle from Simulation / main
@@ -4246,27 +4241,6 @@ export class BiomeManager {
       if (rimOkB && B.edgeLight) {
         this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t * (CREST_RIM_ALPHA[layerKey] ?? 1), B.terrainEnergy ?? 1, heightMulB);
       }
-    }
-    // Miniature characters run along the two nearest ranges' ridges,
-    // riding the same dance the columns do.
-    if (layerKey === 'L4' || layerKey === 'L5') {
-      const strip = (t > 0.5 ? stripsB : stripsA)[layerKey];
-      const runnerHeightMul = t > 0.5 ? heightMulB : heightMulA;
-      const runnerEnergy = (t > 0.5 ? B.terrainEnergy : A.terrainEnergy) ?? 1;
-      const cfg = DANCE_LAYERS[layerKey];
-      const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
-      // Read the same scale _crestPoints computed for this exact strip this
-      // frame (cache hit -- both are keyed identically) so the runners'
-      // baseY/ridge reading matches the mountain they're standing on
-      // instead of drifting whenever growth/pullback/heightMul scale the
-      // strip away from its raw baked height (a pre-existing bug: this used
-      // to always assume scale===1).
-      const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, runnerEnergy, runnerHeightMul);
-      const runnerBaseY = geom ? canvas.height - geom.dh + yOff : canvas.height - strip.height + yOff;
-      const runnerScale = geom ? geom.scale : 1;
-      this.ridgeRunners[layerKey].draw(ctx, strip, scrollX, canvas.width, runnerBaseY, {
-        tSec: this.tSec, groove: this._danceGroove, kick, cfg, fever: this.fever || 0,
-      }, layerKey === 'L5' ? 0.55 : 0.4, runnerScale);
     }
     ctx.restore();
   }

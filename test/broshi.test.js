@@ -157,7 +157,11 @@ test('lost traction (snow) makes the trailing spring visibly overshoot more', ()
     // SPRING's behavior under traction, so give it room to swing in
     // legal space instead of measuring against the edge clamp.
     b._stageW = 1280;
-    b.xRel = -300; // displaced hard from the trail point
+    // Displaced from the set-point (now +200, since he runs point) but on
+    // the same side of Midio as the target, so the spring's own damping is
+    // what is being measured -- crossing Midio's column would drag the
+    // render keep-out ease into the result and flatten both readings.
+    b.xRel = 120;
     let overshoot = 0;
     for (let t = 0; t <= 6000; t += 16) {
       b.update(t, 16 / 1000, { screenX: 640 }, null, 0, 480, 0);

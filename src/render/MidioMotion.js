@@ -85,10 +85,64 @@ export function midioCoreSpinDeg(tSec, energy01 = 0, motionScale = 1) {
 }
 
 /** The three together, for one frame. */
-export function midioMotion(tSec, energy01 = 0, motionScale = 1) {
+export function midioMotion(tSec, energy01 = 0, motionScale = 1, beatPhase01 = null) {
   return {
     hoverPx: midioHoverPx(tSec, energy01, motionScale),
     precessDeg: midioPrecessDeg(tSec, energy01, motionScale),
     coreSpinDeg: midioCoreSpinDeg(tSec, energy01, motionScale),
+    // Null beat phase (no grid yet, or a caller that doesn't have one) means
+    // no pulse rather than a guessed one: a pulse off the beat is worse than
+    // none, and 1 is the identity here.
+    pulseScale: beatPhase01 == null ? 1 : midioPulseScale(beatPhase01, energy01, motionScale),
   };
+}
+
+// --- Baseline pulse -------------------------------------------------------
+//
+// The hover/precession/spin above are deliberately co-prime and never loop:
+// they read as "alive", but nothing in them is ON THE BEAT. Broshi has a
+// beat-locked flash and a stride that visibly agrees with the music; Midio
+// had no equivalent, so he floated beautifully and arhythmically.
+//
+// This is that missing layer: a small, methodical swell locked to the beat
+// grid rather than to wall-clock time, so it stays in step through tempo
+// changes for free. Shaped like a pulse, not a sine -- a fast rise INTO the
+// beat and a longer decay out of it, which is what makes it read as a
+// heartbeat rather than as bobbing.
+//
+// Deliberately small. It is a baseline, underneath the event vocabulary
+// (jumps, tricks, landing squash), and it must never compete with them.
+export const PULSE_BASE = 0.026;    // scale swing in dead silence
+export const PULSE_ENERGY = 0.034;  // ...and what a loud song adds on top
+// Fraction of the beat spent rising into the downbeat. Short enough to read
+// as an attack; long enough that it is not a one-frame strobe.
+const PULSE_ATTACK = 0.08;
+// How sharply the swell falls away after the beat. Higher = snappier.
+const PULSE_DECAY = 3.1;
+
+/**
+ * The pulse envelope across one beat, 0..1.
+ *
+ * @param {number} beatPhase01 position within the current beat, 0 = on the
+ *   beat. Values outside [0,1) wrap, so a caller can hand in a raw ratio.
+ * @returns {number} 1 exactly on the beat, falling away after it, rising
+ *   back through the attack window before the next one. Continuous across
+ *   the wrap -- a bare decay would jump from ~0 to 1 and strobe.
+ */
+export function midioPulseEnv(beatPhase01) {
+  if (!Number.isFinite(beatPhase01)) return 0;
+  const p = ((beatPhase01 % 1) + 1) % 1;
+  if (p >= 1 - PULSE_ATTACK) return (p - (1 - PULSE_ATTACK)) / PULSE_ATTACK;
+  return Math.exp((-PULSE_DECAY * p) / (1 - PULSE_ATTACK));
+}
+
+/**
+ * Uniform scale multiplier for Midio's glyph on the beat.
+ *
+ * @returns {number} around 1; exactly 1 when motionScale is 0, so the
+ *   accessibility toggle stills it completely like every other term here.
+ */
+export function midioPulseScale(beatPhase01, energy01 = 0, motionScale = 1) {
+  const amp = (PULSE_BASE + PULSE_ENERGY * clamp01(energy01)) * clamp01(motionScale);
+  return 1 + amp * midioPulseEnv(beatPhase01);
 }

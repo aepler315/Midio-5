@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   midioHoverPx, midioPrecessDeg, midioCoreSpinDeg, midioMotion,
+  midioPulseEnv, midioPulseScale,
   HOVER_LIFT_PX, PRECESS_BASE_DEG, PRECESS_ENERGY_DEG, CORE_SPIN_BASE_DPS,
 } from '../src/render/MidioMotion.js';
 
@@ -68,7 +69,8 @@ test('reduced motion scales everything toward rest, and 0 is a full stop', () =>
   assert.ok(Math.abs(reduced.precessDeg) < Math.abs(full.precessDeg));
   assert.ok(reduced.coreSpinDeg < full.coreSpinDeg);
   const off = midioMotion(3.3, 1, 0);
-  assert.deepEqual(off, { hoverPx: 0, precessDeg: 0, coreSpinDeg: 0 });
+  // pulseScale is a MULTIPLIER, so its "stopped" value is 1, not 0.
+  assert.deepEqual(off, { hoverPx: 0, precessDeg: 0, coreSpinDeg: 0, pulseScale: 1 });
 });
 
 test('every term is finite across a long run at every energy', () => {
@@ -78,4 +80,50 @@ test('every term is finite across a long run at every energy', () => {
       assert.ok(Number.isFinite(m.hoverPx) && Number.isFinite(m.precessDeg) && Number.isFinite(m.coreSpinDeg));
     }
   }
+});
+
+// --- Baseline pulse -------------------------------------------------------
+// He had no beat-locked layer at all: the hover/precession/spin are
+// deliberately co-prime and never land on anything, so he read as alive but
+// arhythmic next to Broshi, whose flash and stride visibly agree with the
+// music.
+test('the pulse peaks ON the beat and falls away after it', () => {
+  assert.equal(midioPulseEnv(0), 1);
+  assert.ok(midioPulseEnv(0.15) < midioPulseEnv(0.05));
+  assert.ok(midioPulseEnv(0.5) < midioPulseEnv(0.15));
+});
+
+test('and rises back INTO the next beat rather than strobing at the wrap', () => {
+  // A bare decay jumps from ~0 straight to 1 at the beat, which reads as a
+  // one-frame strobe. The attack window is what makes it a heartbeat.
+  assert.ok(midioPulseEnv(0.999) > 0.9, 'should be nearly peaked just before the beat');
+  const step = Math.abs(midioPulseEnv(0.999) - midioPulseEnv(0));
+  assert.ok(step < 0.15, `discontinuity of ${step} at the beat wrap`);
+});
+
+test('the envelope is bounded and wraps for any phase a caller hands in', () => {
+  for (let p = -3; p <= 3; p += 0.037) {
+    const v = midioPulseEnv(p);
+    assert.ok(v >= 0 && v <= 1 + 1e-9, `env out of range at ${p}: ${v}`);
+  }
+  assert.ok(Math.abs(midioPulseEnv(1.25) - midioPulseEnv(0.25)) < 1e-12, 'must wrap');
+  assert.equal(midioPulseEnv(NaN), 0);
+});
+
+test('it is a BASELINE: subtle, and louder music only swells it a little', () => {
+  const quiet = midioPulseScale(0, 0);
+  const loud = midioPulseScale(0, 1);
+  assert.ok(quiet > 1, 'it must be present even in silence -- that is the point');
+  assert.ok(loud > quiet, 'and energy should swell it');
+  assert.ok(loud < 1.09, `too large to sit under the event vocabulary: ${loud}`);
+});
+
+test('reduced motion stills the pulse to exactly 1', () => {
+  assert.equal(midioPulseScale(0, 1, 0), 1);
+  assert.equal(midioPulseScale(0.4, 1, 0), 1);
+});
+
+test('no beat grid means no pulse, not a guessed one', () => {
+  assert.equal(midioMotion(2, 1, 1, null).pulseScale, 1);
+  assert.ok(midioMotion(2, 1, 1, 0).pulseScale > 1);
 });

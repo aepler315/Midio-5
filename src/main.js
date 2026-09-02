@@ -151,9 +151,6 @@ const lyricsSkipBtnEl = document.getElementById('lyricsSkipBtn');
 const lyricsNoneBtnEl = document.getElementById('lyricsNoneBtn');
 const noLyricsBtnEl = document.getElementById('noLyricsBtn');
 const calibrateBtnEl = document.getElementById('calibrateBtn');
-const syncPromptEl = document.getElementById('syncPrompt');
-const syncPromptFixBtnEl = document.getElementById('syncPromptFixBtn');
-const syncPromptDismissBtnEl = document.getElementById('syncPromptDismissBtn');
 const recalibration = new RecalibrationOverlay({
   panel: document.getElementById('recalPanel'),
   number: document.getElementById('recalNumber'),
@@ -229,15 +226,6 @@ if (calibrateBtnEl) {
   calibrateBtnEl.addEventListener('click', () => {
     if (recalibration.active) endRecalibration(); else startRecalibration();
   });
-}
-if (syncPromptFixBtnEl) {
-  syncPromptFixBtnEl.addEventListener('click', () => {
-    syncPromptEl?.classList.add('hidden');
-    startRecalibration();
-  });
-}
-if (syncPromptDismissBtnEl) {
-  syncPromptDismissBtnEl.addEventListener('click', () => syncPromptEl?.classList.add('hidden'));
 }
 // Set per load path (true only for raw decoded audio, which already has
 // every voice baked into the buffer) and read by applySynthMutePolicy().
@@ -616,7 +604,6 @@ function toggleTrackList() {
  *  tolerates being idle). */
 function stopTimeline() {
   running = false;
-  syncPromptEl?.classList.add('hidden');
   // conductor is a single instance shared across every song (see its
   // construction above); Simulation and its subsystems subscribe to it at
   // construction and never unsubscribe on their own. Without this, a replay
@@ -1757,16 +1744,6 @@ function frame(tRaf) {
   // above -- a quake strike and a tsunami wall's arrival both duck the mix.
   if (sim.disasters?.justStruck && sim.disasters.struckKind === 'quake') audioEngine?.duck?.(0.7, 0.08, 0.4);
   if (sim.biomes?.tsunamiJustArrived) audioEngine?.duck?.(0.5, 0.05, 0.35);
-
-  // SyncMonitor's own offer: the chart's kicks read as scattered against
-  // the beat grid for a sustained stretch (the "characters are moving
-  // randomly" failure) -- previously detected but never surfaced anywhere.
-  // A non-blocking invitation, not an interruption: never fires during the
-  // opening, at most twice a song, and never while the overlay is already
-  // up (SyncMonitor.update's own suppress flag handles that).
-  if (sim.syncMonitor?.consumePrompt()) {
-    syncPromptEl?.classList.remove('hidden');
-  }
 
   // Tap recalibration: drive the count while an (opt-in, 'C'-key-triggered)
   // pass is running. Never blocks the frame, pauses audio, or swallows input.

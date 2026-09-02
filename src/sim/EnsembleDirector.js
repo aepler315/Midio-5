@@ -263,11 +263,17 @@ export class EnsembleDirector {
     const cx = this.w * (0.34 + 0.16 * Math.sin(this._t * CENTROID_SPEED * TWO_PI + this._phi) + 0.05 * clamp(flow.x, -1, 1));
     const formAng = this._t * 0.021 * TWO_PI * 0.3;
 
-    // Role bias: Broshi hangs back-left, Midasus high-right, Midio near
-    // center — equilateral alone let them collapse into one pile.
+    // Role bias: Broshi RUNS POINT ahead of Midio, Midasus high-right, Midio
+    // near center — equilateral alone let them collapse into one pile.
+    //
+    // Broshi was -0.42 (hanging back-left) and now leads by the same margin.
+    // A companion who trails is a companion you watch over your shoulder;
+    // one who runs ahead is pulling you along, which is the read wanted here
+    // -- and it also puts him in open frame rather than pinned to the left
+    // edge the camera is always driving away from.
     const roleBias = [
       { x: 0.05, y: 0 },
-      { x: -0.42, y: 0.04 },
+      { x: 0.42, y: 0.04 },
       { x: 0.52, y: -0.34 }, // pushed further from Midio (was 0.38/-0.28) -- they overlapped too much
     ];
 
@@ -283,7 +289,7 @@ export class EnsembleDirector {
     }
     // Stage-safety clamps per character role.
     this.anchors[0].x = clamp(this.anchors[0].x, this.w * 0.14, this.w * 0.58); // Midio: gameplay window
-    this.anchors[1].x = clamp(this.anchors[1].x, this.w * 0.05, this.w * 0.78); // Broshi: prefers left floor
+    this.anchors[1].x = clamp(this.anchors[1].x, this.w * 0.18, this.w * 0.88); // Broshi: runs point, so his window is ahead of Midio's
     this.anchors[2].x = clamp(this.anchors[2].x, this.w * 0.34, this.w * 0.92); // Midasus: sky-right (floor raised from 0.22 -- kept her out of Midio's gameplay window)
     // Midasus: sky-high but never off the top edge -- a wide formation
     // spread could otherwise push her y negative (above the stage entirely).
