@@ -65,6 +65,21 @@ export class AudioEngine {
     return (this.ctx.currentTime - this._startCtxTime) * 1000;
   }
 
+  /**
+   * Shift the clock by a small amount without restarting it.
+   *
+   * For syncing a show to music playing somewhere this page cannot read (see
+   * SongMatcher.SyncTracker): the periodic re-match says the song is a little
+   * ahead of or behind the clock, and the error is walked off a fraction of a
+   * frame at a time. Expressed as a shift of the origin rather than a seek
+   * because nothing should be re-dispatched -- the playhead is not moving to
+   * a new place, it is correcting where it already is.
+   */
+  nudgeMs(deltaMs) {
+    if (!deltaMs || this._startCtxTime === null) return;
+    this._startCtxTime -= deltaMs / 1000;
+  }
+
   /** How far the HEARD signal lags the clock above (see ChoreoClock.js):
    *  base (buffer) latency plus the device/output path. Decorative
    *  beat-anchored visuals subtract this so their peaks line up with the

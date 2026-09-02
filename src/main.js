@@ -42,8 +42,9 @@ import { LiveSession } from './audio/LiveSession.js';
 import { LiveEnergyCurves } from './audio/LiveEnergyCurves.js';
 import { LiveFeed } from './audio/LiveFeed.js';
 import { fingerprintBuffer } from './audio/SongFingerprint.js';
-import { packBundle, unpackBundle } from './audio/AnalysisBundle.js';
-import { getBundle, putBundle } from './audio/AnalysisCache.js';
+import { packBundle, unpackBundle, bundleFrames } from './audio/AnalysisBundle.js';
+import { getBundle, putBundle, listBundles } from './audio/AnalysisCache.js';
+import { matchProbe, SyncTracker } from './audio/SongMatcher.js';
 
 
 const STEP_MS = 1000 / 120;
@@ -670,6 +671,13 @@ let liveSession = null;
 let liveCurves = null;
 let liveFeed = null;
 let liveSilenceWarned = false;
+// Set instead of liveSession when the song was RECOGNISED: the show is
+// driven by a stored analysis rather than by what is being heard, and the
+// microphone's only remaining job is to say where in the song we are.
+let liveMatch = null;
+let liveSync = null;
+let liveResyncAtMs = 0;
+let liveResyncMisses = 0;
 
 function setListenStatus(text, busy = false) {
   if (!listenStatusEl) return;
@@ -690,6 +698,9 @@ function stopListening() {
   liveCurves = null;
   liveFeed = null;
   liveSilenceWarned = false;
+  liveMatch = null;
+  liveSync = null;
+  liveResyncMisses = 0;
 }
 
 async function startListening() {
@@ -706,6 +717,14 @@ async function startListening() {
     setListenStatus(describeMicError(err));
     return;
   }
+
+  // Try to RECOGNISE what is playing before falling back to reacting to it.
+  // A song this device has analysed before can be played as a composed show
+  // -- the real arc, the climax where it belongs, sections on time -- with
+  // the listener's own app supplying the sound. Reactive live mode is the
+  // fallback, not the goal: it structurally cannot know the future.
+  const known = await tryRecogniseSong(input);
+  if (known) return;
 
   const session = new LiveSession({ sampleRate: input.sampleRate });
   const data = session.startData();
@@ -730,6 +749,152 @@ async function startListening() {
   liveFeed = new LiveFeed();
   liveSilenceWarned = false;
   setListenStatus('');
+}
+
+/** How much audio to gather before deciding what is playing. Long enough to
+ *  be evidence, short enough that nobody thinks the button did nothing. */
+const RECOGNISE_SEC = 7;
+/** How often the sync is re-measured against the room while a recognised
+ *  song plays. Drift between two unrelated clocks is slow; a match sweep is
+ *  not free. */
+const RESYNC_INTERVAL_MS = 15000;
+/** The FIRST re-measure comes almost immediately, and that is the whole
+ *  startup strategy. Recognition happens before the world is built, and
+ *  building takes seconds -- so the position it found is stale by an amount
+ *  nothing can predict reliably (measured around half a second, and it varies
+ *  with how cold the caches are). Rather than try to model that, the initial
+ *  match is treated as answering only WHICH song; the precise position comes
+ *  from this follow-up, taken once the expensive work is already done and
+ *  applied while the show is two seconds old and nobody has settled in. */
+const FIRST_RESYNC_MS = 2000;
+/** Consecutive failed re-checks before concluding the song is over or
+ *  something else is playing. One failure is a cough or a passing bus. */
+const RESYNC_GIVE_UP = 3;
+
+/**
+ * Listen for a few seconds and see whether this is a song we already know.
+ *
+ * @returns {Promise<boolean>} true when a synced show was started
+ */
+async function tryRecogniseSong(input) {
+  let cached = [];
+  try {
+    const rows = await listBundles();
+    if (rows.length === 0) return false;
+    setListenStatus('Listening for the song…', true);
+    if (!(await input.enableCapture(RECOGNISE_SEC + 3))) return false;
+    // Gather while the bundles load, so the two costs overlap.
+    const loaded = await Promise.all(rows.slice(0, 60).map(async (r) => ({
+      key: r.key, bundle: await getBundle(r.key),
+    })));
+    cached = loaded.filter((c) => c.bundle);
+  } catch (err) {
+    console.warn('[listen] could not read the local library', err);
+    return false;
+  }
+  if (cached.length === 0) return false;
+
+  // Wait for the ring to actually hold enough audio rather than assuming a
+  // fixed delay: on a throttled or slow-starting device it fills late.
+  const deadline = performance.now() + (RECOGNISE_SEC + 4) * 1000;
+  while (input.capture.seconds < RECOGNISE_SEC && performance.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  if (input.capture.seconds < RECOGNISE_SEC) return false;
+
+  // Stamped before the read, so the elapsed build time added back later is
+  // measured from the moment the probe's last sample was heard.
+  const probeAtMs = performance.now();
+  const hit = matchProbe(input.capture.read(), input.capture.sampleRate, cached,
+    { latencyMs: input.captureLatencyMs });
+  if (!hit) return false;
+
+  const data = unpackBundle(hit.bundle);
+  if (!data) return false;
+  console.info(`[listen] recognised ${hit.key} at ${(hit.positionMs / 1000).toFixed(1)}s `
+    + `(bit error ${hit.ber.toFixed(3)})`);
+
+  muteTimelineSynth = true;
+  try {
+    // The wall clock at the moment the probe's last sample was heard, so
+    // startTimeline can add back however long the world takes to build.
+    startTimeline(data, { live: true, startAtMs: hit.positionMs, startAtWallMs: probeAtMs });
+  } catch (err) {
+    setListenStatus('Could not start the world: ' + (err?.message || err));
+    return false;
+  }
+  liveInput = input;
+  liveMatch = { key: hit.key, frames: bundleFrames(hit.bundle), bundle: hit.bundle };
+  liveSync = new SyncTracker();
+  liveResyncAtMs = performance.now() + FIRST_RESYNC_MS;
+  liveResyncMisses = 0;
+  setListenStatus('');
+  return true;
+}
+
+/**
+ * Keep a recognised show sitting on top of the music.
+ *
+ * Two clocks run side by side: the page's, which advances smoothly and knows
+ * nothing about the song, and the room's, which is authoritative but only
+ * speaks every RESYNC_INTERVAL_MS. SyncTracker reconciles them, easing small
+ * errors as a rate change so the playhead never teleports.
+ */
+function pumpMatchedSync(nowMs, dtMs) {
+  if (!liveMatch || !liveInput?.capture) return;
+  // The ease runs every frame; the re-match only on its interval. Splitting
+  // them is the point: a correction spread across fifteen seconds of frames
+  // is invisible, the same correction applied at the moment it is measured
+  // is a visible jolt.
+  const nudge = liveSync.step(dtMs);
+  if (nudge) audioEngine.nudgeMs(nudge);
+
+  const wall = performance.now();
+  if (wall < liveResyncAtMs) return;
+  liveResyncAtMs = wall + RESYNC_INTERVAL_MS;
+  if (liveInput.capture.seconds < RECOGNISE_SEC) return;
+
+  // Only the song already believed to be playing is re-checked: a full sweep
+  // of the library every fifteen seconds would be wasted work, and a
+  // different song will simply fail this one and be picked up as a miss.
+  const hit = matchProbe(liveInput.capture.read(), liveInput.capture.sampleRate,
+    [{ key: liveMatch.key, bundle: liveMatch.bundle }],
+    { latencyMs: liveInput.captureLatencyMs });
+  if (!hit) {
+    if (++liveResyncMisses >= RESYNC_GIVE_UP) {
+      // The song ended, was skipped, or the room got too loud to read. Say so
+      // rather than letting a show run on against nothing.
+      showErrorBanner('Lost the song — it may have ended or changed. Stop and tap Listen again.');
+      liveMatch = null;
+    }
+    return;
+  }
+  liveResyncMisses = 0;
+  const { jump, errorMs } = liveSync.measure(hit.positionMs, nowMs);
+  // Once every fifteen seconds for the whole song is too much for a console
+  // someone is trying to read; behind ?dev=1 it is the only way to see how
+  // the sync is actually holding.
+  if (DEV_MODE) {
+    console.info(`[sync] measured ${(hit.positionMs / 1000).toFixed(2)}s vs clock `
+      + `${(nowMs / 1000).toFixed(2)}s -> error ${errorMs.toFixed(0)}ms, `
+      + `rate ${liveSync.rate.toFixed(4)} (bit error ${hit.ber.toFixed(3)})${jump ? ' JUMP' : ''}`);
+  }
+  if (jump) {
+    // Too far to walk off: the startup estimate was stale, or someone seeked.
+    // Shift the clock's origin rather than restarting it -- the playhead is
+    // being corrected, not moved to a new place.
+    audioEngine.nudgeMs(errorMs);
+    const corrected = audioEngine.nowMs;
+    // The dispatch cursors have to move WITH the clock. Forward without this
+    // and the notes in between arrive in one burst; backward and every note
+    // between the two positions is silently skipped, because the cursor is
+    // already past them.
+    conductor.seekTo(corrected);
+    sim?.cues?.seekTo?.(corrected);
+    simTime = corrected;
+    lastNowMs = corrected;
+    acc = 0;
+  }
 }
 
 /**
@@ -857,7 +1022,10 @@ function confirmWorld(id) {
 }
 
 function startTimeline(timelineData, extra = {}) {
-  const { songSeed: seedOverride = undefined, playBuffer, live = false } = extra;
+  const {
+    songSeed: seedOverride = undefined, playBuffer, live = false,
+    startAtMs = 0, startAtWallMs = 0,
+  } = extra;
   stopTimeline();
   fitCanvas();
   // Any path that is about to play a decoded recording (confirmWorld,
@@ -875,6 +1043,11 @@ function startTimeline(timelineData, extra = {}) {
   // that switch song type clear it themselves — wiping it here made
   // "New seed" / "Replay seed" start a silent level after any audio drop.
   conductor.load(timelineData);
+  // Starting part-way in (a recognised song already playing in the room):
+  // move the dispatch cursors with the clock, or the first frame fires every
+  // note between zero and here at once -- the whole first half of the song
+  // arriving in one step.
+  if (startAtMs > 0) conductor.seekTo(startAtMs);
   perfGovernor = new PerfGovernor({ startLevel: perfStartLevel });
   // World construction (parallax strips, landmarks) is CPU-heavy; surface a
   // progress line so a multi-second bake never looks like a dead freeze.
@@ -943,15 +1116,34 @@ function startTimeline(timelineData, extra = {}) {
   renderTracks(timelineData.tracks, timelineData.pairs);
   if (filmstripEl) { filmstripEl.innerHTML = ''; filmstripEl.classList.add('hidden'); }
 
-  simTime = 0;
   acc = 0;
-  lastNowMs = audioEngine.nowMs;
   lastRafMs = null;
   // Fresh song, fresh button: the demo/play buttons must lose focus so a
   // stray keypress never re-"clicks" them.
   document.activeElement?.blur?.();
   audioEngine.restoreLevel?.(0.85);
-  audioEngine.start(0);
+  // A recognised song is already playing in the room, some way in. The clock
+  // every system reads (AudioEngine.nowMs) is just an offset from the context
+  // time, so starting it AT that position is all it takes for the whole show
+  // -- notes, sections, the arc -- to arrive already in step with the music.
+  //
+  // But the position was measured BEFORE everything above ran, and building a
+  // world takes seconds (strip bakes, cold paths). Starting at the raw
+  // measurement would put the show that far behind the music -- measured at
+  // about two seconds, which the periodic re-sync then had to correct as a
+  // visible jump rather than an ease. So the wall-clock time spent getting
+  // here is added back: `startAtWallMs` is when `startAtMs` was true.
+  const startedAt = startAtWallMs > 0
+    ? startAtMs + (performance.now() - startAtWallMs)
+    : startAtMs;
+  if (startedAt > 0) conductor.seekTo(startedAt);
+  audioEngine.start(startedAt);
+  simTime = startedAt;
+  // After start(), not before: the clock's origin has only just been set, and
+  // reading it earlier leaves the first frame with a delta of the entire
+  // start offset -- which the 250ms clamp then turns into a quarter second of
+  // sim time nobody asked for.
+  lastNowMs = audioEngine.nowMs;
   running = true;
   stopTitleBackdrop();
 
@@ -983,6 +1175,17 @@ function startTimeline(timelineData, extra = {}) {
     // without it. Live getters, not a snapshot: the governor mutates.
     get perfLevel() { return perfGovernor?.level ?? null; },
     get perf() { return perfGovernor || null; },
+    // Live-listening state, for the debug overlay and for smoke tests: which
+    // song was recognised (if any) and how the sync is holding.
+    get liveMatchKey() { return liveMatch?.key ?? null; },
+    get liveSync() {
+      return liveSync
+        ? {
+        corrections: liveSync.corrections, jumps: liveSync.jumps,
+        pending: Math.round(liveSync.pending), rate: liveSync.rate,
+      }
+        : null;
+    },
   };
 }
 
@@ -1613,18 +1816,25 @@ function frame(tRaf) {
   lastRafMs = tRaf;
   hudIdleTick(tRaf);
   const nowMs = audioEngine.nowMs;
-  // Hear first, then step: the curves and the timeline must already be
-  // current for the time the sim is about to advance to, or every frame
-  // would react to the previous one's audio.
-  if (liveSession) {
-    try { pumpLive(nowMs); } catch (err) {
-      if (drawErrors.record(err, tRaf)) console.error('[live] (occurrence %d)', drawErrors.worst.count, err);
-    }
-  }
   let deltaMs = nowMs - lastNowMs;
   lastNowMs = nowMs;
   if (deltaMs < 0) deltaMs = 0;
   if (deltaMs > 250) deltaMs = 250; // clamp huge gaps (tab backgrounded, breakpoint, etc.)
+
+  // Hear first, then step: the curves and the timeline must already be
+  // current for the time the sim is about to advance to, or every frame
+  // would react to the previous one's audio. Either the room is DRIVING the
+  // show (live) or it is only keeping a stored one in step with it (match) --
+  // never both.
+  if (liveSession) {
+    try { pumpLive(nowMs); } catch (err) {
+      if (drawErrors.record(err, tRaf)) console.error('[live] (occurrence %d)', drawErrors.worst.count, err);
+    }
+  } else if (liveMatch) {
+    try { pumpMatchedSync(nowMs, deltaMs); } catch (err) {
+      if (drawErrors.record(err, tRaf)) console.error('[sync] (occurrence %d)', drawErrors.worst.count, err);
+    }
+  }
   acc += deltaMs;
 
   try {
