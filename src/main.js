@@ -29,7 +29,8 @@ import { TitleBackdrop } from './ui/TitleBackdrop.js';
 import { cssVarMap } from './render/spectral.js';
 import { resolveDurationMs } from './core/SongDuration.js';
 import { formatSeed, parseSeed } from './utils/seed.js';
-import { resolveIdentity, stripSearchNoise } from './lyrics/SongIdentity.js';
+import { resolveIdentity } from './lyrics/SongIdentity.js';
+import { groundLyrics, hasUsableLyrics } from './lyrics/LyricGrounding.js';
 import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
@@ -145,7 +146,7 @@ const lyricsTitleInputEl = document.getElementById('lyricsTitleInput');
 const lyricsFindBtnEl = document.getElementById('lyricsFindBtn');
 const lyricsSkipBtnEl = document.getElementById('lyricsSkipBtn');
 const lyricsNoneBtnEl = document.getElementById('lyricsNoneBtn');
-const noLyricsBtnEl = document.getElementById('noLyricsBtn');
+const lyricGroundingBtnEl = document.getElementById('lyricGroundingBtn');
 const calibrateBtnEl = document.getElementById('calibrateBtn');
 const recalibration = new RecalibrationOverlay({
   panel: document.getElementById('recalPanel'),
@@ -199,18 +200,21 @@ const _styleParam = new URLSearchParams(location.search).get('style');
 let visualStyle = _styleParam ? resolveVisualStyle(_styleParam) : getVisualStyle();
 paramBus.visualStyle = visualStyle;
 
-/** Reflect the "No lyrics" preference on the loader toggle button. */
-function syncNoLyricsBtn() {
-  if (!noLyricsBtnEl) return;
-  noLyricsBtnEl.setAttribute('aria-pressed', lyricsDisabled ? 'true' : 'false');
-  noLyricsBtnEl.textContent = `No lyrics: ${lyricsDisabled ? 'on' : 'off'}`;
+/** Reflect the "Timed lyric grounding" preference on the loader toggle. */
+function syncLyricGroundingBtn() {
+  if (!lyricGroundingBtnEl) return;
+  // Stated positively: the setting is the FEATURE being on, not an opt-out
+  // from it, so `lyricsDisabled` is inverted for display.
+  const on = !lyricsDisabled;
+  lyricGroundingBtnEl.setAttribute('aria-pressed', on ? 'true' : 'false');
+  lyricGroundingBtnEl.textContent = `Timed lyric grounding: ${on ? 'on' : 'off'}`;
 }
-syncNoLyricsBtn();
-if (noLyricsBtnEl) {
-  noLyricsBtnEl.addEventListener('click', () => {
+syncLyricGroundingBtn();
+if (lyricGroundingBtnEl) {
+  lyricGroundingBtnEl.addEventListener('click', () => {
     lyricsDisabled = !lyricsDisabled;
     setLyricsDisabled(lyricsDisabled);
-    syncNoLyricsBtn();
+    syncLyricGroundingBtn();
   });
 }
 
@@ -994,37 +998,36 @@ function promptForLyrics(identity, durationSec) {
       if (skipTimer) clearTimeout(skipTimer);
       skipTimer = setTimeout(() => finish(null), LYRICS_AUTO_SKIP_MS);
     };
-    const lookup = (artist, title) => fetchLyricsCached(
-      { artist, title, album: identity.album, durationSec },
+    const lookup = (attempt) => fetchLyricsCached(
+      { artist: attempt.artist, title: attempt.title, album: attempt.album, durationSec: attempt.durationSec },
       typeof fetch !== 'undefined' ? fetch : null,
     );
-    const textOf = (r) => (r && !r.instrumental
-      && ((r.synced && r.synced.length) || (r.plain && r.plain.length)));
+    const textOf = hasUsableLyrics;
     const runFind = async (artist, title) => {
       if (skipTimer) { clearTimeout(skipTimer); skipTimer = null; }
-      if (lyricsStatusEl) lyricsStatusEl.textContent = 'Searching for lyrics…';
       lyricsFieldsEl?.classList.add('hidden');
-      let result = await lookup(artist, title);
+      // Timed lyric grounding: walk the identity ladder (LyricGrounding.js)
+      // rather than issuing one query and giving up. The tags exactly as
+      // they came are always rung one and win if they resolve; each rung
+      // after that loosens the identity a little -- modifiers stripped, the
+      // album dropped, the artist reduced to the primary act, and so on --
+      // because a provider indexes the canonical release and a rip's tags
+      // describe a particular file.
+      const { result, attempt } = await groundLyrics(
+        { artist, title, album: identity.album, durationSec },
+        lookup,
+        {
+          cancelled: () => settled,
+          onAttempt: (a, i, total) => {
+            if (!lyricsStatusEl) return;
+            lyricsStatusEl.textContent = i === 0
+              ? 'Searching for lyrics…'
+              : `Searching for lyrics… (${i + 1}/${total}: ${a.why})`;
+          },
+        },
+      );
       if (settled) return;
-      // Second pass on a miss: taggers and rips wedge qualifiers into the
-      // title that no lyrics provider has ever indexed -- "(Instrumental)",
-      // "(Guitar)", "- 2011 Remaster". The provider has the plain title. The
-      // original tag is always tried FIRST and wins if it resolves; this only
-      // runs when that came back empty, and only when stripping actually
-      // changes the string (stripSearchNoise returns null otherwise, so a
-      // clean title costs no extra request).
-      if (!textOf(result)) {
-        const retryTitle = stripSearchNoise(title);
-        const retryArtist = stripSearchNoise(artist);
-        if (retryTitle || retryArtist) {
-          const t2 = retryTitle || title;
-          const a2 = retryArtist || artist;
-          if (lyricsStatusEl) lyricsStatusEl.textContent = `Retrying as “${t2}”…`;
-          const retried = await lookup(a2, t2);
-          if (settled) return;
-          if (textOf(retried)) { result = retried; artist = a2; title = t2; }
-        }
-      }
+      if (attempt) { artist = attempt.artist ?? artist; title = attempt.title ?? title; }
       const hasText = textOf(result);
       if (hasText) {
         if (lyricsStatusEl) lyricsStatusEl.textContent = `✓ ${result.synced ? 'synced' : 'plain'} lyrics found — ${artist || '?'} — ${title || '?'}`;
@@ -1039,12 +1042,13 @@ function promptForLyrics(identity, durationSec) {
     };
     const onFind = () => runFind(lyricsArtistInputEl?.value.trim(), lyricsTitleInputEl?.value.trim());
     const onSkip = () => finish(null);
-    // "No lyrics": skip this song AND remember the choice so future songs
-    // skip the fetch entirely (loadAudioFiles reads lyricsDisabled).
+    // Turn timed lyric grounding OFF: skip this song and remember the
+    // choice, so future songs skip the lookup entirely (loadAudioFiles reads
+    // lyricsDisabled).
     const onNever = () => {
       lyricsDisabled = true;
       setLyricsDisabled(true);
-      syncNoLyricsBtn();
+      syncLyricGroundingBtn();
       finish(null);
     };
     lyricsFindBtnEl?.addEventListener('click', onFind);
