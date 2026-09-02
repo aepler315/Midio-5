@@ -16,7 +16,10 @@ import { FlourishGate } from './FlourishGate.js';
 import { Burrow } from './Burrow.js';
 
 const K = 22, C = 3.6; // slightly softer spring so he settles further out
-const D_TRAIL = -200, D_SURGE = 150;
+// He runs POINT, not rear guard: the default set-point is ahead of Midio.
+// (Named D_TRAIL throughout for the spring it feeds; the sign is what
+// changed, not the machinery.)
+const D_TRAIL = 200, D_SURGE = 150;
 // How close to the frame edge he is allowed to get. Roughly his own drawn
 // half-width plus a little air, so he reads as "at the edge of shot" rather
 // than half-cropped by it.
@@ -226,7 +229,7 @@ export class Broshi {
     this._melt = 0;
     this._swell = 1; // shared build-up swell (EnsembleDirector.swell) -- 1 until the first update()
     // Keep-out hysteresis: which side of Midio he was last clearly on.
-    this._lastSide = -1; // starts trailing behind (D_TRAIL is negative)
+    this._lastSide = 1; // starts out in front (D_TRAIL is positive)
 
     // True-companion behaviors -- all render-only, driven by Midio's own
     // state via the ensemble bag (see update()).

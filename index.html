@@ -45,21 +45,17 @@
           </div>
         </div>
 
-        <button id="demoBtn" type="button" class="demoBtn">
-          <span class="demoBtnLabel">Play demo</span>
-          <span class="demoBtnHint">no file needed</span>
-        </button>
+        
 
-        <div class="slskDivider"><span>or load your own file</span></div>
-
+        
         <div id="dropzone" tabindex="0" role="button" aria-label="Drop or choose a music file">
           <div class="dropzoneInner">
             <span class="dropIcon" aria-hidden="true">&#9834;</span>
-            <span class="dropPrimary">Drop MIDI or audio to play</span>
-            <span class="dropSecondary">.mid &middot; mp3 &middot; wav &middot; flac &mdash; multi-stem drops welcome</span>
+            <span class="dropPrimary">Drop a song to play</span>
+            <span class="dropSecondary">mp3 &middot; wav &middot; flac &middot; m4a &mdash; multi-stem drops welcome</span>
             <label class="filebtn" onclick="event.stopPropagation()">
               Browse files
-              <input id="fileInput" type="file" accept=".mid,.midi,.mp3,.wav,.flac,.ogg,.m4a,.aac,audio/*" multiple class="fileInputVisuallyHidden" />
+              <input id="fileInput" type="file" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,audio/*" multiple class="fileInputVisuallyHidden" />
             </label>
           </div>
         </div>
@@ -104,31 +100,7 @@
               <button id="slskSaveCfg" type="button" class="slskSearchBtn">Connect Soulseek</button>
               <button id="slskClearCfg" type="button" class="ghostbtn chipbtn">Use free music</button>
             </div>
-            <details class="slskAdvanced">
-              <summary>Advanced (slskd)</summary>
-              <p class="slskHint">
-                Bundled daemon: <code>docker compose up -d slskd</code>.
-                Midio auto-detects it — leave these blank unless you run slskd elsewhere.
-              </p>
-              <label class="slskField">
-                <span>Connection</span>
-                <select id="slskModeSelect">
-                  <option value="free" selected>Free music (default)</option>
-                  <option value="direct">Direct Soulseek login</option>
-                  <option value="slskd">slskd server</option>
-                </select>
-              </label>
-              <div id="slskdFields" class="slskFieldGroup">
-                <label class="slskField">
-                  <span>slskd URL</span>
-                  <input id="slskdUrl" type="url" placeholder="http://127.0.0.1:5030" spellcheck="false" value="http://127.0.0.1:5030" />
-                </label>
-                <label class="slskField">
-                  <span>API key <em>(leave blank for bundled)</em></span>
-                  <input id="slskdKey" type="password" placeholder="auto (midio-local-dev-key)" spellcheck="false" autocomplete="off" />
-                </label>
-              </div>
-            </details>
+            
           </div>
 
           <p id="slskStatus" class="slskStatus" role="status"></p>
@@ -141,14 +113,10 @@
           <p class="titleFlashNote">Contains flashing lights, camera shake, and sudden scene cuts. Press <kbd>R</kbd> to dampen all three; it turns on automatically if your system asks for reduced motion.</p>
           <div class="prefRow">
 
-            <button id="noLyricsBtn" class="ghostbtn chipbtn" type="button" aria-pressed="false" title="Skip the lyric search for audio files (remembered)">No lyrics: off</button>
+            <button id="lyricGroundingBtn" class="ghostbtn chipbtn" type="button" aria-pressed="true" title="Looks up time-stamped lyrics for your song and uses them to place verses and choruses on the real clock. Tries the tags as they are, then progressively cleaner versions of them. Remembered.">Timed lyric grounding: on</button>
           </div>
 
-          <div class="seedRow" title="Pin a world seed. Leave blank for auto from the song.">
-            <label for="seedInput">Seed</label>
-            <input id="seedInput" type="text" spellcheck="false" autocomplete="off" placeholder="auto" maxlength="48" />
-            <button id="seedRandomBtn" class="ghostbtn chipbtn" type="button" title="Random seed">Random</button>
-          </div>
+          
 
           <div class="resRow" title="Stage render resolution (sim stays 16:9 logical; canvas upscales to this).">
             <label for="stageRes">Stage</label>
@@ -179,32 +147,11 @@
             <ul id="jamendoResults" class="jamendoResults"></ul>
           </details>
 
-          <details class="titleAdvanced">
-            <summary>SoundFonts & extras</summary>
-            <div class="sfRow">
-              <label class="filebtn">
-                Load .sf2 / .zip
-                <input id="sfFileInput" type="file" accept=".sf2,.zip" multiple hidden />
-              </label>
-              <label class="filebtn">
-                Folder
-                <input id="sfDirInput" type="file" webkitdirectory hidden />
-              </label>
-              <button id="sfDirBtn" type="button" class="ghostbtn">Open directory&hellip;</button>
-            </div>
-            <p class="hint">Auto-load: put <code>.sf2</code>/<code>.zip</code> in <code>soundfonts/</code> next to this page. Swap songs anytime by dropping a new file mid-run.</p>
-          </details>
+          
 
           <p id="progressText" class="hint progressHint hidden"></p>
 
-          <ul class="titleKeys" aria-label="Keyboard shortcuts">
-            <li><kbd>F</kbd>/<kbd>J</kbd> tap the groove &mdash; low / high</li>
-            <li><kbd>C</kbd> guided calibration</li>
-            <li><kbd>T</kbd> tracks</li>
-            <li><kbd>G</kbd> fonts</li>
-            <li><kbd>P</kbd> fps</li>
-            <li><kbd>R</kbd> reduced flash</li>
-          </ul>
+          
         </div>
       </div>
     </div>
@@ -226,7 +173,7 @@
         <button id="fullscreenBtn" class="ghostbtn iconbtn" type="button" title="Fullscreen (F11)">&#9974;</button>
         <button id="calibrateBtn" class="ghostbtn" type="button" title="Guided tap calibration -- tap along with the beat so taps register right on time. Same as the C key. The only way to reach this on a phone.">Sync</button>
 
-        <button id="settingsBtn" class="ghostbtn iconbtn" type="button" title="SoundFont settings (hidden fonts)">&#9881;</button>
+        
         <div id="trackBadge" class="hidden">
           <button id="trackBadgeBtn" type="button"></button>
           <div id="trackList"></div>
@@ -253,11 +200,7 @@
          kicks (the "characters are moving randomly" failure) and raises
          this at most twice per song. Music never stops; dismissing it just
          goes away. -->
-    <div id="syncPrompt" class="syncPrompt hidden" role="status">
-      <span class="syncPromptText">The sync looks a little off — want to tap it in?</span>
-      <button id="syncPromptFixBtn" type="button" class="syncPromptFixBtn">Tap to fix</button>
-      <button id="syncPromptDismissBtn" type="button" class="syncPromptDismissBtn" aria-label="Dismiss">&times;</button>
-    </div>
+    
 
     <div id="auditionPanel" class="panel hidden">
       <h1 id="auditionHeading">PULLING THE RECORDING APART</h1>
@@ -285,28 +228,7 @@
          under the narrow-portrait media query below; never blocks input. -->
     <div id="landscapeHint" class="landscapeHint" aria-hidden="true">Rotate your device for the full view</div>
 
-    <div id="fontModal" class="modalBackdrop hidden">
-      <div id="fontModalPanel" class="modalPanel">
-        <div class="modalHeader">
-          <h2 id="fontModalTitle">SoundFonts</h2>
-          <button id="fontModalClose" class="ghostbtn iconbtn" type="button" aria-label="Close">&times;</button>
-        </div>
-        <div id="fontModalList" class="fontList"></div>
-        <div id="fontAuditionStatus" class="auditionStatus hidden"></div>
-        <div class="modalFooter">
-          <label class="filebtn">
-            Load .sf2 / .zip
-            <input id="fontModalFileInput" type="file" accept=".sf2,.zip" multiple hidden />
-          </label>
-          <label class="filebtn">
-            Folder
-            <input id="fontModalDirInput" type="file" webkitdirectory hidden />
-          </label>
-          <button id="fontModalDirBtn" type="button" class="ghostbtn">Open directory…</button>
-          <button id="fontHiddenToggle" type="button" class="ghostbtn">Hidden (0)</button>
-        </div>
-      </div>
-    </div>
+    
 
     <div id="completePanel" class="panel completePanel hidden">
       <div class="completeCard">

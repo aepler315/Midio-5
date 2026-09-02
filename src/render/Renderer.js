@@ -169,7 +169,7 @@ export class Renderer {
       // buffer. Unpadded dims -- the shake overscan margin above is for the
       // live camera transform only, and sx/sy already assume it away.
       ctx.setTransform(sx, 0, 0, sy, 0, 0);
-      fracture.drawShatter(ctx, { width: baseStageW, height: baseStageH });
+      // (shatter draw removed -- see the note at the crack pass below)
       return;
     }
 
@@ -342,7 +342,10 @@ export class Renderer {
     // something that actually happens rather than something that was
     // always half-happening.
     const vibeMelt = sim.vibe ? 0.3 + 6.7 * sim.vibe.epic : 0;
-    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, vibeMelt + feverGlow, sim.apotheosis, sim.reducedFlash, MIDIO_IDENTITY_HUE, sim.ensemble, companionLights, sim.focus ? sim.focus.mul('midio') : 1, sim.gaze);
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, vibeMelt + feverGlow, sim.apotheosis, sim.reducedFlash, MIDIO_IDENTITY_HUE, sim.ensemble, companionLights, sim.focus ? sim.focus.mul('midio') : 1, sim.gaze,
+      sim.beatAnchor && sim.beatAnchor.periodMs > 0
+        ? sim.beatAnchor.phaseRad(sim.timeMs) / (Math.PI * 2)
+        : null);
 
     // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
     const lm = sim.performer ? sim.performer.lastMilestone : null;
@@ -391,7 +394,12 @@ export class Renderer {
     // so they belong on top of every world layer, near-field props included
     // -- not occluded by something the world itself is drawing.
     if (biomeManager) biomeManager.drawForeground(ctx, groundView.stage, pose.worldX, perf ? perf.veilEnabled : true);
-    if (sim.fracture) sim.fracture.draw(ctx, groundView.stage, { glow: perf ? perf.crackGlowEnabled : true });
+    // Glass cracks removed: the progressive fracture and its terminal
+    // shatter are gone at the request of the design. The ENGINE stays --
+    // CutDirector, CodaDirector, NoteChart and the film finish all hang off
+    // its finale timing (isAboutToFreeze / justEnteredFinale), and that
+    // timing is the song's ending, not a decoration -- but it no longer
+    // draws anything.
     if (sim.keyDirector) this._drawTranspositionWave(ctx, groundView.stage, sim.keyDirector);
 
     ctx.restore(); // camera transform
@@ -932,7 +940,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_IDENTITY_HUE, ensemble = null, lights = null, focusMul = 1, gaze = null) {
+  _drawMidio(ctx, pose, performer, tSec = 0, melt = 0, apotheosis = null, reducedFlash = false, baseHue = MIDIO_IDENTITY_HUE, ensemble = null, lights = null, focusMul = 1, gaze = null, beatPhase01 = null) {
     const flash = performer ? performer.goldFlash : 0;
     const blink = performer ? performer.blinkScale : 1;
     const apoProgress = apotheosis ? apotheosis.progress : 0;
@@ -956,12 +964,18 @@ export class Renderer {
     // Reduced-flash is the accessibility setting for exactly this, so it
     // scales the whole thing to rest.
     const motionScale = reducedFlash ? 0.25 : 1;
-    const motion = midioMotion(tSec, clamp01(melt / 8), motionScale);
+    // beatPhase01 comes from BeatAnchor at the call site -- the same grid
+    // every kick-quantized thing in the show already hangs off, so the pulse
+    // stays in step through tempo changes without its own tracking. Null when
+    // there is no usable grid yet, and midioMotion then returns a pulse of
+    // exactly 1: a pulse off the beat is worse than no pulse.
+    const motion = midioMotion(tSec, clamp01(melt / 8), motionScale, beatPhase01);
+    const pulse = motion.pulseScale;
     const transform = {
       tx: pose.midioDrawX, ty: pose.midioY + motion.hoverPx,
       rot: ((pose.leanDeg + motion.precessDeg) * Math.PI) / 180,
-      scaleX: pose.scaleX * MIDIO_DRAW_SCALE * breathe * (1 + 0.25 * apoProgress),
-      scaleY: pose.scaleY * MIDIO_DRAW_SCALE * breathe * (1 + 0.25 * apoProgress),
+      scaleX: pose.scaleX * MIDIO_DRAW_SCALE * breathe * pulse * (1 + 0.25 * apoProgress),
+      scaleY: pose.scaleY * MIDIO_DRAW_SCALE * breathe * pulse * (1 + 0.25 * apoProgress),
       // Rare shared transition tumble (see EnsembleDirector.maybeTumble) --
       // 0 outside of a move, so this is a no-op almost all the time.
       rotX: ensemble ? ensemble.rotX(0) : 0,

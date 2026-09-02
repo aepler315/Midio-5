@@ -45,36 +45,35 @@ test('Midasus falls into orbital wander after 800ms of silence', () => {
   assert.ok(m.rest > 0.9);
 });
 
-test('Broshi trails behind Midio by default (TRAIL setpoint)', () => {
+test('Broshi runs POINT ahead of Midio by default', () => {
   const conductor = new Conductor();
   conductor.load({ timeline: [], barGrid: [], durationMs: 10000 });
   const paramBus = new ParamBus();
   const b = new Broshi(conductor, paramBus);
   const midio = { screenX: 200, groundY: 480, y: 0 };
   stepFor((t, dt) => b.update(t, dt, midio, null, 0, 480), 5000);
-  // He trails BEHIND Midio -- but only as far back as the frame allows. With
-  // Midio at screenX=200 the old fixed -200 set-point parked him at screen
-  // x=0, half out of shot with nothing to pull him back, which is what
-  // "Broshi falls back off the screen" was. The set-point is now clamped
-  // against the stage, so he settles at the edge margin instead.
-  assert.ok(b.xRel < -20, `should still trail behind Midio, got ${b.xRel}`);
+  // He leads Midio now rather than trailing him. The set-point is still
+  // clamped against the stage (that clamp is what stopped him sliding off
+  // the frame when he trailed), so he settles ahead but on-screen.
+  assert.ok(b.xRel > 20, `should run ahead of Midio, got ${b.xRel}`);
   const screenX = midio.screenX + b.xRel;
   assert.ok(screenX >= 60 && screenX <= 1220, `should stay on frame, got screen x=${screenX}`);
 });
 
-test('Broshi never settles off the left edge, wherever Midio stands', () => {
-  // The regression itself: Midio near the left of frame used to leave the
-  // trail set-point pointing off-screen, and a spring sitting happily on its
-  // target has no reason to come back.
-  for (const midioX of [120, 200, 340, 640]) {
+test('Broshi never settles off either edge, wherever Midio stands', () => {
+  // The regression this guards: a set-point pointing off-screen, with a
+  // spring sitting happily on it and no reason to come back. It applied to
+  // the left edge when he trailed; running point it is the right edge that
+  // can strand him, and the same stage clamp covers both.
+  for (const midioX of [120, 200, 340, 640, 1100]) {
     const conductor = new Conductor();
     conductor.load({ timeline: [], barGrid: [], durationMs: 10000 });
     const b = new Broshi(conductor, new ParamBus());
     const midio = { screenX: midioX, groundY: 480, y: 0 };
     stepFor((t, dt) => b.update(t, dt, midio, null, 0, 480), 5000);
     const screenX = midio.screenX + b.xRel;
-    assert.ok(screenX >= 60, `Midio at ${midioX}: Broshi settled at screen x=${screenX}`);
-    assert.ok(b.renderX >= 60, `Midio at ${midioX}: Broshi DREW at x=${b.renderX}`);
+    assert.ok(screenX >= 60 && screenX <= 1220, `Midio at ${midioX}: Broshi settled at screen x=${screenX}`);
+    assert.ok(b.renderX >= 60 && b.renderX <= 1220, `Midio at ${midioX}: Broshi DREW at x=${b.renderX}`);
   }
 });
 

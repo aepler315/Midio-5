@@ -781,9 +781,17 @@ export class Simulation {
     this.beatAnchor.setSongBeatMs(this.jump.beatPeriodMs, nowMs);
     this.beatAnchor.update(nowMs);
     this.syncMonitor.update(nowMs, {
+      beatPeriodMs: this.jump.beatPeriodMs,
       anchorConfidence: this.beatAnchor.confidence,
       suppress: this.recalibrating,
     });
+    // ...and apply what it found. The monitor used to raise a prompt asking
+    // the viewer to tap a correction in by hand; if the engine can measure
+    // the offset it can apply it, so it does. Moving anchorMs IS the fix --
+    // every kick-quantized thing in the show (jumps, Broshi's surges,
+    // section cuts) hangs off this one grid origin.
+    const gridFix = this.syncMonitor.consumeCorrection();
+    if (gridFix != null) this.beatAnchor.anchorMs += gridFix;
     this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs, this.beatAnchor, this.hype.buildUp);
     // A scene transition is a rare cue for the whole trio to share a brief
     // tumble accent (see EnsembleDirector.maybeTumble) -- one-frame lag

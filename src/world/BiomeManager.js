@@ -41,6 +41,7 @@ import { occludedSpans, hillCurve } from './ConnectorHills.js';
 import { strataBeds } from './RockStrata.js';
 import {
   occludedFraction, stepDistantWave, swellCrest,
+  isthmusReveal01, foregroundSwellCrest,
 } from './DistantWave.js';
 import { FlourishGate } from '../sim/FlourishGate.js';
 import {
@@ -69,10 +70,10 @@ import { FarVignettes } from './FarVignettes.js';
 import { NearField, NEARFIELD_RATIO } from './NearField.js';
 import { GroundScatter, SCATTER_RATIO } from './GroundScatter.js';
 import { flameFlicker, smokeDrift } from './Wildfire.js';
-import { RidgeRunners } from './RidgeRunners.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
+import { celestialApproach } from './CelestialApproach.js';
 import { applyConductorSchedule } from '../core/ConductorTrack.js';
 import { analyzeSongForm } from './SongForm.js';
 import {
@@ -169,6 +170,15 @@ const STRATA_DARKEN = 0.17;
 // shading a range got; it is now one of several.
 const RIDGE_CATCHLIGHT_ALPHA = 0.13;
 const RIDGE_SHADE_STRENGTH = 0.36;
+// Foreground swell (the isthmus reveal). Amplitude is absolute rather than
+// relief-derived: this water is at the viewer's feet, so its scale is set by
+// how near it is, not by how tall the mountains behind it happen to be.
+const FG_SWELL_AMP_PX = 26;
+const FG_SWELL_DROP_PX = 26;   // how far below the ground line the shore sits
+// How far the water is darkened below the sky color it reflects.
+const FG_SWELL_DARKEN = 0.30;
+const FG_SWELL_ALPHA = 0.86;
+const FG_SWELL_EDGE_ALPHA = 0.42;
 const SNOW_ALPHA = 0.34;
 const RIM_LIGHT_MIX = 0.35;
 const RIM_GRADIENT_STOPS = 8;
@@ -606,10 +616,6 @@ export class BiomeManager {
     this._massifNextSpawnMs = nextMassifMarkerDelaySec(this._massifRand) * 1000;
     // Miniature characters running along the near ranges' ridges — an
     // independent trio per range so the depths don't mirror each other.
-    this.ridgeRunners = {
-      L4: new RidgeRunners(hashSeed(`${songSeed}:runners:L4`)),
-      L5: new RidgeRunners(hashSeed(`${songSeed}:runners:L5`)),
-    };
 
     this.songSeed = songSeed;
     this.visualStyle = 'rendered'; // set via setVisualStyle from Simulation / main
@@ -2145,7 +2151,108 @@ export class BiomeManager {
     // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
     this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
     this._drawFlood(ctx, groundCanvas);
+    // In FRONT of the ground: as the camera pulls back, the near water comes
+    // into frame and the strip they run along turns out to be an isthmus.
+    this._drawForegroundSwell(ctx, groundCanvas, worldX, A, B, t);
     this._drawTransitionOverlays(ctx, groundCanvas, B);
+  }
+
+  /**
+   * The near shore, revealed by pulling the camera back.
+   *
+   * At normal framing the trio run along a strip of ground with mountains
+   * behind it, and that ground could be a continent. A wide shot has room
+   * below the ground line to answer the question, so this fills it: sea on
+   * the NEAR side too, which makes the strip an isthmus.
+   *
+   * Same swell mathematics as the distant wave at the horizon (see
+   * DistantWave.js) with perspective applied -- longer wavelengths, larger
+   * amplitude, faster apparent travel. Matching the form while scaling those
+   * three is what makes the two read as one ocean seen at two distances
+   * rather than as two unrelated effects.
+   */
+  _drawForegroundSwell(ctx, canvas, worldX, A, B, t) {
+    const reveal = isthmusReveal01(this.pullback01 || 0);
+    if (reveal <= 0.002) return;
+    if (this._perf && !this._perf.heavyPostFx) return;
+
+    // Anchored below the walking ground, so it never rises over the strip
+    // they are actually standing on -- this is the water BEYOND the near
+    // edge of the land, not a flood.
+    const groundY = this._zoomedGroundY(canvas);
+    // Sits in the upper part of the near-ground band. Deeper than this and
+    // the shore is behind the transport bar, which is where the first
+    // attempt put it -- present in a pixel diff, and cropped out of the shot.
+    const baselineY = groundY + FG_SWELL_DROP_PX + (canvas.height - groundY) * 0.12;
+    if (baselineY > canvas.height + FG_SWELL_AMP_PX * 4) return;
+
+    const profile = t > 0.5 ? B : A;
+    const energy = clamp01(profile.terrainEnergy ?? 1);
+    // The nearest parallax in the scene: this water is at the viewer's feet,
+    // so it travels with the ground rather than with any far layer, or it
+    // reads as painted on the lens.
+    const pts = foregroundSwellCrest({
+      width: canvas.width, baselineY, ampPx: FG_SWELL_AMP_PX,
+      tSec: this.tSec, scrollX: worldX, stepPx: CREST_STEP_PX, energy01: energy,
+    });
+    if (pts.length < 2) return;
+
+    // Water reads as sky reflected: the same air color the ranges and the
+    // ground are washed toward, pulled toward the biome's own halo so the
+    // near sea belongs to this world. Darker than the distant swell -- near
+    // water is deeper, and it has to stay under the characters standing in
+    // front of it rather than competing with them.
+    // Water reflects the sky, so it takes the same air color the ranges and
+    // the ground are washed toward -- but DARKENED. The first attempt used
+    // that color at full lightness and read as a lit sandbar rather than as
+    // sea: near water is deep, and a body of water below a lit shore is the
+    // darker of the two, not the brighter. The floor keeps it from going to
+    // pure black on an already-dark palette.
+    const base = ensureMinLightness(
+      shiftLightness(
+        this.lerpCache.get(this._airColor || '#3a4a60', this._rotated(profile.celestial.haloColor), 0.16),
+        -FG_SWELL_DARKEN,
+      ),
+      0.08,
+    );
+    const { r, g, b } = hexToRgb(base);
+    // NOT scaled by this.budget the way the atmospheric passes are. The
+    // budget ramps from ~0.25 over a song's opening, and multiplying by it
+    // made this two grey levels deep -- present in a pixel diff, invisible to
+    // a viewer. This is not decoration: it is the answer to "what am I
+    // standing on", and the whole point is that a wide shot reveals it. It
+    // dims a little while the show is still coming up, and no further.
+    const alpha = FG_SWELL_ALPHA * reveal * (0.6 + 0.4 * clamp01(this.budget));
+    if (alpha < 0.01) return;
+
+    ctx.save();
+    const grad = ctx.createLinearGradient(0, baselineY - FG_SWELL_AMP_PX * 4, 0, canvas.height);
+    grad.addColorStop(0, `rgba(${r},${g},${b},${(alpha * 0.72).toFixed(3)})`);
+    grad.addColorStop(0.35, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
+    grad.addColorStop(1, `rgba(${r},${g},${b},${(alpha * 0.94).toFixed(3)})`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.lineTo(pts[pts.length - 1].x, canvas.height);
+    ctx.lineTo(pts[0].x, canvas.height);
+    ctx.closePath();
+    ctx.fill();
+
+    // The shore line itself. Near water gets a crisper edge than the distant
+    // swell's soft glint -- acuity is a depth cue in its own right, and this
+    // is the closest thing in the frame.
+    if (!this.reducedFlash) {
+      ctx.globalAlpha = FG_SWELL_EDGE_ALPHA * reveal * (0.6 + 0.4 * clamp01(this.budget));
+      ctx.strokeStyle = this._rotated(profile.celestial.haloColor);
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   /** Subtle dark contact where ranges meet the walking ground -- follows the
@@ -3212,12 +3319,30 @@ export class BiomeManager {
     ctx.restore();
   }
 
+  /** The approach (CelestialApproach.js) for this frame, or null before it
+   *  has anything to work with. Resolved once per frame in draw() so the sun,
+   *  the moon, the light rig and the mandala all read the same body. */
+  _celestialApproachAt(canvas, cx, cy) {
+    const midioX = this.midioX ?? canvas.width * 0.32;
+    const midioY = this.midioY ?? this._zoomedGroundY(canvas);
+    return celestialApproach({
+      orbitX: cx, orbitY: cy, midioX, midioY, progress01: clamp01(this._progress || 0),
+    });
+  }
+
   _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22, alpha = 1, cxFrac = CELESTIAL_DEFAULT_XFRAC) {
-    const cx = canvas.width * cxFrac, cy = canvas.height * cyFrac;
+    // The body is closing on a point just up and left of Midio over the length
+    // of the song. Position drifts linearly and slowly; apparent size grows as
+    // 1/distance and therefore accelerates. See CelestialApproach.js for why
+    // that ratio is the whole effect.
+    const app = this._celestialApproachAt(canvas, canvas.width * cxFrac, canvas.height * cyFrac);
+    const cx = app.x, cy = app.y;
+    const grow = app.scale;
     const rotCel = (c) => ({
       ...c,
       color: this._rotated(c.color),
       haloColor: this._rotated(c.haloColor),
+      radius: (c.radius || 0) * grow,
     });
     if (B === A) {
       this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), alpha);
@@ -3300,11 +3425,18 @@ export class BiomeManager {
   _drawMoon(ctx, canvas, cyFrac, alpha, tidalOffsetPx = 0, cxFrac = CELESTIAL_DEFAULT_XFRAC,
     sunXFrac = null, sunYFrac = null, phase01 = 0.5) {
     if (alpha <= 0.02) return;
-    const cx = canvas.width * cxFrac, cy = canvas.height * cyFrac + clamp(tidalOffsetPx, -6, 6);
+    // Same approach the sun is on (CelestialApproach.js): both bodies are
+    // closing on the convergence point, so the moon grows through the night
+    // exactly as the sun grows through the day and the two agree about how
+    // far away the sky is.
+    const app = this._celestialApproachAt(
+      canvas, canvas.width * cxFrac, canvas.height * cyFrac + clamp(tidalOffsetPx, -6, 6),
+    );
+    const cx = app.x, cy = app.y;
     // Scales with the frame like every other sky element, instead of staying
     // a fixed 26px while a camera pull-back widens the stage around it.
     // Matches the old constant exactly at the nominal 720-tall stage.
-    const R = Math.max(14, canvas.height * 0.0361);
+    const R = Math.max(14, canvas.height * 0.0361) * app.scale;
     ctx.save();
     ctx.globalAlpha = alpha;
     const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 2.2);
@@ -4246,27 +4378,6 @@ export class BiomeManager {
       if (rimOkB && B.edgeLight) {
         this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t * (CREST_RIM_ALPHA[layerKey] ?? 1), B.terrainEnergy ?? 1, heightMulB);
       }
-    }
-    // Miniature characters run along the two nearest ranges' ridges,
-    // riding the same dance the columns do.
-    if (layerKey === 'L4' || layerKey === 'L5') {
-      const strip = (t > 0.5 ? stripsB : stripsA)[layerKey];
-      const runnerHeightMul = t > 0.5 ? heightMulB : heightMulA;
-      const runnerEnergy = (t > 0.5 ? B.terrainEnergy : A.terrainEnergy) ?? 1;
-      const cfg = DANCE_LAYERS[layerKey];
-      const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
-      // Read the same scale _crestPoints computed for this exact strip this
-      // frame (cache hit -- both are keyed identically) so the runners'
-      // baseY/ridge reading matches the mountain they're standing on
-      // instead of drifting whenever growth/pullback/heightMul scale the
-      // strip away from its raw baked height (a pre-existing bug: this used
-      // to always assume scale===1).
-      const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, runnerEnergy, runnerHeightMul);
-      const runnerBaseY = geom ? canvas.height - geom.dh + yOff : canvas.height - strip.height + yOff;
-      const runnerScale = geom ? geom.scale : 1;
-      this.ridgeRunners[layerKey].draw(ctx, strip, scrollX, canvas.width, runnerBaseY, {
-        tSec: this.tSec, groove: this._danceGroove, kick, cfg, fever: this.fever || 0,
-      }, layerKey === 'L5' ? 0.55 : 0.4, runnerScale);
     }
     ctx.restore();
   }

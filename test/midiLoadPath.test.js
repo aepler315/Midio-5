@@ -1,6 +1,11 @@
-// End-to-end pure-logic check that the MIDI load path used by drag/upload
-// still produces a playable timeline + custom biome (regression for the
+// End-to-end pure-logic check on the timeline pipeline (regression for the
 // PR #7 UTF-16 corruption that broke module parse of ParamBus/Renderer).
+//
+// The MIDI *upload* path is gone -- audio is the only input now -- but
+// MidiAdapter and BiomeImporter are still the machinery a dropped song's
+// timeline and custom biome are built by, so the pipeline below is live code
+// and worth pinning. The fixture is a synthetic MIDI buffer purely because
+// it is the cheapest deterministic way to make a timeline.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -64,10 +69,18 @@ test('playing a decoded recording mutes the timeline synth (no keyboard/click la
 });
 
 test('audio load path in main.js offers worlds instead of starting immediately', () => {
+  // Anchored on the function itself rather than on whatever follows it: this
+  // used to slice up to `loadDemo`, and the demo is gone -- audio is the only
+  // input now, so there is nothing after it to anchor against.
   const text = readFileSync(join(root, 'src/main.js'), 'utf8');
   const start = text.indexOf('async function loadAudioFiles');
-  const end = text.indexOf('async function loadDemo');
-  assert.ok(start >= 0 && end > start, 'loadAudioFiles should precede loadDemo');
+  assert.ok(start >= 0, 'loadAudioFiles should exist');
+  let i = text.indexOf('{', start), depth = 0, end = -1;
+  for (; i < text.length; i++) {
+    if (text[i] === '{') depth++;
+    else if (text[i] === '}' && --depth === 0) { end = i + 1; break; }
+  }
+  assert.ok(end > start, 'could not find the end of loadAudioFiles');
   const body = text.slice(start, end);
   assert.ok(body.includes('offerWorldsThenStart'), 'dropped audio must reach the world select screen');
   assert.ok(
