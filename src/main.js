@@ -1,9 +1,6 @@
 // Bootstrap: file loading UI, audio-clock-driven game loop (spec §6.1).
 import { Conductor } from './core/Conductor.js';
 import { ParamBus } from './core/ParamBus.js';
-import { midiToTimeline } from './core/MidiAdapter.js';
-import { buildDemoSong } from './core/DemoSong.js';
-import { renderDemoSongToAudioBuffer } from './audio/DemoSongRender.js';
 import { synthesizeEnergyCurves } from './core/EnergyCurvesSynth.js';
 import { audioToTimeline } from './audio/AudioAdapter.js';
 import { Simulation } from './sim/Simulation.js';
@@ -86,7 +83,6 @@ window.addEventListener('unhandledrejection', (e) => {
 const loaderEl = document.getElementById('loader');
 const dropzoneEl = document.getElementById('dropzone');
 const fileInputEl = document.getElementById('fileInput');
-const demoBtnEl = document.getElementById('demoBtn');
 const worldSelectEl = document.getElementById('worldSelect');
 const worldSelectGridEl = document.getElementById('worldSelectGrid');
 const worldSelectBackEl = document.getElementById('worldSelectBack');
@@ -395,7 +391,6 @@ function applySynthMutePolicy() {
   // Audio-file playback already has the song in the buffer — stacking the
   // synthetic hi-hat / click / kick voices on top is what the player hears as
   // the unwanted metronome layer. MIDI still needs the synth; the authored
-  // demo renders its own buffer (see loadDemo) and mutes the same way.
   if (synth) synth.enabled = !muteTimelineSynth;
 }
 
@@ -848,44 +843,6 @@ function startTimeline(timelineData, extra = {}) {
   };
 }
 
-async function loadMidiFile(file) {
-  try {
-    showProgress('Reading MIDI…');
-    worldSelectEl?.classList.add('hidden');
-    await bootAudio();
-    const myGen = ++loadGen;
-    const buf = await file.arrayBuffer();
-    if (!buf || buf.byteLength < 14) {
-      throw new Error('File is empty or too small to be a MIDI file');
-    }
-    const data = midiToTimeline(buf);
-    if (!data.timeline || data.timeline.length === 0) {
-      throw new Error('MIDI parsed but contains no notes');
-    }
-    // A second file dropped while this one was still awaiting arrayBuffer()
-    // has since bumped loadGen -- that load is the one the player actually
-    // wants now, so this stale one must not clobber it by starting anyway.
-    if (myGen !== loadGen) return;
-    lastSongName = file.name || 'song';
-    data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
-    // Custom biome generation lives inside the load path so every drop/upload
-    // of a .mid produces a unique world without changing stock demo casting.
-    data.customBiome = generateCustomBiomeFromMidi(data, file.name || 'MIDI');
-    rememberCustomBiome(paramBus, data.customBiome);
-    // One oscillator-synth patch per channel, tuned to that channel's own
-    // register/density/phrasing in THIS song -- the SF2 path (a real font
-    // loaded) ignores these; this is what plays when there's no soundfont.
-    synth?.fallback?.setPatches?.(designSynthPatches(data.timeline, data.durationMs));
-    muteTimelineSynth = false;
-    lastAudioBuffer = null; // MIDI is synth-driven; drop any prior decoded audio
-    startImmediately(data);
-  } catch (err) {
-    console.error('[MIDI load failed]', err);
-    progressEl.classList.add('hidden');
-    showErrorBanner('Could not load MIDI file: ' + (err?.message || err));
-  }
-}
-
 /**
  * A MIDI and audio file dropped TOGETHER: the recording is what you hear,
  * the score is what you see. This is the authoring path the conductor track
@@ -904,64 +861,6 @@ async function loadMidiFile(file) {
  * as they are for a MIDI-only load. That also makes this path near-instant
  * where a raw-audio drop of the same song takes its separation/pitch pass.
  */
-async function loadScoredAudio(midiFile, audioFiles) {
-  try {
-    await bootAudio();
-    const myGen = ++loadGen;
-    showProgress('Reading score and recording…');
-
-    const midiBuf = await midiFile.arrayBuffer();
-    if (!midiBuf || midiBuf.byteLength < 14) {
-      throw new Error('File is empty or too small to be a MIDI file');
-    }
-    const data = midiToTimeline(midiBuf);
-    if (!data.timeline || data.timeline.length === 0) {
-      throw new Error('MIDI parsed but contains no notes');
-    }
-
-    const decoded = [];
-    for (const file of audioFiles) {
-      decoded.push({
-        name: file.name || 'stem',
-        buffer: await audioEngine.decodeFile(await file.arrayBuffer()),
-      });
-    }
-    const audioBuffer = decoded.length > 1
-      ? sumToMixBuffer(decoded.map((d) => d.buffer))
-      : decoded[0].buffer;
-
-    if (myGen !== loadGen) return; // a newer load started while we decoded
-
-    // Whichever runs longer wins: a recording with a tail past the last
-    // notated bar must not be cut off, and cues written past the end of the
-    // audio must still get their chance to fire.
-    data.durationMs = Math.max(data.durationMs || 0, audioBuffer.duration * 1000);
-    data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
-    data.customBiome = generateCustomBiomeFromMidi(data, midiFile.name || 'MIDI');
-    rememberCustomBiome(paramBus, data.customBiome);
-
-    // The recording carries every voice already -- the timeline synth would
-    // double it, exactly as on the raw-audio path.
-    muteTimelineSynth = true;
-    lastSongName = audioFiles[0].name || midiFile.name || 'song';
-    if (data.conductor && DEV_MODE) {
-      console.info(
-        `[conductor] ${data.conductor.cues.length} cues from ${data.conductor.names.join(', ')}`
-        + ` (${data.conductor.scheduleCues.length} schedule, ${data.conductor.liveCues.length} live)`,
-      );
-    }
-    lastAudioBuffer = audioBuffer;
-    fontRecommender?.clear();
-    offerWorldsThenStart(data, { playBuffer: audioBuffer });
-  } catch (err) {
-    console.error('[scored audio load failed]', err);
-    progressEl.classList.add('hidden');
-    hudEl.classList.add('hidden');
-    loaderEl.classList.remove('hidden');
-    showErrorBanner('Could not load score + audio: ' + (err?.message || err));
-  }
-}
-
 function showProgress(text) {
   progressEl.textContent = text;
   progressEl.classList.remove('hidden');
@@ -1327,72 +1226,23 @@ async function loadAudioFiles(files) {
   }
 }
 
-async function loadDemo() {
-  // Authored song (DemoSong.js): we know every jump, double-jump, and disc
-  // because we wrote the notes. Rendered to a buffer so Play demo is the
-  // scored-audio path (recording plays, timeline drives the show).
-  try {
-    await bootAudio();
-  } catch (err) {
-    showErrorBanner('Could not start audio: ' + (err?.message || err));
-    return;
-  }
-  loadGen++;
-  showProgress('Composing demo…');
-  const data = buildDemoSong();
-  data.energyCurves = synthesizeEnergyCurves(data.timeline, data.durationMs);
-  lastSongName = data.title || 'Proof';
-  muteTimelineSynth = true;
-  let audioBuffer;
-  try {
-    audioBuffer = renderDemoSongToAudioBuffer(audioEngine.ctx, data);
-  } catch (err) {
-    console.error('[demo render failed]', err);
-    showProgress('');
-    progressEl.classList.add('hidden');
-    showErrorBanner('Could not render the demo song: ' + (err?.message || err));
-    return;
-  }
-  lastAudioBuffer = audioBuffer;
-  fontRecommender?.clear();
-  offerWorldsThenStart(data, { playBuffer: audioBuffer });
-}
-
-function isMidiFile(file) {
-  const name = (file.name || '').toLowerCase();
-  // Also accept application/midi / audio/midi MIME when the OS omits extension.
-  const mime = (file.type || '').toLowerCase();
-  return name.endsWith('.mid') || name.endsWith('.midi')
-    || mime === 'audio/midi' || mime === 'audio/mid' || mime === 'application/x-midi'
-    || mime === 'application/midi';
-}
-
 function handleFile(file) {
   if (!file) return;
   handleFiles([file]);
 }
 
-/** One file plays as itself. Several AUDIO files dropped together are stems
- *  of one song (their filenames cast the characters). A MIDI **and** audio
- *  dropped together is the scored path: the recording plays, the score
- *  drives the visuals (see loadScoredAudio). A MIDI alone is a complete
- *  score and performs itself. */
+/** One file plays as itself. Several files dropped together are stems of one
+ *  song (their filenames cast the characters).
+ *
+ *  There is one input now: audio. The MIDI paths (a score alone, or a score
+ *  paired with a recording) and the built-in demo are gone -- this is a
+ *  consumer app, and "drop a song" is the whole interaction. */
 function handleFiles(files) {
   const list = [...(files || [])].filter(Boolean);
   if (!list.length) return;
   worldSelectEl?.classList.add('hidden');
   pendingWorldStart = null;
   showProgress('Reading file…');
-  const midi = list.find(isMidiFile);
-  const audio = list.filter((f) => !isMidiFile(f));
-  if (midi && audio.length) {
-    loadScoredAudio(midi, audio);
-    return;
-  }
-  if (midi) {
-    loadMidiFile(midi);
-    return;
-  }
   loadAudioFiles(list);
 }
 
@@ -1401,7 +1251,6 @@ fileInputEl?.addEventListener('change', (e) => {
   // Same-file re-upload doesn't fire `change` unless we clear the value.
   e.target.value = '';
 });
-demoBtnEl?.addEventListener('click', () => loadDemo());
 worldSelectBackEl?.addEventListener('click', () => backToTitle());
 
 // Unlock the AudioContext on the gesture that opens the picker, not on
@@ -1410,7 +1259,6 @@ worldSelectBackEl?.addEventListener('click', () => backToTitle());
 // throw "Audio is blocked" and the drop looked like it did nothing.
 function unlockAudio() { bootAudio().catch(() => {}); }
 dropzoneEl?.addEventListener('pointerdown', unlockAudio, { passive: true });
-demoBtnEl?.addEventListener('pointerdown', unlockAudio, { passive: true });
 worldSelectEl?.addEventListener('pointerdown', unlockAudio, { passive: true });
 
 // Soulseek-powered song search on the title screen (free music by default,
@@ -1533,7 +1381,7 @@ dropzoneEl.addEventListener('keydown', (e) => {
 
 // --- Global drag-and-drop: works at ANY time, not just from the initial
 // loader screen. Dropping a different .mid/audio file mid-song tears down
-// the current one (stopTimeline, via startTimeline/loadMidiFile/
+// the current one (stopTimeline, via startTimeline/
 // loadAudioFile) and auto-plays the new one immediately. dragDepth tracks
 // nested dragenter/dragleave pairs (they fire on every element the pointer
 // crosses) so the overlay doesn't flicker off while still dragging over a
