@@ -28,6 +28,7 @@
 //
 // Pure, DOM-free, deterministic -- tests exercise every function directly.
 import { clamp, clamp01, lerp } from '../utils/math.js';
+import { plateauProfile } from './ColoradoPlateau.js';
 
 /**
  * One side of a summit: height 0..1 at normalized flank distance `d`
@@ -69,6 +70,12 @@ export const FLANK_Q_STEEP = 0.55;
 export const FLANK_Q_SHALLOW = 1.35;
 export const STEEP_WIDTH_MUL = 0.66;
 export const SHALLOW_WIDTH_MUL = 1.42;
+// Plateau formations are far more symmetric than alpine peaks: erosion works
+// inward from both faces at similar rates on flat-lying rock, so a butte does
+// not have a "steep side" the way a glacially carved mountain does. Using the
+// alpine multipliers here made every mesa look like it was sliding downhill.
+export const PLATEAU_STEEP_MUL = 0.90;
+export const PLATEAU_SHALLOW_MUL = 1.12;
 
 /**
  * The two flank curvatures a character (and therefore a song, through
@@ -130,6 +137,45 @@ export function summitMass(dx, peak, dip = 1, qs = null) {
     ? (qs?.steep ?? FLANK_Q_STEEP)
     : (qs?.shallow ?? FLANK_Q_SHALLOW);
   return flankProfile(d, q) * peak.h;
+}
+
+/**
+ * Height contributed by one PLATEAU formation at signed distance `dx`.
+ *
+ * The southern-Utah counterpart to `summitMass`. The asymmetry machinery is
+ * unchanged -- one flank still runs steeper than the other, and a summit's
+ * own `flip` can disagree with the regional dip -- but the profile inside
+ * that envelope is a formation (caprock, cliff bands, benches, talus) rather
+ * than a continuous alpine flank. See ColoradoPlateau.js.
+ *
+ * A butte's two sides are far less different than a mountain's, so the width
+ * asymmetry is compressed: erosion works inward from both faces at similar
+ * rates on flat-lying rock. Leaving the alpine multipliers in place made
+ * every mesa look like it was sliding downhill.
+ */
+/**
+ * Recover the 0..1 spike-vs-organic figure from a flankQs result.
+ *
+ * flankQs already blends the character dials, the song's lithology and the
+ * layer's profileMix into its two exponents; this reads that blend back out
+ * so the plateau formations can be chosen from the same number rather than
+ * from a second, independently-drifting copy of the same logic.
+ * FLANK_Q_STEEP is the spikiest steep exponent the blend can reach and 0.85
+ * the least, so the steep side alone recovers it.
+ */
+export function flankness01(qs) {
+  const steep = qs?.steep ?? 0.85;
+  return clamp01((0.85 - steep) / Math.max(1e-6, 0.85 - (FLANK_Q_STEEP - 0.13)));
+}
+
+export function plateauMass(dx, peak, dip = 1) {
+  const steepIsLeft = (peak.flip ? -dip : dip) > 0;
+  const onLeft = dx < 0;
+  const steepSide = onLeft === steepIsLeft;
+  const halfWidth = Math.max(8, peak.w * (steepSide ? PLATEAU_STEEP_MUL : PLATEAU_SHALLOW_MUL));
+  const d = Math.abs(dx) / halfWidth;
+  if (d >= 1) return 0;
+  return plateauProfile(d, peak.form) * peak.h;
 }
 
 /**

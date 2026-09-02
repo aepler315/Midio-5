@@ -101,7 +101,7 @@ test('alpine massif has a few distinct high summits (not a flat plateau)', () =>
   assert.ok(peaks >= 2 && peaks <= 40, `expected several summits, got ${peaks}`);
 });
 
-test('alpine bake keeps ridge below strip top (no mesa clip)', async () => {
+test('bake keeps the ridge below the strip top, and flat tops are caprock not clipping', async () => {
   // generateSilhouette needs a canvas; skip if neither OffscreenCanvas nor document.
   const { generateSilhouette } = await import('../src/world/SilhouetteGenerator.js');
   if (typeof OffscreenCanvas === 'undefined' && typeof document === 'undefined') {
@@ -112,9 +112,29 @@ test('alpine bake keeps ridge below strip top (no mesa clip)', async () => {
     const h = alpineHeightField(noise, n, step, 55, n * step);
     let max = 0;
     for (let i = 0; i < n; i++) max = Math.max(max, h[i]);
-    let nearTop = 0;
-    for (let i = 0; i < n; i++) if (h[i] > max * 0.92) nearTop++;
-    assert.ok(nearTop / n < 0.08, `too many samples near max (mesa): ${nearTop}/${n}`);
+    // Flat tops are now the POINT -- these are caprocks (ColoradoPlateau.js),
+    // and a mesa is what the shape language is for. But a flat top produced
+    // by CLIPPING is still a bug, and the two look identical one sample at a
+    // time. What separates them: clipping pins every flat top to the same
+    // ceiling, while caprocks sit at each formation's own height. So the
+    // guard is no longer "few samples near the max" -- it is "the flat tops
+    // are not all at one height".
+    const flats = [];
+    let run = 0;
+    for (let i = 1; i < n; i++) {
+      if (Math.abs(h[i] - h[i - 1]) < max * 0.002 && h[i] > max * 0.35) run++;
+      else { if (run >= 3) flats.push(h[i - 1]); run = 0; }
+    }
+    if (flats.length >= 2) {
+      const lo = Math.min(...flats), hi = Math.max(...flats);
+      assert.ok(hi - lo > max * 0.03,
+        `every flat top sits at the same height (${lo}..${hi} of ${max}) -- that is a clip, not caprock`);
+    }
+    // And nothing may exceed the field's own ceiling, which is the actual
+    // clipping symptom the original test was reaching for.
+    for (let i = 0; i < n; i++) {
+      assert.ok(h[i] <= 1.0001, `sample ${i} above the field ceiling: ${h[i]}`);
+    }
     return;
   }
   const strip = generateSilhouette({

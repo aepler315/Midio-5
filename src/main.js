@@ -34,14 +34,13 @@ import { groundLyrics, hasUsableLyrics } from './lyrics/LyricGrounding.js';
 import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
-import {
-  getJamendoClientId, setJamendoClientId, searchTracks as jamendoSearchTracks,
-  fetchTrackAsFile as jamendoFetchTrackAsFile, JamendoError,
-} from './net/JamendoSource.js';
 import { visualNow } from './core/ChoreoClock.js';
-import { SoulseekSearch } from './soulseek/SoulseekSearch.js';
 import { extractWatchFeatures, buildCustomWorld } from './world/WorldScore.js';
 import { DEFAULT_WORLD_ID, setCustomWorld } from './world/Worlds.js';
+import { LiveInput, liveInputSupported, describeMicError, looksLikeSilence } from './audio/LiveInput.js';
+import { LiveSession } from './audio/LiveSession.js';
+import { LiveEnergyCurves } from './audio/LiveEnergyCurves.js';
+import { LiveFeed } from './audio/LiveFeed.js';
 
 
 const STEP_MS = 1000 / 120;
@@ -117,6 +116,8 @@ const fullscreenBtnEl = document.getElementById('fullscreenBtn');
 const trackBadgeEl = document.getElementById('trackBadge');
 const trackBadgeBtnEl = document.getElementById('trackBadgeBtn');
 const trackListEl = document.getElementById('trackList');
+const listenBtnEl = document.getElementById('listenBtn');
+const listenStatusEl = document.getElementById('listenStatus');
 const dragOverlayEl = document.getElementById('dragOverlay');
 const fontModalEl = document.getElementById('fontModal');
 const fontModalTitleEl = document.getElementById('fontModalTitle');
@@ -603,6 +604,10 @@ function toggleTrackList() {
  *  tolerates being idle). */
 function stopTimeline() {
   running = false;
+  // Release the microphone on any stop. A page that keeps an open mic after
+  // the show ends shows a recording indicator and drains battery, and there
+  // is no version of "back to title" where we still want to be listening.
+  stopListening();
   // conductor is a single instance shared across every song (see its
   // construction above); Simulation and its subsystems subscribe to it at
   // construction and never unsubscribe on their own. Without this, a replay
@@ -647,6 +652,133 @@ function stopTimeline() {
   worldSelectEl?.classList.add('hidden');
 }
 
+// --- Live listening -------------------------------------------------------
+// The path for someone who is not going to find a file: they already have
+// music playing on Spotify or YouTube, and they tap one button. See
+// LiveInput.js for why the microphone is the only route to that on a phone.
+//
+// The seam is narrow on purpose. Nothing downstream is told it is running
+// live: LiveEnergyCurves answers the same questions EnergyCurves does, and
+// LiveFeed appends to the same conductor timeline the MIDI adapter fills. So
+// the whole show -- biomes, characters, camera, weather -- works unchanged,
+// off a microphone, with no parallel rendering path to keep in sync.
+let liveInput = null;
+let liveSession = null;
+let liveCurves = null;
+let liveFeed = null;
+let liveSilenceWarned = false;
+
+function setListenStatus(text, busy = false) {
+  if (!listenStatusEl) return;
+  listenStatusEl.textContent = text || '';
+  listenStatusEl.classList.toggle('hidden', !text);
+  if (listenBtnEl) {
+    listenBtnEl.disabled = busy;
+    listenBtnEl.textContent = busy ? 'Listening…' : 'Listen';
+  }
+}
+
+/** Release the microphone and forget the live state. Safe when idle -- it is
+ *  called from stopTimeline(), which runs before every song of any kind. */
+function stopListening() {
+  if (liveInput) { try { liveInput.stop(); } catch { /* already gone */ } }
+  liveInput = null;
+  liveSession = null;
+  liveCurves = null;
+  liveFeed = null;
+  liveSilenceWarned = false;
+}
+
+async function startListening() {
+  if (!liveInputSupported()) {
+    setListenStatus('This browser can’t listen to audio. Try dropping a file instead.');
+    return;
+  }
+  setListenStatus('Asking for the microphone…', true);
+  const input = new LiveInput();
+  try {
+    await input.start();
+  } catch (err) {
+    input.stop();
+    setListenStatus(describeMicError(err));
+    return;
+  }
+
+  const session = new LiveSession({ sampleRate: input.sampleRate });
+  const data = session.startData();
+  const curves = new LiveEnergyCurves(data.durationMs);
+  data.energyCurves = curves;
+  // Nothing may be synthesized on top of a room that is already playing the
+  // song -- the emitted notes exist to drive choreography, never to be heard.
+  muteTimelineSynth = true;
+  try {
+    // startTimeline() calls stopTimeline() first, which calls stopListening().
+    // So the live state is attached only once it has returned, or the
+    // microphone we just opened would be closed on the way in.
+    startTimeline(data, { live: true });
+  } catch (err) {
+    input.stop();
+    setListenStatus('Could not start the world: ' + (err?.message || err));
+    return;
+  }
+  liveInput = input;
+  liveSession = session;
+  liveCurves = curves;
+  liveFeed = new LiveFeed();
+  liveSilenceWarned = false;
+  setListenStatus('');
+}
+
+/**
+ * One frame of listening: hear, analyse, and hand the result to the two
+ * places the engine reads from.
+ *
+ * Called from frame() before the sim steps, so the curves and the timeline
+ * are already current for the time the sim is about to advance to.
+ */
+function pumpLive(nowMs) {
+  if (!liveSession || !liveInput) return;
+  const mags = liveInput.read();
+  if (!mags) return;
+  const state = liveSession.tick(mags, nowMs);
+  liveCurves.writeAt(nowMs, liveSession.bands);
+  // Onsets are evidence about where the beat grid is, not events in their own
+  // right -- LiveFeed's header explains why forwarding them directly would
+  // put every jump a reaction-time late.
+  if (liveSession.onset > 0) liveFeed.pushOnset(nowMs, liveSession.onset * 4);
+  const notes = liveFeed.emit(nowMs, {
+    bpm: state.bpm,
+    confidence: liveSession.analyser.tempoConfidence,
+    bands: liveSession.bands,
+    energy01: state.energy01,
+  });
+  if (notes.length) {
+    // Appending to the live array is exactly what the conductor's cursor
+    // model supports: it only ever walks forward, and these are all in the
+    // future. Sorting is unnecessary because LiveFeed emits in time order.
+    for (const n of notes) conductor.timeline.push(n);
+  }
+  // `durationMs` is deliberately NOT extended as the song goes on. Every arc
+  // director (coda, excursions, orogeny, disasters) captured it at
+  // construction, so growing it would leave the transport disagreeing with
+  // the arc the show is actually playing -- and the mountain strip would
+  // rescale under the playhead every second. A listen runs the nominal arc
+  // and completes; the clock is drawn as the estimate it is.
+  // Keep the bar grid ahead of the clock too -- anything counting bars
+  // (BiomeManager's schedule, the camera's phrase sense) reads it directly.
+  while (conductor.barGrid.length < liveSession.barGrid.length) {
+    conductor.barGrid.push(liveSession.barGrid[conductor.barGrid.length]);
+  }
+  // Silence is the one failure this feature has that a person cannot debug
+  // on their own: headphones, or a speaker too far away. Say so once, rather
+  // than leaving them watching a still landscape.
+  if (!liveSilenceWarned
+      && looksLikeSilence(state.energy01, liveSession.elapsedMs(nowMs), liveSession.analyser.peak)) {
+    liveSilenceWarned = true;
+    showErrorBanner('Not hearing much — if the music is in headphones, the microphone can’t reach it. Try a speaker, or turn it up.');
+  }
+}
+
 function updatePauseButtonUI() {
   if (!pauseBtnEl) return;
   pauseBtnEl.innerHTML = paused ? '&#9654;' : '&#9208;'; // play triangle vs. pause bars
@@ -676,7 +808,6 @@ function backToTitle() {
   pendingWorldStart = null;
   progressEl.classList.add('hidden');
   loaderEl.classList.remove('hidden');
-  slskPanelSearch?.resetBusy();
   startTitleBackdrop();
 }
 
@@ -723,13 +854,14 @@ function confirmWorld(id) {
 }
 
 function startTimeline(timelineData, extra = {}) {
-  const { songSeed: seedOverride = undefined, playBuffer } = extra;
+  const { songSeed: seedOverride = undefined, playBuffer, live = false } = extra;
   stopTimeline();
   fitCanvas();
   // Any path that is about to play a decoded recording (confirmWorld,
-  // replay) mutes the timeline synth. MIDI and the procedural demo pass
-  // no buffer and keep it.
-  if (playBuffer) muteTimelineSynth = true;
+  // replay) mutes the timeline synth. Live listening mutes it for the same
+  // reason from the other direction: the song is already in the room. MIDI
+  // and the procedural demo pass neither and keep it.
+  if (playBuffer || live) muteTimelineSynth = true;
   applySynthMutePolicy();
   // Guard a degenerate declared duration (<=0): without it, FractureEngine's
   // idle -> about-to-freeze transition never fires and the song never
@@ -797,6 +929,10 @@ function startTimeline(timelineData, extra = {}) {
   // consumer in the sim itself (SectionFusion already folded the lyric
   // structure into BiomeManager.sections by this point).
   sim.lyricIdentity = timelineData.lyricIdentity || null;
+  // Live listening runs its arc against a nominal length, because the song
+  // has not finished happening. Flagged so the transport draws the total as
+  // the estimate it is rather than as a measurement.
+  sim.estimatedDuration = !!timelineData.estimatedDuration;
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
   renderer = createRenderer(canvas, rendererMode);
   visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false, perfGovernor });
@@ -1257,6 +1393,17 @@ fileInputEl?.addEventListener('change', (e) => {
 });
 worldSelectBackEl?.addEventListener('click', () => backToTitle());
 
+listenBtnEl?.addEventListener('click', () => {
+  // The tap is the user gesture both getUserMedia and the AudioContext need,
+  // so the whole start path has to hang off this handler rather than off any
+  // later async continuation.
+  unlockAudio();
+  startListening().catch((err) => {
+    console.error('[listen]', err);
+    setListenStatus(describeMicError(err));
+  });
+});
+
 // Unlock the AudioContext on the gesture that opens the picker, not on
 // the later `change` event -- browsers often don't treat file-picker
 // confirmation as a user activation, so bootAudio() on change used to
@@ -1264,100 +1411,6 @@ worldSelectBackEl?.addEventListener('click', () => backToTitle());
 function unlockAudio() { bootAudio().catch(() => {}); }
 dropzoneEl?.addEventListener('pointerdown', unlockAudio, { passive: true });
 worldSelectEl?.addEventListener('pointerdown', unlockAudio, { passive: true });
-
-// Soulseek-powered song search on the title screen (free music by default,
-// optional Soulseek via slskd). Results download through the local bridge
-// (/api/soulseek/*) and feed the same handleFiles path as drops.
-const slskPanelEl = document.getElementById('slskPanel');
-let slskPanelSearch = null;
-if (slskPanelEl) {
-  slskPanelSearch = new SoulseekSearch({
-    root: slskPanelEl,
-    onFiles: (files) => {
-      slskPanelSearch?.resetBusy();
-      handleFiles(files);
-    },
-    onStatus: (msg) => {
-      if (msg && progressEl && !progressEl.classList.contains('hidden')) {
-        // keep progress text for active loads; search has its own status line
-      }
-    },
-  });
-}
-
-// Jamendo search (JamendoSource.js): a legal alternative to dropping a
-// local file -- free, Creative-Commons-licensed tracks, fetched and handed
-// to the exact same handleFiles() path a local drop uses, so nothing
-// downstream needs to know the audio came from the network.
-const jamendoClientIdInputEl = document.getElementById('jamendoClientIdInput');
-const jamendoSearchInputEl = document.getElementById('jamendoSearchInput');
-const jamendoSearchBtnEl = document.getElementById('jamendoSearchBtn');
-const jamendoStatusEl = document.getElementById('jamendoStatus');
-const jamendoResultsEl = document.getElementById('jamendoResults');
-
-if (jamendoClientIdInputEl) jamendoClientIdInputEl.value = getJamendoClientId();
-jamendoClientIdInputEl?.addEventListener('change', () => {
-  setJamendoClientId(jamendoClientIdInputEl.value.trim());
-});
-
-function setJamendoStatus(text, isError = false) {
-  if (!jamendoStatusEl) return;
-  jamendoStatusEl.textContent = text || '';
-  jamendoStatusEl.classList.toggle('hidden', !text);
-  jamendoStatusEl.classList.toggle('jamendoStatusError', !!isError);
-}
-
-function formatTrackDuration(seconds) {
-  const s = Math.max(0, Math.round(seconds || 0));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
-
-async function runJamendoSearch() {
-  const q = jamendoSearchInputEl?.value.trim();
-  if (!q || !jamendoResultsEl) return;
-  jamendoResultsEl.innerHTML = '';
-  setJamendoStatus('Searching…');
-  let tracks;
-  try {
-    tracks = await jamendoSearchTracks(q, { clientId: getJamendoClientId() });
-  } catch (err) {
-    setJamendoStatus(err instanceof JamendoError ? err.message : `Search failed: ${err.message}`, true);
-    return;
-  }
-  if (!tracks.length) { setJamendoStatus('No results.'); return; }
-  setJamendoStatus('');
-  for (const track of tracks) {
-    const li = document.createElement('li');
-    li.className = 'jamendoResult';
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'ghostbtn jamendoResultBtn';
-    btn.title = track.licenseCcUrl ? `Creative Commons license: ${track.licenseCcUrl}` : '';
-    btn.textContent = `${track.name} — ${track.artist} (${formatTrackDuration(track.duration)})`;
-    btn.addEventListener('click', () => playJamendoTrack(track, btn));
-    li.appendChild(btn);
-    jamendoResultsEl.appendChild(li);
-  }
-}
-
-async function playJamendoTrack(track, btnEl) {
-  setJamendoStatus(`Downloading "${track.name}"…`);
-  if (btnEl) btnEl.disabled = true;
-  try {
-    const file = await jamendoFetchTrackAsFile(track);
-    setJamendoStatus('');
-    handleFiles([file]);
-  } catch (err) {
-    setJamendoStatus(err instanceof JamendoError ? err.message : `Could not load "${track.name}": ${err.message}`, true);
-  } finally {
-    if (btnEl) btnEl.disabled = false;
-  }
-}
-
-jamendoSearchBtnEl?.addEventListener('click', runJamendoSearch);
-jamendoSearchInputEl?.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); runJamendoSearch(); }
-});
 
 // Dropzone-local visual feedback only (pre-game loader screen) — the actual
 // file handling lives in the window-level listeners below so a drop lands
@@ -1525,6 +1578,14 @@ function frame(tRaf) {
   lastRafMs = tRaf;
   hudIdleTick(tRaf);
   const nowMs = audioEngine.nowMs;
+  // Hear first, then step: the curves and the timeline must already be
+  // current for the time the sim is about to advance to, or every frame
+  // would react to the previous one's audio.
+  if (liveSession) {
+    try { pumpLive(nowMs); } catch (err) {
+      if (drawErrors.record(err, tRaf)) console.error('[live] (occurrence %d)', drawErrors.worst.count, err);
+    }
+  }
   let deltaMs = nowMs - lastNowMs;
   lastNowMs = nowMs;
   if (deltaMs < 0) deltaMs = 0;

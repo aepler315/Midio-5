@@ -450,6 +450,7 @@ export class Renderer {
         this.composer = new ComposerStrip(
           sim.conductor.timeline, sim.conductor.barGrid, sim.conductor.durationMs, holds, sections,
         );
+        this.composer.estimatedDuration = !!sim.estimatedDuration;
       } else if (sim.biomes?.sections) {
         this.composer.setSections(sim.biomes.sections);
       }

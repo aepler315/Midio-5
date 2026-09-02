@@ -57,8 +57,12 @@ test('MIDI load pipeline: parse → energy curves → custom biome (drag/upload 
 
 test('playing a decoded recording mutes the timeline synth (no keyboard/click layer)', () => {
   const text = readFileSync(join(root, 'src/main.js'), 'utf8');
+  // Live listening mutes it for the same reason from the other direction --
+  // the song is already in the room -- so the condition covers both. The
+  // assertion is on the intent (a recording never gets a synth layer on top),
+  // not on one exact spelling of the guard.
   assert.ok(
-    text.includes('if (playBuffer) muteTimelineSynth = true'),
+    /if \(playBuffer[^)]*\) muteTimelineSynth = true/.test(text),
     'startTimeline must mute the synth whenever a recording is about to play',
   );
   const confirm = text.slice(text.indexOf('function confirmWorld'), text.indexOf('function startTimeline'));
