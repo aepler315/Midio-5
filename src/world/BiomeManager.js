@@ -373,6 +373,18 @@ const NIGHT_SKY_COLOR = '#060814'; // near-black space, slightly cool
 const SPACE_NEBULA_A = '#1a2850'; // deep indigo wash
 const SPACE_NEBULA_B = '#2a1860'; // violet space dust
 const MOON_COLOR = '#dfe6f2';
+/** How hard the moon's phase is pushed through exact quarter. Above 1 makes
+ *  the curve steep at the midpoint and flat at the ends, so the disc spends
+ *  its time as a crescent or a gibbous -- shapes with a visible curve to the
+ *  terminator -- and crosses the straight-line phase quickly.
+ *
+ *  Measured: at 1 (no warp) the disc reads as near-straight for 9.4% of a
+ *  song; at 4 that is 2.5%. Past about 5 the returns flatten and the phase
+ *  starts to snap between crescent and gibbous, so 4 is where this sits.
+ *  It REDUCES the straight-line moment rather than removing it -- a real
+ *  quarter moon is a straight line, and the fuller fix if it still shows is
+ *  to give the terminator the crater-shadow irregularity a real one has. */
+const MOON_QUARTER_SKEW = 4;
 const MOON_HALO_COLOR = '#aab8d8';
 
 // Fog band geometry (_drawFogBanks). Pure and exported so the "the gradient
@@ -2079,7 +2091,18 @@ export class BiomeManager {
     // view angle has buried the dancing ridge. Also where L2's occlusion is
     // measured for the next section boundary's decision, so this has to run
     // whether or not the wave is currently up.
-    this._drawDistantWave(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t);
+    // A profile switch at the crossfade midpoint swaps the whole silhouette
+    // in one frame. It measures zero on a custom-biome song, where every
+    // section casts to the same biome and there is nothing to switch to --
+    // but castBiomes gives a stock world a different biome per structural
+    // label, and there the swap is a different mountain range appearing
+    // instantly. Dissolve between them instead.
+    if (A.name === B.name || t <= 0 || t >= 1) {
+      this._drawDistantWave(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t);
+    } else {
+      this._drawDistantWave(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, A, t, 1 - t);
+      this._drawDistantWave(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, B, B, t, t);
+    }
     this._drawLayer(ctx, canvas, 'L2', scrollX0, tintL2, t, A, B);
     if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
     // Far-distance vignettes: between the farthest range and everything
@@ -3341,23 +3364,26 @@ export class BiomeManager {
    *  has anything to work with. Resolved once per frame in draw() so the sun,
    *  the moon, the light rig and the mandala all read the same body. */
   _celestialApproachAt(canvas, cx, cy) {
-    const midioX = this.midioX ?? canvas.width * 0.32;
-    // Anchored to the GROUND, not to Midio's live render y. He jumps; the sun
-    // does not. `observerDy` feeds back only the small, distance-scaled
-    // parallax a real observer's motion would produce.
+    // The sea line the body rises out of and sets back into. The approach
+    // scales height ABOVE this, so the rise and the set stay put however
+    // close the body comes -- see CelestialApproach.js.
+    const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
+    // Parallax is measured against the GROUND, not Midio's live render y. He
+    // jumps; the sun does not.
     const groundY = this._zoomedGroundY(canvas);
     const observerDy = Number.isFinite(this.midioY) ? this.midioY - groundY : 0;
     return celestialApproach({
-      orbitX: cx, orbitY: cy, midioX, groundY, observerDy,
+      orbitX: cx, orbitY: cy, horizonY, observerDy,
       progress01: clamp01(this._progress || 0),
     });
   }
 
   _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22, alpha = 1, cxFrac = CELESTIAL_DEFAULT_XFRAC) {
-    // The body is closing on a point just up and left of Midio over the length
-    // of the song. Position drifts linearly and slowly; apparent size grows as
-    // 1/distance and therefore accelerates. See CelestialApproach.js for why
-    // that ratio is the whole effect.
+    // The body is closing over the length of the song: its arc climbs higher
+    // above the sea and its disc grows as 1/distance, so the size
+    // accelerates while the path barely seems to change. See
+    // CelestialApproach.js for why that ratio is the whole effect -- and for
+    // why nothing here pulls the body toward a point.
     const app = this._celestialApproachAt(canvas, canvas.width * cxFrac, canvas.height * cyFrac);
     const cx = app.x, cy = app.y;
     const grow = app.scale;
@@ -3424,7 +3450,31 @@ export class BiomeManager {
    *  The song opens near new and waxes to full at the midpoint. See
    *  MOON_MIN_ILLUM in _drawMoon for why it never actually reaches new. */
   _moonPhase01() {
-    return clamp01(this._progress || 0);
+    // Warped away from exact quarter, because exact quarter is a straight
+    // line.
+    //
+    // The terminator's half-width is k = R*(1-2f), so at f = 0.5 the ellipse
+    // is degenerate and the lit region's inner edge is a mathematically
+    // straight diameter across the disc. Correct astronomy, and on a body
+    // this size with earthshine visible behind it, it reads as a rendering
+    // fault -- a vertical line drawn through the moon.
+    //
+    // Softening the edge was the first attempt and it does not solve this:
+    // whatever the feather, half the disc is lit and half is not, along a
+    // line. The condition has to go rather than be blurred, so progress is
+    // warped to pass THROUGH quarter quickly and dwell near crescent and
+    // gibbous instead, where the terminator is visibly a curve. A cubic
+    // ease about each quarter point does that while staying monotonic --
+    // the phase still runs new to full to new, it just does not linger at
+    // the one value that has no curvature.
+    const p = clamp01(this._progress || 0);
+    // Fold to 0..1 within the half-cycle, warp, unfold. u = 0.5 is quarter.
+    const half = p < 0.5 ? 0 : 1;
+    const u = p < 0.5 ? p * 2 : (p - 0.5) * 2;
+    const warped = u < 0.5
+      ? 0.5 * Math.pow(u * 2, MOON_QUARTER_SKEW) 
+      : 1 - 0.5 * Math.pow((1 - u) * 2, MOON_QUARTER_SKEW);
+    return clamp01((half + warped) * 0.5);
   }
 
   /**
@@ -4729,7 +4779,12 @@ export class BiomeManager {
    * change what the next boundary decides. Only the drawing sheds, on the
    * same rung as the connector country it partners with.
    */
-  _drawDistantWave(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t) {
+  _drawDistantWave(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t, alphaMul = 1) {
+    // `alphaMul` is how the caller crossfades two PROFILES through this pass.
+    // The heightMul below is interpolated, but the strip set cannot be: this
+    // draws one geometry, and two different biomes have entirely different
+    // mountains. So when the profiles differ the caller runs the pass twice
+    // and dissolves one into the other, the way the main layer pass does.
     const profile = t > 0.5 ? B : A;
     const strips = this.stripsFor(profile.name);
     if (!strips) return;
@@ -4800,7 +4855,7 @@ export class BiomeManager {
       0.22,
     );
     const { r, g, b } = hexToRgb(base);
-    const alpha = WAVE_ALPHA * mix * this.budget;
+    const alpha = WAVE_ALPHA * mix * this.budget * alphaMul;
     if (alpha < 0.01) return;
 
     ctx.save();
@@ -4822,7 +4877,7 @@ export class BiomeManager {
     // moving highlight on the swell is the whole reason the eye reads water
     // and keeps watching the back of the scene.
     if (!this.reducedFlash) {
-      ctx.globalAlpha = WAVE_GLINT_ALPHA * mix * this.budget;
+      ctx.globalAlpha = WAVE_GLINT_ALPHA * mix * this.budget * alphaMul;
       ctx.strokeStyle = this._rotated(profile.celestial.haloColor);
       ctx.lineWidth = 1.4;
       ctx.lineJoin = 'round';

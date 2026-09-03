@@ -24,7 +24,7 @@ import {
   shapeDials, flankness,
 } from './RidgeShape.js';
 import { cityHeightField, bakeWindowStrip } from './city/CitySilhouette.js';
-import { pickFormation, varyFormation, plateauProfile } from './ColoradoPlateau.js';
+import { pickFormation, varyFormation, spaceByIsolation, plateauProfile } from './ColoradoPlateau.js';
 
 function makeCanvas(width, height) {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
@@ -206,6 +206,12 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
       spiky: flankness01(flankQEarly),
     }), rand);
   }
+  // Spacing is a property of the LANDFORM, not a constant. Monuments open
+  // real floor around themselves; hoodoos and goblins crowd. Done after the
+  // forms are assigned, because that is the first moment the information
+  // exists -- composition upstream only knows which summits the song asked
+  // for, not what they turned out to be.
+  spaceByIsolation(allPeaks, width);
   const spinePhase = rand() * 10;
   // Flank curvature from the character's own shoulder/spire/spireMix --
   // this is the path a song's spike-vs-organic DNA takes into the shape.
