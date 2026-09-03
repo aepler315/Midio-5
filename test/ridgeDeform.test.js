@@ -7,6 +7,9 @@
 // danceOffsetSmooth's own cosine-blend-at-column-centers contract).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   DANCE_LAYERS, DANCE_COL_W, columnHeights01, columnHeight01At, danceScale,
 } from '../src/world/MountainChoreo.js';
@@ -140,4 +143,27 @@ test('foot-anchored deformation only ever raises the crest, never lowers it belo
       assert.ok(deformed <= yR + 1e-9, `a summit must rise (smaller screen y) or stay put, not sink: yR=${yR} scale=${scale} -> ${deformed}`);
     }
   }
+});
+
+test('overlay passes interpolate the section height multiplier, never switch it', () => {
+  // Per-section heightMul crossfades between two values. The main layer pass
+  // handles that by drawing BOTH sides and alpha-blending them, so its
+  // geometry is continuous. The three overlay passes -- the distant wave, the
+  // inter-range cast shadow, and the occlusion geometry -- draw a SINGLE
+  // geometry, so they picked one side with `t > 0.5 ? heightMulB : heightMulA`.
+  //
+  // That steps the whole overlay the instant t crosses the midpoint. Measured
+  // in the browser across a real song's section boundaries: up to 86px on L2
+  // (mean crest displacement; peaks move further still), once per section.
+  // That is a ridge visibly teleporting every ten seconds or so.
+  //
+  // Source-level because the failure lives in a canvas draw path -- but the
+  // property is exact: no consumer of _drawHeightMul may choose a side.
+  const src = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'src/world/BiomeManager.js'), 'utf8');
+  assert.ok(!/heightMul\s*=\s*t\s*>\s*0\.5\s*\?/.test(src),
+    'an overlay is switching heightMul at the crossfade midpoint instead of interpolating');
+  const lerped = src.match(/const heightMul = lerp\(heightMulA, heightMulB, t\)/g) || [];
+  assert.equal(lerped.length, 3,
+    `expected all three overlay passes to interpolate, found ${lerped.length}`);
 });

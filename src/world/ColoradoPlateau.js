@@ -528,3 +528,63 @@ export function isolationFor(form) {
   if (f.kind === FORM_KIND.DOME) return 1.1;    // dunes run together
   return 1.8;
 }
+
+/**
+ * Push formations apart according to what they are.
+ *
+ * Composition decides WHICH summits exist and how tall they stand -- that is
+ * the song's business, and this does not touch it. Spacing is the landform's
+ * business, and until now it was a single per-layer constant, so a butte and
+ * a hoodoo stood the same distance from their neighbours. That is the half of
+ * the region's character the shape vocabulary alone cannot carry: Monument
+ * Valley is as much about the empty floor as about the rock, and Bryce is the
+ * opposite -- a lone hoodoo is a curiosity, a thousand of them is the place.
+ *
+ * A relaxation rather than a re-placement. Each pass nudges any pair that is
+ * closer than the wider of their two claims, and both move, so a monument
+ * opens space around itself without dragging the whole composition sideways.
+ * The strip tiles, so distance wraps: two summits either side of the seam are
+ * neighbours, and a version of this that forgot that would leave a permanent
+ * crowd at x=0.
+ *
+ * @param {Array<{x:number,w:number,form:object}>} peaks mutated in place
+ * @param {number} width tile width in px
+ * @param {object} [opts]
+ * @param {number} [opts.passes] relaxation iterations
+ * @param {number} [opts.rate] how much of each overlap is resolved per pass
+ * @returns {Array} the same array, for chaining
+ */
+export function spaceByIsolation(peaks, width, { passes = 6, rate = 0.5 } = {}) {
+  if (!peaks || peaks.length < 2 || !(width > 0)) return peaks;
+  const half = width / 2;
+  const wrapDx = (d) => (d > half ? d - width : d < -half ? d + width : d);
+  // What each summit claims: its own drawn half-width times how much room its
+  // landform wants around it.
+  const claim = peaks.map((p) => {
+    const w = Math.max(1, (p.w || 1) * (p.form?.widthMul ?? 1));
+    return w * isolationFor(p.form);
+  });
+  for (let pass = 0; pass < passes; pass++) {
+    let moved = false;
+    for (let i = 0; i < peaks.length; i++) {
+      for (let j = i + 1; j < peaks.length; j++) {
+        const dx = wrapDx(peaks[j].x - peaks[i].x);
+        const dist = Math.abs(dx);
+        // The wider claim wins: a monument beside a hoodoo gets the
+        // monument's floor, not an average of the two.
+        const want = Math.max(claim[i], claim[j]);
+        if (dist >= want || dist < 1e-6) continue;
+        const push = (want - dist) * rate * 0.5;
+        const dir = dx >= 0 ? 1 : -1;
+        peaks[i].x -= dir * push;
+        peaks[j].x += dir * push;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  // Back inside the tile: the pushes above can carry a summit past either
+  // edge, and every consumer indexes the strip by a wrapped x.
+  for (const p of peaks) p.x = ((p.x % width) + width) % width;
+  return peaks;
+}

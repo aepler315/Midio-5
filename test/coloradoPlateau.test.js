@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  plateauProfile, pickFormation, varyFormation, isolationFor,
+  plateauProfile, pickFormation, varyFormation, isolationFor, spaceByIsolation,
   PLATEAU_FORMS, PLATEAU_FORM_NAMES,
 } from '../src/world/ColoradoPlateau.js';
 
@@ -284,4 +284,67 @@ test('no form overshoots the height ceiling', () => {
         `${name} clips once varied`);
     }
   }
+});
+
+test('spacing follows the landform, not a constant', () => {
+  // The composition half of the region's character, and the half the shape
+  // vocabulary alone cannot carry. Monument Valley is as much about the empty
+  // floor as about the rock; Bryce is the opposite. Until this, every summit
+  // stood the same distance from its neighbours whatever it was.
+  // Started CROWDED, in a tile with room to spread. Laying them out evenly
+  // across a wide tile proves nothing: both landforms are then already
+  // further apart than either claims, so neither pushes and the two come out
+  // identical -- which is exactly what the first version of this test
+  // measured.
+  const mk = (form, n) => Array.from({ length: n }, (_, i) => ({
+    x: 100 + i * 12, w: 40, form,
+  }));
+  const spread = (peaks, width) => {
+    const xs = peaks.map((p) => p.x).sort((a, b) => a - b);
+    const gaps = [];
+    for (let i = 0; i < xs.length; i++) {
+      const d = i === xs.length - 1 ? width - xs[i] + xs[0] : xs[i + 1] - xs[i];
+      gaps.push(d);
+    }
+    return Math.min(...gaps);
+  };
+  const W = 2048;
+  const monuments = spaceByIsolation(mk(PLATEAU_FORMS.MONUMENT, 8), W);
+  const hoodoos = spaceByIsolation(mk(PLATEAU_FORMS.HOODOO, 8), W);
+  assert.ok(spread(monuments, W) > spread(hoodoos, W) * 1.5,
+    `monuments must stand further apart than hoodoos: ${spread(monuments, W)} vs ${spread(hoodoos, W)}`);
+});
+
+test('spacing wraps, because the strip tiles', () => {
+  // Two summits either side of the seam are neighbours. A version that
+  // forgot that would leave a permanent crowd at x=0 -- and the seam is the
+  // one place the eye is guaranteed to keep seeing, since it scrolls past on
+  // every repeat.
+  const W = 1000;
+  const peaks = [{ x: 5, w: 60, form: PLATEAU_FORMS.MONUMENT },
+    { x: 995, w: 60, form: PLATEAU_FORMS.MONUMENT }];
+  spaceByIsolation(peaks, W);
+  const half = W / 2;
+  const wrapDx = (d) => (d > half ? d - W : d < -half ? d + W : d);
+  assert.ok(Math.abs(wrapDx(peaks[1].x - peaks[0].x)) > 20,
+    'summits straddling the seam should have been pushed apart');
+});
+
+test('spacing keeps every summit inside the tile', () => {
+  const W = 800;
+  const peaks = Array.from({ length: 10 }, (_, i) => ({
+    x: 400 + i, w: 50, form: PLATEAU_FORMS.MONUMENT,
+  }));
+  spaceByIsolation(peaks, W);
+  for (const p of peaks) {
+    assert.ok(p.x >= 0 && p.x < W, `x escaped the tile: ${p.x}`);
+    assert.ok(Number.isFinite(p.x));
+  }
+});
+
+test('spacing is a no-op on degenerate input', () => {
+  assert.deepEqual(spaceByIsolation([], 100), []);
+  assert.equal(spaceByIsolation(null, 100), null);
+  const one = [{ x: 5, w: 10, form: PLATEAU_FORMS.MESA }];
+  assert.equal(spaceByIsolation(one, 0)[0].x, 5, 'a zero-width tile changes nothing');
 });
