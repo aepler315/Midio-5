@@ -3510,6 +3510,28 @@ export class BiomeManager {
     // curves into a crescent (bulging sunward) or a gibbous (bulging away).
     ctx.ellipse(0, 0, Math.abs(k), R, 0, Math.PI / 2, -Math.PI / 2, k > 0);
     ctx.closePath();
+    // Soft along the terminator, hard at the limb.
+    //
+    // At quarter phase k is exactly 0, so the terminator is a mathematically
+    // straight line across the middle of the disc -- correct astronomy, and
+    // at this size it reads as a rendering fault rather than as a phase: a
+    // razor edge splitting a body that CelestialApproach grows to several
+    // times its original width, with earthshine making the dark half plainly
+    // visible on the other side of it. A real terminator is not a knife edge
+    // either; the sun is not a point source and the surface curves away, so
+    // the light dies over a band rather than at a line.
+    //
+    // The gradient runs along the sun direction (+x here, since the whole
+    // construction is already rotated by toSun), full brightness across the
+    // lit limb and falling to nothing just past the terminator's own x. The
+    // limb stays crisp because the path clips it.
+    const termX = k > 0 ? Math.abs(k) : -Math.abs(k);
+    const softness = Math.max(2, R * 0.10);
+    const { r: mr, g: mg, b: mb } = hexToRgb(MOON_COLOR);
+    const face = ctx.createLinearGradient(termX - softness, 0, termX + softness, 0);
+    face.addColorStop(0, `rgba(${mr},${mg},${mb},0)`);
+    face.addColorStop(1, `rgba(${mr},${mg},${mb},1)`);
+    ctx.fillStyle = face;
     ctx.fill();
     ctx.restore();
   }
@@ -3628,8 +3650,24 @@ export class BiomeManager {
     // blend in reality) -- solid everywhere else on the plane.
     {
       const backing = ctx.createLinearGradient(0, horizonY, 0, nearY);
+      // The feather used to reach FULL OPACITY by 8% of the plane -- about
+      // twenty screen pixels. Twenty pixels from clear sky to opaque water,
+      // held at exactly one y across the entire width, is a ruled line, and
+      // it was the "perfectly straight line" cutting the sun in half and
+      // banding the tops of the far ranges (which are hazy enough to show
+      // what is behind them). Nothing was drawing a stripe; this edge WAS
+      // the stripe.
+      //
+      // A real sea horizon dissolves into haze over a long span, so the ramp
+      // now takes a third of the plane to close. The opacity guarantee this
+      // backing exists for is unaffected: it is fully opaque well above the
+      // 62% mark where the sky's stars and nebulae are generated, which is
+      // the only thing that was ever at risk of showing through.
       backing.addColorStop(0, `${water}00`);
-      backing.addColorStop(0.08, deepWater);
+      backing.addColorStop(0.04, `${water}1c`);
+      backing.addColorStop(0.12, `${deepWater}6a`);
+      backing.addColorStop(0.22, `${deepWater}b4`);
+      backing.addColorStop(0.34, deepWater);
       backing.addColorStop(1, deepWater);
       // Deliberately NOT scaled by this.budget (the ambient light-budget
       // dimmer that fades decorative elements down in quiet sections) --

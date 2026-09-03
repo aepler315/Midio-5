@@ -158,12 +158,52 @@ export const PLATEAU_FORMS = {
     widthMul: 1.95, heightMul: 1.000, asym: 1.3,
   },
 
+  // Mount Hillers and Mount Pennell beside Mount Ellen: the group is not one
+  // dome repeated, so the sharper summit is its own form.
+  HIGH_PEAK: {
+    kind: FORM_KIND.CONE, family: 'peak',
+    coneP: 2.05, coneQ: 0.56,
+    widthMul: 1.45, heightMul: 0.940, asym: 1.25,
+  },
+
   // --- soft rock --------------------------------------------------------
   // Factory Butte's flanks, Cathedral Valley's bentonite: no caprock, no
   // cliff, just a steep rilled cone that erodes as one piece.
   BADLAND: {
     kind: FORM_KIND.BADLAND, family: 'soft',
     badP: 1.18, widthMul: 0.95, heightMul: 0.541, asym: 1.2,
+  },
+
+  // --- the desert floor -------------------------------------------------
+  // Most of southern Utah is not a formation. It is low ground -- sand,
+  // gravel benches, wash terraces, slickrock knobs -- and the dramatic rock
+  // reads as dramatic only because it stands out of that. With every form
+  // above 40% of full height there was no low country at all, so nothing had
+  // anything to stand out OF, and a skyline of monuments read as ordinary.
+  //
+  // These are deliberately far shorter than anything else here. They are the
+  // floor the rest of the vocabulary rises from.
+  DUNE: {
+    kind: FORM_KIND.DOME, family: 'desert',
+    domeP: 2.0, domeQ: 0.62, talus: 0.2, talusTop: 0.18,
+    widthMul: 2.80, heightMul: 0.130, asym: 1.5,
+  },
+  // Desert pavement and wash terraces: nearly flat, with one small riser.
+  BENCH: {
+    kind: FORM_KIND.STACK, family: 'desert',
+    cap: 0.62, benches: 1, cliff: 0.05, talus: 0.20, talusTop: 0.30, tilt: 0, round: 0,
+    widthMul: 3.00, heightMul: 0.165, asym: 1.6,
+  },
+  // A slickrock knob: small, rounded, alone on the flat.
+  KNOB: {
+    kind: FORM_KIND.DOME, family: 'desert',
+    domeP: 2.4, domeQ: 0.50, talus: 0.2, talusTop: 0.2,
+    widthMul: 0.55, heightMul: 0.220, asym: 1.2,
+  },
+  // Low bentonite hummocks -- the soft ground around Factory Butte.
+  HUMMOCK: {
+    kind: FORM_KIND.BADLAND, family: 'desert',
+    badP: 1.30, widthMul: 1.10, heightMul: 0.190, asym: 1.25,
   },
 
   // --- columns ----------------------------------------------------------
@@ -385,20 +425,43 @@ export function pickFormation(rand, {
   // Plateau at all -- it reads as generic hills, which is a different
   // failure from the row of trapezoids but no better.
   const weights = [
+    // The monocline first: a strongly leaning section is a reef before it is
+    // anything else.
     [F.REEF, 0.05 + lean * 4.0],
     [F.FIN, 0.10 + lean * 1.1 + s * 0.55],
+
+    // Columns and towers -- what a bright, spiky section erodes to.
     [F.MONUMENT, 0.30 + c * 1.5 + s * 0.7],
     [F.SPIRE, 0.16 + c * 1.0 + s * 0.9],
     [F.NEEDLE, 0.08 + c * 0.8 + s * 0.8],
     [F.HOODOO, 0.14 + c * 0.7 + s * 0.6],
+
+    // Layered rock -- the everyday landform, and what a bass-heavy section
+    // leaves standing.
     [F.BUTTE, 0.80 + f * 0.6],
     [F.MESA, 0.42 + f * 1.7 - s * 0.45],
     [F.STAIRCASE, 0.38 + f * 1.3 - s * 0.35],
     [F.DOME, 0.20 + (1 - s) * 0.45],
     [F.SLICKROCK, 0.09 + (1 - s) * 0.40 + f * 0.20],
-    [F.LACCOLITH, 0.10 + (1 - c) * 0.26 + (1 - s) * 0.24],
+
+    // Real mountains. Weighted to actually APPEAR: at 2-5% the Henrys turned
+    // up perhaps once in a skyline and the region read as having no mountains
+    // in it at all, which is wrong -- Mount Ellen is 11,522 feet and visible
+    // from most of the country this vocabulary draws.
+    [F.LACCOLITH, 0.34 + (1 - c) * 0.40 + (1 - s) * 0.30],
+    [F.HIGH_PEAK, 0.26 + (1 - c) * 0.30 + (1 - s) * 0.24],
+
+    // Soft rock.
     [F.BADLAND, 0.10 + (1 - c) * 0.26],
     [F.GOBLIN, 0.07 + (1 - c) * 0.20],
+
+    // The desert floor. Common on purpose: this is most of the region, and
+    // the dramatic rock only reads as dramatic when there is low ground for
+    // it to stand out of. A quiet, bass-leaning section is mostly desert.
+    [F.BENCH, 0.55 + (1 - c) * 0.55 + f * 0.30],
+    [F.DUNE, 0.34 + (1 - c) * 0.45 + (1 - s) * 0.25],
+    [F.HUMMOCK, 0.26 + (1 - c) * 0.35],
+    [F.KNOB, 0.30 + (1 - c) * 0.25 + s * 0.20],
   ];
 
   let total = 0;

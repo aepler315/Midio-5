@@ -121,10 +121,26 @@ test('formation choice is song-driven and deterministic', () => {
   const fixed = () => 0.5;
   assert.equal(pickFormation(fixed, { crest: 0.9 }), pickFormation(fixed, { crest: 0.9 }),
     'same inputs must build the same country');
+
+  // The lean is DISTRIBUTIONAL, so it has to be measured over the
+  // distribution. Asserting what a single fixed r returns tests the order of
+  // the weight list, not the weighting -- adding a form anywhere above the
+  // one being checked moves the answer without changing the behaviour at all.
+  const share = (opts, family) => {
+    let n = 0;
+    for (let i = 0; i < 500; i++) {
+      if (pickFormation(() => (i + 0.5) / 500, opts).family === family) n++;
+    }
+    return n / 500;
+  };
+  const bright = { crest: 0.9, foot: 0.2, spiky: 0.8 };
+  const bassy = { crest: 0.2, foot: 0.9, spiky: 0.2 };
   // A bright, high-crest section erodes down to towers.
-  assert.equal(pickFormation(fixed, { crest: 0.9 }).family, 'tower');
+  assert.ok(share(bright, 'tower') > share(bassy, 'tower'),
+    'a bright section should lean toward towers');
   // A bass-heavy one leaves broad layered tables.
-  assert.equal(pickFormation(fixed, { crest: 0.2, foot: 0.8, spiky: 0.2 }).family, 'table');
+  assert.ok(share(bassy, 'table') > share(bright, 'table'),
+    'a bass-heavy section should lean toward tables');
   // A leaning section reefs.
   assert.equal(pickFormation(() => 0.1, { tilt: 0.8 }), PLATEAU_FORMS.REEF);
 });
@@ -160,12 +176,18 @@ test('width and height vary as much as shape does', () => {
   // module header: this is the one place the vocabulary knowingly lies.
   assert.ok(Math.max(...widths) / Math.min(...widths) > 5,
     'a fin and a mesa must not be the same width');
-  // Bounded at both ends: wide enough that a goblin reads as squat beside a
-  // laccolith, floored so that a field drawing only short forms still spans
-  // its own range rather than coming out flat.
-  assert.ok(Math.max(...heights) / Math.min(...heights) > 2.4,
-    'a laccolith and a goblin must not be the same height');
-  assert.ok(Math.min(...heights) > 0.3, 'nor may the short forms vanish');
+  // The desert floor is genuinely low -- that is the point of it, and the
+  // reason the dramatic rock reads as dramatic. So the spread is wide and
+  // there is no floor under it.
+  assert.ok(Math.max(...heights) / Math.min(...heights) > 4,
+    'the desert floor and a laccolith must not be the same height');
+  // What the field actually needs is enough TALL forms that a random draw
+  // still spans its range. An earlier version enforced this with a floor
+  // under every form, which is what left the region with no low country.
+  const tall = heights.filter((h) => h > 0.55).length;
+  assert.ok(Math.max(...heights) === 1, 'the tallest form anchors the ceiling');
+  assert.ok(tall >= heights.length / 3,
+    `a third of forms should be tall enough to carry a skyline, only ${tall} are`);
 });
 
 test('a laccolith is a mountain: rounded summit, no flat top, no cliff band', () => {

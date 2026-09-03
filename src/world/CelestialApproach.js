@@ -43,8 +43,16 @@ export const MAX_SCALE = 3.4;
 // Where it is heading: up and to the left of Midio. Not AT him -- a body on
 // a collision course reads as a threat and as an event about to happen,
 // where the intent here is that it passes, enormously, close by.
-export const CONVERGE_DX = -500;
-export const CONVERGE_DY = -500;
+//
+// These were -500/-500, which put the target OFF THE SCREEN. Midio rides
+// around x=0.32 of a 1280 stage, so the convergence point sat at x=-90, and
+// the body spent the whole song drifting toward a place the viewer cannot
+// see: it slid off the left edge and was simply gone. The effect is supposed
+// to end with the thing enormous and unmistakably close, which requires it to
+// still be IN FRAME when it gets there. Now it converges just above and
+// slightly left of him, which reads as arrival rather than exit.
+export const CONVERGE_DX = -110;
+export const CONVERGE_DY = -300;
 
 /** Distance at song progress t01, closing linearly. Linear IS the point:
  *  it is what makes the positional drift constant-rate and unremarkable
