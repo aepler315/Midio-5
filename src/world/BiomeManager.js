@@ -4734,7 +4734,15 @@ export class BiomeManager {
     const strips = this.stripsFor(profile.name);
     if (!strips) return;
     const { from: heightMulA = 1, to: heightMulB = 1 } = this._drawHeightMul || {};
-    const heightMul = t > 0.5 ? heightMulB : heightMulA;
+    // Interpolated, NOT switched at the midpoint. Picking one side or the
+    // other steps the whole overlay the moment t crosses 0.5: measured at 86px
+    // on L2 across a single section boundary (0.88 -> 1.16 is a 32% change in
+    // height, and the peaks move further than the mean does). That is the
+    // ridge that "teleports" once every section. The layer pass below does the
+    // equivalent correctly by drawing both sides and crossfading them; these
+    // overlays draw one geometry, so the continuity has to come from the
+    // multiplier itself.
+    const heightMul = lerp(heightMulA, heightMulB, t);
     const energy = profile.terrainEnergy ?? 1;
     const yOff = this._zoomedGroundY(canvas) + 40 - canvas.height;
     const dancy = this._crestPoints(canvas, strips.L2, scrollX0, yOff, 'L2', energy, heightMul);
@@ -4832,7 +4840,15 @@ export class BiomeManager {
     const strips = this.stripsFor(profile.name);
     if (!strips) return;
     const { from: heightMulA = 1, to: heightMulB = 1 } = this._drawHeightMul || {};
-    const heightMul = t > 0.5 ? heightMulB : heightMulA;
+    // Interpolated, NOT switched at the midpoint. Picking one side or the
+    // other steps the whole overlay the moment t crosses 0.5: measured at 86px
+    // on L2 across a single section boundary (0.88 -> 1.16 is a 32% change in
+    // height, and the peaks move further than the mean does). That is the
+    // ridge that "teleports" once every section. The layer pass below does the
+    // equivalent correctly by drawing both sides and crossfading them; these
+    // overlays draw one geometry, so the continuity has to come from the
+    // multiplier itself.
+    const heightMul = lerp(heightMulA, heightMulB, t);
     const yOff = this._zoomedGroundY(canvas) + 40 - canvas.height;
     const dancy = this._crestPoints(canvas, strips.L2, scrollX0, yOff, 'L2', profile.terrainEnergy ?? 1, heightMul);
     if (!dancy) return;
@@ -4926,7 +4942,15 @@ export class BiomeManager {
     const farStrip = strips[farLayerKey], nearStrip = strips[nearLayerKey];
     if (!farStrip || !nearStrip) return;
     const { from: heightMulA = 1, to: heightMulB = 1 } = this._drawHeightMul || {};
-    const heightMul = t > 0.5 ? heightMulB : heightMulA;
+    // Interpolated, NOT switched at the midpoint. Picking one side or the
+    // other steps the whole overlay the moment t crosses 0.5: measured at 86px
+    // on L2 across a single section boundary (0.88 -> 1.16 is a 32% change in
+    // height, and the peaks move further than the mean does). That is the
+    // ridge that "teleports" once every section. The layer pass below does the
+    // equivalent correctly by drawing both sides and crossfading them; these
+    // overlays draw one geometry, so the continuity has to come from the
+    // multiplier itself.
+    const heightMul = lerp(heightMulA, heightMulB, t);
     const yOff = this._zoomedGroundY(canvas) + 40 - canvas.height;
     const energy = profile.terrainEnergy ?? 1;
     const farGeom = this._crestPoints(canvas, farStrip, scrollFar, yOff, farLayerKey, energy, heightMul);
