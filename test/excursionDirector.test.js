@@ -95,21 +95,27 @@ test('sustained calm + positive valence triggers a voyage (stargazing launch)', 
   assert.equal(ctx.midasus.forceVoyageCalls.length, 1);
 });
 
-test('sustained bass for 3s triggers a burrow', () => {
+// Burrows are off. The excursion put Broshi underground in a generated
+// cavern, and that cave is a second visual world sitting under the first,
+// competing with the landscape rather than adding to it. These two used to
+// assert the conditions that launched one; they now assert that nothing
+// launches, because those conditions still occur and must stay inert.
+
+test('sustained bass no longer sends anyone underground', () => {
   const director = new ExcursionDirector(300000);
   const ctx = makeCtx({ energyCurves: { sample: () => 0.7 } });
   let t = run(director, ctx, 0, 13);
   run(director, ctx, t, 3.1);
-  assert.equal(ctx.broshi.forceBurrowCalls.length, 1);
+  assert.equal(ctx.broshi.forceBurrowCalls.length, 0);
 });
 
-test('a fresh hype drop triggers a burrow promptly', () => {
+test('a fresh hype drop no longer sends anyone underground', () => {
   const director = new ExcursionDirector(300000);
   const ctx = makeCtx();
   let t = run(director, ctx, 0, 13);
   ctx.hype.dropAtMs = t + STEP_MS; // "fires" on the next tick
   run(director, ctx, t, 1);
-  assert.equal(ctx.broshi.forceBurrowCalls.length, 1);
+  assert.equal(ctx.broshi.forceBurrowCalls.length, 0);
 });
 
 test('a voyage is blocked while inside a drop window', () => {
@@ -178,24 +184,27 @@ test('at most 2 voyages per song, with a cooldown between them', () => {
   assert.equal(ctx.midasus.forceVoyageCalls.length, 2, 'must not exceed the per-song voyage cap');
 });
 
-test('the global cooldown blocks a different excursion type from starting right after one ends', () => {
+test('the global cooldown blocks the next excursion from starting right after one ends', () => {
+  // This used to prove the point with a burrow as the second excursion: fire
+  // a voyage, then satisfy the burrow condition and watch the global cooldown
+  // hold it off. With burrows off there is only one excursion type left, so
+  // the CROSS-TYPE half of that gate is no longer reachable from here, and
+  // the release half can't be shown either -- a second voyage is gated by the
+  // 60s per-type cooldown, which outlives the 25s global one, so "it fires
+  // eventually" would be testing the wrong constant. What survives, and is
+  // what this now pins, is that the global cooldown is timed from the
+  // excursion's LAUNCH moment rather than from now: it is still blocking at
+  // ~16s because the voyage went up at ~12s.
   const director = new ExcursionDirector(400000);
-  // Bass starts at 0 so only the epic condition can fire -- if both were
-  // live at once, the burrow check (which runs first) would win the race
-  // and this test wouldn't be isolating what it claims to.
   const ctx = makeCtx({ vibe: { epic: 0.9, valence: 0 } });
   let t = run(director, ctx, 0, 13); // voyage fires once past the 12s guard
   assert.equal(ctx.midasus.forceVoyageCalls.length, 1);
   ctx.midasus.voyage.active = false;
 
-  // Now turn bass on. The 25s global cooldown, timed from the voyage's
-  // actual launch moment (~12s in, not "now"), should still be blocking.
-  ctx.energyCurves = { sample: () => 0.7 };
-  t = run(director, ctx, t, 3.5); // enough for the 3s bass sustain to be satisfied
-  assert.equal(ctx.broshi.forceBurrowCalls.length, 0, 'global cooldown should still be blocking');
-
-  run(director, ctx, t, 22); // past the 25s global cooldown from the voyage's launch
-  assert.equal(ctx.broshi.forceBurrowCalls.length, 1);
+  // The 25s global cooldown is timed from the voyage's actual launch moment
+  // (~12s in, not "now"), so it should still be blocking here.
+  t = run(director, ctx, t, 3.5);
+  assert.equal(ctx.midasus.forceVoyageCalls.length, 1, 'global cooldown should still be blocking');
 });
 
 test('the end guard forces any active excursion home and blocks new ones', () => {
