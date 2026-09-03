@@ -19,7 +19,13 @@ const CALM_THRESHOLD = 0.6, VALENCE_THRESHOLD = 0.08, CALM_SUSTAIN_MS = 4000;
 const MAX_VOYAGES = 2, VOYAGE_COOLDOWN_MS = 60000;
 
 const BASS_THRESHOLD = 0.55, BASS_SUSTAIN_MS = 3000;
-const MAX_BURROWS = 3, BURROW_COOLDOWN_MS = 40000;
+// Burrows are OFF. The excursion put Broshi underground in a generated
+// cavern, and the cave -- stalactites, rock walls, the lot -- is a second
+// visual world sitting under the first one, competing with the landscape
+// rather than adding to it. Zero here rather than deleting Burrow.js: the
+// class, its geometry and its tests are all still sound, and this is the one
+// line that decides whether anything ever reaches them.
+const MAX_BURROWS = 0, BURROW_COOLDOWN_MS = 40000;
 const DROP_FRESH_MS = 400;   // how recent a drop must be to still count as "just happened"
 const DROP_WINDOW_MS = 1500; // voyages don't launch into a drop
 
