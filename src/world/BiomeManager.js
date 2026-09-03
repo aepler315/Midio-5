@@ -3510,6 +3510,34 @@ export class BiomeManager {
     // curves into a crescent (bulging sunward) or a gibbous (bulging away).
     ctx.ellipse(0, 0, Math.abs(k), R, 0, Math.PI / 2, -Math.PI / 2, k > 0);
     ctx.closePath();
+    // Soft along the terminator, hard at the limb.
+    //
+    // At quarter phase k is exactly 0, so the terminator is a mathematically
+    // straight line across the middle of the disc -- correct astronomy, and
+    // at this size it reads as a rendering fault rather than as a phase: a
+    // razor edge splitting a body that CelestialApproach grows to several
+    // times its original width, with earthshine making the dark half plainly
+    // visible on the other side of it. A real terminator is not a knife edge
+    // either; the sun is not a point source and the surface curves away, so
+    // the light dies over a band rather than at a line.
+    //
+    // The gradient runs along the sun direction (+x here, since the whole
+    // construction is already rotated by toSun), full brightness across the
+    // lit limb and falling to nothing just past the terminator's own x. The
+    // limb stays crisp because the path clips it.
+    const termX = k > 0 ? Math.abs(k) : -Math.abs(k);
+    // A tenth of the radius was the first attempt and it did nothing: on a
+    // disc this size that is under three pixels of feather, which is still a
+    // razor edge. Verified by rendering at quarter phase with it applied and
+    // seeing no change at all. The band has to be a real fraction of the
+    // body to read as a curving surface losing the light rather than as a
+    // straight cut across a flat shape.
+    const softness = Math.max(3, R * 0.38);
+    const { r: mr, g: mg, b: mb } = hexToRgb(MOON_COLOR);
+    const face = ctx.createLinearGradient(termX - softness, 0, termX + softness, 0);
+    face.addColorStop(0, `rgba(${mr},${mg},${mb},0)`);
+    face.addColorStop(1, `rgba(${mr},${mg},${mb},1)`);
+    ctx.fillStyle = face;
     ctx.fill();
     ctx.restore();
   }

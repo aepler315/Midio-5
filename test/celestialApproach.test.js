@@ -70,8 +70,20 @@ test('it converges up and to the left of Midio, and never onto him', () => {
   assert.equal(c.y, 500 + CONVERGE_DY);
   // The second argument is the GROUND line, not Midio's live render y.
   assert.ok(CONVERGE_DX < 0 && CONVERGE_DY < 0, 'up and to the left');
-  // A body on a collision course reads as a threat; this one passes by.
-  assert.ok(Math.hypot(CONVERGE_DX, CONVERGE_DY) > 400, 'must not aim at him');
+  // Two-sided, and the second half is the one that was missing. A body on a
+  // collision course reads as a threat, so the target must clear him...
+  assert.ok(Math.hypot(CONVERGE_DX, CONVERGE_DY) > 200, 'must not aim at him');
+  // ...but it must also still be ON SCREEN when it arrives, and only the
+  // first half of that was ever asserted. At -500/-500 the target sat at
+  // x=-90 on a 1280 stage, so the body drifted off the left edge and the
+  // whole approach read as an exit instead of an arrival.
+  const STAGE_W = 1280, STAGE_H = 720, GROUND_Y = 470;
+  const midioX = STAGE_W * 0.32;
+  const onScreen = convergencePoint(midioX, GROUND_Y);
+  assert.ok(onScreen.x > STAGE_W * 0.04 && onScreen.x < STAGE_W * 0.96,
+    `converges off-frame horizontally at x=${onScreen.x}`);
+  assert.ok(onScreen.y > STAGE_H * 0.04 && onScreen.y < GROUND_Y,
+    `converges off-frame vertically at y=${onScreen.y}`);
 });
 
 test('the orbit is never replaced, only pulled -- it still rises and sets', () => {

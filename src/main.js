@@ -1173,6 +1173,12 @@ function startTimeline(timelineData, extra = {}) {
     // contact shadows, phenomena, the heavy overlay passes), so "why did
     // that effect disappear a few seconds in" is unanswerable from outside
     // without it. Live getters, not a snapshot: the governor mutates.
+    // The real seek, not a clock nudge. Setting audioEngine's origin alone
+    // leaves `simTime` where it was, so the sim keeps stepping from the old
+    // position and everything downstream of it (the song-progress arc, the
+    // celestial approach, the section schedule) stays at the start -- which
+    // silently made every seek-based screenshot a picture of second one.
+    seek: (ms) => seekSong(ms),
     get perfLevel() { return perfGovernor?.level ?? null; },
     get perf() { return perfGovernor || null; },
     // Live-listening state, for the debug overlay and for smoke tests: which
