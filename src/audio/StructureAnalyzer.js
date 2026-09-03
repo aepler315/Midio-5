@@ -42,9 +42,44 @@ const KERNEL_SIGMA = KERNEL_RADIUS / 1.5;
 // breakdown that stays on the same chords.
 const CHROMA_WEIGHT = 0.65, TIMBRE_WEIGHT = 0.35;
 // Repetition labelling: two segments are the same material when their mean
-// cross-similarity clears this. Deliberately strict -- a false merge makes a
-// verse wear the chorus's biome, which reads far worse than a missed repeat.
-const REPEAT_THRESHOLD = 0.82;
+// cross-similarity clears a threshold. Deliberately strict -- a false merge
+// makes a verse wear the chorus's biome, which reads far worse than a missed
+// repeat.
+//
+// This is the FALLBACK value. It used to be the only value, and a flat
+// cosine cutoff is the wrong shape for the question, because how similar two
+// DIFFERENT sections look depends on how much timbral and harmonic contrast
+// the arrangement has at all. Measured on a fixed A-B-A-C form with the
+// contrast between its classes swept: above ~0.8 contrast the read is correct,
+// and below it every pairwise similarity is squeezed above 0.82 and the whole
+// song collapses to a SINGLE label -- one biome, start to finish, with the
+// form invisible. That is not an exotic input; a track built on one synth
+// patch, an acoustic singer-songwriter take, or a lo-fi loop lives there.
+//
+// So the cutoff is placed against the song's OWN distribution of segment
+// similarities instead (see `repeatThresholdFor`), and this constant now
+// serves only the cases where that distribution can't be estimated.
+export const REPEAT_THRESHOLD = 0.82;
+// Where in the song's own similarity range the cutoff sits. Halfway: a
+// repeat is material that resembles its twin more than the song's typical
+// pair does, by the song's own standard.
+const REPEAT_LEVEL = 0.5;
+// Fewer pairs than this and there is no distribution to speak of -- two
+// segments give exactly one similarity, whose min and max are the same
+// number, which would merge them unconditionally. Fall back to the absolute
+// cutoff there.
+const REPEAT_MIN_PAIRS = 3;
+// A similarity range narrower than this means the song genuinely has one
+// texture: every pair is alike, and the peaks in that range are noise rather
+// than form. Stretching THAT to full scale manufactures repeats out of
+// nothing, so fall back to the absolute cutoff -- the same guard, and the
+// same reasoning, as EnergyCurves.FLAT_SPREAD_MIN.
+const REPEAT_SPREAD_MIN = 0.02;
+// Hard floor on what may ever be called "the same material". A
+// through-composed piece has no repeats at all, and its own range tops out
+// low; without this its least-dissimilar pair would still be promoted to a
+// repeat purely for being the best of a bad lot.
+const REPEAT_ABS_MIN = 0.5;
 // Ceiling on the confidence of a read that produced a single section, i.e.
 // found no boundaries at all. Must sit below BiomeManager's
 // SSM_CONFIDENCE_FLOOR so such a read can never win over the energy path.
@@ -179,6 +214,21 @@ export function labelByRepetition(S, cuts) {
     return n > 0 ? sum / n : 0;
   };
 
+  // Every pairwise segment similarity, computed once. The labelling pass below
+  // needs each of these anyway; taking them up front is what makes the song's
+  // own similarity distribution available to set the cutoff from.
+  const sim = Array.from({ length: segs.length }, () => new Float64Array(segs.length));
+  const pairs = [];
+  for (let i = 0; i < segs.length; i++) {
+    for (let j = i + 1; j < segs.length; j++) {
+      const s = meanSim(i, j);
+      sim[i][j] = s;
+      sim[j][i] = s;
+      pairs.push(s);
+    }
+  }
+  const threshold = repeatThresholdFor(pairs);
+
   const labels = new Array(segs.length).fill(-1);
   let next = 0;
   for (let i = 0; i < segs.length; i++) {
@@ -188,11 +238,43 @@ export function labelByRepetition(S, cuts) {
     // drifts as members join and can chain two genuinely different sections
     // together through a middling third.
     for (let j = i + 1; j < segs.length; j++) {
-      if (labels[j] < 0 && meanSim(i, j) >= REPEAT_THRESHOLD) labels[j] = next;
+      if (labels[j] < 0 && sim[i][j] >= threshold) labels[j] = next;
     }
     next++;
   }
   return labels;
+}
+
+/**
+ * The "same material" cutoff for one song, from its own spread of pairwise
+ * segment similarities.
+ *
+ * A flat cutoff asks "are these two segments similar in absolute terms?",
+ * which conflates two different things: whether the material recurs, and how
+ * much contrast the arrangement has to begin with. A song on one synth patch
+ * has every pair sitting high and reads as all-one-section; a densely
+ * arranged one has every pair sitting low and reads as all-distinct. Placing
+ * the cutoff inside the song's own range separates those.
+ *
+ * Falls back to the absolute REPEAT_THRESHOLD in the two cases where the
+ * range says nothing: too few pairs to have a distribution, and a range so
+ * narrow the song genuinely is one texture.
+ *
+ * @param {number[]} pairs every distinct pairwise segment similarity
+ * @returns {number} the cutoff a pair must reach to count as a repeat
+ */
+export function repeatThresholdFor(pairs) {
+  if (!pairs || pairs.length < REPEAT_MIN_PAIRS) return REPEAT_THRESHOLD;
+  let lo = Infinity, hi = -Infinity;
+  for (const p of pairs) {
+    if (!Number.isFinite(p)) continue;
+    if (p < lo) lo = p;
+    if (p > hi) hi = p;
+  }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return REPEAT_THRESHOLD;
+  const spread = hi - lo;
+  if (spread < REPEAT_SPREAD_MIN) return REPEAT_THRESHOLD;
+  return Math.max(REPEAT_ABS_MIN, lo + REPEAT_LEVEL * spread);
 }
 
 /**

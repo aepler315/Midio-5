@@ -26,18 +26,65 @@ export function cosineSim(a, b) {
   return den > 1e-12 ? dot / den : 0;
 }
 
+// The energy gate, expressed against the song's OWN dynamic range.
+//
+// This used to be a flat absolute number (0.22 on a 0..1 energy scale), and
+// that made the FORM a song reads as depend on its MASTERING. Measured on a
+// V-C-V-C' form whose final chorus returns a little quieter, as final
+// choruses do: compress the master and the two choruses land 0.04 apart and
+// label correctly; give the same song real dynamic range and they land 0.25
+// apart, trip the flat 0.22, and the returning chorus founds a THIRD label --
+// so it wears a new biome instead of coming home.
+//
+// It is the same disease EnergyCurves.globalEnergyNorm was written to cure
+// ("a brickwalled master sat pinned above every gate and a quiet one never
+// crossed any"), and the cure is the same: ask the question against the
+// track's own range. Two sections may merge while they sit within this
+// FRACTION of the song's own spread of section energies, so "far apart in
+// loudness" means the same musical thing on a whisper-quiet folk record and
+// a mastered-to-ceiling club track.
+export const ENERGY_TOL_FRAC = 0.45;
+// ...but never a tighter window than this in absolute terms. On a song with
+// essentially no dynamics the section energies differ only by noise, and
+// noise-level differences must not be allowed to veto a clear shape match.
+// Same reasoning as EnergyCurves.FLAT_SPREAD_MIN, and the reason a flat song
+// degrades to the old behaviour rather than to hair-trigger splitting.
+export const ENERGY_TOL_MIN = 0.12;
+
+/** The gate width for one song: a fraction of its own section-energy spread,
+ *  floored so a dynamics-free track can't drive it to zero. Exported so the
+ *  tests can state the property rather than re-deriving the constant. */
+export function energyToleranceFor(sectionFeatures) {
+  if (!sectionFeatures || sectionFeatures.length === 0) return ENERGY_TOL_MIN;
+  let lo = Infinity, hi = -Infinity;
+  for (const f of sectionFeatures) {
+    const e = f.energy;
+    if (!Number.isFinite(e)) continue;
+    if (e < lo) lo = e;
+    if (e > hi) hi = e;
+  }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return ENERGY_TOL_MIN;
+  return Math.max(ENERGY_TOL_MIN, ENERGY_TOL_FRAC * Math.max(0, hi - lo));
+}
+
 /**
  * Greedy agglomerative labelling of a section sequence into structural
  * classes (A=0, B=1, C=2, ...). A section joins the existing label whose
  * running centroid it most resembles when the band-shape cosine similarity
- * clears `simThreshold` AND the energy sits within `energyTol`; otherwise it
- * founds a new label. First-appearance order, so an A-B-A-C-B song reads
- * back exactly [0,1,0,2,1].
+ * clears `simThreshold` AND the energy sits within the song's own energy
+ * tolerance (see `energyToleranceFor`); otherwise it founds a new label.
+ * First-appearance order, so an A-B-A-C-B song reads back exactly [0,1,0,2,1].
  *
  * @param {Array<{energy:number, shape:number[]}>} sectionFeatures
+ * @param {object} [opts]
+ * @param {number} [opts.simThreshold]
+ * @param {number} [opts.energyTol] override the song-relative gate with a
+ *   fixed width. Only for callers that genuinely have an absolute scale in
+ *   hand; leaving it out is the right default.
  * @returns {number[]} one integer label per section
  */
-export function analyzeSongForm(sectionFeatures, { simThreshold = 0.9, energyTol = 0.22 } = {}) {
+export function analyzeSongForm(sectionFeatures, { simThreshold = 0.9, energyTol } = {}) {
+  const tol = energyTol ?? energyToleranceFor(sectionFeatures);
   const labels = [];
   // Per-label running centroid: summed shape + summed energy + count, so the
   // centroid is the mean of every section assigned so far (a returning
@@ -51,7 +98,7 @@ export function analyzeSongForm(sectionFeatures, { simThreshold = 0.9, energyTol
       const cen = centroids[c];
       const centroidShape = cen.shapeSum.map((s) => s / cen.count);
       const centroidEnergy = cen.energySum / cen.count;
-      if (Math.abs(feat.energy - centroidEnergy) > energyTol) continue;
+      if (Math.abs(feat.energy - centroidEnergy) > tol) continue;
       const sim = cosineSim(feat.shape, centroidShape);
       if (sim >= simThreshold && sim > bestSim) { bestSim = sim; best = c; }
     }
