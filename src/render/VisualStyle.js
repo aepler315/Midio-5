@@ -35,7 +35,7 @@ export function styleDials(_style) {
   return {
     id: STYLE_RENDERED,
     // Post
-    bloomBaseMul: 1.4,
+    bloomBaseMul: 0.9,
     filmGradeMul: 1.45,
     vignetteDepthMul: 1.08,
     // Atmosphere
@@ -48,7 +48,7 @@ export function styleDials(_style) {
     // (haze, ocean, mountains, particles); strokes that look fine in
     // isolation vanish into it. These sit just above the previous 1.8/2.7
     // so the trio reads as figures on the ground, not scratches on it.
-    glowHaloMul: 1.55,
+    glowHaloMul: 0.95,
     rimAmount: 0.95,
     widthBase: 2.2,
     widthGlow: 2.6,
@@ -59,7 +59,7 @@ export function styleDials(_style) {
     oceanLineAlpha: 0.42,
     oceanDrawContours: true,
     oceanBodyAlpha: 1.25,
-    oceanReflect: 1.4,
+    oceanReflect: 0.85,
     rowCountMul: 0.6,
     heatShimmerSlices: false,
     groundCrestCaps: true,
