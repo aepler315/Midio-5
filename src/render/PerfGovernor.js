@@ -95,6 +95,7 @@ export class PerfGovernor {
     this._overCount = 0;
     this._cleanSinceMs = null;
     this._warmUntilMs = null;
+    this._canvasW = 1280;
   }
 
   /** Restart the warm-up grace: call when a new song starts (or the world is
@@ -150,10 +151,13 @@ export class PerfGovernor {
   // its own offset -- a discontinuity reintroduced once per tile, which is
   // the opposite of the point. Powers of two only.
   get danceColumnWidth() {
-    if (this.level < 1) return 16;
-    if (this.level < 3) return 32;
-    return 64;
+    const base = this.level < 1 ? 16 : this.level < 3 ? 32 : 64;
+    return this._canvasW > 2560 ? Math.min(128, base * 2) : base;
   }
+
+  /** Tell the governor the current backing-store width so resolution-aware
+   *  quality gates (danceColumnWidth) can adapt. */
+  set canvasWidth(w) { this._canvasW = w; }
 
   get visionAllowed() { return this.level < 1; }
   get particleMul() { return this.level >= 2 ? 0.6 : 1; }
@@ -182,4 +186,16 @@ export class PerfGovernor {
   // The heaviest overlay passes: film-grade wash + vignette, and the hype
   // frame's echo self-blit.
   get heavyPostFx() { return this.level < 6; }
+
+  /** Resolution scale factor (0 < s <= 1) that fitCanvas should apply to the
+   *  chosen stage preset. At high perf pressure the backing store shrinks,
+   *  CSS-upscaled to fill the viewport — the single biggest win because every
+   *  fill/composite/blit scales quadratically with pixel count.
+   *  The scale stays 1.0 for presets at or below 1080p (already cheap). */
+  resolutionScale(presetH) {
+    if (presetH <= 1080) return 1;
+    if (this.level >= 5) return 0.5;
+    if (this.level >= 3) return 0.667;
+    return 1;
+  }
 }

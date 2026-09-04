@@ -127,9 +127,10 @@ test('the drop shock copies the real canvas and blits back in logical units', ()
     assert.equal(src, backing, 'the copy must come from the real canvas');
     assert.notEqual(src, stage, 'not from the logical view');
   }
-  // The offscreen buffer matches the backing store, so the copy is 1:1.
-  assert.equal(r._shockCanvas.width, DEVICE_W);
-  assert.equal(r._shockCanvas.height, DEVICE_H);
+  // The offscreen buffer is half-res at >1920px for performance.
+  const shockScale = DEVICE_W > 1920 ? 2 : 1;
+  assert.equal(r._shockCanvas.width, Math.round(DEVICE_W / shockScale));
+  assert.equal(r._shockCanvas.height, Math.round(DEVICE_H / shockScale));
 
   const blits = calls.filter((c) => c.length >= 5);
   assert.ok(blits.length > 0, 'and it must be blitted back');

@@ -305,14 +305,20 @@ function persistStagePreset(preset) {
   try { localStorage.setItem(STAGE_RES_KEY, String(preset)); } catch { /* no storage */ }
 }
 
-/** Backing-store size for the chosen preset (up to 4K). Sim stays logical 1280×720. */
+/** Backing-store size for the chosen preset (up to 4K). Sim stays logical 1280×720.
+ *  Under perf pressure the backing store shrinks (PerfGovernor.resolutionScale),
+ *  CSS-upscaled to fill the viewport — the single biggest win at 4K. */
 function fitCanvas() {
   const preset = readStagePreset();
   const dims = STAGE_PRESETS[preset] || STAGE_PRESETS[1440];
-  if (canvas.width !== dims.w || canvas.height !== dims.h) {
-    canvas.width = dims.w;
-    canvas.height = dims.h;
+  const scale = perfGovernor ? perfGovernor.resolutionScale(preset) : 1;
+  const w = Math.round(dims.w * scale);
+  const h = Math.round(dims.h * scale);
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
   }
+  if (perfGovernor) perfGovernor.canvasWidth = w;
 }
 
 function readPinnedSeed() {
@@ -1813,7 +1819,9 @@ function frame(tRaf) {
   if (paused) { rafHandle = requestAnimationFrame(frame); return; }
   if (lastRafMs !== null) {
     const rafDeltaMs = tRaf - lastRafMs;
+    const prevLevel = perfGovernor.level;
     perfGovernor.sample(rafDeltaMs, tRaf);
+    if (perfGovernor.level !== prevLevel) fitCanvas();
     fpsEma = emaFps(fpsEma, rafDeltaMs);
     if (fpsHudVisible && fpsHudEl) {
       fpsHudEl.textContent = `${Math.round(fpsEma)} fps  ·  perf ${perfGovernor.level}/${PERF_MAX_LEVEL}`;

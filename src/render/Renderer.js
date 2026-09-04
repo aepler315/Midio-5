@@ -51,7 +51,7 @@ const SPEED_LINE_MAX_ALPHA = 0.35;
 // real luminous source does. Downsampled (cheap blur for free) + a
 // self-multiply threshold (keeps near-white sources, crushes midtones) +
 // a real blur, added back additively at a strength driven by the music.
-const BLOOM_DOWNSCALE = 3;       // offscreen buffers render at 1/3 resolution
+const BLOOM_DOWNSCALE_BASE = 3;  // offscreen buffers render at 1/N resolution
 const BLOOM_BLUR_PX = 7;         // blur radius AT that downsampled scale
 const BLOOM_THRESHOLD_PASSES = 2; // self-multiply passes: c^(2^passes)
 // A low resting glow, not a floor that eats the reactive range: at
@@ -743,19 +743,19 @@ export class Renderer {
     if (perf && perf.particleMul < 1) return;
     const reducedFlash = !!sim.reducedFlash;
 
-    // Chromatic shock.
+    // Chromatic shock — half-res offscreen: the RGB split is a soft additive
+    // glow, so the upscale blur is actually desirable and saves 4x fill.
     if (!this._shockCanvas) {
       this._shockCanvas = document.createElement('canvas');
     }
     const off = this._shockCanvas;
-    // Sized to the REAL backing store, not the logical stage: this buffer
-    // holds a pixel copy of the composed frame, so anything else resamples
-    // it twice. (Same logical-vs-drawable confusion as the hype echo above
-    // -- `canvas` is draw()'s {width, height} view.)
     const src = ctx.canvas;
-    if (off.width !== src.width || off.height !== src.height) {
-      off.width = src.width;
-      off.height = src.height;
+    const shockScale = src.width > 1920 ? 2 : 1;
+    const shockW = Math.round(src.width / shockScale);
+    const shockH = Math.round(src.height / shockScale);
+    if (off.width !== shockW || off.height !== shockH) {
+      off.width = shockW;
+      off.height = shockH;
     }
     const offCtx = off.getContext('2d');
     // Reduced-flash halves the pixel split too -- what's left reads as
@@ -764,10 +764,10 @@ export class Renderer {
     const shockAlpha = capFlashAlpha(SHOCK_MAX_ALPHA * s, reducedFlash);
     for (const [color, dir] of [['rgba(255,60,60,1)', 1], ['rgba(60,220,255,1)', -1]]) {
       offCtx.globalCompositeOperation = 'copy';
-      offCtx.drawImage(src, 0, 0);
+      offCtx.drawImage(src, 0, 0, shockW, shockH);
       offCtx.globalCompositeOperation = 'multiply';
       offCtx.fillStyle = color;
-      offCtx.fillRect(0, 0, off.width, off.height);
+      offCtx.fillRect(0, 0, shockW, shockH);
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = shockAlpha;
@@ -812,8 +812,9 @@ export class Renderer {
     const strength = bloomStrength(sim.hype, sim.fever, !!sim.reducedFlash, sim.opening ? sim.opening.gain : 1);
     if (strength <= 0.005) return;
 
-    const wSmall = Math.max(1, Math.round(canvas.width / BLOOM_DOWNSCALE));
-    const hSmall = Math.max(1, Math.round(canvas.height / BLOOM_DOWNSCALE));
+    const bloomScale = canvas.width > 2560 ? 5 : canvas.width > 1920 ? 4 : BLOOM_DOWNSCALE_BASE;
+    const wSmall = Math.max(1, Math.round(canvas.width / bloomScale));
+    const hSmall = Math.max(1, Math.round(canvas.height / bloomScale));
     if (!this._bloomA) this._bloomA = document.createElement('canvas');
     if (!this._bloomB) this._bloomB = document.createElement('canvas');
     const a = this._bloomA, b = this._bloomB;
