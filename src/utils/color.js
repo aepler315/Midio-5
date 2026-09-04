@@ -18,7 +18,7 @@ export function hexToRgb(hex) {
 }
 
 export function rgbToHex(r, g, b) {
-  const n = (clamp01(r / 255) * 255 << 16) | (clamp01(g / 255) * 255 << 8) | (clamp01(b / 255) * 255);
+  const n = (Math.round(clamp01(r / 255) * 255) << 16) | (Math.round(clamp01(g / 255) * 255) << 8) | Math.round(clamp01(b / 255) * 255);
   return '#' + (n >>> 0).toString(16).padStart(6, '0');
 }
 

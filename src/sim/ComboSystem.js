@@ -13,7 +13,6 @@ export class ComboSystem {
 
     // One-shot per-step flags for FX/HUD to react to.
     this.justClean = false;
-    this.justStumbled = false;
     this.justBroke = false;
   }
 
@@ -32,9 +31,9 @@ export class ComboSystem {
   }
 
   onStumble() {
-    this.streak = 0; // RULE 5
+    this.streak = 0;
     this.M = 1;
-    this.justStumbled = true;
+    this.justBroke = true;
   }
 
   /** Player-rhythm layer: a well-judged press refreshes combo freshness
@@ -76,7 +75,6 @@ export class ComboSystem {
   /** Call once per sim step after update() to clear one-shot flags for the next step. */
   clearFrameFlags() {
     this.justClean = false;
-    this.justStumbled = false;
     this.justBroke = false;
   }
 }

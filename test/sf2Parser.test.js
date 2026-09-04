@@ -53,10 +53,11 @@ test('parseSf2 converts centibel sustain to linear gain', () => {
   assert.ok(Math.abs(z.sustain - 0.31623) < 0.001, `sustain=${z.sustain}`);
 });
 
-test('parseSf2 hardcodes a musical default release', () => {
+test('parseSf2 defaults release from timecent -12000 when no releaseVolEnv generator is present', () => {
   const sf2 = parseSf2(buildMinimalSf2());
   const z = sf2.presets.get(0).zones[0];
-  assert.equal(z.release, 0.05);
+  // -12000 timecents → 2^(-10) ≈ 0.000977
+  assert.ok(Math.abs(z.release - Math.pow(2, -10)) < 0.0001, `release=${z.release}`);
 });
 
 test('parseSf2 sample data is 16-bit PCM with correct length', () => {

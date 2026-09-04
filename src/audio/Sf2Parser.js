@@ -21,22 +21,25 @@ const INFO = 'INFO';
 const SDTA = 'sdta';
 const PDTA = 'pdta';
 
-// Generator opcodes (SF2 spec §8.5)
+// Generator opcodes (SF2 spec §8.1.3)
 const GEN = {
   PAN: 17,
-  DECAY_VOL: 33,       // timecents
-  SUSTAIN_VOL: 34,     // centibels (sustain LEVEL below peak)
-  ATTACK_VOL: 36,      // timecents
-  HOLD_VOL: 37,        // timecents
-  KEY_TO_VOL_DECAY: 38,
+  DELAY_VOL: 33,       // timecents — delay before envelope starts
+  ATTACK_VOL: 34,      // timecents
+  HOLD_VOL: 35,        // timecents
+  DECAY_VOL: 36,       // timecents
+  SUSTAIN_VOL: 37,     // centibels (sustain LEVEL below peak)
+  RELEASE_VOL: 38,     // timecents
+  KEY_TO_VOL_HOLD: 39,
+  KEY_TO_VOL_DECAY: 40,
   INSTRUMENT: 41,      // preset zones → instrument index
   KEY_RANGE: 43,       // lo/hi byte pair
   VEL_RANGE: 44,       // lo/hi byte pair
   INITIAL_ATTENUATION: 48, // 0.1 dB units
-  COARSE_TUNE: 50,     // semitones
-  FINE_TUNE: 51,       // cents
+  COARSE_TUNE: 51,     // semitones
+  FINE_TUNE: 52,       // cents
   SAMPLE_ID: 53,       // instrument zones → sample header index
-  SAMPLE_MODES: 55,    // 0=none, 1=loop
+  SAMPLE_MODES: 54,    // 0=none, 1=loop
 };
 
 // --- timecent / centibel conversions ---
@@ -272,6 +275,8 @@ function collectGens(gens, start, end) {
       out.sampleIndex = g.val;
     } else if (g.oper === GEN.PAN) {
       out.pan = g.valS / 500; // 0.1% → -1..1
+    } else if (g.oper === GEN.DELAY_VOL) {
+      out.delayTc = g.valS;
     } else if (g.oper === GEN.ATTACK_VOL) {
       out.attackTc = g.valS;
     } else if (g.oper === GEN.HOLD_VOL) {
@@ -280,6 +285,10 @@ function collectGens(gens, start, end) {
       out.decayTc = g.valS;
     } else if (g.oper === GEN.SUSTAIN_VOL) {
       out.sustainCb = g.valS;
+    } else if (g.oper === GEN.RELEASE_VOL) {
+      out.releaseTc = g.valS;
+    } else if (g.oper === GEN.KEY_TO_VOL_HOLD) {
+      out.keyToHold = g.valS;
     } else if (g.oper === GEN.KEY_TO_VOL_DECAY) {
       out.keyToDecay = g.valS;
     } else if (g.oper === GEN.SAMPLE_MODES) {
@@ -416,7 +425,7 @@ function buildPresets(pdta, fontName) {
           hold: tcToSec(merged.holdTc ?? -12000),
           decay: tcToSec(merged.decayTc ?? -12000),
           sustain: cbToLinear(merged.sustainCb ?? 0),
-          release: 0.05, // SF2 has no explicit releaseVolEnv generator; use musical default
+          release: tcToSec(merged.releaseTc ?? -12000),
           loopMode: merged.loopMode ?? 0,
           pan,
           fineTune: merged.fineTune ?? 0,
@@ -438,7 +447,7 @@ function buildPresets(pdta, fontName) {
             hold: tcToSec(merged.holdTc ?? -12000),
             decay: tcToSec(merged.decayTc ?? -12000),
             sustain: cbToLinear(merged.sustainCb ?? 0),
-            release: 0.05,
+            release: tcToSec(merged.releaseTc ?? -12000),
             loopMode: merged.loopMode ?? 0,
             pan: baseType === 4 ? 1 : -1, // the linked partner sits on the opposite side
             fineTune: merged.fineTune ?? 0,

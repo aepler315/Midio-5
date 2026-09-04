@@ -6,6 +6,7 @@
  */
 
 const STORAGE_KEY = 'midio.soulseek.config';
+const FETCH_TIMEOUT_MS = 10000;
 
 export class SoulseekSearch {
   /**
@@ -106,6 +107,7 @@ export class SoulseekSearch {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cfg),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Config failed (${res.status})`);
@@ -154,7 +156,7 @@ export class SoulseekSearch {
       await this._pushConfig({ mode: 'free' });
     } catch {
       try {
-        await fetch('/api/soulseek/config', { method: 'DELETE' });
+        await fetch('/api/soulseek/config', { method: 'DELETE', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
       } catch {
         /* ignore */
       }
@@ -170,7 +172,7 @@ export class SoulseekSearch {
 
   async refreshStatus() {
     try {
-      const res = await fetch('/api/soulseek/status');
+      const res = await fetch('/api/soulseek/status', { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
       // 404/405 is the bridge simply not existing at this origin (a static
       // host) -- not an error condition to report, a feature to hide.
       if (res.status === 404 || res.status === 405) {
@@ -279,6 +281,7 @@ export class SoulseekSearch {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: q }),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Search failed (${res.status})`);
@@ -295,7 +298,9 @@ export class SoulseekSearch {
   async _pollOnce() {
     if (!this.searchId) return;
     try {
-      const res = await fetch(`/api/soulseek/search/${encodeURIComponent(this.searchId)}`);
+      const res = await fetch(`/api/soulseek/search/${encodeURIComponent(this.searchId)}`, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Poll failed');
       this._renderResults(data.results || []);
@@ -395,6 +400,7 @@ export class SoulseekSearch {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ item }),
+        signal: AbortSignal.timeout(60000),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

@@ -52,7 +52,7 @@ test('RULE 5: stumble resets streak and multiplier instantly', () => {
   c.onStumble();
   assert.equal(c.streak, 0);
   assert.equal(c.M, 1);
-  assert.equal(c.justStumbled, true);
+  assert.equal(c.justBroke, true);
 });
 
 test('clean-landing window is +/-90ms of the nearest kick', () => {

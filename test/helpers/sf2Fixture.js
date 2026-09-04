@@ -78,12 +78,13 @@ export function buildMinimalSf2(name = 'TestFont') {
   const imodChunk = cat(fourcc('imod'), u32(imodData.length), imodData);
 
   // igen: 6 entries — keyRange, velRange, attack, decay, sustain, sampleID
+  // Opcodes per SF2 spec §8.1.3: attackVolEnv=34, decayVolEnv=36, sustainVolEnv=37
   const igenData = cat(
     u16(43), u16(40 | (84 << 8)),  // keyRange: 40-84
     u16(44), u16(20 | (110 << 8)),  // velRange: 20-110
-    u16(36), i16(-6000),            // attackVol: -6000 timecents (~31ms)
-    u16(33), i16(-4800),            // decayVol: -4800 timecents (~63ms)
-    u16(34), i16(-100),             // sustainVol: -100 centibels (~31.6%)
+    u16(34), i16(-6000),            // attackVolEnv: -6000 timecents (~31ms)
+    u16(36), i16(-4800),            // decayVolEnv: -4800 timecents (~63ms)
+    u16(37), i16(-100),             // sustainVolEnv: -100 centibels (~31.6%)
     u16(53), u16(0),                // sampleID: 0 (terminal)
   );
   const igenChunk = cat(fourcc('igen'), u32(igenData.length), igenData);
@@ -298,7 +299,7 @@ export function buildAuditionSf2({
   const igenData = cat(
     u16(43), u16(keyRange[0] | (keyRange[1] << 8)), // keyRange
     u16(44), u16(velRange[0] | (velRange[1] << 8)), // velRange
-    u16(55), u16(loop ? 1 : 0),                     // sampleModes
+    u16(54), u16(loop ? 1 : 0),                     // sampleModes
     u16(53), u16(0),                                // sampleID (must stay last)
   );
   const igenChunk = cat(fourcc('igen'), u32(igenData.length), igenData);

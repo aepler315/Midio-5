@@ -268,7 +268,7 @@ export class ParticleField {
     // dereferences the particle.
     if (this.particles.length === 0) return;
     ctx.save();
-    const n = Math.max(1, Math.ceil(this.particles.length * mul));
+    const n = Math.max(1, Math.ceil(this.particles.length * Math.min(1, mul)));
     for (let idx = 0; idx < n; idx++) {
       const p = this.particles[idx];
       const boost = lighting ? particleLightAmount(lights, p.x, p.y) : 0;

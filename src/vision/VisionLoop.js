@@ -77,7 +77,9 @@ export class VisionLoop {
 
   _captureFrame() {
     this._pendingBlob = true;
-    this._captureCtx.drawImage(this.canvas, 0, 0, this._captureCanvas.width, this._captureCanvas.height);
+    try {
+      this._captureCtx.drawImage(this.canvas, 0, 0, this._captureCanvas.width, this._captureCanvas.height);
+    } catch { this._pendingBlob = false; return; }
     this._captureCanvas.toBlob((blob) => {
       if (!blob) { this._pendingBlob = false; return; }
       const reader = new FileReader();

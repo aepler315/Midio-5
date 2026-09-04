@@ -9,6 +9,19 @@ import { hexToRgb, rgbToHsl } from '../utils/color.js';
 const RIM_LIGHT_RANGE = 26; // max lightness swing (+/-) a fully-facing/fully-averted edge can pick up
 const RIM_HUE_BLEND = 0.35; // max fraction an edge's hue shifts toward the light's hue on its lit side
 
+const _scratchPool = [];
+function _getScratch(n) {
+  for (let i = 0; i < _scratchPool.length; i++) {
+    if (_scratchPool[i].length >= n) return _scratchPool.splice(i, 1)[0];
+  }
+  const arr = new Array(n);
+  for (let j = 0; j < n; j++) arr[j] = { x: 0, y: 0 };
+  return arr;
+}
+function _releaseScratch(arr) {
+  if (_scratchPool.length < 8) _scratchPool.push(arr);
+}
+
 /** Shortest signed hue delta from a to b, in degrees, through whichever direction around the wheel is shorter. */
 function hueDelta(a, b) {
   return ((b - a + 540) % 360) - 180;
@@ -168,9 +181,14 @@ export function drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, {
 
 /** Convenience: transform every vertex of a mesh with a single rigid transform, then draw. */
 export function drawMeshPart(ctx, mesh, restLengths, transform, baseHueDeg, options) {
-  const points = mesh.vertices.map((v) => applyTransform(v, transform));
-  drawMeshEdges(ctx, mesh, restLengths, points, baseHueDeg, options);
-  return points;
+  const scratch = _getScratch(mesh.vertices.length);
+  for (let i = 0; i < mesh.vertices.length; i++) {
+    const t = applyTransform(mesh.vertices[i], transform);
+    scratch[i].x = t.x; scratch[i].y = t.y;
+  }
+  drawMeshEdges(ctx, mesh, restLengths, scratch, baseHueDeg, options);
+  _releaseScratch(scratch);
+  return scratch;
 }
 
 /**
@@ -206,14 +224,17 @@ export function drawGlowHalo(ctx, cx, cy, rx, ry, hueDeg, alpha, { sat = 70, lig
  */
 export function meltMesh(mesh, cx, cy, tSec, amt, seed = 0) {
   if (amt <= 0.02) return mesh;
-  const vertices = mesh.vertices.map((v) => {
+  const scratch = _getScratch(mesh.vertices.length);
+  for (let i = 0; i < mesh.vertices.length; i++) {
+    const v = mesh.vertices[i];
     const dx = v.x - cx, dy = v.y - cy;
-    if (dx * dx + dy * dy < 4) return v; // the hub holds still: a fixed heart in a flowing body
+    if (dx * dx + dy * dy < 4) { scratch[i].x = v.x; scratch[i].y = v.y; continue; }
     const f = curl2((v.x + seed * 37.7) * 0.028, (v.y - seed * 11.3) * 0.028, tSec * 0.21 + seed);
     const g = curl2((v.y + seed * 5.1) * 0.041, v.x * 0.041, tSec * 0.34 - seed * 2);
-    return { x: v.x + (f.x * 0.7 + g.x * 0.3) * amt, y: v.y + (f.y * 0.7 + g.y * 0.3) * amt };
-  });
-  return { vertices, edges: mesh.edges };
+    scratch[i].x = v.x + (f.x * 0.7 + g.x * 0.3) * amt;
+    scratch[i].y = v.y + (f.y * 0.7 + g.y * 0.3) * amt;
+  }
+  return { vertices: scratch, edges: mesh.edges, _scratch: scratch };
 }
 
 /**
@@ -225,11 +246,13 @@ export function meltMesh(mesh, cx, cy, tSec, amt, seed = 0) {
 export function lerpMesh(meshA, meshB, t) {
   if (t <= 0) return meshA;
   if (t >= 1) return meshB;
-  const vertices = meshA.vertices.map((v, i) => {
-    const w = meshB.vertices[i];
-    return { x: v.x + (w.x - v.x) * t, y: v.y + (w.y - v.y) * t };
-  });
-  return { vertices, edges: meshA.edges };
+  const scratch = _getScratch(meshA.vertices.length);
+  for (let i = 0; i < meshA.vertices.length; i++) {
+    const v = meshA.vertices[i], w = meshB.vertices[i];
+    scratch[i].x = v.x + (w.x - v.x) * t;
+    scratch[i].y = v.y + (w.y - v.y) * t;
+  }
+  return { vertices: scratch, edges: meshA.edges, _scratch: scratch };
 }
 
 /**
@@ -241,12 +264,15 @@ export function lerpMesh(meshA, meshB, t) {
  */
 export function displaceMeshRadial(mesh, cx, cy, field) {
   if (!field || field.energy < 0.05) return mesh;
-  const vertices = mesh.vertices.map((v) => {
+  const scratch = _getScratch(mesh.vertices.length);
+  for (let i = 0; i < mesh.vertices.length; i++) {
+    const v = mesh.vertices[i];
     const dx = v.x - cx, dy = v.y - cy;
     const r = Math.hypot(dx, dy);
-    if (r < 2) return v; // hub vertex: no radial direction to displace along
+    if (r < 2) { scratch[i].x = v.x; scratch[i].y = v.y; continue; }
     const s = (r + field.displacementAt(Math.atan2(dy, dx))) / r;
-    return { x: cx + dx * s, y: cy + dy * s };
-  });
-  return { vertices, edges: mesh.edges };
+    scratch[i].x = cx + dx * s;
+    scratch[i].y = cy + dy * s;
+  }
+  return { vertices: scratch, edges: mesh.edges, _scratch: scratch };
 }

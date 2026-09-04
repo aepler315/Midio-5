@@ -164,14 +164,9 @@ export class Renderer {
     viewStage.width = baseStageW;
     viewStage.height = baseStageH;
 
-    if (fracture && (fracture.isFrozen || fracture.isDone)) {
-      // Shatter geometry is logical-stage space; scale into the physical
-      // buffer. Unpadded dims -- the shake overscan margin above is for the
-      // live camera transform only, and sx/sy already assume it away.
-      ctx.setTransform(sx, 0, 0, sy, 0, 0);
-      // (shatter draw removed -- see the note at the crack pass below)
-      return;
-    }
+    // Fracture freeze/done was previously an early-return that skipped the
+    // entire frame (world, HUD, everything). The shatter draw it guarded was
+    // removed, so the early-return now just blanks the screen. Removed.
 
     const pose = sim.lerpState(alpha);
     const camera = sim.camera;
