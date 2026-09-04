@@ -57,9 +57,17 @@ export function danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever = 0, co
 }
 
 /** Smooth counterpart of MountainChoreo's danceScale (Stage 2 of the
- *  mountain overhaul) -- same cosine-blend-across-column-centers pattern as
- *  danceOffsetSmooth above, so the live crest polyline's per-column scale
- *  matches the blitted columns exactly at every seam instead of stepping. */
+ *  mountain overhaul): a cosine blend across column CENTERS, so each column's
+ *  own raw danceScale value is reached exactly at its center.
+ *
+ *  Note this is NOT the same pattern as danceOffsetSmooth above, whatever an
+ *  earlier version of this comment claimed -- that one blends linearly across
+ *  column BOUNDARIES, which is precisely the shape a sheared blit can draw.
+ *  This one cannot be drawn by the blit at all: a column is one drawImage with
+ *  one straight top edge, and a curve whose extremum sits mid-column has no
+ *  straight edge through it. Use `danceScaleRamp` for anything that has to
+ *  line up with the painted fill; this function survives as the definition of
+ *  the value AT a boundary, which is what that ramp interpolates between. */
 export function danceScaleSmooth(ridge, stripX, transient, sustain, cfg, colW = DANCE_COL_W) {
   const c0 = Math.floor((stripX - colW / 2) / colW) * colW + colW / 2;
   const c1 = c0 + colW;
@@ -68,6 +76,32 @@ export function danceScaleSmooth(ridge, stripX, transient, sustain, cfg, colW = 
   const s0 = danceScale(columnHeight01At(ridge, c0), transient, sustain, cfg);
   const s1 = danceScale(columnHeight01At(ridge, c1), transient, sustain, cfg);
   return s0 * (1 - w) + s1 * w;
+}
+
+/**
+ * The per-column scale AS THE BLIT ACTUALLY PAINTS IT: linear between the
+ * values at the column's two boundaries, exactly mirroring danceOffsetSmooth.
+ *
+ * This is the curve every overlay must trace. A dance column is a single
+ * drawImage, so its top edge is a straight line; the sheared blit ramps that
+ * edge between the boundary values, and nothing else is reachable. Overlays
+ * that traced danceScaleSmooth's mid-column extremum instead were drawing a
+ * silhouette that was never painted -- and because a scale multiplies HEIGHT
+ * ABOVE THE FOOT, the gap was zero at the foot and widest at the summits, and
+ * it grew with the kick: 0.4px at rest, 4.3px on a kick, quantized to the
+ * column grid. That is the blocky flicker at the peaks.
+ *
+ * Sampling danceScaleSmooth at the boundaries means each boundary carries the
+ * average of the two columns meeting there, so a column's center ends up at
+ * (s[k-1] + 2*s[k] + s[k+1]) / 4 -- a centered smoothing of the column values,
+ * with no half-column phase shift of where summits sharpen.
+ */
+export function danceScaleRamp(ridge, stripX, transient, sustain, cfg, colW = DANCE_COL_W) {
+  const b0 = Math.floor(stripX / colW) * colW;
+  const f = (stripX - b0) / colW;
+  const s0 = danceScaleSmooth(ridge, b0, transient, sustain, cfg, colW);
+  const s1 = danceScaleSmooth(ridge, b0 + colW, transient, sustain, cfg, colW);
+  return s0 + (s1 - s0) * clamp01(f);
 }
 
 export const GEO_FEATURE_TYPES = ['cliff', 'arete', 'knob', 'outcrop', 'terrace'];

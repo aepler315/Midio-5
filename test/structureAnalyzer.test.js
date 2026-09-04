@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   analyzeStructure, selfSimilarity, footeNovelty, labelByRepetition, chromaBetween,
-  NO_STRUCTURE_CONFIDENCE,
+  NO_STRUCTURE_CONFIDENCE, repeatThresholdFor, REPEAT_THRESHOLD,
 } from '../src/audio/StructureAnalyzer.js';
 import { SEMITONE_LO } from '../src/audio/PitchTracker.js';
 
@@ -81,6 +81,71 @@ test('labelByRepetition gives recurring material the same label', () => {
   const labels = labelByRepetition(S, [0, 4, 8, 12]);
   assert.equal(labels[0], labels[2], 'the returning A is recognized as the same material');
   assert.notEqual(labels[0], labels[1], 'B is its own label');
+});
+
+// --- the repeat cutoff is the SONG's, not an absolute -----------------------
+
+test('a low-contrast arrangement still reads its form instead of collapsing', () => {
+  // The defect this replaced: the cutoff was a flat 0.82 cosine, so how much
+  // of the song counted as "the same material" depended on how much timbral
+  // contrast the ARRANGEMENT had. A song built on one patch has every pair
+  // squeezed above 0.82, and the whole track collapsed to a single label --
+  // one biome start to finish, the form invisible.
+  //
+  // Same A-B-A-C form at several contrasts; the read must not change.
+  const build = (contrast) => {
+    const dirs = { A: [1, 0, 0], B: [0, 1, 0], C: [0, 0, 1] };
+    const plan = ['A', 'A', 'A', 'B', 'B', 'B', 'A', 'A', 'A', 'C', 'C', 'C'];
+    return plan.map((cls) => {
+      const v = new Float64Array(19).fill(1);
+      dirs[cls].forEach((d, k) => { v[k * 4] += d * contrast * 3; });
+      return v;
+    });
+  };
+  for (const contrast of [0.35, 0.5, 0.8, 1.2, 2.0]) {
+    const labels = labelByRepetition(selfSimilarity(build(contrast)), [0, 3, 6, 9, 12]);
+    assert.deepEqual(labels, [0, 1, 0, 2],
+      `A-B-A-C must survive an arrangement contrast of ${contrast}`);
+  }
+});
+
+test('the repeat cutoff sits inside the song\'s own similarity range', () => {
+  const tight = repeatThresholdFor([0.90, 0.91, 0.92, 0.99]);
+  assert.ok(tight > 0.90 && tight < 0.99,
+    `a cutoff of ${tight} must fall between the song's least and most alike pairs`);
+  const loose = repeatThresholdFor([0.30, 0.35, 0.40, 0.95]);
+  assert.ok(loose < tight,
+    'a song with more contrast between its sections gets a lower bar, not the same one');
+});
+
+test('a cutoff is never lowered enough to call unlike material a repeat', () => {
+  // A through-composed piece has no repeats at all. Without a floor its
+  // least-dissimilar pair would be promoted to one purely for being the best
+  // of a bad lot.
+  const t = repeatThresholdFor([0.05, 0.10, 0.12, 0.20]);
+  assert.ok(t >= 0.5, `nothing at ${t} cosine should ever count as the same material`);
+  const S = [
+    [1, 0.1, 0.2], [0.1, 1, 0.15], [0.2, 0.15, 1],
+  ].map((r) => Float64Array.from(r));
+  assert.deepEqual(labelByRepetition(S, [0, 1, 2, 3]), [0, 1, 2],
+    'three unlike segments stay three labels');
+});
+
+test('too few pairs, or a song of one texture, falls back to the absolute cutoff', () => {
+  assert.equal(repeatThresholdFor([0.9]), REPEAT_THRESHOLD,
+    'two segments give one similarity -- min and max are the same number, which '
+    + 'would merge them unconditionally');
+  assert.equal(repeatThresholdFor([]), REPEAT_THRESHOLD);
+  assert.equal(repeatThresholdFor([0.951, 0.952, 0.9505, 0.9515]), REPEAT_THRESHOLD,
+    'a range this narrow is one texture, and its peaks are noise rather than form');
+});
+
+test('a genuine drone stays one label rather than being split on noise', () => {
+  // The counterpart risk to the collapse above: everything really IS the same
+  // material here, and a purely proportional cutoff would manufacture
+  // boundaries out of the last decimal place.
+  const feats = Array.from({ length: 12 }, () => Float64Array.from(new Array(19).fill(1)));
+  assert.deepEqual(labelByRepetition(selfSimilarity(feats), [0, 3, 6, 9, 12]), [0, 0, 0, 0]);
 });
 
 test('an ABAB song yields boundaries at the seams and repeats its labels', () => {
