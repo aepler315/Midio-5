@@ -4240,7 +4240,7 @@ export class BiomeManager {
   _drawOneCelestial(ctx, cx, cy, c, alpha) {
     if (alpha <= 0.02) return;
     ctx.save();
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = alpha * 0.55;
     const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, c.radius * (c.dominant ? 3.2 : 2.2));
     halo.addColorStop(0, c.haloColor);
     halo.addColorStop(1, 'rgba(0,0,0,0)');

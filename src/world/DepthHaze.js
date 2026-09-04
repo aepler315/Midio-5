@@ -22,7 +22,7 @@ export const HAZE_EPS = 0.004;        // below this, skip the fillRect entirely
 // light than away from it. Capped in the neighbourhood of HAZE_BASE_ALPHA
 // because this stacks across up to three layers and the frame already
 // carries a bloom pass.
-export const HAZE_SCATTER_MAX = HAZE_BASE_ALPHA;
+export const HAZE_SCATTER_MAX = HAZE_BASE_ALPHA * 0.6;
 export const HAZE_SCATTER_RADIUS_FRAC = 0.62;
 
 /** Wash alpha for one layer, before color. hazeMul is the per-biome
