@@ -22,31 +22,57 @@ export function cycleMs(durationMs) {
   return Math.min(clamped, d);
 }
 
+// The empty sky between one body setting and the other rising, as a fraction
+// of the cycle.
+//
+// The two arcs used to abut exactly at p=0.5: the sun touched the water and
+// the moon was already coming out of it on the far side, in the same frame.
+// Both altitudes were 0 at that instant, which satisfied "never both up" on a
+// technicality while giving the eye no gap at all -- the sky simply handed
+// itself over, and the swap read as a swap rather than as night falling.
+//
+// A real gap costs nothing and buys the thing the handoff was missing: a
+// stretch with an empty sky, where the stars are the brightest thing up
+// there. At the 60-120s cycle this runs on, 8% is roughly 5-10 seconds --
+// long enough to register as darkness, short enough that the sky is never
+// boring. There are two of them per cycle (after sunset, and after moonset
+// before dawn), so the cycle is sun-arc / gap / moon-arc / gap.
+export const CELESTIAL_GAP = 0.08;
+/** Phase at which the sun sets; the moon rises a gap later, at 0.5. */
+export const SUN_SET_PHASE = 0.5 - CELESTIAL_GAP;
+/** Phase at which the moon sets; the sun rises a gap later, at the wrap. */
+export const MOON_SET_PHASE = 1 - CELESTIAL_GAP;
+
 /** Altitude (0..1) and night mix at `nowMs` for a cycle of length `cycle`.
- *  Sun owns the first half (rising, zenith, setting), the moon the second
- *  -- both altitudes are exactly 0 at the handoffs, so there's always a
- *  clean moment where neither body is above the horizon. `night` is 0 at
- *  the sun's zenith, 1 at the moon's zenith, smoothstepped through both
- *  handoffs so the sky darkens/lightens gradually, not on a hard cut. */
+ *  The sun crosses over [0, SUN_SET_PHASE), the moon over [0.5,
+ *  MOON_SET_PHASE), and the two CELESTIAL_GAP stretches between them are
+ *  empty sky -- both altitudes are exactly 0 there, for a real span of time
+ *  rather than for one instant. `night` is 0 at the sun's zenith and 1 from
+ *  sunset through the whole of the moon's reign, smoothstepped through both
+ *  ends so the sky darkens/lightens gradually, not on a hard cut. */
 export function dayNight(nowMs, cycle) {
   const c = Math.max(1, cycle);
   const p = cyclePhase01(nowMs, c); // 0..1 phase within the cycle
-  const sunAlt = p < 0.5 ? Math.sin(Math.PI * (p / 0.5)) : 0;
-  const moonAlt = p >= 0.5 ? Math.sin(Math.PI * ((p - 0.5) / 0.5)) : 0;
+  const sunSpan = SUN_SET_PHASE;            // [0, sunSpan)
+  const moonSpan = MOON_SET_PHASE - 0.5;    // [0.5, MOON_SET_PHASE)
+  const sunAlt = p < sunSpan ? Math.sin(Math.PI * (p / sunSpan)) : 0;
+  const moonAlt = (p >= 0.5 && p < MOON_SET_PHASE)
+    ? Math.sin(Math.PI * ((p - 0.5) / moonSpan))
+    : 0;
 
-  // night: smoothstep 0->1 across the sunset handoff (p in [0.42,0.5]),
-  // hold at 1 through the moon's whole reign (including its zenith at
-  // p=0.75), smoothstep 1->0 across the sunrise handoff as p approaches
-  // the wrap back to 0 (p in [0.92,1.0]).
+  // night: smoothstep 0->1 into the sunset, hold at 1 across the empty sky,
+  // the moon's whole reign and its zenith, then smoothstep 1->0 through the
+  // second gap so the sky is already paling when the sun comes back up.
+  const BAND = 0.08;
   let night;
-  if (p < 0.42) night = 0;
-  else if (p < 0.5) night = smoothstep(0.42, 0.5, p);
-  else if (p < 0.92) night = 1;
-  else night = 1 - smoothstep(0.92, 1.0, p);
+  if (p < sunSpan - BAND) night = 0;
+  else if (p < sunSpan) night = smoothstep(sunSpan - BAND, sunSpan, p);
+  else if (p < 1 - BAND) night = 1;
+  else night = 1 - smoothstep(1 - BAND, 1.0, p);
 
-  // Dawn/dusk washes bracket each handoff (the sun's own rise and set).
+  // Dawn/dusk washes bracket the sun's own rise and set.
   const dawnAlpha = clamp01(1 - Math.abs(p - 0.03) / 0.12) * 0.16;
-  const duskAlpha = clamp01(1 - Math.abs(p - 0.47) / 0.12) * 0.18;
+  const duskAlpha = clamp01(1 - Math.abs(p - (sunSpan - 0.03)) / 0.12) * 0.18;
 
   // Azimuth: how far each body is along its OWN arc, 0 at its rise and 1 at
   // its set. This is the same progress term the altitude above is built from
@@ -59,8 +85,8 @@ export function dayNight(nowMs, cycle) {
   // whole night; moon: 0 through the whole day) rather than left undefined,
   // so anything reading it across a handoff sees a body parked at the
   // horizon it just left/has yet to reach, never a jump back across the sky.
-  const sunAz01 = p < 0.5 ? p / 0.5 : 1;
-  const moonAz01 = p >= 0.5 ? (p - 0.5) / 0.5 : 0;
+  const sunAz01 = p < sunSpan ? p / sunSpan : 1;
+  const moonAz01 = p >= 0.5 ? clamp01((p - 0.5) / moonSpan) : 0;
 
   return {
     sunAlt: clamp01(sunAlt), moonAlt: clamp01(moonAlt), night: clamp01(night),
@@ -104,9 +130,17 @@ export function celestialXFracFor(az01) {
  */
 export function sunScreenFrac(p01) {
   const p = ((p01 % 1) + 1) % 1;
-  const altSigned = Math.sin(2 * Math.PI * p);
+  // Split at SUN_SET_PHASE rather than at the half, so this agrees with
+  // dayNight's sun about when it actually touches the water. The night half
+  // is correspondingly longer than the day half -- which is the point of the
+  // gaps -- so the two halves are parameterized separately instead of by one
+  // sin(2*pi*p) that assumed they were equal.
+  const day = SUN_SET_PHASE;
+  const altSigned = p < day
+    ? Math.sin(Math.PI * (p / day))
+    : -Math.sin(Math.PI * ((p - day) / (1 - day)));
   // Out to the set edge over the day, then back the same way underneath.
-  const az01 = p < 0.5 ? p / 0.5 : 1 - (p - 0.5) / 0.5;
+  const az01 = p < day ? p / day : 1 - (p - day) / (1 - day);
   const span = OCEAN_HORIZON_FRAC - 0.12; // horizon -> zenith, same as celestialYFracFor
   return {
     xFrac: celestialXFracFor(az01),

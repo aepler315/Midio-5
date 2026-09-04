@@ -27,7 +27,7 @@ import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import {
-  DANCE_LAYERS, DANCE_COL_W, danceOffset, danceScale, columnHeight01At, kickEnv, spectrumBars, orogenyHeightMul,
+  DANCE_LAYERS, DANCE_COL_W, danceOffset, columnHeight01At, ridgeBakedCrestY, kickEnv, spectrumBars, orogenyHeightMul,
   pullbackHeightMul,
   mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER,
   massifDrawHeight, massifRidgeHeight01, massifRidgeJagPx, massifClearing01,
@@ -35,7 +35,7 @@ import {
   massifEqStep,
 } from './MountainChoreo.js';
 import {
-  ridgeYSmooth, danceOffsetSmooth, danceScaleSmooth, assignBandFeatures, geoCrestOffset,
+  ridgeYSmooth, danceOffsetSmooth, danceScaleSmooth, danceScaleRamp, assignBandFeatures, geoCrestOffset,
 } from './GeoCrest.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
 import { strataBeds } from './RockStrata.js';
@@ -4555,16 +4555,39 @@ export class BiomeManager {
         // line floated off the fill it traces.
         const dyL = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0) * terrainEnergy;
         const dyR = danceOffset(scrollX + sx + cw, this.tSec, this._danceGroove, kick, cfg, this.fever || 0) * terrainEnergy;
-        const dy = dyL;
-        const shear = (dyR - dyL) / Math.max(1, cw);
         // Foot-anchored: this column's own foot (baseY + dh + dy, the same
         // translation the offset dance already applies) never moves: only
         // the elevation above it stretches, so a squat foothill barely
         // grows while this range's own summit visibly heaves.
-        const h01 = columnHeight01At(strip.ridge, cx);
-        const rawScale = danceScale(h01, kick, sustain, cfg);
-        const colDh = dh * (1 + (rawScale - 1) * terrainEnergy);
+        //
+        // The SCALE is read at the column's two boundaries off the same
+        // smooth curve _crestPoints reads, for exactly the reason the offset
+        // above is. It used to be one danceScale() sampled from this column's
+        // own h01 and held flat across it -- a staircase -- while every
+        // overlay traced danceScaleSmooth's ramp. That is the same
+        // step-versus-ramp split the offset comment above describes fixing,
+        // left behind on the sibling term when the shear landed, and it is
+        // worse here than it was there: the offset is a translation, so its
+        // error is uniform, but a scale multiplies HEIGHT ABOVE THE FOOT, so
+        // the mismatch is zero at the foot and largest at the summits, and it
+        // grows with the kick. Measured against a five-summit ridge: 0.4px at
+        // rest, 4.3px on a kick, quantized to the column grid and pulsing at
+        // the kick rate. That is the blocky flicker at the peaks -- the snow
+        // cap, the cast shadow and the strata all tracing a smooth curve the
+        // fill underneath them was not actually drawn on.
+        const scaleL = danceScaleSmooth(strip.ridge, scrollX + sx, kick, sustain, cfg, colW);
+        const scaleR = danceScaleSmooth(strip.ridge, scrollX + sx + cw, kick, sustain, cfg, colW);
+        const colDh = dh * (1 + (scaleL - 1) * terrainEnergy);
+        const colDhR = dh * (1 + (scaleR - 1) * terrainEnergy);
+        const dy = dyL;
         const footY = baseY + dh + dy;
+        // Top edge from (footY - colDh) to (footY + (dyR - dyL) - colDhR):
+        // the shear now carries the scale ramp as well as the offset, so
+        // neighbouring columns' TOPS meet exactly instead of stepping. The
+        // cost is that the foot picks up the same ramp and tilts by
+        // (colDh - colDhR) -- at most a few px, and the strips already
+        // overhang the ground band by ~40px, which swallows it whole.
+        const shear = ((dyR - dyL) - (colDhR - colDh)) / Math.max(1, cw);
         if (Math.abs(shear) < 1e-6) {
           ctx.drawImage(strip, cx, 0, drawW, strip.height, sx, footY - colDh, drawW, colDh);
         } else {
@@ -4658,7 +4681,11 @@ export class BiomeManager {
       // but smoothly blended across column seams like the rest of this
       // live curve already is).
       const h01 = columnHeight01At(strip.ridge, stripX);
-      const rawScale = danceScaleSmooth(strip.ridge, stripX, kick, sustain, cfg, colW);
+      // danceScaleRamp, not danceScaleSmooth: the ramp is the curve the blit
+      // can actually paint (one straight top edge per column), so the crest
+      // polyline and every overlay hung off it land ON the fill instead of on
+      // a silhouette that was never drawn. See GeoCrest.danceScaleRamp.
+      const rawScale = danceScaleRamp(strip.ridge, stripX, kick, sustain, cfg, colW);
       const localScale = 1 + (rawScale - 1) * terrainEnergy;
       const heightAboveFoot = dh - yR;
       const yRDeformed = dh - heightAboveFoot * localScale;
@@ -4672,6 +4699,10 @@ export class BiomeManager {
     const geom = {
       pts, baseY, bottomY: baseY + dh,
       footY: baseY + dh, crestY, dh, stripHeight: strip.height,
+      // The baked summit, free of dance/deformation/scroll. `crestY` above is
+      // a live global extremum and moves every frame; anything that needs a
+      // stable ALTITUDE (the snow line) must hang off this instead.
+      bakedCrestY: baseY + ridgeBakedCrestY(strip.ridge) * scale,
     };
     if (cache) {
       if (!byStrip) { byStrip = new Map(); cache.set(strip, byStrip); }
@@ -5122,7 +5153,7 @@ export class BiomeManager {
     if (strength <= 0) return;
     const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy, heightMul);
     if (!geom) return;
-    const { pts, bottomY, crestY } = geom;
+    const { pts, bottomY, crestY, bakedCrestY } = geom;
     if (!(bottomY > crestY)) return;
 
     // The body path: the skyline, then straight down and back along the
@@ -5238,7 +5269,15 @@ export class BiomeManager {
       // at all, this altitude only ever clamped them. Removing that test (it
       // was the cause of the vertical snow cliffs) promoted the bug to the
       // whole behavior, and the ranges went white.
-      const snowAltY = bottomY - snowLine01 * (bottomY - crestY);
+      // Measured from the BAKED summit, not the live one. `crestY` is a global
+      // min over a ridge that dances and scrolls, so it reports a different
+      // column frame to frame: measured at 6px of wander from the dance alone
+      // and 16-21px once the world scrolls. Hanging the snow ALTITUDE off it
+      // made the whole line -- and the gradient below -- crawl up and down the
+      // range as you ran, which is not something a snow line does. The baked
+      // summit is a property of the range itself and holds still.
+      const reliefTop = Number.isFinite(bakedCrestY) ? bakedCrestY : crestY;
+      const snowAltY = bottomY - snowLine01 * (bottomY - reliefTop);
       // ...and the line itself gets a gentle wander, so it doesn't read as a
       // ruler laid across the range. Small next to the relief it sits in.
       const wobble = (stripX) => 6 * Math.sin(stripX / 260) + 3 * Math.sin(stripX / 97 + 1.7);
@@ -5264,7 +5303,7 @@ export class BiomeManager {
         // Fading out toward the snow line rather than filling flat: a
         // constant alpha ends on a hard horizontal edge right where the cap
         // meets bare rock, and that edge was reading as the bottom of a slab.
-        const snowTop = Math.max(crestY - 8, 0);
+        const snowTop = Math.max(reliefTop - 8, 0);
         const { r: sr, g: sg, b: sb } = hexToRgb(snowColor);
         const a0 = SNOW_ALPHA * alpha * strength;
         const snowGrad = ctx.createLinearGradient(0, snowTop, 0, snowAltY + 10);
