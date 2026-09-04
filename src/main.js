@@ -108,6 +108,7 @@ const completeNewSeedCancelBtnEl = document.getElementById('completeNewSeedCance
 const seedInputEl = document.getElementById('seedInput');
 const seedRandomBtnEl = document.getElementById('seedRandomBtn');
 const stageResEl = document.getElementById('stageRes');
+const stageFpsEl = document.getElementById('stageFps');
 const debugOverlayEl = document.getElementById('debugOverlay');
 const fpsHudEl = document.getElementById('fpsHud');
 const sfFileInputEl = document.getElementById('sfFileInput');
@@ -253,12 +254,17 @@ let lastSongSeed = null; // 32-bit seed used for the run that just finished
 const STAGE_W = 1280;
 const STAGE_H = 720;
 const STAGE_PRESETS = {
+  144: { w: 256, h: 144 },
+  240: { w: 426, h: 240 },
+  360: { w: 640, h: 360 },
+  480: { w: 854, h: 480 },
   720: { w: 1280, h: 720 },
   1080: { w: 1920, h: 1080 },
   1440: { w: 2560, h: 1440 },
   2160: { w: 3840, h: 2160 },
 };
 const STAGE_RES_KEY = 'smw:stageRes';
+const STAGE_FPS_KEY = 'smw:stageFps';
 
 let simTime = 0;
 let acc = 0;
@@ -305,6 +311,23 @@ function persistStagePreset(preset) {
   try { localStorage.setItem(STAGE_RES_KEY, String(preset)); } catch { /* no storage */ }
 }
 
+function readFpsCap() {
+  const fromUi = Number(stageFpsEl?.value);
+  if (fromUi === 30 || fromUi === 60) return fromUi;
+  try {
+    const stored = Number(localStorage.getItem(STAGE_FPS_KEY));
+    if (stored === 30 || stored === 60) return stored;
+  } catch { /* no storage */ }
+  return 60;
+}
+
+function persistFpsCap(fps) {
+  try { localStorage.setItem(STAGE_FPS_KEY, String(fps)); } catch { /* no storage */ }
+}
+
+let fpsCapMs = 1000 / readFpsCap();
+let lastDrawMs = 0;
+
 /** Backing-store size for the chosen preset (up to 4K). Sim stays logical 1280×720.
  *  Under perf pressure the backing store shrinks (PerfGovernor.resolutionScale),
  *  CSS-upscaled to fill the viewport — the single biggest win at 4K. */
@@ -348,6 +371,14 @@ function randomizeSeed() {
     stageResEl.addEventListener('change', () => {
       persistStagePreset(Number(stageResEl.value) || 1080);
       if (!running) fitCanvas();
+    });
+  }
+  if (stageFpsEl) {
+    stageFpsEl.value = String(readFpsCap());
+    stageFpsEl.addEventListener('change', () => {
+      const fps = Number(stageFpsEl.value) || 60;
+      persistFpsCap(fps);
+      fpsCapMs = 1000 / fps;
     });
   }
   seedRandomBtnEl?.addEventListener('click', () => randomizeSeed());
@@ -1868,6 +1899,16 @@ function frame(tRaf) {
       console.error(`[sim.step] (occurrence ${drawErrors.worst.count})`, err);
     }
   }
+
+  // FPS cap: skip the draw when we're ahead of the target frame period.
+  // The sim still steps at full rate so audio sync stays tight; only the
+  // GPU-bound draw is throttled.
+  const drawElapsed = tRaf - lastDrawMs;
+  if (drawElapsed < fpsCapMs - 1) {
+    rafHandle = requestAnimationFrame(frame);
+    return;
+  }
+  lastDrawMs = tRaf;
 
   const alpha = acc / STEP_MS;
   try {
