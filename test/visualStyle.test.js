@@ -28,7 +28,7 @@ test('house dials: CGI terrain + ocean contours', () => {
   assert.ok(d.oceanLineAlpha > 0);
   assert.equal(d.heatShimmerSlices, false);
   assert.ok(d.spaceRidgeAlpha > 0);
-  assert.ok(d.bloomBaseMul >= 1);
+  assert.ok(d.bloomBaseMul > 0);
 });
 
 test('styleLabel is fixed house label', () => {

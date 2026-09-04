@@ -5,9 +5,9 @@
 import { clamp01, smoothstep } from '../utils/math.js';
 import { OCEAN_HORIZON_FRAC } from './Ocean.js';
 
-const MIN_CYCLE_MS = 60000;
-const MAX_CYCLE_MS = 120000;
-const TARGET_CYCLE_MS = 90000;
+const MIN_CYCLE_MS = 100000;
+const MAX_CYCLE_MS = 200000;
+const TARGET_CYCLE_MS = 150000;
 
 /** Full day+night cycle length for a song of `durationMs`. Aims for at
  *  least two full cycles (never just one static "arc") within the 60-120s

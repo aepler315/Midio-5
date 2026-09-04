@@ -15,9 +15,9 @@ const MOON_ZENITH_P = (0.5 + MOON_SET_PHASE) / 2;
 import { OCEAN_HORIZON_FRAC } from '../src/world/Ocean.js';
 
 test('cycleMs guarantees at least two full cycles for songs long enough to hold them, and never exceeds the song itself', () => {
-  for (const durationMs of [180000, 240000, 600000, 3600000]) {
+  for (const durationMs of [300000, 480000, 600000, 3600000]) {
     const c = cycleMs(durationMs);
-    assert.ok(c >= 60000 - 1e-6 && c <= 120000 + 1e-6, `cycle out of range for ${durationMs}: ${c}`);
+    assert.ok(c >= 100000 - 1e-6 && c <= 200000 + 1e-6, `cycle out of range for ${durationMs}: ${c}`);
     assert.ok(durationMs / c >= 2 - 1e-6, `must fit at least two cycles for ${durationMs}: ${durationMs / c}`);
   }
   // Short songs (under two minutes) can't fit two 60s+ cycles -- they get

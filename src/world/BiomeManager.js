@@ -27,7 +27,7 @@ import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import {
-  DANCE_LAYERS, DANCE_COL_W, danceOffset, columnHeight01At, ridgeBakedCrestY, kickEnv, spectrumBars, orogenyHeightMul,
+  DANCE_LAYERS, DANCE_COL_W, danceOffset, columnHeight01At, ridgeBakedCrestY, kickEnv, ridgeKickEnv, spectrumBars, orogenyHeightMul,
   pullbackHeightMul,
   mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER,
   massifDrawHeight, massifRidgeHeight01, massifRidgeJagPx, massifClearing01,
@@ -1721,7 +1721,7 @@ export class BiomeManager {
     // the current universe's terrain drift nudges the amplitude a little
     // further either way.
     const grooveTarget = energyInstant * (1 - 0.55 * calmLevel) * (this.universeTerrainMul || 1);
-    this._danceGroove += (1 - Math.exp(-dtSec / 0.30)) * (grooveTarget - this._danceGroove);
+    this._danceGroove += (1 - Math.exp(-dtSec / 0.55)) * (grooveTarget - this._danceGroove);
     this._danceSustain += (1 - Math.exp(-dtSec / 1.1)) * (this._danceGroove - this._danceSustain);
     const wind = this.atmosphere.at(worldX, this.h * 0.4);
     this.wind = wind;
@@ -4493,7 +4493,7 @@ export class BiomeManager {
   farRidgeSwell01(screenX = 0) {
     const cfg = DANCE_LAYERS[FAR_DANCE_LAYER];
     if (!cfg) return 0;
-    const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
+    const kick = ridgeKickEnv(this.tSec * 1000 - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
     const scrollX = this._danceWorldX * CodaDirector.delaminateRatio(LAYER_RATIOS[FAR_DANCE_LAYER], this.unravel);
     return ridgeSwell01(scrollX + screenX, this.tSec, cfg, kick);
   }
@@ -4513,7 +4513,7 @@ export class BiomeManager {
       return;
     }
     const nowMs = this.tSec * 1000;
-    const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
+    const kick = ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
     // Orogeny grows the range, then mountainStripDrawHeight hard-caps so peaks
     // stay on-frame (ocean/sky remain visible; off-screen summits are useless).
     // heightMul is the per-section draw-time multiplier (Stage 1 of the
@@ -4651,7 +4651,7 @@ export class BiomeManager {
       if (hit) return hit;
     }
     const nowMs = this.tSec * 1000;
-    const kick = kickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
+    const kick = ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
     const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
       * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0))
       * Math.max(0, heightMul);

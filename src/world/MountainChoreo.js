@@ -38,10 +38,10 @@ import { clamp01 } from '../utils/math.js';
 // move), but a full order of magnitude smaller: this is a shape change on
 // top of an existing motion, not a second competing dance.
 export const DANCE_LAYERS = {
-  L2: { waveAmp: 2.6, bounceAmp: 1.1, waveLen: 430, waveHz: 0.10, phase: 0.0, delaySec: 0.0, sharpen: 0.04, swell: 0.03 },
-  L3: { waveAmp: 4.4, bounceAmp: 2.8, waveLen: 350, waveHz: 0.12, phase: 1.3, delaySec: 0.05, sharpen: 0.07, swell: 0.05 },
-  L4: { waveAmp: 6.6, bounceAmp: 5.6, waveLen: 290, waveHz: 0.15, phase: 2.6, delaySec: 0.11, sharpen: 0.11, swell: 0.07 },
-  L5: { waveAmp: 8.4, bounceAmp: 8.0, waveLen: 250, waveHz: 0.18, phase: 4.0, delaySec: 0.17, sharpen: 0.14, swell: 0.09 },
+  L2: { waveAmp: 2.0, bounceAmp: 0.5, waveLen: 430, waveHz: 0.10, phase: 0.0, delaySec: 0.0, sharpen: 0.02, swell: 0.02 },
+  L3: { waveAmp: 3.2, bounceAmp: 1.2, waveLen: 350, waveHz: 0.12, phase: 1.3, delaySec: 0.05, sharpen: 0.04, swell: 0.03 },
+  L4: { waveAmp: 4.8, bounceAmp: 2.4, waveLen: 290, waveHz: 0.15, phase: 2.6, delaySec: 0.11, sharpen: 0.06, swell: 0.04 },
+  L5: { waveAmp: 6.0, bounceAmp: 3.6, waveLen: 250, waveHz: 0.18, phase: 4.0, delaySec: 0.17, sharpen: 0.08, swell: 0.05 },
 };
 
 // Strip-space slice width for the ridge wave. Halved from 128: each slice
@@ -72,7 +72,7 @@ export function danceOffset(stripX, tSec, groove, kick, cfg, fever = 0) {
   return (cfg.waveAmp * drive * wave - cfg.bounceAmp * clamp01(kick)) * mul;
 }
 
-export const FEVER_DANCE_GAIN = 2.4; // fever now cranks the dance up to ~3.4x
+export const FEVER_DANCE_GAIN = 1.4; // fever cranks the dance up to ~2.4x
 
 /** Per-DANCE_COL_W-wide column, how tall that column's own peak reads
  *  relative to the rest of THIS ridge, 0..1 (0 = this range's own flattest
@@ -217,6 +217,13 @@ export function kickEnv(tauMs) {
   if (!(tauMs >= 0)) return 0;
   if (tauMs < 40) return tauMs / 40;
   return Math.exp(-(tauMs - 40) / 180);
+}
+
+/** Softer kick envelope for ridge dance — slower attack, longer settle. */
+export function ridgeKickEnv(tauMs) {
+  if (!(tauMs >= 0)) return 0;
+  if (tauMs < 80) return tauMs / 80;
+  return Math.exp(-(tauMs - 80) / 340);
 }
 
 // Band order across the massif: bass in the middle (band 0 is the lowest,
