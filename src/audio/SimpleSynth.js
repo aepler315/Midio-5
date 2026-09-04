@@ -17,6 +17,7 @@ export class SimpleSynth {
     // to optimize for" -- _tone falls back to the original fixed
     // sine/sawtooth/triangle-by-role voicing, byte-identical to before.
     this.patches = null;
+    this._noiseBuffers = new Map();
   }
 
   /** @param {Object<number, object>|null} patches keyed by MIDI channel */
@@ -151,22 +152,34 @@ export class SimpleSynth {
     osc.stop(t + 0.25);
   }
 
-  _noiseBurst(t, vel, hpFreq, dur, pan) {
+  _getNoiseBuffer(dur) {
     const ctx = this.ae.ctx;
     const bufSize = Math.max(1, Math.floor(ctx.sampleRate * dur));
-    const buffer = ctx.createBuffer(1, bufSize, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufSize);
+    let buffer = this._noiseBuffers.get(bufSize);
+    if (!buffer) {
+      buffer = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+      this._noiseBuffers.set(bufSize, buffer);
+    }
+    return buffer;
+  }
+
+  _noiseBurst(t, vel, hpFreq, dur, pan) {
+    const ctx = this.ae.ctx;
+    const buffer = this._getNoiseBuffer(dur);
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
     hp.frequency.value = hpFreq;
     const gain = ctx.createGain();
-    gain.gain.value = 0.5 * vel;
+    gain.gain.setValueAtTime(0.5 * vel, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     src.connect(hp).connect(gain);
     this._connectOut(gain, pan);
     src.start(t);
+    src.stop(t + dur + 0.01);
   }
 }
 

@@ -227,17 +227,18 @@ export class Sf2Synth {
 
     gain.gain.setValueAtTime(0, t);
     gain.gain.linearRampToValueAtTime(peak, t + atk);
-    // Hold at peak
     const holdEnd = t + atk + hld;
     gain.gain.setValueAtTime(peak, holdEnd);
-    // Decay to sustain level
     const decEnd = holdEnd + dec;
-    gain.gain.exponentialRampToValueAtTime(sustainLevel, decEnd);
-    // Hold sustain until release (only if decay finished before note end)
-    if (decEnd < relStart) {
+    if (decEnd <= relStart) {
+      gain.gain.exponentialRampToValueAtTime(sustainLevel, decEnd);
       gain.gain.setValueAtTime(sustainLevel, relStart);
+    } else {
+      const decElapsed = Math.max(0, relStart - holdEnd);
+      const decFrac = dec > 0 ? decElapsed / dec : 1;
+      const partialLevel = Math.max(0.0001, peak - (peak - sustainLevel) * decFrac);
+      gain.gain.exponentialRampToValueAtTime(partialLevel, relStart);
     }
-    // Release
     gain.gain.exponentialRampToValueAtTime(0.0001, relStart + rel);
 
     // Routing: gain → (stereoPanner →) master. See combinePan() above.

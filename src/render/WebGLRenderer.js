@@ -140,8 +140,8 @@ export class WebGLRenderer {
       gl.deleteShader(vs);
       gl.deleteShader(fs);
 
-      const buf = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      this._vertexBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this._vertexBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
         -1, -1, 1, -1, -1, 1,
         -1, 1, 1, -1, 1, 1,
@@ -237,9 +237,13 @@ export class WebGLRenderer {
 
   _teardownGL() {
     if (this.glCanvas?.parentElement) this.glCanvas.parentElement.removeChild(this.glCanvas);
+    if (this.gl && this._vertexBuffer) {
+      try { this.gl.deleteBuffer(this._vertexBuffer); } catch { /* ignore */ }
+    }
     if (this.gl && this.program) {
       try { this.gl.deleteProgram(this.program); } catch { /* ignore */ }
     }
+    this._vertexBuffer = null;
     this.glCanvas = null;
     this.gl = null;
     this.program = null;
