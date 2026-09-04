@@ -115,6 +115,35 @@ export function columnHeights01(ridge) {
   return out;
 }
 
+/**
+ * The ridge's own baked summit, in ridgeYSmooth's units -- the y its highest
+ * point sits at before any dance, deformation or scroll.
+ *
+ * A STABLE reference for anything that needs "the top of this relief". The
+ * live crest (`_crestPoints`'s min over the drawn points) is not one: it is a
+ * global extremum over a ridge that is both dancing and scrolling, so it
+ * reports a different column frame to frame. Measured on a five-summit ridge,
+ * that min wanders 6px from the dance alone and 16-21px once the world is
+ * scrolling -- and anything anchored to it inherits the whole wander. The
+ * cast shadow already hit this and fixed it by tracing the local crest
+ * instead; the snow line needs a stable ALTITUDE rather than a local trace,
+ * which is what this is.
+ *
+ * Derived purely from the baked heights, so it can never change after the
+ * strip is baked -- memoized on the ridge like columnHeights01 above.
+ */
+export function ridgeBakedCrestY(ridge) {
+  if (!ridge) return 0;
+  if (ridge._bakedCrestY !== undefined) return ridge._bakedCrestY;
+  const { heights, baseline, amplitude, height } = ridge;
+  let maxH = -Infinity;
+  for (const v of heights) if (v > maxH) maxH = v;
+  if (!Number.isFinite(maxH)) maxH = 0;
+  // Mirrors ridgeYSmooth's own algebra: taller height value -> smaller y.
+  ridge._bakedCrestY = height * baseline - maxH * height * amplitude;
+  return ridge._bakedCrestY;
+}
+
 /** columnHeights01, sampled at strip-space x (wraps at the ridge's own
  *  width -- any real x, including negative or scrolled-past-the-tile,
  *  reads the correct column). */
