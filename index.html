@@ -88,10 +88,18 @@
           <div class="resRow" title="Stage render resolution (sim stays 16:9 logical; canvas upscales to this).">
             <label for="stageRes">Stage</label>
             <select id="stageRes" title="Internal stage resolution (sim is 1280×720; buffer upscales). Default 1080p.">
+              <option value="144">144p</option>
+              <option value="240">240p</option>
+              <option value="360">360p</option>
+              <option value="480">480p</option>
               <option value="720">720p</option>
               <option value="1080" selected>1080p</option>
-              <option value="1440">1440p 60</option>
+              <option value="1440">1440p</option>
               <option value="2160">4K</option>
+            </select>
+            <select id="stageFps" title="Frame-rate cap. 60 = every frame drawn; 30 = every other frame skipped, halving GPU load.">
+              <option value="60" selected>60 fps</option>
+              <option value="30">30 fps</option>
             </select>
           </div>
 

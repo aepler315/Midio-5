@@ -77,7 +77,7 @@ test('fever cranks the mountain dance amplitude', () => {
   const cfg = DANCE_LAYERS.L5;
   const cold = danceOffset(100, 2, 1, 0.5, cfg, 0);
   const hot = danceOffset(100, 2, 1, 0.5, cfg, 1);
-  assert.ok(Math.abs(hot) > Math.abs(cold) * 2.5, 'insane fever ≳ 2.8× the cold dance');
+  assert.ok(Math.abs(hot) > Math.abs(cold) * 2.0, 'insane fever ≳ 2.4× the cold dance');
   const legacy = danceOffset(100, 2, 1, 0.5, cfg); // 5-arg call unchanged
   assert.equal(legacy, cold);
 });

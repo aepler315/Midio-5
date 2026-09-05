@@ -5,6 +5,36 @@ import { mulberry32, clamp01 } from '../utils/math.js';
 import { curl2 } from '../utils/fields.js';
 import { hexLerpHsl } from '../utils/color.js';
 
+// Cached radial-glow sprite for gradient-heavy particle kinds (embers, spores,
+// sunshine, fog). One offscreen canvas per hex color holds a color-to-transparent
+// radial gradient at a fixed size; draw() blits it at each particle's position,
+// avoiding per-particle createRadialGradient calls.
+const GLOW_SPRITE_SIZE = 64;
+const _glowCache = new Map();
+function glowSprite(color) {
+  let c = _glowCache.get(color);
+  if (c) return c;
+  if (_glowCache.size > 16) _glowCache.clear();
+  try {
+    c = typeof document !== 'undefined'
+      ? document.createElement('canvas')
+      : new OffscreenCanvas(GLOW_SPRITE_SIZE * 2, GLOW_SPRITE_SIZE * 2);
+    if (c.width === undefined) { c.width = GLOW_SPRITE_SIZE * 2; c.height = GLOW_SPRITE_SIZE * 2; }
+    else { c.width = c.height = GLOW_SPRITE_SIZE * 2; }
+    const g = c.getContext('2d');
+    const r = GLOW_SPRITE_SIZE;
+    const grad = g.createRadialGradient(r, r, 0, r, r, r);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, r * 2, r * 2);
+    _glowCache.set(color, c);
+    return c;
+  } catch {
+    return null;
+  }
+}
+
 // Particle lighting is a proximity wash, not a rim: motes have no edge
 // normal to face a source. Same radius-falloff MeshDrawer uses on
 // character edges, minus the facing term, and capped well below a full
@@ -284,14 +314,11 @@ export class ParticleField {
           ctx.fill();
           break;
         case 'embers': {
-          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 2.4);
-          grad.addColorStop(0, color);
-          grad.addColorStop(1, 'rgba(0,0,0,0)');
+          const r = p.size * 2.4;
           setAlpha(0.85);
-          ctx.fillStyle = grad;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size * 2.4, 0, Math.PI * 2);
-          ctx.fill();
+          const sp = glowSprite(color);
+          if (sp) { ctx.drawImage(sp, p.x - r, p.y - r, r * 2, r * 2); }
+          else { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill(); }
           break;
         }
         case 'snow':
@@ -319,14 +346,10 @@ export class ParticleField {
         }
         case 'spores': {
           const r = p.size * 1.8;
-          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
-          grad.addColorStop(0, color);
-          grad.addColorStop(1, 'rgba(0,0,0,0)');
           setAlpha((p.alpha ?? 0.6) * 0.85);
-          ctx.fillStyle = grad;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-          ctx.fill();
+          const sp = glowSprite(color);
+          if (sp) { ctx.drawImage(sp, p.x - r, p.y - r, r * 2, r * 2); }
+          else { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill(); }
           break;
         }
         case 'petals': {
@@ -401,14 +424,11 @@ export class ParticleField {
           break;
         }
         case 'sunshine': {
-          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 3);
-          grad.addColorStop(0, color);
-          grad.addColorStop(1, 'rgba(0,0,0,0)');
+          const r = p.size * 3;
           setAlpha((p.alpha ?? 1) * 0.7);
-          ctx.fillStyle = grad;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size * 3, 0, Math.PI * 2);
-          ctx.fill();
+          const sp = glowSprite(color);
+          if (sp) { ctx.drawImage(sp, p.x - r, p.y - r, r * 2, r * 2); }
+          else { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill(); }
           break;
         }
         case 'wind':
@@ -421,14 +441,11 @@ export class ParticleField {
           ctx.stroke();
           break;
         case 'fog': {
-          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 14);
-          grad.addColorStop(0, color);
-          grad.addColorStop(1, 'rgba(0,0,0,0)');
+          const r = p.size * 14;
           setAlpha(p.alpha ?? 0.3);
-          ctx.fillStyle = grad;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size * 14, 0, Math.PI * 2);
-          ctx.fill();
+          const sp = glowSprite(color);
+          if (sp) { ctx.drawImage(sp, p.x - r, p.y - r, r * 2, r * 2); }
+          else { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill(); }
           break;
         }
       }

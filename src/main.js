@@ -108,6 +108,7 @@ const completeNewSeedCancelBtnEl = document.getElementById('completeNewSeedCance
 const seedInputEl = document.getElementById('seedInput');
 const seedRandomBtnEl = document.getElementById('seedRandomBtn');
 const stageResEl = document.getElementById('stageRes');
+const stageFpsEl = document.getElementById('stageFps');
 const debugOverlayEl = document.getElementById('debugOverlay');
 const fpsHudEl = document.getElementById('fpsHud');
 const sfFileInputEl = document.getElementById('sfFileInput');
@@ -253,12 +254,17 @@ let lastSongSeed = null; // 32-bit seed used for the run that just finished
 const STAGE_W = 1280;
 const STAGE_H = 720;
 const STAGE_PRESETS = {
+  144: { w: 256, h: 144 },
+  240: { w: 426, h: 240 },
+  360: { w: 640, h: 360 },
+  480: { w: 854, h: 480 },
   720: { w: 1280, h: 720 },
   1080: { w: 1920, h: 1080 },
   1440: { w: 2560, h: 1440 },
   2160: { w: 3840, h: 2160 },
 };
 const STAGE_RES_KEY = 'smw:stageRes';
+const STAGE_FPS_KEY = 'smw:stageFps';
 
 let simTime = 0;
 let acc = 0;
@@ -305,14 +311,37 @@ function persistStagePreset(preset) {
   try { localStorage.setItem(STAGE_RES_KEY, String(preset)); } catch { /* no storage */ }
 }
 
-/** Backing-store size for the chosen preset (up to 4K). Sim stays logical 1280×720. */
+function readFpsCap() {
+  const fromUi = Number(stageFpsEl?.value);
+  if (fromUi === 30 || fromUi === 60) return fromUi;
+  try {
+    const stored = Number(localStorage.getItem(STAGE_FPS_KEY));
+    if (stored === 30 || stored === 60) return stored;
+  } catch { /* no storage */ }
+  return 60;
+}
+
+function persistFpsCap(fps) {
+  try { localStorage.setItem(STAGE_FPS_KEY, String(fps)); } catch { /* no storage */ }
+}
+
+let fpsCapMs = 1000 / readFpsCap();
+let lastDrawMs = 0;
+
+/** Backing-store size for the chosen preset (up to 4K). Sim stays logical 1280×720.
+ *  Under perf pressure the backing store shrinks (PerfGovernor.resolutionScale),
+ *  CSS-upscaled to fill the viewport — the single biggest win at 4K. */
 function fitCanvas() {
   const preset = readStagePreset();
   const dims = STAGE_PRESETS[preset] || STAGE_PRESETS[1440];
-  if (canvas.width !== dims.w || canvas.height !== dims.h) {
-    canvas.width = dims.w;
-    canvas.height = dims.h;
+  const scale = perfGovernor ? perfGovernor.resolutionScale(preset) : 1;
+  const w = Math.round(dims.w * scale);
+  const h = Math.round(dims.h * scale);
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
   }
+  if (perfGovernor) perfGovernor.canvasWidth = w;
 }
 
 function readPinnedSeed() {
@@ -342,6 +371,14 @@ function randomizeSeed() {
     stageResEl.addEventListener('change', () => {
       persistStagePreset(Number(stageResEl.value) || 1080);
       if (!running) fitCanvas();
+    });
+  }
+  if (stageFpsEl) {
+    stageFpsEl.value = String(readFpsCap());
+    stageFpsEl.addEventListener('change', () => {
+      const fps = Number(stageFpsEl.value) || 60;
+      persistFpsCap(fps);
+      fpsCapMs = 1000 / fps;
     });
   }
   seedRandomBtnEl?.addEventListener('click', () => randomizeSeed());
@@ -1066,6 +1103,7 @@ function startTimeline(timelineData, extra = {}) {
       // peak when the EAR gets the beat (Bluetooth can lag 200ms+).
       outputLatencyMs: () => audioEngine.outputLatencyMs,
       lyricSections: timelineData.lyricSections || null,
+      syncedLyrics: timelineData.syncedLyrics || null,
       // SSM structure read (StructureAnalyzer), audio path only. Null on
       // MIDI/demo/free-time, where BiomeManager keeps its own band-energy
       // novelty schedule.
@@ -1449,10 +1487,11 @@ async function resolveLyricsForAudio(file, durationSec, vocalStem = null, { prom
       );
     }
     const lyricSections = buildLyricSections(lyricResult, Math.round((durationSec || 0) * 1000), vocalStem);
-    return { identity, lyricSections };
+    const syncedLyrics = lyricResult?.synced?.length ? lyricResult.synced : null;
+    return { identity, lyricSections, syncedLyrics };
   } catch (err) {
     console.warn('[lyrics] lyrics resolution failed, continuing without it', err);
-    return { identity, lyricSections: null };
+    return { identity, lyricSections: null, syncedLyrics: null };
   }
 }
 
@@ -1518,7 +1557,7 @@ async function loadAudioFiles(files) {
     // "No lyrics" preference: skip the whole identity/lyric fetch + prompt.
     // Everything downstream already no-ops on null lyricSections.
     const lyricsPromise = lyricsDisabled
-      ? Promise.resolve({ identity: null, lyricSections: null })
+      ? Promise.resolve({ identity: null, lyricSections: null, syncedLyrics: null })
       : resolveLyricsForAudio(files[0], audioBuffer.duration, vocalStem, { prompt: false });
     // Has this exact recording been analysed before? The fingerprint names
     // it by what it SOUNDS like, so the same master as mp3 and as flac hit
@@ -1556,13 +1595,14 @@ async function loadAudioFiles(files) {
     } finally {
       loadShow?.stop(loadShowSession);
     }
-    const { identity: lyricIdentity, lyricSections } = await lyricsPromise;
+    const { identity: lyricIdentity, lyricSections, syncedLyrics } = await lyricsPromise;
     // A newer load has since started -- let it win. Its own flow owns the
     // loader/audition/HUD visibility from here; this stale one touches none
     // of it.
     if (myGen !== loadGen) return;
     data.lyricIdentity = lyricIdentity;
     data.lyricSections = lyricSections;
+    data.syncedLyrics = syncedLyrics;
     // Remember this analysis for next time. Stored after identity resolves so
     // the bundle carries the artist/title it was matched to. Not awaited: the
     // show must not wait on a disk write, and a failed one costs only a
@@ -1813,7 +1853,9 @@ function frame(tRaf) {
   if (paused) { rafHandle = requestAnimationFrame(frame); return; }
   if (lastRafMs !== null) {
     const rafDeltaMs = tRaf - lastRafMs;
+    const prevLevel = perfGovernor.level;
     perfGovernor.sample(rafDeltaMs, tRaf);
+    if (perfGovernor.level !== prevLevel) fitCanvas();
     fpsEma = emaFps(fpsEma, rafDeltaMs);
     if (fpsHudVisible && fpsHudEl) {
       fpsHudEl.textContent = `${Math.round(fpsEma)} fps  ·  perf ${perfGovernor.level}/${PERF_MAX_LEVEL}`;
@@ -1860,6 +1902,16 @@ function frame(tRaf) {
       console.error(`[sim.step] (occurrence ${drawErrors.worst.count})`, err);
     }
   }
+
+  // FPS cap: skip the draw when we're ahead of the target frame period.
+  // The sim still steps at full rate so audio sync stays tight; only the
+  // GPU-bound draw is throttled.
+  const drawElapsed = tRaf - lastDrawMs;
+  if (drawElapsed < fpsCapMs - 1) {
+    rafHandle = requestAnimationFrame(frame);
+    return;
+  }
+  lastDrawMs = tRaf;
 
   const alpha = acc / STEP_MS;
   try {

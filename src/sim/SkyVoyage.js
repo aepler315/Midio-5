@@ -8,6 +8,7 @@
 // her normal glyph for the phases where she isn't "here."
 import { mulberry32, clamp, lerp } from '../utils/math.js';
 import { superformula, thomasDeriv, rk4Step3, hypotrochoid } from '../render/oscillators.js';
+import { layoutTextPath } from '../world/LyricGlyph.js';
 
 export const VoyagePhase = Object.freeze({
   IDLE: 'IDLE', WINDUP: 'WINDUP', ASCENT: 'ASCENT', DEEP_SPACE: 'DEEP_SPACE', REENTRY: 'REENTRY',
@@ -238,7 +239,7 @@ export class SkyVoyage {
     }
   }
 
-  trigger(nowMs, fromPos, stageW, stageH) {
+  trigger(nowMs, fromPos, stageW, stageH, chorusText = null) {
     if (this.active) return false;
     this.phase = VoyagePhase.WINDUP;
     this.phaseStartMs = nowMs;
@@ -246,6 +247,7 @@ export class SkyVoyage {
     this._windUpFrom = { ...fromPos };
     this.p = { ...fromPos };
     this._voyageSerial++;
+    this._chorusText = chorusText || null;
     // The station used to roll x in [0.48, 0.78] and y in [0.12, 0.20] --
     // right-of-center only (never the left half of the sky at all) and a
     // band under a tenth of the screen tall. Confirmed live: during
@@ -310,6 +312,18 @@ export class SkyVoyage {
       const kind = pool[Math.floor(this.rand() * pool.length)];
       order.push(this._bakeRecipe(kind, i));
       last = kind;
+    }
+    // During a chorus voyage, replace the middle figure with sky-written
+    // text — sandwiched between two mathematical figures so it reads as
+    // a reveal, not a label.
+    if (this._chorusText) {
+      const textPath = layoutTextPath(this._chorusText);
+      if (textPath.length >= 4) {
+        order[1] = {
+          kind: 'lyricText', rate: 1, scale: 2.2,
+          phase: 0, slot: 1, textPath,
+        };
+      }
     }
     return order;
   }
@@ -551,7 +565,7 @@ export class SkyVoyage {
     const recipe = typeof recipeOrKind === 'string'
       ? defaultRecipe(recipeOrKind, this._figureIdx)
       : (recipeOrKind || this._recipeAt(this._figureIdx));
-    if (!recipe || recipe.kind === 'thomas') return 0;
+    if (!recipe || recipe.kind === 'thomas' || recipe.kind === 'lyricText') return 0;
     let bestT = 0, bestD = Infinity;
     // Sample ~1.5 periods of the parametric rate used in _figureOffset.
     for (let i = 0; i < 48; i++) {
@@ -648,6 +662,18 @@ export class SkyVoyage {
       // Normalize by outer radius so the figure sits near unit scale.
       const norm = Math.max(1e-6, Math.abs(R - rIn) + Math.abs(d));
       return { x: p.x / norm, y: p.y / norm };
+    }
+    if (kind === 'lyricText') {
+      const path = recipe.textPath;
+      if (!path || path.length < 2) return { x: 0, y: 0 };
+      const totalTime = FIGURE_SEC * 0.82;
+      const progress = clamp(localT / totalTime, 0, 0.9999);
+      const fi = progress * (path.length - 1);
+      const i = Math.floor(fi);
+      const frac = fi - i;
+      const a = path[i], b = path[Math.min(i + 1, path.length - 1)];
+      if (b.gap) return { x: b.x, y: b.y };
+      return { x: lerp(a.x, b.x, frac), y: lerp(a.y, b.y, frac) };
     }
     // 'thomas': read the persistent chaotic state -- update() integrates it
     // once per frame in the background regardless of which figure is shown.

@@ -48,7 +48,7 @@ export class ExcursionDirector {
     this._pendingBurrowLaunchMs = null;
   }
 
-  update(nowMs, dtSec, { vibe, calm, hype, energyCurves, conductor, midasus, broshi, worldX }) {
+  update(nowMs, dtSec, { vibe, calm, hype, energyCurves, conductor, midasus, broshi, worldX, chorusText = null }) {
     const voyageActive = midasus.voyage.active;
     const burrowActive = broshi.burrow.active;
     const anyActive = voyageActive || burrowActive;
@@ -66,7 +66,7 @@ export class ExcursionDirector {
       // exclusion here (not just at scheduling time) so a force-triggered
       // excursion from elsewhere can't collide with one we queued earlier.
       if (this._pendingVoyageLaunchMs != null && nowMs >= this._pendingVoyageLaunchMs) {
-        const ok = midasus.forceVoyage(nowMs);
+        const ok = midasus.forceVoyage(nowMs, chorusText);
         this._pendingVoyageLaunchMs = null;
         if (ok) {
           this._voyageCount++;

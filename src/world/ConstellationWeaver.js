@@ -8,6 +8,7 @@
 // choices stay testable without touching canvas.
 import { mulberry32, clamp01 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
+import { placeGlyph } from './LyricGlyph.js';
 
 // yMax used to stop at 0.58 -- barely past mid-screen -- and was widened to
 // 0.95 on the theory that terrain, drawn after this layer, would occlude
@@ -51,6 +52,8 @@ const MAX_DOTS = 40;
 const MAX_STAR_FIGURES = 6;
 const CRYSTALLIZE_CHANCE = 0.45;
 const PULSE_TAU_SEC = 0.25;
+const GLYPH_COOLDOWN_FIGURES = 3; // figures between glyph-shaped ones
+const GLYPH_SIZE_FRAC = 0.18;     // fraction of sky width
 
 // Terrain is drawn AFTER this layer and clips anything below its silhouette
 // with a hard edge (see the REGION comment above). A star-atlas ambient dot
@@ -131,16 +134,52 @@ export class ConstellationWeaver {
     this.stars = [];      // crystallized, persistent
     this.pulse = 0;
     this._lastNowMs = 0;
+    this._pendingGlyph = null;     // glyphId waiting to shape the next figure
+    this._glyphCooldown = 0;       // figures remaining before another glyph is allowed
+  }
+
+  /** Queue a glyph shape for the next constellation figure. Respects a
+   *  cooldown so glyph-shaped figures stay rare — at most every 4th figure. */
+  hintGlyph(glyphId) {
+    if (this._glyphCooldown > 0) return;
+    this._pendingGlyph = glyphId;
   }
 
   onMelody(evt) {
     const nowMs = evt.tMs;
     if (!this.building) {
+      const hue = (evt.pitch % 12) * 30;
+
+      // If a glyph hint is pending, use its shape instead of random dots.
+      if (this._pendingGlyph) {
+        const size = GLYPH_SIZE_FRAC * this.w;
+        const xMin = REGION.xMin * this.w, xMax = REGION.xMax * this.w;
+        const yMin = REGION.yMin * this.h, yMax = REGION.yMax * this.h;
+        const cx = xMin + this.rand() * (xMax - xMin);
+        const cy = yMin + this.rand() * 0.55 * (yMax - yMin);
+        const dots = placeGlyph(this._pendingGlyph, cx, cy, size, {
+          xMin, xMax, yMin, yMax,
+        });
+        this._pendingGlyph = null;
+        if (dots && dots.length >= 3) {
+          this._glyphCooldown = GLYPH_COOLDOWN_FIGURES;
+          this.building = {
+            dots,
+            targetCount: dots.length,
+            hue,
+            phase: 'connecting',
+            edgeRevealedCount: 0,
+            edgeStartMs: nowMs,
+          };
+          return;
+        }
+      }
+
       const targetCount = FIGURE_DOTS_MIN + Math.floor(this.rand() * (FIGURE_DOTS_MAX - FIGURE_DOTS_MIN + 1));
       this.building = {
         dots: [nextDotPos(null, this.rand, this.w, this.h)],
         targetCount,
-        hue: (evt.pitch % 12) * 30,
+        hue,
         phase: 'seeding',
         edgeRevealedCount: 0,
         edgeStartMs: nowMs,
@@ -182,6 +221,7 @@ export class ConstellationWeaver {
     if (this.figures.length >= MAX_ACTIVE_FIGURES) this.figures.shift();
     this.figures.push(fig);
     this.building = null;
+    if (this._glyphCooldown > 0) this._glyphCooldown--;
     this._enforceDotCap();
   }
 

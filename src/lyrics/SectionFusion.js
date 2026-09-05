@@ -49,6 +49,7 @@ function withLyric(base, lyricSection) {
     lyricIntensity: lyricSection ? lyricSection.intensity : DEFAULT_LYRIC.lyricIntensity,
     lyricValence: lyricSection ? lyricSection.valence : DEFAULT_LYRIC.lyricValence,
     lyricConfidence: lyricSection ? lyricSection.confidence : DEFAULT_LYRIC.lyricConfidence,
+    lyricText: lyricSection ? (lyricSection.text || null) : null,
   };
 }
 

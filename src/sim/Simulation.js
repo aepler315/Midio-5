@@ -70,7 +70,7 @@ const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
 export class Simulation {
   constructor(conductor, paramBus, {
     bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720,
-    customBiome = null, inputOffsetMs = 0, outputLatencyMs = null, lyricSections = null, structure = null,
+    customBiome = null, inputOffsetMs = 0, outputLatencyMs = null, lyricSections = null, syncedLyrics = null, structure = null,
     groove = null,
     songSeed: pinnedSeed = null,
     conductorCues = null,
@@ -244,6 +244,7 @@ export class Simulation {
       flood: this.flood,
       customBiome: this.customBiome,
       lyricSections,
+      syncedLyrics,
       structure,
       conductorSchedule: conductorCues ? conductorCues.scheduleCues : null,
       worldId: this.worldId,
@@ -927,9 +928,12 @@ export class Simulation {
     // freshly-launched excursion starts animating in this very frame
     // rather than waiting one extra tick.
     const burrowWasActive = this.broshi.burrow.active;
+    const chorusText = this.biomes.currentKind === 'chorus'
+      ? this.biomes.currentSectionText : null;
     this.excursions.update(nowMs, dtSec, {
       vibe: this.vibe, calm: this.calm, hype: this.hype, energyCurves: this.energyCurves,
       conductor: this.conductor, midasus: this.midasus, broshi: this.broshi, worldX: this.worldX,
+      chorusText,
     });
     // He punches through the ground on the way down -- the screen itself
     // takes a small crack where he broke the surface, same glass-fracture
