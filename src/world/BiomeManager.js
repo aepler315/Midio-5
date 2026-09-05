@@ -1532,6 +1532,18 @@ export class BiomeManager {
     return this._rotated(this.lerpCache.get(this._profile(from).celestial.haloColor, this._profile(to).celestial.haloColor, t));
   }
 
+  /** 0..1 blended presence of a named biome `fx` right now -- the same
+   *  crossfade math the internal `A.fx === X ? 1-t : 0) + (B.fx === X ? t
+   *  : 0)` checks scattered through draw() use, exposed for callers outside
+   *  this file (e.g. Renderer's heat distortion, which needs to know how
+   *  "on fire" the current biome reads without duplicating the blend). */
+  currentFxAlpha(fxName) {
+    if (!this.currentBlend) return 0;
+    const { from, to, t } = this.currentBlend;
+    const A = this._profile(from), B = this._profile(to);
+    return (A.fx === fxName ? 1 - t : 0) + (B.fx === fxName ? t : 0);
+  }
+
   /** Movement VII: the celestial body as an actual light -- position, color, intensity. */
   currentLight() {
     return this.light || computeLight({ canvasWidth: this.w, canvasHeight: this.h, budget: this._lightBudget ?? this.budget });

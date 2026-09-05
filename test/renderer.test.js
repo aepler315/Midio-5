@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dropImpactStrength, speedLineSegments, bloomStrength, BLOOM_BASE } from '../src/render/Renderer.js';
+import { dropImpactStrength, speedLineSegments, bloomStrength, BLOOM_BASE, heatAmbient01 } from '../src/render/Renderer.js';
 
 test('dropImpactStrength is 0 with no drop yet (dropAtMs = -Infinity, HypeDirector\'s initial state)', () => {
   assert.equal(dropImpactStrength(0, -Infinity), 0);
@@ -94,4 +94,25 @@ test('reduced-flash tames the reactive swell but preserves the steady base', () 
 
 test('bloomStrength tolerates missing hype/fever (defensive defaults)', () => {
   assert.ok(Math.abs(bloomStrength(null, null, false) - BLOOM_BASE) < 1e-9);
+});
+
+test('heatAmbient01 is 0 with no fire and no ember haze', () => {
+  assert.equal(heatAmbient01(false, 0, 0), 0);
+  assert.equal(heatAmbient01(false, 1, 0), 0, 'a stale/leftover intensity01 with fireActive=false must not leak through');
+});
+
+test('heatAmbient01 tracks an active fire\'s own intensity directly', () => {
+  assert.equal(heatAmbient01(true, 0.3, 0), 0.3);
+  assert.equal(heatAmbient01(true, 1, 0), 1);
+});
+
+test('heatAmbient01: EMBER ambient haze is capped well below a full wildfire blast', () => {
+  const full = heatAmbient01(false, 0, 1);
+  assert.ok(full > 0 && full < 1, `expected a capped mood, got ${full}`);
+  assert.ok(full <= heatAmbient01(true, 1, 0), 'a full ember haze should never exceed a full wildfire strike');
+});
+
+test('heatAmbient01 takes the max of fire and ember, not their sum', () => {
+  const v = heatAmbient01(true, 0.9, 1);
+  assert.ok(v <= 1, `should stay clamped, got ${v}`);
 });
