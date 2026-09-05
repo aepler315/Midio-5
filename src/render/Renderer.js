@@ -68,6 +68,19 @@ export const BLOOM_BASE = 0.06; // steady glow present even at rest -- never fla
 // reactive term separately is that it still visibly tames the swell.
 const BLOOM_MAX = 0.75;          // hard ceiling so a maxed drop+fever never blows out
 
+// Heat distortion: a UV-warp lens over the fully composed frame for the two
+// things in this world that are actually on fire -- a drop's shock wave and
+// an active wildfire (or EMBER's own ambient ember-haze). Grid cells are
+// screen px at 1x; padded so shifted neighbors still overlap and no seams
+// open up between them.
+const HEAT_GRID_PX = 56;
+const HEAT_PAD_PX = 6;
+const HEAT_DROP_MAX_PX = 5;      // radial shockwave-lens peak displacement
+const HEAT_AMBIENT_MAX_PX = 1.4; // wildfire/ember ambient sway peak displacement
+// EMBER's ambient sky-haze is a mood, not a wildfire's full blast -- capped
+// well below what an active FireDirector strike (intensity01 up to 1) gets.
+const EMBER_AMBIENT_LEVEL = 0.5;
+
 // Film finish: breathing vignette + very-low-alpha color grade (see FilmFinish.js).
 const FILM_GRADE_COOL = '#1a7a96';       // deeper ocean teal -- calm / space push
 const FILM_GRADE_WARM = '#e88a55';       // muted amber -- hot/high-budget push
@@ -417,6 +430,9 @@ export class Renderer {
     // physical canvas size (bloom / retro / freeze capture).
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     this._drawBloom(ctx, canvas, sim);
+    // After bloom, not before: heat is a lens on the whole scene, so it
+    // should bend the glow bloom just added too, not just the world under it.
+    this._drawHeatDistortion(ctx, canvas, sim, pose, viewStage);
     if (sim.filmFinish && (perf ? perf.heavyPostFx : true)) {
       // Film finish was authored in logical space; scale its fill rects.
       ctx.setTransform(sx, 0, 0, sy, 0, 0);
@@ -794,6 +810,85 @@ export class Renderer {
       ctx.lineTo(seg.x1, seg.y1);
     }
     ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Heat distortion: a UV-warp lens over the fully composed frame, for the
+   *  two things in this world that are actually on fire -- a drop's shock
+   *  wave and an active wildfire (FireDirector) or EMBER's own ambient
+   *  ember-haze. Same offscreen-buffer-then-composite shape as bloom and the
+   *  chromatic shock above, just used to WARP the source instead of ADD to
+   *  it: copy the composited frame into a buffer, then redraw it back
+   *  through a grid of overlapping sub-rectangles, each nudged by a small
+   *  sinusoidal offset. A drop's offset is radial -- an expanding shockwave
+   *  lens centered on Midio; a wildfire/ember's is a slow horizontal sway,
+   *  strongest low in frame and fading toward the top (real heat haze bends
+   *  light sideways as it convects upward off the ground, not the sky).
+   *  Sheds under PerfGovernor pressure like its siblings -- a flourish,
+   *  never core feedback. */
+  _drawHeatDistortion(ctx, canvas, sim, pose, viewStage) {
+    const perf = sim.perf;
+    if (perf && !perf.heavyPostFx) return;
+
+    const dropS = sim.hype ? dropImpactStrength(sim.timeMs, sim.hype.dropAtMs) : 0;
+    const emberFxAlpha = sim.biomes && sim.biomes.currentFxAlpha ? sim.biomes.currentFxAlpha('emberGlow') : 0;
+    const ambient = heatAmbient01(!!(sim.fire && sim.fire.active), sim.fire ? sim.fire.intensity01 : 0, emberFxAlpha);
+    if (dropS <= 0.02 && ambient <= 0.02) return;
+
+    const ampMul = sim.reducedFlash ? 0.5 : 1; // less pixel-shove, reads as haze not a jolt
+    const dropAmpPx = HEAT_DROP_MAX_PX * dropS * ampMul;
+    const ambientAmpPx = HEAT_AMBIENT_MAX_PX * ambient * ampMul;
+    if (dropAmpPx < 0.15 && ambientAmpPx < 0.15) return;
+
+    if (!this._heatCanvas) this._heatCanvas = document.createElement('canvas');
+    const src = this._heatCanvas;
+    if (src.width !== canvas.width || src.height !== canvas.height) {
+      src.width = canvas.width;
+      src.height = canvas.height;
+    }
+    const srcCtx = src.getContext('2d');
+    srcCtx.globalCompositeOperation = 'copy';
+    srcCtx.drawImage(canvas, 0, 0);
+
+    // Coarser grid at higher resolutions -- same cost, same apparent cell
+    // size on screen, matching bloom's own downscale-by-canvas-width steps.
+    const cell = HEAT_GRID_PX * (canvas.width > 2560 ? 2.2 : canvas.width > 1920 ? 1.6 : 1);
+    const cols = Math.ceil(canvas.width / cell) + 1;
+    const rows = Math.ceil(canvas.height / cell) + 1;
+    const t = sim.timeMs / 1000;
+    // pose.midioDrawX / sim.midio.groundY are logical (viewStage) coords;
+    // this pass runs post identity-reset against the full physical canvas,
+    // so rescale by the same sx/sy the rest of draw() uses for that jump.
+    const scaleX = viewStage && viewStage.width ? canvas.width / viewStage.width : 1;
+    const scaleY = viewStage && viewStage.height ? canvas.height / viewStage.height : 1;
+    const originX = pose ? pose.midioDrawX * scaleX : canvas.width / 2;
+    const originY = sim.midio ? sim.midio.groundY * scaleY : canvas.height * 0.7;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'copy'; // full overwrite -- warps the frame, doesn't add to it
+    for (let ry = 0; ry < rows; ry++) {
+      const cy = ry * cell + cell / 2;
+      for (let rx = 0; rx < cols; rx++) {
+        const cx = rx * cell + cell / 2;
+        let offX = 0, offY = 0;
+        if (dropAmpPx > 0.05) {
+          const dx = cx - originX, dy = cy - originY;
+          const dist = Math.hypot(dx, dy);
+          const nx = dist > 1e-3 ? dx / dist : 0, ny = dist > 1e-3 ? dy / dist : 0;
+          const radial = Math.sin(dist * 0.05 - t * 9) * dropAmpPx;
+          offX += radial * nx;
+          offY += radial * ny;
+        }
+        if (ambientAmpPx > 0.05) {
+          const heightFrac = clamp01(1 - cy / canvas.height); // 1 at the ground, 0 at the top
+          offX += Math.sin(cx * 0.045 + t * 2.4 + cy * 0.03) * ambientAmpPx * (0.35 + 0.65 * heightFrac);
+        }
+        if (Math.abs(offX) < 0.05 && Math.abs(offY) < 0.05) continue; // no-op cell -- skip the blit entirely
+        const sx = rx * cell - HEAT_PAD_PX, sy = ry * cell - HEAT_PAD_PX;
+        const sw = cell + HEAT_PAD_PX * 2, sh = cell + HEAT_PAD_PX * 2;
+        ctx.drawImage(src, sx, sy, sw, sh, sx + offX, sy + offY, sw, sh);
+      }
+    }
     ctx.restore();
   }
 
@@ -1178,6 +1273,16 @@ export function dropImpactStrength(nowMs, dropAtMs) {
   if (!(age >= 0) || age >= DROP_IMPACT_LIFE_MS) return 0;
   const u = age / DROP_IMPACT_LIFE_MS;
   return (1 - u) * (1 - u); // ease-out: sharp at the hit, tapering fast
+}
+
+/** 0..1 ambient heat level driving the wildfire/ember side of the heat
+ *  distortion (the drop side is dropImpactStrength, unrelated). An active
+ *  FireDirector strike drives this directly by its own intensity01; absent
+ *  that, EMBER's ambient fx alpha contributes a capped, gentler haze -- a
+ *  mood, not a blaze. Pure so it's testable without a canvas. */
+export function heatAmbient01(fireActive, fireIntensity01 = 0, emberFxAlpha = 0) {
+  const fire = fireActive ? clamp01(fireIntensity01) : 0;
+  return clamp01(Math.max(fire, clamp01(emberFxAlpha) * EMBER_AMBIENT_LEVEL));
 }
 
 /** `count` line segments radiating from (cx, cy), angles fixed per `seed`
