@@ -40,7 +40,7 @@ import { PerfGovernor } from '../render/PerfGovernor.js';
 import { HighlightReel } from '../render/HighlightReel.js';
 import { clamp01, hashSeed } from '../utils/math.js';
 import { resolveSongSeed } from '../utils/seed.js';
-import { hexToRgb } from '../utils/color.js';
+import { hexToRgb, hslToRgb } from '../utils/color.js';
 import { buildNoteChart } from './NoteChart.js';
 import { TapJudge } from './TapJudge.js';
 import { ScoreKeeper } from './ScoreKeeper.js';
@@ -976,7 +976,19 @@ export class Simulation {
     // hole (this takes effect next frame; the weight eases over ~1.5s
     // regardless, so the one-step lag is inaudible/invisible).
     this.ensemble.setPresence(2, this.midasus.voyage.active ? 0 : 1);
-    if (this.midasus.voyage.justLanded) { this.camera.shake(4); }
+    if (this.midasus.voyage.justLanded) {
+      this.camera.shake(4);
+      // Reentry burn: her screen position converts to the same world-x
+      // frame ImpactFX/RippleFX use (toScreen(wx) = wx - worldX + midioX),
+      // stamped at the ground beneath her since both FX systems assume a
+      // ground plane. Tinted the fiery orange her hue eases toward on the
+      // way down (SkyVoyage's REENTRY blend target), not the ambient biome
+      // dust -- this is her own atmospheric reentry, not a footstep.
+      const landWorldX = this.worldX + (this.midasus.p.x - this.midio.screenX);
+      const rgb = hslToRgb(20, 0.85, 0.6);
+      const colorRgb = `${Math.round(rgb.r)},${Math.round(rgb.g)},${Math.round(rgb.b)}`;
+      this._reentryBurst(nowMs, landWorldX, this.midio.groundY, colorRgb);
+    }
     if (this.midasus.voyage.justLaunched) { this.camera.shake(4); }
     // The sky notices her presence: the celestial's mandala swells while
     // she's dancing around it, and the accumulated star atlas glints with
@@ -1020,6 +1032,14 @@ export class Simulation {
     // The eruption's matching crack, on his way back up through the pane.
     if (this.broshi.burrow.justSurfaced) {
       this.fracture.spawnSurfaceCrack(this.broshi.screenX, this.midio.groundY, this.camera);
+      // Burrow.surfaceWorldX is already in the same world-x frame
+      // ImpactFX/RippleFX/GroundField expect (Burrow's own shards and
+      // groundField.pulseAt calls use it directly) -- an earthy dirt tone
+      // instead of the ambient biome dust, matching the shard color his
+      // dig-in/eruption already throw.
+      const rgb = hslToRgb(28, 0.55, 0.42);
+      const colorRgb = `${Math.round(rgb.r)},${Math.round(rgb.g)},${Math.round(rgb.b)}`;
+      this._reentryBurst(nowMs, this.broshi.burrow.surfaceWorldX, this.midio.groundY, colorRgb);
     }
     // He's underground -> same presence handoff as Midasus's voyage.
     this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
@@ -1138,6 +1158,22 @@ export class Simulation {
     this.paramBus.step();
 
     this.curr = this._snapshot();
+  }
+
+  /** A major excursion's ending used to just pop the character back in --
+   *  flat compared to every ordinary Midio landing, which gets a full
+   *  crater-flash/dust-ring/shockwave answer from the world. Reuses that
+   *  exact ImpactFX/RippleFX/GroundField fan-out (same call sequence as
+   *  Midio's own landing above) at a fixed high intensity, so Midasus's
+   *  reentry and Broshi's resurfacing read as the same caliber of event as
+   *  the mission that sent them away: a cone of streaking motes, a radial
+   *  flash, and a shockwave stamped into the ground at the landing point. */
+  _reentryBurst(nowMs, worldX, groundY, colorRgb) {
+    const I = 0.85;
+    this.impactFX.trigger(worldX, groundY, I, this.camera, this.perf.particleMul, colorRgb);
+    this.groundField.impulse(worldX, I, nowMs);
+    this.rippleFX.trigger(worldX, groundY, I, this.perf.particleMul);
+    this.rippleFX.landingPuff(worldX, groundY, I, `rgb(${colorRgb})`, this.perf.particleMul);
   }
 
   _snapshot() {
