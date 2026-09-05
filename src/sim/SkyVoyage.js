@@ -55,7 +55,7 @@ const LISSAJOUS_BY_PITCH_CLASS = [
   [5, 3], [7, 5], [2, 1], [7, 3], [8, 3], [5, 1],
 ];
 // Geometric figure families available for seed-baked voyage recipes.
-const FIGURE_FAMILIES = ['lissajous', 'epicycle', 'superformula', 'rose', 'hypotrochoid', 'thomas'];
+const FIGURE_FAMILIES = ['lissajous', 'epicycle', 'superformula', 'rose', 'hypotrochoid', 'thomas', 'harmonograph', 'spiral'];
 // Coprime-ish frequency pairs for seed-picked Lissajous knots.
 const LISS_PAIR_POOL = [
   [2, 1], [3, 1], [3, 2], [4, 1], [4, 3], [5, 2], [5, 3], [5, 4],
@@ -392,6 +392,28 @@ export class SkyVoyage {
       const d = rInner * (0.45 + r() * 0.9);
       return { ...base, R, r: rInner, d };
     }
+    if (kind === 'harmonograph') {
+      // Two-term sum per axis (a real pendulum harmonograph's signature):
+      // richer, less symmetric loops than a single-frequency Lissajous.
+      const a1 = 1 + Math.floor(r() * 4);
+      const a2 = a1 + 1 + Math.floor(r() * 3);
+      const b1 = 1 + Math.floor(r() * 4);
+      const b2 = b1 + 1 + Math.floor(r() * 3);
+      return {
+        ...base, a1, a2, b1, b2,
+        mix: 0.3 + r() * 0.3,
+        p2: r() * Math.PI * 2, p3: r() * Math.PI * 2, p4: r() * Math.PI * 2,
+      };
+    }
+    if (kind === 'spiral') {
+      // A breathing spiral: winds `turns` times while its radius swells
+      // from the center out and back -- reads as a slow bloom rather than
+      // a static rosette, the one figure here that isn't a fixed loop.
+      const turns = 2 + Math.floor(r() * 3);
+      const aspect = 0.75 + r() * 0.5;
+      const dir = r() < 0.5 ? 1 : -1;
+      return { ...base, turns, aspect, dir };
+    }
     // thomas — live attractor; only rate/scale/phase salt vary.
     return {
       ...base,
@@ -675,6 +697,24 @@ export class SkyVoyage {
       if (b.gap) return { x: b.x, y: b.y };
       return { x: lerp(a.x, b.x, frac), y: lerp(a.y, b.y, frac) };
     }
+    if (kind === 'harmonograph') {
+      const a1 = recipe.a1 ?? 2, a2 = recipe.a2 ?? 5;
+      const b1 = recipe.b1 ?? 3, b2 = recipe.b2 ?? 7;
+      const mix = recipe.mix ?? 0.4;
+      const p2 = recipe.p2 ?? 0, p3 = recipe.p3 ?? Math.PI / 2, p4 = recipe.p4 ?? 0;
+      const x = (1 - mix) * Math.sin(a1 * RATE * localT + phase0) + mix * Math.sin(a2 * RATE * localT + p2);
+      const y = (1 - mix) * Math.sin(b1 * RATE * localT + p3) + mix * Math.sin(b2 * RATE * localT + p4);
+      return { x, y };
+    }
+    if (kind === 'spiral') {
+      const turns = recipe.turns ?? 3;
+      const aspect = recipe.aspect ?? 1;
+      const dir = recipe.dir ?? 1;
+      const phi = dir * (localT * RATE + phase0);
+      const breathe = 0.5 - 0.5 * Math.cos(phi / turns);
+      const rr = 0.12 + 0.88 * breathe;
+      return { x: rr * Math.cos(phi), y: rr * Math.sin(phi) * aspect };
+    }
     // 'thomas': read the persistent chaotic state -- update() integrates it
     // once per frame in the background regardless of which figure is shown.
     const as = recipe.attractorScale ?? 4.2;
@@ -766,5 +806,7 @@ function defaultRecipe(kind, slot = 0) {
   if (kind === 'rose') return { ...base, k: 4, offset: 0.08, sinMode: false };
   if (kind === 'hypotrochoid') return { ...base, R: 5, r: 3, d: 2.2 };
   if (kind === 'thomas') return { ...base, attractorScale: 4.2 };
+  if (kind === 'harmonograph') return { ...base, a1: 2, a2: 5, b1: 3, b2: 7, mix: 0.4, p2: 0, p3: Math.PI / 2, p4: 0 };
+  if (kind === 'spiral') return { ...base, turns: 3, aspect: 1, dir: 1 };
   return { ...base, kind: 'lissajous', a: 3, b: 2, delta: Math.PI / 4, aspect: 1 };
 }

@@ -48,6 +48,9 @@ import {
   seaLineY, oceanRowYs, waveRows, rowAlpha, OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC,
   breakerLift, whitecapMask, rowPhaseDrift,
 } from './Ocean.js';
+import {
+  farShoreRecipe, farShoreHeight01, farShorePulse01, FAR_SHORE_PARALLAX, FAR_SHORE_TILE_PX,
+} from './FarShore.js';
 import { buildWaveComponents, waveFieldSample, windSpeedForSeaState, easeSeaState } from './WaveField.js';
 import {
   generateCatalogue, subPixelDraw, twinkleAmplitude, galacticBandCenterY, GALACTIC_BAND,
@@ -569,7 +572,7 @@ export class BiomeManager {
     }));
     this.dustLanes = toFrac(generateDustLanes(hashSeed(`${songSeed}:dust`), 7, this.w, skyH))
       .map((d) => ({ ...d, rxFrac: d.rx / this.w, ryFrac: d.ry / skyH }));
-    this.deepSky = toFrac(generateDeepSky(hashSeed(`${songSeed}:deepsky`), 6, this.w, skyH))
+    this.deepSky = toFrac(generateDeepSky(hashSeed(`${songSeed}:deepsky`), 8, this.w, skyH))
       .map((o) => ({ ...o, rFrac: o.r / skyH }));
     this.planets = toFrac(generatePlanets(hashSeed(`${songSeed}:planets`), 3, this.w, skyH));
     this._glitchTimer = 2 + this._starSeed() * 3;
@@ -719,6 +722,10 @@ export class BiomeManager {
     // The third equalizer: crystalline node-line + one tumbling wireframe,
     // floating higher and further than everything else in the sky.
     this.spaceRidge = new SpaceRidge(hashSeed(`${songSeed}:spaceridge`));
+    // The far shore: a massive, vague mountain range on the far side of the
+    // ocean, so distant only its tallest masses clear the planet's own
+    // curvature (see _drawFarShore).
+    this._farShoreRecipe = farShoreRecipe(hashSeed(`${songSeed}:farshore`));
     this.lightRig = new LightRig(songSeed);
     // Concert beams anchor toward Midio on a drop; sane defaults so a
     // trigger before the first Simulation-set value still points somewhere
@@ -1270,10 +1277,17 @@ export class BiomeManager {
         fromHeightMul: hm, toHeightMul: hm, fromSnowLine01: sl, toSnowLine01: sl,
       };
     }
-    // Transition style sets the crossfade length: a hard cut lands in a
-    // small fraction of a bar, a shutter wipes over one bar, a fade
-    // breathes across four.
-    const bars = sec.transition === 'cut' ? 0.08 : sec.transition === 'shutter' ? 1 : 4;
+    // Transition style sets the crossfade length: a hard cut lands quickly,
+    // a shutter wipes over one bar, a fade breathes across four.
+    //
+    // Used to be 0.08 bars for a cut -- at typical tempos under 200ms. Color
+    // and biome identity can swap that fast and still read as a deliberate
+    // film cut, but ridge HEIGHT can't: two biomes routinely differ by
+    // 80-150px on L2 alone (measured), and collapsing that difference into
+    // under 200ms doesn't read as a cut, it reads as the mountains visibly
+    // dropping. 0.3 bars is still snappy -- nothing like the 4-bar fade --
+    // but gives the eye enough time to see a slide instead of a teleport.
+    const bars = sec.transition === 'cut' ? 0.3 : sec.transition === 'shutter' ? 1 : 4;
     const t = smoothstep(0, 1, (nowMs - sec.startMs) / (bars * sec.barMs));
     // Once the crossfade completes, retire the old biome entirely --
     // otherwise its taller peaks and particles ghost through forever.
@@ -2058,6 +2072,7 @@ export class BiomeManager {
     const nightAlphaMul = (1 + 1.2 * dn.night) * Math.max(0.25, skyA);
     if (phenomenaFull && skyA > 0.02) this.weaver.draw(ctx, canvas, this.reducedFlash, nightAlphaMul);
     if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
+    this._drawFarShore(ctx, canvas, worldX, A, B, t); // beyond the ocean, behind the water itself
     this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
     this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
@@ -3045,6 +3060,16 @@ export class BiomeManager {
             ctx.fillRect(Math.cos(ang2) * rr, Math.sin(ang2) * rr, 1, 1);
           }
         }
+        // A remnant is a shell, not a blob: the shockwave front is a thin
+        // bright ring around a hollow, spent core -- the one deep-sky kind
+        // that reads as an event rather than a static cloud.
+        if (o.kind === 'remnant') {
+          ctx.strokeStyle = `hsla(${o.hue},70%,88%,${(a * 1.8).toFixed(4)})`;
+          ctx.lineWidth = Math.max(0.8, or_ * 0.09);
+          ctx.beginPath();
+          ctx.arc(0, 0, or_ * 0.82, 0, Math.PI * 2);
+          ctx.stroke();
+        }
         ctx.restore();
       }
       ctx.restore();
@@ -3664,6 +3689,57 @@ export class BiomeManager {
       if (tsunamiWithdrawalActive(ev, nowMs)) level = Math.max(level, tsunamiWithdrawal01(ev, nowMs));
     }
     return level;
+  }
+
+  /**
+   * The far shore: a massive, vague mountain range on the far side of the
+   * ocean. Drawn BEHIND the water (see the call site) at the horizon line
+   * itself, clipped so only the portion above the horizon is ever visible --
+   * the same reason a ship's masts clear the sea before its hull does. What
+   * comes through is never a clean skyline, only the tallest broad masses
+   * breaking the horizon, everything below them already swallowed by the
+   * curve of the world. Nearly motionless (see FAR_SHORE_PARALLAX) and
+   * rendered as a soft, dark, almost featureless silhouette -- detail at
+   * this distance has already dissolved into haze, which is exactly what
+   * keeps it reading as impossibly far rather than merely another range.
+   */
+  _drawFarShore(ctx, canvas, worldX, A, B, t) {
+    if (this._perf && !this._perf.heavyPostFx) return;
+    const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
+    // How far below the visible horizon its base sits -- the curvature
+    // "cuts off" this many px of vertical extent before anything can show.
+    const sinkPx = Math.max(18, canvas.height * 0.02);
+    const baseY = horizonY + sinkPx;
+    const maxHeightPx = Math.max(90, canvas.height * 0.20); // massive -- deliberately taller than it should ever be able to look this far off
+    const scrollX = worldX * FAR_SHORE_PARALLAX;
+    const stepPx = 8;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, canvas.width, horizonY);
+    ctx.clip(); // curvature: nothing at or below the true horizon line survives
+
+    ctx.beginPath();
+    ctx.moveTo(-stepPx, baseY);
+    for (let x = -stepPx; x <= canvas.width + stepPx; x += stepPx) {
+      const u = (x + scrollX) / FAR_SHORE_TILE_PX;
+      const h01 = farShoreHeight01(this._farShoreRecipe, u);
+      ctx.lineTo(x, baseY - h01 * maxHeightPx);
+    }
+    ctx.lineTo(canvas.width + stepPx, baseY);
+    ctx.closePath();
+
+    // Near-black, faintly cold -- a mass, not a mountain range with a
+    // palette. A hair of the biome's own air color keeps it from reading as
+    // a flat void cutout rather than something actually out there.
+    const air = this._airColor || '#5a6b80';
+    const base = this.lerpCache.get('#070a12', air, 0.14);
+    const { r, g, b } = hexToRgb(base);
+    const pulse = farShorePulse01(this.tSec);
+    const alpha = 0.16 + 0.07 * pulse;
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+    ctx.fill();
+    ctx.restore();
   }
 
   _drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, night = 0) {

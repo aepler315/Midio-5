@@ -377,7 +377,7 @@ export function generateDustLanes(seed, count, width, height) {
 // and therefore sit ON the plane, while external galaxies are hidden behind
 // that same dust everywhere near it -- the zone of avoidance -- so they only
 // ever appear well off the band.
-export const DEEP_SKY_KINDS = ['cluster', 'nebula', 'galaxy'];
+export const DEEP_SKY_KINDS = ['cluster', 'nebula', 'galaxy', 'remnant'];
 
 /** Faint deep-sky objects in field coordinates. Each carries the geometry
  *  and tint the renderer needs; none of them twinkle (they are resolved
@@ -401,20 +401,25 @@ export function generateDeepSky(seed, count, width, height) {
     }
     const r = height * (kind === 'cluster' ? 0.020 + rand() * 0.022
       : kind === 'nebula' ? 0.030 + rand() * 0.045
-        : 0.016 + rand() * 0.022);
+        : kind === 'remnant' ? 0.026 + rand() * 0.030
+          : 0.016 + rand() * 0.022);
     out.push({
       kind,
       x: xFrac * width,
       y: clamp01(y / height) * height,
       r,
       // Galaxies are the only ones that read as flattened discs.
-      squash: kind === 'galaxy' ? 0.30 + rand() * 0.22 : 0.72 + rand() * 0.28,
+      squash: kind === 'galaxy' ? 0.30 + rand() * 0.22
+        : kind === 'remnant' ? 0.82 + rand() * 0.18
+          : 0.72 + rand() * 0.28,
       rot: rand() * Math.PI,
       // Emission nebulae run hydrogen-red; clusters are hot young blue;
-      // distant galaxies average out to an old, dim yellow-white.
+      // distant galaxies average out to an old, dim yellow-white; a
+      // remnant's shockwave still glows hot ionized cyan-white.
       hue: kind === 'nebula' ? 340 + rand() * 30
         : kind === 'cluster' ? 205 + rand() * 30
-          : 40 + rand() * 20,
+          : kind === 'remnant' ? 178 + rand() * 24
+            : 40 + rand() * 20,
       alpha: 0.05 + rand() * 0.07,
       phase: rand() * Math.PI * 2,
     });
