@@ -130,8 +130,8 @@ export class Midasus {
 
   /** Test/debug hook: send her on a voyage right now regardless of natural
    * triggers. No-op if she's already away. */
-  forceVoyage(nowMs) {
-    return this.voyage.trigger(nowMs, { ...this.p }, this.stageW, this.stageH);
+  forceVoyage(nowMs, chorusText) {
+    return this.voyage.trigger(nowMs, { ...this.p }, this.stageW, this.stageH, chorusText);
   }
 
   _target(n) {

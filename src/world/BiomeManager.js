@@ -73,6 +73,7 @@ import { flameFlicker, smokeDrift } from './Wildfire.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
+import { scanLine } from '../lyrics/LyricLexicon.js';
 import { celestialApproach } from './CelestialApproach.js';
 import { snapCutsToReleases } from './BoundarySnap.js';
 import { applyConductorSchedule } from '../core/ConductorTrack.js';
@@ -425,7 +426,7 @@ export function fogBandAlphaFractionAtY(geo, y) {
 }
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, structure = null, conductorSchedule = null, worldId = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null }) {
     this.conductor = conductor;
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
@@ -474,7 +475,10 @@ export class BiomeManager {
     // Absent lyricSections -> currentKind stays null and every one of
     // these stays at its neutral default, forever -- a strict no-op.
     this._lyricSections = lyricSections;
+    this._syncedLyrics = syncedLyrics;
+    this._lyricLineCursor = 0;
     this.currentKind = null;
+    this.currentSectionText = null;
     this.lyricIntensityEased = 0.4;
     this._kindBudgetMulEased = 1;
     this.budget = 1;
@@ -1659,10 +1663,25 @@ export class BiomeManager {
     // eased lyric intensity, both neutral defaults (null / 0.4) when no
     // lyric data was ever fused in.
     this.currentKind = activeSection?.kind || null;
+    this.currentSectionText = activeSection?.lyricText || null;
     const targetLyricIntensity = activeSection?.lyricIntensity ?? 0.4;
     this.lyricIntensityEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetLyricIntensity - this.lyricIntensityEased);
     const targetKindBudgetMul = KIND_BUDGET_MUL[this.currentKind] ?? 1;
     this._kindBudgetMulEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetKindBudgetMul - this._kindBudgetMulEased);
+
+    // Lyric-driven constellation glyphs: advance the synced-lyrics cursor
+    // and scan each newly-reached line through LyricLexicon. A match queues
+    // the glyph shape on the ConstellationWeaver (its own cooldown decides
+    // whether it actually fires).
+    if (this._syncedLyrics) {
+      while (this._lyricLineCursor < this._syncedLyrics.length
+        && this._syncedLyrics[this._lyricLineCursor].tMs <= nowMs) {
+        const line = this._syncedLyrics[this._lyricLineCursor];
+        this._lyricLineCursor++;
+        const hit = scanLine(line.text);
+        if (hit) this.weaver.hintGlyph(hit.glyphId);
+      }
+    }
 
     // Intensity budget: stage the show -- restrained intro, full finale --
     // additionally scaled by the lyric-structure kind (a chorus/bridge

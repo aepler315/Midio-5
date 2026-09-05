@@ -1103,6 +1103,7 @@ function startTimeline(timelineData, extra = {}) {
       // peak when the EAR gets the beat (Bluetooth can lag 200ms+).
       outputLatencyMs: () => audioEngine.outputLatencyMs,
       lyricSections: timelineData.lyricSections || null,
+      syncedLyrics: timelineData.syncedLyrics || null,
       // SSM structure read (StructureAnalyzer), audio path only. Null on
       // MIDI/demo/free-time, where BiomeManager keeps its own band-energy
       // novelty schedule.
@@ -1486,10 +1487,11 @@ async function resolveLyricsForAudio(file, durationSec, vocalStem = null, { prom
       );
     }
     const lyricSections = buildLyricSections(lyricResult, Math.round((durationSec || 0) * 1000), vocalStem);
-    return { identity, lyricSections };
+    const syncedLyrics = lyricResult?.synced?.length ? lyricResult.synced : null;
+    return { identity, lyricSections, syncedLyrics };
   } catch (err) {
     console.warn('[lyrics] lyrics resolution failed, continuing without it', err);
-    return { identity, lyricSections: null };
+    return { identity, lyricSections: null, syncedLyrics: null };
   }
 }
 
@@ -1555,7 +1557,7 @@ async function loadAudioFiles(files) {
     // "No lyrics" preference: skip the whole identity/lyric fetch + prompt.
     // Everything downstream already no-ops on null lyricSections.
     const lyricsPromise = lyricsDisabled
-      ? Promise.resolve({ identity: null, lyricSections: null })
+      ? Promise.resolve({ identity: null, lyricSections: null, syncedLyrics: null })
       : resolveLyricsForAudio(files[0], audioBuffer.duration, vocalStem, { prompt: false });
     // Has this exact recording been analysed before? The fingerprint names
     // it by what it SOUNDS like, so the same master as mp3 and as flac hit
@@ -1593,13 +1595,14 @@ async function loadAudioFiles(files) {
     } finally {
       loadShow?.stop(loadShowSession);
     }
-    const { identity: lyricIdentity, lyricSections } = await lyricsPromise;
+    const { identity: lyricIdentity, lyricSections, syncedLyrics } = await lyricsPromise;
     // A newer load has since started -- let it win. Its own flow owns the
     // loader/audition/HUD visibility from here; this stale one touches none
     // of it.
     if (myGen !== loadGen) return;
     data.lyricIdentity = lyricIdentity;
     data.lyricSections = lyricSections;
+    data.syncedLyrics = syncedLyrics;
     // Remember this analysis for next time. Stored after identity resolves so
     // the bundle carries the artist/title it was matched to. Not awaited: the
     // show must not wait on a disk write, and a failed one costs only a
