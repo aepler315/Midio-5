@@ -80,13 +80,24 @@ Applied to the fully composed frame, in this fixed order:
    frame-echo self-blit on hard hits.
 3. **Drop impact pack** (`_drawDropImpact`) — chromatic shock
    (`≤ 8 px` offset, `≤ 0.5` alpha) + 24 radial speed lines (`≤ 0.35` alpha).
-4. **Bloom** (`_drawBloom`) — 1/3-res downsample → 2 self-multiply threshold
+4. **Drop motion blur** (`_drawDropMotionBlur`) — a 2–3 frame accumulation
+   over the composed frame, fired only inside the 320 ms drop impact window
+   while the camera is actually traveling. A 3-slot ring of backing-store
+   canvases holds the last three clean frames (captured every frame, so it's
+   warm when a drop lands); during the window the two older frames blend
+   back `source-over` (exposure, not additive), offset against the camera's
+   per-frame travel and fainter with age (α `0.30 / 0.18` × strength).
+   Strength = `dropImpactStrength · (0.35 + 0.65 · clamp(speed/7))` — no
+   shake travel, no smear. Gated like the hype echo: disabled under reduced
+   flash, skipped (and freed) under perf pressure. Pure helpers:
+   `dropMotionBlurStrength` / `dropMotionBlurPasses`.
+5. **Bloom** (`_drawBloom`) — 1/3-res downsample → 2 self-multiply threshold
    passes (`c^4`) → 7 px blur → additive upscale blit. Strength from
    `bloomStrength(hype, fever, reducedFlash, openingGain)`; early-out below 0.005.
-5. **Film finish** (`_drawFilmFinish`) — `soft-light` grade wash (alpha
+6. **Film finish** (`_drawFilmFinish`) — `soft-light` grade wash (alpha
    `0.012 + 0.03·|warmth-0.5|·2`, hard-capped at 0.22) + optional indigo space
    wash + `source-over` vignette (alpha `0.02 → 0.54`, onset `0.62 → 0.34`).
-6. HUD strip draws **after** post-FX so nothing buries it.
+7. HUD strip draws **after** post-FX so nothing buries it.
 
 **`FilmFinish` state model** (`src/render/FilmFinish.js`) — two one-pole
 smoothed 0..1 signals:
