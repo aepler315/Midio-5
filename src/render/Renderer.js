@@ -44,6 +44,15 @@ const SHOCK_MAX_ALPHA = 0.5;
 const SPEED_LINE_COUNT = 24;
 const SPEED_LINE_MAX_ALPHA = 0.35;
 
+// Drop motion blur: a 2-3 frame accumulation over the composed frame,
+// fired inside the drop impact window while the camera is actually being
+// thrown around -- the shake's violence sold as exposure smear rather than
+// one more flash. Camera travel at MOTION_BLUR_SPEED_REF_PX logical px/frame
+// reads as full smear; ghosts trail the motion and fade with age.
+const MOTION_BLUR_SPEED_REF_PX = 7;
+const MOTION_BLUR_GHOST_ALPHA = [0.30, 0.18]; // per history frame (t-1, t-2), scaled by strength
+const MOTION_BLUR_MIN_ALPHA = 0.02;
+
 // Bloom: a final light-bleed pass over the fully composed frame -- the
 // additive glow language used everywhere (character underlays, kick
 // ignition, the celestial, aurora, drop shockwaves) currently stops hard
@@ -117,6 +126,14 @@ export class Renderer {
     this._milestoneSeeded = false;
     this.composer = null; // lazy: needs the conductor's timeline at first draw
     this.brush = new RainbowBrush();
+    // Drop motion blur: a 3-slot ring of backing-store-sized canvases holding
+    // the last three composed frames, captured every frame so the ring is
+    // already warm when a drop lands. Lazy: allocated on first draw, resized
+    // if the canvas ever does.
+    this._motionHistory = null;
+    this._motionRing = 0;
+    this._lastShakeX = null; // last frame's camera position, for per-frame travel
+    this._lastShakeY = null;
     // Renderer-owned (not sim.biomes.lerpCache) so the film finish still
     // works if sim.biomes were ever null (the fallback-sky branch below).
     this._filmLerpCache = new LerpCache();
@@ -427,8 +444,11 @@ export class Renderer {
     if (sim.hype) this._drawDropImpact(ctx, viewStage, sim, pose);
 
     // Post FX that sample the pixel buffer need identity transform + full
-    // physical canvas size (bloom / retro / freeze capture).
+    // physical canvas size (bloom / retro / freeze capture). Motion blur
+    // first: the accumulation smears the fully composed frame (hype border
+    // and drop impact included), and bloom then blooms the smeared result.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this._drawDropMotionBlur(ctx, canvas, sim, camera, sx, sy);
     this._drawBloom(ctx, canvas, sim);
     // After bloom, not before: heat is a lens on the whole scene, so it
     // should bend the glow bloom just added too, not just the world under it.
@@ -995,6 +1015,86 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** Drop motion blur: a 2-3 frame accumulation over the fully composed
+   *  frame, fired only inside the drop's impact window while the camera is
+   *  actually traveling -- the same self-blit family as the hype frame echo
+   *  above, but blended as an exposure (source-over, ghosts trailing the
+   *  motion) instead of an additive flash, and over two frames of history
+   *  rather than one. Capture runs every frame (a single blit) so the ring
+   *  is warm the instant a drop lands; the composite only runs in-window.
+   *  Gated like the echo: reduced-flash disables it outright, perf pressure
+   *  skips the ring entirely (and frees it). Runs at identity transform on
+   *  the physical backing store; `stageSx/stageSy` convert the camera's
+   *  logical travel into physical px. */
+  _drawDropMotionBlur(ctx, canvasEl, sim, camera, stageSx, stageSy) {
+    // Camera travel this frame, logical px. The first frame of a session has
+    // no previous position to difference against: travel 0, no smear. Tracked
+    // before the gates below so a mid-song perf shed (which skips this whole
+    // method) can't leave a stale last position behind -- the frame the
+    // feature recovers on would otherwise read a huge spurious velocity.
+    const vx = this._lastShakeX == null ? 0 : camera.shakeX - this._lastShakeX;
+    const vy = this._lastShakeY == null ? 0 : camera.shakeY - this._lastShakeY;
+    this._lastShakeX = camera.shakeX;
+    this._lastShakeY = camera.shakeY;
+
+    const perf = sim.perf;
+    if (perf && !perf.heavyPostFx) {
+      this._motionHistory = null;
+      return;
+    }
+    if (sim.reducedFlash) return;
+
+    // (Re)allocate the ring if the backing store changed size.
+    let history = this._motionHistory;
+    if (!history || history[0].width !== canvasEl.width || history[0].height !== canvasEl.height) {
+      history = this._motionHistory = [0, 1, 2].map(() => {
+        const c = document.createElement('canvas');
+        c.width = canvasEl.width;
+        c.height = canvasEl.height;
+        return c;
+      });
+      this._motionRing = 0;
+    }
+
+    const hype = sim.hype;
+    const strength = hype
+      ? dropMotionBlurStrength(sim.timeMs, hype.dropAtMs, Math.hypot(vx, vy))
+      : 0;
+    // This IS the drop's own vocabulary, so it reads full strength when
+    // focus picks 'drop' and dampens like everything else otherwise.
+    const focusMul = sim.focus ? sim.focus.mul('drop') : 1;
+
+    // Ghost offsets run AGAINST the camera's travel: raising shakeX shifts
+    // content right, so frame t-k's content sits k*vx px to the LEFT of where
+    // it is now -- exactly where a real exposure would have accumulated it.
+    const passes = dropMotionBlurPasses(strength * focusMul, -vx * stageSx, -vy * stageSy);
+
+    // Capture the current frame FIRST, before any ghost is composited onto
+    // the live canvas -- the ring must only ever hold clean composed frames,
+    // or frame t's smear would re-enter as frame t+1's history and compound
+    // with itself across the window. The ghosts read sibling slots, so this
+    // capture never clobbers what they're about to draw.
+    const slot = history[this._motionRing];
+    const sctx = slot.getContext('2d');
+    sctx.setTransform(1, 0, 0, 1, 0, 0);
+    sctx.clearRect(0, 0, slot.width, slot.height);
+    sctx.drawImage(canvasEl, 0, 0);
+
+    if (passes.length > 0) {
+      // Ring bookkeeping: slot (ring+2)%3 was written last frame (t-1),
+      // slot (ring+1)%3 two frames ago (t-2); slot ring was just recaptured.
+      const ring = this._motionRing;
+      const ghosts = [history[(ring + 2) % 3], history[(ring + 1) % 3]];
+      for (let i = 0; i < passes.length; i++) {
+        ctx.save();
+        ctx.globalAlpha = passes[i].alpha;
+        ctx.drawImage(ghosts[i], passes[i].dx, passes[i].dy);
+        ctx.restore();
+      }
+    }
+    this._motionRing = (this._motionRing + 1) % 3;
+  }
+
   _drawFallbackSky(ctx, canvas) {
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
     g.addColorStop(0, '#1a1a3e');
@@ -1273,6 +1373,33 @@ export function dropImpactStrength(nowMs, dropAtMs) {
   if (!(age >= 0) || age >= DROP_IMPACT_LIFE_MS) return 0;
   const u = age / DROP_IMPACT_LIFE_MS;
   return (1 - u) * (1 - u); // ease-out: sharp at the hit, tapering fast
+}
+
+/** Drop motion blur envelope: the drop impact window, scaled by how fast
+ *  the camera is actually traveling (logical px/frame) -- no shake travel,
+ *  no smear, whatever the music is doing. Saturates at
+ *  MOTION_BLUR_SPEED_REF_PX so the hardest shakes all read full strength.
+ *  Pure so it's testable without a canvas. */
+export function dropMotionBlurStrength(nowMs, dropAtMs, shakeSpeedPx) {
+  const impact = dropImpactStrength(nowMs, dropAtMs);
+  if (!(impact > 0)) return 0;
+  return impact * (0.35 + 0.65 * clamp01(shakeSpeedPx / MOTION_BLUR_SPEED_REF_PX));
+}
+
+/** Per-history-frame draw list for the accumulation composite: up to two
+ *  ghosts (frames t-1, t-2), each offset further along the camera's travel
+ *  and fainter with age. [] when too weak to bother -- the caller skips the
+ *  composite but still captures, keeping the ring warm. Pure and
+ *  deterministic so the offsets/alphas are testable without a canvas. */
+export function dropMotionBlurPasses(strength, vxPx, vyPx) {
+  if (!(strength > 0)) return [];
+  const passes = [];
+  for (let k = 1; k <= MOTION_BLUR_GHOST_ALPHA.length; k++) {
+    const alpha = strength * MOTION_BLUR_GHOST_ALPHA[k - 1];
+    if (alpha <= MOTION_BLUR_MIN_ALPHA) break; // older ghosts only get fainter
+    passes.push({ dx: vxPx * k, dy: vyPx * k, alpha });
+  }
+  return passes;
 }
 
 /** 0..1 ambient heat level driving the wildfire/ember side of the heat

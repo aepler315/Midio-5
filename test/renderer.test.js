@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dropImpactStrength, speedLineSegments, bloomStrength, BLOOM_BASE, heatAmbient01 } from '../src/render/Renderer.js';
+import { dropImpactStrength, speedLineSegments, bloomStrength, BLOOM_BASE, heatAmbient01, dropMotionBlurStrength, dropMotionBlurPasses } from '../src/render/Renderer.js';
 
 test('dropImpactStrength is 0 with no drop yet (dropAtMs = -Infinity, HypeDirector\'s initial state)', () => {
   assert.equal(dropImpactStrength(0, -Infinity), 0);
@@ -115,4 +115,46 @@ test('heatAmbient01: EMBER ambient haze is capped well below a full wildfire bla
 test('heatAmbient01 takes the max of fire and ember, not their sum', () => {
   const v = heatAmbient01(true, 0.9, 1);
   assert.ok(v <= 1, `should stay clamped, got ${v}`);
+});
+
+test('dropMotionBlurStrength is 0 outside the drop impact window', () => {
+  assert.equal(dropMotionBlurStrength(0, -Infinity, 20), 0, 'no drop yet (HypeDirector initial state)');
+  assert.equal(dropMotionBlurStrength(999, 1000, 20), 0, 'before the drop');
+  assert.equal(dropMotionBlurStrength(1000 + 320, 1000, 20), 0, 'exactly at the end of the impact life');
+  assert.equal(dropMotionBlurStrength(2000, 1000, 20), 0, 'long past the drop');
+});
+
+test('dropMotionBlurStrength scales with camera travel and saturates at full speed', () => {
+  const atDrop = 1000;
+  const still = dropMotionBlurStrength(atDrop, atDrop, 0);
+  assert.ok(still > 0 && still < 1, `a stationary camera still smears a little at the hit, got ${still}`);
+  const medium = dropMotionBlurStrength(atDrop, atDrop, 3.5);
+  const full = dropMotionBlurStrength(atDrop, atDrop, 70);
+  assert.ok(medium > still, 'more travel, more smear');
+  assert.ok(full > medium, 'monotonic in speed');
+  assert.equal(full, 1, 'saturated travel reads full strength at the hit');
+  assert.ok(dropMotionBlurStrength(1000 + 300, atDrop, 70) < full, 'eases out with the impact envelope');
+});
+
+test('dropMotionBlurPasses returns [] at zero strength', () => {
+  assert.deepEqual(dropMotionBlurPasses(0, 10, -4), []);
+  assert.deepEqual(dropMotionBlurPasses(-0.5, 10, -4), []);
+});
+
+test('dropMotionBlurPasses: ghosts step along the travel vector and fade with age', () => {
+  const passes = dropMotionBlurPasses(1, 6, -2);
+  assert.equal(passes.length, 2);
+  assert.equal(passes[0].dx, 6);
+  assert.equal(passes[0].dy, -2);
+  assert.equal(passes[1].dx, 12, 'second ghost twice as far along the travel');
+  assert.equal(passes[1].dy, -4);
+  assert.ok(passes[1].alpha < passes[0].alpha, 'older ghost is fainter');
+  assert.ok(passes[0].alpha <= 1 && passes[1].alpha > 0, 'alphas stay in range');
+});
+
+test('dropMotionBlurPasses drops the older ghost first as strength falls', () => {
+  const weak = dropMotionBlurPasses(0.1, 6, -2);
+  assert.equal(weak.length, 1, 'a faint second ghost falls below the minimum first');
+  const none = dropMotionBlurPasses(0.01, 6, -2);
+  assert.equal(none.length, 0, 'everything under the floor composites nothing');
 });
