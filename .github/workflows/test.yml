@@ -1,0 +1,33 @@
+# Run the test suite on PRs and pushes to main. There is no other CI here,
+# so this is the gate: `npm test` (`node --test`) scans the whole checkout
+# and picks up the nested polygon app's TypeScript tests as well, which is
+# why polygon's own dependencies are installed too -- without them its
+# tests fail on missing imports (ERR_MODULE_NOT_FOUND), not on assertions.
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install game dependencies
+        run: npm ci --no-fund --no-audit
+      - name: Install polygon dependencies
+        run: npm ci --no-fund --no-audit
+        working-directory: polygon
+      - name: Run test suite
+        run: npm test
