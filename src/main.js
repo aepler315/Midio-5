@@ -265,6 +265,34 @@ const STAGE_PRESETS = {
 };
 const STAGE_RES_KEY = 'smw:stageRes';
 const STAGE_FPS_KEY = 'smw:stageFps';
+const VISION_PROVIDER_KEY = 'smw:visionProvider';
+const VISION_APIKEY_KEY = 'smw:visionApiKey';
+const VISION_MODEL_KEY = 'smw:visionModel';
+const VISION_ENDPOINT_KEY = 'smw:visionEndpoint';
+
+/** Read the persisted vision-loop provider config (§ VisionLoop.setProvider
+ *  shape). Ollama, with no key, is the zero-setup default; a key is only
+ *  ever read out of this browser's own localStorage, never sent anywhere
+ *  but the provider's own endpoint. */
+function readVisionConfig() {
+  try {
+    return {
+      provider: localStorage.getItem(VISION_PROVIDER_KEY) || 'ollama',
+      apiKey: localStorage.getItem(VISION_APIKEY_KEY) || '',
+      model: localStorage.getItem(VISION_MODEL_KEY) || null,
+      endpoint: localStorage.getItem(VISION_ENDPOINT_KEY) || null,
+    };
+  } catch { return { provider: 'ollama', apiKey: '', model: null, endpoint: null }; }
+}
+
+function persistVisionConfig({ provider, apiKey, model, endpoint }) {
+  try {
+    localStorage.setItem(VISION_PROVIDER_KEY, provider);
+    localStorage.setItem(VISION_APIKEY_KEY, apiKey || '');
+    if (model) localStorage.setItem(VISION_MODEL_KEY, model); else localStorage.removeItem(VISION_MODEL_KEY);
+    if (endpoint) localStorage.setItem(VISION_ENDPOINT_KEY, endpoint); else localStorage.removeItem(VISION_ENDPOINT_KEY);
+  } catch { /* no storage */ }
+}
 
 let simTime = 0;
 let acc = 0;
@@ -1149,8 +1177,11 @@ function startTimeline(timelineData, extra = {}) {
   sim.estimatedDuration = !!timelineData.estimatedDuration;
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
   renderer = createRenderer(canvas, rendererMode);
-  visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false, perfGovernor });
+  // enabled stays false (opt-in via V); provider/key/model/endpoint persist
+  // across songs since they're a machine-level setting, not a per-song one.
+  visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false, perfGovernor, ...readVisionConfig() });
   debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop, perfGovernor, drawErrors);
+  debugOverlay.onVisionConfigChange = persistVisionConfig;
   renderTracks(timelineData.tracks, timelineData.pairs);
   if (filmstripEl) { filmstripEl.innerHTML = ''; filmstripEl.classList.add('hidden'); }
 

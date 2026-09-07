@@ -339,9 +339,13 @@ hard accents.
 
 Press `` ` `` during play to open the debug overlay (ParamBus state + vision
 loop log); press `V` inside it to toggle the vision self-tuning loop (off by
-default — it calls out to a local Ollama instance at
-`http://localhost:11434`, and degrades to a silent no-op if that's not
-running). Press `Escape` to close any open popup.
+default). The overlay also carries the loop's only settings surface: a
+provider dropdown (**Ollama** — local, zero setup, default; **Anthropic**,
+**OpenAI**, **Gemini**, **OpenRouter** — bring your own API key) plus
+optional model/endpoint overrides, persisted in this browser only. Whichever
+provider is picked, the loop degrades to a silent no-op if it's unreachable,
+misconfigured, or returns something it can't validate — it never blocks or
+crashes the game. Press `Escape` to close any open popup.
 
 ## Project layout
 
@@ -354,7 +358,7 @@ src/
   sim/       fixed-step simulation: jump physics, combo, companions, FX, autoplay
   world/     biomes (8-layer parallax), fracture/shatter engine
   render/    canvas compositor + camera
-  vision/    Ollama-backed closed-loop self-tuning
+  vision/    closed-loop self-tuning (Ollama / Anthropic / OpenAI / Gemini / OpenRouter)
   ui/        debug overlay, styles
 test/        node --test unit tests (pure logic, no DOM needed)
 tools/       dev server, WAV/MIDI test-fixture generators, Playwright smoke tests
