@@ -18,7 +18,7 @@ import { drawNaveWorld } from './nave/drawNave.js';
 import { ParticleField } from './ParticleField.js';
 import {
   sampleTerrainCurve, curveFacing, facingColorStops, reliefLitStripRGBA, reliefShadeStripRGBA,
-  RELIEF_FALLOFF_PX,
+  RELIEF_FALLOFF_PX, FOOTING_FACING_K,
 } from './TerrainRelief.js';
 import { Mandala } from './Mandala.js';
 import { CymaticField } from './CymaticField.js';
@@ -2355,8 +2355,25 @@ export class BiomeManager {
       const strokePath = this._terrainTopPath(bars, canvas.height, false, canvas.width);
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
+      // Same facing sampler _drawGround's body/crest passes already use --
+      // this is the one sibling pass along the same ridge that stayed a
+      // flat wash. Omit the light (or rimLightEnabled) and every stop
+      // collapses back to `pass.alpha` unmodulated: byte-identical to today.
+      const rimOn = this._perf ? this._perf.rimLightEnabled : true;
+      const reliefSamples = (rimOn && this.light) ? sampleTerrainCurve(bars) : null;
+      const facing = reliefSamples ? curveFacing(reliefSamples, this.light) : null;
+      const hasFacing = facing && facing.some((f) => Math.abs(f) > 0.01);
       for (const pass of TERRAIN_FOOTING_AO_PASSES) {
-        ctx.strokeStyle = `rgba(0,0,0,${pass.alpha})`;
+        let stroke = `rgba(0,0,0,${pass.alpha})`;
+        if (hasFacing) {
+          const stops = facingColorStops(reliefSamples, facing, 0, canvas.width, 'footing', pass.alpha, FOOTING_FACING_K);
+          if (stops.length >= 2) {
+            const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
+            for (const s of stops) grad.addColorStop(s.offset, s.color);
+            stroke = grad;
+          }
+        }
+        ctx.strokeStyle = stroke;
         ctx.lineWidth = pass.lw;
         ctx.stroke(strokePath);
       }

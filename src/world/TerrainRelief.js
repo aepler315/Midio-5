@@ -39,6 +39,11 @@ export const RELIEF_SAMPLE_PX = 10;
 // each hump brightens on the sun's side and dims on the other.
 export const CREST_BASE_ALPHA = 0.18;
 export const CREST_FACING_K = 0.85;
+// Footing AO (the contact seam _drawTerrainFooting strokes, separate from
+// the crest above): same sign convention as the shade half of the relief
+// body -- more occlusion turned away from the light -- but a softer swing,
+// since this is a seam, not the rim itself.
+export const FOOTING_FACING_K = 0.5;
 
 /**
  * Per-bar surface facing against a light, for the ground ridge.
@@ -145,14 +150,21 @@ export function reliefDepthFade(depthPx, falloffPx = RELIEF_FALLOFF_PX) {
  * collapse). `lit`/`shade` are kept as tested, working pure functions for
  * any future gradient-based consumer, but nothing currently calls them.
  *
+ * `footing` is the AO seam _drawTerrainFooting strokes: `baseAlpha` is that
+ * pass's own uniform alpha (there are several, at different widths), scaled
+ * down where the surface faces the light and up where it turns away --
+ * `baseAlpha` unmodulated (facing 0) reproduces today's flat stroke exactly.
+ *
  * @param {{x:number}[]} samples
  * @param {number[]} facing
  * @param {number} x0
  * @param {number} x1
- * @param {'lit'|'shade'|'crest'} channel
+ * @param {'lit'|'shade'|'crest'|'footing'} channel
+ * @param {number} [baseAlpha] footing only: the pass's own uniform alpha
+ * @param {number} [facingK] footing only: swing amount, defaults to FOOTING_FACING_K
  * @returns {{offset:number, color:string}[]}
  */
-export function facingColorStops(samples, facing, x0, x1, channel) {
+export function facingColorStops(samples, facing, x0, x1, channel, baseAlpha = 0, facingK = FOOTING_FACING_K) {
   const span = x1 - x0;
   if (!(span > 0) || !samples || samples.length === 0) return [];
   const n = Math.min(samples.length, facing ? facing.length : 0);
@@ -165,6 +177,10 @@ export function facingColorStops(samples, facing, x0, x1, channel) {
     }
     if (channel === 'shade') {
       return `rgba(0,0,0,${(RELIEF_SHADE_ALPHA * Math.max(0, -f)).toFixed(3)})`;
+    }
+    if (channel === 'footing') {
+      const a = clamp01(baseAlpha * (1 - facingK * f));
+      return `rgba(0,0,0,${a.toFixed(3)})`;
     }
     const a = CREST_BASE_ALPHA * (1 + CREST_FACING_K * f);
     return `rgba(255,255,255,${Math.max(0, a).toFixed(3)})`;
