@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { TempoMap } from '../src/core/TempoMap.js';
 import { midiToTimeline } from '../src/core/MidiAdapter.js';
 import { Role } from '../src/core/NoteEvent.js';
-import { vlq, buildTrackChunk, buildMultiTrackPannedMidi, buildType0MultiChannelMidi } from './helpers/midiFixture.js';
+import { vlq, buildTrackChunk, buildMultiTrackPannedMidi, buildType0MultiChannelMidi, strBytes } from './helpers/midiFixture.js';
 
 function buildSimpleMidi() {
   const ppqn = 96;
@@ -131,4 +131,34 @@ test('two tracks hard-panned to opposite sides with overlapping notes are intert
   // Real GM program numbers from Program Change carry through onto notes.
   assert.equal(leftNotes[0].program, 40);
   assert.equal(rightNotes[0].program, 42);
+});
+
+// A track named "Conductor" used to be diverted into an authored cue sheet
+// and hidden from the musical pipeline entirely (the Guitar-Pro authoring
+// path, now removed). It's an ordinary track like any other today.
+test('a track named "Conductor" plays like any other track, and no cue sheet is produced', () => {
+  const ppqn = 96;
+  const header = [0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, 2, (ppqn >> 8) & 0xff, ppqn & 0xff];
+
+  const lead = [];
+  lead.push([...vlq(0), 0xff, 0x03, 4, ...strBytes('Lead')]);
+  lead.push([...vlq(0), 0xff, 0x51, 3, 0x07, 0xa1, 0x20]); // 120 BPM
+  lead.push([...vlq(0), 0x90, 60, 100]);
+  lead.push([...vlq(96), 0x80, 60, 0]);
+  lead.push([...vlq(0), 0xff, 0x2f, 0]);
+
+  const named = [];
+  named.push([...vlq(0), 0xff, 0x03, 9, ...strBytes('Conductor')]);
+  named.push([...vlq(0), 0x99, 49, 127]); // Crash Cymbal 1, fff -- used to mean "section boundary"
+  named.push([...vlq(24), 0x89, 49, 0]);
+  named.push([...vlq(0), 0xff, 0x2f, 0]);
+
+  const { timeline, tracks, conductor } = midiToTimeline(
+    new Uint8Array([...header, ...buildTrackChunk(lead), ...buildTrackChunk(named)]).buffer,
+  );
+
+  assert.equal(conductor, null);
+  assert.equal(tracks.length, 2);
+  assert.ok(tracks.some((t) => t.name === 'Conductor'));
+  assert.ok(timeline.some((e) => e.pitch === 49), 'the former cue pitch is just a playable note now');
 });

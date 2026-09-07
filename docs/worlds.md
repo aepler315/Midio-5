@@ -939,10 +939,6 @@ converging back into eight ways of saying 70%.
 - **Character casting per world.** Midio, Midasus, and the third companion
   presumably need per-world silhouette treatments (a diver, a suited figure,
   a driver). Out of scope here; it's a `Casting` question, not a landform one.
-- **Conductor-track cue names.** `ConductorTrack` currently validates biome
-  names against `BIOMES`. With eight palette sets it needs to validate
-  against the *active world's* palettes, and probably wants a world-switch
-  cue of its own. Flagged, not designed.
 - **Whether all eight should always be offered.** There's an argument for
   hiding worlds scoring under ~45 rather than showing a wall of bad matches.
   A UX call, best made once the scores exist and can be looked at.

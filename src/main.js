@@ -1140,9 +1140,8 @@ function startTimeline(timelineData, extra = {}) {
       // sessions learned about how this player hears a beat.
       groove,
       songSeed: pinned,
-      // The conductor track's cue sheet (ConductorTrack.js), when the MIDI
-      // carried one. Null for raw audio, the demo, and any MIDI without a
-      // track named "Conductor".
+      // The demo song's own authored cue sheet (ConductorTrack.js); always
+      // null for any uploaded/dropped file.
       conductorCues: timelineData.conductor || null,
       worldId: timelineData.worldId || lastWorldId || DEFAULT_WORLD_ID,
     });
@@ -1266,11 +1265,8 @@ function startTimeline(timelineData, extra = {}) {
 
 /**
  * A MIDI and audio file dropped TOGETHER: the recording is what you hear,
- * the score is what you see. This is the authoring path the conductor track
- * (ConductorTrack.js) exists for -- export both from the same Guitar Pro
- * project and the MIDI becomes an exact, hand-authorable description of the
- * visuals for a song the engine would otherwise have to guess at from raw
- * spectra.
+ * the score is what you see -- an exact description of the visuals for a
+ * song the engine would otherwise have to guess at from raw spectra.
  *
  * The two are assumed to share a t=0 origin, which is what exporting them
  * from one project gives you. Nothing here tries to detect or correct an
