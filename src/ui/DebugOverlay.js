@@ -11,6 +11,7 @@
 // timestamps where the curve disagrees with your ears.
 import { MAX_LEVEL } from '../render/PerfGovernor.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
+import { VISION_PROVIDERS } from '../vision/providers.js';
 
 const TRACE_W = 460, TRACE_H = 86;
 const TRACE_SMOOTH = 7; // display-only moving average, in trace pixels
@@ -55,9 +56,79 @@ export class DebugOverlay {
     // Wrap rather than clip: the panel is 380px and several lines are longer.
     this.pre.style.whiteSpace = 'pre-wrap';
     this.el.appendChild(this.canvas);
+    this._buildVisionConfigForm();
     this.el.appendChild(this.pre);
 
     this._trace = null; // cached whole-song curve; rebuilt when the song changes
+    // Set by main.js so provider/key/model choices persist across songs;
+    // left null-safe so the overlay works standalone (e.g. under test).
+    this.onVisionConfigChange = null;
+  }
+
+  /** A tiny inline settings form for the vision loop's provider/key/model --
+   *  built once, not part of the per-frame render() rebuild. This is the
+   *  loop's only configuration surface: it stays out of the title/player
+   *  chrome entirely (the loop itself is a silent background optimizer, not
+   *  a feature anyone needs to see to play the game). */
+  _buildVisionConfigForm() {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:0 0 8px;font:11px monospace;';
+
+    const select = document.createElement('select');
+    for (const [id, cfg] of Object.entries(VISION_PROVIDERS)) {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = cfg.label;
+      select.appendChild(opt);
+    }
+    const keyInput = document.createElement('input');
+    keyInput.type = 'password';
+    keyInput.placeholder = 'API key';
+    keyInput.autocomplete = 'off';
+    keyInput.style.cssText = 'width:110px;';
+    const modelInput = document.createElement('input');
+    modelInput.type = 'text';
+    modelInput.placeholder = 'model (optional)';
+    modelInput.style.cssText = 'width:130px;';
+    const endpointInput = document.createElement('input');
+    endpointInput.type = 'text';
+    endpointInput.placeholder = 'endpoint (optional)';
+    endpointInput.style.cssText = 'width:150px;';
+
+    const sync = () => {
+      const cfg = VISION_PROVIDERS[select.value] || VISION_PROVIDERS.ollama;
+      keyInput.disabled = !cfg.needsKey;
+      keyInput.placeholder = cfg.needsKey ? 'API key' : 'API key (not used by Ollama)';
+    };
+
+    const apply = () => {
+      const provider = select.value;
+      const apiKey = keyInput.value.trim();
+      const model = modelInput.value.trim() || null;
+      const endpoint = endpointInput.value.trim() || null;
+      this.visionLoop.setProvider(provider, { apiKey, model, endpoint });
+      this.onVisionConfigChange?.({ provider, apiKey, model, endpoint });
+      sync();
+    };
+
+    // Only show model/endpoint as filled-in when they're an actual override
+    // -- otherwise a blank field re-submitting on an unrelated change (e.g.
+    // just typing the API key) would stomp a previously-set override back
+    // to that provider's default.
+    const startCfg = VISION_PROVIDERS[this.visionLoop.provider] || VISION_PROVIDERS.ollama;
+    select.value = this.visionLoop.provider || 'ollama';
+    keyInput.value = this.visionLoop.apiKey || '';
+    modelInput.value = (this.visionLoop.model && this.visionLoop.model !== startCfg.model) ? this.visionLoop.model : '';
+    endpointInput.value = (this.visionLoop.endpoint && this.visionLoop.endpoint !== startCfg.endpoint) ? this.visionLoop.endpoint : '';
+    sync();
+
+    // Switching providers clears any model/endpoint override rather than
+    // carrying one provider's values onto another's default.
+    select.addEventListener('change', () => { modelInput.value = ''; endpointInput.value = ''; apply(); });
+    for (const el of [keyInput, modelInput, endpointInput]) el.addEventListener('change', apply);
+
+    wrap.append('vision provider: ', select, keyInput, modelInput, endpointInput);
+    this.el.appendChild(wrap);
   }
 
   toggle() {

@@ -1,10 +1,14 @@
 // Autonomous closed-loop vision self-tuning (spec §5). A vision model is a
 // noisy sensor, not a chat partner: slow sampling, strict schema, heavy
 // actuator smoothing (owned by ParamBus), and revert-on-regress. This loop
-// must be safe to fail 100% of the time — Ollama being absent/unreachable
-// degrades to a silent no-op, never a crash or a stuck game.
+// must be safe to fail 100% of the time — the configured provider being
+// absent/unreachable/misconfigured degrades to a silent no-op, never a
+// crash or a stuck game. Ollama is the zero-setup default; Anthropic,
+// OpenAI, Gemini, and OpenRouter are available with a user-supplied API key
+// (see providers.js) so the loop never requires a key baked into the app.
 import { RingBuffer } from '../utils/RingBuffer.js';
 import { clamp, clamp01 } from '../utils/math.js';
+import { VISION_PROVIDERS, callVisionProvider } from './providers.js';
 
 const CRITIC_SYSTEM = `You are the visual director of a rhythm-driven side-scroller. You receive 4 frames spanning ~1 second, in order, plus telemetry. Judge only what is visible. Respond with ONLY a JSON object matching the schema — no prose, no markdown fences.`;
 
@@ -18,15 +22,14 @@ const MIN_CONFIDENCE = 0.4;
 
 export class VisionLoop {
   constructor(canvas, paramBus, sim, {
-    enabled = false, endpoint = 'http://localhost:11434/api/chat', model = 'llava:13b', perfGovernor = null,
+    enabled = false, provider = 'ollama', apiKey = '', endpoint = null, model = null, perfGovernor = null,
   } = {}) {
     this.canvas = canvas;
     this.paramBus = paramBus;
     this.sim = sim;
     this.enabled = enabled;
-    this.endpoint = endpoint;
-    this.model = model;
     this.perfGovernor = perfGovernor;
+    this.setProvider(provider, { apiKey, endpoint, model });
 
     this.ring = new RingBuffer(4);
     this.log = new RingBuffer(40);
@@ -44,6 +47,18 @@ export class VisionLoop {
 
     this._fps = 60;
     this._lastFrameTime = null;
+  }
+
+  /** Switch providers (or update the current one's key/model/endpoint) live.
+   *  An explicit endpoint/model wins; otherwise falls back to that
+   *  provider's default so switching providers doesn't leave e.g. an
+   *  Ollama model name pointed at OpenAI. */
+  setProvider(provider, { apiKey = '', endpoint = null, model = null } = {}) {
+    const cfg = VISION_PROVIDERS[provider] || VISION_PROVIDERS.ollama;
+    this.provider = VISION_PROVIDERS[provider] ? provider : 'ollama';
+    this.apiKey = apiKey;
+    this.endpoint = endpoint || cfg.endpoint;
+    this.model = model || cfg.model;
   }
 
   /** Called once per rAF frame (spec §6.1). tRafMs: performance.now(); nowSimMs: song-relative ms. */
@@ -99,23 +114,15 @@ export class VisionLoop {
     const telemetry = this._buildTelemetry(nowSimMs);
 
     try {
-      const res = await fetch(this.endpoint, {
-        method: 'POST',
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: this.model,
-          stream: false,
-          format: 'json',
-          options: { temperature: 0.2, num_predict: 300 },
-          messages: [
-            { role: 'system', content: CRITIC_SYSTEM },
-            { role: 'user', content: telemetry, images: frames },
-          ],
-        }),
+      const data = await callVisionProvider(this.provider, {
+        apiKey: this.apiKey,
+        endpoint: this.endpoint,
+        model: this.model,
+        systemPrompt: CRITIC_SYSTEM,
+        telemetry,
+        frames,
+        timeoutMs: FETCH_TIMEOUT_MS,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
       const parsed = this._parseResponse(data);
       if (parsed) this._applyResult(parsed, nowSimMs);
       else this.log.push({ t: nowSimMs, applied: false, reason: 'invalid-or-low-confidence-payload' });
