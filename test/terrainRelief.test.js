@@ -14,6 +14,7 @@ import {
   RELIEF_LIT_ALPHA,
   RELIEF_SHADE_ALPHA,
   CREST_BASE_ALPHA,
+  FOOTING_FACING_K,
 } from '../src/world/TerrainRelief.js';
 
 function bar(x, y, width = 40) {
@@ -208,6 +209,48 @@ test('crest stops stay near the legacy 0.18 when facing is 0', () => {
   const alpha = (c) => Number(c.slice(c.lastIndexOf(',') + 1, -1));
   for (const s of stops) {
     assert.ok(Math.abs(alpha(s.color) - CREST_BASE_ALPHA) < 1e-9, s.color);
+  }
+});
+
+// --- footing AO: the one sibling pass that used to ignore the light -------
+
+test('footing stops reproduce the flat pass alpha exactly when facing is 0', () => {
+  const samples = [{ x: 0 }, { x: 100 }];
+  const baseAlpha = 0.22;
+  const stops = facingColorStops(samples, [0, 0], 0, 100, 'footing', baseAlpha);
+  const alpha = (c) => Number(c.slice(c.lastIndexOf(',') + 1, -1));
+  for (const s of stops) {
+    assert.ok(Math.abs(alpha(s.color) - baseAlpha) < 1e-9, s.color);
+  }
+});
+
+test('footing AO deepens turned away from the light and lifts facing it', () => {
+  const samples = [{ x: 0 }, { x: 100 }];
+  const baseAlpha = 0.2;
+  const alpha = (c) => Number(c.slice(c.lastIndexOf(',') + 1, -1));
+
+  const lit = facingColorStops(samples, [1, 1], 0, 100, 'footing', baseAlpha);
+  const shaded = facingColorStops(samples, [-1, -1], 0, 100, 'footing', baseAlpha);
+
+  assert.ok(alpha(lit[0].color) < baseAlpha, 'facing the light should lighten the seam');
+  assert.ok(alpha(shaded[0].color) > baseAlpha, 'turned away should deepen the seam');
+  const expectedLit = baseAlpha * (1 - FOOTING_FACING_K);
+  const expectedShaded = baseAlpha * (1 + FOOTING_FACING_K);
+  assert.ok(Math.abs(alpha(lit[0].color) - expectedLit) < 1e-9);
+  assert.ok(Math.abs(alpha(shaded[0].color) - expectedShaded) < 1e-9);
+});
+
+test('footing alpha never goes negative or exceeds 1, even at extreme facing/base combinations', () => {
+  const samples = [{ x: 0 }, { x: 100 }];
+  const alpha = (c) => Number(c.slice(c.lastIndexOf(',') + 1, -1));
+  for (const baseAlpha of [0, 0.3, 1]) {
+    for (const f of [-1, -0.4, 0, 0.4, 1]) {
+      const stops = facingColorStops(samples, [f, f], 0, 100, 'footing', baseAlpha, 5);
+      for (const s of stops) {
+        const a = alpha(s.color);
+        assert.ok(a >= 0 && a <= 1, `alpha ${a} out of range for base=${baseAlpha} f=${f}`);
+      }
+    }
   }
 });
 
