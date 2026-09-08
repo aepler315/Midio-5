@@ -885,7 +885,15 @@ export class Renderer {
     const originY = sim.midio ? sim.midio.groundY * scaleY : canvas.height * 0.7;
 
     ctx.save();
-    ctx.globalCompositeOperation = 'copy'; // full overwrite -- warps the frame, doesn't add to it
+    // NOT 'copy'. Under 'copy' each drawImage discards the ENTIRE destination
+    // outside the rect it just drew, so in a per-cell loop every cell erased
+    // all the cells before it and the finished frame was just the last cell --
+    // measured at 0.2% of the canvas surviving 63 blits, which on screen is a
+    // blank stage with only the DOM chrome (buttons, seek bar) left visible.
+    // 'source-over' is what a warp actually wants: each shifted slice paints
+    // over the frame it came from, and any pixel no cell lands on simply keeps
+    // its original unwarped content instead of being punched out.
+    ctx.globalCompositeOperation = 'source-over';
     for (let ry = 0; ry < rows; ry++) {
       const cy = ry * cell + cell / 2;
       for (let rx = 0; rx < cols; rx++) {
