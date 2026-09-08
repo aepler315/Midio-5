@@ -31,6 +31,15 @@ const ASCENT_SCALE_FAR = 0.25;
 const FIGURE_SEC = 3.2;
 const FIGURES_PER_VOYAGE = 3;
 const FIGURE_RADIUS_PX = 130;
+// _bakeRecipe's `scale` for the eight math families tops out at 0.82+0.36=1.18
+// (baked into the 0.12 station margin below), but a chorus voyage's middle
+// figure is sky-written lyric text instead, hard-coded to scale=2.2 in
+// _pickFigureOrder -- nearly double. A station placed near the standard
+// margin let that text run off the left/right edge of frame; this scale
+// (and LYRIC_TEXT_SCALE below) let the station-safety math size the margin
+// to whichever figure a given voyage can actually draw.
+const FIGURE_SCALE_MAX = 1.18;
+const LYRIC_TEXT_SCALE = 2.2;
 const TRAIL_SEC = 3.2;
 const TRAIL_MAX_PTS = 400;
 // Trail segments longer than this are a teleport chord — skip them in draw.
@@ -262,14 +271,24 @@ export class SkyVoyage {
     // triple the vertical band, while keeping the lowest point of the
     // biggest possible figure (station.y + ~0.21 of stageH for the largest
     // scaled radius) comfortably above where terrain peaks (~0.55).
-    this._station = { x: stageW * (0.12 + this.rand() * 0.76), y: stageH * (0.10 + this.rand() * 0.20) };
+    //
+    // The safe x-margin has to be sized to whichever figure THIS voyage can
+    // actually draw, not the eight math families' own max: a chorus voyage
+    // sky-writes lyric text at LYRIC_TEXT_SCALE (2.2), nearly double the
+    // math families' FIGURE_SCALE_MAX (1.18). Placed at the old fixed 0.12
+    // margin, that text's own ends run past the frame edge -- the reported
+    // "a large portion of the drawings are outside the frame."
+    const voyageScaleMax = this._chorusText ? LYRIC_TEXT_SCALE : FIGURE_SCALE_MAX;
+    const marginFracX = clamp((FIGURE_RADIUS_PX * voyageScaleMax) / stageW, 0.05, 0.45);
+    this._station = { x: stageW * (marginFracX + this.rand() * (1 - 2 * marginFracX)), y: stageH * (0.10 + this.rand() * 0.20) };
     // She revisits her myths: past voyages pull this one's station toward
-    // the densest cluster of her own accumulated stars, clamped to a safe
-    // sky band so the pull can never drag her down into the mountains.
+    // the densest cluster of her own accumulated stars, clamped to the same
+    // voyage-sized safe band so the pull can never drag a figure (lyric
+    // text included) past the frame edge or down into the mountains.
     const nav = this._navTarget();
     if (nav) {
       this._station = {
-        x: clamp(lerp(this._station.x, nav.x, NAV_PULL), stageW * 0.08, stageW * 0.92),
+        x: clamp(lerp(this._station.x, nav.x, NAV_PULL), stageW * marginFracX, stageW * (1 - marginFracX)),
         y: clamp(lerp(this._station.y, nav.y, NAV_PULL), stageH * 0.08, stageH * 0.32),
       };
     }
@@ -320,7 +339,7 @@ export class SkyVoyage {
       const textPath = layoutTextPath(this._chorusText);
       if (textPath.length >= 4) {
         order[1] = {
-          kind: 'lyricText', rate: 1, scale: 2.2,
+          kind: 'lyricText', rate: 1, scale: LYRIC_TEXT_SCALE,
           phase: 0, slot: 1, textPath,
         };
       }
