@@ -4364,13 +4364,24 @@ export class BiomeManager {
   _drawOneCelestial(ctx, cx, cy, c, alpha) {
     if (alpha <= 0.02) return;
     ctx.save();
-    ctx.globalAlpha = alpha * 0.55;
-    const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, c.radius * (c.dominant ? 3.2 : 2.2));
+    // A previous pass (see git history) cut this halo's ALPHA to 0.55 and
+    // deliberately left its footprint (the gradient radius) untouched.
+    // Reported as still too intense after that -- alpha alone wasn't
+    // enough, because the halo's screen footprint also grows with the
+    // body's own CelestialApproach scale-up (up to 3.4x by song's end), so
+    // a wide multiplier here compounds into a genuinely huge glow late in
+    // a song regardless of how dim any one pixel of it is. This second pass
+    // cuts both: alpha down further, and the multiplier itself (3.2/2.2 ->
+    // 2.4/1.7, roughly a 25% smaller footprint) so the glow's total extent
+    // shrinks along with its brightness, not just one or the other.
+    const haloRadiusMul = c.dominant ? 2.4 : 1.7;
+    ctx.globalAlpha = alpha * 0.4;
+    const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, c.radius * haloRadiusMul);
     halo.addColorStop(0, c.haloColor);
     halo.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = halo;
     ctx.beginPath();
-    ctx.arc(cx, cy, c.radius * (c.dominant ? 3.2 : 2.2), 0, Math.PI * 2);
+    ctx.arc(cx, cy, c.radius * haloRadiusMul, 0, Math.PI * 2);
     ctx.fill();
 
     if (c.wireframe) {
