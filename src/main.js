@@ -480,7 +480,12 @@ async function toggleFullscreen() {
       if (document.exitFullscreen) await document.exitFullscreen();
       else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
     } else if (root.requestFullscreen) {
-      await root.requestFullscreen();
+      // navigationUI: 'hide' asks the browser to skip its own "press Esc to
+      // exit" banner. It's a hint, not a guarantee -- browsers are free to
+      // show it anyway (deliberately: a page can't be allowed to trap
+      // someone in fullscreen with no visible way out), but where it's
+      // honored this is the only lever a page has.
+      await root.requestFullscreen({ navigationUI: 'hide' });
     } else if (root.webkitRequestFullscreen) {
       await root.webkitRequestFullscreen();
     }

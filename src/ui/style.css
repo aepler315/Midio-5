@@ -1049,6 +1049,15 @@ html, body {
   border-radius: var(--radius-sm);
 }
 
+/* Fullscreen sits at the end of the row and is the one HUD button people
+   reach for mid-song without looking -- bigger target, more breathing room
+   from Stop so a hurried tap doesn't clip it instead. */
+#fullscreenBtn {
+  padding: 10px 16px;
+  font-size: 1.35rem;
+  margin-left: var(--space-3);
+}
+
 /* Auto-hiding SoundFont pill (bottom-center) — click to open the switcher
    popup (#fontModal). */
 #fontBar {
