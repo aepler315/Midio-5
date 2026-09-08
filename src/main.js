@@ -23,6 +23,9 @@ import {
 } from './ui/Accessibility.js';
 import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
+import {
+  DEFAULT_STAGE_PRESET, resolveStagePreset, stageDims, isRetroPreset,
+} from './render/StagePresets.js';
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
 import { TitleBackdrop } from './ui/TitleBackdrop.js';
@@ -250,20 +253,12 @@ let pendingWorldStart = null;
 let lastSongName = 'song';
 let lastSongSeed = null; // 32-bit seed used for the run that just finished
 
-// Stage: logical composition is always 1280×720; backing store scales up to
-// the chosen preset (720 / 1080 / 1440 / 4K) for sharper output.
+// Stage: logical composition is always 1280×720; the backing store scales
+// to the chosen preset -- up to 4K for sharper output, or down to 320×180
+// for 8-bit mode. See StagePresets.js for the list and for what makes the
+// 8-bit entry a mode rather than just another size.
 const STAGE_W = 1280;
 const STAGE_H = 720;
-const STAGE_PRESETS = {
-  144: { w: 256, h: 144 },
-  240: { w: 426, h: 240 },
-  360: { w: 640, h: 360 },
-  480: { w: 854, h: 480 },
-  720: { w: 1280, h: 720 },
-  1080: { w: 1920, h: 1080 },
-  1440: { w: 2560, h: 1440 },
-  2160: { w: 3840, h: 2160 },
-};
 const STAGE_RES_KEY = 'smw:stageRes';
 const STAGE_FPS_KEY = 'smw:stageFps';
 const VISION_PROVIDER_KEY = 'smw:visionProvider';
@@ -326,14 +321,32 @@ const perfStartLevel = resolvePerfStartLevel(
   },
 );
 
-function readStagePreset() {
-  const fromUi = Number(stageResEl?.value);
-  if (STAGE_PRESETS[fromUi]) return fromUi;
+// The stored value of each of these two settings, or null. Read through
+// their own functions rather than as the fallback arm of the readers below,
+// because the readers ask the <select> first and a <select> ALWAYS has a
+// value -- the one its markup marks `selected`. That made the stored value
+// unreachable at boot: the select said "1080p"/"60 fps" before storage was
+// ever consulted, so the reader returned the markup default and then the
+// boot code assigned that back onto the select. Both settings were written
+// on every change and silently discarded on every reload. It matters most
+// for exactly the machine 8-bit mode exists for: the device that cannot
+// afford 1080p was handed 1080p again on every load.
+function storedStagePreset() {
+  try { return resolveStagePreset(localStorage.getItem(STAGE_RES_KEY)); } catch { return null; }
+}
+
+function storedFpsCap() {
   try {
-    const stored = Number(localStorage.getItem(STAGE_RES_KEY));
-    if (STAGE_PRESETS[stored]) return stored;
-  } catch { /* no storage */ }
-  return 1080; // house default: 1080p -- a real perf floor for a friend's laptop iGPU
+    const stored = Number(localStorage.getItem(STAGE_FPS_KEY));
+    return stored === 30 || stored === 60 ? stored : null;
+  } catch { return null; }
+}
+
+function readStagePreset() {
+  const fromUi = resolveStagePreset(stageResEl?.value);
+  if (fromUi != null) return fromUi;
+  // 1080p default: a real perf floor for a friend's laptop iGPU.
+  return storedStagePreset() ?? DEFAULT_STAGE_PRESET;
 }
 
 function persistStagePreset(preset) {
@@ -343,11 +356,7 @@ function persistStagePreset(preset) {
 function readFpsCap() {
   const fromUi = Number(stageFpsEl?.value);
   if (fromUi === 30 || fromUi === 60) return fromUi;
-  try {
-    const stored = Number(localStorage.getItem(STAGE_FPS_KEY));
-    if (stored === 30 || stored === 60) return stored;
-  } catch { /* no storage */ }
-  return 60;
+  return storedFpsCap() ?? 60;
 }
 
 function persistFpsCap(fps) {
@@ -362,14 +371,28 @@ let lastDrawMs = 0;
  *  CSS-upscaled to fill the viewport — the single biggest win at 4K. */
 function fitCanvas() {
   const preset = readStagePreset();
-  const dims = STAGE_PRESETS[preset] || STAGE_PRESETS[1440];
-  const scale = perfGovernor ? perfGovernor.resolutionScale(preset) : 1;
+  const dims = stageDims(preset);
+  const retro = isRetroPreset(preset);
+  // Set BEFORE resolutionScale is read: in 8-bit mode the governor is pinned
+  // to its cheapest rung, and the scale it reports depends on that level.
+  if (perfGovernor) perfGovernor.retro = retro;
+  const scale = perfGovernor ? perfGovernor.resolutionScale(dims.h) : 1;
   const w = Math.round(dims.w * scale);
   const h = Math.round(dims.h * scale);
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;
   }
+  // Assigning canvas.width/height resets every 2D context attribute, this
+  // one included -- so it has to be re-applied after each resize rather than
+  // set once at boot. Nearest-neighbour is both what makes 8-bit read as
+  // pixel art instead of blur and the cheaper of the two samplers for the
+  // silhouette-strip blits, which are the bulk of the frame's draw calls.
+  const ctx2d = canvas.getContext('2d');
+  if (ctx2d) ctx2d.imageSmoothingEnabled = !retro;
+  // The other half of the same decision: the browser's own upscale from the
+  // backing store to the viewport (see #stage.retro in style.css).
+  canvas.classList.toggle('retro', retro);
   if (perfGovernor) perfGovernor.canvasWidth = w;
 }
 
@@ -396,14 +419,29 @@ function randomizeSeed() {
     if (qSeed != null) setSeedInput(qSeed);
   } catch { /* ignore */ }
   if (stageResEl) {
-    stageResEl.value = String(readStagePreset());
+    // Storage first, and only then whatever the markup defaults to -- see
+    // storedStagePreset() for why asking readStagePreset() here restored
+    // nothing at all.
+    stageResEl.value = String(storedStagePreset() ?? readStagePreset());
     stageResEl.addEventListener('change', () => {
-      persistStagePreset(Number(stageResEl.value) || 1080);
-      if (!running) fitCanvas();
+      persistStagePreset(resolveStagePreset(stageResEl.value) ?? DEFAULT_STAGE_PRESET);
+      // Applied immediately, mid-song included. This used to wait for the
+      // next song (`if (!running)`), which is precisely backwards for the
+      // reason someone reaches for this menu: they are watching the frame
+      // rate fall apart right now. Every buffer sized to the backing store
+      // (motion-blur ring, bloom, heat) re-allocates itself on a size
+      // change, and the renderer re-derives its transform from canvas.width
+      // every frame, so a resize between frames is already supported.
+      fitCanvas();
     });
   }
   if (stageFpsEl) {
-    stageFpsEl.value = String(readFpsCap());
+    stageFpsEl.value = String(storedFpsCap() ?? readFpsCap());
+    // Seeding the select above does not itself move the live cap, which was
+    // computed from readFpsCap() before the DOM was consulted -- so a
+    // restored 30fps has to be pushed into fpsCapMs here or the menu would
+    // read "30 fps" while the loop kept drawing 60.
+    fpsCapMs = 1000 / readFpsCap();
     stageFpsEl.addEventListener('change', () => {
       const fps = Number(stageFpsEl.value) || 60;
       persistFpsCap(fps);
@@ -1119,7 +1157,14 @@ function startTimeline(timelineData, extra = {}) {
   // note between zero and here at once -- the whole first half of the song
   // arriving in one step.
   if (startAtMs > 0) conductor.seekTo(startAtMs);
-  perfGovernor = new PerfGovernor({ startLevel: perfStartLevel });
+  // A fresh governor per song: it starts already pinned when 8-bit is the
+  // chosen preset, rather than spending the first song at full quality
+  // until something calls fitCanvas() again.
+  perfGovernor = new PerfGovernor({
+    startLevel: perfStartLevel,
+    retro: isRetroPreset(readStagePreset()),
+  });
+  fitCanvas(); // sync the new governor's canvasWidth/scale to the live buffer
   // World construction (parallax strips, landmarks) is CPU-heavy; surface a
   // progress line so a multi-second bake never looks like a dead freeze.
   showProgress('Building world…');

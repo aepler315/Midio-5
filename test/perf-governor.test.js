@@ -257,3 +257,99 @@ test('a machine genuinely missing frames still sheds', () => {
   for (let i = 0; i < 60 * 20; i++) { gov.sample(33.3, t); t += 33.3; } // a hard 30fps
   assert.ok(gov.level > 0, 'a real 30fps scene must still degrade');
 });
+
+// ── 8-bit mode (StagePresets.RETRO_PRESET) ─────────────────────────
+//
+// The menu entry only means something if the governor actually holds the
+// floor. Two things have to be true and neither is automatic: every gate
+// reports its cheapest answer, and the ladder never climbs back out.
+
+test('8-bit mode starts pinned at the cheapest rung with every optional pass off', () => {
+  const gov = new PerfGovernor({ retro: true });
+  assert.equal(gov.retro, true);
+  assert.equal(gov.level, MAX_LEVEL);
+  assert.equal(gov.visionAllowed, false);
+  assert.equal(gov.rimLightEnabled, false);
+  assert.equal(gov.contactShadowsEnabled, false);
+  assert.equal(gov.crackGlowEnabled, false);
+  assert.equal(gov.bloomEnabled, false);
+  assert.equal(gov.veilEnabled, false);
+  assert.equal(gov.phenomenaFull, false);
+  assert.equal(gov.brushEnabled, false);
+  assert.equal(gov.heavyPostFx, false);
+  assert.equal(gov.hazeLayers, 1);
+});
+
+test('8-bit mode does not recover out of itself after clean frames', () => {
+  // THE regression this pins. A 320x180 frame with everything shed is cheap
+  // by construction, so every frame reads clean -- the ordinary recovery
+  // path would climb a rung every 10s and hand back full quality within a
+  // minute, silently undoing the setting the player picked.
+  const gov = new PerfGovernor({ retro: true });
+  let t = 0;
+  for (let i = 0; i < 60 * 120; i++) { gov.sample(1000 / 60, t); t += 1000 / 60; } // 2 clean minutes
+  assert.equal(gov.level, MAX_LEVEL, `recovered to ${gov.level} -- 8-bit mode leaked away`);
+  assert.equal(gov.heavyPostFx, false);
+});
+
+test('8-bit mode holds the floor at a 30fps cap as well as at 60', () => {
+  // At a 30fps cap the draw is skipped every other frame but rAF still
+  // fires at the display's own rate, so the governor sees ~16.7ms deltas at
+  // 60Hz and ~33.3ms ones if the display itself is 30Hz. Neither may move it.
+  for (const deltaMs of [1000 / 60, 1000 / 30]) {
+    const gov = new PerfGovernor({ retro: true });
+    let t = 0;
+    for (let i = 0; i < 60 * 60; i++) { gov.sample(deltaMs, t); t += deltaMs; }
+    assert.equal(gov.level, MAX_LEVEL, `moved off the floor at ${(1000 / deltaMs).toFixed(0)}fps`);
+  }
+});
+
+test('8-bit mode buys draw calls too, below what the ladder alone reaches', () => {
+  const laddered = new PerfGovernor({ startLevel: MAX_LEVEL });
+  const retro = new PerfGovernor({ retro: true });
+  assert.ok(
+    retro.particleMul < laddered.particleMul,
+    `retro particleMul ${retro.particleMul} should undercut the ladder's ${laddered.particleMul}`,
+  );
+  assert.ok(retro.particleMul > 0, 'particles thinned, not switched off entirely');
+  assert.ok(
+    retro.danceColumnWidth >= laddered.danceColumnWidth,
+    'wider dance columns mean fewer per-ridge blit calls',
+  );
+  // _drawDancingStrip slices a 2048px strip into columns of this width; a
+  // width that does not divide it evenly leaves a ragged column per tile.
+  assert.equal(2048 % retro.danceColumnWidth, 0);
+});
+
+test('leaving 8-bit mode hands the ladder back, rather than staying pinned', () => {
+  const gov = new PerfGovernor({ retro: true });
+  let t = 0;
+  for (let i = 0; i < 100; i++) { gov.sample(1000 / 60, t); t += 1000 / 60; }
+  assert.equal(gov.level, MAX_LEVEL);
+
+  gov.retro = false;
+  assert.equal(gov.retro, false);
+  assert.equal(gov.particleMul, 0.6, 'back on the ladder\'s own particle rung');
+  // And it can now climb back out on clean frames like any other run.
+  for (let i = 0; i < 60 * 30; i++) { gov.sample(1000 / 60, t); t += 1000 / 60; }
+  assert.ok(gov.level < MAX_LEVEL, `stayed pinned at ${gov.level} after leaving retro`);
+});
+
+test('entering 8-bit mode mid-song drops straight to the floor from any level', () => {
+  const gov = new PerfGovernor({ startLevel: 0 });
+  assert.equal(gov.heavyPostFx, true);
+  gov.retro = true;
+  assert.equal(gov.level, MAX_LEVEL);
+  assert.equal(gov.heavyPostFx, false);
+  assert.equal(gov.phenomenaFull, false);
+});
+
+test('a warm-up grace does not let 8-bit mode drift off the floor', () => {
+  // beginWarmup() makes sample() return early; the retro pin must not
+  // depend on sample() running at all.
+  const gov = new PerfGovernor({ retro: true });
+  gov.beginWarmup(0);
+  for (let i = 0; i < 200; i++) gov.sample(500, i * 12); // catastrophic frames, inside warm-up
+  assert.equal(gov.level, MAX_LEVEL);
+  assert.equal(gov.retro, true);
+});

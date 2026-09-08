@@ -77,6 +77,19 @@ html, body {
   image-rendering: auto;
 }
 
+/* 8-bit mode (StagePresets.RETRO_PRESET): the backing store is 320×180, so
+   the browser is upscaling it ~6x to a 1080p viewport. Nearest-neighbour is
+   both the cheaper filter and the entire reason the mode reads as pixel art
+   rather than as a blurry low-res frame. Toggled from fitCanvas(), which
+   sets the matching ctx.imageSmoothingEnabled for drawing INTO the buffer. */
+#stage.retro {
+  /* Fallback first, preferred value last: the later declaration wins in any
+     browser that understands it, and an older one that doesn't simply keeps
+     the earlier line. */
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+}
+
 /* Optional WebGL post-FX overlay (created only when ?renderer=webgl).
    Pointer-events none so drops/clicks still hit the page/stage handlers. */
 #stage-webgl {

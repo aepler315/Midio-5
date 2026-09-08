@@ -89,13 +89,48 @@ export function resolvePerfStartLevel(search = '', { isCoarsePointer = false, is
 // from a settled frame rather than from its own loading screen.
 export const WARMUP_MS = 2500;
 
+// 8-bit mode's own floor, below what the ladder's own deepest rung reaches.
+// The ladder is written for a machine that is trying to keep full quality
+// and failing; 8-bit is a machine that was never going to manage it, whose
+// player has said so. Both numbers below buy DRAW CALLS, not pixels -- at
+// 320×180 rasterization is already nearly free, so per-call overhead is
+// what is left to cut.
+const RETRO_PARTICLE_MUL = 0.35; // vs 0.6 at the ladder's particle rung
+// 128 still divides the 2048px strip evenly (16 slices/tile), which the
+// dance-column blit requires -- see danceColumnWidth.
+const RETRO_DANCE_COLUMN_WIDTH = 128;
+
 export class PerfGovernor {
-  constructor({ startLevel = 0 } = {}) {
-    this.level = Math.max(0, Math.min(MAX_LEVEL, startLevel));
+  constructor({ startLevel = 0, retro = false } = {}) {
+    this._retro = !!retro;
+    this.level = this._retro ? MAX_LEVEL : Math.max(0, Math.min(MAX_LEVEL, startLevel));
     this._overCount = 0;
     this._cleanSinceMs = null;
     this._warmUntilMs = null;
     this._canvasW = 1280;
+  }
+
+  /** 8-bit mode (StagePresets.RETRO_PRESET): pin the ladder at its cheapest
+   *  rung and hold it there. Pinning is the whole mechanism, not a detail --
+   *  every quality gate in the codebase already asks this object what it may
+   *  draw, so one flag here sheds all of it without a new gate anywhere else.
+   *  It also has to be a PIN rather than a one-off jump to MAX_LEVEL: a
+   *  320×180 frame with everything shed is cheap by construction, so the
+   *  ladder's own recovery would read ten clean seconds, climb a rung, and
+   *  within a minute of smooth play put every expensive pass back on --
+   *  undoing the mode the player explicitly asked for, and doing it slowly
+   *  enough to look like a mystery rather than a setting. */
+  get retro() { return this._retro; }
+
+  set retro(on) {
+    const next = !!on;
+    if (next === this._retro) return;
+    this._retro = next;
+    // Leaving either direction starts the ladder's evidence over: the frames
+    // measured under the old mode say nothing about the new one.
+    this._overCount = 0;
+    this._cleanSinceMs = null;
+    if (next) this.level = MAX_LEVEL;
   }
 
   /** Restart the warm-up grace: call when a new song starts (or the world is
@@ -108,6 +143,10 @@ export class PerfGovernor {
 
   /** Call once per rendered frame with the raw rAF-to-rAF delta. */
   sample(deltaMs, nowMs) {
+    // 8-bit mode holds the floor: neither shedding (already at the bottom)
+    // nor recovering (see the `retro` setter -- recovery is exactly the
+    // failure mode pinning exists to prevent).
+    if (this._retro) { this.level = MAX_LEVEL; return; }
     // Opt-in, not automatic: a governor that has never been told a song is
     // starting behaves exactly as it always did. Seeding this implicitly on
     // the first sample would quietly change the meaning of every existing
@@ -151,6 +190,7 @@ export class PerfGovernor {
   // its own offset -- a discontinuity reintroduced once per tile, which is
   // the opposite of the point. Powers of two only.
   get danceColumnWidth() {
+    if (this._retro) return RETRO_DANCE_COLUMN_WIDTH;
     const base = this.level < 1 ? 16 : this.level < 3 ? 32 : 64;
     return this._canvasW > 2560 ? Math.min(128, base * 2) : base;
   }
@@ -160,7 +200,10 @@ export class PerfGovernor {
   set canvasWidth(w) { this._canvasW = w; }
 
   get visionAllowed() { return this.level < 1; }
-  get particleMul() { return this.level >= 2 ? 0.6 : 1; }
+  get particleMul() {
+    if (this._retro) return RETRO_PARTICLE_MUL;
+    return this.level >= 2 ? 0.6 : 1;
+  }
   // Movement VII: the celestial-light passes join the same ladder -- rim
   // light is the pricier per-edge work so it sheds at the particle-cap
   // rung; contact shadows shed alongside crack glow, one rung later.
