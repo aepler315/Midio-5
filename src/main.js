@@ -26,6 +26,7 @@ import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
 import { TitleBackdrop } from './ui/TitleBackdrop.js';
+import { clientToStageCoords } from './ui/StageCoords.js';
 import { cssVarMap } from './render/spectral.js';
 import { resolveDurationMs } from './core/SongDuration.js';
 import { formatSeed, parseSeed } from './utils/seed.js';
@@ -2085,13 +2086,23 @@ function renderResultsGrid(stats) {
 
 // Pointer is tracked so star-children can notice the user; never moves camera.
 // Map client coords through the CSS rect into logical 1280×720 stage space.
+//
+// #stage is `object-fit: contain` (style.css): its bounding box fills its
+// container, but the actual rendered 16:9 image is letterboxed/pillarboxed
+// INSIDE that box whenever the container's own aspect ratio isn't exactly
+// 16:9 -- which is the common case, not the exception (a 2000x900 window
+// pillarboxes ~200px of dead space on each side). getBoundingClientRect()
+// reports the full box, bars included, so dividing straight through it (as
+// this used to) silently assumed the box's aspect was always 16:9. Every
+// off-center tap was off by however wide the bars are -- measured at over
+// 60px of strip-space error on a moderately widescreen window, worse on
+// wider ones -- which is exactly the reported "seek lands ~100px from where
+// I tapped." Clicks landing in the bars themselves (dead space, no stage
+// content there at all) now correctly report no hit instead of being
+// silently mapped onto the nearest stage edge.
 function clientToStage(e) {
   const rect = canvas.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return null;
-  return {
-    x: ((e.clientX - rect.left) / rect.width) * STAGE_W,
-    y: ((e.clientY - rect.top) / rect.height) * STAGE_H,
-  };
+  return clientToStageCoords(e.clientX, e.clientY, rect, STAGE_W, STAGE_H);
 }
 
 /** The title screen's living backdrop: a slow, seeded starfield + nebula +
