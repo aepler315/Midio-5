@@ -6,7 +6,7 @@ import { CodaDirector } from '../../sim/CodaDirector.js';
 import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
-import { capFlashAlpha } from '../../ui/Accessibility.js';
+import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
 import { hexToRgb } from '../../utils/color.js';
 
 const LAYER_RATIOS = { L2: 0.06, L3: 0.14, L4: 0.32, L5: 0.70 };
@@ -65,7 +65,7 @@ export function drawRedlineWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn,
   // Heat shimmer: a subtle horizontal distortion band near the horizon.
   const shimmerPhase = (mgr.tSec || 0) * 1.4;
   ctx.save();
-  ctx.globalAlpha = 0.06 + 0.03 * Math.sin(shimmerPhase * 3);
+  ctx.globalAlpha = capFlashAlpha(0.06 + 0.03 * Math.sin(shimmerPhase * 3), mgr.reducedFlash);
   const hg = ctx.createLinearGradient(0, canvas.height * 0.55, 0, canvas.height * 0.75);
   hg.addColorStop(0, 'rgba(255, 200, 100, 0)');
   hg.addColorStop(0.5, 'rgba(255, 180, 80, 0.08)');
@@ -104,8 +104,8 @@ export function drawRedlineWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn,
   if (edgeColor && phenomenaFull) {
     const { r, g, b } = hexToRgb(edgeColor);
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = capFlashAlpha(0.06, false);
+    ctx.globalCompositeOperation = flashCompositeOp(mgr.reducedFlash);
+    ctx.globalAlpha = capFlashAlpha(0.06, mgr.reducedFlash);
     const ng = ctx.createLinearGradient(0, canvas.height * 0.62, 0, canvas.height * 0.68);
     ng.addColorStop(0, `rgba(${r},${g},${b},0)`);
     ng.addColorStop(0.5, `rgba(${r},${g},${b},0.12)`);

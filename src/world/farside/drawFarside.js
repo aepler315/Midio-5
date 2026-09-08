@@ -7,6 +7,7 @@ import { CodaDirector } from '../../sim/CodaDirector.js';
 import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
+import { hexToRgb, hexLerp } from '../../utils/color.js';
 
 const LAYER_RATIOS = { L2: 0.04, L3: 0.10, L4: 0.22, L5: 0.50 };
 const Y_OFF = { L2: 6, L3: 18, L4: 40, L5: 68 };
@@ -16,6 +17,72 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
   ctx.save();
   if (alpha < 0.999) ctx.globalAlpha = alpha;
   drawTiledStrip(ctx, strip, scrollX, canvas.width, canvas.height, yOff);
+  ctx.restore();
+}
+
+// The hero object: a genuinely large, banded, ringed primary — not the
+// generic moon renderer at a bigger number. "Airless, no haze, no weather"
+// makes this the one thing in the frame that has to read as unmistakably
+// alien at a glance; everything else here is the same shared ridge terrain
+// every other world uses. Reuses mgr's existing celestial-approach math
+// (so it rises/grows across the song exactly like every other body does)
+// but draws its own disc, bands, and ring instead of calling _drawMoon.
+function drawPrimary(mgr, ctx, canvas, cyFrac, cxFrac, alpha, color, haloColor, baseRadius) {
+  if (alpha <= 0.02) return;
+  const app = mgr._celestialApproachAt(canvas, canvas.width * cxFrac, canvas.height * cyFrac);
+  const cx = app.x, cy = app.y;
+  const R = Math.max(60, baseRadius * 2.6) * app.scale;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.5);
+  halo.addColorStop(0, haloColor);
+  halo.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R * 1.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Faint ring, drawn behind the disc so the near edge of the disc occludes it.
+  const { r: rr, g: rg, b: rb } = hexToRgb(haloColor);
+  ctx.save();
+  ctx.strokeStyle = `rgba(${rr},${rg},${rb},0.32)`;
+  ctx.lineWidth = Math.max(1, R * 0.05);
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, R * 1.55, R * 0.34, -0.28, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // Disc with limb darkening: lit color toward the light side, the base
+  // color darkening toward the far edge — reads as a sphere, not a disc.
+  const lit = hexLerp(color, '#ffffff', 0.25);
+  const dark = hexLerp(color, '#000000', 0.45);
+  const disc = ctx.createRadialGradient(cx - R * 0.32, cy - R * 0.32, R * 0.08, cx, cy, R);
+  disc.addColorStop(0, lit);
+  disc.addColorStop(0.65, color);
+  disc.addColorStop(1, dark);
+  ctx.fillStyle = disc;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Cloud bands, clipped to the disc.
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.clip();
+  const bandCount = 6;
+  for (let i = 0; i < bandCount; i++) {
+    const bandY = cy - R + (i / bandCount) * 2 * R;
+    const bandH = (2 * R) / bandCount;
+    const shade = i % 2 === 0 ? hexLerp(color, '#ffffff', 0.08) : hexLerp(color, '#000000', 0.18);
+    ctx.globalAlpha = alpha * 0.55;
+    ctx.fillStyle = shade;
+    ctx.fillRect(cx - R, bandY, R * 2, bandH);
+  }
+  ctx.restore();
+
   ctx.restore();
 }
 
@@ -49,17 +116,16 @@ export function drawFarsideWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn,
     ctx.restore();
   }
 
-  // The primary: a large celestial body (gas giant). Use the existing moon
-  // renderer at increased scale — the dominant flag on the palette already
-  // drives the sizing.
+  // The primary: a large, banded, ringed gas giant — the hero object this
+  // world's whole "airless, less-is-more" premise stands or falls on.
   const moonAlt = Math.max(dn.moonAlt, 0.55);
   const celestialYFrac = celestialYFracFor(moonAlt);
   const celestialXFrac = celestialXFracFor(dn.moonAz01 ?? 0.65);
-  mgr._drawMoon(
-    ctx, canvas, celestialYFrac, horizonFade(moonAlt),
-    0,
-    celestialXFrac,
-    0.5, 1.2, mgr._moonPhase01?.() ?? 0.72,
+  const primaryC = mgr._rotated ? mgr._rotated(A.celestial.color) : A.celestial.color;
+  const primaryHalo = mgr._rotated ? mgr._rotated(A.celestial.haloColor) : A.celestial.haloColor;
+  drawPrimary(
+    mgr, ctx, canvas, celestialYFrac, celestialXFrac, horizonFade(moonAlt),
+    primaryC, primaryHalo, A.celestial.radius || 120,
   );
 
   const { from, to } = mgr.currentBlend || { from: A.name, to: B.name };

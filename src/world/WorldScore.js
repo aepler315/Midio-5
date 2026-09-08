@@ -129,8 +129,23 @@ function comfortScore(drive, comfort) {
   if (drive >= lo && drive <= hi) {
     return 0.78 + 0.22 * (1 - Math.abs(drive - mid) / half);
   }
+  // Comfort bands overlap heavily in the middle of drive-space (see
+  // Worlds.js — up to five worlds' bands cover 0.30..0.52), so this
+  // out-of-range falloff is the only thing that can actually separate a
+  // well-matched world from a mismatched one for a typical song. The old
+  // coefficient (1.35) plus a 0.08 floor meant even a badly-mismatched
+  // world (dist ~0.3-0.4, common for real songs since drive rarely leaves
+  // 0.15..0.85) never scored below ~0.3-0.4 — nearly as high as a
+  // well-matched world's in-range floor of 0.78, which is what let
+  // farside/fathom lose pickups they should have won. Steeper falloff, no
+  // floor add-on: being outside a world's comfort band now costs real score.
+  // Quadratic, not linear: a near-miss (drive just past the edge of the
+  // band) barely costs anything -- other components can still carry a
+  // genuinely close song -- but a real mismatch (a song whose drive sits
+  // far from a world's band) is crushed hard, instead of settling into the
+  // old formula's mid-0.3s floor that left every world looking plausible.
   const dist = drive < lo ? lo - drive : drive - hi;
-  return clamp01(0.78 - dist * 1.35) * 0.92 + 0.08;
+  return clamp01(0.78 - dist * dist * 8) * 0.9;
 }
 
 const INVERTED = { centroidInv: 'centroid', onsetInv: 'onset', warmthInv: 'warmth', contrastInv: 'contrast' };

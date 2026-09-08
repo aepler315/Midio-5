@@ -50,8 +50,12 @@ export function drawUnderstoryWorld(mgr, ctx, canvas, worldX, originX, A, B, t, 
     ctx.restore();
   }
 
-  // Canopy light shafts: diagonal beams of filtered sunlight.
-  if (phenomenaFull) {
+  // Canopy light shafts: diagonal beams of filtered sunlight. The heaviest
+  // per-frame addition in this world (3 gradient-composited polygon fills
+  // every draw) — gated the same way every other heavy-post-fx layer in
+  // BiomeManager is, so PerfGovernor's mobile-performance rungs can shed it.
+  const heavyOk = !mgr._perf || mgr._perf.heavyPostFx;
+  if (phenomenaFull && heavyOk) {
     const phase = (mgr.tSec || 0) * 0.3;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';

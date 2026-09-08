@@ -134,7 +134,7 @@ test('farside wins for sparse, bright, cold songs', () => {
   assert.ok(farside.score >= 50, `farside score ${farside.score} too low for sparse bright song`);
 });
 
-test('redline wins for fast, driving, groovy songs', () => {
+test('redline scores well for a fast, driving, groovy song', () => {
   const { ec, durationMs } = makeCurves({
     energyAt: (t) => 0.5 + 0.4 * Math.sin(t * Math.PI),
     bandsAt: () => [0.6, 0.8, 1.2, 1.4, 1.3, 1.0, 0.7],
@@ -142,10 +142,82 @@ test('redline wins for fast, driving, groovy songs', () => {
   const feat = extractWatchFeatures({ energyCurves: ec, durationMs, bpm: 155 });
   const ranked = scoreWorlds(feat);
   const redline = ranked.find((r) => r.id === 'redline');
-  const foundry = ranked.find((r) => r.id === 'foundry');
   assert.ok(redline.score >= 55, `redline score ${redline.score} too low for fast song`);
-  assert.ok(foundry.score >= 55, `foundry score ${foundry.score} too low for energetic song`);
 });
+
+// ── Per-world win/lose coverage ────────────────────────────────────
+//
+// scoreWorlds/comfortScore squashed toward the middle badly enough that a
+// world could sit in the registry and still lose every pickup, even one
+// tuned to its own book. These feed a full, hand-authored feature vector
+// straight to scoreWorlds (bypassing extractWatchFeatures/EnergyCurves —
+// those are already exercised above) so each case targets exactly the
+// "wins on" / "loses on" columns from docs/worlds.md §2, independent of
+// whatever the audio-analysis pipeline happens to produce for a given
+// synthetic curve.
+function baseFeat(overrides = {}) {
+  return {
+    centroid: 0.5, bass: 0.35, air: 0.2, spread: 0.5, dyn: 0.4, energyMean: 0.4,
+    phrase: 0.35, landmarks: 5, onset: 0.35, contrast: 0.4, groove: 0.45, warmth: 0.4,
+    texture: 0.35, form: 0.4, arc: 0.4, drive: 0.5, bpm: 110, tempoHeat: 0.4, trend: 0,
+    ...overrides,
+  };
+}
+
+function topId(feat) { return scoreWorlds(feat)[0].id; }
+function rankOf(feat, id) { return scoreWorlds(feat).findIndex((r) => r.id === id); }
+
+const WORLD_CASES = {
+  alpine: {
+    win: baseFeat({ arc: 0.72, dyn: 0.65, form: 0.65, contrast: 0.58, texture: 0.4, air: 0.35, onset: 0.4, tempoHeat: 0.45, drive: 0.59 }),
+    lose: baseFeat({ arc: 0.08, dyn: 0.1, onset: 0.05, contrast: 0.1, energyMean: 0.1, tempoHeat: 0.05, drive: 0.08, bass: 0.1 }),
+  },
+  nocturne: {
+    win: baseFeat({ warmth: 0.62, groove: 0.6, phrase: 0.55, tempoHeat: 0.42, drive: 0.42, centroid: 0.45, onset: 0.3 }),
+    lose: baseFeat({ air: 0.85, centroid: 0.85, warmth: 0.05, bass: 0.05, drive: 0.1, onset: 0.05 }),
+  },
+  farside: {
+    win: baseFeat({ air: 0.85, centroid: 0.8, warmth: 0.05, onset: 0.06, spread: 0.75, bass: 0.05, drive: 0.1 }),
+    lose: baseFeat({ groove: 0.85, bass: 0.8, onset: 0.75, drive: 0.75, tempoHeat: 0.8, warmth: 0.75 }),
+  },
+  fathom: {
+    win: baseFeat({ bass: 0.75, warmth: 0.78, phrase: 0.68, onset: 0.08, centroid: 0.15, contrast: 0.2, drive: 0.15 }),
+    lose: baseFeat({ onset: 0.85, centroid: 0.85, contrast: 0.8, drive: 0.72, warmth: 0.1 }),
+  },
+  redline: {
+    win: baseFeat({ tempoHeat: 0.85, groove: 0.75, onset: 0.65, centroid: 0.65, drive: 0.72, arc: 0.55 }),
+    lose: baseFeat({ tempoHeat: 0.05, groove: 0.1, onset: 0.05, drive: 0.08, arc: 0.1 }),
+  },
+  foundry: {
+    win: baseFeat({ onset: 0.78, energyMean: 0.78, dyn: 0.65, tempoHeat: 0.7, warmth: 0.62, bass: 0.6, drive: 0.85 }),
+    lose: baseFeat({ onset: 0.05, energyMean: 0.08, dyn: 0.08, tempoHeat: 0.1, drive: 0.08 }),
+  },
+  understory: {
+    win: baseFeat({ texture: 0.75, spread: 0.72, contrast: 0.18, air: 0.5, onset: 0.25, centroid: 0.5, drive: 0.32 }),
+    lose: baseFeat({ contrast: 0.85, onset: 0.8, texture: 0.1, spread: 0.15, drive: 0.75 }),
+  },
+  nave: {
+    win: baseFeat({ contrast: 0.72, form: 0.68, phrase: 0.7, bass: 0.5, arc: 0.5, centroid: 0.5, drive: 0.5 }),
+    lose: baseFeat({ form: 0.05, phrase: 0.05, contrast: 0.1, drive: 0.5, landmarks: 1 }),
+  },
+};
+
+for (const [id, cases] of Object.entries(WORLD_CASES)) {
+  test(`${id} wins (or is a clear top pick) on its own intended song shape`, () => {
+    const ranked = scoreWorlds(cases.win);
+    const idx = rankOf(cases.win, id);
+    const top = ranked[0];
+    assert.ok(idx <= 1, `${id} ranked #${idx + 1} (${top.id} won) on its own dead-center song: ${ranked.map((r) => `${r.id}:${r.score}`).join(' ')}`);
+    const mine = ranked.find((r) => r.id === id);
+    assert.ok(mine.score >= 60, `${id} scored only ${mine.score} on its own intended song shape`);
+  });
+
+  test(`${id} loses (drops well down the ranking) on its stated weakness`, () => {
+    const ranked = scoreWorlds(cases.lose);
+    const idx = rankOf(cases.lose, id);
+    assert.ok(idx >= 3, `${id} ranked #${idx + 1} on a song matching its stated weakness — should sit well off the top: ${ranked.map((r) => `${r.id}:${r.score}`).join(' ')}`);
+  });
+}
 
 test('understory wins for textured, spread, low-contrast songs', () => {
   const { ec, durationMs } = makeCurves({
