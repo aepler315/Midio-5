@@ -81,6 +81,38 @@ test('an unguided voyage station uses a real vertical spread, not a sliver near 
   for (const y of ys) assert.ok(y <= 0.34, `station y-fraction ${y.toFixed(3)} risks dipping into terrain once the figure orbit is added`);
 });
 
+// ── A chorus voyage's middle figure is sky-written lyric text, hard-coded
+// to scale 2.2 in _pickFigureOrder -- nearly double the eight math
+// families' own max scale (1.18). A station placed for the math families'
+// narrower margin let that text's own ends run past the left/right edge of
+// frame ("a large portion of the drawings midasus makes in space are
+// outside the frame"). The station's x-margin must widen to fit whichever
+// figure THIS voyage actually draws.
+test('a chorus voyage (sky-written lyric text) keeps its station far enough from the edges', () => {
+  const w = 1280, h = 720;
+  const textHalfSpanPx = 130 * 2.2; // FIGURE_RADIUS_PX * LYRIC_TEXT_SCALE
+  for (let seed = 1; seed <= 40; seed++) {
+    const v = new SkyVoyage(seed);
+    v.trigger(0, { x: 200, y: 400 }, w, h, 'A LINE OF CHORUS');
+    assert.ok(
+      v._station.x - textHalfSpanPx >= -1 && v._station.x + textHalfSpanPx <= w + 1,
+      `seed ${seed}: station.x=${v._station.x.toFixed(0)} leaves the sky-written text off-frame in a ${w}px stage`,
+    );
+  }
+});
+
+test('an unguided (non-chorus) voyage still uses the full width it used to -- the chorus fix must not shrink it', () => {
+  const w = 1920, h = 1080;
+  let sawClearlyLeft = false, sawClearlyRight = false;
+  for (let seed = 1; seed <= 60; seed++) {
+    const v = new SkyVoyage(seed);
+    v.trigger(0, { x: 200, y: 400 }, w, h); // no chorusText
+    if (v._station.x < w * 0.40) sawClearlyLeft = true;
+    if (v._station.x > w * 0.60) sawClearlyRight = true;
+  }
+  assert.ok(sawClearlyLeft && sawClearlyRight, 'a plain voyage should keep using both halves of the sky');
+});
+
 // Exact phase boundaries (elapsed seconds since trigger), so test
 // checkpoints can land deliberately just past each transition instead of
 // guessing durations and accumulating arithmetic error across calls.

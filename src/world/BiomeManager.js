@@ -4364,13 +4364,24 @@ export class BiomeManager {
   _drawOneCelestial(ctx, cx, cy, c, alpha) {
     if (alpha <= 0.02) return;
     ctx.save();
-    ctx.globalAlpha = alpha * 0.55;
-    const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, c.radius * (c.dominant ? 3.2 : 2.2));
+    // A previous pass (see git history) cut this halo's ALPHA to 0.55 and
+    // deliberately left its footprint (the gradient radius) untouched.
+    // Reported as still too intense after that -- alpha alone wasn't
+    // enough, because the halo's screen footprint also grows with the
+    // body's own CelestialApproach scale-up (up to 3.4x by song's end), so
+    // a wide multiplier here compounds into a genuinely huge glow late in
+    // a song regardless of how dim any one pixel of it is. This second pass
+    // cuts both: alpha down further, and the multiplier itself (3.2/2.2 ->
+    // 2.4/1.7, roughly a 25% smaller footprint) so the glow's total extent
+    // shrinks along with its brightness, not just one or the other.
+    const haloRadiusMul = c.dominant ? 2.4 : 1.7;
+    ctx.globalAlpha = alpha * 0.4;
+    const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, c.radius * haloRadiusMul);
     halo.addColorStop(0, c.haloColor);
     halo.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = halo;
     ctx.beginPath();
-    ctx.arc(cx, cy, c.radius * (c.dominant ? 3.2 : 2.2), 0, Math.PI * 2);
+    ctx.arc(cx, cy, c.radius * haloRadiusMul, 0, Math.PI * 2);
     ctx.fill();
 
     if (c.wireframe) {
@@ -5310,7 +5321,20 @@ export class BiomeManager {
     // vertical seam at every column boundary), so this screen-space pass is
     // the range's ONLY source of shading depth and has to carry the full
     // load alone.
-    const grad = ctx.createLinearGradient(0, crestY, 0, bottomY);
+    //
+    // Anchored to bakedCrestY, NOT crestY: crestY is a live global extremum
+    // over a ridge that dances and scrolls (see _crestPoints -- "moves every
+    // frame"), same failure already diagnosed and fixed for the snow line a
+    // few dozen lines below this. Anchoring the catchlight/shade gradients
+    // to it instead made this pass wobble with them: whichever column
+    // happened to be tallest changed frame to frame, sliding the gradient's
+    // start point up and down and reading as the shading itself flickering.
+    // bakedCrestY is the range's own stable summit, free of dance/scroll --
+    // the clip body below still follows the live per-column silhouette, so
+    // the shading band's SHAPE still tracks the ridge; only its vertical
+    // falloff anchor holds still.
+    const shadeTopY = Number.isFinite(bakedCrestY) ? bakedCrestY : crestY;
+    const grad = ctx.createLinearGradient(0, shadeTopY, 0, bottomY);
     grad.addColorStop(0, `rgba(255,250,240,${(RIDGE_CATCHLIGHT_ALPHA * alpha * strength).toFixed(3)})`);
     grad.addColorStop(0.34, 'rgba(0,0,0,0)');
     ctx.fillStyle = grad;
@@ -5329,7 +5353,7 @@ export class BiomeManager {
     // second pass rather than folded into the lit gradient above.
     const shadeStrength = RIDGE_SHADE_STRENGTH * alpha * strength;
     const g = Math.max(0, Math.min(255, Math.round(255 * (1 - shadeStrength))));
-    const shadeGrad = ctx.createLinearGradient(0, crestY, 0, bottomY);
+    const shadeGrad = ctx.createLinearGradient(0, shadeTopY, 0, bottomY);
     shadeGrad.addColorStop(0, 'rgb(255,255,255)');
     shadeGrad.addColorStop(0.34, 'rgb(255,255,255)');
     shadeGrad.addColorStop(1, `rgb(${g},${g},${g})`);
