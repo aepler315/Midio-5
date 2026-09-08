@@ -92,16 +92,24 @@ export function drawFathomWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, 
   drawRange('L2');
   drawRange('L3');
 
-  // Particles: bubbles and spores drifting upward.
+  // Particles: bubbles and spores drifting upward, lit by the same rim
+  // light every other world's particle field gets. At HADAL depth the
+  // silhouette sits against a near-black frame — ensureContrast() above
+  // already lifts the tint, but a rim light from this bioluminescence
+  // layer is the other half of that mitigation, and nothing wired it in.
   const openA = mgr.openingGain;
   const mandalaColor = mgr._rotated(mgr.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
+  const rimOn = mgr._perf ? mgr._perf.rimLightEnabled : true;
+  const particleLights = rimOn
+    ? [mgr.light, ...groundGlowLights(mgr.groundField ? mgr.groundField.activeGlowScreenLights(worldX, originX) : [], mandalaColor)].filter(Boolean)
+    : null;
   ctx.save();
   if (openA < 0.999) ctx.globalAlpha = openA;
-  mgr.fields.get(from)?.draw(ctx, particleMul * 0.7, mandalaColor, unravel, null);
+  mgr.fields.get(from)?.draw(ctx, particleMul * 0.7, mandalaColor, unravel, particleLights);
   ctx.restore();
   if (to !== from && t > 0.02) {
     ctx.save(); ctx.globalAlpha = t * openA;
-    mgr.fields.get(to)?.draw(ctx, particleMul * 0.7, mandalaColor, unravel, null);
+    mgr.fields.get(to)?.draw(ctx, particleMul * 0.7, mandalaColor, unravel, particleLights);
     ctx.restore();
   }
 
