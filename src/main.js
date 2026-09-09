@@ -19,6 +19,7 @@ import { ROLE_LOW, ROLE_HIGH, GrooveFingerprint } from './sim/GrooveFingerprint.
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
 import {
   getReducedFlash, setReducedFlash, getLyricsDisabled, setLyricsDisabled,
+  getBtLatencyTrim, setBtLatencyTrim, BT_LATENCY_TRIM_MS,
   getStoredGroove, setStoredGroove,
 } from './ui/Accessibility.js';
 import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
@@ -42,14 +43,9 @@ import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './l
 import { visualNow } from './core/ChoreoClock.js';
 import { extractWatchFeatures, buildCustomWorld } from './world/WorldScore.js';
 import { DEFAULT_WORLD_ID, setCustomWorld } from './world/Worlds.js';
-import { LiveInput, liveInputSupported, describeMicError, looksLikeSilence } from './audio/LiveInput.js';
-import { LiveSession } from './audio/LiveSession.js';
-import { LiveEnergyCurves } from './audio/LiveEnergyCurves.js';
-import { LiveFeed } from './audio/LiveFeed.js';
 import { fingerprintBuffer } from './audio/SongFingerprint.js';
-import { packBundle, unpackBundle, bundleFrames } from './audio/AnalysisBundle.js';
-import { getBundle, putBundle, listBundles } from './audio/AnalysisCache.js';
-import { matchProbe, SyncTracker } from './audio/SongMatcher.js';
+import { packBundle, unpackBundle } from './audio/AnalysisBundle.js';
+import { getBundle, putBundle } from './audio/AnalysisCache.js';
 
 
 const STEP_MS = 1000 / 120;
@@ -123,11 +119,10 @@ const settingsBtnEl = document.getElementById('settingsBtn');
 const pauseBtnEl = document.getElementById('pauseBtn');
 const stopBtnEl = document.getElementById('stopBtn');
 const fullscreenBtnEl = document.getElementById('fullscreenBtn');
+const btLatencyBtnEl = document.getElementById('btLatencyBtn');
 const trackBadgeEl = document.getElementById('trackBadge');
 const trackBadgeBtnEl = document.getElementById('trackBadgeBtn');
 const trackListEl = document.getElementById('trackList');
-const listenBtnEl = document.getElementById('listenBtn');
-const listenStatusEl = document.getElementById('listenStatus');
 const dragOverlayEl = document.getElementById('dragOverlay');
 const fontModalEl = document.getElementById('fontModal');
 const fontModalTitleEl = document.getElementById('fontModalTitle');
@@ -198,6 +193,16 @@ let rafHandle = null; // tracks the pending frame() call so a mid-song file
 let fontModalView = 'list'; // 'list' (visible fonts, click-to-hide) | 'hidden' (hidden fonts, click-to-unhide)
 let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted accessibility toggle
 let lyricsDisabled = getLyricsDisabled(); // "No lyrics": persisted opt-out from the lyric fetch/prompt
+let btLatencyTrim = getBtLatencyTrim(); // manual Bluetooth output-latency correction toggle
+
+/** Effective output latency for beat-anchored visuals: AudioEngine's
+ *  auto-detected figure, plus the manual Bluetooth trim when the player has
+ *  turned it on. The one place this composition happens -- every consumer
+ *  (Simulation's per-step envelopes, tap calibration) reads through here
+ *  rather than each re-adding the trim its own way. */
+function effectiveOutputLatencyMs() {
+  return audioEngine.outputLatencyMs + (btLatencyTrim ? BT_LATENCY_TRIM_MS : 0);
+}
 // Dev surfaces (the `` ` ``/V/T debug overlay + its per-frame render cost,
 // and the developer-oriented half of the title screen's key legend) are
 // gated behind ?dev=1. V and T sit on bare letter keys right next to the
@@ -723,10 +728,6 @@ function toggleTrackList() {
  *  tolerates being idle). */
 function stopTimeline() {
   running = false;
-  // Release the microphone on any stop. A page that keeps an open mic after
-  // the show ends shows a recording indicator and drains battery, and there
-  // is no version of "back to title" where we still want to be listening.
-  stopListening();
   // conductor is a single instance shared across every song (see its
   // construction above); Simulation and its subsystems subscribe to it at
   // construction and never unsubscribe on their own. Without this, a replay
@@ -769,297 +770,6 @@ function stopTimeline() {
   debugOverlayEl.classList.add('hidden');
   auditionPanelEl?.classList.add('hidden');
   worldSelectEl?.classList.add('hidden');
-}
-
-// --- Live listening -------------------------------------------------------
-// The path for someone who is not going to find a file: they already have
-// music playing on Spotify or YouTube, and they tap one button. See
-// LiveInput.js for why the microphone is the only route to that on a phone.
-//
-// The seam is narrow on purpose. Nothing downstream is told it is running
-// live: LiveEnergyCurves answers the same questions EnergyCurves does, and
-// LiveFeed appends to the same conductor timeline the MIDI adapter fills. So
-// the whole show -- biomes, characters, camera, weather -- works unchanged,
-// off a microphone, with no parallel rendering path to keep in sync.
-let liveInput = null;
-let liveSession = null;
-let liveCurves = null;
-let liveFeed = null;
-let liveSilenceWarned = false;
-// Set instead of liveSession when the song was RECOGNISED: the show is
-// driven by a stored analysis rather than by what is being heard, and the
-// microphone's only remaining job is to say where in the song we are.
-let liveMatch = null;
-let liveSync = null;
-let liveResyncAtMs = 0;
-let liveResyncMisses = 0;
-
-function setListenStatus(text, busy = false) {
-  if (!listenStatusEl) return;
-  listenStatusEl.textContent = text || '';
-  listenStatusEl.classList.toggle('hidden', !text);
-  if (listenBtnEl) {
-    listenBtnEl.disabled = busy;
-    listenBtnEl.textContent = busy ? 'Listening…' : 'Listen';
-  }
-}
-
-/** Release the microphone and forget the live state. Safe when idle -- it is
- *  called from stopTimeline(), which runs before every song of any kind. */
-function stopListening() {
-  if (liveInput) { try { liveInput.stop(); } catch { /* already gone */ } }
-  liveInput = null;
-  liveSession = null;
-  liveCurves = null;
-  liveFeed = null;
-  liveSilenceWarned = false;
-  liveMatch = null;
-  liveSync = null;
-  liveResyncMisses = 0;
-}
-
-async function startListening() {
-  if (!liveInputSupported()) {
-    setListenStatus('This browser can’t listen to audio. Try dropping a file instead.');
-    return;
-  }
-  setListenStatus('Asking for the microphone…', true);
-  const input = new LiveInput();
-  try {
-    await input.start();
-  } catch (err) {
-    input.stop();
-    setListenStatus(describeMicError(err));
-    return;
-  }
-
-  // Try to RECOGNISE what is playing before falling back to reacting to it.
-  // A song this device has analysed before can be played as a composed show
-  // -- the real arc, the climax where it belongs, sections on time -- with
-  // the listener's own app supplying the sound. Reactive live mode is the
-  // fallback, not the goal: it structurally cannot know the future.
-  const known = await tryRecogniseSong(input);
-  if (known) return;
-
-  const session = new LiveSession({ sampleRate: input.sampleRate });
-  const data = session.startData();
-  const curves = new LiveEnergyCurves(data.durationMs);
-  data.energyCurves = curves;
-  // Nothing may be synthesized on top of a room that is already playing the
-  // song -- the emitted notes exist to drive choreography, never to be heard.
-  muteTimelineSynth = true;
-  try {
-    // startTimeline() calls stopTimeline() first, which calls stopListening().
-    // So the live state is attached only once it has returned, or the
-    // microphone we just opened would be closed on the way in.
-    startTimeline(data, { live: true });
-  } catch (err) {
-    input.stop();
-    setListenStatus('Could not start the world: ' + (err?.message || err));
-    return;
-  }
-  liveInput = input;
-  liveSession = session;
-  liveCurves = curves;
-  liveFeed = new LiveFeed();
-  liveSilenceWarned = false;
-  setListenStatus('');
-}
-
-/** How much audio to gather before deciding what is playing. Long enough to
- *  be evidence, short enough that nobody thinks the button did nothing. */
-const RECOGNISE_SEC = 7;
-/** How often the sync is re-measured against the room while a recognised
- *  song plays. Drift between two unrelated clocks is slow; a match sweep is
- *  not free. */
-const RESYNC_INTERVAL_MS = 15000;
-/** The FIRST re-measure comes almost immediately, and that is the whole
- *  startup strategy. Recognition happens before the world is built, and
- *  building takes seconds -- so the position it found is stale by an amount
- *  nothing can predict reliably (measured around half a second, and it varies
- *  with how cold the caches are). Rather than try to model that, the initial
- *  match is treated as answering only WHICH song; the precise position comes
- *  from this follow-up, taken once the expensive work is already done and
- *  applied while the show is two seconds old and nobody has settled in. */
-const FIRST_RESYNC_MS = 2000;
-/** Consecutive failed re-checks before concluding the song is over or
- *  something else is playing. One failure is a cough or a passing bus. */
-const RESYNC_GIVE_UP = 3;
-
-/**
- * Listen for a few seconds and see whether this is a song we already know.
- *
- * @returns {Promise<boolean>} true when a synced show was started
- */
-async function tryRecogniseSong(input) {
-  let cached = [];
-  try {
-    const rows = await listBundles();
-    if (rows.length === 0) return false;
-    setListenStatus('Listening for the song…', true);
-    if (!(await input.enableCapture(RECOGNISE_SEC + 3))) return false;
-    // Gather while the bundles load, so the two costs overlap.
-    const loaded = await Promise.all(rows.slice(0, 60).map(async (r) => ({
-      key: r.key, bundle: await getBundle(r.key),
-    })));
-    cached = loaded.filter((c) => c.bundle);
-  } catch (err) {
-    console.warn('[listen] could not read the local library', err);
-    return false;
-  }
-  if (cached.length === 0) return false;
-
-  // Wait for the ring to actually hold enough audio rather than assuming a
-  // fixed delay: on a throttled or slow-starting device it fills late.
-  const deadline = performance.now() + (RECOGNISE_SEC + 4) * 1000;
-  while (input.capture.seconds < RECOGNISE_SEC && performance.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  if (input.capture.seconds < RECOGNISE_SEC) return false;
-
-  // Stamped before the read, so the elapsed build time added back later is
-  // measured from the moment the probe's last sample was heard.
-  const probeAtMs = performance.now();
-  const hit = matchProbe(input.capture.read(), input.capture.sampleRate, cached,
-    { latencyMs: input.captureLatencyMs });
-  if (!hit) return false;
-
-  const data = unpackBundle(hit.bundle);
-  if (!data) return false;
-  console.info(`[listen] recognised ${hit.key} at ${(hit.positionMs / 1000).toFixed(1)}s `
-    + `(bit error ${hit.ber.toFixed(3)})`);
-
-  muteTimelineSynth = true;
-  try {
-    // The wall clock at the moment the probe's last sample was heard, so
-    // startTimeline can add back however long the world takes to build.
-    startTimeline(data, { live: true, startAtMs: hit.positionMs, startAtWallMs: probeAtMs });
-  } catch (err) {
-    setListenStatus('Could not start the world: ' + (err?.message || err));
-    return false;
-  }
-  liveInput = input;
-  liveMatch = { key: hit.key, frames: bundleFrames(hit.bundle), bundle: hit.bundle };
-  liveSync = new SyncTracker();
-  liveResyncAtMs = performance.now() + FIRST_RESYNC_MS;
-  liveResyncMisses = 0;
-  setListenStatus('');
-  return true;
-}
-
-/**
- * Keep a recognised show sitting on top of the music.
- *
- * Two clocks run side by side: the page's, which advances smoothly and knows
- * nothing about the song, and the room's, which is authoritative but only
- * speaks every RESYNC_INTERVAL_MS. SyncTracker reconciles them, easing small
- * errors as a rate change so the playhead never teleports.
- */
-function pumpMatchedSync(nowMs, dtMs) {
-  if (!liveMatch || !liveInput?.capture) return;
-  // The ease runs every frame; the re-match only on its interval. Splitting
-  // them is the point: a correction spread across fifteen seconds of frames
-  // is invisible, the same correction applied at the moment it is measured
-  // is a visible jolt.
-  const nudge = liveSync.step(dtMs);
-  if (nudge) audioEngine.nudgeMs(nudge);
-
-  const wall = performance.now();
-  if (wall < liveResyncAtMs) return;
-  liveResyncAtMs = wall + RESYNC_INTERVAL_MS;
-  if (liveInput.capture.seconds < RECOGNISE_SEC) return;
-
-  // Only the song already believed to be playing is re-checked: a full sweep
-  // of the library every fifteen seconds would be wasted work, and a
-  // different song will simply fail this one and be picked up as a miss.
-  const hit = matchProbe(liveInput.capture.read(), liveInput.capture.sampleRate,
-    [{ key: liveMatch.key, bundle: liveMatch.bundle }],
-    { latencyMs: liveInput.captureLatencyMs });
-  if (!hit) {
-    if (++liveResyncMisses >= RESYNC_GIVE_UP) {
-      // The song ended, was skipped, or the room got too loud to read. Say so
-      // rather than letting a show run on against nothing.
-      showErrorBanner('Lost the song — it may have ended or changed. Stop and tap Listen again.');
-      liveMatch = null;
-    }
-    return;
-  }
-  liveResyncMisses = 0;
-  const { jump, errorMs } = liveSync.measure(hit.positionMs, nowMs);
-  // Once every fifteen seconds for the whole song is too much for a console
-  // someone is trying to read; behind ?dev=1 it is the only way to see how
-  // the sync is actually holding.
-  if (DEV_MODE) {
-    console.info(`[sync] measured ${(hit.positionMs / 1000).toFixed(2)}s vs clock `
-      + `${(nowMs / 1000).toFixed(2)}s -> error ${errorMs.toFixed(0)}ms, `
-      + `rate ${liveSync.rate.toFixed(4)} (bit error ${hit.ber.toFixed(3)})${jump ? ' JUMP' : ''}`);
-  }
-  if (jump) {
-    // Too far to walk off: the startup estimate was stale, or someone seeked.
-    // Shift the clock's origin rather than restarting it -- the playhead is
-    // being corrected, not moved to a new place.
-    audioEngine.nudgeMs(errorMs);
-    const corrected = audioEngine.nowMs;
-    // The dispatch cursors have to move WITH the clock. Forward without this
-    // and the notes in between arrive in one burst; backward and every note
-    // between the two positions is silently skipped, because the cursor is
-    // already past them.
-    conductor.seekTo(corrected);
-    sim?.cues?.seekTo?.(corrected);
-    simTime = corrected;
-    lastNowMs = corrected;
-    acc = 0;
-  }
-}
-
-/**
- * One frame of listening: hear, analyse, and hand the result to the two
- * places the engine reads from.
- *
- * Called from frame() before the sim steps, so the curves and the timeline
- * are already current for the time the sim is about to advance to.
- */
-function pumpLive(nowMs) {
-  if (!liveSession || !liveInput) return;
-  const mags = liveInput.read();
-  if (!mags) return;
-  const state = liveSession.tick(mags, nowMs);
-  liveCurves.writeAt(nowMs, liveSession.bands);
-  // Onsets are evidence about where the beat grid is, not events in their own
-  // right -- LiveFeed's header explains why forwarding them directly would
-  // put every jump a reaction-time late.
-  if (liveSession.onset > 0) liveFeed.pushOnset(nowMs, liveSession.onset * 4);
-  const notes = liveFeed.emit(nowMs, {
-    bpm: state.bpm,
-    confidence: liveSession.analyser.tempoConfidence,
-    bands: liveSession.bands,
-    energy01: state.energy01,
-  });
-  if (notes.length) {
-    // Appending to the live array is exactly what the conductor's cursor
-    // model supports: it only ever walks forward, and these are all in the
-    // future. Sorting is unnecessary because LiveFeed emits in time order.
-    for (const n of notes) conductor.timeline.push(n);
-  }
-  // `durationMs` is deliberately NOT extended as the song goes on. Every arc
-  // director (coda, excursions, orogeny, disasters) captured it at
-  // construction, so growing it would leave the transport disagreeing with
-  // the arc the show is actually playing -- and the mountain strip would
-  // rescale under the playhead every second. A listen runs the nominal arc
-  // and completes; the clock is drawn as the estimate it is.
-  // Keep the bar grid ahead of the clock too -- anything counting bars
-  // (BiomeManager's schedule, the camera's phrase sense) reads it directly.
-  while (conductor.barGrid.length < liveSession.barGrid.length) {
-    conductor.barGrid.push(liveSession.barGrid[conductor.barGrid.length]);
-  }
-  // Silence is the one failure this feature has that a person cannot debug
-  // on their own: headphones, or a speaker too far away. Say so once, rather
-  // than leaving them watching a still landscape.
-  if (!liveSilenceWarned
-      && looksLikeSilence(state.energy01, liveSession.elapsedMs(nowMs), liveSession.analyser.peak)) {
-    liveSilenceWarned = true;
-    showErrorBanner('Not hearing much — if the music is in headphones, the microphone can’t reach it. Try a speaker, or turn it up.');
-  }
 }
 
 function updatePauseButtonUI() {
@@ -1187,7 +897,7 @@ function startTimeline(timelineData, extra = {}) {
       customBiome: timelineData.customBiome || null,
       // ChoreoClock: live output-latency getter so beat-anchored envelopes
       // peak when the EAR gets the beat (Bluetooth can lag 200ms+).
-      outputLatencyMs: () => audioEngine.outputLatencyMs,
+      outputLatencyMs: () => effectiveOutputLatencyMs(),
       lyricSections: timelineData.lyricSections || null,
       syncedLyrics: timelineData.syncedLyrics || null,
       // SSM structure read (StructureAnalyzer), audio path only. Null on
@@ -1307,17 +1017,6 @@ function startTimeline(timelineData, extra = {}) {
     seek: (ms) => seekSong(ms),
     get perfLevel() { return perfGovernor?.level ?? null; },
     get perf() { return perfGovernor || null; },
-    // Live-listening state, for the debug overlay and for smoke tests: which
-    // song was recognised (if any) and how the sync is holding.
-    get liveMatchKey() { return liveMatch?.key ?? null; },
-    get liveSync() {
-      return liveSync
-        ? {
-        corrections: liveSync.corrections, jumps: liveSync.jumps,
-        pending: Math.round(liveSync.pending), rate: liveSync.rate,
-      }
-        : null;
-    },
   };
 }
 
@@ -1762,17 +1461,6 @@ fileInputEl?.addEventListener('change', (e) => {
 });
 worldSelectBackEl?.addEventListener('click', () => backToTitle());
 
-listenBtnEl?.addEventListener('click', () => {
-  // The tap is the user gesture both getUserMedia and the AudioContext need,
-  // so the whole start path has to hang off this handler rather than off any
-  // later async continuation.
-  unlockAudio();
-  startListening().catch((err) => {
-    console.error('[listen]', err);
-    setListenStatus(describeMicError(err));
-  });
-});
-
 // Unlock the AudioContext on the gesture that opens the picker, not on
 // the later `change` event -- browsers often don't treat file-picker
 // confirmation as a user activation, so bootAudio() on change used to
@@ -1954,20 +1642,6 @@ function frame(tRaf) {
   if (deltaMs < 0) deltaMs = 0;
   if (deltaMs > 250) deltaMs = 250; // clamp huge gaps (tab backgrounded, breakpoint, etc.)
 
-  // Hear first, then step: the curves and the timeline must already be
-  // current for the time the sim is about to advance to, or every frame
-  // would react to the previous one's audio. Either the room is DRIVING the
-  // show (live) or it is only keeping a stored one in step with it (match) --
-  // never both.
-  if (liveSession) {
-    try { pumpLive(nowMs); } catch (err) {
-      if (drawErrors.record(err, tRaf)) console.error('[live] (occurrence %d)', drawErrors.worst.count, err);
-    }
-  } else if (liveMatch) {
-    try { pumpMatchedSync(nowMs, deltaMs); } catch (err) {
-      if (drawErrors.record(err, tRaf)) console.error('[sync] (occurrence %d)', drawErrors.worst.count, err);
-    }
-  }
   acc += deltaMs;
 
   try {
@@ -2240,7 +1914,7 @@ function seekSong(ms) {
  *  beat-anchored cue in the sim. */
 function beatTap(role = null) {
   if (!running || !sim || paused || !audioEngine) return;
-  sim.onBeatTap(visualNow(audioEngine.nowMs, audioEngine.outputLatencyMs), role);
+  sim.onBeatTap(visualNow(audioEngine.nowMs, effectiveOutputLatencyMs()), role);
   // Persist on a roled tap only. Unroled catch-all taps move the anchor but
   // teach the templates nothing, and writing storage on every stray keypress
   // would be a lot of churn for no new information.
@@ -2413,6 +2087,24 @@ function toggleReducedFlash() {
   setReducedFlash(reducedFlash);
   sim?.setReducedFlash(reducedFlash);
 }
+
+/** Live-toggle + persist the manual Bluetooth latency trim. Takes effect on
+ *  the very next frame -- effectiveOutputLatencyMs() reads the live
+ *  `btLatencyTrim` flag, so nothing needs to be re-armed on the running sim
+ *  the way reducedFlash cascades into one; the choreography clock just
+ *  starts reading a different number. */
+function updateBtLatencyBtnUI() {
+  if (!btLatencyBtnEl) return;
+  btLatencyBtnEl.setAttribute('aria-pressed', btLatencyTrim ? 'true' : 'false');
+  btLatencyBtnEl.textContent = btLatencyTrim ? `BT +${BT_LATENCY_TRIM_MS}ms: on` : `BT +${BT_LATENCY_TRIM_MS}ms`;
+}
+function toggleBtLatencyTrim() {
+  btLatencyTrim = !btLatencyTrim;
+  setBtLatencyTrim(btLatencyTrim);
+  updateBtLatencyBtnUI();
+}
+btLatencyBtnEl?.addEventListener('click', () => toggleBtLatencyTrim());
+updateBtLatencyBtnUI();
 
 function onSongComplete() {
   running = false;

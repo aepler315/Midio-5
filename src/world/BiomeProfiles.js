@@ -120,15 +120,6 @@ export const BIOMES = [
     terrainEnergy: 1.2,
   },
   {
-    name: 'DUNE',
-    sky: ['#1a0e08', '#8a4a18', '#f0c878'],
-    silhouette: '#3a2210',
-    celestial: { kind: 'sun', color: '#ffd27a', radius: 56, haloColor: '#ffb347', veiled: true },
-    particles: { kind: 'sand', color: '#e8c98a', count: 55, speed: 70 },
-    fx: 'mirage',
-    terrainEnergy: 0.85,
-  },
-  {
     name: 'CORAL',
     sky: ['#041a28', '#0d6b7a', '#ffb89a'],
     silhouette: '#0a3040',

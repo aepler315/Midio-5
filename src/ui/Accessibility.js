@@ -78,3 +78,29 @@ export function setStoredGroove(profile) {
 export function clearStoredGroove() {
   try { localStorage.removeItem(GROOVE_KEY); } catch { /* no persistent storage available */ }
 }
+
+// Manual Bluetooth latency correction. ChoreoClock's outputLatencyMs already
+// compensates automatically from AudioContext.baseLatency/outputLatency --
+// but most Bluetooth stacks never report a real number there (0, or a wired-
+// speaker-sized guess), so every beat-anchored visual leads the sound the
+// player actually hears by however much the room's real BT round-trip is
+// (commonly 100-200ms). Auto-detection cannot fix what the platform won't
+// report; this is the manual trim for exactly that gap. Off by default --
+// wired audio, where the automatic figure is usually close, should not pay
+// an unrequested extra delay.
+const BT_LATENCY_KEY = 'smw:btLatencyTrim';
+/** The correction itself. A single flat value, not a slider: this is a
+ *  "my headphones are Bluetooth" toggle, not a calibration instrument --
+ *  someone who needs a precise number already has the guided tap sync
+ *  (LatencyCalibrator.js) for that. 30ms is a deliberately conservative
+ *  partial correction -- it will not fully cancel a 150ms BT stack, but it
+ *  moves every song in the right direction without a setup step. */
+export const BT_LATENCY_TRIM_MS = 30;
+
+export function getBtLatencyTrim() {
+  try { return localStorage.getItem(BT_LATENCY_KEY) === '1'; } catch { return false; }
+}
+
+export function setBtLatencyTrim(v) {
+  try { localStorage.setItem(BT_LATENCY_KEY, v ? '1' : '0'); } catch { /* no persistent storage available */ }
+}

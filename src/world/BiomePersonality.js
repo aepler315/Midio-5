@@ -28,7 +28,6 @@ export const PERSONALITY = {
   MIRROR: { haze: 1.1 }, // lake-morning mist
   // Deep currents: motes drift low, slow mandala, fine Chladni figures, strong swirl.
   ABYSS: { swarmBand: [0.42, 0.68], mandalaRate: 0.7, cymaticModes: [2, 5, 7], ribbonScale: 1.25, turbulence: 1.35, haze: 1.25 },
-  DUNE: { swarmBand: [0.20, 0.45], mandalaRate: 0.85, rdBias: 0.1, turbulence: 1.5, haze: 1.55 }, // sandstorm gusts
   CORAL: { swarmBand: [0.30, 0.62], mandalaRate: 0.75, cymaticModes: [1, 3, 5], turbulence: 0.8, rdBias: -0.08, haze: 0.9 },
   LUMEN: { swarmBand: [0.18, 0.48], mandalaRate: 0.8, cymaticModes: [0, 3, 6], turbulence: 0.55, ribbonScale: 0.9, haze: 1.15 },
   AURUM: { swarmBand: [0.22, 0.55], mandalaRate: 0.95, rdBias: -0.05, turbulence: 0.9, haze: 1.2 },
