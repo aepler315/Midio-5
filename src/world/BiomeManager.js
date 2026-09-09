@@ -2008,6 +2008,32 @@ export class BiomeManager {
       reducedFlash: this.reducedFlash,
     });
 
+    // Space ridge: orbital jewelry — faint in Soft, present in Neon. Drawn
+    // here, before even the dawn/dusk wash, so it sits at the very back of
+    // the sky stack: the atmospheric tint washes over it like it would any
+    // other deep-space light, and the sun/moon (drawn further down, in
+    // ordinary source-over) properly occlude it rather than blooming on top
+    // of something that is supposed to read as unimaginably far behind them
+    // -- it used to draw AFTER both, so its additive glow sat in front of
+    // the moon disc itself, which is backwards for a structure whose entire
+    // point is "too large and far to be nearby." Its draw call was removed
+    // for a stretch while a still-live SkyVoyage station bug (see
+    // SkyVoyage.js trigger()) was misdiagnosed as this; restored once the
+    // real cause was found and fixed. Reinstated on explicit request after
+    // the sky read as too empty without it.
+    {
+      const spaceCol = this._rotated(rotateHueHex(
+        this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t), 45,
+      ));
+      const ridgeA = styleDials(this.visualStyle).spaceRidgeAlpha ?? 1;
+      if (ridgeA > 0.02) {
+        ctx.save();
+        ctx.globalAlpha = ridgeA * (phenomenaFull ? 1 : 0.4);
+        this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash);
+        ctx.restore();
+      }
+    }
+
     // Dawn/dusk tint washes bracket the sun's own rise and set.
     for (const wash of [{ color: '#ff9a6b', alpha: dn.dawnAlpha }, { color: '#141040', alpha: dn.duskAlpha }]) {
       if (wash.alpha > 0.005) {
@@ -2063,21 +2089,6 @@ export class BiomeManager {
       this.ribbon.intensity = prevR;
     }
     this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
-    // Space ridge: orbital jewelry — faint in Soft, present in Neon. Its
-    // draw call was removed for a stretch while a still-live SkyVoyage
-    // station bug (see SkyVoyage.js trigger()) was misdiagnosed as this;
-    // restored once the real cause was found and fixed. Reinstated on
-    // explicit request after the sky read as too empty without it.
-    {
-      const spaceCol = this._rotated(rotateHueHex(mandalaColor, 45));
-      const ridgeA = styleDials(this.visualStyle).spaceRidgeAlpha ?? 1;
-      if (ridgeA > 0.02) {
-        ctx.save();
-        ctx.globalAlpha = ridgeA * (phenomenaFull ? 1 : 0.4);
-        this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash);
-        ctx.restore();
-      }
-    }
     this.drawDeepSky(ctx, skyVoyage, canvas); // Midasus's sky voyage, when she's away -- behind the mountains below
     // Ambient connect-the-dots + reward volleys read as starlight, so the
     // night sky brightens them the same way it brightens the atlas stars.
