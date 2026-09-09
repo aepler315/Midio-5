@@ -92,11 +92,21 @@ test('caps hold under a 300-onset spam: figures, dots, and stars stay bounded, n
     weaver.update(t, 0.1);
     t += 100;
   }
-  assert.ok(weaver.figures.length <= 3, `figures should cap at 3, got ${weaver.figures.length}`);
+  // Figures now retire into a graceful fade (over FADE_MS) instead of being
+  // deleted outright, so more than MAX_ACTIVE_FIGURES(3) can be tracked at
+  // once while old ones fade out -- bounded by the hard MAX_TRACKED_FIGURES
+  // safety net (3x that) rather than the old instant-cap of 3.
+  assert.ok(weaver.figures.length <= 9, `figures should stay bounded (<=9), got ${weaver.figures.length}`);
   assert.ok(weaver.stars.length <= 6, `stars should cap at 6, got ${weaver.stars.length}`);
+  // The dot cap (MAX_DOTS=40) now retires figures into a graceful fade
+  // rather than deleting them outright, and a fading figure keeps its dots
+  // until FADE_MS elapses -- so total dots can briefly overshoot 40 while
+  // several figures fade out at once under sustained spam. The real
+  // guarantee is MAX_TRACKED_FIGURES(9) figures at FIGURE_DOTS_MAX(8) dots
+  // each, worst case.
   let totalDots = weaver.building ? weaver.building.dots.length : 0;
   for (const f of weaver.figures) totalDots += f.dots.length;
-  assert.ok(totalDots <= 40, `total dots should cap at 40, got ${totalDots}`);
+  assert.ok(totalDots <= 72, `total dots should stay bounded (<=72), got ${totalDots}`);
   for (const f of weaver.figures) {
     for (const d of f.dots) assert.ok(Number.isFinite(d.x) && Number.isFinite(d.y));
   }
