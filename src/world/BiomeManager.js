@@ -4499,6 +4499,21 @@ export class BiomeManager {
     ctx.fill();
 
     if (c.wireframe) {
+      // Backing wash: a wireframe body is deliberately hollow (that's the
+      // whole point of the style), but a fully open middle let anything
+      // drawn earlier this frame -- the space ridge, stars, ambient
+      // constellations, all deep-sky content drawn before the celestial
+      // body -- show straight through at full strength, which reads as
+      // those objects sitting IN FRONT of the sun rather than behind a
+      // hollow one. A soft, dark wash (not a full opaque fill, which would
+      // erase the see-through look this style exists for) knocks them back
+      // without losing the wireframe's own character.
+      ctx.globalAlpha = alpha * 0.55;
+      ctx.fillStyle = '#05070d';
+      ctx.beginPath();
+      ctx.arc(cx, cy, c.radius, 0, Math.PI * 2);
+      ctx.fill();
+
       ctx.strokeStyle = c.color;
       ctx.lineWidth = 1.5;
       ctx.globalAlpha = alpha * 0.8;
