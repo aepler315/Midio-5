@@ -287,3 +287,155 @@ test('no drawImage anywhere is handed a plain {width,height}', async () => {
   const bad = offenders.filter((o) => !allowed.some((a) => o.endsWith(a)));
   assert.deepEqual(bad, [], `logical stage view reaching drawImage:\n${bad.join('\n')}`);
 });
+
+// The drop motion-blur ring: reported live as 2-3fps on a flagship Android
+// phone at 1080p60. Profiling the real draw path (not a synthetic proxy)
+// found this pass's own frame-capture -- `drawImage(canvasEl, 0, 0)`, a full
+// backing-store-sized copy issued on EVERY frame of the whole song, not just
+// the ~320ms window the ghosts it captures are ever visible in -- dwarfing
+// every other pass in the frame at 1080p+. Unlike the drop shock (a single-
+// frame effect gated to only run near a drop, where a full-res copy at
+// <=1920px was cheap enough to leave alone), this capture is unconditional
+// for as long as heavyPostFx is on, so its cost is paid continuously. Fixed
+// to capture at postFxDownscale's reduced resolution, the same technique
+// bloom already uses one pass over.
+function motionBlurSim({ reducedFlash = false, dropAtMs = 10000, timeMs = 10000 } = {}) {
+  return {
+    timeMs,
+    hype: { dropAtMs },
+    reducedFlash,
+    perf: { heavyPostFx: true },
+    focus: null,
+  };
+}
+
+function camera(shakeX = 0, shakeY = 0) {
+  return { shakeX, shakeY };
+}
+
+/** A fake canvas-like ring slot, sized as the code would size a real one. */
+function fakeRingSlot(w, h) {
+  const calls = [];
+  return {
+    width: w, height: h,
+    getContext: () => ({
+      setTransform() {}, clearRect() {},
+      drawImage: (...a) => calls.push(a),
+    }),
+    _calls: calls,
+  };
+}
+
+test('the frame capture downsamples instead of copying the backing store 1:1', () => {
+  const r = Object.create(Renderer.prototype);
+  const { ctx } = recordingCtx();
+  // Pre-seed the ring at the size the code should already be using for a
+  // DEVICE_W x DEVICE_H (2560x1440) backing store, so no document.createElement
+  // branch needs stubbing -- same technique the shock test above uses.
+  const scale = DEVICE_W > 2560 ? 5 : DEVICE_W > 1920 ? 4 : 3; // postFxDownscale
+  const expectW = Math.round(DEVICE_W / scale), expectH = Math.round(DEVICE_H / scale);
+  const slots = [fakeRingSlot(expectW, expectH), fakeRingSlot(expectW, expectH), fakeRingSlot(expectW, expectH)];
+  r._motionHistory = slots;
+  r._motionRing = 0;
+
+  r._drawDropMotionBlur(ctx, { width: DEVICE_W, height: DEVICE_H }, motionBlurSim(), camera(), 1, 1);
+
+  const captureCalls = slots[0]._calls;
+  assert.equal(captureCalls.length, 1, 'exactly one capture per frame');
+  const [src, dx, dy, dw, dh] = captureCalls[0];
+  assert.equal(src.width, DEVICE_W, 'captures from the real backing store');
+  assert.equal(dx, 0); assert.equal(dy, 0);
+  assert.equal(dw, expectW, `capture should downsample to ${expectW}, not copy ${DEVICE_W} 1:1`);
+  assert.equal(dh, expectH);
+  assert.ok(dw * dh < DEVICE_W * DEVICE_H / 5, 'the whole point: meaningfully fewer pixels than a 1:1 copy');
+});
+
+test('a resolution change reallocates the ring at the new downscaled size, not the old one', () => {
+  const r = Object.create(Renderer.prototype);
+  const { ctx } = recordingCtx();
+  // Ring left at a stale size from a previous (different) backing store.
+  r._motionHistory = [fakeRingSlot(100, 60), fakeRingSlot(100, 60), fakeRingSlot(100, 60)];
+  r._motionRing = 1;
+
+  const seen = [];
+  const realCreate = globalThis.document?.createElement;
+  globalThis.document = {
+    createElement: () => {
+      const c = fakeRingSlot(0, 0);
+      seen.push(c);
+      return c;
+    },
+  };
+  try {
+    r._drawDropMotionBlur(ctx, { width: DEVICE_W, height: DEVICE_H }, motionBlurSim(), camera(), 1, 1);
+  } finally {
+    if (realCreate) globalThis.document.createElement = realCreate; else delete globalThis.document;
+  }
+
+  const scale = DEVICE_W > 2560 ? 5 : DEVICE_W > 1920 ? 4 : 3;
+  assert.equal(seen.length, 3, 'the ring reallocates all three slots on a size mismatch');
+  for (const c of seen) {
+    assert.equal(c.width, Math.round(DEVICE_W / scale));
+    assert.equal(c.height, Math.round(DEVICE_H / scale));
+  }
+  // Resets to 0 internally on reallocation, then advances by 1 like every
+  // call does -- so from the outside, one call after a reallocation lands
+  // on 1, not 0.
+  assert.equal(r._motionRing, 1, 'ring index resets (then advances once) alongside a reallocation');
+});
+
+test('ghosts upscale from the small ring back to full backing-store size on composite', () => {
+  const r = Object.create(Renderer.prototype);
+  const { ctx, calls } = recordingCtx();
+  const scale = DEVICE_W > 2560 ? 5 : DEVICE_W > 1920 ? 4 : 3;
+  const smallW = Math.round(DEVICE_W / scale), smallH = Math.round(DEVICE_H / scale);
+  const slots = [fakeRingSlot(smallW, smallH), fakeRingSlot(smallW, smallH), fakeRingSlot(smallW, smallH)];
+  r._motionHistory = slots;
+  r._motionRing = 0;
+
+  // Squarely inside the drop's impact window with real camera travel, so
+  // strength is high and both ghost passes fire.
+  r._drawDropMotionBlur(
+    ctx, { width: DEVICE_W, height: DEVICE_H },
+    motionBlurSim({ dropAtMs: 10000, timeMs: 10010 }), camera(4, -2), 1, 1,
+  );
+
+  const ghostCalls = calls.filter((c) => c.length === 9); // the 9-arg drawImage overload
+  assert.ok(ghostCalls.length > 0, 'expected at least one ghost composite in the impact window');
+  for (const [src, sx, sy, sw, sh, , , dw, dh] of ghostCalls) {
+    assert.equal(sw, smallW, 'reads the ghost at its own small size');
+    assert.equal(sh, smallH);
+    assert.equal(dw, DEVICE_W, 'but draws it upscaled to the full backing store');
+    assert.equal(dh, DEVICE_H);
+    assert.ok(slots.includes(src), 'the source is one of the ring slots');
+    void sx; void sy;
+  }
+});
+
+test('no drop in flight still captures (keeping the ring warm) but composites nothing', () => {
+  const r = Object.create(Renderer.prototype);
+  const { ctx, calls } = recordingCtx();
+  const scale = DEVICE_W > 2560 ? 5 : DEVICE_W > 1920 ? 4 : 3;
+  const w = Math.round(DEVICE_W / scale), h = Math.round(DEVICE_H / scale);
+  const slots = [fakeRingSlot(w, h), fakeRingSlot(w, h), fakeRingSlot(w, h)];
+  r._motionHistory = slots;
+  r._motionRing = 0;
+
+  r._drawDropMotionBlur(
+    ctx, { width: DEVICE_W, height: DEVICE_H },
+    motionBlurSim({ dropAtMs: -Infinity }), camera(), 1, 1,
+  );
+
+  assert.equal(slots[0]._calls.length, 1, 'still captures every frame');
+  assert.equal(calls.length, 0, 'but nothing composites onto the live frame without a drop');
+});
+
+test('heavyPostFx off drops the ring entirely, not just skips a frame', () => {
+  const r = Object.create(Renderer.prototype);
+  const { ctx } = recordingCtx();
+  r._motionHistory = [fakeRingSlot(10, 10), fakeRingSlot(10, 10), fakeRingSlot(10, 10)];
+  const sim = motionBlurSim();
+  sim.perf.heavyPostFx = false;
+  r._drawDropMotionBlur(ctx, { width: DEVICE_W, height: DEVICE_H }, sim, camera(), 1, 1);
+  assert.equal(r._motionHistory, null, 'the (now-cheaper, but still real) buffers are freed, not just idled');
+});

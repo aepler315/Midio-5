@@ -64,6 +64,15 @@ const MOTION_BLUR_MIN_ALPHA = 0.02;
 const BLOOM_DOWNSCALE_BASE = 3;  // offscreen buffers render at 1/N resolution
 const BLOOM_BLUR_PX = 7;         // blur radius AT that downsampled scale
 const BLOOM_THRESHOLD_PASSES = 2; // self-multiply passes: c^(2^passes)
+
+/** Downscale factor for an offscreen post-fx buffer, keyed off the real
+ *  backing-store width -- the bigger the store, the more a full-resolution
+ *  copy costs, so the buffer shrinks to match. Shared by bloom and the drop
+ *  motion-blur ring below: same problem (an effect that has to sample or
+ *  hold a copy of the whole composed frame), same answer. */
+function postFxDownscale(width) {
+  return width > 2560 ? 5 : width > 1920 ? 4 : BLOOM_DOWNSCALE_BASE;
+}
 // A low resting glow, not a floor that eats the reactive range: at
 // BLOOM_BASE=0.322 the base alone already used 43% of BLOOM_MAX, so a
 // slam/surge/fever swell only ever had the remaining 57% to move through --
@@ -947,7 +956,7 @@ export class Renderer {
     const strength = bloomStrength(sim.hype, sim.fever, !!sim.reducedFlash, sim.opening ? sim.opening.gain : 1);
     if (strength <= 0.005) return;
 
-    const bloomScale = canvas.width > 2560 ? 5 : canvas.width > 1920 ? 4 : BLOOM_DOWNSCALE_BASE;
+    const bloomScale = postFxDownscale(canvas.width);
     const wSmall = Math.max(1, Math.round(canvas.width / bloomScale));
     const hSmall = Math.max(1, Math.round(canvas.height / bloomScale));
     if (!this._bloomA) this._bloomA = document.createElement('canvas');
@@ -1064,13 +1073,32 @@ export class Renderer {
     }
     if (sim.reducedFlash) return;
 
-    // (Re)allocate the ring if the backing store changed size.
+    // The ring captures at reduced resolution -- see postFxDownscale. This
+    // is not the drop shock's situation (a single-frame effect that only
+    // runs near a drop, so a full-resolution copy above 1920px was cheap
+    // enough to leave alone): the capture below runs on EVERY frame for the
+    // entire song, not just the ~320ms window the ghosts themselves are
+    // ever visible in, because the ring has to already hold real content by
+    // the moment a drop lands (see the capture comment below). Measured as
+    // the single most expensive draw call in the whole frame at 1080p --
+    // reported as 2-3fps on a flagship phone, ~94ms of a ~107ms frame in
+    // this one pass alone, dwarfing bloom, the film finish and every
+    // character draw combined. The ghost is blended at <=0.30 alpha and
+    // already offset from the live frame, so the softening a
+    // downsample-then-upsample gives it for free (the same trick bloom
+    // already uses one pass up) costs nothing visible -- if anything it
+    // reads more like exposure smear than a sharp duplicate would have.
+    const scale = postFxDownscale(canvasEl.width);
+    const histW = Math.max(1, Math.round(canvasEl.width / scale));
+    const histH = Math.max(1, Math.round(canvasEl.height / scale));
+
+    // (Re)allocate the ring if the backing store (or its downscale) changed.
     let history = this._motionHistory;
-    if (!history || history[0].width !== canvasEl.width || history[0].height !== canvasEl.height) {
+    if (!history || history[0].width !== histW || history[0].height !== histH) {
       history = this._motionHistory = [0, 1, 2].map(() => {
         const c = document.createElement('canvas');
-        c.width = canvasEl.width;
-        c.height = canvasEl.height;
+        c.width = histW;
+        c.height = histH;
         return c;
       });
       this._motionRing = 0;
@@ -1087,6 +1115,10 @@ export class Renderer {
     // Ghost offsets run AGAINST the camera's travel: raising shakeX shifts
     // content right, so frame t-k's content sits k*vx px to the LEFT of where
     // it is now -- exactly where a real exposure would have accumulated it.
+    // Computed in full backing-store px (stageSx/stageSy already scale from
+    // logical space), which is also the space the upscaled composite below
+    // draws into -- the downscale is purely an internal storage detail of
+    // the ring, invisible to the offset math on either side of it.
     const passes = dropMotionBlurPasses(strength * focusMul, -vx * stageSx, -vy * stageSy);
 
     // Capture the current frame FIRST, before any ghost is composited onto
@@ -1098,7 +1130,7 @@ export class Renderer {
     const sctx = slot.getContext('2d');
     sctx.setTransform(1, 0, 0, 1, 0, 0);
     sctx.clearRect(0, 0, slot.width, slot.height);
-    sctx.drawImage(canvasEl, 0, 0);
+    sctx.drawImage(canvasEl, 0, 0, slot.width, slot.height);
 
     if (passes.length > 0) {
       // Ring bookkeeping: slot (ring+2)%3 was written last frame (t-1),
@@ -1108,7 +1140,10 @@ export class Renderer {
       for (let i = 0; i < passes.length; i++) {
         ctx.save();
         ctx.globalAlpha = passes[i].alpha;
-        ctx.drawImage(ghosts[i], passes[i].dx, passes[i].dy);
+        ctx.drawImage(
+          ghosts[i], 0, 0, ghosts[i].width, ghosts[i].height,
+          passes[i].dx, passes[i].dy, canvasEl.width, canvasEl.height,
+        );
         ctx.restore();
       }
     }
