@@ -241,11 +241,19 @@ export class SpaceRidge {
     // Main ridge: thick soft underglow + thinner bright core (distant power),
     // scaled by each segment's average depth -- nodes pushing out read
     // larger and brighter, receding ones thinner and dimmer.
+    //
+    // Weighted toward the wide, soft pass and away from the thin, sharp one
+    // (was [11,0.055]/[4.5,0.11]/[1.6,0.28] -- roughly even thirds by total
+    // brightness). A crisp bright core is a NEAR-light cue; this structure's
+    // whole premise is the opposite ("too large and far to be nearby"), and
+    // now that it draws behind the sun/moon rather than blooming over them
+    // (see BiomeManager.draw), it needs to read as diffuse light on its own
+    // rather than relying on occlusion alone to sell the distance.
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i], b = pts[i + 1];
       const flash = Math.max(flashSet.get(a.i) || 0, flashSet.get(b.i) || 0);
       const dm = (a.depthMul + b.depthMul) / 2;
-      for (const [lw, base] of [[11, 0.055], [4.5, 0.11], [1.6, 0.28]]) {
+      for (const [lw, base] of [[14, 0.065], [6, 0.09], [2.2, 0.14]]) {
         ctx.strokeStyle = color;
         ctx.globalAlpha = capFlashAlpha((base + 0.35 * flash) * dm, reducedFlash);
         ctx.lineWidth = lw * dm;
@@ -257,18 +265,20 @@ export class SpaceRidge {
     }
 
     // Node cores — larger, softer (star-stations on a structure too big),
-    // sized/lit by their own depth.
+    // sized/lit by their own depth. Same diffusion logic as the ridge
+    // strokes above: a bigger, dimmer point reads as a distant glow: a
+    // small, near-full-alpha one reads as a nearby light bulb.
     for (const p of pts) {
       const n = this.nodes[p.i];
       const dm = p.depthMul;
       ctx.fillStyle = color;
-      ctx.globalAlpha = capFlashAlpha(0.07 * dm, reducedFlash);
+      ctx.globalAlpha = capFlashAlpha(0.09 * dm, reducedFlash);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, (7 + 4 * n.level) * dm, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, (9 + 5 * n.level) * dm, 0, Math.PI * 2);
       ctx.fill();
-      ctx.globalAlpha = capFlashAlpha((0.4 + 0.4 * n.level) * dm, reducedFlash);
+      ctx.globalAlpha = capFlashAlpha((0.28 + 0.3 * n.level) * dm, reducedFlash);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 2.2 * dm, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 3.2 * dm, 0, Math.PI * 2);
       ctx.fill();
     }
 

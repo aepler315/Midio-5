@@ -48,6 +48,10 @@ const STALL_EDGE_MS = 1500;
 const HOLD_MS = 5000;
 const FADE_MS = 3000;
 const MAX_ACTIVE_FIGURES = 3;
+// Hard ceiling on tracked figures (holding + fading), independent of the
+// graceful per-figure fade -- see the comment at its one use in
+// _commitBuilding for why this exists alongside MAX_ACTIVE_FIGURES.
+const MAX_TRACKED_FIGURES = MAX_ACTIVE_FIGURES * 3;
 const MAX_DOTS = 40;
 const MAX_STAR_FIGURES = 6;
 const CRYSTALLIZE_CHANCE = 0.45;
@@ -136,6 +140,7 @@ export class ConstellationWeaver {
     this._lastNowMs = 0;
     this._pendingGlyph = null;     // glyphId waiting to shape the next figure
     this._glyphCooldown = 0;       // figures remaining before another glyph is allowed
+    this.fullness = 0;             // 0..1, driven by BiomeManager (update()) -- relaxes the concurrency/dot caps so the sky can go genuinely dense every now and then, especially late in the song
   }
 
   /** Queue a glyph shape for the next constellation figure. Respects a
@@ -214,27 +219,62 @@ export class ConstellationWeaver {
     fig.edgeStartMs = nowMs;
   }
 
+  // Retiring a figure used to be `this.figures.shift()`: an outgoing figure
+  // simply vanished from the array on the very next frame, no matter what
+  // phase it was in -- a fully-drawn constellation could be present one
+  // frame and gone the next, reading as a glitch rather than a night sky
+  // losing a shape. Retiring it now means handing it to the SAME fading
+  // state a figure enters on its own after HOLD_MS: the existing draw-time
+  // fade (holdOrFadeFrac in draw(), over FADE_MS) then carries it out
+  // gradually like every other figure that dies of old age, so there is
+  // only ever one way a figure leaves the sky.
+  _retire(fig, nowMs) {
+    if (fig.phase !== 'fading') {
+      fig.phase = 'fading';
+      fig.fadeStartMs = nowMs;
+    }
+  }
+
   _commitBuilding(nowMs) {
     const fig = this.building;
     fig.phase = 'holding';
     fig.holdStartMs = nowMs;
-    if (this.figures.length >= MAX_ACTIVE_FIGURES) this.figures.shift();
+    // fullness (0..1) relaxes how many figures may hold on screen at once --
+    // the sky periodically (and especially late in the song) earns a denser
+    // cap instead of always thinning back down to the same three.
+    const maxActive = MAX_ACTIVE_FIGURES + Math.round(this.fullness * 3);
+    const holding = this.figures.filter((f) => f.phase === 'holding');
+    if (holding.length >= maxActive) this._retire(holding[0], nowMs);
     this.figures.push(fig);
+    // Safety net: a fading figure normally still lingers up to FADE_MS after
+    // being retired above, which is the whole point (a graceful exit instead
+    // of vanishing), but a sustained onset spam can complete new figures
+    // faster than FADE_MS drains old ones, so the tracked list would grow
+    // without bound. Past this many tracked figures (holding + still-fading)
+    // drop the single oldest outright rather than let memory grow -- this
+    // never engages during ordinary play, only under spam far outside any
+    // real melody's onset rate.
+    if (this.figures.length > MAX_TRACKED_FIGURES) this.figures.shift();
     this.building = null;
     if (this._glyphCooldown > 0) this._glyphCooldown--;
-    this._enforceDotCap();
+    this._enforceDotCap(nowMs);
   }
 
-  _enforceDotCap() {
+  _enforceDotCap(nowMs) {
+    const maxDots = MAX_DOTS + Math.round(this.fullness * 30);
     let total = this.building ? this.building.dots.length : 0;
     for (const f of this.figures) total += f.dots.length;
-    while (total > MAX_DOTS && this.figures.length > 0) {
-      total -= this.figures.shift().dots.length;
+    while (total > maxDots) {
+      const target = this.figures.find((f) => f.phase !== 'fading');
+      if (!target) break; // everything left is already on its way out
+      total -= target.dots.length;
+      this._retire(target, nowMs);
     }
   }
 
-  update(nowMs, dtSec) {
+  update(nowMs, dtSec, fullness = 0) {
     this._lastNowMs = nowMs;
+    this.fullness = clamp01(fullness);
     this.pulse *= Math.exp(-dtSec / PULSE_TAU_SEC);
 
     if (this.building && this.building.phase === 'connecting'

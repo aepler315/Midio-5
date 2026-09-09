@@ -1829,7 +1829,14 @@ export class BiomeManager {
     this.lightning.update(dtSec);
     this.lightRig.update(nowMs, dtSec, this._beatMs, calmLevel, this.budget, this.fever || 0);
     this.meteors.update(dtSec);
-    this.weaver.update(nowMs, dtSec);
+    // Sky "fullness": a slow breathing pulse so the constellation weaver's
+    // concurrency cap loosens every now and then rather than sitting flat
+    // for the whole song, plus a hard bias toward dense over the last fifth
+    // of the track so the sky is visibly fuller as the song closes out.
+    const weaverPulse = 0.5 + 0.5 * Math.sin(this.tSec * 0.05);
+    const weaverFinale = smoothstep(0.8, 1, this._progress);
+    const weaverFullness = clamp01(weaverPulse * 0.5 + weaverFinale);
+    this.weaver.update(nowMs, dtSec, weaverFullness);
     this.spaceRidge.update(nowMs, dtSec, this._eqSmoothed, this.calmLevel);
     // Drops send a heavy ring through the lake and snap every light-rig beam
     // onto Midio for a moment -- edge-detected off the externally-set
@@ -2008,6 +2015,32 @@ export class BiomeManager {
       reducedFlash: this.reducedFlash,
     });
 
+    // Space ridge: orbital jewelry — faint in Soft, present in Neon. Drawn
+    // here, before even the dawn/dusk wash, so it sits at the very back of
+    // the sky stack: the atmospheric tint washes over it like it would any
+    // other deep-space light, and the sun/moon (drawn further down, in
+    // ordinary source-over) properly occlude it rather than blooming on top
+    // of something that is supposed to read as unimaginably far behind them
+    // -- it used to draw AFTER both, so its additive glow sat in front of
+    // the moon disc itself, which is backwards for a structure whose entire
+    // point is "too large and far to be nearby." Its draw call was removed
+    // for a stretch while a still-live SkyVoyage station bug (see
+    // SkyVoyage.js trigger()) was misdiagnosed as this; restored once the
+    // real cause was found and fixed. Reinstated on explicit request after
+    // the sky read as too empty without it.
+    {
+      const spaceCol = this._rotated(rotateHueHex(
+        this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t), 45,
+      ));
+      const ridgeA = styleDials(this.visualStyle).spaceRidgeAlpha ?? 1;
+      if (ridgeA > 0.02) {
+        ctx.save();
+        ctx.globalAlpha = ridgeA * (phenomenaFull ? 1 : 0.4);
+        this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash);
+        ctx.restore();
+      }
+    }
+
     // Dawn/dusk tint washes bracket the sun's own rise and set.
     for (const wash of [{ color: '#ff9a6b', alpha: dn.dawnAlpha }, { color: '#141040', alpha: dn.duskAlpha }]) {
       if (wash.alpha > 0.005) {
@@ -2018,6 +2051,26 @@ export class BiomeManager {
         ctx.restore();
       }
     }
+
+    // Hybrid sky wire: mandala / ribbon / weaver scale with skyWireAlpha
+    // (Soft ~0.38, Neon ~0.72) so geometry feels musical without striping.
+    const skyA = styleDials(this.visualStyle).skyWireAlpha ?? 1;
+    // Midasus's sky voyage and the ambient connect-the-dots constellations,
+    // drawn HERE -- before the sun/moon rather than after -- for the same
+    // reason the space ridge moved above: both are additive ('lighter')
+    // deep-sky content, and used to be drawn after the celestial bodies, so
+    // a figure's line or a crystallized star could sit glowing right on top
+    // of the moon's disc instead of behind it. The moon (drawn below, in
+    // ordinary source-over) now properly occludes whatever of these fell
+    // behind its disc, same as it always did for the plain star layer in
+    // _drawSky/_drawStarfield (also drawn before the celestial bodies).
+    this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
+    this.drawDeepSky(ctx, skyVoyage, canvas); // Midasus's sky voyage, when she's away -- behind the mountains below
+    // Ambient connect-the-dots + reward volleys read as starlight, so the
+    // night sky brightens them the same way it brightens the atlas stars.
+    const nightAlphaMul = (1 + 1.2 * dn.night) * Math.max(0.25, skyA);
+    if (phenomenaFull && skyA > 0.02) this.weaver.draw(ctx, canvas, this.reducedFlash, nightAlphaMul);
+    if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
 
     // The sun (this biome's celestial, crossfaded A->B as usual) while
     // it's up; a plain pale moon takes over once it sets. Both fade in/out
@@ -2038,9 +2091,6 @@ export class BiomeManager {
     // Spirograph resonance mandala, centered on the celestial body so it
     // reads as the sun/moon itself resonating with the track.
     const mandalaColor = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-    // Hybrid sky wire: mandala / ribbon / weaver scale with skyWireAlpha
-    // (Soft ~0.38, Neon ~0.72) so geometry feels musical without striping.
-    const skyA = styleDials(this.visualStyle).skyWireAlpha ?? 1;
     // Both are pure background phenomena (a ~700-point spirograph path and a
     // ~420-point attractor trail redrawn every frame) -- real atmosphere but
     // never gameplay, so they shed at the same rung as the rest of the
@@ -2062,28 +2112,6 @@ export class BiomeManager {
       this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075 * (this._ribbonScaleMul || 1), mandalaColor);
       this.ribbon.intensity = prevR;
     }
-    this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
-    // Space ridge: orbital jewelry — faint in Soft, present in Neon. Its
-    // draw call was removed for a stretch while a still-live SkyVoyage
-    // station bug (see SkyVoyage.js trigger()) was misdiagnosed as this;
-    // restored once the real cause was found and fixed. Reinstated on
-    // explicit request after the sky read as too empty without it.
-    {
-      const spaceCol = this._rotated(rotateHueHex(mandalaColor, 45));
-      const ridgeA = styleDials(this.visualStyle).spaceRidgeAlpha ?? 1;
-      if (ridgeA > 0.02) {
-        ctx.save();
-        ctx.globalAlpha = ridgeA * (phenomenaFull ? 1 : 0.4);
-        this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash);
-        ctx.restore();
-      }
-    }
-    this.drawDeepSky(ctx, skyVoyage, canvas); // Midasus's sky voyage, when she's away -- behind the mountains below
-    // Ambient connect-the-dots + reward volleys read as starlight, so the
-    // night sky brightens them the same way it brightens the atlas stars.
-    const nightAlphaMul = (1 + 1.2 * dn.night) * Math.max(0.25, skyA);
-    if (phenomenaFull && skyA > 0.02) this.weaver.draw(ctx, canvas, this.reducedFlash, nightAlphaMul);
-    if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
     this._drawFarShore(ctx, canvas, worldX, A, B, t); // beyond the ocean, behind the water itself
     this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
     this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
@@ -3591,6 +3619,20 @@ export class BiomeManager {
     ctx.fillStyle = halo;
     ctx.beginPath();
     ctx.arc(cx, cy, R * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Opaque backing disc, full moon radius: blocks whatever was drawn
+    // earlier this frame -- the star field, ambient constellations, Midasus's
+    // sky voyage -- from showing through the moon. Without this the dark
+    // limb was only as opaque as the earthshine fill just below (~13%), so
+    // anything sitting behind an unlit crescent moon stayed almost fully
+    // visible right through its own disc. Same alpha as the moon itself so
+    // it fades out in step at moonrise/moonset instead of ever occluding
+    // more than the visible moon does.
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
     ctx.fill();
 
     // Earthshine: the unlit part of a real moon is not empty sky -- it's
