@@ -242,6 +242,22 @@ export class PerfGovernor {
   // The heaviest overlay passes: film-grade wash + vignette, and the hype
   // frame's echo self-blit.
   get heavyPostFx() { return this.level < 6; }
+  // Ridge-volume shading (_drawRidgeVolume): up to three clipped gradient
+  // fills per range layer, every frame, with no rung of its own -- unlike
+  // everything else on this ladder it was never gated at all, so a device
+  // still over budget at MAX_LEVEL had no lever left to pull for it. Its
+  // own crest/column geometry (_crestPoints) already sheds via
+  // danceColumnWidth above, so this only needs to cover what THAT doesn't:
+  // the shading fills themselves. Full at every rung above MAX_LEVEL's own
+  // "clean core" cut, same tier as hazeLayers/heavyPostFx -- ridge shading
+  // is core content ("the range's ONLY source of shading depth", see
+  // _drawRidgeVolume's own comment), not optional atmosphere, so it holds
+  // out to the very last rung rather than shedding early. Even then it
+  // isn't switched off outright: _drawRidgeVolume keeps its catchlight pass
+  // regardless (a flat, uncontrasted silhouette was the original bug this
+  // system exists to fix) and reads this flag only to drop the shade and
+  // aerial-perspective passes, the two more expensive extra fills.
+  get ridgeShadingFull() { return this.level < 6; }
 
   /** Resolution scale factor (0 < s <= 1) that fitCanvas should apply to the
    *  chosen stage preset. At high perf pressure the backing store shrinks,

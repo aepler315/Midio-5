@@ -7,6 +7,7 @@
 // and down with the dance -- reported as flickering shadow artifacts.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { PerfGovernor, MAX_LEVEL } from '../src/render/PerfGovernor.js';
 
 globalThis.Path2D = class Path2D {
   moveTo() {} lineTo() {} closePath() {} bezierCurveTo() {} quadraticCurveTo() {} arc() {} rect() {}
@@ -108,4 +109,90 @@ test('the shading gradient still bottoms out at the range foot (bottomY), unaffe
   for (const g of ctx.gradients.slice(0, 2)) {
     assert.ok(Math.abs(g.y1 - geom.bottomY) < 0.01);
   }
+});
+
+// PerfGovernor.ridgeShadingFull: _drawRidgeVolume never had a shed lever of
+// its own -- danceColumnWidth already thins _crestPoints' geometry, but the
+// gradient fills themselves (up to 3 per layer, every frame) ran in full
+// regardless of governor level. A device still over budget at MAX_LEVEL had
+// nothing left to give here. These pin the new gate: catchlight (the fix
+// for the original "flat, hard to read" silhouette) is never removed; only
+// the shade and aerial-perspective passes -- real cost, but genuinely
+// extra on top of catchlight -- drop out when the gate is off.
+//
+// Real PerfGovernor instances, not hand-rolled partial mocks: _drawShoulders
+// a little below reads its OWN pre-existing gate (heavyPostFx, which also
+// happens to flip at MAX_LEVEL) -- a partial mock naming only the fields a
+// test cares about silently reads every other gate as off, which is not
+// what "no perf at all" or "one specific rung" actually mean in production.
+// Both instances below are built at the SAME level for that reason (so
+// colW, heavyPostFx, phenomenaFull etc. all match) and differ ONLY in
+// ridgeShadingFull, via a plain property override -- shadowing the getter
+// is enough since assert.equal reads the instance, not the prototype.
+test('ridgeShadingFull off drops exactly the shade and aerial passes, keeping catchlight', async () => {
+  const strip = makeStrip({ phase: 0 });
+
+  const bmOff = await makeManager();
+  bmOff.tSec = 3;
+  bmOff._airColor = '#88aacc'; // a real air color, so the aerial pass would be live
+  bmOff._perf = new PerfGovernor({ startLevel: MAX_LEVEL });
+  const ctxOff = new RecordingCtx();
+  bmOff._drawRidgeVolume(ctxOff, canvas, strip, 0, 0, 'L2', 1, 1, 1, 1);
+
+  const bmOn = await makeManager();
+  bmOn.tSec = 3;
+  bmOn._airColor = '#88aacc';
+  bmOn._perf = new PerfGovernor({ startLevel: MAX_LEVEL });
+  // ridgeShadingFull is a getter with no setter; a plain assignment would
+  // throw in strict mode (a module always is). Shadow it with an own
+  // property instead -- the one thing this test varies.
+  Object.defineProperty(bmOn._perf, 'ridgeShadingFull', { value: true });
+  const ctxOn = new RecordingCtx();
+  bmOn._drawRidgeVolume(ctxOn, canvas, strip, 0, 0, 'L2', 1, 1, 1, 1); // L2: AERIAL_PULL 0.46
+
+  assert.equal(bmOff._perf.ridgeShadingFull, false, 'test setup: MAX_LEVEL should already read false');
+  assert.equal(
+    ctxOn.gradients.length - ctxOff.gradients.length, 2,
+    'exactly two extra gradients (shade + aerial) when the gate is on',
+  );
+  assert.equal(ctxOff.gradients.length, 1, 'catchlight alone when the gate is off (shoulders also shed at MAX_LEVEL)');
+});
+
+test('no perf object at all reads every rung, including ridgeShadingFull, as full quality', async () => {
+  // The title-screen backdrop and any caller that predates PerfGovernor
+  // draw with no `_perf` at all -- that must behave like a fresh, level-0
+  // governor, not silently lose the shade/aerial passes just because perf
+  // is absent.
+  const strip = makeStrip({ phase: 0 });
+
+  const bmFreshGovernor = await makeManager();
+  bmFreshGovernor.tSec = 3;
+  bmFreshGovernor._airColor = '#88aacc';
+  bmFreshGovernor._perf = new PerfGovernor(); // level 0
+  const ctxFreshGovernor = new RecordingCtx();
+  bmFreshGovernor._drawRidgeVolume(ctxFreshGovernor, canvas, strip, 0, 0, 'L2', 1, 1, 1, 1);
+
+  const bmNoPerf = await makeManager();
+  bmNoPerf.tSec = 3;
+  bmNoPerf._airColor = '#88aacc';
+  const ctxNoPerf = new RecordingCtx();
+  bmNoPerf._drawRidgeVolume(ctxNoPerf, canvas, strip, 0, 0, 'L2', 1, 1, 1, 1);
+
+  assert.equal(ctxNoPerf.gradients.length, ctxFreshGovernor.gradients.length, 'no perf at all reads as full quality');
+  assert.ok(ctxNoPerf.gradients.length >= 3, 'sanity: catchlight + shade + aerial actually fired here');
+});
+
+test('ridgeShadingFull off still leaves the catchlight gradient anchored correctly', async () => {
+  // The bakedCrestY-anchoring fix above must survive the new gate: shedding
+  // the shade/aerial passes must not also perturb the one pass that stays.
+  const strip = makeStrip({ phase: 0 });
+  const bm = await makeManager();
+  bm.tSec = 3;
+  bm._perf = new PerfGovernor({ startLevel: MAX_LEVEL });
+  const ctx = new RecordingCtx();
+  bm._drawRidgeVolume(ctx, canvas, strip, 0, 0, 'L2', 1, 1, 1, 1);
+  const geom = bm._crestPoints(canvas, strip, 0, 0, 'L2', 1, 1);
+  assert.equal(ctx.gradients.length, 1, 'no air color set here, so only catchlight was ever going to fire');
+  assert.ok(Math.abs(ctx.gradients[0].y0 - geom.bakedCrestY) < 0.01);
+  assert.ok(Math.abs(ctx.gradients[0].y1 - geom.bottomY) < 0.01);
 });

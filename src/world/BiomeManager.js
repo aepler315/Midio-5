@@ -5340,6 +5340,16 @@ export class BiomeManager {
     ctx.fillStyle = grad;
     ctx.fill(body);
 
+    // The shade half and the aerial-perspective wash below it are both
+    // gated on ridgeShadingFull: real cost (a clipped gradient fill each,
+    // same as the catchlight pass above), but not core the way catchlight
+    // is. Catchlight alone still reads as a lit, three-dimensional ridge
+    // rather than the flat silhouette this whole system replaced -- it's
+    // the shade+aerial pair that's the shed-able "extra" contrast/depth on
+    // top of that, and PerfGovernor's own last rung is the only place this
+    // has ever had a lever to pull (see ridgeShadingFull's own comment).
+    const ridgeShadingFull = !this._perf || this._perf.ridgeShadingFull;
+
     // The shade half: genuine multiply occlusion instead of an alpha-
     // blended black wash. A translucent black fill under the default
     // source-over composites IDENTICALLY to true multiply when the
@@ -5351,17 +5361,19 @@ export class BiomeManager {
     // already carries survives into its own shadow. Multiply can only
     // ever darken (g<=1 always), which is exactly why this has to be a
     // second pass rather than folded into the lit gradient above.
-    const shadeStrength = RIDGE_SHADE_STRENGTH * alpha * strength;
-    const g = Math.max(0, Math.min(255, Math.round(255 * (1 - shadeStrength))));
-    const shadeGrad = ctx.createLinearGradient(0, shadeTopY, 0, bottomY);
-    shadeGrad.addColorStop(0, 'rgb(255,255,255)');
-    shadeGrad.addColorStop(0.34, 'rgb(255,255,255)');
-    shadeGrad.addColorStop(1, `rgb(${g},${g},${g})`);
-    ctx.save();
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = shadeGrad;
-    ctx.fill(body);
-    ctx.restore();
+    if (ridgeShadingFull) {
+      const shadeStrength = RIDGE_SHADE_STRENGTH * alpha * strength;
+      const g = Math.max(0, Math.min(255, Math.round(255 * (1 - shadeStrength))));
+      const shadeGrad = ctx.createLinearGradient(0, shadeTopY, 0, bottomY);
+      shadeGrad.addColorStop(0, 'rgb(255,255,255)');
+      shadeGrad.addColorStop(0.34, 'rgb(255,255,255)');
+      shadeGrad.addColorStop(1, `rgb(${g},${g},${g})`);
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = shadeGrad;
+      ctx.fill(body);
+      ctx.restore();
+    }
 
     // Aerial perspective (Stage 3 of the mountain overhaul): AERIAL_PULL was
     // already computed once per frame into tintL2..tintL5 (see draw()) and
@@ -5374,7 +5386,7 @@ export class BiomeManager {
     // guaranteed no-op there -- the near anchor stays exactly as crisp as
     // its authored color.
     const aerialPull = AERIAL_PULL[layerKey] || 0;
-    if (aerialPull > 0.001 && this._airColor) {
+    if (ridgeShadingFull && aerialPull > 0.001 && this._airColor) {
       const air = hexToRgb(this._airColor);
       const aerialAlpha = aerialPull * alpha * strength;
       const aerialGrad = ctx.createLinearGradient(0, crestY, 0, bottomY);
