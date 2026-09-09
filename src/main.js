@@ -24,8 +24,9 @@ import {
 import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
 import {
-  DEFAULT_STAGE_PRESET, resolveStagePreset, stageDims, isRetroPreset,
+  DEFAULT_STAGE_PRESET, resolveStagePreset, stageDims, isRetroPreset, isPalettePreset,
 } from './render/StagePresets.js';
+import { quantizeCanvas } from './render/PaletteQuantize.js';
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
 import { TitleBackdrop } from './ui/TitleBackdrop.js';
@@ -375,7 +376,12 @@ function fitCanvas() {
   const retro = isRetroPreset(preset);
   // Set BEFORE resolutionScale is read: in 8-bit mode the governor is pinned
   // to its cheapest rung, and the scale it reports depends on that level.
-  if (perfGovernor) perfGovernor.retro = retro;
+  // `retro` must be assigned first -- retroPalette only ever holds alongside
+  // it, and clearing retro clears the palette pass with it.
+  if (perfGovernor) {
+    perfGovernor.retro = retro;
+    perfGovernor.retroPalette = isPalettePreset(preset);
+  }
   const scale = perfGovernor ? perfGovernor.resolutionScale(dims.h) : 1;
   const w = Math.round(dims.w * scale);
   const h = Math.round(dims.h * scale);
@@ -1163,6 +1169,7 @@ function startTimeline(timelineData, extra = {}) {
   perfGovernor = new PerfGovernor({
     startLevel: perfStartLevel,
     retro: isRetroPreset(readStagePreset()),
+    retroPalette: isPalettePreset(readStagePreset()),
   });
   fitCanvas(); // sync the new governor's canvasWidth/scale to the live buffer
   // World construction (parallax strips, landmarks) is CPU-heavy; surface a
@@ -2163,12 +2170,22 @@ function clientToStage(e) {
  *  instant a song starts. */
 function titleFrame(tRaf) {
   if (running) return;
-  if (!titleBackdrop) {
+  // Rebuilt whenever the backing store changes size, not just once: the
+  // backdrop bakes its star and nebula positions against the dimensions it
+  // was constructed with, so one built for a 1920x1080 buffer draws almost
+  // entirely off-frame after a switch to 320x180 -- and the control that
+  // makes that switch lives on this very screen.
+  if (!titleBackdrop || titleBackdrop.width !== canvas.width || titleBackdrop.height !== canvas.height) {
     titleBackdrop = new TitleBackdrop({ seed: 1, width: canvas.width, height: canvas.height });
   }
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   titleBackdrop.draw(ctx, tRaf / 1000);
+  // 8-bit intensive quantizes the title screen too. The song path runs this
+  // from Renderer.draw(); doing it here as well means choosing the mode
+  // visibly does something on the screen you choose it from, instead of
+  // looking inert until a song starts.
+  if (isPalettePreset(readStagePreset())) quantizeCanvas(ctx, canvas);
   titleRafHandle = requestAnimationFrame(titleFrame);
 }
 

@@ -101,8 +101,14 @@ const RETRO_PARTICLE_MUL = 0.35; // vs 0.6 at the ladder's particle rung
 const RETRO_DANCE_COLUMN_WIDTH = 128;
 
 export class PerfGovernor {
-  constructor({ startLevel = 0, retro = false } = {}) {
+  constructor({ startLevel = 0, retro = false, retroPalette = false } = {}) {
     this._retro = !!retro;
+    // "8-bit intensive": the palette pass rides on top of the retro floor,
+    // never on its own -- quantizing a 4K frame would cost many times what
+    // the whole rest of the frame does. Kept as its own flag rather than a
+    // second level on the ladder because it is not a shed: it ADDS work, in
+    // exchange for a look, which is the one thing the ladder never does.
+    this._retroPalette = !!retroPalette && this._retro;
     this.level = this._retro ? MAX_LEVEL : Math.max(0, Math.min(MAX_LEVEL, startLevel));
     this._overCount = 0;
     this._cleanSinceMs = null;
@@ -131,7 +137,14 @@ export class PerfGovernor {
     this._overCount = 0;
     this._cleanSinceMs = null;
     if (next) this.level = MAX_LEVEL;
+    else this._retroPalette = false; // the palette pass never outlives the floor
   }
+
+  /** Whether the composed frame should be quantized to the 256-color
+   *  palette (PaletteQuantize.js). Only ever true alongside `retro`. */
+  get retroPalette() { return this._retroPalette; }
+
+  set retroPalette(on) { this._retroPalette = !!on && this._retro; }
 
   /** Restart the warm-up grace: call when a new song starts (or the world is
    *  rebuilt), since that is when the expensive one-off bake happens. */

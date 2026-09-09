@@ -8,8 +8,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  STAGE_PRESETS, RETRO_PRESET, DEFAULT_STAGE_PRESET,
-  resolveStagePreset, stageDims, isRetroPreset,
+  STAGE_PRESETS, RETRO_PRESET, PALETTE_PRESET, DEFAULT_STAGE_PRESET,
+  resolveStagePreset, stageDims, isRetroPreset, isPalettePreset,
 } from '../src/render/StagePresets.js';
 
 const indexHtml = readFileSync(
@@ -32,14 +32,36 @@ test('every option in the stage-resolution menu resolves to a real preset', () =
   }
 });
 
-test('the menu offers 8-bit, and it is the only retro preset', () => {
+test('the menu offers both 8-bit modes, and only those two are retro', () => {
   const values = stageResOptionValues();
   assert.ok(values.includes(RETRO_PRESET), 'the 8-bit option is missing from index.html');
-  const retro = Object.keys(STAGE_PRESETS).filter((k) => STAGE_PRESETS[k].retro);
-  assert.deepEqual(retro, [RETRO_PRESET]);
+  assert.ok(values.includes(PALETTE_PRESET), 'the 8-bit intensive option is missing from index.html');
+  const retro = Object.keys(STAGE_PRESETS).filter((k) => STAGE_PRESETS[k].retro).sort();
+  assert.deepEqual(retro, [RETRO_PRESET, PALETTE_PRESET].sort());
   assert.equal(isRetroPreset(RETRO_PRESET), true);
+  assert.equal(isRetroPreset(PALETTE_PRESET), true);
   assert.equal(isRetroPreset(DEFAULT_STAGE_PRESET), false);
   assert.equal(isRetroPreset(144), false);
+});
+
+test('only the intensive variant asks for the palette pass', () => {
+  // The split is the point: a weak device must be able to buy the cheap
+  // mode without also buying a per-frame readback it cannot afford.
+  assert.equal(isPalettePreset(PALETTE_PRESET), true);
+  assert.equal(isPalettePreset(RETRO_PRESET), false);
+  assert.equal(isPalettePreset(DEFAULT_STAGE_PRESET), false);
+  assert.equal(isPalettePreset('nonsense'), false);
+  const palette = Object.keys(STAGE_PRESETS).filter((k) => STAGE_PRESETS[k].palette);
+  assert.deepEqual(palette, [PALETTE_PRESET]);
+});
+
+test('both 8-bit modes render into the same small buffer', () => {
+  // Intensive costs more per frame, not more pixels -- it must not quietly
+  // raise the resolution as well, or it would be paying twice.
+  assert.deepEqual(
+    { w: stageDims(PALETTE_PRESET).w, h: stageDims(PALETTE_PRESET).h },
+    { w: stageDims(RETRO_PRESET).w, h: stageDims(RETRO_PRESET).h },
+  );
 });
 
 test('8-bit is a genuinely small buffer, not a relabelled full-size one', () => {
@@ -71,6 +93,8 @@ test('8-bit upscales by whole pixels on the two commonest stage sizes', () => {
 test('resolveStagePreset accepts what a select, localStorage, or a URL actually hands it', () => {
   assert.equal(resolveStagePreset('8bit'), RETRO_PRESET);
   assert.equal(resolveStagePreset(' 8BIT '), RETRO_PRESET, 'case/whitespace tolerant');
+  assert.equal(resolveStagePreset('8bit-intensive'), PALETTE_PRESET);
+  assert.equal(resolveStagePreset(' 8BIT-Intensive '), PALETTE_PRESET);
   assert.equal(resolveStagePreset('1080'), 1080, 'a select hands over strings');
   assert.equal(resolveStagePreset(1080), 1080, 'a number works too');
   assert.equal(resolveStagePreset('144'), 144);

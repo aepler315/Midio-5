@@ -87,8 +87,9 @@
 
           <div class="resRow" title="Stage render resolution (sim stays 16:9 logical; canvas upscales to this).">
             <label for="stageRes">Stage</label>
-            <select id="stageRes" title="Internal stage resolution (sim is 1280×720; buffer upscales). Default 1080p. 8-bit renders at 320×180 with every optional effect off — the setting to pick when a low-end device can't hold frame rate.">
+            <select id="stageRes" title="Internal stage resolution (sim is 1280×720; buffer upscales). Default 1080p. 8-bit renders at 320×180 with every optional effect off — the setting to pick when a low-end device can't hold frame rate. 8-bit intensive adds a dithered 256-colour palette on top: the fuller console look, at the cost of a per-frame pixel pass.">
               <option value="8bit">8-bit</option>
+              <option value="8bit-intensive">8-bit intensive</option>
               <option value="144">144p</option>
               <option value="240">240p</option>
               <option value="360">360p</option>
