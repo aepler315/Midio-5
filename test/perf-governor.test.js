@@ -153,6 +153,19 @@ test('deeper rungs (5-6) gate phenomena and the overlay-pass stack, past the ori
   assert.equal(gov.brushEnabled, false);
 });
 
+test('ridgeShadingFull: _drawRidgeVolume\'s shade/aerial passes hold out to the very last rung', () => {
+  // Unlike everything else on this ladder, _drawRidgeVolume never had a shed
+  // lever at all before this -- it's core content (the range's own shading),
+  // not optional atmosphere, so it's meant to be the LAST thing given up,
+  // same tier as hazeLayers/heavyPostFx rather than an earlier rung like
+  // phenomena or the brush.
+  const gov = new PerfGovernor();
+  gov.level = 5;
+  assert.equal(gov.ridgeShadingFull, true, 'still full one rung short of MAX_LEVEL');
+  gov.level = MAX_LEVEL;
+  assert.equal(gov.ridgeShadingFull, false, 'only sheds at the very last rung');
+});
+
 test('constructor accepts a proactive startLevel, clamped to [0, MAX_LEVEL]', () => {
   assert.equal(new PerfGovernor().level, 0, 'defaults to 0');
   assert.equal(new PerfGovernor({ startLevel: 2 }).level, 2);
@@ -278,6 +291,7 @@ test('8-bit mode starts pinned at the cheapest rung with every optional pass off
   assert.equal(gov.brushEnabled, false);
   assert.equal(gov.heavyPostFx, false);
   assert.equal(gov.hazeLayers, 1);
+  assert.equal(gov.ridgeShadingFull, false);
 });
 
 test('8-bit mode does not recover out of itself after clean frames', () => {
