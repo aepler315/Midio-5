@@ -1,5 +1,5 @@
-# Run the test suite on PRs and pushes to main. There is no other CI here,
-# so this is the gate: `npm test` (`node --test`) scans the whole checkout
+# Run Node tests and the current audio-upload browser flow on PRs and
+# pushes to main. `npm test` (`node --test`) scans the whole checkout
 # and picks up the nested polygon app's TypeScript tests as well, which is
 # why polygon's own dependencies are installed too -- without them its
 # tests fail on missing imports (ERR_MODULE_NOT_FOUND), not on assertions.
@@ -31,3 +31,35 @@ jobs:
         working-directory: polygon
       - name: Run test suite
         run: npm test
+
+  audio-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install game dependencies
+        run: npm ci --no-fund --no-audit
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Exercise audio upload and playback
+        run: |
+          mkdir -p .smoke
+          HOST=127.0.0.1 node tools/serve.js > .smoke/server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          npm run test:smoke -- http://127.0.0.1:8080
+      - name: Upload browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-smoke
+          path: .smoke/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7

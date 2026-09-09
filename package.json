@@ -8,6 +8,7 @@
     "start": "node tools/serve.js",
     "dev": "node tools/serve.js 8080",
     "test": "node --test",
+    "test:smoke": "node tools/smoke.mjs",
     "slskd": "docker compose up -d slskd",
     "slskd:down": "docker compose down",
     "slskd:logs": "docker compose logs -f slskd",

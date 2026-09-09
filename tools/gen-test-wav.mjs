@@ -36,7 +36,7 @@ function addHat(tSec, amp = 0.35) {
     const idx = start + i;
     if (idx >= numSamples) break;
     const env = Math.exp(-i / (0.015 * sampleRate));
-    data[idx] += amp * env * (Math.random() * 2 - 1);
+    data[idx] += amp * env * (rand() * 2 - 1);
   }
 }
 
