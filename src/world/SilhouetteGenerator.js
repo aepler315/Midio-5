@@ -185,26 +185,43 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
   // half: all-same reads stamped, half-and-half reads random.
   for (const p of allPeaks) p.flip = rand() < 0.22;
   const flankQEarly = flankQs(cfg, weather.litho, weather.profileMix ?? 0);
+  // L3 keeps the ORIGINAL alpine flank (RidgeShape.summitMass/flankQs) rather
+  // than joining every other layer on the Colorado Plateau vocabulary below:
+  // every layer's summits had been drawn as buttes/mesas/hoodoos regardless
+  // of `character` (massif/range/crags/...), so nothing in the stack ever
+  // produced an actual jagged, glaciated horn -- the one shape a butte
+  // vocabulary was explicitly built to NOT approximate (see
+  // ColoradoPlateau.js's own header). Singling out the middle ridge gives the
+  // stack a genuine North Cascades / Bitterroot layer -- concave, pinched
+  // "horn" flanks (FLANK_Q_STEEP) on one side and a long convex dip slope on
+  // the other, the same asymmetric-cirque shape language Matterhorn/Teton
+  // read as -- instead of every ridge reading as the same desert rock at a
+  // different depth.
+  const alpineFlank = layerKey === 'L3';
   // Southern-Utah shape language (ColoradoPlateau.js). Every summit is a
   // FORMATION -- flat caprock, near-vertical cliff bands, benches, a talus
   // apron -- rather than an alpine flank, because the rock here is flat-lying
   // sedimentary layers of alternating hardness and erosion works on them
   // layer by layer. Assigned once per summit so a formation keeps its
   // identity, and driven by the section's own lithology where it can be.
-  for (const p of allPeaks) {
-    // Varied per summit, not just per section: two formations built from one
-    // parameter set are the same rock twice, and a ridge of them reads as a
-    // repeated stamp however good the individual shape is.
-    p.form = varyFormation(pickFormation(rand, {
-      crest: weather.litho?.crest ?? 0.5,
-      foot: weather.litho?.foot ?? 0.5,
-      tilt: weather.profileMix ?? 0,
-      // The song's spike-vs-organic DNA still reaches the shape -- it now
-      // chooses the FORMATION rather than bending a flank exponent, which is
-      // the only place it can land once summits are formations. flankQ is
-      // still computed above and still drives the detail passes.
-      spiky: flankness01(flankQEarly),
-    }), rand);
+  // Skipped for L3 (see alpineFlank above) -- those summits stay real alpine
+  // flanks and never get a plateau formation to fall back on.
+  if (!alpineFlank) {
+    for (const p of allPeaks) {
+      // Varied per summit, not just per section: two formations built from
+      // one parameter set are the same rock twice, and a ridge of them reads
+      // as a repeated stamp however good the individual shape is.
+      p.form = varyFormation(pickFormation(rand, {
+        crest: weather.litho?.crest ?? 0.5,
+        foot: weather.litho?.foot ?? 0.5,
+        tilt: weather.profileMix ?? 0,
+        // The song's spike-vs-organic DNA still reaches the shape -- it now
+        // chooses the FORMATION rather than bending a flank exponent, which
+        // is the only place it can land once summits are formations. flankQ
+        // is still computed above and still drives the detail passes.
+        spiky: flankness01(flankQEarly),
+      }), rand);
+    }
   }
   // Spacing is a property of the LANDFORM, not a constant. Monuments open
   // real floor around themselves; hoodoos and goblins crowd. Done after the
@@ -234,7 +251,7 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
     let apronSum = 0;
     for (const p of allPeaks) {
       const dx = wrapDx(x - p.x);
-      const m = plateauMass(dx, p, dip);
+      const m = alpineFlank ? summitMass(dx, p, dip, flankQ) : plateauMass(dx, p, dip);
       // Max, not sum: summits must stay separate landforms rather than
       // adding into one dome.
       if (m > summit) summit = m;
