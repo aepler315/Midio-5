@@ -60,22 +60,6 @@
           </div>
         </div>
 
-        <section class="listenPanel" aria-label="Listen to what is playing">
-          <h2 class="listenHeading">Or just play a song</h2>
-          <p class="listenLead">
-            Put anything on &mdash; Spotify, YouTube, whatever you already use &mdash;
-            and tap Listen. Midio builds the world out of what it hears.
-          </p>
-          <button id="listenBtn" type="button" class="listenBtn">Listen</button>
-          <p class="listenNote">
-            Uses your microphone, so the music needs to be coming from a speaker
-            rather than headphones. Nothing is recorded or sent anywhere. A
-            listen runs about three and a half minutes &mdash; it can&rsquo;t know
-            how long your song is, so it plays an arc that length and then ends.
-          </p>
-          <p id="listenStatus" class="hint listenStatus hidden" role="status"></p>
-        </section>
-
         <div class="titleMeta">
           <p class="titleFlashNote">Contains flashing lights, camera shake, and sudden scene cuts. Press <kbd>R</kbd> to dampen all three; it turns on automatically if your system asks for reduced motion.</p>
           <div class="prefRow">
@@ -127,6 +111,12 @@
     </div>
 
     <div id="hud" class="hidden">
+      <div id="hudLeft">
+        <button id="btLatencyBtn" class="ghostbtn chipbtn" type="button" aria-pressed="false"
+          title="Manual Bluetooth latency correction. Most Bluetooth speakers/headphones report no output latency to the browser, so beat-anchored visuals (jumps, flashes, camera hits) can land audibly early. Turning this on delays every one of them by 30ms to compensate. Leave off on wired audio.">
+          BT +30ms
+        </button>
+      </div>
       <div id="hudRight">
         <button id="pauseBtn" class="ghostbtn iconbtn" type="button" title="Pause">&#9208;</button>
         <button id="stopBtn" class="ghostbtn iconbtn" type="button" title="Stop (back to title)">&#9209;</button>
