@@ -51,6 +51,9 @@ import {
 import {
   farShoreRecipe, farShoreHeight01, farShorePulse01, FAR_SHORE_PARALLAX, FAR_SHORE_TILE_PX,
 } from './FarShore.js';
+import {
+  mirageRecipe, mirageHeight01, mirageShimmerPx, miragePresence01, MIRAGE_PARALLAX, MIRAGE_TILE_PX,
+} from './FataMorgana.js';
 import { buildWaveComponents, waveFieldSample, windSpeedForSeaState, easeSeaState } from './WaveField.js';
 import {
   generateCatalogue, subPixelDraw, twinkleAmplitude, galacticBandCenterY, GALACTIC_BAND,
@@ -726,6 +729,10 @@ export class BiomeManager {
     // ocean, so distant only its tallest masses clear the planet's own
     // curvature (see _drawFarShore).
     this._farShoreRecipe = farShoreRecipe(hashSeed(`${songSeed}:farshore`));
+    // The fata morgana: a pale, jagged, snow-capped mirage range hovering at
+    // the same horizon, layered on top of the far shore's dark mass (see
+    // _drawMirage).
+    this._mirageRecipe = mirageRecipe(hashSeed(`${songSeed}:mirage`));
     this.lightRig = new LightRig(songSeed);
     // Concert beams anchor toward Midio on a drop; sane defaults so a
     // trigger before the first Simulation-set value still points somewhere
@@ -2113,6 +2120,7 @@ export class BiomeManager {
       this.ribbon.intensity = prevR;
     }
     this._drawFarShore(ctx, canvas, worldX, A, B, t); // beyond the ocean, behind the water itself
+    this._drawMirage(ctx, canvas, worldX, A, B, t); // the fata morgana, layered on top of the far shore at the same horizon
     this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
     this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
@@ -3809,6 +3817,70 @@ export class BiomeManager {
     const pulse = farShorePulse01(this.tSec);
     const alpha = 0.16 + 0.07 * pulse;
     ctx.fillStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /**
+   * The fata morgana: a pale, jagged, snow-capped mirage layered right on
+   * top of the far shore's dark mass, at the same horizon. Where the far
+   * shore is dark and featureless because real distance has dissolved it,
+   * this reads the opposite way on purpose -- unnaturally crisp, pale
+   * peaks that have no business being visible this far off, because a
+   * mirage isn't distance doing the work, it's atmospheric refraction
+   * lifting a shape into view. Two cues sell that: every column wavers
+   * with a slow heat-shimmer offset instead of holding still, and a
+   * second, squashed echo of the same silhouette floats just beneath the
+   * main one -- the classic doubled/inverted image a real superior mirage
+   * produces.
+   */
+  _drawMirage(ctx, canvas, worldX, A, B, t) {
+    if (this._perf && !this._perf.heavyPostFx) return;
+    const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
+    const sinkPx = Math.max(14, canvas.height * 0.015);
+    const baseY = horizonY + sinkPx;
+    const maxHeightPx = Math.max(60, canvas.height * 0.13);
+    const scrollX = worldX * MIRAGE_PARALLAX;
+    const stepPx = 6;
+    const shimmerAmpPx = Math.max(1.5, canvas.height * 0.006);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, canvas.width, horizonY + sinkPx * 0.6);
+    ctx.clip(); // the mirage still can't show below its own base -- it floats AT the horizon, not below it
+
+    // Pale, cold, and close to the sky's own high color rather than the
+    // biome's palette -- a mirage is refracted SKYLIGHT, not local terrain,
+    // so it should read as an extension of the air, not as another range.
+    const skyHorizon = this._rotated(this.lerpCache.get(A.sky[2], B.sky[2], t));
+    const air = this._airColor || '#8fa8bf';
+    const pale = this.lerpCache.get('#eef4fb', this.lerpCache.get(skyHorizon, air, 0.4), 0.35);
+    const { r, g, b } = hexToRgb(pale);
+    const presence = miragePresence01(this.tSec);
+    const alpha = 0.10 + 0.10 * presence;
+
+    const buildPath = (squash, yBias) => {
+      ctx.beginPath();
+      ctx.moveTo(-stepPx, baseY + yBias);
+      for (let x = -stepPx; x <= canvas.width + stepPx; x += stepPx) {
+        const u = (x + scrollX) / MIRAGE_TILE_PX;
+        const h01 = mirageHeight01(this._mirageRecipe, u);
+        const shimmer = mirageShimmerPx(this._mirageRecipe, u, this.tSec, shimmerAmpPx);
+        const y = baseY + yBias - h01 * maxHeightPx * squash + shimmer;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(canvas.width + stepPx, baseY + yBias);
+      ctx.closePath();
+    };
+
+    // Main image.
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+    buildPath(1, 0);
+    ctx.fill();
+    // Inferior echo: squashed flat and dropped just below -- the doubled,
+    // compressed reflection a real mirage shows under its main image.
+    ctx.fillStyle = `rgba(${r},${g},${b},${(alpha * 0.45).toFixed(3)})`;
+    buildPath(0.34, sinkPx * 0.5);
     ctx.fill();
     ctx.restore();
   }
