@@ -148,6 +148,10 @@ export function chromaHistogram(features) {
  * holds essentially no energy (silence / percussion-only moment), so the
  * caller can keep its fallback.
  */
+// Harmonics 1..6 as semitone offsets from a candidate fundamental
+// (12*log2(k), rounded): 2nd harmonic an octave up, 3rd an octave+fifth, etc.
+const HARMONIC_SEMITONE_OFFSETS = [0, 12, 19, 24, 28, 31];
+
 export function melodyPitchAt(features, tMs, { loMidi = 52, hiMidi = SEMITONE_HI, spanMs = 120 } = {}) {
   const f0 = Math.max(0, Math.floor((tMs / 1000) * features.rate));
   const f1 = Math.min(features.frames.length - 1, Math.ceil(((tMs + spanMs) / 1000) * features.rate));
@@ -155,14 +159,45 @@ export function melodyPitchAt(features, tMs, { loMidi = 52, hiMidi = SEMITONE_HI
 
   const lo = Math.max(0, loMidi - SEMITONE_LO);
   const hi = Math.min(SEMITONE_COUNT - 1, hiMidi - SEMITONE_LO);
-  let bestIdx = -1, bestE = 0, totalE = 0;
-  for (let m = lo; m <= hi; m++) {
+
+  // Per-semitone energy summed over the span.
+  const energy = new Float32Array(SEMITONE_COUNT);
+  let totalE = 0;
+  for (let m = 0; m < SEMITONE_COUNT; m++) {
     let e = 0;
     for (let f = f0; f <= f1; f++) e += features.frames[f][m];
+    energy[m] = e;
     totalE += e;
-    if (e > bestE) { bestE = e; bestIdx = m; }
   }
-  if (bestIdx < 0 || bestE < 1e-6 || bestE < totalE * 0.04) return null;
+  if (totalE < 1e-6) return null;
+
+  // Argmax-by-raw-energy crowns whichever harmonic happens to be loudest --
+  // a real instrument's 2nd harmonic routinely outshines its fundamental
+  // (e.g. a plucked A3 registering as A4, its 2nd harmonic). Score each
+  // candidate FUNDAMENTAL by the energy it and its own harmonic series
+  // (+12, +19, +24... semitones) together explain, weighted down for higher
+  // harmonics: the true fundamental's harmonics genuinely hold energy,
+  // while a harmonic mistaken for the fundamental finds nothing sounding
+  // above it. Energy is compressed (sqrt) before summing so one unusually
+  // loud harmonic can't outweigh the fundamental's own, weaker bin plus the
+  // rest of its series -- a raw-energy sum still lets a 2x-louder harmonic
+  // win outright.
+  let bestIdx = -1, bestScore = -Infinity;
+  for (let m = lo; m <= hi; m++) {
+    let score = 0;
+    for (let k = 0; k < HARMONIC_SEMITONE_OFFSETS.length; k++) {
+      const idx = m + HARMONIC_SEMITONE_OFFSETS[k];
+      if (idx >= SEMITONE_COUNT) break;
+      score += Math.sqrt(energy[idx]) / (k + 1);
+    }
+    if (score > bestScore) { bestScore = score; bestIdx = m; }
+  }
+  if (bestIdx < 0) return null;
+
+  // Confidence gate stays on the winner's own raw energy share, same floor
+  // as before: a harmonically-plausible but energy-negligible bin (silence,
+  // unpitched percussion smeared across many semitones) still isn't a pitch.
+  if (energy[bestIdx] < 1e-6 || energy[bestIdx] < totalE * 0.04) return null;
   return SEMITONE_LO + bestIdx;
 }
 
