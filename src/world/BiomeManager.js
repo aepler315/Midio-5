@@ -245,6 +245,27 @@ const SHUTTER_MIN_GAP_MS = 45000;
 const SHUTTER_MAX_COVER = 0.34;
 const WORLD_SPEED_PX_S = 220;
 const BAND_COUNT = 7;
+
+/**
+ * The song's beat, in seconds, from a bar grid -- or null when there isn't
+ * one (free time). Median of the bar intervals divided by the detected
+ * meter, so a 3/4 track is read in three and a drift-aware grid's odd
+ * window can't skew the answer.
+ */
+export function medianBeatSec(barGrid) {
+  if (!barGrid || barGrid.length < 3) return null;
+  const gaps = [];
+  for (let i = 1; i < barGrid.length; i++) {
+    const d = barGrid[i].ms - barGrid[i - 1].ms;
+    if (d > 60 && d < 12000) gaps.push(d);
+  }
+  if (gaps.length < 2) return null;
+  gaps.sort((a, b) => a - b);
+  const barMs = gaps[gaps.length >> 1];
+  const beats = Math.max(1, Math.round(barGrid[0].numerator || 4));
+  const beatSec = barMs / beats / 1000;
+  return beatSec > 0.12 && beatSec < 4 ? beatSec : null;
+}
 const EQ_ATTACK_SEC = 0.08;
 const EQ_RELEASE_SEC = 0.6;
 const EQ_MAX_HEIGHT_FRAC = 0.4; // never exceed 40% of screen height, however excited the section is
@@ -838,6 +859,14 @@ export class BiomeManager {
   }
 
   _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null, structure = null, conductorSchedule = null) {
+    // The song's beat, in seconds -- the unit the ranges' weathering is cut
+    // on (RidgeShape.couloirCarve's pulse). Taken from the MEDIAN bar
+    // interval rather than the mean: a drift-aware grid re-estimates its
+    // period per window, and one bad window at a tempo-change or a silent
+    // intro would otherwise drag the whole song's grain off. Free-time audio
+    // has no bar grid at all and leaves this null, which drops every layer
+    // back to fixed-frequency detail.
+    this._beatSec = medianBeatSec(barGrid);
     // Without a real bar grid (free-time / tempo-less audio), the analysis
     // resolution used to collapse to a fixed 9 points regardless of song
     // length -- with novelty forced to 0 for the first 4 and a minimum peak
@@ -1340,6 +1369,24 @@ export class BiomeManager {
     }
   }
 
+  /**
+   * A layer's musical time base, handed to generateSilhouette.
+   *
+   * `pxPerSec` is the rate this range actually travels past the viewer:
+   * the world's scroll speed through the layer's own parallax ratio. It is
+   * the missing constant that turns a strip from a decorated 2048 px tile
+   * into a stretch of TIME -- 2048 px of L2 is a minute and a half of
+   * scrolling, of L5 fourteen seconds, and a range laid out against that
+   * shows the song at the pace you travel it. Paired with the song's beat
+   * it also sets the grain of the weathering. Null beat (free time) is
+   * fine: placement still uses pxPerSec, only the pulse drops out.
+   */
+  _layerTimeline(layerKey) {
+    const ratio = LAYER_RATIOS[layerKey];
+    if (!(ratio > 0)) return null;
+    return { pxPerSec: WORLD_SPEED_PX_S * ratio, beatSec: this._beatSec ?? 0 };
+  }
+
   /** Bake one profile's L2-L5 strip set. Extracted from _rebuildStrips so
    *  stripsFor() can lazily build the same thing on a cache miss (a profile
    *  name not eagerly baked -- see Stage 1's "only bake what's cast"). */
@@ -1370,25 +1417,25 @@ export class BiomeManager {
           L2: generateSilhouette({
             seed: seed + 1, height: 400, octaves: 3, amplitude: 0.56, baseline: 0.38,
             color: b.silhouette, shadeMode, profile: 'city',
-            softenScale: 0.88, portrait, layerKey: 'L2', terrainMods,
+            softenScale: 0.88, portrait, layerKey: 'L2', terrainMods, timeline: this._layerTimeline('L2'),
             edgeLight: el,
           }),
           L3: generateSilhouette({
             seed: seed + 2, height: 360, octaves: 3, amplitude: 0.46, baseline: 0.46,
             color: b.silhouette, shadeMode, profile: 'city',
-            softenScale: 0.94, portrait, layerKey: 'L3', terrainMods,
+            softenScale: 0.94, portrait, layerKey: 'L3', terrainMods, timeline: this._layerTimeline('L3'),
             edgeLight: el,
           }),
           L4: generateSilhouette({
             seed: seed + 3, height: 300, octaves: 2, amplitude: 0.30, baseline: 0.66,
             color: b.silhouette, shadeMode, profile: 'city',
-            softenScale: 1, portrait, layerKey: 'L4', terrainMods,
+            softenScale: 1, portrait, layerKey: 'L4', terrainMods, timeline: this._layerTimeline('L4'),
             edgeLight: el,
           }),
           L5: generateSilhouette({
             seed: seed + 4, height: 220, octaves: 2, amplitude: 0.12, baseline: 0.92,
             color: b.silhouette, shadeMode, profile: 'city',
-            softenScale: 1, portrait, layerKey: 'L5', terrainMods,
+            softenScale: 1, portrait, layerKey: 'L5', terrainMods, timeline: this._layerTimeline('L5'),
           }),
         };
       } else {
@@ -1411,25 +1458,25 @@ export class BiomeManager {
           L2: generateSilhouette({
             seed: seed + 1, height: 400, octaves: 4, amplitude: 0.52, baseline: 0.42,
             color: b.silhouette, shadeMode, profile: prof, character: scheme[0],
-            softenScale: soften.L2, portrait, layerKey: 'L2', terrainMods,
+            softenScale: soften.L2, portrait, layerKey: 'L2', terrainMods, timeline: this._layerTimeline('L2'),
             edgeLight: el,
           }),
           L3: generateSilhouette({
             seed: seed + 2, height: 360, octaves: 3, amplitude: 0.44, baseline: 0.50,
             color: b.silhouette, shadeMode, profile: prof, character: scheme[1],
-            softenScale: soften.L3, portrait, layerKey: 'L3', terrainMods,
+            softenScale: soften.L3, portrait, layerKey: 'L3', terrainMods, timeline: this._layerTimeline('L3'),
             edgeLight: el,
           }),
           L4: generateSilhouette({
             seed: seed + 3, height: 330, octaves: 3, amplitude: 0.34, baseline: 0.64,
             color: b.silhouette, shadeMode, profile: prof, character: scheme[2],
-            softenScale: soften.L4, portrait, layerKey: 'L4', terrainMods,
+            softenScale: soften.L4, portrait, layerKey: 'L4', terrainMods, timeline: this._layerTimeline('L4'),
             edgeLight: el,
           }),
           L5: generateSilhouette({
             seed: seed + 4, octaves: 2, amplitude: 0.46, baseline: 0.82,
             color: b.silhouette, shadeMode, profile: 'rolling',
-            softenScale: soften.L5, portrait, layerKey: 'L5', terrainMods,
+            softenScale: soften.L5, portrait, layerKey: 'L5', terrainMods, timeline: this._layerTimeline('L5'),
           }),
         };
         // b.landmarkKey (PaletteSynth.js) is the archetype LANDMARKS is

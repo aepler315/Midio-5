@@ -17,7 +17,7 @@ import {
 } from '../utils/math.js';
 import { shiftLightness } from '../render/VisualStyle.js';
 import {
-  composeAlpinePeaks, seedPeaks, layerWeathering, spineAt, phraseAt,
+  composeAlpinePeaks, seedPeaks, layerWeathering, spineAt, phraseAt, layerTimeBase,
 } from './RidgePortrait.js';
 import {
   summitMass, plateauMass, flankness01, apronMass, massingEnvelope, crenellation, couloirCarve, regionalDip, flankQs,
@@ -131,7 +131,50 @@ function applyTerrainMods(cfg, mods) {
 const SUMMIT_CEIL = 0.97;
 const BASE_CEIL = 0.50;
 
-export function alpineHeightField(noise, n, step, seed, width, character = 'massif', portrait = null, layerKey = 'L2', terrainMods = null) {
+// Which metric unit each depth's gullies are cut on. Distance compresses
+// detail, so the far massif is striped at bar scale while the near range
+// is striped beat by beat -- the same metre read at four zoom levels,
+// which is also how a real range's texture coarsens with distance.
+const PULSE_METER = { L2: 4, L3: 2, L4: 1, L5: 1 };
+// Gullies closer together than this are sub-pixel mush once the strip is
+// softened and blitted; wider than this and there are too few per summit
+// to read as striping at all. Out-of-range periods are doubled or halved
+// (both metric operations -- half-bar, double-time) until they land.
+const PULSE_MIN_PX = 11;
+const PULSE_MAX_FRAC = 0.22;
+
+/**
+ * The beat grid, in tile pixels, for one layer -- or null when the song
+ * has no tempo (free time) or the caller supplied no scroll rate.
+ *
+ * The distance the layer travels in one beat, which is the whole idea: a
+ * gully cut every `periodPx` passes the eye once per beat, so the texture
+ * of the rock scrolls at the song's own pulse. This reads the SCROLL rate
+ * rather than the tile's music rate, because what has to land on the beat
+ * is what the viewer sees going past, and the two only coincide when the
+ * lap rounding was clean.
+ *
+ * The period is then snapped so a whole number of them fits the tile: the
+ * strip wraps, and a grid that does not divide the tile puts a stumble in
+ * the metre at every seam -- the one place the eye is guaranteed to keep
+ * looking, since the seam comes back around forever.
+ */
+export function pulseFor(portrait, timeline, width, layerKey) {
+  const beatSec = timeline?.beatSec;
+  const pxPerSec = timeline?.pxPerSec;
+  if (!(beatSec > 0) || !(pxPerSec > 0) || !(width > 0)) return null;
+  let raw = beatSec * pxPerSec * (PULSE_METER[layerKey] ?? 1);
+  if (!(raw > 0)) return null;
+  const maxPx = width * PULSE_MAX_FRAC;
+  let guard = 0;
+  while (raw < PULSE_MIN_PX && guard++ < 8) raw *= 2;
+  while (raw > maxPx && guard++ < 16) raw /= 2;
+  if (!(raw >= PULSE_MIN_PX) || !(raw <= maxPx)) return null;
+  const cells = Math.max(1, Math.round(width / raw));
+  return { periodPx: width / cells, beatsPerTile: cells };
+}
+
+export function alpineHeightField(noise, n, step, seed, width, character = 'massif', portrait = null, layerKey = 'L2', terrainMods = null, timeline = null) {
   const cfg = applyTerrainMods(ALPINE_CHARACTERS[character] || ALPINE_CHARACTERS.massif, terrainMods);
   const rand = mulberry32((seed ^ 0xa1b1) >>> 0 || 1);
   const weather = portrait ? layerWeathering(portrait, cfg, layerKey) : {
@@ -145,8 +188,9 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
   // centre — a range with its high point dead-centre of the tile was
   // half of why every biome's skyline felt manufactured.
   let peaks = (portrait && portrait.landmarks && portrait.landmarks.length)
-    ? composeAlpinePeaks({ portrait, cfg, layerKey, seed, width })
+    ? composeAlpinePeaks({ portrait, cfg, layerKey, seed, width, timeline })
     : seedPeaks(cfg, seed, width);
+  const timeMap = peaks.timeMap || null;
   if (!peaks.length) peaks = seedPeaks(cfg, seed, width);
 
   // Secondary shoulders / subpeaks (Rainier-style multi-summit) — lower,
@@ -166,6 +210,9 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
         x: p.x + (rand() < 0.5 ? -1 : 1) * (p.w * (0.32 + rand() * 0.2)),
         h: p.h * (0.38 + rand() * 0.22),
         w: sw, wL: sw * sLean, wR: sw / sLean,
+        // A subpeak belongs to its parent's massif and was carved by the
+        // same event, so it shows the same face rather than picking its own.
+        attack: p.attack ?? 0,
       });
     }
   }
@@ -286,10 +333,14 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
     // crenellation that lives up on the crests) is enough to break it.
     const roll = noise.fbm(x * 0.0016 + 53.7, 2) * 0.045;
     // Capped so there is ALWAYS headroom left for a summit to rise into.
+    // Read on the summits' own clock, so the low ground swells under the
+    // loud music the summits were placed by rather than under a differently
+    // paced copy of the same curve.
+    const spineU = timeMap ? u * timeMap.laps + timeMap.shift : u;
     const base = Math.min(
       BASE_CEIL,
       Math.max(envelope[i], envelope[i] * 0.55 + apronField[i] * 0.62)
-        + spineAt(portrait, u, spineAmp) + roll,
+        + spineAt(portrait, spineU, spineAmp) + roll,
     );
     // A full-height summit lands exactly on SUMMIT_CEIL, never past it.
     // The previous cut let base + summit overshoot 1 and relied on clamp01
@@ -299,7 +350,14 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
     structure[i] = base + summitField[i] * (SUMMIT_CEIL - base);
   }
 
-  // Pass 4: detail, anchored to the structure it sits on.
+  // Pass 4: detail, anchored to the structure it sits on -- and, when the
+  // song has a tempo, to its metre. The gullies are cut on the beat grid
+  // and the crest is serrated at the subdivision, both converted into tile
+  // distance at this layer's own travel rate, so the texture of the rock
+  // passes the eye at the speed of the music rather than at an arbitrary
+  // spatial frequency that happened to look right once.
+  const pulse = pulseFor(portrait, timeline, width, layerKey);
+  const crenelCell = pulse ? pulse.periodPx / 2 : 0;
   const heights = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const x = i * step;
@@ -312,19 +370,44 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
     const next = structure[i < n - 1 ? i + 1 : 0];
     const slope = (next - prev) / (2 * Math.max(1, step));
 
-    h -= couloirCarve(noise, x, relief, flankness(slope), dials.couloir);
-    h += crenellation(noise, x, relief, dials.crenel);
+    h -= couloirCarve(noise, x, relief, flankness(slope), dials.couloir, pulse);
+    h += crenellation(noise, x, relief, dials.crenel, crenelCell);
 
     heights[i] = clamp01(h);
   }
   return heights;
 }
 
+// A tile may hold at most this many phrases before the undulation stops
+// reading as hills breathing and starts reading as ripples.
+const MAX_PHRASES_PER_TILE = 10;
+
+/**
+ * How many times the song's phrase loop fits in one tile of the nearest
+ * hills. One, always, before this: the loop was stretched across the whole
+ * strip regardless of how long a phrase actually is, so the "phrase-scale
+ * undulation" took a minute and a half of scrolling to complete a cycle
+ * that lasts four seconds in the music. At the layer's own travel rate a
+ * phrase is a few hundred pixels, and the hills genuinely rise and fall
+ * once per phrase as you pass them. Rounded to a whole number so the loop
+ * closes on the tile wrap.
+ */
+export function phraseCyclesPerTile(portrait, timeline, width) {
+  const period01 = portrait?.phrasePeriod01 ?? 0;
+  if (!(period01 > 0)) return 1;
+  const base = layerTimeBase(portrait, timeline, width);
+  if (!base) return 1;
+  // musicSecPerTile / phraseSec, with windowSec cancelling out of both.
+  return clamp(Math.round(1 / (base.laps * period01)), 1, MAX_PHRASES_PER_TILE);
+}
+
 /** Rolling foothill field (nearer layers) — classic fbm, with a gentle
  *  phrase-scale bass undulation when a portrait is present. The phrase
  *  wave is one period of the song's energy loop, not the full envelope,
- *  so the hills breathe at the song's scale without tracing a spectrogram. */
-export function rollingHeightField(noise, n, step, octaves, portrait = null, width = 0, terrainMods = null) {
+ *  so the hills breathe at the song's scale without tracing a spectrogram.
+ *  With a `timeline` that loop runs at the song's real phrase rate rather
+ *  than once per tile (see phraseCyclesPerTile). */
+export function rollingHeightField(noise, n, step, octaves, portrait = null, width = 0, terrainMods = null, timeline = null) {
   const heights = new Float32Array(n);
   const stripW = width > 0 ? width : Math.max(1, (n - 1) * step);
   const bass = portrait?.bassShare ?? 0;
@@ -335,13 +418,15 @@ export function rollingHeightField(noise, n, step, octaves, portrait = null, wid
   // no-op so a caller with no DNA gets byte-identical output.
   const octAdj = clamp(octaves + Math.round(terrainMods?.rollingOctaveBias ?? 0), 1, 5);
   const ampMul = terrainMods?.rollingAmpMul ?? 1;
+  const cycles = phraseCyclesPerTile(portrait, timeline, stripW);
+  const laps = layerTimeBase(portrait, timeline, stripW)?.laps ?? 1;
   for (let i = 0; i < n; i++) {
     const x = i * step;
     // Map fbm from ~[-1,1] into a positive hill field.
     const f = noise.fbm(x * 0.006, octAdj);
     const u = x / stripW;
-    const phrase = phraseAmp > 0 ? (phraseAt(portrait, u) * 2 - 1) * phraseAmp : 0;
-    const spine = spineAt(portrait, u, 0.04 * (portrait?.bassShare ?? 0));
+    const phrase = phraseAmp > 0 ? (phraseAt(portrait, u * cycles) * 2 - 1) * phraseAmp : 0;
+    const spine = spineAt(portrait, u * laps, 0.04 * (portrait?.bassShare ?? 0));
     heights[i] = clamp01(0.5 + 0.5 * f * ampMul + phrase * 0.5 + spine);
   }
   return heights;
@@ -362,6 +447,13 @@ export function generateSilhouette({
   // Continuous song-shape nudges to the alpine character (deriveTerrainParams
   // in ShapeGrammar.js). Alpine-profile only; ignored otherwise.
   terrainMods = null,
+  // The tile's musical time base: `{pxPerSec, beatSec}` -- how fast this
+  // layer scrolls, and how long one beat of the song lasts. Given both, the
+  // range is laid out as a TIMELINE rather than a composition (see
+  // RidgePortrait.composeAlpinePeaks) and its weathering is cut on the
+  // song's own metre. Null (no tempo, free-time audio, tests) falls back to
+  // the older normalize-to-fill placement and fixed-frequency detail.
+  timeline = null,
   // Aerial perspective, optical half (The Light Show, pass 7): DepthHaze
   // already washes far layers toward the sky color, but color alone isn't
   // the cue a distant object actually gives -- it also loses edge acuity.
@@ -396,11 +488,11 @@ export function generateSilhouette({
 
   let heights;
   if (profile === 'alpine') {
-    heights = alpineHeightField(noise, n, step, seed, width, character, portrait, layerKey, terrainMods);
+    heights = alpineHeightField(noise, n, step, seed, width, character, portrait, layerKey, terrainMods, timeline);
   } else if (profile === 'city') {
     heights = cityHeightField(n, step, seed, width, portrait, layerKey, terrainMods);
   } else {
-    heights = rollingHeightField(noise, n, step, octaves, portrait, width, terrainMods);
+    heights = rollingHeightField(noise, n, step, octaves, portrait, width, terrainMods, timeline);
   }
 
   // Force a seamless horizontal wrap by blending the tail back to the head.
