@@ -19,8 +19,8 @@ npm start
 ```
 
 Open [localhost:8080](http://localhost:8080). The server binds to
-`0.0.0.0` by default; set `HOST=127.0.0.1` to restrict it to your machine,
-or `PORT` to change the port.
+`127.0.0.1` by default. Set `HOST=0.0.0.0` only when you intentionally need
+LAN access, or set `PORT` to change the port.
 
 1. Drop an audio file anywhere on the page, or choose **Browse files**.
    The picker accepts MP3, WAV, FLAC, OGG, M4A, AAC, and other audio formats

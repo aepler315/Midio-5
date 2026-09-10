@@ -31,14 +31,16 @@
 import { EnergyCurves } from './EnergyCurves.js';
 import { BANDS } from './bands.js';
 import { Role } from '../core/NoteEvent.js';
+import { Lane } from '../core/Casting.js';
 
 /** Bump when the shape changes incompatibly. `unpackBundle` refuses a
  *  version it does not know rather than misreading it, because a bundle
  *  silently decoded under the wrong layout produces a show that is subtly,
  *  inexplicably wrong instead of an error anyone can act on. */
-export const BUNDLE_VERSION = 1;
+export const BUNDLE_VERSION = 2;
 
 const ROLES = [Role.MELODY, Role.RHYTHM, Role.BASS, Role.PAD];
+const LANES = [null, Lane.MIDASUS, Lane.MIDIO, Lane.BROSHI];
 
 // --- base64 for typed arrays ----------------------------------------------
 // Neither btoa nor Buffer exists in both a browser and node, and this module
@@ -116,7 +118,7 @@ export function packBundle(data, { fingerprint, name = '', identity = null } = {
   const tMs = new Float32Array(n), durMs = new Float32Array(n);
   const pitch = new Uint8Array(n), vel = new Uint8Array(n);
   // Role, the kick flag and the source all fit in one byte with room spare.
-  const flags = new Uint8Array(n), channel = new Uint8Array(n), pan = new Int8Array(n);
+  const flags = new Uint8Array(n), channel = new Uint8Array(n), pan = new Int8Array(n), lane = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
     const e = timeline[i];
     tMs[i] = e.tMs; durMs[i] = e.durMs;
@@ -126,6 +128,7 @@ export function packBundle(data, { fingerprint, name = '', identity = null } = {
     flags[i] = roleIdx | (e.kick ? 0x80 : 0);
     channel[i] = Math.max(0, Math.min(255, e.channel | 0));
     pan[i] = Math.round(Math.max(-1, Math.min(1, e.pan || 0)) * 127);
+    lane[i] = Math.max(0, LANES.indexOf(e.lane));
   }
 
   return {
@@ -173,6 +176,7 @@ export function packBundle(data, { fingerprint, name = '', identity = null } = {
       flags: bytesToB64(flags),
       channel: bytesToB64(channel),
       pan: bytesToB64(new Uint8Array(pan.buffer, pan.byteOffset, pan.length)),
+      lane: bytesToB64(lane),
     },
   };
 }
@@ -215,6 +219,12 @@ export function unpackBundle(bundle) {
     const flags = b64ToBytes(bundle.notes?.flags || '');
     const channel = b64ToBytes(bundle.notes?.channel || '');
     const panBytes = b64ToBytes(bundle.notes?.pan || '');
+    const lane = b64ToBytes(bundle.notes?.lane || '');
+    if (!Number.isInteger(nt) || nt < 0 ||
+      tMs.length < nt || durMs.length < nt || pitch.length < nt || vel.length < nt ||
+      flags.length < nt || channel.length < nt || panBytes.length < nt || lane.length < nt) {
+      return null;
+    }
     const timeline = new Array(nt);
     for (let i = 0; i < nt; i++) {
       const pan8 = panBytes[i] > 127 ? panBytes[i] - 256 : panBytes[i];
@@ -222,7 +232,7 @@ export function unpackBundle(bundle) {
         tMs: tMs[i], durMs: durMs[i], pitch: pitch[i], vel: vel[i] / 255,
         role: ROLES[flags[i] & 0x7f] || Role.MELODY,
         kick: !!(flags[i] & 0x80),
-        src: 'audio', channel: channel[i], pan: (pan8 || 0) / 127, program: -1, lane: null,
+        src: 'audio', channel: channel[i], pan: (pan8 || 0) / 127, program: -1, lane: LANES[lane[i]] || null,
       };
     }
 

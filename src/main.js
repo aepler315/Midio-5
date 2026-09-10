@@ -1,5 +1,6 @@
 // Bootstrap: file loading UI, audio-clock-driven game loop (spec §6.1).
 import { Conductor } from './core/Conductor.js';
+import { advanceFixedStepClock } from './core/FixedStepClock.js';
 import { ParamBus } from './core/ParamBus.js';
 import { synthesizeEnergyCurves } from './core/EnergyCurvesSynth.js';
 import { audioToTimeline } from './audio/AudioAdapter.js';
@@ -794,6 +795,9 @@ function togglePause() {
 
 /** Back to the title/drop screen so a different song can be chosen. */
 function backToTitle() {
+  // Any in-flight analysis belongs to the discarded song. Its progress or
+  // failure must not redraw this title screen later.
+  loadGen++;
   stopTimeline();
   completePanelEl.classList.add('hidden');
   hudEl.classList.add('hidden');
@@ -1283,11 +1287,15 @@ async function resolveLyricsForAudio(file, durationSec, vocalStem = null, { prom
  *  stems of one song -- summed into a mix for analysis/playback, with each
  *  file's NAME casting its notes to a character (see Casting.js). */
 async function loadAudioFiles(files) {
+  // Claim the load before the first await. Otherwise an older picker/drop
+  // stalled in bootAudio() can wake up later and overwrite the newer choice.
+  const myGen = ++loadGen;
   showProgress('Reading file…');
   worldSelectEl?.classList.add('hidden');
   try {
     await bootAudio();
   } catch (err) {
+    if (myGen !== loadGen) return;
     showErrorBanner('Could not start audio: ' + (err?.message || err));
     progressEl.classList.add('hidden');
     loaderEl.classList.remove('hidden');
@@ -1299,15 +1307,16 @@ async function loadAudioFiles(files) {
   // clobbering it. Analysis here is the longest of any load path (band
   // separation + onset/tempo/pitch + an awaited lyrics prompt), so it's the
   // one most likely to still be in flight when a second drop lands.
-  const myGen = ++loadGen;
   const decoded = [];
   for (const file of files) {
     try {
       decoded.push({ name: file.name || 'stem', buffer: await audioEngine.decodeFile(await file.arrayBuffer()) });
     } catch (err) {
+      if (myGen !== loadGen) return;
       showErrorBanner(`Could not decode audio file "${file.name}": ` + err.message);
       return;
     }
+    if (myGen !== loadGen) return;
   }
   const isStemDrop = decoded.length > 1;
   const audioBuffer = isStemDrop ? sumToMixBuffer(decoded.map((d) => d.buffer)) : decoded[0].buffer;
@@ -1425,6 +1434,7 @@ async function loadAudioFiles(files) {
     fontRecommender?.clear(); // the recording is its own sound source
     offerWorldsThenStart(data, { playBuffer: audioBuffer });
   } catch (err) {
+    if (myGen !== loadGen) return;
     console.error('[audio load failed]', err);
     auditionPanelEl?.classList.add('hidden');
     lyricsRowEl?.classList.add('hidden');
@@ -1637,26 +1647,30 @@ function frame(tRaf) {
   lastRafMs = tRaf;
   hudIdleTick(tRaf);
   const nowMs = audioEngine.nowMs;
-  let deltaMs = nowMs - lastNowMs;
-  lastNowMs = nowMs;
-  if (deltaMs < 0) deltaMs = 0;
-  if (deltaMs > 250) deltaMs = 250; // clamp huge gaps (tab backgrounded, breakpoint, etc.)
-
-  acc += deltaMs;
 
   try {
-    while (acc >= STEP_MS) {
-      sim.step(STEP_MS, simTime + STEP_MS);
-      simTime += STEP_MS;
-      acc -= STEP_MS;
-    }
+    const advanced = advanceFixedStepClock({
+      nowMs,
+      lastNowMs,
+      simTime,
+      accumulatorMs: acc,
+      stepMs: STEP_MS,
+      step: (dtMs, atMs) => sim.step(dtMs, atMs),
+    });
+    lastNowMs = advanced.lastNowMs;
+    simTime = advanced.simTime;
+    acc = advanced.accumulatorMs;
   } catch (err) {
     // frame() has no wrapper of its own -- an uncaught throw here would abort
     // BEFORE reaching the requestAnimationFrame() call at the bottom, which
     // freezes the entire game loop forever on the last good paint. The prime
     // step at song start already learned this the hard way (see its own
     // try/catch above); this is the same failure mode on every later frame.
-    acc = 0; // drop the fractional remainder so a partial step doesn't compound
+    // Start the next frame from the current audio position; a failed step
+    // must not turn into permanent clock drift.
+    lastNowMs = nowMs;
+    simTime = nowMs;
+    acc = 0;
     if (drawErrors.record(err, tRaf)) {
       console.error(`[sim.step] (occurrence ${drawErrors.worst.count})`, err);
     }

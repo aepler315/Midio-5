@@ -11,6 +11,7 @@ import {
 import { EnergyCurves } from '../src/audio/EnergyCurves.js';
 import { BANDS, FLAT_WEIGHTS } from '../src/audio/bands.js';
 import { makeNoteEvent, Role } from '../src/core/NoteEvent.js';
+import { Lane } from '../src/core/Casting.js';
 
 const DURATION = 180000;
 
@@ -26,6 +27,7 @@ function makeAnalysis() {
       tMs: t, durMs: 240, pitch: 36 + ((t / 500) % 40), vel: 0.3 + ((t / 500) % 5) / 10,
       role: [Role.MELODY, Role.RHYTHM, Role.BASS, Role.PAD][(t / 500) % 4],
       kick: (t / 500) % 4 === 0, src: 'audio', channel: (t / 500) % 7, pan: (((t / 500) % 5) - 2) / 2,
+      lane: [Lane.MIDASUS, null, Lane.BROSHI, null][(t / 500) % 4],
     }));
   }
   const barGrid = [];
@@ -78,11 +80,18 @@ test('every note comes back with the fields the show reads', () => {
     assert.equal(b.role, a.role, `note ${i} role`);
     assert.equal(b.kick, a.kick, `note ${i} kick flag`);
     assert.equal(b.channel, a.channel, `note ${i} channel`);
+    assert.equal(b.lane, a.lane, `note ${i} character lane`);
     // Velocity and pan are quantized to a byte; the step is well under
     // anything downstream distinguishes.
     assert.ok(Math.abs(b.vel - a.vel) <= 1 / 255, `note ${i} velocity`);
     assert.ok(Math.abs(b.pan - a.pan) <= 1 / 127, `note ${i} pan`);
   }
+});
+
+test('rejects a truncated note payload rather than starting a corrupted cached show', () => {
+  const bundle = packBundle(makeAnalysis(), { fingerprint: FP });
+  bundle.notes.lane = '';
+  assert.equal(unpackBundle(bundle), null);
 });
 
 test('the energy curves answer the same questions within quantization', () => {

@@ -232,8 +232,7 @@ export async function downloadFreeTrack(item, demoCatalog = DEMO_CATALOG) {
   }
   const track =
     demoCatalog.find((t) => t.id === item.id) ||
-    demoCatalog.find((t) => t.title === item.title && t.artist === item.artist) ||
-    (item.url ? { url: item.url, filename: item.filename, id: item.id } : null);
+    demoCatalog.find((t) => t.title === item.title && t.artist === item.artist);
   if (track?.url) {
     const res = await fetch(track.url, {
       headers: { 'User-Agent': UA },

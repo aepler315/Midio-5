@@ -16,7 +16,7 @@ services:
     container_name: midio-slskd
     restart: unless-stopped
     ports:
-      - "5030:5030"     # HTTP API + web UI
+      - "127.0.0.1:5030:5030" # HTTP API + web UI (local bridge only)
       - "50300:50300"   # Soulseek listen
     environment:
       SLSKD_REMOTE_CONFIGURATION: "true"

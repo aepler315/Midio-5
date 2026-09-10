@@ -1,6 +1,6 @@
 // Zero-dependency static file server + Soulseek bridge for local dev/testing.
 // Usage: node tools/serve.js [port]
-// Binds 0.0.0.0 so the live preview can reach the app.
+// Binds loopback by default. Set HOST=0.0.0.0 only for an intentional LAN preview.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,7 +17,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.env.PORT || process.argv[2]) || 8080;
-const HOST = process.env.HOST || '0.0.0.0';
+const HOST = process.env.HOST || '127.0.0.1';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -38,6 +38,31 @@ const MIME = {
 };
 
 const SOUNDFONTS_DIR = path.join(ROOT, 'soundfonts');
+
+function decodeRequestPath(rawUrl) {
+  const rawPath = (rawUrl || '/').split('?')[0] || '/';
+  let reqPath;
+  try {
+    reqPath = decodeURIComponent(rawPath);
+  } catch {
+    return null;
+  }
+  if (!reqPath.startsWith('/')) return null;
+  if (reqPath === '/') return '/index.html';
+  // Reject traversal and dotfiles before resolving. A string-prefix check on
+  // a resolved path accepts same-prefix siblings such as `app-private`.
+  const segments = reqPath.split('/');
+  if (segments.some((segment) => segment === '.' || segment === '..' || segment.startsWith('.'))) return null;
+  return reqPath;
+}
+
+function staticPath(reqPath) {
+  if (reqPath !== '/index.html' && !reqPath.startsWith('/src/') && !reqPath.startsWith('/soundfonts/')) return null;
+  const filePath = path.resolve(ROOT, `.${reqPath}`);
+  const relative = path.relative(ROOT, filePath);
+  if (relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
+  return filePath;
+}
 
 function sendJson(res, status, obj) {
   const body = JSON.stringify(obj);
@@ -70,8 +95,11 @@ async function handleApi(req, res, reqPath) {
 }
 
 const server = http.createServer(async (req, res) => {
-  let reqPath = decodeURIComponent((req.url || '/').split('?')[0]);
-  if (reqPath === '/') reqPath = '/index.html';
+  const reqPath = decodeRequestPath(req.url);
+  if (!reqPath) {
+    sendJson(res, 400, { error: 'Malformed or forbidden path' });
+    return;
+  }
 
   // Soulseek bridge API: the browser cannot speak the Soulseek TCP protocol,
   // so the dev server holds the connection. Credentials are sent to the
@@ -97,23 +125,35 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const filePath = path.join(ROOT, reqPath);
-
-  if (!filePath.startsWith(ROOT)) {
-    res.writeHead(403);
-    res.end('Forbidden');
+  const filePath = staticPath(reqPath);
+  if (!filePath) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not found');
     return;
   }
 
-  fs.readFile(filePath, (err, data) => {
-    if (err) {
+  fs.realpath(filePath, (realpathErr, realPath) => {
+    if (realpathErr) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('Not found: ' + reqPath);
+      res.end('Not found');
       return;
     }
-    const ext = path.extname(filePath);
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
-    res.end(data);
+    const relative = path.relative(ROOT, realPath);
+    if (relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Forbidden');
+      return;
+    }
+    fs.readFile(realPath, (err, data) => {
+      if (err) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not found');
+        return;
+      }
+      const ext = path.extname(realPath);
+      res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+      res.end(data);
+    });
   });
 });
 
