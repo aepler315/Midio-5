@@ -119,18 +119,47 @@ export function flankQs(cfg, litho = null, songMix = 0) {
   };
 }
 
+// A landmark's attack has to be decisive before it overrules the range's
+// regional dip: below this it is as likely to be the shape of the analysis
+// window as the shape of the music, and letting every summit pick its own
+// side on a weak reading is exactly the per-peak randomness the regional
+// grain exists to avoid.
+export const ATTACK_FLANK_FLOOR = 0.28;
+// How much further apart the two faces are pulled at a maximal attack. A
+// hard drop is a genuinely lopsided mountain; a swell barely leans.
+export const ATTACK_ASYM_MAX = 1.34;
+
 /**
  * Height contributed by one summit at signed distance `dx` from its apex.
+ *
  * `dip` (-1 or +1) is the range's prevailing steep direction; a summit
  * whose own `flip` disagrees with it reverses -- a handful of those per
  * range keeps the run from looking stamped, without losing the regional
  * grain.
+ *
+ * `peak.attack` overrules both when the song was emphatic about it. The
+ * strip scrolls right-to-left and larger x is later music, so a landmark
+ * that rose faster than it fell (a drop: attack > 0) puts its headwall on
+ * the earlier side -- the face you walk INTO on the way to the hit -- and
+ * trails its long dip slope out behind. A swell that faded sharply (attack
+ * < 0) does the reverse. That single sign is the difference between a range
+ * that merely has the song's peaks in it and one that shows you the song's
+ * gestures as you travel past them.
  */
 export function summitMass(dx, peak, dip = 1, qs = null) {
-  const steepIsLeft = (peak.flip ? -dip : dip) > 0;
+  const attack = clamp(peak.attack ?? 0, -1, 1);
+  const decisive = Math.abs(attack) >= ATTACK_FLANK_FLOOR;
+  const steepIsLeft = decisive ? attack > 0 : (peak.flip ? -dip : dip) > 0;
   const onLeft = dx < 0;
   const steepSide = onLeft === steepIsLeft;
-  const halfWidth = Math.max(8, peak.w * (steepSide ? STEEP_WIDTH_MUL : SHALLOW_WIDTH_MUL));
+  // The asymmetry deepens with how emphatic the attack was, about the
+  // existing steep/shallow multipliers, so the footprint stays roughly
+  // fixed while the two faces trade length.
+  const lean = decisive
+    ? lerp(1, ATTACK_ASYM_MAX, (Math.abs(attack) - ATTACK_FLANK_FLOOR) / (1 - ATTACK_FLANK_FLOOR))
+    : 1;
+  const base = steepSide ? STEEP_WIDTH_MUL / lean : SHALLOW_WIDTH_MUL * lean;
+  const halfWidth = Math.max(8, peak.w * base);
   const d = Math.abs(dx) / halfWidth;
   if (d >= 1) return 0;
   const q = steepSide
@@ -276,14 +305,40 @@ export function massingEnvelope(summitField, floorH, gain, radius) {
  * to relief means valleys stay calm and only genuine high ground gets
  * chewed.
  */
-export function crenellation(noise, x, relief, amp) {
+export function crenellation(noise, x, relief, amp, cellPx = 0) {
   if (!(relief > 0) || !(amp > 0)) return 0;
-  const o1 = noise.sample(x * 0.021 + 7.3);
-  const o2 = noise.sample(x * 0.052 + 19.1);
-  const o3 = noise.sample(x * 0.115 + 3.7);
+  // The serration's grain, in tile pixels. Given a `cellPx` (the song's
+  // own subdivision converted to strip distance -- see pulseFor in
+  // SilhouetteGenerator) the crest is chewed at the rate the music moves,
+  // so a fast track's ridges are finely toothed and a slow one's are
+  // coarsely broken. The bare constants are the original fixed grain,
+  // which is ~48 px for the coarsest octave.
+  const f1 = cellPx > 2 ? 1 / cellPx : 0.021;
+  const o1 = noise.sample(x * f1 + 7.3);
+  const o2 = noise.sample(x * f1 * 2.48 + 19.1);
+  const o3 = noise.sample(x * f1 * 5.48 + 3.7);
   // Signed, so a crest is chewed both ways rather than only ever growing.
   const n = o1 * 0.55 + o2 * 0.31 + o3 * 0.14;
   return n * amp * relief;
+}
+
+// How much of a couloir's placement the beat grid owns. Not 1: a fully
+// locked flank is a comb, and the noise term is what keeps the gullies
+// looking eroded rather than machined.
+export const PULSE_LOCK = 0.62;
+// How narrow each incision is around its beat. Higher is a tighter V.
+const PULSE_SHARPNESS = 2.6;
+
+/**
+ * A periodic incision, 1 exactly ON the beat and falling away sharply
+ * between beats. `periodPx` is one beat (or bar) converted to tile
+ * distance; the callers choose a period that divides the tile width
+ * exactly, so the grid stays in phase across the wrap.
+ */
+export function pulseComb(x, periodPx, sharpness = PULSE_SHARPNESS) {
+  if (!(periodPx > 2)) return 0;
+  const onBeat = 0.5 + 0.5 * Math.cos((x / periodPx) * Math.PI * 2);
+  return Math.pow(onBeat, sharpness);
 }
 
 /**
@@ -295,12 +350,24 @@ export function crenellation(noise, x, relief, amp) {
  * local slope, so the gullies follow the mountain's own geometry instead
  * of being stamped on at a fixed rate everywhere.
  */
-export function couloirCarve(noise, x, relief, flankness, amp) {
+export function couloirCarve(noise, x, relief, flankness, amp, pulse = null) {
   if (!(relief > 0) || !(amp > 0) || !(flankness > 0)) return 0;
   const n = noise.sample(x * 0.038 + 11.9);
   // Ridged and rectified: sharp V incisions, never bumps.
   const v = 1 - Math.abs(n);
-  return v * v * amp * relief * clamp01(flankness);
+  let carve = v * v;
+  if (pulse && pulse.periodPx > 2) {
+    // Gullies on the beat. Couloir SPACING is the one piece of mountain
+    // texture that is genuinely periodic in nature (cirques bite a headwall
+    // at an interval set by the ice, not at random), so a metric grid is
+    // not a costume here -- it is the more geological answer as well as the
+    // musical one. Depth still comes from noise, because the point is that
+    // the gullies fall on the pulse, not that every beat cuts one; a range
+    // where all of them cut equally reads as corduroy.
+    const depth = 0.42 + 0.58 * Math.abs(noise.sample(x / (pulse.periodPx * 2.1) + 4.1));
+    carve = lerp(carve, pulseComb(x, pulse.periodPx) * depth, clamp01(pulse.lock ?? PULSE_LOCK));
+  }
+  return carve * amp * relief * clamp01(flankness);
 }
 
 /** Prevailing steep-side direction for a range, from its own seed. */

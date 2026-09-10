@@ -342,13 +342,36 @@ function landmarkWidth01(wave, i) {
   return clamp01((hi - lo) / Math.max(1, wave.length));
 }
 
-function landmarkAttack(wave, i) {
+// The fraction of the read's own dynamic range an event has to move
+// through, either side of its peak, before its attack is taken as a real
+// gesture rather than a wobble.
+const ATTACK_REF_SPAN = 0.35;
+
+function landmarkAttack(wave, i, waveSpan = 0) {
   const span = Math.max(2, Math.round(wave.length * 0.06));
   const pre = wave[Math.max(0, i - span)];
   const post = wave[Math.min(wave.length - 1, i + span)];
   const rise = Math.max(0, wave[i] - pre);
   const fall = Math.max(0, wave[i] - post);
-  return (rise - fall) / (rise + fall + 1e-6); // [-1, 1]: drop → + (steeper left)
+  const raw = (rise - fall) / (rise + fall + 1e-6); // [-1, 1]: drop → + (steeper left)
+  // A landmark sitting against the edge of the read has no room on one side,
+  // so the clamped sample reports no rise (or no fall) and the ratio pins to
+  // ±1 -- a maximally lopsided mountain built out of a measurement that was
+  // never taken. That is harmless while attack only sets an unread width,
+  // but it now steers which face a summit shows, and a section-windowed
+  // portrait puts a landmark against an edge routinely. Damp by how much of
+  // the span actually existed, so an unmeasurable edge reports no opinion.
+  const have = clamp01(Math.min(i, wave.length - 1 - i) / span);
+  // And damp again by how much the energy actually MOVED. The ratio
+  // saturates at ±1 the instant one side is flat, which a bump riding a
+  // long shoulder manages routinely -- and a range where most summits
+  // report a maximal lean in the same direction is the stamped look this
+  // whole file exists to avoid. A gesture has to be worth something in the
+  // song's own dynamic range before it gets to carve a headwall.
+  const conf = waveSpan > 1e-6
+    ? clamp01((rise + fall) / (ATTACK_REF_SPAN * waveSpan))
+    : 1;
+  return raw * have * conf;
 }
 
 /**
@@ -464,6 +487,13 @@ export function extractRidgePortrait(energyCurves, durationMs, window = null) {
   const rawLandmarks = findLandmarks(wave);
   const hasSampleAll = typeof energyCurves.sampleAll === 'function';
 
+  let waveLo = Infinity, waveHi = -Infinity;
+  for (let i = 0; i < wave.length; i++) {
+    if (wave[i] < waveLo) waveLo = wave[i];
+    if (wave[i] > waveHi) waveHi = wave[i];
+  }
+  const waveSpan = waveHi - waveLo;
+
   const landmarks = rawLandmarks.map((lm) => {
     const t01 = lm.i / Math.max(1, wave.length - 1);
     const tMs = winStart + t01 * winDur;
@@ -473,7 +503,7 @@ export function extractRidgePortrait(energyCurves, durationMs, window = null) {
       energy: lm.energy,
       prominence: lm.prominence,
       brightness: bands ? brightnessOf(bands) : 0.5,
-      attack: landmarkAttack(wave, lm.i),
+      attack: landmarkAttack(wave, lm.i, waveSpan),
       width01: landmarkWidth01(wave, lm.i),
     };
   });
@@ -486,6 +516,13 @@ export function extractRidgePortrait(energyCurves, durationMs, window = null) {
 
   const phrase = phrasePeriod(wave);
   const lithology = lithologyFromShares(shares);
+  // How much music this portrait was read from, in seconds. Landmarks are
+  // stored as t01 (a fraction of the read), which on its own says nothing
+  // about PACE -- two landmarks 0.1 apart are four seconds apart in a 40s
+  // verse and forty in the whole song. Carrying the span is what lets
+  // composeAlpinePeaks lay the range out at the rate the listener actually
+  // travels it (see `timeline` there).
+  const windowSec = winDur / 1000;
   const bassShare = lithology.basement;
   const bodyShare = lithology.body;
   const edgeShare = lithology.edge;
@@ -501,6 +538,7 @@ export function extractRidgePortrait(energyCurves, durationMs, window = null) {
     airShare,
     lithology,
     dynamicRange: dyn,
+    windowSec,
     landmarks,
     phrasePeriod01: phrase.period01,
     phraseStrength: phrase.strength,
@@ -644,18 +682,74 @@ function fillGaps(placed, need, rand, minSep) {
   return out;
 }
 
+// A tile may stand for at most this many traversals of the read window.
+// Past it the summits of a long section fold over each other faster than
+// collision resolution can keep them legible, and the range stops reading
+// as a place and starts reading as a texture.
+const MAX_LAPS = 6;
+// How far a summit's width may be pulled toward the duration of the event
+// it stands for, relative to the rest of the range, and how far that pull
+// may ever move it from the landform's own register.
+const TIME_WIDTH_MIX = 0.55;
+const TIME_WIDTH_MIN_MUL = 0.55;
+const TIME_WIDTH_MAX_MUL = 1.85;
+
 /**
- * Compose a mountain-range peak list from a portrait. Same `{x,h,w,wL,wR}`
- * shape alpineHeightField already consumes. `cfg` is an ALPINE_CHARACTERS
- * entry (passed in to avoid a circular import).
+ * How many times a layer's tile scrolls past during the span of music the
+ * portrait was read from.
  *
- * Placement is a *composition*, not a timeline: landmarks keep their
- * relative order and spacing (so two choruses around a drop still read
- * as two similar summits around a king) but the whole set is centred on
- * the song's energy-weighted mass and slid by the layer's phase so the
- * four ranges rhyme without stacking as copies.
+ * The strips tile and scroll forever, so a layer has a natural musical
+ * duration nothing in the old code ever used: the time it takes one tile
+ * to travel one tile-width at that layer's own parallax rate (`spanSec`).
+ * At 220 px/s and the parallax ratios in BiomeManager that is ~93 s for
+ * the far massif, ~52 s for the mid range, ~31 s for the near range and
+ * ~14 s for the foothills -- which is, near enough, one song, one section,
+ * one passage and one phrase. Dividing the read window by that gives the
+ * whole number of traversals the tile should stand for, and therefore the
+ * scale at which the range is drawn.
+ *
+ * Rounding to a whole number (rather than taking the ratio literally) is
+ * what keeps the wrap musical: the tile always holds an exact 1/laps of
+ * the window, so the seam falls on the same point of the music every lap
+ * instead of drifting through it.
  */
-export function composeAlpinePeaks({ portrait, cfg, layerKey = 'L2', seed, width }) {
+export function layerLaps(windowSec, spanSec, maxLaps = MAX_LAPS) {
+  if (!(windowSec > 0) || !(spanSec > 0)) return 1;
+  return clamp(Math.round(windowSec / spanSec), 1, maxLaps);
+}
+
+/** The tile's own time base for a layer: how many traversals of the
+ *  portrait's window it stands for, and how many strip pixels one second
+ *  of that music occupies. `pxPerSec` is the layer's scroll rate, so
+ *  `pxPerMusicSec` lands within a rounding of it -- which is the whole
+ *  point: the range plays back at roughly the speed you travel it. */
+export function layerTimeBase(portrait, timeline, width) {
+  const pxPerSec = timeline?.pxPerSec;
+  const windowSec = portrait?.windowSec;
+  if (!(pxPerSec > 0) || !(windowSec > 0) || !(width > 0)) return null;
+  const laps = layerLaps(windowSec, width / pxPerSec);
+  return { laps, windowSec, pxPerMusicSec: (width * laps) / windowSec };
+}
+
+/**
+ * Compose a mountain-range peak list from a portrait. Same `{x,h,w}` shape
+ * alpineHeightField already consumes. `cfg` is an ALPINE_CHARACTERS entry
+ * (passed in to avoid a circular import).
+ *
+ * With a `timeline` ({pxPerSec}), placement is a TIMELINE: a landmark sits
+ * at the fraction of the tile its moment occupies in the music, at the rate
+ * the layer scrolls, so the gaps between summits are the gaps between
+ * events. Two hits four seconds apart are four seconds of walking apart.
+ * The strip scrolls right-to-left, so larger x is later music -- the
+ * skyline ahead of you is the music ahead of you.
+ *
+ * Without one (tests, callers with no scroll rate) it falls back to the
+ * older behaviour: relative order and spacing preserved, but stretched to
+ * fill the tile and centred on the song's energy-weighted mass.
+ */
+export function composeAlpinePeaks({
+  portrait, cfg, layerKey = 'L2', seed, width, timeline = null,
+}) {
   const role = LAYER_ROLES[layerKey] || LAYER_ROLES.L2;
   const rand = mulberry32((seed ^ 0xc0de) >>> 0 || 1);
   const lms = portrait?.landmarks?.slice() || [];
@@ -687,14 +781,32 @@ export function composeAlpinePeaks({ portrait, cfg, layerKey = 'L2', seed, width
 
   if (taken.length === 0) return [];
 
+  const timeBase = layerTimeBase(portrait, timeline, width);
+
   const times = taken.map((lm) => lm.t01);
   const tMin = Math.min(...times);
   const tMax = Math.max(...times);
   const span = Math.max(0.18, tMax - tMin);
   const usable = 1 - 2 * MARGIN;
   const king = taken.reduce((a, b) => (b.prominence > a.prominence ? b : a), taken[0]);
-  const uRaw = (t) => MARGIN + ((t - tMin) / span) * usable;
-  const shift = kingU - uRaw(king.t01) + role.phase + slide;
+  // Two readings of a landmark's moment. The timed one is a real map: one
+  // lap of the tile IS one 1/laps slice of the window, so the interval
+  // between two summits is the interval between two events, unstretched.
+  // The untimed one is the older normalize-to-fill fallback -- it keeps
+  // ORDER but throws the pacing away, because it rescales whatever span the
+  // landmarks happen to occupy out to the full tile.
+  const uRaw = timeBase
+    ? (t) => t * timeBase.laps
+    : (t) => MARGIN + ((t - tMin) / span) * usable;
+  // The scroll phase of a tile is not synced to the song (nothing anchors
+  // worldX to a bar), so absolute position carries no musical information --
+  // only the intervals do. That makes the king-centring and the per-biome
+  // slide free to keep doing their job on the timed path too: separating
+  // the four stacked ranges, which would otherwise sit summit-over-summit
+  // at scroll 0 wherever two layers landed on the same lap count.
+  const shift = timeBase
+    ? role.phase + slide
+    : kingU - uRaw(king.t01) + role.phase + slide;
 
   // WRAP, don't clamp. The strip tiles and scrolls forever, so there is no
   // privileged "frame" to compose inside -- every x is equally likely to be
@@ -733,6 +845,10 @@ export function composeAlpinePeaks({ portrait, cfg, layerKey = 'L2', seed, width
   const bass = portrait?.bassShare ?? 0.3;
   const centroid = portrait?.centroid01 ?? 0.5;
   const widthBias = lerp(1.22, 0.82, centroid) * role.widthMul;
+  // The range's own middling event length, so durations are read as
+  // proportions of each other rather than as absolute seconds.
+  const eventWs = resolved.map((p) => clamp01(p.width01 ?? 0)).sort((a, b) => a - b);
+  const medianEventW = eventWs.length ? eventWs[eventWs.length >> 1] : 0;
 
   const peaks = resolved.map((p, idx) => {
     const isKing = p.prominence >= maxProm * 0.97 && idx === resolved.findIndex((q) => q.prominence >= maxProm * 0.97);
@@ -749,6 +865,20 @@ export function composeAlpinePeaks({ portrait, cfg, layerKey = 'L2', seed, width
     // are bulky. A long chorus is a broad mountain, a sharp drop is a horn.
     const brightMul = lerp(1.18, 0.78, clamp01(p.brightness));
     let w = (cfg.wBase + eventW * cfg.wSpan) * widthBias * brightMul;
+    // How long the event LASTS, against the other events in this range.
+    // width01 is the landmark's own half-power duration, so the ratio to
+    // the range's median duration says "this one is twice the event that
+    // one was" -- and that is the part worth drawing. The ABSOLUTE duration
+    // is not: a landmark of a whole-song read can be twenty seconds long,
+    // which at any honest scale is a summit wider than the tile. Keeping
+    // the character's register and spending the timing on proportion gives
+    // the thing no static width can -- a long chorus takes visibly longer
+    // to walk past than a one-bar stab -- without a crags layer having to
+    // stop being crag-scale to say it.
+    if (medianEventW > 1e-4) {
+      const rel = clamp(eventW / medianEventW, 0.25, 4);
+      w *= clamp(lerp(1, rel, TIME_WIDTH_MIX), TIME_WIDTH_MIN_MUL, TIME_WIDTH_MAX_MUL);
+    }
     if (isKing) w = Math.max(w, cfg.wBase * (1.22 + bass * 0.35));
     w = Math.max(28, w);
 
@@ -759,9 +889,24 @@ export function composeAlpinePeaks({ portrait, cfg, layerKey = 'L2', seed, width
       w,
       wL: w * lean,
       wR: w / Math.max(0.35, lean),
+      // The landmark's attack -- how much steeper its rise was than its
+      // fall. Carried onto the peak because it is the one thing that says
+      // which FACE the mountain shows you: a drop rises out of nothing and
+      // decays, so its headwall faces the way you are travelling. Until now
+      // this only ever set wL/wR, which nothing downstream read.
+      attack: clamp(p.attack ?? 0, -1, 1),
       king: isKing,
     };
   });
+
+  // The tile's time map, carried on the peak list so anything else drawn
+  // into the same tile can agree with it. The spine (the song's own
+  // smoothed energy, laid under the summits as a family resemblance) is
+  // read at portrait u, and would drift out of step with its own summits
+  // the moment the summits were placed on a lap-scaled clock -- the low
+  // ground would swell where the music was quiet and the summits stood
+  // somewhere else entirely.
+  peaks.timeMap = timeBase ? { laps: timeBase.laps, shift } : null;
 
   // Guarantee a king even if prominence ties.
   if (peaks.length && !peaks.some((p) => p.king)) {
@@ -831,6 +976,9 @@ export function seedPeaks(cfg, seed, width) {
       w,
       wL: w * lean,
       wR: w / lean,
+      // No song, no attack: these summits take the range's regional dip,
+      // which is the only grain a seeded fallback has to offer.
+      attack: 0,
       king: false,
     };
   });

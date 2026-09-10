@@ -112,6 +112,16 @@ celestial bodies, particles, and other effects where supported by the
 chosen style. Repeating musical sections can return to recognizable visual
 identities.
 
+The parallax ranges are laid out as a timeline rather than as decoration.
+Each depth travels at its own speed, so one tile of it stands for a fixed
+stretch of music — roughly a song at the horizon, a section, a passage, and
+a phrase at the front — and a summit sits at the point in that stretch its
+moment occupies. The gaps between mountains are the gaps between events,
+the wider mountains are the longer events, and a summit shows its steep
+face toward whichever side the music rose or fell fastest on. Where the
+recording has a tempo, the gullies striping the flanks are cut on the beat
+grid, so the texture of the rock passes the eye at the song's own pulse.
+
 Analysis bundles are cached in IndexedDB so repeat plays can reuse the
 expensive analysis. Missing or unreadable cache entries fall back to fresh
 analysis. The performance governor reduces optional effects under sustained
