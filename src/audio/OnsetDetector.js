@@ -308,9 +308,32 @@ export function estimateTempo(O, rate, kickFrames) {
   }
 
   // Harmonic disambiguation: trust the kicks over tau*/2 (double-time ghost) or 2*tau*.
+  //
+  // kickGridExplainScore bins kicks into a STATIC modulo-tau histogram, which
+  // assumes the true beat period is an exact integer number of frames. It
+  // never is -- a real tempo rounds to the nearest frame (~11.6ms buckets at
+  // this hop size), and that fraction-of-a-frame error accumulates linearly
+  // over the song. A few hundred beats into a four-minute track the phase has
+  // swept most of the way around the bin, so even the CORRECT tau's own kicks
+  // land all over the histogram and score as poorly "explained" as noise --
+  // while a harmonic candidate can score higher purely by chance. Left
+  // unguarded, that flips tauFinal to a tau the raw autocorrelation gives
+  // near-zero support to (see rHatFinal below), which is how a clean, steady
+  // 120 BPM click ends up reported as ~235 BPM at zero confidence.
+  //
+  // Autocorrelation itself is far more drift-tolerant (it just sums products
+  // at a fixed lag, so gradual phase creep only softens the peak rather than
+  // scattering it), so it's the trustworthy signal here. A harmonic candidate
+  // is only even considered if the raw signal itself supports it at least
+  // half as strongly as the best candidate does -- kickGridExplainScore then
+  // only picks among genuinely plausible candidates instead of overriding a
+  // well-correlated tau with one the signal doesn't actually contain.
   const candidates = [bestTau, Math.round(bestTau / 2), bestTau * 2].filter((t) => t >= 1 && t < n);
+  const candidateRHat = new Map(candidates.map((tau) => [tau, correlationAt(Obar, r0, tau)]));
+  const bestTauRHat = candidateRHat.get(bestTau);
   let tauFinal = bestTau, bestExplain = -1;
   for (const tau of candidates) {
+    if (candidateRHat.get(tau) < bestTauRHat * 0.5) continue;
     const explain = kickGridExplainScore(kickFrames, tau, rate);
     if (explain > bestExplain) { bestExplain = explain; tauFinal = tau; }
   }
