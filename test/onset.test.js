@@ -251,6 +251,41 @@ test('estimateTempo keeps the 4/4 default when the kick pattern does not clearly
   assert.equal(tempo.beatsPerBar, 4);
 });
 
+// ── Harmonic disambiguation must not override a confident autocorrelation ──
+//
+// kickGridExplainScore bins kicks into a static modulo-tau histogram, which
+// implicitly assumes the true beat period is an exact integer number of
+// frames. It never is: a real tempo rounds to the nearest frame, and that
+// sub-frame rounding error accumulates linearly with the song's length. Over
+// a long, steady track the phase sweeps most of the way around the bin, so
+// even the CORRECT tau's own kicks land all over the histogram and score as
+// poorly "explained" as noise -- while a harmonic candidate the raw signal
+// doesn't actually support can score higher purely by chance. Unguarded,
+// that flipped tauFinal to a tau near-zero autocorrelation supports, which is
+// how a clean, steady 120 BPM click over four minutes was reported as ~235
+// BPM at zero confidence (silently falling back to free-time, kick-reactive
+// jumps for a track that has a perfectly steady beat grid).
+
+test('estimateTempo holds a steady 120 BPM over a full four-minute song instead of aliasing to a phantom harmonic', () => {
+  const rate = 44100 / 512; // real analysis rate, not the test suite's rounded 86 -- the bug only shows up with the true fractional period
+  const bpmTrue = 120;
+  const periodFrames = (rate * 60) / bpmTrue; // real, non-integer period
+  const durSec = 240;
+  const n = Math.round(rate * durSec);
+  const O = new Float32Array(n);
+  const kickFrames = [];
+  for (let f = 0; f < n; f += periodFrames) {
+    const fi = Math.round(f);
+    O[fi] = 1;
+    kickFrames.push(fi);
+  }
+
+  const tempo = estimateTempo(O, rate, kickFrames);
+  assert.ok(Math.abs(tempo.bpm - bpmTrue) < 1, `expected ~${bpmTrue}bpm, got ${tempo.bpm}`);
+  assert.ok(tempo.confidence > 0.8, `expected a confident tempo read, got ${tempo.confidence}`);
+  assert.equal(tempo.freeTime, false, 'a perfectly steady beat must never fall back to free-time');
+});
+
 // ── Drift-aware bar grid ────────────────────────────────────────────
 //
 // AudioAdapter used to extrapolate ONE beatPeriodMs, taken from a single
