@@ -37,6 +37,21 @@ test('melodyPitchAt finds the true pitch of a sustained A4 (440Hz)', () => {
   assert.equal(pitch, 69, `expected MIDI 69 (A4), got ${pitch}`);
 });
 
+test('melodyPitchAt reads the fundamental, not a louder harmonic, on a weak-fundamental A3', () => {
+  // A real instrument's 2nd harmonic routinely outshines its fundamental --
+  // reproduces the reported bug: an A3 (220Hz) tone with a stronger 2nd
+  // harmonic (A4, 440Hz) was registering as A4 instead of A3.
+  const n = Math.round(1.0 * SR);
+  const mono = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    mono[i] = 0.3 * Math.sin((2 * Math.PI * midiToHz(57) * i) / SR)
+      + 0.6 * Math.sin((2 * Math.PI * midiToHz(69) * i) / SR);
+  }
+  const features = computePitchFeatures(mono, SR);
+  const pitch = melodyPitchAt(features, 200);
+  assert.equal(pitch, 57, `expected MIDI 57 (A3, the fundamental), got ${pitch}`);
+});
+
 test('melodyPitchAt returns null on silence so callers keep their fallback', () => {
   const mono = new Float32Array(SR); // 1s of silence
   const features = computePitchFeatures(mono, SR);
