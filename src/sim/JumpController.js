@@ -15,9 +15,29 @@ const ANCHOR_MIN_CONFIDENCE = 0.05;
 // offline replicas (JumpPlanner/NoteChart) import these, so they stay in
 // lockstep automatically, and a longer/higher hang only ever widens the
 // obstacle-clearance window (re-verified by obstacleSafety.test).
-export const A = 0.32;   // LAUNCH fraction -- snappier takeoff
-export const B = 0.36;   // APEX HANG fraction -- longer float at the top
-export const GAMMA = 0.32; // FALL fraction -- crisper drop
+//
+// LAUNCH was cut further (0.32 -> 0.12, the freed 0.20 folded into HANG)
+// to close a real "video is late" gap: onKick() fires the launch reactively,
+// exactly at the kick's own tMs (no anticipation -- see _launchOrRetarget),
+// which is the correct trigger for a takeoff that has to start from the
+// ground. But at the OLD 0.32, Midio didn't visibly reach the swell/peak
+// that reads as "the hit" until 32% of D after that kick -- ~120-190ms for
+// the common D range, squarely in "I heard it before I saw it" territory.
+// This is worst on sparse/rubato tracks (JumpController falls back to a raw
+// ground launch on nearly every beat there instead of the continuous
+// mid-air retargeting a dense, steady song keeps him in), but it's the same
+// arc everywhere, so every fresh ground launch reads snappier now.
+// Provably no less safe for obstacle clearance: A+B is unchanged (still
+// 1-GAMMA), so the FALL phase and the landing instant are byte-identical to
+// before -- only how the SAME total rise budget (launch+hang) is split
+// changes. And a quadratic ease-out that reaches the same height Ha in a
+// SHORTER launch fraction is >= the old curve at every instant along the
+// way (reaches Ha sooner, then holds at/above Ha through hang while the old
+// curve was still ramping up to it) -- so this can only clear an obstacle
+// the old timing cleared EARLIER, never later.
+export const A = 0.12;   // LAUNCH fraction -- reaches the peak close to the kick, not a third of D later
+export const B = 0.56;   // APEX HANG fraction -- absorbs what LAUNCH gave up
+export const GAMMA = 0.32; // FALL fraction -- crisper drop, unchanged
 export const W = 0.08;   // apex headroom fraction
 
 export function jumpY(u, H) {
