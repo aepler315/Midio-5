@@ -174,17 +174,54 @@ test('SSM boundaries land at the right TIMES even when its grid differs from our
 // onto one grid point, empty spans are skipped), so a single dropped
 // boundary threw away every label.
 
-test('a schedule the minimum-sections floor rebuilt does not claim to be the SSM read', () => {
+test('a confident SSM read below the minimum-section floor is padded, not discarded', () => {
+  // A pacing preference (the minimum-section floor) must never overwrite
+  // real musical evidence (see the section-detection audit, finding #1):
+  // it may only pad a confident SSM read with extra decorative cuts to hit
+  // the count, and those cuts must not invent a new musical identity.
   const durationMs = 4 * 60 * 1000;
-  // Confident, but only two sections -- below the floor for a song this long,
-  // so _ensureMinimumSections re-picks from the energy novelty and the SSM's
-  // cuts do not survive into the schedule at all.
   const fake = buildWithStructure([], fakeEnergyCurves(durationMs), durationMs, {
     boundariesMs: [0, 100000], labels: [0, 1], cutIndices: [0, 50, 120], confidence: 0.9,
   });
-  assert.ok(fake.sections.length > 2, 'the floor should have rebuilt the schedule');
-  assert.equal(fake.structureSource, 'energy-novelty',
-    'the schedule is made of energy peaks, so that is what it must report');
+  assert.ok(fake.sections.length > 2, 'the floor should have padded the schedule');
+  assert.equal(fake.structureSource, 'ssm+decorative',
+    'the schedule is still made of the SSM read, plus decorative padding');
+  assert.equal(fake.structureConfidence, 0.9, 'confidence still describes the SSM read that is actually in use');
+  // The real 100s boundary must survive verbatim.
+  assert.ok(fake.sections.some((s) => Math.abs(s.startMs - 100000) < 4000),
+    `the detected 100s boundary must survive scheduling, got starts [${fake.sections.map((s) => s.startMs)}]`);
+  // Every decorative cut must inherit its parent's label/identity rather
+  // than invent a new one.
+  const decorative = fake.sections.filter((s) => s.provenance === 'decorative');
+  assert.ok(decorative.length > 0, 'the padding must be visible as decorative');
+  for (const s of decorative) assert.ok(s.label === 0 || s.label === 1, `no invented identity, got label ${s.label}`);
+});
+
+test('a low-confidence or structureless SSM read still falls back to energy-novelty, not decorative padding', () => {
+  const durationMs = 4 * 60 * 1000;
+  const flatSsm = { boundariesMs: [0], labels: [0], cutIndices: [0, 40], confidence: 0.6 };
+  const fake = buildWithStructure([], fakeEnergyCurves(durationMs), durationMs, flatSsm);
+  assert.equal(fake.structureSource, 'energy-novelty');
+  assert.equal(fake.structureConfidence, 0, 'a discarded read must not go on reporting its confidence');
+});
+
+test('a constant-energy song with a confident 2-section SSM read keeps its 60s boundary (audit repro)', () => {
+  // The exact reproduction from the section-detection audit: a 120s song,
+  // confidence 0.95, boundaries [0, 60000] -- an entirely constant-energy
+  // bed, so the floor's own relaxed energy-novelty pass finds nothing and
+  // used to fall all the way through to a blind even-split, discarding the
+  // real boundary and the confidence describing it.
+  const durationMs = 120000;
+  const fake = buildWithStructure([], flatEnergyCurves(), durationMs, {
+    boundariesMs: [0, 60000], labels: [0, 1], cutIndices: [0, 30, 60], confidence: 0.95,
+  });
+  assert.equal(fake.structureSource, 'ssm+decorative');
+  assert.equal(fake.structureConfidence, 0.95);
+  assert.ok(fake.sections.some((s) => Math.abs(s.startMs - 60000) < 2000),
+    `the 60s boundary must survive, got starts [${fake.sections.map((s) => s.startMs)}]`);
+  const labelAt = (ms) => fake.sections.find((s) => s.startMs <= ms && ms < s.endMs)?.label;
+  assert.equal(labelAt(10000), 0);
+  assert.equal(labelAt(110000), 1);
 });
 
 test('an even-split schedule says so, rather than borrowing the credit of a detector', () => {
