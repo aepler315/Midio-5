@@ -49,14 +49,16 @@ export const MAX_LATENCY_MS = 350;
  *  So the world is stepped at `now + VISUAL_LEAD_MS`: each frame renders the
  *  moment it will actually be ON SCREEN rather than the moment it was built.
  *  No browser API reports this figure (there is no "time to photons"), so it
- *  is a fixed constant rather than a measurement -- roughly three 60Hz
+ *  is a fixed constant rather than a measurement -- roughly two 60Hz
  *  refreshes, which is what the compositor path typically costs. Raise or
  *  lower it HERE; every consumer reads through Simulation's visualLeadMs.
+ *  (Was 50ms/three refreshes; playtesting reported that as barely early,
+ *  so trimmed to two.)
  *
  *  Scoring deliberately does NOT move with it: judging compares a tap's own
  *  timestamp against the chart, both on the true audio clock, so leading the
  *  render cannot make a hit score differently (see Simulation.step). */
-export const VISUAL_LEAD_MS = 50;
+export const VISUAL_LEAD_MS = 35;
 
 /** How early ahead-subscriptions deliver character-choreography events.
  *  Must cover the longest anticipation rise plus a couple of sim steps of
