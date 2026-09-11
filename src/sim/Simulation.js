@@ -70,7 +70,7 @@ const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
 export class Simulation {
   constructor(conductor, paramBus, {
     bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720,
-    customBiome = null, inputOffsetMs = 0, outputLatencyMs = null, lyricSections = null, syncedLyrics = null, structure = null,
+    customBiome = null, inputOffsetMs = 0, outputLatencyMs = null, visualLeadMs = 0, lyricSections = null, syncedLyrics = null, structure = null,
     groove = null,
     songSeed: pinnedSeed = null,
     conductorCues = null,
@@ -91,6 +91,11 @@ export class Simulation {
     // beat-anchored envelopes evaluate on the heard clock via visualLagMs.
     this._outputLatencyFn = typeof outputLatencyMs === 'function' ? outputLatencyMs : null;
     this.visualLagMs = 0;
+    // Display presentation lead (ChoreoClock.VISUAL_LEAD_MS): main.js steps
+    // the world at now + this, so a frame depicts the moment it will be seen
+    // rather than the moment it was built. Recorded here so the few things
+    // that must stay on the true audio clock -- scoring -- can undo it.
+    this.visualLeadMs = Math.max(0, visualLeadMs || 0);
 
     // Casting (Casting.js): which character performs which line, decided by
     // the adapters from track names / stem filenames / spectra. Empty lanes
@@ -694,7 +699,13 @@ export class Simulation {
         this.judge.onTapUp(ev.tMs);
       }
     }
-    this.judge.update(nowMs);
+    // Scoring stays on the true audio clock, never the led render clock: a
+    // note's window has to close when the player could actually have heard
+    // it, so a led frame must not retire a note early. (Hit offsets are
+    // already immune -- onTapDown compares the tap's own stamp against the
+    // chart, both absolute song times -- so this expiry is the one place the
+    // lead has to be taken back out.)
+    this.judge.update(nowMs - this.visualLeadMs);
     this._applyJudgeEvents();
     this.fever.update(nowMs, dtSec, this.energyCurves);
     this.calm.update(nowMs, dtSec, this.energyCurves);

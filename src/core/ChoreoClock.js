@@ -35,6 +35,29 @@
  *  outputs, nowhere else. */
 export const MAX_LATENCY_MS = 350;
 
+/** Display presentation lead, ms.
+ *
+ *  The third latency in the chain, and the only one nothing used to answer.
+ *  Legs 1 and 2 above line a visual's COMPUTED peak up with the heard beat,
+ *  but a frame is not seen when it is computed: the canvas is composited and
+ *  then scanned out, so the pixels reach the eye one to two refreshes later.
+ *  Everything therefore reads slightly late no matter how exactly its
+ *  envelope was anchored, and -- unlike draw throttling -- the error does not
+ *  change with the frame-rate cap, because the panel refreshes at its own
+ *  rate regardless.
+ *
+ *  So the world is stepped at `now + VISUAL_LEAD_MS`: each frame renders the
+ *  moment it will actually be ON SCREEN rather than the moment it was built.
+ *  No browser API reports this figure (there is no "time to photons"), so it
+ *  is a fixed constant rather than a measurement -- roughly three 60Hz
+ *  refreshes, which is what the compositor path typically costs. Raise or
+ *  lower it HERE; every consumer reads through Simulation's visualLeadMs.
+ *
+ *  Scoring deliberately does NOT move with it: judging compares a tap's own
+ *  timestamp against the chart, both on the true audio clock, so leading the
+ *  render cannot make a hit score differently (see Simulation.step). */
+export const VISUAL_LEAD_MS = 50;
+
 /** How early ahead-subscriptions deliver character-choreography events.
  *  Must cover the longest anticipation rise plus a couple of sim steps of
  *  dispatch slack; output latency only ever ADDS margin (visualNow lags

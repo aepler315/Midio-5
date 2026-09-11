@@ -41,7 +41,7 @@ import { groundLyrics, hasUsableLyrics } from './lyrics/LyricGrounding.js';
 import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
-import { visualNow } from './core/ChoreoClock.js';
+import { visualNow, VISUAL_LEAD_MS } from './core/ChoreoClock.js';
 import { extractWatchFeatures, buildCustomWorld } from './world/WorldScore.js';
 import { DEFAULT_WORLD_ID, setCustomWorld } from './world/Worlds.js';
 import { fingerprintBuffer } from './audio/SongFingerprint.js';
@@ -902,6 +902,10 @@ function startTimeline(timelineData, extra = {}) {
       // ChoreoClock: live output-latency getter so beat-anchored envelopes
       // peak when the EAR gets the beat (Bluetooth can lag 200ms+).
       outputLatencyMs: () => effectiveOutputLatencyMs(),
+      // ChoreoClock leg 3: how far ahead frame() steps the world so a frame
+      // depicts the moment it reaches the screen, not the moment it was
+      // built. Handed in so scoring can subtract it back out.
+      visualLeadMs: VISUAL_LEAD_MS,
       lyricSections: timelineData.lyricSections || null,
       syncedLyrics: timelineData.syncedLyrics || null,
       // SSM structure read (StructureAnalyzer), audio path only. Null on
@@ -978,12 +982,14 @@ function startTimeline(timelineData, extra = {}) {
     : startAtMs;
   if (startedAt > 0) conductor.seekTo(startedAt);
   audioEngine.start(startedAt);
-  simTime = startedAt;
+  // Both seeded in led time (see frame()), or the first frame would see the
+  // whole lead as a delta and spend it on fixed steps nobody asked for.
+  simTime = startedAt + VISUAL_LEAD_MS;
   // After start(), not before: the clock's origin has only just been set, and
   // reading it earlier leaves the first frame with a delta of the entire
   // start offset -- which the 250ms clamp then turns into a quarter second of
   // sim time nobody asked for.
-  lastNowMs = audioEngine.nowMs;
+  lastNowMs = audioEngine.nowMs + VISUAL_LEAD_MS;
   running = true;
   stopTitleBackdrop();
 
@@ -1647,10 +1653,15 @@ function frame(tRaf) {
   lastRafMs = tRaf;
   hudIdleTick(tRaf);
   const nowMs = audioEngine.nowMs;
+  // ChoreoClock leg 3: the world is stepped for when this frame will be SEEN,
+  // one compositor-plus-scanout hop after it is built, so `simTime` and
+  // `lastNowMs` both live in led time. A constant lead shifts the sequence
+  // without changing any delta, so the fixed-step accumulator is unaffected.
+  const renderNowMs = nowMs + VISUAL_LEAD_MS;
 
   try {
     const advanced = advanceFixedStepClock({
-      nowMs,
+      nowMs: renderNowMs,
       lastNowMs,
       simTime,
       accumulatorMs: acc,
@@ -1668,8 +1679,8 @@ function frame(tRaf) {
     // try/catch above); this is the same failure mode on every later frame.
     // Start the next frame from the current audio position; a failed step
     // must not turn into permanent clock drift.
-    lastNowMs = nowMs;
-    simTime = nowMs;
+    lastNowMs = renderNowMs;
+    simTime = renderNowMs;
     acc = 0;
     if (drawErrors.record(err, tRaf)) {
       console.error(`[sim.step] (occurrence ${drawErrors.worst.count})`, err);
@@ -1912,10 +1923,10 @@ function seekSong(ms) {
   // backward scrub would replay the music with every cue behind the new
   // position already spent (see CueDirector.seekTo).
   sim.cues?.seekTo(t);
-  simTime = t;
-  lastNowMs = t;
+  simTime = t + VISUAL_LEAD_MS;
+  lastNowMs = t + VISUAL_LEAD_MS;
   acc = 0;
-  if (sim.timeMs != null) sim.timeMs = t;
+  if (sim.timeMs != null) sim.timeMs = t + VISUAL_LEAD_MS;
   // A milestone glyph belongs to the moment that earned it. Scrubbing away
   // leaves it stranded (a backward seek puts the clock before its own start),
   // so drop it and anything queued behind it rather than letting either
