@@ -905,6 +905,44 @@ html, body {
   background: color-mix(in srgb, var(--spec-cool) 12%, transparent);
 }
 
+/* Bluetooth latency trim: a small editor popover under the chip, open on
+   click, closed on Escape/outside-click/Set/Off -- same discipline as any
+   other click-to-edit control, not a modal. */
+#btLatencyControl { position: relative; }
+#btLatencyPopover {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  z-index: 6;
+  background: rgba(8, 8, 14, 0.92);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  min-width: 190px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+#btLatencyPopover label { display: block; margin-bottom: var(--space-1); }
+#btLatencyInputRow { display: flex; align-items: center; gap: var(--space-1); margin-bottom: var(--space-2); }
+#btLatencyInput {
+  width: 70px;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface-3);
+  color: var(--text-primary);
+  min-height: 32px; /* still a text field, but tall enough to tap accurately on a phone */
+}
+#btLatencyInput:focus { outline: none; border-color: var(--spec-cool); }
+#btLatencyPopoverActions { display: flex; gap: var(--space-2); justify-content: flex-end; }
+#btLatencyPopoverActions button {
+  font-size: 0.78rem;
+  padding: 6px var(--space-2);
+  min-height: 36px;
+}
+
 /* Right-hand cluster of the HUD row: difficulty, fullscreen, settings gear,
    track badge. #hud disables pointer-events so the canvas underneath stays
    clickable; this wrapper opts its interactive children back in.

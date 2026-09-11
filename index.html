@@ -112,10 +112,24 @@
 
     <div id="hud" class="hidden">
       <div id="hudLeft">
-        <button id="btLatencyBtn" class="ghostbtn chipbtn" type="button" aria-pressed="false"
-          title="Manual Bluetooth latency correction. Most Bluetooth speakers/headphones report no output latency to the browser, so beat-anchored visuals (jumps, flashes, camera hits) can land audibly early. Turning this on delays every one of them by 30ms to compensate. Leave off on wired audio.">
-          BT +30ms
-        </button>
+        <div id="btLatencyControl">
+          <button id="btLatencyBtn" class="ghostbtn chipbtn" type="button" aria-pressed="false"
+            aria-haspopup="true" aria-expanded="false"
+            title="Manual Bluetooth latency correction. Most Bluetooth speakers/headphones report no output latency to the browser, so beat-anchored visuals (jumps, flashes, camera hits) can land audibly early. Tap to set how many ms to delay them by -- your room's real Bluetooth round-trip is commonly 100-200ms. 0 = off. Leave off on wired audio.">
+            BT: off
+          </button>
+          <div id="btLatencyPopover" class="hidden">
+            <label for="btLatencyInput">Delay visuals by</label>
+            <div id="btLatencyInputRow">
+              <input id="btLatencyInput" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="500" step="1" value="30" />
+              <span>ms</span>
+            </div>
+            <div id="btLatencyPopoverActions">
+              <button id="btLatencyOffBtn" type="button" class="ghostbtn">Off</button>
+              <button id="btLatencyApplyBtn" type="button" class="ghostbtn">Set</button>
+            </div>
+          </div>
+        </div>
       </div>
       <div id="hudRight">
         <button id="pauseBtn" class="ghostbtn iconbtn" type="button" title="Pause">&#9208;</button>
