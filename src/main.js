@@ -41,7 +41,7 @@ import { groundLyrics, hasUsableLyrics } from './lyrics/LyricGrounding.js';
 import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
-import { visualNow } from './core/ChoreoClock.js';
+import { visualNow, VISUAL_LEAD_MS } from './core/ChoreoClock.js';
 import { extractWatchFeatures, buildCustomWorld } from './world/WorldScore.js';
 import { DEFAULT_WORLD_ID, setCustomWorld } from './world/Worlds.js';
 import { fingerprintBuffer } from './audio/SongFingerprint.js';
@@ -113,20 +113,6 @@ const stageResEl = document.getElementById('stageRes');
 const stageFpsEl = document.getElementById('stageFps');
 const debugOverlayEl = document.getElementById('debugOverlay');
 const fpsHudEl = document.getElementById('fpsHud');
-const leadToastEl = document.getElementById('leadToast');
-// TEMPORARY: LeadABTester elements -- remove alongside index.html's block,
-// style.css's block, and every LEAD_AB_TEST-tagged piece below once the
-// right VISUAL_LEAD_MS is found.
-const leadTestFlashEl = document.getElementById('leadTestFlash');
-const leadTestOverlayEl = document.getElementById('leadTestOverlay');
-const leadTestStatusEl = document.getElementById('leadTestStatus');
-const leadTestChoicesEl = document.getElementById('leadTestChoices');
-const leadTestChoiceAEl = document.getElementById('leadTestChoiceA');
-const leadTestChoiceBEl = document.getElementById('leadTestChoiceB');
-const leadTestChoiceTieEl = document.getElementById('leadTestChoiceTie');
-const leadTestCancelBtnEl = document.getElementById('leadTestCancelBtn');
-const leadTestRestartBtnEl = document.getElementById('leadTestRestartBtn');
-const leadTestLauncherBtnEl = document.getElementById('leadTestLauncherBtn');
 const sfFileInputEl = document.getElementById('sfFileInput');
 const sfDirInputEl = document.getElementById('sfDirInput');
 const sfDirBtnEl = document.getElementById('sfDirBtn');
@@ -317,26 +303,6 @@ let lastNowMs = 0;
 let running = false;
 let paused = false; // suspends the AudioContext itself -- the master clock everything derives from
 let fpsHudVisible = resolveFpsHudVisible(typeof location !== 'undefined' ? location.search : '');
-
-// VISUAL_LEAD_MS live A/B toggle (L key): repeated single-value bisection
-// from separate full playthroughs produced a non-monotonic trend (50ms read
-// barely early; 45 and 35 both read late; 25 read too early), which is what
-// judging near the edge of human AV-sync JND across separate sessions looks
-// like -- session-to-session noise (fatigue, which beat you anchored on)
-// swamping a 10-20ms true difference. Flipping between two candidates on the
-// SAME playback instant, with no restart, removes that noise. Candidates
-// default to the two most recent contradictory readings so the first press
-// is already informative; override with ?leadA=/?leadB= (ms) for any pair.
-// The mutable `visualLeadMs` below (not the ChoreoClock constant) is what
-// frame() and the sim actually run on once this toggle has fired.
-const _leadParams = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
-const visualLeadCandidates = {
-  A: Number(_leadParams?.get('leadA')) || 25,
-  B: Number(_leadParams?.get('leadB')) || 40,
-};
-let visualLeadSlot = 'A';
-let visualLeadMs = visualLeadCandidates[visualLeadSlot];
-let leadToastUntilMs = 0;
 let fpsEma = null;
 fpsHudEl?.classList.toggle('hidden', !fpsHudVisible);
 // Renderer path: ?renderer=webgl enables the optional WebGL post-FX overlay.
@@ -763,10 +729,6 @@ function toggleTrackList() {
  *  tolerates being idle). */
 function stopTimeline() {
   running = false;
-  // TEMPORARY: LeadABTester -- no song, nothing to test against.
-  cancelLeadABTest();
-  hideLeadABTestOverlay();
-  leadTestLauncherBtnEl?.classList.add('hidden');
   // conductor is a single instance shared across every song (see its
   // construction above); Simulation and its subsystems subscribe to it at
   // construction and never unsubscribe on their own. Without this, a replay
@@ -942,10 +904,8 @@ function startTimeline(timelineData, extra = {}) {
       outputLatencyMs: () => effectiveOutputLatencyMs(),
       // ChoreoClock leg 3: how far ahead frame() steps the world so a frame
       // depicts the moment it reaches the screen, not the moment it was
-      // built. Handed in so scoring can subtract it back out. The L-key A/B
-      // toggle mutates sim.visualLeadMs directly afterward (see below) --
-      // this constructor value only seeds the first playthrough.
-      visualLeadMs,
+      // built. Handed in so scoring can subtract it back out.
+      visualLeadMs: VISUAL_LEAD_MS,
       lyricSections: timelineData.lyricSections || null,
       syncedLyrics: timelineData.syncedLyrics || null,
       // SSM structure read (StructureAnalyzer), audio path only. Null on
@@ -1024,12 +984,12 @@ function startTimeline(timelineData, extra = {}) {
   audioEngine.start(startedAt);
   // Both seeded in led time (see frame()), or the first frame would see the
   // whole lead as a delta and spend it on fixed steps nobody asked for.
-  simTime = startedAt + visualLeadMs;
+  simTime = startedAt + VISUAL_LEAD_MS;
   // After start(), not before: the clock's origin has only just been set, and
   // reading it earlier leaves the first frame with a delta of the entire
   // start offset -- which the 250ms clamp then turns into a quarter second of
   // sim time nobody asked for.
-  lastNowMs = audioEngine.nowMs + visualLeadMs;
+  lastNowMs = audioEngine.nowMs + VISUAL_LEAD_MS;
   running = true;
   stopTitleBackdrop();
 
@@ -1038,15 +998,6 @@ function startTimeline(timelineData, extra = {}) {
   hudEl.classList.remove('hidden');
   wakeHud();
   rafHandle = requestAnimationFrame(frame);
-
-  // TEMPORARY: LeadABTester auto-start, once, on the next song. The
-  // launcher button (tap; K on a keyboard) re-runs it any time after --
-  // see the LEAD_AB_TEST_* block below for the rest.
-  leadTestLauncherBtnEl?.classList.remove('hidden');
-  if (LEAD_AB_TEST_ARMED) {
-    LEAD_AB_TEST_ARMED = false;
-    setTimeout(() => runLeadABTest(), LEAD_AB_TEST_AUTOSTART_DELAY_MS);
-  }
 
   // Exposed for the debug overlay and for smoke-testing internals.
   // `rafHandle` is a live getter (not a snapshot) so smoke tests can
@@ -1706,14 +1657,7 @@ function frame(tRaf) {
   // one compositor-plus-scanout hop after it is built, so `simTime` and
   // `lastNowMs` both live in led time. A constant lead shifts the sequence
   // without changing any delta, so the fixed-step accumulator is unaffected.
-  const renderNowMs = nowMs + visualLeadMs;
-
-  // A/B toast (L key): self-dismisses once its window passes, independent
-  // of whatever else is drawing this frame.
-  if (leadToastUntilMs > 0 && tRaf >= leadToastUntilMs) {
-    leadToastUntilMs = 0;
-    leadToastEl?.classList.add('hidden');
-  }
+  const renderNowMs = nowMs + VISUAL_LEAD_MS;
 
   try {
     const advanced = advanceFixedStepClock({
@@ -2002,196 +1946,6 @@ function beatTap(role = null) {
   if (role) grooveSaveDue = true;
 }
 
-const LEAD_TOAST_MS = 1800;
-
-/** Flip the render-clock lead between its two A/B candidates, live, with no
- *  restart -- see the visualLeadMs block near the top of this file for why.
- *  Updates both this frame's driving variable and the running Simulation's
- *  own copy (miss expiry reads sim.visualLeadMs directly each step), so the
- *  switch is audible/visible on the very next frame. */
-function toggleVisualLead() {
-  visualLeadSlot = visualLeadSlot === 'A' ? 'B' : 'A';
-  visualLeadMs = visualLeadCandidates[visualLeadSlot];
-  if (sim) sim.visualLeadMs = visualLeadMs;
-  console.info(`[visualLead] now ${visualLeadMs}ms (slot ${visualLeadSlot}) -- other candidate: ${visualLeadCandidates[visualLeadSlot === 'A' ? 'B' : 'A']}ms`);
-  if (leadToastEl) {
-    leadToastEl.textContent = `lead: ${visualLeadMs}ms  (${visualLeadSlot} · other: ${visualLeadCandidates[visualLeadSlot === 'A' ? 'B' : 'A']}ms)  [L to flip]`;
-    leadToastEl.classList.remove('hidden');
-  }
-  leadToastUntilMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + LEAD_TOAST_MS;
-}
-
-// ============================================================================
-// TEMPORARY: LeadABTester. A guided, in-game ternary-search run that finds
-// VISUAL_LEAD_MS by direct paired comparison instead of cross-session
-// single-value bisection -- the latter produced a non-monotonic trend (see
-// the visualLeadCandidates comment above), which reads exactly like session-
-// to-session noise swamping a small true difference. Comparing two
-// candidates back-to-back on the SAME playback instant removes that noise.
-//
-// Runs automatically LEAD_AB_TEST_AUTOSTART_DELAY_MS after the next song
-// starts (LEAD_AB_TEST_ARMED disarms itself after one run); press K to run
-// it again on demand. Each trial: SEGMENT_MS of candidate A, a flash+duck
-// transition, SEGMENT_MS of candidate B, then the song pauses for a forced
-// choice (A / B / can't tell). A ternary search over [lo, hi] narrows by a
-// third of the remaining range per decisive trial; a tie shrinks the range
-// slightly without asserting a direction, so indecision can't stall it.
-// Converges to LEAD_AB_TEST_MIN_RANGE_MS or LEAD_AB_TEST_MAX_TRIALS,
-// whichever comes first, then reports the midpoint and leaves it live.
-//
-// Remove this whole block, the LEAD_AB_TEST_* constants, the K-key binding,
-// the Escape-key cancel branch, the auto-start call in startTimeline, and
-// the DOM/CSS blocks tagged the same way, once the right value is found.
-let LEAD_AB_TEST_ARMED = true;
-const LEAD_AB_TEST_AUTOSTART_DELAY_MS = 2500;
-const LEAD_AB_TEST_SEGMENT_MS = 6000;
-const LEAD_AB_TEST_TRANSITION_MS = 700;
-const LEAD_AB_TEST_MIN_RANGE_MS = 4;
-const LEAD_AB_TEST_MAX_TRIALS = 8;
-const LEAD_AB_TEST_RANGE = [20, 60]; // ms; brackets every self-consistent reading so far
-
-let leadTestRunning = false;
-let leadTestAbort = false;
-let leadTestChoiceResolve = null;
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** Resolves with 'A' | 'B' | 'tie' on the next choice-button click or 1/2/3
- *  keypress (wired once in the keydown handler below); null if aborted. */
-function waitForLeadTestChoice() {
-  leadTestChoicesEl?.classList.remove('hidden');
-  return new Promise((resolve) => { leadTestChoiceResolve = resolve; });
-}
-
-function resolveLeadTestChoice(choice) {
-  if (!leadTestChoiceResolve) return;
-  leadTestChoicesEl?.classList.add('hidden');
-  const resolve = leadTestChoiceResolve;
-  leadTestChoiceResolve = null;
-  resolve(choice);
-}
-
-function setLeadTestStatus(text) {
-  if (leadTestStatusEl) leadTestStatusEl.textContent = text;
-}
-
-async function flashLeadTestTransition() {
-  leadTestFlashEl?.classList.add('flash-active');
-  // The audible half of the same marker -- a brief mix duck, same mechanism
-  // CutDirector's drop/apotheosis cues already use.
-  audioEngine?.duck?.(0.4, 0.08, 0.25);
-  await sleep(180);
-  leadTestFlashEl?.classList.remove('flash-active');
-  await sleep(Math.max(0, LEAD_AB_TEST_TRANSITION_MS - 180));
-}
-
-function setLeadTestLead(ms) {
-  visualLeadMs = ms;
-  if (sim) sim.visualLeadMs = ms;
-}
-
-/** Pause the song exactly like the P/Escape pause path -- see togglePause. */
-function leadTestPause() {
-  if (!running || !sim || !audioEngine || paused) return;
-  paused = true;
-  audioEngine.ctx.suspend();
-  updatePauseButtonUI();
-}
-
-function leadTestResume() {
-  if (!running || !sim || !audioEngine || !paused) return;
-  paused = false;
-  audioEngine.ctx.resume();
-  lastRafMs = null;
-  updatePauseButtonUI();
-}
-
-async function runLeadABTest() {
-  if (leadTestRunning || !running || !sim || !audioEngine) return;
-  leadTestRunning = true;
-  leadTestAbort = false;
-  leadTestOverlayEl?.classList.remove('hidden');
-  leadTestCancelBtnEl?.classList.remove('hidden');
-  leadTestRestartBtnEl?.classList.add('hidden');
-  const trials = [];
-  let [lo, hi] = LEAD_AB_TEST_RANGE;
-
-  try {
-    for (let trial = 1; trial <= LEAD_AB_TEST_MAX_TRIALS; trial++) {
-      if (hi - lo <= LEAD_AB_TEST_MIN_RANGE_MS) break;
-      const m1 = lo + (hi - lo) / 3;
-      const m2 = hi - (hi - lo) / 3;
-
-      setLeadTestStatus(`Trial ${trial} -- segment A\n(range ${Math.round(lo)}-${Math.round(hi)}ms)`);
-      setLeadTestLead(m1);
-      await sleep(LEAD_AB_TEST_SEGMENT_MS);
-      if (leadTestAbort) break;
-
-      await flashLeadTestTransition();
-      if (leadTestAbort) break;
-
-      setLeadTestStatus(`Trial ${trial} -- segment B\n(range ${Math.round(lo)}-${Math.round(hi)}ms)`);
-      setLeadTestLead(m2);
-      await sleep(LEAD_AB_TEST_SEGMENT_MS);
-      if (leadTestAbort) break;
-
-      leadTestPause();
-      setLeadTestStatus('Which felt more in sync?');
-      const choice = await waitForLeadTestChoice();
-      leadTestResume();
-      if (leadTestAbort || choice == null) break;
-
-      trials.push({
-        trial, aMs: Math.round(m1), bMs: Math.round(m2), choice,
-      });
-      console.info(`[leadABTest] trial ${trial}: A=${m1.toFixed(1)}ms B=${m2.toFixed(1)}ms -> ${choice}`);
-
-      if (choice === 'A') hi = m2;
-      else if (choice === 'B') lo = m1;
-      else { // 'tie': no direction to assert -- shrink symmetrically so indecision can't stall convergence
-        const shrink = (hi - lo) * 0.15;
-        lo += shrink / 2;
-        hi -= shrink / 2;
-      }
-    }
-  } finally {
-    leadTestChoicesEl?.classList.add('hidden');
-    leadTestCancelBtnEl?.classList.add('hidden');
-    if (paused) leadTestResume();
-  }
-
-  if (leadTestAbort) {
-    setLeadTestStatus('Test cancelled.');
-    console.info('[leadABTest] cancelled', trials);
-    leadTestRestartBtnEl?.classList.remove('hidden');
-    await sleep(1200);
-    leadTestOverlayEl?.classList.add('hidden');
-    leadTestRunning = false;
-    return;
-  }
-
-  const finalMs = Math.round((lo + hi) / 2);
-  setLeadTestLead(finalMs);
-  console.info(`[leadABTest] DONE -- estimated ideal VISUAL_LEAD_MS = ${finalMs}ms`, trials);
-  setLeadTestStatus(`Done.\nEstimated ideal lead: ${finalMs}ms\n(now live -- report this number back)`);
-  leadTestRestartBtnEl?.classList.remove('hidden');
-  leadTestRunning = false;
-  // Leave the readout up until dismissed (Run test again / Cancel / Escape).
-}
-
-function cancelLeadABTest() {
-  if (!leadTestRunning) return;
-  leadTestAbort = true;
-  resolveLeadTestChoice(null);
-}
-function hideLeadABTestOverlay() {
-  leadTestOverlayEl?.classList.add('hidden');
-  leadTestRestartBtnEl?.classList.add('hidden');
-}
-// ============================================================================
-
 /** Open the eight-measure tap-recalibration count. Never pauses the song --
  *  taps keep flowing through the canvas handler into BeatAnchor as usual.
  *  Opt-in only (the 'C' key) -- there is no automatic prompt. */
@@ -2232,15 +1986,6 @@ function hudIdleTick(nowRafMs) {
   }
 }
 hudRightEl?.addEventListener('pointerdown', wakeHud);
-
-// TEMPORARY: LeadABTester choice buttons -- remove with the rest of the
-// LEAD_AB_TEST-tagged block above.
-leadTestChoiceAEl?.addEventListener('click', () => resolveLeadTestChoice('A'));
-leadTestChoiceBEl?.addEventListener('click', () => resolveLeadTestChoice('B'));
-leadTestChoiceTieEl?.addEventListener('click', () => resolveLeadTestChoice('tie'));
-leadTestCancelBtnEl?.addEventListener('click', () => cancelLeadABTest());
-leadTestRestartBtnEl?.addEventListener('click', () => runLeadABTest());
-leadTestLauncherBtnEl?.addEventListener('click', () => runLeadABTest());
 
 // Mountain seekbar: click to seek; click a section to open its debug detail.
 // Anywhere else on the canvas -- not a button, not the seekbar -- resyncs
@@ -2288,17 +2033,7 @@ const INERT_KEYS = new Set([
 
 window.addEventListener('keydown', (e) => {
   if (running) wakeHud();
-  // TEMPORARY: LeadABTester choice keys, active only while a choice prompt
-  // is up (leadTestChoiceResolve is set exactly then). Checked before
-  // Escape's own handling below so Escape can cancel a running test.
-  if (leadTestChoiceResolve) {
-    if (e.key === '1') { resolveLeadTestChoice('A'); return; }
-    if (e.key === '2') { resolveLeadTestChoice('B'); return; }
-    if (e.key === '3') { resolveLeadTestChoice('tie'); return; }
-  }
   if (e.key === 'Escape') {
-    if (leadTestRunning) { cancelLeadABTest(); return; }
-    if (leadTestOverlayEl && !leadTestOverlayEl.classList.contains('hidden')) { hideLeadABTestOverlay(); return; }
     if (fontModalEl && !fontModalEl.classList.contains('hidden')) closeFontModal();
     if (filmstripModalEl && !filmstripModalEl.classList.contains('hidden')) closeFilmstripModal();
     // Close section detail overlay on the seekbar.
@@ -2339,10 +2074,6 @@ window.addEventListener('keydown', (e) => {
     fpsHudEl?.classList.toggle('hidden', !fpsHudVisible);
     return;
   }
-  // Visible, self-explanatory, fully reversible -- ungated like P/F3/T.
-  if (e.key === 'l' || e.key === 'L') { toggleVisualLead(); return; }
-  // TEMPORARY: LeadABTester manual (re)start.
-  if (e.key === 'k' || e.key === 'K') { runLeadABTest(); return; }
   // `T` toggles the always-present, player-facing track badge (index.html's
   // #trackBadge) -- visible, self-explanatory, fully reversible, so it
   // stays ungated like P/F3. `` ` `` (the full telemetry overlay) and V
