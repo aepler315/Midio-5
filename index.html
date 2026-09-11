@@ -220,25 +220,6 @@
 
     <div id="debugOverlay" class="hidden"></div>
     <div id="fpsHud" class="hidden"></div>
-    <div id="leadToast" class="hidden"></div>
-
-    <!-- TEMPORARY: VISUAL_LEAD_MS A/B tester (LeadABTester.js). Remove this
-         block, its CSS, and the LeadABTester import/wiring in main.js once
-         the right lead value is found. -->
-    <div id="leadTestFlash"></div>
-    <button id="leadTestLauncherBtn" type="button" class="hidden">Sync test</button>
-    <div id="leadTestOverlay" class="hidden">
-      <div id="leadTestStatus"></div>
-      <div id="leadTestChoices" class="hidden">
-        <button id="leadTestChoiceA" type="button">A felt more in sync</button>
-        <button id="leadTestChoiceB" type="button">B felt more in sync</button>
-        <button id="leadTestChoiceTie" type="button">Can't tell</button>
-      </div>
-      <div id="leadTestControls">
-        <button id="leadTestCancelBtn" type="button" class="hidden">Cancel test</button>
-        <button id="leadTestRestartBtn" type="button" class="hidden">Run test again</button>
-      </div>
-    </div>
   </div>
 
   <script type="module" src="./src/main.js"></script>
