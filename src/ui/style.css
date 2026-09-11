@@ -949,6 +949,100 @@ html, body {
   white-space: pre;
 }
 
+/* VISUAL_LEAD_MS A/B toggle (L key): a brief, self-dismissing readout of
+   which candidate lead is now live -- separate element from #fpsHud so the
+   two don't fight over one textContent (fpsHud rewrites itself every frame
+   the FPS readout is on). */
+#leadToast {
+  position: absolute;
+  left: var(--space-2); bottom: var(--space-2);
+  z-index: 21;
+  background: rgba(5, 5, 10, 0.75);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  color: #f7e8c8;
+  pointer-events: none;
+  white-space: pre;
+}
+
+/* TEMPORARY: LeadABTester guided A/B run -- remove alongside the HTML block
+   and main.js wiring once the right VISUAL_LEAD_MS is found. */
+#leadTestFlash {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+#leadTestFlash.flash-active { opacity: 0.55; }
+
+/* Touch target floor (WCAG 2.5.5 / mobile HIG): no keyboard on a phone, so
+   every leadTest control has to be comfortably tappable on its own. */
+#leadTestOverlay {
+  position: fixed;
+  left: 50%;
+  top: 10%;
+  transform: translateX(-50%);
+  z-index: 60;
+  background: rgba(8, 8, 14, 0.92);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-mono);
+  color: #f2f2f2;
+  text-align: center;
+  width: min(90vw, 320px);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+#leadTestOverlay #leadTestStatus {
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+#leadTestChoices, #leadTestControls {
+  margin-top: var(--space-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+}
+#leadTestChoices button, #leadTestControls button, #leadTestLauncherBtn {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: var(--space-2) var(--space-3);
+  min-height: 44px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f2f2f2;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+#leadTestChoices button:hover, #leadTestControls button:hover, #leadTestLauncherBtn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+#leadTestControls button {
+  font-size: 12px;
+  min-height: 44px;
+  opacity: 0.85;
+}
+
+/* Persistent replay launcher (no autostart-missed / no-keyboard recovery
+   path) -- bottom-right, out of the way of the seekbar and HUD. */
+#leadTestLauncherBtn {
+  position: fixed;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  z-index: 22;
+}
+
 #debugOverlay {
   position: absolute;
   top: 0; right: 0;
