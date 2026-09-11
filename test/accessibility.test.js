@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getReducedFlash, setReducedFlash, capFlashAlpha, FLASH_CAP, flashCompositeOp,
+  getBtLatencyTrimMs, setBtLatencyTrimMs, BT_LATENCY_TRIM_MS,
 } from '../src/ui/Accessibility.js';
 
 test('getReducedFlash defaults to false when no persisted value exists (or storage is unavailable)', () => {
@@ -90,4 +91,55 @@ test('with no persisted choice, getReducedFlash follows prefers-reduced-motion',
 test('an explicit persisted choice always overrides prefers-reduced-motion', () => {
   withFakeStorageAndMedia('0', true, () => assert.equal(getReducedFlash(), false));
   withFakeStorageAndMedia('1', false, () => assert.equal(getReducedFlash(), true));
+});
+
+// --- Bluetooth latency trim -------------------------------------------------
+
+function withFakeStorage(initial, fn) {
+  const store = new Map(Object.entries(initial));
+  const prevLocalStorage = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, v),
+  };
+  try {
+    fn(store);
+  } finally {
+    globalThis.localStorage = prevLocalStorage;
+  }
+}
+
+test('getBtLatencyTrimMs defaults to 0 (off) with no persisted value, or no storage at all', () => {
+  assert.equal(getBtLatencyTrimMs(), 0); // Node has no localStorage global
+  withFakeStorage({}, () => assert.equal(getBtLatencyTrimMs(), 0));
+});
+
+test('setBtLatencyTrimMs does not throw with no persistent storage, and clamps its return value', () => {
+  assert.doesNotThrow(() => setBtLatencyTrimMs(75));
+  assert.equal(setBtLatencyTrimMs(-10), 0, 'negative input clamps to 0, not a negative visual lead');
+  assert.equal(setBtLatencyTrimMs(9999), 500, 'absurd input clamps to the sanity rail');
+  assert.equal(setBtLatencyTrimMs(12.6), 13, 'rounds to a whole ms');
+});
+
+test('a set value round-trips through getBtLatencyTrimMs', () => {
+  withFakeStorage({}, () => {
+    setBtLatencyTrimMs(75);
+    assert.equal(getBtLatencyTrimMs(), 75);
+  });
+});
+
+test('a stored value is clamped on read too, not just on write (a hand-edited or stale value)', () => {
+  withFakeStorage({ 'smw:btLatencyTrimMs': '-5' }, () => assert.equal(getBtLatencyTrimMs(), 0));
+  withFakeStorage({ 'smw:btLatencyTrimMs': '9999' }, () => assert.equal(getBtLatencyTrimMs(), 500));
+  withFakeStorage({ 'smw:btLatencyTrimMs': 'not-a-number' }, () => assert.equal(getBtLatencyTrimMs(), 0));
+});
+
+test('migrates the old on/off flag: an existing "on" player gets BT_LATENCY_TRIM_MS once, not silently 0', () => {
+  withFakeStorage({ 'smw:btLatencyTrim': '1' }, () => assert.equal(getBtLatencyTrimMs(), BT_LATENCY_TRIM_MS));
+  withFakeStorage({ 'smw:btLatencyTrim': '0' }, () => assert.equal(getBtLatencyTrimMs(), 0));
+});
+
+test('the new numeric key always wins over the legacy flag once it exists', () => {
+  withFakeStorage({ 'smw:btLatencyTrim': '1', 'smw:btLatencyTrimMs': '0' }, () => assert.equal(getBtLatencyTrimMs(), 0));
+  withFakeStorage({ 'smw:btLatencyTrim': '0', 'smw:btLatencyTrimMs': '75' }, () => assert.equal(getBtLatencyTrimMs(), 75));
 });

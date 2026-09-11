@@ -20,7 +20,7 @@ import { ROLE_LOW, ROLE_HIGH, GrooveFingerprint } from './sim/GrooveFingerprint.
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
 import {
   getReducedFlash, setReducedFlash, getLyricsDisabled, setLyricsDisabled,
-  getBtLatencyTrim, setBtLatencyTrim, BT_LATENCY_TRIM_MS,
+  getBtLatencyTrimMs, setBtLatencyTrimMs, BT_LATENCY_TRIM_MS,
   getStoredGroove, setStoredGroove,
 } from './ui/Accessibility.js';
 import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
@@ -121,6 +121,10 @@ const pauseBtnEl = document.getElementById('pauseBtn');
 const stopBtnEl = document.getElementById('stopBtn');
 const fullscreenBtnEl = document.getElementById('fullscreenBtn');
 const btLatencyBtnEl = document.getElementById('btLatencyBtn');
+const btLatencyPopoverEl = document.getElementById('btLatencyPopover');
+const btLatencyInputEl = document.getElementById('btLatencyInput');
+const btLatencyApplyBtnEl = document.getElementById('btLatencyApplyBtn');
+const btLatencyOffBtnEl = document.getElementById('btLatencyOffBtn');
 const trackBadgeEl = document.getElementById('trackBadge');
 const trackBadgeBtnEl = document.getElementById('trackBadgeBtn');
 const trackListEl = document.getElementById('trackList');
@@ -194,15 +198,16 @@ let rafHandle = null; // tracks the pending frame() call so a mid-song file
 let fontModalView = 'list'; // 'list' (visible fonts, click-to-hide) | 'hidden' (hidden fonts, click-to-unhide)
 let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted accessibility toggle
 let lyricsDisabled = getLyricsDisabled(); // "No lyrics": persisted opt-out from the lyric fetch/prompt
-let btLatencyTrim = getBtLatencyTrim(); // manual Bluetooth output-latency correction toggle
+let btLatencyTrimMs = getBtLatencyTrimMs(); // manual Bluetooth output-latency correction, player-entered ms; 0 = off
 
 /** Effective output latency for beat-anchored visuals: AudioEngine's
- *  auto-detected figure, plus the manual Bluetooth trim when the player has
- *  turned it on. The one place this composition happens -- every consumer
- *  (Simulation's per-step envelopes, tap calibration) reads through here
- *  rather than each re-adding the trim its own way. */
+ *  auto-detected figure, plus the manual Bluetooth trim the player has
+ *  typed in (0 if they haven't set one). The one place this composition
+ *  happens -- every consumer (Simulation's per-step envelopes, tap
+ *  calibration) reads through here rather than each re-adding the trim its
+ *  own way. */
 function effectiveOutputLatencyMs() {
-  return audioEngine.outputLatencyMs + (btLatencyTrim ? BT_LATENCY_TRIM_MS : 0);
+  return audioEngine.outputLatencyMs + btLatencyTrimMs;
 }
 // Dev surfaces (the `` ` ``/V/T debug overlay + its per-frame render cost,
 // and the developer-oriented half of the title screen's key legend) are
@@ -2113,22 +2118,73 @@ function toggleReducedFlash() {
   sim?.setReducedFlash(reducedFlash);
 }
 
-/** Live-toggle + persist the manual Bluetooth latency trim. Takes effect on
- *  the very next frame -- effectiveOutputLatencyMs() reads the live
- *  `btLatencyTrim` flag, so nothing needs to be re-armed on the running sim
- *  the way reducedFlash cascades into one; the choreography clock just
- *  starts reading a different number. */
+/** Reflects the current trim in the chip. Takes effect on the very next
+ *  frame either way -- effectiveOutputLatencyMs() reads the live
+ *  `btLatencyTrimMs` variable, so nothing needs to be re-armed on the
+ *  running sim the way reducedFlash cascades into one; the choreography
+ *  clock just starts reading a different number. */
 function updateBtLatencyBtnUI() {
   if (!btLatencyBtnEl) return;
-  btLatencyBtnEl.setAttribute('aria-pressed', btLatencyTrim ? 'true' : 'false');
-  btLatencyBtnEl.textContent = btLatencyTrim ? `BT +${BT_LATENCY_TRIM_MS}ms: on` : `BT +${BT_LATENCY_TRIM_MS}ms`;
+  btLatencyBtnEl.setAttribute('aria-pressed', btLatencyTrimMs > 0 ? 'true' : 'false');
+  btLatencyBtnEl.textContent = btLatencyTrimMs > 0 ? `BT +${btLatencyTrimMs}ms` : 'BT: off';
 }
-function toggleBtLatencyTrim() {
-  btLatencyTrim = !btLatencyTrim;
-  setBtLatencyTrim(btLatencyTrim);
+
+function closeBtLatencyPopover() {
+  btLatencyPopoverEl?.classList.add('hidden');
+  btLatencyBtnEl?.setAttribute('aria-expanded', 'false');
+  document.removeEventListener('pointerdown', onBtLatencyOutsideClick, true);
+}
+/** Closes on a tap/click outside the control -- the button itself is
+ *  excluded so its own click handler (which toggles) fires normally
+ *  instead of racing a close-then-reopen. */
+function onBtLatencyOutsideClick(e) {
+  if (btLatencyPopoverEl?.contains(e.target) || btLatencyBtnEl?.contains(e.target)) return;
+  closeBtLatencyPopover();
+}
+function openBtLatencyPopover() {
+  if (!btLatencyPopoverEl || !btLatencyInputEl) return;
+  btLatencyInputEl.value = String(btLatencyTrimMs > 0 ? btLatencyTrimMs : BT_LATENCY_TRIM_MS);
+  btLatencyPopoverEl.classList.remove('hidden');
+  btLatencyBtnEl?.setAttribute('aria-expanded', 'true');
+  btLatencyInputEl.focus();
+  btLatencyInputEl.select();
+  // Capture phase: outside-click has to see the event before anything
+  // inside the popover (like Apply's own click) could stop it, or a tap on
+  // Set/Off would close-then-reopen instead of applying.
+  document.addEventListener('pointerdown', onBtLatencyOutsideClick, true);
+}
+
+/** Reads, clamps (setBtLatencyTrimMs does the clamping and persists), and
+ *  applies the typed value -- takes effect next frame, same as the toggle
+ *  this replaced. */
+function applyBtLatencyTrim() {
+  if (!btLatencyInputEl) return;
+  btLatencyTrimMs = setBtLatencyTrimMs(btLatencyInputEl.value);
   updateBtLatencyBtnUI();
+  closeBtLatencyPopover();
 }
-btLatencyBtnEl?.addEventListener('click', () => toggleBtLatencyTrim());
+function turnOffBtLatencyTrim() {
+  btLatencyTrimMs = setBtLatencyTrimMs(0);
+  updateBtLatencyBtnUI();
+  closeBtLatencyPopover();
+}
+
+btLatencyBtnEl?.addEventListener('click', () => {
+  if (btLatencyPopoverEl?.classList.contains('hidden')) openBtLatencyPopover();
+  else closeBtLatencyPopover();
+});
+btLatencyApplyBtnEl?.addEventListener('click', () => applyBtLatencyTrim());
+btLatencyOffBtnEl?.addEventListener('click', () => turnOffBtLatencyTrim());
+btLatencyInputEl?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); applyBtLatencyTrim(); }
+  else if (e.key === 'Escape') { e.preventDefault(); closeBtLatencyPopover(); }
+  // Stop the event reaching window's own keydown handler entirely: several
+  // of its branches (F/L/etc. single-letter shortcuts) fire before that
+  // handler's own typing guard runs, so without this, typing a digit like
+  // "5" here would be harmless, but a stray letter key would trigger
+  // whatever shortcut it's bound to while this popover is open.
+  e.stopPropagation();
+});
 updateBtLatencyBtnUI();
 
 function onSongComplete() {

@@ -85,22 +85,39 @@ export function clearStoredGroove() {
 // speaker-sized guess), so every beat-anchored visual leads the sound the
 // player actually hears by however much the room's real BT round-trip is
 // (commonly 100-200ms). Auto-detection cannot fix what the platform won't
-// report; this is the manual trim for exactly that gap. Off by default --
+// report; this is the manual trim for exactly that gap. 0 (off) by default --
 // wired audio, where the automatic figure is usually close, should not pay
 // an unrequested extra delay.
-const BT_LATENCY_KEY = 'smw:btLatencyTrim';
-/** The correction itself. A single flat value, not a slider: this is a
- *  "my headphones are Bluetooth" toggle, not a calibration instrument --
- *  someone who needs a precise number already has the guided tap sync
- *  (LatencyCalibrator.js) for that. 30ms is a deliberately conservative
- *  partial correction -- it will not fully cancel a 150ms BT stack, but it
- *  moves every song in the right direction without a setup step. */
+const BT_LATENCY_KEY = 'smw:btLatencyTrimMs';
+// Pre-v2 storage: a flat on/off flag, always +30ms when on. Migrated below
+// so an existing "on" player keeps getting a correction after the update
+// instead of silently landing back at 0.
+const BT_LATENCY_KEY_LEGACY = 'smw:btLatencyTrim';
+/** The pre-editable default and the popover's prefill: a deliberately
+ *  conservative partial correction -- it will not fully cancel a 150ms BT
+ *  stack, but it moves things in the right direction without a setup step.
+ *  Someone who needs a precise number now types their own via the BT chip;
+ *  someone who needs a *measured* number has the guided tap sync
+ *  (LatencyCalibrator.js) for that instead. */
 export const BT_LATENCY_TRIM_MS = 30;
+const MAX_BT_LATENCY_TRIM_MS = 500; // sanity rail -- matches the input's own max
 
-export function getBtLatencyTrim() {
-  try { return localStorage.getItem(BT_LATENCY_KEY) === '1'; } catch { return false; }
+/** Current trim in ms, clamped to [0, MAX_BT_LATENCY_TRIM_MS]. 0 = off. */
+export function getBtLatencyTrimMs() {
+  try {
+    const stored = localStorage.getItem(BT_LATENCY_KEY);
+    if (stored != null) {
+      const ms = Number(stored);
+      return Number.isFinite(ms) ? Math.max(0, Math.min(MAX_BT_LATENCY_TRIM_MS, ms)) : 0;
+    }
+    // Migrate the old boolean flag once, then let the new key take over.
+    if (localStorage.getItem(BT_LATENCY_KEY_LEGACY) === '1') return BT_LATENCY_TRIM_MS;
+    return 0;
+  } catch { return 0; }
 }
 
-export function setBtLatencyTrim(v) {
-  try { localStorage.setItem(BT_LATENCY_KEY, v ? '1' : '0'); } catch { /* no persistent storage available */ }
+export function setBtLatencyTrimMs(ms) {
+  const clamped = Math.max(0, Math.min(MAX_BT_LATENCY_TRIM_MS, Math.round(Number(ms) || 0)));
+  try { localStorage.setItem(BT_LATENCY_KEY, String(clamped)); } catch { /* no persistent storage available */ }
+  return clamped;
 }
