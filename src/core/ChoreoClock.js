@@ -52,14 +52,14 @@ export const MAX_LATENCY_MS = 350;
  *  is a fixed constant rather than a measurement -- roughly the compositor
  *  path's typical cost on ordinary hardware. Raise or lower it HERE; every
  *  consumer reads through Simulation's visualLeadMs.
- *  (Playtesting bisection: 50ms read barely early, 35ms read late -- both
- *  data points, not just the second one -- so this sits between them,
- *  weighted toward 50 since that miss was the smaller of the two.)
+ *  (Playtesting: 50ms read barely early, 35ms and 45ms both read late --
+ *  set explicitly to 25ms per direct request rather than continued
+ *  bisection.)
  *
  *  Scoring deliberately does NOT move with it: judging compares a tap's own
  *  timestamp against the chart, both on the true audio clock, so leading the
  *  render cannot make a hit score differently (see Simulation.step). */
-export const VISUAL_LEAD_MS = 45;
+export const VISUAL_LEAD_MS = 25;
 
 /** How early ahead-subscriptions deliver character-choreography events.
  *  Must cover the longest anticipation rise plus a couple of sim steps of
