@@ -507,6 +507,11 @@ export class BiomeManager {
     this.currentKind = null;
     this.currentSectionText = null;
     this.lyricIntensityEased = 0.4;
+    // Confidence in `currentKind` being the right FUNCTION label, not just
+    // that a boundary sits here -- eased the same way, and read by callers
+    // (the forced bridge hue swing below, Simulation's epicBiasForKind) so a
+    // weakly-inferred kind cannot trigger a strong dramatic effect.
+    this.kindConfidenceEased = 0;
     this._kindBudgetMulEased = 1;
     this.budget = 1;
     this.openingGain = 1; // OpeningDirector, set per-step by Simulation
@@ -1786,10 +1791,17 @@ export class BiomeManager {
     let targetHueBias = activeSection?.hueBias || 0;
     // The lyric-identified bridge is the one place asked to look
     // unmistakably different from everything around it -- the "epic
-    // bridge" payoff -- so its hue swing is forced large regardless of
-    // how the seeded per-label bias happened to land.
+    // bridge" payoff. But "bridge" from position alone is only a weak
+    // hypothesis, and forcing the swing unconditionally is how a quiet or
+    // merely-uncertain bridge used to get the same escalation as a
+    // confidently, explicitly labeled one. Interpolate by kindConfidence
+    // instead: a confident bridge gets the full forced swing, an
+    // unconfident one keeps its own seeded bias, so a quiet bridge can
+    // still be represented as quiet.
     if (activeSection?.kind === 'bridge') {
-      targetHueBias = Math.sign(targetHueBias || 1) * Math.max(Math.abs(targetHueBias), FORM_HUE_BIAS_MAX * 0.9) * 1.5;
+      const forcedHueBias = Math.sign(targetHueBias || 1) * Math.max(Math.abs(targetHueBias), FORM_HUE_BIAS_MAX * 0.9) * 1.5;
+      const kindConf = clamp01(activeSection.kindConfidence ?? 0);
+      targetHueBias += (forcedHueBias - targetHueBias) * kindConf;
     }
     // The current "parallel universe"'s own small hue drift rides the same
     // easing as the structural hue bias above -- one smooth glide, not two
@@ -1804,6 +1816,8 @@ export class BiomeManager {
     this.currentSectionText = activeSection?.lyricText || null;
     const targetLyricIntensity = activeSection?.lyricIntensity ?? 0.4;
     this.lyricIntensityEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetLyricIntensity - this.lyricIntensityEased);
+    const targetKindConfidence = activeSection?.kindConfidence ?? 0;
+    this.kindConfidenceEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetKindConfidence - this.kindConfidenceEased);
     const targetKindBudgetMul = KIND_BUDGET_MUL[this.currentKind] ?? 1;
     this._kindBudgetMulEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetKindBudgetMul - this._kindBudgetMulEased);
 

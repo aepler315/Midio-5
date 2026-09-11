@@ -714,7 +714,12 @@ export class Simulation {
     // no-op, whenever there's no lyric data (biomes.currentKind stays
     // null). One-frame lag against biomes.update() (which runs later this
     // same step) is inaudible against a signal already eased over ~1.5s.
-    this.vibe.epicBias = epicBiasForKind(this.biomes.currentKind, this.biomes.lyricIntensityEased);
+    // kindConfidenceEased gates the kind-based bonus so an uncertain label
+    // (position-only bridge, low-confidence lyric alignment) cannot force
+    // the same escalation as a confidently identified one.
+    this.vibe.epicBias = epicBiasForKind(
+      this.biomes.currentKind, this.biomes.lyricIntensityEased, this.biomes.kindConfidenceEased,
+    );
     this.vibe.update(nowMs, dtSec, this.energyCurves);
     this.keyDirector.update(nowMs, dtSec, {
       tonic: this.vibe.tonic, tonicConfidence: this.vibe.tonicConfidence, conductor: this.conductor,

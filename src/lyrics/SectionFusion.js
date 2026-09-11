@@ -40,12 +40,23 @@ function sectionAt(sections, tMs) {
   return best;
 }
 
-const DEFAULT_LYRIC = { kind: null, lyricIntensity: 0.4, lyricValence: 0, lyricConfidence: 0 };
+const DEFAULT_LYRIC = {
+  kind: null, kindConfidence: 0, lyricIntensity: 0.4, lyricValence: 0, lyricConfidence: 0,
+};
+
+// A lyric-timed boundary this unconfident is a hypothesis, not evidence a
+// cut belongs there -- letting it insert an "authoritative" section anyway
+// is exactly how zero-confidence lyrics used to fabricate structure.
+const LYRIC_BOUNDARY_MIN_CONFIDENCE = 0.5;
 
 function withLyric(base, lyricSection) {
   return {
     ...base,
     kind: lyricSection ? lyricSection.kind : DEFAULT_LYRIC.kind,
+    // Confidence in the FUNCTION label, separate from `lyricConfidence`
+    // (timing/alignment). Callers that turn `kind` into a dramatic effect
+    // must scale it by this, not apply it unconditionally.
+    kindConfidence: lyricSection ? (lyricSection.kindConfidence ?? DEFAULT_LYRIC.kindConfidence) : DEFAULT_LYRIC.kindConfidence,
     lyricIntensity: lyricSection ? lyricSection.intensity : DEFAULT_LYRIC.lyricIntensity,
     lyricValence: lyricSection ? lyricSection.valence : DEFAULT_LYRIC.lyricValence,
     lyricConfidence: lyricSection ? lyricSection.confidence : DEFAULT_LYRIC.lyricConfidence,
@@ -79,6 +90,7 @@ export function fuseSections(noveltySections, lyricSections, barGrid, durationMs
   for (const s of noveltySections) boundarySet.set(s.startMs, true);
   for (const ls of lyricSections) {
     if (ls.startMs <= 0) continue; // the song start is always a boundary already
+    if ((ls.confidence ?? 0) < LYRIC_BOUNDARY_MIN_CONFIDENCE) continue; // gate alignment: not enough evidence to insert a new cut
     const snapped = nearestBarMs(barGrid, ls.startMs);
     const alreadyClose = [...boundarySet.keys()].some((b) => Math.abs(b - snapped) <= barW);
     if (!alreadyClose) boundarySet.set(snapped, true);
@@ -105,10 +117,18 @@ export function fuseSections(noveltySections, lyricSections, barGrid, durationMs
 }
 
 /** Additive intensity bias (-1..1-ish, but callers should clamp/scale) for
- *  VibeDirector.epicBias, keyed by structural kind -- the "epic bridge"
- *  payoff: a bridge always gets a strong lift regardless of its own lyric
- *  vocabulary, a chorus gets a moderate one, instrumental/outro settle. */
-export function epicBiasForKind(kind, lyricIntensity) {
+ *  VibeDirector.epicBias, keyed by structural kind -- a bridge gets the
+ *  strongest lift, a chorus a moderate one, instrumental/outro settle.
+ *
+ *  `confidence` (default 1, so existing callers that don't pass it keep
+ *  today's behavior) scales the kind-based bonus itself: a kind label that
+ *  is only a weak hypothesis -- a bridge called from position alone, or a
+ *  lyric boundary too uncertain to trust -- must not escalate as hard as
+ *  one backed by an explicit tag or strong alignment. At confidence 0 every
+ *  kind reads exactly like an unbiased verse; a quiet, low-confidence
+ *  "bridge" is represented as itself rather than forced epic. */
+export function epicBiasForKind(kind, lyricIntensity, confidence = 1) {
   const base = { chorus: 0.25, bridge: 0.45, instrumental: 0.15, intro: -0.1, outro: -0.15, verse: 0 }[kind] ?? 0;
-  return clamp01(0.5 + base + 0.3 * (lyricIntensity - 0.4)) * 2 - 1;
+  const gated = base * clamp01(confidence);
+  return clamp01(0.5 + gated + 0.3 * (lyricIntensity - 0.4)) * 2 - 1;
 }

@@ -117,6 +117,36 @@ test('toBlocks (synced): a block longer than the duration cap splits even with n
   }
 });
 
+test('toBlocks (synced): equally-spaced lines split into balanced halves, not six single-line blocks plus one oversized one', () => {
+  // The audit's own reproduction: 20 lines at an exact 3s pace tie on every
+  // internal gap. Always taking the first tied gap used to strip lines off
+  // the front one at a time (six 1-line blocks, then one 14-line, 42s
+  // block). Picking the tie closest to the middle instead bisects cleanly.
+  const lines = [];
+  for (let i = 0; i < 20; i++) lines.push({ tMs: i * 3000, text: `line${i}` });
+  const blocks = toBlocks(lines, { synced: true });
+  assert.equal(blocks.length, 2, `expected a clean balanced bisection, got ${blocks.length} block(s)`);
+  for (const b of blocks) {
+    assert.equal(b.lines.length, 10, 'each half should carry an equal share of the lines');
+    assert.ok(b.endMs - b.startMs <= 40000, `block spans ${b.endMs - b.startMs}ms, expected <=40000ms`);
+  }
+});
+
+test('toBlocks (synced): the duration cap counts the final line\'s own estimated duration, not just its onset', () => {
+  // Onset-to-onset span is 36000ms (under the 40000ms cap), but the lines
+  // are paced 4500ms apart, so the last line's own estimated duration pushes
+  // the true end to ~40500ms -- past the cap even though raw onset span
+  // alone says otherwise. The old cap check (onset span only) never split
+  // this; the true end must.
+  const lines = [];
+  for (let i = 0; i < 9; i++) lines.push({ tMs: i * 4500, text: `line${i}` });
+  const blocks = toBlocks(lines, { synced: true });
+  assert.ok(blocks.length >= 2, `expected the block to split on true estimated end, got ${blocks.length} block(s)`);
+  for (const b of blocks) {
+    assert.ok(b.endMs - b.startMs <= 40000, `block spans ${b.endMs - b.startMs}ms, expected <=40000ms`);
+  }
+});
+
 test('toBlocks: empty/degenerate input never throws', () => {
   assert.deepEqual(toBlocks([], { synced: true }), []);
   assert.deepEqual(toBlocks(null, { synced: false }), []);
@@ -163,6 +193,45 @@ test('labelBlocks (synced): inserts intro/instrumental/outro and honors duration
 
 test('labelBlocks: an empty block list returns an empty section list', () => {
   assert.deepEqual(labelBlocks([]), []);
+});
+
+test('labelBlocks: explicit section tags override recurrence/position -- a repeated block explicitly tagged VERSE stays a verse', () => {
+  const blocks = toBlocks(
+    [
+      '[Verse] walking down this empty road', 'nothing left to say', '',
+      '[Chorus] we rise together now', '',
+      '[Verse] another day another fight', '',
+      '[Chorus] we rise together now', '',
+      '[Verse] a familiar refrain repeats itself', '',
+      '[Verse] a familiar refrain repeats itself', '',
+    ],
+    { synced: false },
+  );
+  const sections = labelBlocks(blocks);
+  assert.equal(sections[0].kind, 'verse');
+  assert.equal(sections[1].kind, 'chorus');
+  assert.equal(sections[4].kind, 'verse', 'an explicitly tagged verse must stay a verse even though it repeats verbatim');
+  assert.equal(sections[5].kind, 'verse');
+  for (const s of sections) assert.ok(s.kindConfidence >= 0.9, 'an explicit tag is strong evidence of function');
+  assert.ok(!sections[0].text.includes('[Verse]'), 'the tag itself must not leak into the displayed text');
+  // The two identical "familiar refrain" blocks are still recognized as the
+  // same recurrence family, just not promoted to CHORUS by it.
+  assert.equal(sections[4].familyId, sections[5].familyId);
+});
+
+test('labelBlocks: kind hypotheses from recurrence/position carry lower kindConfidence than an explicit tag', () => {
+  const verse1 = ['Walking down this empty road', 'Nothing left to say'];
+  const chorus = ['We rise together now', 'We rise together now'];
+  const bridgeText = ['Everything falls apart tonight', 'A different kind of truth'];
+  const blocks = toBlocks(
+    [...verse1, '', ...chorus, '', ...verse1, '', ...chorus, '', ...bridgeText, '', ...chorus, ''],
+    { synced: false },
+  );
+  const sections = labelBlocks(blocks);
+  const chorusSection = sections.find((s) => s.kind === 'chorus');
+  const bridgeSection = sections.find((s) => s.kind === 'bridge');
+  assert.ok(chorusSection.kindConfidence < 0.9);
+  assert.ok(bridgeSection.kindConfidence < 0.9);
 });
 
 test('sectionEmotion: love/joy vocabulary reads positive-valence; blood/rage/scream vocabulary reads negative-valence and high-arousal', () => {

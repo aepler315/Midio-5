@@ -76,6 +76,29 @@ test('fuseSections (synced): every fused section carries a lyricIntensity/lyricV
   }
 });
 
+test('fuseSections (synced): a low-confidence lyric boundary cannot insert a new authoritative cut', () => {
+  const barGrid = makeBarGrid(11, 2000);
+  const lyricSections = [
+    { startMs: 0, endMs: 15000, kind: 'verse', intensity: 0.3, valence: 0, confidence: 0.9 },
+    // Zero confidence: this boundary is a hypothesis, not evidence.
+    { startMs: 15000, endMs: 20000, kind: 'bridge', intensity: 0.9, valence: -0.2, confidence: 0 },
+  ];
+  const fused = fuseSections(novelty, lyricSections, barGrid, 20000);
+  assert.deepEqual(
+    fused.map((s) => s.startMs), [0, 10000],
+    'the zero-confidence lyric boundary at 15000 must not create a new section',
+  );
+});
+
+test('epicBiasForKind: confidence gates the kind-based bonus so a zero-confidence label never escalates', () => {
+  const confidentBridge = epicBiasForKind('bridge', 0.4, 1);
+  const unconfidentBridge = epicBiasForKind('bridge', 0.4, 0);
+  const verse = epicBiasForKind('verse', 0.4, 1);
+  assert.ok(confidentBridge > unconfidentBridge, 'a confidently labeled bridge must escalate more than an unconfident one');
+  assert.equal(unconfidentBridge, verse, 'a zero-confidence bridge must read exactly like an unbiased verse -- a quiet/uncertain bridge is representable');
+  assert.equal(epicBiasForKind('bridge', 0.4), confidentBridge, 'omitting confidence must keep today\'s existing behavior');
+});
+
 test('epicBiasForKind: bridge > chorus > instrumental > verse > intro > outro, always within [-1,1]', () => {
   const order = ['bridge', 'chorus', 'instrumental', 'verse', 'intro', 'outro'];
   const values = order.map((k) => epicBiasForKind(k, 0.4));
