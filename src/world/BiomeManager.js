@@ -971,18 +971,18 @@ export class BiomeManager {
       // found nothing, and must never displace an energy read that found real
       // boundaries (StructureAnalyzer caps its confidence for this reason too).
       && ssmCuts && ssmCuts.length >= 3;
-    this.structureConfidence = structure ? structure.confidence : 0;
-
     const chosen = ssmUsable ? ssmCuts : [0, ...peaks, lastIdx];
-    // _ensureMinimumSections can DISCARD `chosen` wholesale -- re-picking from
-    // the energy novelty with the noise floor dropped, or falling back to even
-    // time-splits. So provenance cannot be decided before it runs: this used to
-    // be set from `ssmUsable` alone, one line above, and a schedule built
-    // entirely from relaxed energy peaks (or from the clock) still reported
-    // itself as 'ssm'. That made the whole class of "the SSM read was thrown
-    // away" bug invisible in debug output, including the label loss below.
-    const { cuts: rawCuts, source: floorSource } = this._ensureMinimumSections(
-      chosen, { pickPeaks, barTimes, durationMs, lastIdx },
+    // _ensureMinimumSections used to be able to DISCARD `chosen` wholesale --
+    // re-picking from the energy novelty or falling back to even time-splits
+    // even when `chosen` was a confident SSM read. A real, confident musical
+    // boundary is evidence; a minimum-section-count floor is a pacing
+    // preference. The preference must never overwrite the evidence -- it may
+    // only pad it with extra, clearly-decorative cuts to hit the count, which
+    // carry no boundary evidence and must not invent a new musical identity
+    // (see _labelsFromSsm below: a decorative cut nearest-maps onto its
+    // parent's SSM label, so it inherits rather than invents one).
+    const { cuts: rawCuts, source: floorSource, decorative: rawDecorative } = this._ensureMinimumSections(
+      chosen, { pickPeaks, barTimes, durationMs, lastIdx }, ssmUsable,
     );
     // Put each boundary on the RELEASE rather than on the run-up to it
     // (BoundarySnap.js). Both detectors answer "where does the material
@@ -996,10 +996,24 @@ export class BiomeManager {
     const cuts = snapCutsToReleases(rawCuts, barScalarEnergy, {
       pinned: [rawCuts[0], rawCuts[rawCuts.length - 1]],
     });
-    // The floor's own answer wins when it intervened, because that IS what the
-    // schedule is now made of; otherwise the chosen detector gets the credit.
-    const ssmKept = ssmUsable && !floorSource;
-    this.structureSource = floorSource || (ssmUsable ? 'ssm' : 'energy-novelty');
+    // A decorative cut's exact index can move under the snap above; carry its
+    // status forward by nearest match rather than exact value.
+    const decorativeSet = new Set();
+    for (const d of rawDecorative) {
+      let best = cuts[0], bestD = Infinity;
+      for (const c of cuts) { const dist = Math.abs(c - d); if (dist < bestD) { bestD = dist; best = c; } }
+      decorativeSet.add(best);
+    }
+    // The SSM read is "kept" whenever the schedule is still built from its
+    // boundaries -- which is now always true once `ssmUsable`, since the
+    // floor can only pad it, never replace it.
+    const ssmKept = ssmUsable;
+    this.structureSource = ssmUsable ? (rawDecorative.length ? 'ssm+decorative' : 'ssm') : (floorSource || 'energy-novelty');
+    // Confidence describes the evidence actually behind the schedule. An SSM
+    // read that survived (padded or not) keeps its detector's confidence;
+    // anything else is not the SSM's read at all, and must not go on
+    // reporting the confidence of an analysis that was never used.
+    this.structureConfidence = ssmKept ? structure.confidence : 0;
     // Which cuts are genuine energy-novelty peaks, and so have a meaningful
     // sharpness to classify from. Everything else -- an SSM boundary (found
     // by a different detector, on a different signal) or an even time-split
@@ -1037,10 +1051,18 @@ export class BiomeManager {
           ? 'fade'
           : classifyTransition(novelty[cuts[i]], maxNovelty),
         barMs: (barTimes[Math.min(barTimes.length - 1, cuts[i] + 1)] - barTimes[cuts[i]]) || 500,
+        // What this boundary's evidence actually is: 'detected' (SSM/harmonic
+        // read), 'inferred' (band-energy novelty peak), or 'decorative' (pure
+        // pacing padding, no signal behind it -- see _padWithDecorativeCuts).
+        // Downstream consumers must not treat a decorative cut as having
+        // found a new musical identity.
+        provenance: decorativeSet.has(cuts[i])
+          ? 'decorative'
+          : (ssmKept ? 'detected' : (peakSet.has(cuts[i]) ? 'inferred' : 'decorative')),
       });
     }
     if (this.sections.length === 0) {
-      this.sections = [{ startMs: 0, endMs: durationMs, transition: 'fade', barMs: 500 }];
+      this.sections = [{ startMs: 0, endMs: durationMs, transition: 'fade', barMs: 500, provenance: 'decorative' }];
       meanEnergies.push(0.5);
       shapes.push(new Array(7).fill(1));
     }
@@ -1263,21 +1285,36 @@ export class BiomeManager {
    * time-splits. An even split is a poor read of the music, but it is a far
    * better experience than four minutes of one unchanging world.
    *
-   * @returns {{cuts: number[], source: ?string}} `source` names what the
-   *   returned cuts are actually made of when this intervened, and is null
-   *   when it left `cuts` alone. The caller cannot tell otherwise -- both
-   *   relaxation paths REPLACE the schedule it was given, including a
-   *   confident SSM one -- and reporting the discarded detector as the
-   *   schedule's source is how that went unnoticed.
+   * @returns {{cuts: number[], source: ?string, decorative: number[]}}
+   *   `source` names what the returned cuts are made of when this
+   *   intervened, and is null when it left `cuts` alone. `decorative` lists
+   *   the cuts (by index into `barTimes`) that carry no boundary evidence --
+   *   pure pacing padding, as opposed to a real detected or inferred
+   *   boundary -- so callers must not treat them as a new musical identity.
+   *
+   *   A confident SSM read (`ssmUsable`) is never replaced wholesale: it may
+   *   only be padded with decorative cuts to reach the floor, since a
+   *   pacing preference discarding real musical evidence was the bug this
+   *   guards against (see the caller). Everything else may still be
+   *   replaced outright, as before.
    */
-  _ensureMinimumSections(cuts, { pickPeaks, barTimes, durationMs, lastIdx }) {
+  _ensureMinimumSections(cuts, { pickPeaks, barTimes, durationMs, lastIdx }, ssmUsable) {
     const deserved = Math.min(MIN_SECTION_CUTS, Math.floor(durationMs / SECTION_CUT_BUDGET_MS));
-    if (deserved < 2 || cuts.length - 1 >= deserved) return { cuts, source: null };
+    if (deserved < 2 || cuts.length - 1 >= deserved) return { cuts, source: null, decorative: [] };
+
+    if (ssmUsable) {
+      const padded = this._padWithDecorativeCuts(cuts, deserved - (cuts.length - 1), lastIdx);
+      return padded.length
+        ? { cuts: [...new Set([...cuts, ...padded])].sort((a, b) => a - b), source: null, decorative: padded }
+        : { cuts, source: null, decorative: [] };
+    }
 
     const relaxed = pickPeaks(0);
-    if (relaxed.length + 1 >= deserved) return { cuts: [0, ...relaxed, lastIdx], source: 'energy-novelty' };
+    if (relaxed.length + 1 >= deserved) return { cuts: [0, ...relaxed, lastIdx], source: 'energy-novelty', decorative: [] };
 
-    // Nothing in the signal to go on: split the time evenly instead.
+    // Nothing in the signal to go on: split the time evenly instead. Every
+    // one of these cuts is decorative -- an even split is not a read of the
+    // music at all.
     const want = Math.max(deserved, relaxed.length + 1);
     const even = [];
     for (let k = 1; k < want; k++) {
@@ -1290,8 +1327,29 @@ export class BiomeManager {
       if (best > 0 && (even.length === 0 || best > even[even.length - 1])) even.push(best);
     }
     return even.length
-      ? { cuts: [0, ...even, lastIdx], source: 'even-split' }
-      : { cuts, source: null };
+      ? { cuts: [0, ...even, lastIdx], source: 'even-split', decorative: even }
+      : { cuts, source: null, decorative: [] };
+  }
+
+  /** Split the `want` largest gaps between existing `cuts` in half, purely
+   *  for visual pacing -- these carry no boundary evidence of their own, so
+   *  the caller must mark them decorative rather than treat them as detected
+   *  or inferred structure. Never encroaches on an existing cut. */
+  _padWithDecorativeCuts(cuts, want, lastIdx) {
+    const out = [];
+    if (want <= 0) return out;
+    const gaps = [];
+    for (let i = 0; i < cuts.length - 1; i++) gaps.push([cuts[i], cuts[i + 1]]);
+    for (let n = 0; n < want; n++) {
+      gaps.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
+      const [lo, hi] = gaps[0];
+      const mid = lo + Math.round((hi - lo) / 2);
+      if (mid <= lo || mid >= hi) break; // gap too small to split further
+      out.push(mid);
+      gaps[0] = [lo, mid];
+      gaps.push([mid, hi]);
+    }
+    return out.filter((i) => i > 0 && i < lastIdx);
   }
 
   _sectionAt(nowMs) {

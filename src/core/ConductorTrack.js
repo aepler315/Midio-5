@@ -99,6 +99,10 @@ export function applyConductorSchedule(sections, cues, barGrid, durationMs) {
         // inherited style there so an opening cue can't shutter into frame.
         transition: i > 0 && cue ? cue.value : inherited.transition,
         cued: !!cue,
+        // A player-authored boundary is not a read of the music at all --
+        // it is instruction, and outranks whatever provenance the inherited
+        // section carried (detected/inferred/decorative).
+        provenance: cue ? 'authored' : inherited.provenance,
       });
     }
     out = rebuilt;
