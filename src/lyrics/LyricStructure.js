@@ -71,17 +71,41 @@ function median(nums) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+/** A block's span for capping purposes is onset-to-onset PLUS the final
+ *  line's own estimated duration (its own median internal gap, capped at
+ *  `LAST_LINE_MAX_MS`) -- otherwise a block whose last line starts right at
+ *  the nominal cap still runs an extra several seconds past it once that
+ *  line's sung duration is counted, exactly the "42 seconds despite a
+ *  40-second cap" failure the cap exists to prevent. */
+function estimatedSpan(lines) {
+  if (lines.length <= 1) return 0;
+  const gaps = [];
+  for (let i = 1; i < lines.length; i++) gaps.push(lines[i].tMs - lines[i - 1].tMs);
+  const tail = Math.min(median(gaps.filter((g) => g > 0)) || 0, LAST_LINE_MAX_MS);
+  return lines[lines.length - 1].tMs - lines[0].tMs + tail;
+}
+
 /** Recursively splits a run of synced lines at its own largest internal gap
  *  until every resulting piece spans no more than `capMs` (or can't be
- *  split further -- a single line always spans 0). Pure. */
+ *  split further -- a single line always spans 0). Pure.
+ *
+ *  When several gaps tie for largest -- the common case for machine-timed
+ *  or otherwise uniformly-paced lyrics -- the split closest to the middle
+ *  wins, so a run of N equally-spaced lines bisects into two balanced
+ *  halves instead of always cutting off the first line: repeatedly taking
+ *  the first tied gap turned 20 evenly-spaced lines into six single-line
+ *  blocks followed by one oversized 14-line block. */
 function splitOversizedBlock(lines, capMs) {
   if (lines.length <= 1) return [lines];
-  const span = lines[lines.length - 1].tMs - lines[0].tMs;
-  if (span <= capMs) return [lines];
+  if (estimatedSpan(lines) <= capMs) return [lines];
+  const mid = lines.length / 2;
   let bestIdx = 1, bestGap = -1;
   for (let i = 1; i < lines.length; i++) {
     const gap = lines[i].tMs - lines[i - 1].tMs;
-    if (gap > bestGap) { bestGap = gap; bestIdx = i; }
+    if (gap > bestGap + 1e-9
+      || (Math.abs(gap - bestGap) <= 1e-9 && Math.abs(i - mid) < Math.abs(bestIdx - mid))) {
+      bestGap = gap; bestIdx = i;
+    }
   }
   const left = lines.slice(0, bestIdx);
   const right = lines.slice(bestIdx);
@@ -169,28 +193,68 @@ function jaccardLines(aLines, bLines) {
 const REPEAT_SIMILARITY_THRESHOLD = 0.7;
 const BRIDGE_SPAN = [0.55, 0.90];
 
+// A leading "[Chorus]", "(Verse 2):" etc. is a reliable explicit label when
+// a lyric source provides one -- far better evidence of function than
+// recurrence or position alone, and the only way a repeated block can be
+// correctly kept as e.g. a repeated VERSE instead of being forced to CHORUS
+// by the recurrence heuristic below.
+const EXPLICIT_TAG_RE = /^\s*[[(]\s*(verse|chorus|bridge|intro|outro|instrumental)\s*\d*\s*[\])]\s*:?\s*/i;
+
+function explicitTag(lines) {
+  if (!lines || !lines.length) return null;
+  const m = EXPLICIT_TAG_RE.exec(lines[0]);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/** Strips a leading explicit tag off a block's first line (if present) so it
+ *  never leaks into repetition matching, emotion lexicon lookup, or the
+ *  displayed text. */
+function stripTag(lines) {
+  if (!lines || !lines.length) return lines;
+  const m = EXPLICIT_TAG_RE.exec(lines[0]);
+  if (!m) return lines;
+  const rest = lines[0].slice(m[0].length);
+  return rest ? [rest, ...lines.slice(1)] : lines.slice(1);
+}
+
+// Confidence in the FUNCTION label (kind), separate from `confidence`, which
+// is about boundary/alignment timing. An explicit tag is direct evidence; a
+// recurrence-based chorus call or a position-based bridge call is only a
+// hypothesis, and callers that turn a kind into a dramatic effect (forced
+// hue swings, epic-bias escalation) should scale that effect by this number
+// rather than treating every kind label as equally certain.
+const KIND_CONFIDENCE = {
+  explicit: 0.9, repeatChorus: 0.55, positionBridge: 0.35, defaultVerse: 0.5,
+};
+
 /** Clusters blocks into repetition families (Jaccard >= threshold joins the
- *  first matching family) and assigns a structural kind: a family that
- *  recurs (>=2 members) is a CHORUS; a one-off block sitting in the back
- *  55-90% of the song is a BRIDGE; everything else is a VERSE. Synced
+ *  first matching family; kept as `familyId`/`occurrenceIndex`, separate
+ *  from the structural kind below) and assigns a structural kind: an
+ *  explicit tag wins outright; otherwise a family that recurs (>=2 members)
+ *  is a CHORUS hypothesis, a one-off block sitting in the back 55-90% of the
+ *  song is a BRIDGE hypothesis, and everything else is a VERSE. Synced
  *  blocks additionally get INSTRUMENTAL entries inserted into gaps >=12s
  *  and INTRO/OUTRO entries for long lead-in/lead-out silence (needs
  *  `durationMs` for the outro check; omit it to skip outro detection).
- *  Returns lyricSections: [{startMs?,endMs?,kind,intensity,valence,
- *  confidence,text}]. */
+ *  Returns lyricSections: [{startMs?,endMs?,kind,kindConfidence,familyId,
+ *  occurrenceIndex,intensity,valence,confidence,text}]. */
 export function labelBlocks(blocks, { durationMs = null } = {}) {
   if (blocks.length === 0) return [];
   const synced = blocks[0].startMs !== undefined;
 
-  // Repetition clustering.
+  const tags = blocks.map((b) => explicitTag(b.lines));
+  const cleanLines = blocks.map((b, i) => (tags[i] ? stripTag(b.lines) : b.lines));
+
+  // Repetition clustering, on tag-stripped text so a shared tag alone never
+  // counts as shared content.
   const families = []; // [{ repLines, indices: [] }]
   const familyOf = new Array(blocks.length).fill(-1);
   blocks.forEach((b, i) => {
     let joined = -1;
     for (let f = 0; f < families.length; f++) {
-      if (jaccardLines(b.lines, families[f].repLines) >= REPEAT_SIMILARITY_THRESHOLD) { joined = f; break; }
+      if (jaccardLines(cleanLines[i], families[f].repLines) >= REPEAT_SIMILARITY_THRESHOLD) { joined = f; break; }
     }
-    if (joined === -1) { families.push({ repLines: b.lines, indices: [i] }); familyOf[i] = families.length - 1; }
+    if (joined === -1) { families.push({ repLines: cleanLines[i], indices: [i] }); familyOf[i] = families.length - 1; }
     else { families[joined].indices.push(i); familyOf[i] = joined; }
   });
 
@@ -200,16 +264,22 @@ export function labelBlocks(blocks, { durationMs = null } = {}) {
     const posFrac = synced && durationMs
       ? clamp01(((b.startMs + b.endMs) / 2) / durationMs)
       : (blocks.length > 1 ? i / (blocks.length - 1) : 0.5);
-    let kind = 'verse';
-    if (isRepeat) kind = 'chorus';
-    else if (posFrac >= BRIDGE_SPAN[0] && posFrac <= BRIDGE_SPAN[1]) kind = 'bridge';
 
-    const text = b.lines.join('\n');
+    let kind, kindConfidence;
+    if (tags[i]) { kind = tags[i]; kindConfidence = KIND_CONFIDENCE.explicit; }
+    else if (isRepeat) { kind = 'chorus'; kindConfidence = KIND_CONFIDENCE.repeatChorus; }
+    else if (posFrac >= BRIDGE_SPAN[0] && posFrac <= BRIDGE_SPAN[1]) { kind = 'bridge'; kindConfidence = KIND_CONFIDENCE.positionBridge; }
+    else { kind = 'verse'; kindConfidence = KIND_CONFIDENCE.defaultVerse; }
+
+    const text = cleanLines[i].join('\n');
     const emo = sectionEmotion(text);
     return {
       startMs: synced ? b.startMs : undefined,
       endMs: synced ? b.endMs : undefined,
       kind,
+      kindConfidence,
+      familyId: familyOf[i],
+      occurrenceIndex: fam.indices.indexOf(i),
       intensity: emo.intensity,
       valence: emo.valence,
       confidence: synced ? 0.8 : 0.4,
@@ -219,22 +289,33 @@ export function labelBlocks(blocks, { durationMs = null } = {}) {
 
   if (!synced) return sections;
 
-  // Instrumental gaps + intro/outro, synced only.
+  // Instrumental gaps + intro/outro, synced only. These are directly
+  // detected from silence, not inferred from ambiguous evidence, so their
+  // kindConfidence matches their timing confidence.
   const out = [];
   if (sections[0].startMs >= EDGE_SILENCE_MS) {
-    out.push({ startMs: 0, endMs: sections[0].startMs, kind: 'intro', intensity: 0.3, valence: 0, confidence: 0.6, text: '' });
+    out.push({
+      startMs: 0, endMs: sections[0].startMs, kind: 'intro', kindConfidence: 0.6,
+      familyId: null, occurrenceIndex: null, intensity: 0.3, valence: 0, confidence: 0.6, text: '',
+    });
   }
   for (let i = 0; i < sections.length; i++) {
     out.push(sections[i]);
     if (i < sections.length - 1) {
       const gap = sections[i + 1].startMs - sections[i].endMs;
       if (gap >= INSTRUMENTAL_GAP_MS) {
-        out.push({ startMs: sections[i].endMs, endMs: sections[i + 1].startMs, kind: 'instrumental', intensity: 0.7, valence: 0, confidence: 0.7, text: '' });
+        out.push({
+          startMs: sections[i].endMs, endMs: sections[i + 1].startMs, kind: 'instrumental', kindConfidence: 0.7,
+          familyId: null, occurrenceIndex: null, intensity: 0.7, valence: 0, confidence: 0.7, text: '',
+        });
       }
     }
   }
   if (durationMs && durationMs - sections[sections.length - 1].endMs >= EDGE_SILENCE_MS) {
-    out.push({ startMs: sections[sections.length - 1].endMs, endMs: durationMs, kind: 'outro', intensity: 0.3, valence: 0, confidence: 0.6, text: '' });
+    out.push({
+      startMs: sections[sections.length - 1].endMs, endMs: durationMs, kind: 'outro', kindConfidence: 0.6,
+      familyId: null, occurrenceIndex: null, intensity: 0.3, valence: 0, confidence: 0.6, text: '',
+    });
   }
   return out;
 }
