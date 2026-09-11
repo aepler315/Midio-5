@@ -203,6 +203,89 @@ test('boundaries honor the minimum gap', () => {
   }
 });
 
+// --- order-sensitive repeat matching (audit finding #2) --------------------
+
+test('an exact changing-pattern repeat matches, but its own reversal does not', () => {
+  // The defect this replaces: labelByRepetition averaged the whole cross
+  // block between two segments, which is invariant to permuting either one.
+  // ABAB/ABAB (a genuine repeat) and ABAB/BABA (the same material reordered)
+  // both scored the same mean similarity and got the same answer.
+  const A = Float64Array.from([1, 0]), B = Float64Array.from([0, 1]);
+  const phrase = [A, B, A, B];
+  const exact = selfSimilarity([...phrase, ...phrase]);
+  assert.deepEqual(labelByRepetition(exact, [0, 4, 8]), [0, 0],
+    'an exact changing-pattern repeat must be recognized as the same material');
+
+  const reordered = selfSimilarity([...phrase, ...[...phrase].reverse()]);
+  assert.deepEqual(labelByRepetition(reordered, [0, 4, 8]), [0, 1],
+    'the same material in a different order must not be called a repeat');
+});
+
+// --- feature dynamics and fine-scale boundaries (audit finding #3) --------
+
+test('a pure level change with no pitch or shape change is no longer invisible', () => {
+  // The defect this replaces: chroma and the band-energy shape are each
+  // independently L2-normalized, which strips magnitude entirely. A section
+  // that keeps the same chord and the same relative band shape but jumps
+  // from quiet to loud produced an all-zero informative delta and the
+  // detector returned null outright.
+  const rate = 20, durationMs = 96000, stepMs = 2000, jumpAtMs = 48000;
+  const totalFrames = (durationMs / 1000) * rate;
+  const frames = Array.from({ length: totalFrames }, () => {
+    const semis = new Float32Array(SEMI_COUNT);
+    semis[10] = 1; // constant pitch throughout
+    return semis;
+  });
+  const pointsMs = grid(durationMs / stepMs, stepMs);
+  const energyCurves = { sampleAll: (t) => new Array(7).fill(t < jumpAtMs ? 0.1 : 0.9) };
+  const res = analyzeStructure({
+    pointsMs, pitchFeatures: { rate, frames }, energyCurves, durationMs, minGapMs: 8000, maxCuts: 8,
+  });
+  assert.ok(res, 'a pure dynamics change must still produce a read');
+  assert.ok(res.boundariesMs.includes(jumpAtMs),
+    `expected a boundary at ${jumpAtMs}, got ${res.boundariesMs}`);
+});
+
+test('both edges of a short contrasting passage survive, one in the main schedule and one at a finer level', () => {
+  // The defect this replaces: an 8-second contrasting passage sitting inside
+  // an otherwise uniform song produced only its leading edge as a boundary;
+  // the 11-second minimum-gap spacing rule silently discarded the trailing
+  // edge, and there was nowhere for it to be recorded at all.
+  const rate = 20, durationMs = 96000, stepMs = 2000;
+  const totalFrames = (durationMs / 1000) * rate;
+  const frames = Array.from({ length: totalFrames }, (_, f) => {
+    const tMs = (f / rate) * 1000;
+    const semis = new Float32Array(SEMI_COUNT);
+    semis[tMs >= 32000 && tMs < 40000 ? 16 : 10] = 1;
+    return semis;
+  });
+  const pointsMs = grid(durationMs / stepMs, stepMs);
+  const res = analyzeStructure({
+    pointsMs, pitchFeatures: { rate, frames }, energyCurves: null, durationMs, minGapMs: 11000, maxCuts: 8,
+  });
+  assert.ok(res);
+  assert.ok(res.boundariesMs.includes(32000), `expected the leading edge, got ${res.boundariesMs}`);
+  assert.ok(res.fineBoundariesMs.includes(40000),
+    `expected the trailing edge preserved at the fine level, got ${res.fineBoundariesMs}`);
+});
+
+test('constant material produces no fine boundaries either', () => {
+  const rate = 20, durationMs = 40000, stepMs = 1000;
+  const totalFrames = (durationMs / 1000) * rate;
+  const frames = Array.from({ length: totalFrames }, () => {
+    const semis = new Float32Array(SEMI_COUNT);
+    semis[10] = 1;
+    return semis;
+  });
+  const res = analyzeStructure({
+    pointsMs: grid(durationMs / stepMs, stepMs), pitchFeatures: { rate, frames },
+    energyCurves: null, durationMs,
+  });
+  // Bailing out entirely (null) is the expected answer for a genuine drone;
+  // if it does return a read, it must not have manufactured fine boundaries.
+  if (res) assert.deepEqual(res.fineBoundariesMs, []);
+});
+
 test('a read that found no boundaries reports low confidence, not medium', () => {
   // With one section there is nothing for the repeat bonus to reward (a lone
   // label cannot recur), so novelty contrast alone used to carry a

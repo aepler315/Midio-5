@@ -34,13 +34,34 @@ import { clamp, clamp01 } from '../utils/math.js';
 // there is no bar grid). 4 bars either side = an 8-bar view, which is the
 // scale real pop/rock sections change on.
 const KERNEL_RADIUS = 4;
+// A second, finer scale for the boundary hunt: half the radius, so a passage
+// too short to register at the coarse scale (a breakdown, a short bridge)
+// still produces a candidate. It never promotes a cut into the main
+// (min-gap-constrained) schedule -- see `fineBoundariesMs` -- it only stops
+// such a passage from being silently erased.
+const FINE_KERNEL_RADIUS = Math.max(2, Math.round(KERNEL_RADIUS / 2));
 // Gaussian taper on the kernel: an abrupt-edged checkerboard rings and
 // produces satellite peaks beside every real boundary.
 const KERNEL_SIGMA = KERNEL_RADIUS / 1.5;
 // Feature fusion. Harmony carries more of the "is this the same section"
 // signal than texture does, but texture is what catches a drop or a
-// breakdown that stays on the same chords.
-const CHROMA_WEIGHT = 0.65, TIMBRE_WEIGHT = 0.35;
+// breakdown that stays on the same chords. Dynamics (overall level, not
+// shape) is its own signal again: two moments can share identical harmony
+// and timbral shape while differing enormously in loudness (a verse dropping
+// to just vocal+bass, then the band re-entering), and L2-normalizing chroma
+// and timbre on their own throws that away entirely.
+//
+// These are applied as sqrt(weight) on each block AFTER each block is
+// independently unit-normalized, not as weight directly. Cosine similarity
+// of the concatenation squares whatever scalar sits in front of a
+// unit-normalized block, so naive `w * block` weights of 0.65/0.35 actually
+// contribute similarity in a 0.65^2 : 0.35^2 (~77.5% : 22.5%) ratio, not the
+// intended one. Because sqrt(w)^2 = w, and because orthogonal unit blocks
+// scaled by sqrt(w) each land at unit-norm-times-sqrt(w), the resulting
+// fused-vector cosine equals CHROMA_WEIGHT*cosChroma + TIMBRE_WEIGHT*cosTimbre
+// + DYNAMICS_WEIGHT*cosDynamics exactly, with no cross term -- a genuine
+// linear mixture of the three similarities, weighted as configured.
+const CHROMA_WEIGHT = 0.55, TIMBRE_WEIGHT = 0.30, DYNAMICS_WEIGHT = 0.15;
 // Repetition labelling: two segments are the same material when their mean
 // cross-similarity clears a threshold. Deliberately strict -- a false merge
 // makes a verse wear the chorus's biome, which reads far worse than a missed
@@ -126,21 +147,79 @@ export function chromaBetween(features, fromMs, toMs) {
   return l2normalize(out);
 }
 
-/** Build the fused per-point feature vectors: 12 chroma ⊕ 7 band energies,
- *  each block normalized on its own before weighting so one can't drown the
- *  other by happening to have a larger scale. */
+// Samples averaged per interval for the timbre block. A single midpoint
+// sample can miss a drum entry, fill, or brief texture shift depending
+// entirely on where it happens to land inside the interval; averaging a few
+// points across the whole span catches it regardless of position.
+const TIMBRE_SAMPLES_PER_POINT = 4;
+
+/** Average the seven band energies across [from, to) rather than sampling
+ *  once at the midpoint. Returns the RAW (unnormalized) mean -- callers
+ *  decide separately whether to keep or discard its magnitude. */
+function averageBands(energyCurves, from, to, samples = TIMBRE_SAMPLES_PER_POINT) {
+  const acc = new Float64Array(7);
+  const n = Math.max(1, samples);
+  const span = Math.max(1, to - from);
+  for (let s = 0; s < n; s++) {
+    const t = from + ((s + 0.5) / n) * span;
+    const v = energyCurves.sampleAll(t);
+    for (let k = 0; k < 7; k++) acc[k] += v[k];
+  }
+  for (let k = 0; k < 7; k++) acc[k] /= n;
+  return acc;
+}
+
+const CHROMA_SCALE = Math.sqrt(CHROMA_WEIGHT);
+const TIMBRE_SCALE = Math.sqrt(TIMBRE_WEIGHT);
+const DYNAMICS_SCALE = Math.sqrt(DYNAMICS_WEIGHT);
+
+/**
+ * Build the fused per-point feature vectors: 12 chroma ⊕ 7 timbre (shape)
+ * ⊕ 2 dynamics (level). Chroma and timbre are each independently
+ * unit-normalized so one can't drown the other by happening to have a
+ * larger scale, exactly as before; dynamics is the piece that block-level
+ * normalization removes, recovered as its own small channel instead of
+ * being thrown away.
+ *
+ * Dynamics is encoded as a point on a quarter-circle arc (level -> angle in
+ * [0, pi/2]) rather than as a raw scalar, so that plain cosine similarity
+ * -- the same operation used for chroma and timbre -- reads it correctly:
+ * two equal levels land on the same point (similarity 1), and similarity
+ * falls off monotonically as the levels diverge, with no wraparound to
+ * worry about across so narrow a range.
+ */
 function buildFeatures(pointsMs, features, energyCurves) {
+  const rawLevels = new Float64Array(pointsMs.length);
+  const timbreDirs = [];
+  let maxLevel = 0;
+  for (let i = 0; i < pointsMs.length; i++) {
+    const from = pointsMs[i];
+    const to = i + 1 < pointsMs.length ? pointsMs[i + 1] : from + 2000;
+    const raw = energyCurves ? averageBands(energyCurves, from, to) : new Float64Array(7);
+    let level = 0;
+    for (let k = 0; k < 7; k++) level += raw[k];
+    rawLevels[i] = level;
+    if (level > maxLevel) maxLevel = level;
+    timbreDirs.push(l2normalize(raw));
+  }
+
   const out = [];
   for (let i = 0; i < pointsMs.length; i++) {
     const from = pointsMs[i];
     const to = i + 1 < pointsMs.length ? pointsMs[i + 1] : from + 2000;
     const chroma = chromaBetween(features, from, to);
-    const bands = energyCurves
-      ? l2normalize(Float64Array.from(energyCurves.sampleAll((from + to) / 2)))
-      : new Float64Array(7);
-    const v = new Float64Array(19);
-    for (let k = 0; k < 12; k++) v[k] = chroma[k] * CHROMA_WEIGHT;
-    for (let k = 0; k < 7; k++) v[12 + k] = bands[k] * TIMBRE_WEIGHT;
+    const timbre = timbreDirs[i];
+    // No energy data at all -> no dynamics signal, matching the old
+    // behavior of contributing nothing rather than manufacturing a level.
+    const level01 = energyCurves && maxLevel > 1e-9 ? rawLevels[i] / maxLevel : 0;
+    const angle = energyCurves ? level01 * (Math.PI / 2) : 0;
+    const dynScale = energyCurves ? DYNAMICS_SCALE : 0;
+
+    const v = new Float64Array(21);
+    for (let k = 0; k < 12; k++) v[k] = chroma[k] * CHROMA_SCALE;
+    for (let k = 0; k < 7; k++) v[12 + k] = timbre[k] * TIMBRE_SCALE;
+    v[19] = Math.cos(angle) * dynScale;
+    v[20] = Math.sin(angle) * dynScale;
     out.push(v);
   }
   return out;
@@ -197,22 +276,50 @@ export function footeNovelty(S, radius = KERNEL_RADIUS) {
 }
 
 /**
+ * Order-sensitive similarity between two segments (index ranges into S):
+ * walk the diagonal path through the p x q block, comparing correspondingly-
+ * positioned frames (proportionally, for segments of different lengths)
+ * rather than averaging the whole block indiscriminately. `meanSim`, which
+ * this replaces, averages the full cross block and is therefore invariant to
+ * permuting either segment: `ABAB` and its own reversal `BABA` score
+ * identically to it, and a genuinely repeated passage whose average is no
+ * higher than an unrelated one's is missed entirely. A diagonal walk only
+ * scores material that recurs in the same order -- this is deliberately the
+ * exact diagonal (no local slack) rather than a windowed or DTW-style
+ * search: a few steps of slack is enough to let a short periodic pattern
+ * (period 2, as in the module's own repeated-vs-reordered check) realign
+ * around a reordering and hide it again. Bar-synchronous analysis points
+ * already remove most of the sub-bar jitter a slack window would exist to
+ * absorb; constrained DTW for genuine tempo drift between two performances
+ * of a section is real future work, not a small tweak to this.
+ *
+ * Because the shorter segment sets the number of steps and every step must
+ * fall somewhere along the longer one, a short shared hook inside a much
+ * longer segment still gets diluted by the rest of that segment's
+ * non-matching material -- this does not need a separate coverage check.
+ */
+function diagonalSim(S, [p0, p1], [q0, q1]) {
+  const lenP = p1 - p0, lenQ = q1 - q0;
+  const steps = Math.max(1, Math.min(lenP, lenQ));
+  let sum = 0;
+  for (let k = 0; k < steps; k++) {
+    const i = p0 + Math.min(lenP - 1, Math.floor((k * lenP) / steps));
+    const j = q0 + Math.min(lenQ - 1, Math.floor((k * lenQ) / steps));
+    sum += S[i][j];
+  }
+  return sum / steps;
+}
+
+/**
  * Assign a structural label per segment by direct repetition: two segments
- * are the same material when the mean similarity between their points clears
- * REPEAT_THRESHOLD. Labels are integers in first-appearance order, matching
- * what SongForm.analyzeSongForm returns so downstream casting is unchanged.
+ * are the same material when their order-sensitive similarity (see
+ * `diagonalSim`) clears a threshold set from the song's own distribution.
+ * Labels are integers in first-appearance order, matching what
+ * SongForm.analyzeSongForm returns so downstream casting is unchanged.
  */
 export function labelByRepetition(S, cuts) {
   const segs = [];
   for (let i = 0; i < cuts.length - 1; i++) segs.push([cuts[i], cuts[i + 1]]);
-
-  const meanSim = (p, q) => {
-    let sum = 0, n = 0;
-    for (let i = segs[p][0]; i < segs[p][1]; i++) {
-      for (let j = segs[q][0]; j < segs[q][1]; j++) { sum += S[i][j]; n++; }
-    }
-    return n > 0 ? sum / n : 0;
-  };
 
   // Every pairwise segment similarity, computed once. The labelling pass below
   // needs each of these anyway; taking them up front is what makes the song's
@@ -221,7 +328,7 @@ export function labelByRepetition(S, cuts) {
   const pairs = [];
   for (let i = 0; i < segs.length; i++) {
     for (let j = i + 1; j < segs.length; j++) {
-      const s = meanSim(i, j);
+      const s = diagonalSim(S, segs[i], segs[j]);
       sim[i][j] = s;
       sim[j][i] = s;
       pairs.push(s);
@@ -287,8 +394,14 @@ export function repeatThresholdFor(pairs) {
  * @param {number}  opts.minGapMs   minimum time between two cuts
  * @param {number}  opts.maxCuts
  * @returns {?{boundariesMs: number[], labels: number[], cutIndices: number[],
- *   novelty: Float64Array, confidence: number}} null when there isn't enough
- *   material to say anything -- callers fall back to the energy-novelty path.
+ *   novelty: Float64Array, confidence: number, fineBoundariesMs: number[]}}
+ *   null when there isn't enough material to say anything -- callers fall
+ *   back to the energy-novelty path. `fineBoundariesMs` holds candidate
+ *   boundaries found at a finer scale that the main pass rejected only for
+ *   crowding an existing cut, not for weak evidence -- a short contrasting
+ *   passage's edges land here even when they're too close together to both
+ *   become full sections under `minGapMs`. Callers that don't need that
+ *   finer hierarchy can ignore it.
  */
 export function analyzeStructure({
   pointsMs, pitchFeatures, energyCurves, durationMs,
@@ -359,5 +472,39 @@ export function analyzeStructure({
   // start to finish. A detector that found nothing must say so.
   if (labels.length < 2) confidence = Math.min(confidence, NO_STRUCTURE_CONFIDENCE);
 
-  return { boundariesMs, labels, cutIndices, novelty, confidence };
+  const fineBoundariesMs = findFineBoundaries(S, pointsMs, cutIndices, minGapIdx, lastIdx);
+
+  return {
+    boundariesMs, labels, cutIndices, novelty, confidence, fineBoundariesMs,
+  };
+}
+
+// A short contrasting passage's two edges can be closer together than
+// `minGapMs` allows for a full section (a fill, a breakdown, an eight-second
+// bridge). The main pass is right to refuse to build two runt sections out
+// of them, but refusing to *record* them at all erases a real musical event.
+// This second pass runs a finer checkerboard scale (more sensitive to short
+// material) and a looser spacing floor, purely to surface what the main pass
+// had to drop -- it never feeds back into `cutIndices`, `labels`, or
+// `confidence`, so the primary read and its pacing contract are unchanged.
+const FINE_GAP_DIVISOR = 2;
+
+function findFineBoundaries(S, pointsMs, cutIndices, minGapIdx, lastIdx) {
+  const fineNovelty = footeNovelty(S, FINE_KERNEL_RADIUS);
+  const finePeak = Math.max(...fineNovelty, 0);
+  if (!(finePeak > 1e-6)) return [];
+
+  const fineGapIdx = Math.max(1, Math.round(minGapIdx / FINE_GAP_DIVISOR));
+  const existing = new Set(cutIndices);
+  const order = Array.from(fineNovelty, (v, i) => [v, i]).sort((a, b) => b[0] - a[0]);
+  const found = [];
+  for (const [v, i] of order) {
+    if (v <= finePeak * 0.15) break;
+    if (i < 1 || i >= lastIdx) continue; // the song's own edges aren't "fine" events
+    if ([...existing].some((c) => Math.abs(c - i) < fineGapIdx)) continue;
+    if (found.some((f) => Math.abs(f - i) < fineGapIdx)) continue;
+    found.push(i);
+  }
+  found.sort((a, b) => a - b);
+  return found.map((i) => pointsMs[i]);
 }
