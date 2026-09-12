@@ -1037,10 +1037,20 @@ export class BiomeManager {
     // in the game, and is most of why the effect felt random.
     const peakSet = new Set(peaks);
     const ssmStrengthByCut = new Map();
-    if (ssmKept && Array.isArray(ssmCuts) && Array.isArray(structure?.boundaryStrengths)) {
-      for (let i = 0; i < ssmCuts.length; i++) {
+    if (ssmKept && Array.isArray(structure?.boundariesMs) && Array.isArray(structure?.boundaryStrengths)) {
+      const pairCount = Math.min(structure.boundariesMs.length, structure.boundaryStrengths.length);
+      let lastMapped = -1;
+      let k = 0;
+      for (let i = 0; i < pairCount; i++) {
+        const ms = structure.boundariesMs[i];
+        while (k + 1 <= lastIdx && barTimes[k + 1] <= ms) k++;
+        let best = k;
+        if (k + 1 <= lastIdx
+          && Math.abs(barTimes[k + 1] - ms) < Math.abs(barTimes[k] - ms)) best = k + 1;
+        if (best >= lastIdx || best <= lastMapped) continue;
+        lastMapped = best;
         const strength = structure.boundaryStrengths[i];
-        if (Number.isFinite(strength)) ssmStrengthByCut.set(ssmCuts[i], strength);
+        if (Number.isFinite(strength)) ssmStrengthByCut.set(best, strength);
       }
     }
 
