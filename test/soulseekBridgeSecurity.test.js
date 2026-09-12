@@ -34,6 +34,5 @@ test('pathsInsideDownloads never escapes the downloads root', () => {
   assert.deepEqual(escaped, [path.join(root, 'passwd')]);
 
   const abs = pathsInsideDownloads(root, '/etc/passwd');
-  assert.ok(abs.every((p) => p === root || p.startsWith(root + path.sep)));
-  assert.ok(!abs.includes('/etc/passwd'));
+  assert.deepEqual(abs, [path.join(root, 'passwd')]);
 });

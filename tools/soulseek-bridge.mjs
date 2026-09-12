@@ -51,7 +51,7 @@ export function assertLoopbackSlskdUrl(raw) {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new Error('slskd URL must use http(s)');
   }
-  if (!['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)) {
+  if (!['localhost', '127.0.0.1', '::1', '[::1]'].includes(parsed.hostname)) {
     throw new Error('slskd URL must stay local to this machine');
   }
   return parsed.origin;
