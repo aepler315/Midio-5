@@ -1293,14 +1293,18 @@ export class BiomeManager {
         ? structure.boundaryEvidence.map((b) => b?.strength ?? 0)
         : null);
     if (!Array.isArray(bounds) || !bounds.length || !Array.isArray(strengths)) return null;
-    return this.sections.map((s) => {
-      let best = 0, bestD = Infinity;
-      for (let k = 0; k < bounds.length; k++) {
+    const out = [0];
+    for (let i = 1; i < this.sections.length; i++) {
+      const s = this.sections[i];
+      if (bounds.length < 2) { out.push(0); continue; }
+      let best = 1, bestD = Infinity;
+      for (let k = 1; k < bounds.length; k++) {
         const d = Math.abs(bounds[k] - s.startMs);
         if (d < bestD) { bestD = d; best = k; }
       }
-      return strengths[best] ?? 0;
-    });
+      out.push(strengths[best] ?? 0);
+    }
+    return out;
   }
 
   _coarseBoundaryEvidenceFromSsm(structure) {
