@@ -999,7 +999,9 @@ export class BiomeManager {
     // The song's first and last cuts are pinned: they are the edges of the
     // schedule, not releases, and moving one leaves a gap.
     const cuts = snapCutsToReleases(rawCuts, barScalarEnergy, {
-      pinned: [rawCuts[0], rawCuts[rawCuts.length - 1]],
+      pinned: ssmUsable
+        ? rawCuts.filter((c) => !rawDecorative.includes(c))
+        : [rawCuts[0], rawCuts[rawCuts.length - 1]],
     });
     // A decorative cut's exact index can move under the snap above; carry its
     // status forward by nearest match rather than exact value.
@@ -1019,6 +1021,12 @@ export class BiomeManager {
     // anything else is not the SSM's read at all, and must not go on
     // reporting the confidence of an analysis that was never used.
     this.structureConfidence = ssmKept ? structure.confidence : 0;
+    this.fineBoundariesMs = ssmKept && Array.isArray(structure?.fineBoundariesMs)
+      ? [...structure.fineBoundariesMs]
+      : [];
+    this.fineBoundaryEvidence = ssmKept && Array.isArray(structure?.fineBoundaryEvidence)
+      ? structure.fineBoundaryEvidence.map((b) => ({ ...b }))
+      : [];
     // Which cuts are genuine energy-novelty peaks, and so have a meaningful
     // sharpness to classify from. Everything else -- an SSM boundary (found
     // by a different detector, on a different signal) or an even time-split
@@ -1028,6 +1036,13 @@ export class BiomeManager {
     // boundary with no drama in it was assigned the most violent transition
     // in the game, and is most of why the effect felt random.
     const peakSet = new Set(peaks);
+    const ssmStrengthByCut = new Map();
+    if (ssmKept && Array.isArray(ssmCuts) && Array.isArray(structure?.boundaryStrengths)) {
+      for (let i = 0; i < ssmCuts.length; i++) {
+        const strength = structure.boundaryStrengths[i];
+        if (Number.isFinite(strength)) ssmStrengthByCut.set(ssmCuts[i], strength);
+      }
+    }
 
     this.sections = [];
     const meanEnergies = [];
@@ -1053,7 +1068,7 @@ export class BiomeManager {
         // fades: the gentlest option is the honest one when we do not
         // actually know how hard the song turned.
         transition: this.sections.length === 0 || !peakSet.has(cuts[i])
-          ? 'fade'
+          ? (Number.isFinite(ssmStrengthByCut.get(cuts[i])) ? classifyTransition(ssmStrengthByCut.get(cuts[i]), 1) : 'fade')
           : classifyTransition(novelty[cuts[i]], maxNovelty),
         barMs: (barTimes[Math.min(barTimes.length - 1, cuts[i] + 1)] - barTimes[cuts[i]]) || 500,
         // What this boundary's evidence actually is: 'detected' (SSM/harmonic
