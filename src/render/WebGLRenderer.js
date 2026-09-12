@@ -13,6 +13,7 @@
 // Toggle with ?renderer=webgl (or createRenderer(canvas, 'webgl')).
 
 import { Renderer } from './Renderer.js';
+import { CathodeRenderer } from '../world/cathode/CathodeRenderer.js';
 
 const VERT = `#version 300 es
 in vec2 a_pos;
@@ -259,8 +260,16 @@ export class WebGLRenderer {
  * Factory used by main.js. mode: 'canvas' | 'webgl'
  * Canvas mode returns the stock Renderer; webgl mode returns WebGLRenderer
  * (which itself falls back to Canvas scene drawing if GL is unavailable).
+ *
+ * `world` (the resolved world object, not an id) lets a world bring its own
+ * pipeline instead of a scenery branch: a world declaring `renderer:
+ * 'pixel'` replaces the whole frame rather than skinning part of it. Worlds
+ * without the field -- every world but Cathode -- take the path above
+ * unchanged, and the renderer mode still wins for them, so `?renderer=webgl`
+ * behaves exactly as before.
  */
-export function createRenderer(canvas, mode = 'canvas') {
+export function createRenderer(canvas, mode = 'canvas', world = null) {
+  if (world?.renderer === 'pixel') return new CathodeRenderer(canvas);
   if (mode === 'webgl') return new WebGLRenderer(canvas, { preferWebGL: true });
   return new Renderer(canvas);
 }

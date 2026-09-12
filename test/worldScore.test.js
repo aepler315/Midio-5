@@ -107,9 +107,13 @@ test('generateSilhouette city profile returns a window strip', async () => {
   assert.equal(strip.ridge.profile, 'city');
 });
 
-test('all 8 worlds are registered and have required fields', () => {
+test('every registered world is listed and has the required fields', () => {
   const worlds = listWorlds();
-  assert.equal(worlds.length, 8);
+  // Exact, not >=: the count is the guard that catches a world silently
+  // dropping out of the registry. Bump it deliberately when adding one.
+  // 8 painterly worlds + Cathode, which is manual-only but still listed
+  // (the select screen offers it; only the scorer ignores it).
+  assert.equal(worlds.length, 9);
   for (const w of worlds) {
     assert.ok(w.id, `missing id`);
     assert.ok(w.name, `${w.id} missing name`);
