@@ -42,8 +42,10 @@ import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
 import { visualNow, VISUAL_LEAD_MS } from './core/ChoreoClock.js';
-import { extractWatchFeatures, buildCustomWorld } from './world/WorldScore.js';
-import { DEFAULT_WORLD_ID, setCustomWorld } from './world/Worlds.js';
+import { extractWatchFeatures, buildCustomWorld, scoreWorlds } from './world/WorldScore.js';
+import {
+  DEFAULT_WORLD_ID, setCustomWorld, clearCustomWorld, getWorld, listWorlds,
+} from './world/Worlds.js';
 import { fingerprintBuffer } from './audio/SongFingerprint.js';
 import { packBundle, unpackBundle } from './audio/AnalysisBundle.js';
 import { getBundle, putBundle } from './audio/AnalysisCache.js';
@@ -813,6 +815,90 @@ function backToTitle() {
   startTitleBackdrop();
 }
 
+/** One card for the select grid. `kind` drives the preview swatch (see
+ *  .worldCardPreview.<kind> in style.css); `score` is omitted for worlds
+ *  the scorer doesn't rank. */
+function worldCardEl({
+  id, name, tagline, kind, score = null, badge = null, best = false,
+}) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = best ? 'worldCard is-best' : 'worldCard';
+  card.dataset.worldId = id;
+
+  const preview = document.createElement('div');
+  preview.className = `worldCardPreview ${kind}`;
+  card.appendChild(preview);
+
+  const top = document.createElement('div');
+  top.className = 'worldCardTop';
+  const nameEl = document.createElement('span');
+  nameEl.className = 'worldCardName';
+  nameEl.textContent = name;
+  top.appendChild(nameEl);
+  if (score != null) {
+    const scoreEl = document.createElement('span');
+    scoreEl.className = 'worldCardScore';
+    scoreEl.textContent = `${score}%`;
+    top.appendChild(scoreEl);
+  }
+  card.appendChild(top);
+
+  if (badge) {
+    const badgeEl = document.createElement('span');
+    badgeEl.className = 'worldCardBadge';
+    badgeEl.textContent = badge;
+    card.appendChild(badgeEl);
+  }
+
+  const tag = document.createElement('p');
+  tag.className = 'worldCardTag';
+  tag.textContent = tagline;
+  card.appendChild(tag);
+
+  return card;
+}
+
+/** Fill the select grid: the analyzed match first, then the hand-picked
+ *  worlds, then the rest of the registry by score. The dialog and all of
+ *  its styling already existed -- only the population did not. */
+function renderWorldGrid(customWorld, proof, features) {
+  if (!worldSelectGridEl) return;
+  worldSelectGridEl.textContent = '';
+
+  if (customWorld) {
+    worldSelectGridEl.appendChild(worldCardEl({
+      id: customWorld.id,
+      name: customWorld.name,
+      tagline: customWorld.tagline,
+      kind: customWorld.kind,
+      score: proof?.score ?? null,
+      badge: 'built for this song',
+      best: true,
+    }));
+  }
+
+  // Manual-only worlds carry no score on purpose: the scorer has no vote
+  // on them (see WorldScore.scoreWorlds), so printing a number would imply
+  // a measurement that was never made.
+  for (const w of listWorlds()) {
+    if (!w.manualOnly) continue;
+    worldSelectGridEl.appendChild(worldCardEl({
+      id: w.id, name: w.name, tagline: w.tagline, kind: w.kind, badge: 'your pick',
+    }));
+  }
+
+  let ranked = [];
+  try {
+    ranked = scoreWorlds(features);
+  } catch { /* a bad feature vector must not cost the player the grid */ }
+  for (const r of ranked) {
+    worldSelectGridEl.appendChild(worldCardEl({
+      id: r.id, name: r.name, tagline: r.tagline, kind: r.kind, score: r.score,
+    }));
+  }
+}
+
 function offerWorldsThenStart(data, extra = {}) {
   try {
     pendingWorldStart = { data, extra };
@@ -826,13 +912,26 @@ function offerWorldsThenStart(data, extra = {}) {
     const { world, proof } = buildCustomWorld(features, data);
     setCustomWorld(world);
     console.log('[custom world] %s (base: %s) score: %d proof:', world.kind, world.baseId, proof.score, proof);
-    confirmWorld(world.id);
+    renderWorldGrid(world, proof, features);
+    worldSelectEl?.classList.remove('hidden');
   } catch (err) {
+    // The grid is a convenience; analysis failing must still start a song.
     console.error('[world score]', err);
     pendingWorldStart = { data, extra };
     confirmWorld(data.worldId || lastWorldId || DEFAULT_WORLD_ID);
   }
 }
+
+worldSelectGridEl?.addEventListener('click', (e) => {
+  const card = e.target?.closest?.('.worldCard');
+  const id = card?.dataset?.worldId;
+  if (!id) return;
+  // Every world but the synthesized one is a real registry entry, so drop
+  // the custom override before handing over -- otherwise it outlives the
+  // song it was built for and `getWorld('custom')` keeps resolving to it.
+  if (id !== 'custom') clearCustomWorld();
+  confirmWorld(id);
+});
 
 
 function confirmWorld(id) {
@@ -959,8 +1058,11 @@ function startTimeline(timelineData, extra = {}) {
   // has not finished happening. Flagged so the transport draws the total as
   // the estimate it is rather than as a measurement.
   sim.estimatedDuration = !!timelineData.estimatedDuration;
-  // Canvas is always the scene compositor; 'webgl' adds a non-destructive overlay.
-  renderer = createRenderer(canvas, rendererMode);
+  // Canvas is always the scene compositor; 'webgl' adds a non-destructive
+  // overlay. The world is passed too: one that brings its own pipeline
+  // (Cathode) replaces the renderer outright rather than branching inside
+  // it. Created here, per song, which is after the world is known.
+  renderer = createRenderer(canvas, rendererMode, getWorld(sim.worldId));
   // enabled stays false (opt-in via V); provider/key/model/endpoint persist
   // across songs since they're a machine-level setting, not a per-song one.
   visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false, perfGovernor, ...readVisionConfig() });

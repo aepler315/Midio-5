@@ -94,6 +94,15 @@ export async function runAudioSmoke({
     const chooserReady = page.waitForEvent('filechooser');
     await page.getByText('Browse files', { exact: true }).click();
     await (await chooserReady).setFiles(wavPath);
+    // Analysis now ends at the world picker rather than starting the song
+    // outright. Take the recommended card -- the analyzed custom world,
+    // exactly the one this test has always exercised, now one click away.
+    await page.locator('#worldSelect:not(.hidden)').waitFor({ state: 'visible', timeout: 90000 });
+    const recommendedCard = page.locator('.worldCard.is-best');
+    await recommendedCard.waitFor({ state: 'visible', timeout: 15000 });
+    check('the picker leads with the analyzed match',
+      await recommendedCard.getAttribute('data-world-id') === 'custom');
+    await recommendedCard.click();
     await page.locator('#hud:not(.hidden)').waitFor({ state: 'visible', timeout: 90000 });
     await page.waitForFunction(() => window.__SMW?.sim?.timeMs > 750, null, { timeout: 30000 });
     const state = await page.evaluate(() => {
@@ -107,8 +116,8 @@ export async function runAudioSmoke({
     });
     report.playback = state;
     check('audio analysis produced a note timeline', state.notes > 0 && state.durationMs > 0);
-    check('custom world starts without a world-picker click', state.worldId === 'custom'
-      && !await page.locator('#worldSelect').isVisible());
+    check('picking the recommended card starts the custom world and dismisses the picker',
+      state.worldId === 'custom' && !await page.locator('#worldSelect').isVisible());
     check('recording plays with the timeline synth muted', state.hasRecording
       && state.audioState === 'running' && state.muteTimelineSynth);
     check('upload screen closes during playback', !await page.locator('#loader').isVisible());

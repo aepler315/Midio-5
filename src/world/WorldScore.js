@@ -188,8 +188,18 @@ function shapeFit(features, prefer) {
  * Score every registered world against this song. Returns a ranked list
  * of `{ id, name, tagline, kind, score, parts, recommended }`.
  * `score` is 1–99 so a card never reads as a sure thing or a zero.
+ *
+ * Worlds flagged `manualOnly` are excluded from the default set. They are
+ * chosen by hand or not at all, and this is the one place that has to
+ * enforce it: buildCustomWorld picks its base from `scoreWorlds(feat)[0]`,
+ * so a manual-only world left in the ranking could be cloned into a custom
+ * world -- inheriting a `kind` (and renderer expectation) that the rest of
+ * the custom-world machinery has no path for. Filtering here covers both
+ * the recommendation and the base pick at once. An explicit `worlds`
+ * argument is still honored verbatim, so a caller that deliberately passes
+ * one in can still score it.
  */
-export function scoreWorlds(features, worlds = listWorlds()) {
+export function scoreWorlds(features, worlds = listWorlds().filter((w) => !w.manualOnly)) {
   const feat = features && typeof features.drive === 'number'
     ? features
     : extractWatchFeatures(features || {});

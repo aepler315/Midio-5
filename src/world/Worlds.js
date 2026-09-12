@@ -18,6 +18,7 @@ import { REDLINE_PALETTES, REDLINE_TEMPERATURE } from './redline/RedlinePalettes
 import { FOUNDRY_PALETTES, FOUNDRY_TEMPERATURE } from './foundry/FoundryPalettes.js';
 import { UNDERSTORY_PALETTES, UNDERSTORY_TEMPERATURE } from './understory/UnderstoryPalettes.js';
 import { NAVE_PALETTES, NAVE_TEMPERATURE } from './nave/NavePalettes.js';
+import { CATHODE_PALETTES, CATHODE_TEMPERATURE } from './cathode/CathodePalettes.js';
 
 /** Channel `reads` keys are fields on the watch-features vector. */
 const ALPINE_CHANNELS = [
@@ -90,6 +91,19 @@ const NAVE_CHANNELS = [
   { id: 'organ', reads: 'bass', weight: 0.85 },
   { id: 'shafts', reads: 'air', weight: 0.70 },
   { id: 'censer', reads: 'onset', weight: 0.50 },
+];
+
+// Carried for shape only -- Cathode is `manualOnly`, so the scorer never
+// reads these. Kept real rather than empty so the world object stays a
+// valid input to scoreWorlds if it is ever passed one explicitly (a debug
+// readout, a future "why not this world?" panel).
+const CATHODE_CHANNELS = [
+  { id: 'sprites', reads: 'onset', weight: 1.30 },
+  { id: 'persona', reads: 'contrast', weight: 1.10 },
+  { id: 'marquee', reads: 'form', weight: 0.90 },
+  { id: 'scanlines', reads: 'texture', weight: 0.60 },
+  { id: 'chiptune', reads: 'groove', weight: 1.20 },
+  { id: 'attract', reads: 'phrase', weight: 0.70 },
 ];
 
 export const WORLDS = [
@@ -244,6 +258,35 @@ export const WORLDS = [
     palettes: NAVE_PALETTES,
     temperature: NAVE_TEMPERATURE,
     cast: (energies, seed) => castBiomes(energies, seed, NAVE_TEMPERATURE),
+  },
+  {
+    // The one world the scorer never gets a vote on. Every other entry
+    // here is a different landform painted by the same pipeline, so
+    // ranking them against a song is a meaningful question. Cathode
+    // replaces the pipeline itself -- different resolution, different
+    // palette discipline, different cast -- and "does this song suit a
+    // Game Boy" is a taste, not a measurement. `manualOnly` keeps it out
+    // of scoreWorlds (and so out of buildCustomWorld's base pick, which
+    // would otherwise be able to clone `kind: 'cathode'` onto a world the
+    // painterly renderer has no draw path for); the select screen offers
+    // it by hand instead.
+    id: 'cathode',
+    name: 'Cathode',
+    tagline: 'A machine dreaming in four colors.',
+    kind: 'cathode',
+    renderer: 'pixel',
+    manualOnly: true,
+    comfort: { lo: 0.20, hi: 0.85 },
+    channels: CATHODE_CHANNELS,
+    prefer: {
+      onset: [0.20, 0.95],
+      groove: [0.25, 0.95],
+      contrast: [0.20, 0.90],
+    },
+    affinity: { onset: 0.34, groove: 0.30, contrast: 0.20, form: 0.16 },
+    palettes: CATHODE_PALETTES,
+    temperature: CATHODE_TEMPERATURE,
+    cast: (energies, seed) => castBiomes(energies, seed, CATHODE_TEMPERATURE),
   },
 ];
 

@@ -2069,6 +2069,27 @@ html, body {
   background: #16161e;
   clip-path: polygon(0 100%, 0 30%, 8% 30%, 8% 100%, 16% 100%, 16% 20%, 24% 10%, 32% 20%, 32% 100%, 42% 100%, 42% 28%, 42% 28%, 58% 28%, 58% 100%, 68% 100%, 68% 20%, 76% 10%, 84% 20%, 84% 100%, 92% 100%, 92% 30%, 100% 30%, 100% 100%);
 }
+/* Cathode's swatch is the only one that shows the PIPELINE rather than a
+   landform: hard-edged bands and scanlines instead of a soft gradient,
+   because that -- not the hue -- is what picking this world changes. */
+.worldCardPreview.cathode {
+  background:
+    repeating-linear-gradient(180deg,
+      rgba(0, 0, 0, 0.55) 0px, rgba(0, 0, 0, 0.55) 1px,
+      rgba(0, 0, 0, 0) 1px, rgba(0, 0, 0, 0) 3px),
+    linear-gradient(180deg, #0f380f 0%, #306230 45%, #8bac0f 70%, #9bbc0f 100%);
+}
+.worldCardPreview.cathode::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 34%;
+  background: #0f380f;
+  /* A chunky stepped horizon: whole-pixel jumps, no diagonals. */
+  clip-path: polygon(0 100%, 0 55%, 12% 55%, 12% 30%, 28% 30%, 28% 62%,
+    44% 62%, 44% 18%, 60% 18%, 60% 48%, 76% 48%, 76% 26%, 88% 26%, 88% 58%, 100% 58%, 100% 100%);
+}
+
 .worldCardTop {
   display: flex;
   align-items: baseline;
