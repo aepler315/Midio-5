@@ -229,6 +229,7 @@ const ANALYSIS_TARGET_STEP_MS = 2000; // ~1 analysis point every 2s for longer s
 // replaces the band-energy schedule. A through-composed piece with no
 // repeats and no sharp boundaries scores below this and keeps the old path.
 const SSM_CONFIDENCE_FLOOR = 0.45;
+const SSM_SNAP_PIN_STRENGTH = 0.78;
 // Novelty below this fraction of the song's strongest turn is noise, not a
 // section boundary. Mirrors the SSM path's own floor so the two detectors
 // refuse to manufacture boundaries on the same terms.
@@ -989,6 +990,16 @@ export class BiomeManager {
     const { cuts: rawCuts, source: floorSource, decorative: rawDecorative } = this._ensureMinimumSections(
       chosen, { pickPeaks, barTimes, durationMs, lastIdx }, ssmUsable,
     );
+    this.fineBoundariesMs = Array.isArray(structure?.fineBoundariesMs) ? [...structure.fineBoundariesMs] : [];
+    this.fineBoundaryEvidence = Array.isArray(structure?.fineBoundaryEvidence)
+      ? structure.fineBoundaryEvidence.map((b) => ({ ...b }))
+      : [];
+    const pinnedCuts = [rawCuts[0], rawCuts[rawCuts.length - 1]];
+    if (ssmUsable && Array.isArray(structure.boundaryStrengths)) {
+      for (let i = 1; i < Math.min(ssmCuts.length, structure.boundaryStrengths.length); i++) {
+        if ((structure.boundaryStrengths[i] ?? 0) >= SSM_SNAP_PIN_STRENGTH) pinnedCuts.push(ssmCuts[i]);
+      }
+    }
     // Put each boundary on the RELEASE rather than on the run-up to it
     // (BoundarySnap.js). Both detectors answer "where does the material
     // change?" -- but in produced music a drop is preceded by a build, the
@@ -999,7 +1010,7 @@ export class BiomeManager {
     // The song's first and last cuts are pinned: they are the edges of the
     // schedule, not releases, and moving one leaves a gap.
     const cuts = snapCutsToReleases(rawCuts, barScalarEnergy, {
-      pinned: [rawCuts[0], rawCuts[rawCuts.length - 1]],
+      pinned: pinnedCuts,
     });
     // A decorative cut's exact index can move under the snap above; carry its
     // status forward by nearest match rather than exact value.
@@ -1008,6 +1019,15 @@ export class BiomeManager {
       let best = cuts[0], bestD = Infinity;
       for (const c of cuts) { const dist = Math.abs(c - d); if (dist < bestD) { bestD = dist; best = c; } }
       decorativeSet.add(best);
+    }
+    const detectedStrengthByCut = new Map();
+    if (ssmUsable) {
+      for (let i = 0; i < ssmCuts.length; i++) {
+        const strength = structure.boundaryStrengths?.[i] ?? 0;
+        let best = cuts[0], bestD = Infinity;
+        for (const c of cuts) { const dist = Math.abs(c - ssmCuts[i]); if (dist < bestD) { bestD = dist; best = c; } }
+        detectedStrengthByCut.set(best, Math.max(detectedStrengthByCut.get(best) ?? 0, strength));
+      }
     }
     // The SSM read is "kept" whenever the schedule is still built from its
     // boundaries -- which is now always true once `ssmUsable`, since the
@@ -1052,9 +1072,13 @@ export class BiomeManager {
         // but only where that sharpness is real. An unmeasured boundary
         // fades: the gentlest option is the honest one when we do not
         // actually know how hard the song turned.
-        transition: this.sections.length === 0 || !peakSet.has(cuts[i])
+        transition: this.sections.length === 0
           ? 'fade'
-          : classifyTransition(novelty[cuts[i]], maxNovelty),
+          : detectedStrengthByCut.has(cuts[i])
+            ? classifyTransition(detectedStrengthByCut.get(cuts[i]), 1)
+            : peakSet.has(cuts[i])
+              ? classifyTransition(novelty[cuts[i]], maxNovelty)
+              : 'fade',
         barMs: (barTimes[Math.min(barTimes.length - 1, cuts[i] + 1)] - barTimes[cuts[i]]) || 500,
         // What this boundary's evidence actually is: 'detected' (SSM/harmonic
         // read), 'inferred' (band-energy novelty peak), or 'decorative' (pure

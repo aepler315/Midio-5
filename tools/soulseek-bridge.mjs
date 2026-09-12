@@ -41,6 +41,34 @@ const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
+export function assertLoopbackSlskdUrl(raw) {
+  let parsed;
+  try {
+    parsed = new URL(String(raw || '').trim());
+  } catch {
+    throw new Error('slskd URL is not valid');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('slskd URL must use http(s)');
+  }
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)) {
+    throw new Error('slskd URL must stay local to this machine');
+  }
+  return parsed.origin;
+}
+
+export function pathsInsideDownloads(dlRoot, localPath) {
+  const root = path.resolve(dlRoot);
+  const raw = String(localPath || '');
+  const safeBase = path.join(root, basename(raw));
+  if (!raw || path.isAbsolute(raw) || /(^|[\\/])\.\.([\\/]|$)/.test(raw)) return [safeBase];
+  const rel = raw.split(/[\\/]+/).filter((seg) => seg && seg !== '.');
+  if (rel.length <= 1) return [safeBase];
+  const nested = path.resolve(root, ...rel);
+  if (!nested.startsWith(root + path.sep)) return [safeBase];
+  return nested === safeBase ? [safeBase] : [safeBase, nested];
+}
+
 /** Fixed local key matching slskd/slskd.yml — never shown to the player. */
 export const BUNDLED_SLSKD_KEY = process.env.SLSKD_API_KEY || 'midio-local-dev-key';
 export const BUNDLED_SLSKD_URL = (process.env.SLSKD_URL || 'http://127.0.0.1:5030').replace(/\/$/, '');
@@ -146,7 +174,7 @@ export async function setConfig(cfg) {
     return { mode: 'free', connected: true };
   }
   if (mode === 'slskd') {
-    const url = String(cfg.slskdUrl || cfg.url || BUNDLED_SLSKD_URL).trim().replace(/\/$/, '');
+    const url = assertLoopbackSlskdUrl(cfg.slskdUrl || cfg.url || BUNDLED_SLSKD_URL);
     // API key optional — fall back to bundled local key
     const key = String(cfg.slskdKey || cfg.apiKey || BUNDLED_SLSKD_KEY).trim();
     if (!url) throw new Error('slskd mode needs a URL');
@@ -439,10 +467,7 @@ async function downloadViaSlskd(cfg, item) {
             process.env.SLSKD_DOWNLOAD_DIR ||
             DEFAULT_SLSKD_DOWNLOADS;
           if (dlRoot) {
-            const tryPaths = [
-              path.join(dlRoot, basename(localPath)),
-              path.join(dlRoot, localPath.replace(/^\\|^\//, '')),
-            ];
+            const tryPaths = pathsInsideDownloads(dlRoot, localPath);
             for (const p of tryPaths) {
               if (fs.existsSync(p)) {
                 return {
