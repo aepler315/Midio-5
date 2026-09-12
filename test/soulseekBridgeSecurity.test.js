@@ -22,6 +22,12 @@ test('pathsInsideDownloads never escapes the downloads root', () => {
   assert.equal(safe.length, 1);
   assert.equal(safe[0], path.join(root, 'track.mp3'));
 
+  const nested = pathsInsideDownloads(root, 'artist/track.mp3');
+  assert.deepEqual(nested, [
+    path.join(root, 'track.mp3'),
+    path.join(root, 'artist', 'track.mp3'),
+  ]);
+
   // Traversal segments are dropped; only the basename may be read, and only
   // inside dlRoot. That is containment, not an escape.
   const escaped = pathsInsideDownloads(root, '../../../etc/passwd');
