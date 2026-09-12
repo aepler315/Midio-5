@@ -184,6 +184,9 @@ To run only the main app's Node tests:
 node --test "test/*.test.js" "test/*.test.mjs"
 ```
 
+To score section boundaries and repeat labels against a held-out annotated
+corpus, see [audio-analysis evaluation](docs/analysis-evaluation.md).
+
 ### Current browser smoke check
 
 Install Chromium once and start the app:

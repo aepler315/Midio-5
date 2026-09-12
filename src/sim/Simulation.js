@@ -70,7 +70,7 @@ const V_REF = (2 * (1 - W) * H_BASE * 1.4) / (GAMMA * D_MIN);
 export class Simulation {
   constructor(conductor, paramBus, {
     bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720,
-    customBiome = null, inputOffsetMs = 0, outputLatencyMs = null, visualLeadMs = 0, lyricSections = null, syncedLyrics = null, structure = null,
+    customBiome = null, inputOffsetMs = 0, outputLatencyMs = null, visualLeadMs = 0, lyricSections = null, syncedLyrics = null, structure = null, tonalityTimeline = null,
     groove = null,
     songSeed: pinnedSeed = null,
     conductorCues = null,
@@ -222,7 +222,7 @@ export class Simulation {
     this._lastDropCount = 0; // matches HypeDirector's own initial dropCount -- no spurious punch at t=0
     this._pendingDiscReason = null; // drop-cued disc spin, deferred one phase (see step())
     this.filmFinish = new FilmFinish();
-    this.vibe = new VibeDirector(conductor.timeline);
+    this.vibe = new VibeDirector(conductor.timeline, tonalityTimeline);
     this.keyDirector = new KeyDirector();
     this.coda = new CodaDirector(conductor.durationMs || 0);
     this.ensemble = new EnsembleDirector(songSeed, { stageW: canvasWidth, stageH: canvasHeight });

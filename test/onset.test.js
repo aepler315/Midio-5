@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   detectRhythmOnsets, estimateTempo, extractPseudoLane, estimateSustainMs, mixBandEnvelopes,
-  globalBandReferences, normalizeBands, estimateTempoCurve, buildDriftAwareBarGrid,
+  globalBandReferences, normalizeBands, estimateTempoCurve, buildDriftAwareBarGrid, bandEnvelope,
 } from '../src/audio/OnsetDetector.js';
 import { Role } from '../src/core/NoteEvent.js';
 import { clamp } from '../src/utils/math.js';
@@ -118,6 +118,41 @@ test('mixBandEnvelopes averages exactly the requested bands', () => {
   bands[3].fill(0.8);
   const mix = mixBandEnvelopes(bands, [2, 3]);
   for (const v of mix) assert.ok(Math.abs(v - 0.6) < 1e-6);
+});
+
+test('bandEnvelope keeps an opposite-phase stereo source audible', () => {
+  // A signed L+R average would make this exactly zero despite both speakers
+  // carrying a healthy tone. Analysis must combine channel power instead.
+  const n = 2048;
+  const left = new Float32Array(n), right = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    left[i] = 0.7 * Math.sin((2 * Math.PI * 220 * i) / 44100);
+    right[i] = -left[i];
+  }
+  const buffer = {
+    numberOfChannels: 2,
+    getChannelData: (channel) => (channel === 0 ? left : right),
+  };
+  const env = bandEnvelope(buffer, 2);
+  assert.ok(env.every((v) => v > 0.2), `phase-safe RMS should stay audible, got ${[...env]}`);
+});
+
+test('a fractional-frame beat period stays on grid for four minutes at common sample rates', () => {
+  for (const sampleRate of [44100, 48000]) {
+    const rate = sampleRate / 512;
+    const tau = rate * 0.5; // exact 120 BPM, intentionally non-integer
+    const grid = buildDriftAwareBarGrid(0, 240000, 4, rate, [{ startFrame: 0, tau, confidence: 1 }], tau);
+    assert.equal(grid.length, 120, `${sampleRate}Hz should yield 120 four-beat bars`);
+    assert.ok(Math.abs(grid[119].ms - 238000) < 1e-6,
+      `${sampleRate}Hz bar 120 drifted to ${grid[119].ms}ms instead of 238000ms`);
+  }
+});
+
+test('a 3/4 audio bar grid advances its musical tick by three beats', () => {
+  const grid = buildDriftAwareBarGrid(0, 12000, 3, 100, [{ startFrame: 0, tau: 50, confidence: 1 }], 50);
+  assert.equal(grid[0].tick, 0);
+  assert.equal(grid[1].tick, 3);
+  assert.equal(grid[2].tick, 6);
 });
 
 // --- True dynamics for EnergyCurves (globalBandReferences) ---------------

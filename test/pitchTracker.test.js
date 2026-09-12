@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   computePitchFeatures, chromaHistogram, melodyPitchAt, estimateBassPitchAt,
-  tonalityFrom, meanBrightness, windowChroma, midiToHz, fft,
+  tonalityFrom, tonalityTimeline, meanBrightness, windowChroma, midiToHz, fft,
 } from '../src/audio/PitchTracker.js';
 
 const SR = 44100;
@@ -35,6 +35,15 @@ test('melodyPitchAt finds the true pitch of a sustained A4 (440Hz)', () => {
   const features = computePitchFeatures(mono, SR);
   const pitch = melodyPitchAt(features, 200);
   assert.equal(pitch, 69, `expected MIDI 69 (A4), got ${pitch}`);
+});
+
+test('phase-inverted stereo retains melody and bass pitch evidence', () => {
+  const left = sine([440, 55], 1.0);
+  const right = Float32Array.from(left, (x) => -x);
+  const features = computePitchFeatures([left, right], SR);
+  assert.equal(melodyPitchAt(features, 200), 69, 'spectral power must not cancel across channels');
+  const bass = estimateBassPitchAt([left, right], SR, 100);
+  assert.ok(Math.abs(bass - 33) <= 1, `expected inverse-phase A1 to remain ~33, got ${bass}`);
 });
 
 test('melodyPitchAt reads the fundamental, not a louder harmonic, on a weak-fundamental A3', () => {
@@ -111,4 +120,14 @@ test('windowChroma returns the strongest classes of a window and [] for silence'
 
   const silent = computePitchFeatures(new Float32Array(SR / 2), SR);
   assert.deepEqual(windowChroma(silent, 0, 400), []);
+});
+
+test('tonalityTimeline provides a causal, confident key stream from spectral chroma', () => {
+  const mono = sine([midiToHz(60), midiToHz(64), midiToHz(67)], 8.0);
+  const timeline = tonalityTimeline(computePitchFeatures(mono, SR), { durationMs: 8000, hopMs: 1000 });
+  const late = timeline.find((k) => k.tMs === 7000);
+  assert.ok(late, 'expected a 7s key sample');
+  assert.equal(late.tonic, 0, `expected C tonic, got ${late.tonic}`);
+  assert.equal(late.mode, 'major');
+  assert.ok(late.confidence > 0, 'a sustained triad should carry nonzero confidence');
 });

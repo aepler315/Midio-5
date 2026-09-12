@@ -51,6 +51,19 @@ test('tonic/tonicConfidence hold their defaults when there is not yet enough evi
   assert.equal(vibe.tonicConfidence, 0);
 });
 
+test('a confident spectral key timeline takes precedence over a misleading note-event argmax', () => {
+  // Raw-audio pitch events are sparse/onset-biased; they can over-count one
+  // melodic note even while the spectral chroma correctly hears the harmony.
+  const notes = loopedTimeline([62, 62, 62, 62], 200, 8);
+  const vibe = new VibeDirector(notes, [
+    { tMs: 0, tonic: 0, mode: 'major', majorness: 0.8, confidence: 0.9 },
+  ]);
+  vibe.update(1000, STEP, null);
+  assert.equal(vibe.tonic, 0);
+  assert.ok(vibe.tonicConfidence > 0.8);
+  assert.ok(vibe.valence > 0, 'the timeline major third balance should inform valence');
+});
+
 test('dense, loud, wide-register writing reads epic; sparse quiet writing reads trivial', () => {
   const epicNotes = loopedTimeline([36, 48, 60, 72, 84, 96], 120, 80);
   const trivialNotes = loopedTimeline([60, 62], 1800, 6, 0.3);

@@ -224,6 +224,30 @@ test('a constant-energy song with a confident 2-section SSM read keeps its 60s b
   assert.equal(labelAt(110000), 1);
 });
 
+test('a harmonic SSM boundary is not moved onto a nearby energy release, and fine evidence survives scheduling', () => {
+  const durationMs = 120000;
+  const barGrid = Array.from({ length: 61 }, (_, i) => ({ ms: i * 2000, tick: i * 4, numerator: 4, denominator: 4 }));
+  const energy = {
+    // A strong release two bars AFTER the harmonic change. The old universal
+    // snap pass would pull the SSM boundary from 60s to 64s.
+    sampleAll(ms) { return new Array(7).fill(ms >= 64000 ? 0.9 : 0.1); },
+  };
+  const fake = buildWithStructure(barGrid, energy, durationMs, {
+    boundariesMs: [0, 60000],
+    boundaryStrengths: [0, 0.95],
+    fineBoundariesMs: [68000],
+    fineBoundaryEvidence: [{ timeMs: 68000, strength: 0.7, source: 'ssm', scale: 'fine' }],
+    labels: [0, 1], confidence: 0.95,
+  });
+  assert.ok(fake.sections.some((s) => s.startMs === 60000),
+    `SSM boundary must remain at its harmonic change, got ${fake.sections.map((s) => s.startMs)}`);
+  assert.deepEqual(fake.fineBoundariesMs, [68000]);
+  assert.equal(fake.fineBoundaryEvidence[0].strength, 0.7);
+  const section = fake.sections.find((s) => s.startMs === 60000);
+  assert.equal(section.provenance, 'detected');
+  assert.equal(section.transition, 'shutter', 'strong SSM evidence should drive its own transition strength');
+});
+
 test('an even-split schedule says so, rather than borrowing the credit of a detector', () => {
   // Nothing in the signal to pick peaks from: the floor falls all the way
   // through to even time-splits. That is a real degradation and the overlay

@@ -13,7 +13,10 @@ const MEDIAN_HALF_WINDOW = 43; // ~+-0.5s at ~86 frames/s
 const MIN_ONSET_GAP_MS = 60;
 const LOCAL_MAX_WINDOW_MS = 30;
 
-/** RMS envelope of one band-limited AudioBuffer, mixed down to mono first.
+/** RMS envelope of one band-limited AudioBuffer.  Channels are combined in
+ *  power, rather than by averaging their signed samples: a stereo widening
+ *  treatment can deliberately put a source in opposite phase left/right,
+ *  and a signed mono mix would make a very audible band look like silence.
  *  Pulled out of computeBandEnvelopes so a caller processing stems one at a
  *  time (see AudioAdapter's streaming path) can compute each band's envelope
  *  and let the full-length buffer be released before rendering the next,
@@ -27,10 +30,12 @@ export function bandEnvelope(buf, numFrames) {
     const start = n * HOP;
     let sum = 0;
     for (let k = 0; k < WIN; k++) {
-      let s = 0;
-      for (let c = 0; c < chans.length; c++) s += chans[c][start + k] || 0;
-      s /= chans.length;
-      sum += s * s;
+      let power = 0;
+      for (let c = 0; c < chans.length; c++) {
+        const s = chans[c][start + k] || 0;
+        power += s * s;
+      }
+      sum += power / Math.max(1, chans.length);
     }
     env[n] = Math.sqrt(sum / WIN);
   }
@@ -281,6 +286,24 @@ function correlationAt(Obar, r0, tau) {
   return r / r0;
 }
 
+/**
+ * The autocorrelation search must inspect integer frame lags, but the peak
+ * itself is almost never exactly on a frame.  Fit a parabola through the
+ * winning lag and its neighbours so the beat period remains fractional when
+ * the bar grid is walked for minutes.  Keeping the integer lag for phase
+ * search preserves array addressing and kick-comb behaviour; only elapsed
+ * time uses the refined value.
+ */
+function refineCorrelationPeak(Obar, r0, tau) {
+  const left = correlationAt(Obar, r0, tau - 1);
+  const center = correlationAt(Obar, r0, tau);
+  const right = correlationAt(Obar, r0, tau + 1);
+  const denom = left - 2 * center + right;
+  if (!Number.isFinite(denom) || Math.abs(denom) < 1e-12) return tau;
+  const delta = clamp(0.5 * (left - right) / denom, -0.5, 0.5);
+  return Number.isFinite(delta) ? tau + delta : tau;
+}
+
 /** BPM autocorrelation + harmonic disambiguation + phase/downbeat alignment (spec §1.2.5). */
 export function estimateTempo(O, rate, kickFrames) {
   const n = O.length;
@@ -338,17 +361,23 @@ export function estimateTempo(O, rate, kickFrames) {
     if (explain > bestExplain) { bestExplain = explain; tauFinal = tau; }
   }
 
-  const rHatFinal = correlationAt(Obar, r0, tauFinal);
-  const beatPeriodMs = (tauFinal / rate) * 1000;
+  // Array/grid phase operations need an integer frame count, but elapsed
+  // time does not.  Without this sub-frame refinement, rounding a 120 BPM
+  // period at 44.1 kHz/512 to 43 frames loses 0.066 frames per beat and
+  // moves the bar grid hundreds of milliseconds over a four-minute song.
+  const tauFinalFrame = tauFinal;
+  const tauRefined = refineCorrelationPeak(Obar, r0, tauFinalFrame);
+  const rHatFinal = correlationAt(Obar, r0, tauFinalFrame);
+  const beatPeriodMs = (tauRefined / rate) * 1000;
   const bpm = 60000 / beatPeriodMs;
 
   // Phase alignment: comb-filter search with KICK frames weighted x2.
   const weighted = Float32Array.from(O);
   for (const kf of kickFrames) if (kf < weighted.length) weighted[kf] *= 2;
   let phiStar = 0, phiScore = -Infinity;
-  for (let phi = 0; phi < tauFinal; phi++) {
+  for (let phi = 0; phi < tauFinalFrame; phi++) {
     let s = 0;
-    for (let k = phi; k < n; k += tauFinal) s += weighted[k];
+    for (let k = phi; k < n; k += tauFinalFrame) s += weighted[k];
     if (s > phiScore) { phiScore = s; phiStar = phi; }
   }
 
@@ -363,8 +392,8 @@ export function estimateTempo(O, rate, kickFrames) {
     let mStar = 0, mScore = -Infinity;
     for (let m = 0; m < beatsPerBar; m++) {
       let s = 0, count = 0;
-      for (let j = 0; phiStar + (m + beatsPerBar * j) * tauFinal < n; j++, count++) {
-        s += kickOnly[phiStar + (m + beatsPerBar * j) * tauFinal];
+      for (let j = 0; phiStar + (m + beatsPerBar * j) * tauFinalFrame < n; j++, count++) {
+        s += kickOnly[phiStar + (m + beatsPerBar * j) * tauFinalFrame];
       }
       const mean = count > 0 ? s / count : 0;
       if (mean > mScore) { mScore = mean; mStar = m; }
@@ -392,13 +421,13 @@ export function estimateTempo(O, rate, kickFrames) {
 
   // phiStar in [0,tauFinal) and mStar in [0,beatsPerBar) => downbeatFrame in
   // [0, beatsPerBar*tauFinal), i.e. exactly the first downbeat at or after t=0.
-  const downbeatFrame = phiStar + mStar * tauFinal;
+  const downbeatFrame = phiStar + mStar * tauFinalFrame;
 
   // Local tempo curve for drift tracking (see estimateTempoCurve): a single
   // beatPeriodMs extrapolated across the whole song accumulates error
   // linearly with duration, which real (non-quantized) performances --
   // especially anything not tracked to a click -- routinely drift past.
-  const curve = estimateTempoCurve(O, rate, tauFinal);
+  const curve = estimateTempoCurve(O, rate, tauRefined);
 
   return {
     bpm,
@@ -408,7 +437,7 @@ export function estimateTempo(O, rate, kickFrames) {
     beatsPerBar,
     barPeriodMs: beatPeriodMs * beatsPerBar,
     firstBarMs: (downbeatFrame / rate) * 1000,
-    tau: tauFinal,
+    tau: tauRefined,
     curve,
   };
 }
@@ -429,7 +458,7 @@ export function estimateTempo(O, rate, kickFrames) {
  */
 export function estimateTempoCurve(O, rate, globalTau, { windowSec = 20, driftTolerance = 0.12 } = {}) {
   const n = O.length;
-  const windowFrames = Math.max(globalTau * 8, Math.round(windowSec * rate));
+  const windowFrames = Math.max(Math.round(globalTau * 8), Math.round(windowSec * rate));
   const tauLo = Math.max(1, Math.round(globalTau * (1 - driftTolerance)));
   const tauHi = Math.max(tauLo + 1, Math.round(globalTau * (1 + driftTolerance)));
   const segments = [];
@@ -444,12 +473,13 @@ export function estimateTempoCurve(O, rate, globalTau, { windowSec = 20, driftTo
     let r0 = 0;
     for (let i = 0; i < bar.length; i++) r0 += bar[i] * bar[i];
     r0 = Math.max(r0, 1e-9);
-    let bestTau = globalTau, bestScore = -Infinity;
+    let bestTau = Math.max(1, Math.round(globalTau)), bestScore = -Infinity;
     for (let tau = tauLo; tau <= tauHi && tau < bar.length; tau++) {
       const score = correlationAt(bar, r0, tau);
       if (score > bestScore) { bestScore = score; bestTau = tau; }
     }
-    segments.push({ startFrame: start, tau: bestTau, confidence: clamp(bestScore, 0, 1) });
+    const tau = bestScore > -Infinity ? refineCorrelationPeak(bar, r0, bestTau) : globalTau;
+    segments.push({ startFrame: start, tau, confidence: clamp(bestScore, 0, 1) });
   }
   return segments.length ? segments : [{ startFrame: 0, tau: globalTau, confidence: 0 }];
 }
@@ -469,11 +499,12 @@ export function estimateTempoCurve(O, rate, globalTau, { windowSec = 20, driftTo
 export function buildDriftAwareBarGrid(firstBarMs, durationMs, beatsPerBar, rate, curve, globalTau, confidenceFloor = 0.2) {
   const barGrid = [];
   let t = firstBarMs, bar = 0, segIdx = 0;
+  const segments = Array.isArray(curve) ? curve : [];
   while (t < durationMs) {
-    barGrid.push({ tick: bar * 4, ms: t, numerator: beatsPerBar, denominator: 4 });
+    barGrid.push({ tick: bar * beatsPerBar, ms: t, numerator: beatsPerBar, denominator: 4 });
     const frame = (t / 1000) * rate;
-    while (segIdx + 1 < curve.length && curve[segIdx + 1].startFrame <= frame) segIdx++;
-    const seg = curve[segIdx];
+    while (segIdx + 1 < segments.length && segments[segIdx + 1].startFrame <= frame) segIdx++;
+    const seg = segments[segIdx];
     const tau = seg && seg.confidence >= confidenceFloor ? seg.tau : globalTau;
     t += ((tau / rate) * 1000) * beatsPerBar;
     bar++;

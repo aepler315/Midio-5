@@ -31,6 +31,22 @@ export function midiToHz(midi) {
   return 440 * 2 ** ((midi - 69) / 12);
 }
 
+/** Accept the historic mono Float32Array API as well as one array per
+ * channel.  Audio analysis must never create a signed L+R mix before this
+ * point: phase-inverted stereo content is still audible and has to retain
+ * its spectral and periodic energy. */
+function sampleChannels(samples) {
+  if (Array.isArray(samples)) return samples.filter((ch) => ch && typeof ch.length === 'number');
+  return samples && typeof samples.length === 'number' ? [samples] : [];
+}
+
+function sharedLength(channels) {
+  if (channels.length === 0) return 0;
+  let length = channels[0].length;
+  for (let i = 1; i < channels.length; i++) length = Math.min(length, channels[i].length);
+  return length;
+}
+
 /** In-place iterative radix-2 FFT. re/im must be power-of-two length. */
 export function fft(re, im) {
   const n = re.length;
@@ -63,7 +79,9 @@ export function fft(re, im) {
 }
 
 /**
- * Semitone spectrogram + per-frame brightness from a mono sample buffer.
+ * Semitone spectrogram + per-frame brightness from one or more sample
+ * buffers. Channel spectra are combined in power, so a phase-inverted stereo
+ * source remains detectable while a mono caller keeps the same API.
  * Each frame holds energy per MIDI note SEMITONE_LO..SEMITONE_HI. Energy
  * is assigned only at spectral PEAKS (local maxima, frequency refined by
  * parabolic interpolation) rather than by band-maxing every bin: FFT
@@ -74,8 +92,10 @@ export function fft(re, im) {
  *
  * @returns {{ rate: number, frames: Float32Array[], brightness: Float32Array }}
  */
-export function computePitchFeatures(mono, sampleRate, { win = DEFAULT_WIN, hop = DEFAULT_HOP } = {}) {
-  const numFrames = Math.max(1, Math.floor((mono.length - win) / hop) + 1);
+export function computePitchFeatures(samples, sampleRate, { win = DEFAULT_WIN, hop = DEFAULT_HOP } = {}) {
+  const channels = sampleChannels(samples);
+  const length = sharedLength(channels);
+  const numFrames = Math.max(1, Math.floor((length - win) / hop) + 1);
   const rate = sampleRate / hop;
 
   const hann = new Float32Array(win);
@@ -93,15 +113,21 @@ export function computePitchFeatures(mono, sampleRate, { win = DEFAULT_WIN, hop 
   const brightness = new Float32Array(numFrames);
   const re = new Float32Array(win), im = new Float32Array(win);
   const mag = new Float32Array(win / 2);
+  const power = new Float64Array(win / 2);
+  const channelCount = Math.max(1, channels.length);
 
   for (let f = 0; f < numFrames; f++) {
     const start = f * hop;
-    for (let i = 0; i < win; i++) {
-      re[i] = (mono[start + i] || 0) * hann[i];
-      im[i] = 0;
+    power.fill(0);
+    for (const channel of channels) {
+      for (let i = 0; i < win; i++) {
+        re[i] = (channel[start + i] || 0) * hann[i];
+        im[i] = 0;
+      }
+      fft(re, im);
+      for (let b = 1; b < win / 2; b++) power[b] += re[b] * re[b] + im[b] * im[b];
     }
-    fft(re, im);
-    for (let b = 1; b < win / 2; b++) mag[b] = Math.hypot(re[b], im[b]);
+    for (let b = 1; b < win / 2; b++) mag[b] = Math.sqrt(power[b] / channelCount);
 
     let frameMax = 0;
     for (let b = scanLo; b <= scanHi; b++) if (mag[b] > frameMax) frameMax = mag[b];
@@ -203,31 +229,56 @@ export function melodyPitchAt(features, tMs, { loMidi = 52, hiMidi = SEMITONE_HI
 
 /**
  * Bass fundamental at a moment via normalized time-domain autocorrelation
- * over a ~2048-sample window -- FFT semitone bands below ~100 Hz are wider
- * than a semitone, so the spectrogram can't resolve bass lines. Returns a
+ * over a decimated ~2048-sample window -- FFT semitone bands below ~100 Hz
+ * are wider than a semitone, so the spectrogram can't resolve bass lines.
+ * The BASS stem is band-limited before this call, allowing a lower analysis
+ * rate and a longer time window without spending millions of operations per
+ * onset. Channels are accumulated in energy rather than averaged in phase.
+ * Returns a
  * MIDI pitch clamped to [loMidi, hiMidi], or null when no periodicity
  * clears the confidence floor (silence, pure noise, a kick thump).
  */
-export function estimateBassPitchAt(mono, sampleRate, tMs, { loMidi = 28, hiMidi = 52, winLen = 2048 } = {}) {
+export function estimateBassPitchAt(samples, sampleRate, tMs, {
+  loMidi = 28, hiMidi = 52, winLen = 2048, targetRate = 9000,
+} = {}) {
+  const channels = sampleChannels(samples);
+  const length = sharedLength(channels);
+  if (channels.length === 0) return null;
+  const stride = Math.max(1, Math.floor(sampleRate / Math.max(1, targetRate)));
+  const analysisRate = sampleRate / stride;
   const start = Math.max(0, Math.round((tMs / 1000) * sampleRate));
-  if (start + winLen > mono.length) return null;
+  if (start + (winLen - 1) * stride >= length) return null;
 
   let r0 = 0;
-  for (let i = 0; i < winLen; i++) r0 += mono[start + i] * mono[start + i];
+  for (const channel of channels) {
+    for (let i = 0; i < winLen; i++) {
+      const x = channel[start + i * stride] || 0;
+      r0 += x * x;
+    }
+  }
   if (r0 < 1e-8) return null;
 
-  const lagMin = Math.max(2, Math.floor(sampleRate / midiToHz(hiMidi)));
-  const lagMax = Math.min(winLen - 1, Math.ceil(sampleRate / midiToHz(loMidi)));
+  const lagMin = Math.max(2, Math.floor(analysisRate / midiToHz(hiMidi)));
+  const lagMax = Math.min(winLen - 1, Math.ceil(analysisRate / midiToHz(loMidi)));
   let bestLag = 0, bestR = 0;
   for (let lag = lagMin; lag <= lagMax; lag++) {
-    let r = 0;
-    for (let i = 0; i + lag < winLen; i++) r += mono[start + i] * mono[start + i + lag];
-    const norm = r / r0;
+    let r = 0, leftEnergy = 0, rightEnergy = 0;
+    for (const channel of channels) {
+      for (let i = 0; i + lag < winLen; i++) {
+        const x = channel[start + i * stride] || 0;
+        const y = channel[start + (i + lag) * stride] || 0;
+        r += x * y;
+        leftEnergy += x * x;
+        rightEnergy += y * y;
+      }
+    }
+    const denom = Math.sqrt(leftEnergy * rightEnergy);
+    const norm = denom > 1e-9 ? r / denom : 0;
     if (norm > bestR) { bestR = norm; bestLag = lag; }
   }
   if (bestR < 0.25 || bestLag === 0) return null;
 
-  const hz = sampleRate / bestLag;
+  const hz = analysisRate / bestLag;
   const midi = Math.round(69 + 12 * Math.log2(hz / 440));
   return clamp(midi, loMidi, hiMidi);
 }
@@ -269,6 +320,46 @@ export function tonalityFrom(hist) {
     ? clamp01((best.score - secondScore) / (Math.abs(best.score) + 1e-6) * 6)
     : 1;
   return { tonic: best.tonic, mode: best.mode, majorness, confidence };
+}
+
+/** Chroma histogram for one time interval. Unlike `windowChroma`, this keeps
+ * every class and is therefore suitable for an actual key estimate. */
+export function chromaHistogramBetween(features, fromMs, toMs) {
+  const hist = new Array(12).fill(0);
+  if (!features || !features.frames || features.frames.length === 0) return hist;
+  const f0 = Math.max(0, Math.floor((fromMs / 1000) * features.rate));
+  const f1 = Math.min(features.frames.length - 1, Math.ceil((toMs / 1000) * features.rate));
+  if (f1 < f0) return hist;
+  for (let f = f0; f <= f1; f++) {
+    const semis = features.frames[f];
+    for (let m = 0; m < semis.length; m++) hist[(SEMITONE_LO + m) % 12] += semis[m];
+  }
+  return hist;
+}
+
+/**
+ * A causal, rolling key timeline derived from the same spectral chroma as
+ * the whole-song fingerprint. This is the authoritative source for visual
+ * key changes; it prevents VibeDirector's note-event argmax from disagreeing
+ * with the Krumhansl analysis that chose the custom world's base key.
+ */
+export function tonalityTimeline(features, {
+  durationMs = null, windowMs = 6000, hopMs = 1000,
+} = {}) {
+  if (!features || !features.frames || features.frames.length === 0 || !(features.rate > 0)) return [];
+  const inferredDurationMs = (features.frames.length / features.rate) * 1000;
+  const endMs = Number.isFinite(durationMs) && durationMs > 0 ? durationMs : inferredDurationMs;
+  const out = [];
+  for (let tMs = 0; tMs <= endMs; tMs += Math.max(1, hopMs)) {
+    const hist = chromaHistogramBetween(features, Math.max(0, tMs - windowMs), tMs);
+    const key = tonalityFrom(hist);
+    out.push({ tMs, ...key });
+  }
+  if (out.length === 0 || out[out.length - 1].tMs < endMs) {
+    const hist = chromaHistogramBetween(features, Math.max(0, endMs - windowMs), endMs);
+    out.push({ tMs: endMs, ...tonalityFrom(hist) });
+  }
+  return out;
 }
 
 /** The brightness (log-frequency centroid, 0..1) around one moment --

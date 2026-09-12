@@ -37,7 +37,7 @@ import { Lane } from '../core/Casting.js';
  *  version it does not know rather than misreading it, because a bundle
  *  silently decoded under the wrong layout produces a show that is subtly,
  *  inexplicably wrong instead of an error anyone can act on. */
-export const BUNDLE_VERSION = 2;
+export const BUNDLE_VERSION = 3;
 
 const ROLES = [Role.MELODY, Role.RHYTHM, Role.BASS, Role.PAD];
 const LANES = [null, Lane.MIDASUS, Lane.MIDIO, Lane.BROSHI];
@@ -148,12 +148,37 @@ export function packBundle(data, { fingerprint, name = '', identity = null } = {
     beatPeriodMs: data.beatPeriodMs || 0,
     confidence: data.confidence ?? 0,
     freeTime: !!data.freeTime,
-    barGrid: packF32((data.barGrid || []).map((b) => b.ms)),
+    // Restoring only bar times used to silently turn a detected 3/4 audio
+    // grid back into 4/4. Keep meter and tick as well as the timestamps.
+    barGrid: {
+      ms: packF32((data.barGrid || []).map((b) => b.ms)),
+      tick: packF32((data.barGrid || []).map((b, index) => b.tick ?? index * (b.numerator || 4))),
+      numerator: bytesToB64(Uint8Array.from((data.barGrid || []).map((b) => b.numerator || 4))),
+      denominator: bytesToB64(Uint8Array.from((data.barGrid || []).map((b) => b.denominator || 4))),
+    },
     stems: data.stems || null,
     analysis: data.analysis || null,
+    tonalityTimeline: Array.isArray(data.tonalityTimeline)
+      ? data.tonalityTimeline
+        .filter((k) => Number.isFinite(k?.tMs) && Number.isFinite(k?.tonic))
+        .map((k) => ({
+          tMs: k.tMs,
+          tonic: ((Math.round(k.tonic) % 12) + 12) % 12,
+          mode: k.mode === 'minor' ? 'minor' : 'major',
+          majorness: Number.isFinite(k.majorness) ? k.majorness : 0,
+          confidence: Number.isFinite(k.confidence) ? k.confidence : 0,
+        }))
+      : null,
     structure: data.structure
       ? {
         boundariesMs: packF32(data.structure.boundariesMs || []),
+        boundaryStrengths: packF32(data.structure.boundaryStrengths || []),
+        fineBoundariesMs: packF32(data.structure.fineBoundariesMs || []),
+        fineBoundaryStrengths: packF32(
+          data.structure.fineBoundaryEvidence
+            ? data.structure.fineBoundaryEvidence.map((b) => b?.strength ?? 0)
+            : (data.structure.fineBoundariesMs || []).map(() => 0),
+        ),
         labels: data.structure.labels || [],
         confidence: data.structure.confidence ?? 0,
       }
@@ -195,8 +220,17 @@ export function packBundle(data, { fingerprint, name = '', identity = null } = {
 export function unpackBundle(bundle) {
   if (!bundle || bundle.v !== BUNDLE_VERSION) return null;
   try {
-    const barMs = unpackF32(bundle.barGrid || '');
-    const barGrid = Array.from(barMs, (ms, index) => ({ ms, index }));
+    const barMs = unpackF32(bundle.barGrid?.ms || '');
+    const barTicks = unpackF32(bundle.barGrid?.tick || '');
+    const numerators = b64ToBytes(bundle.barGrid?.numerator || '');
+    const denominators = b64ToBytes(bundle.barGrid?.denominator || '');
+    const barGrid = Array.from(barMs, (ms, index) => ({
+      ms,
+      index,
+      tick: barTicks[index] ?? index * (numerators[index] || 4),
+      numerator: numerators[index] || 4,
+      denominator: denominators[index] || 4,
+    }));
 
     let energyCurves = null;
     if (bundle.curves) {
@@ -245,17 +279,38 @@ export function unpackBundle(bundle) {
       freeTime: !!bundle.freeTime,
       energyCurves,
       analysis: bundle.analysis || null,
+      tonalityTimeline: Array.isArray(bundle.tonalityTimeline) ? bundle.tonalityTimeline.map((k) => ({ ...k })) : null,
       structure: bundle.structure
-        ? {
-          boundariesMs: Array.from(unpackF32(bundle.structure.boundariesMs || '')),
-          labels: bundle.structure.labels || [],
-          // A restored bundle carries no novelty curve: nothing reads it
-          // after the boundaries are chosen, and it is the largest array in
-          // the structure for no downstream benefit.
-          novelty: [],
-          cutIndices: [],
-          confidence: bundle.structure.confidence ?? 0,
-        }
+        ? (() => {
+          const boundariesMs = Array.from(unpackF32(bundle.structure.boundariesMs || ''));
+          const boundaryStrengths = Array.from(unpackF32(bundle.structure.boundaryStrengths || ''));
+          const fineBoundariesMs = Array.from(unpackF32(bundle.structure.fineBoundariesMs || ''));
+          const fineBoundaryStrengths = Array.from(unpackF32(bundle.structure.fineBoundaryStrengths || ''));
+          return {
+            boundariesMs,
+            boundaryStrengths,
+            boundaryEvidence: boundariesMs.map((timeMs, index) => ({
+              timeMs,
+              strength: boundaryStrengths[index] ?? 0,
+              source: index === 0 ? 'start' : 'ssm',
+              scale: 'coarse',
+            })),
+            fineBoundariesMs,
+            fineBoundaryEvidence: fineBoundariesMs.map((timeMs, index) => ({
+              timeMs,
+              strength: fineBoundaryStrengths[index] ?? 0,
+              source: 'ssm',
+              scale: 'fine',
+            })),
+            labels: bundle.structure.labels || [],
+            // A restored bundle carries no novelty curve: nothing reads it
+            // after the boundaries are chosen, and it is the largest array in
+            // the structure for no downstream benefit.
+            novelty: [],
+            cutIndices: [],
+            confidence: bundle.structure.confidence ?? 0,
+          };
+        })()
         : null,
       stems: bundle.stems || null,
       /** Set so the rest of the app can tell a restored analysis from a fresh
