@@ -30,7 +30,7 @@ web:
       midio:
         key: midio-local-dev-key
         role: administrator
-        cidr: 0.0.0.0/0,::/0
+        cidr: 127.0.0.1/32,::1/128
 
 soulseek:
   # Prefer env: SLSKD_SLSK_USERNAME / SLSKD_SLSK_PASSWORD (set via compose)
