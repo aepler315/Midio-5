@@ -1308,8 +1308,13 @@ export class BiomeManager {
     let prev = -1;
     for (let i = 0; i < bounds.length; i++) {
       const cut = nearest(bounds[i]);
-      if (cut >= lastIdx || cut <= prev) continue;
-      out.set(cut, strengths[i] ?? 0);
+      if (cut >= lastIdx || cut < prev) continue;
+      const strength = strengths[i] ?? 0;
+      if (cut === prev) {
+        out.set(cut, Math.max(out.get(cut) ?? 0, strength));
+        continue;
+      }
+      out.set(cut, strength);
       prev = cut;
     }
     return out;
