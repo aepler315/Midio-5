@@ -53,7 +53,7 @@ jobs:
           cp -r src _site/src
           cp -r soundfonts _site/soundfonts
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: '_site'
       - name: Deploy to GitHub Pages
