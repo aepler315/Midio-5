@@ -4,7 +4,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CATHODE_PALETTES, CATHODE_TEMPERATURE, personaFor, rampAt } from '../src/world/cathode/CathodePalettes.js';
 import { BAYER_4X4, ditherThreshold, rampIndexFor, PIXEL_W, PIXEL_H } from '../src/world/cathode/PixelBuffer.js';
-import { horizonRowFor, buildBackdropPixels, scanlineAlpha } from '../src/world/cathode/CathodeRenderer.js';
+import {
+  horizonRowFor, buildBackdropPixels, scanlineAlpha, VIGNETTE_ALPHA, LAYER_COUNT,
+} from '../src/world/cathode/CathodeRenderer.js';
+import {
+  layerColumnLevel, buildLayerHeights, layerConfigFor, layerRampIndex, runsFromHeights,
+} from '../src/world/cathode/CathodeBackdrop.js';
+import { ValueNoise1D } from '../src/utils/noise.js';
 import { listWorlds, getWorld } from '../src/world/Worlds.js';
 import { scoreWorlds } from '../src/world/WorldScore.js';
 
@@ -217,4 +223,145 @@ test('exactly one world is manual-only today, and every other world still ranks'
   assert.deepEqual(manual.map((w) => w.id), ['cathode']);
   const ranked = scoreWorlds({ drive: 0.5 });
   assert.equal(ranked.length, listWorlds().length - 1);
+});
+
+// --- parallax backdrop -------------------------------------------------------
+
+test('layerColumnLevel is always in [0,1] and constant across a whole column', () => {
+  const noise = new ValueNoise1D(7, 64);
+  const columnPx = 16;
+  for (let col = 0; col < 6; col++) {
+    const first = layerColumnLevel(noise, col * columnPx, columnPx);
+    assert.ok(first >= 0 && first <= 1, `level ${first} out of range at column ${col}`);
+    for (let x = col * columnPx; x < (col + 1) * columnPx; x++) {
+      assert.equal(layerColumnLevel(noise, x, columnPx), first, `x=${x} broke the column-${col} plateau`);
+    }
+  }
+});
+
+test('buildLayerHeights matches layerColumnLevel by construction, and never reaches or passes the horizon', () => {
+  const noise = new ValueNoise1D(3, 64);
+  const w = 48;
+  const horizon = 30;
+  const opts = { columnPx: 12, ampPx: 20, baseRowsAboveHorizon: 5 };
+  const heights = buildLayerHeights(noise, w, horizon, opts);
+  assert.equal(heights.length, w);
+  for (let x = 0; x < w; x++) {
+    const level = layerColumnLevel(noise, x, opts.columnPx);
+    const expected = Math.max(0, horizon - (opts.baseRowsAboveHorizon + Math.round(level * opts.ampPx)));
+    assert.equal(heights[x], expected, `mismatch at x=${x}`);
+    assert.ok(heights[x] < horizon, 'a silhouette must stay strictly above the horizon line, never on or past it');
+    assert.ok(heights[x] >= 0, 'a height must never go off the top of the buffer');
+  }
+});
+
+test('buildLayerHeights scrollPx is a pure phase shift of the same noise field', () => {
+  // Scrolling must not re-seed or otherwise change the field -- shifting by
+  // exactly one column width should reproduce the neighbouring column's
+  // unscrolled value, at every column.
+  const noise = new ValueNoise1D(11, 64);
+  const w = 40;
+  const horizon = 25;
+  const columnPx = 8;
+  const still = buildLayerHeights(noise, w + columnPx, horizon, { columnPx, scrollPx: 0 });
+  const scrolled = buildLayerHeights(noise, w, horizon, { columnPx, scrollPx: columnPx });
+  for (let x = 0; x < w; x++) {
+    assert.equal(scrolled[x], still[x + columnPx], `scrolled x=${x} should equal unscrolled x=${x + columnPx}`);
+  }
+});
+
+test('buildLayerHeights degrades safely on a degenerate (0 or negative) horizon', () => {
+  const noise = new ValueNoise1D(1, 32);
+  const heights = buildLayerHeights(noise, 10, 0);
+  for (const h of heights) assert.equal(h, 0, 'nothing can rise above a horizon already at the top of the buffer');
+});
+
+test('layerConfigFor is deterministic per (seed, index) and distinguishes layers from each other', () => {
+  const a1 = layerConfigFor(42, 0);
+  const a2 = layerConfigFor(42, 0);
+  assert.deepEqual([...a1.noise.table], [...a2.noise.table], 'same seed+index must reproduce the same noise field');
+  assert.equal(a1.scrollPxPerSec, a2.scrollPxPerSec);
+
+  const b = layerConfigFor(42, 1);
+  assert.notDeepEqual([...a1.noise.table], [...b.noise.table], 'different layers of the same song must not share a field');
+  // Parallax direction: farther (index 1) must not outrun or out-loom nearer (index 0).
+  assert.ok(b.scrollPxPerSec < a1.scrollPxPerSec, 'farther layers must scroll slower');
+  assert.ok(b.ampPx < a1.ampPx, 'farther layers must have a shallower silhouette');
+});
+
+test('layerConfigFor never throws on a non-finite or missing seed', () => {
+  for (const seed of [undefined, null, NaN, Infinity]) {
+    assert.doesNotThrow(() => layerConfigFor(seed, 0));
+  }
+});
+
+test('every configured layer index (0..LAYER_COUNT-1) produces a usable config', () => {
+  assert.ok(LAYER_COUNT >= 1);
+  for (let i = 0; i < LAYER_COUNT; i++) {
+    const cfg = layerConfigFor(99, i);
+    assert.ok(cfg.noise instanceof ValueNoise1D);
+    for (const key of ['scrollPxPerSec', 'columnPx', 'ampPx', 'baseRowsAboveHorizon']) {
+      assert.ok(Number.isFinite(cfg[key]) && cfg[key] > 0, `layer ${i} missing/invalid ${key}`);
+    }
+  }
+});
+
+test('layerRampIndex always stays inside the ramp, even on a 4-color persona (COMPOSITE)', () => {
+  const rampLen = 4; // the shortest real persona
+  for (let i = 0; i < LAYER_COUNT; i++) {
+    const idx = layerRampIndex(rampLen, i);
+    assert.ok(idx >= 1 && idx <= rampLen - 2, `layer ${i} -> index ${idx} out of [1, ${rampLen - 2}]`);
+  }
+});
+
+test('layerRampIndex never regresses toward the viewer as index increases', () => {
+  const rampLen = 16; // the longest real persona (BREADBIN)
+  let prev = -1;
+  for (let i = 0; i < 5; i++) {
+    const idx = layerRampIndex(rampLen, i);
+    assert.ok(idx >= prev, `layer ${i} index ${idx} went backwards from ${prev}`);
+    prev = idx;
+  }
+});
+
+test('runsFromHeights: every run is strictly above the horizon and correctly sized', () => {
+  const horizon = 20;
+  const heights = new Int32Array([10, 10, 10, 15, 15, 20, 20, 5, 5, 5]);
+  const runs = runsFromHeights(heights, horizon);
+  assert.deepEqual(runs, [
+    { x: 0, width: 3, height: 10 }, // horizon(20) - 10
+    { x: 3, width: 2, height: 5 },
+    // x=5,6 (height 20) omitted: not < horizon, so no run -- flush with the horizon line
+    { x: 7, width: 3, height: 15 },
+  ]);
+});
+
+test('runsFromHeights on an all-flat field below the horizon is a single run spanning the whole width', () => {
+  const heights = new Int32Array(12).fill(4);
+  const runs = runsFromHeights(heights, 20);
+  assert.deepEqual(runs, [{ x: 0, width: 12, height: 16 }]);
+});
+
+test('runsFromHeights on a field entirely at/above the horizon produces no runs at all', () => {
+  const heights = new Int32Array(8).fill(20);
+  assert.deepEqual(runsFromHeights(heights, 20), []);
+});
+
+test('runsFromHeights never drops or double-counts a pixel: run widths sum to the below-horizon columns', () => {
+  const noise = new ValueNoise1D(5, 64);
+  const w = 64;
+  const horizon = 40;
+  const heights = buildLayerHeights(noise, w, horizon, { columnPx: 9, ampPx: 15, baseRowsAboveHorizon: 3 });
+  const runs = runsFromHeights(heights, horizon);
+  const covered = runs.reduce((sum, r) => sum + r.width, 0);
+  const expected = heights.reduce((n, h) => n + (h < horizon ? 1 : 0), 0);
+  assert.equal(covered, expected);
+  // Non-overlapping and in order.
+  for (let i = 1; i < runs.length; i++) {
+    assert.ok(runs[i].x >= runs[i - 1].x + runs[i - 1].width, 'runs must not overlap');
+  }
+});
+
+test('VIGNETTE_ALPHA is present but never blacks out the corners', () => {
+  assert.ok(VIGNETTE_ALPHA > 0 && VIGNETTE_ALPHA < 0.6);
 });
