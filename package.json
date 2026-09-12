@@ -17,7 +17,7 @@
     "start:full": "docker compose up -d slskd && node tools/serve.js"
   },
   "dependencies": {
-    "slsk-client": "^1.1.0"
+    "slsk-client": "^2.0.1"
   },
   "devDependencies": {
     "playwright": "^1.48.0"
