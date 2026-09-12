@@ -31,13 +31,24 @@ function makeAnalysis() {
     }));
   }
   const barGrid = [];
-  for (let t = 0, i = 0; t < DURATION; t += 2000, i++) barGrid.push({ ms: t, index: i });
+  for (let t = 0, i = 0; t < DURATION; t += 2000, i++) {
+    barGrid.push({ ms: t, index: i, tick: i * 3, numerator: 3, denominator: 4 });
+  }
   return {
     timeline, barGrid, durationMs: DURATION,
     bpm: 124.5, beatPeriodMs: 481.9, confidence: 0.82, freeTime: false,
     energyCurves: curves,
     analysis: { chroma: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], tonic: 4, mode: 'minor', majorness: 0.3, tonalConfidence: 0.7, brightness: 0.44, dynamicRange: 0.6, stereoWidth: 0.5 },
-    structure: { boundariesMs: [0, 30000, 62000, 121000], labels: ['A', 'B', 'A', 'C'], novelty: [0.1, 0.9], cutIndices: [0, 15], confidence: 0.66 },
+    tonalityTimeline: [
+      { tMs: 0, tonic: 4, mode: 'minor', majorness: -0.6, confidence: 0.3 },
+      { tMs: 30000, tonic: 9, mode: 'major', majorness: 0.7, confidence: 0.8 },
+    ],
+    structure: {
+      boundariesMs: [0, 30000, 62000, 121000],
+      boundaryStrengths: [0, 0.84, 0.42, 0.91],
+      labels: ['A', 'B', 'A', 'C'], novelty: [0.1, 0.9], cutIndices: [0, 15], confidence: 0.66,
+      fineBoundariesMs: [45000], fineBoundaryEvidence: [{ timeMs: 45000, strength: 0.58, source: 'ssm', scale: 'fine' }],
+    },
     stems: [{ name: 'drums.wav', lane: null }],
   };
 }
@@ -67,6 +78,9 @@ test('the bar grid comes back with its times and indices', () => {
   assert.equal(out.barGrid[0].ms, 0);
   assert.equal(out.barGrid[5].ms, src.barGrid[5].ms);
   assert.equal(out.barGrid[5].index, 5);
+  assert.equal(out.barGrid[5].tick, src.barGrid[5].tick);
+  assert.equal(out.barGrid[5].numerator, 3);
+  assert.equal(out.barGrid[5].denominator, 4);
 });
 
 test('every note comes back with the fields the show reads', () => {
@@ -127,7 +141,18 @@ test('structure boundaries and labels survive', () => {
   for (let i = 0; i < src.structure.boundariesMs.length; i++) {
     assert.equal(out.structure.boundariesMs[i], src.structure.boundariesMs[i]);
   }
+  for (let i = 0; i < src.structure.boundaryStrengths.length; i++) {
+    assert.ok(Math.abs(out.structure.boundaryStrengths[i] - src.structure.boundaryStrengths[i]) < 1e-6);
+  }
+  assert.deepEqual(out.structure.fineBoundariesMs, src.structure.fineBoundariesMs);
+  assert.ok(Math.abs(out.structure.fineBoundaryEvidence[0].strength - 0.58) < 1e-6);
   assert.ok(Math.abs(out.structure.confidence - 0.66) < 1e-6);
+});
+
+test('the rolling key timeline survives so replay uses the same live key read', () => {
+  const src = makeAnalysis();
+  const out = unpackBundle(packBundle(src, { fingerprint: FP }));
+  assert.deepEqual(out.tonalityTimeline, src.tonalityTimeline);
 });
 
 test('the analysis fingerprint block survives verbatim', () => {

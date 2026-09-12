@@ -55,6 +55,16 @@ test('a self-similarity matrix is symmetric with a unit diagonal', () => {
   assert.equal(S[1][2], S[2][1], 'symmetric');
 });
 
+test('repeat similarity recognizes a transposed chroma pattern without erasing absolute-key boundaries', () => {
+  const C = new Float64Array(12), D = new Float64Array(12);
+  for (const pc of [0, 4, 7]) C[pc] = 1;
+  for (const pc of [2, 6, 9]) D[pc] = 1;
+  const absolute = selfSimilarity([C, D]);
+  const repeat = selfSimilarity([C, D], { chromaLength: 12, transpositionInvariant: true });
+  assert.ok(absolute[0][1] < 0.01, `absolute harmony should keep the modulation visible, got ${absolute[0][1]}`);
+  assert.ok(repeat[0][1] > 0.99, `a rotated repeat should match, got ${repeat[0][1]}`);
+});
+
 test('Foote novelty peaks at the seam between two blocks of unlike material', () => {
   const n = 20;
   const S = Array.from({ length: n }, () => new Float64Array(n));
@@ -221,6 +231,17 @@ test('an exact changing-pattern repeat matches, but its own reversal does not', 
     'the same material in a different order must not be called a repeat');
 });
 
+test('a repeat with one locally delayed analysis point still matches, without relaxing into a reorder', () => {
+  const oneHot = (i) => Float64Array.from({ length: 9 }, (_, k) => (k === i ? 1 : 0));
+  const phrase = Array.from({ length: 8 }, (_, i) => oneHot(i));
+  // The second phrase has one extra dwell on B. Exact proportional diagonal
+  // matching misaligns every later point; the bounded monotonic path should
+  // absorb this single local tempo difference.
+  const delayed = [oneHot(0), oneHot(1), oneHot(1), ...Array.from({ length: 6 }, (_, i) => oneHot(i + 2))];
+  const S = selfSimilarity([...phrase, ...delayed]);
+  assert.deepEqual(labelByRepetition(S, [0, phrase.length, phrase.length + delayed.length]), [0, 0]);
+});
+
 // --- feature dynamics and fine-scale boundaries (audit finding #3) --------
 
 test('a pure level change with no pitch or shape change is no longer invisible', () => {
@@ -267,6 +288,9 @@ test('both edges of a short contrasting passage survive, one in the main schedul
   assert.ok(res.boundariesMs.includes(32000), `expected the leading edge, got ${res.boundariesMs}`);
   assert.ok(res.fineBoundariesMs.includes(40000),
     `expected the trailing edge preserved at the fine level, got ${res.fineBoundariesMs}`);
+  assert.equal(res.boundaryEvidence.length, res.boundariesMs.length);
+  assert.ok(res.boundaryEvidence.slice(1).every((b) => b.strength > 0 && b.source === 'ssm'));
+  assert.ok(res.fineBoundaryEvidence.some((b) => b.timeMs === 40000 && b.strength > 0));
 });
 
 test('constant material produces no fine boundaries either', () => {

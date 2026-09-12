@@ -42,7 +42,6 @@ const KERNEL_RADIUS = 4;
 const FINE_KERNEL_RADIUS = Math.max(2, Math.round(KERNEL_RADIUS / 2));
 // Gaussian taper on the kernel: an abrupt-edged checkerboard rings and
 // produces satellite peaks beside every real boundary.
-const KERNEL_SIGMA = KERNEL_RADIUS / 1.5;
 // Feature fusion. Harmony carries more of the "is this the same section"
 // signal than texture does, but texture is what catches a drop or a
 // breakdown that stays on the same chords. Dynamics (overall level, not
@@ -81,10 +80,10 @@ const CHROMA_WEIGHT = 0.55, TIMBRE_WEIGHT = 0.30, DYNAMICS_WEIGHT = 0.15;
 // similarities instead (see `repeatThresholdFor`), and this constant now
 // serves only the cases where that distribution can't be estimated.
 export const REPEAT_THRESHOLD = 0.82;
-// Where in the song's own similarity range the cutoff sits. Halfway: a
-// repeat is material that resembles its twin more than the song's typical
-// pair does, by the song's own standard.
-const REPEAT_LEVEL = 0.5;
+// The fallback quantile when the distribution has no obvious repeat/nonrepeat
+// split. A high tail is the conservative choice: a form label should be
+// earned by resemblance, not merely by being less unlike than a noisy outlier.
+const REPEAT_LEVEL = 0.75;
 // Fewer pairs than this and there is no distribution to speak of -- two
 // segments give exactly one similarity, whose min and max are the same
 // number, which would merge them unconditionally. Fall back to the absolute
@@ -101,6 +100,9 @@ const REPEAT_SPREAD_MIN = 0.02;
 // low; without this its least-dissimilar pair would still be promoted to a
 // repeat purely for being the best of a bad lot.
 const REPEAT_ABS_MIN = 0.5;
+// A gap must be meaningful in both absolute and distribution-relative terms
+// before it is trusted as the divide between unrelated material and repeats.
+const REPEAT_GAP_MIN = 0.025;
 // Ceiling on the confidence of a read that produced a single section, i.e.
 // found no boundaries at all. Must sit below BiomeManager's
 // SSM_CONFIDENCE_FLOOR so such a read can never win over the energy path.
@@ -188,13 +190,13 @@ const DYNAMICS_SCALE = Math.sqrt(DYNAMICS_WEIGHT);
  * falls off monotonically as the levels diverge, with no wraparound to
  * worry about across so narrow a range.
  */
-function buildFeatures(pointsMs, features, energyCurves) {
+function buildFeatures(pointsMs, features, energyCurves, durationMs = null) {
   const rawLevels = new Float64Array(pointsMs.length);
   const timbreDirs = [];
   let maxLevel = 0;
   for (let i = 0; i < pointsMs.length; i++) {
     const from = pointsMs[i];
-    const to = i + 1 < pointsMs.length ? pointsMs[i + 1] : from + 2000;
+    const to = i + 1 < pointsMs.length ? pointsMs[i + 1] : Math.max(from + 1, durationMs ?? from + 2000);
     const raw = energyCurves ? averageBands(energyCurves, from, to) : new Float64Array(7);
     let level = 0;
     for (let k = 0; k < 7; k++) level += raw[k];
@@ -206,7 +208,7 @@ function buildFeatures(pointsMs, features, energyCurves) {
   const out = [];
   for (let i = 0; i < pointsMs.length; i++) {
     const from = pointsMs[i];
-    const to = i + 1 < pointsMs.length ? pointsMs[i + 1] : from + 2000;
+    const to = i + 1 < pointsMs.length ? pointsMs[i + 1] : Math.max(from + 1, durationMs ?? from + 2000);
     const chroma = chromaBetween(features, from, to);
     const timbre = timbreDirs[i];
     // No energy data at all -> no dynamics signal, matching the old
@@ -225,14 +227,40 @@ function buildFeatures(pointsMs, features, energyCurves) {
   return out;
 }
 
-/** Self-similarity matrix (cosine) over the fused features. */
-export function selfSimilarity(feats) {
+/** Cosine similarity with the chroma block circularly rotated before it is
+ * compared. The other feature blocks (timbre and dynamics) stay fixed. */
+function transpositionInvariantCosine(a, b, chromaLength) {
+  let na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) { na += a[i] * a[i]; nb += b[i] * b[i]; }
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  if (denom <= 1e-9) return 0;
+
+  let best = -Infinity;
+  for (let shift = 0; shift < chromaLength; shift++) {
+    let dot = 0;
+    for (let i = 0; i < chromaLength; i++) dot += a[i] * b[(i + shift) % chromaLength];
+    for (let i = chromaLength; i < a.length; i++) dot += a[i] * b[i];
+    best = Math.max(best, dot / denom);
+  }
+  return clamp(best, -1, 1);
+}
+
+/**
+ * Self-similarity matrix over fused features. Boundary novelty uses the
+ * default absolute-pitch matrix (a modulation can be a real section turn),
+ * while repeat labelling may ask for an octave/transposition-invariant chroma
+ * comparison so a returned chorus shifted up a key still keeps its identity.
+ */
+export function selfSimilarity(feats, { chromaLength = 0, transpositionInvariant = false } = {}) {
   const n = feats.length;
   const S = Array.from({ length: n }, () => new Float64Array(n));
+  const rotateChroma = transpositionInvariant && chromaLength > 1;
   for (let i = 0; i < n; i++) {
     S[i][i] = 1;
     for (let j = i + 1; j < n; j++) {
-      const s = cosine(feats[i], feats[j]);
+      const s = rotateChroma
+        ? transpositionInvariantCosine(feats[i], feats[j], chromaLength)
+        : cosine(feats[i], feats[j]);
       S[i][j] = s;
       S[j][i] = s;
     }
@@ -254,11 +282,12 @@ export function footeNovelty(S, radius = KERNEL_RADIUS) {
   if (n < 2 * radius + 1) return nov;
 
   const size = 2 * radius;
+  const sigma = Math.max(1e-6, radius / 1.5);
   const kernel = Array.from({ length: size }, () => new Float64Array(size));
   for (let a = 0; a < size; a++) {
     for (let b = 0; b < size; b++) {
       const da = a - radius + 0.5, db = b - radius + 0.5;
-      const taper = Math.exp(-(da * da + db * db) / (2 * KERNEL_SIGMA * KERNEL_SIGMA));
+      const taper = Math.exp(-(da * da + db * db) / (2 * sigma * sigma));
       const sign = (da < 0) === (db < 0) ? 1 : -1; // same quadrant sign -> coherence
       kernel[a][b] = sign * taper;
     }
@@ -283,15 +312,11 @@ export function footeNovelty(S, radius = KERNEL_RADIUS) {
  * this replaces, averages the full cross block and is therefore invariant to
  * permuting either segment: `ABAB` and its own reversal `BABA` score
  * identically to it, and a genuinely repeated passage whose average is no
- * higher than an unrelated one's is missed entirely. A diagonal walk only
- * scores material that recurs in the same order -- this is deliberately the
- * exact diagonal (no local slack) rather than a windowed or DTW-style
- * search: a few steps of slack is enough to let a short periodic pattern
- * (period 2, as in the module's own repeated-vs-reordered check) realign
- * around a reordering and hide it again. Bar-synchronous analysis points
- * already remove most of the sub-bar jitter a slack window would exist to
- * absorb; constrained DTW for genuine tempo drift between two performances
- * of a section is real future work, not a small tweak to this.
+ * higher than an unrelated one's is missed entirely. The walk has a very
+ * narrow, monotonic diagonal band: a returning phrase may arrive a bar
+ * early/late from local tempo drift, but it cannot skip arbitrary material or
+ * reorder a periodic pattern to fake a repeat. Endpoints stay pinned, which
+ * distinguishes a genuine aligned recurrence from a shifted cyclic loop.
  *
  * Because the shorter segment sets the number of steps and every step must
  * fall somewhere along the longer one, a short shared hook inside a much
@@ -301,13 +326,55 @@ export function footeNovelty(S, radius = KERNEL_RADIUS) {
 function diagonalSim(S, [p0, p1], [q0, q1]) {
   const lenP = p1 - p0, lenQ = q1 - q0;
   const steps = Math.max(1, Math.min(lenP, lenQ));
-  let sum = 0;
+  if (steps === 1) return S[p0][q0];
+
+  // At most ~12% of the shorter phrase may slide off the proportional
+  // diagonal (always at least one point for ordinary bar grids). The band is
+  // intentionally much smaller than a half-phrase, so ABAB cannot become
+  // BABA by realigning an entire alternating motif.
+  const slack = Math.max(1, Math.floor(steps * 0.12));
+  const offsets = Array.from({ length: slack * 2 + 1 }, (_, i) => i - slack);
+  let prev = new Float64Array(offsets.length).fill(-Infinity);
+  let prevJs = new Int32Array(offsets.length);
+  let prevBase = 0;
+
   for (let k = 0; k < steps; k++) {
-    const i = p0 + Math.min(lenP - 1, Math.floor((k * lenP) / steps));
-    const j = q0 + Math.min(lenQ - 1, Math.floor((k * lenQ) / steps));
-    sum += S[i][j];
+    const i = p0 + Math.min(lenP - 1, Math.floor((k * (lenP - 1)) / (steps - 1)));
+    const baseJ = q0 + Math.min(lenQ - 1, Math.floor((k * (lenQ - 1)) / (steps - 1)));
+    const next = new Float64Array(offsets.length).fill(-Infinity);
+    const nextJs = new Int32Array(offsets.length);
+    for (let oi = 0; oi < offsets.length; oi++) {
+      const offset = offsets[oi];
+      // Pinned ends are non-negotiable: they prevent a cyclic reorder from
+      // entering late and leaving early just to find a pretty diagonal.
+      if ((k === 0 || k === steps - 1) && offset !== 0) continue;
+      const j = baseJ + offset;
+      if (j < q0 || j >= q1) continue;
+      if (k === 0) {
+        next[oi] = S[i][j];
+        nextJs[oi] = j;
+        continue;
+      }
+      const expectedDelta = baseJ - prevBase;
+      let best = -Infinity;
+      for (let pi = 0; pi < offsets.length; pi++) {
+        if (!Number.isFinite(prev[pi])) continue;
+        const delta = j - prevJs[pi];
+        // Monotonic, with only one point of local tempo correction per step.
+        if (delta < 0 || Math.abs(delta - expectedDelta) > 1) continue;
+        if (prev[pi] > best) best = prev[pi];
+      }
+      if (Number.isFinite(best)) {
+        next[oi] = best + S[i][j];
+        nextJs[oi] = j;
+      }
+    }
+    prev = next;
+    prevJs = nextJs;
+    prevBase = baseJ;
   }
-  return sum / steps;
+  const center = slack;
+  return Number.isFinite(prev[center]) ? prev[center] / steps : 0;
 }
 
 /**
@@ -372,16 +439,30 @@ export function labelByRepetition(S, cuts) {
  */
 export function repeatThresholdFor(pairs) {
   if (!pairs || pairs.length < REPEAT_MIN_PAIRS) return REPEAT_THRESHOLD;
-  let lo = Infinity, hi = -Infinity;
-  for (const p of pairs) {
-    if (!Number.isFinite(p)) continue;
-    if (p < lo) lo = p;
-    if (p > hi) hi = p;
-  }
-  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return REPEAT_THRESHOLD;
+  const values = pairs.filter(Number.isFinite).sort((a, b) => a - b);
+  if (values.length < REPEAT_MIN_PAIRS) return REPEAT_THRESHOLD;
+  const lo = values[0], hi = values[values.length - 1];
   const spread = hi - lo;
   if (spread < REPEAT_SPREAD_MIN) return REPEAT_THRESHOLD;
-  return Math.max(REPEAT_ABS_MIN, lo + REPEAT_LEVEL * spread);
+
+  // Similarity distributions usually have a dense non-repeat body and a
+  // smaller high-similarity repeat cluster. Min/max midpoint lets one
+  // pathological unlike pair drag the cutoff down through that body. Find a
+  // conspicuous gap in the upper half instead; only then split at its middle.
+  const median = values[(values.length - 1) >> 1];
+  let bestGap = 0, gapAt = -1;
+  for (let i = 0; i < values.length - 1; i++) {
+    const gap = values[i + 1] - values[i];
+    if (values[i + 1] < median || gap <= bestGap) continue;
+    bestGap = gap;
+    gapAt = i;
+  }
+  if (gapAt >= 0 && bestGap >= Math.max(REPEAT_GAP_MIN, spread * 0.25)) {
+    return Math.max(REPEAT_ABS_MIN, (values[gapAt] + values[gapAt + 1]) / 2);
+  }
+
+  const idx = Math.min(values.length - 1, Math.floor((values.length - 1) * REPEAT_LEVEL));
+  return Math.max(REPEAT_ABS_MIN, values[idx]);
 }
 
 /**
@@ -391,10 +472,12 @@ export function repeatThresholdFor(pairs) {
  * @param {object}  opts.pitchFeatures  from PitchTracker.computePitchFeatures
  * @param {object}  opts.energyCurves
  * @param {number}  opts.durationMs
- * @param {number}  opts.minGapMs   minimum time between two cuts
+ * @param {number}  opts.minGapMs   minimum time between two cuts (free time)
+ * @param {number}  opts.minGapPoints minimum analysis points between cuts
  * @param {number}  opts.maxCuts
  * @returns {?{boundariesMs: number[], labels: number[], cutIndices: number[],
- *   novelty: Float64Array, confidence: number, fineBoundariesMs: number[]}}
+ *   novelty: Float64Array, confidence: number, boundaryStrengths: number[],
+ *   boundaryEvidence: object[], fineBoundariesMs: number[]}}
  *   null when there isn't enough material to say anything -- callers fall
  *   back to the energy-novelty path. `fineBoundariesMs` holds candidate
  *   boundaries found at a finer scale that the main pass rejected only for
@@ -405,12 +488,12 @@ export function repeatThresholdFor(pairs) {
  */
 export function analyzeStructure({
   pointsMs, pitchFeatures, energyCurves, durationMs,
-  minGapMs = 11000, maxCuts = 12,
+  minGapMs = 11000, minGapPoints = null, maxCuts = 12,
 } = {}) {
   if (!Array.isArray(pointsMs) || pointsMs.length < MIN_POINTS) return null;
   if (!pitchFeatures || !pitchFeatures.frames || pitchFeatures.frames.length === 0) return null;
 
-  const feats = buildFeatures(pointsMs, pitchFeatures, energyCurves);
+  const feats = buildFeatures(pointsMs, pitchFeatures, energyCurves, durationMs);
   // Degenerate input (digital silence, a single sustained tone) produces
   // all-zero feature vectors. Their SSM is an identity matrix, and running a
   // checkerboard kernel over an identity matrix yields a perfectly real-
@@ -419,14 +502,20 @@ export function analyzeStructure({
   const informative = feats.filter((v) => v.some((x) => x > 0)).length;
   if (informative < feats.length * 0.5) return null;
 
-  const S = selfSimilarity(feats);
-  const novelty = footeNovelty(S);
+  // Keep absolute harmony for boundaries: a real modulation can be a section
+  // turn. Repeats use a second, transposition-invariant SSM so the same
+  // chorus shifted up a key keeps its label instead of becoming a new biome.
+  const boundaryS = selfSimilarity(feats);
+  const repeatS = selfSimilarity(feats, { chromaLength: 12, transpositionInvariant: true });
+  const novelty = footeNovelty(boundaryS);
 
   const peak = Math.max(...novelty);
   if (!(peak > 1e-6)) return null; // featureless input (silence, a pure tone)
 
   const avgStepMs = (pointsMs[pointsMs.length - 1] - pointsMs[0]) / (pointsMs.length - 1);
-  const minGapIdx = Math.max(1, Math.round(minGapMs / Math.max(1, avgStepMs)));
+  const minGapIdx = Number.isFinite(minGapPoints)
+    ? Math.max(1, Math.round(minGapPoints))
+    : Math.max(1, Math.round(minGapMs / Math.max(1, avgStepMs)));
 
   // Greedy peak picking, strongest first, honoring the spacing floor -- the
   // same discipline the energy-novelty path used, so section pacing is
@@ -447,7 +536,7 @@ export function analyzeStructure({
   peaks.sort((a, b) => a - b);
 
   const cutIndices = [0, ...peaks, pointsMs.length - 1];
-  const labels = labelByRepetition(S, cutIndices);
+  const labels = labelByRepetition(repeatS, cutIndices);
 
   const boundariesMs = [];
   for (let i = 0; i < cutIndices.length - 1; i++) boundariesMs.push(pointsMs[cutIndices[i]]);
@@ -472,10 +561,20 @@ export function analyzeStructure({
   // start to finish. A detector that found nothing must say so.
   if (labels.length < 2) confidence = Math.min(confidence, NO_STRUCTURE_CONFIDENCE);
 
-  const fineBoundariesMs = findFineBoundaries(S, pointsMs, cutIndices, minGapIdx, lastIdx);
+  const boundaryStrengths = [0, ...peaks.map((i) => clamp01(novelty[i] / peak))];
+  const boundaryEvidence = boundariesMs.map((timeMs, index) => ({
+    timeMs,
+    strength: boundaryStrengths[index] ?? 0,
+    source: index === 0 ? 'start' : 'ssm',
+    scale: 'coarse',
+  }));
+  const fineBoundaryEvidence = findFineBoundaries(boundaryS, pointsMs, cutIndices, minGapIdx, lastIdx);
+  const fineBoundariesMs = fineBoundaryEvidence.map((b) => b.timeMs);
 
   return {
-    boundariesMs, labels, cutIndices, novelty, confidence, fineBoundariesMs,
+    boundariesMs, labels, cutIndices, novelty, confidence,
+    boundaryStrengths, boundaryEvidence,
+    fineBoundariesMs, fineBoundaryEvidence,
   };
 }
 
@@ -506,5 +605,10 @@ function findFineBoundaries(S, pointsMs, cutIndices, minGapIdx, lastIdx) {
     found.push(i);
   }
   found.sort((a, b) => a - b);
-  return found.map((i) => pointsMs[i]);
+  return found.map((i) => ({
+    timeMs: pointsMs[i],
+    strength: clamp01(fineNovelty[i] / finePeak),
+    source: 'ssm',
+    scale: 'fine',
+  }));
 }

@@ -1,8 +1,8 @@
 // Reads the emotional weather of the music: two axes every other system
 // can consume.
 //   valence [-1, 1]  sad <-> happy. Dominated by the major-vs-minor-third
-//                    balance against the inferred tonic (argmax pitch
-//                    class) over a rolling 6s window, tinted by spectral
+//                    balance against the inferred tonic over a rolling 6s
+//                    window, tinted by spectral
 //                    brightness (air/presence vs bass energy).
 //   epic    [0, 1]   trivial <-> epic. Loudness + note density + how many
 //                    octaves the writing spans right now.
@@ -16,7 +16,7 @@ const EVAL_EVERY_MS = 240;
 const VAL_TAU = 2.5, EPIC_TAU = 2.0;
 
 export class VibeDirector {
-  constructor(timeline) {
+  constructor(timeline, tonalityTimeline = null) {
     this.notes = timeline
       .filter((e) => e.role !== Role.RHYTHM && Number.isFinite(e.pitch))
       .sort((a, b) => a.tMs - b.tMs);
@@ -33,12 +33,32 @@ export class VibeDirector {
     // enough evidence (count>=3) rather than reset every thin-evidence eval.
     this.tonic = 0;
     this.tonicConfidence = 0;
+    // Raw-audio analysis supplies a Krumhansl key timeline from its spectral
+    // chroma. Prefer it when confident so the live world does not disagree
+    // with AudioAdapter's global-key fingerprint; MIDI/demo keep the exact
+    // note-event fallback below.
+    this.tonalityTimeline = Array.isArray(tonalityTimeline)
+      ? tonalityTimeline
+        .filter((k) => Number.isFinite(k?.tMs) && Number.isFinite(k?.tonic))
+        .sort((a, b) => a.tMs - b.tMs)
+      : [];
     // Additive external bias (-1..1), set each step by Simulation from the
     // fused lyric structure's current section kind (SectionFusion.
     // epicBiasForKind) -- the "epic bridge" reads as genuinely epic even
     // when the music alone wouldn't have said so. Zero (no-op) when there's
     // no lyric data at all.
     this.epicBias = 0;
+  }
+
+  _tonalityAt(nowMs) {
+    const keys = this.tonalityTimeline;
+    if (keys.length === 0) return null;
+    let lo = 0, hi = keys.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (keys[mid].tMs <= nowMs) lo = mid + 1; else hi = mid;
+    }
+    return keys[Math.max(0, lo - 1)] || null;
   }
 
   _evaluate(nowMs, energyCurves) {
@@ -56,7 +76,12 @@ export class VibeDirector {
     }
 
     let third = 0;
-    if (count >= 3) {
+    const spectralKey = this._tonalityAt(nowMs);
+    if (spectralKey && spectralKey.confidence >= 0.15) {
+      this.tonic = ((Math.round(spectralKey.tonic) % 12) + 12) % 12;
+      this.tonicConfidence = clamp01(spectralKey.confidence);
+      third = clamp(spectralKey.majorness ?? 0, -1, 1);
+    } else if (count >= 3) {
       let tonic = 0;
       for (let pc = 1; pc < 12; pc++) if (hist[pc] > hist[tonic]) tonic = pc;
       const M = hist[(tonic + 4) % 12], m = hist[(tonic + 3) % 12];

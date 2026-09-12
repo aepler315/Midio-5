@@ -917,6 +917,10 @@ function startTimeline(timelineData, extra = {}) {
       // MIDI/demo/free-time, where BiomeManager keeps its own band-energy
       // novelty schedule.
       structure: timelineData.structure || null,
+      // The raw-audio Krumhansl timeline is the authoritative live key read;
+      // passing it through keeps VibeDirector/KeyDirector aligned with the
+      // analysis fingerprint used to build the world's palette.
+      tonalityTimeline: timelineData.tonalityTimeline || null,
       // The one piece of state that outlives the song: what previous
       // sessions learned about how this player hears a beat.
       groove,

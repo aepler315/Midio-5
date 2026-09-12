@@ -19,28 +19,22 @@ import {
 } from './OnsetDetector.js';
 import {
   computePitchFeatures, chromaHistogram, melodyPitchAt, estimateBassPitchAt,
-  tonalityFrom, meanBrightness, brightnessAt, windowChroma,
+  tonalityFrom, tonalityTimeline, meanBrightness, brightnessAt, windowChroma,
 } from './PitchTracker.js';
 import { EnergyCurves } from './EnergyCurves.js';
 import { analyzeStructure } from './StructureAnalyzer.js';
-import { MIN_SECTION_CUT_GAP_MS, sectionCutBudget } from './sectionBudget.js';
+import { sectionPacing } from './sectionBudget.js';
 import { Role, makeNoteEvent, sortNoteEvents } from '../core/NoteEvent.js';
 import { Lane, melodyLaneForNote, laneForStemName, delegateByStemActivity } from '../core/Casting.js';
 import { clamp01 } from '../utils/math.js';
 
-/** Mono mixdown of an AudioBuffer's channels into one Float32Array. */
-function mixToMono(audioBuffer) {
-  const n = audioBuffer.length;
+/** Channel views for phase-safe analysis. Keep channels separate until an
+ * algorithm explicitly combines their energy; a signed L+R mix can erase a
+ * deliberately wide, phase-inverted source. */
+function channelArrays(audioBuffer) {
   const chans = [];
   for (let c = 0; c < audioBuffer.numberOfChannels; c++) chans.push(audioBuffer.getChannelData(c));
-  if (chans.length === 1) return chans[0];
-  const mono = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    let s = 0;
-    for (const ch of chans) s += ch[i];
-    mono[i] = s / chans.length;
-  }
-  return mono;
+  return chans.length ? chans : [new Float32Array(audioBuffer.length)];
 }
 
 /** Stereo width 0..1 from L/R decorrelation (0 = mono, 1 = fully decorrelated). */
@@ -74,16 +68,27 @@ function dynamicRange(rawBands) {
   return clamp01(1 - p(0.25) / hi);
 }
 
-/** Coarse loudness-over-time of one decoded buffer: mean |sample| per
- *  analysis frame. Cheap (single pass) -- this is the stem-vote's ballot. */
-export function activityEnvelope(mono, sampleRate, rate = 86) {
+/** Coarse loudness-over-time of one decoded buffer: mean per-sample RMS
+ * across channels. Accepts a historic mono array or a channel array, and is
+ * deliberately phase-safe because it is the stem-vote's ballot. */
+export function activityEnvelope(samples, sampleRate, rate = 86) {
+  const chans = Array.isArray(samples) ? samples : [samples];
+  const length = chans.reduce((min, ch) => Math.min(min, ch?.length ?? 0), Infinity);
+  if (!Number.isFinite(length) || length <= 0) return new Float32Array(1);
   const hop = Math.max(1, Math.round(sampleRate / rate));
-  const n = Math.max(1, Math.ceil(mono.length / hop));
+  const n = Math.max(1, Math.ceil(length / hop));
   const env = new Float32Array(n);
   for (let f = 0; f < n; f++) {
-    const from = f * hop, to = Math.min(mono.length, from + hop);
+    const from = f * hop, to = Math.min(length, from + hop);
     let s = 0;
-    for (let i = from; i < to; i++) s += Math.abs(mono[i]);
+    for (let i = from; i < to; i++) {
+      let power = 0;
+      for (const ch of chans) {
+        const x = ch?.[i] || 0;
+        power += x * x;
+      }
+      s += Math.sqrt(power / Math.max(1, chans.length));
+    }
     env[f] = to > from ? s / (to - from) : 0;
   }
   return env;
@@ -104,15 +109,15 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
   // by the old separateStems+computeBandEnvelopes pairing) -- everything
   // past this point needs only each band's compact envelope, not the raw
   // audio. The one exception is the BASS band, whose actual samples feed
-  // estimateBassPitchAt's autocorrelation later; that one buffer's mono
-  // mixdown is kept, every other band's buffer is released as soon as its
+  // estimateBassPitchAt's autocorrelation later; that one buffer's channel
+  // data is kept, every other band's buffer is released as soon as its
   // envelope is extracted.
-  let rate, numFrames, bassMono = null;
+  let rate, numFrames, bassChannels = null;
   const raw = new Array(BANDS.length);
   await separateStemsSequential(audioBuffer, (i, buf) => {
     if (numFrames === undefined) ({ numFrames, rate } = envelopeFrameCount(buf.length, buf.sampleRate));
     raw[i] = bandEnvelope(buf, numFrames);
-    if (i === 1) bassMono = mixToMono(buf); // the BASS band: 60-250 Hz, already isolated
+    if (i === 1) bassChannels = channelArrays(buf); // the BASS band: 60-250 Hz, already isolated
   }, (p) => onProgress?.({ phase: 'separate', progress: p }));
   onProgress?.({ phase: 'analyze', progress: 0 });
 
@@ -126,8 +131,8 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
   // full mix for melody/harmony, autocorrelation over the bass stem (FFT
   // bins are far too coarse below ~100 Hz to separate semitones).
   onProgress?.({ phase: 'pitch', progress: 0 });
-  const mono = mixToMono(audioBuffer);
-  const pitchFeatures = computePitchFeatures(mono, audioBuffer.sampleRate);
+  const mixChannels = channelArrays(audioBuffer);
+  const pitchFeatures = computePitchFeatures(mixChannels, audioBuffer.sampleRate);
 
   const melodyLane = extractPseudoLane(normBands, rate, {
     bandIndices: [2, 3, 4], pitchLo: 60, pitchHi: 96, role: Role.MELODY, onsetThreshold: 1,
@@ -158,7 +163,7 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
     }));
   }
   for (const n of bassLane) {
-    const tracked = estimateBassPitchAt(bassMono, audioBuffer.sampleRate, n.tMs);
+    const tracked = estimateBassPitchAt(bassChannels || mixChannels, audioBuffer.sampleRate, n.tMs);
     timeline.push(makeNoteEvent({
       tMs: n.tMs, durMs: estimateSustainMs(bassMix, rate, n.frame), pitch: tracked ?? n.pitch,
       vel: n.vel, role: Role.BASS, src: 'audio', channel: 1, lane: Lane.BROSHI,
@@ -191,7 +196,7 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
     const voters = userStems.map(({ name, buffer }) => ({
       name,
       lane: laneForStemName(name),
-      env: activityEnvelope(mixToMono(buffer), buffer.sampleRate, rate),
+      env: activityEnvelope(channelArrays(buffer), buffer.sampleRate, rate),
     }));
     delegateByStemActivity(timeline, voters, rate);
     stemsSummary = voters.map(({ name, lane }) => ({ name, lane }));
@@ -241,6 +246,7 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
   // the custom-biome importer turns into this file's unique world.
   const chroma = chromaHistogram(pitchFeatures);
   const tonality = tonalityFrom(chroma);
+  const keyTimeline = tonalityTimeline(pitchFeatures, { durationMs });
   const analysis = {
     chroma,
     tonic: tonality.tonic,
@@ -262,13 +268,20 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
   const structurePoints = barGrid.length >= 8
     ? barGrid.map((b) => b.ms)
     : (() => { const p = []; for (let t = 0; t < durationMs; t += 2000) p.push(t); return p; })();
-  // Section pacing is BiomeManager's call, not the analyzer's: pass its budget
-  // through rather than letting analyzeStructure fall back to its own defaults,
-  // so one set of constants governs both detectors and they can't drift apart.
+  // Section pacing follows musical bars when a credible bar grid exists. A
+  // fixed seconds-only gap makes a 70 BPM ballad and a 180 BPM dance track
+  // express different numbers of phrases for no musical reason; free-time
+  // recordings retain the time-based fallback.
+  const pacing = sectionPacing({
+    durationMs,
+    pointCount: structurePoints.length,
+    barSynchronous: barGrid.length >= 8,
+  });
   const structure = analyzeStructure({
     pointsMs: structurePoints, pitchFeatures, energyCurves, durationMs,
-    minGapMs: MIN_SECTION_CUT_GAP_MS,
-    maxCuts: sectionCutBudget(durationMs),
+    minGapMs: pacing.minGapMs,
+    minGapPoints: pacing.minGapPoints,
+    maxCuts: pacing.maxCuts,
   });
 
   onProgress?.({ phase: 'done', progress: 1 });
@@ -276,6 +289,6 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
   return {
     timeline, barGrid, durationMs,
     bpm: tempo.bpm, beatPeriodMs: tempo.beatPeriodMs, confidence: tempo.confidence, freeTime: tempo.freeTime,
-    energyCurves, analysis, structure, stems: stemsSummary,
+    energyCurves, analysis, tonalityTimeline: keyTimeline, structure, stems: stemsSummary,
   };
 }
