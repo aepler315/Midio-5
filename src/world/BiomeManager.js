@@ -976,6 +976,7 @@ export class BiomeManager {
       // found nothing, and must never displace an energy read that found real
       // boundaries (StructureAnalyzer caps its confidence for this reason too).
       && ssmCuts && ssmCuts.length >= 3;
+    const ssmStrengthByCut = ssmUsable ? this._boundaryStrengthByCut(structure, barTimes) : null;
     const chosen = ssmUsable ? ssmCuts : [0, ...peaks, lastIdx];
     // _ensureMinimumSections used to be able to DISCARD `chosen` wholesale --
     // re-picking from the energy novelty or falling back to even time-splits
@@ -1076,11 +1077,12 @@ export class BiomeManager {
       meanEnergies.push(0.5);
       shapes.push(new Array(7).fill(1));
     }
-    const ssmBoundaryStrengths = ssmKept ? this._boundaryStrengthsFromSsm(structure) : null;
-    if (ssmBoundaryStrengths) {
+    if (ssmStrengthByCut) {
       for (let i = 1; i < this.sections.length; i++) {
         if (this.sections[i].provenance !== 'detected') continue;
-        this.sections[i].transition = classifyTransition(ssmBoundaryStrengths[i] ?? 0, 1);
+        const strength = ssmStrengthByCut.get(cuts[i]);
+        if (strength == null) continue;
+        this.sections[i].transition = classifyTransition(strength, 1);
       }
     }
 
@@ -1285,7 +1287,7 @@ export class BiomeManager {
     });
   }
 
-  _boundaryStrengthsFromSsm(structure) {
+  _boundaryStrengthByCut(structure, barTimes) {
     const bounds = structure?.boundariesMs;
     const strengths = Array.isArray(structure?.boundaryStrengths)
       ? structure.boundaryStrengths
@@ -1293,16 +1295,22 @@ export class BiomeManager {
         ? structure.boundaryEvidence.map((b) => b?.strength ?? 0)
         : null);
     if (!Array.isArray(bounds) || !bounds.length || !Array.isArray(strengths)) return null;
-    const out = [0];
-    for (let i = 1; i < this.sections.length; i++) {
-      const s = this.sections[i];
-      if (bounds.length < 2) { out.push(0); continue; }
-      let best = 1, bestD = Infinity;
-      for (let k = 1; k < bounds.length; k++) {
-        const d = Math.abs(bounds[k] - s.startMs);
-        if (d < bestD) { bestD = d; best = k; }
+    const lastIdx = barTimes.length - 1;
+    const nearest = (ms) => {
+      let best = 0, bestD = Infinity;
+      for (let i = 0; i <= lastIdx; i++) {
+        const d = Math.abs(barTimes[i] - ms);
+        if (d < bestD) { bestD = d; best = i; }
       }
-      out.push(strengths[best] ?? 0);
+      return best;
+    };
+    const out = new Map();
+    let prev = -1;
+    for (let i = 0; i < bounds.length; i++) {
+      const cut = nearest(bounds[i]);
+      if (cut >= lastIdx || cut <= prev) continue;
+      out.set(cut, strengths[i] ?? 0);
+      prev = cut;
     }
     return out;
   }
