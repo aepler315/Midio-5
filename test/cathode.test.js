@@ -6,10 +6,17 @@ import { CATHODE_PALETTES, CATHODE_TEMPERATURE, personaFor, rampAt } from '../sr
 import { BAYER_4X4, ditherThreshold, rampIndexFor, PIXEL_W, PIXEL_H } from '../src/world/cathode/PixelBuffer.js';
 import {
   horizonRowFor, buildBackdropPixels, scanlineAlpha, VIGNETTE_ALPHA, LAYER_COUNT,
+  shakeOffsetForBuffer, gridScrollSpeedFor,
 } from '../src/world/cathode/CathodeRenderer.js';
 import {
   layerColumnLevel, buildLayerHeights, layerConfigFor, layerRampIndex, runsFromHeights,
 } from '../src/world/cathode/CathodeBackdrop.js';
+import {
+  BOSS_ROWS, BOSS_TOPPERS, MAX_TOPPER_ROWS, MAX_REL_LEVEL,
+  parseSpriteRows, spriteRelativeToRampIndex, bossFormFor,
+  beatFlinchScale, FLINCH_SCALE, FLINCH_CONFIDENCE_FLOOR,
+  bossReassembleU, BOSS_REASSEMBLE_MS, glitchBandOffsets,
+} from '../src/world/cathode/CathodeBoss.js';
 import { ValueNoise1D } from '../src/utils/noise.js';
 import { listWorlds, getWorld } from '../src/world/Worlds.js';
 import { scoreWorlds } from '../src/world/WorldScore.js';
@@ -364,4 +371,207 @@ test('runsFromHeights never drops or double-counts a pixel: run widths sum to th
 
 test('VIGNETTE_ALPHA is present but never blacks out the corners', () => {
   assert.ok(VIGNETTE_ALPHA > 0 && VIGNETTE_ALPHA < 0.6);
+});
+
+// --- world reactivity --------------------------------------------------
+
+test('shakeOffsetForBuffer scales stage-space shake down to buffer-space', () => {
+  const stageW = 1280;
+  const bufferW = 320; // 1/4 scale
+  // Small enough that neither axis hits the clamp (tested separately below).
+  const r = shakeOffsetForBuffer(16, -8, stageW, bufferW);
+  assert.equal(r.x, 4); // 16 * (320/1280)
+  assert.equal(r.y, -2);
+});
+
+test('shakeOffsetForBuffer clamps an extreme shake instead of throwing the frame off-buffer', () => {
+  const r = shakeOffsetForBuffer(10000, -10000, 1280, 320);
+  assert.ok(r.x > 0 && r.x < 20, `x=${r.x} should clamp to a small buffer-space offset`);
+  assert.ok(r.y < 0 && r.y > -20, `y=${r.y} should clamp to a small buffer-space offset`);
+});
+
+test('shakeOffsetForBuffer is 0,0 for no shake, and degrades safely on a degenerate stage width', () => {
+  assert.deepEqual(shakeOffsetForBuffer(0, 0, 1280, 320), { x: 0, y: 0 });
+  assert.deepEqual(shakeOffsetForBuffer(5, 5, 0, 320), { x: 0, y: 0 });
+  assert.deepEqual(shakeOffsetForBuffer(undefined, undefined, 1280, 320), { x: 0, y: 0 });
+});
+
+test('gridScrollSpeedFor rises with epic and stays positive at epic 0 (a quiet verse still crawls, never freezes)', () => {
+  const quiet = gridScrollSpeedFor(0);
+  const loud = gridScrollSpeedFor(1);
+  assert.ok(quiet > 0);
+  assert.ok(loud > quiet);
+});
+
+test('gridScrollSpeedFor clamps out-of-range epic instead of extrapolating', () => {
+  assert.equal(gridScrollSpeedFor(-5), gridScrollSpeedFor(0));
+  assert.equal(gridScrollSpeedFor(5), gridScrollSpeedFor(1));
+});
+
+// --- the boss ------------------------------------------------------------
+
+test('the boss sprite parses to a rectangular grid with no ragged rows', () => {
+  const { w, h, cells } = parseSpriteRows(BOSS_ROWS);
+  assert.equal(h, BOSS_ROWS.length);
+  assert.equal(cells.length, w * h);
+  assert.ok(w > 0 && h > 0);
+});
+
+test('every digit used in the boss art is within [0, MAX_REL_LEVEL]', () => {
+  const { cells } = parseSpriteRows(BOSS_ROWS);
+  for (const v of cells) {
+    if (v < 0) continue; // transparent
+    assert.ok(v <= MAX_REL_LEVEL, `sprite digit ${v} exceeds MAX_REL_LEVEL (${MAX_REL_LEVEL})`);
+  }
+});
+
+test('the boss art is not empty -- at least half its cells are opaque', () => {
+  const { cells } = parseSpriteRows(BOSS_ROWS);
+  const opaque = [...cells].filter((v) => v >= 0).length;
+  assert.ok(opaque > cells.length * 0.3, 'a mostly-transparent grid would read as barely a sprite');
+});
+
+test('parseSpriteRows pads ragged rows with transparent rather than misaligning them', () => {
+  const { w, h, cells } = parseSpriteRows(['012', '0', '01234']);
+  assert.equal(w, 5);
+  assert.equal(h, 3);
+  // Row 1 ("0") should be '0' then four transparent cells, not shifted.
+  assert.deepEqual([...cells.slice(w, w * 2)], [0, -1, -1, -1, -1]);
+});
+
+test('parseSpriteRows treats an unrecognized character as transparent, not a crash or a stray color', () => {
+  const { cells } = parseSpriteRows(['0#2', '.x.']);
+  assert.deepEqual([...cells], [0, -1, 2, -1, -1, -1]);
+});
+
+test('parseSpriteRows on an empty sprite (no topper for this persona) yields a 0x0 grid, not a throw', () => {
+  const { w, h, cells } = parseSpriteRows([]);
+  assert.equal(w, 0);
+  assert.equal(h, 0);
+  assert.equal(cells.length, 0);
+});
+
+test('every registered persona has a topper entry, even if empty (PHOSPHOR)', () => {
+  for (const p of CATHODE_PALETTES) {
+    assert.ok(Object.prototype.hasOwnProperty.call(BOSS_TOPPERS, p.name), `${p.name} has no topper entry at all`);
+  }
+  assert.deepEqual(bossFormFor('PHOSPHOR'), []);
+});
+
+test('bossFormFor never throws and returns an array for any input, including unknown personas', () => {
+  for (const name of ['DMG', 'BREADBIN', 'APERTURE', 'COMPOSITE', 'nonsense', null, undefined]) {
+    assert.ok(Array.isArray(bossFormFor(name)), `bossFormFor(${name}) did not return an array`);
+  }
+});
+
+test('MAX_TOPPER_ROWS actually bounds every authored topper', () => {
+  for (const rows of Object.values(BOSS_TOPPERS)) {
+    assert.ok(rows.length <= MAX_TOPPER_ROWS, `a topper taller than MAX_TOPPER_ROWS would be clipped by the renderer`);
+  }
+  // And it's not a vacuous bound -- at least one topper actually uses it.
+  assert.ok(Object.values(BOSS_TOPPERS).some((rows) => rows.length === MAX_TOPPER_ROWS));
+});
+
+test('spriteRelativeToRampIndex spans the full ramp on both a 4-color and a 16-color persona', () => {
+  for (const rampLen of [4, 16]) {
+    assert.equal(spriteRelativeToRampIndex(0, rampLen), 0);
+    assert.equal(spriteRelativeToRampIndex(MAX_REL_LEVEL, rampLen), rampLen - 1);
+  }
+});
+
+test('spriteRelativeToRampIndex stays in range and non-decreasing across the whole relative scale', () => {
+  for (const rampLen of [1, 2, 4, 6, 16]) {
+    let prev = -1;
+    for (let rel = 0; rel <= MAX_REL_LEVEL; rel++) {
+      const idx = spriteRelativeToRampIndex(rel, rampLen);
+      assert.ok(idx >= 0 && idx < rampLen, `index ${idx} out of range for rampLen ${rampLen}`);
+      assert.ok(idx >= prev, `index went backwards at rel=${rel}`);
+      prev = idx;
+    }
+  }
+});
+
+test('spriteRelativeToRampIndex degrades safely on a degenerate ramp length', () => {
+  assert.equal(spriteRelativeToRampIndex(2, 0), 0);
+  assert.equal(spriteRelativeToRampIndex(2, -1), 0);
+});
+
+test('beatFlinchScale pops only in the first FLINCH_WINDOW of a beat, and only when the lock is confident', () => {
+  const confident = FLINCH_CONFIDENCE_FLOOR + 0.1;
+  assert.equal(beatFlinchScale(0, confident), FLINCH_SCALE);
+  assert.equal(beatFlinchScale(0.05, confident), FLINCH_SCALE);
+  assert.equal(beatFlinchScale(0.5, confident), 1);
+  assert.equal(beatFlinchScale(0.99, confident), 1);
+});
+
+test('beatFlinchScale never pops on an unlocked (low-confidence) beat, however the phase lands', () => {
+  const unconfident = FLINCH_CONFIDENCE_FLOOR - 0.1;
+  for (const phase of [0, 0.05, 0.1, 0.5]) {
+    assert.equal(beatFlinchScale(phase, unconfident), 1, `phase ${phase} should not flinch while unlocked`);
+  }
+});
+
+test('beatFlinchScale wraps phase into [0,1) so a phase of exactly 1 or slightly over still reads as beat-start', () => {
+  const confident = FLINCH_CONFIDENCE_FLOOR + 0.1;
+  assert.equal(beatFlinchScale(1, confident), FLINCH_SCALE);
+  assert.equal(beatFlinchScale(1.05, confident), FLINCH_SCALE);
+});
+
+test('bossReassembleU: 1 (together) before any drop, since dropAtMs starts at -Infinity', () => {
+  assert.equal(bossReassembleU(-Infinity), 1);
+  assert.equal(bossReassembleU(-1), 1);
+});
+
+test('bossReassembleU: 0 right at a drop, 1 once BOSS_REASSEMBLE_MS has passed, monotonic between', () => {
+  assert.equal(bossReassembleU(0), 0);
+  assert.equal(bossReassembleU(BOSS_REASSEMBLE_MS), 1);
+  assert.equal(bossReassembleU(BOSS_REASSEMBLE_MS + 1000), 1);
+  let prev = -1;
+  for (let age = 0; age <= BOSS_REASSEMBLE_MS; age += 20) {
+    const u = bossReassembleU(age);
+    assert.ok(u >= prev, `reassembly must not un-reassemble at age=${age}`);
+    assert.ok(u >= 0 && u <= 1);
+    prev = u;
+  }
+});
+
+test('glitchBandOffsets is all zero at intensity 0, so callers can multiply it in unconditionally', () => {
+  const offsets = glitchBandOffsets(1, 12.3, 0, 6, 10);
+  assert.deepEqual(offsets, [0, 0, 0, 0, 0, 0]);
+});
+
+test('glitchBandOffsets never exceeds maxOffsetPx at full intensity, for any band', () => {
+  const offsets = glitchBandOffsets(7, 3.14, 1, 8, 5);
+  assert.equal(offsets.length, 8);
+  for (const o of offsets) assert.ok(Math.abs(o) <= 5, `offset ${o} exceeds maxOffsetPx`);
+});
+
+test('glitchBandOffsets scales down with intensity: a lower intensity never offsets farther than a higher one at the same instant', () => {
+  const low = glitchBandOffsets(9, 1.0, 0.2, 6, 10);
+  const high = glitchBandOffsets(9, 1.0, 1.0, 6, 10);
+  for (let i = 0; i < 6; i++) {
+    assert.ok(Math.abs(low[i]) <= Math.abs(high[i]) + 1e-9, `band ${i}: low=${low[i]} high=${high[i]}`);
+  }
+});
+
+test('glitchBandOffsets is deterministic: same seed/time/bands always tears the same way', () => {
+  const a = glitchBandOffsets(42, 2.0, 0.8, 5, 8);
+  const b = glitchBandOffsets(42, 2.0, 0.8, 5, 8);
+  assert.deepEqual(a, b);
+});
+
+test('glitchBandOffsets holds steady within one time-step rather than re-randomizing every call', () => {
+  const a = glitchBandOffsets(3, 1.001, 0.5, 4, 6, 0.05);
+  const b = glitchBandOffsets(3, 1.019, 0.5, 4, 6, 0.05); // same 0.05s step
+  assert.deepEqual(a, b);
+});
+
+test('glitchBandOffsets differs across time steps often enough to read as tearing, not a frozen shift', () => {
+  const a = glitchBandOffsets(3, 1.0, 1, 6, 10, 0.05);
+  const b = glitchBandOffsets(3, 2.0, 1, 6, 10, 0.05); // a full second later, many steps on
+  assert.notDeepEqual(a, b);
+});
+
+test('glitchBandOffsets degrades safely on a zero/negative bandCount', () => {
+  assert.deepEqual(glitchBandOffsets(1, 1, 1, 0, 10), []);
 });
