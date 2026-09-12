@@ -49,6 +49,57 @@ export const DEFAULT_SLSKD_DOWNLOADS =
   process.env.SLSKD_DOWNLOAD_DIR ||
   path.join(ROOT, 'data', 'slskd-downloads');
 
+/**
+ * Guard against SSRF: the slskd URL (whether bundled, env-configured, or
+ * supplied by the UI via setConfig) must point at a loopback host. Returns
+ * the normalized (no trailing slash) URL string, or throws.
+ */
+export function assertLoopbackSlskdUrl(input) {
+  let parsed;
+  try {
+    parsed = new URL(String(input));
+  } catch {
+    throw new Error(`"${input}" is not valid: not a URL`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`slskd URL must use http/https, got "${parsed.protocol}"`);
+  }
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
+  const isLoopback =
+    hostname === 'localhost' ||
+    hostname === '::1' ||
+    hostname === '0:0:0:0:0:0:0:1' ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname);
+  if (!isLoopback) {
+    throw new Error(`slskd URL host "${hostname}" is not a local/loopback address`);
+  }
+  return parsed.toString().replace(/\/$/, '');
+}
+
+/**
+ * Guard against path traversal when resolving a slskd-reported download
+ * filename against the local downloads root. Returns the set of candidate
+ * absolute paths to check, all guaranteed to stay inside `root`. Traversal
+ * segments ('..') and absolute paths are collapsed to just the basename so
+ * they can never escape `root`; a genuine relative sub-path (no traversal)
+ * also yields a nested candidate.
+ */
+export function pathsInsideDownloads(root, relPath) {
+  const normalized = String(relPath).replace(/\\/g, '/');
+  const base = path.basename(normalized);
+  const primary = path.join(root, base);
+  const isAbsolute = normalized.startsWith('/');
+  const segments = normalized.split('/').filter(Boolean);
+  const hasTraversal = segments.some((seg) => seg === '..' || seg === '.');
+
+  const candidates = [primary];
+  if (!isAbsolute && !hasTraversal && segments.length > 1) {
+    const nested = path.join(root, ...segments);
+    if (nested !== primary) candidates.push(nested);
+  }
+  return candidates;
+}
+
 const searches = new Map();
 let runtimeConfig = null;
 let directClient = null;
@@ -146,10 +197,11 @@ export async function setConfig(cfg) {
     return { mode: 'free', connected: true };
   }
   if (mode === 'slskd') {
-    const url = String(cfg.slskdUrl || cfg.url || BUNDLED_SLSKD_URL).trim().replace(/\/$/, '');
+    const rawUrl = String(cfg.slskdUrl || cfg.url || BUNDLED_SLSKD_URL).trim();
+    if (!rawUrl) throw new Error('slskd mode needs a URL');
+    const url = assertLoopbackSlskdUrl(rawUrl);
     // API key optional — fall back to bundled local key
     const key = String(cfg.slskdKey || cfg.apiKey || BUNDLED_SLSKD_KEY).trim();
-    if (!url) throw new Error('slskd mode needs a URL');
     runtimeConfig = { mode: 'slskd', slskdUrl: url, slskdKey: key };
     resetDirect();
     slskdProbe = null;
@@ -439,10 +491,7 @@ async function downloadViaSlskd(cfg, item) {
             process.env.SLSKD_DOWNLOAD_DIR ||
             DEFAULT_SLSKD_DOWNLOADS;
           if (dlRoot) {
-            const tryPaths = [
-              path.join(dlRoot, basename(localPath)),
-              path.join(dlRoot, localPath.replace(/^\\|^\//, '')),
-            ];
+            const tryPaths = pathsInsideDownloads(dlRoot, localPath);
             for (const p of tryPaths) {
               if (fs.existsSync(p)) {
                 return {
