@@ -23,6 +23,16 @@ import { personaFor, rampAt } from './CathodePalettes.js';
 import {
   PixelBuffer, PIXEL_W, PIXEL_H, rampIndexFor,
 } from './PixelBuffer.js';
+import {
+  buildLayerHeights, layerConfigFor, layerRampIndex, runsFromHeights,
+} from './CathodeBackdrop.js';
+
+/** How many parallax layers stand between the sky and the ground grid.
+ *  Two: near and far. A third stopped reading as depth and started reading
+ *  as clutter at 320x180 -- there just aren't enough vertical pixels for a
+ *  third band of silhouette to mean anything once the horizon and grid
+ *  already claim their share. */
+export const LAYER_COUNT = 2;
 
 /** Horizon as a fraction of buffer height. Low enough to leave room for a
  *  cast to stand on, high enough that the sky still carries the persona. */
@@ -66,6 +76,11 @@ export function scanlineAlpha(reducedFlash) {
   return capFlashAlpha(reducedFlash ? 0.10 : 0.22, reducedFlash);
 }
 
+/** Corner darkness for the tube vignette. Unlike scanlines this is not
+ *  flash-sensitive -- it is a static gradient, not a flicker, so
+ *  reducedFlash leaves it alone. */
+export const VIGNETTE_ALPHA = 0.35;
+
 export class CathodeRenderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -76,6 +91,10 @@ export class CathodeRenderer {
     this._backdrop = null; // ImageData, rebuilt on persona change
     this._scanPattern = null;
     this._scanAlpha = -1;
+    this._layers = null; // per-layer {noise, scrollPxPerSec, ...}, rebuilt on song change
+    this._layerSeed = null;
+    this._vignette = null; // CanvasGradient, rebuilt on canvas resize
+    this._vignetteSize = null;
   }
 
   /** The persona this frame paints in: whichever biome BiomeManager has
@@ -90,6 +109,37 @@ export class CathodeRenderer {
     const pixels = buildBackdropPixels(persona.ramp, w, h, horizonRowFor(h));
     this._backdrop = new ImageData(pixels, w, h);
     this._backdropName = persona.name;
+  }
+
+  /** One noise field per layer, held for the whole song -- only the scroll
+   *  phase changes frame to frame (see buildLayerHeights' `scrollPx`), so
+   *  the underlying field itself has no reason to move or rebuild. Reseeds
+   *  only when the song (and so its seed) actually changes. */
+  _ensureLayers(songSeed) {
+    const seed = Number.isFinite(songSeed) ? songSeed : 1;
+    if (this._layerSeed === seed && this._layers) return this._layers;
+    this._layers = Array.from({ length: LAYER_COUNT }, (_, i) => layerConfigFor(seed, i));
+    this._layerSeed = seed;
+    return this._layers;
+  }
+
+  /** A radial gradient darkening the corners -- built against the real
+   *  backing store (a gradient's coordinates are canvas-space, not
+   *  buffer-space), so it has to be rebuilt whenever the stage preset
+   *  changes the canvas size, not every frame. */
+  _ensureVignette(cw, ch) {
+    const key = `${cw}x${ch}`;
+    if (this._vignette && this._vignetteSize === key) return this._vignette;
+    const cx = cw / 2;
+    const cy = ch / 2;
+    const inner = Math.min(cw, ch) * 0.35;
+    const outer = Math.hypot(cx, cy);
+    const g = this.ctx.createRadialGradient(cx, cy, inner, cx, cy, outer);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, `rgba(0,0,0,${VIGNETTE_ALPHA})`);
+    this._vignette = g;
+    this._vignetteSize = key;
+    return g;
   }
 
   /** A 1x3 repeating pattern is one fillRect per frame instead of ~360.
@@ -120,6 +170,26 @@ export class CathodeRenderer {
     this._ensureBackdrop(persona);
     buffer.ctx.putImageData(this._backdrop, 0, 0);
 
+    const tSec = (sim?.timeMs ?? 0) / 1000;
+
+    // Parallax skyline: farthest layer first so nearer ones draw over it.
+    // Each layer's noise field is held for the whole song (_ensureLayers);
+    // only the scroll phase advances per frame.
+    const layers = this._ensureLayers(sim?.songSeed);
+    for (let li = LAYER_COUNT - 1; li >= 0; li--) {
+      const cfg = layers[li];
+      const heights = buildLayerHeights(cfg.noise, w, horizon, {
+        columnPx: cfg.columnPx,
+        ampPx: cfg.ampPx,
+        baseRowsAboveHorizon: cfg.baseRowsAboveHorizon,
+        scrollPx: Math.round(tSec * cfg.scrollPxPerSec),
+      });
+      const color = rampAt(ramp, layerRampIndex(ramp.length, li));
+      for (const run of runsFromHeights(heights, horizon)) {
+        buffer.rect(run.x, horizon - run.height, run.width, run.height, color);
+      }
+    }
+
     // Horizon rule: the brightest step in the ramp, one pixel tall. The
     // single line that tells the eye where the floor is.
     buffer.rect(0, horizon, w, 1, rampAt(ramp, ramp.length - 1));
@@ -128,7 +198,6 @@ export class CathodeRenderer {
     // the world reads as moving even before a cast exists. Spacing grows
     // with distance from the horizon, which is what sells the recession
     // without any actual perspective math.
-    const tSec = (sim?.timeMs ?? 0) / 1000;
     const gridColor = rampAt(ramp, Math.max(1, ramp.length - 3));
     for (let i = 1; i < 14; i++) {
       const depth = i / 14;
@@ -157,6 +226,14 @@ export class CathodeRenderer {
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         ctx.restore();
       }
+      // Vignette rides the same gate as scanlines (both are "is this device
+      // paying for the full CRT read"), but is not reducedFlash-sensitive --
+      // it is a static darkening, not a flicker.
+      const vignette = this._ensureVignette(this.canvas.width, this.canvas.height);
+      ctx.save();
+      ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      ctx.restore();
     }
   }
 
@@ -165,5 +242,7 @@ export class CathodeRenderer {
     this.buffer = null;
     this._backdrop = null;
     this._scanPattern = null;
+    this._layers = null;
+    this._vignette = null;
   }
 }
