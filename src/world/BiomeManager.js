@@ -998,9 +998,10 @@ export class BiomeManager {
     // fallback's trailing-window lag, since it looks both ways for the step.
     // The song's first and last cuts are pinned: they are the edges of the
     // schedule, not releases, and moving one leaves a gap.
-    const cuts = snapCutsToReleases(rawCuts, barScalarEnergy, {
-      pinned: [rawCuts[0], rawCuts[rawCuts.length - 1]],
-    });
+    const pinnedCuts = ssmUsable
+      ? rawCuts.filter((c) => !rawDecorative.includes(c))
+      : [rawCuts[0], rawCuts[rawCuts.length - 1]];
+    const cuts = snapCutsToReleases(rawCuts, barScalarEnergy, { pinned: pinnedCuts });
     // A decorative cut's exact index can move under the snap above; carry its
     // status forward by nearest match rather than exact value.
     const decorativeSet = new Set();
@@ -1019,6 +1020,10 @@ export class BiomeManager {
     // anything else is not the SSM's read at all, and must not go on
     // reporting the confidence of an analysis that was never used.
     this.structureConfidence = ssmKept ? structure.confidence : 0;
+    this.boundaryEvidence = ssmKept ? this._coarseBoundaryEvidenceFromSsm(structure) : [];
+    this.boundaryStrengths = this.boundaryEvidence.map((b) => b.strength ?? 0);
+    this.fineBoundaryEvidence = ssmKept ? this._fineBoundaryEvidenceFromSsm(structure) : [];
+    this.fineBoundariesMs = this.fineBoundaryEvidence.map((b) => b.timeMs);
     // Which cuts are genuine energy-novelty peaks, and so have a meaningful
     // sharpness to classify from. Everything else -- an SSM boundary (found
     // by a different detector, on a different signal) or an even time-split
@@ -1070,6 +1075,13 @@ export class BiomeManager {
       this.sections = [{ startMs: 0, endMs: durationMs, transition: 'fade', barMs: 500, provenance: 'decorative' }];
       meanEnergies.push(0.5);
       shapes.push(new Array(7).fill(1));
+    }
+    const ssmBoundaryStrengths = ssmKept ? this._boundaryStrengthsFromSsm(structure) : null;
+    if (ssmBoundaryStrengths) {
+      for (let i = 1; i < this.sections.length; i++) {
+        if (this.sections[i].provenance !== 'detected') continue;
+        this.sections[i].transition = classifyTransition(ssmBoundaryStrengths[i] ?? 0, 1);
+      }
     }
 
     // Song-form recognition: which sections are the SAME music (SongForm).
@@ -1271,6 +1283,47 @@ export class BiomeManager {
       }
       return labels[best];
     });
+  }
+
+  _boundaryStrengthsFromSsm(structure) {
+    const bounds = structure?.boundariesMs;
+    const strengths = Array.isArray(structure?.boundaryStrengths)
+      ? structure.boundaryStrengths
+      : (Array.isArray(structure?.boundaryEvidence)
+        ? structure.boundaryEvidence.map((b) => b?.strength ?? 0)
+        : null);
+    if (!Array.isArray(bounds) || !bounds.length || !Array.isArray(strengths)) return null;
+    return this.sections.map((s) => {
+      let best = 0, bestD = Infinity;
+      for (let k = 0; k < bounds.length; k++) {
+        const d = Math.abs(bounds[k] - s.startMs);
+        if (d < bestD) { bestD = d; best = k; }
+      }
+      return strengths[best] ?? 0;
+    });
+  }
+
+  _coarseBoundaryEvidenceFromSsm(structure) {
+    const bounds = Array.isArray(structure?.boundariesMs) ? structure.boundariesMs : [];
+    const strengths = Array.isArray(structure?.boundaryStrengths) ? structure.boundaryStrengths : [];
+    const evidence = Array.isArray(structure?.boundaryEvidence) ? structure.boundaryEvidence : [];
+    return bounds.map((timeMs, index) => ({
+      timeMs,
+      strength: evidence[index]?.strength ?? strengths[index] ?? 0,
+      source: evidence[index]?.source ?? (index === 0 ? 'start' : 'ssm'),
+      scale: evidence[index]?.scale ?? 'coarse',
+    }));
+  }
+
+  _fineBoundaryEvidenceFromSsm(structure) {
+    const bounds = Array.isArray(structure?.fineBoundariesMs) ? structure.fineBoundariesMs : [];
+    const evidence = Array.isArray(structure?.fineBoundaryEvidence) ? structure.fineBoundaryEvidence : [];
+    return bounds.map((timeMs, index) => ({
+      timeMs,
+      strength: evidence[index]?.strength ?? 0,
+      source: evidence[index]?.source ?? 'ssm',
+      scale: evidence[index]?.scale ?? 'fine',
+    }));
   }
 
   /**
