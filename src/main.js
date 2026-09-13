@@ -42,10 +42,11 @@ import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
 import { visualNow, VISUAL_LEAD_MS } from './core/ChoreoClock.js';
-import { extractWatchFeatures, buildCustomWorld, scoreWorlds } from './world/WorldScore.js';
+import { extractWatchFeatures, buildCustomWorld, buildWorldVariant } from './world/WorldScore.js';
 import {
   DEFAULT_WORLD_ID, setCustomWorld, clearCustomWorld, getWorld, listWorlds,
 } from './world/Worlds.js';
+import { buildWorldChoices } from './ui/WorldChooser.js';
 import { fingerprintBuffer } from './audio/SongFingerprint.js';
 import { packBundle, unpackBundle } from './audio/AnalysisBundle.js';
 import { getBundle, putBundle } from './audio/AnalysisCache.js';
@@ -816,15 +817,15 @@ function backToTitle() {
 }
 
 /** One card for the select grid. `kind` drives the preview swatch (see
- *  .worldCardPreview.<kind> in style.css); `score` is omitted for worlds
- *  the scorer doesn't rank. */
+ * .worldCardPreview.<kind> in style.css). */
 function worldCardEl({
-  id, name, tagline, kind, score = null, badge = null, best = false,
+  worldId, playWorldId, name, tagline, kind,
 }) {
   const card = document.createElement('button');
   card.type = 'button';
-  card.className = best ? 'worldCard is-best' : 'worldCard';
-  card.dataset.worldId = id;
+  card.className = 'worldCard';
+  card.dataset.worldId = playWorldId;
+  card.dataset.baseWorldId = worldId;
 
   const preview = document.createElement('div');
   preview.className = `worldCardPreview ${kind}`;
@@ -836,20 +837,7 @@ function worldCardEl({
   nameEl.className = 'worldCardName';
   nameEl.textContent = name;
   top.appendChild(nameEl);
-  if (score != null) {
-    const scoreEl = document.createElement('span');
-    scoreEl.className = 'worldCardScore';
-    scoreEl.textContent = `${score}%`;
-    top.appendChild(scoreEl);
-  }
   card.appendChild(top);
-
-  if (badge) {
-    const badgeEl = document.createElement('span');
-    badgeEl.className = 'worldCardBadge';
-    badgeEl.textContent = badge;
-    card.appendChild(badgeEl);
-  }
 
   const tag = document.createElement('p');
   tag.className = 'worldCardTag';
@@ -859,43 +847,12 @@ function worldCardEl({
   return card;
 }
 
-/** Fill the select grid: the analyzed match first, then the hand-picked
- *  worlds, then the rest of the registry by score. The dialog and all of
- *  its styling already existed -- only the population did not. */
-function renderWorldGrid(customWorld, proof, features) {
+/** Fill the select grid with one equal-choice card per registered world. */
+function renderWorldGrid(customWorld) {
   if (!worldSelectGridEl) return;
   worldSelectGridEl.textContent = '';
-
-  if (customWorld) {
-    worldSelectGridEl.appendChild(worldCardEl({
-      id: customWorld.id,
-      name: customWorld.name,
-      tagline: customWorld.tagline,
-      kind: customWorld.kind,
-      score: proof?.score ?? null,
-      badge: 'built for this song',
-      best: true,
-    }));
-  }
-
-  // Manual-only worlds carry no score on purpose: the scorer has no vote
-  // on them (see WorldScore.scoreWorlds), so printing a number would imply
-  // a measurement that was never made.
-  for (const w of listWorlds()) {
-    if (!w.manualOnly) continue;
-    worldSelectGridEl.appendChild(worldCardEl({
-      id: w.id, name: w.name, tagline: w.tagline, kind: w.kind, badge: 'your pick',
-    }));
-  }
-
-  let ranked = [];
-  try {
-    ranked = scoreWorlds(features);
-  } catch { /* a bad feature vector must not cost the player the grid */ }
-  for (const r of ranked) {
-    worldSelectGridEl.appendChild(worldCardEl({
-      id: r.id, name: r.name, tagline: r.tagline, kind: r.kind, score: r.score,
-    }));
+  for (const choice of buildWorldChoices(listWorlds(), customWorld)) {
+    worldSelectGridEl.appendChild(worldCardEl(choice));
   }
 }
 
@@ -909,10 +866,11 @@ function offerWorldsThenStart(data, extra = {}) {
       analysis: data.analysis,
       structure: data.structure,
     });
-    const { world, proof } = buildCustomWorld(features, data);
+    pendingWorldStart.features = features;
+    const { world } = buildCustomWorld(features, data);
     setCustomWorld(world);
-    console.log('[custom world] %s (base: %s) score: %d proof:', world.kind, world.baseId, proof.score, proof);
-    renderWorldGrid(world, proof, features);
+    console.log('[custom world] %s (base: %s)', world.kind, world.baseId);
+    renderWorldGrid(world);
     worldSelectEl?.classList.remove('hidden');
   } catch (err) {
     // The grid is a convenience; analysis failing must still start a song.
@@ -924,13 +882,36 @@ function offerWorldsThenStart(data, extra = {}) {
 
 worldSelectGridEl?.addEventListener('click', (e) => {
   const card = e.target?.closest?.('.worldCard');
-  const id = card?.dataset?.worldId;
-  if (!id) return;
-  // Every world but the synthesized one is a real registry entry, so drop
-  // the custom override before handing over -- otherwise it outlives the
-  // song it was built for and `getWorld('custom')` keeps resolving to it.
-  if (id !== 'custom') clearCustomWorld();
-  confirmWorld(id);
+  const baseWorldId = card?.dataset?.baseWorldId;
+  if (!baseWorldId) return;
+  const baseWorld = listWorlds().find((world) => world.id === baseWorldId);
+  if (!baseWorld) return;
+
+  // Cathode owns a separate pixel renderer, so it remains an intentional
+  // manual selection. Every painterly world gets its own variant of this
+  // song, even when it was not the automatic base choice.
+  if (baseWorld.manualOnly) {
+    clearCustomWorld();
+    confirmWorld(baseWorldId);
+    return;
+  }
+
+  try {
+    const current = getWorld('custom');
+    if (current?.baseId !== baseWorldId) {
+      const pending = pendingWorldStart;
+      if (!pending?.features) throw new Error('Missing song features for world variant');
+      const { world } = buildWorldVariant(baseWorldId, pending.features, pending.data);
+      setCustomWorld(world);
+    }
+    confirmWorld('custom');
+  } catch (err) {
+    // A tailored palette or terrain is additive. If it cannot be made, the
+    // player still gets the world they selected instead of a dead-end picker.
+    console.warn('[world variant] failed; starting stock world:', err);
+    clearCustomWorld();
+    confirmWorld(baseWorldId);
+  }
 });
 
 

@@ -28,6 +28,7 @@ export function extractWatchFeatures({
   const dur = Math.max(1, durationMs || 1);
   let centroid = 0.5, bass = 0.3, air = 0.1, spread = 0.5, litho = null;
   let dyn = 0.4, energyMean = 0.4, phrase = 0.3, landmarks = 4, trend = 0;
+  let pulse = 0.5, rhythmWeight = 0;
 
   if (energyCurves && energyCurves.n >= 8) {
     const portrait = extractRidgePortrait(energyCurves, dur);
@@ -69,14 +70,25 @@ export function extractWatchFeatures({
     }
   }
 
+  // The ridge portrait supplies phrase-sized changes, but it cannot measure
+  // rhythmic density: its landmarks are deliberately sparse so terrain stays
+  // readable. When the audio adapter has a credible onset/tempo read, let
+  // that real measurement take over the scorer's rhythm-facing features.
+  const perMin = landmarks / (dur / 60000);
+  let onset = clamp01(perMin / 10);
+
   if (analysis) {
     if (Number.isFinite(analysis.brightness)) centroid = clamp01(0.55 * centroid + 0.45 * analysis.brightness);
     if (Number.isFinite(analysis.dynamicRange)) dyn = clamp01(0.5 * dyn + 0.5 * analysis.dynamicRange);
+    const rhythm = analysis.rhythm;
+    if (Number.isFinite(rhythm?.eventDensity)
+      && Number.isFinite(rhythm?.pulseRegularity)
+      && Number.isFinite(rhythm?.confidence)) {
+      rhythmWeight = clamp01((rhythm.confidence - 0.25) / 0.5);
+      onset = clamp01(onset * (1 - rhythmWeight) + clamp01(rhythm.eventDensity) * rhythmWeight);
+      pulse = clamp01(0.5 * (1 - rhythmWeight) + clamp01(rhythm.pulseRegularity) * rhythmWeight);
+    }
   }
-
-  // Onset-ish density: landmark count per minute, squashed to 0..1.
-  const perMin = landmarks / (dur / 60000);
-  const onset = clamp01(perMin / 10);
 
   // Section contrast from structure labels, else dynamic range.
   let contrast = dyn;
@@ -86,8 +98,11 @@ export function extractWatchFeatures({
   }
 
   const bpmN = Number.isFinite(bpm) && bpm > 0 ? clamp01((bpm - BPM_LO) / (BPM_HI - BPM_LO)) : 0.4;
-  // Groove: mid-tempo (≈80–110) scores high; very slow and very fast fall off.
-  const groove = clamp01(1 - Math.abs((bpm || 96) - 96) / 70) * (0.55 + 0.45 * phrase);
+  // Groove starts with tempo + phrase shape, then moves toward actual
+  // beat alignment only when that measurement is credible. Existing MIDI,
+  // synthetic, and free-time paths preserve the former behavior exactly.
+  const tempoPhraseGroove = clamp01(1 - Math.abs((bpm || 96) - 96) / 70) * (0.55 + 0.45 * phrase);
+  const groove = clamp01(tempoPhraseGroove + rhythmWeight * 0.35 * (pulse - tempoPhraseGroove));
   const tempoHeat = clamp01(((bpm || 100) - 72) / 90);
 
   const warmth = clamp01(0.55 * bass + 0.45 * (1 - centroid));
@@ -104,7 +119,7 @@ export function extractWatchFeatures({
 
   return {
     centroid, bass, air, spread, dyn, energyMean, phrase, landmarks,
-    onset, contrast, groove, warmth, texture, form, arc, drive, bpm: bpm || 0,
+    onset, pulse, contrast, groove, warmth, texture, form, arc, drive, bpm: bpm || 0,
     tempoHeat, litho, trend,
   };
 }
@@ -283,13 +298,15 @@ function buildOptimalPrefer(features) {
  * `features` alone, same as before: palette generation never touches the
  * 100% proof.
  */
-export function buildCustomWorld(features, data = null) {
+/** Build a song-specific interpretation of one registered painterly world. */
+export function buildWorldVariant(baseId, features, data = null) {
   const feat = features && typeof features.drive === 'number'
     ? features
     : extractWatchFeatures(features || {});
-
-  const ranked = scoreWorlds(feat);
-  const base = getWorld(ranked[0].id);
+  const base = getWorld(baseId);
+  if (base.id !== baseId || base.manualOnly) {
+    throw new Error(`Cannot build a tailored variant for world ${baseId}`);
+  }
 
   const channels = buildOptimalChannels(feat);
   const affinity = buildOptimalAffinity(feat);
@@ -376,6 +393,18 @@ export function buildCustomWorld(features, data = null) {
   const proof = proveScore(feat, world);
   proof.dna = paletteProof;
   return { world, proof, baseId: base.id };
+}
+
+/**
+ * Preserve the automatic choice for callers that want one. The chooser can
+ * instead call buildWorldVariant with the world the player picked.
+ */
+export function buildCustomWorld(features, data = null) {
+  const feat = features && typeof features.drive === 'number'
+    ? features
+    : extractWatchFeatures(features || {});
+  const ranked = scoreWorlds(feat);
+  return buildWorldVariant(ranked[0].id, feat, data);
 }
 
 function proveScore(features, world) {

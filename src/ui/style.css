@@ -1966,9 +1966,6 @@ html, body {
   transform: translateY(-1px);
   outline: none;
 }
-.worldCard.is-best {
-  border-color: color-mix(in srgb, var(--spec-gold) 45%, var(--border-subtle));
-}
 .worldCardPreview {
   height: 72px;
   border-radius: var(--radius-sm);
@@ -2101,23 +2098,11 @@ html, body {
   font-weight: 600;
   letter-spacing: -0.02em;
 }
-.worldCardScore {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  font-size: 1.15rem;
-  color: var(--text-primary);
-}
 .worldCardTag {
   margin: 0;
   color: var(--text-secondary);
   font-size: 0.85rem;
   line-height: 1.4;
-}
-.worldCardBadge {
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
 }
 @media (max-width: 560px) {
   .worldSelectInner { padding: var(--space-5) var(--space-4); }
@@ -2126,4 +2111,3 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .worldCard { transition: none; }
 }
-
