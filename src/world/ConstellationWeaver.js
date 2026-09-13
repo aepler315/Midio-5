@@ -9,6 +9,7 @@
 import { mulberry32, clamp01 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { placeGlyph } from './LyricGlyph.js';
+import { OCEAN_HORIZON_FRAC } from './Ocean.js';
 
 // yMax used to stop at 0.58 -- barely past mid-screen -- and was widened to
 // 0.95 on the theory that terrain, drawn after this layer, would occlude
@@ -40,7 +41,16 @@ import { placeGlyph } from './LyricGlyph.js';
 // raising yMax back up to actually use the open sky can never reproduce the
 // original grass-line glitch -- anything that drifts toward the new lower
 // boundary just fades out first.
-const REGION = { xMin: 0.03, xMax: 0.97, yMin: 0.04, yMax: 0.70 };
+// yMax used to be a flat 0.70, tuned against ground-level terrain (Midio's
+// own groundY sits at ~0.75, so 0.70 was "just above the grass"). That
+// reasoning misses the far ocean (Ocean.js), which sits at the same depth
+// as the ranges and starts at OCEAN_HORIZON_FRAC (~0.38) -- well above
+// where terrain peaks. Terrain drawn after this layer occludes what it
+// occludes, but water occludes nothing: a dot placed between the horizon
+// and the ground line sat visibly IN the ocean in any gap between
+// mountains, reading as a constellation sticking out of the sea. Sky ends
+// at the horizon; nothing here should ever be placed below it.
+export const REGION = { xMin: 0.03, xMax: 0.97, yMin: 0.04, yMax: OCEAN_HORIZON_FRAC };
 const FIGURE_DOTS_MIN = 5;
 const FIGURE_DOTS_MAX = 8;
 const EDGE_GROW_MS = 250;
@@ -78,7 +88,13 @@ const GLYPH_SIZE_FRAC = 0.18;     // fraction of sky width
 // safely sit much closer to the real ground line -- nothing can ever again
 // visibly plant itself there, because by definition nothing is visible
 // there.
-const GROUND_FADE_START = 0.55; // real terrain peaks, per the investigation above
+//
+// Kept as the same fraction OF yMax it was tuned at (0.55 against the old
+// 0.70) rather than the old absolute 0.55, now that yMax itself sits at the
+// sea horizon instead of near the ground line -- an absolute 0.55 would sit
+// PAST the new, much lower yMax, breaking groundFadeAlpha's own math
+// (fading toward an endpoint that's already behind it).
+export const GROUND_FADE_START = REGION.yMax * (0.55 / 0.70);
 export function groundFadeAlpha(yFrac) {
   return 1 - clamp01((yFrac - GROUND_FADE_START) / (REGION.yMax - GROUND_FADE_START));
 }

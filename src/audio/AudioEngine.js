@@ -11,7 +11,17 @@ export class AudioEngine {
     this.ctx = new AC();
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.85;
-    this.master.connect(this.ctx.destination);
+    // Every audible source in the game -- the decoded buffer in playBuffer,
+    // every synth voice (Sf2Synth, SimpleSynth, SoundfontLibrary) -- connects
+    // into `master` before reaching the speakers, which makes it the one
+    // choke point where ALL of the game's audio can be delayed uniformly
+    // without threading a delay through each synth's own per-note
+    // scheduling. Sits between master and destination rather than being
+    // folded into master itself so setAudioDelayMs can change it live
+    // (a GainNode has no equivalent "when" parameter to delay through).
+    this._delay = this.ctx.createDelay(1); // 1s max -- well past MAX_BT_LATENCY_TRIM_MS
+    this.master.connect(this._delay);
+    this._delay.connect(this.ctx.destination);
 
     this._startCtxTime = null; // ctx.currentTime corresponding to song-time 0
     this._pausedAtMs = 0;
@@ -86,6 +96,25 @@ export class AudioEngine {
    *  sound as heard rather than as scheduled. */
   get outputLatencyMs() {
     return outputLatencyMs(this.ctx);
+  }
+
+  /**
+   * Delay ALL audio output by `ms` (0 = off), independent of the sim/visual
+   * clock (`nowMs` above is untouched). For the manual Bluetooth trim's
+   * negative case: a player who needs visuals to run AHEAD of the sound
+   * cannot have a frame render before its own real time -- so instead the
+   * sound itself is held back by that many ms via `_delay`, which reads as
+   * the same relative correction. A ramp (not a hard jump) avoids an
+   * audible click if this is ever changed mid-playback.
+   */
+  setAudioDelayMs(ms) {
+    const sec = Math.max(0, Number(ms) || 0) / 1000;
+    try {
+      this._delay.delayTime.cancelScheduledValues(this.ctx.currentTime);
+      this._delay.delayTime.linearRampToValueAtTime(sec, this.ctx.currentTime + 0.05);
+    } catch {
+      this._delay.delayTime.value = sec;
+    }
   }
 
   decodeFile(arrayBuffer) {

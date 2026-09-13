@@ -88,6 +88,15 @@ export function clearStoredGroove() {
 // report; this is the manual trim for exactly that gap. 0 (off) by default --
 // wired audio, where the automatic figure is usually close, should not pay
 // an unrequested extra delay.
+//
+// Signed: a positive trim delays the VISUALS (ChoreoClock.visualNow) to
+// match audio that is heard later than the platform reports -- the original
+// (and by far the more common) case. A negative trim means the opposite
+// correction is needed, and visuals cannot be rendered before their own
+// real time arrives -- there is no way to "un-delay" a frame that hasn't
+// happened yet -- so a negative value instead delays the actual AUDIO
+// output by that many ms (AudioEngine's own delay node), which reads to the
+// player as exactly the same relative correction.
 const BT_LATENCY_KEY = 'smw:btLatencyTrimMs';
 // Pre-v2 storage: a flat on/off flag, always +30ms when on. Migrated below
 // so an existing "on" player keeps getting a correction after the update
@@ -102,13 +111,14 @@ const BT_LATENCY_KEY_LEGACY = 'smw:btLatencyTrim';
 export const BT_LATENCY_TRIM_MS = 30;
 const MAX_BT_LATENCY_TRIM_MS = 500; // sanity rail -- matches the input's own max
 
-/** Current trim in ms, clamped to [0, MAX_BT_LATENCY_TRIM_MS]. 0 = off. */
+/** Current trim in ms, clamped to [-MAX_BT_LATENCY_TRIM_MS, MAX_BT_LATENCY_TRIM_MS].
+ *  0 = off; positive delays visuals, negative delays audio (see comment above). */
 export function getBtLatencyTrimMs() {
   try {
     const stored = localStorage.getItem(BT_LATENCY_KEY);
     if (stored != null) {
       const ms = Number(stored);
-      return Number.isFinite(ms) ? Math.max(0, Math.min(MAX_BT_LATENCY_TRIM_MS, ms)) : 0;
+      return Number.isFinite(ms) ? Math.max(-MAX_BT_LATENCY_TRIM_MS, Math.min(MAX_BT_LATENCY_TRIM_MS, ms)) : 0;
     }
     // Migrate the old boolean flag once, then let the new key take over.
     if (localStorage.getItem(BT_LATENCY_KEY_LEGACY) === '1') return BT_LATENCY_TRIM_MS;
@@ -117,7 +127,7 @@ export function getBtLatencyTrimMs() {
 }
 
 export function setBtLatencyTrimMs(ms) {
-  const clamped = Math.max(0, Math.min(MAX_BT_LATENCY_TRIM_MS, Math.round(Number(ms) || 0)));
+  const clamped = Math.max(-MAX_BT_LATENCY_TRIM_MS, Math.min(MAX_BT_LATENCY_TRIM_MS, Math.round(Number(ms) || 0)));
   try { localStorage.setItem(BT_LATENCY_KEY, String(clamped)); } catch { /* no persistent storage available */ }
   return clamped;
 }
