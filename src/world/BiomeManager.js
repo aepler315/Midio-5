@@ -3637,6 +3637,27 @@ export class BiomeManager {
       haloColor: this._rotated(c.haloColor),
       radius: (c.radius || 0) * grow,
     });
+    // One shared opaque backing, at the body's full (un-split) alpha, before
+    // either crossfading celestial draws on top of it. _drawOneCelestial
+    // gives each body its own backing too, but split by (1-t)/t during a
+    // biome crossfade -- exactly the moment neither body alone is opaque
+    // enough to fully block what's behind it (the space ridge, stars,
+    // Midasus's sky voyage), so a crossfade let all of that show through in
+    // proportion to how mid-transition it was. Sized to whichever body is
+    // larger so it covers both without a visible seam as they fade past
+    // each other.
+    if (alpha > 0.02) {
+      const backR = Math.max((A.celestial.radius || 0), (B.celestial.radius || 0)) * grow;
+      if (backR > 0) {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(cx, cy, backR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
     if (B === A) {
       this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), alpha);
       this._drawCompanions(ctx, canvas, cx, cy, A.celestial.companions, alpha);
@@ -4631,6 +4652,26 @@ export class BiomeManager {
     ctx.fillStyle = halo;
     ctx.beginPath();
     ctx.arc(cx, cy, c.radius * haloRadiusMul, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Opaque backing disc, full body radius: blocks whatever was drawn
+    // earlier this frame -- the space ridge, stars, ambient constellations,
+    // Midasus's sky voyage -- from showing through. Without this, every
+    // path below that isn't fully opaque on its own (veiled bodies at 0.6
+    // alpha, the wireframe style's deliberately-hollow 0.55 wash) let
+    // earlier deep-sky content -- especially the space ridge, drawn with
+    // additive 'lighter' blending -- show through at meaningfully more than
+    // a faint knock-back, which reads as that content sitting IN FRONT of
+    // the sun rather than behind it: backwards for the one object in the
+    // sky that is unimaginably too large and far to ever have anything in
+    // front of it. Same fix the moon already had (see its own backing disc
+    // below); the sun just never got it. Drawn at the body's own full
+    // alpha, not the veiled/wireframe factor, so it fades in/out in step
+    // with the body rather than ever occluding more than the visible body does.
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.arc(cx, cy, c.radius, 0, Math.PI * 2);
     ctx.fill();
 
     if (c.wireframe) {
