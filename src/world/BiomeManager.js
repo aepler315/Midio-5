@@ -111,13 +111,20 @@ import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { VoyagePhase } from '../sim/SkyVoyage.js';
 
 const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
-// Star catalogue spans the WHOLE frame. An earlier cut generated only over
-// the top 78% so stars "behind" the mountains were not wasted — but valleys,
-// shorter biomes, and the city skyline all expose sky well below that line,
-// and the field read as a chunk sitting in the middle of the sky with a
-// dead band above the ridgeline. Terrain occludes what it occludes; the
-// catalogue has to cover every pixel that can ever be sky.
-const STAR_SKY_FRAC = 1;
+// Star catalogue spans down to the sea horizon, not the whole frame. An
+// earlier cut generated only over the top 78% so stars "behind" the
+// mountains were not wasted — but valleys, shorter biomes, and the city
+// skyline all expose sky well below that line, and the field read as a
+// chunk sitting in the middle of the sky with a dead band above the
+// ridgeline. That was fixed by spanning the WHOLE frame instead, on the
+// reasoning that terrain occludes what it occludes -- but the far ocean
+// (Ocean.js) sits at the same depth as the ranges and is water, not
+// terrain: it never occludes anything, so stars generated below its
+// horizon line stayed visible sitting IN the water in any gap between
+// mountains, reading as stars sticking out of the sea. Sky ends where the
+// ocean begins; the catalogue only needs to cover every pixel that can
+// ever actually be sky, which is everything above OCEAN_HORIZON_FRAC.
+const STAR_SKY_FRAC = OCEAN_HORIZON_FRAC;
 const STAR_CATALOGUE_COUNT = 560;
 // Aerial perspective per parallax layer: how far each range's own fill is
 // pulled toward the sky-horizon color before it is drawn. L5 is the
@@ -6574,7 +6581,12 @@ export class BiomeManager {
         ctx.globalCompositeOperation = 'lighter';
         for (const bar of glowBars) {
           const alpha = capFlashAlpha(0.5 * bar.glow, this.reducedFlash);
-          const rimH = Math.min(60, canvas.height - bar.y);
+          // Floored at 1: a bar at or past the bottom edge (canvas.height -
+          // bar.y <= 0) used to hand createRadialGradient a negative radius,
+          // throwing IndexSizeError and killing the frame's whole draw call
+          // -- not just this glow -- every time a kick pulse reached a bar
+          // that low.
+          const rimH = Math.max(1, Math.min(60, canvas.height - bar.y));
           // An elliptical falloff centered on the bar, not a rect filled with
           // a vertical-only gradient -- the old version faded top-to-bottom
           // but left the bar's own width as a hard-edged box (flat top, hard

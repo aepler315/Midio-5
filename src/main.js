@@ -208,9 +208,25 @@ let btLatencyTrimMs = getBtLatencyTrimMs(); // manual Bluetooth output-latency c
  *  typed in (0 if they haven't set one). The one place this composition
  *  happens -- every consumer (Simulation's per-step envelopes, tap
  *  calibration) reads through here rather than each re-adding the trim its
- *  own way. */
+ *  own way.
+ *
+ *  Only the trim's POSITIVE part belongs here -- a negative trim (audio
+ *  needs to run later relative to visuals, not the other way round) is
+ *  applied on the audio side instead, via applyBtLatencyToAudioEngine's
+ *  audioEngine.setAudioDelayMs, since a visual can never be shown before
+ *  its own real time arrives. */
 function effectiveOutputLatencyMs() {
-  return audioEngine.outputLatencyMs + btLatencyTrimMs;
+  return audioEngine.outputLatencyMs + Math.max(0, btLatencyTrimMs);
+}
+
+/** The other half of the signed BT trim (see effectiveOutputLatencyMs): a
+ *  negative value delays the actual audio output by that many ms instead of
+ *  asking visuals to run backward. Called once at startup and again on
+ *  every trim change -- audioEngine itself only exists once the player has
+ *  started a song, so this is a no-op (and re-applied by the next call)
+ *  until then. */
+function applyBtLatencyToAudioEngine() {
+  audioEngine?.setAudioDelayMs(Math.max(0, -btLatencyTrimMs));
 }
 // Dev surfaces (the `` ` ``/V/T debug overlay + its per-frame render cost,
 // and the developer-oriented half of the title screen's key legend) are
@@ -475,6 +491,7 @@ function randomizeSeed() {
 async function bootAudio() {
   if (audioEngine) return;
   audioEngine = new AudioEngine();
+  applyBtLatencyToAudioEngine(); // carry over any negative trim set before this song started
   const running = await audioEngine.resume();
   if (!running) {
     // A stuck-suspended context used to fail silently here: the game would
@@ -2209,11 +2226,16 @@ function toggleReducedFlash() {
  *  frame either way -- effectiveOutputLatencyMs() reads the live
  *  `btLatencyTrimMs` variable, so nothing needs to be re-armed on the
  *  running sim the way reducedFlash cascades into one; the choreography
- *  clock just starts reading a different number. */
+ *  clock just starts reading a different number. A negative trim shows its
+ *  own sign (Number.toString already includes the "-"); only the positive
+ *  case gets an explicit "+", since a bare number there would otherwise
+ *  read as ambiguous about which way the correction goes. */
 function updateBtLatencyBtnUI() {
   if (!btLatencyBtnEl) return;
-  btLatencyBtnEl.setAttribute('aria-pressed', btLatencyTrimMs > 0 ? 'true' : 'false');
-  btLatencyBtnEl.textContent = btLatencyTrimMs > 0 ? `BT +${btLatencyTrimMs}ms` : 'BT: off';
+  btLatencyBtnEl.setAttribute('aria-pressed', btLatencyTrimMs !== 0 ? 'true' : 'false');
+  btLatencyBtnEl.textContent = btLatencyTrimMs > 0 ? `BT +${btLatencyTrimMs}ms`
+    : btLatencyTrimMs < 0 ? `BT ${btLatencyTrimMs}ms`
+      : 'BT: off';
 }
 
 function closeBtLatencyPopover() {
@@ -2230,7 +2252,7 @@ function onBtLatencyOutsideClick(e) {
 }
 function openBtLatencyPopover() {
   if (!btLatencyPopoverEl || !btLatencyInputEl) return;
-  btLatencyInputEl.value = String(btLatencyTrimMs > 0 ? btLatencyTrimMs : BT_LATENCY_TRIM_MS);
+  btLatencyInputEl.value = String(btLatencyTrimMs !== 0 ? btLatencyTrimMs : BT_LATENCY_TRIM_MS);
   btLatencyPopoverEl.classList.remove('hidden');
   btLatencyBtnEl?.setAttribute('aria-expanded', 'true');
   btLatencyInputEl.focus();
@@ -2243,15 +2265,19 @@ function openBtLatencyPopover() {
 
 /** Reads, clamps (setBtLatencyTrimMs does the clamping and persists), and
  *  applies the typed value -- takes effect next frame, same as the toggle
- *  this replaced. */
+ *  this replaced. A negative value's half of the correction (the audio
+ *  delay) is separately pushed straight to the running AudioEngine, since
+ *  that side isn't read live from `btLatencyTrimMs` the way visuals are. */
 function applyBtLatencyTrim() {
   if (!btLatencyInputEl) return;
   btLatencyTrimMs = setBtLatencyTrimMs(btLatencyInputEl.value);
+  applyBtLatencyToAudioEngine();
   updateBtLatencyBtnUI();
   closeBtLatencyPopover();
 }
 function turnOffBtLatencyTrim() {
   btLatencyTrimMs = setBtLatencyTrimMs(0);
+  applyBtLatencyToAudioEngine();
   updateBtLatencyBtnUI();
   closeBtLatencyPopover();
 }

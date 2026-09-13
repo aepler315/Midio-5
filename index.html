@@ -115,13 +115,13 @@
         <div id="btLatencyControl">
           <button id="btLatencyBtn" class="ghostbtn chipbtn" type="button" aria-pressed="false"
             aria-haspopup="true" aria-expanded="false"
-            title="Manual Bluetooth latency correction. Most Bluetooth speakers/headphones report no output latency to the browser, so beat-anchored visuals (jumps, flashes, camera hits) can land audibly early. Tap to set how many ms to delay them by -- your room's real Bluetooth round-trip is commonly 100-200ms. 0 = off. Leave off on wired audio.">
+            title="Manual Bluetooth latency correction. Most Bluetooth speakers/headphones report no output latency to the browser, so beat-anchored visuals (jumps, flashes, camera hits) can land audibly early. Tap to set how many ms to delay them by -- your room's real Bluetooth round-trip is commonly 100-200ms. Negative delays the audio instead, for the opposite problem. 0 = off. Leave off on wired audio.">
             BT: off
           </button>
           <div id="btLatencyPopover" class="hidden">
-            <label for="btLatencyInput">Delay visuals by</label>
+            <label for="btLatencyInput">Delay visuals by (negative delays audio)</label>
             <div id="btLatencyInputRow">
-              <input id="btLatencyInput" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="500" step="1" value="30" />
+              <input id="btLatencyInput" type="number" inputmode="numeric" pattern="-?[0-9]*" min="-500" max="500" step="1" value="30" />
               <span>ms</span>
             </div>
             <div id="btLatencyPopoverActions">

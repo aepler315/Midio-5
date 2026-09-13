@@ -116,9 +116,11 @@ test('getBtLatencyTrimMs defaults to 0 (off) with no persisted value, or no stor
 
 test('setBtLatencyTrimMs does not throw with no persistent storage, and clamps its return value', () => {
   assert.doesNotThrow(() => setBtLatencyTrimMs(75));
-  assert.equal(setBtLatencyTrimMs(-10), 0, 'negative input clamps to 0, not a negative visual lead');
-  assert.equal(setBtLatencyTrimMs(9999), 500, 'absurd input clamps to the sanity rail');
+  assert.equal(setBtLatencyTrimMs(-10), -10, 'negative input is kept -- it delays audio instead of visuals');
+  assert.equal(setBtLatencyTrimMs(9999), 500, 'absurd positive input clamps to the sanity rail');
+  assert.equal(setBtLatencyTrimMs(-9999), -500, 'absurd negative input clamps to the sanity rail too');
   assert.equal(setBtLatencyTrimMs(12.6), 13, 'rounds to a whole ms');
+  assert.equal(setBtLatencyTrimMs(-12.6), -13, 'rounds a negative value to a whole ms too');
 });
 
 test('a set value round-trips through getBtLatencyTrimMs', () => {
@@ -129,8 +131,9 @@ test('a set value round-trips through getBtLatencyTrimMs', () => {
 });
 
 test('a stored value is clamped on read too, not just on write (a hand-edited or stale value)', () => {
-  withFakeStorage({ 'smw:btLatencyTrimMs': '-5' }, () => assert.equal(getBtLatencyTrimMs(), 0));
+  withFakeStorage({ 'smw:btLatencyTrimMs': '-5' }, () => assert.equal(getBtLatencyTrimMs(), -5));
   withFakeStorage({ 'smw:btLatencyTrimMs': '9999' }, () => assert.equal(getBtLatencyTrimMs(), 500));
+  withFakeStorage({ 'smw:btLatencyTrimMs': '-9999' }, () => assert.equal(getBtLatencyTrimMs(), -500));
   withFakeStorage({ 'smw:btLatencyTrimMs': 'not-a-number' }, () => assert.equal(getBtLatencyTrimMs(), 0));
 });
 
