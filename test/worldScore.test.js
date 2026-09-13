@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EnergyCurves } from '../src/audio/EnergyCurves.js';
-import { extractWatchFeatures, scoreWorlds, buildCustomWorld } from '../src/world/WorldScore.js';
+import { extractWatchFeatures, scoreWorlds, buildCustomWorld, buildWorldVariant } from '../src/world/WorldScore.js';
 import { getWorld, listWorlds, setCustomWorld, clearCustomWorld, DEFAULT_WORLD_ID } from '../src/world/Worlds.js';
 import { buildingProfile, cityHeightField, windowOccupancy } from '../src/world/city/CitySilhouette.js';
 import { extractRidgePortrait } from '../src/world/RidgePortrait.js';
@@ -67,6 +67,26 @@ test('a wall-of-sound mix prefers The Range; a warm mid-tempo mix prefers After 
     `lofi city ${pick(quietR, 'nocturne')} vs alpine ${pick(quietR, 'alpine')}`);
   assert.ok(loudR[0].recommended);
   assert.ok(loudR.every((r) => r.score >= 1 && r.score <= 99));
+});
+
+test('a confident rhythm profile supplies onset density and pulse to world scoring', () => {
+  const source = { durationMs: 60000, bpm: 96 };
+  const withoutRhythm = extractWatchFeatures(source);
+  const withRhythm = extractWatchFeatures({
+    ...source,
+    analysis: {
+      rhythm: {
+        eventDensity: 0.8,
+        pulseRegularity: 0.9,
+        confidence: 0.95,
+      },
+    },
+  });
+
+  assert.equal(withRhythm.onset, 0.8);
+  assert.equal(withRhythm.pulse, 0.9);
+  assert.ok(withRhythm.groove > withoutRhythm.groove,
+    `expected beat-aligned rhythm to improve groove: ${withRhythm.groove} <= ${withoutRhythm.groove}`);
 });
 
 test('buildingProfile is rectangular with setbacks, not a mountain cone', () => {
@@ -375,4 +395,17 @@ test('custom world inherits best base world kind', () => {
   assert.equal(world.baseId, ranked[0].id,
     `custom base ${world.baseId} !== top ranked ${ranked[0].id}`);
   assert.equal(world.kind, ranked[0].kind);
+});
+
+test('buildWorldVariant preserves the selected world while tailoring it to the song', () => {
+  const feat = baseFeat({
+    onset: 0.7, energyMean: 0.7, dyn: 0.6, tempoHeat: 0.65, drive: 0.7,
+  });
+  const { world, proof } = buildWorldVariant('nocturne', feat);
+
+  assert.equal(world.id, 'custom');
+  assert.equal(world.baseId, 'nocturne');
+  assert.equal(world.kind, 'city');
+  assert.equal(world.name, 'After Hours');
+  assert.equal(proof.score, 100);
 });

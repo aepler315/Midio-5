@@ -22,6 +22,7 @@ import {
   tonalityFrom, tonalityTimeline, meanBrightness, brightnessAt, windowChroma,
 } from './PitchTracker.js';
 import { EnergyCurves } from './EnergyCurves.js';
+import { summarizeRhythmOnsets } from './RhythmProfile.js';
 import { analyzeStructure } from './StructureAnalyzer.js';
 import { sectionPacing } from './sectionBudget.js';
 import { Role, makeNoteEvent, sortNoteEvents } from '../core/NoteEvent.js';
@@ -256,6 +257,7 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
     brightness: meanBrightness(pitchFeatures),
     dynamicRange: dynamicRange(raw),
     stereoWidth: stereoWidth(audioBuffer),
+    rhythm: summarizeRhythmOnsets(rhythmOnsets, durationMs, tempo),
   };
 
   // Song structure (StructureAnalyzer): a beat-synchronous chroma+timbre

@@ -95,14 +95,17 @@ export async function runAudioSmoke({
     await page.getByText('Browse files', { exact: true }).click();
     await (await chooserReady).setFiles(wavPath);
     // Analysis now ends at the world picker rather than starting the song
-    // outright. Take the recommended card -- the analyzed custom world,
-    // exactly the one this test has always exercised, now one click away.
+    // outright. Every registered world gets one equal-choice card; the
+    // tailored interpretation is the play target of its base card.
     await page.locator('#worldSelect:not(.hidden)').waitFor({ state: 'visible', timeout: 90000 });
-    const recommendedCard = page.locator('.worldCard.is-best');
-    await recommendedCard.waitFor({ state: 'visible', timeout: 15000 });
-    check('the picker leads with the analyzed match',
-      await recommendedCard.getAttribute('data-world-id') === 'custom');
-    await recommendedCard.click();
+    const worldCards = page.locator('#worldSelect .worldCard');
+    check('the picker presents one card per registered world', await worldCards.count() === 9);
+    check('the picker gives no world winner styling', await page.locator('.worldCard.is-best').count() === 0);
+    const tailoredCard = page.locator('.worldCard[data-world-id="custom"]');
+    check('exactly one base card keeps the tailored interpretation', await tailoredCard.count() === 1);
+    const alternateCard = page.locator('.worldCard:not([data-world-id="custom"])').first();
+    check('an alternate painterly world remains selectable', await alternateCard.count() === 1);
+    await alternateCard.click();
     await page.locator('#hud:not(.hidden)').waitFor({ state: 'visible', timeout: 90000 });
     await page.waitForFunction(() => window.__SMW?.sim?.timeMs > 750, null, { timeout: 30000 });
     const state = await page.evaluate(() => {
@@ -116,7 +119,7 @@ export async function runAudioSmoke({
     });
     report.playback = state;
     check('audio analysis produced a note timeline', state.notes > 0 && state.durationMs > 0);
-    check('picking the recommended card starts the custom world and dismisses the picker',
+    check('picking an alternate world starts its tailored variant and dismisses the picker',
       state.worldId === 'custom' && !await page.locator('#worldSelect').isVisible());
     check('recording plays with the timeline synth muted', state.hasRecording
       && state.audioState === 'running' && state.muteTimelineSynth);
