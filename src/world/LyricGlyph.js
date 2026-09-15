@@ -35,10 +35,19 @@ export const GLYPH_SHAPES = {
     { x: 0.96, y: 0.30 }, { x: 0.84, y: 0.10 }, { x: 0.64, y: 0.06 },
     { x: 0.50, y: 0.23 },
   ],
-  star: [
-    { x: 0.50, y: 0.00 }, { x: 0.79, y: 0.90 }, { x: 0.02, y: 0.35 },
-    { x: 0.98, y: 0.35 }, { x: 0.21, y: 0.90 },
-  ],
+  // The five-point outline traced as one continuous path; a small sparkle
+  // glint at the core is a separate stroke, since the path has no pen-lift
+  // to spare mid-trace.
+  star: {
+    outline: [
+      { x: 0.50, y: 0.00 }, { x: 0.79, y: 0.90 }, { x: 0.02, y: 0.35 },
+      { x: 0.98, y: 0.35 }, { x: 0.21, y: 0.90 },
+    ],
+    interior: [
+      [{ x: 0.44, y: 0.45 }, { x: 0.56, y: 0.45 }],
+      [{ x: 0.50, y: 0.39 }, { x: 0.50, y: 0.51 }],
+    ],
+  },
   crown: {
     outline: [
       { x: 0.05, y: 0.90 }, { x: 0.05, y: 0.50 }, { x: 0.25, y: 0.10 },
@@ -77,27 +86,58 @@ export const GLYPH_SHAPES = {
     { x: 0.74, y: 0.82 }, { x: 0.80, y: 0.64 }, { x: 0.80, y: 0.36 },
     { x: 0.74, y: 0.18 }, { x: 0.62, y: 0.04 },
   ],
-  diamond: [
-    { x: 0.50, y: 0.00 }, { x: 0.85, y: 0.30 },
-    { x: 0.50, y: 1.00 }, { x: 0.15, y: 0.30 },
-    { x: 0.50, y: 0.00 }, { x: 0.50, y: 1.00 },
-  ],
+  // The outline already doubles back down the center for the vertical
+  // facet; the girdle -- the widest horizontal cut of a faceted gem -- is
+  // a separate stroke straight across.
+  diamond: {
+    outline: [
+      { x: 0.50, y: 0.00 }, { x: 0.85, y: 0.30 },
+      { x: 0.50, y: 1.00 }, { x: 0.15, y: 0.30 },
+      { x: 0.50, y: 0.00 }, { x: 0.50, y: 1.00 },
+    ],
+    interior: [
+      [{ x: 0.15, y: 0.30 }, { x: 0.85, y: 0.30 }],
+    ],
+  },
   lightning: [
     { x: 0.55, y: 0.00 }, { x: 0.30, y: 0.40 },
     { x: 0.58, y: 0.42 }, { x: 0.28, y: 0.95 },
     { x: 0.65, y: 0.50 }, { x: 0.42, y: 0.48 },
   ],
-  skull: [
-    { x: 0.50, y: 0.03 }, { x: 0.80, y: 0.14 }, { x: 0.90, y: 0.40 },
-    { x: 0.78, y: 0.60 }, { x: 0.62, y: 0.80 }, { x: 0.50, y: 0.97 },
-    { x: 0.38, y: 0.80 }, { x: 0.22, y: 0.60 }, { x: 0.10, y: 0.40 },
-    { x: 0.20, y: 0.14 }, { x: 0.50, y: 0.03 },
-  ],
-  eye: [
-    { x: 0.02, y: 0.50 }, { x: 0.25, y: 0.20 }, { x: 0.50, y: 0.12 },
-    { x: 0.75, y: 0.20 }, { x: 0.98, y: 0.50 },
-    { x: 0.75, y: 0.80 }, { x: 0.50, y: 0.88 }, { x: 0.25, y: 0.80 },
-  ],
+  // Two eye sockets and a jaw's teeth-line -- each a separate stroke, since
+  // the outline's single path has no way to double back into the hollows
+  // it's tracing the rim of.
+  skull: {
+    outline: [
+      { x: 0.50, y: 0.03 }, { x: 0.80, y: 0.14 }, { x: 0.90, y: 0.40 },
+      { x: 0.78, y: 0.60 }, { x: 0.62, y: 0.80 }, { x: 0.50, y: 0.97 },
+      { x: 0.38, y: 0.80 }, { x: 0.22, y: 0.60 }, { x: 0.10, y: 0.40 },
+      { x: 0.20, y: 0.14 }, { x: 0.50, y: 0.03 },
+    ],
+    interior: [
+      [{ x: 0.32, y: 0.42 }, { x: 0.40, y: 0.48 }, { x: 0.32, y: 0.54 }],
+      [{ x: 0.68, y: 0.42 }, { x: 0.60, y: 0.48 }, { x: 0.68, y: 0.54 }],
+      [
+        { x: 0.40, y: 0.85 }, { x: 0.45, y: 0.92 }, { x: 0.50, y: 0.85 },
+        { x: 0.55, y: 0.92 }, { x: 0.60, y: 0.85 },
+      ],
+    ],
+  },
+  // A pupil at the eye's center -- a separate stroke, since the almond
+  // outline is already an open path with nowhere to lift the pen inward.
+  eye: {
+    outline: [
+      { x: 0.02, y: 0.50 }, { x: 0.25, y: 0.20 }, { x: 0.50, y: 0.12 },
+      { x: 0.75, y: 0.20 }, { x: 0.98, y: 0.50 },
+      { x: 0.75, y: 0.80 }, { x: 0.50, y: 0.88 }, { x: 0.25, y: 0.80 },
+    ],
+    interior: [
+      [
+        { x: 0.50, y: 0.38 }, { x: 0.60, y: 0.50 }, { x: 0.50, y: 0.62 },
+        { x: 0.40, y: 0.50 }, { x: 0.50, y: 0.38 },
+      ],
+    ],
+  },
   sword: [
     { x: 0.50, y: 0.00 }, { x: 0.50, y: 0.62 },
     { x: 0.22, y: 0.68 }, { x: 0.78, y: 0.68 },
