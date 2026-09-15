@@ -202,6 +202,87 @@ test('onKick pulse rises then decays toward 0', () => {
   assert.ok(weaver.pulse < 0.05, `pulse should have decayed, got ${weaver.pulse}`);
 });
 
+// ── Lyric-driven glyph hints: timely, and never stale ────────────────
+//
+// hintGlyph used to gate acceptance on the cooldown, silently dropping a
+// hint that arrived while one was still counting down -- with no way to
+// tell that had happened, and no way to fire it once the cooldown cleared.
+// It's now unconditional to accept (a newer hint always replaces an older,
+// unfired one) and carries a deadline, checked fresh in onMelody, so a
+// hint that outlives the lyric line it came from expires instead of
+// popping up over whatever the song (or a scrub) has moved on to.
+
+test('hintGlyph builds a glyph-shaped figure on the next melody event, within its deadline', () => {
+  const weaver = new ConstellationWeaver(3, 1280, 720);
+  weaver.hintGlyph('heart_break', 10_000);
+  weaver.onMelody(melodyEvt(0, 64));
+  assert.ok(weaver.building, 'a figure should start building immediately');
+  assert.ok(weaver.building.interior.length >= 1, 'heart_break carries interior detail the outline alone would not have');
+  assert.strictEqual(weaver._pendingGlyph, null, 'the hint is consumed once used');
+});
+
+test('hintGlyph: a hint past its own deadline expires -- an ordinary figure builds instead', () => {
+  const weaver = new ConstellationWeaver(3, 1280, 720);
+  weaver.hintGlyph('heart_break', 500);
+  weaver.onMelody(melodyEvt(600, 64)); // arrives after the deadline
+  assert.ok(weaver.building, 'a figure should still build -- just not the glyph');
+  assert.deepEqual(weaver.building.interior, [], 'an ordinary figure carries no interior detail');
+  assert.strictEqual(weaver._pendingGlyph, null, 'the expired hint must not linger for a later attempt');
+});
+
+test('hintGlyph: is accepted even while the glyph cooldown is active, unlike before', () => {
+  const weaver = new ConstellationWeaver(3, 1280, 720);
+  weaver._glyphCooldown = 3; // as if a glyph figure just fired
+  weaver.hintGlyph('heart_break', 10_000);
+  assert.ok(weaver._pendingGlyph, 'the hint must be queued, not dropped, while cooldown counts down');
+  assert.strictEqual(weaver._pendingGlyph.glyphId, 'heart_break');
+});
+
+test('hintGlyph: a newer call supersedes an older, still-pending one', () => {
+  const weaver = new ConstellationWeaver(3, 1280, 720);
+  weaver.hintGlyph('heart_break', 10_000);
+  weaver.hintGlyph('ship_wave', 10_000); // the next lyric line's hit
+  weaver.onMelody(melodyEvt(0, 64));
+  assert.ok(weaver.building, 'a figure should be built');
+  // Can't read glyphId back off the built figure directly, so check via a
+  // shape-distinguishing property: ship_wave's interior has 3 strokes
+  // (mast, flag, wave crest); heart_break has exactly 1 (the crack).
+  assert.strictEqual(weaver.building.interior.length, 3, 'should have built ship_wave, not the superseded heart_break');
+});
+
+test('interior detail strokes stay hidden until INTERIOR_REVEAL_MS after the outline commits, then fade in', () => {
+  const weaver = new ConstellationWeaver(1, 1280, 720);
+  weaver.figures.push({
+    dots: [{ x: 100, y: 100 }, { x: 200, y: 100 }, { x: 150, y: 200 }],
+    interior: [[{ x: 120, y: 120 }, { x: 180, y: 120 }]],
+    targetCount: 3, hue: 0, phase: 'holding',
+    edgeRevealedCount: 2, edgeStartMs: 0, holdStartMs: 1000,
+  });
+
+  const makeCtx = () => {
+    const calls = { stroke: 0 };
+    return {
+      calls,
+      save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {}, fill() {},
+      set strokeStyle(v) {}, set fillStyle(v) {}, set lineWidth(v) {}, set globalCompositeOperation(v) {},
+      arc() {}, stroke() { calls.stroke++; },
+    };
+  };
+
+  weaver.update(1000, 0.016, 0);
+  const ctxAt0 = makeCtx();
+  weaver.draw(ctxAt0, { width: 1280, height: 720 }, false, 1);
+  const strokesAtCommit = ctxAt0.calls.stroke;
+
+  weaver.update(1000 + 450, 0.016, 0); // holdStartMs + INTERIOR_REVEAL_MS
+  const ctxAtReveal = makeCtx();
+  weaver.draw(ctxAtReveal, { width: 1280, height: 720 }, false, 1);
+  const strokesAtReveal = ctxAtReveal.calls.stroke;
+
+  assert.ok(strokesAtReveal > strokesAtCommit,
+    `interior stroke should add draw calls once revealed (at commit: ${strokesAtCommit}, at reveal: ${strokesAtReveal})`);
+});
+
 // ── Figures must not reach the ground line ──────────────────────────
 //
 // Reproduced live: yMax=0.95 let a figure's lowest dot land right at (or

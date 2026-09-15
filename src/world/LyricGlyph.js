@@ -1,7 +1,24 @@
-// Constellation glyph shapes: 5-8 normalized {x,y} dots connected
-// sequentially by the ConstellationWeaver's edge system. Each shape
-// suggests a recognizable form — abstract enough to be a discovery when
+// Constellation glyph shapes: normalized {x,y} dots in a 0-1 square,
+// suggesting a recognizable form — abstract enough to be a discovery when
 // you notice it, not a label stamped on the sky.
+//
+// Two ways to author a shape:
+//   - A flat array of dots: the ORIGINAL, still-supported form. Connected
+//     sequentially (dot 0→1→2→...) by the weaver's edge system -- a single
+//     unbroken line, since the weaver's connect-the-dots reveal has no way
+//     to lift the pen mid-figure.
+//   - `{ outline, interior }`: `outline` is that same single unbroken
+//     connect-the-dots line (the shape's own silhouette/identity), and
+//     `interior` is a LIST of separate strokes -- each its own independent
+//     polyline, pen lifted between them -- for detail that can't be reached
+//     by backtracking a single path: a mast rising off a hull, a crack
+//     down a heart, gems set into a crown's band. The weaver reveals
+//     `interior` together, right after `outline` finishes connecting, so a
+//     shape reads as "recognizable, and here's what confirms it" rather
+//     than every stroke arriving at once.
+// `normalizeGlyphShape` below accepts either and always returns the
+// `{outline, interior}` form, so every consumer only has to handle one
+// shape.
 //
 // Also contains a minimal single-stroke font for Midasus's sky writing:
 // uppercase A-Z laid out as polyline paths she traces with her trail.
@@ -9,8 +26,6 @@
 import { clamp } from '../utils/math.js';
 
 // ── Constellation glyph shapes ─────────────────────────────────────────
-// Each shape is an array of {x, y} in a 0-1 normalized square.
-// Connected sequentially (dot 0→1→2→...) by the weaver's edge system.
 
 export const GLYPH_SHAPES = {
   heart: [
@@ -24,19 +39,38 @@ export const GLYPH_SHAPES = {
     { x: 0.50, y: 0.00 }, { x: 0.79, y: 0.90 }, { x: 0.02, y: 0.35 },
     { x: 0.98, y: 0.35 }, { x: 0.21, y: 0.90 },
   ],
-  crown: [
-    { x: 0.05, y: 0.90 }, { x: 0.05, y: 0.50 }, { x: 0.25, y: 0.10 },
-    { x: 0.40, y: 0.45 }, { x: 0.50, y: 0.05 },
-    { x: 0.60, y: 0.45 }, { x: 0.75, y: 0.10 },
-    { x: 0.95, y: 0.50 },
-  ],
-  flame: [
-    { x: 0.50, y: 0.02 }, { x: 0.62, y: 0.18 }, { x: 0.56, y: 0.32 },
-    { x: 0.68, y: 0.46 }, { x: 0.72, y: 0.62 }, { x: 0.60, y: 0.82 },
-    { x: 0.50, y: 0.97 }, { x: 0.40, y: 0.82 }, { x: 0.28, y: 0.64 },
-    { x: 0.34, y: 0.48 }, { x: 0.26, y: 0.32 }, { x: 0.38, y: 0.16 },
-    { x: 0.50, y: 0.02 },
-  ],
+  crown: {
+    outline: [
+      { x: 0.05, y: 0.90 }, { x: 0.05, y: 0.50 }, { x: 0.25, y: 0.10 },
+      { x: 0.40, y: 0.45 }, { x: 0.50, y: 0.05 },
+      { x: 0.60, y: 0.45 }, { x: 0.75, y: 0.10 },
+      { x: 0.95, y: 0.50 }, { x: 0.95, y: 0.90 }, { x: 0.05, y: 0.90 },
+    ],
+    // Two gems set into the band -- separate strokes since the outline's
+    // own single path already has to go up-down-up-down for the points and
+    // has no pen-lift left to spare for them.
+    interior: [
+      [{ x: 0.36, y: 0.72 }, { x: 0.40, y: 0.78 }, { x: 0.36, y: 0.84 }],
+      [{ x: 0.64, y: 0.72 }, { x: 0.60, y: 0.78 }, { x: 0.64, y: 0.84 }],
+    ],
+  },
+  flame: {
+    outline: [
+      { x: 0.50, y: 0.02 }, { x: 0.62, y: 0.18 }, { x: 0.56, y: 0.32 },
+      { x: 0.68, y: 0.46 }, { x: 0.72, y: 0.62 }, { x: 0.60, y: 0.82 },
+      { x: 0.50, y: 0.97 }, { x: 0.40, y: 0.82 }, { x: 0.28, y: 0.64 },
+      { x: 0.34, y: 0.48 }, { x: 0.26, y: 0.32 }, { x: 0.38, y: 0.16 },
+      { x: 0.50, y: 0.02 },
+    ],
+    // A smaller inner flame lick, nested inside the outer tongue.
+    interior: [
+      [
+        { x: 0.50, y: 0.34 }, { x: 0.58, y: 0.48 }, { x: 0.55, y: 0.62 },
+        { x: 0.50, y: 0.76 }, { x: 0.45, y: 0.62 }, { x: 0.42, y: 0.48 },
+        { x: 0.50, y: 0.34 },
+      ],
+    ],
+  },
   moon: [
     { x: 0.62, y: 0.04 }, { x: 0.82, y: 0.16 }, { x: 0.92, y: 0.36 },
     { x: 0.92, y: 0.64 }, { x: 0.82, y: 0.84 }, { x: 0.62, y: 0.96 },
@@ -98,6 +132,59 @@ export const GLYPH_SHAPES = {
     { x: 0.02, y: 0.35 }, { x: 0.20, y: 0.65 },
     { x: 0.50, y: 0.50 }, { x: 0.80, y: 0.65 }, { x: 0.98, y: 0.35 },
   ],
+  // A ship's hull alone (no waves named) -- the mast+flag are a separate
+  // stroke because the hull's own outline has no pen-lift to spare for
+  // them without a straight line cutting back across the deck.
+  ship: {
+    outline: [
+      { x: 0.04, y: 0.72 }, { x: 0.22, y: 0.60 }, { x: 0.50, y: 0.55 },
+      { x: 0.78, y: 0.60 }, { x: 0.96, y: 0.72 },
+      { x: 0.74, y: 0.80 }, { x: 0.26, y: 0.80 }, { x: 0.04, y: 0.72 },
+    ],
+    interior: [
+      [{ x: 0.50, y: 0.55 }, { x: 0.50, y: 0.08 }],
+      [{ x: 0.50, y: 0.08 }, { x: 0.74, y: 0.18 }, { x: 0.50, y: 0.28 }],
+    ],
+  },
+  // "Ship over waves" -- the two-image combo LyricLexicon builds when a
+  // line names both a vessel and the sea in the same breath. Same hull and
+  // rigging as plain `ship`, with a wave-crest stroke added beneath it so
+  // the water is unmistakably part of the same image, not a coincidence.
+  ship_wave: {
+    outline: [
+      { x: 0.04, y: 0.68 }, { x: 0.22, y: 0.56 }, { x: 0.50, y: 0.51 },
+      { x: 0.78, y: 0.56 }, { x: 0.96, y: 0.68 },
+      { x: 0.74, y: 0.76 }, { x: 0.26, y: 0.76 }, { x: 0.04, y: 0.68 },
+    ],
+    interior: [
+      [{ x: 0.50, y: 0.51 }, { x: 0.50, y: 0.06 }],
+      [{ x: 0.50, y: 0.06 }, { x: 0.74, y: 0.16 }, { x: 0.50, y: 0.26 }],
+      [
+        { x: 0.00, y: 0.90 }, { x: 0.14, y: 0.83 }, { x: 0.28, y: 0.90 },
+        { x: 0.42, y: 0.83 }, { x: 0.58, y: 0.90 }, { x: 0.72, y: 0.83 },
+        { x: 0.86, y: 0.90 }, { x: 1.00, y: 0.85 },
+      ],
+    ],
+  },
+  // "Heart with a fracture" -- LyricLexicon's combo for a line that names
+  // both the heart and its breaking, rather than the plain, whole `heart`
+  // above. Same outline; the crack is what a single connect-the-dots path
+  // could never draw (it would have to double back across itself).
+  heart_break: {
+    outline: [
+      { x: 0.50, y: 0.23 }, { x: 0.36, y: 0.06 }, { x: 0.16, y: 0.10 },
+      { x: 0.04, y: 0.30 }, { x: 0.08, y: 0.52 }, { x: 0.24, y: 0.72 },
+      { x: 0.50, y: 0.95 }, { x: 0.76, y: 0.72 }, { x: 0.92, y: 0.52 },
+      { x: 0.96, y: 0.30 }, { x: 0.84, y: 0.10 }, { x: 0.64, y: 0.06 },
+      { x: 0.50, y: 0.23 },
+    ],
+    interior: [
+      [
+        { x: 0.50, y: 0.28 }, { x: 0.44, y: 0.42 }, { x: 0.56, y: 0.52 },
+        { x: 0.42, y: 0.64 }, { x: 0.54, y: 0.76 }, { x: 0.50, y: 0.90 },
+      ],
+    ],
+  },
   // Easter eggs
   leaf: [
     { x: 0.50, y: 0.02 }, { x: 0.72, y: 0.20 }, { x: 0.58, y: 0.28 },
@@ -216,11 +303,30 @@ export function layoutTextPath(text) {
 /** Place glyph dots into a sky region. Returns an array of {x, y}
  *  pixel positions scattered around (cx, cy) at the given size, with
  *  clamping to stay within bounds. */
+/** Accepts either authoring form a GLYPH_SHAPES entry can take (a flat dot
+ *  array, or `{outline, interior}`) and always returns the latter, so every
+ *  consumer only ever has to handle one shape. */
+export function normalizeGlyphShape(raw) {
+  if (!raw) return null;
+  if (Array.isArray(raw)) return { outline: raw, interior: [] };
+  return { outline: raw.outline || [], interior: raw.interior || [] };
+}
+
+/** Place a glyph into a sky region. Returns `{outline, interior}`: `outline`
+ *  is the array of {x,y} pixel positions the weaver connects sequentially
+ *  (unchanged shape, just placed/scaled/clamped), and `interior` is the
+ *  array of separately-stroked detail lines (each already placed the same
+ *  way), empty for a glyph authored as a plain dot chain. `null` for an
+ *  unknown glyph id. */
 export function placeGlyph(glyphId, cx, cy, size, bounds) {
-  const shape = GLYPH_SHAPES[glyphId];
+  const shape = normalizeGlyphShape(GLYPH_SHAPES[glyphId]);
   if (!shape) return null;
-  return shape.map((d) => ({
+  const place = (d) => ({
     x: clamp(cx + (d.x - 0.5) * size, bounds.xMin, bounds.xMax),
     y: clamp(cy + (d.y - 0.5) * size * 0.85, bounds.yMin, bounds.yMax),
-  }));
+  });
+  return {
+    outline: shape.outline.map(place),
+    interior: shape.interior.map((stroke) => stroke.map(place)),
+  };
 }

@@ -7,6 +7,14 @@
 // when the song says "high hopes") is worse than a missed true positive.
 // Keywords are chosen conservatively — only words that unambiguously
 // reference the concept in a song-lyric context.
+//
+// COMBOS (below ENTRIES) catch a line naming TWO related concepts at once
+// — "a ship over waves," "a heart with a fracture" — and point at a single
+// combined glyph (LyricGlyph.js's `ship_wave`/`heart_break`) instead of
+// whichever single-concept glyph happened to win priority. A line that
+// confirms two concepts together is more specific evidence than a line
+// that only mentions one, so combos rank above every plain ENTRIES match,
+// easter eggs included.
 
 import { normalizeLine } from './LyricStructure.js';
 
@@ -28,6 +36,7 @@ const ENTRIES = [
   { id: 'eye',       pri: 2, words: ['eye', 'eyes', 'third eye', 'all seeing', 'vision', 'visions'] },
   { id: 'ghost',     pri: 2, words: ['ghost', 'ghosts', 'phantom', 'haunt', 'haunted', 'haunting', 'specter'] },
   { id: 'wings',     pri: 2, words: ['wings', 'angel', 'angels', 'archangel', 'feathers', 'wingspan'] },
+  { id: 'ship',      pri: 2, words: ['ship', 'ships', 'sail', 'sails', 'sailing', 'sailed', 'vessel', 'schooner'] },
 
   // --- Common symbols (priority 1): broad concepts, high chance of match -
   { id: 'heart',     pri: 1, words: ['heart', 'hearts', 'heartbeat', 'heartbreak', 'heartless'] },
@@ -52,6 +61,36 @@ for (const entry of ENTRIES) {
 }
 const PHRASE_ENTRIES = ENTRIES.filter((e) => e.words.some((w) => w.includes(' ')));
 
+// Two-image combos (see the file header). `words` are compound single-token
+// triggers that already say both halves at once ("heartbreak" IS heart +
+// break, no second word needed); `a`/`b` require one word from EACH side
+// to appear anywhere in the line. Priority 4: above every plain ENTRIES
+// match, easter eggs (3) included -- two confirmed concepts outrank one.
+const COMBOS = [
+  {
+    id: 'heart_break', pri: 4,
+    words: ['heartbreak', 'heartbroken'],
+    a: ['heart', 'hearts'],
+    b: ['break', 'breaks', 'breaking', 'broken', 'shatter', 'shattered', 'shattering', 'fracture', 'fractured', 'crack', 'cracked'],
+  },
+  {
+    id: 'ship_wave', pri: 4,
+    words: [],
+    a: ['ship', 'ships', 'sail', 'sails', 'sailing', 'sailed', 'vessel', 'schooner'],
+    b: ['ocean', 'wave', 'waves', 'tide', 'tidal', 'tsunami', 'surf', 'sea'],
+  },
+];
+
+function comboMatch(words) {
+  for (const combo of COMBOS) {
+    if (combo.words.some((w) => words.includes(w))) return { glyphId: combo.id, priority: combo.pri };
+    if (combo.a.some((w) => words.includes(w)) && combo.b.some((w) => words.includes(w))) {
+      return { glyphId: combo.id, priority: combo.pri };
+    }
+  }
+  return null;
+}
+
 /** Scan a raw lyric line and return the highest-priority glyph match,
  *  or null if nothing matched. Pure, no state. */
 export function scanLine(rawText) {
@@ -59,20 +98,21 @@ export function scanLine(rawText) {
   if (!norm) return null;
   const words = norm.split(' ').filter(Boolean);
 
-  // Check multi-word phrases first (highest specificity).
+  let best = comboMatch(words);
+
+  // Multi-word phrases (next highest specificity after a combo).
   for (const entry of PHRASE_ENTRIES) {
     for (const phrase of entry.words) {
       if (phrase.includes(' ') && norm.includes(phrase)) {
-        return { glyphId: entry.id, priority: entry.pri };
+        if (!best || entry.pri > best.priority) best = { glyphId: entry.id, priority: entry.pri };
       }
     }
   }
 
   // Single-word lookup.
-  let best = null;
   for (const w of words) {
     const entry = WORD_INDEX.get(w);
-    if (entry && (!best || entry.pri > best.pri)) {
+    if (entry && (!best || entry.pri > best.priority)) {
       best = { glyphId: entry.id, priority: entry.pri };
     }
   }

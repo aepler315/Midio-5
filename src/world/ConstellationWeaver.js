@@ -68,6 +68,12 @@ const CRYSTALLIZE_CHANCE = 0.45;
 const PULSE_TAU_SEC = 0.25;
 const GLYPH_COOLDOWN_FIGURES = 3; // figures between glyph-shaped ones
 const GLYPH_SIZE_FRAC = 0.18;     // fraction of sky width
+// How long a glyph's interior detail strokes take to fade in once the
+// outline finishes connecting (fig.holdStartMs). Held back until then
+// rather than revealed alongside the outline -- a crack or a mast means
+// nothing until the shape it belongs to is already recognizable, so the
+// detail reads as confirmation rather than clutter arriving mid-guess.
+const INTERIOR_REVEAL_MS = 450;
 
 // Terrain is drawn AFTER this layer and clips anything below its silhouette
 // with a hard edge (see the REGION comment above). A star-atlas ambient dot
@@ -154,39 +160,57 @@ export class ConstellationWeaver {
     this.stars = [];      // crystallized, persistent
     this.pulse = 0;
     this._lastNowMs = 0;
-    this._pendingGlyph = null;     // glyphId waiting to shape the next figure
+    this._pendingGlyph = null;     // { glyphId, deadlineMs } waiting to shape the next figure
     this._glyphCooldown = 0;       // figures remaining before another glyph is allowed
     this.fullness = 0;             // 0..1, driven by BiomeManager (update()) -- relaxes the concurrency/dot caps so the sky can go genuinely dense every now and then, especially late in the song
   }
 
-  /** Queue a glyph shape for the next constellation figure. Respects a
-   *  cooldown so glyph-shaped figures stay rare — at most every 4th figure. */
-  hintGlyph(glyphId) {
-    if (this._glyphCooldown > 0) return;
-    this._pendingGlyph = glyphId;
+  /** Queue a glyph shape for the next constellation figure, valid only
+   *  until `deadlineMs` (song-clock ms; defaults to "no expiry" for callers
+   *  that don't care, e.g. tests). A newer call always replaces whatever
+   *  was pending -- once the lyric line that earned a hint has been
+   *  superseded by the next one, the old hint has nothing left to confirm
+   *  and should not get to fire just because it happened to arrive first.
+   *
+   *  Deliberately does NOT check the glyph cooldown here (that used to
+   *  drop a hint on the floor forever if it landed while cooldown was
+   *  still counting down, with no way to know that had happened): a hint
+   *  is accepted unconditionally, and onMelody below is the one place that
+   *  decides whether cooldown allows USING it yet, checking the deadline
+   *  fresh each time so a hint that outlives its own line's relevance
+   *  expires instead of firing late. */
+  hintGlyph(glyphId, deadlineMs = Infinity) {
+    this._pendingGlyph = { glyphId, deadlineMs };
   }
 
   onMelody(evt) {
     const nowMs = evt.tMs;
+    // A pending hint past its deadline belongs to a lyric line the song has
+    // already moved on from (played past it, or a seek jumped over it) --
+    // drop it here rather than at the next available building slot, so it
+    // can never surface stale just because cooldown finally cleared.
+    if (this._pendingGlyph && nowMs > this._pendingGlyph.deadlineMs) this._pendingGlyph = null;
+
     if (!this.building) {
       const hue = (evt.pitch % 12) * 30;
 
-      // If a glyph hint is pending, use its shape instead of random dots.
-      if (this._pendingGlyph) {
+      // If a glyph hint is pending and cooldown allows it, use its shape
+      // instead of random dots.
+      if (this._pendingGlyph && this._glyphCooldown <= 0) {
+        const glyphId = this._pendingGlyph.glyphId;
+        this._pendingGlyph = null;
         const size = GLYPH_SIZE_FRAC * this.w;
         const xMin = REGION.xMin * this.w, xMax = REGION.xMax * this.w;
         const yMin = REGION.yMin * this.h, yMax = REGION.yMax * this.h;
         const cx = xMin + this.rand() * (xMax - xMin);
         const cy = yMin + this.rand() * 0.55 * (yMax - yMin);
-        const dots = placeGlyph(this._pendingGlyph, cx, cy, size, {
-          xMin, xMax, yMin, yMax,
-        });
-        this._pendingGlyph = null;
-        if (dots && dots.length >= 3) {
+        const shape = placeGlyph(glyphId, cx, cy, size, { xMin, xMax, yMin, yMax });
+        if (shape && shape.outline.length >= 3) {
           this._glyphCooldown = GLYPH_COOLDOWN_FIGURES;
           this.building = {
-            dots,
-            targetCount: dots.length,
+            dots: shape.outline,
+            interior: shape.interior,
+            targetCount: shape.outline.length,
             hue,
             phase: 'connecting',
             edgeRevealedCount: 0,
@@ -199,6 +223,7 @@ export class ConstellationWeaver {
       const targetCount = FIGURE_DOTS_MIN + Math.floor(this.rand() * (FIGURE_DOTS_MAX - FIGURE_DOTS_MIN + 1));
       this.building = {
         dots: [nextDotPos(null, this.rand, this.w, this.h)],
+        interior: [],
         targetCount,
         hue,
         phase: 'seeding',
@@ -406,6 +431,31 @@ export class ConstellationWeaver {
       ctx.beginPath();
       ctx.arc(dx, dy, 4, 0, Math.PI * 2);
       ctx.fill();
+    }
+
+    // Interior detail strokes (LyricGlyph.js's `interior`): separate
+    // polylines, each its own pen-down/pen-up, revealed together once the
+    // outline itself has fully connected (fig.holdStartMs set) rather than
+    // a still-forming figure's guessed outline gaining detail it hasn't
+    // earned yet. A plain dot-chain figure has none of these -- the loop
+    // below is a silent no-op for it.
+    if (fig.interior && fig.interior.length && fig.holdStartMs != null) {
+      const interiorAlpha = clamp01((nowMs - fig.holdStartMs) / INTERIOR_REVEAL_MS);
+      if (interiorAlpha > 0) {
+        for (const stroke of fig.interior) {
+          for (let i = 0; i < stroke.length - 1; i++) {
+            const a = stroke[i], b = stroke[i + 1];
+            const ax = a.x * sx, ay = a.y * sy, bx = b.x * sx, by = b.y * sy;
+            const fade = groundFadeAlpha(Math.max(a.y, b.y) / this.h);
+            ctx.strokeStyle = `hsla(${fig.hue}, 55%, 84%, ${capFlashAlpha(0.22 * lifeAlpha * pulseBoost * fade * interiorAlpha, reducedFlash)})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(bx, by);
+            ctx.stroke();
+          }
+        }
+      }
     }
   }
 }

@@ -402,6 +402,10 @@ const FORM_HUE_TAU_SEC = 1.5; // section changes glide their hue, never snap
 // a chorus/bridge reads louder, an intro/outro settles. Unrecognized/absent
 // kind (no lyric data at all) multiplies by exactly 1 -- a strict no-op.
 const KIND_BUDGET_MUL = { chorus: 1.15, bridge: 1.3, instrumental: 1.1, intro: 0.9, outro: 0.85, verse: 1.0 };
+// How long a lyric-matched constellation glyph stays valid past its OWN
+// line's start when it's the last line in the song (every other line uses
+// the next line's start time instead -- see the hintGlyph call site).
+const LYRIC_GLYPH_FALLBACK_MS = 6000;
 const OCEAN_WATER_BLUE = '#3ec8f5'; // vivid teal-cyan sea (ocean vibe first)
 const OCEAN_DEEP_BLUE = '#0d3a5c'; // abyssal under-tint
 const NIGHT_SKY_COLOR = '#060814'; // near-black space, slightly cool
@@ -1849,14 +1853,25 @@ export class BiomeManager {
     // Lyric-driven constellation glyphs: advance the synced-lyrics cursor
     // and scan each newly-reached line through LyricLexicon. A match queues
     // the glyph shape on the ConstellationWeaver (its own cooldown decides
-    // whether it actually fires).
+    // whether it actually fires), valid only until the line it came from
+    // stops being the active one -- the next line's own start time, or a
+    // fixed fallback for the last line in the song. Past that, the hint
+    // expires unfired rather than surfacing late: a forward seek that
+    // jumps the cursor across many lines in one burst (see the while loop
+    // below) would otherwise leave whichever line's hint happened to be
+    // scanned last sitting pending indefinitely, ready to pop up over
+    // whatever the player scrubbed to instead of the line that earned it.
     if (this._syncedLyrics) {
       while (this._lyricLineCursor < this._syncedLyrics.length
         && this._syncedLyrics[this._lyricLineCursor].tMs <= nowMs) {
         const line = this._syncedLyrics[this._lyricLineCursor];
+        const nextLine = this._syncedLyrics[this._lyricLineCursor + 1];
         this._lyricLineCursor++;
         const hit = scanLine(line.text);
-        if (hit) this.weaver.hintGlyph(hit.glyphId);
+        if (hit) {
+          const deadlineMs = nextLine ? nextLine.tMs : line.tMs + LYRIC_GLYPH_FALLBACK_MS;
+          this.weaver.hintGlyph(hit.glyphId, deadlineMs);
+        }
       }
     }
 
