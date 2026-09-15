@@ -45,6 +45,13 @@ test('the two-image combo glyphs (ship_wave, heart_break, phoenix, moon_tide) ea
   }
 });
 
+test('common glyphs (star, diamond, skull, eye) also carry interior detail, not just the combos', () => {
+  for (const id of ['star', 'diamond', 'skull', 'eye']) {
+    const shape = normalizeGlyphShape(GLYPH_SHAPES[id]);
+    assert.ok(shape.interior.length >= 1, `${id} should have interior detail`);
+  }
+});
+
 test('layoutTextPath: returns non-empty array for a word', () => {
   const path = layoutTextPath('HELLO');
   assert.ok(Array.isArray(path));
