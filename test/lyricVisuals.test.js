@@ -11,7 +11,7 @@ function melodyEvt(tMs, pitch = 60, vel = 0.7) {
 test('ConstellationWeaver.hintGlyph: queued glyph shapes the next figure', () => {
   const w = new ConstellationWeaver(42, 1280, 720);
   w.hintGlyph('heart');
-  assert.strictEqual(w._pendingGlyph, 'heart');
+  assert.strictEqual(w._pendingGlyph.glyphId, 'heart');
 
   // Feed enough melody events to start + commit a figure
   for (let i = 0; i < 12; i++) {
@@ -23,11 +23,20 @@ test('ConstellationWeaver.hintGlyph: queued glyph shapes the next figure', () =>
   assert.strictEqual(w._pendingGlyph, null);
 });
 
-test('ConstellationWeaver.hintGlyph: cooldown prevents consecutive glyph figures', () => {
+// hintGlyph used to refuse to even QUEUE a hint while the cooldown was
+// active, dropping it on the floor with no way to fire once the cooldown
+// cleared. It's unconditional now -- the cooldown instead gates USING the
+// hint (see onMelody), so a lyric line's glyph can still land once the
+// figure it's waiting behind finishes, as long as it hasn't expired.
+test("ConstellationWeaver.hintGlyph: queues even during cooldown, but cooldown still blocks it from shaping a figure", () => {
   const w = new ConstellationWeaver(42, 1280, 720);
   w._glyphCooldown = 2; // simulate active cooldown
-  w.hintGlyph('star');
-  assert.strictEqual(w._pendingGlyph, null, 'should not queue during cooldown');
+  w.hintGlyph('star', 10_000);
+  assert.strictEqual(w._pendingGlyph.glyphId, 'star', 'a hint must be accepted regardless of cooldown');
+
+  w.onMelody(melodyEvt(0));
+  assert.deepEqual(w.building.interior, [], 'cooldown must still block it from shaping this figure');
+  assert.strictEqual(w._pendingGlyph.glyphId, 'star', 'and the hint must survive to try again later');
 });
 
 test('SkyVoyage lyricText figure: layoutTextPath produces a walkable path', () => {
