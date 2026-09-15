@@ -1,9 +1,42 @@
 # Worlds — the other six
 
-**Status:** design. Nothing here is implemented. The Range (`alpine`) and
-After Hours (`nocturne`/`city`) ship today; this document specifies the six
-worlds that complete the set, in enough detail that building one is a
-mechanical job rather than a new design conversation.
+**Status:** all nine worlds now have registered render paths. The sections
+below retain the original art direction; they are not a feature checklist.
+The chooser presents equal choices and tailors each selected painterly world
+to the song. Cathode keeps its separate pixel renderer.
+
+### Musical behavior: After Hours and Fathom
+
+The city and underwater worlds now share a small set of controls from
+`WorldMusic.js`, while interpreting those controls differently:
+
+- **After Hours:** a steady field of lit windows remains visible in quiet
+  passages. Detected percussion brightens one district at a time. Six pairs
+  of traffic lights travel along the ground with restrained road reflections;
+  percussion accents individual pairs without increasing their count or speed.
+- **The Fathom:** broad light shafts respond to average sub/bass energy over
+  the preceding 1.2 seconds. Slow currents stay independent of percussion.
+  Four small colonies retain ambient light, with only one answering each
+  transient. Measured section boundaries open the shafts gradually; inferred
+  boundaries have half the response, and decorative pacing cuts have none.
+- **Reduced motion:** the new current sway and traffic travel are suppressed,
+  local accents are softened, and these layers use non-additive compositing.
+  Existing world/character motion remains governed by the existing controls.
+
+These controls consume existing energy curves and conductor rhythm events.
+No tempo is invented for unmetered songs, and no persisted analysis schema
+changes are required. The averaging includes intervening samples so rapid
+periodic bass cannot alias into a full-strength pressure flash.
+
+**Verification:** start the app and run `npm run test:worlds`. This uploads the
+same generated 32-second quiet/loud/quiet fixture to Range, After Hours, and
+Fathom with seed 315, checks world selection, actual rhythm delivery, composed
+frames, energy response, backward seeking and reduced motion, and saves
+screenshots plus a JSON report under `.smoke/worlds/`. `npm test` covers the
+control timing, missing data, sustained versus transient bass, rapid drums,
+boundary provenance and reduced-motion behavior. Synthetic fixtures establish
+behavior, not a listener preference ranking; real-song visual evaluation and
+rendered chooser previews remain later buildout work.
 
 ---
 
