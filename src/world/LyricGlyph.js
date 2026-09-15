@@ -185,6 +185,43 @@ export const GLYPH_SHAPES = {
       ],
     ],
   },
+  // "Wings of fire" -- the combo for a line naming both wings/an angel and
+  // fire in the same breath. A wingspan with a flame-shaped tail dropping
+  // from the body, since the outline's own path (wingtip-to-wingtip through
+  // the body) has no pen-lift left to spare for the tail.
+  phoenix: {
+    outline: [
+      { x: 0.50, y: 0.15 }, { x: 0.35, y: 0.35 }, { x: 0.15, y: 0.20 },
+      { x: 0.02, y: 0.45 }, { x: 0.20, y: 0.62 }, { x: 0.50, y: 0.55 },
+      { x: 0.80, y: 0.62 }, { x: 0.98, y: 0.45 }, { x: 0.85, y: 0.20 },
+      { x: 0.65, y: 0.35 }, { x: 0.50, y: 0.15 },
+    ],
+    interior: [
+      [
+        { x: 0.50, y: 0.55 }, { x: 0.44, y: 0.72 }, { x: 0.50, y: 0.90 },
+        { x: 0.56, y: 0.72 }, { x: 0.50, y: 0.55 },
+      ],
+    ],
+  },
+  // "Moonlit tide" -- the combo for a line naming both the moon and the
+  // sea/tide. The moon crescent above, a wave-crest stroke below it --
+  // separate because a single path can't retrace up to the crescent
+  // without a straight line slashing across the water.
+  moon_tide: {
+    outline: [
+      { x: 0.66, y: 0.02 }, { x: 0.84, y: 0.10 }, { x: 0.92, y: 0.26 },
+      { x: 0.92, y: 0.42 }, { x: 0.84, y: 0.58 }, { x: 0.66, y: 0.66 },
+      { x: 0.76, y: 0.56 }, { x: 0.80, y: 0.42 }, { x: 0.80, y: 0.26 },
+      { x: 0.76, y: 0.12 }, { x: 0.66, y: 0.02 },
+    ],
+    interior: [
+      [
+        { x: 0.02, y: 0.88 }, { x: 0.16, y: 0.80 }, { x: 0.30, y: 0.88 },
+        { x: 0.44, y: 0.80 }, { x: 0.58, y: 0.88 }, { x: 0.72, y: 0.80 },
+        { x: 0.86, y: 0.88 }, { x: 0.98, y: 0.82 },
+      ],
+    ],
+  },
   // Easter eggs
   leaf: [
     { x: 0.50, y: 0.02 }, { x: 0.72, y: 0.20 }, { x: 0.58, y: 0.28 },

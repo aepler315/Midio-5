@@ -38,8 +38,8 @@ test('normalizeGlyphShape: null/undefined input returns null', () => {
   assert.strictEqual(normalizeGlyphShape(undefined), null);
 });
 
-test('the two-image combo glyphs (ship_wave, heart_break) each carry at least one interior stroke', () => {
-  for (const id of ['ship_wave', 'heart_break']) {
+test('the two-image combo glyphs (ship_wave, heart_break, phoenix, moon_tide) each carry at least one interior stroke', () => {
+  for (const id of ['ship_wave', 'heart_break', 'phoenix', 'moon_tide']) {
     const shape = normalizeGlyphShape(GLYPH_SHAPES[id]);
     assert.ok(shape.interior.length >= 1, `${id} should have interior detail confirming the second image`);
   }

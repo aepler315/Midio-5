@@ -79,6 +79,18 @@ const COMBOS = [
     a: ['ship', 'ships', 'sail', 'sails', 'sailing', 'sailed', 'vessel', 'schooner'],
     b: ['ocean', 'wave', 'waves', 'tide', 'tidal', 'tsunami', 'surf', 'sea'],
   },
+  {
+    id: 'phoenix', pri: 4,
+    words: ['phoenix'],
+    a: ['wings', 'angel', 'angels', 'archangel', 'feathers', 'wingspan'],
+    b: ['fire', 'flame', 'flames', 'inferno', 'blaze', 'blazing', 'wildfire'],
+  },
+  {
+    id: 'moon_tide', pri: 4,
+    words: [],
+    a: ['moon', 'moonlight', 'moonshine', 'lunar', 'crescent'],
+    b: ['ocean', 'waves', 'tide', 'tidal', 'tsunami', 'surf'],
+  },
 ];
 
 function comboMatch(words) {

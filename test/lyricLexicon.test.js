@@ -92,6 +92,38 @@ test('scanLine: a combo outranks an easter egg present in the same line', () => 
   assert.strictEqual(r.glyphId, 'ship_wave', 'the confirmed two-image combo should win over the rarer single match');
 });
 
+test('scanLine: a line naming both wings and fire returns the phoenix combo', () => {
+  const r = scanLine('Rise up on wings of fire tonight');
+  assert.ok(r);
+  assert.strictEqual(r.glyphId, 'phoenix');
+  assert.strictEqual(r.priority, 4);
+});
+
+test('scanLine: the single word "phoenix" also triggers the combo', () => {
+  const r = scanLine('Like a phoenix I return');
+  assert.ok(r);
+  assert.strictEqual(r.glyphId, 'phoenix');
+});
+
+test('scanLine: a line naming both moonlight and the tide returns the moon_tide combo', () => {
+  const r = scanLine('Moonlight pulls the tide back home');
+  assert.ok(r);
+  assert.strictEqual(r.glyphId, 'moon_tide');
+  assert.strictEqual(r.priority, 4);
+});
+
+test('scanLine: wings alone (no fire word) still matches plain wings, not the combo', () => {
+  const r = scanLine('Angel wings above the city');
+  assert.ok(r);
+  assert.strictEqual(r.glyphId, 'wings');
+});
+
+test('scanLine: moon alone (no tide word) still matches plain moon, not the combo', () => {
+  const r = scanLine('The moonlight guides me home');
+  assert.ok(r);
+  assert.strictEqual(r.glyphId, 'moon');
+});
+
 test('extractChorusPhrase: returns uppercase short phrase', () => {
   const text = 'We are the champions\nNo time for losers\nWe are the champions of the world';
   const r = extractChorusPhrase(text);
