@@ -536,6 +536,7 @@ export class BiomeManager {
     this._ribbonScaleMul = 1;
     this.lerpCache = new LerpCache();
     this.tSec = 0;
+    this.worldRhythm = null;
     this._starSeed = mulberry32(9001);
     // Layered starfield generated from a real catalogue (StarCatalogue.js):
     // luminosity function (faint stars vastly outnumber bright ones),
@@ -839,6 +840,7 @@ export class BiomeManager {
     this._unsub = [
       conductor.onBar(() => { this._scanlineActive = true; this._scanlineY = 0; this.cymatics.onBar(); }),
       conductor.on(Role.RHYTHM, (evt) => {
+        this.worldRhythm = evt;
         if (!evt.kick) return;
         this._pylonFlash = 1;
         this._danceKickMs = evt.tMs;

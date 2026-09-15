@@ -6,6 +6,8 @@ import { CodaDirector } from '../../sim/CodaDirector.js';
 import { ensureContrast } from '../../render/VisualStyle.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
+import { sampleWorldMusic } from '../WorldMusic.js';
+import { flashCompositeOp } from '../../ui/Accessibility.js';
 
 const LAYER_RATIOS = { L2: 0.03, L3: 0.08, L4: 0.18, L5: 0.42 };
 const Y_OFF = { L2: 10, L3: 22, L4: 44, L5: 70 };
@@ -20,6 +22,8 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
 }
 
 export function drawFathomWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView) {
+  const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
+    rhythm: mgr.worldRhythm, section: mgr.sections?.[mgr._lastSectionIdx], reducedFlash: mgr.reducedFlash });
   mgr._drawSky(ctx, canvas, A, B, t, 1);
 
   // Deliberately NOT wired here: BiomeManager's classic path draws
@@ -36,18 +40,7 @@ export function drawFathomWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, 
   const celestialXFrac = celestialXFracFor(dn.sunAz01 ?? 0.5);
   mgr._drawCelestial?.(ctx, canvas, A, B, t, celestialYFrac, horizonFade(sunAlt) * 0.6, celestialXFrac);
 
-  // Caustic ripple overlay — shimmering light bands on the water column.
-  const phase = (mgr.tSec || 0) * 0.8;
-  ctx.save();
-  ctx.globalAlpha = 0.04 + 0.03 * Math.sin(phase * 2.1);
-  ctx.globalCompositeOperation = 'lighter';
-  const cg = ctx.createLinearGradient(0, 0, canvas.width, canvas.height * 0.6);
-  cg.addColorStop(0, 'rgba(120, 220, 220, 0.12)');
-  cg.addColorStop(0.5, 'rgba(80, 180, 200, 0.06)');
-  cg.addColorStop(1, 'rgba(40, 100, 140, 0)');
-  ctx.fillStyle = cg;
-  ctx.fillRect(0, 0, canvas.width, canvas.height * 0.7);
-  ctx.restore();
+  drawWaterLight(ctx, canvas, music, mgr.reducedFlash, phenomenaFull);
 
   const { from, to } = mgr.currentBlend || { from: A.name, to: B.name };
   const skyHorizon = mgr._rotated(mgr.lerpCache.get(A.sky[2], B.sky[2], t));
@@ -91,6 +84,7 @@ export function drawFathomWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, 
 
   drawRange('L2');
   drawRange('L3');
+  if (particleMul > 0) drawLivingLight(ctx, canvas, worldX, music, mgr.reducedFlash, particleMul);
 
   // Particles: bubbles and spores drifting upward, lit by the same rim
   // light every other world's particle field gets. At HADAL depth the
@@ -123,4 +117,54 @@ export function drawFathomWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, 
   mgr._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
   mgr._drawFlood(ctx, groundCanvas);
   mgr._drawTransitionOverlays(ctx, groundCanvas, B);
+}
+
+function drawWaterLight(ctx, canvas, music, reducedFlash, full) {
+  ctx.save();
+  ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
+  const count = full ? 5 : 3;
+  const depth = canvas.height * 0.78;
+  // Broad shafts breathe with sustained low frequencies. A slow opening
+  // at a measured section boundary reveals more of the water column.
+  const spread = 1 + music.reveal * (reducedFlash ? 0.08 : 0.3);
+  const gradient = ctx.createLinearGradient(0, 0, 0, depth);
+  gradient.addColorStop(0, '#a4e7df');
+  gradient.addColorStop(0.35, 'rgba(91,190,196,0.5)');
+  gradient.addColorStop(1, 'rgba(28,98,136,0)');
+  ctx.fillStyle = gradient;
+  ctx.globalAlpha = music.waterLight;
+  for (let i = 0; i < count; i++) {
+    const x = canvas.width * (i + 0.5) / count;
+    const width = canvas.width * (0.018 + (i % 2) * 0.009) * spread;
+    const drift = music.current * canvas.width * 0.08;
+    ctx.beginPath();
+    ctx.moveTo(x - width, 0);
+    ctx.lineTo(x + width, 0);
+    ctx.lineTo(x + drift + width * 3, depth);
+    ctx.lineTo(x + drift - width * 2, depth);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawLivingLight(ctx, canvas, worldX, music, reducedFlash, particleMul) {
+  ctx.save();
+  ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
+  ctx.fillStyle = '#80efce';
+  // Four small colonies at different depths. Only one answers a transient;
+  // the water and the other colonies retain their quiet, slower movement.
+  for (let group = 0; group < 4; group++) {
+    const scroll = worldX * (0.04 + group * 0.015);
+    const x = ((canvas.width * (group + 0.5) / 4 - scroll) % canvas.width + canvas.width) % canvas.width;
+    const y = canvas.height * (0.33 + (group % 3) * 0.13) + music.current * 8;
+    const accent = group === music.group ? music.accent : 0;
+    ctx.globalAlpha = Math.min(1, particleMul) * (0.16 + accent * 0.5);
+    for (let dot = 0; dot < 3; dot++) {
+      ctx.beginPath();
+      ctx.arc(x + dot * 9, y + Math.sin(dot * 2 + group) * 7, 1.5 + accent, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
 }

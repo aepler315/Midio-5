@@ -10,7 +10,8 @@
 import { drawTiledStrip } from '../SilhouetteGenerator.js';
 import { windowOccupancy } from './CitySilhouette.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
-import { capFlashAlpha } from '../../ui/Accessibility.js';
+import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
+import { sampleWorldMusic } from '../WorldMusic.js';
 import { hexToRgb } from '../../utils/color.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
@@ -34,23 +35,31 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
   ctx.restore();
 }
 
-function blitWindows(ctx, canvas, strip, scrollX, yOff, occ, neonHex) {
+function blitWindows(ctx, canvas, strip, scrollX, yOff, occ, music, reducedFlash, blendAlpha = 1) {
   if (!strip?.windows || occ < 0.02) return;
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = capFlashAlpha(0.38 + 0.62 * occ, false);
+  ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
+  ctx.globalAlpha = blendAlpha * capFlashAlpha(0.15 + 0.45 * occ, reducedFlash);
   drawTiledStrip(ctx, strip.windows, scrollX, canvas.width, canvas.height, yOff);
-  if (neonHex) {
-    ctx.globalAlpha = capFlashAlpha(0.12 * occ, false);
-    ctx.fillStyle = neonHex;
-    // Sparse neon bands near the crest — a few signs, not a rave.
-    const y = canvas.height - strip.height + yOff + 28;
-    ctx.fillRect(0, y, canvas.width, 3);
+  if (music.accent > 0.005) {
+    // One district catches the percussion. Clip the already baked windows
+    // so accents never paint bars across the sky or relight every building.
+    const districtW = strip.width / 4;
+    const phase = ((scrollX % strip.width) + strip.width) % strip.width;
+    ctx.beginPath();
+    for (let tile = -phase - strip.width; tile < canvas.width; tile += strip.width) {
+      ctx.rect(tile + music.group * districtW, 0, districtW * 0.72, canvas.height);
+    }
+    ctx.clip();
+    ctx.globalAlpha = blendAlpha * capFlashAlpha(0.55 * music.accent, reducedFlash);
+    drawTiledStrip(ctx, strip.windows, scrollX, canvas.width, canvas.height, yOff);
   }
   ctx.restore();
 }
 
 export function drawCityWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage = null) {
+  const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
+    rhythm: mgr.worldRhythm, section: mgr.sections?.[mgr._lastSectionIdx], reducedFlash: mgr.reducedFlash });
   const night = 1;
   mgr._drawSky(ctx, canvas, A, B, t, night);
 
@@ -85,16 +94,12 @@ export function drawCityWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, ph
   const unravel = mgr.unravel || 0;
   const scroll = (key) => worldX * CodaDirector.delaminateRatio(LAYER_RATIOS[key], unravel);
 
-  const energy = mgr.energyCurves && typeof mgr.energyCurves.globalEnergyNorm === 'function'
-    ? mgr.energyCurves.globalEnergyNorm(mgr.tSec * 1000)
-    : 0.4;
   const occ = windowOccupancy({
-    energy,
+    energy: music.energy,
     openingGain: mgr.openingGain ?? 1,
     orogeny: mgr.orogenyGrowth ?? 0.5,
     fever: mgr.fever ?? 0,
   });
-  const neonHex = A.edgeLight || B.edgeLight || null;
 
   const stripsA = mgr.stripsFor(from);
   const stripsB = mgr.stripsFor(to);
@@ -124,12 +129,12 @@ export function drawCityWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, ph
       const a = to === from ? 1 : 1 - t;
       blit(ctx, canvas, stripsA[key], sx, yOff, a);
       mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false });
-      blitWindows(ctx, canvas, stripsA[key], sx, yOff, occ * a, key === 'L4' ? neonHex : null);
+      blitWindows(ctx, canvas, stripsA[key], sx, yOff, occ, music, mgr.reducedFlash, a);
     }
     if (to !== from && t > 0.02 && stripsB) {
       blit(ctx, canvas, stripsB[key], sx, yOff, t);
       mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false });
-      blitWindows(ctx, canvas, stripsB[key], sx, yOff, occ * t, key === 'L4' ? neonHex : null);
+      blitWindows(ctx, canvas, stripsB[key], sx, yOff, occ, music, mgr.reducedFlash, t);
     }
   };
 
@@ -170,8 +175,33 @@ export function drawCityWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, ph
   drawWetSheen(ctx, groundCanvas, occ);
   mgr._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
   drawStreetLamps(ctx, groundCanvas, worldX, mgr, occ, mandalaColor);
+  drawTraffic(ctx, groundCanvas, worldX, originX, mgr, music);
   mgr._drawFlood(ctx, groundCanvas);
   mgr._drawTransitionOverlays(ctx, groundCanvas, B);
+}
+
+function drawTraffic(ctx, canvas, worldX, originX, mgr, music) {
+  ctx.save();
+  ctx.globalCompositeOperation = flashCompositeOp(mgr.reducedFlash);
+  // Fixed density; fast songs brighten one pair of lights instead of
+  // spawning more cars or accelerating the street on every drum hit.
+  const spacing = canvas.width / 4;
+  const travel = mgr.reducedFlash ? 0 : mgr.tSec * 24;
+  for (let i = 0; i < 6; i++) {
+    const x = ((i * spacing + travel - worldX * 0.12) % (canvas.width + spacing)
+      + canvas.width + spacing) % (canvas.width + spacing) - spacing / 2;
+    const gy = mgr.groundField ? mgr.groundField.heightAt(worldX + x - originX) : mgr.groundY;
+    const y = gy + 9 + (i % 2) * 12;
+    const glow = music.cityLight + (i % 4 === music.group ? music.accent * 0.25 : 0);
+    ctx.globalAlpha = capFlashAlpha(glow, mgr.reducedFlash);
+    ctx.fillStyle = i % 2 ? '#ee856b' : '#f9dfa0';
+    ctx.fillRect(x, y, 4, 2);
+    ctx.fillRect(x + 7, y, 4, 2);
+    ctx.globalAlpha *= 0.18;
+    ctx.fillRect(x - 2, y + 5, 16, 2);
+    ctx.fillRect(x + 1, y + 9, 10, 1);
+  }
+  ctx.restore();
 }
 
 function drawWetSheen(ctx, canvas, occ) {
