@@ -27,6 +27,7 @@ import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
 import {
   DEFAULT_STAGE_PRESET, resolveStagePreset, stageDims, isRetroPreset, isPalettePreset,
+  displayLimitedSize,
 } from './render/StagePresets.js';
 import { quantizeCanvas } from './render/PaletteQuantize.js';
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
@@ -412,9 +413,20 @@ function fitCanvas() {
     perfGovernor.retro = retro;
     perfGovernor.retroPalette = isPalettePreset(preset);
   }
+  // Clamp to what the display can actually present BEFORE the governor's own
+  // scale: the preset is a ceiling, and on a phone (especially in portrait,
+  // where the 16:9 stage letterboxes into a strip) it is far above what the
+  // browser will ever draw. Rendering those pixels costs power and shows
+  // nothing. A desktop displaying the stage at or above its preset size is
+  // unaffected -- this only ever reduces.
+  const fit = displayLimitedSize(
+    dims.w, dims.h,
+    canvas.clientWidth, canvas.clientHeight,
+    typeof devicePixelRatio === 'number' ? devicePixelRatio : 1,
+  );
   const scale = perfGovernor ? perfGovernor.resolutionScale(dims.h) : 1;
-  const w = Math.round(dims.w * scale);
-  const h = Math.round(dims.h * scale);
+  const w = Math.round(fit.w * scale);
+  const h = Math.round(fit.h * scale);
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;
@@ -486,6 +498,21 @@ function randomizeSeed() {
   }
   seedRandomBtnEl?.addEventListener('click', () => randomizeSeed());
   fitCanvas();
+  // The backing store is now sized against the element's own CSS box, so a
+  // rotation or window resize changes the right answer -- nothing re-ran
+  // fitCanvas on either before, since the size used to depend only on the
+  // preset. Coalesced onto a frame so a drag-resize doesn't reallocate every
+  // buffer sized to the backing store (motion-blur ring, bloom, heat) dozens
+  // of times per second.
+  if (typeof window !== 'undefined') {
+    let resizeRaf = null;
+    const onResize = () => {
+      if (resizeRaf !== null) return;
+      resizeRaf = requestAnimationFrame(() => { resizeRaf = null; fitCanvas(); });
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+  }
 }
 
 async function bootAudio() {

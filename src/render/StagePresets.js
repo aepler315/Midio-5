@@ -98,3 +98,42 @@ export function isRetroPreset(preset) {
 export function isPalettePreset(preset) {
   return !!STAGE_PRESETS[preset]?.palette;
 }
+
+// A phone panel's device pixel ratio (commonly 3) is a print-density number,
+// not a viewing-distance one: past ~2x, a 16:9 stage held at arm's length has
+// no detail left to resolve, while every fill/composite/blit in the frame
+// still scales with the pixel count. Capping the ratio we honour is what
+// turns "match the panel exactly" into a power decision instead of a
+// resolution one.
+export const MAX_EFFECTIVE_DPR = 2;
+
+/** Shrink a preset's backing store to what the display can actually show.
+ *
+ *  The preset is a quality CEILING, not an instruction: rasterizing 1920×1080
+ *  into a canvas the browser then draws at a fraction of that size spends
+ *  power on pixels no display ever presents. That is the common case on a
+ *  phone, and worst in portrait, where `object-fit: contain` (style.css)
+ *  letterboxes the 16:9 stage into a thin strip a few hundred CSS px tall.
+ *
+ *  Returns preset-aspect dimensions that are never larger than the preset, so
+ *  this can only ever REDUCE work: a desktop whose stage is displayed at or
+ *  above its preset size keeps that preset unchanged. `cssW`/`cssH` are the
+ *  element's own CSS box; a box with no area yet (measured before layout)
+ *  falls back to the preset rather than guessing.
+ */
+export function displayLimitedSize(presetW, presetH, cssW, cssH, dpr) {
+  if (!(presetW > 0) || !(presetH > 0)) return { w: presetW, h: presetH };
+  if (!(cssW > 0) || !(cssH > 0) || !(dpr > 0)) return { w: presetW, h: presetH };
+  const aspect = presetW / presetH;
+  // object-fit: contain -- the drawn content is the largest preset-aspect box
+  // fitting the element, so the bars carry no pixels worth rendering.
+  const contentW = (cssW / cssH) > aspect ? cssH * aspect : cssW;
+  // One scale for both axes, rather than clamping each independently: the
+  // renderer derives its transform from canvas.width, so an aspect that
+  // drifted by a rounding step would show up as a stretched frame.
+  const scale = Math.min(1, (contentW * Math.min(dpr, MAX_EFFECTIVE_DPR)) / presetW);
+  return {
+    w: Math.max(1, Math.round(presetW * scale)),
+    h: Math.max(1, Math.round(presetH * scale)),
+  };
+}

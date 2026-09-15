@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   STAGE_PRESETS, RETRO_PRESET, PALETTE_PRESET, DEFAULT_STAGE_PRESET,
-  resolveStagePreset, stageDims, isRetroPreset, isPalettePreset,
+  resolveStagePreset, stageDims, isRetroPreset, isPalettePreset, displayLimitedSize,
 } from '../src/render/StagePresets.js';
 
 const indexHtml = readFileSync(
@@ -111,4 +111,54 @@ test('stageDims falls back to the default rather than throwing on a bad key', ()
   assert.deepEqual(stageDims('nonsense'), STAGE_PRESETS[DEFAULT_STAGE_PRESET]);
   assert.deepEqual(stageDims(undefined), STAGE_PRESETS[DEFAULT_STAGE_PRESET]);
   assert.equal(isRetroPreset('nonsense'), false);
+});
+
+// --- displayLimitedSize: never rasterize pixels the display can't show ----
+
+test('displayLimitedSize: a desktop showing the stage at full size keeps its preset', () => {
+  // 1080p preset, 1920x1080 CSS box at dpr 1 -- displayed 1:1, nothing to cut.
+  const r = displayLimitedSize(1920, 1080, 1920, 1080, 1);
+  assert.deepEqual(r, { w: 1920, h: 1080 });
+});
+
+test('displayLimitedSize: never returns more than the preset, however big the display', () => {
+  // A 4K box at dpr 2 could "afford" far more than 1080p; the preset is a
+  // ceiling, so asking for a bigger buffer than the user chose is wrong.
+  const r = displayLimitedSize(1920, 1080, 3840, 2160, 2);
+  assert.deepEqual(r, { w: 1920, h: 1080 });
+});
+
+test('displayLimitedSize: a portrait phone cuts the buffer hard (the letterboxed strip)', () => {
+  // 390x844 CSS at dpr 3: object-fit contain puts the 16:9 stage in a
+  // 390x219 strip, so even at the 2x cap that is 780px wide, not 1920.
+  const r = displayLimitedSize(1920, 1080, 390, 844, 3);
+  assert.equal(r.w, 780);
+  assert.equal(r.h, Math.round(780 * 1080 / 1920));
+  assert.ok(r.w * r.h < 1920 * 1080 * 0.2, 'should be a >80% cut in pixels');
+});
+
+test('displayLimitedSize: a landscape phone still cuts, via the dpr cap', () => {
+  // 844x390 CSS at dpr 3 -- the panel really is ~2532px wide, but past the
+  // 2x cap there is nothing left to see on a phone-sized 16:9 stage.
+  const r = displayLimitedSize(1920, 1080, 844, 390, 3);
+  assert.ok(r.w < 1920, 'must not honour the full 3x panel density');
+  assert.ok(r.w * r.h < 1920 * 1080 * 0.75, 'should be a meaningful cut');
+});
+
+test('displayLimitedSize: preserves the preset aspect ratio exactly', () => {
+  for (const [cssW, cssH, dpr] of [[390, 844, 3], [844, 390, 3], [1000, 700, 1.5]]) {
+    const r = displayLimitedSize(1920, 1080, cssW, cssH, dpr);
+    assert.ok(Math.abs((r.w / r.h) - (1920 / 1080)) < 0.01, `aspect drifted at ${cssW}x${cssH}`);
+  }
+});
+
+test('displayLimitedSize: an unmeasured box (pre-layout) falls back to the preset', () => {
+  assert.deepEqual(displayLimitedSize(1920, 1080, 0, 0, 2), { w: 1920, h: 1080 });
+  assert.deepEqual(displayLimitedSize(1920, 1080, 800, 600, 0), { w: 1920, h: 1080 });
+});
+
+test('displayLimitedSize: leaves the already-tiny 8-bit buffer alone', () => {
+  // 320x180 is below anything a display would limit it to, so the mode keeps
+  // the exact buffer it exists to pin.
+  assert.deepEqual(displayLimitedSize(320, 180, 844, 390, 3), { w: 320, h: 180 });
 });
