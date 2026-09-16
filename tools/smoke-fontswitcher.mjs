@@ -57,7 +57,8 @@ checkpoint('library starts empty (manifest mocked)', await page.evaluate(() => w
 const names = ['AlphaFont', 'BetaFont', 'GammaFont'];
 for (const name of names) {
   const bytes = Array.from(new Uint8Array(buildMinimalSf2(name)));
-  // eslint-disable-next-line no-await-in-loop
+  // Sequential on purpose: the fonts must load one at a time so the
+  // count assertion below reads a settled library.
   await page.evaluate(async (arr) => { await window.__SMW.fontLibrary.addBuffer('x.sf2', new Uint8Array(arr).buffer); }, bytes);
 }
 checkpoint('3 fonts loaded', await page.evaluate(() => window.__SMW.fontLibrary.count === 3));

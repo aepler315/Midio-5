@@ -29,10 +29,24 @@ changes are required. The averaging includes intervening samples so rapid
 periodic bass cannot alias into a full-strength pressure flash.
 
 **Verification:** start the app and run `npm run test:worlds`. This uploads the
-same generated 32-second quiet/loud/quiet fixture to Range, After Hours, and
-Fathom with seed 315, checks world selection, actual rhythm delivery, composed
-frames, energy response, backward seeking and reduced motion, and saves
-screenshots plus a JSON report under `.smoke/worlds/`. `npm test` covers the
+same generated 32-second quiet/loud/quiet fixture to **every registered world**
+with seed 315, checks world selection, actual rhythm delivery, composed frames,
+energy response, backward seeking and reduced motion, and saves screenshots
+plus a JSON report under `.smoke/worlds/`.
+
+It also runs a **per-pass paint audit**: it wraps individual draw passes,
+renders one frame at a pinned full-quality perf rung, and records how many
+stage pixels each pass actually changed. A pass that runs and paints nothing
+fails with its name attached. This exists because judging the composed frame
+cannot catch a single dead pass — BiomeManager's fata morgana ran every frame
+for a week while drawing zero pixels (its call landed in a same-named method
+with a different signature) and the frame was as colorful as ever throughout.
+Passes that may legitimately paint nothing on a short fixture — `drawDeepSky`,
+whose Star Atlas is still empty — are recorded in the report rather than
+asserted. Cathode has no BiomeManager passes to audit, since it replaces the
+renderer rather than the scenery, so its frame is checked as a whole.
+
+`npm test` covers the
 control timing, missing data, sustained versus transient bass, rapid drums,
 boundary provenance and reduced-motion behavior. Synthetic fixtures establish
 behavior, not a listener preference ranking; real-song visual evaluation and
