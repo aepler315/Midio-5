@@ -24,11 +24,6 @@
       "count": 1
     }
   },
-  "src/lyrics/LyricGrounding.js": {
-    "no-useless-assignment": {
-      "count": 1
-    }
-  },
   "src/lyrics/SongIdentity.js": {
     "no-control-regex": {
       "count": 2
@@ -47,9 +42,6 @@
   "src/render/WebGLRenderer.js": {
     "no-unused-vars": {
       "count": 1
-    },
-    "no-useless-assignment": {
-      "count": 1
     }
   },
   "src/render/spectral.js": {
@@ -59,11 +51,6 @@
   },
   "src/sim/BabyStars.js": {
     "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/sim/BattleDirector.js": {
-    "no-useless-assignment": {
       "count": 1
     }
   },
@@ -80,11 +67,6 @@
   "src/ui/TitleBackdrop.js": {
     "no-unused-vars": {
       "count": 4
-    }
-  },
-  "src/utils/color.js": {
-    "no-useless-assignment": {
-      "count": 3
     }
   },
   "src/utils/zip.js": {
@@ -122,37 +104,7 @@
       "count": 1
     }
   },
-  "src/world/WorldScore.js": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/world/dna/OklchColor.js": {
-    "no-useless-assignment": {
-      "count": 1
-    }
-  },
-  "src/world/dna/SongDNA.js": {
-    "no-useless-assignment": {
-      "count": 9
-    }
-  },
-  "src/world/farside/drawFarside.js": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
   "src/world/fathom/drawFathom.js": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/world/nave/drawNave.js": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/world/redline/drawRedline.js": {
     "no-unused-vars": {
       "count": 1
     }
@@ -165,9 +117,6 @@
   "test/burrow.test.js": {
     "no-unused-vars": {
       "count": 1
-    },
-    "no-useless-assignment": {
-      "count": 3
     }
   },
   "test/cameraDirector.test.js": {
@@ -188,9 +137,6 @@
   "test/excursionDirector.test.js": {
     "no-unused-vars": {
       "count": 3
-    },
-    "no-useless-assignment": {
-      "count": 2
     }
   },
   "test/helpers/sf2Fixture.js": {
@@ -206,9 +152,6 @@
   "test/perf-governor.test.js": {
     "no-unused-vars": {
       "count": 1
-    },
-    "no-useless-assignment": {
-      "count": 2
     }
   },
   "test/ridgePortrait.test.js": {
@@ -221,18 +164,8 @@
       "count": 2
     }
   },
-  "test/skyVoyage.test.js": {
-    "no-useless-assignment": {
-      "count": 12
-    }
-  },
   "test/starCatalogue.test.js": {
     "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "test/vibeEnsemble.test.js": {
-    "no-useless-assignment": {
       "count": 1
     }
   },
@@ -247,9 +180,6 @@
     }
   },
   "tools/free-music.mjs": {
-    "no-useless-assignment": {
-      "count": 1
-    },
     "no-useless-escape": {
       "count": 1
     }
@@ -261,9 +191,6 @@
   },
   "tools/song-meta.mjs": {
     "no-sparse-arrays": {
-      "count": 1
-    },
-    "no-useless-assignment": {
       "count": 1
     },
     "no-useless-escape": {
