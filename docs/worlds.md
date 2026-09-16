@@ -5,9 +5,9 @@ below retain the original art direction; they are not a feature checklist.
 The chooser presents equal choices and tailors each selected painterly world
 to the song. Cathode keeps its separate pixel renderer.
 
-### Musical behavior: After Hours and Fathom
+### Musical behavior: After Hours, Fathom, Redline, Foundry
 
-The city and underwater worlds now share a small set of controls from
+The city, underwater, highway and mill worlds share a small set of controls from
 `WorldMusic.js`, while interpreting those controls differently:
 
 - **After Hours:** lit windows, street lamps and the wet road share one glow
@@ -27,9 +27,21 @@ The city and underwater worlds now share a small set of controls from
   Four small colonies retain ambient light, with only one answering each
   transient. Measured section boundaries open the shafts gradually; inferred
   boundaries have half the response, and decorative pacing cuts have none.
-- **Reduced motion:** the new current sway and traffic travel are suppressed,
-  local accents are softened, and these layers use non-additive compositing.
-  Existing world/character motion remains governed by the existing controls.
+- **Redline:** the lane grid travels at a rate taken from the same 1.2s energy
+  average -- quiet songs crawl, a groove cruises, and dense material drops to
+  half-time so a 170 BPM mix does not strobe the road. No tempo is invented
+  from BPM. Phrase boundaries that earned a lift close a tunnel mouth and then
+  open a horizon wash; decorative cuts do neither. Reflectors and neon signage
+  idle with energy; one gantry catches each accent, density never spawns more.
+- **The Foundry:** furnace heat is that same 1.2s energy average, never a
+  single-frame sample -- a kick is not a pour. Quiet input stays as low embers.
+  Percussion drops one hammer in the mill the current section picked; the other
+  three mills stay idle. Earned section lifts flood the ground from below, then
+  fall back to the heat envelope.
+- **Reduced motion:** the new current sway, traffic travel and hammer drop are
+  suppressed, local accents are softened, cruise rate is halved, pours are
+  tempered, and these layers use non-additive compositing. Existing
+  world/character motion remains governed by the existing controls.
 
 These controls consume existing energy curves and conductor rhythm events.
 No tempo is invented for unmetered songs, and no persisted analysis schema

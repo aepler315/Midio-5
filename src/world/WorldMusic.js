@@ -1,9 +1,17 @@
-// Musical controls shared by the city and underwater renderers.
+// Musical controls shared by world draw paths.
 // Rhythm comes from the conductor subscription; never invent a beat from BPM.
 // Sampling is causal and stateless, so rendering cannot advance the music.
-import { clamp01 } from '../utils/math.js';
+import { clamp01, lerp } from '../utils/math.js';
 
 const unit = (value) => Number.isFinite(value) ? clamp01(value) : 0;
+
+// How big a step up in section energy counts. Below the knee a boundary is a
+// continuation and gets nothing; at LIFT_FULL it is the whole move.
+const LIFT_KNEE = 0.05;
+const LIFT_FULL = 0.22;
+// A lift into a section that is quiet FOR THIS SONG is still only a lift
+// into a quiet section. This is the floor such a boundary keeps.
+const REL_FLOOR = 0.45;
 
 export function sampleWorldMusic({ nowMs = 0, energyCurves = null, rhythm = null, section = null, reducedFlash = false } = {}) {
   nowMs = Number.isFinite(nowMs) ? Math.max(0, nowMs) : 0;
@@ -35,4 +43,29 @@ export function sampleWorldMusic({ nowMs = 0, energyCurves = null, rhythm = null
     cityLight: 0.18 + 0.45 * energy,
     waterLight: 0.12 + 0.22 * bass,
   };
+}
+
+/**
+ * How much of a bloom / pour / horizon this boundary has earned, 0..1.
+ *
+ * Two questions, both answered by numbers the section pass already stored.
+ * How much of a step up is it (`meanEnergy` against the section we came from),
+ * and how high does the arriving section sit in the song as a whole
+ * (`relEnergy01`)? The first is what makes a boundary an event; the second is
+ * what keeps a verse that happens to follow the quietest bar in the song from
+ * getting the chorus's treatment.
+ *
+ * Provenance is deliberately NOT checked here -- `sampleWorldMusic`'s `reveal`
+ * already zeroes decorative cuts and halves inferred ones, and doing it twice
+ * would square the weighting.
+ */
+export function boundaryLift01(section, prevSection) {
+  if (!section || !prevSection) return 0;
+  // Below the knee this goes negative and clamps to zero on its own, which is
+  // the whole gate -- a continuation or a fall into a quieter section earns
+  // nothing without a separate branch saying so.
+  const step = (section.meanEnergy ?? 0) - (prevSection.meanEnergy ?? 0);
+  const size = clamp01((step - LIFT_KNEE) / (LIFT_FULL - LIFT_KNEE));
+  const standing = lerp(REL_FLOOR, 1, clamp01(section.relEnergy01 ?? 0.5));
+  return clamp01(size * standing);
 }
