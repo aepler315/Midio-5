@@ -167,6 +167,19 @@ export function pickCelestialKind(dna) {
  *  - geometricRegularity narrows how far off-centre summits sit, so a
  *    regular song's range reads more evenly spaced.
  */
+/** Keys each silhouette profile actually reads. Adaptation sends only the
+ *  groups the world kind consumes — alpine flanks never go to a city. */
+export const RIDGE_TERRAIN_KEYS = [
+  'shoulderMul', 'spireMul', 'spireMixAdd', 'notchAdd', 'teethAdd',
+  'apronGainAdd', 'apronSpreadAdd', 'apronCapAdd', 'asymMul',
+];
+export const CITY_TERRAIN_KEYS = [
+  'cityWidthMul', 'citySetbackFrac', 'cityTaperMul', 'cityDensityMul',
+];
+export const ROLLING_TERRAIN_KEYS = [
+  'rollingAmpMul', 'rollingOctaveBias',
+];
+
 export function deriveTerrainParams(grammar) {
   const g = grammar || {};
   const spiky = (g.spikeCluster || 0) + (g.verticalStack || 0); // baseline ~1/3

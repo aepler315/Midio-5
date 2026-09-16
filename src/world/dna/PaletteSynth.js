@@ -345,6 +345,9 @@ export function synthesizePalette(dna, temperatureOverride = null) {
  *  (song seed, label) so the same section always reads the same way on
  *  replay. Falls back to a single entry when there's no section data. */
 export function synthesizeSectionPalettes(dna, name) {
+  // `name` is the world kind (alpine, city, …). It is only a palette-id
+  // prefix here; WorldAdaptation then tints the result toward that kind's
+  // stock materials so After Hours does not inherit a mountain sky.
   // castBiomes forbids picking the same name twice in a row, so a single
   // entry would strand every section after the first with no candidate.
   // Detected structure wins when we have it; otherwise fall back to three

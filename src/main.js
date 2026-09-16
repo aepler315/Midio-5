@@ -43,10 +43,10 @@ import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
 import { visualNow, VISUAL_LEAD_MS } from './core/ChoreoClock.js';
-import { buildCustomWorld, buildWorldVariant, scoreWorlds } from './world/WorldScore.js';
+import { buildWorldVariant, scoreWorlds } from './world/WorldScore.js';
 import { buildSongProfile, PROFILE_VERSION } from './audio/SongProfile.js';
 import {
-  DEFAULT_WORLD_ID, setCustomWorld, clearCustomWorld, getWorld, listWorlds,
+  DEFAULT_WORLD_ID, setCustomWorld, clearCustomWorld, getCustomWorld, getWorld, listWorlds,
 } from './world/Worlds.js';
 import { buildWorldChoices, moveChoiceIndex } from './ui/WorldChooser.js';
 import {
@@ -1017,6 +1017,7 @@ function renderWorldGrid(customWorld, features = null, extras = {}) {
 
 function offerWorldsThenStart(data, extra = {}) {
   try {
+    clearCustomWorld();
     const profile = data.songProfile?.version === PROFILE_VERSION ? data.songProfile : buildSongProfile({
       energyCurves: data.energyCurves,
       durationMs: data.durationMs,
@@ -1030,16 +1031,13 @@ function offerWorldsThenStart(data, extra = {}) {
       barGrid: data.barGrid,
     });
     const features = profile.watch;
-    const { world } = buildCustomWorld(features, { ...data, profile });
-    setCustomWorld(world);
     const seed = resolveSongSeed(
       { timeline: data.timeline, durationMs: data.durationMs },
       readPinnedSeed(),
     );
     pendingWorldStart = { data, extra, features, seed, profile };
-    console.log('[custom world] %s (base: %s)', world.kind, world.baseId);
     const hasLabels = Array.isArray(data.structure?.labels) && data.structure.labels.length > 1;
-    renderWorldGrid(world, features, { hasLabels });
+    renderWorldGrid(null, features, { hasLabels });
     worldSelectEl?.classList.remove('hidden');
     startChooserPreviews();
   } catch (err) {
@@ -1056,7 +1054,7 @@ function startChooserPreviews() {
   if (!pending) return;
   const audio = previewAudioHandlers();
   previewSession = new PreviewSession({
-    data: pending.data,
+    data: { ...pending.data, profile: pending.profile },
     features: pending.features,
     seed: pending.seed,
     reducedFlash,
@@ -1080,27 +1078,16 @@ function playSelectedWorld(baseWorldId) {
   // Preview audio/timing must not leak into the performance.
   if (previewSession) previewSession.stopPreview();
 
-  // Cathode owns a separate pixel renderer, so it remains an intentional
-  // manual selection. Every painterly world gets its own variant of this
-  // song, even when it was not the automatic base choice.
-  if (baseWorld.manualOnly) {
-    clearCustomWorld();
-    confirmWorld(baseWorldId);
-    return;
-  }
-
   try {
-    const current = getWorld('custom');
-    if (current?.baseId !== baseWorldId) {
-      const pending = pendingWorldStart;
-      if (!pending?.features) throw new Error('Missing song features for world variant');
-      const { world } = buildWorldVariant(baseWorldId, pending.features, {
-        ...pending.data,
-        profile: pending.profile,
-      });
-      setCustomWorld(world);
-    }
-    confirmWorld('custom');
+    const pending = pendingWorldStart;
+    if (!pending?.features && !pending?.profile) throw new Error('Missing song profile for world variant');
+    const { world } = buildWorldVariant(baseWorldId, pending.features, {
+      ...pending.data,
+      profile: pending.profile,
+    });
+    const current = getCustomWorld();
+    if (current?.instanceId !== world.instanceId) setCustomWorld(world);
+    confirmWorld(world.id);
   } catch (err) {
     // A tailored palette or terrain is additive. If it cannot be made, the
     // player still gets the world they selected instead of a dead-end picker.

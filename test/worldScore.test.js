@@ -330,7 +330,7 @@ test('a palette-synthesis-only failure still leaves terrain shaping intact, and 
   console.warn = (...args) => warnCalls.push(args);
   let result;
   try {
-    result = buildCustomWorld(feat, data);
+    result = buildWorldVariant('alpine', feat, data);
   } finally {
     console.warn = originalWarn;
   }
@@ -343,9 +343,7 @@ test('a palette-synthesis-only failure still leaves terrain shaping intact, and 
     'the warning should identify which stage failed');
 });
 
-test('buildCustomWorld scores 100 for any song — proven by construction', () => {
-  // Test across four very different songs: quiet ambient, loud metal,
-  // mid-tempo groove, sparse high-frequency.
+test('an adapted world keeps the base identity instead of constructing a 100 score', () => {
   const songs = [
     { label: 'ambient', energyAt: () => 0.12, bands: () => [1.4, 1.0, 0.6, 0.3, 0.1, 0.05, 0.02], bpm: 68 },
     { label: 'metal', energyAt: (t) => 0.08 + bump(t, 0.5, 0.1, 0.85), bands: () => [0.3, 0.5, 0.9, 1.3, 1.5, 1.3, 1.1], bpm: 175 },
@@ -361,23 +359,17 @@ test('buildCustomWorld scores 100 for any song — proven by construction', () =
     const feat = extractWatchFeatures({ energyCurves: ec, durationMs, bpm: song.bpm });
     const { world, proof } = buildCustomWorld(feat);
 
-    // The proof must hold:
-    assert.equal(proof.score, 100, `${song.label}: score ${proof.score} !== 100`);
-    assert.ok(Math.abs(proof.comfort - 1.0) < 1e-9, `${song.label}: comfort ${proof.comfort} !== 1.0`);
-    assert.ok(Math.abs(proof.shape - 1.0) < 1e-9, `${song.label}: shape ${proof.shape} !== 1.0`);
-    assert.ok(Math.abs(proof.coverageNorm - 1.0) < 1e-9, `${song.label}: coverageNorm ${proof.coverageNorm} !== 1.0`);
-    assert.ok(Math.abs(proof.affinityNorm - 1.0) < 1e-9, `${song.label}: affinityNorm ${proof.affinityNorm} !== 1.0`);
-    assert.ok(Math.abs(proof.mixed - 1.0) < 1e-9, `${song.label}: mixed ${proof.mixed} !== 1.0`);
-
-    // The world must be usable: has all fields BiomeManager needs.
+    assert.notEqual(proof.score, 100, `${song.label}: adapted worlds must not construct a perfect score`);
+    assert.ok(proof.score >= 1 && proof.score <= 99, `${song.label}: score ${proof.score} out of range`);
     assert.ok(world.kind, `${song.label}: missing kind`);
     assert.ok(world.palettes?.length >= 3, `${song.label}: missing palettes`);
     assert.ok(typeof world.cast === 'function', `${song.label}: missing cast`);
-    assert.equal(world.custom, true);
+    assert.ok(world.registeredId);
+    assert.ok(world.instanceId);
+    assert.notEqual(world.instanceId, world.registeredId);
 
-    // Registering and retrieving must work.
     setCustomWorld(world);
-    assert.equal(getWorld('custom').kind, world.kind);
+    assert.equal(getWorld(world.id).kind, world.kind);
     clearCustomWorld();
     assert.notEqual(getWorld('custom').id, 'custom');
   }
@@ -405,7 +397,11 @@ test('buildWorldVariant preserves the selected world while tailoring it to the s
 
   assert.equal(world.id, 'custom');
   assert.equal(world.baseId, 'nocturne');
+  assert.equal(world.registeredId, 'nocturne');
   assert.equal(world.kind, 'city');
   assert.equal(world.name, 'After Hours');
-  assert.equal(proof.score, 100);
+  assert.notEqual(proof.score, 100);
+  assert.ok(world.response);
+  assert.equal(world.capabilities.geometry.includes('skyline'), true);
+  assert.equal(world.capabilities.geometry.includes('ridge'), false);
 });

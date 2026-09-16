@@ -13,22 +13,33 @@ const LIFT_FULL = 0.22;
 // into a quiet section. This is the floor such a boundary keeps.
 const REL_FLOOR = 0.45;
 
-export function sampleWorldMusic({ nowMs = 0, energyCurves = null, rhythm = null, section = null, reducedFlash = false } = {}) {
+export function sampleWorldMusic({ nowMs = 0, energyCurves = null, rhythm = null, section = null, reducedFlash = false, response = null } = {}) {
   nowMs = Number.isFinite(nowMs) ? Math.max(0, nowMs) : 0;
-  // Average the trailing 1.2 seconds at 20ms spacing (the audio curves'
-  // normal frame size). Sparse taps can align with rapid drums and turn
-  // every tap into the same peak, defeating the slow-pressure envelope.
-  // Fixed samples also make 30/60fps and paused renders agree.
+  const windowMs = Number.isFinite(response?.smoothingMs) ? response.smoothingMs : 1200;
+  const n = Math.max(8, Math.round(windowMs / 20));
+  // Average the trailing window at 20ms spacing (the audio curves' normal
+  // frame size). Sparse taps can align with rapid drums and turn every tap
+  // into the same peak, defeating the slow-pressure envelope. Fixed samples
+  // also make 30/60fps and paused renders agree. n=60 is the historical
+  // 1.2s window; tests that omit `response` keep that exact read.
   let bass = 0, energy = 0;
-  for (let i = 0; i < 60; i++) {
+  const denomBass = n * 2;
+  for (let i = 0; i < n; i++) {
     const at = nowMs - (i + 0.5) * 20;
     if (at < 0) continue;
-    bass += (unit(energyCurves?.sample?.(0, at)) + unit(energyCurves?.sample?.(1, at))) / 120;
-    energy += unit(energyCurves?.globalEnergyNorm?.(at)) / 60;
+    bass += (unit(energyCurves?.sample?.(0, at)) + unit(energyCurves?.sample?.(1, at))) / denomBass;
+    energy += unit(energyCurves?.globalEnergyNorm?.(at)) / n;
   }
+  const accentWindow = Number.isFinite(response?.accentWindowMs) ? response.accentWindowMs : 800;
+  const accentDecay = Number.isFinite(response?.accentDecayMs) ? response.accentDecayMs : 150;
+  const accentGain = Number.isFinite(response?.accentGain) ? response.accentGain : 1;
   const age = nowMs - (rhythm?.tMs ?? -Infinity);
-  const accent = age >= 0 && age < 800
-    ? unit(rhythm.vel) * Math.exp(-age / 150) * (reducedFlash ? 0.25 : 1) : 0;
+  const accent = age >= 0 && age < accentWindow
+    ? unit(rhythm.vel) * Math.exp(-age / accentDecay) * accentGain * (reducedFlash ? 0.25 : 1) : 0;
+  const macroMs = Number.isFinite(response?.macroMs) ? response.macroMs : 8000;
+  const ambientScale = Number.isFinite(response?.ambientScale) ? response.ambientScale : 1;
+  const cityFloor = response && Number.isFinite(response.cityLightFloor) ? response.cityLightFloor : 0.18;
+  const waterFloor = response && Number.isFinite(response.waterLightFloor) ? response.waterLightFloor : 0.12;
   // Open over four seconds at an evidence-backed boundary. Pacing-only
   // cuts are visual scheduling, not evidence of a musical phrase.
   const elapsed = nowMs - (section?.startMs ?? 0);
@@ -39,10 +50,23 @@ export function sampleWorldMusic({ nowMs = 0, energyCurves = null, rhythm = null
   return {
     bass, energy, accent, reveal,
     group: rhythm && Number.isFinite(rhythm.tMs) ? Math.abs(Math.round(rhythm.tMs * 0.013)) % 4 : 0,
-    current: reducedFlash ? 0 : Math.sin(nowMs / 8000) * (0.35 + 0.35 * bass),
-    cityLight: 0.18 + 0.45 * energy,
-    waterLight: 0.12 + 0.22 * bass,
+    current: reducedFlash ? 0 : Math.sin(nowMs / macroMs) * (0.35 + 0.35 * bass) * ambientScale,
+    cityLight: cityFloor + 0.45 * energy * ambientScale,
+    waterLight: waterFloor + 0.22 * bass * ambientScale,
   };
+}
+
+/** Draw paths share this so a world's response config actually reaches the sample. */
+export function sampleManagerMusic(mgr, extra = {}) {
+  return sampleWorldMusic({
+    nowMs: (mgr?.tSec ?? 0) * 1000,
+    energyCurves: mgr?.energyCurves,
+    rhythm: mgr?.worldRhythm,
+    section: mgr?.sections?.[mgr._lastSectionIdx],
+    reducedFlash: !!mgr?.reducedFlash,
+    response: mgr?.world?.response,
+    ...extra,
+  });
 }
 
 /**

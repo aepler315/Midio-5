@@ -95,15 +95,15 @@ export async function runAudioSmoke({
     await page.getByText('Browse files', { exact: true }).click();
     await (await chooserReady).setFiles(wavPath);
     // Analysis now ends at the world picker rather than starting the song
-    // outright. Every registered world gets one equal-choice card; the
-    // tailored interpretation is the play target of its base card.
+    // outright. Every registered world gets one equal-choice card. The
+    // chosen world is adapted on Play; there is no privileged custom card.
     await page.locator('#worldSelect:not(.hidden)').waitFor({ state: 'visible', timeout: 90000 });
     const worldCards = page.locator('#worldSelect .worldCard');
     check('the picker presents one card per registered world', await worldCards.count() === 9);
     check('the picker gives no world winner styling', await page.locator('.worldCard.is-best').count() === 0);
     const tailoredCard = page.locator('.worldCard[data-world-id="custom"]');
-    check('exactly one base card keeps the tailored interpretation', await tailoredCard.count() === 1);
-    const alternateCard = page.locator('.worldCard:not([data-world-id="custom"])').first();
+    check('no privileged custom card in the gallery', await tailoredCard.count() === 0);
+    const alternateCard = page.locator('.worldCard').first();
     check('an alternate painterly world remains selectable', await alternateCard.count() === 1);
     await alternateCard.click();
     await page.locator('#hud:not(.hidden)').waitFor({ state: 'visible', timeout: 90000 });

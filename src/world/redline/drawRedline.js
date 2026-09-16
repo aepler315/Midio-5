@@ -8,7 +8,7 @@ import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
 import { hexToRgb } from '../../utils/color.js';
-import { sampleWorldMusic } from '../WorldMusic.js';
+import { sampleManagerMusic } from '../WorldMusic.js';
 import { cruiseRate, cruiseTravel, phrasePassage, signageAlpha, boundaryLift01 } from './Cruise.js';
 
 const LAYER_RATIOS = { L2: 0.06, L3: 0.14, L4: 0.32, L5: 0.70 };
@@ -24,8 +24,7 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
 
 export function drawRedlineWorld(mgr, frame) {
   const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
-  const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
-    rhythm: mgr.worldRhythm, section: mgr.sections?.[mgr._lastSectionIdx], reducedFlash: mgr.reducedFlash });
+  const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
   const rate = cruiseRate(music.energy, mgr.reducedFlash);
   const passage = phrasePassage({ nowMs: mgr.tSec * 1000, section: mgr.sections?.[mgr._lastSectionIdx], lift });

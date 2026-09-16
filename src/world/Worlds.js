@@ -107,6 +107,9 @@ const CATHODE_CHANNELS = [
 ];
 
 export const WORLDS = [
+  // Palette, geometry and response controls each kind actually consumes
+  // are declared in WorldAdaptation.KIND_CAPABILITIES. Adaptation reads
+  // `kind`, never a parallel per-id table.
   {
     id: 'alpine',
     name: 'The Range',

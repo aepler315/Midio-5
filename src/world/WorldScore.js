@@ -7,13 +7,8 @@
 // of sound in After Hours lights every window at once (too intense).
 import { clamp01, clamp } from '../utils/math.js';
 import { listWorlds, getWorld } from './Worlds.js';
-import { buildSongDNA } from './dna/SongDNA.js';
-import { synthesizeSectionPalettes } from './dna/PaletteSynth.js';
-import {
-  buildShapeGrammar, deriveTerrainParams, pickCharacterScheme, CHARACTER_SCHEMES,
-} from './dna/ShapeGrammar.js';
-import { castBiomes } from './Dramaturgy.js';
 import { buildSongProfile } from '../audio/SongProfile.js';
+import { adaptWorld } from './WorldAdaptation.js';
 
 /** Shared extraction lives in SongProfile. Kept here so existing callers
  *  and tests do not have to move; scoring still consumes `watch`. */
@@ -137,18 +132,12 @@ export function scoreWorlds(features, worlds = listWorlds().filter((w) => !w.man
   return ranked;
 }
 
-// ── Custom world construction ──────────────────────────────────────
+// ── World adaptation ───────────────────────────────────────────────
 //
-// A custom world is the provably optimal world for a given feature
-// vector. Its score is 100 by construction:
-//
-//   comfort  = 1.0  (comfort band centered on drive)
-//   shape    = 1.0  (prefer ranges centered on actual features)
-//   coverage = max  (channels read the strongest features)
-//   affinity = max  (weights point to the strongest features)
-//
-// Each sub-score is normalized against its theoretical maximum for
-// these features, so mixed = 1.0 → score = 100.
+// Construction lives in WorldAdaptation.adaptWorld. Scoring stays here
+// and is a heuristic, not a constructed 100. An adapted world keeps the
+// base world's channels, affinity, prefer and comfort, so Choose-for-me
+// can still compare apples to apples after adaptation.
 
 const SCORABLE_KEYS = [
   'arc', 'form', 'contrast', 'texture', 'air', 'onset',
@@ -178,123 +167,29 @@ function buildOptimalAffinity(features) {
   return aff;
 }
 
-function buildOptimalPrefer(features) {
-  const prefer = {};
-  for (const k of SCORABLE_KEYS) {
-    const v = features[k] ?? 0.5;
-    prefer[k] = [v, v];
-  }
-  return prefer;
-}
-
 /**
- * `data`, when given, is the same object threaded through
- * offerWorldsThenStart (energyCurves/durationMs/bpm/analysis/structure,
- * plus timeline/barGrid on the MIDI path) — it drives palette synthesis.
- * Score-affecting fields (channels/affinity/prefer/comfort) are built from
- * `features` alone, same as before: palette generation never touches the
- * 100% proof.
+ * Song-specific interpretation of one registered world. Cathode keeps its
+ * pixel renderer and four-color ramps; painterly worlds overlay as `custom`
+ * with a stable `registeredId` and a per-song `instanceId`.
  */
-/** Build a song-specific interpretation of one registered painterly world. */
 export function buildWorldVariant(baseId, features, data = null) {
   const feat = features && typeof features.drive === 'number'
     ? features
     : extractWatchFeatures(features || {});
   const base = getWorld(baseId);
-  if (base.id !== baseId || base.manualOnly) {
+  if (base.id !== baseId) {
     throw new Error(`Cannot build a tailored variant for world ${baseId}`);
   }
-
-  const channels = buildOptimalChannels(feat);
-  const affinity = buildOptimalAffinity(feat);
-  const prefer = buildOptimalPrefer(feat);
-  const comfort = { lo: feat.drive, hi: feat.drive };
-
-  let palettes = base.palettes;
-  let temperature = base.temperature;
-  let cast = base.cast;
-  let terrainMods = null;
-  let characterScheme = null;
-  let dna = null;
-  let paletteProof = null;
-
-  // Three independent try/catches, not one wrapping all of DNA + palette +
-  // terrain: a single shared catch meant ANY failure -- even one confined
-  // to palette color synthesis -- silently discarded terrainMods and
-  // characterScheme too, even though deriveTerrainParams/pickCharacterScheme
-  // never throw for any dna that buildSongDNA itself successfully returned
-  // and don't depend on palette synthesis having succeeded. A song could
-  // quietly lose its entire generated identity (both color AND terrain
-  // shape) over a failure in only one of the two. Each catch also used to
-  // record its error in paletteProof.error and nothing ever read or logged
-  // it -- a failure here was invisible even to someone looking for it.
-  try {
-    dna = buildSongDNA({ ...(data || {}), structure: data?.structure ?? null });
-  } catch (err) {
-    console.warn('[WorldScore] buildSongDNA failed; falling back to the stock world entirely:', err);
-    paletteProof = { error: String(err?.message || err) };
-  }
-
-  if (dna) {
-    try {
-      const synth = synthesizeSectionPalettes(dna, base.kind || 'world');
-      if (synth.palettes.length) {
-        palettes = synth.palettes;
-        temperature = synth.temperature;
-        cast = (energies, seed) => castBiomes(energies, seed, temperature);
-        paletteProof = { seed: dna.seed, tonicPc: dna.tonicPc, isMajor: dna.isMajor, sections: synth.palettes.length };
-      }
-    } catch (err) {
-      // Palette synthesis is additive — a failure here must never break
-      // world selection, and (see above) must not take terrain shaping
-      // down with it either. Falls back to the base world's stock palette.
-      console.warn('[WorldScore] palette synthesis failed; falling back to the stock palette:', err);
-      paletteProof = { error: String(err?.message || err) };
-    }
-
-    try {
-      // Continuous nudges to the alpine ridgeline's own shape params, so a
-      // song's instrumentation shows up in the skyline it generates and not
-      // only its colors. Additive/optional: BiomeManager falls back to the
-      // stock per-depth character (massif/range/crags) untouched when absent.
-      const grammar = buildShapeGrammar(dna);
-      terrainMods = deriveTerrainParams(grammar);
-      // WHICH landform each depth layer gets, not just how that landform is
-      // shaped -- see ShapeGrammar.pickCharacterScheme. Also falls back to
-      // the stock massif/range/crags triple when absent.
-      characterScheme = CHARACTER_SCHEMES[pickCharacterScheme(grammar)];
-    } catch (err) {
-      console.warn('[WorldScore] terrain-shape derivation failed; falling back to the stock terrain:', err);
-    }
-  }
-
-  const world = {
-    id: 'custom',
-    name: base.name,
-    tagline: base.tagline,
-    kind: base.kind,
-    aerial: base.aerial,
-    custom: true,
-    baseId: base.id,
-    comfort,
-    channels,
-    prefer,
-    affinity,
-    palettes,
-    temperature,
-    cast,
-    terrainMods,
-    characterScheme,
-  };
-
-  const proof = proveScore(feat, world);
-  proof.dna = paletteProof;
-  return { world, proof, baseId: base.id };
+  const adapted = adaptWorld(base, data?.profile || feat, { ...(data || {}), profile: data?.profile });
+  const proof = proveScore(feat, adapted.world);
+  proof.dna = adapted.proof?.dna || null;
+  proof.degraded = adapted.degraded;
+  return { world: adapted.world, proof, baseId: base.id };
 }
 
 /**
- * Preserve the automatic choice for callers that want one. The chooser can
- * instead call buildWorldVariant with the world the player picked.
+ * Choose-for-me constructor: score, then adapt the winner. Not a privileged
+ * gallery card — the chooser calls buildWorldVariant with the picked world.
  */
 export function buildCustomWorld(features, data = null) {
   const feat = features && typeof features.drive === 'number'
@@ -310,9 +205,9 @@ function proveScore(features, world) {
   const shape = shapeFit(features, world.prefer);
   const rawAffinity = affinityScore(features, world);
 
-  // Theoretical maximums: the best any world could achieve on these
-  // features. The custom world's channels/affinity are constructed to
-  // hit these, so the normalized ratios are 1.0.
+  // Theoretical maximums: the best any channel/affinity layout could
+  // achieve on these features. Adapted worlds keep the base world's
+  // layout, so the ratios are a diagnostic, not a constructed 1.0.
   const maxCov = coverageScore(features, buildOptimalChannels(features));
   const maxAff = affinityScore(features, { affinity: buildOptimalAffinity(features) });
 

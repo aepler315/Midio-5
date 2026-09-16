@@ -12,7 +12,7 @@ import { windowOccupancy } from './CitySilhouette.js';
 import { boundaryLift01, cityGlow, windowGlowAlpha } from './CityGlow.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
-import { sampleWorldMusic } from '../WorldMusic.js';
+import { sampleManagerMusic } from '../WorldMusic.js';
 import { hexToRgb } from '../../utils/color.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
@@ -60,8 +60,7 @@ function blitWindows(ctx, canvas, strip, scrollX, yOff, glow, music, reducedFlas
 
 export function drawCityWorld(mgr, frame) {
   const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
-  const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
-    rhythm: mgr.worldRhythm, section: mgr.sections?.[mgr._lastSectionIdx], reducedFlash: mgr.reducedFlash });
+  const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const night = 1;
   mgr._drawSky(ctx, canvas, A, B, t, night);
 
