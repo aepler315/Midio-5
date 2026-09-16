@@ -57,7 +57,8 @@ function blitWindows(ctx, canvas, strip, scrollX, yOff, occ, music, reducedFlash
   ctx.restore();
 }
 
-export function drawCityWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage = null) {
+export function drawCityWorld(mgr, frame) {
+  const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
   const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
     rhythm: mgr.worldRhythm, section: mgr.sections?.[mgr._lastSectionIdx], reducedFlash: mgr.reducedFlash });
   const night = 1;
