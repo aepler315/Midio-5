@@ -33,8 +33,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying
+  validate:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test.yml
+
   deploy:
+    needs: validate
+    if: github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  fingerprintMono, fingerprintKey, bitErrorRate, bestAlignment, sameRecording,
+  fingerprintBuffer, fingerprintMono, fingerprintKey, bitErrorRate, bestAlignment, sameRecording,
   bandEdges, toMono, resampleMono, MATCH_BER, FP_BITS, FP_RATE, FP_WINDOW,
 } from '../src/audio/SongFingerprint.js';
 
@@ -206,4 +206,31 @@ test('the key is printable, prefixed, and length-sensitive', () => {
   const key = fingerprintKey(a.frames);
   assert.match(key, /^fp1_[0-9a-f]{24}$/);
   assert.notEqual(key, fingerprintKey(a.frames.subarray(0, a.frames.length - 1)));
+});
+
+function stereoBuffer(left, right) {
+  return { length: left.length, duration: left.length / RATE, sampleRate: RATE,
+    numberOfChannels: 2, getChannelData: (c) => c ? right : left };
+}
+
+test('opposite-phase stereo retains recording identity rather than collapsing to silence', () => {
+  const a = makeSong(2, 1), b = makeSong(2, 99);
+  const inverted = (v) => Float32Array.from(v, (x) => -x);
+  const fa = fingerprintBuffer(stereoBuffer(a, inverted(a)));
+  const fb = fingerprintBuffer(stereoBuffer(b, inverted(b)));
+  assert.notEqual(fa.key, fb.key);
+  assert.deepEqual(fa.frames, fingerprintBuffer(stereoBuffer(a, a)).frames);
+});
+
+test('silent and too-short recordings cannot supply an authoritative cache key', () => {
+  for (const n of [10, RATE * 2]) {
+    const silence = new Float32Array(n);
+    assert.equal(fingerprintBuffer(stereoBuffer(silence, silence)).key, null);
+  }
+});
+
+
+test('near-silent fingerprints cannot reuse an audible recording analysis', () => {
+  const quiet = Float32Array.from(makeSong(2), (x) => x * 2 ** -60);
+  assert.equal(fingerprintBuffer(stereoBuffer(quiet, quiet)).key, null);
 });

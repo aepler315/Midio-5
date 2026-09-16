@@ -47,7 +47,8 @@ function decodeRequestPath(rawUrl) {
   } catch {
     return null;
   }
-  if (!reqPath.startsWith('/')) return null;
+  if (!reqPath.startsWith('/') || reqPath.includes('\\')
+    || [...reqPath].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) return null;
   if (reqPath === '/') return '/index.html';
   // Reject traversal and dotfiles before resolving. A string-prefix check on
   // a resolved path accepts same-prefix siblings such as `app-private`.
@@ -94,7 +95,7 @@ async function handleApi(req, res, reqPath) {
   return false;
 }
 
-const server = http.createServer(async (req, res) => {
+async function handleRequest(req, res) {
   const reqPath = decodeRequestPath(req.url);
   if (!reqPath) {
     sendJson(res, 400, { error: 'Malformed or forbidden path' });
@@ -139,7 +140,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const relative = path.relative(ROOT, realPath);
-    if (relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    const publicPath = '/' + relative.split(path.sep).join('/');
+    if (relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)
+      || publicPath.split('/').some((segment) => segment.startsWith('.'))
+      || !staticPath(publicPath)) {
       res.writeHead(403, { 'Content-Type': 'text/plain' });
       res.end('Forbidden');
       return;
@@ -154,6 +158,14 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
       res.end(data);
     });
+  });
+}
+
+const server = http.createServer((req, res) => {
+  handleRequest(req, res).catch((err) => {
+    console.error('[request failed]', err);
+    if (res.headersSent) res.destroy();
+    else sendJson(res, 500, { error: 'Internal server error' });
   });
 });
 
@@ -223,7 +235,7 @@ async function handleSoulseekRoute(req, res, reqPath) {
 
   const searchMatch = reqPath.match(/^\/api\/soulseek\/search\/([^/]+)$/);
   if (searchMatch && req.method === 'GET') {
-    const data = getSearch(decodeURIComponent(searchMatch[1]));
+    const data = getSearch(searchMatch[1]);
     if (!data) {
       sendJson(res, 404, { error: 'Search not found' });
       return;

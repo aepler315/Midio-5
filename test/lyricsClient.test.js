@@ -123,3 +123,19 @@ test('fetchLyricsCached: caches a successful result and skips the network on the
   assert.equal(calls, 1, 'the second call must be served from cache, not the network');
   assert.deepEqual(second, first);
 });
+
+for (const [title, artist] of [['Unrelated', 'Someone Else'], ['Song', 'Someone Else'], ['Unrelated', 'Artist']]) {
+  test(`search rejects identity mismatch: ${title} / ${artist}`, async () => {
+    const result = await fetchLyrics({ title: 'Song', artist: 'Artist', durationSec: 180 },
+      async (url) => url.includes('/api/get') ? fakeResponse(false, null) : fakeResponse(true,
+        [{ trackName: title, artistName: artist, duration: 180, plainLyrics: 'wrong' }]));
+    assert.equal(result, null);
+  });
+}
+
+test('search compares non-Latin identities without treating all names as empty', async () => {
+  const result = await fetchLyrics({ title: '夜空', artist: '歌手', durationSec: 180 },
+    async (url) => url.includes('/api/get') ? fakeResponse(false, null) : fakeResponse(true,
+      [{ trackName: '海辺', artistName: '別人', duration: 180, plainLyrics: 'wrong' }]));
+  assert.equal(result, null);
+});
