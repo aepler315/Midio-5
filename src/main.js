@@ -956,7 +956,7 @@ function worldCardEl({
   card.dataset.baseWorldId = worldId;
   card.tabIndex = 0;
   card.setAttribute('role', 'listitem');
-  card.setAttribute('aria-label', `${name}. ${tagline}`);
+  card.setAttribute('aria-label', `${name}. ${tagline}. Preview or play in this world.`);
 
   const preview = document.createElement('div');
   preview.className = `worldCardPreview ${kind}`;
@@ -995,11 +995,13 @@ function worldCardEl({
   previewBtn.type = 'button';
   previewBtn.className = 'worldCardPreviewBtn';
   previewBtn.textContent = 'Preview';
+  previewBtn.setAttribute('aria-label', `Preview ${name}`);
   previewBtn.setAttribute('aria-pressed', 'false');
   const playBtn = document.createElement('button');
   playBtn.type = 'button';
   playBtn.className = 'worldCardPlayBtn';
   playBtn.textContent = 'Play';
+  playBtn.setAttribute('aria-label', `Play in ${name}`);
   actions.appendChild(previewBtn);
   actions.appendChild(playBtn);
   card.appendChild(actions);
@@ -1044,7 +1046,7 @@ function offerWorldsThenStart(data, extra = {}) {
     startChooserPreviews();
   } catch (err) {
     // The grid is a convenience; analysis failing must still start a song.
-    console.error('[world score]', err);
+    console.error('[world chooser]', err);
     pendingWorldStart = { data, extra };
     lastFitDiagnostic = null;
     confirmWorld(data.worldId || lastWorldId || DEFAULT_WORLD_ID);

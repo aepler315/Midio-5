@@ -1,4 +1,4 @@
-// Upload audio through the file chooser, analyse it, build a custom world,
+// Upload audio through the file chooser, analyse it, pick a world,
 // render advancing playback, pause/resume, and stop. Start npm start first.
 // Usage: node tools/smoke.mjs [url] [outDir]
 import assert from 'node:assert/strict';

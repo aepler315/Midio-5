@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Rhythm side-scroller with free song search + optional Soulseek (bundled slskd, no API keys in the UI).",
+  "description": "Browser music visualizer: drop a song, pick a world, watch it play itself.",
   "scripts": {
     "start": "node tools/serve.js",
     "dev": "node tools/serve.js 8080",

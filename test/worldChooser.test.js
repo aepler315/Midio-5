@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildWorldChoices } from '../src/ui/WorldChooser.js';
 
 const WORLDS = [
@@ -37,4 +40,19 @@ test('chooser uses each registered world directly when there is no tailored vari
     { worldId: 'nocturne', playWorldId: 'nocturne' },
     { worldId: 'cathode', playWorldId: 'cathode' },
   ]);
+});
+
+test('chooser copy never ranks worlds or mentions a score', () => {
+  const html = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'index.html'), 'utf8');
+  const start = html.indexOf('id="worldSelect"');
+  const end = html.indexOf('id="hud"');
+  assert.ok(start >= 0 && end > start);
+  const chooser = html.slice(start, end);
+  assert.match(chooser, /Choose how your song looks/);
+  assert.match(chooser, /Choose for me/);
+  assert.match(chooser, /not a ranking/i);
+  assert.match(chooser, /Cathode is always a hand pick/);
+  assert.equal(/%|\bscore\b|\bbest match\b|\bwinner\b/i.test(chooser), false);
+  const title = html.match(/class="titleTagline"[^>]*>([^<]+)/)[1];
+  assert.match(title, /Pick a world/);
 });

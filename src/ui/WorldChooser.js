@@ -1,7 +1,7 @@
 /**
- * Build the stable gallery shown after a song is analyzed. A generated world
- * is an interpretation of one registered world, so it replaces that world's
- * play target instead of creating a second, competing card.
+ * Build the stable gallery shown after a song is analyzed. Each registered
+ * world gets one equal card. A tailored instance (id `custom`) is that
+ * card's play target, never a second competing card, and never a score.
  */
 import { describeWorldResponse } from './WorldPreview.js';
 

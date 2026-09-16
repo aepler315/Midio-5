@@ -2,13 +2,14 @@
 //
 // A biome is a palette that rotates inside a world. A world is the landform
 // contract those palettes paint onto — alpine ranges vs a night city vs
-// whatever comes next. The registry is the future-proof seam: add a world
-// object, a silhouette profile, and a draw path, and the select screen
-// plus the match scorer pick it up with no other wiring.
+// a CRT. The registry is the seam: add a world object, a silhouette
+// profile, and a draw path, and the chooser plus private recommendation
+// pick it up with no other wiring.
 //
-// Match % is NOT genre ("this is a city-pop song"). It is watchability:
-// would this world's visual suite produce a show that sits in a sweet
-// spot for THIS song — enough going on, not clipping into noise.
+// Choose-for-me is not genre ("this is a city-pop song"). It is private
+// post-adaptation fit: would this world's response to THIS song sit in a
+// sweet spot — enough going on, not clipping into noise. The gallery
+// never shows that number. Cathode stays a manual pick.
 import { BIOMES } from './BiomeProfiles.js';
 import { BIOME_TEMPERATURE, castBiomes } from './Dramaturgy.js';
 import { CITY_PALETTES, CITY_TEMPERATURE } from './city/CityPalettes.js';
