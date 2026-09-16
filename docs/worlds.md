@@ -5,7 +5,7 @@ below retain the original art direction; they are not a feature checklist.
 The chooser presents equal choices and tailors each selected painterly world
 to the song. Cathode keeps its separate pixel renderer.
 
-### Musical behavior: The Range, After Hours, Fathom, Redline, Foundry, Far Side, Understory, Nave
+### Musical behavior: The Range, After Hours, Fathom, Redline, Foundry, Far Side, Understory, Nave, Cathode
 
 The painterly worlds share a small set of controls from
 `WorldMusic.js`, while interpreting those controls differently:
@@ -64,9 +64,18 @@ The painterly worlds share a small set of controls from
   do not invent a chorus -- every bay follows bass equally (broad phrasing).
   Inferred structure is worth half a measured one. Earned phrase openings lift
   the motif bays.
+- **Cathode:** a CRT, not a mountain. Raster travel is the 1.2s energy
+  average -- quiet crawls, a groove cruises, dense material drops to half-time
+  so the floor does not strobe. Phosphor weight is bass. Isolated accents flash
+  the boss screen; a locked 170 BPM grid does not strobe the sprite -- dense
+  material only keeps the flinch when the beat also earned a hit. Returning
+  labels pick a scan motif; decorative cuts keep the default raster. Reduced
+  flash kills the flinch, the tear and the screen hit. Manual choice stays
+  manual; nothing here clones a painterly bloom.
 - **Reduced motion:** the new current sway, traffic travel and hammer drop are
-  suppressed, local accents are softened, cruise rate and ridge travel are
-  halved, pours and phrase-scale lifts are tempered, additive layers fall
+  suppressed, local accents are softened, cruise rate, ridge travel and raster
+  rate are halved, pours and phrase-scale lifts are tempered, Cathode's flinch
+  and tear are suppressed, additive layers fall
   back to non-additive compositing. Existing world/character motion remains
   governed by the existing controls.
 
