@@ -145,8 +145,8 @@ export function describeWorldResponse(kind, features = {}, extras = {}) {
         : 'Broad phrasing. Weak structure does not mint a motif.';
     case 'cathode':
       return onset > 0.35
-        ? 'Beats become sprites. Four colors, no painterly glow.'
-        : 'A four-color machine. Sparse hits stay readable.';
+        ? 'Beats become sprites. Dense hits are filtered so the tube does not strobe.'
+        : 'A four-color machine. Sparse hits stay readable. No painterly glow.';
     default:
       return contrast + form > 0.8
         ? 'The scene follows measured contrast and shape, not a guessed genre.'
