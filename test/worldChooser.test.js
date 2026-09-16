@@ -8,17 +8,25 @@ const WORLDS = [
   { id: 'cathode', name: 'Cathode', tagline: 'A machine dreaming in four colors.', kind: 'cathode', manualOnly: true },
 ];
 
+function ids(choices) {
+  return choices.map(({ worldId, playWorldId, name, tagline, kind }) => ({
+    worldId, playWorldId, name, tagline, kind,
+  }));
+}
+
 test('chooser replaces a tailored base world instead of adding a duplicate card', () => {
   const choices = buildWorldChoices(WORLDS, {
     id: 'custom', baseId: 'alpine', name: 'The Range',
     tagline: 'Mountains that breathe with the mix.', kind: 'alpine',
   });
 
-  assert.deepEqual(choices, [
+  assert.deepEqual(ids(choices), [
     { worldId: 'alpine', playWorldId: 'custom', name: 'The Range', tagline: 'Mountains that breathe with the mix.', kind: 'alpine' },
     { worldId: 'nocturne', playWorldId: 'nocturne', name: 'After Hours', tagline: 'A city that glows with the groove.', kind: 'city' },
     { worldId: 'cathode', playWorldId: 'cathode', name: 'Cathode', tagline: 'A machine dreaming in four colors.', kind: 'cathode' },
   ]);
+  assert.equal(choices.every((c) => typeof c.description === 'string' && c.description.length > 0), true);
+  assert.equal(choices[2].manualOnly, true);
 });
 
 test('chooser uses each registered world directly when there is no tailored variant', () => {

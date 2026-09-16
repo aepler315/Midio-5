@@ -71,6 +71,15 @@ with seed 315, checks world selection, actual rhythm delivery, composed frames,
 energy response, backward seeking and reduced motion, and saves screenshots
 plus a JSON report under `.smoke/worlds/`.
 
+The chooser itself now renders a still of the selected world's actual
+configuration at two shared timestamps (a quiet stretch and a peak), so a
+card comparison is a comparison of worlds, not of different moments. Preview
+plays one passage at a time and cannot leak its audio or clock into
+playback. Reduced motion keeps the still and skips the animated clip.
+`node --test test/worldPreview.test.js test/worldChooser.test.js` pins the
+passage picker, copy, cache, and one-at-a-time session. `tools/smoke-world-chooser.mjs`
+covers the live picker.
+
 It also runs a **per-pass paint audit**: it wraps individual draw passes,
 renders one frame at a pinned full-quality perf rung, and records how many
 stage pixels each pass actually changed. A pass that runs and paints nothing

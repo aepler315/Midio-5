@@ -36,18 +36,21 @@ import { TitleBackdrop } from './ui/TitleBackdrop.js';
 import { clientToStageCoords } from './ui/StageCoords.js';
 import { cssVarMap } from './render/spectral.js';
 import { resolveDurationMs } from './core/SongDuration.js';
-import { formatSeed, parseSeed } from './utils/seed.js';
+import { formatSeed, parseSeed, resolveSongSeed } from './utils/seed.js';
 import { resolveIdentity } from './lyrics/SongIdentity.js';
 import { groundLyrics, hasUsableLyrics } from './lyrics/LyricGrounding.js';
 import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
 import { visualNow, VISUAL_LEAD_MS } from './core/ChoreoClock.js';
-import { extractWatchFeatures, buildCustomWorld, buildWorldVariant } from './world/WorldScore.js';
+import { extractWatchFeatures, buildCustomWorld, buildWorldVariant, scoreWorlds } from './world/WorldScore.js';
 import {
   DEFAULT_WORLD_ID, setCustomWorld, clearCustomWorld, getWorld, listWorlds,
 } from './world/Worlds.js';
-import { buildWorldChoices } from './ui/WorldChooser.js';
+import { buildWorldChoices, moveChoiceIndex } from './ui/WorldChooser.js';
+import {
+  PreviewSession, loadPreviewRenderer,
+} from './ui/WorldPreview.js';
 import { fingerprintBuffer } from './audio/SongFingerprint.js';
 import { packBundle, unpackBundle } from './audio/AnalysisBundle.js';
 import { getBundle, putBundle } from './audio/AnalysisCache.js';
@@ -96,6 +99,9 @@ const fileInputEl = document.getElementById('fileInput');
 const worldSelectEl = document.getElementById('worldSelect');
 const worldSelectGridEl = document.getElementById('worldSelectGrid');
 const worldSelectBackEl = document.getElementById('worldSelectBack');
+const worldPassageQuietEl = document.getElementById('worldPassageQuiet');
+const worldPassagePeakEl = document.getElementById('worldPassagePeak');
+const worldChooseForMeEl = document.getElementById('worldChooseForMe');
 const progressEl = document.getElementById('progressText');
 const hudEl = document.getElementById('hud');
 const hudRightEl = document.getElementById('hudRight');
@@ -282,6 +288,7 @@ let lastTimelineData = null;
 let lastAudioBuffer = null;
 let lastWorldId = DEFAULT_WORLD_ID;
 let pendingWorldStart = null;
+let previewSession = null;
 let lastSongName = 'song';
 let lastSongSeed = null; // 32-bit seed used for the run that just finished
 
@@ -823,6 +830,7 @@ function stopTimeline() {
   debugOverlayEl.classList.add('hidden');
   auditionPanelEl?.classList.add('hidden');
   worldSelectEl?.classList.add('hidden');
+  stopWorldPreview();
 }
 
 function updatePauseButtonUI() {
@@ -854,25 +862,109 @@ function backToTitle() {
   completePanelEl.classList.add('hidden');
   hudEl.classList.add('hidden');
   worldSelectEl?.classList.add('hidden');
+  stopWorldPreview();
   pendingWorldStart = null;
   progressEl.classList.add('hidden');
   loaderEl.classList.remove('hidden');
   startTitleBackdrop();
 }
 
-/** One card for the select grid. `kind` drives the preview swatch (see
- * .worldCardPreview.<kind> in style.css). */
+function stopWorldPreview() {
+  if (!previewSession) return;
+  previewSession.cancel();
+  previewSession = null;
+}
+
+function applyWorldStill(worldId, dataUrl) {
+  const card = worldSelectGridEl?.querySelector(`[data-base-world-id="${worldId}"]`);
+  if (!card || !dataUrl) return;
+  const still = card.querySelector('.worldCardStill');
+  const preview = card.querySelector('.worldCardPreview');
+  if (!still || !preview) return;
+  still.src = dataUrl;
+  still.classList.remove('hidden');
+  preview.classList.add('is-rendered');
+}
+
+function setPreviewingCard(worldId) {
+  worldSelectGridEl?.querySelectorAll('.worldCard').forEach((card) => {
+    const on = card.dataset.baseWorldId === worldId;
+    card.classList.toggle('is-previewing', on);
+    const live = card.querySelector('.worldCardLive');
+    if (live && !on) live.classList.add('hidden');
+    const btn = card.querySelector('.worldCardPreviewBtn');
+    if (btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+
+function showPreviewFrame(worldId, source) {
+  const card = worldSelectGridEl?.querySelector(`[data-base-world-id="${worldId}"]`);
+  const live = card?.querySelector('.worldCardLive');
+  if (!live || !source) return;
+  const ctx = live.getContext('2d');
+  if (!ctx) return;
+  if (live.width !== source.width) live.width = source.width;
+  if (live.height !== source.height) live.height = source.height;
+  ctx.drawImage(source, 0, 0);
+  live.classList.remove('hidden');
+}
+
+function syncPassageButtons() {
+  const which = previewSession?.passage || 'peak';
+  worldPassageQuietEl?.setAttribute('aria-pressed', which === 'quiet' ? 'true' : 'false');
+  worldPassagePeakEl?.setAttribute('aria-pressed', which === 'peak' ? 'true' : 'false');
+}
+
+function previewAudioHandlers() {
+  let src = null;
+  const stop = () => {
+    if (!src) return;
+    try { src.stop(); } catch { /* already stopped */ }
+    try { src.disconnect(); } catch { /* ignore */ }
+    src = null;
+  };
+  const play = (offsetSec, durationSec) => {
+    stop();
+    const buffer = pendingWorldStart?.extra?.playBuffer;
+    const ctx = audioEngine?.ctx;
+    if (!buffer || !ctx) return;
+    const node = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    node.buffer = buffer;
+    node.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.value = 0.72;
+    const start = Math.max(0, offsetSec || 0);
+    const dur = Math.max(0.2, durationSec || 8);
+    node.start(0, start, dur);
+    src = node;
+    node.onended = () => { if (src === node) src = null; };
+  };
+  return { play, stop };
+}
+
+/** One card for the select grid. CSS swatch is the fallback until a real
+ *  still from this song's world instance is ready. */
 function worldCardEl({
-  worldId, playWorldId, name, tagline, kind,
+  worldId, playWorldId, name, tagline, kind, description,
 }) {
-  const card = document.createElement('button');
-  card.type = 'button';
+  const card = document.createElement('article');
   card.className = 'worldCard';
   card.dataset.worldId = playWorldId;
   card.dataset.baseWorldId = worldId;
+  card.tabIndex = 0;
+  card.setAttribute('role', 'listitem');
+  card.setAttribute('aria-label', `${name}. ${tagline}`);
 
   const preview = document.createElement('div');
   preview.className = `worldCardPreview ${kind}`;
+  const still = document.createElement('img');
+  still.className = 'worldCardStill hidden';
+  still.alt = '';
+  const live = document.createElement('canvas');
+  live.className = 'worldCardLive hidden';
+  preview.appendChild(still);
+  preview.appendChild(live);
   card.appendChild(preview);
 
   const top = document.createElement('div');
@@ -888,21 +980,42 @@ function worldCardEl({
   tag.textContent = tagline;
   card.appendChild(tag);
 
+  if (description) {
+    const why = document.createElement('p');
+    why.className = 'worldCardWhy';
+    why.textContent = description;
+    card.appendChild(why);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'worldCardActions';
+  const previewBtn = document.createElement('button');
+  previewBtn.type = 'button';
+  previewBtn.className = 'worldCardPreviewBtn';
+  previewBtn.textContent = 'Preview';
+  previewBtn.setAttribute('aria-pressed', 'false');
+  const playBtn = document.createElement('button');
+  playBtn.type = 'button';
+  playBtn.className = 'worldCardPlayBtn';
+  playBtn.textContent = 'Play';
+  actions.appendChild(previewBtn);
+  actions.appendChild(playBtn);
+  card.appendChild(actions);
+
   return card;
 }
 
 /** Fill the select grid with one equal-choice card per registered world. */
-function renderWorldGrid(customWorld) {
+function renderWorldGrid(customWorld, features = null, extras = {}) {
   if (!worldSelectGridEl) return;
   worldSelectGridEl.textContent = '';
-  for (const choice of buildWorldChoices(listWorlds(), customWorld)) {
+  for (const choice of buildWorldChoices(listWorlds(), customWorld, features, extras)) {
     worldSelectGridEl.appendChild(worldCardEl(choice));
   }
 }
 
 function offerWorldsThenStart(data, extra = {}) {
   try {
-    pendingWorldStart = { data, extra };
     const features = extractWatchFeatures({
       energyCurves: data.energyCurves,
       durationMs: data.durationMs,
@@ -910,12 +1023,18 @@ function offerWorldsThenStart(data, extra = {}) {
       analysis: data.analysis,
       structure: data.structure,
     });
-    pendingWorldStart.features = features;
     const { world } = buildCustomWorld(features, data);
     setCustomWorld(world);
+    const seed = resolveSongSeed(
+      { timeline: data.timeline, durationMs: data.durationMs },
+      readPinnedSeed(),
+    );
+    pendingWorldStart = { data, extra, features, seed };
     console.log('[custom world] %s (base: %s)', world.kind, world.baseId);
-    renderWorldGrid(world);
+    const hasLabels = Array.isArray(data.structure?.labels) && data.structure.labels.length > 1;
+    renderWorldGrid(world, features, { hasLabels });
     worldSelectEl?.classList.remove('hidden');
+    startChooserPreviews();
   } catch (err) {
     // The grid is a convenience; analysis failing must still start a song.
     console.error('[world score]', err);
@@ -924,12 +1043,35 @@ function offerWorldsThenStart(data, extra = {}) {
   }
 }
 
-worldSelectGridEl?.addEventListener('click', (e) => {
-  const card = e.target?.closest?.('.worldCard');
-  const baseWorldId = card?.dataset?.baseWorldId;
-  if (!baseWorldId) return;
+function startChooserPreviews() {
+  stopWorldPreview();
+  const pending = pendingWorldStart;
+  if (!pending) return;
+  const audio = previewAudioHandlers();
+  previewSession = new PreviewSession({
+    data: pending.data,
+    features: pending.features,
+    seed: pending.seed,
+    reducedFlash,
+    playAudio: audio.play,
+    stopAudio: audio.stop,
+    onStill: ({ worldId, dataUrl }) => applyWorldStill(worldId, dataUrl),
+    onPreviewStart: ({ worldId }) => setPreviewingCard(worldId),
+    onPreviewFrame: ({ worldId, canvas }) => showPreviewFrame(worldId, canvas),
+    onPreviewEnd: () => setPreviewingCard(null),
+  });
+  syncPassageButtons();
+  loadPreviewRenderer().then(() => {
+    if (previewSession && pendingWorldStart === pending) previewSession.enqueueAll();
+  }).catch((err) => console.warn('[world preview] renderer failed', err));
+}
+
+function playSelectedWorld(baseWorldId) {
   const baseWorld = listWorlds().find((world) => world.id === baseWorldId);
   if (!baseWorld) return;
+
+  // Preview audio/timing must not leak into the performance.
+  if (previewSession) previewSession.stopPreview();
 
   // Cathode owns a separate pixel renderer, so it remains an intentional
   // manual selection. Every painterly world gets its own variant of this
@@ -956,13 +1098,79 @@ worldSelectGridEl?.addEventListener('click', (e) => {
     clearCustomWorld();
     confirmWorld(baseWorldId);
   }
+}
+
+function previewSelectedWorld(baseWorldId) {
+  if (!previewSession) return;
+  loadPreviewRenderer().then(() => {
+    if (previewSession) previewSession.preview(baseWorldId);
+  }).catch((err) => {
+    console.warn('[world preview]', err);
+  });
+}
+
+function chooseRecommendedWorld() {
+  const pending = pendingWorldStart;
+  if (!pending?.features) return;
+  const ranked = scoreWorlds(pending.features);
+  const id = ranked[0]?.id;
+  if (id) playSelectedWorld(id);
+}
+
+worldSelectGridEl?.addEventListener('click', (e) => {
+  const previewBtn = e.target?.closest?.('.worldCardPreviewBtn');
+  if (previewBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    const card = previewBtn.closest('.worldCard');
+    if (card?.dataset?.baseWorldId) previewSelectedWorld(card.dataset.baseWorldId);
+    return;
+  }
+  const card = e.target?.closest?.('.worldCard');
+  const baseWorldId = card?.dataset?.baseWorldId;
+  if (!baseWorldId) return;
+  playSelectedWorld(baseWorldId);
 });
+
+worldSelectGridEl?.addEventListener('keydown', (e) => {
+  const cards = [...(worldSelectGridEl?.querySelectorAll('.worldCard') || [])];
+  const current = document.activeElement?.closest?.('.worldCard');
+  const index = Math.max(0, cards.indexOf(current));
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    cards[moveChoiceIndex(index, 1, cards.length)]?.focus();
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    cards[moveChoiceIndex(index, -1, cards.length)]?.focus();
+  } else if (e.key === 'Enter') {
+    if (current?.dataset?.baseWorldId) {
+      e.preventDefault();
+      playSelectedWorld(current.dataset.baseWorldId);
+    }
+  } else if (e.key === 'p' || e.key === 'P' || e.key === ' ') {
+    if (current?.dataset?.baseWorldId && e.target?.classList?.contains('worldCard')) {
+      e.preventDefault();
+      previewSelectedWorld(current.dataset.baseWorldId);
+    }
+  }
+});
+
+worldPassageQuietEl?.addEventListener('click', () => {
+  previewSession?.setPassage('quiet');
+  syncPassageButtons();
+});
+worldPassagePeakEl?.addEventListener('click', () => {
+  previewSession?.setPassage('peak');
+  syncPassageButtons();
+});
+worldChooseForMeEl?.addEventListener('click', () => chooseRecommendedWorld());
 
 
 function confirmWorld(id) {
   const pending = pendingWorldStart;
   pendingWorldStart = null;
   if (!pending) return;
+  stopWorldPreview();
   lastWorldId = id;
   pending.data.worldId = id;
   worldSelectEl?.classList.add('hidden');
@@ -971,11 +1179,13 @@ function confirmWorld(id) {
   audioEngine?.resume?.();
   // A recording already has every voice. The timeline synth (oscillator
   // "keyboard" tones + hat/kick clicks) must not sit on top of it.
-  if (pending.extra?.playBuffer) muteTimelineSynth = true;
-  startTimeline(pending.data, pending.extra);
-  if (pending.extra.playBuffer) {
-    lastAudioBuffer = pending.extra.playBuffer;
-    audioEngine.playBuffer(pending.extra.playBuffer, 0);
+  const extra = { ...(pending.extra || {}) };
+  if (pending.seed != null && extra.songSeed === undefined) extra.songSeed = pending.seed;
+  if (extra.playBuffer) muteTimelineSynth = true;
+  startTimeline(pending.data, extra);
+  if (extra.playBuffer) {
+    lastAudioBuffer = extra.playBuffer;
+    audioEngine.playBuffer(extra.playBuffer, 0);
   }
 }
 
@@ -1601,6 +1811,7 @@ function handleFiles(files) {
   const list = [...(files || [])].filter(Boolean);
   if (!list.length) return;
   worldSelectEl?.classList.add('hidden');
+  stopWorldPreview();
   pendingWorldStart = null;
   showProgress('Reading file…');
   loadAudioFiles(list);

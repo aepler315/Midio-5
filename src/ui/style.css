@@ -1893,7 +1893,9 @@ html, body {
 }
 .worldSelect.hidden { display: none; }
 .worldSelectInner {
-  width: min(720px, 100%);
+  width: min(1100px, 100%);
+  max-height: min(92vh, 960px);
+  overflow: auto;
   padding: var(--space-6) var(--space-6) var(--space-5);
   border-radius: var(--radius-lg);
   background: linear-gradient(165deg, rgba(24, 16, 38, 0.88), rgba(14, 11, 22, 0.92));
@@ -1916,15 +1918,43 @@ html, body {
   letter-spacing: -0.03em;
 }
 .worldSelectHint {
-  margin: 0 0 var(--space-5);
+  margin: 0 0 var(--space-4);
   color: var(--text-secondary);
   font-size: 0.92rem;
   line-height: 1.45;
-  max-width: 52ch;
+  max-width: 62ch;
+}
+.worldSelectToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+}
+.worldSelectPassages {
+  display: inline-flex;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.worldPassageBtn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  min-height: 44px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.worldPassageBtn[aria-pressed="true"] {
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
 }
 .worldSelectGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: var(--space-4);
 }
 .worldSelectBack {
@@ -1960,14 +1990,18 @@ html, body {
               background var(--dur-base) var(--ease-standard);
 }
 .worldCard:hover,
-.worldCard:focus-visible {
+.worldCard:focus-visible,
+.worldCard.is-focused {
   border-color: var(--border-strong);
   background: rgba(255, 255, 255, 0.07);
   transform: translateY(-1px);
   outline: none;
 }
+.worldCard.is-previewing {
+  border-color: var(--spec-gold);
+}
 .worldCardPreview {
-  height: 72px;
+  height: 132px;
   border-radius: var(--radius-sm);
   position: relative;
   overflow: hidden;
@@ -2087,6 +2121,55 @@ html, body {
     44% 62%, 44% 18%, 60% 18%, 60% 48%, 76% 48%, 76% 26%, 88% 26%, 88% 58%, 100% 58%, 100% 100%);
 }
 
+.worldCardPreview.is-rendered::after {
+  display: none;
+}
+.worldCardStill,
+.worldCardLive {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.worldCardStill.hidden,
+.worldCardLive.hidden {
+  display: none;
+}
+.worldCardLive {
+  z-index: 1;
+}
+.worldCardWhy {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  min-height: 2.8em;
+}
+.worldCardActions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+.worldCardActions button {
+  flex: 1;
+  min-height: 44px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.worldCardPreviewBtn {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+.worldCardPlayBtn {
+  background: rgba(255, 215, 106, 0.12);
+  border: 1px solid var(--spec-gold);
+  color: var(--text-primary);
+}
+
 .worldCardTop {
   display: flex;
   align-items: baseline;
@@ -2107,6 +2190,7 @@ html, body {
 @media (max-width: 560px) {
   .worldSelectInner { padding: var(--space-5) var(--space-4); }
   .worldSelectGrid { grid-template-columns: 1fr; }
+  .worldCardPreview { height: 160px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .worldCard { transition: none; }
