@@ -1,4 +1,4 @@
-// Musical controls shared by world draw paths.
+// Musical controls shared by every painterly world draw path.
 // Rhythm comes from the conductor subscription; never invent a beat from BPM.
 // Sampling is causal and stateless, so rendering cannot advance the music.
 import { clamp01, lerp } from '../utils/math.js';
