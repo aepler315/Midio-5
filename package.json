@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node tools/serve.js",
     "dev": "node tools/serve.js 8080",
+    "lint": "eslint src tools test",
     "test": "node --test test/*.js test/*.mjs test/helpers/*.js",
     "test:all": "node --test",
     "test:smoke": "node tools/smoke.mjs",
@@ -21,6 +22,9 @@
     "slsk-client": "^2.0.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.10.0",
+    "globals": "^17.12.0",
     "playwright": "^1.63.0"
   }
 }

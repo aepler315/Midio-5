@@ -29,6 +29,8 @@ jobs:
       - name: Install polygon dependencies
         run: npm ci --no-fund --no-audit
         working-directory: polygon
+      - name: Lint
+        run: npm run lint
       - name: Run test suite
         run: npm test
 
