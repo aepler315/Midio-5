@@ -370,6 +370,51 @@ export function generateDustLanes(seed, count, width, height) {
   return out;
 }
 
+// --- Open clusters ---------------------------------------------------------
+// A resolved cluster is the cheapest way a sky gains DEPTH: a handful of
+// members share a small patch while the rest of the field stays sparse, so
+// the eye reads distance instead of a flat sprinkle. Sit them on the plane
+// (they belong to the disc). Members are faint on purpose -- a bright knot
+// would look like a bug, not a swarm.
+
+/** Compact member swarms in field coordinates. Flatten `members` into the
+ *  star list at draw time; the parent record is only for tests and layout. */
+export function generateOpenClusters(seed, count, width, height) {
+  const rand = mulberry32((seed ^ 0xc1057e) >>> 0 || 1);
+  const out = [];
+  const aspect = width / Math.max(1, height);
+  for (let i = 0; i < count; i++) {
+    const xFrac = 0.10 + rand() * 0.80;
+    const centerY = galacticBandCenterY(xFrac, height)
+      + ((rand() + rand()) - 1) * height * GALACTIC_BAND.halfFrac * 0.35;
+    const n = 11 + Math.floor(rand() * 8);
+    const spread = height * (0.016 + rand() * 0.024);
+    const members = [];
+    for (let k = 0; k < n; k++) {
+      const ang = rand() * Math.PI * 2;
+      const r = spread * Math.sqrt(rand());
+      const mag = 2.6 + rand() * 2.6;
+      const { cls, tempK } = sampleSpectralClass(rand);
+      const rgb = blackbodyRGB(tempK);
+      const x = xFrac * width + Math.cos(ang) * r * aspect * 0.55;
+      const y = centerY + Math.sin(ang) * r;
+      members.push({
+        x: Math.max(0, Math.min(width, x)),
+        y: Math.max(0, Math.min(height, y)),
+        cls, tempK, mag,
+        brightness: magnitudeToBrightness01(mag),
+        sizePx: sizeForMagnitude(mag),
+        hue: rgbToHue(rgb),
+        rgb,
+        phase: rand() * Math.PI * 2,
+        altitude01: 1 - clamp01(y / height),
+      });
+    }
+    out.push({ x: xFrac * width, y: Math.max(0, Math.min(height, centerY)), members });
+  }
+  return out;
+}
+
 // --- Deep-sky objects ------------------------------------------------------
 // A handful of faint non-stellar smudges. The astronomy that makes this read
 // as a real sky rather than set dressing is WHERE each kind is allowed to

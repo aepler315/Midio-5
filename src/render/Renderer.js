@@ -29,7 +29,7 @@ import { quantizeCanvas } from './PaletteQuantize.js';
 // headroom to spare. See Renderer.draw's stageW/stageH derivation.
 const SHAKE_MARGIN_PX = 64;
 
-const MIDIO_DRAW_SCALE = 2.15; // render-only; physics footprint stays 23px half-width
+const MIDIO_DRAW_SCALE = 1.935; // 10% smaller than 2.15; physics footprint stays 23px half-width
 
 // Fever aura: a screen-edge glow that only shows up once the player's earned
 // it -- silent below the threshold so it never competes with the vignette
