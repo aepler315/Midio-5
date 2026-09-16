@@ -187,6 +187,11 @@ node --test "test/*.test.js" "test/*.test.mjs"
 To score section boundaries and repeat labels against a held-out annotated
 corpus, see [audio-analysis evaluation](docs/analysis-evaluation.md).
 
+To review whether worlds actually look good — same quiet / transition / peak
+in every world, scores hidden — see
+[world quality evaluation](docs/world-quality-evaluation.md).
+
+
 ### Current browser smoke check
 
 Install Chromium once and start the app:

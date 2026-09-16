@@ -13,6 +13,7 @@
     "test:smoke": "node tools/smoke.mjs",
     "test:worlds": "node tools/worlds-smoke.mjs",
     "bench:sections": "node tools/benchmark-segmentation.mjs",
+    "eval:worlds": "node tools/evaluate-worlds.mjs",
     "slskd": "docker compose up -d slskd",
     "slskd:down": "docker compose down",
     "slskd:logs": "docker compose logs -f slskd",
