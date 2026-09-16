@@ -4,7 +4,7 @@
 // a pitch class 0..11), and the whole vector hashes into a seed that makes
 // downstream generation deterministic for the same song.
 import { clamp01, hashSeed } from '../../utils/math.js';
-import { extractWatchFeatures } from '../WorldScore.js';
+import { buildSongProfile, PROFILE_VERSION } from '../../audio/SongProfile.js';
 import { Role } from '../../core/NoteEvent.js';
 
 // Krumhansl-Schmuckler key profiles — duration-weighted pitch-class
@@ -152,12 +152,15 @@ function bucketByBar(timeline, barGrid, durationMs) {
  * full DNA — tonal fields fall back to neutral/energy-derived proxies.
  */
 export function buildSongDNA(data = {}) {
-  const { energyCurves = null, durationMs = 0, bpm = 0, analysis = null, structure = null } = data;
+  const { durationMs = 0, bpm = 0, structure = null } = data;
   const timeline = Array.isArray(data.timeline) ? data.timeline : [];
   const barGrid = data.barGrid;
   const dur = Math.max(1, durationMs || 1);
 
-  const watch = extractWatchFeatures({ energyCurves, durationMs, bpm, analysis, structure });
+  const profile = data.profile?.version === PROFILE_VERSION
+    ? data.profile
+    : buildSongProfile(data);
+  const watch = profile.watch;
 
   let tonicPc = 0, isMajor = true, keyConfidence = 0.3;
   let meanPitch01 = 0.5, registerSpread = 0.3, noteDensity = 0.3, velocityRange = 0.3;
@@ -247,6 +250,17 @@ export function buildSongDNA(data = {}) {
       const avgDistinct = nonEmpty.reduce((s, b) => s + b.size, 0) / nonEmpty.length;
       harmonicComplexity = clamp01(avgDistinct / 7);
     }
+  } else if (profile.tonal?.source === 'audio-chroma' && Number.isFinite(profile.tonal.tonic)) {
+    // Recorded-audio chroma is a real measurement. Do not re-estimate a key
+    // from placeholder event-lane pitches, and do not treat a spectral
+    // centroid as a detected tonic.
+    tonicPc = profile.tonal.tonic;
+    isMajor = profile.tonal.mode !== 'minor';
+    keyConfidence = profile.tonal.confidence;
+    meanPitch01 = watch.centroid;
+    registerSpread = watch.spread;
+    harmonicComplexity = clamp01(watch.contrast);
+    registerTrend = watch.trend ?? 0;
   } else {
     // Nothing pitched to read (audio-only upload with no melodic content, or
     // a drum-only timeline): derive tonal-ish proxies from spectral features

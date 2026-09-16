@@ -223,3 +223,27 @@ test('the packed bundle is JSON-serializable and far smaller than the raw analys
   // IndexedDB and any future transport will do to it.
   assert.ok(unpackBundle(JSON.parse(json)));
 });
+
+test('song profile confidence survives a bundle round-trip; old bundles without one still unpack', () => {
+  const src = makeAnalysis();
+  const packed = packBundle(src, { fingerprint: FP });
+  assert.equal(packed.v, BUNDLE_VERSION);
+  assert.equal(packed.songProfile.version, 1);
+  assert.ok(Number.isFinite(packed.songProfile.confidence.tempo));
+  assert.ok(Number.isFinite(packed.songProfile.confidence.key));
+  const out = unpackBundle(packed);
+  assert.equal(out.songProfile.watch.bpm, src.bpm);
+  assert.equal(out.confidence, src.confidence);
+
+  const legacy = { ...packed };
+  delete legacy.songProfile;
+  const old = unpackBundle(legacy);
+  assert.ok(old, 'a v3 bundle without a profile must still restore');
+  assert.equal(old.songProfile, null);
+  assert.equal(old.durationMs, src.durationMs);
+
+  const future = { ...packed, songProfile: { ...packed.songProfile, version: packed.songProfile.version + 1 } };
+  const dropped = unpackBundle(future);
+  assert.ok(dropped, 'a v3 bundle with an unknown profile version must still restore');
+  assert.equal(dropped.songProfile, null);
+});

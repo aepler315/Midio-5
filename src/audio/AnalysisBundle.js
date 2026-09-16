@@ -32,6 +32,7 @@ import { EnergyCurves } from './EnergyCurves.js';
 import { BANDS } from './bands.js';
 import { Role } from '../core/NoteEvent.js';
 import { Lane } from '../core/Casting.js';
+import { buildSongProfile, snapshotSongProfile, PROFILE_VERSION } from './SongProfile.js';
 
 /** Bump when the shape changes incompatibly. `unpackBundle` refuses a
  *  version it does not know rather than misreading it, because a bundle
@@ -203,6 +204,18 @@ export function packBundle(data, { fingerprint, name = '', identity = null } = {
       pan: bytesToB64(new Uint8Array(pan.buffer, pan.byteOffset, pan.length)),
       lane: bytesToB64(lane),
     },
+    // Optional. Old v3 bundles omit it and unpack still works; a mismatched
+    // profile version is dropped so the caller rebuilds from the analysis.
+    songProfile: (() => {
+      try {
+        const live = data.songProfile?.version === PROFILE_VERSION
+          ? data.songProfile
+          : buildSongProfile(data);
+        return snapshotSongProfile(live);
+      } catch {
+        return null;
+      }
+    })(),
   };
 }
 
@@ -313,6 +326,7 @@ export function unpackBundle(bundle) {
         })()
         : null,
       stems: bundle.stems || null,
+      songProfile: bundle.songProfile?.version === PROFILE_VERSION ? bundle.songProfile : null,
       /** Set so the rest of the app can tell a restored analysis from a fresh
        *  one -- for the progress copy, and so a bug here is attributable. */
       fromBundle: true,

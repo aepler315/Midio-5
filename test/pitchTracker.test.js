@@ -4,6 +4,7 @@ import {
   computePitchFeatures, chromaHistogram, melodyPitchAt, estimateBassPitchAt,
   tonalityFrom, tonalityTimeline, meanBrightness, windowChroma, midiToHz, fft,
 } from '../src/audio/PitchTracker.js';
+import { buildSongProfile } from '../src/audio/SongProfile.js';
 
 const SR = 44100;
 
@@ -130,4 +131,15 @@ test('tonalityTimeline provides a causal, confident key stream from spectral chr
   assert.equal(late.tonic, 0, `expected C tonic, got ${late.tonic}`);
   assert.equal(late.mode, 'major');
   assert.ok(late.confidence > 0, 'a sustained triad should carry nonzero confidence');
+});
+
+test('ambiguous pitch becomes low key confidence on the song profile, not a fake tonic fact', () => {
+  const flat = tonalityFrom([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+  assert.ok(flat.confidence < 0.35, `flat chroma must not look decided, got ${flat.confidence}`);
+  const profile = buildSongProfile({
+    durationMs: 4000,
+    analysis: { tonic: flat.tonic, mode: flat.mode, tonalConfidence: flat.confidence },
+  });
+  assert.equal(profile.tonal.source, 'spectral-fallback');
+  assert.ok(profile.confidence.key <= 0.2);
 });

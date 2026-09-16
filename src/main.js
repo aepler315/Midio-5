@@ -43,7 +43,8 @@ import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
 import { visualNow, VISUAL_LEAD_MS } from './core/ChoreoClock.js';
-import { extractWatchFeatures, buildCustomWorld, buildWorldVariant, scoreWorlds } from './world/WorldScore.js';
+import { buildCustomWorld, buildWorldVariant, scoreWorlds } from './world/WorldScore.js';
+import { buildSongProfile, PROFILE_VERSION } from './audio/SongProfile.js';
 import {
   DEFAULT_WORLD_ID, setCustomWorld, clearCustomWorld, getWorld, listWorlds,
 } from './world/Worlds.js';
@@ -1016,20 +1017,26 @@ function renderWorldGrid(customWorld, features = null, extras = {}) {
 
 function offerWorldsThenStart(data, extra = {}) {
   try {
-    const features = extractWatchFeatures({
+    const profile = data.songProfile?.version === PROFILE_VERSION ? data.songProfile : buildSongProfile({
       energyCurves: data.energyCurves,
       durationMs: data.durationMs,
       bpm: data.bpm,
+      beatPeriodMs: data.beatPeriodMs,
+      confidence: data.confidence,
+      freeTime: data.freeTime,
       analysis: data.analysis,
       structure: data.structure,
+      timeline: data.timeline,
+      barGrid: data.barGrid,
     });
-    const { world } = buildCustomWorld(features, data);
+    const features = profile.watch;
+    const { world } = buildCustomWorld(features, { ...data, profile });
     setCustomWorld(world);
     const seed = resolveSongSeed(
       { timeline: data.timeline, durationMs: data.durationMs },
       readPinnedSeed(),
     );
-    pendingWorldStart = { data, extra, features, seed };
+    pendingWorldStart = { data, extra, features, seed, profile };
     console.log('[custom world] %s (base: %s)', world.kind, world.baseId);
     const hasLabels = Array.isArray(data.structure?.labels) && data.structure.labels.length > 1;
     renderWorldGrid(world, features, { hasLabels });
@@ -1087,7 +1094,10 @@ function playSelectedWorld(baseWorldId) {
     if (current?.baseId !== baseWorldId) {
       const pending = pendingWorldStart;
       if (!pending?.features) throw new Error('Missing song features for world variant');
-      const { world } = buildWorldVariant(baseWorldId, pending.features, pending.data);
+      const { world } = buildWorldVariant(baseWorldId, pending.features, {
+        ...pending.data,
+        profile: pending.profile,
+      });
       setCustomWorld(world);
     }
     confirmWorld('custom');
