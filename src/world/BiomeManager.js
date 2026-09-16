@@ -780,7 +780,7 @@ export class BiomeManager {
     this._farShoreRecipe = farShoreRecipe(hashSeed(`${songSeed}:farshore`));
     // The fata morgana: a pale, jagged, snow-capped mirage range hovering at
     // the same horizon, layered on top of the far shore's dark mass (see
-    // _drawMirage).
+    // _drawFataMorgana).
     this._mirageRecipe = mirageRecipe(hashSeed(`${songSeed}:mirage`));
     this.lightRig = new LightRig(songSeed);
     // Concert beams anchor toward Midio on a drop; sane defaults so a
@@ -2305,7 +2305,7 @@ export class BiomeManager {
       this.ribbon.intensity = prevR;
     }
     this._drawFarShore(ctx, canvas, worldX, A, B, t); // beyond the ocean, behind the water itself
-    this._drawMirage(ctx, canvas, worldX, A, B, t); // the fata morgana, layered on top of the far shore at the same horizon
+    this._drawFataMorgana(ctx, canvas, worldX, A, B, t); // the fata morgana, layered on top of the far shore at the same horizon
     this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
     this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
@@ -4086,7 +4086,7 @@ export class BiomeManager {
    * main one -- the classic doubled/inverted image a real superior mirage
    * produces.
    */
-  _drawMirage(ctx, canvas, worldX, A, B, t) {
+  _drawFataMorgana(ctx, canvas, worldX, A, B, t) {
     if (this._perf && !this._perf.heavyPostFx) return;
     const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
     const sinkPx = Math.max(14, canvas.height * 0.015);
@@ -6750,7 +6750,7 @@ export class BiomeManager {
     else if (activeFx === 'canopyDapple') this._drawCanopyDapple(ctx, canvas, localGroundY);
     else if (activeFx === 'glitchTear' && this._glitchActiveMs > 0) this._drawGlitchTear(ctx, canvas);
     else if (activeFx === 'petalPile') this._drawPetalPiles(ctx, canvas, worldX, localGroundY, t > 0.5 ? B : A);
-    else if (activeFx === 'mirage') this._drawMirage(ctx, canvas, worldX, localGroundY);
+    else if (activeFx === 'mirage') this._drawGroundMirage(ctx, canvas, worldX, localGroundY);
     else if (isLake) this._drawLakeReflection(ctx, canvas, localGroundY);
     // Remembered for drawCharacterReflections: Renderer calls that AFTER the
     // trio draws (their live screen positions aren't known this early), but
@@ -6968,8 +6968,14 @@ export class BiomeManager {
   /** DUNE's desert mirage: a faint, wavering duplicate of the horizon
    *  hovering just above the sand -- distinct from heatShimmer's ridge-slice
    *  distortion, since it reads as a false-water illusion sitting on the
-   *  ground rather than a haze over distant terrain. */
-  _drawMirage(ctx, canvas, worldX, groundY) {
+   *  ground rather than a haze over distant terrain.
+   *
+   *  Distinct also from _drawFataMorgana, which is the OCEAN mirage: a
+   *  hovering range at the far horizon rather than a false pool on the
+   *  ground. The two were both named _drawMirage for a week, and since a
+   *  class body keeps only its last definition of a name, that silently
+   *  deleted the ocean one -- hence the deliberately unalike names now. */
+  _drawGroundMirage(ctx, canvas, worldX, groundY) {
     const bandH = Math.min(26, canvas.height - groundY);
     if (bandH <= 0) return;
     ctx.save();
@@ -6979,10 +6985,11 @@ export class BiomeManager {
     ctx.globalAlpha = 0.22;
     ctx.translate(0, 2 * (groundY - bandH));
     ctx.scale(1, -1);
-    // Same logical-view-vs-drawable fix as the lake reflection. This one is
-    // currently unreachable -- no profile emits fx:'mirage' -- but it would
-    // have thrown the instant one did, so it is corrected rather than left
-    // as a trap for whoever wires DUNE's mirage up.
+    // Same logical-view-vs-drawable fix as the lake reflection. Reached by
+    // DNA-generated worlds, whose fx comes from ShapeGrammar's FX_BY_TEMP
+    // (fx:'mirage' over the 0.55-0.64 temperature band); none of the hand-
+    // authored palettes emit it, which is why it goes unseen in the fixed
+    // nine worlds.
     ctx.drawImage(ctx.canvas, 0, 0, canvas.width, canvas.height);
     ctx.restore();
 
