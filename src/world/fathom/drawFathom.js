@@ -21,7 +21,8 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
   ctx.restore();
 }
 
-export function drawFathomWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView) {
+export function drawFathomWorld(mgr, frame) {
+  const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView } = frame;
   const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
     rhythm: mgr.worldRhythm, section: mgr.sections?.[mgr._lastSectionIdx], reducedFlash: mgr.reducedFlash });
   mgr._drawSky(ctx, canvas, A, B, t, 1);

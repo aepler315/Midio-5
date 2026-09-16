@@ -86,7 +86,8 @@ function drawPrimary(mgr, ctx, canvas, cyFrac, cxFrac, alpha, color, haloColor, 
   ctx.restore();
 }
 
-export function drawFarsideWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage = null) {
+export function drawFarsideWorld(mgr, frame) {
+  const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
   mgr._drawSky(ctx, canvas, A, B, t, 1);
 
   // Deep-sky layer ported in from BiomeManager's classic path -- an airless

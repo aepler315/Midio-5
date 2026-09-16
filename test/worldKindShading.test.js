@@ -15,6 +15,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { WORLD_RENDERERS } from '../src/world/WorldRegistry.js';
 
 const KIND_FILES = {
   city: 'src/world/city/drawCity.js',
@@ -47,15 +48,15 @@ for (const [kind, file] of Object.entries(KIND_FILES)) {
   });
 }
 
-test('every kind that returns early from draw() is covered here', () => {
-  // If someone adds an eighth early-return kind, this fails until the new
-  // world is listed above -- which is the point: the omission that caused
-  // this bug was silent.
-  const bm = readFileSync('src/world/BiomeManager.js', 'utf8');
-  const kinds = [...bm.matchAll(/if \(_kind === '([a-z]+)'\) \{/g)].map((m) => m[1]);
-  assert.ok(kinds.length > 0, 'could not find the world-kind dispatch');
+test('every kind with its own renderer is covered here', () => {
+  // If someone adds an eighth world kind, this fails until it is listed
+  // above -- which is the point: the omission that caused this bug was
+  // silent. Read from the registry rather than matching the dispatch's
+  // source, so this pins the set of worlds and not the shape of an if-chain.
+  const kinds = [...WORLD_RENDERERS.keys()];
+  assert.ok(kinds.length > 0, 'the world renderer registry is empty');
   for (const k of kinds) {
-    assert.ok(KIND_FILES[k], `world kind '${k}' returns early from draw() but is not covered by this test`);
+    assert.ok(KIND_FILES[k], `world kind '${k}' has its own renderer but is not covered by this test`);
   }
   assert.equal(kinds.length, Object.keys(KIND_FILES).length);
 });
@@ -67,7 +68,7 @@ test('the air color is resolved before the dispatch, not after it', () => {
   // consumer silently fell back to a default.
   const bm = readFileSync('src/world/BiomeManager.js', 'utf8');
   const assigned = bm.indexOf('this._airColor = skyHorizonNight;');
-  const dispatch = bm.indexOf("const _kind = this.world?.kind;");
+  const dispatch = bm.indexOf('WORLD_RENDERERS.get(this.world?.kind)');
   assert.ok(assigned > 0 && dispatch > 0, 'could not locate both landmarks');
   assert.ok(assigned < dispatch,
     'the air color is resolved after the world-kind dispatch, so non-alpine worlds never get one');

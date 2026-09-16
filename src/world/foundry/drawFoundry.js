@@ -20,7 +20,8 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
   ctx.restore();
 }
 
-export function drawFoundryWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage = null) {
+export function drawFoundryWorld(mgr, frame) {
+  const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
   mgr._drawSky(ctx, canvas, A, B, t, 0.85);
 
   // Deep-sky layer ported in from BiomeManager's classic path -- the same

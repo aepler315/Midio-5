@@ -21,7 +21,8 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
   ctx.restore();
 }
 
-export function drawNaveWorld(mgr, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView) {
+export function drawNaveWorld(mgr, frame) {
+  const { ctx, canvas, worldX, originX, A, B, t, phenomenaFull, particleMul, groundView } = frame;
   mgr._drawSky(ctx, canvas, A, B, t, 0.8);
 
   // Deliberately NOT wired here: BiomeManager's classic path draws

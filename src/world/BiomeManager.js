@@ -8,13 +8,7 @@ import {
   extractRidgePortrait, lithologyFromShares, landformWindow, relEnergyLadder, snowLine01For,
 } from './RidgePortrait.js';
 import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
-import { drawCityWorld } from './city/drawCity.js';
-import { drawFarsideWorld } from './farside/drawFarside.js';
-import { drawFathomWorld } from './fathom/drawFathom.js';
-import { drawRedlineWorld } from './redline/drawRedline.js';
-import { drawFoundryWorld } from './foundry/drawFoundry.js';
-import { drawUnderstoryWorld } from './understory/drawUnderstory.js';
-import { drawNaveWorld } from './nave/drawNave.js';
+import { WORLD_RENDERERS } from './WorldRegistry.js';
 import { ParticleField } from './ParticleField.js';
 import {
   sampleTerrainCurve, curveFacing, facingColorStops, reliefLitStripRGBA, reliefShadeStripRGBA,
@@ -2152,43 +2146,23 @@ export class BiomeManager {
       : skyHorizon;
     this._airColor = skyHorizonNight;
 
-    const _kind = this.world?.kind;
-    // Five of these six newer world kinds get the same deep-sky star layer
-    // (drawDeepSky/weaver/meteors) the classic path below draws -- it was
-    // simply never ported when each kind got split into its own draw
-    // function, so ConstellationWeaver, SkyVoyage's sky-writing trail, and
-    // meteor-shower reward volleys never rendered at all for a song assigned
-    // one of these kinds. Two are deliberately left out because showing
-    // stars there contradicts what the world already says about itself:
-    // drawFathomWorld's own header states "No stars... the sky is the water
-    // surface overhead", and drawNaveWorld's sky is an interior vault
-    // ceiling, not open air.
-    if (_kind === 'city') {
-      drawCityWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage);
-      return;
-    }
-    if (_kind === 'airless') {
-      drawFarsideWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage);
-      return;
-    }
-    if (_kind === 'abyssal') {
-      drawFathomWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
-      return;
-    }
-    if (_kind === 'strip') {
-      drawRedlineWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage);
-      return;
-    }
-    if (_kind === 'foundry') {
-      drawFoundryWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage);
-      return;
-    }
-    if (_kind === 'overgrowth') {
-      drawUnderstoryWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage);
-      return;
-    }
-    if (_kind === 'nave') {
-      drawNaveWorld(this, ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView);
+    // Everything a world draw module gets for this frame, in one object.
+    // Positional argument lists let the two worlds that take no skyVoyage
+    // sit in the same call shape as the five that do; a property is either
+    // present or it is not.
+    const frame = {
+      ctx, canvas, worldX, originX, A, B, t, dn,
+      phenomenaFull, particleMul, groundView, skyVoyage,
+    };
+
+    // Dispatch on world kind. Registered kinds draw themselves and we are
+    // done; 'alpine' falls through to the original path below, and 'cathode'
+    // never arrives here at all (WebGLRenderer routes it to CathodeRenderer).
+    // What each module may touch on `this` is fixed by WORLD_CONTRACT and
+    // enforced by worldContract.test.js.
+    const drawWorldKind = WORLD_RENDERERS.get(this.world?.kind);
+    if (drawWorldKind) {
+      drawWorldKind(this, frame);
       return;
     }
 
