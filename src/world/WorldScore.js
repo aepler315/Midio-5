@@ -5,9 +5,7 @@
 // going on to watch, not so much that every window strobes and every
 // peak clips. A drone leaves The Range sitting still (boring). A wall
 // of sound in After Hours lights every window at once (too intense).
-import { clamp01, clamp, spread01 } from '../utils/math.js';
-import { FLAT_WEIGHTS } from '../audio/bands.js';
-import { extractRidgePortrait, lithologyFromShares } from './RidgePortrait.js';
+import { clamp01, clamp } from '../utils/math.js';
 import { listWorlds, getWorld } from './Worlds.js';
 import { buildSongDNA } from './dna/SongDNA.js';
 import { synthesizeSectionPalettes } from './dna/PaletteSynth.js';
@@ -15,113 +13,12 @@ import {
   buildShapeGrammar, deriveTerrainParams, pickCharacterScheme, CHARACTER_SCHEMES,
 } from './dna/ShapeGrammar.js';
 import { castBiomes } from './Dramaturgy.js';
+import { buildSongProfile } from '../audio/SongProfile.js';
 
-const BPM_LO = 60, BPM_HI = 180;
-
-export function extractWatchFeatures({
-  energyCurves = null,
-  durationMs = 0,
-  bpm = 0,
-  analysis = null,
-  structure = null,
-} = {}) {
-  const dur = Math.max(1, durationMs || 1);
-  let centroid = 0.5, bass = 0.3, air = 0.1, spread = 0.5, litho = null;
-  let dyn = 0.4, energyMean = 0.4, phrase = 0.3, landmarks = 4, trend = 0;
-  let pulse = 0.5, rhythmWeight = 0;
-
-  if (energyCurves && energyCurves.n >= 8) {
-    const portrait = extractRidgePortrait(energyCurves, dur);
-    if (portrait) {
-      centroid = portrait.centroid01;
-      bass = portrait.bassShare;
-      air = portrait.airShare;
-      spread = portrait.spread01;
-      litho = portrait.lithology;
-      dyn = portrait.dynamicRange;
-      phrase = portrait.phraseStrength;
-      landmarks = portrait.landmarks?.length ?? 4;
-      const wave = portrait.energyWave;
-      if (wave && wave.length) {
-        let wMin = 1, wMax = 0;
-        for (let i = 0; i < wave.length; i++) {
-          const v = wave[i];
-          if (v < wMin) wMin = v;
-          if (v > wMax) wMax = v;
-        }
-        dyn = Math.max(dyn, clamp01(wMax - wMin));
-        // Coarse rise/fall trajectory across the whole song: mean energy of
-        // the last third vs the first third. Used (via SongDNA) as the
-        // audio-only fallback for particle direction when there's no MIDI
-        // pitch timeline to read a register trend from directly.
-        const third = Math.max(1, Math.floor(wave.length / 3));
-        let a = 0, b = 0;
-        for (let i = 0; i < third; i++) a += wave[i];
-        for (let i = wave.length - third; i < wave.length; i++) b += wave[i];
-        trend = clamp((b / third - a / third) * 2.5, -1, 1);
-      }
-    } else {
-      litho = lithologyFromShares(null);
-    }
-    if (typeof energyCurves.calibration === 'function') {
-      const cal = energyCurves.calibration(FLAT_WEIGHTS);
-      dyn = clamp01((cal?.spread ?? 0.2) / 0.5);
-      energyMean = clamp01(((cal?.lo ?? 0) + (cal?.hi ?? 0.4)) * 0.5);
-    }
-  }
-
-  // The ridge portrait supplies phrase-sized changes, but it cannot measure
-  // rhythmic density: its landmarks are deliberately sparse so terrain stays
-  // readable. When the audio adapter has a credible onset/tempo read, let
-  // that real measurement take over the scorer's rhythm-facing features.
-  const perMin = landmarks / (dur / 60000);
-  let onset = clamp01(perMin / 10);
-
-  if (analysis) {
-    if (Number.isFinite(analysis.brightness)) centroid = clamp01(0.55 * centroid + 0.45 * analysis.brightness);
-    if (Number.isFinite(analysis.dynamicRange)) dyn = clamp01(0.5 * dyn + 0.5 * analysis.dynamicRange);
-    const rhythm = analysis.rhythm;
-    if (Number.isFinite(rhythm?.eventDensity)
-      && Number.isFinite(rhythm?.pulseRegularity)
-      && Number.isFinite(rhythm?.confidence)) {
-      rhythmWeight = clamp01((rhythm.confidence - 0.25) / 0.5);
-      onset = clamp01(onset * (1 - rhythmWeight) + clamp01(rhythm.eventDensity) * rhythmWeight);
-      pulse = clamp01(0.5 * (1 - rhythmWeight) + clamp01(rhythm.pulseRegularity) * rhythmWeight);
-    }
-  }
-
-  // Section contrast from structure labels, else dynamic range.
-  let contrast = dyn;
-  if (structure?.labels?.length > 1) {
-    const uniq = new Set(structure.labels).size;
-    contrast = clamp01(0.35 * dyn + 0.65 * (uniq / structure.labels.length));
-  }
-
-  const bpmN = Number.isFinite(bpm) && bpm > 0 ? clamp01((bpm - BPM_LO) / (BPM_HI - BPM_LO)) : 0.4;
-  // Groove starts with tempo + phrase shape, then moves toward actual
-  // beat alignment only when that measurement is credible. Existing MIDI,
-  // synthetic, and free-time paths preserve the former behavior exactly.
-  const tempoPhraseGroove = clamp01(1 - Math.abs((bpm || 96) - 96) / 70) * (0.55 + 0.45 * phrase);
-  const groove = clamp01(tempoPhraseGroove + rhythmWeight * 0.35 * (pulse - tempoPhraseGroove));
-  const tempoHeat = clamp01(((bpm || 100) - 72) / 90);
-
-  const warmth = clamp01(0.55 * bass + 0.45 * (1 - centroid));
-  const texture = clamp01(0.5 * spread + 0.5 * air);
-  const form = clamp01(landmarks / 10);
-  const arc = dyn;
-
-  // spread01: a weighted sum of 5 independent-ish features collapses toward
-  // 0.5 (measured: sd 0.134, <0.1% of songs ever below 0.10 or above 0.90),
-  // which reads every world's comfort band near an edge (farside, fathom,
-  // foundry) as nearly unreachable even though those bands were authored
-  // assuming roughly-uniform coverage. See spread01's own comment.
-  const drive = spread01(clamp01(0.28 * arc + 0.18 * onset + 0.16 * contrast + 0.14 * energyMean + 0.24 * tempoHeat));
-
-  return {
-    centroid, bass, air, spread, dyn, energyMean, phrase, landmarks,
-    onset, pulse, contrast, groove, warmth, texture, form, arc, drive, bpm: bpm || 0,
-    tempoHeat, litho, trend,
-  };
+/** Shared extraction lives in SongProfile. Kept here so existing callers
+ *  and tests do not have to move; scoring still consumes `watch`. */
+export function extractWatchFeatures(data = {}) {
+  return buildSongProfile(data).watch;
 }
 
 function inRangeScore(value, range) {

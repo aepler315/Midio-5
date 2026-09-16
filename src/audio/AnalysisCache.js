@@ -14,6 +14,10 @@
 // Eviction is least-recently-USED, not least-recently-added: the songs a
 // person replays are the ones worth keeping, and insertion order says nothing
 // about that.
+//
+// Bundles may carry a SongProfile snapshot (tempo/key/section confidence).
+// This cache does not interpret it: a profile version the current build
+// cannot read is dropped at unpack, and the analysis is still valid.
 const DB_NAME = 'midio-analysis';
 const DB_VERSION = 1;
 const STORE = 'bundles';

@@ -216,6 +216,19 @@ test('a drum-only timeline reports no tonal read rather than the drum map as a k
   assert.ok(dna.percussionDensity > 0.99, 'a drum-only song is all percussion');
 });
 
+test('audio chroma is a measured key; placeholder drum pitches are not', () => {
+  const drums = audioTimeline({ melody: [], withDrums: true });
+  drums.timeline = drums.timeline.filter((e) => e.role === 'RHYTHM');
+  const dna = buildSongDNA({
+    ...drums,
+    analysis: { tonic: 4, mode: 'minor', tonalConfidence: 0.72, brightness: 0.4 },
+  });
+  assert.equal(dna.hasTonalTimeline, false);
+  assert.equal(dna.tonicPc, 4);
+  assert.equal(dna.isMajor, false);
+  assert.ok(dna.keyConfidence > 0.5);
+});
+
 test('oklchToHex always returns a valid 6-digit hex, even at extreme out-of-gamut chroma', () => {
   for (const [L, C, H] of [[0.5, 0.4, 0], [0.9, 0.5, 120], [0.1, 0.3, 250], [0.5, 0, 90]]) {
     const hex = oklchToHex(L, C, H);

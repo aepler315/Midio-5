@@ -28,6 +28,7 @@ import { sectionPacing } from './sectionBudget.js';
 import { Role, makeNoteEvent, sortNoteEvents } from '../core/NoteEvent.js';
 import { Lane, melodyLaneForNote, laneForStemName, delegateByStemActivity } from '../core/Casting.js';
 import { clamp01 } from '../utils/math.js';
+import { buildSongProfile } from './SongProfile.js';
 
 /** Channel views for phase-safe analysis. Keep channels separate until an
  * algorithm explicitly combines their energy; a signed L+R mix can erase a
@@ -292,5 +293,10 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
     timeline, barGrid, durationMs,
     bpm: tempo.bpm, beatPeriodMs: tempo.beatPeriodMs, confidence: tempo.confidence, freeTime: tempo.freeTime,
     energyCurves, analysis, tonalityTimeline: keyTimeline, structure, stems: stemsSummary,
+    songProfile: buildSongProfile({
+      timeline, barGrid, durationMs,
+      bpm: tempo.bpm, beatPeriodMs: tempo.beatPeriodMs, confidence: tempo.confidence, freeTime: tempo.freeTime,
+      energyCurves, analysis, structure,
+    }),
   };
 }

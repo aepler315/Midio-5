@@ -5,6 +5,8 @@ import {
   globalBandReferences, normalizeBands, estimateTempoCurve, buildDriftAwareBarGrid, bandEnvelope,
 } from '../src/audio/OnsetDetector.js';
 import { Role } from '../src/core/NoteEvent.js';
+import { summarizeRhythmOnsets } from '../src/audio/RhythmProfile.js';
+import { buildSongProfile } from '../src/audio/SongProfile.js';
 import { clamp } from '../src/utils/math.js';
 
 function silentBands(n) {
@@ -423,4 +425,16 @@ test('detectRhythmOnsets still finds an onset sitting at the last frame (the win
   bands[0][n - 1] = 0.9; bands[1][n - 1] = 0.6; // a kick at the very last frame
   const { onsets } = detectRhythmOnsets(bands, bands, rate, 1);
   assert.ok(onsets.some((o) => o.frame === n - 1), 'an onset at the final frame must still be detected');
+});
+
+test('song profile event rate follows onset timestamps, not ridge landmarks', () => {
+  const durationMs = 8000;
+  const onsets = [];
+  for (let t = 0; t < durationMs; t += 200) onsets.push({ tMs: t, kick: t % 400 === 0 });
+  const rhythm = summarizeRhythmOnsets(onsets, durationMs, { beatPeriodMs: 400, confidence: 0.9 });
+  const profile = buildSongProfile({ durationMs, bpm: 150, analysis: { rhythm }, confidence: 0.9 });
+  assert.ok(Math.abs(profile.watch.onset - rhythm.eventDensity) < 1e-9);
+  assert.equal(profile.events.onsetSource, 'onsets');
+  assert.ok(Number.isFinite(profile.watch.form));
+  assert.equal(profile.events.landmarks, profile.watch.landmarks);
 });
