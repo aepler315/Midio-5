@@ -8,7 +8,7 @@ import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
 import { hexToRgb, hexLerp } from '../../utils/color.js';
-import { sampleWorldMusic } from '../WorldMusic.js';
+import { sampleManagerMusic } from '../WorldMusic.js';
 import { terminatorContrast, illumination, surfaceTrace, boundaryLift01 } from './Vacuum.js';
 
 const LAYER_RATIOS = { L2: 0.04, L3: 0.10, L4: 0.22, L5: 0.50 };
@@ -90,8 +90,7 @@ function drawPrimary(mgr, ctx, canvas, cyFrac, cxFrac, alpha, color, haloColor, 
 
 export function drawFarsideWorld(mgr, frame) {
   const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
-  const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
-    rhythm: mgr.worldRhythm, section: mgr.sections?.[mgr._lastSectionIdx], reducedFlash: mgr.reducedFlash });
+  const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
   const illum = illumination({ energy: music.energy, reveal: music.reveal, lift });
   const contrast = terminatorContrast(music.energy);

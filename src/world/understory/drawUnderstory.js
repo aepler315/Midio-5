@@ -8,7 +8,7 @@ import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
-import { sampleWorldMusic } from '../WorldMusic.js';
+import { sampleManagerMusic } from '../WorldMusic.js';
 import { canopyGrowth, shaftOpen, sporeBurst, boundaryLift01 } from './Canopy.js';
 
 const LAYER_RATIOS = { L2: 0.03, L3: 0.08, L4: 0.20, L5: 0.48 };
@@ -24,8 +24,7 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
 
 export function drawUnderstoryWorld(mgr, frame) {
   const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
-  const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
-    rhythm: mgr.worldRhythm, section: mgr.sections?.[mgr._lastSectionIdx], reducedFlash: mgr.reducedFlash });
+  const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
   const growth = canopyGrowth({ energy: music.energy, orogeny: mgr.orogenyGrowth ?? 0 });
   const open = shaftOpen({ growth, reveal: music.reveal, lift });

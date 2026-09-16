@@ -9,7 +9,7 @@ import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor } from '../DayNight.js';
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
 import { hexToRgb } from '../../utils/color.js';
-import { sampleWorldMusic } from '../WorldMusic.js';
+import { sampleManagerMusic } from '../WorldMusic.js';
 import { motifTrust, bayLit, bayAlpha, boundaryLift01 } from './Resonance.js';
 
 const LAYER_RATIOS = { L2: 0.03, L3: 0.08, L4: 0.18, L5: 0.44 };
@@ -26,8 +26,7 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
 export function drawNaveWorld(mgr, frame) {
   const { ctx, canvas, worldX, originX, A, B, t, phenomenaFull, particleMul, groundView } = frame;
   const section = mgr.sections?.[mgr._lastSectionIdx];
-  const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
-    rhythm: mgr.worldRhythm, section, reducedFlash: mgr.reducedFlash });
+  const music = sampleManagerMusic(mgr, { section, energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(section, mgr.sections?.[mgr._lastSectionIdx - 1]);
   const trust = motifTrust(section);
 

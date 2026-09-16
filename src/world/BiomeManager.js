@@ -5020,6 +5020,7 @@ export class BiomeManager {
       rhythm: this.worldRhythm,
       section,
       reducedFlash: this.reducedFlash,
+      response: this.world?.response,
     });
     const env = ridgeEnvelope({
       energy: music.energy,

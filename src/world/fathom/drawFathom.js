@@ -6,7 +6,7 @@ import { CodaDirector } from '../../sim/CodaDirector.js';
 import { ensureContrast } from '../../render/VisualStyle.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
-import { sampleWorldMusic } from '../WorldMusic.js';
+import { sampleManagerMusic } from '../WorldMusic.js';
 import { flashCompositeOp } from '../../ui/Accessibility.js';
 
 const LAYER_RATIOS = { L2: 0.03, L3: 0.08, L4: 0.18, L5: 0.42 };
@@ -23,8 +23,7 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
 
 export function drawFathomWorld(mgr, frame) {
   const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView } = frame;
-  const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
-    rhythm: mgr.worldRhythm, section: mgr.sections?.[mgr._lastSectionIdx], reducedFlash: mgr.reducedFlash });
+  const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   mgr._drawSky(ctx, canvas, A, B, t, 1);
 
   // Deliberately NOT wired here: BiomeManager's classic path draws

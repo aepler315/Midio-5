@@ -340,6 +340,7 @@ export class CathodeRenderer {
       rhythm: sim?.biomes?.worldRhythm,
       section,
       reducedFlash: !!sim?.reducedFlash,
+      response: sim?.biomes?.world?.response,
     });
     const lift = boundaryLift01(section, prev);
 
