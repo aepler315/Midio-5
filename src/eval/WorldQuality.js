@@ -147,19 +147,24 @@ function pickTransitionMs({ durationMs, quietMs, peakMs, spanMs, sample, structu
   return Math.round(clamp(best, 0, maxStart));
 }
 
-export function privateScores(features) {
+export function privateScores(features, options = {}) {
   if (!features || typeof features.drive !== 'number') return null;
-  const ranked = scoreWorlds(features);
+  const ranked = scoreWorlds(features, undefined, options);
+  const pick = ranked.find((r) => r.recommended) || ranked[0];
   return {
-    recommendedId: ranked.find((r) => r.recommended)?.id || ranked[0]?.id || null,
+    recommendedId: pick?.id || null,
+    pickReason: pick?.pickReason || null,
     byWorld: ranked.map((r) => ({
       id: r.id,
       name: r.name,
+      fit: r.fit,
       score: r.score,
+      tied: !!r.tied,
+      eligible: r.eligible !== false,
       parts: r.parts,
       recommended: !!r.recommended,
     })),
-    note: 'Internal fit heuristic, not visual quality or a probability.',
+    note: 'Internal fit heuristic, not visual quality or a probability. Ranked on continuous fit after response adaptation; integer score is display-only.',
   };
 }
 
@@ -332,7 +337,22 @@ export function summarizeAcceptance(sheets, { split = 'all' } = {}) {
     share,
     met: filled.length ? share >= ACCEPTANCE_TARGET.holdoutShare : null,
     claimed: false,
+    calibration: filled.length ? 'holdout-reviews' : 'empty-holdout',
+    exclusions: autoExclusions(sheets),
   };
+}
+
+/** Worlds with a blocking-defect review stay out of auto-suggest for that pair. */
+export function autoExclusions(sheets) {
+  const out = [];
+  for (const s of sheets || []) {
+    for (const r of s.reviews || []) {
+      if (r.blockingDefect) {
+        out.push({ trackId: s.track.id, worldId: r.worldId, reason: 'blocking-defect' });
+      }
+    }
+  }
+  return out;
 }
 
 export function applyReviews(sheet, reviewsByWorld) {

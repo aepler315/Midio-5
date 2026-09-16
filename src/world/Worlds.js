@@ -20,77 +20,79 @@ import { UNDERSTORY_PALETTES, UNDERSTORY_TEMPERATURE } from './understory/Unders
 import { NAVE_PALETTES, NAVE_TEMPERATURE } from './nave/NavePalettes.js';
 import { CATHODE_PALETTES, CATHODE_TEMPERATURE } from './cathode/CathodePalettes.js';
 
-/** Channel `reads` keys are fields on the watch-features vector. */
+/** Channel `reads` keys are fields on the watch-features vector.
+ *  `consumer` is `file#exportOrFunction` of the renderer that actually
+ *  uses that signal. A scored channel with no consumer is a lie. */
 const ALPINE_CHANNELS = [
-  { id: 'orogeny', reads: 'arc', weight: 1.20 },
-  { id: 'ridges', reads: 'form', weight: 1.10 },
-  { id: 'biomes', reads: 'contrast', weight: 1.00 },
-  { id: 'weather', reads: 'texture', weight: 0.70 },
-  { id: 'celestial', reads: 'air', weight: 0.50 },
-  { id: 'particles', reads: 'onset', weight: 0.60 },
+  { id: 'orogeny', reads: 'arc', weight: 1.20, consumer: 'src/world/OrogenyDirector.js#orogenyGrowthAt' },
+  { id: 'ridges', reads: 'form', weight: 1.10, consumer: 'src/world/alpine/Ridge.js#ambientDance' },
+  { id: 'biomes', reads: 'contrast', weight: 1.00, consumer: 'src/world/Dramaturgy.js#castBiomes' },
+  { id: 'weather', reads: 'texture', weight: 0.70, consumer: 'src/world/BiomeManager.js#_drawHaze' },
+  { id: 'celestial', reads: 'air', weight: 0.50, consumer: 'src/world/BiomeManager.js#_drawCelestial' },
+  { id: 'particles', reads: 'onset', weight: 0.60, consumer: 'src/world/ParticleField.js' },
 ];
 
 const CITY_CHANNELS = [
-  { id: 'skyline', reads: 'form', weight: 1.10 },
-  { id: 'windows', reads: 'onset', weight: 1.20 },
-  { id: 'neon', reads: 'air', weight: 0.85 },
-  { id: 'rain', reads: 'texture', weight: 0.90 },
-  { id: 'traffic', reads: 'groove', weight: 1.05 },
-  { id: 'sodium', reads: 'warmth', weight: 0.70 },
+  { id: 'skyline', reads: 'form', weight: 1.10, consumer: 'src/world/city/CitySilhouette.js#cityHeightField' },
+  { id: 'windows', reads: 'onset', weight: 1.20, consumer: 'src/world/city/CitySilhouette.js#windowOccupancy' },
+  { id: 'neon', reads: 'air', weight: 0.85, consumer: 'src/world/city/CityGlow.js#cityGlow' },
+  { id: 'rain', reads: 'texture', weight: 0.90, consumer: 'src/world/city/drawCity.js#_drawHaze' },
+  { id: 'traffic', reads: 'groove', weight: 1.05, consumer: 'src/world/city/drawCity.js#drawTraffic' },
+  { id: 'sodium', reads: 'warmth', weight: 0.70, consumer: 'src/world/city/CityGlow.js#windowGlowAlpha' },
 ];
 
 const FARSIDE_CHANNELS = [
-  { id: 'limb', reads: 'form', weight: 0.90 },
-  { id: 'primary', reads: 'air', weight: 1.25 },
-  { id: 'stars', reads: 'spread', weight: 1.05 },
-  { id: 'terminator', reads: 'contrast', weight: 0.85 },
-  { id: 'regolith', reads: 'onset', weight: 0.40 },
-  { id: 'libration', reads: 'phrase', weight: 0.70 },
+  { id: 'limb', reads: 'form', weight: 0.90, consumer: 'src/world/farside/Vacuum.js#terminatorContrast' },
+  { id: 'primary', reads: 'air', weight: 1.25, consumer: 'src/world/farside/Vacuum.js#illumination' },
+  { id: 'stars', reads: 'spread', weight: 1.05, consumer: 'src/world/farside/drawFarside.js#drawDeepSky' },
+  { id: 'terminator', reads: 'contrast', weight: 0.85, consumer: 'src/world/farside/Vacuum.js#terminatorContrast' },
+  { id: 'regolith', reads: 'onset', weight: 0.40, consumer: 'src/world/farside/Vacuum.js#surfaceTrace' },
+  { id: 'libration', reads: 'phrase', weight: 0.70, consumer: 'src/world/farside/Vacuum.js#illumination' },
 ];
 
 const FATHOM_CHANNELS = [
-  { id: 'caustics', reads: 'phrase', weight: 1.20 },
-  { id: 'column', reads: 'warmth', weight: 1.10 },
-  { id: 'descent', reads: 'arc', weight: 0.80 },
-  { id: 'snow', reads: 'texture', weight: 0.95 },
-  { id: 'life', reads: 'form', weight: 0.70 },
-  { id: 'vents', reads: 'onset', weight: 0.45 },
+  { id: 'caustics', reads: 'phrase', weight: 1.20, consumer: 'src/world/fathom/drawFathom.js#drawWaterLight' },
+  { id: 'column', reads: 'warmth', weight: 1.10, consumer: 'src/world/WorldMusic.js#sampleWorldMusic' },
+  { id: 'descent', reads: 'arc', weight: 0.80, consumer: 'src/world/fathom/drawFathom.js#drawWaterLight' },
+  { id: 'drift', reads: 'texture', weight: 0.95, consumer: 'src/world/fathom/drawFathom.js#drawWaterLight' },
+  { id: 'life', reads: 'form', weight: 0.70, consumer: 'src/world/fathom/drawFathom.js#drawLivingLight' },
+  { id: 'vents', reads: 'onset', weight: 0.45, consumer: 'src/world/fathom/drawFathom.js#drawLivingLight' },
 ];
 
 const REDLINE_CHANNELS = [
-  { id: 'grid', reads: 'tempoHeat', weight: 1.40 },
-  { id: 'gantry', reads: 'groove', weight: 1.20 },
-  { id: 'signs', reads: 'onset', weight: 1.00 },
-  { id: 'horizon', reads: 'centroid', weight: 0.80 },
-  { id: 'sun', reads: 'energyMean', weight: 0.65 },
-  { id: 'tunnel', reads: 'contrast', weight: 0.75 },
+  { id: 'grid', reads: 'tempoHeat', weight: 1.40, consumer: 'src/world/redline/Cruise.js#cruiseRate' },
+  { id: 'gantry', reads: 'groove', weight: 1.20, consumer: 'src/world/redline/Cruise.js#signageAlpha' },
+  { id: 'signs', reads: 'onset', weight: 1.00, consumer: 'src/world/redline/Cruise.js#signageAlpha' },
+  { id: 'horizon', reads: 'centroid', weight: 0.80, consumer: 'src/world/redline/Cruise.js#phrasePassage' },
+  { id: 'sun', reads: 'energyMean', weight: 0.65, consumer: 'src/world/redline/drawRedline.js#_drawCelestial' },
+  { id: 'tunnel', reads: 'contrast', weight: 0.75, consumer: 'src/world/redline/Cruise.js#phrasePassage' },
 ];
 
 const FOUNDRY_CHANNELS = [
-  { id: 'pour', reads: 'energyMean', weight: 1.30 },
-  { id: 'hammers', reads: 'onset', weight: 1.35 },
-  { id: 'stacks', reads: 'form', weight: 0.85 },
-  { id: 'gantry', reads: 'bass', weight: 1.00 },
-  { id: 'sparks', reads: 'dyn', weight: 0.95 },
-  { id: 'steam', reads: 'texture', weight: 0.60 },
+  { id: 'pour', reads: 'energyMean', weight: 1.30, consumer: 'src/world/foundry/Furnace.js#pourGlow' },
+  { id: 'hammers', reads: 'onset', weight: 1.35, consumer: 'src/world/foundry/Furnace.js#machineStroke' },
+  { id: 'stacks', reads: 'form', weight: 0.85, consumer: 'src/world/foundry/drawFoundry.js#_drawRidgeVolume' },
+  { id: 'gantry', reads: 'bass', weight: 1.00, consumer: 'src/world/foundry/Furnace.js#millActivity' },
+  { id: 'sparks', reads: 'dyn', weight: 0.95, consumer: 'src/world/foundry/drawFoundry.js' },
+  { id: 'steam', reads: 'texture', weight: 0.60, consumer: 'src/world/foundry/drawFoundry.js' },
 ];
 
 const UNDERSTORY_CHANNELS = [
-  { id: 'growth', reads: 'arc', weight: 1.00 },
-  { id: 'canopy', reads: 'texture', weight: 1.30 },
-  { id: 'shafts', reads: 'air', weight: 0.90 },
-  { id: 'fabric', reads: 'spread', weight: 1.10 },
-  { id: 'species', reads: 'contrast', weight: 0.55 },
-  { id: 'motes', reads: 'onset', weight: 0.60 },
+  { id: 'growth', reads: 'arc', weight: 1.00, consumer: 'src/world/understory/Canopy.js#canopyGrowth' },
+  { id: 'canopy', reads: 'texture', weight: 1.30, consumer: 'src/world/understory/Canopy.js#canopyGrowth' },
+  { id: 'shafts', reads: 'air', weight: 0.90, consumer: 'src/world/understory/Canopy.js#shaftOpen' },
+  { id: 'fabric', reads: 'spread', weight: 1.10, consumer: 'src/world/understory/drawUnderstory.js' },
+  { id: 'colonies', reads: 'contrast', weight: 0.55, consumer: 'src/world/understory/Canopy.js#sporeBurst' },
+  { id: 'motes', reads: 'onset', weight: 0.60, consumer: 'src/world/understory/Canopy.js#sporeBurst' },
 ];
 
 const NAVE_CHANNELS = [
-  { id: 'bays', reads: 'phrase', weight: 1.15 },
-  { id: 'vault', reads: 'form', weight: 1.25 },
-  { id: 'glass', reads: 'contrast', weight: 1.30 },
-  { id: 'organ', reads: 'bass', weight: 0.85 },
-  { id: 'shafts', reads: 'air', weight: 0.70 },
-  { id: 'censer', reads: 'onset', weight: 0.50 },
+  { id: 'bays', reads: 'phrase', weight: 1.15, consumer: 'src/world/nave/Resonance.js#bayLit' },
+  { id: 'vault', reads: 'form', weight: 1.25, consumer: 'src/world/nave/drawNave.js#_drawRidgeVolume' },
+  { id: 'glass', reads: 'contrast', weight: 1.30, consumer: 'src/world/nave/Resonance.js#bayLit' },
+  { id: 'organ', reads: 'bass', weight: 0.85, consumer: 'src/world/nave/Resonance.js' },
+  { id: 'shafts', reads: 'air', weight: 0.70, consumer: 'src/world/nave/drawNave.js' },
+  { id: 'censer', reads: 'onset', weight: 0.50, consumer: 'src/world/nave/drawNave.js' },
 ];
 
 // Carried for shape only -- Cathode is `manualOnly`, so the scorer never
@@ -98,12 +100,12 @@ const NAVE_CHANNELS = [
 // valid input to scoreWorlds if it is ever passed one explicitly (a debug
 // readout, a future "why not this world?" panel).
 const CATHODE_CHANNELS = [
-  { id: 'sprites', reads: 'onset', weight: 1.30 },
-  { id: 'persona', reads: 'contrast', weight: 1.10 },
-  { id: 'marquee', reads: 'form', weight: 0.90 },
-  { id: 'scanlines', reads: 'texture', weight: 0.60 },
-  { id: 'chiptune', reads: 'groove', weight: 1.20 },
-  { id: 'attract', reads: 'phrase', weight: 0.70 },
+  { id: 'sprites', reads: 'onset', weight: 1.30, consumer: 'src/world/cathode/Tube.js#screenHit' },
+  { id: 'persona', reads: 'contrast', weight: 1.10, consumer: 'src/world/cathode/CathodePalettes.js#personaFor' },
+  { id: 'raster', reads: 'form', weight: 0.90, consumer: 'src/world/cathode/Tube.js#rasterRate' },
+  { id: 'scanlines', reads: 'texture', weight: 0.60, consumer: 'src/world/cathode/CathodeRenderer.js#scanlineAlpha' },
+  { id: 'chiptune', reads: 'groove', weight: 1.20, consumer: 'src/world/cathode/Tube.js#rasterRate' },
+  { id: 'attract', reads: 'phrase', weight: 0.70, consumer: 'src/world/cathode/CathodeRenderer.js' },
 ];
 
 export const WORLDS = [

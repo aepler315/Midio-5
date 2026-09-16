@@ -122,11 +122,6 @@
       "count": 1
     }
   },
-  "src/world/WorldScore.js": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
   "src/world/dna/OklchColor.js": {
     "no-useless-assignment": {
       "count": 1
@@ -137,22 +132,7 @@
       "count": 9
     }
   },
-  "src/world/farside/drawFarside.js": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
   "src/world/fathom/drawFathom.js": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/world/nave/drawNave.js": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/world/redline/drawRedline.js": {
     "no-unused-vars": {
       "count": 1
     }
