@@ -10,8 +10,16 @@ to the song. Cathode keeps its separate pixel renderer.
 The city and underwater worlds now share a small set of controls from
 `WorldMusic.js`, while interpreting those controls differently:
 
-- **After Hours:** a steady field of lit windows remains visible in quiet
-  passages. Detected percussion brightens one district at a time. Six pairs
+- **After Hours:** lit windows, street lamps and the wet road share one glow
+  envelope (`CityGlow.js`). A dimmed baseline tracks window occupancy and
+  breathes on a slow cycle, so quiet passages recede rather than sitting at
+  the same brightness as the rest of the song; the headroom that frees up is
+  spent on blooms at section boundaries that earned one. A boundary earns a
+  bloom by being a genuine step up in section energy and by arriving at a
+  section that sits high in the song overall -- a continuation, a fall into a
+  bridge, and a decorative pacing cut all get nothing. Measured over a real
+  song this fires at two of ten boundaries, about 3% of its running time.
+  Detected percussion still brightens one district at a time on top. Six pairs
   of traffic lights travel along the ground with restrained road reflections;
   percussion accents individual pairs without increasing their count or speed.
 - **The Fathom:** broad light shafts respond to average sub/bass energy over
