@@ -10,6 +10,7 @@ import {
   REQUIRED_FAMILIES, ACCEPTANCE_TARGET, EVAL_QUALITY, viewingOrder, evaluationSeed,
   pickEvaluationPassages, privateScores, seventyEightyCases, diagnosticsFromFeatures,
   evaluateTrack, evaluateCorpus, validateCorpus, applyReviews, summarizeAcceptance,
+  autoExclusions,
 } from '../src/eval/WorldQuality.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -65,7 +66,13 @@ test('private scores are heuristics; 70–80 cases sit beside the winner without
   }
   for (const row of heuristic.byWorld) {
     assert.ok(row.score >= 1 && row.score <= 99);
+    assert.equal(typeof row.fit, 'number');
+    assert.equal(typeof row.tied, 'boolean');
+    assert.equal(typeof row.eligible, 'boolean');
+    assert.ok(row.parts.styleAffinity != null);
+    assert.ok(Array.isArray(row.parts.problems));
   }
+  assert.ok(heuristic.pickReason === 'unique' || heuristic.pickReason === 'near-tie');
 });
 
 test('every world is offered the same quiet, transition and peak clock', () => {
@@ -139,6 +146,8 @@ test('empty ratings do not claim the acceptance target; filled holdout ratings c
   assert.equal(report.summary.claimed, false);
   assert.equal(report.summary.met, null);
   assert.equal(report.summary.reviewed, 0);
+  assert.equal(report.summary.calibration, 'empty-holdout');
+  assert.deepEqual(report.summary.exclusions, []);
   assert.equal(report.acceptance.holdoutShare, 0.8);
   assert.match(ACCEPTANCE_TARGET.note, /Calmness is a legitimate outcome/);
 
@@ -151,6 +160,8 @@ test('empty ratings do not claim the acceptance target; filled holdout ratings c
   assert.equal(ok.reviewed, filled.length);
   assert.equal(ok.met, true);
   assert.equal(ok.claimed, false);
+  assert.equal(ok.calibration, 'holdout-reviews');
+  assert.deepEqual(ok.exclusions, []);
 
   const blocked = report.sheets.map((sheet, i) => applyReviews(sheet, {
     [sheet.heuristic.recommendedId]: {
@@ -164,6 +175,11 @@ test('empty ratings do not claim the acceptance target; filled holdout ratings c
   assert.equal(fail.claimed, false);
   assert.equal(fail.met, false);
   assert.ok(fail.passing < fail.reviewed);
+  assert.equal(fail.calibration, 'holdout-reviews');
+  assert.equal(fail.exclusions.length, 2);
+  assert.ok(fail.exclusions.every((e) => e.reason === 'blocking-defect'));
+  const fromHelper = autoExclusions(blocked);
+  assert.equal(fromHelper.length, 2);
 });
 
 test('evaluateCorpus --split tune never peeks at holdout tracks', () => {

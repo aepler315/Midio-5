@@ -258,6 +258,12 @@ export class DebugOverlay {
     lines.push(`hype: fast=${this.sim.hype.fast.toFixed(2)} slow=${this.sim.hype.slow.toFixed(2)} buildUp=${this.sim.hype.buildUp.toFixed(2)} drops=${this.sim.hype.dropCount}`);
     lines.push(`broshi rabid=${this.sim.broshi.rabid ? 'YES' : 'no'} rho=${(this.sim.broshi.rho || 0).toFixed(2)}`);
 
+    const fit = this.sim.fitDiagnostic;
+    if (fit?.lines?.length) {
+      lines.push('');
+      lines.push(...fit.lines);
+    }
+
     // --- structure ---
     // A failing draw outranks every other reading here: whatever else the
     // numbers say, part of the frame is not being painted.

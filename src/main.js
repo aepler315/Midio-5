@@ -43,7 +43,7 @@ import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
 import { visualNow, VISUAL_LEAD_MS } from './core/ChoreoClock.js';
-import { buildWorldVariant, scoreWorlds } from './world/WorldScore.js';
+import { buildWorldVariant, scoreWorlds, pickRecommended, formatFitDiagnostic } from './world/WorldScore.js';
 import { buildSongProfile, PROFILE_VERSION } from './audio/SongProfile.js';
 import {
   DEFAULT_WORLD_ID, setCustomWorld, clearCustomWorld, getCustomWorld, getWorld, listWorlds,
@@ -289,6 +289,7 @@ let lastTimelineData = null;
 let lastAudioBuffer = null;
 let lastWorldId = DEFAULT_WORLD_ID;
 let pendingWorldStart = null;
+let lastFitDiagnostic = null;
 let previewSession = null;
 let lastSongName = 'song';
 let lastSongSeed = null; // 32-bit seed used for the run that just finished
@@ -1036,6 +1037,7 @@ function offerWorldsThenStart(data, extra = {}) {
       readPinnedSeed(),
     );
     pendingWorldStart = { data, extra, features, seed, profile };
+    lastFitDiagnostic = recordFitDiagnostic(features, profile);
     const hasLabels = Array.isArray(data.structure?.labels) && data.structure.labels.length > 1;
     renderWorldGrid(null, features, { hasLabels });
     worldSelectEl?.classList.remove('hidden');
@@ -1044,6 +1046,7 @@ function offerWorldsThenStart(data, extra = {}) {
     // The grid is a convenience; analysis failing must still start a song.
     console.error('[world score]', err);
     pendingWorldStart = { data, extra };
+    lastFitDiagnostic = null;
     confirmWorld(data.worldId || lastWorldId || DEFAULT_WORLD_ID);
   }
 }
@@ -1106,12 +1109,28 @@ function previewSelectedWorld(baseWorldId) {
   });
 }
 
+function recordFitDiagnostic(features, profile) {
+  if (!features) return null;
+  const ranked = scoreWorlds(features, undefined, { profile });
+  const confidence = Number.isFinite(profile?.confidence?.overall)
+    ? profile.confidence.overall
+    : null;
+  return {
+    ranked,
+    confidence,
+    lines: formatFitDiagnostic(ranked, { confidence }),
+  };
+}
+
 function chooseRecommendedWorld() {
   const pending = pendingWorldStart;
   if (!pending?.features) return;
-  const ranked = scoreWorlds(pending.features);
-  const id = ranked[0]?.id;
-  if (id) playSelectedWorld(id);
+  const diagnostic = lastFitDiagnostic?.ranked?.length
+    ? lastFitDiagnostic
+    : recordFitDiagnostic(pending.features, pending.profile);
+  lastFitDiagnostic = diagnostic;
+  const pick = pickRecommended(diagnostic?.ranked || []);
+  if (pick?.id) playSelectedWorld(pick.id);
 }
 
 worldSelectGridEl?.addEventListener('click', (e) => {
@@ -1286,6 +1305,7 @@ function startTimeline(timelineData, extra = {}) {
   // consumer in the sim itself (SectionFusion already folded the lyric
   // structure into BiomeManager.sections by this point).
   sim.lyricIdentity = timelineData.lyricIdentity || null;
+  sim.fitDiagnostic = extra.fitDiagnostic || lastFitDiagnostic || null;
   // Live listening runs its arc against a nominal length, because the song
   // has not finished happening. Flagged so the transport draws the total as
   // the estimate it is rather than as a measurement.

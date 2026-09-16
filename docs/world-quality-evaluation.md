@@ -49,6 +49,24 @@ gallery as a manual choice; it is not an automatic recommendation.
 the recommended world after the fact. Hide those numbers while rating.
 They are not a percentage of watchability.
 
+Fit is evaluated **after** the world's response configuration. A dense mix
+that already filters accents is not rejected for raw intensity. Ranking
+uses the continuous `fit` value; the integer `score` is display-only for
+the review sheet. Worlds within `TIE_EPS` (0.012) of the leader stay tied.
+Choose-for-me still returns one pick and records `pickReason` as `unique`
+or `near-tie`.
+
+Diagnostics on each row split three things that used to be mixed together:
+
+| Field | Meaning |
+| --- | --- |
+| `parts.styleAffinity` | Does this world's material language like the song? |
+| `parts.analysisConfidence` | How much the tempo/key/structure read can be trusted |
+| `parts.problems` | Predicted response issues (`strobe-risk`, `stillness`, `low-confidence`, `manual-only`) |
+
+A scored channel must name a renderer `consumer` (`file#symbol`). A channel
+with no consumer is not a measurement.
+
 ## Ratings
 
 Rate each world independently, 1–5, on:
@@ -82,7 +100,13 @@ for both appeal and musical timing in at least 80% of held-out reviewed
 cases.
 
 This is a **target to validate**, not a claimed result. An empty sheet
-reports `met: null`. Filling ratings on the tune split does not count.
+reports `met: null` and `calibration: empty-holdout`. Filling ratings on
+the tune split does not count. A sheet with filled holdout reviews reports
+`calibration: holdout-reviews` and still sets `claimed: false`.
+
+Filled `blockingDefect` reviews become `autoExclusions`: that track/world
+pair stays out of Choose-for-me until the defect is gone. Manual selection
+is always available, including Cathode.
 
 Section-boundary metrics remain a separate concern: see
 [analysis-evaluation.md](./analysis-evaluation.md) and `npm run bench:sections`.

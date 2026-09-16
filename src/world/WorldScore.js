@@ -8,7 +8,7 @@
 import { clamp01, clamp } from '../utils/math.js';
 import { listWorlds, getWorld } from './Worlds.js';
 import { buildSongProfile } from '../audio/SongProfile.js';
-import { adaptWorld } from './WorldAdaptation.js';
+import { adaptWorld, responseConfigFor } from './WorldAdaptation.js';
 
 /** Shared extraction lives in SongProfile. Kept here so existing callers
  *  and tests do not have to move; scoring still consumes `watch`. */
@@ -91,44 +91,154 @@ function shapeFit(features, prefer) {
   return s / keys.length;
 }
 
+/** Continuous fit gap treated as a tie, not a unique winner. */
+export const TIE_EPS = 0.012;
+
+function resolveScoreInputs(features, profile) {
+  const prof = profile?.watch ? profile
+    : (features?.watch && features?.version ? features : null);
+  const feat = (features && typeof features.drive === 'number' && !features.watch)
+    ? features
+    : (prof?.watch || extractWatchFeatures(features || {}));
+  return { feat, profile: prof };
+}
+
+/**
+ * Drive used for comfort after the world's response config has had a
+ * chance to absorb density. A dense mix that already filters accents
+ * should not be rejected solely for raw onset. Sparse/quiet input is
+ * never lifted — silence stays still.
+ */
+export function driveAfterResponse(feat, world, response) {
+  const drive = clamp01(feat?.drive ?? 0);
+  if (!response || !world?.comfort) return drive;
+  if (response.quiet) return drive;
+  if (response.band !== 'dense') return drive;
+  const hi = world.comfort.hi ?? 0.8;
+  if (!(drive > hi)) return drive;
+  const overshoot = drive - hi;
+  const absorb = clamp01(1 - (response.accentGain ?? 1)) * 0.5;
+  return clamp01(hi + overshoot * (1 - absorb));
+}
+
+export function predictedProblems(feat, world, response, confidence) {
+  const problems = [];
+  if (Number.isFinite(confidence) && confidence < 0.28) {
+    problems.push({
+      code: 'low-confidence',
+      severity: 'info',
+      detail: 'tempo/key/structure is a fallback, not a measurement',
+    });
+  }
+  const onset = clamp01(feat?.onset ?? 0);
+  if (onset > 0.72 && (response?.accentGain ?? 1) > 0.85 && (response?.maxAccents ?? 4) >= 5) {
+    problems.push({
+      code: 'strobe-risk',
+      severity: 'warn',
+      detail: 'dense hits with little accent filtering',
+    });
+  }
+  if (response?.quiet && (world?.comfort?.lo ?? 0) > 0.55) {
+    problems.push({
+      code: 'stillness',
+      severity: 'warn',
+      detail: 'quiet input in a world that wants high drive; ambient is not lifted',
+    });
+  }
+  if (world?.manualOnly) {
+    problems.push({
+      code: 'manual-only',
+      severity: 'block',
+      detail: 'kept out of Choose-for-me',
+    });
+  }
+  return problems;
+}
+
+export function formatFitDiagnostic(ranked = [], { confidence = null } = {}) {
+  const pick = ranked.find((r) => r.recommended) || ranked[0];
+  if (!pick) return ['=== WORLD FIT (heuristic, not quality) ===', '(no ranking)'];
+  const tied = ranked.filter((r) => r.tied).map((r) => r.id);
+  const lines = [
+    '=== WORLD FIT (heuristic, not quality) ===',
+    `pick: ${pick.id}  fit=${pick.fit.toFixed(3)}  ${pick.pickReason || 'unique'}`,
+  ];
+  if (tied.length > 1) lines.push(`tied with: ${tied.join(', ')}`);
+  if (Number.isFinite(confidence)) lines.push(`analysis confidence: ${confidence.toFixed(2)} (not a probability)`);
+  lines.push(`style affinity: ${(pick.parts?.styleAffinity ?? pick.parts?.affinity ?? 0).toFixed(2)}`);
+  const problems = pick.parts?.problems || [];
+  lines.push(problems.length
+    ? `problems: ${problems.map((p) => p.code).join(', ')}`
+    : 'problems: none');
+  return lines;
+}
+
 /**
  * Score every registered world against this song. Returns a ranked list
- * of `{ id, name, tagline, kind, score, parts, recommended }`.
- * `score` is 1–99 so a card never reads as a sure thing or a zero.
+ * of `{ id, name, tagline, kind, fit, score, parts, recommended, tied }`.
+ *
+ * `fit` is the continuous heuristic (0..1). `score` is the same value
+ * mapped to 1–99 for the private review sheet — ranking uses `fit`,
+ * never the rounded integer. Near ties stay tied; Choose-for-me still
+ * needs one pick and records that as a tie-break, not certainty.
  *
  * Worlds flagged `manualOnly` are excluded from the default set. They are
- * chosen by hand or not at all, and this is the one place that has to
- * enforce it: buildCustomWorld picks its base from `scoreWorlds(feat)[0]`,
- * so a manual-only world left in the ranking could be cloned into a custom
- * world -- inheriting a `kind` (and renderer expectation) that the rest of
- * the custom-world machinery has no path for. Filtering here covers both
- * the recommendation and the base pick at once. An explicit `worlds`
- * argument is still honored verbatim, so a caller that deliberately passes
- * one in can still score it.
+ * chosen by hand or not at all. An explicit `worlds` argument is still
+ * honored verbatim.
+ *
+ * Fit is evaluated after the world's response config, so a dense mix
+ * already damped by accentGain is not rejected for raw intensity.
  */
-export function scoreWorlds(features, worlds = listWorlds().filter((w) => !w.manualOnly)) {
-  const feat = features && typeof features.drive === 'number'
-    ? features
-    : extractWatchFeatures(features || {});
+export function scoreWorlds(features, worlds = listWorlds().filter((w) => !w.manualOnly), options = {}) {
+  const { feat, profile } = resolveScoreInputs(features, options.profile);
+  const confidence = Number.isFinite(profile?.confidence?.overall)
+    ? profile.confidence.overall
+    : (Number.isFinite(options.confidence) ? options.confidence : null);
+  const exclude = options.exclude instanceof Set ? options.exclude : new Set(options.exclude || []);
 
   const ranked = worlds.map((w) => {
-    const comfort = comfortScore(feat.drive, w.comfort);
+    const response = responseConfigFor(w.kind, profile || { watch: feat });
+    const drive = driveAfterResponse(feat, w, response);
+    const comfort = comfortScore(drive, w.comfort);
     const coverage = coverageScore(feat, w.channels);
     const shape = shapeFit(feat, w.prefer);
     const affinity = affinityScore(feat, w);
     const mixed = 0.38 * comfort + 0.24 * coverage + 0.16 * shape + 0.22 * affinity;
-    const score = clamp(Math.round(40 + 58 * mixed), 1, 99);
+    const problems = predictedProblems(feat, w, response, confidence);
+    const blocked = problems.some((p) => p.severity === 'block') || exclude.has(w.id);
     return {
       id: w.id,
       name: w.name,
       tagline: w.tagline,
       kind: w.kind,
-      score,
-      parts: { comfort, coverage, shape, affinity, drive: feat.drive },
+      fit: mixed,
+      score: clamp(Math.round(40 + 58 * mixed), 1, 99),
+      eligible: !blocked,
+      parts: {
+        comfort,
+        coverage,
+        shape,
+        affinity,
+        drive: feat.drive,
+        driveUsed: drive,
+        styleAffinity: affinity,
+        analysisConfidence: confidence,
+        problems,
+        responseBand: response.band,
+      },
     };
   });
-  ranked.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-  if (ranked[0]) ranked[0].recommended = true;
+  ranked.sort((a, b) => (b.eligible - a.eligible) || (b.fit - a.fit) || a.name.localeCompare(b.name));
+  const eligible = ranked.filter((r) => r.eligible);
+  const bestFit = eligible[0]?.fit;
+  if (Number.isFinite(bestFit)) {
+    for (const r of eligible) {
+      r.tied = Math.abs(r.fit - bestFit) <= TIE_EPS;
+    }
+    const tied = eligible.filter((r) => r.tied);
+    eligible[0].recommended = true;
+    eligible[0].pickReason = tied.length > 1 ? 'near-tie' : 'unique';
+  }
   return ranked;
 }
 
@@ -187,6 +297,10 @@ export function buildWorldVariant(baseId, features, data = null) {
   return { world: adapted.world, proof, baseId: base.id };
 }
 
+export function pickRecommended(ranked = []) {
+  return ranked.find((r) => r.recommended) || ranked.find((r) => r.eligible) || ranked[0] || null;
+}
+
 /**
  * Choose-for-me constructor: score, then adapt the winner. Not a privileged
  * gallery card — the chooser calls buildWorldVariant with the picked world.
@@ -195,8 +309,9 @@ export function buildCustomWorld(features, data = null) {
   const feat = features && typeof features.drive === 'number'
     ? features
     : extractWatchFeatures(features || {});
-  const ranked = scoreWorlds(feat);
-  return buildWorldVariant(ranked[0].id, feat, data);
+  const ranked = scoreWorlds(feat, undefined, { profile: data?.profile });
+  const pick = pickRecommended(ranked);
+  return buildWorldVariant(pick.id, feat, data);
 }
 
 function proveScore(features, world) {
