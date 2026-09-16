@@ -5,9 +5,9 @@ below retain the original art direction; they are not a feature checklist.
 The chooser presents equal choices and tailors each selected painterly world
 to the song. Cathode keeps its separate pixel renderer.
 
-### Musical behavior: After Hours, Fathom, Redline, Foundry
+### Musical behavior: After Hours, Fathom, Redline, Foundry, Far Side, Understory, Nave
 
-The city, underwater, highway and mill worlds share a small set of controls from
+The painterly worlds share a small set of controls from
 `WorldMusic.js`, while interpreting those controls differently:
 
 - **After Hours:** lit windows, street lamps and the wet road share one glow
@@ -38,9 +38,26 @@ The city, underwater, highway and mill worlds share a small set of controls from
   Percussion drops one hammer in the mill the current section picked; the other
   three mills stay idle. Earned section lifts flood the ground from below, then
   fall back to the heat envelope.
+- **Far Side:** the terminator still walks the song (the slow form sweep);
+  its contrast eases as energy rises so a dense mix cannot strobe the limb.
+  Illumination of the primary follows the 1.2s energy average plus an earned
+  phrase lift. Isolated accents leave a surface trace; dense material raises
+  the floor so only the stronger hits mark the regolith. Sparse songs keep
+  the composition and the stillness.
+- **Understory:** canopy occupancy is that same energy average plus the
+  orogeny arc -- a kick never adds a trunk. Phrases that earned a lift open
+  the light shafts; decorative cuts do not. One spore colony answers each
+  accent; the other three keep their ambient drift. Shaft sway is the slow
+  current already zeroed under reduced flash.
+- **The Nave:** bass is the resonance of the interior (1.2s average, never a
+  single bin). Returning structural labels light the same stained-glass bays;
+  a different label lights a different set. Decorative cuts and missing labels
+  do not invent a chorus -- every bay follows bass equally (broad phrasing).
+  Inferred structure is worth half a measured one. Earned phrase openings lift
+  the motif bays.
 - **Reduced motion:** the new current sway, traffic travel and hammer drop are
   suppressed, local accents are softened, cruise rate is halved, pours are
-  tempered, and these layers use non-additive compositing. Existing
+  tempered, additive layers fall back to non-additive compositing. Existing
   world/character motion remains governed by the existing controls.
 
 These controls consume existing energy curves and conductor rhythm events.

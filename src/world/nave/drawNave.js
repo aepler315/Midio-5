@@ -6,9 +6,11 @@ import { drawTiledStrip } from '../SilhouetteGenerator.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
 import { ensureContrast } from '../../render/VisualStyle.js';
 import { groundGlowLights } from '../../render/LightField.js';
-import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
-import { capFlashAlpha } from '../../ui/Accessibility.js';
+import { celestialYFracFor, celestialXFracFor } from '../DayNight.js';
+import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
 import { hexToRgb } from '../../utils/color.js';
+import { sampleWorldMusic } from '../WorldMusic.js';
+import { motifTrust, bayLit, bayAlpha, boundaryLift01 } from './Resonance.js';
 
 const LAYER_RATIOS = { L2: 0.03, L3: 0.08, L4: 0.18, L5: 0.44 };
 const Y_OFF = { L2: 6, L3: 16, L4: 36, L5: 66 };
@@ -23,6 +25,12 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
 
 export function drawNaveWorld(mgr, frame) {
   const { ctx, canvas, worldX, originX, A, B, t, phenomenaFull, particleMul, groundView } = frame;
+  const section = mgr.sections?.[mgr._lastSectionIdx];
+  const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
+    rhythm: mgr.worldRhythm, section, reducedFlash: mgr.reducedFlash });
+  const lift = boundaryLift01(section, mgr.sections?.[mgr._lastSectionIdx - 1]);
+  const trust = motifTrust(section);
+
   mgr._drawSky(ctx, canvas, A, B, t, 0.8);
 
   // Deliberately NOT wired here: BiomeManager's classic path draws
@@ -39,21 +47,22 @@ export function drawNaveWorld(mgr, frame) {
   const celestialXFrac = celestialXFracFor(0.5);
   mgr._drawCelestial?.(ctx, canvas, A, B, t, celestialYFrac, 1.0, celestialXFrac);
 
-  // Stained glass color spill: the edgeLight bleeds across the stone.
+  // Stained glass color spill. Bass is the resonance of the interior
+  // (1.2s average, never a single bin). Returning labels light the same
+  // bays; decorative cuts keep every bay equal so we do not invent a chorus.
   const edgeColor = A.edgeLight || B.edgeLight || null;
   if (edgeColor && phenomenaFull) {
     const { r, g, b } = hexToRgb(edgeColor);
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    const energy = mgr.energyCurves && typeof mgr.energyCurves.globalEnergyNorm === 'function'
-      ? mgr.energyCurves.globalEnergyNorm(mgr.tSec * 1000) : 0.4;
-    ctx.globalAlpha = capFlashAlpha(0.03 + 0.04 * energy, false);
-    // Diagonal shafts of colored light from the windows.
+    ctx.globalCompositeOperation = flashCompositeOp(mgr.reducedFlash);
     for (let i = 0; i < 4; i++) {
+      const lit = bayLit(section?.label, i);
+      const alpha = bayAlpha({ trust, lit, bass: music.bass, reveal: music.reveal * lift });
       const xBase = canvas.width * (0.1 + 0.25 * i);
+      ctx.globalAlpha = capFlashAlpha(alpha, mgr.reducedFlash);
       const sg = ctx.createLinearGradient(xBase, 0, xBase + 60, canvas.height * 0.7);
-      sg.addColorStop(0, `rgba(${r},${g},${b},0.08)`);
-      sg.addColorStop(0.5, `rgba(${r},${g},${b},0.03)`);
+      sg.addColorStop(0, `rgba(${r},${g},${b},0.14)`);
+      sg.addColorStop(0.5, `rgba(${r},${g},${b},0.05)`);
       sg.addColorStop(1, `rgba(${r},${g},${b},0)`);
       ctx.fillStyle = sg;
       ctx.fillRect(xBase - 10, 0, 80, canvas.height * 0.7);

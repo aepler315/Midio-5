@@ -7,6 +7,9 @@ import { CodaDirector } from '../../sim/CodaDirector.js';
 import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
+import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
+import { sampleWorldMusic } from '../WorldMusic.js';
+import { canopyGrowth, shaftOpen, sporeBurst, boundaryLift01 } from './Canopy.js';
 
 const LAYER_RATIOS = { L2: 0.03, L3: 0.08, L4: 0.20, L5: 0.48 };
 const Y_OFF = { L2: 8, L3: 18, L4: 38, L5: 66 };
@@ -21,6 +24,12 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
 
 export function drawUnderstoryWorld(mgr, frame) {
   const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
+  const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
+    rhythm: mgr.worldRhythm, section: mgr.sections?.[mgr._lastSectionIdx], reducedFlash: mgr.reducedFlash });
+  const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
+  const growth = canopyGrowth({ energy: music.energy, orogeny: mgr.orogenyGrowth ?? 0 });
+  const open = shaftOpen({ growth, reveal: music.reveal, lift });
+
   mgr._drawSky(ctx, canvas, A, B, t, 0.7);
 
   // Deep-sky layer ported in from BiomeManager's classic path. The canopy
@@ -51,19 +60,18 @@ export function drawUnderstoryWorld(mgr, frame) {
     ctx.restore();
   }
 
-  // Canopy light shafts: diagonal beams of filtered sunlight. The heaviest
-  // per-frame addition in this world (3 gradient-composited polygon fills
-  // every draw) — gated the same way every other heavy-post-fx layer in
-  // BiomeManager is, so PerfGovernor's mobile-performance rungs can shed it.
+  // Canopy light shafts. Spread and brightness follow growth and earned
+  // phrases, not elapsed time. Continuity sway is WorldMusic.current,
+  // which is already zero under reduced flash. Gated the same way every
+  // other heavy-post-fx layer in BiomeManager is.
   const heavyOk = !mgr._perf || mgr._perf.heavyPostFx;
   if (phenomenaFull && heavyOk) {
-    const phase = (mgr.tSec || 0) * 0.3;
+    const sway = music.current * canvas.width * 0.03;
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = flashCompositeOp(mgr.reducedFlash);
     for (let i = 0; i < 3; i++) {
-      const xBase = canvas.width * (0.15 + 0.3 * i + 0.04 * Math.sin(phase + i * 1.7));
-      const shaftAlpha = 0.025 + 0.015 * Math.sin(phase * 0.7 + i * 2.3);
-      ctx.globalAlpha = shaftAlpha;
+      const xBase = canvas.width * (0.15 + 0.3 * i) + sway * (i % 2 ? 1 : -1);
+      ctx.globalAlpha = capFlashAlpha(0.04 + 0.14 * open, mgr.reducedFlash);
       ctx.beginPath();
       ctx.moveTo(xBase - 20, 0);
       ctx.lineTo(xBase + 40, 0);
@@ -110,9 +118,9 @@ export function drawUnderstoryWorld(mgr, frame) {
   };
 
   drawRange('L2');
-  // Green haze between far layers — forest atmosphere.
+  // Green haze between far layers — forest atmosphere. Growth thickens it.
   ctx.save();
-  ctx.globalAlpha = 0.04;
+  ctx.globalAlpha = 0.03 + 0.05 * growth;
   ctx.fillStyle = 'rgba(30, 60, 20, 0.5)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.restore();
@@ -135,6 +143,8 @@ export function drawUnderstoryWorld(mgr, frame) {
     ctx.restore();
   }
 
+  if (particleMul > 0) drawSpores(ctx, canvas, worldX, music, mgr.reducedFlash, particleMul);
+
   drawRange('L4');
   drawRange('L5');
 
@@ -145,4 +155,23 @@ export function drawUnderstoryWorld(mgr, frame) {
   mgr._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
   mgr._drawFlood(ctx, groundCanvas);
   mgr._drawTransitionOverlays(ctx, groundCanvas, B);
+}
+
+function drawSpores(ctx, canvas, worldX, music, reducedFlash, particleMul) {
+  ctx.save();
+  ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
+  ctx.fillStyle = '#d8f0a8';
+  for (let colony = 0; colony < 4; colony++) {
+    const scroll = worldX * (0.05 + colony * 0.012);
+    const x = ((canvas.width * (colony + 0.5) / 4 - scroll) % canvas.width + canvas.width) % canvas.width;
+    const y = canvas.height * (0.38 + (colony % 3) * 0.12) + music.current * 6;
+    const burst = sporeBurst(music.accent, music.group, colony);
+    ctx.globalAlpha = capFlashAlpha(Math.min(1, particleMul) * (0.12 + burst * 0.55), reducedFlash);
+    for (let dot = 0; dot < 3; dot++) {
+      ctx.beginPath();
+      ctx.arc(x + dot * 8, y + Math.sin(dot * 2 + colony) * 6, 1.4 + burst * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
 }
