@@ -5,11 +5,20 @@ below retain the original art direction; they are not a feature checklist.
 The chooser presents equal choices and tailors each selected painterly world
 to the song. Cathode keeps its separate pixel renderer.
 
-### Musical behavior: After Hours, Fathom, Redline, Foundry, Far Side, Understory, Nave
+### Musical behavior: The Range, After Hours, Fathom, Redline, Foundry, Far Side, Understory, Nave
 
 The painterly worlds share a small set of controls from
 `WorldMusic.js`, while interpreting those controls differently:
 
+- **The Range:** the mountains already grow with the song and change scale
+  with each section. Ambient travel of the ridge is now the same 1.2s energy
+  average -- quiet songs keep a slow atmosphere, a groove breathes, and dense
+  material settles so a wall of guitars does not strobe the skyline. Bass
+  swells the flanks. Phrase boundaries that earned a lift add a brief extra
+  scale; decorative cuts do not. Isolated accents sharpen a summit on a quiet
+  song; dense material raises the floor so only stronger hits mark the ridge.
+  Groove is derived from the clock, not a one-pole, so a backward seek cannot
+  keep the previous passage's heave.
 - **After Hours:** lit windows, street lamps and the wet road share one glow
   envelope (`CityGlow.js`). A dimmed baseline tracks window occupancy and
   breathes on a slow cycle, so quiet passages recede rather than sitting at
@@ -56,9 +65,10 @@ The painterly worlds share a small set of controls from
   Inferred structure is worth half a measured one. Earned phrase openings lift
   the motif bays.
 - **Reduced motion:** the new current sway, traffic travel and hammer drop are
-  suppressed, local accents are softened, cruise rate is halved, pours are
-  tempered, additive layers fall back to non-additive compositing. Existing
-  world/character motion remains governed by the existing controls.
+  suppressed, local accents are softened, cruise rate and ridge travel are
+  halved, pours and phrase-scale lifts are tempered, additive layers fall
+  back to non-additive compositing. Existing world/character motion remains
+  governed by the existing controls.
 
 These controls consume existing energy curves and conductor rhythm events.
 No tempo is invented for unmetered songs, and no persisted analysis schema
