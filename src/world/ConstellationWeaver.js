@@ -74,6 +74,10 @@ const GLYPH_SIZE_FRAC = 0.18;     // fraction of sky width
 // nothing until the shape it belongs to is already recognizable, so the
 // detail reads as confirmation rather than clutter arriving mid-guess.
 const INTERIOR_REVEAL_MS = 450;
+// Live melody is a handful of notes per second. A conductor catch-up is
+// tens of the same notes in one frame. One visual-clock step is enough
+// for the former and stops the latter painting a whole sky at once.
+export const MELODY_STEPS_PER_UPDATE = 1;
 
 // Terrain is drawn AFTER this layer and clips anything below its silhouette
 // with a hard edge (see the REGION comment above). A star-atlas ambient dot
@@ -163,6 +167,13 @@ export class ConstellationWeaver {
     this._pendingGlyph = null;     // { glyphId, deadlineMs } waiting to shape the next figure
     this._glyphCooldown = 0;       // figures remaining before another glyph is allowed
     this.fullness = 0;             // 0..1, driven by BiomeManager (update()) -- relaxes the concurrency/dot caps so the sky can go genuinely dense every now and then, especially late in the song
+    // Melody steps are paced by the visual clock. A hitch, a seek, or the
+    // conductor catching up can dump tens of notes in one dispatchUpTo; each
+    // used to advance a figure, so three constellations would complete on the
+    // same frame, hold for five seconds, and vanish together. One step per
+    // update keeps live melody (a few notes a second) intact and turns a
+    // dump into a single extra dot.
+    this._melodyBudget = MELODY_STEPS_PER_UPDATE;
   }
 
   /** Queue a glyph shape for the next constellation figure, valid only
@@ -184,6 +195,8 @@ export class ConstellationWeaver {
   }
 
   onMelody(evt) {
+    if (this._melodyBudget <= 0) return;
+    this._melodyBudget--;
     const nowMs = evt.tMs;
     // A pending hint past its deadline belongs to a lyric line the song has
     // already moved on from (played past it, or a seek jumped over it) --
@@ -315,6 +328,7 @@ export class ConstellationWeaver {
 
   update(nowMs, dtSec, fullness = 0) {
     this._lastNowMs = nowMs;
+    this._melodyBudget = MELODY_STEPS_PER_UPDATE;
     this.fullness = clamp01(fullness);
     this.pulse *= Math.exp(-dtSec / PULSE_TAU_SEC);
 

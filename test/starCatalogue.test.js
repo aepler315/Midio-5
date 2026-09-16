@@ -5,7 +5,7 @@ import {
   sampleMagnitude, magnitudeToBrightness01, sizeForMagnitude, subPixelDraw,
   twinkleAmplitude, generateCatalogue, galacticBandCenterY, GALACTIC_BAND,
   airmass, extinction01, reddening01, generateDustLanes, generateDeepSky,
-  generatePlanets, eclipticY, perceptualStretch,
+  generatePlanets, eclipticY, perceptualStretch, generateOpenClusters,
 } from '../src/world/StarCatalogue.js';
 import { mulberry32 } from '../src/utils/math.js';
 
@@ -253,6 +253,31 @@ test('dust lanes are deterministic and hug the galactic plane', () => {
     assert.ok(d.rx > d.ry, 'lanes lie along the plane, not across it');
     assert.ok(d.alpha > 0 && d.alpha < 1);
   }
+});
+
+// --- Open clusters ---------------------------------------------------------
+
+test('open clusters are compact swarms on the plane, deterministic, members in-field', () => {
+  const w = 1280, h = 440;
+  const a = generateOpenClusters(4, 4, w, h);
+  assert.deepEqual(a, generateOpenClusters(4, 4, w, h), 'deterministic per seed');
+  assert.equal(a.length, 4);
+  const half = h * GALACTIC_BAND.halfFrac;
+  let members = 0;
+  for (const c of a) {
+    members += c.members.length;
+    assert.ok(c.members.length >= 11 && c.members.length <= 18);
+    const off = Math.abs(c.y - galacticBandCenterY(c.x / w, h));
+    assert.ok(off <= half * 0.55, `cluster center belongs to the disc, off=${off}`);
+    let maxR = 0;
+    for (const m of c.members) {
+      assert.ok(m.x >= 0 && m.x <= w && m.y >= 0 && m.y <= h);
+      assert.ok(Number.isFinite(m.mag) && m.sizePx > 0);
+      maxR = Math.max(maxR, Math.hypot(m.x - c.x, m.y - c.y));
+    }
+    assert.ok(maxR < h * 0.08, `members should stay a compact swarm, span=${maxR}`);
+  }
+  assert.ok(members >= 44, `expected a visible swarm, got ${members} members`);
 });
 
 // --- Deep-sky objects ------------------------------------------------------

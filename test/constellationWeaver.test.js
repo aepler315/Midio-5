@@ -2,11 +2,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ConstellationWeaver, nextDotPos, edgeRevealFrac, groundFadeAlpha, REGION, GROUND_FADE_START,
+  MELODY_STEPS_PER_UPDATE,
 } from '../src/world/ConstellationWeaver.js';
 import { mulberry32 } from '../src/utils/math.js';
 
 function melodyEvt(tMs, pitch = 60, vel = 0.7) {
   return { tMs, pitch, vel, role: 'MELODY' };
+}
+
+function tickMelody(weaver, evt, dtSec = 0.05) {
+  weaver.onMelody(evt);
+  weaver.update(evt.tMs, dtSec);
 }
 
 test('nextDotPos: first dot lands in region, subsequent dots stay in region and hop scales with the field diagonal', () => {
@@ -74,7 +80,7 @@ test('a full figure seeds then connects, closing after targetCount-1 edge-reveal
   let t = 0;
   // Feed onsets until the first figure is committed (moves out of `building`).
   for (let i = 0; i < 40 && !((weaver.figures.length === 1) && !weaver.building); i++) {
-    weaver.onMelody(melodyEvt(t, 60 + i));
+    tickMelody(weaver, melodyEvt(t, 60 + i));
     t += 100;
   }
   assert.equal(weaver.figures.length, 1, 'exactly one figure should have completed');
@@ -119,7 +125,7 @@ test('figures drain over time: hold then fade then gone (or crystallized), no Na
   const weaver = new ConstellationWeaver(3, 1280, 720);
   let t = 0;
   // Complete one figure quickly.
-  while (!weaver.figures.length) { weaver.onMelody(melodyEvt(t, 64)); t += 50; }
+  while (!weaver.figures.length) { tickMelody(weaver, melodyEvt(t, 64)); t += 50; }
   assert.equal(weaver.figures.length, 1);
   // Advance well past hold (5000ms) + fade (3000ms).
   for (let i = 0; i < 200; i++) {
@@ -142,7 +148,7 @@ test('same seed + same event sequence -> identical dot coordinates (determinism)
   const events = Array.from({ length: 20 }, (_, i) => melodyEvt(i * 120, (i * 5) % 100, 0.6));
   const a = new ConstellationWeaver(77, 1280, 720);
   const b = new ConstellationWeaver(77, 1280, 720);
-  for (const e of events) { a.onMelody(e); b.onMelody(e); }
+  for (const e of events) { tickMelody(a, e); tickMelody(b, e); }
   assert.deepEqual(a.figures, b.figures);
   assert.deepEqual(a.building, b.building);
 });
@@ -176,7 +182,7 @@ test('draw() rescales dots against the ACTUAL canvas, not the construction-time 
   // every dot to a shrunken box in a corner of the real frame.
   const weaver = new ConstellationWeaver(4, 1280, 720);
   let t = 0;
-  while (!weaver.figures.length) { weaver.onMelody(melodyEvt(t, 64)); t += 50; }
+  while (!weaver.figures.length) { tickMelody(weaver, melodyEvt(t, 64)); t += 50; }
   const fig = weaver.figures[0];
   const rawDot = fig.dots[0];
 
@@ -382,4 +388,22 @@ test('a full song of figures never produces a dot below the sea horizon (REGION.
     assert.ok(d.y / 1080 <= REGION.yMax + 1e-6,
       `a dot at y=${(d.y / 1080).toFixed(3)} of height sits below the sea horizon (${REGION.yMax})`);
   }
+});
+
+test('a catch-up dump of melody notes does not paint a sky of figures in one frame', () => {
+  const weaver = new ConstellationWeaver(12, 1280, 720);
+  weaver.update(8000, 0.016);
+  for (let i = 0; i < 80; i++) weaver.onMelody(melodyEvt(8000 + i * 25, 60 + i));
+  assert.equal(weaver.figures.length, 0, 'no figure can finish from a single-frame dump');
+  assert.ok(weaver.building, 'at most one figure should have taken a step');
+  assert.ok(weaver.building.dots.length <= 2);
+  assert.equal(MELODY_STEPS_PER_UPDATE, 1);
+  weaver.update(9000, 0.016);
+  // After the dump, live melody still completes a figure across frames.
+  let t = 10000;
+  for (let i = 0; i < 40 && !weaver.figures.length; i++) {
+    tickMelody(weaver, melodyEvt(t, 64));
+    t += 90;
+  }
+  assert.equal(weaver.figures.length, 1);
 });

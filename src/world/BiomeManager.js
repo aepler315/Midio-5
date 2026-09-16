@@ -53,7 +53,8 @@ import {
 import { buildWaveComponents, waveFieldSample, windSpeedForSeaState, easeSeaState } from './WaveField.js';
 import {
   generateCatalogue, subPixelDraw, twinkleAmplitude, galacticBandCenterY, GALACTIC_BAND,
-  extinction01, reddening01, generateDustLanes, generateDeepSky, generatePlanets, perceptualStretch,
+  extinction01, reddening01, generateDustLanes, generateDeepSky, generatePlanets,
+  generateOpenClusters, perceptualStretch,
 } from './StarCatalogue.js';
 import { CHARACTER_SCHEMES } from './dna/ShapeGrammar.js';
 import {
@@ -121,7 +122,12 @@ const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.0
 // ocean begins; the catalogue only needs to cover every pixel that can
 // ever actually be sky, which is everything above OCEAN_HORIZON_FRAC.
 const STAR_SKY_FRAC = OCEAN_HORIZON_FRAC;
-const STAR_CATALOGUE_COUNT = 560;
+const STAR_CATALOGUE_COUNT = 720;
+// Horizontal parallax per catalogue layer (far / mid / near). The old
+// (1 + layer * 0.6) * 0.02 spread was almost the same speed on every star,
+// so the field read as a painted backdrop. Far stars barely crawl; heroes
+// slide enough that the sky has a front and a back.
+const STAR_PARALLAX = [0.007, 0.026, 0.088];
 // Aerial perspective per parallax layer: how far each range's own fill is
 // pulled toward the sky-horizon color before it is drawn. L5 is the
 // nearest range and keeps the biome's authored silhouette color exactly;
@@ -604,6 +610,12 @@ export class BiomeManager {
         // Constant per star, so it belongs in the cache, not the frame loop.
         ext: extinction01(s.altitude01),
         redden: reddening01(s.altitude01),
+        parallax: STAR_PARALLAX[layer],
+        varAmp: layer > 0 && ((s.phase * 11) % 1) < 0.12 ? 0.20 : 0,
+        varHz: 0.05 + ((s.phase * 3) % 1) * 0.10,
+        companion: layer === 2 && ((s.phase * 5) % 1) < 0.28
+          ? { dx: 2.2 + ((s.phase * 9) % 1) * 3.4, dy: ((s.phase * 13) % 1 - 0.5) * 2.4 }
+          : null,
       };
     });
     // The rest of the sky's furniture, all generated over the same sky
@@ -613,11 +625,24 @@ export class BiomeManager {
     const toFrac = (list) => list.map((o) => ({
       ...o, xFrac: o.x / this.w, yFrac: o.y / skyH,
     }));
-    this.dustLanes = toFrac(generateDustLanes(hashSeed(`${songSeed}:dust`), 7, this.w, skyH))
+    this.dustLanes = toFrac(generateDustLanes(hashSeed(`${songSeed}:dust`), 11, this.w, skyH))
       .map((d) => ({ ...d, rxFrac: d.rx / this.w, ryFrac: d.ry / skyH }));
-    this.deepSky = toFrac(generateDeepSky(hashSeed(`${songSeed}:deepsky`), 8, this.w, skyH))
+    this.deepSky = toFrac(generateDeepSky(hashSeed(`${songSeed}:deepsky`), 16, this.w, skyH))
       .map((o) => ({ ...o, rFrac: o.r / skyH }));
-    this.planets = toFrac(generatePlanets(hashSeed(`${songSeed}:planets`), 3, this.w, skyH));
+    this.planets = toFrac(generatePlanets(hashSeed(`${songSeed}:planets`), 4, this.w, skyH));
+    for (const cluster of generateOpenClusters(hashSeed(`${songSeed}:ocluster`), 4, this.w, skyH)) {
+      for (const s of cluster.members) {
+        const { drawSize, drawAlpha: rawAlpha } = subPixelDraw(s.sizePx, s.brightness);
+        this.stars.push({
+          xFrac: s.x / this.w, yFrac: s.y / skyH, phase: s.phase,
+          size: drawSize, bright: perceptualStretch(rawAlpha), layer: 1,
+          hue: s.hue, mag: s.mag, altitude01: s.altitude01,
+          ext: extinction01(s.altitude01), redden: reddening01(s.altitude01),
+          parallax: STAR_PARALLAX[1] * 0.85,
+          varAmp: 0, varHz: 0.08, companion: null,
+        });
+      }
+    }
     this._glitchTimer = 2 + this._starSeed() * 3;
     this._glitchActiveMs = 0;
     // Reused across frames rather than rebuilt: the whole point of batching
@@ -3216,7 +3241,7 @@ export class BiomeManager {
       const half = skyH * GALACTIC_BAND.halfFrac;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      const bandA = 0.05 + 0.06 * night;
+      const bandA = 0.07 + 0.09 * night;
       // Rotate into the band's own frame so the gradient runs perpendicular
       // to the plane rather than straight down the screen.
       const ang = Math.atan2(yR - yL, canvas.width);
@@ -3327,15 +3352,18 @@ export class BiomeManager {
         ? twinkleAmplitude(s.mag, s.altitude01 ?? 0.5)
         : 0.4;
       const tw = (1 - twDepth) + twDepth * (0.5 + 0.5 * Math.sin(this.tSec * twinkleRate * (0.7 + s.bright) + s.phase));
+      const pulse = s.varAmp
+        ? 1 + s.varAmp * Math.sin(this.tSec * (s.varHz || 0.08) * Math.PI * 2 + s.phase)
+        : 1;
       // Air path: low stars lose real light before they ever reach the eye,
       // so the field thins and warms toward the ridgeline instead of walling
       // off at full brightness the way a flat scatter does.
-      const a = alpha * s.bright * tw * (s.ext ?? 1);
+      const a = alpha * s.bright * tw * (s.ext ?? 1) * pulse;
       // Faint floor: a 0.03 cut used to wipe the dimmer half of the field
       // (especially near the horizon, after extinction), leaving only the
       // brighter mid-sky survivors — another way the stars read as a chunk.
       if (a < 0.01) continue;
-      const layerDrift = (1 + s.layer * 0.6) * scroll * 0.02;
+      const layerDrift = (s.parallax ?? STAR_PARALLAX[s.layer] ?? STAR_PARALLAX[0]) * scroll;
       // Rescaled from the cached fraction against the ACTUAL canvas, not the
       // (possibly narrower) field the catalogue was generated over -- a
       // camera pull-back widens the stage BiomeManager draws into, and an
@@ -3400,6 +3428,10 @@ export class BiomeManager {
         ctx.globalAlpha = a;
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(x - 0.6, y - 0.6, 1.2, 1.2);
+        if (s.companion) {
+          ctx.globalAlpha = a * 0.45;
+          ctx.fillRect(x + s.companion.dx - 0.4, y + s.companion.dy - 0.4, 0.9, 0.9);
+        }
       } else {
         // Deferred into a bucket instead of drawn here. Setting fillStyle per
         // star was the single most expensive thing in this loop -- building
