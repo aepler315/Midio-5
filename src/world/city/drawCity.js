@@ -9,6 +9,7 @@
 // space ridge / connector hills / far vignettes / sun / aurora / canopy.
 import { drawTiledStrip } from '../SilhouetteGenerator.js';
 import { windowOccupancy } from './CitySilhouette.js';
+import { boundaryLift01, cityGlow, windowGlowAlpha } from './CityGlow.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
 import { sampleWorldMusic } from '../WorldMusic.js';
@@ -35,11 +36,11 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
   ctx.restore();
 }
 
-function blitWindows(ctx, canvas, strip, scrollX, yOff, occ, music, reducedFlash, blendAlpha = 1) {
-  if (!strip?.windows || occ < 0.02) return;
+function blitWindows(ctx, canvas, strip, scrollX, yOff, glow, music, reducedFlash, blendAlpha = 1) {
+  if (!strip?.windows || glow < 0.02) return;
   ctx.save();
   ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
-  ctx.globalAlpha = blendAlpha * capFlashAlpha(0.15 + 0.45 * occ, reducedFlash);
+  ctx.globalAlpha = blendAlpha * capFlashAlpha(windowGlowAlpha(glow), reducedFlash);
   drawTiledStrip(ctx, strip.windows, scrollX, canvas.width, canvas.height, yOff);
   if (music.accent > 0.005) {
     // One district catches the percussion. Clip the already baked windows
@@ -95,11 +96,22 @@ export function drawCityWorld(mgr, frame) {
   const unravel = mgr.unravel || 0;
   const scroll = (key) => worldX * CodaDirector.delaminateRatio(LAYER_RATIOS[key], unravel);
 
+  // How awake the city is -- the slow, drifting number. On its own it never
+  // rests, so it is only the baseline here; CityGlow decides what the skyline
+  // actually does with it.
   const occ = windowOccupancy({
     energy: music.energy,
     openingGain: mgr.openingGain ?? 1,
     orogeny: mgr.orogenyGrowth ?? 0.5,
     fever: mgr.fever ?? 0,
+  });
+  const sectionIdx = mgr._lastSectionIdx;
+  const glow = cityGlow({
+    occupancy: occ,
+    tSec: mgr.tSec,
+    reveal: music.reveal,
+    lift: boundaryLift01(mgr.sections?.[sectionIdx], mgr.sections?.[sectionIdx - 1]),
+    reducedFlash: mgr.reducedFlash,
   });
 
   const stripsA = mgr.stripsFor(from);
@@ -130,12 +142,12 @@ export function drawCityWorld(mgr, frame) {
       const a = to === from ? 1 : 1 - t;
       blit(ctx, canvas, stripsA[key], sx, yOff, a);
       mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false });
-      blitWindows(ctx, canvas, stripsA[key], sx, yOff, occ, music, mgr.reducedFlash, a);
+      blitWindows(ctx, canvas, stripsA[key], sx, yOff, glow, music, mgr.reducedFlash, a);
     }
     if (to !== from && t > 0.02 && stripsB) {
       blit(ctx, canvas, stripsB[key], sx, yOff, t);
       mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false });
-      blitWindows(ctx, canvas, stripsB[key], sx, yOff, occ, music, mgr.reducedFlash, t);
+      blitWindows(ctx, canvas, stripsB[key], sx, yOff, glow, music, mgr.reducedFlash, t);
     }
   };
 
@@ -173,9 +185,9 @@ export function drawCityWorld(mgr, frame) {
   const groundCanvas = groundView ? groundView.stage : canvas;
   if (groundView) groundView.apply();
   mgr._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
-  drawWetSheen(ctx, groundCanvas, occ);
+  drawWetSheen(ctx, groundCanvas, glow);
   mgr._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
-  drawStreetLamps(ctx, groundCanvas, worldX, mgr, occ, mandalaColor);
+  drawStreetLamps(ctx, groundCanvas, worldX, mgr, glow, mandalaColor);
   drawTraffic(ctx, groundCanvas, worldX, originX, mgr, music);
   mgr._drawFlood(ctx, groundCanvas);
   mgr._drawTransitionOverlays(ctx, groundCanvas, B);
@@ -205,19 +217,19 @@ function drawTraffic(ctx, canvas, worldX, originX, mgr, music) {
   ctx.restore();
 }
 
-function drawWetSheen(ctx, canvas, occ) {
+function drawWetSheen(ctx, canvas, glow) {
   ctx.save();
   const gy = canvas.height * 0.72;
   const g = ctx.createLinearGradient(0, gy, 0, canvas.height);
   g.addColorStop(0, 'rgba(180, 200, 220, 0)');
-  g.addColorStop(0.15, `rgba(160, 180, 200, ${0.04 + 0.05 * occ})`);
+  g.addColorStop(0.15, `rgba(160, 180, 200, ${0.04 + 0.06 * glow})`);
   g.addColorStop(1, 'rgba(20, 24, 32, 0.18)');
   ctx.fillStyle = g;
   ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
   ctx.restore();
 }
 
-function drawStreetLamps(ctx, canvas, worldX, mgr, occ, halo) {
+function drawStreetLamps(ctx, canvas, worldX, mgr, glow, halo) {
   const gy = mgr.groundField ? mgr.groundField.heightAt(worldX) : mgr.groundY;
   const spacing = 220;
   const phase = ((worldX * 0.65) % spacing + spacing) % spacing;
@@ -226,15 +238,15 @@ function drawStreetLamps(ctx, canvas, worldX, mgr, occ, halo) {
   ctx.globalCompositeOperation = 'lighter';
   for (let x = -phase; x < canvas.width + 40; x += spacing) {
     const px = x;
-    const glow = 0.10 + 0.12 * occ;
+    const lampGlow = 0.07 + 0.16 * glow;
     const rad = ctx.createRadialGradient(px, gy - 36, 2, px, gy - 8, 70);
-    rad.addColorStop(0, `rgba(${r},${g},${b},${glow})`);
+    rad.addColorStop(0, `rgba(${r},${g},${b},${lampGlow})`);
     rad.addColorStop(1, `rgba(${r},${g},${b},0)`);
     ctx.fillStyle = rad;
     ctx.beginPath();
     ctx.arc(px, gy - 20, 70, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = `rgba(${r},${g},${b},${0.35 + 0.4 * occ})`;
+    ctx.fillStyle = `rgba(${r},${g},${b},${0.30 + 0.5 * glow})`;
     ctx.fillRect(px - 1.5, gy - 52, 3, 40);
     ctx.beginPath();
     ctx.arc(px, gy - 54, 3.5, 0, Math.PI * 2);
