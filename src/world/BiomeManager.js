@@ -9,6 +9,8 @@ import {
 } from './RidgePortrait.js';
 import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
 import { WORLD_RENDERERS } from './WorldRegistry.js';
+import { sampleWorldMusic } from './WorldMusic.js';
+import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { ParticleField } from './ParticleField.js';
 import {
   sampleTerrainCurve, curveFacing, facingColorStops, reliefLitStripRGBA, reliefShadeStripRGBA,
@@ -2090,6 +2092,7 @@ export class BiomeManager {
     // is captured in the cache key, so this is safe to clear once here and
     // let every caller below share one derivation per unique input.
     this._crestCache = new Map();
+    this._ridgeMusicCache = null;
     const phenomenaFull = perf ? perf.phenomenaFull : true;
     const {
       from, to, t, fromHeightMul = 1, toHeightMul = 1, fromSnowLine01 = 1, toSnowLine01 = 1,
@@ -2177,7 +2180,7 @@ export class BiomeManager {
         silhouette: this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)),
         halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
       },
-      tSec: this.tSec, groove: this._danceGroove,
+      tSec: this.tSec, groove: this._ridgeEnvelope()?.groove ?? this._danceGroove,
       reducedFlash: this.reducedFlash,
     });
 
@@ -4993,6 +4996,43 @@ export class BiomeManager {
     ctx.restore();
   }
 
+  /**
+   * Range-only musical envelope. Other worlds keep the accumulated groove
+   * so their crest shading does not inherit alpine phrase/bass rules.
+   * Cached once per draw so the blit, the live crest and the sky ensemble
+   * cannot disagree about where the song is.
+   */
+  _ridgeEnvelope() {
+    const kind = this.world?.kind || 'alpine';
+    if (kind !== 'alpine') return null;
+    const nowMs = this.tSec * 1000;
+    const cache = this._ridgeMusicCache;
+    if (cache && cache.nowMs === nowMs && cache.reducedFlash === !!this.reducedFlash) {
+      return cache.env;
+    }
+    const section = this.sections?.[this._lastSectionIdx];
+    const prev = Number.isFinite(this._lastSectionIdx) && this._lastSectionIdx > 0
+      ? this.sections?.[this._lastSectionIdx - 1]
+      : null;
+    const music = sampleWorldMusic({
+      nowMs,
+      energyCurves: this.energyCurves,
+      rhythm: this.worldRhythm,
+      section,
+      reducedFlash: this.reducedFlash,
+    });
+    const env = ridgeEnvelope({
+      energy: music.energy,
+      bass: music.bass,
+      accent: music.accent,
+      reveal: music.reveal,
+      lift: boundaryLift01(section, prev),
+      reducedFlash: this.reducedFlash,
+    });
+    this._ridgeMusicCache = { nowMs, reducedFlash: !!this.reducedFlash, env };
+    return env;
+  }
+
   /** How heaved the furthest range is right now at one screen column, 0..1
    *  (see MountainChoreo.ridgeSwell01). Midio's jump gate rides this, so it
    *  is read from the sim rather than from a draw pass -- it deliberately
@@ -5023,21 +5063,27 @@ export class BiomeManager {
       return;
     }
     const nowMs = this.tSec * 1000;
-    const kick = ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
+    const ridge = this._ridgeEnvelope();
+    const kick = ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
+      * this._danceKickAmp * (ridge?.kickMul ?? 1);
     // Orogeny grows the range, then mountainStripDrawHeight hard-caps so peaks
     // stay on-frame (ocean/sky remain visible; off-screen summits are useless).
     // heightMul is the per-section draw-time multiplier (Stage 1 of the
     // mountain overhaul) -- never baked, since generateSilhouette's own
     // HEADROOM refit would erase an in-strip height change on L2/L3.
+    // Phrase openings that earned a lift add a brief extra scale on top;
+    // decorative cuts leave scaleMul at 1.
     const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
       * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0))
-      * Math.max(0, heightMul);
+      * Math.max(0, heightMul)
+      * (ridge?.scaleMul ?? 1);
     const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this._zoomedGroundY(canvas));
     const baseY = canvas.height - dh + yOff;
     // Stage 2 (ridge deformation): summits sharpen on the kick, flanks swell
     // on sustained energy -- gated by terrainEnergy exactly like the offset
     // dance above, so a flat/calm biome doesn't deform either.
-    const sustain = this._danceSustain || 0;
+    const sustain = ridge ? ridge.sustain : (this._danceSustain || 0);
+    const groove = ridge ? ridge.groove : this._danceGroove;
     // Slice width is the dance's sampling resolution, and a quality setting
     // (PerfGovernor.danceColumnWidth): the step between neighbouring slices
     // is the offset curve's slope times this width, so narrowing it shrinks
@@ -5063,8 +5109,8 @@ export class BiomeManager {
         // live crest stroke blended between column CENTERS -- a ramp phase-
         // shifted half a column from a staircase. That is why the neon ridge
         // line floated off the fill it traces.
-        const dyL = danceOffset(scrollX + sx, this.tSec, this._danceGroove, kick, cfg, this.fever || 0) * terrainEnergy;
-        const dyR = danceOffset(scrollX + sx + cw, this.tSec, this._danceGroove, kick, cfg, this.fever || 0) * terrainEnergy;
+        const dyL = danceOffset(scrollX + sx, this.tSec, groove, kick, cfg, this.fever || 0) * terrainEnergy;
+        const dyR = danceOffset(scrollX + sx + cw, this.tSec, groove, kick, cfg, this.fever || 0) * terrainEnergy;
         // Foot-anchored: this column's own foot (baseY + dh + dy, the same
         // translation the offset dance already applies) never moves: only
         // the elevation above it stretches, so a squat foothill barely
@@ -5085,8 +5131,10 @@ export class BiomeManager {
         // the kick rate. That is the blocky flicker at the peaks -- the snow
         // cap, the cast shadow and the strata all tracing a smooth curve the
         // fill underneath them was not actually drawn on.
-        const scaleL = danceScaleSmooth(strip.ridge, scrollX + sx, kick, sustain, cfg, colW);
-        const scaleR = danceScaleSmooth(strip.ridge, scrollX + sx + cw, kick, sustain, cfg, colW);
+        // Isolated accents may still sharpen a summit when bounce is gated.
+        const sharpen = ridge ? Math.max(kick, ridge.gesture) : kick;
+        const scaleL = danceScaleSmooth(strip.ridge, scrollX + sx, sharpen, sustain, cfg, colW);
+        const scaleR = danceScaleSmooth(strip.ridge, scrollX + sx + cw, sharpen, sustain, cfg, colW);
         const colDh = dh * (1 + (scaleL - 1) * terrainEnergy);
         const colDhR = dh * (1 + (scaleR - 1) * terrainEnergy);
         const dy = dyL;
@@ -5155,16 +5203,19 @@ export class BiomeManager {
     const cache = this._crestCache;
     let byStrip = cache && cache.get(strip);
     const colW = this._danceColW();
-    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}|${colW}`;
+    const ridge = this._ridgeEnvelope();
+    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}|${colW}|${ridge?.scaleMul ?? 1}|${ridge?.groove ?? 'g'}|${ridge?.sustain ?? 's'}`;
     if (byStrip) {
       const hit = byStrip.get(cacheKey);
       if (hit) return hit;
     }
     const nowMs = this.tSec * 1000;
-    const kick = ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
+    const kick = ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
+      * this._danceKickAmp * (ridge?.kickMul ?? 1);
     const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
       * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0))
-      * Math.max(0, heightMul);
+      * Math.max(0, heightMul)
+      * (ridge?.scaleMul ?? 1);
     const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this._zoomedGroundY(canvas));
     const scale = dh / Math.max(1, strip.height);
     const baseY = canvas.height - dh + yOff;
@@ -5172,8 +5223,8 @@ export class BiomeManager {
     const isGeo = layerKey === 'L4';
     const tSec = this.tSec;
     const fever = this.fever || 0;
-    const groove = this._danceGroove;
-    const sustain = this._danceSustain || 0;
+    const groove = ridge ? ridge.groove : this._danceGroove;
+    const sustain = ridge ? ridge.sustain : (this._danceSustain || 0);
 
     const pts = new Array(Math.ceil(canvas.width / CREST_STEP_PX) + 3);
     let n = 0;
@@ -5195,7 +5246,7 @@ export class BiomeManager {
       // can actually paint (one straight top edge per column), so the crest
       // polyline and every overlay hung off it land ON the fill instead of on
       // a silhouette that was never drawn. See GeoCrest.danceScaleRamp.
-      const rawScale = danceScaleRamp(strip.ridge, stripX, kick, sustain, cfg, colW);
+      const rawScale = danceScaleRamp(strip.ridge, stripX, ridge ? Math.max(kick, ridge.gesture) : kick, sustain, cfg, colW);
       const localScale = 1 + (rawScale - 1) * terrainEnergy;
       const heightAboveFoot = dh - yR;
       const yRDeformed = dh - heightAboveFoot * localScale;
