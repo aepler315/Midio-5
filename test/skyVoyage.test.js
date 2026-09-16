@@ -524,22 +524,37 @@ test('_navTarget is null on an unwritten sky and finds the densest cluster other
 });
 
 test('past voyages pull the next station toward the densest cluster (she revisits her myths)', () => {
-  // Two voyages with the SAME seed: one with an empty sky (default random
-  // station) and one with a seeded cluster. Identical rand streams mean
-  // the only difference is the navigational pull.
+  // The pull is deliberately OCCASIONAL (NAV_REVISIT_CHANCE), not every
+  // voyage: applying it every time made its own output its next input and
+  // collapsed a whole song's stations onto one patch of sky -- see
+  // skyVoyageStationSpread.test.js. So this compares RATES across many
+  // seeds rather than one voyage against one voyage. A single pair proves
+  // nothing now, and asserting on one would just re-pin the bug.
   const clusterAt = { x: 950, y: 100 };
-  const plain = new SkyVoyage(61);
+  const NEAR_PX = 220;
+  let nearPlain = 0, nearGuided = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const plain = new SkyVoyage(seed);
+    const guided = new SkyVoyage(seed);
+    guided.atlas.push({
+      stars: Array.from({ length: 10 }, (_, i) => ({ x: clusterAt.x + i, y: clusterAt.y + i, phase: 0 })),
+      hue: 90,
+    });
+    plain.trigger(0, { x: 200, y: 400 }, 1280, 720);
+    guided.trigger(0, { x: 200, y: 400 }, 1280, 720);
+    if (Math.hypot(plain._station.x - clusterAt.x, plain._station.y - clusterAt.y) < NEAR_PX) nearPlain++;
+    if (Math.hypot(guided._station.x - clusterAt.x, guided._station.y - clusterAt.y) < NEAR_PX) nearGuided++;
+  }
+  assert.ok(nearGuided > nearPlain,
+    `a written sky should draw her back more often than an empty one (${nearGuided} vs ${nearPlain} of 40)`);
+
+  // One guided voyage, for the safe-band assertions below.
   const guided = new SkyVoyage(61);
   guided.atlas.push({
     stars: Array.from({ length: 10 }, (_, i) => ({ x: clusterAt.x + i, y: clusterAt.y + i, phase: 0 })),
     hue: 90,
   });
-  plain.trigger(0, { x: 200, y: 400 }, 1280, 720);
   guided.trigger(0, { x: 200, y: 400 }, 1280, 720);
-
-  const dPlain = Math.hypot(plain._station.x - clusterAt.x, plain._station.y - clusterAt.y);
-  const dGuided = Math.hypot(guided._station.x - clusterAt.x, guided._station.y - clusterAt.y);
-  assert.ok(dGuided < dPlain, `guided station should sit closer to the cluster (${dGuided.toFixed(0)} vs ${dPlain.toFixed(0)})`);
 
   // And the pull can never drag her out of the safe sky band.
   assert.ok(guided._station.x >= 1280 * 0.08 - 1 && guided._station.x <= 1280 * 0.92 + 1);

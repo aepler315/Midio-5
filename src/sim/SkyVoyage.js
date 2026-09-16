@@ -49,8 +49,26 @@ const CONSTELLATION_MAX = 4;
 const ATLAS_MAX = 8; // permanent star-map entries; oldest myths fade first
 // Navigational atlas: the next voyage is drawn toward the densest cluster
 // of her own past figures -- she revisits her myths.
+//
+// That pull cannot apply to EVERY voyage, because its input is its own
+// output. _navTarget returns the centroid of the densest clump of atlas
+// stars; a voyage dragged there deposits ~3 more figures there; the next
+// _navTarget finds that same clump, now denser, and pulls harder still.
+// Nothing in the loop ever sends her to unwritten sky, so whichever patch
+// the FIRST voyage happens to roll captures every voyage after it. Measured
+// over 12 voyages: the station stayed inside an x-span of 0.17-0.27 of the
+// stage for a whole song, in a y-band already clamped to the top third --
+// one dense knot of stars in one corner and an empty sky everywhere else,
+// which is exactly how it was reported. So the revisit is now occasional,
+// and the voyages that are NOT revisiting actively seek empty sky.
 const NAV_CLUSTER_RADIUS_PX = 140;
 const NAV_PULL = 0.65; // how strongly the cluster overrides the random station
+const NAV_REVISIT_CHANCE = 0.34; // how often a voyage returns to an old myth
+// Candidates drawn for the best-candidate (Mitchell) placement used by every
+// other voyage: keep the one whose nearest existing atlas star is furthest
+// away. Same blue-noise idea the hero stars use (StarCatalogue.generateCatalogue),
+// and the cheapest way to make a sky fill out rather than pile up.
+const NAV_SPREAD_CANDIDATES = 12;
 // Supernova finale: each atlas star detonates on its own popcorn delay.
 const NOVA_STAGGER_MS = 900;
 const NOVA_LIFE_MS = 1100;
@@ -149,6 +167,53 @@ export class SkyVoyage {
         }
       }
       if (count > bestCount) { bestCount = count; best = c; }
+    }
+    return best;
+  }
+
+  /** Where this voyage sets up shop, inside the safe band that keeps even
+   * the biggest figure on screen and above the mountains.
+   *
+   * Two modes. NAV_REVISIT_CHANCE of the time she returns to an old myth
+   * (the original behavior: lerp toward _navTarget by NAV_PULL). The rest
+   * of the time she goes somewhere new, chosen best-candidate style --
+   * NAV_SPREAD_CANDIDATES random stations, keep whichever one's nearest
+   * existing atlas star is furthest away. With an empty atlas both modes
+   * collapse to a plain random roll, so the first voyage of a song is
+   * unchanged. Pure apart from this.rand. */
+  _pickStation(stageW, stageH, marginFracX) {
+    const xMin = stageW * marginFracX, xMax = stageW * (1 - marginFracX);
+    const roll = () => ({
+      x: stageW * (marginFracX + this.rand() * (1 - 2 * marginFracX)),
+      y: stageH * (0.10 + this.rand() * 0.20),
+    });
+
+    const nav = this._navTarget();
+    if (!nav) return roll();
+
+    if (this.rand() < NAV_REVISIT_CHANCE) {
+      const base = roll();
+      return {
+        x: clamp(lerp(base.x, nav.x, NAV_PULL), xMin, xMax),
+        y: clamp(lerp(base.y, nav.y, NAV_PULL), stageH * 0.08, stageH * 0.32),
+      };
+    }
+
+    // Unwritten sky. Distance to the NEAREST existing star is the right
+    // score, not distance to the densest centroid: maximizing the latter
+    // just parks her on the far side of one clump, which is how a second
+    // clump gets started instead of a spread.
+    let best = null, bestGap = -1;
+    for (let i = 0; i < NAV_SPREAD_CANDIDATES; i++) {
+      const cand = roll();
+      let gap = Infinity;
+      for (const entry of this.atlas) {
+        for (const s of entry.stars) {
+          const d = Math.hypot(s.x - cand.x, s.y - cand.y);
+          if (d < gap) gap = d;
+        }
+      }
+      if (gap > bestGap) { bestGap = gap; best = cand; }
     }
     return best;
   }
@@ -280,18 +345,7 @@ export class SkyVoyage {
     // "a large portion of the drawings are outside the frame."
     const voyageScaleMax = this._chorusText ? LYRIC_TEXT_SCALE : FIGURE_SCALE_MAX;
     const marginFracX = clamp((FIGURE_RADIUS_PX * voyageScaleMax) / stageW, 0.05, 0.45);
-    this._station = { x: stageW * (marginFracX + this.rand() * (1 - 2 * marginFracX)), y: stageH * (0.10 + this.rand() * 0.20) };
-    // She revisits her myths: past voyages pull this one's station toward
-    // the densest cluster of her own accumulated stars, clamped to the same
-    // voyage-sized safe band so the pull can never drag a figure (lyric
-    // text included) past the frame edge or down into the mountains.
-    const nav = this._navTarget();
-    if (nav) {
-      this._station = {
-        x: clamp(lerp(this._station.x, nav.x, NAV_PULL), stageW * marginFracX, stageW * (1 - marginFracX)),
-        y: clamp(lerp(this._station.y, nav.y, NAV_PULL), stageH * 0.08, stageH * 0.32),
-      };
-    }
+    this._station = this._pickStation(stageW, stageH, marginFracX);
 
     this._figureOrder = this._pickFigureOrder();
     this._figureCount = 0;
