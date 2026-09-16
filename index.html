@@ -102,10 +102,17 @@
 
     <div id="worldSelect" class="worldSelect hidden" role="dialog" aria-labelledby="worldSelectTitle" aria-modal="true">
       <div class="worldSelectInner">
-        <p class="worldSelectEyebrow">choose a way in</p>
-        <h2 id="worldSelectTitle">Choose a world</h2>
-        <p class="worldSelectHint">Every world makes a different read of your song. Pick the one you want to visit.</p>
-        <div id="worldSelectGrid" class="worldSelectGrid"></div>
+        <p class="worldSelectEyebrow">choose how it looks</p>
+        <h2 id="worldSelectTitle">Choose how your song looks</h2>
+        <p class="worldSelectHint">Every world makes a different read of the same song. Preview a quiet passage and a peak — the timestamps stay the same — then play. Nothing here is a ranking.</p>
+        <div class="worldSelectToolbar">
+          <div class="worldSelectPassages" role="group" aria-label="Preview passage">
+            <button type="button" id="worldPassageQuiet" class="worldPassageBtn" aria-pressed="false">Quiet</button>
+            <button type="button" id="worldPassagePeak" class="worldPassageBtn" aria-pressed="true">Peak</button>
+          </div>
+          <button type="button" id="worldChooseForMe" class="ghostbtn">Choose for me</button>
+        </div>
+        <div id="worldSelectGrid" class="worldSelectGrid" role="list"></div>
         <button id="worldSelectBack" type="button" class="ghostbtn worldSelectBack">Different song</button>
       </div>
     </div>

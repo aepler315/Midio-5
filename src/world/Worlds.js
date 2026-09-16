@@ -303,6 +303,10 @@ export function listWorlds() {
   return WORLDS;
 }
 
+export function getCustomWorld() {
+  return _custom;
+}
+
 export function setCustomWorld(world) {
   _custom = world;
 }
