@@ -8,9 +8,6 @@ import {
   materialFor, layerBake, layerColor, terrainModsForLayer, groundColorFor, catchlightRgb,
 } from './WorldMaterial.js';
 import {
-  materialFor, layerBake, layerColor, terrainModsForLayer, groundColorFor, catchlightRgb,
-} from './WorldMaterial.js';
-import {
   extractRidgePortrait, lithologyFromShares, landformWindow, relEnergyLadder, snowLine01For,
 } from './RidgePortrait.js';
 import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
@@ -29,7 +26,7 @@ import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import {
-  DANCE_LAYERS, DANCE_COL_W, danceOffset, columnHeight01At, ridgeBakedCrestY, kickEnv, ridgeKickEnv, spectrumBars, orogenyHeightMul,
+  DANCE_LAYERS, danceOffset, columnHeight01At, ridgeBakedCrestY, kickEnv, ridgeKickEnv, spectrumBars, orogenyHeightMul,
   pullbackHeightMul,
   mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER,
   massifDrawHeight, massifRidgeHeight01, massifRidgeJagPx, massifClearing01,
@@ -68,7 +65,7 @@ import {
   tsunamiActive, tsunamiProgress, tsunamiRowFrac, tsunamiPerspectiveScale,
   tsunamiCenterX, tsunamiLift, tsunamiDepthLift, tsunamiProfile, sprayFlecks,
   fishArcY, serpentHumpY,
-  wrappedOffset, OCEAN_LIFE_WRAP_PX, OCEAN_LIFE_RATIO, TSUNAMI_WIDTH_PX,
+  wrappedOffset, OCEAN_LIFE_RATIO, TSUNAMI_WIDTH_PX,
   tsunamiHeightScale, TSUNAMI_OVERTOP_SCALE,
   tsunamiWithdrawalActive, tsunamiWithdrawal01,
 } from './OceanLife.js';
@@ -95,14 +92,14 @@ import { MeteorShowerFX } from './MeteorShower.js';
 import { LightRig } from './LightRig.js';
 import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS, hazeScatter } from './DepthHaze.js';
 import { PERSONALITY } from './BiomePersonality.js';
-import { isRendered, styleDials, shiftLightness, ensureContrast, ensureMinLightness } from '../render/VisualStyle.js';
+import { styleDials, shiftLightness, ensureContrast, ensureMinLightness } from '../render/VisualStyle.js';
 import { Murmuration } from './Murmuration.js';
 import { Atmosphere } from './Atmosphere.js';
 import { CodaDirector } from '../sim/CodaDirector.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
 import {
-  computeLight, celestialScreenPos, groundGlowLights, rimGain, CELESTIAL_DEFAULT_XFRAC,
+  computeLight, groundGlowLights, rimGain, CELESTIAL_DEFAULT_XFRAC,
 } from '../render/LightField.js';
 import {
   clamp, clamp01, smoothstep, mulberry32, hashSeed, lerpHue, lerp,
@@ -212,19 +209,11 @@ const RIM_LIGHT_MIX = 0.35;
 const RIM_GRADIENT_STOPS = 8;
 const GROUND_AERIAL_ALPHA = 0.34;
 const GROUND_AERIAL_FALLOFF = 0.38;
-// Aerial perspective, optical half: how much each layer's strip bake is
-// downsampled before being stretched back up (generateSilhouette's
-// softenScale), so distant ranges lose edge acuity the same way AERIAL_PULL
-// already pulls their color toward the sky. L5 stays at 1 (full crisp) --
-// DepthHaze already never washes it, for the same reason: it's the
-// foreground anchor the eye calibrates every other layer's depth against.
-const AERIAL_SOFTEN = { L2: 0.40, L3: 0.62, L4: 0.85, L5: 1 };
 // Section height is a draw-time multiplier, never baked (generateSilhouette's
 // own HEADROOM refit erases in-strip height changes on L2/L3 -- see the
 // mountain-overhaul plan). Range chosen so the quietest section is visibly
 // smaller and the loudest visibly taller without either reading as broken.
 const SECTION_HEIGHT_MUL = [0.88, 1.16];
-const LAYER_EQ_RATIO = 0.06; // between L1 (celestial) and L2 (far mountains)
 // Terrain footing contact shadow: layered strokes along the ridge's own
 // smooth curve approximate the soft vertical falloff a single gradient rect
 // used to give a flat ground line -- widest/faintest pass first so the
@@ -1478,9 +1467,6 @@ export class BiomeManager {
   }
 
   _rebuildStrips() {
-    const songSeed = this.songSeed ?? 1;
-    // Always soft CGI silhouettes (flat cutouts lost the DKC mass).
-    const shadeMode = 'rendered';
     // One portrait per song: spectral mass + phrase-scale energy landmarks.
     // Layers read different facets of it so the stack rhymes without cloning.
     // Cheap (64 samples + a handful of landmarks) and cached on the manager
