@@ -1,14 +1,9 @@
-# Run Node tests and the current audio-upload browser flow on PRs and
-# pushes to main. `npm test` (`node --test`) scans the whole checkout
-# and picks up the nested polygon app's TypeScript tests as well, which is
-# why polygon's own dependencies are installed too -- without them its
-# tests fail on missing imports (ERR_MODULE_NOT_FOUND), not on assertions.
+# Reusable validation for pull requests and the Pages deployment gate.
 name: Test
 
 on:
   pull_request:
-  push:
-    branches: ["main"]
+  workflow_call:
 
 permissions:
   contents: read
@@ -26,9 +21,6 @@ jobs:
           cache: npm
       - name: Install game dependencies
         run: npm ci --no-fund --no-audit
-      - name: Install polygon dependencies
-        run: npm ci --no-fund --no-audit
-        working-directory: polygon
       - name: Lint
         run: npm run lint
       - name: Run test suite

@@ -8,6 +8,9 @@ import {
   materialFor, layerBake, layerColor, terrainModsForLayer, groundColorFor, catchlightRgb,
 } from './WorldMaterial.js';
 import {
+  materialFor, layerBake, layerColor, terrainModsForLayer, groundColorFor, catchlightRgb,
+} from './WorldMaterial.js';
+import {
   extractRidgePortrait, lithologyFromShares, landformWindow, relEnergyLadder, snowLine01For,
 } from './RidgePortrait.js';
 import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';

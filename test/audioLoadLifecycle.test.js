@@ -1,0 +1,113 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import * as cache from '../src/audio/AnalysisCache.js';
+import { fingerprintBuffer } from '../src/audio/SongFingerprint.js';
+import { GrooveFingerprint } from '../src/sim/GrooveFingerprint.js';
+
+// Execute the real upload orchestrator with browser/audio boundaries replaced.
+// Analysis/cache identity remain real; no browser is needed to test ownership.
+const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+const loadSource = main.slice(main.indexOf('async function loadAudioFiles('), main.indexOf('\nfunction handleFile('));
+const element = () => ({ classList: { add() {}, remove() {} }, textContent: '' });
+function recording(hz = 440) {
+  const samples = Float32Array.from({ length: 16000 }, (_, i) => Math.sin(i * hz * Math.PI / 4000) * (0.4 + 0.1 * Math.sin(i / 100)));
+  return { sampleRate: 8000, length: samples.length, duration: 2, numberOfChannels: 1, getChannelData: () => samples };
+}
+function harness() {
+  const mix = recording();
+  const keys = [], errors = [];
+  const context = vm.createContext({
+    ...cache, fingerprintBuffer, GrooveFingerprint,
+    loadGen: 0, groove: new GrooveFingerprint(), lyricsDisabled: true,
+    console, bootAudio: async () => {}, showProgress() {},
+    showErrorBanner: (error) => errors.push(error),
+    audioEngine: { playing: true, decodeFile: async (value) => value },
+    stopTimeline() { context.audioEngine.playing = false; context.stopped = true; },
+    stopTitleBackdrop() {}, stopWorldPreview() {}, pendingWorldStart: {},
+    worldSelectEl: element(), progressEl: element(), loaderEl: element(), hudEl: element(),
+    auditionHeadingEl: element(), auditionPanelEl: element(), lyricsRowEl: element(),
+    loadShow: { start() {}, stop() {}, setStage() {} },
+    sumToMixBuffer: () => mix, isVocalStemName: () => false,
+    getBundle: async (key) => { keys.push(key); return {}; },
+    unpackBundle: () => ({ fromBundle: true }),
+    audioToTimeline: async () => ({ fromBundle: true }),
+    generateCustomBiomeFromMidi: () => ({}), rememberCustomBiome() {}, paramBus: {},
+    muteTimelineSynth: false, lastSongName: '', lastAudioBuffer: null,
+    fontRecommender: null, DEV_MODE: false, offerWorldsThenStart() {},
+  });
+  vm.runInContext(loadSource, context);
+  const load = async (names = ['mix.wav']) => {
+    await context.loadAudioFiles(names.map((name) => ({ name, arrayBuffer: async () => mix })));
+    assert.deepEqual(errors, []);
+    return keys.at(-1);
+  };
+  return { context, load, keys };
+}
+
+test('accepting an upload stops the old performance before audio initialization awaits', async () => {
+  const { context } = harness();
+  context.bootAudio = () => new Promise(() => {});
+  context.loadAudioFiles([{ name: 'new.wav' }]);
+  assert.equal(context.audioEngine.playing, false);
+  assert.equal(context.pendingWorldStart, null);
+});
+
+test('cache identity changes when the same stem audio is renamed for a different character', async () => {
+  const { load } = harness();
+  const first = await load(['vocals.wav', 'bass.wav']);
+  assert.notEqual(await load(['guitar.wav', 'bass.wav']), first);
+});
+
+test('cache identity changes with learned rhythm settings and is stable otherwise', async () => {
+  const { context, load } = harness();
+  const first = await load();
+  assert.equal(await load(), first);
+  context.groove.low.count = 16;
+  context.groove.low.template[0] = 1;
+  assert.notEqual(await load(), first);
+});
+
+
+test('stem content participates in cache identity even when the mixed fingerprint is unchanged', () => {
+  const mix = fingerprintBuffer(recording());
+  const key = (buffer) => cache.analysisCacheKey(mix, { stems: [{ name: 'bass.wav', buffer }] });
+  assert.notEqual(key(recording(440)), key(recording(880)));
+});
+
+test('low-information audio bypasses cache lookup and still reaches analysis', async () => {
+  const { context, keys } = harness();
+  let analyzed = false;
+  context.audioToTimeline = async () => { analyzed = true; return { fromBundle: true }; };
+  const silence = recording();
+  silence.getChannelData = () => new Float32Array(silence.length);
+  await context.loadAudioFiles([{ name: 'silence.wav', arrayBuffer: async () => silence }]);
+  assert.equal(analyzed, true);
+  assert.deepEqual(keys, []);
+});
+
+test('a superseded load awaiting audio initialization never starts decoding', async () => {
+  const { context } = harness();
+  let release;
+  context.bootAudio = () => new Promise((resolve) => { release = resolve; });
+  let decoded = false;
+  context.audioEngine.decodeFile = async () => { decoded = true; };
+  const pending = context.loadAudioFiles([{ name: 'old.wav', arrayBuffer: async () => recording() }]);
+  context.loadGen++;
+  release();
+  await pending;
+  assert.equal(decoded, false);
+});
+
+test('phase-sensitive analysis never shares a cache entry with an in-phase recording', () => {
+  const mono = recording();
+  const left = mono.getChannelData(0);
+  const right = Float32Array.from(left, (x) => -x);
+  const stereo = (inverted) => ({ ...mono, numberOfChannels: 2,
+    getChannelData: (c) => c && inverted ? right : left });
+  const a = fingerprintBuffer(stereo(false)), b = fingerprintBuffer(stereo(true));
+  assert.deepEqual(a.frames, b.frames, 'acoustic matching remains phase-safe');
+  assert.notEqual(cache.analysisCacheKey(a), cache.analysisCacheKey(b),
+    'cached stereo width depends on phase');
+});

@@ -54,7 +54,7 @@ export function parseLrc(text) {
 /** Jaccard similarity over lowercased word sets -- good enough to rank
  *  search results, not meant to be a general string-distance algorithm. */
 function nameSimilarity(a, b) {
-  const wordsOf = (s) => new Set(String(s || '').toLowerCase().match(/[a-z0-9]+/g) || []);
+  const wordsOf = (s) => new Set(String(s || '').normalize('NFKC').toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
   const sa = wordsOf(a), sb = wordsOf(b);
   if (sa.size === 0 && sb.size === 0) return 1;
   if (sa.size === 0 || sb.size === 0) return 0;
@@ -115,7 +115,11 @@ export async function fetchLyrics({ artist, title, album, durationSec } = {}, fe
     if (!Number.isFinite(c.duration)) continue;
     const durDelta = Number.isFinite(durationSec) ? Math.abs(c.duration - durationSec) : 0;
     if (Number.isFinite(durationSec) && durDelta > SEARCH_MAX_DURATION_DELTA_SEC) continue;
-    const nameScore = 0.6 * nameSimilarity(c.trackName, title) + 0.4 * nameSimilarity(c.artistName, artist);
+    const titleScore = nameSimilarity(c.trackName, title);
+    const artistScore = artist ? nameSimilarity(c.artistName, artist) : 1;
+    // Duration can rank plausible matches, but cannot establish song identity.
+    if (titleScore < 0.6 || artistScore < 0.5) continue;
+    const nameScore = 0.6 * titleScore + 0.4 * artistScore;
     const durScore = Number.isFinite(durationSec) ? clamp01(1 - durDelta / (SEARCH_MAX_DURATION_DELTA_SEC + 1)) : 0.5;
     const score = 0.7 * nameScore + 0.3 * durScore;
     if (score > bestScore) { bestScore = score; best = c; }
@@ -125,7 +129,7 @@ export async function fetchLyrics({ artist, title, album, durationSec } = {}, fe
 
 function cacheKey(artist, title, durationSec) {
   const roundedDur = Number.isFinite(durationSec) ? Math.round(durationSec / 2) * 2 : 'na';
-  return `smw:lyrics:${(artist || '').toLowerCase()}|${(title || '').toLowerCase()}|${roundedDur}`;
+  return `smw:lyrics:v2:${(artist || '').toLowerCase()}|${(title || '').toLowerCase()}|${roundedDur}`;
 }
 
 /** localStorage-cached wrapper around fetchLyrics -- same try/catch-guarded
