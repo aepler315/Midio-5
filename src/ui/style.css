@@ -17,11 +17,11 @@
      spacing, radius, and motion value in this file is built on these so
      the whole chrome reads as one deliberately-designed surface instead
      of each panel drifting to its own nearby purple. */
-  --bg-void: #050308;                    /* page/stage background */
-  --bg-surface: rgba(14, 11, 22, 0.86);  /* card background */
+  --bg-void: #080c14;                    /* page/stage background */
+  --bg-surface: rgba(12, 16, 28, 0.86);  /* card background */
   --bg-surface-2: rgba(255, 255, 255, 0.05); /* nested/raised surface: inputs, chips, rows */
   --bg-surface-3: rgba(0, 0, 0, 0.3);    /* recessed surface: settings wells */
-  --bg-scrim: rgba(5, 3, 8, 0.72);       /* modal/drag backdrop */
+  --bg-scrim: rgba(8, 12, 20, 0.72);     /* modal/drag backdrop */
 
   --border-subtle: rgba(255, 255, 255, 0.1);
   --border-strong: rgba(255, 255, 255, 0.22);
@@ -113,7 +113,7 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: var(--space-4);
-  background: radial-gradient(circle at 50% 40%, rgba(60, 30, 90, 0.5), rgba(5, 3, 8, 0.92));
+  background: radial-gradient(circle at 50% 40%, rgba(36, 52, 88, 0.42), rgba(8, 12, 22, 0.92));
   text-align: center;
   padding: var(--space-6);
 }
@@ -301,9 +301,9 @@ html, body {
   left: 0; right: 0; bottom: 0;
   height: 28%;
   background:
-    radial-gradient(ellipse 70% 100% at 20% 100%, #1a1030 0%, transparent 70%),
-    radial-gradient(ellipse 80% 120% at 55% 100%, #120c28 0%, transparent 72%),
-    radial-gradient(ellipse 60% 100% at 85% 100%, #0e1a30 0%, transparent 70%);
+    radial-gradient(ellipse 70% 100% at 20% 100%, #1c2848 0%, transparent 70%),
+    radial-gradient(ellipse 80% 120% at 55% 100%, #243050 0%, transparent 72%),
+    radial-gradient(ellipse 60% 100% at 85% 100%, #1a3040 0%, transparent 70%);
   opacity: 0.9;
 }
 
@@ -323,12 +323,12 @@ html, body {
   margin: 0 auto var(--space-4);
   padding: var(--space-5) var(--space-5) var(--space-4);
   border-radius: var(--radius-lg);
-  background: linear-gradient(165deg, rgba(24, 16, 38, 0.78), rgba(14, 11, 22, 0.82));
+  background: linear-gradient(165deg, rgba(20, 28, 48, 0.78), rgba(10, 14, 24, 0.82));
   border: 1px solid var(--border-subtle);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--spec-gold) 6%, transparent) inset,
     var(--shadow-card),
-    0 0 80px rgba(120, 60, 180, 0.1);
+    0 0 80px rgba(40, 70, 120, 0.12);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
@@ -508,6 +508,9 @@ html, body {
   font-size: 0.78rem;
   color: var(--text-tertiary);
   margin-bottom: var(--space-2);
+}
+#loader #dropzone #demoBtn {
+  margin-top: 2px;
 }
 
 /* Primary/action pill button (file picker, Soulseek search). One recipe
@@ -2007,18 +2010,18 @@ html, body {
   overflow: hidden;
 }
 .worldCardPreview.alpine {
-  background: linear-gradient(180deg, #1a1a3e 0%, #4a3b6b 55%, #2b2145 100%);
+  background: linear-gradient(180deg, #1c2248 0%, #5a4a78 55%, #e8a078 100%);
 }
 .worldCardPreview.alpine::after {
   content: '';
   position: absolute;
   left: -8%; right: -8%; bottom: 0;
   height: 58%;
-  background: #1a1428;
-  clip-path: polygon(0 100%, 0 62%, 12% 28%, 22% 48%, 38% 8%, 52% 42%, 64% 22%, 78% 50%, 90% 30%, 100% 70%, 100% 100%);
+  background: #4a4068;
+  clip-path: polygon(0 100%, 0 58%, 10% 46%, 22% 30%, 36% 44%, 50% 20%, 64% 38%, 78% 26%, 90% 42%, 100% 54%, 100% 100%);
 }
 .worldCardPreview.city {
-  background: linear-gradient(180deg, #05060c 0%, #12182a 70%, #1a2233 100%);
+  background: linear-gradient(180deg, #0c101c 0%, #1a2233 70%, #2a3448 100%);
 }
 .worldCardPreview.city::after {
   content: '';
@@ -2027,78 +2030,122 @@ html, body {
   height: 72%;
   background:
     linear-gradient(90deg,
-      transparent 6%, #0a0e18 6%, #0a0e18 18%, transparent 18%,
-      transparent 22%, #0c121c 22%, #0c121c 31%, transparent 31%,
-      transparent 36%, #0a1018 36%, #0a1018 58%, transparent 58%,
-      transparent 64%, #0e141e 64%, #0e141e 72%, transparent 72%,
-      transparent 78%, #0a0e16 78%, #0a0e16 94%, transparent 94%);
+      transparent 6%, #1a2030 6%, #1a2030 18%, transparent 18%,
+      transparent 22%, #1c2838 22%, #1c2838 31%, transparent 31%,
+      transparent 36%, #1a2030 36%, #1a2030 58%, transparent 58%,
+      transparent 64%, #241c30 64%, #241c30 72%, transparent 72%,
+      transparent 78%, #1a2030 78%, #1a2030 94%, transparent 94%);
   clip-path: polygon(0 100%, 6% 100%, 6% 42%, 18% 42%, 18% 100%, 22% 100%, 22% 28%, 31% 28%, 31% 100%, 36% 100%, 36% 18%, 58% 18%, 58% 100%, 64% 100%, 64% 36%, 72% 36%, 72% 100%, 78% 100%, 78% 24%, 94% 24%, 94% 100%, 100% 100%);
 }
 .worldCardPreview.airless {
-  background: linear-gradient(180deg, #000000 0%, #040610 60%, #0a0e1a 100%);
+  background: linear-gradient(180deg, #000000 0%, #020208 60%, #080a14 100%);
 }
 .worldCardPreview.airless::after {
   content: '';
   position: absolute;
   left: -4%; right: -4%; bottom: 0;
-  height: 42%;
-  background: #141822;
-  clip-path: polygon(0 100%, 0 70%, 8% 60%, 20% 72%, 35% 55%, 50% 68%, 65% 50%, 80% 65%, 92% 58%, 100% 72%, 100% 100%);
+  height: 34%;
+  background: #2c3240;
+  clip-path: polygon(0 100%, 0 78%, 12% 68%, 28% 74%, 46% 62%, 64% 72%, 82% 64%, 100% 70%, 100% 100%);
 }
 .worldCardPreview.abyssal {
-  background: linear-gradient(180deg, #0a2e3a 0%, #062430 50%, #020d14 100%);
+  background: linear-gradient(180deg, #0a2e3a 0%, #12586a 42%, #03151f 100%);
+}
+.worldCardPreview.abyssal::before {
+  content: '';
+  position: absolute;
+  left: -4%; right: -4%; top: 0;
+  height: 40%;
+  background: #144850;
+  clip-path: polygon(0 0, 100% 0, 100% 48%, 88% 78%, 74% 50%, 58% 82%, 42% 46%, 26% 74%, 12% 52%, 0 68%);
 }
 .worldCardPreview.abyssal::after {
   content: '';
   position: absolute;
   left: -4%; right: -4%; bottom: 0;
-  height: 50%;
-  background: #04202a;
-  clip-path: polygon(0 100%, 0 68%, 10% 58%, 25% 70%, 40% 52%, 55% 64%, 70% 48%, 85% 62%, 100% 56%, 100% 100%);
+  height: 30%;
+  background: #0e3440;
+  clip-path: polygon(0 100%, 0 52%, 18% 64%, 40% 44%, 64% 60%, 86% 48%, 100% 58%, 100% 100%);
 }
 .worldCardPreview.strip {
-  background: linear-gradient(180deg, #1a1030 0%, #4a2050 40%, #e05a50 100%);
+  background: linear-gradient(180deg, #241848 0%, #5a2860 42%, #e07060 100%);
 }
 .worldCardPreview.strip::after {
   content: '';
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  height: 28%;
-  background: #180c28;
-  clip-path: polygon(0 100%, 0 50%, 100% 50%, 100% 100%);
+  height: 26%;
+  background: #2a1840;
+  clip-path: polygon(0 100%, 0 58%, 100% 42%, 100% 100%);
 }
 .worldCardPreview.foundry {
-  background: linear-gradient(180deg, #08080a 0%, #301000 50%, #6a2400 100%);
+  background: linear-gradient(180deg, #18141c 0%, #3a1808 52%, #c06020 100%);
 }
 .worldCardPreview.foundry::after {
   content: '';
   position: absolute;
-  left: -4%; right: -4%; bottom: 0;
-  height: 54%;
-  background: #0e0604;
-  clip-path: polygon(0 100%, 0 58%, 6% 42%, 14% 56%, 22% 32%, 28% 48%, 38% 22%, 48% 45%, 56% 28%, 66% 52%, 72% 36%, 82% 54%, 90% 40%, 100% 60%, 100% 100%);
+  left: -2%; right: -2%; bottom: 0;
+  height: 62%;
+  background: #2a1810;
+  clip-path: polygon(
+    0 100%, 0 52%,
+    7% 52%, 7% 16%, 18% 16%, 18% 52%,
+    27% 52%, 27% 6%, 40% 6%, 40% 52%,
+    50% 52%, 50% 22%, 62% 22%, 62% 52%,
+    71% 52%, 71% 10%, 84% 10%, 84% 52%,
+    100% 52%, 100% 100%
+  );
 }
 .worldCardPreview.overgrowth {
-  background: linear-gradient(180deg, #0e2418 0%, #1e5030 50%, #78c088 100%);
+  background: linear-gradient(180deg, #1a3a28 0%, #3a6a40 48%, #a8c060 100%);
+}
+.worldCardPreview.overgrowth::before {
+  content: '';
+  position: absolute;
+  left: -4%; right: -4%; top: 0;
+  height: 42%;
+  background: #243818;
+  clip-path: polygon(0 0, 100% 0, 100% 40%, 90% 78%, 78% 48%, 64% 86%, 50% 44%, 36% 80%, 22% 50%, 10% 74%, 0 42%);
 }
 .worldCardPreview.overgrowth::after {
   content: '';
   position: absolute;
-  left: -4%; right: -4%; bottom: 0;
-  height: 60%;
-  background: #0a1e14;
-  clip-path: polygon(0 100%, 0 50%, 5% 38%, 12% 52%, 20% 30%, 28% 48%, 35% 24%, 42% 42%, 50% 28%, 58% 45%, 65% 22%, 72% 40%, 80% 32%, 88% 50%, 95% 36%, 100% 48%, 100% 100%);
+  left: 0; right: 0; bottom: 0;
+  height: 48%;
+  background: #1a3a28;
+  clip-path: polygon(
+    0 100%, 0 70%,
+    12% 70%, 12% 18%, 18% 18%, 18% 70%,
+    38% 70%, 38% 28%, 44% 28%, 44% 70%,
+    66% 70%, 66% 12%, 72% 12%, 72% 70%,
+    88% 70%, 88% 32%, 94% 32%, 94% 70%,
+    100% 70%, 100% 100%
+  );
 }
 .worldCardPreview.nave {
-  background: linear-gradient(180deg, #101018 0%, #242436 55%, #4a4460 100%);
+  background: linear-gradient(180deg, #1c1c28 0%, #3a4460 55%, #c08a30 100%);
+}
+.worldCardPreview.nave::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 36%;
+  background: #282838;
+  clip-path: polygon(0 0, 100% 0, 100% 55%, 84% 100%, 68% 55%, 50% 100%, 32% 55%, 16% 100%, 0 55%);
 }
 .worldCardPreview.nave::after {
   content: '';
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  height: 68%;
-  background: #16161e;
-  clip-path: polygon(0 100%, 0 30%, 8% 30%, 8% 100%, 16% 100%, 16% 20%, 24% 10%, 32% 20%, 32% 100%, 42% 100%, 42% 28%, 42% 28%, 58% 28%, 58% 100%, 68% 100%, 68% 20%, 76% 10%, 84% 20%, 84% 100%, 92% 100%, 92% 30%, 100% 30%, 100% 100%);
+  height: 58%;
+  background: #1c2838;
+  clip-path: polygon(
+    0 100%, 0 28%, 8% 28%, 8% 100%,
+    18% 100%, 18% 12%, 26% 0, 34% 12%, 34% 100%,
+    48% 100%, 48% 22%, 52% 22%, 52% 100%,
+    66% 100%, 66% 12%, 74% 0, 82% 12%, 82% 100%,
+    92% 100%, 92% 28%, 100% 28%, 100% 100%
+  );
 }
 /* Cathode's swatch is the only one that shows the PIPELINE rather than a
    landform: hard-edged bands and scanlines instead of a soft gradient,
@@ -2121,7 +2168,8 @@ html, body {
     44% 62%, 44% 18%, 60% 18%, 60% 48%, 76% 48%, 76% 26%, 88% 26%, 88% 58%, 100% 58%, 100% 100%);
 }
 
-.worldCardPreview.is-rendered::after {
+.worldCardPreview.is-rendered::after,
+.worldCardPreview.is-rendered::before {
   display: none;
 }
 .worldCardStill,

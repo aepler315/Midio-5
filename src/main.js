@@ -3,6 +3,7 @@ import { Conductor } from './core/Conductor.js';
 import { advanceFixedStepClock } from './core/FixedStepClock.js';
 import { ParamBus } from './core/ParamBus.js';
 import { synthesizeEnergyCurves } from './core/EnergyCurvesSynth.js';
+import { buildDemoSong } from './core/DemoSong.js';
 import { audioToTimeline } from './audio/AudioAdapter.js';
 import { Simulation } from './sim/Simulation.js';
 import { createRenderer, resolveRendererMode } from './render/WebGLRenderer.js';
@@ -97,6 +98,7 @@ window.addEventListener('unhandledrejection', (e) => {
 const loaderEl = document.getElementById('loader');
 const dropzoneEl = document.getElementById('dropzone');
 const fileInputEl = document.getElementById('fileInput');
+const demoBtnEl = document.getElementById('demoBtn');
 const worldSelectEl = document.getElementById('worldSelect');
 const worldSelectGridEl = document.getElementById('worldSelectGrid');
 const worldSelectBackEl = document.getElementById('worldSelectBack');
@@ -1832,11 +1834,8 @@ function handleFile(file) {
 }
 
 /** One file plays as itself. Several files dropped together are stems of one
- *  song (their filenames cast the characters).
- *
- *  There is one input now: audio. The MIDI paths (a score alone, or a score
- *  paired with a recording) and the built-in demo are gone -- this is a
- *  consumer app, and "drop a song" is the whole interaction. */
+ *  song (their filenames cast the characters). The built-in sample is a
+ *  second door into the same chooser. */
 function handleFiles(files) {
   const list = [...(files || [])].filter(Boolean);
   if (!list.length) return;
@@ -1853,6 +1852,43 @@ fileInputEl?.addEventListener('change', (e) => {
   e.target.value = '';
 });
 worldSelectBackEl?.addEventListener('click', () => backToTitle());
+
+/** Authored sample (Proof) so a visitor can see the worlds without a file. */
+async function startDemoSample() {
+  try {
+    await bootAudio();
+  } catch (err) {
+    showErrorBanner(err?.message || 'Audio is blocked. Click the page, then try again.');
+    return;
+  }
+  muteTimelineSynth = false;
+  lastAudioBuffer = null;
+  lastSongName = 'Proof';
+  fontRecommender?.clear();
+  const song = buildDemoSong();
+  const energyCurves = synthesizeEnergyCurves(song.timeline, song.durationMs);
+  const barMs = (60000 / song.bpm) * 4;
+  const boundariesMs = song.sections.map((s) => s.bar0 * barMs);
+  boundariesMs.push(song.durationMs);
+  offerWorldsThenStart({
+    title: song.title,
+    bpm: song.bpm,
+    durationMs: song.durationMs,
+    timeline: song.timeline,
+    barGrid: song.barGrid,
+    energyCurves,
+    conductor: song.conductor,
+    structure: {
+      labels: song.sections.map((s) => s.id),
+      boundariesMs,
+      confidence: 1,
+    },
+  });
+}
+demoBtnEl?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  startDemoSample();
+});
 
 // Unlock the AudioContext on the gesture that opens the picker, not on
 // the later `change` event -- browsers often don't treat file-picker
