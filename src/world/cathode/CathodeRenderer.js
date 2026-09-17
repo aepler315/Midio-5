@@ -34,7 +34,7 @@ import {
 } from './CathodeBoss.js';
 import { sampleWorldMusic } from '../WorldMusic.js';
 import {
-  rasterRate, phosphorGlow, screenHit, tubeFlinch, scanPeriod, tearAmount,
+  rasterRate, rasterTravel, phosphorGlow, screenHit, tubeFlinch, scanPeriod, tearAmount,
   sectionAt, boundaryLift01,
 } from './Tube.js';
 
@@ -380,7 +380,7 @@ export class CathodeRenderer {
     }
     // Energy-scaled, inverted-U: a quiet verse crawls, a groove cruises,
     // dense material drops to half-time so the floor does not strobe.
-    const scroll = Math.round((tSec * rasterRate(music.energy, !!sim?.reducedFlash)) % 32);
+    const scroll = Math.round((rasterTravel(tSec, sim?.energyCurves, !!sim?.reducedFlash, sim?.biomes?.world?.response)) % 32);
     for (let x = -scroll; x < w; x += 32) {
       buffer.rect(x, horizon + horizonH, 1, h - horizon - horizonH, gridColor);
     }

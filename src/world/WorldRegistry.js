@@ -68,6 +68,7 @@ export const WORLD_CONTRACT = Object.freeze({
   time: ['tSec', 'durationMs', 'currentBlend', 'openingGain', 'unravel'],
   // What the music and the sim are doing this frame.
   state: [
+    'world', // response.smoothingMs also governs integrated travel
     'energyCurves', 'worldRhythm', 'sections', '_lastSectionIdx', 'fever',
     'orogenyGrowth', 'light', 'weatherState', 'weatherFields',
     '_activeWeatherIntensity', 'starCatalogue', 'weaver', 'meteors',

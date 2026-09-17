@@ -9,7 +9,7 @@ import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.j
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
 import { hexToRgb } from '../../utils/color.js';
 import { sampleManagerMusic } from '../WorldMusic.js';
-import { cruiseRate, cruiseTravel, phrasePassage, signageAlpha, boundaryLift01 } from './Cruise.js';
+import { cruiseTravel, phrasePassage, signageAlpha, boundaryLift01 } from './Cruise.js';
 
 const LAYER_RATIOS = { L2: 0.06, L3: 0.14, L4: 0.32, L5: 0.70 };
 const Y_OFF = { L2: 4, L3: 14, L4: 34, L5: 64 };
@@ -26,7 +26,6 @@ export function drawRedlineWorld(mgr, frame) {
   const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
   const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
-  const rate = cruiseRate(music.energy, mgr.reducedFlash);
   const passage = phrasePassage({ nowMs: mgr.tSec * 1000, section: mgr.sections?.[mgr._lastSectionIdx], lift });
 
   mgr._drawSky(ctx, canvas, A, B, t, 0.6);
@@ -154,7 +153,7 @@ export function drawRedlineWorld(mgr, frame) {
   if (groundView) groundView.apply();
   mgr._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
   mgr._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
-  drawLaneMarkers(ctx, groundCanvas, worldX, mgr, rate);
+  drawLaneMarkers(ctx, groundCanvas, worldX, mgr);
   drawReflectors(ctx, groundCanvas, worldX, mgr, music);
   mgr._drawFlood(ctx, groundCanvas);
   mgr._drawTransitionOverlays(ctx, groundCanvas, B);
@@ -188,10 +187,10 @@ function drawHorizonWash(ctx, canvas, wash, reducedFlash) {
   ctx.restore();
 }
 
-function drawLaneMarkers(ctx, canvas, worldX, mgr, rate) {
+function drawLaneMarkers(ctx, canvas, worldX, mgr) {
   const gy = mgr.groundField ? mgr.groundField.heightAt(worldX) : mgr.groundY;
   const spacing = 56;
-  const travel = cruiseTravel(mgr.tSec, rate);
+  const travel = cruiseTravel(mgr.tSec, mgr.energyCurves, mgr.reducedFlash, mgr.world?.response);
   const phase = ((travel - worldX * 0.55) % spacing + spacing) % spacing;
   ctx.save();
   ctx.fillStyle = 'rgba(255, 230, 160, 0.62)';

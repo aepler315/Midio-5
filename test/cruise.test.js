@@ -25,12 +25,12 @@ test('reduced flash halves the grid without inventing a different shape', () => 
 });
 
 test('travel is a function of the clock, so a backward seek cannot keep speed', () => {
-  const rate = cruiseRate(0.5);
-  const at = cruiseTravel(12, rate);
-  cruiseTravel(90, 1);
-  assert.equal(cruiseTravel(12, rate), at);
-  assert.equal(cruiseTravel(-1, rate), 0);
-  assert.equal(cruiseTravel(NaN, rate), 0);
+  const curves = { globalEnergyNorm: () => 0.5 };
+  const at = cruiseTravel(12, curves);
+  cruiseTravel(90, curves);
+  assert.equal(cruiseTravel(12, curves), at);
+  assert.equal(cruiseTravel(-1, curves), 0);
+  assert.equal(cruiseTravel(NaN, curves), 0);
 });
 
 test('only an earned step-up opens a tunnel-then-horizon passage', () => {

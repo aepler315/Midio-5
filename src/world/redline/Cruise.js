@@ -19,6 +19,7 @@
 // backward seek keep the previous song-position's speed.
 import { clamp01, lerp } from '../../utils/math.js';
 import { boundaryLift01 } from '../WorldMusic.js';
+import { energyTravel } from '../EnergyTravel.js';
 
 const CRAWL = 0.22;
 const CRUISE = 1;
@@ -41,10 +42,11 @@ export function cruiseRate(energy = 0, reducedFlash = false) {
   return rate;
 }
 
-/** Pixel travel of the lane grid at this clock, for a given rate. */
-export function cruiseTravel(tSec, rate) {
-  if (!Number.isFinite(tSec) || tSec <= 0) return 0;
-  return tSec * TRAVEL_PX * clamp01(rate);
+const cruisePixelsPerSecond = (energy) => TRAVEL_PX * cruiseRate(energy);
+
+/** Integrated lane travel; independent of render order and frame rate. */
+export function cruiseTravel(tSec, energyCurves = null, reducedFlash = false, response = null) {
+  return energyTravel(tSec, energyCurves, cruisePixelsPerSecond, response) * (reducedFlash ? 0.5 : 1);
 }
 
 /**
