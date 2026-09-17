@@ -170,6 +170,13 @@ export async function runAudioSmoke({
     await page.locator('#hud:not(.hidden)').waitFor({ state: 'visible', timeout: 90000 });
     await page.waitForFunction(() => window.__SMW.audioEngine.playing && window.__SMW.sim.timeMs > 500);
     check('replacement song starts after world selection', true);
+    // A slow runner can let the replacement song's controls fade before
+    // reaching Stop. Exercise that state deliberately and wake them like a
+    // viewer, just as the pause check above does.
+    await page.locator('#hudRight.hud-faded').waitFor({ state: 'attached' });
+    await page.locator('#stage').click({ position: { x: 640, y: 250 } });
+    check('canvas tap wakes replacement playback controls before stop',
+      !await page.locator('#hudRight.hud-faded').count());
     await page.locator('#stopBtn').click();
     await page.locator('#loader:not(.hidden)').waitFor({ state: 'visible' });
     const stopped = await page.evaluate(() => !window.__SMW.audioEngine.playing
