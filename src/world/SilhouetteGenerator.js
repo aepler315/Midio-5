@@ -15,7 +15,7 @@
 //
 // shadeMode 'rendered' bakes soft vertical CGI shading (DKC3 lineage):
 // dark foot, mid body, lit crest, faint ridge specular -- once, free forever.
-import { ValueNoise1D, ridged } from '../utils/noise.js';
+import { ValueNoise1D } from '../utils/noise.js';
 import {
   lerp, mulberry32, clamp01, clamp,
 } from '../utils/math.js';
@@ -28,7 +28,7 @@ import {
   shapeDials, flankness,
 } from './RidgeShape.js';
 import { cityHeightField, bakeWindowStrip } from './city/CitySilhouette.js';
-import { pickFormation, varyFormation, spaceByIsolation, plateauProfile } from './ColoradoPlateau.js';
+import { pickFormation, varyFormation, spaceByIsolation } from './ColoradoPlateau.js';
 import { rimStroke } from './WorldMaterial.js';
 
 function makeCanvas(width, height) {
@@ -281,7 +281,6 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
   // exists -- composition upstream only knows which summits the song asked
   // for, not what they turned out to be.
   spaceByIsolation(allPeaks, width);
-  const spinePhase = rand() * 10;
   // Flank curvature from the character's own shoulder/spire/spireMix --
   // this is the path a song's spike-vs-organic DNA takes into the shape.
   const flankQ = flankQs(cfg, weather.litho, weather.profileMix ?? 0);
@@ -447,7 +446,6 @@ export function columnarHeightField(n, step, seed, width, portrait = null, {
   bayPx = 96, colFrac = 0.18, colH = 0.90, archAmp = 0.22, organic = false, layerKey = 'L4',
 } = {}) {
   const heights = new Float32Array(n);
-  const rand = mulberry32((seed ^ 0xc01a) >>> 0 || 1);
   const stripW = width > 0 ? width : Math.max(1, (n - 1) * step);
   const landmarkXs = [];
   if (portrait?.landmarks?.length) {
@@ -624,9 +622,6 @@ export function generateSilhouette({
       maxY = target;
     }
   }
-  // Gradient crest starts a little above the skyline
-  const gradTop = Math.max(0, (hanging ? 0 : minY) - 8);
-
   // Fitted amplitude so ridgeYAt matches the painted (unclipped) skyline.
   let hMax = 0;
   for (let i = 0; i < n; i++) if (heights[i] > hMax) hMax = heights[i];
