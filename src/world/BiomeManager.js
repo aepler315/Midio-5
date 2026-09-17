@@ -3,7 +3,7 @@
 // profile crossfading (§4.1.4). Each biome is pure data (BiomeProfiles.js);
 // this file is the one place that knows how to render the contract.
 import { BIOMES } from './BiomeProfiles.js';
-import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
+import { generateSilhouette, drawTiledStrip, ridgeYAt } from './SilhouetteGenerator.js';
 import {
   materialFor, layerBake, layerColor, terrainModsForLayer, groundColorFor, catchlightRgb,
 } from './WorldMaterial.js';
@@ -5709,8 +5709,14 @@ export class BiomeManager {
   _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1, heightMul = 1, snowLine01 = 1, { geology = true } = {}) {
     // Ceiling landforms are hanging masses. Foot-anchored crest shading
     // (catchlight on a summit, shade pooling in a valley) paints the
-    // wrong volume onto a vault or a canopy.
-    if (strip?.ridge?.anchor === 'ceiling') return;
+    // wrong volume onto a vault or a canopy — but skipping the pass
+    // entirely left those worlds as cardboard cutouts hanging from the
+    // top of the frame. Their own volume: light on the dangling edge,
+    // shade at the attachment.
+    if (strip?.ridge?.anchor === 'ceiling') {
+      this._drawCeilingVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha);
+      return;
+    }
     const strength = RIDGE_VOLUME_STRENGTH[layerKey] ?? 0;
     if (strength <= 0) return;
     const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy, heightMul);
@@ -5974,6 +5980,85 @@ export class BiomeManager {
     // mountain, not optional atmosphere like the phenomena layer.
     if (!this._perf || this._perf.heavyPostFx) {
       this._drawShoulders(ctx, pts, bottomY, alpha * strength);
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Volume for a hanging landform (canopy, vault, water surface). Light
+   * catches the dangling edge; shade pools at the attachment. Same
+   * catchlight language as the standing ridge, inverted.
+   */
+  _drawCeilingVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha) {
+    const strength = RIDGE_VOLUME_STRENGTH[layerKey] ?? 0;
+    if (strength <= 0) return;
+    const r = strip.ridge;
+    if (!r) return;
+    const w = strip.width;
+    const pts = [];
+    let edgeMax = yOff;
+    for (let x = 0; x <= canvas.width; x += CREST_STEP_PX) {
+      const u = (((scrollX + x) % w) + w) % w;
+      const y = yOff + Math.max(0, ridgeYAt(strip, u));
+      pts.push({ x, y });
+      if (y > edgeMax) edgeMax = y;
+    }
+    if (!(edgeMax > yOff + 4) || pts.length < 2) return;
+
+    const body = new Path2D();
+    body.moveTo(pts[0].x, yOff);
+    for (let i = 0; i < pts.length; i++) body.lineTo(pts[i].x, pts[i].y);
+    body.lineTo(pts[pts.length - 1].x, yOff);
+    body.closePath();
+
+    const worldKind = this.world?.kind || 'alpine';
+    const mat = materialFor(worldKind);
+    const cl = catchlightRgb(worldKind);
+
+    ctx.save();
+    ctx.clip(body);
+
+    if (cl) {
+      const grad = ctx.createLinearGradient(0, yOff, 0, edgeMax);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(0.58, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, `rgba(${cl.r},${cl.g},${cl.b},${(RIDGE_CATCHLIGHT_ALPHA * alpha * strength).toFixed(3)})`);
+      ctx.fillStyle = grad;
+      ctx.fill(body);
+    }
+
+    const ridgeShadingFull = !this._perf || this._perf.ridgeShadingFull;
+    if (ridgeShadingFull) {
+      const shadeStrength = RIDGE_SHADE_STRENGTH * alpha * strength;
+      const g = Math.max(0, Math.min(255, Math.round(255 * (1 - shadeStrength))));
+      const shadeGrad = ctx.createLinearGradient(0, yOff, 0, edgeMax);
+      shadeGrad.addColorStop(0, `rgb(${g},${g},${g})`);
+      shadeGrad.addColorStop(0.55, 'rgb(255,255,255)');
+      shadeGrad.addColorStop(1, 'rgb(255,255,255)');
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = shadeGrad;
+      ctx.fill(body);
+      ctx.restore();
+    }
+
+    const aerialPull = AERIAL_PULL[layerKey] || 0;
+    if (ridgeShadingFull && aerialPull > 0.001 && mat.aerial !== false) {
+      const airHex = mat.aerial === 'invert' ? (mat.deep || '#020a0e') : this._airColor;
+      if (airHex) {
+        const air = hexToRgb(airHex);
+        const aerialAlpha = aerialPull * alpha * strength;
+        const aerialGrad = ctx.createLinearGradient(0, yOff, 0, edgeMax);
+        if (mat.aerial === 'invert') {
+          aerialGrad.addColorStop(0, `rgba(${air.r},${air.g},${air.b},${(aerialAlpha * 0.35).toFixed(3)})`);
+          aerialGrad.addColorStop(1, `rgba(${air.r},${air.g},${air.b},${aerialAlpha.toFixed(3)})`);
+        } else {
+          aerialGrad.addColorStop(0, `rgba(${air.r},${air.g},${air.b},${aerialAlpha.toFixed(3)})`);
+          aerialGrad.addColorStop(1, `rgba(${air.r},${air.g},${air.b},${(aerialAlpha * 0.35).toFixed(3)})`);
+        }
+        ctx.fillStyle = aerialGrad;
+        ctx.fill(body);
+      }
     }
     ctx.restore();
   }
