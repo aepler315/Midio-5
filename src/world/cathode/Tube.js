@@ -17,6 +17,7 @@
 // Pure and causal. A rate held in a field would survive a backward seek.
 import { clamp01, lerp } from '../../utils/math.js';
 import { boundaryLift01 } from '../WorldMusic.js';
+import { energyTravel } from '../EnergyTravel.js';
 import { beatFlinchScale, FLINCH_SCALE } from './CathodeBoss.js';
 
 const CRAWL = 18;
@@ -41,6 +42,11 @@ export function rasterRate(energy = 0, reducedFlash = false) {
   else rate = lerp(CRUISE, HALF_TIME, (e - PEAK_AT) / (1 - PEAK_AT));
   if (reducedFlash) rate *= 0.5;
   return rate;
+}
+
+/** Integrated grid distance, stable under seeks and changing energy. */
+export function rasterTravel(tSec, energyCurves = null, reducedFlash = false, response = null) {
+  return energyTravel(tSec, energyCurves, rasterRate, response) * (reducedFlash ? 0.5 : 1);
 }
 
 /** Screen-weight from sustained bass, never a single-frame sample. */
