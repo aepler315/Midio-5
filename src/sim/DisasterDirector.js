@@ -55,6 +55,12 @@ export class DisasterDirector {
     this.struckKind = null;
   }
 
+  /** Skip past slots on a fresh scene; do not strike a backlog of disasters. */
+  seekTo(nowMs) {
+    this._nextIdx = 0;
+    while (this._nextIdx < this._schedule.length && this._schedule[this._nextIdx].tMs <= nowMs) this._nextIdx++;
+  }
+
   /**
    * @param {number} nowMs
    * @param {number} worldX current scroll position -- new strikes are

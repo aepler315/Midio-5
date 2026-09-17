@@ -110,7 +110,7 @@ export class Conductor {
    * Used by the mountain seekbar. Forward seeks skip silently; reverse
    * seeks rewind cursors so future notes still fire once.
    */
-  seekTo(ms) {
+  seekTo(ms, { primeAhead = false } = {}) {
     const t = Math.max(0, ms);
     // On-time cursor: first event strictly after t
     let lo = 0, hi = this.timeline.length;
@@ -126,7 +126,7 @@ export class Conductor {
     }
     this.barCursor = lo;
     for (const reg of this.aheadRegs) {
-      const horizon = t + reg.leadMs;
+      const horizon = primeAhead ? t : t + reg.leadMs;
       let a = 0, b = this.timeline.length;
       while (a < b) {
         const m = (a + b) >> 1;
