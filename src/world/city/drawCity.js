@@ -140,12 +140,12 @@ export function drawCityWorld(mgr, frame) {
     if (stripsA) {
       const a = to === from ? 1 : 1 - t;
       blit(ctx, canvas, stripsA[key], sx, yOff, a);
-      mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false });
+      mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
       blitWindows(ctx, canvas, stripsA[key], sx, yOff, glow, music, mgr.reducedFlash, a);
     }
     if (to !== from && t > 0.02 && stripsB) {
       blit(ctx, canvas, stripsB[key], sx, yOff, t);
-      mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false });
+      mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
       blitWindows(ctx, canvas, stripsB[key], sx, yOff, glow, music, mgr.reducedFlash, t);
     }
   };
