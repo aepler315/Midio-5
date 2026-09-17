@@ -5,6 +5,9 @@
 import { BIOMES } from './BiomeProfiles.js';
 import { generateSilhouette, drawTiledStrip } from './SilhouetteGenerator.js';
 import {
+  materialFor, layerBake, layerColor, terrainModsForLayer, groundColorFor, catchlightRgb,
+} from './WorldMaterial.js';
+import {
   extractRidgePortrait, lithologyFromShares, landformWindow, relEnergyLadder, snowLine01For,
 } from './RidgePortrait.js';
 import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
@@ -310,7 +313,7 @@ const SHOULDER_FACET_ALPHA = 0.22;
 const SHOULDER_LINE_ALPHA = 0.20;
 // The same warm catch-light generateSilhouette bakes along the skyline, so
 // a spur's lit edge reads as the same sun striking the same rock.
-const SHOULDER_LIT = '#fff8e6';
+const SHOULDER_LIT = '#ece4d6';
 // Facet facing: the celestial owns the side, the existing stripX hash is a
 // small per-summit perturbation so a whole range doesn't flatten into one
 // uniformly-lit wall. A summit only flips against the sun when its hash is
@@ -386,11 +389,6 @@ const WAVE_BAND_PX = 150;
 // rather than as another hazy ridge.
 const WAVE_GLINT_ALPHA = 0.30;
 
-// The ground must never sink into the void, whatever the biome's silhouette
-// started at. Chosen to clear the film-grade wash and the vignette that
-// still follow it -- both only ever push toward black, and the ground sits
-// in their darkest (bottom, off-centre) reach.
-const GROUND_MIN_LIGHTNESS = 0.30;
 const MILESTONE_METEOR_BASE = [5, 8, 14];
 const DROP_METEOR_BASE = 12;
 const ACHROMATIC_SAT_THRESHOLD = 0.08;
@@ -1524,95 +1522,61 @@ export class BiomeManager {
     // structural label gets that label's own windowed portrait/lithology
     // instead of the whole-song aggregate, so a chorus and a verse sharing
     // a biome's color palette still get structurally different mountains.
-    // Absent for city/farside/etc. worlds, and for any profile not tied to
-    // a label yet (setVisualStyle's pre-schedule fallback) -- both fall
-    // back to the whole-song portrait exactly as before this stage.
     const variant = this._profileVariants?.get(b.name) || null;
     const portrait = variant?.portrait || this._ridgePortrait;
     const worldKind = this.world?.kind || 'alpine';
-    const noAerial = this.world?.aerial === false;
-    {
-      const seed = hashSeed(b.name);
-      const el = b.edgeLight || null;
-      let strips;
-      if (worldKind === 'city') {
-        const terrainMods = this.world?.terrainMods || null;
-        strips = {
-          L2: generateSilhouette({
-            seed: seed + 1, height: 400, octaves: 3, amplitude: 0.56, baseline: 0.38,
-            color: b.silhouette, shadeMode, profile: 'city',
-            softenScale: 0.88, portrait, layerKey: 'L2', terrainMods, timeline: this._layerTimeline('L2'),
-            edgeLight: el,
-          }),
-          L3: generateSilhouette({
-            seed: seed + 2, height: 360, octaves: 3, amplitude: 0.46, baseline: 0.46,
-            color: b.silhouette, shadeMode, profile: 'city',
-            softenScale: 0.94, portrait, layerKey: 'L3', terrainMods, timeline: this._layerTimeline('L3'),
-            edgeLight: el,
-          }),
-          L4: generateSilhouette({
-            seed: seed + 3, height: 300, octaves: 2, amplitude: 0.30, baseline: 0.66,
-            color: b.silhouette, shadeMode, profile: 'city',
-            softenScale: 1, portrait, layerKey: 'L4', terrainMods, timeline: this._layerTimeline('L4'),
-            edgeLight: el,
-          }),
-          L5: generateSilhouette({
-            seed: seed + 4, height: 220, octaves: 2, amplitude: 0.12, baseline: 0.92,
-            color: b.silhouette, shadeMode, profile: 'city',
-            softenScale: 1, portrait, layerKey: 'L5', terrainMods, timeline: this._layerTimeline('L5'),
-          }),
-        };
-      } else {
-        const soften = noAerial
-          ? { L2: 0.75, L3: 0.85, L4: 0.95, L5: 1 }
-          : AERIAL_SOFTEN;
-        const prof = worldKind === 'strip' ? 'rolling' : 'alpine';
-        const terrainMods = this.world?.terrainMods || null;
-        // Which landform each depth gets (not just how that landform is
-        // shaped -- terrainMods above still does that): a song's own
-        // spike/organic bias picks between the classic massif/range/crags
-        // triple and two more distinct schemes (ShapeGrammar.
-        // pickCharacterScheme), so a spiky song's whole stack skews toward
-        // true needle spires up close and an organic song's toward a
-        // joined tableland at the horizon, instead of every world reaching
-        // for the identical three landforms regardless of what generated
-        // it. Falls back to the original fixed triple when absent.
-        const scheme = variant?.character || this.world?.characterScheme || CHARACTER_SCHEMES.classic;
-        strips = {
-          L2: generateSilhouette({
-            seed: seed + 1, height: 400, octaves: 4, amplitude: 0.52, baseline: 0.42,
-            color: b.silhouette, shadeMode, profile: prof, character: scheme[0],
-            softenScale: soften.L2, portrait, layerKey: 'L2', terrainMods, timeline: this._layerTimeline('L2'),
-            edgeLight: el,
-          }),
-          L3: generateSilhouette({
-            seed: seed + 2, height: 360, octaves: 3, amplitude: 0.44, baseline: 0.50,
-            color: b.silhouette, shadeMode, profile: prof, character: scheme[1],
-            softenScale: soften.L3, portrait, layerKey: 'L3', terrainMods, timeline: this._layerTimeline('L3'),
-            edgeLight: el,
-          }),
-          L4: generateSilhouette({
-            seed: seed + 3, height: 330, octaves: 3, amplitude: 0.34, baseline: 0.64,
-            color: b.silhouette, shadeMode, profile: prof, character: scheme[2],
-            softenScale: soften.L4, portrait, layerKey: 'L4', terrainMods, timeline: this._layerTimeline('L4'),
-            edgeLight: el,
-          }),
-          L5: generateSilhouette({
-            seed: seed + 4, octaves: 2, amplitude: 0.46, baseline: 0.82,
-            color: b.silhouette, shadeMode, profile: 'rolling',
-            softenScale: soften.L5, portrait, layerKey: 'L5', terrainMods, timeline: this._layerTimeline('L5'),
-          }),
-        };
-        // b.landmarkKey (PaletteSynth.js) is the archetype LANDMARKS is
-        // actually keyed by; a synthesized palette's own display `name`
-        // (e.g. "NAVE_A_0") never matches, and falls back to b.name for the
-        // stock path where name IS already an archetype key.
-        const landmarkKey = b.landmarkKey || b.name;
-        decorateStrip(strips.L4, landmarkKey, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
-        decorateStrip(strips.L5, landmarkKey, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
-      }
-      return strips;
+    const mat = materialFor(worldKind);
+    const seed = hashSeed(b.name);
+    const el = b.edgeLight || null;
+    const terrainMods = this.world?.terrainMods || null;
+    const songScheme = variant?.character || this.world?.characterScheme || CHARACTER_SCHEMES.classic;
+    const scheme = mat.scheme === 'song'
+      ? songScheme
+      : (mat.scheme && CHARACTER_SCHEMES[mat.scheme]) || songScheme;
+
+    const strips = {};
+    const keys = ['L2', 'L3', 'L4', 'L5'];
+    keys.forEach((layerKey, idx) => {
+      const bake = layerBake(worldKind, layerKey);
+      const character = Number.isInteger(bake.characterIndex)
+        ? scheme[bake.characterIndex] || scheme[0]
+        : 'massif';
+      const color = layerColor(b.silhouette, worldKind, layerKey);
+      strips[layerKey] = generateSilhouette({
+        seed: seed + idx + 1,
+        height: bake.height,
+        octaves: bake.octaves,
+        amplitude: bake.amplitude,
+        baseline: bake.baseline,
+        color,
+        shadeMode,
+        profile: bake.profile,
+        character,
+        anchor: bake.anchor,
+        fillLift: mat.fillLift,
+        kind: worldKind,
+        colH: bake.colH,
+        archAmp: bake.archAmp,
+        bayPx: bake.bayPx,
+        colFrac: bake.colFrac,
+        organic: bake.organic,
+        softenScale: bake.soften,
+        portrait,
+        layerKey,
+        terrainMods: terrainModsForLayer(terrainMods, bake),
+        timeline: this._layerTimeline(layerKey),
+        edgeLight: el,
+      });
+    });
+
+    // Landmarks are alpine/rolling dressing. Columns and skylines have their
+    // own members; hanging a pine on a nave bay is how the worlds collapsed.
+    if (worldKind === 'alpine' || worldKind === 'airless') {
+      const landmarkKey = b.landmarkKey || b.name;
+      decorateStrip(strips.L4, landmarkKey, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
+      decorateStrip(strips.L5, landmarkKey, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
     }
+    return strips;
   }
 
   /** Lazy-bake indirection over this.strips: a profile name eagerly baked by
@@ -5743,6 +5707,10 @@ export class BiomeManager {
    * the only source of shading depth any range has, in any world.
    */
   _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1, heightMul = 1, snowLine01 = 1, { geology = true } = {}) {
+    // Ceiling landforms are hanging masses. Foot-anchored crest shading
+    // (catchlight on a summit, shade pooling in a valley) paints the
+    // wrong volume onto a vault or a canopy.
+    if (strip?.ridge?.anchor === 'ceiling') return;
     const strength = RIDGE_VOLUME_STRENGTH[layerKey] ?? 0;
     if (strength <= 0) return;
     const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy, heightMul);
@@ -5793,11 +5761,16 @@ export class BiomeManager {
     // the shading band's SHAPE still tracks the ridge; only its vertical
     // falloff anchor holds still.
     const shadeTopY = Number.isFinite(bakedCrestY) ? bakedCrestY : crestY;
-    const grad = ctx.createLinearGradient(0, shadeTopY, 0, bottomY);
-    grad.addColorStop(0, `rgba(255,250,240,${(RIDGE_CATCHLIGHT_ALPHA * alpha * strength).toFixed(3)})`);
-    grad.addColorStop(0.34, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grad;
-    ctx.fill(body);
+    const worldKind = this.world?.kind || 'alpine';
+    const mat = materialFor(worldKind);
+    const cl = catchlightRgb(worldKind);
+    if (cl) {
+      const grad = ctx.createLinearGradient(0, shadeTopY, 0, bottomY);
+      grad.addColorStop(0, `rgba(${cl.r},${cl.g},${cl.b},${(RIDGE_CATCHLIGHT_ALPHA * alpha * strength).toFixed(3)})`);
+      grad.addColorStop(0.34, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.fill(body);
+    }
 
     // The shade half and the aerial-perspective wash below it are both
     // gated on ridgeShadingFull: real cost (a clipped gradient fill each,
@@ -5845,14 +5818,19 @@ export class BiomeManager {
     // guaranteed no-op there -- the near anchor stays exactly as crisp as
     // its authored color.
     const aerialPull = AERIAL_PULL[layerKey] || 0;
-    if (ridgeShadingFull && aerialPull > 0.001 && this._airColor) {
-      const air = hexToRgb(this._airColor);
-      const aerialAlpha = aerialPull * alpha * strength;
-      const aerialGrad = ctx.createLinearGradient(0, crestY, 0, bottomY);
-      aerialGrad.addColorStop(0, `rgba(${air.r},${air.g},${air.b},${(aerialAlpha * 0.35).toFixed(3)})`);
-      aerialGrad.addColorStop(1, `rgba(${air.r},${air.g},${air.b},${aerialAlpha.toFixed(3)})`);
-      ctx.fillStyle = aerialGrad;
-      ctx.fill(body);
+    if (ridgeShadingFull && aerialPull > 0.001 && mat.aerial !== false) {
+      const airHex = mat.aerial === 'invert'
+        ? (mat.deep || '#020a0e')
+        : this._airColor;
+      if (airHex) {
+        const air = hexToRgb(airHex);
+        const aerialAlpha = aerialPull * alpha * strength;
+        const aerialGrad = ctx.createLinearGradient(0, crestY, 0, bottomY);
+        aerialGrad.addColorStop(0, `rgba(${air.r},${air.g},${air.b},${(aerialAlpha * 0.35).toFixed(3)})`);
+        aerialGrad.addColorStop(1, `rgba(${air.r},${air.g},${air.b},${aerialAlpha.toFixed(3)})`);
+        ctx.fillStyle = aerialGrad;
+        ctx.fill(body);
+      }
     }
 
     // Snowline (Stage 4): song-grounded caps riding the same per-column
@@ -6409,7 +6387,10 @@ export class BiomeManager {
     // beyond flat dirt and Broshi's occasional cave. Both are seeded once
     // per song and drawn in WORLD space like the strata above, so they
     // scroll with the terrain instead of sitting pinned to the screen.
-    this._drawRoots(ctx, canvas, crest, depth, worldX);
+    // Roots are a foliage tell — skip them in worlds whose ground is stone,
+    // iron, water-floor, or vacuum.
+    const mat = materialFor(this.world?.kind || 'alpine');
+    if (mat.ground.roots) this._drawRoots(ctx, canvas, crest, depth, worldX);
     this._drawOreFlecks(ctx, canvas, crest, depth, worldX);
 
     // 4. Light falls off with depth into the solid -- drawn LAST so it
@@ -6418,10 +6399,11 @@ export class BiomeManager {
     // actually stands) stays a real, lit material -- going to true black
     // by ~55% of the band made the footing under the characters read as
     // void, which is the opposite of "the ground catches the light".
+    const voidA = mat.ground.voidAlpha ?? 0.20;
     const grad = ctx.createLinearGradient(0, crest, 0, canvas.height);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
     grad.addColorStop(0.38, shiftLightness(groundColor, -0.10));
-    grad.addColorStop(1, 'rgba(0,0,0,0.72)');
+    grad.addColorStop(1, `rgba(0,0,0,${voidA.toFixed(2)})`);
     ctx.fillStyle = grad;
     ctx.fillRect(0, crest, canvas.width, depth);
     ctx.restore();
@@ -6559,23 +6541,13 @@ export class BiomeManager {
     // otherwise the ground could end up *less* legible than the range it's
     // standing in front of.
     const groundColorRaw = mountainTint ?? this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t));
-    // Lifted a touch *lighter* than the nearest range -- not darker -- so
-    // the ground always keeps an edge (previously the one silhouette-tinted
-    // element skipping the key/section hue rotation entirely) and, just as
-    // important, so it has headroom to survive the film-finish vignette and
-    // fog wash still to come: those only ever push toward black, and the
-    // ground sits in their darkest (bottom, off-center) reach. A color that
-    // starts already dark has nothing left once they're through with it.
-    // ...and then floored outright. The relative lift alone is not enough:
-    // +0.14 from a near-black silhouette (CYBER, LUMEN, STORM, ABYSS all sit
-    // under 0.10 lightness) is still near-black, and under a bright ocean
-    // that reads as no ground at all -- just void below the water. The floor
-    // is what makes "there is ground here" true on every palette rather than
-    // only on the ones that started bright.
-    const groundColor = ensureMinLightness(
-      shiftLightness(groundColorRaw, 0.14),
-      GROUND_MIN_LIGHTNESS,
-    );
+    // Ground is a different material from the ridge — hue-shifted, lifted,
+    // and floored per world so a near-black silhouette cannot produce a
+    // void underfoot. Scenic-poster paint, not the same cutout continued
+    // downward.
+    const worldKind = this.world?.kind || 'alpine';
+    const mat = materialFor(worldKind);
+    const groundColor = groundColorFor(groundColorRaw, worldKind);
     const localGroundY = this.groundField ? this.groundField.heightAt(worldX) : this.groundY;
     const activeFx = t > 0.5 ? B.fx : A.fx;
     // The Mirror: GroundField's physics (collision height) are untouched,
@@ -6607,7 +6579,7 @@ export class BiomeManager {
       // (the top, where the ground meets the ranges) toward this._airColor,
       // and leave the near edge alone at full color. Runs before
       // _drawGroundInterior so the interior detail still reads on top of it.
-      if (this._airColor && bars.length) {
+      if (mat.ground.aerial !== false && this._airColor && bars.length) {
         let minTop = canvas.height;
         for (const bar of bars) if (bar.y < minTop) minTop = bar.y;
         const near = Math.max(minTop + 1, canvas.height);

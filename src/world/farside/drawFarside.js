@@ -38,13 +38,9 @@ function drawPrimary(mgr, ctx, canvas, cyFrac, cxFrac, alpha, color, haloColor, 
   ctx.save();
   ctx.globalAlpha = alpha;
 
-  const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * (1.35 + 0.35 * illum));
-  halo.addColorStop(0, haloColor);
-  halo.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = halo;
-  ctx.beginPath();
-  ctx.arc(cx, cy, R * (1.35 + 0.35 * illum), 0, Math.PI * 2);
-  ctx.fill();
+  // No atmospheric halo. This is vacuum — a glow around the primary was
+  // the one air-cue this world is not allowed. The disc, bands, and ring
+  // carry the planet.
 
   // Faint ring, drawn behind the disc so the near edge of the disc occludes it.
   const { r: rr, g: rg, b: rb } = hexToRgb(haloColor);
@@ -186,11 +182,6 @@ export function drawFarsideWorld(mgr, frame) {
   drawRange('L2');
   // No haze between layers — vacuum.
   drawRange('L3');
-
-  // Meteor impacts: use existing meteor shower as silent ballistic impacts.
-  if (phenomenaFull && mgr.meteors) {
-    mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
-  }
 
   // Particles — sparse regolith dust, no secondary lights (no atmosphere
   // to scatter them).

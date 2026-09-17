@@ -10,7 +10,7 @@ export const REDLINE_PALETTES = [
   {
     name: 'DUSKRUN',
     sky: ['#1a1030', '#4a2050', '#e05a50'],
-    silhouette: '#180c28',
+    silhouette: '#2a1840',
     edgeLight: '#ff7a90',
     celestial: { kind: 'sun', color: '#ff8a6a', radius: 68, haloColor: '#ffb37a', dominant: true },
     particles: { kind: 'wind', color: '#ffb0a0', count: 20, speed: 90 },
@@ -20,7 +20,7 @@ export const REDLINE_PALETTES = [
   {
     name: 'VAPOR',
     sky: ['#12082a', '#3a1060', '#f050a0'],
-    silhouette: '#140828',
+    silhouette: '#241040',
     edgeLight: '#40e8ff',
     celestial: { kind: 'sun', color: '#ff70c0', radius: 74, haloColor: '#a050ff', dominant: true },
     particles: { kind: 'wind', color: '#a0e0ff', count: 24, speed: 110 },
@@ -30,7 +30,7 @@ export const REDLINE_PALETTES = [
   {
     name: 'TUNNEL',
     sky: ['#06060a', '#0c0c14', '#1a1a24'],
-    silhouette: '#08080c',
+    silhouette: '#1a1a24',
     edgeLight: '#ffd040',
     celestial: { kind: 'moon', color: '#c0c0d0', radius: 20, haloColor: '#808090', veiled: true },
     particles: { kind: 'flaresparks', color: '#ffd040', count: 18, speed: 140 },
@@ -40,7 +40,7 @@ export const REDLINE_PALETTES = [
   {
     name: 'NEONMILE',
     sky: ['#08041a', '#180a3a', '#3a1a70'],
-    silhouette: '#0a0618',
+    silhouette: '#181030',
     edgeLight: '#30ffd0',
     celestial: { kind: 'moon', color: '#d0f0ff', radius: 26, haloColor: '#5060c0' },
     particles: { kind: 'digitalrain', color: '#30ffd0', count: 30, speed: 120 },
@@ -50,7 +50,7 @@ export const REDLINE_PALETTES = [
   {
     name: 'OVERDRIVE',
     sky: ['#2a0400', '#6a1000', '#ff5010'],
-    silhouette: '#200400',
+    silhouette: '#3a0c00',
     edgeLight: '#ffe060',
     celestial: { kind: 'sun', color: '#ffe060', radius: 86, haloColor: '#ff7020', dominant: true },
     particles: { kind: 'flaresparks', color: '#ffb040', count: 26, speed: 170 },

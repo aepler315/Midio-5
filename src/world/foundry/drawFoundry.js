@@ -3,7 +3,7 @@
 // every layer is furnace glow bleeding through silhouette gaps.
 import { drawTiledStrip } from '../SilhouetteGenerator.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
-import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
+import { ensureContrast } from '../../render/VisualStyle.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
@@ -23,7 +23,7 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
 }
 
 export function drawFoundryWorld(mgr, frame) {
-  const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
+  const { ctx, canvas, worldX, originX, A, B, t, dn, particleMul, groundView } = frame;
   const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const heat = furnaceHeat(music.energy);
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
@@ -32,18 +32,8 @@ export function drawFoundryWorld(mgr, frame) {
 
   mgr._drawSky(ctx, canvas, A, B, t, 0.85);
 
-  // Deep-sky layer ported in from BiomeManager's classic path -- the same
-  // celestial body here is "often veiled behind smoke", not always, so the
-  // sky above the furnace glow can still carry Midasus's sky-writing trail,
-  // the ambient constellations, and reward-volley meteors. Missing here
-  // only because Foundry got its own draw function without them.
-  mgr.drawDeepSky(ctx, skyVoyage, canvas);
-  const skyA = styleDials(mgr.visualStyle).skyWireAlpha ?? 1;
-  if (phenomenaFull && skyA > 0.02) {
-    const nightAlphaMul = (1 + 1.2 * 0.85) * Math.max(0.25, skyA);
-    mgr.weaver.draw(ctx, canvas, mgr.reducedFlash, nightAlphaMul);
-  }
-  if (phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
+  // Foundry is smoke and furnace glow, not a star field. Deep-sky writing,
+  // constellations and meteors belong to open-air worlds.
 
   // Celestial body — often veiled behind smoke, small in the hot palettes.
   const moonAlt = Math.max(dn.moonAlt, 0.30);
@@ -144,10 +134,6 @@ export function drawFoundryWorld(mgr, frame) {
     ctx.save(); ctx.globalAlpha = t * openA;
     mgr.fields.get(to)?.draw(ctx, particleMul * 1.2, mandalaColor, unravel, particleLights);
     ctx.restore();
-  }
-
-  if (phenomenaFull && mgr.meteors) {
-    mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
   }
 
   drawRange('L4');

@@ -106,3 +106,23 @@ test('no wash at all when this._airColor is unset (defensive: never throws, neve
   const canvas = { width: 960, height: 540 };
   assert.doesNotThrow(() => bm._drawRidgeVolume(ctx, canvas, strip, 0, 40, 'L2', 1, 1, 1));
 });
+
+test('a ceiling strip is not painted with foot-anchored ridge volume', async () => {
+  const bm = await makeManager();
+  const ctx = new RecordingCtx();
+  const strip = makeStrip();
+  strip.ridge.anchor = 'ceiling';
+  const canvas = { width: 960, height: 540 };
+  bm._drawRidgeVolume(ctx, canvas, strip, 0, 40, 'L2', 1, 1, 1);
+  assert.equal(ctx.fills.length, 0, 'ceiling landforms skip the summit-catchlight pass');
+});
+
+test('airless worlds skip the aerial wash — vacuum has no haze', async () => {
+  const bm = await makeManager();
+  bm.world = { kind: 'airless' };
+  const ctx = new RecordingCtx();
+  const strip = makeStrip();
+  const canvas = { width: 960, height: 540 };
+  bm._drawRidgeVolume(ctx, canvas, strip, 0, 40, 'L2', 1, 1, 1);
+  assert.ok(!hasAirColorStop(ctx.fills, 32, 64, 96), 'Far Side must not wash toward sky');
+});

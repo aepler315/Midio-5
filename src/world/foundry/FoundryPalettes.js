@@ -10,7 +10,7 @@ export const FOUNDRY_PALETTES = [
   {
     name: 'COLDIRON',
     sky: ['#08080a', '#101014', '#1c1c22'],
-    silhouette: '#0a0a0c',
+    silhouette: '#1c1c24',
     edgeLight: '#4a5a6a',
     celestial: { kind: 'moon', color: '#8a94a4', radius: 20, haloColor: '#606878', veiled: true },
     particles: { kind: 'fog', color: '#6a7280', count: 26, speed: 8 },
@@ -20,7 +20,7 @@ export const FOUNDRY_PALETTES = [
   {
     name: 'SCALE',
     sky: ['#0c0806', '#180e08', '#2a1a10'],
-    silhouette: '#0c0806',
+    silhouette: '#2a1810',
     edgeLight: '#a04020',
     celestial: { kind: 'moon', color: '#c08050', radius: 18, haloColor: '#805030', veiled: true },
     particles: { kind: 'embers', color: '#d05820', count: 30, speed: 40 },
@@ -30,7 +30,7 @@ export const FOUNDRY_PALETTES = [
   {
     name: 'POUR',
     sky: ['#140800', '#301000', '#6a2400'],
-    silhouette: '#0e0604',
+    silhouette: '#2a1008',
     edgeLight: '#ff6010',
     celestial: { kind: 'sun', color: '#ff7020', radius: 56, haloColor: '#ff9040', dominant: true, veiled: true },
     particles: { kind: 'embers', color: '#ff7020', count: 48, speed: 70 },
@@ -40,7 +40,7 @@ export const FOUNDRY_PALETTES = [
   {
     name: 'WHITEHEAT',
     sky: ['#2a1000', '#701e00', '#ffa030'],
-    silhouette: '#140800',
+    silhouette: '#3a1808',
     edgeLight: '#ffd070',
     celestial: { kind: 'sun', color: '#fff0c0', radius: 72, haloColor: '#ffb040', dominant: true },
     particles: { kind: 'flaresparks', color: '#ffd880', count: 54, speed: 130 },
@@ -50,7 +50,7 @@ export const FOUNDRY_PALETTES = [
   {
     name: 'QUENCH',
     sky: ['#04080c', '#0a1620', '#183040'],
-    silhouette: '#050a0e',
+    silhouette: '#122028',
     edgeLight: '#60c0e0',
     celestial: { kind: 'moon', color: '#a0d0e8', radius: 24, haloColor: '#608898', veiled: true },
     particles: { kind: 'fog', color: '#a0c0d0', count: 60, speed: 20 },

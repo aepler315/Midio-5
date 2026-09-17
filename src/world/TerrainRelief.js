@@ -20,7 +20,7 @@ import { clamp, clamp01 } from '../utils/math.js';
 // blue and a SOLAR orange both just want their lit face caught and their
 // shaded face darker. Tinted relief would muddy whatever the sky already
 // did, across seventeen palettes.
-export const RELIEF_LIT = '#fff8e6';
+export const RELIEF_LIT = '#ece4d6';
 export const RELIEF_SHADE = '#000000';
 // Peak coefficients sit below the mountains' own crest-catch / foot-sink
 // (0.17 / 0.32). The ground is nearer and larger, and the gradient fill
@@ -173,7 +173,7 @@ export function facingColorStops(samples, facing, x0, x1, channel, baseAlpha = 0
   const colorAt = (i) => {
     const f = facing[clamp(i, 0, n - 1)] || 0;
     if (channel === 'lit') {
-      return `rgba(255,248,230,${(RELIEF_LIT_ALPHA * Math.max(0, f)).toFixed(3)})`;
+      return `rgba(236,228,214,${(RELIEF_LIT_ALPHA * Math.max(0, f)).toFixed(3)})`;
     }
     if (channel === 'shade') {
       return `rgba(0,0,0,${(RELIEF_SHADE_ALPHA * Math.max(0, -f)).toFixed(3)})`;
@@ -362,9 +362,9 @@ export function reliefLitStripRGBA(samples, facing, width) {
   for (let x = 0; x < n; x++) {
     const f = facingAtX(samples, facing, x);
     const o = x * 4;
-    out[o] = 255;
-    out[o + 1] = 248;
-    out[o + 2] = 230;
+    out[o] = 236;
+    out[o + 1] = 228;
+    out[o + 2] = 214;
     out[o + 3] = f > 0 ? Math.round(RELIEF_LIT_ALPHA * f * 255) : 0;
   }
   return out;

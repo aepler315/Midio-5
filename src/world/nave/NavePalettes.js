@@ -10,7 +10,7 @@ export const NAVE_PALETTES = [
   {
     name: 'CRYPT',
     sky: ['#0a0a0e', '#14141c', '#22222c'],
-    silhouette: '#0c0c12',
+    silhouette: '#1c1c28',
     celestial: { kind: 'moon', color: '#c0c0cc', radius: 22, haloColor: '#808088', veiled: true },
     particles: { kind: 'fog', color: '#8a8a98', count: 20, speed: 4 },
     fx: 'starTwinkle',
@@ -19,7 +19,7 @@ export const NAVE_PALETTES = [
   {
     name: 'LAUDS',
     sky: ['#101018', '#242436', '#4a4460'],
-    silhouette: '#16161e',
+    silhouette: '#282838',
     edgeLight: '#8a7ad0',
     celestial: { kind: 'sun', color: '#e8dcff', radius: 30, haloColor: '#b0a0e0', shafts: true },
     particles: { kind: 'sunshine', color: '#e8dcff', count: 24, speed: 6 },
@@ -29,7 +29,7 @@ export const NAVE_PALETTES = [
   {
     name: 'TRANSEPT',
     sky: ['#0e1420', '#1e3048', '#3a6080'],
-    silhouette: '#101620',
+    silhouette: '#1c2838',
     edgeLight: '#5ea0d0',
     celestial: { kind: 'sun', color: '#d0e8ff', radius: 34, haloColor: '#90b8e0', shafts: true },
     particles: { kind: 'sunshine', color: '#cfe8ff', count: 30, speed: 7 },
@@ -39,7 +39,7 @@ export const NAVE_PALETTES = [
   {
     name: 'ROSE',
     sky: ['#1a0e18', '#3a1830', '#7a2e50'],
-    silhouette: '#1c0e18',
+    silhouette: '#301828',
     edgeLight: '#d05070',
     celestial: { kind: 'sun', color: '#ffd0d8', radius: 40, haloColor: '#e090a0', dominant: true, shafts: true },
     particles: { kind: 'sunshine', color: '#ffc0cc', count: 28, speed: 8 },
@@ -49,7 +49,7 @@ export const NAVE_PALETTES = [
   {
     name: 'GLORIA',
     sky: ['#2a1c08', '#5a3c10', '#c08a30'],
-    silhouette: '#241806',
+    silhouette: '#3a2810',
     edgeLight: '#ffc860',
     celestial: { kind: 'sun', color: '#fff0c0', radius: 52, haloColor: '#e0b060', dominant: true, shafts: true },
     particles: { kind: 'sunshine', color: '#ffe8b0', count: 34, speed: 10 },
