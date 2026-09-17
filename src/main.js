@@ -54,7 +54,7 @@ import {
 } from './ui/WorldPreview.js';
 import { fingerprintBuffer } from './audio/SongFingerprint.js';
 import { packBundle, unpackBundle } from './audio/AnalysisBundle.js';
-import { getBundle, putBundle } from './audio/AnalysisCache.js';
+import { analysisCacheKey, getBundle, putBundle } from './audio/AnalysisCache.js';
 
 
 const STEP_MS = 1000 / 120;
@@ -1661,6 +1661,13 @@ async function loadAudioFiles(files) {
   // Claim the load before the first await. Otherwise an older picker/drop
   // stalled in bootAudio() can wake up later and overwrite the newer choice.
   const myGen = ++loadGen;
+  stopTimeline();
+  stopTitleBackdrop();
+  loadShow?.stop();
+  pendingWorldStart = null;
+  hudEl.classList.add('hidden');
+  // Freeze learned settings for both cache identity and the analysis itself.
+  const analysisGroove = new GrooveFingerprint(groove.toJSON());
   showProgress('Reading file…');
   worldSelectEl?.classList.add('hidden');
   try {
@@ -1678,6 +1685,7 @@ async function loadAudioFiles(files) {
   // clobbering it. Analysis here is the longest of any load path (band
   // separation + onset/tempo/pitch + an awaited lyrics prompt), so it's the
   // one most likely to still be in flight when a second drop lands.
+  if (myGen !== loadGen) return;
   const decoded = [];
   for (const file of files) {
     try {
@@ -1685,6 +1693,8 @@ async function loadAudioFiles(files) {
     } catch (err) {
       if (myGen !== loadGen) return;
       showErrorBanner(`Could not decode audio file "${file.name}": ` + err.message);
+      progressEl.classList.add('hidden');
+      loaderEl.classList.remove('hidden');
       return;
     }
     if (myGen !== loadGen) return;
@@ -1723,16 +1733,16 @@ async function loadAudioFiles(files) {
     const lyricsPromise = lyricsDisabled
       ? Promise.resolve({ identity: null, lyricSections: null, syncedLyrics: null })
       : resolveLyricsForAudio(files[0], audioBuffer.duration, vocalStem, { prompt: false });
-    // Has this exact recording been analysed before? The fingerprint names
-    // it by what it SOUNDS like, so the same master as mp3 and as flac hit
-    // the same entry -- a file hash could never do that. A hit skips tens of
-    // seconds of separation, onset and pitch work.
+    // Reuse only the same decoded fingerprint, stem assignments, and learned
+    // rhythm settings. Different encodings may have different fingerprints.
     let fingerprint = null;
+    let cacheKey = null;
     let data = null;
     try {
       loadShow?.setStage('Recognising the recording…', 0.05);
       fingerprint = fingerprintBuffer(audioBuffer);
-      const cached = await getBundle(fingerprint.key);
+      cacheKey = analysisCacheKey(fingerprint, { stems: isStemDrop ? decoded : [], groove: analysisGroove });
+      const cached = cacheKey ? await getBundle(cacheKey) : null;
       if (cached) {
         data = unpackBundle(cached);
         // An unreadable bundle (older layout, truncated, hand-edited) is not
@@ -1749,8 +1759,9 @@ async function loadAudioFiles(files) {
         userStems: isStemDrop ? decoded : null,
         // Everything previous sessions learned about how this player splits a
         // kick from a hat, applied to a song they've never played.
-        groove,
+        groove: analysisGroove,
         onProgress: ({ phase, progress }) => {
+          if (myGen !== loadGen) return;
           if (phase === 'separate') loadShow?.setStage(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`, progress);
           else if (phase === 'analyze') loadShow?.setStage('Detecting onsets, tempo, and downbeat…', 0.7);
           else if (phase === 'pitch') loadShow?.setStage('Tracing melody, bass, and harmony…', 0.9);
@@ -1772,9 +1783,9 @@ async function loadAudioFiles(files) {
     // show must not wait on a disk write, and a failed one costs only a
     // re-analysis later. Lyrics are deliberately NOT in the bundle -- they
     // are fetched per play and the preference can change between plays.
-    if (fingerprint && !data.fromBundle) {
+    if (cacheKey && !data.fromBundle) {
       Promise.resolve()
-        .then(() => putBundle(fingerprint.key, packBundle(data, {
+        .then(() => putBundle(cacheKey, packBundle(data, {
           fingerprint, name: files[0].name || '', identity: lyricIdentity,
         })))
         .catch((err) => console.warn('[analysis] could not cache bundle', err));

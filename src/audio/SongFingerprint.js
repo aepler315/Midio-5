@@ -134,8 +134,14 @@ export function resampleMono(mono, fromRate, toRate = FP_RATE) {
  * @returns {{frames: Uint32Array, frameHz: number}}
  */
 export function fingerprintMono(mono, sampleRate) {
+  return fingerprintChannels([mono], sampleRate);
+}
+
+// Add spectral power, not signed samples: opposite-phase channels must not cancel.
+function fingerprintChannels(channels, sampleRate) {
   const frameHz = FP_RATE / FP_HOP;
-  const sig = resampleMono(mono, sampleRate, FP_RATE);
+  const signals = channels.map((channel) => resampleMono(channel, sampleRate, FP_RATE));
+  const sig = signals[0];
   const count = Math.max(0, Math.floor((sig.length - FP_WINDOW) / FP_HOP) + 1);
   if (count < 2) return { frames: new Uint32Array(0), frameHz };
   const edges = bandEdges(FP_RATE, FP_WINDOW);
@@ -150,13 +156,15 @@ export function fingerprintMono(mono, sampleRate) {
   let prev = null;
   for (let f = 0; f < count; f++) {
     const off = f * FP_HOP;
-    for (let i = 0; i < FP_WINDOW; i++) { re[i] = sig[off + i] * win[i]; im[i] = 0; }
-    fft(re, im);
     const energies = new Float64Array(FP_BANDS);
-    for (let b = 0; b < FP_BANDS; b++) {
-      let sum = 0;
-      for (let k = edges[b]; k < edges[b + 1]; k++) sum += re[k] * re[k] + im[k] * im[k];
-      energies[b] = sum;
+    for (const channel of signals) {
+      for (let i = 0; i < FP_WINDOW; i++) { re[i] = channel[off + i] * win[i]; im[i] = 0; }
+      fft(re, im);
+      for (let b = 0; b < FP_BANDS; b++) {
+        let sum = 0;
+        for (let k = edges[b]; k < edges[b + 1]; k++) sum += re[k] * re[k] + im[k] * im[k];
+        energies[b] += sum;
+      }
     }
     if (prev) {
       let bits = 0;
@@ -175,8 +183,27 @@ export function fingerprintMono(mono, sampleRate) {
 
 /** Fingerprint a decoded AudioBuffer. */
 export function fingerprintBuffer(buffer) {
-  const { frames, frameHz } = fingerprintMono(toMono(buffer), buffer.sampleRate);
-  return { frames, frameHz, key: fingerprintKey(frames), durationMs: (buffer.duration || 0) * 1000 };
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+  const { frames, frameHz } = fingerprintChannels(channels, buffer.sampleRate);
+  // Matching tolerates gain/phase changes; cached analysis does not (absolute
+  // silence thresholds and stereo width differ). Carry those inputs separately.
+  const channelRms = channels.map((channel) => {
+    let power = 0;
+    for (const value of channel) power += value * value;
+    return Math.sqrt(power / Math.max(1, channel.length));
+  });
+  let crossPower = 0;
+  if (channels.length > 1) {
+    for (let i = 0; i < buffer.length; i++) crossPower += channels[0][i] * channels[1][i];
+  }
+  const signal = { sampleRate: buffer.sampleRate, length: buffer.length,
+    channelRms, crossPower: crossPower / Math.max(1, buffer.length) };
+  // Empty/constant fingerprints carry no distinguishing temporal information.
+  // A new namespace prevents old channel-cancelled bundles from being reused.
+  const informative = channelRms.some((rms) => rms > 1e-6)
+    && frames.length > 1 && frames.some((frame) => frame !== frames[0]);
+  const key = informative ? fingerprintKey(frames).replace('fp1_', 'fp2_') : null;
+  return { frames, frameHz, key, signal, durationMs: (buffer.duration || 0) * 1000 };
 }
 
 /**

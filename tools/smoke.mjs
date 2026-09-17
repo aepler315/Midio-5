@@ -156,6 +156,20 @@ export async function runAudioSmoke({
     await page.waitForFunction((t) => window.__SMW.audioEngine.ctx.state === 'running'
       && window.__SMW.sim.timeMs > t + 500, pausedAt.sim);
     check('resume advances playback', true);
+
+    // Replace an actively playing song. The old source and frame loop must
+    // stop before the next world is chosen, including on a cache hit.
+    await page.locator('#fileInput').setInputFiles(wavPath);
+    await page.locator('#worldSelect:not(.hidden)').waitFor({ state: 'visible', timeout: 90000 });
+    check('replacement upload releases old playback before world selection',
+      await page.evaluate(() => !window.__SMW.audioEngine.playing
+        && !window.__SMW.audioEngine.sourceNode && window.__SMW.rafHandle === null));
+    check('replacement does not show the previous song completion panel',
+      !await page.locator('#completePanel').isVisible());
+    await page.locator('.worldCard').first().click();
+    await page.locator('#hud:not(.hidden)').waitFor({ state: 'visible', timeout: 90000 });
+    await page.waitForFunction(() => window.__SMW.audioEngine.playing && window.__SMW.sim.timeMs > 500);
+    check('replacement song starts after world selection', true);
     await page.locator('#stopBtn').click();
     await page.locator('#loader:not(.hidden)').waitFor({ state: 'visible' });
     const stopped = await page.evaluate(() => !window.__SMW.audioEngine.playing

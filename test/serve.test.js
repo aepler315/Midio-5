@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { test } from 'node:test';
+import { mkdtempSync, symlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -19,7 +20,12 @@ async function waitForServer(baseUrl) {
   throw new Error('development server did not start');
 }
 
-test('development server rejects traversal, malformed URLs, and arbitrary download URLs without dying', async () => {
+test('development server rejects traversal, malformed URLs, and arbitrary download URLs without dying', async (t) => {
+  const links = mkdtempSync(resolve(root, 'src/server-test-'));
+  t.after(() => rmSync(links, { recursive: true, force: true }));
+  symlinkSync(resolve(root, 'package.json'), resolve(links, 'private.json'));
+  writeFileSync(resolve(links, '100%.js'), '/* public */');
+  const linkPath = '/src/' + links.split(/[\\/]/).at(-1) + '/private.json';
   const port = 20_000 + Math.floor(Math.random() * 20_000);
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, [serverFile, String(port)], {
@@ -33,6 +39,11 @@ test('development server rejects traversal, malformed URLs, and arbitrary downlo
     assert.equal((await fetch(`${baseUrl}/%ZZ`)).status, 400);
     assert.equal((await fetch(`${baseUrl}/..%2fpackage.json`)).status, 400);
     assert.equal((await fetch(`${baseUrl}/package.json`)).status, 404);
+    assert.equal((await fetch(baseUrl + linkPath)).status, 403);
+    assert.equal((await fetch(baseUrl + linkPath.replace('private.json', '100%25.js'))).status, 200);
+    assert.equal((await fetch(`${baseUrl}/src/x%5c..%5c..%5c.env`)).status, 400);
+    assert.equal((await fetch(`${baseUrl}/src/main.js%00`)).status, 400);
+    assert.equal((await fetch(`${baseUrl}/api/soulseek/search/%25`)).status, 404);
 
     const download = await fetch(`${baseUrl}/api/soulseek/download`, {
       method: 'POST',
@@ -46,6 +57,6 @@ test('development server rejects traversal, malformed URLs, and arbitrary downlo
     assert.equal((await fetch(`${baseUrl}/src/main.js`)).status, 200);
   } finally {
     child.kill('SIGTERM');
-    await new Promise((resolve) => child.once('exit', resolve));
+    if (child.exitCode === null && child.signalCode === null) await new Promise((resolve) => child.once('exit', resolve));
   }
 });
