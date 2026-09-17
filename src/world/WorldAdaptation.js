@@ -201,6 +201,10 @@ export function instanceIdFor(baseId, profile) {
 function materializePalette(generated, stock, mix) {
   if (!generated || !stock || !(mix > 0)) return generated;
   const out = { ...generated };
+  // Palette synthesis owns song colors, but does not define the material
+  // light used by Nave's glass, Foundry's furnaces and Redline's signage.
+  // Preserve that renderer input from the corresponding stock palette.
+  if (stock.edgeLight && !out.edgeLight) out.edgeLight = stock.edgeLight;
   if (generated.silhouette && stock.silhouette) {
     out.silhouette = hexLerp(generated.silhouette, stock.silhouette, mix);
   }

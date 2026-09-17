@@ -221,3 +221,19 @@ test('WorldAdaptation does not import WorldScore — construction stays downstre
   const src = readFileSync(new URL('../src/world/WorldAdaptation.js', import.meta.url), 'utf8');
   assert.equal(/from ['"].*WorldScore/.test(src), false);
 });
+
+for (const id of ['nave', 'foundry', 'redline']) {
+  test(`${id}: adaptation preserves material lighting without mutating stock palettes`, () => {
+    const base = getWorld(id);
+    const before = structuredClone(base.palettes);
+    const { data, profile } = song();
+    const { world, degraded } = adaptWorld(base, profile, data);
+    assert.equal(degraded.palette, false);
+    assert.ok(world.palettes.length > 0);
+    world.palettes.forEach((palette, i) => {
+      assert.equal(palette.edgeLight, base.palettes[i % base.palettes.length].edgeLight);
+      if (palette.edgeLight) assert.match(palette.edgeLight, /^#[0-9a-f]{6}$/i);
+    });
+    assert.deepEqual(base.palettes, before);
+  });
+}
