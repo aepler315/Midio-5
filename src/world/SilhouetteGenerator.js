@@ -730,7 +730,7 @@ export function generateSilhouette({
   // throw so ridgeYAt matches what was painted (no clipped-mesa ghost).
   // Full precision regardless of softenScale -- see the softenScale doc
   // above for why the vector data and the baked pixels are independent.
-  canvas.ridge = { heights, step, baseline: hanging ? 0 : baseline, amplitude: ampFitted, height, profile, anchor: hanging ? 'ceiling' : 'ground' };
+  canvas.ridge = { heights, ridgeYs, step, baseline: hanging ? 0 : baseline, amplitude: ampFitted, height, profile, anchor: hanging ? 'ceiling' : 'ground' };
   if (profile === 'city') {
     canvas.windows = bakeWindowStrip(ridgeYs, {
       width, height, step, seed, color: '#f2d090',
@@ -748,15 +748,43 @@ export function ridgeYAt(strip, x) {
   return r.height * r.baseline - r.heights[i] * r.height * r.amplitude;
 }
 
+/** Placement shared by the static bitmap and its shading geometry. */
+export function tiledStripPlacement(strip, scrollX, canvasHeight, yOffset = 0) {
+  return {
+    x: -(((scrollX % strip.width) + strip.width) % strip.width),
+    y: strip.ridge?.anchor === 'ceiling' ? yOffset : canvasHeight - strip.height + yOffset,
+  };
+}
+
+/** Exact baked vertices, with the same tile origin and size as drawTiledStrip. */
+export function staticStripGeometry(strip, scrollX, canvasWidth, canvasHeight, yOffset = 0) {
+  if (!strip?.ridge) return null;
+  const { x, y } = tiledStripPlacement(strip, scrollX, canvasHeight, yOffset);
+  const ridge = strip.ridge;
+  const ys = ridge.ridgeYs || Array.from(ridge.heights, (_, i) => ridgeYAt(strip, i * ridge.step));
+  const pts = [];
+  for (let tileX = x; tileX < canvasWidth; tileX += strip.width) {
+    for (let i = 0; i < ys.length; i++) {
+      const localX = i * ridge.step;
+      if (localX > strip.width) break;
+      pts.push({ x: tileX + localX, y: y + ys[i], stripX: tileX + localX + scrollX,
+        lift: 0, dy: 0, scale: 1 });
+    }
+    // A non-divisible width closes the baked polygon at the tile's foot.
+    if ((ys.length - 1) * ridge.step < strip.width) {
+      pts.push({ x: tileX + strip.width, y: y + strip.height,
+        stripX: tileX + strip.width + scrollX, lift: 0, dy: 0, scale: 1 });
+    }
+  }
+  const crestY = y + Math.min(...ys);
+  return { pts, baseY: y, bottomY: y + strip.height, footY: y + strip.height,
+    crestY, bakedCrestY: crestY, dh: strip.height, stripHeight: strip.height };
+}
+
 /** Draws a tileable strip scroll-wrapped across the canvas width at the given y offset. */
 export function drawTiledStrip(ctx, strip, scrollX, canvasWidth, canvasHeight, yOffset = 0) {
-  const w = strip.width;
-  const y = strip.ridge?.anchor === 'ceiling'
-    ? yOffset
-    : canvasHeight - strip.height + yOffset;
-  let x = -(((scrollX % w) + w) % w);
-  while (x < canvasWidth) {
-    ctx.drawImage(strip, x, y);
-    x += w;
+  const placement = tiledStripPlacement(strip, scrollX, canvasHeight, yOffset);
+  for (let x = placement.x; x < canvasWidth; x += strip.width) {
+    ctx.drawImage(strip, x, placement.y);
   }
 }

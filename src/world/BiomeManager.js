@@ -3,7 +3,7 @@
 // profile crossfading (§4.1.4). Each biome is pure data (BiomeProfiles.js);
 // this file is the one place that knows how to render the contract.
 import { BIOMES } from './BiomeProfiles.js';
-import { generateSilhouette, drawTiledStrip, ridgeYAt } from './SilhouetteGenerator.js';
+import { generateSilhouette, drawTiledStrip, ridgeYAt, staticStripGeometry } from './SilhouetteGenerator.js';
 import {
   materialFor, layerBake, layerColor, terrainModsForLayer, groundColorFor, catchlightRgb,
 } from './WorldMaterial.js';
@@ -5176,7 +5176,8 @@ export class BiomeManager {
     return this._perf ? this._perf.danceColumnWidth : DANCE_COL_FINE;
   }
 
-  _crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy = 1, heightMul = 1) {
+  _crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy = 1, heightMul = 1, geometry = 'dancing') {
+    if (geometry === 'static') return staticStripGeometry(strip, scrollX, canvas.width, canvas.height, yOff);
     if (!strip.ridge) return null;
     const cfg = DANCE_LAYERS[layerKey];
     if (!cfg) return null;
@@ -5695,7 +5696,7 @@ export class BiomeManager {
    * dance columns is a hard seam at every column boundary), so this pass is
    * the only source of shading depth any range has, in any world.
    */
-  _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1, heightMul = 1, snowLine01 = 1, { geology = true } = {}) {
+  _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1, heightMul = 1, snowLine01 = 1, { geology = true, geometry = 'dancing' } = {}) {
     // Ceiling landforms are hanging masses. Foot-anchored crest shading
     // (catchlight on a summit, shade pooling in a valley) paints the
     // wrong volume onto a vault or a canopy — but skipping the pass
@@ -5708,7 +5709,7 @@ export class BiomeManager {
     }
     const strength = RIDGE_VOLUME_STRENGTH[layerKey] ?? 0;
     if (strength <= 0) return;
-    const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy, heightMul);
+    const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy, heightMul, geometry);
     if (!geom) return;
     const { pts, bottomY, crestY, bakedCrestY } = geom;
     if (!(bottomY > crestY)) return;
