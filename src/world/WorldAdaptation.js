@@ -42,7 +42,7 @@ export const KIND_CAPABILITIES = {
   },
   abyssal: {
     palette: 'painterly',
-    geometry: ['ridge', 'rolling', 'characterScheme'],
+    geometry: ['ridge', 'rolling', 'columnar', 'ceiling', 'characterScheme'],
     materialMix: 0.38,
     response: { smoothingMs: 2000, accentCooldownMs: 360, maxAccents: 3, macroMs: 9000 },
   },
@@ -54,19 +54,19 @@ export const KIND_CAPABILITIES = {
   },
   foundry: {
     palette: 'painterly',
-    geometry: ['ridge', 'rolling', 'characterScheme'],
+    geometry: ['columnar', 'rolling'],
     materialMix: 0.32,
     response: { smoothingMs: 800, accentCooldownMs: 90, maxAccents: 5, macroMs: 5500 },
   },
   overgrowth: {
     palette: 'painterly',
-    geometry: ['ridge', 'rolling', 'characterScheme'],
+    geometry: ['ridge', 'rolling', 'columnar', 'ceiling', 'characterScheme'],
     materialMix: 0.30,
     response: { smoothingMs: 1600, accentCooldownMs: 280, maxAccents: 3, macroMs: 8500 },
   },
   nave: {
     palette: 'painterly',
-    geometry: ['ridge', 'rolling', 'characterScheme'],
+    geometry: ['columnar', 'rolling', 'ceiling'],
     materialMix: 0.34,
     response: { smoothingMs: 1400, accentCooldownMs: 260, maxAccents: 3, macroMs: 7500 },
   },

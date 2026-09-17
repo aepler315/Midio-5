@@ -10,7 +10,7 @@ export const UNDERSTORY_PALETTES = [
   {
     name: 'DAWNFLOOR',
     sky: ['#1a2410', '#3a5220', '#a8c060'],
-    silhouette: '#12200e',
+    silhouette: '#243818',
     celestial: { kind: 'sun', color: '#e8ffb0', radius: 42, haloColor: '#c0e880', shafts: true },
     particles: { kind: 'pollen', color: '#e8ffb0', count: 44, speed: 7 },
     fx: 'godRays',
@@ -19,7 +19,7 @@ export const UNDERSTORY_PALETTES = [
   {
     name: 'MOSSLIGHT',
     sky: ['#0e2418', '#1e5030', '#78c088'],
-    silhouette: '#0a1e14',
+    silhouette: '#1a3a28',
     celestial: { kind: 'sun', color: '#d0ffd0', radius: 38, haloColor: '#90d890', shafts: true },
     particles: { kind: 'spores', color: '#c8f0b8', count: 50, speed: 5 },
     fx: 'canopyDapple',
@@ -28,7 +28,7 @@ export const UNDERSTORY_PALETTES = [
   {
     name: 'CANOPY',
     sky: ['#08200e', '#134a22', '#4a9850'],
-    silhouette: '#061a0c',
+    silhouette: '#144020',
     celestial: { kind: 'sun', color: '#b8e890', radius: 34, haloColor: '#80c060', veiled: true, shafts: true },
     particles: { kind: 'pollen', color: '#d8ffa0', count: 38, speed: 6 },
     fx: 'canopyDapple',
@@ -37,7 +37,7 @@ export const UNDERSTORY_PALETTES = [
   {
     name: 'ROTBLOOM',
     sky: ['#140e1a', '#2e2038', '#6a4a70'],
-    silhouette: '#100a16',
+    silhouette: '#241830',
     celestial: { kind: 'moon', color: '#e0c8f0', radius: 30, haloColor: '#a880c0' },
     particles: { kind: 'spores', color: '#d8a8f0', count: 54, speed: 4 },
     fx: 'sporeGlow',
@@ -46,7 +46,7 @@ export const UNDERSTORY_PALETTES = [
   {
     name: 'NIGHTBLOOM',
     sky: ['#040c10', '#0a2028', '#164048'],
-    silhouette: '#03080c',
+    silhouette: '#0e2830',
     celestial: { kind: 'moon', color: '#a8f0e0', radius: 26, haloColor: '#60a090', veiled: true },
     particles: { kind: 'fireflies', color: '#a8ffd8', count: 40, speed: 10 },
     fx: 'bioluminescence',

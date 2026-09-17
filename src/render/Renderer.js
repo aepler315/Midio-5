@@ -1152,14 +1152,14 @@ export class Renderer {
 
   _drawFallbackSky(ctx, canvas) {
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    g.addColorStop(0, '#1a1a3e');
-    g.addColorStop(1, '#4a3b6b');
+    g.addColorStop(0, '#1c2248');
+    g.addColorStop(1, '#4a4a7a');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
   _drawGround(ctx, canvas, pose, groundY) {
-    ctx.fillStyle = '#2b2145';
+    ctx.fillStyle = '#4a4068';
     ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
     ctx.strokeStyle = 'rgba(255,255,255,0.15)';
     ctx.lineWidth = 2;

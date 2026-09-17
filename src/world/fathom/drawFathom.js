@@ -11,7 +11,6 @@ import { flashCompositeOp } from '../../ui/Accessibility.js';
 
 const LAYER_RATIOS = { L2: 0.03, L3: 0.08, L4: 0.18, L5: 0.42 };
 const Y_OFF = { L2: 10, L3: 22, L4: 44, L5: 70 };
-const DEPTH_DARKEN = { L2: 0.38, L3: 0.24, L4: 0.10, L5: 0 };
 
 function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
   if (!strip) return;
@@ -44,7 +43,6 @@ export function drawFathomWorld(mgr, frame) {
 
   const { from, to } = mgr.currentBlend || { from: A.name, to: B.name };
   const skyHorizon = mgr._rotated(mgr.lerpCache.get(A.sky[2], B.sky[2], t));
-  const DEEP = '#020a0e';
   const tint = ensureContrast(mgr._rotated(mgr.lerpCache.get(A.silhouette, B.silhouette, t)), skyHorizon, 0.14);
 
   const unravel = mgr.unravel || 0;
@@ -53,12 +51,10 @@ export function drawFathomWorld(mgr, frame) {
   const stripsA = mgr.stripsFor(from);
   const stripsB = mgr.stripsFor(to);
 
-  // Depth darkening instead of aerial perspective: far layers darken
-  // toward the deep water color rather than fading toward sky.
-  const layerTint = (key) => {
-    const pull = DEPTH_DARKEN[key] || 0;
-    return pull > 0.001 ? mgr.lerpCache.get(tint, DEEP, pull) : tint;
-  };
+  // Depth is in the bake (WorldMaterial.layerColor mixes far layers toward
+  // the water column) and in the live invert-aerial wash _drawRidgeVolume
+  // paints for abyssal kinds. A second live tint here used to be computed
+  // and then never applied.
 
   const drawRange = (key) => {
     const yOff = Y_OFF[key] || 0;
