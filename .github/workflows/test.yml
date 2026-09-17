@@ -48,6 +48,7 @@ jobs:
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           npm run test:smoke -- http://127.0.0.1:8080
+          npm run test:lighting -- http://127.0.0.1:8080
       - name: Upload browser diagnostics
         if: always()
         uses: actions/upload-artifact@v7
