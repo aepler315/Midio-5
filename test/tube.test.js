@@ -4,7 +4,7 @@ import { EnergyCurves } from '../src/audio/EnergyCurves.js';
 import { sampleWorldMusic } from '../src/world/WorldMusic.js';
 import { FLINCH_SCALE, FLINCH_CONFIDENCE_FLOOR } from '../src/world/cathode/CathodeBoss.js';
 import {
-  boundaryLift01, rasterRate, phosphorGlow, screenHit, tubeFlinch,
+  boundaryLift01, rasterRate, rasterTravel, phosphorGlow, screenHit, tubeFlinch,
   motifTrust, scanPeriod, tearAmount, sectionAt,
 } from '../src/world/cathode/Tube.js';
 
@@ -25,6 +25,19 @@ test('quiet songs crawl, mid energy cruises, dense material drops to half-time',
 test('reduced flash halves the raster without inventing a different shape', () => {
   assert.ok(Math.abs(rasterRate(0.40, true) * 2 - rasterRate(0.40)) < 1e-9);
   assert.ok(rasterRate(0.95, true) < rasterRate(0.40, true));
+});
+
+test('raster travel changes its local derivative when sustained energy changes', () => {
+  const curves = new EnergyCurves(6000, 50);
+  for (let i = 0; i < curves.n; i++) {
+    const energy = i < 100 ? 0.05 : 0.40; // step at two seconds
+    curves.setFrame(i, [energy, energy, energy, energy, energy, energy, energy]);
+  }
+  const dt = 0.02;
+  const before = rasterTravel(1.8 + dt, curves) - rasterTravel(1.8, curves);
+  const after = rasterTravel(3.8 + dt, curves) - rasterTravel(3.8, curves);
+  assert.ok(Math.abs(after - before) > 0.01,
+    `a sustained energy change must alter raster velocity (${before.toFixed(3)} -> ${after.toFixed(3)})`);
 });
 
 test('phosphor follows sustained bass, not a single kick', () => {

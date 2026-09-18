@@ -33,6 +33,19 @@ test('travel is a function of the clock, so a backward seek cannot keep speed', 
   assert.equal(cruiseTravel(NaN, curves), 0);
 });
 
+test('lane travel changes its local derivative when sustained energy changes', () => {
+  const curves = new EnergyCurves(6000, 50);
+  for (let i = 0; i < curves.n; i++) {
+    const energy = i < 100 ? 0.05 : 0.42; // step at two seconds
+    curves.setFrame(i, [energy, energy, energy, energy, energy, energy, energy]);
+  }
+  const dt = 0.02;
+  const before = cruiseTravel(1.8 + dt, curves) - cruiseTravel(1.8, curves);
+  const after = cruiseTravel(3.8 + dt, curves) - cruiseTravel(3.8, curves);
+  assert.ok(Math.abs(after - before) > 0.01,
+    `a sustained energy change must alter road velocity (${before.toFixed(3)} -> ${after.toFixed(3)})`);
+});
+
 test('only an earned step-up opens a tunnel-then-horizon passage', () => {
   const lift = boundaryLift01(chorus, verse);
   const mid = phrasePassage({ nowMs: 62000, section: chorus, lift });
