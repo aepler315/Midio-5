@@ -181,7 +181,7 @@ export class Murmuration {
     ctx.lineWidth = 1.4;
     ctx.globalAlpha = 0.55 * this.intensity;
     ctx.beginPath();
-    const n = Math.max(1, Math.ceil(this.boids.length * mul));
+    const n = Math.min(this.boids.length, Math.max(0, Math.ceil(this.boids.length * mul)));
     for (let idx = 0; idx < n; idx++) {
       const b = this.boids[idx];
       const heading = Math.atan2(b.vy, b.vx);

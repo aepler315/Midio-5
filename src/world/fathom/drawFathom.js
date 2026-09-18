@@ -23,7 +23,7 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
 export function drawFathomWorld(mgr, frame) {
   const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView } = frame;
   const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
-  mgr._drawSky(ctx, canvas, A, B, t, 1);
+  mgr._drawSky(ctx, canvas, A, B, t, 1, { astronomical: false });
 
   // Deliberately NOT wired here: BiomeManager's classic path draws
   // drawDeepSky/weaver/meteors (Midasus's sky-writing trail, ambient

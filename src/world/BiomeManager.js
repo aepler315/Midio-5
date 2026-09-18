@@ -3029,10 +3029,12 @@ export class BiomeManager {
   }
 
   _drawSky(ctx, canvas, A, B, t, night = 0, starOptions = {}) {
+    // Water and vault ceilings retain local light effects, not astronomy.
+    const astronomical = starOptions.astronomical !== false;
     const dials = styleDials(this.visualStyle);
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
     // Night + rendered both pull toward deep space so stars/ocean have a stage.
-    const nightPull = 0.62 * night + (dials.spaceWash ? 0.14 : 0);
+    const nightPull = 0.62 * night + (astronomical && dials.spaceWash ? 0.14 : 0);
     // Variable stop count (SongDNA.harmonicComplexity, via PaletteSynth's
     // skyStops): a harmonically richer song gets a subtler, more banded sky
     // gradient instead of the flat 3-stop default. Only takes effect when
@@ -3066,11 +3068,11 @@ export class BiomeManager {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
 
-    if (A.fx === 'aurora' || B.fx === 'aurora') {
+    if (astronomical && (A.fx === 'aurora' || B.fx === 'aurora')) {
       const auroraAlpha = (A.fx === 'aurora' ? 1 - t : 0) + (B.fx === 'aurora' ? t : 0);
       if (auroraAlpha > 0.02) this._drawAurora(ctx, canvas, auroraAlpha);
     }
-    if (A.fx === 'nebulaBloom' || B.fx === 'nebulaBloom') {
+    if (astronomical && (A.fx === 'nebulaBloom' || B.fx === 'nebulaBloom')) {
       const alpha = (A.fx === 'nebulaBloom' ? 1 - t : 0) + (B.fx === 'nebulaBloom' ? t : 0);
       if (alpha > 0.02) this._drawNebulaBloom(ctx, canvas, alpha, A, B, t);
     }
@@ -3115,8 +3117,6 @@ export class BiomeManager {
       const mid = this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t));
       const { r: r0, g: g0, b: b0 } = hexToRgb(top);
       const { r: r1, g: g1, b: b1 } = hexToRgb(mid);
-      const nebA = hexToRgb(SPACE_NEBULA_A);
-      const nebB = hexToRgb(SPACE_NEBULA_B);
       ctx.save();
       ctx.globalCompositeOperation = 'soft-light';
       const plate = ctx.createRadialGradient(
@@ -3129,32 +3129,36 @@ export class BiomeManager {
       ctx.globalAlpha = 0.42;
       ctx.fillStyle = plate;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      // Indigo / violet space dust — orbital, not pure daylight.
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.07 + 0.1 * night;
-      const dust = ctx.createRadialGradient(
-        canvas.width * 0.28, canvas.height * 0.12, 10,
-        canvas.width * 0.35, canvas.height * 0.22, canvas.width * 0.38,
-      );
-      dust.addColorStop(0, `rgba(${nebB.r},${nebB.g},${nebB.b},0.55)`);
-      dust.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = dust;
-      ctx.fillRect(0, 0, canvas.width, canvas.height * 0.55);
-      ctx.globalAlpha = 0.05 + 0.08 * night;
-      const dust2 = ctx.createRadialGradient(
-        canvas.width * 0.78, canvas.height * 0.18, 8,
-        canvas.width * 0.72, canvas.height * 0.28, canvas.width * 0.32,
-      );
-      dust2.addColorStop(0, `rgba(${nebA.r},${nebA.g},${nebA.b},0.5)`);
-      dust2.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = dust2;
-      ctx.fillRect(0, 0, canvas.width, canvas.height * 0.5);
+      if (astronomical) {
+        const nebA = hexToRgb(SPACE_NEBULA_A);
+        const nebB = hexToRgb(SPACE_NEBULA_B);
+        // Indigo / violet space dust — orbital, not pure daylight.
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.07 + 0.1 * night;
+        const dust = ctx.createRadialGradient(
+          canvas.width * 0.28, canvas.height * 0.12, 10,
+          canvas.width * 0.35, canvas.height * 0.22, canvas.width * 0.38,
+        );
+        dust.addColorStop(0, `rgba(${nebB.r},${nebB.g},${nebB.b},0.55)`);
+        dust.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = dust;
+        ctx.fillRect(0, 0, canvas.width, canvas.height * 0.55);
+        ctx.globalAlpha = 0.05 + 0.08 * night;
+        const dust2 = ctx.createRadialGradient(
+          canvas.width * 0.78, canvas.height * 0.18, 8,
+          canvas.width * 0.72, canvas.height * 0.28, canvas.width * 0.32,
+        );
+        dust2.addColorStop(0, `rgba(${nebA.r},${nebA.g},${nebA.b},0.5)`);
+        dust2.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = dust2;
+        ctx.fillRect(0, 0, canvas.width, canvas.height * 0.5);
+      }
       ctx.restore();
     }
 
     // Star backdrop last in the sky stack so it always reads as depth behind
     // the world, not a faint garnish wiped by washes above it.
-    this._drawStarfield(ctx, canvas, A, B, t, night, starOptions);
+    if (astronomical) this._drawStarfield(ctx, canvas, A, B, t, night, starOptions);
   }
 
   /** Layered starfield: ambient by day, rich at night / starTwinkle biomes. */

@@ -13,7 +13,7 @@ import { RainbowBrush } from './RainbowBrush.js';
 import { GOLD_AFTERIMAGE_LIFE_MS } from '../sim/MidioPerformer.js';
 import { contactShadow } from '../world/ContactShadow.js';
 import { clamp01 } from '../utils/math.js';
-import { capFlashAlpha } from '../ui/Accessibility.js';
+import { capFlashAlpha, flashCompositeOp } from '../ui/Accessibility.js';
 import { LerpCache, hexToRgb } from '../utils/color.js';
 import { spectralFamily } from './spectral.js';
 import { hypeFrameStyle } from '../sim/HypeDirector.js';
@@ -581,13 +581,13 @@ export class Renderer {
     const maxR = Math.hypot(canvas.width, canvas.height) * 0.75;
     const focusMul = sim.focus ? sim.focus.mul('drop') : 1;
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = flashCompositeOp(sim.reducedFlash);
     for (const [lag, alphaMul, lw] of [[0, 1, 3.5], [0.12, 0.5, 1.8]]) {
       const uu = u - lag;
       if (uu <= 0) continue;
       const r = maxR * (1 - (1 - uu) ** 2); // ease-out: it detonates, then coasts
       ctx.strokeStyle = '#ffffff';
-      ctx.globalAlpha = (1 - uu) ** 2 * 0.55 * alphaMul * focusMul;
+      ctx.globalAlpha = capFlashAlpha((1 - uu) ** 2 * 0.55 * alphaMul * focusMul, sim.reducedFlash);
       ctx.lineWidth = lw + 10 * (1 - uu);
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -826,7 +826,7 @@ export class Renderer {
       offCtx.fillStyle = color;
       offCtx.fillRect(0, 0, shockW, shockH);
       ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
       ctx.globalAlpha = shockAlpha;
       // Device-pixel source back into the logical rect the transform expects,
       // shifted by a logical-space offset so the split is the same visual
@@ -842,7 +842,7 @@ export class Renderer {
     const segs = speedLineSegments(cx, cy, count, s, hype.dropCount, maxR);
     const lineAlpha = capFlashAlpha(SPEED_LINE_MAX_ALPHA * s, reducedFlash);
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
     ctx.strokeStyle = `rgba(255,255,255,${lineAlpha})`;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -1035,9 +1035,9 @@ export class Renderer {
 
     if (style.alpha < 0.02) return; // fully calm, no rim stroke
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = flashCompositeOp(sim.reducedFlash);
     ctx.strokeStyle = color;
-    ctx.globalAlpha = style.alpha * focusMul;
+    ctx.globalAlpha = capFlashAlpha(style.alpha * focusMul, sim.reducedFlash);
     ctx.lineWidth = style.lineWidth;
     const inset = style.inset;
     ctx.beginPath();
