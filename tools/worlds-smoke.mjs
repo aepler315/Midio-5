@@ -38,7 +38,8 @@ const out = path.resolve(process.argv[3] || path.join(root, '.smoke/worlds'));
 // asserted, so a pass that quietly stops painting is visible in a diff even
 // where it is allowed to vary.
 //
-// Both lists name only passes the world actually invokes -- a pass listed for
+// `mustNotPaint` protects interiors from astronomical layers.
+// The positive lists name only passes the world actually invokes -- a pass listed for
 // a world that never calls it would sit at zero forever and read like a
 // finding. `drawDeepSky` is the reason `watch` exists and cannot be promoted:
 // it runs in five worlds and legitimately paints nothing on a 32-second
@@ -60,7 +61,7 @@ const WORLDS = [
     watch: ['drawDeepSky'] },
   { name: 'The Fathom', kind: 'abyssal',
     mustPaint: ['_drawSky', '_drawGround'],
-    watch: ['_drawCelestial'] },
+    watch: ['_drawCelestial'], mustNotPaint: ['_drawStarfield', 'drawDeepSky'] },
   { name: 'Redline', kind: 'strip',
     mustPaint: ['_drawSky', '_drawGround'],
     watch: ['drawDeepSky', '_drawMoon'] },
@@ -72,7 +73,7 @@ const WORLDS = [
     watch: ['drawDeepSky', '_drawCelestial'] },
   { name: 'The Nave', kind: 'nave',
     mustPaint: ['_drawSky', '_drawGround'],
-    watch: ['_drawCelestial'] },
+    watch: ['_drawCelestial'], mustNotPaint: ['_drawStarfield', 'drawDeepSky'] },
   // Cathode replaces the renderer rather than the scenery, so BiomeManager
   // never draws for it and there are no BiomeManager passes to audit. Its
   // frame is checked as a whole instead -- see CATHODE_STATS.
@@ -224,13 +225,18 @@ try {
         assert.ok(cathode.colors > 4, name + ' composes a real pixel frame');
         assert.ok(cathode.litFraction > 0.05, name + ' frame is not essentially blank');
       } else {
-        paint = await page.evaluate(PAINT_AUDIT, [...world.mustPaint, ...world.watch]);
+        paint = await page.evaluate(PAINT_AUDIT, [...world.mustPaint, ...world.watch, ...(world.mustNotPaint || [])]);
         for (const pass of world.mustPaint) {
           const s = paint[pass];
           if (!s || s.missing) { failures.push(`${name}: ${pass} is not a method on BiomeManager`); continue; }
           if (s.calls === 0) { failures.push(`${name}: ${pass} never ran`); continue; }
           if (s.paintedPx === 0) failures.push(`${name}: ${pass} ran ${s.calls}x and changed 0 pixels`);
         }
+      }
+
+      for (const pass of world.mustNotPaint || []) {
+        assert.equal(paint[pass]?.missing, undefined, `${name}: missing ${pass} audit target`);
+        assert.equal(paint[pass]?.paintedPx, 0, `${name}: ${pass} must not paint an interior`);
       }
 
       // Exercise backward seek and the reduced-motion preference.

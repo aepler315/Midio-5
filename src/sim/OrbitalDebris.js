@@ -95,7 +95,7 @@ export class OrbitalDebris {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineWidth = 1.3;
-    const n = Math.max(1, Math.ceil(this.shards.length * mul));
+    const n = Math.min(this.shards.length, Math.max(0, Math.ceil(this.shards.length * mul)));
     for (let idx = 0; idx < n; idx++) {
       const s = this.shards[idx];
       ctx.strokeStyle = `hsla(${hue},${sat}%,68%,0.55)`;

@@ -30,7 +30,7 @@ export function drawNaveWorld(mgr, frame) {
   const lift = boundaryLift01(section, mgr.sections?.[mgr._lastSectionIdx - 1]);
   const trust = motifTrust(section);
 
-  mgr._drawSky(ctx, canvas, A, B, t, 0.8);
+  mgr._drawSky(ctx, canvas, A, B, t, 0.8, { astronomical: false });
 
   // Deliberately NOT wired here: BiomeManager's classic path draws
   // drawDeepSky/weaver/meteors (Midasus's sky-writing trail, ambient

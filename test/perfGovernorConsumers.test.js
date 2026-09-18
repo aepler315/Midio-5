@@ -5,14 +5,16 @@ import { Murmuration } from '../src/world/Murmuration.js';
 import { OrbitalDebris } from '../src/sim/OrbitalDebris.js';
 
 function fakeCtx() {
-  let arcs = 0;
+  let arcs = 0, lines = 0, strokes = 0;
   return {
     get arcCount() { return arcs; },
-    save() {}, restore() {}, beginPath() {}, fill() {}, stroke() {}, closePath() {},
+    get lineCount() { return lines; },
+    get strokeCount() { return strokes; },
+    save() {}, restore() {}, beginPath() {}, fill() {}, stroke() { strokes++; }, closePath() {},
     arc() { arcs++; },
     createRadialGradient() { return { addColorStop() {} }; },
     createLinearGradient() { return { addColorStop() {} }; },
-    moveTo() {}, lineTo() {}, translate() {}, rotate() {}, roundRect() {}, fillRect() {}, strokeRect() {},
+    moveTo() {}, lineTo() { lines++; }, translate() {}, rotate() {}, roundRect() {}, fillRect() {}, strokeRect() {},
     ellipse() {}, quadraticCurveTo() {}, drawImage() {}, clearRect() {}, scale() {}, filter: '',
   };
 }
@@ -31,10 +33,8 @@ test('Murmuration.draw draws fewer boids at a lower particleMul', () => {
   const ctxFull = fakeCtx(), ctxShed = fakeCtx();
   m.draw(ctxFull, 0, '#fff', 1);
   m.draw(ctxShed, 0, '#fff', 0.6);
-  // each boid draws 2 wing strokes via moveTo/lineTo -- count via beginPath calls is 1 for
-  // the whole flock, so instead assert on boids array length directly threaded through.
-  assert.equal(Math.ceil(m.boids.length * 1), m.boids.length);
-  assert.ok(Math.ceil(m.boids.length * 0.6) < m.boids.length);
+  assert.equal(ctxFull.lineCount, 120); // 60 birds, two wings each
+  assert.equal(ctxShed.lineCount, 72); // 36 birds
 });
 
 test('OrbitalDebris.draw draws fewer shards at a lower particleMul', () => {
@@ -42,6 +42,28 @@ test('OrbitalDebris.draw draws fewer shards at a lower particleMul', () => {
   const ctxFull = fakeCtx(), ctxShed = fakeCtx();
   d.draw(ctxFull, 200, 0, 1);
   d.draw(ctxShed, 200, 0, 0.6);
-  assert.equal(ctxFull.arcCount, 0); // debris draws triangles via lineTo, not arc -- sanity only
-  assert.ok(Math.ceil(d.shards.length * 0.6) < d.shards.length);
+  assert.equal(ctxFull.strokeCount, 13);
+  assert.equal(ctxShed.strokeCount, 8);
+  assert.equal(ctxFull.lineCount, 39); // closed triangles
+  assert.equal(ctxShed.lineCount, 24);
+});
+
+for (const mul of [0, -0.5, 2]) {
+  test(`fixed-size particle consumers bound emitted geometry for multiplier ${mul}`, () => {
+    const m = new Murmuration(800, 600, 1);
+    const d = new OrbitalDebris(1);
+    const birds = fakeCtx(), debris = fakeCtx();
+    m.draw(birds, 0, '#fff', mul);
+    d.draw(debris, 200, 0, mul);
+    assert.equal(birds.lineCount, mul <= 0 ? 0 : 120);
+    assert.equal(debris.strokeCount, mul <= 0 ? 0 : 13);
+  });
+}
+
+test('empty particle collections emit no geometry', () => {
+  const birds = fakeCtx(), debris = fakeCtx();
+  new Murmuration(800, 600, 1, { n: 0 }).draw(birds, 0, '#fff', 1);
+  new OrbitalDebris(1, { n: 0 }).draw(debris, 200, 0, 1);
+  assert.equal(birds.lineCount, 0);
+  assert.equal(debris.strokeCount, 0);
 });
