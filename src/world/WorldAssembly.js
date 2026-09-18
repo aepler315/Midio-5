@@ -69,7 +69,8 @@ export class WorldAssembly {
    *  explode-outward-from-center burst. */
   captureFrame(sourceCanvas, nowMs) {
     const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(this.w, this.h) : document.createElement('canvas');
-    if (!(c instanceof OffscreenCanvas)) { c.width = this.w; c.height = this.h; }
+    c.width = this.w;
+    c.height = this.h;
     const fctx = c.getContext('2d');
     fctx.drawImage(sourceCanvas, 0, 0, this.w, this.h);
     this.frame = c;
