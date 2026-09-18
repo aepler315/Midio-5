@@ -8,7 +8,7 @@
 </head>
 <body>
   <div id="app">
-    <canvas id="stage" width="1280" height="720"></canvas>
+    <canvas id="stage" width="1280" height="720" tabindex="-1" aria-label="Music visualizer"></canvas>
 
     <!-- Every user-facing failure (bad file, decode error, no audio
          support) surfaces here instead of a native alert() -- see
@@ -101,7 +101,7 @@
       </div>
     </div>
 
-    <div id="worldSelect" class="worldSelect hidden" role="dialog" aria-labelledby="worldSelectTitle" aria-modal="true">
+    <dialog id="worldSelect" class="worldSelect hidden" aria-labelledby="worldSelectTitle" aria-modal="true">
       <div class="worldSelectInner">
         <p class="worldSelectEyebrow">same song, nine looks</p>
         <h2 id="worldSelectTitle">Choose how your song looks</h2>
@@ -116,7 +116,7 @@
         <div id="worldSelectGrid" class="worldSelectGrid" role="list"></div>
         <button id="worldSelectBack" type="button" class="ghostbtn worldSelectBack">Different song</button>
       </div>
-    </div>
+    </dialog>
 
     <div id="hud" class="hidden">
       <div id="hudLeft">

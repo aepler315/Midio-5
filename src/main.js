@@ -834,7 +834,7 @@ function stopTimeline({ preservePause = false } = {}) {
   completeNewSeedRowEl?.classList.add('hidden');
   debugOverlayEl.classList.add('hidden');
   auditionPanelEl?.classList.add('hidden');
-  worldSelectEl?.classList.add('hidden');
+  closeWorldChooser();
   stopWorldPreview();
 }
 
@@ -858,6 +858,12 @@ function togglePause() {
   updatePauseButtonUI();
 }
 
+/** Leave the native top layer on every teardown path, not just hide its pixels. */
+function closeWorldChooser() {
+  if (worldSelectEl?.open) worldSelectEl.close();
+  worldSelectEl?.classList.add('hidden');
+}
+
 /** Back to the title/drop screen so a different song can be chosen. */
 function backToTitle() {
   // Any in-flight analysis belongs to the discarded song. Its progress or
@@ -866,12 +872,13 @@ function backToTitle() {
   stopTimeline();
   completePanelEl.classList.add('hidden');
   hudEl.classList.add('hidden');
-  worldSelectEl?.classList.add('hidden');
+  closeWorldChooser();
   stopWorldPreview();
   pendingWorldStart = null;
   progressEl.classList.add('hidden');
   loaderEl.classList.remove('hidden');
   startTitleBackdrop();
+  dropzoneEl.focus({ preventScroll: true });
 }
 
 function stopWorldPreview() {
@@ -1046,6 +1053,7 @@ function offerWorldsThenStart(data, extra = {}) {
     const hasLabels = Array.isArray(data.structure?.labels) && data.structure.labels.length > 1;
     renderWorldGrid(null, features, { hasLabels });
     worldSelectEl?.classList.remove('hidden');
+    if (worldSelectEl && !worldSelectEl.open) worldSelectEl.showModal();
     startChooserPreviews();
   } catch (err) {
     // The grid is a convenience; analysis failing must still start a song.
@@ -1154,6 +1162,9 @@ worldSelectGridEl?.addEventListener('click', (e) => {
 });
 
 worldSelectGridEl?.addEventListener('keydown', (e) => {
+  // Buttons keep their native Enter/Space activation; card shortcuts are
+  // only for focus on the card itself. Do not steal Preview's Enter key.
+  if (!e.target?.classList?.contains('worldCard')) return;
   const cards = [...(worldSelectGridEl?.querySelectorAll('.worldCard') || [])];
   const current = document.activeElement?.closest?.('.worldCard');
   const index = Math.max(0, cards.indexOf(current));
@@ -1194,7 +1205,7 @@ function confirmWorld(id) {
   stopWorldPreview();
   lastWorldId = id;
   pending.data.worldId = id;
-  worldSelectEl?.classList.add('hidden');
+  closeWorldChooser();
   // World select can sit for a while; a suspended context would start a
   // silent, frozen first frame that reads as "upload did nothing."
   audioEngine?.resume?.();
@@ -1204,6 +1215,7 @@ function confirmWorld(id) {
   if (pending.seed != null && extra.songSeed === undefined) extra.songSeed = pending.seed;
   if (extra.playBuffer) muteTimelineSynth = true;
   startTimeline(pending.data, extra);
+  if (running) canvas.focus({ preventScroll: true });
   if (extra.playBuffer) {
     lastAudioBuffer = extra.playBuffer;
     audioEngine.playBuffer(extra.playBuffer, 0);
@@ -1672,7 +1684,7 @@ async function loadAudioFiles(files) {
   // Freeze learned settings for both cache identity and the analysis itself.
   const analysisGroove = new GrooveFingerprint(groove.toJSON());
   showProgress('Reading file…');
-  worldSelectEl?.classList.add('hidden');
+  closeWorldChooser();
   try {
     await bootAudio();
   } catch (err) {
@@ -1840,7 +1852,7 @@ function handleFile(file) {
 function handleFiles(files) {
   const list = [...(files || [])].filter(Boolean);
   if (!list.length) return;
-  worldSelectEl?.classList.add('hidden');
+  closeWorldChooser();
   stopWorldPreview();
   pendingWorldStart = null;
   showProgress('Reading file…');
@@ -1853,6 +1865,22 @@ fileInputEl?.addEventListener('change', (e) => {
   e.target.value = '';
 });
 worldSelectBackEl?.addEventListener('click', () => backToTitle());
+worldSelectEl?.addEventListener('keydown', (e) => {
+  // Native modality makes the background inert; explicitly wrap the two
+  // endpoints so Tab does not leave the page for the browser toolbar.
+  if (e.key !== 'Tab') return;
+  if (e.shiftKey && document.activeElement === worldPassageQuietEl) {
+    e.preventDefault();
+    worldSelectBackEl?.focus();
+  } else if (!e.shiftKey && document.activeElement === worldSelectBackEl) {
+    e.preventDefault();
+    worldPassageQuietEl?.focus();
+  }
+});
+worldSelectEl?.addEventListener('cancel', (e) => {
+  e.preventDefault();
+  backToTitle(); // also stops preview audio and discards the pending song
+});
 
 /** Authored sample (Proof) so a visitor can see the worlds without a file. */
 async function startDemoSample() {
@@ -1918,6 +1946,7 @@ dropzoneEl.addEventListener('click', () => fileInputEl.click());
 // keyboard-operable at all, and the keypress instead fell through to
 // beatTap() (the F/J calibration handler) once the loader is showing.
 dropzoneEl.addEventListener('keydown', (e) => {
+  if (e.target !== dropzoneEl) return; // nested sample/upload controls own their keys
   if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
   e.preventDefault(); // Space must not also scroll the page
   fileInputEl.click();
@@ -2447,6 +2476,17 @@ const INERT_KEYS = new Set([
 ]);
 
 window.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented) return;
+  // A modal chooser owns keyboard input. R stays available for accessibility;
+  // all other keys retain native dialog/button behavior, including Escape.
+  if (worldSelectEl?.open) {
+    if (e.key === 'r' || e.key === 'R') toggleReducedFlash();
+    return;
+  }
+  // Native controls must receive their Enter/Space default actions before
+  // the gameplay handler's inert-key guard can suppress them.
+  if ((e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar')
+    && e.target?.closest?.('button, input, select, textarea, a')) return;
   if (running) wakeHud();
   if (e.key === 'Escape') {
     if (fontModalEl && !fontModalEl.classList.contains('hidden')) closeFontModal();
@@ -2526,6 +2566,15 @@ function toggleReducedFlash() {
   reducedFlash = !reducedFlash;
   setReducedFlash(reducedFlash);
   sim?.setReducedFlash(reducedFlash);
+  if (worldSelectEl?.open && previewSession) {
+    // Rebuild stills and stop any live animation/audio using the old setting.
+    const worldId = previewSession.activePreviewId;
+    const passage = previewSession.passage;
+    startChooserPreviews();
+    previewSession?.setPassage(passage);
+    syncPassageButtons();
+    if (worldId) previewSelectedWorld(worldId);
+  }
 }
 
 /** Reflects the current trim in the chip. Takes effect on the very next
