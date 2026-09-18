@@ -84,3 +84,30 @@ test('heat distortion sheds entirely when the perf governor has cut heavy post-F
   );
   assert.equal(blitOps.length, 0);
 });
+
+for (const [height, groundY] of [[720, 616], [1440, 308]]) {
+  test(`ambient heat grows toward the ground in backing-store coordinates (${height}px)`, () => {
+    // Both configurations put the ground at physical y=616. Measure maxima
+    // over time to separate the spatial envelope from the oscillation phase.
+    const canvas = { width: 112, height };
+    const self = { _heatCanvas: makeHeatCanvas() };
+    const maxima = new Map();
+    const ctx = makeCtx([]);
+    ctx.drawImage = (_src, sx, sy, sw, sh, dx) => {
+      if (sx !== -6) return; // first grid column
+      const cy = sy + sh / 2;
+      maxima.set(cy, Math.max(maxima.get(cy) || 0, Math.abs(dx - sx)));
+    };
+    const sim = { ...makeSim(), hype: null, fire: { active: true, intensity01: 1 }, midio: { groundY } };
+    for (let i = 0; i < 160; i++) {
+      sim.timeMs = i * 25;
+      Renderer.prototype._drawHeatDistortion.call(self, ctx, canvas, sim,
+        { midioDrawX: 50 }, { width: 112, height: 720 });
+    }
+    const upper = maxima.get(28), middle = maxima.get(308), lower = maxima.get(644);
+    assert.ok(lower > upper * 2, `ground ${lower} should be stronger than upper sky ${upper}`);
+    assert.ok(Math.abs(middle - 0.945) < 0.005, `halfway to ground has 67.5% amplitude, got ${middle}`);
+    assert.ok(Math.abs(lower - 1.4) < 0.005, `ground reaches full ambient amplitude, got ${lower}`);
+    assert.ok(maxima.get(700) <= 1.4 + 1e-9, 'below-ground cells stay bounded');
+  });
+}
