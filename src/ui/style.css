@@ -1884,7 +1884,14 @@ html, body {
 
 /* --- World select ------------------------------------------------------- */
 .worldSelect {
-  position: absolute;
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  color: inherit;
   inset: 0;
   z-index: 8;
   display: flex;
@@ -1894,7 +1901,8 @@ html, body {
   background: var(--bg-scrim);
   pointer-events: auto;
 }
-.worldSelect.hidden { display: none; }
+.worldSelect.hidden, .worldSelect:not([open]) { display: none; }
+.worldSelect::backdrop { background: transparent; }
 .worldSelectInner {
   width: min(1100px, 100%);
   max-height: min(92vh, 960px);

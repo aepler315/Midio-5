@@ -187,9 +187,12 @@ is a fresh destination state, not replay of every earlier random particle.
 | Whole-system effect lifecycle across seeks | `npm run test:seek` |
 | Upload/playback/replacement/stop | `npm run test:smoke` |
 | Nine-world selection/playback/seek/reduced motion and paint checks | `npm run test:worlds` |
+| Uploaded-song chooser, pointer Preview/Play | `npm run test:chooser` |
+| Desktop/narrow keyboard selection, native modality, Tab wrapping, Escape and focus return | `npm run test:chooser-keyboard` |
 
-The reusable `.github/workflows/test.yml` runs lint, unit tests and all five
-browser commands above. Pages deployment depends on this validation workflow.
+The reusable `.github/workflows/test.yml` runs lint, unit tests and all seven
+browser commands above. Chooser checks run in their own job, and Pages
+deployment depends on the entire validation workflow.
 The world smoke explicitly rejects astronomical painting in Fathom/Nave.
 Browser liveness, isolated pixel checks and unit tests do not establish
 subjective appeal, exhaustive accessibility or real-device sustained FPS.
@@ -206,6 +209,8 @@ Still required:
 - Per-world review of shared character outlines, trails, rings and bloom
   after the material-lighting fixes. Overlay dominance is an art-direction
   observation, not a demonstrated defect for every song.
-- Broader keyboard/screen-reader review of the chooser, final-frame flash
-  assessment, and a dedicated draw-order regression. Current tests cover
+- Manual screen-reader and broader assistive-technology review of the chooser,
+  final-frame flash assessment, and a dedicated draw-order regression. Automated
+  chooser tests cover keyboard behavior at 1280×800 and 390×844, not every
+  browser/device or screen-reader combination. Current rendering tests cover
   individual drawables and lifecycle boundaries, not every ordering invariant.

@@ -25,7 +25,7 @@ function harness() {
     showErrorBanner: (error) => errors.push(error),
     audioEngine: { playing: true, decodeFile: async (value) => value },
     stopTimeline() { context.audioEngine.playing = false; context.stopped = true; },
-    stopTitleBackdrop() {}, stopWorldPreview() {}, pendingWorldStart: {},
+    stopTitleBackdrop() {}, stopWorldPreview() {}, closeWorldChooser() {}, pendingWorldStart: {},
     worldSelectEl: element(), progressEl: element(), loaderEl: element(), hudEl: element(),
     auditionHeadingEl: element(), auditionPanelEl: element(), lyricsRowEl: element(),
     loadShow: { start() {}, stop() {}, setStage() {} },
