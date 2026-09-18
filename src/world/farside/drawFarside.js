@@ -91,7 +91,9 @@ export function drawFarsideWorld(mgr, frame) {
   const illum = illumination({ energy: music.energy, reveal: music.reveal, lift });
   const contrast = terminatorContrast(music.energy);
 
-  mgr._drawSky(ctx, canvas, A, B, t, 1);
+  // Render the real shared catalogue without atmospheric scintillation,
+  // extinction or reddening. Night visibility still respects openingGain.
+  mgr._drawSky(ctx, canvas, A, B, t, 1, { atmosphere: false });
 
   // Deep-sky layer ported in from BiomeManager's classic path -- an airless
   // sky "full of stars" is exactly where Midasus's sky-writing trail, the
@@ -105,20 +107,6 @@ export function drawFarsideWorld(mgr, frame) {
     mgr.weaver.draw(ctx, canvas, mgr.reducedFlash, nightAlphaMul);
   }
   if (phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
-
-  // Stars: always at full brightness, never twinkle (no atmosphere).
-  // Use the existing star catalogue at full fidelity.
-  const showStars = true;
-  if (showStars && mgr.starCatalogue) {
-    ctx.save();
-    ctx.globalAlpha = 1.0;
-    mgr.starCatalogue.draw(ctx, canvas, mgr.tSec * 1000, {
-      twinkle: false,
-      night: 1,
-      reducedFlash: mgr.reducedFlash,
-    });
-    ctx.restore();
-  }
 
   // The primary: a large, banded, ringed gas giant — the hero object this
   // world's whole "airless, less-is-more" premise stands or falls on.

@@ -71,7 +71,7 @@ export const WORLD_CONTRACT = Object.freeze({
     'world', // response.smoothingMs also governs integrated travel
     'energyCurves', 'worldRhythm', 'sections', '_lastSectionIdx', 'fever',
     'orogenyGrowth', 'light', 'weatherState', 'weatherFields',
-    '_activeWeatherIntensity', 'starCatalogue', 'weaver', 'meteors',
+    '_activeWeatherIntensity', 'weaver', 'meteors',
     '_moonPhase01', '_celestialApproachAt',
   ],
   // Presentation budget: how fancy, how bright, how fast.
