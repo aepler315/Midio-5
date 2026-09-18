@@ -3028,7 +3028,7 @@ export class BiomeManager {
     ctx.restore();
   }
 
-  _drawSky(ctx, canvas, A, B, t, night = 0) {
+  _drawSky(ctx, canvas, A, B, t, night = 0, starOptions = {}) {
     const dials = styleDials(this.visualStyle);
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
     // Night + rendered both pull toward deep space so stars/ocean have a stage.
@@ -3154,11 +3154,11 @@ export class BiomeManager {
 
     // Star backdrop last in the sky stack so it always reads as depth behind
     // the world, not a faint garnish wiped by washes above it.
-    this._drawStarfield(ctx, canvas, A, B, t, night);
+    this._drawStarfield(ctx, canvas, A, B, t, night, starOptions);
   }
 
   /** Layered starfield: ambient by day, rich at night / starTwinkle biomes. */
-  _drawStarfield(ctx, canvas, A, B, t, night = 0) {
+  _drawStarfield(ctx, canvas, A, B, t, night = 0, { atmosphere = true } = {}) {
     const dials = styleDials(this.visualStyle);
     const showStars = A.fx === 'starTwinkle' || B.fx === 'starTwinkle';
     const twinkleBlend = showStars
@@ -3301,9 +3301,10 @@ export class BiomeManager {
       // atmospheric stars do not all blink at the same depth. Falls back to
       // a fixed mid-range depth for anything without catalogue fields (kept
       // defensive since `stars` is public state some other path could feed).
-      const twDepth = s.mag != null
-        ? twinkleAmplitude(s.mag, s.altitude01 ?? 0.5)
-        : 0.4;
+      // Airless worlds share the catalogue but have no scintillation.
+      const twDepth = atmosphere
+        ? (s.mag != null ? twinkleAmplitude(s.mag, s.altitude01 ?? 0.5) : 0.4)
+        : 0;
       const tw = (1 - twDepth) + twDepth * (0.5 + 0.5 * Math.sin(this.tSec * twinkleRate * (0.7 + s.bright) + s.phase));
       const pulse = s.varAmp
         ? 1 + s.varAmp * Math.sin(this.tSec * (s.varHz || 0.08) * Math.PI * 2 + s.phase)
@@ -3311,7 +3312,7 @@ export class BiomeManager {
       // Air path: low stars lose real light before they ever reach the eye,
       // so the field thins and warms toward the ridgeline instead of walling
       // off at full brightness the way a flat scatter does.
-      const a = alpha * s.bright * tw * (s.ext ?? 1) * pulse;
+      const a = alpha * s.bright * tw * (atmosphere ? (s.ext ?? 1) : 1) * pulse;
       // Faint floor: a 0.03 cut used to wipe the dimmer half of the field
       // (especially near the horizon, after extinction), leaving only the
       // brighter mid-sky survivors — another way the stars read as a chunk.
@@ -3331,7 +3332,7 @@ export class BiomeManager {
       // The same air path that dimmed it also scatters its blue out first,
       // so what survives is warmer. Pull the star's own spectral hue toward
       // horizon-orange in proportion to how much light it lost.
-      const red = s.redden ?? 0;
+      const red = atmosphere ? (s.redden ?? 0) : 0;
       const hue = s.hue > 0 ? lerpHue(s.hue, 24, red * 0.6) : 24;
       const useHue = s.hue > 0 || red > 0.35;
 
@@ -3432,7 +3433,7 @@ export class BiomeManager {
     // scintillation away, so holding perfectly steady in a field of
     // shivering points is the whole tell.
     for (const p of this.planets) {
-      const pa = alpha * p.bright * extinction01(p.altitude01) * 1.15;
+      const pa = alpha * p.bright * (atmosphere ? extinction01(p.altitude01) : 1) * 1.15;
       if (pa < 0.03) continue;
       const py = p.yFrac * skyH;
       let px = p.xFrac * canvas.width + scroll * 0.02;

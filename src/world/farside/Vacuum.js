@@ -1,6 +1,6 @@
 // Far Side's musical envelope.
 //
-// Vacuum has no air to carry a beat. Clock-driven twinkle and a terminator
+// Vacuum has no air to carry a beat. A steady starfield and a terminator
 // that only walks song-time already said that; what was missing is that
 // slow tonal change and isolated hits still have somewhere to go without
 // turning the surface into a music visualizer.
