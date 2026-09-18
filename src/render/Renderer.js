@@ -17,6 +17,7 @@ import { capFlashAlpha, flashCompositeOp } from '../ui/Accessibility.js';
 import { LerpCache, hexToRgb } from '../utils/color.js';
 import { spectralFamily } from './spectral.js';
 import { hypeFrameStyle } from '../sim/HypeDirector.js';
+import { salienceBudgetFor } from './SalienceBudget.js';
 import { isRendered, styleDials } from './VisualStyle.js';
 import { groundGlowLights, characterGlowLight } from './LightField.js';
 import { quantizeCanvas } from './PaletteQuantize.js';
@@ -213,6 +214,8 @@ export class Renderer {
     const biomeManager = sim.biomes || null;
     const perf = sim.perf || null;
     const particleMul = perf ? perf.particleMul : 1;
+    const salience = salienceBudgetFor(sim.focus);
+    const worldParticleMul = particleMul * salience.particles;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -278,7 +281,7 @@ export class Renderer {
     };
 
     if (biomeManager) {
-      biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul, perf, groundView);
+      biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, worldParticleMul, perf, groundView);
     } else {
       this._drawFallbackSky(ctx, stage);
       groundView.apply();
@@ -459,7 +462,7 @@ export class Renderer {
     // and drop impact included), and bloom then blooms the smeared result.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     this._drawDropMotionBlur(ctx, canvas, sim, camera, sx, sy);
-    this._drawBloom(ctx, canvas, sim);
+    this._drawBloom(ctx, canvas, sim, salience);
     // After bloom, not before: heat is a lens on the whole scene, so it
     // should bend the glow bloom just added too, not just the world under it.
     this._drawHeatDistortion(ctx, canvas, sim, pose, viewStage);
@@ -952,10 +955,13 @@ export class Renderer {
    *  Naturally tinted by whatever was bright: gold glow bleeds gold,
    *  aurora bleeds green. Sheds under PerfGovernor pressure like the drop
    *  impact pack (a budget-allowing flourish, not core feedback). */
-  _drawBloom(ctx, canvas, sim) {
+  _drawBloom(ctx, canvas, sim, salience = null) {
     const perf = sim.perf;
     if (perf && !perf.bloomEnabled) return;
-    const strength = bloomStrength(sim.hype, sim.fever, !!sim.reducedFlash, sim.opening ? sim.opening.gain : 1);
+    const strength = bloomStrength(
+      sim.hype, sim.fever, !!sim.reducedFlash, sim.opening ? sim.opening.gain : 1,
+      salience?.bloom ?? 1,
+    );
     if (strength <= 0.005) return;
 
     const bloomScale = postFxDownscale(canvas.width);
@@ -1410,7 +1416,7 @@ export class Renderer {
  * the pulsing on drops/kicks while the base glow stays intact. Clamped to
  * BLOOM_MAX so a maxed-out drop-during-fever never blows the frame out.
  */
-export function bloomStrength(hype, fever, reducedFlash = false, openingGain = 1) {
+export function bloomStrength(hype, fever, reducedFlash = false, openingGain = 1, supportingBloomMul = 1) {
   const slam = hype ? hype.slam : 0;
   const surge = hype ? hype.surge : 0;
   const feverLevel = fever ? fever.level : 0;
@@ -1419,7 +1425,9 @@ export function bloomStrength(hype, fever, reducedFlash = false, openingGain = 1
   // still opened on a fully bloomed frame -- the single loudest thing on
   // screen at t=0, and the one least justified by anything audible.
   // OpeningDirector's gain scales it until the song has actually started.
-  return Math.min(BLOOM_MAX, BLOOM_BASE * openingGain + reactive);
+  // The reactive term belongs to an earned hit; only the resting spill has
+  // to yield when another subject owns the frame.
+  return Math.min(BLOOM_MAX, BLOOM_BASE * openingGain * clamp01(supportingBloomMul) + reactive);
 }
 
 /** Drop impact envelope: 1 right at the drop, easing to 0 over
