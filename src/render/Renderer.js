@@ -929,7 +929,9 @@ export class Renderer {
           offY += radial * ny;
         }
         if (ambientAmpPx > 0.05) {
-          const heightFrac = clamp01(1 - cy / canvas.height); // 1 at the ground, 0 at the top
+          // Canvas Y grows downward. Reach full sway at the actual ground
+          // in backing-store coordinates, with the weaker floor above it.
+          const heightFrac = clamp01(cy / Math.max(1, originY));
           offX += Math.sin(cx * 0.045 + t * 2.4 + cy * 0.03) * ambientAmpPx * (0.35 + 0.65 * heightFrac);
         }
         if (Math.abs(offX) < 0.05 && Math.abs(offY) < 0.05) continue; // no-op cell -- skip the blit entirely
