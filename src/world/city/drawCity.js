@@ -17,6 +17,7 @@ import { hexToRgb } from '../../utils/color.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
+import { identityAllows } from '../WorldIdentity.js';
 
 const LAYER_RATIOS = { L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65 };
 const AERIAL_PULL = { L2: 0.50, L3: 0.32, L4: 0.14, L5: 0 };
@@ -60,6 +61,7 @@ function blitWindows(ctx, canvas, strip, scrollX, yOff, glow, music, reducedFlas
 
 export function drawCityWorld(mgr, frame) {
   const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
+  const identity = mgr.world;
   const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const night = 1;
   mgr._drawSky(ctx, canvas, A, B, t, night);
@@ -69,13 +71,13 @@ export function drawCityWorld(mgr, frame) {
   // the ambient per-note constellations, and reward-volley meteors above
   // it. Not in this file's own "scrapped" list up top, so its absence here
   // was a gap from the city split, not a deliberate style choice.
-  mgr.drawDeepSky(ctx, skyVoyage, canvas);
+  if (identityAllows(identity, 'deepSky')) mgr.drawDeepSky(ctx, skyVoyage, canvas);
   const skyA = styleDials(mgr.visualStyle).skyWireAlpha ?? 1;
-  if (phenomenaFull && skyA > 0.02) {
+  if (identityAllows(identity, 'constellations') && phenomenaFull && skyA > 0.02) {
     const nightAlphaMul = (1 + 1.2 * night) * Math.max(0.25, skyA);
     mgr.weaver.draw(ctx, canvas, mgr.reducedFlash, nightAlphaMul);
   }
-  if (phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
+  if (identityAllows(identity, 'meteors') && phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
 
   const moonAlt = Math.max(dn.moonAlt, 0.35);
   const celestialYFrac = celestialYFracFor(moonAlt);

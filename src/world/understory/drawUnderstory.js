@@ -4,7 +4,7 @@
 // and fireflies instead of weather.
 import { drawTiledStrip } from '../SilhouetteGenerator.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
-import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
+import { ensureContrast } from '../../render/VisualStyle.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
@@ -23,7 +23,7 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
 }
 
 export function drawUnderstoryWorld(mgr, frame) {
-  const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
+  const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView } = frame;
   const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
   const growth = canopyGrowth({ energy: music.energy, orogeny: mgr.orogenyGrowth ?? 0 });
@@ -31,20 +31,9 @@ export function drawUnderstoryWorld(mgr, frame) {
 
   mgr._drawSky(ctx, canvas, A, B, t, 0.7);
 
-  // Deep-sky layer ported in from BiomeManager's classic path. The canopy
-  // blocks direct view of the SUN (see the veiled-celestial draw below),
-  // but says nothing about the rest of the sky -- gaps in the canopy are
-  // exactly what the god-ray shafts a few lines down are already showing.
-  // Midasus's sky-writing trail, the ambient per-note constellations, and
-  // reward-volley meteors never rendered here at all: the calls were left
-  // behind when Understory got its own draw function.
-  mgr.drawDeepSky(ctx, skyVoyage, canvas);
-  const skyA = styleDials(mgr.visualStyle).skyWireAlpha ?? 1;
-  if (phenomenaFull && skyA > 0.02) {
-    const nightAlphaMul = (1 + 1.2 * 0.7) * Math.max(0.25, skyA);
-    mgr.weaver.draw(ctx, canvas, mgr.reducedFlash, nightAlphaMul);
-  }
-  if (phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
+  // The policy forbids open-sky spectacle here. Gaps in the canopy are
+  // light shafts, not an invitation for stars or meteors to erase the
+  // interior forest read.
 
   // The sun filters through the canopy — never directly visible, but its
   // presence is felt through god rays and dappled light patches.

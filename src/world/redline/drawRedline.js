@@ -10,6 +10,7 @@ import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
 import { hexToRgb } from '../../utils/color.js';
 import { sampleManagerMusic } from '../WorldMusic.js';
 import { cruiseTravel, phrasePassage, signageAlpha, boundaryLift01 } from './Cruise.js';
+import { identityAllows } from '../WorldIdentity.js';
 
 const LAYER_RATIOS = { L2: 0.06, L3: 0.14, L4: 0.32, L5: 0.70 };
 const Y_OFF = { L2: 4, L3: 14, L4: 34, L5: 64 };
@@ -24,6 +25,7 @@ function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
 
 export function drawRedlineWorld(mgr, frame) {
   const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
+  const identity = mgr.world;
   const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
   const passage = phrasePassage({ nowMs: mgr.tSec * 1000, section: mgr.sections?.[mgr._lastSectionIdx], lift });
@@ -35,13 +37,13 @@ export function drawRedlineWorld(mgr, frame) {
   // biomes: Midasus's sky-writing trail, the ambient constellations, and
   // reward-volley meteors. Missing here only because Redline got its own
   // draw function without carrying these calls along.
-  mgr.drawDeepSky(ctx, skyVoyage, canvas);
+  if (identityAllows(identity, 'deepSky')) mgr.drawDeepSky(ctx, skyVoyage, canvas);
   const skyA = styleDials(mgr.visualStyle).skyWireAlpha ?? 1;
-  if (phenomenaFull && skyA > 0.02) {
+  if (identityAllows(identity, 'constellations') && phenomenaFull && skyA > 0.02) {
     const nightAlphaMul = (1 + 1.2 * 0.6) * Math.max(0.25, skyA);
     mgr.weaver.draw(ctx, canvas, mgr.reducedFlash, nightAlphaMul);
   }
-  if (phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
+  if (identityAllows(identity, 'meteors') && phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
 
   // Big sun or moon — always a dominant presence on the horizon.
   const sunUp = (dn.sunAlt ?? 0) > 0.01;

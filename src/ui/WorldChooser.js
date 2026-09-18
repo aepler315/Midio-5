@@ -4,17 +4,26 @@
  * card's play target, never a second competing card, and never a score.
  */
 import { describeWorldResponse } from './WorldPreview.js';
+import { identityFor } from '../world/WorldIdentity.js';
 
 export function buildWorldChoices(worlds, customWorld = null, features = null, extras = {}) {
-  return worlds.map((world) => ({
+  return worlds.map((world) => {
+    const identity = identityFor(world);
+    return {
     worldId: world.id,
     playWorldId: customWorld?.baseId === world.id ? customWorld.id : world.id,
     name: world.name,
     tagline: world.tagline,
     kind: world.kind,
     description: describeWorldResponse(world.kind, features || {}, extras),
+    identity: {
+      landmark: identity.landmark,
+      signatureMotion: identity.signatureMotion,
+      lightSource: identity.lightSource,
+    },
     manualOnly: !!world.manualOnly,
-  }));
+    };
+  });
 }
 
 /** Keyboard order for the gallery: left/right wrap, no ranking. */
