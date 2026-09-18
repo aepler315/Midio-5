@@ -40,17 +40,22 @@
 // on a genuinely weak machine should not have to buy the second to get the
 // first, which is exactly what a single merged mode would force.
 
-/** Preset key for 8-bit mode. A string, unlike every other key — the other
- *  presets are named by their height in pixels and these are not. */
+/** Automatic mode follows the visible stage and measured frame pressure.
+ *  Its table dimensions are a safe pre-layout fallback; autoStageSize()
+ *  supplies the live backing size once the canvas has a CSS box. */
+export const AUTO_PRESET = 'auto';
+
+/** Preset key for 8-bit mode. A string, unlike the numeric presets. */
 export const RETRO_PRESET = '8bit';
 
 /** Preset key for 8-bit intensive: everything RETRO_PRESET does, plus the
  *  per-frame palette quantization. */
 export const PALETTE_PRESET = '8bit-intensive';
 
-export const DEFAULT_STAGE_PRESET = 1080;
+export const DEFAULT_STAGE_PRESET = AUTO_PRESET;
 
 export const STAGE_PRESETS = {
+  [AUTO_PRESET]: { w: 1920, h: 1080, auto: true },
   [RETRO_PRESET]: { w: 320, h: 180, retro: true },
   [PALETTE_PRESET]: { w: 320, h: 180, retro: true, palette: true },
   144: { w: 256, h: 144 },
@@ -86,6 +91,10 @@ export function stageDims(preset) {
   return STAGE_PRESETS[preset] || STAGE_PRESETS[DEFAULT_STAGE_PRESET];
 }
 
+export function isAutoPreset(preset) {
+  return !!STAGE_PRESETS[preset]?.auto;
+}
+
 /** Whether this preset is one of the 8-bit modes, i.e. whether the rest of
  *  the pipeline (governor floor, nearest-neighbour filtering) should engage.
  *  True for both the plain and the intensive variant. */
@@ -106,6 +115,33 @@ export function isPalettePreset(preset) {
 // turns "match the panel exactly" into a power decision instead of a
 // resolution one.
 export const MAX_EFFECTIVE_DPR = 2;
+export const MAX_COARSE_DPR = 1.5;
+export const AUTO_DESKTOP_MAX_H = 1440;
+export const AUTO_COARSE_MAX_H = 720;
+
+/** Match Auto quality to the pixels the contained 16:9 stage can present.
+ *  Coarse-pointer screens get a lower density/max-height ceiling because a
+ *  phone's high panel DPR is not useful stage detail at arm's length. */
+export function autoStageSize(cssW, cssH, dpr, isCoarsePointer = false) {
+  const fallback = STAGE_PRESETS[AUTO_PRESET];
+  if (!(cssW > 0) || !(cssH > 0) || !(dpr > 0)) {
+    return { w: fallback.w, h: fallback.h };
+  }
+  const aspect = 16 / 9;
+  const contentW = (cssW / cssH) > aspect ? cssH * aspect : cssW;
+  const effectiveDpr = Math.min(dpr, isCoarsePointer ? MAX_COARSE_DPR : MAX_EFFECTIVE_DPR);
+  const maxH = isCoarsePointer ? AUTO_COARSE_MAX_H : AUTO_DESKTOP_MAX_H;
+  const h = Math.max(1, Math.round(Math.min(maxH, contentW * effectiveDpr / aspect)));
+  return { w: Math.max(1, Math.round(h * aspect)), h };
+}
+
+/** Show rotation guidance only when a phone-like portrait viewport leaves
+ *  less than 45% of its height for the contained stage. */
+export function shouldSuggestLandscape(viewportW, viewportH) {
+  if (!(viewportW > 0) || !(viewportH > 0)) return false;
+  if (viewportW >= viewportH || viewportW > 600) return false;
+  return (viewportW * 9 / 16) / viewportH < 0.45;
+}
 
 /** Shrink a preset's backing store to what the display can actually show.
  *

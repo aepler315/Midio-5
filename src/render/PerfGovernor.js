@@ -259,15 +259,14 @@ export class PerfGovernor {
   // aerial-perspective passes, the two more expensive extra fills.
   get ridgeShadingFull() { return this.level < 6; }
 
-  /** Resolution scale factor (0 < s <= 1) that fitCanvas should apply to the
-   *  chosen stage preset. At high perf pressure the backing store shrinks,
-   *  CSS-upscaled to fill the viewport — the single biggest win because every
-   *  fill/composite/blit scales quadratically with pixel count.
-   *  The scale stays 1.0 for presets at or below 1080p (already cheap). */
-  resolutionScale(presetH) {
-    if (presetH <= 1080) return 1;
-    if (this.level >= 5) return 0.5;
-    if (this.level >= 3) return 0.667;
+  /** Resolution scale for Auto mode. Manual presets are promises and stay
+   *  fixed; Auto progressively buys pixels before level 5 removes the
+   *  world-defining phenomena layer. */
+  resolutionScale(_presetH, { adaptive = false } = {}) {
+    if (!adaptive) return 1;
+    if (this.level >= 4) return 0.625;
+    if (this.level >= 3) return 0.75;
+    if (this.level >= 2) return 0.85;
     return 1;
   }
 }
