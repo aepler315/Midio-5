@@ -50,6 +50,7 @@ jobs:
           npm run test:smoke -- http://127.0.0.1:8080
           npm run test:lighting -- http://127.0.0.1:8080
           npm run test:shading -- http://127.0.0.1:8080
+          npm run test:seek -- http://127.0.0.1:8080
       - name: Upload browser diagnostics
         if: always()
         uses: actions/upload-artifact@v7

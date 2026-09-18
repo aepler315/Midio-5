@@ -790,8 +790,9 @@ function toggleTrackList() {
  *  voices, and resets the UI panels a fresh song should start without. Safe
  *  to call before the very first song too (everything it touches already
  *  tolerates being idle). */
-function stopTimeline() {
+function stopTimeline({ preservePause = false } = {}) {
   running = false;
+  recalibration.stop();
   // conductor is a single instance shared across every song (see its
   // construction above); Simulation and its subsystems subscribe to it at
   // construction and never unsubscribe on their own. Without this, a replay
@@ -803,7 +804,7 @@ function stopTimeline() {
   // currentTime is the master clock every song's timing derives from
   // (see AudioEngine.js header), and a still-suspended context would
   // freeze the NEXT song before it even starts.
-  if (paused) {
+  if (paused && !preservePause) {
     paused = false;
     audioEngine?.ctx?.resume();
     updatePauseButtonUI();
@@ -1212,9 +1213,9 @@ function confirmWorld(id) {
 function startTimeline(timelineData, extra = {}) {
   const {
     songSeed: seedOverride = undefined, playBuffer, live = false,
-    startAtMs = 0, startAtWallMs = 0,
+    startAtMs = 0, startAtWallMs = 0, preservePause = false,
   } = extra;
-  stopTimeline();
+  stopTimeline({ preservePause });
   fitCanvas();
   // Any path that is about to play a decoded recording (confirmWorld,
   // replay) mutes the timeline synth. Live listening mutes it for the same
@@ -1302,7 +1303,7 @@ function startTimeline(timelineData, extra = {}) {
   // Prime one sim step so BiomeManager/update dials (haze, calm, etc.) are
   // initialized before the first paint — a zero-dt first rAF used to draw
   // with undefined multipliers and throw on rgba(...,NaN).
-  try { sim.step(STEP_MS, STEP_MS); simTime = STEP_MS; } catch (err) {
+  try { if (!(startAtMs > 0)) { sim.step(STEP_MS, STEP_MS); simTime = STEP_MS; } } catch (err) {
     console.warn('[sim prime]', err);
   }
   // Exposed for DebugOverlay only -- resolved song identity has no other
@@ -1347,8 +1348,8 @@ function startTimeline(timelineData, extra = {}) {
   const startedAt = startAtWallMs > 0
     ? startAtMs + (performance.now() - startAtWallMs)
     : startAtMs;
-  if (startedAt > 0) conductor.seekTo(startedAt);
   audioEngine.start(startedAt);
+  if (startedAt > 0) sim.startAt(startedAt + VISUAL_LEAD_MS);
   // Both seeded in led time (see frame()), or the first frame would see the
   // whole lead as a delta and spend it on fixed steps nobody asked for.
   simTime = startedAt + VISUAL_LEAD_MS;
@@ -2324,27 +2325,28 @@ canvas.addEventListener('pointermove', (e) => {
   sim.setPointer(p.x, p.y);
 });
 
-/** Jump audio clock + conductor + sim time to `ms` (mountain seekbar). */
+/** Seek is a fresh playback scene at the destination. Use the same complete
+ * teardown/construction lifecycle as replay so no effect pool, timestamp,
+ * subscription or renderer history can survive from the discarded future. */
 function seekSong(ms) {
-  if (!running || !sim || !audioEngine) return;
+  if (!running || !sim || !audioEngine || !lastTimelineData || !Number.isFinite(ms)) return;
   const dur = Math.max(1, sim.conductor?.durationMs || audioEngine.nowMs + 1);
   const t = Math.max(0, Math.min(ms, dur - 1));
-  synth?.stopAll?.();
-  audioEngine.seekToMs(t);
-  if (sim.conductor?.seekTo) sim.conductor.seekTo(t);
-  // The conductor track's own cursor has to move with the playhead, or a
-  // backward scrub would replay the music with every cue behind the new
-  // position already spent (see CueDirector.seekTo).
-  sim.cues?.seekTo(t);
-  simTime = t + VISUAL_LEAD_MS;
-  lastNowMs = t + VISUAL_LEAD_MS;
-  acc = 0;
-  if (sim.timeMs != null) sim.timeMs = t + VISUAL_LEAD_MS;
-  // A milestone glyph belongs to the moment that earned it. Scrubbing away
-  // leaves it stranded (a backward seek puts the clock before its own start),
-  // so drop it and anything queued behind it rather than letting either
-  // surface at the wrong point in the song.
-  renderer?.epicycles?.reset();
+  const wasPaused = paused;
+  const seed = sim.songSeed;
+  const buffer = lastAudioBuffer;
+  const selectedSection = renderer?.composer?.selectedSection;
+  startTimeline(lastTimelineData, { songSeed: seed, startAtMs: t,
+    playBuffer: buffer || undefined, preservePause: wasPaused, fitDiagnostic: sim.fitDiagnostic });
+  if (!running || !sim) return;
+  if (buffer) audioEngine.playBuffer(buffer, t / 1000);
+  if (wasPaused) {
+    paused = true;
+    audioEngine.ctx.suspend();
+    updatePauseButtonUI();
+  }
+  renderer.draw(sim, 1);
+  if (renderer.composer && selectedSection != null) renderer.composer.selectedSection = selectedSection;
 }
 
 /** The player's own sense of "where's the beat" (BeatAnchor.js): stamped on

@@ -43,6 +43,21 @@ export class TapJudge {
     this.stepEvents = [];
   }
 
+  /** Discard judgments/holds and silently skip notes before a new segment. */
+  seekTo(nowMs) {
+    this._consumed.fill(false);
+    this._missCursor = 0;
+    while (this._missCursor < this.notes.length && this.notes[this._missCursor].tMs <= nowMs) {
+      this._consumed[this._missCursor++] = true;
+    }
+    this.buttonDown = false;
+    this._downSinceMs = null;
+    this._hold = null;
+    this.holdState = { active: false, chargeU: 0, note: null };
+    this.clearFrameFlags();
+    return this._missCursor;
+  }
+
   clearFrameFlags() {
     this.stepEvents.length = 0;
   }
