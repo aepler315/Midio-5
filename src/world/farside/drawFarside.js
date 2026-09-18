@@ -10,6 +10,7 @@ import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
 import { hexToRgb, hexLerp } from '../../utils/color.js';
 import { sampleManagerMusic } from '../WorldMusic.js';
 import { terminatorContrast, illumination, surfaceTrace, boundaryLift01 } from './Vacuum.js';
+import { identityAllows } from '../WorldIdentity.js';
 
 const LAYER_RATIOS = { L2: 0.04, L3: 0.10, L4: 0.22, L5: 0.50 };
 const Y_OFF = { L2: 6, L3: 18, L4: 40, L5: 68 };
@@ -86,6 +87,7 @@ function drawPrimary(mgr, ctx, canvas, cyFrac, cxFrac, alpha, color, haloColor, 
 
 export function drawFarsideWorld(mgr, frame) {
   const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
+  const identity = mgr.world;
   const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
   const illum = illumination({ energy: music.energy, reveal: music.reveal, lift });
@@ -100,13 +102,13 @@ export function drawFarsideWorld(mgr, frame) {
   // ambient per-note constellations, and reward-volley meteors belong most.
   // This never rendered here before: the classic path's calls were left
   // behind when Far Side got its own draw function.
-  mgr.drawDeepSky(ctx, skyVoyage, canvas);
+  if (identityAllows(identity, 'deepSky')) mgr.drawDeepSky(ctx, skyVoyage, canvas);
   const skyA = styleDials(mgr.visualStyle).skyWireAlpha ?? 1;
-  if (phenomenaFull && skyA > 0.02) {
+  if (identityAllows(identity, 'constellations') && phenomenaFull && skyA > 0.02) {
     const nightAlphaMul = (1 + 1.2 * 1) * Math.max(0.25, skyA);
     mgr.weaver.draw(ctx, canvas, mgr.reducedFlash, nightAlphaMul);
   }
-  if (phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
+  if (identityAllows(identity, 'meteors') && phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
 
   // The primary: a large, banded, ringed gas giant — the hero object this
   // world's whole "airless, less-is-more" premise stands or falls on.
