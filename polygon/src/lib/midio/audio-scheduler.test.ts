@@ -17,7 +17,7 @@ test("a long hidden interval skips stale beats instead of scheduling each one", 
   });
   assert.ok(planned.skipped >= 79, `expected a large skip, got ${planned.skipped}`);
   assert.ok(planned.times.length <= MAX_SCHEDULED_BEATS);
-  assert.equal(planned.times.length, MAX_SCHEDULED_BEATS);
+  assert.equal(planned.times.length, 2, "only grid beats inside the lookahead window are scheduled");
   assert.ok(planned.times[0]! >= now - 1e-9);
   assert.ok(planned.times.at(-1)! < now + LOOKAHEAD_SEC + beat);
   const grid = planned.times.map((t) => t / beat);
