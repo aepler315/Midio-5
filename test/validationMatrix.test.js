@@ -20,7 +20,7 @@ function workflowJobs(text) {
     if (/^jobs:\s*$/.test(line)) { inJobs = true; continue; }
     if (!inJobs) continue;
     if (/^\S/.test(line) && !line.startsWith(' ')) break;
-    const m = line.match(/^  ([A-Za-z0-9_-]+):\s*$/);
+    const m = line.match(/^ {2}([A-Za-z0-9_-]+):\s*$/);
     if (m) jobs.push(m[1]);
   }
   return jobs;
