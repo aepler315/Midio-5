@@ -309,6 +309,35 @@ export class SyncCalibrator {
   }
 
   /**
+   * The onsets a tap is actually matched against: the chart's kicks with
+   * flammed pairs collapsed to the first of each cluster.
+   *
+   * Exposed because the eye phase's marker has to pulse on this same list.
+   * Driving the marker from the raw kicks would flash twice for an ornament
+   * while the match resolved to the first onset, so a player timing the
+   * second flash would have the flam gap -- tens of milliseconds -- recorded
+   * as display latency and subtracted from the trim.
+   *
+   * Cached on the identity of the onset array AND the gap, so a tempo change
+   * re-derives the grid rather than keeping whatever beat length the pass
+   * first saw. Called every frame while the marker is up; the cache is what
+   * makes that free.
+   *
+   * @param {number[]} onsets ascending chart onsets (the kicks)
+   * @param {number} beatPeriodMs current beat length, for the flam gap
+   * @returns {number[]} the collapsed list
+   */
+  collapsedOnsets(onsets, beatPeriodMs) {
+    const gap = flamGapMs(beatPeriodMs);
+    if (onsets !== this._onsetsRef || gap !== this._collapsedGap) {
+      this._onsetsRef = onsets;
+      this._collapsedGap = gap;
+      this._collapsed = collapseFlams(onsets, gap);
+    }
+    return this._collapsed;
+  }
+
+  /**
    * Take one tap and return the new trim, or null when the tap told us
    * nothing.
    *
@@ -319,13 +348,11 @@ export class SyncCalibrator {
    */
   tap(tapMs, onsets, beatPeriodMs, { maxPositiveTrimMs = MAX_TRIM_MS } = {}) {
     if (!Number.isFinite(tapMs)) return null;
-    const gap = flamGapMs(beatPeriodMs);
-    if (onsets !== this._onsetsRef || gap !== this._collapsedGap) {
-      this._onsetsRef = onsets;
-      this._collapsedGap = gap;
-      this._collapsed = collapseFlams(onsets, gap);
-    }
-    const offsetMs = nearestOnsetOffsetMs(this._collapsed, tapMs, matchWindowMs(beatPeriodMs));
+    const offsetMs = nearestOnsetOffsetMs(
+      this.collapsedOnsets(onsets, beatPeriodMs),
+      tapMs,
+      matchWindowMs(beatPeriodMs),
+    );
     if (offsetMs === null) return null;
 
     const sample = this.phase === PHASE_EYE ? this._eye : this._implied;

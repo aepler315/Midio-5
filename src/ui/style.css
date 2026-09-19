@@ -1537,7 +1537,10 @@ html, body {
 }
 
 /* A ring that pulses is the point of the exercise, so reduced-motion gets a
-   version that still flashes but does not grow. */
+   version that still reads but does not grow. The BRIGHTNESS is capped in
+   JS (RecalibrationOverlay's reducedFlash path), not here -- this rule only
+   ever governed the scale, and on its own it left an OS reduced-motion user
+   with the full-strength flash, which is the half that matters. */
 @media (prefers-reduced-motion: reduce) {
   .recalMarker { transform: none !important; }
 }

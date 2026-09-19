@@ -71,6 +71,20 @@ asserts those bars are black and the middle is not, because a stretch and a
 letterbox are indistinguishable from any check that only looks at the
 dimensions.
 
+## The recorded choreography runs on the audio clock, not the display clock
+
+The sim is stepped `VISUAL_LEAD_MS` (52ms) ahead of the audio, so that what
+is drawn now is right by the time a display actually shows it. A captured
+frame has no scanout to wait for — it is timestamped the instant it is
+grabbed — so during a recording that lead has nothing to compensate for and
+would encode the choreography a lead ahead of the master bus.
+
+`choreographyOutputLatencyMs()` therefore hands the lead back as the visual
+lag while recording, which subtracts it again and puts recorded visuals on
+exactly the audio clock they are muxed with. Returning a flat zero was the
+earlier shape, and it correctly dropped *this room's* device and Bluetooth
+compensation — but zero latency is not zero lag, and it left the 52ms in.
+
 ## Why it composites instead of capturing the stage directly
 
 `stage.captureStream()` would be less code and is wrong. The stage's backing

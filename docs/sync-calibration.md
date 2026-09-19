@@ -47,6 +47,13 @@ clock** — the same clock, with the same lag applied, that the characters'
 beat-anchored moves are drawn on. Tapping it therefore measures the path
 from "the app decided to draw this beat" to "a person saw it".
 
+Concretely that clock is `sim.timeMs - sim.visualLagMs`, which is exactly
+what `Renderer` and every performer evaluate. The presentation lead is
+already inside `sim.timeMs`; taking it off again for the ring would put the
+ring a lead (52ms) behind the visuals it stands in for, and every eye pass
+would bank that as display latency. Measured in Chromium, doing so moved the
+ring's flash from 10ms off the kick to 75ms off it.
+
 A marker running on its own private timer would measure nothing: it would be
 a stopwatch racing itself. This is also why the ear phase's big block count
 is hidden during the eye phase — two things pulsing at once gives the eye a
@@ -136,3 +143,51 @@ deliberately absorbed.
   whose screen ran 130ms behind: the trim reached a negative value — which a
   by-ear pass can never produce — the audio delay node followed it, the song
   kept playing and the world stayed drawn throughout.
+
+## The ring and the match share one onset list
+
+Real kick lists arrive in flammed pairs — `1010, 81, 917, 81` in the wild.
+`collapseFlams` reduces each cluster to its first onset before a tap is
+matched, with a beat-relative gap so a genuine fast double-kick survives.
+
+The ring pulses on that **same collapsed list**, via
+`SyncCalibrator.collapsedOnsets()`. Driving it from the raw kicks would
+flash twice for one beat while the match resolved to the first of the pair,
+so a player timing the second flash would have the ornament's gap — tens of
+milliseconds — recorded as display latency and subtracted from the trim. The
+list is cached on the identity of the onset array *and* the gap, so calling
+it every frame is free and a tempo change still re-derives the grid.
+
+## What the eye phase deliberately does not touch
+
+- **The beat anchor.** An eye-phase tap is aimed at a ring, not at the
+  groove. Feeding it to `BeatAnchor` would teach the anchor the display
+  delay: six consistent taps drag `anchorMs` toward it, and that anchor goes
+  on steering jumps and the ensemble long after the pass ends. Eye taps are
+  routed only to the latency measurement, and never reach the persisted
+  groove fingerprint.
+- **The high/low distinction.** The ear phase measures against kicks, so a
+  tap marked as the high part (J, or a right-click) is excluded there. The
+  eye phase has no such distinction — there is one ring and both hands are
+  aimed at it — so filtering there would leave a player using the documented
+  right-hand input stuck at zero eye taps until the pass ran out.
+
+## Each half gets its own eight measures
+
+The pass deadline is re-based when the phase switches. The eight measures
+are a budget for *one* half: shared, a sparse chart at one kick per measure
+spends six of them on the six ear taps, leaving two measures in which to
+collect six eye taps. The overlay would close mid-instruction and persist a
+trim built on a two-sample eye median — the exact noisy number the six-tap
+requirement exists to prevent.
+
+## Reduced flash
+
+The ring's pulse is the thing being timed, so reduced flash caps the swing
+rather than removing it: the floor comes up and the ceiling comes down,
+keeping the *onset* sharp — the edge is what a tap is timed against — while
+the flash stays well short of a full-brightness strobe. This is handled in
+`RecalibrationOverlay`, not CSS. The `prefers-reduced-motion` rule only ever
+governed the scale, which left an OS reduced-motion user with the
+full-strength brightness jump, and `getReducedFlash()` defaults to that OS
+preference when nothing is stored.

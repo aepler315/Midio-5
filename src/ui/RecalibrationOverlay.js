@@ -39,6 +39,12 @@ const BEATS_PER_MEASURE = 4;
 // Fade the instruction once the player has clearly read it; the count is the
 // useful part after that.
 const INSTRUCTION_MEASURES = 2;
+// The eye marker's pulse, as opacity. The reduced-flash pair keeps a legible
+// onset without the full-brightness swing (see update()).
+const MARKER_DIM = 0.12;
+const MARKER_LIT = 1;
+const MARKER_DIM_SOFT = 0.45;
+const MARKER_LIT_SOFT = 0.8;
 
 export class RecalibrationOverlay {
   /**
@@ -72,11 +78,29 @@ export class RecalibrationOverlay {
    * @param {number} beatPeriodMs current beat length (JumpController's EMA)
    * @param {number} confidence   BeatAnchor.confidence at entry, for the delta
    */
-  /** Switch halves. Re-shows the instruction, because it has changed. */
-  setPhase(phase) {
+  /**
+   * Switch halves. Re-shows the instruction, because it has changed, and
+   * re-bases the pass deadline.
+   *
+   * The eight measures are a budget for ONE half. Measured from the start
+   * of the pass they are shared, and on a sparse chart -- one kick per
+   * measure -- the ear half can spend six of them on its six taps, leaving
+   * two measures in which to collect six eye taps. The overlay would close
+   * mid-instruction and the trim would be persisted from a two-sample eye
+   * median, which is exactly the noisy number the six-tap requirement
+   * exists to prevent.
+   *
+   * @param {number} [nowMs] the sim clock, to restart the count from here
+   */
+  setPhase(phase, nowMs = null) {
     const next = phase === 'eye' ? 'eye' : 'ear';
     if (next === this.phase) return;
     this.phase = next;
+    if (Number.isFinite(nowMs)) {
+      this.startMs = nowMs;
+      this._lastBeat = -1;
+      this._lastMeasure = -1;
+    }
     const { instruction, marker, number } = this.els;
     instruction?.classList.remove('faded');
     this._phaseShownAtMs = null;
@@ -136,7 +160,9 @@ export class RecalibrationOverlay {
    * @returns {boolean} false once the eight measures are done (the caller
    *   should stop() and, if it likes, report the confidence delta).
    */
-  update(nowMs, { beatPeriodMs = null, confidence = 0, beatPulse01 = 0 } = {}) {
+  update(nowMs, {
+    beatPeriodMs = null, confidence = 0, beatPulse01 = 0, reducedFlash = false,
+  } = {}) {
     if (!this.active) return false;
     // Track live tempo so a drifting/retuning estimate doesn't desynchronize
     // the count from what's actually playing.
@@ -189,11 +215,23 @@ export class RecalibrationOverlay {
     }
 
     // The eye half's target, on the visual clock the caller hands in.
+    //
+    // Reduced flash caps the swing rather than removing it. The pulse is the
+    // thing being timed -- a marker that does not visibly change gives the
+    // player nothing to tap, and the pass would measure noise -- so the
+    // floor comes up and the ceiling comes down, keeping the ONSET sharp
+    // (the edge is what a tap is timed against) while the flash itself stays
+    // well short of a full-brightness strobe. The CSS media rule only ever
+    // suppressed the scale, which left the brightness jump untouched for
+    // anyone whose OS preference had turned this on by default.
     const { marker } = this.els;
     if (marker && this.phase === 'eye') {
       const lit = Math.max(0, Math.min(1, beatPulse01));
-      marker.style.opacity = (0.12 + 0.88 * lit).toFixed(3);
-      marker.style.transform = `scale(${(0.82 + 0.28 * lit).toFixed(3)})`;
+      const low = reducedFlash ? MARKER_DIM_SOFT : MARKER_DIM;
+      const high = reducedFlash ? MARKER_LIT_SOFT : MARKER_LIT;
+      marker.style.opacity = (low + (high - low) * lit).toFixed(3);
+      const scale = reducedFlash ? 0.94 + 0.06 * lit : 0.82 + 0.28 * lit;
+      marker.style.transform = `scale(${scale.toFixed(3)})`;
     }
     if (confFill) confFill.style.width = `${Math.round(Math.max(0, Math.min(1, confidence)) * 100)}%`;
     if (status) {
