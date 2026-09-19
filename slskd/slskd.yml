@@ -21,8 +21,10 @@ web:
   https:
     disabled: true
   authentication:
-    # The HTTP API is published only on loopback by docker-compose. Operators
-    # who expose slskd separately must configure their own authentication.
+    # Disabled because Compose publishes 5030 only on 127.0.0.1. That is a
+    # host-trust boundary, not per-client auth: any local process can call
+    # the API. Enable authentication and set SLSKD_API_KEY before binding
+    # this service beyond loopback.
     disabled: true
 
 soulseek:
