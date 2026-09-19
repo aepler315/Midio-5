@@ -253,6 +253,13 @@ function effectiveOutputLatencyMs() {
   return audioEngine.outputLatencyMs + Math.max(0, btLatencyTrimMs);
 }
 
+/** Recorded audio is tapped before hardware output latency, so an export's
+ * choreography must use the same zero-latency clock rather than baking this
+ * room's device/Bluetooth compensation into the video. */
+function choreographyOutputLatencyMs() {
+  return songRecorder?.recording ? 0 : effectiveOutputLatencyMs();
+}
+
 /** The other half of the signed BT trim (see effectiveOutputLatencyMs): a
  *  negative value delays the actual audio output by that many ms instead of
  *  asking visuals to run backward. Called once at startup and again on
@@ -1364,8 +1371,9 @@ function startTimeline(timelineData, extra = {}) {
       canvasHeight: STAGE_H,
       customBiome: timelineData.customBiome || null,
       // ChoreoClock: live output-latency getter so beat-anchored envelopes
-      // peak when the EAR gets the beat (Bluetooth can lag 200ms+).
-      outputLatencyMs: () => effectiveOutputLatencyMs(),
+      // peak when the EAR gets the beat (Bluetooth can lag 200ms+), except
+      // while exporting, where audio and video share the source clock.
+      outputLatencyMs: () => choreographyOutputLatencyMs(),
       // ChoreoClock leg 3: how far ahead frame() steps the world so a frame
       // depicts the moment it reaches the screen, not the moment it was
       // built. Handed in so scoring can subtract it back out.
@@ -3477,12 +3485,14 @@ function setExportNote(text, className = '') {
 
 function syncRecordUI() {
   const active = !!songRecorder?.recording;
+  const busy = active || !!songRecorder?.finalizing;
   recordBtnEl?.setAttribute('aria-pressed', String(active));
   recordBtnEl?.setAttribute('title', active
     ? 'Stop recording and save the video'
     : 'Record the show to a video file from this moment. Press again to stop and save.');
   recordStatusEl?.classList.toggle('hidden', !active);
-  if (exportBtnEl) exportBtnEl.disabled = active;
+  if (recordBtnEl) recordBtnEl.disabled = busy && !active;
+  if (exportBtnEl) exportBtnEl.disabled = busy;
 }
 
 /** Elapsed time and file size while recording.
@@ -3526,7 +3536,7 @@ function syncExportUI() {
   const recorder = ensureRecorder();
   const candidate = recorder?.candidate ?? null;
   // A browser that cannot record says so here rather than after a replay.
-  if (exportBtnEl) exportBtnEl.disabled = !candidate || !!songRecorder?.recording;
+  if (exportBtnEl) exportBtnEl.disabled = !candidate || !!songRecorder?.recording || !!songRecorder?.finalizing;
   if (recordBtnEl) recordBtnEl.classList.toggle('hidden', !candidate);
 
   const preset = presetById(exportPresetEl.value);
@@ -3544,6 +3554,7 @@ function syncExportUI() {
 
 recordBtnEl?.addEventListener('click', () => {
   if (songRecorder?.recording) finishRecording();
+  else if (songRecorder?.finalizing) return;
   else startRecording();
 });
 
