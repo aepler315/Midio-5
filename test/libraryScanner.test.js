@@ -265,3 +265,71 @@ test('a webkitdirectory pick produces the same paths the handle walk would', asy
   assert.equal(tracks[0].folder, 'Radiohead/Kid A');
   assert.ok(handles.get('loose.mp3'));
 });
+
+test('tracks are handed over while the walk runs, not all at the end', async () => {
+  // The bug this exists for: a real music folder takes minutes to walk, and
+  // a library that shows nothing until the last file is read looks exactly
+  // like one that never started.
+  const entries = {};
+  for (let i = 0; i < 95; i++) entries[`${i}.mp3`] = file(`${i}.mp3`, new Uint8Array(16));
+  const batches = [];
+  const tracks = await scanDirectory('r', dir('M', entries), {
+    batchSize: 40,
+    onBatch: (batch) => batches.push(batch.length),
+  });
+  assert.equal(tracks.length, 95);
+  // Two full batches during the walk, and the remainder at the end -- the
+  // trailing partial batch is the one an off-by-one would swallow.
+  assert.deepEqual(batches, [40, 40, 15]);
+  assert.equal(batches.reduce((a, b) => a + b, 0), tracks.length);
+});
+
+test('a slow disk still reports in, on an interval rather than a count', async () => {
+  const entries = {};
+  for (let i = 0; i < 6; i++) entries[`${i}.mp3`] = file(`${i}.mp3`, new Uint8Array(16));
+  let clock = 0;
+  const batches = [];
+  // Far below the batch size, so only the interval can be flushing these.
+  await scanDirectory('r', dir('M', entries), {
+    batchSize: 1000,
+    batchMs: 100,
+    now: () => { clock += 60; return clock; },
+    onBatch: (batch) => batches.push(batch.length),
+  });
+  assert.ok(batches.length > 1, `expected several batches, got ${JSON.stringify(batches)}`);
+  assert.equal(batches.reduce((a, b) => a + b, 0), 6);
+});
+
+test('a walk that is abandoned still hands over what it found', async () => {
+  const entries = {};
+  for (let i = 0; i < 20; i++) entries[`${i}.mp3`] = file(`${i}.mp3`, new Uint8Array(16));
+  const signal = { aborted: false };
+  const batches = [];
+  const tracks = await scanDirectory('r', dir('M', entries), {
+    batchSize: 1000,
+    onProgress: (count) => { if (count === 5) signal.aborted = true; },
+    onBatch: (batch) => batches.push(...batch),
+    signal,
+  });
+  assert.equal(tracks.length, 5);
+  // Those five were still read. Throwing them away because the walk was cut
+  // short is the difference between a partial library and no library.
+  assert.equal(batches.length, 5);
+});
+
+test('the batch handler is awaited, so its writes cannot be lapped', async () => {
+  const entries = {};
+  for (let i = 0; i < 80; i++) entries[`${i}.mp3`] = file(`${i}.mp3`, new Uint8Array(16));
+  let inFlight = 0;
+  let overlapped = false;
+  await scanDirectory('r', dir('M', entries), {
+    batchSize: 20,
+    onBatch: async () => {
+      if (inFlight > 0) overlapped = true;
+      inFlight++;
+      await new Promise((r) => setTimeout(r, 1));
+      inFlight--;
+    },
+  });
+  assert.equal(overlapped, false);
+});

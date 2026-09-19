@@ -169,30 +169,28 @@ export async function removeRoot(rootId, scope = globalThis) {
   }
 }
 
-/** Replace every track under `rootId` with `tracks`.
+/**
+ * Write a batch of scanned tracks, merging each with whatever the library
+ * already knew about that path.
  *
- *  Replace rather than merge: a rescan is the answer to "what is in this
- *  folder NOW", so a file deleted on disk has to disappear from the library
- *  too. What a merge would have preserved -- play counts, auto-tags, cached
- *  durations -- is carried forward here explicitly instead, keyed by path,
- *  so re-scanning a folder never costs the player their history. */
-export async function replaceTracks(rootId, tracks, scope = globalThis) {
+ * This is what makes a scan streamable: a folder of ten thousand songs is
+ * written in batches as it is walked, so a scan interrupted half way
+ * through leaves a half-populated library rather than nothing at all.
+ */
+export async function putTracks(tracks, scope = globalThis) {
+  const list = [...(tracks || [])].filter(Boolean);
+  if (!list.length) return 0;
   const db = await open(scope);
   if (!db) return 0;
   try {
-    const existing = (await wrap(db.transaction(TRACKS, 'readonly').objectStore(TRACKS).index('rootId').getAll(rootId))) || [];
-    const byPath = new Map(existing.map((t) => [t.path, t]));
-
+    const read = db.transaction(TRACKS, 'readonly').objectStore(TRACKS);
+    const priors = await Promise.all(list.map((t) => wrap(read.get(t.key))));
     const tx = db.transaction(TRACKS, 'readwrite');
     const store = tx.objectStore(TRACKS);
-    for (const row of existing) store.delete(row.key);
-    let n = 0;
-    for (const track of tracks || []) {
-      const prior = byPath.get(track.path);
-      store.put(prior ? carryForward(prior, track) : track);
-      n++;
-    }
-    return (await done(tx)) ? n : 0;
+    list.forEach((track, i) => {
+      store.put(priors[i] ? carryForward(priors[i], track) : track);
+    });
+    return (await done(tx)) ? list.length : 0;
   } catch {
     return 0;
   } finally {
@@ -200,6 +198,47 @@ export async function replaceTracks(rootId, tracks, scope = globalThis) {
   }
 }
 
+/**
+ * Drop every track under `rootId` whose path is not in `keepPaths`.
+ *
+ * Only ever called once a scan has FINISHED, because only then is the set
+ * of paths complete -- pruning against a partial walk would delete most of
+ * the library and call it housekeeping.
+ */
+export async function pruneTracks(rootId, keepPaths, scope = globalThis) {
+  const keep = keepPaths instanceof Set ? keepPaths : new Set(keepPaths || []);
+  const db = await open(scope);
+  if (!db) return 0;
+  try {
+    const rows = (await wrap(db.transaction(TRACKS, 'readonly').objectStore(TRACKS).index('rootId').getAll(rootId))) || [];
+    const stale = rows.filter((row) => !keep.has(row.path));
+    if (!stale.length) return 0;
+    const tx = db.transaction(TRACKS, 'readwrite');
+    const store = tx.objectStore(TRACKS);
+    for (const row of stale) store.delete(row.key);
+    return (await done(tx)) ? stale.length : 0;
+  } catch {
+    return 0;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Replace every track under `rootId` with `tracks`, in one go.
+ *
+ * Replace rather than merge: a rescan is the answer to "what is in this
+ * folder NOW", so a file deleted on disk has to disappear from the library
+ * too. What a merge would have preserved -- play counts, auto-tags, cached
+ * durations -- is carried forward explicitly by `carryForward` below, so
+ * re-scanning a folder never costs the player their history.
+ */
+export async function replaceTracks(rootId, tracks, scope = globalThis) {
+  const list = [...(tracks || [])].filter(Boolean);
+  const written = await putTracks(list, scope);
+  await pruneTracks(rootId, list.map((t) => t.path), scope);
+  return written;
+}
 /** What survives a rescan: everything the player or the network earned,
  *  never anything the filesystem is authoritative about. Exported because
  *  the rule is worth testing on its own -- it is the difference between a

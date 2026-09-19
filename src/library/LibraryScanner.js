@@ -129,13 +129,39 @@ export function trackRecord({ rootId, path, file, identity, nowMs = Date.now() }
 /**
  * Scan a folder into track records.
  *
- * `onProgress(count, path)` is called as files are found so a big folder can
- * say what it is doing instead of looking hung. `signal` aborts the scan
- * between files -- closing the panel mid-scan of a 10,000-track drive should
- * not leave the walk running.
+ * `onBatch(tracks)` is the reason this is not simply a function that
+ * returns an array. A real music folder takes minutes to walk, and a
+ * library that shows nothing until the last file is read is
+ * indistinguishable, from the outside, from one that did not start. Tracks
+ * are handed over in small batches as they are found so the view fills in
+ * while the walk continues.
+ *
+ * Batches flush on whichever comes first, a count or an interval: the count
+ * keeps a fast local disk from repainting per file, and the interval keeps
+ * a slow network drive from looking frozen between them.
+ *
+ * `onProgress(count, path)` is the same running total for a status line.
+ * `signal` aborts between files -- closing the panel over a ten-thousand
+ * track drive should actually stop reading it.
  */
-export async function scanDirectory(rootId, dirHandle, { onProgress = null, signal = null, nowMs = Date.now() } = {}) {
+export async function scanDirectory(rootId, dirHandle, {
+  onProgress = null, onBatch = null, signal = null, nowMs = Date.now(),
+  batchSize = 40, batchMs = 250, now = () => Date.now(),
+} = {}) {
   const tracks = [];
+  let batch = [];
+  let lastFlushMs = now();
+
+  // Awaited, not fired and forgotten: the handler persists each batch, and
+  // letting the walk lap it would race those writes against each other.
+  const flush = async () => {
+    if (!batch.length) return;
+    const sending = batch;
+    batch = [];
+    lastFlushMs = now();
+    await onBatch?.(sending);
+  };
+
   for await (const { entry, path } of walkAudioFiles(dirHandle)) {
     if (signal?.aborted) break;
     let file;
@@ -145,9 +171,15 @@ export async function scanDirectory(rootId, dirHandle, { onProgress = null, sign
       continue; // vanished or unreadable between listing and opening
     }
     const identity = await readTags(file);
-    tracks.push(trackRecord({ rootId, path, file, identity, nowMs }));
+    const track = trackRecord({ rootId, path, file, identity, nowMs });
+    tracks.push(track);
+    batch.push(track);
     onProgress?.(tracks.length, path);
+    if (batch.length >= batchSize || now() - lastFlushMs >= batchMs) await flush();
   }
+  // Whatever is left over, including everything when the walk was aborted
+  // part way -- those tracks were still found and are still worth having.
+  await flush();
   return tracks;
 }
 
@@ -205,9 +237,22 @@ export async function resolveFile(rootHandle, path) {
  * once per visit. That is a worse deal than the handle, and it is a much
  * better one than no library.
  */
-export async function scanFileList(rootId, files, { onProgress = null, signal = null, nowMs = Date.now() } = {}) {
+export async function scanFileList(rootId, files, {
+  onProgress = null, onBatch = null, signal = null, nowMs = Date.now(),
+  batchSize = 40, batchMs = 250, now = () => Date.now(),
+} = {}) {
   const tracks = [];
   const handles = new Map();
+  let batch = [];
+  let lastFlushMs = now();
+  const flush = async () => {
+    if (!batch.length) return;
+    const sending = batch;
+    batch = [];
+    lastFlushMs = now();
+    await onBatch?.(sending);
+  };
+
   for (const file of [...(files || [])]) {
     if (signal?.aborted) break;
     if (!file || !isAudioName(file.name)) continue;
@@ -218,9 +263,13 @@ export async function scanFileList(rootId, files, { onProgress = null, signal = 
     const path = full.includes('/') ? full.slice(full.indexOf('/') + 1) : full;
     if (path.split('/').some((part) => part.startsWith('.'))) continue;
     const identity = await readTags(file);
-    tracks.push(trackRecord({ rootId, path, file, identity, nowMs }));
+    const track = trackRecord({ rootId, path, file, identity, nowMs });
+    tracks.push(track);
+    batch.push(track);
     handles.set(path, file);
     onProgress?.(tracks.length, path);
+    if (batch.length >= batchSize || now() - lastFlushMs >= batchMs) await flush();
   }
+  await flush();
   return { tracks, handles };
 }

@@ -34,6 +34,26 @@ in seconds, so the scan reads as little as it can:
   without that, a drive written on a Mac reports twice as many songs as it
   has.
 
+## The scan streams
+
+A real music folder takes minutes to walk, and a library that shows nothing
+until the last file is read is indistinguishable, from the outside, from one
+that never started. So nothing waits for the end:
+
+- the library **opens as soon as the folder is chosen**, before a single file
+  has been read;
+- tracks arrive in batches — whichever comes first, forty files or 250ms, so
+  a fast local disk does not repaint per file and a slow network drive does
+  not look frozen between batches;
+- each batch is **written to storage as it arrives**, so a scan abandoned
+  half way leaves a half-populated library rather than nothing;
+- searching, sorting, the folder view and playing a track all work on what
+  has arrived so far.
+
+The deletion half of a rescan waits for the end, and has to: only a
+*completed* walk knows the full set of paths, so pruning against a partial
+one would delete most of the library and call it housekeeping.
+
 ## Sorting, filtering, folders
 
 The view's whole mind is in `TrackIndex.js`, which has no DOM in it. Three

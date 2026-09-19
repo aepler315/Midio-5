@@ -8,7 +8,7 @@
 //
 // Nothing here touches the DOM. The panel subscribes and repaints.
 import {
-  addRoot, listRoots, listTracks, removeRoot, replaceTracks, updateTrack, updateTracks,
+  addRoot, listRoots, listTracks, removeRoot, putTracks, pruneTracks, updateTrack, updateTracks,
   libraryDbSupported, directoryHandlesSupported,
 } from './LibraryDB.js';
 import { scanDirectory, scanFileList, resolveFile, ensureReadPermission } from './LibraryScanner.js';
@@ -27,7 +27,15 @@ export class MusicLibrary {
      *  again by walking the directory instead. */
     this.sessionFiles = new Map();
     this.listeners = new Set();
+    /** True while a folder is being walked. The view uses it to say so --
+     *  a library that is still filling and one that is finished and small
+     *  look identical otherwise. */
+    this.scanning = false;
+    this.scannedCount = 0;
     this._abort = null;
+    /** Bumped per scan so a scan that has been superseded cannot write its
+     *  results over the newer one's when it finally unwinds. */
+    this._scanGen = 0;
   }
 
   get supported() { return libraryDbSupported(this.scope); }
@@ -83,27 +91,36 @@ export class MusicLibrary {
    * Both produce the same track records, so everything downstream is
    * identical -- the difference shows up once, at the next reload.
    */
-  async pickFolder({ onProgress = null } = {}) {
-    if (this.persistable) {
-      let handle;
-      try {
-        handle = await this.scope.showDirectoryPicker({ id: 'midio-music', mode: 'read' });
-      } catch {
-        return null; // cancelled
-      }
-      const root = await addRoot({ name: handle.name, handle }, this.scope);
-      if (!root) return null;
-      this.root = root;
-      this.handle = handle;
-      this.sessionFiles.clear();
-      return this.rescan({ onProgress });
+  async pickFolder({ onProgress = null, onRootChosen = null } = {}) {
+    if (!this.persistable) return null;
+    let handle;
+    try {
+      handle = await this.scope.showDirectoryPicker({ id: 'midio-music', mode: 'read' });
+    } catch (err) {
+      // Only a cancellation is silent. Anything else -- a lost user
+      // gesture, a blocked API, a folder the browser refuses -- used to
+      // come back here as null and look exactly like "the button did
+      // nothing", which is the worst possible way to report a failure.
+      if (err?.name === 'AbortError') return null;
+      throw err;
     }
-    return null;
+    const root = await addRoot({ name: handle.name, handle }, this.scope);
+    if (!root) return null;
+    this.root = root;
+    this.handle = handle;
+    this.sessionFiles.clear();
+    this.tracks = [];
+    this._emit();
+    // Before the walk starts, not after it finishes: the caller opens the
+    // library on this, so the folder's contents appear as they are read
+    // instead of minutes later in one go.
+    onRootChosen?.(root);
+    return this.rescan({ onProgress });
   }
 
   /** The `<input type="file" webkitdirectory>` path: the caller owns the
    *  element and hands the files here. */
-  async adoptFileList(files, { name = 'Music', onProgress = null } = {}) {
+  async adoptFileList(files, { name = 'Music', onProgress = null, onRootChosen = null } = {}) {
     const list = [...(files || [])];
     if (!list.length) return null;
     // webkitRelativePath leads with the folder the player actually chose,
@@ -113,29 +130,90 @@ export class MusicLibrary {
     const root = await addRoot({ name: folderName, handle: null, persistable: false }, this.scope);
     this.root = root || { id: `root:${folderName.toLowerCase()}`, name: folderName, handle: null, persistable: false };
     this.handle = null;
+    const rootId = this.root.id;
 
     const signal = this._beginWork();
-    const { tracks, handles } = await scanFileList(this.root.id, list, { onProgress, signal });
-    this.sessionFiles = handles;
-    await replaceTracks(this.root.id, tracks, this.scope);
-    this.tracks = await listTracks(this.root.id, this.scope);
-    this._endWork();
+    const gen = this._scanGen;
+    const mine = () => gen === this._scanGen;
+    this.tracks = [];
+    this.sessionFiles = new Map();
+    this.scanning = true;
+    this.scannedCount = 0;
     this._emit();
+    onRootChosen?.(this.root);
+
+    const { tracks, handles } = await scanFileList(rootId, list, {
+      signal,
+      onProgress: (count, path) => {
+        if (!mine()) return;
+        this.scannedCount = count;
+        onProgress?.(count, path);
+      },
+      onBatch: async (batch) => {
+        if (!mine()) return;
+        this.tracks.push(...batch);
+        this._emit();
+        await putTracks(batch, this.scope);
+      },
+    });
+
+    if (mine()) {
+      this.sessionFiles = handles;
+      if (!signal.aborted) await pruneTracks(rootId, tracks.map((t) => t.path), this.scope);
+      this.tracks = await listTracks(rootId, this.scope);
+      this.scanning = false;
+      this._endWork();
+      this._emit();
+    }
     return this.tracks;
   }
 
   /** Re-read the open folder. What the player earned is carried across by
-   *  LibraryDB, so this is cheap to do often and safe to do at all. */
+   *  LibraryDB, so this is cheap to do often and safe to do at all.
+   *
+   *  Results arrive in batches while the walk runs, so the view fills in
+   *  rather than sitting empty until the last file is read. */
   async rescan({ onProgress = null } = {}) {
     if (!this.root || !this.handle) return this.tracks;
     const signal = this._beginWork();
-    const scanned = await scanDirectory(this.root.id, this.handle, { onProgress, signal });
-    if (!signal.aborted) {
-      await replaceTracks(this.root.id, scanned, this.scope);
-      this.tracks = await listTracks(this.root.id, this.scope);
-    }
-    this._endWork();
+    const gen = this._scanGen;
+    const rootId = this.root.id;
+    const mine = () => gen === this._scanGen;
+
+    this.tracks = [];
+    this.scanning = true;
+    this.scannedCount = 0;
     this._emit();
+
+    const scanned = await scanDirectory(rootId, this.handle, {
+      signal,
+      onProgress: (count, path) => {
+        if (!mine()) return;
+        this.scannedCount = count;
+        onProgress?.(count, path);
+      },
+      onBatch: async (batch) => {
+        if (!mine()) return;
+        this.tracks.push(...batch);
+        this._emit();
+        // Persisted as they are found, so a scan abandoned half way leaves
+        // a half-populated library rather than nothing.
+        await putTracks(batch, this.scope);
+      },
+    });
+
+    if (mine()) {
+      // Only a COMPLETED walk knows the full set of paths, so only a
+      // completed walk may delete what is missing from it.
+      if (!signal.aborted) await pruneTracks(rootId, scanned.map((t) => t.path), this.scope);
+      // Re-read rather than keeping the scan records: what the view should
+      // show is the merged row, with the play counts and auto-tags that
+      // carryForward preserved.
+      this.tracks = await listTracks(rootId, this.scope);
+      this.scanning = false;
+      this._endWork();
+      this._emit();
+    }
     return this.tracks;
   }
 
@@ -214,6 +292,7 @@ export class MusicLibrary {
 
   /** One scan or tag run at a time; starting another abandons the first. */
   _beginWork() {
+    this._scanGen++;
     this._abort?.abort?.();
     this._abort = typeof AbortController !== 'undefined' ? new AbortController() : { signal: { aborted: false }, abort() { this.signal.aborted = true; } };
     return this._abort.signal;
@@ -228,5 +307,9 @@ export class MusicLibrary {
   cancel() {
     this._abort?.abort?.();
     this._abort = null;
+    if (this.scanning) {
+      this.scanning = false;
+      this._emit();
+    }
   }
 }

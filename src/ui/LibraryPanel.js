@@ -64,6 +64,10 @@ export class LibraryPanel {
     this.tracks = [];
     this.folderName = 'Library';
     this.busy = false;
+    /** A folder being walked right now. A library that is still filling and
+     *  one that is finished and small look identical without this. */
+    this.scanning = false;
+    this.scannedCount = 0;
 
     const prefs = readPrefs();
     this.query = '';
@@ -246,10 +250,24 @@ export class LibraryPanel {
     this.render();
   }
 
+  /** Say that the folder is still being read, and how far it has got.
+   *  Rows keep arriving underneath this, so it is a running commentary on
+   *  a list that is already usable, not a spinner in place of one. */
+  setScanning(scanning, count = 0) {
+    this.scanning = !!scanning;
+    this.scannedCount = count || 0;
+    // Rescan is the only control a scan makes meaningless; the rest --
+    // search, sort, folder view, playing a track that has already appeared
+    // -- all work on what has arrived so far.
+    this.rescanBtn.disabled = this.scanning || this.busy;
+    this.autoTagBtn.disabled = this.scanning || this.busy;
+    this.render();
+  }
+
   setBusy(busy, message = '') {
     this.busy = !!busy;
-    this.rescanBtn.disabled = this.busy;
-    this.autoTagBtn.disabled = this.busy;
+    this.rescanBtn.disabled = this.busy || this.scanning;
+    this.autoTagBtn.disabled = this.busy || this.scanning;
     this.changeBtn.disabled = this.busy;
     if (message) this.setStatus(message);
   }
@@ -364,12 +382,18 @@ export class LibraryPanel {
     const truncated = shownCount < listedTotal;
     const parts = [];
     if (this.tracks.length === 0) {
-      this.emptyEl.textContent = this.folderName && this.folderName !== 'Library'
-        ? 'No playable audio in this folder.'
-        : 'No music folder chosen yet.';
+      // An empty folder and a folder that has not been read yet are very
+      // different things, and only one of them is the player's problem.
+      this.emptyEl.textContent = this.scanning
+        ? 'Reading the folder… tracks appear here as they are found.'
+        : (this.folderName && this.folderName !== 'Library'
+          ? 'No playable audio in this folder.'
+          : 'No music folder chosen yet.');
       this.emptyEl.classList.remove('hidden');
     } else if (matchedTotal === 0) {
-      this.emptyEl.textContent = `Nothing matches “${this.query.trim()}”.`;
+      this.emptyEl.textContent = this.scanning
+        ? `Nothing matches “${this.query.trim()}” yet — still reading the folder.`
+        : `Nothing matches “${this.query.trim()}”.`;
       this.emptyEl.classList.remove('hidden');
     } else {
       this.emptyEl.classList.add('hidden');
@@ -381,6 +405,19 @@ export class LibraryPanel {
     // Never let a capped list read as the whole answer.
     if (truncated) parts.push(`showing the first ${shownCount.toLocaleString()} — search to narrow`);
     this.countLine = parts.join(' · ');
+
+    if (this.scanning) {
+      // The running total leads: it is the number that is moving, and it is
+      // the answer to "is this working". The count line only earns a place
+      // beside it when it says something different -- while filtering or
+      // inside a folder it does, and otherwise it is the same number twice.
+      const found = `Reading ${this.folderName}… ${this.scannedCount.toLocaleString()} found`;
+      const sameNumber = !searching && !folderCount && listedTotal === this.scannedCount;
+      this.statusEl.textContent = sameNumber ? found : `${found} · ${this.countLine}`;
+      this.statusEl.classList.add('isScanning');
+      return;
+    }
+    this.statusEl.classList.remove('isScanning');
     if (!this.busy) this.setStatus(this.countLine);
   }
 }

@@ -228,3 +228,95 @@ test('with no storage at all the library is inert rather than broken', async () 
   await lib.notePlayed({ key: 'k' }, 10);
   assert.equal(await lib.autoTag(), 0);
 });
+
+/** A folder of `count` files, for watching a scan unfold. */
+function bigFolder(count) {
+  const files = {};
+  for (let i = 0; i < count; i++) files[`t${String(i).padStart(4, '0')}.mp3`] = fakeFile(`t${i}.mp3`);
+  return files;
+}
+
+test('the library fills in while the folder is being read, not after', async () => {
+  // The reported bug: choosing a folder showed nothing at all for minutes,
+  // then everything at once. Subscribers must see it growing.
+  const scope = scopeWith(fakeDirHandle('Music', bigFolder(120)));
+  const lib = new MusicLibrary({ scope });
+  const seen = [];
+  lib.subscribe(() => seen.push({ n: lib.tracks.length, scanning: lib.scanning }));
+
+  let rootChosenAt = null;
+  await lib.pickFolder({ onRootChosen: () => { rootChosenAt = lib.tracks.length; } });
+
+  // The caller is told about the folder BEFORE any track has been read --
+  // that is the moment the library opens, so it opens empty and fills.
+  assert.equal(rootChosenAt, 0);
+  const growing = seen.filter((s) => s.scanning && s.n > 0);
+  assert.ok(growing.length >= 2, `expected several partial emissions, saw ${JSON.stringify(seen.map((s) => s.n))}`);
+  // Strictly increasing while scanning: no emission ever goes backwards.
+  for (let i = 1; i < growing.length; i++) assert.ok(growing[i].n >= growing[i - 1].n);
+  // And the last word is the complete, finished library.
+  assert.equal(seen.at(-1).scanning, false);
+  assert.equal(seen.at(-1).n, 120);
+  assert.equal(lib.scanning, false);
+});
+
+test('a scan abandoned part way leaves what it found, and a later rescan completes it', async () => {
+  const files = bigFolder(200);
+  const scope = scopeWith(fakeDirHandle('Music', files));
+  const lib = new MusicLibrary({ scope });
+
+  const unsubscribe = lib.subscribe(() => {
+    if (lib.scanning && lib.tracks.length >= 40) lib.cancel();
+  });
+  await lib.pickFolder();
+  unsubscribe();
+
+  const partial = (await new MusicLibrary({ scope }).init()).tracks.length;
+  assert.ok(partial >= 40 && partial < 200, `partial scan stored ${partial}`);
+
+  // Nothing was pruned, because a partial walk does not know what is
+  // missing -- only a completed one does.
+  const finished = await new MusicLibrary({ scope }).init();
+  await finished.grantAccess();
+  await finished.rescan();
+  assert.equal(finished.tracks.length, 200);
+  assert.equal(finished.scanning, false);
+});
+
+test('choosing a second folder cannot be overwritten by the first scan unwinding', async () => {
+  const scope = scopeWith(fakeDirHandle('Music', bigFolder(80)));
+  const lib = new MusicLibrary({ scope });
+  lib.root = { id: 'root:music', name: 'Music' };
+  lib.handle = fakeDirHandle('Music', bigFolder(80));
+  const slow = lib.rescan();
+  // A second scan starts before the first has unwound.
+  lib.handle = fakeDirHandle('Other', bigFolder(10));
+  lib.root = { id: 'root:other', name: 'Other' };
+  const fresh = await lib.rescan();
+  await slow;
+
+  assert.equal(fresh.length, 10);
+  // The superseded scan must not write its 80 tracks over the new library.
+  assert.equal(lib.tracks.length, 10);
+});
+
+test('a cancelled picker is silent; a broken one is not', async () => {
+  const scope = fakeIdb();
+  const lib = new MusicLibrary({ scope });
+
+  scope.showDirectoryPicker = async () => {
+    const err = new Error('The user aborted a request.');
+    err.name = 'AbortError';
+    throw err;
+  };
+  assert.equal(await lib.pickFolder(), null);
+
+  // Anything else used to come back as null too, which looks exactly like
+  // "the button did nothing" -- the worst way to report a failure.
+  scope.showDirectoryPicker = async () => {
+    const err = new Error('Must be handling a user gesture to show a file picker.');
+    err.name = 'SecurityError';
+    throw err;
+  };
+  await assert.rejects(() => lib.pickFolder(), /user gesture/);
+});
