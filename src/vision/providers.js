@@ -30,7 +30,8 @@ export const VISION_PROVIDERS = {
   gemini: {
     label: 'Gemini',
     endpoint: 'https://generativelanguage.googleapis.com/v1beta/models',
-    model: 'gemini-1.5-flash',
+    // gemini-1.5-flash shut down 2025-09-29; gemini-2.0-flash is also retired.
+    model: 'gemini-2.5-flash',
     needsKey: true,
   },
   openrouter: {
@@ -163,18 +164,40 @@ export function extractVisionContent(provider, data) {
   }
 }
 
+/** Models known to be shut down; the Gemini default must not be one of these. */
+export const RETIRED_GEMINI_MODELS = Object.freeze([
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+]);
+
+export function visionHttpError(provider, status, model) {
+  if ((status === 400 || status === 404 || status === 410) && model) {
+    return new Error(
+      `${provider} model '${model}' is unavailable (HTTP ${status}). Choose a current model in vision settings.`,
+    );
+  }
+  return new Error(`HTTP ${status}`);
+}
+
 /**
  * Fire one request at the configured provider. Returns the same
  * `{ message: { content } }` shape Ollama's API returns natively, so
  * VisionLoop.parseVisionResponse (and its tests) stay provider-agnostic and
  * unchanged. Throws on any transport/HTTP failure; the caller already
  * treats a thrown cycle as a silent no-op (spec: safe to fail 100% of the
- * time).
+ * time). Retired-model HTTP statuses name the model so a stale default is
+ * diagnosable without a live key.
  */
 export async function callVisionProvider(provider, opts) {
   const { url, options } = buildVisionRequest(provider, opts);
   const res = await fetch(url, { ...options, signal: AbortSignal.timeout(opts.timeoutMs ?? 20000) });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const cfg = VISION_PROVIDERS[provider] || VISION_PROVIDERS.ollama;
+    const model = opts.model || cfg.model;
+    throw visionHttpError(provider, res.status, model);
+  }
   const data = await res.json();
   const content = extractVisionContent(provider, data);
   return { message: { content } };
