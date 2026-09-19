@@ -320,3 +320,132 @@ test('a cancelled picker is silent; a broken one is not', async () => {
   };
   await assert.rejects(() => lib.pickFolder(), /user gesture/);
 });
+
+// --- Streaming a scan means rows are live before the scan is done, and
+// everything below is a way that can go wrong. All seven were found by
+// review on the streaming change itself.
+
+test('playing a track that arrived mid-scan does not reset its play count', () => {
+  // A raw scan record carries playCount 0. Publishing those and then
+  // playing one computes the next count from the zero and writes 1 over a
+  // stored 7 -- silently, and permanently.
+  const scope = scopeWith(fakeDirHandle('Music', bigFolder(80)));
+  return (async () => {
+    const first = new MusicLibrary({ scope });
+    await first.pickFolder();
+    const target = first.tracks[0];
+    await first.notePlayed(target, 180);
+    await first.notePlayed(target, 180);
+    assert.equal(target.playCount, 2);
+
+    const second = await new MusicLibrary({ scope }).init();
+    await second.grantAccess();
+    let seenMidScan = null;
+    second.subscribe(() => {
+      if (second.scanning && !seenMidScan) seenMidScan = second.tracks.find((t) => t.path === target.path) || null;
+    });
+    await second.rescan();
+    assert.ok(seenMidScan, 'the track should have been published during the scan');
+    // The row the view got is the merged one, history intact.
+    assert.equal(seenMidScan.playCount, 2);
+    await second.notePlayed(seenMidScan, 180);
+    assert.equal(seenMidScan.playCount, 3);
+  })();
+});
+
+test('a folder that stops being readable mid-walk does not leave the library scanning forever', async () => {
+  const scope = fakeIdb();
+  const lib = new MusicLibrary({ scope });
+  lib.root = { id: 'root:music', name: 'Music' };
+  lib.handle = {
+    values() {
+      return (async function* () {
+        yield { kind: 'file', name: 'a.mp3', getFile: async () => fakeFile('a.mp3') };
+        throw new Error('NotAllowedError: access revoked');
+      })();
+    },
+  };
+  await assert.rejects(() => lib.rescan(), /access revoked/);
+  // Otherwise the panel stays labelled as reading, with Rescan and Auto-tag
+  // disabled and no scan left to re-enable them.
+  assert.equal(lib.scanning, false);
+  assert.equal(lib._abort, null);
+});
+
+test('forgetting during a scan leaves nothing behind for the scan to write back', async () => {
+  const scope = scopeWith(fakeDirHandle('Music', bigFolder(200)));
+  const lib = new MusicLibrary({ scope });
+  let forgetting = null;
+  const unsubscribe = lib.subscribe(() => {
+    if (lib.scanning && lib.tracks.length >= 40) { unsubscribe(); forgetting = lib.forget(); }
+  });
+  await lib.pickFolder();
+  await forgetting;
+  // A flush already under way finishes after the root is deleted; without a
+  // new generation it still looks current and writes orphan rows back.
+  assert.equal(lib.root, null);
+  assert.deepEqual(lib.tracks, []);
+  const next = await new MusicLibrary({ scope }).init();
+  assert.equal(next.root, null);
+  assert.deepEqual(next.tracks, []);
+});
+
+test('a scan whose writes were refused does not then decide what to delete', async () => {
+  // Pruning is the destructive half. A scan that could not store everything
+  // it found has no standing to say what is missing from disk.
+  const scope = scopeWith(fakeDirHandle('Music', { 'keep.mp3': fakeFile('keep.mp3') }));
+  const seed = new MusicLibrary({ scope });
+  await seed.pickFolder();
+  assert.equal(seed.tracks.length, 1);
+
+  const hostile = fakeIdb({ rejectPut: (row, name) => name === 'tracks' });
+  hostile.showDirectoryPicker = scope.showDirectoryPicker;
+  // Same store, but writes now fail: seed it through the working scope
+  // first, then swap in the refusing one.
+  const lib = new MusicLibrary({ scope });
+  await lib.init();
+  lib.scope = { ...scope, indexedDB: hostile.indexedDB };
+  lib.handle = fakeDirHandle('Music', { 'other.mp3': fakeFile('other.mp3') });
+  await lib.rescan();
+  // keep.mp3 is gone from disk, but the replacement never landed, so it is
+  // not this scan's place to remove it.
+  const survivors = await new MusicLibrary({ scope }).init();
+  assert.ok(survivors.tracks.some((t) => t.path === 'keep.mp3'), 'a refused write must not license a prune');
+});
+
+test('a scan superseded while it is finishing does not clobber the newer one', async () => {
+  const scope = scopeWith(fakeDirHandle('Music', bigFolder(60)));
+  const lib = new MusicLibrary({ scope });
+  lib.root = { id: 'root:music', name: 'Music' };
+  lib.handle = fakeDirHandle('Music', bigFolder(60));
+
+  const stale = lib.rescan();
+  lib.root = { id: 'root:other', name: 'Other' };
+  lib.handle = fakeDirHandle('Other', bigFolder(8));
+  const fresh = lib.rescan();
+  await Promise.all([stale, fresh]);
+
+  assert.equal(lib.tracks.length, 8);
+  assert.equal(lib.scanning, false);
+  // The stale scan must not have cleared the newer scan's abort controller
+  // on its way out, which would leave the new one uncancellable.
+  assert.equal(lib._abort, null);
+});
+
+test('a webkitdirectory row is playable the moment it appears, not when the scan ends', async () => {
+  // The one path where the File is already in hand. Holding the session map
+  // back until the end meant every row that appeared during a long scan
+  // reported "pick the folder again" when clicked.
+  const scope = fakeIdb();
+  const lib = new MusicLibrary({ scope });
+  const withPath = (i) => Object.assign(fakeFile(`${i}.mp3`), { webkitRelativePath: `My Music/${i}.mp3` });
+  const files = Array.from({ length: 90 }, (_, i) => withPath(i));
+
+  let playableMidScan = null;
+  lib.subscribe(async () => {
+    if (!lib.scanning || playableMidScan !== null || !lib.tracks.length) return;
+    playableMidScan = !!await lib.openFile(lib.tracks[0]);
+  });
+  await lib.adoptFileList(files);
+  assert.equal(playableMidScan, true);
+});

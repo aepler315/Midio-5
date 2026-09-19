@@ -161,12 +161,21 @@ test('a batch written mid-scan merges with what the library already knew', async
 
   // The scanner knows none of that and offers a plain filename guess, the
   // same as on a first scan.
-  assert.equal(await putTracks([track({ path: 'a.mp3', title: null, tagSource: 'filename' })], scope), 1);
+  // Returns the MERGED rows, which is what a streaming caller must publish
+  // -- a raw scan record carries playCount 0 and would overwrite history.
+  const merged = await putTracks([track({ path: 'a.mp3', title: null, tagSource: 'filename' })], scope);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].playCount, 4);
+  assert.equal(merged[0].title, 'Fetched');
   const [row] = await listTracks('r', scope);
   assert.equal(row.playCount, 4);
   assert.equal(row.title, 'Fetched');
-  assert.equal(await putTracks([], scope), 0);
-  assert.equal(await putTracks(null, scope), 0);
+  assert.deepEqual(await putTracks([], scope), []);
+  assert.deepEqual(await putTracks(null, scope), []);
+  // Null, not an empty array: "nowhere to store this" and "nothing to
+  // store" are different answers, and a streaming scan has to be able to
+  // tell them apart before it prunes.
+  assert.equal(await putTracks([track()], {}), null);
 });
 
 test('pruning removes only what a completed scan did not find, and only in its root', async () => {

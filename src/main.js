@@ -3169,12 +3169,21 @@ function openLibrary() {
   libraryPanel?.focusSearch();
 }
 
-function closeLibrary() {
+/**
+ * Hide the library.
+ *
+ * `cancelScan` separates the two reasons the panel closes. Dismissing it --
+ * the close button, Escape -- abandons a scan in flight, because closing it
+ * over a large drive should stop reading the drive and not merely stop
+ * showing it. Closing it to PLAY something is not that: the whole point of
+ * streaming results is that you can start the first song you recognise, and
+ * having that silently end the import would leave the rest of the folder
+ * unscanned until someone thought to rescan it by hand.
+ */
+function closeLibrary({ cancelScan = true } = {}) {
   if (libraryPanelEl?.open) libraryPanelEl.close();
   libraryPanelEl?.classList.add('hidden');
-  // Abandon a scan in flight: closing the panel over a large drive should
-  // stop reading it, not merely stop showing it.
-  musicLibrary.cancel();
+  if (cancelScan) musicLibrary.cancel();
   autoTagAbort?.abort?.();
   autoTagAbort = null;
 }
@@ -3201,7 +3210,9 @@ async function playLibraryTrack(track) {
     return;
   }
   playingFromLibrary = track;
-  closeLibrary();
+  // The scan keeps running: playing the first track you recognise is the
+  // reason the rows stream in at all.
+  closeLibrary({ cancelScan: false });
   handleFiles([file]);
 }
 
