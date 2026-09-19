@@ -21,6 +21,20 @@
 // the sim considers "now" -- including output-latency compensation.
 
 export const RECAL_MEASURES = 8;
+
+/** What each half of the pass asks for. The wording is the measurement:
+ *  one half times the sound reaching the ear, the other the picture
+ *  reaching the eye, and the difference between them is the answer. */
+export const PHASE_COPY = {
+  ear: {
+    title: 'Tap the kick, when you HEAR it.',
+    body: 'The low drum. Go by your ears — ignore what the screen is doing.',
+  },
+  eye: {
+    title: 'Now tap when the ring FLASHES.',
+    body: 'Go by your eyes this time. The difference between the two is your delay.',
+  },
+};
 const BEATS_PER_MEASURE = 4;
 // Fade the instruction once the player has clearly read it; the count is the
 // useful part after that.
@@ -42,6 +56,8 @@ export class RecalibrationOverlay {
      *  The Sync pass puts the Bluetooth delay it is deriving here, so the
      *  number the tapping is setting is visible while it is being set. */
     this.syncNote = '';
+    /** Which half of the pass is running. The caller owns the transition. */
+    this.phase = 'ear';
     this._buildPips();
   }
 
@@ -56,6 +72,31 @@ export class RecalibrationOverlay {
    * @param {number} beatPeriodMs current beat length (JumpController's EMA)
    * @param {number} confidence   BeatAnchor.confidence at entry, for the delta
    */
+  /** Switch halves. Re-shows the instruction, because it has changed. */
+  setPhase(phase) {
+    const next = phase === 'eye' ? 'eye' : 'ear';
+    if (next === this.phase) return;
+    this.phase = next;
+    const { instruction, marker, number } = this.els;
+    instruction?.classList.remove('faded');
+    this._phaseShownAtMs = null;
+    this._writeInstruction();
+    // The count belongs to the ear half; the eye half has a target instead,
+    // and two big things pulsing at once would give the eye a choice.
+    marker?.classList.toggle('hidden', next !== 'eye');
+    if (number) number.style.opacity = next === 'eye' ? '0' : '';
+  }
+
+  _writeInstruction() {
+    const { instruction } = this.els;
+    if (!instruction) return;
+    const copy = PHASE_COPY[this.phase] || PHASE_COPY.ear;
+    instruction.innerHTML = '';
+    const strong = document.createElement('strong');
+    strong.textContent = copy.title;
+    instruction.append(strong, document.createTextNode(copy.body));
+  }
+
   start(nowMs, beatPeriodMs, confidence = 0) {
     if (this.active) return;
     this.active = true;
@@ -66,6 +107,11 @@ export class RecalibrationOverlay {
     const { panel, instruction, status } = this.els;
     instruction?.classList.remove('faded');
     this.syncNote = '';
+    this.phase = 'ear';
+    this._phaseShownAtMs = null;
+    this._writeInstruction();
+    this.els.marker?.classList.add('hidden');
+    if (this.els.number) this.els.number.style.opacity = '';
     if (status) status.textContent = '';
     panel?.classList.remove('hidden');
     panel?.setAttribute('aria-hidden', 'false');
@@ -90,7 +136,7 @@ export class RecalibrationOverlay {
    * @returns {boolean} false once the eight measures are done (the caller
    *   should stop() and, if it likes, report the confidence delta).
    */
-  update(nowMs, { beatPeriodMs = null, confidence = 0 } = {}) {
+  update(nowMs, { beatPeriodMs = null, confidence = 0, beatPulse01 = 0 } = {}) {
     if (!this.active) return false;
     // Track live tempo so a drifting/retuning estimate doesn't desynchronize
     // the count from what's actually playing.
@@ -107,7 +153,13 @@ export class RecalibrationOverlay {
 
     const { number, instruction, pips, confFill, status } = this.els;
 
-    if (number) {
+    // The count belongs to the ear half only. Without this guard the
+    // per-frame swell below rewrites the opacity that setPhase() zeroed,
+    // and the big number ghosts through the eye half -- a second thing
+    // pulsing next to the one the player is trying to time.
+    if (number && this.phase === 'eye') {
+      number.style.opacity = '0';
+    } else if (number) {
       if (measure !== this._lastMeasure) {
         number.textContent = String(measure);
         this._lastMeasure = measure;
@@ -127,7 +179,22 @@ export class RecalibrationOverlay {
       this._lastBeat = beat;
     }
 
-    if (instruction && measure > INSTRUCTION_MEASURES) instruction.classList.add('faded');
+    // The instruction fades once it has clearly been read -- measured from
+    // when THIS phase's wording went up, not from the start of the pass, or
+    // the eye half's instruction would arrive already faded.
+    if (this._phaseShownAtMs === null) this._phaseShownAtMs = nowMs;
+    const phaseElapsed = nowMs - this._phaseShownAtMs;
+    if (instruction && phaseElapsed > INSTRUCTION_MEASURES * this.beatPeriodMs * BEATS_PER_MEASURE) {
+      instruction.classList.add('faded');
+    }
+
+    // The eye half's target, on the visual clock the caller hands in.
+    const { marker } = this.els;
+    if (marker && this.phase === 'eye') {
+      const lit = Math.max(0, Math.min(1, beatPulse01));
+      marker.style.opacity = (0.12 + 0.88 * lit).toFixed(3);
+      marker.style.transform = `scale(${(0.82 + 0.28 * lit).toFixed(3)})`;
+    }
     if (confFill) confFill.style.width = `${Math.round(Math.max(0, Math.min(1, confidence)) * 100)}%`;
     if (status) {
       // The caller's line wins when there is one: a live delay readout is

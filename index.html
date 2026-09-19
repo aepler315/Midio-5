@@ -194,15 +194,18 @@
          the existing BeatAnchor handler untouched. The music never stops. -->
     <div id="recalPanel" class="recalPanel hidden" aria-hidden="true">
       <div id="recalNumber" class="recalNumber">1</div>
-      <!-- The instruction has to name what the pass MEASURES. Taps are
-           matched against the chart's kicks, so asking for "the kick, the
-           snare, wherever your hand wants to go" -- as this did -- sent a
-           snare-tapper's taps into the gaps between kicks, where they are
-           discarded and the delay never moves. -->
+      <!-- The eye phase's target. Driven from the chart's kicks on the
+           VISUAL clock, so tapping it measures the path from "the app drew
+           this beat" to "a person saw it" -- the term a by-ear pass cannot
+           reach. Hidden during the ear phase. -->
+      <div id="recalMarker" class="recalMarker hidden" aria-hidden="true"></div>
+
+      <!-- The instruction has to name what the pass MEASURES, and it
+           measures two different things in turn. Written from JS per phase. -->
       <p id="recalInstruction" class="recalInstruction">
         <strong>Tap the kick, when you hear it.</strong>
         The low drum, not straight time &mdash; and go by your ears, not by
-        what the screen is doing. That gap is what this is measuring.
+        what the screen is doing.
       </p>
       <div id="recalPips" class="recalPips" aria-hidden="true"></div>
       <div class="recalConf"><div id="recalConfFill" class="recalConfFill"></div></div>

@@ -54,6 +54,7 @@ function h264Chunk(size = 512) {
 
 function fakeScope({
   supported = [H264], withRequestFrame = true, chunkOnStart = true, failConstruct = false,
+  deferStop = false,
 } = {}) {
   const created = [];
   let clock = 1000;
@@ -76,8 +77,12 @@ function fakeScope({
       // A real MediaRecorder always flushes what it is holding as a final
       // `dataavailable` before `onstop`. Without that here, a recording
       // stopped inside one timeslice would look like it captured nothing.
-      if (chunkOnStart) this.ondataavailable?.({ data: h264Chunk() });
-      this.onstop?.();
+      const finish = () => {
+        if (chunkOnStart) this.ondataavailable?.({ data: h264Chunk() });
+        this.onstop?.();
+      };
+      if (deferStop) this.finishStop = finish;
+      else finish();
     }
   }
   const scope = {
@@ -271,6 +276,27 @@ test('start is not re-entrant and frames outside a recording are ignored', async
   rec.captureFrame(); // after stop
   assert.equal(canvas.draws.length, after);
   assert.equal(await rec.stop(), null, 'stopping twice is not an error');
+});
+
+test('a new recording cannot replace a session while stop is finalizing', async () => {
+  const scope = fakeScope({ deferStop: true });
+  const rec = new SongRecorder({ stage, scope });
+  assert.equal(rec.start({ presetId: '720p' }), true);
+  const firstRecorder = scope.recorders[0];
+  const stopped = rec.stop();
+
+  assert.equal(rec.recording, false);
+  assert.equal(rec.finalizing, true);
+  assert.equal(rec.start({ presetId: 'car' }), false);
+  assert.equal(scope.recorders.length, 1, 'the pending session must retain its fields');
+  assert.equal(rec.stop(), stopped, 'repeated stop returns the same pending result');
+
+  firstRecorder.finishStop();
+  const result = await stopped;
+  assert.equal(result.preset.id, '720p');
+  assert.equal(rec.finalizing, false);
+  assert.equal(rec.start({ presetId: 'car' }), true);
+  assert.equal(scope.recorders.length, 2);
 });
 
 test('cancelling throws the recording away and releases everything', async () => {
