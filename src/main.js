@@ -27,8 +27,8 @@ import {
 import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
 import {
-  DEFAULT_STAGE_PRESET, resolveStagePreset, stageDims, isRetroPreset, isPalettePreset,
-  displayLimitedSize,
+  DEFAULT_STAGE_PRESET, resolveStagePreset, stageDims, isAutoPreset, isRetroPreset,
+  isPalettePreset, displayLimitedSize, autoStageSize, shouldSuggestLandscape,
 } from './render/StagePresets.js';
 import { quantizeCanvas } from './render/PaletteQuantize.js';
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
@@ -124,6 +124,7 @@ const seedInputEl = document.getElementById('seedInput');
 const seedRandomBtnEl = document.getElementById('seedRandomBtn');
 const stageResEl = document.getElementById('stageRes');
 const stageFpsEl = document.getElementById('stageFps');
+const landscapeHintEl = document.getElementById('landscapeHint');
 const debugOverlayEl = document.getElementById('debugOverlay');
 const fpsHudEl = document.getElementById('fpsHud');
 const sfFileInputEl = document.getElementById('sfFileInput');
@@ -353,13 +354,15 @@ paramBus.rendererMode = rendererMode;
 // starts, so the loader is never a dead gradient.
 startTitleBackdrop();
 
+const isCoarsePointer = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+
 // Perf tier: ?perf=lite|high overrides; otherwise a coarse-pointer/small-
 // viewport device heuristic starts a phone a rung down so the first
 // second of play is already smooth instead of janky-then-corrected.
 const perfStartLevel = resolvePerfStartLevel(
   typeof location !== 'undefined' ? location.search : '',
   {
-    isCoarsePointer: typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches,
+    isCoarsePointer,
     isSmallViewport: typeof window !== 'undefined' && Math.min(window.innerWidth || 9999, window.innerHeight || 9999) < 700,
   },
 );
@@ -388,7 +391,7 @@ function storedFpsCap() {
 function readStagePreset() {
   const fromUi = resolveStagePreset(stageResEl?.value);
   if (fromUi != null) return fromUi;
-  // 1080p default: a real perf floor for a friend's laptop iGPU.
+  // Auto is the default; a remembered manual choice still wins at boot.
   return storedStagePreset() ?? DEFAULT_STAGE_PRESET;
 }
 
@@ -415,6 +418,7 @@ let lastDrawMs = 0;
 function fitCanvas() {
   const preset = readStagePreset();
   const dims = stageDims(preset);
+  const adaptive = isAutoPreset(preset);
   const retro = isRetroPreset(preset);
   // Set BEFORE resolutionScale is read: in 8-bit mode the governor is pinned
   // to its cheapest rung, and the scale it reports depends on that level.
@@ -430,12 +434,11 @@ function fitCanvas() {
   // browser will ever draw. Rendering those pixels costs power and shows
   // nothing. A desktop displaying the stage at or above its preset size is
   // unaffected -- this only ever reduces.
-  const fit = displayLimitedSize(
-    dims.w, dims.h,
-    canvas.clientWidth, canvas.clientHeight,
-    typeof devicePixelRatio === 'number' ? devicePixelRatio : 1,
-  );
-  const scale = perfGovernor ? perfGovernor.resolutionScale(dims.h) : 1;
+  const dpr = typeof devicePixelRatio === 'number' ? devicePixelRatio : 1;
+  const fit = adaptive
+    ? autoStageSize(canvas.clientWidth, canvas.clientHeight, dpr, isCoarsePointer)
+    : displayLimitedSize(dims.w, dims.h, canvas.clientWidth, canvas.clientHeight, dpr);
+  const scale = perfGovernor ? perfGovernor.resolutionScale(fit.h, { adaptive }) : 1;
   const w = Math.round(fit.w * scale);
   const h = Math.round(fit.h * scale);
   if (canvas.width !== w || canvas.height !== h) {
@@ -453,6 +456,10 @@ function fitCanvas() {
   // backing store to the viewport (see #stage.retro in style.css).
   canvas.classList.toggle('retro', retro);
   if (perfGovernor) perfGovernor.canvasWidth = w;
+  landscapeHintEl?.classList.toggle(
+    'is-visible',
+    shouldSuggestLandscape(canvas.clientWidth, canvas.clientHeight),
+  );
 }
 
 function readPinnedSeed() {

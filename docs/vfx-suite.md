@@ -124,10 +124,12 @@ wait, not JavaScript draw cost. Its threshold is **18.5 ms**.
 | 5 | Disable optional phenomena and RainbowBrush |
 | 6 | Haze 3→1 layers; disable heavy finishing/echo/blur; reduce terrain shading to its retained catchlight |
 
-Above 2560 backing-store pixels, column width doubles (maximum 128).
-Stage presets taller than 1080p can also reduce resolution at levels 3/5.
-Retro mode pins level 6, particle multiplier 0.35 and 128 px columns;
-optional retro palette quantization only runs with that mode.
+Above 2560 backing-store pixels, column width doubles (maximum 128). Every
+preset is capped to the pixels its contained 16:9 stage can actually present;
+manual presets otherwise remain fixed. Auto alone reduces its fitted backing
+store to 85%, 75% and 62.5% at levels 2, 3 and 4. Retro mode pins level 6,
+particle multiplier 0.35 and 128 px columns; optional retro palette
+quantization only runs with that mode.
 
 Some capabilities are historical: the painterly renderer no longer draws
 fracture cracks, although the timing engine and governor accessor remain.
@@ -181,6 +183,7 @@ is a fresh destination state, not replay of every earlier random particle.
 | Governor shedding, grace and recovery | `test/perf-governor.test.js` |
 | Observed particle draw counts | `test/perfGovernorConsumers.test.js` |
 | Interior sky exclusions and retained shafts | `test/interiorSky.test.js` |
+| Specialized-world blit/shading argument alignment and material mode | `test/worldKindShading.test.js` |
 | Heat displacement envelope | `test/heatDistortionComposite.test.js` |
 | World material light pixels | `npm run test:lighting` |
 | Static shading containment | `npm run test:shading` |

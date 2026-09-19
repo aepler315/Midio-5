@@ -8,8 +8,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  STAGE_PRESETS, RETRO_PRESET, PALETTE_PRESET, DEFAULT_STAGE_PRESET,
-  resolveStagePreset, stageDims, isRetroPreset, isPalettePreset, displayLimitedSize,
+  STAGE_PRESETS, AUTO_PRESET, RETRO_PRESET, PALETTE_PRESET, DEFAULT_STAGE_PRESET,
+  resolveStagePreset, stageDims, isAutoPreset, isRetroPreset, isPalettePreset,
+  displayLimitedSize, autoStageSize, shouldSuggestLandscape,
 } from '../src/render/StagePresets.js';
 
 const indexHtml = readFileSync(
@@ -30,6 +31,16 @@ test('every option in the stage-resolution menu resolves to a real preset', () =
     assert.notEqual(preset, null, `option value "${v}" resolves to no preset`);
     assert.ok(stageDims(preset).w > 0, `option "${v}" has no dimensions`);
   }
+});
+
+test('Auto is the default stage mode exposed by the menu', () => {
+  const select = indexHtml.match(/<select id="stageRes"[\s\S]*?<\/select>/);
+  assert.ok(select);
+  assert.match(select[0], /<option value="auto" selected>Auto<\/option>/);
+  assert.equal(DEFAULT_STAGE_PRESET, AUTO_PRESET);
+  assert.equal(resolveStagePreset('auto'), AUTO_PRESET);
+  assert.equal(isAutoPreset(AUTO_PRESET), true);
+  assert.equal(isAutoPreset(1080), false);
 });
 
 test('the menu offers both 8-bit modes, and only those two are retro', () => {
@@ -161,4 +172,28 @@ test('displayLimitedSize: leaves the already-tiny 8-bit buffer alone', () => {
   // 320x180 is below anything a display would limit it to, so the mode keeps
   // the exact buffer it exists to pin.
   assert.deepEqual(displayLimitedSize(320, 180, 844, 390, 3), { w: 320, h: 180 });
+});
+
+test('autoStageSize matches visible desktop demand without exceeding 1440p', () => {
+  assert.deepEqual(autoStageSize(1920, 1080, 1, false), { w: 1920, h: 1080 });
+  assert.deepEqual(autoStageSize(3840, 2160, 1, false), { w: 2560, h: 1440 });
+});
+
+test('autoStageSize treats a coarse-pointer DPR as density, not useful detail', () => {
+  const portrait = autoStageSize(390, 844, 3, true);
+  assert.deepEqual(portrait, { w: 585, h: 329 });
+  const landscape = autoStageSize(1280, 720, 3, true);
+  assert.equal(landscape.h, 720, 'touch Auto quality is capped at 720p');
+  assert.equal(landscape.w, 1280);
+});
+
+test('autoStageSize preserves a usable fallback before layout is measured', () => {
+  assert.deepEqual(autoStageSize(0, 0, 3, true), { w: 1920, h: 1080 });
+});
+
+test('portrait guidance reaches tall phones but not tablets or landscape screens', () => {
+  assert.equal(shouldSuggestLandscape(390, 844), true, 'a tall modern phone needs the hint');
+  assert.equal(shouldSuggestLandscape(540, 960), true, 'the old 820px height cutoff must stay gone');
+  assert.equal(shouldSuggestLandscape(844, 390), false, 'already landscape');
+  assert.equal(shouldSuggestLandscape(768, 1024), false, 'a portrait tablet has enough stage height');
 });
