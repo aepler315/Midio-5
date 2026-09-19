@@ -37,6 +37,8 @@ const FALLBACK_SAMPLE_FPS = 60;
  *  song, rare enough not to fragment a long recording into thousands of
  *  blobs. */
 const TIMESLICE_MS = 1000;
+/** Keep long exports bounded even when a browser retains every recorder chunk in memory. */
+export const MAX_RECORDING_BYTES = 512 * 1024 * 1024;
 
 export class SongRecorder {
   /**
@@ -122,6 +124,11 @@ export class SongRecorder {
       this.bytes = 0;
       this._recorder.ondataavailable = (e) => {
         if (!e.data?.size) return;
+        if (this.bytes + e.data.size > MAX_RECORDING_BYTES) {
+          this.error = 'Recording reached the 512 MB export limit.';
+          if (this._recorder?.state !== 'inactive') this.stop();
+          return;
+        }
         this._chunks.push(e.data);
         this.bytes += e.data.size;
       };
