@@ -2795,3 +2795,24 @@ html, body {
 @media (max-width: 720px) {
   .recordStatus { display: none; } /* the dot on the button is enough */
 }
+
+/* The status line while a folder is still being read. Brighter than the
+   resting count, because it is the answer to "is this working" and it is
+   the only thing on screen that is moving. */
+.libraryStatus.isScanning { color: var(--text-secondary); }
+
+/* A disabled ghost button has to look disabled. Rescan and Auto-tag are
+   both turned off while a folder is being read -- one would restart the
+   walk it is already doing, the other would work from a list that is still
+   half-written -- and a button that refuses a click without saying why is
+   worse than one that is visibly out of reach. */
+.ghostbtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ghostbtn:disabled:hover {
+  border-color: var(--border-subtle);
+  background: transparent;
+  color: inherit;
+}

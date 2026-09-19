@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import {
   libraryDbSupported, directoryHandlesSupported, rootIdFor, addRoot, listRoots, removeRoot,
   replaceTracks, listTracks, updateTrack, updateTracks, carryForward,
+  putTracks, pruneTracks,
 } from '../src/library/LibraryDB.js';
 import { fakeIdb } from './helpers/fakeLibraryIdb.js';
 
@@ -151,4 +152,44 @@ test('a batch of patches merges into the rows it names and skips the rest', asyn
   assert.equal(rows.find((t) => t.path === 'b.mp3').artist, null);
   assert.equal(await updateTracks([], scope), 0);
   assert.equal(await updateTrack('r\u0000missing.mp3', { artist: 'x' }, scope), false);
+});
+
+test('a batch written mid-scan merges with what the library already knew', async () => {
+  const scope = fakeIdb();
+  await replaceTracks('r', [track({ path: 'a.mp3' })], scope);
+  await updateTrack('r\u0000a.mp3', { playCount: 4, tagSource: 'auto', title: 'Fetched' }, scope);
+
+  // The scanner knows none of that and offers a plain filename guess, the
+  // same as on a first scan.
+  assert.equal(await putTracks([track({ path: 'a.mp3', title: null, tagSource: 'filename' })], scope), 1);
+  const [row] = await listTracks('r', scope);
+  assert.equal(row.playCount, 4);
+  assert.equal(row.title, 'Fetched');
+  assert.equal(await putTracks([], scope), 0);
+  assert.equal(await putTracks(null, scope), 0);
+});
+
+test('pruning removes only what a completed scan did not find, and only in its root', async () => {
+  const scope = fakeIdb();
+  await putTracks([
+    track({ rootId: 'A', path: 'keep.mp3' }),
+    track({ rootId: 'A', path: 'gone.mp3' }),
+    track({ rootId: 'B', path: 'other.mp3' }),
+  ], scope);
+
+  assert.equal(await pruneTracks('A', ['keep.mp3'], scope), 1);
+  assert.deepEqual((await listTracks('A', scope)).map((t) => t.path), ['keep.mp3']);
+  // A different root's tracks are none of this scan's business.
+  assert.deepEqual((await listTracks('B', scope)).map((t) => t.path), ['other.mp3']);
+  // Nothing stale is a no-op, and a Set is accepted as readily as an array.
+  assert.equal(await pruneTracks('A', new Set(['keep.mp3']), scope), 0);
+});
+
+test('a half-finished scan leaves a half-populated library, not an empty one', async () => {
+  // The point of writing batches as they are found: a walk abandoned part
+  // way is still worth something on the next visit.
+  const scope = fakeIdb();
+  await putTracks([track({ path: '1.mp3' }), track({ path: '2.mp3' })], scope);
+  // No prune, because the walk never finished and the path set is partial.
+  assert.equal((await listTracks('r', scope)).length, 2);
 });

@@ -3101,6 +3101,7 @@ musicLibrary.subscribe(() => {
     trackCount: musicLibrary.tracks.length,
   });
   libraryPanel.setTracks(musicLibrary.tracks);
+  libraryPanel.setScanning(musicLibrary.scanning, musicLibrary.scannedCount);
 });
 
 function openLibrary() {
@@ -3156,21 +3157,27 @@ async function chooseMusicFolder() {
     libraryFolderInputEl?.click();
     return;
   }
-  unlockAudio();
-  libraryPanel?.setBusy(true, 'Reading folder…');
   try {
-    const tracks = await musicLibrary.pickFolder({
-      onProgress: (count) => libraryPanel?.setStatus(`Reading folder… ${count.toLocaleString()} tracks`),
+    await musicLibrary.pickFolder({
+      // The picker has closed and the walk is about to start: open the
+      // library NOW. It used to open only once the scan finished, which on
+      // a real music folder is minutes of a screen that looks like the
+      // button did nothing.
+      // The status line is the panel's own: see LibraryPanel.setScanning,
+      // which has the folder name and the running total together.
+      onRootChosen: () => openLibrary(),
     });
-    if (tracks) openLibrary();
   } catch (err) {
     console.warn('[library] folder scan failed', err);
     showErrorBanner('Could not read that folder: ' + (err?.message || err));
   } finally {
-    libraryPanel?.setBusy(false);
     libraryPanel?.render();
     syncFolderControls();
   }
+  // Audio is booted after the picker, never before it: constructing the
+  // engine takes time the browser counts against the gesture that opened
+  // the picker.
+  unlockAudio();
 }
 
 async function rescanLibrary() {
@@ -3180,9 +3187,7 @@ async function rescanLibrary() {
       showErrorBanner('Allow access to your music folder to rescan it.');
       return;
     }
-    await musicLibrary.rescan({
-      onProgress: (count) => libraryPanel?.setStatus(`Rescanning… ${count.toLocaleString()} tracks`),
-    });
+    await musicLibrary.rescan();
   } finally {
     libraryPanel?.setBusy(false);
     libraryPanel?.render();
@@ -3240,10 +3245,7 @@ libraryFolderInputEl?.addEventListener('change', async (e) => {
   unlockAudio();
   libraryPanel?.setBusy(true, 'Reading folder…');
   try {
-    await musicLibrary.adoptFileList(files, {
-      onProgress: (count) => libraryPanel?.setStatus(`Reading folder… ${count.toLocaleString()} tracks`),
-    });
-    openLibrary();
+    await musicLibrary.adoptFileList(files, { onRootChosen: () => openLibrary() });
   } finally {
     libraryPanel?.setBusy(false);
     libraryPanel?.render();
