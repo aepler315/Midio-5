@@ -179,20 +179,23 @@ export async function removeRoot(rootId, scope = globalThis) {
  */
 export async function putTracks(tracks, scope = globalThis) {
   const list = [...(tracks || [])].filter(Boolean);
-  if (!list.length) return 0;
+  if (!list.length) return [];
   const db = await open(scope);
-  if (!db) return 0;
+  if (!db) return null;
   try {
     const read = db.transaction(TRACKS, 'readonly').objectStore(TRACKS);
     const priors = await Promise.all(list.map((t) => wrap(read.get(t.key))));
     const tx = db.transaction(TRACKS, 'readwrite');
     const store = tx.objectStore(TRACKS);
-    list.forEach((track, i) => {
-      store.put(priors[i] ? carryForward(priors[i], track) : track);
-    });
-    return (await done(tx)) ? list.length : 0;
+    // The MERGED rows, not the raw scan records. A caller streaming a scan
+    // into a view has to publish these: a fresh scan record carries
+    // playCount 0, and playing a track off one would compute its next play
+    // count from that zero and write 1 over a stored 7.
+    const merged = list.map((track, i) => (priors[i] ? carryForward(priors[i], track) : track));
+    for (const row of merged) store.put(row);
+    return (await done(tx)) ? merged : null;
   } catch {
-    return 0;
+    return null;
   } finally {
     db.close();
   }
@@ -237,7 +240,7 @@ export async function replaceTracks(rootId, tracks, scope = globalThis) {
   const list = [...(tracks || [])].filter(Boolean);
   const written = await putTracks(list, scope);
   await pruneTracks(rootId, list.map((t) => t.path), scope);
-  return written;
+  return written ? written.length : 0;
 }
 /** What survives a rescan: everything the player or the network earned,
  *  never anything the filesystem is authoritative about. Exported because

@@ -135,6 +135,7 @@ export class MusicLibrary {
     const signal = this._beginWork();
     const gen = this._scanGen;
     const mine = () => gen === this._scanGen;
+    let allStored = true;
     this.tracks = [];
     this.sessionFiles = new Map();
     this.scanning = true;
@@ -142,30 +143,43 @@ export class MusicLibrary {
     this._emit();
     onRootChosen?.(this.root);
 
-    const { tracks, handles } = await scanFileList(rootId, list, {
-      signal,
-      onProgress: (count, path) => {
-        if (!mine()) return;
-        this.scannedCount = count;
-        onProgress?.(count, path);
-      },
-      onBatch: async (batch) => {
-        if (!mine()) return;
-        this.tracks.push(...batch);
-        this._emit();
-        await putTracks(batch, this.scope);
-      },
-    });
+    try {
+      const { tracks } = await scanFileList(rootId, list, {
+        signal,
+        onProgress: (count, path) => {
+          if (!mine()) return;
+          this.scannedCount = count;
+          onProgress?.(count, path);
+        },
+        onBatch: async (batch, batchFiles) => {
+          if (!mine()) return;
+          // Before the rows are published, not after the whole scan: this
+          // is the only path where the File is already in hand, and a row
+          // on screen that cannot be played is worse than one that is not
+          // on screen yet.
+          for (const [path, file] of batchFiles) this.sessionFiles.set(path, file);
+          const merged = await putTracks(batch, this.scope);
+          if (!mine()) return;
+          if (!merged) allStored = false;
+          this.tracks.push(...(merged || batch));
+          this._emit();
+        },
+      });
 
-    if (mine()) {
-      this.sessionFiles = handles;
-      if (!signal.aborted) await pruneTracks(rootId, tracks.map((t) => t.path), this.scope);
-      this.tracks = await listTracks(rootId, this.scope);
-      this.scanning = false;
-      this._endWork();
-      this._emit();
+      if (!mine()) return this.tracks;
+      if (!signal.aborted && allStored) await pruneTracks(rootId, tracks.map((t) => t.path), this.scope);
+      if (!mine()) return this.tracks;
+      const rows = await listTracks(rootId, this.scope);
+      if (!mine()) return this.tracks;
+      this.tracks = rows;
+      return this.tracks;
+    } finally {
+      if (mine()) {
+        this.scanning = false;
+        this._endWork();
+        this._emit();
+      }
     }
-    return this.tracks;
   }
 
   /** Re-read the open folder. What the player earned is carried across by
@@ -179,45 +193,73 @@ export class MusicLibrary {
     const gen = this._scanGen;
     const rootId = this.root.id;
     const mine = () => gen === this._scanGen;
+    /** Cleared by any batch the store refused. A scan that did not manage
+     *  to write everything it found has no business deciding what is
+     *  missing from disk. */
+    let allStored = true;
 
     this.tracks = [];
     this.scanning = true;
     this.scannedCount = 0;
     this._emit();
 
-    const scanned = await scanDirectory(rootId, this.handle, {
-      signal,
-      onProgress: (count, path) => {
-        if (!mine()) return;
-        this.scannedCount = count;
-        onProgress?.(count, path);
-      },
-      onBatch: async (batch) => {
-        if (!mine()) return;
-        this.tracks.push(...batch);
-        this._emit();
-        // Persisted as they are found, so a scan abandoned half way leaves
-        // a half-populated library rather than nothing.
-        await putTracks(batch, this.scope);
-      },
-    });
+    try {
+      const scanned = await scanDirectory(rootId, this.handle, {
+        signal,
+        onProgress: (count, path) => {
+          if (!mine()) return;
+          this.scannedCount = count;
+          onProgress?.(count, path);
+        },
+        onBatch: async (batch) => {
+          if (!mine()) return;
+          // Persisted as they are found, so a scan abandoned half way
+          // leaves a half-populated library rather than nothing -- and the
+          // MERGED rows are what gets published, because a raw scan record
+          // carries playCount 0 and playing a track off one would write 1
+          // over a stored 7.
+          const merged = await putTracks(batch, this.scope);
+          if (!mine()) return;
+          if (!merged) allStored = false;
+          this.tracks.push(...(merged || batch));
+          this._emit();
+        },
+      });
 
-    if (mine()) {
+      // Re-checked after every await below. A newer scan starting during
+      // the prune or the reload would otherwise be clobbered by this one
+      // finishing -- including its abort controller, via _endWork.
+      if (!mine()) return this.tracks;
       // Only a COMPLETED walk knows the full set of paths, so only a
-      // completed walk may delete what is missing from it.
-      if (!signal.aborted) await pruneTracks(rootId, scanned.map((t) => t.path), this.scope);
+      // completed walk may delete what is missing from it -- and only one
+      // whose writes all landed.
+      if (!signal.aborted && allStored) await pruneTracks(rootId, scanned.map((t) => t.path), this.scope);
+      if (!mine()) return this.tracks;
       // Re-read rather than keeping the scan records: what the view should
       // show is the merged row, with the play counts and auto-tags that
       // carryForward preserved.
-      this.tracks = await listTracks(rootId, this.scope);
-      this.scanning = false;
-      this._endWork();
-      this._emit();
+      const rows = await listTracks(rootId, this.scope);
+      if (!mine()) return this.tracks;
+      this.tracks = rows;
+      return this.tracks;
+    } finally {
+      // A rejecting directory iterator -- access revoked mid-walk -- would
+      // otherwise leave the panel labelled as reading forever, with Rescan
+      // and Auto-tag disabled and no scan left to re-enable them.
+      if (mine()) {
+        this.scanning = false;
+        this._endWork();
+        this._emit();
+      }
     }
-    return this.tracks;
   }
 
   async forget() {
+    // Invalidate first. A scan already reading a file will flush its last
+    // batch after the root is gone, and without a new generation that batch
+    // still looks current -- it would write orphan rows back under the
+    // deleted root and repopulate `tracks` from them.
+    this.cancel();
     if (this.root) await removeRoot(this.root.id, this.scope);
     this.root = null;
     this.handle = null;
@@ -305,6 +347,10 @@ export class MusicLibrary {
   /** Stop any scan in flight -- closing the panel over a ten-thousand-track
    *  drive should actually stop reading it. */
   cancel() {
+    // The generation moves too, not just the signal. `signal.aborted` is
+    // only read between files, so a flush already under way finishes -- and
+    // it must not be allowed to look like the current scan when it does.
+    this._scanGen++;
     this._abort?.abort?.();
     this._abort = null;
     if (this.scanning) {

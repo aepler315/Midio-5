@@ -245,12 +245,18 @@ export async function scanFileList(rootId, files, {
   const handles = new Map();
   let batch = [];
   let lastFlushMs = now();
+  let batchFiles = new Map();
   const flush = async () => {
     if (!batch.length) return;
     const sending = batch;
+    const sendingFiles = batchFiles;
     batch = [];
+    batchFiles = new Map();
     lastFlushMs = now();
-    await onBatch?.(sending);
+    // The Files come with their tracks. Held back until the end, every row
+    // that appeared during the scan would report "pick the folder again"
+    // when clicked, on the one path where the file is already in hand.
+    await onBatch?.(sending, sendingFiles);
   };
 
   for (const file of [...(files || [])]) {
@@ -267,6 +273,7 @@ export async function scanFileList(rootId, files, {
     tracks.push(track);
     batch.push(track);
     handles.set(path, file);
+    batchFiles.set(path, file);
     onProgress?.(tracks.length, path);
     if (batch.length >= batchSize || now() - lastFlushMs >= batchMs) await flush();
   }

@@ -284,6 +284,11 @@ export class JumpController {
    *  same source ObstacleSpawner/NoteChart feed JumpPlanner/replayTakeoff-
    *  Triggers), so landings can be scheduled onto whichever of them is
    *  next rather than only ever guessed from the beat-period EMA. */
+  /** The chart's kick onsets, ascending. Read by the Sync pass, which
+   *  measures the player's taps against them -- they are the ground truth
+   *  the overlay already tells people to tap along with. */
+  get kickTimes() { return this._kickTimes; }
+
   setKickTimes(kickTimes) {
     this._kickTimes = kickTimes || [];
     this._kickIdx = 0;

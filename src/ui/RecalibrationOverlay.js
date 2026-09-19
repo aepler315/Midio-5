@@ -38,6 +38,10 @@ export class RecalibrationOverlay {
     this._lastBeat = -1;
     this._startConfidence = 0;
     this._raf = 0;
+    /** A line the caller owns, shown in place of the generic progress text.
+     *  The Sync pass puts the Bluetooth delay it is deriving here, so the
+     *  number the tapping is setting is visible while it is being set. */
+    this.syncNote = '';
     this._buildPips();
   }
 
@@ -61,6 +65,7 @@ export class RecalibrationOverlay {
     this._startConfidence = confidence;
     const { panel, instruction, status } = this.els;
     instruction?.classList.remove('faded');
+    this.syncNote = '';
     if (status) status.textContent = '';
     panel?.classList.remove('hidden');
     panel?.setAttribute('aria-hidden', 'false');
@@ -125,7 +130,9 @@ export class RecalibrationOverlay {
     if (instruction && measure > INSTRUCTION_MEASURES) instruction.classList.add('faded');
     if (confFill) confFill.style.width = `${Math.round(Math.max(0, Math.min(1, confidence)) * 100)}%`;
     if (status) {
-      status.textContent = confidence >= 0.85
+      // The caller's line wins when there is one: a live delay readout is
+      // more use than a measure count, and it is what the pass is FOR.
+      status.textContent = this.syncNote ? this.syncNote : confidence >= 0.85
         ? 'Locked on — keep going or stop whenever.'
         : confidence >= 0.4
           ? 'Got it, keep tapping…'

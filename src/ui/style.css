@@ -916,15 +916,23 @@ html, body {
   z-index: 5;
 }
 
-/* Left-hand cluster: currently just the Bluetooth latency toggle. A
-   set-once-and-forget correction, not something reached for mid-song like
-   pause/stop/fullscreen -- so unlike #hudRight it does NOT fade on
-   inactivity; a player mid-toggle-hunt shouldn't have it vanish on them. */
+/* Left-hand cluster: the Bluetooth latency chip. Fades on the same timer as
+   #hudRight -- it is chrome over the show like everything else, and leaving
+   one cluster lit while the other goes dark reads as a bug rather than as a
+   decision. The concern that kept it pinned open (losing it mid-edit) is
+   answered where it actually arises: main.js holds the fade off entirely
+   while the popover is open. */
 #hudLeft {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
   pointer-events: auto;
+  opacity: 1;
+  transition: opacity var(--dur-slow) ease;
+}
+#hudLeft.hud-faded {
+  opacity: 0;
+  pointer-events: none;
 }
 #btLatencyBtn[aria-pressed="true"] {
   border-color: var(--spec-cool);
@@ -989,7 +997,7 @@ html, body {
   pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  #hudRight { transition: none; }
+  #hudRight, #hudLeft { transition: none; }
 }
 #settingsBtn, #fullscreenBtn {
   line-height: 1;
