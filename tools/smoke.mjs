@@ -60,6 +60,27 @@ export async function runAudioSmoke({
     report.checkpoints.push(name);
     console.log('PASS ' + name);
   };
+  // #hudRight fades after three seconds of inactivity and is unclickable
+  // while faded (pointer-events: none -- the canvas takes the hit instead).
+  // A slow machine can lose the race between waking it and clicking it, so
+  // wake and click as one retried unit rather than assuming a single wake
+  // still holds by the time the click lands.
+  const clickHudButton = async (selector) => {
+    let lastErr;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      if (await page.locator('#hudRight.hud-faded').count()) {
+        await page.locator('#stage').click({ position: { x: 640, y: 250 } });
+      }
+      try {
+        // Shorter than the fade window, so a click that loses the race is
+        // retried behind a fresh wake rather than burning the whole budget
+        // on one attempt -- but long enough for a heavily loaded runner.
+        await page.locator(selector).click({ timeout: 5000 });
+        return;
+      } catch (err) { lastErr = err; }
+    }
+    throw lastErr;
+  };
   let browser, context, page;
   try {
     await waitForServer(url);
@@ -141,7 +162,7 @@ export async function runAudioSmoke({
     await page.locator('#stage').click({ position: { x: 640, y: 250 } });
     check('canvas tap wakes faded playback controls',
       !await page.locator('#hudRight.hud-faded').count());
-    await page.locator('#pauseBtn').click();
+    await clickHudButton('#pauseBtn');
     await page.waitForFunction(() => window.__SMW.audioEngine.ctx.state === 'suspended');
     const pausedAt = await page.evaluate(() => ({
       audio: window.__SMW.audioEngine.nowMs, sim: window.__SMW.sim.timeMs,
@@ -152,7 +173,7 @@ export async function runAudioSmoke({
     }));
     check('pause freezes the audio and simulation clocks', pausedAt.audio === stillPaused.audio
       && pausedAt.sim === stillPaused.sim);
-    await page.locator('#pauseBtn').click();
+    await clickHudButton('#pauseBtn');
     await page.waitForFunction((t) => window.__SMW.audioEngine.ctx.state === 'running'
       && window.__SMW.sim.timeMs > t + 500, pausedAt.sim);
     check('resume advances playback', true);
@@ -177,7 +198,7 @@ export async function runAudioSmoke({
     await page.locator('#stage').click({ position: { x: 640, y: 250 } });
     check('canvas tap wakes replacement playback controls before stop',
       !await page.locator('#hudRight.hud-faded').count());
-    await page.locator('#stopBtn').click();
+    await clickHudButton('#stopBtn');
     await page.locator('#loader:not(.hidden)').waitFor({ state: 'visible' });
     const stopped = await page.evaluate(() => !window.__SMW.audioEngine.playing
       && !window.__SMW.audioEngine.sourceNode && window.__SMW.rafHandle === null);

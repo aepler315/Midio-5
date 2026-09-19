@@ -35,6 +35,9 @@ import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
 import { TitleBackdrop } from './ui/TitleBackdrop.js';
 import { clientToStageCoords } from './ui/StageCoords.js';
+import {
+  KeepAwake, shouldAbsorbTap, isSystemFullscreenDrop, isDisplaySleepGap,
+} from './ui/KeepAwake.js';
 import { cssVarMap } from './render/spectral.js';
 import { resolveDurationMs } from './core/SongDuration.js';
 import { formatSeed, parseSeed, resolveSongSeed } from './utils/seed.js';
@@ -593,13 +596,10 @@ function applySynthMutePolicy() {
 function isFullscreen() {
   return !!(document.fullscreenElement || document.webkitFullscreenElement);
 }
-async function toggleFullscreen() {
+async function enterFullscreen() {
   const root = document.documentElement;
   try {
-    if (isFullscreen()) {
-      if (document.exitFullscreen) await document.exitFullscreen();
-      else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
-    } else if (root.requestFullscreen) {
+    if (root.requestFullscreen) {
       // navigationUI: 'hide' asks the browser to skip its own "press Esc to
       // exit" banner. It's a hint, not a guarantee -- browsers are free to
       // show it anyway (deliberately: a page can't be allowed to trap
@@ -614,6 +614,16 @@ async function toggleFullscreen() {
   }
   updateFullscreenBtn();
 }
+async function toggleFullscreen() {
+  if (!isFullscreen()) { await enterFullscreen(); return; }
+  try {
+    if (document.exitFullscreen) await document.exitFullscreen();
+    else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+  } catch (err) {
+    console.warn('[fullscreen]', err);
+  }
+  updateFullscreenBtn();
+}
 function updateFullscreenBtn() {
   if (!fullscreenBtnEl) return;
   fullscreenBtnEl.title = isFullscreen() ? 'Exit fullscreen' : 'Fullscreen';
@@ -622,8 +632,87 @@ function updateFullscreenBtn() {
 if (fullscreenBtnEl) fullscreenBtnEl.addEventListener('click', () => toggleFullscreen());
 if (pauseBtnEl) pauseBtnEl.addEventListener('click', () => togglePause());
 if (stopBtnEl) stopBtnEl.addEventListener('click', () => backToTitle());
-document.addEventListener('fullscreenchange', updateFullscreenBtn);
-document.addEventListener('webkitfullscreenchange', updateFullscreenBtn);
+
+// --- Car mode: display timeout and fullscreen survival (KeepAwake.js) ---
+// On a head-unit projection (Auto Pro X -> car receiver) the display blanks
+// after about a minute of no touch input, and the tap that revives it also
+// drops the show out of fullscreen. Three parts, none of which fake input --
+// a synthesized tap is untrusted and never reaches the OS idle timer:
+//   * hold a screen wake lock while a song runs, re-armed on a 30s heartbeat;
+//   * if the display blanks anyway, spend the reviving tap on restoring the
+//     show instead of letting it reach a button (the HUD's "tap to unlock"
+//     beat, one level up);
+//   * re-enter fullscreen when the system -- not the player -- dropped it.
+const keepAwake = new KeepAwake({ onWarn: (msg, err) => console.warn('[keepawake]', msg, err) });
+let lastInputMs = null;
+let fullscreenDropped = false;
+// Evidence that there was a blanked display to wake: the render loop stopped
+// being called, or the page was hidden outright. Without it, a long wait with
+// nobody touching the screen -- a 40-second analysis, a song watched straight
+// through -- would look exactly like a display timeout, and the next real tap
+// would be eaten. Cleared by the tap it is spent on.
+let displaySlept = false;
+// Touch still synthesizes a click after pointerdown in some browsers even
+// when the pointerdown was default-prevented; an absorbed tap has to swallow
+// that echo too, or it lands on a button anyway.
+let absorbClickUntilMs = 0;
+const CLICK_ECHO_MS = 700;
+
+/** Called from the render loop with each frame delta (playing frames only --
+ *  a pause leaves the loop running but resets the delta, see togglePause). */
+function noteFrameGap(rafDeltaMs) {
+  if (isDisplaySleepGap(rafDeltaMs)) displaySlept = true;
+}
+// Screen-off usually hides the page outright, which is the cleaner signal
+// where it happens; the frame-gap check above covers the projection cases
+// where it does not.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') displaySlept = true;
+});
+
+function syncKeepAwake() {
+  if (running || isFullscreen()) keepAwake.enable();
+  else keepAwake.disable();
+}
+
+function onFullscreenChange() {
+  updateFullscreenBtn();
+  if (isFullscreen()) fullscreenDropped = false;
+  else if (isSystemFullscreenDrop(lastInputMs, performance.now())) fullscreenDropped = true;
+  syncKeepAwake();
+}
+document.addEventListener('fullscreenchange', onFullscreenChange);
+document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+
+// Capture phase, before every other handler: this is the only place that can
+// decide a tap belongs to the screen rather than to the page.
+document.addEventListener('pointerdown', (e) => {
+  const nowMs = performance.now();
+  const absorb = shouldAbsorbTap(lastInputMs, nowMs, displaySlept);
+  lastInputMs = nowMs;
+  displaySlept = false;
+  keepAwake.noteInput();
+  if (!absorb) return;
+  e.preventDefault();
+  e.stopPropagation();
+  absorbClickUntilMs = nowMs + CLICK_ECHO_MS;
+  if (fullscreenDropped && !isFullscreen()) {
+    fullscreenDropped = false;
+    // A real user gesture is in hand right now -- the only moment a page is
+    // allowed to ask for fullscreen back.
+    enterFullscreen();
+  }
+  if (running) wakeHud();
+}, true);
+
+document.addEventListener('click', (e) => {
+  if (performance.now() >= absorbClickUntilMs) return;
+  absorbClickUntilMs = 0;
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
+
+window.addEventListener('keydown', () => { lastInputMs = performance.now(); displaySlept = false; }, true);
 
 function applyActiveFont(active) {
   if (sf2Engine) {
@@ -799,6 +888,7 @@ function toggleTrackList() {
  *  tolerates being idle). */
 function stopTimeline({ preservePause = false } = {}) {
   running = false;
+  syncKeepAwake();
   recalibration.stop();
   // conductor is a single instance shared across every song (see its
   // construction above); Simulation and its subsystems subscribe to it at
@@ -1378,6 +1468,7 @@ function startTimeline(timelineData, extra = {}) {
   // sim time nobody asked for.
   lastNowMs = audioEngine.nowMs + VISUAL_LEAD_MS;
   running = true;
+  syncKeepAwake();
   stopTitleBackdrop();
 
   progressEl.classList.add('hidden');
@@ -1414,6 +1505,20 @@ function startTimeline(timelineData, extra = {}) {
     seek: (ms) => seekSong(ms),
     get perfLevel() { return perfGovernor?.level ?? null; },
     get perf() { return perfGovernor || null; },
+    // Car mode (KeepAwake.js): live state for debugging on a head unit, plus
+    // the one hook a smoke test needs -- backdating the last-input clock, so
+    // the wake-tap path can be exercised without idling for a real 20s.
+    carMode: {
+      keepAwake,
+      get lastInputMs() { return lastInputMs; },
+      get fullscreenDropped() { return fullscreenDropped; },
+      get displaySlept() { return displaySlept; },
+      backdateInput: (idleMs) => { lastInputMs = performance.now() - idleMs; },
+      simulateDisplaySleep: (idleMs) => {
+        lastInputMs = performance.now() - idleMs;
+        displaySlept = true;
+      },
+    },
   };
 }
 
@@ -2092,6 +2197,7 @@ function frame(tRaf) {
   if (paused) { rafHandle = requestAnimationFrame(frame); return; }
   if (lastRafMs !== null) {
     const rafDeltaMs = tRaf - lastRafMs;
+    noteFrameGap(rafDeltaMs);
     const prevLevel = perfGovernor.level;
     perfGovernor.sample(rafDeltaMs, tRaf);
     if (perfGovernor.level !== prevLevel) fitCanvas();
@@ -2102,6 +2208,7 @@ function frame(tRaf) {
   }
   lastRafMs = tRaf;
   hudIdleTick(tRaf);
+  keepAwake.tick(tRaf);
   const nowMs = audioEngine.nowMs;
   // ChoreoClock leg 3: the world is stepped for when this frame will be SEEN,
   // one compositor-plus-scanout hop after it is built, so `simTime` and

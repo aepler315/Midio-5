@@ -66,6 +66,10 @@ use; Docker and a Soulseek account are not required to play uploaded audio.
 | `T` | Toggle track details when available |
 | `F3` | Toggle section labels on the mountain seekbar |
 
+On a car head unit, the first tap after a long idle gap is spent entirely on
+waking the display and restoring fullscreen, never on a control; a screen
+wake lock is held while a song plays. See [car mode](docs/car-mode.md).
+
 Reduced motion preferences enable reduced-flash behavior automatically.
 The show can contain flashing lights, camera shake, and sudden cuts.
 Playback controls fade after inactivity; tap the canvas to bring them back.
@@ -254,6 +258,13 @@ An existing recording can use the same checks (choose one at least
 node tools/smoke-audio.mjs path/to/recording.wav http://localhost:8080 .smoke/custom
 ```
 
+Car mode (wake lock, wake-up-tap absorption) has its own check against a
+running server:
+
+```sh
+npm run test:car
+```
+
 CI runs the generated-fixture smoke check and uploads its diagnostics.
 The other `tools/smoke-*.mjs` scripts are legacy or specialized diagnostics;
 some still target removed MIDI/demo/SoundFont UI and are not the maintained
@@ -264,6 +275,8 @@ upload regression suite.
 - [World design notes](docs/worlds.md) — design background; the current
   registry, chooser, and per-world musical responses are described above.
 - [VFX suite](docs/vfx-suite.md) — visual-system design notes.
+- [Car mode](docs/car-mode.md) — keeping a head-unit display awake and in
+  fullscreen, and why a page cannot fake a tap.
 - [Soulseek bridge notes](docs/soulseek.md) — retained backend tooling;
   the current upload page does not expose its search/connect controls.
 - [SoundFont tooling](soundfonts/README.md) — retained synthesis support;
