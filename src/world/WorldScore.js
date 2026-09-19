@@ -5,123 +5,15 @@
 // going on to watch, not so much that every window strobes and every
 // peak clips. A drone leaves The Range sitting still (boring). A wall
 // of sound in After Hours lights every window at once (too intense).
-import { clamp01, clamp, spread01 } from '../utils/math.js';
-import { FLAT_WEIGHTS } from '../audio/bands.js';
-import { extractRidgePortrait, lithologyFromShares } from './RidgePortrait.js';
+import { clamp01, clamp } from '../utils/math.js';
 import { listWorlds, getWorld } from './Worlds.js';
-import { buildSongDNA } from './dna/SongDNA.js';
-import { synthesizeSectionPalettes } from './dna/PaletteSynth.js';
-import {
-  buildShapeGrammar, deriveTerrainParams, pickCharacterScheme, CHARACTER_SCHEMES,
-} from './dna/ShapeGrammar.js';
-import { castBiomes } from './Dramaturgy.js';
+import { buildSongProfile } from '../audio/SongProfile.js';
+import { adaptWorld, responseConfigFor } from './WorldAdaptation.js';
 
-const BPM_LO = 60, BPM_HI = 180;
-
-export function extractWatchFeatures({
-  energyCurves = null,
-  durationMs = 0,
-  bpm = 0,
-  analysis = null,
-  structure = null,
-} = {}) {
-  const dur = Math.max(1, durationMs || 1);
-  let centroid = 0.5, bass = 0.3, air = 0.1, spread = 0.5, litho = null;
-  let dyn = 0.4, energyMean = 0.4, phrase = 0.3, landmarks = 4, trend = 0;
-  let pulse = 0.5, rhythmWeight = 0;
-
-  if (energyCurves && energyCurves.n >= 8) {
-    const portrait = extractRidgePortrait(energyCurves, dur);
-    if (portrait) {
-      centroid = portrait.centroid01;
-      bass = portrait.bassShare;
-      air = portrait.airShare;
-      spread = portrait.spread01;
-      litho = portrait.lithology;
-      dyn = portrait.dynamicRange;
-      phrase = portrait.phraseStrength;
-      landmarks = portrait.landmarks?.length ?? 4;
-      const wave = portrait.energyWave;
-      if (wave && wave.length) {
-        let wMin = 1, wMax = 0;
-        for (let i = 0; i < wave.length; i++) {
-          const v = wave[i];
-          if (v < wMin) wMin = v;
-          if (v > wMax) wMax = v;
-        }
-        dyn = Math.max(dyn, clamp01(wMax - wMin));
-        // Coarse rise/fall trajectory across the whole song: mean energy of
-        // the last third vs the first third. Used (via SongDNA) as the
-        // audio-only fallback for particle direction when there's no MIDI
-        // pitch timeline to read a register trend from directly.
-        const third = Math.max(1, Math.floor(wave.length / 3));
-        let a = 0, b = 0;
-        for (let i = 0; i < third; i++) a += wave[i];
-        for (let i = wave.length - third; i < wave.length; i++) b += wave[i];
-        trend = clamp((b / third - a / third) * 2.5, -1, 1);
-      }
-    } else {
-      litho = lithologyFromShares(null);
-    }
-    if (typeof energyCurves.calibration === 'function') {
-      const cal = energyCurves.calibration(FLAT_WEIGHTS);
-      dyn = clamp01((cal?.spread ?? 0.2) / 0.5);
-      energyMean = clamp01(((cal?.lo ?? 0) + (cal?.hi ?? 0.4)) * 0.5);
-    }
-  }
-
-  // The ridge portrait supplies phrase-sized changes, but it cannot measure
-  // rhythmic density: its landmarks are deliberately sparse so terrain stays
-  // readable. When the audio adapter has a credible onset/tempo read, let
-  // that real measurement take over the scorer's rhythm-facing features.
-  const perMin = landmarks / (dur / 60000);
-  let onset = clamp01(perMin / 10);
-
-  if (analysis) {
-    if (Number.isFinite(analysis.brightness)) centroid = clamp01(0.55 * centroid + 0.45 * analysis.brightness);
-    if (Number.isFinite(analysis.dynamicRange)) dyn = clamp01(0.5 * dyn + 0.5 * analysis.dynamicRange);
-    const rhythm = analysis.rhythm;
-    if (Number.isFinite(rhythm?.eventDensity)
-      && Number.isFinite(rhythm?.pulseRegularity)
-      && Number.isFinite(rhythm?.confidence)) {
-      rhythmWeight = clamp01((rhythm.confidence - 0.25) / 0.5);
-      onset = clamp01(onset * (1 - rhythmWeight) + clamp01(rhythm.eventDensity) * rhythmWeight);
-      pulse = clamp01(0.5 * (1 - rhythmWeight) + clamp01(rhythm.pulseRegularity) * rhythmWeight);
-    }
-  }
-
-  // Section contrast from structure labels, else dynamic range.
-  let contrast = dyn;
-  if (structure?.labels?.length > 1) {
-    const uniq = new Set(structure.labels).size;
-    contrast = clamp01(0.35 * dyn + 0.65 * (uniq / structure.labels.length));
-  }
-
-  const bpmN = Number.isFinite(bpm) && bpm > 0 ? clamp01((bpm - BPM_LO) / (BPM_HI - BPM_LO)) : 0.4;
-  // Groove starts with tempo + phrase shape, then moves toward actual
-  // beat alignment only when that measurement is credible. Existing MIDI,
-  // synthetic, and free-time paths preserve the former behavior exactly.
-  const tempoPhraseGroove = clamp01(1 - Math.abs((bpm || 96) - 96) / 70) * (0.55 + 0.45 * phrase);
-  const groove = clamp01(tempoPhraseGroove + rhythmWeight * 0.35 * (pulse - tempoPhraseGroove));
-  const tempoHeat = clamp01(((bpm || 100) - 72) / 90);
-
-  const warmth = clamp01(0.55 * bass + 0.45 * (1 - centroid));
-  const texture = clamp01(0.5 * spread + 0.5 * air);
-  const form = clamp01(landmarks / 10);
-  const arc = dyn;
-
-  // spread01: a weighted sum of 5 independent-ish features collapses toward
-  // 0.5 (measured: sd 0.134, <0.1% of songs ever below 0.10 or above 0.90),
-  // which reads every world's comfort band near an edge (farside, fathom,
-  // foundry) as nearly unreachable even though those bands were authored
-  // assuming roughly-uniform coverage. See spread01's own comment.
-  const drive = spread01(clamp01(0.28 * arc + 0.18 * onset + 0.16 * contrast + 0.14 * energyMean + 0.24 * tempoHeat));
-
-  return {
-    centroid, bass, air, spread, dyn, energyMean, phrase, landmarks,
-    onset, pulse, contrast, groove, warmth, texture, form, arc, drive, bpm: bpm || 0,
-    tempoHeat, litho, trend,
-  };
+/** Shared extraction lives in SongProfile. Kept here so existing callers
+ *  and tests do not have to move; scoring still consumes `watch`. */
+export function extractWatchFeatures(data = {}) {
+  return buildSongProfile(data).watch;
 }
 
 function inRangeScore(value, range) {
@@ -199,59 +91,163 @@ function shapeFit(features, prefer) {
   return s / keys.length;
 }
 
+/** Continuous fit gap treated as a tie, not a unique winner. */
+export const TIE_EPS = 0.012;
+
+function resolveScoreInputs(features, profile) {
+  const prof = profile?.watch ? profile
+    : (features?.watch && features?.version ? features : null);
+  const feat = (features && typeof features.drive === 'number' && !features.watch)
+    ? features
+    : (prof?.watch || extractWatchFeatures(features || {}));
+  return { feat, profile: prof };
+}
+
+/**
+ * Drive used for comfort after the world's response config has had a
+ * chance to absorb density. A dense mix that already filters accents
+ * should not be rejected solely for raw onset. Sparse/quiet input is
+ * never lifted — silence stays still.
+ */
+export function driveAfterResponse(feat, world, response) {
+  const drive = clamp01(feat?.drive ?? 0);
+  if (!response || !world?.comfort) return drive;
+  if (response.quiet) return drive;
+  if (response.band !== 'dense') return drive;
+  const hi = world.comfort.hi ?? 0.8;
+  if (!(drive > hi)) return drive;
+  const overshoot = drive - hi;
+  const absorb = clamp01(1 - (response.accentGain ?? 1)) * 0.5;
+  return clamp01(hi + overshoot * (1 - absorb));
+}
+
+export function predictedProblems(feat, world, response, confidence) {
+  const problems = [];
+  if (Number.isFinite(confidence) && confidence < 0.28) {
+    problems.push({
+      code: 'low-confidence',
+      severity: 'info',
+      detail: 'tempo/key/structure is a fallback, not a measurement',
+    });
+  }
+  const onset = clamp01(feat?.onset ?? 0);
+  if (onset > 0.72 && (response?.accentGain ?? 1) > 0.85 && (response?.maxAccents ?? 4) >= 5) {
+    problems.push({
+      code: 'strobe-risk',
+      severity: 'warn',
+      detail: 'dense hits with little accent filtering',
+    });
+  }
+  if (response?.quiet && (world?.comfort?.lo ?? 0) > 0.55) {
+    problems.push({
+      code: 'stillness',
+      severity: 'warn',
+      detail: 'quiet input in a world that wants high drive; ambient is not lifted',
+    });
+  }
+  if (world?.manualOnly) {
+    problems.push({
+      code: 'manual-only',
+      severity: 'block',
+      detail: 'kept out of Choose-for-me',
+    });
+  }
+  return problems;
+}
+
+export function formatFitDiagnostic(ranked = [], { confidence = null } = {}) {
+  const pick = ranked.find((r) => r.recommended) || ranked[0];
+  if (!pick) return ['=== WORLD FIT (heuristic, not quality) ===', '(no ranking)'];
+  const tied = ranked.filter((r) => r.tied).map((r) => r.id);
+  const lines = [
+    '=== WORLD FIT (heuristic, not quality) ===',
+    `pick: ${pick.id}  fit=${pick.fit.toFixed(3)}  ${pick.pickReason || 'unique'}`,
+  ];
+  if (tied.length > 1) lines.push(`tied with: ${tied.join(', ')}`);
+  if (Number.isFinite(confidence)) lines.push(`analysis confidence: ${confidence.toFixed(2)} (not a probability)`);
+  lines.push(`style affinity: ${(pick.parts?.styleAffinity ?? pick.parts?.affinity ?? 0).toFixed(2)}`);
+  const problems = pick.parts?.problems || [];
+  lines.push(problems.length
+    ? `problems: ${problems.map((p) => p.code).join(', ')}`
+    : 'problems: none');
+  return lines;
+}
+
 /**
  * Score every registered world against this song. Returns a ranked list
- * of `{ id, name, tagline, kind, score, parts, recommended }`.
- * `score` is 1–99 so a card never reads as a sure thing or a zero.
+ * of `{ id, name, tagline, kind, fit, score, parts, recommended, tied }`.
+ *
+ * `fit` is the continuous heuristic (0..1). `score` is the same value
+ * mapped to 1–99 for the private review sheet — ranking uses `fit`,
+ * never the rounded integer. Near ties stay tied; Choose-for-me still
+ * needs one pick and records that as a tie-break, not certainty.
  *
  * Worlds flagged `manualOnly` are excluded from the default set. They are
- * chosen by hand or not at all, and this is the one place that has to
- * enforce it: buildCustomWorld picks its base from `scoreWorlds(feat)[0]`,
- * so a manual-only world left in the ranking could be cloned into a custom
- * world -- inheriting a `kind` (and renderer expectation) that the rest of
- * the custom-world machinery has no path for. Filtering here covers both
- * the recommendation and the base pick at once. An explicit `worlds`
- * argument is still honored verbatim, so a caller that deliberately passes
- * one in can still score it.
+ * chosen by hand or not at all. An explicit `worlds` argument is still
+ * honored verbatim.
+ *
+ * Fit is evaluated after the world's response config, so a dense mix
+ * already damped by accentGain is not rejected for raw intensity.
  */
-export function scoreWorlds(features, worlds = listWorlds().filter((w) => !w.manualOnly)) {
-  const feat = features && typeof features.drive === 'number'
-    ? features
-    : extractWatchFeatures(features || {});
+export function scoreWorlds(features, worlds = listWorlds().filter((w) => !w.manualOnly), options = {}) {
+  const { feat, profile } = resolveScoreInputs(features, options.profile);
+  const confidence = Number.isFinite(profile?.confidence?.overall)
+    ? profile.confidence.overall
+    : (Number.isFinite(options.confidence) ? options.confidence : null);
+  const exclude = options.exclude instanceof Set ? options.exclude : new Set(options.exclude || []);
 
   const ranked = worlds.map((w) => {
-    const comfort = comfortScore(feat.drive, w.comfort);
+    const response = responseConfigFor(w.kind, profile || { watch: feat });
+    const drive = driveAfterResponse(feat, w, response);
+    const comfort = comfortScore(drive, w.comfort);
     const coverage = coverageScore(feat, w.channels);
     const shape = shapeFit(feat, w.prefer);
     const affinity = affinityScore(feat, w);
     const mixed = 0.38 * comfort + 0.24 * coverage + 0.16 * shape + 0.22 * affinity;
-    const score = clamp(Math.round(40 + 58 * mixed), 1, 99);
+    const problems = predictedProblems(feat, w, response, confidence);
+    const blocked = problems.some((p) => p.severity === 'block') || exclude.has(w.id);
     return {
       id: w.id,
       name: w.name,
       tagline: w.tagline,
       kind: w.kind,
-      score,
-      parts: { comfort, coverage, shape, affinity, drive: feat.drive },
+      fit: mixed,
+      score: clamp(Math.round(40 + 58 * mixed), 1, 99),
+      eligible: !blocked,
+      parts: {
+        comfort,
+        coverage,
+        shape,
+        affinity,
+        drive: feat.drive,
+        driveUsed: drive,
+        styleAffinity: affinity,
+        analysisConfidence: confidence,
+        problems,
+        responseBand: response.band,
+      },
     };
   });
-  ranked.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-  if (ranked[0]) ranked[0].recommended = true;
+  ranked.sort((a, b) => (b.eligible - a.eligible) || (b.fit - a.fit) || a.name.localeCompare(b.name));
+  const eligible = ranked.filter((r) => r.eligible);
+  const bestFit = eligible[0]?.fit;
+  if (Number.isFinite(bestFit)) {
+    for (const r of eligible) {
+      r.tied = Math.abs(r.fit - bestFit) <= TIE_EPS;
+    }
+    const tied = eligible.filter((r) => r.tied);
+    eligible[0].recommended = true;
+    eligible[0].pickReason = tied.length > 1 ? 'near-tie' : 'unique';
+  }
   return ranked;
 }
 
-// ── Custom world construction ──────────────────────────────────────
+// ── World adaptation ───────────────────────────────────────────────
 //
-// A custom world is the provably optimal world for a given feature
-// vector. Its score is 100 by construction:
-//
-//   comfort  = 1.0  (comfort band centered on drive)
-//   shape    = 1.0  (prefer ranges centered on actual features)
-//   coverage = max  (channels read the strongest features)
-//   affinity = max  (weights point to the strongest features)
-//
-// Each sub-score is normalized against its theoretical maximum for
-// these features, so mixed = 1.0 → score = 100.
+// Construction lives in WorldAdaptation.adaptWorld. Scoring stays here
+// and is a heuristic, not a constructed 100. An adapted world keeps the
+// base world's channels, affinity, prefer and comfort, so Choose-for-me
+// can still compare apples to apples after adaptation.
 
 const SCORABLE_KEYS = [
   'arc', 'form', 'contrast', 'texture', 'air', 'onset',
@@ -281,130 +277,41 @@ function buildOptimalAffinity(features) {
   return aff;
 }
 
-function buildOptimalPrefer(features) {
-  const prefer = {};
-  for (const k of SCORABLE_KEYS) {
-    const v = features[k] ?? 0.5;
-    prefer[k] = [v, v];
-  }
-  return prefer;
-}
-
 /**
- * `data`, when given, is the same object threaded through
- * offerWorldsThenStart (energyCurves/durationMs/bpm/analysis/structure,
- * plus timeline/barGrid on the MIDI path) — it drives palette synthesis.
- * Score-affecting fields (channels/affinity/prefer/comfort) are built from
- * `features` alone, same as before: palette generation never touches the
- * 100% proof.
+ * Song-specific interpretation of one registered world. Cathode keeps its
+ * pixel renderer and four-color ramps; painterly worlds overlay as `custom`
+ * with a stable `registeredId` and a per-song `instanceId`.
  */
-/** Build a song-specific interpretation of one registered painterly world. */
 export function buildWorldVariant(baseId, features, data = null) {
   const feat = features && typeof features.drive === 'number'
     ? features
     : extractWatchFeatures(features || {});
   const base = getWorld(baseId);
-  if (base.id !== baseId || base.manualOnly) {
+  if (base.id !== baseId) {
     throw new Error(`Cannot build a tailored variant for world ${baseId}`);
   }
+  const adapted = adaptWorld(base, data?.profile || feat, { ...(data || {}), profile: data?.profile });
+  const proof = proveScore(feat, adapted.world);
+  proof.dna = adapted.proof?.dna || null;
+  proof.degraded = adapted.degraded;
+  return { world: adapted.world, proof, baseId: base.id };
+}
 
-  const channels = buildOptimalChannels(feat);
-  const affinity = buildOptimalAffinity(feat);
-  const prefer = buildOptimalPrefer(feat);
-  const comfort = { lo: feat.drive, hi: feat.drive };
-
-  let palettes = base.palettes;
-  let temperature = base.temperature;
-  let cast = base.cast;
-  let terrainMods = null;
-  let characterScheme = null;
-  let dna = null;
-  let paletteProof = null;
-
-  // Three independent try/catches, not one wrapping all of DNA + palette +
-  // terrain: a single shared catch meant ANY failure -- even one confined
-  // to palette color synthesis -- silently discarded terrainMods and
-  // characterScheme too, even though deriveTerrainParams/pickCharacterScheme
-  // never throw for any dna that buildSongDNA itself successfully returned
-  // and don't depend on palette synthesis having succeeded. A song could
-  // quietly lose its entire generated identity (both color AND terrain
-  // shape) over a failure in only one of the two. Each catch also used to
-  // record its error in paletteProof.error and nothing ever read or logged
-  // it -- a failure here was invisible even to someone looking for it.
-  try {
-    dna = buildSongDNA({ ...(data || {}), structure: data?.structure ?? null });
-  } catch (err) {
-    console.warn('[WorldScore] buildSongDNA failed; falling back to the stock world entirely:', err);
-    paletteProof = { error: String(err?.message || err) };
-  }
-
-  if (dna) {
-    try {
-      const synth = synthesizeSectionPalettes(dna, base.kind || 'world');
-      if (synth.palettes.length) {
-        palettes = synth.palettes;
-        temperature = synth.temperature;
-        cast = (energies, seed) => castBiomes(energies, seed, temperature);
-        paletteProof = { seed: dna.seed, tonicPc: dna.tonicPc, isMajor: dna.isMajor, sections: synth.palettes.length };
-      }
-    } catch (err) {
-      // Palette synthesis is additive — a failure here must never break
-      // world selection, and (see above) must not take terrain shaping
-      // down with it either. Falls back to the base world's stock palette.
-      console.warn('[WorldScore] palette synthesis failed; falling back to the stock palette:', err);
-      paletteProof = { error: String(err?.message || err) };
-    }
-
-    try {
-      // Continuous nudges to the alpine ridgeline's own shape params, so a
-      // song's instrumentation shows up in the skyline it generates and not
-      // only its colors. Additive/optional: BiomeManager falls back to the
-      // stock per-depth character (massif/range/crags) untouched when absent.
-      const grammar = buildShapeGrammar(dna);
-      terrainMods = deriveTerrainParams(grammar);
-      // WHICH landform each depth layer gets, not just how that landform is
-      // shaped -- see ShapeGrammar.pickCharacterScheme. Also falls back to
-      // the stock massif/range/crags triple when absent.
-      characterScheme = CHARACTER_SCHEMES[pickCharacterScheme(grammar)];
-    } catch (err) {
-      console.warn('[WorldScore] terrain-shape derivation failed; falling back to the stock terrain:', err);
-    }
-  }
-
-  const world = {
-    id: 'custom',
-    name: base.name,
-    tagline: base.tagline,
-    kind: base.kind,
-    aerial: base.aerial,
-    custom: true,
-    baseId: base.id,
-    comfort,
-    channels,
-    prefer,
-    affinity,
-    palettes,
-    temperature,
-    cast,
-    terrainMods,
-    characterScheme,
-  };
-
-  const proof = proveScore(feat, world);
-  proof.dna = paletteProof;
-  return { world, proof, baseId: base.id };
+export function pickRecommended(ranked = []) {
+  return ranked.find((r) => r.recommended) || ranked.find((r) => r.eligible) || ranked[0] || null;
 }
 
 /**
- * Preserve the automatic choice for callers that want one. The chooser can
- * instead call buildWorldVariant with the world the player picked.
+ * Choose-for-me constructor: score, then adapt the winner. Not a privileged
+ * gallery card — the chooser calls buildWorldVariant with the picked world.
  */
 export function buildCustomWorld(features, data = null) {
   const feat = features && typeof features.drive === 'number'
     ? features
     : extractWatchFeatures(features || {});
-  const ranked = scoreWorlds(feat);
-  return buildWorldVariant(ranked[0].id, feat, data);
+  const ranked = scoreWorlds(feat, undefined, { profile: data?.profile });
+  const pick = pickRecommended(ranked);
+  return buildWorldVariant(pick.id, feat, data);
 }
 
 function proveScore(features, world) {
@@ -413,9 +320,9 @@ function proveScore(features, world) {
   const shape = shapeFit(features, world.prefer);
   const rawAffinity = affinityScore(features, world);
 
-  // Theoretical maximums: the best any world could achieve on these
-  // features. The custom world's channels/affinity are constructed to
-  // hit these, so the normalized ratios are 1.0.
+  // Theoretical maximums: the best any channel/affinity layout could
+  // achieve on these features. Adapted worlds keep the base world's
+  // layout, so the ratios are a diagnostic, not a constructed 1.0.
   const maxCov = coverageScore(features, buildOptimalChannels(features));
   const maxAff = affinityScore(features, { affinity: buildOptimalAffinity(features) });
 

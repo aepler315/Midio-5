@@ -87,8 +87,8 @@ export function spectralTokens({
   const keyShift = spectralShiftDeg(effAnchor, tonic) * clamp01(amount);
   const deg = Math.round((keyShift + (keyRotation || 0) + (sectionHueBias || 0)) / 3) * 3;
   const rot = (h) => (deg === 0 ? h : rotateHueHex(h, deg));
-  const sky = (biome && biome.sky) || ['#1a1a3e', '#4a3b6b', '#e8746a'];
-  const silhouette = (biome && biome.silhouette) || '#2b2145';
+  const sky = (biome && biome.sky) || ['#1c2248', '#4a4a7a', '#e8a078'];
+  const silhouette = (biome && biome.silhouette) || '#4a4068';
   const halo = (biome && biome.celestial && biome.celestial.haloColor) || '#ffdca0';
   const edge = (biome && biome.edgeLight) || null;
   return {

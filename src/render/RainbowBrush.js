@@ -51,6 +51,7 @@ export class RainbowBrush {
       const cx = d.wx - worldX + originX;
       if (cx < -margin || cx > canvasWidth + margin) continue;
       const age = (nowMs - d.bornMs) / LIFE_MS;
+      if (age < 0 || age >= 1) continue;
       const size = Math.max(3, Math.round((9 - 4 * age) * sizeMul));
       // Lower peak alpha than the old opaque dabs used -- additive stacking
       // saturates to white fast, and a dense flurry of jumps overlaps a LOT

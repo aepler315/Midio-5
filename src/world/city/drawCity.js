@@ -12,11 +12,12 @@ import { windowOccupancy } from './CitySilhouette.js';
 import { boundaryLift01, cityGlow, windowGlowAlpha } from './CityGlow.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
-import { sampleWorldMusic } from '../WorldMusic.js';
+import { sampleManagerMusic } from '../WorldMusic.js';
 import { hexToRgb } from '../../utils/color.js';
 import { groundGlowLights } from '../../render/LightField.js';
 import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
+import { identityAllows } from '../WorldIdentity.js';
 
 const LAYER_RATIOS = { L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65 };
 const AERIAL_PULL = { L2: 0.50, L3: 0.32, L4: 0.14, L5: 0 };
@@ -60,8 +61,8 @@ function blitWindows(ctx, canvas, strip, scrollX, yOff, glow, music, reducedFlas
 
 export function drawCityWorld(mgr, frame) {
   const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
-  const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
-    rhythm: mgr.worldRhythm, section: mgr.sections?.[mgr._lastSectionIdx], reducedFlash: mgr.reducedFlash });
+  const identity = mgr.world;
+  const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const night = 1;
   mgr._drawSky(ctx, canvas, A, B, t, night);
 
@@ -70,13 +71,13 @@ export function drawCityWorld(mgr, frame) {
   // the ambient per-note constellations, and reward-volley meteors above
   // it. Not in this file's own "scrapped" list up top, so its absence here
   // was a gap from the city split, not a deliberate style choice.
-  mgr.drawDeepSky(ctx, skyVoyage, canvas);
+  if (identityAllows(identity, 'deepSky')) mgr.drawDeepSky(ctx, skyVoyage, canvas);
   const skyA = styleDials(mgr.visualStyle).skyWireAlpha ?? 1;
-  if (phenomenaFull && skyA > 0.02) {
+  if (identityAllows(identity, 'constellations') && phenomenaFull && skyA > 0.02) {
     const nightAlphaMul = (1 + 1.2 * night) * Math.max(0.25, skyA);
     mgr.weaver.draw(ctx, canvas, mgr.reducedFlash, nightAlphaMul);
   }
-  if (phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
+  if (identityAllows(identity, 'meteors') && phenomenaFull) mgr.meteors.draw(ctx, canvas, mgr.reducedFlash);
 
   const moonAlt = Math.max(dn.moonAlt, 0.35);
   const celestialYFrac = celestialYFracFor(moonAlt);
@@ -141,12 +142,12 @@ export function drawCityWorld(mgr, frame) {
     if (stripsA) {
       const a = to === from ? 1 : 1 - t;
       blit(ctx, canvas, stripsA[key], sx, yOff, a);
-      mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false });
+      mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
       blitWindows(ctx, canvas, stripsA[key], sx, yOff, glow, music, mgr.reducedFlash, a);
     }
     if (to !== from && t > 0.02 && stripsB) {
       blit(ctx, canvas, stripsB[key], sx, yOff, t);
-      mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false });
+      mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
       blitWindows(ctx, canvas, stripsB[key], sx, yOff, glow, music, mgr.reducedFlash, t);
     }
   };

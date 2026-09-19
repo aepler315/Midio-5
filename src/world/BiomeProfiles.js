@@ -12,8 +12,8 @@
 export const BIOMES = [
   {
     name: 'TWILIGHT',
-    sky: ['#1a1a3e', '#4a3b6b', '#e8746a'],
-    silhouette: '#2b2145',
+    sky: ['#1c2248', '#4a4a7a', '#e8a078'],
+    silhouette: '#4a4068',
     celestial: { kind: 'sun', color: '#ffb37a', radius: 46, haloColor: '#ffdca0' },
     particles: { kind: 'fireflies', color: '#fff2a8', count: 26, speed: 14 },
     fx: 'starTwinkle',
@@ -22,7 +22,7 @@ export const BIOMES = [
   {
     name: 'EMBER',
     sky: ['#2b0f0a', '#7a2413', '#ff9a3c'],
-    silhouette: '#3d120b',
+    silhouette: '#5a2818',
     celestial: { kind: 'sun', color: '#ff8a3c', radius: 50, haloColor: '#ffb37a', veiled: true },
     particles: { kind: 'embers', color: '#ff7a3c', count: 34, speed: 60 },
     fx: 'emberGlow',
@@ -31,7 +31,7 @@ export const BIOMES = [
   {
     name: 'ARCTIC',
     sky: ['#0e2a44', '#3f6d9e', '#cfe8ff'],
-    silhouette: '#12324f',
+    silhouette: '#1e4868',
     celestial: { kind: 'sun', color: '#eaf6ff', radius: 34, haloColor: '#ffffff', ring: true, shape: { m: 6, n1: 1, n2: 1.8, n3: 1.8 } },
     particles: { kind: 'snow', color: '#ffffff', count: 60, speed: 45 },
     fx: 'aurora',
@@ -40,7 +40,7 @@ export const BIOMES = [
   {
     name: 'JADE',
     sky: ['#0c2b1c', '#1f6b46', '#a9e5b0'],
-    silhouette: '#0f3a26',
+    silhouette: '#1a4e34',
     celestial: { kind: 'sun', color: '#eaffb0', radius: 40, haloColor: '#c8f2a0', shafts: true },
     particles: { kind: 'pollen', color: '#eaffb0', count: 40, speed: 8 },
     fx: 'canopyDapple',
@@ -48,8 +48,8 @@ export const BIOMES = [
   },
   {
     name: 'VOID',
-    sky: ['#05010d', '#1b0f33', '#4d2b8c'],
-    silhouette: '#150a2e',
+    sky: ['#080c1c', '#1a2448', '#3d4a80'],
+    silhouette: '#2c3458',
     celestial: { kind: 'moon', color: '#cabfff', radius: 38, haloColor: '#7a5bd8', shattered: true, shape: { m: 5, n1: 0.35, n2: 0.35, n3: 0.35 } },
     particles: { kind: 'antigrav', color: '#b79bff', count: 30, speed: 20 },
     fx: 'glitchTear',
@@ -58,7 +58,7 @@ export const BIOMES = [
   {
     name: 'SAKURA',
     sky: ['#2b1030', '#8a3a6b', '#ffd7e8'],
-    silhouette: '#3a1642',
+    silhouette: '#4a2850',
     celestial: { kind: 'moon', color: '#ffe9f2', radius: 62, haloColor: '#ffc9de', shape: { m: 5, n1: 3, n2: 6, n3: 6 } },
     particles: { kind: 'petals', color: '#ffb6d3', count: 46, speed: 35 },
     fx: 'petalPile',
@@ -67,7 +67,7 @@ export const BIOMES = [
   {
     name: 'SOLAR',
     sky: ['#3a1f00', '#c96a00', '#ffe08a'],
-    silhouette: '#4a2600',
+    silhouette: '#5a3210',
     celestial: { kind: 'sun', color: '#ffe08a', radius: 78, haloColor: '#ffb347', dominant: true, shape: { m: 8, n1: 0.9, n2: 1.5, n3: 1.5 } },
     particles: { kind: 'flaresparks', color: '#ffcf6b', count: 18, speed: 90 },
     fx: 'prominence',
@@ -76,7 +76,7 @@ export const BIOMES = [
   {
     name: 'STORM',
     sky: ['#0b0f1a', '#1f2937', '#3d4f66'],
-    silhouette: '#0a1220',
+    silhouette: '#1c2a3c',
     celestial: { kind: 'moon', color: '#b9c7dd', radius: 34, haloColor: '#8fa5c8', veiled: true },
     particles: { kind: 'rain', color: '#9fb8d8', count: 70, speed: 0 },
     fx: 'lightning',
@@ -85,7 +85,7 @@ export const BIOMES = [
   {
     name: 'MIRROR',
     sky: ['#0a1626', '#254a6b', '#bfe0ff'],
-    silhouette: '#0f2438',
+    silhouette: '#1a3a52',
     celestial: { kind: 'moon', color: '#eaf6ff', radius: 44, haloColor: '#cfe8ff' },
     particles: { kind: 'fireflies', color: '#dff3ff', count: 18, speed: 6 },
     fx: 'lakeReflection',
@@ -94,7 +94,7 @@ export const BIOMES = [
   {
     name: 'CYBER',
     sky: ['#020814', '#062a3f', '#0b4b5e'],
-    silhouette: '#04121f',
+    silhouette: '#0e2a3a',
     edgeLight: '#00ffd0',
     celestial: { kind: 'sun', color: '#00ffd0', radius: 36, haloColor: '#00ffd0', wireframe: true },
     particles: { kind: 'digitalrain', color: '#00ffb0', count: 22, speed: 140 },
@@ -104,7 +104,7 @@ export const BIOMES = [
   {
     name: 'ABYSS',
     sky: ['#01060f', '#0a1f3a', '#1a6b7a'],
-    silhouette: '#061428',
+    silhouette: '#0e3048',
     edgeLight: '#3dffe8',
     celestial: {
       kind: 'moon',
@@ -122,7 +122,7 @@ export const BIOMES = [
   {
     name: 'CORAL',
     sky: ['#041a28', '#0d6b7a', '#ffb89a'],
-    silhouette: '#0a3040',
+    silhouette: '#145060',
     edgeLight: '#ff7eb6',
     celestial: { kind: 'sun', color: '#ffe0c0', radius: 44, haloColor: '#7ee8ff', shafts: true },
     particles: { kind: 'bubbles', color: '#b8f0ff', count: 42, speed: 28 },
@@ -132,7 +132,7 @@ export const BIOMES = [
   {
     name: 'LUMEN',
     sky: ['#0a0614', '#1a3a2a', '#6bffb0'],
-    silhouette: '#0e1a18',
+    silhouette: '#1a3a32',
     edgeLight: '#7dffb0',
     celestial: {
       kind: 'moon',
@@ -148,7 +148,7 @@ export const BIOMES = [
   {
     name: 'AURUM',
     sky: ['#1a1008', '#8a5020', '#ffd080'],
-    silhouette: '#2a1808',
+    silhouette: '#3a2410',
     celestial: { kind: 'sun', color: '#ffcc66', radius: 52, haloColor: '#ffaa44', shafts: true },
     particles: { kind: 'petals', color: '#ff9a3c', count: 50, speed: 32 },
     fx: 'sunMotes',
@@ -157,7 +157,7 @@ export const BIOMES = [
   {
     name: 'NEBULA',
     sky: ['#080414', '#3a1860', '#ff8ec8'],
-    silhouette: '#140a28',
+    silhouette: '#2a1848',
     edgeLight: '#c89bff',
     celestial: {
       kind: 'moon',
@@ -174,7 +174,7 @@ export const BIOMES = [
   {
     name: 'GEODE',
     sky: ['#0c0618', '#3a1a5c', '#d4a0ff'],
-    silhouette: '#1a0e2e',
+    silhouette: '#2c1a48',
     edgeLight: '#c48cff',
     celestial: {
       kind: 'moon',

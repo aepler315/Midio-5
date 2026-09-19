@@ -30,8 +30,13 @@ import {
 } from './CathodeBackdrop.js';
 import {
   BOSS_ROWS, MAX_TOPPER_ROWS, parseSpriteRows, spriteRelativeToRampIndex, bossFormFor,
-  beatFlinchScale, bossReassembleU, glitchBandOffsets,
+  bossReassembleU, glitchBandOffsets,
 } from './CathodeBoss.js';
+import { sampleWorldMusic } from '../WorldMusic.js';
+import {
+  rasterRate, rasterTravel, phosphorGlow, screenHit, tubeFlinch, scanPeriod, tearAmount,
+  sectionAt, boundaryLift01,
+} from './Tube.js';
 
 /** How many parallax layers stand between the sky and the ground grid.
  *  Two: near and far. A third stopped reading as depth and started reading
@@ -104,11 +109,11 @@ export function shakeOffsetForBuffer(shakeX, shakeY, stageWidthPx, bufferWidthPx
   return { x: clampAxis(shakeX), y: clampAxis(shakeY) };
 }
 
-/** Ground-grid scroll speed, px/sec, scaled by how "epic" the moment reads
- *  (sim.vibe.epic, 0..1). A quiet verse crawls; a hyped chorus never sits
- *  still -- "constant motion" without every frame being equally loud. */
+/** Ground-grid scroll speed. Kept as a wrapper so existing callers keep
+ *  working; the renderer itself reads rasterRate from Tube.js, which is
+ *  the 1.2s energy average rather than vibe.epic. */
 export function gridScrollSpeedFor(epic01) {
-  return 24 + 40 * clamp01(epic01);
+  return rasterRate(epic01, false);
 }
 
 /** How many bands the backdrop tears into on a drop, and how far, scaled
@@ -136,6 +141,7 @@ export class CathodeRenderer {
     this._backdrop = null; // ImageData, rebuilt on persona change
     this._scanPattern = null;
     this._scanAlpha = -1;
+    this._scanPeriod = -1;
     this._layers = null; // per-layer {noise, scrollPxPerSec, ...}, rebuilt on song change
     this._layerSeed = null;
     this._vignette = null; // CanvasGradient, rebuilt on canvas resize
@@ -226,7 +232,7 @@ export class CathodeRenderer {
    * top MAX_TOPPER_ROWS rows are always reserved for the topper, whatever
    * its actual height, so the body's own draw position never has to move.
    */
-  _drawBoss(sim, persona, w, horizon, tSec, dropAtMs) {
+  _drawBoss(sim, persona, w, horizon, tSec, dropAtMs, music) {
     const { buffer } = this;
     const bctx = this._bossCtx;
     if (!bctx) return;
@@ -236,9 +242,9 @@ export class CathodeRenderer {
     const bodyTop = MAX_TOPPER_ROWS;
 
     const bossAgeMs = (sim?.timeMs ?? 0) - dropAtMs;
-    const tearAmount = clamp01(1 - bossReassembleU(bossAgeMs));
-    const rowOffsets = tearAmount > 0
-      ? glitchBandOffsets(sim?.songSeed ?? 1, tSec, tearAmount, body.h, BOSS_TEAR_MAX_PX)
+    const tear = tearAmount(clamp01(1 - bossReassembleU(bossAgeMs)), !!sim?.reducedFlash);
+    const rowOffsets = tear > 0
+      ? glitchBandOffsets(sim?.songSeed ?? 1, tSec, tear, body.h, BOSS_TEAR_MAX_PX)
       : null;
 
     bctx.clearRect(0, 0, this._bossCanvas.width, this._bossCanvas.height);
@@ -270,7 +276,13 @@ export class CathodeRenderer {
     }
 
     const beatPhase01 = sim?.beatAnchor ? sim.beatAnchor.phaseRad(sim.timeMs ?? 0) / (Math.PI * 2) : 0;
-    const flinch = beatFlinchScale(beatPhase01, sim?.beatAnchor?.confidence ?? 0);
+    const flinch = tubeFlinch({
+      phase01: beatPhase01,
+      confidence: sim?.beatAnchor?.confidence ?? 0,
+      accent: music?.accent ?? 0,
+      energy: music?.energy ?? 0,
+      reducedFlash: !!sim?.reducedFlash,
+    });
 
     // Feet stay anchored to the horizon and the whole sprite stays
     // horizontally centered regardless of flinch scale -- a hit pops the
@@ -287,20 +299,24 @@ export class CathodeRenderer {
     buffer.ctx.drawImage(this._bossCanvas, 0, 0, cw, ch, destX, destY, destW, destH);
   }
 
-  /** A 1x3 repeating pattern is one fillRect per frame instead of ~360.
+  /** A 1xN repeating pattern is one fillRect per frame instead of ~360.
    *  Built against the destination context (patterns are context-bound)
-   *  and rebuilt only when the alpha changes. */
-  _ensureScanPattern(alpha) {
-    if (this._scanPattern && this._scanAlpha === alpha) return this._scanPattern;
+   *  and rebuilt only when the alpha or the section motif period changes. */
+  _ensureScanPattern(alpha, period = 3) {
+    const tileH = Math.max(2, Math.round(period) || 3);
+    if (this._scanPattern && this._scanAlpha === alpha && this._scanPeriod === tileH) {
+      return this._scanPattern;
+    }
     const tile = document.createElement('canvas');
     tile.width = 1;
-    tile.height = 3;
+    tile.height = tileH;
     const tctx = tile.getContext('2d');
     if (!tctx) return null;
     tctx.fillStyle = `rgba(0,0,0,${alpha})`;
     tctx.fillRect(0, 0, 1, 1);
     this._scanPattern = this.ctx.createPattern(tile, 'repeat');
     this._scanAlpha = alpha;
+    this._scanPeriod = tileH;
     return this._scanPattern;
   }
 
@@ -316,6 +332,17 @@ export class CathodeRenderer {
     buffer.ctx.putImageData(this._backdrop, 0, 0);
 
     const tSec = (sim?.timeMs ?? 0) / 1000;
+    const nowMs = sim?.timeMs ?? 0;
+    const { section, prev } = sectionAt(sim?.biomes?.sections, nowMs);
+    const music = sampleWorldMusic({
+      nowMs,
+      energyCurves: sim?.energyCurves,
+      rhythm: sim?.biomes?.worldRhythm,
+      section,
+      reducedFlash: !!sim?.reducedFlash,
+      response: sim?.biomes?.world?.response,
+    });
+    const lift = boundaryLift01(section, prev);
 
     // Parallax skyline: farthest layer first so nearer ones draw over it.
     // Each layer's noise field is held for the whole song (_ensureLayers);
@@ -335,9 +362,10 @@ export class CathodeRenderer {
       }
     }
 
-    // Horizon rule: the brightest step in the ramp, one pixel tall. The
-    // single line that tells the eye where the floor is.
-    buffer.rect(0, horizon, w, 1, rampAt(ramp, ramp.length - 1));
+    // Horizon rule: the brightest step in the ramp. Bass gives the line
+    // weight -- a kick is not a thicker floor.
+    const horizonH = 1 + Math.round(2 * phosphorGlow(music.bass));
+    buffer.rect(0, horizon, w, horizonH, rampAt(ramp, ramp.length - 1));
 
     // A ground grid receding toward the horizon, scrolled by song time so
     // the world reads as moving even before a cast exists. Spacing grows
@@ -350,11 +378,11 @@ export class CathodeRenderer {
       if (y >= h) break;
       buffer.rect(0, y, w, 1, gridColor);
     }
-    // Epic-scaled: a quiet verse's grid crawls, a hyped chorus's blasts by
-    // -- "constant motion" without every moment being equally loud.
-    const scroll = Math.round((tSec * gridScrollSpeedFor(sim?.vibe?.epic ?? 0)) % 32);
+    // Energy-scaled, inverted-U: a quiet verse crawls, a groove cruises,
+    // dense material drops to half-time so the floor does not strobe.
+    const scroll = Math.round((rasterTravel(tSec, sim?.energyCurves, !!sim?.reducedFlash, sim?.biomes?.world?.response)) % 32);
     for (let x = -scroll; x < w; x += 32) {
-      buffer.rect(x, horizon + 1, 1, h - horizon - 1, gridColor);
+      buffer.rect(x, horizon + horizonH, 1, h - horizon - horizonH, gridColor);
     }
 
     // Drop envelope: covers both hype's automatic detection and an
@@ -363,12 +391,25 @@ export class CathodeRenderer {
     // latched into a timestamp the same way hype already carries its own
     // -- otherwise the reaction would last exactly one frame.
     if (sim?.cut?.dropJustCut || sim?.cut?.apotheosisJustCut) {
-      this._authoredDropAtMs = sim?.timeMs ?? 0;
+      this._authoredDropAtMs = nowMs;
     }
     const dropAtMs = Math.max(sim?.hype?.dropAtMs ?? -Infinity, this._authoredDropAtMs);
-    const dropStrength = dropImpactStrength(sim?.timeMs ?? 0, dropAtMs);
+    const dropStrength = tearAmount(dropImpactStrength(nowMs, dropAtMs), !!sim?.reducedFlash);
 
-    this._drawBoss(sim, persona, w, horizon, tSec, dropAtMs);
+    this._drawBoss(sim, persona, w, horizon, tSec, dropAtMs, music);
+
+    // Isolated accents flash the boss screen. Density already filtered
+    // them; reduced flash arrives with accent 0.
+    const hit = screenHit(music.accent, music.energy);
+    if (hit > 0.02) {
+      const faceY = Math.max(2, horizon - 36);
+      buffer.rect(Math.round(w * 0.42), faceY, Math.round(w * 0.16), 3, rampAt(ramp, ramp.length - 1));
+    }
+    // Earned phrase openings light a one-pixel attract bar. Decorative
+    // cuts arrive with reveal 0 and do nothing.
+    if (music.reveal * lift > 0.05) {
+      buffer.rect(0, 0, w, 1, rampAt(ramp, ramp.length - 1));
+    }
 
     // Backdrop tear: the scenery drawn so far (sky, skyline, grid, and the
     // boss now standing in it) shifts apart in a few bands for the same
@@ -409,7 +450,10 @@ export class CathodeRenderer {
 
     const allowCrt = sim?.perf?.heavyPostFx ?? true;
     if (allowCrt) {
-      const pattern = this._ensureScanPattern(scanlineAlpha(!!sim?.reducedFlash));
+      const pattern = this._ensureScanPattern(
+        scanlineAlpha(!!sim?.reducedFlash),
+        scanPeriod(section),
+      );
       if (pattern) {
         ctx.save();
         ctx.fillStyle = pattern;

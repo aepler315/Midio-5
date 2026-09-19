@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EnergyCurves } from '../src/audio/EnergyCurves.js';
-import { extractWatchFeatures, scoreWorlds, buildCustomWorld, buildWorldVariant } from '../src/world/WorldScore.js';
+import { extractWatchFeatures, scoreWorlds, buildCustomWorld, buildWorldVariant, TIE_EPS, pickRecommended, formatFitDiagnostic, driveAfterResponse } from '../src/world/WorldScore.js';
 import { getWorld, listWorlds, setCustomWorld, clearCustomWorld, DEFAULT_WORLD_ID } from '../src/world/Worlds.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildingProfile, cityHeightField, windowOccupancy } from '../src/world/city/CitySilhouette.js';
 import { extractRidgePortrait } from '../src/world/RidgePortrait.js';
 import { castBiomes } from '../src/world/Dramaturgy.js';
@@ -330,7 +333,7 @@ test('a palette-synthesis-only failure still leaves terrain shaping intact, and 
   console.warn = (...args) => warnCalls.push(args);
   let result;
   try {
-    result = buildCustomWorld(feat, data);
+    result = buildWorldVariant('alpine', feat, data);
   } finally {
     console.warn = originalWarn;
   }
@@ -343,9 +346,7 @@ test('a palette-synthesis-only failure still leaves terrain shaping intact, and 
     'the warning should identify which stage failed');
 });
 
-test('buildCustomWorld scores 100 for any song — proven by construction', () => {
-  // Test across four very different songs: quiet ambient, loud metal,
-  // mid-tempo groove, sparse high-frequency.
+test('an adapted world keeps the base identity instead of constructing a 100 score', () => {
   const songs = [
     { label: 'ambient', energyAt: () => 0.12, bands: () => [1.4, 1.0, 0.6, 0.3, 0.1, 0.05, 0.02], bpm: 68 },
     { label: 'metal', energyAt: (t) => 0.08 + bump(t, 0.5, 0.1, 0.85), bands: () => [0.3, 0.5, 0.9, 1.3, 1.5, 1.3, 1.1], bpm: 175 },
@@ -361,23 +362,17 @@ test('buildCustomWorld scores 100 for any song — proven by construction', () =
     const feat = extractWatchFeatures({ energyCurves: ec, durationMs, bpm: song.bpm });
     const { world, proof } = buildCustomWorld(feat);
 
-    // The proof must hold:
-    assert.equal(proof.score, 100, `${song.label}: score ${proof.score} !== 100`);
-    assert.ok(Math.abs(proof.comfort - 1.0) < 1e-9, `${song.label}: comfort ${proof.comfort} !== 1.0`);
-    assert.ok(Math.abs(proof.shape - 1.0) < 1e-9, `${song.label}: shape ${proof.shape} !== 1.0`);
-    assert.ok(Math.abs(proof.coverageNorm - 1.0) < 1e-9, `${song.label}: coverageNorm ${proof.coverageNorm} !== 1.0`);
-    assert.ok(Math.abs(proof.affinityNorm - 1.0) < 1e-9, `${song.label}: affinityNorm ${proof.affinityNorm} !== 1.0`);
-    assert.ok(Math.abs(proof.mixed - 1.0) < 1e-9, `${song.label}: mixed ${proof.mixed} !== 1.0`);
-
-    // The world must be usable: has all fields BiomeManager needs.
+    assert.notEqual(proof.score, 100, `${song.label}: adapted worlds must not construct a perfect score`);
+    assert.ok(proof.score >= 1 && proof.score <= 99, `${song.label}: score ${proof.score} out of range`);
     assert.ok(world.kind, `${song.label}: missing kind`);
     assert.ok(world.palettes?.length >= 3, `${song.label}: missing palettes`);
     assert.ok(typeof world.cast === 'function', `${song.label}: missing cast`);
-    assert.equal(world.custom, true);
+    assert.ok(world.registeredId);
+    assert.ok(world.instanceId);
+    assert.notEqual(world.instanceId, world.registeredId);
 
-    // Registering and retrieving must work.
     setCustomWorld(world);
-    assert.equal(getWorld('custom').kind, world.kind);
+    assert.equal(getWorld(world.id).kind, world.kind);
     clearCustomWorld();
     assert.notEqual(getWorld('custom').id, 'custom');
   }
@@ -405,7 +400,173 @@ test('buildWorldVariant preserves the selected world while tailoring it to the s
 
   assert.equal(world.id, 'custom');
   assert.equal(world.baseId, 'nocturne');
+  assert.equal(world.registeredId, 'nocturne');
   assert.equal(world.kind, 'city');
   assert.equal(world.name, 'After Hours');
-  assert.equal(proof.score, 100);
+  assert.notEqual(proof.score, 100);
+  assert.ok(world.response);
+  assert.equal(world.capabilities.geometry.includes('skyline'), true);
+  assert.equal(world.capabilities.geometry.includes('ridge'), false);
+});
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+test('every scored channel cites a real renderer consumer', () => {
+  const missing = [];
+  for (const w of listWorlds()) {
+    for (const ch of w.channels || []) {
+      if (!ch.consumer) {
+        missing.push(`${w.id}.${ch.id} has no consumer`);
+        continue;
+      }
+      const [file, sym] = ch.consumer.split('#');
+      const path = join(REPO_ROOT, file);
+      if (!existsSync(path)) {
+        missing.push(`${w.id}.${ch.id} missing file ${file}`);
+        continue;
+      }
+      if (sym) {
+        const src = readFileSync(path, 'utf8');
+        if (!src.includes(sym)) missing.push(`${w.id}.${ch.id} missing ${sym} in ${file}`);
+      }
+    }
+  }
+  assert.deepEqual(missing, []);
+});
+
+test('ranking uses continuous fit, not the rounded display score', () => {
+  const loud = metal();
+  const feat = extractWatchFeatures({ energyCurves: loud.ec, durationMs: loud.durationMs, bpm: 160 });
+  const ranked = scoreWorlds(feat);
+  for (let i = 1; i < ranked.length; i++) {
+    if (ranked[i - 1].eligible === ranked[i].eligible) {
+      assert.ok(ranked[i - 1].fit >= ranked[i].fit - 1e-12,
+        `fit out of order at ${i}: ${ranked[i - 1].id}=${ranked[i - 1].fit} then ${ranked[i].id}=${ranked[i].fit}`);
+    }
+  }
+  for (const row of ranked) {
+    assert.equal(row.score, Math.max(1, Math.min(99, Math.round(40 + 58 * row.fit))));
+  }
+
+  const low = {
+    id: 'low', name: 'Aaa', kind: 'alpine',
+    comfort: { lo: 0.40, hi: 0.60 },
+    channels: [{ id: 'x', reads: 'arc', weight: 1 }],
+    prefer: { arc: [0.10, 0.20] },
+    affinity: { groove: 1 },
+  };
+  const high = {
+    id: 'high', name: 'Zed', kind: 'alpine',
+    comfort: { lo: 0.30, hi: 0.80 },
+    channels: [{ id: 'x', reads: 'onset', weight: 1 }],
+    prefer: { onset: [0.30, 0.40] },
+    affinity: { onset: 1 },
+  };
+  const pair = scoreWorlds(baseFeat({ drive: 0.50, onset: 0.35, arc: 0.42, groove: 0.20 }), [low, high]);
+  assert.ok(pair[0].fit >= pair[1].fit);
+  if (pair[0].score === pair[1].score && pair[0].fit !== pair[1].fit) {
+    const byScoreThenName = [...pair].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    assert.equal(byScoreThenName[0].name, 'Aaa');
+    assert.notEqual(pair[0].id, byScoreThenName[0].id);
+  }
+});
+
+test('near ties stay tied; Choose-for-me still returns one pick', () => {
+  const feat = baseFeat({ drive: 0.5, onset: 0.4, arc: 0.5, groove: 0.5 });
+  const clone = (id, name) => ({
+    id, name, kind: 'alpine',
+    comfort: { lo: 0.3, hi: 0.8 },
+    channels: [{ id: 'x', reads: 'arc', weight: 1 }],
+    prefer: { arc: [0.4, 0.6] },
+    affinity: { arc: 1 },
+  });
+  const ranked = scoreWorlds(feat, [clone('one', 'One'), clone('two', 'Two')]);
+  assert.ok(Math.abs(ranked[0].fit - ranked[1].fit) <= TIE_EPS);
+  assert.equal(ranked[0].tied, true);
+  assert.equal(ranked[1].tied, true);
+  assert.equal(ranked.filter((r) => r.recommended).length, 1);
+  assert.equal(ranked[0].pickReason, 'near-tie');
+  const pick = pickRecommended(ranked);
+  assert.ok(pick.recommended);
+  assert.equal(pick.id, ranked[0].id);
+});
+
+test('a unique winner exposes split diagnostic fields', () => {
+  const loud = metal();
+  const feat = extractWatchFeatures({ energyCurves: loud.ec, durationMs: loud.durationMs, bpm: 160 });
+  const ranked = scoreWorlds(feat);
+  const pick = pickRecommended(ranked);
+  const next = ranked.find((r) => r.id !== pick.id);
+  if (Math.abs(pick.fit - next.fit) > TIE_EPS) {
+    assert.equal(pick.pickReason, 'unique');
+    assert.equal(ranked.filter((r) => r.tied).length, 1);
+  }
+  assert.ok(pick.parts.styleAffinity != null);
+  assert.ok(Array.isArray(pick.parts.problems));
+  assert.ok('driveUsed' in pick.parts);
+  assert.ok(pick.parts.responseBand);
+});
+
+test('dense response does not invert metal: The Range still beats After Hours', () => {
+  const loud = metal();
+  const feat = extractWatchFeatures({ energyCurves: loud.ec, durationMs: loud.durationMs, bpm: 160 });
+  const ranked = scoreWorlds(feat);
+  const alpine = ranked.find((r) => r.id === 'alpine');
+  const city = ranked.find((r) => r.id === 'nocturne');
+  assert.ok(alpine.fit > city.fit, `metal alpine fit ${alpine.fit} vs city ${city.fit}`);
+  assert.ok(alpine.parts.driveUsed <= alpine.parts.drive + 1e-9, 'dense absorb must not lift drive');
+  assert.ok(city.parts.driveUsed <= city.parts.drive + 1e-9, 'dense absorb must not lift drive');
+  const cityHi = getWorld('nocturne').comfort.hi;
+  if (city.parts.drive > cityHi) {
+    assert.ok(city.parts.driveUsed > cityHi, 'city is not teleported into its comfort band');
+  }
+});
+
+test('quiet input is never lifted to manufacture activity', () => {
+  const feat = baseFeat({ energyMean: 0.08, dyn: 0.10, onset: 0.05, drive: 0.10, arc: 0.08 });
+  const ranked = scoreWorlds(feat);
+  for (const r of ranked) {
+    assert.equal(r.parts.driveUsed, r.parts.drive);
+  }
+  const foundry = ranked.find((r) => r.id === 'foundry');
+  assert.ok(foundry.parts.problems.some((p) => p.code === 'stillness'));
+});
+
+test('diagnostics separate style affinity, analysis confidence, and predicted problems', () => {
+  const feat = baseFeat({ onset: 0.8, drive: 0.7 });
+  const ranked = scoreWorlds(feat, undefined, { confidence: 0.12 });
+  const pick = pickRecommended(ranked);
+  assert.equal(pick.parts.analysisConfidence, 0.12);
+  assert.equal(pick.parts.styleAffinity, pick.parts.affinity);
+  assert.ok(pick.parts.problems.some((p) => p.code === 'low-confidence'));
+  const lines = formatFitDiagnostic(ranked, { confidence: 0.12 });
+  assert.ok(lines[0].includes('heuristic, not quality'));
+  assert.ok(lines.some((l) => l.startsWith('pick:')));
+  assert.ok(lines.some((l) => l.includes('analysis confidence')));
+  assert.ok(lines.some((l) => l.startsWith('style affinity:')));
+  assert.ok(lines.some((l) => l.startsWith('problems:')));
+});
+
+test('manual-only worlds and explicit exclusions stay out of Choose-for-me', () => {
+  const feat = baseFeat();
+  const withCathode = scoreWorlds(feat, listWorlds());
+  const cathode = withCathode.find((r) => r.id === 'cathode');
+  assert.equal(cathode.eligible, false);
+  assert.ok(cathode.parts.problems.some((p) => p.code === 'manual-only'));
+  assert.notEqual(pickRecommended(withCathode).id, 'cathode');
+
+  const excluded = scoreWorlds(feat, undefined, { exclude: ['alpine'] });
+  assert.equal(excluded.find((r) => r.id === 'alpine').eligible, false);
+  assert.notEqual(pickRecommended(excluded).id, 'alpine');
+});
+
+test('driveAfterResponse absorbs dense overshoot toward the comfort ceiling', () => {
+  const world = { comfort: { lo: 0.2, hi: 0.6 } };
+  const feat = { drive: 0.9 };
+  const dense = { band: 'dense', accentGain: 0.42, quiet: false };
+  const used = driveAfterResponse(feat, world, dense);
+  assert.ok(used < feat.drive);
+  assert.ok(used > world.comfort.hi);
+  assert.equal(driveAfterResponse(feat, world, { band: 'mid', accentGain: 0.42, quiet: false }), 0.9);
+  assert.equal(driveAfterResponse({ drive: 0.1 }, world, { band: 'dense', accentGain: 0.42, quiet: true }), 0.1);
 });

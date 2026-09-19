@@ -32,3 +32,9 @@ deviation, pairwise form-label F-measure, and over/under-segmentation NCE.
 Keep final evaluation tracks separate from tuning tracks. Synthetic unit cases
 protect algorithmic regressions, but they are not a substitute for a real,
 annotated music corpus.
+
+World *visual* quality is a separate protocol: see
+[world-quality-evaluation.md](./world-quality-evaluation.md) and
+`npm run eval:worlds`. Section metrics here do not measure watchability,
+and world-quality ratings do not measure boundary F-measure.
+

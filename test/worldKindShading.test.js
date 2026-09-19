@@ -17,34 +17,84 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { WORLD_RENDERERS } from '../src/world/WorldRegistry.js';
 
-const KIND_FILES = {
-  city: 'src/world/city/drawCity.js',
-  airless: 'src/world/farside/drawFarside.js',
-  abyssal: 'src/world/fathom/drawFathom.js',
-  foundry: 'src/world/foundry/drawFoundry.js',
-  overgrowth: 'src/world/understory/drawUnderstory.js',
-  nave: 'src/world/nave/drawNave.js',
-  strip: 'src/world/redline/drawRedline.js',
-};
+const KINDS = ['city', 'airless', 'abyssal', 'foundry', 'overgrowth', 'nave', 'strip'];
+const STOP_AFTER_FIRST_SHADE = new Error('first range shaded');
 
-for (const [kind, file] of Object.entries(KIND_FILES)) {
-  test(`the ${kind} world shades its ranges instead of blitting flat shapes`, () => {
-    const src = readFileSync(file, 'utf8');
-    assert.ok(src.includes('_drawRidgeVolume'),
-      `${file} blits its ranges with no shading pass -- they will render as flat cutouts`);
-  });
+function recordingContext(events) {
+  const gradient = () => ({ addColorStop() {} });
+  return {
+    canvas: { width: 640, height: 360 },
+    save() {}, restore() {}, beginPath() {}, closePath() {}, clip() {}, fill() {}, stroke() {},
+    moveTo() {}, lineTo() {}, rect() {}, arc() {}, ellipse() {}, translate() {}, rotate() {}, scale() {},
+    fillRect() {}, strokeRect() {},
+    drawImage(strip, x, y) { events.push({ type: 'blit', strip, x, y }); },
+    createLinearGradient: gradient, createRadialGradient: gradient,
+    globalAlpha: 1, globalCompositeOperation: 'source-over', fillStyle: '', strokeStyle: '', lineWidth: 1,
+  };
+}
 
-  test(`the ${kind} world does not claim alpine geology`, () => {
-    // Snowcaps and sedimentary bedding are alpine-specific. A skyline, a
-    // foundry's stacks and an interior vault all need SHADING; none of them
-    // needs strata. Every call from these files must opt out explicitly.
-    const src = readFileSync(file, 'utf8');
-    const calls = src.match(/_drawRidgeVolume\([^;]*?\);/gs) || [];
-    assert.ok(calls.length > 0, `${file} has no _drawRidgeVolume call to check`);
-    for (const call of calls) {
-      assert.ok(/geology:\s*false/.test(call),
-        `${file}: a _drawRidgeVolume call did not pass { geology: false }`);
-    }
+function firstRangeContract(kind, draw) {
+  const events = [];
+  const strip = { width: 200, height: 100 };
+  const strips = { L2: strip, L3: strip, L4: strip, L5: strip };
+  const noop = () => {};
+  const mgr = {
+    world: { kind }, tSec: 5, durationMs: 120000, openingGain: 1, reducedFlash: false,
+    currentBlend: { from: 'fixture', to: 'fixture' }, unravel: 0, orogenyGrowth: 0.5,
+    energyCurves: null, worldRhythm: null, sections: [], _lastSectionIdx: 0,
+    visualStyle: null, _perf: { phenomenaFull: false, heavyPostFx: false, hazeLayers: 1, rimLightEnabled: false },
+    lerpCache: { get: (a) => a }, _rotated: (a) => a,
+    stripsFor: () => strips, fields: new Map(), weatherFields: new Map(),
+    weaver: { draw: noop }, meteors: { draw: noop },
+    _drawSky: noop, drawDeepSky: noop, _drawMoon: noop, _drawCelestial: noop,
+    _drawHaze: noop, _drawFogBanks: noop, _drawGround: noop, _drawTerrainFooting: noop,
+    _drawFlood: noop, _drawTransitionOverlays: noop,
+    _moonPhase01: () => 0.5,
+    _celestialApproachAt: (_canvas, x, y) => ({ x, y, scale: 1 }),
+    _drawRidgeVolume(...args) {
+      events.push({ type: 'shade', args });
+      throw STOP_AFTER_FIRST_SHADE;
+    },
+  };
+  const palette = {
+    name: 'fixture', sky: ['#101820', '#182838', '#304050'], silhouette: '#506070',
+    terrainEnergy: 0.75, fx: null, celestial: { color: '#d0c0a0', haloColor: '#80a0c0', radius: 80 },
+  };
+  const canvas = { width: 640, height: 360 };
+  const ctx = recordingContext(events);
+  assert.throws(() => draw(mgr, {
+    ctx, canvas, worldX: 137, originX: 0, A: palette, B: palette, t: 0,
+    dn: { sunAlt: 0.6, moonAlt: 0.6, sunAz01: 0.5, moonAz01: 0.5 },
+    phenomenaFull: false, particleMul: 0, groundView: null, skyVoyage: null,
+  }), error => error === STOP_AFTER_FIRST_SHADE);
+  return { events, strip, canvas };
+}
+
+for (const kind of KINDS) {
+  test(`the ${kind} world shades the exact static range it blits`, () => {
+    const { events, strip, canvas } = firstRangeContract(kind, WORLD_RENDERERS.get(kind));
+    const shade = events.at(-1);
+    const blits = events.slice(0, -1);
+    assert.ok(blits.length > 0, 'the first range must be tiled before it is shaded');
+    const blit = blits.at(-1);
+    assert.ok(blits.every(event => event.type === 'blit' && event.strip === strip));
+    assert.equal(blit.type, 'blit');
+    assert.equal(shade.type, 'shade');
+    const [ctxArg, canvasArg, stripArg, scrollX, yOff, layer, alpha, terrainEnergy,
+      danceMul, growthMul, options] = shade.args;
+    assert.ok(ctxArg && typeof ctxArg.drawImage === 'function');
+    assert.equal(canvasArg, canvas);
+    assert.equal(stripArg, strip);
+    const tile = (blit.x + scrollX) / strip.width;
+    assert.ok(Math.abs(tile - Math.round(tile)) < 1e-9,
+      'shading and tiled bitmap must use the same scroll phase');
+    assert.equal(yOff, blit.y - (canvas.height - strip.height), 'shading and bitmap must use the same y offset');
+    assert.equal(layer, 'L2');
+    assert.equal(alpha, 1);
+    assert.equal(terrainEnergy, 0.75);
+    assert.equal(danceMul, 1);
+    assert.equal(growthMul, 1);
+    assert.deepEqual(options, { geology: false, geometry: 'static' });
   });
 }
 
@@ -56,9 +106,9 @@ test('every kind with its own renderer is covered here', () => {
   const kinds = [...WORLD_RENDERERS.keys()];
   assert.ok(kinds.length > 0, 'the world renderer registry is empty');
   for (const k of kinds) {
-    assert.ok(KIND_FILES[k], `world kind '${k}' has its own renderer but is not covered by this test`);
+    assert.ok(KINDS.includes(k), `world kind '${k}' has its own renderer but is not covered by this test`);
   }
-  assert.equal(kinds.length, Object.keys(KIND_FILES).length);
+  assert.equal(kinds.length, KINDS.length);
 });
 
 test('the air color is resolved before the dispatch, not after it', () => {

@@ -1,349 +1,219 @@
-# Visual Effects Suite — Spec Sheet
+# Visual Effects Suite — implementation and verification
 
-The VFX suite is everything the game draws that is *not* world geometry and
-*not* a character: the impact vocabulary, the trails, the post-processing
-stack, and the two cross-cutting systems (accessibility, perf) that every
-effect is obligated to respect.
+Checked against the implementation on September 18, 2026. This document
+separates implemented behavior from tests and remaining acceptance work.
+The main painterly path is `src/render/Renderer.js`; Cathode has its own
+renderer and CRT pipeline. Directors consume timeline/simulation state;
+the renderer consumes their output rather than analyzing audio itself.
 
-Everything here is a **pure consumer of the NoteEvent timeline and the sim
-state** — no effect owns gameplay state, and no effect reads audio directly.
-Directors compute numbers; the Renderer draws them.
+## Impact and trail inventory
 
----
+`ImpactFX` stores positions in world space and projects them with
+`wx - worldX + originX`. `Simulation` seeds it with the song seed.
 
-## 1. Inventory
+| Effect | Capacity | Lifetime / behavior |
+| --- | --- | --- |
+| Crater flash | 16 | 0.12 s; biome-tinted landing light |
+| Landing dust ring | 16 | 0.42 s; 24 jittered segments |
+| Judgment ring | 16, separate pool | Dedicated capacity keeps landing decoration from starving verdicts |
+| Dust motes | 400 | 0.26–0.42 s for landings; also judgment/sputter particles |
+| Star-polygon shockwave | 8 | 0.5 s; hard landings (`I > 0.5`) |
+| Paint splat | 20 | 2.8 s; rhythm-clean landings and authored events |
+| Gold ignition ring | 8 | 0.5 s; Apotheosis |
+| Ground scar | 60, manual list | 4 s |
 
-### 1.1 Impact vocabulary — `src/sim/ImpactFX.js`
+Landing intensity is `clamp(vLand / vRef, 0, 1)^0.7`; camera shake is
+`5.5 * I`. Pool allocation returns `null` at capacity; ring initialization
+is guarded. Pools recycle objects, while some effect payloads (for example
+splat blob arrays) still allocate. This is not an allocation-free engine.
 
-Landing/judgment fan-out. Positions stored in **world space** (`wx`) so a
-short-lived burst stays glued to its ground point while the world scrolls;
-mapped to screen at draw time via `wx - worldX + originX`.
+`RippleFX` adds expanding perspective rings, ground pulses and biome-tinted
+landing puffs. Its radius, lifetime, opacity and puff trajectories have pure
+helpers and tests. Ring count and puff count consume the particle multiplier,
+with minimum feedback counts; zero multiplier does not disable every effect.
 
-| Sub-effect | Pool cap | Life | Trigger |
-| --- | --- | --- | --- |
-| Crater flash (radial gradient, ellipse squash 0.4) | 16 | 0.12 s | every landing |
-| Dust ring (24-segment jittered ellipse) | 16 | 0.42 s | every landing |
-| Dust motes (gravity 300 px/s²) | 400 | 0.26–0.42 s | landing, sputter, judgment |
-| Star-polygon shockwave (5–7 points, spinning, 3-lobe wobble) | 8 | 0.5 s | landing with `I > 0.5` |
-| Paint splat (6–9 chunky squares, 1 of 6 paint-pot colors) | 20 | 2.8 s | rhythm-clean landing |
-| Ignition ring (gold, `lighter`) | 8 | 0.5 s | any landing while Apotheosis is active |
-| Ground scar (decal) | 60 (manual cap) | 4 s | every landing |
+`ImpactFX` trigger, judgment, sputter and splat accept particle multipliers.
+Some simulation events multiply the governor budget by fever headroom;
+other authored events intentionally use the default. These are effect budgets,
+not a promise that every draw count scales identically.
 
-**Intensity law.** `I = clamp(vLand / vRef, 0, 1) ^ 0.7` — the single
-normalized 0..1 scalar that scales radius, alpha, mote count, and camera
-shake (`camera.shake(5.5 * I)`).
+`RainbowBrush` deposits world-locked square dabs while airborne: at most 320,
+3.2 s lifetime, 8 px nominal spacing, 16° hue steps. Spacing widens under
+particle shedding. Draw skips expired, future-dated and off-screen dabs;
+the entire brush is gated at governor level 5. Reduced flash uses normal
+compositing instead of additive blending.
 
-**Judgment ring colors** are the verdict; the shape is language-free:
+Murmuration and OrbitalDebris render a bounded subset of their fixed simulated
+collections. The draw multiplier affects emitted wing segments/triangles,
+not the size of the simulation arrays. Zero or negative multipliers emit no
+geometry; values above one cannot read beyond the collection.
 
-| Tier | RGB | Radius | Motes | Direction |
-| --- | --- | --- | --- | --- |
-| `perfect` | `255,215,106` | 150 | 10 | rising |
-| `great` | `79,216,196` | 110 | 6 | rising |
-| `good` | `235,235,245` | 75 | 3 | rising |
-| `sour` | `158,132,168` | 55 | 8 | drooping, 7px jag |
+## Lighting and world boundaries
 
-**Telegraph sputter** runs at a fixed ~120 motes/sec accumulator during
-pre-kick anticipation.
+`LightField` resolves a shared celestial light and local ground/character
+lights. Celestial intensity is
+`budget * (1 - unravel) * (1 - 0.5 * dayArcAlpha)`; reduced flash compresses
+it toward a steady 0.6 baseline rather than applying a flash cap.
 
-### 1.2 Ripple — `src/sim/RippleFX.js`
+Song adaptation preserves each stock palette's `edgeLight`, so Nave's
+stained-glass spill, Foundry's furnace glow and Redline's neon band remain
+available. Intentionally unlit stock palettes stay unlit. Seven specialized
+worlds shade the exact fitted vertices and placement of their static strips;
+Range retains its dancing terrain. Ceiling strips have their own geometry.
 
-The ground's *answer* to a landing, drawn additively (`lighter`) with the
-same world-space convention and a fixed `RIPPLE_SQUASH = 0.28` perspective.
-Every curve is a **pure exported function**, which is why this is the one
-impact module with real unit tests.
+Fathom and Nave pass `{ astronomical: false }` to the shared sky renderer.
+They retain the base gradient, atmospheric plate and local palette effects
+such as light shafts, bioluminescence and motes. Stars, galactic layers,
+space dust, aurora and nebula bloom are excluded. Their celestial objects
+remain the underwater sun and rose window. The default open-sky behavior is
+unchanged. The final film grade remains a separate, shared color treatment.
 
-- `rippleRadius(ageMs, I)` — ease-out cubic to `60 + 180·I` px
-- `rippleLifeMs(I)` — `700 + 300·I` ms
-- `rippleAlpha(ageMs, I)` — `(0.5 + 0.3·I)·(1-u)²`
-- `groundPulseX(ageMs, I)` — twin ground-line pulses, ease-out to `90 + 160·I` px
-- `puffOffset(ageMs, angle, I)` / `puffAlpha(ageMs, I)` — biome-tinted landing puff, `PUFF_LIFE_MS = 480`
+Redline and Cathode travel integrate smoothed song energy into cumulative
+distance. They no longer multiply the current rate by elapsed song age.
+Direct and backward seeks therefore agree with the integrated timeline.
 
-3 rings stagger at 90 ms. The puff takes its color from
-`BiomeManager.currentParticleColor()` — the puff itself does not know dust
-from snow from ember from splash.
+Protected hues remain Midio (`178°`), hazard (`#ff4d4d`) and reward
+(`#ffd75e`). `VisualStyle.styleDials()` is authoritative for shared style:
+current bloom multiplier 0.9, film grade 1.45, vignette 1.08, glow halo 0.95
+and rim amount 0.95. World identity still needs visual review across songs;
+those numbers alone do not establish balanced compositions.
 
-### 1.3 Rainbow brush — `src/render/RainbowBrush.js`
+## Reduced flash
 
-Mario-Paint pen repurposed: while Midio is airborne, chunky square dabs drop
-at 8 px stroke spacing, hue stepping 16°/dab, world-locked, `MAX_DABS = 320`,
-`LIFE_MS = 3200`. Additive at peak alpha 0.4 (deliberately low — additive
-stacking saturates to white fast). Spacing widens by `1/particleMul` under
-perf pressure; size doubles during Apotheosis.
+The persisted preference defaults to `prefers-reduced-motion` when no
+explicit preference is stored. The per-effect flash helper caps alpha at
+`FLASH_CAP = 0.4`.
 
-### 1.4 Post-processing stack
+- Impact flashes/rings, RippleFX and other flash-aware effects cap their
+  transient opacity. Landing additive effects switch to `source-over`.
+- The hype echo and drop motion blur are disabled. The hype border caps its
+  final opacity (including focus weighting) and switches to `source-over`.
+- Drop shockwave rings, shock blits and speed lines cap opacity and switch to `source-over`;
+  the chromatic displacement is also halved.
+- Cathode suppresses screen hits/tearing and reduces raster travel speed.
+- Film grading is a slow color treatment, not a beat flash. Celestial light
+  compression and bloom's steady base have separate rules.
 
-Applied to the fully composed frame, in this fixed order:
+A per-draw alpha limit is not a frame-wide luminance guarantee. Normal
+compositing avoids additive summation, but overlapping layers and remaining
+post-processing can still alter contrast. These implementation checks do
+not constitute a photosensitivity certification or exhaustive flash audit.
 
-1. **Fever aura** (`_drawFeverAura`) — inverse vignette, silent below
-   `fever = 0.55`, ramps to alpha 0.22, tinted to the biome halo.
-2. **Hype frame** (`_drawHypeFrame`) — breathing border + kick strobe +
-   frame-echo self-blit on hard hits.
-3. **Drop impact pack** (`_drawDropImpact`) — chromatic shock
-   (`≤ 8 px` offset, `≤ 0.5` alpha) + 24 radial speed lines (`≤ 0.35` alpha).
-4. **Drop motion blur** (`_drawDropMotionBlur`) — a 2–3 frame accumulation
-   over the composed frame, fired only inside the 320 ms drop impact window
-   while the camera is actually traveling. A 3-slot ring of backing-store
-   canvases holds the last three clean frames (captured every frame, so it's
-   warm when a drop lands); during the window the two older frames blend
-   back `source-over` (exposure, not additive), offset against the camera's
-   per-frame travel and fainter with age (α `0.30 / 0.18` × strength).
-   Strength = `dropImpactStrength · (0.35 + 0.65 · clamp(speed/7))` — no
-   shake travel, no smear. Gated like the hype echo: disabled under reduced
-   flash, skipped (and freed) under perf pressure. Pure helpers:
-   `dropMotionBlurStrength` / `dropMotionBlurPasses`.
-5. **Bloom** (`_drawBloom`) — 1/3-res downsample → 2 self-multiply threshold
-   passes (`c^4`) → 7 px blur → additive upscale blit. Strength from
-   `bloomStrength(hype, fever, reducedFlash, openingGain)`; early-out below 0.005.
-6. **Film finish** (`_drawFilmFinish`) — `soft-light` grade wash (alpha
-   `0.012 + 0.03·|warmth-0.5|·2`, hard-capped at 0.22) + optional indigo space
-   wash + `source-over` vignette (alpha `0.02 → 0.54`, onset `0.62 → 0.34`).
-7. HUD strip draws **after** post-FX so nothing buries it.
+## Performance governor
 
-**`FilmFinish` state model** (`src/render/FilmFinish.js`) — two one-pole
-smoothed 0..1 signals:
+`PerfGovernor.sample()` receives the **rAF frame period**, including vsync
+wait, not JavaScript draw cost. Its threshold is **18.5 ms**.
 
-- `vignetteDepth`, τ = 0.6 s. Target = `calm · (1 - 0.85·hypeOpen)` —
-  proportional, never subtractive, so it can't undershoot.
-  `hypeOpen = surge + 0.35·slam + 0.20·fast`.
-- `warmth`, τ = 1.2 s. Target = `0.5·(1-calm) + 0.5·budget`.
-- `hit(kind)` bypasses the lowpass entirely for authored cuts:
-  `drop→0.05`, `apotheosis→0.95`, `finale→0`, `quake→0.2`, `tsunami→0.05`.
+- Song/world construction starts **2,500 ms warmup grace**; those frames do
+  not vote on shedding.
+- Each period above budget adds `min(6, deltaMs / 18.5)` load units. At 60
+  units it sheds one level and clears the accumulator.
+- A clean period removes 0.5 load units, bounded at zero. Intermittent judder
+  can accumulate evidence; one clean frame no longer erases it.
+- Ten uninterrupted clean seconds recover one level. An over-budget period
+  restarts that recovery window.
+- `?perf=high` starts at 0; `?perf=lite` starts at 2. Coarse-pointer or small
+  viewport otherwise starts at 1. These choose the initial level only.
 
-### 1.5 Lighting — `src/render/LightField.js`
-
-Pure data, no drawing. One celestial light resolved per frame and shared by
-every rim light and contact shadow:
-
-`intensity = budget · (1 - unravel) · (1 - 0.5·dayArcAlpha)`
-
-Secondary lights are local and falloff-limited — they light who's nearby,
-they don't relight the world: ground-glow pulses (radius 130 px, ×0.55) and
-character glow (radius 100 px). Both are empty-in/empty-out (zero cost when
-nothing is active).
-
-### 1.6 Color law — `src/render/ColorLaw.js`
-
-Three protected hues, never rotated by biome or key, never angle-nudged,
-never blended:
-
-- `MIDIO_IDENTITY_HUE = 178` — who he is
-- `HAZARD_HEX = #ff4d4d` — what will hurt you
-- `REWARD_HEX = #ffd75e` — what you did right
-
-### 1.7 House dials — `src/render/VisualStyle.js`
-
-One look, one dial set. VFX-relevant multipliers: `bloomBaseMul 1.4`,
-`filmGradeMul 1.45`, `vignetteDepthMul 1.08`, `glowHaloMul 1.55`,
-`rimAmount 0.95`, `spaceWash true`.
-
----
-
-## 2. Cross-cutting contracts
-
-### 2.1 Accessibility — `src/ui/Accessibility.js`
-
-`reducedFlash` is a persisted toggle that defaults to
-`prefers-reduced-motion` when the player has never chosen. Contract:
-**every flashing alpha routes through `capFlashAlpha(alpha, reducedFlash)`**,
-which clamps to `FLASH_CAP = 0.4`.
-
-Two effects opt out deliberately and document why:
-
-- The film finish never routes through it — neither channel spikes on a
-  kick, so it is a swell, not a flash.
-- `LightField.computeLight` *compresses toward a 0.6 baseline* instead of
-  capping, since a continuous light has no peak to clamp.
-
-The hype frame's echo self-blit is disabled outright under reduced flash.
-
-### 2.2 Performance — `src/render/PerfGovernor.js`
-
-A 7-level (0..6) shed ladder with hysteresis. Budget 15 ms.
-
-**Shed:** each over-budget frame accumulates `min(6, delta/15)`; at 60
-accumulated units, shed one rung. A frame at exactly budget takes ~1 s to
-shed; a 3× frame takes ~20.
-**Recover:** one rung per 10 clean seconds.
-**Start level:** `?perf=lite` → 2, `?perf=high` → 0, otherwise coarse-pointer
-or small viewport → 1.
-
-| Level | What is lost |
+| Level | Additional degradation |
 | --- | --- |
-| 1 | vision self-tuning loop |
-| 2 | particle count ×0.6, rim light |
-| 3 | contact shadows, crack glow, **bloom** |
-| 4 | L7 foreground veil |
-| 5 | optional phenomena (reaction-diffusion, cymatics, murmuration, planets, far vignettes, meteors) |
-| 6 | haze layers 3→1, **film grade + vignette**, hype frame echo |
+| 1 | Disable vision self-tuning; widen dancing-strip columns 16→32 px |
+| 2 | Particle multiplier 0.6; disable rim lighting |
+| 3 | Disable contact shadows, crack-glow capability and bloom; columns 64 px |
+| 4 | Disable L7 veil |
+| 5 | Disable optional phenomena and RainbowBrush |
+| 6 | Haze 3→1 layers; disable heavy finishing/echo/blur; reduce terrain shading to its retained catchlight |
 
-`particleMul` reaches effects two ways: directly from `perf.particleMul`, and
-multiplied by fever headroom in the sim (`perf.particleMul · (1 + 1.5·fever)`).
+Above 2560 backing-store pixels, column width doubles (maximum 128). Every
+preset is capped to the pixels its contained 16:9 stage can actually present;
+manual presets otherwise remain fixed. Auto alone reduces its fitted backing
+store to 85%, 75% and 62.5% at levels 2, 3 and 4. Retro mode pins level 6,
+particle multiplier 0.35 and 128 px columns; optional retro palette
+quantization only runs with that mode.
 
-### 2.3 Allocation discipline
+Some capabilities are historical: the painterly renderer no longer draws
+fracture cracks, although the timing engine and governor accessor remain.
+Profile-crossfade memoization and per-pixel crack refraction are not
+implemented features and are not claimed as savings.
 
-Every burst effect uses `ObjectPool` (`src/utils/ObjectPool.js`) — prefilled
-free list, hard capacity cap, `spawn()` **returns `null`** when full,
-`step(dt, fn)` reclaims on `fn → false`. Zero allocation in the hot loop once
-warm. Scars are the documented exception (small list, seconds-long life,
-manual `shift()` cap at 60).
+## Painterly draw order
 
----
+The important boundaries in `Renderer.draw()` are:
 
-## 3. Draw order (the actual contract)
+1. Sky/parallax/phenomena use the zoomed view. The world renderer then switches
+   to the fixed ground view for ground, footing and flood.
+2. Burrow/desaturation/telegraph, obstacles, ImpactFX and RippleFX precede
+   battle enemies, brush and characters. Shadows precede their characters;
+   Midio's afterimages precede his core.
+3. Epicycles/drop shockwave, Midasus, character reflections, battle FX and
+   gnat precede the foreground veil and transposition wave. Fracture drawing
+   has been removed; its simulation timing still exists.
+4. After restoring the camera transform, the opening assembly captures the
+   clean world composite **before post-processing and HUD**.
+5. Fever aura → hype frame → drop impact → drop motion blur → bloom → heat
+   distortion → film finish. Pixel-sampling passes use the physical backing
+   store at identity transform; logical overlays use the stage transform.
+6. HUD/seek strip follows post-processing. Assembly shards follow the HUD.
+   Optional retro palette quantization follows assembly. Freeze and highlight
+   capture use the completed frame.
 
-Effects are not free to draw anywhere; the order below is load-bearing.
+Ambient heat distortion grows toward the ground in backing-store coordinates;
+it is no longer strongest at the top. Radial drop distortion remains a
+separate contribution.
 
-```
-sky / parallax / phenomena          [zoomed transform]
-──── groundView.apply() ──────────  [fixed zoom=1 transform, everything below]
-ground, footing, flood
-burrow
-desaturation overlay (Coda)         ← touches only the world painted so far
-telegraph
-obstacle contact shadows, obstacles
-ImpactFX                            ← world-space bursts
-RippleFX
-battle enemies
-RainbowBrush                        ← behind the characters
-contact shadows + characters (Broshi, Midio, Midasus)
-epicycles (combo milestone)
-drop shockwave
-character reflections
-battle FX, gnat
-foreground veil (L7)
-fracture cracks                     ← the screen's own glass, above all world layers
-transposition wave
-──── ctx.restore() ───────────────
-[opening-assembly frame capture]    ← clean world composite, pre-post-FX
-fever aura → hype frame → drop impact
-──── identity transform ──────────
-bloom → film finish
-HUD seekbar                         ← after post-FX, never buried
-assembly shards
-[freeze capture] · [highlight reel capture]
-```
+## Seeking and lifecycle
 
-Two capture points depend on this order: the opening assembly grabs a clean
-world composite *before* post-FX; the highlight reel grabs the *fully*
-composed frame including HUD.
+Seeking rebuilds playback simulation/renderer state at the destination,
+clearing future transformations, cooldowns, disasters, trails and frame
+history. Song, seed, world, presentation preferences, recording and paused
+state are retained. Skipped events are advanced silently, destination scene
+state and interpolation are initialized, and future anticipation is primed.
+Score/holds and spatial origin restart as a new performance segment. This
+is a fresh destination state, not replay of every earlier random particle.
 
----
+## Verification and remaining acceptance work
 
-## 4. Verification
-
-| Covered by unit tests | Not covered |
+| Area | Evidence in the repository |
 | --- | --- |
-| `rippleFX.test.js` (pure curve functions) | `ImpactFX` — no test file at all |
-| `filmFinish.test.js` (targets, smoothing, hits) | `RainbowBrush` |
-| `lightField.test.js` | `_drawFilmFinish` / `_drawFeverAura` / `_drawDropImpact` |
-| `perf-governor.test.js`, `perfGovernorConsumers.test.js` | bloom pipeline (only `bloomStrength` is tested) |
-| `accessibility.test.js`, `colorLaw.test.js` | draw-order regressions |
-| `visualStyle.test.js` (incl. `bloomStrength`) | |
+| Impact saturation, separate feedback pool, flash handling, spawn scaling | `test/impactFX.test.js` |
+| Ripple curves and scaled feedback | `test/rippleFX.test.js` |
+| Brush lifetime, scaling, culling and future timestamps | `test/rainbowBrush.test.js` |
+| Hype border, both shockwave rings, shock blits and speed-line opacity/compositing | `test/rendererFlash.test.js` |
+| Backing-store sampling and blur | `test/rendererDrawables.test.js` |
+| Governor shedding, grace and recovery | `test/perf-governor.test.js` |
+| Observed particle draw counts | `test/perfGovernorConsumers.test.js` |
+| Interior sky exclusions and retained shafts | `test/interiorSky.test.js` |
+| Specialized-world blit/shading argument alignment and material mode | `test/worldKindShading.test.js` |
+| Heat displacement envelope | `test/heatDistortionComposite.test.js` |
+| World material light pixels | `npm run test:lighting` |
+| Static shading containment | `npm run test:shading` |
+| Whole-system effect lifecycle across seeks | `npm run test:seek` |
+| Upload/playback/replacement/stop | `npm run test:smoke` |
+| Nine-world selection/playback/seek/reduced motion and paint checks | `npm run test:worlds` |
+| Uploaded-song chooser, pointer Preview/Play | `npm run test:chooser` |
+| Desktop/narrow keyboard selection, native modality, Tab wrapping, Escape and focus return | `npm run test:chooser-keyboard` |
 
-E2E: `tools/smoke.mjs` (screenshot sequence), `tools/smoke-fracture.mjs`,
-`tools/smoke-full.mjs`.
+The reusable `.github/workflows/test.yml` runs lint, unit tests and all seven
+browser commands above. Chooser checks run in their own job, and Pages
+deployment depends on the entire validation workflow.
+The world smoke explicitly rejects astronomical painting in Fathom/Nave.
+Browser liveness, isolated pixel checks and unit tests do not establish
+subjective appeal, exhaustive accessibility or real-device sustained FPS.
 
----
+Still required:
 
-## 5. Review — how this suite should improve
-
-Ordered by severity. Items 1–3 are defects; 4–7 are design gaps.
-
-### 5.1 `ImpactFX` can throw when its ring pool is full — **bug**
-
-`ObjectPool.spawn()` returns `null` at capacity, and both ring call sites
-dereference the result immediately:
-
-```js
-const ring = this.rings.spawn({ ... });   // ImpactFX.js:39, :109
-for (let i = 0; i < 24; i++) ring.jitter[i] = ...;   // TypeError if null
-```
-
-The ring pool holds 16; ring life is 0.38–0.42 s. Sixteen concurrent rings
-means roughly 38 landings-plus-judgments per second — reachable in a dense
-passage with judgment rings firing per note. Because `main.js` wraps the draw
-in a try/catch, the throw would silently kill the rest of the frame rather
-than surface. **Fix:** null-guard both sites (`if (!ring) return;` /
-`if (ring) { … }`), and consider raising the ring cap to match the mote pool's
-generosity. Add the same guard as a lint-visible convention wherever
-`spawn()`'s return value is used.
-
-### 5.2 `ImpactFX` ignores `reducedFlash` entirely — **accessibility gap**
-
-`capFlashAlpha` is imported by 16 files. `ImpactFX.js` is not one of them,
-and `Renderer.js:301` calls `sim.impactFX.draw(ctx, worldX, originX)` with no
-flash argument at all — while the very next line passes it to `RippleFX`.
-So the crater flash (alpha 0.85), the judgment rings, and the gold ignition
-ring (additive `lighter`) all run at full strength for a player who
-explicitly asked for reduced flash. This is the single most flash-heavy
-module in the game and it is the one module exempt from the toggle.
-**Fix:** thread `reducedFlash` into `ImpactFX.draw` and wrap crater, ring,
-polyRing and ignition alphas.
-
-### 5.3 A single clean frame wipes the shed accumulator — **perf logic**
-
-```js
-} else { this._overCount = 0; ... }   // PerfGovernor.js:67
-```
-
-Alternating over/under frames — the classic "hovering just above budget"
-pattern that produces visible judder — never accumulates 60 units and so
-never sheds a rung. The severity weighting added for badly-blown frames
-doesn't help here, because the counter resets before it can build. **Fix:**
-decay rather than reset (`this._overCount *= 0.9` or subtract a fixed unit),
-so sustained judder eventually sheds while a single clean hitch still
-doesn't.
-
-### 5.4 The flash cap doesn't survive additive stacking
-
-`capFlashAlpha` clamps each layer at 0.4 independently, but ripple rings,
-ground pulses, puffs, brush dabs, ignition rings, bloom and the hype echo all
-composite with `lighter`. Six capped layers still sum to white. The cap is a
-per-call promise the composite mode breaks. **Fix:** give reduced-flash a
-frame-level budget — either a global additive-alpha multiplier applied once
-in the Renderer, or suppress the additive composite mode itself (fall back to
-`source-over`) when the toggle is on.
-
-### 5.5 `particleMul` is applied inconsistently
-
-`trigger()` and `judgment()` take it; `sputter()` (fixed 120 motes/sec),
-`splat()` (fixed 6–9 blobs) and `RippleFX.trigger()` (fixed 3 rings) do not.
-On a level-2 shed device the headline bursts thin out by 40% while the
-continuous telegraph sputter keeps its full spawn rate — the opposite of the
-right priority, since sputter is ambient and the landing burst is feedback.
-**Fix:** route every spawn site through the same multiplier, and consider
-inverting the weighting so ambient effects shed *before* feedback effects.
-
-### 5.6 `ImpactFX` is untested, and is the module most in need of tests
-
-`RippleFX` was written with its curves as pure exported functions and is
-tested; `ImpactFX` keeps the identical math inline in `trigger()`/`draw()`
-and has no test file. The intensity law, the tier→style table, and the pool
-lifecycle are all trivially testable. **Fix:** extract `craterRadius(I)`,
-`ringRadius(age, tau, Rd)`, `moteCount(I, particleMul)` and the tier table as
-pure exports, mirroring `RippleFX`'s shape, then test them — this also makes
-5.1 and 5.5 regressions catchable.
-
-### 5.7 Draw order is a comment, not a contract
-
-Section 3 above is reconstructed by reading `Renderer.draw()` top to bottom. The comments are unusually good, and several of them
-record real bugs that were fixed (the non-cancelling shake translate, the
-`drawImage` on a logical stage view that silently killed whole frames). But
-nothing *enforces* the order, and two frame captures depend on it. **Fix:**
-a `rendererDrawOrder.test.js` that drives a stub context recording call
-order and asserts the load-bearing invariants — foreground veil before
-fracture, HUD after post-FX, assembly capture before bloom.
-
-### 5.8 Smaller notes
-
-- `new ImpactFX()` takes a seed but is always constructed with the default
-  `1`, so splat colors and mote spread replay identically for every song. If
-  that's deliberate (determinism for the smoke tests), say so in the comment;
-  if not, seed it from the song.
-- `PerfGovernor`'s header documents two spec rungs that were never built
-  (crossfade memoization, per-pixel crack refraction) and explains what was
-  substituted. That's the right call, but the honesty belongs in the spec
-  too — as of now this doc is the only place both halves are written down.
-- The ladder never sheds `RainbowBrush`, which at 320 dabs is a real
-  per-frame cost during a dense flurry. It widens spacing via `particleMul`
-  but is never gated. Level 4 or 5 is the natural home for it.
+- Human holdout reviews for appeal and musical timing. The checked-in holdout
+  has eight tracks and zero reviews: `met: null`, `calibration: empty-holdout`.
+  Do not claim the acceptance target has been met. See
+  `docs/world-quality-evaluation.md` and `npm run eval:worlds -- --split holdout`.
+- A device/scene matrix covering 1080p/4K, long tracks, sustained overload and
+  recovery, plus complete simulation/audio/compositor costs. Repeated draws
+  of one state measure JS submission only, not FPS or GPU completion.
+- Per-world review of shared character outlines, trails, rings and bloom
+  after the material-lighting fixes. Overlay dominance is an art-direction
+  observation, not a demonstrated defect for every song.
+- Manual screen-reader and broader assistive-technology review of the chooser,
+  final-frame flash assessment, and a dedicated draw-order regression. Automated
+  chooser tests cover keyboard behavior at 1280×800 and 390×844, not every
+  browser/device or screen-reader combination. Current rendering tests cover
+  individual drawables and lifecycle boundaries, not every ordering invariant.

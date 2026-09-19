@@ -1,9 +1,10 @@
 # Super Maudio World
 
-Drop a song and watch it become a world. Super Maudio World is a browser
-music visualizer with an automatically choreographed cast, moving scenery,
-and musical effects. The recording supplies the sound; its analysed rhythm,
-pitch, energy, and structure drive the performance.
+Drop a song, pick a world, watch it play itself. Super Maudio World is a
+browser music visualizer with an automatically choreographed cast, moving
+scenery, and musical effects. The recording supplies the sound; its
+analysed rhythm, pitch, energy, and structure drive the performance. Each
+world keeps its own look and listens to that analysis in its own way.
 
 The root app uses plain JavaScript modules, Canvas 2D, and Web Audio. An
 optional WebGL2 overlay adds post-processing. There is no frontend build
@@ -26,9 +27,12 @@ LAN access, or set `PORT` to change the port.
    pick a music folder once and play from your library (see below).
    The picker accepts MP3, WAV, FLAC, OGG, M4A, AAC, and other audio formats
    your browser can decode.
-2. Wait for audio analysis and world generation. The app automatically
-   selects a base world style and customizes it for the song.
-3. Watch the performance. Midio plays himself; there is no movement control
+2. Wait while the recording is pulled apart: frequency bands, onsets,
+   tempo, pitch, and section structure become one song profile.
+3. Choose a world. Every card is equal. Preview the **same** quiet stretch
+   and the **same** peak in each world, then **Play**. **Choose for me**
+   is optional and never ranks the cards. **Cathode** is always a hand pick.
+4. Watch the performance. Midio plays himself; there is no movement control
    or failure condition. Optional taps help calibrate the groove.
 
 Several files selected or dropped together are treated as **stems of one
@@ -86,6 +90,10 @@ See [docs/library.md](docs/library.md) for the details.
 | `T` | Toggle track details when available |
 | `F3` | Toggle section labels on the mountain seekbar |
 
+On a car head unit, the first tap after a long idle gap is spent entirely on
+waking the display and restoring fullscreen, never on a control; a screen
+wake lock is held while a song plays. See [car mode](docs/car-mode.md).
+
 Reduced motion preferences enable reduced-flash behavior automatically.
 The show can contain flashing lights, camera shake, and sudden cuts.
 Playback controls fade after inactivity; tap the canvas to bring them back.
@@ -100,7 +108,10 @@ analysis still drives the show.
 The audio adapter decodes a recording and filters it into seven frequency
 bands, then estimates onsets, tempo, melody and bass pitches, sustain,
 harmony, and section boundaries. These become a unified `NoteEvent`
-timeline and continuous energy curves.
+timeline, continuous energy curves, and one shared **song profile**.
+Worlds do not invent their own summaries of the mix. Pulse confidence and
+free-time are kept separate from BPM, so a missing beat never becomes a
+fake tempo.
 
 Here, “stem separation” in the implementation means frequency-band
 filtering. It is not learned instrument isolation. Pitch and role estimates
@@ -118,23 +129,30 @@ Musical casting assigns clean melodic material to **Midasus**, bass to
 be identified. With uploaded stems, filenames and each stem's activity
 help assign the notes.
 
-The world registry contains eight base styles:
+The world registry contains nine styles. Eight are painterly landforms.
+**Cathode** is a four-color CRT with its own pixel renderer.
 
-- **The Range** — alpine mountains.
-- **After Hours** — a nighttime city.
-- **Far Side** — a lunar landscape.
-- **The Fathom** — an underwater world.
-- **Redline** — a racing-inspired landscape.
-- **The Foundry** — an industrial world.
-- **Understory** — a forest world.
-- **The Nave** — a cathedral world.
+- **The Range** — mountains that breathe with the mix.
+- **After Hours** — a city that glows with the groove.
+- **Far Side** — a lunar landscape. No air. Nothing softens.
+- **The Fathom** — an underwater world, slow on purpose.
+- **Redline** — a road that only exists at speed.
+- **The Foundry** — an industrial world that only stops when the song does.
+- **Understory** — a forest. Nothing is built. Everything grows.
+- **The Nave** — a cathedral whose glass rebuilds with returning sections.
+- **Cathode** — a machine dreaming in four colors. Manual pick only.
 
-World scoring chooses a base automatically. Song features then shape
-section palettes, terrain, and visual responses; there is no world-picker
-step in the current upload flow. Scenery includes layered ridges, weather,
-celestial bodies, particles, and other effects where supported by the
-chosen style. Repeating musical sections can return to recognizable visual
-identities.
+After analysis, the chooser shows one equal card per world, in authored
+order. A **Preview** plays the same quiet or peak passage through that
+world's treatment of the song. **Play** adapts palette, terrain, and
+musical response for the selected world — alpine never grows a city, and
+a dense mix is filtered rather than amplified. There is no privileged
+“custom” card and no public score.
+
+**Choose for me** uses a private post-adaptation fit: would this world's
+response sit in a sweet spot for this song, without clipping into noise.
+Ties stay ties. Cathode and any explicit exclusion stay out of that pick.
+The number is never shown on the cards.
 
 The parallax ranges are laid out as a timeline rather than as decoration.
 Each depth travels at its own speed, so one tile of it stands for a fixed
@@ -148,8 +166,10 @@ grid, so the texture of the rock passes the eye at the song's own pulse.
 
 Analysis bundles are cached in IndexedDB so repeat plays can reuse the
 expensive analysis. Missing or unreadable cache entries fall back to fresh
-analysis. The performance governor reduces optional effects under sustained
-frame pressure; the low-resolution presets provide additional controls.
+analysis. Older bundles without a song profile still play; the profile is
+rebuilt from the unpacked analysis. The performance governor reduces
+optional effects under sustained frame pressure; the low-resolution
+presets provide additional controls.
 
 ## Rendering and developer tools
 
@@ -167,17 +187,18 @@ require this feature.
 ## Repository layout
 
 ```text
-index.html   Current audio-upload page and playback controls
+index.html   Current audio-upload page, world chooser, and playback controls
 src/
-  main.js    Loading, controls, playback lifecycle, and app coordination
+  main.js    Loading, chooser, playback lifecycle, and app coordination
   core/      NoteEvent timeline, Conductor, ParamBus, MIDI utilities
-  audio/     Filtering, onset/tempo/pitch analysis, caching, playback, synthesis
+  audio/     Filtering, onset/tempo/pitch analysis, song profile, caching, playback
   lyrics/    Song identity, lyric lookup, alignment, and section interpretation
   sim/       Fixed-step choreography, companions, calibration, and effects
-  world/     World registry, scoring, song-derived palettes, terrain, scenery
+  world/     World registry, adaptation, private fit, palettes, terrain, scenery
+  eval/      Private world-quality corpus (no audio, no public scores)
   render/    Canvas compositor, optional WebGL overlay, performance governor
   vision/    Optional vision tuning loop and provider adapters
-  ui/        Controls, accessibility preferences, overlays, styles
+  ui/        Controls, world chooser, previews, accessibility, overlays, styles
 test/        Main app's Node tests and fixtures
 tools/       Local server, fixture generators, browser smoke checks, legacy tools
 polygon/     Separate TanStack Start / React / TypeScript application
@@ -193,23 +214,29 @@ The root GitHub Pages workflow publishes `index.html`, `src/`,
 
 ## Testing
 
-The root `npm test` command also discovers tests under `polygon/`, so
-install that app's dependencies before running the full suite:
+The main app suite:
 
 ```sh
 npm ci
-npm ci --prefix polygon
 npm test
 ```
 
-To run only the main app's Node tests:
+`npm test` runs the Node tests under `test/` (`test/*.js`, `test/*.mjs`,
+and `test/helpers/*.js`). It does not walk `polygon/`. To also discover
+nested packages:
 
 ```sh
-node --test "test/*.test.js" "test/*.test.mjs"
+npm ci --prefix polygon
+npm run test:all
 ```
 
 To score section boundaries and repeat labels against a held-out annotated
 corpus, see [audio-analysis evaluation](docs/analysis-evaluation.md).
+
+To review whether worlds actually look good — same quiet / transition / peak
+in every world, scores hidden — see
+[world quality evaluation](docs/world-quality-evaluation.md).
+
 
 ### Current browser smoke check
 
@@ -232,7 +259,8 @@ The check generates a deterministic 24-second PCM WAV and opens a fresh
 browser context. It turns off optional lyric lookup, selects 720p, and
 uploads through **Browse files**, preserving the browser gesture needed to
 unlock audio. It exercises the real decoder, OfflineAudioContext filtering,
-analysis, automatic world generation, and renderer.
+analysis, the world chooser (nine equal cards, no privileged custom card),
+and the renderer after a world is picked.
 
 Assertions require a populated timeline, an active recording with the
 timeline synth muted, advancing audio and simulation clocks, a populated
@@ -254,6 +282,13 @@ An existing recording can use the same checks (choose one at least
 node tools/smoke-audio.mjs path/to/recording.wav http://localhost:8080 .smoke/custom
 ```
 
+Car mode (wake lock, wake-up-tap absorption) has its own check against a
+running server:
+
+```sh
+npm run test:car
+```
+
 CI runs the generated-fixture smoke check and uploads its diagnostics.
 The other `tools/smoke-*.mjs` scripts are legacy or specialized diagnostics;
 some still target removed MIDI/demo/SoundFont UI and are not the maintained
@@ -262,8 +297,10 @@ upload regression suite.
 ## Additional references
 
 - [World design notes](docs/worlds.md) — design background; the current
-  registry and automatic selection are described above.
+  registry, chooser, and per-world musical responses are described above.
 - [VFX suite](docs/vfx-suite.md) — visual-system design notes.
+- [Car mode](docs/car-mode.md) — keeping a head-unit display awake and in
+  fullscreen, and why a page cannot fake a tap.
 - [Soulseek bridge notes](docs/soulseek.md) — retained backend tooling;
   the current upload page does not expose its search/connect controls.
 - [SoundFont tooling](soundfonts/README.md) — retained synthesis support;

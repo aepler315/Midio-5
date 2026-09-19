@@ -13,10 +13,11 @@ import { RainbowBrush } from './RainbowBrush.js';
 import { GOLD_AFTERIMAGE_LIFE_MS } from '../sim/MidioPerformer.js';
 import { contactShadow } from '../world/ContactShadow.js';
 import { clamp01 } from '../utils/math.js';
-import { capFlashAlpha } from '../ui/Accessibility.js';
+import { capFlashAlpha, flashCompositeOp } from '../ui/Accessibility.js';
 import { LerpCache, hexToRgb } from '../utils/color.js';
 import { spectralFamily } from './spectral.js';
 import { hypeFrameStyle } from '../sim/HypeDirector.js';
+import { salienceBudgetFor } from './SalienceBudget.js';
 import { isRendered, styleDials } from './VisualStyle.js';
 import { groundGlowLights, characterGlowLight } from './LightField.js';
 import { quantizeCanvas } from './PaletteQuantize.js';
@@ -29,7 +30,7 @@ import { quantizeCanvas } from './PaletteQuantize.js';
 // headroom to spare. See Renderer.draw's stageW/stageH derivation.
 const SHAKE_MARGIN_PX = 64;
 
-const MIDIO_DRAW_SCALE = 2.15; // render-only; physics footprint stays 23px half-width
+const MIDIO_DRAW_SCALE = 1.935; // 10% smaller than 2.15; physics footprint stays 23px half-width
 
 // Fever aura: a screen-edge glow that only shows up once the player's earned
 // it -- silent below the threshold so it never competes with the vignette
@@ -213,6 +214,8 @@ export class Renderer {
     const biomeManager = sim.biomes || null;
     const perf = sim.perf || null;
     const particleMul = perf ? perf.particleMul : 1;
+    const salience = salienceBudgetFor(sim.focus);
+    const worldParticleMul = particleMul * salience.particles;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -278,7 +281,7 @@ export class Renderer {
     };
 
     if (biomeManager) {
-      biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, particleMul, perf, groundView);
+      biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, worldParticleMul, perf, groundView);
     } else {
       this._drawFallbackSky(ctx, stage);
       groundView.apply();
@@ -459,7 +462,7 @@ export class Renderer {
     // and drop impact included), and bloom then blooms the smeared result.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     this._drawDropMotionBlur(ctx, canvas, sim, camera, sx, sy);
-    this._drawBloom(ctx, canvas, sim);
+    this._drawBloom(ctx, canvas, sim, salience);
     // After bloom, not before: heat is a lens on the whole scene, so it
     // should bend the glow bloom just added too, not just the world under it.
     this._drawHeatDistortion(ctx, canvas, sim, pose, viewStage);
@@ -581,13 +584,13 @@ export class Renderer {
     const maxR = Math.hypot(canvas.width, canvas.height) * 0.75;
     const focusMul = sim.focus ? sim.focus.mul('drop') : 1;
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = flashCompositeOp(sim.reducedFlash);
     for (const [lag, alphaMul, lw] of [[0, 1, 3.5], [0.12, 0.5, 1.8]]) {
       const uu = u - lag;
       if (uu <= 0) continue;
       const r = maxR * (1 - (1 - uu) ** 2); // ease-out: it detonates, then coasts
       ctx.strokeStyle = '#ffffff';
-      ctx.globalAlpha = (1 - uu) ** 2 * 0.55 * alphaMul * focusMul;
+      ctx.globalAlpha = capFlashAlpha((1 - uu) ** 2 * 0.55 * alphaMul * focusMul, sim.reducedFlash);
       ctx.lineWidth = lw + 10 * (1 - uu);
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -826,7 +829,7 @@ export class Renderer {
       offCtx.fillStyle = color;
       offCtx.fillRect(0, 0, shockW, shockH);
       ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
       ctx.globalAlpha = shockAlpha;
       // Device-pixel source back into the logical rect the transform expects,
       // shifted by a logical-space offset so the split is the same visual
@@ -842,7 +845,7 @@ export class Renderer {
     const segs = speedLineSegments(cx, cy, count, s, hype.dropCount, maxR);
     const lineAlpha = capFlashAlpha(SPEED_LINE_MAX_ALPHA * s, reducedFlash);
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = flashCompositeOp(reducedFlash);
     ctx.strokeStyle = `rgba(255,255,255,${lineAlpha})`;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -929,7 +932,9 @@ export class Renderer {
           offY += radial * ny;
         }
         if (ambientAmpPx > 0.05) {
-          const heightFrac = clamp01(1 - cy / canvas.height); // 1 at the ground, 0 at the top
+          // Canvas Y grows downward. Reach full sway at the actual ground
+          // in backing-store coordinates, with the weaker floor above it.
+          const heightFrac = clamp01(cy / Math.max(1, originY));
           offX += Math.sin(cx * 0.045 + t * 2.4 + cy * 0.03) * ambientAmpPx * (0.35 + 0.65 * heightFrac);
         }
         if (Math.abs(offX) < 0.05 && Math.abs(offY) < 0.05) continue; // no-op cell -- skip the blit entirely
@@ -950,10 +955,13 @@ export class Renderer {
    *  Naturally tinted by whatever was bright: gold glow bleeds gold,
    *  aurora bleeds green. Sheds under PerfGovernor pressure like the drop
    *  impact pack (a budget-allowing flourish, not core feedback). */
-  _drawBloom(ctx, canvas, sim) {
+  _drawBloom(ctx, canvas, sim, salience = null) {
     const perf = sim.perf;
     if (perf && !perf.bloomEnabled) return;
-    const strength = bloomStrength(sim.hype, sim.fever, !!sim.reducedFlash, sim.opening ? sim.opening.gain : 1);
+    const strength = bloomStrength(
+      sim.hype, sim.fever, !!sim.reducedFlash, sim.opening ? sim.opening.gain : 1,
+      salience?.bloom ?? 1,
+    );
     if (strength <= 0.005) return;
 
     const bloomScale = postFxDownscale(canvas.width);
@@ -1033,9 +1041,9 @@ export class Renderer {
 
     if (style.alpha < 0.02) return; // fully calm, no rim stroke
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = flashCompositeOp(sim.reducedFlash);
     ctx.strokeStyle = color;
-    ctx.globalAlpha = style.alpha * focusMul;
+    ctx.globalAlpha = capFlashAlpha(style.alpha * focusMul, sim.reducedFlash);
     ctx.lineWidth = style.lineWidth;
     const inset = style.inset;
     ctx.beginPath();
@@ -1152,14 +1160,14 @@ export class Renderer {
 
   _drawFallbackSky(ctx, canvas) {
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    g.addColorStop(0, '#1a1a3e');
-    g.addColorStop(1, '#4a3b6b');
+    g.addColorStop(0, '#1c2248');
+    g.addColorStop(1, '#4a4a7a');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
   _drawGround(ctx, canvas, pose, groundY) {
-    ctx.fillStyle = '#2b2145';
+    ctx.fillStyle = '#4a4068';
     ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
     ctx.strokeStyle = 'rgba(255,255,255,0.15)';
     ctx.lineWidth = 2;
@@ -1408,7 +1416,7 @@ export class Renderer {
  * the pulsing on drops/kicks while the base glow stays intact. Clamped to
  * BLOOM_MAX so a maxed-out drop-during-fever never blows the frame out.
  */
-export function bloomStrength(hype, fever, reducedFlash = false, openingGain = 1) {
+export function bloomStrength(hype, fever, reducedFlash = false, openingGain = 1, supportingBloomMul = 1) {
   const slam = hype ? hype.slam : 0;
   const surge = hype ? hype.surge : 0;
   const feverLevel = fever ? fever.level : 0;
@@ -1417,7 +1425,9 @@ export function bloomStrength(hype, fever, reducedFlash = false, openingGain = 1
   // still opened on a fully bloomed frame -- the single loudest thing on
   // screen at t=0, and the one least justified by anything audible.
   // OpeningDirector's gain scales it until the song has actually started.
-  return Math.min(BLOOM_MAX, BLOOM_BASE * openingGain + reactive);
+  // The reactive term belongs to an earned hit; only the resting spill has
+  // to yield when another subject owns the frame.
+  return Math.min(BLOOM_MAX, BLOOM_BASE * openingGain * clamp01(supportingBloomMul) + reactive);
 }
 
 /** Drop impact envelope: 1 right at the drop, easing to 0 over

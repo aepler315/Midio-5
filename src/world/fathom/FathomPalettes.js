@@ -10,7 +10,7 @@ export const FATHOM_PALETTES = [
   {
     name: 'SHALLOWS',
     sky: ['#0a2e3a', '#12586a', '#3fa0a8'],
-    silhouette: '#08313a',
+    silhouette: '#144850',
     celestial: { kind: 'sun', color: '#bff0ea', radius: 54, haloColor: '#80d8d0', veiled: true },
     particles: { kind: 'bubbles', color: '#cdf2ff', count: 40, speed: 26 },
     fx: 'godRays',
@@ -19,7 +19,7 @@ export const FATHOM_PALETTES = [
   {
     name: 'THERMOCLINE',
     sky: ['#062430', '#0c4050', '#1f7280'],
-    silhouette: '#062a34',
+    silhouette: '#123e48',
     celestial: { kind: 'sun', color: '#8fd8d8', radius: 44, haloColor: '#60b0b0', veiled: true },
     particles: { kind: 'bubbles', color: '#a8dcea', count: 30, speed: 20 },
     fx: 'godRays',
@@ -28,7 +28,7 @@ export const FATHOM_PALETTES = [
   {
     name: 'MIDWATER',
     sky: ['#03151f', '#062a38', '#0d4552'],
-    silhouette: '#04202a',
+    silhouette: '#0e3440',
     celestial: { kind: 'moon', color: '#7fc0c8', radius: 30, haloColor: '#4a8a90', veiled: true },
     particles: { kind: 'spores', color: '#8ad0d8', count: 34, speed: 9 },
     fx: 'bioluminescence',
@@ -37,7 +37,7 @@ export const FATHOM_PALETTES = [
   {
     name: 'HADAL',
     sky: ['#01090f', '#03151d', '#06242e'],
-    silhouette: '#020d14',
+    silhouette: '#0a2834',
     celestial: { kind: 'moon', color: '#5a8a94', radius: 22, haloColor: '#2a5060', veiled: true },
     particles: { kind: 'spores', color: '#6fb0bc', count: 46, speed: 6 },
     fx: 'bioluminescence',
@@ -46,7 +46,7 @@ export const FATHOM_PALETTES = [
   {
     name: 'VENT',
     sky: ['#0c0806', '#1a1008', '#2a1a10'],
-    silhouette: '#0a0806',
+    silhouette: '#2a1810',
     celestial: { kind: 'moon', color: '#e0a060', radius: 18, haloColor: '#a06030', veiled: true },
     particles: { kind: 'embers', color: '#ff9a4c', count: 26, speed: 14 },
     fx: 'emberGlow',

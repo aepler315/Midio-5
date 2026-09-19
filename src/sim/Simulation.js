@@ -52,7 +52,7 @@ import { FeverMeter } from './FeverMeter.js';
 import { LatencyCalibrator } from './LatencyCalibrator.js';
 import { SyncMonitor } from './SyncMonitor.js';
 import { GrooveFingerprint } from './GrooveFingerprint.js';
-import { OpeningDirector } from './OpeningDirector.js';
+import { OpeningDirector, MAX_HOLD_MS } from './OpeningDirector.js';
 import { WeatherDirector } from './WeatherDirector.js';
 import { OrogenyDirector } from '../world/OrogenyDirector.js';
 import { QuakeDirector } from './QuakeDirector.js';
@@ -579,6 +579,31 @@ export class Simulation {
     let best = kicks[lo];
     if (lo > 0 && Math.abs(kicks[lo - 1] - tMs) < Math.abs(best - tMs)) best = kicks[lo - 1];
     return best;
+  }
+
+  /** Position a freshly constructed scene without replaying skipped cues or
+   * notes. Seeking starts a new performance segment: score, holds and all
+   * transient effects come from construction; immutable song data is kept.
+   * Spatial travel starts at a new origin, rather than extrapolating today's
+   * scroll speed backward over the song. */
+  startAt(nowMs) {
+    // Preserve the audio/visual lead: on-time notes between the audible
+    // destination and this frame still belong to its first dispatch.
+    this.conductor.seekTo(Math.max(0, nowMs - this.visualLeadMs), { primeAhead: true });
+    this.cues.seekTo(nowMs);
+    this._autoplayCursor = this.judge.seekTo(nowMs);
+    while (this._holdSpanIdx < this.noteChart.holdSpans.length
+      && this.noteChart.holdSpans[this._holdSpanIdx].toMs <= nowMs) this._holdSpanIdx++;
+    this.disasters.seekTo(nowMs);
+    // Select the destination without presenting the jump as a section cut.
+    this.biomes._lastSectionIdx = null;
+    if (nowMs >= MAX_HOLD_MS) { this.opening.holding = false; this.opening.gain = 1; }
+    // Prime continuous energy context without a false drop from a cold EMA.
+    const energy = this.energyCurves?.globalEnergyNorm(nowMs) ?? 0.3;
+    this.hype.fast = energy; this.hype.slow = energy;
+    this.step(0, nowMs);
+    this.prev = this._snapshot();
+    this.curr = this._snapshot();
   }
 
   /** Tear down every subscription this sim (and its owned subsystems) made

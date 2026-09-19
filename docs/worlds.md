@@ -5,11 +5,20 @@ below retain the original art direction; they are not a feature checklist.
 The chooser presents equal choices and tailors each selected painterly world
 to the song. Cathode keeps its separate pixel renderer.
 
-### Musical behavior: After Hours and Fathom
+### Musical behavior: The Range, After Hours, Fathom, Redline, Foundry, Far Side, Understory, Nave, Cathode
 
-The city and underwater worlds now share a small set of controls from
+The painterly worlds share a small set of controls from
 `WorldMusic.js`, while interpreting those controls differently:
 
+- **The Range:** the mountains already grow with the song and change scale
+  with each section. Ambient travel of the ridge is now the same 1.2s energy
+  average -- quiet songs keep a slow atmosphere, a groove breathes, and dense
+  material settles so a wall of guitars does not strobe the skyline. Bass
+  swells the flanks. Phrase boundaries that earned a lift add a brief extra
+  scale; decorative cuts do not. Isolated accents sharpen a summit on a quiet
+  song; dense material raises the floor so only stronger hits mark the ridge.
+  Groove is derived from the clock, not a one-pole, so a backward seek cannot
+  keep the previous passage's heave.
 - **After Hours:** lit windows, street lamps and the wet road share one glow
   envelope (`CityGlow.js`). A dimmed baseline tracks window occupancy and
   breathes on a slow cycle, so quiet passages recede rather than sitting at
@@ -27,9 +36,48 @@ The city and underwater worlds now share a small set of controls from
   Four small colonies retain ambient light, with only one answering each
   transient. Measured section boundaries open the shafts gradually; inferred
   boundaries have half the response, and decorative pacing cuts have none.
-- **Reduced motion:** the new current sway and traffic travel are suppressed,
-  local accents are softened, and these layers use non-additive compositing.
-  Existing world/character motion remains governed by the existing controls.
+- **Redline:** the lane grid travels at a rate taken from the same 1.2s energy
+  average -- quiet songs crawl, a groove cruises, and dense material drops to
+  half-time so a 170 BPM mix does not strobe the road. No tempo is invented
+  from BPM. Phrase boundaries that earned a lift close a tunnel mouth and then
+  open a horizon wash; decorative cuts do neither. Reflectors and neon signage
+  idle with energy; one gantry catches each accent, density never spawns more.
+- **The Foundry:** furnace heat is that same 1.2s energy average, never a
+  single-frame sample -- a kick is not a pour. Quiet input stays as low embers.
+  Percussion drops one hammer in the mill the current section picked; the other
+  three mills stay idle. Earned section lifts flood the ground from below, then
+  fall back to the heat envelope.
+- **Far Side:** the terminator still walks the song (the slow form sweep);
+  its contrast eases as energy rises so a dense mix cannot strobe the limb.
+  Illumination of the primary follows the 1.2s energy average plus an earned
+  phrase lift. Isolated accents leave a surface trace; dense material raises
+  the floor so only the stronger hits mark the regolith. Sparse songs keep
+  the composition and the stillness.
+- **Understory:** canopy occupancy is that same energy average plus the
+  orogeny arc -- a kick never adds a trunk. Phrases that earned a lift open
+  the light shafts; decorative cuts do not. One spore colony answers each
+  accent; the other three keep their ambient drift. Shaft sway is the slow
+  current already zeroed under reduced flash.
+- **The Nave:** bass is the resonance of the interior (1.2s average, never a
+  single bin). Returning structural labels light the same stained-glass bays;
+  a different label lights a different set. Decorative cuts and missing labels
+  do not invent a chorus -- every bay follows bass equally (broad phrasing).
+  Inferred structure is worth half a measured one. Earned phrase openings lift
+  the motif bays.
+- **Cathode:** a CRT, not a mountain. Raster travel is the 1.2s energy
+  average -- quiet crawls, a groove cruises, dense material drops to half-time
+  so the floor does not strobe. Phosphor weight is bass. Isolated accents flash
+  the boss screen; a locked 170 BPM grid does not strobe the sprite -- dense
+  material only keeps the flinch when the beat also earned a hit. Returning
+  labels pick a scan motif; decorative cuts keep the default raster. Reduced
+  flash kills the flinch, the tear and the screen hit. Manual choice stays
+  manual; nothing here clones a painterly bloom.
+- **Reduced motion:** the new current sway, traffic travel and hammer drop are
+  suppressed, local accents are softened, cruise rate, ridge travel and raster
+  rate are halved, pours and phrase-scale lifts are tempered, Cathode's flinch
+  and tear are suppressed, additive layers fall
+  back to non-additive compositing. Existing world/character motion remains
+  governed by the existing controls.
 
 These controls consume existing energy curves and conductor rhythm events.
 No tempo is invented for unmetered songs, and no persisted analysis schema
@@ -41,6 +89,15 @@ same generated 32-second quiet/loud/quiet fixture to **every registered world**
 with seed 315, checks world selection, actual rhythm delivery, composed frames,
 energy response, backward seeking and reduced motion, and saves screenshots
 plus a JSON report under `.smoke/worlds/`.
+
+The chooser itself now renders a still of the selected world's actual
+configuration at two shared timestamps (a quiet stretch and a peak), so a
+card comparison is a comparison of worlds, not of different moments. Preview
+plays one passage at a time and cannot leak its audio or clock into
+playback. Reduced motion keeps the still and skips the animated clip.
+`node --test test/worldPreview.test.js test/worldChooser.test.js` pins the
+passage picker, copy, cache, and one-at-a-time session. `tools/smoke-world-chooser.mjs`
+covers the live picker.
 
 It also runs a **per-pass paint audit**: it wraps individual draw passes,
 renders one frame at a pinned full-quality perf rung, and records how many

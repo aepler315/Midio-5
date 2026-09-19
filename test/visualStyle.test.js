@@ -67,6 +67,16 @@ test('the opening gain scales the resting bloom, not the reactive swell', () => 
   assert.ok(slam > rest, 'the reactive term is untouched by the hold');
 });
 
+test('salience lowers supporting bloom without weakening the active drop', () => {
+  const ordinary = bloomStrength(null, null, false, 1, 1);
+  const restrained = bloomStrength(null, null, false, 1, 0.4);
+  assert.ok(restrained < ordinary, 'a landmark or performer focus leaves less bloom for the rest of the frame');
+
+  const activeDrop = bloomStrength({ slam: 1, surge: 1 }, { level: 1 }, false, 1, 0.4);
+  const unrestrainedDrop = bloomStrength({ slam: 1, surge: 1 }, { level: 1 }, false, 1, 1);
+  assert.equal(activeDrop, unrestrainedDrop, 'the drop keeps the bloom it earned');
+});
+
 // --- ensureMinLightness: the ground must exist on every palette ----------
 
 test('ensureMinLightness leaves anything already bright enough untouched', () => {

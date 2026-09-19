@@ -17,7 +17,8 @@ const N_CANDIDATES = 400;
 // across a hue that cycles with every note's pitch class — full hue
 // coverage, so hue-only separation can't work. What holds for every hue is
 // keeping the silhouette she's staged against well below that band.
-const SILHOUETTE_MAX_L = 0.36;
+const SILHOUETTE_MAX_L = 0.44;
+const SILHOUETTE_MIN_L = 0.12;
 const SKY_STOP_MIN_DELTA = 0.035;
 const SILHOUETTE_SKY_MIN_DELTA = 0.11;
 
@@ -36,11 +37,11 @@ function roleLch(role, anchor) {
 }
 
 const ROLES = {
-  // silhouette is deliberately near-decoupled from lightnessScale (small
-  // lightGain): it must read as dark against the sky at every tempo, not
-  // just the slow ones, so Midio silhouettes cleanly against it.
-  silhouette: { hueFrac: -0.22, chromaBase: 0.06, lightBase: 0.02, lightGain: 0.05, jitterMul: 0.15 },
-  skyDark: { hueFrac: 0, chromaBase: 0.11, lightBase: 0.14, lightGain: 0.26, jitterMul: 0.2 },
+  // silhouette is a colored mass, not a hole in the sky. Decoupled from
+  // lightnessScale (small lightGain) so it still sits under Midio at every
+  // tempo, but the floor is high enough that the landform reads as paint.
+  silhouette: { hueFrac: -0.22, chromaBase: 0.08, lightBase: 0.16, lightGain: 0.10, jitterMul: 0.15 },
+  skyDark: { hueFrac: 0, chromaBase: 0.11, lightBase: 0.24, lightGain: 0.26, jitterMul: 0.2 },
   // Intermediate sky-gradient stops (halfway between the ROLES either side of
   // them, same recipe just interpolated) -- only used when a harmonically
   // rich song earns a 5-stop skyStops gradient (see skyStopCountFor below).
@@ -81,6 +82,7 @@ function synthesizeCandidate(dna, grammar, temp, rand) {
 function hardConstraintViolation(hex, lch) {
   let violation = 0;
   if (lch.silhouette.L > SILHOUETTE_MAX_L) violation += (lch.silhouette.L - SILHOUETTE_MAX_L) * 4;
+  if (lch.silhouette.L < SILHOUETTE_MIN_L) violation += (SILHOUETTE_MIN_L - lch.silhouette.L) * 4;
 
   const skyDarkLab = hexToOklab(hex.skyDark);
   const skyMidLab = hexToOklab(hex.skyMid);
@@ -345,6 +347,9 @@ export function synthesizePalette(dna, temperatureOverride = null) {
  *  (song seed, label) so the same section always reads the same way on
  *  replay. Falls back to a single entry when there's no section data. */
 export function synthesizeSectionPalettes(dna, name) {
+  // `name` is the world kind (alpine, city, …). It is only a palette-id
+  // prefix here; WorldAdaptation then tints the result toward that kind's
+  // stock materials so After Hours does not inherit a mountain sky.
   // castBiomes forbids picking the same name twice in a row, so a single
   // entry would strand every section after the first with no candidate.
   // Detected structure wins when we have it; otherwise fall back to three

@@ -146,3 +146,45 @@ test('draw() eases every shard back to its home position by the end of its own b
     assert.ok(Math.abs(l.y - f.cy) < 1, `shard should have landed at its home y (${l.y} vs ${f.cy})`);
   }
 });
+
+for (const offscreenAvailable of [false, true]) {
+  test(`capture completes and draws shards with OffscreenCanvas ${offscreenAvailable ? 'present' : 'absent'}`, () => {
+    const originals = new Map(['OffscreenCanvas', 'document'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+    const capture = recordingCtx();
+    let created;
+    class CanvasStub {
+      constructor(width = 300, height = 150) { this.width = width; this.height = height; created = this; }
+      getContext(kind) { assert.equal(kind, '2d'); return capture.ctx; }
+    }
+    try {
+      if (offscreenAvailable) globalThis.OffscreenCanvas = CanvasStub;
+      else delete globalThis.OffscreenCanvas;
+      globalThis.document = { createElement(tag) {
+        assert.equal(offscreenAvailable, false, 'available OffscreenCanvas should be used');
+        assert.equal(tag, 'canvas');
+        return new CanvasStub();
+      } };
+      const wa = new WorldAssembly({ canvasWidth: 640, canvasHeight: 360, songSeed: 7 });
+      const source = { width: 1280, height: 720 };
+      wa.captureFrame(source, 200);
+      assert.equal(created.width, 640);
+      assert.equal(created.height, 360);
+      assert.deepEqual(capture.drawImageCalls, [[source, 0, 0, 640, 360]]);
+      assert.equal(wa.state, 'assembling');
+      assert.equal(wa.wantsCapture(300), false, 'capture must not retry next frame');
+      assert.ok(wa.fragments.count > 0);
+      const draw = recordingCtx();
+      wa.draw(draw.ctx, 300);
+      assert.equal(draw.drawImageCalls.length, wa.fragments.count);
+      assert.ok(draw.drawImageCalls.every(([image]) => image === created));
+      wa.update(200 + ASSEMBLE_TOTAL_MS);
+      assert.equal(wa.state, 'done');
+      assert.equal(wa.frame, null);
+    } finally {
+      for (const [key, descriptor] of originals) {
+        if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+        else delete globalThis[key];
+      }
+    }
+  });
+}

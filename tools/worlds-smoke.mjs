@@ -38,7 +38,8 @@ const out = path.resolve(process.argv[3] || path.join(root, '.smoke/worlds'));
 // asserted, so a pass that quietly stops painting is visible in a diff even
 // where it is allowed to vary.
 //
-// Both lists name only passes the world actually invokes -- a pass listed for
+// `mustNotPaint` protects interiors from astronomical layers.
+// The positive lists name only passes the world actually invokes -- a pass listed for
 // a world that never calls it would sit at zero forever and read like a
 // finding. `drawDeepSky` is the reason `watch` exists and cannot be promoted:
 // it runs in five worlds and legitimately paints nothing on a 32-second
@@ -60,7 +61,7 @@ const WORLDS = [
     watch: ['drawDeepSky'] },
   { name: 'The Fathom', kind: 'abyssal',
     mustPaint: ['_drawSky', '_drawGround'],
-    watch: ['_drawCelestial'] },
+    watch: ['_drawCelestial'], mustNotPaint: ['_drawStarfield', 'drawDeepSky'] },
   { name: 'Redline', kind: 'strip',
     mustPaint: ['_drawSky', '_drawGround'],
     watch: ['drawDeepSky', '_drawMoon'] },
@@ -72,7 +73,7 @@ const WORLDS = [
     watch: ['drawDeepSky', '_drawCelestial'] },
   { name: 'The Nave', kind: 'nave',
     mustPaint: ['_drawSky', '_drawGround'],
-    watch: ['_drawCelestial'] },
+    watch: ['_drawCelestial'], mustNotPaint: ['_drawStarfield', 'drawDeepSky'] },
   // Cathode replaces the renderer rather than the scenery, so BiomeManager
   // never draws for it and there are no BiomeManager passes to audit. Its
   // frame is checked as a whole instead -- see CATHODE_STATS.
@@ -195,6 +196,20 @@ try {
       await page.locator('.worldCard').filter({ has: page.getByText(name, { exact: true }) }).click();
       await page.waitForFunction(() => window.__SMW?.sim?.timeMs > 1200, null, { timeout: 60000 });
       assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.world.kind), kind);
+      // Exercise backward seek and the reduced-motion preference while the
+      // song is far from the ending boundary.
+      await page.keyboard.press('r');
+      await page.evaluate(() => window.__SMW.seek(4000));
+      await page.waitForFunction(() => {
+        const tSec = window.__SMW?.sim?.biomes?.tSec;
+        return Number.isFinite(tSec) && tSec > 4.5 && tSec < 12;
+      }, null, { timeout: 60000 });
+      assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.reducedFlash), true);
+      await page.locator('#stage').screenshot({ path: path.join(out, `${kind}-reduced.png`) });
+      // Keep reduced-motion assertions isolated from the per-world paint and
+      // dynamics checks below.
+      await page.keyboard.press('r');
+      assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.reducedFlash), false);
       const samples = [];
       for (const [label, atMs] of [['quiet', 6000], ['energetic', 18000], ['return', 27000]]) {
         await page.evaluate(ms => window.__SMW.seek(ms), atMs);
@@ -228,7 +243,7 @@ try {
         assert.ok(cathode.colors > 4, name + ' composes a real pixel frame');
         assert.ok(cathode.litFraction > 0.05, name + ' frame is not essentially blank');
       } else {
-        paint = await page.evaluate(PAINT_AUDIT, [...world.mustPaint, ...world.watch]);
+        paint = await page.evaluate(PAINT_AUDIT, [...world.mustPaint, ...world.watch, ...(world.mustNotPaint || [])]);
         for (const pass of world.mustPaint) {
           const s = paint[pass];
           if (!s || s.missing) { failures.push(`${name}: ${pass} is not a method on BiomeManager`); continue; }
@@ -237,12 +252,10 @@ try {
         }
       }
 
-      // Exercise backward seek and the reduced-motion preference.
-      await page.keyboard.press('r');
-      await page.evaluate(() => window.__SMW.seek(4000));
-      await page.waitForFunction(() => window.__SMW.sim.biomes.tSec > 4.5 && window.__SMW.sim.biomes.tSec < 8);
-      assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.reducedFlash), true);
-      await page.locator('#stage').screenshot({ path: path.join(out, `${kind}-reduced.png`) });
+      for (const pass of world.mustNotPaint || []) {
+        assert.equal(paint[pass]?.missing, undefined, `${name}: missing ${pass} audit target`);
+        assert.equal(paint[pass]?.paintedPx, 0, `${name}: ${pass} must not paint an interior`);
+      }
       assert.deepEqual(errors, [], name + ' has no browser errors');
       report.worlds.push({ name, kind, samples, paint, cathode, errors });
       const painted = paint

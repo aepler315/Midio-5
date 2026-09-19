@@ -68,6 +68,22 @@ test('a stored bundle comes back', async () => {
   assert.equal(got.name, 'a.mp3');
 });
 
+test('tempo and key confidence on a stored profile come back unchanged', async () => {
+  const scope = fakeIdb();
+  const bundle = {
+    v: 3,
+    name: 'held.mp3',
+    durationMs: 180000,
+    confidence: 0.77,
+    songProfile: { version: 1, confidence: { tempo: 0.77, key: 0.61, structure: 0.4, onset: 0.5, overall: 0.6 } },
+  };
+  assert.equal(await putBundle('held', bundle, scope), true);
+  const got = await getBundle('held', scope);
+  assert.equal(got.confidence, 0.77);
+  assert.equal(got.songProfile.confidence.tempo, 0.77);
+  assert.equal(got.songProfile.confidence.key, 0.61);
+});
+
 test('a miss is null, not an error', async () => {
   const scope = fakeIdb();
   assert.equal(await getBundle('nope', scope), null);

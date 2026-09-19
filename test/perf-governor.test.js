@@ -166,6 +166,26 @@ test('ridgeShadingFull: _drawRidgeVolume\'s shade/aerial passes hold out to the 
   assert.equal(gov.ridgeShadingFull, false, 'only sheds at the very last rung');
 });
 
+test('Auto quality lowers backing resolution before world-defining phenomena are removed', () => {
+  const gov = new PerfGovernor();
+  gov.level = 0;
+  assert.equal(gov.resolutionScale(1080, { adaptive: true }), 1);
+
+  gov.level = 2;
+  assert.equal(gov.resolutionScale(1080, { adaptive: true }), 0.85);
+  assert.equal(gov.phenomenaFull, true, 'world phenomena remain intact at the first resolution step');
+
+  gov.level = 4;
+  assert.equal(gov.resolutionScale(1080, { adaptive: true }), 0.625);
+  assert.equal(gov.phenomenaFull, true, 'Auto buys pixels before shedding world identity at level 5');
+});
+
+test('manual resolution overrides remain fixed under governor pressure', () => {
+  const gov = new PerfGovernor({ startLevel: MAX_LEVEL });
+  assert.equal(gov.resolutionScale(2160, { adaptive: false }), 1);
+  assert.equal(gov.resolutionScale(720), 1);
+});
+
 test('constructor accepts a proactive startLevel, clamped to [0, MAX_LEVEL]', () => {
   assert.equal(new PerfGovernor().level, 0, 'defaults to 0');
   assert.equal(new PerfGovernor({ startLevel: 2 }).level, 2);

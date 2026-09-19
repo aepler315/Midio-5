@@ -3,6 +3,7 @@ import { Conductor } from './core/Conductor.js';
 import { advanceFixedStepClock } from './core/FixedStepClock.js';
 import { ParamBus } from './core/ParamBus.js';
 import { synthesizeEnergyCurves } from './core/EnergyCurvesSynth.js';
+import { buildDemoSong } from './core/DemoSong.js';
 import { audioToTimeline } from './audio/AudioAdapter.js';
 import { Simulation } from './sim/Simulation.js';
 import { createRenderer, resolveRendererMode } from './render/WebGLRenderer.js';
@@ -26,31 +27,38 @@ import {
 import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
 import {
-  DEFAULT_STAGE_PRESET, resolveStagePreset, stageDims, isRetroPreset, isPalettePreset,
-  displayLimitedSize,
+  DEFAULT_STAGE_PRESET, resolveStagePreset, stageDims, isAutoPreset, isRetroPreset,
+  isPalettePreset, displayLimitedSize, autoStageSize, shouldSuggestLandscape,
 } from './render/StagePresets.js';
 import { quantizeCanvas } from './render/PaletteQuantize.js';
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
 import { TitleBackdrop } from './ui/TitleBackdrop.js';
 import { clientToStageCoords } from './ui/StageCoords.js';
+import {
+  KeepAwake, shouldAbsorbTap, isSystemFullscreenDrop, isDisplaySleepGap,
+} from './ui/KeepAwake.js';
 import { cssVarMap } from './render/spectral.js';
 import { resolveDurationMs } from './core/SongDuration.js';
-import { formatSeed, parseSeed } from './utils/seed.js';
+import { formatSeed, parseSeed, resolveSongSeed } from './utils/seed.js';
 import { resolveIdentity } from './lyrics/SongIdentity.js';
 import { groundLyrics, hasUsableLyrics } from './lyrics/LyricGrounding.js';
 import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
 import { visualNow, VISUAL_LEAD_MS } from './core/ChoreoClock.js';
-import { extractWatchFeatures, buildCustomWorld, buildWorldVariant } from './world/WorldScore.js';
+import { buildWorldVariant, scoreWorlds, pickRecommended, formatFitDiagnostic } from './world/WorldScore.js';
+import { buildSongProfile, PROFILE_VERSION } from './audio/SongProfile.js';
 import {
-  DEFAULT_WORLD_ID, setCustomWorld, clearCustomWorld, getWorld, listWorlds,
+  DEFAULT_WORLD_ID, setCustomWorld, clearCustomWorld, getCustomWorld, getWorld, listWorlds,
 } from './world/Worlds.js';
-import { buildWorldChoices } from './ui/WorldChooser.js';
+import { buildWorldChoices, moveChoiceIndex } from './ui/WorldChooser.js';
+import {
+  PreviewSession, loadPreviewRenderer,
+} from './ui/WorldPreview.js';
 import { fingerprintBuffer } from './audio/SongFingerprint.js';
 import { packBundle, unpackBundle } from './audio/AnalysisBundle.js';
-import { getBundle, putBundle } from './audio/AnalysisCache.js';
+import { analysisCacheKey, getBundle, putBundle } from './audio/AnalysisCache.js';
 import { MusicLibrary } from './library/MusicLibrary.js';
 import { LibraryPanel } from './ui/LibraryPanel.js';
 import { recentlyPlayed, displayTitle, displayArtist, untaggedTracks } from './library/TrackIndex.js';
@@ -96,9 +104,13 @@ window.addEventListener('unhandledrejection', (e) => {
 const loaderEl = document.getElementById('loader');
 const dropzoneEl = document.getElementById('dropzone');
 const fileInputEl = document.getElementById('fileInput');
+const demoBtnEl = document.getElementById('demoBtn');
 const worldSelectEl = document.getElementById('worldSelect');
 const worldSelectGridEl = document.getElementById('worldSelectGrid');
 const worldSelectBackEl = document.getElementById('worldSelectBack');
+const worldPassageQuietEl = document.getElementById('worldPassageQuiet');
+const worldPassagePeakEl = document.getElementById('worldPassagePeak');
+const worldChooseForMeEl = document.getElementById('worldChooseForMe');
 const progressEl = document.getElementById('progressText');
 const hudEl = document.getElementById('hud');
 const hudRightEl = document.getElementById('hudRight');
@@ -118,6 +130,7 @@ const seedInputEl = document.getElementById('seedInput');
 const seedRandomBtnEl = document.getElementById('seedRandomBtn');
 const stageResEl = document.getElementById('stageRes');
 const stageFpsEl = document.getElementById('stageFps');
+const landscapeHintEl = document.getElementById('landscapeHint');
 const debugOverlayEl = document.getElementById('debugOverlay');
 const fpsHudEl = document.getElementById('fpsHud');
 const sfFileInputEl = document.getElementById('sfFileInput');
@@ -285,6 +298,8 @@ let lastTimelineData = null;
 let lastAudioBuffer = null;
 let lastWorldId = DEFAULT_WORLD_ID;
 let pendingWorldStart = null;
+let lastFitDiagnostic = null;
+let previewSession = null;
 let lastSongName = 'song';
 let lastSongSeed = null; // 32-bit seed used for the run that just finished
 
@@ -345,13 +360,15 @@ paramBus.rendererMode = rendererMode;
 // starts, so the loader is never a dead gradient.
 startTitleBackdrop();
 
+const isCoarsePointer = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+
 // Perf tier: ?perf=lite|high overrides; otherwise a coarse-pointer/small-
 // viewport device heuristic starts a phone a rung down so the first
 // second of play is already smooth instead of janky-then-corrected.
 const perfStartLevel = resolvePerfStartLevel(
   typeof location !== 'undefined' ? location.search : '',
   {
-    isCoarsePointer: typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches,
+    isCoarsePointer,
     isSmallViewport: typeof window !== 'undefined' && Math.min(window.innerWidth || 9999, window.innerHeight || 9999) < 700,
   },
 );
@@ -380,7 +397,7 @@ function storedFpsCap() {
 function readStagePreset() {
   const fromUi = resolveStagePreset(stageResEl?.value);
   if (fromUi != null) return fromUi;
-  // 1080p default: a real perf floor for a friend's laptop iGPU.
+  // Auto is the default; a remembered manual choice still wins at boot.
   return storedStagePreset() ?? DEFAULT_STAGE_PRESET;
 }
 
@@ -407,6 +424,7 @@ let lastDrawMs = 0;
 function fitCanvas() {
   const preset = readStagePreset();
   const dims = stageDims(preset);
+  const adaptive = isAutoPreset(preset);
   const retro = isRetroPreset(preset);
   // Set BEFORE resolutionScale is read: in 8-bit mode the governor is pinned
   // to its cheapest rung, and the scale it reports depends on that level.
@@ -422,12 +440,11 @@ function fitCanvas() {
   // browser will ever draw. Rendering those pixels costs power and shows
   // nothing. A desktop displaying the stage at or above its preset size is
   // unaffected -- this only ever reduces.
-  const fit = displayLimitedSize(
-    dims.w, dims.h,
-    canvas.clientWidth, canvas.clientHeight,
-    typeof devicePixelRatio === 'number' ? devicePixelRatio : 1,
-  );
-  const scale = perfGovernor ? perfGovernor.resolutionScale(dims.h) : 1;
+  const dpr = typeof devicePixelRatio === 'number' ? devicePixelRatio : 1;
+  const fit = adaptive
+    ? autoStageSize(canvas.clientWidth, canvas.clientHeight, dpr, isCoarsePointer)
+    : displayLimitedSize(dims.w, dims.h, canvas.clientWidth, canvas.clientHeight, dpr);
+  const scale = perfGovernor ? perfGovernor.resolutionScale(fit.h, { adaptive }) : 1;
   const w = Math.round(fit.w * scale);
   const h = Math.round(fit.h * scale);
   if (canvas.width !== w || canvas.height !== h) {
@@ -445,6 +462,10 @@ function fitCanvas() {
   // backing store to the viewport (see #stage.retro in style.css).
   canvas.classList.toggle('retro', retro);
   if (perfGovernor) perfGovernor.canvasWidth = w;
+  landscapeHintEl?.classList.toggle(
+    'is-visible',
+    shouldSuggestLandscape(canvas.clientWidth, canvas.clientHeight),
+  );
 }
 
 function readPinnedSeed() {
@@ -578,13 +599,10 @@ function applySynthMutePolicy() {
 function isFullscreen() {
   return !!(document.fullscreenElement || document.webkitFullscreenElement);
 }
-async function toggleFullscreen() {
+async function enterFullscreen() {
   const root = document.documentElement;
   try {
-    if (isFullscreen()) {
-      if (document.exitFullscreen) await document.exitFullscreen();
-      else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
-    } else if (root.requestFullscreen) {
+    if (root.requestFullscreen) {
       // navigationUI: 'hide' asks the browser to skip its own "press Esc to
       // exit" banner. It's a hint, not a guarantee -- browsers are free to
       // show it anyway (deliberately: a page can't be allowed to trap
@@ -599,6 +617,16 @@ async function toggleFullscreen() {
   }
   updateFullscreenBtn();
 }
+async function toggleFullscreen() {
+  if (!isFullscreen()) { await enterFullscreen(); return; }
+  try {
+    if (document.exitFullscreen) await document.exitFullscreen();
+    else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+  } catch (err) {
+    console.warn('[fullscreen]', err);
+  }
+  updateFullscreenBtn();
+}
 function updateFullscreenBtn() {
   if (!fullscreenBtnEl) return;
   fullscreenBtnEl.title = isFullscreen() ? 'Exit fullscreen' : 'Fullscreen';
@@ -607,8 +635,87 @@ function updateFullscreenBtn() {
 if (fullscreenBtnEl) fullscreenBtnEl.addEventListener('click', () => toggleFullscreen());
 if (pauseBtnEl) pauseBtnEl.addEventListener('click', () => togglePause());
 if (stopBtnEl) stopBtnEl.addEventListener('click', () => backToTitle());
-document.addEventListener('fullscreenchange', updateFullscreenBtn);
-document.addEventListener('webkitfullscreenchange', updateFullscreenBtn);
+
+// --- Car mode: display timeout and fullscreen survival (KeepAwake.js) ---
+// On a head-unit projection (Auto Pro X -> car receiver) the display blanks
+// after about a minute of no touch input, and the tap that revives it also
+// drops the show out of fullscreen. Three parts, none of which fake input --
+// a synthesized tap is untrusted and never reaches the OS idle timer:
+//   * hold a screen wake lock while a song runs, re-armed on a 30s heartbeat;
+//   * if the display blanks anyway, spend the reviving tap on restoring the
+//     show instead of letting it reach a button (the HUD's "tap to unlock"
+//     beat, one level up);
+//   * re-enter fullscreen when the system -- not the player -- dropped it.
+const keepAwake = new KeepAwake({ onWarn: (msg, err) => console.warn('[keepawake]', msg, err) });
+let lastInputMs = null;
+let fullscreenDropped = false;
+// Evidence that there was a blanked display to wake: the render loop stopped
+// being called, or the page was hidden outright. Without it, a long wait with
+// nobody touching the screen -- a 40-second analysis, a song watched straight
+// through -- would look exactly like a display timeout, and the next real tap
+// would be eaten. Cleared by the tap it is spent on.
+let displaySlept = false;
+// Touch still synthesizes a click after pointerdown in some browsers even
+// when the pointerdown was default-prevented; an absorbed tap has to swallow
+// that echo too, or it lands on a button anyway.
+let absorbClickUntilMs = 0;
+const CLICK_ECHO_MS = 700;
+
+/** Called from the render loop with each frame delta (playing frames only --
+ *  a pause leaves the loop running but resets the delta, see togglePause). */
+function noteFrameGap(rafDeltaMs) {
+  if (isDisplaySleepGap(rafDeltaMs)) displaySlept = true;
+}
+// Screen-off usually hides the page outright, which is the cleaner signal
+// where it happens; the frame-gap check above covers the projection cases
+// where it does not.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') displaySlept = true;
+});
+
+function syncKeepAwake() {
+  if (running || isFullscreen()) keepAwake.enable();
+  else keepAwake.disable();
+}
+
+function onFullscreenChange() {
+  updateFullscreenBtn();
+  if (isFullscreen()) fullscreenDropped = false;
+  else if (isSystemFullscreenDrop(lastInputMs, performance.now())) fullscreenDropped = true;
+  syncKeepAwake();
+}
+document.addEventListener('fullscreenchange', onFullscreenChange);
+document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+
+// Capture phase, before every other handler: this is the only place that can
+// decide a tap belongs to the screen rather than to the page.
+document.addEventListener('pointerdown', (e) => {
+  const nowMs = performance.now();
+  const absorb = shouldAbsorbTap(lastInputMs, nowMs, displaySlept);
+  lastInputMs = nowMs;
+  displaySlept = false;
+  keepAwake.noteInput();
+  if (!absorb) return;
+  e.preventDefault();
+  e.stopPropagation();
+  absorbClickUntilMs = nowMs + CLICK_ECHO_MS;
+  if (fullscreenDropped && !isFullscreen()) {
+    fullscreenDropped = false;
+    // A real user gesture is in hand right now -- the only moment a page is
+    // allowed to ask for fullscreen back.
+    enterFullscreen();
+  }
+  if (running) wakeHud();
+}, true);
+
+document.addEventListener('click', (e) => {
+  if (performance.now() >= absorbClickUntilMs) return;
+  absorbClickUntilMs = 0;
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
+
+window.addEventListener('keydown', () => { lastInputMs = performance.now(); displaySlept = false; }, true);
 
 function applyActiveFont(active) {
   if (sf2Engine) {
@@ -782,8 +889,10 @@ function toggleTrackList() {
  *  voices, and resets the UI panels a fresh song should start without. Safe
  *  to call before the very first song too (everything it touches already
  *  tolerates being idle). */
-function stopTimeline() {
+function stopTimeline({ preservePause = false } = {}) {
   running = false;
+  syncKeepAwake();
+  recalibration.stop();
   // conductor is a single instance shared across every song (see its
   // construction above); Simulation and its subsystems subscribe to it at
   // construction and never unsubscribe on their own. Without this, a replay
@@ -795,7 +904,7 @@ function stopTimeline() {
   // currentTime is the master clock every song's timing derives from
   // (see AudioEngine.js header), and a still-suspended context would
   // freeze the NEXT song before it even starts.
-  if (paused) {
+  if (paused && !preservePause) {
     paused = false;
     audioEngine?.ctx?.resume();
     updatePauseButtonUI();
@@ -825,7 +934,8 @@ function stopTimeline() {
   completeNewSeedRowEl?.classList.add('hidden');
   debugOverlayEl.classList.add('hidden');
   auditionPanelEl?.classList.add('hidden');
-  worldSelectEl?.classList.add('hidden');
+  closeWorldChooser();
+  stopWorldPreview();
 }
 
 function updatePauseButtonUI() {
@@ -848,6 +958,12 @@ function togglePause() {
   updatePauseButtonUI();
 }
 
+/** Leave the native top layer on every teardown path, not just hide its pixels. */
+function closeWorldChooser() {
+  if (worldSelectEl?.open) worldSelectEl.close();
+  worldSelectEl?.classList.add('hidden');
+}
+
 /** Back to the title/drop screen so a different song can be chosen. */
 function backToTitle() {
   // Any in-flight analysis belongs to the discarded song. Its progress or
@@ -856,26 +972,111 @@ function backToTitle() {
   stopTimeline();
   completePanelEl.classList.add('hidden');
   hudEl.classList.add('hidden');
-  worldSelectEl?.classList.add('hidden');
+  closeWorldChooser();
+  stopWorldPreview();
   pendingWorldStart = null;
   progressEl.classList.add('hidden');
   loaderEl.classList.remove('hidden');
   startTitleBackdrop();
+  dropzoneEl.focus({ preventScroll: true });
 }
 
-/** One card for the select grid. `kind` drives the preview swatch (see
- * .worldCardPreview.<kind> in style.css). */
+function stopWorldPreview() {
+  if (!previewSession) return;
+  previewSession.cancel();
+  previewSession = null;
+}
+
+function applyWorldStill(worldId, dataUrl) {
+  const card = worldSelectGridEl?.querySelector(`[data-base-world-id="${worldId}"]`);
+  if (!card || !dataUrl) return;
+  const still = card.querySelector('.worldCardStill');
+  const preview = card.querySelector('.worldCardPreview');
+  if (!still || !preview) return;
+  still.src = dataUrl;
+  still.classList.remove('hidden');
+  preview.classList.add('is-rendered');
+}
+
+function setPreviewingCard(worldId) {
+  worldSelectGridEl?.querySelectorAll('.worldCard').forEach((card) => {
+    const on = card.dataset.baseWorldId === worldId;
+    card.classList.toggle('is-previewing', on);
+    const live = card.querySelector('.worldCardLive');
+    if (live && !on) live.classList.add('hidden');
+    const btn = card.querySelector('.worldCardPreviewBtn');
+    if (btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+
+function showPreviewFrame(worldId, source) {
+  const card = worldSelectGridEl?.querySelector(`[data-base-world-id="${worldId}"]`);
+  const live = card?.querySelector('.worldCardLive');
+  if (!live || !source) return;
+  const ctx = live.getContext('2d');
+  if (!ctx) return;
+  if (live.width !== source.width) live.width = source.width;
+  if (live.height !== source.height) live.height = source.height;
+  ctx.drawImage(source, 0, 0);
+  live.classList.remove('hidden');
+}
+
+function syncPassageButtons() {
+  const which = previewSession?.passage || 'peak';
+  worldPassageQuietEl?.setAttribute('aria-pressed', which === 'quiet' ? 'true' : 'false');
+  worldPassagePeakEl?.setAttribute('aria-pressed', which === 'peak' ? 'true' : 'false');
+}
+
+function previewAudioHandlers() {
+  let src = null;
+  const stop = () => {
+    if (!src) return;
+    try { src.stop(); } catch { /* already stopped */ }
+    try { src.disconnect(); } catch { /* ignore */ }
+    src = null;
+  };
+  const play = (offsetSec, durationSec) => {
+    stop();
+    const buffer = pendingWorldStart?.extra?.playBuffer;
+    const ctx = audioEngine?.ctx;
+    if (!buffer || !ctx) return;
+    const node = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    node.buffer = buffer;
+    node.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.value = 0.72;
+    const start = Math.max(0, offsetSec || 0);
+    const dur = Math.max(0.2, durationSec || 8);
+    node.start(0, start, dur);
+    src = node;
+    node.onended = () => { if (src === node) src = null; };
+  };
+  return { play, stop };
+}
+
+/** One card for the select grid. CSS swatch is the fallback until a real
+ *  still from this song's world instance is ready. */
 function worldCardEl({
-  worldId, playWorldId, name, tagline, kind,
+  worldId, playWorldId, name, tagline, kind, description,
 }) {
-  const card = document.createElement('button');
-  card.type = 'button';
+  const card = document.createElement('article');
   card.className = 'worldCard';
   card.dataset.worldId = playWorldId;
   card.dataset.baseWorldId = worldId;
+  card.tabIndex = 0;
+  card.setAttribute('role', 'listitem');
+  card.setAttribute('aria-label', `${name}. ${tagline}. Preview or play in this world.`);
 
   const preview = document.createElement('div');
   preview.className = `worldCardPreview ${kind}`;
+  const still = document.createElement('img');
+  still.className = 'worldCardStill hidden';
+  still.alt = '';
+  const live = document.createElement('canvas');
+  live.className = 'worldCardLive hidden';
+  preview.appendChild(still);
+  preview.appendChild(live);
   card.appendChild(preview);
 
   const top = document.createElement('div');
@@ -891,67 +1092,118 @@ function worldCardEl({
   tag.textContent = tagline;
   card.appendChild(tag);
 
+  if (description) {
+    const why = document.createElement('p');
+    why.className = 'worldCardWhy';
+    why.textContent = description;
+    card.appendChild(why);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'worldCardActions';
+  const previewBtn = document.createElement('button');
+  previewBtn.type = 'button';
+  previewBtn.className = 'worldCardPreviewBtn';
+  previewBtn.textContent = 'Preview';
+  previewBtn.setAttribute('aria-label', `Preview ${name}`);
+  previewBtn.setAttribute('aria-pressed', 'false');
+  const playBtn = document.createElement('button');
+  playBtn.type = 'button';
+  playBtn.className = 'worldCardPlayBtn';
+  playBtn.textContent = 'Play';
+  playBtn.setAttribute('aria-label', `Play in ${name}`);
+  actions.appendChild(previewBtn);
+  actions.appendChild(playBtn);
+  card.appendChild(actions);
+
   return card;
 }
 
 /** Fill the select grid with one equal-choice card per registered world. */
-function renderWorldGrid(customWorld) {
+function renderWorldGrid(customWorld, features = null, extras = {}) {
   if (!worldSelectGridEl) return;
   worldSelectGridEl.textContent = '';
-  for (const choice of buildWorldChoices(listWorlds(), customWorld)) {
+  for (const choice of buildWorldChoices(listWorlds(), customWorld, features, extras)) {
     worldSelectGridEl.appendChild(worldCardEl(choice));
   }
 }
 
 function offerWorldsThenStart(data, extra = {}) {
   try {
-    pendingWorldStart = { data, extra };
-    const features = extractWatchFeatures({
+    clearCustomWorld();
+    const profile = data.songProfile?.version === PROFILE_VERSION ? data.songProfile : buildSongProfile({
       energyCurves: data.energyCurves,
       durationMs: data.durationMs,
       bpm: data.bpm,
+      beatPeriodMs: data.beatPeriodMs,
+      confidence: data.confidence,
+      freeTime: data.freeTime,
       analysis: data.analysis,
       structure: data.structure,
+      timeline: data.timeline,
+      barGrid: data.barGrid,
     });
-    pendingWorldStart.features = features;
-    const { world } = buildCustomWorld(features, data);
-    setCustomWorld(world);
-    console.log('[custom world] %s (base: %s)', world.kind, world.baseId);
-    renderWorldGrid(world);
+    const features = profile.watch;
+    const seed = resolveSongSeed(
+      { timeline: data.timeline, durationMs: data.durationMs },
+      readPinnedSeed(),
+    );
+    pendingWorldStart = { data, extra, features, seed, profile };
+    lastFitDiagnostic = recordFitDiagnostic(features, profile);
+    const hasLabels = Array.isArray(data.structure?.labels) && data.structure.labels.length > 1;
+    renderWorldGrid(null, features, { hasLabels });
     worldSelectEl?.classList.remove('hidden');
+    if (worldSelectEl && !worldSelectEl.open) worldSelectEl.showModal();
+    startChooserPreviews();
   } catch (err) {
     // The grid is a convenience; analysis failing must still start a song.
-    console.error('[world score]', err);
+    console.error('[world chooser]', err);
     pendingWorldStart = { data, extra };
+    lastFitDiagnostic = null;
     confirmWorld(data.worldId || lastWorldId || DEFAULT_WORLD_ID);
   }
 }
 
-worldSelectGridEl?.addEventListener('click', (e) => {
-  const card = e.target?.closest?.('.worldCard');
-  const baseWorldId = card?.dataset?.baseWorldId;
-  if (!baseWorldId) return;
+function startChooserPreviews() {
+  stopWorldPreview();
+  const pending = pendingWorldStart;
+  if (!pending) return;
+  const audio = previewAudioHandlers();
+  previewSession = new PreviewSession({
+    data: { ...pending.data, profile: pending.profile },
+    features: pending.features,
+    seed: pending.seed,
+    reducedFlash,
+    playAudio: audio.play,
+    stopAudio: audio.stop,
+    onStill: ({ worldId, dataUrl }) => applyWorldStill(worldId, dataUrl),
+    onPreviewStart: ({ worldId }) => setPreviewingCard(worldId),
+    onPreviewFrame: ({ worldId, canvas }) => showPreviewFrame(worldId, canvas),
+    onPreviewEnd: () => setPreviewingCard(null),
+  });
+  syncPassageButtons();
+  loadPreviewRenderer().then(() => {
+    if (previewSession && pendingWorldStart === pending) previewSession.enqueueAll();
+  }).catch((err) => console.warn('[world preview] renderer failed', err));
+}
+
+function playSelectedWorld(baseWorldId) {
   const baseWorld = listWorlds().find((world) => world.id === baseWorldId);
   if (!baseWorld) return;
 
-  // Cathode owns a separate pixel renderer, so it remains an intentional
-  // manual selection. Every painterly world gets its own variant of this
-  // song, even when it was not the automatic base choice.
-  if (baseWorld.manualOnly) {
-    clearCustomWorld();
-    confirmWorld(baseWorldId);
-    return;
-  }
+  // Preview audio/timing must not leak into the performance.
+  if (previewSession) previewSession.stopPreview();
 
   try {
-    const current = getWorld('custom');
-    if (current?.baseId !== baseWorldId) {
-      const pending = pendingWorldStart;
-      if (!pending?.features) throw new Error('Missing song features for world variant');
-      const { world } = buildWorldVariant(baseWorldId, pending.features, pending.data);
-      setCustomWorld(world);
-    }
-    confirmWorld('custom');
+    const pending = pendingWorldStart;
+    if (!pending?.features && !pending?.profile) throw new Error('Missing song profile for world variant');
+    const { world } = buildWorldVariant(baseWorldId, pending.features, {
+      ...pending.data,
+      profile: pending.profile,
+    });
+    const current = getCustomWorld();
+    if (current?.instanceId !== world.instanceId) setCustomWorld(world);
+    confirmWorld(world.id);
   } catch (err) {
     // A tailored palette or terrain is additive. If it cannot be made, the
     // player still gets the world they selected instead of a dead-end picker.
@@ -959,35 +1211,123 @@ worldSelectGridEl?.addEventListener('click', (e) => {
     clearCustomWorld();
     confirmWorld(baseWorldId);
   }
+}
+
+function previewSelectedWorld(baseWorldId) {
+  if (!previewSession) return;
+  loadPreviewRenderer().then(() => {
+    if (previewSession) previewSession.preview(baseWorldId);
+  }).catch((err) => {
+    console.warn('[world preview]', err);
+  });
+}
+
+function recordFitDiagnostic(features, profile) {
+  if (!features) return null;
+  const ranked = scoreWorlds(features, undefined, { profile });
+  const confidence = Number.isFinite(profile?.confidence?.overall)
+    ? profile.confidence.overall
+    : null;
+  return {
+    ranked,
+    confidence,
+    lines: formatFitDiagnostic(ranked, { confidence }),
+  };
+}
+
+function chooseRecommendedWorld() {
+  const pending = pendingWorldStart;
+  if (!pending?.features) return;
+  const diagnostic = lastFitDiagnostic?.ranked?.length
+    ? lastFitDiagnostic
+    : recordFitDiagnostic(pending.features, pending.profile);
+  lastFitDiagnostic = diagnostic;
+  const pick = pickRecommended(diagnostic?.ranked || []);
+  if (pick?.id) playSelectedWorld(pick.id);
+}
+
+worldSelectGridEl?.addEventListener('click', (e) => {
+  const previewBtn = e.target?.closest?.('.worldCardPreviewBtn');
+  if (previewBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    const card = previewBtn.closest('.worldCard');
+    if (card?.dataset?.baseWorldId) previewSelectedWorld(card.dataset.baseWorldId);
+    return;
+  }
+  const card = e.target?.closest?.('.worldCard');
+  const baseWorldId = card?.dataset?.baseWorldId;
+  if (!baseWorldId) return;
+  playSelectedWorld(baseWorldId);
 });
+
+worldSelectGridEl?.addEventListener('keydown', (e) => {
+  // Buttons keep their native Enter/Space activation; card shortcuts are
+  // only for focus on the card itself. Do not steal Preview's Enter key.
+  if (!e.target?.classList?.contains('worldCard')) return;
+  const cards = [...(worldSelectGridEl?.querySelectorAll('.worldCard') || [])];
+  const current = document.activeElement?.closest?.('.worldCard');
+  const index = Math.max(0, cards.indexOf(current));
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    cards[moveChoiceIndex(index, 1, cards.length)]?.focus();
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    cards[moveChoiceIndex(index, -1, cards.length)]?.focus();
+  } else if (e.key === 'Enter') {
+    if (current?.dataset?.baseWorldId) {
+      e.preventDefault();
+      playSelectedWorld(current.dataset.baseWorldId);
+    }
+  } else if (e.key === 'p' || e.key === 'P' || e.key === ' ') {
+    if (current?.dataset?.baseWorldId && e.target?.classList?.contains('worldCard')) {
+      e.preventDefault();
+      previewSelectedWorld(current.dataset.baseWorldId);
+    }
+  }
+});
+
+worldPassageQuietEl?.addEventListener('click', () => {
+  previewSession?.setPassage('quiet');
+  syncPassageButtons();
+});
+worldPassagePeakEl?.addEventListener('click', () => {
+  previewSession?.setPassage('peak');
+  syncPassageButtons();
+});
+worldChooseForMeEl?.addEventListener('click', () => chooseRecommendedWorld());
 
 
 function confirmWorld(id) {
   const pending = pendingWorldStart;
   pendingWorldStart = null;
   if (!pending) return;
+  stopWorldPreview();
   lastWorldId = id;
   pending.data.worldId = id;
-  worldSelectEl?.classList.add('hidden');
+  closeWorldChooser();
   // World select can sit for a while; a suspended context would start a
   // silent, frozen first frame that reads as "upload did nothing."
   audioEngine?.resume?.();
   // A recording already has every voice. The timeline synth (oscillator
   // "keyboard" tones + hat/kick clicks) must not sit on top of it.
-  if (pending.extra?.playBuffer) muteTimelineSynth = true;
-  startTimeline(pending.data, pending.extra);
-  if (pending.extra.playBuffer) {
-    lastAudioBuffer = pending.extra.playBuffer;
-    audioEngine.playBuffer(pending.extra.playBuffer, 0);
+  const extra = { ...(pending.extra || {}) };
+  if (pending.seed != null && extra.songSeed === undefined) extra.songSeed = pending.seed;
+  if (extra.playBuffer) muteTimelineSynth = true;
+  startTimeline(pending.data, extra);
+  if (running) canvas.focus({ preventScroll: true });
+  if (extra.playBuffer) {
+    lastAudioBuffer = extra.playBuffer;
+    audioEngine.playBuffer(extra.playBuffer, 0);
   }
 }
 
 function startTimeline(timelineData, extra = {}) {
   const {
     songSeed: seedOverride = undefined, playBuffer, live = false,
-    startAtMs = 0, startAtWallMs = 0,
+    startAtMs = 0, startAtWallMs = 0, preservePause = false,
   } = extra;
-  stopTimeline();
+  stopTimeline({ preservePause });
   fitCanvas();
   // Any path that is about to play a decoded recording (confirmWorld,
   // replay) mutes the timeline synth. Live listening mutes it for the same
@@ -1075,13 +1415,14 @@ function startTimeline(timelineData, extra = {}) {
   // Prime one sim step so BiomeManager/update dials (haze, calm, etc.) are
   // initialized before the first paint — a zero-dt first rAF used to draw
   // with undefined multipliers and throw on rgba(...,NaN).
-  try { sim.step(STEP_MS, STEP_MS); simTime = STEP_MS; } catch (err) {
+  try { if (!(startAtMs > 0)) { sim.step(STEP_MS, STEP_MS); simTime = STEP_MS; } } catch (err) {
     console.warn('[sim prime]', err);
   }
   // Exposed for DebugOverlay only -- resolved song identity has no other
   // consumer in the sim itself (SectionFusion already folded the lyric
   // structure into BiomeManager.sections by this point).
   sim.lyricIdentity = timelineData.lyricIdentity || null;
+  sim.fitDiagnostic = extra.fitDiagnostic || lastFitDiagnostic || null;
   // Live listening runs its arc against a nominal length, because the song
   // has not finished happening. Flagged so the transport draws the total as
   // the estimate it is rather than as a measurement.
@@ -1119,8 +1460,8 @@ function startTimeline(timelineData, extra = {}) {
   const startedAt = startAtWallMs > 0
     ? startAtMs + (performance.now() - startAtWallMs)
     : startAtMs;
-  if (startedAt > 0) conductor.seekTo(startedAt);
   audioEngine.start(startedAt);
+  if (startedAt > 0) sim.startAt(startedAt + VISUAL_LEAD_MS);
   // Both seeded in led time (see frame()), or the first frame would see the
   // whole lead as a delta and spend it on fixed steps nobody asked for.
   simTime = startedAt + VISUAL_LEAD_MS;
@@ -1130,6 +1471,7 @@ function startTimeline(timelineData, extra = {}) {
   // sim time nobody asked for.
   lastNowMs = audioEngine.nowMs + VISUAL_LEAD_MS;
   running = true;
+  syncKeepAwake();
   stopTitleBackdrop();
 
   progressEl.classList.add('hidden');
@@ -1166,6 +1508,20 @@ function startTimeline(timelineData, extra = {}) {
     seek: (ms) => seekSong(ms),
     get perfLevel() { return perfGovernor?.level ?? null; },
     get perf() { return perfGovernor || null; },
+    // Car mode (KeepAwake.js): live state for debugging on a head unit, plus
+    // the one hook a smoke test needs -- backdating the last-input clock, so
+    // the wake-tap path can be exercised without idling for a real 20s.
+    carMode: {
+      keepAwake,
+      get lastInputMs() { return lastInputMs; },
+      get fullscreenDropped() { return fullscreenDropped; },
+      get displaySlept() { return displaySlept; },
+      backdateInput: (idleMs) => { lastInputMs = performance.now() - idleMs; },
+      simulateDisplaySleep: (idleMs) => {
+        lastInputMs = performance.now() - idleMs;
+        displaySlept = true;
+      },
+    },
   };
 }
 
@@ -1435,8 +1791,15 @@ async function loadAudioFiles(files) {
   // Claim the load before the first await. Otherwise an older picker/drop
   // stalled in bootAudio() can wake up later and overwrite the newer choice.
   const myGen = ++loadGen;
+  stopTimeline();
+  stopTitleBackdrop();
+  loadShow?.stop();
+  pendingWorldStart = null;
+  hudEl.classList.add('hidden');
+  // Freeze learned settings for both cache identity and the analysis itself.
+  const analysisGroove = new GrooveFingerprint(groove.toJSON());
   showProgress('Reading file…');
-  worldSelectEl?.classList.add('hidden');
+  closeWorldChooser();
   try {
     await bootAudio();
   } catch (err) {
@@ -1452,6 +1815,7 @@ async function loadAudioFiles(files) {
   // clobbering it. Analysis here is the longest of any load path (band
   // separation + onset/tempo/pitch + an awaited lyrics prompt), so it's the
   // one most likely to still be in flight when a second drop lands.
+  if (myGen !== loadGen) return;
   const decoded = [];
   for (const file of files) {
     try {
@@ -1459,6 +1823,8 @@ async function loadAudioFiles(files) {
     } catch (err) {
       if (myGen !== loadGen) return;
       showErrorBanner(`Could not decode audio file "${file.name}": ` + err.message);
+      progressEl.classList.add('hidden');
+      loaderEl.classList.remove('hidden');
       return;
     }
     if (myGen !== loadGen) return;
@@ -1507,16 +1873,16 @@ async function loadAudioFiles(files) {
     const lyricsPromise = lyricsDisabled
       ? Promise.resolve({ identity: null, lyricSections: null, syncedLyrics: null })
       : resolveLyricsForAudio(files[0], audioBuffer.duration, vocalStem, { prompt: false });
-    // Has this exact recording been analysed before? The fingerprint names
-    // it by what it SOUNDS like, so the same master as mp3 and as flac hit
-    // the same entry -- a file hash could never do that. A hit skips tens of
-    // seconds of separation, onset and pitch work.
+    // Reuse only the same decoded fingerprint, stem assignments, and learned
+    // rhythm settings. Different encodings may have different fingerprints.
     let fingerprint = null;
+    let cacheKey = null;
     let data = null;
     try {
       loadShow?.setStage('Recognising the recording…', 0.05);
       fingerprint = fingerprintBuffer(audioBuffer);
-      const cached = await getBundle(fingerprint.key);
+      cacheKey = analysisCacheKey(fingerprint, { stems: isStemDrop ? decoded : [], groove: analysisGroove });
+      const cached = cacheKey ? await getBundle(cacheKey) : null;
       if (cached) {
         data = unpackBundle(cached);
         // An unreadable bundle (older layout, truncated, hand-edited) is not
@@ -1533,8 +1899,9 @@ async function loadAudioFiles(files) {
         userStems: isStemDrop ? decoded : null,
         // Everything previous sessions learned about how this player splits a
         // kick from a hat, applied to a song they've never played.
-        groove,
+        groove: analysisGroove,
         onProgress: ({ phase, progress }) => {
+          if (myGen !== loadGen) return;
           if (phase === 'separate') loadShow?.setStage(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`, progress);
           else if (phase === 'analyze') loadShow?.setStage('Detecting onsets, tempo, and downbeat…', 0.7);
           else if (phase === 'pitch') loadShow?.setStage('Tracing melody, bass, and harmony…', 0.9);
@@ -1556,9 +1923,9 @@ async function loadAudioFiles(files) {
     // show must not wait on a disk write, and a failed one costs only a
     // re-analysis later. Lyrics are deliberately NOT in the bundle -- they
     // are fetched per play and the preference can change between plays.
-    if (fingerprint && !data.fromBundle) {
+    if (cacheKey && !data.fromBundle) {
       Promise.resolve()
-        .then(() => putBundle(fingerprint.key, packBundle(data, {
+        .then(() => putBundle(cacheKey, packBundle(data, {
           fingerprint, name: files[0].name || '', identity: lyricIdentity,
         })))
         .catch((err) => console.warn('[analysis] could not cache bundle', err));
@@ -1605,15 +1972,13 @@ function handleFile(file) {
 }
 
 /** One file plays as itself. Several files dropped together are stems of one
- *  song (their filenames cast the characters).
- *
- *  There is one input now: audio. The MIDI paths (a score alone, or a score
- *  paired with a recording) and the built-in demo are gone -- this is a
- *  consumer app, and "drop a song" is the whole interaction. */
+ *  song (their filenames cast the characters). The built-in sample is a
+ *  second door into the same chooser. */
 function handleFiles(files) {
   const list = [...(files || [])].filter(Boolean);
   if (!list.length) return;
-  worldSelectEl?.classList.add('hidden');
+  closeWorldChooser();
+  stopWorldPreview();
   pendingWorldStart = null;
   showProgress('Reading file…');
   loadAudioFiles(list);
@@ -1625,6 +1990,59 @@ fileInputEl?.addEventListener('change', (e) => {
   e.target.value = '';
 });
 worldSelectBackEl?.addEventListener('click', () => backToTitle());
+worldSelectEl?.addEventListener('keydown', (e) => {
+  // Native modality makes the background inert; explicitly wrap the two
+  // endpoints so Tab does not leave the page for the browser toolbar.
+  if (e.key !== 'Tab') return;
+  if (e.shiftKey && document.activeElement === worldPassageQuietEl) {
+    e.preventDefault();
+    worldSelectBackEl?.focus();
+  } else if (!e.shiftKey && document.activeElement === worldSelectBackEl) {
+    e.preventDefault();
+    worldPassageQuietEl?.focus();
+  }
+});
+worldSelectEl?.addEventListener('cancel', (e) => {
+  e.preventDefault();
+  backToTitle(); // also stops preview audio and discards the pending song
+});
+
+/** Authored sample (Proof) so a visitor can see the worlds without a file. */
+async function startDemoSample() {
+  try {
+    await bootAudio();
+  } catch (err) {
+    showErrorBanner(err?.message || 'Audio is blocked. Click the page, then try again.');
+    return;
+  }
+  muteTimelineSynth = false;
+  lastAudioBuffer = null;
+  lastSongName = 'Proof';
+  fontRecommender?.clear();
+  const song = buildDemoSong();
+  const energyCurves = synthesizeEnergyCurves(song.timeline, song.durationMs);
+  const barMs = (60000 / song.bpm) * 4;
+  const boundariesMs = song.sections.map((s) => s.bar0 * barMs);
+  boundariesMs.push(song.durationMs);
+  offerWorldsThenStart({
+    title: song.title,
+    bpm: song.bpm,
+    durationMs: song.durationMs,
+    timeline: song.timeline,
+    barGrid: song.barGrid,
+    energyCurves,
+    conductor: song.conductor,
+    structure: {
+      labels: song.sections.map((s) => s.id),
+      boundariesMs,
+      confidence: 1,
+    },
+  });
+}
+demoBtnEl?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  startDemoSample();
+});
 
 // Unlock the AudioContext on the gesture that opens the picker, not on
 // the later `change` event -- browsers often don't treat file-picker
@@ -1653,6 +2071,7 @@ dropzoneEl.addEventListener('click', () => fileInputEl.click());
 // keyboard-operable at all, and the keypress instead fell through to
 // beatTap() (the F/J calibration handler) once the loader is showing.
 dropzoneEl.addEventListener('keydown', (e) => {
+  if (e.target !== dropzoneEl) return; // nested sample/upload controls own their keys
   if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
   e.preventDefault(); // Space must not also scroll the page
   fileInputEl.click();
@@ -1791,6 +2210,7 @@ function frame(tRaf) {
   if (paused) { rafHandle = requestAnimationFrame(frame); return; }
   if (lastRafMs !== null) {
     const rafDeltaMs = tRaf - lastRafMs;
+    noteFrameGap(rafDeltaMs);
     const prevLevel = perfGovernor.level;
     perfGovernor.sample(rafDeltaMs, tRaf);
     if (perfGovernor.level !== prevLevel) fitCanvas();
@@ -1801,6 +2221,7 @@ function frame(tRaf) {
   }
   lastRafMs = tRaf;
   hudIdleTick(tRaf);
+  keepAwake.tick(tRaf);
   const nowMs = audioEngine.nowMs;
   // ChoreoClock leg 3: the world is stepped for when this frame will be SEEN,
   // one compositor-plus-scanout hop after it is built, so `simTime` and
@@ -2060,27 +2481,28 @@ canvas.addEventListener('pointermove', (e) => {
   sim.setPointer(p.x, p.y);
 });
 
-/** Jump audio clock + conductor + sim time to `ms` (mountain seekbar). */
+/** Seek is a fresh playback scene at the destination. Use the same complete
+ * teardown/construction lifecycle as replay so no effect pool, timestamp,
+ * subscription or renderer history can survive from the discarded future. */
 function seekSong(ms) {
-  if (!running || !sim || !audioEngine) return;
+  if (!running || !sim || !audioEngine || !lastTimelineData || !Number.isFinite(ms)) return;
   const dur = Math.max(1, sim.conductor?.durationMs || audioEngine.nowMs + 1);
   const t = Math.max(0, Math.min(ms, dur - 1));
-  synth?.stopAll?.();
-  audioEngine.seekToMs(t);
-  if (sim.conductor?.seekTo) sim.conductor.seekTo(t);
-  // The conductor track's own cursor has to move with the playhead, or a
-  // backward scrub would replay the music with every cue behind the new
-  // position already spent (see CueDirector.seekTo).
-  sim.cues?.seekTo(t);
-  simTime = t + VISUAL_LEAD_MS;
-  lastNowMs = t + VISUAL_LEAD_MS;
-  acc = 0;
-  if (sim.timeMs != null) sim.timeMs = t + VISUAL_LEAD_MS;
-  // A milestone glyph belongs to the moment that earned it. Scrubbing away
-  // leaves it stranded (a backward seek puts the clock before its own start),
-  // so drop it and anything queued behind it rather than letting either
-  // surface at the wrong point in the song.
-  renderer?.epicycles?.reset();
+  const wasPaused = paused;
+  const seed = sim.songSeed;
+  const buffer = lastAudioBuffer;
+  const selectedSection = renderer?.composer?.selectedSection;
+  startTimeline(lastTimelineData, { songSeed: seed, startAtMs: t,
+    playBuffer: buffer || undefined, preservePause: wasPaused, fitDiagnostic: sim.fitDiagnostic });
+  if (!running || !sim) return;
+  if (buffer) audioEngine.playBuffer(buffer, t / 1000);
+  if (wasPaused) {
+    paused = true;
+    audioEngine.ctx.suspend();
+    updatePauseButtonUI();
+  }
+  renderer.draw(sim, 1);
+  if (renderer.composer && selectedSection != null) renderer.composer.selectedSection = selectedSection;
 }
 
 /** The player's own sense of "where's the beat" (BeatAnchor.js): stamped on
@@ -2181,6 +2603,17 @@ const INERT_KEYS = new Set([
 ]);
 
 window.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented) return;
+  // A modal chooser owns keyboard input. R stays available for accessibility;
+  // all other keys retain native dialog/button behavior, including Escape.
+  if (worldSelectEl?.open) {
+    if (e.key === 'r' || e.key === 'R') toggleReducedFlash();
+    return;
+  }
+  // Native controls must receive their Enter/Space default actions before
+  // the gameplay handler's inert-key guard can suppress them.
+  if ((e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar')
+    && e.target?.closest?.('button, input, select, textarea, a')) return;
   if (running) wakeHud();
   if (e.key === 'Escape') {
     if (fontModalEl && !fontModalEl.classList.contains('hidden')) closeFontModal();
@@ -2260,6 +2693,15 @@ function toggleReducedFlash() {
   reducedFlash = !reducedFlash;
   setReducedFlash(reducedFlash);
   sim?.setReducedFlash(reducedFlash);
+  if (worldSelectEl?.open && previewSession) {
+    // Rebuild stills and stop any live animation/audio using the old setting.
+    const worldId = previewSession.activePreviewId;
+    const passage = previewSession.passage;
+    startChooserPreviews();
+    previewSession?.setPassage(passage);
+    syncPassageButtons();
+    if (worldId) previewSelectedWorld(worldId);
+  }
 }
 
 /** Reflects the current trim in the chip. Takes effect on the very next
@@ -2598,10 +3040,12 @@ function openLibrary() {
   if (!libraryPanelEl) return;
   unlockAudio();
   libraryPanelEl.classList.remove('hidden');
+  if (!libraryPanelEl.open) libraryPanelEl.showModal();
   libraryPanel?.focusSearch();
 }
 
 function closeLibrary() {
+  if (libraryPanelEl?.open) libraryPanelEl.close();
   libraryPanelEl?.classList.add('hidden');
   // Abandon a scan in flight: closing the panel over a large drive should
   // stop reading it, not merely stop showing it.
@@ -2739,11 +3183,10 @@ libraryFolderInputEl?.addEventListener('change', async (e) => {
   }
 });
 
-// Escape closes the library the same way it would any other panel, and only
-// when it is the thing on screen.
-window.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape') return;
-  if (libraryPanelEl?.classList.contains('hidden') !== false) return;
+// A modal <dialog> handles Escape itself. All this has to do is make sure
+// the dismissal runs the same teardown a click on the close button does --
+// otherwise Escape would leave a scan reading a ten-thousand-track drive.
+libraryPanelEl?.addEventListener('cancel', (e) => {
   e.preventDefault();
   closeLibrary();
 });

@@ -8,10 +8,14 @@
 // broad-shouldered summits joined by high saddles, couloirs, ridged
 // high-frequency crags.
 // profile 'rolling' (nearer hills L4/L5): softer fbm foothills.
+// profile 'city': stepped skyline.
+// profile 'columnar': bays and shafts (foundry stacks, nave piers, trunks).
+// anchor 'ceiling': hang the mass from the top of the strip (canopy, vault,
+// water surface) instead of standing it on the ground.
 //
 // shadeMode 'rendered' bakes soft vertical CGI shading (DKC3 lineage):
 // dark foot, mid body, lit crest, faint ridge specular -- once, free forever.
-import { ValueNoise1D, ridged } from '../utils/noise.js';
+import { ValueNoise1D } from '../utils/noise.js';
 import {
   lerp, mulberry32, clamp01, clamp,
 } from '../utils/math.js';
@@ -24,7 +28,8 @@ import {
   shapeDials, flankness,
 } from './RidgeShape.js';
 import { cityHeightField, bakeWindowStrip } from './city/CitySilhouette.js';
-import { pickFormation, varyFormation, spaceByIsolation, plateauProfile } from './ColoradoPlateau.js';
+import { pickFormation, varyFormation, spaceByIsolation } from './ColoradoPlateau.js';
+import { rimStroke } from './WorldMaterial.js';
 
 function makeCanvas(width, height) {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
@@ -276,7 +281,6 @@ export function alpineHeightField(noise, n, step, seed, width, character = 'mass
   // exists -- composition upstream only knows which summits the song asked
   // for, not what they turned out to be.
   spaceByIsolation(allPeaks, width);
-  const spinePhase = rand() * 10;
   // Flank curvature from the character's own shoulder/spire/spireMix --
   // this is the path a song's spike-vs-organic DNA takes into the shape.
   const flankQ = flankQs(cfg, weather.litho, weather.profileMix ?? 0);
@@ -432,12 +436,82 @@ export function rollingHeightField(noise, n, step, octaves, portrait = null, wid
   return heights;
 }
 
+/**
+ * Vertical members with a capital and a base, spaced on a regular bay.
+ * This is architecture (Nave columns, Foundry stacks, Understory trunks),
+ * not a mountain. `organic: true` jitters bay width and tapers the shaft
+ * so trunks don't read as a barcode.
+ */
+export function columnarHeightField(n, step, seed, width, portrait = null, {
+  bayPx = 96, colFrac = 0.18, colH = 0.90, archAmp = 0.22, organic = false, layerKey = 'L4',
+} = {}) {
+  const heights = new Float32Array(n);
+  const stripW = width > 0 ? width : Math.max(1, (n - 1) * step);
+  const landmarkXs = [];
+  if (portrait?.landmarks?.length) {
+    for (const lm of portrait.landmarks) {
+      const u = Number.isFinite(lm.u) ? lm.u : (Number.isFinite(lm.x01) ? lm.x01 : null);
+      if (u == null) continue;
+      landmarkXs.push(clamp01(u) * stripW);
+    }
+  }
+  const baseH = Math.max(0.08, colH - archAmp - 0.12);
+  let bay = Math.max(48, bayPx);
+  if (layerKey === 'L2') bay *= 1.25;
+  if (layerKey === 'L3') bay *= 1.10;
+
+  for (let i = 0; i < n; i++) {
+    const x = i * step;
+    let localBay = bay;
+    if (organic) {
+      const jitter = 0.18 * Math.sin(x * 0.003 + seed * 0.01);
+      localBay = bay * (1 + jitter);
+    }
+    const phase = ((x % localBay) + localBay) % localBay;
+    const u = phase / localBay;
+    const half = colFrac * 0.5;
+    const colLo = 0.5 - half;
+    const colHi = 0.5 + half;
+    const inCol = u >= colLo && u <= colHi;
+    const colT = inCol ? (u - colLo) / Math.max(1e-6, colFrac) : 0;
+    // Shaft slightly wider at the foot, capital as a small step near the top
+    // of the column's own height (encoded as extra height, not width).
+    const taper = organic ? (0.08 * (1 - colT)) : 0;
+    const capital = inCol && colT > 0.82 ? 0.06 : 0;
+    let arch = 0;
+    if (!inCol && u > 0.08 && u < 0.92) {
+      const au = (u - 0.08) / 0.84;
+      arch = Math.sin(au * Math.PI) * archAmp;
+    }
+    let h = inCol ? (colH + capital + taper) : (baseH + arch);
+    // Portrait landmarks raise the nearest column, the way a chorus bay
+    // should be the tall one.
+    for (const lx of landmarkXs) {
+      const d = Math.abs(x - lx);
+      if (d < localBay * 0.55) h += 0.08 * (1 - d / (localBay * 0.55));
+    }
+    heights[i] = clamp01(h);
+  }
+  return heights;
+}
+
 export function generateSilhouette({
   seed, width = 2048, height = 320, octaves = 2, baseline = 0.55, amplitude = 0.30, color, step = 4,
   edgeLight = null, // optional neon ridge-line stroke (CYBER's edgeLight hook)
   shadeMode = 'classic', // 'classic' flat fill | 'rendered' soft CGI volume
-  profile = 'rolling', // 'rolling' | 'alpine' (Denali / Rainier / Shasta massifs)
+  profile = 'rolling', // 'rolling' | 'alpine' | 'city' | 'columnar'
   character = 'massif', // alpine only -- see ALPINE_CHARACTERS
+  // Hang the strip from the top of the canvas (Fathom surface, Nave vault,
+  // Understory canopy) instead of standing it on the ground.
+  anchor = 'ground',
+  // Lift the baked fill so a silhouette is a colored mass, not a hole.
+  fillLift = 0,
+  // Skyline rim in the world's own light. Null keeps a faint paper edge;
+  // never the old moonlight cream (that was the Halloween outline).
+  rimColor = null,
+  kind = null,
+  // Columnar-only bake knobs. Ignored for other profiles.
+  colH, archAmp, bayPx, colFrac, organic,
   // Song-anchored outline (RidgePortrait). Null keeps the seeded fallback
   // so tests and anything without energy curves still get a range. layerKey
   // picks which facet of the portrait this depth reads (L2 form / L3
@@ -491,6 +565,10 @@ export function generateSilhouette({
     heights = alpineHeightField(noise, n, step, seed, width, character, portrait, layerKey, terrainMods, timeline);
   } else if (profile === 'city') {
     heights = cityHeightField(n, step, seed, width, portrait, layerKey, terrainMods);
+  } else if (profile === 'columnar') {
+    heights = columnarHeightField(n, step, seed, width, portrait, {
+      bayPx, colFrac, colH, archAmp, organic, layerKey,
+    });
   } else {
     heights = rollingHeightField(noise, n, step, octaves, portrait, width, terrainMods, timeline);
   }
@@ -505,20 +583,25 @@ export function generateSilhouette({
 
   // Precompute ridge y samples + the highest crest (for gradient top).
   // Alpine: slightly more vertical throw so tall peaks really pierce the sky.
+  const hanging = anchor === 'ceiling';
   const amp = profile === 'alpine' ? amplitude * 1.12 : amplitude;
-  const footY = height * baseline;
+  const footY = hanging ? 0 : height * baseline;
   const ridgeYs = new Float32Array(n);
-  let minY = height;
+  let minY = hanging ? 0 : height;
+  let maxY = 0;
   for (let i = 0; i < n; i++) {
-    ridgeYs[i] = footY - heights[i] * height * amp;
+    ridgeYs[i] = hanging
+      ? heights[i] * height * amp
+      : footY - heights[i] * height * amp;
     if (ridgeYs[i] < minY) minY = ridgeYs[i];
+    if (ridgeYs[i] > maxY) maxY = ridgeYs[i];
   }
 
   // CRITICAL: peaks that compute above the strip top (y < 0) are clipped by
   // the canvas into flat mesas. Rescale the vertical throw so the tallest
   // summit keeps headroom — shape stays pointy, nothing shears off.
-  const HEADROOM = profile === 'alpine' ? 14 : profile === 'city' ? 10 : 6;
-  if (minY < HEADROOM) {
+  const HEADROOM = profile === 'alpine' ? 14 : profile === 'city' ? 10 : profile === 'columnar' ? 8 : 6;
+  if (!hanging && minY < HEADROOM) {
     const span = footY - minY;
     const target = footY - HEADROOM;
     if (span > 1e-6 && target > 0) {
@@ -531,14 +614,19 @@ export function generateSilhouette({
       minY = Math.max(HEADROOM, minY);
     }
   }
-  // Gradient crest starts a little above the skyline
-  const gradTop = Math.max(0, minY - 8);
-
+  if (hanging && maxY > height - HEADROOM) {
+    const target = height - HEADROOM;
+    if (maxY > 1e-6 && target > 0) {
+      const s = target / maxY;
+      for (let i = 0; i < n; i++) ridgeYs[i] *= s;
+      maxY = target;
+    }
+  }
   // Fitted amplitude so ridgeYAt matches the painted (unclipped) skyline.
   let hMax = 0;
   for (let i = 0; i < n; i++) if (heights[i] > hMax) hMax = heights[i];
   const ampFitted = hMax > 1e-6
-    ? (footY - minY) / (height * hMax)
+    ? (hanging ? maxY / (height * hMax) : (footY - minY) / (height * hMax))
     : amp;
 
   // Softened bakes draw at a reduced physical size; everything below still
@@ -552,9 +640,15 @@ export function generateSilhouette({
   const ctx = bakeCanvas.getContext('2d');
   if (soften < 1) ctx.scale(soften, soften);
   ctx.beginPath();
-  ctx.moveTo(0, height);
-  for (let i = 0; i < n; i++) ctx.lineTo(i * step, ridgeYs[i]);
-  ctx.lineTo(width, height);
+  if (hanging) {
+    ctx.moveTo(0, 0);
+    for (let i = 0; i < n; i++) ctx.lineTo(i * step, ridgeYs[i]);
+    ctx.lineTo(width, 0);
+  } else {
+    ctx.moveTo(0, height);
+    for (let i = 0; i < n; i++) ctx.lineTo(i * step, ridgeYs[i]);
+    ctx.lineTo(width, height);
+  }
   ctx.closePath();
 
   if (shadeMode === 'rendered') {
@@ -576,25 +670,29 @@ export function generateSilhouette({
     // doc comment) and now carries the full shading load instead of merely
     // adding contrast on top of a still-seamed bake. A flat fill has no
     // per-row color variation at all, so there is nothing left to seam.
-    ctx.fillStyle = shiftLightness(color, -0.02); // same "mid" tone as before
+    ctx.fillStyle = shiftLightness(color, (fillLift || 0) - 0.02);
     ctx.fill();
 
-    // Soft specular catch-light along the skyline — very low alpha, no hard
-    // hairline (stacked strokes read as glitchy neon outlines through gaps).
-    // Alpine: slightly stronger rim so jagged summits read against the sky.
-    ctx.save();
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = profile === 'alpine' ? 0.20 : profile === 'city' ? 0.10 : 0.14;
-    ctx.strokeStyle = 'rgba(255, 248, 230, 0.45)';
-    ctx.lineWidth = profile === 'alpine' ? 2.0 : profile === 'city' ? 1.2 : 2.4;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    for (let i = 0; i < n; i++) {
-      if (i === 0) ctx.moveTo(0, ridgeYs[i]); else ctx.lineTo(i * step, ridgeYs[i]);
+    // Soft rim along the skyline. A creamy moonlight stroke on jagged teeth
+    // is the Halloween-special outline; the rim is the world's own light
+    // (paper mixed with the fill) at low alpha.
+    const rim = (kind && rimStroke(color, kind))
+      || (rimColor ? { css: rimColor, alpha: 0.12, width: 1.6 } : { css: 'rgba(236, 228, 214, 0.22)', alpha: 0.12, width: 1.6 });
+    if (rim.alpha > 0.001) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = rim.css;
+      ctx.lineWidth = rim.width;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        if (i === 0) ctx.moveTo(0, ridgeYs[i]); else ctx.lineTo(i * step, ridgeYs[i]);
+      }
+      ctx.stroke();
+      ctx.restore();
     }
-    ctx.stroke();
-    ctx.restore();
   } else {
     ctx.fillStyle = color;
     ctx.fill();
@@ -632,7 +730,7 @@ export function generateSilhouette({
   // throw so ridgeYAt matches what was painted (no clipped-mesa ghost).
   // Full precision regardless of softenScale -- see the softenScale doc
   // above for why the vector data and the baked pixels are independent.
-  canvas.ridge = { heights, step, baseline, amplitude: ampFitted, height, profile };
+  canvas.ridge = { heights, ridgeYs, step, baseline: hanging ? 0 : baseline, amplitude: ampFitted, height, profile, anchor: hanging ? 'ceiling' : 'ground' };
   if (profile === 'city') {
     canvas.windows = bakeWindowStrip(ridgeYs, {
       width, height, step, seed, color: '#f2d090',
@@ -646,15 +744,47 @@ export function ridgeYAt(strip, x) {
   const r = strip.ridge;
   if (!r) return strip.height * 0.7;
   const i = Math.max(0, Math.min(r.heights.length - 1, Math.round(x / r.step)));
+  if (r.anchor === 'ceiling') return r.heights[i] * r.height * r.amplitude;
   return r.height * r.baseline - r.heights[i] * r.height * r.amplitude;
+}
+
+/** Placement shared by the static bitmap and its shading geometry. */
+export function tiledStripPlacement(strip, scrollX, canvasHeight, yOffset = 0) {
+  return {
+    x: -(((scrollX % strip.width) + strip.width) % strip.width),
+    y: strip.ridge?.anchor === 'ceiling' ? yOffset : canvasHeight - strip.height + yOffset,
+  };
+}
+
+/** Exact baked vertices, with the same tile origin and size as drawTiledStrip. */
+export function staticStripGeometry(strip, scrollX, canvasWidth, canvasHeight, yOffset = 0) {
+  if (!strip?.ridge) return null;
+  const { x, y } = tiledStripPlacement(strip, scrollX, canvasHeight, yOffset);
+  const ridge = strip.ridge;
+  const ys = ridge.ridgeYs || Array.from(ridge.heights, (_, i) => ridgeYAt(strip, i * ridge.step));
+  const pts = [];
+  for (let tileX = x; tileX < canvasWidth; tileX += strip.width) {
+    for (let i = 0; i < ys.length; i++) {
+      const localX = i * ridge.step;
+      if (localX > strip.width) break;
+      pts.push({ x: tileX + localX, y: y + ys[i], stripX: tileX + localX + scrollX,
+        lift: 0, dy: 0, scale: 1 });
+    }
+    // A non-divisible width closes the baked polygon at the tile's foot.
+    if ((ys.length - 1) * ridge.step < strip.width) {
+      pts.push({ x: tileX + strip.width, y: y + strip.height,
+        stripX: tileX + strip.width + scrollX, lift: 0, dy: 0, scale: 1 });
+    }
+  }
+  const crestY = y + Math.min(...ys);
+  return { pts, baseY: y, bottomY: y + strip.height, footY: y + strip.height,
+    crestY, bakedCrestY: crestY, dh: strip.height, stripHeight: strip.height };
 }
 
 /** Draws a tileable strip scroll-wrapped across the canvas width at the given y offset. */
 export function drawTiledStrip(ctx, strip, scrollX, canvasWidth, canvasHeight, yOffset = 0) {
-  const w = strip.width;
-  let x = -(((scrollX % w) + w) % w);
-  while (x < canvasWidth) {
-    ctx.drawImage(strip, x, canvasHeight - strip.height + yOffset);
-    x += w;
+  const placement = tiledStripPlacement(strip, scrollX, canvasHeight, yOffset);
+  for (let x = placement.x; x < canvasWidth; x += strip.width) {
+    ctx.drawImage(strip, x, placement.y);
   }
 }

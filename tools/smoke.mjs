@@ -1,4 +1,4 @@
-// Upload audio through the file chooser, analyse it, build a custom world,
+// Upload audio through the file chooser, analyse it, pick a world,
 // render advancing playback, pause/resume, and stop. Start npm start first.
 // Usage: node tools/smoke.mjs [url] [outDir]
 import assert from 'node:assert/strict';
@@ -60,6 +60,27 @@ export async function runAudioSmoke({
     report.checkpoints.push(name);
     console.log('PASS ' + name);
   };
+  // #hudRight fades after three seconds of inactivity and is unclickable
+  // while faded (pointer-events: none -- the canvas takes the hit instead).
+  // A slow machine can lose the race between waking it and clicking it, so
+  // wake and click as one retried unit rather than assuming a single wake
+  // still holds by the time the click lands.
+  const clickHudButton = async (selector) => {
+    let lastErr;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      if (await page.locator('#hudRight.hud-faded').count()) {
+        await page.locator('#stage').click({ position: { x: 640, y: 250 } });
+      }
+      try {
+        // Shorter than the fade window, so a click that loses the race is
+        // retried behind a fresh wake rather than burning the whole budget
+        // on one attempt -- but long enough for a heavily loaded runner.
+        await page.locator(selector).click({ timeout: 5000 });
+        return;
+      } catch (err) { lastErr = err; }
+    }
+    throw lastErr;
+  };
   let browser, context, page;
   try {
     await waitForServer(url);
@@ -99,15 +120,15 @@ export async function runAudioSmoke({
     await page.getByText('Browse files', { exact: true }).click();
     await (await chooserReady).setFiles(wavPath);
     // Analysis now ends at the world picker rather than starting the song
-    // outright. Every registered world gets one equal-choice card; the
-    // tailored interpretation is the play target of its base card.
+    // outright. Every registered world gets one equal-choice card. The
+    // chosen world is adapted on Play; there is no privileged custom card.
     await page.locator('#worldSelect:not(.hidden)').waitFor({ state: 'visible', timeout: 90000 });
     const worldCards = page.locator('#worldSelect .worldCard');
     check('the picker presents one card per registered world', await worldCards.count() === 9);
     check('the picker gives no world winner styling', await page.locator('.worldCard.is-best').count() === 0);
     const tailoredCard = page.locator('.worldCard[data-world-id="custom"]');
-    check('exactly one base card keeps the tailored interpretation', await tailoredCard.count() === 1);
-    const alternateCard = page.locator('.worldCard:not([data-world-id="custom"])').first();
+    check('no privileged custom card in the gallery', await tailoredCard.count() === 0);
+    const alternateCard = page.locator('.worldCard').first();
     check('an alternate painterly world remains selectable', await alternateCard.count() === 1);
     await alternateCard.click();
     await page.locator('#hud:not(.hidden)').waitFor({ state: 'visible', timeout: 90000 });
@@ -145,7 +166,7 @@ export async function runAudioSmoke({
     await page.locator('#stage').click({ position: { x: 640, y: 250 } });
     check('canvas tap wakes faded playback controls',
       !await page.locator('#hudRight.hud-faded').count());
-    await page.locator('#pauseBtn').click();
+    await clickHudButton('#pauseBtn');
     await page.waitForFunction(() => window.__SMW.audioEngine.ctx.state === 'suspended');
     const pausedAt = await page.evaluate(() => ({
       audio: window.__SMW.audioEngine.nowMs, sim: window.__SMW.sim.timeMs,
@@ -156,11 +177,32 @@ export async function runAudioSmoke({
     }));
     check('pause freezes the audio and simulation clocks', pausedAt.audio === stillPaused.audio
       && pausedAt.sim === stillPaused.sim);
-    await page.locator('#pauseBtn').click();
+    await clickHudButton('#pauseBtn');
     await page.waitForFunction((t) => window.__SMW.audioEngine.ctx.state === 'running'
       && window.__SMW.sim.timeMs > t + 500, pausedAt.sim);
     check('resume advances playback', true);
-    await page.locator('#stopBtn').click();
+
+    // Replace an actively playing song. The old source and frame loop must
+    // stop before the next world is chosen, including on a cache hit.
+    await page.locator('#fileInput').setInputFiles(wavPath);
+    await page.locator('#worldSelect:not(.hidden)').waitFor({ state: 'visible', timeout: 90000 });
+    check('replacement upload releases old playback before world selection',
+      await page.evaluate(() => !window.__SMW.audioEngine.playing
+        && !window.__SMW.audioEngine.sourceNode && window.__SMW.rafHandle === null));
+    check('replacement does not show the previous song completion panel',
+      !await page.locator('#completePanel').isVisible());
+    await page.locator('.worldCard').first().click();
+    await page.locator('#hud:not(.hidden)').waitFor({ state: 'visible', timeout: 90000 });
+    await page.waitForFunction(() => window.__SMW.audioEngine.playing && window.__SMW.sim.timeMs > 500);
+    check('replacement song starts after world selection', true);
+    // A slow runner can let the replacement song's controls fade before
+    // reaching Stop. Exercise that state deliberately and wake them like a
+    // viewer, just as the pause check above does.
+    await page.locator('#hudRight.hud-faded').waitFor({ state: 'attached' });
+    await page.locator('#stage').click({ position: { x: 640, y: 250 } });
+    check('canvas tap wakes replacement playback controls before stop',
+      !await page.locator('#hudRight.hud-faded').count());
+    await clickHudButton('#stopBtn');
     await page.locator('#loader:not(.hidden)').waitFor({ state: 'visible' });
     const stopped = await page.evaluate(() => !window.__SMW.audioEngine.playing
       && !window.__SMW.audioEngine.sourceNode && window.__SMW.rafHandle === null);
