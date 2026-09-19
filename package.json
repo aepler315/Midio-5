@@ -17,6 +17,7 @@
     "test:worlds": "node tools/worlds-smoke.mjs",
     "test:chooser": "node tools/smoke-world-chooser.mjs",
     "test:chooser-keyboard": "node tools/chooser-keyboard-smoke.mjs",
+    "test:car": "node tools/car-mode-smoke.mjs",
     "bench:sections": "node tools/benchmark-segmentation.mjs",
     "eval:worlds": "node tools/evaluate-worlds.mjs",
     "slskd": "docker compose up -d slskd",
