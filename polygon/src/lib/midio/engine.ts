@@ -1,4 +1,4 @@
-import { createAudio, landThump, pollAudio, startTransport, type AudioEngine, grabTick, setMuted, unlockAudio } from "./audio";
+import { createAudio, hideTransport, landThump, pollAudio, resumeTransport, startTransport, type AudioEngine, grabTick, setMuted } from "./audio";
 import { createConductor, launchJump, stepConductor, type ConductorState } from "./conductor";
 import { computeIris, drawScene } from "./draw";
 import { applyApotheosis, createWorld, nearestParticle, physicsStep, placeParticles, type PhysicsWorld } from "./physics";
@@ -104,7 +104,9 @@ export function attachEngine(canvas: HTMLCanvasElement): MidioEngine {
   canvas.addEventListener("pointercancel", onPointer);
   window.addEventListener("keydown", onKey);
   const vis = () => {
-    if (document.visibilityState === "visible" && engine.audio) unlockAudio(engine.audio);
+    if (!engine.audio) return;
+    if (document.visibilityState === "hidden") hideTransport(engine.audio);
+    else resumeTransport(engine.audio);
   };
   document.addEventListener("visibilitychange", vis);
 
