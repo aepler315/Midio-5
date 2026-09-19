@@ -27,7 +27,7 @@
     "start:full": "docker compose up -d slskd && node tools/serve.js"
   },
   "dependencies": {
-    "slsk-client": "^2.0.1"
+    "slsk-client": "^2.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
