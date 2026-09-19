@@ -95,6 +95,19 @@ try {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  const clickHudButton = async (selector) => {
+    let lastErr;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      if (await page.locator('#hudRight.hud-faded').count()) {
+        await page.locator('#stage').click({ position: { x: 640, y: 250 } });
+      }
+      try {
+        await page.locator(selector).click({ timeout: 5000 });
+        return;
+      } catch (err) { lastErr = err; }
+    }
+    throw lastErr;
+  };
 
   const entry = new URL(url);
   entry.searchParams.set('seed', '315');
@@ -117,7 +130,7 @@ try {
   await page.waitForFunction(() => window.__SMW?.sim?.timeMs > 1500, null, { timeout: 60000 });
 
   // --- record from the HUD, mid-song
-  await page.click('#recordBtn');
+  await clickHudButton('#recordBtn');
   check('recording is armed', await page.getAttribute('#recordBtn', 'aria-pressed') === 'true');
   await page.waitForTimeout(4000);
   // The HUD holds itself open while recording: its stop control is the only
@@ -125,7 +138,7 @@ try {
   check('the HUD stays reachable while recording', await page.locator('#recordBtn').isVisible());
 
   const hudDownload = page.waitForEvent('download', { timeout: 60000 });
-  await page.click('#recordBtn');
+  await clickHudButton('#recordBtn');
   const saved = await hudDownload;
   const hudPath = path.join(out, 'hud' + path.extname(saved.suggestedFilename()));
   await saved.saveAs(hudPath);
