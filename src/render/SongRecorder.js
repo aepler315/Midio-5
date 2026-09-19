@@ -53,6 +53,10 @@ export class SongRecorder {
     this.scope = scope;
 
     this.recording = false;
+    // MediaRecorder.stop() finalises its container asynchronously.  Keep
+    // start() locked until that work (including codec sniffing) is complete,
+    // otherwise a late onstop callback could tear down the next session.
+    this.finalizing = false;
     this.startedMs = 0;
     this.bytes = 0;
     this.error = null;
@@ -95,7 +99,7 @@ export class SongRecorder {
    * down with it.
    */
   start({ presetId } = {}) {
-    if (this.recording) return false;
+    if (this.recording || this.finalizing) return false;
     this.error = null;
     const MR = this.scope?.MediaRecorder;
     if (!MR || !this.stage) { this.error = 'This browser cannot record video.'; return false; }
@@ -219,9 +223,11 @@ export class SongRecorder {
 
   /** Stop and resolve to `{blob, url, fileName-ready parts}` — or null if
    *  nothing was captured. */
-  async stop() {
+  stop() {
+    if (this.finalizing) return this._stopPromise;
     if (!this.recording) return null;
     this.recording = false;
+    this.finalizing = true;
     const pending = this._stopPromise;
     try {
       this._recorder.stop();
@@ -235,8 +241,13 @@ export class SongRecorder {
     const durationMs = (this.scope?.performance?.now?.() ?? Date.now()) - this.startedMs;
     const candidate = this._candidate;
     const chunks = this._chunks;
+    const preset = this._preset;
+    const resolveStop = this._resolveStop;
     this._teardown();
-    if (!chunks.length) { this._resolveStop?.(null); return; }
+    if (!chunks.length) {
+      this._completeFinalization(resolveStop, null);
+      return;
+    }
 
     const blob = new Blob(chunks, { type: candidate?.mimeType || 'video/mp4' });
     let codec = null;
@@ -248,14 +259,26 @@ export class SongRecorder {
       codec = sniffVideoCodec(head);
     } catch { /* labelling is a nicety, never a failure */ }
 
-    this._resolveStop?.({
+    this._completeFinalization(resolveStop, {
       blob,
       candidate,
       codec,
       bytes: blob.size,
       durationMs,
-      preset: this._preset,
+      preset,
     });
+  }
+
+  _completeFinalization(resolveStop, result) {
+    // Unlock only after every await in _finish has completed.  Clearing the
+    // session references here also ensures a subsequent recording receives
+    // its own promise and resolver.
+    this.finalizing = false;
+    this._stopPromise = null;
+    this._resolveStop = null;
+    this._preset = null;
+    this._candidate = null;
+    resolveStop?.(result);
   }
 
   _teardown() {
@@ -290,7 +313,12 @@ export class SongRecorder {
       this._recorder.onerror = null;
       try { this._recorder.stop(); } catch { /* already stopped */ }
     }
-    this._resolveStop?.(null);
+    const resolveStop = this._resolveStop;
     this._teardown();
+    this._stopPromise = null;
+    this._resolveStop = null;
+    this._preset = null;
+    this._candidate = null;
+    resolveStop?.(null);
   }
 }
