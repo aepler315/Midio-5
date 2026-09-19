@@ -1,5 +1,27 @@
 // Setting the Bluetooth delay from the player's own tapping.
 //
+// ## Two passes, because one cannot see the whole problem
+//
+// A tap made by EAR says when the sound reached the ear. A tap made by EYE
+// says when the picture reached the eye. Neither alone is the A/V skew, and
+// a pass that only listens is blind to display latency entirely -- which is
+// how a projected or re-encoded screen can be badly out of step while a
+// by-ear pass keeps reporting that everything is fine.
+//
+// So Sync runs both, and the answer is the difference:
+//
+//     sound at the ear  =  kick + D_hw + audioDelay
+//     picture at the eye =  kick + visualLag + D_display
+//
+// setting those equal gives `trim = (D_hw - reportedLatency) - D_display`,
+// which is exactly `median(ear) - median(eye)` once each side is normalised
+// for the trim in force when it was measured.
+//
+// The player's own bias -- the habit of anticipating a beat, which no two
+// people share -- appears in BOTH passes and cancels in the subtraction.
+// That is the real reason to run two: it removes the one term a single pass
+// has to either trust or guess at.
+//
 // The premise, and it is the player's: their taps are canon. If they tap
 // along with what they HEAR and those taps land 150ms after the song's
 // kicks, then the sound is reaching them 150ms late, and that is the number
@@ -23,7 +45,7 @@
 // they were collected.
 //
 // Pure: no clock, no DOM, no audio. Every timestamp is handed in.
-import { clamp } from '../utils/math.js';
+import { clamp, clamp01 } from '../utils/math.js';
 import { MAX_LATENCY_MS } from '../core/ChoreoClock.js';
 import { median } from './LatencyCalibrator.js';
 
@@ -183,11 +205,53 @@ export function spreadMs(values) {
   return median(values.map((v) => Math.abs(v - mid)));
 }
 
+/** How long the eye-phase marker takes to fall back after a beat. Short
+ *  enough that two beats never overlap at any playable tempo, long enough
+ *  to be seen on a display that is itself the thing being measured. */
+const PULSE_DECAY_MS = 220;
+
+/**
+ * The eye-phase marker's brightness, 1 at the beat and falling to 0.
+ *
+ * Driven by the VISUAL clock -- the same clock, with the same lag applied,
+ * that the characters' beat-anchored moves are drawn on. That is the whole
+ * point: tapping this marker measures the path from "the app decided to
+ * draw this beat" to "a person saw it", which is the term a by-ear pass
+ * cannot reach. A marker on its own private timer would measure nothing.
+ */
+export function beatPulse01(onsets, visualBeatMs, decayMs = PULSE_DECAY_MS) {
+  if (!onsets?.length || !Number.isFinite(visualBeatMs)) return 0;
+  let lo = 0;
+  let hi = onsets.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (onsets[mid] <= visualBeatMs) lo = mid; else hi = mid - 1;
+  }
+  if (onsets[lo] > visualBeatMs) return 0; // before the first beat
+  const age = visualBeatMs - onsets[lo];
+  return clamp01(1 - age / Math.max(1, decayMs));
+}
+
+/** Which half of the pass a tap belongs to. */
+export const PHASE_EAR = 'ear';
+export const PHASE_EYE = 'eye';
+
+/** Taps per phase before it has enough to stand on. Below this the reading
+ *  is shown but described as unfinished. */
+export const TAPS_PER_PHASE = 6;
+
 export class SyncCalibrator {
   constructor(trimMs = 0) {
     this.trimMs = clamp(Math.round(trimMs) || 0, -MAX_TRIM_MS, MAX_TRIM_MS);
-    /** What each tap implied the trim should be, in one consistent unit. */
+    this.phase = PHASE_EAR;
+    /** Ear taps, normalised to what each implied the trim should be --
+     *  `trim + offset`, which cancels the trim in force at the time and so
+     *  stays comparable across a pass that is moving the trim as it goes. */
     this._implied = [];
+    /** Eye taps, kept as raw offsets: the distance between a beat's picture
+     *  being drawn and the tap it drew is display latency plus the player's
+     *  own bias, and neither depends on the trim. */
+    this._eye = [];
     this._lastTapMs = -Infinity;
     /** The collapsed onset list, cached against the array it came from --
      *  this runs on every tap and the chart does not change under it. */
@@ -196,13 +260,52 @@ export class SyncCalibrator {
     this._collapsed = [];
   }
 
-  get taps() { return this._implied.length; }
+  get taps() { return this._implied.length + this._eye.length; }
+
+  get earTaps() { return this._implied.length; }
+
+  get eyeTaps() { return this._eye.length; }
+
+  /** Has this phase heard enough to move on? */
+  get phaseComplete() {
+    return (this.phase === PHASE_EAR ? this._implied.length : this._eye.length) >= TAPS_PER_PHASE;
+  }
+
+  /** How far the picture is behind the moment it was drawn for, in ms --
+   *  display latency plus the player's bias. Only meaningful once the eye
+   *  phase has taps; it is the term a by-ear pass cannot see. */
+  get displayLagMs() {
+    return this._eye.length ? Math.round(trimmedMedian(this._eye)) : null;
+  }
+
+  /** Move to the eye half. The session clock resets with it: the pause
+   *  while someone reads the new instruction is not a gap in tapping. */
+  beginPhase(phase) {
+    this.phase = phase === PHASE_EYE ? PHASE_EYE : PHASE_EAR;
+    this._lastTapMs = -Infinity;
+  }
 
   /** Start over from a known trim -- what the Sync button does on entry. */
   reset(trimMs = this.trimMs) {
     this.trimMs = clamp(Math.round(trimMs) || 0, -MAX_TRIM_MS, MAX_TRIM_MS);
+    this.phase = PHASE_EAR;
     this._implied = [];
+    this._eye = [];
     this._lastTapMs = -Infinity;
+  }
+
+  /**
+   * What the two passes together say the trim should be.
+   *
+   * With only ear taps this is the old single-pass answer, which silently
+   * assumes the picture is instant. The eye phase is what removes that
+   * assumption -- and, with it, the player's own tapping bias.
+   */
+  _wantedTrimMs() {
+    if (!this._implied.length) return this.trimMs;
+    const ear = trimmedMedian(this._implied);
+    if (!this._eye.length) return Math.round(ear);
+    return Math.round(ear - trimmedMedian(this._eye));
   }
 
   /**
@@ -225,24 +328,32 @@ export class SyncCalibrator {
     const offsetMs = nearestOnsetOffsetMs(this._collapsed, tapMs, matchWindowMs(beatPeriodMs));
     if (offsetMs === null) return null;
 
-    if (tapMs - this._lastTapMs > TAP_SESSION_GAP_MS) this._implied = [];
+    const sample = this.phase === PHASE_EYE ? this._eye : this._implied;
+    if (tapMs - this._lastTapMs > TAP_SESSION_GAP_MS) sample.length = 0;
     this._lastTapMs = tapMs;
 
-    // What this tap says the trim should be. Stored rather than the raw
-    // offset so entries collected under different trims stay comparable.
-    this._implied.push(this.trimMs + offsetMs);
-    if (this._implied.length > HISTORY_MAX) this._implied.shift();
+    // An ear tap is stored as what it implies the trim should be, so entries
+    // collected under different trims stay comparable. An eye tap is stored
+    // raw: what it measures -- how long the picture takes to arrive -- does
+    // not move when the trim does.
+    sample.push(this.phase === PHASE_EYE ? offsetMs : this.trimMs + offsetMs);
+    if (sample.length > HISTORY_MAX) sample.shift();
 
     const previous = this.trimMs;
     const ceiling = clamp(maxPositiveTrimMs, 0, MAX_TRIM_MS);
-    const wanted = Math.round(trimmedMedian(this._implied));
+    const wanted = this._wantedTrimMs();
     this.trimMs = clamp(wanted, -MAX_TRIM_MS, ceiling);
     return {
       trimMs: this.trimMs,
       offsetMs,
-      taps: this._implied.length,
-      spreadMs: Math.round(spreadMs(this._implied)),
+      phase: this.phase,
+      earTaps: this._implied.length,
+      eyeTaps: this._eye.length,
+      taps: sample.length,
+      displayLagMs: this.displayLagMs,
+      spreadMs: Math.round(spreadMs(sample)),
       changed: this.trimMs !== previous,
+      phaseComplete: this.phaseComplete,
       // The taps are asking for more delay than the visual clock can apply.
       // Said out loud rather than swallowed: a player tapping harder at a
       // number that has stopped moving deserves to know why.
@@ -260,12 +371,32 @@ export class SyncCalibrator {
  */
 export function syncStatusText(result) {
   if (!result) return null;
-  const { trimMs, taps, spreadMs: spread } = result;
+  const { trimMs, phase, earTaps, eyeTaps, spreadMs: spread, phaseComplete } = result;
   const magnitude = Math.abs(trimMs);
   const direction = trimMs > 0 ? 'visuals delayed' : trimMs < 0 ? 'audio delayed' : 'no delay';
-  const settled = taps >= 4 && spread <= 25;
   const head = trimMs === 0 ? 'Bluetooth delay: none' : `Bluetooth delay: ${magnitude}ms (${direction})`;
+
+  if (phase === PHASE_EAR) {
+    // The first half cannot know the answer yet -- it has not measured the
+    // picture. Saying "settled" here would be a promise about a number that
+    // is about to move.
+    const left = Math.max(0, TAPS_PER_PHASE - earTaps);
+    return left > 0
+      ? `Listening… ${earTaps} of ${TAPS_PER_PHASE} taps`
+      : 'Got your ears — now watch the marker.';
+  }
+
+  const left = Math.max(0, TAPS_PER_PHASE - eyeTaps);
+  if (left > 0) return `${head} · watching… ${eyeTaps} of ${TAPS_PER_PHASE} taps`;
   if (result.railed) return `${head} · as far as the visuals can be delayed`;
-  if (taps < 3) return `${head} · keep tapping`;
-  return settled ? `${head} · settled` : `${head} · ±${spread}ms, keep tapping`;
+  if (!phaseComplete) return `${head} · keep tapping`;
+  return spread <= 25 ? `${head} · settled` : `${head} · ±${spread}ms, keep tapping`;
+}
+
+/** What the finished pass found, for the log and the closing line. */
+export function syncResultText(calibrator) {
+  if (!calibrator?.earTaps) return 'Sync cancelled before it measured anything.';
+  if (!calibrator.eyeTaps) return `Bluetooth delay ${calibrator.trimMs}ms, from your ears alone — the screen was never measured.`;
+  const display = calibrator.displayLagMs;
+  return `Bluetooth delay ${calibrator.trimMs}ms. Your screen runs about ${display}ms behind its own frames.`;
 }

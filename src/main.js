@@ -52,7 +52,10 @@ import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
 import { visualNow, VISUAL_LEAD_MS } from './core/ChoreoClock.js';
-import { SyncCalibrator, syncStatusText, positiveTrimCeilingMs } from './sim/SyncCalibrator.js';
+import {
+  SyncCalibrator, syncStatusText, syncResultText, positiveTrimCeilingMs, beatPulse01,
+  PHASE_EAR, PHASE_EYE,
+} from './sim/SyncCalibrator.js';
 import { buildWorldVariant, scoreWorlds, pickRecommended, formatFitDiagnostic } from './world/WorldScore.js';
 import { buildSongProfile, PROFILE_VERSION } from './audio/SongProfile.js';
 import {
@@ -199,6 +202,7 @@ const recalibration = new RecalibrationOverlay({
   pips: document.getElementById('recalPips'),
   confFill: document.getElementById('recalConfFill'),
   status: document.getElementById('recalStatus'),
+  marker: document.getElementById('recalMarker'),
 });
 // Cross-song groove profile (GrooveFingerprint), rehydrated once at startup
 // and handed to every Simulation built afterwards.
@@ -2376,9 +2380,18 @@ function frame(tRaf) {
   // Tap recalibration: drive the count while an (opt-in, 'C'-key-triggered)
   // pass is running. Never blocks the frame, pauses audio, or swallows input.
   if (recalibration.active) {
+    // The clock the picture is actually drawn on: the sim runs a display
+    // lead ahead of the audio, and the beat-anchored layer sits a further
+    // visualLag behind that. Undoing both puts this back on song time, so a
+    // kick's marker is drawn in the same frame as the character move for
+    // the same kick -- which is what makes tapping it measure the display.
+    const visualBeatMs = simTime - VISUAL_LEAD_MS - (sim.visualLagMs || 0);
     const alive = recalibration.update(simTime, {
       beatPeriodMs: sim.jump.beatPeriodMs,
       confidence: sim.beatAnchor.confidence,
+      beatPulse01: recalibration.phase === PHASE_EYE
+        ? beatPulse01(sim.jump.kickTimes, visualBeatMs)
+        : 0,
     });
     if (!alive) endRecalibration();
   }
@@ -2600,7 +2613,8 @@ function startRecalibration() {
   // Start from the trim already in force rather than from zero: it is a
   // correction the player has already made, and the pass refines it.
   syncCalibrator.reset(btLatencyTrimMs);
-  recalibration.syncNote = 'Tap along with what you HEAR — the delay follows your taps.';
+  recalibration.setPhase(PHASE_EAR);
+  recalibration.syncNote = 'Tap the kick when you hear it — the screen comes next.';
   sim.recalibrating = true;
   sim.syncMonitor.onCalibrated();
 }
@@ -2625,6 +2639,15 @@ function applySyncTap(tapMs) {
   // stands rather than being diluted by a tap aimed at a rest.
   if (!result) return;
   recalibration.syncNote = syncStatusText(result);
+
+  // Enough taps by ear: switch to measuring the screen. The player is not
+  // asked to press anything -- the pass moves itself on, because stopping
+  // to find a button is exactly the interruption this is meant to avoid.
+  if (result.phase === PHASE_EAR && result.phaseComplete) {
+    syncCalibrator.beginPhase(PHASE_EYE);
+    recalibration.setPhase(PHASE_EYE);
+  }
+
   if (!result.changed) return;
   btLatencyTrimMs = setBtLatencyTrimMs(result.trimMs);
   applyBtLatencyToAudioEngine();
@@ -2639,7 +2662,7 @@ function endRecalibration() {
   const text = recalibration.resultText(sim ? sim.beatAnchor.confidence : 0);
   recalibration.stop();
   if (sim) sim.recalibrating = false;
-  console.info('[recalibrate]', text, `bt=${btLatencyTrimMs}ms from ${syncCalibrator.taps} taps`);
+  console.info('[recalibrate]', text, syncResultText(syncCalibrator));
 }
 
 // HUD auto-fade: both button clusters fade out after a few
@@ -2667,6 +2690,10 @@ function hudIdleTick(nowRafMs) {
   // player would press twice and wonder why the first did nothing. The
   // live elapsed/size readout wants to stay on screen anyway.
   if (songRecorder?.recording) { hudSleepAtMs = nowRafMs + HUD_FADE_MS; return; }
+  // A Sync pass holds it open too: the Sync button is how the pass ends,
+  // and hunting for a control that has faded under the canvas is the
+  // interruption the whole overlay is built to avoid.
+  if (recalibration.active) { hudSleepAtMs = nowRafMs + HUD_FADE_MS; return; }
   // An open editor is being used, whatever the idle timer thinks. Fading
   // the Bluetooth chip out from under a half-typed value is the exact
   // complaint that kept this cluster pinned open in the first place; the

@@ -1491,33 +1491,79 @@ html, body {
 }
 
 /* The big block count. Sized off the viewport so it reads at any stage
-   resolution, and translucent enough that the show is never hidden. */
+   resolution, and translucent enough that the show is never hidden -- the
+   pass runs over a playing song and the player has to keep seeing it. */
 #recalNumber {
   font-family: var(--font-sans);
   font-size: 40vh;
   line-height: 0.82;
   font-weight: 900;
   letter-spacing: -0.04em;
-  color: rgba(255, 255, 255, 0.16);
-  text-shadow: 0 0 60px color-mix(in srgb, var(--spec-cool) 22%, transparent);
+  color: rgba(255, 255, 255, 0.12);
+  text-shadow: 0 0 60px color-mix(in srgb, var(--spec-cool) 18%, transparent);
+  transition: opacity 240ms ease;
   font-variant-numeric: tabular-nums;
   /* Scale/opacity are driven per-beat from JS (same swell-then-snap shape as
      the old calibration beacon), so no CSS transition -- it would smear it. */
   will-change: transform, opacity;
 }
 
+/* The eye phase's target: a ring rather than a filled disc, so the world
+   keeps showing through the middle of the one thing the player is staring
+   at. Brightness and scale are written per frame from the VISUAL clock --
+   no CSS transition, which would smear the very edge being measured. */
+.recalMarker {
+  /* Pinned high and centred rather than sitting in the flow: a timing
+     target has to be in the SAME place every beat, and the middle of the
+     stage is where the characters are. Up here it is over sky. */
+  position: absolute;
+  top: 14%;
+  left: 50%;
+  margin-left: -9vh;
+  width: 18vh;
+  height: 18vh;
+  max-width: 170px;
+  max-height: 170px;
+  border-radius: 50%;
+  /* A ring, not a disc, so the show keeps showing through the one thing
+     the player is staring at. */
+  border: 7px solid #fff;
+  box-shadow:
+    0 0 0 3px rgba(0, 0, 0, 0.55),
+    0 0 46px color-mix(in srgb, var(--spec-cool) 70%, transparent),
+    inset 0 0 0 3px rgba(0, 0, 0, 0.45);
+  opacity: 0.18;
+  will-change: opacity, transform;
+}
+
+/* A ring that pulses is the point of the exercise, so reduced-motion gets a
+   version that still flashes but does not grow. */
+@media (prefers-reduced-motion: reduce) {
+  .recalMarker { transform: none !important; }
+}
+
 #recalInstruction {
   max-width: 46ch;
   margin: 0;
+  /* A narrow scrim behind the words only. The pass runs over a playing
+     song and a full panel would hide it, but unbacked text over a bright
+     sky is genuinely unreadable -- and this one has to be read once,
+     quickly, while the music keeps going. */
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: rgba(6, 4, 10, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   text-align: center;
   font-size: 15px;
   line-height: 1.55;
   color: var(--text-primary);
-  opacity: 0.82;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+  opacity: 0.92;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.95);
   transition: opacity 700ms ease;
 }
 #recalInstruction strong { display: block; margin-bottom: 4px; color: #fff; font-size: 17px; }
+#recalInstruction { color: rgba(255, 255, 255, 0.92); }
 #recalInstruction.faded { opacity: 0.2; }
 
 /* Beat pips within the current measure. */
@@ -1543,9 +1589,13 @@ html, body {
 
 #recalStatus {
   margin: 0; min-height: 1.2em;
+  padding: 4px var(--space-3);
+  border-radius: var(--radius-pill);
+  background: rgba(6, 4, 10, 0.5);
   font-size: 13px;
-  color: var(--text-secondary);
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
 }
 
 @keyframes recalFadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -1553,6 +1603,12 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   #recalPanel { animation: none; }
 }
+
+/* Nothing in the pass takes the pointer. Taps are meant to fall through to
+   the canvas, which is what feeds both the beat anchor and this
+   measurement -- a control here that swallowed one would be measuring its
+   own button instead of the song. */
+#recalPanel, #recalPanel * { pointer-events: none; }
 
 /* ── Soulseek search panel ────────────────────────────────────────────────── */
 /* Same card language as .titleCard/.completeCard/.modalPanel now -- it used

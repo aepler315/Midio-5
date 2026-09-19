@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {
   SyncCalibrator, nearestOnsetOffsetMs, matchWindowMs, trimmedMedian, spreadMs,
   syncStatusText, MAX_TRIM_MS, TAP_SESSION_GAP_MS, positiveTrimCeilingMs, collapseFlams, FLAM_GAP_MS, flamGapMs,
+  PHASE_EAR, PHASE_EYE, TAPS_PER_PHASE, syncResultText, beatPulse01,
 } from '../src/sim/SyncCalibrator.js';
 import { MAX_LATENCY_MS } from '../src/core/ChoreoClock.js';
 
@@ -110,7 +111,10 @@ test('tapping early delays the audio instead', () => {
   let last = null;
   for (let i = 4; i < 12; i++) last = cal.tap(kicks[i] - 60 - cal.trimMs, kicks, 500);
   assert.equal(last.trimMs, -60);
-  assert.match(syncStatusText(last), /audio delayed/);
+  // The ear phase reports progress, not a verdict: it has not measured the
+  // picture yet, so the number under it is provisional by construction.
+  assert.equal(last.phase, PHASE_EAR);
+  assert.match(syncStatusText(last), /now watch the marker/);
 });
 
 test('the value moves on the very first tap', () => {
@@ -122,7 +126,7 @@ test('the value moves on the very first tap', () => {
   assert.equal(first.trimMs, 120);
   assert.equal(first.taps, 1);
   assert.equal(first.changed, true);
-  assert.match(syncStatusText(first), /keep tapping/);
+  assert.match(syncStatusText(first), /Listening… 1 of 6 taps/);
 });
 
 test('an existing trim is the starting point, not something to rediscover', () => {
@@ -190,13 +194,16 @@ test('reset starts over from the trim the player already has', () => {
 });
 
 test('the readout says which way the correction goes, in the control’s own words', () => {
+  const eye = (over) => ({ phase: PHASE_EYE, earTaps: 6, eyeTaps: 6, phaseComplete: true, ...over });
   assert.equal(syncStatusText(null), null);
-  assert.match(syncStatusText({ trimMs: 150, taps: 6, spreadMs: 8 }), /150ms \(visuals delayed\).*settled/);
-  assert.match(syncStatusText({ trimMs: -90, taps: 6, spreadMs: 8 }), /90ms \(audio delayed\)/);
-  assert.match(syncStatusText({ trimMs: 0, taps: 6, spreadMs: 4 }), /none/);
+  assert.match(syncStatusText(eye({ trimMs: 150, spreadMs: 8 })), /150ms \(visuals delayed\).*settled/);
+  assert.match(syncStatusText(eye({ trimMs: -90, spreadMs: 8 })), /90ms \(audio delayed\)/);
+  assert.match(syncStatusText(eye({ trimMs: 0, spreadMs: 4 })), /none/);
   // Still wandering: say so rather than implying the number is final.
-  assert.match(syncStatusText({ trimMs: 120, taps: 6, spreadMs: 70 }), /±70ms, keep tapping/);
-  assert.match(syncStatusText({ trimMs: 120, taps: 2, spreadMs: 2 }), /keep tapping/);
+  assert.match(syncStatusText(eye({ trimMs: 120, spreadMs: 70 })), /±70ms, keep tapping/);
+  // Mid-phase counts are progress, not a verdict.
+  assert.match(syncStatusText(eye({ trimMs: 120, eyeTaps: 2, spreadMs: 2 })), /watching… 2 of 6 taps/);
+  assert.match(syncStatusText({ phase: PHASE_EAR, earTaps: 2 }), /Listening… 2 of 6 taps/);
 });
 
 test('the positive ceiling is what the visual clock will actually honour', () => {
@@ -227,8 +234,10 @@ test('a trim the visual clock cannot apply is refused, not chased', () => {
   assert.equal(last.trimMs, ceiling);
   assert.equal(last.railed, true);
   // And it says so, rather than letting someone tap harder at a number that
-  // has stopped moving.
-  assert.match(syncStatusText(last), /as far as the visuals can be delayed/);
+  // has stopped moving -- once the pass has reached the half that can say
+  // anything final.
+  assert.match(syncStatusText({ ...last, phase: PHASE_EYE, eyeTaps: TAPS_PER_PHASE }),
+    /as far as the visuals can be delayed/);
 
   // Below the ceiling nothing is railed and the readout is the normal one.
   const easy = new SyncCalibrator(0);
@@ -331,4 +340,138 @@ test('a tap is measured against the tempo it was played at', () => {
   cal.reset(0);
   // Slow: the pair is an ornament, so the tap is measured from its start.
   assert.equal(cal.tap(410, onsets, 2000).offsetMs, 110);
+});
+
+// --- Two passes. The ear pass cannot see display latency at all; the eye
+// pass is what supplies it, and the subtraction is what removes the
+// player's own habits from the answer.
+
+/** Drive a whole pass as a person would experience it.
+ *  @param {number} dHw      how late the sound reaches the ear
+ *  @param {number} dDisplay how late the picture reaches the eye
+ *  @param {number} bias     the player's own habit (negative = anticipates)
+ *  @param {number} reported what the browser claims its output latency is */
+function runPass({ dHw = 0, dDisplay = 0, bias = 0, reported = 0, taps = 10 } = {}) {
+  const kicks = grid(200);
+  const cal = new SyncCalibrator(0);
+  const visualLag = () => reported + Math.max(0, cal.trimMs);
+  const audioDelay = () => Math.max(0, -cal.trimMs);
+
+  for (let i = 4; i < 4 + taps; i++) {
+    // Heard at kick + the hardware path + whatever we are delaying audio by.
+    const heardAt = kicks[i] + dHw + audioDelay();
+    cal.tap(heardAt + bias - visualLag(), kicks, 500);
+  }
+  cal.beginPhase(PHASE_EYE);
+  let last = null;
+  for (let i = 40; i < 40 + taps; i++) {
+    // The picture for this kick is drawn at kick + visualLag and reaches
+    // the eye dDisplay later.
+    const seenAt = kicks[i] + visualLag() + dDisplay;
+    last = cal.tap(seenAt + bias - visualLag(), kicks, 500);
+  }
+  return { cal, last };
+}
+
+test('the two passes together see a lagging screen that neither ear alone could', () => {
+  // A projected or re-encoded display: the sound is on time, the picture is
+  // 120ms behind. A by-ear pass reports that everything is fine, because by
+  // ear it is -- which is exactly the failure this exists to fix.
+  const earOnly = new SyncCalibrator(0);
+  const kicks = grid(200);
+  for (let i = 4; i < 14; i++) earOnly.tap(kicks[i] - earOnly.trimMs, kicks, 500);
+  assert.equal(earOnly.trimMs, 0, 'listening alone cannot detect a late picture');
+
+  const { cal } = runPass({ dHw: 0, dDisplay: 120 });
+  // Delay the audio to meet the late picture.
+  assert.equal(cal.trimMs, -120);
+  assert.equal(cal.displayLagMs, 120);
+});
+
+test('a late sound still asks for the visuals to be held back', () => {
+  // The ordinary Bluetooth case, and the sign the user has to be able to
+  // trust: sound lagging the picture is corrected by delaying the picture.
+  const { cal } = runPass({ dHw: 180, dDisplay: 0 });
+  assert.equal(cal.trimMs, 180);
+});
+
+test('the player’s own tapping habit cancels between the two passes', () => {
+  // The real reason to run two. Whatever someone's anticipation is, it is
+  // in both passes and drops out of the difference -- so the answer is the
+  // machine's latency, not a mixture of the machine and the person.
+  const truth = runPass({ dHw: 150, dDisplay: 40, bias: 0 }).cal.trimMs;
+  for (const bias of [-60, -25, 0, 25, 60]) {
+    const { cal } = runPass({ dHw: 150, dDisplay: 40, bias });
+    assert.equal(cal.trimMs, truth, `bias ${bias} should not change the answer`);
+  }
+  // A single by-ear pass has no such protection: the habit lands straight
+  // in the number.
+  const kicks = grid(200);
+  const earOnly = new SyncCalibrator(0);
+  for (let i = 4; i < 14; i++) earOnly.tap(kicks[i] + 150 - 60 - earOnly.trimMs, kicks, 500);
+  assert.equal(earOnly.trimMs, 90);
+});
+
+test('both halves cancel the latency the browser already reports', () => {
+  const { cal } = runPass({ dHw: 200, dDisplay: 0, reported: 80 });
+  // 80ms of it is already compensated, so only the remainder is ours.
+  assert.equal(cal.trimMs, 120);
+});
+
+test('the phases keep their own taps and their own progress', () => {
+  const kicks = grid(200);
+  const cal = new SyncCalibrator(0);
+  assert.equal(cal.phase, PHASE_EAR);
+  for (let i = 4; i < 4 + TAPS_PER_PHASE; i++) cal.tap(kicks[i] + 100 - cal.trimMs, kicks, 500);
+  assert.equal(cal.earTaps, TAPS_PER_PHASE);
+  assert.equal(cal.eyeTaps, 0);
+  assert.equal(cal.phaseComplete, true);
+  assert.equal(cal.displayLagMs, null, 'nothing has measured the screen yet');
+
+  cal.beginPhase(PHASE_EYE);
+  assert.equal(cal.phaseComplete, false, 'the new phase starts empty');
+  const first = cal.tap(kicks[40] + 30, kicks, 500);
+  assert.equal(first.phase, PHASE_EYE);
+  assert.equal(first.earTaps, TAPS_PER_PHASE);
+  assert.equal(first.eyeTaps, 1);
+  // Switching phase is not a gap in tapping, so the ear taps survive it.
+  assert.equal(cal.earTaps, TAPS_PER_PHASE);
+
+  cal.reset(0);
+  assert.equal(cal.phase, PHASE_EAR);
+  assert.equal(cal.taps, 0);
+});
+
+test('a pass that never watched the screen says so rather than implying it did', () => {
+  const { cal } = runPass({ dHw: 120, taps: 8 });
+  assert.match(syncResultText(cal), /screen runs about/);
+
+  const earOnly = new SyncCalibrator(0);
+  const kicks = grid(200);
+  for (let i = 4; i < 12; i++) earOnly.tap(kicks[i] + 120 - earOnly.trimMs, kicks, 500);
+  assert.match(syncResultText(earOnly), /from your ears alone/);
+  assert.match(syncResultText(new SyncCalibrator(0)), /cancelled/);
+});
+
+test('the eye marker flashes on the beat and falls away before the next one', () => {
+  const kicks = [1000, 1500, 2000];
+  assert.equal(beatPulse01(kicks, 1000), 1);
+  assert.ok(beatPulse01(kicks, 1050) < 1 && beatPulse01(kicks, 1050) > 0.5);
+  assert.equal(beatPulse01(kicks, 1400), 0, 'dark again before the next beat');
+  assert.equal(beatPulse01(kicks, 1500), 1);
+  // Before the first beat, and on nothing at all.
+  assert.equal(beatPulse01(kicks, 500), 0);
+  assert.equal(beatPulse01([], 1000), 0);
+  assert.equal(beatPulse01(kicks, NaN), 0);
+  // Well past the last beat it stays dark rather than latching on.
+  assert.equal(beatPulse01(kicks, 9000), 0);
+});
+
+test('the marker never overlaps itself at a playable tempo', () => {
+  // Two beats lit at once would give the eye two things to aim at.
+  const fast = Array.from({ length: 20 }, (_, i) => i * 250); // 240bpm
+  for (let t = 0; t < 4000; t += 10) {
+    const lit = fast.filter((k) => t >= k && beatPulse01([k], t) > 0).length;
+    assert.ok(lit <= 1, `two markers lit at ${t}ms`);
+  }
 });
