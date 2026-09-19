@@ -78,7 +78,21 @@ const MATCH_WINDOW_MAX_MS = 400;
  * one to keep, and rejecting the tap would have thrown away good data for
  * a problem the onset list could fix about itself.
  */
-export const FLAM_GAP_MS = 150;
+export const FLAM_GAP_MS = 120;
+
+/**
+ * ...and it scales with tempo, because a fixed gap cannot tell an ornament
+ * from a fast pattern.
+ *
+ * The onset detector will report hits 60ms apart, and a double-kick figure
+ * at 100ms spacing is a real one, not a flam. Collapsing those would
+ * measure a player who tapped the second kick as 100ms late and persist a
+ * delay they never had. But double-kick figures live in fast music, so a
+ * threshold expressed as a fraction of the beat separates the two: the
+ * ornament observed in the wild was 81ms against a ~713ms beat (11%),
+ * while a 100ms double-kick at 200bpm is a third of its beat.
+ */
+const FLAM_GAP_BEAT_FRACTION = 0.2;
 
 /** Taps kept. Long enough to be robust, short enough that a player who
  *  drifts mid-pass is followed rather than averaged against their own past. */
@@ -129,6 +143,11 @@ export function nearestOnsetOffsetMs(onsets, tapMs, windowMs) {
  * The first is the beat; anything within `minGapMs` after it is the same
  * event's tail. Ascending in, ascending out.
  */
+export function flamGapMs(beatPeriodMs) {
+  const beat = Number.isFinite(beatPeriodMs) && beatPeriodMs > 0 ? beatPeriodMs : 500;
+  return Math.min(FLAM_GAP_MS, beat * FLAM_GAP_BEAT_FRACTION);
+}
+
 export function collapseFlams(onsets, minGapMs = FLAM_GAP_MS) {
   if (!onsets?.length) return [];
   const out = [onsets[0]];
@@ -173,6 +192,7 @@ export class SyncCalibrator {
     /** The collapsed onset list, cached against the array it came from --
      *  this runs on every tap and the chart does not change under it. */
     this._onsetsRef = null;
+    this._collapsedGap = null;
     this._collapsed = [];
   }
 
@@ -196,9 +216,11 @@ export class SyncCalibrator {
    */
   tap(tapMs, onsets, beatPeriodMs, { maxPositiveTrimMs = MAX_TRIM_MS } = {}) {
     if (!Number.isFinite(tapMs)) return null;
-    if (onsets !== this._onsetsRef) {
+    const gap = flamGapMs(beatPeriodMs);
+    if (onsets !== this._onsetsRef || gap !== this._collapsedGap) {
       this._onsetsRef = onsets;
-      this._collapsed = collapseFlams(onsets);
+      this._collapsedGap = gap;
+      this._collapsed = collapseFlams(onsets, gap);
     }
     const offsetMs = nearestOnsetOffsetMs(this._collapsed, tapMs, matchWindowMs(beatPeriodMs));
     if (offsetMs === null) return null;

@@ -2570,7 +2570,13 @@ function beatTap(role = null) {
   // during one: taps are the beat anchor's the rest of the time, and having
   // an ordinary tap silently move an audio setting would be a surprise
   // nobody asked for.
-  if (recalibration.active) applySyncTap(tapMs);
+  //
+  // And only the low hand. Taps are measured against the chart's KICKS, so
+  // a tap the player has explicitly marked as the high part (J, or a
+  // right-click) is aimed at something else -- measuring it here would file
+  // a backbeat's distance from the nearest kick as a Bluetooth delay. It
+  // still reaches the beat anchor above, which wants both hands.
+  if (recalibration.active && role !== ROLE_HIGH) applySyncTap(tapMs);
   // Persist on a roled tap only. Unroled catch-all taps move the anchor but
   // teach the templates nothing, and writing storage on every stray keypress
   // would be a lot of churn for no new information.
@@ -2867,13 +2873,33 @@ function applyBtLatencyTrim() {
   btLatencyTrimMs = setBtLatencyTrimMs(btLatencyInputEl.value);
   applyBtLatencyToAudioEngine();
   updateBtLatencyBtnUI();
+  adoptManualTrim();
   closeBtLatencyPopover();
 }
 function turnOffBtLatencyTrim() {
   btLatencyTrimMs = setBtLatencyTrimMs(0);
   applyBtLatencyToAudioEngine();
   updateBtLatencyBtnUI();
+  adoptManualTrim();
   closeBtLatencyPopover();
+}
+
+/**
+ * A trim typed in by hand replaces whatever the calibrator was converging
+ * on.
+ *
+ * The chip stays reachable during a Sync pass, and a tap taken afterwards
+ * is stamped through the NEW trim while the calibrator would still be
+ * adding its old one -- so the next tap would overwrite the manual value
+ * with one displaced by the difference. Resetting rather than patching the
+ * number is the honest move: taps collected under the old trim are no
+ * longer evidence about this one.
+ */
+function adoptManualTrim() {
+  syncCalibrator.reset(btLatencyTrimMs);
+  if (recalibration.active) {
+    recalibration.syncNote = `Bluetooth delay: ${Math.abs(btLatencyTrimMs)}ms, set by hand — tap to refine it.`;
+  }
 }
 
 btLatencyBtnEl?.addEventListener('click', () => {

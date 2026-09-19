@@ -55,6 +55,43 @@ the cluster *starts* — the flam is an ornament on that beat, not a second
 beat. Collapsing keeps the data; rejecting those taps would have thrown it
 away for a problem the onset list could fix about itself.
 
+The threshold is a fraction of the beat, not a fixed number of
+milliseconds, because a fixed one cannot tell an ornament from a fast
+pattern. The onset detector reports hits 60ms apart, and a double-kick
+figure at 100ms spacing is real music — collapsing it would measure a
+player who tapped the second hit as 100ms late and persist a delay they
+never had. Double-kick figures live in fast music, so a beat-relative
+threshold separates them: the ornament seen in the wild was 81ms against a
+~713ms beat, while 100ms at 200bpm is a third of the beat.
+
+## Tap the kick
+
+The instruction names what the pass actually measures. Taps are matched
+against the chart's **kicks** (`RHYTHM` events flagged `kick`), so the
+overlay's older wording — "the kick, the snare, wherever your hand wants to
+go", which is right for teaching `BeatAnchor` a groove — sent a
+snare-tapper's taps into the gaps between kicks, where they are discarded
+and the delay never moves.
+
+For the same reason a tap the player has explicitly marked as the high part
+(`J`, or a right-click) is left out of the measurement: it is aimed at
+something other than the kick, and measuring its distance from the nearest
+one would file a backbeat as a Bluetooth delay. It still reaches the beat
+anchor, which wants both hands.
+
+Measuring against *all* percussion instead was the other option, and it is
+worse: kicks and snares together put onsets every half beat, which halves
+the range of latency a tap can unambiguously express — and 100–200ms is
+exactly the range this exists to find.
+
+## A trim typed in by hand wins
+
+The chip stays reachable during a pass. A manual edit resets the
+calibrator to that value rather than being folded into it: the next tap is
+stamped through the new trim, so taps collected under the old one are no
+longer evidence about this one. Without the reset, one tap after a manual
+edit would overwrite it with a value displaced by the difference.
+
 ## What is not a measurement
 
 - **A tap with no kick near it.** Further than half a beat (capped at 400ms)

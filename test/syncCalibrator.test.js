@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   SyncCalibrator, nearestOnsetOffsetMs, matchWindowMs, trimmedMedian, spreadMs,
-  syncStatusText, MAX_TRIM_MS, TAP_SESSION_GAP_MS, positiveTrimCeilingMs, collapseFlams, FLAM_GAP_MS,
+  syncStatusText, MAX_TRIM_MS, TAP_SESSION_GAP_MS, positiveTrimCeilingMs, collapseFlams, FLAM_GAP_MS, flamGapMs,
 } from '../src/sim/SyncCalibrator.js';
 import { MAX_LATENCY_MS } from '../src/core/ChoreoClock.js';
 
@@ -272,7 +272,7 @@ test('a flam collapses to the beat it ornaments, not to two beats', () => {
   // A clean grid is left exactly as it is.
   assert.deepEqual(collapseFlams([1000, 2000, 3000]), [1000, 2000, 3000]);
   // A run of hits inside one window collapses to its start, not pairwise.
-  assert.deepEqual(collapseFlams([0, 40, 80, 120, 400]), [0, 400]);
+  assert.deepEqual(collapseFlams([0, 40, 80, 110, 400], 150), [0, 400]);
   assert.deepEqual(collapseFlams([]), []);
   assert.deepEqual(collapseFlams(null), []);
   assert.deepEqual(collapseFlams([500], FLAM_GAP_MS), [500]);
@@ -300,4 +300,35 @@ test('a common Bluetooth lag is still measurable on an ordinary grid', () => {
   let last = null;
   for (let i = 4; i < 14; i++) last = cal.tap(kicks[i] + 200 - cal.trimMs, kicks, 500);
   assert.equal(last.trimMs, 200);
+});
+
+test('a fast double-kick is a pattern, not an ornament', () => {
+  // A fixed gap cannot tell the two apart. The onset detector reports hits
+  // 60ms apart, and a 100ms double-kick figure is real music -- collapsing
+  // it would measure a player who tapped the second hit as 100ms late and
+  // persist a delay they never had. Double-kick figures live in fast music,
+  // so a threshold that is a fraction of the beat separates them.
+  const ornament = flamGapMs(713);   // the ~120bpm case the flam was seen in
+  const fast = flamGapMs(300);       // 200bpm, where double-kicks live
+  assert.ok(81 < ornament, 'the observed 81ms flam must still collapse');
+  assert.ok(100 > fast, 'a 100ms double-kick at 200bpm must survive');
+  assert.equal(flamGapMs(undefined), Math.min(FLAM_GAP_MS, 100));
+
+  const doubleKick = [0, 100, 300, 400, 600, 700];
+  assert.deepEqual(collapseFlams(doubleKick, flamGapMs(300)), doubleKick);
+  // And the same spacing in slow music still reads as an ornament.
+  assert.deepEqual(collapseFlams([0, 100, 1000, 1100], flamGapMs(1000)), [0, 1000]);
+});
+
+test('a tap is measured against the tempo it was played at', () => {
+  // The collapse is cached, so a tempo change has to invalidate it --
+  // otherwise the first beat length a pass saw would decide the grid for
+  // the rest of the song.
+  const onsets = [0, 100, 300, 400, 600, 700, 900, 1000];
+  const cal = new SyncCalibrator(0);
+  // Fast: both hits of each pair stand, so the tap belongs to the nearer.
+  assert.equal(cal.tap(410, onsets, 300).offsetMs, 10);
+  cal.reset(0);
+  // Slow: the pair is an ornament, so the tap is measured from its start.
+  assert.equal(cal.tap(410, onsets, 2000).offsetMs, 110);
 });

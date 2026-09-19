@@ -194,10 +194,15 @@
          the existing BeatAnchor handler untouched. The music never stops. -->
     <div id="recalPanel" class="recalPanel hidden" aria-hidden="true">
       <div id="recalNumber" class="recalNumber">1</div>
+      <!-- The instruction has to name what the pass MEASURES. Taps are
+           matched against the chart's kicks, so asking for "the kick, the
+           snare, wherever your hand wants to go" -- as this did -- sent a
+           snare-tapper's taps into the gaps between kicks, where they are
+           discarded and the delay never moves. -->
       <p id="recalInstruction" class="recalInstruction">
-        <strong>Tap the groove, not the clock.</strong>
-        Don&rsquo;t tick along with straight time &mdash; hit whatever you&rsquo;d
-        slap the table to: the kick, the snare, wherever your hand wants to go.
+        <strong>Tap the kick, when you hear it.</strong>
+        The low drum, not straight time &mdash; and go by your ears, not by
+        what the screen is doing. That gap is what this is measuring.
       </p>
       <div id="recalPips" class="recalPips" aria-hidden="true"></div>
       <div class="recalConf"><div id="recalConfFill" class="recalConfFill"></div></div>
