@@ -65,6 +65,11 @@ import { fingerprintBuffer } from './audio/SongFingerprint.js';
 import { readVisionConfig, persistVisionConfig } from './vision/config.js';
 import { packBundle, unpackBundle } from './audio/AnalysisBundle.js';
 import { analysisCacheKey, getBundle, putBundle } from './audio/AnalysisCache.js';
+import { SongRecorder } from './render/SongRecorder.js';
+import {
+  RENDER_PRESETS, DEFAULT_PRESET_ID, presetById, reachSummary, estimateBytes,
+  formatBytes, formatElapsed, exportFileName, describeResult,
+} from './render/VideoExport.js';
 import { MusicLibrary } from './library/MusicLibrary.js';
 import { LibraryPanel } from './ui/LibraryPanel.js';
 import { recentlyPlayed, displayTitle, displayArtist, untaggedTracks } from './library/TrackIndex.js';
@@ -890,6 +895,10 @@ function stopTimeline({ preservePause = false } = {}) {
     cancelAnimationFrame(rafHandle);
     rafHandle = null;
   }
+  // A recording running when the song is torn down (Stop, or a new drop)
+  // is saved rather than dropped: whatever was captured is work the player
+  // asked for, and silently discarding it is the worse surprise.
+  if (songRecorder?.recording) finishRecording();
   audioEngine?.pause();
   // Forget any decoded buffer from a previous raw-audio song -- otherwise a
   // MIDI/demo load right after one leaves the OLD song's buffer attached,
@@ -2367,6 +2376,10 @@ function frame(tRaf) {
     setStoredGroove(groove);
   }
 
+  // One composite per rendered frame, after the stage is final --
+  // visionLoop samples the same canvas here, which is what says so.
+  songRecorder?.captureFrame();
+  updateRecordReadout(tRaf);
   visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();
 
@@ -2586,6 +2599,13 @@ function wakeHud() {
   hudRightEl?.classList.remove('hud-faded');
 }
 function hudIdleTick(nowRafMs) {
+  // A recording holds the HUD open. The stop control is in there, and a
+  // faded HUD sits under the canvas -- so letting it fade would mean the
+  // only way to end a recording is to tap the stage first, and that tap is
+  // deliberately absorbed by the wake-up handler (see car-mode.md). The
+  // player would press twice and wonder why the first did nothing. The
+  // live elapsed/size readout wants to stay on screen anyway.
+  if (songRecorder?.recording) { hudSleepAtMs = nowRafMs + HUD_FADE_MS; return; }
   if (hudAwake && nowRafMs >= hudSleepAtMs) {
     hudAwake = false;
     hudRightEl?.classList.add('hud-faded');
@@ -2834,6 +2854,10 @@ function onSongComplete() {
   renderResultsGrid(buildRunStats(sim));
   renderFilmstrip(sim.highlightReel?.frames || []);
   completePanelEl.classList.remove('hidden');
+  syncExportUI();
+  // A full-song export ends where the song does. Awaiting it here would
+  // hold up the panel, so it saves itself and writes its own line.
+  if (songRecorder?.recording) finishRecording();
 }
 
 /** Restart the last-loaded song. Pass songSeed to pin the world; omit for
@@ -2851,6 +2875,14 @@ function replaySong({ songSeed } = {}) {
   if (buffer) {
     lastAudioBuffer = buffer;
     audioEngine.playBuffer(buffer, 0);
+  }
+  // A full-song export replays the song with the recorder armed, so the
+  // file covers it start to finish rather than from wherever someone
+  // managed to press a button.
+  if (pendingExportPresetId) {
+    const presetId = pendingExportPresetId;
+    pendingExportPresetId = null;
+    startRecording(presetId);
   }
   // Seed field + complete readout stay in sync with the run that just started.
   if (sim?.songSeed != null) {
@@ -3228,3 +3260,211 @@ libraryPanelEl?.addEventListener('cancel', (e) => {
 
 syncFolderControls();
 musicLibrary.init().catch((err) => console.warn('[library] could not be loaded', err));
+
+// ===================================================================
+// VIDEO EXPORT
+//
+// Recording the show to a file. The interesting problem is not capture --
+// MediaRecorder does that -- it is sync, and why a recording has it when a
+// mirrored or projected screen does not: here the picture and the sound are
+// two tracks stamped from one clock, so a show choreographed to the beat
+// stays on it. On a car head unit fed by a projection dongle they arrive by
+// different paths with independent latency, which is what the Bluetooth
+// trim in the HUD exists to fight. A file does not need the trim.
+//
+// The other thing this owns is honesty about the format. See VideoExport.js:
+// `MediaRecorder.isTypeSupported('video/mp4')` can answer yes and then hand
+// back VP9 in an MP4 wrapper, which a head unit refuses. What the player is
+// told comes from the bytes of the finished file, not the extension.
+// ===================================================================
+
+const recordBtnEl = document.getElementById('recordBtn');
+const recordStatusEl = document.getElementById('recordStatus');
+const completeExportEl = document.getElementById('completeExport');
+const exportPresetEl = document.getElementById('exportPreset');
+const exportBtnEl = document.getElementById('exportBtn');
+const exportNoteEl = document.getElementById('exportNote');
+
+const EXPORT_PRESET_KEY = 'midio.export.preset';
+
+let songRecorder = null;
+/** Set just before a replay so the recorder starts with the new song. */
+let pendingExportPresetId = null;
+/** The last object URL handed out, revoked when the next one replaces it. */
+let lastExportUrl = null;
+
+function storedExportPresetId() {
+  try { return presetById(localStorage.getItem(EXPORT_PRESET_KEY)).id; } catch { return DEFAULT_PRESET_ID; }
+}
+
+function rememberExportPresetId(id) {
+  try { localStorage.setItem(EXPORT_PRESET_KEY, id); } catch { /* private mode */ }
+}
+
+/** The recorder needs the audio graph, so it cannot exist before bootAudio.
+ *  Built once and reused: the master-bus tap is connected per recording and
+ *  released again when each one ends. */
+function ensureRecorder() {
+  if (songRecorder || !audioEngine?.ctx) return songRecorder;
+  songRecorder = new SongRecorder({
+    stage: canvas,
+    audioContext: audioEngine.ctx,
+    audioSource: audioEngine.master,
+  });
+  return songRecorder;
+}
+
+function startRecording(presetId = storedExportPresetId()) {
+  const recorder = ensureRecorder();
+  if (!recorder) { showErrorBanner('Start a song before recording.'); return false; }
+  if (!recorder.start({ presetId })) {
+    showErrorBanner(recorder.error || 'This browser cannot record video.');
+    syncRecordUI();
+    return false;
+  }
+  recordReadoutAtMs = 0;
+  syncRecordUI();
+  return true;
+}
+
+/** Stop, save, and say what it turned out to be. Fire-and-forget: nothing
+ *  on screen waits for a file to finish writing. */
+function finishRecording() {
+  const recorder = songRecorder;
+  if (!recorder?.recording) return;
+  recorder.stop().then((result) => {
+    syncRecordUI();
+    if (!result) {
+      setExportNote('Nothing was captured — the recording was too short to save.', 'isWarning');
+      return;
+    }
+    const fileName = exportFileName({
+      songName: lastSongName || 'song',
+      presetId: result.preset?.id,
+      ext: result.candidate?.ext || 'mp4',
+    });
+    downloadBlob(result.blob, fileName);
+    setExportNote(
+      `Saved ${fileName} — ${describeResult(result)}`,
+      result.codec && result.codec !== 'H.264' ? 'isWarning' : 'isResult',
+    );
+  }).catch((err) => {
+    console.error('[export] failed', err);
+    showErrorBanner('Could not save the recording: ' + (err?.message || err));
+    syncRecordUI();
+  });
+  syncRecordUI();
+}
+
+function downloadBlob(blob, fileName) {
+  try {
+    if (lastExportUrl) URL.revokeObjectURL(lastExportUrl);
+    lastExportUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = lastExportUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } catch (err) {
+    console.error('[export] could not offer the download', err);
+    showErrorBanner('The video was recorded but could not be saved automatically.');
+  }
+}
+
+function setExportNote(text, className = '') {
+  if (!exportNoteEl) return;
+  exportNoteEl.textContent = text;
+  exportNoteEl.classList.toggle('isResult', className === 'isResult');
+  exportNoteEl.classList.toggle('isWarning', className === 'isWarning');
+}
+
+function syncRecordUI() {
+  const active = !!songRecorder?.recording;
+  recordBtnEl?.setAttribute('aria-pressed', String(active));
+  recordBtnEl?.setAttribute('title', active
+    ? 'Stop recording and save the video'
+    : 'Record the show to a video file from this moment. Press again to stop and save.');
+  recordStatusEl?.classList.toggle('hidden', !active);
+  if (exportBtnEl) exportBtnEl.disabled = active;
+}
+
+/** Elapsed time and file size while recording.
+ *
+ *  Called from the render loop but throttled to twice a second: the readout
+ *  is seconds and megabytes, so writing it sixty times a second would be
+ *  fifty-nine layout invalidations nobody can read, during the one part of
+ *  the app that is already spending every frame it has. */
+const RECORD_READOUT_MS = 500;
+let recordReadoutAtMs = 0;
+
+function updateRecordReadout(tRaf = 0) {
+  if (!recordStatusEl || !songRecorder?.recording) return;
+  if (tRaf < recordReadoutAtMs) return;
+  recordReadoutAtMs = tRaf + RECORD_READOUT_MS;
+  // Size only once there is one. Chromium's MP4 muxer can hold everything
+  // until the recording stops rather than emitting per timeslice, and a
+  // readout sitting on "0 B" thirty seconds in reads as broken when it is
+  // merely early.
+  const elapsed = formatElapsed(songRecorder.elapsedMs);
+  recordStatusEl.textContent = songRecorder.bytes > 0
+    ? `${elapsed} · ${formatBytes(songRecorder.bytes)}`
+    : elapsed;
+}
+
+/** Fill the preset menu from one source of truth, and say what this browser
+ *  will actually produce BEFORE anyone spends a song finding out. */
+function syncExportUI() {
+  if (!exportPresetEl || !completeExportEl) return;
+  if (!exportPresetEl.options.length) {
+    for (const preset of RENDER_PRESETS) {
+      const option = document.createElement('option');
+      option.value = preset.id;
+      option.textContent = `${preset.label} — ${preset.width}×${preset.height}`;
+      option.title = preset.note || '';
+      exportPresetEl.appendChild(option);
+    }
+    exportPresetEl.value = storedExportPresetId();
+  }
+
+  const recorder = ensureRecorder();
+  const candidate = recorder?.candidate ?? null;
+  // A browser that cannot record says so here rather than after a replay.
+  if (exportBtnEl) exportBtnEl.disabled = !candidate || !!songRecorder?.recording;
+  if (recordBtnEl) recordBtnEl.classList.toggle('hidden', !candidate);
+
+  const preset = presetById(exportPresetEl.value);
+  const durationMs = conductor?.durationMs || 0;
+  const size = estimateBytes({ width: preset.width, height: preset.height, durationMs });
+  const parts = [preset.note, reachSummary(candidate)];
+  // An upper bound, not a promise: it is computed from the bitrate we ASK
+  // for, and an encoder that finds the content easy will undershoot it --
+  // measured at roughly half on a sparse test signal. Over-stating is the
+  // safe direction; nobody is upset by a smaller file than they were told.
+  if (candidate && size > 0) parts.push(`Up to about ${formatBytes(size)} for this song.`);
+  if (candidate) parts.push('Recording replays the song in real time.');
+  setExportNote(parts.filter(Boolean).join(' '));
+}
+
+recordBtnEl?.addEventListener('click', () => {
+  if (songRecorder?.recording) finishRecording();
+  else startRecording();
+});
+
+exportPresetEl?.addEventListener('change', () => {
+  rememberExportPresetId(exportPresetEl.value);
+  syncExportUI();
+});
+
+exportBtnEl?.addEventListener('click', () => {
+  if (!lastTimelineData) return;
+  const presetId = exportPresetEl?.value || storedExportPresetId();
+  rememberExportPresetId(presetId);
+  pendingExportPresetId = presetId;
+  setExportNote('Recording… the song is replaying in real time. It saves itself when it finishes.');
+  // Same seed, so the file is the show that was just watched and not a
+  // different roll of the same song.
+  replaySong({ songSeed: lastSongSeed });
+});
+
+syncRecordUI();

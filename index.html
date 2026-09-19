@@ -176,6 +176,12 @@
         <button id="fullscreenBtn" class="ghostbtn iconbtn" type="button" title="Fullscreen (F11)">&#9974;</button>
         <button id="calibrateBtn" class="ghostbtn" type="button" title="Guided tap calibration -- tap along with the beat so taps register right on time. Same as the C key. The only way to reach this on a phone.">Sync</button>
 
+        <!-- Record from here. The full-song export lives on the complete
+             screen, where you already know you want to keep this one. -->
+        <button id="recordBtn" class="ghostbtn iconbtn recordBtn" type="button" aria-pressed="false"
+          title="Record the show to a video file from this moment. Press again to stop and save.">&#9679;</button>
+        <span id="recordStatus" class="recordStatus hidden" role="status"></span>
+
         
         <div id="trackBadge" class="hidden">
           <button id="trackBadgeBtn" type="button"></button>
@@ -244,6 +250,19 @@
         </div>
         <div id="resultsGrid" class="resultsGrid"></div>
         <div id="filmstrip" class="hidden"></div>
+        <!-- Save a video. Populated from RENDER_PRESETS so the sizes have
+             one source of truth, and the note under it states what this
+             browser will actually produce before anyone spends a song on
+             it. -->
+        <div id="completeExport" class="completeExport">
+          <div class="completeExportRow">
+            <label for="exportPreset">Save a video</label>
+            <select id="exportPreset" aria-describedby="exportNote"></select>
+            <button id="exportBtn" type="button" class="ghostbtn">Record full song</button>
+          </div>
+          <p id="exportNote" class="hint completeExportNote"></p>
+        </div>
+
         <div class="completeActions">
           <button id="replaySameSeedBtn" type="button">Replay seed</button>
           <button id="replayNewSeedBtn" type="button" class="ghostbtn">New seed</button>

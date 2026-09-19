@@ -43,6 +43,12 @@
 
   --shadow-card: 0 24px 64px rgba(0, 0, 0, 0.45);
   --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.5);
+
+  /* The recording indicator. Structural on purpose: every other accent in
+     this chrome is rewritten from the song's spectral palette, and a record
+     light that turns green because the song is bright has stopped saying
+     "recording". */
+  --record-red: #ff3b44;
 }
 
 html, body {
@@ -2684,4 +2690,108 @@ html, body {
   transform: none;
   border-color: var(--border-strong);
   box-shadow: none;
+}
+
+/* ===================================================================
+   VIDEO EXPORT
+   =================================================================== */
+
+/* The record dot. Red only while armed -- a permanently red button in the
+   HUD reads as a warning light, and this one is an offer.
+
+   Deliberately NOT --spec-rhythm. Every other accent in this chrome is
+   rewritten from the song's spectral palette, which is the point of the One
+   Spectrum system; a recording indicator is not decoration, and one that
+   turns green because the song is bright has stopped saying "recording".
+   Defined with the structural tokens on :root, not here. */
+.recordBtn { color: var(--text-secondary); }
+.recordBtn[aria-pressed="true"] {
+  color: var(--record-red);
+  border-color: color-mix(in srgb, var(--record-red) 55%, transparent);
+  background: color-mix(in srgb, var(--record-red) 12%, transparent);
+}
+
+.recordStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--record-red) 16%, var(--bg-surface-3));
+  border: 1px solid color-mix(in srgb, var(--record-red) 40%, transparent);
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.recordStatus::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--record-red);
+  animation: recordPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes recordPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* A blinking dot is exactly the thing reduced-motion is asking about, and
+   the pill still reads as recording without it. */
+@media (prefers-reduced-motion: reduce) {
+  .recordStatus::before { animation: none; }
+}
+
+.completeExport {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+
+.completeExportRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.completeExportRow label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+#exportPreset {
+  flex: 1 1 210px;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.completeExportNote {
+  margin: var(--space-2) 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+
+/* What you ended up with, once a file exists. Stated from the bytes, so
+   this is where a VP9-in-MP4 gets called out rather than passed off. */
+.completeExportNote.isResult { color: var(--text-secondary); }
+.completeExportNote.isWarning { color: var(--spec-gold); }
+
+@media (max-width: 720px) {
+  .recordStatus { display: none; } /* the dot on the button is enough */
 }

@@ -70,6 +70,24 @@ storage at all, there is simply no library and dropping a song still works.
 
 See [docs/library.md](docs/library.md) for the details.
 
+## Saving a video
+
+The show can be recorded to a file: the record dot in the HUD captures from
+wherever you are, and **Save a video** on the complete screen replays the
+song and records it end to end. Picture and sound come out in one file, in
+sync, with no mirroring or projection in between.
+
+Presets cover 480p, 720p and 1080p, plus **Car display** (800×480) for a
+double-DIN head unit, letterboxed rather than stretched. Chrome and Edge
+produce H.264 MP4, which plays anywhere; Firefox produces WebM and some
+Chromium builds produce VP9 in an MP4 wrapper, neither of which most car
+stereos or TVs will decode. The app checks the finished file and tells you
+which one you got rather than trusting the extension.
+
+Recording runs in real time — a four-minute song takes four minutes.
+
+See [docs/video-export.md](docs/video-export.md) for the details.
+
 ## Controls and preferences
 
 | Control | Effect |
@@ -77,6 +95,8 @@ See [docs/library.md](docs/library.md) for the details.
 | Pause / Resume | Freeze or continue the performance and audio together |
 | Stop | Stop playback and return to the upload screen |
 | Fullscreen button | Expand the performance |
+| **Record** (HUD dot) | Record the show to a video file from this moment; press again to stop and save |
+| **Save a video** (complete screen) | Replay the song with the same seed and record it start to finish |
 | **Use a music folder** / **Change folder** | Choose the folder your library reads from; remembered between sessions |
 | **Browse library** | Open the library: search, sort, folder view, auto-tag. `Esc` closes it |
 | **Timed lyric grounding: on/off** | Enable or skip lyric lookup; remembered between sessions |
