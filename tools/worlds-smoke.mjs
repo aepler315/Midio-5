@@ -183,6 +183,10 @@ try {
       entry.searchParams.set('seed', '315');
       entry.searchParams.set('perf', 'high'); // start the ladder at full quality
       await page.goto(entry.href);
+      // The title screen's settings live behind a disclosure now, so that a
+      // returning player's first screenful is their music rather than a
+      // wall of preferences. Open it before reaching for one.
+      await page.locator('#titleSettings').evaluate((node) => { node.open = true; });
       const lyrics = page.locator('#lyricGroundingBtn');
       if (await lyrics.getAttribute('aria-pressed') === 'true') await lyrics.click();
       await page.locator('#stageRes').selectOption('720');

@@ -2111,3 +2111,407 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .worldCard { transition: none; }
 }
+
+/* ===================================================================
+   MUSIC LIBRARY
+   Built on the same tokens as every other surface -- the library is a
+   part of the app, not a bolted-on file manager, and it has to read that
+   way at a glance.
+   =================================================================== */
+
+/* --- Title screen: the returning player's own music, above the fold --- */
+
+.libraryHome {
+  width: 100%;
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4);
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+
+.libraryHomeHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.libraryHomeTitle {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.libraryRecent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* One recent song. Two lines, because an artist under a title is the
+   difference between recognising a track and reading a filename. */
+.recentChip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  max-width: 220px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard);
+}
+
+.recentChip:hover, .recentChip:focus-visible {
+  border-color: var(--border-strong);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.recentChipTitle {
+  font-weight: 600;
+  font-size: 0.92rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recentChipArtist {
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.libraryHomeNote {
+  margin: var(--space-3) 0 0;
+  font-size: 0.82rem;
+  color: var(--text-tertiary);
+}
+
+.titleFolderRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.libraryFolderBtn { cursor: pointer; }
+
+.libraryFolderHint {
+  margin: 0;
+  flex: 1 1 260px;
+  min-width: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+  text-align: left;
+}
+
+/* The settings were most of the first screenful and none of them is what
+   anyone opened the page to do. Folded away, they stay one click from
+   anyone who wants them and stop competing with the music. */
+.settingsWell {
+  margin-top: var(--space-3);
+  padding: 0 var(--space-3);
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.settingsSummary {
+  padding: var(--space-3) 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.settingsSummary::-webkit-details-marker { display: none; }
+
+.settingsSummary::before {
+  content: '\203a';
+  display: inline-block;
+  margin-right: var(--space-2);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+
+.settingsWell[open] > .settingsSummary::before { transform: rotate(90deg); }
+.settingsWell[open] > .settingsSummary { border-bottom: 1px solid var(--border-subtle); }
+.settingsWell > *:last-child { margin-bottom: var(--space-3); }
+
+/* --- The library panel --- */
+
+.libraryPanel {
+  background: var(--bg-scrim);
+  backdrop-filter: blur(8px);
+  padding: var(--space-5);
+  align-items: stretch;
+  justify-content: center;
+}
+
+.libraryInner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(1040px, 100%);
+  max-height: 100%;
+  margin: 0 auto;
+  padding: var(--space-5);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden; /* the list scrolls, the panel does not */
+  /* .panel centres its text for the title and complete screens. A list of
+     file names read down a column, so it opts out. */
+  text-align: left;
+}
+
+.libraryHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.libraryHeadings { min-width: 0; }
+
+.libraryTitle {
+  margin: 0;
+  font-size: 1.4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.librarySub {
+  margin: var(--space-1) 0 0;
+  font-size: 0.84rem;
+  color: var(--text-tertiary);
+}
+
+.libraryHeaderActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.libraryToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.librarySearch {
+  flex: 1 1 240px;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.librarySearch:focus-visible {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.librarySort {
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.libraryDirBtn { min-width: 2.4em; }
+
+.libraryCrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 0.86rem;
+  color: var(--text-tertiary);
+}
+
+.libraryCrumb {
+  padding: 2px var(--space-2);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--spec-cool);
+  font: inherit;
+  cursor: pointer;
+}
+
+.libraryCrumb:hover { background: var(--bg-surface-2); }
+.libraryCrumb.isCurrent { color: var(--text-primary); cursor: default; }
+.libraryCrumbSep { color: var(--text-tertiary); }
+
+.libraryList {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-3);
+}
+
+/* Five columns: marker, title, artist, album-or-path, length. The title
+   gets the most room because it is what someone is scanning for. */
+.libraryRow {
+  display: grid;
+  grid-template-columns: 1.6em minmax(0, 2.4fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 4em;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+
+.libraryRow:last-child { border-bottom: none; }
+.libraryRow:hover, .libraryRow:focus-visible { background: var(--bg-surface-2); outline: none; }
+.libraryRow.isFolder .libraryRowTitle { font-weight: 600; }
+
+.libraryRowIcon { color: var(--text-tertiary); font-size: 0.9rem; }
+
+.libraryRowTitle,
+.libraryRowArtist,
+.libraryRowAlbum {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.libraryRowArtist, .libraryRowAlbum { color: var(--text-secondary); font-size: 0.88rem; }
+
+/* A path standing in for a missing album is information of a different
+   kind, and says so rather than passing itself off as one. */
+.libraryRowAlbum.isPath { color: var(--text-tertiary); font-family: var(--font-mono); font-size: 0.78rem; }
+
+.libraryRowTime {
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* A tag that came from the network, not from the file. Worth marking:
+   it is a good guess, not ground truth. */
+.libraryRow.isAutoTagged .libraryRowTitle::after {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: var(--space-2);
+  border-radius: 50%;
+  background: var(--spec-cool);
+  vertical-align: middle;
+  opacity: 0.7;
+}
+
+.libraryEmpty {
+  margin: var(--space-5) 0;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.libraryStatus {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 0.82rem;
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 720px) {
+  .libraryPanel { padding: var(--space-2); }
+  .libraryInner { padding: var(--space-4); border-radius: var(--radius-md); }
+  .libraryHeader { flex-direction: column; }
+  .libraryHeaderActions { justify-content: flex-start; }
+  /* The album column goes and the artist drops under the title: on a
+     phone a row is a title, who it is by, and how long it is. */
+  .libraryRow { grid-template-columns: 1.6em minmax(0, 1fr) 4em; row-gap: 0; }
+  .libraryRowIcon { grid-column: 1; grid-row: 1 / span 2; }
+  .libraryRowTitle { grid-column: 2; grid-row: 1; }
+  .libraryRowArtist { grid-column: 2; grid-row: 2; font-size: 0.78rem; }
+  .libraryRowAlbum { display: none; }
+  .libraryRowTime { grid-column: 3; grid-row: 1 / span 2; }
+  .recentChip { max-width: 100%; flex: 1 1 100%; }
+}
+
+/* With a library on screen the dropzone is no longer the main event: it
+   shrinks to a quiet second way in rather than competing with the music
+   the player already has. Scoped under #loader to outrank the title
+   screen's own gold-dashed treatment of it. */
+#loader #dropzone.isSecondary {
+  border-width: 1px;
+  border-color: var(--border-subtle);
+  background: transparent;
+  opacity: 0.75;
+}
+
+#loader #dropzone.isSecondary:hover,
+#loader #dropzone.isSecondary:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--bg-surface-2);
+  box-shadow: none;
+  opacity: 1;
+}
+
+#dropzone.isSecondary .dropzoneInner {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+#dropzone.isSecondary .dropIcon,
+#dropzone.isSecondary .dropSecondary { display: none; }
+#dropzone.isSecondary .dropPrimary { font-size: 0.92rem; font-weight: 600; color: var(--text-secondary); }
+
+/* The accent pill is the page's single loudest control. With a library
+   present that belongs to the library, not to the fallback. */
+#dropzone.isSecondary .filebtn {
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-weight: 600;
+  padding: var(--space-1) var(--space-4);
+  box-shadow: none;
+}
+
+#dropzone.isSecondary .filebtn:hover {
+  transform: none;
+  border-color: var(--border-strong);
+  box-shadow: none;
+}

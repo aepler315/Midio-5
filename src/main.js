@@ -51,6 +51,9 @@ import { buildWorldChoices } from './ui/WorldChooser.js';
 import { fingerprintBuffer } from './audio/SongFingerprint.js';
 import { packBundle, unpackBundle } from './audio/AnalysisBundle.js';
 import { getBundle, putBundle } from './audio/AnalysisCache.js';
+import { MusicLibrary } from './library/MusicLibrary.js';
+import { LibraryPanel } from './ui/LibraryPanel.js';
+import { recentlyPlayed, displayTitle, displayArtist, untaggedTracks } from './library/TrackIndex.js';
 
 
 const STEP_MS = 1000 / 120;
@@ -1463,6 +1466,16 @@ async function loadAudioFiles(files) {
   const isStemDrop = decoded.length > 1;
   const audioBuffer = isStemDrop ? sumToMixBuffer(decoded.map((d) => d.buffer)) : decoded[0].buffer;
 
+  // A play, and the one fact a folder scan can never know: how long the
+  // track actually is. Decoding is the only place that learns it, so this
+  // is where it goes back to the library. Fire-and-forget -- a storage
+  // failure must not delay the song by a frame.
+  if (playingFromLibrary) {
+    const track = playingFromLibrary;
+    playingFromLibrary = null;
+    musicLibrary.notePlayed(track, audioBuffer.duration).catch(() => {});
+  }
+
   // A dropped audio file has real work ahead of it (band separation, onset/
   // tempo detection, pitch tracing) with no timeline yet to drive the usual
   // percussion loading show -- so it runs visual-only (star glyph +
@@ -2459,3 +2472,281 @@ copySeedBtnEl?.addEventListener('click', async () => {
     seedInputEl?.select?.();
   }
 });
+
+// ===================================================================
+// MUSIC LIBRARY
+//
+// A folder chosen once, remembered, and browsable. Nothing is uploaded and
+// nothing is copied: the File System Access API hands back a handle to a
+// folder the player already has, and that handle is what gets stored.
+//
+// The library is an addition, not a replacement -- dropping a file on the
+// page still works exactly as it did, and every path below degrades to
+// "there is no library" rather than to an error, because a browser with no
+// IndexedDB and no directory picker must still be able to play a song.
+// ===================================================================
+
+const libraryPanelEl = document.getElementById('libraryPanel');
+const libraryHomeEl = document.getElementById('libraryHome');
+const libraryRecentEl = document.getElementById('libraryRecent');
+const libraryHomeNoteEl = document.getElementById('libraryHomeNote');
+const libraryOpenBtnEl = document.getElementById('libraryOpenBtn');
+const libraryFolderBtnEl = document.getElementById('libraryFolderBtn');
+const libraryFolderFallbackEl = document.getElementById('libraryFolderFallback');
+const libraryFolderInputEl = document.getElementById('libraryFolderInput');
+const libraryFolderHintEl = document.querySelector('.libraryFolderHint');
+
+const musicLibrary = new MusicLibrary();
+/** Set when a load came from the library, so the decode can report the
+ *  track's real duration back. Cleared as soon as it is consumed. */
+let playingFromLibrary = null;
+let autoTagAbort = null;
+
+const libraryPanel = libraryPanelEl
+  ? new LibraryPanel({
+    root: libraryPanelEl,
+    onPlay: (track) => playLibraryTrack(track),
+    onPickFolder: () => chooseMusicFolder(),
+    onRescan: () => rescanLibrary(),
+    onAutoTag: () => runAutoTag(),
+    onForget: () => forgetLibrary(),
+    onClose: () => closeLibrary(),
+  })
+  : null;
+
+/** Only the browsers that can actually honour a control are shown it: one
+ *  that can keep a directory handle gets the picker, one that cannot gets
+ *  the `webkitdirectory` input and, later, the caveat that goes with it. */
+function syncFolderControls() {
+  const canPersist = musicLibrary.persistable;
+  libraryFolderBtnEl?.classList.toggle('hidden', !canPersist);
+  libraryFolderFallbackEl?.classList.toggle('hidden', canPersist);
+}
+
+function renderLibraryHome() {
+  if (!libraryHomeEl) return;
+  const tracks = musicLibrary.tracks;
+  const hasLibrary = tracks.length > 0;
+  libraryHomeEl.classList.toggle('hidden', !hasLibrary);
+  // With a library on screen, dropping a file is the secondary way in, so
+  // the dropzone stops being the loudest thing on the page.
+  dropzoneEl?.classList.toggle('isSecondary', hasLibrary);
+  // Once there IS a folder, the row below stops being an invitation and
+  // becomes a way to swap it -- so it says that instead of re-pitching the
+  // privacy line to someone who already accepted it.
+  const folderLabel = hasLibrary ? 'Change folder' : 'Use a music folder';
+  if (libraryFolderBtnEl) libraryFolderBtnEl.textContent = folderLabel;
+  if (libraryFolderFallbackEl) libraryFolderFallbackEl.childNodes[0].nodeValue = `${folderLabel} `;
+  if (libraryFolderHintEl) {
+    libraryFolderHintEl.textContent = hasLibrary
+      ? `Reading from ${musicLibrary.root?.name || 'your folder'}.`
+      : 'Choose it once and it stays. Your files never leave the device — the folder is read straight off your disk.';
+  }
+  if (!hasLibrary) return;
+
+  if (libraryOpenBtnEl) {
+    libraryOpenBtnEl.textContent = `Browse all ${tracks.length.toLocaleString()}`;
+  }
+
+  // Never played anything yet? Then "jump back in" is a lie, and the right
+  // offer is a handful of the library to start from.
+  const recent = recentlyPlayed(tracks, 5);
+  const offered = recent.length ? recent : tracks.slice(0, 5);
+  const heading = libraryHomeEl.querySelector('.libraryHomeTitle');
+  if (heading) heading.textContent = recent.length ? 'Jump back in' : 'From your library';
+
+  libraryRecentEl.textContent = '';
+  for (const track of offered) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'recentChip';
+    chip.title = track.path;
+    const title = document.createElement('span');
+    title.className = 'recentChipTitle';
+    title.textContent = displayTitle(track);
+    const artist = document.createElement('span');
+    artist.className = 'recentChipArtist';
+    artist.textContent = displayArtist(track);
+    chip.append(title, artist);
+    chip.addEventListener('click', () => playLibraryTrack(track));
+    libraryRecentEl.appendChild(chip);
+  }
+
+  if (libraryHomeNoteEl) {
+    // A library that cannot be read right now has to say so here, not fail
+    // silently when something is clicked.
+    const needsFolder = !musicLibrary.playable;
+    libraryHomeNoteEl.classList.toggle('hidden', !needsFolder);
+    libraryHomeNoteEl.textContent = needsFolder
+      ? 'Pick the folder again to play from it — this browser can’t reopen it on its own.'
+      : '';
+  }
+}
+
+musicLibrary.subscribe(() => {
+  renderLibraryHome();
+  if (!libraryPanel) return;
+  libraryPanel.setRoot({
+    name: musicLibrary.root?.name || '',
+    persistable: musicLibrary.playable || musicLibrary.persistable,
+    trackCount: musicLibrary.tracks.length,
+  });
+  libraryPanel.setTracks(musicLibrary.tracks);
+});
+
+function openLibrary() {
+  if (!libraryPanelEl) return;
+  unlockAudio();
+  libraryPanelEl.classList.remove('hidden');
+  libraryPanel?.focusSearch();
+}
+
+function closeLibrary() {
+  libraryPanelEl?.classList.add('hidden');
+  // Abandon a scan in flight: closing the panel over a large drive should
+  // stop reading it, not merely stop showing it.
+  musicLibrary.cancel();
+  autoTagAbort?.abort?.();
+  autoTagAbort = null;
+}
+
+/** Turn a stored track back into the drop that the whole load path already
+ *  understands, so a library play and a dropped file are the same thing
+ *  from here on. */
+async function playLibraryTrack(track) {
+  if (!track) return;
+  unlockAudio();
+  // A remembered library with no live handle: one click gets it back rather
+  // than making the player hunt for the folder button.
+  if (!musicLibrary.playable && musicLibrary.root?.handle) {
+    if (!await musicLibrary.grantAccess()) {
+      showErrorBanner('Allow access to your music folder to play from the library.');
+      return;
+    }
+  }
+  const file = await musicLibrary.openFile(track);
+  if (!file) {
+    showErrorBanner(musicLibrary.playable
+      ? `“${displayTitle(track)}” isn’t where the library remembers it. Rescan the folder to catch up.`
+      : 'Pick your music folder again to play from the library.');
+    return;
+  }
+  playingFromLibrary = track;
+  closeLibrary();
+  handleFiles([file]);
+}
+
+async function chooseMusicFolder() {
+  if (!musicLibrary.supported) {
+    showErrorBanner('This browser has no storage available, so a library can’t be kept here. Dropping a song still works.');
+    return;
+  }
+  if (!musicLibrary.persistable) {
+    libraryFolderInputEl?.click();
+    return;
+  }
+  unlockAudio();
+  libraryPanel?.setBusy(true, 'Reading folder…');
+  try {
+    const tracks = await musicLibrary.pickFolder({
+      onProgress: (count) => libraryPanel?.setStatus(`Reading folder… ${count.toLocaleString()} tracks`),
+    });
+    if (tracks) openLibrary();
+  } catch (err) {
+    console.warn('[library] folder scan failed', err);
+    showErrorBanner('Could not read that folder: ' + (err?.message || err));
+  } finally {
+    libraryPanel?.setBusy(false);
+    libraryPanel?.render();
+    syncFolderControls();
+  }
+}
+
+async function rescanLibrary() {
+  libraryPanel?.setBusy(true, 'Rescanning…');
+  try {
+    if (!musicLibrary.playable && !await musicLibrary.grantAccess()) {
+      showErrorBanner('Allow access to your music folder to rescan it.');
+      return;
+    }
+    await musicLibrary.rescan({
+      onProgress: (count) => libraryPanel?.setStatus(`Rescanning… ${count.toLocaleString()} tracks`),
+    });
+  } finally {
+    libraryPanel?.setBusy(false);
+    libraryPanel?.render();
+  }
+}
+
+async function forgetLibrary() {
+  await musicLibrary.forget();
+  libraryPanel?.render();
+  closeLibrary();
+}
+
+async function runAutoTag() {
+  const pending = untaggedTracks(musicLibrary.tracks).length;
+  if (!pending) {
+    libraryPanel?.setStatus('Every track already has a title and artist.');
+    return;
+  }
+  autoTagAbort?.abort?.();
+  autoTagAbort = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  libraryPanel?.setBusy(true, `Looking up ${pending.toLocaleString()} tracks…`);
+  try {
+    const tagged = await musicLibrary.autoTag({
+      signal: autoTagAbort?.signal || null,
+      // One per second is MusicBrainz's published rate for anonymous
+      // clients, so a big folder is minutes of work. Saying how far along
+      // it is turns that from a hang into progress.
+      onProgress: (done, total, found) => libraryPanel?.setStatus(
+        `Looking up tags… ${done.toLocaleString()} of ${total.toLocaleString()} (${found.toLocaleString()} found)`,
+      ),
+    });
+    libraryPanel?.setBusy(false);
+    libraryPanel?.setStatus(tagged
+      ? `Tagged ${tagged.toLocaleString()} of ${pending.toLocaleString()} tracks.`
+      : 'No matches found for those tracks.');
+  } catch (err) {
+    console.warn('[library] auto-tag failed', err);
+    libraryPanel?.setBusy(false);
+    libraryPanel?.setStatus('Tag lookup failed — check your connection and try again.');
+  } finally {
+    autoTagAbort = null;
+  }
+}
+
+libraryOpenBtnEl?.addEventListener('click', openLibrary);
+libraryFolderBtnEl?.addEventListener('click', chooseMusicFolder);
+libraryFolderInputEl?.addEventListener('change', async (e) => {
+  // Copy BEFORE clearing: `e.target.files` is a live FileList view of the
+  // input, so resetting the value empties the list the scan is about to
+  // read. Clearing is still required, or re-picking the same folder never
+  // fires `change` again.
+  const files = [...e.target.files];
+  e.target.value = '';
+  if (!files.length) return;
+  unlockAudio();
+  libraryPanel?.setBusy(true, 'Reading folder…');
+  try {
+    await musicLibrary.adoptFileList(files, {
+      onProgress: (count) => libraryPanel?.setStatus(`Reading folder… ${count.toLocaleString()} tracks`),
+    });
+    openLibrary();
+  } finally {
+    libraryPanel?.setBusy(false);
+    libraryPanel?.render();
+  }
+});
+
+// Escape closes the library the same way it would any other panel, and only
+// when it is the thing on screen.
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (libraryPanelEl?.classList.contains('hidden') !== false) return;
+  e.preventDefault();
+  closeLibrary();
+});
+
+syncFolderControls();
+musicLibrary.init().catch((err) => console.warn('[library] could not be loaded', err));

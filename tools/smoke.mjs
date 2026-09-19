@@ -86,6 +86,10 @@ export async function runAudioSmoke({
     await page.locator('#loader:not(.hidden)').waitFor({ state: 'visible' });
     // A fresh context has no cached analysis or saved preferences. Disable
     // optional lyrics through the UI so the test needs no external service.
+    // The title screen's settings live behind a disclosure now, so that a
+    // returning player's first screenful is their music rather than a
+    // wall of preferences. Open it before reaching for one.
+    await page.locator('#titleSettings').evaluate((node) => { node.open = true; });
     const lyrics = page.locator('#lyricGroundingBtn');
     if (await lyrics.getAttribute('aria-pressed') === 'true') await lyrics.click();
     check('optional lyric lookup is off', await lyrics.getAttribute('aria-pressed') === 'false');

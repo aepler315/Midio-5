@@ -47,7 +47,18 @@
 
         
 
-        
+        <!-- Shown only once a library exists. A returning player's first
+             screenful should be their own music, so this sits above the
+             dropzone and the dropzone becomes the secondary way in. -->
+        <section id="libraryHome" class="libraryHome hidden" aria-labelledby="libraryHomeTitle">
+          <div class="libraryHomeHead">
+            <h2 id="libraryHomeTitle" class="libraryHomeTitle">Jump back in</h2>
+            <button id="libraryOpenBtn" type="button" class="ghostbtn chipbtn">Browse library</button>
+          </div>
+          <div id="libraryRecent" class="libraryRecent"></div>
+          <p id="libraryHomeNote" class="libraryHomeNote hidden"></p>
+        </section>
+
         <div id="dropzone" tabindex="0" role="button" aria-label="Drop or choose a music file">
           <div class="dropzoneInner">
             <span class="dropIcon" aria-hidden="true">&#9834;</span>
@@ -60,34 +71,48 @@
           </div>
         </div>
 
+        <div class="titleFolderRow">
+          <button id="libraryFolderBtn" type="button" class="ghostbtn libraryFolderBtn">Use a music folder</button>
+          <!-- Browsers with no persistable directory handle fall back to
+               this; main.js shows whichever one the browser can honour. -->
+          <label id="libraryFolderFallback" class="ghostbtn libraryFolderBtn hidden">
+            Use a music folder
+            <input id="libraryFolderInput" type="file" webkitdirectory directory multiple class="fileInputVisuallyHidden" />
+          </label>
+          <p class="libraryFolderHint">Choose it once and it stays. Your files never leave the device &mdash; the folder is read straight off your disk.</p>
+        </div>
+
         <div class="titleMeta">
           <p class="titleFlashNote">Contains flashing lights, camera shake, and sudden scene cuts. Press <kbd>R</kbd> to dampen all three; it turns on automatically if your system asks for reduced motion.</p>
-          <div class="prefRow">
+          <details id="titleSettings" class="settingsWell">
+            <summary class="settingsSummary">Settings</summary>
+            <div class="prefRow">
 
-            <button id="lyricGroundingBtn" class="ghostbtn chipbtn" type="button" aria-pressed="true" title="Looks up time-stamped lyrics for your song and uses them to place verses and choruses on the real clock. Tries the tags as they are, then progressively cleaner versions of them. Remembered.">Timed lyric grounding: on</button>
-          </div>
+              <button id="lyricGroundingBtn" class="ghostbtn chipbtn" type="button" aria-pressed="true" title="Looks up time-stamped lyrics for your song and uses them to place verses and choruses on the real clock. Tries the tags as they are, then progressively cleaner versions of them. Remembered.">Timed lyric grounding: on</button>
+            </div>
 
           
 
-          <div class="resRow" title="Stage render resolution (sim stays 16:9 logical; canvas upscales to this).">
-            <label for="stageRes">Stage</label>
-            <select id="stageRes" title="Internal stage resolution (sim is 1280×720; buffer upscales). Default 1080p. 8-bit renders at 320×180 with every optional effect off — the setting to pick when a low-end device can't hold frame rate. 8-bit intensive adds a dithered 256-colour palette on top: the fuller console look, at the cost of a per-frame pixel pass.">
-              <option value="8bit">8-bit</option>
-              <option value="8bit-intensive">8-bit intensive</option>
-              <option value="144">144p</option>
-              <option value="240">240p</option>
-              <option value="360">360p</option>
-              <option value="480">480p</option>
-              <option value="720">720p</option>
-              <option value="1080" selected>1080p</option>
-              <option value="1440">1440p</option>
-              <option value="2160">4K</option>
-            </select>
-            <select id="stageFps" title="Frame-rate cap. 60 = every frame drawn; 30 = every other frame skipped, halving GPU load.">
-              <option value="60" selected>60 fps</option>
-              <option value="30">30 fps</option>
-            </select>
-          </div>
+            <div class="resRow" title="Stage render resolution (sim stays 16:9 logical; canvas upscales to this).">
+              <label for="stageRes">Stage</label>
+              <select id="stageRes" title="Internal stage resolution (sim is 1280×720; buffer upscales). Default 1080p. 8-bit renders at 320×180 with every optional effect off — the setting to pick when a low-end device can't hold frame rate. 8-bit intensive adds a dithered 256-colour palette on top: the fuller console look, at the cost of a per-frame pixel pass.">
+                <option value="8bit">8-bit</option>
+                <option value="8bit-intensive">8-bit intensive</option>
+                <option value="144">144p</option>
+                <option value="240">240p</option>
+                <option value="360">360p</option>
+                <option value="480">480p</option>
+                <option value="720">720p</option>
+                <option value="1080" selected>1080p</option>
+                <option value="1440">1440p</option>
+                <option value="2160">4K</option>
+              </select>
+              <select id="stageFps" title="Frame-rate cap. 60 = every frame drawn; 30 = every other frame skipped, halving GPU load.">
+                <option value="60" selected>60 fps</option>
+                <option value="30">30 fps</option>
+              </select>
+            </div>
+          </details>
 
           
 
@@ -99,6 +124,8 @@
         </div>
       </div>
     </div>
+
+    <div id="libraryPanel" class="panel libraryPanel hidden" role="dialog" aria-label="Music library" aria-modal="true"></div>
 
     <div id="worldSelect" class="worldSelect hidden" role="dialog" aria-labelledby="worldSelectTitle" aria-modal="true">
       <div class="worldSelectInner">
