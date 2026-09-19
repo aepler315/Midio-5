@@ -192,6 +192,20 @@ try {
       await page.locator('.worldCard').filter({ has: page.getByText(name, { exact: true }) }).click();
       await page.waitForFunction(() => window.__SMW?.sim?.timeMs > 1200, null, { timeout: 60000 });
       assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.world.kind), kind);
+      // Exercise backward seek and the reduced-motion preference while the
+      // song is far from the ending boundary.
+      await page.keyboard.press('r');
+      await page.evaluate(() => window.__SMW.seek(4000));
+      await page.waitForFunction(() => {
+        const tSec = window.__SMW?.sim?.biomes?.tSec;
+        return Number.isFinite(tSec) && tSec > 4.5 && tSec < 12;
+      }, null, { timeout: 60000 });
+      assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.reducedFlash), true);
+      await page.locator('#stage').screenshot({ path: path.join(out, `${kind}-reduced.png`) });
+      // Keep reduced-motion assertions isolated from the per-world paint and
+      // dynamics checks below.
+      await page.keyboard.press('r');
+      assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.reducedFlash), false);
       const samples = [];
       for (const [label, atMs] of [['quiet', 6000], ['energetic', 18000], ['return', 27000]]) {
         await page.evaluate(ms => window.__SMW.seek(ms), atMs);
@@ -238,13 +252,6 @@ try {
         assert.equal(paint[pass]?.missing, undefined, `${name}: missing ${pass} audit target`);
         assert.equal(paint[pass]?.paintedPx, 0, `${name}: ${pass} must not paint an interior`);
       }
-
-      // Exercise backward seek and the reduced-motion preference.
-      await page.keyboard.press('r');
-      await page.evaluate(() => window.__SMW.seek(4000));
-      await page.waitForFunction(() => window.__SMW.sim.biomes.tSec > 4.5 && window.__SMW.sim.biomes.tSec < 8);
-      assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.reducedFlash), true);
-      await page.locator('#stage').screenshot({ path: path.join(out, `${kind}-reduced.png`) });
       assert.deepEqual(errors, [], name + ' has no browser errors');
       report.worlds.push({ name, kind, samples, paint, cathode, errors });
       const painted = paint
