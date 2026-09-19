@@ -52,6 +52,7 @@ import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
 import { visualNow, VISUAL_LEAD_MS } from './core/ChoreoClock.js';
+import { SyncCalibrator, syncStatusText, positiveTrimCeilingMs } from './sim/SyncCalibrator.js';
 import { buildWorldVariant, scoreWorlds, pickRecommended, formatFitDiagnostic } from './world/WorldScore.js';
 import { buildSongProfile, PROFILE_VERSION } from './audio/SongProfile.js';
 import {
@@ -125,6 +126,7 @@ const worldChooseForMeEl = document.getElementById('worldChooseForMe');
 const progressEl = document.getElementById('progressText');
 const hudEl = document.getElementById('hud');
 const hudRightEl = document.getElementById('hudRight');
+const hudLeftEl = document.getElementById('hudLeft');
 const completePanelEl = document.getElementById('completePanel');
 const completeSongNameEl = document.getElementById('completeSongName');
 const completeSeedEl = document.getElementById('completeSeed');
@@ -230,6 +232,10 @@ let fontModalView = 'list'; // 'list' (visible fonts, click-to-hide) | 'hidden' 
 let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted accessibility toggle
 let lyricsDisabled = getLyricsDisabled(); // "No lyrics": persisted opt-out from the lyric fetch/prompt
 let btLatencyTrimMs = getBtLatencyTrimMs(); // manual Bluetooth output-latency correction, player-entered ms; 0 = off
+/** Derives that trim from tapping during a Sync pass. See SyncCalibrator.js:
+ *  the player's taps are treated as canon, and the value moves after each
+ *  one rather than at the end of the pass. */
+const syncCalibrator = new SyncCalibrator(btLatencyTrimMs);
 
 /** Effective output latency for beat-anchored visuals: AudioEngine's
  *  auto-detected figure, plus the manual Bluetooth trim the player has
@@ -2558,7 +2564,13 @@ function seekSong(ms) {
  *  beat-anchored cue in the sim. */
 function beatTap(role = null) {
   if (!running || !sim || paused || !audioEngine) return;
-  sim.onBeatTap(visualNow(audioEngine.nowMs, effectiveOutputLatencyMs()), role);
+  const tapMs = visualNow(audioEngine.nowMs, effectiveOutputLatencyMs());
+  sim.onBeatTap(tapMs, role);
+  // During a Sync pass the same tap also sets the Bluetooth delay. Only
+  // during one: taps are the beat anchor's the rest of the time, and having
+  // an ordinary tap silently move an audio setting would be a surprise
+  // nobody asked for.
+  if (recalibration.active) applySyncTap(tapMs);
   // Persist on a roled tap only. Unroled catch-all taps move the anchor but
   // teach the templates nothing, and writing storage on every stray keypress
   // would be a lot of churn for no new information.
@@ -2571,18 +2583,52 @@ function beatTap(role = null) {
 function startRecalibration() {
   if (!running || !sim || paused || recalibration.active) return;
   recalibration.start(simTime, sim.jump.beatPeriodMs, sim.beatAnchor.confidence);
+  // Start from the trim already in force rather than from zero: it is a
+  // correction the player has already made, and the pass refines it.
+  syncCalibrator.reset(btLatencyTrimMs);
+  recalibration.syncNote = 'Tap along with what you HEAR — the delay follows your taps.';
   sim.recalibrating = true;
   sim.syncMonitor.onCalibrated();
 }
+
+/**
+ * One tap of a Sync pass: measure it against the chart's kicks and move the
+ * Bluetooth delay to match, live.
+ *
+ * The taps are canon. If someone tapping along with what they hear lands
+ * consistently after the song's kicks, the sound is reaching them late by
+ * that much, and no amount of reasoning about typical Bluetooth round-trips
+ * or the human tendency to anticipate a beat outranks what they just did.
+ */
+function applySyncTap(tapMs) {
+  // A positive trim only works up to visualNow's own clamp; past it the
+  // number rises and the picture does not, which for a loop that measures
+  // its own residual is a runaway rather than a plateau.
+  const result = syncCalibrator.tap(tapMs, sim.jump.kickTimes, sim.jump.beatPeriodMs, {
+    maxPositiveTrimMs: positiveTrimCeilingMs(audioEngine.outputLatencyMs),
+  });
+  // A tap with no kick near it measured nothing; the last good reading
+  // stands rather than being diluted by a tap aimed at a rest.
+  if (!result) return;
+  recalibration.syncNote = syncStatusText(result);
+  if (!result.changed) return;
+  btLatencyTrimMs = setBtLatencyTrimMs(result.trimMs);
+  applyBtLatencyToAudioEngine();
+  updateBtLatencyBtnUI();
+  // The chip is the thing that just changed; show it rather than making
+  // the player hunt for confirmation that the tapping did anything.
+  wakeHud();
+}
+
 function endRecalibration() {
   if (!recalibration.active) return;
   const text = recalibration.resultText(sim ? sim.beatAnchor.confidence : 0);
   recalibration.stop();
   if (sim) sim.recalibrating = false;
-  console.info('[recalibrate]', text);
+  console.info('[recalibrate]', text, `bt=${btLatencyTrimMs}ms from ${syncCalibrator.taps} taps`);
 }
 
-// HUD auto-fade: the button cluster (#hudRight) fades out after a few
+// HUD auto-fade: both button clusters fade out after a few
 // seconds with no interaction, and comes back awake on the next one. While
 // asleep, a tap on the canvas is spent entirely on waking the HUD back up --
 // it never also acts as a gameplay tap or a seek/section click, exactly the
@@ -2597,6 +2643,7 @@ function wakeHud() {
   if (hudAwake) return;
   hudAwake = true;
   hudRightEl?.classList.remove('hud-faded');
+  hudLeftEl?.classList.remove('hud-faded');
 }
 function hudIdleTick(nowRafMs) {
   // A recording holds the HUD open. The stop control is in there, and a
@@ -2606,12 +2653,22 @@ function hudIdleTick(nowRafMs) {
   // player would press twice and wonder why the first did nothing. The
   // live elapsed/size readout wants to stay on screen anyway.
   if (songRecorder?.recording) { hudSleepAtMs = nowRafMs + HUD_FADE_MS; return; }
+  // An open editor is being used, whatever the idle timer thinks. Fading
+  // the Bluetooth chip out from under a half-typed value is the exact
+  // complaint that kept this cluster pinned open in the first place; the
+  // answer is to hold it while the popover is up, not to never fade it.
+  if (btLatencyPopoverEl && !btLatencyPopoverEl.classList.contains('hidden')) {
+    hudSleepAtMs = nowRafMs + HUD_FADE_MS;
+    return;
+  }
   if (hudAwake && nowRafMs >= hudSleepAtMs) {
     hudAwake = false;
     hudRightEl?.classList.add('hud-faded');
+    hudLeftEl?.classList.add('hud-faded');
   }
 }
 hudRightEl?.addEventListener('pointerdown', wakeHud);
+hudLeftEl?.addEventListener('pointerdown', wakeHud);
 
 // Mountain seekbar: click to seek; click a section to open its debug detail.
 // Anywhere else on the canvas -- not a button, not the seekbar -- resyncs

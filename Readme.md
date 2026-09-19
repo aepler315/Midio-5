@@ -102,8 +102,8 @@ See [docs/video-export.md](docs/video-export.md) for the details.
 | **Timed lyric grounding: on/off** | Enable or skip lyric lookup; remembered between sessions |
 | Stage selector | Choose the render resolution, including 8-bit and 8-bit intensive presets |
 | Frame-rate selector | Cap rendering at 30 or 60 fps |
-| **BT +30ms** | Toggle an additional 30 ms visual delay for manual Bluetooth correction |
-| **Sync** button or `C` | Open guided tap calibration |
+| **BT** chip | The Bluetooth delay, set by **Sync** or typed in by hand. Fades with the rest of the HUD; held open while its editor is |
+| **Sync** button or `C` | Tap along with what you hear; the Bluetooth delay follows your taps, live ([docs](docs/sync-calibration.md)) |
 | `F` / `J` | Tap the low / high percussion parts for groove calibration |
 | `R` | Toggle reduced flashes, shake, and cuts |
 | `P` | Toggle the FPS display |
