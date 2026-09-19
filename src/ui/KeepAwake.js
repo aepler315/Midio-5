@@ -30,6 +30,13 @@
  *  wake-lock refresh, not a fake tap: invisible, silent, no UI effect. */
 export const HEARTBEAT_MS = 30000;
 
+/** A render-loop gap this long means the page stopped being drawn at all:
+ *  a blanked display, or the browser backgrounded. Nothing else produces it
+ *  during playback -- even a bad frame is two orders of magnitude shorter --
+ *  and requiring it is what keeps an ordinary long wait (a 40-second
+ *  analysis with nobody touching the screen) from being mistaken for one. */
+export const SLEEP_STALL_MS = 10000;
+
 /** A gap this long with no input means the display plausibly blanked, so
  *  the next tap is a wake-up tap and belongs to the screen, not the page.
  *  Comfortably under the ~60s timeout being worked around, and far longer
@@ -42,10 +49,22 @@ export const WAKE_TAP_IDLE_MS = 20000;
  *  worth restoring. */
 export const FULLSCREEN_DROP_GRACE_MS = 2000;
 
+/** True when a render-loop gap is long enough to mean the page was not being
+ *  drawn -- the display slept, or the browser backgrounded it. */
+export function isDisplaySleepGap(rafDeltaMs, stallMs = SLEEP_STALL_MS) {
+  return rafDeltaMs >= stallMs;
+}
+
 /** True when the next tap should be spent on waking the display back up
- *  instead of reaching the page. `lastInputMs` of null (no input yet at all)
- *  is never a wake tap -- the first touch of a session is a real one. */
-export function shouldAbsorbTap(lastInputMs, nowMs, idleMs = WAKE_TAP_IDLE_MS) {
+ *  instead of reaching the page. Both halves are required, and deliberately
+ *  so: `slept` (the page stopped being drawn, or was hidden) is the evidence
+ *  that there was a display to wake, and the idle gap is the evidence that
+ *  this tap is the one that woke it. Either alone has false positives that
+ *  cost the player a real tap -- a page that was backgrounded an hour ago,
+ *  or a long unattended wait on a screen that never blanked.
+ *  `lastInputMs` of null (no input yet at all) is never a wake tap. */
+export function shouldAbsorbTap(lastInputMs, nowMs, slept, idleMs = WAKE_TAP_IDLE_MS) {
+  if (!slept) return false;
   if (lastInputMs == null) return false;
   return (nowMs - lastInputMs) >= idleMs;
 }

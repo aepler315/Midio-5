@@ -31,6 +31,14 @@ try {
     assert.equal(await page.evaluate(() => window.__SMW.carMode.keepAwake.enabled), true);
   });
 
+  await run('a long wait with no display sleep does not eat the next tap', async () => {
+    const before = await paused();
+    await page.evaluate(() => window.__SMW.carMode.backdateInput(60000));
+    await page.locator('#pauseBtn').click();
+    assert.notEqual(await paused(), before, 'idle alone must not absorb a tap');
+    await page.locator('#pauseBtn').click();
+  });
+
   await run('an ordinary tap still reaches the button', async () => {
     const before = await paused();
     await page.locator('#pauseBtn').click();
@@ -40,7 +48,7 @@ try {
 
   await run('the tap that wakes a blanked display is swallowed', async () => {
     const before = await paused();
-    await page.evaluate(() => window.__SMW.carMode.backdateInput(60000));
+    await page.evaluate(() => window.__SMW.carMode.simulateDisplaySleep(60000));
     await page.locator('#pauseBtn').click();
     assert.equal(await paused(), before, 'a wake-up tap must not toggle pause');
   });

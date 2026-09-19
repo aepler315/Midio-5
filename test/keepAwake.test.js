@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  KeepAwake, shouldAbsorbTap, isSystemFullscreenDrop,
-  WAKE_TAP_IDLE_MS, FULLSCREEN_DROP_GRACE_MS, HEARTBEAT_MS,
+  KeepAwake, shouldAbsorbTap, isSystemFullscreenDrop, isDisplaySleepGap,
+  WAKE_TAP_IDLE_MS, FULLSCREEN_DROP_GRACE_MS, HEARTBEAT_MS, SLEEP_STALL_MS,
 } from '../src/ui/KeepAwake.js';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -63,13 +63,28 @@ function fakeNav(sentinels = []) {
 }
 
 test('shouldAbsorbTap treats the first input of a session as a real tap', () => {
-  assert.equal(shouldAbsorbTap(null, 999999), false);
+  assert.equal(shouldAbsorbTap(null, 999999, true), false);
 });
 
 test('shouldAbsorbTap only absorbs after a display-blanking-length idle gap', () => {
-  assert.equal(shouldAbsorbTap(1000, 1000 + WAKE_TAP_IDLE_MS - 1), false);
-  assert.equal(shouldAbsorbTap(1000, 1000 + WAKE_TAP_IDLE_MS), true);
-  assert.equal(shouldAbsorbTap(1000, 1000 + 60000), true);
+  assert.equal(shouldAbsorbTap(1000, 1000 + WAKE_TAP_IDLE_MS - 1, true), false);
+  assert.equal(shouldAbsorbTap(1000, 1000 + WAKE_TAP_IDLE_MS, true), true);
+  assert.equal(shouldAbsorbTap(1000, 1000 + 60000, true), true);
+});
+
+test('shouldAbsorbTap never eats a tap when the display never slept', () => {
+  // The long unattended wait that is NOT a display timeout: a 40-second
+  // analysis, or a song watched straight through. The next tap is real.
+  assert.equal(shouldAbsorbTap(1000, 1000 + 60000, false), false);
+  assert.equal(shouldAbsorbTap(1000, 1000 + 3600000, false), false);
+});
+
+test('isDisplaySleepGap ignores ordinary frame hitches and catches a stopped loop', () => {
+  assert.equal(isDisplaySleepGap(16), false);
+  assert.equal(isDisplaySleepGap(250), false);
+  assert.equal(isDisplaySleepGap(SLEEP_STALL_MS - 1), false);
+  assert.equal(isDisplaySleepGap(SLEEP_STALL_MS), true);
+  assert.equal(isDisplaySleepGap(90000), true);
 });
 
 test('isSystemFullscreenDrop is false right after real input (the player asked to exit)', () => {

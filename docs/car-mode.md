@@ -61,9 +61,15 @@ absorbed:
 
 * a capture-phase `pointerdown` listener on `document` runs before every
   other handler;
-* if the gap since the last real input is at least `WAKE_TAP_IDLE_MS` (20s,
-  comfortably under the ~60s timeout and far longer than any gap between
-  deliberate taps), the event is default-prevented and stopped;
+* it absorbs the tap only when *both* halves hold: the page stopped being
+  drawn (a render-loop gap of `SLEEP_STALL_MS`, 10s — nothing else produces
+  one during playback — or a `visibilitychange` to hidden), which is the
+  evidence there was a blanked display at all; **and** the gap since the last
+  real input is at least `WAKE_TAP_IDLE_MS` (20s), which is the evidence that
+  *this* tap is the one that woke it. Either half alone has false positives
+  that cost the player a real tap — a page backgrounded an hour ago, or a
+  40-second analysis nobody touched the screen during. Then the event is
+  default-prevented and stopped;
 * the synthesized `click` some browsers still fire after a prevented
   touch `pointerdown` is swallowed too, for 700ms, so it cannot land on a
   button either;
@@ -97,6 +103,7 @@ at input recency (`FULLSCREEN_DROP_GRACE_MS`, 2s):
 ## Testing
 
 * `test/keepAwake.test.js` — lock acquire / re-arm / release / fallback and
-  the two timing predicates, against injected fakes.
+  the timing predicates, against injected fakes.
 * `npm run test:car` (`tools/car-mode-smoke.mjs`) — a real browser: a
-  wake-up tap must not toggle pause, and the next tap must.
+  wake-up tap must not toggle pause, the next tap must, and a long idle gap
+  with no display sleep must not eat a tap at all.

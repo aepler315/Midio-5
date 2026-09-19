@@ -35,7 +35,9 @@ import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
 import { TitleBackdrop } from './ui/TitleBackdrop.js';
 import { clientToStageCoords } from './ui/StageCoords.js';
-import { KeepAwake, shouldAbsorbTap, isSystemFullscreenDrop } from './ui/KeepAwake.js';
+import {
+  KeepAwake, shouldAbsorbTap, isSystemFullscreenDrop, isDisplaySleepGap,
+} from './ui/KeepAwake.js';
 import { cssVarMap } from './render/spectral.js';
 import { resolveDurationMs } from './core/SongDuration.js';
 import { formatSeed, parseSeed, resolveSongSeed } from './utils/seed.js';
@@ -644,11 +646,29 @@ if (stopBtnEl) stopBtnEl.addEventListener('click', () => backToTitle());
 const keepAwake = new KeepAwake({ onWarn: (msg, err) => console.warn('[keepawake]', msg, err) });
 let lastInputMs = null;
 let fullscreenDropped = false;
+// Evidence that there was a blanked display to wake: the render loop stopped
+// being called, or the page was hidden outright. Without it, a long wait with
+// nobody touching the screen -- a 40-second analysis, a song watched straight
+// through -- would look exactly like a display timeout, and the next real tap
+// would be eaten. Cleared by the tap it is spent on.
+let displaySlept = false;
 // Touch still synthesizes a click after pointerdown in some browsers even
 // when the pointerdown was default-prevented; an absorbed tap has to swallow
 // that echo too, or it lands on a button anyway.
 let absorbClickUntilMs = 0;
 const CLICK_ECHO_MS = 700;
+
+/** Called from the render loop with each frame delta (playing frames only --
+ *  a pause leaves the loop running but resets the delta, see togglePause). */
+function noteFrameGap(rafDeltaMs) {
+  if (isDisplaySleepGap(rafDeltaMs)) displaySlept = true;
+}
+// Screen-off usually hides the page outright, which is the cleaner signal
+// where it happens; the frame-gap check above covers the projection cases
+// where it does not.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') displaySlept = true;
+});
 
 function syncKeepAwake() {
   if (running || isFullscreen()) keepAwake.enable();
@@ -668,8 +688,9 @@ document.addEventListener('webkitfullscreenchange', onFullscreenChange);
 // decide a tap belongs to the screen rather than to the page.
 document.addEventListener('pointerdown', (e) => {
   const nowMs = performance.now();
-  const absorb = shouldAbsorbTap(lastInputMs, nowMs);
+  const absorb = shouldAbsorbTap(lastInputMs, nowMs, displaySlept);
   lastInputMs = nowMs;
+  displaySlept = false;
   keepAwake.noteInput();
   if (!absorb) return;
   e.preventDefault();
@@ -691,7 +712,7 @@ document.addEventListener('click', (e) => {
   e.stopPropagation();
 }, true);
 
-window.addEventListener('keydown', () => { lastInputMs = performance.now(); }, true);
+window.addEventListener('keydown', () => { lastInputMs = performance.now(); displaySlept = false; }, true);
 
 function applyActiveFont(active) {
   if (sf2Engine) {
@@ -1491,7 +1512,12 @@ function startTimeline(timelineData, extra = {}) {
       keepAwake,
       get lastInputMs() { return lastInputMs; },
       get fullscreenDropped() { return fullscreenDropped; },
-      backdateInput: (ms) => { lastInputMs = performance.now() - ms; },
+      get displaySlept() { return displaySlept; },
+      backdateInput: (idleMs) => { lastInputMs = performance.now() - idleMs; },
+      simulateDisplaySleep: (idleMs) => {
+        lastInputMs = performance.now() - idleMs;
+        displaySlept = true;
+      },
     },
   };
 }
@@ -2171,6 +2197,7 @@ function frame(tRaf) {
   if (paused) { rafHandle = requestAnimationFrame(frame); return; }
   if (lastRafMs !== null) {
     const rafDeltaMs = tRaf - lastRafMs;
+    noteFrameGap(rafDeltaMs);
     const prevLevel = perfGovernor.level;
     perfGovernor.sample(rafDeltaMs, tRaf);
     if (perfGovernor.level !== prevLevel) fitCanvas();
