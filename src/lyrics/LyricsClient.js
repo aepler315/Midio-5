@@ -63,17 +63,24 @@ function nameSimilarity(a, b) {
   return inter / (sa.size + sb.size - inter);
 }
 
-async function fetchJson(fetchFn, url) {
+async function fetchJson(fetchFn, url, externalSignal = null) {
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = controller ? setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS) : null;
+  const onExternalAbort = () => controller?.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) onExternalAbort();
+    else externalSignal.addEventListener?.('abort', onExternalAbort, { once: true });
+  }
   try {
-    const res = await fetchFn(url, controller ? { signal: controller.signal } : {});
+    const requestSignal = controller?.signal || externalSignal || null;
+    const res = await fetchFn(url, requestSignal ? { signal: requestSignal } : {});
     if (!res || !res.ok) return null;
     return await res.json();
   } catch {
     return null;
   } finally {
     if (timer) clearTimeout(timer);
+    externalSignal?.removeEventListener?.('abort', onExternalAbort);
   }
 }
 
@@ -95,19 +102,19 @@ function recordMeta(record) {
  *  then falls back to /api/search picking the closest-duration, then
  *  most-similar-named candidate. Returns null on any failure/no match --
  *  callers should treat that as "no lyrics available," never an error. */
-export async function fetchLyrics({ artist, title, album, durationSec } = {}, fetchFn = (typeof fetch !== 'undefined' ? fetch : null)) {
+export async function fetchLyrics({ artist, title, album, durationSec, signal = null } = {}, fetchFn = (typeof fetch !== 'undefined' ? fetch : null)) {
   if (!fetchFn || !title) return null;
 
   const getParams = new URLSearchParams({ track_name: title });
   if (artist) getParams.set('artist_name', artist);
   if (album) getParams.set('album_name', album);
   if (Number.isFinite(durationSec)) getParams.set('duration', String(Math.round(durationSec)));
-  const direct = await fetchJson(fetchFn, `${BASE}/get?${getParams.toString()}`);
+  const direct = await fetchJson(fetchFn, `${BASE}/get?${getParams.toString()}`, signal);
   const direct2 = toResult(direct);
   if (direct2) return direct2;
 
   const searchParams = new URLSearchParams({ q: [artist, title].filter(Boolean).join(' ') || title });
-  const candidates = await fetchJson(fetchFn, `${BASE}/search?${searchParams.toString()}`);
+  const candidates = await fetchJson(fetchFn, `${BASE}/search?${searchParams.toString()}`, signal);
   if (!Array.isArray(candidates) || candidates.length === 0) return null;
 
   let best = null, bestScore = -Infinity;
@@ -136,14 +143,14 @@ function cacheKey(artist, title, durationSec) {
  *  pattern as Accessibility.js so a private-mode browser (or Node, for
  *  tests) degrades to "just fetch every time" instead of throwing. Only
  *  successful (non-null) results are cached. */
-export async function fetchLyricsCached(identity, fetchFn) {
+export async function fetchLyricsCached(identity, fetchFn, signal = null) {
   const key = cacheKey(identity?.artist, identity?.title, identity?.durationSec);
   try {
     const cached = localStorage.getItem(key);
     if (cached) return JSON.parse(cached);
   } catch { /* unavailable or corrupt -- fall through to a live fetch */ }
 
-  const result = await fetchLyrics(identity, fetchFn);
+  const result = await fetchLyrics({ ...identity, signal }, fetchFn);
   if (result) {
     try { localStorage.setItem(key, JSON.stringify(result)); } catch { /* storage full/unavailable -- fine, just not cached */ }
   }

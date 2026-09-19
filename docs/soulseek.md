@@ -29,7 +29,8 @@ or playing when you don’t want network P2P.
 ## Bundled slskd (recommended for Soulseek)
 
 The repo ships a ready-to-run [slskd](https://github.com/slskd/slskd) config.
-API keys are **pre-shared between Midio and slskd** — players never paste one.
+The bundled API and Soulseek listener bind to loopback by default; no shared
+administrator key or web password is committed to the repository.
 
 ```sh
 # optional: put your Soulseek account in .env (see .env.example)
@@ -39,8 +40,9 @@ docker compose up -d slskd
 npm start
 ```
 
-- slskd UI: http://127.0.0.1:5030 (user/pass `midio` / `midio` for the web UI only)
-- Midio auto-detects `http://127.0.0.1:5030` with key `midio-local-dev-key`
+- slskd UI/API: http://127.0.0.1:5030 (authentication is disabled only because
+  the Compose port is loopback-bound; configure authentication before exposing it)
+- Midio auto-detects `http://127.0.0.1:5030` without a repository-shipped key
 - Finished downloads land in `data/slskd-downloads/` (shared volume)
 
 Files:
@@ -48,7 +50,7 @@ Files:
 | Path | Purpose |
 | --- | --- |
 | [`docker-compose.yml`](../docker-compose.yml) | slskd service |
-| [`slskd/slskd.yml`](../slskd/slskd.yml) | fixed local API key + dirs |
+| [`slskd/slskd.yml`](../slskd/slskd.yml) | loopback-only local config + dirs |
 | [`.env.example`](../.env.example) | optional Soulseek creds |
 
 ## Optional: Soulseek login in the game
@@ -56,8 +58,9 @@ Files:
 Open **Soulseek** on the title search panel → enter username + password →
 **Connect Soulseek**. That uses the direct client (or your auto-detected slskd).
 
-Advanced → slskd: only if you run slskd on another host. Leave the API key
-blank to use the bundled local key.
+Advanced → slskd: only if you run slskd on another host. The bridge accepts
+only loopback slskd URLs; provide an operator-managed API key when your local
+slskd instance requires one.
 
 Env overrides (server):
 
@@ -66,8 +69,10 @@ export SLSK_USER=yourname
 export SLSK_PASS=yourpass
 # or custom slskd:
 export SLSKD_URL=http://127.0.0.1:5030
-export SLSKD_API_KEY=midio-local-dev-key
+export SLSKD_API_KEY=your-operator-managed-key
 export SLSKD_DOWNLOADS=./data/slskd-downloads
+# If the Midio server is reachable from a LAN, require a separate bridge token:
+export MIDIO_BRIDGE_TOKEN=generate-a-long-random-value
 npm start
 ```
 

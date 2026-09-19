@@ -5,6 +5,11 @@ import { ParamBus } from './core/ParamBus.js';
 import { synthesizeEnergyCurves } from './core/EnergyCurvesSynth.js';
 import { buildDemoSong } from './core/DemoSong.js';
 import { audioToTimeline } from './audio/AudioAdapter.js';
+import {
+  AUDIO_LOAD_LIMITS, accumulateDecodedAudioBytes, accumulateDecodedByteLength,
+  accumulateEncodedAudioBytes, throwIfAborted, validateAudioFiles,
+  validateDecodedAudioBuffer, validateDecodedByteLength,
+} from './audio/loadLimits.js';
 import { Simulation } from './sim/Simulation.js';
 import { createRenderer, resolveRendererMode } from './render/WebGLRenderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
@@ -57,6 +62,7 @@ import {
   PreviewSession, loadPreviewRenderer,
 } from './ui/WorldPreview.js';
 import { fingerprintBuffer } from './audio/SongFingerprint.js';
+import { readVisionConfig, persistVisionConfig } from './vision/config.js';
 import { packBundle, unpackBundle } from './audio/AnalysisBundle.js';
 import { analysisCacheKey, getBundle, putBundle } from './audio/AnalysisCache.js';
 
@@ -308,35 +314,6 @@ const STAGE_W = 1280;
 const STAGE_H = 720;
 const STAGE_RES_KEY = 'smw:stageRes';
 const STAGE_FPS_KEY = 'smw:stageFps';
-const VISION_PROVIDER_KEY = 'smw:visionProvider';
-const VISION_APIKEY_KEY = 'smw:visionApiKey';
-const VISION_MODEL_KEY = 'smw:visionModel';
-const VISION_ENDPOINT_KEY = 'smw:visionEndpoint';
-
-/** Read the persisted vision-loop provider config (§ VisionLoop.setProvider
- *  shape). Ollama, with no key, is the zero-setup default; a key is only
- *  ever read out of this browser's own localStorage, never sent anywhere
- *  but the provider's own endpoint. */
-function readVisionConfig() {
-  try {
-    return {
-      provider: localStorage.getItem(VISION_PROVIDER_KEY) || 'ollama',
-      apiKey: localStorage.getItem(VISION_APIKEY_KEY) || '',
-      model: localStorage.getItem(VISION_MODEL_KEY) || null,
-      endpoint: localStorage.getItem(VISION_ENDPOINT_KEY) || null,
-    };
-  } catch { return { provider: 'ollama', apiKey: '', model: null, endpoint: null }; }
-}
-
-function persistVisionConfig({ provider, apiKey, model, endpoint }) {
-  try {
-    localStorage.setItem(VISION_PROVIDER_KEY, provider);
-    localStorage.setItem(VISION_APIKEY_KEY, apiKey || '');
-    if (model) localStorage.setItem(VISION_MODEL_KEY, model); else localStorage.removeItem(VISION_MODEL_KEY);
-    if (endpoint) localStorage.setItem(VISION_ENDPOINT_KEY, endpoint); else localStorage.removeItem(VISION_ENDPOINT_KEY);
-  } catch { /* no storage */ }
-}
-
 let simTime = 0;
 let acc = 0;
 let lastNowMs = 0;
@@ -1549,7 +1526,7 @@ async function loadAudioFile(file) {
 /** Sums N decoded stems into one stereo mix buffer -- the mix is both the
  *  analysis subject and what actually plays. Stems shorter than the longest
  *  simply end early (silence-padded by construction). */
-function sumToMixBuffer(buffers) {
+function sumToMixBuffer(buffers, signal = null) {
   const rate = buffers[0].sampleRate;
   const length = Math.max(...buffers.map((b) => b.length));
   const mix = audioEngine.ctx.createBuffer(2, length, rate);
@@ -1561,11 +1538,13 @@ function sumToMixBuffer(buffers) {
   for (let c = 0; c < 2; c++) {
     const out = mix.getChannelData(c);
     for (let bi = 0; bi < ordered.length; bi++) {
+      throwIfAborted(signal);
       const src = ordered[bi].getChannelData(Math.min(c, ordered[bi].numberOfChannels - 1));
       const last = bi === ordered.length - 1;
       for (let i = 0; i < src.length; i++) {
         out[i] += src[i];
         if (last) { const a = Math.abs(out[i]); if (a > peak) peak = a; }
+        if ((i & 0x7fff) === 0) throwIfAborted(signal);
       }
     }
   }
@@ -1574,7 +1553,10 @@ function sumToMixBuffer(buffers) {
     const g = 0.98 / peak;
     for (let c = 0; c < 2; c++) {
       const ch = mix.getChannelData(c);
-      for (let i = 0; i < ch.length; i++) ch[i] *= g;
+      for (let i = 0; i < ch.length; i++) {
+        ch[i] *= g;
+        if ((i & 0x7fff) === 0) throwIfAborted(signal);
+      }
     }
   }
   return mix;
@@ -1754,10 +1736,11 @@ function promptForLyrics(identity, durationSec) {
  *  Never throws. `vocalStem` ({name, buffer}), when given, is only
  *  ever consulted by buildLyricSections, and only when the lyrics that come
  *  back are plain-only -- see its doc comment for the StemAlign gate. */
-async function resolveLyricsForAudio(file, durationSec, vocalStem = null, { prompt = false } = {}) {
+async function resolveLyricsForAudio(file, durationSec, vocalStem = null, { prompt = false, signal = null } = {}) {
   let identity = { title: null, artist: null, album: null, durationSec, source: 'none', confidence: 0 };
   try {
     const tagBuffer = await file.arrayBuffer();
+    if (signal?.aborted) return { identity, lyricSections: null, syncedLyrics: null };
     identity = resolveIdentity(file.name || '', tagBuffer, durationSec);
   } catch (err) {
     console.warn('[lyrics] identity resolution failed, continuing without it', err);
@@ -1770,8 +1753,10 @@ async function resolveLyricsForAudio(file, durationSec, vocalStem = null, { prom
       lyricResult = await fetchLyricsCached(
         { artist: identity.artist, title: identity.title, album: identity.album, durationSec },
         typeof fetch !== 'undefined' ? fetch : null,
+        signal,
       );
     }
+    if (signal?.aborted) return { identity, lyricSections: null, syncedLyrics: null };
     const lyricSections = buildLyricSections(lyricResult, Math.round((durationSec || 0) * 1000), vocalStem);
     const syncedLyrics = lyricResult?.synced?.length ? lyricResult.synced : null;
     return { identity, lyricSections, syncedLyrics };
@@ -1785,9 +1770,25 @@ async function resolveLyricsForAudio(file, durationSec, vocalStem = null, { prom
  *  stems of one song -- summed into a mix for analysis/playback, with each
  *  file's NAME casting its notes to a character (see Casting.js). */
 async function loadAudioFiles(files) {
+  let selectedFiles;
+  try {
+    selectedFiles = validateAudioFiles(files, AUDIO_LOAD_LIMITS);
+  } catch (err) {
+    showErrorBanner(err?.message || 'The selected audio cannot be loaded.');
+    return;
+  }
+  // Abort the previous decode/analysis before claiming the new generation.
+  // Web Audio cannot interrupt a native decode already in progress, but every
+  // boundary below observes this signal so stale work cannot commit or start
+  // another expensive phase after a replacement selection.
+  loadAudioFiles._abortController?.abort();
+  const abortController = new AbortController();
+  loadAudioFiles._abortController = abortController;
+  const { signal } = abortController;
   // Claim the load before the first await. Otherwise an older picker/drop
   // stalled in bootAudio() can wake up later and overwrite the newer choice.
   const myGen = ++loadGen;
+  const isStale = () => signal.aborted || myGen !== loadGen;
   stopTimeline();
   stopTitleBackdrop();
   loadShow?.stop();
@@ -1800,7 +1801,7 @@ async function loadAudioFiles(files) {
   try {
     await bootAudio();
   } catch (err) {
-    if (myGen !== loadGen) return;
+    if (isStale()) return;
     showErrorBanner('Could not start audio: ' + (err?.message || err));
     progressEl.classList.add('hidden');
     loaderEl.classList.remove('hidden');
@@ -1812,22 +1813,49 @@ async function loadAudioFiles(files) {
   // clobbering it. Analysis here is the longest of any load path (band
   // separation + onset/tempo/pitch + an awaited lyrics prompt), so it's the
   // one most likely to still be in flight when a second drop lands.
-  if (myGen !== loadGen) return;
+  if (isStale()) return;
   const decoded = [];
-  for (const file of files) {
+  let encodedBytes = 0;
+  let decodedBytes = 0;
+  for (const file of selectedFiles) {
     try {
-      decoded.push({ name: file.name || 'stem', buffer: await audioEngine.decodeFile(await file.arrayBuffer()) });
+      const bytes = await file.arrayBuffer();
+      if (isStale()) return;
+      encodedBytes = accumulateEncodedAudioBytes(
+        encodedBytes, bytes?.byteLength, file.name || 'audio file', AUDIO_LOAD_LIMITS,
+      );
+      const buffer = await audioEngine.decodeFile(bytes, { signal });
+      validateDecodedAudioBuffer(buffer, AUDIO_LOAD_LIMITS);
+      decodedBytes = accumulateDecodedAudioBytes(decodedBytes, buffer, AUDIO_LOAD_LIMITS);
+      decoded.push({ name: file.name || 'stem', buffer });
     } catch (err) {
-      if (myGen !== loadGen) return;
+      if (isStale() || err?.name === 'AbortError') return;
       showErrorBanner(`Could not decode audio file "${file.name}": ` + err.message);
       progressEl.classList.add('hidden');
       loaderEl.classList.remove('hidden');
       return;
     }
-    if (myGen !== loadGen) return;
+    if (isStale()) return;
   }
   const isStemDrop = decoded.length > 1;
-  const audioBuffer = isStemDrop ? sumToMixBuffer(decoded.map((d) => d.buffer)) : decoded[0].buffer;
+  let audioBuffer;
+  try {
+    if (isStemDrop) {
+      const mixLength = Math.max(...decoded.map(({ buffer }) => buffer.length));
+      const mixBytes = mixLength * 2 * Float32Array.BYTES_PER_ELEMENT;
+      validateDecodedByteLength(mixBytes, AUDIO_LOAD_LIMITS);
+      accumulateDecodedByteLength(decodedBytes, mixBytes, AUDIO_LOAD_LIMITS);
+    }
+    audioBuffer = isStemDrop ? sumToMixBuffer(decoded.map((d) => d.buffer), signal) : decoded[0].buffer;
+    validateDecodedAudioBuffer(audioBuffer, AUDIO_LOAD_LIMITS);
+    if (isStemDrop) accumulateDecodedAudioBytes(decodedBytes, audioBuffer, AUDIO_LOAD_LIMITS);
+  } catch (err) {
+    if (isStale() || err?.name === 'AbortError') return;
+    showErrorBanner('Could not prepare the selected audio: ' + (err?.message || err));
+    progressEl.classList.add('hidden');
+    loaderEl.classList.remove('hidden');
+    return;
+  }
 
   // A dropped audio file has real work ahead of it (band separation, onset/
   // tempo detection, pitch tracing) with no timeline yet to drive the usual
@@ -1859,7 +1887,7 @@ async function loadAudioFiles(files) {
     // Everything downstream already no-ops on null lyricSections.
     const lyricsPromise = lyricsDisabled
       ? Promise.resolve({ identity: null, lyricSections: null, syncedLyrics: null })
-      : resolveLyricsForAudio(files[0], audioBuffer.duration, vocalStem, { prompt: false });
+      : resolveLyricsForAudio(selectedFiles[0], audioBuffer.duration, vocalStem, { prompt: false, signal });
     // Reuse only the same decoded fingerprint, stem assignments, and learned
     // rhythm settings. Different encodings may have different fingerprints.
     let fingerprint = null;
@@ -1887,8 +1915,9 @@ async function loadAudioFiles(files) {
         // Everything previous sessions learned about how this player splits a
         // kick from a hat, applied to a song they've never played.
         groove: analysisGroove,
+        signal,
         onProgress: ({ phase, progress }) => {
-          if (myGen !== loadGen) return;
+          if (isStale()) return;
           if (phase === 'separate') loadShow?.setStage(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`, progress);
           else if (phase === 'analyze') loadShow?.setStage('Detecting onsets, tempo, and downbeat…', 0.7);
           else if (phase === 'pitch') loadShow?.setStage('Tracing melody, bass, and harmony…', 0.9);
@@ -1901,7 +1930,7 @@ async function loadAudioFiles(files) {
     // A newer load has since started -- let it win. Its own flow owns the
     // loader/audition/HUD visibility from here; this stale one touches none
     // of it.
-    if (myGen !== loadGen) return;
+    if (isStale()) return;
     data.lyricIdentity = lyricIdentity;
     data.lyricSections = lyricSections;
     data.syncedLyrics = syncedLyrics;
@@ -1913,7 +1942,7 @@ async function loadAudioFiles(files) {
     if (cacheKey && !data.fromBundle) {
       Promise.resolve()
         .then(() => putBundle(cacheKey, packBundle(data, {
-          fingerprint, name: files[0].name || '', identity: lyricIdentity,
+          fingerprint, name: selectedFiles[0].name || '', identity: lyricIdentity,
         })))
         .catch((err) => console.warn('[analysis] could not cache bundle', err));
     }
@@ -1932,18 +1961,18 @@ async function loadAudioFiles(files) {
     // Audio files get the same per-song visual fingerprint MIDI files do: a
     // unique custom biome from the timeline plus the adapter's chroma/
     // brightness/dynamics/width analysis (see BiomeImporter).
-    data.customBiome = generateCustomBiomeFromMidi(data, files[0].name || 'Audio');
+    data.customBiome = generateCustomBiomeFromMidi(data, selectedFiles[0].name || 'Audio');
     rememberCustomBiome(paramBus, data.customBiome);
     // Raw audio already has every voice baked into the decoded buffer —
     // stacking the synth's pseudo-onset voicing on top is the unwanted
     // synthetic hi-hat/click layer, so the timeline synth stays silent here.
     muteTimelineSynth = true;
-    lastSongName = files[0].name || 'song';
+    lastSongName = selectedFiles[0].name || 'song';
     lastAudioBuffer = audioBuffer;
     fontRecommender?.clear(); // the recording is its own sound source
     offerWorldsThenStart(data, { playBuffer: audioBuffer });
   } catch (err) {
-    if (myGen !== loadGen) return;
+    if (isStale() || err?.name === 'AbortError') return;
     console.error('[audio load failed]', err);
     auditionPanelEl?.classList.add('hidden');
     lyricsRowEl?.classList.add('hidden');
@@ -1962,7 +1991,13 @@ function handleFile(file) {
  *  song (their filenames cast the characters). The built-in sample is a
  *  second door into the same chooser. */
 function handleFiles(files) {
-  const list = [...(files || [])].filter(Boolean);
+  let list;
+  try {
+    list = validateAudioFiles(files, AUDIO_LOAD_LIMITS);
+  } catch (err) {
+    showErrorBanner(err?.message || 'The selected audio cannot be loaded.');
+    return;
+  }
   if (!list.length) return;
   closeWorldChooser();
   stopWorldPreview();

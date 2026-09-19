@@ -108,10 +108,10 @@ export function buildVisionRequest(provider, { apiKey, endpoint, model, systemPr
     case 'gemini': {
       const base = url.endsWith(':generateContent') ? url : `${url.replace(/\/$/, '')}/${mdl}:generateContent`;
       return {
-        url: `${base}?key=${encodeURIComponent(apiKey)}`,
+        url: base,
         options: {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
           body: JSON.stringify({
             contents: [{
               parts: [

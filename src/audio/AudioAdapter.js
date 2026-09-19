@@ -18,9 +18,10 @@ import {
   buildDriftAwareBarGrid,
 } from './OnsetDetector.js';
 import {
-  computePitchFeatures, chromaHistogram, melodyPitchAt, estimateBassPitchAt,
+  computePitchFeaturesAsync, chromaHistogram, melodyPitchAt, estimateBassPitchAt,
   tonalityFrom, tonalityTimeline, meanBrightness, brightnessAt, windowChroma,
 } from './PitchTracker.js';
+import { throwIfAborted } from './loadLimits.js';
 import { EnergyCurves } from './EnergyCurves.js';
 import { summarizeRhythmOnsets } from './RhythmProfile.js';
 import { analyzeStructure } from './StructureAnalyzer.js';
@@ -73,7 +74,7 @@ function dynamicRange(rawBands) {
 /** Coarse loudness-over-time of one decoded buffer: mean per-sample RMS
  * across channels. Accepts a historic mono array or a channel array, and is
  * deliberately phase-safe because it is the stem-vote's ballot. */
-export function activityEnvelope(samples, sampleRate, rate = 86) {
+export function activityEnvelope(samples, sampleRate, rate = 86, signal = null) {
   const chans = Array.isArray(samples) ? samples : [samples];
   const length = chans.reduce((min, ch) => Math.min(min, ch?.length ?? 0), Infinity);
   if (!Number.isFinite(length) || length <= 0) return new Float32Array(1);
@@ -81,6 +82,7 @@ export function activityEnvelope(samples, sampleRate, rate = 86) {
   const n = Math.max(1, Math.ceil(length / hop));
   const env = new Float32Array(n);
   for (let f = 0; f < n; f++) {
+    throwIfAborted(signal);
     const from = f * hop, to = Math.min(length, from + hop);
     let s = 0;
     for (let i = from; i < to; i++) {
@@ -105,7 +107,10 @@ export function activityEnvelope(samples, sampleRate, rate = 86) {
  *   FILENAMES cast the characters (Casting.laneForStemName) and their
  *   per-moment loudness decides which stem owns each melodic/bass note.
  */
-export async function audioToTimeline(audioBuffer, { onProgress = null, userStems = null, groove = null } = {}) {
+export async function audioToTimeline(audioBuffer, {
+  onProgress = null, userStems = null, groove = null, signal = null,
+} = {}) {
+  throwIfAborted(signal);
   // Stream the 7 bands one at a time rather than holding all of them fully
   // decoded at once (~565MB for a 4-minute 44.1kHz song, held simultaneously
   // by the old separateStems+computeBandEnvelopes pairing) -- everything
@@ -120,21 +125,25 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
     if (numFrames === undefined) ({ numFrames, rate } = envelopeFrameCount(buf.length, buf.sampleRate));
     raw[i] = bandEnvelope(buf, numFrames);
     if (i === 1) bassChannels = channelArrays(buf); // the BASS band: 60-250 Hz, already isolated
-  }, (p) => onProgress?.({ phase: 'separate', progress: p }));
+  }, (p) => onProgress?.({ phase: 'separate', progress: p }), signal);
+  throwIfAborted(signal);
   onProgress?.({ phase: 'analyze', progress: 0 });
 
   const normBands = normalizeBands(raw, rate);
+  throwIfAborted(signal);
 
   const { O, onsets: rhythmOnsets } = detectRhythmOnsets(normBands, raw, rate, 1, groove);
   const kickFrames = rhythmOnsets.filter((o) => o.kick).map((o) => o.frame);
   const tempo = estimateTempo(O, rate, kickFrames);
+  throwIfAborted(signal);
 
   // Real pitch analysis on the actual samples: FFT peak tracking over the
   // full mix for melody/harmony, autocorrelation over the bass stem (FFT
   // bins are far too coarse below ~100 Hz to separate semitones).
   onProgress?.({ phase: 'pitch', progress: 0 });
   const mixChannels = channelArrays(audioBuffer);
-  const pitchFeatures = computePitchFeatures(mixChannels, audioBuffer.sampleRate);
+  const pitchFeatures = await computePitchFeaturesAsync(mixChannels, audioBuffer.sampleRate, { signal });
+  throwIfAborted(signal);
 
   const melodyLane = extractPseudoLane(normBands, rate, {
     bandIndices: [2, 3, 4], pitchLo: 60, pitchHi: 96, role: Role.MELODY, onsetThreshold: 1,
@@ -198,7 +207,7 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
     const voters = userStems.map(({ name, buffer }) => ({
       name,
       lane: laneForStemName(name),
-      env: activityEnvelope(channelArrays(buffer), buffer.sampleRate, rate),
+      env: activityEnvelope(channelArrays(buffer), buffer.sampleRate, rate, signal),
     }));
     delegateByStemActivity(timeline, voters, rate);
     stemsSummary = voters.map(({ name, lane }) => ({ name, lane }));
@@ -225,6 +234,7 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
       }));
     }
   }
+  throwIfAborted(signal);
   sortNoteEvents(timeline);
 
   // EnergyCurves must carry the song's TRUE relative loudness, not
@@ -286,6 +296,7 @@ export async function audioToTimeline(audioBuffer, { onProgress = null, userStem
     minGapPoints: pacing.minGapPoints,
     maxCuts: pacing.maxCuts,
   });
+  throwIfAborted(signal);
 
   onProgress?.({ phase: 'done', progress: 1 });
 

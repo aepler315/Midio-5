@@ -5,6 +5,10 @@ import vm from 'node:vm';
 import * as cache from '../src/audio/AnalysisCache.js';
 import { fingerprintBuffer } from '../src/audio/SongFingerprint.js';
 import { GrooveFingerprint } from '../src/sim/GrooveFingerprint.js';
+import {
+  AUDIO_LOAD_LIMITS, accumulateDecodedAudioBytes, accumulateDecodedByteLength, decodedAudioByteLength,
+  accumulateEncodedAudioBytes, validateAudioFiles, validateDecodedAudioBuffer, validateDecodedByteLength,
+} from '../src/audio/loadLimits.js';
 
 // Execute the real upload orchestrator with browser/audio boundaries replaced.
 // Analysis/cache identity remain real; no browser is needed to test ownership.
@@ -17,13 +21,17 @@ function recording(hz = 440) {
 }
 function harness() {
   const mix = recording();
+  const encoded = new ArrayBuffer(1024);
   const keys = [], errors = [];
   const context = vm.createContext({
     ...cache, fingerprintBuffer, GrooveFingerprint,
+    AUDIO_LOAD_LIMITS, accumulateDecodedAudioBytes, accumulateDecodedByteLength, decodedAudioByteLength,
+    accumulateEncodedAudioBytes, validateAudioFiles, validateDecodedAudioBuffer, validateDecodedByteLength,
+    AbortController,
     loadGen: 0, groove: new GrooveFingerprint(), lyricsDisabled: true,
     console, bootAudio: async () => {}, showProgress() {},
     showErrorBanner: (error) => errors.push(error),
-    audioEngine: { playing: true, decodeFile: async (value) => value },
+    audioEngine: { playing: true, decodeFile: async () => mix },
     stopTimeline() { context.audioEngine.playing = false; context.stopped = true; },
     stopTitleBackdrop() {}, stopWorldPreview() {}, closeWorldChooser() {}, pendingWorldStart: {},
     worldSelectEl: element(), progressEl: element(), loaderEl: element(), hudEl: element(),
@@ -39,7 +47,7 @@ function harness() {
   });
   vm.runInContext(loadSource, context);
   const load = async (names = ['mix.wav']) => {
-    await context.loadAudioFiles(names.map((name) => ({ name, arrayBuffer: async () => mix })));
+    await context.loadAudioFiles(names.map((name) => ({ name, arrayBuffer: async () => encoded })));
     assert.deepEqual(errors, []);
     return keys.at(-1);
   };
@@ -82,7 +90,8 @@ test('low-information audio bypasses cache lookup and still reaches analysis', a
   context.audioToTimeline = async () => { analyzed = true; return { fromBundle: true }; };
   const silence = recording();
   silence.getChannelData = () => new Float32Array(silence.length);
-  await context.loadAudioFiles([{ name: 'silence.wav', arrayBuffer: async () => silence }]);
+  context.audioEngine.decodeFile = async () => silence;
+  await context.loadAudioFiles([{ name: 'silence.wav', arrayBuffer: async () => new ArrayBuffer(1024) }]);
   assert.equal(analyzed, true);
   assert.deepEqual(keys, []);
 });
@@ -93,11 +102,28 @@ test('a superseded load awaiting audio initialization never starts decoding', as
   context.bootAudio = () => new Promise((resolve) => { release = resolve; });
   let decoded = false;
   context.audioEngine.decodeFile = async () => { decoded = true; };
-  const pending = context.loadAudioFiles([{ name: 'old.wav', arrayBuffer: async () => recording() }]);
+  const pending = context.loadAudioFiles([{ name: 'old.wav', arrayBuffer: async () => new ArrayBuffer(1024) }]);
   context.loadGen++;
   release();
   await pending;
   assert.equal(decoded, false);
+});
+
+test('a superseded audio analysis receives an abort signal', async () => {
+  const { context } = harness();
+  let analysisStarted;
+  const analysisSignal = new Promise((resolve) => { analysisStarted = resolve; });
+  context.unpackBundle = () => null;
+  context.audioToTimeline = async (_buffer, { signal }) => {
+    analysisStarted(signal);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return { fromBundle: true };
+  };
+  const first = context.loadAudioFiles([{ name: 'old.wav', arrayBuffer: async () => new ArrayBuffer(1024) }]);
+  const signal = await analysisSignal;
+  const second = context.loadAudioFiles([{ name: 'new.wav', arrayBuffer: async () => new ArrayBuffer(1024) }]);
+  await Promise.all([first, second]);
+  assert.equal(signal.aborted, true);
 });
 
 test('phase-sensitive analysis never shares a cache entry with an in-phase recording', () => {

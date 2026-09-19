@@ -3,6 +3,7 @@
 // Because we query ctx.currentTime fresh every rAF frame rather than caching
 // a performance.now()-based mirror, there is no drift to IIR-correct here.
 import { outputLatencyMs } from '../core/ChoreoClock.js';
+import { throwIfAborted } from './loadLimits.js';
 
 export class AudioEngine {
   constructor() {
@@ -117,8 +118,11 @@ export class AudioEngine {
     }
   }
 
-  decodeFile(arrayBuffer) {
-    return this.ctx.decodeAudioData(arrayBuffer);
+  async decodeFile(arrayBuffer, { signal = null } = {}) {
+    throwIfAborted(signal);
+    const decoded = await this.ctx.decodeAudioData(arrayBuffer);
+    throwIfAborted(signal);
+    return decoded;
   }
 
   /** Plays a decoded AudioBuffer and adopts it as the master clock's zero point. */

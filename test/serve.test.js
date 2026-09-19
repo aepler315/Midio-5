@@ -36,6 +36,10 @@ test('development server rejects traversal, malformed URLs, and arbitrary downlo
   try {
     await waitForServer(baseUrl);
     assert.equal((await fetch(baseUrl)).status, 200);
+    const crossOrigin = await fetch(`${baseUrl}/api/soulseek/status`, {
+      headers: { Origin: 'https://evil.example' },
+    });
+    assert.equal(crossOrigin.status, 401);
     assert.equal((await fetch(`${baseUrl}/%ZZ`)).status, 400);
     assert.equal((await fetch(`${baseUrl}/..%2fpackage.json`)).status, 400);
     assert.equal((await fetch(`${baseUrl}/package.json`)).status, 404);
@@ -59,4 +63,38 @@ test('development server rejects traversal, malformed URLs, and arbitrary downlo
     child.kill('SIGTERM');
     if (child.exitCode === null && child.signalCode === null) await new Promise((resolve) => child.once('exit', resolve));
   }
+});
+
+test('Soulseek bridge requires the configured token even on loopback', async (t) => {
+  const port = 20_000 + Math.floor(Math.random() * 20_000);
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(process.execPath, [serverFile, String(port)], {
+    cwd: root,
+    env: { ...process.env, HOST: '127.0.0.1', MIDIO_BRIDGE_TOKEN: 'test-bridge-token' },
+    stdio: 'ignore',
+  });
+  try {
+    await waitForServer(baseUrl);
+    const denied = await fetch(`${baseUrl}/api/soulseek/status`);
+    assert.equal(denied.status, 401);
+    const allowed = await fetch(`${baseUrl}/api/soulseek/status`, {
+      headers: { 'X-Midio-Bridge-Token': 'test-bridge-token' },
+    });
+    assert.notEqual(allowed.status, 401);
+  } finally {
+    child.kill('SIGTERM');
+    if (child.exitCode === null && child.signalCode === null) await new Promise((resolve) => child.once('exit', resolve));
+  }
+});
+
+test('development server refuses a non-loopback bind without a bridge token', async (t) => {
+  const port = 20_000 + Math.floor(Math.random() * 20_000);
+  const child = spawn(process.execPath, [serverFile, String(port)], {
+    cwd: root,
+    env: { ...process.env, HOST: '0.0.0.0', MIDIO_BRIDGE_TOKEN: '' },
+    stdio: 'ignore',
+  });
+  t.after(() => child.kill('SIGTERM'));
+  const exit = await new Promise((resolve) => child.once('exit', (code) => resolve(code)));
+  assert.notEqual(exit, 0);
 });
