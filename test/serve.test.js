@@ -87,6 +87,34 @@ test('Soulseek bridge requires the configured token even on loopback', async (t)
   }
 });
 
+test('tokenless bridge rejects untrusted Host headers and never returns configured credentials', async (t) => {
+  const port = 20_000 + Math.floor(Math.random() * 20_000);
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(process.execPath, [serverFile, String(port)], {
+    cwd: root,
+    env: { ...process.env, HOST: '127.0.0.1', SLSK_USER: 'synthetic-user', SLSK_PASS: 'synthetic-password' },
+    stdio: 'ignore',
+  });
+  try {
+    await waitForServer(baseUrl);
+    const rebinding = await fetch(`${baseUrl}/api/soulseek/status`, {
+      headers: { Host: `audit.invalid:${port}`, Origin: `http://audit.invalid:${port}` },
+    });
+    assert.equal(rebinding.status, 401);
+    const config = await fetch(`${baseUrl}/api/soulseek/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'auto' }),
+    });
+    assert.equal(config.status, 200);
+    const body = await config.text();
+    assert.doesNotMatch(body, /synthetic-password/);
+  } finally {
+    child.kill('SIGTERM');
+    if (child.exitCode === null && child.signalCode === null) await new Promise((resolve) => child.once('exit', resolve));
+  }
+});
+
 test('development server refuses a non-loopback bind without a bridge token', async (t) => {
   const port = 20_000 + Math.floor(Math.random() * 20_000);
   const child = spawn(process.execPath, [serverFile, String(port)], {

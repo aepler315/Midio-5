@@ -8,7 +8,7 @@ const dir = dirname(fileURLToPath(import.meta.url));
 const server = readFileSync(join(dir, "server.ts"), "utf8");
 
 test("production auth wiring calls resolveAuthSecret instead of preview fallback", () => {
-  assert.match(server, /import \{ resolveAuthSecret \} from \"\.\/secret\"/);
+  assert.match(server, /import \{ resolveAuthSecret \} from "\.\/secret"/);
   assert.match(server, /secret:\s*resolveAuthSecret\(/);
   assert.doesNotMatch(
     server,

@@ -8,7 +8,7 @@
 // document, performance, the audio graph -- comes from an injected scope.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SongRecorder } from '../src/render/SongRecorder.js';
+import { MAX_RECORDING_BYTES, SongRecorder } from '../src/render/SongRecorder.js';
 import { presetById, STAGE_W, STAGE_H } from '../src/render/VideoExport.js';
 
 const H264 = 'video/mp4;codecs="avc1.42E01E,mp4a.40.2"';
@@ -261,6 +261,16 @@ test('an unknown preset records at the default rather than 0x0', () => {
   const rec = new SongRecorder({ stage, scope: fakeScope() });
   assert.equal(rec.start({ presetId: 'nonsense' }), true);
   assert.equal(rec._canvas.width, presetById('720p').width);
+});
+
+test('recording finalizes before retaining chunks beyond the byte budget', () => {
+  const scope = fakeScope({ chunkOnStart: false });
+  const rec = new SongRecorder({ stage, scope });
+  assert.equal(rec.start(), true);
+  scope.recorders[0].ondataavailable({ data: { size: MAX_RECORDING_BYTES + 1 } });
+  assert.equal(rec.bytes, 0);
+  assert.match(rec.error, /512 MB export limit/);
+  assert.equal(rec.recording, false);
 });
 
 test('start is not re-entrant and frames outside a recording are ignored', async () => {

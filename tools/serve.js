@@ -32,6 +32,15 @@ function isLoopbackHost(host) {
   return normalized === 'localhost' || isLoopbackAddress(normalized);
 }
 
+function validLoopbackRequestHost(host) {
+  try {
+    const url = new URL(`http://${String(host || '').trim()}`);
+    return !url.username && !url.password && isLoopbackHost(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function sameSecret(actual, expected) {
   const actualBytes = Buffer.from(String(actual || ''));
   const expectedBytes = Buffer.from(expected);
@@ -39,10 +48,12 @@ function sameSecret(actual, expected) {
 }
 
 function sameOriginRequest(req) {
+  const host = String(req.headers.host || '').trim();
+  if (!validLoopbackRequestHost(host)) return false;
   const origin = String(req.headers.origin || '').trim();
   if (!origin) return true;
   try {
-    return new URL(origin).origin === `http://${req.headers.host}`;
+    return new URL(origin).origin === `http://${host}`;
   } catch {
     return false;
   }
@@ -58,7 +69,11 @@ function bridgeRequestAuthorized(req) {
   // requests to 127.0.0.1 and, for simple JSON content types, avoid CORS
   // preflight. Require the local app's exact origin unless an operator has
   // deliberately configured a bridge token for a non-browser client.
-  if (!BRIDGE_TOKEN && !sameOriginRequest(req)) return false;
+  if (!BRIDGE_TOKEN && (
+    !sameOriginRequest(req)
+    || req.headers['x-forwarded-host']
+    || req.headers.forwarded
+  )) return false;
   const authorization = String(req.headers.authorization || '');
   const presented = String(
     req.headers['x-midio-bridge-token']
@@ -279,8 +294,8 @@ async function handleSoulseekRoute(req, res, reqPath) {
     if (req.method === 'POST') {
       try {
         const body = await readJsonBody(req);
-        const status = await setConfig(body || {});
-        sendJson(res, 200, { ok: true, ...status, ...(await getStatus()) });
+        await setConfig(body || {});
+        sendJson(res, 200, { ok: true, ...(await getStatus()) });
       } catch (err) {
         sendJson(res, 400, { error: err.message || String(err) });
       }

@@ -32,6 +32,7 @@
  */
 import { betterAuth } from "better-auth";
 import { bearer, genericOAuth } from "better-auth/plugins";
+import { resolveAuthSecret } from "./secret";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { getCookie } from "@tanstack/react-start/server";
 import { randomBytes } from "node:crypto";
@@ -175,9 +176,9 @@ const grokOAuthPlugin = authConfigured
 
 export const auth = betterAuth({
   baseURL,
-  // Deployed apps inject BETTER_AUTH_SECRET. Preview: process-stable secret on
-  // globalThis so HMR doesn't invalidate PGLite-backed sessions (see above).
-  secret: env("BETTER_AUTH_SECRET") ?? previewAuthSecret(),
+  // Persistent deployments must configure a stable signing/encryption secret.
+  // Ephemeral preview retains its process-stable HMR-safe fallback.
+  secret: resolveAuthSecret(process.env, previewAuthSecret),
   database,
 
   // CSRF / origin check for credentialed auth POSTs (email sign-up/sign-in, …).

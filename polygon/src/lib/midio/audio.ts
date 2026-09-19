@@ -120,14 +120,10 @@ export function planSchedule(state: ScheduleState) {
   const beat = 60 / state.bpm;
   const look = state.look ?? LOOKAHEAD_SEC;
   const maxBeats = state.maxBeats ?? MAX_SCHEDULED_BEATS;
-  let next = state.nextKickAudio;
-  let index = state.beatIndex;
-  let skipped = 0;
-  while (next < state.now) {
-    next += beat;
-    index += 1;
-    skipped += 1;
-  }
+  const elapsed = Math.max(0, state.now - state.nextKickAudio);
+  const skipped = elapsed > 0 ? Math.ceil(elapsed / beat - 1e-12) : 0;
+  let next = state.nextKickAudio + skipped * beat;
+  let index = state.beatIndex + skipped;
   const times: number[] = [];
   const indices: number[] = [];
   while (next < state.now + look && times.length < maxBeats) {
@@ -198,6 +194,7 @@ export function skipStaleBeats(a: AudioEngine, now = a.ctx.currentTime) {
   });
   a.nextKickAudio = planned.nextKickAudio;
   a.beatIndex = planned.beatIndex;
+  a.kickQueue = a.kickQueue.filter((when) => when >= now - 0.012);
   return planned.skipped;
 }
 
