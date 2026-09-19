@@ -13,6 +13,7 @@ export interface AudioEngine {
   nextKickAudio: number;
   patternStart: number;
   beatIndex: number;
+  hidden: boolean;
 }
 
 function envGain(ctx: AudioContext, dest: AudioNode, peak: number, attack: number, decay: number) {
@@ -101,6 +102,43 @@ function pad(ctx: AudioContext, dest: AudioNode, when: number, freqs: number[]) 
 
 const BASS_DEGREES = [55, 55, 73.4, 82.4, 55, 49, 73.4, 82.4];
 
+export const LOOKAHEAD_SEC = 0.55;
+export const MAX_SCHEDULED_BEATS = 8;
+
+export type ScheduleState = {
+  now: number;
+  nextKickAudio: number;
+  beatIndex: number;
+  bpm: number;
+  look?: number;
+  maxBeats?: number;
+};
+
+/** Advance the beat cursor past audio-clock time that already elapsed.
+ *  Phase is preserved: nextKickAudio stays on the original grid. */
+export function planSchedule(state: ScheduleState) {
+  const beat = 60 / state.bpm;
+  const look = state.look ?? LOOKAHEAD_SEC;
+  const maxBeats = state.maxBeats ?? MAX_SCHEDULED_BEATS;
+  let next = state.nextKickAudio;
+  let index = state.beatIndex;
+  let skipped = 0;
+  while (next < state.now) {
+    next += beat;
+    index += 1;
+    skipped += 1;
+  }
+  const times: number[] = [];
+  const indices: number[] = [];
+  while (next < state.now + look && times.length < maxBeats) {
+    times.push(next);
+    indices.push(index);
+    next += beat;
+    index += 1;
+  }
+  return { nextKickAudio: next, beatIndex: index, skipped, times, indices };
+}
+
 export function createAudio(): AudioEngine {
   const ctx = new AudioContext({ latencyHint: "interactive" });
   const master = ctx.createGain();
@@ -131,6 +169,7 @@ export function createAudio(): AudioEngine {
     nextKickAudio: 0,
     patternStart: 0,
     beatIndex: 0,
+    hidden: false,
   };
 }
 
@@ -142,20 +181,50 @@ export function startTransport(a: AudioEngine) {
   unlockAudio(a);
   if (a.started) return;
   a.started = true;
+  a.hidden = false;
   a.patternStart = a.ctx.currentTime + 0.08;
   a.nextKickAudio = a.patternStart;
   a.beatIndex = 0;
   scheduleAhead(a);
 }
 
-function scheduleAhead(a: AudioEngine) {
+export function skipStaleBeats(a: AudioEngine, now = a.ctx.currentTime) {
+  const planned = planSchedule({
+    now,
+    nextKickAudio: a.nextKickAudio,
+    beatIndex: a.beatIndex,
+    bpm: a.bpm,
+    maxBeats: 0,
+  });
+  a.nextKickAudio = planned.nextKickAudio;
+  a.beatIndex = planned.beatIndex;
+  return planned.skipped;
+}
+
+export function hideTransport(a: AudioEngine) {
+  a.hidden = true;
+}
+
+export function resumeTransport(a: AudioEngine) {
+  a.hidden = false;
+  unlockAudio(a);
   if (!a.started) return;
+  skipStaleBeats(a);
+  scheduleAhead(a);
+}
+
+function scheduleAhead(a: AudioEngine) {
+  if (!a.started || a.hidden) return;
   const ctx = a.ctx;
-  const look = 0.55;
-  const beat = 60 / a.bpm;
-  while (a.nextKickAudio < ctx.currentTime + look) {
-    const when = a.nextKickAudio;
-    const i = a.beatIndex;
+  const planned = planSchedule({
+    now: ctx.currentTime,
+    nextKickAudio: a.nextKickAudio,
+    beatIndex: a.beatIndex,
+    bpm: a.bpm,
+  });
+  for (let n = 0; n < planned.times.length; n++) {
+    const when = planned.times[n]!;
+    const i = planned.indices[n]!;
     const isKick = i % 2 === 0 || i % 8 === 5;
     if (isKick) {
       kick(ctx, a.music, when);
@@ -167,9 +236,9 @@ function scheduleAhead(a: AudioEngine) {
       bass(ctx, a.music, when, deg);
     }
     if (i % 16 === 0) pad(ctx, a.music, when, [220, 277, 330]);
-    a.beatIndex++;
-    a.nextKickAudio += beat;
   }
+  a.nextKickAudio = planned.nextKickAudio;
+  a.beatIndex = planned.beatIndex;
 }
 
 export function pollAudio(a: AudioEngine, nowMs: number) {
