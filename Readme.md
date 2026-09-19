@@ -23,7 +23,8 @@ Open [localhost:8080](http://localhost:8080). The server binds to
 `127.0.0.1` by default. Set `HOST=0.0.0.0` only when you intentionally need
 LAN access, or set `PORT` to change the port.
 
-1. Drop an audio file anywhere on the page, or choose **Browse files**.
+1. Drop an audio file anywhere on the page, choose **Browse files**, or
+   pick a music folder once and play from your library (see below).
    The picker accepts MP3, WAV, FLAC, OGG, M4A, AAC, and other audio formats
    your browser can decode.
 2. Wait while the recording is pulled apart: frequency bands, onsets,
@@ -48,6 +49,27 @@ longer part of the page. MIDI and synthesis modules and the local
 Soulseek/free-music bridge remain in the repository for internal or legacy
 use; Docker and a Soulseek account are not required to play uploaded audio.
 
+## Your music library
+
+**Use a music folder** remembers a folder you choose, so a returning visit
+opens on your own music instead of an empty dropzone. Nothing is uploaded
+and nothing is copied: the browser hands the page a durable reference to a
+folder already on your disk, and a file is read only when you play it.
+
+The library sorts by title, artist, album, folder, date added, last played,
+play count or length; filters as you type (`artist:radiohead`,
+`folder:"kid a"`, or just words, which also match the path); and switches
+between one flat list and the folders as they are on disk. **Auto-tag**
+fills in titles and artists for tracks that only have a filename, using the
+free MusicBrainz API at the one request per second it asks for.
+
+Chromium-based browsers can reopen the folder by themselves. Firefox and
+Safari cannot, so there the listing is remembered and the folder is picked
+again once per visit before anything plays from it. Where the browser has no
+storage at all, there is simply no library and dropping a song still works.
+
+See [docs/library.md](docs/library.md) for the details.
+
 ## Controls and preferences
 
 | Control | Effect |
@@ -55,6 +77,8 @@ use; Docker and a Soulseek account are not required to play uploaded audio.
 | Pause / Resume | Freeze or continue the performance and audio together |
 | Stop | Stop playback and return to the upload screen |
 | Fullscreen button | Expand the performance |
+| **Use a music folder** / **Change folder** | Choose the folder your library reads from; remembered between sessions |
+| **Browse library** | Open the library: search, sort, folder view, auto-tag. `Esc` closes it |
 | **Timed lyric grounding: on/off** | Enable or skip lyric lookup; remembered between sessions |
 | Stage selector | Choose the render resolution, including 8-bit and 8-bit intensive presets |
 | Frame-rate selector | Cap rendering at 30 or 60 fps |

@@ -44,6 +44,10 @@ function harness() {
     generateCustomBiomeFromMidi: () => ({}), rememberCustomBiome() {}, paramBus: {},
     muteTimelineSynth: false, lastSongName: '', lastAudioBuffer: null,
     fontRecommender: null, DEV_MODE: false, offerWorldsThenStart() {},
+    // A load started from the music library reports the decoded duration
+    // back to it -- the one fact a folder scan cannot know.
+    playingFromLibrary: null,
+    musicLibrary: { played: [], async notePlayed(track, seconds) { this.played.push([track, seconds]); } },
   });
   vm.runInContext(loadSource, context);
   const load = async (names = ['mix.wav']) => {
@@ -60,6 +64,25 @@ test('accepting an upload stops the old performance before audio initialization 
   context.loadAudioFiles([{ name: 'new.wav' }]);
   assert.equal(context.audioEngine.playing, false);
   assert.equal(context.pendingWorldStart, null);
+});
+
+test('a library play reports its decoded duration back, exactly once', async () => {
+  const { context, load } = harness();
+  const track = { key: 'root\u0000a.wav', path: 'a.wav' };
+  context.playingFromLibrary = track;
+  await load();
+  assert.deepEqual(context.musicLibrary.played, [[track, 2]]);
+  // The claim is consumed, so a later drop that did not come from the
+  // library cannot be credited to the last track played from it.
+  assert.equal(context.playingFromLibrary, null);
+  await load();
+  assert.equal(context.musicLibrary.played.length, 1);
+});
+
+test('a drop that did not come from the library tells it nothing', async () => {
+  const { context, load } = harness();
+  await load();
+  assert.deepEqual(context.musicLibrary.played, []);
 });
 
 test('cache identity changes when the same stem audio is renamed for a different character', async () => {

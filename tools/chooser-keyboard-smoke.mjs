@@ -41,8 +41,15 @@ try {
       document.getElementById('worldSelect').contains(document.activeElement));
 
     await run('modal-focus', async page => {
+      // #stageRes now sits behind the title screen's settings disclosure,
+      // and focus() on a display:none control is a silent no-op -- which
+      // would leave the inertness assertion below passing without testing
+      // anything. Open the disclosure first so it is a real background
+      // control again.
+      await page.locator('#titleSettings').evaluate((node) => { node.open = true; });
       await open(page);
       assert.equal(await focusedInside(page), true, 'opening must move focus into the chooser');
+      assert.equal(await page.locator('#stageRes').isVisible(), true, 'the background control must really be focusable');
       await page.locator('#stageRes').evaluate(el => el.focus());
       assert.equal(await focusedInside(page), true, 'background controls must be inert');
       await page.locator('#worldSelectBack').focus();
