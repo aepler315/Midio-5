@@ -87,6 +87,32 @@ export function projectRoot() {
   return dirname(dirname(fileURLToPath(import.meta.url)));
 }
 
+/** npm exposes package binaries as `.cmd` shims on Windows, while Node's
+ * `spawn()` does not perform the shell lookup that an npm script does. Keep
+ * the wrapper usable from both native Windows and POSIX CI without enabling a
+ * shell for user-controlled arguments. */
+export function executableForPlatform(command, platform = process.platform) {
+  if (
+    platform === "win32" &&
+    !/\.(?:cmd|com|exe)$/i.test(command) &&
+    !command.includes("/") &&
+    !command.includes("\\")
+  ) {
+    return `${command}.cmd`;
+  }
+  return command;
+}
+
+export function childInvocation(command, args, platform = process.platform, root = projectRoot()) {
+  if (platform === "win32" && command === "vite") {
+    return {
+      command: process.execPath,
+      args: [join(root, "node_modules", "vite", "bin", "vite.js"), ...args],
+    };
+  }
+  return { command: executableForPlatform(command, platform), args };
+}
+
 /**
  * Whether `moduleUrl` is the script node was asked to run.
  *
@@ -111,7 +137,8 @@ function main(argv) {
     process.exit(2);
   }
   const env = mergeAppEnv(readAppEnv(projectRoot()), process.env);
-  const child = spawn(command, args, { stdio: "inherit", env });
+  const invocation = childInvocation(command, args);
+  const child = spawn(invocation.command, invocation.args, { stdio: "inherit", env });
   // The dev server is long-running and is stopped by signalling this wrapper.
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => child.kill(signal));

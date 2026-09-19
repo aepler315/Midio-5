@@ -21,16 +21,9 @@ web:
   https:
     disabled: true
   authentication:
-    # Web UI login for slskd itself (local only)
-    username: midio
-    password: midio
-    disabled: false
-    api_keys:
-      # Fixed local key — Midio knows this. Not a secret for public internet.
-      midio:
-        key: midio-local-dev-key
-        role: administrator
-        cidr: 127.0.0.1/32,::1/128
+    # The HTTP API is published only on loopback by docker-compose. Operators
+    # who expose slskd separately must configure their own authentication.
+    disabled: true
 
 soulseek:
   # Prefer env: SLSKD_SLSK_USERNAME / SLSKD_SLSK_PASSWORD (set via compose)

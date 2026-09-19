@@ -10,6 +10,7 @@ import {
 } from './song-meta.mjs';
 
 const UA = 'Midio-FreeMusic/1.0 (+https://github.com/aepler315/Midio-5)';
+export const MAX_DOWNLOAD_BYTES = 256 * 1024 * 1024;
 
 /** @type {Array<object>} */
 export const DEMO_CATALOG = [
@@ -191,6 +192,39 @@ function parseRuntime(runtime) {
   return null;
 }
 
+/** Read a remote audio response without allocating an unbounded buffer. */
+export async function readBoundedDownload(res, label = 'audio download') {
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_DOWNLOAD_BYTES) {
+    throw new Error(`${label} exceeds the ${MAX_DOWNLOAD_BYTES} byte limit`);
+  }
+  if (!res.body?.getReader) {
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.length > MAX_DOWNLOAD_BYTES) {
+      throw new Error(`${label} exceeds the ${MAX_DOWNLOAD_BYTES} byte limit`);
+    }
+    return buffer;
+  }
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_DOWNLOAD_BYTES) {
+        await reader.cancel().catch(() => {});
+        throw new Error(`${label} exceeds the ${MAX_DOWNLOAD_BYTES} byte limit`);
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, total);
+}
+
 /** Resolve a playable MP3 URL for an Archive.org item. */
 export async function resolveArchiveDownload(item) {
   const id = item.iaId || (item.id && String(item.id).startsWith('ia:') ? String(item.id).slice(3) : null);
@@ -217,7 +251,7 @@ export async function resolveArchiveDownload(item) {
     signal: AbortSignal.timeout(120_000),
   });
   if (!res.ok) throw new Error(`Archive download failed (${res.status})`);
-  const buffer = Buffer.from(await res.arrayBuffer());
+  const buffer = await readBoundedDownload(res, 'Archive download');
   if (buffer.length < 1000) throw new Error('Archive download too small');
   return {
     buffer,
@@ -240,7 +274,7 @@ export async function downloadFreeTrack(item, demoCatalog = DEMO_CATALOG) {
       signal: AbortSignal.timeout(60_000),
     });
     if (!res.ok) throw new Error(`Free track download failed (${res.status})`);
-    const buffer = Buffer.from(await res.arrayBuffer());
+    const buffer = await readBoundedDownload(res, 'Free track download');
     if (buffer.length < 1000) throw new Error('Free track too small');
     const name = (track.filename || item.filename || 'track.mp3').split('/').pop();
     return { buffer, filename: name, contentType: 'audio/mpeg' };

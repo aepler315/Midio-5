@@ -13,3 +13,13 @@ cd polygon
 npm install
 npm run dev
 ```
+
+Authentication is fail-closed by default. For a deliberately isolated local
+development session without a database or sign-in provider, opt into the
+synthetic user explicitly in the shell that starts the app:
+
+```sh
+VITE_AUTH_ENABLED=false VITE_ALLOW_SHARED_DEV_USER=true MIDIO_ALLOW_SHARED_DEV_USER=true npm run dev
+```
+
+Never set that fallback when DATABASE_URL points at shared or persistent data.

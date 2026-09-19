@@ -8,6 +8,23 @@
 const STORAGE_KEY = 'midio.soulseek.config';
 const FETCH_TIMEOUT_MS = 10000;
 
+/** Return only non-secret preferences suitable for persistent browser storage. */
+export function configForStorage(cfg = {}) {
+  const mode = ['free', 'direct', 'slskd'].includes(cfg.mode) ? cfg.mode : 'free';
+  const safe = { mode };
+  if (cfg.slskdUrl) {
+    try {
+      const url = new URL(String(cfg.slskdUrl));
+      if (!url.username && !url.password && !url.search && !url.hash) {
+        safe.slskdUrl = url.toString().replace(/\/$/, '');
+      }
+    } catch {
+      /* Do not preserve malformed or credential-bearing legacy URLs. */
+    }
+  }
+  return safe;
+}
+
 export class SoulseekSearch {
   /**
    * @param {object} opts
@@ -91,12 +108,9 @@ export class SoulseekSearch {
       }
       if (this.els.modeSelect) this.els.modeSelect.value = cfg.mode || 'free';
       if (this.els.slskdUrl && cfg.slskdUrl) this.els.slskdUrl.value = cfg.slskdUrl;
-      if (this.els.slskdKey && cfg.slskdKey) this.els.slskdKey.value = cfg.slskdKey;
-      if (this.els.slskUser && cfg.slskUser) this.els.slskUser.value = cfg.slskUser;
-      if (this.els.slskPass && cfg.slskPass) this.els.slskPass.value = cfg.slskPass;
-      if ((cfg.slskUser && cfg.slskPass) || cfg.mode === 'slskd' || cfg.mode === 'direct') {
-        this._pushConfig(cfg).catch(() => {});
-      }
+      // Deliberately do not restore passwords, API keys, or account names.
+      // Rewrite old localStorage values immediately so an upgrade removes them.
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(configForStorage(cfg)));
     } catch {
       /* ignore */
     }
@@ -124,7 +138,7 @@ export class SoulseekSearch {
       cfg = {
         mode: 'slskd',
         slskdUrl: this.els.slskdUrl?.value?.trim() || 'http://127.0.0.1:5030',
-        // blank key → server uses bundled midio-local-dev-key
+        // blank key → server uses the loopback-only no-key configuration
         slskdKey: this.els.slskdKey?.value?.trim() || '',
       };
     } else if (user && pass) {
@@ -140,8 +154,7 @@ export class SoulseekSearch {
     try {
       this._setStatusLine(cfg.mode === 'free' ? 'Switching to free music…' : 'Connecting…');
       const data = await this._pushConfig(cfg);
-      // Don't persist password in plain text if user prefers — still do for convenience in this app
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(configForStorage(cfg)));
       this.status = data;
       this._renderBadge();
       this._setStatusLine(data.note || 'Connected.');

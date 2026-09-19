@@ -29,13 +29,14 @@ export const authClient = createAuthClient({
 });
 
 /**
- * True when sign-in UI should be shown — i.e. whenever `VITE_AUTH_ENABLED` is
- * not `"false"`. The shipped template sets it to `"false"`
- * (`.grok/app-env.json`), which selects the dev user (see `use-current-user`);
- * with the key removed, sign-in is real in preview (baked preview client) and
- * when deployed (injected per-app client).
+ * True when sign-in UI should be shown. A disabled-auth build only uses the
+ * shared dev user when that behavior is explicitly enabled through
+ * `VITE_ALLOW_SHARED_DEV_USER`; otherwise the server fails closed and the UI
+ * must not pretend that a synthetic user is authenticated.
  */
-export const authEnabled = import.meta.env.VITE_AUTH_ENABLED !== "false";
+const sharedDevUserEnabled = import.meta.env.VITE_ALLOW_SHARED_DEV_USER === "true";
+export const authEnabled =
+  import.meta.env.VITE_AUTH_ENABLED !== "false" || !sharedDevUserEnabled;
 
 /** The upstream providers to render sign-in buttons for. */
 export { GROK_PROVIDERS };

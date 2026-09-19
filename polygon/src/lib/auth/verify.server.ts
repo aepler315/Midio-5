@@ -26,8 +26,18 @@ if (databaseConfigured && !authConfigured) {
   );
 }
 
-/** Dev fallback user id, used only when auth is disabled (VITE_AUTH_ENABLED=false). */
+/** Dev fallback user id, used only when explicitly enabled for local development. */
 export const DEV_USER_ID = "dev-user";
+
+/**
+ * Shared-user mode is an explicit local-development escape hatch, never the
+ * default. It is rejected when a real database is configured because that
+ * would turn every unauthenticated visitor into the same persistent account.
+ */
+export const sharedDevUserAllowed =
+  !databaseConfigured &&
+  (process.env.MIDIO_ALLOW_SHARED_DEV_USER?.trim() === "true" ||
+    process.env.VITE_ALLOW_SHARED_DEV_USER?.trim() === "true");
 
 /**
  * Thrown by `requireUserId` when the caller has no valid session. Carries
@@ -79,7 +89,8 @@ export async function getSessionUser(
  * - Auth disabled (`VITE_AUTH_ENABLED=false`) + `DATABASE_URL` set -> throw (fail
  *   closed): one shared dev user on a real database would let every visitor
  *   read/write everyone's rows.
- * - Auth disabled + no database -> the shared dev user id.
+ * - Auth disabled + no database + explicit MIDIO_ALLOW_SHARED_DEV_USER=true ->
+ *   the shared dev user id for local development only.
  */
 export async function requireUserId(bearerToken?: string): Promise<string> {
   if (!authConfigured && !gateIdentityEnabled()) {
@@ -89,7 +100,8 @@ export async function requireUserId(bearerToken?: string): Promise<string> {
           "refusing to fall back to the shared dev user against a real database.",
       );
     }
-    return DEV_USER_ID;
+    if (sharedDevUserAllowed) return DEV_USER_ID;
+    throw new UnauthorizedError();
   }
   const user = await getSessionUser(bearerToken);
   if (!user) throw new UnauthorizedError();

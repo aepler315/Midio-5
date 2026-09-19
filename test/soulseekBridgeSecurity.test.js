@@ -3,8 +3,14 @@ import path from 'node:path';
 import { test } from 'node:test';
 import {
   assertLoopbackSlskdUrl,
+  BUNDLED_SLSKD_KEY,
   pathsInsideDownloads,
+  readBoundedFile,
 } from '../tools/soulseek-bridge.mjs';
+
+test('bundled slskd does not fall back to a repository-shipped API key', () => {
+  assert.equal(BUNDLED_SLSKD_KEY, '');
+});
 
 test('assertLoopbackSlskdUrl accepts only loopback http(s) hosts', () => {
   assert.equal(assertLoopbackSlskdUrl('http://127.0.0.1:5030'), 'http://127.0.0.1:5030');
@@ -13,6 +19,8 @@ test('assertLoopbackSlskdUrl accepts only loopback http(s) hosts', () => {
   assert.throws(() => assertLoopbackSlskdUrl('http://10.0.0.5:5030'), /local/);
   assert.throws(() => assertLoopbackSlskdUrl('http://example.com'), /local/);
   assert.throws(() => assertLoopbackSlskdUrl('file:///etc/passwd'), /http/);
+  assert.throws(() => assertLoopbackSlskdUrl('http://user:pass@127.0.0.1:5030'), /credentials/);
+  assert.throws(() => assertLoopbackSlskdUrl('http://127.0.0.1:5030/?key=secret'), /query/);
   assert.throws(() => assertLoopbackSlskdUrl('not a url'), /not valid/);
 });
 
@@ -35,4 +43,15 @@ test('pathsInsideDownloads never escapes the downloads root', () => {
 
   const abs = pathsInsideDownloads(root, '/etc/passwd');
   assert.deepEqual(abs, [path.join(root, 'passwd')]);
+});
+
+test('local Soulseek reads are bounded independently of a stale file size', async () => {
+  const fs = await import('node:fs/promises');
+  const file = path.join('/tmp', `midio-bounded-${process.pid}-${Date.now()}.bin`);
+  await fs.writeFile(file, Buffer.from('safe'));
+  try {
+    assert.deepEqual([...readBoundedFile(file)], [...Buffer.from('safe')]);
+  } finally {
+    await fs.rm(file, { force: true });
+  }
 });

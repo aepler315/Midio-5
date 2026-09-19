@@ -2,6 +2,7 @@
 // Usage: node tools/serve.js [port]
 // Binds loopback by default. Set HOST=0.0.0.0 only for an intentional LAN preview.
 import http from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +19,58 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.env.PORT || process.argv[2]) || 8080;
 const HOST = process.env.HOST || '127.0.0.1';
+const BRIDGE_TOKEN = process.env.MIDIO_BRIDGE_TOKEN?.trim() || '';
+const MAX_JSON_BODY_BYTES = 1e6;
+
+function isLoopbackAddress(address) {
+  const normalized = String(address || '').replace(/^::ffff:/i, '');
+  return normalized === '::1' || normalized === '127.0.0.1' || /^127\./.test(normalized);
+}
+
+function isLoopbackHost(host) {
+  const normalized = String(host || '').toLowerCase().replace(/^\[|\]$/g, '');
+  return normalized === 'localhost' || isLoopbackAddress(normalized);
+}
+
+function sameSecret(actual, expected) {
+  const actualBytes = Buffer.from(String(actual || ''));
+  const expectedBytes = Buffer.from(expected);
+  return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
+}
+
+function sameOriginRequest(req) {
+  const origin = String(req.headers.origin || '').trim();
+  if (!origin) return true;
+  try {
+    return new URL(origin).origin === `http://${req.headers.host}`;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The bridge is local-only unless an explicit token is configured. When a
+ * token is configured it is required even for loopback, which also protects
+ * the legacy endpoints from same-origin callers that do not know the token.
+ */
+function bridgeRequestAuthorized(req) {
+  // Loopback is not a browser-origin boundary: an arbitrary website can send
+  // requests to 127.0.0.1 and, for simple JSON content types, avoid CORS
+  // preflight. Require the local app's exact origin unless an operator has
+  // deliberately configured a bridge token for a non-browser client.
+  if (!BRIDGE_TOKEN && !sameOriginRequest(req)) return false;
+  const authorization = String(req.headers.authorization || '');
+  const presented = String(
+    req.headers['x-midio-bridge-token']
+      || (authorization.startsWith('Bearer ') ? authorization.slice(7) : ''),
+  ).trim();
+  if (BRIDGE_TOKEN) return sameSecret(presented, BRIDGE_TOKEN);
+  return isLoopbackAddress(req.socket.remoteAddress);
+}
+
+if (!isLoopbackHost(HOST) && !BRIDGE_TOKEN) {
+  throw new Error('Refusing to bind the development server beyond loopback without MIDIO_BRIDGE_TOKEN');
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -82,7 +135,7 @@ function sendJson(res, status, obj) {
 async function handleApi(req, res, reqPath) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Midio-Bridge-Token, Authorization');
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
@@ -190,11 +243,25 @@ const server = http.createServer((req, res) => {
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (chunk) => { body += chunk; if (body.length > 1e6) req.destroy(); });
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > MAX_JSON_BODY_BYTES) {
+        fail(new Error('Request body too large'));
+        req.destroy();
+      }
+    });
     req.on('end', () => {
+      if (settled) return;
+      settled = true;
       try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error('Invalid JSON body')); }
     });
-    req.on('error', reject);
+    req.on('error', fail);
   });
 }
 
@@ -202,6 +269,10 @@ function readJsonBody(req) {
  *  SoulseekSearch.js): free music with no login, optional bundled slskd or
  *  a direct Soulseek account layered on top via /config. */
 async function handleSoulseekRoute(req, res, reqPath) {
+  if (!bridgeRequestAuthorized(req)) {
+    sendJson(res, 401, { error: 'Soulseek bridge authentication required' });
+    return;
+  }
   const action = reqPath.slice('/api/soulseek/'.length);
 
   if (action === 'config') {

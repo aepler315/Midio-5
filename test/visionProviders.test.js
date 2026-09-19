@@ -47,10 +47,11 @@ test('buildVisionRequest: openai and openrouter share the chat-completions shape
   }
 });
 
-test('buildVisionRequest: gemini appends the model + key to the URL and inlines images', () => {
+test('buildVisionRequest: gemini keeps the API key out of the URL', () => {
   const { url, options } = buildVisionRequest('gemini', BASE);
   assert.ok(url.includes(`${VISION_PROVIDERS.gemini.model}:generateContent`));
-  assert.ok(url.includes('key=sk-test'));
+  assert.ok(!url.includes('key=sk-test'));
+  assert.equal(options.headers['x-goog-api-key'], 'sk-test');
   const body = JSON.parse(options.body);
   const parts = body.contents[0].parts;
   assert.ok(parts[0].text.includes('SYS'));

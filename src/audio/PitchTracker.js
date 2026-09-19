@@ -17,6 +17,7 @@
 // Pure numeric on Float32Arrays -- no DOM/AudioContext -- so node --test
 // can exercise it against synthesized sines directly.
 import { clamp, clamp01 } from '../utils/math.js';
+import { throwIfAborted } from './loadLimits.js';
 
 export const SEMITONE_LO = 36; // C2
 export const SEMITONE_HI = 95; // B6
@@ -92,7 +93,7 @@ export function fft(re, im) {
  *
  * @returns {{ rate: number, frames: Float32Array[], brightness: Float32Array }}
  */
-export function computePitchFeatures(samples, sampleRate, { win = DEFAULT_WIN, hop = DEFAULT_HOP } = {}) {
+function* pitchFeatureFrames(samples, sampleRate, { win = DEFAULT_WIN, hop = DEFAULT_HOP } = {}) {
   const channels = sampleChannels(samples);
   const length = sharedLength(channels);
   const numFrames = Math.max(1, Math.floor((length - win) / hop) + 1);
@@ -154,9 +155,44 @@ export function computePitchFeatures(samples, sampleRate, { win = DEFAULT_WIN, h
       const centroidHz = num / den;
       brightness[f] = clamp01(Math.log2(centroidHz / BRIGHT_LO_HZ) / Math.log2(BRIGHT_HI_HZ / BRIGHT_LO_HZ));
     }
+    yield;
   }
 
   return { rate, frames, brightness };
+}
+
+/** Synchronous compatibility API for callers that already run off the UI path. */
+export function computePitchFeatures(samples, sampleRate, options = {}) {
+  const iterator = pitchFeatureFrames(samples, sampleRate, options);
+  let step = iterator.next();
+  while (!step.done) step = iterator.next();
+  return step.value;
+}
+
+/**
+ * Cooperative pitch analysis for browser uploads. FFT work is yielded back to
+ * the event loop periodically so a second file selection can abort a stale
+ * analysis instead of waiting for the entire recording to finish.
+ */
+export async function computePitchFeaturesAsync(samples, sampleRate, {
+  win = DEFAULT_WIN, hop = DEFAULT_HOP, signal = null, yieldEvery = 4,
+} = {}) {
+  throwIfAborted(signal);
+  const iterator = pitchFeatureFrames(samples, sampleRate, { win, hop });
+  const interval = Math.max(1, Math.floor(yieldEvery) || 1);
+  let frames = 0;
+  let step = iterator.next();
+  while (!step.done) {
+    frames++;
+    throwIfAborted(signal);
+    if (frames % interval === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      throwIfAborted(signal);
+    }
+    step = iterator.next();
+  }
+  throwIfAborted(signal);
+  return step.value;
 }
 
 /** Fold the whole spectrogram (energy-weighted) into a 12-bin chroma histogram. */

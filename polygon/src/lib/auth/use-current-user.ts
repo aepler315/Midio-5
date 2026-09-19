@@ -11,11 +11,12 @@ export type AppUser = {
 };
 
 /**
- * Stable fallback user, used ONLY when auth is disabled
- * (`VITE_AUTH_ENABLED=false`, the shipped default). With auth on, the sandbox
- * live preview does real sign-in via the baked preview client. Its id is
- * `"dev-user"` — the SAME id `verify.server.ts` returns server-side — so per-user
- * rows written in that mode belong to one consistent owner.
+ * Stable fallback user, used ONLY when auth is disabled and
+ * `VITE_ALLOW_SHARED_DEV_USER=true` was explicitly provided for local
+ * development. With auth on, the sandbox live preview does real sign-in via
+ * injected runtime credentials. Its id is `"dev-user"` — the SAME id
+ * `verify.server.ts` returns server-side — so per-user rows written in that
+ * explicitly opted-in mode belong to one consistent owner.
  */
 export const DEV_USER: AppUser = {
   id: "dev-user",
@@ -40,7 +41,8 @@ export type CurrentUserState = {
  *                            signed out (`isPending: false`). Session comes from
  *                            Better Auth `useSession()` → `/api/auth/get-session`
  *                            (cookie when deployed; bearer in live preview).
- *   - Auth disabled (`VITE_AUTH_ENABLED=false`) -> `DEV_USER`, never pending.
+ *   - Explicit shared-user mode (`VITE_AUTH_ENABLED=false` and
+ *     `VITE_ALLOW_SHARED_DEV_USER=true`) -> `DEV_USER`, never pending.
  *
  * Protect a route by waiting out `isPending` before acting on `user` —
  * redirecting on `user: null` alone bounces signed-in visitors to sign-in on
@@ -56,7 +58,6 @@ export type CurrentUserState = {
  */
 export function useCurrentUserState(): CurrentUserState {
   if (!authEnabled) return { user: DEV_USER, isPending: false };
-  // eslint-disable-next-line react-hooks/rules-of-hooks -- authEnabled is constant for the app's lifetime
   const { data, isPending } = authClient.useSession();
   const user = data?.user;
   return {

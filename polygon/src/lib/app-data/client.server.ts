@@ -211,7 +211,9 @@ function tokenIdentityKey(token: string): string {
             .digest("base64url");
         }
       }
-    } catch {}
+    } catch {
+      // Malformed or non-JWT tokens still receive a bounded hash below.
+    }
   }
   return createHash("sha256").update(token).digest("base64url");
 }

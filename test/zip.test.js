@@ -51,3 +51,22 @@ test('extractZip handles nested paths in filenames', async () => {
   assert.ok(files.has('subdir/nested.sf2'));
   assert.deepEqual([...files.get('subdir/nested.sf2')], [...fileA]);
 });
+
+test('extractZip rejects archives over the configured entry budget', async () => {
+  const zip = buildStoredZip([
+    { name: 'one.sf2', data: fileA },
+    { name: 'two.sf2', data: fileB },
+  ]);
+  await assert.rejects(
+    () => extractZip(zip, { maxEntries: 1 }),
+    /entry count exceeds/i,
+  );
+});
+
+test('extractZip rejects an entry before decompression exceeds its byte budget', async () => {
+  const zip = buildDeflateZip([{ name: 'large.sf2', data: new Uint8Array(1024) }]);
+  await assert.rejects(
+    () => extractZip(zip, { maxEntryBytes: 128 }),
+    /uncompressed size exceeds/i,
+  );
+});

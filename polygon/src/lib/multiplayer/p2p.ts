@@ -81,6 +81,21 @@ const STALL_MS = 10_000;
 const MAX_RECOVERY_ATTEMPTS = 3;
 const SIGNAL_RETRY_DELAYS_MS = [250, 750];
 
+/** Attach the live-preview bearer token to signaling requests. Deployed
+ * cookie-auth requests remain unchanged; the import is client-only and lazy so
+ * this transport module does not pull auth state into server bundles. */
+async function rtcFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  try {
+    const { getBearerToken } = await import("../auth/client");
+    const token = getBearerToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  } catch {
+    // Non-browser/test callers use the ordinary same-origin cookie path.
+  }
+  return fetch(input, { ...init, headers });
+}
+
 export function defaultIceServers(): RTCIceServer[] {
   const urls = (import.meta.env.VITE_STUN_URLS as string | undefined)
     ?.split(",")
@@ -138,7 +153,7 @@ export class P2PRoom {
     this.peers.clear();
     // Leaving the roster is the teardown broadcast: everyone's next poll
     // drops this peer and closes their side of the pair.
-    void fetch("/api/rtc", {
+    void rtcFetch("/api/rtc", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ op: "leave", room: this.opts.room, peer: this.opts.selfId }),
@@ -192,7 +207,7 @@ export class P2PRoom {
       name: this.opts.name ?? "",
       since: String(this.cursor),
     });
-    const res = await fetch(`/api/rtc?${params}`);
+    const res = await rtcFetch(`/api/rtc?${params}`);
     if (this.closed) return;
     if (!res.ok) throw new Error(`signaling poll failed: ${res.status}`);
     const body = (await res.json()) as RtcPollResponse;
@@ -448,7 +463,7 @@ export class P2PRoom {
     for (let attempt = 0; ; attempt++) {
       if (this.closed) return;
       try {
-        const res = await fetch("/api/rtc", {
+        const res = await rtcFetch("/api/rtc", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({

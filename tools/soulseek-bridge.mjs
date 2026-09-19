@@ -3,7 +3,7 @@
  *
  * Smooth UX defaults:
  *   • Free music (SoundHelix + Internet Archive) always works — no login, no API keys.
- *   • Bundled slskd (docker compose) auto-detected at 127.0.0.1:5030 with fixed local key.
+ *   • Bundled slskd (docker compose) auto-detected at 127.0.0.1:5030 with an optional operator key.
  *   • Optional Soulseek username/password (direct or via slskd) for the full network.
  *
  * Backends:
@@ -32,6 +32,7 @@ import {
 } from './song-meta.mjs';
 import {
   DEMO_CATALOG,
+  MAX_DOWNLOAD_BYTES,
   searchFreeMusic,
   downloadFreeTrack,
   searchDemoCatalog,
@@ -40,14 +41,6 @@ import {
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-
-/** Fixed local key matching slskd/slskd.yml — never shown to the player. */
-export const BUNDLED_SLSKD_KEY = process.env.SLSKD_API_KEY || 'midio-local-dev-key';
-export const BUNDLED_SLSKD_URL = (process.env.SLSKD_URL || 'http://127.0.0.1:5030').replace(/\/$/, '');
-export const DEFAULT_SLSKD_DOWNLOADS =
-  process.env.SLSKD_DOWNLOADS ||
-  process.env.SLSKD_DOWNLOAD_DIR ||
-  path.join(ROOT, 'data', 'slskd-downloads');
 
 /**
  * Guard against SSRF: the slskd URL (whether bundled, env-configured, or
@@ -64,6 +57,9 @@ export function assertLoopbackSlskdUrl(input) {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new Error(`slskd URL must use http/https, got "${parsed.protocol}"`);
   }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error('slskd URL must not contain credentials, query parameters, or fragments');
+  }
   const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
   const isLoopback =
     hostname === 'localhost' ||
@@ -75,6 +71,16 @@ export function assertLoopbackSlskdUrl(input) {
   }
   return parsed.toString().replace(/\/$/, '');
 }
+
+/** Optional operator-supplied key; never ship a shared credential in source. */
+export const BUNDLED_SLSKD_KEY = process.env.SLSKD_API_KEY || '';
+export const BUNDLED_SLSKD_URL = assertLoopbackSlskdUrl(
+  process.env.SLSKD_URL || 'http://127.0.0.1:5030',
+);
+export const DEFAULT_SLSKD_DOWNLOADS =
+  process.env.SLSKD_DOWNLOADS ||
+  process.env.SLSKD_DOWNLOAD_DIR ||
+  path.join(ROOT, 'data', 'slskd-downloads');
 
 /**
  * Guard against path traversal when resolving a slskd-reported download
@@ -101,6 +107,24 @@ export function pathsInsideDownloads(root, relPath) {
 }
 
 const searches = new Map();
+const MAX_SEARCHES = 128;
+const SEARCH_TTL_MS = 5 * 60 * 1000;
+
+function pruneSearches(now = Date.now()) {
+  for (const [id, search] of searches) {
+    if (now - search.createdAt > SEARCH_TTL_MS) searches.delete(id);
+  }
+}
+
+function rememberSearch(id, search) {
+  pruneSearches();
+  while (searches.size >= MAX_SEARCHES) {
+    const oldest = searches.keys().next().value;
+    if (oldest === undefined) break;
+    searches.delete(oldest);
+  }
+  searches.set(id, search);
+}
 let runtimeConfig = null;
 let directClient = null;
 let directClientPromise = null;
@@ -153,7 +177,7 @@ function activeConfigSync() {
   if (process.env.SLSKD_URL && process.env.SLSKD_API_KEY) {
     return {
       mode: 'slskd',
-      slskdUrl: process.env.SLSKD_URL.replace(/\/$/, ''),
+      slskdUrl: assertLoopbackSlskdUrl(process.env.SLSKD_URL),
       slskdKey: process.env.SLSKD_API_KEY,
     };
   }
@@ -200,7 +224,7 @@ export async function setConfig(cfg) {
     const rawUrl = String(cfg.slskdUrl || cfg.url || BUNDLED_SLSKD_URL).trim();
     if (!rawUrl) throw new Error('slskd mode needs a URL');
     const url = assertLoopbackSlskdUrl(rawUrl);
-    // API key optional — fall back to bundled local key
+    // API key is optional for a loopback-only slskd configured without auth.
     const key = String(cfg.slskdKey || cfg.apiKey || BUNDLED_SLSKD_KEY).trim();
     runtimeConfig = { mode: 'slskd', slskdUrl: url, slskdKey: key };
     resetDirect();
@@ -291,6 +315,28 @@ function formatBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** Read a local Soulseek result without a stat/read TOCTOU allocation gap. */
+export function readBoundedFile(filePath, label = 'Soulseek download') {
+  const fd = fs.openSync(filePath, 'r');
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, MAX_DOWNLOAD_BYTES - total + 1));
+      const bytes = fs.readSync(fd, chunk, 0, chunk.length, null);
+      if (bytes === 0) break;
+      total += bytes;
+      if (total > MAX_DOWNLOAD_BYTES) {
+        throw new Error(`${label} exceeds the ${MAX_DOWNLOAD_BYTES} byte limit`);
+      }
+      chunks.push(chunk.subarray(0, bytes));
+    }
+    return Buffer.concat(chunks, total);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function normalizeFile(raw, source) {
   const filename = raw.filename || raw.file || raw.name || 'unknown';
   const size = Number(raw.size || 0);
@@ -342,9 +388,9 @@ async function slskdFetch(cfg, apiPath, opts = {}) {
   const url = `${cfg.slskdUrl}/api/v0${apiPath}`;
   const headers = {
     Accept: 'application/json',
-    'X-API-Key': cfg.slskdKey,
     ...(opts.headers || {}),
   };
+  if (cfg.slskdKey) headers['X-API-Key'] = cfg.slskdKey;
   if (opts.body && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
   }
@@ -376,7 +422,7 @@ async function startSlskdSearch(cfg, query) {
     searchTimeout: 12_000,
   };
   await slskdFetch(cfg, '/searches', { method: 'POST', body });
-  searches.set(id, {
+  rememberSearch(id, {
     mode: 'slskd',
     query,
     status: 'inProgress',
@@ -494,8 +540,12 @@ async function downloadViaSlskd(cfg, item) {
             const tryPaths = pathsInsideDownloads(dlRoot, localPath);
             for (const p of tryPaths) {
               if (fs.existsSync(p)) {
+                const stat = fs.statSync(p);
+                if (!stat.isFile() || stat.size > MAX_DOWNLOAD_BYTES) {
+                  throw new Error(`slskd download exceeds the ${MAX_DOWNLOAD_BYTES} byte limit`);
+                }
                 return {
-                  buffer: fs.readFileSync(p),
+                  buffer: readBoundedFile(p, 'slskd download'),
                   filename: basename(localPath),
                   contentType: mimeFor(basename(localPath)),
                 };
@@ -581,7 +631,7 @@ async function startDirectSearch(cfg, query) {
     throw new Error('Sign in with your Soulseek account (Connect → Soulseek login).');
   }
   const id = randomUUID();
-  searches.set(id, {
+  rememberSearch(id, {
     mode: 'direct',
     query,
     status: 'inProgress',
@@ -643,23 +693,26 @@ async function downloadViaDirect(cfg, item) {
     bitrate: item.bitrate || 0,
     speed: item.speed || 0,
   };
-  await new Promise((resolve, reject) => {
-    client.download({ file: fileObj, path: outPath }, (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
-  const buffer = fs.readFileSync(outPath);
   try {
+    await new Promise((resolve, reject) => {
+      client.download({ file: fileObj, path: outPath }, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    const stat = fs.statSync(outPath);
+    if (!stat.isFile() || stat.size > MAX_DOWNLOAD_BYTES) {
+      throw new Error(`Soulseek download exceeds the ${MAX_DOWNLOAD_BYTES} byte limit`);
+    }
+    const buffer = readBoundedFile(outPath);
+    return {
+      buffer,
+      filename: basename(item.filename),
+      contentType: mimeFor(basename(item.filename)),
+    };
+  } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
-  } catch {
-    /* ignore */
   }
-  return {
-    buffer,
-    filename: basename(item.filename),
-    contentType: mimeFor(basename(item.filename)),
-  };
 }
 
 
@@ -717,7 +770,7 @@ export async function startSearch(query) {
 
   // Free music — always available, no keys / no sign-in
   const id = randomUUID();
-  searches.set(id, {
+  rememberSearch(id, {
     mode: 'free',
     query: q,
     status: 'inProgress',
@@ -744,6 +797,7 @@ export async function startSearch(query) {
 }
 
 export function getSearch(id) {
+  pruneSearches();
   const s = searches.get(id);
   if (!s) return null;
   return {
@@ -759,6 +813,10 @@ export function getSearch(id) {
 
 export async function downloadResult(item) {
   if (!item || typeof item !== 'object') throw new Error('Missing download item');
+  const advertisedSize = Number(item.size);
+  if (Number.isFinite(advertisedSize) && advertisedSize > MAX_DOWNLOAD_BYTES) {
+    throw new Error(`Requested download exceeds the ${MAX_DOWNLOAD_BYTES} byte limit`);
+  }
   const cfg = activeConfigSync();
   const source = item.source || cfg.mode;
 

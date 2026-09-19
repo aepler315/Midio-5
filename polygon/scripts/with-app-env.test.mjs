@@ -7,11 +7,27 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 import {
   APP_ENV_REL_PATH,
+  childInvocation,
+  executableForPlatform,
   mergeAppEnv,
   parseAppEnv,
   projectRoot,
   readAppEnv,
 } from "./with-app-env.mjs";
+
+test("resolves npm command shims on Windows without enabling a shell", () => {
+  assert.equal(executableForPlatform("vite", "win32"), "vite.cmd");
+  assert.equal(executableForPlatform("vite.cmd", "win32"), "vite.cmd");
+  assert.equal(executableForPlatform("node.exe", "win32"), "node.exe");
+  assert.equal(executableForPlatform("vite", "linux"), "vite");
+  assert.equal(executableForPlatform("./node_modules/vite/bin/vite.js", "win32"), "./node_modules/vite/bin/vite.js");
+});
+
+test("runs Vite through Node on Windows-compatible workspaces", () => {
+  const invocation = childInvocation("vite", ["build"], "win32", "/tmp/app");
+  assert.equal(invocation.command, process.execPath);
+  assert.deepEqual(invocation.args, [join("/tmp/app", "node_modules", "vite", "bin", "vite.js"), "build"]);
+});
 
 const execFileAsync = promisify(execFile);
 const WRAPPER = join(projectRoot(), "scripts/with-app-env.mjs");

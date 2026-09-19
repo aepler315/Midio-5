@@ -109,6 +109,9 @@ import { spectralShiftDeg, easeSpectralShift } from '../render/spectral.js';
 import { Role } from '../core/NoteEvent.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { VoyagePhase } from '../sim/SkyVoyage.js';
+import { blendSections, medianBeatSec, sectionIndexAt } from './BiomeSchedule.js';
+
+export { medianBeatSec } from './BiomeSchedule.js';
 
 const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
 // Star catalogue spans down to the sea horizon, not the whole frame. An
@@ -256,20 +259,6 @@ const BAND_COUNT = 7;
  * meter, so a 3/4 track is read in three and a drift-aware grid's odd
  * window can't skew the answer.
  */
-export function medianBeatSec(barGrid) {
-  if (!barGrid || barGrid.length < 3) return null;
-  const gaps = [];
-  for (let i = 1; i < barGrid.length; i++) {
-    const d = barGrid[i].ms - barGrid[i - 1].ms;
-    if (d > 60 && d < 12000) gaps.push(d);
-  }
-  if (gaps.length < 2) return null;
-  gaps.sort((a, b) => a - b);
-  const barMs = gaps[gaps.length >> 1];
-  const beats = Math.max(1, Math.round(barGrid[0].numerator || 4));
-  const beatSec = barMs / beats / 1000;
-  return beatSec > 0.12 && beatSec < 4 ? beatSec : null;
-}
 const EQ_ATTACK_SEC = 0.08;
 const EQ_RELEASE_SEC = 0.6;
 const EQ_MAX_HEIGHT_FRAC = 0.4; // never exceed 40% of screen height, however excited the section is
@@ -1409,50 +1398,11 @@ export class BiomeManager {
   }
 
   _sectionAt(nowMs) {
-    let idx = this.sections.length - 1;
-    for (let i = 0; i < this.sections.length; i++) {
-      if (this.sections[i].startMs <= nowMs) idx = i; else break;
-    }
-    return idx;
+    return sectionIndexAt(this.sections, nowMs);
   }
 
   _blend(nowMs) {
-    const idx = this._sectionAt(nowMs);
-    const sec = this.sections[idx];
-    const hm = sec.heightMul ?? 1;
-    const sl = sec.snowLine01 ?? 1;
-    if (idx === 0) {
-      return {
-        from: sec.profile, to: sec.profile, t: 1,
-        fromHeightMul: hm, toHeightMul: hm, fromSnowLine01: sl, toSnowLine01: sl,
-      };
-    }
-    // Transition style sets the crossfade length: a hard cut lands quickly,
-    // a shutter wipes over one bar, a fade breathes across four.
-    //
-    // Used to be 0.08 bars for a cut -- at typical tempos under 200ms. Color
-    // and biome identity can swap that fast and still read as a deliberate
-    // film cut, but ridge HEIGHT can't: two biomes routinely differ by
-    // 80-150px on L2 alone (measured), and collapsing that difference into
-    // under 200ms doesn't read as a cut, it reads as the mountains visibly
-    // dropping. 0.3 bars is still snappy -- nothing like the 4-bar fade --
-    // but gives the eye enough time to see a slide instead of a teleport.
-    const bars = sec.transition === 'cut' ? 0.3 : sec.transition === 'shutter' ? 1 : 4;
-    const t = smoothstep(0, 1, (nowMs - sec.startMs) / (bars * sec.barMs));
-    // Once the crossfade completes, retire the old biome entirely --
-    // otherwise its taller peaks and particles ghost through forever.
-    if (t >= 0.999) {
-      return {
-        from: sec.profile, to: sec.profile, t: 1,
-        fromHeightMul: hm, toHeightMul: hm, fromSnowLine01: sl, toSnowLine01: sl,
-      };
-    }
-    const prevHm = this.sections[idx - 1].heightMul ?? 1;
-    const prevSl = this.sections[idx - 1].snowLine01 ?? 1;
-    return {
-      from: this.sections[idx - 1].profile, to: sec.profile, t,
-      fromHeightMul: prevHm, toHeightMul: hm, fromSnowLine01: prevSl, toSnowLine01: sl,
-    };
+    return blendSections(this.sections, nowMs);
   }
 
   /**

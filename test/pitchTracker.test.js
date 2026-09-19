@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  computePitchFeatures, chromaHistogram, melodyPitchAt, estimateBassPitchAt,
+  computePitchFeatures, computePitchFeaturesAsync, chromaHistogram, melodyPitchAt, estimateBassPitchAt,
   tonalityFrom, tonalityTimeline, meanBrightness, windowChroma, midiToHz, fft,
 } from '../src/audio/PitchTracker.js';
 import { buildSongProfile } from '../src/audio/SongProfile.js';
@@ -29,6 +29,16 @@ test('fft recovers a pure tone at the right bin', () => {
     if (m > bestMag) { bestMag = m; best = b; }
   }
   assert.equal(best, bin);
+});
+
+test('async pitch analysis yields and honors cancellation', async () => {
+  const controller = new AbortController();
+  const pending = computePitchFeaturesAsync(sine([440], 1.0), SR, {
+    yieldEvery: 1,
+    signal: controller.signal,
+  });
+  controller.abort();
+  await assert.rejects(pending, { name: 'AbortError' });
 });
 
 test('melodyPitchAt finds the true pitch of a sustained A4 (440Hz)', () => {
