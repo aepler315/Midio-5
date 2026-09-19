@@ -261,16 +261,14 @@ function effectiveOutputLatencyMs() {
  * choreography must use the same zero-latency clock rather than baking this
  * room's device/Bluetooth compensation into the video.
  *
- * Zero latency is not zero lag, though. The sim is stepped VISUAL_LEAD_MS
- * ahead of the audio so that what is drawn now is right by the time a
- * display actually shows it -- but a captured frame is timestamped the
- * instant it is grabbed, with no scanout to wait for, so that lead has
- * nothing to compensate for and would encode the choreography a lead ahead
- * of the master bus. Handing the lead back as the visual lag subtracts it
- * again, putting recorded visuals on exactly the audio clock they are
- * muxed with. */
+ * The presentation lead is removed too, but NOT here -- it comes off the
+ * shared clock in frame(), because only one consumer in the whole renderer
+ * reads through visualLagMs and the other two dozen use sim.timeMs
+ * directly. Taking it off here would move the performers onto the audio
+ * clock and leave the drop shockwave, the impact flash and the rest a lead
+ * ahead of them, which is worse in an export than a uniform offset. */
 function choreographyOutputLatencyMs() {
-  return songRecorder?.recording ? VISUAL_LEAD_MS : effectiveOutputLatencyMs();
+  return songRecorder?.recording ? 0 : effectiveOutputLatencyMs();
 }
 
 /** The other half of the signed BT trim (see effectiveOutputLatencyMs): a
@@ -349,6 +347,8 @@ const STAGE_H = 720;
 const STAGE_RES_KEY = 'smw:stageRes';
 const STAGE_FPS_KEY = 'smw:stageFps';
 let simTime = 0;
+/** The presentation lead on the shared sim clock this frame (see frame()). */
+let choreoLeadMs = VISUAL_LEAD_MS;
 let acc = 0;
 let lastNowMs = 0;
 let running = false;
@@ -1509,6 +1509,13 @@ function startTimeline(timelineData, extra = {}) {
     worldId: sim.worldId,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
+    // The presentation lead currently being applied to the shared sim clock.
+    // Zero while recording -- a captured frame has no scanout to lead, so
+    // the whole show rides the audio clock it is muxed with. Exposed because
+    // the alternative is inferring it from the gap between a step-quantized
+    // sim clock and a continuous audio clock, which frame-rate changes under
+    // recording load make unreadable.
+    get choreoLeadMs() { return choreoLeadMs; },
     // The shed level decides which passes are running at all (rim light,
     // contact shadows, phenomena, the heavy overlay passes), so "why did
     // that effect disappear a few seconds in" is unanswerable from outside
@@ -2298,7 +2305,18 @@ function frame(tRaf) {
   // one compositor-plus-scanout hop after it is built, so `simTime` and
   // `lastNowMs` both live in led time. A constant lead shifts the sequence
   // without changing any delta, so the fixed-step accumulator is unaffected.
-  const renderNowMs = nowMs + VISUAL_LEAD_MS;
+  //
+  // A recording has no scanout to lead. The captured frame is timestamped
+  // the instant it is grabbed, so the lead has nothing to compensate for and
+  // would encode the whole show a lead ahead of the master bus it is muxed
+  // with. Dropping it HERE, at the shared clock, moves every time-based
+  // consumer together -- the two dozen that read sim.timeMs directly as well
+  // as the one that reads through visualLagMs. Arming mid-song costs a
+  // single frame whose delta clamps to zero (FixedStepClock floors a
+  // backward step), after which simTime tracks the audio clock exactly; the
+  // full-song export path arms at song start, where there is nothing to see.
+  choreoLeadMs = songRecorder?.recording ? 0 : VISUAL_LEAD_MS;
+  const renderNowMs = nowMs + choreoLeadMs;
 
   try {
     const advanced = advanceFixedStepClock({

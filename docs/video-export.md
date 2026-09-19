@@ -79,11 +79,25 @@ frame has no scanout to wait for — it is timestamped the instant it is
 grabbed — so during a recording that lead has nothing to compensate for and
 would encode the choreography a lead ahead of the master bus.
 
-`choreographyOutputLatencyMs()` therefore hands the lead back as the visual
-lag while recording, which subtracts it again and puts recorded visuals on
-exactly the audio clock they are muxed with. Returning a flat zero was the
-earlier shape, and it correctly dropped *this room's* device and Bluetooth
-compensation — but zero latency is not zero lag, and it left the 52ms in.
+The lead therefore comes off **the shared clock** in `frame()` —
+`renderNowMs = nowMs + choreoLeadMs`, where `choreoLeadMs` is 0 while
+recording — not off `choreographyOutputLatencyMs()`, which stays at a flat
+zero and only governs device/Bluetooth compensation.
+
+That distinction is the whole point. Only one consumer in the renderer reads
+through `sim.visualLagMs`; two dozen others use `sim.timeMs` directly
+(`hype.ringU(sim.timeMs)`, `dropImpactStrength(sim.timeMs, …)`, the brush,
+the epicycles). Subtracting the lead via the visual lag would move the
+performers onto the audio clock and leave the drop shockwave, the impact
+flash and the rest a lead ahead of them — internal desynchronization, which
+in an export is worse than a uniform offset. Taking it off the shared clock
+moves everything together.
+
+Arming mid-song costs a single frame whose delta clamps to zero
+(`FixedStepClock` floors a backward step), after which `simTime` tracks the
+audio clock exactly. The full-song export path arms at song start, where
+there is nothing to see. `window.__SMW.choreoLeadMs` reports the live value:
+52 normally, 0 while recording.
 
 ## Why it composites instead of capturing the stage directly
 
