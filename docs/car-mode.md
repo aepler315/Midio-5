@@ -107,3 +107,12 @@ at input recency (`FULLSCREEN_DROP_GRACE_MS`, 2s):
 * `npm run test:car` (`tools/car-mode-smoke.mjs`) — a real browser: a
   wake-up tap must not toggle pause, the next tap must, and a long idle gap
   with no display sleep must not eat a tap at all.
+
+  It runs in CI alongside the other browser smokes. It did not, for a
+  while, and it broke silently when the HUD fade landed: a faded HUD sits
+  under the canvas on purpose, so a harness that reached straight for
+  `#pauseBtn` got "canvas intercepts pointer events" on every click. The
+  harness now performs the sequence a driver performs — wait for the fade,
+  tap the stage to bring the HUD back, then tap the control — and waits for
+  the fade first so it always has a full awake window rather than racing
+  the tail of one.
