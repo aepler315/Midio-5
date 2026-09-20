@@ -2179,7 +2179,10 @@ export class BiomeManager {
     // a lit sky instead of only appearing at night.
     const dayBoost = 1 + 0.85 * (1 - dn.night);
     const nightAlphaMul = (1 + 1.2 * dn.night) * Math.max(0.55, skyA) * dayBoost;
-    if (phenomenaFull && skyA > 0.02) this.weaver.draw(ctx, canvas, this.reducedFlash, nightAlphaMul);
+    // The weaver is far lighter than the rest of the phenomena layer -- it
+    // must NOT drop out with them (rung 5) or The Range's sky goes dark.
+    const constellationsOn = this._perf ? this._perf.constellationsEnabled : true;
+    if (constellationsOn && skyA > 0.02) this.weaver.draw(ctx, canvas, this.reducedFlash, nightAlphaMul);
     if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
 
     // The sun (this biome's celestial, crossfaded A->B as usual) while
