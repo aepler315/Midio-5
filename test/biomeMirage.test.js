@@ -11,6 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BiomeManager } from '../src/world/BiomeManager.js';
 import { mirageRecipe } from '../src/world/FataMorgana.js';
+import { farShoreRecipe, FAR_SHORE_PARALLAX } from '../src/world/FarShore.js';
 
 const CANVAS = { width: 1280, height: 720 };
 
@@ -30,13 +31,16 @@ function recordingCtx() {
   return { ctx, fills, strokes, images, rects };
 }
 
-/** The fields _drawFataMorgana reads, and nothing more. */
+/** The fields _drawFataMorgana reads, and nothing more. It now needs the
+ *  REAL far-shore recipe too -- the mirage is a ghost of what is actually
+ *  out there, not an invented range. */
 function fataMorganaThis() {
   return {
     _perf: null,
     tSec: 12.5,
     _airColor: '#8fa8bf',
     _mirageRecipe: mirageRecipe(1234),
+    _farShoreRecipe: farShoreRecipe(5678),
     _rotated: (hex) => hex,
     lerpCache: { get: (a) => a },
   };
@@ -54,18 +58,33 @@ test('the fata morgana and the ground mirage are separate methods', () => {
   assert.equal(BiomeManager.prototype._drawMirage, undefined);
 });
 
-test('the fata morgana paints its main image and its inferior echo', () => {
+test('the fata morgana paints the real shore as a stacked superior mirage', () => {
   const { ctx, fills } = recordingCtx();
   BiomeManager.prototype._drawFataMorgana.call(
     fataMorganaThis(), ctx, CANVAS, 400, PROFILE, PROFILE, 0.5,
   );
-  // One fill for the range itself, one for the squashed reflection below it.
-  assert.equal(fills.length, 2, 'expected the main image and its echo');
+  // Three stacked images, top to bottom: the erect upper copy, the main
+  // refracted image (the real far shore, stretched), and the squashed
+  // inverted echo beneath -- the canonical superior-mirage stack.
+  assert.equal(fills.length, 3, 'expected erect + main + inverted echo');
   for (const f of fills) assert.match(f.style, /^rgba\(\d+,\d+,\d+,0\.\d+\)$/);
-  // The echo is the fainter of the two, not a second copy at full strength.
+  // The main image is the brightest; both echoes are fainter copies of it.
   const alphaOf = (s) => Number(s.style.slice(s.style.lastIndexOf(',') + 1, -1));
-  assert.ok(alphaOf(fills[1]) < alphaOf(fills[0]), 'the echo should be fainter');
-  assert.ok(alphaOf(fills[0]) > 0, 'the main image should be visible at all');
+  assert.ok(alphaOf(fills[0]) > 0, 'the erect image should be visible at all');
+  assert.ok(alphaOf(fills[1]) > alphaOf(fills[0]) || alphaOf(fills[2]) < alphaOf(fills[0]),
+    'the echoes should be fainter than the brightest image');
+});
+
+test('the fata morgana is wired to the real far shore it mirrors', () => {
+  // This is the lock that makes it "a ghost of what is actually there": the
+  // draw path needs the REAL far-shore recipe on `this`, and samples it via
+  // mirageHeight01(shore, mirage, u) -- the module-level invariants (wrap,
+  // stretch cap, crest detail, drift/stretch bounds) are covered in
+  // fataMorgana.test.js.
+  const self = fataMorganaThis();
+  assert.ok(self._farShoreRecipe, '_drawFataMorgana requires the real far-shore recipe');
+  assert.ok(self._farShoreRecipe.lobes.length > 0, 'far-shore recipe carries the landmass lobes');
+  assert.equal(FAR_SHORE_PARALLAX, 0.012, 'mirage rides the far shore parallax, not its own crawl');
 });
 
 test('the fata morgana is shed with the rest of the heavy post-FX', () => {

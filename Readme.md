@@ -221,16 +221,10 @@ src/
   ui/        Controls, world chooser, previews, accessibility, overlays, styles
 test/        Main app's Node tests and fixtures
 tools/       Local server, fixture generators, browser smoke checks, legacy tools
-polygon/     Separate TanStack Start / React / TypeScript application
 ```
 
-[Midio Polygon](polygon/README.md) is a standalone faceted-particle
-experiment, with crystal, visco, shatter, and swarm modes. It has its own
-dependencies and development server and does not replace the root app.
-
 The root GitHub Pages workflow publishes `index.html`, `src/`,
-`soundfonts/`, and `CNAME`. It does not run the Node bridge or deploy
-`polygon/`.
+`soundfonts/`, and `CNAME`. It does not run the Node bridge.
 
 ## Testing
 
@@ -242,11 +236,9 @@ npm test
 ```
 
 `npm test` runs the Node tests under `test/` (`test/*.js`, `test/*.mjs`,
-and `test/helpers/*.js`). It does not walk `polygon/`. To also discover
-nested packages:
+and `test/helpers/*.js`). To discover any nested packages instead:
 
 ```sh
-npm ci --prefix polygon
 npm run test:all
 ```
 

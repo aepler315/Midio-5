@@ -482,10 +482,18 @@ export function pickFormation(rand, {
  * copy so the family is recognisable but no two members are traceable to each
  * other. Every field stays inside the range its profile function is monotonic
  * over, so the correctness property survives the jitter.
+ *
+ * `sharpBoost` (0..1, from the song's spike-vs-organic mix) is the September
+ * 2026 sharpening pass: at 0 it is a true no-op, at 1 it narrows every flat
+ * cap and raises every cone exponent so even the butte family's crowns come
+ * to a point instead of a table. Organic mixes (0) keep the full southern-Utah
+ * caprock read; the boost only ever REMOVES flatness, never adds it, so a
+ * formation can never be sharpened past its monotonic-safe floor.
  */
-export function varyFormation(form, rand) {
+export function varyFormation(form, rand, sharpBoost = 0) {
   const f = form || PLATEAU_FORMS.BUTTE;
   const r = typeof rand === 'function' ? rand : () => 0.5;
+  const boost = clamp01(sharpBoost);
   const jit = (amt) => 1 + (r() * 2 - 1) * amt;
   const out = {
     ...f,
@@ -495,9 +503,16 @@ export function varyFormation(form, rand) {
     heightMul: Math.min(1, Math.max(0.12, (f.heightMul ?? 1) * jit(0.24))),
     asym: Math.max(1, (f.asym ?? 1) * jit(0.22)),
   };
-  if (f.cap != null) out.cap = clamp01(f.cap * jit(0.20));
+  if (f.cap != null) out.cap = clamp01(f.cap * jit(0.20) * (1 - boost * 0.42));
   if (f.talus != null) out.talus = clamp01(f.talus * jit(0.18));
   if (f.talusTop != null) out.talusTop = clamp01(f.talusTop * jit(0.16));
+  // Sharpen the continuous-mass skeletons: cones and domes get steeper sides
+  // (higher exponent), hoodoo walls fall faster (lower wallPow). Both directions
+  // stay inside each profile's monotonic range -- these are exponents on
+  // (1 - t^k) curves, not changes that can invent a rise.
+  if (f.coneP != null) out.coneP = f.coneP * (1 + boost * 0.38);
+  if (f.domeP != null) out.domeP = f.domeP * (1 + boost * 0.30);
+  if (f.wallPow != null) out.wallPow = f.wallPow * (1 - boost * 0.28);
   // An extra storey now and then, so a staircase is not always three.
   if (f.benches != null) out.benches = Math.max(1, f.benches + (r() < 0.28 ? 1 : 0));
   // Keep cap + talus from swallowing the stack between them.
