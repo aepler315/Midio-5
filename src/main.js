@@ -471,7 +471,14 @@ function fitCanvas() {
   // The other half of the same decision: the browser's own upscale from the
   // backing store to the viewport (see #stage.retro in style.css).
   canvas.classList.toggle('retro', retro);
-  if (perfGovernor) perfGovernor.canvasWidth = w;
+  if (perfGovernor) {
+    // Both, and they are not the same number: `w` is the live backing store
+    // after Auto's resolution scaling, `fit.w` the ceiling before it. Gates
+    // that must not move as the ladder squeezes read the ceiling -- see
+    // PerfGovernor.targetCanvasWidth.
+    perfGovernor.targetCanvasWidth = fit.w;
+    perfGovernor.canvasWidth = w;
+  }
   landscapeHintEl?.classList.toggle(
     'is-visible',
     shouldSuggestLandscape(canvas.clientWidth, canvas.clientHeight),
@@ -507,6 +514,13 @@ function randomizeSeed() {
     stageResEl.value = String(storedStagePreset() ?? readStagePreset());
     stageResEl.addEventListener('change', () => {
       persistStagePreset(resolveStagePreset(stageResEl.value) ?? DEFAULT_STAGE_PRESET);
+      // Someone reaching for this menu has changed the workload, so what the
+      // ladder learned about the old one no longer applies -- otherwise a
+      // rung they can now easily afford stays switched off for up to the
+      // capped recovery window, which is the opposite of why they came here.
+      // Deliberately only on the explicit change: the governor's own Auto
+      // resizes must keep their evidence.
+      perfGovernor?.forgetRecoveryHistory();
       // Applied immediately, mid-song included. This used to wait for the
       // next song (`if (!running)`), which is precisely backwards for the
       // reason someone reaches for this menu: they are watching the frame
@@ -680,7 +694,11 @@ function noteFrameGap(rafDeltaMs) {
 // where it happens; the frame-gap check above covers the projection cases
 // where it does not.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') displaySlept = true;
+  if (document.visibilityState === 'hidden') { displaySlept = true; return; }
+  // Coming back, the first frames are a cold cache and a giant rAF gap, not
+  // a scene the machine cannot draw. The ladder must not read them as
+  // evidence -- re-arm the same grace a new song gets.
+  perfGovernor?.beginWarmup(performance.now());
 });
 
 function syncKeepAwake() {
@@ -2285,7 +2303,13 @@ function frame(tRaf) {
     const rafDeltaMs = tRaf - lastRafMs;
     noteFrameGap(rafDeltaMs);
     const prevLevel = perfGovernor.level;
-    perfGovernor.sample(rafDeltaMs, tRaf);
+    // A hidden page's frame timing says nothing about how expensive the
+    // scene is. Chrome stops rAF outright for a hidden tab, but an embedded
+    // WebView may instead throttle it to about 1Hz -- and a run of 1000ms
+    // "frames" is exactly the shape the severity escalation is built to
+    // believe, so it would shed rung after rung while nothing was being
+    // drawn at all, and hand the player back a degraded show on return.
+    if (!document.hidden) perfGovernor.sample(rafDeltaMs, tRaf);
     if (perfGovernor.level !== prevLevel) fitCanvas();
     fpsEma = emaFps(fpsEma, rafDeltaMs);
     if (fpsHudVisible && fpsHudEl) {

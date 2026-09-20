@@ -118,6 +118,36 @@ Simulated over ten minutes against a machine that cannot afford its top rung:
 bouncing. `test/perf-governor.test.js` runs that simulation both ways, so the
 test proves it is measuring the fix and not something that was always true.
 
+## Three traps the escalation opens, and their guards
+
+Making the ladder react faster and remember failures makes it more sensitive
+to frame timing that is not about rendering cost at all. Three came out of
+review, all real:
+
+- **A shrinking stage must not raise the tier back.** `fullFrameFxEnabled`
+  keys off the stage width, and under Auto the *live* width shrinks as the
+  ladder sheds. Keyed off that number the gate is not monotonic: on a ~2880px
+  backing store, level 1 sheds the whole-frame passes, then level 2's 0.85
+  resolution scale drops the live width to ~2448 — inside the `level < 3`
+  tier — and the most expensive passes in the frame come **back on** as
+  pressure rises. It reads the unscaled target width instead
+  (`targetCanvasWidth`), because the tier is a property of the display, not
+  of how hard the ladder is currently squeezing.
+- **A hidden page must not vote.** Chrome stops rAF for a hidden tab, but an
+  embedded WebView may throttle it to about 1Hz instead — and a run of 1000ms
+  "frames" is exactly the shape the escalation is built to believe. It would
+  shed rung after rung while nothing was drawn at all, then hand back a
+  degraded show. `main.js` skips sampling while `document.hidden`, and
+  re-arms the warm-up grace on return so the first cold frames do not vote
+  either.
+- **An explicit quality change is a new workload.** Someone who drops from 4K
+  to 720p because the frame rate fell apart has changed the amount of work,
+  so the fallback counts gathered at 4K no longer describe anything. Left in
+  place, a rung they can now easily afford could stay off for up to the
+  capped recovery window — the opposite of what reaching for that menu is
+  for. The stage-resolution handler calls `forgetRecoveryHistory()`;
+  the governor's own Auto resizes deliberately keep their evidence.
+
 ## Still open: vertical banding at 4K
 
 Reported alongside the above: flat vertical bands glitching across the stage

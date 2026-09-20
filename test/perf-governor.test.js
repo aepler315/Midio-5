@@ -660,3 +660,82 @@ test('two isolated hitches far apart still do not escalate', () => {
   }
   assert.equal(gov.level, 0, 'clean frames between hitches must reset the run');
 });
+
+// --- Shedding must be monotonic in level.
+//
+// fullFrameFxEnabled keys off the stage width, and under Auto the LIVE width
+// shrinks as the ladder sheds (resolutionScale). Keyed off that live number
+// the gate is not monotonic: on a ~2880px backing store, level 1 sheds the
+// whole-frame passes (2880 > 2560), then level 2's 0.85 scale drops the live
+// width to ~2448, which lands in the 1921-2560 branch -- `level < 3` -- and
+// switches the most expensive passes in the frame back ON as pressure rises.
+// The machine collapses again and sticks a rung or two lower, having shed
+// particles and lighting it never needed to lose.
+
+test('the full-frame gate never re-enables as the ladder sheds further', () => {
+  for (const targetW of [1280, 1920, 1921, 2560, 2561, 2880, 3840]) {
+    const gov = new PerfGovernor();
+    gov.targetCanvasWidth = targetW;
+    let wasOff = false;
+    for (let lvl = 0; lvl <= MAX_LEVEL; lvl++) {
+      gov.level = lvl;
+      // Auto shrinks the live backing store as the level rises; the gate must
+      // not care, because the tier is a property of the display.
+      gov.canvasWidth = Math.round(targetW * gov.resolutionScale(targetW * 9 / 16, { adaptive: true }));
+      const on = gov.fullFrameFxEnabled;
+      if (!on) wasOff = true;
+      assert.ok(!(on && wasOff), `${targetW}px: the gate came back on at level ${lvl} after shedding`);
+    }
+  }
+});
+
+test('the 2880px Auto case specifically -- the one the live width got wrong', () => {
+  const gov = new PerfGovernor();
+  gov.targetCanvasWidth = 2880;
+  gov.level = 1;
+  gov.canvasWidth = 2880; // scale is still 1 at level 1
+  assert.equal(gov.fullFrameFxEnabled, false, 'shed at level 1, as a >2560 stage should');
+  gov.level = 2;
+  gov.canvasWidth = Math.round(2880 * 0.85); // 2448 -- inside the 1921-2560 tier
+  assert.equal(
+    gov.fullFrameFxEnabled, false,
+    'more pressure must not hand the most expensive passes back',
+  );
+});
+
+test('without a target width it still works off the live one', () => {
+  // Manual presets and every existing caller that never sets a target.
+  const gov = new PerfGovernor();
+  gov.canvasWidth = 3840;
+  assert.equal(gov.fullFrameFxEnabled, true);
+  gov.level = 1;
+  assert.equal(gov.fullFrameFxEnabled, false);
+});
+
+// --- An explicit quality change is a new workload, not more evidence.
+
+test('forgetRecoveryHistory clears the backoff a player has just made irrelevant', () => {
+  const gov = new PerfGovernor();
+  let t = feedFrames(gov, 60, 20, 0);
+  t = feedFrames(gov, 700, 5, t, 16.6);   // recover
+  t = feedFrames(gov, 60, 20, t);         // and fall back out
+  assert.equal(gov.recoverWindowMsFor(0), 20000, 'the backoff is in force');
+
+  // The player drops the stage resolution. Everything learned at the old one
+  // is about a different amount of work.
+  gov.forgetRecoveryHistory();
+  assert.equal(gov.recoverWindowMsFor(0), 10000, 'the ladder starts listening again');
+  feedFrames(gov, 700, 5, t, 16.6);
+  assert.equal(gov.level, 0, 'and a now-affordable rung comes back on the usual schedule');
+});
+
+test('forgetRecoveryHistory does not itself change the level', () => {
+  // It clears evidence, not the current state: the ladder climbs back on the
+  // ordinary clean-run rule, it does not jump.
+  const gov = new PerfGovernor();
+  feedFrames(gov, 60, 20, 0);
+  feedFrames(gov, 60, 20, 5000);
+  const before = gov.level;
+  gov.forgetRecoveryHistory();
+  assert.equal(gov.level, before);
+});

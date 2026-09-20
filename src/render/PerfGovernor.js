@@ -147,6 +147,7 @@ export class PerfGovernor {
     this._cleanSinceMs = null;
     this._warmUntilMs = null;
     this._canvasW = 1280;
+    this._targetW = 0; // 0 -> fall back to the live width
     // level -> how many times the machine has shed back out of it after
     // having recovered into it. Drives the recovery backoff above.
     this._fallbacks = new Map();
@@ -155,6 +156,23 @@ export class PerfGovernor {
     this._recoveredInto = new Set();
     // Consecutive frames past CATASTROPHIC_RATIO, for the severity escalation.
     this._catastrophicRun = 0;
+  }
+
+  /** Discard what the ladder has learned about which rungs are affordable.
+   *
+   *  For an EXPLICIT quality change by the player -- picking a different
+   *  stage resolution mid-song -- not for the governor's own Auto resizing.
+   *  Someone who drops from 4K to 720p because the frame rate fell apart has
+   *  changed the workload, and the fallback counts gathered at 4K are about a
+   *  different machine's worth of work; left in place, a rung they can now
+   *  easily afford could stay switched off for up to the capped recovery
+   *  window, which is the opposite of what reaching for that menu is for. */
+  forgetRecoveryHistory() {
+    this._fallbacks.clear();
+    this._recoveredInto.clear();
+    this._overCount = 0;
+    this._catastrophicRun = 0;
+    this._cleanSinceMs = null;
   }
 
   /** How long a clean run has to last before the ladder will try `level`
@@ -282,8 +300,24 @@ export class PerfGovernor {
   }
 
   /** Tell the governor the current backing-store width so resolution-aware
-   *  quality gates (danceColumnWidth) can adapt. */
+   *  quality gates (danceColumnWidth) can adapt. This is the LIVE width,
+   *  after Auto's own resolution scaling. */
   set canvasWidth(w) { this._canvasW = w; }
+
+  /** The width the stage would use at full quality -- the preset/display
+   *  ceiling, before resolutionScale shrinks it under pressure.
+   *
+   *  fullFrameFxEnabled has to read this rather than the live width, or it
+   *  is not monotonic in level. On Auto with a ~2880px backing store: level
+   *  1 sheds the whole-frame passes (2880 > 2560), then level 2 applies the
+   *  0.85 resolution scale, the live width drops to ~2448, and the gate
+   *  lands in the 1921-2560 branch -- which is `level < 3`, so the most
+   *  expensive passes in the frame switch back ON as pressure increases.
+   *  The machine then collapses again at level 2 and sticks around level 3,
+   *  having shed particles and lighting it never needed to lose. The tier
+   *  is a property of the display, not of how hard the ladder is currently
+   *  squeezing, so it reads the unscaled target. */
+  set targetCanvasWidth(w) { this._targetW = w; }
 
   get visionAllowed() { return this.level < 1; }
   get particleMul() {
@@ -335,8 +369,11 @@ export class PerfGovernor {
    *  machine loses an effect it was affording. */
   get fullFrameFxEnabled() {
     if (!this.heavyPostFx) return false; // never outlive the rung they used to sit on
-    if (this._canvasW > 2560) return this.level < 1;
-    if (this._canvasW > 1920) return this.level < 3;
+    // The unscaled target, so the tier cannot move under the ladder's own
+    // feet -- see targetCanvasWidth.
+    const tierW = this._targetW || this._canvasW;
+    if (tierW > 2560) return this.level < 1;
+    if (tierW > 1920) return this.level < 3;
     return true;
   }
   // Ridge-volume shading (_drawRidgeVolume): up to three clipped gradient
