@@ -542,6 +542,14 @@ function randomizeSeed() {
       const fps = Number(stageFpsEl.value) || 60;
       persistFpsCap(fps);
       fpsCapMs = 1000 / fps;
+      // The same reasoning as the resolution menu next to it: halving the
+      // draw rate halves the work, so what the ladder learned at the old
+      // rate describes a different workload. The frame callbacks go clean
+      // almost immediately -- sampling runs at the full rAF rate whatever
+      // the cap, it is the DRAW that is skipped -- and without this the
+      // backoff from before the change would hold quality down for minutes
+      // after the player has already fixed the problem.
+      perfGovernor?.forgetRecoveryHistory();
     });
   }
   seedRandomBtnEl?.addEventListener('click', () => randomizeSeed());
