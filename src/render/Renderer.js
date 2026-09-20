@@ -1020,7 +1020,9 @@ export class Renderer {
     // ghost is exactly the kind of flash the toggle exists to remove).
     // Calm also kills most of the echo via hypeFrameStyle.
     const echo = sim.reducedFlash ? 0 : style.echo;
-    if (echo > 0.05 && (sim.perf ? sim.perf.heavyPostFx : true)) {
+    // Same reasoning as the motion-blur ring: the echo re-blits the entire
+    // composed frame, so it sheds on backing-store size, not draw calls.
+    if (echo > 0.05 && (sim.perf ? sim.perf.fullFrameFxEnabled : true)) {
       const off = 3 + 5 * echo;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
@@ -1075,7 +1077,15 @@ export class Renderer {
     this._lastShakeY = camera.shakeY;
 
     const perf = sim.perf;
-    if (perf && !perf.heavyPostFx) {
+    // fullFrameFxEnabled, not heavyPostFx: this pass copies the WHOLE
+    // composed frame every frame of the song, so its cost scales with the
+    // backing store rather than with draw calls. Profiled at a 3840x2160
+    // stage it was 23% of wall time -- the single most expensive thing in
+    // the frame -- while sitting on the ladder's LAST rung, so a 4K machine
+    // shed its vision loop, particles, rim light, bloom, the veil and the
+    // entire phenomena layer before ever reaching it. The new gate sheds it
+    // first at that size and is identical to the old one at 1080p and below.
+    if (perf && !perf.fullFrameFxEnabled) {
       this._motionHistory = null;
       return;
     }

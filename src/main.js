@@ -222,6 +222,13 @@ let renderer = null;
 let titleBackdrop = null; // living title-screen backdrop (drawn while !running)
 let titleRafHandle = null;
 let lastSpecSig = null; // cache-gate for the One-Spectrum CSS var sync (write only on key/form change)
+// A second, much coarser gate for the --glow-* tokens. See the note on
+// #app::before in style.css: those three feed a larger-than-viewport element
+// under a 48px blur, so each rewrite is a full-viewport repaint at display
+// resolution -- the one CSS variable write in this app whose cost is worth a
+// gate of its own. 30 degrees rather than the chrome's 3.
+const GLOW_SHIFT_STEP_DEG = 30;
+let lastGlowSig = null;
 let visionLoop = null;
 let debugOverlay = null;
 let perfGovernor = null;
@@ -464,7 +471,14 @@ function fitCanvas() {
   // The other half of the same decision: the browser's own upscale from the
   // backing store to the viewport (see #stage.retro in style.css).
   canvas.classList.toggle('retro', retro);
-  if (perfGovernor) perfGovernor.canvasWidth = w;
+  if (perfGovernor) {
+    // Both, and they are not the same number: `w` is the live backing store
+    // after Auto's resolution scaling, `fit.w` the ceiling before it. Gates
+    // that must not move as the ladder squeezes read the ceiling -- see
+    // PerfGovernor.targetCanvasWidth.
+    perfGovernor.targetCanvasWidth = fit.w;
+    perfGovernor.canvasWidth = w;
+  }
   landscapeHintEl?.classList.toggle(
     'is-visible',
     shouldSuggestLandscape(canvas.clientWidth, canvas.clientHeight),
@@ -500,6 +514,13 @@ function randomizeSeed() {
     stageResEl.value = String(storedStagePreset() ?? readStagePreset());
     stageResEl.addEventListener('change', () => {
       persistStagePreset(resolveStagePreset(stageResEl.value) ?? DEFAULT_STAGE_PRESET);
+      // Someone reaching for this menu has changed the workload, so what the
+      // ladder learned about the old one no longer applies -- otherwise a
+      // rung they can now easily afford stays switched off for up to the
+      // capped recovery window, which is the opposite of why they came here.
+      // Deliberately only on the explicit change: the governor's own Auto
+      // resizes must keep their evidence.
+      perfGovernor?.forgetRecoveryHistory();
       // Applied immediately, mid-song included. This used to wait for the
       // next song (`if (!running)`), which is precisely backwards for the
       // reason someone reaches for this menu: they are watching the frame
@@ -521,6 +542,14 @@ function randomizeSeed() {
       const fps = Number(stageFpsEl.value) || 60;
       persistFpsCap(fps);
       fpsCapMs = 1000 / fps;
+      // The same reasoning as the resolution menu next to it: halving the
+      // draw rate halves the work, so what the ladder learned at the old
+      // rate describes a different workload. The frame callbacks go clean
+      // almost immediately -- sampling runs at the full rAF rate whatever
+      // the cap, it is the DRAW that is skipped -- and without this the
+      // backoff from before the change would hold quality down for minutes
+      // after the player has already fixed the problem.
+      perfGovernor?.forgetRecoveryHistory();
     });
   }
   seedRandomBtnEl?.addEventListener('click', () => randomizeSeed());
@@ -673,7 +702,11 @@ function noteFrameGap(rafDeltaMs) {
 // where it happens; the frame-gap check above covers the projection cases
 // where it does not.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') displaySlept = true;
+  if (document.visibilityState === 'hidden') { displaySlept = true; return; }
+  // Coming back, the first frames are a cold cache and a giant rAF gap, not
+  // a scene the machine cannot draw. The ladder must not read them as
+  // evidence -- re-arm the same grace a new song gets.
+  perfGovernor?.beginWarmup(performance.now());
 });
 
 function syncKeepAwake() {
@@ -2278,7 +2311,13 @@ function frame(tRaf) {
     const rafDeltaMs = tRaf - lastRafMs;
     noteFrameGap(rafDeltaMs);
     const prevLevel = perfGovernor.level;
-    perfGovernor.sample(rafDeltaMs, tRaf);
+    // A hidden page's frame timing says nothing about how expensive the
+    // scene is. Chrome stops rAF outright for a hidden tab, but an embedded
+    // WebView may instead throttle it to about 1Hz -- and a run of 1000ms
+    // "frames" is exactly the shape the severity escalation is built to
+    // believe, so it would shed rung after rung while nothing was being
+    // drawn at all, and hand the player back a degraded show on return.
+    if (!document.hidden) perfGovernor.sample(rafDeltaMs, tRaf);
     if (perfGovernor.level !== prevLevel) fitCanvas();
     fpsEma = emaFps(fpsEma, rafDeltaMs);
     if (fpsHudVisible && fpsHudEl) {
@@ -2353,7 +2392,10 @@ function frame(tRaf) {
   // DOM is only touched when the song's key/form actually moves -- never
   // per-frame style thrash.
   if (sim.biomes && typeof sim.biomes.currentHaloColor === 'function') {
-    const sig = `${sim.biomes.tonic ?? '?'}|${sim.biomes._spectralShift ? Math.round(sim.biomes._spectralShift() / 3) : 0}|${sim.biomes.currentBlend ? sim.biomes.currentBlend.to : ''}`;
+    const tonic = sim.biomes.tonic ?? '?';
+    const shiftDeg = sim.biomes._spectralShift ? sim.biomes._spectralShift() : 0;
+    const blendTo = sim.biomes.currentBlend ? sim.biomes.currentBlend.to : '';
+    const sig = `${tonic}|${Math.round(shiftDeg / 3)}|${blendTo}`;
     if (sig !== lastSpecSig) {
       lastSpecSig = sig;
       const halo = sim.biomes.currentHaloColor();
@@ -2361,6 +2403,16 @@ function frame(tRaf) {
       const vars = cssVarMap(tokens);
       const root = document.documentElement;
       for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+      // The ambient glow rides a coarser gate. Its signature can only move
+      // when this one has, so deriving it here costs nothing and keeps both
+      // reading the same palette.
+      const glowSig = `${tonic}|${Math.round(shiftDeg / GLOW_SHIFT_STEP_DEG)}|${blendTo}`;
+      if (glowSig !== lastGlowSig) {
+        lastGlowSig = glowSig;
+        root.style.setProperty('--glow-gold', vars['--spec-gold']);
+        root.style.setProperty('--glow-cool', vars['--spec-cool']);
+        root.style.setProperty('--glow-warm', vars['--spec-warm']);
+      }
     }
   }
 
