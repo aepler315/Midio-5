@@ -54,7 +54,7 @@ function hypeSim({ reducedFlash = false, particleMul = 1 } = {}) {
     calm: { level: 0 },
     fever: { level: 0 },
     reducedFlash,
-    perf: { particleMul, heavyPostFx: true },
+    perf: { particleMul, heavyPostFx: true, fullFrameFxEnabled: true },
     biomes: { currentHaloColor: () => '#ffdca0' },
     midio: { groundY: 540, screenX: 300, renderY: 400 },
   };
@@ -304,7 +304,7 @@ function motionBlurSim({ reducedFlash = false, dropAtMs = 10000, timeMs = 10000 
     timeMs,
     hype: { dropAtMs },
     reducedFlash,
-    perf: { heavyPostFx: true },
+    perf: { heavyPostFx: true, fullFrameFxEnabled: true },
     focus: null,
   };
 }
@@ -430,12 +430,31 @@ test('no drop in flight still captures (keeping the ring warm) but composites no
   assert.equal(calls.length, 0, 'but nothing composites onto the live frame without a drop');
 });
 
-test('heavyPostFx off drops the ring entirely, not just skips a frame', () => {
+test('shedding the pass drops the ring entirely, not just skips a frame', () => {
   const r = Object.create(Renderer.prototype);
   const { ctx } = recordingCtx();
   r._motionHistory = [fakeRingSlot(10, 10), fakeRingSlot(10, 10), fakeRingSlot(10, 10)];
   const sim = motionBlurSim();
-  sim.perf.heavyPostFx = false;
+  sim.perf.fullFrameFxEnabled = false;
   r._drawDropMotionBlur(ctx, { width: DEVICE_W, height: DEVICE_H }, sim, camera(), 1, 1);
   assert.equal(r._motionHistory, null, 'the (now-cheaper, but still real) buffers are freed, not just idled');
+});
+
+// The gate moved from heavyPostFx to fullFrameFxEnabled deliberately. This
+// pass copies the WHOLE composed frame every frame of the song, so its cost
+// scales with the backing store while the rest of the ladder sheds draw
+// calls. Profiled at a 3840x2160 stage it was 23% of wall time -- the single
+// most expensive thing in the frame -- and it was gated on the ladder's LAST
+// rung, so a 4K machine shed its vision loop, particles, rim light, bloom,
+// the veil and the whole phenomena layer before reaching it.
+test('the ring reads the resolution-aware gate, not the generic heavy-post-fx one', () => {
+  const r = Object.create(Renderer.prototype);
+  const { ctx } = recordingCtx();
+  r._motionHistory = [fakeRingSlot(10, 10), fakeRingSlot(10, 10), fakeRingSlot(10, 10)];
+  const sim = motionBlurSim();
+  // Everything else still allowed; only the whole-frame copies are shed.
+  sim.perf.heavyPostFx = true;
+  sim.perf.fullFrameFxEnabled = false;
+  r._drawDropMotionBlur(ctx, { width: DEVICE_W, height: DEVICE_H }, sim, camera(), 1, 1);
+  assert.equal(r._motionHistory, null, 'a shed whole-frame pass must not survive on heavyPostFx alone');
 });

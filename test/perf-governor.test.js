@@ -440,3 +440,223 @@ test('the palette pass does not disturb the pin: intensive still never recovers'
   assert.equal(gov.level, MAX_LEVEL);
   assert.equal(gov.retroPalette, true);
 });
+
+// --- The ladder must not oscillate.
+//
+// Recovery used to be unconditional: ten clean seconds bought a rung back,
+// every time, at the same price. On a machine that genuinely cannot afford
+// the rung below, that makes the ladder an oscillator -- shed to something
+// playable, bank ten clean seconds, climb back into the rung that was
+// drowning it, collapse, shed again. The reported shape was "60fps for a few
+// seconds then 1 or 2fps for a few seconds", on repeat.
+
+test('the first descent through a rung is not held against it', () => {
+  const gov = new PerfGovernor();
+  let t = feedFrames(gov, 60, 20, 0);
+  assert.equal(gov.level, 1, 'shed once');
+  assert.equal(
+    gov.recoverWindowMsFor(0), 10000,
+    'a cold machine, a load hitch or another program taking the CPU is not evidence '
+    + 'that a rung is unaffordable -- the ordinary ten-second recovery must be unchanged',
+  );
+  feedFrames(gov, 700, 5, t, 16.6); // ~11.6s clean
+  assert.equal(gov.level, 0, 'and it recovers on the usual schedule');
+});
+
+test('falling back out of a rung it had climbed into doubles the price of trying again', () => {
+  const gov = new PerfGovernor();
+  let t = feedFrames(gov, 60, 20, 0);          // 0 -> 1
+  t = feedFrames(gov, 700, 5, t, 16.6);        // recover 1 -> 0
+  assert.equal(gov.level, 0);
+  assert.equal(gov.recoverWindowMsFor(0), 10000, 'not yet failed at level 0');
+
+  t = feedFrames(gov, 60, 20, t);              // fall back out of 0
+  assert.equal(gov.level, 1);
+  assert.equal(gov.recoverWindowMsFor(0), 20000, 'that attempt failed, so the next costs twice as long');
+
+  // Ten clean seconds no longer buys it back.
+  t = feedFrames(gov, 660, 5, t, 16.6);        // ~11s clean
+  assert.equal(gov.level, 1, 'the old ten-second window must no longer be enough');
+  feedFrames(gov, 700, 5, t, 16.6);            // past 20s total
+  assert.equal(gov.level, 0, 'but a long enough clean run still earns it back');
+});
+
+test('the backoff compounds, so a rung that never holds stops being retried', () => {
+  const gov = new PerfGovernor();
+  let t = feedFrames(gov, 60, 20, 0);
+  const windows = [];
+  for (let round = 0; round < 4; round++) {
+    // A clean run long enough to climb back in, however long that has become.
+    const need = gov.recoverWindowMsFor(gov.level - 1);
+    t = feedFrames(gov, Math.ceil(need / 16.6) + 40, 5, t, 16.6);
+    assert.equal(gov.level, 0, `round ${round}: should have recovered`);
+    windows.push(gov.recoverWindowMsFor(0));
+    t = feedFrames(gov, 60, 20, t); // and fall straight back out
+    assert.equal(gov.level, 1);
+  }
+  assert.deepEqual(windows, [10000, 20000, 40000, 80000],
+    'each failed attempt doubles the clean run required before the next one');
+});
+
+test('the backoff is capped, and 8-bit mode clears the history', () => {
+  const gov = new PerfGovernor();
+  for (let i = 0; i < 40; i++) gov._fallbacks.set(0, i);
+  assert.ok(gov.recoverWindowMsFor(0) <= 600000, 'the window must not grow without bound');
+  gov._fallbacks.set(0, 3);
+  gov.retro = true;
+  gov.retro = false;
+  assert.equal(gov.recoverWindowMsFor(0), 10000, 'switching modes starts the evidence over');
+});
+
+// --- Full-frame passes shed on backing-store size, not on draw calls.
+//
+// The drop motion-blur ring and the hype echo COPY the whole composed frame.
+// Profiled at a 3840x2160 stage they were 23% and 9% of wall time -- together
+// more than every other pass combined -- while gated on the ladder's LAST
+// rung, so a 4K machine shed its vision loop, particles, rim light, bloom,
+// the veil and the entire phenomena layer before reaching them.
+
+test('at 1080p and below the full-frame passes behave exactly as they always did', () => {
+  for (const w of [1280, 1920]) {
+    const gov = new PerfGovernor();
+    gov.canvasWidth = w;
+    for (let lvl = 0; lvl < MAX_LEVEL; lvl++) {
+      gov.level = lvl;
+      assert.equal(gov.fullFrameFxEnabled, true, `${w}px level ${lvl}: no machine should lose an effect it was affording`);
+    }
+    gov.level = MAX_LEVEL;
+    assert.equal(gov.fullFrameFxEnabled, false, `${w}px: still off at the last rung, as before`);
+  }
+});
+
+test('a 4K stage sheds the whole-frame copies at the first rung instead of the last', () => {
+  const gov = new PerfGovernor();
+  gov.canvasWidth = 3840;
+  assert.equal(gov.fullFrameFxEnabled, true, 'level 0 still gets them');
+  gov.level = 1;
+  assert.equal(gov.fullFrameFxEnabled, false, 'one rung of pressure is enough at 4K');
+  assert.equal(gov.phenomenaFull, true, 'and the world-defining layers are still intact at that point');
+  assert.equal(gov.particleMul, 1, 'nothing else has been shed to pay for them');
+});
+
+test('1440p sits between the two, shedding them mid-ladder', () => {
+  const gov = new PerfGovernor();
+  gov.canvasWidth = 2560;
+  gov.level = 1;
+  assert.equal(gov.fullFrameFxEnabled, true, '2560 is not past the 4K threshold');
+  gov.canvasWidth = 2561;
+  assert.equal(gov.fullFrameFxEnabled, false);
+  const mid = new PerfGovernor();
+  mid.canvasWidth = 2000;
+  mid.level = 2;
+  assert.equal(mid.fullFrameFxEnabled, true);
+  mid.level = 3;
+  assert.equal(mid.fullFrameFxEnabled, false);
+});
+
+test('8-bit mode has them off, as it has everything else off', () => {
+  const gov = new PerfGovernor({ retro: true });
+  gov.canvasWidth = 320;
+  assert.equal(gov.fullFrameFxEnabled, false);
+});
+
+// --- The symptom, simulated end to end.
+//
+// "it'll be 60fps for a few seconds then drop to 1 or 2fps for a few seconds."
+// That is what an oscillating ladder produces on a machine that cannot afford
+// its top rung: recover, collapse, spend an age shedding, recover, collapse.
+// This drives the governor with a machine of exactly that shape and measures
+// how much of its runtime is spent unplayable.
+
+/** A machine where `badLevel` and above-quality rungs cost `badMs` a frame and
+ *  everything below is a comfortable 60fps. Returns the share of wall time
+ *  spent in frames slower than 10fps. */
+function simulateMachine(gov, { badMs = 1000, goodMs = 16.6, runMs = 600000 } = {}) {
+  let t = 0;
+  let badTime = 0;
+  while (t < runMs) {
+    // The expensive whole-frame passes are the thing this machine cannot
+    // afford, so it is slow exactly while the ladder is handing them out.
+    const delta = gov.fullFrameFxEnabled ? badMs : goodMs;
+    if (delta > 100) badTime += delta;
+    t += delta;
+    gov.sample(delta, t);
+  }
+  return badTime / t;
+}
+
+test('a machine that cannot afford the top rung settles instead of oscillating', () => {
+  const gov = new PerfGovernor();
+  gov.canvasWidth = 3840;
+  const badShare = simulateMachine(gov);
+  // Over ten minutes it should spend a small opening stretch discovering the
+  // problem and then essentially none of its runtime back in it.
+  assert.ok(
+    badShare < 0.05,
+    `expected well under 5% of runtime unplayable, got ${(badShare * 100).toFixed(1)}%`,
+  );
+  assert.ok(gov.level >= 1, 'and it should be sitting below the rung it cannot afford');
+});
+
+test('the same machine under the old rules would have oscillated -- the backoff is what stops it', () => {
+  // Same simulation with the backoff disabled, to show the test above is
+  // measuring the fix and not something that was always true.
+  const gov = new PerfGovernor();
+  gov.canvasWidth = 3840;
+  gov.recoverWindowMsFor = () => 10000; // the old flat window
+  const badShare = simulateMachine(gov);
+  assert.ok(
+    badShare > 0.1,
+    `the flat window should leave the machine oscillating; got ${(badShare * 100).toFixed(1)}%`,
+  );
+});
+
+test('a machine that CAN afford the rung keeps it', () => {
+  const gov = new PerfGovernor();
+  gov.canvasWidth = 1920;
+  // Never over budget: the ladder must never take anything away.
+  for (let t = 0, i = 0; i < 40000; i++, t += 16.6) gov.sample(16.6, t);
+  assert.equal(gov.level, 0);
+  assert.equal(gov.fullFrameFxEnabled, true);
+});
+
+test('a machine that is merely a little slow still gets its rung back', () => {
+  // The backoff must not punish a machine that only briefly stumbled: it
+  // recovers, holds, and is never demoted again.
+  const gov = new PerfGovernor();
+  let t = feedFrames(gov, 60, 20, 0);
+  assert.equal(gov.level, 1);
+  for (let i = 0; i < 4000; i++, t += 16.6) gov.sample(16.6, t);
+  assert.equal(gov.level, 0, 'a clean machine climbs all the way back');
+  assert.equal(gov.recoverWindowMsFor(0), 10000, 'and pays no penalty for the one stumble');
+});
+
+test('sustained catastrophic frames shed in a few frames, not a few seconds', () => {
+  const gov = new PerfGovernor();
+  // ~1fps: 54x over budget. Under the plain cap this took ten frames -- ten
+  // seconds of unusable output -- to buy a single rung.
+  let t = 0;
+  let frames = 0;
+  while (gov.level === 0 && frames < 60) { gov.sample(1000, t); t += 1000; frames++; }
+  assert.ok(frames <= 4, `expected a rung shed within ~3 frames at 1fps, took ${frames}`);
+});
+
+test('an isolated hitch is still capped -- one bad frame must not cascade', () => {
+  const gov = new PerfGovernor();
+  // A single 2-second stall surrounded by healthy frames: a tab hitch, a GC
+  // pause, the OS swapping. It must not shed anything on its own.
+  for (let t = 0, i = 0; i < 30; i++, t += 16.6) gov.sample(16.6, t);
+  gov.sample(2000, 600);
+  for (let t = 2600, i = 0; i < 30; i++, t += 16.6) gov.sample(16.6, t);
+  assert.equal(gov.level, 0, 'one catastrophic frame is a hitch, not a verdict');
+});
+
+test('two isolated hitches far apart still do not escalate', () => {
+  const gov = new PerfGovernor();
+  let t = 0;
+  for (let round = 0; round < 5; round++) {
+    gov.sample(1000, t); t += 1000;
+    for (let i = 0; i < 120; i++, t += 16.6) gov.sample(16.6, t);
+  }
+  assert.equal(gov.level, 0, 'clean frames between hitches must reset the run');
+});
