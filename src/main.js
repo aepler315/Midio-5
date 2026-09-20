@@ -222,6 +222,13 @@ let renderer = null;
 let titleBackdrop = null; // living title-screen backdrop (drawn while !running)
 let titleRafHandle = null;
 let lastSpecSig = null; // cache-gate for the One-Spectrum CSS var sync (write only on key/form change)
+// A second, much coarser gate for the --glow-* tokens. See the note on
+// #app::before in style.css: those three feed a larger-than-viewport element
+// under a 48px blur, so each rewrite is a full-viewport repaint at display
+// resolution -- the one CSS variable write in this app whose cost is worth a
+// gate of its own. 30 degrees rather than the chrome's 3.
+const GLOW_SHIFT_STEP_DEG = 30;
+let lastGlowSig = null;
 let visionLoop = null;
 let debugOverlay = null;
 let perfGovernor = null;
@@ -2353,7 +2360,10 @@ function frame(tRaf) {
   // DOM is only touched when the song's key/form actually moves -- never
   // per-frame style thrash.
   if (sim.biomes && typeof sim.biomes.currentHaloColor === 'function') {
-    const sig = `${sim.biomes.tonic ?? '?'}|${sim.biomes._spectralShift ? Math.round(sim.biomes._spectralShift() / 3) : 0}|${sim.biomes.currentBlend ? sim.biomes.currentBlend.to : ''}`;
+    const tonic = sim.biomes.tonic ?? '?';
+    const shiftDeg = sim.biomes._spectralShift ? sim.biomes._spectralShift() : 0;
+    const blendTo = sim.biomes.currentBlend ? sim.biomes.currentBlend.to : '';
+    const sig = `${tonic}|${Math.round(shiftDeg / 3)}|${blendTo}`;
     if (sig !== lastSpecSig) {
       lastSpecSig = sig;
       const halo = sim.biomes.currentHaloColor();
@@ -2361,6 +2371,16 @@ function frame(tRaf) {
       const vars = cssVarMap(tokens);
       const root = document.documentElement;
       for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+      // The ambient glow rides a coarser gate. Its signature can only move
+      // when this one has, so deriving it here costs nothing and keeps both
+      // reading the same palette.
+      const glowSig = `${tonic}|${Math.round(shiftDeg / GLOW_SHIFT_STEP_DEG)}|${blendTo}`;
+      if (glowSig !== lastGlowSig) {
+        lastGlowSig = glowSig;
+        root.style.setProperty('--glow-gold', vars['--spec-gold']);
+        root.style.setProperty('--glow-cool', vars['--spec-cool']);
+        root.style.setProperty('--glow-warm', vars['--spec-warm']);
+      }
     }
   }
 

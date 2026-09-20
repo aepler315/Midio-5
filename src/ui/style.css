@@ -9,6 +9,11 @@
   --spec-gold: #ffd76a;    /* combo, grade, hover accents */
   --spec-cool: #7ad1ff;    /* BASS role, ghost-button hover */
   --spec-warm: #ff7ab6;    /* primary file button, warm accents */
+  /* Coarse mirrors of the three above, for the one element whose repaint is
+     expensive enough to be worth decoupling -- see #app::before. */
+  --glow-gold: #ffd76a;
+  --glow-cool: #7ad1ff;
+  --glow-warm: #ff7ab6;
   --spec-pad: #b9a3ff;     /* PAD role dot */
   --spec-rhythm: #ff5a7a;  /* RHYTHM role dot, hide action */
   --spec-hue: 45;
@@ -71,8 +76,19 @@ html, body {
 }
 
 /* Treat the safe-stage bars as part of the composition. These colors are
-   already cache-synced to the live song/world palette by main.js, so the
-   surround follows a performance without copying or blurring the canvas. */
+   cache-synced to the live song/world palette by main.js.
+
+   They read --glow-* rather than the --spec-* tokens the rest of the chrome
+   uses, and that separation is a performance fix, not a naming preference.
+   This element is larger than the viewport and sits under a 48px blur, so
+   any rewrite of a custom property it reads repaints the whole document
+   layer and re-runs that blur at DISPLAY resolution. The --spec-* tokens
+   move with the song's spectral drift, which measured ~0.9 rewrites a
+   second -- i.e. roughly one full-viewport blurred repaint per second, all
+   song. It costs the same whatever the stage resolution is, which is why
+   picking 8-bit never helped it. main.js updates --glow-* on a far coarser
+   quantization; a 0.38-alpha wash under a 48px blur cannot show the
+   difference. */
 #app::before {
   content: '';
   position: absolute;
@@ -83,9 +99,9 @@ html, body {
   filter: blur(48px) saturate(0.8);
   transform: scale(1.08);
   background:
-    radial-gradient(ellipse at 18% 30%, color-mix(in srgb, var(--spec-cool) 42%, transparent), transparent 58%),
-    radial-gradient(ellipse at 82% 68%, color-mix(in srgb, var(--spec-warm) 34%, transparent), transparent 62%),
-    linear-gradient(145deg, var(--bg-void), color-mix(in srgb, var(--spec-gold) 16%, var(--bg-void)));
+    radial-gradient(ellipse at 18% 30%, color-mix(in srgb, var(--glow-cool) 42%, transparent), transparent 58%),
+    radial-gradient(ellipse at 82% 68%, color-mix(in srgb, var(--glow-warm) 34%, transparent), transparent 62%),
+    linear-gradient(145deg, var(--bg-void), color-mix(in srgb, var(--glow-gold) 16%, var(--bg-void)));
 }
 
 #stage {
