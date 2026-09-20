@@ -475,3 +475,67 @@ test('the marker never overlaps itself at a playable tempo', () => {
     assert.ok(lit <= 1, `two markers lit at ${t}ms`);
   }
 });
+
+// --- Review findings on the two-phase pass (#275), fixed after it merged.
+
+test('the marker and the match read the same collapsed onsets', () => {
+  // Real kick lists arrive in flammed pairs. tap() has always collapsed them;
+  // the marker was pulsing on the raw list, so it flashed twice for one beat
+  // while the tap resolved to the first of the pair -- and a player timing
+  // the second flash had the ornament's gap filed as display latency.
+  const flammed = [1000, 1081, 2000, 2081, 3000, 3081];
+  const cal = new SyncCalibrator(0);
+  const collapsed = cal.collapsedOnsets(flammed, 1000);
+  assert.deepEqual(collapsed, [1000, 2000, 3000]);
+
+  // One flash per beat, and it is the FIRST of each pair that lights. At the
+  // ornament the ring is still DECAYING from that flash, not re-spiking --
+  // which is exactly what the raw list does, and what gave the player a
+  // second edge to aim at.
+  assert.equal(beatPulse01(collapsed, 1000), 1);
+  assert.ok(beatPulse01(collapsed, 1081) < 1, 'the ornament does not re-light');
+  assert.equal(beatPulse01(flammed, 1081), 1, 'whereas the raw list re-spikes');
+  // Strictly falling across the ornament: one edge per beat, so there is
+  // only ever one instant to tap.
+  for (let t = 1000; t < 1200; t += 10) {
+    assert.ok(
+      beatPulse01(collapsed, t + 10) <= beatPulse01(collapsed, t),
+      `pulse rose again at ${t + 10}ms`,
+    );
+  }
+
+  // Which is the onset the tap is measured against, so the two agree.
+  const r = cal.tap(1081, flammed, 1000, {});
+  assert.equal(r.offsetMs, 81, 'measured from the cluster start, not the flam');
+});
+
+test('collapsedOnsets re-derives the grid when the tempo changes', () => {
+  // The gap is beat-relative, so a cached list from a different tempo would
+  // be the wrong grid. 81ms is an ornament at 60bpm and a real note at 240.
+  const onsets = [1000, 1081, 2000, 2081];
+  const cal = new SyncCalibrator(0);
+  assert.deepEqual(cal.collapsedOnsets(onsets, 1000), [1000, 2000]);
+  assert.deepEqual(cal.collapsedOnsets(onsets, 250), onsets, 'fast: all real');
+});
+
+test('collapsedOnsets caches on identity, so per-frame calls are free', () => {
+  const onsets = [1000, 1081, 2000];
+  const cal = new SyncCalibrator(0);
+  const a = cal.collapsedOnsets(onsets, 1000);
+  const b = cal.collapsedOnsets(onsets, 1000);
+  assert.equal(a, b, 'same array instance back, not a fresh collapse');
+});
+
+test('a manual trim mid-pass resets to the ear phase', () => {
+  // The overlay follows this back (main.js adoptManualTrim). If the
+  // calibrator said ear while the screen still asked for ring taps, those
+  // taps would be stored as ear samples and overwrite the typed value.
+  const cal = new SyncCalibrator(0);
+  cal.beginPhase(PHASE_EYE);
+  assert.equal(cal.phase, PHASE_EYE);
+  cal.reset(-120);
+  assert.equal(cal.phase, PHASE_EAR, 'reset returns to the ear phase');
+  assert.equal(cal.trimMs, -120, 'and adopts the typed value');
+  assert.equal(cal.earTaps, 0);
+  assert.equal(cal.eyeTaps, 0);
+});

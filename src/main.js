@@ -259,7 +259,11 @@ function effectiveOutputLatencyMs() {
 
 /** Recorded audio is tapped before hardware output latency, so an export's
  * choreography must use the same zero-latency clock rather than baking this
- * room's device/Bluetooth compensation into the video. */
+ * room's device/Bluetooth compensation into the video.
+ *
+ * NOT the presentation lead, which a captured frame also does not need --
+ * that one is still baked into the recorded choreography, and taking it out
+ * is its own piece of work. See docs/video-export.md. */
 function choreographyOutputLatencyMs() {
   return songRecorder?.recording ? 0 : effectiveOutputLatencyMs();
 }
@@ -2380,17 +2384,28 @@ function frame(tRaf) {
   // Tap recalibration: drive the count while an (opt-in, 'C'-key-triggered)
   // pass is running. Never blocks the frame, pauses audio, or swallows input.
   if (recalibration.active) {
-    // The clock the picture is actually drawn on: the sim runs a display
-    // lead ahead of the audio, and the beat-anchored layer sits a further
-    // visualLag behind that. Undoing both puts this back on song time, so a
-    // kick's marker is drawn in the same frame as the character move for
-    // the same kick -- which is what makes tapping it measure the display.
-    const visualBeatMs = simTime - VISUAL_LEAD_MS - (sim.visualLagMs || 0);
+    // The exact clock the beat-anchored layer is drawn on -- Renderer and
+    // every performer evaluate `sim.timeMs - visualLagMs`, and the ring has
+    // to pulse in the same frame as the character move for the same kick or
+    // the pass measures the gap between them instead of the display. The
+    // display lead is already inside simTime and must NOT be taken off
+    // again here: doing so put the ring a lead (52ms) behind the visuals it
+    // stands in for, and every eye pass banked that as display latency.
+    const visualBeatMs = simTime - (sim.visualLagMs || 0);
     const alive = recalibration.update(simTime, {
       beatPeriodMs: sim.jump.beatPeriodMs,
       confidence: sim.beatAnchor.confidence,
+      reducedFlash,
+      // Matched against the same collapsed onsets the tap is measured
+      // against. Pulsing on the raw list would flash twice for a flammed
+      // kick while the match resolved to the first of the pair, so a player
+      // timing the second flash would have the ornament's gap filed as
+      // display latency.
       beatPulse01: recalibration.phase === PHASE_EYE
-        ? beatPulse01(sim.jump.kickTimes, visualBeatMs)
+        ? beatPulse01(
+          syncCalibrator.collapsedOnsets(sim.jump.kickTimes, sim.jump.beatPeriodMs),
+          visualBeatMs,
+        )
         : 0,
     });
     if (!alive) endRecalibration();
@@ -2586,22 +2601,36 @@ function seekSong(ms) {
 function beatTap(role = null) {
   if (!running || !sim || paused || !audioEngine) return;
   const tapMs = visualNow(audioEngine.nowMs, effectiveOutputLatencyMs());
-  sim.onBeatTap(tapMs, role);
+  const eyePhase = recalibration.active && recalibration.phase === PHASE_EYE;
+  // An eye-phase tap is aimed at a ring on the screen, not at the groove.
+  // Feeding it to the anchor would teach BeatAnchor the display delay:
+  // six consistent taps drag anchorMs toward it, and that anchor goes on
+  // steering jumps and the ensemble long after the pass ends -- and, on a
+  // roled tap, into the persisted groove fingerprint. It measures the
+  // screen and nothing else.
+  if (!eyePhase) sim.onBeatTap(tapMs, role);
   // During a Sync pass the same tap also sets the Bluetooth delay. Only
   // during one: taps are the beat anchor's the rest of the time, and having
   // an ordinary tap silently move an audio setting would be a surprise
   // nobody asked for.
   //
-  // And only the low hand. Taps are measured against the chart's KICKS, so
-  // a tap the player has explicitly marked as the high part (J, or a
-  // right-click) is aimed at something else -- measuring it here would file
-  // a backbeat's distance from the nearest kick as a Bluetooth delay. It
-  // still reaches the beat anchor above, which wants both hands.
-  if (recalibration.active && role !== ROLE_HIGH) applySyncTap(tapMs);
+  // In the ear phase, only the low hand. Taps are measured against the
+  // chart's KICKS, so a tap the player has explicitly marked as the high
+  // part (J, or a right-click) is aimed at something else -- measuring it
+  // here would file a backbeat's distance from the nearest kick as a
+  // Bluetooth delay. It still reaches the beat anchor above, which wants
+  // both hands.
+  //
+  // The eye phase has no such distinction: there is one ring, and both
+  // hands are aimed at it. Filtering there would leave a player using the
+  // documented right-hand input stuck at zero eye taps until the pass ran
+  // out, with the trim then built from ear samples alone.
+  if (recalibration.active && (eyePhase || role !== ROLE_HIGH)) applySyncTap(tapMs);
   // Persist on a roled tap only. Unroled catch-all taps move the anchor but
   // teach the templates nothing, and writing storage on every stray keypress
-  // would be a lot of churn for no new information.
-  if (role) grooveSaveDue = true;
+  // would be a lot of churn for no new information. An eye-phase tap never
+  // reached the anchor at all, so it has nothing to persist either.
+  if (role && !eyePhase) grooveSaveDue = true;
 }
 
 /** Open the eight-measure tap-recalibration count. Never pauses the song --
@@ -2645,7 +2674,11 @@ function applySyncTap(tapMs) {
   // to find a button is exactly the interruption this is meant to avoid.
   if (result.phase === PHASE_EAR && result.phaseComplete) {
     syncCalibrator.beginPhase(PHASE_EYE);
-    recalibration.setPhase(PHASE_EYE);
+    // Re-base the pass deadline. The eight measures are a budget for ONE
+    // half; a sparse chart can spend six of them on the ear taps alone, and
+    // the eye half would then close after two -- persisting a trim built on
+    // a two-sample median while the UI was still asking for six.
+    recalibration.setPhase(PHASE_EYE, simTime);
   }
 
   if (!result.changed) return;
@@ -2933,6 +2966,12 @@ function turnOffBtLatencyTrim() {
 function adoptManualTrim() {
   syncCalibrator.reset(btLatencyTrimMs);
   if (recalibration.active) {
+    // reset() puts the calibrator back on the ear phase, so the overlay has
+    // to go back with it. Left on the eye phase it would still be telling
+    // the player to tap the flashing ring while every one of those taps was
+    // stored as an ear sample -- measuring the screen, filing it as the
+    // sound, and overwriting the value the player just typed by hand.
+    recalibration.setPhase(PHASE_EAR, simTime);
     recalibration.syncNote = `Bluetooth delay: ${Math.abs(btLatencyTrimMs)}ms, set by hand — tap to refine it.`;
   }
 }

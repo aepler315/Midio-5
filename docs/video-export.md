@@ -71,6 +71,39 @@ asserts those bars are black and the middle is not, because a stretch and a
 letterbox are indistinguishable from any check that only looks at the
 dimensions.
 
+## Known: the recorded choreography is a presentation lead ahead of its audio
+
+The sim is stepped `VISUAL_LEAD_MS` (52ms) ahead of the audio, so that what
+is drawn now is right by the time a display actually shows it. A captured
+frame has no scanout to wait for — it is timestamped the instant it is
+grabbed — so that lead has nothing to compensate for and is encoded into the
+file: the choreography sits ~52ms ahead of the master bus it is muxed with.
+
+It is a *uniform* offset, so nothing inside the frame disagrees with
+anything else, and at ~1.5 frames it is near the edge of perceptible. It is
+also pre-existing, and not yet fixed. Two things make it harder than it
+looks, and both have already produced a wrong fix:
+
+- **It cannot come off via `choreographyOutputLatencyMs()`.** Exactly one
+  consumer in the renderer reads through `sim.visualLagMs`; `grep -c
+  'sim\.timeMs' src/render/Renderer.js` returns 23. Subtracting the lead
+  there moves the performers and leaves the drop shockwave, the impact
+  flash, the brush and the epicycles where they were — internal
+  desynchronization, which is worse than a uniform offset.
+- **It cannot come off the shared clock either, not by itself.**
+  `startTimeline()` seeds `simTime = startedAt + VISUAL_LEAD_MS`, so the
+  lead is already *stored* in the clock. Lowering `renderNowMs` afterwards
+  does not remove it: `advanceFixedStepClock()` floors the resulting
+  negative delta at zero and then sets `lastNowMs = nowMs`, which forgives
+  the rest of the debt. The sim loses one frame of advance, not 52ms.
+
+A real fix has to rebase `simTime` itself when the lead changes, and decide
+what to do about monotonicity — pulling the clock back 52ms risks re-firing
+one-shot events, while freezing it for 52ms needs the debt carried across
+frames rather than forgiven. It also needs a test that actually measures A/V
+alignment in the output file; `choreoLeadMs`-style instrumentation only
+reports the input, not the result.
+
 ## Why it composites instead of capturing the stage directly
 
 `stage.captureStream()` would be less code and is wrong. The stage's backing
