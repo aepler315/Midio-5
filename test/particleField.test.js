@@ -212,3 +212,103 @@ test('an empty field draws nothing instead of throwing', () => {
   assert.doesNotThrow(() => f.draw(ctx, 1));
   assert.equal(calls.length, 0, 'an empty field should not even open a save/restore pair');
 });
+
+// --- The caller's alpha is a scene-level fade, not a suggestion.
+// BiomeManager sets globalAlpha twice around these fields: once for the
+// opening gain, and again for the incoming half of a biome cross-blend,
+// deliberately fading the field as a whole so individual particles don't
+// pop as the gain rises. draw() used to ASSIGN globalAlpha per particle,
+// which discarded both -- so neither fade did anything and particles
+// arrived at full strength on their first frame.
+
+/** Records the globalAlpha in force at each fill/stroke/drawImage, with
+ *  save/restore semantics so the outer state can be checked afterwards. */
+function alphaRecorder(startAlpha = 1) {
+  const stack = [];
+  const drawn = [];
+  const ctx = {
+    globalAlpha: startAlpha,
+    save() { stack.push(this.globalAlpha); },
+    restore() { this.globalAlpha = stack.pop(); },
+    beginPath() {}, arc() {}, moveTo() {}, lineTo() {}, closePath() {},
+    translate() {}, rotate() {}, scale() {}, ellipse() {}, rect() {},
+    fillText() {}, setLineDash() {},
+    fill() { drawn.push(this.globalAlpha); },
+    stroke() { drawn.push(this.globalAlpha); },
+    drawImage() { drawn.push(this.globalAlpha); },
+  };
+  return { ctx, drawn };
+}
+
+test('a field scales through the alpha it is handed instead of replacing it', () => {
+  const f = new ParticleField({ kind: 'snow', color: '#fff', count: 4, speed: 10 }, 800, 600, 1);
+
+  const full = alphaRecorder(1);
+  f.draw(full.ctx, 1);
+  const faded = alphaRecorder(0.1);
+  f.draw(faded.ctx, 1);
+
+  assert.ok(full.drawn.length > 0, 'the control pass must actually draw');
+  assert.equal(faded.drawn.length, full.drawn.length, 'the fade changes opacity, not particle count');
+  for (let i = 0; i < full.drawn.length; i++) {
+    assert.ok(
+      Math.abs(faded.drawn[i] - full.drawn[i] * 0.1) < 1e-9,
+      `particle ${i} drew at ${faded.drawn[i]}, expected a tenth of ${full.drawn[i]}`,
+    );
+  }
+  assert.equal(faded.ctx.globalAlpha, 0.1, 'the outer alpha is left as it was found');
+});
+
+test('a field faded to nothing draws nothing', () => {
+  const f = new ParticleField({ kind: 'snow', color: '#fff', count: 4, speed: 10 }, 800, 600, 1);
+  const { ctx, drawn } = alphaRecorder(0);
+  f.draw(ctx, 1);
+  assert.deepEqual(drawn, [], 'a field at zero alpha is invisible -- it should not be drawn at all');
+  assert.equal(ctx.globalAlpha, 0);
+});
+
+test('the light boost brightens the particle, then the scene fade scales the result', () => {
+  const f = new ParticleField({ kind: 'snow', color: '#fff', count: 4, speed: 10 }, 800, 600, 1);
+  const lights = [{ x: f.particles[0].x, y: f.particles[0].y, intensity: 1, radius: 400 }];
+
+  const lit = alphaRecorder(1);
+  f.draw(lit.ctx, 1, null, 0, lights);
+  const litFaded = alphaRecorder(0.5);
+  f.draw(litFaded.ctx, 1, null, 0, lights);
+
+  assert.ok(lit.drawn[0] > 0.85, 'the nearest particle should carry a light boost above the base snow alpha');
+  assert.ok(lit.drawn[0] <= 1, 'the boost stays clamped');
+  assert.ok(
+    Math.abs(litFaded.drawn[0] - lit.drawn[0] * 0.5) < 1e-9,
+    'the scene fade applies on top of the boost, not instead of it',
+  );
+});
+
+// --- A draw multiplier of zero means the field is shed, not thinned.
+// The drawn count is floored at 1 so a heavily shed field still shows
+// something; that floor used to apply at zero too, so a governor rung that
+// had switched particles off still paid for, and drew, one particle per
+// field per frame -- at full opacity, in a world that had asked for none.
+
+test('a zero draw multiplier draws no particles at all', () => {
+  const f = new ParticleField({ kind: 'snow', color: '#fff', count: 4, speed: 10 }, 800, 600, 1);
+  const { ctx, drawn } = alphaRecorder(1);
+  f.draw(ctx, 0);
+  assert.deepEqual(drawn, [], 'a shed field should draw nothing');
+});
+
+test('a negative or NaN draw multiplier is treated as shed, not as one particle', () => {
+  const f = new ParticleField({ kind: 'snow', color: '#fff', count: 4, speed: 10 }, 800, 600, 1);
+  for (const mul of [-1, -0.5, NaN]) {
+    const { ctx, drawn } = alphaRecorder(1);
+    f.draw(ctx, mul);
+    assert.deepEqual(drawn, [], `multiplier ${mul} should draw nothing`);
+  }
+});
+
+test('a small but positive multiplier still shows at least one particle', () => {
+  const f = new ParticleField({ kind: 'snow', color: '#fff', count: 40, speed: 10 }, 800, 600, 1);
+  const { ctx, drawn } = alphaRecorder(1);
+  f.draw(ctx, 0.001);
+  assert.equal(drawn.length, 1, 'shedding hard thins the field to one, it does not switch it off');
+});
