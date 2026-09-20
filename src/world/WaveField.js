@@ -153,3 +153,24 @@ export function easeSeaState(current, target, dtSec, tauSec = 10) {
   const alpha = 1 - Math.exp(-Math.max(0, dtSec) / Math.max(0.1, tauSec));
   return current + (clamp01(target) - current) * alpha;
 }
+
+/** How far the eased sea state must travel from the value the live spectrum
+ *  was sampled at before it is worth re-sampling. Small enough that the sea
+ *  keeps up with the weather, large enough to bound the rebuild rate. */
+export const SPECTRUM_REBUILD_STEP = 0.01;
+
+/**
+ * Whether the wave spectrum should be rebuilt, given the sea state now and
+ * the sea state the LIVE spectrum was built at.
+ *
+ * The second argument is the whole point. easeSeaState has a ~10s time
+ * constant, so one frame at 60fps moves the sea state by at most dt/tau --
+ * about 0.0017, which can never clear a 0.01 step. Compared against the
+ * PREVIOUS FRAME's sea state this test therefore never passes, at any
+ * tempo, for any song: the spectrum stays frozen at whatever state it was
+ * constructed with. Compared against the built-at state the small per-frame
+ * deltas accumulate and the spectrum re-samples as the weather moves.
+ */
+export function shouldRebuildSpectrum(seaState, spectrumSeaState, step = SPECTRUM_REBUILD_STEP) {
+  return Math.abs(seaState - spectrumSeaState) > step;
+}

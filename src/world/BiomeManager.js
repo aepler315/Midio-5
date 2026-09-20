@@ -53,7 +53,7 @@ import {
 import {
   mirageRecipe, mirageHeight01, mirageShimmerPx, miragePresence01, MIRAGE_PARALLAX, MIRAGE_TILE_PX,
 } from './FataMorgana.js';
-import { buildWaveComponents, waveFieldSample, windSpeedForSeaState, easeSeaState } from './WaveField.js';
+import { buildWaveComponents, waveFieldSample, windSpeedForSeaState, easeSeaState, shouldRebuildSpectrum } from './WaveField.js';
 import {
   generateCatalogue, subPixelDraw, twinkleAmplitude, galacticBandCenterY, GALACTIC_BAND,
   extinction01, reddening01, generateDustLanes, generateDeepSky, generatePlanets,
@@ -652,6 +652,9 @@ export class BiomeManager {
     // moves. Seeded once so it's deterministic per song like everything else.
     this._waveFieldSeed = hashSeed(`${songSeed}:wavefield`);
     this._seaState = 0;
+    // The sea state the CURRENT spectrum was sampled at, which is what the
+    // rebuild test has to measure against -- see the update below.
+    this._spectrumSeaState = 0;
     this._waveComponents = buildWaveComponents(this._waveFieldSeed, windSpeedForSeaState(0), 24);
 
     // The mountains dance: a groove level (smoothed global energy) drives a
@@ -1917,8 +1920,12 @@ export class BiomeManager {
     // never makes a wave. The surface itself always obeys its own physics.
     const targetSeaState = (this._eqSmoothed[0] + this._eqSmoothed[1] + this._eqSmoothed[2]) / 3;
     const nextSeaState = easeSeaState(this._seaState, targetSeaState, dtSec, 10);
-    if (Math.abs(nextSeaState - this._seaState) > 0.01) {
+    // Measured against the sea state the spectrum was BUILT at, not against
+    // last frame's -- see shouldRebuildSpectrum for why the difference is
+    // the whole behaviour.
+    if (shouldRebuildSpectrum(nextSeaState, this._spectrumSeaState)) {
       this._waveComponents = buildWaveComponents(this._waveFieldSeed, windSpeedForSeaState(nextSeaState), 24);
+      this._spectrumSeaState = nextSeaState;
     }
     this._seaState = nextSeaState;
 
@@ -2313,7 +2320,10 @@ export class BiomeManager {
       ].filter(Boolean)
       : null;
     ctx.save();
-    if (openA < 0.999) ctx.globalAlpha = openA;
+    // Set unconditionally, not just when the gain is below 1: ParticleField
+    // now scales through the alpha it arrives with, so an unset alpha here
+    // would hand it whatever an earlier sky draw happened to leave behind.
+    ctx.globalAlpha = openA;
     this.fields.get(from).draw(ctx, particleMul, mandalaColor, this.unravel, particleLights);
     ctx.restore();
     if (to !== from && t > 0.02) {
@@ -2326,7 +2336,12 @@ export class BiomeManager {
     // convergence at the coda comes free from `this.unravel`.
     if (this._activeWeatherIntensity > 0.01) {
       const weatherField = this.weatherFields.get(this.weatherState.kind);
-      if (weatherField) weatherField.draw(ctx, this._activeWeatherIntensity * particleMul, mandalaColor, this.unravel, particleLights);
+      if (weatherField) {
+        ctx.save();
+        ctx.globalAlpha = openA;
+        weatherField.draw(ctx, this._activeWeatherIntensity * particleMul, mandalaColor, this.unravel, particleLights);
+        ctx.restore();
+      }
     }
 
     // The Kuramoto swarm shares this depth: synchronized flashing motes,

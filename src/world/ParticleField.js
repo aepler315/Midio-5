@@ -288,8 +288,6 @@ export class ParticleField {
    *  toward the biome's own halo color. Blended once per draw call, not
    *  per particle. */
   draw(ctx, mul = 1, haloColor = null, hueBlend = 0, lights = null) {
-    const color = haloColor && hueBlend > 0.001 ? hexLerpHsl(this.color, haloColor, clamp01(hueBlend)) : this.color;
-    const lighting = !!(lights && lights.length);
     // An empty field has nothing to draw. Without this the Math.max below
     // floors the count at 1, `particles[0]` is undefined, and the first
     // property read off it throws -- which aborts the REST of the frame,
@@ -297,12 +295,32 @@ export class ParticleField {
     // only surfaced under lighting, because that is the first branch that
     // dereferences the particle.
     if (this.particles.length === 0) return;
+    // A multiplier at or below zero means the caller has shed this field
+    // outright -- the governor at its deepest rung, or a weather kind at
+    // zero intensity. The Math.max below floors the drawn count at 1, so
+    // "off" still cost a particle per field per frame AND drew one, at
+    // full opacity, in a world that had asked for none. A NaN multiplier
+    // lands here too rather than propagating into the count.
+    const density = Math.min(1, mul);
+    if (!(density > 0)) return;
+    // The alpha the caller arrives with is a scene-level fade: BiomeManager
+    // sets it for the opening gain and again for the incoming half of a
+    // biome cross-blend, deliberately fading the field as a whole so
+    // individual particles don't pop as the gain rises. Every setAlpha
+    // below used to ASSIGN globalAlpha, which threw that fade away -- so
+    // both fades did nothing and particles arrived at full strength on
+    // their first frame. Scale through the inherited alpha instead. A
+    // field faded to nothing is then nothing to draw.
+    const inherited = ctx.globalAlpha ?? 1;
+    if (!(inherited > 0)) return;
+    const color = haloColor && hueBlend > 0.001 ? hexLerpHsl(this.color, haloColor, clamp01(hueBlend)) : this.color;
+    const lighting = !!(lights && lights.length);
     ctx.save();
-    const n = Math.max(1, Math.ceil(this.particles.length * Math.min(1, mul)));
+    const n = Math.max(1, Math.ceil(this.particles.length * density));
     for (let idx = 0; idx < n; idx++) {
       const p = this.particles[idx];
       const boost = lighting ? particleLightAmount(lights, p.x, p.y) : 0;
-      const setAlpha = (a) => { ctx.globalAlpha = boost ? clamp01(a + boost) : a; };
+      const setAlpha = (a) => { ctx.globalAlpha = inherited * (boost ? clamp01(a + boost) : a); };
       switch (this.kind) {
         case 'fireflies':
         case 'pollen':
