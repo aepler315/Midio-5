@@ -51,7 +51,7 @@ import {
   farShoreRecipe, farShoreHeight01, farShorePulse01, FAR_SHORE_PARALLAX, FAR_SHORE_TILE_PX,
 } from './FarShore.js';
 import {
-  mirageRecipe, mirageHeight01, mirageShimmerPx, miragePresence01, MIRAGE_PARALLAX, MIRAGE_TILE_PX,
+  mirageRecipe, mirageHeight01, mirageShimmerPx, miragePresence01, mirageDriftPx, mirageStretch01, MIRAGE_TILE_PX,
 } from './FataMorgana.js';
 import { buildWaveComponents, waveFieldSample, windSpeedForSeaState, easeSeaState, shouldRebuildSpectrum } from './WaveField.js';
 import {
@@ -2172,7 +2172,13 @@ export class BiomeManager {
     this.drawDeepSky(ctx, skyVoyage, canvas); // Midasus's sky voyage, when she's away -- behind the mountains below
     // Ambient connect-the-dots + reward volleys read as starlight, so the
     // night sky brightens them the same way it brightens the atlas stars.
-    const nightAlphaMul = (1 + 1.2 * dn.night) * Math.max(0.25, skyA);
+    // The Range's constellations were effectively washed out in daylight:
+    // styleDials pins skyWireAlpha to 0.38 and the Math.max(0.25,...) floor
+    // left them around alpha 0.09 by day. Raise the floor to 0.55 and boost
+    // daytime presence so the connect-the-dots figures actually read against
+    // a lit sky instead of only appearing at night.
+    const dayBoost = 1 + 0.85 * (1 - dn.night);
+    const nightAlphaMul = (1 + 1.2 * dn.night) * Math.max(0.55, skyA) * dayBoost;
     if (phenomenaFull && skyA > 0.02) this.weaver.draw(ctx, canvas, this.reducedFlash, nightAlphaMul);
     if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
 
@@ -4023,10 +4029,22 @@ export class BiomeManager {
     const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
     const sinkPx = Math.max(14, canvas.height * 0.015);
     const baseY = horizonY + sinkPx;
-    const maxHeightPx = Math.max(60, canvas.height * 0.13);
-    const scrollX = worldX * MIRAGE_PARALLAX;
+    // A touch SMALLER in pixels than the old invented range (0.13 -> 0.115 of
+    // canvas height) -- the mirage is stretched vertically by refraction but
+    // stays compact, because its scale is conveyed by how slowly it moves and
+    // how it towers, not by raw screen area.
+    const maxHeightPx = Math.max(54, canvas.height * 0.115);
+    // The mirage IS the far shore: same recipe, same horizontal span, same
+    // (near-static) parallax as the dark shoreline one draw-call earlier, so
+    // the two stay locked together as the same landmass.
+    const scrollX = worldX * FAR_SHORE_PARALLAX;
     const stepPx = 6;
     const shimmerAmpPx = Math.max(1.5, canvas.height * 0.006);
+    // Megalophobic motion (SpaceRidge's cues, not its size): a vast, slow
+    // bob and a 31s towering/sagging stretch that read as "too large to be
+    // nearby" without needing to occupy more pixels.
+    const drift = mirageDriftPx(this.tSec, canvas.height);
+    const stretch = mirageStretch01(this.tSec);
 
     ctx.save();
     ctx.beginPath();
@@ -4048,21 +4066,29 @@ export class BiomeManager {
       ctx.moveTo(-stepPx, baseY + yBias);
       for (let x = -stepPx; x <= canvas.width + stepPx; x += stepPx) {
         const u = (x + scrollX) / MIRAGE_TILE_PX;
-        const h01 = mirageHeight01(this._mirageRecipe, u);
+        // Sample the REAL far shore (this._farShoreRecipe), refined by the
+        // mirage's own fine crest (this._mirageRecipe).
+        const h01 = mirageHeight01(this._farShoreRecipe, this._mirageRecipe, u);
         const shimmer = mirageShimmerPx(this._mirageRecipe, u, this.tSec, shimmerAmpPx);
-        const y = baseY + yBias - h01 * maxHeightPx * squash + shimmer;
+        const y = baseY + yBias + drift - h01 * maxHeightPx * stretch * squash + shimmer;
         ctx.lineTo(x, y);
       }
       ctx.lineTo(canvas.width + stepPx, baseY + yBias);
       ctx.closePath();
     };
 
-    // Main image.
+    // Main image -- the real far shore, lifted and stretched by refraction.
     ctx.fillStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
     buildPath(1, 0);
     ctx.fill();
-    // Inferior echo: squashed flat and dropped just below -- the doubled,
-    // compressed reflection a real mirage shows under its main image.
+    // Superior mirage upper image: a second, slightly taller, fainter copy
+    // floating just above the main one -- a true superior Fata Morgana
+    // stacks an erect image over an inverted one.
+    ctx.fillStyle = `rgba(${r},${g},${b},${(alpha * 0.6).toFixed(3)})`;
+    buildPath(1.28, -maxHeightPx * stretch * 0.10);
+    ctx.fill();
+    // Inferior echo: squashed flat and dropped just below -- the inverted,
+    // compressed reflection a real superior mirage shows under its erect image.
     ctx.fillStyle = `rgba(${r},${g},${b},${(alpha * 0.45).toFixed(3)})`;
     buildPath(0.34, sinkPx * 0.5);
     ctx.fill();

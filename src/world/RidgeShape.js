@@ -331,8 +331,13 @@ export function crenellation(noise, x, relief, amp, cellPx = 0) {
   const o1 = noise.sample(x * f1 + 7.3);
   const o2 = noise.sample(x * f1 * 2.48 + 19.1);
   const o3 = noise.sample(x * f1 * 5.48 + 3.7);
-  // Signed, so a crest is chewed both ways rather than only ever growing.
-  const n = o1 * 0.55 + o2 * 0.31 + o3 * 0.14;
+  // A fourth, finer octave (max-pretty pass) adds rock teeth to the crest,
+  // weighted LOW so the detail rides the existing skyline instead of
+  // overtopping it -- the previous pass had already spent the available
+  // headroom, so this leans on grain rather than lift (see the no-clipping
+  // test that guards exactly this).
+  const o4 = noise.sample(x * f1 * 9.7 + 27.9);
+  const n = o1 * 0.50 + o2 * 0.28 + o3 * 0.16 + o4 * 0.06;
   return n * amp * relief;
 }
 
@@ -419,9 +424,13 @@ export function shapeDials(cfg, litho) {
     // which was the actual defect being fixed.
     spineFloor: clamp(0.04 + basement * 0.05 + (cfg.bed ?? 0.12) * 0.16, 0.03, 0.13),
     spineSwing: clamp(0.11 + basement * 0.09, 0.09, 0.22),
-    // Presence/edge cuts gullies; air serrates the crest.
+    // Presence/edge cuts gullies; air serrates the crest. The max-pretty
+    // pass raises the crenel ceiling a notch (0.26 -> 0.34) so the sharpened
+    // crests carry more rock serration where the song's air allows it.
     couloir: clamp((cfg.notch ?? 0.12) * (0.55 + 1.15 * edge), 0, 0.34),
-    crenel: clamp((cfg.teeth ?? 0.08) * (0.50 + 1.30 * air), 0, 0.26),
+    // Modest lift over the original -- the headroom was already spent by the
+    // earlier pass (see the no-clip test), so this is grain, not lift.
+    crenel: clamp((cfg.teeth ?? 0.08) * (0.50 + 1.30 * air) * 1.12, 0, 0.30),
     apronSpread: clamp(cfg.apronSpread ?? 2.4, 1.6, 3.4),
     apronCap: clamp(cfg.apronCap ?? 0.5, 0.3, 0.7),
   };
