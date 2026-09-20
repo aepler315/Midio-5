@@ -66,10 +66,20 @@ export function flankProfile(d, q) {
 // (concave, a cirque headwall), the shallow side bulges (convex, a long
 // dip slope running out to the valley) -- so the two flanks of one summit
 // are visibly different CURVES, not just different widths.
-export const FLANK_Q_STEEP = 0.55;
-export const FLANK_Q_SHALLOW = 1.35;
-export const STEEP_WIDTH_MUL = 0.66;
-export const SHALLOW_WIDTH_MUL = 1.42;
+//
+// September 2026 sharpening pass: the previous values still landed visibly
+// closer to a tent than to a horn on screen. The steep exponent deepens
+// (0.55 -> 0.47, and the spiky end of flankQs reaches ~0.42), the steep
+// face narrows (0.66 -> 0.56 of nominal width), and the dip slope lengthens
+// to compensate (1.42 -> 1.50), so a summit's footprint stays roughly fixed
+// while its crest turns into an edge. A pinched profile on a narrower base
+// is exactly what makes a peak read as a point rather than as a broad knob:
+// the sharpened steep face covers LESS strip than before, which also keeps
+// total silhouette coverage flat (the perf governor's binding constraint).
+export const FLANK_Q_STEEP = 0.47;
+export const FLANK_Q_SHALLOW = 1.42;
+export const STEEP_WIDTH_MUL = 0.56;
+export const SHALLOW_WIDTH_MUL = 1.50;
 // Plateau formations are far more symmetric than alpine peaks: erosion works
 // inward from both faces at similar rates on flat-lying rock, so a butte does
 // not have a "steep side" the way a glacially carved mountain does. Using the
@@ -114,7 +124,11 @@ export function flankQs(cfg, litho = null, songMix = 0) {
     spiky = lerp(spiky, songSpiky, clamp01(songMix));
   }
   return {
-    steep: lerp(0.85, FLANK_Q_STEEP - 0.13, spiky),
+    // The spiky reach keeps pace with the sharpened FLANK_Q_STEEP: a truly
+    // spike-driven song now drives the steep face to ~0.42, a genuinely
+    // needle-like horn, instead of stalling at the old floor of 0.42-0.45
+    // that still rendered as a wide cone.
+    steep: lerp(0.85, FLANK_Q_STEEP - 0.05, spiky),
     shallow: lerp(1.85, FLANK_Q_SHALLOW - 0.30, spiky),
   };
 }

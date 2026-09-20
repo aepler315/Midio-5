@@ -56,5 +56,5 @@ export default [
       'no-new': 'error',
     },
   },
-  { ignores: ['node_modules/**', '.smoke/**', 'polygon/**', 'slskd/**', 'data/**'] },
+  { ignores: ['node_modules/**', '.smoke/**', 'slskd/**', 'data/**'] },
 ];
