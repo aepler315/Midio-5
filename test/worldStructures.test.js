@@ -45,3 +45,14 @@ for (const kind of ['overgrowth', 'nave', 'strip', 'foundry']) {
     assert.deepEqual(render(kind, false, 0), render(kind, false, 6));
   });
 }
+
+test('Redline corridor covers the cast travel line', () => {
+  const ops = render('strip', true, 0);
+  const face = ops.slice(0, ops.findIndex(o => o.method === 'fill'));
+  const apex = face.find(o => o.method === 'moveTo').args;
+  const edges = face.filter(o => o.method === 'lineTo' && o.args[1] === 720).map(o => o.args[0]);
+  const depth = (570 - apex[1]) / (720 - apex[1]);
+  const atTravel = edges.map(x => apex[0] + (x - apex[0]) * depth);
+  assert.ok(Math.min(...atTravel) < 128, 'left cast position lies on pavement');
+  assert.ok(Math.max(...atTravel) > 1152, 'travel line remains on pavement across the scene');
+});

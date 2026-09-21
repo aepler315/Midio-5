@@ -129,7 +129,6 @@ export function drawRedlineWorld(mgr, frame) {
   // Ground
   const groundCanvas = drawGroundBase(mgr, frame, tint);
   mgr._drawSignature(frame, music);
-  drawLaneMarkers(ctx, groundCanvas, worldX, mgr);
   drawReflectors(ctx, groundCanvas, worldX, mgr, music);
   mgr._drawFlood(ctx, groundCanvas);
   mgr._drawTransitionOverlays(ctx, groundCanvas, B);
@@ -163,23 +162,6 @@ function drawHorizonWash(ctx, canvas, wash, reducedFlash) {
   ctx.restore();
 }
 
-function drawLaneMarkers(ctx, canvas, worldX, mgr) {
-  const gy = mgr.groundField ? mgr.groundField.heightAt(worldX) : mgr.groundY;
-  const spacing = 56;
-  const travel = cruiseTravel(mgr.tSec, mgr.energyCurves, mgr.reducedFlash, mgr.world?.response);
-  const phase = ((travel - worldX * 0.55) % spacing + spacing) % spacing;
-  ctx.save();
-  ctx.fillStyle = 'rgba(255, 230, 160, 0.62)';
-  for (let x = -phase; x < canvas.width + 24; x += spacing) {
-    ctx.fillRect(x, gy + 6, 22, 3);
-  }
-  ctx.globalAlpha = 0.38;
-  for (let x = -phase + spacing / 2; x < canvas.width + 24; x += spacing) {
-    ctx.fillRect(x, gy + 18, 16, 2);
-  }
-  ctx.restore();
-}
-
 function drawReflectors(ctx, canvas, worldX, mgr, music) {
   const spacing = 90;
   const phase = ((worldX * 0.8) % spacing + spacing) % spacing;
@@ -202,15 +184,15 @@ export function drawRoad(mgr, frame, music) {
   const canvas = frame.groundView ? frame.groundView.stage : frame.canvas;
   const w = canvas.width, h = canvas.height;
   const gy = mgr.groundField ? mgr.groundField.heightAt(worldX) : mgr.groundY;
-  const vx = w * 0.62, vy = gy - h * 0.12;
+  const vx = w * 0.62, vy = gy - h * 0.20;
   const bottom = h;
   ctx.save();
   ctx.fillStyle = '#151923';
   ctx.beginPath(); ctx.moveTo(vx - 5, vy); ctx.lineTo(vx + 5, vy);
-  ctx.lineTo(w * 1.06, bottom); ctx.lineTo(w * 0.08, bottom); ctx.closePath(); ctx.fill();
+  ctx.lineTo(w * 2.2, bottom); ctx.lineTo(w * -1.2, bottom); ctx.closePath(); ctx.fill();
   ctx.strokeStyle = '#987c68'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(vx - 5, vy); ctx.lineTo(w * 0.08, bottom);
-  ctx.moveTo(vx + 5, vy); ctx.lineTo(w * 1.06, bottom); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(vx - 5, vy); ctx.lineTo(w * -1.2, bottom);
+  ctx.moveTo(vx + 5, vy); ctx.lineTo(w * 2.2, bottom); ctx.stroke();
   const travel = cruiseTravel(mgr.tSec, mgr.energyCurves, mgr.reducedFlash, mgr.world?.response);
   const phase = ((travel % 90) + 90) % 90 / 90;
   ctx.fillStyle = '#c8b58a';
@@ -218,7 +200,7 @@ export function drawRoad(mgr, frame, music) {
     for (let i = 0; i < 10; i++) {
       const near = ((i + phase) / 10) ** 2;
       const far = Math.max(0, (i + phase - 0.35) / 10) ** 2;
-      const dx = (lane ? 0.16 : -0.18) * w;
+      const dx = (lane ? 0.52 : -0.68) * w;
       ctx.beginPath(); ctx.moveTo(vx + dx * far, vy + (bottom - vy) * far);
       ctx.lineTo(vx + dx * near, vy + (bottom - vy) * near);
       ctx.lineTo(vx + dx * near + 2 + near * 3, vy + (bottom - vy) * near);
@@ -229,7 +211,7 @@ export function drawRoad(mgr, frame, music) {
   ctx.globalAlpha = capFlashAlpha(0.22 + music.energy * 0.22, mgr.reducedFlash);
   for (let side = -1; side <= 1; side += 2) {
     ctx.beginPath(); ctx.moveTo(vx, vy - 8);
-    ctx.lineTo(vx + side * w * 0.52, bottom - 12); ctx.stroke();
+    ctx.lineTo(vx + side * w * 1.65, bottom - 12); ctx.stroke();
   }
   ctx.restore();
 }

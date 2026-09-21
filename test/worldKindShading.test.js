@@ -49,6 +49,7 @@ function firstRangeContract(kind, draw, complete = false) {
     _drawSky: noop, drawDeepSky: noop, _drawMoon: noop, _drawCelestial: noop,
     _drawHaze: noop, _drawFogBanks: noop, _drawGround: noop, _drawTerrainFooting: noop,
     _drawFlood: noop, _drawTransitionOverlays: noop,
+    _drawSignature: () => events.push({ type: 'signature' }),
     _moonPhase01: () => 0.5,
     _celestialApproachAt: (_canvas, x, y) => ({ x, y, scale: 1 }),
     _drawRidgeVolume(...args) {
@@ -128,4 +129,10 @@ test('the air color is resolved before the dispatch, not after it', () => {
 
 test('city complete frame reaches ground setup after its window and wet-sheen passes', () => {
   firstRangeContract('city', WORLD_RENDERERS.get('city'), true);
+});
+
+test('Foundry machinery remains in front of the nearest terrain strips', () => {
+  const { events } = firstRangeContract('foundry', WORLD_RENDERERS.get('foundry'), true);
+  const signature = events.findIndex(e => e.type === 'signature');
+  assert.ok(signature > events.findLastIndex(e => e.type === 'shade'));
 });

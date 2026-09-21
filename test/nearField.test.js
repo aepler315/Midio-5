@@ -232,3 +232,18 @@ test('foreground occupancy is independent of seek and query order', () => {
     assert.ok(!(forward._sector(i, BIOME) && forward._sector(i + 1, BIOME)));
   }
 });
+
+test('world props stay within bounded coverage and stop swaying under reduced motion', () => {
+  for (const kind of ['alpine', 'city', 'airless', 'abyssal', 'strip', 'foundry', 'overgrowth', 'nave']) {
+    const nf = new NearField(315, { kind });
+    let d;
+    for (let i = 1; !d && i < 100; i++) d = nf._sector(i, BIOME);
+    const transforms = [];
+    const ctx = { ...recordingCtx(), rect() {}, scale: (x, y) => transforms.push([x, y]) };
+    nf._drawOne(ctx, { width: 1280, height: 720 }, d, 640, { tSec: 1, reducedMotion: true, biomeName: BIOME });
+    const [sx, sy] = transforms[0];
+    assert.ok(Math.abs(sx) * 100 <= 1280 * 0.09);
+    assert.ok(Math.abs(sy) * 100 <= 720 * nf.identity.foreground.maxHeight);
+    assert.equal(ctx.calls.translate[0][0], 640);
+  }
+});

@@ -8,12 +8,12 @@ Isolation: fresh task-only clone, branch feat/world-identity-graphics. No existi
 
 | Order | Requirement / current code | Task | Acceptance evidence | Status |
 |---|---|---|---|---|
-| 1 | worlds-smoke energetic audit uses return frame; generic music diagnostics | Pause, explicitly seek every labeled audit, record actual response and dimensions | Helper regressions, browser captures | In progress |
-| 2 | WorldIdentity / PaletteSynth / WorldAdaptation / NearField | Enforce shared-boundary sky admission and world physical vocabulary, bounded world props | Behavioral adaptation/render tests; primary seed captures | Pending baseline |
-| 3 | Repeated static strip/shading, particle and ground setup in world modules | Small behavior-preserving shared functions, separate commit | Pre/post controlled frames, ordering tests | Pending |
-| 4 | Understory / Nave / Redline / Foundry art | Connected canopy; architectural glass/bays; road perspective; machinery assemblies | Composition intent and per-world before/after frames/motion | Pending |
-| 5 | SalienceBudget / PerfGovernor | Retain essential structures, constrain competing foreground/light | All-world quality/accessibility matrix, measured costs | Pending |
-| 6 | Verification / delivery | Full lint/unit/browser checks, final review and PR | Commands, artifact links, final SHA | Pending |
+| 1 | worlds-smoke energetic audit uses return frame; generic music diagnostics | Pause, explicitly seek every labeled audit, record actual response and dimensions | Helper regressions, browser captures | Implemented; corrected deterministic captures running |
+| 2 | WorldIdentity / PaletteSynth / WorldAdaptation / NearField | Enforce shared-boundary sky admission and world physical vocabulary, bounded world props | Behavioral adaptation/render tests; primary seed captures | Implemented; regressions green |
+| 3 | Repeated static strip/shading, particle and ground setup in world modules | Small behavior-preserving shared functions, separate commit | Pre/post controlled frames, ordering tests | Implemented; historical comparison running |
+| 4 | Understory / Nave / Redline / Foundry art | Connected canopy; architectural glass/bays; road perspective; machinery assemblies | Composition intent and per-world before/after frames/motion | Implemented; composed visual review pending |
+| 5 | SalienceBudget / PerfGovernor | Retain essential structures, constrain competing foreground/light | All-world quality/accessibility matrix, measured costs | Implemented; browser quality/motion review pending |
+| 6 | Verification / delivery | Full lint/unit/browser checks, final review and PR | Commands, artifact links, final SHA | In progress |
 
 ## Findings at current baseline
 
@@ -104,3 +104,12 @@ Design choice: extend WorldIdentity with physical-content/foreground rules and c
 - Crown parity now follows absolute tree index. Generated drift is bounded by world physics (3px/s for water/forest, 2px/s vacuum). Foreground occupancy derives from seeded eligibility runs independently of cache visitation.
 - Art CI 35663047975 exposed a lighting-test stub missing `_drawSignature`. Fixture now invokes the real manager signature dispatcher, preserving the with/without-light comparison.
 - Refactor image comparison exposed non-deterministic CameraDirector construction and DOM hover pixels. Capture scopes seeded randomness to synchronous seek (restored in finally), and saves raw canvas PNGs. No comparison tolerance was enlarged. Temporary historical CI repeats identity/refactor captures with this same corrected harness.
+
+### Composed visual inspection and refactor proof
+
+- Corrected historical CI 35663721702: 36/36 raw RGB frames exactly identical between identity 5e09a05 and corrected refactor 0dfc85c (all nine kinds × quiet/energetic/return/degraded). No masks or tolerances. Artifact 10668640778; comparison report will be retained in this directory.
+- Art CI 35663721714: all jobs passed, including lighting, shading, seek, all-world, export, car and chooser browser checks. Artifact 10668560928.
+- Inspected all nine energetic compositions and full Foundry frame: canopy/rose/vault/road/machinery are visible, but nearer terrain hides furnace mouths and the road misses the cast's horizontal travel line.
+- Added failing actual draw-order and road-coverage regressions, then moved machinery in front of L5 and widened perspective pavement across the cast line. Removed conflicting old horizontal lane dashes; existing reflectors/signage and integrated travel remain.
+- Local full suite after corrections: 2840 pass, 0 fail. Lint passes. Latest composed captures are still required.
+- Temporary historical workflow removed after its comparison runs; the opt-in historical mode remains in the same harness for reproduction.

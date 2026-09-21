@@ -107,7 +107,6 @@ export function drawFoundryWorld(mgr, frame) {
   drawRange('L2');
   drawSmoke(0.42);
   drawRange('L3');
-  mgr._drawSignature(frame, music);
   drawSmoke(0.52);
 
   // Particles: embers, sparks, fog.
@@ -116,6 +115,8 @@ export function drawFoundryWorld(mgr, frame) {
   drawRange('L4');
   drawSmoke(0.62);
   drawRange('L5');
+  // Keep furnace mouths and pour channels in front of the terrain.
+  mgr._drawSignature(frame, music);
 
   // Ground
   const groundCanvas = drawGroundBase(mgr, frame, tint);
