@@ -86,7 +86,15 @@ export class NearField {
 
   _sector(idx, biomeName) {
     if (!this._cache.has(idx)) {
-      const prev = this._cache.get(idx - 1); // undefined reads as "not occupied" -- fine, sector 0 is always clear anyway
+      // A consecutive run of eligible sectors alternates occupied/empty.
+      // Walk only to the first failed roll, without caching unseen geometry.
+      let run = 0;
+      for (let previous = idx - 1; previous >= 1; previous--) {
+        const rand = mulberry32(hashSeed(`${this.songSeed}:nearfield:${previous}`));
+        if (rand() >= PROP_CHANCE) break;
+        run++;
+      }
+      const prev = run % 2 === 1;
       const descriptor = nearFieldForSector(this.songSeed, idx, this.identity ? 'JADE' : biomeName, !!prev);
       if (descriptor && this.identity) {
         descriptor.biomeName = biomeName;

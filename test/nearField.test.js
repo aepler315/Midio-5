@@ -221,3 +221,14 @@ test('world foreground geometry is independent of a generated landmark key', () 
     if (!['overgrowth', 'nave', 'foundry'].includes(kind)) assert.ok(shapesA.every(d => !d.hang));
   }
 });
+
+test('foreground occupancy is independent of seek and query order', () => {
+  const forward = new NearField(1), backward = new NearField(1);
+  for (let i = 1; i <= 100; i++) forward._sector(i, BIOME);
+  for (let i = 100; i >= 1; i--) backward._sector(i, BIOME);
+  for (let i = 1; i <= 100; i++) {
+    assert.deepEqual(backward._sector(i, BIOME), forward._sector(i, BIOME));
+    assert.deepEqual(new NearField(1)._sector(i, BIOME), forward._sector(i, BIOME));
+    assert.ok(!(forward._sector(i, BIOME) && forward._sector(i + 1, BIOME)));
+  }
+});

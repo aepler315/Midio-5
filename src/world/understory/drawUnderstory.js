@@ -148,7 +148,8 @@ export function drawCanopy(mgr, { ctx, canvas, worldX, A }, music) {
   ctx.fillStyle = A.silhouette;
   for (let i = -1; i < 6; i++) {
     const x = i * spacing - phase;
-    const crownY = h * (0.07 + (i % 2 ? 0.04 : 0));
+    const treeIndex = i + Math.floor(worldX * 0.08 / spacing);
+    const crownY = h * (0.07 + (treeIndex % 2 ? 0.04 : 0));
     // Roots, tapering trunk and two connected boughs.
     ctx.beginPath();
     ctx.moveTo(x - 38, h * 0.86);

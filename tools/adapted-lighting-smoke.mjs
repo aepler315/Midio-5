@@ -11,6 +11,7 @@ try {
   const page = await browser.newPage();
   await page.goto(process.argv[2] || 'http://127.0.0.1:8080');
   const results = await page.evaluate(async () => {
+    const { BiomeManager } = await import('/src/world/BiomeManager.js');
     const { getWorld } = await import('/src/world/Worlds.js');
     const { adaptWorld } = await import('/src/world/WorldAdaptation.js');
     const { drawNaveWorld } = await import('/src/world/nave/drawNave.js');
@@ -26,6 +27,7 @@ try {
       _drawSky: noop, _drawMoon: noop, drawDeepSky: noop,
       _drawGround: noop, _drawTerrainFooting: noop, _drawFlood: noop,
       _drawTransitionOverlays: noop,
+      _drawSignature: BiomeManager.prototype._drawSignature,
     };
     const canvas = document.createElement('canvas');
     canvas.width = 640; canvas.height = 360;
@@ -33,6 +35,7 @@ try {
     const results = [];
     for (const [id, draw] of [['nave', drawNaveWorld], ['foundry', drawFoundryWorld], ['redline', drawRedlineWorld]]) {
       const base = getWorld(id);
+      mgr.world = base;
       const { world } = adaptWorld(base, null, {
         durationMs: 120000, bpm: 120,
         structure: { boundariesMs: [0, 20000, 40000, 60000, 80000, 100000, 120000],

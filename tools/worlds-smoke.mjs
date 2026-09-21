@@ -28,6 +28,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const url = process.argv[2] || 'http://127.0.0.1:8080';
 const out = path.resolve(process.argv[3] || path.join(root, '.smoke/worlds'));
 
+async function saveStage(page, destination) {
+  const data = await page.evaluate(() => document.querySelector('#stage').toDataURL('image/png'));
+  await fs.writeFile(destination, Buffer.from(data.split(',')[1], 'base64'));
+}
+
 // Every world on the select screen. `kind` is what BiomeManager reports once
 // the world is live -- picking a card builds a per-song VARIANT of that base
 // world (see main.js), so the id changes but the kind does not.
@@ -169,6 +174,11 @@ const CATHODE_STATS = () => {
 const browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_PATH
   ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {});
 const report = { passed: false, seed: 315, viewport: { width: 1280, height: 720 }, browser: browser.version(), timingScope: 'Headless JS draw submission; not GPU time or device FPS', worlds: [] };
+// Explicit opt-in only for pre-signature historical refactor comparisons.
+if (process.env.WORLD_CAPTURE_REVISION) {
+  report.historicalRevision = process.env.WORLD_CAPTURE_REVISION;
+  for (const world of WORLDS) world.mustPaint = world.mustPaint.filter(name => name !== '_drawSignature');
+}
 const failures = [];
 try {
   for (const world of WORLDS) {
@@ -206,7 +216,7 @@ try {
         return Number.isFinite(tSec) && tSec > 4.5 && tSec < 12;
       }, null, { timeout: 60000 });
       assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.reducedFlash), true);
-      await page.locator('#stage').screenshot({ path: path.join(out, `${kind}-reduced.png`) });
+      await saveStage(page, path.join(out, `${kind}-reduced.png`));
       assert.ok(await page.evaluate(() => Number.isFinite(window.__SMW.sim.biomes.worldRhythm?.tMs)),
         name + ' receives detected rhythm during live playback');
       // Keep reduced-motion assertions isolated from the per-world paint and
@@ -233,7 +243,7 @@ try {
         assert.ok(sample.colors > 16, name + ' renders a composed ' + label + ' scene');
         assert.ok(sample.rhythmMs == null || Number.isFinite(sample.rhythmMs), name + ' rhythm is absent or finite after destination rebuild');
         assert.ok(Object.values(sample.music).every(Number.isFinite));
-        await page.locator('#stage').screenshot({ path: path.join(out, `${kind}-${label}.png`) });
+        await saveStage(page, path.join(out, `${kind}-${label}.png`));
         samples.push({ label, ...configuration, ...sample });
       }
       assert.ok(samples[1].music.energy > samples[0].music.energy, name + ' recognizes the louder passage');
@@ -269,7 +279,7 @@ try {
         degradedPaint = await page.evaluate(PAINT_AUDIT, { names: ['_drawSignature'], quality: 6 });
         assert.ok(degradedPaint._drawSignature.paintedPx > 0, name + ' retains its defining structure at lowest quality');
       }
-      await page.locator('#stage').screenshot({ path: path.join(out, `${kind}-degraded.png`) });
+      await saveStage(page, path.join(out, `${kind}-degraded.png`));
       await page.keyboard.press('r');
       await page.evaluate(renderWorldFrame, { atMs: 18000, quality: 0 });
       // Fixed-step motion samples, not sleep-based comparisons. Drawing cost
@@ -289,7 +299,7 @@ try {
             }
             return { timeMs: sim.timeMs, submissionMs: costs };
           });
-          await page.locator('#stage').screenshot({ path: path.join(out, `${kind}-motion-${segment}.png`) });
+          await saveStage(page, path.join(out, `${kind}-motion-${segment}.png`));
           motion.push(timing);
         }
       }

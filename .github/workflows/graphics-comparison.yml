@@ -1,0 +1,37 @@
+name: Graphics comparison
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  historical:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Capture fixed historical revisions with current harness
+        run: |
+          mkdir -p .smoke/comparison
+          for revision in 5e09a052a25b4583b77c30f68337941e4050e8a6 0dfc85c09a35a1c4c8b0fd91427fbc37d9f234e3; do
+            git worktree add --detach /tmp/graphics-history "$revision"
+            (cd /tmp/graphics-history && HOST=127.0.0.1 node tools/serve.js 8090) > .smoke/comparison/server.log 2>&1 &
+            server_pid=$!
+            WORLD_CAPTURE_REVISION="$revision" node tools/worlds-smoke.mjs http://127.0.0.1:8090 ".smoke/comparison/$revision"
+            kill "$server_pid"
+            wait "$server_pid" || true
+            git worktree remove --force /tmp/graphics-history
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: graphics-comparison
+          path: .smoke/comparison/
+          include-hidden-files: true
+          retention-days: 7

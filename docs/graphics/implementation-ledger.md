@@ -97,3 +97,10 @@ Design choice: extend WorldIdentity with physical-content/foreground rules and c
 - Shared SalienceBudget uses per-world support-light caps while leaving landmark/terrain at 1. Far Side adaptation retains a dark sky around its existing primary. Range/Fathom/Cathode geometry is retained; no arbitrary edits solely to change every world.
 - Failing signature, salience and airless tests -> green. npm test: 2827 pass, 0 failed (14.8s). npm run lint and git diff --check: pass.
 - Browser/art inspection, corrected-refactor equivalence, profiling, final review and evidence completion remain pending.
+
+### Review and capture correction
+
+- Independent review reproduced canopy parity popping at a scroll wrap, unbounded generated drift reversing bubbles, and pre-existing cache-order-dependent foreground spacing. Regression tests failed before fixes and pass afterward.
+- Crown parity now follows absolute tree index. Generated drift is bounded by world physics (3px/s for water/forest, 2px/s vacuum). Foreground occupancy derives from seeded eligibility runs independently of cache visitation.
+- Art CI 35663047975 exposed a lighting-test stub missing `_drawSignature`. Fixture now invokes the real manager signature dispatcher, preserving the with/without-light comparison.
+- Refactor image comparison exposed non-deterministic CameraDirector construction and DOM hover pixels. Capture scopes seeded randomness to synchronous seek (restored in finally), and saves raw canvas PNGs. No comparison tolerance was enlarged. Temporary historical CI repeats identity/refactor captures with this same corrected harness.

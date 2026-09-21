@@ -18,3 +18,10 @@ test('controlled capture seeks before reading the replacement scene and renderin
     assert.deepEqual(capture.backingStore, { width: 1280, height: 720 });
   } finally { delete globalThis.window; delete globalThis.document; }
 });
+
+test('capture restores random source when seek throws', () => {
+  const original = Math.random;
+  globalThis.window = { __SMW: { seek() { throw new Error('seek failed'); } } };
+  try { assert.throws(() => renderWorldFrame({ atMs: 1 }), /seek failed/); assert.equal(Math.random, original); }
+  finally { delete globalThis.window; }
+});

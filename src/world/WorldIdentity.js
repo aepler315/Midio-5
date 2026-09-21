@@ -168,6 +168,13 @@ export function constrainPalette(subject, palette, stock = null) {
     celestial.companions = [];
     celestial.ring = false;
   }
+  // Generated register direction is a small bias, never the dominant force.
+  // Rise/fall behavior remains owned by ParticleField's admitted kind.
+  const driftLimit = { airless: 2, abyssal: 3, overgrowth: 3, nave: 3, foundry: 8, city: 8, strip: 12 }[identity.kind];
+  const drift = palette.particles.driftBias;
+  const boundedDrift = drift && driftLimit !== undefined ? Object.fromEntries(
+    ['vx', 'vy'].map(axis => [axis, Math.max(-driftLimit, Math.min(driftLimit, Number.isFinite(drift[axis]) ? drift[axis] : 0))]),
+  ) : drift;
   return {
     ...palette,
     // Vacuum has no luminous terrestrial atmosphere. Retain a hint of the
@@ -181,6 +188,7 @@ export function constrainPalette(subject, palette, stock = null) {
     celestial,
     particles: {
       ...palette.particles,
+      ...(drift ? { driftBias: boundedDrift } : {}),
       kind: admit('particles', palette.particles.kind, stock?.particles?.kind),
       // Keep a vacuum or spores slow even when the song is fast.
       speed: stock?.particles ? Math.min(palette.particles.speed, stock.particles.speed * 1.5) : palette.particles.speed,
