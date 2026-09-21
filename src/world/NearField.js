@@ -18,6 +18,8 @@
 import { mulberry32, hashSeed, clamp01 } from '../utils/math.js';
 import { hexLerp } from '../utils/color.js';
 import { LANDMARKS } from './Landmarks.js';
+import { identityFor } from './WorldIdentity.js';
+import { drawWorldProp } from './ForegroundProps.js';
 import { biomeByName } from './BiomeProfiles.js';
 
 export const NEARFIELD_RATIO = 1.42; // faster than L7's veil (1.20) and the L6 characters (1.00)
@@ -75,7 +77,8 @@ export function nearFieldForSector(songSeed, sectorIdx, biomeName, prevOccupied 
 }
 
 export class NearField {
-  constructor(songSeed) {
+  constructor(songSeed, world = null) {
+    this.identity = world ? identityFor(world) : null;
     this.songSeed = songSeed;
     this._cache = new Map(); // sectorIdx -> descriptor|null
     this._colorCache = new Map(); // biomeName -> darkened silhouette hex
@@ -83,8 +86,22 @@ export class NearField {
 
   _sector(idx, biomeName) {
     if (!this._cache.has(idx)) {
-      const prev = this._cache.get(idx - 1); // undefined reads as "not occupied" -- fine, sector 0 is always clear anyway
-      this._cache.set(idx, nearFieldForSector(this.songSeed, idx, biomeName, !!prev));
+      // A consecutive run of eligible sectors alternates occupied/empty.
+      // Walk only to the first failed roll, without caching unseen geometry.
+      let run = 0;
+      for (let previous = idx - 1; previous >= 1; previous--) {
+        const rand = mulberry32(hashSeed(`${this.songSeed}:nearfield:${previous}`));
+        if (rand() >= PROP_CHANCE) break;
+        run++;
+      }
+      const prev = run % 2 === 1;
+      const descriptor = nearFieldForSector(this.songSeed, idx, this.identity ? 'JADE' : biomeName, !!prev);
+      if (descriptor && this.identity) {
+        descriptor.biomeName = biomeName;
+        descriptor.kind = this.identity.kind;
+        descriptor.hang = descriptor.hang && this.identity.foreground.hanging;
+      }
+      this._cache.set(idx, descriptor);
     }
     return this._cache.get(idx);
   }
@@ -119,6 +136,18 @@ export class NearField {
   }
 
   _drawOne(ctx, canvas, d, x, env) {
+    if (d.kind) {
+      const height = canvas.height * this.identity.foreground.maxHeight * (d.scale / MAX_SCALE);
+      const motion = env.reducedMotion ? 0 : Math.sin(env.tSec * 0.6 + d.seed) * 2;
+      ctx.save();
+      ctx.translate(x + motion, d.hang ? 0 : canvas.height);
+      // Narrow coverage leaves the landmark and cast visible between props.
+      ctx.scale(Math.min(height * 0.65, canvas.width * 0.09) / 100 * (d.flip ? -1 : 1), height / 100 * (d.hang ? -1 : 1));
+      ctx.fillStyle = env.silhouette ? hexLerp(env.silhouette, '#000000', TINT_TOWARD_BLACK) : this._colorFor(d.biomeName);
+      drawWorldProp(ctx, d.kind, d.seed);
+      ctx.restore();
+      return;
+    }
     const painters = LANDMARKS[d.biomeName];
     const painter = painters[d.painterIdx % painters.length];
     const color = this._colorFor(d.biomeName);

@@ -1,11 +1,10 @@
+import { drawStaticStrip, drawGroundBase, drawParticleBlend } from '../WorldDraw.js';
 // The Nave draw path. A cathedral interior that rebuilds itself every
 // chorus. The parallax layers are vaulted bays and buttresses, not
 // mountains. Stained glass color spill (edgeLight) and god rays replace
 // aerial perspective. The "sky" is the vault ceiling.
-import { drawTiledStrip } from '../SilhouetteGenerator.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
 import { ensureContrast } from '../../render/VisualStyle.js';
-import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor } from '../DayNight.js';
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
 import { hexToRgb } from '../../utils/color.js';
@@ -15,16 +14,9 @@ import { motifTrust, bayLit, bayAlpha, boundaryLift01 } from './Resonance.js';
 const LAYER_RATIOS = { L2: 0.03, L3: 0.08, L4: 0.18, L5: 0.44 };
 const Y_OFF = { L2: 6, L3: 16, L4: 36, L5: 66 };
 
-function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
-  if (!strip) return;
-  ctx.save();
-  if (alpha < 0.999) ctx.globalAlpha = alpha;
-  drawTiledStrip(ctx, strip, scrollX, canvas.width, canvas.height, yOff);
-  ctx.restore();
-}
 
 export function drawNaveWorld(mgr, frame) {
-  const { ctx, canvas, worldX, originX, A, B, t, phenomenaFull, particleMul, groundView } = frame;
+  const { ctx, canvas, worldX, A, B, t, phenomenaFull } = frame;
   const section = mgr.sections?.[mgr._lastSectionIdx];
   const music = sampleManagerMusic(mgr, { section, energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(section, mgr.sections?.[mgr._lastSectionIdx - 1]);
@@ -92,43 +84,66 @@ export function drawNaveWorld(mgr, frame) {
     // -- that half is alpine-specific. The shading half is not.
     if (stripsA) {
       const a = to === from ? 1 : 1 - t;
-      blit(ctx, canvas, stripsA[key], sx, yOff, a);
-      mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
+      drawStaticStrip(mgr, ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1);
     }
     if (to !== from && t > 0.02 && stripsB) {
-      blit(ctx, canvas, stripsB[key], sx, yOff, t);
-      mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
+      drawStaticStrip(mgr, ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1);
     }
   };
 
   drawRange('L2');
   drawRange('L3');
+  mgr._drawSignature(frame, music);
 
   // Particles: sunshine motes, censer smoke.
-  const openA = mgr.openingGain;
-  const mandalaColor = mgr._rotated(mgr.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-  const rimOn = mgr._perf ? mgr._perf.rimLightEnabled : true;
-  const particleLights = rimOn
-    ? [mgr.light, ...groundGlowLights(mgr.groundField ? mgr.groundField.activeGlowScreenLights(worldX, originX) : [], mandalaColor)].filter(Boolean)
-    : null;
-  ctx.save();
-  if (openA < 0.999) ctx.globalAlpha = openA;
-  mgr.fields.get(from)?.draw(ctx, particleMul * 0.7, mandalaColor, unravel, particleLights);
-  ctx.restore();
-  if (to !== from && t > 0.02) {
-    ctx.save(); ctx.globalAlpha = t * openA;
-    mgr.fields.get(to)?.draw(ctx, particleMul * 0.7, mandalaColor, unravel, particleLights);
-    ctx.restore();
-  }
+  drawParticleBlend(mgr, frame, 0.7);
 
   drawRange('L4');
   drawRange('L5');
 
   // Ground
-  const groundCanvas = groundView ? groundView.stage : canvas;
-  if (groundView) groundView.apply();
-  mgr._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
-  mgr._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
+  const groundCanvas = drawGroundBase(mgr, frame, tint);
   mgr._drawFlood(ctx, groundCanvas);
   mgr._drawTransitionOverlays(ctx, groundCanvas, B);
+}
+
+export function drawVault(mgr, { ctx, canvas, A }, music) {
+  const w = canvas.width, h = canvas.height, cx = w * 0.55, cy = h * 0.27;
+  const section = mgr.sections?.[mgr._lastSectionIdx];
+  ctx.save();
+  ctx.strokeStyle = A.silhouette;
+  // Perspective bays connect piers to pointed vaults, instead of a skyline.
+  for (let bay = 0; bay < 3; bay++) {
+    const span = w * (0.19 + bay * 0.12), top = h * (0.09 - bay * 0.045);
+    ctx.lineWidth = 10 + bay * 6;
+    ctx.beginPath(); ctx.moveTo(cx - span, h * 0.83); ctx.lineTo(cx - span, h * 0.4);
+    ctx.bezierCurveTo(cx - span, h * 0.22, cx - span * 0.45, top + h * 0.03, cx, top);
+    ctx.bezierCurveTo(cx + span * 0.45, top + h * 0.03, cx + span, h * 0.22, cx + span, h * 0.4);
+    ctx.lineTo(cx + span, h * 0.83); ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = A.edgeLight || '#95879f';
+    ctx.globalAlpha = capFlashAlpha(0.25 + 0.2 * bayAlpha({ trust: motifTrust(section), lit: bayLit(section?.label, bay), bass: music.bass, reveal: music.reveal }), mgr.reducedFlash);
+    ctx.stroke(); ctx.globalAlpha = 1; ctx.strokeStyle = A.silhouette;
+  }
+  const radius = h * 0.105;
+  ctx.fillStyle = '#11121e'; ctx.beginPath(); ctx.arc(cx, cy, radius * 1.12, 0, Math.PI * 2); ctx.fill();
+  const colors = [A.celestial.color, A.edgeLight || '#bc8773', '#748abd', '#c3a675'];
+  for (let pane = 0; pane < 12; pane++) {
+    const angle = pane * Math.PI / 6;
+    ctx.fillStyle = colors[pane % colors.length];
+    ctx.globalAlpha = capFlashAlpha(0.46 + music.bass * 0.2 + music.reveal * 0.16, mgr.reducedFlash);
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, radius, angle + 0.025, angle + Math.PI / 6 - 0.025);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.globalAlpha = 1; ctx.strokeStyle = '#52485e'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, radius * 0.28, 0, Math.PI * 2); ctx.stroke();
+  // Glass illumination has an architectural origin even on the lowest rung.
+  ctx.globalAlpha = capFlashAlpha(0.055 + music.bass * 0.045, mgr.reducedFlash);
+  ctx.fillStyle = A.edgeLight || '#b0a0e0';
+  ctx.beginPath(); ctx.moveTo(cx - radius * 0.4, cy + radius);
+  ctx.lineTo(cx + radius * 0.4, cy + radius); ctx.lineTo(cx + w * 0.17, h * 0.81);
+  ctx.lineTo(cx - w * 0.11, h * 0.81); ctx.closePath(); ctx.fill();
+  ctx.restore();
 }

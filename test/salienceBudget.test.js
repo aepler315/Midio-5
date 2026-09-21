@@ -37,3 +37,12 @@ test('ordinary playback is a no-op budget', () => {
     bloom: 1,
   });
 });
+
+test('world-local structures take precedence over broad bloom even during a drop', () => {
+  for (const kind of ['city', 'nave', 'overgrowth', 'foundry', 'abyssal', 'airless']) {
+    const budget = salienceBudgetFor({ subject: 'drop', mul: () => 0.3 }, { kind });
+    assert.ok(budget.bloom < 0.8, kind + ' broad bloom must support local light');
+    assert.equal(budget.landmark, 1);
+    assert.equal(budget.terrain, 1);
+  }
+});

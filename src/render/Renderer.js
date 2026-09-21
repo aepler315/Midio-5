@@ -214,7 +214,7 @@ export class Renderer {
     const biomeManager = sim.biomes || null;
     const perf = sim.perf || null;
     const particleMul = perf ? perf.particleMul : 1;
-    const salience = salienceBudgetFor(sim.focus);
+    const salience = salienceBudgetFor(sim.focus, biomeManager?.world);
     const worldParticleMul = particleMul * salience.particles;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);

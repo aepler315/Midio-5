@@ -1,3 +1,4 @@
+import { drawStaticStrip } from '../WorldDraw.js';
 // After Hours draw path. BiomeManager.draw() hands off here for city worlds.
 //
 // Translated from alpine: ridge portrait → skyline, parallax, haze, rain,
@@ -29,13 +30,6 @@ function layerTint(mgr, tint, skyHorizon, layerKey) {
   return pull > 0.001 ? mgr.lerpCache.get(tint, skyHorizon, pull) : tint;
 }
 
-function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
-  if (!strip) return;
-  ctx.save();
-  if (alpha < 0.999) ctx.globalAlpha = alpha;
-  drawTiledStrip(ctx, strip, scrollX, canvas.width, canvas.height, yOff);
-  ctx.restore();
-}
 
 function blitWindows(ctx, canvas, strip, scrollX, yOff, glow, music, reducedFlash, blendAlpha = 1) {
   if (!strip?.windows || glow < 0.02) return;
@@ -141,13 +135,11 @@ export function drawCityWorld(mgr, frame) {
     // sedimentary. The shading half is universal.
     if (stripsA) {
       const a = to === from ? 1 : 1 - t;
-      blit(ctx, canvas, stripsA[key], sx, yOff, a);
-      mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
+      drawStaticStrip(mgr, ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1);
       blitWindows(ctx, canvas, stripsA[key], sx, yOff, glow, music, mgr.reducedFlash, a);
     }
     if (to !== from && t > 0.02 && stripsB) {
-      blit(ctx, canvas, stripsB[key], sx, yOff, t);
-      mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
+      drawStaticStrip(mgr, ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1);
       blitWindows(ctx, canvas, stripsB[key], sx, yOff, glow, music, mgr.reducedFlash, t);
     }
   };

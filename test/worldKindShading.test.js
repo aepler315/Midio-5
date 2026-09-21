@@ -33,7 +33,7 @@ function recordingContext(events) {
   };
 }
 
-function firstRangeContract(kind, draw) {
+function firstRangeContract(kind, draw, complete = false) {
   const events = [];
   const strip = { width: 200, height: 100 };
   const strips = { L2: strip, L3: strip, L4: strip, L5: strip };
@@ -47,13 +47,14 @@ function firstRangeContract(kind, draw) {
     stripsFor: () => strips, fields: new Map(), weatherFields: new Map(),
     weaver: { draw: noop }, meteors: { draw: noop },
     _drawSky: noop, drawDeepSky: noop, _drawMoon: noop, _drawCelestial: noop,
-    _drawHaze: noop, _drawFogBanks: noop, _drawGround: noop, _drawTerrainFooting: noop,
+    _drawHaze: noop, _drawFogBanks: noop, _drawGround: () => events.push({ type: 'ground' }), _drawTerrainFooting: noop,
     _drawFlood: noop, _drawTransitionOverlays: noop,
+    _drawSignature: () => events.push({ type: 'signature' }),
     _moonPhase01: () => 0.5,
     _celestialApproachAt: (_canvas, x, y) => ({ x, y, scale: 1 }),
     _drawRidgeVolume(...args) {
       events.push({ type: 'shade', args });
-      throw STOP_AFTER_FIRST_SHADE;
+      if (!complete) throw STOP_AFTER_FIRST_SHADE;
     },
   };
   const palette = {
@@ -62,11 +63,13 @@ function firstRangeContract(kind, draw) {
   };
   const canvas = { width: 640, height: 360 };
   const ctx = recordingContext(events);
-  assert.throws(() => draw(mgr, {
+  const drawFrame = () => draw(mgr, {
     ctx, canvas, worldX: 137, originX: 0, A: palette, B: palette, t: 0,
     dn: { sunAlt: 0.6, moonAlt: 0.6, sunAz01: 0.5, moonAz01: 0.5 },
     phenomenaFull: false, particleMul: 0, groundView: null, skyVoyage: null,
-  }), error => error === STOP_AFTER_FIRST_SHADE);
+  });
+  if (complete) assert.doesNotThrow(drawFrame);
+  else assert.throws(drawFrame, error => error === STOP_AFTER_FIRST_SHADE);
   return { events, strip, canvas };
 }
 
@@ -122,4 +125,15 @@ test('the air color is resolved before the dispatch, not after it', () => {
   assert.ok(assigned > 0 && dispatch > 0, 'could not locate both landmarks');
   assert.ok(assigned < dispatch,
     'the air color is resolved after the world-kind dispatch, so non-alpine worlds never get one');
+});
+
+test('city complete frame reaches ground setup after its window and wet-sheen passes', () => {
+  firstRangeContract('city', WORLD_RENDERERS.get('city'), true);
+});
+
+test('Foundry machinery remains in front of the nearest terrain strips', () => {
+  const { events } = firstRangeContract('foundry', WORLD_RENDERERS.get('foundry'), true);
+  const signature = events.findIndex(e => e.type === 'signature');
+  assert.ok(signature > events.findLastIndex(e => e.type === 'shade'));
+  assert.ok(signature > events.findIndex(e => e.type === 'ground'), 'fixed ground must not cover the furnace');
 });

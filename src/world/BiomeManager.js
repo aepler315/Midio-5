@@ -1,3 +1,4 @@
+import { identityAllows } from './WorldIdentity.js';
 // Orchestrates the 8-layer parallax contract (spec §4.1.1), biome
 // scheduling via novelty-curve segmentation (§4.1.3), and gamma-correct
 // profile crossfading (§4.1.4). Each biome is pure data (BiomeProfiles.js);
@@ -11,7 +12,7 @@ import {
   extractRidgePortrait, lithologyFromShares, landformWindow, relEnergyLadder, snowLine01For,
 } from './RidgePortrait.js';
 import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
-import { WORLD_RENDERERS } from './WorldRegistry.js';
+import { WORLD_SIGNATURES, WORLD_RENDERERS } from './WorldRegistry.js';
 import { sampleWorldMusic } from './WorldMusic.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { ParticleField } from './ParticleField.js';
@@ -735,7 +736,7 @@ export class BiomeManager {
     // the OTHER end of the depth stack -- huge biome-landmark silhouettes
     // sweeping past faster than the characters, close enough to occlude
     // them. Drawn in drawForeground(), after everything else.
-    this.nearField = new NearField(songSeed);
+    this.nearField = new NearField(songSeed, this.world);
     this.groundScatter = new GroundScatter(songSeed);
 
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections, structure, conductorSchedule);
@@ -2621,7 +2622,12 @@ export class BiomeManager {
    * constellations (completed figures frozen into the sky), the live
    * persistent trail sky-writing the current figure, and a small mote of
    * light at her current position. A no-op whenever she isn't away. */
+  _drawSignature(frame, music) {
+    WORLD_SIGNATURES.get(this.world?.kind)?.(this, frame, music);
+  }
+
   drawDeepSky(ctx, voyage, canvas) {
+    if (!identityAllows(this.world, 'deepSky')) return;
     if (!voyage) return;
     const nowMs = this.tSec * 1000;
     // Every position SkyVoyage stores (station, trail, constellations, the
@@ -2893,7 +2899,7 @@ export class BiomeManager {
       const ratio = CodaDirector.delaminateRatio(NEARFIELD_RATIO, this.unravel);
       const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 60) * this._danceKickAmp;
       this.nearField.draw(ctx, canvas, worldX, {
-        tSec: this.tSec, kick, biomeName: dominantLandmarkKey, reducedMotion: !!this.reducedFlash, ratio,
+        tSec: this.tSec, kick, biomeName: dominantLandmarkKey, silhouette: this._profile(dominant)?.silhouette, reducedMotion: !!this.reducedFlash, ratio,
       });
 
       // Ground scatter: the frontmost plane's small detail, drawn after
@@ -3004,7 +3010,7 @@ export class BiomeManager {
 
   _drawSky(ctx, canvas, A, B, t, night = 0, starOptions = {}) {
     // Water and vault ceilings retain local light effects, not astronomy.
-    const astronomical = starOptions.astronomical !== false;
+    const astronomical = identityAllows(this.world, 'astronomy') && starOptions.astronomical !== false;
     const dials = styleDials(this.visualStyle);
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
     // Night + rendered both pull toward deep space so stars/ocean have a stage.
@@ -3137,6 +3143,7 @@ export class BiomeManager {
 
   /** Layered starfield: ambient by day, rich at night / starTwinkle biomes. */
   _drawStarfield(ctx, canvas, A, B, t, night = 0, { atmosphere = true } = {}) {
+    if (!identityAllows(this.world, 'astronomy')) return;
     const dials = styleDials(this.visualStyle);
     const showStars = A.fx === 'starTwinkle' || B.fx === 'starTwinkle';
     const twinkleBlend = showStars
@@ -3660,6 +3667,7 @@ export class BiomeManager {
   }
 
   _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22, alpha = 1, cxFrac = CELESTIAL_DEFAULT_XFRAC) {
+    if (!identityAllows(this.world, 'celestialBodies')) return;
     // The body is closing over the length of the song: its arc climbs higher
     // above the sea and its disc grows as 1/distance, so the size
     // accelerates while the path barely seems to change. See
@@ -3799,6 +3807,7 @@ export class BiomeManager {
    */
   _drawMoon(ctx, canvas, cyFrac, alpha, tidalOffsetPx = 0, cxFrac = CELESTIAL_DEFAULT_XFRAC,
     sunXFrac = null, sunYFrac = null, phase01 = 0.5) {
+    if (!identityAllows(this.world, 'celestialBodies')) return;
     if (alpha <= 0.02) return;
     // Same approach the sun is on (CelestialApproach.js): both bodies are
     // closing on the convergence point, so the moon grows through the night

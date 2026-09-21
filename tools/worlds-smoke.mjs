@@ -22,10 +22,16 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { renderWorldFrame } from './world-frame.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const url = process.argv[2] || 'http://127.0.0.1:8080';
 const out = path.resolve(process.argv[3] || path.join(root, '.smoke/worlds'));
+
+async function saveStage(page, destination) {
+  const data = await page.evaluate(() => document.querySelector('#stage').toDataURL('image/png'));
+  await fs.writeFile(destination, Buffer.from(data.split(',')[1], 'base64'));
+}
 
 // Every world on the select screen. `kind` is what BiomeManager reports once
 // the world is live -- picking a card builds a per-song VARIANT of that base
@@ -63,16 +69,16 @@ const WORLDS = [
     mustPaint: ['_drawSky', '_drawGround'],
     watch: ['_drawCelestial'], mustNotPaint: ['_drawStarfield', 'drawDeepSky'] },
   { name: 'Redline', kind: 'strip',
-    mustPaint: ['_drawSky', '_drawGround'],
+    mustPaint: ['_drawSky', '_drawGround', '_drawSignature'],
     watch: ['drawDeepSky', '_drawMoon'] },
   { name: 'The Foundry', kind: 'foundry',
-    mustPaint: ['_drawSky', '_drawGround'],
-    watch: ['drawDeepSky', '_drawMoon'] },
+    mustPaint: ['_drawSky', '_drawGround', '_drawSignature'],
+    watch: [], mustNotPaint: ['_drawStarfield', 'drawDeepSky', '_drawMoon', '_drawCelestial'] },
   { name: 'Understory', kind: 'overgrowth',
-    mustPaint: ['_drawSky', '_drawGround'],
-    watch: ['drawDeepSky', '_drawCelestial'] },
+    mustPaint: ['_drawSky', '_drawGround', '_drawSignature'],
+    watch: [], mustNotPaint: ['_drawStarfield', 'drawDeepSky', '_drawMoon', '_drawCelestial'] },
   { name: 'The Nave', kind: 'nave',
-    mustPaint: ['_drawSky', '_drawGround'],
+    mustPaint: ['_drawSky', '_drawGround', '_drawSignature'],
     watch: ['_drawCelestial'], mustNotPaint: ['_drawStarfield', 'drawDeepSky'] },
   // Cathode replaces the renderer rather than the scenery, so BiomeManager
   // never draws for it and there are no BiomeManager passes to audit. Its
@@ -96,7 +102,7 @@ await fs.writeFile(wav, buffer);
 
 /** Runs in the page: wrap each named pass, draw one frame, and report how
  *  many stage pixels each call changed. Returns {pass: {calls, paintedPx}}. */
-const PAINT_AUDIT = (names) => {
+const PAINT_AUDIT = ({ names, quality = 0 }) => {
   const { sim, renderer, perf } = window.__SMW;
   const mgr = sim.biomes;
   const proto = Object.getPrototypeOf(mgr);
@@ -135,7 +141,7 @@ const PAINT_AUDIT = (names) => {
   try {
     // Full quality for the audited frame: a shed rung legitimately turns
     // whole passes off, which would read as "painted nothing".
-    if (perf) perf.level = 0;
+    if (perf) perf.level = quality;
     renderer.draw(sim, 1);
   } finally {
     for (const [name, fn] of originals) proto[name] = fn;
@@ -167,7 +173,12 @@ const CATHODE_STATS = () => {
 
 const browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_PATH
   ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {});
-const report = { passed: false, worlds: [] };
+const report = { passed: false, seed: 315, viewport: { width: 1280, height: 720 }, browser: browser.version(), timingScope: 'Headless JS draw submission; not GPU time or device FPS', worlds: [] };
+// Explicit opt-in only for pre-signature historical refactor comparisons.
+if (process.env.WORLD_CAPTURE_REVISION) {
+  report.historicalRevision = process.env.WORLD_CAPTURE_REVISION;
+  for (const world of WORLDS) world.mustPaint = world.mustPaint.filter(name => name !== '_drawSignature');
+}
 const failures = [];
 try {
   for (const world of WORLDS) {
@@ -205,21 +216,23 @@ try {
         return Number.isFinite(tSec) && tSec > 4.5 && tSec < 12;
       }, null, { timeout: 60000 });
       assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.reducedFlash), true);
-      await page.locator('#stage').screenshot({ path: path.join(out, `${kind}-reduced.png`) });
+      await saveStage(page, path.join(out, `${kind}-reduced.png`));
+      assert.ok(await page.evaluate(() => Number.isFinite(window.__SMW.sim.biomes.worldRhythm?.tMs)),
+        name + ' receives detected rhythm during live playback');
       // Keep reduced-motion assertions isolated from the per-world paint and
       // dynamics checks below.
       await page.keyboard.press('r');
       assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.reducedFlash), false);
+      await page.locator('#pauseBtn').click();
+      assert.equal(await page.locator('#pauseBtn').getAttribute('aria-pressed'), 'true');
       const samples = [];
       for (const [label, atMs] of [['quiet', 6000], ['energetic', 18000], ['return', 27000]]) {
-        await page.evaluate(ms => window.__SMW.seek(ms), atMs);
-        await page.waitForFunction(ms => window.__SMW.sim.biomes.tSec * 1000 > ms + 500, atMs);
+        const configuration = await page.evaluate(renderWorldFrame, { atMs, quality: 0 });
         const sample = await page.evaluate(async () => {
           const { sim } = window.__SMW;
           const mgr = sim.biomes;
-          const { sampleWorldMusic } = await import('/src/world/WorldMusic.js');
-          const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
-            rhythm: mgr.worldRhythm, section: mgr.sections[mgr._lastSectionIdx] });
+          const { sampleManagerMusic } = await import('/src/world/WorldMusic.js');
+          const music = sampleManagerMusic(mgr);
           const c = document.createElement('canvas'); c.width = 64; c.height = 36;
           const ctx = c.getContext('2d'); ctx.drawImage(document.querySelector('#stage'), 0, 0, 64, 36);
           const pixels = ctx.getImageData(0, 0, 64, 36).data;
@@ -228,22 +241,23 @@ try {
           return { timeMs: mgr.tSec * 1000, music, rhythmMs: mgr.worldRhythm?.tMs, colors: colors.size };
         });
         assert.ok(sample.colors > 16, name + ' renders a composed ' + label + ' scene');
-        assert.ok(Number.isFinite(sample.rhythmMs), name + ' receives detected rhythm through the conductor');
+        assert.ok(sample.rhythmMs == null || Number.isFinite(sample.rhythmMs), name + ' rhythm is absent or finite after destination rebuild');
         assert.ok(Object.values(sample.music).every(Number.isFinite));
-        await page.locator('#stage').screenshot({ path: path.join(out, `${kind}-${label}.png`) });
-        samples.push({ label, ...sample });
+        await saveStage(page, path.join(out, `${kind}-${label}.png`));
+        samples.push({ label, ...configuration, ...sample });
       }
       assert.ok(samples[1].music.energy > samples[0].music.energy, name + ' recognizes the louder passage');
 
       // The per-pass audit, on the energetic passage -- the busiest frame,
       // and the one where every optional layer is in play.
+      const auditConfiguration = await page.evaluate(renderWorldFrame, { atMs: 18000, quality: 0 });
       let paint = null, cathode = null;
       if (world.pixelRenderer) {
         cathode = await page.evaluate(CATHODE_STATS);
         assert.ok(cathode.colors > 4, name + ' composes a real pixel frame');
         assert.ok(cathode.litFraction > 0.05, name + ' frame is not essentially blank');
       } else {
-        paint = await page.evaluate(PAINT_AUDIT, [...world.mustPaint, ...world.watch, ...(world.mustNotPaint || [])]);
+        paint = await page.evaluate(PAINT_AUDIT, { names: [...world.mustPaint, ...world.watch, ...(world.mustNotPaint || [])] });
         for (const pass of world.mustPaint) {
           const s = paint[pass];
           if (!s || s.missing) { failures.push(`${name}: ${pass} is not a method on BiomeManager`); continue; }
@@ -256,8 +270,49 @@ try {
         assert.equal(paint[pass]?.missing, undefined, `${name}: missing ${pass} audit target`);
         assert.equal(paint[pass]?.paintedPx, 0, `${name}: ${pass} must not paint an interior`);
       }
-      assert.deepEqual(errors, [], name + ' has no browser errors');
-      report.worlds.push({ name, kind, samples, paint, cathode, errors });
+      // Same destination at deepest supported quality and reduced motion.
+      await page.keyboard.press('r');
+      const degradedConfiguration = await page.evaluate(renderWorldFrame, { atMs: 18000, quality: 6 });
+      assert.equal(degradedConfiguration.reducedFlash, true);
+      let degradedPaint = null;
+      if (world.mustPaint.includes('_drawSignature')) {
+        degradedPaint = await page.evaluate(PAINT_AUDIT, { names: ['_drawSignature'], quality: 6 });
+        assert.ok(degradedPaint._drawSignature.paintedPx > 0, name + ' retains its defining structure at lowest quality');
+      }
+      await saveStage(page, path.join(out, `${kind}-degraded.png`));
+      // Restore quality on the SAME destination scene to exercise a live
+      // transition, rather than hiding state bugs behind another seek.
+      await page.evaluate(() => {
+        const { sim, renderer, perf } = window.__SMW;
+        if (perf) perf.level = 0;
+        renderer.draw(sim, 1);
+      });
+      await saveStage(page, path.join(out, `${kind}-quality-restored.png`));
+      await page.keyboard.press('r');
+      await page.evaluate(renderWorldFrame, { atMs: 18000, quality: 0 });
+      // Fixed-step motion samples, not sleep-based comparisons. Drawing cost
+      // is headless JS submission time; it is not device FPS or GPU time.
+      const motion = [];
+      if (['overgrowth', 'nave', 'strip', 'foundry'].includes(kind)) {
+        for (let segment = 0; segment < 6; segment++) {
+          const timing = await page.evaluate(() => {
+            const { sim, renderer, perf } = window.__SMW;
+            const costs = [];
+            for (let i = 0; i < 15; i++) {
+              if (perf) perf.level = 0;
+              sim.step(1000 / 60, sim.timeMs + 1000 / 60);
+              const before = performance.now();
+              renderer.draw(sim, 1);
+              costs.push(performance.now() - before);
+            }
+            return { timeMs: sim.timeMs, submissionMs: costs };
+          });
+          await saveStage(page, path.join(out, `${kind}-motion-${segment}.png`));
+          motion.push(timing);
+        }
+      }
+            assert.deepEqual(errors, [], name + ' has no browser errors');
+      report.worlds.push({ name, kind, samples, auditConfiguration, paint, cathode, degradedConfiguration, degradedPaint, motion, errors });
       const painted = paint
         ? Object.entries(paint).filter(([, s]) => s.paintedPx > 0).map(([k]) => k).join(', ')
         : 'pixel renderer';
