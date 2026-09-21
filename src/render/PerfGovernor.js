@@ -339,6 +339,16 @@ export class PerfGovernor {
   // texture, CymaticField, Murmuration, SkyEnsemble planets, FarVignettes,
   // MeteorShower) -- all genuinely optional atmosphere, none of it gameplay.
   get phenomenaFull() { return this.level < 5; }
+  // The constellation weaver (ambient connect-the-dots, lyric-derived
+  // glyphs, crystallized stars) is a few thin 1-3px strokes -- nothing like
+  // the pixel-pass cost of ReactionDiffusion or the other rung-5 phenomena.
+  // Shedding it with them is how The Range's sky went dark: a machine under
+  // load that already lost the heavy atmosphere at rung 5 would then lose
+  // the constellations and lyric glyphs too, reading as "the sky's details
+  // vanished," not "perf dropped one rung." The weaver holds out to the last
+  // rung (with hazeLayers/heavyPostFx/ridgeShadingFull) -- as light as it is,
+  // it is never the thing drowning the frame.
+  get constellationsEnabled() { return this.level < 6; }
   // RainbowBrush: up to 320 additive dabs redrawn every frame, purely
   // cosmetic trail decoration -- widened spacing via particleMul but never
   // actually gated by a rung. Sheds alongside the other optional atmosphere.

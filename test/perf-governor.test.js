@@ -166,6 +166,21 @@ test('ridgeShadingFull: _drawRidgeVolume\'s shade/aerial passes hold out to the 
   assert.equal(gov.ridgeShadingFull, false, 'only sheds at the very last rung');
 });
 
+test('constellationsEnabled: the constellation weaver outlives the phenomena layer it used to shed with', () => {
+  // The connect-the-dots / lyric-glyph weaver is a few thin strokes -- far
+  // cheaper than the ReactionDiffusion/atmosphere layers that share rung 5.
+  // Shedding it with phenomena is what made The Range's sky go dark under
+  // load, so it now holds out to the last rung with hazeLayers/heavyPostFx.
+  const gov = new PerfGovernor();
+  gov.level = 0;
+  assert.equal(gov.constellationsEnabled, true);
+  gov.level = 5;
+  assert.equal(gov.phenomenaFull, false, 'heavy phenomena already shed at rung 5');
+  assert.equal(gov.constellationsEnabled, true, 'constellations survive the phenomena cut');
+  gov.level = MAX_LEVEL;
+  assert.equal(gov.constellationsEnabled, false, 'only sheds at the very last rung');
+});
+
 test('Auto quality lowers backing resolution before world-defining phenomena are removed', () => {
   const gov = new PerfGovernor();
   gov.level = 0;
