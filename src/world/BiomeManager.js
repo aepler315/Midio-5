@@ -12,7 +12,7 @@ import {
   extractRidgePortrait, lithologyFromShares, landformWindow, relEnergyLadder, snowLine01For,
 } from './RidgePortrait.js';
 import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
-import { WORLD_RENDERERS } from './WorldRegistry.js';
+import { WORLD_SIGNATURES, WORLD_RENDERERS } from './WorldRegistry.js';
 import { sampleWorldMusic } from './WorldMusic.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { ParticleField } from './ParticleField.js';
@@ -2622,6 +2622,10 @@ export class BiomeManager {
    * constellations (completed figures frozen into the sky), the live
    * persistent trail sky-writing the current figure, and a small mote of
    * light at her current position. A no-op whenever she isn't away. */
+  _drawSignature(frame, music) {
+    WORLD_SIGNATURES.get(this.world?.kind)?.(this, frame, music);
+  }
+
   drawDeepSky(ctx, voyage, canvas) {
     if (!identityAllows(this.world, 'deepSky')) return;
     if (!voyage) return;

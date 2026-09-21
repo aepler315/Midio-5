@@ -107,6 +107,7 @@ export function drawFoundryWorld(mgr, frame) {
   drawRange('L2');
   drawSmoke(0.42);
   drawRange('L3');
+  mgr._drawSignature(frame, music);
   drawSmoke(0.52);
 
   // Particles: embers, sparks, fog.
@@ -143,6 +144,39 @@ function drawMills(ctx, canvas, worldX, mgr, music, heat, pour, operation) {
     ctx.beginPath();
     ctx.arc(x, gy - 54 + drop, 5, 0, Math.PI * 2);
     ctx.fill();
+  }
+  ctx.restore();
+}
+
+export function drawMachinery(mgr, { ctx, canvas, A }, music) {
+  const w = canvas.width, h = canvas.height, floor = h * 0.79;
+  const heat = furnaceHeat(music.energy);
+  const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
+  const pour = pourGlow({ heat, reveal: music.reveal, lift, reducedFlash: mgr.reducedFlash });
+  const operation = operationIndex(mgr._lastSectionIdx);
+  ctx.save();
+  for (let machine = 0; machine < 3; machine++) {
+    const x = w * (0.22 + machine * 0.29), half = w * 0.075, top = floor - h * (0.31 + machine % 2 * 0.05);
+    const stroke = machineStroke({ accent: music.accent, group: music.group, operation, machine });
+    const drop = mgr.reducedFlash ? 0 : stroke * h * 0.035;
+    ctx.fillStyle = A.silhouette;
+    ctx.beginPath(); ctx.rect(x - half, top, half * 2, 15);
+    ctx.rect(x - half, top, 13, floor - top); ctx.rect(x + half - 13, top, 13, floor - top);
+    ctx.rect(x - half * 0.7, floor - 24, half * 1.4, 24); ctx.fill();
+    ctx.strokeStyle = '#665448'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x - half, floor); ctx.lineTo(x + half, top);
+    ctx.moveTo(x + half, floor); ctx.lineTo(x - half, top); ctx.stroke();
+    // Visible ram, piston head and furnace mouth form one assembly.
+    ctx.fillStyle = '#766759'; ctx.fillRect(x - 5, top + 15, 10, h * 0.12 + drop);
+    ctx.fillRect(x - 25, top + h * 0.12 + drop, 50, 14);
+    ctx.fillStyle = A.edgeLight || '#e68139';
+    ctx.globalAlpha = capFlashAlpha(0.28 + heat * 0.32, mgr.reducedFlash);
+    ctx.fillRect(x - half * 0.48, floor - 22, half * 0.96, 18);
+    ctx.globalAlpha = capFlashAlpha(0.12 + pour * 0.4, mgr.reducedFlash);
+    ctx.beginPath(); ctx.moveTo(x + half * 0.46, floor - 21);
+    ctx.lineTo(x + half * 0.62, floor - 21); ctx.lineTo(x + half * 0.88, floor + 10);
+    ctx.lineTo(x + half * 0.72, floor + 10); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
   }
   ctx.restore();
 }

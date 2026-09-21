@@ -103,6 +103,7 @@ export function drawUnderstoryWorld(mgr, frame) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.restore();
   drawRange('L3');
+  mgr._drawSignature(frame, music);
 
   // Particles: pollen, spores, fireflies.
   drawParticleBlend(mgr, frame, 0.8);
@@ -133,6 +134,44 @@ function drawSpores(ctx, canvas, worldX, music, reducedFlash, particleMul) {
       ctx.arc(x + dot * 8, y + Math.sin(dot * 2 + colony) * 6, 1.4 + burst * 1.6, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+  ctx.restore();
+}
+
+// Broad masses are retained at every quality level; fine spores remain optional.
+export function drawCanopy(mgr, { ctx, canvas, worldX, A }, music) {
+  const w = canvas.width, h = canvas.height;
+  const spacing = w / 4;
+  const phase = ((worldX * 0.08) % spacing + spacing) % spacing;
+  const sway = mgr.reducedFlash ? 0 : music.current * 5;
+  ctx.save();
+  ctx.fillStyle = A.silhouette;
+  for (let i = -1; i < 6; i++) {
+    const x = i * spacing - phase;
+    const crownY = h * (0.07 + (i % 2 ? 0.04 : 0));
+    // Roots, tapering trunk and two connected boughs.
+    ctx.beginPath();
+    ctx.moveTo(x - 38, h * 0.86);
+    ctx.bezierCurveTo(x - 12, h * 0.66, x - 20, h * 0.35, x - 14 + sway, crownY);
+    ctx.lineTo(x + 17 + sway, crownY);
+    ctx.bezierCurveTo(x + 12, h * 0.38, x + 13, h * 0.69, x + 42, h * 0.86);
+    ctx.closePath(); ctx.fill();
+    ctx.lineWidth = 18;
+    ctx.strokeStyle = A.silhouette;
+    ctx.beginPath(); ctx.moveTo(x, h * 0.4);
+    ctx.bezierCurveTo(x - 10, h * 0.26, x - spacing * 0.3, h * 0.15, x - spacing * 0.5, crownY);
+    ctx.moveTo(x + 4, h * 0.32);
+    ctx.bezierCurveTo(x + 38, h * 0.2, x + spacing * 0.38, h * 0.2, x + spacing * 0.55, crownY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(x + sway, crownY - h * 0.04, spacing * 0.69, h * 0.13, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // A narrow lit edge supports the mass without turning the sky bright.
+    ctx.strokeStyle = '#668a50'; ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.22 + music.bass * 0.12;
+    ctx.beginPath(); ctx.moveTo(x + 17, h * 0.75);
+    ctx.bezierCurveTo(x + 10, h * 0.5, x + 20, h * 0.28, x + 35, h * 0.2);
+    ctx.stroke(); ctx.globalAlpha = 1;
   }
   ctx.restore();
 }

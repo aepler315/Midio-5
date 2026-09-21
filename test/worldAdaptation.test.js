@@ -259,3 +259,14 @@ for (const fixture of [
     }
   });
 }
+
+test('Far Side adaptation keeps an airless dark sky around its primary', () => {
+  const { data, profile } = song({ energyAt: () => 0.9, bpm: 160 });
+  const base = listWorlds().find(w => w.kind === 'airless');
+  const { world } = adaptWorld(base, profile, data);
+  for (const palette of world.palettes) {
+    for (const color of [...palette.sky, ...palette.skyStops]) {
+      assert.ok(color.slice(1).match(/../g).every(byte => parseInt(byte, 16) < 64), color);
+    }
+  }
+});

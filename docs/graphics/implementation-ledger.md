@@ -88,3 +88,12 @@ Design choice: extend WorldIdentity with physical-content/foreground rules and c
 - CI run 35662140636 failed: City groundView was omitted although wet sheen requires its distinct ground sequence. Preserve that sequence; remove unused shared-ground import. Remove unused Redline particle input.
 - Added a complete City-frame regression (existing test stopped at first shaded strip): RED ReferenceError -> GREEN; 10 focused tests pass. Completed lint run passes.
 - Identity CI produced artifact 10667855366 for pre-refactor comparison. Corrected refactor CI is required before visual-equivalence claims.
+
+### Structures and hierarchy implementation
+
+- Four world-owned signature painters are registered through existing WorldRegistry and drawn at explicit positions in each world's order. Shared `_drawSignature` is auditable; it does not define world geometry.
+- Understory: connected roots/trunks/boughs and enclosing crowns. Nave: three pointed bays, radial glass panes and architecture-origin illumination. Redline: perspective corridor and depth-spaced lane marks using existing integrated travel. Foundry: braced frames, pistons, furnace mouths and channels tied to existing sustained heat/pour controls.
+- Essential signature geometry has no quality gate. Browser harness now tests actual signature paint at level 0 and level 6/reduced motion, and captures 1.5-second fixed-step motion sequences.
+- Shared SalienceBudget uses per-world support-light caps while leaving landmark/terrain at 1. Far Side adaptation retains a dark sky around its existing primary. Range/Fathom/Cathode geometry is retained; no arbitrary edits solely to change every world.
+- Failing signature, salience and airless tests -> green. npm test: 2827 pass, 0 failed (14.8s). npm run lint and git diff --check: pass.
+- Browser/art inspection, corrected-refactor equivalence, profiling, final review and evidence completion remain pending.

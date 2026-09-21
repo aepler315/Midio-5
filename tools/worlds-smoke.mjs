@@ -64,16 +64,16 @@ const WORLDS = [
     mustPaint: ['_drawSky', '_drawGround'],
     watch: ['_drawCelestial'], mustNotPaint: ['_drawStarfield', 'drawDeepSky'] },
   { name: 'Redline', kind: 'strip',
-    mustPaint: ['_drawSky', '_drawGround'],
+    mustPaint: ['_drawSky', '_drawGround', '_drawSignature'],
     watch: ['drawDeepSky', '_drawMoon'] },
   { name: 'The Foundry', kind: 'foundry',
-    mustPaint: ['_drawSky', '_drawGround'],
+    mustPaint: ['_drawSky', '_drawGround', '_drawSignature'],
     watch: [], mustNotPaint: ['_drawStarfield', 'drawDeepSky', '_drawMoon', '_drawCelestial'] },
   { name: 'Understory', kind: 'overgrowth',
-    mustPaint: ['_drawSky', '_drawGround'],
+    mustPaint: ['_drawSky', '_drawGround', '_drawSignature'],
     watch: [], mustNotPaint: ['_drawStarfield', 'drawDeepSky', '_drawMoon', '_drawCelestial'] },
   { name: 'The Nave', kind: 'nave',
-    mustPaint: ['_drawSky', '_drawGround'],
+    mustPaint: ['_drawSky', '_drawGround', '_drawSignature'],
     watch: ['_drawCelestial'], mustNotPaint: ['_drawStarfield', 'drawDeepSky'] },
   // Cathode replaces the renderer rather than the scenery, so BiomeManager
   // never draws for it and there are no BiomeManager passes to audit. Its
@@ -97,7 +97,7 @@ await fs.writeFile(wav, buffer);
 
 /** Runs in the page: wrap each named pass, draw one frame, and report how
  *  many stage pixels each call changed. Returns {pass: {calls, paintedPx}}. */
-const PAINT_AUDIT = (names) => {
+const PAINT_AUDIT = ({ names, quality = 0 }) => {
   const { sim, renderer, perf } = window.__SMW;
   const mgr = sim.biomes;
   const proto = Object.getPrototypeOf(mgr);
@@ -136,7 +136,7 @@ const PAINT_AUDIT = (names) => {
   try {
     // Full quality for the audited frame: a shed rung legitimately turns
     // whole passes off, which would read as "painted nothing".
-    if (perf) perf.level = 0;
+    if (perf) perf.level = quality;
     renderer.draw(sim, 1);
   } finally {
     for (const [name, fn] of originals) proto[name] = fn;
@@ -168,7 +168,7 @@ const CATHODE_STATS = () => {
 
 const browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_PATH
   ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {});
-const report = { passed: false, worlds: [] };
+const report = { passed: false, seed: 315, viewport: { width: 1280, height: 720 }, browser: browser.version(), timingScope: 'Headless JS draw submission; not GPU time or device FPS', worlds: [] };
 const failures = [];
 try {
   for (const world of WORLDS) {
@@ -247,7 +247,7 @@ try {
         assert.ok(cathode.colors > 4, name + ' composes a real pixel frame');
         assert.ok(cathode.litFraction > 0.05, name + ' frame is not essentially blank');
       } else {
-        paint = await page.evaluate(PAINT_AUDIT, [...world.mustPaint, ...world.watch, ...(world.mustNotPaint || [])]);
+        paint = await page.evaluate(PAINT_AUDIT, { names: [...world.mustPaint, ...world.watch, ...(world.mustNotPaint || [])] });
         for (const pass of world.mustPaint) {
           const s = paint[pass];
           if (!s || s.missing) { failures.push(`${name}: ${pass} is not a method on BiomeManager`); continue; }
@@ -260,8 +260,41 @@ try {
         assert.equal(paint[pass]?.missing, undefined, `${name}: missing ${pass} audit target`);
         assert.equal(paint[pass]?.paintedPx, 0, `${name}: ${pass} must not paint an interior`);
       }
-      assert.deepEqual(errors, [], name + ' has no browser errors');
-      report.worlds.push({ name, kind, samples, auditConfiguration, paint, cathode, errors });
+      // Same destination at deepest supported quality and reduced motion.
+      await page.keyboard.press('r');
+      const degradedConfiguration = await page.evaluate(renderWorldFrame, { atMs: 18000, quality: 6 });
+      assert.equal(degradedConfiguration.reducedFlash, true);
+      let degradedPaint = null;
+      if (world.mustPaint.includes('_drawSignature')) {
+        degradedPaint = await page.evaluate(PAINT_AUDIT, { names: ['_drawSignature'], quality: 6 });
+        assert.ok(degradedPaint._drawSignature.paintedPx > 0, name + ' retains its defining structure at lowest quality');
+      }
+      await page.locator('#stage').screenshot({ path: path.join(out, `${kind}-degraded.png`) });
+      await page.keyboard.press('r');
+      await page.evaluate(renderWorldFrame, { atMs: 18000, quality: 0 });
+      // Fixed-step motion samples, not sleep-based comparisons. Drawing cost
+      // is headless JS submission time; it is not device FPS or GPU time.
+      const motion = [];
+      if (world.mustPaint.includes('_drawSignature')) {
+        for (let segment = 0; segment < 6; segment++) {
+          const timing = await page.evaluate(() => {
+            const { sim, renderer, perf } = window.__SMW;
+            const costs = [];
+            for (let i = 0; i < 15; i++) {
+              if (perf) perf.level = 0;
+              sim.step(1000 / 60, sim.timeMs + 1000 / 60);
+              const before = performance.now();
+              renderer.draw(sim, 1);
+              costs.push(performance.now() - before);
+            }
+            return { timeMs: sim.timeMs, submissionMs: costs };
+          });
+          await page.locator('#stage').screenshot({ path: path.join(out, `${kind}-motion-${segment}.png`) });
+          motion.push(timing);
+        }
+      }
+            assert.deepEqual(errors, [], name + ' has no browser errors');
+      report.worlds.push({ name, kind, samples, auditConfiguration, paint, cathode, degradedConfiguration, degradedPaint, motion, errors });
       const painted = paint
         ? Object.entries(paint).filter(([, s]) => s.paintedPx > 0).map(([k]) => k).join(', ')
         : 'pixel renderer';

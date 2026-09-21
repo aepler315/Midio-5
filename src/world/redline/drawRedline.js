@@ -128,6 +128,7 @@ export function drawRedlineWorld(mgr, frame) {
 
   // Ground
   const groundCanvas = drawGroundBase(mgr, frame, tint);
+  mgr._drawSignature(frame, music);
   drawLaneMarkers(ctx, groundCanvas, worldX, mgr);
   drawReflectors(ctx, groundCanvas, worldX, mgr, music);
   mgr._drawFlood(ctx, groundCanvas);
@@ -192,6 +193,43 @@ function drawReflectors(ctx, canvas, worldX, mgr, music) {
     ctx.fillStyle = i % 2 ? '#ff7a4a' : '#ffe08a';
     ctx.fillRect(x, gy - 14, 3, 8);
     ctx.fillRect(x, gy - 4, 3, 3);
+  }
+  ctx.restore();
+}
+
+export function drawRoad(mgr, frame, music) {
+  const { ctx, worldX } = frame;
+  const canvas = frame.groundView ? frame.groundView.stage : frame.canvas;
+  const w = canvas.width, h = canvas.height;
+  const gy = mgr.groundField ? mgr.groundField.heightAt(worldX) : mgr.groundY;
+  const vx = w * 0.62, vy = gy - h * 0.12;
+  const bottom = h;
+  ctx.save();
+  ctx.fillStyle = '#151923';
+  ctx.beginPath(); ctx.moveTo(vx - 5, vy); ctx.lineTo(vx + 5, vy);
+  ctx.lineTo(w * 1.06, bottom); ctx.lineTo(w * 0.08, bottom); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#987c68'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(vx - 5, vy); ctx.lineTo(w * 0.08, bottom);
+  ctx.moveTo(vx + 5, vy); ctx.lineTo(w * 1.06, bottom); ctx.stroke();
+  const travel = cruiseTravel(mgr.tSec, mgr.energyCurves, mgr.reducedFlash, mgr.world?.response);
+  const phase = ((travel % 90) + 90) % 90 / 90;
+  ctx.fillStyle = '#c8b58a';
+  for (let lane = 0; lane < 2; lane++) {
+    for (let i = 0; i < 10; i++) {
+      const near = ((i + phase) / 10) ** 2;
+      const far = Math.max(0, (i + phase - 0.35) / 10) ** 2;
+      const dx = (lane ? 0.16 : -0.18) * w;
+      ctx.beginPath(); ctx.moveTo(vx + dx * far, vy + (bottom - vy) * far);
+      ctx.lineTo(vx + dx * near, vy + (bottom - vy) * near);
+      ctx.lineTo(vx + dx * near + 2 + near * 3, vy + (bottom - vy) * near);
+      ctx.lineTo(vx + dx * far + 1, vy + (bottom - vy) * far); ctx.closePath(); ctx.fill();
+    }
+  }
+  ctx.strokeStyle = frame.A.edgeLight || '#dc9362';
+  ctx.globalAlpha = capFlashAlpha(0.22 + music.energy * 0.22, mgr.reducedFlash);
+  for (let side = -1; side <= 1; side += 2) {
+    ctx.beginPath(); ctx.moveTo(vx, vy - 8);
+    ctx.lineTo(vx + side * w * 0.52, bottom - 12); ctx.stroke();
   }
   ctx.restore();
 }

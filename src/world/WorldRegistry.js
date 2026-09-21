@@ -24,10 +24,10 @@
 import { drawCityWorld } from './city/drawCity.js';
 import { drawFarsideWorld } from './farside/drawFarside.js';
 import { drawFathomWorld } from './fathom/drawFathom.js';
-import { drawRedlineWorld } from './redline/drawRedline.js';
-import { drawFoundryWorld } from './foundry/drawFoundry.js';
-import { drawUnderstoryWorld } from './understory/drawUnderstory.js';
-import { drawNaveWorld } from './nave/drawNave.js';
+import { drawRedlineWorld, drawRoad } from './redline/drawRedline.js';
+import { drawFoundryWorld, drawMachinery } from './foundry/drawFoundry.js';
+import { drawUnderstoryWorld, drawCanopy } from './understory/drawUnderstory.js';
+import { drawNaveWorld, drawVault } from './nave/drawNave.js';
 
 // kind -> the function that draws it. Two of the nine kinds are absent on
 // purpose and worldContract.test.js asserts exactly these two:
@@ -54,7 +54,7 @@ export const WORLD_CONTRACT = Object.freeze({
   // what makes a world a world rather than an unrelated canvas.
   passes: [
     '_drawSky', '_drawGround', '_drawFlood', '_drawRidgeVolume',
-    '_drawTerrainFooting', '_drawTransitionOverlays',
+    '_drawTerrainFooting', '_drawTransitionOverlays', '_drawSignature',
   ],
   // Passes a world takes or leaves. Fathom and Nave skip drawDeepSky by
   // choice -- their own headers explain why open-sky stars would contradict
@@ -82,3 +82,9 @@ export const WORLD_CONTRACT = Object.freeze({
 export const WORLD_CONTRACT_MEMBERS = Object.freeze(
   new Set(Object.values(WORLD_CONTRACT).flat()),
 );
+
+// Defining structures live in their world modules and survive quality shedding.
+export const WORLD_SIGNATURES = new Map([
+  ['overgrowth', drawCanopy], ['nave', drawVault],
+  ['strip', drawRoad], ['foundry', drawMachinery],
+]);

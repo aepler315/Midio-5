@@ -1,3 +1,4 @@
+import { hexLerp } from '../utils/color.js';
 // The visual facts that must survive song adaptation.
 //
 // A world may take on a song's color, timing, and terrain variation, but it
@@ -7,7 +8,7 @@
 
 function policy({
   kind, landmark, signatureMotion, lightSource, paletteFloor, castPlacement,
-  sharedEffects, vocabulary, foreground,
+  sharedEffects, vocabulary, foreground, supportLight = 1,
 }) {
   return Object.freeze({
     kind,
@@ -18,6 +19,7 @@ function policy({
     castPlacement,
     vocabulary: Object.freeze(Object.fromEntries(Object.entries(vocabulary).map(([key, value]) => [key, Array.isArray(value) ? Object.freeze(value) : value]))),
     foreground: Object.freeze(foreground),
+    supportLight,
     sharedEffects: Object.freeze({ ...sharedEffects }),
   });
 }
@@ -39,6 +41,7 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   city: policy({
     kind: 'city',
+    supportLight: 0.55,
     vocabulary: { particles: ["rain", "embers"], effects: ["starTwinkle", "neonGrid", "emberGlow", "sunMotes"], landmarks: ["CYBER"] },
     foreground: { maxHeight: 0.2, hanging: false },
     landmark: 'a layered skyline with lit districts',
@@ -50,6 +53,7 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   airless: policy({
     kind: 'airless',
+    supportLight: 0.55,
     vocabulary: { particles: ["antigrav"], effects: ["starTwinkle", "crystalGlint"], landmarks: ["VOID", "GEODE", "ARCTIC"] },
     foreground: { maxHeight: 0.14, hanging: false },
     landmark: 'a giant banded primary above the regolith',
@@ -61,6 +65,7 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   abyssal: policy({
     kind: 'abyssal',
+    supportLight: 0.6,
     vocabulary: { particles: ["bubbles", "spores", "embers"], effects: ["godRays", "bioluminescence", "emberGlow"], landmarks: ["ABYSS", "CORAL"] },
     foreground: { maxHeight: 0.2, hanging: false },
     landmark: 'a water ceiling with descending shafts',
@@ -72,6 +77,7 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   strip: policy({
     kind: 'strip',
+    supportLight: 0.8,
     vocabulary: { particles: ["wind", "flaresparks", "digitalrain"], effects: ["heatShimmer", "neonGrid", "prominence"], landmarks: ["CYBER"] },
     foreground: { maxHeight: 0.16, hanging: false },
     landmark: 'a road vanishing into the horizon',
@@ -83,6 +89,7 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   foundry: policy({
     kind: 'foundry',
+    supportLight: 0.65,
     vocabulary: { particles: ["fog", "embers", "flaresparks"], effects: ["starTwinkle", "emberGlow", "prominence", "heatShimmer"], landmarks: ["CYBER"] },
     foreground: { maxHeight: 0.2, hanging: true },
     landmark: 'smokestacks and a furnace glow from below',
@@ -94,6 +101,7 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   overgrowth: policy({
     kind: 'overgrowth',
+    supportLight: 0.6,
     vocabulary: { particles: ["pollen", "spores", "fireflies"], effects: ["godRays", "canopyDapple", "sporeGlow", "bioluminescence"], landmarks: ["JADE", "LUMEN"] },
     foreground: { maxHeight: 0.24, hanging: true },
     landmark: 'a dense canopy closing the upper frame',
@@ -105,6 +113,7 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   nave: policy({
     kind: 'nave',
+    supportLight: 0.6,
     vocabulary: { particles: ["fog", "sunshine"], effects: ["starTwinkle", "godRays", "crystalGlint", "prominence"], landmarks: ["TWILIGHT"] },
     foreground: { maxHeight: 0.22, hanging: true },
     landmark: 'vaulted bays framing a central rose window',
@@ -161,6 +170,12 @@ export function constrainPalette(subject, palette, stock = null) {
   }
   return {
     ...palette,
+    // Vacuum has no luminous terrestrial atmosphere. Retain a hint of the
+    // musical hue, once at materialization, without changing primary size.
+    ...(stock && identity.kind === 'airless' ? {
+      sky: palette.sky.map(color => hexLerp(color, '#020408', 0.97)),
+      skyStops: palette.skyStops?.map(color => hexLerp(color, '#020408', 0.97)),
+    } : {}),
     landmarkKey: admit('landmarks', palette.landmarkKey, stock?.landmarkKey),
     fx: admit('effects', palette.fx, stock?.fx),
     celestial,
