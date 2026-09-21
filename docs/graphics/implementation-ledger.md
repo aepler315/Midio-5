@@ -8,12 +8,12 @@ Isolation: fresh task-only clone, branch feat/world-identity-graphics. No existi
 
 | Order | Requirement / current code | Task | Acceptance evidence | Status |
 |---|---|---|---|---|
-| 1 | worlds-smoke energetic audit uses return frame; generic music diagnostics | Pause, explicitly seek every labeled audit, record actual response and dimensions | Helper regressions, browser captures | Implemented; corrected deterministic captures running |
-| 2 | WorldIdentity / PaletteSynth / WorldAdaptation / NearField | Enforce shared-boundary sky admission and world physical vocabulary, bounded world props | Behavioral adaptation/render tests; primary seed captures | Implemented; regressions green |
-| 3 | Repeated static strip/shading, particle and ground setup in world modules | Small behavior-preserving shared functions, separate commit | Pre/post controlled frames, ordering tests | Implemented; historical comparison running |
-| 4 | Understory / Nave / Redline / Foundry art | Connected canopy; architectural glass/bays; road perspective; machinery assemblies | Composition intent and per-world before/after frames/motion | Implemented; composed visual review pending |
-| 5 | SalienceBudget / PerfGovernor | Retain essential structures, constrain competing foreground/light | All-world quality/accessibility matrix, measured costs | Implemented; browser quality/motion review pending |
-| 6 | Verification / delivery | Full lint/unit/browser checks, final review and PR | Commands, artifact links, final SHA | In progress |
+| 1 | worlds-smoke energetic audit uses return frame; generic music diagnostics | Pause, explicitly seek every labeled audit, record actual response and dimensions | Helper regressions, browser captures | Complete; controlled primary/motion/quality captures verified |
+| 2 | WorldIdentity / PaletteSynth / WorldAdaptation / NearField | Enforce shared-boundary sky admission and world physical vocabulary, bounded world props | Behavioral adaptation/render tests; primary seed captures | Complete; behavioral and browser regressions green |
+| 3 | Repeated static strip/shading, particle and ground setup in world modules | Small behavior-preserving shared functions, separate commit | Pre/post controlled frames, ordering tests | Complete; 69 exact RGB matches |
+| 4 | Understory / Nave / Redline / Foundry art | Connected canopy; architectural glass/bays; road perspective; machinery assemblies | Composition intent and per-world before/after frames/motion | Complete; per-world before/after and motion inspected |
+| 5 | SalienceBudget / PerfGovernor | Retain essential structures, constrain competing foreground/light | All-world quality/accessibility matrix, measured costs | Complete; all-world quality/reduced-motion checks pass |
+| 6 | Verification / delivery | Full lint/unit/browser checks, final review and PR | Commands, artifact links, final SHA | Complete; PR evidence attached |
 
 ## Findings at current baseline
 
@@ -118,3 +118,15 @@ Design choice: extend WorldIdentity with physical-content/foreground rules and c
 - After Hours energetic inspection showed a luminous generated backdrop competing with small window districts. Added failing actual adaptation test, then attenuated only its sky at materialization while preserving musical hue and localized lights. Full suite: 2841 pass; lint/diff check pass.
 
 - Subsequent composed inspection found the fixed ground pass could still cover Foundry's furnace under camera pull-back. Actual draw-order regression now requires machinery after ground. Assemblies use groundView.stage and sampled ground height; furnace mouths keep warm material color while sustained heat controls intensity. Focused 25 tests and full 2841-test suite pass; lint passes.
+
+
+### Final verification and delivery
+
+- Final source: 2ed3cc86c92b244252d540dbe5e4d47e3289b50a. CI run 35664965444: all three jobs passed. Local `npm test`: 2841/2841; `npm run lint` and `git diff --check`: pass.
+- Browser commands in the passing audio job: test:smoke, test:lighting, test:shading, test:seek, test:worlds, test:export, test:car. Chooser job: test:chooser, test:chooser-keyboard. Dependency audits passed.
+- Final artifact 10669710174 (audio-smoke) inspected: all nine primary three-passage comparisons, all nine degraded/restored pairs, priority-world motion frames. Furnace mouths/channels now survive full composition and camera pull-back; city windows have a darker backdrop; road spans cast travel line. No remaining implementation blocker found.
+- Persistent evidence: validation.md, evidence/*-comparison.jpg, priority-motion.gif, final-capture.json, refactor-comparison.json. Final-art median/p95 submission ms: Redline 46.05/49.3, Foundry 50.6/56.5, Understory 42.65/49.0, Nave 48.95/53.3. Separate CI runs do not establish causal speedup.
+- Independent whole-branch review found no Critical issue and three Important issues; each reproduced and fixed. Subsequent integrator composition review found and fixed road coverage and furnace grounding. No unresolved review finding remains.
+- Scope decisions: retain successful Range ridge/mirage, Fathom ceiling/shafts, and Cathode raster geometry; do not add complexity only to force an edit in every world. Existing destination-reassembly transient is retained and visible in early motion samples.
+- Remaining limits: no human preference/holdout acceptance, physical-device frame pacing/GPU benchmark, cross-browser certification, or photosensitivity certification. Local browser install unavailable; real browser verification completed in CI.
+- PR: https://github.com/aepler315/Midio-5/pull/292. No merge/deployment. Final evidence commit changes documentation/assets only; source/tests remain the fully verified source above. Next action is maintainer review.

@@ -1,0 +1,2672 @@
+{
+  "passed": true,
+  "seed": 315,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "browser": "153.0.8010.12",
+  "timingScope": "Headless JS draw submission; not GPU time or device FPS",
+  "worlds": [
+    {
+      "name": "The Range",
+      "kind": "alpine",
+      "samples": [
+        {
+          "label": "quiet",
+          "requestedMs": 6000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 6052,
+          "simulationMs": 6052,
+          "response": {
+            "smoothingMs": 1620,
+            "accentCooldownMs": 252,
+            "maxAccents": 4,
+            "macroMs": 10800,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.06079491425469509,
+            "energy": 0.23100094522285142,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.1677342051081342,
+            "cityLight": 0.20835786154774066,
+            "waterLight": 0.09136864896562798
+          },
+          "colors": 2033
+        },
+        {
+          "label": "energetic",
+          "requestedMs": 18000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": -0.21683624677968627,
+            "shakeY": 5.285346861010264,
+            "roll": 0
+          },
+          "timeMs": 18052,
+          "simulationMs": 18052,
+          "response": {
+            "smoothingMs": 1620,
+            "accentCooldownMs": 252,
+            "maxAccents": 4,
+            "macroMs": 10800,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.23990897667031502,
+            "energy": 0.6111338995625379,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.3670047748685447,
+            "cityLight": 0.3537587165826708,
+            "waterLight": 0.12486297863734891
+          },
+          "colors": 1978
+        },
+        {
+          "label": "return",
+          "requestedMs": 27000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 27052,
+          "simulationMs": 27052,
+          "response": {
+            "smoothingMs": 1620,
+            "accentCooldownMs": 252,
+            "maxAccents": 4,
+            "macroMs": 10800,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.06053492578791926,
+            "energy": 0.2305576837626288,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.18760421601124433,
+            "cityLight": 0.2081883140392055,
+            "waterLight": 0.09132003112234091
+          },
+          "colors": 1962
+        }
+      ],
+      "auditConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.21683624677968627,
+          "shakeY": 5.285346861010264,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 1620,
+          "accentCooldownMs": 252,
+          "maxAccents": 4,
+          "macroMs": 10800,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 0,
+        "reducedFlash": false,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "paint": {
+        "_drawSky": {
+          "calls": 1,
+          "paintedPx": 921600
+        },
+        "_drawGround": {
+          "calls": 1,
+          "paintedPx": 198400
+        },
+        "_drawFataMorgana": {
+          "calls": 1,
+          "paintedPx": 71571
+        },
+        "drawDeepSky": {
+          "calls": 1,
+          "paintedPx": 0
+        },
+        "_drawStarfield": {
+          "calls": 1,
+          "paintedPx": 237253
+        },
+        "_drawFarShore": {
+          "calls": 1,
+          "paintedPx": 58776
+        },
+        "_drawOcean": {
+          "calls": 1,
+          "paintedPx": 450271
+        },
+        "_drawLayer": {
+          "calls": 4,
+          "paintedPx": 1322201
+        }
+      },
+      "cathode": null,
+      "degradedConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.10841812338984314,
+          "shakeY": 2.642673430505132,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 1620,
+          "accentCooldownMs": 252,
+          "maxAccents": 4,
+          "macroMs": 10800,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 6,
+        "reducedFlash": true,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "degradedPaint": null,
+      "motion": [],
+      "errors": []
+    },
+    {
+      "name": "After Hours",
+      "kind": "city",
+      "samples": [
+        {
+          "label": "quiet",
+          "requestedMs": 6000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 6052,
+          "simulationMs": 6052,
+          "response": {
+            "smoothingMs": 1215,
+            "accentCooldownMs": 196,
+            "maxAccents": 6,
+            "macroMs": 8100,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.07823583334451455,
+            "energy": 0.2326470206997805,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.21798544829523717,
+            "cityLight": 0.20898748541766604,
+            "waterLight": 0.09463010083542422
+          },
+          "colors": 1626
+        },
+        {
+          "label": "energetic",
+          "requestedMs": 18000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": -0.21683624677968627,
+            "shakeY": 5.285346861010264,
+            "roll": 0
+          },
+          "timeMs": 18052,
+          "simulationMs": 18052,
+          "response": {
+            "smoothingMs": 1215,
+            "accentCooldownMs": 196,
+            "maxAccents": 6,
+            "macroMs": 8100,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.28667914717773824,
+            "energy": 0.5978603593089966,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.3029037023613014,
+            "cityLight": 0.3486815874356912,
+            "waterLight": 0.13360900052223704
+          },
+          "colors": 1553
+        },
+        {
+          "label": "return",
+          "requestedMs": 27000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 27052,
+          "simulationMs": 27052,
+          "response": {
+            "smoothingMs": 1215,
+            "accentCooldownMs": 196,
+            "maxAccents": 6,
+            "macroMs": 8100,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.07774605599665708,
+            "energy": 0.23182770322549476,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": -0.06312106884733097,
+            "cityLight": 0.20867409648375174,
+            "waterLight": 0.09453851247137487
+          },
+          "colors": 1433
+        }
+      ],
+      "auditConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.21683624677968627,
+          "shakeY": 5.285346861010264,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 1215,
+          "accentCooldownMs": 196,
+          "maxAccents": 6,
+          "macroMs": 8100,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 0,
+        "reducedFlash": false,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "paint": {
+        "_drawSky": {
+          "calls": 1,
+          "paintedPx": 921600
+        },
+        "_drawGround": {
+          "calls": 1,
+          "paintedPx": 198400
+        },
+        "drawDeepSky": {
+          "calls": 1,
+          "paintedPx": 0
+        },
+        "_drawHaze": {
+          "calls": 3,
+          "paintedPx": 2719778
+        },
+        "_drawFogBanks": {
+          "calls": 1,
+          "paintedPx": 363470
+        },
+        "_drawMoon": {
+          "calls": 1,
+          "paintedPx": 40327
+        }
+      },
+      "cathode": null,
+      "degradedConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.10841812338984314,
+          "shakeY": 2.642673430505132,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 1215,
+          "accentCooldownMs": 196,
+          "maxAccents": 6,
+          "macroMs": 8100,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 6,
+        "reducedFlash": true,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "degradedPaint": null,
+      "motion": [],
+      "errors": []
+    },
+    {
+      "name": "Far Side",
+      "kind": "airless",
+      "samples": [
+        {
+          "label": "quiet",
+          "requestedMs": 6000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 6052,
+          "simulationMs": 6052,
+          "response": {
+            "smoothingMs": 2430,
+            "accentCooldownMs": 588,
+            "maxAccents": 2,
+            "macroMs": 13500,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.06248976113381735,
+            "energy": 0.2345350326385683,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.13700344937428208,
+            "cityLight": 0.20970964998425237,
+            "waterLight": 0.09168558533202384
+          },
+          "colors": 1034
+        },
+        {
+          "label": "energetic",
+          "requestedMs": 18000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": -0.21683624677968627,
+            "shakeY": 5.285346861010264,
+            "roll": 0
+          },
+          "timeMs": 18052,
+          "simulationMs": 18052,
+          "response": {
+            "smoothingMs": 2430,
+            "accentCooldownMs": 588,
+            "maxAccents": 2,
+            "macroMs": 13500,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.2669954642543609,
+            "energy": 0.6013921484197847,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.3666924903174228,
+            "cityLight": 0.35003249677056764,
+            "waterLight": 0.1299281518155655
+          },
+          "colors": 1274
+        },
+        {
+          "label": "return",
+          "requestedMs": 27000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 27052,
+          "simulationMs": 27052,
+          "response": {
+            "smoothingMs": 2430,
+            "accentCooldownMs": 588,
+            "maxAccents": 2,
+            "macroMs": 13500,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.06331586598177447,
+            "energy": 0.2264697413161597,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.28713473859965033,
+            "cityLight": 0.2066246760534311,
+            "waterLight": 0.09184006693859183
+          },
+          "colors": 1238
+        }
+      ],
+      "auditConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.21683624677968627,
+          "shakeY": 5.285346861010264,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 2430,
+          "accentCooldownMs": 588,
+          "maxAccents": 2,
+          "macroMs": 13500,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 0,
+        "reducedFlash": false,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "paint": {
+        "_drawSky": {
+          "calls": 1,
+          "paintedPx": 921600
+        },
+        "_drawGround": {
+          "calls": 1,
+          "paintedPx": 198400
+        },
+        "drawDeepSky": {
+          "calls": 1,
+          "paintedPx": 0
+        }
+      },
+      "cathode": null,
+      "degradedConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.10841812338984314,
+          "shakeY": 2.642673430505132,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 2430,
+          "accentCooldownMs": 588,
+          "maxAccents": 2,
+          "macroMs": 13500,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 6,
+        "reducedFlash": true,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "degradedPaint": null,
+      "motion": [],
+      "errors": []
+    },
+    {
+      "name": "The Fathom",
+      "kind": "abyssal",
+      "samples": [
+        {
+          "label": "quiet",
+          "requestedMs": 6000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 6052,
+          "simulationMs": 6052,
+          "response": {
+            "smoothingMs": 2700,
+            "accentCooldownMs": 504,
+            "maxAccents": 3,
+            "macroMs": 12150,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.05856327144381603,
+            "energy": 0.2325865056819353,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.15045848348970817,
+            "cityLight": 0.20896433842334025,
+            "waterLight": 0.09095133175999359
+          },
+          "colors": 1445
+        },
+        {
+          "label": "energetic",
+          "requestedMs": 18000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": -0.21683624677968627,
+            "shakeY": 5.285346861010264,
+            "roll": 0
+          },
+          "timeMs": 18052,
+          "simulationMs": 18052,
+          "response": {
+            "smoothingMs": 2700,
+            "accentCooldownMs": 504,
+            "maxAccents": 3,
+            "macroMs": 12150,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.2642574124415599,
+            "energy": 0.5937511511240177,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.3747575587753293,
+            "cityLight": 0.34710981530493673,
+            "waterLight": 0.1294161361265717
+          },
+          "colors": 1415
+        },
+        {
+          "label": "return",
+          "requestedMs": 27000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 27052,
+          "simulationMs": 27052,
+          "response": {
+            "smoothingMs": 2700,
+            "accentCooldownMs": 504,
+            "maxAccents": 3,
+            "macroMs": 12150,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.05996159091413448,
+            "energy": 0.2250083150940218,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.2499429751127315,
+            "cityLight": 0.20606568052346333,
+            "waterLight": 0.09121281750094315
+          },
+          "colors": 1337
+        }
+      ],
+      "auditConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.21683624677968627,
+          "shakeY": 5.285346861010264,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 2700,
+          "accentCooldownMs": 504,
+          "maxAccents": 3,
+          "macroMs": 12150,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 0,
+        "reducedFlash": false,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "paint": {
+        "_drawSky": {
+          "calls": 1,
+          "paintedPx": 921600
+        },
+        "_drawGround": {
+          "calls": 1,
+          "paintedPx": 198400
+        },
+        "_drawCelestial": {
+          "calls": 1,
+          "paintedPx": 0
+        },
+        "_drawStarfield": {
+          "calls": 0,
+          "paintedPx": 0
+        },
+        "drawDeepSky": {
+          "calls": 0,
+          "paintedPx": 0
+        }
+      },
+      "cathode": null,
+      "degradedConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.10841812338984314,
+          "shakeY": 2.642673430505132,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 2700,
+          "accentCooldownMs": 504,
+          "maxAccents": 3,
+          "macroMs": 12150,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 6,
+        "reducedFlash": true,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "degradedPaint": null,
+      "motion": [],
+      "errors": []
+    },
+    {
+      "name": "Redline",
+      "kind": "strip",
+      "samples": [
+        {
+          "label": "quiet",
+          "requestedMs": 6000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 6052,
+          "simulationMs": 6052,
+          "response": {
+            "smoothingMs": 945,
+            "accentCooldownMs": 168,
+            "maxAccents": 5,
+            "macroMs": 6750,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.04950454353977188,
+            "energy": 0.2106525386628371,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.24391354126393477,
+            "cityLight": 0.20057459603853517,
+            "waterLight": 0.08925734964193735
+          },
+          "colors": 1314
+        },
+        {
+          "label": "energetic",
+          "requestedMs": 18000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": -0.21683624677968627,
+            "shakeY": 5.285346861010264,
+            "roll": 0
+          },
+          "timeMs": 18052,
+          "simulationMs": 18052,
+          "response": {
+            "smoothingMs": 945,
+            "accentCooldownMs": 168,
+            "maxAccents": 5,
+            "macroMs": 6750,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.25252250477501564,
+            "energy": 0.5972874882316773,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.16783348791754008,
+            "cityLight": 0.3484624642486166,
+            "waterLight": 0.12722170839292793
+          },
+          "colors": 1305
+        },
+        {
+          "label": "return",
+          "requestedMs": 27000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 27052,
+          "simulationMs": 27052,
+          "response": {
+            "smoothingMs": 945,
+            "accentCooldownMs": 168,
+            "maxAccents": 5,
+            "macroMs": 6750,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.05017256661805915,
+            "energy": 0.21537444114059062,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": -0.23801121651920612,
+            "cityLight": 0.2023807237362759,
+            "waterLight": 0.08938226995757706
+          },
+          "colors": 1212
+        }
+      ],
+      "auditConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.21683624677968627,
+          "shakeY": 5.285346861010264,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 945,
+          "accentCooldownMs": 168,
+          "maxAccents": 5,
+          "macroMs": 6750,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 0,
+        "reducedFlash": false,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "paint": {
+        "_drawSky": {
+          "calls": 1,
+          "paintedPx": 921600
+        },
+        "_drawGround": {
+          "calls": 1,
+          "paintedPx": 198400
+        },
+        "_drawSignature": {
+          "calls": 1,
+          "paintedPx": 349685
+        },
+        "drawDeepSky": {
+          "calls": 1,
+          "paintedPx": 0
+        },
+        "_drawMoon": {
+          "calls": 1,
+          "paintedPx": 41409
+        }
+      },
+      "cathode": null,
+      "degradedConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.10841812338984314,
+          "shakeY": 2.642673430505132,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 945,
+          "accentCooldownMs": 168,
+          "maxAccents": 5,
+          "macroMs": 6750,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 6,
+        "reducedFlash": true,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "degradedPaint": {
+        "_drawSignature": {
+          "calls": 1,
+          "paintedPx": 353128
+        }
+      },
+      "motion": [
+        {
+          "timeMs": 18302.00000000002,
+          "submissionMs": [
+            41.5,
+            41.20000000001164,
+            40.40000000002328,
+            40.90000000002328,
+            41.60000000000582,
+            41.5,
+            48.89999999999418,
+            49.29999999998836,
+            48.5,
+            48.29999999998836,
+            56.30000000001746,
+            56.60000000000582,
+            53.09999999997672,
+            47.60000000000582,
+            46.39999999999418
+          ]
+        },
+        {
+          "timeMs": 18552.000000000036,
+          "submissionMs": [
+            47.19999999998254,
+            48.79999999998836,
+            48.69999999998254,
+            47.79999999998836,
+            47.10000000000582,
+            47.80000000001746,
+            46,
+            47.29999999998836,
+            43.89999999999418,
+            47.30000000001746,
+            47,
+            45.60000000000582,
+            46.09999999997672,
+            43.5,
+            45.79999999998836
+          ]
+        },
+        {
+          "timeMs": 18802.000000000055,
+          "submissionMs": [
+            43.90000000002328,
+            42.70000000001164,
+            42.59999999997672,
+            43,
+            45.19999999998254,
+            43.70000000001164,
+            43.89999999999418,
+            44.09999999997672,
+            45.39999999999418,
+            43.60000000000582,
+            43.39999999999418,
+            43.09999999997672,
+            43.70000000001164,
+            44.29999999998836,
+            44.10000000000582
+          ]
+        },
+        {
+          "timeMs": 19052.000000000073,
+          "submissionMs": [
+            42.10000000000582,
+            45.70000000001164,
+            43.89999999999418,
+            45.59999999997672,
+            42.80000000001746,
+            43,
+            45.20000000001164,
+            42.59999999997672,
+            43,
+            42.70000000001164,
+            46.69999999998254,
+            45.80000000001746,
+            48,
+            47.89999999999418,
+            45.70000000001164
+          ]
+        },
+        {
+          "timeMs": 19302.00000000009,
+          "submissionMs": [
+            48.5,
+            53.30000000001746,
+            47.20000000001164,
+            48.70000000001164,
+            50.79999999998836,
+            45.89999999999418,
+            48.69999999998254,
+            47.79999999998836,
+            47.60000000000582,
+            47.69999999998254,
+            47.39999999999418,
+            47.5,
+            47.69999999998254,
+            47.39999999999418,
+            46.29999999998836
+          ]
+        },
+        {
+          "timeMs": 19552.00000000011,
+          "submissionMs": [
+            48.20000000001164,
+            47.39999999999418,
+            46.5,
+            46.40000000002328,
+            43.80000000001746,
+            46.60000000000582,
+            46.10000000000582,
+            46,
+            46.19999999998254,
+            46.5,
+            46.19999999998254,
+            45.5,
+            45.69999999998254,
+            43.79999999998836,
+            43.39999999999418
+          ]
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "The Foundry",
+      "kind": "foundry",
+      "samples": [
+        {
+          "label": "quiet",
+          "requestedMs": 6000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 6052,
+          "simulationMs": 6052,
+          "response": {
+            "smoothingMs": 1080,
+            "accentCooldownMs": 126,
+            "maxAccents": 5,
+            "macroMs": 7425,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.08810990302804489,
+            "energy": 0.24178937686078752,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.2355927036607695,
+            "cityLight": 0.2124844366492512,
+            "waterLight": 0.0964765518662444
+          },
+          "colors": 1526
+        },
+        {
+          "label": "energetic",
+          "requestedMs": 18000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": -0.21683624677968627,
+            "shakeY": 5.285346861010264,
+            "roll": 0
+          },
+          "timeMs": 18052,
+          "simulationMs": 18052,
+          "response": {
+            "smoothingMs": 1080,
+            "accentCooldownMs": 126,
+            "maxAccents": 5,
+            "macroMs": 7425,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.3210459318104918,
+            "energy": 0.6440767568203489,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.25628131461370635,
+            "cityLight": 0.36635935948378345,
+            "waterLight": 0.14003558924856196
+          },
+          "colors": 1457
+        },
+        {
+          "label": "return",
+          "requestedMs": 27000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 27052,
+          "simulationMs": 27052,
+          "response": {
+            "smoothingMs": 1080,
+            "accentCooldownMs": 126,
+            "maxAccents": 5,
+            "macroMs": 7425,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.08755483452762058,
+            "energy": 0.24092131535073252,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": -0.1556205286852425,
+            "cityLight": 0.21215240312165518,
+            "waterLight": 0.09637275405666505
+          },
+          "colors": 1436
+        }
+      ],
+      "auditConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.21683624677968627,
+          "shakeY": 5.285346861010264,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 1080,
+          "accentCooldownMs": 126,
+          "maxAccents": 5,
+          "macroMs": 7425,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 0,
+        "reducedFlash": false,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "paint": {
+        "_drawSky": {
+          "calls": 1,
+          "paintedPx": 921600
+        },
+        "_drawGround": {
+          "calls": 1,
+          "paintedPx": 198400
+        },
+        "_drawSignature": {
+          "calls": 1,
+          "paintedPx": 56324
+        },
+        "_drawStarfield": {
+          "calls": 0,
+          "paintedPx": 0
+        },
+        "drawDeepSky": {
+          "calls": 0,
+          "paintedPx": 0
+        },
+        "_drawMoon": {
+          "calls": 1,
+          "paintedPx": 0
+        },
+        "_drawCelestial": {
+          "calls": 0,
+          "paintedPx": 0
+        }
+      },
+      "cathode": null,
+      "degradedConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.10841812338984314,
+          "shakeY": 2.642673430505132,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 1080,
+          "accentCooldownMs": 126,
+          "maxAccents": 5,
+          "macroMs": 7425,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 6,
+        "reducedFlash": true,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "degradedPaint": {
+        "_drawSignature": {
+          "calls": 1,
+          "paintedPx": 56507
+        }
+      },
+      "motion": [
+        {
+          "timeMs": 18302.00000000002,
+          "submissionMs": [
+            48.79999999998836,
+            47.70000000001164,
+            48.20000000001164,
+            48.60000000000582,
+            49.90000000002328,
+            49.70000000001164,
+            58.19999999998254,
+            57,
+            53.90000000002328,
+            54.80000000001746,
+            54.40000000002328,
+            61.79999999998836,
+            56.30000000001746,
+            59.29999999998836,
+            63.10000000000582
+          ]
+        },
+        {
+          "timeMs": 18552.000000000036,
+          "submissionMs": [
+            56.30000000001746,
+            56,
+            55.29999999998836,
+            54.39999999999418,
+            53.89999999999418,
+            54,
+            53.89999999999418,
+            54.79999999998836,
+            48.29999999998836,
+            55.39999999999418,
+            53.60000000000582,
+            52,
+            51.60000000000582,
+            49.79999999998836,
+            51.39999999999418
+          ]
+        },
+        {
+          "timeMs": 18802.000000000055,
+          "submissionMs": [
+            47.19999999998254,
+            47.5,
+            47.5,
+            47.39999999999418,
+            53.19999999998254,
+            48,
+            48.30000000001746,
+            48.10000000000582,
+            47.70000000001164,
+            47.29999999998836,
+            47,
+            48.09999999997672,
+            48,
+            47.60000000000582,
+            47.80000000001746
+          ]
+        },
+        {
+          "timeMs": 19052.000000000073,
+          "submissionMs": [
+            47,
+            48.70000000001164,
+            48.19999999998254,
+            48.80000000001746,
+            49.5,
+            47.89999999999418,
+            50.20000000001164,
+            47.70000000001164,
+            47.90000000002328,
+            47.90000000002328,
+            48.5,
+            49.5,
+            49.89999999999418,
+            49.89999999999418,
+            51
+          ]
+        },
+        {
+          "timeMs": 19302.00000000009,
+          "submissionMs": [
+            49.20000000001164,
+            48.39999999999418,
+            49.89999999999418,
+            49.19999999998254,
+            48.70000000001164,
+            49.20000000001164,
+            55,
+            55.19999999998254,
+            54.30000000001746,
+            54.40000000002328,
+            54.60000000000582,
+            54.89999999999418,
+            54.39999999999418,
+            55,
+            53
+          ]
+        },
+        {
+          "timeMs": 19552.00000000011,
+          "submissionMs": [
+            56.5,
+            54.10000000000582,
+            52.69999999998254,
+            53.29999999998836,
+            49.89999999999418,
+            53.60000000000582,
+            53.29999999998836,
+            53,
+            51.70000000001164,
+            52.5,
+            52.20000000001164,
+            52.20000000001164,
+            51,
+            47.89999999999418,
+            48.29999999998836
+          ]
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "Understory",
+      "kind": "overgrowth",
+      "samples": [
+        {
+          "label": "quiet",
+          "requestedMs": 6000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 6052,
+          "simulationMs": 6052,
+          "response": {
+            "smoothingMs": 2160,
+            "accentCooldownMs": 392,
+            "maxAccents": 3,
+            "macroMs": 11475,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.06809122133311402,
+            "energy": 0.23909455514240477,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.15992549553655458,
+            "cityLight": 0.2114536673419698,
+            "waterLight": 0.09273305838929233
+          },
+          "colors": 1329
+        },
+        {
+          "label": "energetic",
+          "requestedMs": 18000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": -0.21683624677968627,
+            "shakeY": 5.285346861010264,
+            "roll": 0
+          },
+          "timeMs": 18052,
+          "simulationMs": 18052,
+          "response": {
+            "smoothingMs": 2160,
+            "accentCooldownMs": 392,
+            "maxAccents": 3,
+            "macroMs": 11475,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.25638203686991096,
+            "energy": 0.6004031112150487,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.3737726126884655,
+            "cityLight": 0.3496541900397562,
+            "waterLight": 0.12794344089467335
+          },
+          "colors": 1341
+        },
+        {
+          "label": "return",
+          "requestedMs": 27000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 27052,
+          "simulationMs": 27052,
+          "response": {
+            "smoothingMs": 2160,
+            "accentCooldownMs": 392,
+            "maxAccents": 3,
+            "macroMs": 11475,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.06765379102782113,
+            "energy": 0.2293722885958294,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.2243089280763713,
+            "cityLight": 0.20773490038790474,
+            "waterLight": 0.09265125892220255
+          },
+          "colors": 1264
+        }
+      ],
+      "auditConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.21683624677968627,
+          "shakeY": 5.285346861010264,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 2160,
+          "accentCooldownMs": 392,
+          "maxAccents": 3,
+          "macroMs": 11475,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 0,
+        "reducedFlash": false,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "paint": {
+        "_drawSky": {
+          "calls": 1,
+          "paintedPx": 921600
+        },
+        "_drawGround": {
+          "calls": 1,
+          "paintedPx": 198400
+        },
+        "_drawSignature": {
+          "calls": 1,
+          "paintedPx": 206180
+        },
+        "_drawStarfield": {
+          "calls": 0,
+          "paintedPx": 0
+        },
+        "drawDeepSky": {
+          "calls": 0,
+          "paintedPx": 0
+        },
+        "_drawMoon": {
+          "calls": 0,
+          "paintedPx": 0
+        },
+        "_drawCelestial": {
+          "calls": 1,
+          "paintedPx": 0
+        }
+      },
+      "cathode": null,
+      "degradedConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.10841812338984314,
+          "shakeY": 2.642673430505132,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 2160,
+          "accentCooldownMs": 392,
+          "maxAccents": 3,
+          "macroMs": 11475,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 6,
+        "reducedFlash": true,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "degradedPaint": {
+        "_drawSignature": {
+          "calls": 1,
+          "paintedPx": 202523
+        }
+      },
+      "motion": [
+        {
+          "timeMs": 18302.00000000002,
+          "submissionMs": [
+            40,
+            41.10000000000582,
+            39.10000000000582,
+            39.40000000002328,
+            41.60000000000582,
+            40.79999999998836,
+            49,
+            47.80000000001746,
+            47.70000000001164,
+            46.80000000001746,
+            47.39999999999418,
+            54.5,
+            50.10000000000582,
+            54.39999999999418,
+            49
+          ]
+        },
+        {
+          "timeMs": 18552.000000000036,
+          "submissionMs": [
+            46.10000000000582,
+            46.60000000000582,
+            47.19999999998254,
+            54.5,
+            57.59999999997672,
+            45.29999999998836,
+            43.79999999998836,
+            45,
+            42.20000000001164,
+            45.40000000002328,
+            44.89999999999418,
+            45,
+            43.59999999997672,
+            41.5,
+            43.5
+          ]
+        },
+        {
+          "timeMs": 18802.000000000055,
+          "submissionMs": [
+            40.09999999997672,
+            40.20000000001164,
+            40.09999999997672,
+            40.70000000001164,
+            42.59999999997672,
+            41.5,
+            41,
+            41.20000000001164,
+            42.80000000001746,
+            41.70000000001164,
+            41.29999999998836,
+            41.09999999997672,
+            41.29999999998836,
+            41.10000000000582,
+            40.39999999999418
+          ]
+        },
+        {
+          "timeMs": 19052.000000000073,
+          "submissionMs": [
+            40.20000000001164,
+            41.69999999998254,
+            40.79999999998836,
+            40.39999999999418,
+            40,
+            39.80000000001746,
+            40.79999999998836,
+            39.89999999999418,
+            39.79999999998836,
+            39.79999999998836,
+            41.10000000000582,
+            41.70000000001164,
+            41,
+            41.40000000002328,
+            41.70000000001164
+          ]
+        },
+        {
+          "timeMs": 19302.00000000009,
+          "submissionMs": [
+            39.89999999999418,
+            42.5,
+            42.69999999998254,
+            42,
+            41.79999999998836,
+            41.5,
+            45.29999999998836,
+            45.5,
+            45.60000000000582,
+            45.30000000001746,
+            46.10000000000582,
+            45.90000000002328,
+            45.10000000000582,
+            45,
+            44.29999999998836
+          ]
+        },
+        {
+          "timeMs": 19552.00000000011,
+          "submissionMs": [
+            46.30000000001746,
+            45.19999999998254,
+            44.89999999999418,
+            45.19999999998254,
+            41.30000000001746,
+            44.20000000001164,
+            44.20000000001164,
+            44,
+            43.69999999998254,
+            44.20000000001164,
+            43.5,
+            43.79999999998836,
+            42.79999999998836,
+            41.79999999998836,
+            40.80000000001746
+          ]
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "The Nave",
+      "kind": "nave",
+      "samples": [
+        {
+          "label": "quiet",
+          "requestedMs": 6000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 6052,
+          "simulationMs": 6052,
+          "response": {
+            "smoothingMs": 1890,
+            "accentCooldownMs": 364,
+            "maxAccents": 3,
+            "macroMs": 10125,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.052558402156866,
+            "energy": 0.22579361345925833,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.17622242122274487,
+            "cityLight": 0.2063660571481663,
+            "waterLight": 0.08982842120333394
+          },
+          "colors": 1530
+        },
+        {
+          "label": "energetic",
+          "requestedMs": 18000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": -0.21683624677968627,
+            "shakeY": 5.285346861010264,
+            "roll": 0
+          },
+          "timeMs": 18052,
+          "simulationMs": 18052,
+          "response": {
+            "smoothingMs": 1890,
+            "accentCooldownMs": 364,
+            "maxAccents": 3,
+            "macroMs": 10125,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.2230908954753981,
+            "energy": 0.5924426116008412,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.35571426453728666,
+            "cityLight": 0.3466092989373218,
+            "waterLight": 0.12171799745389944
+          },
+          "colors": 1510
+        },
+        {
+          "label": "return",
+          "requestedMs": 27000,
+          "constructionSeed": 315,
+          "renderer": "Renderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 27052,
+          "simulationMs": 27052,
+          "response": {
+            "smoothingMs": 1890,
+            "accentCooldownMs": 364,
+            "maxAccents": 3,
+            "macroMs": 10125,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.05179481913671352,
+            "energy": 0.2207582552020922,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.14165363856648652,
+            "cityLight": 0.20444003261480026,
+            "waterLight": 0.08968563117856543
+          },
+          "colors": 1444
+        }
+      ],
+      "auditConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.21683624677968627,
+          "shakeY": 5.285346861010264,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 1890,
+          "accentCooldownMs": 364,
+          "maxAccents": 3,
+          "macroMs": 10125,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 0,
+        "reducedFlash": false,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "paint": {
+        "_drawSky": {
+          "calls": 1,
+          "paintedPx": 921600
+        },
+        "_drawGround": {
+          "calls": 1,
+          "paintedPx": 198400
+        },
+        "_drawSignature": {
+          "calls": 1,
+          "paintedPx": 190769
+        },
+        "_drawCelestial": {
+          "calls": 1,
+          "paintedPx": 0
+        },
+        "_drawStarfield": {
+          "calls": 0,
+          "paintedPx": 0
+        },
+        "drawDeepSky": {
+          "calls": 0,
+          "paintedPx": 0
+        }
+      },
+      "cathode": null,
+      "degradedConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "Renderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.10841812338984314,
+          "shakeY": 2.642673430505132,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 1890,
+          "accentCooldownMs": 364,
+          "maxAccents": 3,
+          "macroMs": 10125,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 6,
+        "reducedFlash": true,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "degradedPaint": {
+        "_drawSignature": {
+          "calls": 1,
+          "paintedPx": 189997
+        }
+      },
+      "motion": [
+        {
+          "timeMs": 18302.00000000002,
+          "submissionMs": [
+            45.5,
+            44.89999999999418,
+            45.89999999999418,
+            48.20000000001164,
+            48.10000000000582,
+            47,
+            56.09999999997672,
+            55,
+            53.30000000001746,
+            52.70000000001164,
+            52.5,
+            58.60000000000582,
+            56.09999999997672,
+            61.89999999999418,
+            51.30000000001746
+          ]
+        },
+        {
+          "timeMs": 18552.000000000036,
+          "submissionMs": [
+            52.5,
+            53.10000000000582,
+            52.89999999999418,
+            51.89999999999418,
+            51.5,
+            51.90000000002328,
+            50.40000000002328,
+            51.5,
+            46.80000000001746,
+            51.70000000001164,
+            51.5,
+            51.5,
+            50.20000000001164,
+            45.19999999998254,
+            50.89999999999418
+          ]
+        },
+        {
+          "timeMs": 18802.000000000055,
+          "submissionMs": [
+            49,
+            46,
+            48.20000000001164,
+            46.39999999999418,
+            48.39999999999418,
+            46.10000000000582,
+            45.69999999998254,
+            45.89999999999418,
+            46.60000000000582,
+            45.60000000000582,
+            45.79999999998836,
+            45.89999999999418,
+            46.70000000001164,
+            46.5,
+            45.60000000000582
+          ]
+        },
+        {
+          "timeMs": 19052.000000000073,
+          "submissionMs": [
+            44.60000000000582,
+            47.20000000001164,
+            47.70000000001164,
+            45.29999999998836,
+            45.60000000000582,
+            45.39999999999418,
+            45.5,
+            44.70000000001164,
+            46.39999999999418,
+            46,
+            46.89999999999418,
+            49.10000000000582,
+            46.79999999998836,
+            47.79999999998836,
+            47.70000000001164
+          ]
+        },
+        {
+          "timeMs": 19302.00000000009,
+          "submissionMs": [
+            51.10000000000582,
+            47.69999999998254,
+            50.59999999997672,
+            48,
+            47.29999999998836,
+            48,
+            52.90000000002328,
+            52.90000000002328,
+            51.5,
+            51.5,
+            51.10000000000582,
+            51.60000000000582,
+            51,
+            51.70000000001164,
+            51.70000000001164
+          ]
+        },
+        {
+          "timeMs": 19552.00000000011,
+          "submissionMs": [
+            53,
+            51.20000000001164,
+            50.20000000001164,
+            49.90000000002328,
+            45.60000000000582,
+            52.29999999998836,
+            50.60000000000582,
+            49.39999999999418,
+            48.89999999999418,
+            49.40000000002328,
+            49.5,
+            49.30000000001746,
+            48.20000000001164,
+            44.70000000001164,
+            45.09999999997672
+          ]
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "Cathode",
+      "kind": "cathode",
+      "samples": [
+        {
+          "label": "quiet",
+          "requestedMs": 6000,
+          "constructionSeed": 315,
+          "renderer": "CathodeRenderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 6052,
+          "simulationMs": 6052,
+          "response": {
+            "smoothingMs": 108,
+            "accentCooldownMs": 140,
+            "maxAccents": 3,
+            "macroMs": 5400,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.2325807687351133,
+            "energy": 0.3479146665190575,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": 0.3301785836182821,
+            "cityLight": 0.2530773599435395,
+            "waterLight": 0.12349260375346618
+          },
+          "colors": 577
+        },
+        {
+          "label": "energetic",
+          "requestedMs": 18000,
+          "constructionSeed": 315,
+          "renderer": "CathodeRenderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": -0.21683624677968627,
+            "shakeY": 5.285346861010264,
+            "roll": 0
+          },
+          "timeMs": 18052,
+          "simulationMs": 18052,
+          "response": {
+            "smoothingMs": 108,
+            "accentCooldownMs": 140,
+            "maxAccents": 3,
+            "macroMs": 5400,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.44775156628450163,
+            "energy": 0.5815496629256821,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": -0.08614644621958295,
+            "cityLight": 0.3424427460690734,
+            "waterLight": 0.1637295428952018
+          },
+          "colors": 574
+        },
+        {
+          "label": "return",
+          "requestedMs": 27000,
+          "constructionSeed": 315,
+          "renderer": "CathodeRenderer",
+          "songSeed": 2741114877,
+          "camera": {
+            "zoom": 1,
+            "shakeX": 0.5613041910189707,
+            "shakeY": 4.069455384887537,
+            "roll": 0
+          },
+          "timeMs": 27052,
+          "simulationMs": 27052,
+          "response": {
+            "smoothingMs": 108,
+            "accentCooldownMs": 140,
+            "maxAccents": 3,
+            "macroMs": 5400,
+            "accentGain": 0.42,
+            "accentDecayMs": 110,
+            "accentWindowMs": 420,
+            "cityLightFloor": 0.12,
+            "waterLightFloor": 0.08,
+            "ambientScale": 0.85,
+            "band": "dense",
+            "quiet": false
+          },
+          "quality": 0,
+          "reducedFlash": false,
+          "backingStore": {
+            "width": 1280,
+            "height": 720
+          },
+          "music": {
+            "bass": 0.228080306818966,
+            "energy": 0.32815321197786423,
+            "accent": 0,
+            "reveal": 0,
+            "group": 0,
+            "current": -0.34933250022666296,
+            "cityLight": 0.24551860358153307,
+            "waterLight": 0.12265101737514664
+          },
+          "colors": 575
+        }
+      ],
+      "auditConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "CathodeRenderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.21683624677968627,
+          "shakeY": 5.285346861010264,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 108,
+          "accentCooldownMs": 140,
+          "maxAccents": 3,
+          "macroMs": 5400,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 0,
+        "reducedFlash": false,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "paint": null,
+      "cathode": {
+        "colors": 1792,
+        "litFraction": 0.675,
+        "rendererIsPixel": "CathodeRenderer"
+      },
+      "degradedConfiguration": {
+        "requestedMs": 18000,
+        "constructionSeed": 315,
+        "renderer": "CathodeRenderer",
+        "songSeed": 2741114877,
+        "camera": {
+          "zoom": 1,
+          "shakeX": -0.10841812338984314,
+          "shakeY": 2.642673430505132,
+          "roll": 0
+        },
+        "timeMs": 18052,
+        "simulationMs": 18052,
+        "response": {
+          "smoothingMs": 108,
+          "accentCooldownMs": 140,
+          "maxAccents": 3,
+          "macroMs": 5400,
+          "accentGain": 0.42,
+          "accentDecayMs": 110,
+          "accentWindowMs": 420,
+          "cityLightFloor": 0.12,
+          "waterLightFloor": 0.08,
+          "ambientScale": 0.85,
+          "band": "dense",
+          "quiet": false
+        },
+        "quality": 6,
+        "reducedFlash": true,
+        "backingStore": {
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "degradedPaint": null,
+      "motion": [],
+      "errors": []
+    }
+  ],
+  "failures": [],
+  "sourceRevision": "2ed3cc86c92b244252d540dbe5e4d47e3289b50a",
+  "ciRun": 35664965444
+}
