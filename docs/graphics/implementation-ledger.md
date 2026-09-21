@@ -113,3 +113,6 @@ Design choice: extend WorldIdentity with physical-content/foreground rules and c
 - Added failing actual draw-order and road-coverage regressions, then moved machinery in front of L5 and widened perspective pavement across the cast line. Removed conflicting old horizontal lane dashes; existing reflectors/signage and integrated travel remain.
 - Local full suite after corrections: 2840 pass, 0 fail. Lint passes. Latest composed captures are still required.
 - Temporary historical workflow removed after its comparison runs; the opt-in historical mode remains in the same harness for reproduction.
+
+- Historical repeat with motion, run 35663934900: 69/69 exact RGB matches (27 passages + 9 degraded + 9 quality-restored + 24 motion frames); evidence/refactor-comparison.json retains hashes and raw submission samples. Median differences range -0.5 to +0.4ms. This is headless submission cost, not device frame pacing/GPU performance.
+- After Hours energetic inspection showed a luminous generated backdrop competing with small window districts. Added failing actual adaptation test, then attenuated only its sky at materialization while preserving musical hue and localized lights. Full suite: 2841 pass; lint/diff check pass.

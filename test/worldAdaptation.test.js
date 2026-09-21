@@ -270,3 +270,14 @@ test('Far Side adaptation keeps an airless dark sky around its primary', () => {
     }
   }
 });
+
+test('After Hours adaptation keeps the sky subordinate to city lights', () => {
+  const { data, profile } = song();
+  const base = listWorlds().find(w => w.kind === 'city');
+  const { world } = adaptWorld(base, profile, data);
+  for (const palette of world.palettes) {
+    for (const color of [...palette.sky, ...palette.skyStops]) {
+      assert.ok(color.slice(1).match(/../g).every(byte => parseInt(byte, 16) < 112), color);
+    }
+  }
+});

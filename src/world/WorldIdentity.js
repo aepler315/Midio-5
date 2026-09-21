@@ -175,13 +175,14 @@ export function constrainPalette(subject, palette, stock = null) {
   const boundedDrift = drift && driftLimit !== undefined ? Object.fromEntries(
     ['vx', 'vy'].map(axis => [axis, Math.max(-driftLimit, Math.min(driftLimit, Number.isFinite(drift[axis]) ? drift[axis] : 0))]),
   ) : drift;
+  const skyAttenuation = { airless: 0.97, city: 0.85 }[identity.kind] || 0;
   return {
     ...palette,
-    // Vacuum has no luminous terrestrial atmosphere. Retain a hint of the
-    // musical hue, once at materialization, without changing primary size.
-    ...(stock && identity.kind === 'airless' ? {
-      sky: palette.sky.map(color => hexLerp(color, '#020408', 0.97)),
-      skyStops: palette.skyStops?.map(color => hexLerp(color, '#020408', 0.97)),
+    // Vacuum stays dark; urban skies yield to windows and street lighting.
+    // Retain musical hue, once at materialization, without changing primary size.
+    ...(stock && skyAttenuation ? {
+      sky: palette.sky.map(color => hexLerp(color, '#020408', skyAttenuation)),
+      skyStops: palette.skyStops?.map(color => hexLerp(color, '#020408', skyAttenuation)),
     } : {}),
     landmarkKey: admit('landmarks', palette.landmarkKey, stock?.landmarkKey),
     fx: admit('effects', palette.fx, stock?.fx),
