@@ -237,3 +237,25 @@ for (const id of ['nave', 'foundry', 'redline']) {
     assert.deepEqual(base.palettes, before);
   });
 }
+
+for (const fixture of [
+  { bpm: 64, energyAt: () => 0.05 },
+  { bpm: 84, energyAt: () => 0.65, bandsAt: () => [8, 5, 1, 1, 1, 1, 1] },
+  { bpm: 180, energyAt: t => (Math.floor(t * 120) % 2 ? 0.95 : 0.2) },
+  { bpm: 120, energyAt: t => t < 0.33 || t > 0.67 ? 0.12 : 0.9 },
+]) {
+  test(`adapted physical vocabulary stays within selected world at bpm=${fixture.bpm}`, () => {
+    const { data, profile } = song(fixture);
+    for (const base of listWorlds()) {
+      if (base.kind === 'alpine' || base.kind === 'cathode') continue;
+      const { world } = adaptWorld(base, profile, data);
+      assert.equal(world.kind, base.kind);
+      const particles = new Set(base.palettes.map(p => p.particles.kind));
+      const effects = new Set(base.palettes.map(p => p.fx));
+      for (const palette of world.palettes) {
+        assert.ok(particles.has(palette.particles.kind), `${base.kind}: inappropriate ${palette.particles.kind}`);
+        assert.ok(effects.has(palette.fx), `${base.kind}: inappropriate ${palette.fx}`);
+      }
+    }
+  });
+}

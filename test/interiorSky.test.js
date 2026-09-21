@@ -2,12 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BiomeManager } from '../src/world/BiomeManager.js';
 import { drawFathomWorld } from '../src/world/fathom/drawFathom.js';
+import { drawUnderstoryWorld } from '../src/world/understory/drawUnderstory.js';
+import { drawFoundryWorld } from '../src/world/foundry/drawFoundry.js';
 import { drawNaveWorld } from '../src/world/nave/drawNave.js';
 
 const canvas = { width: 1280, height: 720 };
 const palette = { sky: ['#102030', '#203040', '#304050'], fx: 'starTwinkle' };
 
-function paintSky(draw, phenomenaFull, fx = 'starTwinkle') {
+function paintSky(draw, phenomenaFull, fx = 'starTwinkle', kind = undefined) {
   const colors = { ...palette, fx };
   const draws = [], stack = [];
   const gradient = kind => ({ kind, addColorStop() {} });
@@ -23,6 +25,7 @@ function paintSky(draw, phenomenaFull, fx = 'starTwinkle') {
     fill() { draws.push({ style: this.fillStyle }); },
   };
   const mgr = Object.assign(Object.create(BiomeManager.prototype), {
+    world: kind ? { id: 'custom', kind } : undefined,
     tSec: 5, openingGain: 1, calmLevel: 0,
     _perf: { phenomenaFull }, _rotated: x => x, lerpCache: { get: a => a },
     stars: [{ xFrac: 0.4, yFrac: 0.3, size: 1, layer: 0, bright: 0.8, phase: 0, hue: 0 }],
@@ -64,3 +67,14 @@ for (const [name, draw] of [['Fathom', drawFathomWorld], ['Nave', drawNaveWorld]
 test('the default open sky still paints astronomical layers', () => {
   assert.ok(paintSky(null, true).length > 4);
 });
+
+for (const [kind, draw] of [['overgrowth', drawUnderstoryWorld], ['foundry', drawFoundryWorld]]) {
+  test(`${kind} actual world-to-sky path excludes astronomy even without caller flags`, () => {
+    assert.equal(paintSky(draw, true, 'starTwinkle', kind).length, 2);
+  });
+}
+for (const kind of ['overgrowth', 'foundry', 'nave', 'abyssal', 'cathode']) {
+  test(`${kind} shared sky boundary rejects inherited space dust and stars`, () => {
+    assert.equal(paintSky(null, true, 'starTwinkle', kind).length, 2);
+  });
+}

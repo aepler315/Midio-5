@@ -203,3 +203,21 @@ test('every biome has a real silhouette color to darken (no crash on an unknown 
     assert.doesNotThrow(() => nf._colorFor(b.name));
   }
 });
+
+test('world foreground geometry is independent of a generated landmark key', () => {
+  for (const kind of ['alpine', 'city', 'airless', 'abyssal', 'strip', 'foundry', 'overgrowth', 'nave']) {
+    const a = new NearField(555, { id: 'custom', kind });
+    const b = new NearField(555, { id: 'custom', kind });
+    const shapesA = [], shapesB = [];
+    for (let i = 1; i < 100; i++) {
+      const da = a._sector(i, 'DUNE');
+      const db = b._sector(i, 'GEODE');
+      if (da) shapesA.push({ kind: da.kind, hang: da.hang, scale: da.scale, painterIdx: da.painterIdx });
+      if (db) shapesB.push({ kind: db.kind, hang: db.hang, scale: db.scale, painterIdx: db.painterIdx });
+    }
+    assert.ok(shapesA.length > 0);
+    assert.ok(shapesA.every(d => d.kind === kind), `${kind} descriptors retain physical identity`);
+    assert.deepEqual(shapesA, shapesB);
+    if (!['overgrowth', 'nave', 'foundry'].includes(kind)) assert.ok(shapesA.every(d => !d.hang));
+  }
+});

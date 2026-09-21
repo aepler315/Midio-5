@@ -43,3 +43,34 @@ Isolation: fresh task-only clone, branch feat/world-identity-graphics. No existi
 - npm run test:worlds: cannot launch (Chromium executable missing).
 - Ruling: assert conductor rhythm in live playback; a paused destination reconstruction can legitimately contain no rhythm event. Capture reports requested audible time and actual led simulation time separately.
 - Next: push this prerequisite, obtain CI baseline captures, then implement identity boundaries.
+
+### Composition intent (before any art changes)
+
+- Understory: trunks join an enclosing, irregular canopy with open gaps; filtered shafts land under those gaps. Retain broad canopy masses at every quality rung.
+- Nave: connected pointed bays and piers frame a radial stained-glass rose. Glass remains geometry, not a celestial disc; phrase controls existing bay response.
+- Redline: converging road edges and depth-scaled lane marks establish a corridor while preserving integrated cruise travel and side-scroll cast grounding.
+- Foundry: connected frames, pistons and channels make existing sustained heat, machine strokes and pours legible. No astronomical source behind machinery.
+- Stronger worlds: preserve Range ridge/mirage, Far Side primary, Fathom ceiling, After Hours districts, and Cathode raster. Change only confirmed vocabulary/foreground/hierarchy issues supported by captures.
+
+Design choice: extend WorldIdentity with physical-content/foreground rules and constrain generated palettes during adaptation. Keep musical color/intensity controls. Use small shared static-strip helpers only after appearance comparisons are available; do not build a universal renderer.
+
+### Regression preparation (uncommitted until baseline)
+
+- Real Understory/Foundry -> BiomeManager._drawSky -> _drawStarfield tests fail with unwanted paint.
+- Shared sky direct calls for all five enclosed kinds fail (six paint operations versus two expected).
+- Four adaptation fixtures (sparse, sustained bass, dense pulses, sectional) fail at city receiving pollen.
+
+### Baseline captured
+
+- CI run 35661031062 at 6f69835811f81afc187137f7f95e5338e46e8002: all jobs passed, including complete browser suite.
+- Original controlled primary frames: `.smoke/baseline/worlds/`; CI artifact 10666707464 (audio-smoke).
+- Inspected nine-world energetic contact sheet: shared green sky/columns obscure Understory, Foundry, Nave; Nave has a plain disc; Redline lacks a visible corridor. Range ridges and Far Side primary are stronger. These are visual observations, not human preference acceptance.
+
+### Identity implementation
+
+- Existing WorldIdentity now constrains particle/effect/landmark vocabularies, celestial admission and foreground bounds.
+- Synthesis and real adaptation retain music colors/intensity, constrain physical choices; custom retains kind. Stock primary radius is not substituted for generated radius (avoids enlarging Far Side's successful primary).
+- Shared sky/starfield/deep-sky/celestial/moon boundaries reject enclosed astronomy even if callers omit flags.
+- NearField retains sector seeds/spacing/scroll/cache; registered worlds use bounded street furniture, road signs, pipes, piers, roots, sea fans and rocks. Legacy direct callers retain their interface.
+- Focused tests: 50 pass; lint pass. Full suite in progress.
+- Full identity suite: npm test -> 2816 passed, 0 failed (14.8s). Final focused adaptation rerun and lint passed after radius preservation adjustment.

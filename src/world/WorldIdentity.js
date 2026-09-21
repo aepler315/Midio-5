@@ -7,7 +7,7 @@
 
 function policy({
   kind, landmark, signatureMotion, lightSource, paletteFloor, castPlacement,
-  sharedEffects,
+  sharedEffects, vocabulary, foreground,
 }) {
   return Object.freeze({
     kind,
@@ -16,16 +16,20 @@ function policy({
     lightSource,
     paletteFloor,
     castPlacement,
+    vocabulary: Object.freeze(Object.fromEntries(Object.entries(vocabulary).map(([key, value]) => [key, Array.isArray(value) ? Object.freeze(value) : value]))),
+    foreground: Object.freeze(foreground),
     sharedEffects: Object.freeze({ ...sharedEffects }),
   });
 }
 
-const OPEN_SKY = Object.freeze({ deepSky: true, constellations: true, meteors: true });
-const ENCLOSED = Object.freeze({ deepSky: false, constellations: false, meteors: false });
+const OPEN_SKY = Object.freeze({ astronomy: true, celestialBodies: true, deepSky: true, constellations: true, meteors: true });
+const ENCLOSED = Object.freeze({ astronomy: false, celestialBodies: false, deepSky: false, constellations: false, meteors: false });
 
 export const WORLD_IDENTITIES = Object.freeze({
   alpine: policy({
     kind: 'alpine',
+    vocabulary: { particles: ["snow", "petals", "embers", "pollen", "spores", "sunshine", "rain", "wind", "antigrav", "fireflies", "flaresparks", "fog", "bubbles", "digitalrain"], effects: ["aurora", "nebulaBloom", "starTwinkle", "bioluminescence", "canopyDapple", "godRays", "mirage", "petalPile", "sunMotes", "crystalGlint", "prominence", "lightning"], landmarks: ["JADE", "ARCTIC", "STORM", "MIRROR", "DUNE", "GEODE"] },
+    foreground: { maxHeight: 0.18, hanging: false },
     landmark: 'a ridge line spanning the lower frame',
     signatureMotion: 'slow breathing contours',
     lightSource: 'a horizon sun or moon',
@@ -35,6 +39,8 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   city: policy({
     kind: 'city',
+    vocabulary: { particles: ["rain", "embers"], effects: ["starTwinkle", "neonGrid", "emberGlow", "sunMotes"], landmarks: ["CYBER"] },
+    foreground: { maxHeight: 0.2, hanging: false },
     landmark: 'a layered skyline with lit districts',
     signatureMotion: 'window districts pulse with the groove',
     lightSource: 'street glow and a restrained moon',
@@ -44,6 +50,8 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   airless: policy({
     kind: 'airless',
+    vocabulary: { particles: ["antigrav"], effects: ["starTwinkle", "crystalGlint"], landmarks: ["VOID", "GEODE", "ARCTIC"] },
+    foreground: { maxHeight: 0.14, hanging: false },
     landmark: 'a giant banded primary above the regolith',
     signatureMotion: 'slow libration and ballistic surface traces',
     lightSource: 'hard, unscattered primary light',
@@ -53,6 +61,8 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   abyssal: policy({
     kind: 'abyssal',
+    vocabulary: { particles: ["bubbles", "spores", "embers"], effects: ["godRays", "bioluminescence", "emberGlow"], landmarks: ["ABYSS", "CORAL"] },
+    foreground: { maxHeight: 0.2, hanging: false },
     landmark: 'a water ceiling with descending shafts',
     signatureMotion: 'slow pressure drift and caustic sway',
     lightSource: 'veiled sunlight through the surface',
@@ -62,6 +72,8 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   strip: policy({
     kind: 'strip',
+    vocabulary: { particles: ["wind", "flaresparks", "digitalrain"], effects: ["heatShimmer", "neonGrid", "prominence"], landmarks: ["CYBER"] },
+    foreground: { maxHeight: 0.16, hanging: false },
     landmark: 'a road vanishing into the horizon',
     signatureMotion: 'constant forward cruise',
     lightSource: 'a dominant horizon sun or moon plus signage',
@@ -71,6 +83,8 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   foundry: policy({
     kind: 'foundry',
+    vocabulary: { particles: ["fog", "embers", "flaresparks"], effects: ["starTwinkle", "emberGlow", "prominence", "heatShimmer"], landmarks: ["CYBER"] },
+    foreground: { maxHeight: 0.2, hanging: true },
     landmark: 'smokestacks and a furnace glow from below',
     signatureMotion: 'machine strokes and molten pour pulses',
     lightSource: 'furnace uplight through smoke',
@@ -80,6 +94,8 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   overgrowth: policy({
     kind: 'overgrowth',
+    vocabulary: { particles: ["pollen", "spores", "fireflies"], effects: ["godRays", "canopyDapple", "sporeGlow", "bioluminescence"], landmarks: ["JADE", "LUMEN"] },
+    foreground: { maxHeight: 0.24, hanging: true },
     landmark: 'a dense canopy closing the upper frame',
     signatureMotion: 'canopy growth and opening light shafts',
     lightSource: 'filtered sunlight and dappled floor light',
@@ -89,6 +105,8 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   nave: policy({
     kind: 'nave',
+    vocabulary: { particles: ["fog", "sunshine"], effects: ["starTwinkle", "godRays", "crystalGlint", "prominence"], landmarks: ["TWILIGHT"] },
+    foreground: { maxHeight: 0.22, hanging: true },
     landmark: 'vaulted bays framing a central rose window',
     signatureMotion: 'returning bays resonate with phrases',
     lightSource: 'stained glass and interior shafts',
@@ -98,6 +116,8 @@ export const WORLD_IDENTITIES = Object.freeze({
   }),
   cathode: policy({
     kind: 'cathode',
+    vocabulary: { particles: [], effects: [], landmarks: [] },
+    foreground: { maxHeight: 0, hanging: false },
     landmark: 'a four-color CRT tube and raster horizon',
     signatureMotion: 'scanline crawl and sprite response',
     lightSource: 'phosphor emission from the tube',
@@ -122,4 +142,33 @@ export function identityAllows(subject, effect) {
 /** Keep adaptation's stock-palette contribution above the world-specific floor. */
 export function stockPaletteMixFor(subject, requested = 0) {
   return Math.max(identityFor(subject).paletteFloor, Number(requested) || 0);
+}
+
+/** Physical choices are world-owned; color, timing and intensity remain musical. */
+export function constrainPalette(subject, palette, stock = null) {
+  const identity = identityFor(subject);
+  const vocabulary = identity.vocabulary;
+  const admit = (key, value, preferred) => vocabulary[key].includes(value)
+    ? value : vocabulary[key].includes(preferred) ? preferred : vocabulary[key][0];
+  const celestial = stock?.celestial ? {
+    ...stock.celestial,
+    color: palette.celestial.color, haloColor: palette.celestial.haloColor,
+    radius: palette.celestial.radius,
+  } : { ...palette.celestial };
+  if (!identity.sharedEffects.astronomy || !['alpine', 'airless'].includes(identity.kind)) {
+    celestial.companions = [];
+    celestial.ring = false;
+  }
+  return {
+    ...palette,
+    landmarkKey: admit('landmarks', palette.landmarkKey, stock?.landmarkKey),
+    fx: admit('effects', palette.fx, stock?.fx),
+    celestial,
+    particles: {
+      ...palette.particles,
+      kind: admit('particles', palette.particles.kind, stock?.particles?.kind),
+      // Keep a vacuum or spores slow even when the song is fast.
+      speed: stock?.particles ? Math.min(palette.particles.speed, stock.particles.speed * 1.5) : palette.particles.speed,
+    },
+  };
 }
