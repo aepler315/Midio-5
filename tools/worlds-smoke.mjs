@@ -22,6 +22,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { renderWorldFrame } from './world-frame.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const url = process.argv[2] || 'http://127.0.0.1:8080';
@@ -206,20 +207,22 @@ try {
       }, null, { timeout: 60000 });
       assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.reducedFlash), true);
       await page.locator('#stage').screenshot({ path: path.join(out, `${kind}-reduced.png`) });
+      assert.ok(await page.evaluate(() => Number.isFinite(window.__SMW.sim.biomes.worldRhythm?.tMs)),
+        name + ' receives detected rhythm during live playback');
       // Keep reduced-motion assertions isolated from the per-world paint and
       // dynamics checks below.
       await page.keyboard.press('r');
       assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.reducedFlash), false);
+      await page.locator('#pauseBtn').click();
+      assert.equal(await page.locator('#pauseBtn').getAttribute('aria-pressed'), 'true');
       const samples = [];
       for (const [label, atMs] of [['quiet', 6000], ['energetic', 18000], ['return', 27000]]) {
-        await page.evaluate(ms => window.__SMW.seek(ms), atMs);
-        await page.waitForFunction(ms => window.__SMW.sim.biomes.tSec * 1000 > ms + 500, atMs);
+        const configuration = await page.evaluate(renderWorldFrame, { atMs, quality: 0 });
         const sample = await page.evaluate(async () => {
           const { sim } = window.__SMW;
           const mgr = sim.biomes;
-          const { sampleWorldMusic } = await import('/src/world/WorldMusic.js');
-          const music = sampleWorldMusic({ nowMs: mgr.tSec * 1000, energyCurves: mgr.energyCurves,
-            rhythm: mgr.worldRhythm, section: mgr.sections[mgr._lastSectionIdx] });
+          const { sampleManagerMusic } = await import('/src/world/WorldMusic.js');
+          const music = sampleManagerMusic(mgr);
           const c = document.createElement('canvas'); c.width = 64; c.height = 36;
           const ctx = c.getContext('2d'); ctx.drawImage(document.querySelector('#stage'), 0, 0, 64, 36);
           const pixels = ctx.getImageData(0, 0, 64, 36).data;
@@ -228,15 +231,16 @@ try {
           return { timeMs: mgr.tSec * 1000, music, rhythmMs: mgr.worldRhythm?.tMs, colors: colors.size };
         });
         assert.ok(sample.colors > 16, name + ' renders a composed ' + label + ' scene');
-        assert.ok(Number.isFinite(sample.rhythmMs), name + ' receives detected rhythm through the conductor');
+        assert.ok(sample.rhythmMs == null || Number.isFinite(sample.rhythmMs), name + ' rhythm is absent or finite after destination rebuild');
         assert.ok(Object.values(sample.music).every(Number.isFinite));
         await page.locator('#stage').screenshot({ path: path.join(out, `${kind}-${label}.png`) });
-        samples.push({ label, ...sample });
+        samples.push({ label, ...configuration, ...sample });
       }
       assert.ok(samples[1].music.energy > samples[0].music.energy, name + ' recognizes the louder passage');
 
       // The per-pass audit, on the energetic passage -- the busiest frame,
       // and the one where every optional layer is in play.
+      const auditConfiguration = await page.evaluate(renderWorldFrame, { atMs: 18000, quality: 0 });
       let paint = null, cathode = null;
       if (world.pixelRenderer) {
         cathode = await page.evaluate(CATHODE_STATS);
@@ -257,7 +261,7 @@ try {
         assert.equal(paint[pass]?.paintedPx, 0, `${name}: ${pass} must not paint an interior`);
       }
       assert.deepEqual(errors, [], name + ' has no browser errors');
-      report.worlds.push({ name, kind, samples, paint, cathode, errors });
+      report.worlds.push({ name, kind, samples, auditConfiguration, paint, cathode, errors });
       const painted = paint
         ? Object.entries(paint).filter(([, s]) => s.paintedPx > 0).map(([k]) => k).join(', ')
         : 'pixel renderer';
