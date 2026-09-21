@@ -47,7 +47,7 @@ function firstRangeContract(kind, draw, complete = false) {
     stripsFor: () => strips, fields: new Map(), weatherFields: new Map(),
     weaver: { draw: noop }, meteors: { draw: noop },
     _drawSky: noop, drawDeepSky: noop, _drawMoon: noop, _drawCelestial: noop,
-    _drawHaze: noop, _drawFogBanks: noop, _drawGround: noop, _drawTerrainFooting: noop,
+    _drawHaze: noop, _drawFogBanks: noop, _drawGround: () => events.push({ type: 'ground' }), _drawTerrainFooting: noop,
     _drawFlood: noop, _drawTransitionOverlays: noop,
     _drawSignature: () => events.push({ type: 'signature' }),
     _moonPhase01: () => 0.5,
@@ -135,4 +135,5 @@ test('Foundry machinery remains in front of the nearest terrain strips', () => {
   const { events } = firstRangeContract('foundry', WORLD_RENDERERS.get('foundry'), true);
   const signature = events.findIndex(e => e.type === 'signature');
   assert.ok(signature > events.findLastIndex(e => e.type === 'shade'));
+  assert.ok(signature > events.findIndex(e => e.type === 'ground'), 'fixed ground must not cover the furnace');
 });

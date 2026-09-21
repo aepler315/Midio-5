@@ -115,11 +115,12 @@ export function drawFoundryWorld(mgr, frame) {
   drawRange('L4');
   drawSmoke(0.62);
   drawRange('L5');
-  // Keep furnace mouths and pour channels in front of the terrain.
-  mgr._drawSignature(frame, music);
 
   // Ground
   const groundCanvas = drawGroundBase(mgr, frame, tint);
+  // Assemblies share the fixed ground transform, so camera pull-back cannot
+  // bury furnace mouths under the independently aligned ground pass.
+  mgr._drawSignature(frame, music);
   drawMills(ctx, groundCanvas, worldX, mgr, music, heat, pour, operation);
   mgr._drawFlood(ctx, groundCanvas);
   mgr._drawTransitionOverlays(ctx, groundCanvas, B);
@@ -149,8 +150,11 @@ function drawMills(ctx, canvas, worldX, mgr, music, heat, pour, operation) {
   ctx.restore();
 }
 
-export function drawMachinery(mgr, { ctx, canvas, A }, music) {
-  const w = canvas.width, h = canvas.height, floor = h * 0.79;
+export function drawMachinery(mgr, frame, music) {
+  const { ctx, A, worldX } = frame;
+  const canvas = frame.groundView ? frame.groundView.stage : frame.canvas;
+  const w = canvas.width, h = canvas.height;
+  const floor = (mgr.groundField ? mgr.groundField.heightAt(worldX) : mgr.groundY) - 4;
   const heat = furnaceHeat(music.energy);
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
   const pour = pourGlow({ heat, reveal: music.reveal, lift, reducedFlash: mgr.reducedFlash });
@@ -170,7 +174,7 @@ export function drawMachinery(mgr, { ctx, canvas, A }, music) {
     // Visible ram, piston head and furnace mouth form one assembly.
     ctx.fillStyle = '#766759'; ctx.fillRect(x - 5, top + 15, 10, h * 0.12 + drop);
     ctx.fillRect(x - 25, top + h * 0.12 + drop, 50, 14);
-    ctx.fillStyle = A.edgeLight || '#e68139';
+    ctx.fillStyle = '#e68139';
     ctx.globalAlpha = capFlashAlpha(0.28 + heat * 0.32, mgr.reducedFlash);
     ctx.fillRect(x - half * 0.48, floor - 22, half * 0.96, 18);
     ctx.globalAlpha = capFlashAlpha(0.12 + pour * 0.4, mgr.reducedFlash);

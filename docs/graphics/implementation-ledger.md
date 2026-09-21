@@ -116,3 +116,5 @@ Design choice: extend WorldIdentity with physical-content/foreground rules and c
 
 - Historical repeat with motion, run 35663934900: 69/69 exact RGB matches (27 passages + 9 degraded + 9 quality-restored + 24 motion frames); evidence/refactor-comparison.json retains hashes and raw submission samples. Median differences range -0.5 to +0.4ms. This is headless submission cost, not device frame pacing/GPU performance.
 - After Hours energetic inspection showed a luminous generated backdrop competing with small window districts. Added failing actual adaptation test, then attenuated only its sky at materialization while preserving musical hue and localized lights. Full suite: 2841 pass; lint/diff check pass.
+
+- Subsequent composed inspection found the fixed ground pass could still cover Foundry's furnace under camera pull-back. Actual draw-order regression now requires machinery after ground. Assemblies use groundView.stage and sampled ground height; furnace mouths keep warm material color while sustained heat controls intensity. Focused 25 tests and full 2841-test suite pass; lint passes.
