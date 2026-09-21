@@ -80,5 +80,11 @@ Design choice: extend WorldIdentity with physical-content/foreground rules and c
 - Extracted static strip placement + aligned shading, repeated particle blend/setup, ground transform/footing into WorldDraw.js. City window layering stays explicit; Range and Cathode stay untouched.
 - Persistent STATIC_SHADE options avoid allocating a new options object for every strip shade call. No FPS improvement claim (not profiled).
 - Existing actual world draw order/alignment tests pass. Contract scan extended to include shared helper; no coupling coverage removed.
-- npm test: 2816 passed, 0 failed (15.7s). npm run lint: pass.
+- npm test: 2816 passed, 0 failed (15.7s). Correction: lint was still running when first reported; it failed on City groundView and an unused Redline input.
 - Pixel comparisons against the identity commit remain pending CI artifacts; no tolerance changes.
+
+### Refactor correction
+
+- CI run 35662140636 failed: City groundView was omitted although wet sheen requires its distinct ground sequence. Preserve that sequence; remove unused shared-ground import. Remove unused Redline particle input.
+- Added a complete City-frame regression (existing test stopped at first shaded strip): RED ReferenceError -> GREEN; 10 focused tests pass. Completed lint run passes.
+- Identity CI produced artifact 10667855366 for pre-refactor comparison. Corrected refactor CI is required before visual-equivalence claims.

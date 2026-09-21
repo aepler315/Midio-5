@@ -1,4 +1,4 @@
-import { drawStaticStrip, drawGroundBase } from '../WorldDraw.js';
+import { drawStaticStrip } from '../WorldDraw.js';
 // After Hours draw path. BiomeManager.draw() hands off here for city worlds.
 //
 // Translated from alpine: ridge portrait → skyline, parallax, haze, rain,
@@ -54,7 +54,7 @@ function blitWindows(ctx, canvas, strip, scrollX, yOff, glow, music, reducedFlas
 }
 
 export function drawCityWorld(mgr, frame) {
-  const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, skyVoyage } = frame;
+  const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
   const identity = mgr.world;
   const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const night = 1;

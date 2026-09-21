@@ -16,7 +16,7 @@ const Y_OFF = { L2: 4, L3: 14, L4: 34, L5: 64 };
 
 
 export function drawRedlineWorld(mgr, frame) {
-  const { ctx, canvas, worldX, A, B, t, dn, phenomenaFull, particleMul, skyVoyage } = frame;
+  const { ctx, canvas, worldX, A, B, t, dn, phenomenaFull, skyVoyage } = frame;
   const identity = mgr.world;
   const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
