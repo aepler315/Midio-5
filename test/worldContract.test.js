@@ -30,7 +30,7 @@ const UNREGISTERED_KINDS = {
   cathode: 'routed to CathodeRenderer by WebGLRenderer, never reaches BiomeManager',
 };
 
-function worldModuleSources() {
+function worldModuleSources(includeShared = true) {
   const dir = path.join(ROOT, 'src', 'world');
   const out = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -41,13 +41,17 @@ function worldModuleSources() {
       out.push({ rel, code: stripNonCode(fs.readFileSync(path.join(ROOT, rel), 'utf8')) });
     }
   }
+  if (includeShared) {
+    const rel = 'src/world/WorldDraw.js';
+    out.push({ rel, code: stripNonCode(fs.readFileSync(path.join(ROOT, rel), 'utf8')) });
+  }
   return out;
 }
 
 // Guards the two tests below: if the file discovery or the comment stripper
 // ever breaks, they would pass by finding nothing at all.
 test('the scan finds every world module and the members they touch', () => {
-  const mods = worldModuleSources();
+  const mods = worldModuleSources(false);
   assert.equal(mods.length, WORLD_RENDERERS.size,
     `expected one draw module per registered kind, saw ${mods.map((m) => m.rel).join(', ')}`);
   for (const { rel, code } of mods) {

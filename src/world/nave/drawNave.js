@@ -1,11 +1,10 @@
+import { drawStaticStrip, drawGroundBase, drawParticleBlend } from '../WorldDraw.js';
 // The Nave draw path. A cathedral interior that rebuilds itself every
 // chorus. The parallax layers are vaulted bays and buttresses, not
 // mountains. Stained glass color spill (edgeLight) and god rays replace
 // aerial perspective. The "sky" is the vault ceiling.
-import { drawTiledStrip } from '../SilhouetteGenerator.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
 import { ensureContrast } from '../../render/VisualStyle.js';
-import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor } from '../DayNight.js';
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
 import { hexToRgb } from '../../utils/color.js';
@@ -15,16 +14,9 @@ import { motifTrust, bayLit, bayAlpha, boundaryLift01 } from './Resonance.js';
 const LAYER_RATIOS = { L2: 0.03, L3: 0.08, L4: 0.18, L5: 0.44 };
 const Y_OFF = { L2: 6, L3: 16, L4: 36, L5: 66 };
 
-function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
-  if (!strip) return;
-  ctx.save();
-  if (alpha < 0.999) ctx.globalAlpha = alpha;
-  drawTiledStrip(ctx, strip, scrollX, canvas.width, canvas.height, yOff);
-  ctx.restore();
-}
 
 export function drawNaveWorld(mgr, frame) {
-  const { ctx, canvas, worldX, originX, A, B, t, phenomenaFull, particleMul, groundView } = frame;
+  const { ctx, canvas, worldX, A, B, t, phenomenaFull } = frame;
   const section = mgr.sections?.[mgr._lastSectionIdx];
   const music = sampleManagerMusic(mgr, { section, energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(section, mgr.sections?.[mgr._lastSectionIdx - 1]);
@@ -92,12 +84,10 @@ export function drawNaveWorld(mgr, frame) {
     // -- that half is alpine-specific. The shading half is not.
     if (stripsA) {
       const a = to === from ? 1 : 1 - t;
-      blit(ctx, canvas, stripsA[key], sx, yOff, a);
-      mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
+      drawStaticStrip(mgr, ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1);
     }
     if (to !== from && t > 0.02 && stripsB) {
-      blit(ctx, canvas, stripsB[key], sx, yOff, t);
-      mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
+      drawStaticStrip(mgr, ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1);
     }
   };
 
@@ -105,30 +95,13 @@ export function drawNaveWorld(mgr, frame) {
   drawRange('L3');
 
   // Particles: sunshine motes, censer smoke.
-  const openA = mgr.openingGain;
-  const mandalaColor = mgr._rotated(mgr.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-  const rimOn = mgr._perf ? mgr._perf.rimLightEnabled : true;
-  const particleLights = rimOn
-    ? [mgr.light, ...groundGlowLights(mgr.groundField ? mgr.groundField.activeGlowScreenLights(worldX, originX) : [], mandalaColor)].filter(Boolean)
-    : null;
-  ctx.save();
-  if (openA < 0.999) ctx.globalAlpha = openA;
-  mgr.fields.get(from)?.draw(ctx, particleMul * 0.7, mandalaColor, unravel, particleLights);
-  ctx.restore();
-  if (to !== from && t > 0.02) {
-    ctx.save(); ctx.globalAlpha = t * openA;
-    mgr.fields.get(to)?.draw(ctx, particleMul * 0.7, mandalaColor, unravel, particleLights);
-    ctx.restore();
-  }
+  drawParticleBlend(mgr, frame, 0.7);
 
   drawRange('L4');
   drawRange('L5');
 
   // Ground
-  const groundCanvas = groundView ? groundView.stage : canvas;
-  if (groundView) groundView.apply();
-  mgr._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
-  mgr._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
+  const groundCanvas = drawGroundBase(mgr, frame, tint);
   mgr._drawFlood(ctx, groundCanvas);
   mgr._drawTransitionOverlays(ctx, groundCanvas, B);
 }

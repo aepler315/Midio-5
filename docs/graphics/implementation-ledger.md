@@ -74,3 +74,11 @@ Design choice: extend WorldIdentity with physical-content/foreground rules and c
 - NearField retains sector seeds/spacing/scroll/cache; registered worlds use bounded street furniture, road signs, pipes, piers, roots, sea fans and rocks. Legacy direct callers retain their interface.
 - Focused tests: 50 pass; lint pass. Full suite in progress.
 - Full identity suite: npm test -> 2816 passed, 0 failed (14.8s). Final focused adaptation rerun and lint passed after radius preservation adjustment.
+
+### Mechanics refactor (appearance-preserving commit)
+
+- Extracted static strip placement + aligned shading, repeated particle blend/setup, ground transform/footing into WorldDraw.js. City window layering stays explicit; Range and Cathode stay untouched.
+- Persistent STATIC_SHADE options avoid allocating a new options object for every strip shade call. No FPS improvement claim (not profiled).
+- Existing actual world draw order/alignment tests pass. Contract scan extended to include shared helper; no coupling coverage removed.
+- npm test: 2816 passed, 0 failed (15.7s). npm run lint: pass.
+- Pixel comparisons against the identity commit remain pending CI artifacts; no tolerance changes.
