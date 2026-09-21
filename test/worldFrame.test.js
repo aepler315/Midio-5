@@ -25,3 +25,14 @@ test('capture restores random source when seek throws', () => {
   try { assert.throws(() => renderWorldFrame({ atMs: 1 }), /seek failed/); assert.equal(Math.random, original); }
   finally { delete globalThis.window; }
 });
+
+test('capture construction consumes a repeatable RNG sequence without changing global randomness', () => {
+  const original = Math.random, samples = [];
+  const sim = { timeMs: 1, biomes: { tSec: 0.001, world: {} } };
+  globalThis.window = { __SMW: { sim, perf: {}, renderer: { draw() {} }, seek() { samples.push([Math.random(), Math.random()]); } } };
+  globalThis.document = { querySelector: () => ({ width: 1280, height: 720 }) };
+  try {
+    renderWorldFrame({ atMs: 1 }); renderWorldFrame({ atMs: 1 });
+    assert.deepEqual(samples[0], samples[1]); assert.equal(Math.random, original);
+  } finally { delete globalThis.window; delete globalThis.document; }
+});

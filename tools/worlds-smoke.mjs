@@ -280,12 +280,20 @@ try {
         assert.ok(degradedPaint._drawSignature.paintedPx > 0, name + ' retains its defining structure at lowest quality');
       }
       await saveStage(page, path.join(out, `${kind}-degraded.png`));
+      // Restore quality on the SAME destination scene to exercise a live
+      // transition, rather than hiding state bugs behind another seek.
+      await page.evaluate(() => {
+        const { sim, renderer, perf } = window.__SMW;
+        if (perf) perf.level = 0;
+        renderer.draw(sim, 1);
+      });
+      await saveStage(page, path.join(out, `${kind}-quality-restored.png`));
       await page.keyboard.press('r');
       await page.evaluate(renderWorldFrame, { atMs: 18000, quality: 0 });
       // Fixed-step motion samples, not sleep-based comparisons. Drawing cost
       // is headless JS submission time; it is not device FPS or GPU time.
       const motion = [];
-      if (world.mustPaint.includes('_drawSignature')) {
+      if (['overgrowth', 'nave', 'strip', 'foundry'].includes(kind)) {
         for (let segment = 0; segment < 6; segment++) {
           const timing = await page.evaluate(() => {
             const { sim, renderer, perf } = window.__SMW;

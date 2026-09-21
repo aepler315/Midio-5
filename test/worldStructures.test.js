@@ -38,3 +38,10 @@ test('canopy crowns remain continuous across a sector wrap', () => {
   assert.equal(before.length, after.length);
   before.forEach((a,i) => { assert.ok(Math.abs(a[0]-after[i][0]) < 0.01); assert.equal(a[1], after[i][1]); });
 });
+
+for (const kind of ['overgrowth', 'nave', 'strip', 'foundry']) {
+  test(`${kind} essential geometry does not pop across quality transitions`, () => {
+    assert.deepEqual(render(kind, true, 0), render(kind, true, 6));
+    assert.deepEqual(render(kind, false, 0), render(kind, false, 6));
+  });
+}

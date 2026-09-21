@@ -15,6 +15,9 @@ export function renderWorldFrame({ atMs, quality = 0, constructionSeed = 315 }) 
   return {
     requestedMs: atMs,
     constructionSeed,
+    renderer: renderer.constructor.name,
+    songSeed: sim.songSeed ?? sim.biomes.songSeed ?? null,
+    camera: sim.camera ? { x: sim.camera.x, zoom: sim.camera.zoom, shakeX: sim.camera.shakeX, shakeY: sim.camera.shakeY, roll: sim.camera.roll } : null,
     timeMs: sim.biomes.tSec * 1000,
     simulationMs: sim.timeMs,
     response: sim.biomes.world.response || null,
