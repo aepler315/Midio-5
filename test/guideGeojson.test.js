@@ -44,6 +44,22 @@ test('a guide file rejects a polygon and a second line for the same layer', () =
   }, frame));
 });
 
+test('a disconnected MultiLineString is rejected rather than joined across space', () => {
+  assert.throws(() => guidesFromGeoJSON({
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature', properties: { layer: 'mid' },
+      geometry: {
+        type: 'MultiLineString',
+        coordinates: [
+          [[-110.8, 43.6], [-110.8, 43.7]],
+          [[-110.4, 43.8], [-110.4, 43.9]],
+        ],
+      },
+    }],
+  }, frame), /disconnected/i);
+});
+
 test('the Teton guide file is the crest and the eastern range', () => {
   const geo = JSON.parse(readFileSync(new URL('../data/terrain/tetons-guides.geojson', import.meta.url), 'utf8'));
   const guides = guidesFromGeoJSON(geo, frame);

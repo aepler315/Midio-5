@@ -1,7179 +1,2526 @@
-import { identityAllows } from './WorldIdentity.js';
-// Orchestrates the 8-layer parallax contract (spec Â§4.1.1), biome
-// scheduling via novelty-curve segmentation (Â§4.1.3), and gamma-correct
-// profile crossfading (Â§4.1.4). Each biome is pure data (BiomeProfiles.js);
-// this file is the one place that knows how to render the contract.
-import { BIOMES } from './BiomeProfiles.js';
-import { generateSilhouette, drawTiledStrip, ridgeYAt, staticStripGeometry, stripOriginX, stripSampleX, isTerrainStrip } from './SilhouetteGenerator.js';
-import {
-  materialFor, layerBake, layerColor, terrainModsForLayer, groundColorFor, catchlightRgb,
-} from './WorldMaterial.js';
-import {
-  extractRidgePortrait, lithologyFromShares, landformWindow, relEnergyLadder, snowLine01For,
-} from './RidgePortrait.js';
-import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
-import { WORLD_SIGNATURES, WORLD_RENDERERS } from './WorldRegistry.js';
-import { sampleWorldMusic } from './WorldMusic.js';
-import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
-import { ParticleField } from './ParticleField.js';
-import {
-  sampleTerrainCurve, curveFacing, facingColorStops, reliefLitStripRGBA, reliefShadeStripRGBA,
-  RELIEF_FALLOFF_PX, FOOTING_FACING_K,
-} from './TerrainRelief.js';
-import { Mandala } from './Mandala.js';
-import { CymaticField } from './CymaticField.js';
-import { KuramotoSwarm } from './KuramotoSwarm.js';
-import { ChaosRibbon } from './ChaosRibbon.js';
-import { ReactionDiffusion } from './ReactionDiffusion.js';
-import { decorateStrip } from './Landmarks.js';
-import {
-  DANCE_LAYERS, danceOffset, columnHeight01At, ridgeBakedCrestY, kickEnv, ridgeKickEnv, planeKick, kickBloom, spectrumBars, orogenyHeightMul,
-  pullbackHeightMul,
-  mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER,
-  massifDrawHeight, massifRidgeHeight01, massifRidgeJagPx, massifClearing01,
-  MASSIF_MARKER_SPEED_PX_S, MASSIF_MARKER_LIFE_SEC, nextMassifMarkerDelaySec,
-  massifEqStep,
-} from './MountainChoreo.js';
-import {
-  ridgeYSmooth, danceOffsetSmooth, danceScaleSmooth, danceScaleRamp, assignBandFeatures, geoCrestOffset,
-} from './GeoCrest.js';
-import { profileUnits } from './terrain/TerrainProfile.js';
-import { ridgeDepth, terrainScrollPx } from './terrain/ProfileTravel.js';
-import { TERRAIN_STRIP_WIDTH } from './terrain/StripRead.js';
-import { occludedSpans, hillCurve } from './ConnectorHills.js';
-import { strataBeds } from './RockStrata.js';
-import {
-  occludedFraction, stepDistantWave, swellCrest,
-  isthmusReveal01, foregroundSwellCrest,
-} from './DistantWave.js';
-import { FlourishGate } from '../sim/FlourishGate.js';
-import {
-  seaLineY, oceanRowYs, waveRows, rowAlpha, OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC,
-  breakerLift, whitecapMask, rowPhaseDrift,
-} from './Ocean.js';
-import {
-  farShoreRecipe, farShoreHeight01, farShorePulse01, FAR_SHORE_PARALLAX, FAR_SHORE_TILE_PX,
-} from './FarShore.js';
-import {
-  mirageRecipe, mirageHeight01, mirageShimmerPx, miragePresence01, mirageDriftPx, mirageStretch01, MIRAGE_TILE_PX,
-} from './FataMorgana.js';
-import { buildWaveComponents, waveFieldSample, windSpeedForSeaState, easeSeaState, shouldRebuildSpectrum } from './WaveField.js';
-import {
-  generateCatalogue, subPixelDraw, twinkleAmplitude, galacticBandCenterY, GALACTIC_BAND,
-  extinction01, reddening01, generateDustLanes, generateDeepSky, generatePlanets,
-  generateOpenClusters, perceptualStretch,
-} from './StarCatalogue.js';
-import { CHARACTER_SCHEMES } from './dna/ShapeGrammar.js';
-import {
-  islands, ships, seaLifeSchedule, monsterSchedule, tsunamiSchedule,
-  tsunamiActive, tsunamiProgress, tsunamiRowFrac, tsunamiPerspectiveScale,
-  tsunamiCenterX, tsunamiLift, tsunamiDepthLift, tsunamiProfile, sprayFlecks,
-  fishArcY, serpentHumpY,
-  wrappedOffset, OCEAN_LIFE_RATIO, TSUNAMI_WIDTH_PX,
-  tsunamiHeightScale, TSUNAMI_OVERTOP_SCALE,
-  tsunamiWithdrawalActive, tsunamiWithdrawal01,
-} from './OceanLife.js';
-import { ConstellationWeaver } from './ConstellationWeaver.js';
-import { SpaceRidge } from './SpaceRidge.js';
-import { SkyEnsemble } from './SkyEnsemble.js';
-import { FarVignettes } from './FarVignettes.js';
-import { NearField, NEARFIELD_RATIO } from './NearField.js';
-import { GroundScatter, SCATTER_RATIO } from './GroundScatter.js';
-import { flameFlicker, smokeDrift } from './Wildfire.js';
-import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
-import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
-import { fuseSections } from '../lyrics/SectionFusion.js';
-import { scanLine } from '../lyrics/LyricLexicon.js';
-import { celestialApproach } from './CelestialApproach.js';
-import { snapCutsToReleases } from './BoundarySnap.js';
-import { applyConductorSchedule } from '../core/ConductorTrack.js';
-import { analyzeSongForm } from './SongForm.js';
-import {
-  MIN_SECTION_CUT_GAP_MS, SECTION_CUT_BUDGET_MS, MIN_SECTION_CUTS, sectionCutBudget,
-} from '../audio/sectionBudget.js';
-import { LightningFX } from './Lightning.js';
-import { MeteorShowerFX } from './MeteorShower.js';
-import { LightRig } from './LightRig.js';
-import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS, hazeScatter } from './DepthHaze.js';
-import { PERSONALITY } from './BiomePersonality.js';
-import { styleDials, shiftLightness, ensureContrast, ensureMinLightness } from '../render/VisualStyle.js';
-import { Murmuration } from './Murmuration.js';
-import { Atmosphere } from './Atmosphere.js';
-import { CodaDirector } from '../sim/CodaDirector.js';
-import { capFlashAlpha } from '../ui/Accessibility.js';
-import { superformula, ModalRing } from '../render/oscillators.js';
-import {
-  computeLight, groundGlowLights, rimGain, CELESTIAL_DEFAULT_XFRAC,
-} from '../render/LightField.js';
-import {
-  clamp, clamp01, smoothstep, mulberry32, hashSeed, lerpHue, lerp,
-} from '../utils/math.js';
-import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
-import { spectralShiftDeg, easeSpectralShift } from '../render/spectral.js';
-import { Role } from '../core/NoteEvent.js';
-import { FLAT_WEIGHTS } from '../audio/bands.js';
-import { VoyagePhase, constellationLife01 } from '../sim/SkyVoyage.js';
-import { blendSections, medianBeatSec, sectionIndexAt } from './BiomeSchedule.js';
-
-export { medianBeatSec } from './BiomeSchedule.js';
-
-const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
-// Star catalogue spans down to the sea horizon, not the whole frame. An
-// earlier cut generated only over the top 78% so stars "behind" the
-// mountains were not wasted â€” but valleys, shorter biomes, and the city
-// skyline all expose sky well below that line, and the field read as a
-// chunk sitting in the middle of the sky with a dead band above the
-// ridgeline. That was fixed by spanning the WHOLE frame instead, on the
-// reasoning that terrain occludes what it occludes -- but the far ocean
-// (Ocean.js) sits at the same depth as the ranges and is water, not
-// terrain: it never occludes anything, so stars generated below its
-// horizon line stayed visible sitting IN the water in any gap between
-// mountains, reading as stars sticking out of the sea. Sky ends where the
-// ocean begins; the catalogue only needs to cover every pixel that can
-// ever actually be sky, which is everything above OCEAN_HORIZON_FRAC.
-const STAR_SKY_FRAC = OCEAN_HORIZON_FRAC;
-const STAR_CATALOGUE_COUNT = 2800;
-// Horizontal parallax per catalogue layer (far / mid / near). The old
-// (1 + layer * 0.6) * 0.02 spread was almost the same speed on every star,
-// so the field read as a painted backdrop. Far stars barely crawl; heroes
-// slide enough that the sky has a front and a back.
-const STAR_PARALLAX = [0.007, 0.026, 0.088];
-// Aerial perspective per parallax layer: how far each range's own fill is
-// pulled toward the sky-horizon color before it is drawn. L5 is the
-// nearest range and keeps the biome's authored silhouette color exactly;
-// L2 is the furthest and sits nearly half way to the sky. See the
-// layerTint() comment in draw() for why this exists.
-const AERIAL_PULL = { L2: 0.46, L3: 0.29, L4: 0.13, L5: 0 };
-// Crest rim (Stage 3 of the mountain overhaul): the backlit skyline edge
-// used to be L4/L5-only, so the two BIGGEST ranges on screen got the LEAST
-// depth treatment of the stack. Extended to L2/L3 at reduced,
-// depth-appropriate alpha -- full strength stays reserved for the near
-// anchors so the crest rim itself still reads as a depth cue, not a flat
-// outline repeated at every layer.
-const CREST_RIM_ALPHA = { L2: 0.35, L3: 0.55, L4: 1, L5: 1 };
-// Cast shadow (Stage 5 of the mountain overhaul): a near range darkens the
-// already-drawn farther range in a band just above its own crest. Capped
-// low -- this is a subtle depth cue between adjacent ranges, not a hard
-// silhouette of one range printed onto another.
-const CAST_SHADOW_MAX = 0.18;
-const CAST_SHADOW_BAND_PX = 46;
-// Sub-bands the falloff is built from. Each traces the near crest at its own
-// offset, so the fade is measured from the LOCAL crest everywhere rather than
-// from one global extremum -- see _drawCastShadow for why that mattered.
-// Four is enough that the steps are invisible at this contrast.
-const CAST_SHADOW_STEPS = 4;
-// Rock strata (Stage 6, ship-last/cuttable): thin bands, kept well under the
-// crest/shoulder contrast so the skyline and the shoulder facets -- both
-// already established depth cues -- stay the things you read first.
-const STRATA_SPACING_PX = 34;
-const STRATA_BAND_PX = 9;
-// Beds now run near-horizontally and are truncated by the range's own
-// silhouette (see RockStrata.js), so a tall summit legitimately shows several
-// while a low shoulder shows one.
-//
-// Beds are counted UP FROM THE FOOT (the foot is the stable edge -- the crest
-// dances), so this cap decides how far up the range they reach. The first
-// value tried here was 8, which on a normal range stopped ~90px short of the
-// crest and left every summit bare -- and the summits are the part of a range
-// that is actually on screen, everything lower being behind the range in
-// front of it. High enough to reach the top of a tall range; a runaway guard
-// rather than a look control.
-const STRATA_MAX_BEDS = 18;
-const STRATA_DARKEN = 0.17;
-// Ground aerial perspective: how strongly the far edge of the walking ground
-// washes toward the air color, and how far down the frame that wash reaches
-// before the ground is at its own full color. Kept lighter than any range's
-// AERIAL_PULL -- the ground is the NEAREST thing in the scene, so it should
-// only lose color right at the horizon where it meets the ranges.
-// Crest rim: how far the biome's accent is dragged toward the light's own
-// color, and how many stops the falloff gradient gets. Nine is well past the
-// point where the ramp is visually smooth; the falloff is quadratic and the
-// stroke is at most 7.5px wide, so nothing here needs fine resolution.
-// Snow cap opacity at the summit, fading to nothing at the snow line. Snow is
-// the brightest thing that can appear on a range, and a range must stay darker
-// than the sky it is silhouetted against -- aerial perspective moves a distant
-// object TOWARD the sky's value, it never takes it past.
-// Ridge shading. The catch-light is a near-white ADDITIVE wash at the crest,
-// so it is the range pass's largest single contribution to overall
-// brightness; the shade is a multiply, so raising it costs nothing in hue.
-// Trading a little catch-light for a little more shade lowers the scene's
-// overall value while keeping -- slightly increasing -- the contrast that
-// makes the ranges readable. Both were set when this pass was the ONLY
-// shading a range got; it is now one of several.
-const RIDGE_CATCHLIGHT_ALPHA = 0.13;
-const RIDGE_SHADE_STRENGTH = 0.36;
-// Foreground swell (the isthmus reveal). Amplitude is absolute rather than
-// relief-derived: this water is at the viewer's feet, so its scale is set by
-// how near it is, not by how tall the mountains behind it happen to be.
-const FG_SWELL_AMP_PX = 26;
-const FG_SWELL_DROP_PX = 26;   // how far below the ground line the shore sits
-// How far the water is darkened below the sky color it reflects.
-const FG_SWELL_DARKEN = 0.30;
-const FG_SWELL_ALPHA = 0.86;
-const FG_SWELL_EDGE_ALPHA = 0.42;
-const SNOW_ALPHA = 0.34;
-const RIM_LIGHT_MIX = 0.35;
-const RIM_GRADIENT_STOPS = 8;
-const GROUND_AERIAL_ALPHA = 0.34;
-const GROUND_AERIAL_FALLOFF = 0.38;
-// Section height is a draw-time multiplier, never baked (generateSilhouette's
-// own HEADROOM refit erases in-strip height changes on L2/L3 -- see the
-// mountain-overhaul plan). Range chosen so the quietest section is visibly
-// smaller and the loudest visibly taller without either reading as broken.
-const SECTION_HEIGHT_MUL = [0.88, 1.16];
-// Terrain footing contact shadow: layered strokes along the ridge's own
-// smooth curve approximate the soft vertical falloff a single gradient rect
-// used to give a flat ground line -- widest/faintest pass first so the
-// stack reads as one soft AO band, not three hard-edged strokes.
-const TERRAIN_FOOTING_AO_PASSES = [
-  { lw: 30, alpha: 0.035 },
-  { lw: 18, alpha: 0.06 },
-  { lw: 8, alpha: 0.10 },
-];
-
-// Section-detection schedule (_buildSchedule): a real bar grid already gives
-// plenty of analysis resolution; these only govern the free-time/no-tempo
-// fallback and the cut budget/spacing that apply either way.
-const ANALYSIS_MIN_POINTS = 64;       // fallback analysis-point floor regardless of duration
-const ANALYSIS_TARGET_STEP_MS = 2000; // ~1 analysis point every 2s for longer songs
-// How sure the SSM structure read (StructureAnalyzer) must be before it
-// replaces the band-energy schedule. A through-composed piece with no
-// repeats and no sharp boundaries scores below this and keeps the old path.
-const SSM_CONFIDENCE_FLOOR = 0.45;
-// Novelty below this fraction of the song's strongest turn is noise, not a
-// section boundary. Mirrors the SSM path's own floor so the two detectors
-// refuse to manufacture boundaries on the same terms.
-const NOVELTY_NOISE_FLOOR = 0.15;
-
-// --- The shutter: the screen closing down over a section boundary --------
-// A hard floor between bites. Section boundaries may legally sit 11s apart,
-// and two near-total blackouts that close together read as the game
-// malfunctioning rather than as punctuation.
-const SHUTTER_MIN_GAP_MS = 45000;
-// How much of the screen each half may swallow. Was 0.5 -- with both halves
-// closing that is a total blackout, which is more than any transition needs
-// to earn its point.
-const SHUTTER_MAX_COVER = 0.34;
-const WORLD_SPEED_PX_S = 220;
-const BAND_COUNT = 7;
-
-/**
- * The song's beat, in seconds, from a bar grid -- or null when there isn't
- * one (free time). Median of the bar intervals divided by the detected
- * meter, so a 3/4 track is read in three and a drift-aware grid's odd
- * window can't skew the answer.
- */
-const EQ_ATTACK_SEC = 0.08;
-const EQ_RELEASE_SEC = 0.6;
-const EQ_MAX_HEIGHT_FRAC = 0.4; // never exceed 40% of screen height, however excited the section is
-
-// --- Ridge volume: the dancing ranges read as MASS, not as flat cutouts ---
-// Sampling step (px) for the smooth crest polyline shared by the crest
-// stroke and the volume pass.
-// The slice width used when no PerfGovernor is present (tests, and any
-// caller that never wired one up). Matches the governor's own level-0 value:
-// with nothing telling us to economize, render at full resolution. Must
-// divide the 2048px strip evenly -- see PerfGovernor.danceColumnWidth.
-const DANCE_COL_FINE = 16;
-const CREST_STEP_PX = 8;
-// A summit only earns shoulders if it stands this far (px) above the
-// saddles either side of it -- otherwise every ripple in the noise ridge
-// would sprout spurs and the skyline would turn to visual noise.
-const SHOULDER_MIN_PROMINENCE = 26;
-// ...and no two summits within this screen distance both get them.
-const SHOULDER_MIN_SPACING_PX = 190;
-const SHOULDER_MAX_PER_RANGE = 5;
-// The near spur runs this fraction of the summit's height out to the side
-// as it descends toward the viewer; the far one is shorter and fades out.
-const SHOULDER_NEAR_RUN = 0.62;
-const SHOULDER_FAR_RUN = 0.42;
-// How far a spur descends, as a multiple of its summit's own prominence.
-// Big near summits reach the ground band on their own account; small
-// distant ones stay local instead of streaking across the frame.
-const SHOULDER_RELIEF_RUN = 2.4;
-// Deliberately quieter than the crest line itself (which strokes at up to
-// 0.38): these are interior form, and reading them as a second skyline is
-// exactly the noise we're avoiding.
-const SHOULDER_FACET_ALPHA = 0.22;
-const SHOULDER_LINE_ALPHA = 0.20;
-// The same warm catch-light generateSilhouette bakes along the skyline, so
-// a spur's lit edge reads as the same sun striking the same rock.
-const SHOULDER_LIT = '#ece4d6';
-// Facet facing: the celestial owns the side, the existing stripX hash is a
-// small per-summit perturbation so a whole range doesn't flatten into one
-// uniformly-lit wall. A summit only flips against the sun when its hash is
-// strongly opposed (sin past this threshold).
-export const FACET_SUN_FLIP = 0.62;
-
-/**
- * Which way a summit's near (shaded) facet leans. +1 = right, -1 = left.
- * Omitting the light falls back to the original stripX coin-flip so any
- * caller that hasn't been handed a celestial keeps today's look.
- *
- * The shaded face is the one AWAY from the light (sun on the right shades
- * the left). The hash is allowed to overturn that on a minority of
- * summits -- enough variety that ridges stay ridges, not a lit slab.
- */
-export function shoulderFacetSide(stripX, lightX = null, summitX = null) {
-  const hash = Math.sin(stripX * 0.0137);
-  if (!Number.isFinite(lightX) || !Number.isFinite(summitX)) {
-    return hash >= 0 ? 1 : -1;
-  }
-  const sunBias = summitX < lightX ? -1 : 1;
-  if (hash * -sunBias > FACET_SUN_FLIP) return -sunBias;
-  return sunBias;
-}
-// How hard the volume pass leans on each range. Follows the dance ordering
-// (MountainChoreo.DANCE_LAYERS): the far skyline is the dramatic one, so it
-// gets the most sculpting, and the near hills only enough to stop reading
-// as flat cutouts. L5 sits right behind the characters -- anything strong
-// there competes with them for attention.
-const RIDGE_VOLUME_STRENGTH = { L2: 1.0, L3: 0.85, L4: 0.6, L5: 0.4 };
-
-// --- Connector hills: green country bridging a hidden dancing skyline -----
-// A humble forest/grass green. The biome's own halo is dragged most of the
-// way toward it, so the country belongs to this world without ever becoming
-// the biome's accent colour.
-const CONNECTOR_GREEN = '#5f8f5a';
-const CONNECTOR_GREEN_MIX = 0.72;
-const CONNECTOR_MIN_LIGHTNESS = 0.26;
-// How far the country rolls down from the occluding crest at full burial.
-const CONNECTOR_DESCEND_PX = 90;
-// Quiet by design: this is the subtlest thing in the scene, and it has to
-// stay under the crest it's rescuing rather than becoming a second skyline.
-// But subtle is not the same as absent -- the first pass measured out at a
-// peak of 0.12 once the intensity budget had its say, which read as nothing
-// at all against a dark sky.
-const CONNECTOR_ALPHA = 0.55;
-// How far past its own foot the country keeps going before it dissolves.
-// Filling all the way down to the ground band instead reads as a broad wash
-// over a third of the frame rather than as hills -- the dead band this is
-// bridging is between the crest that hid the ridge and the range in front,
-// not everything below it.
-const CONNECTOR_BAND_PX = 120;
-
-// --- Distant wave: what stands in for a buried dancing ridge --------------
-// See DistantWave.js. Amplitude is a fraction of the far range's own relief,
-// so the swell is scaled to the scene it replaces rather than to a fixed px
-// number that would read as a ripple in one framing and a tidal wave in
-// another. Floored/capped so it survives a flat range and can't tower.
-const WAVE_AMP_FRAC = 0.20;
-const WAVE_AMP_MIN_PX = 10;
-const WAVE_AMP_MAX_PX = 46;
-// Where the swell sits: a little above the ridge's mean crest, so the water's
-// own crests break the near skyline (which is the entire point -- a wave
-// drawn where the ridge already lost the argument would be invisible too).
-const WAVE_LIFT_PX = 26;
-// Quiet, like the connector country: this is the back of the scene seen
-// through a lot of air, not a feature competing with the ranges in front.
-const WAVE_ALPHA = 0.40;
-// How far below its crest the body fills before dissolving. The near ranges
-// cover most of it; this only has to reach past their skyline.
-const WAVE_BAND_PX = 150;
-// A thin sunlit line on the crest itself -- the one cue that reads as water
-// rather than as another hazy ridge.
-const WAVE_GLINT_ALPHA = 0.30;
-
-const MILESTONE_METEOR_BASE = [5, 8, 14];
-const DROP_METEOR_BASE = 12;
-const ACHROMATIC_SAT_THRESHOLD = 0.08;
-// Song-form recognition: how far a structural label's signature hue-shift
-// can swing (degrees). Bounded so a section reads as "the chorus color"
-// without leaving the biome's own palette behind. Layered on top of
-// KeyDirector's key-driven rotation via _rotated.
-const FORM_HUE_BIAS_MAX = 40;
-const FORM_HUE_TAU_SEC = 1.5; // section changes glide their hue, never snap
-// Lyric-structure intensity-budget multiplier by section kind (SectionFusion) --
-// a chorus/bridge reads louder, an intro/outro settles. Unrecognized/absent
-// kind (no lyric data at all) multiplies by exactly 1 -- a strict no-op.
-const KIND_BUDGET_MUL = { chorus: 1.15, bridge: 1.3, instrumental: 1.1, intro: 0.9, outro: 0.85, verse: 1.0 };
-// How long a lyric-matched constellation glyph stays valid past its OWN
-// line's start when it's the last line in the song (every other line uses
-// the next line's start time instead -- see the hintGlyph call site).
-const LYRIC_GLYPH_FALLBACK_MS = 6000;
-
-// Alpha quantization for the batched star field (see _drawStarfield). Stars
-// are 1-2px dots drawn additively, so a 1/24 step in brightness is well under
-// what the eye resolves on one -- and it is what lets hundreds of them share
-// a single fillStyle/globalAlpha pair instead of each setting their own.
-const STAR_ALPHA_STEPS = 24;
-const OCEAN_WATER_BLUE = '#3ec8f5'; // vivid teal-cyan sea (ocean vibe first)
-const OCEAN_DEEP_BLUE = '#0d3a5c'; // abyssal under-tint
-const NIGHT_SKY_COLOR = '#060814'; // near-black space, slightly cool
-const SPACE_NEBULA_A = '#1a2850'; // deep indigo wash
-const SPACE_NEBULA_B = '#2a1860'; // violet space dust
-const MOON_COLOR = '#dfe6f2';
-/** How hard the moon's phase is pushed through exact quarter. Above 1 makes
- *  the curve steep at the midpoint and flat at the ends, so the disc spends
- *  its time as a crescent or a gibbous -- shapes with a visible curve to the
- *  terminator -- and crosses the straight-line phase quickly.
- *
- *  Measured: at 1 (no warp) the disc reads as near-straight for 9.4% of a
- *  song; at 4 that is 2.5%. Past about 5 the returns flatten and the phase
- *  starts to snap between crescent and gibbous, so 4 is where this sits.
- *  It REDUCES the straight-line moment rather than removing it -- a real
- *  quarter moon is a straight line, and the fuller fix if it still shows is
- *  to give the terminator the crater-shadow irregularity a real one has. */
-const MOON_QUARTER_SKEW = 4;
-const MOON_HALO_COLOR = '#aab8d8';
-
-// Fog band geometry (_drawFogBanks). Pure and exported so the "the gradient
-// reaches zero before the band edge" property is directly testable, rather
-// than only checkable by eyeballing a screenshot.
-//
-// The bank used to pour a CIRCULAR gradient (radius 0.45*canvasWidth,
-// centered mid-band) straight into a fillRect spanning the band -- but the
-// band is far shorter than the gradient is tall, so both the top and bottom
-// edges sliced the falloff at ~65% alpha, leaving a dead-flat horizontal
-// line across the full canvas width (once per fog bank, stacked under
-// 'lighter' compositing). That was the hard line reported at ~0.15h, and
-// its fainter twin at ~0.70h, the band's other edge.
-//
-// Fix: paint an ELLIPSE instead of a circle, squashed just enough that it
-// reaches zero exactly at the band's own top/bottom -- same footprint,
-// same horizontal reach, nothing left for the rect to cut.
-export const FOG_BAND_TOP_FRAC = 0.15;
-export const FOG_BAND_HEIGHT_FRAC = 0.55;
-
-/** @returns {{cy:number, r:number, yScale:number, bandTop:number, bandBottom:number}} */
-export function fogBandGradientGeometry(canvasWidth, canvasHeight) {
-  const bandTop = canvasHeight * FOG_BAND_TOP_FRAC;
-  const bandH = canvasHeight * FOG_BAND_HEIGHT_FRAC;
-  const cy = bandTop + bandH * 0.5;
-  const r = canvasWidth * 0.45;
-  const yScale = (bandH * 0.5) / r;
-  return { cy, r, yScale, bandTop, bandBottom: bandTop + bandH };
-}
-
-/** The gradient's own alpha FRACTION (0..1, before the bank's overall alpha
- *  multiplier) at absolute canvas y, for a bank centered per `geo`. Used by
- *  the draw call's own math and directly by tests -- no canvas needed. */
-export function fogBandAlphaFractionAtY(geo, y) {
-  const dy = (y - geo.cy) / geo.yScale;
-  const d = Math.abs(dy);
-  return d >= geo.r ? 0 : 1 - d / geo.r;
-}
-
-export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null }) {
-    this.conductor = conductor;
-    this.energyCurves = energyCurves;
-    this.durationMs = durationMs || 0;
-    this._dayNightCycleMs = dayNightCycleMs(this.durationMs);
-    this.w = canvasWidth;
-    this.h = canvasHeight;
-    this.groundY = groundY;
-    this.groundField = groundField;
-    this.fire = fire; // FireDirector (src/sim/FireDirector.js), owned by Simulation -- see _drawWildfire()
-    this.flood = flood; // FloodDirector (src/sim/FloodDirector.js), owned by Simulation -- see armFromTsunami() in update() and _drawFlood()
-    this.customBiome = customBiome || null;
-    this.world = getWorld(worldId || DEFAULT_WORLD_ID);
-    this.worldId = this.world.id;
-    // Optional real-terrain skylines for L2 (far), L3 (middle), L4 (near).
-    // Absent, every layer stays procedural. L5 is never taken from here.
-    this.terrainProfiles = terrainProfiles;
-    // Hold the scanned ridges still so the geographic profile can be checked
-    // without the musical heave. F4 toggles this.
-    this.terrainPreview = false;
-    // Palettes live on the world. Alpine keeps the stock biomes (+ optional
-    // MIDI-derived custom). City worlds bring their own night palettes and
-    // ignore the alpine custom biome so a generated mountain skin never
-    // paints itself onto a skyline.
-    this.profiles = this.world.palettes.slice();
-    if (customBiome && this.world.kind === 'alpine') {
-      this.profiles = [...this.profiles, customBiome];
-    }
-    this._lastSectionIdx = null;
-    // Distant wave (DistantWave.js): how buried L2 currently is, whether the
-    // swell has taken its place, and how far through the crossfade we are.
-    // The occlusion figure is refreshed every frame from draw()'s geometry,
-    // but only ever ACTED on at a section boundary.
-    this._ridgeOcclusionRaw = 0;
-    this._ridgeOcclusion01 = 0;
-    this._distantWaveOn = false;
-    this._distantWaveMix = 0;
-    this._cutFlash = 0;
-    this._shutterStartMs = -Infinity;
-    this._shutterBarMs = 500;
-    // The shutter is the most aggressive thing on screen; it gets the same
-    // hard-floor rate limiter the character flourishes use.
-    this._shutterGate = new FlourishGate({ minGapMs: SHUTTER_MIN_GAP_MS, chance: 1 });
-    this.shutterDebug = null;
-    this.cutFlashJustFired = false;
-    // Edge-triggered once per section boundary, any transition style -- other
-    // systems (character tumble choreography) hang a rare accent off this.
-    this.sectionJustChanged = false;
-    this.lastTransitionStyle = null;
-    // Lyric-fused structure (SectionFusion): a section's `kind` (verse/
-    // chorus/bridge/instrumental/intro/outro) and its lyric intensity/
-    // valence, when lyrics were found and fused into the schedule below.
-    // Absent lyricSections -> currentKind stays null and every one of
-    // these stays at its neutral default, forever -- a strict no-op.
-    this._lyricSections = lyricSections;
-    this._syncedLyrics = syncedLyrics;
-    this._lyricLineCursor = 0;
-    this.currentKind = null;
-    this.currentSectionText = null;
-    this.lyricIntensityEased = 0.4;
-    // Confidence in `currentKind` being the right FUNCTION label, not just
-    // that a boundary sits here -- eased the same way, and read by callers
-    // (the forced bridge hue swing below, Simulation's epicBiasForKind) so a
-    // weakly-inferred kind cannot trigger a strong dramatic effect.
-    this.kindConfidenceEased = 0;
-    this._kindBudgetMulEased = 1;
-    this.budget = 1;
-    this.openingGain = 1; // OpeningDirector, set per-step by Simulation
-    this.hypeBoost = 1; // drop-surge multiplier from the HypeDirector
-    this.focusMul = 1; // FocusDirector's 'sky' dampener -- 1 unless some other subject has focus
-    this.stillnessMul = 1; // CutDirector's held-breath dip right after an authored drop/apotheosis cut
-    this.mandalaScaleMul = 1; // swells while Midasus dances near the celestial
-    this._progress = 0;
-    // Safe defaults before the first update() so a zero-dt first frame
-    // (draw before step) never feeds NaN into canvas gradients and kills rAF.
-    this.calmLevel = 0;
-    this._hazeMul = 1;
-    this.dustLevel01 = 0; // set externally each frame from Simulation.quake.dustLevel01
-    this.smokeLevel01 = 0; // set externally each frame from Simulation.fire.smokeLevel01
-    this._ribbonScaleMul = 1;
-    this.lerpCache = new LerpCache();
-    this.tSec = 0;
-    this.worldRhythm = null;
-    this._starSeed = mulberry32(9001);
-    // Layered starfield generated from a real catalogue (StarCatalogue.js):
-    // luminosity function (faint stars vastly outnumber bright ones),
-    // spectral-class-weighted blackbody color, a galactic-plane density
-    // band, and sub-pixel stars that contribute partial light instead of
-    // vanishing or getting rounded up -- the "incomprehensibly distant"
-    // read the brief asked for. Generated once and cached, exactly like
-    // the silhouette strips, so the density costs nothing per frame; only
-    // twinkle (in _drawStarfield) is computed live. Bumped from a flat 96
-    // to 2800 -- still cheap because the catalogue stays 1px and the common
-    // layers are still batched into one fill per bucket.
-    // The field is generated over the full frame: every pixel that can ever
-    // be sky (valleys, city streets of sky between towers, the zenith) gets
-    // stars, and the mountain / skyline stack paints over the rest. A
-    // shorter catalogue left a dead band above the ridgeline that read as
-    // "the stars are a chunk in the middle of the sky."
-    const catalogue = generateCatalogue(hashSeed(`${songSeed}:starcat`), STAR_CATALOGUE_COUNT, this.w, this.h * STAR_SKY_FRAC);
-    // See StarCatalogue.perceptualStretch for why this is applied to
-    // subPixelDraw's OUTPUT below, never fed in as its input.
-    // Hero-bright layer 2 is reserved by RANK, not by an absolute magnitude
-    // cutoff -- the realistic population makes true hero-magnitude stars
-    // vanishingly rare at this sample size, so a fixed threshold could
-    // easily reserve zero. A guaranteed slice keeps the sky visually alive
-    // without touching the underlying (correctly faint-dominated) catalogue.
-    // A fixed 6 (regardless of population) read as a sparse scatter of
-    // isolated bright dots rather than "a sky full of stars" -- the cheap
-    // points that make up the rest are real (see perceptualStretch) but
-    // small and easily washed out by anything drawn over them (haze,
-    // cloud, nebula washes), so most of a genuinely full-looking sky needs
-    // to come from the reliably-visible bright tier, not the faint majority.
-    const byMag = catalogue.slice().sort((a, b) => a.mag - b.mag);
-    const heroCutMag = byMag[Math.min(byMag.length - 1, Math.floor(byMag.length * 0.08))].mag;
-    const midCutMag = byMag[Math.min(byMag.length - 1, Math.floor(byMag.length * 0.35))].mag;
-    // Every position below is cached as a FRACTION of the field it was
-    // generated over (xFrac/yFrac), not an absolute pixel -- the canvas
-    // BiomeManager actually draws into is not always this.w x this.h. The
-    // camera's off-frame pull-back (CameraDirector.zoom) widens the logical
-    // stage Renderer hands to draw() (stage.width = nominalW/zoom, plus a
-    // shake margin), so a live game frame can be meaningfully wider than
-    // the dimensions the catalogue was built against. Baking absolute pixel
-    // coordinates here meant every star, dust lane, deep-sky smudge, and
-    // planet stayed pinned to their ORIGINAL narrower span while the sky
-    // around them widened -- reading as the whole field crammed into a
-    // band down the middle instead of spread edge to edge. Storing a
-    // fraction and rescaling against the real canvas at draw time (see
-    // _drawStarfield) fixes that at every zoom level and every resize.
-    const skyH = this.h * STAR_SKY_FRAC;
-    this.stars = catalogue.map((s) => {
-      const { drawSize, drawAlpha: rawAlpha } = subPixelDraw(s.sizePx, s.brightness);
-      const drawAlpha = perceptualStretch(rawAlpha);
-      const layer = s.mag <= heroCutMag ? 2 : s.mag <= midCutMag ? 1 : 0;
-      return {
-        xFrac: s.x / this.w, yFrac: s.y / skyH, phase: s.phase,
-        size: drawSize, bright: drawAlpha, layer,
-        hue: s.hue,
-        mag: s.mag, altitude01: s.altitude01, // read by twinkleAmplitude in _drawStarfield
-        // Air path, resolved once: low stars are permanently dimmer and
-        // redder than the same star overhead (StarCatalogue.extinction01).
-        // Constant per star, so it belongs in the cache, not the frame loop.
-        ext: extinction01(s.altitude01),
-        redden: reddening01(s.altitude01),
-        parallax: STAR_PARALLAX[layer],
-        varAmp: layer > 0 && ((s.phase * 11) % 1) < 0.12 ? 0.20 : 0,
-        varHz: 0.05 + ((s.phase * 3) % 1) * 0.10,
-        companion: layer === 2 && ((s.phase * 5) % 1) < 0.28
-          ? { dx: 2.2 + ((s.phase * 9) % 1) * 3.4, dy: ((s.phase * 13) % 1 - 0.5) * 2.4 }
-          : null,
-      };
-    });
-    // The rest of the sky's furniture, all generated over the same sky
-    // region and cached alongside the stars (same fraction convention):
-    // dark nebulae that break up the milky wash, a few resolved deep-sky
-    // smudges, and the planets.
-    const toFrac = (list) => list.map((o) => ({
-      ...o, xFrac: o.x / this.w, yFrac: o.y / skyH,
-    }));
-    this.dustLanes = toFrac(generateDustLanes(hashSeed(`${songSeed}:dust`), 11, this.w, skyH))
-      .map((d) => ({ ...d, rxFrac: d.rx / this.w, ryFrac: d.ry / skyH }));
-    this.deepSky = toFrac(generateDeepSky(hashSeed(`${songSeed}:deepsky`), 16, this.w, skyH))
-      .map((o) => ({ ...o, rFrac: o.r / skyH }));
-    this.planets = toFrac(generatePlanets(hashSeed(`${songSeed}:planets`), 4, this.w, skyH));
-    for (const cluster of generateOpenClusters(hashSeed(`${songSeed}:ocluster`), 4, this.w, skyH)) {
-      for (const s of cluster.members) {
-        const { drawSize, drawAlpha: rawAlpha } = subPixelDraw(s.sizePx, s.brightness);
-        this.stars.push({
-          xFrac: s.x / this.w, yFrac: s.y / skyH, phase: s.phase,
-          size: drawSize, bright: perceptualStretch(rawAlpha), layer: 1,
-          hue: s.hue, mag: s.mag, altitude01: s.altitude01,
-          ext: extinction01(s.altitude01), redden: reddening01(s.altitude01),
-          parallax: STAR_PARALLAX[1] * 0.85,
-          varAmp: 0, varHz: 0.08, companion: null,
-        });
-      }
-    }
-    this._glitchTimer = 2 + this._starSeed() * 3;
-    this._glitchActiveMs = 0;
-    // Reused across frames rather than rebuilt: the whole point of batching
-    // the star field is to stop doing per-star work, and allocating a Map of
-    // arrays every frame would hand back in GC what the batching saves. Keys
-    // are bounded (hue buckets x alpha steps, plus two flat layer colours).
-    this._starBuckets = new Map();
-    this._scanlineY = 0;
-    this._pylonFlash = 0;
-    this._eqSmoothed = new Float32Array(BAND_COUNT);
-    // The massif reads the same 7 raw bands but through its own far slower
-    // attack/release (massifEqStep) -- see MountainChoreo.js's
-    // MASSIF_EQ_ATTACK_SEC/MASSIF_EQ_RELEASE_SEC doc for why a mountain
-    // range sold as impossibly vast can't be allowed to hop on every kick.
-    this._massifEqSmoothed = new Float32Array(BAND_COUNT);
-    // The geological equalizer: L4's crest reads the same 7 bands as the
-    // horizon EQ and the massif, but through per-song, per-band geological
-    // features (cliff/arete/knob/outcrop/terrace) pinned to fixed terrain
-    // positions -- a distinct silhouette vocabulary, "relevant" to the same
-    // music without repeating either sibling equalizer's look.
-    this._geoFeatures = assignBandFeatures(hashSeed(`${songSeed}:geocrest`));
-    // Far ocean: denser row stack for a readable water plane between ridges.
-    // Infinite flat plane of water in perspective, not a solid band (a
-    // solid band at ridge height is fully occluded by the opaque ridges).
-    this._oceanRows = waveRows(hashSeed(`${songSeed}:ocean`), 28);
-    // Spectral depth pass, layered under the rows above (see WaveField.js):
-    // a real Pierson-Moskowitz sea, re-sampled whenever the eased sea state
-    // moves. Seeded once so it's deterministic per song like everything else.
-    this._waveFieldSeed = hashSeed(`${songSeed}:wavefield`);
-    this._seaState = 0;
-    // The sea state the CURRENT spectrum was sampled at, which is what the
-    // rebuild test has to measure against -- see the update below.
-    this._spectrumSeaState = 0;
-    this._waveComponents = buildWaveComponents(this._waveFieldSeed, windSpeedForSeaState(0), 24);
-
-    // The mountains dance: a groove level (smoothed global energy) drives a
-    // traveling ridge wave through every range, and each kick sends a
-    // bounce rolling from the near hills out to the far peaks.
-    this._danceGroove = 0;
-    // Stage 2 (ridge deformation): a slower one-pole on _danceGroove itself
-    // -- "has this section been loud for a while", distinct from the kick's
-    // instant transient. Flanks swell on this; summits sharpen on the kick.
-    this._danceSustain = 0;
-    this._danceKickMs = -Infinity;
-    this._danceKickAmp = 0;
-    this._danceWorldX = 0;
-    this.fever = 0; // player fever (Simulation.fever.level): cranks the dance and the runners
-    // Parallel-universe drift (ParallelUniverseDirector, set externally each
-    // step): cosmetic-only per-section variation. Neutral until the first shift.
-    this.universeHueDeg = 0;
-    this.universeHazeMul = 1;
-    this.universeWindMul = 1;
-    this.universeTerrainMul = 1;
-    // Float tilt (CameraDirector.floatTilt, set externally each step): a
-    // small per-layer-scaled rotation applied in _drawLayer while the
-    // camera is pulled back, so nearer ranges lean more than far ones --
-    // see LAYER_TILT_PIVOT_KEY below for why the ground itself never tilts.
-    this.floatTilt = 0;
-    this.orogenyGrowth = 0.1; // mountain-building arc (Simulation.orogeny.growth), set externally each step
-    // Off-frame pull-back (CameraDirector.zoom, set externally each step): 0
-    // at normal framing, 1 at the hardest pull-back (ZOOM_MIN). Grows the
-    // nearer ranges (see MountainChoreo.pullbackHeightMul) so a wide shot
-    // doesn't just shrink the world in place -- the ridges nearest the
-    // player rise up to close the flat gap a pull-back would otherwise open.
-    this.pullback01 = 0;
-    // The massif's scale markers (MountainChoreo.js): tiny, ordinary-parallax
-    // silhouettes that occasionally drift across its face -- the comparison
-    // against something the eye already knows the size of is what actually
-    // sells "this is unfathomably huge," not raw height alone.
-    this._massifRand = mulberry32(hashSeed(`${songSeed}:massif`));
-    this._massifMarkers = []; // {x0, y, bornMs}
-    this._massifNextSpawnMs = nextMassifMarkerDelaySec(this._massifRand) * 1000;
-    // Miniature characters running along the near ranges' ridges â€” an
-    // independent trio per range so the depths don't mirror each other.
-
-    this.songSeed = songSeed;
-    this.visualStyle = 'rendered'; // set via setVisualStyle from Simulation / main
-    this.strips = new Map(); // biomeName -> { L2, L3, L4, L5 }
-
-    this.fields = new Map(); // biomeName -> ParticleField
-    for (const b of this.profiles) this.fields.set(b.name, new ParticleField(b.particles, canvasWidth, canvasHeight, hashSeed(b.name + 'p')));
-
-    // Music-reactive weather (decoupled from biome): one field per kind,
-    // built once and reused regardless of which biome is active -- unlike
-    // `fields` above (each biome's own signature), only WeatherDirector's
-    // current kind is ever drawn, and only above its DORMANT_GATE.
-    this.weatherState = { kind: 'snow', intensity: 0 }; // set externally each frame from Simulation.weather.state
-    this.weatherFields = new Map();
-    for (const [kind, count, color, speed] of [
-      ['rain', 90, '#9fb8d8', 0],
-      ['snow', 70, '#ffffff', 45],
-      ['petals', 45, '#ffb6d3', 35],
-      ['embers', 55, '#ff7a3c', 60],
-      ['sunshine', 20, '#fff6c8', 0],
-      ['fog', 14, '#c9d6e0', 0],
-      ['wind', 40, '#dfe8ee', 0],
-    ]) {
-      this.weatherFields.set(kind, new ParticleField({ kind, color, count, speed }, canvasWidth, canvasHeight, hashSeed(`weather:${kind}`)));
-    }
-    this._weatherSuppress = 1; // eased 0..1: 0 while the active biome already has this exact particle kind
-    this._activeWeatherIntensity = 0; // weatherState.intensity * suppress, computed in update(), read by draw()
-    this.snowCover = 0; // settled snow 0..1, set externally each frame from Simulation.snowCover -- drives the frost caps
-
-    // Planets + astral artifacts: seeded per song/biome, drawn behind the
-    // celestial so the sun/moon and ranges occlude them naturally.
-    this.skyEnsemble = new SkyEnsemble(songSeed, durationMs);
-    // Far-distance vignettes: rare seeded scenes (aliens at dinner, a cloud
-    // whale...) witnessed way out between the L2 and L3 ranges.
-    this.farVignettes = new FarVignettes(songSeed);
-    // Near-field foreground occluders: the mirror image of farVignettes at
-    // the OTHER end of the depth stack -- huge biome-landmark silhouettes
-    // sweeping past faster than the characters, close enough to occlude
-    // them. Drawn in drawForeground(), after everything else.
-    this.nearField = new NearField(songSeed, this.world);
-    this.groundScatter = new GroundScatter(songSeed);
-
-    this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections, structure, conductorSchedule);
-    // Strips are baked AFTER the schedule exists (moved here from right
-    // after construction's field init) so _buildStripSet can key each
-    // profile's per-label variant (lithology/landform/landmarks/heightMul --
-    // see _buildSchedule's this._profileVariants) off sections that now
-    // actually exist. setVisualStyle() also calls _rebuildStrips() directly,
-    // standalone, after this -- this._profileVariants is still whatever
-    // _buildSchedule last computed, so that path is unaffected.
-    this._rebuildStrips();
-    // MIDI custom biome: cast every section into the generated world so the
-    // dropped file IS the place, while stock demos keep dramaturgical casting.
-    // MIDI custom biome: alpine only â€” city worlds keep their own palettes.
-    if (this.customBiome && this.world.kind === 'alpine') this.loadCustom(this.customBiome);
-
-    // Ocean ecosystem: islands + ships sit on the water always; sea life,
-    // the rare monster, and tsunamis (anchored on the song's loudest bars)
-    // are the phenomena-gated extras.
-    this._islands = islands(hashSeed(`${songSeed}:islands`), 7);
-    this._ships = ships(hashSeed(`${songSeed}:ships`), 5);
-    this._seaLife = seaLifeSchedule(hashSeed(`${songSeed}:sealife`), durationMs, { minGapMs: 3500, maxGapMs: 9000 });
-    this._seaLifeIdx = 0;
-    this._monsters = monsterSchedule(hashSeed(`${songSeed}:monster`), durationMs);
-    this._monsterIdx = 0;
-    this._tsunamis = tsunamiSchedule(hashSeed(`${songSeed}:tsunami`), durationMs, this._oceanHotspotMs || []);
-    this._tsunamiIdx = 0;
-    this._tsunamiFlecks = sprayFlecks(hashSeed(`${songSeed}:tsunamispray`));
-    this.mandala = new Mandala(songSeed);
-    this.cymatics = new CymaticField(songSeed);
-    this.swarm = new KuramotoSwarm(songSeed);
-    this.ribbon = new ChaosRibbon(songSeed);
-    this.rd = new ReactionDiffusion(songSeed);
-    this.lightning = new LightningFX(songSeed);
-    this.meteors = new MeteorShowerFX(songSeed);
-    // Ambient connect-the-dots: ordinary melody notes weave constellations
-    // all song long (unlike Midasus's rare, capped SkyVoyage).
-    this.weaver = new ConstellationWeaver(hashSeed(`${songSeed}:weaver`), canvasWidth, canvasHeight);
-    // The third equalizer: crystalline node-line + one tumbling wireframe,
-    // floating higher and further than everything else in the sky.
-    this.spaceRidge = new SpaceRidge(hashSeed(`${songSeed}:spaceridge`));
-    // The far shore: a massive, vague mountain range on the far side of the
-    // ocean, so distant only its tallest masses clear the planet's own
-    // curvature (see _drawFarShore).
-    this._farShoreRecipe = farShoreRecipe(hashSeed(`${songSeed}:farshore`));
-    // The fata morgana: a pale, jagged, snow-capped mirage range hovering at
-    // the same horizon, layered on top of the far shore's dark mass (see
-    // _drawFataMorgana).
-    this._mirageRecipe = mirageRecipe(hashSeed(`${songSeed}:mirage`));
-    this.lightRig = new LightRig(songSeed);
-    // Concert beams anchor toward Midio on a drop; sane defaults so a
-    // trigger before the first Simulation-set value still points somewhere
-    // reasonable rather than at (0,0).
-    this.midioX = this.w * 0.5;
-    this.midioY = this.groundY;
-    // Reward bursts: milestone/drop counts scale with perf headroom
-    // (defaults to 1 so BiomeManager works standalone in tests with no
-    // wired Simulation/PerfGovernor) and the song's intensity budget.
-    this.particleMul = 1;
-    this.milestoneAtMs = -Infinity;
-    this._lastSeenMilestoneMs = -Infinity;
-    this.milestoneIdx = -1;
-    this.murmuration = new Murmuration(canvasWidth, canvasHeight, songSeed);
-    this._beatMs = 500; // EMA'd kick interval, feeding the swarm's natural frequency
-    this._lastKickMs = null;
-
-    // The Wind (Movement II): one global weather field instead of every
-    // particle system drifting in its own private noise.
-    this.atmosphere = new Atmosphere(songSeed);
-    this.wind = { x: 0, y: 0 };
-    this.heatShimmer = 0; // set externally from HypeDirector.fast each frame
-    this._shedPetals = [];
-    const fogSeed = mulberry32(songSeed ^ 0x0f06);
-    this._fogBanks = [0, 1, 2].map(() => ({ x: fogSeed() * canvasWidth * 1.6 }));
-
-    // The Key of the World (Movement III): the harmony-driven palette
-    // rotation, set externally each frame from KeyDirector.paletteRotation
-    // (same pattern as hypeBoost/heatShimmer above). Quantized to 3deg
-    // steps before rotating so the LerpCache-style cache below stays hot.
-    this.paletteRotation = 0;
-    this._rotationCache = new Map();
-    // One Spectrum: the song's detected key (pitch class 0..11, fed from
-    // KeyDirector) plus how far the world should key to it (0..1). The
-    // spectral key shift is eased (one-pole, characters-style) so a key
-    // change GLIDES the whole frame as one body -- the world and the
-    // characters never disagree, and nothing ever snaps (reduced-flash
-    // safe). This subsumes the old slow paletteRotation drift (same tonic
-    // signal at 7.5deg/semitone); the spectral shift lands the anchor ON
-    // the key at the full 30deg/semitone.
-    this.tonic = null;
-    this.spectralAmount = 1;
-    this._specShift = 0;       // eased degrees, read by _rotated
-    this._specShiftTarget = 0;
-    // Song-form recognition (SongForm): the active section's structural
-    // signature hue, eased so a section change glides the whole palette by
-    // its label's bias -- the chorus always the same shift, the verse
-    // always another, recurring identically. Composed on top of
-    // paletteRotation in _rotated; works in ANY biome (the payoff on the
-    // single-biome dropped-song path, where every section is one profile).
-    this.sectionHueBias = 0;
-
-    // The Mirror (Movement IV): a shared 1-D ring for the lake's ripples --
-    // gentle mode reuse of the same ModalRing driving Midio's body vibration
-    // elsewhere, just tuned slower/softer for water instead of a body strike.
-    this.lakeRing = new ModalRing({ modes: 3, baseHz: 1.1, decaySec: 1.4, seed: hashSeed('lake' + songSeed) });
-    this._lakeReflectGroundY = null; // set each frame by _drawGround; read by drawCharacterReflections
-    this.dropAtMs = -Infinity; // set externally from HypeDirector.dropAtMs each frame
-    this._lastSeenDropAtMs = -Infinity;
-
-    // The Unraveling (Movement V): set externally from CodaDirector.unravel
-    // each frame.
-    this.unravel = 0;
-
-    // The Reel (Movement VI): set externally, persisted accessibility toggle.
-    this.reducedFlash = false;
-
-    // conductor outlives every song (see main.js); dispose() must undo
-    // exactly these three subscriptions or a replay stacks a fresh
-    // BiomeManager's listeners on top of every previous one still firing.
-    this._unsub = [
-      conductor.onBar(() => { this._scanlineActive = true; this._scanlineY = 0; this.cymatics.onBar(); }),
-      conductor.on(Role.RHYTHM, (evt) => {
-        this.worldRhythm = evt;
-        if (!evt.kick) return;
-        this._pylonFlash = 1;
-        this._danceKickMs = evt.tMs;
-        this._danceKickAmp = 0.4 + 0.6 * evt.vel;
-        this.mandala.kick();
-        this.swarm.kick(evt.vel);
-        this.ribbon.kick();
-        this.rd.onKick();
-        this.weaver.onKick(evt.vel, evt.tMs);
-        if (evt.vel > 0.78) this.murmuration.startle(evt.vel);
-        // Heavy kicks strike lightning, but only while a storm is blowing.
-        const active = this.currentBlend ? this._profile(this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from) : null;
-        if (active && active.fx === 'lightning') this.lightning.maybeTrigger(evt.tMs, evt.vel, this.w, this.groundY);
-        // Beats ripple the water, but only while the lake is out.
-        if (active && active.fx === 'lakeReflection') this.lakeRing.excite(3 + 9 * evt.vel);
-        if (this._lastKickMs != null) {
-          const delta = evt.tMs - this._lastKickMs;
-          if (delta >= 240 && delta <= 1500) this._beatMs += 0.25 * (delta - this._beatMs);
-        }
-        this._lastKickMs = evt.tMs;
-      }),
-      conductor.on(Role.MELODY, (evt) => { this.weaver.onMelody(evt); }),
-    ];
-  }
-
-  /** Undo every conductor subscription made at construction. */
-  dispose() {
-    for (const unsub of this._unsub) unsub();
-    this._unsub.length = 0;
-  }
-
-  _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null, structure = null, conductorSchedule = null) {
-    // The song's beat, in seconds -- the unit the ranges' weathering is cut
-    // on (RidgeShape.couloirCarve's pulse). Taken from the MEDIAN bar
-    // interval rather than the mean: a drift-aware grid re-estimates its
-    // period per window, and one bad window at a tempo-change or a silent
-    // intro would otherwise drag the whole song's grain off. Free-time audio
-    // has no bar grid at all and leaves this null, which drops every layer
-    // back to fixed-frequency detail.
-    this._beatSec = medianBeatSec(barGrid);
-    // Without a real bar grid (free-time / tempo-less audio), the analysis
-    // resolution used to collapse to a fixed 9 points regardless of song
-    // length -- with novelty forced to 0 for the first 4 and a minimum peak
-    // spacing measured in THOSE 9 indices, at most one cut could ever be
-    // placed, so section detection silently bottomed out at exactly 3
-    // sections no matter how long or eventful the song was. Scale the
-    // fallback resolution with duration instead.
-    let barTimes = barGrid.length >= 8
-      ? barGrid.map((b) => b.ms)
-      : this._evenSplit(durationMs, Math.max(ANALYSIS_MIN_POINTS, Math.round(durationMs / ANALYSIS_TARGET_STEP_MS)));
-    if (barTimes.length < 2) barTimes = [0, durationMs];
-
-    const vectors = barTimes.map((ms) => (energyCurves ? energyCurves.sampleAll(ms) : new Array(7).fill(0)));
-    // Hotspot bar times (top-2 by scalar bar energy) -- anchors for things
-    // that should land where the song is actually loudest, e.g. tsunamis.
-    const barScalarEnergy = vectors.map((v) => v.reduce((a, x) => a + x, 0) / 7);
-    this._oceanHotspotMs = barTimes
-      .map((ms, i) => [barScalarEnergy[i], ms])
-      .sort((a, b) => b[0] - a[0])
-      .slice(0, 2)
-      .map((p) => p[1]);
-    const means = barTimes.map((_, i) => {
-      const start = Math.max(0, i - 3);
-      const slice = vectors.slice(start, i + 1);
-      const avg = new Array(7).fill(0);
-      for (const v of slice) for (let k = 0; k < 7; k++) avg[k] += v[k] / slice.length;
-      return avg;
-    });
-    // Compare each point against ~4 samples back, clamped to 0 instead of
-    // unconditionally returning 0 for the first 4 -- the opening material
-    // can now register as a boundary too, instead of being silently exempt.
-    const novelty = barTimes.map((_, i) => {
-      const j = Math.max(0, i - 4);
-      if (j === i) return 0;
-      let d = 0;
-      for (let k = 0; k < 7; k++) d += (means[i][k] - means[j][k]) ** 2;
-      return Math.sqrt(d);
-    });
-
-    // Minimum spacing between cuts, expressed in TIME (not analysis-point
-    // indices) so it means the same thing regardless of whether barTimes
-    // came from a fine bar grid or the coarser even-split fallback above --
-    // an 8-index minimum was ~16s on a bar grid but only ~2 fallback points
-    // (its whole bug) in the other.
-    const avgStepMs = barTimes.length > 1 ? (barTimes[barTimes.length - 1] - barTimes[0]) / (barTimes.length - 1) : durationMs;
-    const minGap = Math.max(1, Math.round(MIN_SECTION_CUT_GAP_MS / Math.max(1, avgStepMs)));
-    // Cut budget scales with song length instead of a flat 7 -- a 5-minute
-    // song can now express close to a section every 24s.
-    const maxCuts = sectionCutBudget(durationMs);
-    const lastIdx = barTimes.length - 1;
-    const peakNovelty = Math.max(...novelty, 0);
-    /** Greedy strongest-first peak picking. `floorMul` is the noise floor as a
-     *  fraction of the strongest novelty: the normal pass refuses to
-     *  manufacture boundaries out of near-flat material, and the relaxation in
-     *  _ensureMinimumSections re-runs with it dropped. */
-    const pickPeaks = (floorMul) => {
-      const out = [];
-      const sorted = novelty.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]);
-      for (const [v, i] of sorted) {
-        if (out.length >= maxCuts) break;
-        if (v <= 1e-6) continue;
-        if (v <= peakNovelty * floorMul) break;
-        // Spaced against the song's own edges as well as against each other.
-        // Index 0 and the final index are ALWAYS cuts, so a peak crowding
-        // either one produces a runt section -- and a lone peak landing on the
-        // final index collapses the schedule to a single section outright
-        // (cuts [0, last, last], whose first pair is then dropped as empty).
-        // A big outro or fade-out makes that very reachable on real songs.
-        if (i < minGap || lastIdx - i < minGap) continue;
-        if (out.some((p) => Math.abs(p - i) < minGap)) continue;
-        out.push(i);
-      }
-      out.sort((a, b) => a - b);
-      return out;
-    };
-    const peaks = pickPeaks(NOVELTY_NOISE_FLOOR);
-
-    // The SSM read (StructureAnalyzer) wins when it's confident: its
-    // boundaries come from a checkerboard kernel over a chroma+timbre
-    // self-similarity matrix rather than a difference of trailing band-energy
-    // means, and it hears harmony, which the novelty path above cannot.
-    //
-    // Its boundaries arrive as TIMES, not as indices. They used to arrive as
-    // cut indices, which was silently wrong whenever the two sides built
-    // different analysis grids: with no bar grid, AudioAdapter steps a flat
-    // 2000ms while _evenSplit here returns n+1 points at a much finer step for
-    // songs under ~128s. Indices from one grid read against the other put every
-    // cut at the wrong time, bunched toward the song's start -- and the old
-    // `<= barTimes.length - 1` guard never caught it, because the array being
-    // indexed was the longer of the two. Times are unambiguous; indices are
-    // only meaningful next to the grid that produced them.
-    //
-    // Everything falls back cleanly: MIDI, the demo timeline, free-time audio
-    // and any low-confidence read keep the band-energy schedule exactly as it
-    // was.
-    const ssmCuts = structure && Array.isArray(structure.boundariesMs)
-      ? this._cutsFromTimes(structure.boundariesMs, barTimes)
-      : null;
-    const ssmUsable = structure
-      && structure.confidence >= SSM_CONFIDENCE_FLOOR
-      // At least two sections. A one-section read is the detector reporting it
-      // found nothing, and must never displace an energy read that found real
-      // boundaries (StructureAnalyzer caps its confidence for this reason too).
-      && ssmCuts && ssmCuts.length >= 3;
-    const chosen = ssmUsable ? ssmCuts : [0, ...peaks, lastIdx];
-    // _ensureMinimumSections used to be able to DISCARD `chosen` wholesale --
-    // re-picking from the energy novelty or falling back to even time-splits
-    // even when `chosen` was a confident SSM read. A real, confident musical
-    // boundary is evidence; a minimum-section-count floor is a pacing
-    // preference. The preference must never overwrite the evidence -- it may
-    // only pad it with extra, clearly-decorative cuts to hit the count, which
-    // carry no boundary evidence and must not invent a new musical identity
-    // (see _labelsFromSsm below: a decorative cut nearest-maps onto its
-    // parent's SSM label, so it inherits rather than invents one).
-    const { cuts: rawCuts, source: floorSource, decorative: rawDecorative } = this._ensureMinimumSections(
-      chosen, { pickPeaks, barTimes, durationMs, lastIdx }, ssmUsable,
-    );
-    // Put each boundary on the RELEASE rather than on the run-up to it
-    // (BoundarySnap.js). Both detectors answer "where does the material
-    // change?" -- but in produced music a drop is preceded by a build, the
-    // energy vector changes when the BUILD starts, and the detector marks the
-    // build. The show then fired its release about a bar early, over material
-    // still winding up. The same correction also pulls back the band-energy
-    // fallback's trailing-window lag, since it looks both ways for the step.
-    // The song's first and last cuts are pinned: they are the edges of the
-    // schedule, not releases, and moving one leaves a gap.
-    const cuts = snapCutsToReleases(rawCuts, barScalarEnergy, {
-      pinned: ssmUsable ? chosen : [rawCuts[0], rawCuts[rawCuts.length - 1]],
-    });
-    // A decorative cut's exact index can move under the snap above; carry its
-    // status forward by nearest match rather than exact value.
-    const decorativeSet = new Set();
-    for (const d of rawDecorative) {
-      let best = cuts[0], bestD = Infinity;
-      for (const c of cuts) { const dist = Math.abs(c - d); if (dist < bestD) { bestD = dist; best = c; } }
-      decorativeSet.add(best);
-    }
-    // The SSM read is "kept" whenever the schedule is still built from its
-    // boundaries -- which is now always true once `ssmUsable`, since the
-    // floor can only pad it, never replace it.
-    const ssmKept = ssmUsable;
-    this.structureSource = ssmUsable ? (rawDecorative.length ? 'ssm+decorative' : 'ssm') : (floorSource || 'energy-novelty');
-    // Confidence describes the evidence actually behind the schedule. An SSM
-    // read that survived (padded or not) keeps its detector's confidence;
-    // anything else is not the SSM's read at all, and must not go on
-    // reporting the confidence of an analysis that was never used.
-    this.structureConfidence = ssmKept ? structure.confidence : 0;
-    this.fineBoundariesMs = ssmKept && Array.isArray(structure?.fineBoundariesMs)
-      ? structure.fineBoundariesMs.slice()
-      : [];
-    this.fineBoundaryEvidence = ssmKept && Array.isArray(structure?.fineBoundaryEvidence)
-      ? structure.fineBoundaryEvidence.map((b) => ({ ...b }))
-      : [];
-    // Which cuts are genuine energy-novelty peaks, and so have a meaningful
-    // sharpness to classify from. Everything else -- an SSM boundary (found
-    // by a different detector, on a different signal) or an even time-split
-    // inserted by the minimum-sections floor -- has only whatever the energy
-    // novelty happened to read at that index, which is not that boundary's
-    // strength in any sense. Handing those an arbitrary value is how a
-    // boundary with no drama in it was assigned the most violent transition
-    // in the game, and is most of why the effect felt random.
-    const peakSet = new Set(peaks);
-    const ssmStrengthByCut = new Map();
-    if (ssmKept && Array.isArray(structure?.boundaryStrengths)) {
-      for (let i = 0; i < chosen.length; i++) {
-        const cut = chosen[i];
-        const strength = clamp01(structure.boundaryStrengths[i] ?? 0);
-        if (strength > (ssmStrengthByCut.get(cut) ?? -Infinity)) ssmStrengthByCut.set(cut, strength);
-      }
-    }
-
-    this.sections = [];
-    const meanEnergies = [];
-    const shapes = []; // per-section mean 7-band spectral vector -- timbral fingerprint
-    const maxNovelty = Math.max(...novelty, 1e-9);
-    for (let i = 0; i < cuts.length - 1; i++) {
-      if (cuts[i + 1] <= cuts[i]) continue;
-      // Section's mean global energy (for casting) AND its mean per-band
-      // vector (its timbral shape, for form recognition -- see SongForm).
-      let e = 0, count = 0;
-      const shape = new Array(7).fill(0);
-      for (let b = cuts[i]; b < cuts[i + 1]; b++, count++) {
-        for (let k = 0; k < 7; k++) { e += vectors[b][k] / 7; shape[k] += vectors[b][k]; }
-      }
-      if (count > 0) for (let k = 0; k < 7; k++) shape[k] /= count;
-      meanEnergies.push(count > 0 ? e / count : 0);
-      shapes.push(shape);
-      this.sections.push({
-        startMs: barTimes[cuts[i]],
-        endMs: i === cuts.length - 2 ? durationMs : barTimes[cuts[i + 1]],
-        // Boundary sharpness picks the transition style into this section --
-        // but only where that sharpness is real. An unmeasured boundary
-        // fades: the gentlest option is the honest one when we do not
-        // actually know how hard the song turned.
-        transition: this.sections.length === 0
-          ? 'fade'
-          : (ssmStrengthByCut.has(cuts[i])
-            ? classifyTransition(ssmStrengthByCut.get(cuts[i]), 1)
-            : (peakSet.has(cuts[i]) ? classifyTransition(novelty[cuts[i]], maxNovelty) : 'fade')),
-        barMs: (barTimes[Math.min(barTimes.length - 1, cuts[i] + 1)] - barTimes[cuts[i]]) || 500,
-        // What this boundary's evidence actually is: 'detected' (SSM/harmonic
-        // read), 'inferred' (band-energy novelty peak), or 'decorative' (pure
-        // pacing padding, no signal behind it -- see _padWithDecorativeCuts).
-        // Downstream consumers must not treat a decorative cut as having
-        // found a new musical identity.
-        provenance: decorativeSet.has(cuts[i])
-          ? 'decorative'
-          : (ssmKept ? 'detected' : (peakSet.has(cuts[i]) ? 'inferred' : 'decorative')),
-      });
-    }
-    if (this.sections.length === 0) {
-      this.sections = [{ startMs: 0, endMs: durationMs, transition: 'fade', barMs: 500, provenance: 'decorative' }];
-      meanEnergies.push(0.5);
-      shapes.push(new Array(7).fill(1));
-    }
-
-    // Song-form recognition: which sections are the SAME music (SongForm).
-    // A returning chorus gets the same structural label as its earlier
-    // selves, so it can wear the same face instead of reading as new.
-    // Labels: the SSM's repetition pass finds material that literally recurs,
-    // which is what a returning chorus IS. analyzeSongForm's band-shape
-    // clustering is the fallback -- it can only ask whether two sections have
-    // a similar average spectrum.
-    //
-    // Matching them up used to require `structure.labels.length ===
-    // this.sections.length`, which is far more fragile than it looks: the
-    // section list is not a copy of the SSM's segment list. _cutsFromTimes
-    // drops any boundary that lands on the tail or fails to advance the index
-    // (two boundaries collapsing onto one point of a coarser grid), the loop
-    // above skips empty spans, and lyric fusion has yet to run. Any one of
-    // those makes the counts differ by one and throws away the ENTIRE
-    // repetition read -- the better half of the SSM, and the only thing in the
-    // pipeline that knows a returning chorus is literally the same music --
-    // falling back to band-shape clustering with no signal that it happened.
-    // Map each section back to its nearest SSM boundary instead, so a dropped
-    // or merged boundary costs one label rather than all of them.
-    const ssmLabels = ssmKept ? this._labelsFromSsm(structure) : null;
-    const labels = ssmLabels
-      || analyzeSongForm(this.sections.map((_, i) => ({ energy: meanEnergies[i], shape: shapes[i] })));
-
-    // Cast the show by structural LABEL, not per-section: every recurrence
-    // of a label shares a biome name (stock path), so the returning skyline
-    // is literally the same -- strips/landmarks bake per (songSeed, name).
-    const uniqueLabels = [...new Set(labels)]; // first-appearance order
-    const labelEnergy = uniqueLabels.map((lab) => {
-      let s = 0, n = 0;
-      labels.forEach((l, i) => { if (l === lab) { s += meanEnergies[i]; n++; } });
-      return n > 0 ? s / n : 0;
-    });
-    const labelCast = this.world?.cast
-      ? this.world.cast(labelEnergy, songSeed)
-      : castBiomes(labelEnergy, songSeed);
-    const biomeByLabel = new Map(uniqueLabels.map((lab, i) => [lab, labelCast[i]]));
-
-    // Each label also gets a deterministic color signature (a hue bias),
-    // so even in a single-biome dropped song the chorus recurs in the same
-    // hue-shift and the verse in another -- form made visible in ANY biome.
-    const hueByLabel = new Map(uniqueLabels.map((lab) => {
-      const r = mulberry32(hashSeed(`${songSeed}:form:${lab}`));
-      return [lab, (r() * 2 - 1) * FORM_HUE_BIAS_MAX];
-    }));
-
-    // Relative energy rank across THIS song's own labels (min-max, not an
-    // absolute threshold) -- so a quiet song's chorus still reads as its
-    // biggest, and a loud song's bridge still reads as a lull, regardless
-    // of the track's overall loudness.
-    const relEnergyValues = relEnergyLadder(labelEnergy);
-    const relEnergyByLabel = new Map(uniqueLabels.map((lab, i) => [lab, relEnergyValues[i]]));
-
-    // One shape recomposition per label (Stage 1 of the mountain overhaul):
-    // lithology from the label's own averaged spectrum, a landform-ladder
-    // window from spectral position + relative energy, and landmarks
-    // resampled from just that label's own first occurrence in the song
-    // (a representative instance) instead of the whole track. Alpine only --
-    // city/farside/etc. worlds keep their own single-variant look.
-    const labelShape = new Map(uniqueLabels.map((lab) => {
-      const idxs = [];
-      labels.forEach((l, i) => { if (l === lab) idxs.push(i); });
-      const shape = new Array(7).fill(0);
-      for (const i of idxs) for (let k = 0; k < 7; k++) shape[k] += shapes[i][k];
-      for (let k = 0; k < 7; k++) shape[k] /= Math.max(1, idxs.length);
-      return [lab, shape];
-    }));
-    const worldKindForVariants = this.world?.kind || 'alpine';
-    const buildVariant = worldKindForVariants === 'alpine' ? (lab) => {
-      const shape = labelShape.get(lab);
-      const rel = relEnergyByLabel.get(lab) ?? 0.5;
-      let wsum = 0, wtot = 0;
-      for (let k = 0; k < 7; k++) { wsum += shape[k] * k; wtot += shape[k]; }
-      const spectralPos01 = wtot > 1e-9 ? clamp01(wsum / (6 * wtot)) : 0.5;
-      const firstIdx = labels.indexOf(lab);
-      const window = firstIdx >= 0
-        ? { startMs: this.sections[firstIdx].startMs, endMs: this.sections[firstIdx].endMs }
-        : null;
-      const windowedPortrait = extractRidgePortrait(energyCurves, durationMs, window);
-      const litho = lithologyFromShares(shape);
-      if (windowedPortrait) windowedPortrait.lithology = litho;
-      return {
-        lithology: litho,
-        character: landformWindow(spectralPos01, rel),
-        portrait: windowedPortrait,
-        heightMul: lerp(SECTION_HEIGHT_MUL[0], SECTION_HEIGHT_MUL[1], rel),
-        relEnergy01: rel,
-        snowLine01: snowLine01For(litho.crest, rel),
-      };
-    } : null;
-    // Keyed by BIOME NAME, not label: biomeByLabel maps labels 1:1 to a
-    // cast biome in the common case, so a variant per name costs exactly
-    // what the cast already implies. On the rare tie (two labels casting
-    // the same biome), the first label to claim the name wins -- an
-    // acceptable, deterministic edge case rather than a second keying
-    // scheme threaded through every strip consumer.
-    this._profileVariants = buildVariant ? new Map() : null;
-    if (buildVariant) {
-      for (const lab of uniqueLabels) {
-        const name = biomeByLabel.get(lab);
-        if (!this._profileVariants.has(name)) this._profileVariants.set(name, buildVariant(lab));
-      }
-    }
-
-    const seenLabels = new Set();
-    this.sections.forEach((s, i) => {
-      s.label = labels[i];
-      s.profile = biomeByLabel.get(labels[i]);
-      s.hueBias = hueByLabel.get(labels[i]);
-      s.meanEnergy = meanEnergies[i];
-      s.shape = shapes[i];
-      s.relEnergy01 = relEnergyByLabel.get(labels[i]) ?? 0.5;
-      s.heightMul = this._profileVariants?.get(s.profile)?.heightMul
-        ?? lerp(SECTION_HEIGHT_MUL[0], SECTION_HEIGHT_MUL[1], s.relEnergy01);
-      s.snowLine01 = this._profileVariants?.get(s.profile)?.snowLine01 ?? 1;
-      // Recognition: re-entering a label seen earlier snaps back into the
-      // familiar place (a cut of recognition) rather than fading somewhere
-      // new. First occurrence keeps its novelty-derived transition.
-      if (i > 0 && seenLabels.has(labels[i])) s.transition = 'cut';
-      seenLabels.add(labels[i]);
-    });
-
-    // Lyric fusion (SectionFusion): when lyrics were found and resolved,
-    // fold their structural read (verse/chorus/bridge/instrumental/intro/
-    // outro + per-section valence/intensity) onto this novelty-derived
-    // schedule -- synced lyrics can insert/merge boundaries snapped to the
-    // beat grid, plain lyrics only add labels. Absent lyricSections is a
-    // true no-op (fuseSections returns the exact same array).
-    this.sections = fuseSections(this.sections, lyricSections, barGrid, durationMs);
-
-    // The conductor track has the last word (ConductorTrack.js). Everything
-    // above this line is INFERRED -- novelty cuts, form labels, lyric
-    // structure -- and every one of those reads can be wrong about a
-    // particular song. A cue is not a read: the player wrote it, so an
-    // authored boundary or biome overrides whatever was detected there.
-    // Absent cues is a true no-op (the same array reference comes back).
-    this.sections = applyConductorSchedule(this.sections, conductorSchedule, barGrid, durationMs);
-  }
-
-  _evenSplit(durationMs, n) {
-    const out = [];
-    for (let i = 0; i <= n; i++) out.push((i / n) * durationMs);
-    return out;
-  }
-
-  /** Boundary TIMES -> cut indices into this schedule's own `barTimes`, by
-   *  nearest point. This is the whole defence against the two sides
-   *  disagreeing about their analysis grid: whatever grid the detector ran on,
-   *  its answers land at the right moments in the song. Always closed with the
-   *  final index, which `boundariesMs` deliberately omits. */
-  _cutsFromTimes(boundariesMs, barTimes) {
-    const lastIdx = barTimes.length - 1;
-    const nearest = (ms) => {
-      let best = 0, bestD = Infinity;
-      for (let i = 0; i <= lastIdx; i++) {
-        const d = Math.abs(barTimes[i] - ms);
-        if (d < bestD) { bestD = d; best = i; }
-      }
-      return best;
-    };
-    const cuts = [];
-    for (const ms of boundariesMs) {
-      const i = nearest(ms);
-      if (i >= lastIdx) continue;              // would collapse against the tail
-      if (cuts.length && i <= cuts[cuts.length - 1]) continue; // keep it strictly rising
-      cuts.push(i);
-    }
-    if (cuts[0] !== 0) cuts.unshift(0);
-    cuts.push(lastIdx);
-    return cuts;
-  }
-
-  /**
-   * One structural label per built section, read off the SSM's repetition
-   * pass by nearest boundary.
-   *
-   * Nearest rather than containment: a section's startMs is `barTimes[cut]`,
-   * i.e. the SSM boundary already snapped to the nearest point of THIS
-   * schedule's grid (_cutsFromTimes), so it can land a few milliseconds
-   * either side of the boundary it came from. Containment would hand a
-   * section that rounded down the previous segment's label; nearest is the
-   * exact inverse of the snap that produced it, and reproduces the old 1:1
-   * mapping whenever the counts do line up.
-   *
-   * @returns {?number[]} null when the analyzer's own labels/boundaries are
-   *   missing or disagree with each other -- caller falls back to SongForm.
-   */
-  _labelsFromSsm(structure) {
-    const bounds = structure?.boundariesMs, labels = structure?.labels;
-    if (!Array.isArray(bounds) || !Array.isArray(labels) || !bounds.length
-      || bounds.length !== labels.length) return null;
-    return this.sections.map((s) => {
-      let best = 0, bestD = Infinity;
-      for (let k = 0; k < bounds.length; k++) {
-        const d = Math.abs(bounds[k] - s.startMs);
-        if (d < bestD) { bestD = d; best = k; }
-      }
-      return labels[best];
-    });
-  }
-
-  /**
-   * A minimum number of sections, for songs long enough to deserve them.
-   *
-   * MIN_SECTION_CUTS was previously only ever the lower bound of the clamp on
-   * `maxCuts` -- it guaranteed the section *budget* was at least 3, never that
-   * three cuts were actually made. Nothing anywhere counted the result, so a
-   * whole song could (and did) come out as a single biome: a heavily
-   * compressed master whose trailing-mean novelty barely moves clears the
-   * absolute 1e-6 test but nothing else, and every candidate gets rejected.
-   *
-   * So: count, and if the song is long enough to hold several sections but
-   * didn't get them, relax in order -- first re-pick with the noise floor
-   * dropped (the material is flat, but its *relative* peaks are still where
-   * the song actually turns), and only if that still fails, fall back to even
-   * time-splits. An even split is a poor read of the music, but it is a far
-   * better experience than four minutes of one unchanging world.
-   *
-   * @returns {{cuts: number[], source: ?string, decorative: number[]}}
-   *   `source` names what the returned cuts are made of when this
-   *   intervened, and is null when it left `cuts` alone. `decorative` lists
-   *   the cuts (by index into `barTimes`) that carry no boundary evidence --
-   *   pure pacing padding, as opposed to a real detected or inferred
-   *   boundary -- so callers must not treat them as a new musical identity.
-   *
-   *   A confident SSM read (`ssmUsable`) is never replaced wholesale: it may
-   *   only be padded with decorative cuts to reach the floor, since a
-   *   pacing preference discarding real musical evidence was the bug this
-   *   guards against (see the caller). Everything else may still be
-   *   replaced outright, as before.
-   */
-  _ensureMinimumSections(cuts, { pickPeaks, barTimes, durationMs, lastIdx }, ssmUsable) {
-    const deserved = Math.min(MIN_SECTION_CUTS, Math.floor(durationMs / SECTION_CUT_BUDGET_MS));
-    if (deserved < 2 || cuts.length - 1 >= deserved) return { cuts, source: null, decorative: [] };
-
-    if (ssmUsable) {
-      const padded = this._padWithDecorativeCuts(cuts, deserved - (cuts.length - 1), lastIdx);
-      return padded.length
-        ? { cuts: [...new Set([...cuts, ...padded])].sort((a, b) => a - b), source: null, decorative: padded }
-        : { cuts, source: null, decorative: [] };
-    }
-
-    const relaxed = pickPeaks(0);
-    if (relaxed.length + 1 >= deserved) return { cuts: [0, ...relaxed, lastIdx], source: 'energy-novelty', decorative: [] };
-
-    // Nothing in the signal to go on: split the time evenly instead. Every
-    // one of these cuts is decorative -- an even split is not a read of the
-    // music at all.
-    const want = Math.max(deserved, relaxed.length + 1);
-    const even = [];
-    for (let k = 1; k < want; k++) {
-      const ms = (k / want) * durationMs;
-      let best = 0, bestD = Infinity;
-      for (let i = 1; i < lastIdx; i++) {
-        const d = Math.abs(barTimes[i] - ms);
-        if (d < bestD) { bestD = d; best = i; }
-      }
-      if (best > 0 && (even.length === 0 || best > even[even.length - 1])) even.push(best);
-    }
-    return even.length
-      ? { cuts: [0, ...even, lastIdx], source: 'even-split', decorative: even }
-      : { cuts, source: null, decorative: [] };
-  }
-
-  /** Split the `want` largest gaps between existing `cuts` in half, purely
-   *  for visual pacing -- these carry no boundary evidence of their own, so
-   *  the caller must mark them decorative rather than treat them as detected
-   *  or inferred structure. Never encroaches on an existing cut. */
-  _padWithDecorativeCuts(cuts, want, lastIdx) {
-    const out = [];
-    if (want <= 0) return out;
-    const gaps = [];
-    for (let i = 0; i < cuts.length - 1; i++) gaps.push([cuts[i], cuts[i + 1]]);
-    for (let n = 0; n < want; n++) {
-      gaps.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
-      const [lo, hi] = gaps[0];
-      const mid = lo + Math.round((hi - lo) / 2);
-      if (mid <= lo || mid >= hi) break; // gap too small to split further
-      out.push(mid);
-      gaps[0] = [lo, mid];
-      gaps.push([mid, hi]);
-    }
-    return out.filter((i) => i > 0 && i < lastIdx);
-  }
-
-  _sectionAt(nowMs) {
-    return sectionIndexAt(this.sections, nowMs);
-  }
-
-  _blend(nowMs) {
-    return blendSections(this.sections, nowMs);
-  }
-
-  /**
-   * Global presentation mode (classic SMW-flat vs rendered DKC-CGI).
-   * Rebuilds silhouette strips when shade mode changes.
-   */
-  setVisualStyle(style) {
-    const next = style === 'classic' ? 'classic' : 'rendered';
-    if (this.visualStyle === next) return;
-    this.visualStyle = next;
-    this._rebuildStrips();
-  }
-
-  _rebuildStrips() {
-    // One portrait per song: spectral mass + phrase-scale energy landmarks.
-    // Layers read different facets of it so the stack rhymes without cloning.
-    // Cheap (64 samples + a handful of landmarks) and cached on the manager
-    // so a shade-mode rebuild doesn't redo the analysis.
-    if (!this._ridgePortrait) {
-      this._ridgePortrait = extractRidgePortrait(this.energyCurves, this.durationMs);
-    }
-    this.strips = new Map();
-    for (const b of this.profiles) {
-      this.strips.set(b.name, this._buildStripSet(b));
-    }
-  }
-
-  /**
-   * A layer's musical time base, handed to generateSilhouette.
-   *
-   * `pxPerSec` is the rate this range actually travels past the viewer:
-   * the world's scroll speed through the layer's own parallax ratio. It is
-   * the missing constant that turns a strip from a decorated 2048 px tile
-   * into a stretch of TIME -- 2048 px of L2 is a minute and a half of
-   * scrolling, of L5 fourteen seconds, and a range laid out against that
-   * shows the song at the pace you travel it. Paired with the song's beat
-   * it also sets the grain of the weathering. Null beat (free time) is
-   * fine: placement still uses pxPerSec, only the pulse drops out.
-   */
-  _layerTimeline(layerKey) {
-    const ratio = LAYER_RATIOS[layerKey];
-    if (!(ratio > 0)) return null;
-    return { pxPerSec: WORLD_SPEED_PX_S * ratio, beatSec: this._beatSec ?? 0 };
-  }
-
-  /** Bake one profile's L2-L5 strip set. Extracted from _rebuildStrips so
-   *  stripsFor() can lazily build the same thing on a cache miss (a profile
-   *  name not eagerly baked -- see Stage 1's "only bake what's cast"). */
-  _buildStripSet(b) {
-    const songSeed = this.songSeed ?? 1;
-    const shadeMode = 'rendered';
-    if (!this._ridgePortrait) {
-      this._ridgePortrait = extractRidgePortrait(this.energyCurves, this.durationMs);
-    }
-    // Per-section recomposition (Stage 1): a profile cast for a specific
-    // structural label gets that label's own windowed portrait/lithology
-    // instead of the whole-song aggregate, so a chorus and a verse sharing
-    // a biome's color palette still get structurally different mountains.
-    const variant = this._profileVariants?.get(b.name) || null;
-    const portrait = variant?.portrait || this._ridgePortrait;
-    const worldKind = this.world?.kind || 'alpine';
-    const mat = materialFor(worldKind);
-    const seed = hashSeed(b.name);
-    const el = b.edgeLight || null;
-    const terrainMods = this.world?.terrainMods || null;
-    const songScheme = variant?.character || this.world?.characterScheme || CHARACTER_SCHEMES.classic;
-    const scheme = mat.scheme === 'song'
-      ? songScheme
-      : (mat.scheme && CHARACTER_SCHEMES[mat.scheme]) || songScheme;
-
-    const strips = {};
-    const keys = ['L2', 'L3', 'L4', 'L5'];
-    keys.forEach((layerKey, idx) => {
-      const bake = layerBake(worldKind, layerKey);
-      const character = Number.isInteger(bake.characterIndex)
-        ? scheme[bake.characterIndex] || scheme[0]
-        : 'massif';
-      const color = layerColor(b.silhouette, worldKind, layerKey);
-      const terrain = layerKey !== 'L5' ? this.terrainProfiles?.[layerKey] : null;
-      strips[layerKey] = generateSilhouette({
-        seed: seed + idx + 1,
-        height: bake.height,
-        octaves: bake.octaves,
-        amplitude: bake.amplitude,
-        baseline: bake.baseline,
-        color,
-        shadeMode,
-        profile: bake.profile,
-        character,
-        anchor: bake.anchor,
-        fillLift: mat.fillLift,
-        kind: worldKind,
-        colH: bake.colH,
-        archAmp: bake.archAmp,
-        bayPx: bake.bayPx,
-        colFrac: bake.colFrac,
-        organic: bake.organic,
-        softenScale: bake.soften,
-        portrait,
-        layerKey,
-        terrainMods: terrainModsForLayer(terrainMods, bake),
-        timeline: this._layerTimeline(layerKey),
-        edgeLight: el,
-        // One south-to-north pass. Where the view opens, and how fast it
-        // moves, is the song's (see _terrainScroll), not this width.
-        // The whole profile is on this strip, so the headroom fit is one
-        // scale for all of it, not a per-window stretch.
-        width: terrain ? TERRAIN_STRIP_WIDTH : undefined,
-        sourceHeights: terrain ? profileUnits(terrain) : null,
-        preserveScale: false,
-      });
-    });
-
-    // Landmarks are alpine/rolling dressing. Columns and skylines have their
-    // own members; hanging a pine on a nave bay is how the worlds collapsed.
-    if (worldKind === 'alpine' || worldKind === 'airless') {
-      const landmarkKey = b.landmarkKey || b.name;
-      decorateStrip(strips.L4, landmarkKey, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
-      decorateStrip(strips.L5, landmarkKey, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
-    }
-    return strips;
-  }
-
-  /** Lazy-bake indirection over this.strips: a profile name eagerly baked by
-   *  _rebuildStrips() is a plain lookup; a name not yet baked (Stage 1's
-   *  "only bake what's cast" -- a variant not chosen for any section) is
-   *  built on first use and cached, so every call site gets the same strip
-   *  set whether it was baked up front or on demand. */
-  stripsFor(key) {
-    let strips = this.strips.get(key);
-    if (strips) return strips;
-    const profile = this._profile(key);
-    strips = this._buildStripSet(profile);
-    this.strips.set(key, strips);
-    return strips;
-  }
-
-  _profile(name) {
-    return this.profiles.find((b) => b.name === name) || this.profiles[0] || BIOMES[0];
-  }
-
-  /**
-   * Register (or re-cast) a custom biome profile for the current song.
-   * Safe to call after construction; strips/fields must already exist for
-   * the profile name (constructor path always builds them when customBiome
-   * is passed in). Hot registration of a brand-new profile mid-song is not
-   * supported â€” drop a new MIDI to rebuild the world.
-   */
-  loadCustom(custom) {
-    if (!custom || !custom.name) return;
-    if (!this.profiles.some((b) => b.name === custom.name)) {
-      this.profiles.push(custom);
-    }
-    this.customBiome = custom;
-    if (this.sections && this.sections.length) {
-      for (const s of this.sections) s.profile = custom.name;
-      // Reset blend so the next draw lands fully on the custom world.
-      this.currentBlend = { from: custom.name, to: custom.name, t: 1 };
-      this._lastSectionIdx = null;
-    }
-  }
-
-  /** The Key of the World: hue-rotate a color by the current (quantized)
-   *  palette rotation. Quantizing to 3deg steps before rotating means the
-   *  same handful of rotated hex strings recur across many frames, so this
-   *  small cache actually hits instead of growing unbounded. */
-  _rotated(hex) {
-    // The One-Spectrum key shift (eased, landing the anchor on the tonic)
-    // and the song-form section signature compose into one hue offset --
-    // quantized together to 3deg steps so the cache stays hot.
-    const deg = Math.round((this._spectralShift() + (this.sectionHueBias || 0)) / 3) * 3;
-    if (deg === 0) return hex;
-    const key = hex + '|' + deg;
-    let v = this._rotationCache.get(key);
-    if (v === undefined) {
-      v = rotateHueHex(hex, deg);
-      this._rotationCache.set(key, v);
-    }
-    return v;
-  }
-
-  /** One Spectrum: how far the world's color should rotate so its anchor
-   *  hue lands on the song's key. Anchor = the active biome's halo hue
-   *  (identity-bearing). Eased in update() so a key change glides; the
-   *  target is zero when there's no detected tonic yet (the first beat of
-   *  a song) so the world never snaps on boot. */
-  _spectralShift() {
-    return this._specShift || 0;
-  }
-
-  /** Ease the One-Spectrum key shift toward its target: the active
-   *  biome's anchor hue must land on the song's tonic, at 30deg/semitone
-   *  (the characters' own spectral spacing). Same one-pole timescale as
-   *  the characters' hue glide (FORM_HUE_TAU_SEC class), so the world and
-   *  the characters move together and reduced-flash sees a glide, never
-   *  a snap. */
-  _updateSpectralShift(dtSec) {
-    const tonic = this.tonic;
-    let target = 0;
-    if (tonic != null && this.currentBlend) {
-      const { from, to, t } = this.currentBlend;
-      const active = this._profile(t > 0.5 ? to : from);
-      const anchorHex = (active && active.celestial && active.celestial.haloColor) || '#ffdca0';
-      const { r, g, b } = hexToRgb(anchorHex);
-      const { h } = rgbToHsl(r, g, b);
-      target = spectralShiftDeg(h, tonic) * (this.spectralAmount ?? 1);
-    }
-    this._specShiftTarget = target;
-    this._specShift = easeSpectralShift(this._specShift, target, dtSec);
-  }
-
-  /** The current blended halo color -- shared accent for HUD-level effects. */
-  currentHaloColor() {
-    if (!this.currentBlend) return '#ffffff';
-    const { from, to, t } = this.currentBlend;
-    return this._rotated(this.lerpCache.get(this._profile(from).celestial.haloColor, this._profile(to).celestial.haloColor, t));
-  }
-
-  /** 0..1 blended presence of a named biome `fx` right now -- the same
-   *  crossfade math the internal `A.fx === X ? 1-t : 0) + (B.fx === X ? t
-   *  : 0)` checks scattered through draw() use, exposed for callers outside
-   *  this file (e.g. Renderer's heat distortion, which needs to know how
-   *  "on fire" the current biome reads without duplicating the blend). */
-  currentFxAlpha(fxName) {
-    if (!this.currentBlend) return 0;
-    const { from, to, t } = this.currentBlend;
-    const A = this._profile(from), B = this._profile(to);
-    return (A.fx === fxName ? 1 - t : 0) + (B.fx === fxName ? t : 0);
-  }
-
-  /** Movement VII: the celestial body as an actual light -- position, color, intensity. */
-  currentLight() {
-    return this.light || computeLight({ canvasWidth: this.w, canvasHeight: this.h, budget: this._lightBudget ?? this.budget });
-  }
-
-  /** The current sky's base (horizon) tone -- used as a full-bleed backdrop
-   *  fill so zooming out past 1.0 never exposes blank canvas at the edges
-   *  of the (deliberately un-overscanned) parallax layers. */
-  /** The ACTIVE profile's own ambient particle kind ('snow', 'rain', ...) --
-   *  Simulation reads this so an inherently frozen biome ices the footing
-   *  even when the music-reactive weather layer is doing something else. */
-  currentParticleKind() {
-    if (!this.currentBlend) return null;
-    const { from, to, t } = this.currentBlend;
-    return this._profile(t > 0.5 ? to : from).particles.kind;
-  }
-
-  /** The current blended ambient-particle color -- lets a landing puff
-   *  (RippleFX) or any other one-off effect read as "of this biome"
-   *  without needing its own per-biome color table. */
-  currentParticleColor() {
-    if (!this.currentBlend) return '#ffffff';
-    const { from, to, t } = this.currentBlend;
-    return this._rotated(this.lerpCache.get(this._profile(from).particles.color, this._profile(to).particles.color, t));
-  }
-
-  currentSkyBase() {
-    if (!this.currentBlend) return '#141428';
-    const { from, to, t } = this.currentBlend;
-    return this._rotated(this.lerpCache.get(this._profile(from).sky[1], this._profile(to).sky[1], t));
-  }
-
-  /** Fires a reward meteor volley sized by both PerfGovernor headroom and
-   *  the song's staged intensity budget, colored from the current blended
-   *  halo (an achromatic biome like ARCTIC's near-white sun gets a
-   *  desaturated volley instead of an arbitrary hue). */
-  /** Conductor-cued phenomena (ConductorTrack.js). These reach past the
-   *  reward/storm gating the internal callers go through -- an authored cue
-   *  fires its volley or its bolt wherever it was written, including under a
-   *  clear sky -- but reuse the same FX objects and the same halo-derived
-   *  coloring, so a cued volley is indistinguishable from an earned one. */
-  cueMeteors(nowMs, strength = 1) {
-    this._triggerMeteors(nowMs, Math.max(2, Math.round(6 + 26 * strength)));
-  }
-
-  cueLightning(nowMs) {
-    this.lightning.strike(nowMs, this.w, this.groundY);
-  }
-
-  _triggerMeteors(nowMs, baseCount) {
-    const count = Math.max(2, Math.round(baseCount * this.particleMul * this.budget));
-    const { r, g, b } = hexToRgb(this.currentHaloColor());
-    const { h, s } = rgbToHsl(r, g, b);
-    const hue = s < ACHROMATIC_SAT_THRESHOLD ? -1 : h;
-    this.meteors.trigger(nowMs, count, hue);
-  }
-
-  update(nowMs, dtSec, energyCurves, calmLevel = 0, worldX = 0) {
-    this.tSec = nowMs / 1000;
-    this.calmLevel = calmLevel;
-    this._danceWorldX = worldX; // kept for farRidgeSwell01(), read by the sim
-    const {
-      from, to, t, fromHeightMul, toHeightMul, fromSnowLine01, toSnowLine01,
-    } = this._blend(nowMs);
-    this.currentBlend = {
-      from, to, t, fromHeightMul, toHeightMul, fromSnowLine01, toSnowLine01,
-    };
-    // One Spectrum: glide the key shift (needs the blend just resolved).
-    this._updateSpectralShift(dtSec);
-
-    // Dramaturgy: detect section boundaries and fire their transition FX.
-    const sectionIdx = this._sectionAt(nowMs);
-    this.cutFlashJustFired = false;
-    this.sectionJustChanged = false;
-    if (sectionIdx !== this._lastSectionIdx) {
-      const sec = this.sections[sectionIdx];
-      if (this._lastSectionIdx != null) {
-        if (sec.transition === 'cut') { this._cutFlash = 1; this.cutFlashJustFired = true; }
-        else if (sec.transition === 'shutter') {
-          // Through a real rate limiter. Boundaries are allowed to sit
-          // MIN_SECTION_CUT_GAP_MS (11s) apart, so before this two near-total
-          // blackouts eleven seconds apart were a permitted outcome -- and
-          // nothing else in the game punctuates that hard. The gate's floor
-          // cannot be bypassed (transition: true skips only the probability
-          // roll), which is exactly the guarantee wanted here.
-          const fired = this._shutterGate.tryFire(nowMs, { intensity: this.vibeEpic || 0, transition: true });
-          this.shutterDebug = { fired, reason: this._shutterGate.lastReason, atMs: nowMs };
-          if (fired) { this._shutterStartMs = nowMs; this._shutterBarMs = sec.barMs; }
-        }
-        // A lyric-identified instrumental/solo section gets the same
-        // spotlight snap a hype drop does -- the show notices the vocals
-        // stepping back just as much as it notices them stepping forward.
-        if (sec.kind === 'instrumental') this.lightRig.trigger(nowMs, this.midioX, this.midioY);
-        this.sectionJustChanged = true;
-        this.lastTransitionStyle = sec.transition;
-      }
-      this._lastSectionIdx = sectionIdx;
-    }
-    // The crossfade the boundary started (the decision above is the only
-    // thing that moves the target; this just walks toward it).
-    // Smooth the raw per-frame occlusion draw() measured. The ridge is
-    // dancing, so any single frame's figure is noisy; a ~1s one-pole means
-    // the number a boundary reads describes the FRAMING rather than whichever
-    // part of the swing the boundary happened to land on.
-    if (typeof this._ridgeOcclusionRaw === 'number') {
-      const k = 1 - Math.exp(-dtSec / 1.0);
-      this._ridgeOcclusion01 += (this._ridgeOcclusionRaw - this._ridgeOcclusion01) * k;
-    }
-    // Distant wave. `sectionJustChanged` is the ONE gate on the horizon
-    // changing its mind about being rock or water: asking per-frame would
-    // flip the back of the scene every time a tall column danced past the
-    // threshold, whereas this lands every swap on a musical boundary,
-    // alongside the transition FX that already cover it. Every other frame
-    // only walks the crossfade the last boundary started.
-    const wave = stepDistantWave(
-      { on: this._distantWaveOn, mix: this._distantWaveMix },
-      { occlusion01: this._ridgeOcclusion01, sectionChanged: this.sectionJustChanged, dtSec },
-    );
-    this._distantWaveOn = wave.on;
-    this._distantWaveMix = wave.mix;
-    this._cutFlash = Math.max(0, this._cutFlash - dtSec / 0.25);
-
-    // Song-form recognition: glide the whole palette toward the active
-    // section's structural signature hue, so a returning chorus settles
-    // back into the same shift it always wears (a recognizable "place")
-    // rather than snapping. Constant, steady color -- reduced-flash safe.
-    const activeSection = this.sections[sectionIdx];
-    let targetHueBias = activeSection?.hueBias || 0;
-    // The lyric-identified bridge is the one place asked to look
-    // unmistakably different from everything around it -- the "epic
-    // bridge" payoff. But "bridge" from position alone is only a weak
-    // hypothesis, and forcing the swing unconditionally is how a quiet or
-    // merely-uncertain bridge used to get the same escalation as a
-    // confidently, explicitly labeled one. Interpolate by kindConfidence
-    // instead: a confident bridge gets the full forced swing, an
-    // unconfident one keeps its own seeded bias, so a quiet bridge can
-    // still be represented as quiet.
-    if (activeSection?.kind === 'bridge') {
-      const forcedHueBias = Math.sign(targetHueBias || 1) * Math.max(Math.abs(targetHueBias), FORM_HUE_BIAS_MAX * 0.9) * 1.5;
-      const kindConf = clamp01(activeSection.kindConfidence ?? 0);
-      targetHueBias += (forcedHueBias - targetHueBias) * kindConf;
-    }
-    // The current "parallel universe"'s own small hue drift rides the same
-    // easing as the structural hue bias above -- one smooth glide, not two
-    // competing color systems.
-    targetHueBias += this.universeHueDeg || 0;
-    this.sectionHueBias += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetHueBias - this.sectionHueBias);
-
-    // Lyric structure (SectionFusion): the active section's kind and its
-    // eased lyric intensity, both neutral defaults (null / 0.4) when no
-    // lyric data was ever fused in.
-    this.currentKind = activeSection?.kind || null;
-    this.currentSectionText = activeSection?.lyricText || null;
-    const targetLyricIntensity = activeSection?.lyricIntensity ?? 0.4;
-    this.lyricIntensityEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetLyricIntensity - this.lyricIntensityEased);
-    const targetKindConfidence = activeSection?.kindConfidence ?? 0;
-    this.kindConfidenceEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetKindConfidence - this.kindConfidenceEased);
-    const targetKindBudgetMul = KIND_BUDGET_MUL[this.currentKind] ?? 1;
-    this._kindBudgetMulEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetKindBudgetMul - this._kindBudgetMulEased);
-
-    // Lyric-driven constellation glyphs: advance the synced-lyrics cursor
-    // and scan each newly-reached line through LyricLexicon. A match queues
-    // the glyph shape on the ConstellationWeaver (its own cooldown decides
-    // whether it actually fires), valid only until the line it came from
-    // stops being the active one -- the next line's own start time, or a
-    // fixed fallback for the last line in the song. Past that, the hint
-    // expires unfired rather than surfacing late: a forward seek that
-    // jumps the cursor across many lines in one burst (see the while loop
-    // below) would otherwise leave whichever line's hint happened to be
-    // scanned last sitting pending indefinitely, ready to pop up over
-    // whatever the player scrubbed to instead of the line that earned it.
-    if (this._syncedLyrics) {
-      while (this._lyricLineCursor < this._syncedLyrics.length
-        && this._syncedLyrics[this._lyricLineCursor].tMs <= nowMs) {
-        const line = this._syncedLyrics[this._lyricLineCursor];
-        const nextLine = this._syncedLyrics[this._lyricLineCursor + 1];
-        this._lyricLineCursor++;
-        const hit = scanLine(line.text);
-        if (hit) {
-          const deadlineMs = nextLine ? nextLine.tMs : line.tMs + LYRIC_GLYPH_FALLBACK_MS;
-          this.weaver.hintGlyph(hit.glyphId, deadlineMs);
-        }
-      }
-    }
-
-    // Intensity budget: stage the show -- restrained intro, full finale --
-    // additionally scaled by the lyric-structure kind (a chorus/bridge
-    // reads louder, an intro/outro settles), a no-op multiplier of 1 when
-    // there's no lyric data.
-    this._progress = this.durationMs > 0 ? clamp01(nowMs / this.durationMs) : 0.5;
-    // Staging (time) x lyric kind x whether the song has actually started
-    // (audio). The first two cannot hear the music; openingGain is what keeps
-    // a fade-in from opening on a fully-lit world.
-    // this._lightBudget is the undampened base: the celestial LIGHT itself
-    // (rim-lighting, contact shadows -- computed below into this.light) must
-    // never dim just because focus picked a subject other than 'sky', or
-    // the very subject focus is emphasizing (Midio mid-apotheosis, Midasus
-    // mid-voyage) would visibly dim along with everything else. focusMul
-    // folds into the PUBLIC this.budget instead -- every existing decorative
-    // budget-scaled site (the many ctx.globalAlpha = X * this.budget draws
-    // below, plus LightRig's own budget param) dampens for free whenever
-    // some other subject has focus, with no per-site changes needed.
-    this._lightBudget = intensityBudget(this._progress) * this._kindBudgetMulEased * this.openingGain;
-    this.budget = this._lightBudget * this.focusMul * this.stillnessMul;
-    const gain = this.budget * this.hypeBoost;
-    this.mandala.intensity = gain;
-    this.murmuration.intensity = gain;
-    this.cymatics.intensity = gain;
-    this.swarm.intensity = gain;
-    this.ribbon.intensity = gain;
-    this.rd.intensity = gain;
-
-    // Biome personality: the dominant biome tunes the phenomena dials.
-    const pers = PERSONALITY[t > 0.5 ? to : from] || {};
-    this.cymatics.modePool = pers.cymaticModes || null;
-    const [bandLo, bandHi] = pers.swarmBand || [0.18, 0.53];
-    this.swarm.setBand(bandLo, bandHi);
-    this.mandala.rateMul = pers.mandalaRate ?? 1;
-    this.rd.bias = pers.rdBias ?? 0;
-    this._ribbonScaleMul = pers.ribbonScale ?? 1;
-    // Quake dust and wildfire smoke: the air stays hazy/reddened for a
-    // while after either settles (QuakeDirector.dustLevel01,
-    // FireDirector.smokeLevel01, both pushed in each frame by Simulation)
-    // -- folded into the same haze multiplier every other dial already
-    // feeds, so this costs nothing new at draw time. Smoke pushes harder
-    // than dust (3x vs 2x) -- a wildfire should visibly choke the sky, not
-    // just tint it.
-    this._hazeMul = (pers.haze ?? 1) * (this.universeHazeMul || 1)
-      * (1 + 2 * clamp01(this.dustLevel01 || 0))
-      * (1 + 3 * clamp01(this.smokeLevel01 || 0));
-
-    // The Wind: one sample per frame, shared by every consumer below --
-    // never re-derived per particle. An active weather front gusts it up:
-    // rain and snow arrive WITH wind, not into still air.
-    this.atmosphere.turbulence = (pers.turbulence ?? 1) * (this.universeWindMul || 1) * (1 + 0.6 * this._activeWeatherIntensity);
-    const energyInstant = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS)) : 0;
-    this.atmosphere.update(dtSec, energyInstant);
-
-    // Groove for the dancing ranges: energy-driven, calmed sections settle,
-    // the current universe's terrain drift nudges the amplitude a little
-    // further either way.
-    const grooveTarget = energyInstant * (1 - 0.55 * calmLevel) * (this.universeTerrainMul || 1);
-    this._danceGroove += (1 - Math.exp(-dtSec / 0.55)) * (grooveTarget - this._danceGroove);
-    this._danceSustain += (1 - Math.exp(-dtSec / 1.1)) * (this._danceGroove - this._danceSustain);
-    const wind = this.atmosphere.at(worldX, this.h * 0.4);
-    this.wind = wind;
-
-    // Music-reactive weather: stand down (eased, not snapped) if the active
-    // biome's own particle signature already IS this kind -- STORM already
-    // rains, ARCTIC already snows, SAKURA already sheds petals, EMBER
-    // already lofts embers, so this layer would just double them up there.
-    const activeProfile = this._profile(t > 0.5 ? to : from);
-    const suppressTarget = activeProfile.particles.kind === this.weatherState.kind ? 0 : 1;
-    this._weatherSuppress += (1 - Math.exp(-dtSec / 1.0)) * (suppressTarget - this._weatherSuppress);
-    this._activeWeatherIntensity = this.weatherState.intensity * this._weatherSuppress;
-    // Rain (and any other ground-colliding particle) lands on the real
-    // terrain, not a hardcoded screen-fraction shelf. Screen x -> world x
-    // via the same origin Midio is drawn at, so a drop over a valley
-    // actually falls into it.
-    const originX = Number.isFinite(this.midioX) ? this.midioX : this.w * 0.5;
-    const groundYAt = this.groundField
-      ? (sx) => this.groundField.heightAt(worldX + (sx - originX))
-      : null;
-
-    if (this._activeWeatherIntensity > 0.01) {
-      const weatherField = this.weatherFields.get(this.weatherState.kind);
-      if (weatherField) weatherField.update(dtSec, this.tSec, energyCurves, nowMs, calmLevel, wind, groundYAt);
-    }
-
-    this.fields.get(from).update(dtSec, this.tSec, energyCurves, nowMs, calmLevel, wind, groundYAt);
-    if (to !== from) this.fields.get(to).update(dtSec, this.tSec, energyCurves, nowMs, calmLevel, wind, groundYAt);
-    this._updateShedPetals(dtSec, worldX, wind, this._profile(t > 0.5 ? to : from));
-    for (const bank of this._fogBanks) {
-      const period = this.w * 1.6;
-      bank.x = (((bank.x + wind.x * dtSec * 0.6) % period) + period) % period;
-    }
-
-    // Horizon EQ (follow-up item 2): fast attack so hits register, slow
-    // release so it breathes instead of flickering -- excited, never noisy.
-    for (let b = 0; b < BAND_COUNT; b++) {
-      const raw = energyCurves ? clamp01(energyCurves.sample(b, nowMs)) : 0;
-      const tau = raw > this._eqSmoothed[b] ? EQ_ATTACK_SEC : EQ_RELEASE_SEC;
-      this._eqSmoothed[b] += (1 - Math.exp(-dtSec / tau)) * (raw - this._eqSmoothed[b]);
-      this._massifEqSmoothed[b] = massifEqStep(this._massifEqSmoothed[b], raw, dtSec);
-    }
-
-    // Ocean weather (WaveField.js): overall low-band energy is the ONLY
-    // channel the music has into the spectral sea, and even that only ever
-    // shifts sea state, eased over ~10s -- a drop raises the sea state, it
-    // never makes a wave. The surface itself always obeys its own physics.
-    const targetSeaState = (this._eqSmoothed[0] + this._eqSmoothed[1] + this._eqSmoothed[2]) / 3;
-    const nextSeaState = easeSeaState(this._seaState, targetSeaState, dtSec, 10);
-    // Measured against the sea state the spectrum was BUILT at, not against
-    // last frame's -- see shouldRebuildSpectrum for why the difference is
-    // the whole behaviour.
-    if (shouldRebuildSpectrum(nextSeaState, this._spectrumSeaState)) {
-      this._waveComponents = buildWaveComponents(this._waveFieldSeed, windSpeedForSeaState(nextSeaState), 24);
-      this._spectrumSeaState = nextSeaState;
-    }
-    this._seaState = nextSeaState;
-
-    // Every one of these five is drawn only behind `phenomenaFull`, so once
-    // the ladder has shed that rung they were being simulated to produce
-    // nothing -- ~3.3% of frame CPU, spent on exactly the weak devices that
-    // shed in the first place. Stepping them is now gated on the same flag
-    // that decides whether anything will ever look at the result.
-    //
-    // Safe to freeze rather than tear down: nothing outside their own draw
-    // reads them (checked across every world draw path, not just this one),
-    // and the music events that still fire at them -- onBar, kick, onKick --
-    // all write bounded state (a counter, a scalar, one in-place droplet on
-    // an existing grid), so nothing queues up while they are stopped. They
-    // resume from where they left off, which for a diffusion field and two
-    // oscillator banks is a valid state rather than a stale one.
-    if (!this._perf || this._perf.phenomenaFull) {
-      this.mandala.update(nowMs, dtSec, energyCurves, calmLevel);
-      this.cymatics.update(nowMs, dtSec, energyCurves, calmLevel);
-      this.swarm.update(nowMs, dtSec, energyCurves, this._beatMs, calmLevel);
-      this.ribbon.update(nowMs, dtSec, energyCurves, calmLevel);
-      this.rd.update(nowMs, dtSec, energyCurves, calmLevel);
-    }
-    this.lightning.update(dtSec);
-    this.lightRig.update(nowMs, dtSec, this._beatMs, calmLevel, this.budget, this.fever || 0);
-    this.meteors.update(dtSec);
-    // Sky "fullness": a slow breathing pulse so the constellation weaver's
-    // concurrency cap loosens every now and then rather than sitting flat
-    // for the whole song, plus a hard bias toward dense over the last fifth
-    // of the track so the sky is visibly fuller as the song closes out.
-    const weaverPulse = 0.5 + 0.5 * Math.sin(this.tSec * 0.05);
-    const weaverFinale = smoothstep(0.8, 1, this._progress);
-    const weaverFullness = clamp01(weaverPulse * 0.5 + weaverFinale);
-    this.weaver.update(nowMs, dtSec, weaverFullness);
-    // Reduced flash keeps the slow tumble and drops the beat hitch.
-    const kickTau = this.reducedFlash ? -1 : nowMs - this._danceKickMs;
-    this.spaceRidge.update(nowMs, dtSec, this._eqSmoothed, this.calmLevel, kickTau);
-    // Drops send a heavy ring through the lake and snap every light-rig beam
-    // onto Midio for a moment -- edge-detected off the externally-set
-    // dropAtMs (same passthrough pattern as heatShimmer).
-    if (Number.isFinite(this.dropAtMs) && this.dropAtMs !== this._lastSeenDropAtMs) {
-      this._lastSeenDropAtMs = this.dropAtMs;
-      this.lakeRing.excite(22);
-      this.lightRig.trigger(nowMs, this.midioX, this.midioY);
-      this._triggerMeteors(nowMs, DROP_METEOR_BASE);
-      // A drop also throws a bonus tsunami wall across the ocean, if one
-      // hasn't rolled through recently.
-      if (nowMs - (this._lastDropTsunamiMs ?? -Infinity) >= 30000) {
-        this._lastDropTsunamiMs = nowMs;
-        this._tsunamis.push({ tMs: nowMs, dir: this._tsunamis.length % 2 === 0 ? 1 : -1 });
-      }
-    }
-    // Spilling over: the first time ANY active tsunami's height envelope
-    // crosses TSUNAMI_OVERTOP_SCALE, arm a flood over the near ground
-    // plane. The envelope itself (rise -> hold -> recede) lives in
-    // FloodDirector (src/sim/FloodDirector.js, owned by Simulation) --
-    // this only detects the trigger, since tsunami scheduling/state is
-    // BiomeManager's own domain. armFromTsunami() is itself guarded
-    // per-event, so a wall's crest sitting above the threshold across
-    // several frames only ever arms once.
-    const activeNow = this._activeTsunami(this.w || 1280);
-    if (activeNow && tsunamiHeightScale(nowMs - activeNow.ev.tMs) >= TSUNAMI_OVERTOP_SCALE) {
-      this.flood?.armFromTsunami(nowMs, activeNow.ev.tMs);
-    }
-    // Edge-triggered one-frame flag for the moment a wall's approach
-    // window actually begins (not the withdrawal lead-up) -- Simulation
-    // reads this to fire the same authored-cut treatment (FilmFinish.hit)
-    // the drop/apotheosis/finale already get.
-    this.tsunamiJustArrived = !!activeNow && !this._wasTsunamiActive;
-    this._wasTsunamiActive = !!activeNow;
-    // Combo milestones (streak 5/10/20) throw their own reward volley.
-    if (Number.isFinite(this.milestoneAtMs) && this.milestoneAtMs !== this._lastSeenMilestoneMs) {
-      this._lastSeenMilestoneMs = this.milestoneAtMs;
-      const idx = Math.max(0, Math.min(MILESTONE_METEOR_BASE.length - 1, this.milestoneIdx));
-      this._triggerMeteors(nowMs, MILESTONE_METEOR_BASE[idx]);
-    }
-    this.lakeRing.update(dtSec);
-    this.murmuration.update(nowMs, dtSec, energyCurves, calmLevel, wind);
-
-    if (this._scanlineActive) {
-      this._scanlineY += dtSec * this.h * 2.2;
-      if (this._scanlineY > this.h) this._scanlineActive = false;
-    }
-    this._pylonFlash = Math.max(0, this._pylonFlash - dtSec / 0.15);
-
-    this._glitchActiveMs -= dtSec * 1000;
-    this._glitchTimer -= dtSec;
-    if (this._glitchTimer <= 0) { this._glitchActiveMs = 60; this._glitchTimer = 2.5 + this._starSeed() * 3.5; }
-  }
-
-  draw(ctx, canvas, worldX, originX = 0, skyVoyage = null, particleMul = 1, perf = null, groundView = null) {
-    // Deeper PerfGovernor rungs (mobile performance round): the optional
-    // phenomena layer and the depth-haze layer count both read this for
-    // the rest of the frame, so it's stashed on `this` rather than threaded
-    // through every helper's signature.
-    this._perf = perf;
-    // _crestPoints is re-derived by _drawRidgeVolume, _drawCrest, and
-    // _drawConnectorHills for the same layer -- up to ~14x/frame across
-    // L2-L5 with a crossfade active. Everything within one frame that would
-    // make it recompute (strip identity, scrollX, layerKey, terrainEnergy)
-    // is captured in the cache key, so this is safe to clear once here and
-    // let every caller below share one derivation per unique input.
-    this._crestCache = new Map();
-    this._ridgeMusicCache = null;
-    const phenomenaFull = perf ? perf.phenomenaFull : true;
-    const {
-      from, to, t, fromHeightMul = 1, toHeightMul = 1, fromSnowLine01 = 1, toSnowLine01 = 1,
-    } = this.currentBlend
-      || { from: this.sections[0].profile, to: this.sections[0].profile, t: 1 };
-    const A = this._profile(from), B = this._profile(to);
-    this._drawHeightMul = { from: fromHeightMul, to: toHeightMul };
-    this._drawSnowLine = { from: fromSnowLine01, to: toSnowLine01 };
-
-    // Sunrise/moonrise cycle: which body is up, how high, and how dark the
-    // sky should read. Computed once per frame -- feeds the sky gradient,
-    // the celestial itself, the mandala/light-rig anchor, and the ocean's
-    // reflection glint, so everything tracks the same body.
-    const dn = dayNight(this.tSec * 1000, this._dayNightCycleMs);
-    const sunUp = dn.sunAlt > 0.001;
-    const activeAlt = sunUp ? dn.sunAlt : dn.moonAlt;
-    // Cast shadow (Stage 5 of the mountain overhaul): a near range can only
-    // physically shadow a farther one when light comes from roughly behind
-    // the camera -- low on the horizon, not overhead -- so strength is tied
-    // to how LOW the active body currently sits (activeAlt near 0 = near
-    // the horizon = longest shadows), not to any particular light direction.
-    this._castShadowStrength = (1 - clamp01(activeAlt)) * CAST_SHADOW_MAX;
-    const celestialYFrac = celestialYFracFor(activeAlt);
-    // ...and how far across the sky it has travelled. Whichever body is up
-    // owns the light, so the light's anchor follows that body's own arc --
-    // which is what makes shadows swing through the day instead of pointing
-    // one fixed direction from dawn to dusk.
-    const celestialXFrac = celestialXFracFor(sunUp ? dn.sunAz01 : dn.moonAz01);
-    // Aerial-perspective haze still warms/cools on the song's own progress
-    // arc (a separate, slower signal than the sunrise/moonrise cycle) --
-    // only `.hazeWarm` from the old day-arc survives here.
-    const arc = dayArc(this._progress);
-
-    // Movement VII: the celestial body doubles as a light -- every
-    // consumer downstream this frame (layers, characters, obstacles)
-    // reads the same `this.light` rather than re-deriving its position.
-    this.light = computeLight({
-      canvasWidth: canvas.width, canvasHeight: canvas.height,
-      celestialYFrac, celestialXFrac, haloColorHex: this.currentHaloColor(),
-      budget: this._lightBudget, unravel: this.unravel,
-      dayArcAlpha: dn.dawnAlpha + dn.duskAlpha,
-      reducedFlash: this.reducedFlash,
-    });
-
-    // The horizon color, and from it the air color every range body and the
-    // ground are washed toward. Computed HERE, above the world-kind dispatch
-    // below, rather than further down in the classic path -- seven of the
-    // eight kinds return before that point, so `_airColor` was simply never
-    // set for any of them and every consumer silently fell back.
-    const horizonPull = (0.62 * (dn.night || 0) + (styleDials(this.visualStyle).spaceWash ? 0.14 : 0)) * 0.45;
-    const skyHorizon = this._rotated(this.lerpCache.get(A.sky[2], B.sky[2], t));
-    const skyHorizonNight = horizonPull > 0.02
-      ? this.lerpCache.get(skyHorizon, NIGHT_SKY_COLOR, horizonPull)
-      : skyHorizon;
-    this._airColor = skyHorizonNight;
-
-    // Everything a world draw module gets for this frame, in one object.
-    // Positional argument lists let the two worlds that take no skyVoyage
-    // sit in the same call shape as the five that do; a property is either
-    // present or it is not.
-    const frame = {
-      ctx, canvas, worldX, originX, A, B, t, dn,
-      phenomenaFull, particleMul, groundView, skyVoyage,
-    };
-
-    // Dispatch on world kind. Registered kinds draw themselves and we are
-    // done; 'alpine' falls through to the original path below, and 'cathode'
-    // never arrives here at all (WebGLRenderer routes it to CathodeRenderer).
-    // What each module may touch on `this` is fixed by WORLD_CONTRACT and
-    // enforced by worldContract.test.js.
-    const drawWorldKind = WORLD_RENDERERS.get(this.world?.kind);
-    if (drawWorldKind) {
-      drawWorldKind(this, frame);
-      return;
-    }
-
-    this._drawSky(ctx, canvas, A, B, t, dn.night);
-
-    // Planets + astral artifacts, behind everything else in the heavens --
-    // purely atmospheric, first to go on the deepest perf rung.
-    if (phenomenaFull) this.skyEnsemble.draw(ctx, canvas, this.tSec * 1000, {
-      fromName: A.name, toName: B.name, t,
-      colors: {
-        skyMid: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
-        silhouette: this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)),
-        halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
-      },
-      tSec: this.tSec, groove: this._ridgeEnvelope()?.groove ?? this._danceGroove,
-      reducedFlash: this.reducedFlash,
-    });
-
-    // Space ridge: orbital jewelry â€” faint in Soft, present in Neon. Drawn
-    // here, before even the dawn/dusk wash, so it sits at the very back of
-    // the sky stack: the atmospheric tint washes over it like it would any
-    // other deep-space light, and the sun/moon (drawn further down, in
-    // ordinary source-over) properly occlude it rather than blooming on top
-    // of something that is supposed to read as unimaginably far behind them
-    // -- it used to draw AFTER both, so its additive glow sat in front of
-    // the moon disc itself, which is backwards for a structure whose entire
-    // point is "too large and far to be nearby." Its draw call was removed
-    // for a stretch while a still-live SkyVoyage station bug (see
-    // SkyVoyage.js trigger()) was misdiagnosed as this; restored once the
-    // real cause was found and fixed. Reinstated on explicit request after
-    // the sky read as too empty without it.
-    {
-      const spaceCol = this._rotated(rotateHueHex(
-        this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t), 45,
-      ));
-      const ridgeA = styleDials(this.visualStyle).spaceRidgeAlpha ?? 1;
-      if (ridgeA > 0.02) {
-        ctx.save();
-        ctx.globalAlpha = ridgeA * (phenomenaFull ? 1 : 0.4);
-        this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash);
-        ctx.restore();
-      }
-    }
-
-    // Dawn/dusk tint washes bracket the sun's own rise and set.
-    for (const wash of [{ color: '#ff9a6b', alpha: dn.dawnAlpha }, { color: '#141040', alpha: dn.duskAlpha }]) {
-      if (wash.alpha > 0.005) {
-        ctx.save();
-        ctx.globalAlpha = wash.alpha;
-        ctx.fillStyle = wash.color;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.restore();
-      }
-    }
-
-    // Hybrid sky wire: mandala / ribbon / weaver scale with skyWireAlpha
-    // (Soft ~0.38, Neon ~0.72) so geometry feels musical without striping.
-    const skyA = styleDials(this.visualStyle).skyWireAlpha ?? 1;
-    // Midasus's sky voyage and the ambient connect-the-dots constellations,
-    // drawn HERE -- before the sun/moon rather than after -- for the same
-    // reason the space ridge moved above: both are additive ('lighter')
-    // deep-sky content, and used to be drawn after the celestial bodies, so
-    // a figure's line or a crystallized star could sit glowing right on top
-    // of the moon's disc instead of behind it. The moon (drawn below, in
-    // ordinary source-over) now properly occludes whatever of these fell
-    // behind its disc, same as it always did for the plain star layer in
-    // _drawSky/_drawStarfield (also drawn before the celestial bodies).
-    this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
-    this.drawDeepSky(ctx, skyVoyage, canvas); // Midasus's sky voyage, when she's away -- behind the mountains below
-    // Ambient connect-the-dots + reward volleys read as starlight, so the
-    // night sky brightens them the same way it brightens the atlas stars.
-    // The Range's constellations were effectively washed out in daylight:
-    // styleDials pins skyWireAlpha to 0.38 and the Math.max(0.25,...) floor
-    // left them around alpha 0.09 by day. Raise the floor to 0.55 and boost
-    // daytime presence so the connect-the-dots figures actually read against
-    // a lit sky instead of only appearing at night.
-    const dayBoost = 1 + 0.85 * (1 - dn.night);
-    const nightAlphaMul = (1 + 1.2 * dn.night) * Math.max(0.55, skyA) * dayBoost;
-    // The weaver is far lighter than the rest of the phenomena layer -- it
-    // must NOT drop out with them (rung 5) or The Range's sky goes dark.
-    const constellationsOn = this._perf ? this._perf.constellationsEnabled : true;
-    if (constellationsOn && skyA > 0.02) this.weaver.draw(ctx, canvas, this.reducedFlash, nightAlphaMul);
-    if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
-
-    // The sun (this biome's celestial, crossfaded A->B as usual) while
-    // it's up; a plain pale moon takes over once it sets. Both fade in/out
-    // over their last stretch of altitude rather than popping at the
-    // horizon, and both rise from and set into the sea horizon.
-    if (sunUp) this._drawCelestial(ctx, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt), celestialXFrac);
-    if (dn.moonAlt > 0.001) {
-      // Where the sun really is -- below the horizon all night, which is the
-      // whole point: it's what makes the moon read as lit from underneath.
-      const sun = sunScreenFrac(cyclePhase01(this.tSec * 1000, this._dayNightCycleMs));
-      this._drawMoon(
-        ctx, canvas, celestialYFracFor(dn.moonAlt), horizonFade(dn.moonAlt),
-        0.22 * this.spaceRidge.tidalOffsetPx(canvas.height),
-        celestialXFracFor(dn.moonAz01),
-        sun.xFrac, sun.yFrac, this._moonPhase01(),
-      );
-    }
-    // Spirograph resonance mandala, centered on the celestial body so it
-    // reads as the sun/moon itself resonating with the track.
-    const mandalaColor = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-    // Both are pure background phenomena (a ~700-point spirograph path and a
-    // ~420-point attractor trail redrawn every frame) -- real atmosphere but
-    // never gameplay, so they shed at the same rung as the rest of the
-    // optional phenomena layer below rather than paying full cost regardless
-    // of perf level.
-    if (phenomenaFull && skyA > 0.02) {
-      const prevM = this.mandala.intensity;
-      this.mandala.intensity = prevM * skyA;
-      this.mandala.draw(ctx, canvas.width * celestialXFrac, canvas.height * celestialYFrac, canvas.height * 0.30 * this.mandalaScaleMul, mandalaColor);
-      this.mandala.intensity = prevM;
-    }
-    // Phenomena layer, deep sky: cymatic dust settling into Chladni
-    // figures, and the chaos ribbon opposite the celestial for balance.
-    if (phenomenaFull) this.cymatics.draw(ctx, canvas, mandalaColor);
-    if (phenomenaFull) {
-      const ribbonA = Math.max(0.18, skyA);
-      const prevR = this.ribbon.intensity;
-      this.ribbon.intensity = prevR * ribbonA;
-      this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075 * (this._ribbonScaleMul || 1), mandalaColor);
-      this.ribbon.intensity = prevR;
-    }
-    this._drawFarShore(ctx, canvas, worldX, A, B, t); // beyond the ocean, behind the water itself
-    this._drawFataMorgana(ctx, canvas, worldX, A, B, t); // the fata morgana, layered on top of the far shore at the same horizon
-    this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
-    this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
-    this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
-    this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
-
-    // Concert beams: anchored at the celestial, drawn before the mountain
-    // silhouettes so the ranges occlude their lower reach the same way
-    // Lightning's bolts do.
-    const cx = canvas.width * celestialXFrac, cy = canvas.height * celestialYFrac;
-    this.lightRig.draw(ctx, canvas, cx, cy, mandalaColor, particleMul, this.reducedFlash);
-
-    // The Unraveling: each layer's scroll ratio drifts apart from the rest
-    // as the world delaminates -- nearer layers race ahead more than far
-    // ones (the ratio itself is the depth proxy, so no separate table).
-    // Scanned L2 and L4 keep that depth, but the song chooses their station
-    // and their speed. L3 has no profile here, so it stays on worldX.
-    const scrollX0 = this._terrainScroll('L2', worldX);
-    const scrollX1 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L3, this.unravel);
-    const scrollX2 = this._terrainScroll('L4', worldX);
-    const scrollX3 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L5, this.unravel);
-    // A biome's silhouette is one fixed authored color; the sky behind it
-    // pulls toward near-black at night (see _drawSky's nightPull). On a
-    // palette that already runs dark, those two can converge and the ranges
-    // read as barely-there smears instead of silhouettes -- so pin the
-    // mountain tint to stay legible against the actual horizon color it's
-    // about to sit in front of, at the same pull the sky gradient just used.
-    const tint = ensureContrast(this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)), skyHorizonNight, 0.14);
-    // Aerial perspective. Every range used to be painted in this ONE tint,
-    // which is the single biggest reason the four layers read as the same
-    // mountain repeated four times: depth was carried entirely by the haze
-    // washes drawn BETWEEN them, and nothing about the ranges themselves
-    // said "this one is further away."
-    //
-    // Real distance desaturates a silhouette toward the color of the air
-    // in front of it, so each layer's own fill is pulled toward the sky
-    // horizon by its depth fraction: L5 (nearest) keeps the authored
-    // silhouette color outright, L2 (furthest) sits nearly half way to the
-    // sky. Cheap -- four cached hex lerps per frame -- and it stacks with
-    // the existing haze rather than replacing it.
-    const layerTint = (layerKey) => {
-      const pull = AERIAL_PULL[layerKey] || 0;
-      return pull > 0.001 ? this.lerpCache.get(tint, skyHorizonNight, pull) : tint;
-    };
-    const tintL2 = layerTint('L2'), tintL3 = layerTint('L3');
-    const tintL4 = layerTint('L4'), tintL5 = layerTint('L5');
-    // Depth haze: three wash layers (L2/L3/L4) at healthy perf; the deepest
-    // rung collapses to just L3, the middle layer -- enough of an
-    // atmosphere cue to not read as flat, at a third of the cost.
-    const hazeLayers = this._perf ? this._perf.hazeLayers : 3;
-
-    // Behind every range: the swell that takes over the horizon when the
-    // view angle has buried the dancing ridge. Also where L2's occlusion is
-    // measured for the next section boundary's decision, so this has to run
-    // whether or not the wave is currently up.
-    // A profile switch at the crossfade midpoint swaps the whole silhouette
-    // in one frame. It measures zero on a custom-biome song, where every
-    // section casts to the same biome and there is nothing to switch to --
-    // but castBiomes gives a stock world a different biome per structural
-    // label, and there the swap is a different mountain range appearing
-    // instantly. Dissolve between them instead.
-    if (A.name === B.name || t <= 0 || t >= 1) {
-      this._drawDistantWave(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t);
-    } else {
-      this._drawDistantWave(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, A, t, 1 - t);
-      this._drawDistantWave(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, B, B, t, t);
-    }
-    this._drawLayer(ctx, canvas, 'L2', scrollX0, tintL2, t, A, B);
-    if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
-    // Far-distance vignettes: between the farthest range and everything
-    // nearer, so the L3/L4/L5 ridges partially occlude them -- genuinely
-    // "witnessed in the far distance", not sprites pasted on the sky.
-    if (phenomenaFull) this.farVignettes.draw(ctx, canvas, worldX, {
-      tSec: this.tSec,
-      kick: planeKick(this.tSec * 1000, this._danceKickMs, 'vignette', this._danceKickAmp),
-      silhouette: tintL2, // they sit at L2's depth, so they wear L2's air
-      sky: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
-      halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
-    });
-    this._drawLayer(ctx, canvas, 'L3', scrollX1, tintL3, t, A, B);
-    this._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
-    this._drawCastShadow(ctx, canvas, 'L2', 'L3', scrollX0, scrollX1, A, B, t);
-
-    // Ambient particle field lives roughly at mid-depth. The Unraveling:
-    // particle hues converge toward the biome's own halo color as the
-    // ending arc progresses.
-    // Particle counts are fixed at construction and never saw the intensity
-    // budget, so a fading-in song still opened on a fully-populated frame.
-    // Fading the whole field is cheaper and less jarring than culling
-    // individual particles, which would pop as the gain rose.
-    const openA = this.openingGain;
-    // Same secondary-light assembly characters use (Renderer.js), gated on
-    // the same rim-light rung -- particles are the largest draw-call
-    // population in the frame and must pay nothing on the deep rungs.
-    const rimOn = this._perf ? this._perf.rimLightEnabled : true;
-    const particleLights = rimOn
-      ? [
-        this.light,
-        ...groundGlowLights(
-          this.groundField ? this.groundField.activeGlowScreenLights(worldX, originX) : [],
-          mandalaColor,
-        ),
-      ].filter(Boolean)
-      : null;
-    ctx.save();
-    // Set unconditionally, not just when the gain is below 1: ParticleField
-    // now scales through the alpha it arrives with, so an unset alpha here
-    // would hand it whatever an earlier sky draw happened to leave behind.
-    ctx.globalAlpha = openA;
-    this.fields.get(from).draw(ctx, particleMul, mandalaColor, this.unravel, particleLights);
-    ctx.restore();
-    if (to !== from && t > 0.02) {
-      ctx.save(); ctx.globalAlpha = t * openA;
-      this.fields.get(to).draw(ctx, particleMul, mandalaColor, this.unravel, particleLights);
-      ctx.restore();
-    }
-    // Music-reactive weather, same mid-depth as the ambient field above --
-    // density (and thus fever's boost) comes free from `particleMul`, hue
-    // convergence at the coda comes free from `this.unravel`.
-    if (this._activeWeatherIntensity > 0.01) {
-      const weatherField = this.weatherFields.get(this.weatherState.kind);
-      if (weatherField) {
-        ctx.save();
-        ctx.globalAlpha = openA;
-        weatherField.draw(ctx, this._activeWeatherIntensity * particleMul, mandalaColor, this.unravel, particleLights);
-        ctx.restore();
-      }
-    }
-
-    // The Kuramoto swarm shares this depth: synchronized flashing motes,
-    // with the murmuration wheeling among them. Same optional-phenomena rung
-    // as the murmuration it flies with -- 48 individually stroked arcs a
-    // frame, atmosphere rather than gameplay.
-    if (phenomenaFull) this.swarm.draw(ctx, canvas, mandalaColor);
-    if (phenomenaFull) this.murmuration.draw(ctx, this.tSec * 1000, mandalaColor, particleMul);
-    this._drawFogBanks(ctx, canvas);
-
-    this._drawLayer(ctx, canvas, 'L4', scrollX2, tintL4, t, A, B);
-    if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L4', A, B, t, arc);
-    this._drawCastShadow(ctx, canvas, 'L3', 'L4', scrollX1, scrollX2, A, B, t);
-    // Green country bridging the sightline wherever the dancing far skyline
-    // has ducked behind the hills in front of it. Between L4 and L5 so the
-    // nearest hills still overlap it and it reads as depth rather than as a
-    // pane laid over the scene.
-    this._drawConnectorHills(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t);
-    this._drawLayer(ctx, canvas, 'L5', scrollX3, tintL5, t, A, B);
-    this._drawCastShadow(ctx, canvas, 'L4', 'L5', scrollX2, scrollX3, A, B, t);
-
-    // Ground view: switch to the fixed, never-zoomed transform for the
-    // ground and everything painted from here on (see Renderer.draw's
-    // groundView comment for the full reasoning). Everything above this
-    // point -- sky, massif, L2-L5 -- stays on the zoomed transform that was
-    // already active when draw() was called, which is exactly what makes a
-    // camera pull-back read as "more sky and mountain becomes visible
-    // above a ground that never moves" instead of "everything, ground
-    // included, shrinks in place." No-ops (keeps the caller's transform)
-    // when no groundView was handed in -- tests and any caller that hasn't
-    // opted in still get the old, single-transform behavior.
-    const groundCanvas = groundView ? groundView.stage : canvas;
-    if (groundView) groundView.apply();
-    this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
-    // Light contact seam only â€” keep ranges readable (heavy mist/AO massacred them).
-    this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
-    this._drawFlood(ctx, groundCanvas);
-    // In FRONT of the ground: as the camera pulls back, the near water comes
-    // into frame and the strip they run along turns out to be an isthmus.
-    this._drawForegroundSwell(ctx, groundCanvas, worldX, A, B, t);
-    this._drawTransitionOverlays(ctx, groundCanvas, B);
-  }
-
-  /**
-   * The near shore, revealed by pulling the camera back.
-   *
-   * At normal framing the trio run along a strip of ground with mountains
-   * behind it, and that ground could be a continent. A wide shot has room
-   * below the ground line to answer the question, so this fills it: sea on
-   * the NEAR side too, which makes the strip an isthmus.
-   *
-   * Same swell mathematics as the distant wave at the horizon (see
-   * DistantWave.js) with perspective applied -- longer wavelengths, larger
-   * amplitude, faster apparent travel. Matching the form while scaling those
-   * three is what makes the two read as one ocean seen at two distances
-   * rather than as two unrelated effects.
-   */
-  _drawForegroundSwell(ctx, canvas, worldX, A, B, t) {
-    const reveal = isthmusReveal01(this.pullback01 || 0);
-    if (reveal <= 0.002) return;
-    if (this._perf && !this._perf.heavyPostFx) return;
-
-    // Anchored below the walking ground, so it never rises over the strip
-    // they are actually standing on -- this is the water BEYOND the near
-    // edge of the land, not a flood.
-    const groundY = this._zoomedGroundY(canvas);
-    // Sits in the upper part of the near-ground band. Deeper than this and
-    // the shore is behind the transport bar, which is where the first
-    // attempt put it -- present in a pixel diff, and cropped out of the shot.
-    const baselineY = groundY + FG_SWELL_DROP_PX + (canvas.height - groundY) * 0.12;
-    if (baselineY > canvas.height + FG_SWELL_AMP_PX * 4) return;
-
-    const profile = t > 0.5 ? B : A;
-    const energy = clamp01(profile.terrainEnergy ?? 1);
-    // The nearest parallax in the scene: this water is at the viewer's feet,
-    // so it travels with the ground rather than with any far layer, or it
-    // reads as painted on the lens.
-    const pts = foregroundSwellCrest({
-      width: canvas.width, baselineY, ampPx: FG_SWELL_AMP_PX,
-      tSec: this.tSec, scrollX: worldX, stepPx: CREST_STEP_PX, energy01: energy,
-    });
-    if (pts.length < 2) return;
-
-    // Water reads as sky reflected: the same air color the ranges and the
-    // ground are washed toward, pulled toward the biome's own halo so the
-    // near sea belongs to this world. Darker than the distant swell -- near
-    // water is deeper, and it has to stay under the characters standing in
-    // front of it rather than competing with them.
-    // Water reflects the sky, so it takes the same air color the ranges and
-    // the ground are washed toward -- but DARKENED. The first attempt used
-    // that color at full lightness and read as a lit sandbar rather than as
-    // sea: near water is deep, and a body of water below a lit shore is the
-    // darker of the two, not the brighter. The floor keeps it from going to
-    // pure black on an already-dark palette.
-    const base = ensureMinLightness(
-      shiftLightness(
-        this.lerpCache.get(this._airColor || '#3a4a60', this._rotated(profile.celestial.haloColor), 0.16),
-        -FG_SWELL_DARKEN,
-      ),
-      0.08,
-    );
-    const { r, g, b } = hexToRgb(base);
-    // NOT scaled by this.budget the way the atmospheric passes are. The
-    // budget ramps from ~0.25 over a song's opening, and multiplying by it
-    // made this two grey levels deep -- present in a pixel diff, invisible to
-    // a viewer. This is not decoration: it is the answer to "what am I
-    // standing on", and the whole point is that a wide shot reveals it. It
-    // dims a little while the show is still coming up, and no further.
-    const alpha = FG_SWELL_ALPHA * reveal * (0.6 + 0.4 * clamp01(this.budget));
-    if (alpha < 0.01) return;
-
-    ctx.save();
-    const grad = ctx.createLinearGradient(0, baselineY - FG_SWELL_AMP_PX * 4, 0, canvas.height);
-    grad.addColorStop(0, `rgba(${r},${g},${b},${(alpha * 0.72).toFixed(3)})`);
-    grad.addColorStop(0.35, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
-    grad.addColorStop(1, `rgba(${r},${g},${b},${(alpha * 0.94).toFixed(3)})`);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.lineTo(pts[pts.length - 1].x, canvas.height);
-    ctx.lineTo(pts[0].x, canvas.height);
-    ctx.closePath();
-    ctx.fill();
-
-    // The shore line itself. Near water gets a crisper edge than the distant
-    // swell's soft glint -- acuity is a depth cue in its own right, and this
-    // is the closest thing in the frame.
-    if (!this.reducedFlash) {
-      ctx.globalAlpha = FG_SWELL_EDGE_ALPHA * reveal * (0.6 + 0.4 * clamp01(this.budget));
-      ctx.strokeStyle = this._rotated(profile.celestial.haloColor);
-      ctx.lineWidth = 2;
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  /** Subtle dark contact where ranges meet the walking ground -- follows the
-   *  ridge's own smooth top curve (same path _drawGround built) rather than
-   *  the flat physics reference, so the seam tracks the terrain instead of
-   *  floating over/under it whenever the EQ bars rise or fall. */
-  _drawTerrainFooting(ctx, canvas, worldX, originX, A, B, t) {
-    const activeFx = t > 0.5 ? B.fx : A.fx;
-    const isLake = activeFx === 'lakeReflection';
-    ctx.save();
-    if (this.groundField && !isLake) {
-      const bars = this.groundField.visibleBars(worldX, originX, canvas.width);
-      const strokePath = this._terrainTopPath(bars, canvas.height, false, canvas.width);
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      // Same facing sampler _drawGround's body/crest passes already use --
-      // this is the one sibling pass along the same ridge that stayed a
-      // flat wash. Omit the light (or rimLightEnabled) and every stop
-      // collapses back to `pass.alpha` unmodulated: byte-identical to today.
-      const rimOn = this._perf ? this._perf.rimLightEnabled : true;
-      const reliefSamples = (rimOn && this.light) ? sampleTerrainCurve(bars) : null;
-      const facing = reliefSamples ? curveFacing(reliefSamples, this.light) : null;
-      const hasFacing = facing && facing.some((f) => Math.abs(f) > 0.01);
-      for (const pass of TERRAIN_FOOTING_AO_PASSES) {
-        let stroke = `rgba(0,0,0,${pass.alpha})`;
-        if (hasFacing) {
-          const stops = facingColorStops(reliefSamples, facing, 0, canvas.width, 'footing', pass.alpha, FOOTING_FACING_K);
-          if (stops.length >= 2) {
-            const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
-            for (const s of stops) grad.addColorStop(s.offset, s.color);
-            stroke = grad;
-          }
-        }
-        ctx.strokeStyle = stroke;
-        ctx.lineWidth = pass.lw;
-        ctx.stroke(strokePath);
-      }
-    } else {
-      const gy = this.groundField ? this.groundField.heightAt(worldX) : this.groundY;
-      const ao = ctx.createLinearGradient(0, gy - 28, 0, gy + 8);
-      ao.addColorStop(0, 'rgba(0,0,0,0)');
-      ao.addColorStop(0.7, 'rgba(0,0,0,0.12)');
-      ao.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = ao;
-      ctx.fillRect(0, gy - 28, canvas.width, 36);
-    }
-    ctx.restore();
-  }
-
-  /** Temporary flood: rising water (a tsunami spilling over, or the ground
-   *  waterlogging under sustained rain -- see FloodDirector) across the
-   *  near ground plane, then receding -- drawn on top of the ground/
-   *  mountain layers (unlike the ocean plane itself, drawn far underneath
-   *  everything in this same draw() call) so it genuinely reads as
-   *  submerging the foreground where Midio walks.
-   *  Pure rendering only -- floodActive/floodLevel01 are computed in
-   *  FloodDirector (src/sim/FloodDirector.js), not here -- Simulation reads
-   *  flood.level01/active for wet-footing traction the same frame,
-   *  without depending on draw() having already run. */
-  _drawFlood(ctx, canvas) {
-    if (!this.flood?.active) return;
-    const level01 = this.flood.level01;
-    const FLOOD_RISE_PX = 46;
-    const levelY = this.groundY - FLOOD_RISE_PX * level01;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    const grad = ctx.createLinearGradient(0, levelY - 20, 0, canvas.height);
-    grad.addColorStop(0, `${OCEAN_WATER_BLUE}00`);
-    grad.addColorStop(0.3, `${OCEAN_WATER_BLUE}55`);
-    grad.addColorStop(1, `${OCEAN_WATER_BLUE}33`);
-    ctx.fillStyle = grad;
-    ctx.globalAlpha = capFlashAlpha(0.85 * level01, this.reducedFlash);
-    ctx.beginPath();
-    const N = 40;
-    for (let i = 0; i <= N; i++) {
-      const x = (i / N) * canvas.width;
-      const y = levelY + Math.sin(x * 0.02 + this.tSec * 2) * 3;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.lineTo(canvas.width, canvas.height);
-    ctx.lineTo(0, canvas.height);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
-
-  /** Aerial perspective: a translucent sky-colored wash after a mountain
-   *  layer, strongest behind the farthest range (L2) and none behind the
-   *  nearest (L5), so distance accumulates atmosphere the way it does in
-   *  the real world instead of every range reading as the same flat
-   *  cutout. Color pulls toward a warm dawn/dusk tone via the day arc;
-   *  the per-biome PERSONALITY.haze dial and calmLevel both scale it. */
-  _drawHaze(ctx, canvas, layerKey, A, B, t, arc) {
-    const styleHaze = styleDials(this.visualStyle).hazeMul || 1;
-    const hazeMul = (Number.isFinite(this._hazeMul) ? this._hazeMul : 1) * styleHaze;
-    const alpha = hazeAlpha(layerKey, hazeMul, this.calmLevel || 0);
-    if (!(alpha > HAZE_EPS) || !Number.isFinite(alpha)) return;
-    const skyTint = this.lerpCache.get(A.sky[2], B.sky[2], t);
-    const hazeColor = this._rotated(this.lerpCache.get(skyTint, HAZE_WARM_COLOR, hazeWarmMix(arc?.hazeWarm ?? 0)));
-    const { r, g, b } = hexToRgb(hazeColor);
-    if (![r, g, b].every(Number.isFinite)) return;
-    ctx.save();
-    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    grad.addColorStop(0, `rgba(${r},${g},${b},0)`);
-    grad.addColorStop(1, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    // Forward scatter: one additive radial fill centred on the celestial,
-    // so the air brightens toward the light instead of reading as a flat
-    // tint. Dies with the layer (hazeLayers already collapses L2/L4 at
-    // the deep rung) and is a hard skip when hazeScatter returns null.
-    const scatter = hazeScatter(layerKey, this.light, hazeMul, canvas.height);
-    if (scatter) {
-      ctx.globalCompositeOperation = 'lighter';
-      const halo = ctx.createRadialGradient(scatter.cx, scatter.cy, 0, scatter.cx, scatter.cy, scatter.radius);
-      halo.addColorStop(0, `rgba(${r},${g},${b},${scatter.alpha.toFixed(3)})`);
-      halo.addColorStop(1, `rgba(${r},${g},${b},0)`);
-      ctx.fillStyle = halo;
-      ctx.beginPath();
-      ctx.arc(scatter.cx, scatter.cy, scatter.radius, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  /** Midasus's deep-space excursion: drawn here (behind the mountain
-   * silhouettes drawn further down in draw()) so she genuinely reads as
-   * "way in the distance" rather than just smaller. Renders her fading
-   * constellations (completed figures frozen into the sky), the live
-   * persistent trail sky-writing the current figure, and a small mote of
-   * light at her current position. A no-op whenever she isn't away. */
-  _drawSignature(frame, music) {
-    WORLD_SIGNATURES.get(this.world?.kind)?.(this, frame, music);
-  }
-
-  drawDeepSky(ctx, voyage, canvas) {
-    if (!identityAllows(this.world, 'deepSky')) return;
-    if (!voyage) return;
-    const nowMs = this.tSec * 1000;
-    // Every position SkyVoyage stores (station, trail, constellations, the
-    // permanent atlas, novae, sparkles, micro-slashes) is baked as an
-    // ABSOLUTE pixel against Midasus's own stageW/stageH -- the nominal
-    // canvasWidth/Height Simulation was constructed with (see Midasus.js),
-    // which is NOT the same frame this draws into: Renderer pads the stage
-    // by SHAKE_MARGIN_PX on every side and widens it further under camera
-    // pull-back (CameraDirector.zoom), so the live canvas is routinely
-    // wider/taller than the nominal dims these points were computed
-    // against. Every other sky object in this file (stars, constellation
-    // weaver, dust lanes...) stores a FRACTION and rescales against the
-    // actual canvas at draw time for exactly this reason; SkyVoyage never
-    // did, so her whole sky-writing trail sat pinned to the nominal span
-    // while the live frame around it grew -- reading as drawn in the wrong
-    // part of the screen, and (since the terrain silhouette below IS
-    // rescaled to the live canvas every frame) landing in front of terrain
-    // it should have been safely behind. This.w/this.h are the same
-    // canvasWidth/canvasHeight Midasus was constructed with, so they're the
-    // correct reference frame to rescale against.
-    const sx = canvas.width / this.w, sy = canvas.height / this.h;
-    const X = (x) => x * sx, Y = (y) => y * sy;
-
-    // The Star Atlas draws whether or not she's away: every crystallized
-    // constellation stays in the sky for the rest of the song, twinkling
-    // per-star and glinting with the beat (atlasPulse rides hype.slam).
-    if (voyage.atlas.length) {
-      const pulse = voyage.atlasPulse || 0;
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      for (const entry of voyage.atlas) {
-        // Short neighbor edges only â€” full polyline over sparse stars made
-        // the "random straight line" sky triangles.
-        ctx.strokeStyle = `hsla(${entry.hue}, 35%, 82%, ${0.09 * (1 + 1.2 * pulse)})`;
-        ctx.lineWidth = 0.8;
-        ctx.lineCap = 'round';
-        const ATLAS_EDGE = 20;
-        for (let i = 1; i < entry.stars.length; i++) {
-          const a = entry.stars[i - 1], b = entry.stars[i];
-          const dx = b.x - a.x, dy = b.y - a.y;
-          if (dx * dx + dy * dy > ATLAS_EDGE * ATLAS_EDGE) continue;
-          ctx.beginPath();
-          ctx.moveTo(X(a.x), Y(a.y));
-          ctx.lineTo(X(b.x), Y(b.y));
-          ctx.stroke();
-        }
-        for (const s of entry.stars) {
-          const twinkle = 0.5 + 0.5 * Math.sin(nowMs * 0.0013 + s.phase);
-          ctx.fillStyle = `hsla(${entry.hue}, 45%, 88%, ${(0.16 + 0.16 * twinkle) * (1 + 1.6 * pulse)})`;
-          ctx.beginPath();
-          ctx.arc(X(s.x), Y(s.y), 1.1 + 0.5 * twinkle, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      ctx.restore();
-    }
-
-    // The finale's supernova cascade: each detonating atlas star throws an
-    // expanding ring, a hot core, and a five-ray flare. Drawn whether or
-    // not she's away -- she's home watching her own myths go up.
-    if (voyage.novae.length) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      for (const n of voyage.novae) {
-        const age = nowMs - n.bornMs - n.delayMs;
-        if (age < 0) continue; // still waiting on its popcorn delay
-        const u = Math.min(1, age / 1100);
-        const easeOut = 1 - (1 - u) ** 3;
-        const fade = 1 - u;
-        const nx = X(n.x), ny = Y(n.y);
-
-        ctx.strokeStyle = `hsla(${n.hue}, 70%, 85%, ${capFlashAlpha(0.7 * fade, this.reducedFlash)})`;
-        ctx.lineWidth = 0.5 + 2 * fade;
-        ctx.beginPath();
-        ctx.arc(nx, ny, 4 + 62 * easeOut, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.fillStyle = `hsla(${n.hue}, 30%, 96%, ${capFlashAlpha(fade, this.reducedFlash)})`;
-        ctx.beginPath();
-        ctx.arc(nx, ny, 1 + 3 * fade, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.strokeStyle = `hsla(${n.hue}, 60%, 90%, ${capFlashAlpha(0.5 * fade, this.reducedFlash)})`;
-        ctx.lineWidth = 1;
-        for (let k = 0; k < 5; k++) {
-          const ang = n.phase + (k / 5) * Math.PI * 2;
-          const len = 10 + 42 * easeOut;
-          ctx.beginPath();
-          ctx.moveTo(nx + Math.cos(ang) * 5, ny + Math.sin(ang) * 5);
-          ctx.lineTo(nx + Math.cos(ang) * len, ny + Math.sin(ang) * len);
-          ctx.stroke();
-        }
-      }
-      ctx.restore();
-    }
-
-    if (voyage.depth <= 0.02) return;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-
-    // Frozen figures: short curve segments only (skip long chords that
-    // used to read as random straight lines across the sky).
-    const CONST_EDGE_MAX = 22;
-    for (const c of voyage.constellations) {
-      const life = constellationLife01(c.bornMs, nowMs);
-      if (life <= 0) continue;
-      ctx.strokeStyle = `hsla(${c.hue}, 60%, 80%, ${0.45 * life})`;
-      ctx.lineWidth = 1.3;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      for (let i = 1; i < c.points.length; i++) {
-        const a = c.points[i - 1], b = c.points[i];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        if (dx * dx + dy * dy > CONST_EDGE_MAX * CONST_EDGE_MAX) continue;
-        ctx.beginPath();
-        ctx.moveTo(X(a.x), Y(a.y));
-        ctx.lineTo(X(b.x), Y(b.y));
-        ctx.stroke();
-      }
-      ctx.fillStyle = `hsla(${c.hue}, 75%, 90%, ${0.9 * life})`;
-      for (const p of c.points) {
-        ctx.beginPath();
-        ctx.arc(X(p.x), Y(p.y), 2.4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    // Atlas crystal edges: only short links (same rule â€” no sky triangles).
-    // (Full atlas stroke is drawn above; keep stars, drop long polylines.)
-
-    // Persistent trail: a soft wide glow pass underneath a bright thin
-    // core. Skip gap / teleport chords so a phase jump never paints a
-    // straight line across the figure.
-    const trail = voyage.trail;
-    const GAP = 28;
-    for (let i = 1; i < trail.length; i++) {
-      const a = trail[i - 1], b = trail[i];
-      if (b.gap) continue;
-      const dx = b.x - a.x, dy = b.y - a.y;
-      if (dx * dx + dy * dy > GAP * GAP) continue;
-      const u = i / trail.length; // older points fade toward transparent
-      const ax = X(a.x), ay = Y(a.y), bx = X(b.x), by = Y(b.y);
-      ctx.strokeStyle = `hsla(${b.hue}, 65%, 78%, ${0.22 * u})`;
-      ctx.lineWidth = 6;
-      ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-      ctx.strokeStyle = `hsla(${b.hue}, 75%, 88%, ${0.85 * u})`;
-      ctx.lineWidth = 1.6;
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-    }
-
-    // Kick sparkles: radial bursts flung off her on every beat out there.
-    for (const s of voyage.sparkles) {
-      const life = 1 - s.age / 0.6;
-      if (life <= 0) continue;
-      ctx.fillStyle = `hsla(${s.hue}, 80%, 88%, ${0.85 * life})`;
-      ctx.fillRect(X(s.x) - 1, Y(s.y) - 1, 2.2, 2.2);
-    }
-
-    // Micro-slashes: each melody onset cuts a brief bright line at her
-    // deep-sky position -- her note-slash vocabulary, miniaturized.
-    ctx.lineCap = 'round';
-    for (const s of voyage.microSlashes) {
-      const u = s.age / 0.25;
-      if (u >= 1) continue;
-      const ext = 8 + 14 * u;
-      const sx2 = X(s.x), sy2 = Y(s.y);
-      ctx.strokeStyle = `hsla(${s.hue}, 75%, 85%, ${0.9 * (1 - u)})`;
-      ctx.lineWidth = 1.6 * (1 - u * 0.5);
-      ctx.beginPath();
-      ctx.moveTo(sx2 - Math.cos(s.ang) * ext, sy2 - Math.sin(s.ang) * ext);
-      ctx.lineTo(sx2 + Math.cos(s.ang) * ext, sy2 + Math.sin(s.ang) * ext);
-      ctx.stroke();
-    }
-
-    // Her current position: a small glowing comet-head, but ONLY once she's
-    // genuinely deep-sky -- WINDUP/ASCENT/REENTRY now render her real mesh
-    // in the character layer (see Midasus.draw()), so drawing this dot
-    // during those phases would double her up.
-    if (voyage.phase === VoyagePhase.DEEP_SPACE) {
-      const r = 2 + 3 * (1 - voyage.depth);
-      const px = X(voyage.p.x), py = Y(voyage.p.y);
-      ctx.fillStyle = `hsla(${voyage.hue}, 60%, 85%, ${0.28 * voyage.depth})`;
-      ctx.beginPath();
-      ctx.arc(px, py, r * 3.4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = `hsla(${voyage.hue}, 80%, 92%, ${0.6 + 0.4 * voyage.depth})`;
-      ctx.beginPath();
-      ctx.arc(px, py, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.restore();
-  }
-
-  /** Cut flash + shutter wipe, fired by the Dramaturgy Director. */
-  _drawTransitionOverlays(ctx, canvas, B) {
-    const nowMs = this.tSec * 1000;
-    const u = (nowMs - this._shutterStartMs) / this._shutterBarMs;
-    if (u >= 0 && u <= 1) {
-      // Vertical shutter columns closing then reopening over one bar,
-      // phase-staggered so the wipe ripples instead of slamming.
-      //
-      // Coverage is capped well short of meeting in the middle. At 0.5 per
-      // half these columns closed the frame to solid black for about a
-      // second -- the screen biting shut. It should read as the world
-      // narrowing on a moment, not as the picture being taken away.
-      //
-      // Reduced-flash halves it again. This is the largest, highest-contrast
-      // event in the game and it was the one thing in this file ignoring the
-      // accessibility cap entirely.
-      const cover = this.reducedFlash ? SHUTTER_MAX_COVER * 0.5 : SHUTTER_MAX_COVER;
-      ctx.save();
-      ctx.fillStyle = B.silhouette;
-      const cols = 14;
-      const colW = canvas.width / cols;
-      for (let i = 0; i < cols; i++) {
-        const stagger = 0.8 + 0.2 * Math.sin(i * 1.7);
-        const h = canvas.height * cover * Math.sin(Math.PI * Math.min(1, u * 1.05)) * stagger;
-        ctx.fillRect(i * colW, 0, colW + 1, h);
-        ctx.fillRect(i * colW, canvas.height - h, colW + 1, h);
-      }
-      ctx.restore();
-    }
-    if (this._cutFlash > 0.01) {
-      ctx.save();
-      ctx.globalAlpha = capFlashAlpha(0.35 * this._cutFlash, this.reducedFlash);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.restore();
-    }
-  }
-
-  drawForeground(ctx, canvas, worldX, veilEnabled = true) {
-    // L7: oversized, blurred, low-alpha foreground veil (spec Â§4.1.1).
-    // Calm sections lift the veil alpha a little -- a small, cheap way to
-    // keep this backmost layer visibly breathing when nothing else is loud.
-    if (!veilEnabled) return;
-    ctx.save();
-    ctx.globalAlpha = 0.10 * (1 + 0.6 * (this.calmLevel || 0));
-    const scrollX = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L7, this.unravel);
-    for (let i = 0; i < 3; i++) {
-      const x = ((i * 480 - scrollX) % (canvas.width + 400) + canvas.width + 400) % (canvas.width + 400) - 200;
-      const cy = canvas.height * (0.3 + 0.2 * i);
-      // Wider, softer radial fill stands in for the old blur(6px) pass --
-      // same soft-edged look, no per-frame offscreen-layer/GPU-flush cost.
-      const rx = 220, ry = 130;
-      const g = ctx.createRadialGradient(x, cy, 0, x, cy, Math.max(rx, ry));
-      g.addColorStop(0, 'rgba(255,255,255,1)');
-      g.addColorStop(0.6, 'rgba(255,255,255,0.6)');
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.ellipse(x, cy, rx, ry, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-
-    // Near-field occluders: huge biome-landmark silhouettes sweeping past
-    // faster than the characters, close enough to occlude them. Gated on
-    // the same perf signal as the veil above -- costs a handful of vector
-    // shape draws per visible sector, cheaper than the veil's 3 gradients.
-    if (this.currentBlend) {
-      const dominant = this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from;
-      // Same name/archetype mismatch as decorateStrip above: NearField keys
-      // LANDMARKS and (via biomeByName) its silhouette-darkening color off
-      // an archetype name, not a synthesized palette's own display name.
-      const dominantLandmarkKey = this._profile(dominant)?.landmarkKey || dominant;
-      const ratio = CodaDirector.delaminateRatio(NEARFIELD_RATIO, this.unravel);
-      const kick = planeKick(this.tSec * 1000, this._danceKickMs, 'near', this._danceKickAmp);
-      this.nearField.draw(ctx, canvas, worldX, {
-        tSec: this.tSec, kick, biomeName: dominantLandmarkKey, silhouette: this._profile(dominant)?.silhouette, reducedMotion: !!this.reducedFlash, ratio,
-      });
-
-      // Ground scatter: the frontmost plane's small detail, drawn after
-      // NearField so the two near-field layers stack near-to-camera last.
-      // This is the only layer in the scene that outruns the characters by
-      // this much, and that is what finally gives the ground a read on how
-      // fast the world is going past. Sheds on the same perf rung as the
-      // rest of the foreground (this whole method is already gated on it).
-      this.groundScatter.draw(ctx, canvas, worldX, {
-        groundY: this.groundY,
-        kick,
-        ratio: CodaDirector.delaminateRatio(SCATTER_RATIO, this.unravel),
-        // Rides the ambient light budget like every other decorative layer,
-        // so a quiet section quiets the ground too instead of leaving grit
-        // at full contrast against a faded world.
-        alpha: 0.55 + 0.45 * clamp01(this.budget),
-      });
-    }
-
-    this._drawWildfire(ctx, canvas, worldX);
-  }
-
-  /** Wildfire: near flames tracking the burn front's real world-x extent,
-   *  a wind-sheared smoke column, and a permanent dark scorch strip left
-   *  behind on the ground -- "weather with consequences," the same
-   *  pattern groundCover (frost) and floodLevel01 (wet footing) already
-   *  established. Ground-locked (screen-x uses the same
-   *  Midio-anchored origin as everything else drawn on the walking
-   *  ground), unlike GroundScatter's own independently-scrolling
-   *  parallax address space, so the burn genuinely tracks a real
-   *  location Midio walks through rather than a decorative texture. */
-  _drawWildfire(ctx, canvas, worldX) {
-    if (!this.fire) return;
-    const originX = Number.isFinite(this.midioX) ? this.midioX : this.w * 0.5;
-    const toScreen = (wx) => wx - worldX + originX;
-
-    // Permanent scorch: every recorded burned interval, drawn regardless
-    // of whether the fire itself is still active, so walking back through
-    // an old burn still reads as scarred ground.
-    if (this.fire.burnedIntervals.length) {
-      ctx.save();
-      ctx.fillStyle = 'rgba(20,12,8,0.4)';
-      for (const iv of this.fire.burnedIntervals) {
-        const sx0 = toScreen(iv.x0), sx1 = toScreen(iv.x1);
-        if (sx1 < -20 || sx0 > canvas.width + 20) continue;
-        ctx.fillRect(Math.max(-20, sx0), this.groundY - 3, Math.min(canvas.width + 20, sx1) - Math.max(-20, sx0), 10);
-      }
-      ctx.restore();
-    }
-
-    const I = this.fire.intensity01;
-    if (!(I > 0.02)) return;
-    const sx0 = toScreen(this.fire.x0), sx1 = toScreen(this.fire.x1);
-    if (sx1 < -60 || sx0 > canvas.width + 60) return; // whole front off-screen
-
-    // Near flames: a bounded number of flickering columns spread evenly
-    // across the front's visible span, regardless of how wide the real
-    // world extent has grown -- draw cost never scales with fire age.
-    const spanPx = Math.max(1, sx1 - sx0);
-    const count = Math.max(3, Math.min(28, Math.round(spanPx / 40)));
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < count; i++) {
-      const sx = sx0 + (spanPx * (i + 0.5)) / count;
-      if (sx < -20 || sx > canvas.width + 20) continue;
-      const worldXAt = worldX + (sx - originX);
-      const flick = flameFlicker(worldXAt, this.tSec);
-      const h = (14 + 20 * flick) * I;
-      const w = 8 + 5 * flick;
-      const grad = ctx.createLinearGradient(sx, this.groundY, sx, this.groundY - h);
-      grad.addColorStop(0, `rgba(255,120,30,${(0.85 * I).toFixed(3)})`);
-      grad.addColorStop(0.55, `rgba(255,70,20,${(0.6 * I).toFixed(3)})`);
-      grad.addColorStop(1, 'rgba(255,210,60,0)');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.moveTo(sx - w / 2, this.groundY);
-      ctx.quadraticCurveTo(sx - w * 0.15, this.groundY - h * 0.6, sx, this.groundY - h);
-      ctx.quadraticCurveTo(sx + w * 0.15, this.groundY - h * 0.6, sx + w / 2, this.groundY);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.restore();
-
-    // Smoke column: a handful of soft, upward-drifting puffs rising from
-    // the front's midpoint, sheared by the same wind that shapes the
-    // front's own asymmetry -- the sky-grade half of this is the haze
-    // multiplier boost in the personality update block, this is the
-    // visible plume itself.
-    const midSx = (sx0 + sx1) / 2;
-    const windLeanPx = 40 * (this.fire.windProjectionValue || 0);
-    ctx.save();
-    ctx.globalAlpha = 0.5 * I;
-    for (let i = 0; i < 5; i++) {
-      const h01 = i / 4;
-      const puffY = this.groundY - 30 - h01 * 220;
-      const puffX = midSx + smokeDrift(h01, this.tSec, windLeanPx);
-      const r = 26 + 34 * h01;
-      const g = ctx.createRadialGradient(puffX, puffY, 0, puffX, puffY, r);
-      g.addColorStop(0, `rgba(70,60,55,${(0.5 * (1 - h01 * 0.6)).toFixed(3)})`);
-      g.addColorStop(1, 'rgba(70,60,55,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(puffX, puffY, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  _drawSky(ctx, canvas, A, B, t, night = 0, starOptions = {}) {
-    // Water and vault ceilings retain local light effects, not astronomy.
-    const astronomical = identityAllows(this.world, 'astronomy') && starOptions.astronomical !== false;
-    const dials = styleDials(this.visualStyle);
-    const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    // Night + rendered both pull toward deep space so stars/ocean have a stage.
-    const nightPull = 0.62 * night + (astronomical && dials.spaceWash ? 0.14 : 0);
-    // Variable stop count (SongDNA.harmonicComplexity, via PaletteSynth's
-    // skyStops): a harmonically richer song gets a subtler, more banded sky
-    // gradient instead of the flat 3-stop default. Only takes effect when
-    // BOTH sides of a transition carry skyStops of the same length --
-    // crossfading against a stock biome or the older customBiome importer
-    // (neither sets skyStops) falls back to the original fixed 3-stop
-    // A.sky/B.sky exactly as before, so nothing else that reads sky[0..2]
-    // for its own purposes (fire glow, water reflection, light rig, etc.)
-    // is affected either way.
-    const stopsA = A.skyStops, stopsB = B.skyStops;
-    const useVariable = Array.isArray(stopsA) && Array.isArray(stopsB)
-      && stopsA.length === stopsB.length && stopsA.length >= 3;
-    const n = useVariable ? stopsA.length : 3;
-    for (let i = 0; i < n; i++) {
-      const from = useVariable ? stopsA[i] : A.sky[i];
-      const to = useVariable ? stopsB[i] : B.sky[i];
-      const stop = this._rotated(this.lerpCache.get(from, to, t));
-      // Upper sky (i=0) goes more space-black; lower sky keeps more biome
-      // color. n===3 keeps the exact original 1/0.75/0.45 steps (byte-
-      // identical for every biome that doesn't opt into extra stops); a
-      // richer n interpolates the same curve continuously across more stops.
-      const posFrac = n > 1 ? i / (n - 1) : 0;
-      const pull = n === 3
-        ? nightPull * (i === 0 ? 1 : i === 1 ? 0.75 : 0.45)
-        : nightPull * lerp(1, 0.45, posFrac);
-      g.addColorStop(posFrac, pull > 0.02
-        ? this.lerpCache.get(stop, NIGHT_SKY_COLOR, pull)
-        : stop);
-    }
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-
-    if (astronomical && (A.fx === 'aurora' || B.fx === 'aurora')) {
-      const auroraAlpha = (A.fx === 'aurora' ? 1 - t : 0) + (B.fx === 'aurora' ? t : 0);
-      if (auroraAlpha > 0.02) this._drawAurora(ctx, canvas, auroraAlpha);
-    }
-    if (astronomical && (A.fx === 'nebulaBloom' || B.fx === 'nebulaBloom')) {
-      const alpha = (A.fx === 'nebulaBloom' ? 1 - t : 0) + (B.fx === 'nebulaBloom' ? t : 0);
-      if (alpha > 0.02) this._drawNebulaBloom(ctx, canvas, alpha, A, B, t);
-    }
-    if (A.fx === 'godRays' || B.fx === 'godRays') {
-      const alpha = (A.fx === 'godRays' ? 1 - t : 0) + (B.fx === 'godRays' ? t : 0);
-      if (alpha > 0.02) this._drawGodRays(ctx, canvas, alpha);
-    }
-    if (A.fx === 'sporeGlow' || B.fx === 'sporeGlow') {
-      const alpha = (A.fx === 'sporeGlow' ? 1 - t : 0) + (B.fx === 'sporeGlow' ? t : 0);
-      if (alpha > 0.02) this._drawSporeGlow(ctx, canvas, alpha, t > 0.5 ? B : A);
-    }
-    if (A.fx === 'bioluminescence' || B.fx === 'bioluminescence') {
-      const alpha = (A.fx === 'bioluminescence' ? 1 - t : 0) + (B.fx === 'bioluminescence' ? t : 0);
-      if (alpha > 0.02) this._drawBioluminescence(ctx, canvas, alpha);
-    }
-    if (A.fx === 'sunMotes' || B.fx === 'sunMotes') {
-      const alpha = (A.fx === 'sunMotes' ? 1 - t : 0) + (B.fx === 'sunMotes' ? t : 0);
-      if (alpha > 0.02) this._drawSunMotes(ctx, canvas, alpha, t > 0.5 ? B : A);
-    }
-    if (A.fx === 'crystalGlint' || B.fx === 'crystalGlint') {
-      const alpha = (A.fx === 'crystalGlint' ? 1 - t : 0) + (B.fx === 'crystalGlint' ? t : 0);
-      if (alpha > 0.02) this._drawCrystalGlint(ctx, canvas, alpha, t > 0.5 ? B : A);
-    }
-    if (A.fx === 'emberGlow' || B.fx === 'emberGlow') {
-      const alpha = (A.fx === 'emberGlow' ? 1 - t : 0) + (B.fx === 'emberGlow' ? t : 0);
-      if (alpha > 0.02) this._drawEmberGlow(ctx, canvas, alpha, t > 0.5 ? B : A);
-    }
-    // Soft atmospheric + faint space-nebula wash (under stars).
-    //
-    // Three FULL-CANVAS fills, one of them through `soft-light` (a per-pixel
-    // blend, not a plain source-over), measured at 2.53M pixels a frame of
-    // the 7.68M everything in the frame fills -- a third of the total, for a
-    // wash that is by its own description faint. It had no perf gate at all,
-    // so the deepest rungs could not shed it even though the frame it sits in
-    // was already dropping. `phenomenaFull` is the right rung: this is
-    // optional atmosphere, the same category as the reaction-diffusion
-    // texture and the sky planets it already gates, and none of it is
-    // gameplay. The base sky gradient above is untouched -- that one IS the
-    // sky, not a garnish on it.
-    if (!this._perf || this._perf.phenomenaFull) {
-      const top = this._rotated(this.lerpCache.get(A.sky[0], B.sky[0], t));
-      const mid = this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t));
-      const { r: r0, g: g0, b: b0 } = hexToRgb(top);
-      const { r: r1, g: g1, b: b1 } = hexToRgb(mid);
-      ctx.save();
-      ctx.globalCompositeOperation = 'soft-light';
-      const plate = ctx.createRadialGradient(
-        canvas.width * 0.55, canvas.height * 0.16, 16,
-        canvas.width * 0.5, canvas.height * 0.32, canvas.height * 0.7,
-      );
-      plate.addColorStop(0, `rgba(${r1},${g1},${b1},0.4)`);
-      plate.addColorStop(0.5, `rgba(${r0},${g0},${b0},0.16)`);
-      plate.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.globalAlpha = 0.42;
-      ctx.fillStyle = plate;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      if (astronomical) {
-        const nebA = hexToRgb(SPACE_NEBULA_A);
-        const nebB = hexToRgb(SPACE_NEBULA_B);
-        // Indigo / violet space dust â€” orbital, not pure daylight.
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = 0.07 + 0.1 * night;
-        const dust = ctx.createRadialGradient(
-          canvas.width * 0.28, canvas.height * 0.12, 10,
-          canvas.width * 0.35, canvas.height * 0.22, canvas.width * 0.38,
-        );
-        dust.addColorStop(0, `rgba(${nebB.r},${nebB.g},${nebB.b},0.55)`);
-        dust.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = dust;
-        ctx.fillRect(0, 0, canvas.width, canvas.height * 0.55);
-        ctx.globalAlpha = 0.05 + 0.08 * night;
-        const dust2 = ctx.createRadialGradient(
-          canvas.width * 0.78, canvas.height * 0.18, 8,
-          canvas.width * 0.72, canvas.height * 0.28, canvas.width * 0.32,
-        );
-        dust2.addColorStop(0, `rgba(${nebA.r},${nebA.g},${nebA.b},0.5)`);
-        dust2.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = dust2;
-        ctx.fillRect(0, 0, canvas.width, canvas.height * 0.5);
-      }
-      ctx.restore();
-    }
-
-    // Star backdrop last in the sky stack so it always reads as depth behind
-    // the world, not a faint garnish wiped by washes above it.
-    if (astronomical) this._drawStarfield(ctx, canvas, A, B, t, night, starOptions);
-  }
-
-  /** Layered starfield: ambient by day, rich at night / starTwinkle biomes. */
-  _drawStarfield(ctx, canvas, A, B, t, night = 0, { atmosphere = true } = {}) {
-    if (!identityAllows(this.world, 'astronomy')) return;
-    const dials = styleDials(this.visualStyle);
-    const showStars = A.fx === 'starTwinkle' || B.fx === 'starTwinkle';
-    const twinkleBlend = showStars
-      ? (A.fx === 'starTwinkle' ? 1 - t : 0) + (B.fx === 'starTwinkle' ? t : 0)
-      : 0;
-    // Always a living backdrop â€” night, space style, and star biomes amplify.
-    // Base raised from 0.34 -- too dim outside the best conditions, reading
-    // as "a dull band of mostly nothing" (reported live; see
-    // StarCatalogue.perceptualStretch's floor, raised alongside this).
-    const starAmb = dials.starAmbient ?? 1;
-    const ambient = (0.48 + 0.18 * (this.calmLevel || 0)) * starAmb;
-    const nightBoost = 0.55 + 1.55 * night;
-    const biomeBoost = 0.95 * twinkleBlend;
-    const spaceFloor = dials.spaceWash ? 0.22 : 0;
-    const alpha = clamp01(ambient * nightBoost + biomeBoost + spaceFloor) * this.openingGain;
-    if (alpha < 0.04) return;
-
-    const twinkleRate = 1.15 + 0.7 * (this.calmLevel || 0) + 0.35 * night;
-    const scroll = (this.tSec * 1.8) % canvas.width; // glacial drift
-    // The sky field's height on the ACTUAL canvas being drawn to -- shared
-    // by every rescale below (stars, dust lanes, deep sky) so they all
-    // agree on where the field ends, no matter how wide the stage is.
-    const skyH = canvas.height * STAR_SKY_FRAC;
-
-    // Soft milky / galactic wash. Sits on the SAME tilted axis the star
-    // density does (GALACTIC_BAND, shared with StarCatalogue) -- it used to
-    // be a horizontal bar pinned at 0.14 of the canvas while the density
-    // ridge sat at 0.32, so the painted galaxy and the actual stars
-    // disagreed about where the plane was.
-    {
-      const yL = galacticBandCenterY(0, skyH);
-      const yR = galacticBandCenterY(1, skyH);
-      const half = skyH * GALACTIC_BAND.halfFrac;
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      const bandA = 0.07 + 0.09 * night;
-      // Rotate into the band's own frame so the gradient runs perpendicular
-      // to the plane rather than straight down the screen.
-      const ang = Math.atan2(yR - yL, canvas.width);
-      const diag = Math.hypot(canvas.width, yR - yL);
-      ctx.translate(0, yL);
-      ctx.rotate(ang);
-      const band = ctx.createLinearGradient(0, -half, 0, half);
-      band.addColorStop(0, 'rgba(160,190,255,0)');
-      band.addColorStop(0.5, `rgba(190,210,255,${bandA.toFixed(3)})`);
-      band.addColorStop(1, 'rgba(160,190,255,0)');
-      ctx.fillStyle = band;
-      ctx.fillRect(0, -half, diag, half * 2);
-      // Dark nebulae, drawn INSIDE the band's own rotated frame and clipped
-      // to the wash they occlude. A smooth airbrushed stripe is the most
-      // synthetic thing a night sky can do; the real plane is broken up by
-      // dust clouds that block the glow behind them (the Great Rift), so the
-      // band gets its structure from what's missing, not from more light.
-      // 'multiply' against black, NOT destination-out: these have to darken
-      // the sky they sit in front of, and destination-out would punch a hole
-      // clean through the backdrop to transparent instead.
-      ctx.globalCompositeOperation = 'multiply';
-      for (const d of this.dustLanes) {
-        // Rescaled from the cached fraction against the ACTUAL canvas, not
-        // the field the catalogue was generated over -- see the comment at
-        // the star cache above for why that distinction matters.
-        const dx = d.xFrac * canvas.width;
-        const dyAbs = d.yFrac * skyH;
-        // The lanes were generated in field space against the same tilted
-        // axis, so undo the band's own tilt to place them in this frame.
-        const dy = dyAbs - galacticBandCenterY(dx / Math.max(1, canvas.width), skyH);
-        const breathe = 0.85 + 0.15 * Math.sin(this.tSec * 0.06 + d.phase);
-        ctx.save();
-        ctx.translate(dx, dy);
-        ctx.rotate(d.rot - ang);
-        const g2 = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
-        g2.addColorStop(0, `rgba(0,0,0,${(d.alpha * breathe).toFixed(3)})`);
-        g2.addColorStop(0.55, `rgba(0,0,0,${(d.alpha * breathe * 0.5).toFixed(3)})`);
-        g2.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.scale(d.rxFrac * canvas.width, d.ryFrac * skyH);
-        ctx.fillStyle = g2;
-        ctx.beginPath();
-        ctx.arc(0, 0, 1, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-      ctx.restore();
-    }
-
-    // Deep-sky objects: faint resolved smudges, under the stars so a star
-    // can sit in front of one. These do not twinkle -- an extended source
-    // averages scintillation away, which is exactly the cue that separates
-    // "a nebula" from "a bright star" at a glance.
-    {
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      for (const o of this.deepSky) {
-        const a = alpha * o.alpha * (0.85 + 0.15 * Math.sin(this.tSec * 0.09 + o.phase));
-        if (a < 0.004) continue;
-        const ox = o.xFrac * canvas.width, oy = o.yFrac * skyH, or_ = o.rFrac * skyH;
-        ctx.save();
-        ctx.translate(ox, oy);
-        ctx.rotate(o.rot);
-        ctx.scale(1, o.squash);
-        const g3 = ctx.createRadialGradient(0, 0, 0, 0, 0, or_);
-        g3.addColorStop(0, `hsla(${o.hue},58%,80%,${(a * 1.6).toFixed(4)})`);
-        g3.addColorStop(0.45, `hsla(${o.hue},52%,68%,${(a * 0.7).toFixed(4)})`);
-        g3.addColorStop(1, `hsla(${o.hue},48%,60%,0)`);
-        ctx.fillStyle = g3;
-        ctx.beginPath();
-        ctx.arc(0, 0, or_, 0, Math.PI * 2);
-        ctx.fill();
-        // A cluster is granular, not a smooth blob -- a few resolved
-        // members are what make it read as a swarm of stars.
-        if (o.kind === 'cluster') {
-          ctx.fillStyle = `hsla(${o.hue},40%,92%,${(a * 2.2).toFixed(4)})`;
-          for (let k = 0; k < 9; k++) {
-            const ang2 = (k / 9) * Math.PI * 2 + o.phase;
-            const rr = or_ * (0.15 + 0.65 * ((k * 7919) % 100) / 100);
-            ctx.fillRect(Math.cos(ang2) * rr, Math.sin(ang2) * rr, 1, 1);
-          }
-        }
-        // A remnant is a shell, not a blob: the shockwave front is a thin
-        // bright ring around a hollow, spent core -- the one deep-sky kind
-        // that reads as an event rather than a static cloud.
-        if (o.kind === 'remnant') {
-          ctx.strokeStyle = `hsla(${o.hue},70%,88%,${(a * 1.8).toFixed(4)})`;
-          ctx.lineWidth = Math.max(0.8, or_ * 0.09);
-          ctx.beginPath();
-          ctx.arc(0, 0, or_ * 0.82, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        ctx.restore();
-      }
-      ctx.restore();
-    }
-
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    const starBuckets = this._starBuckets;
-    // Cheap dots for the field; soft glow only for hero stars (layer 2).
-    for (const s of this.stars) {
-      // Per-star scintillation depth (StarCatalogue.js): fainter, more
-      // point-like stars and stars nearer the horizon twinkle harder, real
-      // atmospheric stars do not all blink at the same depth. Falls back to
-      // a fixed mid-range depth for anything without catalogue fields (kept
-      // defensive since `stars` is public state some other path could feed).
-      // Airless worlds share the catalogue but have no scintillation.
-      const twDepth = atmosphere
-        ? (s.mag != null ? twinkleAmplitude(s.mag, s.altitude01 ?? 0.5) : 0.4)
-        : 0;
-      const tw = (1 - twDepth) + twDepth * (0.5 + 0.5 * Math.sin(this.tSec * twinkleRate * (0.7 + s.bright) + s.phase));
-      const pulse = s.varAmp
-        ? 1 + s.varAmp * Math.sin(this.tSec * (s.varHz || 0.08) * Math.PI * 2 + s.phase)
-        : 1;
-      // Air path: low stars lose real light before they ever reach the eye,
-      // so the field thins and warms toward the ridgeline instead of walling
-      // off at full brightness the way a flat scatter does.
-      const a = alpha * s.bright * tw * (atmosphere ? (s.ext ?? 1) : 1) * pulse;
-      // Faint floor: a 0.03 cut used to wipe the dimmer half of the field
-      // (especially near the horizon, after extinction), leaving only the
-      // brighter mid-sky survivors â€” another way the stars read as a chunk.
-      if (a < 0.01) continue;
-      const layerDrift = (s.parallax ?? STAR_PARALLAX[s.layer] ?? STAR_PARALLAX[0]) * scroll;
-      // Rescaled from the cached fraction against the ACTUAL canvas, not the
-      // (possibly narrower) field the catalogue was generated over -- a
-      // camera pull-back widens the stage BiomeManager draws into, and an
-      // absolute pixel baked in at generation time would stay pinned to its
-      // original span while the sky around it widened.
-      let x = s.xFrac * canvas.width + layerDrift;
-      if (x > canvas.width) x -= canvas.width;
-      else if (x < 0) x += canvas.width;
-      const y = s.yFrac * skyH;
-      const sz = 1;
-
-      // The same air path that dimmed it also scatters its blue out first,
-      // so what survives is warmer. Pull the star's own spectral hue toward
-      // horizon-orange in proportion to how much light it lost.
-      const red = atmosphere ? (s.redden ?? 0) : 0;
-      const hue = s.hue > 0 ? lerpHue(s.hue, 24, red * 0.6) : 24;
-      const useHue = s.hue > 0 || red > 0.35;
-
-      if (s.layer === 2) {
-        ctx.globalAlpha = a;
-        ctx.fillStyle = useHue ? `hsl(${hue},55%,88%)` : '#ffffff';
-        ctx.fillRect(x - 0.5, y - 0.5, sz, sz);
-        if (s.companion) {
-          ctx.globalAlpha = a * 0.45;
-          ctx.fillRect(x + s.companion.dx - 0.5, y + s.companion.dy - 0.5, 1, 1);
-        }
-      } else {
-        // Deferred into a bucket instead of drawn here. Setting fillStyle per
-        // star was the single most expensive thing in this loop -- building
-        // the `hsl(...)` string and having the engine parse it cost more than
-        // the fills themselves (measured at 532 stars: 0.81ms of a 1.72ms
-        // total, against 0.84ms for the fillRects). Bucketing by quantized
-        // colour and alpha turns ~530 style assignments plus ~530 alpha
-        // assignments plus ~530 fillRects into one of each per bucket and a
-        // single path fill, which is ~3x faster for a field this size.
-        //
-        // Reordering is safe because the whole field draws with 'lighter'
-        // (set above): additive compositing is commutative, so a star
-        // contributes the same light whenever it lands. The quantization is
-        // below the threshold of a 1-2px dot -- alpha to 1/24, hue to 7.5
-        // degrees.
-        const aQ = Math.min(STAR_ALPHA_STEPS - 1, (a * STAR_ALPHA_STEPS) | 0);
-        const key = useHue
-          ? `h${Math.round(hue / 7.5)}_${aQ}`
-          : `l${s.layer === 1 ? 1 : 0}_${aQ}`;
-        let bucket = starBuckets.get(key);
-        if (!bucket) {
-          bucket = { style: null, alpha: (aQ + 0.5) / STAR_ALPHA_STEPS, rects: [] };
-          bucket.style = useHue
-            ? `hsl(${Math.round(hue / 7.5) * 7.5},55%,88%)`
-            : (s.layer === 1 ? '#f0f4ff' : '#d8e0f5');
-          starBuckets.set(key, bucket);
-        }
-        bucket.rects.push(x - 0.5, y - 0.5, sz);
-      }
-    }
-
-    for (const bucket of starBuckets.values()) {
-      const r = bucket.rects;
-      if (!r.length) continue;
-      ctx.globalAlpha = bucket.alpha;
-      ctx.fillStyle = bucket.style;
-      ctx.beginPath();
-      for (let i = 0; i < r.length; i += 3) ctx.rect(r[i], r[i + 1], r[i + 2], r[i + 2]);
-      ctx.fill();
-      r.length = 0;
-    }
-
-    // Planets, over the stars: brighter than anything near them, obviously
-    // colored, and deliberately NOT twinkling -- a resolved disc averages
-    // scintillation away, so holding perfectly steady in a field of
-    // shivering points is the whole tell.
-    for (const p of this.planets) {
-      const pa = alpha * p.bright * (atmosphere ? extinction01(p.altitude01) : 1) * 1.15;
-      if (pa < 0.03) continue;
-      const py = p.yFrac * skyH;
-      let px = p.xFrac * canvas.width + scroll * 0.02;
-      if (px > canvas.width) px -= canvas.width;
-      const r = 3.2 * p.size;
-      ctx.globalAlpha = pa * 0.5;
-      const pg = ctx.createRadialGradient(px, py, 0, px, py, r);
-      pg.addColorStop(0, `hsla(${p.hue},${p.sat}%,88%,1)`);
-      pg.addColorStop(0.4, `hsla(${p.hue},${p.sat}%,76%,0.35)`);
-      pg.addColorStop(1, `hsla(${p.hue},${p.sat}%,70%,0)`);
-      ctx.fillStyle = pg;
-      ctx.beginPath();
-      ctx.arc(px, py, r, 0, Math.PI * 2);
-      ctx.fill();
-      // The disc itself -- a couple of px across, not a point.
-      ctx.globalAlpha = pa;
-      ctx.fillStyle = `hsl(${p.hue},${Math.round(p.sat * 0.8)}%,92%)`;
-      ctx.beginPath();
-      ctx.arc(px, py, Math.max(0.9, p.size * 0.62), 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  /** Soft pastel gas clouds for NEBULA â€” additive blobs that drift slowly. */
-  _drawNebulaBloom(ctx, canvas, alpha, A, B, t) {
-    const c0 = this._rotated(this.lerpCache.get(A.sky[2] || '#ff8ec8', B.sky[2] || '#ff8ec8', t));
-    const c1 = this._rotated(this.lerpCache.get(A.celestial?.haloColor || '#c89bff', B.celestial?.haloColor || '#c89bff', t));
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    const blobs = [
-      { x: 0.22, y: 0.22, rx: 0.28, ry: 0.16, col: c0, ph: 0 },
-      { x: 0.62, y: 0.18, rx: 0.34, ry: 0.20, col: c1, ph: 1.7 },
-      { x: 0.45, y: 0.38, rx: 0.22, ry: 0.14, col: c0, ph: 3.1 },
-      { x: 0.78, y: 0.32, rx: 0.18, ry: 0.12, col: c1, ph: 4.4 },
-    ];
-    for (const b of blobs) {
-      const breathe = 0.75 + 0.25 * Math.sin(this.tSec * 0.35 + b.ph);
-      const cx = canvas.width * (b.x + 0.02 * Math.sin(this.tSec * 0.2 + b.ph));
-      const cy = canvas.height * (b.y + 0.015 * Math.cos(this.tSec * 0.25 + b.ph));
-      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, canvas.width * b.rx * breathe);
-      grad.addColorStop(0, `${b.col}55`);
-      grad.addColorStop(0.55, `${b.col}18`);
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.globalAlpha = 0.55 * alpha * breathe;
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, canvas.width * b.rx * breathe, canvas.height * b.ry * breathe, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  /** Underwater / late-afternoon light shafts for CORAL (and similar). */
-  _drawGodRays(ctx, canvas, alpha) {
-    const cx = canvas.width * 0.72;
-    const cy = canvas.height * 0.08;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 7; i++) {
-      const ang = -0.55 + i * 0.16 + Math.sin(this.tSec * 0.4 + i) * 0.03;
-      const len = canvas.height * (0.55 + 0.1 * Math.sin(this.tSec * 0.5 + i * 0.7));
-      const half = 8 + i * 2.5;
-      const flick = 0.55 + 0.45 * Math.sin(this.tSec * (0.9 + i * 0.11) + i);
-      ctx.globalAlpha = 0.07 * alpha * flick;
-      ctx.fillStyle = '#ffe8c0';
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(cx + Math.cos(ang - 0.04) * half, cy + Math.sin(ang - 0.04) * half);
-      ctx.lineTo(cx + Math.cos(ang) * len + Math.cos(ang + Math.PI / 2) * half * 2.5,
-        cy + Math.sin(ang) * len + Math.sin(ang + Math.PI / 2) * half * 2.5);
-      ctx.lineTo(cx + Math.cos(ang) * len - Math.cos(ang + Math.PI / 2) * half * 2.5,
-        cy + Math.sin(ang) * len - Math.sin(ang + Math.PI / 2) * half * 2.5);
-      ctx.lineTo(cx + Math.cos(ang + 0.04) * half, cy + Math.sin(ang + 0.04) * half);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  _drawAurora(ctx, canvas, alpha) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    // Soft filled ribbons (no hard stroke edges â€” stroke bands
-    // read as cyan sky-wide "line glitch" when stacked).
-    for (let band = 0; band < 3; band++) {
-      const hue = 160 + ((this.tSec * 12 + band * 40) % 140);
-      ctx.fillStyle = `hsla(${hue},70%,58%,${0.07 * alpha})`;
-      ctx.beginPath();
-      for (let x = 0; x <= canvas.width; x += 16) {
-        const y = 60 + band * 30 + Math.sin(x * 0.006 + this.tSec * 0.6 + band) * 26;
-        if (x === 0) ctx.moveTo(x, y - 14); else ctx.lineTo(x, y - 14);
-      }
-      for (let x = canvas.width; x >= 0; x -= 16) {
-        const y = 60 + band * 30 + Math.sin(x * 0.006 + this.tSec * 0.6 + band) * 26;
-        ctx.lineTo(x, y + 14);
-      }
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  /** Rising bioluminescent motes for LUMEN's spore-lit canopy: soft glow
-   *  patches that pulse and drift upward, distinct from starTwinkle's fixed
-   *  pinpoint dots. */
-  _drawSporeGlow(ctx, canvas, alpha, profile) {
-    const col = profile?.particles?.color || '#9dffc8';
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 10; i++) {
-      const phase = i * 1.3;
-      const x = canvas.width * ((i * 0.097 + 0.05) % 1);
-      const rise = (this.tSec * 8 + i * 37) % (canvas.height * 0.7);
-      const y = canvas.height * 0.85 - rise;
-      const pulse = 0.5 + 0.5 * Math.sin(this.tSec * 1.1 + phase);
-      const r = 3 + 4 * pulse;
-      const grad = ctx.createRadialGradient(x, y, 0, x, y, r * 4);
-      grad.addColorStop(0, `${col}aa`);
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.globalAlpha = alpha * (0.35 + 0.4 * pulse);
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(x, y, r * 4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  /** Vertical bioluminescent curtains rising from the deep for ABYSS --
-   *  aurora's cousin, but columns of light drifting upward instead of
-   *  horizontal wavy bands, so the two never read the same. */
-  _drawBioluminescence(ctx, canvas, alpha) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (let col = 0; col < 5; col++) {
-      const hue = 175 + col * 8;
-      const x = canvas.width * (0.12 + col * 0.19) + Math.sin(this.tSec * 0.25 + col) * 14;
-      const sway = Math.sin(this.tSec * 0.3 + col * 1.7) * 18;
-      ctx.strokeStyle = `hsla(${hue},90%,65%,${0.14 * alpha})`;
-      ctx.lineWidth = 14;
-      ctx.beginPath();
-      for (let y = canvas.height; y >= canvas.height * 0.15; y -= 20) {
-        const drift = sway * (1 - y / canvas.height);
-        if (y === canvas.height) ctx.moveTo(x + drift, y); else ctx.lineTo(x + drift, y);
-      }
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  /** Drifting golden light motes for AURUM -- an ambient sunlit haze
-   *  wandering the whole frame, unlike petalPile's grounded, shedding
-   *  piles. */
-  _drawSunMotes(ctx, canvas, alpha, profile) {
-    const col = profile?.particles?.color || '#ffcc66';
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 24; i++) {
-      const seed = i * 12.9898;
-      const x = canvas.width * ((Math.sin(seed) * 0.5 + 0.5 + this.tSec * 0.01 * (1 + (i % 3))) % 1);
-      const y = canvas.height * ((Math.cos(seed * 1.7) * 0.5 + 0.5 + Math.sin(this.tSec * 0.2 + i) * 0.05) % 1);
-      const twinkle = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(this.tSec * 1.4 + i * 2.1));
-      ctx.globalAlpha = alpha * 0.5 * twinkle;
-      ctx.fillStyle = col;
-      ctx.beginPath();
-      ctx.arc(x, y, 1.4 + 1.2 * twinkle, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  /** Sharp four-point flare glints for GEODE -- faceted crystal catching
-   *  light at hard angles, unlike starTwinkle's soft round dots: each glint
-   *  is a thin cross flare that snaps to full brightness and decays, never
-   *  a smooth pulse. */
-  _drawCrystalGlint(ctx, canvas, alpha, profile) {
-    const col = profile?.particles?.color || '#e0b0ff';
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = col;
-    ctx.lineCap = 'round';
-    for (let i = 0; i < 14; i++) {
-      const seed = i * 7.234;
-      const x = canvas.width * ((Math.sin(seed) * 0.5 + 0.5));
-      const y = canvas.height * ((Math.cos(seed * 1.9) * 0.5 + 0.5) * 0.6);
-      const cyclePos = (this.tSec * 0.5 + i * 0.37) % 1;
-      const snap = Math.max(0, 1 - cyclePos * 4); // sharp attack, fast decay
-      if (snap <= 0.01) continue;
-      const len = 4 + 14 * snap;
-      ctx.globalAlpha = alpha * snap;
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(x - len, y); ctx.lineTo(x + len, y);
-      ctx.moveTo(x, y - len); ctx.lineTo(x, y + len);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  /** Rising cinders with a trailing streak for EMBER -- hotter and faster
-   *  than sporeGlow's slow drift, with a directional tail so it reads as
-   *  fire rather than bioluminescence. */
-  _drawEmberGlow(ctx, canvas, alpha, profile) {
-    const col = profile?.particles?.color || '#ff7a3c';
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 16; i++) {
-      const phase = i * 1.7;
-      const x = canvas.width * ((i * 0.083 + 0.03) % 1) + Math.sin(this.tSec * 2 + phase) * 10;
-      const rise = (this.tSec * 30 + i * 41) % (canvas.height * 0.75);
-      const y = canvas.height * 0.9 - rise;
-      const flicker = 0.5 + 0.5 * Math.sin(this.tSec * 5 + phase);
-      ctx.strokeStyle = col;
-      ctx.globalAlpha = alpha * (0.3 + 0.4 * flicker);
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x - 3, y + 12 + 6 * flicker);
-      ctx.stroke();
-      ctx.fillStyle = col;
-      ctx.globalAlpha = alpha * (0.5 + 0.5 * flicker);
-      ctx.beginPath();
-      ctx.arc(x, y, 1.4 + flicker, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  /** The approach (CelestialApproach.js) for this frame, or null before it
-   *  has anything to work with. Resolved once per frame in draw() so the sun,
-   *  the moon, the light rig and the mandala all read the same body. */
-  _celestialApproachAt(canvas, cx, cy) {
-    // The sea line the body rises out of and sets back into. The approach
-    // scales height ABOVE this, so the rise and the set stay put however
-    // close the body comes -- see CelestialApproach.js.
-    const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
-    // Parallax is measured against the GROUND, not Midio's live render y. He
-    // jumps; the sun does not.
-    const groundY = this._zoomedGroundY(canvas);
-    const observerDy = Number.isFinite(this.midioY) ? this.midioY - groundY : 0;
-    return celestialApproach({
-      orbitX: cx, orbitY: cy, horizonY, observerDy,
-      progress01: clamp01(this._progress || 0),
-    });
-  }
-
-  _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22, alpha = 1, cxFrac = CELESTIAL_DEFAULT_XFRAC) {
-    if (!identityAllows(this.world, 'celestialBodies')) return;
-    // The body is closing over the length of the song: its arc climbs higher
-    // above the sea and its disc grows as 1/distance, so the size
-    // accelerates while the path barely seems to change. See
-    // CelestialApproach.js for why that ratio is the whole effect -- and for
-    // why nothing here pulls the body toward a point.
-    const app = this._celestialApproachAt(canvas, canvas.width * cxFrac, canvas.height * cyFrac);
-    const cx = app.x, cy = app.y;
-    const grow = app.scale;
-    // The disc does not move. The halo blooms on the heard kick (no depth
-    // delay â€” the sun is the beat marker, same clock as a character flash)
-    // and stays still under reduced flash.
-    const heardKick = this.reducedFlash
-      ? 0
-      : kickEnv(this.tSec * 1000 - this._danceKickMs) * this._danceKickAmp;
-    const haloMul = 1 + kickBloom(heardKick);
-    const rotCel = (c) => ({
-      ...c,
-      color: this._rotated(c.color),
-      haloColor: this._rotated(c.haloColor),
-      radius: (c.radius || 0) * grow,
-    });
-    // One shared opaque backing, at the body's full (un-split) alpha, before
-    // either crossfading celestial draws on top of it. _drawOneCelestial
-    // gives each body its own backing too, but split by (1-t)/t during a
-    // biome crossfade -- exactly the moment neither body alone is opaque
-    // enough to fully block what's behind it (the space ridge, stars,
-    // Midasus's sky voyage), so a crossfade let all of that show through in
-    // proportion to how mid-transition it was. Sized to whichever body is
-    // larger so it covers both without a visible seam as they fade past
-    // each other.
-    if (alpha > 0.02) {
-      const backR = Math.max((A.celestial.radius || 0), (B.celestial.radius || 0)) * grow;
-      if (backR > 0) {
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = '#000000';
-        ctx.beginPath();
-        ctx.arc(cx, cy, backR, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-    }
-    if (B === A) {
-      this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), alpha, haloMul);
-      this._drawCompanions(ctx, canvas, cx, cy, A.celestial.companions, alpha);
-    } else {
-      this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), (1 - t) * alpha, haloMul);
-      this._drawOneCelestial(ctx, cx, cy, rotCel(B.celestial), t * alpha, haloMul);
-      this._drawCompanions(ctx, canvas, cx, cy, A.celestial.companions, (1 - t) * alpha);
-      this._drawCompanions(ctx, canvas, cx, cy, B.celestial.companions, t * alpha);
-    }
-
-    const promAlpha = ((A.fx === 'prominence' ? 1 - t : 0) + (B.fx === 'prominence' ? t : 0)) * alpha;
-    if (promAlpha > 0.02) this._drawProminence(ctx, cx, cy, promAlpha);
-  }
-
-  /**
-   * Small decorative bodies near the primary celestial (PaletteSynth's
-   * buildCompanions -- more of them for a harmonically richer song).
-   * Deliberately drawn as plain _drawOneCelestial discs paired with the
-   * primary's own crossfade alpha: no day/night light contribution, no
-   * mandala anchoring, no occlusion. A biome without companions (every
-   * stock world, and any custom world for a harmonically simple song)
-   * draws nothing here -- today's single-body sky is unchanged.
-   */
-  _drawCompanions(ctx, canvas, cx, cy, companions, alpha) {
-    if (!Array.isArray(companions) || !companions.length || alpha <= 0.02) return;
-    const primaryR = Math.max(14, canvas.height * 0.0361);
-    for (const co of companions) {
-      const ccx = cx + co.dxFrac * canvas.width;
-      const ccy = cy + co.dyFrac * canvas.height;
-      this._drawOneCelestial(ctx, ccx, ccy, {
-        color: this._rotated(co.color),
-        haloColor: this._rotated(co.haloColor),
-        radius: Math.max(3, primaryR * co.radiusFrac),
-      }, alpha * 0.85);
-    }
-  }
-
-  /** A plain pale moon, taking over from the biome's own sun once it sets
-   *  -- deliberately generic (not crossfaded between biomes) so it always
-   *  reads as "the moon," with a simple crescent bite for character.
-   *  `tidalOffsetPx` lets the space ridge's own vast tidal drift (see
-   *  SpaceRidge.tidalOffsetPx) nudge the moon a little too -- a body small
-   *  enough to visibly yield to something far larger, kept subtle (a
-   *  fraction of the amplitude, hard-clamped) so it never reads as bouncing. */
-  /** Illuminated fraction of the moon's disc this frame, 0..1.
-   *
-   *  The day/night cycle here runs sun and moon in strict opposition (the
-   *  moon rises exactly as the sun sets), and a body at opposition is, in
-   *  reality, always FULL -- so reading a phase off this cycle's own
-   *  geometry would only ever produce a full moon. The phase is therefore
-   *  its own slow term, one synodic cycle across the song: a real lunar
-   *  phenomenon on a compressed clock, the same compression the 90-second
-   *  "day" already is.
-   *
-   *  The song opens near new and waxes to full at the midpoint. See
-   *  MOON_MIN_ILLUM in _drawMoon for why it never actually reaches new. */
-  _moonPhase01() {
-    // Warped away from exact quarter, because exact quarter is a straight
-    // line.
-    //
-    // The terminator's half-width is k = R*(1-2f), so at f = 0.5 the ellipse
-    // is degenerate and the lit region's inner edge is a mathematically
-    // straight diameter across the disc. Correct astronomy, and on a body
-    // this size with earthshine visible behind it, it reads as a rendering
-    // fault -- a vertical line drawn through the moon.
-    //
-    // Softening the edge was the first attempt and it does not solve this:
-    // whatever the feather, half the disc is lit and half is not, along a
-    // line. The condition has to go rather than be blurred, so progress is
-    // warped to pass THROUGH quarter quickly and dwell near crescent and
-    // gibbous instead, where the terminator is visibly a curve. A cubic
-    // ease about each quarter point does that while staying monotonic --
-    // the phase still runs new to full to new, it just does not linger at
-    // the one value that has no curvature.
-    const p = clamp01(this._progress || 0);
-    // Fold to 0..1 within the half-cycle, warp, unfold. u = 0.5 is quarter.
-    const half = p < 0.5 ? 0 : 1;
-    const u = p < 0.5 ? p * 2 : (p - 0.5) * 2;
-    const warped = u < 0.5
-      ? 0.5 * Math.pow(u * 2, MOON_QUARTER_SKEW) 
-      : 1 - 0.5 * Math.pow((1 - u) * 2, MOON_QUARTER_SKEW);
-    return clamp01((half + warped) * 0.5);
-  }
-
-  /**
-   * The moon: a lit sphere, drawn as one.
-   *
-   * The phase boundary on a sphere lit from the side is not a circular bite
-   * out of the disc -- it is the sphere's own great-circle terminator seen in
-   * projection, which is a HALF-ELLIPSE sharing the disc's poles, its width
-   * shrinking to nothing at quarter phase and bulging the opposite way
-   * through gibbous. The previous offset-circle cut could only ever produce
-   * crescents (never a correct gibbous), and even its crescents had the wrong
-   * limb curvature, because two circles of different radii don't meet the way
-   * a limb and a terminator do. Building the lit region out of a true limb
-   * arc plus a true terminator ellipse is both simpler and actually right.
-   *
-   * The whole construction is then rotated so its lit side faces the sun's
-   * real position (`sunXFrac`/`sunYFrac`, continued below the horizon by
-   * DayNight.sunScreenFrac) -- at night that sun is underneath, so the moon
-   * is lit from below, which is exactly what it does in the sky.
-   */
-  _drawMoon(ctx, canvas, cyFrac, alpha, tidalOffsetPx = 0, cxFrac = CELESTIAL_DEFAULT_XFRAC,
-    sunXFrac = null, sunYFrac = null, phase01 = 0.5) {
-    if (!identityAllows(this.world, 'celestialBodies')) return;
-    if (alpha <= 0.02) return;
-    // Same approach the sun is on (CelestialApproach.js): both bodies are
-    // closing on the convergence point, so the moon grows through the night
-    // exactly as the sun grows through the day and the two agree about how
-    // far away the sky is.
-    const app = this._celestialApproachAt(
-      canvas, canvas.width * cxFrac, canvas.height * cyFrac + clamp(tidalOffsetPx, -6, 6),
-    );
-    const cx = app.x, cy = app.y;
-    // Scales with the frame like every other sky element, instead of staying
-    // a fixed 26px while a camera pull-back widens the stage around it.
-    // Matches the old constant exactly at the nominal 720-tall stage.
-    const R = Math.max(14, canvas.height * 0.0361) * app.scale;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 2.2);
-    halo.addColorStop(0, MOON_HALO_COLOR);
-    halo.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = halo;
-    ctx.beginPath();
-    ctx.arc(cx, cy, R * 2.2, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Opaque backing disc, full moon radius: blocks whatever was drawn
-    // earlier this frame -- the star field, ambient constellations, Midasus's
-    // sky voyage -- from showing through the moon. Without this the dark
-    // limb was only as opaque as the earthshine fill just below (~13%), so
-    // anything sitting behind an unlit crescent moon stayed almost fully
-    // visible right through its own disc. Same alpha as the moon itself so
-    // it fades out in step at moonrise/moonset instead of ever occluding
-    // more than the visible moon does.
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = '#000000';
-    ctx.beginPath();
-    ctx.arc(cx, cy, R, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Earthshine: the unlit part of a real moon is not empty sky -- it's
-    // dimly lit by light bouncing off the planet, which is why you can make
-    // out the whole disc behind a thin crescent. Also keeps the moon reading
-    // as a sphere at slim phases instead of a detached sliver.
-    ctx.globalAlpha = alpha * 0.13;
-    ctx.fillStyle = MOON_COLOR;
-    ctx.beginPath();
-    ctx.arc(cx, cy, R, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Illuminated fraction -> terminator half-width. k = R at new (terminator
-    // hugs the lit limb, nothing showing), 0 at quarter (a straight edge),
-    // -R at full (terminator hugs the far limb, whole disc showing).
-    //
-    // Floored short of a true new moon: at f = 0 the moon is genuinely
-    // invisible, and since the phase here is tied to song progress that
-    // would mean no moon at all through the opening of every song, which
-    // reads as a missing feature rather than as astronomy. A thin crescent
-    // is the same shape a new moon is a day either side of new, so this
-    // costs nothing in fidelity.
-    const MOON_MIN_ILLUM = 0.16;
-    const f = Math.max(MOON_MIN_ILLUM, 0.5 - 0.5 * Math.cos(2 * Math.PI * clamp01(phase01)));
-    const k = R * (1 - 2 * f);
-
-    // Point +x at the sun, so the bright limb faces it.
-    const sunX = sunXFrac == null ? cx + R : canvas.width * sunXFrac;
-    const sunY = sunYFrac == null ? cy : canvas.height * sunYFrac;
-    const toSun = Math.atan2(sunY - cy, sunX - cx);
-
-    ctx.globalAlpha = alpha;
-    ctx.translate(cx, cy);
-    ctx.rotate(toSun);
-    ctx.beginPath();
-    // Lit limb: the sunward half of the disc, top -> right -> bottom.
-    ctx.arc(0, 0, R, -Math.PI / 2, Math.PI / 2, false);
-    // Terminator: back from bottom to top along the projected great circle.
-    // Sweep direction follows k's sign, which is what turns the same two
-    // curves into a crescent (bulging sunward) or a gibbous (bulging away).
-    ctx.ellipse(0, 0, Math.abs(k), R, 0, Math.PI / 2, -Math.PI / 2, k > 0);
-    ctx.closePath();
-    // Soft along the terminator, hard at the limb.
-    //
-    // At quarter phase k is exactly 0, so the terminator is a mathematically
-    // straight line across the middle of the disc -- correct astronomy, and
-    // at this size it reads as a rendering fault rather than as a phase: a
-    // razor edge splitting a body that CelestialApproach grows to several
-    // times its original width, with earthshine making the dark half plainly
-    // visible on the other side of it. A real terminator is not a knife edge
-    // either; the sun is not a point source and the surface curves away, so
-    // the light dies over a band rather than at a line.
-    //
-    // The gradient runs along the sun direction (+x here, since the whole
-    // construction is already rotated by toSun), full brightness across the
-    // lit limb and falling to nothing just past the terminator's own x. The
-    // limb stays crisp because the path clips it.
-    const termX = k > 0 ? Math.abs(k) : -Math.abs(k);
-    // A tenth of the radius was the first attempt and it did nothing: on a
-    // disc this size that is under three pixels of feather, which is still a
-    // razor edge. Verified by rendering at quarter phase with it applied and
-    // seeing no change at all. The band has to be a real fraction of the
-    // body to read as a curving surface losing the light rather than as a
-    // straight cut across a flat shape.
-    const softness = Math.max(3, R * 0.38);
-    const { r: mr, g: mg, b: mb } = hexToRgb(MOON_COLOR);
-    const face = ctx.createLinearGradient(termX - softness, 0, termX + softness, 0);
-    face.addColorStop(0, `rgba(${mr},${mg},${mb},0)`);
-    face.addColorStop(1, `rgba(${mr},${mg},${mb},1)`);
-    ctx.fillStyle = face;
-    ctx.fill();
-    ctx.restore();
-  }
-
-  /** A far ocean seen through/behind the mountain silhouettes: not a solid
-   *  band (which a ridge simply paints over) but an abstract field of
-   *  wave-contour rows receding toward a high horizon, like an infinite
-   *  flat plane of water in perspective -- rows compress and fade as they
-   *  approach the horizon, and the whole field fades at the left/right
-   *  screen edges. Drawn before the horizon EQ, spectrum massif, and every
-   *  mountain layer, so those naturally occlude the lower portion; the
-   *  visible remainder (above/between the ridgelines) IS the ocean. The row
-   *  stack always draws (visibility is the feature); it thins and drops the
-   *  celestial glint at the deepest perf rung. */
-  /** Which tsunami (if any) is currently approaching, with its depth /
-   *  perspective state -- looked up once per frame and shared by the row
-   *  swell and the wall silhouette. */
-  _activeTsunami(canvasWidth) {
-    const nowMs = this.tSec * 1000;
-    for (const ev of this._tsunamis) {
-      if (!tsunamiActive(ev, nowMs)) continue;
-      const age = nowMs - ev.tMs;
-      const progress = tsunamiProgress(age);
-      return {
-        ev,
-        progress,
-        rowFrac: tsunamiRowFrac(progress),
-        scale: tsunamiPerspectiveScale(progress),
-        heightScale: tsunamiHeightScale(age),
-        centerX: tsunamiCenterX(ev, canvasWidth),
-      };
-    }
-    return null;
-  }
-
-  /** Schedules a new tsunami wall, same shape as the existing drop-cued
-   *  bonus wall (see the dropAtMs block in update()) -- used by Simulation
-   *  for the quake -> tsunami linked event (DisasterDirector arms a
-   *  sea-epicenter quake, then calls this ~20-40s later so the aftershock
-   *  reads as having kicked up a real wave). Keeps `_tsunamis` sorted so
-   *  `_activeTsunami`'s first-match scan stays correct. */
-  armTsunami(tMs, dir = 1) {
-    this._tsunamis.push({ tMs, dir });
-    this._tsunamis.sort((a, b) => a.tMs - b.tMs);
-  }
-
-  /** 0..1 withdrawal depth across every scheduled tsunami -- at most one
-   *  can be in its withdrawal window at a time in practice (the schedule
-   *  spaces walls well apart), but this takes the max rather than assuming
-   *  that to stay correct either way. */
-  _activeWithdrawal() {
-    const nowMs = this.tSec * 1000;
-    let level = 0;
-    for (const ev of this._tsunamis) {
-      if (tsunamiWithdrawalActive(ev, nowMs)) level = Math.max(level, tsunamiWithdrawal01(ev, nowMs));
-    }
-    return level;
-  }
-
-  /**
-   * The far shore: a massive, vague mountain range on the far side of the
-   * ocean. Drawn BEHIND the water (see the call site) at the horizon line
-   * itself, clipped so only the portion above the horizon is ever visible --
-   * the same reason a ship's masts clear the sea before its hull does. What
-   * comes through is never a clean skyline, only the tallest broad masses
-   * breaking the horizon, everything below them already swallowed by the
-   * curve of the world. Nearly motionless (see FAR_SHORE_PARALLAX) and
-   * rendered as a soft, dark, almost featureless silhouette -- detail at
-   * this distance has already dissolved into haze, which is exactly what
-   * keeps it reading as impossibly far rather than merely another range.
-   */
-  _drawFarShore(ctx, canvas, worldX, A, B, t) {
-    if (this._perf && !this._perf.heavyPostFx) return;
-    const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
-    // How far below the visible horizon its base sits -- the curvature
-    // "cuts off" this many px of vertical extent before anything can show.
-    const sinkPx = Math.max(18, canvas.height * 0.02);
-    const baseY = horizonY + sinkPx;
-    const maxHeightPx = Math.max(90, canvas.height * 0.20); // massive -- deliberately taller than it should ever be able to look this far off
-    const scrollX = worldX * FAR_SHORE_PARALLAX;
-    const stepPx = 8;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, canvas.width, horizonY);
-    ctx.clip(); // curvature: nothing at or below the true horizon line survives
-
-    ctx.beginPath();
-    ctx.moveTo(-stepPx, baseY);
-    for (let x = -stepPx; x <= canvas.width + stepPx; x += stepPx) {
-      const u = (x + scrollX) / FAR_SHORE_TILE_PX;
-      const h01 = farShoreHeight01(this._farShoreRecipe, u);
-      ctx.lineTo(x, baseY - h01 * maxHeightPx);
-    }
-    ctx.lineTo(canvas.width + stepPx, baseY);
-    ctx.closePath();
-
-    // Near-black, faintly cold -- a mass, not a mountain range with a
-    // palette. A hair of the biome's own air color keeps it from reading as
-    // a flat void cutout rather than something actually out there.
-    const air = this._airColor || '#5a6b80';
-    const base = this.lerpCache.get('#070a12', air, 0.14);
-    const { r, g, b } = hexToRgb(base);
-    const pulse = farShorePulse01(this.tSec);
-    const alpha = 0.16 + 0.07 * pulse;
-    ctx.fillStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
-    ctx.fill();
-    ctx.restore();
-  }
-
-  /**
-   * The fata morgana: a pale, jagged, snow-capped mirage layered right on
-   * top of the far shore's dark mass, at the same horizon. Where the far
-   * shore is dark and featureless because real distance has dissolved it,
-   * this reads the opposite way on purpose -- unnaturally crisp, pale
-   * peaks that have no business being visible this far off, because a
-   * mirage isn't distance doing the work, it's atmospheric refraction
-   * lifting a shape into view. Two cues sell that: every column wavers
-   * with a slow heat-shimmer offset instead of holding still, and a
-   * second, squashed echo of the same silhouette floats just beneath the
-   * main one -- the classic doubled/inverted image a real superior mirage
-   * produces.
-   */
-  _drawFataMorgana(ctx, canvas, worldX, A, B, t) {
-    const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
-    const sinkPx = Math.max(14, canvas.height * 0.015);
-    const baseY = horizonY + sinkPx;
-    // Smaller in pixels than before (0.115 -> 0.055 of canvas height) -- the
-    // mirage is stretched vertically by refraction but
-    // stays compact, because its scale is conveyed by how slowly it moves and
-    // how it towers, not by raw screen area.
-    const maxHeightPx = Math.max(28, canvas.height * 0.055);
-    // The mirage IS the far shore: same recipe, same horizontal span, same
-    // (near-static) parallax as the dark shoreline one draw-call earlier, so
-    // the two stay locked together as the same landmass.
-    const scrollX = worldX * FAR_SHORE_PARALLAX;
-    const stepPx = 6;
-    const shimmerAmpPx = Math.max(1.5, canvas.height * 0.006);
-    // Megalophobic motion (SpaceRidge's cues, not its size): a vast, slow
-    // bob and a 31s towering/sagging stretch that read as "too large to be
-    // nearby" without needing to occupy more pixels.
-    const drift = mirageDriftPx(this.tSec, canvas.height);
-    const stretch = mirageStretch01(this.tSec);
-
-    // Pale, cold, and close to the sky's own high color rather than the
-    // biome's palette -- a mirage is refracted SKYLIGHT, not local terrain,
-    // so it should read as an extension of the air, not as another range.
-    const skyHorizon = this._rotated(this.lerpCache.get(A.sky[2], B.sky[2], t));
-    const air = this._airColor || '#8fa8bf';
-    const pale = this.lerpCache.get('#eef4fb', this.lerpCache.get(skyHorizon, air, 0.4), 0.35);
-    const { r, g, b } = hexToRgb(pale);
-    const presence = miragePresence01(this.tSec);
-    if (presence < 0.02) return;
-    const alpha = 0.22 * presence;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, canvas.width, horizonY + sinkPx * 0.6);
-    ctx.clip(); // the mirage still can't show below its own base -- it floats AT the horizon, not below it
-
-    const buildPath = (squash, yBias) => {
-      ctx.beginPath();
-      ctx.moveTo(-stepPx, baseY + yBias);
-      for (let x = -stepPx; x <= canvas.width + stepPx; x += stepPx) {
-        const u = (x + scrollX) / MIRAGE_TILE_PX;
-        // Sample the REAL far shore (this._farShoreRecipe), refined by the
-        // mirage's own fine crest (this._mirageRecipe).
-        const h01 = mirageHeight01(this._farShoreRecipe, this._mirageRecipe, u);
-        const shimmer = mirageShimmerPx(this._mirageRecipe, u, this.tSec, shimmerAmpPx);
-        const y = baseY + yBias + drift - h01 * maxHeightPx * stretch * squash + shimmer;
-        ctx.lineTo(x, y);
-      }
-      ctx.lineTo(canvas.width + stepPx, baseY + yBias);
-      ctx.closePath();
-    };
-
-    // Main image -- the real far shore, lifted and stretched by refraction.
-    ctx.fillStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
-    buildPath(1, 0);
-    ctx.fill();
-    // Superior mirage upper image: a second, slightly taller, fainter copy
-    // floating just above the main one -- a true superior Fata Morgana
-    // stacks an erect image over an inverted one.
-    ctx.fillStyle = `rgba(${r},${g},${b},${(alpha * 0.6).toFixed(3)})`;
-    buildPath(1.28, -maxHeightPx * stretch * 0.10);
-    ctx.fill();
-    // Inferior echo: squashed flat and dropped just below -- the inverted,
-    // compressed reflection a real superior mirage shows under its erect image.
-    ctx.fillStyle = `rgba(${r},${g},${b},${(alpha * 0.45).toFixed(3)})`;
-    buildPath(0.34, sinkPx * 0.5);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  _drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, night = 0) {
-    const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
-    // Withdrawal telegraph: the sea visibly drains back toward the horizon
-    // in the seconds before a tsunami wall's own approach begins -- pulling
-    // the near edge of the WHOLE plane up toward the horizon shrinks every
-    // downstream draw (the backing fill, the body plate, every contour row
-    // via oceanRowYs) for free, since they all key off nearY.
-    const withdrawal01 = this._activeWithdrawal();
-    const nearY = canvas.height * OCEAN_NEAR_FRAC - (canvas.height * (OCEAN_NEAR_FRAC - OCEAN_HORIZON_FRAC)) * 0.4 * withdrawal01;
-    const bass = 0.5 * ((this._eqSmoothed[0] || 0) + (this._eqSmoothed[1] || 0));
-    const treble = 0.5 * ((this._eqSmoothed[5] || 0) + (this._eqSmoothed[6] || 0));
-    const kick = planeKick(this.tSec * 1000, this._danceKickMs, 'ocean', this._danceKickAmp);
-    const tsunami = this._activeTsunami(canvas.width);
-    const dials = styleDials(this.visualStyle);
-    const presence = 1.28 * (dials.oceanPresence ?? 1);
-    const lineMul = dials.oceanLineAlpha ?? 1;
-    const bodyMul = dials.oceanBodyAlpha ?? 1;
-    const reflectMul = dials.oceanReflect ?? 1;
-
-    const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
-    const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
-    const base = this.lerpCache.get(sil, skyMid, 0.28);
-    // Lean hard into teal sea + abyssal deep so the plane reads as ocean.
-    const water = this._rotated(this.lerpCache.get(base, OCEAN_WATER_BLUE, 0.68));
-    const deepWater = this._rotated(this.lerpCache.get(base, OCEAN_DEEP_BLUE, 0.62));
-    const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-
-    // Rendered: fewer contour rows so the plane reads as water mass, not a
-    // neon wireframe grid. Classic keeps the denser field.
-    const rowBudget = Math.max(8, Math.ceil(this._oceanRows.length * (dials.rowCountMul ?? 1)));
-    const fullRows = this._oceanRows.slice(0, rowBudget);
-    const rows = phenomenaFull ? fullRows : fullRows.slice(0, Math.ceil(fullRows.length * 0.65));
-    const rowYs = oceanRowYs(horizonY, nearY, rows.length);
-
-    // Fade to transparent at the screen edges -- an infinite plane trails
-    // off sideways as much as it recedes into the distance.
-    const edgeFade = ctx.createLinearGradient(0, 0, canvas.width, 0);
-    edgeFade.addColorStop(0, `${water}00`);
-    edgeFade.addColorStop(0.1, water);
-    edgeFade.addColorStop(0.9, water);
-    edgeFade.addColorStop(1, `${water}00`);
-
-    ctx.save();
-    // Normal compositing so water sits as a soft plate instead of laser lines.
-    ctx.globalCompositeOperation = 'source-over';
-
-    // Opaque backing, UNDER the translucent body plate below: water is a
-    // solid surface, and the glassy gradient/contour layers on top of this
-    // were the ocean's entire visible thickness -- at their own peak alpha
-    // (~26%, the body plate's `55` stop times its multipliers) that let the
-    // sky's stars/nebulae/planets, generated as low as 62% of the canvas,
-    // shine straight through the water anywhere past its own horizon. A
-    // real ocean is opaque; no amount of translucency tuning on the pretty
-    // layers fixes that, so this fill guarantees nothing behind ever shows
-    // through, and everything else keeps its existing glassy look on top of
-    // it. Feathers only at the horizon seam (where sky and water always
-    // blend in reality) -- solid everywhere else on the plane.
-    {
-      const backing = ctx.createLinearGradient(0, horizonY, 0, nearY);
-      backing.addColorStop(0, `${water}00`);
-      backing.addColorStop(0.08, deepWater);
-      backing.addColorStop(1, deepWater);
-      // Deliberately NOT scaled by this.budget (the ambient light-budget
-      // dimmer that fades decorative elements down in quiet sections) --
-      // that system governs how VIVID things read, not whether physical
-      // opacity holds. Gating this on it reintroduced the exact leak this
-      // layer exists to close: budget dips as low as ~0.1 in calm stretches,
-      // which would have dropped the backing back to near-transparent right
-      // when the sky is otherwise at its most visible.
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = backing;
-      ctx.fillRect(0, horizonY, canvas.width, Math.max(1, nearY - horizonY));
-    }
-
-    // Body plate: a continuous water mass under the wave contours so the
-    // plane reads as ocean even when mountains occlude parts of the stack.
-    {
-      const body = ctx.createLinearGradient(0, horizonY, 0, nearY);
-      body.addColorStop(0, `${water}00`);
-      body.addColorStop(0.1, `${water}48`);
-      body.addColorStop(0.4, `${deepWater}55`);
-      body.addColorStop(0.75, `${water}36`);
-      body.addColorStop(1, `${water}00`);
-      ctx.globalAlpha = 0.78 * this.budget * presence * bodyMul;
-      ctx.fillStyle = body;
-      ctx.fillRect(0, horizonY, canvas.width, Math.max(1, nearY - horizonY));
-    }
-
-    // Wave contour polylines â€” soft perspective lines on the water plate.
-    const drawContours = dials.oceanDrawContours !== false && lineMul > 0.02;
-    const N = 48;
-    const nRows = rows.length;
-    if (drawContours) {
-      // source-over so lines sit IN the water mass (not laser-cyan soup).
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = edgeFade;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      for (let j = 0; j < nRows; j++) {
-        const row = rows[j];
-        const alpha = rowAlpha(j, nRows) * row.alphaMul * this.budget * presence * lineMul * 0.7;
-        if (alpha <= 0.01) continue;
-        const gapAbove = j === 0 ? nearY - rowYs[0] : rowYs[j - 1] - rowYs[j];
-        const ampScale = row.ampMul * Math.max(0.2, clamp01(gapAbove / 24));
-        const scroll = worldX * (0.03 + 0.09 * (1 - j / nRows));
-        const rowFrac = nRows <= 1 ? 0.5 : j / (nRows - 1);
-        const depthSwell = tsunami
-          ? tsunamiDepthLift(rowFrac, tsunami.rowFrac) * tsunami.scale * tsunami.heightScale
-          : 0;
-        const drift = rowPhaseDrift(j, this.tSec);
-        ctx.globalAlpha = alpha * 0.75;
-        // Slightly thicker + lower contrast so lines read as water, not HUD rules.
-        ctx.lineWidth = 1.4 + 0.4 * (1 - j / nRows);
-        ctx.beginPath();
-        const samples = [];
-        for (let i = 0; i <= N; i++) {
-          const u = ((i / N + row.uPhase + scroll / canvas.width + drift) % 1 + 1) % 1;
-          let x = (i / N) * canvas.width;
-          let y = rowYs[j]
-            + seaLineY(u, this.tSec * row.speedMul, bass, kick) * ampScale
-            - breakerLift(u, this.tSec * row.speedMul, 0.35 + 0.65 * treble) * ampScale * 0.55;
-          // Spectral depth pass (WaveField.js), layered on top of the hand-
-          // tuned rows above -- deliberately subtle (small coefficients
-          // against seaLineY's own amplitude) so the vibe stays exactly
-          // what it was; only gated on phenomenaFull since the row count
-          // itself already trims for lower perf tiers.
-          if (phenomenaFull) {
-            const wave = waveFieldSample(this._waveComponents, x + scroll, this.tSec);
-            x += wave.dx * 0.6 * ampScale;
-            y += wave.dy * 0.4 * ampScale;
-          }
-          if (depthSwell > 0.01) {
-            const halfW = TSUNAMI_WIDTH_PX * (0.35 + 0.65 * tsunami.scale);
-            y -= tsunamiLift(x - tsunami.centerX, halfW) * depthSwell * 85 * (0.55 + 0.45 * ampScale);
-          }
-          samples.push({ x, y, u });
-          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-
-        if (phenomenaFull && rowFrac < 0.72) {
-          ctx.fillStyle = cap;
-          for (let i = 0; i < samples.length; i += 2) {
-            const s = samples[i];
-            const m = whitecapMask(s.u, this.tSec * row.speedMul, rowFrac);
-            if (m < 0.35) continue;
-            ctx.globalAlpha = alpha * m * 0.55;
-            ctx.beginPath();
-            ctx.arc(s.x, s.y - 1.2, 1.1 + 0.9 * m, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-      }
-    } else if (phenomenaFull && tsunami) {
-      // Still need tsunami geometry even when contours are off â€” swell the plate only.
-    }
-
-    if (tsunami && tsunami.scale > 0.02) {
-      // Approach from far horizon â†’ near ocean edge. Size is perspective-
-      // driven (tiny while distant, large as it nears the player). Still a
-      // translucent watery veil + foam crest -- never a solid mountain
-      // silhouette sliding sideways.
-      const { centerX, scale: persp, heightScale, rowFrac: tRf } = tsunami;
-      const baseY = this._oceanLifeRowY(canvas, tRf);
-      const wallH = (nearY - horizonY) * 0.62 * heightScale * (0.12 + 0.88 * persp);
-      const WS = TSUNAMI_WIDTH_PX * (0.28 + 0.72 * persp);
-      const crestY = (s) => baseY - tsunamiProfile(s) * wallH;
-      const alphaMul = this.budget * heightScale * (0.2 + 0.8 * persp);
-      const footY = Math.min(nearY, baseY + wallH * 0.15);
-
-      const veilGrad = ctx.createLinearGradient(0, baseY - wallH, 0, footY);
-      veilGrad.addColorStop(0, `${water}00`);
-      veilGrad.addColorStop(0.45, `${water}2a`);
-      veilGrad.addColorStop(1, `${water}00`);
-      ctx.fillStyle = veilGrad;
-      ctx.beginPath();
-      for (let i = 0; i <= 24; i++) {
-        const s = -1 + (i / 24) * 2;
-        const x = centerX + s * WS;
-        const y = crestY(s);
-        if (i === 0) ctx.moveTo(x, footY);
-        ctx.lineTo(x, y);
-      }
-      ctx.lineTo(centerX + WS, footY);
-      ctx.closePath();
-      ctx.globalAlpha = capFlashAlpha(0.65 * alphaMul, this.reducedFlash);
-      ctx.fill();
-
-      ctx.fillStyle = cap;
-      for (const f of this._tsunamiFlecks) {
-        const x = centerX + f.sOff * WS;
-        const by = crestY(f.sOff);
-        const bob = Math.sin(this.tSec * 4 + f.phase) * 3 * persp;
-        ctx.globalAlpha = capFlashAlpha(0.5 * alphaMul, this.reducedFlash);
-        ctx.beginPath();
-        ctx.arc(x, by - f.riseFrac * wallH * 0.4 + bob, 1.2 + 1.2 * persp, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    // Horizon seam: very soft blend into sky (hard bar reads as a UI rule line).
-    {
-      const hz = ctx.createLinearGradient(0, horizonY - 14, 0, horizonY + 18);
-      hz.addColorStop(0, `${water}00`);
-      hz.addColorStop(0.5, `${water}18`);
-      hz.addColorStop(1, `${water}00`);
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = 0.35 * this.budget * presence;
-      ctx.fillStyle = hz;
-      ctx.fillRect(0, horizonY - 14, canvas.width, 32);
-    }
-
-    // Body sheen just below the horizon â€” soft water mass, not a bright stripe.
-    const sheenH = Math.min(120, nearY - horizonY);
-    const sheen = ctx.createLinearGradient(0, horizonY, 0, horizonY + sheenH);
-    sheen.addColorStop(0, `${water}22`);
-    sheen.addColorStop(0.4, `${water}12`);
-    sheen.addColorStop(1, `${water}00`);
-    ctx.fillStyle = sheen;
-    ctx.globalAlpha = 0.7 * this.budget * presence;
-    ctx.fillRect(0, horizonY, canvas.width, sheenH);
-
-    if (phenomenaFull) {
-      // Celestial reflection path: sun by day, cooler moon path at night.
-      const rx = canvas.width * 0.78;
-      const glintH = (nearY - horizonY) * 0.98;
-      const shimmer = 5 * Math.sin(this.tSec * 1.1);
-      const glintCol = night > 0.45 ? this._rotated(MOON_HALO_COLOR) : cap;
-      const rGrad = ctx.createLinearGradient(rx, horizonY, rx, horizonY + glintH);
-      rGrad.addColorStop(0, `${glintCol}66`);
-      rGrad.addColorStop(0.25, `${glintCol}32`);
-      rGrad.addColorStop(0.65, `${glintCol}14`);
-      rGrad.addColorStop(1, `${glintCol}00`);
-      ctx.fillStyle = rGrad;
-      ctx.globalAlpha = (0.26 + 0.12 * night) * this.budget * reflectMul;
-      // Tapered column (wider at horizon, narrow toward near edge).
-      ctx.beginPath();
-      ctx.moveTo(rx - 10 + shimmer * 0.2, horizonY + glintH);
-      ctx.lineTo(rx - 48 + shimmer * 0.3, horizonY);
-      ctx.lineTo(rx + 48 + shimmer * 0.3, horizonY);
-      ctx.lineTo(rx + 10 + shimmer * 0.2, horizonY + glintH);
-      ctx.closePath();
-      ctx.fill();
-
-      // Secondary sparkle along the reflection path: soft dots only
-      // (1px-tall rects read as dashed glitch).
-      const sparkleN = 5;
-      ctx.fillStyle = glintCol;
-      for (let i = 0; i < sparkleN; i++) {
-        const u = (i + 0.5) / sparkleN;
-        const sy = horizonY + glintH * u;
-        const bob = Math.sin(this.tSec * 2.2 + i * 1.3) * 2;
-        ctx.globalAlpha = (0.08 + 0.10 * (1 - u)) * this.budget * (0.6 + 0.4 * bass);
-        ctx.beginPath();
-        ctx.arc(rx + bob, sy, 1.6 + 1.2 * (1 - u), 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Foam: soft flecks only.
-      ctx.fillStyle = cap;
-      for (let i = 0; i < 9; i++) {
-        const fx = ((i * 0.12 + worldX * 0.00008) % 1) * canvas.width;
-        const fy = horizonY + sheenH * (0.28 + 0.08 * Math.sin(this.tSec * 0.5 + i));
-        ctx.globalAlpha = 0.12 * this.budget * presence;
-        ctx.beginPath();
-        ctx.arc(fx, fy, 1.4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-    ctx.restore();
-  }
-
-  /** Maps an OceanLife rowFrac (0=nearest .. 1=at the horizon) to a screen
-   *  y and a size scale, biased the same perspective direction as the wave
-   *  rows themselves. */
-  _oceanLifeRowY(canvas, rowFrac) {
-    const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
-    const nearY = canvas.height * OCEAN_NEAR_FRAC;
-    return horizonY + (nearY - horizonY) * Math.pow(1 - rowFrac, 1.6);
-  }
-
-  /** Everything living on/over the ocean: islands and ships always (a
-   *  handful of strokes each), sea life and the rare monster gated on
-   *  phenomenaFull -- witnessed set pieces, not core scenery. */
-  _drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull) {
-    const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
-    const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
-    const water = this._rotated(this.lerpCache.get(sil, skyMid, 0.45));
-    const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-    const bass = 0.5 * ((this._eqSmoothed[0] || 0) + (this._eqSmoothed[1] || 0));
-    const kick = planeKick(this.tSec * 1000, this._danceKickMs, 'ocean', this._danceKickAmp);
-    const nowMs = this.tSec * 1000;
-    const scroll = worldX * OCEAN_LIFE_RATIO;
-    const pad = 200;
-
-    ctx.save();
-    // Islands/ships sit on the water plate â€” normal composite, not additive
-    // "lighter" (that made mesa silhouettes float as purple diamonds in the sky).
-    ctx.globalCompositeOperation = 'source-over';
-
-    // Islands -- dark land masses grounded on the ocean rows.
-    const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
-    const nearY = canvas.height * OCEAN_NEAR_FRAC;
-    for (const isl of this._islands) {
-      const x = wrappedOffset(isl.x0, scroll);
-      if (x < -pad || x > canvas.width + pad) continue;
-      const y = this._oceanLifeRowY(canvas, isl.rowFrac);
-      // Only draw while the foot is on the ocean band (never free-float in sky).
-      if (y < horizonY - 4 || y > nearY + 20) continue;
-      const scale = 1 - 0.65 * isl.rowFrac;
-      const w = isl.w * scale, h = Math.max(8, isl.h * scale);
-      ctx.globalAlpha = capFlashAlpha(0.72 * this.budget, this.reducedFlash);
-      ctx.fillStyle = this._rotated(sil);
-      ctx.beginPath();
-      if (isl.kind === 'cone') {
-        ctx.moveTo(x - w / 2, y);
-        ctx.lineTo(x, y - h);
-        ctx.lineTo(x + w / 2, y);
-      } else if (isl.kind === 'mesa') {
-        // A steep table-mountain, not a gentle trapezoid: the plateau is
-        // much narrower than the base, the cliff faces are concave (near-
-        // vertical rock, not a sloped berm), and the crest is a ragged
-        // forested treeline rather than a flat table edge -- Forest Haven,
-        // not a sandbar.
-        const topHalf = w * 0.30;
-        const jag = isl.crownJag || [0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
-        ctx.moveTo(x - w / 2, y);
-        ctx.quadraticCurveTo(x - w * 0.42, y - h * 0.55, x - topHalf, y - h);
-        const crownN = jag.length;
-        for (let k = 0; k <= crownN; k++) {
-          const cx = x - topHalf + (k / crownN) * (topHalf * 2);
-          const bump = k === 0 || k === crownN ? 0 : (jag[k - 1] - 0.5) * h * 0.26;
-          ctx.lineTo(cx, y - h - bump);
-        }
-        ctx.quadraticCurveTo(x + w * 0.42, y - h * 0.55, x + w / 2, y);
-      } else {
-        ctx.ellipse(x, y - h * 0.15, w / 2, h * 0.3, 0, 0, Math.PI * 2);
-      }
-      ctx.closePath();
-      ctx.fill();
-      if (isl.kind === 'mesa') {
-        // Faint cliff striations on the near cliff face -- just enough
-        // texture to read as rock, not a flat cutout.
-        ctx.globalAlpha = capFlashAlpha(0.16 * this.budget, this.reducedFlash);
-        ctx.strokeStyle = water;
-        ctx.lineWidth = Math.max(0.8, 1 * scale);
-        ctx.beginPath();
-        ctx.moveTo(x - w * 0.34, y - h * 0.12);
-        ctx.lineTo(x - w * 0.22, y - h * 0.72);
-        ctx.moveTo(x + w * 0.20, y - h * 0.08);
-        ctx.lineTo(x + w * 0.30, y - h * 0.6);
-        ctx.stroke();
-      }
-      if (isl.kind === 'palm') {
-        ctx.strokeStyle = this._rotated(sil);
-        ctx.lineWidth = Math.max(1, 1.5 * scale);
-        ctx.beginPath();
-        ctx.moveTo(x - w * 0.1, y - h * 0.2);
-        ctx.lineTo(x - w * 0.05, y - h * 0.9);
-        ctx.stroke();
-      }
-      // Thin wet foot into the water (flat, not a second â€œbunâ€ dome).
-      ctx.globalAlpha = capFlashAlpha(0.22 * this.budget, this.reducedFlash);
-      ctx.fillStyle = water;
-      ctx.fillRect(x - w * 0.5, y - 1, w, Math.max(2, 2.5 * scale));
-      // Waterline cap â€” thin, not a neon laser.
-      ctx.strokeStyle = cap;
-      ctx.lineWidth = Math.max(0.8, 1 * scale);
-      ctx.globalAlpha = capFlashAlpha(0.22 * this.budget, this.reducedFlash);
-      ctx.beginPath();
-      ctx.moveTo(x - w * 0.55, y);
-      ctx.lineTo(x + w * 0.55, y);
-      ctx.stroke();
-      if (isl.beacon) {
-        // Small lamp on the crest only â€” no skyward beam.
-        const blink = 0.45 + 0.55 * Math.sin(this.tSec * 2.3 + isl.x0);
-        ctx.globalAlpha = capFlashAlpha(0.5 * blink * this.budget, this.reducedFlash);
-        ctx.fillStyle = cap;
-        ctx.beginPath();
-        ctx.arc(x, y - h - 1.5 * scale, 1.4 * scale, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    ctx.globalCompositeOperation = 'lighter';
-
-    // Run-up: a tsunami wall's swell lifts and rocks any ship sitting near
-    // its current depth row, same tsunamiDepthLift/scale/heightScale math
-    // _drawOcean already uses for the wave rows themselves -- ships
-    // visibly answer the wall passing beneath them instead of drifting on
-    // obliviously.
-    const tsunami = this._activeTsunami(canvas.width);
-
-    // Ships -- slow drifters, hull+mast, bobbing on the wave line at their u.
-    for (const ship of this._ships) {
-      const x = wrappedOffset(ship.x0 - ship.driftPxS * this.tSec, scroll);
-      if (x < -pad || x > canvas.width + pad) continue;
-      const y = this._oceanLifeRowY(canvas, ship.rowFrac);
-      const u = ((x / canvas.width) % 1 + 1) % 1;
-      let bob = seaLineY(u, this.tSec, bass, kick) * 0.3;
-      if (tsunami) {
-        const runUp = tsunamiDepthLift(ship.rowFrac, tsunami.rowFrac) * tsunami.scale * tsunami.heightScale;
-        bob -= runUp * 22; // lifts the hull as the swell passes beneath it
-      }
-      const s = ship.size * (1 - 0.5 * ship.rowFrac);
-      ctx.globalAlpha = capFlashAlpha(0.55 * this.budget, this.reducedFlash);
-      ctx.strokeStyle = water;
-      ctx.fillStyle = water;
-      ctx.lineWidth = Math.max(1, 1.2 * s);
-      if (ship.kind === 'wreck') {
-        // Half-sunken hull, broken mast -- still a few strokes, sits lower.
-        ctx.beginPath();
-        ctx.moveTo(x - 16 * s, y + bob + 2 * s);
-        ctx.lineTo(x + 10 * s, y + bob);
-        ctx.lineTo(x + 6 * s, y + bob + 5 * s);
-        ctx.lineTo(x - 12 * s, y + bob + 6 * s);
-        ctx.closePath();
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(x - 2 * s, y + bob);
-        ctx.lineTo(x + 4 * s, y + bob - 10 * s);
-        ctx.stroke();
-      } else {
-        ctx.beginPath(); // hull
-        ctx.moveTo(x - 14 * s, y + bob);
-        ctx.lineTo(x + 14 * s, y + bob);
-        ctx.lineTo(x + 10 * s, y + bob + 4 * s);
-        ctx.lineTo(x - 10 * s, y + bob + 4 * s);
-        ctx.closePath();
-        ctx.fill();
-        ctx.beginPath(); // mast + sail
-        ctx.moveTo(x, y + bob);
-        ctx.lineTo(x, y + bob - 16 * s);
-        ctx.lineTo(x + 9 * s, y + bob - 4 * s);
-        ctx.closePath();
-        ctx.stroke();
-      }
-    }
-
-    if (phenomenaFull) {
-      // Sea life: brief witnessed events -- fish leaps, dolphin pods, a
-      // whale spout. Placed by a fixed screen fraction, not world scroll
-      // (they're transient, like a meteor, not scenery).
-      while (this._seaLifeIdx < this._seaLife.length && this._seaLife[this._seaLifeIdx].tMs + this._seaLife[this._seaLifeIdx].durMs < nowMs) this._seaLifeIdx++;
-      for (let k = this._seaLifeIdx; k < this._seaLife.length; k++) {
-        const ev = this._seaLife[k];
-        if (ev.tMs > nowMs) break;
-        const age = nowMs - ev.tMs;
-        const u = clamp01(age / ev.durMs);
-        const x = ev.u * canvas.width;
-        const y = this._oceanLifeRowY(canvas, ev.rowFrac);
-        ctx.strokeStyle = water; ctx.fillStyle = water;
-        if (ev.kind === 'fish') {
-          const arc = fishArcY(u);
-          ctx.globalAlpha = capFlashAlpha((1 - Math.abs(u - 0.5) * 1.6) * this.budget, this.reducedFlash);
-          ctx.beginPath();
-          ctx.ellipse(x, y - arc, 5, 2, -0.5, 0, Math.PI * 2);
-          ctx.fill();
-          if (arc < 3) {
-            ctx.globalAlpha = capFlashAlpha(0.4 * this.budget, this.reducedFlash);
-            ctx.beginPath(); ctx.arc(x, y, 6 * (1 - u), 0, Math.PI * 2); ctx.stroke();
-          }
-        } else if (ev.kind === 'pod') {
-          ctx.globalAlpha = capFlashAlpha(0.7 * this.budget, this.reducedFlash);
-          for (let i = 0; i < 3; i++) {
-            const pu = clamp01(u * 3 - i * 0.6) % 1;
-            if (pu <= 0 || pu >= 1) continue;
-              const arc = fishArcY(pu);
-            ctx.beginPath();
-            ctx.ellipse(x + i * 26 - 26, y - arc, 7, 3, -0.4, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        } else { // spout
-          const rise = clamp01(u * 3);
-          const h = 30 * (1 - Math.max(0, u - 0.35) / 0.65);
-          ctx.globalAlpha = capFlashAlpha(0.8 * this.budget * rise, this.reducedFlash);
-          ctx.beginPath();
-          ctx.ellipse(x, y, 20, 5, 0, 0, Math.PI * 2);
-          ctx.fill();
-          if (h > 0) {
-            ctx.strokeStyle = cap;
-            ctx.lineWidth = 1.4;
-            ctx.beginPath();
-            ctx.moveTo(x, y - 4);
-            ctx.lineTo(x, y - 4 - h);
-            ctx.stroke();
-          }
-        }
-      }
-
-      // The rare sea monster: a serpent that rises, undulates, and submerges.
-      while (this._monsterIdx < this._monsters.length && this._monsters[this._monsterIdx].tMs + this._monsters[this._monsterIdx].durMs < nowMs) this._monsterIdx++;
-      if (this._monsterIdx < this._monsters.length) {
-        const ev = this._monsters[this._monsterIdx];
-        const age = nowMs - ev.tMs;
-        if (age >= 0 && age <= ev.durMs) {
-          const u = age / ev.durMs;
-          const rise = Math.sin(clamp01(u * 3) * Math.PI * 0.5) * clamp01((1 - u) * 3 + 0.3);
-          const x = ev.u * canvas.width;
-          const y = this._oceanLifeRowY(canvas, 0.35);
-          ctx.globalAlpha = capFlashAlpha(0.75 * this.budget, this.reducedFlash);
-          ctx.strokeStyle = water;
-          ctx.lineWidth = 5;
-          ctx.lineCap = 'round';
-          for (let h = 0; h < 3; h++) {
-            const hx = x - 60 + h * 34;
-            const hy = y - rise * (26 - h * 5) + serpentHumpY(u, h * 2.1 + this.tSec * 2);
-            ctx.beginPath();
-            ctx.moveTo(hx - 12, y);
-            ctx.quadraticCurveTo(hx, hy, hx + 12, y);
-            ctx.stroke();
-          }
-          // Head.
-          ctx.fillStyle = water;
-          ctx.beginPath();
-          ctx.ellipse(x + 46, y - rise * 30, 9, 6, -0.3, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    }
-    ctx.restore();
-  }
-
-  /**
-   * The spectrum as weather, not as bars: a continuous luminous ridge on
-   * the horizon whose silhouette IS the 7-band spectrum -- cosine-
-   * interpolated between bands so there is not a straight line in it,
-   * slowly scrolling through the bands, with a traveling undulation riding
-   * the crest. Filled glow below, a bright aurora crest line on top.
-   */
-  _drawHorizonEQ(ctx, canvas, worldX, A, B, t) {
-    const color = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-    const eqMul = styleDials(this.visualStyle).horizonEqAlpha ?? 1;
-    if (eqMul < 0.05) return;
-    const baseline = canvas.height * 0.60;
-    const maxH = canvas.height * EQ_MAX_HEIGHT_FRAC;
-    const scroll = worldX * 0.0018;
-    const tS = this.tSec;
-
-    // One extra sample past each edge so the wave terminates off-screen
-    // instead of clipping mid-oscillation exactly on the canvas boundary.
-    const N = 64;
-    const EDGE_STEPS = 1;
-    const pts = new Array(N + 1 + 2 * EDGE_STEPS);
-    for (let k = 0; k < pts.length; k++) {
-      const i = k - EDGE_STEPS;
-      const u = i / N;
-      // Which pair of bands this column sits between (wrapping, scrolling).
-      const p = ((u * BAND_COUNT + scroll) % BAND_COUNT + BAND_COUNT) % BAND_COUNT;
-      const i0 = Math.floor(p) % BAND_COUNT, i1 = (i0 + 1) % BAND_COUNT;
-      const f = p - Math.floor(p);
-      const c = (1 - Math.cos(f * Math.PI)) / 2; // cosine ease: no corners
-      const v = clamp01(this._eqSmoothed[i0] * (1 - c) + this._eqSmoothed[i1] * c);
-      const wave = Math.sin(u * Math.PI * 7 + tS * 1.6) * 7 * (0.25 + v);
-      pts[k] = { x: u * canvas.width, y: baseline - (v * maxH + wave) };
-    }
-
-    ctx.save();
-    // Soft additive aurora glow over the CGI sky.
-    ctx.globalCompositeOperation = 'lighter';
-
-    // Body: luminous fill from crest down â€” the musical weather mass.
-    const grad = ctx.createLinearGradient(0, baseline - maxH, 0, baseline + 30);
-    grad.addColorStop(0, `${color}99`);
-    grad.addColorStop(0.55, `${color}4d`);
-    grad.addColorStop(1, `${color}00`);
-    ctx.fillStyle = grad;
-    ctx.globalAlpha = 0.75 * this.budget * eqMul;
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, baseline + 30);
-    for (const p of pts) ctx.lineTo(p.x, p.y);
-    ctx.lineTo(pts[pts.length - 1].x, baseline + 30);
-    ctx.closePath();
-    ctx.fill();
-
-    // Bright aurora crest line on top â€” the fill alone reads as a haze;
-    // this is what makes the spectrum's own shape legible against the sky.
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = color;
-    for (const [lw, alpha] of [[10, 0.16], [4, 0.32], [1.6, 0.85]]) {
-      ctx.globalAlpha = alpha * this.budget * eqMul;
-      ctx.lineWidth = lw;
-      ctx.beginPath();
-      pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  _drawOneCelestial(ctx, cx, cy, c, alpha, haloMul = 1) {
-    if (alpha <= 0.02) return;
-    ctx.save();
-    // A previous pass (see git history) cut this halo's ALPHA to 0.55 and
-    // deliberately left its footprint (the gradient radius) untouched.
-    // Reported as still too intense after that -- alpha alone wasn't
-    // enough, because the halo's screen footprint also grows with the
-    // body's own CelestialApproach scale-up (up to 3.4x by song's end), so
-    // a wide multiplier here compounds into a genuinely huge glow late in
-    // a song regardless of how dim any one pixel of it is. This second pass
-    // cuts both: alpha down further, and the multiplier itself (3.2/2.2 ->
-    // 2.4/1.7, roughly a 25% smaller footprint) so the glow's total extent
-    // shrinks along with its brightness, not just one or the other.
-    const haloRadiusMul = (c.dominant ? 2.4 : 1.7) * haloMul;
-    ctx.globalAlpha = Math.min(0.72, alpha * 0.4 * haloMul);
-    const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, c.radius * haloRadiusMul);
-    halo.addColorStop(0, c.haloColor);
-    halo.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = halo;
-    ctx.beginPath();
-    ctx.arc(cx, cy, c.radius * haloRadiusMul, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Opaque backing disc, full body radius: blocks whatever was drawn
-    // earlier this frame -- the space ridge, stars, ambient constellations,
-    // Midasus's sky voyage -- from showing through. Without this, every
-    // path below that isn't fully opaque on its own (veiled bodies at 0.6
-    // alpha, the wireframe style's deliberately-hollow 0.55 wash) let
-    // earlier deep-sky content -- especially the space ridge, drawn with
-    // additive 'lighter' blending -- show through at meaningfully more than
-    // a faint knock-back, which reads as that content sitting IN FRONT of
-    // the sun rather than behind it: backwards for the one object in the
-    // sky that is unimaginably too large and far to ever have anything in
-    // front of it. Same fix the moon already had (see its own backing disc
-    // below); the sun just never got it. Drawn at the body's own full
-    // alpha, not the veiled/wireframe factor, so it fades in/out in step
-    // with the body rather than ever occluding more than the visible body does.
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = '#000000';
-    ctx.beginPath();
-    ctx.arc(cx, cy, c.radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    if (c.wireframe) {
-      // Backing wash: a wireframe body is deliberately hollow (that's the
-      // whole point of the style), but a fully open middle let anything
-      // drawn earlier this frame -- the space ridge, stars, ambient
-      // constellations, all deep-sky content drawn before the celestial
-      // body -- show straight through at full strength, which reads as
-      // those objects sitting IN FRONT of the sun rather than behind a
-      // hollow one. A soft, dark wash (not a full opaque fill, which would
-      // erase the see-through look this style exists for) knocks them back
-      // without losing the wireframe's own character.
-      ctx.globalAlpha = alpha * 0.55;
-      ctx.fillStyle = '#05070d';
-      ctx.beginPath();
-      ctx.arc(cx, cy, c.radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.strokeStyle = c.color;
-      ctx.lineWidth = 1.5;
-      ctx.globalAlpha = alpha * 0.8;
-      ctx.beginPath();
-      ctx.arc(cx, cy, c.radius, 0, Math.PI * 2);
-      ctx.moveTo(cx - c.radius, cy); ctx.lineTo(cx + c.radius, cy);
-      ctx.moveTo(cx, cy - c.radius); ctx.lineTo(cx, cy + c.radius);
-      ctx.stroke();
-    } else if (c.shape) {
-      // Superformula silhouette: this biome's sun/moon is a Gielis curve,
-      // slowly rotating, normalized so `radius` still means what it says.
-      // Odd m only closes after 4*pi (the curve needs two revolutions),
-      // even m closes after 2*pi.
-      const { m, n1, n2, n3 } = c.shape;
-      const span = (m % 2 === 1 ? 4 : 2) * Math.PI;
-      const steps = m % 2 === 1 ? 192 : 96;
-      let rMax = 0;
-      const rs = new Array(steps + 1);
-      for (let i = 0; i <= steps; i++) {
-        rs[i] = superformula((i / steps) * span, m, n1, n2, n3);
-        if (rs[i] > rMax) rMax = rs[i];
-      }
-      const rot = this.tSec * 0.05;
-      // A single flat fill read as a plain pale disc no matter how faceted
-      // the outline is -- especially for shallow superformula params
-      // (GEODE's hexagon barely dips below its own peak radius) where the
-      // silhouette alone is too subtle to notice against the halo glow. A
-      // simple off-center sphere-shaded gradient gives every faceted
-      // celestial actual depth instead of relying on the outline to sell it.
-      const rgb = hexToRgb(c.color);
-      const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
-      const shade = ctx.createRadialGradient(
-        cx - c.radius * 0.35, cy - c.radius * 0.35, 0,
-        cx, cy, c.radius * 1.15,
-      );
-      shade.addColorStop(0, `hsl(${h.toFixed(0)},${s.toFixed(0)}%,${Math.min(94, l + 14).toFixed(0)}%)`);
-      shade.addColorStop(0.6, c.color);
-      shade.addColorStop(1, `hsl(${h.toFixed(0)},${s.toFixed(0)}%,${Math.max(4, l - 20).toFixed(0)}%)`);
-      ctx.fillStyle = shade;
-      ctx.globalAlpha = alpha * (c.veiled ? 0.6 : 1);
-      ctx.beginPath();
-      for (let i = 0; i <= steps; i++) {
-        const phi = (i / steps) * span;
-        const r = (rs[i] / rMax) * c.radius;
-        const x = cx + Math.cos(phi + rot) * r;
-        const y = cy + Math.sin(phi + rot) * r;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-      ctx.fill();
-    } else {
-      ctx.fillStyle = c.color;
-      ctx.globalAlpha = alpha * (c.veiled ? 0.6 : 1);
-      ctx.beginPath();
-      ctx.arc(cx, cy, c.radius, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    if (c.ring) {
-      ctx.strokeStyle = c.haloColor;
-      ctx.globalAlpha = alpha * 0.5;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(cx, cy, c.radius * 1.6, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    if (c.shattered) {
-      ctx.strokeStyle = '#05010d';
-      ctx.globalAlpha = alpha * 0.8;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(cx - c.radius * 0.3, cy - c.radius * 0.6);
-      ctx.lineTo(cx + c.radius * 0.1, cy + c.radius * 0.4);
-      ctx.moveTo(cx + c.radius * 0.4, cy - c.radius * 0.5);
-      ctx.lineTo(cx - c.radius * 0.1, cy + c.radius * 0.2);
-      ctx.stroke();
-    }
-    if (c.shafts) {
-      ctx.globalAlpha = alpha * 0.10;
-      ctx.fillStyle = c.color;
-      for (let i = 0; i < 5; i++) {
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate((i - 2) * 0.22 + Math.sin(this.tSec * 0.2 + i) * 0.03);
-        ctx.fillRect(-8, 0, 16, 600);
-        ctx.restore();
-      }
-    }
-    ctx.restore();
-  }
-
-  _drawProminence(ctx, cx, cy, alpha) {
-    const e0 = this.energyCurves ? this.energyCurves.sample(0, this.tSec * 1000) : 0.3;
-    ctx.save();
-    ctx.globalAlpha = alpha * 0.7;
-    ctx.strokeStyle = '#ffcf6b';
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 4; i++) {
-      const ang = (i / 4) * Math.PI * 2 + this.tSec * 0.15;
-      const r1 = 80, r2 = 80 + 30 * (0.3 + e0);
-      ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1 * 0.6);
-      ctx.quadraticCurveTo(
-        cx + Math.cos(ang) * (r1 + r2) * 0.7, cy + Math.sin(ang) * (r1 + r2) * 0.4 - 20,
-        cx + Math.cos(ang) * r2, cy + Math.sin(ang) * r2 * 0.6,
-      );
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  /** The Wind: 2-3 translucent fog banks drifting on the same global wind
-   *  as everything else, opacity proportional to how calm the section is
-   *  -- calm stretches finally get weather, not just slower motion. */
-  _drawFogBanks(ctx, canvas) {
-    const fogMul = styleDials(this.visualStyle).fogMul;
-    // Always carries a little atmosphere, more on calm stretches.
-    const calm = this.calmLevel || 0;
-    const alpha = 0.10 * fogMul + 0.14 * fogMul * calm;
-    if (alpha < 0.01) return;
-    const period = canvas.width * 1.6;
-    // See fogBandGradientGeometry's own doc comment: an ellipse fitted to
-    // the band, reaching zero at its top/bottom, in place of the old circle
-    // a shorter rect used to cut off mid-falloff.
-    const { cy, r, yScale } = fogBandGradientGeometry(canvas.width, canvas.height);
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (const bank of this._fogBanks) {
-      for (const x of bank.x < canvas.width * 0.5 ? [bank.x, bank.x + period] : [bank.x]) {
-        ctx.save();
-        ctx.translate(x, cy);
-        ctx.scale(1, yScale);
-        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
-        g.addColorStop(0, `rgba(255,255,255,${alpha})`);
-        g.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-    }
-    ctx.restore();
-  }
-
-  /** `this.groundY` is fixed at construction against the NOMINAL
-   *  (unzoomed) frame, but during a camera pull-back this method's caller
-   *  is drawing into the wider/taller zoomed logical stage instead
-   *  (CameraDirector.zoom < 1 -- see Renderer.js). Combining the two
-   *  directly -- `this.groundY + 40 - canvas.height` -- has canvas.height
-   *  cancel out exactly, pinning the ranges to a fixed absolute Y
-   *  regardless of zoom. mountainStripDrawHeight's headroom cap
-   *  (`canvas.height * HEADROOM_FRAC`) then GROWS as the frame widens
-   *  while its "bottom" anchor (groundY+40) stays fixed and small, so the
-   *  allowed strip height actively SHRINKS the further the camera pulls
-   *  back -- ranges collapse to a thin sliver near the bottom of frame
-   *  instead of growing to fill the newly revealed space, leaving the sky
-   *  and ocean (which correctly scale off plain canvas.height fractions)
-   *  to cover a much bigger, under-detailed area than intended. Scaling
-   *  groundY by the same ratio canvas.height/this.h that the zoomed stage
-   *  itself grew by keeps the ranges' anchor and headroom growing in step
-   *  with the pull-back, exactly like the sky and ocean already do. */
-  _zoomedGroundY(canvas) {
-    const zoomScale = this.h > 0 ? canvas.height / this.h : 1;
-    return this.groundY * zoomScale;
-  }
-
-  _drawLayer(ctx, canvas, layerKey, scrollX, tint, t, A, B) {
-    const stripsA = this.stripsFor(A.name), stripsB = this.stripsFor(B.name);
-    // Per-section height (Stage 1): a draw-time multiplier, set once per
-    // frame in draw() from the active section(s) -- never baked, since
-    // generateSilhouette's own HEADROOM refit would erase it on L2/L3.
-    const { from: heightMulA = 1, to: heightMulB = 1 } = this._drawHeightMul || {};
-    // Snowline (Stage 4): also a per-section value, read the same way.
-    const { from: snowLineA = 1, to: snowLineB = 1 } = this._drawSnowLine || {};
-    const zGroundY = this._zoomedGroundY(canvas);
-    // Lift the ranges so their ridges actually clear the ground band --
-    // strip bottoms stay tucked safely beneath the ground fill.
-    const yOff = zGroundY + 40 - canvas.height;
-    ctx.save();
-    // Float tilt (CameraDirector.floatTilt): as the camera pulls back, each
-    // range leans as if the vantage point itself is rising past it -- scaled
-    // by the SAME depth ratio that already governs its parallax scroll
-    // speed, so the nearest range (L5) gets the full tilt and the farthest
-    // (L2) barely moves, exactly like their scroll speeds already do.
-    // Pivoted near the range's own base (the ground line) so its foot stays
-    // put and its peak is what visibly swings -- the ground itself never
-    // tilts (see the separate fixed ground transform in draw()), so this
-    // reads as the mountains leaning away from a level floor, not the
-    // floor tilting under them.
-    const tilt = (this.floatTilt || 0) * (LAYER_RATIOS[layerKey] / LAYER_RATIOS.L5);
-    if (tilt) {
-      const pivotX = canvas.width / 2, pivotY = zGroundY;
-      ctx.translate(pivotX, pivotY);
-      ctx.rotate(tilt);
-      ctx.translate(-pivotX, -pivotY);
-    }
-    const wantShimmerSlices = styleDials(this.visualStyle).heatShimmerSlices !== false;
-    const biomeShimmerAlpha = (A.fx === 'heatShimmer' ? 1 - t : 0) + (B.fx === 'heatShimmer' ? t : 0);
-    const applyBiomeShimmer = wantShimmerSlices && biomeShimmerAlpha > 0.05 && layerKey !== 'L5';
-    // Movement II: heat shimmer isn't only SOLAR's signature anymore -- a
-    // hard hype-fast spike reuses the exact same slice-offset trick on the
-    // farthest range, above the horizon, regardless of biome.
-    // Rendered skips the row-slice warp (it paints horizontal hairlines).
-    const applyDynamicShimmer = wantShimmerSlices && layerKey === 'L2' && (this.heatShimmer || 0) > 0.7;
-    if (applyBiomeShimmer || applyDynamicShimmer) {
-      this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX, yOff);
-    } else {
-      this._drawDancingStrip(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.terrainEnergy ?? 1, heightMulA);
-      // Volume before the crest: the skyline stroke has to sit on top of
-      // its own mountain's shading, not under it.
-      this._drawRidgeVolume(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, 1, A.terrainEnergy ?? 1, heightMulA, snowLineA);
-      // Crest rim: full strength at the near anchors (L4/L5), extended to
-      // L2/L3 at reduced alpha (Stage 3) -- gated on heavyPostFx there since
-      // it's a wider live pass across the two biggest ranges on screen.
-      const rimOkA = layerKey === 'L4' || layerKey === 'L5' || !this._perf || this._perf.heavyPostFx;
-      if (rimOkA && A.edgeLight) {
-        this._drawCrest(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.edgeLight, CREST_RIM_ALPHA[layerKey] ?? 1, A.terrainEnergy ?? 1, heightMulA);
-      }
-    }
-    if (B !== A && t > 0.02) {
-      ctx.globalAlpha = t;
-      this._drawDancingStrip(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.terrainEnergy ?? 1, heightMulB);
-      ctx.globalAlpha = 1;
-      this._drawRidgeVolume(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, t, B.terrainEnergy ?? 1, heightMulB, snowLineB);
-      const rimOkB = layerKey === 'L4' || layerKey === 'L5' || !this._perf || this._perf.heavyPostFx;
-      if (rimOkB && B.edgeLight) {
-        this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t * (CREST_RIM_ALPHA[layerKey] ?? 1), B.terrainEnergy ?? 1, heightMulB);
-      }
-    }
-    ctx.restore();
-  }
-
-  /**
-   * Range-only musical envelope. Other worlds keep the accumulated groove
-   * so their crest shading does not inherit alpine phrase/bass rules.
-   * Cached once per draw so the blit, the live crest and the sky ensemble
-   * cannot disagree about where the song is.
-   */
-  _ridgeEnvelope() {
-    const kind = this.world?.kind || 'alpine';
-    if (kind !== 'alpine') return null;
-    const nowMs = this.tSec * 1000;
-    const cache = this._ridgeMusicCache;
-    if (cache && cache.nowMs === nowMs && cache.reducedFlash === !!this.reducedFlash) {
-      return cache.env;
-    }
-    const section = this.sections?.[this._lastSectionIdx];
-    const prev = Number.isFinite(this._lastSectionIdx) && this._lastSectionIdx > 0
-      ? this.sections?.[this._lastSectionIdx - 1]
-      : null;
-    const music = sampleWorldMusic({
-      nowMs,
-      energyCurves: this.energyCurves,
-      rhythm: this.worldRhythm,
-      section,
-      reducedFlash: this.reducedFlash,
-      response: this.world?.response,
-    });
-    const env = ridgeEnvelope({
-      energy: music.energy,
-      bass: music.bass,
-      accent: music.accent,
-      reveal: music.reveal,
-      lift: boundaryLift01(section, prev),
-      reducedFlash: this.reducedFlash,
-    });
-    this._ridgeMusicCache = { nowMs, reducedFlash: !!this.reducedFlash, env };
-    return env;
-  }
-
-  /** Scroll for one range. A procedural layer keeps world parallax.
-   *  A scanned profile does not: the song picks the station it opens on
-   *  and the speed it travels, instead of the south end at L2's fixed
-   *  rate. The nearer scanned range still leads by its depth ratio.
-   *  L3 has no profile on this tile, so it stays on the parallax clock. */
-  _terrainScroll(layerKey, worldX) {
-    if (!this.terrainProfiles?.[layerKey]) {
-      return worldX * CodaDirector.delaminateRatio(LAYER_RATIOS[layerKey], this.unravel);
-    }
-    return terrainScrollPx({
-      tSec: this.tSec,
-      curves: this.energyCurves,
-      durationMs: this.durationMs,
-      stripWidth: this._terrainStripWidth(layerKey),
-      reducedFlash: !!this.reducedFlash,
-      response: this.world?.response,
-      depth: ridgeDepth(LAYER_RATIOS[layerKey], LAYER_RATIOS.L2, this.unravel || 0),
-    });
-  }
-
-  _terrainStripWidth(layerKey) {
-    const name = this.currentBlend?.from || this.profiles?.[0]?.name;
-    const width = name ? this.strips.get(name)?.[layerKey]?.width : 0;
-    return width > 0 ? width : TERRAIN_STRIP_WIDTH;
-  }
-
-  /** How heaved the furthest range is right now at one screen column, 0..1
-   *  (see MountainChoreo.ridgeSwell01). Midio's jump gate rides this, so it
-   *  is read from the sim rather than from a draw pass -- it deliberately
-   *  re-derives the same strip-space column position _drawDancingStrip uses
-   *  (song travel on a scanned L2, otherwise worldX through the L2 parallax
-   *  ratio, delamination included) so the number describes the range the
-   *  player is actually looking at.
-   *  @param {number} screenX the column to read, in stage space */
-  farRidgeSwell01(screenX = 0) {
-    const cfg = DANCE_LAYERS[FAR_DANCE_LAYER];
-    if (!cfg) return 0;
-    const kick = ridgeKickEnv(this.tSec * 1000 - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
-    const scrollX = this._terrainScroll(FAR_DANCE_LAYER, this._danceWorldX);
-    return ridgeSwell01(scrollX + screenX, this.tSec, cfg, kick);
-  }
-
-  /** The mountains dance: the strip is drawn in column slices, each riding
-   *  a groove-scaled traveling wave along the ridge, and the whole range
-   *  bounces on kicks â€” near hills first, far peaks a beat-fraction later
-   *  (per-layer delaySec), a crowd wave rolling into the distance. Column
-   *  phase is computed in scroll-stable strip space so the wave travels
-   *  with time, never jittering with camera scroll. The strips overhang
-   *  the ground band by ~40px, which quietly swallows the bottom gap a
-   *  lifted column would otherwise open. */
-  _drawDancingStrip(ctx, canvas, strip, scrollX, yOff, layerKey, terrainEnergy = 1, heightMul = 1) {
-    const cfg = DANCE_LAYERS[layerKey];
-    if (!cfg) {
-      drawTiledStrip(ctx, strip, scrollX, canvas.width, canvas.height, yOff);
-      return;
-    }
-    const nowMs = this.tSec * 1000;
-    const ridge = this._ridgeEnvelope();
-    const preview = this.terrainPreview && isTerrainStrip(strip);
-    const kick = preview ? 0 : ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
-      * this._danceKickAmp * (ridge?.kickMul ?? 1);
-    // Orogeny grows the range, then mountainStripDrawHeight hard-caps so peaks
-    // stay on-frame (ocean/sky remain visible; off-screen summits are useless).
-    // heightMul is the per-section draw-time multiplier (Stage 1 of the
-    // mountain overhaul) -- never baked, since generateSilhouette's own
-    // HEADROOM refit would erase an in-strip height change on L2/L3.
-    // Phrase openings that earned a lift add a brief extra scale on top;
-    // decorative cuts leave scaleMul at 1.
-    const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
-      * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0))
-      * Math.max(0, heightMul)
-      * (ridge?.scaleMul ?? 1);
-    const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this._zoomedGroundY(canvas));
-    const baseY = canvas.height - dh + yOff;
-    // Stage 2 (ridge deformation): summits sharpen on the kick, flanks swell
-    // on sustained energy -- gated by terrainEnergy exactly like the offset
-    // dance above, so a flat/calm biome doesn't deform either.
-    const sustain = preview ? 0 : (ridge ? ridge.sustain : (this._danceSustain || 0));
-    const groove = preview ? 0 : (ridge ? ridge.groove : this._danceGroove);
-    // Slice width is the dance's sampling resolution, and a quality setting
-    // (PerfGovernor.danceColumnWidth): the step between neighbouring slices
-    // is the offset curve's slope times this width, so narrowing it shrinks
-    // the staircase in the skyline proportionally. _crestPoints must read the
-    // SAME width, or the live crest polyline lands where the blit didn't.
-    const colW = this._danceColW();
-    const w = strip.width;
-    const terrain = isTerrainStrip(strip);
-    let x = stripOriginX(strip, scrollX, canvas.width);
-    while (x < canvas.width) {
-      for (let cx = 0; cx < w; cx += colW) {
-        const cw = Math.min(colW, w - cx);
-        // 1px horizontal overlap hides hairline seams between dance columns.
-        const drawW = Math.min(cw + 1, w - cx);
-        const sx = x + cx;
-        if (sx + drawW < 0 || sx > canvas.width) continue;
-        // Offsets at this column's own two BOUNDARIES, not one sample held
-        // flat across it. Drawn with a vertical shear between them, the
-        // column's left edge lands exactly where its left neighbour's right
-        // edge did, so the silhouette is piecewise-linear instead of a
-        // staircase and there is no seam left to hide.
-        //
-        // The old code sampled the LEFT EDGE and held it constant, while the
-        // live crest stroke blended between column CENTERS -- a ramp phase-
-        // shifted half a column from a staircase. That is why the neon ridge
-        // line floated off the fill it traces.
-        const dyL = danceOffset(scrollX + sx, this.tSec, groove, kick, cfg, this.fever || 0) * terrainEnergy;
-        const dyR = danceOffset(scrollX + sx + cw, this.tSec, groove, kick, cfg, this.fever || 0) * terrainEnergy;
-        // Foot-anchored: this column's own foot (baseY + dh + dy, the same
-        // translation the offset dance already applies) never moves: only
-        // the elevation above it stretches, so a squat foothill barely
-        // grows while this range's own summit visibly heaves.
-        //
-        // The SCALE is read at the column's two boundaries off the same
-        // smooth curve _crestPoints reads, for exactly the reason the offset
-        // above is. It used to be one danceScale() sampled from this column's
-        // own h01 and held flat across it -- a staircase -- while every
-        // overlay traced danceScaleSmooth's ramp. That is the same
-        // step-versus-ramp split the offset comment above describes fixing,
-        // left behind on the sibling term when the shear landed, and it is
-        // worse here than it was there: the offset is a translation, so its
-        // error is uniform, but a scale multiplies HEIGHT ABOVE THE FOOT, so
-        // the mismatch is zero at the foot and largest at the summits, and it
-        // grows with the kick. Measured against a five-summit ridge: 0.4px at
-        // rest, 4.3px on a kick, quantized to the column grid and pulsing at
-        // the kick rate. That is the blocky flicker at the peaks -- the snow
-        // cap, the cast shadow and the strata all tracing a smooth curve the
-        // fill underneath them was not actually drawn on.
-        // Isolated accents may still sharpen a summit when bounce is gated.
-        const sharpen = ridge ? Math.max(kick, ridge.gesture) : kick;
-        const scaleL = danceScaleSmooth(strip.ridge, scrollX + sx, sharpen, sustain, cfg, colW);
-        const scaleR = danceScaleSmooth(strip.ridge, scrollX + sx + cw, sharpen, sustain, cfg, colW);
-        const colDh = dh * (1 + (scaleL - 1) * terrainEnergy);
-        const colDhR = dh * (1 + (scaleR - 1) * terrainEnergy);
-        const dy = dyL;
-        const footY = baseY + dh + dy;
-        // Top edge from (footY - colDh) to (footY + (dyR - dyL) - colDhR):
-        // the shear now carries the scale ramp as well as the offset, so
-        // neighbouring columns' TOPS meet exactly instead of stepping. The
-        // cost is that the foot picks up the same ramp and tilts by
-        // (colDh - colDhR) -- at most a few px, and the strips already
-        // overhang the ground band by ~40px, which swallows it whole.
-        const shear = ((dyR - dyL) - (colDhR - colDh)) / Math.max(1, cw);
-        if (Math.abs(shear) < 1e-6) {
-          ctx.drawImage(strip, cx, 0, drawW, strip.height, sx, footY - colDh, drawW, colDh);
-        } else {
-          // transform(1, k, 0, 1, 0, 0) maps (x, y) -> (x, y + k*x), so the
-          // destination y is pre-compensated by -k*sx to put the column's
-          // LEFT edge exactly on footY - colDh; the shear then carries it to
-          // footY - colDh + (dyR - dyL) at the right edge. A pure vertical
-          // shear translates the column continuously, which is exactly what
-          // the offset dance is -- the foot stays as glued as it ever was,
-          // it simply arrives at each x by a ramp rather than a jump.
-          ctx.save();
-          ctx.transform(1, shear, 0, 1, 0, 0);
-          ctx.drawImage(strip, cx, 0, drawW, strip.height, sx, footY - colDh - shear * sx, drawW, colDh);
-          ctx.restore();
-        }
-      }
-      if (terrain) break;
-      x += w;
-    }
-  }
-
-  /** The neon ridge line, drawn LIVE instead of baked into the strip bitmap
-   *  (the old baked stroke tore at every 128px dance-column seam). Walks the
-   *  same danceOffset/growthMul/baseY math _drawDancingStrip uses, but
-   *  smoothly (GeoCrest's ridgeYSmooth/danceOffsetSmooth) so the line stays
-   *  one continuous polyline across every seam and every strip-tile wrap.
-   *  L4 additionally subtracts geoCrestOffset -- the 7-band spectrum,
-   *  sculpted into geological features (cliffs, aretes, knobs, outcrops,
-   *  terraces) fixed to terrain positions -- making it the third, distinct
-   *  equalizer alongside the horizon EQ and the spectrum massif. L5 keeps
-   *  the plain unbroken crest (today's look, minus the tear). */
-  /** The smooth screen-space crest polyline for a dancing range, plus the
-   *  band it encloses. Extracted so the crest stroke and the volume pass
-   *  (depth gradient + peak shoulders) walk one identical curve -- if they
-   *  re-derived it separately, any drift between them would show up as the
-   *  shading peeling away from the skyline it is supposed to belong to. */
-  /** The width _drawDancingStrip is slicing the strip at this frame -- the
-   *  dance's sampling resolution, and a quality setting (see
-   *  PerfGovernor.danceColumnWidth). Read through one accessor so the blit
-   *  and the live crest polyline can never disagree about it: they are the
-   *  same silhouette, and a mismatch puts the crest where the blit isn't. */
-  _danceColW() {
-    return this._perf ? this._perf.danceColumnWidth : DANCE_COL_FINE;
-  }
-
-  _crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy = 1, heightMul = 1, geometry = 'dancing') {
-    if (geometry === 'static') return staticStripGeometry(strip, scrollX, canvas.width, canvas.height, yOff);
-    if (!strip.ridge) return null;
-    const cfg = DANCE_LAYERS[layerKey];
-    if (!cfg) return null;
-    // Shared per-frame cache (cleared once at the top of draw()): this same
-    // (strip, layerKey, scrollX, terrainEnergy, heightMul) combination is
-    // re-derived by _drawRidgeVolume, _drawCrest, and _drawConnectorHills
-    // for the same frame -- up to ~14x across L2-L5 with a crossfade
-    // active. yOff/canvas are constant for the whole frame so they don't
-    // need to be in the key.
-    const cache = this._crestCache;
-    let byStrip = cache && cache.get(strip);
-    const colW = this._danceColW();
-    const ridge = this._ridgeEnvelope();
-    const preview = this.terrainPreview && isTerrainStrip(strip);
-    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}|${colW}|${ridge?.scaleMul ?? 1}|${ridge?.groove ?? 'g'}|${ridge?.sustain ?? 's'}|${preview ? 1 : 0}`;
-    if (byStrip) {
-      const hit = byStrip.get(cacheKey);
-      if (hit) return hit;
-    }
-    const nowMs = this.tSec * 1000;
-    const kick = preview ? 0 : ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
-      * this._danceKickAmp * (ridge?.kickMul ?? 1);
-    const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
-      * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0))
-      * Math.max(0, heightMul)
-      * (ridge?.scaleMul ?? 1);
-    const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this._zoomedGroundY(canvas));
-    const scale = dh / Math.max(1, strip.height);
-    const baseY = canvas.height - dh + yOff;
-    const w = strip.width;
-    const isGeo = layerKey === 'L4';
-    const tSec = this.tSec;
-    const fever = this.fever || 0;
-    const groove = preview ? 0 : (ridge ? ridge.groove : this._danceGroove);
-    const sustain = preview ? 0 : (ridge ? ridge.sustain : (this._danceSustain || 0));
-
-    const pts = new Array(Math.ceil(canvas.width / CREST_STEP_PX) + 3);
-    let n = 0;
-    let crestY = Infinity;
-    const viewScroll = isTerrainStrip(strip) ? -stripOriginX(strip, scrollX, canvas.width) : scrollX;
-    for (let x = -CREST_STEP_PX; x <= canvas.width + CREST_STEP_PX; x += CREST_STEP_PX) {
-      const stripX = viewScroll + x;
-      const u = stripSampleX(strip, stripX);
-      const yR = ridgeYSmooth(strip.ridge, u) * scale;
-      const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever, colW) * terrainEnergy;
-      const lift = (isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
-      // Stage 2 (ridge deformation): foot-anchored per-column scale -- the
-      // strip's foot (screen y = baseY + dh) never moves; only the
-      // elevation above it stretches, by this column's own relative peak
-      // height (h01, mirroring _drawDancingStrip's raw per-column read,
-      // but smoothly blended across column seams like the rest of this
-      // live curve already is).
-      const h01 = columnHeight01At(strip.ridge, stripX);
-      // danceScaleRamp, not danceScaleSmooth: the ramp is the curve the blit
-      // can actually paint (one straight top edge per column), so the crest
-      // polyline and every overlay hung off it land ON the fill instead of on
-      // a silhouette that was never drawn. See GeoCrest.danceScaleRamp.
-      const rawScale = danceScaleRamp(strip.ridge, stripX, ridge ? Math.max(kick, ridge.gesture) : kick, sustain, cfg, colW);
-      const localScale = 1 + (rawScale - 1) * terrainEnergy;
-      const heightAboveFoot = dh - yR;
-      const yRDeformed = dh - heightAboveFoot * localScale;
-      const y = baseY + yRDeformed + dy - lift;
-      if (y < crestY) crestY = y;
-      pts[n++] = { x, y, lift, stripX, dy, scale: scale * localScale, h01 };
-    }
-    pts.length = n;
-    // The strips are blitted from baseY down over `dh`, so this is where the
-    // range's body actually ends and the ground band swallows it.
-    const geom = {
-      pts, baseY, bottomY: baseY + dh,
-      footY: baseY + dh, crestY, dh, stripHeight: strip.height,
-      // The baked summit, free of dance/deformation/scroll. `crestY` above is
-      // a live global extremum and moves every frame; anything that needs a
-      // stable ALTITUDE (the snow line) must hang off this instead.
-      bakedCrestY: baseY + ridgeBakedCrestY(strip.ridge) * scale,
-    };
-    if (cache) {
-      if (!byStrip) { byStrip = new Map(); cache.set(strip, byStrip); }
-      byStrip.set(cacheKey, geom);
-    }
-    return geom;
-  }
-
-  _drawCrest(ctx, canvas, strip, scrollX, yOff, layerKey, edgeLight, alpha, terrainEnergy = 1, heightMul = 1) {
-    const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy, heightMul);
-    if (!geom) return;
-    const { pts } = geom;
-    const isGeo = layerKey === 'L4';
-
-    ctx.save();
-    if (isGeo) {
-      let anyLift = false;
-      for (const p of pts) if (p.lift > 1) { anyLift = true; break; }
-      if (anyLift) {
-        ctx.globalAlpha = 0.10 * alpha;
-        ctx.fillStyle = edgeLight;
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-        for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x, pts[i].y + pts[i].lift);
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
-    // Ridge glow: a soft wide pass (CGI catch-light) rather than stacked
-    // hairline polylines that stripe the sky.
-    const crestDials = styleDials(this.visualStyle);
-    const crestMul = crestDials.crestGlowAlpha ?? 1;
-    if (crestDials.crestStroke !== false && crestMul > 0.02) {
-      const passes = [[7.5, 0.10], [3.2, 0.22], [1.1, 0.38]];
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      // A rim is light spilling over an edge, so it takes its color from the
-      // LIGHT as much as from the biome's own accent. Stroked in raw
-      // `edgeLight` it was a marker pen tracing the mountain in whatever
-      // saturated hue the palette happened to name -- which on a bright
-      // palette reads as neon piping rather than as a backlit ridge.
-      const rimColor = this.light
-        ? this.lerpCache.get(edgeLight, this.light.colorHex, RIM_LIGHT_MIX)
-        : edgeLight;
-      const { r: rr, g: rg, b: rb } = hexToRgb(rimColor);
-      // ...and it has to fall off away from the source. A constant alpha all
-      // the way across the frame is the other half of why it read as an
-      // outline: real rim light is strongest where the ridge faces the light
-      // and nearly gone on the far side. One horizontal gradient per pass
-      // does that in the same single stroke call the flat version cost.
-      const lightX = this.light ? this.light.x : canvas.width * 0.5;
-      const rimGrad = (baseA) => {
-        const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
-        for (let s = 0; s <= RIM_GRADIENT_STOPS; s++) {
-          const u = s / RIM_GRADIENT_STOPS;
-          const a = baseA * rimGain(u * canvas.width, lightX, canvas.width);
-          grad.addColorStop(u, `rgba(${rr},${rg},${rb},${a.toFixed(4)})`);
-        }
-        return grad;
-      };
-      for (const [lw, a] of passes) {
-        ctx.strokeStyle = rimGrad(a * alpha * crestMul);
-        ctx.globalAlpha = 1;
-        ctx.lineWidth = lw;
-        ctx.beginPath();
-        for (let i = 0; i < pts.length; i++) {
-          if (i === 0) ctx.moveTo(pts[i].x, pts[i].y); else ctx.lineTo(pts[i].x, pts[i].y);
-        }
-        ctx.stroke();
-      }
-    }
-    ctx.restore();
-  }
-
-  /**
-   * The green connector country (ConnectorHills.js).
-   *
-   * The far range carries the biggest dance, which means it spends a lot of
-   * its time hidden behind the nearer hills -- and when it does, there's a
-   * dead band between whatever hid it and the ground, with nothing to carry
-   * the eye down through. These hills fill exactly that, only there, and only
-   * as much as the ridge is actually buried.
-   *
-   * Deliberately the quietest thing on screen: a soft forest/grass green at
-   * low alpha with no crest stroke of its own, so it reads as distance rather
-   * than as another skyline competing with the one it's rescuing.
-   */
-  /**
-   * The distant swell that stands in for the dancing ridge when the view
-   * angle has buried it (DistantWave.js).
-   *
-   * Two jobs, deliberately in one pass because both need the same geometry:
-   *
-   *  1. **Measure.** Every frame, how much of L2 the nearer ranges are
-   *     eating, into `_ridgeOcclusionRaw`. update() smooths it and, at a
-   *     section boundary and nowhere else, lets it decide the swap.
-   *  2. **Draw.** Whatever the crossfade currently says. Drawn BEFORE L2 --
-   *     behind every range -- so the near hills occlude the swell's body and
-   *     only its crests break their skyline. That's what makes it read as
-   *     water seen past the mountains rather than a band laid over the sky.
-   *
-   * The measurement is never gated: the decision has to be made on the same
-   * evidence at every shed level, or dropping a rung mid-song would silently
-   * change what the next boundary decides. Only the drawing sheds, on the
-   * same rung as the connector country it partners with.
-   */
-  _drawDistantWave(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t, alphaMul = 1) {
-    // `alphaMul` is how the caller crossfades two PROFILES through this pass.
-    // The heightMul below is interpolated, but the strip set cannot be: this
-    // draws one geometry, and two different biomes have entirely different
-    // mountains. So when the profiles differ the caller runs the pass twice
-    // and dissolves one into the other, the way the main layer pass does.
-    const profile = t > 0.5 ? B : A;
-    const strips = this.stripsFor(profile.name);
-    if (!strips) return;
-    const { from: heightMulA = 1, to: heightMulB = 1 } = this._drawHeightMul || {};
-    // Interpolated, NOT switched at the midpoint. Picking one side or the
-    // other steps the whole overlay the moment t crosses 0.5: measured at 86px
-    // on L2 across a single section boundary (0.88 -> 1.16 is a 32% change in
-    // height, and the peaks move further than the mean does). That is the
-    // ridge that "teleports" once every section. The layer pass below does the
-    // equivalent correctly by drawing both sides and crossfading them; these
-    // overlays draw one geometry, so the continuity has to come from the
-    // multiplier itself.
-    const heightMul = lerp(heightMulA, heightMulB, t);
-    const energy = profile.terrainEnergy ?? 1;
-    const yOff = this._zoomedGroundY(canvas) + 40 - canvas.height;
-    const dancy = this._crestPoints(canvas, strips.L2, scrollX0, yOff, 'L2', energy, heightMul);
-    if (!dancy) return;
-    const nearer = [
-      this._crestPoints(canvas, strips.L3, scrollX1, yOff, 'L3', energy, heightMul),
-      this._crestPoints(canvas, strips.L4, scrollX2, yOff, 'L4', energy, heightMul),
-    ].filter(Boolean);
-    if (!nearer.length) return;
-    const skyline = dancy.pts.map((_, i) => {
-      let top = Infinity;
-      for (const g of nearer) if (g.pts[i] && g.pts[i].y < top) top = g.pts[i].y;
-      return top;
-    });
-    this._ridgeOcclusionRaw = occludedFraction(dancy.pts, skyline);
-
-    const mix = this._distantWaveMix || 0;
-    this.distantWaveDebug = { occlusion01: this._ridgeOcclusion01, on: this._distantWaveOn, mix };
-    if (mix < 0.01) return;
-    if (this._perf && !this._perf.heavyPostFx) return;
-
-    let sumY = 0, minY = Infinity, maxY = -Infinity;
-    for (const p of dancy.pts) { sumY += p.y; if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y; }
-    const meanY = sumY / dancy.pts.length;
-    const relief = Math.max(0, maxY - minY);
-    const ampPx = Math.min(WAVE_AMP_MAX_PX, Math.max(WAVE_AMP_MIN_PX, relief * WAVE_AMP_FRAC));
-    // Where the swell sits. The obvious answer -- the ridge's own crest line
-    // -- is wrong, and wrong for the same reason the feature exists: a ridge
-    // this pass has just decided is BURIED is, by definition, below the
-    // skyline that buried it, so a wave drawn there is hidden too. So the
-    // baseline is taken from whichever line is higher on screen, the ridge's
-    // mean crest or the occluding skyline's, with the skyline candidate
-    // lifted by a full amplitude so the swell's troughs clear it rather than
-    // only its crests. Clamped out of the upper sky band so a very tall near
-    // range can't push the sea up among the stars.
-    let sumSky = 0;
-    for (const y of skyline) sumSky += y;
-    const meanSky = sumSky / skyline.length;
-    const baselineY = Math.max(
-      canvas.height * 0.15,
-      Math.min(meanY - WAVE_LIFT_PX, meanSky - ampPx - WAVE_LIFT_PX),
-    );
-
-    const pts = swellCrest({
-      width: canvas.width, baselineY, ampPx, tSec: this.tSec,
-      scrollX: scrollX0, stepPx: CREST_STEP_PX, energy01: clamp01(energy),
-    });
-    if (pts.length < 2) return;
-
-    // Water at this distance is mostly sky: the same air color every range's
-    // body is washed toward (Stage 3), nudged toward the biome's own halo so
-    // the sea belongs to this world rather than being one grey everywhere.
-    const base = ensureMinLightness(
-      this.lerpCache.get(this._airColor || '#5a6b80', this._rotated(profile.celestial.haloColor), 0.22),
-      0.22,
-    );
-    const { r, g, b } = hexToRgb(base);
-    const alpha = WAVE_ALPHA * mix * this.budget * alphaMul;
-    if (alpha < 0.01) return;
-
-    ctx.save();
-    const bottom = baselineY + ampPx + WAVE_BAND_PX;
-    const grad = ctx.createLinearGradient(0, baselineY - ampPx, 0, bottom);
-    grad.addColorStop(0, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
-    grad.addColorStop(0.5, `rgba(${r},${g},${b},${(alpha * 0.7).toFixed(3)})`);
-    grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.lineTo(pts[pts.length - 1].x, bottom);
-    ctx.lineTo(pts[0].x, bottom);
-    ctx.closePath();
-    ctx.fill();
-
-    // The crest glint. Without it this is just another hazy ridge -- the
-    // moving highlight on the swell is the whole reason the eye reads water
-    // and keeps watching the back of the scene.
-    if (!this.reducedFlash) {
-      ctx.globalAlpha = WAVE_GLINT_ALPHA * mix * this.budget * alphaMul;
-      ctx.strokeStyle = this._rotated(profile.celestial.haloColor);
-      ctx.lineWidth = 1.4;
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  _drawConnectorHills(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t) {
-    if (this._perf && !this._perf.heavyPostFx) return;
-    const profile = t > 0.5 ? B : A;
-    const strips = this.stripsFor(profile.name);
-    if (!strips) return;
-    const { from: heightMulA = 1, to: heightMulB = 1 } = this._drawHeightMul || {};
-    // Interpolated, NOT switched at the midpoint. Picking one side or the
-    // other steps the whole overlay the moment t crosses 0.5: measured at 86px
-    // on L2 across a single section boundary (0.88 -> 1.16 is a 32% change in
-    // height, and the peaks move further than the mean does). That is the
-    // ridge that "teleports" once every section. The layer pass below does the
-    // equivalent correctly by drawing both sides and crossfading them; these
-    // overlays draw one geometry, so the continuity has to come from the
-    // multiplier itself.
-    const heightMul = lerp(heightMulA, heightMulB, t);
-    const yOff = this._zoomedGroundY(canvas) + 40 - canvas.height;
-    const dancy = this._crestPoints(canvas, strips.L2, scrollX0, yOff, 'L2', profile.terrainEnergy ?? 1, heightMul);
-    if (!dancy) return;
-
-    // The skyline doing the hiding: whichever of the nearer ranges stands
-    // highest at each x (screen y, so the minimum).
-    const nearer = [
-      this._crestPoints(canvas, strips.L3, scrollX1, yOff, 'L3', profile.terrainEnergy ?? 1, heightMul),
-      this._crestPoints(canvas, strips.L4, scrollX2, yOff, 'L4', profile.terrainEnergy ?? 1, heightMul),
-    ].filter(Boolean);
-    if (!nearer.length) return;
-    const skyline = dancy.pts.map((_, i) => {
-      let top = Infinity;
-      for (const g of nearer) if (g.pts[i] && g.pts[i].y < top) top = g.pts[i].y;
-      return top;
-    });
-
-    const spans = occludedSpans(dancy.pts, skyline);
-    // Debug readout (DebugOverlay, backtick): what the pass actually saw this
-    // frame. Reconstructing it from outside means guessing the parallax
-    // ratios, which is its own source of wrong answers.
-    this.connectorDebug = { spans: spans.length, depth01: spans.length ? Math.max(...spans.map((x) => x.depth01)) : 0, alpha: 0 };
-    if (!spans.length) return;
-
-    // Forest/grass, pulled from the biome's own halo so it still belongs to
-    // this world, but dragged well toward green and desaturated. Floored so it
-    // survives the dark palettes, same lesson as the ground.
-    const base = ensureMinLightness(
-      this.lerpCache.get(this._rotated(profile.celestial.haloColor), CONNECTOR_GREEN, CONNECTOR_GREEN_MIX),
-      CONNECTOR_MIN_LIGHTNESS,
-    );
-    const { r, g, b } = hexToRgb(base);
-
-    ctx.save();
-    for (const span of spans) {
-      const pts = hillCurve(span, dancy.pts, skyline, { descendPx: CONNECTOR_DESCEND_PX });
-      if (pts.length < 2) continue;
-      // Wider camera pull-back also earns a stronger connector wash -- the
-      // wide shot is exactly where the flat gap it bridges is most visible.
-      // The distant wave answers the same complaint these hills do -- a
-      // sightline broken by a buried ridge -- so when the swell has taken
-      // the horizon, the country stands down rather than stacking a second
-      // fix on top of the first.
-      const alpha = CONNECTOR_ALPHA * span.depth01 * this.budget
-        * (1 + 0.5 * clamp01(this.pullback01 || 0)) * (1 - (this._distantWaveMix || 0));
-      this.connectorDebug.alpha = Math.max(this.connectorDebug.alpha, alpha);
-      if (alpha < 0.01) continue;
-
-      // A band that follows the hills down and dissolves, not a fill to the
-      // floor: it bridges the gap the hidden ridge left, then hands the eye
-      // over to the range in front.
-      let topY = Infinity, footY = -Infinity;
-      for (const q of pts) { if (q.y < topY) topY = q.y; if (q.y > footY) footY = q.y; }
-      const bottom = Math.min(this._zoomedGroundY(canvas) + 40, footY + CONNECTOR_BAND_PX);
-      const grad = ctx.createLinearGradient(0, topY, 0, bottom);
-      grad.addColorStop(0, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
-      grad.addColorStop(0.55, `rgba(${r},${g},${b},${(alpha * 0.6).toFixed(3)})`);
-      grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.lineTo(pts[pts.length - 1].x, bottom);
-      ctx.lineTo(pts[0].x, bottom);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  /**
-   * Cast shadow (Stage 5 of the mountain overhaul): the near range darkens
-   * the already-drawn farther range in a band above the near range's OWN
-   * crest -- this is where the near silhouette actually stands in front of
-   * the far one, so it's the physically sensible place for its shadow to
-   * fall. multiply-blended (matches _drawRidgeVolume's own shade
-   * vocabulary) and clipped to the far range's body using the same cached
-   * _crestPoints geometry _drawRidgeVolume reads, so no new geometry pass
-   * is needed. Deliberately no horizontal shift: asserting a shadow
-   * DIRECTION would only be honest under a low, off-camera sun, and this
-   * runs at every sun elevation (strength alone falls off at high noon --
-   * see this._castShadowStrength).
-   */
-  _drawCastShadow(ctx, canvas, farLayerKey, nearLayerKey, scrollFar, scrollNear, A, B, t) {
-    if (this._perf && !this._perf.heavyPostFx) return;
-    const strength = this._castShadowStrength || 0;
-    if (strength <= 0.002) return;
-    const profile = t > 0.5 ? B : A;
-    const strips = this.stripsFor(profile.name);
-    if (!strips) return;
-    const farStrip = strips[farLayerKey], nearStrip = strips[nearLayerKey];
-    if (!farStrip || !nearStrip) return;
-    const { from: heightMulA = 1, to: heightMulB = 1 } = this._drawHeightMul || {};
-    // Interpolated, NOT switched at the midpoint. Picking one side or the
-    // other steps the whole overlay the moment t crosses 0.5: measured at 86px
-    // on L2 across a single section boundary (0.88 -> 1.16 is a 32% change in
-    // height, and the peaks move further than the mean does). That is the
-    // ridge that "teleports" once every section. The layer pass below does the
-    // equivalent correctly by drawing both sides and crossfading them; these
-    // overlays draw one geometry, so the continuity has to come from the
-    // multiplier itself.
-    const heightMul = lerp(heightMulA, heightMulB, t);
-    const yOff = this._zoomedGroundY(canvas) + 40 - canvas.height;
-    const energy = profile.terrainEnergy ?? 1;
-    const farGeom = this._crestPoints(canvas, farStrip, scrollFar, yOff, farLayerKey, energy, heightMul);
-    const nearGeom = this._crestPoints(canvas, nearStrip, scrollNear, yOff, nearLayerKey, energy, heightMul);
-    if (!farGeom || !nearGeom) return;
-    if (!(farGeom.bottomY > farGeom.crestY)) return;
-
-    const farBody = new Path2D();
-    farBody.moveTo(farGeom.pts[0].x, farGeom.pts[0].y);
-    for (let i = 1; i < farGeom.pts.length; i++) farBody.lineTo(farGeom.pts[i].x, farGeom.pts[i].y);
-    farBody.lineTo(farGeom.pts[farGeom.pts.length - 1].x, farGeom.bottomY);
-    farBody.lineTo(farGeom.pts[0].x, farGeom.bottomY);
-    farBody.closePath();
-
-    // The fade used to come from a vertical gradient anchored at
-    // `nearGeom.crestY` -- the single highest point of the near range across
-    // the whole screen. That is a global extremum over a DANCING ridge:
-    // whichever column happens to be tallest changes abruptly frame to frame,
-    // so the gradient's position snapped around and the shadow flickered.
-    //
-    // A screen-vertical gradient was the wrong instrument anyway. The band
-    // follows a wavy crest, so one gradient can only be correct at whatever
-    // height it was anchored to and is wrong everywhere else. Stacked
-    // sub-bands, each tracing the crest polyline at its own offset, put the
-    // falloff where it belongs -- measured from the LOCAL crest at every x --
-    // and depend on no extremum at all, so there is nothing left to snap.
-    const nPts = nearGeom.pts;
-    ctx.save();
-    ctx.clip(farBody);
-    ctx.globalCompositeOperation = 'multiply';
-    const step = CAST_SHADOW_BAND_PX / CAST_SHADOW_STEPS;
-    for (let s2 = 0; s2 < CAST_SHADOW_STEPS; s2++) {
-      // Darkest against the crest, fading upward away from it.
-      const a = strength * (1 - s2 / CAST_SHADOW_STEPS);
-      if (a < 0.004) continue;
-      const g = Math.max(0, Math.min(255, Math.round(255 * (1 - a))));
-      ctx.fillStyle = `rgb(${g},${g},${g})`;
-      const lo = -s2 * step, hi = -(s2 + 1) * step;
-      const band = new Path2D();
-      band.moveTo(nPts[0].x, nPts[0].y + lo);
-      for (let i = 1; i < nPts.length; i++) band.lineTo(nPts[i].x, nPts[i].y + lo);
-      for (let i = nPts.length - 1; i >= 0; i--) band.lineTo(nPts[i].x, nPts[i].y + hi);
-      band.closePath();
-      ctx.fill(band);
-    }
-    ctx.restore();
-  }
-
-  /** Summits worth sculpting: local maxima of the crest whose prominence
-   *  (height above the lower of the two saddles flanking them) clears
-   *  SHOULDER_MIN_PROMINENCE, thinned so no two sit closer than
-   *  SHOULDER_MIN_SPACING_PX and only the tallest few survive. Prominence
-   *  rather than a bare local-max test is the whole point: on a noise ridge
-   *  every third sample is a local max, and spurring all of them is how you
-   *  turn a mountain range into a hairball. */
-  _ridgePeaks(pts) {
-    const cands = [];
-    for (let i = 1; i < pts.length - 1; i++) {
-      if (!(pts[i].y < pts[i - 1].y && pts[i].y <= pts[i + 1].y)) continue;
-      // Walk out both ways to the saddle before the ground rises again.
-      let l = i, lo = pts[i].y;
-      while (l > 0 && pts[l - 1].y >= pts[l].y) { l--; lo = Math.max(lo, pts[l].y); }
-      let r = i, ro = pts[i].y;
-      while (r < pts.length - 1 && pts[r + 1].y >= pts[r].y) { r++; ro = Math.max(ro, pts[r].y); }
-      const prominence = Math.min(lo, ro) - pts[i].y;
-      if (prominence >= SHOULDER_MIN_PROMINENCE) cands.push({ i, prominence });
-    }
-    cands.sort((a, b) => b.prominence - a.prominence);
-    const kept = [];
-    for (const c of cands) {
-      if (kept.length >= SHOULDER_MAX_PER_RANGE) break;
-      if (kept.some((k) => Math.abs(pts[k.i].x - pts[c.i].x) < SHOULDER_MIN_SPACING_PX)) continue;
-      kept.push(c);
-    }
-    return kept;
-  }
-
-  /**
-   * Gives a dancing range its third dimension. Two things, both live over
-   * the blitted strip:
-   *
-   * 1. A depth gradient anchored to the SCREEN rather than to the strip
-   *    bitmap. The baked gradient inside each strip is shifted per dance
-   *    column (_drawDancingStrip blits in DANCE_COL_W slices, each at its
-   *    own vertical offset), so at every column boundary the same screen row
-   *    lands on a different part of that gradient -- a hard vertical shade
-   *    step every 128px, marching across the range as it dances. Re-laying
-   *    the gradient in screen space over the whole body restores one
-   *    continuous shade across all of them.
-   *
-   * 2. Shoulders on the summits: from each peak, a spur descending toward
-   *    the viewer all the way into the ground band, and a shorter one
-   *    running away from us that fades out before it lands. The facet
-   *    between the near spur and the skyline is shaded, which is what
-   *    actually turns the silhouette into a solid -- a ridge line with a
-   *    flat fill under it reads as a paper cutout no matter how nicely it
-   *    moves. Kept well under the crest's own contrast so the skyline stays
-   *    the thing you read first.
-   */
-  /**
-   * Shading and depth for one range body.
-   *
-   * `geology` (snow caps, sedimentary bedding) is alpine-specific and off by
-   * default for callers that opt in from another world kind: a city skyline
-   * or a foundry's stacks have silhouettes that need shading just as much,
-   * but snowcaps and rock strata on them would be nonsense. The SHADING half
-   * is universal -- the strip bake is a single flat fill by design (see
-   * SilhouetteGenerator: a baked gradient sliced into independently-offset
-   * dance columns is a hard seam at every column boundary), so this pass is
-   * the only source of shading depth any range has, in any world.
-   */
-  _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1, heightMul = 1, snowLine01 = 1, { geology = true, geometry = 'dancing' } = {}) {
-    // Ceiling landforms are hanging masses. Foot-anchored crest shading
-    // (catchlight on a summit, shade pooling in a valley) paints the
-    // wrong volume onto a vault or a canopy â€” but skipping the pass
-    // entirely left those worlds as cardboard cutouts hanging from the
-    // top of the frame. Their own volume: light on the dangling edge,
-    // shade at the attachment.
-    if (strip?.ridge?.anchor === 'ceiling') {
-      this._drawCeilingVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha);
-      return;
-    }
-    const strength = RIDGE_VOLUME_STRENGTH[layerKey] ?? 0;
-    if (strength <= 0) return;
-    const geom = this._crestPoints(canvas, strip, scrollX, yOff, layerKey, terrainEnergy, heightMul, geometry);
-    if (!geom) return;
-    const { pts, bottomY, crestY, bakedCrestY } = geom;
-    if (!(bottomY > crestY)) return;
-
-    // The body path: the skyline, then straight down and back along the
-    // range's own bottom edge.
-    const body = new Path2D();
-    body.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) body.lineTo(pts[i].x, pts[i].y);
-    body.lineTo(pts[pts.length - 1].x, bottomY);
-    body.lineTo(pts[0].x, bottomY);
-    body.closePath();
-
-    ctx.save();
-    ctx.clip(body);
-
-    // Screen-anchored depth: catch the light along the crest, sink the
-    // foot, leave the middle alone. Deliberately NOT a repaint in the
-    // biome's own color -- the strips are already haze-mixed toward the sky
-    // by distance, and re-filling them with a lightened silhouette hue
-    // throws that away (a saturated palette turns into a slab of neon).
-    // Just as deliberately not a pure darkening either: these scenes are
-    // already dim, and the complaint being answered here is that the ranges
-    // are hard to READ, so the pass has to add contrast without spending
-    // overall brightness to get it.
-    //
-    // Coefficients bumped from 0.11/0.26 -- the strip used to also carry a
-    // baked vertical gradient (SilhouetteGenerator's 'rendered' shadeMode),
-    // and this pass only ever ADDED contrast on top of that. The strip is
-    // now a flat mid-tone fill (see SilhouetteGenerator.js for why: a baked
-    // gradient sliced into independently-offset dance columns is a hard
-    // vertical seam at every column boundary), so this screen-space pass is
-    // the range's ONLY source of shading depth and has to carry the full
-    // load alone.
-    //
-    // Anchored to bakedCrestY, NOT crestY: crestY is a live global extremum
-    // over a ridge that dances and scrolls (see _crestPoints -- "moves every
-    // frame"), same failure already diagnosed and fixed for the snow line a
-    // few dozen lines below this. Anchoring the catchlight/shade gradients
-    // to it instead made this pass wobble with them: whichever column
-    // happened to be tallest changed frame to frame, sliding the gradient's
-    // start point up and down and reading as the shading itself flickering.
-    // bakedCrestY is the range's own stable summit, free of dance/scroll --
-    // the clip body below still follows the live per-column silhouette, so
-    // the shading band's SHAPE still tracks the ridge; only its vertical
-    // falloff anchor holds still.
-    const shadeTopY = Number.isFinite(bakedCrestY) ? bakedCrestY : crestY;
-    const worldKind = this.world?.kind || 'alpine';
-    const mat = materialFor(worldKind);
-    const cl = catchlightRgb(worldKind);
-    if (cl) {
-      const grad = ctx.createLinearGradient(0, shadeTopY, 0, bottomY);
-      grad.addColorStop(0, `rgba(${cl.r},${cl.g},${cl.b},${(RIDGE_CATCHLIGHT_ALPHA * alpha * strength).toFixed(3)})`);
-      grad.addColorStop(0.34, 'rgba(0,0,0,0)');
-      ctx.fillStyle = grad;
-      ctx.fill(body);
-    }
-
-    // The shade half and the aerial-perspective wash below it are both
-    // gated on ridgeShadingFull: real cost (a clipped gradient fill each,
-    // same as the catchlight pass above), but not core the way catchlight
-    // is. Catchlight alone still reads as a lit, three-dimensional ridge
-    // rather than the flat silhouette this whole system replaced -- it's
-    // the shade+aerial pair that's the shed-able "extra" contrast/depth on
-    // top of that, and PerfGovernor's own last rung is the only place this
-    // has ever had a lever to pull (see ridgeShadingFull's own comment).
-    const ridgeShadingFull = !this._perf || this._perf.ridgeShadingFull;
-
-    // The shade half: genuine multiply occlusion instead of an alpha-
-    // blended black wash. A translucent black fill under the default
-    // source-over composites IDENTICALLY to true multiply when the
-    // source is pure black (co = cb*(1-a) either way) -- it can only ever
-    // wash the surface toward black, never darken it while keeping its
-    // own hue, which is why the shaded half always read flat. A fully-
-    // OPAQUE gray fill under 'multiply' instead scales the destination by
-    // that gray value (co = cb*g), so whatever hue/saturation the strip
-    // already carries survives into its own shadow. Multiply can only
-    // ever darken (g<=1 always), which is exactly why this has to be a
-    // second pass rather than folded into the lit gradient above.
-    if (ridgeShadingFull) {
-      const shadeStrength = RIDGE_SHADE_STRENGTH * alpha * strength;
-      const g = Math.max(0, Math.min(255, Math.round(255 * (1 - shadeStrength))));
-      const shadeGrad = ctx.createLinearGradient(0, shadeTopY, 0, bottomY);
-      shadeGrad.addColorStop(0, 'rgb(255,255,255)');
-      shadeGrad.addColorStop(0.34, 'rgb(255,255,255)');
-      shadeGrad.addColorStop(1, `rgb(${g},${g},${g})`);
-      ctx.save();
-      ctx.globalCompositeOperation = 'multiply';
-      ctx.fillStyle = shadeGrad;
-      ctx.fill(body);
-      ctx.restore();
-    }
-
-    // Aerial perspective (Stage 3 of the mountain overhaul): AERIAL_PULL was
-    // already computed once per frame into tintL2..tintL5 (see draw()) and
-    // handed to _drawLayer as its `tint` argument -- which this function
-    // never read, so the whole table was dead code, tuned against a scene
-    // where it never touched a pixel. This is the first live use of it: a
-    // wash toward this._airColor (the same sky-horizon color the tint pull
-    // targets), bottom-weighted since haze pools in valleys rather than
-    // clinging to a summit. L5 gets AERIAL_PULL.L5 === 0, so this is a
-    // guaranteed no-op there -- the near anchor stays exactly as crisp as
-    // its authored color.
-    const aerialPull = AERIAL_PULL[layerKey] || 0;
-    if (ridgeShadingFull && aerialPull > 0.001 && mat.aerial !== false) {
-      const airHex = mat.aerial === 'invert'
-        ? (mat.deep || '#020a0e')
-        : this._airColor;
-      if (airHex) {
-        const air = hexToRgb(airHex);
-        const aerialAlpha = aerialPull * alpha * strength;
-        const aerialGrad = ctx.createLinearGradient(0, crestY, 0, bottomY);
-        aerialGrad.addColorStop(0, `rgba(${air.r},${air.g},${air.b},${(aerialAlpha * 0.35).toFixed(3)})`);
-        aerialGrad.addColorStop(1, `rgba(${air.r},${air.g},${air.b},${aerialAlpha.toFixed(3)})`);
-        ctx.fillStyle = aerialGrad;
-        ctx.fill(body);
-      }
-    }
-
-    // Snowline (Stage 4): song-grounded caps riding the same per-column
-    // h01 Stage 2 already computes for this exact crest -- a summit whose
-    // OWN relative height (h01, 0..1 within this range) clears the active
-    // section's snowLine01 threshold gets capped, one that doesn't stays
-    // bare rock. Free clip (already inside `body`), free deformation (h01
-    // already reflects Stage 2's dance), gated on phenomenaFull since it's
-    // atmosphere rather than the mountain's own form.
-    const wantSnow = geology && (!this._perf || this._perf.phenomenaFull);
-    if (wantSnow && snowLine01 < 1) {
-      // Snow is an ALTITUDE, and this used to ask the wrong question of the
-      // wrong variable: `p.h01 > snowLine01` tests a column's relative height
-      // within the range, and h01 is a per-64px-column figure, so the answer
-      // stepped between neighbouring crest samples. A cap therefore began and
-      // ended in a single sample's width -- a vertical white cliff dropped
-      // down the mountainside, which is what the "flat-topped slabs with
-      // straight sides" in the report actually were.
-      //
-      // The honest test is whether the SURFACE is above the snow line, which
-      // is continuous by construction: where the ridge crosses the altitude
-      // the cap's top and bottom edges meet and the polygon simply closes.
-      // Nothing to step, so there is no cliff to draw.
-      // ...and the altitude itself was inverted. `snowLine01` is a
-      // height-RANK threshold in [0.55, 1] (snowLine01For: "column-height-rank
-      // above which a column's own peak is capped"), so snow belongs on the
-      // top `1 - snowLine01` of the relief -- at 0.8, the top fifth. Measuring
-      // `(1 - snowLine01)` UP FROM THE FOOT instead put the line at a fifth of
-      // the way up and buried four fifths of every range in snow.
-      //
-      // That inversion has been here since the snowline landed, but it was
-      // masked: while the per-column h01 test gated which columns got any snow
-      // at all, this altitude only ever clamped them. Removing that test (it
-      // was the cause of the vertical snow cliffs) promoted the bug to the
-      // whole behavior, and the ranges went white.
-      // Measured from the BAKED summit, not the live one. `crestY` is a global
-      // min over a ridge that dances and scrolls, so it reports a different
-      // column frame to frame: measured at 6px of wander from the dance alone
-      // and 16-21px once the world scrolls. Hanging the snow ALTITUDE off it
-      // made the whole line -- and the gradient below -- crawl up and down the
-      // range as you ran, which is not something a snow line does. The baked
-      // summit is a property of the range itself and holds still.
-      const reliefTop = Number.isFinite(bakedCrestY) ? bakedCrestY : crestY;
-      const snowAltY = bottomY - snowLine01 * (bottomY - reliefTop);
-      // ...and the line itself gets a gentle wander, so it doesn't read as a
-      // ruler laid across the range. Small next to the relief it sits in.
-      const wobble = (stripX) => 6 * Math.sin(stripX / 260) + 3 * Math.sin(stripX / 97 + 1.7);
-      const altAt = (p) => snowAltY + wobble(p.stripX);
-      let anyCap = false;
-      for (const p of pts) if (p.y < altAt(p)) { anyCap = true; break; }
-      if (anyCap) {
-        const cap = new Path2D();
-        for (let i = 0; i < pts.length; i++) {
-          const p = pts[i];
-          const y = Math.min(p.y, altAt(p));
-          if (i === 0) cap.moveTo(p.x, y); else cap.lineTo(p.x, y);
-        }
-        for (let i = pts.length - 1; i >= 0; i--) cap.lineTo(pts[i].x, altAt(pts[i]));
-        cap.closePath();
-        // Pulled toward this._airColor (Stage 3) rather than pure white --
-        // otherwise a snow cap pops out of the haze that's supposed to be
-        // receding it into the distance along with everything else at
-        // this depth.
-        const snowColor = this._airColor
-          ? this.lerpCache.get('#f5f9ff', this._airColor, 0.22)
-          : '#f5f9ff';
-        // Fading out toward the snow line rather than filling flat: a
-        // constant alpha ends on a hard horizontal edge right where the cap
-        // meets bare rock, and that edge was reading as the bottom of a slab.
-        const snowTop = Math.max(reliefTop - 8, 0);
-        const { r: sr, g: sg, b: sb } = hexToRgb(snowColor);
-        const a0 = SNOW_ALPHA * alpha * strength;
-        const snowGrad = ctx.createLinearGradient(0, snowTop, 0, snowAltY + 10);
-        snowGrad.addColorStop(0, `rgba(${sr},${sg},${sb},${a0.toFixed(3)})`);
-        snowGrad.addColorStop(0.65, `rgba(${sr},${sg},${sb},${(a0 * 0.72).toFixed(3)})`);
-        snowGrad.addColorStop(1, `rgba(${sr},${sg},${sb},0)`);
-        ctx.fillStyle = snowGrad;
-        ctx.fill(cap);
-      }
-    }
-
-    // Rock strata (Stage 6 -- highest-risk/most cuttable stage of the
-    // mountain overhaul, L2/L3 only: L4 already carries GeoCrest + shoulders,
-    // L5 is rolling hills). Thin multiply bands PARALLEL TO THE LOCAL CREST
-    // -- each one traces the same live `pts` polyline everything else in
-    // this pass already reads (already carrying Stage 2's per-column
-    // deformation), just offset further down -- rather than a fixed
-    // screen-horizontal stripe. That distinction is the whole safety case:
-    // a horizontal stripe baked into the strip bitmap is exactly the family
-    // the original column-seam bug came from (SilhouetteGenerator.js), and
-    // a live but screen-horizontal stripe would still crawl unnaturally
-    // against a dancing, foot-anchored ridge. Tracing the polyline means
-    // every band moves WITH the ridge, so there is no seam to reintroduce.
-    if (geology && (layerKey === 'L2' || layerKey === 'L3') && (!this._perf || this._perf.heavyPostFx)) {
-      // Beds dip opposite ways on the two layers so the ranges read as two
-      // separate pieces of country rather than one structure drawn twice.
-      const beds = strataBeds({
-        width: canvas.width, crestY, bottomY, scrollX,
-        spacingPx: STRATA_SPACING_PX, maxBeds: STRATA_MAX_BEDS,
-        dipSign: layerKey === 'L2' ? 1 : -1,
-      });
-      if (beds.length) {
-        ctx.save();
-        ctx.globalCompositeOperation = 'multiply';
-        // One Path2D per DISTINCT TONE rather than one for everything: beds
-        // differ in darkness now (see strataBeds' `tone`) and a single fill
-        // can only carry one color. `tone` takes a small fixed set of values
-        // by construction, so this is three fills for a whole range -- still
-        // fewer than the four full-width polygon fills this replaced, and the
-        // frame is dominated by compositing rather than by path work.
-        //
-        // Grouped by exact value, not by bucket-and-take-the-midpoint: that
-        // first attempt rendered a 0.71 bed at 0.4 and washed the bedding out
-        // to nearly nothing.
-        const byTone = new Map();
-        for (const bed of beds) {
-          const key = bed.tone.toFixed(4);
-          if (!byTone.has(key)) byTone.set(key, { tone: bed.tone, beds: [] });
-          byTone.get(key).beds.push(bed);
-        }
-        for (const { tone, beds: inBucket } of byTone.values()) {
-          const g = Math.max(0, Math.min(255,
-            Math.round(255 * (1 - STRATA_DARKEN * tone * alpha * strength))));
-          ctx.fillStyle = `rgb(${g},${g},${g})`;
-          const band = new Path2D();
-          for (const bed of inBucket) {
-            const bp = bed.pts;
-            band.moveTo(bp[0].x, bp[0].y);
-            for (let i = 1; i < bp.length; i++) band.lineTo(bp[i].x, bp[i].y);
-            for (let i = bp.length - 1; i >= 0; i--) band.lineTo(bp[i].x, bp[i].y + STRATA_BAND_PX);
-            band.closePath();
-          }
-          ctx.fill(band);
-        }
-        ctx.restore();
-      }
-    }
-
-    // Cheap enough (a handful of path fills, no offscreen buffers) that it
-    // only sheds on the very bottom rung -- this is the form of the
-    // mountain, not optional atmosphere like the phenomena layer.
-    if (!this._perf || this._perf.heavyPostFx) {
-      this._drawShoulders(ctx, pts, bottomY, alpha * strength);
-    }
-    ctx.restore();
-  }
-
-  /**
-   * Volume for a hanging landform (canopy, vault, water surface). Light
-   * catches the dangling edge; shade pools at the attachment. Same
-   * catchlight language as the standing ridge, inverted.
-   */
-  _drawCeilingVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha) {
-    const strength = RIDGE_VOLUME_STRENGTH[layerKey] ?? 0;
-    if (strength <= 0) return;
-    const r = strip.ridge;
-    if (!r) return;
-    const pts = [];
-    let edgeMax = yOff;
-    for (let x = 0; x <= canvas.width; x += CREST_STEP_PX) {
-      const u = stripSampleX(strip, scrollX + x);
-      const y = yOff + Math.max(0, ridgeYAt(strip, u));
-      pts.push({ x, y });
-      if (y > edgeMax) edgeMax = y;
-    }
-    if (!(edgeMax > yOff + 4) || pts.length < 2) return;
-
-    const body = new Path2D();
-    body.moveTo(pts[0].x, yOff);
-    for (let i = 0; i < pts.length; i++) body.lineTo(pts[i].x, pts[i].y);
-    body.lineTo(pts[pts.length - 1].x, yOff);
-    body.closePath();
-
-    const worldKind = this.world?.kind || 'alpine';
-    const mat = materialFor(worldKind);
-    const cl = catchlightRgb(worldKind);
-
-    ctx.save();
-    ctx.clip(body);
-
-    if (cl) {
-      const grad = ctx.createLinearGradient(0, yOff, 0, edgeMax);
-      grad.addColorStop(0, 'rgba(0,0,0,0)');
-      grad.addColorStop(0.58, 'rgba(0,0,0,0)');
-      grad.addColorStop(1, `rgba(${cl.r},${cl.g},${cl.b},${(RIDGE_CATCHLIGHT_ALPHA * alpha * strength).toFixed(3)})`);
-      ctx.fillStyle = grad;
-      ctx.fill(body);
-    }
-
-    const ridgeShadingFull = !this._perf || this._perf.ridgeShadingFull;
-    if (ridgeShadingFull) {
-      const shadeStrength = RIDGE_SHADE_STRENGTH * alpha * strength;
-      const g = Math.max(0, Math.min(255, Math.round(255 * (1 - shadeStrength))));
-      const shadeGrad = ctx.createLinearGradient(0, yOff, 0, edgeMax);
-      shadeGrad.addColorStop(0, `rgb(${g},${g},${g})`);
-      shadeGrad.addColorStop(0.55, 'rgb(255,255,255)');
-      shadeGrad.addColorStop(1, 'rgb(255,255,255)');
-      ctx.save();
-      ctx.globalCompositeOperation = 'multiply';
-      ctx.fillStyle = shadeGrad;
-      ctx.fill(body);
-      ctx.restore();
-    }
-
-    const aerialPull = AERIAL_PULL[layerKey] || 0;
-    if (ridgeShadingFull && aerialPull > 0.001 && mat.aerial !== false) {
-      const airHex = mat.aerial === 'invert' ? (mat.deep || '#020a0e') : this._airColor;
-      if (airHex) {
-        const air = hexToRgb(airHex);
-        const aerialAlpha = aerialPull * alpha * strength;
-        const aerialGrad = ctx.createLinearGradient(0, yOff, 0, edgeMax);
-        if (mat.aerial === 'invert') {
-          aerialGrad.addColorStop(0, `rgba(${air.r},${air.g},${air.b},${(aerialAlpha * 0.35).toFixed(3)})`);
-          aerialGrad.addColorStop(1, `rgba(${air.r},${air.g},${air.b},${aerialAlpha.toFixed(3)})`);
-        } else {
-          aerialGrad.addColorStop(0, `rgba(${air.r},${air.g},${air.b},${aerialAlpha.toFixed(3)})`);
-          aerialGrad.addColorStop(1, `rgba(${air.r},${air.g},${air.b},${(aerialAlpha * 0.35).toFixed(3)})`);
-        }
-        ctx.fillStyle = aerialGrad;
-        ctx.fill(body);
-      }
-    }
-    ctx.restore();
-  }
-
-  /** The spurs themselves. Called already clipped to the range's body, so a
-   *  facet can be built generously and still never spill past the skyline. */
-  _drawShoulders(ctx, pts, bottomY, alpha) {
-    // Neutral shading, not a tinted one. These have to read the same on all
-    // seventeen palettes -- an ARCTIC blue and a SOLAR orange both just want
-    // their shadowed face darker and their lit edge caught, and mixing the
-    // biome's own hue back in only muddies whatever the sky already did.
-    const lit = SHOULDER_LIT;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-
-    for (const { i, prominence } of this._ridgePeaks(pts)) {
-      const p = pts[i];
-      // A spur descends to ITS OWN summit's base, not to the world's ground
-      // -- sizing it off the drop to the ground band instead made every
-      // distant bump throw a 250px streak across the whole scene, which is
-      // precisely the "visually noisy" failure this is trying to avoid. A
-      // genuinely big near summit still reaches the ground, because its own
-      // relief is that tall; a small far one keeps its spur to itself.
-      const drop = Math.min(bottomY - p.y, prominence * SHOULDER_RELIEF_RUN);
-      if (drop <= 10) continue;
-      const footY = p.y + drop;
-      // Facing follows the celestial, with the original stripX hash kept as
-      // a per-summit perturbation so a whole range doesn't flatten into one
-      // uniformly-lit wall. Falls back to the hash alone when no light is
-      // on `this` (tests, and any caller that hasn't computed one yet).
-      const lightX = this.light && Number.isFinite(this.light.x) ? this.light.x : null;
-      const s = shoulderFacetSide(p.stripX, lightX, p.x);
-      const nearRun = drop * SHOULDER_NEAR_RUN * s;
-      const farRun = drop * SHOULDER_FAR_RUN * -s;
-
-      // --- the face between the skyline and the near spur ---------------
-      const facet = new Path2D();
-      facet.moveTo(p.x, p.y);
-      // Follow the real skyline out to where the spur's foot lands, so the
-      // facet's upper edge IS the mountain's own outline.
-      const stepDir = s > 0 ? 1 : -1;
-      for (let k = i + stepDir; k >= 0 && k < pts.length; k += stepDir) {
-        facet.lineTo(pts[k].x, pts[k].y);
-        if ((pts[k].x - p.x) * stepDir >= Math.abs(nearRun)) break;
-      }
-      facet.lineTo(p.x + nearRun, footY);
-      facet.lineTo(p.x, footY);
-      facet.closePath();
-      // Same multiply-occlusion treatment as the range body's own shade
-      // pass above: an opaque gray under 'multiply' scales the surface
-      // down rather than washing it toward black over top of it.
-      {
-        const shadeStrength = alpha * SHOULDER_FACET_ALPHA;
-        const sg = Math.max(0, Math.min(255, Math.round(255 * (1 - shadeStrength))));
-        ctx.save();
-        ctx.globalCompositeOperation = 'multiply';
-        ctx.fillStyle = `rgb(${sg},${sg},${sg})`;
-        ctx.fill(facet);
-        ctx.restore();
-      }
-
-      // The spur's own edge -- a catch-light along the top of the ridge
-      // running at us, which is what sells it as an edge rather than a
-      // shadow with a straight side. Faded out along its length so it
-      // dissolves into the body instead of ending on a hard tip.
-      const { r, g, b } = hexToRgb(lit);
-      const nearFade = ctx.createLinearGradient(p.x, p.y, p.x + nearRun, footY);
-      nearFade.addColorStop(0, `rgba(${r},${g},${b},${(alpha * SHOULDER_LINE_ALPHA).toFixed(3)})`);
-      nearFade.addColorStop(1, `rgba(${r},${g},${b},0)`);
-      ctx.strokeStyle = nearFade;
-      ctx.globalAlpha = 1;
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.quadraticCurveTo(p.x + nearRun * 0.34, p.y + drop * 0.58, p.x + nearRun, footY);
-      ctx.stroke();
-
-      // --- the shoulder running away from us ----------------------------
-      // Shorter, shallower, and faded out before it reaches the bottom:
-      // it's meant to leave the frame into depth, not to land.
-      const farEndY = p.y + drop * 0.62;
-      const fade = ctx.createLinearGradient(p.x, p.y, p.x + farRun, farEndY);
-      fade.addColorStop(0, `rgba(${r},${g},${b},${(alpha * SHOULDER_LINE_ALPHA * 0.7).toFixed(3)})`);
-      fade.addColorStop(1, `rgba(${r},${g},${b},0)`);
-      ctx.strokeStyle = fade;
-      ctx.globalAlpha = 1;
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.quadraticCurveTo(p.x + farRun * 0.45, p.y + drop * 0.22, p.x + farRun, farEndY);
-      ctx.stroke();
-    }
-  }
-
-  /** One super-distant mountain range that IS the spectrum: seven chunky
-   *  bars â€” bass building the summit at the center, treble falling away to
-   *  the flanks (see spectrumBars) â€” riding the SAME 7 raw bands as the
-   *  horizon EQ but through their own far slower attack/release
-   *  (massifEqStep, seconds not fractions of a second): the horizon EQ can
-   *  hop with the beat, the massif can only ever crawl. It sits on the
-   *  slowest scroll ratio in the scene, so it reads as the single farthest,
-   *  most ancient thing in the world -- which is the whole basis for
-   *  letting it loom far taller than any ordinary range (massifDrawHeight)
-   *  without reading as absurd: something that far away, and that vast, is
-   *  allowed to simply BE that big and barely seem to move at all.
-   *  A jagged (not flat) crest, a permanent haze veil near its own summit
-   *  that only rarely thins into a full clearing, and the occasional tiny
-   *  scale marker drifting across its face (_drawMassifMarkers) are what
-   *  turn "very tall bar graph" into something that induces real
-   *  megalophobia -- the raw height alone was never going to do that on
-   *  its own. Thin halo-colored crest caps stay the "this peak is an
-   *  equalizer" tell, same as always. */
-  _drawSpectrumMassif(ctx, canvas, worldX, A, B, t) {
-    const bars = spectrumBars(this._massifEqSmoothed);
-    const barW = 46, gap = 3;
-    const massifW = bars.length * (barW + gap) - gap;
-    const period = canvas.width * 1.5;
-    const scroll = worldX * CodaDirector.delaminateRatio(0.03, this.unravel);
-    const left = ((((canvas.width * 0.58 - scroll) % period) + period) % period) - massifW;
-    if (left > canvas.width || left + massifW < 0) return;
-
-    // Same bottom anchor as L2's own strips (_drawLayer's yOff), so the
-    // massif reads as sitting at L2's altitude/layer instead of floating at
-    // its own -- vertical position only; paint order, parallax (the scroll
-    // above), and color stay untouched.
-    const baseY = this._zoomedGroundY(canvas) + 40;
-    // Massif rides L2 orogeny, but answers to its OWN far taller ceiling
-    // (massifDrawHeight, not the ordinary-range mountainStripDrawHeight) --
-    // see MountainChoreo.js's MASSIF_SKY_HEADROOM_FRAC for why that's safe
-    // here specifically and nowhere else. The nominal height fed in is
-    // deliberately way beyond anything growth could produce on its own
-    // (unlike the ordinary ranges' 210, sized to their own strip bitmap) --
-    // this massif isn't SCALED into its size by orogeny the way the
-    // foreground ranges are, it simply already IS that size, so the real
-    // ceiling (ordinary frame geometry) is always what actually binds.
-    const growth = orogenyHeightMul('L2', clamp01(this.orogenyGrowth || 0));
-    const maxH = massifDrawHeight(2000, growth, canvas.height, this._zoomedGroundY(canvas));
-    const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
-    const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
-    const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.55));
-    const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-
-    const nowMs = this.tSec * 1000;
-    // The clearing: mostly veiled near its own crest, rarely fully bared --
-    // see massifClearing01's doc for why the window is deliberately narrow.
-    const clearing = massifClearing01(this.tSec);
-
-    // ONE continuous ridge line across the whole width -- not seven
-    // separate rectangles with gaps between them. At genuinely towering
-    // heights, narrow gapped columns stop reading as terrain and start
-    // reading as a picket fence of skyscrapers; a single smoothly
-    // interpolated (massifRidgeHeight01), jaggedly roughened
-    // (massifRidgeJagPx) skyline reads as one impossibly large mountain
-    // RANGE instead, while the bass-builds-the-summit EQ shape survives
-    // completely intact -- it's still exactly the same seven peaks, just
-    // connected.
-    const RIDGE_STEP_PX = 8;
-    const ridgePts = [];
-    for (let x = 0; x <= massifW; x += RIDGE_STEP_PX) {
-      const u = x / massifW;
-      ridgePts.push({ x: left + x, y: baseY - massifRidgeHeight01(bars, u) * maxH + massifRidgeJagPx(u) });
-    }
-    const lastX = ridgePts[ridgePts.length - 1].x;
-    if (lastX < left + massifW - 0.01) {
-      ridgePts.push({ x: left + massifW, y: baseY - massifRidgeHeight01(bars, 1) * maxH + massifRidgeJagPx(1) });
-    }
-
-    ctx.save();
-    ctx.fillStyle = body;
-    ctx.beginPath();
-    ctx.moveTo(ridgePts[0].x, baseY);
-    for (const p of ridgePts) ctx.lineTo(p.x, p.y);
-    ctx.lineTo(ridgePts[ridgePts.length - 1].x, baseY);
-    ctx.closePath();
-    ctx.fill();
-
-    // The haze veil: a permanent wash sitting at a fixed altitude band near
-    // the massif's own highest possible peak, thinning only during a rare
-    // clearing. Real distant summits vanish into their own atmosphere long
-    // before you'd ever reach one -- "can't quite see all of it, even now"
-    // is itself doing scale work that raw height never could alone.
-    const veilAlpha = 0.55 * (1 - clearing);
-    if (veilAlpha > 0.01) {
-      const skyRgb = hexToRgb(skyMid);
-      const veilTopY = baseY - maxH;
-      const veilBottomY = baseY - maxH * 0.45;
-      // An elliptical (not rectangular) falloff -- a plain vertical-only
-      // gradient inside a fillRect fades top-to-bottom but leaves the
-      // rect's own left/right edges perfectly hard, which read as a
-      // conspicuous straight-sided box floating in the sky. Radial gradient
-      // + a non-uniform scale turns that same falloff into an ellipse that
-      // fades on every side.
-      const cx = left + massifW / 2;
-      const cy = (veilTopY + veilBottomY) / 2;
-      const ry = Math.max(1, (veilBottomY - veilTopY) / 2) * 1.15;
-      const rx = massifW / 2 + 50;
-      const sx = rx / ry;
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.scale(sx, 1);
-      const veil = ctx.createRadialGradient(0, 0, 0, 0, 0, ry);
-      veil.addColorStop(0, `rgba(${skyRgb.r},${skyRgb.g},${skyRgb.b},${veilAlpha.toFixed(3)})`);
-      veil.addColorStop(1, `rgba(${skyRgb.r},${skyRgb.g},${skyRgb.b},0)`);
-      ctx.fillStyle = veil;
-      ctx.fillRect(-ry * 1.3, -ry * 1.3, ry * 2.6, ry * 2.6);
-      ctx.restore();
-    }
-
-    // Soft massif crest cap â€” musical equalizer tell â€” traced along the
-    // exact same ridge path so it never drifts off the silhouette it's
-    // supposed to be capping.
-    if (styleDials(this.visualStyle).massifCrestCaps !== false) {
-      ctx.strokeStyle = cap;
-      ctx.globalAlpha = 0.28 * (0.5 + 0.5 * this.budget);
-      ctx.lineWidth = 3.5;
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      ctx.moveTo(ridgePts[0].x, ridgePts[0].y);
-      for (const p of ridgePts) ctx.lineTo(p.x, p.y);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    ctx.restore();
-
-    this._drawMassifMarkers(ctx, nowMs, left, massifW, baseY - maxH, baseY - maxH * 0.4);
-  }
-
-  /** Tiny, ordinary-parallax silhouettes drifting across the massif's face
-   *  on a seeded timer (MountainChoreo.js's marker constants). This is the
-   *  actual "occasionally perceived in a way that makes its raw size
-   *  known" mechanic: a shape crossing in front of the massif at a normal,
-   *  everyday speed, while the massif itself barely seems to move at all,
-   *  IS the scale reveal -- the comparison does work no amount of raw
-   *  height alone ever could. */
-  _drawMassifMarkers(ctx, nowMs, left, massifW, topY, bottomY) {
-    if (nowMs >= this._massifNextSpawnMs && massifW > 40) {
-      this._massifMarkers.push({
-        x0: left + this._massifRand() * massifW * 0.3,
-        y: topY + this._massifRand() * Math.max(1, bottomY - topY),
-        bornMs: nowMs,
-      });
-      this._massifNextSpawnMs = nowMs + nextMassifMarkerDelaySec(this._massifRand) * 1000;
-    }
-    if (!this._massifMarkers.length) return;
-    ctx.save();
-    ctx.fillStyle = 'rgba(6,6,12,0.6)';
-    this._massifMarkers = this._massifMarkers.filter((m) => {
-      const ageSec = (nowMs - m.bornMs) / 1000;
-      if (ageSec > MASSIF_MARKER_LIFE_SEC) return false;
-      const x = m.x0 + MASSIF_MARKER_SPEED_PX_S * ageSec;
-      // Eases in and out of visibility rather than popping -- a hard cut at
-      // either end would read as a glitch, not a distant bird/ship passing.
-      const fade = Math.min(1, ageSec * 3) * Math.min(1, (MASSIF_MARKER_LIFE_SEC - ageSec) * 3);
-      const wobble = Math.sin(ageSec * 3 + m.bornMs * 0.001) * 2;
-      ctx.globalAlpha = 0.55 * fade;
-      ctx.beginPath();
-      ctx.moveTo(x, m.y + wobble);
-      ctx.lineTo(x - 5, m.y + wobble + 2.2);
-      ctx.lineTo(x - 5, m.y + wobble - 2.2);
-      ctx.closePath();
-      ctx.fill();
-      return true;
-    });
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
-  _drawShimmered(ctx, canvas, strip, scrollX, yOff = 0) {
-    const w = strip.width, h = strip.height;
-    const baseY = canvas.height - h + yOff;
-    let x0 = stripOriginX(strip, scrollX, canvas.width);
-    const step = 6;
-    const once = isTerrainStrip(strip);
-    for (let sx = x0; sx < canvas.width; sx += w) {
-      for (let row = 0; row < h; row += step) {
-        const offset = 2 * Math.sin(row / 24 + this.tSec * 4);
-        ctx.drawImage(strip, 0, row, w, step, sx + offset, baseY + row, w, step);
-      }
-      if (once) break;
-    }
-  }
-
-  /** Reused 1Ã—W facing strip + WÃ—falloff band for the ground relief. */
-  _reliefBand(width) {
-    const w = Math.max(1, width | 0);
-    if (typeof document === 'undefined' || !document.createElement) return null;
-    if (!this._reliefScratch || this._reliefScratch.w !== w) {
-      const strip = document.createElement('canvas');
-      strip.width = w;
-      strip.height = 1;
-      const band = document.createElement('canvas');
-      band.width = w;
-      band.height = RELIEF_FALLOFF_PX;
-      this._reliefScratch = {
-        w,
-        strip,
-        stripCtx: strip.getContext('2d', { willReadFrequently: true }),
-        band,
-        bandCtx: band.getContext('2d'),
-      };
-    }
-    return this._reliefScratch;
-  }
-
-  /** Builds a smooth curve through each bar's top-center point -- the
-   *  quadratic-midpoint technique (each segment's control point is the
-   *  sample itself, its endpoint the midpoint to the next sample) turns the
-   *  hard 90px staircase into a continuous ridge while the underlying
-   *  physics (GroundField.heightAt) stays exactly the discrete spring
-   *  simulation it always was; this is render-only. `closed` also draws the
-   *  two side edges down to `canvas.height` and closes the path, for fills
-   *  and clips; the open (stroke) form stops at the last top point. */
-  _terrainTopPath(bars, canvasHeight, closed, canvasWidth = null) {
-    const path = new Path2D();
-    if (bars.length === 0) return path;
-    const pts = bars.map((b) => ({ x: b.x + b.width / 2, y: b.y }));
-    const lastBar = bars[bars.length - 1];
-    const right = Number.isFinite(canvasWidth)
-      ? Math.max(canvasWidth, lastBar.x + lastBar.width)
-      : lastBar.x + lastBar.width;
-    if (closed) path.moveTo(0, canvasHeight);
-    if (closed) path.lineTo(pts[0].x, pts[0].y); else path.moveTo(pts[0].x, pts[0].y);
-    for (let i = 0; i < pts.length - 1; i++) {
-      const cur = pts[i], next = pts[i + 1];
-      const midX = (cur.x + next.x) / 2, midY = (cur.y + next.y) / 2;
-      path.quadraticCurveTo(cur.x, cur.y, midX, midY);
-    }
-    const lastPt = pts[pts.length - 1];
-    path.lineTo(lastPt.x, lastPt.y);
-    if (closed) {
-      path.lineTo(right, lastPt.y);
-      path.lineTo(right, canvasHeight);
-      path.closePath();
-    }
-    return path;
-  }
-
-  /**
-   * The inside of the ground. Everything below the crest used to be one
-   * flat fillRect of a single color -- the terrain relief pass lit the top
-   * ~14px and the rest of the frame's entire lower third was a poster-flat
-   * slab, which is exactly as boring as it sounds and gave the eye nothing
-   * to read the world's speed against.
-   *
-   * Two cheap passes, both clipped to the terrain path so they can never
-   * spill into the sky:
-   *  1. a vertical light falloff -- ground gets darker the deeper it goes,
-   *     the same way any lit solid does, which alone kills the flat read;
-   *  2. sparse seeded strata scrolling at world speed, so the ground has
-   *     visible grain and you can actually see the land moving past.
-   *
-   * Strata are generated once per song and drawn as a handful of wavy
-   * strokes, so this costs a fixed few draw calls regardless of scroll.
-   */
-  _drawGroundInterior(ctx, canvas, fillPath, bars, groundColor, worldX) {
-    // Deliberately NOT gated on the perf ladder: every pass in here is a
-    // fixed, small number of draw calls regardless of scroll or scene
-    // complexity (a handful of strata strokes, a couple dozen root/ore
-    // marks, one gradient fill), not a per-frame cost that scales with
-    // load. It used to skip outright at the deepest perf rung, which meant
-    // the ground went completely flat and textureless in exactly the
-    // scenes heavy enough to trigger that rung -- the moment everything
-    // ELSE on screen was busiest, the ground was blankest.
-    let crest = canvas.height;
-    for (const b of bars) if (b.y < crest) crest = b.y;
-    const depth = canvas.height - crest;
-    if (depth < 8) return;
-
-    ctx.save();
-    ctx.clip(fillPath);
-
-    // 1. Soil horizon. The single most legible "this is ground, not a
-    // colored region" cue: a crust of surface material hugging the terrain
-    // contour with denser subsoil beneath it, exactly the topsoil/bedrock
-    // boundary you see in any road cutting. Built by re-running the same
-    // terrain path a fixed distance lower and filling everything below it
-    // darker -- so the crust automatically follows every bump the ridge
-    // has, for one extra path fill.
-    const soilPx = Math.min(26, Math.max(9, depth * 0.06));
-    const sunk = this._terrainTopPath(
-      bars.map((b) => ({ ...b, y: b.y + soilPx })), canvas.height, true, canvas.width,
-    );
-    ctx.fillStyle = shiftLightness(groundColor, -0.07);
-    ctx.fill(sunk);
-
-    // 2. Strata. Drawn in WORLD space (phase driven by worldX) so they
-    // travel with the terrain instead of sitting still on the screen --
-    // that motion is the whole point, it's what makes the ground read as
-    // ground being crossed rather than as a colored region.
-    const strata = this._strata || (this._strata = this._buildStrata());
-    ctx.lineCap = 'round';
-    for (const s of strata) {
-      const y = crest + soilPx + (depth - soilPx) * s.depth01;
-      if (y > canvas.height + 4) continue;
-      // Nearer-to-surface strata scroll slightly faster: a little internal
-      // parallax inside the solid, so it has thickness rather than being
-      // one sheet of wallpaper.
-      const sx = worldX * (0.85 + 0.3 * (1 - s.depth01));
-      ctx.strokeStyle = s.light ? 'rgba(255,255,255,1)' : 'rgba(0,0,0,1)';
-      ctx.globalAlpha = s.alpha;
-      ctx.lineWidth = s.width;
-      ctx.beginPath();
-      for (let x = 0; x <= canvas.width; x += 16) {
-        const yy = y + Math.sin((x + sx) / s.wavelength + s.phase) * s.amp
-          + Math.sin((x + sx) / (s.wavelength * 0.37) + s.phase * 1.7) * s.amp * 0.45;
-        if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
-      }
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-
-    // 3. Roots and ore: persistent dressing so the band has something in it
-    // beyond flat dirt and Broshi's occasional cave. Both are seeded once
-    // per song and drawn in WORLD space like the strata above, so they
-    // scroll with the terrain instead of sitting pinned to the screen.
-    // Roots are a foliage tell â€” skip them in worlds whose ground is stone,
-    // iron, water-floor, or vacuum.
-    const mat = materialFor(this.world?.kind || 'alpine');
-    if (mat.ground.roots) this._drawRoots(ctx, canvas, crest, depth, worldX);
-    this._drawOreFlecks(ctx, canvas, crest, depth, worldX);
-
-    // 4. Light falls off with depth into the solid -- drawn LAST so it
-    // sinks everything above into the dark with distance from the surface.
-    // Recedes toward an unlit lower band, but the surface (where the trio
-    // actually stands) stays a real, lit material -- going to true black
-    // by ~55% of the band made the footing under the characters read as
-    // void, which is the opposite of "the ground catches the light".
-    const voidA = mat.ground.voidAlpha ?? 0.20;
-    const grad = ctx.createLinearGradient(0, crest, 0, canvas.height);
-    grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(0.38, shiftLightness(groundColor, -0.10));
-    grad.addColorStop(1, `rgba(0,0,0,${voidA.toFixed(2)})`);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, crest, canvas.width, depth);
-    ctx.restore();
-  }
-
-  /** Seeded root definitions -- fixed per song. Each is a short, tapering,
-   *  gently forking tendril hanging from a point on the soil horizon,
-   *  reading as the underside of surface foliage rather than anything
-   *  planted at generation time (there's no per-plant correlation --
-   *  purely ambient texture, cheap because it's baked once). */
-  _buildRoots() {
-    const rand = mulberry32(hashSeed(`${this.songSeed}:roots`));
-    const out = [];
-    const SPAN = 2400; // world-x period the pattern repeats over
-    const COUNT = 22;
-    for (let i = 0; i < COUNT; i++) {
-      out.push({
-        worldX: rand() * SPAN,
-        len: 14 + rand() * 34,
-        lean: (rand() - 0.5) * 0.6,
-        forkAt: 0.4 + rand() * 0.4,
-        forkLen: 8 + rand() * 16,
-        forkSide: rand() < 0.5 ? -1 : 1,
-        width: 1.1 + rand() * 1.3,
-      });
-    }
-    return { span: SPAN, roots: out };
-  }
-
-  _drawRoots(ctx, canvas, crest, depth, worldX) {
-    const { span, roots } = this._roots || (this._roots = this._buildRoots());
-    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-    ctx.lineCap = 'round';
-    const phase = worldX % span;
-    for (let rep = -1; rep <= Math.ceil(canvas.width / span) + 1; rep++) {
-      for (const r of roots) {
-        const x = r.worldX + rep * span - phase;
-        if (x < -20 || x > canvas.width + 20) continue;
-        const reach = Math.min(r.len, depth * 0.7);
-        if (reach < 6) continue;
-        ctx.lineWidth = r.width;
-        ctx.beginPath();
-        ctx.moveTo(x, crest);
-        const midX = x + r.lean * reach;
-        const midY = crest + reach * r.forkAt;
-        ctx.lineTo(midX, midY);
-        ctx.lineTo(midX + r.lean * (reach - reach * r.forkAt), crest + reach);
-        ctx.stroke();
-        // A short fork off the main tendril -- keeps it reading as roots,
-        // not a single straight scratch.
-        ctx.beginPath();
-        ctx.moveTo(midX, midY);
-        ctx.lineTo(midX + r.forkSide * r.forkLen * 0.6, midY + r.forkLen);
-        ctx.stroke();
-      }
-    }
-  }
-
-  /** Seeded ore-fleck definitions -- small glints buried in the soil,
-   *  reacting faintly to the melody band like the strata's light passes
-   *  already do elsewhere in this class, so the band never reads as fully
-   *  inert even between cave events. */
-  _buildOreFlecks() {
-    const rand = mulberry32(hashSeed(`${this.songSeed}:ore`));
-    const out = [];
-    const SPAN = 1800;
-    const COUNT = 14;
-    const HUES = ['#ffe08a', '#8ad9ff', '#c9a4ff'];
-    for (let i = 0; i < COUNT; i++) {
-      out.push({
-        worldX: rand() * SPAN,
-        depth01: 0.15 + rand() * 0.75,
-        r: 1.4 + rand() * 2.2,
-        color: HUES[(rand() * HUES.length) | 0],
-        phase: rand() * Math.PI * 2,
-      });
-    }
-    return { span: SPAN, flecks: out };
-  }
-
-  _drawOreFlecks(ctx, canvas, crest, depth, worldX) {
-    const { span, flecks } = this._oreFlecks || (this._oreFlecks = this._buildOreFlecks());
-    const phase = worldX % span;
-    const nowMs = this.tSec * 1000;
-    for (let rep = -1; rep <= Math.ceil(canvas.width / span) + 1; rep++) {
-      for (const f of flecks) {
-        const x = f.worldX + rep * span - phase;
-        if (x < -6 || x > canvas.width + 6) continue;
-        const y = crest + depth * f.depth01;
-        if (y > canvas.height - 4) continue;
-        const twinkle = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(nowMs / 900 + f.phase));
-        ctx.globalAlpha = 0.5 * twinkle;
-        ctx.fillStyle = f.color;
-        ctx.beginPath();
-        ctx.arc(x, y, f.r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  /** Seeded strata definitions -- fixed per song, so the same seed always
-   *  produces the same ground grain (a replay can be pointed at). */
-  _buildStrata() {
-    const rand = mulberry32(hashSeed(`${this.songSeed}:strata`));
-    const out = [];
-    const COUNT = 9;
-    for (let i = 0; i < COUNT; i++) {
-      // Bias toward the upper half of the solid: that's the part actually
-      // on screen most of the time, and real bedding planes crowd nearer
-      // the surface rather than spreading evenly to the core.
-      const d = Math.pow(rand(), 1.6);
-      out.push({
-        depth01: 0.04 + d * 0.94,
-        // Short enough to visibly undulate across a 1280px frame -- long
-        // wavelengths read as dead straight scratches, not bedding planes.
-        wavelength: 150 + rand() * 260,
-        amp: 4 + rand() * 16,
-        phase: rand() * Math.PI * 2,
-        width: 1.4 + rand() * 3.2,
-        // A few pale bedding planes among mostly dark ones -- pure dark
-        // strata on a dark ground read as smudges, the light ones are what
-        // actually make the layering legible.
-        light: rand() < 0.34,
-        alpha: 0.09 + rand() * 0.11,
-      });
-    }
-    return out.sort((a, b) => a.depth01 - b.depth01);
-  }
-
-  _drawGround(ctx, canvas, worldX, originX, A, B, t, mountainTint = null) {
-    // Match the mountains' own contrast-corrected tint when it's handed in
-    // (draw()'s per-frame guard against a dark palette washing out at
-    // night) rather than re-deriving the raw, uncorrected silhouette --
-    // otherwise the ground could end up *less* legible than the range it's
-    // standing in front of.
-    const groundColorRaw = mountainTint ?? this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t));
-    // Ground is a different material from the ridge â€” hue-shifted, lifted,
-    // and floored per world so a near-black silhouette cannot produce a
-    // void underfoot. Scenic-poster paint, not the same cutout continued
-    // downward.
-    const worldKind = this.world?.kind || 'alpine';
-    const mat = materialFor(worldKind);
-    const groundColor = groundColorFor(groundColorRaw, worldKind);
-    const localGroundY = this.groundField ? this.groundField.heightAt(worldX) : this.groundY;
-    const activeFx = t > 0.5 ? B.fx : A.fx;
-    // The Mirror: GroundField's physics (collision height) are untouched,
-    // but the lake is where the terrain-EQ visually takes a rest -- a
-    // still, flat surface instead of jittering EQ-bar terrain.
-    const isLake = activeFx === 'lakeReflection';
-
-    if (this.groundField && !isLake) {
-      // Ground as shifted EQ-bar-shaped slices (follow-up item 5): each bar
-      // echoes the horizon EQ's own per-band reading, just offset by a few
-      // columns, so the terrain visually rhymes with the music playing far
-      // in the background. Rendered as one continuous smoothed ridge (see
-      // _terrainTopPath) rather than per-slice rects.
-      const bars = this.groundField.visibleBars(worldX, originX, canvas.width);
-      const fillPath = this._terrainTopPath(bars, canvas.height, true, canvas.width);
-      const strokePath = this._terrainTopPath(bars, canvas.height, false, canvas.width);
-      ctx.fillStyle = groundColor;
-      ctx.fill(fillPath);
-      // Aerial perspective for the ground.
-      //
-      // Every range got this in Stage 3 of the mountain overhaul; the ground
-      // never did, so it stayed ONE flat color from the horizon line all the
-      // way to the bottom of the frame -- the single biggest reason it reads
-      // as a sheet of construction paper laid under the scene rather than as
-      // land receding away from you. It is also the largest continuous area
-      // on screen, so it is where a missing depth cue costs the most.
-      //
-      // Same vocabulary as _drawRidgeVolume's aerial pass: wash the FAR edge
-      // (the top, where the ground meets the ranges) toward this._airColor,
-      // and leave the near edge alone at full color. Runs before
-      // _drawGroundInterior so the interior detail still reads on top of it.
-      if (mat.ground.aerial !== false && this._airColor && bars.length) {
-        let minTop = canvas.height;
-        for (const bar of bars) if (bar.y < minTop) minTop = bar.y;
-        const near = Math.max(minTop + 1, canvas.height);
-        const { r: ar, g: ag, b: ab } = hexToRgb(this._airColor);
-        const depth = ctx.createLinearGradient(0, minTop, 0, near);
-        depth.addColorStop(0, `rgba(${ar},${ag},${ab},${GROUND_AERIAL_ALPHA})`);
-        depth.addColorStop(GROUND_AERIAL_FALLOFF, `rgba(${ar},${ag},${ab},0)`);
-        depth.addColorStop(1, `rgba(${ar},${ag},${ab},0)`);
-        ctx.fillStyle = depth;
-        ctx.fill(fillPath);
-      }
-      this._drawGroundInterior(ctx, canvas, fillPath, bars, groundColor, worldX);
-
-      // Terrain relief: clip to the ridge and stamp a 1px-tall facing
-      // strip, stretched and faded with depth. A per-pixel strip cannot
-      // grow a hard vertical cut the way a many-stop CanvasGradient can
-      // when neighbouring stops collapse. Gated on rimLightEnabled; omit
-      // the light and this is a no-op (byte-identical to the flat fill).
-      const rimOn = this._perf ? this._perf.rimLightEnabled : true;
-      const reliefSamples = (rimOn && this.light)
-        ? sampleTerrainCurve(bars)
-        : null;
-      const facing = reliefSamples ? curveFacing(reliefSamples, this.light) : null;
-      if (facing && facing.some((f) => Math.abs(f) > 0.01)) {
-        ctx.save();
-        ctx.clip(fillPath);
-        let minTop = canvas.height;
-        for (const bar of bars) if (bar.y < minTop) minTop = bar.y;
-        const band = this._reliefBand(canvas.width);
-        if (band) {
-          // Lit and shade are two separate strips now, not one combined
-          // pass: they need different final composite operations onto
-          // the real canvas (a warm-white catch-light adds brightness
-          // under the default source-over; the shade half needs
-          // 'multiply' for genuine occlusion -- see reliefShadeStripRGBA).
-          // Same strip+band scratch buffers, reused sequentially for each.
-          const bctx = band.bandCtx;
-          const paintBand = (rgba, finalComposite) => {
-            band.stripCtx.putImageData(new ImageData(rgba, canvas.width, 1), 0, 0);
-            bctx.setTransform(1, 0, 0, 1, 0, 0);
-            bctx.clearRect(0, 0, band.band.width, band.band.height);
-            bctx.globalCompositeOperation = 'source-over';
-            bctx.drawImage(band.strip, 0, 0, canvas.width, RELIEF_FALLOFF_PX);
-            bctx.globalCompositeOperation = 'destination-in';
-            const fade = bctx.createLinearGradient(0, 0, 0, RELIEF_FALLOFF_PX);
-            fade.addColorStop(0, 'rgba(0,0,0,1)');
-            fade.addColorStop(1, 'rgba(0,0,0,0)');
-            bctx.fillStyle = fade;
-            bctx.fillRect(0, 0, canvas.width, RELIEF_FALLOFF_PX);
-            ctx.globalCompositeOperation = finalComposite;
-            ctx.drawImage(band.band, 0, minTop);
-          };
-          paintBand(reliefLitStripRGBA(reliefSamples, facing, canvas.width), 'source-over');
-          paintBand(reliefShadeStripRGBA(reliefSamples, facing, canvas.width), 'multiply');
-          ctx.globalCompositeOperation = 'source-over';
-        }
-        ctx.restore();
-      }
-
-      const haloColor = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-      const { r, g, b } = hexToRgb(haloColor);
-      const rgb = `${r},${g},${b}`;
-
-      // Soft groove cap: music-terrain tell, soft alpha so it reads as
-      // energy riding the land â€” not a cyan hairline glitch. A thick stroke
-      // along the same ridge curve rather than a per-bar rect.
-      const grooveNow = bars.length ? bars[0].groove || 0 : 0;
-      const wantGroundCaps = styleDials(this.visualStyle).groundCrestCaps !== false;
-      if (grooveNow > 0.05 && wantGroundCaps) {
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        const a = 0.16 * grooveNow;
-        ctx.strokeStyle = `rgba(${rgb},${capFlashAlpha(a, this.reducedFlash)})`;
-        ctx.lineWidth = 4;
-        ctx.lineJoin = 'round';
-        ctx.stroke(strokePath);
-        ctx.restore();
-      }
-
-      // Settled snow: a frost cap riding the ridge -- a pale band whose
-      // thickness grows with cover, plus seeded glints so ice reads as ICE
-      // (slippery, see Traction.js) rather than just pale paint. Melts to
-      // zero cost the moment cover does.
-      if ((this.snowCover || 0) > 0.03) {
-        const cover = this.snowCover;
-        ctx.save();
-        ctx.strokeStyle = `rgba(230,242,255,${(0.34 * cover).toFixed(3)})`;
-        ctx.lineWidth = 4 + 9 * cover;
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
-        ctx.stroke(strokePath);
-        // Specular glints: a few bar-top points catch the light each moment,
-        // drifting with world scroll so the sheen slides underfoot.
-        const glints = [];
-        for (const bar of bars) {
-          const glint = 0.5 + 0.5 * Math.sin(bar.x * 0.13 + worldX * 0.011 + this.tSec * 1.7);
-          if (glint > 0.86) glints.push([bar, 0.30 * cover * (glint - 0.86) / 0.14]);
-        }
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.fillStyle = '#fff';
-        for (const [bar, a] of glints) {
-          ctx.globalAlpha = a;
-          ctx.beginPath();
-          ctx.arc(bar.x + bar.width / 2, bar.y, 1.6, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.globalAlpha = 1;
-        ctx.restore();
-      }
-
-      // Kick ground glow: an emissive rim over bars a kick-synced pulse
-      // (GroundField.kickGlow) is currently racing through -- tinted toward
-      // the biome's own halo color so it reads as the world's light, not a
-      // generic overlay. Silent (zero cost) whenever no pulse is active.
-      const glowBars = bars.filter((bar) => bar.glow > 0.01);
-      if (glowBars.length) {
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        for (const bar of glowBars) {
-          const alpha = capFlashAlpha(0.5 * bar.glow, this.reducedFlash);
-          // Floored at 1: a bar at or past the bottom edge (canvas.height -
-          // bar.y <= 0) used to hand createRadialGradient a negative radius,
-          // throwing IndexSizeError and killing the frame's whole draw call
-          // -- not just this glow -- every time a kick pulse reached a bar
-          // that low.
-          const rimH = Math.max(1, Math.min(60, canvas.height - bar.y));
-          // An elliptical falloff centered on the bar, not a rect filled with
-          // a vertical-only gradient -- the old version faded top-to-bottom
-          // but left the bar's own width as a hard-edged box (flat top, hard
-          // left/right sides) sitting right on the ground line every time a
-          // kick pulse raced through, exactly the "straight lined box" /
-          // "hard cutoff" artifact this fades away on every side instead.
-          const cx = bar.x + bar.width / 2, cy = bar.y;
-          const ry = rimH;
-          const rx = bar.width / 2 + 6;
-          const sx = rx / ry;
-          ctx.save();
-          ctx.translate(cx, cy);
-          ctx.scale(sx, 1);
-          const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, ry);
-          grad.addColorStop(0, `rgba(${rgb},${alpha})`);
-          grad.addColorStop(1, `rgba(${rgb},0)`);
-          ctx.fillStyle = grad;
-          ctx.beginPath();
-          ctx.arc(0, 0, ry, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        }
-        ctx.restore();
-      }
-
-      // Gray-Scott texture living inside the ground: clip to the ridge's
-      // silhouette (one smooth Path2D, not a union of per-slice rects) so
-      // the pattern rides the terrain's own vertical motion. Purely
-      // decorative texture over the flat fill above it, so the deepest perf
-      // rung skips it outright rather than clip+draw for nothing.
-      if (!this._perf || this._perf.phenomenaFull) {
-        let minTop = canvas.height;
-        for (const bar of bars) if (bar.y < minTop) minTop = bar.y;
-        ctx.save();
-        ctx.clip(fillPath);
-        this.rd.draw(ctx, canvas, worldX, minTop);
-        ctx.restore();
-      }
-
-      if (facing) {
-        // Crest catch: today's 0.18 stroke, one smoothed path, alpha
-        // modulated along the same horizontal gradient the body uses.
-        // A single stroke of `strokePath` keeps the rim on the ridge
-        // it belongs to, instead of N straight segments between bar
-        // centres that don't match the quadratic fill.
-        const crestStops = facingColorStops(
-          reliefSamples, facing, 0, canvas.width, 'crest',
-        );
-        if (crestStops.length >= 2) {
-          const crest = ctx.createLinearGradient(0, 0, canvas.width, 0);
-          for (const s of crestStops) crest.addColorStop(s.offset, s.color);
-          ctx.strokeStyle = crest;
-        } else {
-          ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-        }
-        ctx.lineWidth = 2;
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
-        ctx.stroke(strokePath);
-      } else {
-        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-        ctx.lineWidth = 2;
-        ctx.lineJoin = 'round';
-        ctx.stroke(strokePath);
-      }
-    } else {
-      ctx.fillStyle = groundColor;
-      ctx.fillRect(0, localGroundY, canvas.width, canvas.height - localGroundY);
-    }
-
-    if (activeFx === 'neonGrid') this._drawNeonGrid(ctx, canvas, worldX, localGroundY);
-    else if (activeFx === 'canopyDapple') this._drawCanopyDapple(ctx, canvas, localGroundY);
-    else if (activeFx === 'glitchTear' && this._glitchActiveMs > 0) this._drawGlitchTear(ctx, canvas);
-    else if (activeFx === 'petalPile') this._drawPetalPiles(ctx, canvas, worldX, localGroundY, t > 0.5 ? B : A);
-    else if (activeFx === 'mirage') this._drawGroundMirage(ctx, canvas, worldX, localGroundY);
-    else if (isLake) this._drawLakeReflection(ctx, canvas, localGroundY);
-    // Remembered for drawCharacterReflections: Renderer calls that AFTER the
-    // trio draws (their live screen positions aren't known this early), but
-    // only the lake band -- and only THIS frame's ground line -- is a valid
-    // surface to reflect them into.
-    this._lakeReflectGroundY = isLake ? localGroundY : null;
-  }
-
-  /** The Mirror (Movement IV): flip the sky/phenomena/silhouette region
-   *  already painted above the waterline straight down into the lake band
-   *  -- the mandala, aurora, murmuration, and Midasus's sky voyage all
-   *  reflect for free, since this reads back whatever canvas pixels are
-   *  already there. Then ripples: a kick/drop-excited ModalRing drives a
-   *  horizontal sine offset per row-slice, re-blitting the reflection
-   *  sideways in place (the same self-referential drawImage trick as the
-   *  hype-frame echo in Renderer.js). */
-  _drawLakeReflection(ctx, canvas, groundY) {
-    const lakeHeight = canvas.height - groundY;
-    if (lakeHeight <= 0) return;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, groundY, canvas.width, lakeHeight);
-    ctx.clip();
-
-    ctx.globalAlpha = 0.35;
-    ctx.translate(0, 2 * groundY);
-    ctx.scale(1, -1);
-    // `canvas` is draw()'s LOGICAL stage view -- a plain {width, height},
-    // not a drawable. Passing it to drawImage threw on every frame MIRROR
-    // was on screen, and since _drawGround runs near the END of the world
-    // draw, the swallowed throw took every character, the HUD, bloom and the
-    // film finish with it. Source the real backing store; destination stays
-    // in logical units because we are under the sx/sy transform.
-    ctx.drawImage(ctx.canvas, 0, 0, canvas.width, canvas.height);
-    ctx.restore();
-
-    // Vertical fade with depth: the reflection dissolves toward the far
-    // (bottom) edge of the lake band rather than cutting off sharply.
-    ctx.save();
-    const fadeGrad = ctx.createLinearGradient(0, groundY, 0, canvas.height);
-    fadeGrad.addColorStop(0, 'rgba(0,0,0,0)');
-    fadeGrad.addColorStop(1, 'rgba(6,10,18,0.75)');
-    ctx.fillStyle = fadeGrad;
-    ctx.fillRect(0, groundY, canvas.width, lakeHeight);
-    ctx.restore();
-
-    // Ripples.
-    const SLICES = 8;
-    const step = Math.max(1, Math.ceil(lakeHeight / SLICES));
-    // Backing store may be 1x-4x the logical stage (stage-resolution preset).
-    const dpr = ctx.canvas.height / Math.max(1, canvas.height);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, groundY, canvas.width, lakeHeight);
-    ctx.clip();
-    for (let row = 0, i = 0; row < lakeHeight; row += step, i++) {
-      const theta = (i / SLICES) * Math.PI * 2;
-      const offset = this.lakeRing.displacementAt(theta) * 3;
-      if (Math.abs(offset) < 0.05) continue;
-      // Source rect is in DEVICE pixels (it indexes the backing store);
-      // destination stays logical. Same distinction as the mirror blit above.
-      ctx.drawImage(ctx.canvas,
-        0, (groundY + row) * dpr, ctx.canvas.width, step * dpr,
-        offset, groundY + row, canvas.width, step);
-    }
-    ctx.restore();
-  }
-
-  /** Faint character reflections in the Mirror lake (Movement IV): the sky
-   *  and terrain already reflect for free (see _drawLakeReflection above),
-   *  but that pass runs before the trio is drawn, so it can never pick them
-   *  up from the backing store the way it does everything else. Called by
-   *  Renderer right after the trio draws, when their live screen positions
-   *  and hues are finally known -- a soft color-matched glow standing in for
-   *  each present character, not a full mirrored sprite (there's no cheap
-   *  way to re-render their mesh a second time, and a colored echo already
-   *  reads as "reflected" against the rippling water beneath it).
-   *  `entries`: [{x, hue, active}] in screen space; inactive entries
-   *  (burrowed, voyaging) are skipped so nothing reflects a performer who
-   *  isn't actually standing on the shore. */
-  drawCharacterReflections(ctx, canvas, entries) {
-    const groundY = this._lakeReflectGroundY;
-    if (groundY == null) return;
-    const lakeHeight = canvas.height - groundY;
-    if (lakeHeight <= 0) return;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, groundY, canvas.width, lakeHeight);
-    ctx.clip();
-    ctx.globalCompositeOperation = 'lighter';
-    for (const e of entries) {
-      if (!e || !e.active || !Number.isFinite(e.x)) continue;
-      // Same ring the water ripples borrow from _drawLakeReflection, sampled
-      // at this character's own horizontal position so their reflection
-      // wobbles in sync with the water right under them, not in lockstep
-      // with everyone else's.
-      const theta = ((e.x / canvas.width) % 1 + 1) * Math.PI * 2;
-      const ripple = this.lakeRing.displacementAt(theta) * 3;
-      const grad = ctx.createLinearGradient(0, groundY, 0, groundY + 74);
-      grad.addColorStop(0, `hsla(${e.hue}, 70%, 68%, 0.28)`);
-      grad.addColorStop(1, `hsla(${e.hue}, 70%, 68%, 0)`);
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.ellipse(e.x + ripple, groundY + 30, 18, 30, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  /** The Wind: SAKURA's piles actively shed a few petals downwind rather
-   *  than just sitting there as static ellipses. */
-  _updateShedPetals(dtSec, worldX, wind, activeProfile) {
-    if (activeProfile.fx === 'petalPile' && this._starSeed() < 0.5 * dtSec && this._shedPetals.length < 40) {
-      this._shedPetals.push({
-        wx: worldX + this.w * 0.5 + (this._starSeed() * 2 - 1) * this.w * 0.9,
-        y: this.groundY - 4, vy: -16 - 10 * this._starSeed(),
-        age: 0, life: 2 + this._starSeed(),
-        color: activeProfile.particles.color,
-        rot: this._starSeed() * Math.PI * 2, spin: (this._starSeed() * 2 - 1) * 2,
-      });
-    }
-    for (let i = this._shedPetals.length - 1; i >= 0; i--) {
-      const sp = this._shedPetals[i];
-      sp.age += dtSec;
-      sp.wx += wind.x * dtSec;
-      sp.vy += 40 * dtSec; // settles back toward the ground
-      sp.y += sp.vy * dtSec * 0.2 + Math.sin(sp.age * 3) * 0.3;
-      sp.rot += sp.spin * dtSec;
-      if (sp.age >= sp.life) this._shedPetals.splice(i, 1);
-    }
-  }
-
-  /** SAKURA's dormant hook: soft petal drifts scrolling with the ground,
-   *  plus any petals actively shedding off the piles right now.
-   *  (Was one giant half-ellipse per pile â€” read as hamburger buns under the ridge.) */
-  _drawPetalPiles(ctx, canvas, worldX, groundY, profile) {
-    ctx.save();
-    ctx.fillStyle = profile.particles.color;
-    const spacing = 300;
-    for (let i = 0; i < 6; i++) {
-      const x = ((i * spacing - worldX) % (canvas.width + spacing) + canvas.width + spacing) % (canvas.width + spacing) - spacing / 2;
-      const breathe = 0.8 + 0.2 * Math.sin(this.tSec * 0.5 + i * 2.1);
-      // Small stacked petal flecks on the ground line â€” not a dome under the cliff.
-      const n = 5 + (i % 3);
-      for (let k = 0; k < n; k++) {
-        const ox = (k - (n - 1) / 2) * 7 + Math.sin(i * 1.7 + k) * 2;
-        const oy = -2 - (k % 3) * 1.6;
-        const rw = 5 + (k % 3) * 1.4;
-        const rh = 2.2 + (k % 2) * 0.6;
-        ctx.globalAlpha = 0.18 * breathe * (0.7 + 0.3 * ((k + i) % 3) / 2);
-        ctx.beginPath();
-        ctx.ellipse(x + ox, groundY + oy, rw, rh, (k - 2) * 0.35, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-    for (const sp of this._shedPetals) {
-      const sx = sp.wx - worldX;
-      if (sx < -30 || sx > canvas.width + 30) continue;
-      ctx.globalAlpha = 0.55 * (1 - sp.age / sp.life);
-      ctx.fillStyle = sp.color;
-      ctx.save();
-      ctx.translate(sx, sp.y);
-      ctx.rotate(sp.rot);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, 4, 2, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-    ctx.restore();
-  }
-
-  _drawNeonGrid(ctx, canvas, worldX, groundY) {
-    ctx.save();
-    ctx.strokeStyle = 'rgba(0,255,208,0.35)';
-    ctx.lineWidth = 1;
-    const spacing = 48;
-    const offset = worldX % spacing;
-    for (let x = -offset; x < canvas.width; x += spacing) {
-      ctx.beginPath(); ctx.moveTo(x, groundY); ctx.lineTo(x, canvas.height); ctx.stroke();
-    }
-    for (let y = groundY; y < canvas.height; y += 24) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
-    }
-    if (this._scanlineActive) {
-      ctx.fillStyle = 'rgba(0,255,208,0.12)';
-      ctx.fillRect(0, this._scanlineY, canvas.width, 6);
-    }
-    if (this._pylonFlash > 0.02) {
-      ctx.globalAlpha = this._pylonFlash;
-      ctx.fillStyle = '#00ffd0';
-      for (let i = 0; i < 3; i++) {
-        const x = ((i * 420 - worldX * 0.65) % (canvas.width + 200) + canvas.width + 200) % (canvas.width + 200) - 100;
-        ctx.fillRect(x, groundY - 140, 6, 140);
-      }
-    }
-    ctx.restore();
-  }
-
-  _drawCanopyDapple(ctx, canvas, groundY) {
-    ctx.save();
-    ctx.fillStyle = 'rgba(234,255,176,0.10)';
-    for (let i = 0; i < 5; i++) {
-      const flick = 0.6 + 0.4 * Math.sin(this.tSec * (0.8 + i * 0.3) + i);
-      ctx.globalAlpha = 0.5 * flick;
-      const x = ((i * 240) % canvas.width);
-      ctx.beginPath();
-      ctx.ellipse(x, groundY + 30, 60, 18, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  /** DUNE's desert mirage: a faint, wavering duplicate of the horizon
-   *  hovering just above the sand -- distinct from heatShimmer's ridge-slice
-   *  distortion, since it reads as a false-water illusion sitting on the
-   *  ground rather than a haze over distant terrain.
-   *
-   *  Distinct also from _drawFataMorgana, which is the OCEAN mirage: a
-   *  hovering range at the far horizon rather than a false pool on the
-   *  ground. The two were both named _drawMirage for a week, and since a
-   *  class body keeps only its last definition of a name, that silently
-   *  deleted the ocean one -- hence the deliberately unalike names now. */
-  _drawGroundMirage(ctx, canvas, worldX, groundY) {
-    const bandH = Math.min(26, canvas.height - groundY);
-    if (bandH <= 0) return;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, groundY - bandH, canvas.width, bandH);
-    ctx.clip();
-    ctx.globalAlpha = 0.22;
-    ctx.translate(0, 2 * (groundY - bandH));
-    ctx.scale(1, -1);
-    // Same logical-view-vs-drawable fix as the lake reflection. Reached by
-    // DNA-generated worlds, whose fx comes from ShapeGrammar's FX_BY_TEMP
-    // (fx:'mirage' over the 0.55-0.64 temperature band); none of the hand-
-    // authored palettes emit it, which is why it goes unseen in the fixed
-    // nine worlds.
-    ctx.drawImage(ctx.canvas, 0, 0, canvas.width, canvas.height);
-    ctx.restore();
-
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255,235,190,0.25)';
-    ctx.lineWidth = 2;
-    const waveOffset = worldX * 0.02;
-    for (let row = 0; row < bandH; row += 6) {
-      const y = groundY - bandH + row;
-      ctx.beginPath();
-      for (let x = 0; x <= canvas.width; x += 10) {
-        const yy = y + Math.sin(x * 0.05 + this.tSec * 2 + waveOffset) * 2;
-        if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
-      }
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  // Displaces one horizontal band sideways, as a datamosh tear.
-  //
-  // Done as a self-blit rather than getImageData + putImageData. That pair
-  // reads the frame back off the GPU mid-draw, which stalls the pipeline: it
-  // has to finish every queued operation before the pixels can be handed to
-  // JS, and it is the single most expensive thing a Canvas2D frame can ask
-  // for. drawImage with the canvas as its own source stays entirely on the
-  // GPU. The fx fires for 60ms every few seconds, so this is a short stall
-  // rather than a constant one, but it is a stall for no reason.
-  //
-  // Three details keep the result identical to what putImageData produced:
-  // it addresses the backing store directly, ignoring the active transform
-  // (the renderer has a scale set -- see Renderer.draw), so the transform is
-  // reset here; it replaces pixels rather than compositing, which matches
-  // source-over because the band is opaque ground; and it truncates its
-  // destination toward zero, so the shift is truncated rather than left
-  // fractional, which also keeps the tear hard-edged instead of resampling
-  // it into a blur -- the wrong look for a datamosh displacement.
-  _drawGlitchTear(ctx, canvas) {
-    const rowY = Math.floor((mulberry32(Math.floor(this.tSec * 4))() ) * (canvas.height - 100));
-    const rowH = 18;
-    const shift = Math.trunc(6 * (mulberry32(Math.floor(this.tSec * 4) + 1)() * 2 - 1));
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
-    // ctx.canvas, never `canvas` -- the latter is the logical stage view, not
-    // a drawable (see rendererDrawables.test.js). The rect keeps the exact
-    // numbers getImageData was called with, so the band tears in the same
-    // place it always has: those are logical-sized figures addressing the
-    // backing store, which only coincide when the two match, but reproducing
-    // that is the point here. This is a stall fix, not a reframing of the fx.
-    ctx.drawImage(ctx.canvas, 0, rowY, canvas.width, rowH, shift, rowY, canvas.width, rowH);
-    ctx.restore();
-  }
-}
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éí×môÓTèµ©hºÚn¶X§zÍZ[\ÜÈY[]P[ÝÜÈHœ›ÛH	Ë‹ÕÛÜ›Y[]KšœÉÎÂ‹ËÈÜ˜Ú\Ý˜]\ÈH[^Y\ˆ\˜[^ÛÛ˜XÝ
+ÜXÈ0©ÍŒKŒJKš[ÛYB‹ËÈØÚY[[™ÈšXH›Ý™[KXÝ\™HÙYÛY[][Ûˆ
+0©ÍŒKŒÊK[™Ø[[XKXÛÜœ™XÝ‹ËÈ›Ùš[HÜ›ÜÜÙ˜Y[™È
+0©ÍŒK
+KˆXXÚš[ÛYH\È\™H]H
+š[ÛYT›Ùš[\ËšœÊNÂ‹ËÈ\Èš[H\ÈHÛ™HXÙH]Û›ÝÜÈÝÈÈ™[™\ˆHÛÛ˜XÝ‚š[\ÜÈ’SÓQTÈHœ›ÛH	Ë‹Ðš[ÛYT›Ùš[\ËšœÉÎÂš[\ÜÈÙ[™\˜]TÚ[ÝY]K˜]Õ[YÝš\šYÙVP]Ý]XÔÝš\Ù[ÛY]žKÝš\ÜšYÚ[–Ýš\Ø[\V\Õ\œ˜Z[”Ýš\Hœ›ÛH	Ë‹ÔÚ[ÝY]QÙ[™\˜]Ü‹šœÉÎÂš[\ÜÂˆX]\šX[›Ü‹^Y\˜ZÙK^Y\ÛÛÜ‹\œ˜Z[“[ÙÑ›Ü“^Y\‹Ü›Ý[™ÛÛÜ‘›Ü‹Ø]ÚYÚ™Ø‹ŸHœ›ÛH	Ë‹ÕÛÜ›X]\šX[šœÉÎÂš[\ÜÂˆ^˜XÝšYÙTÜ˜Z]]ÛÙÞQœ›ÛTÚ\™\Ë[™›Ü›UÚ[™ÝË™[[™\™ÞSY\‹Û›ÝÓ[™LQ›Ü‹ŸHœ›ÛH	Ë‹ÔšYÙTÜ˜Z]šœÉÎÂš[\ÜÈÙ]ÛÜ›QUSÕÓÔ“ÒQHœ›ÛH	Ë‹ÕÛÜ›ËšœÉÎÂš[\ÜÈÓÔ“ÔÒQÓUT‘TËÓÔ“Ô‘S‘T‘T”ÈHœ›ÛH	Ë‹ÕÛÜ›™YÚ\ÝžKšœÉÎÂš[\ÜÈØ[\UÛÜ›]\ÚXÈHœ›ÛH	Ë‹ÕÛÜ›]\ÚXËšœÉÎÂš[\ÜÈšYÙQ[™[ÜK›Ý[™\žSYHHœ›ÛH	Ë‹Ø[[™KÔšYÙKšœÉÎÂš[\ÜÈ\XÛQšY[Hœ›ÛH	Ë‹Ô\XÛQšY[šœÉÎÂš[\ÜÂˆØ[\U\œ˜Z[Ý\™KÝ\™Q˜XÚ[™Ë˜XÚ[™ÐÛÛÜ”ÝÜË™[YY“]Ýš\‘ÐK™[YY”ÚYTÝš\‘ÐKˆ‘SQQ—ÑSÑ‘—Ô“ÓÕS‘×ÑPÒS‘×ÒËŸHœ›ÛH	Ë‹Õ\œ˜Z[”™[YY‹šœÉÎÂš[\ÜÈX[™[HHœ›ÛH	Ë‹ÓX[™[KšœÉÎÂš[\ÜÈÞ[X]XÑšY[Hœ›ÛH	Ë‹ÐÞ[X]XÑšY[šœÉÎÂš[\ÜÈÝ\˜[[ÝÔÝØ\›HHœ›ÛH	Ë‹ÒÝ\˜[[ÝÔÝØ\›KšœÉÎÂš[\ÜÈÚ[ÜÔšX˜›ÛˆHœ›ÛH	Ë‹ÐÚ[ÜÔšX˜›Û‹šœÉÎÂš[\ÜÈ™XXÝ[Û‘Y™\Ú[ÛˆHœ›ÛH	Ë‹Ô™XXÝ[Û‘Y™\Ú[Û‹šœÉÎÂš[\ÜÈXÛÜ˜]TÝš\Hœ›ÛH	Ë‹Ó[™X\šÜËšœÉÎÂš[\ÜÂˆSÑWÓVQT”Ë[˜ÙSÙ™œÙ]ÛÛ[[’ZYÚP]šYÙP˜ZÙYÜ™\ÝKÚXÚÑ[‹šYÙRÚXÚÑ[‹[™RÚXÚËÚXÚÐ›ÛÛKÜXÝ[P˜\œËÜ›ÙÙ[žRZYÚ][ˆ[˜XÚÒZYÚ][ˆ[Ý[Z[”Ýš\˜]ÒZYÚšYÙTÝÙ[KT—ÑSÑWÓVQT‹ˆX\ÜÚY‘˜]ÒZYÚX\ÜÚY”šYÙRZYÚKX\ÜÚY”šYÙR˜YÔX\ÜÚYÛX\š[™ÌKˆPTÔÒQ—ÓPT’ÑT—ÔÔQQÔÔËPTÔÒQ—ÓPT’ÑT—ÓQ‘WÔÑPË™^X\ÜÚY“X\šÙ\‘[^TÙXËˆX\ÜÚY‘\TÝ\ŸHœ›ÛH	Ë‹Ó[Ý[Z[ÚÜ™[ËšœÉÎÂš[\ÜÂˆšYÙVTÛ[ÛÝ[˜ÙSÙ™œÙ]Û[ÛÝ[˜ÙTØØ[TÛ[ÛÝ[˜ÙTØØ[T˜[\\ÜÚYÛ˜[™™X]\™\ËÙ[ÐÜ™\ÝÙ™œÙ]ŸHœ›ÛH	Ë‹ÑÙ[ÐÜ™\ÝšœÉÎÂš[\ÜÈ›Ùš[U[š]ÈHœ›ÛH	Ë‹Ý\œ˜Z[‹Õ\œ˜Z[”›Ùš[KšœÉÎÂš[\ÜÈšYÙQ\\œ˜Z[”™]šY]ÔÝ][Û”\œ˜Z[”ØÜ›ÛHœ›ÛH	Ë‹Ý\œ˜Z[‹Ô›Ùš[U˜]™[šœÉÎÂš[\ÜÈT”RS—ÔÕ’TÕÒQHœ›ÛH	Ë‹Ý\œ˜Z[‹ÔÝš\™XYšœÉÎÂš[\ÜÈ\œ˜Z[”Ýš\ØXÚHHœ›ÛH	Ë‹Ý\œ˜Z[‹Õ\œ˜Z[”Ýš\ØXÚKšœÉÎÂš[\ÜÈØØÛYYÜ[œË[Ý\™HHœ›ÛH	Ë‹ÐÛÛ›™XÝÜ’[ËšœÉÎÂš[\ÜÈÝ˜]P™YÈHœ›ÛH	Ë‹Ô›ØÚÔÝ˜]KšœÉÎÂš[\ÜÂˆØØÛYYœ˜XÝ[Û‹Ý\\Ý[Ø]™KÝÙ[Ü™\Ýˆ\Ý]\Ô™]™X[K›Ü™YÜ›Ý[™ÝÙ[Ü™\ÝŸHœ›ÛH	Ë‹Ñ\Ý[Ø]™KšœÉÎÂš[\ÜÈ›Ý\š\ÚØ]HHœ›ÛH	Ë‹‹ÜÚ[KÑ›Ý\š\ÚØ]KšœÉÎÂš[\ÜÂˆÙXS[™VKØÙX[”›ÝÖ\ËØ]™T›ÝÜË›ÝÐ[KÐÑPS—ÒÔ’V“Ó—Ñ”PËÐÑPS—Ó‘PT—Ñ”PËˆœ™XZÙ\“YÚ]XØ\X\ÚË›ÝÔ\ÙQšYŸHœ›ÛH	Ë‹ÓØÙX[‹šœÉÎÂš[\ÜÂˆ˜\”ÚÜ™T™XÚ\K˜\”ÚÜ™RZYÚK˜\”ÚÜ™T[ÙLKT—ÔÒÔ‘WÔTSVT—ÔÒÔ‘WÕSWÔŸHœ›ÛH	Ë‹Ñ˜\”ÚÜ™KšœÉÎÂš[\ÜÂˆZ\˜YÙT™XÚ\KZ\˜YÙRZYÚKZ\˜YÙTÚ[[Y\”Z\˜YÙT™\Ù[˜ÙLKZ\˜YÙQšYZ\˜YÙTÝ™]ÚKRTQÑWÕSWÔŸHœ›ÛH	Ë‹Ñ˜]S[Ü™Ø[˜KšœÉÎÂš[\ÜÈZ[Ø]™PÛÛ\Û™[ËØ]™QšY[Ø[\KÚ[™ÜYY›Ü”ÙXTÝ]KX\ÙTÙXTÝ]KÚÝ[™XZ[ÜXÝ[HHœ›ÛH	Ë‹ÕØ]™QšY[šœÉÎÂš[\ÜÂˆÙ[™\˜]PØ][ÙÝYKÝX”^[˜]ËÚ[šÛP[\]YKØ[XÝXÐ˜[™Ù[\–KÐSPÕP×ÐS‘ˆ^[˜Ý[ÛŒK™Y[š[™ÌKÙ[™\˜]Q\Ý[™\ËÙ[™\˜]QY\ÚÞKÙ[™\˜]T[™]ËˆÙ[™\˜]SÜ[Û\Ý\œË\˜Ù\X[Ý™]ÚŸHœ›ÛH	Ë‹ÔÝ\Ø][ÙÝYKšœÉÎÂš[\ÜÈÒTPÕT—ÔÐÒSQTÈHœ›ÛH	Ë‹Ù˜KÔÚ\QÜ˜[[X\‹šœÉÎÂš[\ÜÂˆ\Û[™ËÚ\ËÙXSY™TØÚY[K[ÛœÝ\”ØÚY[KÝ[˜[ZTØÚY[KˆÝ[˜[ZPXÝ]™KÝ[˜[ZT›ÙÜ™\ÜËÝ[˜[ZT›ÝÑœ˜XËÝ[˜[ZT\œÜXÝ]™TØØ[KˆÝ[˜[ZPÙ[\–Ý[˜[ZSYÝ[˜[ZQ\YÝ[˜[ZT›Ùš[KÜ˜^Q›XÚÜËˆš\Ú\˜ÖKÙ\œ[[\KˆÜ˜\YÙ™œÙ]ÐÑPS—ÓQ‘WÔUSËÕSSRWÕÒQÔˆÝ[˜[ZRZYÚØØ[KÕSSRWÓÕ‘T•ÔÔÐÐSKˆÝ[˜[ZUÚ]˜]Ø[XÝ]™KÝ[˜[ZUÚ]˜]Ø[KŸHœ›ÛH	Ë‹ÓØÙX[“Y™KšœÉÎÂš[\ÜÈÛÛœÝ[][Û•ÙX]™\ˆHœ›ÛH	Ë‹ÐÛÛœÝ[][Û•ÙX]™\‹šœÉÎÂš[\ÜÈÜXÙTšYÙHHœ›ÛH	Ë‹ÔÜXÙTšYÙKšœÉÎÂš[\ÜÈÚÞQ[œÙ[X›HHœ›ÛH	Ë‹ÔÚÞQ[œÙ[X›KšœÉÎÂš[\ÜÈ˜\•šYÛ™]\ÈHœ›ÛH	Ë‹Ñ˜\•šYÛ™]\ËšœÉÎÂš[\ÜÈ™X\‘šY[‘PT‘’QSÔUSÈHœ›ÛH	Ë‹Ó™X\‘šY[šœÉÎÂš[\ÜÈÜ›Ý[™ØØ]\‹ÐÐUT—ÔUSÈHœ›ÛH	Ë‹ÑÜ›Ý[™ØØ]\‹šœÉÎÂš[\ÜÈ›[YQ›XÚÙ\‹Û[ÚÙQšYHœ›ÛH	Ë‹ÕÚ[š\™KšœÉÎÂš[\ÜÈØ\Ýš[ÛY\ËÛ\ÜÚYžU˜[œÚ][Û‹[[œÚ]PYÙ]^P\˜ÈHœ›ÛH	Ë‹Ñ˜[X]\™ÞKšœÉÎÂš[\ÜÈÞXÛS\È\È^SšYÚÞXÛS\Ë^SšYÚÙ[\ÝX[Qœ˜XÑ›Ü‹Ù[\ÝX[œ˜XÑ›Ü‹Üš^›Û‘˜YKÝ[”ØÜ™Y[‘œ˜XËÞXÛT\ÙLHHœ›ÛH	Ë‹Ñ^SšYÚšœÉÎÂš[\ÜÈ\ÙTÙXÝ[ÛœÈHœ›ÛH	Ë‹‹Û\šXÜËÔÙXÝ[Û‘\Ú[Û‹šœÉÎÂš[\ÜÈØØ[“[™HHœ›ÛH	Ë‹‹Û\šXÜËÓ\šXÓ^XÛÛ‹šœÉÎÂš[\ÜÈÙ[\ÝX[\›ØXÚHœ›ÛH	Ë‹ÐÙ[\ÝX[\›ØXÚšœÉÎÂš[\ÜÈÛ˜\Ý]ÕÔ™[X\Ù\ÈHœ›ÛH	Ë‹Ð›Ý[™\žTÛ˜\šœÉÎÂš[\ÜÈ\PÛÛ™XÝÜ”ØÚY[HHœ›ÛH	Ë‹‹ØÛÜ™KÐÛÛ™XÝÜ•˜XÚËšœÉÎÂš[\ÜÈ[˜[^™TÛÛ™Ñ›Ü›HHœ›ÛH	Ë‹ÔÛÛ™Ñ›Ü›KšœÉÎÂš[\ÜÂˆRS—ÔÑPÕSÓ—ÐÕUÑÐTÓTËÑPÕSÓ—ÐÕUÐ•QÑUÓTËRS—ÔÑPÕSÓ—ÐÕUËÙXÝ[ÛÝ]YÙ]ŸHœ›ÛH	Ë‹‹Ø]Y[ËÜÙXÝ[ÛYÙ]šœÉÎÂš[\ÜÈYÚš[™Ñ–Hœ›ÛH	Ë‹ÓYÚš[™ËšœÉÎÂš[\ÜÈY][Ü”ÚÝÙ\‘–Hœ›ÛH	Ë‹ÓY][Ü”ÚÝÙ\‹šœÉÎÂš[\ÜÈYÚšYÈHœ›ÛH	Ë‹ÓYÚšYËšœÉÎÂš[\ÜÈ^™P[K^™UØ\›SZ^V‘WÕÐT“WÐÓÓÔ‹V‘WÑTË^™TØØ]\ˆHœ›ÛH	Ë‹Ñ\^™KšœÉÎÂš[\ÜÈT”ÓÓSUHHœ›ÛH	Ë‹Ðš[ÛYT\œÛÛ˜[]KšœÉÎÂš[\ÜÈÝ[QX[ËÚYYÚ™\ÜË[œÝ\™PÛÛ˜\Ý[œÝ\™SZ[“YÚ™\ÜÈHœ›ÛH	Ë‹‹Ü™[™\‹Õš\ÝX[Ý[KšœÉÎÂš[\ÜÈ]\›]\˜][ÛˆHœ›ÛH	Ë‹Ó]\›]\˜][Û‹šœÉÎÂš[\ÜÈ][ÜÜ\™HHœ›ÛH	Ë‹Ð][ÜÜ\™KšœÉÎÂš[\ÜÈÛÙQ\™XÝÜˆHœ›ÛH	Ë‹‹ÜÚ[KÐÛÙQ\™XÝÜ‹šœÉÎÂš[\ÜÈØ\›\Ú[HHœ›ÛH	Ë‹‹ÝZKÐXØÙ\ÜÚXš[]KšœÉÎÂš[\ÜÈÝ\\™›Ü›][K[Ù[š[™ÈHœ›ÛH	Ë‹‹Ü™[™\‹ÛÜØÚ[]ÜœËšœÉÎÂš[\ÜÂˆÛÛ\]SYÚÜ›Ý[™ÛÝÓYÚËš[QØZ[‹ÑSTÕPSÑQUSÖ”PËŸHœ›ÛH	Ë‹‹Ü™[™\‹ÓYÚšY[šœÉÎÂš[\ÜÂˆÛ[\Û[\KÛ[ÛÝÝ\][™\œžLÌ‹\ÚÙYY\œYK\œŸHœ›ÛH	Ë‹‹Ý][ËÛX]šœÉÎÂš[\ÜÈ\œØXÚK›Ý]RYR^^Ô™Ø‹™Ø•ÒÛHœ›ÛH	Ë‹‹Ý][ËØÛÛÜ‹šœÉÎÂš[\ÜÈÜXÝ˜[ÚYYËX\ÙTÜXÝ˜[ÚYHœ›ÛH	Ë‹‹Ü™[™\‹ÜÜXÝ˜[šœÉÎÂš[\ÜÈ›ÛHHœ›ÛH	Ë‹‹ØÛÜ™KÓ›ÝQ]™[šœÉÎÂš[\ÜÈ“UÕÑRQÒÈHœ›ÛH	Ë‹‹Ø]Y[ËØ˜[™ËšœÉÎÂš[\ÜÈ›ÞXYÙT\ÙKÛÛœÝ[][Û“Y™LHHœ›ÛH	Ë‹‹ÜÚ[KÔÚÞU›ÞXYÙKšœÉÎÂš[\ÜÈ›[™ÙXÝ[ÛœËYYX[™X]ÙXËÙXÝ[Û’[™^]Hœ›ÛH	Ë‹Ðš[ÛYTØÚY[KšœÉÎÂ‚™^ÜÈYYX[™X]ÙXÈHœ›ÛH	Ë‹Ðš[ÛYTØÚY[KšœÉÎÂ‚˜ÛÛœÝVQT—ÔUSÔÈHÈNˆŒKŽˆŒLÎˆŒNˆŒÌNˆKŽˆKŒÎˆKŒŒNÂ‹ËÈÝ\ˆØ][ÙÝYHÜ[œÈÝÛˆÈHÙXHÜš^›Û‹›ÝHÚÛHœ˜[YKˆ[‚‹ËÈX\›Y\ˆÝ]Ù[™\˜]YÛ›HÝ™\ˆHÜÎ	HÛÈÝ\œÈ˜™Z[™ˆB‹ËÈ[Ý[Z[œÈÙ\™H›ÝØ\ÝY8 %]˜[^\ËÚÜ\ˆš[ÛY\Ë[™HÚ]B‹ËÈÚÞ[[™H[^ÜÙHÚÞHÙ[™[ÝÈ][™K[™HšY[™XY\ÈB‹ËÈÚ[šÈÚ][™È[ˆHZYHÙˆHÚÞHÚ]HXY˜[™X›Ý™HB‹ËÈšYÙ[[™Kˆ]Ø\Èš^YžHÜ[›š[™ÈHÒÓHœ˜[YH[œÝXYÛˆB‹ËÈ™X\ÛÛš[™È]\œ˜Z[ˆØØÛY\ÈÚ]]ØØÛY\ÈKH]H˜\ˆØÙX[‚‹ËÈ
+ØÙX[‹šœÊHÚ]È]HØ[YH\\ÈH˜[™Ù\È[™\ÈØ]\‹›Ý‹ËÈ\œ˜Z[Žˆ]™]™\ˆØØÛY\È[ž][™ËÛÈÝ\œÈÙ[™\˜]Y™[ÝÈ]Â‹ËÈÜš^›Ûˆ[™HÝ^YYš\ÚX›HÚ][™ÈSˆHØ]\ˆ[ˆ[žHØ\™]ÙY[‚‹ËÈ[Ý[Z[œË™XY[™È\ÈÝ\œÈÝXÚÚ[™ÈÝ]ÙˆHÙXKˆÚÞH[™ÈÚ\™HB‹ËÈØÙX[ˆ™YÚ[œÎÈHØ][ÙÝYHÛ›H™YYÈÈÛÝ™\ˆ]™\žH^[]Ø[‚‹ËÈ]™\ˆXÝX[H™HÚÞKÚXÚ\È]™\ž][™ÈX›Ý™HÐÑPS—ÒÔ’V“Ó—Ñ”PË‚˜ÛÛœÝÕT—ÔÒÖWÑ”PÈHÐÑPS—ÒÔ’V“Ó—Ñ”PÎÂ˜ÛÛœÝÕT—ÐÐUSÑÕQWÐÓÕS•HŽÂ‹ËÈÜš^›Û[\˜[^\ˆØ][ÙÝYH^Y\ˆ
+˜\ˆÈZYÈ™X\ŠKˆHÛ‹ËÈ
+H
+È^Y\ˆ
+ˆŠH
+ˆŒˆÜ™XYØ\È[[ÜÝHØ[YHÜYYÛˆ]™\žHÝ\‹‹ËÈÛÈHšY[™XY\ÈHZ[Y˜XÚÙ›Üˆ˜\ˆÝ\œÈ˜\™[HÜ˜]ÛÈ\›Ù\Â‹ËÈÛYH[›ÝYÚ]HÚÞH\ÈHœ›Û[™H˜XÚË‚˜ÛÛœÝÕT—ÔTSVHÌŒËŒ‹ŒNÂ‹ËÈY\šX[\œÜXÝ]™H\ˆ\˜[^^Y\ŽˆÝÈ˜\ˆXXÚ˜[™ÙIÜÈÝÛˆš[\Â‹ËÈ[YÝØ\™HÚÞKZÜš^›ÛˆÛÛÜˆ™Y›Ü™H]\È˜]Û‹ˆH\ÈB‹ËÈ™X\™\Ý˜[™ÙH[™ÙY\ÈHš[ÛYIÜÈ]]Ü™YÚ[ÝY]HÛÛÜˆ^XÝNÂ‹ËÈˆ\ÈH\\Ý[™Ú]È™X\›H[ˆØ^HÈHÚÞKˆÙYHB‹ËÈ^Y\•[
+
+HÛÛ[Y[[ˆ˜]Ê
+H›ÜˆÚH\È^\ÝË‚˜ÛÛœÝQT’PSÔSHÈŽˆ‹ÎˆŒŽKˆŒLËNˆNÂ‹ËÈÜ™\Ýš[H
+ÝYÙHÈÙˆH[Ý[Z[ˆÝ™\š][
+NˆH˜XÚÛ]ÚÞ[[™HYÙB‹ËÈ\ÙYÈ™HÓK[Û›KÛÈHÛÈ’QÑÑTÕ˜[™Ù\ÈÛˆØÜ™Y[ˆÛÝHPTÕ‹ËÈ\™X]Y[ÙˆHÝXÚËˆ^[™YÈ‹ÓÈ]™YXÙY‹ËÈ\X\›ÜšX]H[HKH[Ý™[™ÝÝ^\È™\Ù\™Y›ÜˆH™X\‚‹ËÈ[˜ÚÜœÈÛÈHÜ™\Ýš[H]Ù[ˆÝ[™XYÈ\ÈH\ÝYK›ÝH›]‹ËÈÝ][™H™\X]Y]]™\žH^Y\‹‚˜ÛÛœÝÔ‘TÕÔ’SWÐSHHÈŽˆŒÍKÎˆMKˆKNˆHNÂ‹ËÈØ\ÝÚYÝÈ
+ÝYÙHHÙˆH[Ý[Z[ˆÝ™\š][
+NˆH™X\ˆ˜[™ÙH\šÙ[œÈB‹ËÈ[™XYKY˜]Ûˆ˜\\ˆ˜[™ÙH[ˆH˜[™\ÝX›Ý™H]ÈÝÛˆÜ™\ÝˆØ\Y‹ËÈÝÈKH\È\ÈHÝXH\ÝYH™]ÙY[ˆY˜XÙ[˜[™Ù\Ë›ÝH\™‹ËÈÚ[ÝY]HÙˆÛ™H˜[™ÙHš[YÛÈ[›Ý\‹‚˜ÛÛœÝÐTÕÔÒQÕ×ÓPVHŒNÂ˜ÛÛœÝÐTÕÔÒQÕ×ÐS‘ÔHŽÂ‹ËÈÝX‹X˜[™ÈH˜[Ù™ˆ\ÈZ[œ›ÛKˆXXÚ˜XÙ\ÈH™X\ˆÜ™\Ý]]ÈÝÛ‚‹ËÈÙ™œÙ]ÛÈH˜YH\ÈYX\Ý\™Yœ›ÛHHÐÐSÜ™\Ý]™\ž]Ú\™H˜]\ˆ[‚‹ËÈœ›ÛHÛ™HÛØ˜[^™[][HKHÙYHÙ˜]ÐØ\ÝÚYÝÈ›ÜˆÚH]X]\™Y‚‹ËÈ›Ý\ˆ\È[›ÝYÚ]HÝ\È\™H[š\ÚX›H]\ÈÛÛ˜\Ý‚˜ÛÛœÝÐTÕÔÒQÕ×ÔÕTÈHÂ‹ËÈ›ØÚÈÝ˜]H
+ÝYÙH‹Ú\[\ÝØÝ]X›JNˆ[ˆ˜[™ËÙ\Ù[[™\ˆB‹ËÈÜ™\ÝÜÚÝ[\ˆÛÛ˜\ÝÛÈHÚÞ[[™H[™HÚÝ[\ˆ˜XÙ]ÈKH›Ý‹ËÈ[™XYH\ÝX›\ÚY\ÝY\ÈKHÝ^HH[™ÜÈ[ÝH™XYš\œÝ‚˜ÛÛœÝÕUWÔÔPÒS‘×ÔHÍÂ˜ÛÛœÝÕUWÐS‘ÔHNÂ‹ËÈ™YÈ›ÝÈ[ˆ™X\‹ZÜš^›Û[H[™\™H[˜Ø]YžHH˜[™ÙIÜÈÝÛ‚‹ËÈÚ[ÝY]H
+ÙYH›ØÚÔÝ˜]KšœÊKÛÈH[Ý[[Z]YÚ][X][HÚÝÜÈÙ]™\˜[‹ËÈÚ[HHÝÈÚÝ[\ˆÚÝÜÈÛ™K‚‹ËÂ‹ËÈ™YÈ\™HÛÝ[YT”“ÓHH“ÓÕ
+H›ÛÝ\ÈHÝX›HYÙHKHHÜ™\Ý‹ËÈ[˜Ù\ÊKÛÈ\ÈØ\XÚY\ÈÝÈ˜\ˆ\H˜[™ÙH^H™XXÚˆHš\œÝ‹ËÈ˜[YHšYY\™HØ\ÈÚXÚÛˆH›Ü›X[˜[™ÙHÝÜYŽLÚÜÙˆB‹ËÈÜ™\Ý[™Y]™\žHÝ[[Z]˜\™HKH[™HÝ[[Z]È\™HH\ÙˆH˜[™ÙB‹ËÈ]\ÈXÝX[HÛˆØÜ™Y[‹]™\ž][™ÈÝÙ\ˆ™Z[™È™Z[™H˜[™ÙH[‚‹ËÈœ›ÛÙˆ]ˆYÚ[›ÝYÚÈ™XXÚHÜÙˆH[˜[™ÙNÈH[˜]Ø^HÝX\™‹ËÈ˜]\ˆ[ˆHÛÚÈÛÛ›Û‚˜ÛÛœÝÕUWÓPVÐ‘QÈHNÂ˜ÛÛœÝÕUWÑT’ÑSˆHŒMÎÂ‹ËÈÜ›Ý[™Y\šX[\œÜXÝ]™NˆÝÈÝ›Û™ÛHH˜\ˆYÙHÙˆHØ[Ú[™ÈÜ›Ý[™‹ËÈØ\Ú\ÈÝØ\™HZ\ˆÛÛÜ‹[™ÝÈ˜\ˆÝÛˆHœ˜[YH]Ø\Ú™XXÚ\Â‹ËÈ™Y›Ü™HHÜ›Ý[™\È]]ÈÝÛˆ[ÛÛÜ‹ˆÙ\YÚ\ˆ[ˆ[žH˜[™ÙIÜÂ‹ËÈQT’PSÔSKHHÜ›Ý[™\ÈH‘PT‘TÕ[™È[ˆHØÙ[™KÛÈ]ÚÝ[‹ËÈÛ›HÜÙHÛÛÜˆšYÚ]HÜš^›ÛˆÚ\™H]YY]ÈH˜[™Ù\Ë‚‹ËÈÜ™\Ýš[NˆÝÈ˜\ˆHš[ÛYIÜÈXØÙ[\È˜YÙÙYÝØ\™HYÚ	ÜÈÝÛ‚‹ËÈÛÛÜ‹[™ÝÈX[žHÝÜÈH˜[Ù™ˆÜ˜YY[Ù]Ëˆš[™H\ÈÙ[\ÝB‹ËÈÚ[Ú\™HH˜[\\Èš\ÝX[HÛ[ÛÝÈH˜[Ù™ˆ\È]XY˜]XÈ[™B‹ËÈÝ›ÚÙH\È][ÜÝË\ÚYKÛÈ›Ý[™È\™H™YYÈš[™H™\ÛÛ][Û‹‚‹ËÈÛ›ÝÈØ\ÜXÚ]H]HÝ[[Z]˜Y[™ÈÈ›Ý[™È]HÛ›ÝÈ[™KˆÛ›ÝÈ\Â‹ËÈHœšYÚ\Ý[™È]Ø[ˆ\X\ˆÛˆH˜[™ÙK[™H˜[™ÙH]\ÝÝ^H\šÙ\‚‹ËÈ[ˆHÚÞH]\ÈÚ[ÝY]YYØZ[œÝKHY\šX[\œÜXÝ]™H[Ý™\ÈH\Ý[‹ËÈØš™XÝÕÐT‘HÚÞIÜÈ˜[YK]™]™\ˆZÙ\È]\Ý‚‹ËÈšYÙHÚY[™ËˆHØ]Ú[YÚ\ÈH™X\‹]Ú]HQUU‘HØ\Ú]HÜ™\Ý‹ËÈÛÈ]\ÈH˜[™ÙH\ÜÉÜÈ\™Ù\ÝÚ[™ÛHÛÛšX][ÛˆÈÝ™\˜[‹ËÈœšYÚ™\ÜÎÈHÚYH\ÈH][\KÛÈ˜Z\Ú[™È]ÛÜÝÈ›Ý[™È[ˆYK‚‹ËÈ˜Y[™ÈH]HØ]Ú[YÚ›ÜˆH]H[Ü™HÚYHÝÙ\œÈHØÙ[™IÜÂ‹ËÈÝ™\˜[˜[YHÚ[HÙY\[™ÈKHÛYÚH[˜Ü™X\Ú[™ÈKHHÛÛ˜\Ý]‹ËÈXZÙ\ÈH˜[™Ù\È™XYX›Kˆ›ÝÙ\™HÙ]Ú[ˆ\È\ÜÈØ\ÈHÓ“B‹ËÈÚY[™ÈH˜[™ÙHÛÝÈ]\È›ÝÈÛ™HÙˆÙ]™\˜[‚˜ÛÛœÝ’QÑWÐÐUÒQÒÐSHHŒLÎÂ˜ÛÛœÝ’QÑWÔÒQWÔÕ‘S‘ÕHŒÍŽÂ‹ËÈ›Ü™YÜ›Ý[™ÝÙ[
+H\Ý]\È™]™X[
+Kˆ[\]YH\ÈXœÛÛ]H˜]\ˆ[‚‹ËÈ™[YY‹Y\š]™Yˆ\ÈØ]\ˆ\È]HšY]Ù\‰ÜÈ™Y]ÛÈ]ÈØØ[H\ÈÙ]žB‹ËÈÝÈ™X\ˆ]\Ë›ÝžHÝÈ[H[Ý[Z[œÈ™Z[™]\[ˆÈ™K‚˜ÛÛœÝ‘×ÔÕÑSÐSTÔHŽÂ˜ÛÛœÝ‘×ÔÕÑSÑ“ÔÔHŽÈËÈÝÈ˜\ˆ™[ÝÈHÜ›Ý[™[™HHÚÜ™HÚ]Â‹ËÈÝÈ˜\ˆHØ]\ˆ\È\šÙ[™Y™[ÝÈHÚÞHÛÛÜˆ]™Y›XÝË‚˜ÛÛœÝ‘×ÔÕÑSÑT’ÑSˆHŒÌÂ˜ÛÛœÝ‘×ÔÕÑSÐSHHŽŽÂ˜ÛÛœÝ‘×ÔÕÑSÑQÑWÐSHHŽÂ˜ÛÛœÝÓ“Õ×ÐSHHŒÍÂ˜ÛÛœÝ’SWÓQÒÓRVHŒÍNÂ˜ÛÛœÝ’SWÑÔQQS•ÔÕÔÈHÂ˜ÛÛœÝÔ“ÕS‘ÐQT’PSÐSHHŒÍÂ˜ÛÛœÝÔ“ÕS‘ÐQT’PSÑSÑ‘ˆHŒÎÂ‹ËÈÙXÝ[ÛˆZYÚ\ÈH˜]Ë][YH][\Y\‹™]™\ˆ˜ZÙY
+Ù[™\˜]TÚ[ÝY]IÜÂ‹ËÈÝÛˆPQ“ÓÓH™Yš]\˜\Ù\È[‹\Ýš\ZYÚÚ[™Ù\ÈÛˆ‹ÓÈKHÙYHB‹ËÈ[Ý[Z[‹[Ý™\š][[ŠKˆ˜[™ÙHÚÜÙ[ˆÛÈH]ZY]\ÝÙXÝ[Ûˆ\Èš\ÚX›B‹ËÈÛX[\ˆ[™HÝY\Ýš\ÚX›H[\ˆÚ]Ý]Z]\ˆ™XY[™È\Èœ›ÚÙ[‹‚˜ÛÛœÝÑPÕSÓ—ÒRQÒÓUSHÌŽKŒM—NÂ‹ËÈ\œ˜Z[ˆ›ÛÝ[™ÈÛÛXÝÚYÝÎˆ^Y\™YÝ›ÚÙ\È[Û™ÈHšYÙIÜÈÝÛ‚‹ËÈÛ[ÛÝÝ\™H\›Þ[X]HHÛÙ™\XØ[˜[Ù™ˆHÚ[™ÛHÜ˜YY[™XÝ‹ËÈ\ÙYÈÚ]™HH›]Ü›Ý[™[™HKHÚY\ÝÙ˜Z[\Ý\ÜÈš\œÝÛÈB‹ËÈÝXÚÈ™XYÈ\ÈÛ™HÛÙSÈ˜[™›Ý™YH\™YYÙYÝ›ÚÙ\Ë‚˜ÛÛœÝT”RS—Ñ“ÓÕS‘×ÐS×ÔTÔÑTÈHÂˆÈÎˆÌ[NˆŒÍHKˆÈÎˆN[NˆŒˆKˆÈÎˆ[NˆŒLK—NÂ‚‹ËÈÙXÝ[Û‹Y]XÝ[ÛˆØÚY[H
+ØZ[ØÚY[JNˆH™X[˜\ˆÜšY[™XYHÚ]™\Â‹ËÈ[HÙˆ[˜[\Ú\È™\ÛÛ][ÛŽÈ\ÙHÛ›HÛÝ™\›ˆHœ™YK][YKÛ›Ë][\Â‹ËÈ˜[˜XÚÈ[™HÝ]YÙ]ÜÜXÚ[™È]\HZ]\ˆØ^K‚˜ÛÛœÝSSTÒT×ÓRS—ÔÒS•ÈHÈËÈ˜[˜XÚÈ[˜[\Ú\Ë\Ú[›ÛÜˆ™YØ\™\ÜÈÙˆ\˜][Û‚˜ÛÛœÝSSTÒT×ÕT‘ÑUÔÕTÓTÈHŒÈËÈŒH[˜[\Ú\ÈÚ[]™\žHœÈ›ÜˆÛ™Ù\ˆÛÛ™ÜÂ‹ËÈÝÈÝ\™HHÔÓHÝXÝ\™H™XY
+ÝXÝ\™P[˜[^™\ŠH]\Ý™H™Y›Ü™H]‹ËÈ™\XÙ\ÈH˜[™Y[™\™ÞHØÚY[KˆH›ÝYÚXÛÛ\ÜÙYYXÙHÚ]›Â‹ËÈ™\X]È[™›ÈÚ\œ›Ý[™\šY\ÈØÛÜ™\È™[ÝÈ\È[™ÙY\ÈHÛ]‚˜ÛÛœÝÔÓWÐÓÓ‘’QSÑWÑ“ÓÔˆHNÂ‹ËÈ›Ý™[H™[ÝÈ\Èœ˜XÝ[ÛˆÙˆHÛÛ™ÉÜÈÝ›Û™Ù\Ý\›ˆ\È›Ú\ÙK›ÝB‹ËÈÙXÝ[Ûˆ›Ý[™\žKˆZ\œ›ÜœÈHÔÓH]	ÜÈÝÛˆ›ÛÜˆÛÈHÛÈ]XÝÜœÂ‹ËÈ™Y\ÙHÈX[Y˜XÝ\™H›Ý[™\šY\ÈÛˆHØ[YH\›\Ë‚˜ÛÛœÝ“Õ‘SWÓ“ÒTÑWÑ“ÓÔˆHŒMNÂ‚‹ËÈKKHHÚ]\ŽˆHØÜ™Y[ˆÛÜÚ[™ÈÝÛˆÝ™\ˆHÙXÝ[Ûˆ›Ý[™\žHKKKKKKKB‹ËÈH\™›ÛÜˆ™]ÙY[ˆš]\ËˆÙXÝ[Ûˆ›Ý[™\šY\ÈX^HYØ[HÚ]L\È\\‹ËÈ[™ÛÈ™X\‹]Ý[›XÚÛÝ]È]ÛÜÙHÙÙ]\ˆ™XY\ÈHØ[YB‹ËÈX[[˜Ý[Ûš[™È˜]\ˆ[ˆ\È[˜ÝX][Û‹‚˜ÛÛœÝÒUT—ÓRS—ÑÐTÓTÈHLÂ‹ËÈÝÈ]XÚÙˆHØÜ™Y[ˆXXÚ[ˆX^HÝØ[ÝËˆØ\ÈHKHÚ]›Ý[™\Â‹ËÈÛÜÚ[™È]\ÈHÝ[›XÚÛÝ]ÚXÚ\È[Ü™H[ˆ[žH˜[œÚ][Ûˆ™YYÂ‹ËÈÈX\›ˆ]ÈÚ[‚˜ÛÛœÝÒUT—ÓPVÐÓÕ‘TˆHŒÍÂ˜ÛÛœÝÓÔ“ÔÔQQÔÔÈHŒŒÂ˜ÛÛœÝS‘ÐÓÕS•HÎÂ‚‹ÊŠ‚ˆ
+ˆHÛÛ™ÉÜÈ™X][ˆÙXÛÛ™Ëœ›ÛHH˜\ˆÜšYKHÜˆ[Ú[ˆ\™H\Û‰Ýˆ
+ˆÛ™H
+œ™YH[YJKˆYYX[ˆÙˆH˜\ˆ[\˜[È]šYYžHH]XÝYˆ
+ˆY]\‹ÛÈHËÍ˜XÚÈ\È™XY[ˆ™YH[™HšYX]Ø\™HÜšY	ÜÈÙˆ
+ˆÚ[™ÝÈØ[‰ÝÚÙ]ÈH[œÝÙ\‹‚ˆ
+‹Â˜ÛÛœÝTWÐUPÒ×ÔÑPÈHŒÂ˜ÛÛœÝTWÔ‘SPTÑWÔÑPÈHŽÂ˜ÛÛœÝTWÓPVÒRQÒÑ”PÈHÈËÈ™]™\ˆ^ÙYY	HÙˆØÜ™Y[ˆZYÚÝÙ]™\ˆ^Ú]YHÙXÝ[Ûˆ\Â‚‹ËÈKKHšYÙH›Û[YNˆH[˜Ú[™È˜[™Ù\È™XY\ÈPTÔË›Ý\È›]Ý]Ý]ÈKKB‹ËÈØ[\[™ÈÝ\
+
+H›ÜˆHÛ[ÛÝÜ™\ÝÛ[[™HÚ\™YžHHÜ™\Ý‹ËÈÝ›ÚÙH[™H›Û[YH\ÜË‚‹ËÈHÛXÙHÚY\ÙYÚ[ˆ›È\™‘ÛÝ™\››Üˆ\È™\Ù[
+\ÝË[™[žB‹ËÈØ[\ˆ]™]™\ˆÚ\™YÛ™H\
+KˆX]Ú\ÈHÛÝ™\››Ü‰ÜÈÝÛˆ]™[L˜[YN‚‹ËÈÚ]›Ý[™È[[™È\ÈÈXÛÛ›ÛZ^™K™[™\ˆ][™\ÛÛ][Û‹ˆ]\Ý‹ËÈ]šYHHŒÝš\]™[›HKHÙYH\™‘ÛÝ™\››Ü‹™[˜ÙPÛÛ[[•ÚY‚˜ÛÛœÝSÑWÐÓÓÑ’S‘HHMŽÂ˜ÛÛœÝÔ‘TÕÔÕTÔHÂ‹ËÈHÝ[[Z]Û›HX\›œÈÚÝ[\œÈYˆ]Ý[™È\È˜\ˆ
+
+HX›Ý™HB‹ËÈØY\ÈZ]\ˆÚYHÙˆ]KHÝ\Ú\ÙH]™\žHš\H[ˆH›Ú\ÙHšYÙB‹ËÈÛÝ[Ü›Ý]Ü\œÈ[™HÚÞ[[™HÛÝ[\›ˆÈš\ÝX[›Ú\ÙK‚˜ÛÛœÝÒÕST—ÓRS—Ô“ÓRS‘SÑHHŽÂ‹ËÈ‹‹˜[™›ÈÛÈÝ[[Z]ÈÚ][ˆ\ÈØÜ™Y[ˆ\Ý[˜ÙH›ÝÙ][K‚˜ÛÛœÝÒÕST—ÓRS—ÔÔPÒS‘×ÔHNLÂ˜ÛÛœÝÒÕST—ÓPVÔT—ÔS‘ÑHHNÂ‹ËÈH™X\ˆÜ\ˆ[œÈ\Èœ˜XÝ[ÛˆÙˆHÝ[[Z]	ÜÈZYÚÝ]ÈHÚYB‹ËÈ\È]\ØÙ[™ÈÝØ\™HšY]Ù\ŽÈH˜\ˆÛ™H\ÈÚÜ\ˆ[™˜Y\ÈÝ]‚˜ÛÛœÝÒÕST—Ó‘PT—Ô•SˆHŒŽÂ˜ÛÛœÝÒÕST—ÑT—Ô•SˆHŽÂ‹ËÈÝÈ˜\ˆHÜ\ˆ\ØÙ[™Ë\ÈH][\HÙˆ]ÈÝ[[Z]	ÜÈÝÛˆ›ÛZ[™[˜ÙK‚‹ËÈšYÈ™X\ˆÝ[[Z]È™XXÚHÜ›Ý[™˜[™ÛˆZ\ˆÝÛˆXØÛÝ[ÈÛX[‹ËÈ\Ý[Û™\ÈÝ^HØØ[[œÝXYÙˆÝ™XZÚ[™ÈXÜ›ÜÜÈHœ˜[YK‚˜ÛÛœÝÒÕST—Ô‘SQQ—Ô•SˆH‹Â‹ËÈ[X™\˜][H]ZY]\ˆ[ˆHÜ™\Ý[™H]Ù[ˆ
+ÚXÚÝ›ÚÙ\È]\Â‹ËÈŒÎ
+Nˆ\ÙH\™H[\š[Üˆ›Ü›K[™™XY[™È[H\ÈHÙXÛÛ™ÚÞ[[™H\Â‹ËÈ^XÝHH›Ú\ÙHÙIÜ™H]›ÚY[™Ë‚˜ÛÛœÝÒÕST—ÑPÑUÐSHHŒŒŽÂ˜ÛÛœÝÒÕST—ÓS‘WÐSHHŒŒÂ‹ËÈHØ[YHØ\›HØ]Ú[YÚÙ[™\˜]TÚ[ÝY]H˜ZÙ\È[Û™ÈHÚÞ[[™KÛÂ‹ËÈHÜ\‰ÜÈ]YÙH™XYÈ\ÈHØ[YHÝ[ˆÝšZÚ[™ÈHØ[YH›ØÚË‚˜ÛÛœÝÒÕST—ÓUH	ÈÙXÙM‰ÎÂ‹ËÈ˜XÙ]˜XÚ[™ÎˆHÙ[\ÝX[ÝÛœÈHÚYKH^\Ý[™ÈÝš\\Ú\ÈB‹ËÈÛX[\‹\Ý[[Z]\\˜˜][ÛˆÛÈHÚÛH˜[™ÙHÙ\Û‰Ý›][ˆ[ÈÛ™B‹ËÈ[šY›Ü›[K[]Ø[ˆHÝ[[Z]Û›H›\ÈYØZ[œÝHÝ[ˆÚ[ˆ]È\Ú\Â‹ËÈÝ›Û™ÛHÜÜÙY
+Ú[ˆ\Ý\È™\ÚÛ
+K‚™^ÜÛÛœÝPÑUÔÕS—Ñ“THŒŽÂ‚‹ÊŠ‚ˆ
+ˆÚXÚØ^HHÝ[[Z]	ÜÈ™X\ˆ
+ÚYY
+H˜XÙ]X[œËˆ
+ÌHHšYÚLHHY‚ˆ
+ˆÛZ][™ÈHYÚ˜[È˜XÚÈÈHÜšYÚ[˜[Ýš\ÛÚ[‹Y›\ÛÈ[žBˆ
+ˆØ[\ˆ]\Û‰Ý™Y[ˆ[™YHÙ[\ÝX[ÙY\ÈÙ^IÜÈÛÚË‚ˆ
+‚ˆ
+ˆHÚYY˜XÙH\ÈHÛ™HUÐVHœ›ÛHHYÚ
+Ý[ˆÛˆHšYÚÚY\Âˆ
+ˆHY
+KˆH\Ú\È[ÝÙYÈÝ™\\›ˆ]ÛˆHZ[›Üš]HÙ‚ˆ
+ˆÝ[[Z]ÈKH[›ÝYÚ˜\šY]H]šYÙ\ÈÝ^HšYÙ\Ë›ÝH]ÛX‹‚ˆ
+‹Â™^Ü[˜Ý[ÛˆÚÝ[\‘˜XÙ]ÚYJÝš\YÚH[Ý[[Z]H[
+HÂˆÛÛœÝ\ÚHX]œÚ[ŠÝš\
+ˆŒLÍÊNÂˆYˆ
+S[X™\‹š\Ñš[š]JYÚ
+HS[X™\‹š\Ñš[š]JÝ[[Z]
+JHÂˆ™]\›ˆ\ÚHÈHˆLNÂˆBˆÛÛœÝÝ[šX\ÈHÝ[[Z]YÚÈLHˆNÂˆYˆ
+\Ú
+ˆ\Ý[šX\ÈˆPÑUÔÕS—Ñ“T
+H™]\›ˆ\Ý[šX\ÎÂˆ™]\›ˆÝ[šX\ÎÂŸB‹ËÈÝÈ\™H›Û[YH\ÜÈX[œÈÛˆXXÚ˜[™ÙKˆ›ÛÝÜÈH[˜ÙHÜ™\š[™Â‹ËÈ
+[Ý[Z[ÚÜ™[Ë‘SÑWÓVQT”ÊNˆH˜\ˆÚÞ[[™H\ÈH˜[X]XÈÛ™KÛÈ]‹ËÈÙ]ÈH[ÜÝØÝ[[™Ë[™H™X\ˆ[ÈÛ›H[›ÝYÚÈÝÜ™XY[™Â‹ËÈ\È›]Ý]Ý]ËˆHÚ]ÈšYÚ™Z[™HÚ\˜XÝ\œÈKH[ž][™ÈÝ›Û™Â‹ËÈ\™HÛÛ\]\ÈÚ][H›Üˆ][[Û‹‚˜ÛÛœÝ’QÑWÕ“ÓSQWÔÕ‘S‘ÕHÈŽˆKŒÎˆŽKˆ‹NˆNÂ‚‹ËÈKKHÛÛ›™XÝÜˆ[ÎˆÜ™Y[ˆÛÝ[žHœšYÚ[™ÈHY[ˆ[˜Ú[™ÈÚÞ[[™HKKKKB‹ËÈH[X›H›Ü™\ÝÙÜ˜\ÜÈÜ™Y[‹ˆHš[ÛYIÜÈÝÛˆ[È\È˜YÙÙY[ÜÝÙˆB‹ËÈØ^HÝØ\™]ÛÈHÛÝ[žH™[Û™ÜÈÈ\ÈÛÜ›Ú]Ý]]™\ˆ™XÛÛZ[™Â‹ËÈHš[ÛYIÜÈXØÙ[ÛÛÝ\‹‚˜ÛÛœÝÓÓ“‘PÕÔ—ÑÔ‘QSˆH	ÈÍYŽXIÎÂ˜ÛÛœÝÓÓ“‘PÕÔ—ÑÔ‘QS—ÓRVHÌŽÂ˜ÛÛœÝÓÓ“‘PÕÔ—ÓRS—ÓQÒ‘TÔÈHŒŽÂ‹ËÈÝÈ˜\ˆHÛÝ[žH›ÛÈÝÛˆœ›ÛHHØØÛY[™ÈÜ™\Ý][\šX[‚˜ÛÛœÝÓÓ“‘PÕÔ—ÑTÐÑS‘ÔHLÂ‹ËÈ]ZY]žH\ÚYÛŽˆ\È\ÈHÝX\Ý[™È[ˆHØÙ[™K[™]\ÈÂ‹ËÈÝ^H[™\ˆHÜ™\Ý]	ÜÈ™\ØÝZ[™È˜]\ˆ[ˆ™XÛÛZ[™ÈHÙXÛÛ™ÚÞ[[™K‚‹ËÈ]ÝXH\È›ÝHØ[YH\ÈXœÙ[KHHš\œÝ\ÜÈYX\Ý\™YÝ]]B‹ËÈXZÈÙˆŒLˆÛ˜ÙHH[[œÚ]HYÙ]Y]ÈØ^KÚXÚ™XY\È›Ý[™Â‹ËÈ][YØZ[œÝH\šÈÚÞK‚˜ÛÛœÝÓÓ“‘PÕÔ—ÐSHHMNÂ‹ËÈÝÈ˜\ˆ\Ý]ÈÝÛˆ›ÛÝHÛÝ[žHÙY\ÈÛÚ[™È™Y›Ü™H]\ÜÛÛ™\Ë‚‹ËÈš[[™È[HØ^HÝÛˆÈHÜ›Ý[™˜[™[œÝXY™XYÈ\ÈHœ›ØYØ\Ú‹ËÈÝ™\ˆH\™ÙˆHœ˜[YH˜]\ˆ[ˆ\È[ÈKHHXY˜[™\È\Â‹ËÈœšYÚ[™È\È™]ÙY[ˆHÜ™\Ý]YHšYÙH[™H˜[™ÙH[ˆœ›Û‹ËÈ›Ý]™\ž][™È™[ÝÈ]‚˜ÛÛœÝÓÓ“‘PÕÔ—ÐS‘ÔHLŒÂ‚‹ËÈKKH\Ý[Ø]™NˆÚ]Ý[™È[ˆ›ÜˆH\šYY[˜Ú[™ÈšYÙHKKKKKKKKKKKKKB‹ËÈÙYH\Ý[Ø]™KšœËˆ[\]YH\ÈHœ˜XÝ[ÛˆÙˆH˜\ˆ˜[™ÙIÜÈÝÛˆ™[YY‹‹ËÈÛÈHÝÙ[\ÈØØ[YÈHØÙ[™H]™\XÙ\È˜]\ˆ[ˆÈHš^Y‹ËÈ[X™\ˆ]ÛÝ[™XY\ÈHš\H[ˆÛ™Hœ˜[Z[™È[™HY[Ø]™H[‚‹ËÈ[›Ý\‹ˆ›ÛÜ™YØØ\YÛÈ]Ý\š]™\ÈH›]˜[™ÙH[™Ø[‰ÝÝÙ\‹‚˜ÛÛœÝÐU‘WÐSTÑ”PÈHŒŒÂ˜ÛÛœÝÐU‘WÐSTÓRS—ÔHLÂ˜ÛÛœÝÐU‘WÐSTÓPVÔHŽÂ‹ËÈÚ\™HHÝÙ[Ú]ÎˆH]HX›Ý™HHšYÙIÜÈYX[ˆÜ™\ÝÛÈHØ]\‰ÜÂ‹ËÈÝÛˆÜ™\ÝÈœ™XZÈH™X\ˆÚÞ[[™H
+ÚXÚ\ÈH[\™HÚ[KHHØ]™B‹ËÈ˜]ÛˆÚ\™HHšYÙH[™XYHÜÝH\™Ý[Y[ÛÝ[™H[š\ÚX›HÛÊK‚˜ÛÛœÝÐU‘WÓQ•ÔHŽÂ‹ËÈ]ZY]ZÙHHÛÛ›™XÝÜˆÛÝ[žNˆ\È\ÈH˜XÚÈÙˆHØÙ[™HÙY[‚‹ËÈ›ÝYÚHÝÙˆZ\‹›ÝH™X]\™HÛÛ\][™ÈÚ]H˜[™Ù\È[ˆœ›Û‚˜ÛÛœÝÐU‘WÐSHHÂ‹ËÈÝÈ˜\ˆ™[ÝÈ]ÈÜ™\ÝH›ÙHš[È™Y›Ü™H\ÜÛÛš[™ËˆH™X\ˆ˜[™Ù\Â‹ËÈÛÝ™\ˆ[ÜÝÙˆ]È\ÈÛ›H\ÈÈ™XXÚ\ÝZ\ˆÚÞ[[™K‚˜ÛÛœÝÐU‘WÐS‘ÔHMLÂ‹ËÈH[ˆÝ[›][™HÛˆHÜ™\Ý]Ù[ˆKHHÛ™HÝYH]™XYÈ\ÈØ]\‚‹ËÈ˜]\ˆ[ˆ\È[›Ý\ˆ^žHšYÙK‚˜ÛÛœÝÐU‘WÑÓS•ÐSHHŒÌÂ‚˜ÛÛœÝRSTÕÓ‘WÓQUSÔ—ÐTÑHHÍKMNÂ˜ÛÛœÝ“ÔÓQUSÔ—ÐTÑHHLŽÂ˜ÛÛœÝPÒ“ÓPUP×ÔÐUÕ‘TÒÓHŒÂ‹ËÈÛÛ™ËY›Ü›H™XÛÙÛš][ÛŽˆÝÈ˜\ˆHÝXÝ\˜[X™[	ÜÈÚYÛ˜]\™HYK\ÚY‹ËÈØ[ˆÝÚ[™È
+YÜ™Y\ÊKˆ›Ý[™YÛÈHÙXÝ[Ûˆ™XYÈ\ÈHÚÜ\ÈÛÛÜˆ‚‹ËÈÚ]Ý]X]š[™ÈHš[ÛYIÜÈÝÛˆ[]H™Z[™ˆ^Y\™YÛˆÜÙ‚‹ËÈÙ^Q\™XÝÜ‰ÜÈÙ^KYš]™[ˆ›Ý][ÛˆšXHÜ›Ý]Y‚˜ÛÛœÝ“Ô“WÒQWÐ’PT×ÓPVHÂ˜ÛÛœÝ“Ô“WÒQWÕUWÔÑPÈHKNÈËÈÙXÝ[ÛˆÚ[™Ù\ÈÛYHZ\ˆYK™]™\ˆÛ˜\‹ËÈ\šXË\ÝXÝ\™H[[œÚ]KXYÙ]][\Y\ˆžHÙXÝ[ÛˆÚ[™
+ÙXÝ[Û‘\Ú[ÛŠHKB‹ËÈHÚÜ\ËØœšYÙH™XYÈÝY\‹[ˆ[›ËÛÝ]›ÈÙ]\Ëˆ[œ™XÛÙÛš^™YØXœÙ[‹ËÈÚ[™
+›È\šXÈ]H][
+H][\Y\ÈžH^XÝHHKHHÝšXÝ›Ë[Ü‚˜ÛÛœÝÒS‘Ð•QÑUÓUSHÈÚÜ\ÎˆKŒMKœšYÙNˆKŒË[œÝ[Y[[ˆKŒK[›ÎˆŽKÝ]›ÎˆŽK™\œÙNˆKŒNÂ‹ËÈÝÈÛ™ÈH\šXË[X]ÚYÛÛœÝ[][ÛˆÛ\Ý^\È˜[Y\Ý]ÈÕÓ‚‹ËÈ[™IÜÈÝ\Ú[ˆ]	ÜÈH\Ý[™H[ˆHÛÛ™È
+]™\žHÝ\ˆ[™H\Ù\Â‹ËÈH™^[™IÜÈÝ\[YH[œÝXYKHÙYHH[Û\Ø[Ú]JK‚˜ÛÛœÝT’P×ÑÓTÑSPÒ×ÓTÈHŒÂ‚‹ËÈ[H]X[^˜][Ûˆ›ÜˆH˜]ÚYÝ\ˆšY[
+ÙYHÙ˜]ÔÝ\™šY[
+KˆÝ\œÂ‹ËÈ\™HKLœÝÈ˜]ÛˆY]]™[KÛÈHKÌÝ\[ˆœšYÚ™\ÜÈ\ÈÙ[[™\‚‹ËÈÚ]H^YH™\ÛÛ™\ÈÛˆÛ™HKH[™]\ÈÚ]]È[™™YÈÙˆ[HÚ\™B‹ËÈHÚ[™ÛHš[Ý[KÙÛØ˜[[HZ\ˆ[œÝXYÙˆXXÚÙ][™ÈZ\ˆÝÛ‹‚˜ÛÛœÝÕT—ÐSWÔÕTÈHÂ˜ÛÛœÝÐÑPS—ÕÐUT—Ð“QHH	ÈÌÙXÎIÎÈËÈš]šYX[XÞX[ˆÙXH
+ØÙX[ˆšX™Hš\œÝ
+B˜ÛÛœÝÐÑPS—ÑQTÐ“QHH	ÈÌØMXÉÎÈËÈXž\ÜØ[[™\‹][˜ÛÛœÝ’QÒÔÒÖWÐÓÓÔˆH	ÈÌŒM	ÎÈËÈ™X\‹X›XÚÈÜXÙKÛYÚHÛÛÛ˜ÛÛœÝÔPÑWÓ‘P•SWÐHH	ÈÌXLŽL	ÎÈËÈY\[™YÛÈØ\Ú˜ÛÛœÝÔPÑWÓ‘P•SWÐˆH	ÈÌ˜LNŒ	ÎÈËÈš[Û]ÜXÙH\Ý˜ÛÛœÝSÓÓ—ÐÓÓÔˆH	ÈÙ™M™Œ‰ÎÂ‹ÊŠˆÝÈ\™H[ÛÛ‰ÜÈ\ÙH\È\ÚY›ÝYÚ^XÝ]X\\‹ˆX›Ý™HHXZÙ\Âˆ
+ˆHÝ\™HÝY\]HZYÚ[[™›]]H[™ËÛÈH\ØÈÜ[™Âˆ
+ˆ]È[YH\ÈHÜ™\ØÙ[ÜˆHÚX˜›Ý\ÈKHÚ\\ÈÚ]Hš\ÚX›HÝ\™HÈBˆ
+ˆ\›Z[˜]ÜˆKH[™Ü›ÜÜÙ\ÈHÝ˜ZYÚ[[™H\ÙH]ZXÚÛK‚ˆ
+‚ˆ
+ˆYX\Ý\™Yˆ]H
+›ÈØ\œ
+HH\ØÈ™XYÈ\È™X\‹\Ý˜ZYÚ›ÜˆK	HÙˆBˆ
+ˆÛÛ™ÎÈ]]\È‹IKˆ\ÝX›Ý]HH™]\›œÈ›][ˆ[™H\ÙBˆ
+ˆÝ\ÈÈÛ˜\™]ÙY[ˆÜ™\ØÙ[[™ÚX˜›Ý\ËÛÈ\ÈÚ\™H\ÈÚ]Ë‚ˆ
+ˆ]‘QPÑTÈHÝ˜ZYÚ[[™H[ÛY[˜]\ˆ[ˆ™[[Ýš[™È]KHH™X[ˆ
+ˆ]X\\ˆ[ÛÛˆ\ÈHÝ˜ZYÚ[™K[™H[\ˆš^Yˆ]Ý[ÚÝÜÈ\Âˆ
+ˆÈÚ]™HH\›Z[˜]ÜˆHÜ˜]\‹\ÚYÝÈ\œ™YÝ[\š]HH™X[Û™H\Ëˆ
+‹Â˜ÛÛœÝSÓÓ—ÔUPT•T—ÔÒÑUÈHÂ˜ÛÛœÝSÓÓ—ÒS×ÐÓÓÔˆH	ÈØXXŽ	ÎÂ‚‹ËÈ›ÙÈ˜[™Ù[ÛY]žH
+Ù˜]Ñ›ÙÐ˜[šÜÊKˆ\™H[™^ÜYÛÈHHÜ˜YY[‹ËÈ™XXÚ\È™\›È™Y›Ü™HH˜[™YÙHˆ›Ü\H\È\™XÝH\ÝX›K˜]\‚‹ËÈ[ˆÛ›HÚXÚØX›HžH^YX˜[[™ÈHØÜ™Y[œÚÝ‚‹ËÂ‹ËÈH˜[šÈ\ÙYÈÝ\ˆHÒTÕSTˆÜ˜YY[
+˜Y]\ÈJ˜Ø[˜\ÕÚY‹ËÈÙ[\™YZYX˜[™
+HÝ˜ZYÚ[ÈHš[™XÝÜ[›š[™ÈH˜[™KH]B‹ËÈ˜[™\È˜\ˆÚÜ\ˆ[ˆHÜ˜YY[\È[ÛÈ›ÝHÜ[™›ÝÛB‹ËÈYÙ\ÈÛXÙYH˜[Ù™ˆ]IH[KX]š[™ÈHXYY›]Üš^›Û[‹ËÈ[™HXÜ›ÜÜÈH[Ø[˜\ÈÚY
+Û˜ÙH\ˆ›ÙÈ˜[šËÝXÚÙY[™\‚‹ËÈ	ÛYÚ\‰ÈÛÛ\ÜÚ][™ÊKˆ]Ø\ÈH\™[™H™\ÜY]ŒŒMZ[™‹ËÈ]È˜Z[\ˆÚ[ˆ]ŒÌH˜[™	ÜÈÝ\ˆYÙK‚‹ËÂ‹ËÈš^ˆZ[[ˆSTÑH[œÝXYÙˆHÚ\˜ÛKÜ]X\ÚY\Ý[›ÝYÚ]]‹ËÈ™XXÚ\È™\›È^XÝH]H˜[™	ÜÈÝÛˆÜØ›ÝÛHKHØ[YH›ÛÝš[‹ËÈØ[YHÜš^›Û[™XXÚ›Ý[™ÈY›ÜˆH™XÝÈÝ]‚™^ÜÛÛœÝ“Ñ×ÐS‘ÕÔÑ”PÈHŒMNÂ™^ÜÛÛœÝ“Ñ×ÐS‘ÒRQÒÑ”PÈHMNÂ‚‹ÊŠˆ™]\›œÈÞØÞN›[X™\‹Ž›[X™\‹TØØ[N›[X™\‹˜[™Ü›[X™\‹˜[™›ÝÛN›[X™\Ÿ_H
+‹Â™^Ü[˜Ý[Ûˆ›ÙÐ˜[™Ü˜YY[Ù[ÛY]žJØ[˜\ÕÚYØ[˜\ÒZYÚ
+HÂˆÛÛœÝ˜[™ÜHØ[˜\ÒZYÚ
+ˆ“Ñ×ÐS‘ÕÔÑ”PÎÂˆÛÛœÝ˜[™HØ[˜\ÒZYÚ
+ˆ“Ñ×ÐS‘ÒRQÒÑ”PÎÂˆÛÛœÝÞHH˜[™Ü
+È˜[™
+ˆNÂˆÛÛœÝˆHØ[˜\ÕÚY
+ˆNÂˆÛÛœÝTØØ[HH
+˜[™
+ˆJHÈŽÂˆ™]\›ˆÈÞK‹TØØ[K˜[™Ü˜[™›ÝÛNˆ˜[™Ü
+È˜[™NÂŸB‚‹ÊŠˆHÜ˜YY[	ÜÈÝÛˆ[H”PÕSÓˆ
+‹ŒK™Y›Ü™HH˜[šÉÜÈÝ™\˜[[Bˆ
+ˆ][\Y\ŠH]XœÛÛ]HØ[˜\ÈK›ÜˆH˜[šÈÙ[\™Y\ˆÙ[Øˆ\ÙYžBˆ
+ˆH˜]ÈØ[	ÜÈÝÛˆX][™\™XÝHžH\ÝÈKH›ÈØ[˜\È™YYYˆ
+‹Â™^Ü[˜Ý[Ûˆ›ÙÐ˜[™[Qœ˜XÝ[Û]JÙ[ËJHÂˆÛÛœÝHH
+HHÙ[Ë˜ÞJHÈÙ[ËžTØØ[NÂˆÛÛœÝHX]˜XœÊJNÂˆ™]\›ˆHÙ[ËœˆÈˆHHÈÙ[ËœŽÂŸB‚™^ÜÛ\ÜÈš[ÛYSX[˜YÙ\ˆÂˆÛÛœÝXÝÜŠÈÛÛ™XÝÜ‹[™\™ÞPÝ\™\Ë\˜][Û“\ËØ[˜\ÕÚYØ[˜\ÒZYÚÜ›Ý[™KÛÛ™ÔÙYYÜ›Ý[™šY[H[š\™HH[›ÛÙH[Ý\ÝÛPš[ÛYHH[\šXÔÙXÝ[ÛœÈH[Þ[˜ÙY\šXÜÈH[ÝXÝ\™HH[ÛÛ™XÝÜ”ØÚY[HH[ÛÜ›YH[\œ˜Z[”›Ùš[\ÈH[JHÂˆ\Ë˜ÛÛ™XÝÜˆHÛÛ™XÝÜŽÂˆ\Ë™[™\™ÞPÝ\™\ÈH[™\™ÞPÝ\™\ÎÂˆ\Ë™\˜][Û“\ÈH\˜][Û“\ÈÂˆ\Ë—Ù^SšYÚÞXÛS\ÈH^SšYÚÞXÛS\Ê\Ë™\˜][Û“\ÊNÂˆ\ËÈHØ[˜\ÕÚYÂˆ\ËšHØ[˜\ÒZYÚÂˆ\Ë™Ü›Ý[™HHÜ›Ý[™NÂˆ\Ë™Ü›Ý[™šY[HÜ›Ý[™šY[Âˆ\Ë™š\™HHš\™NÈËÈš\™Q\™XÝÜˆ
+Ü˜ËÜÚ[KÑš\™Q\™XÝÜ‹šœÊKÝÛ™YžHÚ[][][ÛˆKHÙYHÙ˜]ÕÚ[š\™J
+Bˆ\Ë™›ÛÙH›ÛÙÈËÈ›ÛÙ\™XÝÜˆ
+Ü˜ËÜÚ[KÑ›ÛÙ\™XÝÜ‹šœÊKÝÛ™YžHÚ[][][ÛˆKHÙYH\›Qœ›ÛUÝ[˜[ZJ
+H[ˆ\]J
+H[™Ù˜]Ñ›ÛÙ
+
+Bˆ\Ë˜Ý\ÝÛPš[ÛYHHÝ\ÝÛPš[ÛYH[Âˆ\ËÛÜ›HÙ]ÛÜ›
+ÛÜ›YQUSÕÓÔ“ÒQ
+NÂˆ\ËÛÜ›YH\ËÛÜ›šYÂˆËÈÜ[Û˜[™X[]\œ˜Z[ˆÚÞ[[™\È›Üˆˆ
+˜\ŠKÈ
+ZYJK
+™X\ŠK‚ˆËÈXœÙ[]™\žH^Y\ˆÝ^\È›ØÙY\˜[ˆH\È™]™\ˆZÙ[ˆœ›ÛH\™K‚ˆ\Ë\œ˜Z[”›Ùš[\ÈH\œ˜Z[”›Ùš[\ÎÂˆËÈÛHØØ[›™YšYÙ\ÈÝ[ÛÈHÙ[ÙÜ˜\XÈ›Ùš[HØ[ˆ™HÚXÚÙYˆËÈÚ]Ý]H]\ÚXØ[X]™KˆÙÙÛ\È\Ë‚ˆ\Ë\œ˜Z[”™]šY]ÈH˜[ÙNÂˆËÈ[]\È]™HÛˆHÛÜ›ˆ[[™HÙY\ÈHÝØÚÈš[ÛY\È
+
+ÈÜ[Û˜[ˆËÈRQKY\š]™YÝ\ÝÛJKˆÚ]HÛÜ›Èœš[™ÈZ\ˆÝÛˆšYÚ[]\È[™ˆËÈYÛ›Ü™HH[[™HÝ\ÝÛHš[ÛYHÛÈHÙ[™\˜]Y[Ý[Z[ˆÚÚ[ˆ™]™\‚ˆËÈZ[È]Ù[ˆÛÈHÚÞ[[™K‚ˆ\Ëœ›Ùš[\ÈH\ËÛÜ›œ[]\ËœÛXÙJ
+NÂˆYˆ
+Ý\ÝÛPš[ÛYH	‰ˆ\ËÛÜ›šÚ[™OOH	Ø[[™IÊHÂˆ\Ëœ›Ùš[\ÈHË‹‹\Ëœ›Ùš[\ËÝ\ÝÛPš[ÛYWNÂˆBˆ\Ë—Û\ÝÙXÝ[Û’YH[ÂˆËÈ\Ý[Ø]™H
+\Ý[Ø]™KšœÊNˆÝÈ\šYYˆÝ\œ™[H\ËÚ]\ˆBˆËÈÝÙ[\ÈZÙ[ˆ]ÈXÙK[™ÝÈ˜\ˆ›ÝYÚHÜ›ÜÜÙ˜YHÙH\™K‚ˆËÈHØØÛ\Ú[ÛˆšYÝ\™H\È™Yœ™\ÚY]™\žHœ˜[YHœ›ÛH˜]Ê
+IÜÈÙ[ÛY]žKˆËÈ]Û›H]™\ˆPÕQÛˆ]HÙXÝ[Ûˆ›Ý[™\žK‚ˆ\Ë—ÜšYÙSØØÛ\Ú[Û”˜]ÈHÂˆ\Ë—ÜšYÙSØØÛ\Ú[ÛŒHHÂˆ\Ë—Ù\Ý[Ø]™SÛˆH˜[ÙNÂˆ\Ë—Ù\Ý[Ø]™SZ^HÂˆ\Ë—ØÝ]›\ÚHÂˆ\Ë—ÜÚ]\”Ý\\ÈHR[™š[š]NÂˆ\Ë—ÜÚ]\˜\“\ÈHLÂˆËÈHÚ]\ˆ\ÈH[ÜÝYÙÜ™\ÜÚ]™H[™ÈÛˆØÜ™Y[ŽÈ]Ù]ÈHØ[YBˆËÈ\™Y›ÛÜˆ˜]H[Z]\ˆHÚ\˜XÝ\ˆ›Ý\š\Ú\È\ÙK‚ˆ\Ë—ÜÚ]\‘Ø]HH™]È›Ý\š\ÚØ]JÈZ[‘Ø\\ÎˆÒUT—ÓRS—ÑÐTÓTËÚ[˜ÙNˆHJNÂˆ\ËœÚ]\‘XYÈH[Âˆ\Ë˜Ý]›\Ú\Ýš\™YH˜[ÙNÂˆËÈYÙK]šYÙÙ\™YÛ˜ÙH\ˆÙXÝ[Ûˆ›Ý[™\žK[žH˜[œÚ][ÛˆÝ[HKHÝ\‚ˆËÈÞ\Ý[\È
+Ú\˜XÝ\ˆ[X›HÚÜ™[ÙÜ˜\JH[™ÈH˜\™HXØÙ[Ù™ˆ\Ë‚ˆ\ËœÙXÝ[Û’\ÝÚ[™ÙYH˜[ÙNÂˆ\Ë›\Ý˜[œÚ][Û”Ý[HH[ÂˆËÈ\šXËY\ÙYÝXÝ\™H
+ÙXÝ[Û‘\Ú[ÛŠNˆHÙXÝ[Û‰ÜÈÚ[™
+™\œÙKÂˆËÈÚÜ\ËØœšYÙKÚ[œÝ[Y[[Ú[›ËÛÝ]›ÊH[™]È\šXÈ[[œÚ]KÂˆËÈ˜[[˜ÙKÚ[ˆ\šXÜÈÙ\™H›Ý[™[™\ÙY[ÈHØÚY[H™[ÝË‚ˆËÈXœÙ[\šXÔÙXÝ[ÛœÈOˆÝ\œ™[Ú[™Ý^\È[[™]™\žHÛ™HÙ‚ˆËÈ\ÙHÝ^\È]]È™]]˜[Y˜][›Ü™]™\ˆKHHÝšXÝ›Ë[Ü‚ˆ\Ë—Û\šXÔÙXÝ[ÛœÈH\šXÔÙXÝ[ÛœÎÂˆ\Ë—ÜÞ[˜ÙY\šXÜÈHÞ[˜ÙY\šXÜÎÂˆ\Ë—Û\šXÓ[™PÝ\œÛÜˆHÂˆ\Ë˜Ý\œ™[Ú[™H[Âˆ\Ë˜Ý\œ™[ÙXÝ[Û•^H[Âˆ\Ë›\šXÒ[[œÚ]QX\ÙYHÂˆËÈÛÛ™šY[˜ÙH[ˆÝ\œ™[Ú[™™Z[™ÈHšYÚ•SÕSÓˆX™[›Ý\ÝˆËÈ]H›Ý[™\žHÚ]È\™HKHX\ÙYHØ[YHØ^K[™™XYžHØ[\œÂˆËÈ
+H›Ü˜ÙYœšYÙHYHÝÚ[™È™[ÝËÚ[][][Û‰ÜÈ\XÐšX\Ñ›Ü’Ú[™
+HÛÈBˆËÈÙXZÛKZ[™™\œ™YÚ[™Ø[››ÝšYÙÙ\ˆHÝ›Û™È˜[X]XÈY™™XÝ‚ˆ\ËšÚ[™ÛÛ™šY[˜ÙQX\ÙYHÂˆ\Ë—ÚÚ[™YÙ]][X\ÙYHNÂˆ\Ë˜YÙ]HNÂˆ\Ë›Ü[š[™ÑØZ[ˆHNÈËÈÜ[š[™Ñ\™XÝÜ‹Ù]\‹\Ý\žHÚ[][][Û‚ˆ\Ëš\P›ÛÜÝHNÈËÈ›Ü\Ý\™ÙH][\Y\ˆœ›ÛHH\Q\™XÝÜ‚ˆ\Ë™›ØÝ\Ó][HNÈËÈ›ØÝ\Ñ\™XÝÜ‰ÜÈ	ÜÚÞIÈ[\[™\ˆKHH[›\ÜÈÛÛYHÝ\ˆÝXš™XÝ\È›ØÝ\Âˆ\ËœÝ[™\ÜÓ][HNÈËÈÝ]\™XÝÜ‰ÜÈ[Xœ™X]\šYÚY\ˆ[ˆ]]Ü™Y›ÜØ\Ý[ÜÚ\ÈÝ]ˆ\Ë›X[™[TØØ[S][HNÈËÈÝÙ[ÈÚ[HZY\Ý\È[˜Ù\È™X\ˆHÙ[\ÝX[ˆ\Ë—Ü›ÙÜ™\ÜÈHÂˆËÈØY™HY˜][È™Y›Ü™HHš\œÝ\]J
+HÛÈH™\›ËYš\œÝœ˜[YBˆËÈ
+˜]È™Y›Ü™HÝ\
+H™]™\ˆ™YYÈ˜Sˆ[ÈØ[˜\ÈÜ˜YY[È[™Ú[ÈQ‹‚ˆ\Ë˜Ø[S]™[HÂˆ\Ë—Ú^™S][HNÂˆ\Ë™\Ý]™[HHÈËÈÙ]^\›˜[HXXÚœ˜[YHœ›ÛHÚ[][][Û‹œ]XZÙK™\Ý]™[Bˆ\ËœÛ[ÚÙS]™[HHÈËÈÙ]^\›˜[HXXÚœ˜[YHœ›ÛHÚ[][][Û‹™š\™KœÛ[ÚÙS]™[Bˆ\Ë—ÜšX˜›Û”ØØ[S][HNÂˆ\Ë›\œØXÚHH™]È\œØXÚJ
+NÂˆ\ËÙXÈHÂˆ\ËÛÜ›š]HH[Âˆ\Ë—ÜÝ\”ÙYYH][™\œžLÌŠLJNÂˆËÈ^Y\™YÝ\™šY[Ù[™\˜]Yœ›ÛHH™X[Ø][ÙÝYH
+Ý\Ø][ÙÝYKšœÊN‚ˆËÈ[Z[›ÜÚ]H[˜Ý[Ûˆ
+˜Z[Ý\œÈ˜\ÝHÝ][X™\ˆœšYÚÛ™\ÊKˆËÈÜXÝ˜[XÛ\ÜË]ÙZYÚY›XÚØ›ÙHÛÛÜ‹HØ[XÝXË\[™H[œÚ]BˆËÈ˜[™[™ÝX‹\^[Ý\œÈ]ÛÛšX]H\X[YÚ[œÝXYÙ‚ˆËÈ˜[š\Ú[™ÈÜˆÙ][™È›Ý[™Y\KHHš[˜ÛÛ\™Z[œÚX›H\Ý[‚ˆËÈ™XYHœšYYˆ\ÚÙY›Ü‹ˆÙ[™\˜]YÛ˜ÙH[™ØXÚY^XÝHZÙBˆËÈHÚ[ÝY]HÝš\ËÛÈH[œÚ]HÛÜÝÈ›Ý[™È\ˆœ˜[YNÈÛ›BˆËÈÚ[šÛH
+[ˆÙ˜]ÔÝ\™šY[
+H\ÈÛÛ\]Y]™Kˆ[\Yœ›ÛHH›]M‚ˆËÈÈŽKHÝ[ÚX\™XØ]\ÙHHØ][ÙÝYHÝ^\È\[™HÛÛ[[Û‚ˆËÈ^Y\œÈ\™HÝ[˜]ÚY[ÈÛ™Hš[\ˆXÚÙ]‚ˆËÈHšY[\ÈÙ[™\˜]YÝ™\ˆH[œ˜[YNˆ]™\žH^[]Ø[ˆ]™\‚ˆËÈ™HÚÞH
+˜[^\ËÚ]HÝ™Y]ÈÙˆÚÞH™]ÙY[ˆÝÙ\œËH™[š]
+HÙ]ÂˆËÈÝ\œË[™H[Ý[Z[ˆÈÚÞ[[™HÝXÚÈZ[ÈÝ™\ˆH™\ÝˆBˆËÈÚÜ\ˆØ][ÙÝYHYHXY˜[™X›Ý™HHšYÙ[[™H]™XY\ÂˆËÈHÝ\œÈ\™HHÚ[šÈ[ˆHZYHÙˆHÚÞKˆ‚ˆÛÛœÝØ][ÙÝYHHÙ[™\˜]PØ][ÙÝYJ\ÚÙYY
+	ÜÛÛ™ÔÙYYNœÝ\˜Ø]
+KÕT—ÐÐUSÑÕQWÐÓÕS•\ËË\Ëš
+ˆÕT—ÔÒÖWÑ”PÊNÂˆËÈÙYHÝ\Ø][ÙÝYKœ\˜Ù\X[Ý™]Ú›ÜˆÚH\È\È\YYÂˆËÈÝX”^[˜]ÉÜÈÕUU™[ÝË™]™\ˆ™Y[ˆ\È]È[œ]‚ˆËÈ\›ËXœšYÚ^Y\ˆˆ\È™\Ù\™YžHS’Ë›ÝžH[ˆXœÛÛ]HXYÛš]YBˆËÈÝ]Ù™ˆKHH™X[\ÝXÈÜ[][ÛˆXZÙ\ÈYH\›Ë[XYÛš]YHÝ\œÂˆËÈ˜[š\Ú[™ÛH˜\™H]\ÈØ[\HÚ^™KÛÈHš^Y™\ÚÛÛÝ[ˆËÈX\Ú[H™\Ù\™H™\›ËˆHÝX\˜[YYÛXÙHÙY\ÈHÚÞHš\ÝX[H[]™BˆËÈÚ]Ý]ÝXÚ[™ÈH[™\›Z[™È
+ÛÜœ™XÝH˜Z[YÛZ[˜]Y
+HØ][ÙÝYK‚ˆËÈHš^Yˆ
+™YØ\™\ÜÈÙˆÜ[][ÛŠH™XY\ÈHÜ\œÙHØØ]\ˆÙ‚ˆËÈ\ÛÛ]YœšYÚÝÈ˜]\ˆ[ˆ˜HÚÞH[ÙˆÝ\œÈˆKHHÚX\ˆËÈÚ[È]XZÙH\H™\Ý\™H™X[
+ÙYH\˜Ù\X[Ý™]Ú
+H]ˆËÈÛX[[™X\Ú[HØ\ÚYÝ]žH[ž][™È˜]ÛˆÝ™\ˆ[H
+^™KˆËÈÛÝY™X[HØ\Ú\ÊKÛÈ[ÜÝÙˆHÙ[Z[™[H[[ÛÚÚ[™ÈÚÞH™YYÂˆËÈÈÛÛYHœ›ÛHH™[XX›K]š\ÚX›HœšYÚY\‹›ÝH˜Z[XZ›Üš]K‚ˆÛÛœÝžSXYÈHØ][ÙÝYKœÛXÙJ
+KœÛÜ
+
+KŠHOˆK›XYÈH‹›XYÊNÂˆÛÛœÝ\›ÐÝ]XYÈHžSXYÖÓX]›Z[ŠžSXYË›[™ÝHKX]™›ÛÜŠžSXYË›[™Ý
+ˆŒ
+JWK›XYÎÂˆÛÛœÝZYÝ]XYÈHžSXYÖÓX]›Z[ŠžSXYË›[™ÝHKX]™›ÛÜŠžSXYË›[™Ý
+ˆŒÍJJWK›XYÎÂˆËÈ]™\žHÜÚ][Ûˆ™[ÝÈ\ÈØXÚY\ÈH”PÕSÓˆÙˆHšY[]Ø\ÂˆËÈÙ[™\˜]YÝ™\ˆ
+œ˜XËÞQœ˜XÊK›Ý[ˆXœÛÛ]H^[KHHØ[˜\ÂˆËÈš[ÛYSX[˜YÙ\ˆXÝX[H˜]ÜÈ[È\È›Ý[Ø^\È\ËÈ\ËšˆBˆËÈØ[Y\˜IÜÈÙ™‹Yœ˜[YH[X˜XÚÈ
+Ø[Y\˜Q\™XÝÜ‹ž›ÛÛJHÚY[œÈHÙÚXØ[ˆËÈÝYÙH™[™\™\ˆ[™ÈÈ˜]Ê
+H
+ÝYÙKÚYH›ÛZ[˜[ËÞ›ÛÛK\ÈBˆËÈÚZÙHX\™Ú[ŠKÛÈH]™HØ[YHœ˜[YHØ[ˆ™HYX[š[™Ù[HÚY\ˆ[‚ˆËÈH[Y[œÚ[ÛœÈHØ][ÙÝYHØ\ÈZ[YØZ[œÝˆ˜ZÚ[™ÈXœÛÛ]H^[ˆËÈÛÛÜ™[˜]\È\™HYX[]™\žHÝ\‹\Ý[™KY\\ÚÞHÛ]YÙK[™ˆËÈ[™]Ý^YY[›™YÈZ\ˆÔ’QÒSS˜\œ›ÝÙ\ˆÜ[ˆÚ[HHÚÞBˆËÈ\›Ý[™[HÚY[™YKH™XY[™È\ÈHÚÛHšY[Ü˜[[YY[ÈBˆËÈ˜[™ÝÛˆHZYH[œÝXYÙˆÜ™XYYÙHÈYÙKˆÝÜš[™ÈBˆËÈœ˜XÝ[Ûˆ[™™\ØØ[[™ÈYØZ[œÝH™X[Ø[˜\È]˜]È[YH
+ÙYBˆËÈÙ˜]ÔÝ\™šY[
+Hš^\È]]]™\žH›ÛÛH]™[[™]™\žH™\Ú^™K‚ˆÛÛœÝÚÞRH\Ëš
+ˆÕT—ÔÒÖWÑ”PÎÂˆ\ËœÝ\œÈHØ][ÙÝYK›X\
+
+ÊHOˆÂˆÛÛœÝÈ˜]ÔÚ^™K˜]Ð[Nˆ˜]Ð[HHHÝX”^[˜]ÊËœÚ^™TË˜œšYÚ™\ÜÊNÂˆÛÛœÝ˜]Ð[HH\˜Ù\X[Ý™]Ú
+˜]Ð[JNÂˆÛÛœÝ^Y\ˆHË›XYÈH\›ÐÝ]XYÈÈˆˆË›XYÈHZYÝ]XYÈÈHˆÂˆ™]\›ˆÂˆœ˜XÎˆËžÈ\ËËQœ˜XÎˆËžHÈÚÞR\ÙNˆËœ\ÙKˆÚ^™Nˆ˜]ÔÚ^™KœšYÚˆ˜]Ð[K^Y\‹ˆYNˆËšYKˆXYÎˆË›XYË[]YLNˆË˜[]YLKËÈ™XYžHÚ[šÛP[\]YH[ˆÙ˜]ÔÝ\™šY[ˆËÈZ\ˆ]™\ÛÛ™YÛ˜ÙNˆÝÈÝ\œÈ\™H\›X[™[H[[Y\ˆ[™ˆËÈ™Y\ˆ[ˆHØ[YHÝ\ˆÝ™\šXY
+Ý\Ø][ÙÝYK™^[˜Ý[ÛŒJK‚ˆËÈÛÛœÝ[\ˆÝ\‹ÛÈ]™[Û™ÜÈ[ˆHØXÚK›ÝHœ˜[YHÛÜ‚ˆ^ˆ^[˜Ý[ÛŒJË˜[]YLJKˆ™Y[Žˆ™Y[š[™ÌJË˜[]YLJKˆ\˜[^ˆÕT—ÔTSVÛ^Y\—Kˆ˜\[\ˆ^Y\ˆˆ	‰ˆ
+
+Ëœ\ÙH
+ˆLJH	HJHŒLˆÈŒŒˆˆ˜\’ŽˆŒH
+È
+
+Ëœ\ÙH
+ˆÊH	HJH
+ˆŒLˆÛÛ\[š[ÛŽˆ^Y\ˆOOHˆ	‰ˆ
+
+Ëœ\ÙH
+ˆJH	HJHŒŽˆÈÈˆ‹Œˆ
+È
+
+Ëœ\ÙH
+ˆJH	HJH
+ˆËNˆ
+
+Ëœ\ÙH
+ˆLÊH	HHHJH
+ˆ‹Bˆˆ[ˆNÂˆJNÂˆËÈH™\ÝÙˆHÚÞIÜÈ\›š]\™K[Ù[™\˜]YÝ™\ˆHØ[YHÚÞBˆËÈ™YÚ[Ûˆ[™ØXÚY[Û™ÜÚYHHÝ\œÈ
+Ø[YHœ˜XÝ[ÛˆÛÛ™[[ÛŠN‚ˆËÈ\šÈ™X[YH]œ™XZÈ\HZ[ÞHØ\ÚH™]È™\ÛÛ™YY\\ÚÞBˆËÈÛ]YÙ\Ë[™H[™]Ë‚ˆÛÛœÝÑœ˜XÈH
+\Ý
+HOˆ\Ý›X\
+
+ÊHOˆ
+Âˆ‹‹›Ëœ˜XÎˆËžÈ\ËËQœ˜XÎˆËžHÈÚÞRˆJJNÂˆ\Ë™\Ý[™\ÈHÑœ˜XÊÙ[™\˜]Q\Ý[™\Ê\ÚÙYY
+	ÜÛÛ™ÔÙYYN™\Ý
+KLK\ËËÚÞR
+JBˆ›X\
+
+
+HOˆ
+È‹‹™žœ˜XÎˆœžÈ\ËËžQœ˜XÎˆœžHÈÚÞRJJNÂˆ\Ë™Y\ÚÞHHÑœ˜XÊÙ[™\˜]QY\ÚÞJ\ÚÙYY
+	ÜÛÛ™ÔÙYYN™Y\ÚÞX
+KM‹\ËËÚÞR
+JBˆ›X\
+
+ÊHOˆ
+È‹‹›Ë‘œ˜XÎˆËœˆÈÚÞRJJNÂˆ\Ëœ[™]ÈHÑœ˜XÊÙ[™\˜]T[™]Ê\ÚÙYY
+	ÜÛÛ™ÔÙYYNœ[™]Ø
+K\ËËÚÞR
+JNÂˆ›Üˆ
+ÛÛœÝÛ\Ý\ˆÙˆÙ[™\˜]SÜ[Û\Ý\œÊ\ÚÙYY
+	ÜÛÛ™ÔÙYYN›ØÛ\Ý\˜
+K\ËËÚÞR
+JHÂˆ›Üˆ
+ÛÛœÝÈÙˆÛ\Ý\‹›Y[X™\œÊHÂˆÛÛœÝÈ˜]ÔÚ^™K˜]Ð[Nˆ˜]Ð[HHHÝX”^[˜]ÊËœÚ^™TË˜œšYÚ™\ÜÊNÂˆ\ËœÝ\œËœ\Ú
+Âˆœ˜XÎˆËžÈ\ËËQœ˜XÎˆËžHÈÚÞR\ÙNˆËœ\ÙKˆÚ^™Nˆ˜]ÔÚ^™KœšYÚˆ\˜Ù\X[Ý™]Ú
+˜]Ð[JK^Y\ŽˆKˆYNˆËšYKXYÎˆË›XYË[]YLNˆË˜[]YLKˆ^ˆ^[˜Ý[ÛŒJË˜[]YLJK™Y[Žˆ™Y[š[™ÌJË˜[]YLJKˆ\˜[^ˆÕT—ÔTSVÌWH
+ˆŽKˆ˜\[\ˆ˜\’ŽˆŒÛÛ\[š[ÛŽˆ[ˆJNÂˆBˆBˆ\Ë—ÙÛ]Ú[Y\ˆHˆ
+È\Ë—ÜÝ\”ÙYY
+
+H
+ˆÎÂˆ\Ë—ÙÛ]ÚXÝ]™S\ÈHÂˆËÈ™]\ÙYXÜ›ÜÜÈœ˜[Y\È˜]\ˆ[ˆ™XZ[ˆHÚÛHÚ[Ùˆ˜]Ú[™ÂˆËÈHÝ\ˆšY[\ÈÈÝÜÚ[™È\‹\Ý\ˆÛÜšË[™[ØØ][™ÈHX\Ù‚ˆËÈ\œ˜^\È]™\žHœ˜[YHÛÝ[[™˜XÚÈ[ˆÐÈÚ]H˜]Ú[™ÈØ]™\ËˆÙ^\ÂˆËÈ\™H›Ý[™Y
+YHXÚÙ]È[HÝ\Ë\ÈÛÈ›]^Y\ˆÛÛÝ\œÊK‚ˆ\Ë—ÜÝ\XÚÙ]ÈH™]ÈX\
+
+NÂˆ\Ë—ÜØØ[›[™VHHÂˆ\Ë—Ü[Û‘›\ÚHÂˆ\Ë—Ù\TÛ[ÛÝYH™]È›Ø]Ì\œ˜^JS‘ÐÓÕS•
+NÂˆËÈHX\ÜÚYˆ™XYÈHØ[YHÈ˜]È˜[™È]›ÝYÚ]ÈÝÛˆ˜\ˆÛÝÙ\‚ˆËÈ]XÚËÜ™[X\ÙH
+X\ÜÚY‘\TÝ\
+HKHÙYH[Ý[Z[ÚÜ™[ËšœÉÜÂˆËÈPTÔÒQ—ÑTWÐUPÒ×ÔÑPËÓPTÔÒQ—ÑTWÔ‘SPTÑWÔÑPÈØÈ›ÜˆÚHH[Ý[Z[‚ˆËÈ˜[™ÙHÛÛ\È[\ÜÜÚX›H˜\ÝØ[‰Ý™H[ÝÙYÈÜÛˆ]™\žHÚXÚË‚ˆ\Ë—ÛX\ÜÚY‘\TÛ[ÛÝYH™]È›Ø]Ì\œ˜^JS‘ÐÓÕS•
+NÂˆËÈHÙ[ÛÙÚXØ[\]X[^™\Žˆ	ÜÈÜ™\Ý™XYÈHØ[YHÈ˜[™È\ÈBˆËÈÜš^›ÛˆTH[™HX\ÜÚY‹]›ÝYÚ\‹\ÛÛ™Ë\‹X˜[™Ù[ÛÙÚXØ[ˆËÈ™X]\™\È
+ÛY™‹Ø\™]KÚÛ›Ø‹ÛÝ]Ü›ÜÝ\œ˜XÙJH[›™YÈš^Y\œ˜Z[‚ˆËÈÜÚ][ÛœÈKHH\Ý[˜ÝÚ[ÝY]H›ØØX[\žKœ™[]˜[ˆÈHØ[YBˆËÈ]\ÚXÈÚ]Ý]™\X][™ÈZ]\ˆÚX›[™È\]X[^™\‰ÜÈÛÚË‚ˆ\Ë—ÙÙ[Ñ™X]\™\ÈH\ÜÚYÛ˜[™™X]\™\Ê\ÚÙYY
+	ÜÛÛ™ÔÙYYN™Ù[ØÜ™\Ý
+JNÂˆËÈ˜\ˆØÙX[Žˆ[œÙ\ˆ›ÝÈÝXÚÈ›ÜˆH™XYX›HØ]\ˆ[™H™]ÙY[ˆšYÙ\Ë‚ˆËÈ[™š[š]H›][™HÙˆØ]\ˆ[ˆ\œÜXÝ]™K›ÝHÛÛY˜[™
+BˆËÈÛÛY˜[™]šYÙHZYÚ\È[HØØÛYYžHHÜ\]YHšYÙ\ÊK‚ˆ\Ë—ÛØÙX[”›ÝÜÈHØ]™T›ÝÜÊ\ÚÙYY
+	ÜÛÛ™ÔÙYYN›ØÙX[˜
+KŽ
+NÂˆËÈÜXÝ˜[\\ÜË^Y\™Y[™\ˆH›ÝÜÈX›Ý™H
+ÙYHØ]™QšY[šœÊN‚ˆËÈH™X[Y\œÛÛ‹S[ÜÚÛÝÚ]ˆÙXK™K\Ø[\YÚ[™]™\ˆHX\ÙYÙXHÝ]BˆËÈ[Ý™\ËˆÙYYYÛ˜ÙHÛÈ]	ÜÈ]\›Z[š\ÝXÈ\ˆÛÛ™ÈZÙH]™\ž][™È[ÙK‚ˆ\Ë—ÝØ]™QšY[ÙYYH\ÚÙYY
+	ÜÛÛ™ÔÙYYNØ]™YšY[
+NÂˆ\Ë—ÜÙXTÝ]HHÂˆËÈHÙXHÝ]HHÕT”‘S•ÜXÝ[HØ\ÈØ[\Y]ÚXÚ\ÈÚ]BˆËÈ™XZ[\Ý\ÈÈYX\Ý\™HYØZ[œÝKHÙYHH\]H™[ÝË‚ˆ\Ë—ÜÜXÝ[TÙXTÝ]HHÂˆ\Ë—ÝØ]™PÛÛ\Û™[ÈHZ[Ø]™PÛÛ\Û™[Ê\Ë—ÝØ]™QšY[ÙYYÚ[™ÜYY›Ü”ÙXTÝ]J
+K
+NÂ‚ˆËÈH[Ý[Z[œÈ[˜ÙNˆHÜ›ÛÝ™H]™[
+Û[ÛÝYÛØ˜[[™\™ÞJHš]™\ÈBˆËÈ˜]™[[™ÈšYÙHØ]™H›ÝYÚ]™\žH˜[™ÙK[™XXÚÚXÚÈÙ[™ÈBˆËÈ›Ý[˜ÙH›Û[™Èœ›ÛHH™X\ˆ[ÈÝ]ÈH˜\ˆXZÜË‚ˆ\Ë—Ù[˜ÙQÜ›ÛÝ™HHÂˆËÈÝYÙHˆ
+šYÙHY›Ü›X][ÛŠNˆHÛÝÙ\ˆÛ™K\ÛHÛˆÙ[˜ÙQÜ›ÛÝ™H]Ù[‚ˆËÈKHš\È\ÈÙXÝ[Ûˆ™Y[ˆÝY›ÜˆHÚ[H‹\Ý[˜Ýœ›ÛHHÚXÚÉÜÂˆËÈ[œÝ[˜[œÚY[ˆ›[šÜÈÝÙ[Ûˆ\ÎÈÝ[[Z]ÈÚ\œ[ˆÛˆHÚXÚË‚ˆ\Ë—Ù[˜ÙTÝ\ÝZ[ˆHÂˆ\Ë—Ù[˜ÙRÚXÚÓ\ÈHR[™š[š]NÂˆ\Ë—Ù[˜ÙRÚXÚÐ[\HÂˆ\Ë—Ù[˜ÙUÛÜ›HÂˆ\Ë™™]™\ˆHÈËÈ^Y\ˆ™]™\ˆ
+Ú[][][Û‹™™]™\‹›]™[
+NˆÜ˜[šÜÈH[˜ÙH[™H[›™\œÂˆËÈ\˜[[][š]™\œÙHšY
+\˜[[[š]™\œÙQ\™XÝÜ‹Ù]^\›˜[HXXÚˆËÈÝ\
+NˆÛÜÛY]XË[Û›H\‹\ÙXÝ[Ûˆ˜\šX][Û‹ˆ™]]˜[[[Hš\œÝÚY‚ˆ\Ë[š]™\œÙRYQYÈHÂˆ\Ë[š]™\œÙR^™S][HNÂˆ\Ë[š]™\œÙUÚ[™][HNÂˆ\Ë[š]™\œÙU\œ˜Z[“][HNÂˆËÈ›Ø][
+Ø[Y\˜Q\™XÝÜ‹™›Ø][Ù]^\›˜[HXXÚÝ\
+NˆBˆËÈÛX[\‹[^Y\‹\ØØ[Y›Ý][Ûˆ\YY[ˆÙ˜]Ó^Y\ˆÚ[HBˆËÈØ[Y\˜H\È[Y˜XÚËÛÈ™X\™\ˆ˜[™Ù\ÈX[ˆ[Ü™H[ˆ˜\ˆÛ™\ÈKBˆËÈÙYHVQT—ÕSÔU“ÕÒÑVH™[ÝÈ›ÜˆÚHHÜ›Ý[™]Ù[ˆ™]™\ˆ[Ë‚ˆ\Ë™›Ø][HÂˆ\Ë›Ü›ÙÙ[žQÜ›ÝÝHŒNÈËÈ[Ý[Z[‹XZ[[™È\˜È
+Ú[][][Û‹›Ü›ÙÙ[žK™Ü›ÝÝ
+KÙ]^\›˜[HXXÚÝ\ˆËÈÙ™‹Yœ˜[YH[X˜XÚÈ
+Ø[Y\˜Q\™XÝÜ‹ž›ÛÛKÙ]^\›˜[HXXÚÝ\
+NˆˆËÈ]›Ü›X[œ˜[Z[™ËH]H\™\Ý[X˜XÚÈ
+“ÓÓWÓRSŠKˆÜ›ÝÜÈBˆËÈ™X\™\ˆ˜[™Ù\È
+ÙYH[Ý[Z[ÚÜ™[Ëœ[˜XÚÒZYÚ][
+HÛÈHÚYHÚÝˆËÈÙ\Û‰Ý\ÝÚš[šÈHÛÜ›[ˆXÙHKHHšYÙ\È™X\™\ÝBˆËÈ^Y\ˆš\ÙH\ÈÛÜÙHH›]Ø\H[X˜XÚÈÛÝ[Ý\Ú\ÙHÜ[‹‚ˆ\Ëœ[˜XÚÌHHÂˆËÈHX\ÜÚY‰ÜÈØØ[HX\šÙ\œÈ
+[Ý[Z[ÚÜ™[ËšœÊNˆ[žKÜ™[˜\žK\\˜[^ˆËÈÚ[ÝY]\È]ØØØ\Ú[Û˜[HšYXÜ›ÜÜÈ]È˜XÙHKHHÛÛ\\š\ÛÛ‚ˆËÈYØZ[œÝÛÛY][™ÈH^YH[™XYHÛ›ÝÜÈHÚ^™HÙˆ\ÈÚ]XÝX[BˆËÈÙ[È\È\È[™˜]ÛXX›HYÙKˆ›Ý˜]ÈZYÚ[Û™K‚ˆ\Ë—ÛX\ÜÚY”˜[™H][™\œžLÌŠ\ÚÙYY
+	ÜÛÛ™ÔÙYYN›X\ÜÚY˜
+JNÂˆ\Ë—ÛX\ÜÚY“X\šÙ\œÈH×NÈËÈÞK›Ü›“\ßBˆ\Ë—ÛX\ÜÚY“™^Ü]Û“\ÈH™^X\ÜÚY“X\šÙ\‘[^TÙXÊ\Ë—ÛX\ÜÚY”˜[™
+H
+ˆLÂˆËÈZ[šX]\™HÚ\˜XÝ\œÈ[›š[™È[Û™ÈH™X\ˆ˜[™Ù\ÉÈšYÙ\È8 %[‚ˆËÈ[™\[™[š[È\ˆ˜[™ÙHÛÈH\ÈÛ‰ÝZ\œ›ÜˆXXÚÝ\‹‚‚ˆ\ËœÛÛ™ÔÙYYHÛÛ™ÔÙYYÂˆ\Ëš\ÝX[Ý[HH	Ü™[™\™Y	ÎÈËÈÙ]šXHÙ]š\ÝX[Ý[Hœ›ÛHÚ[][][ÛˆÈXZ[‚ˆ\ËœÝš\ÈH™]È\œ˜Z[”Ýš\ØXÚJ
+NÈËÈš[ÛYS˜[YHOˆÈ‹ËHB‚ˆ\Ë™šY[ÈH™]ÈX\
+
+NÈËÈš[ÛYS˜[YHOˆ\XÛQšY[ˆ›Üˆ
+ÛÛœÝˆÙˆ\Ëœ›Ùš[\ÊH\Ë™šY[ËœÙ]
+‹›˜[YK™]È\XÛQšY[
+‹œ\XÛ\ËØ[˜\ÕÚYØ[˜\ÒZYÚ\ÚÙYY
+‹›˜[YH
+È	Ü	ÊJJNÂ‚ˆËÈ]\ÚXË\™XXÝ]™HÙX]\ˆ
+XÛÝ\Yœ›ÛHš[ÛYJNˆÛ™HšY[\ˆÚ[™ˆËÈZ[Û˜ÙH[™™]\ÙY™YØ\™\ÜÈÙˆÚXÚš[ÛYH\ÈXÝ]™HKH[›ZÙBˆËÈšY[ØX›Ý™H
+XXÚš[ÛYIÜÈÝÛˆÚYÛ˜]\™JKÛ›HÙX]\‘\™XÝÜ‰ÜÂˆËÈÝ\œ™[Ú[™\È]™\ˆ˜]Û‹[™Û›HX›Ý™H]ÈÔ“PS•ÑÐUK‚ˆ\ËÙX]\”Ý]HHÈÚ[™ˆ	ÜÛ›ÝÉË[[œÚ]NˆNÈËÈÙ]^\›˜[HXXÚœ˜[YHœ›ÛHÚ[][][Û‹ÙX]\‹œÝ]Bˆ\ËÙX]\‘šY[ÈH™]ÈX\
+
+NÂˆ›Üˆ
+ÛÛœÝÚÚ[™ÛÝ[ÛÛÜ‹ÜYYHÙˆÂˆÉÜ˜Z[‰ËL	ÈÎY˜Ž	ËKˆÉÜÛ›ÝÉËÌ	ÈÙ™™™™™‰ËWKˆÉÜ][ÉËK	ÈÙ™˜™ÉËÍWKˆÉÙ[X™\œÉËMK	ÈÙ™ØLØÉËŒKˆÉÜÝ[œÚ[™IËŒ	ÈÙ™™˜Î	ËKˆÉÙ›ÙÉËM	ÈØÎY™L	ËKˆÉÝÚ[™	Ë	ÈÙ™NYIËKˆJHÂˆ\ËÙX]\‘šY[ËœÙ]
+Ú[™™]È\XÛQšY[
+ÈÚ[™ÛÛÜ‹ÛÝ[ÜYYKØ[˜\ÕÚYØ[˜\ÒZYÚ\ÚÙYY
+ÙX]\Ž‰ÚÚ[™X
+JJNÂˆBˆ\Ë—ÝÙX]\”Ý\™\ÜÈHNÈËÈX\ÙY‹ŒNˆÚ[HHXÝ]™Hš[ÛYH[™XYH\È\È^XÝ\XÛHÚ[™ˆ\Ë—ØXÝ]™UÙX]\’[[œÚ]HHÈËÈÙX]\”Ý]Kš[[œÚ]H
+ˆÝ\™\ÜËÛÛ\]Y[ˆ\]J
+K™XYžH˜]Ê
+Bˆ\ËœÛ›ÝÐÛÝ™\ˆHÈËÈÙ]YÛ›ÝÈ‹ŒKÙ]^\›˜[HXXÚœ˜[YHœ›ÛHÚ[][][Û‹œÛ›ÝÐÛÝ™\ˆKHš]™\ÈHœ›ÜÝØ\Â‚ˆËÈ[™]È
+È\Ý˜[\Y˜XÝÎˆÙYYY\ˆÛÛ™ËØš[ÛYK˜]Ûˆ™Z[™BˆËÈÙ[\ÝX[ÛÈHÝ[‹Û[ÛÛˆ[™˜[™Ù\ÈØØÛYH[H˜]\˜[K‚ˆ\ËœÚÞQ[œÙ[X›HH™]ÈÚÞQ[œÙ[X›JÛÛ™ÔÙYY\˜][Û“\ÊNÂˆËÈ˜\‹Y\Ý[˜ÙHšYÛ™]\Îˆ˜\™HÙYYYØÙ[™\È
+[Y[œÈ][›™\‹HÛÝYˆËÈÚ[K‹‹ŠHÚ]™\ÜÙYØ^HÝ]™]ÙY[ˆHˆ[™È˜[™Ù\Ë‚ˆ\Ë™˜\•šYÛ™]\ÈH™]È˜\•šYÛ™]\ÊÛÛ™ÔÙYY
+NÂˆËÈ™X\‹YšY[›Ü™YÜ›Ý[™ØØÛY\œÎˆHZ\œ›Üˆ[XYÙHÙˆ˜\•šYÛ™]\È]ˆËÈHÕTˆ[™ÙˆH\ÝXÚÈKHYÙHš[ÛYK[[™X\šÈÚ[ÝY]\ÂˆËÈÝÙY\[™È\Ý˜\Ý\ˆ[ˆHÚ\˜XÝ\œËÛÜÙH[›ÝYÚÈØØÛYBˆËÈ[Kˆ˜]Ûˆ[ˆ˜]Ñ›Ü™YÜ›Ý[™
+
+KY\ˆ]™\ž][™È[ÙK‚ˆ\Ë›™X\‘šY[H™]È™X\‘šY[
+ÛÛ™ÔÙYY\ËÛÜ›
+NÂˆ\Ë™Ü›Ý[™ØØ]\ˆH™]ÈÜ›Ý[™ØØ]\ŠÛÛ™ÔÙYY
+NÂ‚ˆ\Ë—ØZ[ØÚY[JÛÛ™XÝÜ‹˜˜\‘ÜšY[™\™ÞPÝ\™\Ë\˜][Û“\ËÛÛ™ÔÙYY\šXÔÙXÝ[ÛœËÝXÝ\™KÛÛ™XÝÜ”ØÚY[JNÂˆËÈÝš\È\™H˜ZÙYQ•TˆHØÚY[H^\ÝÈ
+[Ý™Y\™Hœ›ÛHšYÚˆËÈY\ˆÛÛœÝXÝ[Û‰ÜÈšY[[š]
+HÛÈØZ[Ýš\Ù]Ø[ˆÙ^HXXÚˆËÈ›Ùš[IÜÈ\‹[X™[˜\šX[
+]ÛÙÞKÛ[™›Ü›KÛ[™X\šÜËÚZYÚ][KBˆËÈÙYHØZ[ØÚY[IÜÈ\Ë—Ü›Ùš[U˜\šX[ÊHÙ™ˆÙXÝ[ÛœÈ]›ÝÂˆËÈXÝX[H^\ÝˆÙ]š\ÝX[Ý[J
+H[ÛÈØ[ÈÜ™XZ[Ýš\Ê
+H\™XÝKˆËÈÝ[™[Û™KY\ˆ\ÈKH\Ë—Ü›Ùš[U˜\šX[È\ÈÝ[Ú]]™\‚ˆËÈØZ[ØÚY[H\ÝÛÛ\]YÛÈ]]\È[˜Y™™XÝY‚ˆ\Ë—Ü™XZ[Ýš\Ê
+NÂˆËÈRQHÝ\ÝÛHš[ÛYNˆØ\Ý]™\žHÙXÝ[Ûˆ[ÈHÙ[™\˜]YÛÜ›ÛÈBˆËÈ›ÜYš[HTÈHXÙKÚ[HÝØÚÈ[[ÜÈÙY\˜[X]\™ÚXØ[Ø\Ý[™Ë‚ˆËÈRQHÝ\ÝÛHš[ÛYNˆ[[™HÛ›H8 %Ú]HÛÜ›ÈÙY\Z\ˆÝÛˆ[]\Ë‚ˆYˆ
+\Ë˜Ý\ÝÛPš[ÛYH	‰ˆ\ËÛÜ›šÚ[™OOH	Ø[[™IÊH\Ë›ØYÝ\ÝÛJ\Ë˜Ý\ÝÛPš[ÛYJNÂ‚ˆËÈØÙX[ˆXÛÜÞ\Ý[Nˆ\Û[™È
+ÈÚ\ÈÚ]ÛˆHØ]\ˆ[Ø^\ÎÈÙXHY™KˆËÈH˜\™H[ÛœÝ\‹[™Ý[˜[Z\È
+[˜ÚÜ™YÛˆHÛÛ™ÉÜÈÝY\Ý˜\œÊBˆËÈ\™HH[›ÛY[˜KYØ]Y^˜\Ë‚ˆ\Ë—Ú\Û[™ÈH\Û[™Ê\ÚÙYY
+	ÜÛÛ™ÔÙYYNš\Û[™Ø
+KÊNÂˆ\Ë—ÜÚ\ÈHÚ\Ê\ÚÙYY
+	ÜÛÛ™ÔÙYYNœÚ\Ø
+KJNÂˆ\Ë—ÜÙXSY™HHÙXSY™TØÚY[J\ÚÙYY
+	ÜÛÛ™ÔÙYYNœÙX[Y™X
+K\˜][Û“\ËÈZ[‘Ø\\ÎˆÍLX^Ø\\ÎˆLJNÂˆ\Ë—ÜÙXSY™RYHÂˆ\Ë—Û[ÛœÝ\œÈH[ÛœÝ\”ØÚY[J\ÚÙYY
+	ÜÛÛ™ÔÙYYN›[ÛœÝ\˜
+K\˜][Û“\ÊNÂˆ\Ë—Û[ÛœÝ\’YHÂˆ\Ë—ÝÝ[˜[Z\ÈHÝ[˜[ZTØÚY[J\ÚÙYY
+	ÜÛÛ™ÔÙYYNÝ[˜[ZX
+K\˜][Û“\Ë\Ë—ÛØÙX[’ÝÜÝ\È×JNÂˆ\Ë—ÝÝ[˜[ZRYHÂˆ\Ë—ÝÝ[˜[ZQ›XÚÜÈHÜ˜^Q›XÚÜÊ\ÚÙYY
+	ÜÛÛ™ÔÙYYNÝ[˜[Z\Ü˜^X
+JNÂˆ\Ë›X[™[HH™]ÈX[™[JÛÛ™ÔÙYY
+NÂˆ\Ë˜Þ[X]XÜÈH™]ÈÞ[X]XÑšY[
+ÛÛ™ÔÙYY
+NÂˆ\ËœÝØ\›HH™]ÈÝ\˜[[ÝÔÝØ\›JÛÛ™ÔÙYY
+NÂˆ\ËœšX˜›ÛˆH™]ÈÚ[ÜÔšX˜›ÛŠÛÛ™ÔÙYY
+NÂˆ\Ëœ™H™]È™XXÝ[Û‘Y™\Ú[ÛŠÛÛ™ÔÙYY
+NÂˆ\Ë›YÚš[™ÈH™]ÈYÚš[™Ñ–
+ÛÛ™ÔÙYY
+NÂˆ\Ë›Y][ÜœÈH™]ÈY][Ü”ÚÝÙ\‘–
+ÛÛ™ÔÙYY
+NÂˆËÈ[XšY[ÛÛ›™XÝ]KYÝÎˆÜ™[˜\žHY[ÙH›Ý\ÈÙX]™HÛÛœÝ[][ÛœÂˆËÈ[ÛÛ™ÈÛ™È
+[›ZÙHZY\Ý\ÉÜÈ˜\™KØ\YÚÞU›ÞXYÙJK‚ˆ\ËÙX]™\ˆH™]ÈÛÛœÝ[][Û•ÙX]™\Š\ÚÙYY
+	ÜÛÛ™ÔÙYYNÙX]™\˜
+KØ[˜\ÕÚYØ[˜\ÒZYÚ
+NÂˆËÈH\™\]X[^™\ŽˆÜž\Ý[[™H›ÙK[[™H
+ÈÛ™H[X›[™ÈÚ\™Yœ˜[YKˆËÈ›Ø][™ÈYÚ\ˆ[™\\ˆ[ˆ]™\ž][™È[ÙH[ˆHÚÞK‚ˆ\ËœÜXÙTšYÙHH™]ÈÜXÙTšYÙJ\ÚÙYY
+	ÜÛÛ™ÔÙYYNœÜXÙ\šYÙX
+JNÂˆËÈH˜\ˆÚÜ™NˆHX\ÜÚ]™K˜YÝYH[Ý[Z[ˆ˜[™ÙHÛˆH˜\ˆÚYHÙˆBˆËÈØÙX[‹ÛÈ\Ý[Û›H]È[\ÝX\ÜÙ\ÈÛX\ˆH[™]	ÜÈÝÛ‚ˆËÈÝ\˜]\™H
+ÙYHÙ˜]Ñ˜\”ÚÜ™JK‚ˆ\Ë—Ù˜\”ÚÜ™T™XÚ\HH˜\”ÚÜ™T™XÚ\J\ÚÙYY
+	ÜÛÛ™ÔÙYYN™˜\œÚÜ™X
+JNÂˆËÈH˜]H[Ü™Ø[˜NˆH[K˜YÙÙYÛ›ÝËXØ\YZ\˜YÙH˜[™ÙHÝ™\š[™È]ˆËÈHØ[YHÜš^›Û‹^Y\™YÛˆÜÙˆH˜\ˆÚÜ™IÜÈ\šÈX\ÜÈ
+ÙYBˆËÈÙ˜]Ñ˜]S[Ü™Ø[˜JK‚ˆ\Ë—ÛZ\˜YÙT™XÚ\HHZ\˜YÙT™XÚ\J\ÚÙYY
+	ÜÛÛ™ÔÙYYN›Z\˜YÙX
+JNÂˆ\Ë›YÚšYÈH™]ÈYÚšYÊÛÛ™ÔÙYY
+NÂˆËÈÛÛ˜Ù\™X[\È[˜ÚÜˆÝØ\™ZY[ÈÛˆH›ÜÈØ[™HY˜][ÈÛÈBˆËÈšYÙÙ\ˆ™Y›Ü™HHš\œÝÚ[][][Û‹\Ù]˜[YHÝ[Ú[ÈÛÛY]Ú\™BˆËÈ™X\ÛÛ˜X›H˜]\ˆ[ˆ]
+
+K‚ˆ\Ë›ZY[ÖH\ËÈ
+ˆNÂˆ\Ë›ZY[ÖHH\Ë™Ü›Ý[™NÂˆËÈ™]Ø\™\œÝÎˆZ[\ÝÛ™KÙ›ÜÛÝ[ÈØØ[HÚ]\™ˆXY›ÛÛBˆËÈ
+Y˜][ÈÈHÛÈš[ÛYSX[˜YÙ\ˆÛÜšÜÈÝ[™[Û™H[ˆ\ÝÈÚ]›ÂˆËÈÚ\™YÚ[][][Û‹Ô\™‘ÛÝ™\››ÜŠH[™HÛÛ™ÉÜÈ[[œÚ]HYÙ]‚ˆ\Ëœ\XÛS][HNÂˆ\Ë›Z[\ÝÛ™P]\ÈHR[™š[š]NÂˆ\Ë—Û\ÝÙY[“Z[\ÝÛ™S\ÈHR[™š[š]NÂˆ\Ë›Z[\ÝÛ™RYHLNÂˆ\Ë›]\›]\˜][ÛˆH™]È]\›]\˜][ÛŠØ[˜\ÕÚYØ[˜\ÒZYÚÛÛ™ÔÙYY
+NÂˆ\Ë—Ø™X]\ÈHLÈËÈSPIÙÚXÚÈ[\˜[™YY[™ÈHÝØ\›IÜÈ˜]\˜[œ™\]Y[˜ÞBˆ\Ë—Û\ÝÚXÚÓ\ÈH[Â‚ˆËÈHÚ[™
+[Ý™[Y[RJNˆÛ™HÛØ˜[ÙX]\ˆšY[[œÝXYÙˆ]™\žBˆËÈ\XÛHÞ\Ý[HšY[™È[ˆ]ÈÝÛˆš]˜]H›Ú\ÙK‚ˆ\Ë˜][ÜÜ\™HH™]È][ÜÜ\™JÛÛ™ÔÙYY
+NÂˆ\ËÚ[™HÈˆNˆNÂˆ\ËšX]Ú[[Y\ˆHÈËÈÙ]^\›˜[Hœ›ÛH\Q\™XÝÜ‹™˜\ÝXXÚœ˜[YBˆ\Ë—ÜÚY][ÈH×NÂˆÛÛœÝ›ÙÔÙYYH][™\œžLÌŠÛÛ™ÔÙYYˆŒŠNÂˆ\Ë—Ù›ÙÐ˜[šÜÈHÌK—K›X\
+
+
+HOˆ
+Èˆ›ÙÔÙYY
+
+H
+ˆØ[˜\ÕÚY
+ˆKˆJJNÂ‚ˆËÈHÙ^HÙˆHÛÜ›
+[Ý™[Y[RRJNˆH\›[ÛžKYš]™[ˆ[]BˆËÈ›Ý][Û‹Ù]^\›˜[HXXÚœ˜[YHœ›ÛHÙ^Q\™XÝÜ‹œ[]T›Ý][Û‚ˆËÈ
+Ø[YH]\›ˆ\È\P›ÛÜÝÚX]Ú[[Y\ˆX›Ý™JKˆ]X[^™YÈÙYÂˆËÈÝ\È™Y›Ü™H›Ý][™ÈÛÈH\œØXÚK\Ý[HØXÚH™[ÝÈÝ^\ÈÝ‚ˆ\Ëœ[]T›Ý][ÛˆHÂˆ\Ë—Ü›Ý][ÛØXÚHH™]ÈX\
+
+NÂˆËÈÛ™HÜXÝ[NˆHÛÛ™ÉÜÈ]XÝYÙ^H
+]ÚÛ\ÜÈ‹ŒLK™Yœ›ÛBˆËÈÙ^Q\™XÝÜŠH\ÈÝÈ˜\ˆHÛÜ›ÚÝ[Ù^HÈ]
+‹ŒJKˆBˆËÈÜXÝ˜[Ù^HÚY\ÈX\ÙY
+Û™K\ÛKÚ\˜XÝ\œË\Ý[JHÛÈHÙ^BˆËÈÚ[™ÙHÓQTÈHÚÛHœ˜[YH\ÈÛ™H›ÙHKHHÛÜ›[™BˆËÈÚ\˜XÝ\œÈ™]™\ˆ\ØYÜ™YK[™›Ý[™È]™\ˆÛ˜\È
+™YXÙYY›\ÚˆËÈØY™JKˆ\ÈÝXœÝ[Y\ÈHÛÛÝÈ[]T›Ý][ÛˆšY
+Ø[YHÛšXÂˆËÈÚYÛ˜[]ËYYËÜÙ[Z]Û™JNÈHÜXÝ˜[ÚY[™ÈH[˜ÚÜˆÓ‚ˆËÈHÙ^H]H[ÌYËÜÙ[Z]Û™K‚ˆ\ËÛšXÈH[Âˆ\ËœÜXÝ˜[[[Ý[HNÂˆ\Ë—ÜÜXÔÚYHÈËÈX\ÙYYÜ™Y\Ë™XYžHÜ›Ý]Yˆ\Ë—ÜÜXÔÚY\™Ù]HÂˆËÈÛÛ™ËY›Ü›H™XÛÙÛš][Ûˆ
+ÛÛ™Ñ›Ü›JNˆHXÝ]™HÙXÝ[Û‰ÜÈÝXÝ\˜[ˆËÈÚYÛ˜]\™HYKX\ÙYÛÈHÙXÝ[ÛˆÚ[™ÙHÛY\ÈHÚÛH[]HžBˆËÈ]ÈX™[	ÜÈšX\ÈKHHÚÜ\È[Ø^\ÈHØ[YHÚYH™\œÙBˆËÈ[Ø^\È[›Ý\‹™XÝ\œš[™ÈY[XØ[KˆÛÛ\ÜÙYÛˆÜÙ‚ˆËÈ[]T›Ý][Ûˆ[ˆÜ›Ý]YÈÛÜšÜÈ[ˆS–Hš[ÛYH
+H^[Ù™ˆÛˆBˆËÈÚ[™ÛKXš[ÛYH›ÜY\ÛÛ™È]Ú\™H]™\žHÙXÝ[Ûˆ\ÈÛ™H›Ùš[JK‚ˆ\ËœÙXÝ[Û’YPšX\ÈHÂ‚ˆËÈHZ\œ›Üˆ
+[Ý™[Y[UŠNˆHÚ\™YKQš[™È›ÜˆHZÙIÜÈš\\ÈKBˆËÈÙ[H[ÙH™]\ÙHÙˆHØ[YH[Ù[š[™Èš]š[™ÈZY[ÉÜÈ›ÙHšXœ˜][Û‚ˆËÈ[Ù]Ú\™K\Ý[™YÛÝÙ\‹ÜÛÙ\ˆ›ÜˆØ]\ˆ[œÝXYÙˆH›ÙHÝšZÙK‚ˆ\Ë›ZÙTš[™ÈH™]È[Ù[š[™ÊÈ[Ù\ÎˆË˜\ÙRŽˆKŒKXØ^TÙXÎˆKÙYYˆ\ÚÙYY
+	ÛZÙIÈ
+ÈÛÛ™ÔÙYY
+HJNÂˆ\Ë—ÛZÙT™Y›XÝÜ›Ý[™HH[ÈËÈÙ]XXÚœ˜[YHžHÙ˜]ÑÜ›Ý[™È™XYžH˜]ÐÚ\˜XÝ\”™Y›XÝ[ÛœÂˆ\Ë™›Ü]\ÈHR[™š[š]NÈËÈÙ]^\›˜[Hœ›ÛH\Q\™XÝÜ‹™›Ü]\ÈXXÚœ˜[YBˆ\Ë—Û\ÝÙY[‘›Ü]\ÈHR[™š[š]NÂ‚ˆËÈH[œ˜]™[[™È
+[Ý™[Y[ŠNˆÙ]^\›˜[Hœ›ÛHÛÙQ\™XÝÜ‹[œ˜]™[ˆËÈXXÚœ˜[YK‚ˆ\Ë[œ˜]™[HÂ‚ˆËÈH™Y[
+[Ý™[Y[’JNˆÙ]^\›˜[K\œÚ\ÝYXØÙ\ÜÚXš[]HÙÙÛK‚ˆ\Ëœ™YXÙY›\ÚH˜[ÙNÂ‚ˆËÈÛÛ™XÝÜˆÝ]]™\È]™\žHÛÛ™È
+ÙYHXZ[‹šœÊNÈ\ÜÜÙJ
+H]\Ý[™ÂˆËÈ^XÝH\ÙH™YHÝXœØÜš\[ÛœÈÜˆH™\^HÝXÚÜÈHœ™\ÚˆËÈš[ÛYSX[˜YÙ\‰ÜÈ\Ý[™\œÈÛˆÜÙˆ]™\žH™]š[Ý\ÈÛ™HÝ[š\š[™Ë‚ˆ\Ë—Ý[œÝXˆHÂˆÛÛ™XÝÜ‹›Û˜\Š
+
+HOˆÈ\Ë—ÜØØ[›[™PXÝ]™HHYNÈ\Ë—ÜØØ[›[™VHHÈ\Ë˜Þ[X]XÜË›Û˜\Š
+NÈJKˆÛÛ™XÝÜ‹›ÛŠ›ÛK”’UK
+]
+HOˆÂˆ\ËÛÜ›š]HH]ÂˆYˆ
+Y]šÚXÚÊH™]\›ŽÂˆ\Ë—Ü[Û‘›\ÚHNÂˆ\Ë—Ù[˜ÙRÚXÚÓ\ÈH]\ÎÂˆ\Ë—Ù[˜ÙRÚXÚÐ[\H
+Èˆ
+ˆ]™[Âˆ\Ë›X[™[KšÚXÚÊ
+NÂˆ\ËœÝØ\›KšÚXÚÊ]™[
+NÂˆ\ËœšX˜›Û‹šÚXÚÊ
+NÂˆ\Ëœ™›Û’ÚXÚÊ
+NÂˆ\ËÙX]™\‹›Û’ÚXÚÊ]™[]\ÊNÂˆYˆ
+]™[ˆÎ
+H\Ë›]\›]\˜][Û‹œÝ\J]™[
+NÂˆËÈX]žHÚXÚÜÈÝšZÙHYÚš[™Ë]Û›HÚ[HHÝÜ›H\È›ÝÚ[™Ë‚ˆÛÛœÝXÝ]™HH\Ë˜Ý\œ™[›[™È\Ë—Ü›Ùš[J\Ë˜Ý\œ™[›[™ˆHÈ\Ë˜Ý\œ™[›[™Èˆ\Ë˜Ý\œ™[›[™™œ›ÛJHˆ[ÂˆYˆ
+XÝ]™H	‰ˆXÝ]™K™žOOH	ÛYÚš[™ÉÊH\Ë›YÚš[™Ë›X^X™UšYÙÙ\Š]\Ë]™[\ËË\Ë™Ü›Ý[™JNÂˆËÈ™X]Èš\HHØ]\‹]Û›HÚ[HHZÙH\ÈÝ]‚ˆYˆ
+XÝ]™H	‰ˆXÝ]™K™žOOH	ÛZÙT™Y›XÝ[Û‰ÊH\Ë›ZÙTš[™Ë™^Ú]JÈ
+ÈH
+ˆ]™[
+NÂˆYˆ
+\Ë—Û\ÝÚXÚÓ\ÈOH[
+HÂˆÛÛœÝ[HH]\ÈH\Ë—Û\ÝÚXÚÓ\ÎÂˆYˆ
+[HH	‰ˆ[HHML
+H\Ë—Ø™X]\È
+ÏHŒH
+ˆ
+[HH\Ë—Ø™X]\ÊNÂˆBˆ\Ë—Û\ÝÚXÚÓ\ÈH]\ÎÂˆJKˆÛÛ™XÝÜ‹›ÛŠ›ÛK“QSÑK
+]
+HOˆÈ\ËÙX]™\‹›Û“Y[ÙJ]
+NÈJKˆNÂˆB‚ˆÊŠˆ[™È]™\žHÛÛ™XÝÜˆÝXœØÜš\[ÛˆXYH]ÛÛœÝXÝ[Û‹ˆ
+‹Âˆ\ÜÜÙJ
+HÂˆ›Üˆ
+ÛÛœÝ[œÝXˆÙˆ\Ë—Ý[œÝXŠH[œÝXŠ
+NÂˆ\Ë—Ý[œÝX‹›[™ÝHÂˆ\ËœÝš\Ë˜ÛX\Š
+NÂˆB‚ˆØZ[ØÚY[J˜\‘ÜšY[™\™ÞPÝ\™\Ë\˜][Û“\ËÛÛ™ÔÙYY\šXÔÙXÝ[ÛœÈH[ÝXÝ\™HH[ÛÛ™XÝÜ”ØÚY[HH[
+HÂˆËÈHÛÛ™ÉÜÈ™X][ˆÙXÛÛ™ÈKHH[š]H˜[™Ù\ÉÈÙX]\š[™È\ÈÝ]ˆËÈÛˆ
+šYÙTÚ\K˜ÛÝ[Ú\Ø\™IÜÈ[ÙJKˆZÙ[ˆœ›ÛHHQQPSˆ˜\‚ˆËÈ[\˜[˜]\ˆ[ˆHYX[ŽˆHšYX]Ø\™HÜšY™KY\Ý[X]\È]ÂˆËÈ\š[Ù\ˆÚ[™ÝË[™Û™H˜YÚ[™ÝÈ]H[\ËXÚ[™ÙHÜˆHÚ[[ˆËÈ[›ÈÛÝ[Ý\Ú\ÙH˜YÈHÚÛHÛÛ™ÉÜÈÜ˜Z[ˆÙ™‹ˆœ™YK][YH]Y[ÂˆËÈ\È›È˜\ˆÜšY][[™X]™\È\È[ÚXÚ›ÜÈ]™\žH^Y\‚ˆËÈ˜XÚÈÈš^YYœ™\]Y[˜ÞH]Z[‚ˆ\Ë—Ø™X]ÙXÈHYYX[™X]ÙXÊ˜\‘ÜšY
+NÂˆËÈÚ]Ý]H™X[˜\ˆÜšY
+œ™YK][YHÈ[\Ë[\ÜÈ]Y[ÊKH[˜[\Ú\ÂˆËÈ™\ÛÛ][Ûˆ\ÙYÈÛÛ\ÙHÈHš^YHÚ[È™YØ\™\ÜÈÙˆÛÛ™ÂˆËÈ[™ÝKHÚ]›Ý™[H›Ü˜ÙYÈ›ÜˆHš\œÝ[™HZ[š[][HXZÂˆËÈÜXÚ[™ÈYX\Ý\™Y[ˆÔÑHH[™XÙ\Ë][ÜÝÛ™HÝ]ÛÝ[]™\ˆ™BˆËÈXÙYÛÈÙXÝ[Ûˆ]XÝ[ÛˆÚ[[H›ÝÛYYÝ]]^XÝHÂˆËÈÙXÝ[ÛœÈ›ÈX]\ˆÝÈÛ™ÈÜˆ]™[[HÛÛ™ÈØ\ËˆØØ[HBˆËÈ˜[˜XÚÈ™\ÛÛ][ÛˆÚ]\˜][Ûˆ[œÝXY‚ˆ]˜\•[Y\ÈH˜\‘ÜšY›[™ÝHˆÈ˜\‘ÜšY›X\
+
+ŠHOˆ‹›\ÊBˆˆ\Ë—Ù]™[”Ü]
+\˜][Û“\ËX]›X^
+SSTÒT×ÓRS—ÔÒS•ËX]œ›Ý[™
+\˜][Û“\ÈÈSSTÒT×ÕT‘ÑUÔÕTÓTÊJJNÂˆYˆ
+˜\•[Y\Ë›[™ÝŠH˜\•[Y\ÈHÌ\˜][Û“\×NÂ‚ˆÛÛœÝ™XÝÜœÈH˜\•[Y\Ë›X\
+
+\ÊHOˆ
+[™\™ÞPÝ\™\ÈÈ[™\™ÞPÝ\™\ËœØ[\P[
+\ÊHˆ™]È\œ˜^JÊK™š[
+
+JJNÂˆËÈÝÜÝ˜\ˆ[Y\È
+ÜLˆžHØØ[\ˆ˜\ˆ[™\™ÞJHKH[˜ÚÜœÈ›Üˆ[™ÜÂˆËÈ]ÚÝ[[™Ú\™HHÛÛ™È\ÈXÝX[HÝY\ÝK™ËˆÝ[˜[Z\Ë‚ˆÛÛœÝ˜\”ØØ[\‘[™\™ÞHH™XÝÜœË›X\
+
+ŠHOˆ‹œ™YXÙJ
+K
+HOˆH
+È
+HÈÊNÂˆ\Ë—ÛØÙX[’ÝÜÝ\ÈH˜\•[Y\Âˆ›X\
+
+\ËJHOˆØ˜\”ØØ[\‘[™\™ÞVÚWK\×JBˆœÛÜ
+
+KŠHOˆ–ÌHHVÌJBˆœÛXÙJŠBˆ›X\
+
+
+HOˆÌWJNÂˆÛÛœÝYX[œÈH˜\•[Y\Ë›X\
+
+ËJHOˆÂˆÛÛœÝÝ\HX]›X^
+HHÊNÂˆÛÛœÝÛXÙHH™XÝÜœËœÛXÙJÝ\H
+ÈJNÂˆÛÛœÝ]™ÈH™]È\œ˜^JÊK™š[
+
+NÂˆ›Üˆ
+ÛÛœÝˆÙˆÛXÙJH›Üˆ
+]ÈHÈÈÎÈÊÊÊH]™ÖÚ×H
+ÏH–Ú×HÈÛXÙK›[™ÝÂˆ™]\›ˆ]™ÎÂˆJNÂˆËÈÛÛ\\™HXXÚÚ[YØZ[œÝØ[\\È˜XÚËÛ[\YÈ[œÝXYÙ‚ˆËÈ[˜ÛÛ™][Û˜[H™]\›š[™È›ÜˆHš\œÝKHHÜ[š[™ÈX]\šX[ˆËÈØ[ˆ›ÝÈ™YÚ\Ý\ˆ\ÈH›Ý[™\žHÛË[œÝXYÙˆ™Z[™ÈÚ[[H^[\‚ˆÛÛœÝ›Ý™[HH˜\•[Y\Ë›X\
+
+ËJHOˆÂˆÛÛœÝˆHX]›X^
+HH
+NÂˆYˆ
+ˆOOHJH™]\›ˆÂˆ]HÂˆ›Üˆ
+]ÈHÈÈÎÈÊÊÊH
+ÏH
+YX[œÖÚWVÚ×HHYX[œÖÚ—VÚ×JH
+ŠˆŽÂˆ™]\›ˆX]œÜ\
+
+NÂˆJNÂ‚ˆËÈZ[š[][HÜXÚ[™È™]ÙY[ˆÝ]Ë^™\ÜÙY[ˆSQH
+›Ý[˜[\Ú\Ë\Ú[ˆËÈ[™XÙ\ÊHÛÈ]YX[œÈHØ[YH[™È™YØ\™\ÜÈÙˆÚ]\ˆ˜\•[Y\ÂˆËÈØ[YHœ›ÛHHš[™H˜\ˆÜšYÜˆHÛØ\œÙ\ˆ]™[‹\Ü]˜[˜XÚÈX›Ý™HKBˆËÈ[ˆZ[™^Z[š[][HØ\ÈŒMœÈÛˆH˜\ˆÜšY]Û›HŒˆ˜[˜XÚÈÚ[ÂˆËÈ
+]ÈÚÛHYÊH[ˆHÝ\‹‚ˆÛÛœÝ]™ÔÝ\\ÈH˜\•[Y\Ë›[™ÝˆHÈ
+˜\•[Y\ÖØ˜\•[Y\Ë›[™ÝHWHH˜\•[Y\ÖÌJHÈ
+˜\•[Y\Ë›[™ÝHJHˆ\˜][Û“\ÎÂˆÛÛœÝZ[‘Ø\HX]›X^
+KX]œ›Ý[™
+RS—ÔÑPÕSÓ—ÐÕUÑÐTÓTÈÈX]›X^
+K]™ÔÝ\\ÊJJNÂˆËÈÝ]YÙ]ØØ[\ÈÚ]ÛÛ™È[™Ý[œÝXYÙˆH›]ÈKHHK[Z[]BˆËÈÛÛ™ÈØ[ˆ›ÝÈ^™\ÜÈÛÜÙHÈHÙXÝ[Ûˆ]™\žHË‚ˆÛÛœÝX^Ý]ÈHÙXÝ[ÛÝ]YÙ]
+\˜][Û“\ÊNÂˆÛÛœÝ\ÝYH˜\•[Y\Ë›[™ÝHNÂˆÛÛœÝXZÓ›Ý™[HHX]›X^
+‹‹››Ý™[K
+NÂˆÊŠˆÜ™YYHÝ›Û™Ù\ÝYš\œÝXZÈXÚÚ[™Ëˆ›ÛÜ“][\ÈH›Ú\ÙH›ÛÜˆ\ÈBˆ
+ˆœ˜XÝ[ÛˆÙˆHÝ›Û™Ù\Ý›Ý™[NˆH›Ü›X[\ÜÈ™Y\Ù\ÈÂˆ
+ˆX[Y˜XÝ\™H›Ý[™\šY\ÈÝ]Ùˆ™X\‹Y›]X]\šX[[™H™[^][Ûˆ[‚ˆ
+ˆÙ[œÝ\™SZ[š[][TÙXÝ[ÛœÈ™K\[œÈÚ]]›ÜYˆ
+‹ÂˆÛÛœÝXÚÔXZÜÈH
+›ÛÜ“][
+HOˆÂˆÛÛœÝÝ]H×NÂˆÛÛœÝÛÜYH›Ý™[K›X\
+
+‹JHOˆÝ‹WJKœÛÜ
+
+KŠHOˆ–ÌHHVÌJNÂˆ›Üˆ
+ÛÛœÝÝ‹WHÙˆÛÜY
+HÂˆYˆ
+Ý]›[™ÝHX^Ý]ÊHœ™XZÎÂˆYˆ
+ˆHYKMŠHÛÛ[YNÂˆYˆ
+ˆHXZÓ›Ý™[H
+ˆ›ÛÜ“][
+Hœ™XZÎÂˆËÈÜXÙYYØZ[œÝHÛÛ™ÉÜÈÝÛˆYÙ\È\ÈÙ[\ÈYØZ[œÝXXÚÝ\‹‚ˆËÈ[™^[™Hš[˜[[™^\™HSÐVTÈÝ]ËÛÈHXZÈÜ›ÝÙ[™ÂˆËÈZ]\ˆÛ™H›ÙXÙ\ÈH[ÙXÝ[ÛˆKH[™HÛ™HXZÈ[™[™ÈÛˆBˆËÈš[˜[[™^ÛÛ\Ù\ÈHØÚY[HÈHÚ[™ÛHÙXÝ[ÛˆÝ]šYÚˆËÈ
+Ý]ÈÌ\Ý\ÝKÚÜÙHš\œÝZ\ˆ\È[ˆ›ÜY\È[\JK‚ˆËÈHšYÈÝ]›ÈÜˆ˜YK[Ý]XZÙ\È]™\žH™XXÚX›HÛˆ™X[ÛÛ™ÜË‚ˆYˆ
+HZ[‘Ø\\ÝYHHZ[‘Ø\
+HÛÛ[YNÂˆYˆ
+Ý]œÛÛYJ
+
+HOˆX]˜XœÊHJHZ[‘Ø\
+JHÛÛ[YNÂˆÝ]œ\Ú
+JNÂˆBˆÝ]œÛÜ
+
+KŠHOˆHHŠNÂˆ™]\›ˆÝ]ÂˆNÂˆÛÛœÝXZÜÈHXÚÔXZÜÊ“Õ‘SWÓ“ÒTÑWÑ“ÓÔŠNÂ‚ˆËÈHÔÓH™XY
+ÝXÝ\™P[˜[^™\ŠHÚ[œÈÚ[ˆ]	ÜÈÛÛ™šY[ˆ]ÂˆËÈ›Ý[™\šY\ÈÛÛYHœ›ÛHHÚXÚÙ\˜›Ø\™Ù\›™[Ý™\ˆHÚ›ÛXJÝ[Xœ™BˆËÈÙ[‹\Ú[Z[\š]HX]š^˜]\ˆ[ˆHY™™\™[˜ÙHÙˆ˜Z[[™È˜[™Y[™\™ÞBˆËÈYX[œË[™]X\œÈ\›[ÛžKÚXÚH›Ý™[H]X›Ý™HØ[››Ý‚ˆËÂˆËÈ]È›Ý[™\šY\È\œš]™H\ÈSQTË›Ý\È[™XÙ\Ëˆ^H\ÙYÈ\œš]™H\ÂˆËÈÝ][™XÙ\ËÚXÚØ\ÈÚ[[HÜ›Û™ÈÚ[™]™\ˆHÛÈÚY\ÈZ[ˆËÈY™™\™[[˜[\Ú\ÈÜšYÎˆÚ]›È˜\ˆÜšY]Y[ÐY\\ˆÝ\ÈH›]ˆËÈŒ\ÈÚ[HÙ]™[”Ü]\™H™]\›œÈŠÌHÚ[È]H]XÚš[™\ˆÝ\›Ü‚ˆËÈÛÛ™ÜÈ[™\ˆŒLŽËˆ[™XÙ\Èœ›ÛHÛ™HÜšY™XYYØZ[œÝHÝ\ˆ]]™\žBˆËÈÝ]]HÜ›Û™È[YK[˜ÚYÝØ\™HÛÛ™ÉÜÈÝ\KH[™HÛˆËÈH˜\•[Y\Ë›[™ÝHXÝX\™™]™\ˆØ]YÚ]™XØ]\ÙHH\œ˜^H™Z[™ÂˆËÈ[™^YØ\ÈHÛ™Ù\ˆÙˆHÛËˆ[Y\È\™H[˜[XšYÝ[Ý\ÎÈ[™XÙ\È\™BˆËÈÛ›HYX[š[™Ù[™^ÈHÜšY]›ÙXÙY[K‚ˆËÂˆËÈ]™\ž][™È˜[È˜XÚÈÛX[›NˆRQKH[[È[Y[[™Kœ™YK][YH]Y[ÂˆËÈ[™[žHÝËXÛÛ™šY[˜ÙH™XYÙY\H˜[™Y[™\™ÞHØÚY[H^XÝH\È]ˆËÈØ\Ë‚ˆÛÛœÝÜÛPÝ]ÈHÝXÝ\™H	‰ˆ\œ˜^Kš\Ð\œ˜^JÝXÝ\™K˜›Ý[™\šY\Ó\ÊBˆÈ\Ë—ØÝ]Ñœ›ÛU[Y\ÊÝXÝ\™K˜›Ý[™\šY\Ó\Ë˜\•[Y\ÊBˆˆ[ÂˆÛÛœÝÜÛU\ØX›HHÝXÝ\™Bˆ	‰ˆÝXÝ\™K˜ÛÛ™šY[˜ÙHHÔÓWÐÓÓ‘’QSÑWÑ“ÓÔ‚ˆËÈ]X\ÝÛÈÙXÝ[ÛœËˆHÛ™K\ÙXÝ[Ûˆ™XY\ÈH]XÝÜˆ™\Ü[™È]ˆËÈ›Ý[™›Ý[™Ë[™]\Ý™]™\ˆ\ÜXÙH[ˆ[™\™ÞH™XY]›Ý[™™X[ˆËÈ›Ý[™\šY\È
+ÝXÝ\™P[˜[^™\ˆØ\È]ÈÛÛ™šY[˜ÙH›Üˆ\È™X\ÛÛˆÛÊK‚ˆ	‰ˆÜÛPÝ]È	‰ˆÜÛPÝ]Ë›[™ÝHÎÂˆÛÛœÝÚÜÙ[ˆHÜÛU\ØX›HÈÜÛPÝ]ÈˆÌ‹‹œXZÜË\ÝYNÂˆËÈÙ[œÝ\™SZ[š[][TÙXÝ[ÛœÈ\ÙYÈ™HX›HÈTÐÐT‘ÚÜÙ[˜ÚÛ\Ø[HKBˆËÈ™K\XÚÚ[™Èœ›ÛHH[™\™ÞH›Ý™[HÜˆ˜[[™È˜XÚÈÈ]™[ˆ[YK\Ü]ÂˆËÈ]™[ˆÚ[ˆÚÜÙ[˜Ø\ÈHÛÛ™šY[ÔÓH™XYˆH™X[ÛÛ™šY[]\ÚXØ[ˆËÈ›Ý[™\žH\È]šY[˜ÙNÈHZ[š[][K\ÙXÝ[Û‹XÛÝ[›ÛÜˆ\ÈHXÚ[™ÂˆËÈ™Y™\™[˜ÙKˆH™Y™\™[˜ÙH]\Ý™]™\ˆÝ™\Üš]HH]šY[˜ÙHKH]X^BˆËÈÛ›HY]Ú]^˜KÛX\›KYXÛÜ˜]]™HÝ]ÈÈ]HÛÝ[ÚXÚˆËÈØ\œžH›È›Ý[™\žH]šY[˜ÙH[™]\Ý›Ý[™[H™]È]\ÚXØ[Y[]BˆËÈ
+ÙYHÛX™[Ñœ›ÛTÜÛH™[ÝÎˆHXÛÜ˜]]™HÝ]™X\™\Ý[X\ÈÛÈ]ÂˆËÈ\™[	ÜÈÔÓHX™[ÛÈ][š\š]È˜]\ˆ[ˆ[™[ÈÛ™JK‚ˆÛÛœÝÈÝ]Îˆ˜]ÐÝ]ËÛÝ\˜ÙNˆ›ÛÜ”ÛÝ\˜ÙKXÛÜ˜]]™Nˆ˜]ÑXÛÜ˜]]™HHH\Ë—Ù[œÝ\™SZ[š[][TÙXÝ[ÛœÊˆÚÜÙ[‹ÈXÚÔXZÜË˜\•[Y\Ë\˜][Û“\Ë\ÝYKÜÛU\ØX›Kˆ
+NÂˆËÈ]XXÚ›Ý[™\žHÛˆH‘SPTÑH˜]\ˆ[ˆÛˆH[‹]\È]ˆËÈ
+›Ý[™\žTÛ˜\šœÊKˆ›Ý]XÝÜœÈ[œÝÙ\ˆÚ\™HÙ\ÈHX]\šX[ˆËÈÚ[™ÙOÈˆKH][ˆ›ÙXÙY]\ÚXÈH›Ü\È™XÙYYžHHZ[BˆËÈ[™\™ÞH™XÝÜˆÚ[™Ù\ÈÚ[ˆH•RSÝ\Ë[™H]XÝÜˆX\šÜÈBˆËÈZ[ˆHÚÝÈ[ˆš\™Y]È™[X\ÙHX›Ý]H˜\ˆX\›KÝ™\ˆX]\šX[ˆËÈÝ[Ú[™[™È\ˆHØ[YHÛÜœ™XÝ[Ûˆ[ÛÈ[È˜XÚÈH˜[™Y[™\™ÞBˆËÈ˜[˜XÚÉÜÈ˜Z[[™Ë]Ú[™ÝÈYËÚ[˜ÙH]ÛÚÜÈ›ÝØ^\È›ÜˆHÝ\‚ˆËÈHÛÛ™ÉÜÈš\œÝ[™\ÝÝ]È\™H[›™Yˆ^H\™HHYÙ\ÈÙˆBˆËÈØÚY[K›Ý™[X\Ù\Ë[™[Ýš[™ÈÛ™HX]™\ÈHØ\‚ˆÛÛœÝÝ]ÈHÛ˜\Ý]ÕÔ™[X\Ù\Ê˜]ÐÝ]Ë˜\”ØØ[\‘[™\™ÞKÂˆ[›™YˆÜÛU\ØX›HÈÚÜÙ[ˆˆÜ˜]ÐÝ]ÖÌK˜]ÐÝ]ÖÜ˜]ÐÝ]Ë›[™ÝHWWKˆJNÂˆËÈHXÛÜ˜]]™HÝ]	ÜÈ^XÝ[™^Ø[ˆ[Ý™H[™\ˆHÛ˜\X›Ý™NÈØ\œžH]ÂˆËÈÝ]\È›ÜØ\™žH™X\™\ÝX]Ú˜]\ˆ[ˆ^XÝ˜[YK‚ˆÛÛœÝXÛÜ˜]]™TÙ]H™]ÈÙ]
+
+NÂˆ›Üˆ
+ÛÛœÝÙˆ˜]ÑXÛÜ˜]]™JHÂˆ]™\ÝHÝ]ÖÌK™\ÝH[™š[š]NÂˆ›Üˆ
+ÛÛœÝÈÙˆÝ]ÊHÈÛÛœÝ\ÝHX]˜XœÊÈH
+NÈYˆ
+\Ý™\Ý
+HÈ™\ÝH\ÝÈ™\ÝHÎÈHBˆXÛÜ˜]]™TÙ]˜Y
+™\Ý
+NÂˆBˆËÈHÔÓH™XY\ÈšÙ\ˆÚ[™]™\ˆHØÚY[H\ÈÝ[Z[œ›ÛH]ÂˆËÈ›Ý[™\šY\ÈKHÚXÚ\È›ÝÈ[Ø^\ÈYHÛ˜ÙHÜÛU\ØX›XÚ[˜ÙHBˆËÈ›ÛÜˆØ[ˆÛ›HY]™]™\ˆ™\XÙH]‚ˆÛÛœÝÜÛRÙ\HÜÛU\ØX›NÂˆ\ËœÝXÝ\™TÛÝ\˜ÙHHÜÛU\ØX›HÈ
+˜]ÑXÛÜ˜]]™K›[™ÝÈ	ÜÜÛJÙXÛÜ˜]]™IÈˆ	ÜÜÛIÊHˆ
+›ÛÜ”ÛÝ\˜ÙH	Ù[™\™ÞK[›Ý™[IÊNÂˆËÈÛÛ™šY[˜ÙH\ØÜšX™\ÈH]šY[˜ÙHXÝX[H™Z[™HØÚY[Kˆ[ˆÔÓBˆËÈ™XY]Ý\š]™Y
+YYÜˆ›Ý
+HÙY\È]È]XÝÜ‰ÜÈÛÛ™šY[˜ÙNÂˆËÈ[ž][™È[ÙH\È›ÝHÔÓIÜÈ™XY][[™]\Ý›ÝÛÈÛ‚ˆËÈ™\Ü[™ÈHÛÛ™šY[˜ÙHÙˆ[ˆ[˜[\Ú\È]Ø\È™]™\ˆ\ÙY‚ˆ\ËœÝXÝ\™PÛÛ™šY[˜ÙHHÜÛRÙ\ÈÝXÝ\™K˜ÛÛ™šY[˜ÙHˆÂˆ\Ë™š[™P›Ý[™\šY\Ó\ÈHÜÛRÙ\	‰ˆ\œ˜^Kš\Ð\œ˜^JÝXÝ\™OË™š[™P›Ý[™\šY\Ó\ÊBˆÈÝXÝ\™K™š[™P›Ý[™\šY\Ó\ËœÛXÙJ
+Bˆˆ×NÂˆ\Ë™š[™P›Ý[™\žQ]šY[˜ÙHHÜÛRÙ\	‰ˆ\œ˜^Kš\Ð\œ˜^JÝXÝ\™OË™š[™P›Ý[™\žQ]šY[˜ÙJBˆÈÝXÝ\™K™š[™P›Ý[™\žQ]šY[˜ÙK›X\
+
+ŠHOˆ
+È‹‹˜ˆJJBˆˆ×NÂˆËÈÚXÚÝ]È\™HÙ[Z[™H[™\™ÞK[›Ý™[HXZÜË[™ÛÈ]™HHYX[š[™Ù[ˆËÈÚ\œ™\ÜÈÈÛ\ÜÚYžHœ›ÛKˆ]™\ž][™È[ÙHKH[ˆÔÓH›Ý[™\žH
+›Ý[™ˆËÈžHHY™™\™[]XÝÜ‹ÛˆHY™™\™[ÚYÛ˜[
+HÜˆ[ˆ]™[ˆ[YK\Ü]ˆËÈ[œÙ\YžHHZ[š[][K\ÙXÝ[ÛœÈ›ÛÜˆKH\ÈÛ›HÚ]]™\ˆH[™\™ÞBˆËÈ›Ý™[H\[™YÈ™XY]][™^ÚXÚ\È›Ý]›Ý[™\žIÜÂˆËÈÝ™[™Ý[ˆ[žHÙ[œÙKˆ[™[™ÈÜÙH[ˆ\˜š]˜\žH˜[YH\ÈÝÈBˆËÈ›Ý[™\žHÚ]›È˜[XH[ˆ]Ø\È\ÜÚYÛ™YH[ÜÝš[Û[˜[œÚ][Û‚ˆËÈ[ˆHØ[YK[™\È[ÜÝÙˆÚHHY™™XÝ™[˜[™ÛK‚ˆÛÛœÝXZÔÙ]H™]ÈÙ]
+XZÜÊNÂˆÛÛœÝÜÛTÝ™[™ÝžPÝ]H™]ÈX\
+
+NÂˆYˆ
+ÜÛRÙ\	‰ˆ\œ˜^Kš\Ð\œ˜^JÝXÝ\™OË˜›Ý[™\žTÝ™[™ÝÊJHÂˆ›Üˆ
+]HHÈHÚÜÙ[‹›[™ÝÈJÊÊHÂˆÛÛœÝÝ]HÚÜÙ[–ÚWNÂˆÛÛœÝÝ™[™ÝHÛ[\JÝXÝ\™K˜›Ý[™\žTÝ™[™ÝÖÚWHÏÈ
+NÂˆYˆ
+Ý™[™Ýˆ
+ÜÛTÝ™[™ÝžPÝ]™Ù]
+Ý]
+HÏÈR[™š[š]JJHÜÛTÝ™[™ÝžPÝ]œÙ]
+Ý]Ý™[™Ý
+NÂˆBˆB‚ˆ\ËœÙXÝ[ÛœÈH×NÂˆÛÛœÝYX[‘[™\™ÚY\ÈH×NÂˆÛÛœÝÚ\\ÈH×NÈËÈ\‹\ÙXÝ[ÛˆYX[ˆËX˜[™ÜXÝ˜[™XÝÜˆKH[Xœ˜[š[™Ù\œš[ˆÛÛœÝX^›Ý™[HHX]›X^
+‹‹››Ý™[KYKNJNÂˆ›Üˆ
+]HHÈHÝ]Ë›[™ÝHNÈJÊÊHÂˆYˆ
+Ý]ÖÚH
+ÈWHHÝ]ÖÚWJHÛÛ[YNÂˆËÈÙXÝ[Û‰ÜÈYX[ˆÛØ˜[[™\™ÞH
+›ÜˆØ\Ý[™ÊHS‘]ÈYX[ˆ\‹X˜[™ˆËÈ™XÝÜˆ
+]È[Xœ˜[Ú\K›Üˆ›Ü›H™XÛÙÛš][ÛˆKHÙYHÛÛ™Ñ›Ü›JK‚ˆ]HHÛÝ[HÂˆÛÛœÝÚ\HH™]È\œ˜^JÊK™š[
+
+NÂˆ›Üˆ
+]ˆHÝ]ÖÚWNÈˆÝ]ÖÚH
+ÈWNÈŠÊËÛÝ[
+ÊÊHÂˆ›Üˆ
+]ÈHÈÈÎÈÊÊÊHÈH
+ÏH™XÝÜœÖØ—VÚ×HÈÎÈÚ\VÚ×H
+ÏH™XÝÜœÖØ—VÚ×NÈBˆBˆYˆ
+ÛÝ[ˆ
+H›Üˆ
+]ÈHÈÈÎÈÊÊÊHÚ\VÚ×HÏHÛÝ[ÂˆYX[‘[™\™ÚY\Ëœ\Ú
+ÛÝ[ˆÈHÈÛÝ[ˆ
+NÂˆÚ\\Ëœ\Ú
+Ú\JNÂˆ\ËœÙXÝ[ÛœËœ\Ú
+ÂˆÝ\\Îˆ˜\•[Y\ÖØÝ]ÖÚWWKˆ[™\ÎˆHOOHÝ]Ë›[™ÝHˆÈ\˜][Û“\Èˆ˜\•[Y\ÖØÝ]ÖÚH
+ÈWWKˆËÈ›Ý[™\žHÚ\œ™\ÜÈXÚÜÈH˜[œÚ][ÛˆÝ[H[È\ÈÙXÝ[ÛˆKBˆËÈ]Û›HÚ\™H]Ú\œ™\ÜÈ\È™X[ˆ[ˆ[›YX\Ý\™Y›Ý[™\žBˆËÈ˜Y\ÎˆHÙ[\ÝÜ[Ûˆ\ÈHÛ™\ÝÛ™HÚ[ˆÙHÈ›ÝˆËÈXÝX[HÛ›ÝÈÝÈ\™HÛÛ™È\›™Y‚ˆ˜[œÚ][ÛŽˆ\ËœÙXÝ[ÛœË›[™ÝOOHˆÈ	Ù˜YIÂˆˆ
+ÜÛTÝ™[™ÝžPÝ]š\ÊÝ]ÖÚWJBˆÈÛ\ÜÚYžU˜[œÚ][ÛŠÜÛTÝ™[™ÝžPÝ]™Ù]
+Ý]ÖÚWJKJBˆˆ
+XZÔÙ]š\ÊÝ]ÖÚWJHÈÛ\ÜÚYžU˜[œÚ][ÛŠ›Ý™[VØÝ]ÖÚWWKX^›Ý™[JHˆ	Ù˜YIÊJKˆ˜\“\Îˆ
+˜\•[Y\ÖÓX]›Z[Š˜\•[Y\Ë›[™ÝHKÝ]ÖÚWH
+ÈJWHH˜\•[Y\ÖØÝ]ÖÚWWJHLˆËÈÚ]\È›Ý[™\žIÜÈ]šY[˜ÙHXÝX[H\Îˆ	Ù]XÝY	È
+ÔÓKÚ\›[ÛšXÂˆËÈ™XY
+K	Ú[™™\œ™Y	È
+˜[™Y[™\™ÞH›Ý™[HXZÊKÜˆ	ÙXÛÜ˜]]™IÈ
+\™BˆËÈXÚ[™ÈY[™Ë›ÈÚYÛ˜[™Z[™]KHÙYHÜYÚ]XÛÜ˜]]™PÝ]ÊK‚ˆËÈÝÛœÝ™X[HÛÛœÝ[Y\œÈ]\Ý›Ý™X]HXÛÜ˜]]™HÝ]\È]š[™ÂˆËÈ›Ý[™H™]È]\ÚXØ[Y[]K‚ˆ›Ý™[˜[˜ÙNˆXÛÜ˜]]™TÙ]š\ÊÝ]ÖÚWJBˆÈ	ÙXÛÜ˜]]™IÂˆˆ
+ÜÛRÙ\È	Ù]XÝY	Èˆ
+XZÔÙ]š\ÊÝ]ÖÚWJHÈ	Ú[™™\œ™Y	Èˆ	ÙXÛÜ˜]]™IÊJKˆJNÂˆBˆYˆ
+\ËœÙXÝ[ÛœË›[™ÝOOH
+HÂˆ\ËœÙXÝ[ÛœÈHÞÈÝ\\Îˆ[™\Îˆ\˜][Û“\Ë˜[œÚ][ÛŽˆ	Ù˜YIË˜\“\ÎˆL›Ý™[˜[˜ÙNˆ	ÙXÛÜ˜]]™IÈWNÂˆYX[‘[™\™ÚY\Ëœ\Ú
+JNÂˆÚ\\Ëœ\Ú
+™]È\œ˜^JÊK™š[
+JJNÂˆB‚ˆËÈÛÛ™ËY›Ü›H™XÛÙÛš][ÛŽˆÚXÚÙXÝ[ÛœÈ\™HHÐSQH]\ÚXÈ
+ÛÛ™Ñ›Ü›JK‚ˆËÈH™]\›š[™ÈÚÜ\ÈÙ]ÈHØ[YHÝXÝ\˜[X™[\È]ÈX\›Y\‚ˆËÈÙ[™\ËÛÈ]Ø[ˆÙX\ˆHØ[YH˜XÙH[œÝXYÙˆ™XY[™È\È™]Ë‚ˆËÈX™[ÎˆHÔÓIÜÈ™\]][Ûˆ\ÜÈš[™ÈX]\šX[]]\˜[H™XÝ\œËˆËÈÚXÚ\ÈÚ]H™]\›š[™ÈÚÜ\ÈTËˆ[˜[^™TÛÛ™Ñ›Ü›IÜÈ˜[™\Ú\BˆËÈÛ\Ý\š[™È\ÈH˜[˜XÚÈKH]Ø[ˆÛ›H\ÚÈÚ]\ˆÛÈÙXÝ[ÛœÈ]™BˆËÈHÚ[Z[\ˆ]™\˜YÙHÜXÝ[K‚ˆËÂˆËÈX]Ú[™È[H\\ÙYÈ™\]Z\™HÝXÝ\™K›X™[Ë›[™ÝOOBˆËÈ\ËœÙXÝ[ÛœË›[™ÝÚXÚ\È˜\ˆ[Ü™Hœ˜YÚ[H[ˆ]ÛÚÜÎˆBˆËÈÙXÝ[Ûˆ\Ý\È›ÝHÛÜHÙˆHÔÓIÜÈÙYÛY[\ÝˆØÝ]Ñœ›ÛU[Y\ÂˆËÈ›ÜÈ[žH›Ý[™\žH][™ÈÛˆHZ[Üˆ˜Z[ÈÈY˜[˜ÙHH[™^ˆËÈ
+ÛÈ›Ý[™\šY\ÈÛÛ\Ú[™ÈÛÈÛ™HÚ[ÙˆHÛØ\œÙ\ˆÜšY
+KHÛÜˆËÈX›Ý™HÚÚ\È[\HÜ[œË[™\šXÈ\Ú[Ûˆ\ÈY]È[‹ˆ[žHÛ™HÙ‚ˆËÈÜÙHXZÙ\ÈHÛÝ[ÈY™™\ˆžHÛ™H[™›ÝÜÈ]Ø^HHS•T‘BˆËÈ™\]][Ûˆ™XYKHH™]\ˆ[ˆÙˆHÔÓK[™HÛ›H[™È[ˆBˆËÈ\[[™H]Û›ÝÜÈH™]\›š[™ÈÚÜ\È\È]\˜[HHØ[YH]\ÚXÈKBˆËÈ˜[[™È˜XÚÈÈ˜[™\Ú\HÛ\Ý\š[™ÈÚ]›ÈÚYÛ˜[]]\[™Y‚ˆËÈX\XXÚÙXÝ[Ûˆ˜XÚÈÈ]È™X\™\ÝÔÓH›Ý[™\žH[œÝXYÛÈH›ÜYˆËÈÜˆY\™ÙY›Ý[™\žHÛÜÝÈÛ™HX™[˜]\ˆ[ˆ[Ùˆ[K‚ˆÛÛœÝÜÛSX™[ÈHÜÛRÙ\È\Ë—ÛX™[Ñœ›ÛTÜÛJÝXÝ\™JHˆ[ÂˆÛÛœÝX™[ÈHÜÛSX™[Âˆ[˜[^™TÛÛ™Ñ›Ü›J\ËœÙXÝ[ÛœË›X\
+
+ËJHOˆ
+È[™\™ÞNˆYX[‘[™\™ÚY\ÖÚWKÚ\NˆÚ\\ÖÚWHJJJNÂ‚ˆËÈØ\ÝHÚÝÈžHÝXÝ\˜[P‘S›Ý\‹\ÙXÝ[ÛŽˆ]™\žH™XÝ\œ™[˜ÙBˆËÈÙˆHX™[Ú\™\ÈHš[ÛYH˜[YH
+ÝØÚÈ]
+KÛÈH™]\›š[™ÈÚÞ[[™BˆËÈ\È]\˜[HHØ[YHKHÝš\ËÛ[™X\šÜÈ˜ZÙH\ˆ
+ÛÛ™ÔÙYY˜[YJK‚ˆÛÛœÝ[š\]YSX™[ÈHË‹‹›™]ÈÙ]
+X™[ÊWNÈËÈš\œÝX\X\˜[˜ÙHÜ™\‚ˆÛÛœÝX™[[™\™ÞHH[š\]YSX™[Ë›X\
+
+XŠHOˆÂˆ]ÈHˆHÂˆX™[Ë™›Ü‘XXÚ
+
+JHOˆÈYˆ
+OOHXŠHÈÈ
+ÏHYX[‘[™\™ÚY\ÖÚWNÈŠÊÎÈHJNÂˆ™]\›ˆˆˆÈÈÈˆˆÂˆJNÂˆÛÛœÝX™[Ø\ÝH\ËÛÜ›Ë˜Ø\ÝˆÈ\ËÛÜ›˜Ø\Ý
+X™[[™\™ÞKÛÛ™ÔÙYY
+BˆˆØ\Ýš[ÛY\ÊX™[[™\™ÞKÛÛ™ÔÙYY
+NÂˆÛÛœÝš[ÛYPžSX™[H™]ÈX\
+[š\]YSX™[Ë›X\
+
+X‹JHOˆÛX‹X™[Ø\ÝÚWWJJNÂ‚ˆËÈXXÚX™[[ÛÈÙ]ÈH]\›Z[š\ÝXÈÛÛÜˆÚYÛ˜]\™H
+HYHšX\ÊKˆËÈÛÈ]™[ˆ[ˆHÚ[™ÛKXš[ÛYH›ÜYÛÛ™ÈHÚÜ\È™XÝ\œÈ[ˆHØ[YBˆËÈYK\ÚY[™H™\œÙH[ˆ[›Ý\ˆKH›Ü›HXYHš\ÚX›H[ˆS–Hš[ÛYK‚ˆÛÛœÝYPžSX™[H™]ÈX\
+[š\]YSX™[Ë›X\
+
+XŠHOˆÂˆÛÛœÝˆH][™\œžLÌŠ\ÚÙYY
+	ÜÛÛ™ÔÙYYN™›Ü›N‰ÛXŸX
+JNÂˆ™]\›ˆÛX‹
+Š
+H
+ˆˆHJH
+ˆ“Ô“WÒQWÐ’PT×ÓPVNÂˆJJNÂ‚ˆËÈ™[]]™H[™\™ÞH˜[šÈXÜ›ÜÜÈTÈÛÛ™ÉÜÈÝÛˆX™[È
+Z[‹[X^›Ý[‚ˆËÈXœÛÛ]H™\ÚÛ
+HKHÛÈH]ZY]ÛÛ™ÉÜÈÚÜ\ÈÝ[™XYÈ\È]ÂˆËÈšYÙÙ\Ý[™HÝYÛÛ™ÉÜÈœšYÙHÝ[™XYÈ\ÈH[™YØ\™\ÜÂˆËÈÙˆH˜XÚÉÜÈÝ™\˜[ÝY™\ÜË‚ˆÛÛœÝ™[[™\™ÞU˜[Y\ÈH™[[™\™ÞSY\ŠX™[[™\™ÞJNÂˆÛÛœÝ™[[™\™ÞPžSX™[H™]ÈX\
+[š\]YSX™[Ë›X\
+
+X‹JHOˆÛX‹™[[™\™ÞU˜[Y\ÖÚWWJJNÂ‚ˆËÈÛ™HÚ\H™XÛÛ\ÜÚ][Ûˆ\ˆX™[
+ÝYÙHHÙˆH[Ý[Z[ˆÝ™\š][
+N‚ˆËÈ]ÛÙÞHœ›ÛHHX™[	ÜÈÝÛˆ]™\˜YÙYÜXÝ[KH[™›Ü›K[Y\‚ˆËÈÚ[™ÝÈœ›ÛHÜXÝ˜[ÜÚ][Ûˆ
+È™[]]™H[™\™ÞK[™[™X\šÜÂˆËÈ™\Ø[\Yœ›ÛH\Ý]X™[	ÜÈÝÛˆš\œÝØØÝ\œ™[˜ÙH[ˆHÛÛ™ÂˆËÈ
+H™\™\Ù[]]™H[œÝ[˜ÙJH[œÝXYÙˆHÚÛH˜XÚËˆ[[™HÛ›HKBˆËÈÚ]KÙ˜\œÚYKÙ]ËˆÛÜ›ÈÙY\Z\ˆÝÛˆÚ[™ÛK]˜\šX[ÛÚË‚ˆÛÛœÝX™[Ú\HH™]ÈX\
+[š\]YSX™[Ë›X\
+
+XŠHOˆÂˆÛÛœÝYÈH×NÂˆX™[Ë™›Ü‘XXÚ
+
+JHOˆÈYˆ
+OOHXŠHYËœ\Ú
+JNÈJNÂˆÛÛœÝÚ\HH™]È\œ˜^JÊK™š[
+
+NÂˆ›Üˆ
+ÛÛœÝHÙˆYÊH›Üˆ
+]ÈHÈÈÎÈÊÊÊHÚ\VÚ×H
+ÏHÚ\\ÖÚWVÚ×NÂˆ›Üˆ
+]ÈHÈÈÎÈÊÊÊHÚ\VÚ×HÏHX]›X^
+KYË›[™Ý
+NÂˆ™]\›ˆÛX‹Ú\WNÂˆJJNÂˆÛÛœÝÛÜ›Ú[™›Ü•˜\šX[ÈH\ËÛÜ›ËšÚ[™	Ø[[™IÎÂˆÛÛœÝZ[˜\šX[HÛÜ›Ú[™›Ü•˜\šX[ÈOOH	Ø[[™IÈÈ
+XŠHOˆÂˆÛÛœÝÚ\HHX™[Ú\K™Ù]
+XŠNÂˆÛÛœÝ™[H™[[™\™ÞPžSX™[™Ù]
+XŠHÏÈNÂˆ]ÜÝ[HHÝÝHÂˆ›Üˆ
+]ÈHÈÈÎÈÊÊÊHÈÜÝ[H
+ÏHÚ\VÚ×H
+ˆÎÈÝÝ
+ÏHÚ\VÚ×NÈBˆÛÛœÝÜXÝ˜[ÜÌHHÝÝˆYKNHÈÛ[\JÜÝ[HÈ
+ˆ
+ˆÝÝ
+JHˆNÂˆÛÛœÝš\œÝYHX™[Ëš[™^ÙŠXŠNÂˆÛÛœÝÚ[™ÝÈHš\œÝYHˆÈÈÝ\\Îˆ\ËœÙXÝ[ÛœÖÙš\œÝYKœÝ\\Ë[™\Îˆ\ËœÙXÝ[ÛœÖÙš\œÝYK™[™\ÈBˆˆ[ÂˆÛÛœÝÚ[™ÝÙYÜ˜Z]H^˜XÝšYÙTÜ˜Z]
+[™\™ÞPÝ\™\Ë\˜][Û“\ËÚ[™ÝÊNÂˆÛÛœÝ]ÈH]ÛÙÞQœ›ÛTÚ\™\ÊÚ\JNÂˆYˆ
+Ú[™ÝÙYÜ˜Z]
+HÚ[™ÝÙYÜ˜Z]›]ÛÙÞHH]ÎÂˆ™]\›ˆÂˆ]ÛÙÞNˆ]ËˆÚ\˜XÝ\Žˆ[™›Ü›UÚ[™ÝÊÜXÝ˜[ÜÌK™[
+KˆÜ˜Z]ˆÚ[™ÝÙYÜ˜Z]ˆZYÚ][ˆ\œ
+ÑPÕSÓ—ÒRQÒÓUSÌKÑPÕSÓ—ÒRQÒÓUSÌWK™[
+Kˆ™[[™\™ÞLNˆ™[ˆÛ›ÝÓ[™LNˆÛ›ÝÓ[™LQ›ÜŠ]Ë˜Ü™\Ý™[
+KˆNÂˆHˆ[ÂˆËÈÙ^YYžH’SÓQHSQK›ÝX™[ˆš[ÛYPžSX™[X\ÈX™[ÈNŒHÈBˆËÈØ\Ýš[ÛYH[ˆHÛÛ[[ÛˆØ\ÙKÛÈH˜\šX[\ˆ˜[YHÛÜÝÈ^XÝBˆËÈÚ]HØ\Ý[™XYH[\Y\ËˆÛˆH˜\™HYH
+ÛÈX™[ÈØ\Ý[™ÂˆËÈHØ[YHš[ÛYJKHš\œÝX™[ÈÛZ[HH˜[YHÚ[œÈKH[‚ˆËÈXØÙ\X›K]\›Z[š\ÝXÈYÙHØ\ÙH˜]\ˆ[ˆHÙXÛÛ™Ù^Z[™ÂˆËÈØÚ[YH™XYY›ÝYÚ]™\žHÝš\ÛÛœÝ[Y\‹‚ˆ\Ë—Ü›Ùš[U˜\šX[ÈHZ[˜\šX[È™]ÈX\
+
+Hˆ[ÂˆYˆ
+Z[˜\šX[
+HÂˆ›Üˆ
+ÛÛœÝXˆÙˆ[š\]YSX™[ÊHÂˆÛÛœÝ˜[YHHš[ÛYPžSX™[™Ù]
+XŠNÂˆYˆ
+]\Ë—Ü›Ùš[U˜\šX[Ëš\Ê˜[YJJH\Ë—Ü›Ùš[U˜\šX[ËœÙ]
+˜[YKZ[˜\šX[
+XŠJNÂˆBˆB‚ˆÛÛœÝÙY[“X™[ÈH™]ÈÙ]
+
+NÂˆ\ËœÙXÝ[ÛœË™›Ü‘XXÚ
+
+ËJHOˆÂˆË›X™[HX™[ÖÚWNÂˆËœ›Ùš[HHš[ÛYPžSX™[™Ù]
+X™[ÖÚWJNÂˆËšYPšX\ÈHYPžSX™[™Ù]
+X™[ÖÚWJNÂˆË›YX[‘[™\™ÞHHYX[‘[™\™ÚY\ÖÚWNÂˆËœÚ\HHÚ\\ÖÚWNÂˆËœ™[[™\™ÞLHH™[[™\™ÞPžSX™[™Ù]
+X™[ÖÚWJHÏÈNÂˆËšZYÚ][H\Ë—Ü›Ùš[U˜\šX[ÏË™Ù]
+Ëœ›Ùš[JOËšZYÚ][ˆÏÈ\œ
+ÑPÕSÓ—ÒRQÒÓUSÌKÑPÕSÓ—ÒRQÒÓUSÌWKËœ™[[™\™ÞLJNÂˆËœÛ›ÝÓ[™LHH\Ë—Ü›Ùš[U˜\šX[ÏË™Ù]
+Ëœ›Ùš[JOËœÛ›ÝÓ[™LHÏÈNÂˆËÈ™XÛÙÛš][ÛŽˆ™KY[\š[™ÈHX™[ÙY[ˆX\›Y\ˆÛ˜\È˜XÚÈ[ÈBˆËÈ˜[Z[X\ˆXÙH
+HÝ]Ùˆ™XÛÙÛš][ÛŠH˜]\ˆ[ˆ˜Y[™ÈÛÛY]Ú\™BˆËÈ™]Ëˆš\œÝØØÝ\œ™[˜ÙHÙY\È]È›Ý™[KY\š]™Y˜[œÚ][Û‹‚ˆYˆ
+Hˆ	‰ˆÙY[“X™[Ëš\ÊX™[ÖÚWJJHË˜[œÚ][ÛˆH	ØÝ]	ÎÂˆÙY[“X™[Ë˜Y
+X™[ÖÚWJNÂˆJNÂ‚ˆËÈ\šXÈ\Ú[Ûˆ
+ÙXÝ[Û‘\Ú[ÛŠNˆÚ[ˆ\šXÜÈÙ\™H›Ý[™[™™\ÛÛ™YˆËÈ›ÛZ\ˆÝXÝ\˜[™XY
+™\œÙKØÚÜ\ËØœšYÙKÚ[œÝ[Y[[Ú[›ËÂˆËÈÝ]›È
+È\‹\ÙXÝ[Ûˆ˜[[˜ÙKÚ[[œÚ]JHÛÈ\È›Ý™[KY\š]™YˆËÈØÚY[HKHÞ[˜ÙY\šXÜÈØ[ˆ[œÙ\ÛY\™ÙH›Ý[™\šY\ÈÛ˜\YÈBˆËÈ™X]ÜšYZ[ˆ\šXÜÈÛ›HYX™[ËˆXœÙ[\šXÔÙXÝ[ÛœÈ\ÈBˆËÈYH›Ë[Ü
+\ÙTÙXÝ[ÛœÈ™]\›œÈH^XÝØ[YH\œ˜^JK‚ˆ\ËœÙXÝ[ÛœÈH\ÙTÙXÝ[ÛœÊ\ËœÙXÝ[ÛœË\šXÔÙXÝ[ÛœË˜\‘ÜšY\˜][Û“\ÊNÂ‚ˆËÈHÛÛ™XÝÜˆ˜XÚÈ\ÈH\ÝÛÜ™
+ÛÛ™XÝÜ•˜XÚËšœÊKˆ]™\ž][™ÂˆËÈX›Ý™H\È[™H\ÈS‘‘T”‘QKH›Ý™[HÝ]Ë›Ü›HX™[Ë\šXÂˆËÈÝXÝ\™HKH[™]™\žHÛ™HÙˆÜÙH™XYÈØ[ˆ™HÜ›Û™ÈX›Ý]BˆËÈ\XÝ[\ˆÛÛ™ËˆHÝYH\È›ÝH™XYˆH^Y\ˆÜ›ÝH]ÛÈ[‚ˆËÈ]]Ü™Y›Ý[™\žHÜˆš[ÛYHÝ™\œšY\ÈÚ]]™\ˆØ\È]XÝY\™K‚ˆËÈXœÙ[ÝY\È\ÈHYH›Ë[Ü
+HØ[YH\œ˜^H™Y™\™[˜ÙHÛÛY\È˜XÚÊK‚ˆ\ËœÙXÝ[ÛœÈH\PÛÛ™XÝÜ”ØÚY[J\ËœÙXÝ[ÛœËÛÛ™XÝÜ”ØÚY[K˜\‘ÜšY\˜][Û“\ÊNÂˆB‚ˆÙ]™[”Ü]
+\˜][Û“\ËŠHÂˆÛÛœÝÝ]H×NÂˆ›Üˆ
+]HHÈHHŽÈJÊÊHÝ]œ\Ú
+
+HÈŠH
+ˆ\˜][Û“\ÊNÂˆ™]\›ˆÝ]ÂˆB‚ˆÊŠˆ›Ý[™\žHSQTÈOˆÝ][™XÙ\È[È\ÈØÚY[IÜÈÝÛˆ˜\•[Y\ØžBˆ
+ˆ™X\™\ÝÚ[ˆ\È\ÈHÚÛHY™[˜ÙHYØZ[œÝHÛÈÚY\Âˆ
+ˆ\ØYÜ™YZ[™ÈX›Ý]Z\ˆ[˜[\Ú\ÈÜšYˆÚ]]™\ˆÜšYH]XÝÜˆ˜[ˆÛ‹ˆ
+ˆ]È[œÝÙ\œÈ[™]HšYÚ[ÛY[È[ˆHÛÛ™Ëˆ[Ø^\ÈÛÜÙYÚ]Bˆ
+ˆš[˜[[™^ÚXÚ›Ý[™\šY\Ó\Ø[X™\˜][HÛZ]Ëˆ
+‹ÂˆØÝ]Ñœ›ÛU[Y\Ê›Ý[™\šY\Ó\Ë˜\•[Y\ÊHÂˆÛÛœÝ\ÝYH˜\•[Y\Ë›[™ÝHNÂˆÛÛœÝ™X\™\ÝH
+\ÊHOˆÂˆ]™\ÝH™\ÝH[™š[š]NÂˆ›Üˆ
+]HHÈHH\ÝYÈJÊÊHÂˆÛÛœÝHX]˜XœÊ˜\•[Y\ÖÚWHH\ÊNÂˆYˆ
+™\Ý
+HÈ™\ÝHÈ™\ÝHNÈBˆBˆ™]\›ˆ™\ÝÂˆNÂˆÛÛœÝÝ]ÈH×NÂˆ›Üˆ
+ÛÛœÝ\ÈÙˆ›Ý[™\šY\Ó\ÊHÂˆÛÛœÝHH™X\™\Ý
+\ÊNÂˆYˆ
+HH\ÝY
+HÛÛ[YNÈËÈÛÝ[ÛÛ\ÙHYØZ[œÝHZ[ˆYˆ
+Ý]Ë›[™Ý	‰ˆHHÝ]ÖØÝ]Ë›[™ÝHWJHÛÛ[YNÈËÈÙY\]ÝšXÝHš\Ú[™ÂˆÝ]Ëœ\Ú
+JNÂˆBˆYˆ
+Ý]ÖÌHOOH
+HÝ]Ë[œÚY
+
+NÂˆÝ]Ëœ\Ú
+\ÝY
+NÂˆ™]\›ˆÝ]ÎÂˆB‚ˆÊŠ‚ˆ
+ˆÛ™HÝXÝ\˜[X™[\ˆZ[ÙXÝ[Û‹™XYÙ™ˆHÔÓIÜÈ™\]][Û‚ˆ
+ˆ\ÜÈžH™X\™\Ý›Ý[™\žK‚ˆ
+‚ˆ
+ˆ™X\™\Ý˜]\ˆ[ˆÛÛZ[›Y[ˆHÙXÝ[Û‰ÜÈÝ\\È\È˜\•[Y\ÖØÝ]Xˆ
+ˆK™KˆHÔÓH›Ý[™\žH[™XYHÛ˜\YÈH™X\™\ÝÚ[ÙˆTÂˆ
+ˆØÚY[IÜÈÜšY
+ØÝ]Ñœ›ÛU[Y\ÊKÛÈ]Ø[ˆ[™H™]ÈZ[\ÙXÛÛ™Âˆ
+ˆZ]\ˆÚYHÙˆH›Ý[™\žH]Ø[YHœ›ÛKˆÛÛZ[›Y[ÛÝ[[™Bˆ
+ˆÙXÝ[Ûˆ]›Ý[™YÝÛˆH™]š[Ý\ÈÙYÛY[	ÜÈX™[È™X\™\Ý\ÈBˆ
+ˆ^XÝ[™\œÙHÙˆHÛ˜\]›ÙXÙY][™™\›ÙXÙ\ÈHÛNŒBˆ
+ˆX\[™ÈÚ[™]™\ˆHÛÝ[ÈÈ[™H\‚ˆ
+‚ˆ
+ˆ™]\›œÈÏÛ[X™\–×_H[Ú[ˆH[˜[^™\‰ÜÈÝÛˆX™[ËØ›Ý[™\šY\È\™Bˆ
+ˆZ\ÜÚ[™ÈÜˆ\ØYÜ™YHÚ]XXÚÝ\ˆKHØ[\ˆ˜[È˜XÚÈÈÛÛ™Ñ›Ü›K‚ˆ
+‹ÂˆÛX™[Ñœ›ÛTÜÛJÝXÝ\™JHÂˆÛÛœÝ›Ý[™ÈHÝXÝ\™OË˜›Ý[™\šY\Ó\ËX™[ÈHÝXÝ\™OË›X™[ÎÂˆYˆ
+P\œ˜^Kš\Ð\œ˜^J›Ý[™ÊHP\œ˜^Kš\Ð\œ˜^JX™[ÊHX›Ý[™Ë›[™Ýˆ›Ý[™Ë›[™ÝOOHX™[Ë›[™Ý
+H™]\›ˆ[Âˆ™]\›ˆ\ËœÙXÝ[ÛœË›X\
+
+ÊHOˆÂˆ]™\ÝH™\ÝH[™š[š]NÂˆ›Üˆ
+]ÈHÈÈ›Ý[™Ë›[™ÝÈÊÊÊHÂˆÛÛœÝHX]˜XœÊ›Ý[™ÖÚ×HHËœÝ\\ÊNÂˆYˆ
+™\Ý
+HÈ™\ÝHÈ™\ÝHÎÈBˆBˆ™]\›ˆX™[ÖØ™\ÝNÂˆJNÂˆB‚ˆÊŠ‚ˆ
+ˆHZ[š[][H[X™\ˆÙˆÙXÝ[ÛœË›ÜˆÛÛ™ÜÈÛ™È[›ÝYÚÈ\Ù\™H[K‚ˆ
+‚ˆ
+ˆRS—ÔÑPÕSÓ—ÐÕUÈØ\È™]š[Ý\ÛHÛ›H]™\ˆHÝÙ\ˆ›Ý[™ÙˆHÛ[\Û‚ˆ
+ˆX^Ý]ØKH]ÝX\˜[YYHÙXÝ[Ûˆ
+˜YÙ]
+ˆØ\È]X\ÝË™]™\ˆ]ˆ
+ˆ™YHÝ]ÈÙ\™HXÝX[HXYKˆ›Ý[™È[ž]Ú\™HÛÝ[YH™\Ý[ÛÈBˆ
+ˆÚÛHÛÛ™ÈÛÝ[
+[™Y
+HÛÛYHÝ]\ÈHÚ[™ÛHš[ÛYNˆHX]š[Bˆ
+ˆÛÛ\™\ÜÙYX\Ý\ˆÚÜÙH˜Z[[™Ë[YX[ˆ›Ý™[H˜\™[H[Ý™\ÈÛX\œÈBˆ
+ˆXœÛÛ]HYKMˆ\Ý]›Ý[™È[ÙK[™]™\žHØ[™Y]HÙ]È™Z™XÝY‚ˆ
+‚ˆ
+ˆÛÎˆÛÝ[[™YˆHÛÛ™È\ÈÛ™È[›ÝYÚÈÛÙ]™\˜[ÙXÝ[ÛœÈ]ˆ
+ˆY‰ÝÙ][K™[^[ˆÜ™\ˆKHš\œÝ™K\XÚÈÚ]H›Ú\ÙH›ÛÜ‚ˆ
+ˆ›ÜY
+HX]\šX[\È›]]]È
+œ™[]]™JˆXZÜÈ\™HÝ[Ú\™Bˆ
+ˆHÛÛ™ÈXÝX[H\›œÊK[™Û›HYˆ]Ý[˜Z[Ë˜[˜XÚÈÈ]™[‚ˆ
+ˆ[YK\Ü]Ëˆ[ˆ]™[ˆÜ]\ÈHÛÜˆ™XYÙˆH]\ÚXË]]\ÈH˜\‚ˆ
+ˆ™]\ˆ^\šY[˜ÙH[ˆ›Ý\ˆZ[]\ÈÙˆÛ™H[˜Ú[™Ú[™ÈÛÜ›‚ˆ
+‚ˆ
+ˆ™]\›œÈÞØÝ]Îˆ[X™\–×KÛÝ\˜ÙNˆÜÝš[™ËXÛÜ˜]]™Nˆ[X™\–×__Bˆ
+ˆÛÝ\˜ÙX˜[Y\ÈÚ]H™]\›™YÝ]È\™HXYHÙˆÚ[ˆ\Âˆ
+ˆ[\™[™Y[™\È[Ú[ˆ]YÝ]Ø[Û™KˆXÛÜ˜]]™X\ÝÂˆ
+ˆHÝ]È
+žH[™^[È˜\•[Y\Ø
+H]Ø\œžH›È›Ý[™\žH]šY[˜ÙHKBˆ
+ˆ\™HXÚ[™ÈY[™Ë\ÈÜÜÙYÈH™X[]XÝYÜˆ[™™\œ™Yˆ
+ˆ›Ý[™\žHKHÛÈØ[\œÈ]\Ý›Ý™X][H\ÈH™]È]\ÚXØ[Y[]K‚ˆ
+‚ˆ
+ˆHÛÛ™šY[ÔÓH™XY
+ÜÛU\ØX›X
+H\È™]™\ˆ™\XÙYÚÛ\Ø[Nˆ]X^Bˆ
+ˆÛ›H™HYYÚ]XÛÜ˜]]™HÝ]ÈÈ™XXÚH›ÛÜ‹Ú[˜ÙHBˆ
+ˆXÚ[™È™Y™\™[˜ÙH\ØØ\™[™È™X[]\ÚXØ[]šY[˜ÙHØ\ÈHYÈ\Âˆ
+ˆÝX\™ÈYØZ[œÝ
+ÙYHHØ[\ŠKˆ]™\ž][™È[ÙHX^HÝ[™Bˆ
+ˆ™\XÙYÝ]šYÚ\È™Y›Ü™K‚ˆ
+‹ÂˆÙ[œÝ\™SZ[š[][TÙXÝ[ÛœÊÝ]ËÈXÚÔXZÜË˜\•[Y\Ë\˜][Û“\Ë\ÝYKÜÛU\ØX›JHÂˆÛÛœÝ\Ù\™YHX]›Z[ŠRS—ÔÑPÕSÓ—ÐÕUËX]™›ÛÜŠ\˜][Û“\ÈÈÑPÕSÓ—ÐÕUÐ•QÑUÓTÊJNÂˆYˆ
+\Ù\™YˆÝ]Ë›[™ÝHHH\Ù\™Y
+H™]\›ˆÈÝ]ËÛÝ\˜ÙNˆ[XÛÜ˜]]™Nˆ×HNÂ‚ˆYˆ
+ÜÛU\ØX›JHÂˆÛÛœÝYYH\Ë—ÜYÚ]XÛÜ˜]]™PÝ]ÊÝ]Ë\Ù\™YH
+Ý]Ë›[™ÝHJK\ÝY
+NÂˆ™]\›ˆYY›[™ÝˆÈÈÝ]ÎˆË‹‹›™]ÈÙ]
+Ë‹‹˜Ý]Ë‹‹œYYJWKœÛÜ
+
+KŠHOˆHHŠKÛÝ\˜ÙNˆ[XÛÜ˜]]™NˆYYBˆˆÈÝ]ËÛÝ\˜ÙNˆ[XÛÜ˜]]™Nˆ×HNÂˆB‚ˆÛÛœÝ™[^YHXÚÔXZÜÊ
+NÂˆYˆ
+™[^Y›[™Ý
+ÈHH\Ù\™Y
+H™]\›ˆÈÝ]ÎˆÌ‹‹œ™[^Y\ÝYKÛÝ\˜ÙNˆ	Ù[™\™ÞK[›Ý™[IËXÛÜ˜]]™Nˆ×HNÂ‚ˆËÈ›Ý[™È[ˆHÚYÛ˜[ÈÛÈÛŽˆÜ]H[YH]™[›H[œÝXYˆ]™\žBˆËÈÛ™HÙˆ\ÙHÝ]È\ÈXÛÜ˜]]™HKH[ˆ]™[ˆÜ]\È›ÝH™XYÙˆBˆËÈ]\ÚXÈ][‚ˆÛÛœÝØ[HX]›X^
+\Ù\™Y™[^Y›[™Ý
+ÈJNÂˆÛÛœÝ]™[ˆH×NÂˆ›Üˆ
+]ÈHNÈÈØ[ÈÊÊÊHÂˆÛÛœÝ\ÈH
+ÈÈØ[
+H
+ˆ\˜][Û“\ÎÂˆ]™\ÝH™\ÝH[™š[š]NÂˆ›Üˆ
+]HHNÈH\ÝYÈJÊÊHÂˆÛÛœÝHX]˜XœÊ˜\•[Y\ÖÚWHH\ÊNÂˆYˆ
+™\Ý
+HÈ™\ÝHÈ™\ÝHNÈBˆBˆYˆ
+™\Ýˆ	‰ˆ
+]™[‹›[™ÝOOH™\Ýˆ]™[–Ù]™[‹›[™ÝHWJJH]™[‹œ\Ú
+™\Ý
+NÂˆBˆ™]\›ˆ]™[‹›[™ÝˆÈÈÝ]ÎˆÌ‹‹™]™[‹\ÝYKÛÝ\˜ÙNˆ	Ù]™[‹\Ü]	ËXÛÜ˜]]™Nˆ]™[ˆBˆˆÈÝ]ËÛÝ\˜ÙNˆ[XÛÜ˜]]™Nˆ×HNÂˆB‚ˆÊŠˆÜ]HØ[\™Ù\ÝØ\È™]ÙY[ˆ^\Ý[™ÈÝ]Ø[ˆ[‹\™[Bˆ
+ˆ›Üˆš\ÝX[XÚ[™ÈKH\ÙHØ\œžH›È›Ý[™\žH]šY[˜ÙHÙˆZ\ˆÝÛ‹ÛÂˆ
+ˆHØ[\ˆ]\ÝX\šÈ[HXÛÜ˜]]™H˜]\ˆ[ˆ™X][H\È]XÝYˆ
+ˆÜˆ[™™\œ™YÝXÝ\™Kˆ™]™\ˆ[˜Ü›ØXÚ\ÈÛˆ[ˆ^\Ý[™ÈÝ]ˆ
+‹ÂˆÜYÚ]XÛÜ˜]]™PÝ]ÊÝ]ËØ[\ÝY
+HÂˆÛÛœÝÝ]H×NÂˆYˆ
+Ø[H
+H™]\›ˆÝ]ÂˆÛÛœÝØ\ÈH×NÂˆ›Üˆ
+]HHÈHÝ]Ë›[™ÝHNÈJÊÊHØ\Ëœ\Ú
+ØÝ]ÖÚWKÝ]ÖÚH
+ÈWWJNÂˆ›Üˆ
+]ˆHÈˆØ[ÈŠÊÊHÂˆØ\ËœÛÜ
+
+KŠHOˆ
+–ÌWHH–ÌJHH
+VÌWHHVÌJJNÂˆÛÛœÝÛËWHHØ\ÖÌNÂˆÛÛœÝZYHÈ
+ÈX]œ›Ý[™
+
+HHÊHÈŠNÂˆYˆ
+ZYHÈZYHJHœ™XZÎÈËÈØ\ÛÈÛX[ÈÜ]\\‚ˆÝ]œ\Ú
+ZY
+NÂˆØ\ÖÌHHÛËZYNÂˆØ\Ëœ\Ú
+ÛZYWJNÂˆBˆ™]\›ˆÝ]™š[\Š
+JHOˆHˆ	‰ˆH\ÝY
+NÂˆB‚ˆÜÙXÝ[Û]
+›ÝÓ\ÊHÂˆ™]\›ˆÙXÝ[Û’[™^]
+\ËœÙXÝ[ÛœË›ÝÓ\ÊNÂˆB‚ˆØ›[™
+›ÝÓ\ÊHÂˆ™]\›ˆ›[™ÙXÝ[ÛœÊ\ËœÙXÝ[ÛœË›ÝÓ\ÊNÂˆB‚ˆÊŠ‚ˆ
+ˆÛØ˜[™\Ù[][Ûˆ[ÙH
+Û\ÜÚXÈÓUËY›]œÈ™[™\™YÐËPÑÒJK‚ˆ
+ˆ™XZ[ÈÚ[ÝY]HÝš\ÈÚ[ˆÚYH[ÙHÚ[™Ù\Ë‚ˆ
+‹ÂˆÙ]š\ÝX[Ý[JÝ[JHÂˆÛÛœÝ™^HÝ[HOOH	ØÛ\ÜÚXÉÈÈ	ØÛ\ÜÚXÉÈˆ	Ü™[™\™Y	ÎÂˆYˆ
+\Ëš\ÝX[Ý[HOOH™^
+H™]\›ŽÂˆ\Ëš\ÝX[Ý[HH™^Âˆ\Ë—Ü™XZ[Ýš\Ê
+NÂˆB‚ˆÜ™XZ[Ýš\Ê
+HÂˆËÈÛ™HÜ˜Z]\ˆÛÛ™ÎˆÜXÝ˜[X\ÜÈ
+È˜\ÙK\ØØ[H[™\™ÞH[™X\šÜË‚ˆËÈ^Y\œÈ™XYY™™\™[˜XÙ]ÈÙˆ]ÛÈHÝXÚÈš[Y\ÈÚ]Ý]ÛÛš[™Ë‚ˆËÈÚX\
+Ø[\\È
+ÈH[™[Ùˆ[™X\šÜÊH[™ØXÚYÛˆHX[˜YÙ\‚ˆËÈÛÈHÚYK[[ÙH™XZ[Ù\Û‰Ý™YÈH[˜[\Ú\Ë‚ˆYˆ
+]\Ë—ÜšYÙTÜ˜Z]
+HÂˆ\Ë—ÜšYÙTÜ˜Z]H^˜XÝšYÙTÜ˜Z]
+\Ë™[™\™ÞPÝ\™\Ë\Ë™\˜][Û“\ÊNÂˆBˆ\ËœÝš\Ë˜ÛX\Š
+NÂˆB‚ˆÊŠ‚ˆ
+ˆH^Y\‰ÜÈ]\ÚXØ[[YH˜\ÙK[™YÈÙ[™\˜]TÚ[ÝY]K‚ˆ
+‚ˆ
+ˆ\”ÙXØ\ÈH˜]H\È˜[™ÙHXÝX[H˜]™[È\ÝHšY]Ù\Ž‚ˆ
+ˆHÛÜ›	ÜÈØÜ›ÛÜYY›ÝYÚH^Y\‰ÜÈÝÛˆ\˜[^˜][Ëˆ]\Âˆ
+ˆHZ\ÜÚ[™ÈÛÛœÝ[]\›œÈHÝš\œ›ÛHHXÛÜ˜]YŒ[Bˆ
+ˆ[ÈHÝ™]ÚÙˆSQHKHŒÙˆˆ\ÈHZ[]H[™H[ˆÙ‚ˆ
+ˆØÜ›Û[™ËÙˆH›Ý\Y[ˆÙXÛÛ™Ë[™H˜[™ÙHZYÝ]YØZ[œÝ]ˆ
+ˆÚÝÜÈHÛÛ™È]HXÙH[ÝH˜]™[]ˆZ\™YÚ]HÛÛ™ÉÜÈ™X]ˆ
+ˆ][ÛÈÙ]ÈHÜ˜Z[ˆÙˆHÙX]\š[™Ëˆ[™X]
+œ™YH[YJH\Âˆ
+ˆš[™NˆXÙ[Y[Ý[\Ù\È\”ÙXËÛ›HH[ÙH›ÜÈÝ]‚ˆ
+‹ÂˆÛ^Y\•[Y[[™J^Y\’Ù^JHÂˆÛÛœÝ˜][ÈHVQT—ÔUSÔÖÛ^Y\’Ù^WNÂˆYˆ
+J˜][Èˆ
+JH™]\›ˆ[Âˆ™]\›ˆÈ\”ÙXÎˆÓÔ“ÔÔQQÔÔÈ
+ˆ˜][Ë™X]ÙXÎˆ\Ë—Ø™X]ÙXÈÏÈNÂˆB‚ˆÊŠˆ˜ZÙHÛ™H›Ùš[IÜÈ‹SHÝš\Ù]ˆ^˜XÝYœ›ÛHÜ™XZ[Ýš\ÈÛÂˆ
+ˆÝš\Ñ›ÜŠ
+HØ[ˆ^š[HZ[HØ[YH[™ÈÛˆHØXÚHZ\ÜÈ
+H›Ùš[Bˆ
+ˆ˜[YH›ÝXYÙ\›H˜ZÙYKHÙYHÝYÙHIÜÈ›Û›H˜ZÙHÚ]	ÜÈØ\ÝŠKˆ
+‹ÂˆØZ[Ýš\Ù]
+ŠHÂˆÛÛœÝÛÛ™ÔÙYYH\ËœÛÛ™ÔÙYYÏÈNÂˆÛÛœÝÚYS[ÙHH	Ü™[™\™Y	ÎÂˆYˆ
+]\Ë—ÜšYÙTÜ˜Z]
+HÂˆ\Ë—ÜšYÙTÜ˜Z]H^˜XÝšYÙTÜ˜Z]
+\Ë™[™\™ÞPÝ\™\Ë\Ë™\˜][Û“\ÊNÂˆBˆËÈ\‹\ÙXÝ[Ûˆ™XÛÛ\ÜÚ][Ûˆ
+ÝYÙHJNˆH›Ùš[HØ\Ý›ÜˆHÜXÚYšXÂˆËÈÝXÝ\˜[X™[Ù]È]X™[	ÜÈÝÛˆÚ[™ÝÙYÜ˜Z]Û]ÛÙÞBˆËÈ[œÝXYÙˆHÚÛK\ÛÛ™ÈYÙÜ™YØ]KÛÈHÚÜ\È[™H™\œÙHÚ\š[™ÂˆËÈHš[ÛYIÜÈÛÛÜˆ[]HÝ[Ù]ÝXÝ\˜[HY™™\™[[Ý[Z[œË‚ˆÛÛœÝ˜\šX[H\Ë—Ü›Ùš[U˜\šX[ÏË™Ù]
+‹›˜[YJH[ÂˆÛÛœÝÜ˜Z]H˜\šX[ËœÜ˜Z]\Ë—ÜšYÙTÜ˜Z]ÂˆÛÛœÝÛÜ›Ú[™H\ËÛÜ›ËšÚ[™	Ø[[™IÎÂˆÛÛœÝX]HX]\šX[›ÜŠÛÜ›Ú[™
+NÂˆÛÛœÝÙYYH\ÚÙYY
+‹›˜[YJNÂˆÛÛœÝ[H‹™YÙSYÚ[ÂˆÛÛœÝ\œ˜Z[“[ÙÈH\ËÛÜ›Ë\œ˜Z[“[ÙÈ[ÂˆÛÛœÝÛÛ™ÔØÚ[YHH˜\šX[Ë˜Ú\˜XÝ\ˆ\ËÛÜ›Ë˜Ú\˜XÝ\”ØÚ[YHÒTPÕT—ÔÐÒSQTË˜Û\ÜÚXÎÂˆÛÛœÝØÚ[YHHX]œØÚ[YHOOH	ÜÛÛ™ÉÂˆÈÛÛ™ÔØÚ[YBˆˆ
+X]œØÚ[YH	‰ˆÒTPÕT—ÔÐÒSQTÖÛX]œØÚ[YWJHÛÛ™ÔØÚ[YNÂ‚ˆÛÛœÝÝš\ÈHßNÂˆÛÛœÝÙ^\ÈHÉÓ‰Ë	ÓÉË	Ó	Ë	ÓI×NÂˆÙ^\Ë™›Ü‘XXÚ
+
+^Y\’Ù^KY
+HOˆÂˆÛÛœÝ˜ZÙHH^Y\˜ZÙJÛÜ›Ú[™^Y\’Ù^JNÂˆÛÛœÝÚ\˜XÝ\ˆH[X™\‹š\Ò[YÙ\Š˜ZÙK˜Ú\˜XÝ\’[™^
+BˆÈØÚ[YVØ˜ZÙK˜Ú\˜XÝ\’[™^HØÚ[YVÌBˆˆ	ÛX\ÜÚY‰ÎÂˆÛÛœÝÛÛÜˆH^Y\ÛÛÜŠ‹œÚ[ÝY]KÛÜ›Ú[™^Y\’Ù^JNÂˆÛÛœÝ\œ˜Z[ˆH^Y\’Ù^HOOH	ÓIÈÈ\Ë\œ˜Z[”›Ùš[\ÏË–Û^Y\’Ù^WHˆ[ÂˆÝš\ÖÛ^Y\’Ù^WHHÙ[™\˜]TÚ[ÝY]JÂˆÙYYˆÙYY
+ÈY
+ÈKˆZYÚˆ˜ZÙKšZYÚˆØÝ]™\Îˆ˜ZÙK›ØÝ]™\Ëˆ[\]YNˆ˜ZÙK˜[\]YKˆ˜\Ù[[™Nˆ˜ZÙK˜˜\Ù[[™KˆÛÛÜ‹ˆÚYS[ÙKˆ›Ùš[Nˆ˜ZÙKœ›Ùš[KˆÚ\˜XÝ\‹ˆ[˜ÚÜŽˆ˜ZÙK˜[˜ÚÜ‹ˆš[YˆX]™š[YˆÚ[™ˆÛÜ›Ú[™ˆÛÛˆ˜ZÙK˜ÛÛˆ\˜Ú[\ˆ˜ZÙK˜\˜Ú[\ˆ˜^Tˆ˜ZÙK˜˜^TˆÛÛœ˜XÎˆ˜ZÙK˜ÛÛœ˜XËˆÜ™Ø[šXÎˆ˜ZÙK›Ü™Ø[šXËˆÛÙ[”ØØ[Nˆ˜ZÙKœÛÙ[‹ˆÜ˜Z]ˆ^Y\’Ù^Kˆ\œ˜Z[“[ÙÎˆ\œ˜Z[“[ÙÑ›Ü“^Y\Š\œ˜Z[“[ÙË˜ZÙJKˆ[Y[[™Nˆ\Ë—Û^Y\•[Y[[™J^Y\’Ù^JKˆYÙSYÚˆ[ˆËÈÛ™HÛÝ]]Ë[›Ü\ÜËˆÚ\™HHšY]ÈÜ[œË[™ÝÈ˜\Ý]ˆËÈ[Ý™\Ë\ÈHÛÛ™ÉÜÈ
+ÙYHÝ\œ˜Z[”ØÜ›Û
+K›Ý\ÈÚY‚ˆËÈHÚÛH›Ùš[H\ÈÛˆ\ÈÝš\ÛÈHXY›ÛÛHš]\ÈÛ™BˆËÈØØ[H›Üˆ[Ùˆ]›ÝH\‹]Ú[™ÝÈÝ™]Ú‚ˆÚYˆ\œ˜Z[ˆÈT”RS—ÔÕ’TÕÒQˆ[™Yš[™YˆÛÝ\˜ÙRZYÚÎˆ\œ˜Z[ˆÈ›Ùš[U[š]Ê\œ˜Z[ŠHˆ[ˆ™\Ù\™TØØ[Nˆ˜[ÙKˆJNÂˆJNÂ‚ˆËÈ[™X\šÜÈ\™H[[™KÜ›Û[™È™\ÜÚ[™ËˆÛÛ[[œÈ[™ÚÞ[[™\È]™HZ\‚ˆËÈÝÛˆY[X™\œÎÈ[™Ú[™ÈH[™HÛˆH˜]™H˜^H\ÈÝÈHÛÜ›ÈÛÛ\ÙY‚ˆYˆ
+ÛÜ›Ú[™OOH	Ø[[™IÈÛÜ›Ú[™OOH	ØZ\›\ÜÉÊHÂˆÛÛœÝ[™X\šÒÙ^HH‹›[™X\šÒÙ^H‹›˜[YNÂˆXÛÜ˜]TÝš\
+Ýš\Ë“[™X\šÒÙ^K\ÚÙYY
+	ÜÛÛ™ÔÙYYN‰Ø‹›˜[Y_N“
+K‹œÚ[ÝY]KÈÛÝ[ˆËØØ[NˆHJNÂˆXÛÜ˜]TÝš\
+Ýš\Ë“K[™X\šÒÙ^K\ÚÙYY
+	ÜÛÛ™ÔÙYYN‰Ø‹›˜[Y_N“X
+K‹œÚ[ÝY]KÈÛÝ[ˆ‹ØØ[NˆKŽHJNÂˆBˆ™]\›ˆÝš\ÎÂˆB‚ˆÊŠˆ^žKX˜ZÙH[™\™XÝ[ÛˆÝ™\ˆ\ËœÝš\ÎˆH›Ùš[H˜[YHXYÙ\›H˜ZÙYžBˆ
+ˆÜ™XZ[Ýš\Ê
+H\ÈHZ[ˆÛÚÝ\ÈH˜[YH›ÝY]˜ZÙY
+ÝYÙHIÜÂˆ
+ˆ›Û›H˜ZÙHÚ]	ÜÈØ\ÝˆKHH˜\šX[›ÝÚÜÙ[ˆ›Üˆ[žHÙXÝ[ÛŠH\Âˆ
+ˆZ[Ûˆš\œÝ\ÙH[™ØXÚYÛÈ]™\žHØ[Ú]HÙ]ÈHØ[YHÝš\ˆ
+ˆÙ]Ú]\ˆ]Ø\È˜ZÙY\œ›ÛÜˆÛˆ[X[™ˆ
+‹ÂˆÝš\Ñ›ÜŠÙ^JHÂˆÛÛœÝ[œÈH\Ë˜Ý\œ™[›[™ˆÈÝ\Ë˜Ý\œ™[›[™™œ›ÛK\Ë˜Ý\œ™[›[™×BˆˆÝ\ËœÙXÝ[ÛœÏË–ÌOËœ›Ùš[HÙ^WNÂˆ\ËœÝš\ËœÙ][œÊ[œÊNÂˆ]Ýš\ÈH\ËœÝš\Ë™Ù]
+Ù^JNÂˆYˆ
+Ýš\ÊH™]\›ˆÝš\ÎÂˆÛÛœÝ›Ùš[HH\Ë—Ü›Ùš[JÙ^JNÂˆÛÛœÝÚ[™H\ËÛÜ›ËšÚ[™	Ø[[™IÎÂˆÛÛœÝ\Ý[X]Yž]\ÈHÉÓ‰Ë	ÓÉË	Ó	Ë	ÓI×Kœ™YXÙJ
+Ý[^Y\’Ù^JHOˆÂˆÛÛœÝ˜ZÙHH^Y\˜ZÙJÚ[™^Y\’Ù^JNÂˆÛÛœÝÚYH\Ë\œ˜Z[”›Ùš[\ÏË–Û^Y\’Ù^WH	‰ˆ^Y\’Ù^HOOH	ÓIÈÈT”RS—ÔÕ’TÕÒQˆŒÂˆËÈÚ]HÝš\ÈÝÛˆHØ[YK\Ú^™Y[Z\ÜÚ]™HÚ[™ÝÈÝ\™˜XÙK‚ˆ™]\›ˆÝ[
+ÈÚY
+ˆ˜ZÙKšZYÚ
+ˆ
+ˆ
+˜ZÙKœ›Ùš[HOOH	ØÚ]IÈÈˆˆJNÂˆK
+NÂˆ\ËœÝš\Ëœ™\Ù\™J\Ý[X]Yž]\Ë™]ÈÙ]
+ÚÙ^WJJNÂˆÝš\ÈH\Ë—ØZ[Ýš\Ù]
+›Ùš[JNÂˆ\ËœÝš\ËœÙ]
+Ù^KÝš\ÊNÂˆ™]\›ˆÝš\ÎÂˆB‚ˆÜ›Ùš[J˜[YJHÂˆ™]\›ˆ\Ëœ›Ùš[\Ë™š[™
+
+ŠHOˆ‹›˜[YHOOH˜[YJH\Ëœ›Ùš[\ÖÌH’SÓQTÖÌNÂˆB‚ˆÊŠ‚ˆ
+ˆ™YÚ\Ý\ˆ
+Üˆ™KXØ\Ý
+HHÝ\ÝÛHš[ÛYH›Ùš[H›ÜˆHÝ\œ™[ÛÛ™Ë‚ˆ
+ˆØY™HÈØ[Y\ˆÛÛœÝXÝ[ÛŽÈÝš\ËÙšY[È]\Ý[™XYH^\Ý›Ü‚ˆ
+ˆH›Ùš[H˜[YH
+ÛÛœÝXÝÜˆ][Ø^\ÈZ[È[HÚ[ˆÝ\ÝÛPš[ÛYBˆ
+ˆ\È\ÜÙY[ŠKˆÝ™YÚ\Ý˜][ÛˆÙˆHœ˜[™[™]È›Ùš[HZY\ÛÛ™È\È›Ýˆ
+ˆÝ\ÜY8 %›ÜH™]ÈRQHÈ™XZ[HÛÜ›‚ˆ
+‹ÂˆØYÝ\ÝÛJÝ\ÝÛJHÂˆYˆ
+XÝ\ÝÛHXÝ\ÝÛK›˜[YJH™]\›ŽÂˆYˆ
+]\Ëœ›Ùš[\ËœÛÛYJ
+ŠHOˆ‹›˜[YHOOHÝ\ÝÛK›˜[YJJHÂˆ\Ëœ›Ùš[\Ëœ\Ú
+Ý\ÝÛJNÂˆBˆ\Ë˜Ý\ÝÛPš[ÛYHHÝ\ÝÛNÂˆYˆ
+\ËœÙXÝ[ÛœÈ	‰ˆ\ËœÙXÝ[ÛœË›[™Ý
+HÂˆ›Üˆ
+ÛÛœÝÈÙˆ\ËœÙXÝ[ÛœÊHËœ›Ùš[HHÝ\ÝÛK›˜[YNÂˆËÈ™\Ù]›[™ÛÈH™^˜]È[™È[HÛˆHÝ\ÝÛHÛÜ›‚ˆ\Ë˜Ý\œ™[›[™HÈœ›ÛNˆÝ\ÝÛK›˜[YKÎˆÝ\ÝÛK›˜[YKˆHNÂˆ\Ë—Û\ÝÙXÝ[Û’YH[ÂˆBˆB‚ˆÊŠˆHÙ^HÙˆHÛÜ›ˆYK\›Ý]HHÛÛÜˆžHHÝ\œ™[
+]X[^™Y
+Bˆ
+ˆ[]H›Ý][Û‹ˆ]X[^š[™ÈÈÙYÈÝ\È™Y›Ü™H›Ý][™ÈYX[œÈBˆ
+ˆØ[YH[™[Ùˆ›Ý]Y^Ýš[™ÜÈ™XÝ\ˆXÜ›ÜÜÈX[žHœ˜[Y\ËÛÈ\Âˆ
+ˆÛX[ØXÚHXÝX[H]È[œÝXYÙˆÜ›ÝÚ[™È[˜›Ý[™Yˆ
+‹ÂˆÜ›Ý]Y
+^
+HÂˆËÈHÛ™KTÜXÝ[HÙ^HÚY
+X\ÙY[™[™ÈH[˜ÚÜˆÛˆHÛšXÊBˆËÈ[™HÛÛ™ËY›Ü›HÙXÝ[ÛˆÚYÛ˜]\™HÛÛ\ÜÙH[ÈÛ™HYHÙ™œÙ]KBˆËÈ]X[^™YÙÙ]\ˆÈÙYÈÝ\ÈÛÈHØXÚHÝ^\ÈÝ‚ˆÛÛœÝYÈHX]œ›Ý[™
+
+\Ë—ÜÜXÝ˜[ÚY
+
+H
+È
+\ËœÙXÝ[Û’YPšX\È
+JHÈÊH
+ˆÎÂˆYˆ
+YÈOOH
+H™]\›ˆ^ÂˆÛÛœÝÙ^HH^
+È	ß	È
+ÈYÎÂˆ]ˆH\Ë—Ü›Ý][ÛØXÚK™Ù]
+Ù^JNÂˆYˆ
+ˆOOH[™Yš[™Y
+HÂˆˆH›Ý]RYR^
+^YÊNÂˆ\Ë—Ü›Ý][ÛØXÚKœÙ]
+Ù^KŠNÂˆBˆ™]\›ˆŽÂˆB‚ˆÊŠˆÛ™HÜXÝ[NˆÝÈ˜\ˆHÛÜ›	ÜÈÛÛÜˆÚÝ[›Ý]HÛÈ]È[˜ÚÜ‚ˆ
+ˆYH[™ÈÛˆHÛÛ™ÉÜÈÙ^Kˆ[˜ÚÜˆHHXÝ]™Hš[ÛYIÜÈ[ÈYBˆ
+ˆ
+Y[]KX™X\š[™ÊKˆX\ÙY[ˆ\]J
+HÛÈHÙ^HÚ[™ÙHÛY\ÎÈBˆ
+ˆ\™Ù]\È™\›ÈÚ[ˆ\™IÜÈ›È]XÝYÛšXÈY]
+Hš\œÝ™X]Ù‚ˆ
+ˆHÛÛ™ÊHÛÈHÛÜ›™]™\ˆÛ˜\ÈÛˆ›ÛÝˆ
+‹ÂˆÜÜXÝ˜[ÚY
+
+HÂˆ™]\›ˆ\Ë—ÜÜXÔÚYÂˆB‚ˆÊŠˆX\ÙHHÛ™KTÜXÝ[HÙ^HÚYÝØ\™]È\™Ù]ˆHXÝ]™Bˆ
+ˆš[ÛYIÜÈ[˜ÚÜˆYH]\Ý[™ÛˆHÛÛ™ÉÜÈÛšXË]ÌYËÜÙ[Z]Û™Bˆ
+ˆ
+HÚ\˜XÝ\œÉÈÝÛˆÜXÝ˜[ÜXÚ[™ÊKˆØ[YHÛ™K\ÛH[Y\ØØ[H\Âˆ
+ˆHÚ\˜XÝ\œÉÈYHÛYH
+“Ô“WÒQWÕUWÔÑPÈÛ\ÜÊKÛÈHÛÜ›[™ˆ
+ˆHÚ\˜XÝ\œÈ[Ý™HÙÙ]\ˆ[™™YXÙYY›\ÚÙY\ÈHÛYK™]™\‚ˆ
+ˆHÛ˜\ˆ
+‹ÂˆÝ\]TÜXÝ˜[ÚY
+ÙXÊHÂˆÛÛœÝÛšXÈH\ËÛšXÎÂˆ]\™Ù]HÂˆYˆ
+ÛšXÈOH[	‰ˆ\Ë˜Ý\œ™[›[™
+HÂˆÛÛœÝÈœ›ÛKËHH\Ë˜Ý\œ™[›[™ÂˆÛÛœÝXÝ]™HH\Ë—Ü›Ùš[JˆHÈÈˆœ›ÛJNÂˆÛÛœÝ[˜ÚÜ’^H
+XÝ]™H	‰ˆXÝ]™K˜Ù[\ÝX[	‰ˆXÝ]™K˜Ù[\ÝX[š[ÐÛÛÜŠH	ÈÙ™™ØL	ÎÂˆÛÛœÝÈ‹ËˆHH^Ô™ØŠ[˜ÚÜ’^
+NÂˆÛÛœÝÈHH™Ø•ÒÛ
+‹ËŠNÂˆ\™Ù]HÜXÝ˜[ÚYYÊÛšXÊH
+ˆ
+\ËœÜXÝ˜[[[Ý[ÏÈJNÂˆBˆ\Ë—ÜÜXÔÚY\™Ù]H\™Ù]Âˆ\Ë—ÜÜXÔÚYHX\ÙTÜXÝ˜[ÚY
+\Ë—ÜÜXÔÚY\™Ù]ÙXÊNÂˆB‚ˆÊŠˆHÝ\œ™[›[™Y[ÈÛÛÜˆKHÚ\™YXØÙ[›ÜˆQ[]™[Y™™XÝËˆ
+‹ÂˆÝ\œ™[[ÐÛÛÜŠ
+HÂˆYˆ
+]\Ë˜Ý\œ™[›[™
+H™]\›ˆ	ÈÙ™™™™™‰ÎÂˆÛÛœÝÈœ›ÛKËHH\Ë˜Ý\œ™[›[™Âˆ™]\›ˆ\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+\Ë—Ü›Ùš[Jœ›ÛJK˜Ù[\ÝX[š[ÐÛÛÜ‹\Ë—Ü›Ùš[JÊK˜Ù[\ÝX[š[ÐÛÛÜ‹
+JNÂˆB‚ˆÊŠˆ‹ŒH›[™Y™\Ù[˜ÙHÙˆH˜[YYš[ÛYHžšYÚ›ÝÈKHHØ[YBˆ
+ˆÜ›ÜÜÙ˜YHX]H[\›˜[K™žOOHÈK]ˆ
+H
+È
+‹™žOOHÈˆ
+ˆˆ
+XÚXÚÜÈØØ]\™Y›ÝYÚ˜]Ê
+H\ÙK^ÜÙY›ÜˆØ[\œÈÝ]ÚYBˆ
+ˆ\Èš[H
+K™Ëˆ™[™\™\‰ÜÈX]\ÝÜ[Û‹ÚXÚ™YYÈÈÛ›ÝÈÝÂˆ
+ˆ›Ûˆš\™HˆHÝ\œ™[š[ÛYH™XYÈÚ]Ý]\XØ][™ÈH›[™
+Kˆ
+‹ÂˆÝ\œ™[ž[Jž˜[YJHÂˆYˆ
+]\Ë˜Ý\œ™[›[™
+H™]\›ˆÂˆÛÛœÝÈœ›ÛKËHH\Ë˜Ý\œ™[›[™ÂˆÛÛœÝHH\Ë—Ü›Ùš[Jœ›ÛJKˆH\Ë—Ü›Ùš[JÊNÂˆ™]\›ˆ
+K™žOOHž˜[YHÈHHˆ
+H
+È
+‹™žOOHž˜[YHÈˆ
+NÂˆB‚ˆÊŠˆ[Ý™[Y[’RNˆHÙ[\ÝX[›ÙH\È[ˆXÝX[YÚKHÜÚ][Û‹ÛÛÜ‹[[œÚ]Kˆ
+‹ÂˆÝ\œ™[YÚ
+
+HÂˆ™]\›ˆ\Ë›YÚÛÛ\]SYÚ
+ÈØ[˜\ÕÚYˆ\ËËØ[˜\ÒZYÚˆ\ËšYÙ]ˆ\Ë—ÛYÚYÙ]ÏÈ\Ë˜YÙ]JNÂˆB‚ˆÊŠˆHÝ\œ™[ÚÞIÜÈ˜\ÙH
+Üš^›ÛŠHÛ™HKH\ÙY\ÈH[X›YY˜XÚÙ›Üˆ
+ˆš[ÛÈ›ÛÛZ[™ÈÝ]\ÝKŒ™]™\ˆ^ÜÙ\È›[šÈØ[˜\È]HYÙ\Âˆ
+ˆÙˆH
+[X™\˜][H[‹[Ý™\œØØ[›™Y
+H\˜[^^Y\œËˆ
+‹ÂˆÊŠˆHPÕU‘H›Ùš[IÜÈÝÛˆ[XšY[\XÛHÚ[™
+	ÜÛ›ÝÉË	Ü˜Z[‰Ë‹‹ŠHKBˆ
+ˆÚ[][][Ûˆ™XYÈ\ÈÛÈ[ˆ[š\™[Hœ›Þ™[ˆš[ÛYHXÙ\ÈH›ÛÝ[™Âˆ
+ˆ]™[ˆÚ[ˆH]\ÚXË\™XXÝ]™HÙX]\ˆ^Y\ˆ\ÈÚ[™ÈÛÛY][™È[ÙKˆ
+‹ÂˆÝ\œ™[\XÛRÚ[™
+
+HÂˆYˆ
+]\Ë˜Ý\œ™[›[™
+H™]\›ˆ[ÂˆÛÛœÝÈœ›ÛKËHH\Ë˜Ý\œ™[›[™Âˆ™]\›ˆ\Ë—Ü›Ùš[JˆHÈÈˆœ›ÛJKœ\XÛ\ËšÚ[™ÂˆB‚ˆÊŠˆHÝ\œ™[›[™Y[XšY[\\XÛHÛÛÜˆKH]ÈH[™[™ÈY™‚ˆ
+ˆ
+š\Q–
+HÜˆ[žHÝ\ˆÛ™K[Ù™ˆY™™XÝ™XY\È›Ùˆ\Èš[ÛYH‚ˆ
+ˆÚ]Ý]™YY[™È]ÈÝÛˆ\‹Xš[ÛYHÛÛÜˆX›Kˆ
+‹ÂˆÝ\œ™[\XÛPÛÛÜŠ
+HÂˆYˆ
+]\Ë˜Ý\œ™[›[™
+H™]\›ˆ	ÈÙ™™™™™‰ÎÂˆÛÛœÝÈœ›ÛKËHH\Ë˜Ý\œ™[›[™Âˆ™]\›ˆ\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+\Ë—Ü›Ùš[Jœ›ÛJKœ\XÛ\Ë˜ÛÛÜ‹\Ë—Ü›Ùš[JÊKœ\XÛ\Ë˜ÛÛÜ‹
+JNÂˆB‚ˆÝ\œ™[ÚÞP˜\ÙJ
+HÂˆYˆ
+]\Ë˜Ý\œ™[›[™
+H™]\›ˆ	ÈÌMMŽ	ÎÂˆÛÛœÝÈœ›ÛKËHH\Ë˜Ý\œ™[›[™Âˆ™]\›ˆ\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+\Ë—Ü›Ùš[Jœ›ÛJKœÚÞVÌWK\Ë—Ü›Ùš[JÊKœÚÞVÌWK
+JNÂˆB‚ˆÊŠˆš\™\ÈH™]Ø\™Y][Üˆ›Û^HÚ^™YžH›Ý\™‘ÛÝ™\››ÜˆXY›ÛÛH[™ˆ
+ˆHÛÛ™ÉÜÈÝYÙY[[œÚ]HYÙ]ÛÛÜ™Yœ›ÛHHÝ\œ™[›[™Yˆ
+ˆ[È
+[ˆXÚ›ÛX]XÈš[ÛYHZÙHTÕPÉÜÈ™X\‹]Ú]HÝ[ˆÙ]ÈBˆ
+ˆ\Ø]\˜]Y›Û^H[œÝXYÙˆ[ˆ\˜š]˜\žHYJKˆ
+‹ÂˆÊŠˆÛÛ™XÝÜ‹XÝYY[›ÛY[˜H
+ÛÛ™XÝÜ•˜XÚËšœÊKˆ\ÙH™XXÚ\ÝBˆ
+ˆ™]Ø\™ÜÝÜ›HØ][™ÈH[\›˜[Ø[\œÈÛÈ›ÝYÚKH[ˆ]]Ü™YÝYBˆ
+ˆš\™\È]È›Û^HÜˆ]È›ÛÚ\™]™\ˆ]Ø\ÈÜš][‹[˜ÛY[™È[™\ˆBˆ
+ˆÛX\ˆÚÞHKH]™]\ÙHHØ[YH–Øš™XÝÈ[™HØ[YH[ËY\š]™Yˆ
+ˆÛÛÜš[™ËÛÈHÝYY›Û^H\È[™\Ý[™ÝZ\ÚX›Hœ›ÛH[ˆX\›™YÛ™Kˆ
+‹ÂˆÝYSY][ÜœÊ›ÝÓ\ËÝ™[™ÝHJHÂˆ\Ë—ÝšYÙÙ\“Y][ÜœÊ›ÝÓ\ËX]›X^
+‹X]œ›Ý[™
+ˆ
+Èˆ
+ˆÝ™[™Ý
+JJNÂˆB‚ˆÝYSYÚš[™Ê›ÝÓ\ÊHÂˆ\Ë›YÚš[™ËœÝšZÙJ›ÝÓ\Ë\ËË\Ë™Ü›Ý[™JNÂˆB‚ˆÝšYÙÙ\“Y][ÜœÊ›ÝÓ\Ë˜\ÙPÛÝ[
+HÂˆÛÛœÝÛÝ[HX]›X^
+‹X]œ›Ý[™
+˜\ÙPÛÝ[
+ˆ\Ëœ\XÛS][
+ˆ\Ë˜YÙ]
+JNÂˆÛÛœÝÈ‹ËˆHH^Ô™ØŠ\Ë˜Ý\œ™[[ÐÛÛÜŠ
+JNÂˆÛÛœÝÈÈHH™Ø•ÒÛ
+‹ËŠNÂˆÛÛœÝYHHÈPÒ“ÓPUP×ÔÐUÕ‘TÒÓÈLHˆÂˆ\Ë›Y][ÜœËšYÙÙ\Š›ÝÓ\ËÛÝ[YJNÂˆB‚ˆ\]J›ÝÓ\ËÙXË[™\™ÞPÝ\™\ËØ[S]™[HÛÜ›H
+HÂˆ\ËÙXÈH›ÝÓ\ÈÈLÂˆ\Ë˜Ø[S]™[HØ[S]™[Âˆ\Ë—Ù[˜ÙUÛÜ›HÛÜ›ÈËÈÙ\›Üˆ˜\”šYÙTÝÙ[J
+K™XYžHHÚ[BˆÛÛœÝÂˆœ›ÛKËœ›ÛRZYÚ][ÒZYÚ][œ›ÛTÛ›ÝÓ[™LKÔÛ›ÝÓ[™LKˆHH\Ë—Ø›[™
+›ÝÓ\ÊNÂˆ\Ë˜Ý\œ™[›[™HÂˆœ›ÛKËœ›ÛRZYÚ][ÒZYÚ][œ›ÛTÛ›ÝÓ[™LKÔÛ›ÝÓ[™LKˆNÂˆËÈÛ™HÜXÝ[NˆÛYHHÙ^HÚY
+™YYÈH›[™\Ý™\ÛÛ™Y
+K‚ˆ\Ë—Ý\]TÜXÝ˜[ÚY
+ÙXÊNÂ‚ˆËÈ˜[X]\™ÞNˆ]XÝÙXÝ[Ûˆ›Ý[™\šY\È[™š\™HZ\ˆ˜[œÚ][Ûˆ–‚ˆÛÛœÝÙXÝ[Û’YH\Ë—ÜÙXÝ[Û]
+›ÝÓ\ÊNÂˆ\Ë˜Ý]›\Ú\Ýš\™YH˜[ÙNÂˆ\ËœÙXÝ[Û’\ÝÚ[™ÙYH˜[ÙNÂˆYˆ
+ÙXÝ[Û’YOOH\Ë—Û\ÝÙXÝ[Û’Y
+HÂˆÛÛœÝÙXÈH\ËœÙXÝ[ÛœÖÜÙXÝ[Û’YNÂˆYˆ
+\Ë—Û\ÝÙXÝ[Û’YOH[
+HÂˆYˆ
+ÙXË˜[œÚ][ÛˆOOH	ØÝ]	ÊHÈ\Ë—ØÝ]›\ÚHNÈ\Ë˜Ý]›\Ú\Ýš\™YHYNÈBˆ[ÙHYˆ
+ÙXË˜[œÚ][ÛˆOOH	ÜÚ]\‰ÊHÂˆËÈ›ÝYÚH™X[˜]H[Z]\‹ˆ›Ý[™\šY\È\™H[ÝÙYÈÚ]ˆËÈRS—ÔÑPÕSÓ—ÐÕUÑÐTÓTÈ
+L\ÊH\\ÛÈ™Y›Ü™H\ÈÛÈ™X\‹]Ý[ˆËÈ›XÚÛÝ]È[]™[ˆÙXÛÛ™È\\Ù\™HH\›Z]YÝ]ÛÛYHKH[™ˆËÈ›Ý[™È[ÙH[ˆHØ[YH[˜ÝX]\È]\™ˆHØ]IÜÈ›ÛÜ‚ˆËÈØ[››Ý™Hž\\ÜÙY
+˜[œÚ][ÛŽˆYHÚÚ\ÈÛ›HH›Ø˜Xš[]BˆËÈ›Û
+KÚXÚ\È^XÝHHÝX\˜[YHØ[Y\™K‚ˆÛÛœÝš\™YH\Ë—ÜÚ]\‘Ø]KžQš\™J›ÝÓ\ËÈ[[œÚ]Nˆ\ËšX™Q\XÈ˜[œÚ][ÛŽˆYHJNÂˆ\ËœÚ]\‘XYÈHÈš\™Y™X\ÛÛŽˆ\Ë—ÜÚ]\‘Ø]K›\Ý™X\ÛÛ‹]\Îˆ›ÝÓ\ÈNÂˆYˆ
+š\™Y
+HÈ\Ë—ÜÚ]\”Ý\\ÈH›ÝÓ\ÎÈ\Ë—ÜÚ]\˜\“\ÈHÙXË˜˜\“\ÎÈBˆBˆËÈH\šXËZY[YšYY[œÝ[Y[[ÜÛÛÈÙXÝ[ÛˆÙ]ÈHØ[YBˆËÈÜÝYÚÛ˜\H\H›ÜÙ\ÈKHHÚÝÈ›ÝXÙ\ÈH›ØØ[ÂˆËÈÝ\[™È˜XÚÈ\Ý\È]XÚ\È]›ÝXÙ\È[HÝ\[™È›ÜØ\™‚ˆYˆ
+ÙXËšÚ[™OOH	Ú[œÝ[Y[[	ÊH\Ë›YÚšYËšYÙÙ\Š›ÝÓ\Ë\Ë›ZY[Ö\Ë›ZY[ÖJNÂˆ\ËœÙXÝ[Û’\ÝÚ[™ÙYHYNÂˆ\Ë›\Ý˜[œÚ][Û”Ý[HHÙXË˜[œÚ][ÛŽÂˆBˆ\Ë—Û\ÝÙXÝ[Û’YHÙXÝ[Û’YÂˆBˆËÈHÜ›ÜÜÙ˜YHH›Ý[™\žHÝ\Y
+HXÚ\Ú[ÛˆX›Ý™H\ÈHÛ›BˆËÈ[™È][Ý™\ÈH\™Ù]È\È\ÝØ[ÜÈÝØ\™]
+K‚ˆËÈÛ[ÛÝH˜]È\‹Yœ˜[YHØØÛ\Ú[Ûˆ˜]Ê
+HYX\Ý\™YˆHšYÙH\ÂˆËÈ[˜Ú[™ËÛÈ[žHÚ[™ÛHœ˜[YIÜÈšYÝ\™H\È›Ú\ÞNÈHŒ\ÈÛ™K\ÛHYX[œÂˆËÈH[X™\ˆH›Ý[™\žH™XYÈ\ØÜšX™\ÈH”SRS‘È˜]\ˆ[ˆÚXÚ]™\‚ˆËÈ\ÙˆHÝÚ[™ÈH›Ý[™\žH\[™YÈ[™Û‹‚ˆYˆ
+\[Ùˆ\Ë—ÜšYÙSØØÛ\Ú[Û”˜]ÈOOH	Û[X™\‰ÊHÂˆÛÛœÝÈHHHX]™^
+YÙXÈÈKŒ
+NÂˆ\Ë—ÜšYÙSØØÛ\Ú[ÛŒH
+ÏH
+\Ë—ÜšYÙSØØÛ\Ú[Û”˜]ÈH\Ë—ÜšYÙSØØÛ\Ú[ÛŒJH
+ˆÎÂˆBˆËÈ\Ý[Ø]™KˆÙXÝ[Û’\ÝÚ[™ÙY\ÈHÓ‘HØ]HÛˆHÜš^›Û‚ˆËÈÚ[™Ú[™È]ÈZ[™X›Ý]™Z[™È›ØÚÈÜˆØ]\Žˆ\ÚÚ[™È\‹Yœ˜[YHÛÝ[ˆËÈ›\H˜XÚÈÙˆHØÙ[™H]™\žH[YHH[ÛÛ[[ˆ[˜ÙY\ÝBˆËÈ™\ÚÛÚ\™X\È\È[™È]™\žHÝØ\ÛˆH]\ÚXØ[›Ý[™\žKˆËÈ[Û™ÜÚYHH˜[œÚ][Ûˆ–][™XYHÛÝ™\ˆ]ˆ]™\žHÝ\ˆœ˜[YBˆËÈÛ›HØ[ÜÈHÜ›ÜÜÙ˜YHH\Ý›Ý[™\žHÝ\Y‚ˆÛÛœÝØ]™HHÝ\\Ý[Ø]™JˆÈÛŽˆ\Ë—Ù\Ý[Ø]™SÛ‹Z^ˆ\Ë—Ù\Ý[Ø]™SZ^KˆÈØØÛ\Ú[ÛŒNˆ\Ë—ÜšYÙSØØÛ\Ú[ÛŒKÙXÝ[ÛÚ[™ÙYˆ\ËœÙXÝ[Û’\ÝÚ[™ÙYÙXÈKˆ
+NÂˆ\Ë—Ù\Ý[Ø]™SÛˆHØ]™K›ÛŽÂˆ\Ë—Ù\Ý[Ø]™SZ^HØ]™K›Z^Âˆ\Ë—ØÝ]›\ÚHX]›X^
+\Ë—ØÝ]›\ÚHÙXÈÈŒJNÂ‚ˆËÈÛÛ™ËY›Ü›H™XÛÙÛš][ÛŽˆÛYHHÚÛH[]HÝØ\™HXÝ]™BˆËÈÙXÝ[Û‰ÜÈÝXÝ\˜[ÚYÛ˜]\™HYKÛÈH™]\›š[™ÈÚÜ\ÈÙ]\ÂˆËÈ˜XÚÈ[ÈHØ[YHÚY][Ø^\ÈÙX\œÈ
+H™XÛÙÛš^˜X›HœXÙHŠBˆËÈ˜]\ˆ[ˆÛ˜\[™ËˆÛÛœÝ[ÝXYHÛÛÜˆKH™YXÙYY›\ÚØY™K‚ˆÛÛœÝXÝ]™TÙXÝ[ÛˆH\ËœÙXÝ[ÛœÖÜÙXÝ[Û’YNÂˆ]\™Ù]YPšX\ÈHXÝ]™TÙXÝ[ÛËšYPšX\ÈÂˆËÈH\šXËZY[YšYYœšYÙH\ÈHÛ™HXÙH\ÚÙYÈÛÚÂˆËÈ[›Z\ÝZØX›HY™™\™[œ›ÛH]™\ž][™È\›Ý[™]KHH™\XÂˆËÈœšYÙHˆ^[Ù™‹ˆ]˜œšYÙHˆœ›ÛHÜÚ][Ûˆ[Û™H\ÈÛ›HHÙXZÂˆËÈ\Ý\Ú\Ë[™›Ü˜Ú[™ÈHÝÚ[™È[˜ÛÛ™][Û˜[H\ÈÝÈH]ZY]Ü‚ˆËÈY\™[K][˜Ù\Z[ˆœšYÙH\ÙYÈÙ]HØ[YH\ØØ[][Ûˆ\ÈBˆËÈÛÛ™šY[K^XÚ]HX™[YÛ™Kˆ[\œÛ]HžHÚ[™ÛÛ™šY[˜ÙBˆËÈ[œÝXYˆHÛÛ™šY[œšYÙHÙ]ÈH[›Ü˜ÙYÝÚ[™Ë[‚ˆËÈ[˜ÛÛ™šY[Û™HÙY\È]ÈÝÛˆÙYYYšX\ËÛÈH]ZY]œšYÙHØ[‚ˆËÈÝ[™H™\™\Ù[Y\È]ZY]‚ˆYˆ
+XÝ]™TÙXÝ[ÛËšÚ[™OOH	ØœšYÙIÊHÂˆÛÛœÝ›Ü˜ÙYYPšX\ÈHX]œÚYÛŠ\™Ù]YPšX\ÈJH
+ˆX]›X^
+X]˜XœÊ\™Ù]YPšX\ÊK“Ô“WÒQWÐ’PT×ÓPV
+ˆŽJH
+ˆKNÂˆÛÛœÝÚ[™ÛÛ™ˆHÛ[\JXÝ]™TÙXÝ[Û‹šÚ[™ÛÛ™šY[˜ÙHÏÈ
+NÂˆ\™Ù]YPšX\È
+ÏH
+›Ü˜ÙYYPšX\ÈH\™Ù]YPšX\ÊH
+ˆÚ[™ÛÛ™ŽÂˆBˆËÈHÝ\œ™[œ\˜[[[š]™\œÙH‰ÜÈÝÛˆÛX[YHšYšY\ÈHØ[YBˆËÈX\Ú[™È\ÈHÝXÝ\˜[YHšX\ÈX›Ý™HKHÛ™HÛ[ÛÝÛYK›ÝÛÂˆËÈÛÛ\][™ÈÛÛÜˆÞ\Ý[\Ë‚ˆ\™Ù]YPšX\È
+ÏH\Ë[š]™\œÙRYQYÈÂˆ\ËœÙXÝ[Û’YPšX\È
+ÏH
+HHX]™^
+YÙXÈÈ“Ô“WÒQWÕUWÔÑPÊJH
+ˆ
+\™Ù]YPšX\ÈH\ËœÙXÝ[Û’YPšX\ÊNÂ‚ˆËÈ\šXÈÝXÝ\™H
+ÙXÝ[Û‘\Ú[ÛŠNˆHXÝ]™HÙXÝ[Û‰ÜÈÚ[™[™]ÂˆËÈX\ÙY\šXÈ[[œÚ]K›Ý™]]˜[Y˜][È
+[È
+HÚ[ˆ›ÂˆËÈ\šXÈ]HØ\È]™\ˆ\ÙY[‹‚ˆ\Ë˜Ý\œ™[Ú[™HXÝ]™TÙXÝ[ÛËšÚ[™[Âˆ\Ë˜Ý\œ™[ÙXÝ[Û•^HXÝ]™TÙXÝ[ÛË›\šXÕ^[ÂˆÛÛœÝ\™Ù]\šXÒ[[œÚ]HHXÝ]™TÙXÝ[ÛË›\šXÒ[[œÚ]HÏÈÂˆ\Ë›\šXÒ[[œÚ]QX\ÙY
+ÏH
+HHX]™^
+YÙXÈÈ“Ô“WÒQWÕUWÔÑPÊJH
+ˆ
+\™Ù]\šXÒ[[œÚ]HH\Ë›\šXÒ[[œÚ]QX\ÙY
+NÂˆÛÛœÝ\™Ù]Ú[™ÛÛ™šY[˜ÙHHXÝ]™TÙXÝ[ÛËšÚ[™ÛÛ™šY[˜ÙHÏÈÂˆ\ËšÚ[™ÛÛ™šY[˜ÙQX\ÙY
+ÏH
+HHX]™^
+YÙXÈÈ“Ô“WÒQWÕUWÔÑPÊJH
+ˆ
+\™Ù]Ú[™ÛÛ™šY[˜ÙHH\ËšÚ[™ÛÛ™šY[˜ÙQX\ÙY
+NÂˆÛÛœÝ\™Ù]Ú[™YÙ]][HÒS‘Ð•QÑUÓUSÝ\Ë˜Ý\œ™[Ú[™HÏÈNÂˆ\Ë—ÚÚ[™YÙ]][X\ÙY
+ÏH
+HHX]™^
+YÙXÈÈ“Ô“WÒQWÕUWÔÑPÊJH
+ˆ
+\™Ù]Ú[™YÙ]][H\Ë—ÚÚ[™YÙ]][X\ÙY
+NÂ‚ˆËÈ\šXËYš]™[ˆÛÛœÝ[][ÛˆÛ\ÎˆY˜[˜ÙHHÞ[˜ÙY[\šXÜÈÝ\œÛÜ‚ˆËÈ[™ØØ[ˆXXÚ™]ÛK\™XXÚY[™H›ÝYÚ\šXÓ^XÛÛ‹ˆHX]Ú]Y]Y\ÂˆËÈHÛ\Ú\HÛˆHÛÛœÝ[][Û•ÙX]™\ˆ
+]ÈÝÛˆÛÛÛÝÛˆXÚY\ÂˆËÈÚ]\ˆ]XÝX[Hš\™\ÊK˜[YÛ›H[[H[™H]Ø[YHœ›ÛBˆËÈÝÜÈ™Z[™ÈHXÝ]™HÛ™HKHH™^[™IÜÈÝÛˆÝ\[YKÜˆBˆËÈš^Y˜[˜XÚÈ›ÜˆH\Ý[™H[ˆHÛÛ™Ëˆ\Ý]H[ˆËÈ^\™\È[™š\™Y˜]\ˆ[ˆÝ\™˜XÚ[™È]NˆH›ÜØ\™ÙYZÈ]ˆËÈ[\ÈHÝ\œÛÜˆXÜ›ÜÜÈX[žH[™\È[ˆÛ™H\œÝ
+ÙYHHÚ[HÛÜˆËÈ™[ÝÊHÛÝ[Ý\Ú\ÙHX]™HÚXÚ]™\ˆ[™IÜÈ[\[™YÈ™BˆËÈØØ[›™Y\ÝÚ][™È[™[™È[™Yš[š][K™XYHÈÜ\Ý™\‚ˆËÈÚ]]™\ˆH^Y\ˆØÜX˜™YÈ[œÝXYÙˆH[™H]X\›™Y]‚ˆYˆ
+\Ë—ÜÞ[˜ÙY\šXÜÊHÂˆÚ[H
+\Ë—Û\šXÓ[™PÝ\œÛÜˆ\Ë—ÜÞ[˜ÙY\šXÜË›[™Ýˆ	‰ˆ\Ë—ÜÞ[˜ÙY\šXÜÖÝ\Ë—Û\šXÓ[™PÝ\œÛÜ—K\ÈH›ÝÓ\ÊHÂˆÛÛœÝ[™HH\Ë—ÜÞ[˜ÙY\šXÜÖÝ\Ë—Û\šXÓ[™PÝ\œÛÜ—NÂˆÛÛœÝ™^[™HH\Ë—ÜÞ[˜ÙY\šXÜÖÝ\Ë—Û\šXÓ[™PÝ\œÛÜˆ
+ÈWNÂˆ\Ë—Û\šXÓ[™PÝ\œÛÜŠÊÎÂˆÛÛœÝ]HØØ[“[™J[™K^
+NÂˆYˆ
+]
+HÂˆÛÛœÝXY[™S\ÈH™^[™HÈ™^[™K\Èˆ[™K\È
+ÈT’P×ÑÓTÑSPÒ×ÓTÎÂˆ\ËÙX]™\‹š[Û\
+]™Û\YXY[™S\ÊNÂˆBˆBˆB‚ˆËÈ[[œÚ]HYÙ]ˆÝYÙHHÚÝÈKH™\Ý˜Z[™Y[›Ë[š[˜[HKBˆËÈY][Û˜[HØØ[YžHH\šXË\ÝXÝ\™HÚ[™
+HÚÜ\ËØœšYÙBˆËÈ™XYÈÝY\‹[ˆ[›ËÛÝ]›ÈÙ]\ÊKH›Ë[Ü][\Y\ˆÙˆHÚ[‚ˆËÈ\™IÜÈ›È\šXÈ]K‚ˆ\Ë—Ü›ÙÜ™\ÜÈH\Ë™\˜][Û“\ÈˆÈÛ[\J›ÝÓ\ÈÈ\Ë™\˜][Û“\ÊHˆNÂˆËÈÝYÚ[™È
+[YJH\šXÈÚ[™Ú]\ˆHÛÛ™È\ÈXÝX[HÝ\YˆËÈ
+]Y[ÊKˆHš\œÝÛÈØ[››ÝX\ˆH]\ÚXÎÈÜ[š[™ÑØZ[ˆ\ÈÚ]ÙY\ÂˆËÈH˜YKZ[ˆœ›ÛHÜ[š[™ÈÛˆH[K[]ÛÜ›‚ˆËÈ\Ë—ÛYÚYÙ]\ÈH[™[\[™Y˜\ÙNˆHÙ[\ÝX[QÒ]Ù[‚ˆËÈ
+š[K[YÚ[™ËÛÛXÝÚYÝÜÈKHÛÛ\]Y™[ÝÈ[È\Ë›YÚ
+H]\ÝˆËÈ™]™\ˆ[H\Ý™XØ]\ÙH›ØÝ\ÈXÚÙYHÝXš™XÝÝ\ˆ[ˆ	ÜÚÞIËÜ‚ˆËÈH™\žHÝXš™XÝ›ØÝ\È\È[\\Ú^š[™È
+ZY[ÈZYX\Ý[ÜÚ\ËZY\Ý\ÂˆËÈZY]›ÞXYÙJHÛÝ[š\ÚX›H[H[Û™ÈÚ]]™\ž][™È[ÙKˆ›ØÝ\Ó][ˆËÈ›ÛÈ[ÈHP“PÈ\Ë˜YÙ][œÝXYKH]™\žH^\Ý[™ÈXÛÜ˜]]™BˆËÈYÙ]\ØØ[YÚ]H
+HX[žHÝ™ÛØ˜[[HH
+ˆ\Ë˜YÙ]˜]ÜÂˆËÈ™[ÝË\ÈYÚšYÉÜÈÝÛˆYÙ]\˜[JH[\[œÈ›Üˆœ™YHÚ[™]™\‚ˆËÈÛÛYHÝ\ˆÝXš™XÝ\È›ØÝ\ËÚ]›È\‹\Ú]HÚ[™Ù\È™YYY‚ˆ\Ë—ÛYÚYÙ]H[[œÚ]PYÙ]
+\Ë—Ü›ÙÜ™\ÜÊH
+ˆ\Ë—ÚÚ[™YÙ]][X\ÙY
+ˆ\Ë›Ü[š[™ÑØZ[ŽÂˆ\Ë˜YÙ]H\Ë—ÛYÚYÙ]
+ˆ\Ë™›ØÝ\Ó][
+ˆ\ËœÝ[™\ÜÓ][ÂˆÛÛœÝØZ[ˆH\Ë˜YÙ]
+ˆ\Ëš\P›ÛÜÝÂˆ\Ë›X[™[Kš[[œÚ]HHØZ[ŽÂˆ\Ë›]\›]\˜][Û‹š[[œÚ]HHØZ[ŽÂˆ\Ë˜Þ[X]XÜËš[[œÚ]HHØZ[ŽÂˆ\ËœÝØ\›Kš[[œÚ]HHØZ[ŽÂˆ\ËœšX˜›Û‹š[[œÚ]HHØZ[ŽÂˆ\Ëœ™š[[œÚ]HHØZ[ŽÂ‚ˆËÈš[ÛYH\œÛÛ˜[]NˆHÛZ[˜[š[ÛYH[™\ÈH[›ÛY[˜HX[Ë‚ˆÛÛœÝ\œÈHT”ÓÓSUVÝˆHÈÈˆœ›ÛWHßNÂˆ\Ë˜Þ[X]XÜË›[ÙTÛÛH\œË˜Þ[X]XÓ[Ù\È[ÂˆÛÛœÝØ˜[™Ë˜[™WHH\œËœÝØ\›P˜[™ÌŒNL×NÂˆ\ËœÝØ\›KœÙ]˜[™
+˜[™Ë˜[™JNÂˆ\Ë›X[™[Kœ˜]S][H\œË›X[™[T˜]HÏÈNÂˆ\Ëœ™˜šX\ÈH\œËœ™šX\ÈÏÈÂˆ\Ë—ÜšX˜›Û”ØØ[S][H\œËœšX˜›Û”ØØ[HÏÈNÂˆËÈ]XZÙH\Ý[™Ú[š\™HÛ[ÚÙNˆHZ\ˆÝ^\È^žKÜ™Y[™Y›ÜˆBˆËÈÚ[HY\ˆZ]\ˆÙ]\È
+]XZÙQ\™XÝÜ‹™\Ý]™[KˆËÈš\™Q\™XÝÜ‹œÛ[ÚÙS]™[K›Ý\ÚY[ˆXXÚœ˜[YHžHÚ[][][ÛŠBˆËÈKH›ÛY[ÈHØ[YH^™H][\Y\ˆ]™\žHÝ\ˆX[[™XYBˆËÈ™YYËÛÈ\ÈÛÜÝÈ›Ý[™È™]È]˜]È[YKˆÛ[ÚÙH\Ú\È\™\‚ˆËÈ[ˆ\Ý
+ÞœÈž
+HKHHÚ[š\™HÚÝ[š\ÚX›HÚÚÙHHÚÞK›ÝˆËÈ\Ý[]‚ˆ\Ë—Ú^™S][H
+\œËš^™HÏÈJH
+ˆ
+\Ë[š]™\œÙR^™S][JBˆ
+ˆ
+H
+Èˆ
+ˆÛ[\J\Ë™\Ý]™[H
+JBˆ
+ˆ
+H
+ÈÈ
+ˆÛ[\J\ËœÛ[ÚÙS]™[H
+JNÂ‚ˆËÈHÚ[™ˆÛ™HØ[\H\ˆœ˜[YKÚ\™YžH]™\žHÛÛœÝ[Y\ˆ™[ÝÈKBˆËÈ™]™\ˆ™KY\š]™Y\ˆ\XÛKˆ[ˆXÝ]™HÙX]\ˆœ›ÛÝ\ÝÈ]\‚ˆËÈ˜Z[ˆ[™Û›ÝÈ\œš]™HÒUÚ[™›Ý[ÈÝ[Z\‹‚ˆ\Ë˜][ÜÜ\™K\˜[[˜ÙHH
+\œË\˜[[˜ÙHÏÈJH
+ˆ
+\Ë[š]™\œÙUÚ[™][JH
+ˆ
+H
+Èˆ
+ˆ\Ë—ØXÝ]™UÙX]\’[[œÚ]JNÂˆÛÛœÝ[™\™ÞR[œÝ[H[™\™ÞPÝ\™\ÈÈÛ[\J[™\™ÞPÝ\™\Ë™ÛØ˜[[™\™ÞJ›ÝÓ\Ë“UÕÑRQÒÊJHˆÂˆ\Ë˜][ÜÜ\™K\]JÙXË[™\™ÞR[œÝ[
+NÂ‚ˆËÈÜ›ÛÝ™H›ÜˆH[˜Ú[™È˜[™Ù\Îˆ[™\™ÞKYš]™[‹Ø[YYÙXÝ[ÛœÈÙ]KˆËÈHÝ\œ™[[š]™\œÙIÜÈ\œ˜Z[ˆšYYÙ\ÈH[\]YHH]BˆËÈ\\ˆZ]\ˆØ^K‚ˆÛÛœÝÜ›ÛÝ™U\™Ù]H[™\™ÞR[œÝ[
+ˆ
+HHMH
+ˆØ[S]™[
+H
+ˆ
+\Ë[š]™\œÙU\œ˜Z[“][JNÂˆ\Ë—Ù[˜ÙQÜ›ÛÝ™H
+ÏH
+HHX]™^
+YÙXÈÈMJJH
+ˆ
+Ü›ÛÝ™U\™Ù]H\Ë—Ù[˜ÙQÜ›ÛÝ™JNÂˆ\Ë—Ù[˜ÙTÝ\ÝZ[ˆ
+ÏH
+HHX]™^
+YÙXÈÈKŒJJH
+ˆ
+\Ë—Ù[˜ÙQÜ›ÛÝ™HH\Ë—Ù[˜ÙTÝ\ÝZ[ŠNÂˆÛÛœÝÚ[™H\Ë˜][ÜÜ\™K˜]
+ÛÜ›\Ëš
+ˆ
+NÂˆ\ËÚ[™HÚ[™Â‚ˆËÈ]\ÚXË\™XXÝ]™HÙX]\ŽˆÝ[™ÝÛˆ
+X\ÙY›ÝÛ˜\Y
+HYˆHXÝ]™BˆËÈš[ÛYIÜÈÝÛˆ\XÛHÚYÛ˜]\™H[™XYHTÈ\ÈÚ[™KHÕÔ“H[™XYBˆËÈ˜Z[œËTÕPÈ[™XYHÛ›ÝÜËÐRÕTH[™XYHÚYÈ][ËSP‘T‚ˆËÈ[™XYHÙÈ[X™\œËÛÈ\È^Y\ˆÛÝ[\ÝÝX›H[H\\™K‚ˆÛÛœÝXÝ]™T›Ùš[HH\Ë—Ü›Ùš[JˆHÈÈˆœ›ÛJNÂˆÛÛœÝÝ\™\ÜÕ\™Ù]HXÝ]™T›Ùš[Kœ\XÛ\ËšÚ[™OOH\ËÙX]\”Ý]KšÚ[™ÈˆNÂˆ\Ë—ÝÙX]\”Ý\™\ÜÈ
+ÏH
+HHX]™^
+YÙXÈÈKŒ
+JH
+ˆ
+Ý\™\ÜÕ\™Ù]H\Ë—ÝÙX]\”Ý\™\ÜÊNÂˆ\Ë—ØXÝ]™UÙX]\’[[œÚ]HH\ËÙX]\”Ý]Kš[[œÚ]H
+ˆ\Ë—ÝÙX]\”Ý\™\ÜÎÂˆËÈ˜Z[ˆ
+[™[žHÝ\ˆÜ›Ý[™XÛÛY[™È\XÛJH[™ÈÛˆH™X[ˆËÈ\œ˜Z[‹›ÝH\™ÛÙYØÜ™Y[‹Yœ˜XÝ[ÛˆÚ[‹ˆØÜ™Y[ˆOˆÛÜ›ˆËÈšXHHØ[YHÜšYÚ[ˆZY[È\È˜]Ûˆ]ÛÈH›ÜÝ™\ˆH˜[^BˆËÈXÝX[H˜[È[È]‚ˆÛÛœÝÜšYÚ[–H[X™\‹š\Ñš[š]J\Ë›ZY[Ö
+HÈ\Ë›ZY[Öˆ\ËÈ
+ˆNÂˆÛÛœÝÜ›Ý[™P]H\Ë™Ü›Ý[™šY[ˆÈ
+Þ
+HOˆ\Ë™Ü›Ý[™šY[šZYÚ]
+ÛÜ›
+È
+ÞHÜšYÚ[–
+JBˆˆ[Â‚ˆYˆ
+\Ë—ØXÝ]™UÙX]\’[[œÚ]HˆŒJHÂˆÛÛœÝÙX]\‘šY[H\ËÙX]\‘šY[Ë™Ù]
+\ËÙX]\”Ý]KšÚ[™
+NÂˆYˆ
+ÙX]\‘šY[
+HÙX]\‘šY[\]JÙXË\ËÙXË[™\™ÞPÝ\™\Ë›ÝÓ\ËØ[S]™[Ú[™Ü›Ý[™P]
+NÂˆB‚ˆ\Ë™šY[Ë™Ù]
+œ›ÛJK\]JÙXË\ËÙXË[™\™ÞPÝ\™\Ë›ÝÓ\ËØ[S]™[Ú[™Ü›Ý[™P]
+NÂˆYˆ
+ÈOOHœ›ÛJH\Ë™šY[Ë™Ù]
+ÊK\]JÙXË\ËÙXË[™\™ÞPÝ\™\Ë›ÝÓ\ËØ[S]™[Ú[™Ü›Ý[™P]
+NÂˆ\Ë—Ý\]TÚY][ÊÙXËÛÜ›Ú[™\Ë—Ü›Ùš[JˆHÈÈˆœ›ÛJJNÂˆ›Üˆ
+ÛÛœÝ˜[šÈÙˆ\Ë—Ù›ÙÐ˜[šÜÊHÂˆÛÛœÝ\š[ÙH\ËÈ
+ˆKŽÂˆ˜[šËžH
+
+
+˜[šËž
+ÈÚ[™ž
+ˆÙXÈ
+ˆŠH	H\š[Ù
+H
+È\š[Ù
+H	H\š[ÙÂˆB‚ˆËÈÜš^›ÛˆTH
+›ÛÝË]\][HŠNˆ˜\Ý]XÚÈÛÈ]È™YÚ\Ý\‹ÛÝÂˆËÈ™[X\ÙHÛÈ]œ™X]\È[œÝXYÙˆ›XÚÙ\š[™ÈKH^Ú]Y™]™\ˆ›Ú\ÞK‚ˆ›Üˆ
+]ˆHÈˆS‘ÐÓÕS•ÈŠÊÊHÂˆÛÛœÝ˜]ÈH[™\™ÞPÝ\™\ÈÈÛ[\J[™\™ÞPÝ\™\ËœØ[\J‹›ÝÓ\ÊJHˆÂˆÛÛœÝ]HH˜]Èˆ\Ë—Ù\TÛ[ÛÝYØ—HÈTWÐUPÒ×ÔÑPÈˆTWÔ‘SPTÑWÔÑPÎÂˆ\Ë—Ù\TÛ[ÛÝYØ—H
+ÏH
+HHX]™^
+YÙXÈÈ]JJH
+ˆ
+˜]ÈH\Ë—Ù\TÛ[ÛÝYØ—JNÂˆ\Ë—ÛX\ÜÚY‘\TÛ[ÛÝYØ—HHX\ÜÚY‘\TÝ\
+\Ë—ÛX\ÜÚY‘\TÛ[ÛÝYØ—K˜]ËÙXÊNÂˆB‚ˆËÈØÙX[ˆÙX]\ˆ
+Ø]™QšY[šœÊNˆÝ™\˜[ÝËX˜[™[™\™ÞH\ÈHÓ“BˆËÈÚ[›™[H]\ÚXÈ\È[ÈHÜXÝ˜[ÙXK[™]™[ˆ]Û›H]™\‚ˆËÈÚYÈÙXHÝ]KX\ÙYÝ™\ˆŒLÈKHH›Ü˜Z\Ù\ÈHÙXHÝ]K]ˆËÈ™]™\ˆXZÙ\ÈHØ]™KˆHÝ\™˜XÙH]Ù[ˆ[Ø^\ÈØ™^\È]ÈÝÛˆ\ÚXÜË‚ˆÛÛœÝ\™Ù]ÙXTÝ]HH
+\Ë—Ù\TÛ[ÛÝYÌH
+È\Ë—Ù\TÛ[ÛÝYÌWH
+È\Ë—Ù\TÛ[ÛÝYÌ—JHÈÎÂˆÛÛœÝ™^ÙXTÝ]HHX\ÙTÙXTÝ]J\Ë—ÜÙXTÝ]K\™Ù]ÙXTÝ]KÙXËL
+NÂˆËÈYX\Ý\™YYØZ[œÝHÙXHÝ]HHÜXÝ[HØ\È•RS]›ÝYØZ[œÝˆËÈ\Ýœ˜[YIÜÈKHÙYHÚÝ[™XZ[ÜXÝ[H›ÜˆÚHHY™™\™[˜ÙH\ÂˆËÈHÚÛH™Z]š[Ý\‹‚ˆYˆ
+ÚÝ[™XZ[ÜXÝ[J™^ÙXTÝ]K\Ë—ÜÜXÝ[TÙXTÝ]JJHÂˆ\Ë—ÝØ]™PÛÛ\Û™[ÈHZ[Ø]™PÛÛ\Û™[Ê\Ë—ÝØ]™QšY[ÙYYÚ[™ÜYY›Ü”ÙXTÝ]J™^ÙXTÝ]JK
+NÂˆ\Ë—ÜÜXÝ[TÙXTÝ]HH™^ÙXTÝ]NÂˆBˆ\Ë—ÜÙXTÝ]HH™^ÙXTÝ]NÂ‚ˆËÈ]™\žHÛ™HÙˆ\ÙHš]™H\È˜]ÛˆÛ›H™Z[™[›ÛY[˜Q[ÛÈÛ˜ÙBˆËÈHY\ˆ\ÈÚY][™È^HÙ\™H™Z[™ÈÚ[][]YÈ›ÙXÙBˆËÈ›Ý[™ÈKHŒËŒÉHÙˆœ˜[YHÔKÜ[Ûˆ^XÝHHÙXZÈ]šXÙ\È]ˆËÈÚY[ˆHš\œÝXÙKˆÝ\[™È[H\È›ÝÈØ]YÛˆHØ[YH›YÂˆËÈ]XÚY\ÈÚ]\ˆ[ž][™ÈÚ[]™\ˆÛÚÈ]H™\Ý[‚ˆËÂˆËÈØY™HÈœ™Y^™H˜]\ˆ[ˆX\ˆÝÛŽˆ›Ý[™ÈÝ]ÚYHZ\ˆÝÛˆ˜]ÂˆËÈ™XYÈ[H
+ÚXÚÙYXÜ›ÜÜÈ]™\žHÛÜ›˜]È]›Ý\Ý\ÈÛ™JKˆËÈ[™H]\ÚXÈ]™[È]Ý[š\™H][HKHÛ˜\‹ÚXÚËÛ’ÚXÚÈKBˆËÈ[Üš]H›Ý[™YÝ]H
+HÛÝ[\‹HØØ[\‹Û™H[‹\XÙH›Ü]Û‚ˆËÈ[ˆ^\Ý[™ÈÜšY
+KÛÈ›Ý[™È]Y]Y\È\Ú[H^H\™HÝÜYˆ^BˆËÈ™\Ý[YHœ›ÛHÚ\™H^HYÙ™‹ÚXÚ›ÜˆHY™\Ú[ÛˆšY[[™ÛÂˆËÈÜØÚ[]Üˆ˜[šÜÈ\ÈH˜[YÝ]H˜]\ˆ[ˆHÝ[HÛ™K‚ˆYˆ
+]\Ë—Ü\™ˆ\Ë—Ü\™‹œ[›ÛY[˜Q[
+HÂˆ\Ë›X[™[K\]J›ÝÓ\ËÙXË[™\™ÞPÝ\™\ËØ[S]™[
+NÂˆ\Ë˜Þ[X]XÜË\]J›ÝÓ\ËÙXË[™\™ÞPÝ\™\ËØ[S]™[
+NÂˆ\ËœÝØ\›K\]J›ÝÓ\ËÙXË[™\™ÞPÝ\™\Ë\Ë—Ø™X]\ËØ[S]™[
+NÂˆ\ËœšX˜›Û‹\]J›ÝÓ\ËÙXË[™\™ÞPÝ\™\ËØ[S]™[
+NÂˆ\Ëœ™\]J›ÝÓ\ËÙXË[™\™ÞPÝ\™\ËØ[S]™[
+NÂˆBˆ\Ë›YÚš[™Ë\]JÙXÊNÂˆ\Ë›YÚšYË\]J›ÝÓ\ËÙXË\Ë—Ø™X]\ËØ[S]™[\Ë˜YÙ]\Ë™™]™\ˆ
+NÂˆ\Ë›Y][ÜœË\]JÙXÊNÂˆËÈÚÞH™[™\ÜÈŽˆHÛÝÈœ™X][™È[ÙHÛÈHÛÛœÝ[][ÛˆÙX]™\‰ÜÂˆËÈÛÛ˜Ý\œ™[˜ÞHØ\ÛÜÙ[œÈ]™\žH›ÝÈ[™[ˆ˜]\ˆ[ˆÚ][™È›]ˆËÈ›ÜˆHÚÛHÛÛ™Ë\ÈH\™šX\ÈÝØ\™[œÙHÝ™\ˆH\ÝšYˆËÈÙˆH˜XÚÈÛÈHÚÞH\Èš\ÚX›H[\ˆ\ÈHÛÛ™ÈÛÜÙ\ÈÝ]‚ˆÛÛœÝÙX]™\”[ÙHHH
+ÈH
+ˆX]œÚ[Š\ËÙXÈ
+ˆŒJNÂˆÛÛœÝÙX]™\‘š[˜[HHÛ[ÛÝÝ\
+ŽK\Ë—Ü›ÙÜ™\ÜÊNÂˆÛÛœÝÙX]™\‘[™\ÜÈHÛ[\JÙX]™\”[ÙH
+ˆH
+ÈÙX]™\‘š[˜[JNÂˆ\ËÙX]™\‹\]J›ÝÓ\ËÙXËÙX]™\‘[™\ÜÊNÂˆËÈ™YXÙY›\ÚÙY\ÈHÛÝÈ[X›H[™›ÜÈH™X]]Ú‚ˆÛÛœÝÚXÚÕ]HH\Ëœ™YXÙY›\ÚÈLHˆ›ÝÓ\ÈH\Ë—Ù[˜ÙRÚXÚÓ\ÎÂˆ\ËœÜXÙTšYÙK\]J›ÝÓ\ËÙXË\Ë—Ù\TÛ[ÛÝY\Ë˜Ø[S]™[ÚXÚÕ]JNÂˆËÈ›ÜÈÙ[™HX]žHš[™È›ÝYÚHZÙH[™Û˜\]™\žHYÚ\šYÈ™X[BˆËÈÛÈZY[È›ÜˆH[ÛY[KHYÙKY]XÝYÙ™ˆH^\›˜[K\Ù]ˆËÈ›Ü]\È
+Ø[YH\ÜÝ›ÝYÚ]\›ˆ\ÈX]Ú[[Y\ŠK‚ˆYˆ
+[X™\‹š\Ñš[š]J\Ë™›Ü]\ÊH	‰ˆ\Ë™›Ü]\ÈOOH\Ë—Û\ÝÙY[‘›Ü]\ÊHÂˆ\Ë—Û\ÝÙY[‘›Ü]\ÈH\Ë™›Ü]\ÎÂˆ\Ë›ZÙTš[™Ë™^Ú]JŒŠNÂˆ\Ë›YÚšYËšYÙÙ\Š›ÝÓ\Ë\Ë›ZY[Ö\Ë›ZY[ÖJNÂˆ\Ë—ÝšYÙÙ\“Y][ÜœÊ›ÝÓ\Ë“ÔÓQUSÔ—ÐTÑJNÂˆËÈH›Ü[ÛÈ›ÝÜÈH›Û\ÈÝ[˜[ZHØ[XÜ›ÜÜÈHØÙX[‹YˆÛ™BˆËÈ\Û‰Ý›ÛY›ÝYÚ™XÙ[K‚ˆYˆ
+›ÝÓ\ÈH
+\Ë—Û\Ý›ÜÝ[˜[ZS\ÈÏÈR[™š[š]JHHÌ
+HÂˆ\Ë—Û\Ý›ÜÝ[˜[ZS\ÈH›ÝÓ\ÎÂˆ\Ë—ÝÝ[˜[Z\Ëœ\Ú
+È\Îˆ›ÝÓ\Ë\Žˆ\Ë—ÝÝ[˜[Z\Ë›[™Ý	HˆOOHÈHˆLHJNÂˆBˆBˆËÈÜ[[™ÈÝ™\ŽˆHš\œÝ[YHS–HXÝ]™HÝ[˜[ZIÜÈZYÚ[™[ÜBˆËÈÜ›ÜÜÙ\ÈÕSSRWÓÕ‘T•ÔÔÐÐSK\›HH›ÛÙÝ™\ˆH™X\ˆÜ›Ý[™ˆËÈ[™KˆH[™[ÜH]Ù[ˆ
+š\ÙHOˆÛOˆ™XÙYJH]™\È[‚ˆËÈ›ÛÙ\™XÝÜˆ
+Ü˜ËÜÚ[KÑ›ÛÙ\™XÝÜ‹šœËÝÛ™YžHÚ[][][ÛŠHKBˆËÈ\ÈÛ›H]XÝÈHšYÙÙ\‹Ú[˜ÙHÝ[˜[ZHØÚY[[™ËÜÝ]H\ÂˆËÈš[ÛYSX[˜YÙ\‰ÜÈÝÛˆÛXZ[‹ˆ\›Qœ›ÛUÝ[˜[ZJ
+H\È]Ù[ˆÝX\™YˆËÈ\‹Y]™[ÛÈHØ[	ÜÈÜ™\ÝÚ][™ÈX›Ý™HH™\ÚÛXÜ›ÜÜÂˆËÈÙ]™\˜[œ˜[Y\ÈÛ›H]™\ˆ\›\ÈÛ˜ÙK‚ˆÛÛœÝXÝ]™S›ÝÈH\Ë—ØXÝ]™UÝ[˜[ZJ\ËÈLŽ
+NÂˆYˆ
+XÝ]™S›ÝÈ	‰ˆÝ[˜[ZRZYÚØØ[J›ÝÓ\ÈHXÝ]™S›ÝË™]‹\ÊHHÕSSRWÓÕ‘T•ÔÔÐÐSJHÂˆ\Ë™›ÛÙË˜\›Qœ›ÛUÝ[˜[ZJ›ÝÓ\ËXÝ]™S›ÝË™]‹\ÊNÂˆBˆËÈYÙK]šYÙÙ\™YÛ™KYœ˜[YH›YÈ›ÜˆH[ÛY[HØ[	ÜÈ\›ØXÚˆËÈÚ[™ÝÈXÝX[H™YÚ[œÈ
+›ÝHÚ]˜]Ø[XY]\
+HKHÚ[][][Û‚ˆËÈ™XYÈ\ÈÈš\™HHØ[YH]]Ü™YXÝ]™X]Y[
+š[Qš[š\Úš]
+BˆËÈH›ÜØ\Ý[ÜÚ\ËÙš[˜[H[™XYHÙ]‚ˆ\ËÝ[˜[ZR\Ý\œš]™YHHXXÝ]™S›ÝÈ	‰ˆ]\Ë—ÝØ\ÕÝ[˜[ZPXÝ]™NÂˆ\Ë—ÝØ\ÕÝ[˜[ZPXÝ]™HHHXXÝ]™S›ÝÎÂˆËÈÛÛX›ÈZ[\ÝÛ™\È
+Ý™XZÈKÌLÌŒ
+H›ÝÈZ\ˆÝÛˆ™]Ø\™›Û^K‚ˆYˆ
+[X™\‹š\Ñš[š]J\Ë›Z[\ÝÛ™P]\ÊH	‰ˆ\Ë›Z[\ÝÛ™P]\ÈOOH\Ë—Û\ÝÙY[“Z[\ÝÛ™S\ÊHÂˆ\Ë—Û\ÝÙY[“Z[\ÝÛ™S\ÈH\Ë›Z[\ÝÛ™P]\ÎÂˆÛÛœÝYHX]›X^
+X]›Z[ŠRSTÕÓ‘WÓQUSÔ—ÐTÑK›[™ÝHK\Ë›Z[\ÝÛ™RY
+JNÂˆ\Ë—ÝšYÙÙ\“Y][ÜœÊ›ÝÓ\ËRSTÕÓ‘WÓQUSÔ—ÐTÑVÚYJNÂˆBˆ\Ë›ZÙTš[™Ë\]JÙXÊNÂˆ\Ë›]\›]\˜][Û‹\]J›ÝÓ\ËÙXË[™\™ÞPÝ\™\ËØ[S]™[Ú[™
+NÂ‚ˆYˆ
+\Ë—ÜØØ[›[™PXÝ]™JHÂˆ\Ë—ÜØØ[›[™VH
+ÏHÙXÈ
+ˆ\Ëš
+ˆ‹ŒŽÂˆYˆ
+\Ë—ÜØØ[›[™VHˆ\Ëš
+H\Ë—ÜØØ[›[™PXÝ]™HH˜[ÙNÂˆBˆ\Ë—Ü[Û‘›\ÚHX]›X^
+\Ë—Ü[Û‘›\ÚHÙXÈÈŒMJNÂ‚ˆ\Ë—ÙÛ]ÚXÝ]™S\ÈOHÙXÈ
+ˆLÂˆ\Ë—ÙÛ]Ú[Y\ˆOHÙXÎÂˆYˆ
+\Ë—ÙÛ]Ú[Y\ˆH
+HÈ\Ë—ÙÛ]ÚXÝ]™S\ÈHŒÈ\Ë—ÙÛ]Ú[Y\ˆH‹H
+È\Ë—ÜÝ\”ÙYY
+
+H
+ˆËNÈBˆB‚ˆ˜]ÊÝØ[˜\ËÛÜ›ÜšYÚ[–HÚÞU›ÞXYÙHH[\XÛS][HK\™ˆH[Ü›Ý[™šY]ÈH[
+HÂˆËÈY\\ˆ\™‘ÛÝ™\››Üˆ[™ÜÈ
+[Øš[H\™›Ü›X[˜ÙH›Ý[™
+NˆHÜ[Û˜[ˆËÈ[›ÛY[˜H^Y\ˆ[™H\Z^™H^Y\ˆÛÝ[›Ý™XY\È›Ü‚ˆËÈH™\ÝÙˆHœ˜[YKÛÈ]	ÜÈÝ\ÚYÛˆ\Ø˜]\ˆ[ˆ™XYYˆËÈ›ÝYÚ]™\žH[\‰ÜÈÚYÛ˜]\™K‚ˆ\Ë—Ü\™ˆH\™ŽÂˆËÈØÜ™\ÝÚ[È\È™KY\š]™YžHÙ˜]ÔšYÙU›Û[YKÙ˜]ÐÜ™\Ý[™ˆËÈÙ˜]ÐÛÛ›™XÝÜ’[È›ÜˆHØ[YH^Y\ˆKH\ÈŒMÙœ˜[YHXÜ›ÜÜÂˆËÈ‹SHÚ]HÜ›ÜÜÙ˜YHXÝ]™Kˆ]™\ž][™ÈÚ][ˆÛ™Hœ˜[YH]ÛÝ[ˆËÈXZÙH]™XÛÛ\]H
+Ýš\Y[]KØÜ›Û^Y\’Ù^K\œ˜Z[‘[™\™ÞJBˆËÈ\ÈØ\\™Y[ˆHØXÚHÙ^KÛÈ\È\ÈØY™HÈÛX\ˆÛ˜ÙH\™H[™ˆËÈ]]™\žHØ[\ˆ™[ÝÈÚ\™HÛ™H\š]˜][Ûˆ\ˆ[š\]YH[œ]‚ˆ\Ë—ØÜ™\ÝØXÚHH™]ÈX\
+
+NÂˆ\Ë—ÜšYÙS]\ÚXÐØXÚHH[ÂˆÛÛœÝ[›ÛY[˜Q[H\™ˆÈ\™‹œ[›ÛY[˜Q[ˆYNÂˆÛÛœÝÂˆœ›ÛKËœ›ÛRZYÚ][HKÒZYÚ][HKœ›ÛTÛ›ÝÓ[™LHHKÔÛ›ÝÓ[™LHHKˆHH\Ë˜Ý\œ™[›[™ˆÈœ›ÛNˆ\ËœÙXÝ[ÛœÖÌKœ›Ùš[KÎˆ\ËœÙXÝ[ÛœÖÌKœ›Ùš[KˆHNÂˆÛÛœÝHH\Ë—Ü›Ùš[Jœ›ÛJKˆH\Ë—Ü›Ùš[JÊNÂˆ\Ë—Ù˜]ÒZYÚ][HÈœ›ÛNˆœ›ÛRZYÚ][ÎˆÒZYÚ][NÂˆ\Ë—Ù˜]ÔÛ›ÝÓ[™HHÈœ›ÛNˆœ›ÛTÛ›ÝÓ[™LKÎˆÔÛ›ÝÓ[™LHNÂ‚ˆËÈÝ[œš\ÙKÛ[ÛÛœš\ÙHÞXÛNˆÚXÚ›ÙH\È\ÝÈYÚ[™ÝÈ\šÈBˆËÈÚÞHÚÝ[™XYˆÛÛ\]YÛ˜ÙH\ˆœ˜[YHKH™YYÈHÚÞHÜ˜YY[ˆËÈHÙ[\ÝX[]Ù[‹HX[™[KÛYÚ\šYÈ[˜ÚÜ‹[™HØÙX[‰ÜÂˆËÈ™Y›XÝ[ÛˆÛ[ÛÈ]™\ž][™È˜XÚÜÈHØ[YH›ÙK‚ˆÛÛœÝˆH^SšYÚ
+\ËÙXÈ
+ˆL\Ë—Ù^SšYÚÞXÛS\ÊNÂˆÛÛœÝÝ[•\H‹œÝ[[ˆŒNÂˆÛÛœÝXÝ]™P[HÝ[•\È‹œÝ[[ˆ‹›[ÛÛ[ÂˆËÈØ\ÝÚYÝÈ
+ÝYÙHHÙˆH[Ý[Z[ˆÝ™\š][
+NˆH™X\ˆ˜[™ÙHØ[ˆÛ›BˆËÈ\ÚXØ[HÚYÝÈH˜\\ˆÛ™HÚ[ˆYÚÛÛY\Èœ›ÛH›ÝYÚH™Z[™ˆËÈHØ[Y\˜HKHÝÈÛˆHÜš^›Û‹›ÝÝ™\šXYKHÛÈÝ™[™Ý\ÈYYˆËÈÈÝÈÕÈHXÝ]™H›ÙHÝ\œ™[HÚ]È
+XÝ]™P[™X\ˆH™X\‚ˆËÈHÜš^›ÛˆHÛ™Ù\ÝÚYÝÜÊK›ÝÈ[žH\XÝ[\ˆYÚ\™XÝ[Û‹‚ˆ\Ë—ØØ\ÝÚYÝÔÝ™[™ÝH
+HHÛ[\JXÝ]™P[
+JH
+ˆÐTÕÔÒQÕ×ÓPVÂˆÛÛœÝÙ[\ÝX[Qœ˜XÈHÙ[\ÝX[Qœ˜XÑ›ÜŠXÝ]™P[
+NÂˆËÈ‹‹˜[™ÝÈ˜\ˆXÜ›ÜÜÈHÚÞH]\È˜]™[YˆÚXÚ]™\ˆ›ÙH\È\ˆËÈÝÛœÈHYÚÛÈHYÚ	ÜÈ[˜ÚÜˆ›ÛÝÜÈ]›ÙIÜÈÝÛˆ\˜ÈKBˆËÈÚXÚ\ÈÚ]XZÙ\ÈÚYÝÜÈÝÚ[™È›ÝYÚH^H[œÝXYÙˆÚ[[™ÂˆËÈÛ™Hš^Y\™XÝ[Ûˆœ›ÛH]ÛˆÈ\ÚË‚ˆÛÛœÝÙ[\ÝX[œ˜XÈHÙ[\ÝX[œ˜XÑ›ÜŠÝ[•\È‹œÝ[^ŒHˆ‹›[ÛÛ^ŒJNÂˆËÈY\šX[\\œÜXÝ]™H^™HÝ[Ø\›\ËØÛÛÛÈÛˆHÛÛ™ÉÜÈÝÛˆ›ÙÜ™\ÜÂˆËÈ\˜È
+HÙ\\˜]KÛÝÙ\ˆÚYÛ˜[[ˆHÝ[œš\ÙKÛ[ÛÛœš\ÙHÞXÛJHKBˆËÈÛ›Hš^™UØ\›Xœ›ÛHHÛ^KX\˜ÈÝ\š]™\È\™K‚ˆÛÛœÝ\˜ÈH^P\˜Ê\Ë—Ü›ÙÜ™\ÜÊNÂ‚ˆËÈ[Ý™[Y[’RNˆHÙ[\ÝX[›ÙHÝX›\È\ÈHYÚKH]™\žBˆËÈÛÛœÝ[Y\ˆÝÛœÝ™X[H\Èœ˜[YH
+^Y\œËÚ\˜XÝ\œËØœÝXÛ\ÊBˆËÈ™XYÈHØ[YH\Ë›YÚ˜]\ˆ[ˆ™KY\š]š[™È]ÈÜÚ][Û‹‚ˆ\Ë›YÚHÛÛ\]SYÚ
+ÂˆØ[˜\ÕÚYˆØ[˜\ËÚYØ[˜\ÒZYÚˆØ[˜\ËšZYÚˆÙ[\ÝX[Qœ˜XËÙ[\ÝX[œ˜XË[ÐÛÛÜ’^ˆ\Ë˜Ý\œ™[[ÐÛÛÜŠ
+KˆYÙ]ˆ\Ë—ÛYÚYÙ][œ˜]™[ˆ\Ë[œ˜]™[ˆ^P\˜Ð[Nˆ‹™]Û[H
+È‹™\ÚÐ[Kˆ™YXÙY›\Úˆ\Ëœ™YXÙY›\ÚˆJNÂ‚ˆËÈHÜš^›ÛˆÛÛÜ‹[™œ›ÛH]HZ\ˆÛÛÜˆ]™\žH˜[™ÙH›ÙH[™BˆËÈÜ›Ý[™\™HØ\ÚYÝØ\™ˆÛÛ\]YT‘KX›Ý™HHÛÜ›ZÚ[™\Ü]ÚˆËÈ™[ÝË˜]\ˆ[ˆ\\ˆÝÛˆ[ˆHÛ\ÜÚXÈ]KHÙ]™[ˆÙˆBˆËÈZYÚÚ[™È™]\›ˆ™Y›Ü™H]Ú[ÛÈØZ\ÛÛÜ˜Ø\ÈÚ[\H™]™\‚ˆËÈÙ]›Üˆ[žHÙˆ[H[™]™\žHÛÛœÝ[Y\ˆÚ[[H™[˜XÚË‚ˆÛÛœÝÜš^›Û”[H
+Œˆ
+ˆ
+‹›šYÚ
+H
+È
+Ý[QX[Ê\Ëš\ÝX[Ý[JKœÜXÙUØ\ÚÈŒMˆ
+JH
+ˆNÂˆÛÛœÝÚÞRÜš^›ÛˆH\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+KœÚÞVÌ—K‹œÚÞVÌ—K
+JNÂˆÛÛœÝÚÞRÜš^›Û“šYÚHÜš^›Û”[ˆŒ‚ˆÈ\Ë›\œØXÚK™Ù]
+ÚÞRÜš^›Û‹’QÒÔÒÖWÐÓÓÔ‹Üš^›Û”[
+BˆˆÚÞRÜš^›ÛŽÂˆ\Ë—ØZ\ÛÛÜˆHÚÞRÜš^›Û“šYÚÂ‚ˆËÈ]™\ž][™ÈHÛÜ›˜]È[Ù[HÙ]È›Üˆ\Èœ˜[YK[ˆÛ™HØš™XÝ‚ˆËÈÜÚ][Û˜[\™Ý[Y[\ÝÈ]HÛÈÛÜ›È]ZÙH›ÈÚÞU›ÞXYÙBˆËÈÚ][ˆHØ[YHØ[Ú\H\ÈHš]™H]ÎÈH›Ü\H\ÈZ]\‚ˆËÈ™\Ù[Üˆ]\È›Ý‚ˆÛÛœÝœ˜[YHHÂˆÝØ[˜\ËÛÜ›ÜšYÚ[–K‹‹ˆ[›ÛY[˜Q[\XÛS][Ü›Ý[™šY]ËÚÞU›ÞXYÙKˆNÂ‚ˆËÈ\Ü]ÚÛˆÛÜ›Ú[™ˆ™YÚ\Ý\™YÚ[™È˜]È[\Ù[™\È[™ÙH\™BˆËÈÛ™NÈ	Ø[[™IÈ˜[È›ÝYÚÈHÜšYÚ[˜[]™[ÝË[™	ØØ]ÙIÂˆËÈ™]™\ˆ\œš]™\È\™H][
+ÙX‘Ó™[™\™\ˆ›Ý]\È]ÈØ]ÙT™[™\™\ŠK‚ˆËÈÚ]XXÚ[Ù[HX^HÝXÚÛˆ\Ø\Èš^YžHÓÔ“ÐÓÓ•PÕ[™ˆËÈ[™›Ü˜ÙYžHÛÜ›ÛÛ˜XÝ\ÝšœË‚ˆÛÛœÝ˜]ÕÛÜ›Ú[™HÓÔ“Ô‘S‘T‘T”Ë™Ù]
+\ËÛÜ›ËšÚ[™
+NÂˆYˆ
+˜]ÕÛÜ›Ú[™
+HÂˆ˜]ÕÛÜ›Ú[™
+\Ëœ˜[YJNÂˆ™]\›ŽÂˆB‚ˆ\Ë—Ù˜]ÔÚÞJÝØ[˜\ËK‹‹›šYÚ
+NÂ‚ˆËÈ[™]È
+È\Ý˜[\Y˜XÝË™Z[™]™\ž][™È[ÙH[ˆHX]™[œÈKBˆËÈ\™[H][ÜÜ\šXËš\œÝÈÛÈÛˆHY\\Ý\™ˆ[™Ë‚ˆYˆ
+[›ÛY[˜Q[
+H\ËœÚÞQ[œÙ[X›K™˜]ÊÝØ[˜\Ë\ËÙXÈ
+ˆLÂˆœ›ÛS˜[YNˆK›˜[YKÓ˜[YNˆ‹›˜[YKˆÛÛÜœÎˆÂˆÚÞSZYˆ\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+KœÚÞVÌWK‹œÚÞVÌWK
+JKˆÚ[ÝY]Nˆ\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+KœÚ[ÝY]K‹œÚ[ÝY]K
+JKˆ[Îˆ\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+K˜Ù[\ÝX[š[ÐÛÛÜ‹‹˜Ù[\ÝX[š[ÐÛÛÜ‹
+JKˆKˆÙXÎˆ\ËÙXËÜ›ÛÝ™Nˆ\Ë—ÜšYÙQ[™[ÜJ
+OË™Ü›ÛÝ™HÏÈ\Ë—Ù[˜ÙQÜ›ÛÝ™Kˆ™YXÙY›\Úˆ\Ëœ™YXÙY›\ÚˆJNÂ‚ˆËÈÜXÙHšYÙNˆÜ˜š][™]Ù[žH8 %˜Z[[ˆÛÙ™\Ù[[ˆ™[Û‹ˆ˜]Û‚ˆËÈ\™K™Y›Ü™H]™[ˆH]Û‹Ù\ÚÈØ\ÚÛÈ]Ú]È]H™\žH˜XÚÈÙ‚ˆËÈHÚÞHÝXÚÎˆH][ÜÜ\šXÈ[Ø\Ú\ÈÝ™\ˆ]ZÙH]ÛÝ[[žBˆËÈÝ\ˆY\\ÜXÙHYÚ[™HÝ[‹Û[ÛÛˆ
+˜]Ûˆ\\ˆÝÛ‹[‚ˆËÈÜ™[˜\žHÛÝ\˜ÙK[Ý™\ŠH›Ü\›HØØÛYH]˜]\ˆ[ˆ›ÛÛZ[™ÈÛˆÜˆËÈÙˆÛÛY][™È]\ÈÝ\ÜÙYÈ™XY\È[š[XYÚ[˜X›H˜\ˆ™Z[™[BˆËÈKH]\ÙYÈ˜]ÈQ•Tˆ›ÝÛÈ]ÈY]]™HÛÝÈØ][ˆœ›ÛÙ‚ˆËÈH[ÛÛˆ\ØÈ]Ù[‹ÚXÚ\È˜XÚÝØ\™È›ÜˆHÝXÝ\™HÚÜÙH[\™BˆËÈÚ[\ÈÛÈ\™ÙH[™˜\ˆÈ™H™X\˜žKˆˆ]È˜]ÈØ[Ø\È™[[Ý™YˆËÈ›ÜˆHÝ™]ÚÚ[HHÝ[[]™HÚÞU›ÞXYÙHÝ][ÛˆYÈ
+ÙYBˆËÈÚÞU›ÞXYÙKšœÈšYÙÙ\Š
+JHØ\ÈZ\ÙXYÛ›ÜÙY\È\ÎÈ™\ÝÜ™YÛ˜ÙHBˆËÈ™X[Ø]\ÙHØ\È›Ý[™[™š^Yˆ™Z[œÝ]YÛˆ^XÚ]™\]Y\ÝY\‚ˆËÈHÚÞH™XY\ÈÛÈ[\HÚ]Ý]]‚ˆÂˆÛÛœÝÜXÙPÛÛH\Ë—Ü›Ý]Y
+›Ý]RYR^
+ˆ\Ë›\œØXÚK™Ù]
+K˜Ù[\ÝX[š[ÐÛÛÜ‹‹˜Ù[\ÝX[š[ÐÛÛÜ‹
+KKˆ
+JNÂˆÛÛœÝšYÙPHHÝ[QX[Ê\Ëš\ÝX[Ý[JKœÜXÙTšYÙP[HÏÈNÂˆYˆ
+šYÙPHˆŒŠHÂˆÝœØ]™J
+NÂˆÝ™ÛØ˜[[HHšYÙPH
+ˆ
+[›ÛY[˜Q[ÈHˆ
+NÂˆ\ËœÜXÙTšYÙK™˜]ÊÝØ[˜\ËÜXÙPÛÛ\ËÙXË\Ëœ™YXÙY›\Ú
+NÂˆÝœ™\ÝÜ™J
+NÂˆBˆB‚ˆËÈ]Û‹Ù\ÚÈ[Ø\Ú\Èœ˜XÚÙ]HÝ[‰ÜÈÝÛˆš\ÙH[™Ù]‚ˆ›Üˆ
+ÛÛœÝØ\ÚÙˆÞÈÛÛÜŽˆ	ÈÙ™ŽXM˜‰Ë[Nˆ‹™]Û[HKÈÛÛÜŽˆ	ÈÌML	Ë[Nˆ‹™\ÚÐ[HWJHÂˆYˆ
+Ø\Ú˜[HˆŒJHÂˆÝœØ]™J
+NÂˆÝ™ÛØ˜[[HHØ\Ú˜[NÂˆÝ™š[Ý[HHØ\Ú˜ÛÛÜŽÂˆÝ™š[™XÝ
+Ø[˜\ËÚYØ[˜\ËšZYÚ
+NÂˆÝœ™\ÝÜ™J
+NÂˆBˆB‚ˆËÈXœšYÚÞHÚ\™NˆX[™[HÈšX˜›ÛˆÈÙX]™\ˆØØ[HÚ]ÚÞUÚ\™P[BˆËÈ
+ÛÙŒŒÎ™[ÛˆŒÌŠHÛÈÙ[ÛY]žH™Y[È]\ÚXØ[Ú]Ý]Ýš\[™Ë‚ˆÛÛœÝÚÞPHHÝ[QX[Ê\Ëš\ÝX[Ý[JKœÚÞUÚ\™P[HÏÈNÂˆËÈZY\Ý\ÉÜÈÚÞH›ÞXYÙH[™H[XšY[ÛÛ›™XÝ]KYÝÈÛÛœÝ[][ÛœËˆËÈ˜]ÛˆT‘HKH™Y›Ü™HHÝ[‹Û[ÛÛˆ˜]\ˆ[ˆY\ˆKH›ÜˆHØ[YBˆËÈ™X\ÛÛˆHÜXÙHšYÙH[Ý™YX›Ý™Nˆ›Ý\™HY]]™H
+	ÛYÚ\‰ÊBˆËÈY\\ÚÞHÛÛ[[™\ÙYÈ™H˜]ÛˆY\ˆHÙ[\ÝX[›ÙY\ËÛÂˆËÈHšYÝ\™IÜÈ[™HÜˆHÜž\Ý[^™YÝ\ˆÛÝ[Ú]ÛÝÚ[™ÈšYÚÛˆÜˆËÈÙˆH[ÛÛ‰ÜÈ\ØÈ[œÝXYÙˆ™Z[™]ˆH[ÛÛˆ
+˜]Ûˆ™[ÝË[‚ˆËÈÜ™[˜\žHÛÝ\˜ÙK[Ý™\ŠH›ÝÈ›Ü\›HØØÛY\ÈÚ]]™\ˆÙˆ\ÙH™[ˆËÈ™Z[™]È\ØËØ[YH\È][Ø^\ÈY›ÜˆHZ[ˆÝ\ˆ^Y\ˆ[‚ˆËÈÙ˜]ÔÚÞK×Ù˜]ÔÝ\™šY[
+[ÛÈ˜]Ûˆ™Y›Ü™HHÙ[\ÝX[›ÙY\ÊK‚ˆ\Ë›YÚš[™Ë™˜]ÊÝØ[˜\Ë\ËÙXÈ
+ˆL\Ëœ™YXÙY›\Ú
+NÈËÈ™Z[™H˜[™Ù\Îˆ›ÛÈ[™™^[Û™H[Âˆ\Ë™˜]ÑY\ÚÞJÝÚÞU›ÞXYÙKØ[˜\ÊNÈËÈZY\Ý\ÉÜÈÚÞH›ÞXYÙKÚ[ˆÚIÜÈ]Ø^HKH™Z[™H[Ý[Z[œÈ™[ÝÂˆËÈ[XšY[ÛÛ›™XÝ]KYÝÈ
+È™]Ø\™›Û^\È™XY\ÈÝ\›YÚÛÈBˆËÈšYÚÚÞHœšYÚ[œÈ[HHØ[YHØ^H]œšYÚ[œÈH]\ÈÝ\œË‚ˆËÈH˜[™ÙIÜÈÛÛœÝ[][ÛœÈÙ\™HY™™XÝ]™[HØ\ÚYÝ][ˆ^[YÚ‚ˆËÈÝ[QX[È[œÈÚÞUÚ\™P[HÈŒÎ[™HX]›X^
+ŒK‹‹ŠH›ÛÜ‚ˆËÈY[H\›Ý[™[HŒHžH^Kˆ˜Z\ÙHH›ÛÜˆÈMH[™›ÛÜÝˆËÈ^][YH™\Ù[˜ÙHÛÈHÛÛ›™XÝ]KYÝÈšYÝ\™\ÈXÝX[H™XYYØZ[œÝˆËÈH]ÚÞH[œÝXYÙˆÛ›H\X\š[™È]šYÚ‚ˆÛÛœÝ^P›ÛÜÝHH
+ÈŽH
+ˆ
+HH‹›šYÚ
+NÂˆÛÛœÝšYÚ[S][H
+H
+ÈKŒˆ
+ˆ‹›šYÚ
+H
+ˆX]›X^
+MKÚÞPJH
+ˆ^P›ÛÜÝÂˆËÈHÙX]™\ˆ\È˜\ˆYÚ\ˆ[ˆH™\ÝÙˆH[›ÛY[˜H^Y\ˆKH]ˆËÈ]\Ý“Õ›ÜÝ]Ú][H
+[™ÈJHÜˆH˜[™ÙIÜÈÚÞHÛÙ\È\šË‚ˆÛÛœÝÛÛœÝ[][ÛœÓÛˆH\Ë—Ü\™ˆÈ\Ë—Ü\™‹˜ÛÛœÝ[][ÛœÑ[˜X›YˆYNÂˆYˆ
+ÛÛœÝ[][ÛœÓÛˆ	‰ˆÚÞPHˆŒŠH\ËÙX]™\‹™˜]ÊÝØ[˜\Ë\Ëœ™YXÙY›\ÚšYÚ[S][
+NÂˆYˆ
+[›ÛY[˜Q[
+H\Ë›Y][ÜœË™˜]ÊÝØ[˜\Ë\Ëœ™YXÙY›\Ú
+NÈËÈ™]Ø\™›Û^\ËØ[YHY\\ÚÞH\ØØÛYYžHH˜[™Ù\È˜]Ûˆ™[ÝÂ‚ˆËÈHÝ[ˆ
+\Èš[ÛYIÜÈÙ[\ÝX[Ü›ÜÜÙ˜YYKOˆ\È\ÝX[
+HÚ[BˆËÈ]	ÜÈ\ÈHZ[ˆ[H[ÛÛˆZÙ\ÈÝ™\ˆÛ˜ÙH]Ù]Ëˆ›Ý˜YH[‹ÛÝ]ˆËÈÝ™\ˆZ\ˆ\ÝÝ™]ÚÙˆ[]YH˜]\ˆ[ˆÜ[™È]BˆËÈÜš^›Û‹[™›Ýš\ÙHœ›ÛH[™Ù][ÈHÙXHÜš^›Û‹‚ˆYˆ
+Ý[•\
+H\Ë—Ù˜]ÐÙ[\ÝX[
+ÝØ[˜\ËK‹Ù[\ÝX[Qœ˜XËÜš^›Û‘˜YJ‹œÝ[[
+KÙ[\ÝX[œ˜XÊNÂˆYˆ
+‹›[ÛÛ[ˆŒJHÂˆËÈÚ\™HHÝ[ˆ™X[H\ÈKH™[ÝÈHÜš^›Ûˆ[šYÚÚXÚ\ÈBˆËÈÚÛHÚ[ˆ]	ÜÈÚ]XZÙ\ÈH[ÛÛˆ™XY\È]œ›ÛH[™\›™X]‚ˆÛÛœÝÝ[ˆHÝ[”ØÜ™Y[‘œ˜XÊÞXÛT\ÙLJ\ËÙXÈ
+ˆL\Ë—Ù^SšYÚÞXÛS\ÊJNÂˆ\Ë—Ù˜]Ó[ÛÛŠˆÝØ[˜\ËÙ[\ÝX[Qœ˜XÑ›ÜŠ‹›[ÛÛ[
+KÜš^›Û‘˜YJ‹›[ÛÛ[
+KˆŒŒˆ
+ˆ\ËœÜXÙTšYÙKY[Ù™œÙ]
+Ø[˜\ËšZYÚ
+KˆÙ[\ÝX[œ˜XÑ›ÜŠ‹›[ÛÛ^ŒJKˆÝ[‹žœ˜XËÝ[‹žQœ˜XË\Ë—Û[ÛÛ”\ÙLJ
+Kˆ
+NÂˆBˆËÈÜ\›ÙÜ˜\™\ÛÛ˜[˜ÙHX[™[KÙ[\™YÛˆHÙ[\ÝX[›ÙHÛÈ]ˆËÈ™XYÈ\ÈHÝ[‹Û[ÛÛˆ]Ù[ˆ™\ÛÛ˜][™ÈÚ]H˜XÚË‚ˆÛÛœÝX[™[PÛÛÜˆH\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+K˜Ù[\ÝX[š[ÐÛÛÜ‹‹˜Ù[\ÝX[š[ÐÛÛÜ‹
+JNÂˆËÈ›Ý\™H\™H˜XÚÙÜ›Ý[™[›ÛY[˜H
+HÌ\Ú[Ü\›ÙÜ˜\][™BˆËÈŒ\Ú[]˜XÝÜˆ˜Z[™Y˜]Ûˆ]™\žHœ˜[YJHKH™X[][ÜÜ\™H]ˆËÈ™]™\ˆØ[Y\^KÛÈ^HÚY]HØ[YH[™È\ÈH™\ÝÙˆBˆËÈÜ[Û˜[[›ÛY[˜H^Y\ˆ™[ÝÈ˜]\ˆ[ˆ^Z[™È[ÛÜÝ™YØ\™\ÜÂˆËÈÙˆ\™ˆ]™[‚ˆYˆ
+[›ÛY[˜Q[	‰ˆÚÞPHˆŒŠHÂˆÛÛœÝ™]“HH\Ë›X[™[Kš[[œÚ]NÂˆ\Ë›X[™[Kš[[œÚ]HH™]“H
+ˆÚÞPNÂˆ\Ë›X[™[K™˜]ÊÝØ[˜\ËÚY
+ˆÙ[\ÝX[œ˜XËØ[˜\ËšZYÚ
+ˆÙ[\ÝX[Qœ˜XËØ[˜\ËšZYÚ
+ˆŒÌ
+ˆ\Ë›X[™[TØØ[S][X[™[PÛÛÜŠNÂˆ\Ë›X[™[Kš[[œÚ]HH™]“NÂˆBˆËÈ[›ÛY[˜H^Y\‹Y\ÚÞNˆÞ[X]XÈ\ÝÙ][™È[ÈÚYšBˆËÈšYÝ\™\Ë[™HÚ[ÜÈšX˜›ÛˆÜÜÚ]HHÙ[\ÝX[›Üˆ˜[[˜ÙK‚ˆYˆ
+[›ÛY[˜Q[
+H\Ë˜Þ[X]XÜË™˜]ÊÝØ[˜\ËX[™[PÛÛÜŠNÂˆYˆ
+[›ÛY[˜Q[
+HÂˆÛÛœÝšX˜›ÛHHX]›X^
+ŒNÚÞPJNÂˆÛÛœÝ™]”ˆH\ËœšX˜›Û‹š[[œÚ]NÂˆ\ËœšX˜›Û‹š[[œÚ]HH™]”ˆ
+ˆšX˜›ÛNÂˆ\ËœšX˜›Û‹™˜]ÊÝØ[˜\ËÚY
+ˆŒŒ‹Ø[˜\ËšZYÚ
+ˆŒÌØ[˜\ËšZYÚ
+ˆŒÍH
+ˆ
+\Ë—ÜšX˜›Û”ØØ[S][JKX[™[PÛÛÜŠNÂˆ\ËœšX˜›Û‹š[[œÚ]HH™]”ŽÂˆBˆ\Ë—Ù˜]Ñ˜\”ÚÜ™JÝØ[˜\ËÛÜ›K‹
+NÈËÈ™^[Û™HØÙX[‹™Z[™HØ]\ˆ]Ù[‚ˆ\Ë—Ù˜]Ñ˜]S[Ü™Ø[˜JÝØ[˜\ËÛÜ›K‹
+NÈËÈH˜]H[Ü™Ø[˜K^Y\™YÛˆÜÙˆH˜\ˆÚÜ™H]HØ[YHÜš^›Û‚ˆ\Ë—Ù˜]ÓØÙX[ŠÝØ[˜\ËÛÜ›K‹[›ÛY[˜Q[‹›šYÚ
+NÂˆ\Ë—Ù˜]ÓØÙX[“Y™JÝØ[˜\ËÛÜ›K‹[›ÛY[˜Q[
+NÂˆ\Ë—Ù˜]ÒÜš^›Û‘TJÝØ[˜\ËÛÜ›K‹
+NÂˆ\Ë—Ù˜]ÔÜXÝ[SX\ÜÚYŠÝØ[˜\ËÛÜ›K‹
+NÂ‚ˆËÈÛÛ˜Ù\™X[\Îˆ[˜ÚÜ™Y]HÙ[\ÝX[˜]Ûˆ™Y›Ü™HH[Ý[Z[‚ˆËÈÚ[ÝY]\ÈÛÈH˜[™Ù\ÈØØÛYHZ\ˆÝÙ\ˆ™XXÚHØ[YHØ^BˆËÈYÚš[™ÉÜÈ›ÛÈË‚ˆÛÛœÝÞHØ[˜\ËÚY
+ˆÙ[\ÝX[œ˜XËÞHHØ[˜\ËšZYÚ
+ˆÙ[\ÝX[Qœ˜XÎÂˆ\Ë›YÚšYË™˜]ÊÝØ[˜\ËÞÞKX[™[PÛÛÜ‹\XÛS][\Ëœ™YXÙY›\Ú
+NÂ‚ˆËÈH[œ˜]™[[™ÎˆXXÚ^Y\‰ÜÈØÜ›Û˜][ÈšYÈ\\œ›ÛHH™\ÝˆËÈ\ÈHÛÜ›[[Z[˜]\ÈKH™X\™\ˆ^Y\œÈ˜XÙHZXY[Ü™H[ˆ˜\‚ˆËÈÛ™\È
+H˜][È]Ù[ˆ\ÈH\›ÞKÛÈ›ÈÙ\\˜]HX›JK‚ˆËÈØØ[›™Yˆ[™ÙY\]\]HÛÛ™ÈÚÛÜÙ\ÈZ\ˆÝ][Û‚ˆËÈ[™Z\ˆÜYYˆÈ\È›È›Ùš[H\™KÛÈ]Ý^\ÈÛˆÛÜ›‚ˆÛÛœÝØÜ›ÛH\Ë—Ý\œ˜Z[”ØÜ›Û
+	Ó‰ËÛÜ›
+NÂˆÛÛœÝØÜ›ÛHHÛÜ›
+ˆÛÙQ\™XÝÜ‹™[[Z[˜]T˜][ÊVQT—ÔUSÔË“Ë\Ë[œ˜]™[
+NÂˆÛÛœÝØÜ›ÛˆH\Ë—Ý\œ˜Z[”ØÜ›Û
+	Ó	ËÛÜ›
+NÂˆÛÛœÝØÜ›ÛÈHÛÜ›
+ˆÛÙQ\™XÝÜ‹™[[Z[˜]T˜][ÊVQT—ÔUSÔË“K\Ë[œ˜]™[
+NÂˆËÈHš[ÛYIÜÈÚ[ÝY]H\ÈÛ™Hš^Y]]Ü™YÛÛÜŽÈHÚÞH™Z[™]ˆËÈ[ÈÝØ\™™X\‹X›XÚÈ]šYÚ
+ÙYHÙ˜]ÔÚÞIÜÈšYÚ[
+KˆÛˆBˆËÈ[]H][™XYH[œÈ\šËÜÙHÛÈØ[ˆÛÛ™\™ÙH[™H˜[™Ù\ÂˆËÈ™XY\È˜\™[K]\™HÛYX\œÈ[œÝXYÙˆÚ[ÝY]\ÈKHÛÈ[ˆBˆËÈ[Ý[Z[ˆ[ÈÝ^HYÚX›HYØZ[œÝHXÝX[Üš^›ÛˆÛÛÜˆ]	ÜÂˆËÈX›Ý]ÈÚ][ˆœ›ÛÙ‹]HØ[YH[HÚÞHÜ˜YY[\Ý\ÙY‚ˆÛÛœÝ[H[œÝ\™PÛÛ˜\Ý
+\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+KœÚ[ÝY]K‹œÚ[ÝY]K
+JKÚÞRÜš^›Û“šYÚŒM
+NÂˆËÈY\šX[\œÜXÝ]™Kˆ]™\žH˜[™ÙH\ÙYÈ™HZ[Y[ˆ\ÈÓ‘H[ˆËÈÚXÚ\ÈHÚ[™ÛHšYÙÙ\Ý™X\ÛÛˆH›Ý\ˆ^Y\œÈ™XY\ÈHØ[YBˆËÈ[Ý[Z[ˆ™\X]Y›Ý\ˆ[Y\Îˆ\Ø\ÈØ\œšYY[\™[HžHH^™BˆËÈØ\Ú\È˜]Ûˆ‘UÑQSˆ[K[™›Ý[™ÈX›Ý]H˜[™Ù\È[\Ù[™\ÂˆËÈØZY\ÈÛ™H\È\\ˆ]Ø^Kˆ‚ˆËÂˆËÈ™X[\Ý[˜ÙH\Ø]\˜]\ÈHÚ[ÝY]HÝØ\™HÛÛÜˆÙˆHZ\‚ˆËÈ[ˆœ›ÛÙˆ]ÛÈXXÚ^Y\‰ÜÈÝÛˆš[\È[YÝØ\™HÚÞBˆËÈÜš^›ÛˆžH]È\œ˜XÝ[ÛŽˆH
+™X\™\Ý
+HÙY\ÈH]]Ü™YˆËÈÚ[ÝY]HÛÛÜˆÝ]šYÚˆ
+\\Ý
+HÚ]È™X\›H[ˆØ^HÈBˆËÈÚÞKˆÚX\KH›Ý\ˆØXÚY^\œÈ\ˆœ˜[YHKH[™]ÝXÚÜÈÚ]ˆËÈH^\Ý[™È^™H˜]\ˆ[ˆ™\XÚ[™È]‚ˆÛÛœÝ^Y\•[H
+^Y\’Ù^JHOˆÂˆÛÛœÝ[HQT’PSÔSÛ^Y\’Ù^WHÂˆ™]\›ˆ[ˆŒHÈ\Ë›\œØXÚK™Ù]
+[ÚÞRÜš^›Û“šYÚ[
+Hˆ[ÂˆNÂˆÛÛœÝ[ˆH^Y\•[
+	Ó‰ÊK[ÈH^Y\•[
+	ÓÉÊNÂˆÛÛœÝ[H^Y\•[
+	Ó	ÊK[HH^Y\•[
+	ÓIÊNÂˆËÈ\^™Nˆ™YHØ\Ú^Y\œÈ
+‹ÓËÓ
+H]X[H\™ŽÈHY\\ÝˆËÈ[™ÈÛÛ\Ù\ÈÈ\ÝËHZYH^Y\ˆKH[›ÝYÚÙˆ[‚ˆËÈ][ÜÜ\™HÝYHÈ›Ý™XY\È›]]H\™ÙˆHÛÜÝ‚ˆÛÛœÝ^™S^Y\œÈH\Ë—Ü\™ˆÈ\Ë—Ü\™‹š^™S^Y\œÈˆÎÂ‚ˆËÈ™Z[™]™\žH˜[™ÙNˆHÝÙ[]ZÙ\ÈÝ™\ˆHÜš^›ÛˆÚ[ˆBˆËÈšY]È[™ÛH\È\šYYH[˜Ú[™ÈšYÙKˆ[ÛÈÚ\™H‰ÜÈØØÛ\Ú[Ûˆ\ÂˆËÈYX\Ý\™Y›ÜˆH™^ÙXÝ[Ûˆ›Ý[™\žIÜÈXÚ\Ú[Û‹ÛÈ\È\ÈÈ[‚ˆËÈÚ]\ˆÜˆ›ÝHØ]™H\ÈÝ\œ™[H\‚ˆËÈH›Ùš[HÝÚ]Ú]HÜ›ÜÜÙ˜YHZYÚ[ÝØ\ÈHÚÛHÚ[ÝY]BˆËÈ[ˆÛ™Hœ˜[YKˆ]YX\Ý\™\È™\›ÈÛˆHÝ\ÝÛKXš[ÛYHÛÛ™ËÚ\™H]™\žBˆËÈÙXÝ[ÛˆØ\ÝÈÈHØ[YHš[ÛYH[™\™H\È›Ý[™ÈÈÝÚ]ÚÈKBˆËÈ]Ø\Ýš[ÛY\ÈÚ]™\ÈHÝØÚÈÛÜ›HY™™\™[š[ÛYH\ˆÝXÝ\˜[ˆËÈX™[[™\™HHÝØ\\ÈHY™™\™[[Ý[Z[ˆ˜[™ÙH\X\š[™ÂˆËÈ[œÝ[Kˆ\ÜÛÛ™H™]ÙY[ˆ[H[œÝXY‚ˆYˆ
+K›˜[YHOOH‹›˜[YHHHJHÂˆ\Ë—Ù˜]Ñ\Ý[Ø]™JÝØ[˜\ËÈØÜ›ÛØÜ›ÛKØÜ›ÛˆKK‹
+NÂˆH[ÙHÂˆ\Ë—Ù˜]Ñ\Ý[Ø]™JÝØ[˜\ËÈØÜ›ÛØÜ›ÛKØÜ›ÛˆKKKHH
+NÂˆ\Ë—Ù˜]Ñ\Ý[Ø]™JÝØ[˜\ËÈØÜ›ÛØÜ›ÛKØÜ›ÛˆK‹‹
+NÂˆBˆ\Ë—Ù˜]Ó^Y\ŠÝØ[˜\Ë	Ó‰ËØÜ›Û[‹KŠNÂˆYˆ
+^™S^Y\œÈHÊH\Ë—Ù˜]Ò^™JÝØ[˜\Ë	Ó‰ËK‹\˜ÊNÂˆËÈ˜\‹Y\Ý[˜ÙHšYÛ™]\Îˆ™]ÙY[ˆH˜\\Ý˜[™ÙH[™]™\ž][™ÂˆËÈ™X\™\‹ÛÈHËÓÓHšYÙ\È\X[HØØÛYH[HKHÙ[Z[™[BˆËÈÚ]™\ÜÙY[ˆH˜\ˆ\Ý[˜ÙH‹›ÝÜš]\È\ÝYÛˆHÚÞK‚ˆYˆ
+[›ÛY[˜Q[
+H\Ë™˜\•šYÛ™]\Ë™˜]ÊÝØ[˜\ËÛÜ›ÂˆÙXÎˆ\ËÙXËˆÚXÚÎˆ[™RÚXÚÊ\ËÙXÈ
+ˆL\Ë—Ù[˜ÙRÚXÚÓ\Ë	ÝšYÛ™]IË\Ë—Ù[˜ÙRÚXÚÐ[\
+KˆÚ[ÝY]Nˆ[‹ËÈ^HÚ]]‰ÜÈ\ÛÈ^HÙX\ˆ‰ÜÈZ\‚ˆÚÞNˆ\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+KœÚÞVÌWK‹œÚÞVÌWK
+JKˆ[Îˆ\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+K˜Ù[\ÝX[š[ÐÛÛÜ‹‹˜Ù[\ÝX[š[ÐÛÛÜ‹
+JKˆJNÂˆ\Ë—Ù˜]Ó^Y\ŠÝØ[˜\Ë	ÓÉËØÜ›ÛK[ËKŠNÂˆ\Ë—Ù˜]Ò^™JÝØ[˜\Ë	ÓÉËK‹\˜ÊNÂˆ\Ë—Ù˜]ÐØ\ÝÚYÝÊÝØ[˜\Ë	Ó‰Ë	ÓÉËØÜ›ÛØÜ›ÛKK‹
+NÂ‚ˆËÈ[XšY[\XÛHšY[]™\È›ÝYÚH]ZYY\ˆH[œ˜]™[[™Î‚ˆËÈ\XÛHY\ÈÛÛ™\™ÙHÝØ\™Hš[ÛYIÜÈÝÛˆ[ÈÛÛÜˆ\ÈBˆËÈ[™[™È\˜È›ÙÜ™\ÜÙ\Ë‚ˆËÈ\XÛHÛÝ[È\™Hš^Y]ÛÛœÝXÝ[Ûˆ[™™]™\ˆØ]ÈH[[œÚ]BˆËÈYÙ]ÛÈH˜Y[™ËZ[ˆÛÛ™ÈÝ[Ü[™YÛˆH[K\Ü[]Yœ˜[YK‚ˆËÈ˜Y[™ÈHÚÛHšY[\ÈÚX\\ˆ[™\ÜÈ˜\œš[™È[ˆÝ[[™ÂˆËÈ[™]šYX[\XÛ\ËÚXÚÛÝ[Ü\ÈHØZ[ˆ›ÜÙK‚ˆÛÛœÝÜ[HH\Ë›Ü[š[™ÑØZ[ŽÂˆËÈØ[YHÙXÛÛ™\žK[YÚ\ÜÙ[X›HÚ\˜XÝ\œÈ\ÙH
+™[™\™\‹šœÊKØ]YÛ‚ˆËÈHØ[YHš[K[YÚ[™ÈKH\XÛ\È\™HH\™Ù\Ý˜]ËXØ[ˆËÈÜ[][Ûˆ[ˆHœ˜[YH[™]\Ý^H›Ý[™ÈÛˆHY\[™ÜË‚ˆÛÛœÝš[SÛˆH\Ë—Ü\™ˆÈ\Ë—Ü\™‹œš[SYÚ[˜X›YˆYNÂˆÛÛœÝ\XÛSYÚÈHš[SÛ‚ˆÈÂˆ\Ë›YÚˆ‹‹™Ü›Ý[™ÛÝÓYÚÊˆ\Ë™Ü›Ý[™šY[È\Ë™Ü›Ý[™šY[˜XÝ]™QÛÝÔØÜ™Y[“YÚÊÛÜ›ÜšYÚ[–
+Hˆ×KˆX[™[PÛÛÜ‹ˆ
+KˆK™š[\Š›ÛÛX[ŠBˆˆ[ÂˆÝœØ]™J
+NÂˆËÈÙ][˜ÛÛ™][Û˜[K›Ý\ÝÚ[ˆHØZ[ˆ\È™[ÝÈNˆ\XÛQšY[ˆËÈ›ÝÈØØ[\È›ÝYÚH[H]\œš]™\ÈÚ]ÛÈ[ˆ[œÙ][H\™BˆËÈÛÝ[[™]Ú]]™\ˆ[ˆX\›Y\ˆÚÞH˜]È\[™YÈX]™H™Z[™‚ˆÝ™ÛØ˜[[HHÜ[NÂˆ\Ë™šY[Ë™Ù]
+œ›ÛJK™˜]ÊÝ\XÛS][X[™[PÛÛÜ‹\Ë[œ˜]™[\XÛSYÚÊNÂˆÝœ™\ÝÜ™J
+NÂˆYˆ
+ÈOOHœ›ÛH	‰ˆˆŒŠHÂˆÝœØ]™J
+NÈÝ™ÛØ˜[[HH
+ˆÜ[NÂˆ\Ë™šY[Ë™Ù]
+ÊK™˜]ÊÝ\XÛS][X[™[PÛÛÜ‹\Ë[œ˜]™[\XÛSYÚÊNÂˆÝœ™\ÝÜ™J
+NÂˆBˆËÈ]\ÚXË\™XXÝ]™HÙX]\‹Ø[YHZYY\\ÈH[XšY[šY[X›Ý™HKBˆËÈ[œÚ]H
+[™\È™]™\‰ÜÈ›ÛÜÝ
+HÛÛY\Èœ™YHœ›ÛH\XÛS][YBˆËÈÛÛ™\™Ù[˜ÙH]HÛÙHÛÛY\Èœ™YHœ›ÛH\Ë[œ˜]™[‚ˆYˆ
+\Ë—ØXÝ]™UÙX]\’[[œÚ]HˆŒJHÂˆÛÛœÝÙX]\‘šY[H\ËÙX]\‘šY[Ë™Ù]
+\ËÙX]\”Ý]KšÚ[™
+NÂˆYˆ
+ÙX]\‘šY[
+HÂˆÝœØ]™J
+NÂˆÝ™ÛØ˜[[HHÜ[NÂˆÙX]\‘šY[™˜]ÊÝ\Ë—ØXÝ]™UÙX]\’[[œÚ]H
+ˆ\XÛS][X[™[PÛÛÜ‹\Ë[œ˜]™[\XÛSYÚÊNÂˆÝœ™\ÝÜ™J
+NÂˆBˆB‚ˆËÈHÝ\˜[[ÝÈÝØ\›HÚ\™\È\È\ˆÞ[˜Ú›Ûš^™Y›\Ú[™È[Ý\ËˆËÈÚ]H]\›]\˜][ÛˆÚY[[™È[[Û™È[KˆØ[YHÜ[Û˜[\[›ÛY[˜H[™ÂˆËÈ\ÈH]\›]\˜][Ûˆ]›Y\ÈÚ]KH[™]šYX[HÝ›ÚÙY\˜ÜÈBˆËÈœ˜[YK][ÜÜ\™H˜]\ˆ[ˆØ[Y\^K‚ˆYˆ
+[›ÛY[˜Q[
+H\ËœÝØ\›K™˜]ÊÝØ[˜\ËX[™[PÛÛÜŠNÂˆYˆ
+[›ÛY[˜Q[
+H\Ë›]\›]\˜][Û‹™˜]ÊÝ\ËÙXÈ
+ˆLX[™[PÛÛÜ‹\XÛS][
+NÂˆ\Ë—Ù˜]Ñ›ÙÐ˜[šÜÊÝØ[˜\ÊNÂ‚ˆ\Ë—Ù˜]Ó^Y\ŠÝØ[˜\Ë	Ó	ËØÜ›Û‹[KŠNÂˆYˆ
+^™S^Y\œÈHÊH\Ë—Ù˜]Ò^™JÝØ[˜\Ë	Ó	ËK‹\˜ÊNÂˆ\Ë—Ù˜]ÐØ\ÝÚYÝÊÝØ[˜\Ë	ÓÉË	Ó	ËØÜ›ÛKØÜ›Û‹K‹
+NÂˆËÈÜ™Y[ˆÛÝ[žHœšYÚ[™ÈHÚYÚ[™HÚ\™]™\ˆH[˜Ú[™È˜\ˆÚÞ[[™BˆËÈ\ÈXÚÙY™Z[™H[È[ˆœ›ÛÙˆ]ˆ™]ÙY[ˆ[™HÛÈBˆËÈ™X\™\Ý[ÈÝ[Ý™\›\][™]™XYÈ\È\˜]\ˆ[ˆ\ÈBˆËÈ[™HZYÝ™\ˆHØÙ[™K‚ˆ\Ë—Ù˜]ÐÛÛ›™XÝÜ’[ÊÝØ[˜\ËÈØÜ›ÛØÜ›ÛKØÜ›ÛˆKK‹
+NÂˆ\Ë—Ù˜]Ó^Y\ŠÝØ[˜\Ë	ÓIËØÜ›ÛË[KKŠNÂˆ\Ë—Ù˜]ÐØ\ÝÚYÝÊÝØ[˜\Ë	Ó	Ë	ÓIËØÜ›Û‹ØÜ›ÛËK‹
+NÂ‚ˆËÈÜ›Ý[™šY]ÎˆÝÚ]ÚÈHš^Y™]™\‹^›ÛÛYY˜[œÙ›Ü›H›ÜˆBˆËÈÜ›Ý[™[™]™\ž][™ÈZ[Yœ›ÛH\™HÛˆ
+ÙYH™[™\™\‹™˜]ÉÜÂˆËÈÜ›Ý[™šY]ÈÛÛ[Y[›ÜˆH[™X\ÛÛš[™ÊKˆ]™\ž][™ÈX›Ý™H\ÂˆËÈÚ[KHÚÞKX\ÜÚY‹‹SHKHÝ^\ÈÛˆH›ÛÛYY˜[œÙ›Ü›H]Ø\ÂˆËÈ[™XYHXÝ]™HÚ[ˆ˜]Ê
+HØ\ÈØ[YÚXÚ\È^XÝHÚ]XZÙ\ÈBˆËÈØ[Y\˜H[X˜XÚÈ™XY\È›[Ü™HÚÞH[™[Ý[Z[ˆ™XÛÛY\Èš\ÚX›BˆËÈX›Ý™HHÜ›Ý[™]™]™\ˆ[Ý™\Èˆ[œÝXYÙˆ™]™\ž][™ËÜ›Ý[™ˆËÈ[˜ÛYYÚš[šÜÈ[ˆXÙKˆˆ›Ë[ÜÈ
+ÙY\ÈHØ[\‰ÜÈ˜[œÙ›Ü›JBˆËÈÚ[ˆ›ÈÜ›Ý[™šY]ÈØ\È[™Y[ˆKH\ÝÈ[™[žHØ[\ˆ]\Û‰ÝˆËÈÜY[ˆÝ[Ù]HÛÚ[™ÛK]˜[œÙ›Ü›H™Z]š[Ü‹‚ˆÛÛœÝÜ›Ý[™Ø[˜\ÈHÜ›Ý[™šY]ÈÈÜ›Ý[™šY]ËœÝYÙHˆØ[˜\ÎÂˆYˆ
+Ü›Ý[™šY]ÊHÜ›Ý[™šY]Ë˜\J
+NÂˆ\Ë—Ù˜]ÑÜ›Ý[™
+ÝÜ›Ý[™Ø[˜\ËÛÜ›ÜšYÚ[–K‹[
+NÂˆËÈYÚÛÛXÝÙX[HÛ›H8 %ÙY\˜[™Ù\È™XYX›H
+X]žHZ\ÝÐSÈX\ÜØXÜ™Y[JK‚ˆ\Ë—Ù˜]Õ\œ˜Z[‘›ÛÝ[™ÊÝÜ›Ý[™Ø[˜\ËÛÜ›ÜšYÚ[–K‹
+NÂˆ\Ë—Ù˜]Ñ›ÛÙ
+ÝÜ›Ý[™Ø[˜\ÊNÂˆËÈ[ˆ”“Ó•ÙˆHÜ›Ý[™ˆ\ÈHØ[Y\˜H[È˜XÚËH™X\ˆØ]\ˆÛÛY\ÂˆËÈ[Èœ˜[YH[™HÝš\^H[ˆ[Û™È\›œÈÝ]È™H[ˆ\Ý]\Ë‚ˆ\Ë—Ù˜]Ñ›Ü™YÜ›Ý[™ÝÙ[
+ÝÜ›Ý[™Ø[˜\ËÛÜ›K‹
+NÂˆ\Ë—Ù˜]Õ˜[œÚ][Û“Ý™\›^\ÊÝÜ›Ý[™Ø[˜\ËŠNÂˆB‚ˆÊŠ‚ˆ
+ˆH™X\ˆÚÜ™K™]™X[YžH[[™ÈHØ[Y\˜H˜XÚË‚ˆ
+‚ˆ
+ˆ]›Ü›X[œ˜[Z[™ÈHš[È[ˆ[Û™ÈHÝš\ÙˆÜ›Ý[™Ú][Ý[Z[œÂˆ
+ˆ™Z[™][™]Ü›Ý[™ÛÝ[™HHÛÛ[™[ˆHÚYHÚÝ\È›ÛÛBˆ
+ˆ™[ÝÈHÜ›Ý[™[™HÈ[œÝÙ\ˆH]Y\Ý[Û‹ÛÈ\Èš[È]ˆÙXHÛ‚ˆ
+ˆH‘PTˆÚYHÛËÚXÚXZÙ\ÈHÝš\[ˆ\Ý]\Ë‚ˆ
+‚ˆ
+ˆØ[YHÝÙ[X][X]XÜÈ\ÈH\Ý[Ø]™H]HÜš^›Ûˆ
+ÙYBˆ
+ˆ\Ý[Ø]™KšœÊHÚ]\œÜXÝ]™H\YYKHÛ™Ù\ˆØ]™[[™ÝË\™Ù\‚ˆ
+ˆ[\]YK˜\Ý\ˆ\\™[˜]™[ˆX]Ú[™ÈH›Ü›HÚ[HØØ[[™ÈÜÙBˆ
+ˆ™YH\ÈÚ]XZÙ\ÈHÛÈ™XY\ÈÛ™HØÙX[ˆÙY[ˆ]ÛÈ\Ý[˜Ù\Âˆ
+ˆ˜]\ˆ[ˆ\ÈÛÈ[œ™[]YY™™XÝË‚ˆ
+‹ÂˆÙ˜]Ñ›Ü™YÜ›Ý[™ÝÙ[
+ÝØ[˜\ËÛÜ›K‹
+HÂˆÛÛœÝ™]™X[H\Ý]\Ô™]™X[J\Ëœ[˜XÚÌH
+NÂˆYˆ
+™]™X[HŒŠH™]\›ŽÂˆYˆ
+\Ë—Ü\™ˆ	‰ˆ]\Ë—Ü\™‹šX]žTÜÝž
+H™]\›ŽÂ‚ˆËÈ[˜ÚÜ™Y™[ÝÈHØ[Ú[™ÈÜ›Ý[™ÛÈ]™]™\ˆš\Ù\ÈÝ™\ˆHÝš\ˆËÈ^H\™HXÝX[HÝ[™[™ÈÛˆKH\È\ÈHØ]\ˆ‘VSÓ‘H™X\‚ˆËÈYÙHÙˆH[™›ÝH›ÛÙ‚ˆÛÛœÝÜ›Ý[™HH\Ë—Þ›ÛÛYYÜ›Ý[™JØ[˜\ÊNÂˆËÈÚ]È[ˆH\\ˆ\ÙˆH™X\‹YÜ›Ý[™˜[™ˆY\\ˆ[ˆ\È[™ˆËÈHÚÜ™H\È™Z[™H˜[œÜÜ˜\‹ÚXÚ\ÈÚ\™HHš\œÝˆËÈ][\]]KH™\Ù[[ˆH^[Y™‹[™Ü›ÜYÝ]ÙˆHÚÝ‚ˆÛÛœÝ˜\Ù[[™VHHÜ›Ý[™H
+È‘×ÔÕÑSÑ“ÔÔ
+È
+Ø[˜\ËšZYÚHÜ›Ý[™JH
+ˆŒLŽÂˆYˆ
+˜\Ù[[™VHˆØ[˜\ËšZYÚ
+È‘×ÔÕÑSÐSTÔ
+ˆ
+H™]\›ŽÂ‚ˆÛÛœÝ›Ùš[HHˆHÈˆˆNÂˆÛÛœÝ[™\™ÞHHÛ[\J›Ùš[K\œ˜Z[‘[™\™ÞHÏÈJNÂˆËÈH™X\™\Ý\˜[^[ˆHØÙ[™Nˆ\ÈØ]\ˆ\È]HšY]Ù\‰ÜÈ™Y]ˆËÈÛÈ]˜]™[ÈÚ]HÜ›Ý[™˜]\ˆ[ˆÚ][žH˜\ˆ^Y\‹Üˆ]ˆËÈ™XYÈ\ÈZ[YÛˆH[œË‚ˆÛÛœÝÈH›Ü™YÜ›Ý[™ÝÙ[Ü™\Ý
+ÂˆÚYˆØ[˜\ËÚY˜\Ù[[™VK[\ˆ‘×ÔÕÑSÐSTÔˆÙXÎˆ\ËÙXËØÜ›ÛˆÛÜ›Ý\ˆÔ‘TÕÔÕTÔ[™\™ÞLNˆ[™\™ÞKˆJNÂˆYˆ
+Ë›[™ÝŠH™]\›ŽÂ‚ˆËÈØ]\ˆ™XYÈ\ÈÚÞH™Y›XÝYˆHØ[YHZ\ˆÛÛÜˆH˜[™Ù\È[™BˆËÈÜ›Ý[™\™HØ\ÚYÝØ\™[YÝØ\™Hš[ÛYIÜÈÝÛˆ[ÈÛÈBˆËÈ™X\ˆÙXH™[Û™ÜÈÈ\ÈÛÜ›ˆ\šÙ\ˆ[ˆH\Ý[ÝÙ[KH™X\‚ˆËÈØ]\ˆ\ÈY\\‹[™]\ÈÈÝ^H[™\ˆHÚ\˜XÝ\œÈÝ[™[™È[‚ˆËÈœ›ÛÙˆ]˜]\ˆ[ˆÛÛ\][™ÈÚ][K‚ˆËÈØ]\ˆ™Y›XÝÈHÚÞKÛÈ]ZÙ\ÈHØ[YHZ\ˆÛÛÜˆH˜[™Ù\È[™ˆËÈHÜ›Ý[™\™HØ\ÚYÝØ\™KH]T’ÑS‘QˆHš\œÝ][\\ÙYˆËÈ]ÛÛÜˆ][YÚ™\ÜÈ[™™XY\ÈH]Ø[™˜\ˆ˜]\ˆ[ˆ\ÂˆËÈÙXNˆ™X\ˆØ]\ˆ\ÈY\[™H›ÙHÙˆØ]\ˆ™[ÝÈH]ÚÜ™H\ÈBˆËÈ\šÙ\ˆÙˆHÛË›ÝHœšYÚ\‹ˆH›ÛÜˆÙY\È]œ›ÛHÛÚ[™ÈÂˆËÈ\™H›XÚÈÛˆ[ˆ[™XYKY\šÈ[]K‚ˆÛÛœÝ˜\ÙHH[œÝ\™SZ[“YÚ™\ÜÊˆÚYYÚ™\ÜÊˆ\Ë›\œØXÚK™Ù]
+\Ë—ØZ\ÛÛÜˆ	ÈÌØMMŒ	Ë\Ë—Ü›Ý]Y
+›Ùš[K˜Ù[\ÝX[š[ÐÛÛÜŠKŒMŠKˆQ‘×ÔÕÑSÑT’ÑS‹ˆ
+KˆŒˆ
+NÂˆÛÛœÝÈ‹ËˆHH^Ô™ØŠ˜\ÙJNÂˆËÈ“ÕØØ[YžH\Ë˜YÙ]HØ^HH][ÜÜ\šXÈ\ÜÙ\È\™KˆBˆËÈYÙ]˜[\Èœ›ÛHŒŒHÝ™\ˆHÛÛ™ÉÜÈÜ[š[™Ë[™][\Z[™ÈžH]ˆËÈXYH\ÈÛÈÜ™^H]™[ÈY\KH™\Ù[[ˆH^[Y™‹[š\ÚX›HÂˆËÈHšY]Ù\‹ˆ\È\È›ÝXÛÜ˜][ÛŽˆ]\ÈH[œÝÙ\ˆÈÚ][HBˆËÈÝ[™[™ÈÛˆ‹[™HÚÛHÚ[\È]HÚYHÚÝ™]™X[È]ˆ]ˆËÈ[\ÈH]HÚ[HHÚÝÈ\ÈÝ[ÛÛZ[™È\[™›È\\‹‚ˆÛÛœÝ[HH‘×ÔÕÑSÐSH
+ˆ™]™X[
+ˆ
+ˆ
+È
+ˆÛ[\J\Ë˜YÙ]
+JNÂˆYˆ
+[HŒJH™]\›ŽÂ‚ˆÝœØ]™J
+NÂˆÛÛœÝÜ˜YHÝ˜Ü™X]S[™X\‘Ü˜YY[
+˜\Ù[[™VHH‘×ÔÕÑSÐSTÔ
+ˆØ[˜\ËšZYÚ
+NÂˆÜ˜Y˜YÛÛÜ”ÝÜ
+™Ø˜J	ÜŸK	ÙßK	ØŸK	Ê[H
+ˆÌŠKÑš^Y
+Ê_JX
+NÂˆÜ˜Y˜YÛÛÜ”ÝÜ
+ŒÍK™Ø˜J	ÜŸK	ÙßK	ØŸK	Ø[KÑš^Y
+Ê_JX
+NÂˆÜ˜Y˜YÛÛÜ”ÝÜ
+K™Ø˜J	ÜŸK	ÙßK	ØŸK	Ê[H
+ˆŽM
+KÑš^Y
+Ê_JX
+NÂˆÝ™š[Ý[HHÜ˜YÂˆÝ˜™YÚ[”]
+
+NÂˆÝ›[Ý™UÊÖÌKžÖÌKžJNÂˆ›Üˆ
+]HHNÈHË›[™ÝÈJÊÊHÝ›[™UÊÖÚWKžÖÚWKžJNÂˆÝ›[™UÊÖÜË›[™ÝHWKžØ[˜\ËšZYÚ
+NÂˆÝ›[™UÊÖÌKžØ[˜\ËšZYÚ
+NÂˆÝ˜ÛÜÙT]
+
+NÂˆÝ™š[
+
+NÂ‚ˆËÈHÚÜ™H[™H]Ù[‹ˆ™X\ˆØ]\ˆÙ]ÈHÜš\Ü\ˆYÙH[ˆH\Ý[ˆËÈÝÙ[	ÜÈÛÙÛ[KHXÝZ]H\ÈH\ÝYH[ˆ]ÈÝÛˆšYÚ[™\ÂˆËÈ\ÈHÛÜÙ\Ý[™È[ˆHœ˜[YK‚ˆYˆ
+]\Ëœ™YXÙY›\Ú
+HÂˆÝ™ÛØ˜[[HH‘×ÔÕÑSÑQÑWÐSH
+ˆ™]™X[
+ˆ
+ˆ
+È
+ˆÛ[\J\Ë˜YÙ]
+JNÂˆÝœÝ›ÚÙTÝ[HH\Ë—Ü›Ý]Y
+›Ùš[K˜Ù[\ÝX[š[ÐÛÛÜŠNÂˆÝ›[™UÚYHŽÂˆÝ›[™R›Ú[ˆH	Ü›Ý[™	ÎÂˆÝ˜™YÚ[”]
+
+NÂˆÝ›[Ý™UÊÖÌKžÖÌKžJNÂˆ›Üˆ
+]HHNÈHË›[™ÝÈJÊÊHÝ›[™UÊÖÚWKžÖÚWKžJNÂˆÝœÝ›ÚÙJ
+NÂˆBˆÝœ™\ÝÜ™J
+NÂˆB‚ˆÊŠˆÝXH\šÈÛÛXÝÚ\™H˜[™Ù\ÈYY]HØ[Ú[™ÈÜ›Ý[™KH›ÛÝÜÈBˆ
+ˆšYÙIÜÈÝÛˆÛ[ÛÝÜÝ\™H
+Ø[YH]Ù˜]ÑÜ›Ý[™Z[
+H˜]\ˆ[‚ˆ
+ˆH›]\ÚXÜÈ™Y™\™[˜ÙKÛÈHÙX[H˜XÚÜÈH\œ˜Z[ˆ[œÝXYÙ‚ˆ
+ˆ›Ø][™ÈÝ™\‹Ý[™\ˆ]Ú[™]™\ˆHTH˜\œÈš\ÙHÜˆ˜[ˆ
+‹ÂˆÙ˜]Õ\œ˜Z[‘›ÛÝ[™ÊÝØ[˜\ËÛÜ›ÜšYÚ[–K‹
+HÂˆÛÛœÝXÝ]™QžHˆHÈ‹™žˆK™žÂˆÛÛœÝ\ÓZÙHHXÝ]™QžOOH	ÛZÙT™Y›XÝ[Û‰ÎÂˆÝœØ]™J
+NÂˆYˆ
+\Ë™Ü›Ý[™šY[	‰ˆZ\ÓZÙJHÂˆÛÛœÝ˜\œÈH\Ë™Ü›Ý[™šY[š\ÚX›P˜\œÊÛÜ›ÜšYÚ[–Ø[˜\ËÚY
+NÂˆÛÛœÝÝ›ÚÙT]H\Ë—Ý\œ˜Z[•Ü]
+˜\œËØ[˜\ËšZYÚ˜[ÙKØ[˜\ËÚY
+NÂˆÝ›[™R›Ú[ˆH	Ü›Ý[™	ÎÂˆÝ›[™PØ\H	Ü›Ý[™	ÎÂˆËÈØ[YH˜XÚ[™ÈØ[\\ˆÙ˜]ÑÜ›Ý[™	ÜÈ›ÙKØÜ™\Ý\ÜÙ\È[™XYH\ÙHKBˆËÈ\È\ÈHÛ™HÚX›[™È\ÜÈ[Û™ÈHØ[YHšYÙH]Ý^YYBˆËÈ›]Ø\ÚˆÛZ]HYÚ
+Üˆš[SYÚ[˜X›Y
+H[™]™\žHÝÜˆËÈÛÛ\Ù\È˜XÚÈÈ\ÜË˜[X[›[Ù[]Yˆž]KZY[XØ[ÈÙ^K‚ˆÛÛœÝš[SÛˆH\Ë—Ü\™ˆÈ\Ë—Ü\™‹œš[SYÚ[˜X›YˆYNÂˆÛÛœÝ™[YY”Ø[\\ÈH
+š[SÛˆ	‰ˆ\Ë›YÚ
+HÈØ[\U\œ˜Z[Ý\™J˜\œÊHˆ[ÂˆÛÛœÝ˜XÚ[™ÈH™[YY”Ø[\\ÈÈÝ\™Q˜XÚ[™Ê™[YY”Ø[\\Ë\Ë›YÚ
+Hˆ[ÂˆÛÛœÝ\Ñ˜XÚ[™ÈH˜XÚ[™È	‰ˆ˜XÚ[™ËœÛÛYJ
+ŠHOˆX]˜XœÊŠHˆŒJNÂˆ›Üˆ
+ÛÛœÝ\ÜÈÙˆT”RS—Ñ“ÓÕS‘×ÐS×ÔTÔÑTÊHÂˆ]Ý›ÚÙHH™Ø˜J	Ü\ÜË˜[_JXÂˆYˆ
+\Ñ˜XÚ[™ÊHÂˆÛÛœÝÝÜÈH˜XÚ[™ÐÛÛÜ”ÝÜÊ™[YY”Ø[\\Ë˜XÚ[™ËØ[˜\ËÚY	Ù›ÛÝ[™ÉË\ÜË˜[K“ÓÕS‘×ÑPÒS‘×ÒÊNÂˆYˆ
+ÝÜË›[™ÝHŠHÂˆÛÛœÝÜ˜YHÝ˜Ü™X]S[™X\‘Ü˜YY[
+Ø[˜\ËÚY
+NÂˆ›Üˆ
+ÛÛœÝÈÙˆÝÜÊHÜ˜Y˜YÛÛÜ”ÝÜ
+Ë›Ù™œÙ]Ë˜ÛÛÜŠNÂˆÝ›ÚÙHHÜ˜YÂˆBˆBˆÝœÝ›ÚÙTÝ[HHÝ›ÚÙNÂˆÝ›[™UÚYH\ÜË›ÎÂˆÝœÝ›ÚÙJÝ›ÚÙT]
+NÂˆBˆH[ÙHÂˆÛÛœÝÞHH\Ë™Ü›Ý[™šY[È\Ë™Ü›Ý[™šY[šZYÚ]
+ÛÜ›
+Hˆ\Ë™Ü›Ý[™NÂˆÛÛœÝ[ÈHÝ˜Ü™X]S[™X\‘Ü˜YY[
+ÞHHŽÞH
+È
+NÂˆ[Ë˜YÛÛÜ”ÝÜ
+	Ü™Ø˜J
+IÊNÂˆ[Ë˜YÛÛÜ”ÝÜ
+Ë	Ü™Ø˜JŒLŠIÊNÂˆ[Ë˜YÛÛÜ”ÝÜ
+K	Ü™Ø˜J
+IÊNÂˆÝ™š[Ý[HH[ÎÂˆÝ™š[™XÝ
+ÞHHŽØ[˜\ËÚYÍŠNÂˆBˆÝœ™\ÝÜ™J
+NÂˆB‚ˆÊŠˆ[\Ü˜\žH›ÛÙˆš\Ú[™ÈØ]\ˆ
+HÝ[˜[ZHÜ[[™ÈÝ™\‹ÜˆHÜ›Ý[™ˆ
+ˆØ]\›ÙÙÚ[™È[™\ˆÝ\ÝZ[™Y˜Z[ˆKHÙYH›ÛÙ\™XÝÜŠHXÜ›ÜÜÈBˆ
+ˆ™X\ˆÜ›Ý[™[™K[ˆ™XÙY[™ÈKH˜]ÛˆÛˆÜÙˆHÜ›Ý[™Âˆ
+ˆ[Ý[Z[ˆ^Y\œÈ
+[›ZÙHHØÙX[ˆ[™H]Ù[‹˜]Ûˆ˜\ˆ[™\›™X]ˆ
+ˆ]™\ž][™È[ˆ\ÈØ[YH˜]Ê
+HØ[
+HÛÈ]Ù[Z[™[H™XYÈ\Âˆ
+ˆÝX›Y\™Ú[™ÈH›Ü™YÜ›Ý[™Ú\™HZY[ÈØ[ÜË‚ˆ
+ˆ\™H™[™\š[™ÈÛ›HKH›ÛÙXÝ]™KÙ›ÛÙ]™[H\™HÛÛ\]Y[‚ˆ
+ˆ›ÛÙ\™XÝÜˆ
+Ü˜ËÜÚ[KÑ›ÛÙ\™XÝÜ‹šœÊK›Ý\™HKHÚ[][][Ûˆ™XYÂˆ
+ˆ›ÛÙ›]™[KØXÝ]™H›ÜˆÙ]Y›ÛÝ[™È˜XÝ[ÛˆHØ[YHœ˜[YKˆ
+ˆÚ]Ý]\[™[™ÈÛˆ˜]Ê
+H]š[™È[™XYH[‹ˆ
+‹ÂˆÙ˜]Ñ›ÛÙ
+ÝØ[˜\ÊHÂˆYˆ
+]\Ë™›ÛÙË˜XÝ]™JH™]\›ŽÂˆÛÛœÝ]™[HH\Ë™›ÛÙ›]™[NÂˆÛÛœÝ“ÓÑÔ’TÑWÔHŽÂˆÛÛœÝ]™[HH\Ë™Ü›Ý[™HH“ÓÑÔ’TÑWÔ
+ˆ]™[NÂˆÝœØ]™J
+NÂˆÝ™ÛØ˜[ÛÛ\ÜÚ]SÜ\˜][ÛˆH	ÛYÚ\‰ÎÂˆÛÛœÝÜ˜YHÝ˜Ü™X]S[™X\‘Ü˜YY[
+]™[HHŒØ[˜\ËšZYÚ
+NÂˆÜ˜Y˜YÛÛÜ”ÝÜ
+	ÓÐÑPS—ÕÐUT—Ð“Q_L
+NÂˆÜ˜Y˜YÛÛÜ”ÝÜ
+ŒË	ÓÐÑPS—ÕÐUT—Ð“Q_MMX
+NÂˆÜ˜Y˜YÛÛÜ”ÝÜ
+K	ÓÐÑPS—ÕÐUT—Ð“Q_LÌØ
+NÂˆÝ™š[Ý[HHÜ˜YÂˆÝ™ÛØ˜[[HHØ\›\Ú[JŽH
+ˆ]™[K\Ëœ™YXÙY›\Ú
+NÂˆÝ˜™YÚ[”]
+
+NÂˆÛÛœÝˆHÂˆ›Üˆ
+]HHÈHHŽÈJÊÊHÂˆÛÛœÝH
+HÈŠH
+ˆØ[˜\ËÚYÂˆÛÛœÝHH]™[H
+ÈX]œÚ[Š
+ˆŒˆ
+È\ËÙXÈ
+ˆŠH
+ˆÎÂˆYˆ
+HOOH
+HÝ›[Ý™UÊJNÈ[ÙHÝ›[™UÊJNÂˆBˆÝ›[™UÊØ[˜\ËÚYØ[˜\ËšZYÚ
+NÂˆÝ›[™UÊØ[˜\ËšZYÚ
+NÂˆÝ˜ÛÜÙT]
+
+NÂˆÝ™š[
+
+NÂˆÝœ™\ÝÜ™J
+NÂˆB‚ˆÊŠˆY\šX[\œÜXÝ]™NˆH˜[œÛXÙ[ÚÞKXÛÛÜ™YØ\ÚY\ˆH[Ý[Z[‚ˆ
+ˆ^Y\‹Ý›Û™Ù\Ý™Z[™H˜\\Ý˜[™ÙH
+ŠH[™›Û™H™Z[™Bˆ
+ˆ™X\™\Ý
+JKÛÈ\Ý[˜ÙHXØÝ[][]\È][ÜÜ\™HHØ^H]Ù\È[‚ˆ
+ˆH™X[ÛÜ›[œÝXYÙˆ]™\žH˜[™ÙH™XY[™È\ÈHØ[YH›]ˆ
+ˆÝ]Ý]ˆÛÛÜˆ[ÈÝØ\™HØ\›H]Û‹Ù\ÚÈÛ™HšXHH^H\˜ÎÂˆ
+ˆH\‹Xš[ÛYHT”ÓÓSUKš^™HX[[™Ø[S]™[›ÝØØ[H]ˆ
+‹ÂˆÙ˜]Ò^™JÝØ[˜\Ë^Y\’Ù^KK‹\˜ÊHÂˆÛÛœÝÝ[R^™HHÝ[QX[Ê\Ëš\ÝX[Ý[JKš^™S][NÂˆÛÛœÝ^™S][H
+[X™\‹š\Ñš[š]J\Ë—Ú^™S][
+HÈ\Ë—Ú^™S][ˆJH
+ˆÝ[R^™NÂˆÛÛœÝ[HH^™P[J^Y\’Ù^K^™S][\Ë˜Ø[S]™[
+NÂˆYˆ
+J[HˆV‘WÑTÊHS[X™\‹š\Ñš[š]J[JJH™]\›ŽÂˆÛÛœÝÚÞU[H\Ë›\œØXÚK™Ù]
+KœÚÞVÌ—K‹œÚÞVÌ—K
+NÂˆÛÛœÝ^™PÛÛÜˆH\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+ÚÞU[V‘WÕÐT“WÐÓÓÔ‹^™UØ\›SZ^
+\˜ÏËš^™UØ\›HÏÈ
+JJNÂˆÛÛœÝÈ‹ËˆHH^Ô™ØŠ^™PÛÛÜŠNÂˆYˆ
+VÜ‹Ë—K™]™\žJ[X™\‹š\Ñš[š]JJH™]\›ŽÂˆÝœØ]™J
+NÂˆÛÛœÝÜ˜YHÝ˜Ü™X]S[™X\‘Ü˜YY[
+Ø[˜\ËšZYÚ
+NÂˆÜ˜Y˜YÛÛÜ”ÝÜ
+™Ø˜J	ÜŸK	ÙßK	ØŸK
+X
+NÂˆÜ˜Y˜YÛÛÜ”ÝÜ
+K™Ø˜J	ÜŸK	ÙßK	ØŸK	Ø[KÑš^Y
+Ê_JX
+NÂˆÝ™š[Ý[HHÜ˜YÂˆÝ™š[™XÝ
+Ø[˜\ËÚYØ[˜\ËšZYÚ
+NÂˆËÈ›ÜØ\™ØØ]\ŽˆÛ™HY]]™H˜YX[š[Ù[™YÛˆHÙ[\ÝX[ˆËÈÛÈHZ\ˆœšYÚ[œÈÝØ\™HYÚ[œÝXYÙˆ™XY[™È\ÈH›]ˆËÈ[ˆY\ÈÚ]H^Y\ˆ
+^™S^Y\œÈ[™XYHÛÛ\Ù\È‹Ó]ˆËÈHY\[™ÊH[™\ÈH\™ÚÚ\Ú[ˆ^™TØØ]\ˆ™]\›œÈ[‚ˆÛÛœÝØØ]\ˆH^™TØØ]\Š^Y\’Ù^K\Ë›YÚ^™S][Ø[˜\ËšZYÚ
+NÂˆYˆ
+ØØ]\ŠHÂˆÝ™ÛØ˜[ÛÛ\ÜÚ]SÜ\˜][ÛˆH	ÛYÚ\‰ÎÂˆÛÛœÝ[ÈHÝ˜Ü™X]T˜YX[Ü˜YY[
+ØØ]\‹˜ÞØØ]\‹˜ÞKØØ]\‹˜ÞØØ]\‹˜ÞKØØ]\‹œ˜Y]\ÊNÂˆ[Ë˜YÛÛÜ”ÝÜ
+™Ø˜J	ÜŸK	ÙßK	ØŸK	ÜØØ]\‹˜[KÑš^Y
+Ê_JX
+NÂˆ[Ë˜YÛÛÜ”ÝÜ
+K™Ø˜J	ÜŸK	ÙßK	ØŸK
+X
+NÂˆÝ™š[Ý[HH[ÎÂˆÝ˜™YÚ[”]
+
+NÂˆÝ˜\˜ÊØØ]\‹˜ÞØØ]\‹˜ÞKØØ]\‹œ˜Y]\ËX]”H
+ˆŠNÂˆÝ™š[
+
+NÂˆBˆÝœ™\ÝÜ™J
+NÂˆB‚ˆÊŠˆZY\Ý\ÉÜÈY\\ÜXÙH^Ý\œÚ[ÛŽˆ˜]Ûˆ\™H
+™Z[™H[Ý[Z[‚ˆ
+ˆÚ[ÝY]\È˜]Ûˆ\\ˆÝÛˆ[ˆ˜]Ê
+JHÛÈÚHÙ[Z[™[H™XYÈ\Âˆ
+ˆØ^H[ˆH\Ý[˜ÙHˆ˜]\ˆ[ˆ\ÝÛX[\‹ˆ™[™\œÈ\ˆ˜Y[™Âˆ
+ˆÛÛœÝ[][ÛœÈ
+ÛÛ\]YšYÝ\™\Èœ›Þ™[ˆ[ÈHÚÞJKH]™Bˆ
+ˆ\œÚ\Ý[˜Z[ÚÞK]Üš][™ÈHÝ\œ™[šYÝ\™K[™HÛX[[ÝHÙ‚ˆ
+ˆYÚ]\ˆÝ\œ™[ÜÚ][Û‹ˆH›Ë[ÜÚ[™]™\ˆÚH\Û‰Ý]Ø^Kˆ
+‹ÂˆÙ˜]ÔÚYÛ˜]\™Jœ˜[YK]\ÚXÊHÂˆÓÔ“ÔÒQÓUT‘TË™Ù]
+\ËÛÜ›ËšÚ[™
+OËŠ\Ëœ˜[YK]\ÚXÊNÂˆB‚ˆ˜]ÑY\ÚÞJÝ›ÞXYÙKØ[˜\ÊHÂˆYˆ
+ZY[]P[ÝÜÊ\ËÛÜ›	ÙY\ÚÞIÊJH™]\›ŽÂˆYˆ
+]›ÞXYÙJH™]\›ŽÂˆÛÛœÝ›ÝÓ\ÈH\ËÙXÈ
+ˆLÂˆËÈ]™\žHÜÚ][ÛˆÚÞU›ÞXYÙHÝÜ™\È
+Ý][Û‹˜Z[ÛÛœÝ[][ÛœËBˆËÈ\›X[™[]\Ë›Ý˜YKÜ\šÛ\ËZXÜ›Ë\Û\Ú\ÊH\È˜ZÙY\È[‚ˆËÈP”ÓÓUH^[YØZ[œÝZY\Ý\ÉÜÈÝÛˆÝYÙUËÜÝYÙRKHH›ÛZ[˜[ˆËÈØ[˜\ÕÚYÒZYÚÚ[][][ÛˆØ\ÈÛÛœÝXÝYÚ]
+ÙYHZY\Ý\ËšœÊKˆËÈÚXÚ\È“ÕHØ[YHœ˜[YH\È˜]ÜÈ[Îˆ™[™\™\ˆYÈHÝYÙBˆËÈžHÒRÑWÓPT‘ÒS—ÔÛˆ]™\žHÚYH[™ÚY[œÈ]\\ˆ[™\ˆØ[Y\˜BˆËÈ[X˜XÚÈ
+Ø[Y\˜Q\™XÝÜ‹ž›ÛÛJKÛÈH]™HØ[˜\È\È›Ý][™[BˆËÈÚY\‹Ý[\ˆ[ˆH›ÛZ[˜[[\È\ÙHÚ[ÈÙ\™HÛÛ\]YˆËÈYØZ[œÝˆ]™\žHÝ\ˆÚÞHØš™XÝ[ˆ\Èš[H
+Ý\œËÛÛœÝ[][Û‚ˆËÈÙX]™\‹\Ý[™\Ë‹‹ŠHÝÜ™\ÈH”PÕSÓˆ[™™\ØØ[\ÈYØZ[œÝBˆËÈXÝX[Ø[˜\È]˜]È[YH›Üˆ^XÝH\È™X\ÛÛŽÈÚÞU›ÞXYÙH™]™\‚ˆËÈYÛÈ\ˆÚÛHÚÞK]Üš][™È˜Z[Ø][›™YÈH›ÛZ[˜[Ü[‚ˆËÈÚ[HH]™Hœ˜[YH\›Ý[™]Ü™]ÈKH™XY[™È\È˜]Ûˆ[ˆHÜ›Û™ÂˆËÈ\ÙˆHØÜ™Y[‹[™
+Ú[˜ÙHH\œ˜Z[ˆÚ[ÝY]H™[ÝÈTÂˆËÈ™\ØØ[YÈH]™HØ[˜\È]™\žHœ˜[YJH[™[™È[ˆœ›ÛÙˆ\œ˜Z[‚ˆËÈ]ÚÝ[]™H™Y[ˆØY™[H™Z[™ˆ\ËËÝ\Ëš\™HHØ[YBˆËÈØ[˜\ÕÚYØØ[˜\ÒZYÚZY\Ý\ÈØ\ÈÛÛœÝXÝYÚ]ÛÈ^IÜ™HBˆËÈÛÜœ™XÝ™Y™\™[˜ÙHœ˜[YHÈ™\ØØ[HYØZ[œÝ‚ˆÛÛœÝÞHØ[˜\ËÚYÈ\ËËÞHHØ[˜\ËšZYÚÈ\ËšÂˆÛÛœÝH
+
+HOˆ
+ˆÞHH
+JHOˆH
+ˆÞNÂ‚ˆËÈHÝ\ˆ]\È˜]ÜÈÚ]\ˆÜˆ›ÝÚIÜÈ]Ø^Nˆ]™\žHÜž\Ý[^™YˆËÈÛÛœÝ[][ÛˆÝ^\È[ˆHÚÞH›ÜˆH™\ÝÙˆHÛÛ™ËÚ[šÛ[™ÂˆËÈ\‹\Ý\ˆ[™Û[[™ÈÚ]H™X]
+]\Ô[ÙHšY\È\KœÛ[JK‚ˆYˆ
+›ÞXYÙK˜]\Ë›[™Ý
+HÂˆÛÛœÝ[ÙHH›ÞXYÙK˜]\Ô[ÙHÂˆÝœØ]™J
+NÂˆÝ™ÛØ˜[ÛÛ\ÜÚ]SÜ\˜][ÛˆH	ÛYÚ\‰ÎÂˆ›Üˆ
+ÛÛœÝ[žHÙˆ›ÞXYÙK˜]\ÊHÂˆËÈÚÜ™ZYÚ›ÜˆYÙ\ÈÛ›H8 %[Û[[™HÝ™\ˆÜ\œÙHÝ\œÈXYBˆËÈHœ˜[™ÛHÝ˜ZYÚ[™HˆÚÞHšX[™Û\Ë‚ˆÝœÝ›ÚÙTÝ[HHÛJ	Ù[žKšY_KÍIK‰K	ÌŒH
+ˆ
+H
+ÈKŒˆ
+ˆ[ÙJ_JXÂˆÝ›[™UÚYHŽÂˆÝ›[™PØ\H	Ü›Ý[™	ÎÂˆÛÛœÝUT×ÑQÑHHŒÂˆ›Üˆ
+]HHNÈH[žKœÝ\œË›[™ÝÈJÊÊHÂˆÛÛœÝHH[žKœÝ\œÖÚHHWKˆH[žKœÝ\œÖÚWNÂˆÛÛœÝH‹žHKžHH‹žHHKžNÂˆYˆ
+
+ˆ
+ÈH
+ˆHˆUT×ÑQÑH
+ˆUT×ÑQÑJHÛÛ[YNÂˆÝ˜™YÚ[”]
+
+NÂˆÝ›[Ý™UÊ
+Kž
+KJKžJJNÂˆÝ›[™UÊ
+‹ž
+KJ‹žJJNÂˆÝœÝ›ÚÙJ
+NÂˆBˆ›Üˆ
+ÛÛœÝÈÙˆ[žKœÝ\œÊHÂˆÛÛœÝÚ[šÛHHH
+ÈH
+ˆX]œÚ[Š›ÝÓ\È
+ˆŒLÈ
+ÈËœ\ÙJNÂˆÝ™š[Ý[HHÛJ	Ù[žKšY_KIK	K	ÊŒMˆ
+ÈŒMˆ
+ˆÚ[šÛJH
+ˆ
+H
+ÈKˆ
+ˆ[ÙJ_JXÂˆÝ˜™YÚ[”]
+
+NÂˆÝ˜\˜Ê
+Ëž
+KJËžJKKŒH
+ÈH
+ˆÚ[šÛKX]”H
+ˆŠNÂˆÝ™š[
+
+NÂˆBˆBˆÝœ™\ÝÜ™J
+NÂˆB‚ˆËÈHš[˜[IÜÈÝ\\››Ý˜HØ\ØØYNˆXXÚ]Û˜][™È]\ÈÝ\ˆ›ÝÜÈ[‚ˆËÈ^[™[™Èš[™ËHÝÛÜ™K[™Hš]™K\˜^H›\™Kˆ˜]ÛˆÚ]\ˆÜ‚ˆËÈ›ÝÚIÜÈ]Ø^HKHÚIÜÈÛYHØ]Ú[™È\ˆÝÛˆ^]ÈÛÈ\‚ˆYˆ
+›ÞXYÙK››Ý˜YK›[™Ý
+HÂˆÝœØ]™J
+NÂˆÝ™ÛØ˜[ÛÛ\ÜÚ]SÜ\˜][ÛˆH	ÛYÚ\‰ÎÂˆ›Üˆ
+ÛÛœÝˆÙˆ›ÞXYÙK››Ý˜YJHÂˆÛÛœÝYÙHH›ÝÓ\ÈH‹˜›Ü›“\ÈH‹™[^S\ÎÂˆYˆ
+YÙH
+HÛÛ[YNÈËÈÝ[ØZ][™ÈÛˆ]ÈÜÛÜ›ˆ[^BˆÛÛœÝHHX]›Z[ŠKYÙHÈLL
+NÂˆÛÛœÝX\ÙSÝ]HHH
+HHJH
+ŠˆÎÂˆÛÛœÝ˜YHHHHNÂˆÛÛœÝžH
+‹ž
+KžHHJ‹žJNÂ‚ˆÝœÝ›ÚÙTÝ[HHÛJ	Û‹šY_KÌ	KIK	ØØ\›\Ú[JÈ
+ˆ˜YK\Ëœ™YXÙY›\Ú
+_JXÂˆÝ›[™UÚYHH
+Èˆ
+ˆ˜YNÂˆÝ˜™YÚ[”]
+
+NÂˆÝ˜\˜ÊžžK
+ÈŒˆ
+ˆX\ÙSÝ]X]”H
+ˆŠNÂˆÝœÝ›ÚÙJ
+NÂ‚ˆÝ™š[Ý[HHÛJ	Û‹šY_KÌ	KM‰K	ØØ\›\Ú[J˜YK\Ëœ™YXÙY›\Ú
+_JXÂˆÝ˜™YÚ[”]
+
+NÂˆÝ˜\˜ÊžžKH
+ÈÈ
+ˆ˜YKX]”H
+ˆŠNÂˆÝ™š[
+
+NÂ‚ˆÝœÝ›ÚÙTÝ[HHÛJ	Û‹šY_KŒ	KL	K	ØØ\›\Ú[JH
+ˆ˜YK\Ëœ™YXÙY›\Ú
+_JXÂˆÝ›[™UÚYHNÂˆ›Üˆ
+]ÈHÈÈNÈÊÊÊHÂˆÛÛœÝ[™ÈH‹œ\ÙH
+È
+ÈÈJH
+ˆX]”H
+ˆŽÂˆÛÛœÝ[ˆHL
+Èˆ
+ˆX\ÙSÝ]ÂˆÝ˜™YÚ[”]
+
+NÂˆÝ›[Ý™UÊž
+ÈX]˜ÛÜÊ[™ÊH
+ˆKžH
+ÈX]œÚ[Š[™ÊH
+ˆJNÂˆÝ›[™UÊž
+ÈX]˜ÛÜÊ[™ÊH
+ˆ[‹žH
+ÈX]œÚ[Š[™ÊH
+ˆ[ŠNÂˆÝœÝ›ÚÙJ
+NÂˆBˆBˆÝœ™\ÝÜ™J
+NÂˆB‚ˆYˆ
+›ÞXYÙK™\HŒŠH™]\›ŽÂˆÝœØ]™J
+NÂˆÝ™ÛØ˜[ÛÛ\ÜÚ]SÜ\˜][ÛˆH	ÛYÚ\‰ÎÂ‚ˆËÈœ›Þ™[ˆšYÝ\™\ÎˆÚÜÝ\™HÙYÛY[ÈÛ›H
+ÚÚ\Û™ÈÚÜ™È]ˆËÈ\ÙYÈ™XY\È˜[™ÛHÝ˜ZYÚ[™\ÈXÜ›ÜÜÈHÚÞJK‚ˆÛÛœÝÓÓ”ÕÑQÑWÓPVHŒŽÂˆ›Üˆ
+ÛÛœÝÈÙˆ›ÞXYÙK˜ÛÛœÝ[][ÛœÊHÂˆÛÛœÝY™HHÛÛœÝ[][Û“Y™LJË˜›Ü›“\Ë›ÝÓ\ÊNÂˆYˆ
+Y™HH
+HÛÛ[YNÂˆÝœÝ›ÚÙTÝ[HHÛJ	ØËšY_KŒ	K	K	ÌH
+ˆY™_JXÂˆÝ›[™UÚYHKŒÎÂˆÝ›[™PØ\H	Ü›Ý[™	ÎÂˆÝ›[™R›Ú[ˆH	Ü›Ý[™	ÎÂˆ›Üˆ
+]HHNÈHËœÚ[Ë›[™ÝÈJÊÊHÂˆÛÛœÝHHËœÚ[ÖÚHHWKˆHËœÚ[ÖÚWNÂˆÛÛœÝH‹žHKžHH‹žHHKžNÂˆYˆ
+
+ˆ
+ÈH
+ˆHˆÓÓ”ÕÑQÑWÓPV
+ˆÓÓ”ÕÑQÑWÓPV
+HÛÛ[YNÂˆÝ˜™YÚ[”]
+
+NÂˆÝ›[Ý™UÊ
+Kž
+KJKžJJNÂˆÝ›[™UÊ
+‹ž
+KJ‹žJJNÂˆÝœÝ›ÚÙJ
+NÂˆBˆÝ™š[Ý[HHÛJ	ØËšY_KÍIKL	K	ÌŽH
+ˆY™_JXÂˆ›Üˆ
+ÛÛœÝÙˆËœÚ[ÊHÂˆÝ˜™YÚ[”]
+
+NÂˆÝ˜\˜Ê
+ž
+KJžJK‹X]”H
+ˆŠNÂˆÝ™š[
+
+NÂˆBˆB‚ˆËÈ]\ÈÜž\Ý[YÙ\ÎˆÛ›HÚÜ[šÜÈ
+Ø[YH[H8 %›ÈÚÞHšX[™Û\ÊK‚ˆËÈ
+[]\ÈÝ›ÚÙH\È˜]ÛˆX›Ý™NÈÙY\Ý\œË›ÜÛ™ÈÛ[[™\ËŠB‚ˆËÈ\œÚ\Ý[˜Z[ˆHÛÙÚYHÛÝÈ\ÜÈ[™\›™X]HœšYÚ[‚ˆËÈÛÜ™KˆÚÚ\Ø\È[\ÜÚÜ™ÈÛÈH\ÙH[\™]™\ˆZ[ÈBˆËÈÝ˜ZYÚ[™HXÜ›ÜÜÈHšYÝ\™K‚ˆÛÛœÝ˜Z[H›ÞXYÙK˜Z[ÂˆÛÛœÝÐTHŽÂˆ›Üˆ
+]HHNÈH˜Z[›[™ÝÈJÊÊHÂˆÛÛœÝHH˜Z[ÚHHWKˆH˜Z[ÚWNÂˆYˆ
+‹™Ø\
+HÛÛ[YNÂˆÛÛœÝH‹žHKžHH‹žHHKžNÂˆYˆ
+
+ˆ
+ÈH
+ˆHˆÐT
+ˆÐT
+HÛÛ[YNÂˆÛÛœÝHHHÈ˜Z[›[™ÝÈËÈÛ\ˆÚ[È˜YHÝØ\™˜[œÜ\™[ˆÛÛœÝ^H
+Kž
+K^HHJKžJKžH
+‹ž
+KžHHJ‹žJNÂˆÝœÝ›ÚÙTÝ[HHÛJ	Ø‹šY_KIKÎ	K	ÌŒŒˆ
+ˆ_JXÂˆÝ›[™UÚYHŽÂˆÝ›[™PØ\H	Ü›Ý[™	ÎÂˆÝ˜™YÚ[”]
+
+NÈÝ›[Ý™UÊ^^JNÈÝ›[™UÊžžJNÈÝœÝ›ÚÙJ
+NÂˆÝœÝ›ÚÙTÝ[HHÛJ	Ø‹šY_KÍIK	K	ÌŽH
+ˆ_JXÂˆÝ›[™UÚYHKŽÂˆÝ˜™YÚ[”]
+
+NÈÝ›[Ý™UÊ^^JNÈÝ›[™UÊžžJNÈÝœÝ›ÚÙJ
+NÂˆB‚ˆËÈÚXÚÈÜ\šÛ\Îˆ˜YX[\œÝÈ›[™ÈÙ™ˆ\ˆÛˆ]™\žH™X]Ý]\™K‚ˆ›Üˆ
+ÛÛœÝÈÙˆ›ÞXYÙKœÜ\šÛ\ÊHÂˆÛÛœÝY™HHHHË˜YÙHÈŽÂˆYˆ
+Y™HH
+HÛÛ[YNÂˆÝ™š[Ý[HHÛJ	ÜËšY_K	K	K	ÌŽH
+ˆY™_JXÂˆÝ™š[™XÝ
+
+Ëž
+HHKJËžJHHK‹Œ‹‹ŒŠNÂˆB‚ˆËÈZXÜ›Ë\Û\Ú\ÎˆXXÚY[ÙHÛœÙ]Ý]ÈHœšYYˆœšYÚ[™H]\‚ˆËÈY\\ÚÞHÜÚ][ÛˆKH\ˆ›ÝK\Û\Ú›ØØX[\žKZ[šX]\š^™Y‚ˆÝ›[™PØ\H	Ü›Ý[™	ÎÂˆ›Üˆ
+ÛÛœÝÈÙˆ›ÞXYÙK›ZXÜ›ÔÛ\Ú\ÊHÂˆÛÛœÝHHË˜YÙHÈŒNÂˆYˆ
+HHJHÛÛ[YNÂˆÛÛœÝ^H
+ÈM
+ˆNÂˆÛÛœÝÞˆH
+Ëž
+KÞLˆHJËžJNÂˆÝœÝ›ÚÙTÝ[HHÛJ	ÜËšY_KÍIKIK	ÌŽH
+ˆ
+HHJ_JXÂˆÝ›[™UÚYHKˆ
+ˆ
+HHH
+ˆJNÂˆÝ˜™YÚ[”]
+
+NÂˆÝ›[Ý™UÊÞˆHX]˜ÛÜÊË˜[™ÊH
+ˆ^ÞLˆHX]œÚ[ŠË˜[™ÊH
+ˆ^
+NÂˆÝ›[™UÊÞˆ
+ÈX]˜ÛÜÊË˜[™ÊH
+ˆ^ÞLˆ
+ÈX]œÚ[ŠË˜[™ÊH
+ˆ^
+NÂˆÝœÝ›ÚÙJ
+NÂˆB‚ˆËÈ\ˆÝ\œ™[ÜÚ][ÛŽˆHÛX[ÛÝÚ[™ÈÛÛY]ZXY]Ó“HÛ˜ÙHÚIÜÂˆËÈÙ[Z[™[HY\\ÚÞHKHÒS‘TÐTÐÑS•Ô‘QS•–H›ÝÈ™[™\ˆ\ˆ™X[Y\ÚˆËÈ[ˆHÚ\˜XÝ\ˆ^Y\ˆ
+ÙYHZY\Ý\Ë™˜]Ê
+JKÛÈ˜]Ú[™È\ÈÝˆËÈ\š[™ÈÜÙH\Ù\ÈÛÝ[ÝX›H\ˆ\‚ˆYˆ
+›ÞXYÙKœ\ÙHOOH›ÞXYÙT\ÙK‘QTÔÔPÑJHÂˆÛÛœÝˆHˆ
+ÈÈ
+ˆ
+HH›ÞXYÙK™\
+NÂˆÛÛœÝH
+›ÞXYÙKœž
+KHHJ›ÞXYÙKœžJNÂˆÝ™š[Ý[HHÛJ	Ý›ÞXYÙKšY_KŒ	KIK	ÌŒŽ
+ˆ›ÞXYÙK™\JXÂˆÝ˜™YÚ[”]
+
+NÂˆÝ˜\˜ÊKˆ
+ˆËX]”H
+ˆŠNÂˆÝ™š[
+
+NÂˆÝ™š[Ý[HHÛJ	Ý›ÞXYÙKšY_K	KL‰K	Ìˆ
+È
+ˆ›ÞXYÙK™\JXÂˆÝ˜™YÚ[”]
+
+NÂˆÝ˜\˜ÊK‹X]”H
+ˆŠNÂˆÝ™š[
+
+NÂˆB‚ˆÝœ™\ÝÜ™J
+NÂˆB‚ˆÊŠˆÝ]›\Ú
+ÈÚ]\ˆÚ\Kš\™YžHH˜[X]\™ÞH\™XÝÜ‹ˆ
+‹ÂˆÙ˜]Õ˜[œÚ][Û“Ý™\›^\ÊÝØ[˜\ËŠHÂˆÛÛœÝ›ÝÓ\ÈH\ËÙXÈ
+ˆLÂˆÛÛœÝHH
+›ÝÓ\ÈH\Ë—ÜÚ]\”Ý\\ÊHÈ\Ë—ÜÚ]\˜\“\ÎÂˆYˆ
+HH	‰ˆHHJHÂˆËÈ™\XØ[Ú]\ˆÛÛ[[œÈÛÜÚ[™È[ˆ™[Ü[š[™ÈÝ™\ˆÛ™H˜\‹ˆËÈ\ÙK\ÝYÙÙ\™YÛÈHÚ\Hš\\È[œÝXYÙˆÛ[[Z[™Ë‚ˆËÂˆËÈÛÝ™\˜YÙH\ÈØ\YÙ[ÚÜÙˆYY][™È[ˆHZYKˆ]H\‚ˆËÈ[ˆ\ÙHÛÛ[[œÈÛÜÙYHœ˜[YHÈÛÛY›XÚÈ›ÜˆX›Ý]BˆËÈÙXÛÛ™KHHØÜ™Y[ˆš][™ÈÚ]ˆ]ÚÝ[™XY\ÈHÛÜ›ˆËÈ˜\œ›ÝÚ[™ÈÛˆH[ÛY[›Ý\ÈHXÝ\™H™Z[™ÈZÙ[ˆ]Ø^K‚ˆËÂˆËÈ™YXÙYY›\Ú[™\È]YØZ[‹ˆ\È\ÈH\™Ù\ÝYÚ\ÝXÛÛ˜\ÝˆËÈ]™[[ˆHØ[YH[™]Ø\ÈHÛ™H[™È[ˆ\Èš[HYÛ›Üš[™ÈBˆËÈXØÙ\ÜÚXš[]HØ\[\™[K‚ˆÛÛœÝÛÝ™\ˆH\Ëœ™YXÙY›\ÚÈÒUT—ÓPVÐÓÕ‘Tˆ
+ˆHˆÒUT—ÓPVÐÓÕ‘TŽÂˆÝœØ]™J
+NÂˆÝ™š[Ý[HH‹œÚ[ÝY]NÂˆÛÛœÝÛÛÈHMÂˆÛÛœÝÛÛÈHØ[˜\ËÚYÈÛÛÎÂˆ›Üˆ
+]HHÈHÛÛÎÈJÊÊHÂˆÛÛœÝÝYÙÙ\ˆHŽ
+ÈŒˆ
+ˆX]œÚ[ŠH
+ˆKÊNÂˆÛÛœÝHØ[˜\ËšZYÚ
+ˆÛÝ™\ˆ
+ˆX]œÚ[ŠX]”H
+ˆX]›Z[ŠKH
+ˆKŒJJH
+ˆÝYÙÙ\ŽÂˆÝ™š[™XÝ
+H
+ˆÛÛËÛÛÈ
+ÈK
+NÂˆÝ™š[™XÝ
+H
+ˆÛÛËØ[˜\ËšZYÚHÛÛÈ
+ÈK
+NÂˆBˆÝœ™\ÝÜ™J
+NÂˆBˆYˆ
+\Ë—ØÝ]›\ÚˆŒJHÂˆÝœØ]™J
+NÂˆÝ™ÛØ˜[[HHØ\›\Ú[JŒÍH
+ˆ\Ë—ØÝ]›\Ú\Ëœ™YXÙY›\Ú
+NÂˆÝ™š[Ý[HH	ÈÙ™™™™™‰ÎÂˆÝ™š[™XÝ
+Ø[˜\ËÚYØ[˜\ËšZYÚ
+NÂˆÝœ™\ÝÜ™J
+NÂˆBˆB‚ˆ˜]Ñ›Ü™YÜ›Ý[™
+ÝØ[˜\ËÛÜ›™Z[[˜X›YHYJHÂˆËÈÎˆÝ™\œÚ^™Y›\œ™YÝËX[H›Ü™YÜ›Ý[™™Z[
+ÜXÈ0©ÍŒKŒJK‚ˆËÈØ[HÙXÝ[ÛœÈYH™Z[[HH]HKHHÛX[ÚX\Ø^HÂˆËÈÙY\\È˜XÚÛ[ÜÝ^Y\ˆš\ÚX›Hœ™X][™ÈÚ[ˆ›Ý[™È[ÙH\ÈÝY‚ˆYˆ
+]™Z[[˜X›Y
+H™]\›ŽÂˆÝœØ]™J
+NÂˆÝ™ÛØ˜[[HHŒL
+ˆ
+H
+Èˆ
+ˆ
+\Ë˜Ø[S]™[
+JNÂˆÛÛœÝØÜ›ÛHÛÜ›
+ˆÛÙQ\™XÝÜ‹™[[Z[˜]T˜][ÊVQT—ÔUSÔË“Ë\Ë[œ˜]™[
+NÂˆ›Üˆ
+]HHÈHÎÈJÊÊHÂˆÛÛœÝH
+
+H
+ˆHØÜ›Û
+H	H
+Ø[˜\ËÚY
+È
+H
+ÈØ[˜\ËÚY
+È
+H	H
+Ø[˜\ËÚY
+È
+HHŒÂˆÛÛœÝÞHHØ[˜\ËšZYÚ
+ˆ
+ŒÈ
+ÈŒˆ
+ˆJNÂˆËÈÚY\‹ÛÙ\ˆ˜YX[š[Ý[™È[ˆ›ÜˆHÛ›\Šœ
+H\ÜÈKBˆËÈØ[YHÛÙYYÙYÛÚË›È\‹Yœ˜[YHÙ™œØÜ™Y[‹[^Y\‹ÑÔKY›\ÚÛÜÝ‚ˆÛÛœÝžHŒŒžHHLÌÂˆÛÛœÝÈHÝ˜Ü™X]T˜YX[Ü˜YY[
+ÞKÞKX]›X^
+žžJJNÂˆË˜YÛÛÜ”ÝÜ
+	Ü™Ø˜JMKMKMKJIÊNÂˆË˜YÛÛÜ”ÝÜ
+‹	Ü™Ø˜JMKMKMKŠIÊNÂˆË˜YÛÛÜ”ÝÜ
+K	Ü™Ø˜JMKMKMK
+IÊNÂˆÝ™š[Ý[HHÎÂˆÝ˜™YÚ[”]
+
+NÂˆÝ™[\ÙJÞKžžKX]”H
+ˆŠNÂˆÝ™š[
+
+NÂˆBˆÝœ™\ÝÜ™J
+NÂ‚ˆËÈ™X\‹YšY[ØØÛY\œÎˆYÙHš[ÛYK[[™X\šÈÚ[ÝY]\ÈÝÙY\[™È\ÝˆËÈ˜\Ý\ˆ[ˆHÚ\˜XÝ\œËÛÜÙH[›ÝYÚÈØØÛYH[KˆØ]YÛ‚ˆËÈHØ[YH\™ˆÚYÛ˜[\ÈH™Z[X›Ý™HKHÛÜÝÈH[™[Ùˆ™XÝÜ‚ˆËÈÚ\H˜]ÜÈ\ˆš\ÚX›HÙXÝÜ‹ÚX\\ˆ[ˆH™Z[	ÜÈÈÜ˜YY[Ë‚ˆYˆ
+\Ë˜Ý\œ™[›[™
+HÂˆÛÛœÝÛZ[˜[H\Ë˜Ý\œ™[›[™ˆHÈ\Ë˜Ý\œ™[›[™Èˆ\Ë˜Ý\œ™[›[™™œ›ÛNÂˆËÈØ[YH˜[YKØ\˜Ú]\HZ\ÛX]Ú\ÈXÛÜ˜]TÝš\X›Ý™Nˆ™X\‘šY[Ù^\ÂˆËÈS‘PT’ÔÈ[™
+šXHš[ÛYPžS˜[YJH]ÈÚ[ÝY]KY\šÙ[š[™ÈÛÛÜˆÙ™‚ˆËÈ[ˆ\˜Ú]\H˜[YK›ÝHÞ[\Ú^™Y[]IÜÈÝÛˆ\Ü^H˜[YK‚ˆÛÛœÝÛZ[˜[[™X\šÒÙ^HH\Ë—Ü›Ùš[JÛZ[˜[
+OË›[™X\šÒÙ^HÛZ[˜[ÂˆÛÛœÝ˜][ÈHÛÙQ\™XÝÜ‹™[[Z[˜]T˜][Ê‘PT‘’QSÔUSË\Ë[œ˜]™[
+NÂˆÛÛœÝÚXÚÈH[™RÚXÚÊ\ËÙXÈ
+ˆL\Ë—Ù[˜ÙRÚXÚÓ\Ë	Û™X\‰Ë\Ë—Ù[˜ÙRÚXÚÐ[\
+NÂˆ\Ë›™X\‘šY[™˜]ÊÝØ[˜\ËÛÜ›ÂˆÙXÎˆ\ËÙXËÚXÚËš[ÛYS˜[YNˆÛZ[˜[[™X\šÒÙ^KÚ[ÝY]Nˆ\Ë—Ü›Ùš[JÛZ[˜[
+OËœÚ[ÝY]K™YXÙY[Ý[ÛŽˆH]\Ëœ™YXÙY›\Ú˜][ËˆJNÂ‚ˆËÈÜ›Ý[™ØØ]\ŽˆHœ›Û[ÜÝ[™IÜÈÛX[]Z[˜]ÛˆY\‚ˆËÈ™X\‘šY[ÛÈHÛÈ™X\‹YšY[^Y\œÈÝXÚÈ™X\‹]ËXØ[Y\˜H\Ý‚ˆËÈ\È\ÈHÛ›H^Y\ˆ[ˆHØÙ[™H]Ý][œÈHÚ\˜XÝ\œÈžBˆËÈ\È]XÚ[™]\ÈÚ]š[˜[HÚ]™\ÈHÜ›Ý[™H™XYÛˆÝÂˆËÈ˜\ÝHÛÜ›\ÈÛÚ[™È\ÝˆÚYÈÛˆHØ[YH\™ˆ[™È\ÈBˆËÈ™\ÝÙˆH›Ü™YÜ›Ý[™
+\ÈÚÛHY]Ù\È[™XYHØ]YÛˆ]
+K‚ˆ\Ë™Ü›Ý[™ØØ]\‹™˜]ÊÝØ[˜\ËÛÜ›ÂˆÜ›Ý[™Nˆ\Ë™Ü›Ý[™KˆÚXÚËˆ˜][ÎˆÛÙQ\™XÝÜ‹™[[Z[˜]T˜][ÊÐÐUT—ÔUSË\Ë[œ˜]™[
+KˆËÈšY\ÈH[XšY[YÚYÙ]ZÙH]™\žHÝ\ˆXÛÜ˜]]™H^Y\‹ˆËÈÛÈH]ZY]ÙXÝ[Ûˆ]ZY]ÈHÜ›Ý[™ÛÈ[œÝXYÙˆX]š[™ÈÜš]ˆËÈ][ÛÛ˜\ÝYØZ[œÝH˜YYÛÜ›‚ˆ[NˆMH
+ÈH
+ˆÛ[\J\Ë˜YÙ]
+KˆJNÂˆB‚ˆ\Ë—Ù˜]ÕÚ[š\™JÝØ[˜\ËÛÜ›
+NÂˆB‚ˆÊŠˆÚ[š\™Nˆ™X\ˆ›[Y\È˜XÚÚ[™ÈH\›ˆœ›Û	ÜÈ™X[ÛÜ›^^[ˆ
+ˆHÚ[™\ÚX\™YÛ[ÚÙHÛÛ[[‹[™H\›X[™[\šÈØÛÜ˜ÚÝš\Yˆ
+ˆ™Z[™ÛˆHÜ›Ý[™KHÙX]\ˆÚ]ÛÛœÙ\]Y[˜Ù\ËˆHØ[YBˆ
+ˆ]\›ˆÜ›Ý[™ÛÝ™\ˆ
+œ›ÜÝ
+H[™›ÛÙ]™[H
+Ù]›ÛÝ[™ÊH[™XYBˆ
+ˆ\ÝX›\ÚYˆÜ›Ý[™[ØÚÙY
+ØÜ™Y[‹^\Ù\ÈHØ[YBˆ
+ˆZY[ËX[˜ÚÜ™YÜšYÚ[ˆ\È]™\ž][™È[ÙH˜]ÛˆÛˆHØ[Ú[™Âˆ
+ˆÜ›Ý[™
+K[›ZÙHÜ›Ý[™ØØ]\‰ÜÈÝÛˆ[™\[™[K\ØÜ›Û[™Âˆ
+ˆ\˜[^Y™\ÜÈÜXÙKÛÈH\›ˆÙ[Z[™[H˜XÚÜÈH™X[ˆ
+ˆØØ][ÛˆZY[ÈØ[ÜÈ›ÝYÚ˜]\ˆ[ˆHXÛÜ˜]]™H^\™Kˆ
+‹ÂˆÙ˜]ÕÚ[š\™JÝØ[˜\ËÛÜ›
+HÂˆYˆ
+]\Ë™š\™JH™]\›ŽÂˆÛÛœÝÜšYÚ[–H[X™\‹š\Ñš[š]J\Ë›ZY[Ö
+HÈ\Ë›ZY[Öˆ\ËÈ
+ˆNÂˆÛÛœÝÔØÜ™Y[ˆH
+Þ
+HOˆÞHÛÜ›
+ÈÜšYÚ[–Â‚ˆËÈ\›X[™[ØÛÜ˜Úˆ]™\žH™XÛÜ™Y\›™Y[\˜[˜]Ûˆ™YØ\™\ÜÂˆËÈÙˆÚ]\ˆHš\™H]Ù[ˆ\ÈÝ[XÝ]™KÛÈØ[Ú[™È˜XÚÈ›ÝYÚˆËÈ[ˆÛ\›ˆÝ[™XYÈ\ÈØØ\œ™YÜ›Ý[™‚ˆYˆ
+\Ë™š\™K˜\›™Y[\˜[Ë›[™Ý
+HÂˆÝœØ]™J
+NÂˆÝ™š[Ý[HH	Ü™Ø˜JŒL‹
+IÎÂˆ›Üˆ
+ÛÛœÝ]ˆÙˆ\Ë™š\™K˜\›™Y[\˜[ÊHÂˆÛÛœÝÞHÔØÜ™Y[Š]‹ž
+KÞHHÔØÜ™Y[Š]‹žJNÂˆYˆ
+ÞHLŒÞˆØ[˜\ËÚY
+ÈŒ
+HÛÛ[YNÂˆÝ™š[™XÝ
+X]›X^
+LŒÞ
+K\Ë™Ü›Ý[™HHËX]›Z[ŠØ[˜\ËÚY
+ÈŒÞJHHX]›X^
+LŒÞ
+KL
+NÂˆBˆÝœ™\ÝÜ™J
+NÂˆB‚ˆÛÛœÝHH\Ë™š\™Kš[[œÚ]LNÂˆYˆ
+JHˆŒŠJH™]\›ŽÂˆÛÛœÝÞHÔØÜ™Y[Š\Ë™š\™Kž
+KÞHHÔØÜ™Y[Š\Ë™š\™KžJNÂˆYˆ
+ÞHMŒÞˆØ[˜\ËÚY
+ÈŒ
+H™]\›ŽÈËÈÚÛHœ›ÛÙ™‹\ØÜ™Y[‚‚ˆËÈ™X\ˆ›[Y\ÎˆH›Ý[™Y[X™\ˆÙˆ›XÚÙ\š[™ÈÛÛ[[œÈÜ™XY]™[›BˆËÈXÜ›ÜÜÈHœ›Û	ÜÈš\ÚX›HÜ[‹™YØ\™\ÜÈÙˆÝÈÚYHH™X[ˆËÈÛÜ›^[\ÈÜ›ÝÛˆKH˜]ÈÛÜÝ™]™\ˆØØ[\ÈÚ]š\™HYÙK‚ˆÛÛœÝÜ[”HX]›X^
+KÞHHÞ
+NÂˆÛÛœÝÛÝ[HX]›X^
+ËX]›Z[ŠŽX]œ›Ý[™
+Ü[”È
+JJNÂˆÝœØ]™J
+NÂˆÝ™ÛØ˜[ÛÛ\ÜÚ]SÜ\˜][ÛˆH	ÛYÚ\‰ÎÂˆ›Üˆ
+]HHÈHÛÝ[ÈJÊÊHÂˆÛÛœÝÞHÞ
+È
+Ü[”
+ˆ
+H
+ÈJJHÈÛÝ[ÂˆYˆ
+ÞLŒÞˆØ[˜\ËÚY
+ÈŒ
+HÛÛ[YNÂˆÛÛœÝÛÜ›]HÛÜ›
+È
+ÞHÜšYÚ[–
+NÂˆÛÛœÝ›XÚÈH›[YQ›XÚÙ\ŠÛÜ›]\ËÙXÊNÂˆÛÛœÝH
+M
+ÈŒ
+ˆ›XÚÊH
+ˆNÂˆÛÛœÝÈH
+ÈH
+ˆ›XÚÎÂˆÛÛœÝÜ˜YHÝ˜Ü™X]S[™X\‘Ü˜YY[
+Þ\Ë™Ü›Ý[™KÞ\Ë™Ü›Ý[™HH
+NÂˆÜ˜Y˜YÛÛÜ”ÝÜ
+™Ø˜JMKLŒÌ	ÊŽH
+ˆJKÑš^Y
+Ê_JX
+NÂˆÜ˜Y˜YÛÛÜ”ÝÜ
+MK™Ø˜JMKÌŒ	Êˆ
+ˆJKÑš^Y
+Ê_JX
+NÂˆÜ˜Y˜YÛÛÜ”ÝÜ
+K	Ü™Ø˜JMKŒLŒ
+IÊNÂˆÝ™š[Ý[HHÜ˜YÂˆÝ˜™YÚ[”]
+
+NÂˆÝ›[Ý™UÊÞHÈÈ‹\Ë™Ü›Ý[™JNÂˆÝœ]XY˜]XÐÝ\™UÊÞHÈ
+ˆŒMK\Ë™Ü›Ý[™HH
+ˆ‹Þ\Ë™Ü›Ý[™HH
+NÂˆÝœ]XY˜]XÐÝ\™UÊÞ
+ÈÈ
+ˆŒMK\Ë™Ü›Ý[™HH
+ˆ‹Þ
+ÈÈÈ‹\Ë™Ü›Ý[™JNÂˆÝ˜ÛÜÙT]
+
+NÂˆÝ™š[
+
+NÂˆBˆÝœ™\ÝÜ™J
+NÂ‚ˆËÈÛ[ÚÙHÛÛ[[ŽˆH[™[ÙˆÛÙ\Ø\™YšY[™ÈY™œÈš\Ú[™Èœ›ÛBˆËÈHœ›Û	ÜÈZYÚ[ÚX\™YžHHØ[YHÚ[™]Ú\\ÈBˆËÈœ›Û	ÜÈÝÛˆ\Þ[[Y]žHKHHÚÞKYÜ˜YH[ˆÙˆ\È\ÈH^™BˆËÈ][\Y\ˆ›ÛÜÝ[ˆH\œÛÛ˜[]H\]H›ØÚË\È\ÈBˆËÈš\ÚX›H[YH]Ù[‹‚ˆÛÛœÝZYÞH
+Þ
+ÈÞJHÈŽÂˆÛÛœÝÚ[™X[”H
+ˆ
+\Ë™š\™KÚ[™›Ú™XÝ[Û•˜[YH
+NÂˆÝœØ]™J
+NÂˆÝ™ÛØ˜[[HHH
+ˆNÂˆ›Üˆ
+]HHÈHNÈJÊÊHÂˆÛÛœÝHHHÈÂˆÛÛœÝY™–HH\Ë™Ü›Ý[™HHÌHH
+ˆŒŒÂˆÛÛœÝY™–HZYÞ
+ÈÛ[ÚÙQšY
+K\ËÙXËÚ[™X[”
+NÂˆÛÛœÝˆHˆ
+ÈÍ
+ˆNÂˆÛÛœÝÈHÝ˜Ü™X]T˜YX[Ü˜YY[
+Y™–Y™–KY™–Y™–KŠNÂˆË˜YÛÛÜ”ÝÜ
+™Ø˜JÌŒMK	ÊH
+ˆ
+HHH
+ˆŠJKÑš^Y
+Ê_JX
+NÂˆË˜YÛÛÜ”ÝÜ
+K	Ü™Ø˜JÌŒMK
+IÊNÂˆÝ™š[Ý[HHÎÂˆÝ˜™YÚ[”]
+
+NÂˆÝ˜\˜ÊY™–Y™–K‹X]”H
+ˆŠNÂˆÝ™š[
+
+NÂˆBˆÝœ™\ÝÜ™J
+NÂˆB‚ˆÙ˜]ÔÚÞJÝØ[˜\ËK‹šYÚHÝ\“Ü[ÛœÈHßJHÂˆËÈØ]\ˆ[™˜][ÙZ[[™ÜÈ™]Z[ˆØØ[YÚY™™XÝË›Ý\Ý›Û›Û^K‚ˆÛÛœÝ\Ý›Û›ÛZXØ[HY[]P[ÝÜÊ\ËÛÜ›	Ø\Ý›Û›Û^IÊH	‰ˆÝ\“Ü[ÛœË˜\Ý›Û›ÛZXØ[OOH˜[ÙNÂˆÛÛœÝX[ÈHÝ[QX[Ê\Ëš\ÝX[Ý[JNÂˆÛÛœÝÈHÝ˜Ü™X]S[™X\‘Ü˜YY[
+Ø[˜\ËšZYÚ
+NÂˆËÈšYÚ
+È™[™\™Y›Ý[ÝØ\™Y\ÜXÙHÛÈÝ\œËÛØÙX[ˆ]™HHÝYÙK‚ˆÛÛœÝšYÚ[HŒˆ
+ˆšYÚ
+È
+\Ý›Û›ÛZXØ[	‰ˆX[ËœÜXÙUØ\ÚÈŒMˆ
+NÂˆËÈ˜\šXX›HÝÜÛÝ[
+ÛÛ™ÑKš\›[ÛšXÐÛÛ\^]KšXH[]TÞ[	ÜÂˆËÈÚÞTÝÜÊNˆH\›[ÛšXØ[HšXÚ\ˆÛÛ™ÈÙ]ÈHÝX\‹[Ü™H˜[™YÚÞBˆËÈÜ˜YY[[œÝXYÙˆH›]Ë\ÝÜY˜][ˆÛ›HZÙ\ÈY™™XÝÚ[‚ˆËÈ“ÕÚY\ÈÙˆH˜[œÚ][ÛˆØ\œžHÚÞTÝÜÈÙˆHØ[YH[™ÝKBˆËÈÜ›ÜÜÙ˜Y[™ÈYØZ[œÝHÝØÚÈš[ÛYHÜˆHÛ\ˆÝ\ÝÛPš[ÛYH[\Ü\‚ˆËÈ
+™Z]\ˆÙ]ÈÚÞTÝÜÊH˜[È˜XÚÈÈHÜšYÚ[˜[š^YË\ÝÜˆËÈKœÚÞKÐ‹œÚÞH^XÝH\È™Y›Ü™KÛÈ›Ý[™È[ÙH]™XYÈÚÞVÌ‹Œ—BˆËÈ›Üˆ]ÈÝÛˆ\œÜÙ\È
+š\™HÛÝËØ]\ˆ™Y›XÝ[Û‹YÚšYË]ËŠBˆËÈ\ÈY™™XÝYZ]\ˆØ^K‚ˆÛÛœÝÝÜÐHHKœÚÞTÝÜËÝÜÐˆH‹œÚÞTÝÜÎÂˆÛÛœÝ\ÙU˜\šXX›HH\œ˜^Kš\Ð\œ˜^JÝÜÐJH	‰ˆ\œ˜^Kš\Ð\œ˜^JÝÜÐŠBˆ	‰ˆÝÜÐK›[™ÝOOHÝÜÐ‹›[™Ý	‰ˆÝÜÐK›[™ÝHÎÂˆÛÛœÝˆH\ÙU˜\šXX›HÈÝÜÐK›[™ÝˆÎÂˆ›Üˆ
+]HHÈHŽÈJÊÊHÂˆÛÛœÝœ›ÛHH\ÙU˜\šXX›HÈÝÜÐVÚWHˆKœÚÞVÚWNÂˆÛÛœÝÈH\ÙU˜\šXX›HÈÝÜÐ–ÚWHˆ‹œÚÞVÚWNÂˆÛÛœÝÝÜH\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+œ›ÛKË
+JNÂˆËÈ\\ˆÚÞH
+OL
+HÛÙ\È[Ü™HÜXÙKX›XÚÎÈÝÙ\ˆÚÞHÙY\È[Ü™Hš[ÛYBˆËÈÛÛÜ‹ˆOOLÈÙY\ÈH^XÝÜšYÚ[˜[KÌÍKÌHÝ\È
+ž]KBˆËÈY[XØ[›Üˆ]™\žHš[ÛYH]Ù\Û‰ÝÜ[È^˜HÝÜÊNÈBˆËÈšXÚ\ˆˆ[\œÛ]\ÈHØ[YHÝ\™HÛÛ[[Ý\ÛHXÜ›ÜÜÈ[Ü™HÝÜË‚ˆÛÛœÝÜÑœ˜XÈHˆˆHÈHÈ
+ˆHJHˆÂˆÛÛœÝ[HˆOOHÂˆÈšYÚ[
+ˆ
+HOOHÈHˆHOOHHÈÍHˆJBˆˆšYÚ[
+ˆ\œ
+KKÜÑœ˜XÊNÂˆË˜YÛÛÜ”ÝÜ
+ÜÑœ˜XË[ˆŒ‚ˆÈ\Ë›\œØXÚK™Ù]
+ÝÜ’QÒÔÒÖWÐÓÓÔ‹[
+BˆˆÝÜ
+NÂˆBˆÝ™š[Ý[HHÎÂˆÝ™š[™XÝ
+Ø[˜\ËÚYØ[˜\ËšZYÚ
+NÂ‚‚ˆYˆ
+\Ý›Û›ÛZXØ[	‰ˆ
+K™žOOH	Ø]\›Ü˜IÈ‹™žOOH	Ø]\›Ü˜IÊJHÂˆÛÛœÝ]\›Ü˜P[HH
+K™žOOH	Ø]\›Ü˜IÈÈHHˆ
+H
+È
+‹™žOOH	Ø]\›Ü˜IÈÈˆ
+NÂˆYˆ
+]\›Ü˜P[HˆŒŠH\Ë—Ù˜]Ð]\›Ü˜JÝØ[˜\Ë]\›Ü˜P[JNÂˆBˆYˆ
+\Ý›Û›ÛZXØ[	‰ˆ
+K™žOOH	Û™X[P›ÛÛIÈ‹™žOOH	Û™X[P›ÛÛIÊJHÂˆÛÛœÝ[HH
+K™žOOH	Û™X[P›ÛÛIÈÈHHˆ
+H
+È
+‹™žOOH	Û™X[P›ÛÛIÈÈˆ
+NÂˆYˆ
+[HˆŒŠH\Ë—Ù˜]Ó™X[P›ÛÛJÝØ[˜\Ë[KK‹
+NÂˆBˆYˆ
+K™žOOH	ÙÛÙ˜^\ÉÈ‹™žOOH	ÙÛÙ˜^\ÉÊHÂˆÛÛœÝ[HH
+K™žOOH	ÙÛÙ˜^\ÉÈÈHHˆ
+H
+È
+‹™žOOH	ÙÛÙ˜^\ÉÈÈˆ
+NÂˆYˆ
+[HˆŒŠH\Ë—Ù˜]ÑÛÙ˜^\ÊÝØ[˜\Ë[JNÂˆBˆYˆ
+K™žOOH	ÜÜÜ™QÛÝÉÈ‹™žOOH	ÜÜÜ™QÛÝÉÊHÂˆÛÛœÝ[HH
+K™žOOH	ÜÜÜ™QÛÝÉÈÈHHˆ
+H
+È
+‹™žOOH	ÜÜÜ™QÛÝÉÈÈˆ
+NÂˆYˆ
+[HˆŒŠH\Ë—Ù˜]ÔÜÜ™QÛÝÊÝØ[˜\Ë[KˆHÈˆˆJNÂˆBˆYˆ
+K™žOOH	Øš[Û[Z[™\ØÙ[˜ÙIÈ‹™žOOH	Øš[Û[Z[™\ØÙ[˜ÙIÊHÂˆÛÛœÝ[HH
+K™žOOH	Øš[Û[Z[™\ØÙ[˜ÙIÈÈHHˆ
+H
+È
+‹™žOOH	Øš[Û[Z[™\ØÙ[˜ÙIÈÈˆ
+NÂˆYˆ
+[HˆŒŠH\Ë—Ù˜]Ðš[Û[Z[™\ØÙ[˜ÙJÝØ[˜\Ë[JNÂˆBˆYˆ
+K™žOOH	ÜÝ[“[Ý\ÉÈ‹™žOOH	ÜÝ[“[Ý\ÉÊHÂˆÛÛœÝ[HH
+K™žOOH	ÜÝ[“[Ý\ÉÈÈHHˆ
+H
+È
+‹™žOOH	ÜÝ[“[Ý\ÉÈÈˆ
+NÂˆYˆ
+[HˆŒŠH\Ë—Ù˜]ÔÝ[“[Ý\ÊÝØ[˜\Ë[KˆHÈˆˆJNÂˆBˆYˆ
+K™žOOH	ØÜž\Ý[Û[	È‹™žOOH	ØÜž\Ý[Û[	ÊHÂˆÛÛœÝ[HH
+K™žOOH	ØÜž\Ý[Û[	ÈÈHHˆ
+H
+È
+‹™žOOH	ØÜž\Ý[Û[	ÈÈˆ
+NÂˆYˆ
+[HˆŒŠH\Ë—Ù˜]ÐÜž\Ý[Û[
+ÝØ[˜\Ë[KˆHÈˆˆJNÂˆBˆYˆ
+K™žOOH	Ù[X™\‘ÛÝÉÈ‹™žOOH	Ù[X™\‘ÛÝÉÊHÂˆÛÛœÝ[HH
+K™žOOH	Ù[X™\‘ÛÝÉÈÈHHˆ
+H
+È
+‹™žOOH	Ù[X™\‘ÛÝÉÈÈˆ
+NÂˆYˆ
+[HˆŒŠH\Ë—Ù˜]Ñ[X™\‘ÛÝÊÝØ[˜\Ë[KˆHÈˆˆJNÂˆBˆËÈÛÙ][ÜÜ\šXÈ
+È˜Z[ÜXÙK[™X[HØ\Ú
+[™\ˆÝ\œÊK‚ˆËÂˆËÈ™YH•SPÐS•TÈš[ËÛ™HÙˆ[H›ÝYÚÛÙ[YÚ
+H\‹\^[ˆËÈ›[™›ÝHZ[ˆÛÝ\˜ÙK[Ý™\ŠKYX\Ý\™Y]‹LÓH^[ÈHœ˜[YHÙ‚ˆËÈHËŽH]™\ž][™È[ˆHœ˜[YHš[ÈKHH\™ÙˆHÝ[›ÜˆBˆËÈØ\Ú]\ÈžH]ÈÝÛˆ\ØÜš\[Ûˆ˜Z[ˆ]Y›È\™ˆØ]H][ˆËÈÛÈHY\\Ý[™ÜÈÛÝ[›ÝÚY]]™[ˆÝYÚHœ˜[YH]Ú]È[‚ˆËÈØ\È[™XYH›Ü[™Ëˆ[›ÛY[˜Q[\ÈHšYÚ[™Îˆ\È\ÂˆËÈÜ[Û˜[][ÜÜ\™KHØ[YHØ]YÛÜžH\ÈH™XXÝ[Û‹YY™\Ú[Û‚ˆËÈ^\™H[™HÚÞH[™]È][™XYHØ]\Ë[™›Û™HÙˆ]\ÂˆËÈØ[Y\^KˆH˜\ÙHÚÞHÜ˜YY[X›Ý™H\È[ÝXÚYKH]Û™HTÈBˆËÈÚÞK›ÝHØ\›š\ÚÛˆ]‚ˆYˆ
+]\Ë—Ü\™ˆ\Ë—Ü\™‹œ[›ÛY[˜Q[
+HÂˆÛÛœÝÜH\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+KœÚÞVÌK‹œÚÞVÌK
+JNÂˆÛÛœÝZYH\Ë—Ü›Ý]Y
+\Ë›\œØXÚK™Ù]
+KœÚÞVÌWK‹œÚÞVÌWK
+JNÂˆÛÛœÝÈŽˆŒÎˆÌŽˆŒHH^Ô™ØŠÜ
+NÂˆÛÛœÝÈŽˆŒKÎˆÌKŽˆŒHHH^Ô™ØŠZY
+NÂˆÝœØ]™J
+NÂˆÝ™ÛØ˜[ÛÛ\ÜÚ]SÜ\˜][ÛˆH	ÜÛÙ[YÚ	ÎÂˆÛÛœÝ]HHÝ˜Ü™X]T˜YX[Ü˜YY[
+ˆØ[˜\ËÚY
+ˆMKØ[˜\ËšZYÚ
+ˆŒM‹M‹ˆØ[˜\ËÚY
+ˆKØ[˜\ËšZYÚ
+ˆŒÌ‹Ø[˜\ËšZYÚ
+ˆËˆ
+NÂˆ]K˜YÛÛÜ”ÝÜ
+™Ø˜J	ÜŒ_K	ÙÌ_K	ØŒ_K
+X
+NÂˆ]K˜YÛÛÜ”ÝÜ
+K™Ø˜J	ÜŒK	ÙÌK	ØŒKŒMŠX
+NÂˆ]K˜YÛÛÜ”ÝÜ
+K	Ü™Ø˜J
+IÊNÂˆÝ™ÛØ˜[[HHŽÂˆÝ™š[Ý[HH]NÂˆÝ™š[™XÝ
+Ø[˜\ËÚYØ[˜\ËšZYÚ
+NÂˆYˆ
+\Ý›Û›ÛZXØ[
+HÂˆÛÛœÝ™XHH^Ô™ØŠÔPÑWÓ‘P•SWÐJNÂˆÛÛœÝ™XˆH^Ô™ØŠÔPÑWÓ‘P•SWÐŠNÂˆËÈ[™YÛÈÈš[Û]ÜXÙH\Ý8 %Ü˜š][›Ý\™H^[YÚ‚ˆÝ™ÛØ˜[ÛÛ\ÜÚ]SÜ\˜][ÛˆH	ÛYÚ\‰ÎÂˆÝ™ÛØ˜[[HHŒÈ
+ÈŒH
+ˆšYÚÂˆÛÛœÝ\ÝHÝ˜Ü™X]T˜YX[Ü˜YY[
+ˆØ[˜\ËÚY
+ˆŒŽØ[˜\ËšZYÚ
+ˆŒL‹LˆØ[˜\ËÚY
+ˆŒÍKØ[˜\ËšZYÚ
+ˆŒŒ‹Ø[˜\ËÚY
+ˆŒÎˆ
+NÂˆ\Ý˜YÛÛÜ”ÝÜ
+™Ø˜J	Û™X‹œŸK	Û™X‹™ßK	Û™X‹˜ŸKMJX
+NÂˆ\Ý˜YÛÛÜ”ÝÜ
+K	Ü™Ø˜J
+IÊNÂˆÝ™š[Ý[HH\ÝÂˆÝ™š[™XÝ
+Ø[˜\ËÚYØ[˜\ËšZYÚ
+ˆMJNÂˆÝ™ÛØ˜[[HHŒH
+ÈŒ
+ˆšYÚÂˆÛÛœÝ\ÝˆHÝ˜Ü™X]T˜YX[Ü˜YY[
+ˆØ[˜\ËÚY
+ˆÎØ[˜\ËšZYÚ
+ˆŒNˆØ[˜\ËÚY
+ˆÌ‹Ø[˜\ËšZYÚ
+ˆŒŽØ[˜\ËÚY
+ˆŒÌ‹ˆ
+NÂˆ\Ý‹˜YÛÛÜ”ÝÜ
+™Ø˜J	Û™XKœŸK	Û™XK™ßK	Û™XK˜ŸKJX
+NÂˆ\Ý‹˜YÛÛÜ”ÝÜ
+K	Ü™Ø˜J
+IÊNÂˆÝ™š[Ý[HH\ÝŽÂˆÝ™š[™XÝ
+Ø[˜\ËÚYØ[˜\ËšZYÚ
+ˆJNÂˆBˆÝœ™\ÝÜ™J
+NÂˆB‚ˆËÈÝ\ˆ˜XÚÙ›Ü\Ý[ˆHÚÞHÝXÚÈÛÈ][Ø^\È™XYÈ\È\™Z[™ˆËÈHÛÜ››ÝH˜Z[Ø\›š\ÚÚ\YžHØ\Ú\ÈX›Ý™H]‚ˆYˆ
+\Ý›Û›ÛZXØ[
+H\Ë—Ù˜]ÔÝ\™šY[
+ÝØ[˜\ËK‹šYÚÝ\“Ü[ÛœÊNÂˆB‚ˆÊŠˆ^Y\™YÝ\™šY[ˆ[XšY[žH^KšXÚ]šYÚÈÝ\•Ú[šÛHš[ÛY\Ëˆ
+‹ÂˆÙ˜]ÔÝ\™šY[
+ÝØ[˜\ËK‹šYÚHÈ][ÜÜ\™HHYHHHßJHÂˆYˆ
+ZY[]P[ÝÜÊ\ËÛÜ›	Ø\Ý›Û›Û^IÊJH™]\›ŽÂˆÛÛœÝX[ÈHÝ[QX[Ê\Ëš\ÝX[Ý[JNÂˆÛÛœÝÚÝÔÝ\œÈHK™žOOH	ÜÝ\•Ú[šÛIÈ‹™žOOH	ÜÝ\•Ú[šÛIÎÂˆÛÛœÝÚ[šÛP›[™HÚÝÔÝ\œÂˆÈ
+K™žOOH	ÜÝ\•Ú[šÛIÈÈHHˆ
+H
+È
+‹™žOOH	ÜÝ\•Ú[šÛIÈÈˆ
+BˆˆÂˆËÈ[Ø^\ÈH]š[™È˜XÚÙ›Ü8 %šYÚÜXÙHÝ[K[™Ý\ˆš[ÛY\È[\YžK‚ˆËÈ˜\ÙH˜Z\ÙYœ›ÛHŒÍKHÛÈ[HÝ]ÚYHH™\ÝÛÛ™][ÛœË™XY[™ÂˆËÈ\È˜H[˜[™Ùˆ[ÜÝH›Ý[™Èˆ
+™\ÜY]™NÈÙYBˆËÈÝ\Ø][ÙÝYKœ\˜Ù\X[Ý™]Ú	ÜÈ›ÛÜ‹˜Z\ÙY[Û™ÜÚYH\ÊK‚ˆÛÛœÝÝ\[XˆHX[ËœÝ\[XšY[ÏÈNÂˆÛÛœÝ[XšY[H
+
+ÈŒN
+ˆ
+\Ë˜Ø[S]™[
+JH
+ˆÝ\[XŽÂˆÛÛœÝšYÚ›ÛÜÝHMH
+ÈKMH
+ˆšYÚÂˆÛÛœÝš[ÛYP›ÛÜÝHŽMH
+ˆÚ[šÛP›[™ÂˆÛÛœÝÜXÙQ›ÛÜˆHX[ËœÜXÙUØ\ÚÈŒŒˆˆÂˆÛÛœÝ[HHÛ[\J[XšY[
+ˆšYÚ›ÛÜÝ
+Èš[ÛYP›ÛÜÝ
+ÈÜXÙQ›ÛÜŠH
+ˆ\Ë›Ü[š[™ÑØZ[ŽÂˆYˆ
+[HŒ
+H™]\›ŽÂ‚ˆÛÛœÝÚ[šÛT˜]HHKŒMH
+ÈÈ
+ˆ
+\Ë˜Ø[S]™[
+H
+ÈŒÍH
+ˆšYÚÂˆÛÛœÝØÜ›ÛH
+\ËÙXÈ
+ˆKŽ
+H	HØ[˜\ËÚYÈËÈÛXÚX[šYˆËÈHÚÞHšY[	ÜÈZYÚÛˆHPÕPSØ[˜\È™Z[™È˜]ÛˆÈKHÚ\™YˆËÈžH]™\žH™\ØØ[H™[ÝÈ
+Ý\œË\Ý[™\ËY\ÚÞJHÛÈ^H[ˆËÈYÜ™YHÛˆÚ\™HHšY[[™Ë›ÈX]\ˆÝÈÚYHHÝYÙH\Ë‚ˆÛÛœÝÚÞRHØ[˜\ËšZYÚ
+ˆÕT—ÔÒÖWÑ”PÎÂ‚ˆËÈÛÙZ[ÞHÈØ[XÝXÈØ\ÚˆÚ]ÈÛˆHÐSQH[Y^\ÈHÝ\‚ˆËÈ[œÚ]HÙ\È
+ÐSPÕP×ÐS‘Ú\™YÚ]Ý\Ø][ÙÝYJHKH]\ÙYÂˆËÈ™HHÜš^›Û[˜\ˆ[›™Y]ŒMÙˆHØ[˜\ÈÚ[HH[œÚ]BˆËÈšYÙHØ]]ŒÌ‹ÛÈHZ[YØ[^H[™HXÝX[Ý\œÂˆËÈ\ØYÜ™YYX›Ý]Ú\™HH[™HØ\Ë‚ˆÂˆÛÛœÝSHØ[XÝXÐ˜[™Ù[\–JÚÞR
+NÂˆÛÛœÝTˆHØ[XÝXÐ˜[™Ù[\–JKÚÞR
+NÂˆÛÛœÝ[ˆHÚÞR
+ˆÐSPÕP×ÐS‘š[‘œ˜XÎÂˆÝœØ]™J
+NÂˆÝ™ÛØ˜[ÛÛ\ÜÚ]SÜ\˜][ÛˆH	ÛYÚ\‰ÎÂˆÛÛœÝ˜[™HHŒÈ
+ÈŒH
+ˆšYÚÂˆËÈ›Ý]H[ÈH˜[™	ÜÈÝÛˆœ˜[YHÛÈHÜ˜YY[[œÈ\œ[™XÝ[\‚ˆËÈÈH[™H˜]\ˆ[ˆÝ˜ZYÚÝÛˆHØÜ™Y[‹‚ˆÛÛœÝ[™ÈHX]˜][ŒŠTˆHSØ[˜\ËÚY
+NÂˆÛÛœÝXYÈHX]š\Ý
+Ø[˜\ËÚYTˆHS
+NÂˆÝ˜[œÛ]JS
+NÂˆÝœ›Ý]J[™ÊNÂˆÛÛœÝ˜[™HÝ˜Ü™X]S[™X\‘Ü˜YY[
+Z[‹[ŠNÂˆ˜[™˜YÛÛÜ”ÝÜ
+	Ü™Ø˜JMŒNLMK
+IÊNÂˆ˜[™˜YÛÛÜ”ÝÜ
+K™Ø˜JNLŒLMK	Ø˜[™KÑš^Y
+Ê_JX
+NÂˆ˜[™˜YÛÛÜ”ÝÜ
+K	Ü™Ø˜JMŒNLMK
+IÊNÂˆÝ™š[Ý[HH˜[™ÂˆÝ™š[™XÝ
+Z[‹XYË[ˆ
+ˆŠNÂˆËÈ\šÈ™X[YK˜]ÛˆS”ÒQHH˜[™	ÜÈÝÛˆ›Ý]Yœ˜[YH[™Û\YˆËÈÈHØ\Ú^HØØÛYKˆHÛ[ÛÝZ\˜œ\ÚYÝš\H\ÈH[ÜÝˆËÈÞ[]XÈ[™ÈHšYÚÚÞHØ[ˆÎÈH™X[[™H\Èœ›ÚÙ[ˆ\žBˆËÈ\ÝÛÝYÈ]›ØÚÈHÛÝÈ™Z[™[H
+HÜ™X]šY
+KÛÈBˆËÈ˜[™Ù]È]ÈÝXÝ\™Hœ›ÛHÚ]	ÜÈZ\ÜÚ[™Ë›Ýœ›ÛH[Ü™HYÚ‚ˆËÈ	Û][\IÈYØZ[œÝ›XÚË“Õ\Ý[˜][Û‹[Ý]ˆ\ÙH]™HÈ\šÙ[‚ˆËÈHÚÞH^HÚ][ˆœ›ÛÙ‹[™\Ý[˜][Û‹[Ý]ÛÝ[[˜ÚHÛBˆËÈÛX[ˆ›ÝYÚH˜XÚÙ›ÜÈ˜[œÜ\™[[œÝXY‚ˆÝ™ÛØ˜[ÛÛ\ÜÚ]SÜ\˜][ÛˆH	Û][\IÎÂˆ›Üˆ
+ÛÛœÝÙˆ\Ë™\Ý[™\ÊHÂˆËÈ™\ØØ[Yœ›ÛHHØXÚYœ˜XÝ[ÛˆYØZ[œÝHPÕPSØ[˜\Ë›ÝˆËÈHšY[HØ][ÙÝYHØ\ÈÙ[™\˜]YÝ™\ˆKHÙYHHÛÛ[Y[]ˆËÈHÝ\ˆØXÚHX›Ý™H›ÜˆÚH]\Ý[˜Ý[ÛˆX]\œË‚ˆÛÛœÝHžœ˜XÈ
+ˆØ[˜\ËÚYÂˆÛÛœÝPXœÈHžQœ˜XÈ
+ˆÚÞRÂˆËÈH[™\ÈÙ\™HÙ[™\˜]Y[ˆšY[ÜXÙHYØZ[œÝHØ[YH[YˆËÈ^\ËÛÈ[™ÈH˜[™	ÜÈÝÛˆ[ÈXÙH[H[ˆ\Èœ˜[YK‚ˆÛÛœÝHHPXœÈHØ[XÝXÐ˜[™Ù[\–JÈX]›X^
+KØ[˜\ËÚY
+KÚÞR
+NÂˆÛÛœÝœ™X]HHŽH
+ÈŒMH
+ˆX]œÚ[Š\ËÙXÈ
+ˆŒˆ
+Èœ\ÙJNÂˆÝœØ]™J
+NÂˆÝ˜[œÛ]JJNÂˆÝœ›Ý]Jœ›ÝH[™ÊNÂˆÛÛœÝÌˆHÝ˜Ü™X]T˜YX[Ü˜YY[
+JNÂˆÌ‹˜YÛÛÜ”ÝÜ
+™Ø˜J	Ê˜[H
+ˆœ™X]JKÑš^Y
+Ê_JX
+NÂˆÌ‹˜YÛÛÜ”ÝÜ
+MK™Ø˜J	Ê˜[H
+ˆœ™X]H
+ˆJKÑš^Y
+Ê_JX
+NÂˆÌ‹˜YÛÛÜ”ÝÜ
+K	Ü™Ø˜J
+IÊNÂˆÝœØØ[Jœžœ˜XÈ
+ˆØ[˜\ËÚYœžQœ˜XÈ
+ˆÚÞR
+NÂˆÝ™š[Ý[HHÌŽÂˆÝ˜™YÚ[”]
+
+NÂˆÝ˜\˜ÊKX]”H
+ˆŠNÂˆÝ™š[
+
+NÂˆÝœ™\ÝÜ™J
+NÂˆBˆÝœ™\ÝÜ™J
+NÂˆB‚ˆËÈY\\ÚÞHØš™XÝÎˆ˜Z[™\ÛÛ™YÛ]YÙ\Ë[™\ˆHÝ\œÈÛÈHÝ\‚ˆËÈØ[ˆÚ][ˆœ›ÛÙˆÛ™Kˆ\ÙHÈ›ÝÚ[šÛHKH[ˆ^[™YÛÝ\˜ÙBˆËÈ]™\˜YÙ\ÈØÚ[[][Ûˆ]Ø^KÚXÚ\È^XÝHHÝYH]Ù\\˜]\ÂˆËÈ˜H™X[Hˆœ›ÛH˜HœšYÚÝ\ˆˆ]HÛ[˜ÙK‚ˆÂˆÝœØ]™J
+NÂˆÝ™ÛØ˜[ÛÛ\ÜÚ]SÜ\˜][ÛˆH	ÛYÚ\‰ÎÂˆ›Üˆ
+ÛÛœÝÈÙˆ\Ë™Y\ÚÞJHÂˆÛÛœÝHH[H
+ˆË˜[H
+ˆ
+ŽH
+ÈŒMH
+ˆX]œÚ[Š\ËÙXÈ
+ˆŒH
+ÈËœ\ÙJJNÂˆYˆ
+HŒ
+HÛÛ[YNÂˆÛÛœÝÞHËžœ˜XÈ
+ˆØ[˜\ËÚYÞHHËžQœ˜XÈ
+ˆÚÞRÜ—ÈHËœ‘œ˜XÈ
+ˆÚÞRÂˆÝœØ]™J
+NÂˆÝ˜[œÛ]JÞÞJNÂˆÝœ›Ý]JËœ›Ý
+NÂˆÝœØØ[JKËœÜ]X\Ú
+NÂˆÛÛœÝÌÈHÝ˜Ü™X]T˜YX[Ü˜YY[
+Ü—ÊNÂˆÌË˜YÛÛÜ”ÝÜ
+ÛJ	ÛËšY_KN	K	K	ÊH
+ˆKŠKÑš^Y
+
+_JX
+NÂˆÌË˜YÛÛÜ”ÝÜ
+KÛJ	ÛËšY_KL‰KŽ	K	ÊH
+ˆÊKÑš^Y
+
+_JX
+NÂˆÌË˜YÛÛÜ”ÝÜ
+KÛJ	ÛËšY_K	KŒ	K
+X
+NÂˆÝ™š[Ý[HHÌÎÂˆÝ˜™YÚ[”]
+
+NÂˆÝ˜\˜ÊÜ—ËX]”H
+ˆŠNÂˆÝ™š[
+
+NÂˆËÈHÛ\Ý\ˆ\ÈÜ˜[[\‹›ÝHÛ[ÛÝ›ØˆKHH™]È™\ÛÛ™YˆËÈY[X™\œÈ\™HÚ]XZÙH]™XY\ÈHÝØ\›HÙˆÝ\œË‚ˆYˆ
+ËšÚ[™OOH	ØÛ\Ý\‰ÊHÂˆÝ™š[Ý[HHÛJ	ÛËšY_K	KL‰K	ÊH
+ˆ‹ŒŠKÑš^Y
+
+_JXÂˆ›Üˆ
+]ÈHÈÈNÈÊÊÊHÂˆÛÛœÝ[™ÌˆH
+ÈÈJH
+ˆX]”H
+ˆˆ
+ÈËœ\ÙNÂˆÛÛœÝœˆHÜ—È
+ˆ
+ŒMH
+ÈH
+ˆ
+
+È
+ˆÎLNJH	HL
+HÈL
+NÂˆÝ™š[™XÝ
+X]˜ÛÜÊ[™ÌŠH
+ˆœ‹X]œÚ[Š[™ÌŠH
+ˆœ‹KJNÂˆBˆBˆËÈH™[[˜[\ÈHÚ[›ÝH›ØŽˆHÚØÚÝØ]™Hœ›Û\ÈH[‚ˆËÈœšYÚš[™È\›Ý[™HÛÝËÜ[ÛÜ™HKHHÛ™HY\\ÚÞHÚ[™ˆËÈ]™XYÈ\È[ˆ]™[˜]\ˆ[ˆHÝ]XÈÛÝY‚ˆYˆ
+ËšÚ[™OOH	Ü™[[˜[	ÊHÂˆÝœÝ›ÚÙTÝ[HHÛJ	ÛËšY_KÌ	K	K	ÊH
+ˆKŽ
+KÑš^Y
+
+_JXÂˆÝ›[™UÚYHX]›X^
+ŽÜ—È
+ˆŒJNÂˆÝ˜™YÚ[”]
+
+NÂˆÝ˜\˜ÊÜ—È
+ˆŽ‹X]”H
+ˆŠNÂˆÝœÝ›ÚÙJ
+NÂˆBˆÝœ™\ÝÜ™J
+NÂˆBˆÝœ™\ÝÜ™J
+NÂˆB‚ˆÝœØ]™J
+NÂˆÝ™ÛØ˜[ÛÛ\ÜÚ]SÜ\˜][ÛˆH	ÛYÚ\‰ÎÂˆÛÛœÝÝ\XÚÙ]ÈH\Ë—ÜÝ\XÚÙ]ÎÂˆËÈÚX\ÝÈ›ÜˆHšY[ÈÛÙÛÝÈÛ›H›Üˆ\›ÈÝ\œÈ
+^Y\ˆŠK‚ˆ›Üˆ
+ÛÛœÝÈÙˆ\ËœÝ\œÊHÂˆËÈ\‹\Ý\ˆØÚ[[][Ûˆ\
+Ý\Ø][ÙÝYKšœÊNˆ˜Z[\‹[Ü™BˆËÈÚ[[ZÙHÝ\œÈ[™Ý\œÈ™X\™\ˆHÜš^›ÛˆÚ[šÛH\™\‹™X[ˆËÈ][ÜÜ\šXÈÝ\œÈÈ›Ý[›[šÈ]HØ[YH\ˆ˜[È˜XÚÈÂˆËÈHš^YZY\˜[™ÙH\›Üˆ[ž][™ÈÚ]Ý]Ø][ÙÝYHšY[È
+Ù\ˆËÈY™[œÚ]™HÚ[˜ÙHÝ\œØ\ÈX›XÈÝ]HÛÛYHÝ\ˆ]ÛÝ[™YY
+K‚ˆËÈZ\›\ÜÈÛÜ›ÈÚ\™HHØ][ÙÝYH]]™H›ÈØÚ[[][Û‹‚ˆÛÛœÝÑ\H][ÜÜ\™BˆÈ
+Ë›XYÈOH[ÈÚ[šÛP[\]YJË›XYËË˜[]YLHÏÈJHˆ
+BˆˆÂˆÛÛœÝÈH
+HHÑ\
+H
+ÈÑ\
+ˆ
+H
+ÈH
+ˆX]œÚ[Š\ËÙXÈ
+ˆÚ[šÛT˜]H
+ˆ
+È
+ÈË˜œšYÚ
+H
+ÈËœ\ÙJJNÂˆÛÛœÝ[ÙHHË˜\[\ˆÈH
+ÈË˜\[\
+ˆX]œÚ[Š\ËÙXÈ
+ˆ
+Ë˜\’ˆŒ
+H
+ˆX]”H
+ˆˆ
+ÈËœ\ÙJBˆˆNÂˆËÈZ\ˆ]ˆÝÈÝ\œÈÜÙH™X[YÚ™Y›Ü™H^H]™\ˆ™XXÚH^YKˆËÈÛÈHšY[[œÈ[™Ø\›\ÈÝØ\™HšYÙ[[™H[œÝXYÙˆØ[[™ÂˆËÈÙ™ˆ][œšYÚ™\ÜÈHØ^HH›]ØØ]\ˆÙ\Ë‚ˆÛÛœÝHH[H
+ˆË˜œšYÚ
+ˆÈ
+ˆ
+][ÜÜ\™HÈ
+Ë™^ÏÈJHˆJH
+ˆ[ÙNÂˆËÈ˜Z[›ÛÜŽˆHŒÈÝ]\ÙYÈÚ\HH[[Y\ˆ[ˆÙˆHšY[ˆËÈ
+\ÜXÚX[H™X\ˆHÜš^›Û‹Y\ˆ^[˜Ý[ÛŠKX]š[™ÈÛ›HBˆËÈœšYÚ\ˆZY\ÚÞHÝ\š]›ÜœÈ8 %[›Ý\ˆØ^HHÝ\œÈ™XY\ÈHÚ[šË‚ˆYˆ
+HŒJHÛÛ[YNÂˆÛÛœÝ^Y\‘šYH
+Ëœ\˜[^ÏÈÕT—ÔTSVÜË›^Y\—HÏÈÕT—ÔTSVÌJH
+ˆØÜ›ÛÂˆËÈ™\ØØ[Yœ›ÛHHØXÚYœ˜XÝ[ÛˆYØZ[œÝHPÕPSØ[˜\Ë›ÝBˆËÈ
+ÜÜÚX›H˜\œ›ÝÙ\ŠHšY[HØ][ÙÝYHØ\ÈÙ[™\˜]YÝ™\ˆKHBˆËÈØ[Y\˜H[X˜XÚÈÚY[œÈHÝYÙHš[ÛYSX[˜YÙ\ˆ˜]ÜÈ[Ë[™[‚ˆËÈXœÛÛ]H^[˜ZÙY[ˆ]Ù[™\˜][Ûˆ[YHÛÝ[Ý^H[›™YÈ]ÂˆËÈÜšYÚ[˜[Ü[ˆÚ[HHÚÞH\›Ý[™]ÚY[™Y‚ˆ]HËžœ˜XÈ
+ˆØ[˜\ËÚY
+È^Y\‘šYÂˆYˆ
+ˆØ[˜\ËÚY
+HOHØ[˜\ËÚYÂˆ[ÙHYˆ
+
+H
+ÏHØ[˜\ËÚYÂˆÛÛœÝHHËžwÓMm¢G§²ÚîÆ­yÒã#R²6öÂ’¢C°¢6öç7B7v’ÒÖF‚ç6–â‡F†—2çE6V2¢ã2²6öÂ¢ãr’¢ƒ°¢7G‚ç7G&ö¶U7G–ÆRÒ‡6Æ‚G¶‡VWÒÃ“RÃcRRÂG³ãB¢Ç†Ò–°¢7G‚æÆ–æUv–GF‚ÒC°¢7G‚æ&Vv–åF‚‚“°¢f÷"†ÆWB’Ò6çf2æ†V–v‡C²’ãÒ6çf2æ†V–v‡B¢ãS²’ÓÒ#’°¢6öç7BG&–gBÒ7v’¢ƒÒ’ò6çf2æ†V–v‡B“°¢–b‡’ÓÓÒ6çf2æ†V–v‡B’7G‚æÖ÷fUFò‡‚²G&–gBÂ’“²VÇ6R7G‚æÆ–æUFò‡‚²G&–gBÂ’“°¢Ð¢7G‚ç7G&ö¶R‚“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢¢G&–gF–ærvöÆFVâÆ–v‡BÖ÷FW2f÷"U%TÒÒÒâÖ&–VçB7VæÆ—B†¦P¢¢væFW&–ærF†Rv†öÆRg&ÖRÂVæÆ–¶RWFÅ–ÆRw2w&÷VæFVBÂ6†VFF–æp¢¢–ÆW2â¢ð¢öG&u7VäÖ÷FW2†7G‚Â6çf2ÂÇ†Â&öf–ÆR’°¢6öç7B6öÂÒ&öf–ÆSòç'F–6ÆW3òæ6öÆ÷"ÇÂr6ff63cbs°¢7G‚ç6fR‚“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒvÆ–v‡FW"s°¢f÷"†ÆWB’Ò²’Â#C²’²²’°¢6öç7B6VVBÒ’¢"ã“ƒ“ƒ°¢6öç7B‚Ò6çf2çv–GF‚¢‚„ÖF‚ç6–â‡6VVB’¢ãR²ãR²F†—2çE6V2¢ã¢ƒ²†’R2’’’R“°¢6öç7B’Ò6çf2æ†V–v‡B¢‚„ÖF‚æ6÷2‡6VVB¢ãr’¢ãR²ãR²ÖF‚ç6–â‡F†—2çE6V2¢ã"²’’¢ãR’R“°¢6öç7BGv–æ¶ÆRÒãB²ãb¢ƒãR²ãR¢ÖF‚ç6–â‡F†—2çE6V2¢ãB²’¢"ã’“°¢7G‚ævÆö&ÄÇ†ÒÇ†¢ãR¢Gv–æ¶ÆS°¢7G‚æf–ÆÅ7G–ÆRÒ6öÃ°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2‡‚Â’ÂãB²ã"¢Gv–æ¶ÆRÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢¢6†'f÷W"×ö–çBfÆ&RvÆ–çG2f÷"tTôDRÒÒf6WFVB7'—7FÂ6F6†–æp¢¢Æ–v‡BB†&BævÆW2ÂVæÆ–¶R7F%Gv–æ¶ÆRw26ögB&÷VæBF÷G3¢V6‚vÆ–ç@¢¢—2F†–â7&÷72fÆ&RF†B6æ2FògVÆÂ'&–v‡FæW72æBFV6—2ÂæWfW ¢¢6Öö÷F‚VÇ6Râ¢ð¢öG&t7'—7FÄvÆ–çB†7G‚Â6çf2ÂÇ†Â&öf–ÆR’°¢6öç7B6öÂÒ&öf–ÆSòç'F–6ÆW3òæ6öÆ÷"ÇÂr6S#fbs°¢7G‚ç6fR‚“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒvÆ–v‡FW"s°¢7G‚ç7G&ö¶U7G–ÆRÒ6öÃ°¢7G‚æÆ–æT6Òw&÷VæBs°¢f÷"†ÆWB’Ò²’ÂC²’²²’°¢6öç7B6VVBÒ’¢rã#3C°¢6öç7B‚Ò6çf2çv–GF‚¢‚„ÖF‚ç6–â‡6VVB’¢ãR²ãR’“°¢6öç7B’Ò6çf2æ†V–v‡B¢‚„ÖF‚æ6÷2‡6VVB¢ã’’¢ãR²ãR’¢ãb“°¢6öç7B7–6ÆU÷2Ò‡F†—2çE6V2¢ãR²’¢ã3r’R°¢6öç7B6æÒÖF‚æÖ‚ƒÂÒ7–6ÆU÷2¢B“²òò6†'GF6²Âf7BFV6¢–b‡6æÃÒã’6öçF–çVS°¢6öç7BÆVâÒB²B¢6æ°¢7G‚ævÆö&ÄÇ†ÒÇ†¢6æ°¢7G‚æÆ–æUv–GF‚Òã#°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡‚ÒÆVâÂ’“²7G‚æÆ–æUFò‡‚²ÆVâÂ’“°¢7G‚æÖ÷fUFò‡‚Â’ÒÆVâ“²7G‚æÆ–æUFò‡‚Â’²ÆVâ“°¢7G‚ç7G&ö¶R‚“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢¢&—6–ær6–æFW'2v—F‚G&–Æ–ær7G&V²f÷"TÔ$U"ÒÒ†÷GFW"æBf7FW ¢¢F†â7÷&TvÆ÷rw26Æ÷rG&–gBÂv—F‚F—&V7F–öæÂF–Â6ò—B&VG20¢¢f—&R&F†W"F†â&–öÇVÖ–æW66Væ6Râ¢ð¢öG&tVÖ&W$vÆ÷r†7G‚Â6çf2ÂÇ†Â&öf–ÆR’°¢6öç7B6öÂÒ&öf–ÆSòç'F–6ÆW3òæ6öÆ÷"ÇÂr6fcv62s°¢7G‚ç6fR‚“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒvÆ–v‡FW"s°¢f÷"†ÆWB’Ò²’Âc²’²²’°¢6öç7B†6RÒ’¢ãs°¢6öç7B‚Ò6çf2çv–GF‚¢‚†’¢ãƒ2²ã2’R’²ÖF‚ç6–â‡F†—2çE6V2¢"²†6R’¢°¢6öç7B&—6RÒ‡F†—2çE6V2¢3²’¢C’R†6çf2æ†V–v‡B¢ãsR“°¢6öç7B’Ò6çf2æ†V–v‡B¢ã’Ò&—6S°¢6öç7BfÆ–6¶W"ÒãR²ãR¢ÖF‚ç6–â‡F†—2çE6V2¢R²†6R“°¢7G‚ç7G&ö¶U7G–ÆRÒ6öÃ°¢7G‚ævÆö&ÄÇ†ÒÇ†¢ƒã2²ãB¢fÆ–6¶W"“°¢7G‚æÆ–æUv–GF‚Òãc°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡‚Â’“°¢7G‚æÆ–æUFò‡‚Ò2Â’²"²b¢fÆ–6¶W"“°¢7G‚ç7G&ö¶R‚“°¢7G‚æf–ÆÅ7G–ÆRÒ6öÃ°¢7G‚ævÆö&ÄÇ†ÒÇ†¢ƒãR²ãR¢fÆ–6¶W"“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2‡‚Â’ÂãB²fÆ–6¶W"ÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢¢F†R&ö6‚„6VÆW7F–Ä&ö6‚æ§2’f÷"F†—2g&ÖRÂ÷"çVÆÂ&Vf÷&R—@¢¢†2ç—F†–ærFòv÷&²v—F‚â&W6öÇfVBöæ6RW"g&ÖR–âG&r‚’6òF†R7VâÀ¢¢F†RÖööâÂF†RÆ–v‡B&–ræBF†RÖæFÆÆÂ&VBF†R6ÖR&öG’â¢ð¢ö6VÆW7F–Ä&ö6„B†6çf2Â7‚Â7’’°¢òòF†R6VÆ–æRF†R&öG’&—6W2÷WBöbæB6WG2&6²–çFòâF†R&ö6€¢òò66ÆW2†V–v‡B$õdRF†—2Â6òF†R&—6RæBF†R6WB7F’WB†÷vWfW ¢òò6Æ÷6RF†R&öG’6öÖW2ÒÒ6VR6VÆW7F–Ä&ö6‚æ§2à¢6öç7B†÷&—¦öå’Ò6çf2æ†V–v‡B¢ô4Tåô„õ$•¤ôåôe$3°¢òò&ÆÆ‚—2ÖV7W&VBv–ç7BF†Ru$õTäBÂæ÷BÖ–F–òw2Æ—fR&VæFW"’â†P¢òò§V×3²F†R7VâFöW2æ÷Bà¢6öç7Bw&÷VæE’ÒF†—2å÷¦ööÖVDw&÷VæE’†6çf2“°¢6öç7Bö'6W'fW$G’ÒçVÖ&W"æ—4f–æ—FR‡F†—2æÖ–F–õ’’òF†—2æÖ–F–õ’Òw&÷VæE’¢°¢&WGW&â6VÆW7F–Ä&ö6‚‡°¢÷&&—Eƒ¢7‚Â÷&&—E“¢7’Â†÷&—¦öå’Âö'6W'fW$G’À¢&öw&W73¢6Æ×‡F†—2å÷&öw&W72ÇÂ’À¢Ò“°¢Ð ¢öG&t6VÆW7F–Â†7G‚Â6çf2ÂÂ"ÂBÂ7”g&2Òã#"ÂÇ†ÒÂ7„g&2Ò4TÄU5D”ÅôDTdTÅEõ„e$2’°¢–b‚–FVçF—G”ÆÆ÷w2‡F†—2çv÷&ÆBÂv6VÆW7F–Ä&öF–W2r’’&WGW&ã°¢òòF†R&öG’—26Æ÷6–ær÷fW"F†RÆVæwF‚öbF†R6öæs¢—G2&26Æ–Ö'2†–v†W ¢òò&÷fRF†R6VæB—G2F—62w&÷w22öF—7Fæ6RÂ6òF†R6—¦P¢òò66VÆW&FW2v†–ÆRF†RF‚&&VÇ’6VV×2Fò6†ævRâ6VP¢òò6VÆW7F–Ä&ö6‚æ§2f÷"v‡’F†B&F–ò—2F†Rv†öÆRVffV7BÒÒæBf÷ ¢òòv‡’æ÷F†–ær†W&RVÆÇ2F†R&öG’F÷v&Bö–çBà¢6öç7BÒF†—2åö6VÆW7F–Ä&ö6„B†6çf2Â6çf2çv–GF‚¢7„g&2Â6çf2æ†V–v‡B¢7”g&2“°¢6öç7B7‚Òç‚Â7’Òç“°¢6öç7Bw&÷rÒç66ÆS°¢òòF†RF—62FöW2æ÷BÖ÷fRâF†R†Æò&Æöö×2öâF†R†V&B¶–6²†æòFWF€¢òòFVÆ’(	BF†R7Vâ—2F†R&VBÖ&¶W"Â6ÖR6Æö6²26†&7FW"fÆ6‚¢òòæB7F—27F–ÆÂVæFW"&VGV6VBfÆ6‚à¢6öç7B†V&D¶–6²ÒF†—2ç&VGV6VDfÆ6€¢ò ¢¢¶–6´Vçb‡F†—2çE6V2¢ÒF†—2åöFæ6T¶–6´×2’¢F†—2åöFæ6T¶–6´×°¢6öç7B†Æô×VÂÒ²¶–6´&ÆööÒ††V&D¶–6²“°¢6öç7B&÷D6VÂÒ†2’Óâ‡°¢ââæ2À¢6öÆ÷#¢F†—2å÷&÷FFVB†2æ6öÆ÷"’À¢†Æô6öÆ÷#¢F†—2å÷&÷FFVB†2æ†Æô6öÆ÷"’À¢&F—W3¢†2ç&F—W2ÇÂ’¢w&÷rÀ¢Ò“°¢òòöæR6†&VB÷VR&6¶–ærÂBF†R&öG’w2gVÆÂ‡Vâ×7Æ—B’Ç†Â&Vf÷&P¢òòV—F†W"7&÷76fF–ær6VÆW7F–ÂG&w2öâF÷öb—BâöG&töæT6VÆW7F–À¢òòv—fW2V6‚&öG’—G2÷vâ&6¶–ærFöòÂ'WB7Æ—B'’ƒ×B’÷BGW&–ær¢òò&–öÖR7&÷76fFRÒÒW†7FÇ’F†RÖöÖVçBæV—F†W"&öG’ÆöæR—2÷VP¢òòVæ÷Vv‚FògVÆÇ’&Æö6²v†Bw2&V†–æB—B‡F†R76R&–FvRÂ7F'2À¢òòÖ–F7W2w26·’f÷–vR’Â6ò7&÷76fFRÆWBÆÂöbF†B6†÷rF‡&÷Vv‚–à¢òò&÷÷'F–öâFò†÷rÖ–B×G&ç6—F–öâ—Bv2â6—¦VBFòv†–6†WfW"&öG’—0¢òòÆ&vW"6ò—B6÷fW'2&÷F‚v—F†÷WBf—6–&ÆR6VÒ2F†W’fFR7@¢òòV6‚÷F†W"à¢–b†Ç†âã"’°¢6öç7B&6µ"ÒÖF‚æÖ‚‚„æ6VÆW7F–Âç&F—W2ÇÂ’Â„"æ6VÆW7F–Âç&F—W2ÇÂ’’¢w&÷s°¢–b†&6µ"â’°¢7G‚ç6fR‚“°¢7G‚ævÆö&ÄÇ†ÒÇ†°¢7G‚æf–ÆÅ7G–ÆRÒr3s°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2†7‚Â7’Â&6µ"ÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢7G‚ç&W7F÷&R‚“°¢Ð¢Ð¢–b„"ÓÓÒ’°¢F†—2åöG&töæT6VÆW7F–Â†7G‚Â7‚Â7’Â&÷D6VÂ„æ6VÆW7F–Â’ÂÇ†Â†Æô×VÂ“°¢F†—2åöG&t6ö×æ–öç2†7G‚Â6çf2Â7‚Â7’Âæ6VÆW7F–Âæ6ö×æ–öç2ÂÇ†“°¢ÒVÇ6R°¢F†—2åöG&töæT6VÆW7F–Â†7G‚Â7‚Â7’Â&÷D6VÂ„æ6VÆW7F–Â’ÂƒÒB’¢Ç†Â†Æô×VÂ“°¢F†—2åöG&töæT6VÆW7F–Â†7G‚Â7‚Â7’Â&÷D6VÂ„"æ6VÆW7F–Â’ÂB¢Ç†Â†Æô×VÂ“°¢F†—2åöG&t6ö×æ–öç2†7G‚Â6çf2Â7‚Â7’Âæ6VÆW7F–Âæ6ö×æ–öç2ÂƒÒB’¢Ç†“°¢F†—2åöG&t6ö×æ–öç2†7G‚Â6çf2Â7‚Â7’Â"æ6VÆW7F–Âæ6ö×æ–öç2ÂB¢Ç†“°¢Ð ¢6öç7B&öÔÇ†Ò‚„æg‚ÓÓÒw&öÖ–æVæ6RròÒB¢’²„"æg‚ÓÓÒw&öÖ–æVæ6RròB¢’’¢Ç†°¢–b‡&öÔÇ†âã"’F†—2åöG&u&öÖ–æVæ6R†7G‚Â7‚Â7’Â&öÔÇ†“°¢Ð ¢ò¢ ¢¢6ÖÆÂFV6÷&F—fR&öF–W2æV"F†R&–Ö'’6VÆW7F–Â…ÆWGFU7–çF‚w0¢¢'V–ÆD6ö×æ–öç2ÒÒÖ÷&RöbF†VÒf÷"†&Ööæ–6ÆÇ’&–6†W"6öær’à¢¢FVÆ–&W&FVÇ’G&vâ2Æ–âöG&töæT6VÆW7F–ÂF—672—&VBv—F‚F†P¢¢&–Ö'’w2÷vâ7&÷76fFRÇ†¢æòF’öæ–v‡BÆ–v‡B6öçG&–'WF–öâÂæð¢¢ÖæFÆæ6†÷&–ærÂæòö66ÇW6–öââ&–öÖRv—F†÷WB6ö×æ–öç2†WfW'¢¢7Fö6²v÷&ÆBÂæBç’7W7FöÒv÷&ÆBf÷"†&Ööæ–6ÆÇ’6–×ÆR6öær¢¢G&w2æ÷F†–ær†W&RÒÒFöF’w26–ævÆRÖ&öG’6·’—2Væ6†ævVBà¢¢ð¢öG&t6ö×æ–öç2†7G‚Â6çf2Â7‚Â7’Â6ö×æ–öç2ÂÇ†’°¢–b‚'&’æ—4'&’†6ö×æ–öç2’ÇÂ6ö×æ–öç2æÆVæwF‚ÇÂÇ†ÃÒã"’&WGW&ã°¢6öç7B&–Ö'•"ÒÖF‚æÖ‚ƒBÂ6çf2æ†V–v‡B¢ã3c“°¢f÷"†6öç7B6òöb6ö×æ–öç2’°¢6öç7B67‚Ò7‚²6òæG„g&2¢6çf2çv–GFƒ°¢6öç7B67’Ò7’²6òæG”g&2¢6çf2æ†V–v‡C°¢F†—2åöG&töæT6VÆW7F–Â†7G‚Â67‚Â67’Â°¢6öÆ÷#¢F†—2å÷&÷FFVB†6òæ6öÆ÷"’À¢†Æô6öÆ÷#¢F†—2å÷&÷FFVB†6òæ†Æô6öÆ÷"’À¢&F—W3¢ÖF‚æÖ‚ƒ2Â&–Ö'•"¢6òç&F—W4g&2’À¢ÒÂÇ†¢ãƒR“°¢Ð¢Ð ¢ò¢¢Æ–âÆRÖööâÂF¶–ær÷fW"g&öÒF†R&–öÖRw2÷vâ7Vâöæ6R—B6WG0¢¢ÒÒFVÆ–&W&FVÇ’vVæW&–2†æ÷B7&÷76fFVB&WGvVVâ&–öÖW2’6ò—BÇv—0¢¢&VG22'F†RÖööâÂ"v—F‚6–×ÆR7&W66VçB&—FRf÷"6†&7FW"à¢¢F–FÄöfg6WE†ÆWG2F†R76R&–FvRw2÷vâf7BF–FÂG&–gB‡6VP¢¢76U&–FvRçF–FÄöfg6WE‚’çVFvRF†RÖööâÆ—GFÆRFöòÒÒ&öG’6ÖÆÀ¢¢Væ÷Vv‚Fòf—6–&Ç’––VÆBFò6öÖWF†–ærf"Æ&vW"Â¶WB7V'FÆR†¢¢g&7F–öâöbF†R×Æ—GVFRÂ†&BÖ6Æ×VB’6ò—BæWfW"&VG22&÷Væ6–ærâ¢ð¢ò¢¢–ÆÇVÖ–æFVBg&7F–öâöbF†RÖööâw2F—62F†—2g&ÖRÂâãà¢ ¢¢F†RF’öæ–v‡B7–6ÆR†W&R'Vç27VâæBÖööâ–â7G&–7B÷÷6—F–öâ‡F†P¢¢Öööâ&—6W2W†7FÇ’2F†R7Vâ6WG2’ÂæB&öG’B÷÷6—F–öâ—2Â–à¢¢&VÆ—G’ÂÇv—2eTÄÂÒÒ6ò&VF–ær†6RöfbF†—27–6ÆRw2÷và¢¢vVöÖWG'’v÷VÆBöæÇ’WfW"&öGV6RgVÆÂÖööââF†R†6R—2F†W&Vf÷&P¢¢—G2÷vâ6Æ÷rFW&ÒÂöæR7–æöF–27–6ÆR7&÷72F†R6öæs¢&VÂÇVæ ¢¢†VæöÖVæöâöâ6ö×&W76VB6Æö6²ÂF†R6ÖR6ö×&W76–öâF†R“×6V6öæ@¢¢&F’"Ç&VG’—2à¢ ¢¢F†R6öær÷Vç2æV"æWræBv†W2FògVÆÂBF†RÖ–Gö–çBâ6VP¢¢ÔôôåôÔ”åô”ÄÅTÒ–âöG&tÖööâf÷"v‡’—BæWfW"7GVÆÇ’&V6†W2æWrâ¢ð¢öÖööå†6S‚’°¢òòv'VBv’g&öÒW†7BV'FW"Â&V6W6RW†7BV'FW"—27G&–v‡@¢òòÆ–æRà¢òð¢òòF†RFW&Ö–æF÷"w2†Æb×v–GF‚—2²Ò"¢ƒÓ&b’Â6òBbÒãRF†RVÆÆ—6P¢òò—2FVvVæW&FRæBF†RÆ—B&Vv–öâw2–ææW"VFvR—2ÖF†VÖF–6ÆÇ¢òò7G&–v‡BF–ÖWFW"7&÷72F†RF—62â6÷'&V7B7G&öæö×’ÂæBöâ&öG¢òòF†—26—¦Rv—F‚V'F‡6†–æRf—6–&ÆR&V†–æB—BÂ—B&VG22&VæFW&–æp¢òòfVÇBÒÒfW'F–6ÂÆ–æRG&vâF‡&÷Vv‚F†RÖööâà¢òð¢òò6ögFVæ–ærF†RVFvRv2F†Rf—'7BGFV×BæB—BFöW2æ÷B6öÇfRF†—3 ¢òòv†FWfW"F†RfVF†W"Â†ÆbF†RF—62—2Æ—BæB†Æb—2æ÷BÂÆöær¢òòÆ–æRâF†R6öæF—F–öâ†2Fòvò&F†W"F†â&R&ÇW'&VBÂ6ò&öw&W72—0¢òòv'VBFò72D…$õTt‚V'FW"V–6¶Ç’æBGvVÆÂæV"7&W66VçBæ@¢òòv–&&÷W2–ç7FVBÂv†W&RF†RFW&Ö–æF÷"—2f—6–&Ç’7W'fRâ7V&–0¢òòV6R&÷WBV6‚V'FW"ö–çBFöW2F†Bv†–ÆR7F––ærÖöæ÷Föæ–2ÒÐ¢òòF†R†6R7F–ÆÂ'Vç2æWrFògVÆÂFòæWrÂ—B§W7BFöW2æ÷BÆ–ævW"@¢òòF†RöæRfÇVRF†B†2æò7W'fGW&Rà¢6öç7BÒ6Æ×‡F†—2å÷&öw&W72ÇÂ“°¢òòföÆBFòâãv—F†–âF†R†ÆbÖ7–6ÆRÂv'ÂVæföÆBâRÒãR—2V'FW"à¢6öç7B†ÆbÒÂãRò¢°¢6öç7BRÒÂãRò¢"¢‡ÒãR’¢#°¢6öç7Bv'VBÒRÂãP¢òãR¢ÖF‚ç÷r‡R¢"ÂÔôôåõT%DU%õ4´Ur’ ¢¢ÒãR¢ÖF‚ç÷r‚ƒÒR’¢"ÂÔôôåõT%DU%õ4´Ur“°¢&WGW&â6Æ×‚††Æb²v'VB’¢ãR“°¢Ð ¢ò¢ ¢¢F†RÖööã¢Æ—B7†W&RÂG&vâ2öæRà¢ ¢¢F†R†6R&÷VæF'’öâ7†W&RÆ—Bg&öÒF†R6–FR—2æ÷B6—&7VÆ"&—FP¢¢÷WBöbF†RF—62ÒÒ—B—2F†R7†W&Rw2÷vâw&VBÖ6—&6ÆRFW&Ö–æF÷"6VVâ–à¢¢&ö¦V7F–öâÂv†–6‚—2„ÄbÔTÄÄ•4R6†&–ærF†RF—62w2öÆW2Â—G2v–GF€¢¢6‡&–æ¶–ærFòæ÷F†–ærBV'FW"†6RæB'VÆv–ærF†R÷÷6—FRv¢¢F‡&÷Vv‚v–&&÷W2âF†R&Wf–÷W2öfg6WBÖ6—&6ÆR7WB6÷VÆBöæÇ’WfW"&öGV6P¢¢7&W66VçG2†æWfW"6÷'&V7Bv–&&÷W2’ÂæBWfVâ—G27&W66VçG2†BF†Rw&öæp¢¢Æ–Ö"7W'fGW&RÂ&V6W6RGvò6—&6ÆW2öbF–ffW&VçB&F–’FöâwBÖVWBF†Rv¢¢Æ–Ö"æBFW&Ö–æF÷"Fòâ'V–ÆF–ærF†RÆ—B&Vv–öâ÷WBöbG'VRÆ–Ö ¢¢&2ÇW2G'VRFW&Ö–æF÷"VÆÆ—6R—2&÷F‚6–×ÆW"æB7GVÆÇ’&–v‡Bà¢ ¢¢F†Rv†öÆR6öç7G'V7F–öâ—2F†Vâ&÷FFVB6ò—G2Æ—B6–FRf6W2F†R7Vâw0¢¢&VÂ÷6—F–öâ†7Vå„g&6ö7Vå”g&6Â6öçF–çVVB&VÆ÷rF†R†÷&—¦öâ'¢¢F”æ–v‡Bç7Vå67&VVäg&2’ÒÒBæ–v‡BF†B7Vâ—2VæFW&æVF‚Â6òF†RÖööà¢¢—2Æ—Bg&öÒ&VÆ÷rÂv†–6‚—2W†7FÇ’v†B—BFöW2–âF†R6·’à¢¢ð¢öG&tÖööâ†7G‚Â6çf2Â7”g&2ÂÇ†ÂF–FÄöfg6WE‚ÒÂ7„g&2Ò4TÄU5D”ÅôDTdTÅEõ„e$2À¢7Vå„g&2ÒçVÆÂÂ7Vå”g&2ÒçVÆÂÂ†6SÒãR’°¢–b‚–FVçF—G”ÆÆ÷w2‡F†—2çv÷&ÆBÂv6VÆW7F–Ä&öF–W2r’’&WGW&ã°¢–b†Ç†ÃÒã"’&WGW&ã°¢òò6ÖR&ö6‚F†R7Vâ—2öâ„6VÆW7F–Ä&ö6‚æ§2“¢&÷F‚&öF–W2&P¢òò6Æ÷6–æröâF†R6öçfW&vVæ6Rö–çBÂ6òF†RÖööâw&÷w2F‡&÷Vv‚F†Ræ–v‡@¢òòW†7FÇ’2F†R7Vâw&÷w2F‡&÷Vv‚F†RF’æBF†RGvòw&VR&÷WB†÷p¢òòf"v’F†R6·’—2à¢6öç7BÒF†—2åö6VÆW7F–Ä&ö6„B€¢6çf2Â6çf2çv–GF‚¢7„g&2Â6çf2æ†V–v‡B¢7”g&2²6Æ×‡F–FÄöfg6WE‚ÂÓbÂb’À¢“°¢6öç7B7‚Òç‚Â7’Òç“°¢òò66ÆW2v—F‚F†Rg&ÖRÆ–¶RWfW'’÷F†W"6·’VÆVÖVçBÂ–ç7FVBöb7F––æp¢òòf—†VB#g‚v†–ÆR6ÖW&VÆÂÖ&6²v–FVç2F†R7FvR&÷VæB—Bà¢òòÖF6†W2F†RöÆB6öç7FçBW†7FÇ’BF†RæöÖ–æÂs#×FÆÂ7FvRà¢6öç7B"ÒÖF‚æÖ‚ƒBÂ6çf2æ†V–v‡B¢ã3c’¢ç66ÆS°¢7G‚ç6fR‚“°¢7G‚ævÆö&ÄÇ†ÒÇ†°¢6öç7B†ÆòÒ7G‚æ7&VFU&F–Äw&F–VçB†7‚Â7’ÂÂ7‚Â7’Â"¢"ã"“°¢†ÆòæFD6öÆ÷%7F÷ƒÂÔôôåô„Äõô4ôÄõ"“°¢†ÆòæFD6öÆ÷%7F÷ƒÂw&v&ƒÃÃÃ’r“°¢7G‚æf–ÆÅ7G–ÆRÒ†Æó°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2†7‚Â7’Â"¢"ã"ÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“° ¢òò÷VR&6¶–ærF—62ÂgVÆÂÖööâ&F—W3¢&Æö6·2v†FWfW"v2G&và¢òòV&Æ–W"F†—2g&ÖRÒÒF†R7F"f–VÆBÂÖ&–VçB6öç7FVÆÆF–öç2ÂÖ–F7W2w0¢òò6·’f÷–vRÒÒg&öÒ6†÷v–ærF‡&÷Vv‚F†RÖööââv—F†÷WBF†—2F†RF&°¢òòÆ–Ö"v2öæÇ’2÷VR2F†RV'F‡6†–æRf–ÆÂ§W7B&VÆ÷r‡ã2R’Â6ð¢òòç—F†–ær6—GF–ær&V†–æBâVæÆ—B7&W66VçBÖööâ7F–VBÆÖ÷7BgVÆÇ¢òòf—6–&ÆR&–v‡BF‡&÷Vv‚—G2÷vâF—62â6ÖRÇ†2F†RÖööâ—G6VÆb6ð¢òò—BfFW2÷WB–â7FWBÖööç&—6RöÖööç6WB–ç7FVBöbWfW"ö66ÇVF–æp¢òòÖ÷&RF†âF†Rf—6–&ÆRÖööâFöW2à¢7G‚ævÆö&ÄÇ†ÒÇ†°¢7G‚æf–ÆÅ7G–ÆRÒr3s°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2†7‚Â7’Â"ÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“° ¢òòV'F‡6†–æS¢F†RVæÆ—B'Böb&VÂÖööâ—2æ÷BV×G’6·’ÒÒ—Bw0¢òòF–ÖÇ’Æ—B'’Æ–v‡B&÷Væ6–æröfbF†RÆæWBÂv†–6‚—2v‡’–÷R6âÖ¶P¢òò÷WBF†Rv†öÆRF—62&V†–æBF†–â7&W66VçBâÇ6ò¶VW2F†RÖööâ&VF–æp¢òò27†W&RB6Æ–Ò†6W2–ç7FVBöbFWF6†VB6Æ—fW"à¢7G‚ævÆö&ÄÇ†ÒÇ†¢ã3°¢7G‚æf–ÆÅ7G–ÆRÒÔôôåô4ôÄõ#°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2†7‚Â7’Â"ÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“° ¢òò–ÆÇVÖ–æFVBg&7F–öâÓâFW&Ö–æF÷"†Æb×v–GF‚â²Ò"BæWr‡FW&Ö–æF÷ ¢òò‡Vw2F†RÆ—BÆ–Ö"Âæ÷F†–ær6†÷v–ær’ÂBV'FW"†7G&–v‡BVFvR’À¢òòÕ"BgVÆÂ‡FW&Ö–æF÷"‡Vw2F†Rf"Æ–Ö"Âv†öÆRF—626†÷v–ær’à¢òð¢òòfÆö÷&VB6†÷'BöbG'VRæWrÖööã¢BbÒF†RÖööâ—2vVçV–æVÇ¢òò–çf—6–&ÆRÂæB6–æ6RF†R†6R†W&R—2F–VBFò6öær&öw&W72F†@¢òòv÷VÆBÖVâæòÖööâBÆÂF‡&÷Vv‚F†R÷Væ–æröbWfW'’6öærÂv†–6€¢òò&VG22Ö—76–ærfVGW&R&F†W"F†â27G&öæö×’âF†–â7&W66Vç@¢òò—2F†R6ÖR6†RæWrÖööâ—2F’V—F†W"6–FRöbæWrÂ6òF†—0¢òò6÷7G2æ÷F†–ær–âf–FVÆ—G’à¢6öç7BÔôôåôÔ”åô”ÄÅTÒÒãc°¢6öç7BbÒÖF‚æÖ‚„ÔôôåôÔ”åô”ÄÅTÒÂãRÒãR¢ÖF‚æ6÷2ƒ"¢ÖF‚å’¢6Æ×‡†6S’’“°¢6öç7B²Ò"¢ƒÒ"¢b“° ¢òòö–çB·‚BF†R7VâÂ6òF†R'&–v‡BÆ–Ö"f6W2—Bà¢6öç7B7Vå‚Ò7Vå„g&2ÓÒçVÆÂò7‚²"¢6çf2çv–GF‚¢7Vå„g&3°¢6öç7B7Vå’Ò7Vå”g&2ÓÒçVÆÂò7’¢6çf2æ†V–v‡B¢7Vå”g&3°¢6öç7BFõ7VâÒÖF‚æFã"‡7Vå’Ò7’Â7Vå‚Ò7‚“° ¢7G‚ævÆö&ÄÇ†ÒÇ†°¢7G‚çG&ç6ÆFR†7‚Â7’“°¢7G‚ç&÷FFR‡Fõ7Vâ“°¢7G‚æ&Vv–åF‚‚“°¢òòÆ—BÆ–Ö#¢F†R7Vçv&B†ÆböbF†RF—62ÂF÷Óâ&–v‡BÓâ&÷GFöÒà¢7G‚æ&2ƒÂÂ"ÂÔÖF‚å’ò"ÂÖF‚å’ò"ÂfÇ6R“°¢òòFW&Ö–æF÷#¢&6²g&öÒ&÷GFöÒFòF÷ÆöærF†R&ö¦V7FVBw&VB6—&6ÆRà¢òò7vVWF—&V7F–öâföÆÆ÷w2²w26–vâÂv†–6‚—2v†BGW&ç2F†R6ÖRGvð¢òò7W'fW2–çFò7&W66VçB†'VÆv–ær7Vçv&B’÷"v–&&÷W2†'VÆv–ærv’’à¢7G‚æVÆÆ—6RƒÂÂÖF‚æ'2†²’Â"ÂÂÖF‚å’ò"ÂÔÖF‚å’ò"Â²â“°¢7G‚æ6Æ÷6UF‚‚“°¢òò6ögBÆöærF†RFW&Ö–æF÷"Â†&BBF†RÆ–Ö"à¢òð¢òòBV'FW"†6R²—2W†7FÇ’Â6òF†RFW&Ö–æF÷"—2ÖF†VÖF–6ÆÇ¢òò7G&–v‡BÆ–æR7&÷72F†RÖ–FFÆRöbF†RF—62ÒÒ6÷'&V7B7G&öæö×’Âæ@¢òòBF†—26—¦R—B&VG22&VæFW&–ærfVÇB&F†W"F†â2†6S¢¢òò&¦÷"VFvR7Æ—GF–ær&öG’F†B6VÆW7F–Ä&ö6‚w&÷w2Fò6WfW&À¢òòF–ÖW2—G2÷&–v–æÂv–GF‚Âv—F‚V'F‡6†–æRÖ¶–ærF†RF&²†ÆbÆ–æÇ¢òòf—6–&ÆRöâF†R÷F†W"6–FRöb—Bâ&VÂFW&Ö–æF÷"—2æ÷B¶æ–fRVFvP¢òòV—F†W#²F†R7Vâ—2æ÷Bö–çB6÷W&6RæBF†R7W&f6R7W'fW2v’Â6ð¢òòF†RÆ–v‡BF–W2÷fW"&æB&F†W"F†âBÆ–æRà¢òð¢òòF†Rw&F–VçB'Vç2ÆöærF†R7VâF—&V7F–öâ‚·‚†W&RÂ6–æ6RF†Rv†öÆP¢òò6öç7G'V7F–öâ—2Ç&VG’&÷FFVB'’Fõ7Vâ’ÂgVÆÂ'&–v‡FæW727&÷72F†P¢òòÆ—BÆ–Ö"æBfÆÆ–ærFòæ÷F†–ær§W7B7BF†RFW&Ö–æF÷"w2÷vâ‚âF†P¢òòÆ–Ö"7F—27&—7&V6W6RF†RF‚6Æ—2—Bà¢6öç7BFW&Õ‚Ò²âòÖF‚æ'2†²’¢ÔÖF‚æ'2†²“°¢òòFVçF‚öbF†R&F—W2v2F†Rf—'7BGFV×BæB—BF–Bæ÷F†–æs¢öâ¢òòF—62F†—26—¦RF†B—2VæFW"F‡&VR—†VÇ2öbfVF†W"Âv†–6‚—27F–ÆÂ¢òò&¦÷"VFvRâfW&–f–VB'’&VæFW&–ærBV'FW"†6Rv—F‚—BÆ–VBæ@¢òò6VV–æræò6†ævRBÆÂâF†R&æB†2Fò&R&VÂg&7F–öâöbF†P¢òò&öG’Fò&VB27W'f–ær7W&f6RÆ÷6–ærF†RÆ–v‡B&F†W"F†â2¢òò7G&–v‡B7WB7&÷72fÆB6†Rà¢6öç7B6ögFæW72ÒÖF‚æÖ‚ƒ2Â"¢ã3‚“°¢6öç7B²#¢×"Âs¢ÖrÂ#¢Ö"ÒÒ†W…Fõ&v"„Ôôôåô4ôÄõ"“°¢6öç7Bf6RÒ7G‚æ7&VFTÆ–æV$w&F–VçB‡FW&Õ‚Ò6ögFæW72ÂÂFW&Õ‚²6ögFæW72Â“°¢f6RæFD6öÆ÷%7F÷ƒÂ&v&‚G¶×'ÒÂG¶ÖwÒÂG¶Ö'ÒÃ–“°¢f6RæFD6öÆ÷%7F÷ƒÂ&v&‚G¶×'ÒÂG¶ÖwÒÂG¶Ö'ÒÃ–“°¢7G‚æf–ÆÅ7G–ÆRÒf6S°¢7G‚æf–ÆÂ‚“°¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢¢f"ö6Vâ6VVâF‡&÷Vv‚ö&V†–æBF†RÖ÷VçF–â6–Æ†÷VWGFW3¢æ÷B6öÆ–@¢¢&æB‡v†–6‚&–FvR6–×Ç’–çG2÷fW"’'WBâ'7G&7Bf–VÆBö`¢¢vfRÖ6öçF÷W"&÷w2&V6VF–ærF÷v&B†–v‚†÷&—¦öâÂÆ–¶Râ–æf–æ—FP¢¢fÆBÆæRöbvFW"–âW'7V7F—fRÒÒ&÷w26ö×&W72æBfFR2F†W¢¢&ö6‚F†R†÷&—¦öâÂæBF†Rv†öÆRf–VÆBfFW2BF†RÆVgB÷&–v‡@¢¢67&VVâVFvW2âG&vâ&Vf÷&RF†R†÷&—¦öâUÂ7V7G'VÒÖ76–bÂæBWfW'¢¢Ö÷VçF–âÆ–W"Â6òF†÷6RæGW&ÆÇ’ö66ÇVFRF†RÆ÷vW"÷'F–öã²F†P¢¢f—6–&ÆR&VÖ–æFW"†&÷fRö&WGvVVâF†R&–FvVÆ–æW2’•2F†Rö6VââF†R&÷p¢¢7F6²Çv—2G&w2‡f—6–&–Æ—G’—2F†RfVGW&R“²—BF†–ç2æBG&÷2F†P¢¢6VÆW7F–ÂvÆ–çBBF†RFVWW7BW&b'Værâ¢ð¢ò¢¢v†–6‚G7VæÖ’†–bç’’—27W'&VçFÇ’&ö6†–ærÂv—F‚—G2FWF‚ð¢¢W'7V7F—fR7FFRÒÒÆöö¶VBWöæ6RW"g&ÖRæB6†&VB'’F†R&÷p¢¢7vVÆÂæBF†RvÆÂ6–Æ†÷VWGFRâ¢ð¢ö7F—fUG7VæÖ’†6çf5v–GF‚’°¢6öç7Bæ÷t×2ÒF†—2çE6V2¢°¢f÷"†6öç7BWböbF†—2å÷G7VæÖ—2’°¢–b‚G7VæÖ”7F—fR†WbÂæ÷t×2’’6öçF–çVS°¢6öç7BvRÒæ÷t×2ÒWbçD×3°¢6öç7B&öw&W72ÒG7VæÖ•&öw&W72†vR“°¢&WGW&â°¢WbÀ¢&öw&W72À¢&÷tg&3¢G7VæÖ•&÷tg&2‡&öw&W72’À¢66ÆS¢G7VæÖ•W'7V7F—fU66ÆR‡&öw&W72’À¢†V–v‡E66ÆS¢G7VæÖ”†V–v‡E66ÆR†vR’À¢6VçFW%ƒ¢G7VæÖ”6VçFW%‚†WbÂ6çf5v–GF‚’À¢Ó°¢Ð¢&WGW&âçVÆÃ°¢Ð ¢ò¢¢66†VGVÆW2æWrG7VæÖ’vÆÂÂ6ÖR6†R2F†RW†—7F–ærG&÷Ö7VV@¢¢&öçW2vÆÂ‡6VRF†RG&÷D×2&Æö6²–âWFFR‚’’ÒÒW6VB'’6–×VÆF–öà¢¢f÷"F†RV¶RÓâG7VæÖ’Æ–æ¶VBWfVçB„F—67FW$F—&V7F÷"&×2¢¢6VÖW–6VçFW"V¶RÂF†Vâ6ÆÇ2F†—2ã#ÓC2ÆFW"6òF†RgFW'6†ö6°¢¢&VG22†f–ær¶–6¶VBW&VÂvfR’â¶VW2÷G7VæÖ—66÷'FVB6ð¢¢ö7F—fUG7VæÖ–w2f—'7BÖÖF6‚66â7F—26÷'&V7Bâ¢ð¢&ÕG7VæÖ’‡D×2ÂF—"Ò’°¢F†—2å÷G7VæÖ—2çW6‚‡²D×2ÂF—"Ò“°¢F†—2å÷G7VæÖ—2ç6÷'B‚†Â"’ÓâçD×2Ò"çD×2“°¢Ð ¢ò¢¢âãv—F†G&vÂFWF‚7&÷72WfW'’66†VGVÆVBG7VæÖ’ÒÒBÖ÷7BöæP¢¢6â&R–â—G2v—F†G&vÂv–æF÷rBF–ÖR–â&7F–6R‡F†R66†VGVÆP¢¢76W2vÆÇ2vVÆÂ'B’Â'WBF†—2F¶W2F†RÖ‚&F†W"F†â77VÖ–æp¢¢F†BFò7F’6÷'&V7BV—F†W"v’â¢ð¢ö7F—fUv—F†G&vÂ‚’°¢6öç7Bæ÷t×2ÒF†—2çE6V2¢°¢ÆWBÆWfVÂÒ°¢f÷"†6öç7BWböbF†—2å÷G7VæÖ—2’°¢–b‡G7VæÖ•v—F†G&vÄ7F—fR†WbÂæ÷t×2’’ÆWfVÂÒÖF‚æÖ‚†ÆWfVÂÂG7VæÖ•v—F†G&vÃ†WbÂæ÷t×2’“°¢Ð¢&WGW&âÆWfVÃ°¢Ð ¢ò¢ ¢¢F†Rf"6†÷&S¢Ö76—fRÂfwVRÖ÷VçF–â&ævRöâF†Rf"6–FRöbF†P¢¢ö6VââG&vâ$T„”äBF†RvFW"‡6VRF†R6ÆÂ6—FR’BF†R†÷&—¦öâÆ–æP¢¢—G6VÆbÂ6Æ—VB6òöæÇ’F†R÷'F–öâ&÷fRF†R†÷&—¦öâ—2WfW"f—6–&ÆRÒÐ¢¢F†R6ÖR&V6öâ6†—w2Ö7G26ÆV"F†R6V&Vf÷&R—G2‡VÆÂFöW2âv†@¢¢6öÖW2F‡&÷Vv‚—2æWfW"6ÆVâ6·–Æ–æRÂöæÇ’F†RFÆÆW7B'&öBÖ76W0¢¢'&V¶–ærF†R†÷&—¦öâÂWfW'—F†–ær&VÆ÷rF†VÒÇ&VG’7vÆÆ÷vVB'’F†P¢¢7W'fRöbF†Rv÷&ÆBâæV&Ç’Ö÷F–öæÆW72‡6VRd%õ4„õ$Uõ$ÄÄ‚’æ@¢¢&VæFW&VB26ögBÂF&²ÂÆÖ÷7BfVGW&VÆW726–Æ†÷VWGFRÒÒFWF–Â@¢¢F†—2F—7Fæ6R†2Ç&VG’F—76öÇfVB–çFò†¦RÂv†–6‚—2W†7FÇ’v†@¢¢¶VW2—B&VF–ær2–×÷76–&Ç’f"&F†W"F†âÖW&VÇ’æ÷F†W"&ævRà¢¢ð¢öG&tf%6†÷&R†7G‚Â6çf2Âv÷&ÆE‚ÂÂ"ÂB’°¢–b‡F†—2å÷W&bbbF†—2å÷W&bæ†Vg•÷7Dg‚’&WGW&ã°¢6öç7B†÷&—¦öå’Ò6çf2æ†V–v‡B¢ô4Tåô„õ$•¤ôåôe$3°¢òò†÷rf"&VÆ÷rF†Rf—6–&ÆR†÷&—¦öâ—G2&6R6—G2ÒÒF†R7W'fGW&P¢òò&7WG2öfb"F†—2Öç’‚öbfW'F–6ÂW‡FVçB&Vf÷&Rç—F†–ær6â6†÷rà¢6öç7B6–æµ‚ÒÖF‚æÖ‚ƒ‚Â6çf2æ†V–v‡B¢ã"“°¢6öç7B&6U’Ò†÷&—¦öå’²6–æµƒ°¢6öç7BÖ„†V–v‡E‚ÒÖF‚æÖ‚ƒ“Â6çf2æ†V–v‡B¢ã#“²òòÖ76—fRÒÒFVÆ–&W&FVÇ’FÆÆW"F†â—B6†÷VÆBWfW"&R&ÆRFòÆöö²F†—2f"öf`¢6öç7B67&öÆÅ‚Òv÷&ÆE‚¢d%õ4„õ$Uõ$ÄÄƒ°¢6öç7B7FW‚Òƒ° ¢7G‚ç6fR‚“°¢7G‚æ&Vv–åF‚‚“°¢7G‚ç&V7BƒÂÂ6çf2çv–GF‚Â†÷&—¦öå’“°¢7G‚æ6Æ—‚“²òò7W'fGW&S¢æ÷F†–ærB÷"&VÆ÷rF†RG'VR†÷&—¦öâÆ–æR7W'f—fW0 ¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‚×7FW‚Â&6U’“°¢f÷"†ÆWB‚Ò×7FWƒ²‚ÃÒ6çf2çv–GF‚²7FWƒ²‚³Ò7FW‚’°¢6öç7BRÒ‡‚²67&öÆÅ‚’òd%õ4„õ$UõD”ÄUõƒ°¢6öç7BƒÒf%6†÷&T†V–v‡C‡F†—2åöf%6†÷&U&V6—RÂR“°¢7G‚æÆ–æUFò‡‚Â&6U’Òƒ¢Ö„†V–v‡E‚“°¢Ð¢7G‚æÆ–æUFò†6çf2çv–GF‚²7FW‚Â&6U’“°¢7G‚æ6Æ÷6UF‚‚“° ¢òòæV"Ö&Æ6²Âf–çFÇ’6öÆBÒÒÖ72Âæ÷BÖ÷VçF–â&ævRv—F‚¢òòÆWGFRâ†—"öbF†R&–öÖRw2÷vâ—"6öÆ÷"¶VW2—Bg&öÒ&VF–ær0¢òòfÆBfö–B7WF÷WB&F†W"F†â6öÖWF†–ær7GVÆÇ’÷WBF†W&Rà¢6öç7B—"ÒF†—2åö—$6öÆ÷"ÇÂr3Vf#ƒs°¢6öç7B&6RÒF†—2æÆW'66†RævWB‚r3s"rÂ—"ÂãB“°¢6öç7B²"ÂrÂ"ÒÒ†W…Fõ&v"†&6R“°¢6öç7BVÇ6RÒf%6†÷&UVÇ6S‡F†—2çE6V2“°¢6öç7BÇ†Òãb²ãr¢VÇ6S°¢7G‚æf–ÆÅ7G–ÆRÒ&v&‚G·'ÒÂG¶wÒÂG¶'ÒÂG¶Ç†çFôf—†VBƒ2—Ò–°¢7G‚æf–ÆÂ‚“°¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢ ¢¢F†RfFÖ÷&væ¢ÆRÂ¦vvVBÂ6æ÷rÖ6VBÖ—&vRÆ–W&VB&–v‡Böà¢¢F÷öbF†Rf"6†÷&Rw2F&²Ö72ÂBF†R6ÖR†÷&—¦öââv†W&RF†Rf ¢¢6†÷&R—2F&²æBfVGW&VÆW72&V6W6R&VÂF—7Fæ6R†2F—76öÇfVB—BÀ¢¢F†—2&VG2F†R÷÷6—FRv’öâW'÷6RÒÒVææGW&ÆÇ’7&—7ÂÆP¢¢V·2F†B†fRæò'W6–æW72&V–ærf—6–&ÆRF†—2f"öfbÂ&V6W6R¢¢Ö—&vR—6âwBF—7Fæ6RFö–ærF†Rv÷&²Â—Bw2FÖ÷7†W&–2&Vg&7F–öà¢¢Æ–gF–ær6†R–çFòf–WrâGvò7VW26VÆÂF†C¢WfW'’6öÇVÖâvfW'0¢¢v—F‚6Æ÷r†VB×6†–ÖÖW"öfg6WB–ç7FVBöb†öÆF–ær7F–ÆÂÂæB¢¢6V6öæBÂ7V6†VBV6†òöbF†R6ÖR6–Æ†÷VWGFRfÆöG2§W7B&VæVF‚F†P¢¢Ö–âöæRÒÒF†R6Æ76–2F÷V&ÆVBö–çfW'FVB–ÖvR&VÂ7WW&–÷"Ö—&vP¢¢&öGV6W2à¢¢ð¢öG&tfFÖ÷&væ†7G‚Â6çf2Âv÷&ÆE‚ÂÂ"ÂB’°¢6öç7B†÷&—¦öå’Ò6çf2æ†V–v‡B¢ô4Tåô„õ$•¤ôåôe$3°¢6öç7B6–æµ‚ÒÖF‚æÖ‚ƒBÂ6çf2æ†V–v‡B¢ãR“°¢6öç7B&6U’Ò†÷&—¦öå’²6–æµƒ°¢òò6ÖÆÆW"–â—†VÇ2F†â&Vf÷&RƒãRÓâãSRöb6çf2†V–v‡B’ÒÒF†P¢òòÖ—&vR—27G&WF6†VBfW'F–6ÆÇ’'’&Vg&7F–öâ'W@¢òò7F—26ö×7BÂ&V6W6R—G266ÆR—26öçfW–VB'’†÷r6Æ÷vÇ’—BÖ÷fW2æ@¢òò†÷r—BF÷vW'2Âæ÷B'’&r67&VVâ&Và¢6öç7BÖ„†V–v‡E‚ÒÖF‚æÖ‚ƒ#‚Â6çf2æ†V–v‡B¢ãSR“°¢òòF†RÖ—&vR•2F†Rf"6†÷&S¢6ÖR&V6—RÂ6ÖR†÷&—¦öçFÂ7âÂ6ÖP¢òò†æV"×7FF–2’&ÆÆ‚2F†RF&²6†÷&VÆ–æRöæRG&rÖ6ÆÂV&Æ–W"Â6ð¢òòF†RGvò7F’Æö6¶VBFövWF†W"2F†R6ÖRÆæFÖ72à¢6öç7B67&öÆÅ‚Òv÷&ÆE‚¢d%õ4„õ$Uõ$ÄÄƒ°¢6öç7B7FW‚Òc°¢6öç7B6†–ÖÖW$×‚ÒÖF‚æÖ‚ƒãRÂ6çf2æ†V–v‡B¢ãb“°¢òòÖVvÆ÷†ö&–2Ö÷F–öâ…76U&–FvRw27VW2Âæ÷B—G26—¦R“¢f7BÂ6Æ÷p¢òò&ö"æB32F÷vW&–ær÷6vv–ær7G&WF6‚F†B&VB2'FöòÆ&vRFò&P¢òòæV&'’"v—F†÷WBæVVF–ærFòö67W’Ö÷&R—†VÇ2à¢6öç7BG&–gBÒÖ—&vTG&–gE‚‡F†—2çE6V2Â6çf2æ†V–v‡B“°¢6öç7B7G&WF6‚ÒÖ—&vU7G&WF6ƒ‡F†—2çE6V2“° ¢òòÆRÂ6öÆBÂæB6Æ÷6RFòF†R6·’w2÷vâ†–v‚6öÆ÷"&F†W"F†âF†P¢òò&–öÖRw2ÆWGFRÒÒÖ—&vR—2&Vg&7FVB4µ”Ä”t…BÂæ÷BÆö6ÂFW'&–âÀ¢òò6ò—B6†÷VÆB&VB2âW‡FVç6–öâöbF†R—"Âæ÷B2æ÷F†W"&ævRà¢6öç7B6·”†÷&—¦öâÒF†—2å÷&÷FFVB‡F†—2æÆW'66†RævWB„ç6·•³%ÒÂ"ç6·•³%ÒÂB’“°¢6öç7B—"ÒF†—2åö—$6öÆ÷"ÇÂr3†f†&bs°¢6öç7BÆRÒF†—2æÆW'66†RævWB‚r6VVcFf"rÂF†—2æÆW'66†RævWB‡6·”†÷&—¦öâÂ—"ÂãB’Âã3R“°¢6öç7B²"ÂrÂ"ÒÒ†W…Fõ&v"‡ÆR“°¢6öç7B&W6Væ6RÒÖ—&vU&W6Væ6S‡F†—2çE6V2“°¢–b‡&W6Væ6RÂã"’&WGW&ã°¢6öç7BÇ†Òã#"¢&W6Væ6S° ¢7G‚ç6fR‚“°¢7G‚æ&Vv–åF‚‚“°¢7G‚ç&V7BƒÂÂ6çf2çv–GF‚Â†÷&—¦öå’²6–æµ‚¢ãb“°¢7G‚æ6Æ—‚“²òòF†RÖ—&vR7F–ÆÂ6âwB6†÷r&VÆ÷r—G2÷vâ&6RÒÒ—BfÆöG2BF†R†÷&—¦öâÂæ÷B&VÆ÷r—@ ¢6öç7B'V–ÆEF‚Ò‡7V6‚Â”&–2’Óâ°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‚×7FW‚Â&6U’²”&–2“°¢f÷"†ÆWB‚Ò×7FWƒ²‚ÃÒ6çf2çv–GF‚²7FWƒ²‚³Ò7FW‚’°¢6öç7BRÒ‡‚²67&öÆÅ‚’òÔ•$tUõD”ÄUõƒ°¢òò6×ÆRF†R$TÂf"6†÷&R‡F†—2åöf%6†÷&U&V6—R’Â&Vf–æVB'’F†P¢òòÖ—&vRw2÷vâf–æR7&W7B‡F†—2åöÖ—&vU&V6—R’à¢6öç7BƒÒÖ—&vT†V–v‡C‡F†—2åöf%6†÷&U&V6—RÂF†—2åöÖ—&vU&V6—RÂR“°¢6öç7B6†–ÖÖW"ÒÖ—&vU6†–ÖÖW%‚‡F†—2åöÖ—&vU&V6—RÂRÂF†—2çE6V2Â6†–ÖÖW$×‚“°¢6öç7B’Ò&6U’²”&–2²G&–gBÒƒ¢Ö„†V–v‡E‚¢7G&WF6‚¢7V6‚²6†–ÖÖW#°¢7G‚æÆ–æUFò‡‚Â’“°¢Ð¢7G‚æÆ–æUFò†6çf2çv–GF‚²7FW‚Â&6U’²”&–2“°¢7G‚æ6Æ÷6UF‚‚“°¢Ó° ¢òòÖ–â–ÖvRÒÒF†R&VÂf"6†÷&RÂÆ–gFVBæB7G&WF6†VB'’&Vg&7F–öâà¢7G‚æf–ÆÅ7G–ÆRÒ&v&‚G·'ÒÂG¶wÒÂG¶'ÒÂG¶Ç†çFôf—†VBƒ2—Ò–°¢'V–ÆEF‚ƒÂ“°¢7G‚æf–ÆÂ‚“°¢òò7WW&–÷"Ö—&vRWW"–ÖvS¢6V6öæBÂ6Æ–v‡FÇ’FÆÆW"Âf–çFW"6÷¢òòfÆöF–ær§W7B&÷fRF†RÖ–âöæRÒÒG'VR7WW&–÷"fFÖ÷&væ¢òò7F6·2âW&V7B–ÖvR÷fW"â–çfW'FVBöæRà¢7G‚æf–ÆÅ7G–ÆRÒ&v&‚G·'ÒÂG¶wÒÂG¶'ÒÂG²†Ç†¢ãb’çFôf—†VBƒ2—Ò–°¢'V–ÆEF‚ƒã#‚ÂÖÖ„†V–v‡E‚¢7G&WF6‚¢ã“°¢7G‚æf–ÆÂ‚“°¢òò–æfW&–÷"V6†ó¢7V6†VBfÆBæBG&÷VB§W7B&VÆ÷rÒÒF†R–çfW'FVBÀ¢òò6ö×&W76VB&VfÆV7F–öâ&VÂ7WW&–÷"Ö—&vR6†÷w2VæFW"—G2W&V7B–ÖvRà¢7G‚æf–ÆÅ7G–ÆRÒ&v&‚G·'ÒÂG¶wÒÂG¶'ÒÂG²†Ç†¢ãCR’çFôf—†VBƒ2—Ò–°¢'V–ÆEF‚ƒã3BÂ6–æµ‚¢ãR“°¢7G‚æf–ÆÂ‚“°¢7G‚ç&W7F÷&R‚“°¢Ð ¢öG&tö6Vâ†7G‚Â6çf2Âv÷&ÆE‚ÂÂ"ÂBÂ†VæöÖVægVÆÂÂæ–v‡BÒ’°¢6öç7B†÷&—¦öå’Ò6çf2æ†V–v‡B¢ô4Tåô„õ$•¤ôåôe$3°¢òòv—F†G&vÂFVÆVw&ƒ¢F†R6Vf—6–&Ç’G&–ç2&6²F÷v&BF†R†÷&—¦öà¢òò–âF†R6V6öæG2&Vf÷&RG7VæÖ’vÆÂw2÷vâ&ö6‚&Vv–ç2ÒÒVÆÆ–æp¢òòF†RæV"VFvRöbF†Rt„ôÄRÆæRWF÷v&BF†R†÷&—¦öâ6‡&–æ·2WfW'¢òòF÷vç7G&VÒG&r‡F†R&6¶–ærf–ÆÂÂF†R&öG’ÆFRÂWfW'’6öçF÷W"&÷p¢òòf–ö6Vå&÷u—2’f÷"g&VRÂ6–æ6RF†W’ÆÂ¶W’öfbæV%’à¢6öç7Bv—F†G&vÃÒF†—2åö7F—fUv—F†G&vÂ‚“°¢6öç7BæV%’Ò6çf2æ†V–v‡B¢ô4TåôäT%ôe$2Ò†6çf2æ†V–v‡B¢„ô4TåôäT%ôe$2Òô4Tåô„õ$•¤ôåôe$2’’¢ãB¢v—F†G&vÃ°¢6öç7B&72ÒãR¢‚‡F†—2åöW6Öö÷F†VE³ÒÇÂ’²‡F†—2åöW6Öö÷F†VE³ÒÇÂ’“°¢6öç7BG&V&ÆRÒãR¢‚‡F†—2åöW6Öö÷F†VE³UÒÇÂ’²‡F†—2åöW6Öö÷F†VE³eÒÇÂ’“°¢6öç7B¶–6²ÒÆæT¶–6²‡F†—2çE6V2¢ÂF†—2åöFæ6T¶–6´×2Âvö6VârÂF†—2åöFæ6T¶–6´×“°¢6öç7BG7VæÖ’ÒF†—2åö7F—fUG7VæÖ’†6çf2çv–GF‚“°¢6öç7BF–Ç2Ò7G–ÆTF–Ç2‡F†—2çf—7VÅ7G–ÆR“°¢6öç7B&W6Væ6RÒã#‚¢†F–Ç2æö6Vå&W6Væ6Róò“°¢6öç7BÆ–æT×VÂÒF–Ç2æö6VäÆ–æTÇ†óò°¢6öç7B&öG”×VÂÒF–Ç2æö6Vä&öG”Ç†óò°¢6öç7B&VfÆV7D×VÂÒF–Ç2æö6Vå&VfÆV7Bóò° ¢6öç7B6·”Ö–BÒF†—2æÆW'66†RævWB„ç6·•³ÒÂ"ç6·•³ÒÂB“°¢6öç7B6–ÂÒF†—2æÆW'66†RævWB„ç6–Æ†÷VWGFRÂ"ç6–Æ†÷VWGFRÂB“°¢6öç7B&6RÒF†—2æÆW'66†RævWB‡6–ÂÂ6·”Ö–BÂã#‚“°¢òòÆVâ†&B–çFòFVÂ6V²'—76ÂFVW6òF†RÆæR&VG22ö6Vâà¢6öç7BvFW"ÒF†—2å÷&÷FFVB‡F†—2æÆW'66†RævWB†&6RÂô4TåõtDU%ô$ÅTRÂãc‚’“°¢6öç7BFVWvFW"ÒF†—2å÷&÷FFVB‡F†—2æÆW'66†RævWB†&6RÂô4TåôDTUô$ÅTRÂãc"’“°¢6öç7B6ÒF†—2å÷&÷FFVB‡F†—2æÆW'66†RævWB„æ6VÆW7F–Âæ†Æô6öÆ÷"Â"æ6VÆW7F–Âæ†Æô6öÆ÷"ÂB’“° ¢òò&VæFW&VC¢fWvW"6öçF÷W"&÷w26òF†RÆæR&VG22vFW"Ö72Âæ÷B¢òòæVöâv—&Vg&ÖRw&–Bâ6Æ76–2¶VW2F†RFVç6W"f–VÆBà¢6öç7B&÷t'VFvWBÒÖF‚æÖ‚ƒ‚ÂÖF‚æ6V–Â‡F†—2åöö6Vå&÷w2æÆVæwF‚¢†F–Ç2ç&÷t6÷VçD×VÂóò’’“°¢6öç7BgVÆÅ&÷w2ÒF†—2åöö6Vå&÷w2ç6Æ–6RƒÂ&÷t'VFvWB“°¢6öç7B&÷w2Ò†VæöÖVægVÆÂògVÆÅ&÷w2¢gVÆÅ&÷w2ç6Æ–6RƒÂÖF‚æ6V–Â†gVÆÅ&÷w2æÆVæwF‚¢ãcR’“°¢6öç7B&÷u—2Òö6Vå&÷u—2††÷&—¦öå’ÂæV%’Â&÷w2æÆVæwF‚“° ¢òòfFRFòG&ç7&VçBBF†R67&VVâVFvW2ÒÒâ–æf–æ—FRÆæRG&–Ç0¢òòöfb6–FWv—22×V6‚2—B&V6VFW2–çFòF†RF—7Fæ6Rà¢6öç7BVFvTfFRÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂÂ6çf2çv–GF‚Â“°¢VFvTfFRæFD6öÆ÷%7F÷ƒÂG·vFW'Ó“°¢VFvTfFRæFD6öÆ÷%7F÷ƒãÂvFW"“°¢VFvTfFRæFD6öÆ÷%7F÷ƒã’ÂvFW"“°¢VFvTfFRæFD6öÆ÷%7F÷ƒÂG·vFW'Ó“° ¢7G‚ç6fR‚“°¢òòæ÷&ÖÂ6ö×÷6—F–ær6òvFW"6—G226ögBÆFR–ç7FVBöbÆ6W"Æ–æW2à¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒw6÷W&6RÖ÷fW"s° ¢òò÷VR&6¶–ærÂTäDU"F†RG&ç6ÇV6VçB&öG’ÆFR&VÆ÷s¢vFW"—2¢òò6öÆ–B7W&f6RÂæBF†RvÆ77’w&F–VçBö6öçF÷W"Æ–W'2öâF÷öbF†—0¢òòvW&RF†Rö6Vâw2VçF—&Rf—6–&ÆRF†–6¶æW72ÒÒBF†V—"÷vâV²Ç†¢òò‡ã#bRÂF†R&öG’ÆFRw2SV7F÷F–ÖW2—G2×VÇF—Æ–W'2’F†BÆWBF†P¢òò6·’w27F'2öæV'VÆR÷ÆæWG2ÂvVæW&FVB2Æ÷r2c"RöbF†R6çf2À¢òò6†–æR7G&–v‡BF‡&÷Vv‚F†RvFW"ç—v†W&R7B—G2÷vâ†÷&—¦öââ¢òò&VÂö6Vâ—2÷VS²æòÖ÷VçBöbG&ç6ÇV6Væ7’GVæ–æröâF†R&WGG¢òòÆ–W'2f—†W2F†BÂ6òF†—2f–ÆÂwV&çFVW2æ÷F†–ær&V†–æBWfW"6†÷w0¢òòF‡&÷Vv‚ÂæBWfW'—F†–ærVÇ6R¶VW2—G2W†—7F–ærvÆ77’Æöö²öâF÷ö`¢òò—BâfVF†W'2öæÇ’BF†R†÷&—¦öâ6VÒ‡v†W&R6·’æBvFW"Çv—0¢òò&ÆVæB–â&VÆ—G’’ÒÒ6öÆ–BWfW'—v†W&RVÇ6RöâF†RÆæRà¢°¢6öç7B&6¶–ærÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ†÷&—¦öå’ÂÂæV%’“°¢&6¶–æræFD6öÆ÷%7F÷ƒÂG·vFW'Ó“°¢&6¶–æræFD6öÆ÷%7F÷ƒã‚ÂFVWvFW"“°¢&6¶–æræFD6öÆ÷%7F÷ƒÂFVWvFW"“°¢òòFVÆ–&W&FVÇ’äõB66ÆVB'’F†—2æ'VFvWB‡F†RÖ&–VçBÆ–v‡BÖ'VFvW@¢òòF–ÖÖW"F†BfFW2FV6÷&F—fRVÆVÖVçG2F÷vâ–âV–WB6V7F–öç2’ÒÐ¢òòF†B7—7FVÒv÷fW&ç2†÷rd•d”BF†–æw2&VBÂæ÷Bv†WF†W"‡—6–6À¢òò÷6—G’†öÆG2âvF–ærF†—2öâ—B&V–çG&öGV6VBF†RW†7BÆV²F†—0¢òòÆ–W"W†—7G2Fò6Æ÷6S¢'VFvWBF—22Æ÷r2ãã–â6ÆÒ7G&WF6†W2À¢òòv†–6‚v÷VÆB†fRG&÷VBF†R&6¶–ær&6²FòæV"×G&ç7&VçB&–v‡@¢òòv†VâF†R6·’—2÷F†W'v—6RB—G2Ö÷7Bf—6–&ÆRà¢7G‚ævÆö&ÄÇ†Ò°¢7G‚æf–ÆÅ7G–ÆRÒ&6¶–æs°¢7G‚æf–ÆÅ&V7BƒÂ†÷&—¦öå’Â6çf2çv–GF‚ÂÖF‚æÖ‚ƒÂæV%’Ò†÷&—¦öå’’“°¢Ð ¢òò&öG’ÆFS¢6öçF–çV÷W2vFW"Ö72VæFW"F†RvfR6öçF÷W'26òF†P¢òòÆæR&VG22ö6VâWfVâv†VâÖ÷VçF–ç2ö66ÇVFR'G2öbF†R7F6²à¢°¢6öç7B&öG’Ò7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ†÷&—¦öå’ÂÂæV%’“°¢&öG’æFD6öÆ÷%7F÷ƒÂG·vFW'Ó“°¢&öG’æFD6öÆ÷%7F÷ƒãÂG·vFW'ÓC†“°¢&öG’æFD6öÆ÷%7F÷ƒãBÂG¶FVWvFW'ÓSV“°¢&öG’æFD6öÆ÷%7F÷ƒãsRÂG·vFW'Ó3f“°¢&öG’æFD6öÆ÷%7F÷ƒÂG·vFW'Ó“°¢7G‚ævÆö&ÄÇ†Òãs‚¢F†—2æ'VFvWB¢&W6Væ6R¢&öG”×VÃ°¢7G‚æf–ÆÅ7G–ÆRÒ&öG“°¢7G‚æf–ÆÅ&V7BƒÂ†÷&—¦öå’Â6çf2çv–GF‚ÂÖF‚æÖ‚ƒÂæV%’Ò†÷&—¦öå’’“°¢Ð ¢òòvfR6öçF÷W"öÇ–Æ–æW2(	B6ögBW'7V7F—fRÆ–æW2öâF†RvFW"ÆFRà¢6öç7BG&t6öçF÷W'2ÒF–Ç2æö6VäG&t6öçF÷W'2ÓÒfÇ6RbbÆ–æT×VÂâã#°¢6öç7BâÒCƒ°¢6öç7Bå&÷w2Ò&÷w2æÆVæwFƒ°¢–b†G&t6öçF÷W'2’°¢òò6÷W&6RÖ÷fW"6òÆ–æW26—B”âF†RvFW"Ö72†æ÷BÆ6W"Ö7–â6÷W’à¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒw6÷W&6RÖ÷fW"s°¢7G‚ç7G&ö¶U7G–ÆRÒVFvTfFS°¢7G‚æÆ–æT6Òw&÷VæBs°¢7G‚æÆ–æT¦ö–âÒw&÷VæBs°¢f÷"†ÆWB¢Ò²¢Âå&÷w3²¢²²’°¢6öç7B&÷rÒ&÷w5¶¥Ó°¢6öç7BÇ†Ò&÷tÇ††¢Âå&÷w2’¢&÷ræÇ†×VÂ¢F†—2æ'VFvWB¢&W6Væ6R¢Æ–æT×VÂ¢ãs°¢–b†Ç†ÃÒã’6öçF–çVS°¢6öç7Bv&÷fRÒ¢ÓÓÒòæV%’Ò&÷u—5³Ò¢&÷u—5¶¢ÒÒÒ&÷u—5¶¥Ó°¢6öç7B×66ÆRÒ&÷ræ××VÂ¢ÖF‚æÖ‚ƒã"Â6Æ×†v&÷fRò#B’“°¢6öç7B67&öÆÂÒv÷&ÆE‚¢ƒã2²ã’¢ƒÒ¢òå&÷w2’“°¢6öç7B&÷tg&2Òå&÷w2ÃÒòãR¢¢ò†å&÷w2Ò“°¢6öç7BFWF…7vVÆÂÒG7VæÖ¢òG7VæÖ”FWF„Æ–gB‡&÷tg&2ÂG7VæÖ’ç&÷tg&2’¢G7VæÖ’ç66ÆR¢G7VæÖ’æ†V–v‡E66ÆP¢¢°¢6öç7BG&–gBÒ&÷u†6TG&–gB†¢ÂF†—2çE6V2“°¢7G‚ævÆö&ÄÇ†ÒÇ†¢ãsS°¢òò6Æ–v‡FÇ’F†–6¶W"²Æ÷vW"6öçG&7B6òÆ–æW2&VB2vFW"Âæ÷B…TB'VÆW2à¢7G‚æÆ–æUv–GF‚ÒãB²ãB¢ƒÒ¢òå&÷w2“°¢7G‚æ&Vv–åF‚‚“°¢6öç7B6×ÆW2ÒµÓ°¢f÷"†ÆWB’Ò²’ÃÒã²’²²’°¢6öç7BRÒ‚†’òâ²&÷rçU†6R²67&öÆÂò6çf2çv–GF‚²G&–gB’R²’R°¢ÆWB‚Ò†’òâ’¢6çf2çv–GFƒ°¢ÆWB’Ò&÷u—5¶¥Ð¢²6VÆ–æU’‡RÂF†—2çE6V2¢&÷rç7VVD×VÂÂ&72Â¶–6²’¢×66ÆP¢Ò'&V¶W$Æ–gB‡RÂF†—2çE6V2¢&÷rç7VVD×VÂÂã3R²ãcR¢G&V&ÆR’¢×66ÆR¢ãSS°¢òò7V7G&ÂFWF‚72…vfTf–VÆBæ§2’ÂÆ–W&VBöâF÷öbF†R†æBÐ¢òòGVæVB&÷w2&÷fRÒÒFVÆ–&W&FVÇ’7V'FÆR‡6ÖÆÂ6öVff–6–VçG0¢òòv–ç7B6VÆ–æU’w2÷vâ×Æ—GVFR’6òF†Rf–&R7F—2W†7FÇ¢òòv†B—Bv3²öæÇ’vFVBöâ†VæöÖVægVÆÂ6–æ6RF†R&÷r6÷Vç@¢òò—G6VÆbÇ&VG’G&–×2f÷"Æ÷vW"W&bF–W'2à¢–b‡†VæöÖVægVÆÂ’°¢6öç7BvfRÒvfTf–VÆE6×ÆR‡F†—2å÷vfT6ö×öæVçG2Â‚²67&öÆÂÂF†—2çE6V2“°¢‚³ÒvfRæG‚¢ãb¢×66ÆS°¢’³ÒvfRæG’¢ãB¢×66ÆS°¢Ð¢–b†FWF…7vVÆÂâã’°¢6öç7B†ÆerÒE5TäÔ•õt”ED…õ‚¢ƒã3R²ãcR¢G7VæÖ’ç66ÆR“°¢’ÓÒG7VæÖ”Æ–gB‡‚ÒG7VæÖ’æ6VçFW%‚Â†Æer’¢FWF…7vVÆÂ¢ƒR¢ƒãSR²ãCR¢×66ÆR“°¢Ð¢6×ÆW2çW6‚‡²‚Â’ÂRÒ“°¢–b†’ÓÓÒ’7G‚æÖ÷fUFò‡‚Â’“²VÇ6R7G‚æÆ–æUFò‡‚Â’“°¢Ð¢7G‚ç7G&ö¶R‚“° ¢–b‡†VæöÖVægVÆÂbb&÷tg&2Âãs"’°¢7G‚æf–ÆÅ7G–ÆRÒ6°¢f÷"†ÆWB’Ò²’Â6×ÆW2æÆVæwFƒ²’³Ò"’°¢6öç7B2Ò6×ÆW5¶•Ó°¢6öç7BÒÒv†—FV6Ö6²‡2çRÂF†—2çE6V2¢&÷rç7VVD×VÂÂ&÷tg&2“°¢–b†ÒÂã3R’6öçF–çVS°¢7G‚ævÆö&ÄÇ†ÒÇ†¢Ò¢ãSS°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2‡2ç‚Â2ç’Òã"Âã²ã’¢ÒÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð¢Ð¢Ð¢ÒVÇ6R–b‡†VæöÖVægVÆÂbbG7VæÖ’’°¢òò7F–ÆÂæVVBG7VæÖ’vVöÖWG'’WfVâv†Vâ6öçF÷W'2&Röfb(	B7vVÆÂF†RÆFRöæÇ’à¢Ð ¢–b‡G7VæÖ’bbG7VæÖ’ç66ÆRâã"’°¢òò&ö6‚g&öÒf"†÷&—¦öâ(i"æV"ö6VâVFvRâ6—¦R—2W'7V7F—fRÐ¢òòG&—fVâ‡F–ç’v†–ÆRF—7FçBÂÆ&vR2—BæV'2F†RÆ–W"’â7F–ÆÂ¢òòG&ç6ÇV6VçBvFW'’fV–Â²föÒ7&W7BÒÒæWfW"6öÆ–BÖ÷VçF–à¢òò6–Æ†÷VWGFR6Æ–F–ær6–FWv—2à¢6öç7B²6VçFW%‚Â66ÆS¢W'7Â†V–v‡E66ÆRÂ&÷tg&3¢E&bÒÒG7VæÖ“°¢6öç7B&6U’ÒF†—2åöö6VäÆ–fU&÷u’†6çf2ÂE&b“°¢6öç7BvÆÄ‚Ò†æV%’Ò†÷&—¦öå’’¢ãc"¢†V–v‡E66ÆR¢ƒã"²ãƒ‚¢W'7“°¢6öç7Bu2ÒE5TäÔ•õt”ED…õ‚¢ƒã#‚²ãs"¢W'7“°¢6öç7B7&W7E’Ò‡2’Óâ&6U’ÒG7VæÖ•&öf–ÆR‡2’¢vÆÄƒ°¢6öç7BÇ†×VÂÒF†—2æ'VFvWB¢†V–v‡E66ÆR¢ƒã"²ã‚¢W'7“°¢6öç7Bfö÷E’ÒÖF‚æÖ–â†æV%’Â&6U’²vÆÄ‚¢ãR“° ¢6öç7BfV–Äw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ&6U’ÒvÆÄ‚ÂÂfö÷E’“°¢fV–Äw&BæFD6öÆ÷%7F÷ƒÂG·vFW'Ó“°¢fV–Äw&BæFD6öÆ÷%7F÷ƒãCRÂG·vFW'Ó&“°¢fV–Äw&BæFD6öÆ÷%7F÷ƒÂG·vFW'Ó“°¢7G‚æf–ÆÅ7G–ÆRÒfV–Äw&C°¢7G‚æ&Vv–åF‚‚“°¢f÷"†ÆWB’Ò²’ÃÒ#C²’²²’°¢6öç7B2ÒÓ²†’ò#B’¢#°¢6öç7B‚Ò6VçFW%‚²2¢u3°¢6öç7B’Ò7&W7E’‡2“°¢–b†’ÓÓÒ’7G‚æÖ÷fUFò‡‚Âfö÷E’“°¢7G‚æÆ–æUFò‡‚Â’“°¢Ð¢7G‚æÆ–æUFò†6VçFW%‚²u2Âfö÷E’“°¢7G‚æ6Æ÷6UF‚‚“°¢7G‚ævÆö&ÄÇ†Ò6fÆ6„Ç†ƒãcR¢Ç†×VÂÂF†—2ç&VGV6VDfÆ6‚“°¢7G‚æf–ÆÂ‚“° ¢7G‚æf–ÆÅ7G–ÆRÒ6°¢f÷"†6öç7BböbF†—2å÷G7VæÖ”fÆV6·2’°¢6öç7B‚Ò6VçFW%‚²bç4öfb¢u3°¢6öç7B'’Ò7&W7E’†bç4öfb“°¢6öç7B&ö"ÒÖF‚ç6–â‡F†—2çE6V2¢B²bç†6R’¢2¢W'7°¢7G‚ævÆö&ÄÇ†Ò6fÆ6„Ç†ƒãR¢Ç†×VÂÂF†—2ç&VGV6VDfÆ6‚“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2‡‚Â'’Òbç&—6Tg&2¢vÆÄ‚¢ãB²&ö"Âã"²ã"¢W'7ÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð¢Ð ¢òò†÷&—¦öâ6VÓ¢fW'’6ögB&ÆVæB–çFò6·’††&B&"&VG22T’'VÆRÆ–æR’à¢°¢6öç7B‡¢Ò7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ†÷&—¦öå’ÒBÂÂ†÷&—¦öå’²‚“°¢‡¢æFD6öÆ÷%7F÷ƒÂG·vFW'Ó“°¢‡¢æFD6öÆ÷%7F÷ƒãRÂG·vFW'Ó†“°¢‡¢æFD6öÆ÷%7F÷ƒÂG·vFW'Ó“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒw6÷W&6RÖ÷fW"s°¢7G‚ævÆö&ÄÇ†Òã3R¢F†—2æ'VFvWB¢&W6Væ6S°¢7G‚æf–ÆÅ7G–ÆRÒ‡£°¢7G‚æf–ÆÅ&V7BƒÂ†÷&—¦öå’ÒBÂ6çf2çv–GF‚Â3"“°¢Ð ¢òò&öG’6†VVâ§W7B&VÆ÷rF†R†÷&—¦öâ(	B6ögBvFW"Ö72Âæ÷B'&–v‡B7G&—Rà¢6öç7B6†VVä‚ÒÖF‚æÖ–âƒ#ÂæV%’Ò†÷&—¦öå’“°¢6öç7B6†VVâÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ†÷&—¦öå’ÂÂ†÷&—¦öå’²6†VVä‚“°¢6†VVâæFD6öÆ÷%7F÷ƒÂG·vFW'Ó#&“°¢6†VVâæFD6öÆ÷%7F÷ƒãBÂG·vFW'Ó&“°¢6†VVâæFD6öÆ÷%7F÷ƒÂG·vFW'Ó“°¢7G‚æf–ÆÅ7G–ÆRÒ6†VVã°¢7G‚ævÆö&ÄÇ†Òãr¢F†—2æ'VFvWB¢&W6Væ6S°¢7G‚æf–ÆÅ&V7BƒÂ†÷&—¦öå’Â6çf2çv–GF‚Â6†VVä‚“° ¢–b‡†VæöÖVægVÆÂ’°¢òò6VÆW7F–Â&VfÆV7F–öâFƒ¢7Vâ'’F’Â6ööÆW"ÖööâF‚Bæ–v‡Bà¢6öç7B'‚Ò6çf2çv–GF‚¢ãsƒ°¢6öç7BvÆ–çD‚Ò†æV%’Ò†÷&—¦öå’’¢ã“ƒ°¢6öç7B6†–ÖÖW"ÒR¢ÖF‚ç6–â‡F†—2çE6V2¢ã“°¢6öç7BvÆ–çD6öÂÒæ–v‡BâãCRòF†—2å÷&÷FFVB„Ôôôåô„Äõô4ôÄõ"’¢6°¢6öç7B$w&BÒ7G‚æ7&VFTÆ–æV$w&F–VçB‡'‚Â†÷&—¦öå’Â'‚Â†÷&—¦öå’²vÆ–çD‚“°¢$w&BæFD6öÆ÷%7F÷ƒÂG¶vÆ–çD6öÇÓcf“°¢$w&BæFD6öÆ÷%7F÷ƒã#RÂG¶vÆ–çD6öÇÓ3&“°¢$w&BæFD6öÆ÷%7F÷ƒãcRÂG¶vÆ–çD6öÇÓF“°¢$w&BæFD6öÆ÷%7F÷ƒÂG¶vÆ–çD6öÇÓ“°¢7G‚æf–ÆÅ7G–ÆRÒ$w&C°¢7G‚ævÆö&ÄÇ†Òƒã#b²ã"¢æ–v‡B’¢F†—2æ'VFvWB¢&VfÆV7D×VÃ°¢òòFW&VB6öÇVÖâ‡v–FW"B†÷&—¦öâÂæ'&÷rF÷v&BæV"VFvR’à¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡'‚Ò²6†–ÖÖW"¢ã"Â†÷&—¦öå’²vÆ–çD‚“°¢7G‚æÆ–æUFò‡'‚ÒC‚²6†–ÖÖW"¢ã2Â†÷&—¦öå’“°¢7G‚æÆ–æUFò‡'‚²C‚²6†–ÖÖW"¢ã2Â†÷&—¦öå’“°¢7G‚æÆ–æUFò‡'‚²²6†–ÖÖW"¢ã"Â†÷&—¦öå’²vÆ–çD‚“°¢7G‚æ6Æ÷6UF‚‚“°¢7G‚æf–ÆÂ‚“° ¢òò6V6öæF'’7&¶ÆRÆöærF†R&VfÆV7F–öâFƒ¢6ögBF÷G2öæÇ¢òòƒ‚×FÆÂ&V7G2&VB2F6†VBvÆ—F6‚’à¢6öç7B7&¶ÆTâÒS°¢7G‚æf–ÆÅ7G–ÆRÒvÆ–çD6öÃ°¢f÷"†ÆWB’Ò²’Â7&¶ÆTã²’²²’°¢6öç7BRÒ†’²ãR’ò7&¶ÆTã°¢6öç7B7’Ò†÷&—¦öå’²vÆ–çD‚¢S°¢6öç7B&ö"ÒÖF‚ç6–â‡F†—2çE6V2¢"ã"²’¢ã2’¢#°¢7G‚ævÆö&ÄÇ†Òƒã‚²ã¢ƒÒR’’¢F†—2æ'VFvWB¢ƒãb²ãB¢&72“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2‡'‚²&ö"Â7’Âãb²ã"¢ƒÒR’ÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð ¢òòföÓ¢6ögBfÆV6·2öæÇ’à¢7G‚æf–ÆÅ7G–ÆRÒ6°¢f÷"†ÆWB’Ò²’Â“²’²²’°¢6öç7Bg‚Ò‚†’¢ã"²v÷&ÆE‚¢ã‚’R’¢6çf2çv–GFƒ°¢6öç7Bg’Ò†÷&—¦öå’²6†VVä‚¢ƒã#‚²ã‚¢ÖF‚ç6–â‡F†—2çE6V2¢ãR²’’“°¢7G‚ævÆö&ÄÇ†Òã"¢F†—2æ'VFvWB¢&W6Væ6S°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2†g‚Âg’ÂãBÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢¢Ö2âö6VäÆ–fR&÷tg&2ƒÖæV&W7BââÖBF†R†÷&—¦öâ’Fò67&VVà¢¢’æB6—¦R66ÆRÂ&–6VBF†R6ÖRW'7V7F—fRF—&V7F–öâ2F†RvfP¢¢&÷w2F†V×6VÇfW2â¢ð¢öö6VäÆ–fU&÷u’†6çf2Â&÷tg&2’°¢6öç7B†÷&—¦öå’Ò6çf2æ†V–v‡B¢ô4Tåô„õ$•¤ôåôe$3°¢6öç7BæV%’Ò6çf2æ†V–v‡B¢ô4TåôäT%ôe$3°¢&WGW&â†÷&—¦öå’²†æV%’Ò†÷&—¦öå’’¢ÖF‚ç÷rƒÒ&÷tg&2Âãb“°¢Ð ¢ò¢¢WfW'—F†–ærÆ—f–æröâö÷fW"F†Rö6Vã¢—6ÆæG2æB6†—2Çv—2†¢¢†æFgVÂöb7G&ö¶W2V6‚’Â6VÆ–fRæBF†R&&RÖöç7FW"vFVBöà¢¢†VæöÖVægVÆÂÒÒv—FæW76VB6WB–V6W2Âæ÷B6÷&R66VæW'’â¢ð¢öG&tö6VäÆ–fR†7G‚Â6çf2Âv÷&ÆE‚ÂÂ"ÂBÂ†VæöÖVægVÆÂ’°¢6öç7B6·”Ö–BÒF†—2æÆW'66†RævWB„ç6·•³ÒÂ"ç6·•³ÒÂB“°¢6öç7B6–ÂÒF†—2æÆW'66†RævWB„ç6–Æ†÷VWGFRÂ"ç6–Æ†÷VWGFRÂB“°¢6öç7BvFW"ÒF†—2å÷&÷FFVB‡F†—2æÆW'66†RævWB‡6–ÂÂ6·”Ö–BÂãCR’“°¢6öç7B6ÒF†—2å÷&÷FFVB‡F†—2æÆW'66†RævWB„æ6VÆW7F–Âæ†Æô6öÆ÷"Â"æ6VÆW7F–Âæ†Æô6öÆ÷"ÂB’“°¢6öç7B&72ÒãR¢‚‡F†—2åöW6Öö÷F†VE³ÒÇÂ’²‡F†—2åöW6Öö÷F†VE³ÒÇÂ’“°¢6öç7B¶–6²ÒÆæT¶–6²‡F†—2çE6V2¢ÂF†—2åöFæ6T¶–6´×2Âvö6VârÂF†—2åöFæ6T¶–6´×“°¢6öç7Bæ÷t×2ÒF†—2çE6V2¢°¢6öç7B67&öÆÂÒv÷&ÆE‚¢ô4TåôÄ”dUõ$D”ó°¢6öç7BBÒ#° ¢7G‚ç6fR‚“°¢òò—6ÆæG2÷6†—26—BöâF†RvFW"ÆFR(	Bæ÷&ÖÂ6ö×÷6—FRÂæ÷BFF—F—fP¢òò&Æ–v‡FW""‡F†BÖFRÖW66–Æ†÷VWGFW2fÆöB2W'ÆRF–ÖöæG2–âF†R6·’’à¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒw6÷W&6RÖ÷fW"s° ¢òò—6ÆæG2ÒÒF&²ÆæBÖ76W2w&÷VæFVBöâF†Rö6Vâ&÷w2à¢6öç7B†÷&—¦öå’Ò6çf2æ†V–v‡B¢ô4Tåô„õ$•¤ôåôe$3°¢6öç7BæV%’Ò6çf2æ†V–v‡B¢ô4TåôäT%ôe$3°¢f÷"†6öç7B—6ÂöbF†—2åö—6ÆæG2’°¢6öç7B‚Òw&VDöfg6WB†—6ÂçƒÂ67&öÆÂ“°¢–b‡‚Â×BÇÂ‚â6çf2çv–GF‚²B’6öçF–çVS°¢6öç7B’ÒF†—2åöö6VäÆ–fU&÷u’†6çf2Â—6Âç&÷tg&2“°¢òòöæÇ’G&rv†–ÆRF†Rfö÷B—2öâF†Rö6Vâ&æB†æWfW"g&VRÖfÆöB–â6·’’à¢–b‡’Â†÷&—¦öå’ÒBÇÂ’âæV%’²#’6öçF–çVS°¢6öç7B66ÆRÒÒãcR¢—6Âç&÷tg&3°¢6öç7BrÒ—6Âçr¢66ÆRÂ‚ÒÖF‚æÖ‚ƒ‚Â—6Âæ‚¢66ÆR“°¢7G‚ævÆö&ÄÇ†Ò6fÆ6„Ç†ƒãs"¢F†—2æ'VFvWBÂF†—2ç&VGV6VDfÆ6‚“°¢7G‚æf–ÆÅ7G–ÆRÒF†—2å÷&÷FFVB‡6–Â“°¢7G‚æ&Vv–åF‚‚“°¢–b†—6Âæ¶–æBÓÓÒv6öæRr’°¢7G‚æÖ÷fUFò‡‚Òrò"Â’“°¢7G‚æÆ–æUFò‡‚Â’Ò‚“°¢7G‚æÆ–æUFò‡‚²rò"Â’“°¢ÒVÇ6R–b†—6Âæ¶–æBÓÓÒvÖW6r’°¢òò7FVWF&ÆRÖÖ÷VçF–âÂæ÷BvVçFÆRG&W¦ö–C¢F†RÆFVR—0¢òò×V6‚æ'&÷vW"F†âF†R&6RÂF†R6Æ–fbf6W2&R6öæ6fR†æV"Ð¢òòfW'F–6Â&ö6²Âæ÷B6Æ÷VB&W&Ò’ÂæBF†R7&W7B—2&vvV@¢òòf÷&W7FVBG&VVÆ–æR&F†W"F†âfÆBF&ÆRVFvRÒÒf÷&W7B†fVâÀ¢òòæ÷B6æF&"à¢6öç7BF÷†ÆbÒr¢ã3°¢6öç7B¦rÒ—6Âæ7&÷vä¦rÇÂ³ãRÂãRÂãRÂãRÂãRÂãUÓ°¢7G‚æÖ÷fUFò‡‚Òrò"Â’“°¢7G‚çVG&F–47W'fUFò‡‚Òr¢ãC"Â’Ò‚¢ãSRÂ‚ÒF÷†ÆbÂ’Ò‚“°¢6öç7B7&÷väâÒ¦ræÆVæwFƒ°¢f÷"†ÆWB²Ò²²ÃÒ7&÷väã²²²²’°¢6öç7B7‚Ò‚ÒF÷†Æb²†²ò7&÷väâ’¢‡F÷†Æb¢"“°¢6öç7B'V×Ò²ÓÓÒÇÂ²ÓÓÒ7&÷väâò¢†¦u¶²ÒÒÒãR’¢‚¢ã#c°¢7G‚æÆ–æUFò†7‚Â’Ò‚Ò'V×“°¢Ð¢7G‚çVG&F–47W'fUFò‡‚²r¢ãC"Â’Ò‚¢ãSRÂ‚²rò"Â’“°¢ÒVÇ6R°¢7G‚æVÆÆ—6R‡‚Â’Ò‚¢ãRÂrò"Â‚¢ã2ÂÂÂÖF‚å’¢"“°¢Ð¢7G‚æ6Æ÷6UF‚‚“°¢7G‚æf–ÆÂ‚“°¢–b†—6Âæ¶–æBÓÓÒvÖW6r’°¢òòf–çB6Æ–fb7G&–F–öç2öâF†RæV"6Æ–fbf6RÒÒ§W7BVæ÷Vv€¢òòFW‡GW&RFò&VB2&ö6²Âæ÷BfÆB7WF÷WBà¢7G‚ævÆö&ÄÇ†Ò6fÆ6„Ç†ƒãb¢F†—2æ'VFvWBÂF†—2ç&VGV6VDfÆ6‚“°¢7G‚ç7G&ö¶U7G–ÆRÒvFW#°¢7G‚æÆ–æUv–GF‚ÒÖF‚æÖ‚ƒã‚Â¢66ÆR“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡‚Òr¢ã3BÂ’Ò‚¢ã"“°¢7G‚æÆ–æUFò‡‚Òr¢ã#"Â’Ò‚¢ãs"“°¢7G‚æÖ÷fUFò‡‚²r¢ã#Â’Ò‚¢ã‚“°¢7G‚æÆ–æUFò‡‚²r¢ã3Â’Ò‚¢ãb“°¢7G‚ç7G&ö¶R‚“°¢Ð¢–b†—6Âæ¶–æBÓÓÒwÆÒr’°¢7G‚ç7G&ö¶U7G–ÆRÒF†—2å÷&÷FFVB‡6–Â“°¢7G‚æÆ–æUv–GF‚ÒÖF‚æÖ‚ƒÂãR¢66ÆR“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡‚Òr¢ãÂ’Ò‚¢ã"“°¢7G‚æÆ–æUFò‡‚Òr¢ãRÂ’Ò‚¢ã’“°¢7G‚ç7G&ö¶R‚“°¢Ð¢òòF†–âvWBfö÷B–çFòF†RvFW"†fÆBÂæ÷B6V6öæB(	Æ'Vî(	ÒFöÖR’à¢7G‚ævÆö&ÄÇ†Ò6fÆ6„Ç†ƒã#"¢F†—2æ'VFvWBÂF†—2ç&VGV6VDfÆ6‚“°¢7G‚æf–ÆÅ7G–ÆRÒvFW#°¢7G‚æf–ÆÅ&V7B‡‚Òr¢ãRÂ’ÒÂrÂÖF‚æÖ‚ƒ"Â"ãR¢66ÆR’“°¢òòvFW&Æ–æR6(	BF†–âÂæ÷BæVöâÆ6W"à¢7G‚ç7G&ö¶U7G–ÆRÒ6°¢7G‚æÆ–æUv–GF‚ÒÖF‚æÖ‚ƒã‚Â¢66ÆR“°¢7G‚ævÆö&ÄÇ†Ò6fÆ6„Ç†ƒã#"¢F†—2æ'VFvWBÂF†—2ç&VGV6VDfÆ6‚“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡‚Òr¢ãSRÂ’“°¢7G‚æÆ–æUFò‡‚²r¢ãSRÂ’“°¢7G‚ç7G&ö¶R‚“°¢–b†—6Âæ&V6öâ’°¢òò6ÖÆÂÆ×öâF†R7&W7BöæÇ’(	Bæò6·—v&B&VÒà¢6öç7B&Æ–æ²ÒãCR²ãSR¢ÖF‚ç6–â‡F†—2çE6V2¢"ã2²—6Âçƒ“°¢7G‚ævÆö&ÄÇ†Ò6fÆ6„Ç†ƒãR¢&Æ–æ²¢F†—2æ'VFvWBÂF†—2ç&VGV6VDfÆ6‚“°¢7G‚æf–ÆÅ7G–ÆRÒ6°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2‡‚Â’Ò‚ÒãR¢66ÆRÂãB¢66ÆRÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð¢Ð ¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒvÆ–v‡FW"s° ¢òò'Vâ×W¢G7VæÖ’vÆÂw27vVÆÂÆ–gG2æB&ö6·2ç’6†—6—GF–æræV ¢òò—G27W'&VçBFWF‚&÷rÂ6ÖRG7VæÖ”FWF„Æ–gB÷66ÆRö†V–v‡E66ÆRÖF€¢òòöG&tö6VâÇ&VG’W6W2f÷"F†RvfR&÷w2F†V×6VÇfW2ÒÒ6†—0¢òòf—6–&Ç’ç7vW"F†RvÆÂ76–ær&VæVF‚F†VÒ–ç7FVBöbG&–gF–æröà¢òòö&Æ—f–÷W6Ç’à¢6öç7BG7VæÖ’ÒF†—2åö7F—fUG7VæÖ’†6çf2çv–GF‚“° ¢òò6†—2ÒÒ6Æ÷rG&–gFW'2Â‡VÆÂ¶Ö7BÂ&ö&&–æröâF†RvfRÆ–æRBF†V—"Rà¢f÷"†6öç7B6†—öbF†—2å÷6†—2’°¢6öç7B‚Òw&VDöfg6WB‡6†—çƒÒ6†—æG&–gE…2¢F†—2çE6V2Â67&öÆÂ“°¢–b‡‚Â×BÇÂ‚â6çf2çv–GF‚²B’6öçF–çVS°¢6öç7B’ÒF†—2åöö6VäÆ–fU&÷u’†6çf2Â6†—ç&÷tg&2“°¢6öç7BRÒ‚‡‚ò6çf2çv–GF‚’R²’R°¢ÆWB&ö"Ò6VÆ–æU’‡RÂF†—2çE6V2Â&72Â¶–6²’¢ã3°¢–b‡G7VæÖ’’°¢6öç7B'VåWÒG7VæÖ”FWF„Æ–gB‡6†—ç&÷tg&2ÂG7VæÖ’ç&÷tg&2’¢G7VæÖ’ç66ÆR¢G7VæÖ’æ†V–v‡E66ÆS°¢&ö"ÓÒ'VåW¢##²òòÆ–gG2F†R‡VÆÂ2F†R7vVÆÂ76W2&VæVF‚—@¢Ð¢6öç7B2Ò6†—ç6—¦R¢ƒÒãR¢6†—ç&÷tg&2“°¢7G‚ævÆö&ÄÇ†Ò6fÆ6„Ç†ƒãSR¢F†—2æ'VFvWBÂF†—2ç&VGV6VDfÆ6‚“°¢7G‚ç7G&ö¶U7G–ÆRÒvFW#°¢7G‚æf–ÆÅ7G–ÆRÒvFW#°¢7G‚æÆ–æUv–GF‚ÒÖF‚æÖ‚ƒÂã"¢2“°¢–b‡6†—æ¶–æBÓÓÒww&V6²r’°¢òò†Æb×7Væ¶Vâ‡VÆÂÂ'&ö¶VâÖ7BÒÒ7F–ÆÂfWr7G&ö¶W2Â6—G2Æ÷vW"à¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡‚Òb¢2Â’²&ö"²"¢2“°¢7G‚æÆ–æUFò‡‚²¢2Â’²&ö"“°¢7G‚æÆ–æUFò‡‚²b¢2Â’²&ö"²R¢2“°¢7G‚æÆ–æUFò‡‚Ò"¢2Â’²&ö"²b¢2“°¢7G‚æ6Æ÷6UF‚‚“°¢7G‚æf–ÆÂ‚“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡‚Ò"¢2Â’²&ö"“°¢7G‚æÆ–æUFò‡‚²B¢2Â’²&ö"Ò¢2“°¢7G‚ç7G&ö¶R‚“°¢ÒVÇ6R°¢7G‚æ&Vv–åF‚‚“²òò‡VÆÀ¢7G‚æÖ÷fUFò‡‚ÒB¢2Â’²&ö"“°¢7G‚æÆ–æUFò‡‚²B¢2Â’²&ö"“°¢7G‚æÆ–æUFò‡‚²¢2Â’²&ö"²B¢2“°¢7G‚æÆ–æUFò‡‚Ò¢2Â’²&ö"²B¢2“°¢7G‚æ6Æ÷6UF‚‚“°¢7G‚æf–ÆÂ‚“°¢7G‚æ&Vv–åF‚‚“²òòÖ7B²6–À¢7G‚æÖ÷fUFò‡‚Â’²&ö"“°¢7G‚æÆ–æUFò‡‚Â’²&ö"Òb¢2“°¢7G‚æÆ–æUFò‡‚²’¢2Â’²&ö"ÒB¢2“°¢7G‚æ6Æ÷6UF‚‚“°¢7G‚ç7G&ö¶R‚“°¢Ð¢Ð ¢–b‡†VæöÖVægVÆÂ’°¢òò6VÆ–fS¢'&–Vbv—FæW76VBWfVçG2ÒÒf—6‚ÆV2ÂFöÇ†–âöG2Â¢òòv†ÆR7÷WBâÆ6VB'’f—†VB67&VVâg&7F–öâÂæ÷Bv÷&ÆB67&öÆÀ¢òò‡F†W’w&RG&ç6–VçBÂÆ–¶RÖWFV÷"Âæ÷B66VæW'’’à¢v†–ÆR‡F†—2å÷6VÆ–fT–G‚ÂF†—2å÷6VÆ–fRæÆVæwF‚bbF†—2å÷6VÆ–fU·F†—2å÷6VÆ–fT–G…ÒçD×2²F†—2å÷6VÆ–fU·F†—2å÷6VÆ–fT–G…ÒæGW$×2Âæ÷t×2’F†—2å÷6VÆ–fT–G‚²³°¢f÷"†ÆWB²ÒF†—2å÷6VÆ–fT–Gƒ²²ÂF†—2å÷6VÆ–fRæÆVæwFƒ²²²²’°¢6öç7BWbÒF†—2å÷6VÆ–fU¶µÓ°¢–b†WbçD×2âæ÷t×2’'&V³°¢6öç7BvRÒæ÷t×2ÒWbçD×3°¢6öç7BRÒ6Æ×†vRòWbæGW$×2“°¢6öç7B‚ÒWbçR¢6çf2çv–GFƒ°¢6öç7B’ÒF†—2åöö6VäÆ–fU&÷u’†6çf2ÂWbç&÷tg&2“°¢7G‚ç7G&ö¶U7G–ÆRÒvFW#²7G‚æf–ÆÅ7G–ÆRÒvFW#°¢–b†Wbæ¶–æBÓÓÒvf—6‚r’°¢6öç7B&2Òf—6„&5’‡R“°¢7G‚ævÆö&ÄÇ†Ò6fÆ6„Ç†‚ƒÒÖF‚æ'2‡RÒãR’¢ãb’¢F†—2æ'VFvWBÂF†—2ç&VGV6VDfÆ6‚“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æVÆÆ—6R‡‚Â’Ò&2ÂRÂ"ÂÓãRÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢–b†&2Â2’°¢7G‚ævÆö&ÄÇ†Ò6fÆ6„Ç†ƒãB¢F†—2æ'VFvWBÂF†—2ç&VGV6VDfÆ6‚“°¢7G‚æ&Vv–åF‚‚“²7G‚æ&2‡‚Â’Âb¢ƒÒR’ÂÂÖF‚å’¢"“²7G‚ç7G&ö¶R‚“°¢Ð¢ÒVÇ6R–b†Wbæ¶–æBÓÓÒwöBr’°¢7G‚ævÆö&ÄÇ†Ò6fÆ6„Ç†ƒãr¢F†—2æ'VFvWBÂF†—2ç&VGV6VDfÆ6‚“°¢f÷"†ÆWB’Ò²’Â3²’²²’°¢6öç7BRÒ6Æ×‡R¢2Ò’¢ãb’R°¢–b‡RÃÒÇÂRãÒ’6öçF–çVS°¢6öç7B&2Òf—6„&5’‡R“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æVÆÆ—6R‡‚²’¢#bÒ#bÂ’Ò&2ÂrÂ2ÂÓãBÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð¢ÒVÇ6R²òò7÷W@¢6öç7B&—6RÒ6Æ×‡R¢2“°¢6öç7B‚Ò3¢ƒÒÖF‚æÖ‚ƒÂRÒã3R’òãcR“°¢7G‚ævÆö&ÄÇ†Ò6fÆ6„Ç†ƒã‚¢F†—2æ'VFvWB¢&—6RÂF†—2ç&VGV6VDfÆ6‚“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æVÆÆ—6R‡‚Â’Â#ÂRÂÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢–b†‚â’°¢7G‚ç7G&ö¶U7G–ÆRÒ6°¢7G‚æÆ–æUv–GF‚ÒãC°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡‚Â’ÒB“°¢7G‚æÆ–æUFò‡‚Â’ÒBÒ‚“°¢7G‚ç7G&ö¶R‚“°¢Ð¢Ð¢Ð ¢òòF†R&&R6VÖöç7FW#¢6W'VçBF†B&—6W2ÂVæGVÆFW2ÂæB7V&ÖW&vW2à¢v†–ÆR‡F†—2åöÖöç7FW$–G‚ÂF†—2åöÖöç7FW'2æÆVæwF‚bbF†—2åöÖöç7FW'5·F†—2åöÖöç7FW$–G…ÒçD×2²F†—2åöÖöç7FW'5·F†—2åöÖöç7FW$–G…ÒæGW$×2Âæ÷t×2’F†—2åöÖöç7FW$–G‚²³°¢–b‡F†—2åöÖöç7FW$–G‚ÂF†—2åöÖöç7FW'2æÆVæwF‚’°¢6öç7BWbÒF†—2åöÖöç7FW'5·F†—2åöÖöç7FW$–G…Ó°¢6öç7BvRÒæ÷t×2ÒWbçD×3°¢–b†vRãÒbbvRÃÒWbæGW$×2’°¢6öç7BRÒvRòWbæGW$×3°¢6öç7B&—6RÒÖF‚ç6–â†6Æ×‡R¢2’¢ÖF‚å’¢ãR’¢6Æ×‚ƒÒR’¢2²ã2“°¢6öç7B‚ÒWbçR¢6çf2çv–GFƒ°¢6öç7B’ÒF†—2åöö6VäÆ–fU&÷u’†6çf2Âã3R“°¢7G‚ævÆö&ÄÇ†Ò6fÆ6„Ç†ƒãsR¢F†—2æ'VFvWBÂF†—2ç&VGV6VDfÆ6‚“°¢7G‚ç7G&ö¶U7G–ÆRÒvFW#°¢7G‚æÆ–æUv–GF‚ÒS°¢7G‚æÆ–æT6Òw&÷VæBs°¢f÷"†ÆWB‚Ò²‚Â3²‚²²’°¢6öç7B‡‚Ò‚Òc²‚¢3C°¢6öç7B‡’Ò’Ò&—6R¢ƒ#bÒ‚¢R’²6W'VçD‡V×’‡RÂ‚¢"ã²F†—2çE6V2¢"“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò†‡‚Ò"Â’“°¢7G‚çVG&F–47W'fUFò†‡‚Â‡’Â‡‚²"Â’“°¢7G‚ç7G&ö¶R‚“°¢Ð¢òò†VBà¢7G‚æf–ÆÅ7G–ÆRÒvFW#°¢7G‚æ&Vv–åF‚‚“°¢7G‚æVÆÆ—6R‡‚²CbÂ’Ò&—6R¢3Â’ÂbÂÓã2ÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð¢Ð¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢ ¢¢F†R7V7G'VÒ2vVF†W"Âæ÷B2&'3¢6öçF–çV÷W2ÇVÖ–æ÷W2&–FvRöà¢¢F†R†÷&—¦öâv†÷6R6–Æ†÷VWGFR•2F†RrÖ&æB7V7G'VÒÒÒ6÷6–æRÐ¢¢–çFW'öÆFVB&WGvVVâ&æG26òF†W&R—2æ÷B7G&–v‡BÆ–æR–â—BÀ¢¢6Æ÷vÇ’67&öÆÆ–ærF‡&÷Vv‚F†R&æG2Âv—F‚G&fVÆ–ærVæGVÆF–öâ&–F–æp¢¢F†R7&W7Bâf–ÆÆVBvÆ÷r&VÆ÷rÂ'&–v‡BW&÷&7&W7BÆ–æRöâF÷à¢¢ð¢öG&t†÷&—¦öäU†7G‚Â6çf2Âv÷&ÆE‚ÂÂ"ÂB’°¢6öç7B6öÆ÷"ÒF†—2å÷&÷FFVB‡F†—2æÆW'66†RævWB„æ6VÆW7F–Âæ†Æô6öÆ÷"Â"æ6VÆW7F–Âæ†Æô6öÆ÷"ÂB’“°¢6öç7BW×VÂÒ7G–ÆTF–Ç2‡F†—2çf—7VÅ7G–ÆR’æ†÷&—¦öäWÇ†óò°¢–b†W×VÂÂãR’&WGW&ã°¢6öç7B&6VÆ–æRÒ6çf2æ†V–v‡B¢ãc°¢6öç7BÖ„‚Ò6çf2æ†V–v‡B¢UôÔ…ô„T”t…Eôe$3°¢6öç7B67&öÆÂÒv÷&ÆE‚¢ãƒ°¢6öç7BE2ÒF†—2çE6V3° ¢òòöæRW‡G&6×ÆR7BV6‚VFvR6òF†RvfRFW&Ö–æFW2öfb×67&VVà¢òò–ç7FVBöb6Æ—–ærÖ–BÖ÷66–ÆÆF–öâW†7FÇ’öâF†R6çf2&÷VæF'’à¢6öç7BâÒcC°¢6öç7BTDtUõ5DU2Ò°¢6öç7BG2ÒæWr'&’„â²²"¢TDtUõ5DU2“°¢f÷"†ÆWB²Ò²²ÂG2æÆVæwFƒ²²²²’°¢6öç7B’Ò²ÒTDtUõ5DU3°¢6öç7BRÒ’òã°¢òòv†–6‚—"öb&æG2F†—26öÇVÖâ6—G2&WGvVVâ‡w&–ærÂ67&öÆÆ–ær’à¢6öç7BÒ‚‡R¢$äEô4õTåB²67&öÆÂ’R$äEô4õTåB²$äEô4õTåB’R$äEô4õTåC°¢6öç7B“ÒÖF‚æfÆö÷"‡’R$äEô4õTåBÂ“Ò†“²’R$äEô4õTåC°¢6öç7BbÒÒÖF‚æfÆö÷"‡“°¢6öç7B2ÒƒÒÖF‚æ6÷2†b¢ÖF‚å’’’ò#²òò6÷6–æRV6S¢æò6÷&æW'0¢6öç7BbÒ6Æ×‡F†—2åöW6Öö÷F†VE¶“Ò¢ƒÒ2’²F†—2åöW6Öö÷F†VE¶“Ò¢2“°¢6öç7BvfRÒÖF‚ç6–â‡R¢ÖF‚å’¢r²E2¢ãb’¢r¢ƒã#R²b“°¢G5¶µÒÒ²ƒ¢R¢6çf2çv–GF‚Â“¢&6VÆ–æRÒ‡b¢Ö„‚²vfR’Ó°¢Ð ¢7G‚ç6fR‚“°¢òò6ögBFF—F—fRW&÷&vÆ÷r÷fW"F†R4t’6·’à¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒvÆ–v‡FW"s° ¢òò&öG“¢ÇVÖ–æ÷W2f–ÆÂg&öÒ7&W7BF÷vâ(	BF†R×W6–6ÂvVF†W"Ö72à¢6öç7Bw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ&6VÆ–æRÒÖ„‚ÂÂ&6VÆ–æR²3“°¢w&BæFD6öÆ÷%7F÷ƒÂG¶6öÆ÷'Ó“–“°¢w&BæFD6öÆ÷%7F÷ƒãSRÂG¶6öÆ÷'ÓFF“°¢w&BæFD6öÆ÷%7F÷ƒÂG¶6öÆ÷'Ó“°¢7G‚æf–ÆÅ7G–ÆRÒw&C°¢7G‚ævÆö&ÄÇ†ÒãsR¢F†—2æ'VFvWB¢W×VÃ°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡G5³Òç‚Â&6VÆ–æR²3“°¢f÷"†6öç7BöbG2’7G‚æÆ–æUFò‡ç‚Âç’“°¢7G‚æÆ–æUFò‡G5·G2æÆVæwF‚ÒÒç‚Â&6VÆ–æR²3“°¢7G‚æ6Æ÷6UF‚‚“°¢7G‚æf–ÆÂ‚“° ¢òò'&–v‡BW&÷&7&W7BÆ–æRöâF÷(	BF†Rf–ÆÂÆöæR&VG22†¦S°¢òòF†—2—2v†BÖ¶W2F†R7V7G'VÒw2÷vâ6†RÆVv–&ÆRv–ç7BF†R6·’à¢7G‚æÆ–æT¦ö–âÒw&÷VæBs°¢7G‚æÆ–æT6Òw&÷VæBs°¢7G‚ç7G&ö¶U7G–ÆRÒ6öÆ÷#°¢f÷"†6öç7B¶ÇrÂÇ†Òöbµ³ÂãeÒÂ³BÂã3%ÒÂ³ãbÂãƒUÕÒ’°¢7G‚ævÆö&ÄÇ†ÒÇ†¢F†—2æ'VFvWB¢W×VÃ°¢7G‚æÆ–æUv–GF‚ÒÇs°¢7G‚æ&Vv–åF‚‚“°¢G2æf÷$V6‚‚‡Â’’Óâ²–b†’ÓÓÒ’7G‚æÖ÷fUFò‡ç‚Âç’“²VÇ6R7G‚æÆ–æUFò‡ç‚Âç’“²Ò“°¢7G‚ç7G&ö¶R‚“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢öG&töæT6VÆW7F–Â†7G‚Â7‚Â7’Â2ÂÇ†Â†Æô×VÂÒ’°¢–b†Ç†ÃÒã"’&WGW&ã°¢7G‚ç6fR‚“°¢òò&Wf–÷W272‡6VRv—B†—7F÷'’’7WBF†—2†Æòw2Å„FòãSRæ@¢òòFVÆ–&W&FVÇ’ÆVgB—G2fö÷G&–çB‡F†Rw&F–VçB&F—W2’VçF÷V6†VBà¢òò&W÷'FVB27F–ÆÂFöò–çFVç6RgFW"F†BÒÒÇ†ÆöæRv6âw@¢òòVæ÷Vv‚Â&V6W6RF†R†Æòw267&VVâfö÷G&–çBÇ6òw&÷w2v—F‚F†P¢òò&öG’w2÷vâ6VÆW7F–Ä&ö6‚66ÆR×W‡WFò2ãG‚'’6öærw2VæB’Â6ð¢òòv–FR×VÇF—Æ–W"†W&R6ö×÷VæG2–çFòvVçV–æVÇ’‡VvRvÆ÷rÆFR–à¢òò6öær&Vv&FÆW72öb†÷rF–Òç’öæR—†VÂöb—B—2âF†—26V6öæB70¢òò7WG2&÷Fƒ¢Ç†F÷vâgW'F†W"ÂæBF†R×VÇF—Æ–W"—G6VÆbƒ2ã"ó"ã"Óà¢òò"ãBóãrÂ&÷Vv†Ç’#RR6ÖÆÆW"fö÷G&–çB’6òF†RvÆ÷rw2F÷FÂW‡FVç@¢òò6‡&–æ·2Æöærv—F‚—G2'&–v‡FæW72Âæ÷B§W7BöæR÷"F†R÷F†W"à¢6öç7B†Æõ&F—W4×VÂÒ†2æFöÖ–æçBò"ãB¢ãr’¢†Æô×VÃ°¢7G‚ævÆö&ÄÇ†ÒÖF‚æÖ–âƒãs"ÂÇ†¢ãB¢†Æô×VÂ“°¢6öç7B†ÆòÒ7G‚æ7&VFU&F–Äw&F–VçB†7‚Â7’ÂÂ7‚Â7’Â2ç&F—W2¢†Æõ&F—W4×VÂ“°¢†ÆòæFD6öÆ÷%7F÷ƒÂ2æ†Æô6öÆ÷"“°¢†ÆòæFD6öÆ÷%7F÷ƒÂw&v&ƒÃÃÃ’r“°¢7G‚æf–ÆÅ7G–ÆRÒ†Æó°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2†7‚Â7’Â2ç&F—W2¢†Æõ&F—W4×VÂÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“° ¢òò÷VR&6¶–ærF—62ÂgVÆÂ&öG’&F—W3¢&Æö6·2v†FWfW"v2G&và¢òòV&Æ–W"F†—2g&ÖRÒÒF†R76R&–FvRÂ7F'2ÂÖ&–VçB6öç7FVÆÆF–öç2À¢òòÖ–F7W2w26·’f÷–vRÒÒg&öÒ6†÷v–ærF‡&÷Vv‚âv—F†÷WBF†—2ÂWfW'¢òòF‚&VÆ÷rF†B—6âwBgVÆÇ’÷VRöâ—G2÷vâ‡fV–ÆVB&öF–W2Bã`¢òòÇ†ÂF†Rv—&Vg&ÖR7G–ÆRw2FVÆ–&W&FVÇ’Ö†öÆÆ÷rãSRv6‚’ÆW@¢òòV&Æ–W"FVW×6·’6öçFVçBÒÒW7V6–ÆÇ’F†R76R&–FvRÂG&vâv—F€¢òòFF—F—fRvÆ–v‡FW"r&ÆVæF–ærÒÒ6†÷rF‡&÷Vv‚BÖVæ–ævgVÆÇ’Ö÷&RF†à¢òòf–çB¶æö6²Ö&6²Âv†–6‚&VG22F†B6öçFVçB6—GF–ær”âe$ôåBö`¢òòF†R7Vâ&F†W"F†â&V†–æB—C¢&6·v&G2f÷"F†RöæRö&¦V7B–âF†P¢òò6·’F†B—2Væ–Öv–æ&Ç’FöòÆ&vRæBf"FòWfW"†fRç—F†–ær–à¢òòg&öçBöb—Bâ6ÖRf—‚F†RÖööâÇ&VG’†B‡6VR—G2÷vâ&6¶–ærF—60¢òò&VÆ÷r“²F†R7Vâ§W7BæWfW"v÷B—BâG&vâBF†R&öG’w2÷vâgVÆÀ¢òòÇ†Âæ÷BF†RfV–ÆVB÷v—&Vg&ÖRf7F÷"Â6ò—BfFW2–âö÷WB–â7FW ¢òòv—F‚F†R&öG’&F†W"F†âWfW"ö66ÇVF–ærÖ÷&RF†âF†Rf—6–&ÆR&öG’FöW2à¢7G‚ævÆö&ÄÇ†ÒÇ†°¢7G‚æf–ÆÅ7G–ÆRÒr3s°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2†7‚Â7’Â2ç&F—W2ÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“° ¢–b†2çv—&Vg&ÖR’°¢òò&6¶–ærv6ƒ¢v—&Vg&ÖR&öG’—2FVÆ–&W&FVÇ’†öÆÆ÷r‡F†Bw2F†P¢òòv†öÆRö–çBöbF†R7G–ÆR’Â'WBgVÆÇ’÷VâÖ–FFÆRÆWBç—F†–æp¢òòG&vâV&Æ–W"F†—2g&ÖRÒÒF†R76R&–FvRÂ7F'2ÂÖ&–Vç@¢òò6öç7FVÆÆF–öç2ÂÆÂFVW×6·’6öçFVçBG&vâ&Vf÷&RF†R6VÆW7F–À¢òò&öG’ÒÒ6†÷r7G&–v‡BF‡&÷Vv‚BgVÆÂ7G&VæwF‚Âv†–6‚&VG20¢òòF†÷6Rö&¦V7G26—GF–ær”âe$ôåBöbF†R7Vâ&F†W"F†â&V†–æB¢òò†öÆÆ÷röæRâ6ögBÂF&²v6‚†æ÷BgVÆÂ÷VRf–ÆÂÂv†–6‚v÷VÆ@¢òòW&6RF†R6VR×F‡&÷Vv‚Æöö²F†—27G–ÆRW†—7G2f÷"’¶æö6·2F†VÒ&6°¢òòv—F†÷WBÆ÷6–ærF†Rv—&Vg&ÖRw2÷vâ6†&7FW"à¢7G‚ævÆö&ÄÇ†ÒÇ†¢ãSS°¢7G‚æf–ÆÅ7G–ÆRÒr3SsBs°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2†7‚Â7’Â2ç&F—W2ÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“° ¢7G‚ç7G&ö¶U7G–ÆRÒ2æ6öÆ÷#°¢7G‚æÆ–æUv–GF‚ÒãS°¢7G‚ævÆö&ÄÇ†ÒÇ†¢ãƒ°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2†7‚Â7’Â2ç&F—W2ÂÂÖF‚å’¢"“°¢7G‚æÖ÷fUFò†7‚Ò2ç&F—W2Â7’“²7G‚æÆ–æUFò†7‚²2ç&F—W2Â7’“°¢7G‚æÖ÷fUFò†7‚Â7’Ò2ç&F—W2“²7G‚æÆ–æUFò†7‚Â7’²2ç&F—W2“°¢7G‚ç7G&ö¶R‚“°¢ÒVÇ6R–b†2ç6†R’°¢òò7WW&f÷&×VÆ6–Æ†÷VWGFS¢F†—2&–öÖRw27VâöÖööâ—2v–VÆ—27W'fRÀ¢òò6Æ÷vÇ’&÷FF–ærÂæ÷&ÖÆ—¦VB6ò&F—W67F–ÆÂÖVç2v†B—B6—2à¢òòöFBÒöæÇ’6Æ÷6W2gFW"B§’‡F†R7W'fRæVVG2Gvò&WföÇWF–öç2’À¢òòWfVâÒ6Æ÷6W2gFW""§’à¢6öç7B²ÒÂãÂã"Âã2ÒÒ2ç6†S°¢6öç7B7âÒ†ÒR"ÓÓÒòB¢"’¢ÖF‚å“°¢6öç7B7FW2ÒÒR"ÓÓÒò“"¢“c°¢ÆWB$Ö‚Ò°¢6öç7B'2ÒæWr'&’‡7FW2²“°¢f÷"†ÆWB’Ò²’ÃÒ7FW3²’²²’°¢'5¶•ÒÒ7WW&f÷&×VÆ‚†’ò7FW2’¢7âÂÒÂãÂã"Âã2“°¢–b‡'5¶•Òâ$Ö‚’$Ö‚Ò'5¶•Ó°¢Ð¢6öç7B&÷BÒF†—2çE6V2¢ãS°¢òò6–ævÆRfÆBf–ÆÂ&VB2Æ–âÆRF—62æòÖGFW"†÷rf6WFV@¢òòF†R÷WFÆ–æR—2ÒÒW7V6–ÆÇ’f÷"6†ÆÆ÷r7WW&f÷&×VÆ&×0¢òò„tTôDRw2†W†vöâ&&VÇ’F—2&VÆ÷r—G2÷vâV²&F—W2’v†W&RF†P¢òò6–Æ†÷VWGFRÆöæR—2Föò7V'FÆRFòæ÷F–6Rv–ç7BF†R†ÆòvÆ÷râ¢òò6–×ÆRöfbÖ6VçFW"7†W&R×6†FVBw&F–VçBv—fW2WfW'’f6WFV@¢òò6VÆW7F–Â7GVÂFWF‚–ç7FVBöb&VÇ––æröâF†R÷WFÆ–æRFò6VÆÂ—Bà¢6öç7B&v"Ò†W…Fõ&v"†2æ6öÆ÷"“°¢6öç7B²‚Â2ÂÂÒÒ&v%Fô‡6Â‡&v"ç"Â&v"ærÂ&v"æ"“°¢6öç7B6†FRÒ7G‚æ7&VFU&F–Äw&F–VçB€¢7‚Ò2ç&F—W2¢ã3RÂ7’Ò2ç&F—W2¢ã3RÂÀ¢7‚Â7’Â2ç&F—W2¢ãRÀ¢“°¢6†FRæFD6öÆ÷%7F÷ƒÂ‡6Â‚G¶‚çFôf—†VBƒ—ÒÂG·2çFôf—†VBƒ—ÒRÂG´ÖF‚æÖ–âƒ“BÂÂ²B’çFôf—†VBƒ—ÒR–“°¢6†FRæFD6öÆ÷%7F÷ƒãbÂ2æ6öÆ÷"“°¢6†FRæFD6öÆ÷%7F÷ƒÂ‡6Â‚G¶‚çFôf—†VBƒ—ÒÂG·2çFôf—†VBƒ—ÒRÂG´ÖF‚æÖ‚ƒBÂÂÒ#’çFôf—†VBƒ—ÒR–“°¢7G‚æf–ÆÅ7G–ÆRÒ6†FS°¢7G‚ævÆö&ÄÇ†ÒÇ†¢†2çfV–ÆVBòãb¢“°¢7G‚æ&Vv–åF‚‚“°¢f÷"†ÆWB’Ò²’ÃÒ7FW3²’²²’°¢6öç7B†’Ò†’ò7FW2’¢7ã°¢6öç7B"Ò‡'5¶•Òò$Ö‚’¢2ç&F—W3°¢6öç7B‚Ò7‚²ÖF‚æ6÷2‡†’²&÷B’¢#°¢6öç7B’Ò7’²ÖF‚ç6–â‡†’²&÷B’¢#°¢–b†’ÓÓÒ’7G‚æÖ÷fUFò‡‚Â’“²VÇ6R7G‚æÆ–æUFò‡‚Â’“°¢Ð¢7G‚æ6Æ÷6UF‚‚“°¢7G‚æf–ÆÂ‚“°¢ÒVÇ6R°¢7G‚æf–ÆÅ7G–ÆRÒ2æ6öÆ÷#°¢7G‚ævÆö&ÄÇ†ÒÇ†¢†2çfV–ÆVBòãb¢“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2†7‚Â7’Â2ç&F—W2ÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð ¢–b†2ç&–ær’°¢7G‚ç7G&ö¶U7G–ÆRÒ2æ†Æô6öÆ÷#°¢7G‚ævÆö&ÄÇ†ÒÇ†¢ãS°¢7G‚æÆ–æUv–GF‚Ò3°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2†7‚Â7’Â2ç&F—W2¢ãbÂÂÖF‚å’¢"“°¢7G‚ç7G&ö¶R‚“°¢Ð¢–b†2ç6†GFW&VB’°¢7G‚ç7G&ö¶U7G–ÆRÒr3SBs°¢7G‚ævÆö&ÄÇ†ÒÇ†¢ãƒ°¢7G‚æÆ–æUv–GF‚Ò#°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò†7‚Ò2ç&F—W2¢ã2Â7’Ò2ç&F—W2¢ãb“°¢7G‚æÆ–æUFò†7‚²2ç&F—W2¢ãÂ7’²2ç&F—W2¢ãB“°¢7G‚æÖ÷fUFò†7‚²2ç&F—W2¢ãBÂ7’Ò2ç&F—W2¢ãR“°¢7G‚æÆ–æUFò†7‚Ò2ç&F—W2¢ãÂ7’²2ç&F—W2¢ã"“°¢7G‚ç7G&ö¶R‚“°¢Ð¢–b†2ç6†gG2’°¢7G‚ævÆö&ÄÇ†ÒÇ†¢ã°¢7G‚æf–ÆÅ7G–ÆRÒ2æ6öÆ÷#°¢f÷"†ÆWB’Ò²’ÂS²’²²’°¢7G‚ç6fR‚“°¢7G‚çG&ç6ÆFR†7‚Â7’“°¢7G‚ç&÷FFR‚†’Ò"’¢ã#"²ÖF‚ç6–â‡F†—2çE6V2¢ã"²’’¢ã2“°¢7G‚æf–ÆÅ&V7B‚Ó‚ÂÂbÂc“°¢7G‚ç&W7F÷&R‚“°¢Ð¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢öG&u&öÖ–æVæ6R†7G‚Â7‚Â7’ÂÇ†’°¢6öç7BSÒF†—2æVæW&w”7W'fW2òF†—2æVæW&w”7W'fW2ç6×ÆRƒÂF†—2çE6V2¢’¢ã3°¢7G‚ç6fR‚“°¢7G‚ævÆö&ÄÇ†ÒÇ†¢ãs°¢7G‚ç7G&ö¶U7G–ÆRÒr6ff6cf"s°¢7G‚æÆ–æUv–GF‚Ò#°¢f÷"†ÆWB’Ò²’ÂC²’²²’°¢6öç7BærÒ†’òB’¢ÖF‚å’¢"²F†—2çE6V2¢ãS°¢6öç7B#ÒƒÂ#"Òƒ²3¢ƒã2²S“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò†7‚²ÖF‚æ6÷2†ær’¢#Â7’²ÖF‚ç6–â†ær’¢#¢ãb“°¢7G‚çVG&F–47W'fUFò€¢7‚²ÖF‚æ6÷2†ær’¢‡#²#"’¢ãrÂ7’²ÖF‚ç6–â†ær’¢‡#²#"’¢ãBÒ#À¢7‚²ÖF‚æ6÷2†ær’¢#"Â7’²ÖF‚ç6–â†ær’¢#"¢ãbÀ¢“°¢7G‚ç7G&ö¶R‚“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢¢F†Rv–æC¢"Ó2G&ç6ÇV6VçBför&æ·2G&–gF–æröâF†R6ÖRvÆö&Âv–æ@¢¢2WfW'—F†–ærVÇ6RÂ÷6—G’&÷÷'F–öæÂFò†÷r6ÆÒF†R6V7F–öâ—0¢¢ÒÒ6ÆÒ7G&WF6†W2f–æÆÇ’vWBvVF†W"Âæ÷B§W7B6Æ÷vW"Ö÷F–öââ¢ð¢öG&tföt&æ·2†7G‚Â6çf2’°¢6öç7Bföt×VÂÒ7G–ÆTF–Ç2‡F†—2çf—7VÅ7G–ÆR’æföt×VÃ°¢òòÇv—26'&–W2Æ—GFÆRFÖ÷7†W&RÂÖ÷&Röâ6ÆÒ7G&WF6†W2à¢6öç7B6ÆÒÒF†—2æ6ÆÔÆWfVÂÇÂ°¢6öç7BÇ†Òã¢föt×VÂ²ãB¢föt×VÂ¢6ÆÓ°¢–b†Ç†Âã’&WGW&ã°¢6öç7BW&–öBÒ6çf2çv–GF‚¢ãc°¢òò6VRföt&æDw&F–VçDvVöÖWG'’w2÷vâFö26öÖÖVçC¢âVÆÆ—6Rf—GFVBFð¢òòF†R&æBÂ&V6†–ær¦W&òB—G2F÷ö&÷GFöÒÂ–âÆ6RöbF†RöÆB6—&6ÆP¢òò6†÷'FW"&V7BW6VBFò7WBöfbÖ–BÖfÆÆöfbà¢6öç7B²7’Â"Â•66ÆRÒÒföt&æDw&F–VçDvVöÖWG'’†6çf2çv–GF‚Â6çf2æ†V–v‡B“°¢7G‚ç6fR‚“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒvÆ–v‡FW"s°¢f÷"†6öç7B&æ²öbF†—2åöföt&æ·2’°¢f÷"†6öç7B‚öb&æ²ç‚Â6çf2çv–GF‚¢ãRò¶&æ²ç‚Â&æ²ç‚²W&–öEÒ¢¶&æ²ç…Ò’°¢7G‚ç6fR‚“°¢7G‚çG&ç6ÆFR‡‚Â7’“°¢7G‚ç66ÆRƒÂ•66ÆR“°¢6öç7BrÒ7G‚æ7&VFU&F–Äw&F–VçBƒÂÂÂÂÂ"“°¢ræFD6öÆ÷%7F÷ƒÂ&v&ƒ#SRÃ#SRÃ#SRÂG¶Ç†Ò–“°¢ræFD6öÆ÷%7F÷ƒÂw&v&ƒ#SRÃ#SRÃ#SRÃ’r“°¢7G‚æf–ÆÅ7G–ÆRÒs°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2ƒÂÂ"ÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢7G‚ç&W7F÷&R‚“°¢Ð¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢¢F†—2æw&÷VæE–—2f—†VBB6öç7G'V7F–öâv–ç7BF†RäôÔ”äÀ¢¢‡Vç¦ööÖVB’g&ÖRÂ'WBGW&–ær6ÖW&VÆÂÖ&6²F†—2ÖWF†öBw26ÆÆW ¢¢—2G&v–ær–çFòF†Rv–FW"÷FÆÆW"¦ööÖVBÆöv–6Â7FvR–ç7FV@¢¢„6ÖW&F—&V7F÷"ç¦ööÒÂÒÒ6VR&VæFW&W"æ§2’â6öÖ&–æ–ærF†RGvð¢¢F—&V7FÇ’ÒÒF†—2æw&÷VæE’²CÒ6çf2æ†V–v‡FÒÒ†26çf2æ†V–v‡@¢¢6æ6VÂ÷WBW†7FÇ’Â–ææ–ærF†R&ævW2Fòf—†VB'6öÇWFR¢¢&Vv&FÆW72öb¦ööÒâÖ÷VçF–å7G&—G&t†V–v‡Bw2†VG&ööÒ6 ¢¢†6çf2æ†V–v‡B¢„TE$ôôÕôe$6’F†Vâu$õu22F†Rg&ÖRv–FVç0¢¢v†–ÆR—G2&&÷GFöÒ"æ6†÷"†w&÷VæE’³C’7F—2f—†VBæB6ÖÆÂÂ6òF†P¢¢ÆÆ÷vVB7G&—†V–v‡B7F—fVÇ’4…$”äµ2F†RgW'F†W"F†R6ÖW&VÆÇ0¢¢&6²ÒÒ&ævW26öÆÆ6RFòF†–â6Æ—fW"æV"F†R&÷GFöÒöbg&ÖP¢¢–ç7FVBöbw&÷v–ærFòf–ÆÂF†RæWvÇ’&WfVÆVB76RÂÆVf–ærF†R6·¢¢æBö6Vâ‡v†–6‚6÷'&V7FÇ’66ÆRöfbÆ–â6çf2æ†V–v‡Bg&7F–öç2¢¢Fò6÷fW"×V6‚&–vvW"ÂVæFW"ÖFWF–ÆVB&VF†â–çFVæFVBâ66Æ–æp¢¢w&÷VæE’'’F†R6ÖR&F–ò6çf2æ†V–v‡B÷F†—2æ‚F†BF†R¦ööÖVB7FvP¢¢—G6VÆbw&Wr'’¶VW2F†R&ævW2ræ6†÷"æB†VG&ööÒw&÷v–ær–â7FW ¢¢v—F‚F†RVÆÂÖ&6²ÂW†7FÇ’Æ–¶RF†R6·’æBö6VâÇ&VG’Fòâ¢ð¢÷¦ööÖVDw&÷VæE’†6çf2’°¢6öç7B¦ööÕ66ÆRÒF†—2æ‚âò6çf2æ†V–v‡BòF†—2æ‚¢°¢&WGW&âF†—2æw&÷VæE’¢¦ööÕ66ÆS°¢Ð ¢öG&tÆ–W"†7G‚Â6çf2ÂÆ–W$¶W’Â67&öÆÅ‚ÂF–çBÂBÂÂ"’°¢6öç7B7G&—4ÒF†—2ç7G&—4f÷"„ææÖR’Â7G&—4"ÒF†—2ç7G&—4f÷"„"ææÖR“°¢òòW"×6V7F–öâ†V–v‡B…7FvR“¢G&r×F–ÖR×VÇF—Æ–W"Â6WBöæ6RW ¢òòg&ÖR–âG&r‚’g&öÒF†R7F—fR6V7F–öâ‡2’ÒÒæWfW"&¶VBÂ6–æ6P¢òòvVæW&FU6–Æ†÷VWGFRw2÷vâ„TE$ôôÒ&Vf—Bv÷VÆBW&6R—BöâÃ"ôÃ2à¢6öç7B²g&öÓ¢†V–v‡D×VÄÒÂFó¢†V–v‡D×VÄ"ÒÒÒF†—2åöG&t†V–v‡D×VÂÇÂ·Ó°¢òò6æ÷vÆ–æR…7FvRB“¢Ç6òW"×6V7F–öâfÇVRÂ&VBF†R6ÖRv’à¢6öç7B²g&öÓ¢6æ÷tÆ–æTÒÂFó¢6æ÷tÆ–æT"ÒÒÒF†—2åöG&u6æ÷tÆ–æRÇÂ·Ó°¢6öç7B¤w&÷VæE’ÒF†—2å÷¦ööÖVDw&÷VæE’†6çf2“°¢òòÆ–gBF†R&ævW26òF†V—"&–FvW27GVÆÇ’6ÆV"F†Rw&÷VæB&æBÒÐ¢òò7G&—&÷GFö×27F’GV6¶VB6fVÇ’&VæVF‚F†Rw&÷VæBf–ÆÂà¢6öç7B”öfbÒ¤w&÷VæE’²CÒ6çf2æ†V–v‡C°¢7G‚ç6fR‚“°¢òòfÆöBF–ÇB„6ÖW&F—&V7F÷"æfÆöEF–ÇB“¢2F†R6ÖW&VÆÇ2&6²ÂV6€¢òò&ævRÆVç22–bF†RfçFvRö–çB—G6VÆb—2&—6–ær7B—BÒÒ66ÆV@¢òò'’F†R4ÔRFWF‚&F–òF†BÇ&VG’v÷fW&ç2—G2&ÆÆ‚67&öÆÀ¢òò7VVBÂ6òF†RæV&W7B&ævR„ÃR’vWG2F†RgVÆÂF–ÇBæBF†Rf'F†W7@¢òò„Ã"’&&VÇ’Ö÷fW2ÂW†7FÇ’Æ–¶RF†V—"67&öÆÂ7VVG2Ç&VG’Fòà¢òò—f÷FVBæV"F†R&ævRw2÷vâ&6R‡F†Rw&÷VæBÆ–æR’6ò—G2fö÷B7F—0¢òòWBæB—G2V²—2v†Bf—6–&Ç’7v–æw2ÒÒF†Rw&÷VæB—G6VÆbæWfW ¢òòF–ÇG2‡6VRF†R6W&FRf—†VBw&÷VæBG&ç6f÷&Ò–âG&r‚’’Â6òF†—0¢òò&VG22F†RÖ÷VçF–ç2ÆVæ–ærv’g&öÒÆWfVÂfÆö÷"Âæ÷BF†P¢òòfÆö÷"F–ÇF–ærVæFW"F†VÒà¢6öç7BF–ÇBÒ‡F†—2æfÆöEF–ÇBÇÂ’¢„Ä”U%õ$D”õ5¶Æ–W$¶W•ÒòÄ”U%õ$D”õ2äÃR“°¢–b‡F–ÇB’°¢6öç7B—f÷E‚Ò6çf2çv–GF‚ò"Â—f÷E’Ò¤w&÷VæE“°¢7G‚çG&ç6ÆFR‡—f÷E‚Â—f÷E’“°¢7G‚ç&÷FFR‡F–ÇB“°¢7G‚çG&ç6ÆFR‚×—f÷E‚Â×—f÷E’“°¢Ð¢6öç7BvçE6†–ÖÖW%6Æ–6W2Ò7G–ÆTF–Ç2‡F†—2çf—7VÅ7G–ÆR’æ†VE6†–ÖÖW%6Æ–6W2ÓÒfÇ6S°¢6öç7B&–öÖU6†–ÖÖW$Ç†Ò„æg‚ÓÓÒv†VE6†–ÖÖW"ròÒB¢’²„"æg‚ÓÓÒv†VE6†–ÖÖW"ròB¢“°¢6öç7BÇ”&–öÖU6†–ÖÖW"ÒvçE6†–ÖÖW%6Æ–6W2bb&–öÖU6†–ÖÖW$Ç†âãRbbÆ–W$¶W’ÓÒtÃRs°¢òòÖ÷fVÖVçB”“¢†VB6†–ÖÖW"—6âwBöæÇ’4ôÄ"w26–væGW&Rç–Ö÷&RÒÒ¢òò†&B‡—RÖf7B7–¶R&WW6W2F†RW†7B6ÖR6Æ–6RÖöfg6WBG&–6²öâF†P¢òòf'F†W7B&ævRÂ&÷fRF†R†÷&—¦öâÂ&Vv&FÆW72öb&–öÖRà¢òò&VæFW&VB6¶—2F†R&÷r×6Æ–6Rv'†—B–çG2†÷&—¦öçFÂ†—&Æ–æW2’à¢6öç7BÇ”G–æÖ–56†–ÖÖW"ÒvçE6†–ÖÖW%6Æ–6W2bbÆ–W$¶W’ÓÓÒtÃ"rbb‡F†—2æ†VE6†–ÖÖW"ÇÂ’âãs°¢–b†Ç”&–öÖU6†–ÖÖW"ÇÂÇ”G–æÖ–56†–ÖÖW"’°¢F†—2åöG&u6†–ÖÖW&VB†7G‚Â6çf2Â7G&—4¶Æ–W$¶W•ÒÂ67&öÆÅ‚Â”öfb“°¢ÒVÇ6R°¢F†—2åöG&tFæ6–æu7G&—†7G‚Â6çf2Â7G&—4¶Æ–W$¶W•ÒÂ67&öÆÅ‚Â”öfbÂÆ–W$¶W’ÂçFW'&–äVæW&w’óòÂ†V–v‡D×VÄ“°¢òòföÇVÖR&Vf÷&RF†R7&W7C¢F†R6·–Æ–æR7G&ö¶R†2Fò6—BöâF÷ö`¢òò—G2÷vâÖ÷VçF–âw26†F–ærÂæ÷BVæFW"—Bà¢F†—2åöG&u&–FvUföÇVÖR†7G‚Â6çf2Â7G&—4¶Æ–W$¶W•ÒÂ67&öÆÅ‚Â”öfbÂÆ–W$¶W’ÂÂçFW'&–äVæW&w’óòÂ†V–v‡D×VÄÂ6æ÷tÆ–æT“°¢òò7&W7B&–Ó¢gVÆÂ7G&VæwF‚BF†RæV"æ6†÷'2„ÃBôÃR’ÂW‡FVæFVBFð¢òòÃ"ôÃ2B&VGV6VBÇ†…7FvR2’ÒÒvFVBöâ†Vg•÷7Dg‚F†W&R6–æ6P¢òò—Bw2v–FW"Æ—fR727&÷72F†RGvò&–vvW7B&ævW2öâ67&VVâà¢6öç7B&–Ôö´ÒÆ–W$¶W’ÓÓÒtÃBrÇÂÆ–W$¶W’ÓÓÒtÃRrÇÂF†—2å÷W&bÇÂF†—2å÷W&bæ†Vg•÷7Dgƒ°¢–b‡&–Ôö´bbæVFvTÆ–v‡B’°¢F†—2åöG&t7&W7B†7G‚Â6çf2Â7G&—4¶Æ–W$¶W•ÒÂ67&öÆÅ‚Â”öfbÂÆ–W$¶W’ÂæVFvTÆ–v‡BÂ5$U5Eõ$”ÕôÅ„¶Æ–W$¶W•ÒóòÂçFW'&–äVæW&w’óòÂ†V–v‡D×VÄ“°¢Ð¢Ð¢–b„"ÓÒbbBâã"’°¢7G‚ævÆö&ÄÇ†ÒC°¢F†—2åöG&tFæ6–æu7G&—†7G‚Â6çf2Â7G&—4%¶Æ–W$¶W•ÒÂ67&öÆÅ‚Â”öfbÂÆ–W$¶W’Â"çFW'&–äVæW&w’óòÂ†V–v‡D×VÄ"“°¢7G‚ævÆö&ÄÇ†Ò°¢F†—2åöG&u&–FvUföÇVÖR†7G‚Â6çf2Â7G&—4%¶Æ–W$¶W•ÒÂ67&öÆÅ‚Â”öfbÂÆ–W$¶W’ÂBÂ"çFW'&–äVæW&w’óòÂ†V–v‡D×VÄ"Â6æ÷tÆ–æT"“°¢6öç7B&–Ôö´"ÒÆ–W$¶W’ÓÓÒtÃBrÇÂÆ–W$¶W’ÓÓÒtÃRrÇÂF†—2å÷W&bÇÂF†—2å÷W&bæ†Vg•÷7Dgƒ°¢–b‡&–Ôö´"bb"æVFvTÆ–v‡B’°¢F†—2åöG&t7&W7B†7G‚Â6çf2Â7G&—4%¶Æ–W$¶W•ÒÂ67&öÆÅ‚Â”öfbÂÆ–W$¶W’Â"æVFvTÆ–v‡BÂB¢„5$U5Eõ$”ÕôÅ„¶Æ–W$¶W•Òóò’Â"çFW'&–äVæW&w’óòÂ†V–v‡D×VÄ"“°¢Ð¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢ ¢¢&ævRÖöæÇ’×W6–6ÂVçfVÆ÷Râ÷F†W"v÷&ÆG2¶VWF†R67V×VÆFVBw&ö÷fP¢¢6òF†V—"7&W7B6†F–ærFöW2æ÷B–æ†W&—BÇ–æR‡&6Rö&72'VÆW2à¢¢66†VBöæ6RW"G&r6òF†R&Æ—BÂF†RÆ—fR7&W7BæBF†R6·’Vç6VÖ&ÆP¢¢6ææ÷BF—6w&VR&÷WBv†W&RF†R6öær—2à¢¢ð¢÷&–FvTVçfVÆ÷R‚’°¢6öç7B¶–æBÒF†—2çv÷&ÆCòæ¶–æBÇÂvÇ–æRs°¢–b†¶–æBÓÒvÇ–æRr’&WGW&âçVÆÃ°¢6öç7Bæ÷t×2ÒF†—2çE6V2¢°¢6öç7B66†RÒF†—2å÷&–FvT×W6–466†S°¢–b†66†Rbb66†Rææ÷t×2ÓÓÒæ÷t×2bb66†Rç&VGV6VDfÆ6‚ÓÓÒF†—2ç&VGV6VDfÆ6‚’°¢&WGW&â66†RæVçc°¢Ð¢6öç7B6V7F–öâÒF†—2ç6V7F–öç3òå·F†—2åöÆ7E6V7F–öä–G…Ó°¢6öç7B&WbÒçVÖ&W"æ—4f–æ—FR‡F†—2åöÆ7E6V7F–öä–G‚’bbF†—2åöÆ7E6V7F–öä–G‚â ¢òF†—2ç6V7F–öç3òå·F†—2åöÆ7E6V7F–öä–G‚ÒÐ¢¢çVÆÃ°¢6öç7B×W6–2Ò6×ÆUv÷&ÆD×W6–2‡°¢æ÷t×2À¢VæW&w”7W'fW3¢F†—2æVæW&w”7W'fW2À¢&‡—F†Ó¢F†—2çv÷&ÆE&‡—F†ÒÀ¢6V7F–öâÀ¢&VGV6VDfÆ6ƒ¢F†—2ç&VGV6VDfÆ6‚À¢&W7öç6S¢F†—2çv÷&ÆCòç&W7öç6RÀ¢Ò“°¢6öç7BVçbÒ&–FvTVçfVÆ÷R‡°¢VæW&w“¢×W6–2æVæW&w’À¢&73¢×W6–2æ&72À¢66VçC¢×W6–2æ66VçBÀ¢&WfVÃ¢×W6–2ç&WfVÂÀ¢Æ–gC¢&÷VæF'”Æ–gC‡6V7F–öâÂ&Wb’À¢&VGV6VDfÆ6ƒ¢F†—2ç&VGV6VDfÆ6‚À¢Ò“°¢F†—2å÷&–FvT×W6–466†RÒ²æ÷t×2Â&VGV6VDfÆ6ƒ¢F†—2ç&VGV6VDfÆ6‚ÂVçbÓ°¢&WGW&âVçc°¢Ð ¢ò¢¢67&öÆÂf÷"öæR&ævRâ&ö6VGW&ÂÆ–W"¶VW2v÷&ÆB&ÆÆ‚à¢¢66ææVB&öf–ÆRFöW2æ÷C¢F†R6öær–6·2F†R7FF–öâ—B÷Vç2öà¢¢æBF†R7VVB—BG&fVÇ2Â–ç7FVBöbF†R6÷WF‚VæBBÃ"w2f—†V@¢¢&FRâF†RæV&W"66ææVB&ævR7F–ÆÂÆVG2'’—G2FWF‚&F–òà¢¢Ã2†2æò&öf–ÆRöâF†—2F–ÆRÂ6ò—B7F—2öâF†R&ÆÆ‚6Æö6²â¢ð¢÷FW'&–å67&öÆÂ†Æ–W$¶W’Âv÷&ÆE‚’°¢–b‚F†—2çFW'&–å&öf–ÆW3òå¶Æ–W$¶W•Ò’°¢&WGW&âv÷&ÆE‚¢6öFF—&V7F÷"æFVÆÖ–æFU&F–ò„Ä”U%õ$D”õ5¶Æ–W$¶W•ÒÂF†—2çVç&fVÂ“°¢Ð¢–b‡F†—2çFW'&–å&Wf–Wr’&WGW&âFW'&–å&Wf–Wu7FF–öå‚‡F†—2å÷FW'&–å7G&—v–GF‚†Æ–W$¶W’’“°¢&WGW&âFW'&–å67&öÆÅ‚‡°¢E6V3¢F†—2çE6V2À¢7W'fW3¢F†—2æVæW&w”7W'fW2À¢GW&F–öä×3¢F†—2æGW&F–öä×2À¢7G&—v–GFƒ¢F†—2å÷FW'&–å7G&—v–GF‚†Æ–W$¶W’’À¢&VGV6VDfÆ6ƒ¢F†—2ç&VGV6VDfÆ6‚À¢&W7öç6S¢F†—2çv÷&ÆCòç&W7öç6RÀ¢FWFƒ¢&–FvTFWF‚„Ä”U%õ$D”õ5¶Æ–W$¶W•ÒÂÄ”U%õ$D”õ2äÃ"ÂF†—2çVç&fVÂÇÂ’À¢Ò“°¢Ð ¢÷FW'&–å7G&—v–GF‚†Æ–W$¶W’’°¢6öç7BæÖRÒF†—2æ7W'&VçD&ÆVæCòæg&öÒÇÂF†—2ç&öf–ÆW3òå³ÓòææÖS°¢6öç7Bv–GF‚ÒæÖRòF†—2ç7G&—2ævWB†æÖR“òå¶Æ–W$¶W•Óòçv–GF‚¢°¢&WGW&âv–GF‚âòv–GF‚¢DU%$”åõ5E$•õt”EDƒ°¢Ð ¢ò¢¢†÷r†VfVBF†RgW'F†W7B&ævR—2&–v‡Bæ÷rBöæR67&VVâ6öÇVÖâÂâã¢¢‡6VRÖ÷VçF–ä6†÷&Vòç&–FvU7vVÆÃ’âÖ–F–òw2§V×vFR&–FW2F†—2Â6ò—@¢¢—2&VBg&öÒF†R6–Ò&F†W"F†âg&öÒG&r72ÒÒ—BFVÆ–&W&FVÇ¢¢&RÖFW&—fW2F†R6ÖR7G&—×76R6öÇVÖâ÷6—F–öâöG&tFæ6–æu7G&—W6W0¢¢‡6öærG&fVÂöâ66ææVBÃ"Â÷F†W'v—6Rv÷&ÆE‚F‡&÷Vv‚F†RÃ"&ÆÆ€¢¢&F–òÂFVÆÖ–æF–öâ–æ6ÇVFVB’6òF†RçVÖ&W"FW67&–&W2F†R&ævRF†P¢¢Æ–W"—27GVÆÇ’Æöö¶–ærBà¢¢&Ò¶çVÖ&W'Ò67&VVå‚F†R6öÇVÖâFò&VBÂ–â7FvR76R¢ð¢f%&–FvU7vVÆÃ‡67&VVå‚Ò’°¢6öç7B6frÒDä4UôÄ”U%5´d%ôDä4UôÄ”U%Ó°¢–b‚6fr’&WGW&â°¢6öç7B¶–6²Ò&–FvT¶–6´Vçb‡F†—2çE6V2¢ÒF†—2åöFæ6T¶–6´×2Ò6fræFVÆ•6V2¢’¢F†—2åöFæ6T¶–6´×°¢6öç7B67&öÆÅ‚ÒF†—2å÷FW'&–å67&öÆÂ„d%ôDä4UôÄ”U"ÂF†—2åöFæ6Uv÷&ÆE‚“°¢&WGW&â&–FvU7vVÆÃ‡67&öÆÅ‚²67&VVå‚ÂF†—2çE6V2Â6frÂ¶–6²“°¢Ð ¢ò¢¢F†RÖ÷VçF–ç2Fæ6S¢F†R7G&——2G&vâ–â6öÇVÖâ6Æ–6W2ÂV6‚&–F–æp¢¢w&ö÷fR×66ÆVBG&fVÆ–ærvfRÆöærF†R&–FvRÂæBF†Rv†öÆR&ævP¢¢&÷Væ6W2öâ¶–6·2(	BæV"†–ÆÇ2f—'7BÂf"V·2&VBÖg&7F–öâÆFW ¢¢‡W"ÖÆ–W"FVÆ•6V2’Â7&÷vBvfR&öÆÆ–ær–çFòF†RF—7Fæ6Râ6öÇVÖà¢¢†6R—26ö×WFVB–â67&öÆÂ×7F&ÆR7G&—76R6òF†RvfRG&fVÇ0¢¢v—F‚F–ÖRÂæWfW"¦—GFW&–ærv—F‚6ÖW&67&öÆÂâF†R7G&—2÷fW&†æp¢¢F†Rw&÷VæB&æB'’ãC‚Âv†–6‚V–WFÇ’7vÆÆ÷w2F†R&÷GFöÒv¢¢Æ–gFVB6öÇVÖâv÷VÆB÷F†W'v—6R÷Vââ¢ð¢öG&tFæ6–æu7G&—†7G‚Â6çf2Â7G&—Â67&öÆÅ‚Â”öfbÂÆ–W$¶W’ÂFW'&–äVæW&w’ÒÂ†V–v‡D×VÂÒ’°¢6öç7B6frÒDä4UôÄ”U%5¶Æ–W$¶W•Ó°¢–b‚6fr’°¢G&uF–ÆVE7G&—†7G‚Â7G&—Â67&öÆÅ‚Â6çf2çv–GF‚Â6çf2æ†V–v‡BÂ”öfb“°¢&WGW&ã°¢Ð¢6öç7Bæ÷t×2ÒF†—2çE6V2¢°¢6öç7B&–FvRÒF†—2å÷&–FvTVçfVÆ÷R‚“°¢6öç7B&Wf–WrÒF†—2çFW'&–å&Wf–Wrbb—5FW'&–å7G&—‡7G&—“°¢6öç7B¶–6²Ò&Wf–Wrò¢&–FvT¶–6´Vçb†æ÷t×2ÒF†—2åöFæ6T¶–6´×2Ò6fræFVÆ•6V2¢¢¢F†—2åöFæ6T¶–6´×¢‡&–FvSòæ¶–6´×VÂóò“°¢òò÷&övVç’w&÷w2F†R&ævRÂF†VâÖ÷VçF–å7G&—G&t†V–v‡B†&BÖ626òV·0¢òò7F’öâÖg&ÖR†ö6Vâ÷6·’&VÖ–âf—6–&ÆS²öfb×67&VVâ7VÖÖ—G2&RW6VÆW72’à¢òò†V–v‡D×VÂ—2F†RW"×6V7F–öâG&r×F–ÖR×VÇF—Æ–W"…7FvRöbF†P¢òòÖ÷VçF–â÷fW&†VÂ’ÒÒæWfW"&¶VBÂ6–æ6RvVæW&FU6–Æ†÷VWGFRw2÷và¢òò„TE$ôôÒ&Vf—Bv÷VÆBW&6Râ–â×7G&—†V–v‡B6†ævRöâÃ"ôÃ2à¢òò‡&6R÷Væ–æw2F†BV&æVBÆ–gBFB'&–VbW‡G&66ÆRöâF÷°¢òòFV6÷&F—fR7WG2ÆVfR66ÆT×VÂBà¢6öç7Bw&÷wF„×VÂÒ&Wf–Wrò¢÷&övVç”†V–v‡D×VÂ†Æ–W$¶W’Â6Æ×‡F†—2æ÷&övVç”w&÷wF‚ÇÂ’¢¢VÆÆ&6´†V–v‡D×VÂ†Æ–W$¶W’Â6Æ×‡F†—2çVÆÆ&6³ÇÂ’¢¢ÖF‚æÖ‚ƒÂ†V–v‡D×VÂ¢¢‡&–FvSòç66ÆT×VÂóò“°¢6öç7BF‚ÒÖ÷VçF–å7G&—G&t†V–v‡B‡7G&—æ†V–v‡BÂw&÷wF„×VÂÂ6çf2æ†V–v‡BÂF†—2å÷¦ööÖVDw&÷VæE’†6çf2’“°¢6öç7B&6U’Ò6çf2æ†V–v‡BÒF‚²”öfc°¢òò7FvR"‡&–FvRFVf÷&ÖF–öâ“¢7VÖÖ—G26†'VâöâF†R¶–6²ÂfÆæ·27vVÆÀ¢òòöâ7W7F–æVBVæW&w’ÒÒvFVB'’FW'&–äVæW&w’W†7FÇ’Æ–¶RF†Röfg6W@¢òòFæ6R&÷fRÂ6òfÆBö6ÆÒ&–öÖRFöW6âwBFVf÷&ÒV—F†W"à¢6öç7B7W7F–âÒ&Wf–Wrò¢‡&–FvRò&–FvRç7W7F–â¢‡F†—2åöFæ6U7W7F–âÇÂ’“°¢6öç7Bw&ö÷fRÒ&Wf–Wrò¢‡&–FvRò&–FvRæw&ö÷fR¢F†—2åöFæ6Tw&ö÷fR“°¢òò6Æ–6Rv–GF‚—2F†RFæ6Rw26×Æ–ær&W6öÇWF–öâÂæBVÆ—G’6WGF–æp¢òò…W&dv÷fW&æ÷"æFæ6T6öÇVÖåv–GF‚“¢F†R7FW&WGvVVâæV–v†&÷W&–ær6Æ–6W0¢òò—2F†Röfg6WB7W'fRw26Æ÷RF–ÖW2F†—2v–GF‚Â6òæ'&÷v–ær—B6‡&–æ·0¢òòF†R7F—&66R–âF†R6·–Æ–æR&÷÷'F–öæÆÇ’âö7&W7Eö–çG2×W7B&VBF†P¢òò4ÔRv–GF‚Â÷"F†RÆ—fR7&W7BöÇ–Æ–æRÆæG2v†W&RF†R&Æ—BF–FâwBà¢6öç7B6öÅrÒF†—2åöFæ6T6öÅr‚“°¢6öç7BrÒ7G&—çv–GFƒ°¢6öç7BFW'&–âÒ—5FW'&–å7G&—‡7G&—“°¢ÆWB‚Ò7G&—÷&–v–å‚‡7G&—Â67&öÆÅ‚Â6çf2çv–GF‚“°¢v†–ÆR‡‚Â6çf2çv–GF‚’°¢f÷"†ÆWB7‚Ò²7‚Âs²7‚³Ò6öÅr’°¢6öç7B7rÒÖF‚æÖ–â†6öÅrÂrÒ7‚“°¢òò‚†÷&—¦öçFÂ÷fW&Æ†–FW2†—&Æ–æR6V×2&WGvVVâFæ6R6öÇVÖç2à¢6öç7BG&urÒÖF‚æÖ–â†7r²ÂrÒ7‚“°¢6öç7B7‚Ò‚²7ƒ°¢–b‡7‚²G&urÂÇÂ7‚â6çf2çv–GF‚’6öçF–çVS°¢òòöfg6WG2BF†—26öÇVÖâw2÷vâGvò$õTäD$”U2Âæ÷BöæR6×ÆR†VÆ@¢òòfÆB7&÷72—BâG&vâv—F‚fW'F–6Â6†V"&WGvVVâF†VÒÂF†P¢òò6öÇVÖâw2ÆVgBVFvRÆæG2W†7FÇ’v†W&R—G2ÆVgBæV–v†&÷W"w2&–v‡@¢òòVFvRF–BÂ6òF†R6–Æ†÷VWGFR—2–V6Wv—6RÖÆ–æV"–ç7FVBöb¢òò7F—&66RæBF†W&R—2æò6VÒÆVgBFò†–FRà¢òð¢òòF†RöÆB6öFR6×ÆVBF†RÄTeBTDtRæB†VÆB—B6öç7FçBÂv†–ÆRF†P¢òòÆ—fR7&W7B7G&ö¶R&ÆVæFVB&WGvVVâ6öÇVÖâ4TåDU%2ÒÒ&×†6RÐ¢òò6†–gFVB†Æb6öÇVÖâg&öÒ7F—&66RâF†B—2v‡’F†RæVöâ&–FvP¢òòÆ–æRfÆöFVBöfbF†Rf–ÆÂ—BG&6W2à¢6öç7BFæ6UF–ÖRÒ&Wf–Wrò¢F†—2çE6V3°¢6öç7BfWfW"Ò&Wf–Wrò¢‡F†—2æfWfW"ÇÂ“°¢6öç7BG”ÂÒFæ6Töfg6WB‡67&öÆÅ‚²7‚ÂFæ6UF–ÖRÂw&ö÷fRÂ¶–6²Â6frÂfWfW"’¢FW'&–äVæW&w“°¢6öç7BG•"ÒFæ6Töfg6WB‡67&öÆÅ‚²7‚²7rÂFæ6UF–ÖRÂw&ö÷fRÂ¶–6²Â6frÂfWfW"’¢FW'&–äVæW&w“°¢òòfö÷BÖæ6†÷&VC¢F†—26öÇVÖâw2÷vâfö÷B†&6U’²F‚²G’ÂF†R6ÖP¢òòG&ç6ÆF–öâF†Röfg6WBFæ6RÇ&VG’Æ–W2’æWfW"Ö÷fW3¢öæÇ¢òòF†RVÆWfF–öâ&÷fR—B7G&WF6†W2Â6ò7VBfö÷F†–ÆÂ&&VÇ¢òòw&÷w2v†–ÆRF†—2&ævRw2÷vâ7VÖÖ—Bf—6–&Ç’†VfW2à¢òð¢òòF†R44ÄR—2&VBBF†R6öÇVÖâw2Gvò&÷VæF&–W2öfbF†R6ÖP¢òò6Öö÷F‚7W'fRö7&W7Eö–çG2&VG2Âf÷"W†7FÇ’F†R&V6öâF†Röfg6W@¢òò&÷fR—2â—BW6VBFò&RöæRFæ6U66ÆR‚’6×ÆVBg&öÒF†—26öÇVÖâw0¢òò÷vâƒæB†VÆBfÆB7&÷72—BÒÒ7F—&66RÒÒv†–ÆRWfW'¢òò÷fW&Æ’G&6VBFæ6U66ÆU6Öö÷F‚w2&×âF†B—2F†R6ÖP¢òò7FW×fW'7W2×&×7Æ—BF†Röfg6WB6öÖÖVçB&÷fRFW67&–&W2f—†–ærÀ¢òòÆVgB&V†–æBöâF†R6–&Æ–ærFW&Òv†VâF†R6†V"ÆæFVBÂæB—B—0¢òòv÷'6R†W&RF†â—Bv2F†W&S¢F†Röfg6WB—2G&ç6ÆF–öâÂ6ò—G0¢òòW'&÷"—2Væ–f÷&ÒÂ'WB66ÆR×VÇF—Æ–W2„T”t…B$õdRD„RdôõBÂ6ð¢òòF†RÖ—6ÖF6‚—2¦W&òBF†Rfö÷BæBÆ&vW7BBF†R7VÖÖ—G2ÂæB—@¢òòw&÷w2v—F‚F†R¶–6²âÖV7W&VBv–ç7Bf—fR×7VÖÖ—B&–FvS¢ãG‚@¢òò&W7BÂBã7‚öâ¶–6²ÂVçF—¦VBFòF†R6öÇVÖâw&–BæBVÇ6–ær@¢òòF†R¶–6²&FRâF†B—2F†R&Æö6·’fÆ–6¶W"BF†RV·2ÒÒF†R6æ÷p¢òò6ÂF†R67B6†F÷ræBF†R7G&FÆÂG&6–ær6Öö÷F‚7W'fRF†P¢òòf–ÆÂVæFW&æVF‚F†VÒv2æ÷B7GVÆÇ’G&vâöâà¢òò—6öÆFVB66VçG2Ö’7F–ÆÂ6†'Vâ7VÖÖ—Bv†Vâ&÷Væ6R—2vFVBà¢6öç7B6†'VâÒ&Wf–Wrò¢‡&–FvRòÖF‚æÖ‚†¶–6²Â&–FvRævW7GW&R’¢¶–6²“°¢6öç7B66ÆTÂÒ&Wf–Wrò¢Fæ6U66ÆU6Öö÷F‚‡7G&—ç&–FvRÂ67&öÆÅ‚²7‚Â6†'VâÂ7W7F–âÂ6frÂ6öÅr“°¢6öç7B66ÆU"Ò&Wf–Wrò¢Fæ6U66ÆU6Öö÷F‚‡7G&—ç&–FvRÂ67&öÆÅ‚²7‚²7rÂ6†'VâÂ7W7F–âÂ6frÂ6öÅr“°¢6öç7B6öÄF‚ÒF‚¢ƒ²‡66ÆTÂÒ’¢FW'&–äVæW&w’“°¢6öç7B6öÄF…"ÒF‚¢ƒ²‡66ÆU"Ò’¢FW'&–äVæW&w’“°¢6öç7BG’ÒG”Ã°¢6öç7Bfö÷E’Ò&6U’²F‚²G“°¢òòF÷VFvRg&öÒ†fö÷E’Ò6öÄF‚’Fò†fö÷E’²†G•"ÒG”Â’Ò6öÄF…"“ ¢òòF†R6†V"æ÷r6'&–W2F†R66ÆR&×2vVÆÂ2F†Röfg6WBÂ6ð¢òòæV–v†&÷W&–ær6öÇVÖç2rDõ2ÖVWBW†7FÇ’–ç7FVBöb7FW–ærâF†P¢òò6÷7B—2F†BF†Rfö÷B–6·2WF†R6ÖR&×æBF–ÇG2'¢òò†6öÄF‚Ò6öÄF…"’ÒÒBÖ÷7BfWr‚ÂæBF†R7G&—2Ç&VG¢òò÷fW&†ærF†Rw&÷VæB&æB'’ãC‚Âv†–6‚7vÆÆ÷w2—Bv†öÆRà¢6öç7B6†V"Ò‚†G•"ÒG”Â’Ò†6öÄF…"Ò6öÄF‚’’òÖF‚æÖ‚ƒÂ7r“°¢–b„ÖF‚æ'2‡6†V"’ÂRÓb’°¢7G‚æG&t–ÖvR‡7G&—Â7‚ÂÂG&urÂ7G&—æ†V–v‡BÂ7‚Âfö÷E’Ò6öÄF‚ÂG&urÂ6öÄF‚“°¢ÒVÇ6R°¢òòG&ç6f÷&ÒƒÂ²ÂÂÂÂ’Ö2‡‚Â’’Óâ‡‚Â’²²§‚’Â6òF†P¢òòFW7F–æF–öâ’—2&RÖ6ö×Vç6FVB'’Ö²§7‚FòWBF†R6öÇVÖâw0¢òòÄTeBVFvRW†7FÇ’öâfö÷E’Ò6öÄFƒ²F†R6†V"F†Vâ6'&–W2—BFð¢òòfö÷E’Ò6öÄF‚²†G•"ÒG”Â’BF†R&–v‡BVFvRâW&RfW'F–6À¢òò6†V"G&ç6ÆFW2F†R6öÇVÖâ6öçF–çV÷W6Ç’Âv†–6‚—2W†7FÇ’v†@¢òòF†Röfg6WBFæ6R—2ÒÒF†Rfö÷B7F—22vÇVVB2—BWfW"v2À¢òò—B6–×Ç’'&—fW2BV6‚‚'’&×&F†W"F†â§V×à¢7G‚ç6fR‚“°¢7G‚çG&ç6f÷&ÒƒÂ6†V"ÂÂÂÂ“°¢7G‚æG&t–ÖvR‡7G&—Â7‚ÂÂG&urÂ7G&—æ†V–v‡BÂ7‚Âfö÷E’Ò6öÄF‚Ò6†V"¢7‚ÂG&urÂ6öÄF‚“°¢7G‚ç&W7F÷&R‚“°¢Ð¢Ð¢–b‡FW'&–â’'&V³°¢‚³Òs°¢Ð¢Ð ¢ò¢¢F†RæVöâ&–FvRÆ–æRÂG&vâÄ•dR–ç7FVBöb&¶VB–çFòF†R7G&—&—FÖ ¢¢‡F†RöÆB&¶VB7G&ö¶RF÷&RBWfW'’#‡‚Fæ6RÖ6öÇVÖâ6VÒ’âvÆ·2F†P¢¢6ÖRFæ6Töfg6WBöw&÷wF„×VÂö&6U’ÖF‚öG&tFæ6–æu7G&—W6W2Â'W@¢¢6Öö÷F†Ç’„vVô7&W7Bw2&–FvU•6Öö÷F‚öFæ6Töfg6WE6Öö÷F‚’6òF†RÆ–æR7F—0¢¢öæR6öçF–çV÷W2öÇ–Æ–æR7&÷72WfW'’6VÒæBWfW'’7G&—×F–ÆRw&à¢¢ÃBFF—F–öæÆÇ’7V'G&7G2vVô7&W7Döfg6WBÒÒF†RrÖ&æB7V7G'VÒÀ¢¢67VÇFVB–çFòvVöÆöv–6ÂfVGW&W2†6Æ–fg2Â&WFW2Â¶æö'2Â÷WF7&÷2À¢¢FW'&6W2’f—†VBFòFW'&–â÷6—F–öç2ÒÒÖ¶–ær—BF†RF†—&BÂF—7F–æ7@¢¢WVÆ—¦W"Æöæw6–FRF†R†÷&—¦öâUæBF†R7V7G'VÒÖ76–bâÃR¶VW0¢¢F†RÆ–âVæ'&ö¶Vâ7&W7B‡FöF’w2Æöö²ÂÖ–çW2F†RFV"’â¢ð¢ò¢¢F†R6Öö÷F‚67&VVâ×76R7&W7BöÇ–Æ–æRf÷"Fæ6–ær&ævRÂÇW2F†P¢¢&æB—BVæ6Æ÷6W2âW‡G&7FVB6òF†R7&W7B7G&ö¶RæBF†RföÇVÖR70¢¢†FWF‚w&F–VçB²V²6†÷VÆFW'2’vÆ²öæR–FVçF–6Â7W'fRÒÒ–bF†W¢¢&RÖFW&—fVB—B6W&FVÇ’Âç’G&–gB&WGvVVâF†VÒv÷VÆB6†÷rW2F†P¢¢6†F–ærVVÆ–ærv’g&öÒF†R6·–Æ–æR—B—27W÷6VBFò&VÆöærFòâ¢ð¢ò¢¢F†Rv–GF‚öG&tFæ6–æu7G&——26Æ–6–ærF†R7G&—BF†—2g&ÖRÒÒF†P¢¢Fæ6Rw26×Æ–ær&W6öÇWF–öâÂæBVÆ—G’6WGF–ær‡6VP¢¢W&dv÷fW&æ÷"æFæ6T6öÇVÖåv–GF‚’â&VBF‡&÷Vv‚öæR66W76÷"6òF†R&Æ—@¢¢æBF†RÆ—fR7&W7BöÇ–Æ–æR6âæWfW"F—6w&VR&÷WB—C¢F†W’&RF†P¢¢6ÖR6–Æ†÷VWGFRÂæBÖ—6ÖF6‚WG2F†R7&W7Bv†W&RF†R&Æ—B—6âwBâ¢ð¢öFæ6T6öÅr‚’°¢&WGW&âF†—2å÷W&bòF†—2å÷W&bæFæ6T6öÇVÖåv–GF‚¢Dä4Uô4ôÅôd”äS°¢Ð ¢ö7&W7Eö–çG2†6çf2Â7G&—Â67&öÆÅ‚Â”öfbÂÆ–W$¶W’ÂFW'&–äVæW&w’ÒÂ†V–v‡D×VÂÒÂvVöÖWG'’ÒvFæ6–ærr’°¢–b†vVöÖWG'’ÓÓÒw7FF–2r’&WGW&â7FF–57G&—vVöÖWG'’‡7G&—Â67&öÆÅ‚Â6çf2çv–GF‚Â6çf2æ†V–v‡BÂ”öfb“°¢–b‚7G&—ç&–FvR’&WGW&âçVÆÃ°¢6öç7B6frÒDä4UôÄ”U%5¶Æ–W$¶W•Ó°¢–b‚6fr’&WGW&âçVÆÃ°¢òò6†&VBW"Ög&ÖR66†R†6ÆV&VBöæ6RBF†RF÷öbG&r‚’“¢F†—26ÖP¢òò‡7G&—ÂÆ–W$¶W’Â67&öÆÅ‚ÂFW'&–äVæW&w’Â†V–v‡D×VÂ’6öÖ&–æF–öâ—0¢òò&RÖFW&—fVB'’öG&u&–FvUföÇVÖRÂöG&t7&W7BÂæBöG&t6öææV7F÷$†–ÆÇ0¢òòf÷"F†R6ÖRg&ÖRÒÒWFòãG‚7&÷72Ã"ÔÃRv—F‚7&÷76fFP¢òò7F—fRâ”öfbö6çf2&R6öç7FçBf÷"F†Rv†öÆRg&ÖR6òF†W’Föâw@¢òòæVVBFò&R–âF†R¶W’à¢6öç7B66†RÒF†—2åö7&W7D66†S°¢ÆWB'•7G&—Ò66†Rbb66†RævWB‡7G&—“°¢6öç7B6öÅrÒF†—2åöFæ6T6öÅr‚“°¢6öç7B&–FvRÒF†—2å÷&–FvTVçfVÆ÷R‚“°¢6öç7B&Wf–WrÒF†—2çFW'&–å&Wf–Wrbb—5FW'&–å7G&—‡7G&—“°¢6öç7B66†T¶W’ÒG¶Æ–W$¶W—×ÂG·67&öÆÅ‡×ÂG·FW'&–äVæW&w—×ÂG¶†V–v‡D×VÇ×ÂG¶6öÅw×ÂG·&–FvSòç66ÆT×VÂóò×ÂG·&–FvSòæw&ö÷fRóòvrw×ÂG·&–FvSòç7W7F–âóòw2w×ÂG·&Wf–Wrò¢Ö°¢–b†'•7G&—’°¢6öç7B†—BÒ'•7G&—ævWB†66†T¶W’“°¢–b††—B’&WGW&â†—C°¢Ð¢6öç7Bæ÷t×2ÒF†—2çE6V2¢°¢6öç7B¶–6²Ò&Wf–Wrò¢&–FvT¶–6´Vçb†æ÷t×2ÒF†—2åöFæ6T¶–6´×2Ò6fræFVÆ•6V2¢¢¢F†—2åöFæ6T¶–6´×¢‡&–FvSòæ¶–6´×VÂóò“°¢6öç7Bw&÷wF„×VÂÒ&Wf–Wrò¢÷&övVç”†V–v‡D×VÂ†Æ–W$¶W’Â6Æ×‡F†—2æ÷&övVç”w&÷wF‚ÇÂ’¢¢VÆÆ&6´†V–v‡D×VÂ†Æ–W$¶W’Â6Æ×‡F†—2çVÆÆ&6³ÇÂ’¢¢ÖF‚æÖ‚ƒÂ†V–v‡D×VÂ¢¢‡&–FvSòç66ÆT×VÂóò“°¢6öç7BF‚ÒÖ÷VçF–å7G&—G&t†V–v‡B‡7G&—æ†V–v‡BÂw&÷wF„×VÂÂ6çf2æ†V–v‡BÂF†—2å÷¦ööÖVDw&÷VæE’†6çf2’“°¢6öç7B66ÆRÒF‚òÖF‚æÖ‚ƒÂ7G&—æ†V–v‡B“°¢6öç7B&6U’Ò6çf2æ†V–v‡BÒF‚²”öfc°¢6öç7BrÒ7G&—çv–GFƒ°¢6öç7B—4vVòÒÆ–W$¶W’ÓÓÒtÃBs°¢6öç7BE6V2Ò&Wf–Wrò¢F†—2çE6V3°¢6öç7BfWfW"Ò&Wf–Wrò¢‡F†—2æfWfW"ÇÂ“°¢6öç7Bw&ö÷fRÒ&Wf–Wrò¢‡&–FvRò&–FvRæw&ö÷fR¢F†—2åöFæ6Tw&ö÷fR“°¢6öç7B7W7F–âÒ&Wf–Wrò¢‡&–FvRò&–FvRç7W7F–â¢‡F†—2åöFæ6U7W7F–âÇÂ’“° ¢6öç7BG2ÒæWr'&’„ÖF‚æ6V–Â†6çf2çv–GF‚ò5$U5Eõ5DUõ‚’²2“°¢ÆWBâÒ°¢ÆWB7&W7E’Ò–æf–æ—G“°¢6öç7Bf–Wu67&öÆÂÒ—5FW'&–å7G&—‡7G&—’ò×7G&—÷&–v–å‚‡7G&—Â67&öÆÅ‚Â6çf2çv–GF‚’¢67&öÆÅƒ°¢f÷"†ÆWB‚ÒÔ5$U5Eõ5DUõƒ²‚ÃÒ6çf2çv–GF‚²5$U5Eõ5DUõƒ²‚³Ò5$U5Eõ5DUõ‚’°¢6öç7B7G&—‚Òf–Wu67&öÆÂ²ƒ°¢6öç7BRÒ7G&—6×ÆU‚‡7G&—Â7G&—‚“°¢6öç7B•"Ò&–FvU•6Öö÷F‚‡7G&—ç&–FvRÂR’¢66ÆS°¢6öç7BG’ÒFæ6Töfg6WE6Öö÷F‚‡7G&—‚ÂE6V2Âw&ö÷fRÂ¶–6²Â6frÂfWfW"Â6öÅr’¢FW'&–äVæW&w“°¢6öç7BÆ–gBÒ‚&Wf–Wrbb—4vVòòvVô7&W7Döfg6WB‡RòrÂF†—2åöW6Öö÷F†VBÂF†—2åövVôfVGW&W2ÂE6V2’¢’¢FW'&–äVæW&w“°¢òò7FvR"‡&–FvRFVf÷&ÖF–öâ“¢fö÷BÖæ6†÷&VBW"Ö6öÇVÖâ66ÆRÒÒF†P¢òò7G&—w2fö÷B‡67&VVâ’Ò&6U’²F‚’æWfW"Ö÷fW3²öæÇ’F†P¢òòVÆWfF–öâ&÷fR—B7G&WF6†W2Â'’F†—26öÇVÖâw2÷vâ&VÆF—fRV°¢òò†V–v‡B†ƒÂÖ—'&÷&–æröG&tFæ6–æu7G&—w2&rW"Ö6öÇVÖâ&VBÀ¢òò'WB6Öö÷F†Ç’&ÆVæFVB7&÷726öÇVÖâ6V×2Æ–¶RF†R&W7BöbF†—0¢òòÆ—fR7W'fRÇ&VG’—2’à¢6öç7BƒÒ6öÇVÖä†V–v‡CB‡7G&—ç&–FvRÂ7G&—‚“°¢òòFæ6U66ÆU&×Âæ÷BFæ6U66ÆU6Öö÷Fƒ¢F†R&×—2F†R7W'fRF†R&Æ—@¢òò6â7GVÆÇ’–çB†öæR7G&–v‡BF÷VFvRW"6öÇVÖâ’Â6òF†R7&W7@¢òòöÇ–Æ–æRæBWfW'’÷fW&Æ’‡Væröfb—BÆæBôâF†Rf–ÆÂ–ç7FVBöböà¢òò6–Æ†÷VWGFRF†Bv2æWfW"G&vââ6VRvVô7&W7BæFæ6U66ÆU&×à¢6öç7B&u66ÆRÒ&Wf–Wrò¢Fæ6U66ÆU&×‡7G&—ç&–FvRÂ7G&—‚À¢&–FvRòÖF‚æÖ‚†¶–6²Â&–FvRævW7GW&R’¢¶–6²Â7W7F–âÂ6frÂ6öÅr“°¢6öç7BÆö6Å66ÆRÒ²‡&u66ÆRÒ’¢FW'&–äVæW&w“°¢6öç7B†V–v‡D&÷fTfö÷BÒF‚Ò•#°¢6öç7B•$FVf÷&ÖVBÒF‚Ò†V–v‡D&÷fTfö÷B¢Æö6Å66ÆS°¢6öç7B’Ò&6U’²•$FVf÷&ÖVB²G’ÒÆ–gC°¢–b‡’Â7&W7E’’7&W7E’Ò“°¢G5¶â²µÒÒ²‚Â’ÂÆ–gBÂ7G&—‚ÂG’Â66ÆS¢66ÆR¢Æö6Å66ÆRÂƒÓ°¢Ð¢G2æÆVæwF‚Òã°¢òòF†R7G&—2&R&Æ—GFVBg&öÒ&6U’F÷vâ÷fW"F†Â6òF†—2—2v†W&RF†P¢òò&ævRw2&öG’7GVÆÇ’VæG2æBF†Rw&÷VæB&æB7vÆÆ÷w2—Bà¢6öç7BvVöÒÒ°¢G2Â&6U’Â&÷GFöÕ“¢&6U’²F‚À¢fö÷E“¢&6U’²F‚Â7&W7E’ÂF‚Â7G&—†V–v‡C¢7G&—æ†V–v‡BÀ¢òòF†R&¶VB7VÖÖ—BÂg&VRöbFæ6RöFVf÷&ÖF–öâ÷67&öÆÂâ7&W7E–&÷fR—0¢òòÆ—fRvÆö&ÂW‡G&V×VÒæBÖ÷fW2WfW'’g&ÖS²ç—F†–ærF†BæVVG2¢òò7F&ÆRÅD•ETDR‡F†R6æ÷rÆ–æR’×W7B†æröfbF†—2–ç7FVBà¢&¶VD7&W7E“¢&6U’²&–FvT&¶VD7&W7E’‡7G&—ç&–FvR’¢66ÆRÀ¢Ó°¢–b†66†R’°¢–b‚'•7G&—’²'•7G&—ÒæWrÖ‚“²66†Rç6WB‡7G&—Â'•7G&—“²Ð¢'•7G&—ç6WB†66†T¶W’ÂvVöÒ“°¢Ð¢&WGW&âvVöÓ°¢Ð ¢öG&t7&W7B†7G‚Â6çf2Â7G&—Â67&öÆÅ‚Â”öfbÂÆ–W$¶W’ÂVFvTÆ–v‡BÂÇ†ÂFW'&–äVæW&w’ÒÂ†V–v‡D×VÂÒ’°¢6öç7BvVöÒÒF†—2åö7&W7Eö–çG2†6çf2Â7G&—Â67&öÆÅ‚Â”öfbÂÆ–W$¶W’ÂFW'&–äVæW&w’Â†V–v‡D×VÂ“°¢–b‚vVöÒ’&WGW&ã°¢6öç7B²G2ÒÒvVöÓ°¢6öç7B—4vVòÒÆ–W$¶W’ÓÓÒtÃBs° ¢7G‚ç6fR‚“°¢–b†—4vVò’°¢ÆWBç”Æ–gBÒfÇ6S°¢f÷"†6öç7BöbG2’–b‡æÆ–gBâ’²ç”Æ–gBÒG'VS²'&V³²Ð¢–b†ç”Æ–gB’°¢7G‚ævÆö&ÄÇ†Òã¢Ç†°¢7G‚æf–ÆÅ7G–ÆRÒVFvTÆ–v‡C°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡G5³Òç‚ÂG5³Òç’“°¢f÷"†ÆWB’Ò²’ÂG2æÆVæwFƒ²’²²’7G‚æÆ–æUFò‡G5¶•Òç‚ÂG5¶•Òç’“°¢f÷"†ÆWB’ÒG2æÆVæwF‚Ò²’ãÒ²’ÒÒ’7G‚æÆ–æUFò‡G5¶•Òç‚ÂG5¶•Òç’²G5¶•ÒæÆ–gB“°¢7G‚æ6Æ÷6UF‚‚“°¢7G‚æf–ÆÂ‚“°¢Ð¢Ð¢òò&–FvRvÆ÷s¢6ögBv–FR72„4t’6F6‚ÖÆ–v‡B’&F†W"F†â7F6¶V@¢òò†—&Æ–æRöÇ–Æ–æW2F†B7G&—RF†R6·’à¢6öç7B7&W7DF–Ç2Ò7G–ÆTF–Ç2‡F†—2çf—7VÅ7G–ÆR“°¢6öç7B7&W7D×VÂÒ7&W7DF–Ç2æ7&W7DvÆ÷tÇ†óò°¢–b†7&W7DF–Ç2æ7&W7E7G&ö¶RÓÒfÇ6Rbb7&W7D×VÂâã"’°¢6öç7B76W2Òµ³rãRÂãÒÂ³2ã"Âã#%ÒÂ³ãÂã3…ÕÓ°¢7G‚æÆ–æT¦ö–âÒw&÷VæBs°¢7G‚æÆ–æT6Òw&÷VæBs°¢òò&–Ò—2Æ–v‡B7–ÆÆ–ær÷fW"âVFvRÂ6ò—BF¶W2—G26öÆ÷"g&öÒF†P¢òòÄ”t…B2×V6‚2g&öÒF†R&–öÖRw2÷vâ66VçBâ7G&ö¶VB–â&p¢òòVFvTÆ–v‡F—Bv2Ö&¶W"VâG&6–ærF†RÖ÷VçF–â–âv†FWfW ¢òò6GW&FVB‡VRF†RÆWGFR†VæVBFòæÖRÒÒv†–6‚öâ'&–v‡@¢òòÆWGFR&VG22æVöâ—–ær&F†W"F†â2&6¶Æ—B&–FvRà¢6öç7B&–Ô6öÆ÷"ÒF†—2æÆ–v‡@¢òF†—2æÆW'66†RævWB†VFvTÆ–v‡BÂF†—2æÆ–v‡Bæ6öÆ÷$†W‚Â$”ÕôÄ”t…EôÔ•‚¢¢VFvTÆ–v‡C°¢6öç7B²#¢'"Âs¢&rÂ#¢&"ÒÒ†W…Fõ&v"‡&–Ô6öÆ÷"“°¢òòââææB—B†2FòfÆÂöfbv’g&öÒF†R6÷W&6Râ6öç7FçBÇ†ÆÀ¢òòF†Rv’7&÷72F†Rg&ÖR—2F†R÷F†W"†Æböbv‡’—B&VB2à¢òò÷WFÆ–æS¢&VÂ&–ÒÆ–v‡B—27G&öævW7Bv†W&RF†R&–FvRf6W2F†RÆ–v‡@¢òòæBæV&Ç’vöæRöâF†Rf"6–FRâöæR†÷&—¦öçFÂw&F–VçBW"70¢òòFöW2F†B–âF†R6ÖR6–ævÆR7G&ö¶R6ÆÂF†RfÆBfW'6–öâ6÷7Bà¢6öç7BÆ–v‡E‚ÒF†—2æÆ–v‡BòF†—2æÆ–v‡Bç‚¢6çf2çv–GF‚¢ãS°¢6öç7B&–Ôw&BÒ†&6T’Óâ°¢6öç7Bw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂÂ6çf2çv–GF‚Â“°¢f÷"†ÆWB2Ò²2ÃÒ$”Õôu$D”TåEõ5Dõ3²2²²’°¢6öç7BRÒ2ò$”Õôu$D”TåEõ5Dõ3°¢6öç7BÒ&6T¢&–Ôv–â‡R¢6çf2çv–GF‚ÂÆ–v‡E‚Â6çf2çv–GF‚“°¢w&BæFD6öÆ÷%7F÷‡RÂ&v&‚G·''ÒÂG·&wÒÂG·&'ÒÂG¶çFôf—†VBƒB—Ò–“°¢Ð¢&WGW&âw&C°¢Ó°¢f÷"†6öç7B¶ÇrÂÒöb76W2’°¢7G‚ç7G&ö¶U7G–ÆRÒ&–Ôw&B†¢Ç†¢7&W7D×VÂ“°¢7G‚ævÆö&ÄÇ†Ò°¢7G‚æÆ–æUv–GF‚ÒÇs°¢7G‚æ&Vv–åF‚‚“°¢f÷"†ÆWB’Ò²’ÂG2æÆVæwFƒ²’²²’°¢–b†’ÓÓÒ’7G‚æÖ÷fUFò‡G5¶•Òç‚ÂG5¶•Òç’“²VÇ6R7G‚æÆ–æUFò‡G5¶•Òç‚ÂG5¶•Òç’“°¢Ð¢7G‚ç7G&ö¶R‚“°¢Ð¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢ ¢¢F†Rw&VVâ6öææV7F÷"6÷VçG'’„6öææV7F÷$†–ÆÇ2æ§2’à¢ ¢¢F†Rf"&ævR6'&–W2F†R&–vvW7BFæ6RÂv†–6‚ÖVç2—B7VæG2Æ÷Bö`¢¢—G2F–ÖR†–FFVâ&V†–æBF†RæV&W"†–ÆÇ2ÒÒæBv†Vâ—BFöW2ÂF†W&Rw2¢¢FVB&æB&WGvVVâv†FWfW"†–B—BæBF†Rw&÷VæBÂv—F‚æ÷F†–ærFò6''¢¢F†RW–RF÷vâF‡&÷Vv‚âF†W6R†–ÆÇ2f–ÆÂW†7FÇ’F†BÂöæÇ’F†W&RÂæBöæÇ¢¢2×V6‚2F†R&–FvR—27GVÆÇ’'W&–VBà¢ ¢¢FVÆ–&W&FVÇ’F†RV–WFW7BF†–æröâ67&VVã¢6ögBf÷&W7Böw&72w&VVâ@¢¢Æ÷rÇ†v—F‚æò7&W7B7G&ö¶Röb—G2÷vâÂ6ò—B&VG22F—7Fæ6R&F†W ¢¢F†â2æ÷F†W"6·–Æ–æR6ö×WF–ærv—F‚F†RöæR—Bw2&W67V–ærà¢¢ð¢ò¢ ¢¢F†RF—7FçB7vVÆÂF†B7FæG2–âf÷"F†RFæ6–ær&–FvRv†VâF†Rf–Wp¢¢ævÆR†2'W&–VB—B„F—7FçEvfRæ§2’à¢ ¢¢Gvò¦ö'2ÂFVÆ–&W&FVÇ’–âöæR72&V6W6R&÷F‚æVVBF†R6ÖRvVöÖWG'“ ¢ ¢¢â¢¤ÖV7W&Râ¢¢WfW'’g&ÖRÂ†÷r×V6‚öbÃ"F†RæV&W"&ævW2&P¢¢VF–ærÂ–çFò÷&–FvTö66ÇW6–öå&vâWFFR‚’6Öö÷F‡2—BæBÂB¢¢6V7F–öâ&÷VæF'’æBæ÷v†W&RVÇ6RÂÆWG2—BFV6–FRF†R7và¢¢"â¢¤G&râ¢¢v†FWfW"F†R7&÷76fFR7W'&VçFÇ’6—2âG&vâ$Tdõ$RÃ"ÒÐ¢¢&V†–æBWfW'’&ævRÒÒ6òF†RæV"†–ÆÇ2ö66ÇVFRF†R7vVÆÂw2&öG’æ@¢¢öæÇ’—G27&W7G2'&V²F†V—"6·–Æ–æRâF†Bw2v†BÖ¶W2—B&VB0¢¢vFW"6VVâ7BF†RÖ÷VçF–ç2&F†W"F†â&æBÆ–B÷fW"F†R6·’à¢ ¢¢F†RÖV7W&VÖVçB—2æWfW"vFVC¢F†RFV6—6–öâ†2Fò&RÖFRöâF†R6ÖP¢¢Wf–FVæ6RBWfW'’6†VBÆWfVÂÂ÷"G&÷–ær'VærÖ–B×6öærv÷VÆB6–ÆVçFÇ¢¢6†ævRv†BF†RæW‡B&÷VæF'’FV6–FW2âöæÇ’F†RG&v–ær6†VG2ÂöâF†P¢¢6ÖR'Vær2F†R6öææV7F÷"6÷VçG'’—B'FæW'2v—F‚à¢¢ð¢öG&tF—7FçEvfR†7G‚Â6çf2Â²67&öÆÅƒÂ67&öÆÅƒÂ67&öÆÅƒ"ÒÂÂ"ÂBÂÇ†×VÂÒ’°¢òòÇ†×VÆ—2†÷rF†R6ÆÆW"7&÷76fFW2Gvò$ôd”ÄU2F‡&÷Vv‚F†—272à¢òòF†R†V–v‡D×VÂ&VÆ÷r—2–çFW'öÆFVBÂ'WBF†R7G&—6WB6ææ÷B&S¢F†—0¢òòG&w2öæRvVöÖWG'’ÂæBGvòF–ffW&VçB&–öÖW2†fRVçF—&VÇ’F–ffW&Vç@¢òòÖ÷VçF–ç2â6òv†VâF†R&öf–ÆW2F–ffW"F†R6ÆÆW"'Vç2F†R72Gv–6P¢òòæBF—76öÇfW2öæR–çFòF†R÷F†W"ÂF†Rv’F†RÖ–âÆ–W"72FöW2à¢6öç7B&öf–ÆRÒBâãRò"¢°¢6öç7B7G&—2ÒF†—2ç7G&—4f÷"‡&öf–ÆRææÖR“°¢–b‚7G&—2’&WGW&ã°¢6öç7B²g&öÓ¢†V–v‡D×VÄÒÂFó¢†V–v‡D×VÄ"ÒÒÒF†—2åöG&t†V–v‡D×VÂÇÂ·Ó°¢òò–çFW'öÆFVBÂäõB7v—F6†VBBF†RÖ–Gö–çBâ–6¶–æröæR6–FR÷"F†P¢òò÷F†W"7FW2F†Rv†öÆR÷fW&Æ’F†RÖöÖVçBB7&÷76W2ãS¢ÖV7W&VBBƒg€¢òòöâÃ"7&÷726–ævÆR6V7F–öâ&÷VæF'’ƒãƒ‚Óâãb—23"R6†ævR–à¢òò†V–v‡BÂæBF†RV·2Ö÷fRgW'F†W"F†âF†RÖVâFöW2’âF†B—2F†P¢òò&–FvRF†B'FVÆW÷'G2"öæ6RWfW'’6V7F–öââF†RÆ–W"72&VÆ÷rFöW2F†P¢òòWV—fÆVçB6÷'&V7FÇ’'’G&v–ær&÷F‚6–FW2æB7&÷76fF–ærF†VÓ²F†W6P¢òò÷fW&Æ—2G&röæRvVöÖWG'’Â6òF†R6öçF–çV—G’†2Fò6öÖRg&öÒF†P¢òò×VÇF—Æ–W"—G6VÆbà¢6öç7B†V–v‡D×VÂÒÆW'††V–v‡D×VÄÂ†V–v‡D×VÄ"ÂB“°¢6öç7BVæW&w’Ò&öf–ÆRçFW'&–äVæW&w’óò°¢6öç7B”öfbÒF†—2å÷¦ööÖVDw&÷VæE’†6çf2’²CÒ6çf2æ†V–v‡C°¢6öç7BFæ7’ÒF†—2åö7&W7Eö–çG2†6çf2Â7G&—2äÃ"Â67&öÆÅƒÂ”öfbÂtÃ"rÂVæW&w’Â†V–v‡D×VÂ“°¢–b‚Fæ7’’&WGW&ã°¢6öç7BæV&W"Ò°¢F†—2åö7&W7Eö–çG2†6çf2Â7G&—2äÃ2Â67&öÆÅƒÂ”öfbÂtÃ2rÂVæW&w’Â†V–v‡D×VÂ’À¢F†—2åö7&W7Eö–çG2†6çf2Â7G&—2äÃBÂ67&öÆÅƒ"Â”öfbÂtÃBrÂVæW&w’Â†V–v‡D×VÂ’À¢Òæf–ÇFW"„&ööÆVâ“°¢–b‚æV&W"æÆVæwF‚’&WGW&ã°¢6öç7B6·–Æ–æRÒFæ7’çG2æÖ‚…òÂ’’Óâ°¢ÆWBF÷Ò–æf–æ—G“°¢f÷"†6öç7BröbæV&W"’–b†rçG5¶•ÒbbrçG5¶•Òç’ÂF÷’F÷ÒrçG5¶•Òç“°¢&WGW&âF÷°¢Ò“°¢F†—2å÷&–FvTö66ÇW6–öå&rÒö66ÇVFVDg&7F–öâ†Fæ7’çG2Â6·–Æ–æR“° ¢6öç7BÖ—‚ÒF†—2åöF—7FçEvfTÖ—‚ÇÂ°¢F†—2æF—7FçEvfTFV'VrÒ²ö66ÇW6–öã¢F†—2å÷&–FvTö66ÇW6–öãÂöã¢F†—2åöF—7FçEvfTöâÂÖ—‚Ó°¢–b†Ö—‚Âã’&WGW&ã°¢–b‡F†—2å÷W&bbbF†—2å÷W&bæ†Vg•÷7Dg‚’&WGW&ã° ¢ÆWB7VÕ’ÒÂÖ–å’Ò–æf–æ—G’ÂÖ…’ÒÔ–æf–æ—G“°¢f÷"†6öç7BöbFæ7’çG2’²7VÕ’³Òç“²–b‡ç’ÂÖ–å’’Ö–å’Òç“²–b‡ç’âÖ…’’Ö…’Òç“²Ð¢6öç7BÖVå’Ò7VÕ’òFæ7’çG2æÆVæwFƒ°¢6öç7B&VÆ–VbÒÖF‚æÖ‚ƒÂÖ…’ÒÖ–å’“°¢6öç7B×‚ÒÖF‚æÖ–â…tdUôÕôÔ…õ‚ÂÖF‚æÖ‚…tdUôÕôÔ”åõ‚Â&VÆ–Vb¢tdUôÕôe$2’“°¢òòv†W&RF†R7vVÆÂ6—G2âF†Rö'f–÷W2ç7vW"ÒÒF†R&–FvRw2÷vâ7&W7BÆ–æP¢òòÒÒ—2w&öærÂæBw&öærf÷"F†R6ÖR&V6öâF†RfVGW&RW†—7G3¢&–FvP¢òòF†—272†2§W7BFV6–FVB—2%U$”TB—2Â'’FVf–æ—F–öâÂ&VÆ÷rF†P¢òò6·–Æ–æRF†B'W&–VB—BÂ6òvfRG&vâF†W&R—2†–FFVâFöòâ6òF†P¢òò&6VÆ–æR—2F¶Vâg&öÒv†–6†WfW"Æ–æR—2†–v†W"öâ67&VVâÂF†R&–FvRw0¢òòÖVâ7&W7B÷"F†Rö66ÇVF–ær6·–Æ–æRw2Âv—F‚F†R6·–Æ–æR6æF–FFP¢òòÆ–gFVB'’gVÆÂ×Æ—GVFR6òF†R7vVÆÂw2G&÷Vv‡26ÆV"—B&F†W"F†à¢òòöæÇ’—G27&W7G2â6Æ×VB÷WBöbF†RWW"6·’&æB6òfW'’FÆÂæV ¢òò&ævR6âwBW6‚F†R6VWÖöærF†R7F'2à¢ÆWB7VÕ6·’Ò°¢f÷"†6öç7B’öb6·–Æ–æR’7VÕ6·’³Ò“°¢6öç7BÖVå6·’Ò7VÕ6·’ò6·–Æ–æRæÆVæwFƒ°¢6öç7B&6VÆ–æU’ÒÖF‚æÖ‚€¢6çf2æ†V–v‡B¢ãRÀ¢ÖF‚æÖ–â†ÖVå’ÒtdUôÄ”eEõ‚ÂÖVå6·’Ò×‚ÒtdUôÄ”eEõ‚’À¢“° ¢6öç7BG2Ò7vVÆÄ7&W7B‡°¢v–GFƒ¢6çf2çv–GF‚Â&6VÆ–æU’Â×‚ÂE6V3¢F†—2çE6V2À¢67&öÆÅƒ¢67&öÆÅƒÂ7FWƒ¢5$U5Eõ5DUõ‚ÂVæW&w“¢6Æ×†VæW&w’’À¢Ò“°¢–b‡G2æÆVæwF‚Â"’&WGW&ã° ¢òòvFW"BF†—2F—7Fæ6R—2Ö÷7FÇ’6·“¢F†R6ÖR—"6öÆ÷"WfW'’&ævRw0¢òò&öG’—2v6†VBF÷v&B…7FvR2’ÂçVFvVBF÷v&BF†R&–öÖRw2÷vâ†Æò6ð¢òòF†R6V&VÆöæw2FòF†—2v÷&ÆB&F†W"F†â&V–æröæRw&W’WfW'—v†W&Rà¢6öç7B&6RÒVç7W&TÖ–äÆ–v‡FæW72€¢F†—2æÆW'66†RævWB‡F†—2åö—$6öÆ÷"ÇÂr3Vf#ƒrÂF†—2å÷&÷FFVB‡&öf–ÆRæ6VÆW7F–Âæ†Æô6öÆ÷"’Âã#"’À¢ã#"À¢“°¢6öç7B²"ÂrÂ"ÒÒ†W…Fõ&v"†&6R“°¢6öç7BÇ†ÒtdUôÅ„¢Ö—‚¢F†—2æ'VFvWB¢Ç†×VÃ°¢–b†Ç†Âã’&WGW&ã° ¢7G‚ç6fR‚“°¢6öç7B&÷GFöÒÒ&6VÆ–æU’²×‚²tdUô$äEõƒ°¢6öç7Bw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ&6VÆ–æU’Ò×‚ÂÂ&÷GFöÒ“°¢w&BæFD6öÆ÷%7F÷ƒÂ&v&‚G·'ÒÂG¶wÒÂG¶'ÒÂG¶Ç†çFôf—†VBƒ2—Ò–“°¢w&BæFD6öÆ÷%7F÷ƒãRÂ&v&‚G·'ÒÂG¶wÒÂG¶'ÒÂG²†Ç†¢ãr’çFôf—†VBƒ2—Ò–“°¢w&BæFD6öÆ÷%7F÷ƒÂ&v&‚G·'ÒÂG¶wÒÂG¶'ÒÃ–“°¢7G‚æf–ÆÅ7G–ÆRÒw&C°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡G5³Òç‚ÂG5³Òç’“°¢f÷"†ÆWB’Ò²’ÂG2æÆVæwFƒ²’²²’7G‚æÆ–æUFò‡G5¶•Òç‚ÂG5¶•Òç’“°¢7G‚æÆ–æUFò‡G5·G2æÆVæwF‚ÒÒç‚Â&÷GFöÒ“°¢7G‚æÆ–æUFò‡G5³Òç‚Â&÷GFöÒ“°¢7G‚æ6Æ÷6UF‚‚“°¢7G‚æf–ÆÂ‚“° ¢òòF†R7&W7BvÆ–çBâv—F†÷WB—BF†—2—2§W7Bæ÷F†W"†§’&–FvRÒÒF†P¢òòÖ÷f–ær†–v†Æ–v‡BöâF†R7vVÆÂ—2F†Rv†öÆR&V6öâF†RW–R&VG2vFW ¢òòæB¶VW2vF6†–ærF†R&6²öbF†R66VæRà¢–b‚F†—2ç&VGV6VDfÆ6‚’°¢7G‚ævÆö&ÄÇ†ÒtdUôtÄ”åEôÅ„¢Ö—‚¢F†—2æ'VFvWB¢Ç†×VÃ°¢7G‚ç7G&ö¶U7G–ÆRÒF†—2å÷&÷FFVB‡&öf–ÆRæ6VÆW7F–Âæ†Æô6öÆ÷"“°¢7G‚æÆ–æUv–GF‚ÒãC°¢7G‚æÆ–æT¦ö–âÒw&÷VæBs°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡G5³Òç‚ÂG5³Òç’“°¢f÷"†ÆWB’Ò²’ÂG2æÆVæwFƒ²’²²’7G‚æÆ–æUFò‡G5¶•Òç‚ÂG5¶•Òç’“°¢7G‚ç7G&ö¶R‚“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢öG&t6öææV7F÷$†–ÆÇ2†7G‚Â6çf2Â²67&öÆÅƒÂ67&öÆÅƒÂ67&öÆÅƒ"ÒÂÂ"ÂB’°¢–b‡F†—2å÷W&bbbF†—2å÷W&bæ†Vg•÷7Dg‚’&WGW&ã°¢6öç7B&öf–ÆRÒBâãRò"¢°¢6öç7B7G&—2ÒF†—2ç7G&—4f÷"‡&öf–ÆRææÖR“°¢–b‚7G&—2’&WGW&ã°¢6öç7B²g&öÓ¢†V–v‡D×VÄÒÂFó¢†V–v‡D×VÄ"ÒÒÒF†—2åöG&t†V–v‡D×VÂÇÂ·Ó°¢òò–çFW'öÆFVBÂäõB7v—F6†VBBF†RÖ–Gö–çBâ–6¶–æröæR6–FR÷"F†P¢òò÷F†W"7FW2F†Rv†öÆR÷fW&Æ’F†RÖöÖVçBB7&÷76W2ãS¢ÖV7W&VBBƒg€¢òòöâÃ"7&÷726–ævÆR6V7F–öâ&÷VæF'’ƒãƒ‚Óâãb—23"R6†ævR–à¢òò†V–v‡BÂæBF†RV·2Ö÷fRgW'F†W"F†âF†RÖVâFöW2’âF†B—2F†P¢òò&–FvRF†B'FVÆW÷'G2"öæ6RWfW'’6V7F–öââF†RÆ–W"72&VÆ÷rFöW2F†P¢òòWV—fÆVçB6÷'&V7FÇ’'’G&v–ær&÷F‚6–FW2æB7&÷76fF–ærF†VÓ²F†W6P¢òò÷fW&Æ—2G&röæRvVöÖWG'’Â6òF†R6öçF–çV—G’†2Fò6öÖRg&öÒF†P¢òò×VÇF—Æ–W"—G6VÆbà¢6öç7B†V–v‡D×VÂÒÆW'††V–v‡D×VÄÂ†V–v‡D×VÄ"ÂB“°¢6öç7B”öfbÒF†—2å÷¦ööÖVDw&÷VæE’†6çf2’²CÒ6çf2æ†V–v‡C°¢6öç7BFæ7’ÒF†—2åö7&W7Eö–çG2†6çf2Â7G&—2äÃ"Â67&öÆÅƒÂ”öfbÂtÃ"rÂ&öf–ÆRçFW'&–äVæW&w’óòÂ†V–v‡D×VÂ“°¢–b‚Fæ7’’&WGW&ã° ¢òòF†R6·–Æ–æRFö–ærF†R†–F–æs¢v†–6†WfW"öbF†RæV&W"&ævW27FæG0¢òò†–v†W7BBV6‚‚‡67&VVâ’Â6òF†RÖ–æ–×VÒ’à¢6öç7BæV&W"Ò°¢F†—2åö7&W7Eö–çG2†6çf2Â7G&—2äÃ2Â67&öÆÅƒÂ”öfbÂtÃ2rÂ&öf–ÆRçFW'&–äVæW&w’óòÂ†V–v‡D×VÂ’À¢F†—2åö7&W7Eö–çG2†6çf2Â7G&—2äÃBÂ67&öÆÅƒ"Â”öfbÂtÃBrÂ&öf–ÆRçFW'&–äVæW&w’óòÂ†V–v‡D×VÂ’À¢Òæf–ÇFW"„&ööÆVâ“°¢–b‚æV&W"æÆVæwF‚’&WGW&ã°¢6öç7B6·–Æ–æRÒFæ7’çG2æÖ‚…òÂ’’Óâ°¢ÆWBF÷Ò–æf–æ—G“°¢f÷"†6öç7BröbæV&W"’–b†rçG5¶•ÒbbrçG5¶•Òç’ÂF÷’F÷ÒrçG5¶•Òç“°¢&WGW&âF÷°¢Ò“° ¢6öç7B7ç2Òö66ÇVFVE7ç2†Fæ7’çG2Â6·–Æ–æR“°¢òòFV'Vr&VF÷WB„FV'Vt÷fW&Æ’Â&6·F–6²“¢v†BF†R727GVÆÇ’6rF†—0¢òòg&ÖRâ&V6öç7G'V7F–ær—Bg&öÒ÷WG6–FRÖVç2wVW76–ærF†R&ÆÆ€¢òò&F–÷2Âv†–6‚—2—G2÷vâ6÷W&6Röbw&öærç7vW'2à¢F†—2æ6öææV7F÷$FV'VrÒ²7ç3¢7ç2æÆVæwF‚ÂFWFƒ¢7ç2æÆVæwF‚òÖF‚æÖ‚‚ââç7ç2æÖ‚‡‚’Óâ‚æFWFƒ’’¢ÂÇ†¢Ó°¢–b‚7ç2æÆVæwF‚’&WGW&ã° ¢òòf÷&W7Böw&72ÂVÆÆVBg&öÒF†R&–öÖRw2÷vâ†Æò6ò—B7F–ÆÂ&VÆöæw2Fð¢òòF†—2v÷&ÆBÂ'WBG&vvVBvVÆÂF÷v&Bw&VVâæBFW6GW&FVBâfÆö÷&VB6ò—@¢òò7W'f—fW2F†RF&²ÆWGFW2Â6ÖRÆW76öâ2F†Rw&÷VæBà¢6öç7B&6RÒVç7W&TÖ–äÆ–v‡FæW72€¢F†—2æÆW'66†RævWB‡F†—2å÷&÷FFVB‡&öf–ÆRæ6VÆW7F–Âæ†Æô6öÆ÷"’Â4ôääT5Dõ%ôu$TTâÂ4ôääT5Dõ%ôu$TTåôÔ•‚’À¢4ôääT5Dõ%ôÔ”åôÄ”t…DäU52À¢“°¢6öç7B²"ÂrÂ"ÒÒ†W…Fõ&v"†&6R“° ¢7G‚ç6fR‚“°¢f÷"†6öç7B7âöb7ç2’°¢6öç7BG2Ò†–ÆÄ7W'fR‡7âÂFæ7’çG2Â6·–Æ–æRÂ²FW66VæEƒ¢4ôääT5Dõ%ôDU44TäEõ‚Ò“°¢–b‡G2æÆVæwF‚Â"’6öçF–çVS°¢òòv–FW"6ÖW&VÆÂÖ&6²Ç6òV&ç27G&öævW"6öææV7F÷"v6‚ÒÒF†P¢òòv–FR6†÷B—2W†7FÇ’v†W&RF†RfÆBv—B'&–FvW2—2Ö÷7Bf—6–&ÆRà¢òòF†RF—7FçBvfRç7vW'2F†R6ÖR6ö×Æ–çBF†W6R†–ÆÇ2FòÒÒ¢òò6–v‡FÆ–æR'&ö¶Vâ'’'W&–VB&–FvRÒÒ6òv†VâF†R7vVÆÂ†2F¶Và¢òòF†R†÷&—¦öâÂF†R6÷VçG'’7FæG2F÷vâ&F†W"F†â7F6¶–ær6V6öæ@¢òòf—‚öâF÷öbF†Rf—'7Bà¢6öç7BÇ†Ò4ôääT5Dõ%ôÅ„¢7âæFWFƒ¢F†—2æ'VFvW@¢¢ƒ²ãR¢6Æ×‡F†—2çVÆÆ&6³ÇÂ’’¢ƒÒ‡F†—2åöF—7FçEvfTÖ—‚ÇÂ’“°¢F†—2æ6öææV7F÷$FV'VræÇ†ÒÖF‚æÖ‚‡F†—2æ6öææV7F÷$FV'VræÇ†ÂÇ†“°¢–b†Ç†Âã’6öçF–çVS° ¢òò&æBF†BföÆÆ÷w2F†R†–ÆÇ2F÷vâæBF—76öÇfW2Âæ÷Bf–ÆÂFòF†P¢òòfÆö÷#¢—B'&–FvW2F†RvF†R†–FFVâ&–FvRÆVgBÂF†Vâ†æG2F†RW–P¢òò÷fW"FòF†R&ævR–âg&öçBà¢ÆWBF÷’Ò–æf–æ—G’Âfö÷E’ÒÔ–æf–æ—G“°¢f÷"†6öç7BöbG2’²–b‡ç’ÂF÷’’F÷’Òç“²–b‡ç’âfö÷E’’fö÷E’Òç“²Ð¢6öç7B&÷GFöÒÒÖF‚æÖ–â‡F†—2å÷¦ööÖVDw&÷VæE’†6çf2’²CÂfö÷E’²4ôääT5Dõ%ô$äEõ‚“°¢6öç7Bw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂF÷’ÂÂ&÷GFöÒ“°¢w&BæFD6öÆ÷%7F÷ƒÂ&v&‚G·'ÒÂG¶wÒÂG¶'ÒÂG¶Ç†çFôf—†VBƒ2—Ò–“°¢w&BæFD6öÆ÷%7F÷ƒãSRÂ&v&‚G·'ÒÂG¶wÒÂG¶'ÒÂG²†Ç†¢ãb’çFôf—†VBƒ2—Ò–“°¢w&BæFD6öÆ÷%7F÷ƒÂ&v&‚G·'ÒÂG¶wÒÂG¶'ÒÃ–“°¢7G‚æf–ÆÅ7G–ÆRÒw&C°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡G5³Òç‚ÂG5³Òç’“°¢f÷"†ÆWB’Ò²’ÂG2æÆVæwFƒ²’²²’7G‚æÆ–æUFò‡G5¶•Òç‚ÂG5¶•Òç’“°¢7G‚æÆ–æUFò‡G5·G2æÆVæwF‚ÒÒç‚Â&÷GFöÒ“°¢7G‚æÆ–æUFò‡G5³Òç‚Â&÷GFöÒ“°¢7G‚æ6Æ÷6UF‚‚“°¢7G‚æf–ÆÂ‚“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢ ¢¢67B6†F÷r…7FvRRöbF†RÖ÷VçF–â÷fW&†VÂ“¢F†RæV"&ævRF&¶Vç0¢¢F†RÇ&VG’ÖG&vâf'F†W"&ævR–â&æB&÷fRF†RæV"&ævRw2õtà¢¢7&W7BÒÒF†—2—2v†W&RF†RæV"6–Æ†÷VWGFR7GVÆÇ’7FæG2–âg&öçBö`¢¢F†Rf"öæRÂ6ò—Bw2F†R‡—6–6ÆÇ’6Vç6–&ÆRÆ6Rf÷"—G26†F÷rFð¢¢fÆÂâ×VÇF—Ç’Ö&ÆVæFVB†ÖF6†W2öG&u&–FvUföÇVÖRw2÷vâ6†FP¢¢fö6'VÆ'’’æB6Æ—VBFòF†Rf"&ævRw2&öG’W6–ærF†R6ÖR66†V@¢¢ö7&W7Eö–çG2vVöÖWG'’öG&u&–FvUföÇVÖR&VG2Â6òæòæWrvVöÖWG'’70¢¢—2æVVFVBâFVÆ–&W&FVÇ’æò†÷&—¦öçFÂ6†–gC¢76W'F–ær6†F÷p¢¢D•$T5D”ôâv÷VÆBöæÇ’&R†öæW7BVæFW"Æ÷rÂöfbÖ6ÖW&7VâÂæBF†—0¢¢'Vç2BWfW'’7VâVÆWfF–öâ‡7G&VæwF‚ÆöæRfÆÇ2öfbB†–v‚æööâÒÐ¢¢6VRF†—2åö67E6†F÷u7G&VæwF‚’à¢¢ð¢öG&t67E6†F÷r†7G‚Â6çf2Âf$Æ–W$¶W’ÂæV$Æ–W$¶W’Â67&öÆÄf"Â67&öÆÄæV"ÂÂ"ÂB’°¢–b‡F†—2å÷W&bbbF†—2å÷W&bæ†Vg•÷7Dg‚’&WGW&ã°¢6öç7B7G&VæwF‚ÒF†—2åö67E6†F÷u7G&VæwF‚ÇÂ°¢–b‡7G&VæwF‚ÃÒã"’&WGW&ã°¢6öç7B&öf–ÆRÒBâãRò"¢°¢6öç7B7G&—2ÒF†—2ç7G&—4f÷"‡&öf–ÆRææÖR“°¢–b‚7G&—2’&WGW&ã°¢6öç7Bf%7G&—Ò7G&—5¶f$Æ–W$¶W•ÒÂæV%7G&—Ò7G&—5¶æV$Æ–W$¶W•Ó°¢–b‚f%7G&—ÇÂæV%7G&—’&WGW&ã°¢6öç7B²g&öÓ¢†V–v‡D×VÄÒÂFó¢†V–v‡D×VÄ"ÒÒÒF†—2åöG&t†V–v‡D×VÂÇÂ·Ó°¢òò–çFW'öÆFVBÂäõB7v—F6†VBBF†RÖ–Gö–çBâ–6¶–æröæR6–FR÷"F†P¢òò÷F†W"7FW2F†Rv†öÆR÷fW&Æ’F†RÖöÖVçBB7&÷76W2ãS¢ÖV7W&VBBƒg€¢òòöâÃ"7&÷726–ævÆR6V7F–öâ&÷VæF'’ƒãƒ‚Óâãb—23"R6†ævR–à¢òò†V–v‡BÂæBF†RV·2Ö÷fRgW'F†W"F†âF†RÖVâFöW2’âF†B—2F†P¢òò&–FvRF†B'FVÆW÷'G2"öæ6RWfW'’6V7F–öââF†RÆ–W"72&VÆ÷rFöW2F†P¢òòWV—fÆVçB6÷'&V7FÇ’'’G&v–ær&÷F‚6–FW2æB7&÷76fF–ærF†VÓ²F†W6P¢òò÷fW&Æ—2G&röæRvVöÖWG'’Â6òF†R6öçF–çV—G’†2Fò6öÖRg&öÒF†P¢òò×VÇF—Æ–W"—G6VÆbà¢6öç7B†V–v‡D×VÂÒÆW'††V–v‡D×VÄÂ†V–v‡D×VÄ"ÂB“°¢6öç7B”öfbÒF†—2å÷¦ööÖVDw&÷VæE’†6çf2’²CÒ6çf2æ†V–v‡C°¢6öç7BVæW&w’Ò&öf–ÆRçFW'&–äVæW&w’óò°¢6öç7Bf$vVöÒÒF†—2åö7&W7Eö–çG2†6çf2Âf%7G&—Â67&öÆÄf"Â”öfbÂf$Æ–W$¶W’ÂVæW&w’Â†V–v‡D×VÂ“°¢6öç7BæV$vVöÒÒF†—2åö7&W7Eö–çG2†6çf2ÂæV%7G&—Â67&öÆÄæV"Â”öfbÂæV$Æ–W$¶W’ÂVæW&w’Â†V–v‡D×VÂ“°¢–b‚f$vVöÒÇÂæV$vVöÒ’&WGW&ã°¢–b‚†f$vVöÒæ&÷GFöÕ’âf$vVöÒæ7&W7E’’’&WGW&ã° ¢6öç7Bf$&öG’ÒæWrFƒ$B‚“°¢f$&öG’æÖ÷fUFò†f$vVöÒçG5³Òç‚Âf$vVöÒçG5³Òç’“°¢f÷"†ÆWB’Ò²’Âf$vVöÒçG2æÆVæwFƒ²’²²’f$&öG’æÆ–æUFò†f$vVöÒçG5¶•Òç‚Âf$vVöÒçG5¶•Òç’“°¢f$&öG’æÆ–æUFò†f$vVöÒçG5¶f$vVöÒçG2æÆVæwF‚ÒÒç‚Âf$vVöÒæ&÷GFöÕ’“°¢f$&öG’æÆ–æUFò†f$vVöÒçG5³Òç‚Âf$vVöÒæ&÷GFöÕ’“°¢f$&öG’æ6Æ÷6UF‚‚“° ¢òòF†RfFRW6VBFò6öÖRg&öÒfW'F–6Âw&F–VçBæ6†÷&VB@¢òòæV$vVöÒæ7&W7E–ÒÒF†R6–ævÆR†–v†W7Bö–çBöbF†RæV"&ævR7&÷70¢òòF†Rv†öÆR67&VVââF†B—2vÆö&ÂW‡G&V×VÒ÷fW"Dä4”är&–FvS ¢òòv†–6†WfW"6öÇVÖâ†Vç2Fò&RFÆÆW7B6†ævW2''WFÇ’g&ÖRFòg&ÖRÀ¢òò6òF†Rw&F–VçBw2÷6—F–öâ6æVB&÷VæBæBF†R6†F÷rfÆ–6¶W&VBà¢òð¢òò67&VVâ×fW'F–6Âw&F–VçBv2F†Rw&öær–ç7G'VÖVçBç—v’âF†R&æ@¢òòföÆÆ÷w2vg’7&W7BÂ6òöæRw&F–VçB6âöæÇ’&R6÷'&V7BBv†FWfW ¢òò†V–v‡B—Bv2æ6†÷&VBFòæB—2w&öærWfW'—v†W&RVÇ6Râ7F6¶V@¢òò7V"Ö&æG2ÂV6‚G&6–ærF†R7&W7BöÇ–Æ–æRB—G2÷vâöfg6WBÂWBF†P¢òòfÆÆöfbv†W&R—B&VÆöæw2ÒÒÖV7W&VBg&öÒF†RÄô4Â7&W7BBWfW'’‚ÒÐ¢òòæBFWVæBöâæòW‡G&V×VÒBÆÂÂ6òF†W&R—2æ÷F†–ærÆVgBFò6æà¢6öç7BåG2ÒæV$vVöÒçG3°¢7G‚ç6fR‚“°¢7G‚æ6Æ—†f$&öG’“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒv×VÇF—Ç’s°¢6öç7B7FWÒ45Eõ4„Dõuô$äEõ‚ò45Eõ4„Dõuõ5DU3°¢f÷"†ÆWB3"Ò²3"Â45Eõ4„Dõuõ5DU3²3"²²’°¢òòF&¶W7Bv–ç7BF†R7&W7BÂfF–ærWv&Bv’g&öÒ—Bà¢6öç7BÒ7G&VæwF‚¢ƒÒ3"ò45Eõ4„Dõuõ5DU2“°¢–b†ÂãB’6öçF–çVS°¢6öç7BrÒÖF‚æÖ‚ƒÂÖF‚æÖ–âƒ#SRÂÖF‚ç&÷VæBƒ#SR¢ƒÒ’’’“°¢7G‚æf–ÆÅ7G–ÆRÒ&v"‚G¶wÒÂG¶wÒÂG¶wÒ–°¢6öç7BÆòÒ×3"¢7FWÂ†’ÒÒ‡3"²’¢7FW°¢6öç7B&æBÒæWrFƒ$B‚“°¢&æBæÖ÷fUFò†åG5³Òç‚ÂåG5³Òç’²Æò“°¢f÷"†ÆWB’Ò²’ÂåG2æÆVæwFƒ²’²²’&æBæÆ–æUFò†åG5¶•Òç‚ÂåG5¶•Òç’²Æò“°¢f÷"†ÆWB’ÒåG2æÆVæwF‚Ò²’ãÒ²’ÒÒ’&æBæÆ–æUFò†åG5¶•Òç‚ÂåG5¶•Òç’²†’“°¢&æBæ6Æ÷6UF‚‚“°¢7G‚æf–ÆÂ†&æB“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢¢7VÖÖ—G2v÷'F‚67VÇF–æs¢Æö6ÂÖ†–ÖöbF†R7&W7Bv†÷6R&öÖ–æVæ6P¢¢††V–v‡B&÷fRF†RÆ÷vW"öbF†RGvò6FFÆW2fÆæ¶–ærF†VÒ’6ÆV'0¢¢4„õTÄDU%ôÔ”åõ$ôÔ”äTä4RÂF†–ææVB6òæòGvò6—B6Æ÷6W"F†à¢¢4„õTÄDU%ôÔ”åõ54”äuõ‚æBöæÇ’F†RFÆÆW7BfWr7W'f—fRâ&öÖ–æVæ6P¢¢&F†W"F†â&&RÆö6ÂÖÖ‚FW7B—2F†Rv†öÆRö–çC¢öâæö—6R&–FvP¢¢WfW'’F†—&B6×ÆR—2Æö6ÂÖ‚ÂæB7W'&–ærÆÂöbF†VÒ—2†÷r–÷P¢¢GW&âÖ÷VçF–â&ævR–çFò†—&&ÆÂâ¢ð¢÷&–FvUV·2‡G2’°¢6öç7B6æG2ÒµÓ°¢f÷"†ÆWB’Ò²’ÂG2æÆVæwF‚Ò²’²²’°¢–b‚‡G5¶•Òç’ÂG5¶’ÒÒç’bbG5¶•Òç’ÃÒG5¶’²Òç’’’6öçF–çVS°¢òòvÆ²÷WB&÷F‚v—2FòF†R6FFÆR&Vf÷&RF†Rw&÷VæB&—6W2v–âà¢ÆWBÂÒ’ÂÆòÒG5¶•Òç“°¢v†–ÆR†ÂâbbG5¶ÂÒÒç’ãÒG5¶ÅÒç’’²ÂÒÓ²ÆòÒÖF‚æÖ‚†ÆòÂG5¶ÅÒç’“²Ð¢ÆWB"Ò’Â&òÒG5¶•Òç“°¢v†–ÆR‡"ÂG2æÆVæwF‚ÒbbG5·"²Òç’ãÒG5·%Òç’’²"²³²&òÒÖF‚æÖ‚‡&òÂG5·%Òç’“²Ð¢6öç7B&öÖ–æVæ6RÒÖF‚æÖ–â†ÆòÂ&ò’ÒG5¶•Òç“°¢–b‡&öÖ–æVæ6RãÒ4„õTÄDU%ôÔ”åõ$ôÔ”äTä4R’6æG2çW6‚‡²’Â&öÖ–æVæ6RÒ“°¢Ð¢6æG2ç6÷'B‚†Â"’Óâ"ç&öÖ–æVæ6RÒç&öÖ–æVæ6R“°¢6öç7B¶WBÒµÓ°¢f÷"†6öç7B2öb6æG2’°¢–b†¶WBæÆVæwF‚ãÒ4„õTÄDU%ôÔ…õU%õ$ätR’'&V³°¢–b†¶WBç6öÖR‚†²’ÓâÖF‚æ'2‡G5¶²æ•Òç‚ÒG5¶2æ•Òç‚’Â4„õTÄDU%ôÔ”åõ54”äuõ‚’’6öçF–çVS°¢¶WBçW6‚†2“°¢Ð¢&WGW&â¶WC°¢Ð ¢ò¢ ¢¢v—fW2Fæ6–ær&ævR—G2F†—&BF–ÖVç6–öââGvòF†–æw2Â&÷F‚Æ—fR÷fW ¢¢F†R&Æ—GFVB7G&— ¢ ¢¢âFWF‚w&F–VçBæ6†÷&VBFòF†R45$TTâ&F†W"F†âFòF†R7G&— ¢¢&—FÖâF†R&¶VBw&F–VçB–ç6–FRV6‚7G&——26†–gFVBW"Fæ6P¢¢6öÇVÖâ…öG&tFæ6–æu7G&—&Æ—G2–âDä4Uô4ôÅõr6Æ–6W2ÂV6‚B—G0¢¢÷vâfW'F–6Âöfg6WB’Â6òBWfW'’6öÇVÖâ&÷VæF'’F†R6ÖR67&VVâ&÷p¢¢ÆæG2öâF–ffW&VçB'BöbF†Bw&F–VçBÒÒ†&BfW'F–6Â6†FP¢¢7FWWfW'’#‡‚ÂÖ&6†–ær7&÷72F†R&ævR2—BFæ6W2â&RÖÆ––æp¢¢F†Rw&F–VçB–â67&VVâ76R÷fW"F†Rv†öÆR&öG’&W7F÷&W2öæP¢¢6öçF–çV÷W26†FR7&÷72ÆÂöbF†VÒà¢ ¢¢"â6†÷VÆFW'2öâF†R7VÖÖ—G3¢g&öÒV6‚V²Â7W"FW66VæF–ærF÷v&@¢¢F†Rf–WvW"ÆÂF†Rv’–çFòF†Rw&÷VæB&æBÂæB6†÷'FW"öæP¢¢'Vææ–ærv’g&öÒW2F†BfFW2÷WB&Vf÷&R—BÆæG2âF†Rf6W@¢¢&WGvVVâF†RæV"7W"æBF†R6·–Æ–æR—26†FVBÂv†–6‚—2v†@¢¢7GVÆÇ’GW&ç2F†R6–Æ†÷VWGFR–çFò6öÆ–BÒÒ&–FvRÆ–æRv—F‚¢¢fÆBf–ÆÂVæFW"—B&VG22W"7WF÷WBæòÖGFW"†÷ræ–6VÇ’—@¢¢Ö÷fW2â¶WBvVÆÂVæFW"F†R7&W7Bw2÷vâ6öçG&7B6òF†R6·–Æ–æR7F—0¢¢F†RF†–ær–÷R&VBf—'7Bà¢¢ð¢ò¢ ¢¢6†F–æræBFWF‚f÷"öæR&ævR&öG’à¢ ¢¢vVöÆöw–‡6æ÷r62Â6VF–ÖVçF'’&VFF–ær’—2Ç–æR×7V6–f–2æBöfb'¢¢FVfVÇBf÷"6ÆÆW'2F†B÷B–âg&öÒæ÷F†W"v÷&ÆB¶–æC¢6—G’6·–Æ–æP¢¢÷"f÷VæG'’w27F6·2†fR6–Æ†÷VWGFW2F†BæVVB6†F–ær§W7B2×V6‚À¢¢'WB6æ÷v62æB&ö6²7G&FöâF†VÒv÷VÆB&Ræöç6Vç6RâF†R4„D”är†Æ`¢¢—2Væ—fW'6ÂÒÒF†R7G&—&¶R—26–ævÆRfÆBf–ÆÂ'’FW6–vâ‡6VP¢¢6–Æ†÷VWGFTvVæW&F÷#¢&¶VBw&F–VçB6Æ–6VB–çFò–æFWVæFVçFÇ’Ööfg6W@¢¢Fæ6R6öÇVÖç2—2†&B6VÒBWfW'’6öÇVÖâ&÷VæF'’’Â6òF†—272—0¢¢F†RöæÇ’6÷W&6Röb6†F–ærFWF‚ç’&ævR†2Â–âç’v÷&ÆBà¢¢ð¢öG&u&–FvUföÇVÖR†7G‚Â6çf2Â7G&—Â67&öÆÅ‚Â”öfbÂÆ–W$¶W’ÂÇ†ÂFW'&–äVæW&w’ÒÂ†V–v‡D×VÂÒÂ6æ÷tÆ–æSÒÂ²vVöÆöw’ÒG'VRÂvVöÖWG'’ÒvFæ6–ærrÒÒ·Ò’°¢òò6V–Æ–ærÆæFf÷&×2&R†æv–ærÖ76W2âfö÷BÖæ6†÷&VB7&W7B6†F–æp¢òò†6F6†Æ–v‡Böâ7VÖÖ—BÂ6†FRööÆ–ær–âfÆÆW’’–çG2F†P¢òòw&öærföÇVÖRöçFòfVÇB÷"6æ÷’(	B'WB6¶—–ærF†R70¢òòVçF—&VÇ’ÆVgBF†÷6Rv÷&ÆG226&F&ö&B7WF÷WG2†æv–ærg&öÒF†P¢òòF÷öbF†Rg&ÖRâF†V—"÷vâföÇVÖS¢Æ–v‡BöâF†RFævÆ–ærVFvRÀ¢òò6†FRBF†RGF6†ÖVçBà¢–b‡7G&—òç&–FvSòææ6†÷"ÓÓÒv6V–Æ–ærr’°¢F†—2åöG&t6V–Æ–æuföÇVÖR†7G‚Â6çf2Â7G&—Â67&öÆÅ‚Â”öfbÂÆ–W$¶W’ÂÇ†“°¢&WGW&ã°¢Ð¢6öç7B7G&VæwF‚Ò$”DtUõdôÅTÔUõ5E$TäuD…¶Æ–W$¶W•Òóò°¢–b‡7G&VæwF‚ÃÒ’&WGW&ã°¢6öç7BvVöÒÒF†—2åö7&W7Eö–çG2†6çf2Â7G&—Â67&öÆÅ‚Â”öfbÂÆ–W$¶W’ÂFW'&–äVæW&w’Â†V–v‡D×VÂÂvVöÖWG'’“°¢–b‚vVöÒ’&WGW&ã°¢6öç7B²G2Â&÷GFöÕ’Â7&W7E’Â&¶VD7&W7E’ÒÒvVöÓ°¢–b‚†&÷GFöÕ’â7&W7E’’’&WGW&ã° ¢òòF†R&öG’Fƒ¢F†R6·–Æ–æRÂF†Vâ7G&–v‡BF÷vâæB&6²ÆöærF†P¢òò&ævRw2÷vâ&÷GFöÒVFvRà¢6öç7B&öG’ÒæWrFƒ$B‚“°¢&öG’æÖ÷fUFò‡G5³Òç‚ÂG5³Òç’“°¢f÷"†ÆWB’Ò²’ÂG2æÆVæwFƒ²’²²’&öG’æÆ–æUFò‡G5¶•Òç‚ÂG5¶•Òç’“°¢&öG’æÆ–æUFò‡G5·G2æÆVæwF‚ÒÒç‚Â&÷GFöÕ’“°¢&öG’æÆ–æUFò‡G5³Òç‚Â&÷GFöÕ’“°¢&öG’æ6Æ÷6UF‚‚“° ¢7G‚ç6fR‚“°¢7G‚æ6Æ—†&öG’“° ¢òò67&VVâÖæ6†÷&VBFWFƒ¢6F6‚F†RÆ–v‡BÆöærF†R7&W7BÂ6–æ²F†P¢òòfö÷BÂÆVfRF†RÖ–FFÆRÆöæRâFVÆ–&W&FVÇ’äõB&W–çB–âF†P¢òò&–öÖRw2÷vâ6öÆ÷"ÒÒF†R7G&—2&RÇ&VG’†¦RÖÖ—†VBF÷v&BF†R6·¢òò'’F—7Fæ6RÂæB&RÖf–ÆÆ–ærF†VÒv—F‚Æ–v‡FVæVB6–Æ†÷VWGFR‡VP¢òòF‡&÷w2F†Bv’†6GW&FVBÆWGFRGW&ç2–çFò6Æ"öbæVöâ’à¢òò§W7B2FVÆ–&W&FVÇ’æ÷BW&RF&¶Væ–ærV—F†W#¢F†W6R66VæW2&P¢òòÇ&VG’F–ÒÂæBF†R6ö×Æ–çB&V–ærç7vW&VB†W&R—2F†BF†R&ævW0¢òò&R†&BFò$TBÂ6òF†R72†2FòFB6öçG&7Bv—F†÷WB7VæF–æp¢òò÷fW&ÆÂ'&–v‡FæW72FòvWB—Bà¢òð¢òò6öVff–6–VçG2'V×VBg&öÒãóã#bÒÒF†R7G&—W6VBFòÇ6ò6''’¢òò&¶VBfW'F–6Âw&F–VçB…6–Æ†÷VWGFTvVæW&F÷"w2w&VæFW&VBr6†FTÖöFR’À¢òòæBF†—272öæÇ’WfW"DDTB6öçG&7BöâF÷öbF†BâF†R7G&——0¢òòæ÷rfÆBÖ–B×FöæRf–ÆÂ‡6VR6–Æ†÷VWGFTvVæW&F÷"æ§2f÷"v‡“¢&¶V@¢òòw&F–VçB6Æ–6VB–çFò–æFWVæFVçFÇ’Ööfg6WBFæ6R6öÇVÖç2—2†&@¢òòfW'F–6Â6VÒBWfW'’6öÇVÖâ&÷VæF'’’Â6òF†—267&VVâ×76R72—0¢òòF†R&ævRw2ôäÅ’6÷W&6Röb6†F–ærFWF‚æB†2Fò6''’F†RgVÆÀ¢òòÆöBÆöæRà¢òð¢òòæ6†÷&VBFò&¶VD7&W7E’ÂäõB7&W7E“¢7&W7E’—2Æ—fRvÆö&ÂW‡G&V×VÐ¢òò÷fW"&–FvRF†BFæ6W2æB67&öÆÇ2‡6VRö7&W7Eö–çG2ÒÒ&Ö÷fW2WfW'¢òòg&ÖR"’Â6ÖRf–ÇW&RÇ&VG’F–væ÷6VBæBf—†VBf÷"F†R6æ÷rÆ–æR¢òòfWrF÷¦VâÆ–æW2&VÆ÷rF†—2âæ6†÷&–ærF†R6F6†Æ–v‡B÷6†FRw&F–VçG0¢òòFò—B–ç7FVBÖFRF†—272vö&&ÆRv—F‚F†VÓ¢v†–6†WfW"6öÇVÖà¢òò†VæVBFò&RFÆÆW7B6†ævVBg&ÖRFòg&ÖRÂ6Æ–F–ærF†Rw&F–VçBw0¢òò7F'Bö–çBWæBF÷vâæB&VF–ær2F†R6†F–ær—G6VÆbfÆ–6¶W&–ærà¢òò&¶VD7&W7E’—2F†R&ævRw2÷vâ7F&ÆR7VÖÖ—BÂg&VRöbFæ6R÷67&öÆÂÒÐ¢òòF†R6Æ—&öG’&VÆ÷r7F–ÆÂföÆÆ÷w2F†RÆ—fRW"Ö6öÇVÖâ6–Æ†÷VWGFRÂ6ð¢òòF†R6†F–ær&æBw24„R7F–ÆÂG&6·2F†R&–FvS²öæÇ’—G2fW'F–6À¢òòfÆÆöfbæ6†÷"†öÆG27F–ÆÂà¢6öç7B6†FUF÷’ÒçVÖ&W"æ—4f–æ—FR†&¶VD7&W7E’’ò&¶VD7&W7E’¢7&W7E“°¢6öç7Bv÷&ÆD¶–æBÒF†—2çv÷&ÆCòæ¶–æBÇÂvÇ–æRs°¢6öç7BÖBÒÖFW&–Äf÷"‡v÷&ÆD¶–æB“°¢6öç7B6ÂÒ6F6†Æ–v‡E&v"‡v÷&ÆD¶–æB“°¢–b†6Â’°¢6öç7Bw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ6†FUF÷’ÂÂ&÷GFöÕ’“°¢w&BæFD6öÆ÷%7F÷ƒÂ&v&‚G¶6Âç'ÒÂG¶6ÂæwÒÂG¶6Âæ'ÒÂG²…$”DtUô4D4„Ä”t…EôÅ„¢Ç†¢7G&VæwF‚’çFôf—†VBƒ2—Ò–“°¢w&BæFD6öÆ÷%7F÷ƒã3BÂw&v&ƒÃÃÃ’r“°¢7G‚æf–ÆÅ7G–ÆRÒw&C°¢7G‚æf–ÆÂ†&öG’“°¢Ð ¢òòF†R6†FR†ÆbæBF†RW&–Â×W'7V7F—fRv6‚&VÆ÷r—B&R&÷F€¢òòvFVBöâ&–FvU6†F–ætgVÆÃ¢&VÂ6÷7B†6Æ—VBw&F–VçBf–ÆÂV6‚À¢òò6ÖR2F†R6F6†Æ–v‡B72&÷fR’Â'WBæ÷B6÷&RF†Rv’6F6†Æ–v‡@¢òò—2â6F6†Æ–v‡BÆöæR7F–ÆÂ&VG22Æ—BÂF‡&VRÖF–ÖVç6–öæÂ&–FvP¢òò&F†W"F†âF†RfÆB6–Æ†÷VWGFRF†—2v†öÆR7—7FVÒ&WÆ6VBÒÒ—Bw0¢òòF†R6†FR¶W&–Â—"F†Bw2F†R6†VBÖ&ÆR&W‡G&"6öçG&7BöFWF‚öà¢òòF÷öbF†BÂæBW&dv÷fW&æ÷"w2÷vâÆ7B'Vær—2F†RöæÇ’Æ6RF†—0¢òò†2WfW"†BÆWfW"FòVÆÂ‡6VR&–FvU6†F–ætgVÆÂw2÷vâ6öÖÖVçB’à¢6öç7B&–FvU6†F–ætgVÆÂÒF†—2å÷W&bÇÂF†—2å÷W&bç&–FvU6†F–ætgVÆÃ° ¢òòF†R6†FR†Æc¢vVçV–æR×VÇF—Ç’ö66ÇW6–öâ–ç7FVBöbâÇ†Ð¢òò&ÆVæFVB&Æ6²v6‚âG&ç6ÇV6VçB&Æ6²f–ÆÂVæFW"F†RFVfVÇ@¢òò6÷W&6RÖ÷fW"6ö×÷6—FW2”DTåD”4ÄÅ’FòG'VR×VÇF—Ç’v†VâF†P¢òò6÷W&6R—2W&R&Æ6²†6òÒ6"¢ƒÖ’V—F†W"v’’ÒÒ—B6âöæÇ’WfW ¢òòv6‚F†R7W&f6RF÷v&B&Æ6²ÂæWfW"F&¶Vâ—Bv†–ÆR¶VW–ær—G0¢òò÷vâ‡VRÂv†–6‚—2v‡’F†R6†FVB†ÆbÇv—2&VBfÆBâgVÆÇ’Ð¢òòõTRw&’f–ÆÂVæFW"v×VÇF—Ç’r–ç7FVB66ÆW2F†RFW7F–æF–öâ'¢òòF†Bw&’fÇVR†6òÒ6"¦r’Â6òv†FWfW"‡VR÷6GW&F–öâF†R7G&— ¢òòÇ&VG’6'&–W27W'f—fW2–çFò—G2÷vâ6†F÷râ×VÇF—Ç’6âöæÇ¢òòWfW"F&¶Vâ†sÃÓÇv—2’Âv†–6‚—2W†7FÇ’v‡’F†—2†2Fò&R¢òò6V6öæB72&F†W"F†âföÆFVB–çFòF†RÆ—Bw&F–VçB&÷fRà¢–b‡&–FvU6†F–ætgVÆÂ’°¢6öç7B6†FU7G&VæwF‚Ò$”DtUõ4„DUõ5E$TäuD‚¢Ç†¢7G&VæwFƒ°¢6öç7BrÒÖF‚æÖ‚ƒÂÖF‚æÖ–âƒ#SRÂÖF‚ç&÷VæBƒ#SR¢ƒÒ6†FU7G&VæwF‚’’’“°¢6öç7B6†FTw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ6†FUF÷’ÂÂ&÷GFöÕ’“°¢6†FTw&BæFD6öÆ÷%7F÷ƒÂw&v"ƒ#SRÃ#SRÃ#SR’r“°¢6†FTw&BæFD6öÆ÷%7F÷ƒã3BÂw&v"ƒ#SRÃ#SRÃ#SR’r“°¢6†FTw&BæFD6öÆ÷%7F÷ƒÂ&v"‚G¶wÒÂG¶wÒÂG¶wÒ–“°¢7G‚ç6fR‚“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒv×VÇF—Ç’s°¢7G‚æf–ÆÅ7G–ÆRÒ6†FTw&C°¢7G‚æf–ÆÂ†&öG’“°¢7G‚ç&W7F÷&R‚“°¢Ð ¢òòW&–ÂW'7V7F—fR…7FvR2öbF†RÖ÷VçF–â÷fW&†VÂ“¢U$”ÅõTÄÂv0¢òòÇ&VG’6ö×WFVBöæ6RW"g&ÖR–çFòF–çDÃ"âçF–çDÃR‡6VRG&r‚’’æ@¢òò†æFVBFòöG&tÆ–W"2—G2F–çF&wVÖVçBÒÒv†–6‚F†—2gVæ7F–öà¢òòæWfW"&VBÂ6òF†Rv†öÆRF&ÆRv2FVB6öFRÂGVæVBv–ç7B66VæP¢òòv†W&R—BæWfW"F÷V6†VB—†VÂâF†—2—2F†Rf—'7BÆ—fRW6Röb—C¢¢òòv6‚F÷v&BF†—2åö—$6öÆ÷"‡F†R6ÖR6·’Ö†÷&—¦öâ6öÆ÷"F†RF–çBVÆÀ¢òòF&vWG2’Â&÷GFöÒ×vV–v‡FVB6–æ6R†¦RööÇ2–âfÆÆW—2&F†W"F†à¢òò6Æ–æv–ærFò7VÖÖ—BâÃRvWG2U$”ÅõTÄÂäÃRÓÓÒÂ6òF†—2—2¢òòwV&çFVVBæòÖ÷F†W&RÒÒF†RæV"æ6†÷"7F—2W†7FÇ’27&—70¢òò—G2WF†÷&VB6öÆ÷"à¢6öç7BW&–ÅVÆÂÒU$”ÅõTÄÅ¶Æ–W$¶W•ÒÇÂ°¢–b‡&–FvU6†F–ætgVÆÂbbW&–ÅVÆÂâãbbÖBæW&–ÂÓÒfÇ6R’°¢6öç7B—$†W‚ÒÖBæW&–ÂÓÓÒv–çfW'Bp¢ò†ÖBæFVWÇÂr3#Rr¢¢F†—2åö—$6öÆ÷#°¢–b†—$†W‚’°¢6öç7B—"Ò†W…Fõ&v"†—$†W‚“°¢6öç7BW&–ÄÇ†ÒW&–ÅVÆÂ¢Ç†¢7G&VæwFƒ°¢6öç7BW&–Äw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ7&W7E’ÂÂ&÷GFöÕ’“°¢W&–Äw&BæFD6öÆ÷%7F÷ƒÂ&v&‚G¶—"ç'ÒÂG¶—"æwÒÂG¶—"æ'ÒÂG²†W&–ÄÇ†¢ã3R’çFôf—†VBƒ2—Ò–“°¢W&–Äw&BæFD6öÆ÷%7F÷ƒÂ&v&‚G¶—"ç'ÒÂG¶—"æwÒÂG¶—"æ'ÒÂG¶W&–ÄÇ†çFôf—†VBƒ2—Ò–“°¢7G‚æf–ÆÅ7G–ÆRÒW&–Äw&C°¢7G‚æf–ÆÂ†&öG’“°¢Ð¢Ð ¢òò6æ÷vÆ–æR…7FvRB“¢6öærÖw&÷VæFVB62&–F–ærF†R6ÖRW"Ö6öÇVÖà¢òòƒ7FvR"Ç&VG’6ö×WFW2f÷"F†—2W†7B7&W7BÒÒ7VÖÖ—Bv†÷6P¢òòõtâ&VÆF—fR†V–v‡B†ƒÂâãv—F†–âF†—2&ævR’6ÆV'2F†R7F—fP¢òò6V7F–öâw26æ÷tÆ–æSF‡&W6†öÆBvWG26VBÂöæRF†BFöW6âwB7F—0¢òò&&R&ö6²âg&VR6Æ—†Ç&VG’–ç6–FR&öG–’Âg&VRFVf÷&ÖF–öâ†ƒ¢òòÇ&VG’&VfÆV7G27FvR"w2Fæ6R’ÂvFVBöâ†VæöÖVægVÆÂ6–æ6R—Bw0¢òòFÖ÷7†W&R&F†W"F†âF†RÖ÷VçF–âw2÷vâf÷&Òà¢6öç7BvçE6æ÷rÒvVöÆöw’bb‚F†—2å÷W&bÇÂF†—2å÷W&bç†VæöÖVægVÆÂ“°¢–b‡vçE6æ÷rbb6æ÷tÆ–æSÂ’°¢òò6æ÷r—2âÅD•ETDRÂæBF†—2W6VBFò6²F†Rw&öærVW7F–öâöbF†P¢òòw&öærf&–&ÆS¢æƒâ6æ÷tÆ–æSFW7G26öÇVÖâw2&VÆF—fR†V–v‡@¢òòv—F†–âF†R&ævRÂæBƒ—2W"ÓcG‚Ö6öÇVÖâf–wW&RÂ6òF†Rç7vW ¢òò7FWVB&WGvVVâæV–v†&÷W&–ær7&W7B6×ÆW2â6F†W&Vf÷&R&Vvâæ@¢òòVæFVB–â6–ævÆR6×ÆRw2v–GF‚ÒÒfW'F–6Âv†—FR6Æ–fbG&÷V@¢òòF÷vâF†RÖ÷VçF–ç6–FRÂv†–6‚—2v†BF†R&fÆB×F÷VB6Æ'2v—F€¢òò7G&–v‡B6–FW2"–âF†R&W÷'B7GVÆÇ’vW&Rà¢òð¢òòF†R†öæW7BFW7B—2v†WF†W"F†R5U$d4R—2&÷fRF†R6æ÷rÆ–æRÂv†–6€¢òò—26öçF–çV÷W2'’6öç7G'V7F–öã¢v†W&RF†R&–FvR7&÷76W2F†RÇF—GVFP¢òòF†R6w2F÷æB&÷GFöÒVFvW2ÖVWBæBF†RöÇ–vöâ6–×Ç’6Æ÷6W2à¢òòæ÷F†–ærFò7FWÂ6òF†W&R—2æò6Æ–fbFòG&rà¢òòââææBF†RÇF—GVFR—G6VÆbv2–çfW'FVBâ6æ÷tÆ–æS—2¢òò†V–v‡BÕ$ä²F‡&W6†öÆB–â³ãSRÂÒ‡6æ÷tÆ–æSf÷#¢&6öÇVÖâÖ†V–v‡B×&æ°¢òò&÷fRv†–6‚6öÇVÖâw2÷vâV²—26VB"’Â6ò6æ÷r&VÆöæw2öâF†P¢òòF÷Ò6æ÷tÆ–æSöbF†R&VÆ–VbÒÒBã‚ÂF†RF÷f–gF‚âÖV7W&–æp¢òòƒÒ6æ÷tÆ–æS–Ue$ôÒD„RdôõB–ç7FVBWBF†RÆ–æRBf–gF‚ö`¢òòF†Rv’WæB'W&–VBf÷W"f–gF‡2öbWfW'’&ævR–â6æ÷rà¢òð¢òòF†B–çfW'6–öâ†2&VVâ†W&R6–æ6RF†R6æ÷vÆ–æRÆæFVBÂ'WB—Bv0¢òòÖ6¶VC¢v†–ÆRF†RW"Ö6öÇVÖâƒFW7BvFVBv†–6‚6öÇVÖç2v÷Bç’6æ÷p¢òòBÆÂÂF†—2ÇF—GVFRöæÇ’WfW"6Æ×VBF†VÒâ&VÖ÷f–ærF†BFW7B†—@¢òòv2F†R6W6RöbF†RfW'F–6Â6æ÷r6Æ–fg2’&öÖ÷FVBF†R'VrFòF†P¢òòv†öÆR&V†f–÷"ÂæBF†R&ævW2vVçBv†—FRà¢òòÖV7W&VBg&öÒF†R$´TB7VÖÖ—BÂæ÷BF†RÆ—fRöæRâ7&W7E–—2vÆö&À¢òòÖ–â÷fW"&–FvRF†BFæ6W2æB67&öÆÇ2Â6ò—B&W÷'G2F–ffW&Vç@¢òò6öÇVÖâg&ÖRFòg&ÖS¢ÖV7W&VBBg‚öbvæFW"g&öÒF†RFæ6RÆöæP¢òòæBbÓ#‚öæ6RF†Rv÷&ÆB67&öÆÇ2â†æv–ærF†R6æ÷rÅD•ETDRöfb—@¢òòÖFRF†Rv†öÆRÆ–æRÒÒæBF†Rw&F–VçB&VÆ÷rÒÒ7&vÂWæBF÷vâF†P¢òò&ævR2–÷R&âÂv†–6‚—2æ÷B6öÖWF†–ær6æ÷rÆ–æRFöW2âF†R&¶V@¢òò7VÖÖ—B—2&÷W'G’öbF†R&ævR—G6VÆbæB†öÆG27F–ÆÂà¢6öç7B&VÆ–VeF÷ÒçVÖ&W"æ—4f–æ—FR†&¶VD7&W7E’’ò&¶VD7&W7E’¢7&W7E“°¢6öç7B6æ÷tÇE’Ò&÷GFöÕ’Ò6æ÷tÆ–æS¢†&÷GFöÕ’Ò&VÆ–VeF÷“°¢òòââææBF†RÆ–æR—G6VÆbvWG2vVçFÆRvæFW"Â6ò—BFöW6âwB&VB2¢òò'VÆW"Æ–B7&÷72F†R&ævRâ6ÖÆÂæW‡BFòF†R&VÆ–Vb—B6—G2–âà¢6öç7Bvö&&ÆRÒ‡7G&—‚’Óâb¢ÖF‚ç6–â‡7G&—‚ò#c’²2¢ÖF‚ç6–â‡7G&—‚ò“r²ãr“°¢6öç7BÇDBÒ‡’Óâ6æ÷tÇE’²vö&&ÆR‡ç7G&—‚“°¢ÆWBç”6ÒfÇ6S°¢f÷"†6öç7BöbG2’–b‡ç’ÂÇDB‡’’²ç”6ÒG'VS²'&V³²Ð¢–b†ç”6’°¢6öç7B6ÒæWrFƒ$B‚“°¢f÷"†ÆWB’Ò²’ÂG2æÆVæwFƒ²’²²’°¢6öç7BÒG5¶•Ó°¢6öç7B’ÒÖF‚æÖ–â‡ç’ÂÇDB‡’“°¢–b†’ÓÓÒ’6æÖ÷fUFò‡ç‚Â’“²VÇ6R6æÆ–æUFò‡ç‚Â’“°¢Ð¢f÷"†ÆWB’ÒG2æÆVæwF‚Ò²’ãÒ²’ÒÒ’6æÆ–æUFò‡G5¶•Òç‚ÂÇDB‡G5¶•Ò’“°¢6æ6Æ÷6UF‚‚“°¢òòVÆÆVBF÷v&BF†—2åö—$6öÆ÷"…7FvR2’&F†W"F†âW&Rv†—FRÒÐ¢òò÷F†W'v—6R6æ÷r6÷2÷WBöbF†R†¦RF†Bw27W÷6VBFò&P¢òò&V6VF–ær—B–çFòF†RF—7Fæ6RÆöærv—F‚WfW'—F†–ærVÇ6R@¢òòF†—2FWF‚à¢6öç7B6æ÷t6öÆ÷"ÒF†—2åö—$6öÆ÷ ¢òF†—2æÆW'66†RævWB‚r6cVc–fbrÂF†—2åö—$6öÆ÷"Âã#"¢¢r6cVc–fbs°¢òòfF–ær÷WBF÷v&BF†R6æ÷rÆ–æR&F†W"F†âf–ÆÆ–ærfÆC¢¢òò6öç7FçBÇ†VæG2öâ†&B†÷&—¦öçFÂVFvR&–v‡Bv†W&RF†R6 ¢òòÖVWG2&&R&ö6²ÂæBF†BVFvRv2&VF–ær2F†R&÷GFöÒöb6Æ"à¢6öç7B6æ÷uF÷ÒÖF‚æÖ‚‡&VÆ–VeF÷Ò‚Â“°¢6öç7B²#¢7"Âs¢6rÂ#¢6"ÒÒ†W…Fõ&v"‡6æ÷t6öÆ÷"“°¢6öç7BÒ4äõuôÅ„¢Ç†¢7G&VæwFƒ°¢6öç7B6æ÷tw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ6æ÷uF÷ÂÂ6æ÷tÇE’²“°¢6æ÷tw&BæFD6öÆ÷%7F÷ƒÂ&v&‚G·7'ÒÂG·6wÒÂG·6'ÒÂG¶çFôf—†VBƒ2—Ò–“°¢6æ÷tw&BæFD6öÆ÷%7F÷ƒãcRÂ&v&‚G·7'ÒÂG·6wÒÂG·6'ÒÂG²†¢ãs"’çFôf—†VBƒ2—Ò–“°¢6æ÷tw&BæFD6öÆ÷%7F÷ƒÂ&v&‚G·7'ÒÂG·6wÒÂG·6'ÒÃ–“°¢7G‚æf–ÆÅ7G–ÆRÒ6æ÷tw&C°¢7G‚æf–ÆÂ†6“°¢Ð¢Ð ¢òò&ö6²7G&F…7FvRbÒÒ†–v†W7B×&—6²öÖ÷7B7WGF&ÆR7FvRöbF†P¢òòÖ÷VçF–â÷fW&†VÂÂÃ"ôÃ2öæÇ“¢ÃBÇ&VG’6'&–W2vVô7&W7B²6†÷VÆFW'2À¢òòÃR—2&öÆÆ–ær†–ÆÇ2’âF†–â×VÇF—Ç’&æG2$ÄÄTÂDòD„RÄô4Â5$U5@¢òòÒÒV6‚öæRG&6W2F†R6ÖRÆ—fRG6öÇ–Æ–æRWfW'—F†–ærVÇ6R–à¢òòF†—272Ç&VG’&VG2†Ç&VG’6''––ær7FvR"w2W"Ö6öÇVÖà¢òòFVf÷&ÖF–öâ’Â§W7Böfg6WBgW'F†W"F÷vâÒÒ&F†W"F†âf—†V@¢òò67&VVâÖ†÷&—¦öçFÂ7G&—RâF†BF—7F–æ7F–öâ—2F†Rv†öÆR6fWG’66S ¢òò†÷&—¦öçFÂ7G&—R&¶VB–çFòF†R7G&—&—FÖ—2W†7FÇ’F†RfÖ–Ç¢òòF†R÷&–v–æÂ6öÇVÖâ×6VÒ'Vr6ÖRg&öÒ…6–Æ†÷VWGFTvVæW&F÷"æ§2’Âæ@¢òòÆ—fR'WB67&VVâÖ†÷&—¦öçFÂ7G&—Rv÷VÆB7F–ÆÂ7&vÂVææGW&ÆÇ¢òòv–ç7BFæ6–ærÂfö÷BÖæ6†÷&VB&–FvRâG&6–ærF†RöÇ–Æ–æRÖVç0¢òòWfW'’&æBÖ÷fW2t•D‚F†R&–FvRÂ6òF†W&R—2æò6VÒFò&V–çG&öGV6Rà¢–b†vVöÆöw’bb†Æ–W$¶W’ÓÓÒtÃ"rÇÂÆ–W$¶W’ÓÓÒtÃ2r’bb‚F†—2å÷W&bÇÂF†—2å÷W&bæ†Vg•÷7Dg‚’’°¢òò&VG2F—÷÷6—FRv—2öâF†RGvòÆ–W'26òF†R&ævW2&VB2Gvð¢òò6W&FR–V6W2öb6÷VçG'’&F†W"F†âöæR7G'V7GW&RG&vâGv–6Rà¢6öç7B&VG2Ò7G&F&VG2‡°¢v–GFƒ¢6çf2çv–GF‚Â7&W7E’Â&÷GFöÕ’Â67&öÆÅ‚À¢76–æuƒ¢5E$Dõ54”äuõ‚ÂÖ„&VG3¢5E$DôÔ…ô$TE2À¢F—6–vã¢Æ–W$¶W’ÓÓÒtÃ"rò¢ÓÀ¢Ò“°¢–b†&VG2æÆVæwF‚’°¢7G‚ç6fR‚“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒv×VÇF—Ç’s°¢òòöæRFƒ$BW"D•5D”ä5BDôäR&F†W"F†âöæRf÷"WfW'—F†–æs¢&VG0¢òòF–ffW"–âF&¶æW72æ÷r‡6VR7G&F&VG2rFöæV’æB6–ævÆRf–ÆÀ¢òò6âöæÇ’6''’öæR6öÆ÷"âFöæVF¶W26ÖÆÂf—†VB6WBöbfÇVW0¢òò'’6öç7G'V7F–öâÂ6òF†—2—2F‡&VRf–ÆÇ2f÷"v†öÆR&ævRÒÒ7F–ÆÀ¢òòfWvW"F†âF†Rf÷W"gVÆÂ×v–GF‚öÇ–vöâf–ÆÇ2F†—2&WÆ6VBÂæBF†P¢òòg&ÖR—2FöÖ–æFVB'’6ö×÷6—F–ær&F†W"F†â'’F‚v÷&²à¢òð¢òòw&÷WVB'’W†7BfÇVRÂæ÷B'’'V6¶WBÖæB×F¶R×F†RÖÖ–Gö–çC¢F†@¢òòf—'7BGFV×B&VæFW&VBãs&VBBãBæBv6†VBF†R&VFF–ær÷W@¢òòFòæV&Ç’æ÷F†–ærà¢6öç7B'•FöæRÒæWrÖ‚“°¢f÷"†6öç7B&VBöb&VG2’°¢6öç7B¶W’Ò&VBçFöæRçFôf—†VBƒB“°¢–b‚'•FöæRæ†2†¶W’’’'•FöæRç6WB†¶W’Â²FöæS¢&VBçFöæRÂ&VG3¢µÒÒ“°¢'•FöæRævWB†¶W’’æ&VG2çW6‚†&VB“°¢Ð¢f÷"†6öç7B²FöæRÂ&VG3¢–ä'V6¶WBÒöb'•FöæRçfÇVW2‚’’°¢6öç7BrÒÖF‚æÖ‚ƒÂÖF‚æÖ–âƒ#SRÀ¢ÖF‚ç&÷VæBƒ#SR¢ƒÒ5E$DôD$´Tâ¢FöæR¢Ç†¢7G&VæwF‚’’’“°¢7G‚æf–ÆÅ7G–ÆRÒ&v"‚G¶wÒÂG¶wÒÂG¶wÒ–°¢6öç7B&æBÒæWrFƒ$B‚“°¢f÷"†6öç7B&VBöb–ä'V6¶WB’°¢6öç7B'Ò&VBçG3°¢&æBæÖ÷fUFò†'³Òç‚Â'³Òç’“°¢f÷"†ÆWB’Ò²’Â'æÆVæwFƒ²’²²’&æBæÆ–æUFò†'¶•Òç‚Â'¶•Òç’“°¢f÷"†ÆWB’Ò'æÆVæwF‚Ò²’ãÒ²’ÒÒ’&æBæÆ–æUFò†'¶•Òç‚Â'¶•Òç’²5E$Dô$äEõ‚“°¢&æBæ6Æ÷6UF‚‚“°¢Ð¢7G‚æf–ÆÂ†&æB“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð¢Ð ¢òò6†VVæ÷Vv‚††æFgVÂöbF‚f–ÆÇ2Âæòöfg67&VVâ'VffW'2’F†B—@¢òòöæÇ’6†VG2öâF†RfW'’&÷GFöÒ'VærÒÒF†—2—2F†Rf÷&ÒöbF†P¢òòÖ÷VçF–âÂæ÷B÷F–öæÂFÖ÷7†W&RÆ–¶RF†R†VæöÖVæÆ–W"à¢–b‚F†—2å÷W&bÇÂF†—2å÷W&bæ†Vg•÷7Dg‚’°¢F†—2åöG&u6†÷VÆFW'2†7G‚ÂG2Â&÷GFöÕ’ÂÇ†¢7G&VæwF‚“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢ ¢¢föÇVÖRf÷"†æv–ærÆæFf÷&Ò†6æ÷’ÂfVÇBÂvFW"7W&f6R’âÆ–v‡@¢¢6F6†W2F†RFævÆ–ærVFvS²6†FRööÇ2BF†RGF6†ÖVçBâ6ÖP¢¢6F6†Æ–v‡BÆæwVvR2F†R7FæF–ær&–FvRÂ–çfW'FVBà¢¢ð¢öG&t6V–Æ–æuföÇVÖR†7G‚Â6çf2Â7G&—Â67&öÆÅ‚Â”öfbÂÆ–W$¶W’ÂÇ†’°¢6öç7B7G&VæwF‚Ò$”DtUõdôÅTÔUõ5E$TäuD…¶Æ–W$¶W•Òóò°¢–b‡7G&VæwF‚ÃÒ’&WGW&ã°¢6öç7B"Ò7G&—ç&–FvS°¢–b‚"’&WGW&ã°¢6öç7BG2ÒµÓ°¢ÆWBVFvTÖ‚Ò”öfc°¢f÷"†ÆWB‚Ò²‚ÃÒ6çf2çv–GFƒ²‚³Ò5$U5Eõ5DUõ‚’°¢6öç7BRÒ7G&—6×ÆU‚‡7G&—Â67&öÆÅ‚²‚“°¢6öç7B’Ò”öfb²ÖF‚æÖ‚ƒÂ&–FvU”B‡7G&—ÂR’“°¢G2çW6‚‡²‚Â’Ò“°¢–b‡’âVFvTÖ‚’VFvTÖ‚Ò“°¢Ð¢–b‚†VFvTÖ‚â”öfb²B’ÇÂG2æÆVæwF‚Â"’&WGW&ã° ¢6öç7B&öG’ÒæWrFƒ$B‚“°¢&öG’æÖ÷fUFò‡G5³Òç‚Â”öfb“°¢f÷"†ÆWB’Ò²’ÂG2æÆVæwFƒ²’²²’&öG’æÆ–æUFò‡G5¶•Òç‚ÂG5¶•Òç’“°¢&öG’æÆ–æUFò‡G5·G2æÆVæwF‚ÒÒç‚Â”öfb“°¢&öG’æ6Æ÷6UF‚‚“° ¢6öç7Bv÷&ÆD¶–æBÒF†—2çv÷&ÆCòæ¶–æBÇÂvÇ–æRs°¢6öç7BÖBÒÖFW&–Äf÷"‡v÷&ÆD¶–æB“°¢6öç7B6ÂÒ6F6†Æ–v‡E&v"‡v÷&ÆD¶–æB“° ¢7G‚ç6fR‚“°¢7G‚æ6Æ—†&öG’“° ¢–b†6Â’°¢6öç7Bw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ”öfbÂÂVFvTÖ‚“°¢w&BæFD6öÆ÷%7F÷ƒÂw&v&ƒÃÃÃ’r“°¢w&BæFD6öÆ÷%7F÷ƒãS‚Âw&v&ƒÃÃÃ’r“°¢w&BæFD6öÆ÷%7F÷ƒÂ&v&‚G¶6Âç'ÒÂG¶6ÂæwÒÂG¶6Âæ'ÒÂG²…$”DtUô4D4„Ä”t…EôÅ„¢Ç†¢7G&VæwF‚’çFôf—†VBƒ2—Ò–“°¢7G‚æf–ÆÅ7G–ÆRÒw&C°¢7G‚æf–ÆÂ†&öG’“°¢Ð ¢6öç7B&–FvU6†F–ætgVÆÂÒF†—2å÷W&bÇÂF†—2å÷W&bç&–FvU6†F–ætgVÆÃ°¢–b‡&–FvU6†F–ætgVÆÂ’°¢6öç7B6†FU7G&VæwF‚Ò$”DtUõ4„DUõ5E$TäuD‚¢Ç†¢7G&VæwFƒ°¢6öç7BrÒÖF‚æÖ‚ƒÂÖF‚æÖ–âƒ#SRÂÖF‚ç&÷VæBƒ#SR¢ƒÒ6†FU7G&VæwF‚’’’“°¢6öç7B6†FTw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ”öfbÂÂVFvTÖ‚“°¢6†FTw&BæFD6öÆ÷%7F÷ƒÂ&v"‚G¶wÒÂG¶wÒÂG¶wÒ–“°¢6†FTw&BæFD6öÆ÷%7F÷ƒãSRÂw&v"ƒ#SRÃ#SRÃ#SR’r“°¢6†FTw&BæFD6öÆ÷%7F÷ƒÂw&v"ƒ#SRÃ#SRÃ#SR’r“°¢7G‚ç6fR‚“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒv×VÇF—Ç’s°¢7G‚æf–ÆÅ7G–ÆRÒ6†FTw&C°¢7G‚æf–ÆÂ†&öG’“°¢7G‚ç&W7F÷&R‚“°¢Ð ¢6öç7BW&–ÅVÆÂÒU$”ÅõTÄÅ¶Æ–W$¶W•ÒÇÂ°¢–b‡&–FvU6†F–ætgVÆÂbbW&–ÅVÆÂâãbbÖBæW&–ÂÓÒfÇ6R’°¢6öç7B—$†W‚ÒÖBæW&–ÂÓÓÒv–çfW'Brò†ÖBæFVWÇÂr3#Rr’¢F†—2åö—$6öÆ÷#°¢–b†—$†W‚’°¢6öç7B—"Ò†W…Fõ&v"†—$†W‚“°¢6öç7BW&–ÄÇ†ÒW&–ÅVÆÂ¢Ç†¢7G&VæwFƒ°¢6öç7BW&–Äw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ”öfbÂÂVFvTÖ‚“°¢–b†ÖBæW&–ÂÓÓÒv–çfW'Br’°¢W&–Äw&BæFD6öÆ÷%7F÷ƒÂ&v&‚G¶—"ç'ÒÂG¶—"æwÒÂG¶—"æ'ÒÂG²†W&–ÄÇ†¢ã3R’çFôf—†VBƒ2—Ò–“°¢W&–Äw&BæFD6öÆ÷%7F÷ƒÂ&v&‚G¶—"ç'ÒÂG¶—"æwÒÂG¶—"æ'ÒÂG¶W&–ÄÇ†çFôf—†VBƒ2—Ò–“°¢ÒVÇ6R°¢W&–Äw&BæFD6öÆ÷%7F÷ƒÂ&v&‚G¶—"ç'ÒÂG¶—"æwÒÂG¶—"æ'ÒÂG¶W&–ÄÇ†çFôf—†VBƒ2—Ò–“°¢W&–Äw&BæFD6öÆ÷%7F÷ƒÂ&v&‚G¶—"ç'ÒÂG¶—"æwÒÂG¶—"æ'ÒÂG²†W&–ÄÇ†¢ã3R’çFôf—†VBƒ2—Ò–“°¢Ð¢7G‚æf–ÆÅ7G–ÆRÒW&–Äw&C°¢7G‚æf–ÆÂ†&öG’“°¢Ð¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢¢F†R7W'2F†V×6VÇfW2â6ÆÆVBÇ&VG’6Æ—VBFòF†R&ævRw2&öG’Â6ò¢¢f6WB6â&R'V–ÇBvVæW&÷W6Ç’æB7F–ÆÂæWfW"7–ÆÂ7BF†R6·–Æ–æRâ¢ð¢öG&u6†÷VÆFW'2†7G‚ÂG2Â&÷GFöÕ’ÂÇ†’°¢òòæWWG&Â6†F–ærÂæ÷BF–çFVBöæRâF†W6R†fRFò&VBF†R6ÖRöâÆÀ¢òò6WfVçFVVâÆWGFW2ÒÒâ$5D”2&ÇVRæB4ôÄ"÷&ævR&÷F‚§W7Bvç@¢òòF†V—"6†F÷vVBf6RF&¶W"æBF†V—"Æ—BVFvR6Vv‡BÂæBÖ—†–ærF†P¢òò&–öÖRw2÷vâ‡VR&6²–âöæÇ’×VFF–W2v†FWfW"F†R6·’Ç&VG’F–Bà¢6öç7BÆ—BÒ4„õTÄDU%ôÄ•C°¢7G‚æÆ–æT¦ö–âÒw&÷VæBs°¢7G‚æÆ–æT6Òw&÷VæBs° ¢f÷"†6öç7B²’Â&öÖ–æVæ6RÒöbF†—2å÷&–FvUV·2‡G2’’°¢6öç7BÒG5¶•Ó°¢òò7W"FW66VæG2Fò•E2õtâ7VÖÖ—Bw2&6RÂæ÷BFòF†Rv÷&ÆBw2w&÷Væ@¢òòÒÒ6—¦–ær—BöfbF†RG&÷FòF†Rw&÷VæB&æB–ç7FVBÖFRWfW'¢òòF—7FçB'V×F‡&÷r#S‚7G&V²7&÷72F†Rv†öÆR66VæRÂv†–6‚—0¢òò&V6—6VÇ’F†R'f—7VÆÇ’æö—7’"f–ÇW&RF†—2—2G'––ærFòfö–Bâ¢òòvVçV–æVÇ’&–ræV"7VÖÖ—B7F–ÆÂ&V6†W2F†Rw&÷VæBÂ&V6W6R—G2÷và¢òò&VÆ–Vb—2F†BFÆÃ²6ÖÆÂf"öæR¶VW2—G27W"Fò—G6VÆbà¢6öç7BG&÷ÒÖF‚æÖ–â†&÷GFöÕ’Òç’Â&öÖ–æVæ6R¢4„õTÄDU%õ$TÄ”Teõ%Tâ“°¢–b†G&÷ÃÒ’6öçF–çVS°¢6öç7Bfö÷E’Òç’²G&÷°¢òòf6–ærföÆÆ÷w2F†R6VÆW7F–ÂÂv—F‚F†R÷&–v–æÂ7G&—‚†6‚¶WB0¢òòW"×7VÖÖ—BW'GW&&F–öâ6òv†öÆR&ævRFöW6âwBfÆGFVâ–çFòöæP¢òòVæ–f÷&ÖÇ’ÖÆ—BvÆÂâfÆÇ2&6²FòF†R†6‚ÆöæRv†VâæòÆ–v‡B—0¢òòöâF†—6‡FW7G2ÂæBç’6ÆÆW"F†B†6âwB6ö×WFVBöæR–WB’à¢6öç7BÆ–v‡E‚ÒF†—2æÆ–v‡BbbçVÖ&W"æ—4f–æ—FR‡F†—2æÆ–v‡Bç‚’òF†—2æÆ–v‡Bç‚¢çVÆÃ°¢6öç7B2Ò6†÷VÆFW$f6WE6–FR‡ç7G&—‚ÂÆ–v‡E‚Âç‚“°¢6öç7BæV%'VâÒG&÷¢4„õTÄDU%ôäT%õ%Tâ¢3°¢6öç7Bf%'VâÒG&÷¢4„õTÄDU%ôd%õ%Tâ¢×3° ¢òòÒÒÒF†Rf6R&WGvVVâF†R6·–Æ–æRæBF†RæV"7W"ÒÒÒÒÒÒÒÒÒÒÒÒÒÒÐ¢6öç7Bf6WBÒæWrFƒ$B‚“°¢f6WBæÖ÷fUFò‡ç‚Âç’“°¢òòföÆÆ÷rF†R&VÂ6·–Æ–æR÷WBFòv†W&RF†R7W"w2fö÷BÆæG2Â6òF†P¢òòf6WBw2WW"VFvR•2F†RÖ÷VçF–âw2÷vâ÷WFÆ–æRà¢6öç7B7FWF—"Ò2âò¢Ó°¢f÷"†ÆWB²Ò’²7FWF—#²²ãÒbb²ÂG2æÆVæwFƒ²²³Ò7FWF—"’°¢f6WBæÆ–æUFò‡G5¶µÒç‚ÂG5¶µÒç’“°¢–b‚‡G5¶µÒç‚Òç‚’¢7FWF—"ãÒÖF‚æ'2†æV%'Vâ’’'&V³°¢Ð¢f6WBæÆ–æUFò‡ç‚²æV%'VâÂfö÷E’“°¢f6WBæÆ–æUFò‡ç‚Âfö÷E’“°¢f6WBæ6Æ÷6UF‚‚“°¢òò6ÖR×VÇF—Ç’Öö66ÇW6–öâG&VFÖVçB2F†R&ævR&öG’w2÷vâ6†FP¢òò72&÷fS¢â÷VRw&’VæFW"v×VÇF—Ç’r66ÆW2F†R7W&f6P¢òòF÷vâ&F†W"F†âv6†–ær—BF÷v&B&Æ6²÷fW"F÷öb—Bà¢°¢6öç7B6†FU7G&VæwF‚ÒÇ†¢4„õTÄDU%ôd4UEôÅ„°¢6öç7B6rÒÖF‚æÖ‚ƒÂÖF‚æÖ–âƒ#SRÂÖF‚ç&÷VæBƒ#SR¢ƒÒ6†FU7G&VæwF‚’’’“°¢7G‚ç6fR‚“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒv×VÇF—Ç’s°¢7G‚æf–ÆÅ7G–ÆRÒ&v"‚G·6wÒÂG·6wÒÂG·6wÒ–°¢7G‚æf–ÆÂ†f6WB“°¢7G‚ç&W7F÷&R‚“°¢Ð ¢òòF†R7W"w2÷vâVFvRÒÒ6F6‚ÖÆ–v‡BÆöærF†RF÷öbF†R&–FvP¢òò'Vææ–ærBW2Âv†–6‚—2v†B6VÆÇ2—B2âVFvR&F†W"F†â¢òò6†F÷rv—F‚7G&–v‡B6–FRâfFVB÷WBÆöær—G2ÆVæwF‚6ò—@¢òòF—76öÇfW2–çFòF†R&öG’–ç7FVBöbVæF–æröâ†&BF—à¢6öç7B²"ÂrÂ"ÒÒ†W…Fõ&v"†Æ—B“°¢6öç7BæV$fFRÒ7G‚æ7&VFTÆ–æV$w&F–VçB‡ç‚Âç’Âç‚²æV%'VâÂfö÷E’“°¢æV$fFRæFD6öÆ÷%7F÷ƒÂ&v&‚G·'ÒÂG¶wÒÂG¶'ÒÂG²†Ç†¢4„õTÄDU%ôÄ”äUôÅ„’çFôf—†VBƒ2—Ò–“°¢æV$fFRæFD6öÆ÷%7F÷ƒÂ&v&‚G·'ÒÂG¶wÒÂG¶'ÒÃ–“°¢7G‚ç7G&ö¶U7G–ÆRÒæV$fFS°¢7G‚ævÆö&ÄÇ†Ò°¢7G‚æÆ–æUv–GF‚Òãc°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡ç‚Âç’“°¢7G‚çVG&F–47W'fUFò‡ç‚²æV%'Vâ¢ã3BÂç’²G&÷¢ãS‚Âç‚²æV%'VâÂfö÷E’“°¢7G‚ç7G&ö¶R‚“° ¢òòÒÒÒF†R6†÷VÆFW"'Vææ–ærv’g&öÒW2ÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÐ¢òò6†÷'FW"Â6†ÆÆ÷vW"ÂæBfFVB÷WB&Vf÷&R—B&V6†W2F†R&÷GFöÓ ¢òò—Bw2ÖVçBFòÆVfRF†Rg&ÖR–çFòFWF‚Âæ÷BFòÆæBà¢6öç7Bf$VæE’Òç’²G&÷¢ãc#°¢6öç7BfFRÒ7G‚æ7&VFTÆ–æV$w&F–VçB‡ç‚Âç’Âç‚²f%'VâÂf$VæE’“°¢fFRæFD6öÆ÷%7F÷ƒÂ&v&‚G·'ÒÂG¶wÒÂG¶'ÒÂG²†Ç†¢4„õTÄDU%ôÄ”äUôÅ„¢ãr’çFôf—†VBƒ2—Ò–“°¢fFRæFD6öÆ÷%7F÷ƒÂ&v&‚G·'ÒÂG¶wÒÂG¶'ÒÃ–“°¢7G‚ç7G&ö¶U7G–ÆRÒfFS°¢7G‚ævÆö&ÄÇ†Ò°¢7G‚æÆ–æUv–GF‚Òã#°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡ç‚Âç’“°¢7G‚çVG&F–47W'fUFò‡ç‚²f%'Vâ¢ãCRÂç’²G&÷¢ã#"Âç‚²f%'VâÂf$VæE’“°¢7G‚ç7G&ö¶R‚“°¢Ð¢Ð ¢ò¢¢öæR7WW"ÖF—7FçBÖ÷VçF–â&ævRF†B•2F†R7V7G'VÓ¢6WfVâ6‡Væ·¢¢&'2(	B&72'V–ÆF–ærF†R7VÖÖ—BBF†R6VçFW"ÂG&V&ÆRfÆÆ–ærv’Fð¢¢F†RfÆæ·2‡6VR7V7G'VÔ&'2’(	B&–F–ærF†R4ÔRr&r&æG22F†P¢¢†÷&—¦öâU'WBF‡&÷Vv‚F†V—"÷vâf"6Æ÷vW"GF6²÷&VÆV6P¢¢†Ö76–dW7FWÂ6V6öæG2æ÷Bg&7F–öç2öb6V6öæB“¢F†R†÷&—¦öâU6à¢¢†÷v—F‚F†R&VBÂF†RÖ76–b6âöæÇ’WfW"7&vÂâ—B6—G2öâF†P¢¢6Æ÷vW7B67&öÆÂ&F–ò–âF†R66VæRÂ6ò—B&VG22F†R6–ævÆRf'F†W7BÀ¢¢Ö÷7Bæ6–VçBF†–ær–âF†Rv÷&ÆBÒÒv†–6‚—2F†Rv†öÆR&6—2f÷ ¢¢ÆWGF–ær—BÆööÒf"FÆÆW"F†âç’÷&F–æ'’&ævR†Ö76–dG&t†V–v‡B¢¢v—F†÷WB&VF–ær2'7W&C¢6öÖWF†–ærF†Bf"v’ÂæBF†Bf7BÂ—0¢¢ÆÆ÷vVBFò6–×Ç’$RF†B&–ræB&&VÇ’6VVÒFòÖ÷fRBÆÂà¢¢¦vvVB†æ÷BfÆB’7&W7BÂW&ÖæVçB†¦RfV–ÂæV"—G2÷vâ7VÖÖ—@¢¢F†BöæÇ’&&VÇ’F†–ç2–çFògVÆÂ6ÆV&–ærÂæBF†Rö666–öæÂF–ç¢¢66ÆRÖ&¶W"G&–gF–ær7&÷72—G2f6R…öG&tÖ76–dÖ&¶W'2’&Rv†@¢¢GW&â'fW'’FÆÂ&"w&‚"–çFò6öÖWF†–ærF†B–æGV6W2&VÀ¢¢ÖVvÆ÷†ö&–ÒÒF†R&r†V–v‡BÆöæRv2æWfW"vö–ærFòFòF†Böà¢¢—G2÷vââF†–â†ÆòÖ6öÆ÷&VB7&W7B627F’F†R'F†—2V²—2à¢¢WVÆ—¦W""FVÆÂÂ6ÖR2Çv—2â¢ð¢öG&u7V7G'VÔÖ76–b†7G‚Â6çf2Âv÷&ÆE‚ÂÂ"ÂB’°¢6öç7B&'2Ò7V7G'VÔ&'2‡F†—2åöÖ76–dW6Öö÷F†VB“°¢6öç7B&%rÒCbÂvÒ3°¢6öç7BÖ76–erÒ&'2æÆVæwF‚¢†&%r²v’Òv°¢6öç7BW&–öBÒ6çf2çv–GF‚¢ãS°¢6öç7B67&öÆÂÒv÷&ÆE‚¢6öFF—&V7F÷"æFVÆÖ–æFU&F–òƒã2ÂF†—2çVç&fVÂ“°¢6öç7BÆVgBÒ‚‚‚†6çf2çv–GF‚¢ãS‚Ò67&öÆÂ’RW&–öB’²W&–öB’RW&–öB’ÒÖ76–es°¢–b†ÆVgBâ6çf2çv–GF‚ÇÂÆVgB²Ö76–erÂ’&WGW&ã° ¢òò6ÖR&÷GFöÒæ6†÷"2Ã"w2÷vâ7G&—2…öG&tÆ–W"w2”öfb’Â6òF†P¢òòÖ76–b&VG226—GF–ærBÃ"w2ÇF—GVFRöÆ–W"–ç7FVBöbfÆöF–ær@¢òò—G2÷vâÒÒfW'F–6Â÷6—F–öâöæÇ“²–çB÷&FW"Â&ÆÆ‚‡F†R67&öÆÀ¢òò&÷fR’ÂæB6öÆ÷"7F’VçF÷V6†VBà¢6öç7B&6U’ÒF†—2å÷¦ööÖVDw&÷VæE’†6çf2’²C°¢òòÖ76–b&–FW2Ã"÷&övVç’Â'WBç7vW'2Fò—G2õtâf"FÆÆW"6V–Æ–æp¢òò†Ö76–dG&t†V–v‡BÂæ÷BF†R÷&F–æ'’×&ævRÖ÷VçF–å7G&—G&t†V–v‡B’ÒÐ¢òò6VRÖ÷VçF–ä6†÷&Vòæ§2w2Ô54”eõ4µ•ô„TE$ôôÕôe$2f÷"v‡’F†Bw26fP¢òò†W&R7V6–f–6ÆÇ’æBæ÷v†W&RVÇ6RâF†RæöÖ–æÂ†V–v‡BfVB–â—0¢òòFVÆ–&W&FVÇ’v’&W–öæBç—F†–ærw&÷wF‚6÷VÆB&öGV6Röâ—G2÷và¢òò‡VæÆ–¶RF†R÷&F–æ'’&ævW2r#Â6—¦VBFòF†V—"÷vâ7G&—&—FÖ’ÒÐ¢òòF†—2Ö76–b—6âwB44ÄTB–çFò—G26—¦R'’÷&övVç’F†Rv’F†P¢òòf÷&Vw&÷VæB&ævW2&RÂ—B6–×Ç’Ç&VG’•2F†B6—¦RÂ6òF†R&VÀ¢òò6V–Æ–ær†÷&F–æ'’g&ÖRvVöÖWG'’’—2Çv—2v†B7GVÆÇ’&–æG2à¢6öç7Bw&÷wF‚Ò÷&övVç”†V–v‡D×VÂ‚tÃ"rÂ6Æ×‡F†—2æ÷&övVç”w&÷wF‚ÇÂ’“°¢6öç7BÖ„‚ÒÖ76–dG&t†V–v‡Bƒ#Âw&÷wF‚Â6çf2æ†V–v‡BÂF†—2å÷¦ööÖVDw&÷VæE’†6çf2’“°¢6öç7B6·”Ö–BÒF†—2æÆW'66†RævWB„ç6·•³ÒÂ"ç6·•³ÒÂB“°¢6öç7B6–ÂÒF†—2æÆW'66†RævWB„ç6–Æ†÷VWGFRÂ"ç6–Æ†÷VWGFRÂB“°¢6öç7B&öG’ÒF†—2å÷&÷FFVB‡F†—2æÆW'66†RævWB‡6–ÂÂ6·”Ö–BÂãSR’“°¢6öç7B6ÒF†—2å÷&÷FFVB‡F†—2æÆW'66†RævWB„æ6VÆW7F–Âæ†Æô6öÆ÷"Â"æ6VÆW7F–Âæ†Æô6öÆ÷"ÂB’“° ¢6öç7Bæ÷t×2ÒF†—2çE6V2¢°¢òòF†R6ÆV&–æs¢Ö÷7FÇ’fV–ÆVBæV"—G2÷vâ7&W7BÂ&&VÇ’gVÆÇ’&&VBÒÐ¢òò6VRÖ76–d6ÆV&–æsw2Fö2f÷"v‡’F†Rv–æF÷r—2FVÆ–&W&FVÇ’æ'&÷rà¢6öç7B6ÆV&–ærÒÖ76–d6ÆV&–æs‡F†—2çE6V2“° ¢òòôäR6öçF–çV÷W2&–FvRÆ–æR7&÷72F†Rv†öÆRv–GF‚ÒÒæ÷B6WfVà¢òò6W&FR&V7FævÆW2v—F‚v2&WGvVVâF†VÒâBvVçV–æVÇ’F÷vW&–æp¢òò†V–v‡G2Âæ'&÷rvVB6öÇVÖç27F÷&VF–ær2FW'&–âæB7F'@¢òò&VF–ær2–6¶WBfVæ6Röb6·—67&W'3²6–ævÆR6Öö÷F†Ç¢òò–çFW'öÆFVB†Ö76–e&–FvT†V–v‡C’Â¦vvVFÇ’&÷Vv†VæV@¢òò†Ö76–e&–FvT¦u‚’6·–Æ–æR&VG22öæR–×÷76–&Ç’Æ&vRÖ÷VçF–à¢òò$ätR–ç7FVBÂv†–ÆRF†R&72Ö'V–ÆG2×F†R×7VÖÖ—BU6†R7W'f—fW0¢òò6ö×ÆWFVÇ’–çF7BÒÒ—Bw27F–ÆÂW†7FÇ’F†R6ÖR6WfVâV·2Â§W7@¢òò6öææV7FVBà¢6öç7B$”DtUõ5DUõ‚Òƒ°¢6öç7B&–FvUG2ÒµÓ°¢f÷"†ÆWB‚Ò²‚ÃÒÖ76–es²‚³Ò$”DtUõ5DUõ‚’°¢6öç7BRÒ‚òÖ76–es°¢&–FvUG2çW6‚‡²ƒ¢ÆVgB²‚Â“¢&6U’ÒÖ76–e&–FvT†V–v‡C†&'2ÂR’¢Ö„‚²Ö76–e&–FvT¦u‚‡R’Ò“°¢Ð¢6öç7BÆ7E‚Ò&–FvUG5·&–FvUG2æÆVæwF‚ÒÒçƒ°¢–b†Æ7E‚ÂÆVgB²Ö76–erÒã’°¢&–FvUG2çW6‚‡²ƒ¢ÆVgB²Ö76–erÂ“¢&6U’ÒÖ76–e&–FvT†V–v‡C†&'2Â’¢Ö„‚²Ö76–e&–FvT¦u‚ƒ’Ò“°¢Ð ¢7G‚ç6fR‚“°¢7G‚æf–ÆÅ7G–ÆRÒ&öG“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡&–FvUG5³Òç‚Â&6U’“°¢f÷"†6öç7Böb&–FvUG2’7G‚æÆ–æUFò‡ç‚Âç’“°¢7G‚æÆ–æUFò‡&–FvUG5·&–FvUG2æÆVæwF‚ÒÒç‚Â&6U’“°¢7G‚æ6Æ÷6UF‚‚“°¢7G‚æf–ÆÂ‚“° ¢òòF†R†¦RfV–Ã¢W&ÖæVçBv6‚6—GF–ærBf—†VBÇF—GVFR&æBæV ¢òòF†RÖ76–bw2÷vâ†–v†W7B÷76–&ÆRV²ÂF†–ææ–æröæÇ’GW&–ær&&P¢òò6ÆV&–ærâ&VÂF—7FçB7VÖÖ—G2fæ—6‚–çFòF†V—"÷vâFÖ÷7†W&RÆöæp¢òò&Vf÷&R–÷RvBWfW"&V6‚öæRÒÒ&6âwBV—FR6VRÆÂöb—BÂWfVâæ÷r ¢òò—2—G6VÆbFö–ær66ÆRv÷&²F†B&r†V–v‡BæWfW"6÷VÆBÆöæRà¢6öç7BfV–ÄÇ†ÒãSR¢ƒÒ6ÆV&–ær“°¢–b‡fV–ÄÇ†âã’°¢6öç7B6·•&v"Ò†W…Fõ&v"‡6·”Ö–B“°¢6öç7BfV–ÅF÷’Ò&6U’ÒÖ„ƒ°¢6öç7BfV–Ä&÷GFöÕ’Ò&6U’ÒÖ„‚¢ãCS°¢òòâVÆÆ—F–6Â†æ÷B&V7FæwVÆ"’fÆÆöfbÒÒÆ–âfW'F–6ÂÖöæÇ¢òòw&F–VçB–ç6–FRf–ÆÅ&V7BfFW2F÷×FòÖ&÷GFöÒ'WBÆVfW2F†P¢òò&V7Bw2÷vâÆVgB÷&–v‡BVFvW2W&fV7FÇ’†&BÂv†–6‚&VB2¢òò6öç7–7V÷W27G&–v‡B×6–FVB&÷‚fÆöF–ær–âF†R6·’â&F–Âw&F–Vç@¢òò²æöâ×Væ–f÷&Ò66ÆRGW&ç2F†B6ÖRfÆÆöfb–çFòâVÆÆ—6RF†@¢òòfFW2öâWfW'’6–FRà¢6öç7B7‚ÒÆVgB²Ö76–erò#°¢6öç7B7’Ò‡fV–ÅF÷’²fV–Ä&÷GFöÕ’’ò#°¢6öç7B'’ÒÖF‚æÖ‚ƒÂ‡fV–Ä&÷GFöÕ’ÒfV–ÅF÷’’ò"’¢ãS°¢6öç7B'‚ÒÖ76–erò"²S°¢6öç7B7‚Ò'‚ò'“°¢7G‚ç6fR‚“°¢7G‚çG&ç6ÆFR†7‚Â7’“°¢7G‚ç66ÆR‡7‚Â“°¢6öç7BfV–ÂÒ7G‚æ7&VFU&F–Äw&F–VçBƒÂÂÂÂÂ'’“°¢fV–ÂæFD6öÆ÷%7F÷ƒÂ&v&‚G·6·•&v"ç'ÒÂG·6·•&v"æwÒÂG·6·•&v"æ'ÒÂG·fV–ÄÇ†çFôf—†VBƒ2—Ò–“°¢fV–ÂæFD6öÆ÷%7F÷ƒÂ&v&‚G·6·•&v"ç'ÒÂG·6·•&v"æwÒÂG·6·•&v"æ'ÒÃ–“°¢7G‚æf–ÆÅ7G–ÆRÒfV–Ã°¢7G‚æf–ÆÅ&V7B‚×'’¢ã2Â×'’¢ã2Â'’¢"ãbÂ'’¢"ãb“°¢7G‚ç&W7F÷&R‚“°¢Ð ¢òò6ögBÖ76–b7&W7B6(	B×W6–6ÂWVÆ—¦W"FVÆÂ(	BG&6VBÆöærF†P¢òòW†7B6ÖR&–FvRF‚6ò—BæWfW"G&–gG2öfbF†R6–Æ†÷VWGFR—Bw0¢òò7W÷6VBFò&R6–ærà¢–b‡7G–ÆTF–Ç2‡F†—2çf—7VÅ7G–ÆR’æÖ76–d7&W7D62ÓÒfÇ6R’°¢7G‚ç7G&ö¶U7G–ÆRÒ6°¢7G‚ævÆö&ÄÇ†Òã#‚¢ƒãR²ãR¢F†—2æ'VFvWB“°¢7G‚æÆ–æUv–GF‚Ò2ãS°¢7G‚æÆ–æT¦ö–âÒw&÷VæBs°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡&–FvUG5³Òç‚Â&–FvUG5³Òç’“°¢f÷"†6öç7Böb&–FvUG2’7G‚æÆ–æUFò‡ç‚Âç’“°¢7G‚ç7G&ö¶R‚“°¢7G‚ævÆö&ÄÇ†Ò°¢Ð¢7G‚ç&W7F÷&R‚“° ¢F†—2åöG&tÖ76–dÖ&¶W'2†7G‚Âæ÷t×2ÂÆVgBÂÖ76–erÂ&6U’ÒÖ„‚Â&6U’ÒÖ„‚¢ãB“°¢Ð ¢ò¢¢F–ç’Â÷&F–æ'’×&ÆÆ‚6–Æ†÷VWGFW2G&–gF–ær7&÷72F†RÖ76–bw2f6P¢¢öâ6VVFVBF–ÖW"„Ö÷VçF–ä6†÷&Vòæ§2w2Ö&¶W"6öç7FçG2’âF†—2—2F†P¢¢7GVÂ&ö666–öæÆÇ’W&6V—fVB–âv’F†BÖ¶W2—G2&r6—¦P¢¢¶æ÷vâ"ÖV6†æ–3¢6†R7&÷76–ær–âg&öçBöbF†RÖ76–bBæ÷&ÖÂÀ¢¢WfW'–F’7VVBÂv†–ÆRF†RÖ76–b—G6VÆb&&VÇ’6VV×2FòÖ÷fRBÆÂÀ¢¢•2F†R66ÆR&WfVÂÒÒF†R6ö×&—6öâFöW2v÷&²æòÖ÷VçBöb&p¢¢†V–v‡BÆöæRWfW"6÷VÆBâ¢ð¢öG&tÖ76–dÖ&¶W'2†7G‚Âæ÷t×2ÂÆVgBÂÖ76–erÂF÷’Â&÷GFöÕ’’°¢–b†æ÷t×2ãÒF†—2åöÖ76–dæW‡E7vä×2bbÖ76–erâC’°¢F†—2åöÖ76–dÖ&¶W'2çW6‚‡°¢ƒ¢ÆVgB²F†—2åöÖ76–e&æB‚’¢Ö76–er¢ã2À¢“¢F÷’²F†—2åöÖ76–e&æB‚’¢ÖF‚æÖ‚ƒÂ&÷GFöÕ’ÒF÷’’À¢&÷&ä×3¢æ÷t×2À¢Ò“°¢F†—2åöÖ76–dæW‡E7vä×2Òæ÷t×2²æW‡DÖ76–dÖ&¶W$FVÆ•6V2‡F†—2åöÖ76–e&æB’¢°¢Ð¢–b‚F†—2åöÖ76–dÖ&¶W'2æÆVæwF‚’&WGW&ã°¢7G‚ç6fR‚“°¢7G‚æf–ÆÅ7G–ÆRÒw&v&ƒbÃbÃ"Ããb’s°¢F†—2åöÖ76–dÖ&¶W'2ÒF†—2åöÖ76–dÖ&¶W'2æf–ÇFW"‚†Ò’Óâ°¢6öç7BvU6V2Ò†æ÷t×2ÒÒæ&÷&ä×2’ò°¢–b†vU6V2âÔ54”eôÔ$´U%ôÄ”dUõ4T2’&WGW&âfÇ6S°¢6öç7B‚ÒÒçƒ²Ô54”eôÔ$´U%õ5TTEõ…õ2¢vU6V3°¢òòV6W2–âæB÷WBöbf—6–&–Æ—G’&F†W"F†â÷–ærÒÒ†&B7WB@¢òòV—F†W"VæBv÷VÆB&VB2vÆ—F6‚Âæ÷BF—7FçB&—&B÷6†—76–ærà¢6öç7BfFRÒÖF‚æÖ–âƒÂvU6V2¢2’¢ÖF‚æÖ–âƒÂ„Ô54”eôÔ$´U%ôÄ”dUõ4T2ÒvU6V2’¢2“°¢6öç7Bvö&&ÆRÒÖF‚ç6–â†vU6V2¢2²Òæ&÷&ä×2¢ã’¢#°¢7G‚ævÆö&ÄÇ†ÒãSR¢fFS°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡‚ÂÒç’²vö&&ÆR“°¢7G‚æÆ–æUFò‡‚ÒRÂÒç’²vö&&ÆR²"ã"“°¢7G‚æÆ–æUFò‡‚ÒRÂÒç’²vö&&ÆRÒ"ã"“°¢7G‚æ6Æ÷6UF‚‚“°¢7G‚æf–ÆÂ‚“°¢&WGW&âG'VS°¢Ò“°¢7G‚ævÆö&ÄÇ†Ò°¢7G‚ç&W7F÷&R‚“°¢Ð ¢öG&u6†–ÖÖW&VB†7G‚Â6çf2Â7G&—Â67&öÆÅ‚Â”öfbÒ’°¢6öç7BrÒ7G&—çv–GF‚Â‚Ò7G&—æ†V–v‡C°¢6öç7B&6U’Ò6çf2æ†V–v‡BÒ‚²”öfc°¢ÆWBƒÒ7G&—÷&–v–å‚‡7G&—Â67&öÆÅ‚Â6çf2çv–GF‚“°¢6öç7B7FWÒc°¢6öç7Böæ6RÒ—5FW'&–å7G&—‡7G&—“°¢f÷"†ÆWB7‚Òƒ²7‚Â6çf2çv–GFƒ²7‚³Òr’°¢f÷"†ÆWB&÷rÒ²&÷rÂƒ²&÷r³Ò7FW’°¢6öç7Böfg6WBÒ"¢ÖF‚ç6–â‡&÷rò#B²F†—2çE6V2¢B“°¢7G‚æG&t–ÖvR‡7G&—ÂÂ&÷rÂrÂ7FWÂ7‚²öfg6WBÂ&6U’²&÷rÂrÂ7FW“°¢Ð¢–b†öæ6R’'&V³°¢Ð¢Ð ¢ò¢¢&WW6VB9urf6–ær7G&—²|9vfÆÆöfb&æBf÷"F†Rw&÷VæB&VÆ–Vbâ¢ð¢÷&VÆ–Vd&æB‡v–GF‚’°¢6öç7BrÒÖF‚æÖ‚ƒÂv–GF‚Â“°¢–b‡G—VöbFö7VÖVçBÓÓÒwVæFVf–æVBrÇÂFö7VÖVçBæ7&VFTVÆVÖVçB’&WGW&âçVÆÃ°¢–b‚F†—2å÷&VÆ–Ve67&F6‚ÇÂF†—2å÷&VÆ–Ve67&F6‚çrÓÒr’°¢6öç7B7G&—ÒFö7VÖVçBæ7&VFTVÆVÖVçB‚v6çf2r“°¢7G&—çv–GF‚Òs°¢7G&—æ†V–v‡BÒ°¢6öç7B&æBÒFö7VÖVçBæ7&VFTVÆVÖVçB‚v6çf2r“°¢&æBçv–GF‚Òs°¢&æBæ†V–v‡BÒ$TÄ”TeôdÄÄôdeõƒ°¢F†—2å÷&VÆ–Ve67&F6‚Ò°¢rÀ¢7G&—À¢7G&—7Gƒ¢7G&—ævWD6öçFW‡B‚s&BrÂ²v–ÆÅ&VDg&WVVçFÇ“¢G'VRÒ’À¢&æBÀ¢&æD7Gƒ¢&æBævWD6öçFW‡B‚s&Br’À¢Ó°¢Ð¢&WGW&âF†—2å÷&VÆ–Ve67&F6ƒ°¢Ð ¢ò¢¢'V–ÆG26Öö÷F‚7W'fRF‡&÷Vv‚V6‚&"w2F÷Ö6VçFW"ö–çBÒÒF†P¢¢VG&F–2ÖÖ–Gö–çBFV6†æ—VR†V6‚6VvÖVçBw26öçG&öÂö–çB—2F†P¢¢6×ÆR—G6VÆbÂ—G2VæGö–çBF†RÖ–Gö–çBFòF†RæW‡B6×ÆR’GW&ç2F†P¢¢†&B“‚7F—&66R–çFò6öçF–çV÷W2&–FvRv†–ÆRF†RVæFW&Ç––æp¢¢‡—6–72„w&÷VæDf–VÆBæ†V–v‡DB’7F—2W†7FÇ’F†RF—67&WFR7&–æp¢¢6–×VÆF–öâ—BÇv—2v3²F†—2—2&VæFW"ÖöæÇ’â6Æ÷6VFÇ6òG&w2F†P¢¢Gvò6–FRVFvW2F÷vâFò6çf2æ†V–v‡FæB6Æ÷6W2F†RF‚Âf÷"f–ÆÇ0¢¢æB6Æ—3²F†R÷Vâ‡7G&ö¶R’f÷&Ò7F÷2BF†RÆ7BF÷ö–çBâ¢ð¢÷FW'&–åF÷F‚†&'2Â6çf4†V–v‡BÂ6Æ÷6VBÂ6çf5v–GF‚ÒçVÆÂ’°¢6öç7BF‚ÒæWrFƒ$B‚“°¢–b†&'2æÆVæwF‚ÓÓÒ’&WGW&âFƒ°¢6öç7BG2Ò&'2æÖ‚†"’Óâ‡²ƒ¢"ç‚²"çv–GF‚ò"Â“¢"ç’Ò’“°¢6öç7BÆ7D&"Ò&'5¶&'2æÆVæwF‚ÒÓ°¢6öç7B&–v‡BÒçVÖ&W"æ—4f–æ—FR†6çf5v–GF‚¢òÖF‚æÖ‚†6çf5v–GF‚ÂÆ7D&"ç‚²Æ7D&"çv–GF‚¢¢Æ7D&"ç‚²Æ7D&"çv–GFƒ°¢–b†6Æ÷6VB’F‚æÖ÷fUFòƒÂ6çf4†V–v‡B“°¢–b†6Æ÷6VB’F‚æÆ–æUFò‡G5³Òç‚ÂG5³Òç’“²VÇ6RF‚æÖ÷fUFò‡G5³Òç‚ÂG5³Òç’“°¢f÷"†ÆWB’Ò²’ÂG2æÆVæwF‚Ò²’²²’°¢6öç7B7W"ÒG5¶•ÒÂæW‡BÒG5¶’²Ó°¢6öç7BÖ–E‚Ò†7W"ç‚²æW‡Bç‚’ò"ÂÖ–E’Ò†7W"ç’²æW‡Bç’’ò#°¢F‚çVG&F–47W'fUFò†7W"ç‚Â7W"ç’ÂÖ–E‚ÂÖ–E’“°¢Ð¢6öç7BÆ7EBÒG5·G2æÆVæwF‚ÒÓ°¢F‚æÆ–æUFò†Æ7EBç‚ÂÆ7EBç’“°¢–b†6Æ÷6VB’°¢F‚æÆ–æUFò‡&–v‡BÂÆ7EBç’“°¢F‚æÆ–æUFò‡&–v‡BÂ6çf4†V–v‡B“°¢F‚æ6Æ÷6UF‚‚“°¢Ð¢&WGW&âFƒ°¢Ð ¢ò¢ ¢¢F†R–ç6–FRöbF†Rw&÷VæBâWfW'—F†–ær&VÆ÷rF†R7&W7BW6VBFò&RöæP¢¢fÆBf–ÆÅ&V7Böb6–ævÆR6öÆ÷"ÒÒF†RFW'&–â&VÆ–Vb72Æ—BF†RF÷ ¢¢ãG‚æBF†R&W7BöbF†Rg&ÖRw2VçF—&RÆ÷vW"F†—&Bv2÷7FW"ÖfÆ@¢¢6Æ"Âv†–6‚—2W†7FÇ’2&÷&–ær2—B6÷VæG2æBvfRF†RW–Ræ÷F†–æp¢¢Fò&VBF†Rv÷&ÆBw27VVBv–ç7Bà¢ ¢¢Gvò6†V76W2Â&÷F‚6Æ—VBFòF†RFW'&–âF‚6òF†W’6âæWfW ¢¢7–ÆÂ–çFòF†R6·“ ¢¢âfW'F–6ÂÆ–v‡BfÆÆöfbÒÒw&÷VæBvWG2F&¶W"F†RFVWW"—BvöW2À¢¢F†R6ÖRv’ç’Æ—B6öÆ–BFöW2Âv†–6‚ÆöæR¶–ÆÇ2F†RfÆB&VC°¢¢"â7'6R6VVFVB7G&F67&öÆÆ–ærBv÷&ÆB7VVBÂ6òF†Rw&÷VæB†0¢¢f—6–&ÆRw&–âæB–÷R6â7GVÆÇ’6VRF†RÆæBÖ÷f–ær7Bà¢ ¢¢7G&F&RvVæW&FVBöæ6RW"6öæræBG&vâ2†æFgVÂöbvg¢¢7G&ö¶W2Â6òF†—26÷7G2f—†VBfWrG&r6ÆÇ2&Vv&FÆW72öb67&öÆÂà¢¢ð¢öG&tw&÷VæD–çFW&–÷"†7G‚Â6çf2Âf–ÆÅF‚Â&'2Âw&÷VæD6öÆ÷"Âv÷&ÆE‚’°¢òòFVÆ–&W&FVÇ’äõBvFVBöâF†RW&bÆFFW#¢WfW'’72–â†W&R—2¢òòf—†VBÂ6ÖÆÂçVÖ&W"öbG&r6ÆÇ2&Vv&FÆW72öb67&öÆÂ÷"66VæP¢òò6ö×ÆW†—G’††æFgVÂöb7G&F7G&ö¶W2Â6÷WÆRF÷¦Vâ&ö÷Bö÷&P¢òòÖ&·2ÂöæRw&F–VçBf–ÆÂ’Âæ÷BW"Ög&ÖR6÷7BF†B66ÆW2v—F€¢òòÆöBâ—BW6VBFò6¶—÷WG&–v‡BBF†RFVWW7BW&b'VærÂv†–6‚ÖVç@¢òòF†Rw&÷VæBvVçB6ö×ÆWFVÇ’fÆBæBFW‡GW&VÆW72–âW†7FÇ’F†P¢òò66VæW2†Vg’Væ÷Vv‚FòG&–vvW"F†B'VærÒÒF†RÖöÖVçBWfW'—F†–æp¢òòTÅ4Röâ67&VVâv2'W6–W7BÂF†Rw&÷VæBv2&Ææ¶W7Bà¢ÆWB7&W7BÒ6çf2æ†V–v‡C°¢f÷"†6öç7B"öb&'2’–b†"ç’Â7&W7B’7&W7BÒ"ç“°¢6öç7BFWF‚Ò6çf2æ†V–v‡BÒ7&W7C°¢–b†FWF‚Â‚’&WGW&ã° ¢7G‚ç6fR‚“°¢7G‚æ6Æ—†f–ÆÅF‚“° ¢òòâ6ö–Â†÷&—¦öââF†R6–ævÆRÖ÷7BÆVv–&ÆR'F†—2—2w&÷VæBÂæ÷B¢òò6öÆ÷&VB&Vv–öâ"7VS¢7'W7Böb7W&f6RÖFW&–Â‡Vvv–ærF†RFW'&–à¢òò6öçF÷W"v—F‚FVç6W"7V'6ö–Â&VæVF‚—BÂW†7FÇ’F†RF÷6ö–Âö&VG&ö6°¢òò&÷VæF'’–÷R6VR–âç’&öB7WGF–ærâ'V–ÇB'’&R×'Vææ–ærF†R6ÖP¢òòFW'&–âF‚f—†VBF—7Fæ6RÆ÷vW"æBf–ÆÆ–ærWfW'—F†–ær&VÆ÷r—@¢òòF&¶W"ÒÒ6òF†R7'W7BWFöÖF–6ÆÇ’föÆÆ÷w2WfW'’'V×F†R&–FvP¢òò†2Âf÷"öæRW‡G&F‚f–ÆÂà¢6öç7B6ö–Å‚ÒÖF‚æÖ–âƒ#bÂÖF‚æÖ‚ƒ’ÂFWF‚¢ãb’“°¢6öç7B7Væ²ÒF†—2å÷FW'&–åF÷F‚€¢&'2æÖ‚†"’Óâ‡²ââæ"Â“¢"ç’²6ö–Å‚Ò’’Â6çf2æ†V–v‡BÂG'VRÂ6çf2çv–GF‚À¢“°¢7G‚æf–ÆÅ7G–ÆRÒ6†–gDÆ–v‡FæW72†w&÷VæD6öÆ÷"ÂÓãr“°¢7G‚æf–ÆÂ‡7Væ²“° ¢òò"â7G&FâG&vâ–âtõ$ÄB76R‡†6RG&—fVâ'’v÷&ÆE‚’6òF†W¢òòG&fVÂv—F‚F†RFW'&–â–ç7FVBöb6—GF–ær7F–ÆÂöâF†R67&VVâÒÐ¢òòF†BÖ÷F–öâ—2F†Rv†öÆRö–çBÂ—Bw2v†BÖ¶W2F†Rw&÷VæB&VB0¢òòw&÷VæB&V–ær7&÷76VB&F†W"F†â26öÆ÷&VB&Vv–öâà¢6öç7B7G&FÒF†—2å÷7G&FÇÂ‡F†—2å÷7G&FÒF†—2åö'V–ÆE7G&F‚’“°¢7G‚æÆ–æT6Òw&÷VæBs°¢f÷"†6öç7B2öb7G&F’°¢6öç7B’Ò7&W7B²6ö–Å‚²†FWF‚Ò6ö–Å‚’¢2æFWFƒ°¢–b‡’â6çf2æ†V–v‡B²B’6öçF–çVS°¢òòæV&W"×Fò×7W&f6R7G&F67&öÆÂ6Æ–v‡FÇ’f7FW#¢Æ—GFÆR–çFW&æÀ¢òò&ÆÆ‚–ç6–FRF†R6öÆ–BÂ6ò—B†2F†–6¶æW72&F†W"F†â&V–æp¢òòöæR6†VWBöbvÆÇW"à¢6öç7B7‚Òv÷&ÆE‚¢ƒãƒR²ã2¢ƒÒ2æFWFƒ’“°¢7G‚ç7G&ö¶U7G–ÆRÒ2æÆ–v‡Bòw&v&ƒ#SRÃ#SRÃ#SRÃ’r¢w&v&ƒÃÃÃ’s°¢7G‚ævÆö&ÄÇ†Ò2æÇ†°¢7G‚æÆ–æUv–GF‚Ò2çv–GFƒ°¢7G‚æ&Vv–åF‚‚“°¢f÷"†ÆWB‚Ò²‚ÃÒ6çf2çv–GFƒ²‚³Òb’°¢6öç7B—’Ò’²ÖF‚ç6–â‚‡‚²7‚’ò2çvfVÆVæwF‚²2ç†6R’¢2æ× ¢²ÖF‚ç6–â‚‡‚²7‚’ò‡2çvfVÆVæwF‚¢ã3r’²2ç†6R¢ãr’¢2æ×¢ãCS°¢–b‡‚ÓÓÒ’7G‚æÖ÷fUFò‡‚Â—’“²VÇ6R7G‚æÆ–æUFò‡‚Â—’“°¢Ð¢7G‚ç7G&ö¶R‚“°¢Ð¢7G‚ævÆö&ÄÇ†Ò° ¢òò2â&ö÷G2æB÷&S¢W'6—7FVçBG&W76–ær6òF†R&æB†26öÖWF†–ær–â—@¢òò&W–öæBfÆBF—'BæB'&÷6†’w2ö666–öæÂ6fRâ&÷F‚&R6VVFVBöæ6P¢òòW"6öæræBG&vâ–âtõ$ÄB76RÆ–¶RF†R7G&F&÷fRÂ6òF†W¢òò67&öÆÂv—F‚F†RFW'&–â–ç7FVBöb6—GF–ær–ææVBFòF†R67&VVâà¢òò&ö÷G2&RföÆ–vRFVÆÂ(	B6¶—F†VÒ–âv÷&ÆG2v†÷6Rw&÷VæB—27FöæRÀ¢òò—&öâÂvFW"ÖfÆö÷"Â÷"f7WVÒà¢6öç7BÖBÒÖFW&–Äf÷"‡F†—2çv÷&ÆCòæ¶–æBÇÂvÇ–æRr“°¢–b†ÖBæw&÷VæBç&ö÷G2’F†—2åöG&u&ö÷G2†7G‚Â6çf2Â7&W7BÂFWF‚Âv÷&ÆE‚“°¢F†—2åöG&t÷&TfÆV6·2†7G‚Â6çf2Â7&W7BÂFWF‚Âv÷&ÆE‚“° ¢òòBâÆ–v‡BfÆÇ2öfbv—F‚FWF‚–çFòF†R6öÆ–BÒÒG&vâÄ5B6ò—@¢òò6–æ·2WfW'—F†–ær&÷fR–çFòF†RF&²v—F‚F—7Fæ6Rg&öÒF†R7W&f6Rà¢òò&V6VFW2F÷v&BâVæÆ—BÆ÷vW"&æBÂ'WBF†R7W&f6R‡v†W&RF†RG&–ð¢òò7GVÆÇ’7FæG2’7F—2&VÂÂÆ—BÖFW&–ÂÒÒvö–ærFòG'VR&Æ6°¢òò'’ãSRRöbF†R&æBÖFRF†Rfö÷F–ærVæFW"F†R6†&7FW'2&VB0¢òòfö–BÂv†–6‚—2F†R÷÷6—FRöb'F†Rw&÷VæB6F6†W2F†RÆ–v‡B"à¢6öç7Bfö–DÒÖBæw&÷VæBçfö–DÇ†óòã#°¢6öç7Bw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂ7&W7BÂÂ6çf2æ†V–v‡B“°¢w&BæFD6öÆ÷%7F÷ƒÂw&v&ƒÃÃÃ’r“°¢w&BæFD6öÆ÷%7F÷ƒã3‚Â6†–gDÆ–v‡FæW72†w&÷VæD6öÆ÷"ÂÓã’“°¢w&BæFD6öÆ÷%7F÷ƒÂ&v&ƒÃÃÂG·fö–DçFôf—†VBƒ"—Ò–“°¢7G‚æf–ÆÅ7G–ÆRÒw&C°¢7G‚æf–ÆÅ&V7BƒÂ7&W7BÂ6çf2çv–GF‚ÂFWF‚“°¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢¢6VVFVB&ö÷BFVf–æ—F–öç2ÒÒf—†VBW"6öærâV6‚—26†÷'BÂFW&–ærÀ¢¢vVçFÇ’f÷&¶–ærFVæG&–Â†æv–ærg&öÒö–çBöâF†R6ö–Â†÷&—¦öâÀ¢¢&VF–ær2F†RVæFW'6–FRöb7W&f6RföÆ–vR&F†W"F†âç—F†–æp¢¢ÆçFVBBvVæW&F–öâF–ÖR‡F†W&Rw2æòW"×ÆçB6÷'&VÆF–öâÒÐ¢¢W&VÇ’Ö&–VçBFW‡GW&RÂ6†V&V6W6R—Bw2&¶VBöæ6R’â¢ð¢ö'V–ÆE&ö÷G2‚’°¢6öç7B&æBÒ×VÆ&W''“3"††6…6VVB†G·F†—2ç6öæu6VVGÓ§&ö÷G6’“°¢6öç7B÷WBÒµÓ°¢6öç7B5âÒ#C²òòv÷&ÆB×‚W&–öBF†RGFW&â&WVG2÷fW ¢6öç7B4õTåBÒ##°¢f÷"†ÆWB’Ò²’Â4õTåC²’²²’°¢÷WBçW6‚‡°¢v÷&ÆEƒ¢&æB‚’¢5âÀ¢ÆVã¢B²&æB‚’¢3BÀ¢ÆVã¢‡&æB‚’ÒãR’¢ãbÀ¢f÷&´C¢ãB²&æB‚’¢ãBÀ¢f÷&´ÆVã¢‚²&æB‚’¢bÀ¢f÷&µ6–FS¢&æB‚’ÂãRòÓ¢À¢v–GFƒ¢ã²&æB‚’¢ã2À¢Ò“°¢Ð¢&WGW&â²7ã¢5âÂ&ö÷G3¢÷WBÓ°¢Ð ¢öG&u&ö÷G2†7G‚Â6çf2Â7&W7BÂFWF‚Âv÷&ÆE‚’°¢6öç7B²7âÂ&ö÷G2ÒÒF†—2å÷&ö÷G2ÇÂ‡F†—2å÷&ö÷G2ÒF†—2åö'V–ÆE&ö÷G2‚’“°¢7G‚ç7G&ö¶U7G–ÆRÒw&v&ƒÃÃÃãB’s°¢7G‚æÆ–æT6Òw&÷VæBs°¢6öç7B†6RÒv÷&ÆE‚R7ã°¢f÷"†ÆWB&WÒÓ²&WÃÒÖF‚æ6V–Â†6çf2çv–GF‚ò7â’²²&W²²’°¢f÷"†6öç7B"öb&ö÷G2’°¢6öç7B‚Ò"çv÷&ÆE‚²&W¢7âÒ†6S°¢–b‡‚ÂÓ#ÇÂ‚â6çf2çv–GF‚²#’6öçF–çVS°¢6öç7B&V6‚ÒÖF‚æÖ–â‡"æÆVâÂFWF‚¢ãr“°¢–b‡&V6‚Âb’6öçF–çVS°¢7G‚æÆ–æUv–GF‚Ò"çv–GFƒ°¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò‡‚Â7&W7B“°¢6öç7BÖ–E‚Ò‚²"æÆVâ¢&V6ƒ°¢6öç7BÖ–E’Ò7&W7B²&V6‚¢"æf÷&´C°¢7G‚æÆ–æUFò†Ö–E‚ÂÖ–E’“°¢7G‚æÆ–æUFò†Ö–E‚²"æÆVâ¢‡&V6‚Ò&V6‚¢"æf÷&´B’Â7&W7B²&V6‚“°¢7G‚ç7G&ö¶R‚“°¢òò6†÷'Bf÷&²öfbF†RÖ–âFVæG&–ÂÒÒ¶VW2—B&VF–ær2&ö÷G2À¢òòæ÷B6–ævÆR7G&–v‡B67&F6‚à¢7G‚æ&Vv–åF‚‚“°¢7G‚æÖ÷fUFò†Ö–E‚ÂÖ–E’“°¢7G‚æÆ–æUFò†Ö–E‚²"æf÷&µ6–FR¢"æf÷&´ÆVâ¢ãbÂÖ–E’²"æf÷&´ÆVâ“°¢7G‚ç7G&ö¶R‚“°¢Ð¢Ð¢Ð ¢ò¢¢6VVFVB÷&RÖfÆV6²FVf–æ—F–öç2ÒÒ6ÖÆÂvÆ–çG2'W&–VB–âF†R6ö–ÂÀ¢¢&V7F–ærf–çFÇ’FòF†RÖVÆöG’&æBÆ–¶RF†R7G&Fw2Æ–v‡B76W0¢¢Ç&VG’FòVÇ6Wv†W&R–âF†—26Æ72Â6òF†R&æBæWfW"&VG22gVÆÇ¢¢–æW'BWfVâ&WGvVVâ6fRWfVçG2â¢ð¢ö'V–ÆD÷&TfÆV6·2‚’°¢6öç7B&æBÒ×VÆ&W''“3"††6…6VVB†G·F†—2ç6öæu6VVGÓ¦÷&V’“°¢6öç7B÷WBÒµÓ°¢6öç7B5âÒƒ°¢6öç7B4õTåBÒC°¢6öç7B…TU2Ò²r6ffS†rÂr3†C–fbrÂr63–FfbuÓ°¢f÷"†ÆWB’Ò²’Â4õTåC²’²²’°¢÷WBçW6‚‡°¢v÷&ÆEƒ¢&æB‚’¢5âÀ¢FWFƒ¢ãR²&æB‚’¢ãsRÀ¢#¢ãB²&æB‚’¢"ã"À¢6öÆ÷#¢…TU5²‡&æB‚’¢…TU2æÆVæwF‚’ÂÒÀ¢†6S¢&æB‚’¢ÖF‚å’¢"À¢Ò“°¢Ð¢&WGW&â²7ã¢5âÂfÆV6·3¢÷WBÓ°¢Ð ¢öG&t÷&TfÆV6·2†7G‚Â6çf2Â7&W7BÂFWF‚Âv÷&ÆE‚’°¢6öç7B²7âÂfÆV6·2ÒÒF†—2åö÷&TfÆV6·2ÇÂ‡F†—2åö÷&TfÆV6·2ÒF†—2åö'V–ÆD÷&TfÆV6·2‚’“°¢6öç7B†6RÒv÷&ÆE‚R7ã°¢6öç7Bæ÷t×2ÒF†—2çE6V2¢°¢f÷"†ÆWB&WÒÓ²&WÃÒÖF‚æ6V–Â†6çf2çv–GF‚ò7â’²²&W²²’°¢f÷"†6öç7BböbfÆV6·2’°¢6öç7B‚Òbçv÷&ÆE‚²&W¢7âÒ†6S°¢–b‡‚ÂÓbÇÂ‚â6çf2çv–GF‚²b’6öçF–çVS°¢6öç7B’Ò7&W7B²FWF‚¢bæFWFƒ°¢–b‡’â6çf2æ†V–v‡BÒB’6öçF–çVS°¢6öç7BGv–æ¶ÆRÒã3R²ãcR¢ƒãR²ãR¢ÖF‚ç6–â†æ÷t×2ò“²bç†6R’“°¢7G‚ævÆö&ÄÇ†ÒãR¢Gv–æ¶ÆS°¢7G‚æf–ÆÅ7G–ÆRÒbæ6öÆ÷#°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2‡‚Â’Âbç"ÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð¢Ð¢7G‚ævÆö&ÄÇ†Ò°¢Ð ¢ò¢¢6VVFVB7G&FFVf–æ—F–öç2ÒÒf—†VBW"6öærÂ6òF†R6ÖR6VVBÇv—0¢¢&öGV6W2F†R6ÖRw&÷VæBw&–â†&WÆ’6â&Rö–çFVBB’â¢ð¢ö'V–ÆE7G&F‚’°¢6öç7B&æBÒ×VÆ&W''“3"††6…6VVB†G·F†—2ç6öæu6VVGÓ§7G&F’“°¢6öç7B÷WBÒµÓ°¢6öç7B4õTåBÒ“°¢f÷"†ÆWB’Ò²’Â4õTåC²’²²’°¢òò&–2F÷v&BF†RWW"†ÆböbF†R6öÆ–C¢F†Bw2F†R'B7GVÆÇ¢òòöâ67&VVâÖ÷7BöbF†RF–ÖRÂæB&VÂ&VFF–ærÆæW27&÷vBæV&W ¢òòF†R7W&f6R&F†W"F†â7&VF–ærWfVæÇ’FòF†R6÷&Rà¢6öç7BBÒÖF‚ç÷r‡&æB‚’Âãb“°¢÷WBçW6‚‡°¢FWFƒ¢ãB²B¢ã“BÀ¢òò6†÷'BVæ÷Vv‚Fòf—6–&Ç’VæGVÆFR7&÷72#ƒ‚g&ÖRÒÒÆöæp¢òòvfVÆVæwF‡2&VB2FVB7G&–v‡B67&F6†W2Âæ÷B&VFF–ærÆæW2à¢vfVÆVæwFƒ¢S²&æB‚’¢#cÀ¢×¢B²&æB‚’¢bÀ¢†6S¢&æB‚’¢ÖF‚å’¢"À¢v–GFƒ¢ãB²&æB‚’¢2ã"À¢òòfWrÆR&VFF–ærÆæW2ÖöærÖ÷7FÇ’F&²öæW2ÒÒW&RF&°¢òò7G&FöâF&²w&÷VæB&VB26×VFvW2ÂF†RÆ–v‡BöæW2&Rv†@¢òò7GVÆÇ’Ö¶RF†RÆ–W&–ærÆVv–&ÆRà¢Æ–v‡C¢&æB‚’Âã3BÀ¢Ç†¢ã’²&æB‚’¢ãÀ¢Ò“°¢Ð¢&WGW&â÷WBç6÷'B‚†Â"’ÓâæFWFƒÒ"æFWFƒ“°¢Ð ¢öG&tw&÷VæB†7G‚Â6çf2Âv÷&ÆE‚Â÷&–v–å‚ÂÂ"ÂBÂÖ÷VçF–åF–çBÒçVÆÂ’°¢òòÖF6‚F†RÖ÷VçF–ç2r÷vâ6öçG&7BÖ6÷'&V7FVBF–çBv†Vâ—Bw2†æFVB–à¢òò†G&r‚’w2W"Ög&ÖRwV&Bv–ç7BF&²ÆWGFRv6†–ær÷WB@¢òòæ–v‡B’&F†W"F†â&RÖFW&—f–ærF†R&rÂVæ6÷'&V7FVB6–Æ†÷VWGFRÒÐ¢òò÷F†W'v—6RF†Rw&÷VæB6÷VÆBVæBW¦ÆW72¢ÆVv–&ÆRF†âF†R&ævR—Bw0¢òò7FæF–ær–âg&öçBöbà¢6öç7Bw&÷VæD6öÆ÷%&rÒÖ÷VçF–åF–çBóòF†—2å÷&÷FFVB‡F†—2æÆW'66†RævWB„ç6–Æ†÷VWGFRÂ"ç6–Æ†÷VWGFRÂB’“°¢òòw&÷VæB—2F–ffW&VçBÖFW&–Âg&öÒF†R&–FvR(	B‡VR×6†–gFVBÂÆ–gFVBÀ¢òòæBfÆö÷&VBW"v÷&ÆB6òæV"Ö&Æ6²6–Æ†÷VWGFR6ææ÷B&öGV6R¢òòfö–BVæFW&fö÷Bâ66Væ–2×÷7FW"–çBÂæ÷BF†R6ÖR7WF÷WB6öçF–çVV@¢òòF÷vçv&Bà¢6öç7Bv÷&ÆD¶–æBÒF†—2çv÷&ÆCòæ¶–æBÇÂvÇ–æRs°¢6öç7BÖBÒÖFW&–Äf÷"‡v÷&ÆD¶–æB“°¢6öç7Bw&÷VæD6öÆ÷"Òw&÷VæD6öÆ÷$f÷"†w&÷VæD6öÆ÷%&rÂv÷&ÆD¶–æB“°¢6öç7BÆö6Äw&÷VæE’ÒF†—2æw&÷VæDf–VÆBòF†—2æw&÷VæDf–VÆBæ†V–v‡DB‡v÷&ÆE‚’¢F†—2æw&÷VæE“°¢6öç7B7F—fTg‚ÒBâãRò"æg‚¢ægƒ°¢òòF†RÖ—'&÷#¢w&÷VæDf–VÆBw2‡—6–72†6öÆÆ—6–öâ†V–v‡B’&RVçF÷V6†VBÀ¢òò'WBF†RÆ¶R—2v†W&RF†RFW'&–âÔUf—7VÆÇ’F¶W2&W7BÒÒ¢òò7F–ÆÂÂfÆB7W&f6R–ç7FVBöb¦—GFW&–ærUÖ&"FW'&–âà¢6öç7B—4Æ¶RÒ7F—fTg‚ÓÓÒvÆ¶U&VfÆV7F–öâs° ¢–b‡F†—2æw&÷VæDf–VÆBbb—4Æ¶R’°¢òòw&÷VæB26†–gFVBUÖ&"×6†VB6Æ–6W2†föÆÆ÷r×W—FVÒR“¢V6‚& ¢òòV6†öW2F†R†÷&—¦öâUw2÷vâW"Ö&æB&VF–ærÂ§W7Böfg6WB'’fWp¢òò6öÇVÖç2Â6òF†RFW'&–âf—7VÆÇ’&‡–ÖW2v—F‚F†R×W6–2Æ––ærf ¢òò–âF†R&6¶w&÷VæBâ&VæFW&VB2öæR6öçF–çV÷W26Öö÷F†VB&–FvR‡6VP¢òò÷FW'&–åF÷F‚’&F†W"F†âW"×6Æ–6R&V7G2à¢6öç7B&'2ÒF†—2æw&÷VæDf–VÆBçf—6–&ÆT&'2‡v÷&ÆE‚Â÷&–v–å‚Â6çf2çv–GF‚“°¢6öç7Bf–ÆÅF‚ÒF†—2å÷FW'&–åF÷F‚†&'2Â6çf2æ†V–v‡BÂG'VRÂ6çf2çv–GF‚“°¢6öç7B7G&ö¶UF‚ÒF†—2å÷FW'&–åF÷F‚†&'2Â6çf2æ†V–v‡BÂfÇ6RÂ6çf2çv–GF‚“°¢7G‚æf–ÆÅ7G–ÆRÒw&÷VæD6öÆ÷#°¢7G‚æf–ÆÂ†f–ÆÅF‚“°¢òòW&–ÂW'7V7F—fRf÷"F†Rw&÷VæBà¢òð¢òòWfW'’&ævRv÷BF†—2–â7FvR2öbF†RÖ÷VçF–â÷fW&†VÃ²F†Rw&÷Væ@¢òòæWfW"F–BÂ6ò—B7F–VBôäRfÆB6öÆ÷"g&öÒF†R†÷&—¦öâÆ–æRÆÂF†P¢òòv’FòF†R&÷GFöÒöbF†Rg&ÖRÒÒF†R6–ævÆR&–vvW7B&V6öâ—B&VG0¢òò26†VWBöb6öç7G'V7F–öâW"Æ–BVæFW"F†R66VæR&F†W"F†â0¢òòÆæB&V6VF–ærv’g&öÒ–÷Râ—B—2Ç6òF†RÆ&vW7B6öçF–çV÷W2&V¢òòöâ67&VVâÂ6ò—B—2v†W&RÖ—76–ærFWF‚7VR6÷7G2F†RÖ÷7Bà¢òð¢òò6ÖRfö6'VÆ'’2öG&u&–FvUföÇVÖRw2W&–Â73¢v6‚F†Rd"VFvP¢òò‡F†RF÷Âv†W&RF†Rw&÷VæBÖVWG2F†R&ævW2’F÷v&BF†—2åö—$6öÆ÷"À¢òòæBÆVfRF†RæV"VFvRÆöæRBgVÆÂ6öÆ÷"â'Vç2&Vf÷&P¢òòöG&tw&÷VæD–çFW&–÷"6òF†R–çFW&–÷"FWF–Â7F–ÆÂ&VG2öâF÷öb—Bà¢–b†ÖBæw&÷VæBæW&–ÂÓÒfÇ6RbbF†—2åö—$6öÆ÷"bb&'2æÆVæwF‚’°¢ÆWBÖ–åF÷Ò6çf2æ†V–v‡C°¢f÷"†6öç7B&"öb&'2’–b†&"ç’ÂÖ–åF÷’Ö–åF÷Ò&"ç“°¢6öç7BæV"ÒÖF‚æÖ‚†Ö–åF÷²Â6çf2æ†V–v‡B“°¢6öç7B²#¢"Âs¢rÂ#¢"ÒÒ†W…Fõ&v"‡F†—2åö—$6öÆ÷"“°¢6öç7BFWF‚Ò7G‚æ7&VFTÆ–æV$w&F–VçBƒÂÖ–åF÷ÂÂæV"“°¢FWF‚æFD6öÆ÷%7F÷ƒÂ&v&‚G¶'ÒÂG¶wÒÂG¶'ÒÂG´u$õTäEôU$”ÅôÅ„Ò–“°¢FWF‚æFD6öÆ÷%7F÷„u$õTäEôU$”ÅôdÄÄôdbÂ&v&‚G¶'ÒÂG¶wÒÂG¶'ÒÃ–“°¢FWF‚æFD6öÆ÷%7F÷ƒÂ&v&‚G¶'ÒÂG¶wÒÂG¶'ÒÃ–“°¢7G‚æf–ÆÅ7G–ÆRÒFWFƒ°¢7G‚æf–ÆÂ†f–ÆÅF‚“°¢Ð¢F†—2åöG&tw&÷VæD–çFW&–÷"†7G‚Â6çf2Âf–ÆÅF‚Â&'2Âw&÷VæD6öÆ÷"Âv÷&ÆE‚“° ¢òòFW'&–â&VÆ–Vc¢6Æ—FòF†R&–FvRæB7F×‚×FÆÂf6–æp¢òò7G&—Â7G&WF6†VBæBfFVBv—F‚FWF‚âW"×—†VÂ7G&—6ææ÷@¢òòw&÷r†&BfW'F–6Â7WBF†Rv’Öç’×7F÷6çf4w&F–VçB6à¢òòv†VâæV–v†&÷W&–ær7F÷26öÆÆ6RâvFVBöâ&–ÔÆ–v‡DVæ&ÆVC²öÖ—@¢òòF†RÆ–v‡BæBF†—2—2æòÖ÷†'—FRÖ–FVçF–6ÂFòF†RfÆBf–ÆÂ’à¢6öç7B&–ÔöâÒF†—2å÷W&bòF†—2å÷W&bç&–ÔÆ–v‡DVæ&ÆVB¢G'VS°¢6öç7B&VÆ–Ve6×ÆW2Ò‡&–ÔöâbbF†—2æÆ–v‡B¢ò6×ÆUFW'&–ä7W'fR†&'2¢¢çVÆÃ°¢6öç7Bf6–ærÒ&VÆ–Ve6×ÆW2ò7W'fTf6–ær‡&VÆ–Ve6×ÆW2ÂF†—2æÆ–v‡B’¢çVÆÃ°¢–b†f6–ærbbf6–ærç6öÖR‚†b’ÓâÖF‚æ'2†b’âã’’°¢7G‚ç6fR‚“°¢7G‚æ6Æ—†f–ÆÅF‚“°¢ÆWBÖ–åF÷Ò6çf2æ†V–v‡C°¢f÷"†6öç7B&"öb&'2’–b†&"ç’ÂÖ–åF÷’Ö–åF÷Ò&"ç“°¢6öç7B&æBÒF†—2å÷&VÆ–Vd&æB†6çf2çv–GF‚“°¢–b†&æB’°¢òòÆ—BæB6†FR&RGvò6W&FR7G&—2æ÷rÂæ÷BöæR6öÖ&–æV@¢òò73¢F†W’æVVBF–ffW&VçBf–æÂ6ö×÷6—FR÷W&F–öç2öçFð¢òòF†R&VÂ6çf2†v&Ò×v†—FR6F6‚ÖÆ–v‡BFG2'&–v‡FæW70¢òòVæFW"F†RFVfVÇB6÷W&6RÖ÷fW#²F†R6†FR†ÆbæVVG0¢òòv×VÇF—Ç’rf÷"vVçV–æRö66ÇW6–öâÒÒ6VR&VÆ–Ve6†FU7G&—$t$’à¢òò6ÖR7G&—¶&æB67&F6‚'VffW'2Â&WW6VB6WVVçF–ÆÇ’f÷"V6‚à¢6öç7B&7G‚Ò&æBæ&æD7Gƒ°¢6öç7B–çD&æBÒ‡&v&Âf–æÄ6ö×÷6—FR’Óâ°¢&æBç7G&—7G‚çWD–ÖvTFF†æWr–ÖvTFF‡&v&Â6çf2çv–GF‚Â’ÂÂ“°¢&7G‚ç6WEG&ç6f÷&ÒƒÂÂÂÂÂ“°¢&7G‚æ6ÆV%&V7BƒÂÂ&æBæ&æBçv–GF‚Â&æBæ&æBæ†V–v‡B“°¢&7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒw6÷W&6RÖ÷fW"s°¢&7G‚æG&t–ÖvR†&æBç7G&—ÂÂÂ6çf2çv–GF‚Â$TÄ”TeôdÄÄôdeõ‚“°¢&7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒvFW7F–æF–öâÖ–âs°¢6öç7BfFRÒ&7G‚æ7&VFTÆ–æV$w&F–VçBƒÂÂÂ$TÄ”TeôdÄÄôdeõ‚“°¢fFRæFD6öÆ÷%7F÷ƒÂw&v&ƒÃÃÃ’r“°¢fFRæFD6öÆ÷%7F÷ƒÂw&v&ƒÃÃÃ’r“°¢&7G‚æf–ÆÅ7G–ÆRÒfFS°¢&7G‚æf–ÆÅ&V7BƒÂÂ6çf2çv–GF‚Â$TÄ”TeôdÄÄôdeõ‚“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒf–æÄ6ö×÷6—FS°¢7G‚æG&t–ÖvR†&æBæ&æBÂÂÖ–åF÷“°¢Ó°¢–çD&æB‡&VÆ–VdÆ—E7G&—$t$‡&VÆ–Ve6×ÆW2Âf6–ærÂ6çf2çv–GF‚’Âw6÷W&6RÖ÷fW"r“°¢–çD&æB‡&VÆ–Ve6†FU7G&—$t$‡&VÆ–Ve6×ÆW2Âf6–ærÂ6çf2çv–GF‚’Âv×VÇF—Ç’r“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒw6÷W&6RÖ÷fW"s°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢6öç7B†Æô6öÆ÷"ÒF†—2å÷&÷FFVB‡F†—2æÆW'66†RævWB„æ6VÆW7F–Âæ†Æô6öÆ÷"Â"æ6VÆW7F–Âæ†Æô6öÆ÷"ÂB’“°¢6öç7B²"ÂrÂ"ÒÒ†W…Fõ&v"††Æô6öÆ÷"“°¢6öç7B&v"ÒG·'ÒÂG¶wÒÂG¶'Ö° ¢òò6ögBw&ö÷fR6¢×W6–2×FW'&–âFVÆÂÂ6ögBÇ†6ò—B&VG20¢òòVæW&w’&–F–ærF†RÆæB(	Bæ÷B7–â†—&Æ–æRvÆ—F6‚âF†–6²7G&ö¶P¢òòÆöærF†R6ÖR&–FvR7W'fR&F†W"F†âW"Ö&"&V7Bà¢6öç7Bw&ö÷fTæ÷rÒ&'2æÆVæwF‚ò&'5³Òæw&ö÷fRÇÂ¢°¢6öç7BvçDw&÷VæD62Ò7G–ÆTF–Ç2‡F†—2çf—7VÅ7G–ÆR’æw&÷VæD7&W7D62ÓÒfÇ6S°¢–b†w&ö÷fTæ÷râãRbbvçDw&÷VæD62’°¢7G‚ç6fR‚“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒvÆ–v‡FW"s°¢6öç7BÒãb¢w&ö÷fTæ÷s°¢7G‚ç7G&ö¶U7G–ÆRÒ&v&‚G·&v'ÒÂG¶6fÆ6„Ç††ÂF†—2ç&VGV6VDfÆ6‚—Ò–°¢7G‚æÆ–æUv–GF‚ÒC°¢7G‚æÆ–æT¦ö–âÒw&÷VæBs°¢7G‚ç7G&ö¶R‡7G&ö¶UF‚“°¢7G‚ç&W7F÷&R‚“°¢Ð ¢òò6WGFÆVB6æ÷s¢g&÷7B6&–F–ærF†R&–FvRÒÒÆR&æBv†÷6P¢òòF†–6¶æW72w&÷w2v—F‚6÷fW"ÂÇW26VVFVBvÆ–çG26ò–6R&VG22”4P¢òò‡6Æ—W'’Â6VRG&7F–öâæ§2’&F†W"F†â§W7BÆR–çBâÖVÇG2Fð¢òò¦W&ò6÷7BF†RÖöÖVçB6÷fW"FöW2à¢–b‚‡F†—2ç6æ÷t6÷fW"ÇÂ’âã2’°¢6öç7B6÷fW"ÒF†—2ç6æ÷t6÷fW#°¢7G‚ç6fR‚“°¢7G‚ç7G&ö¶U7G–ÆRÒ&v&ƒ#3Ã#C"Ã#SRÂG²ƒã3B¢6÷fW"’çFôf—†VBƒ2—Ò–°¢7G‚æÆ–æUv–GF‚ÒB²’¢6÷fW#°¢7G‚æÆ–æT¦ö–âÒw&÷VæBs°¢7G‚æÆ–æT6Òw&÷VæBs°¢7G‚ç7G&ö¶R‡7G&ö¶UF‚“°¢òò7V7VÆ"vÆ–çG3¢fWr&"×F÷ö–çG26F6‚F†RÆ–v‡BV6‚ÖöÖVçBÀ¢òòG&–gF–ærv—F‚v÷&ÆB67&öÆÂ6òF†R6†VVâ6Æ–FW2VæFW&fö÷Bà¢6öç7BvÆ–çG2ÒµÓ°¢f÷"†6öç7B&"öb&'2’°¢6öç7BvÆ–çBÒãR²ãR¢ÖF‚ç6–â†&"ç‚¢ã2²v÷&ÆE‚¢ã²F†—2çE6V2¢ãr“°¢–b†vÆ–çBâãƒb’vÆ–çG2çW6‚…¶&"Âã3¢6÷fW"¢†vÆ–çBÒãƒb’òãEÒ“°¢Ð¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒvÆ–v‡FW"s°¢7G‚æf–ÆÅ7G–ÆRÒr6ffbs°¢f÷"†6öç7B¶&"ÂÒöbvÆ–çG2’°¢7G‚ævÆö&ÄÇ†Ò°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2†&"ç‚²&"çv–GF‚ò"Â&"ç’ÂãbÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð¢7G‚ævÆö&ÄÇ†Ò°¢7G‚ç&W7F÷&R‚“°¢Ð ¢òò¶–6²w&÷VæBvÆ÷s¢âVÖ—76—fR&–Ò÷fW"&'2¶–6²×7–æ6VBVÇ6P¢òò„w&÷VæDf–VÆBæ¶–6´vÆ÷r’—27W'&VçFÇ’&6–ærF‡&÷Vv‚ÒÒF–çFVBF÷v&@¢òòF†R&–öÖRw2÷vâ†Æò6öÆ÷"6ò—B&VG22F†Rv÷&ÆBw2Æ–v‡BÂæ÷B¢òòvVæW&–2÷fW&Æ’â6–ÆVçB‡¦W&ò6÷7B’v†VæWfW"æòVÇ6R—27F—fRà¢6öç7BvÆ÷t&'2Ò&'2æf–ÇFW"‚†&"’Óâ&"ævÆ÷râã“°¢–b†vÆ÷t&'2æÆVæwF‚’°¢7G‚ç6fR‚“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒvÆ–v‡FW"s°¢f÷"†6öç7B&"öbvÆ÷t&'2’°¢6öç7BÇ†Ò6fÆ6„Ç†ƒãR¢&"ævÆ÷rÂF†—2ç&VGV6VDfÆ6‚“°¢òòfÆö÷&VBB¢&"B÷"7BF†R&÷GFöÒVFvR†6çf2æ†V–v‡BÐ¢òò&"ç’ÃÒ’W6VBFò†æB7&VFU&F–Äw&F–VçBæVvF—fR&F—W2À¢òòF‡&÷v–ær–æFW…6—¦TW'&÷"æB¶–ÆÆ–ærF†Rg&ÖRw2v†öÆRG&r6ÆÀ¢òòÒÒæ÷B§W7BF†—2vÆ÷rÒÒWfW'’F–ÖR¶–6²VÇ6R&V6†VB& ¢òòF†BÆ÷rà¢6öç7B&–Ô‚ÒÖF‚æÖ‚ƒÂÖF‚æÖ–âƒcÂ6çf2æ†V–v‡BÒ&"ç’’“°¢òòâVÆÆ—F–6ÂfÆÆöfb6VçFW&VBöâF†R&"Âæ÷B&V7Bf–ÆÆVBv—F€¢òòfW'F–6ÂÖöæÇ’w&F–VçBÒÒF†RöÆBfW'6–öâfFVBF÷×FòÖ&÷GFöÐ¢òò'WBÆVgBF†R&"w2÷vâv–GF‚2†&BÖVFvVB&÷‚†fÆBF÷Â†&@¢òòÆVgB÷&–v‡B6–FW2’6—GF–ær&–v‡BöâF†Rw&÷VæBÆ–æRWfW'’F–ÖR¢òò¶–6²VÇ6R&6VBF‡&÷Vv‚ÂW†7FÇ’F†R'7G&–v‡BÆ–æVB&÷‚"ð¢òò&†&B7WFöfb"'F–f7BF†—2fFW2v’öâWfW'’6–FR–ç7FVBà¢6öç7B7‚Ò&"ç‚²&"çv–GF‚ò"Â7’Ò&"ç“°¢6öç7B'’Ò&–Ôƒ°¢6öç7B'‚Ò&"çv–GF‚ò"²c°¢6öç7B7‚Ò'‚ò'“°¢7G‚ç6fR‚“°¢7G‚çG&ç6ÆFR†7‚Â7’“°¢7G‚ç66ÆR‡7‚Â“°¢6öç7Bw&BÒ7G‚æ7&VFU&F–Äw&F–VçBƒÂÂÂÂÂ'’“°¢w&BæFD6öÆ÷%7F÷ƒÂ&v&‚G·&v'ÒÂG¶Ç†Ò–“°¢w&BæFD6öÆ÷%7F÷ƒÂ&v&‚G·&v'ÒÃ–“°¢7G‚æf–ÆÅ7G–ÆRÒw&C°¢7G‚æ&Vv–åF‚‚“°¢7G‚æ&2ƒÂÂ'’ÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢7G‚ç&W7F÷&R‚“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢òòw&’Õ66÷GBFW‡GW&RÆ—f–ær–ç6–FRF†Rw&÷VæC¢6Æ—FòF†R&–FvRw0¢òò6–Æ†÷VWGFR†öæR6Öö÷F‚Fƒ$BÂæ÷BVæ–öâöbW"×6Æ–6R&V7G2’6ð¢òòF†RGFW&â&–FW2F†RFW'&–âw2÷vâfW'F–6ÂÖ÷F–öââW&VÇ¢òòFV6÷&F—fRFW‡GW&R÷fW"F†RfÆBf–ÆÂ&÷fR—BÂ6òF†RFVWW7BW&`¢òò'Vær6¶—2—B÷WG&–v‡B&F†W"F†â6Æ—¶G&rf÷"æ÷F†–ærà¢–b‚F†—2å÷W&bÇÂF†—2å÷W&bç†VæöÖVægVÆÂ’°¢ÆWBÖ–åF÷Ò6çf2æ†V–v‡C°¢f÷"†6öç7B&"öb&'2’–b†&"ç’ÂÖ–åF÷’Ö–åF÷Ò&"ç“°¢7G‚ç6fR‚“°¢7G‚æ6Æ—†f–ÆÅF‚“°¢F†—2ç&BæG&r†7G‚Â6çf2Âv÷&ÆE‚ÂÖ–åF÷“°¢7G‚ç&W7F÷&R‚“°¢Ð ¢–b†f6–ær’°¢òò7&W7B6F6ƒ¢FöF’w2ã‚7G&ö¶RÂöæR6Öö÷F†VBF‚ÂÇ†¢òòÖöGVÆFVBÆöærF†R6ÖR†÷&—¦öçFÂw&F–VçBF†R&öG’W6W2à¢òò6–ævÆR7G&ö¶Röb7G&ö¶UF†¶VW2F†R&–ÒöâF†R&–FvP¢òò—B&VÆöæw2FòÂ–ç7FVBöbâ7G&–v‡B6VvÖVçG2&WGvVVâ& ¢òò6VçG&W2F†BFöâwBÖF6‚F†RVG&F–2f–ÆÂà¢6öç7B7&W7E7F÷2Òf6–æt6öÆ÷%7F÷2€¢&VÆ–Ve6×ÆW2Âf6–ærÂÂ6çf2çv–GF‚Âv7&W7BrÀ¢“°¢–b†7&W7E7F÷2æÆVæwF‚ãÒ"’°¢6öç7B7&W7BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂÂ6çf2çv–GF‚Â“°¢f÷"†6öç7B2öb7&W7E7F÷2’7&W7BæFD6öÆ÷%7F÷‡2æöfg6WBÂ2æ6öÆ÷"“°¢7G‚ç7G&ö¶U7G–ÆRÒ7&W7C°¢ÒVÇ6R°¢7G‚ç7G&ö¶U7G–ÆRÒw&v&ƒ#SRÃ#SRÃ#SRÃã‚’s°¢Ð¢7G‚æÆ–æUv–GF‚Ò#°¢7G‚æÆ–æT¦ö–âÒw&÷VæBs°¢7G‚æÆ–æT6Òw&÷VæBs°¢7G‚ç7G&ö¶R‡7G&ö¶UF‚“°¢ÒVÇ6R°¢7G‚ç7G&ö¶U7G–ÆRÒw&v&ƒ#SRÃ#SRÃ#SRÃã‚’s°¢7G‚æÆ–æUv–GF‚Ò#°¢7G‚æÆ–æT¦ö–âÒw&÷VæBs°¢7G‚ç7G&ö¶R‡7G&ö¶UF‚“°¢Ð¢ÒVÇ6R°¢7G‚æf–ÆÅ7G–ÆRÒw&÷VæD6öÆ÷#°¢7G‚æf–ÆÅ&V7BƒÂÆö6Äw&÷VæE’Â6çf2çv–GF‚Â6çf2æ†V–v‡BÒÆö6Äw&÷VæE’“°¢Ð ¢–b†7F—fTg‚ÓÓÒvæVöäw&–Br’F†—2åöG&tæVöäw&–B†7G‚Â6çf2Âv÷&ÆE‚ÂÆö6Äw&÷VæE’“°¢VÇ6R–b†7F—fTg‚ÓÓÒv6æ÷”FÆRr’F†—2åöG&t6æ÷”FÆR†7G‚Â6çf2ÂÆö6Äw&÷VæE’“°¢VÇ6R–b†7F—fTg‚ÓÓÒvvÆ—F6…FV"rbbF†—2åövÆ—F6„7F—fT×2â’F†—2åöG&tvÆ—F6…FV"†7G‚Â6çf2“°¢VÇ6R–b†7F—fTg‚ÓÓÒwWFÅ–ÆRr’F†—2åöG&uWFÅ–ÆW2†7G‚Â6çf2Âv÷&ÆE‚ÂÆö6Äw&÷VæE’ÂBâãRò"¢“°¢VÇ6R–b†7F—fTg‚ÓÓÒvÖ—&vRr’F†—2åöG&tw&÷VæDÖ—&vR†7G‚Â6çf2Âv÷&ÆE‚ÂÆö6Äw&÷VæE’“°¢VÇ6R–b†—4Æ¶R’F†—2åöG&tÆ¶U&VfÆV7F–öâ†7G‚Â6çf2ÂÆö6Äw&÷VæE’“°¢òò&VÖVÖ&W&VBf÷"G&t6†&7FW%&VfÆV7F–öç3¢&VæFW&W"6ÆÇ2F†BeDU"F†P¢òòG&–òG&w2‡F†V—"Æ—fR67&VVâ÷6—F–öç2&VâwB¶æ÷vâF†—2V&Ç’’Â'W@¢òòöæÇ’F†RÆ¶R&æBÒÒæBöæÇ’D„•2g&ÖRw2w&÷VæBÆ–æRÒÒ—2fÆ–@¢òò7W&f6RFò&VfÆV7BF†VÒ–çFòà¢F†—2åöÆ¶U&VfÆV7Dw&÷VæE’Ò—4Æ¶RòÆö6Äw&÷VæE’¢çVÆÃ°¢Ð ¢ò¢¢F†RÖ—'&÷"„Ö÷fVÖVçB•b“¢fÆ—F†R6·’÷†VæöÖVæ÷6–Æ†÷VWGFR&Vv–öà¢¢Ç&VG’–çFVB&÷fRF†RvFW&Æ–æR7G&–v‡BF÷vâ–çFòF†RÆ¶R&æ@¢¢ÒÒF†RÖæFÆÂW&÷&Â×W&×W&F–öâÂæBÖ–F7W2w26·’f÷–vRÆÀ¢¢&VfÆV7Bf÷"g&VRÂ6–æ6RF†—2&VG2&6²v†FWfW"6çf2—†VÇ2&P¢¢Ç&VG’F†W&RâF†Vâ&—ÆW3¢¶–6²öG&÷ÖW†6—FVBÖöFÅ&–ærG&—fW2¢¢†÷&—¦öçFÂ6–æRöfg6WBW"&÷r×6Æ–6RÂ&RÖ&Æ—GF–ærF†R&VfÆV7F–öà¢¢6–FWv—2–âÆ6R‡F†R6ÖR6VÆb×&VfW&VçF–ÂG&t–ÖvRG&–6²2F†P¢¢‡—RÖg&ÖRV6†ò–â&VæFW&W"æ§2’â¢ð¢öG&tÆ¶U&VfÆV7F–öâ†7G‚Â6çf2Âw&÷VæE’’°¢6öç7BÆ¶T†V–v‡BÒ6çf2æ†V–v‡BÒw&÷VæE“°¢–b†Æ¶T†V–v‡BÃÒ’&WGW&ã° ¢7G‚ç6fR‚“°¢7G‚æ&Vv–åF‚‚“°¢7G‚ç&V7BƒÂw&÷VæE’Â6çf2çv–GF‚ÂÆ¶T†V–v‡B“°¢7G‚æ6Æ—‚“° ¢7G‚ævÆö&ÄÇ†Òã3S°¢7G‚çG&ç6ÆFRƒÂ"¢w&÷VæE’“°¢7G‚ç66ÆRƒÂÓ“°¢òò6çf6—2G&r‚’w2Äôt”4Â7FvRf–WrÒÒÆ–â·v–GF‚Â†V–v‡GÒÀ¢òòæ÷BG&v&ÆRâ76–ær—BFòG&t–ÖvRF‡&WröâWfW'’g&ÖRÔ•%$õ ¢òòv2öâ67&VVâÂæB6–æ6RöG&tw&÷VæB'Vç2æV"F†RTäBöbF†Rv÷&Æ@¢òòG&rÂF†R7vÆÆ÷vVBF‡&÷rFöö²WfW'’6†&7FW"ÂF†R…TBÂ&ÆööÒæBF†P¢òòf–ÆÒf–æ—6‚v—F‚—Bâ6÷W&6RF†R&VÂ&6¶–ær7F÷&S²FW7F–æF–öâ7F—0¢òò–âÆöv–6ÂVæ—G2&V6W6RvR&RVæFW"F†R7‚÷7’G&ç6f÷&Òà¢7G‚æG&t–ÖvR†7G‚æ6çf2ÂÂÂ6çf2çv–GF‚Â6çf2æ†V–v‡B“°¢7G‚ç&W7F÷&R‚“° ¢òòfW'F–6ÂfFRv—F‚FWFƒ¢F†R&VfÆV7F–öâF—76öÇfW2F÷v&BF†Rf ¢òò†&÷GFöÒ’VFvRöbF†RÆ¶R&æB&F†W"F†â7WGF–æröfb6†'Ç’à¢7G‚ç6fR‚“°¢6öç7BfFTw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂw&÷VæE’ÂÂ6çf2æ†V–v‡B“°¢fFTw&BæFD6öÆ÷%7F÷ƒÂw&v&ƒÃÃÃ’r“°¢fFTw&BæFD6öÆ÷%7F÷ƒÂw&v&ƒbÃÃ‚ÃãsR’r“°¢7G‚æf–ÆÅ7G–ÆRÒfFTw&C°¢7G‚æf–ÆÅ&V7BƒÂw&÷VæE’Â6çf2çv–GF‚ÂÆ¶T†V–v‡B“°¢7G‚ç&W7F÷&R‚“° ¢òò&—ÆW2à¢6öç7B4Ä”4U2Òƒ°¢6öç7B7FWÒÖF‚æÖ‚ƒÂÖF‚æ6V–Â†Æ¶T†V–v‡Bò4Ä”4U2’“°¢òò&6¶–ær7F÷&RÖ’&R‚ÓG‚F†RÆöv–6Â7FvR‡7FvR×&W6öÇWF–öâ&W6WB’à¢6öç7BG"Ò7G‚æ6çf2æ†V–v‡BòÖF‚æÖ‚ƒÂ6çf2æ†V–v‡B“°¢7G‚ç6fR‚“°¢7G‚æ&Vv–åF‚‚“°¢7G‚ç&V7BƒÂw&÷VæE’Â6çf2çv–GF‚ÂÆ¶T†V–v‡B“°¢7G‚æ6Æ—‚“°¢f÷"†ÆWB&÷rÒÂ’Ò²&÷rÂÆ¶T†V–v‡C²&÷r³Ò7FWÂ’²²’°¢6öç7BF†WFÒ†’ò4Ä”4U2’¢ÖF‚å’¢#°¢6öç7Böfg6WBÒF†—2æÆ¶U&–æræF—7Æ6VÖVçDB‡F†WF’¢3°¢–b„ÖF‚æ'2†öfg6WB’ÂãR’6öçF–çVS°¢òò6÷W&6R&V7B—2–âDUd”4R—†VÇ2†—B–æFW†W2F†R&6¶–ær7F÷&R“°¢òòFW7F–æF–öâ7F—2Æöv–6Ââ6ÖRF—7F–æ7F–öâ2F†RÖ—'&÷"&Æ—B&÷fRà¢7G‚æG&t–ÖvR†7G‚æ6çf2À¢Â†w&÷VæE’²&÷r’¢G"Â7G‚æ6çf2çv–GF‚Â7FW¢G"À¢öfg6WBÂw&÷VæE’²&÷rÂ6çf2çv–GF‚Â7FW“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢¢f–çB6†&7FW"&VfÆV7F–öç2–âF†RÖ—'&÷"Æ¶R„Ö÷fVÖVçB•b“¢F†R6·¢¢æBFW'&–âÇ&VG’&VfÆV7Bf÷"g&VR‡6VRöG&tÆ¶U&VfÆV7F–öâ&÷fR’À¢¢'WBF†B72'Vç2&Vf÷&RF†RG&–ò—2G&vâÂ6ò—B6âæWfW"–6²F†VÐ¢¢Wg&öÒF†R&6¶–ær7F÷&RF†Rv’—BFöW2WfW'—F†–ærVÇ6Râ6ÆÆVB'¢¢&VæFW&W"&–v‡BgFW"F†RG&–òG&w2Âv†VâF†V—"Æ—fR67&VVâ÷6—F–öç0¢¢æB‡VW2&Rf–æÆÇ’¶æ÷vâÒÒ6ögB6öÆ÷"ÖÖF6†VBvÆ÷r7FæF–ær–âf÷ ¢¢V6‚&W6VçB6†&7FW"Âæ÷BgVÆÂÖ—'&÷&VB7&—FR‡F†W&Rw2æò6†V ¢¢v’Fò&R×&VæFW"F†V—"ÖW6‚6V6öæBF–ÖRÂæB6öÆ÷&VBV6†òÇ&VG¢¢&VG22'&VfÆV7FVB"v–ç7BF†R&—Æ–ærvFW"&VæVF‚—B’à¢¢VçG&–W6¢··‚Â‡VRÂ7F—fWÕÒ–â67&VVâ76S²–æ7F—fRVçG&–W0¢¢†'W'&÷vVBÂf÷–v–ær’&R6¶—VB6òæ÷F†–ær&VfÆV7G2W&f÷&ÖW"v†ð¢¢—6âwB7GVÆÇ’7FæF–æröâF†R6†÷&Râ¢ð¢G&t6†&7FW%&VfÆV7F–öç2†7G‚Â6çf2ÂVçG&–W2’°¢6öç7Bw&÷VæE’ÒF†—2åöÆ¶U&VfÆV7Dw&÷VæE“°¢–b†w&÷VæE’ÓÒçVÆÂ’&WGW&ã°¢6öç7BÆ¶T†V–v‡BÒ6çf2æ†V–v‡BÒw&÷VæE“°¢–b†Æ¶T†V–v‡BÃÒ’&WGW&ã° ¢7G‚ç6fR‚“°¢7G‚æ&Vv–åF‚‚“°¢7G‚ç&V7BƒÂw&÷VæE’Â6çf2çv–GF‚ÂÆ¶T†V–v‡B“°¢7G‚æ6Æ—‚“°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒvÆ–v‡FW"s°¢f÷"†6öç7BRöbVçG&–W2’°¢–b‚RÇÂRæ7F—fRÇÂçVÖ&W"æ—4f–æ—FR†Rç‚’’6öçF–çVS°¢òò6ÖR&–ærF†RvFW"&—ÆW2&÷'&÷rg&öÒöG&tÆ¶U&VfÆV7F–öâÂ6×ÆV@¢òòBF†—26†&7FW"w2÷vâ†÷&—¦öçFÂ÷6—F–öâ6òF†V—"&VfÆV7F–öà¢òòvö&&ÆW2–â7–æ2v—F‚F†RvFW"&–v‡BVæFW"F†VÒÂæ÷B–âÆö6·7FW ¢òòv—F‚WfW'–öæRVÇ6Rw2à¢6öç7BF†WFÒ‚†Rç‚ò6çf2çv–GF‚’R²’¢ÖF‚å’¢#°¢6öç7B&—ÆRÒF†—2æÆ¶U&–æræF—7Æ6VÖVçDB‡F†WF’¢3°¢6öç7Bw&BÒ7G‚æ7&VFTÆ–æV$w&F–VçBƒÂw&÷VæE’ÂÂw&÷VæE’²sB“°¢w&BæFD6öÆ÷%7F÷ƒÂ‡6Æ‚G¶Ræ‡VWÒÂsRÂc‚RÂã#‚–“°¢w&BæFD6öÆ÷%7F÷ƒÂ‡6Æ‚G¶Ræ‡VWÒÂsRÂc‚RÂ–“°¢7G‚æf–ÆÅ7G–ÆRÒw&C°¢7G‚æ&Vv–åF‚‚“°¢7G‚æVÆÆ—6R†Rç‚²&—ÆRÂw&÷VæE’²3Â‚Â3ÂÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢¢F†Rv–æC¢4µU$w2–ÆW27F—fVÇ’6†VBfWrWFÇ2F÷vçv–æB&F†W ¢¢F†â§W7B6—GF–ærF†W&R27FF–2VÆÆ—6W2â¢ð¢÷WFFU6†VEWFÇ2†GE6V2Âv÷&ÆE‚Âv–æBÂ7F—fU&öf–ÆR’°¢–b†7F—fU&öf–ÆRæg‚ÓÓÒwWFÅ–ÆRrbbF†—2å÷7F%6VVB‚’ÂãR¢GE6V2bbF†—2å÷6†VEWFÇ2æÆVæwF‚ÂC’°¢F†—2å÷6†VEWFÇ2çW6‚‡°¢wƒ¢v÷&ÆE‚²F†—2çr¢ãR²‡F†—2å÷7F%6VVB‚’¢"Ò’¢F†—2çr¢ã’À¢“¢F†—2æw&÷VæE’ÒBÂg“¢ÓbÒ¢F†—2å÷7F%6VVB‚’À¢vS¢ÂÆ–fS¢"²F†—2å÷7F%6VVB‚’À¢6öÆ÷#¢7F—fU&öf–ÆRç'F–6ÆW2æ6öÆ÷"À¢&÷C¢F†—2å÷7F%6VVB‚’¢ÖF‚å’¢"Â7–ã¢‡F†—2å÷7F%6VVB‚’¢"Ò’¢"À¢Ò“°¢Ð¢f÷"†ÆWB’ÒF†—2å÷6†VEWFÇ2æÆVæwF‚Ò²’ãÒ²’ÒÒ’°¢6öç7B7ÒF†—2å÷6†VEWFÇ5¶•Ó°¢7ævR³ÒGE6V3°¢7çw‚³Òv–æBç‚¢GE6V3°¢7çg’³ÒC¢GE6V3²òò6WGFÆW2&6²F÷v&BF†Rw&÷Væ@¢7ç’³Ò7çg’¢GE6V2¢ã"²ÖF‚ç6–â‡7ævR¢2’¢ã3°¢7ç&÷B³Ò7ç7–â¢GE6V3°¢–b‡7ævRãÒ7æÆ–fR’F†—2å÷6†VEWFÇ2ç7Æ–6R†’Â“°¢Ð¢Ð ¢ò¢¢4µU$w2F÷&ÖçB†öö³¢6ögBWFÂG&–gG267&öÆÆ–ærv—F‚F†Rw&÷VæBÀ¢¢ÇW2ç’WFÇ27F—fVÇ’6†VFF–æröfbF†R–ÆW2&–v‡Bæ÷rà¢¢…v2öæRv–çB†ÆbÖVÆÆ—6RW"–ÆR(	B&VB2†Ö'W&vW"'Vç2VæFW"F†R&–FvRâ’¢ð¢öG&uWFÅ–ÆW2†7G‚Â6çf2Âv÷&ÆE‚Âw&÷VæE’Â&öf–ÆR’°¢7G‚ç6fR‚“°¢7G‚æf–ÆÅ7G–ÆRÒ&öf–ÆRç'F–6ÆW2æ6öÆ÷#°¢6öç7B76–ærÒ3°¢f÷"†ÆWB’Ò²’Âc²’²²’°¢6öç7B‚Ò‚†’¢76–ærÒv÷&ÆE‚’R†6çf2çv–GF‚²76–ær’²6çf2çv–GF‚²76–ær’R†6çf2çv–GF‚²76–ær’Ò76–ærò#°¢6öç7B'&VF†RÒã‚²ã"¢ÖF‚ç6–â‡F†—2çE6V2¢ãR²’¢"ã“°¢òò6ÖÆÂ7F6¶VBWFÂfÆV6·2öâF†Rw&÷VæBÆ–æR(	Bæ÷BFöÖRVæFW"F†R6Æ–fbà¢6öç7BâÒR²†’R2“°¢f÷"†ÆWB²Ò²²Âã²²²²’°¢6öç7B÷‚Ò†²Ò†âÒ’ò"’¢r²ÖF‚ç6–â†’¢ãr²²’¢#°¢6öç7B÷’ÒÓ"Ò†²R2’¢ãc°¢6öç7B'rÒR²†²R2’¢ãC°¢6öç7B&‚Ò"ã"²†²R"’¢ãc°¢7G‚ævÆö&ÄÇ†Òã‚¢'&VF†R¢ƒãr²ã2¢‚†²²’’R2’ò"“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æVÆÆ—6R‡‚²÷‚Âw&÷VæE’²÷’Â'rÂ&‚Â†²Ò"’¢ã3RÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð¢Ð¢f÷"†6öç7B7öbF†—2å÷6†VEWFÇ2’°¢6öç7B7‚Ò7çw‚Òv÷&ÆEƒ°¢–b‡7‚ÂÓ3ÇÂ7‚â6çf2çv–GF‚²3’6öçF–çVS°¢7G‚ævÆö&ÄÇ†ÒãSR¢ƒÒ7ævRò7æÆ–fR“°¢7G‚æf–ÆÅ7G–ÆRÒ7æ6öÆ÷#°¢7G‚ç6fR‚“°¢7G‚çG&ç6ÆFR‡7‚Â7ç’“°¢7G‚ç&÷FFR‡7ç&÷B“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æVÆÆ—6RƒÂÂBÂ"ÂÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢7G‚ç&W7F÷&R‚“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢öG&tæVöäw&–B†7G‚Â6çf2Âv÷&ÆE‚Âw&÷VæE’’°¢7G‚ç6fR‚“°¢7G‚ç7G&ö¶U7G–ÆRÒw&v&ƒÃ#SRÃ#‚Ãã3R’s°¢7G‚æÆ–æUv–GF‚Ò°¢6öç7B76–ærÒCƒ°¢6öç7Böfg6WBÒv÷&ÆE‚R76–æs°¢f÷"†ÆWB‚ÒÖöfg6WC²‚Â6çf2çv–GFƒ²‚³Ò76–ær’°¢7G‚æ&Vv–åF‚‚“²7G‚æÖ÷fUFò‡‚Âw&÷VæE’“²7G‚æÆ–æUFò‡‚Â6çf2æ†V–v‡B“²7G‚ç7G&ö¶R‚“°¢Ð¢f÷"†ÆWB’Òw&÷VæE“²’Â6çf2æ†V–v‡C²’³Ò#B’°¢7G‚æ&Vv–åF‚‚“²7G‚æÖ÷fUFòƒÂ’“²7G‚æÆ–æUFò†6çf2çv–GF‚Â’“²7G‚ç7G&ö¶R‚“°¢Ð¢–b‡F†—2å÷66æÆ–æT7F—fR’°¢7G‚æf–ÆÅ7G–ÆRÒw&v&ƒÃ#SRÃ#‚Ãã"’s°¢7G‚æf–ÆÅ&V7BƒÂF†—2å÷66æÆ–æU’Â6çf2çv–GF‚Âb“°¢Ð¢–b‡F†—2å÷–ÆöäfÆ6‚âã"’°¢7G‚ævÆö&ÄÇ†ÒF†—2å÷–ÆöäfÆ6ƒ°¢7G‚æf–ÆÅ7G–ÆRÒr3ffCs°¢f÷"†ÆWB’Ò²’Â3²’²²’°¢6öç7B‚Ò‚†’¢C#Òv÷&ÆE‚¢ãcR’R†6çf2çv–GF‚²#’²6çf2çv–GF‚²#’R†6çf2çv–GF‚²#’Ò°¢7G‚æf–ÆÅ&V7B‡‚Âw&÷VæE’ÒCÂbÂC“°¢Ð¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢öG&t6æ÷”FÆR†7G‚Â6çf2Âw&÷VæE’’°¢7G‚ç6fR‚“°¢7G‚æf–ÆÅ7G–ÆRÒw&v&ƒ#3BÃ#SRÃsbÃã’s°¢f÷"†ÆWB’Ò²’ÂS²’²²’°¢6öç7BfÆ–6²Òãb²ãB¢ÖF‚ç6–â‡F†—2çE6V2¢ƒã‚²’¢ã2’²’“°¢7G‚ævÆö&ÄÇ†ÒãR¢fÆ–6³°¢6öç7B‚Ò‚†’¢#C’R6çf2çv–GF‚“°¢7G‚æ&Vv–åF‚‚“°¢7G‚æVÆÆ—6R‡‚Âw&÷VæE’²3ÂcÂ‚ÂÂÂÖF‚å’¢"“°¢7G‚æf–ÆÂ‚“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢ò¢¢ETäRw2FW6W'BÖ—&vS¢f–çBÂvfW&–ærGWÆ–6FRöbF†R†÷&—¦öà¢¢†÷fW&–ær§W7B&÷fRF†R6æBÒÒF—7F–æ7Bg&öÒ†VE6†–ÖÖW"w2&–FvR×6Æ–6P¢¢F—7F÷'F–öâÂ6–æ6R—B&VG22fÇ6R×vFW"–ÆÇW6–öâ6—GF–æröâF†P¢¢w&÷VæB&F†W"F†â†¦R÷fW"F—7FçBFW'&–âà¢ ¢¢F—7F–æ7BÇ6òg&öÒöG&tfFÖ÷&væÂv†–6‚—2F†Rô4TâÖ—&vS¢¢¢†÷fW&–ær&ævRBF†Rf"†÷&—¦öâ&F†W"F†âfÇ6RööÂöâF†P¢¢w&÷VæBâF†RGvòvW&R&÷F‚æÖVBöG&tÖ—&vRf÷"vVV²ÂæB6–æ6R¢¢6Æ72&öG’¶VW2öæÇ’—G2Æ7BFVf–æ—F–öâöbæÖRÂF†B6–ÆVçFÇ¢¢FVÆWFVBF†Rö6VâöæRÒÒ†Væ6RF†RFVÆ–&W&FVÇ’VæÆ–¶RæÖW2æ÷râ¢ð¢öG&tw&÷VæDÖ—&vR†7G‚Â6çf2Âv÷&ÆE‚Âw&÷VæE’’°¢6öç7B&æD‚ÒÖF‚æÖ–âƒ#bÂ6çf2æ†V–v‡BÒw&÷VæE’“°¢–b†&æD‚ÃÒ’&WGW&ã°¢7G‚ç6fR‚“°¢7G‚æ&Vv–åF‚‚“°¢7G‚ç&V7BƒÂw&÷VæE’Ò&æD‚Â6çf2çv–GF‚Â&æD‚“°¢7G‚æ6Æ—‚“°¢7G‚ævÆö&ÄÇ†Òã##°¢7G‚çG&ç6ÆFRƒÂ"¢†w&÷VæE’Ò&æD‚’“°¢7G‚ç66ÆRƒÂÓ“°¢òò6ÖRÆöv–6Â×f–Wr×g2ÖG&v&ÆRf—‚2F†RÆ¶R&VfÆV7F–öââ&V6†VB'¢òòDäÖvVæW&FVBv÷&ÆG2Âv†÷6Rg‚6öÖW2g&öÒ6†Tw&ÖÖ"w2e…ô%•õDTÕ ¢òò†gƒ¢vÖ—&vRr÷fW"F†RãSRÓãcBFV×W&GW&R&æB“²æöæRöbF†R†æBÐ¢òòWF†÷&VBÆWGFW2VÖ—B—BÂv†–6‚—2v‡’—BvöW2Vç6VVâ–âF†Rf—†V@¢òòæ–æRv÷&ÆG2à¢7G‚æG&t–ÖvR†7G‚æ6çf2ÂÂÂ6çf2çv–GF‚Â6çf2æ†V–v‡B“°¢7G‚ç&W7F÷&R‚“° ¢7G‚ç6fR‚“°¢7G‚ç7G&ö¶U7G–ÆRÒw&v&ƒ#SRÃ#3RÃ“Ãã#R’s°¢7G‚æÆ–æUv–GF‚Ò#°¢6öç7BvfTöfg6WBÒv÷&ÆE‚¢ã#°¢f÷"†ÆWB&÷rÒ²&÷rÂ&æDƒ²&÷r³Òb’°¢6öç7B’Òw&÷VæE’Ò&æD‚²&÷s°¢7G‚æ&Vv–åF‚‚“°¢f÷"†ÆWB‚Ò²‚ÃÒ6çf2çv–GFƒ²‚³Ò’°¢6öç7B—’Ò’²ÖF‚ç6–â‡‚¢ãR²F†—2çE6V2¢"²vfTöfg6WB’¢#°¢–b‡‚ÓÓÒ’7G‚æÖ÷fUFò‡‚Â—’“²VÇ6R7G‚æÆ–æUFò‡‚Â—’“°¢Ð¢7G‚ç7G&ö¶R‚“°¢Ð¢7G‚ç&W7F÷&R‚“°¢Ð ¢òòF—7Æ6W2öæR†÷&—¦öçFÂ&æB6–FWv—2Â2FFÖ÷6‚FV"à¢òð¢òòFöæR26VÆbÖ&Æ—B&F†W"F†âvWD–ÖvTFF²WD–ÖvTFFâF†B— ¢òò&VG2F†Rg&ÖR&6²öfbF†RuRÖ–BÖG&rÂv†–6‚7FÆÇ2F†R—VÆ–æS¢—@¢òò†2Fòf–æ—6‚WfW'’VWVVB÷W&F–öâ&Vf÷&RF†R—†VÇ26â&R†æFVBFð¢òò¥2ÂæB—B—2F†R6–ævÆRÖ÷7BW‡Vç6—fRF†–ær6çf3$Bg&ÖR6â6°¢òòf÷"âG&t–ÖvRv—F‚F†R6çf22—G2÷vâ6÷W&6R7F—2VçF—&VÇ’öâF†P¢òòuRâF†Rg‚f—&W2f÷"c×2WfW'’fWr6V6öæG2Â6òF†—2—26†÷'B7FÆÀ¢òò&F†W"F†â6öç7FçBöæRÂ'WB—B—27FÆÂf÷"æò&V6öâà¢òð¢òòF‡&VRFWF–Ç2¶VWF†R&W7VÇB–FVçF–6ÂFòv†BWD–ÖvTFF&öGV6VC ¢òò—BFG&W76W2F†R&6¶–ær7F÷&RF—&V7FÇ’Â–væ÷&–ærF†R7F—fRG&ç6f÷&Ð¢òò‡F†R&VæFW&W"†266ÆR6WBÒÒ6VR&VæFW&W"æG&r’Â6òF†RG&ç6f÷&Ò—0¢òò&W6WB†W&S²—B&WÆ6W2—†VÇ2&F†W"F†â6ö×÷6—F–ærÂv†–6‚ÖF6†W0¢òò6÷W&6RÖ÷fW"&V6W6RF†R&æB—2÷VRw&÷VæC²æB—BG'Væ6FW2—G0¢òòFW7F–æF–öâF÷v&B¦W&òÂ6òF†R6†–gB—2G'Væ6FVB&F†W"F†âÆVg@¢òòg&7F–öæÂÂv†–6‚Ç6ò¶VW2F†RFV"†&BÖVFvVB–ç7FVBöb&W6×Æ–æp¢òò—B–çFò&ÇW"ÒÒF†Rw&öærÆöö²f÷"FFÖ÷6‚F—7Æ6VÖVçBà¢öG&tvÆ—F6…FV"†7G‚Â6çf2’°¢6öç7B&÷u’ÒÖF‚æfÆö÷"‚†×VÆ&W''“3"„ÖF‚æfÆö÷"‡F†—2çE6V2¢B’’‚’’¢†6çf2æ†V–v‡BÒ’“°¢6öç7B&÷t‚Òƒ°¢6öç7B6†–gBÒÖF‚çG'Væ2ƒb¢†×VÆ&W''“3"„ÖF‚æfÆö÷"‡F†—2çE6V2¢B’²’‚’¢"Ò’“°¢7G‚ç6fR‚“°¢7G‚ç6WEG&ç6f÷&ÒƒÂÂÂÂÂ“°¢7G‚ævÆö&ÄÇ†Ò°¢7G‚ævÆö&Ä6ö×÷6—FT÷W&F–öâÒw6÷W&6RÖ÷fW"s°¢òò7G‚æ6çf2ÂæWfW"6çf6ÒÒF†RÆGFW"—2F†RÆöv–6Â7FvRf–WrÂæ÷@¢òòG&v&ÆR‡6VR&VæFW&W$G&v&ÆW2çFW7Bæ§2’âF†R&V7B¶VW2F†RW†7@¢òòçVÖ&W'2vWD–ÖvTFFv26ÆÆVBv—F‚Â6òF†R&æBFV'2–âF†R6ÖP¢òòÆ6R—BÇv—2†3¢F†÷6R&RÆöv–6Â×6—¦VBf–wW&W2FG&W76–ærF†P¢òò&6¶–ær7F÷&RÂv†–6‚öæÇ’6ö–æ6–FRv†VâF†RGvòÖF6‚Â'WB&W&öGV6–æp¢òòF†B—2F†Rö–çB†W&RâF†—2—27FÆÂf—‚Âæ÷B&Vg&Ö–æröbF†Rg‚à¢7G‚æG&t–ÖvR†7G‚æ6çf2ÂÂ&÷u’Â6çf2çv–GF‚Â&÷t‚Â6†–gBÂ&÷u’Â6çf2çv–GF‚Â&÷t‚“°¢7G‚ç&W7F÷&R‚“°¢Ð§Ð

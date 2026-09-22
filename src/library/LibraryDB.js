@@ -99,21 +99,50 @@ export function rootIdFor(name) {
   return `root:${String(name || 'music').toLowerCase()}`;
 }
 
+function collisionSafeRootId(base, roots, scope) {
+  if (!roots.some((root) => root.id === base)) return base;
+  const uuid = scope?.crypto?.randomUUID?.() || globalThis.crypto?.randomUUID?.()
+    || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `${base}:${uuid}`;
+}
+
+async function sameDirectory(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (typeof a.isSameEntry !== 'function') return false;
+  try { return !!await a.isSameEntry(b); } catch { return false; }
+}
+
 /** Remember a folder. Returns the stored root record, or null if there is
  *  nowhere to store it. */
-function putRoot(db, record) {
-  return db.transaction(ROOTS, 'readwrite').objectStore(ROOTS).put(record);
+async function putRoot(db, record) {
+  const tx = db.transaction(ROOTS, 'readwrite');
+  const committed = done(tx);
+  const request = tx.objectStore(ROOTS).put(record);
+  const requestOk = await wrapOk(request);
+  return requestOk && await committed;
 }
 
 export async function addRoot({ name, handle = null, persistable = true }, scope = globalThis) {
   const db = await open(scope);
   if (!db) return null;
+  const roots = (await wrap(db.transaction(ROOTS, 'readonly').objectStore(ROOTS).getAll())) || [];
+  let prior = null;
+  if (handle) {
+    for (const candidate of roots) {
+      if (await sameDirectory(handle, candidate.handle)) { prior = candidate; break; }
+    }
+  }
+  const now = Date.now();
+  const selectedMs = Math.max(now, ...roots.map((root) => (root.lastSelectedMs || root.addedMs || 0) + 1));
+  const baseId = rootIdFor(name);
   const record = {
-    id: rootIdFor(name),
+    id: prior?.id || collisionSafeRootId(baseId, roots, scope),
     name: String(name || 'Music'),
     handle,
     persistable: !!persistable && !!handle,
-    addedMs: Date.now(),
+    addedMs: prior?.addedMs || now,
+    lastSelectedMs: selectedMs,
   };
   try {
     // A handle the browser refuses to structured-clone rejects the write.
@@ -127,13 +156,13 @@ export async function addRoot({ name, handle = null, persistable = true }, scope
     // could never run.
     let stored = false;
     try {
-      stored = await wrapOk(putRoot(db, record));
+      stored = await putRoot(db, record);
     } catch {
       stored = false;
     }
     if (stored) return record;
     const fallback = { ...record, handle: null, persistable: false };
-    return (await wrapOk(putRoot(db, fallback))) ? fallback : null;
+    return (await putRoot(db, fallback)) ? fallback : null;
   } catch {
     return null;
   } finally {
@@ -145,7 +174,8 @@ export async function listRoots(scope = globalThis) {
   const db = await open(scope);
   if (!db) return [];
   try {
-    return (await wrap(db.transaction(ROOTS, 'readonly').objectStore(ROOTS).getAll())) || [];
+    const roots = (await wrap(db.transaction(ROOTS, 'readonly').objectStore(ROOTS).getAll())) || [];
+    return roots.sort((a, b) => (b.lastSelectedMs || b.addedMs || 0) - (a.lastSelectedMs || a.addedMs || 0));
   } finally {
     db.close();
   }
@@ -239,8 +269,9 @@ export async function pruneTracks(rootId, keepPaths, scope = globalThis) {
 export async function replaceTracks(rootId, tracks, scope = globalThis) {
   const list = [...(tracks || [])].filter(Boolean);
   const written = await putTracks(list, scope);
+  if (written === null) return 0;
   await pruneTracks(rootId, list.map((t) => t.path), scope);
-  return written ? written.length : 0;
+  return written.length;
 }
 /** What survives a rescan: everything the player or the network earned,
  *  never anything the filesystem is authoritative about. Exported because

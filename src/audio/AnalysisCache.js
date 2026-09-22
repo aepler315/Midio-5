@@ -81,6 +81,22 @@ function wrapOk(request) {
   });
 }
 
+function transactionDone(transaction) {
+  return new Promise((resolve) => {
+    transaction.oncomplete = () => resolve(true);
+    transaction.onerror = () => resolve(false);
+    transaction.onabort = () => resolve(false);
+  });
+}
+
+async function writeCommitted(db, operation) {
+  const transaction = db.transaction(STORE, 'readwrite');
+  const committed = transactionDone(transaction);
+  const request = operation(transaction.objectStore(STORE));
+  const requestOk = await wrapOk(request);
+  return requestOk && await committed;
+}
+
 /**
  * Look up a bundle by fingerprint key.
  *
@@ -108,7 +124,8 @@ export async function putBundle(key, bundle, scope = globalThis) {
   const db = await open(scope);
   if (!db) return false;
   try {
-    const ok = await wrapOk(tx(db, 'readwrite').put({ key, bundle, usedMs: Date.now() }));
+    const ok = await writeCommitted(db,
+      (store) => store.put({ key, bundle, usedMs: Date.now() }));
     if (!ok) return false;
     await evict(db);
     return true;
@@ -154,7 +171,7 @@ export async function clearBundles(scope = globalThis) {
   const db = await open(scope);
   if (!db) return false;
   try {
-    return await wrapOk(tx(db, 'readwrite').clear());
+    return await writeCommitted(db, (store) => store.clear());
   } finally {
     db.close();
   }

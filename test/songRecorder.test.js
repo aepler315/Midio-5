@@ -182,6 +182,17 @@ test('exactly one frame is pushed per rendered frame', () => {
   assert.equal(rec._canvas.streams[0].fps, 0);
 });
 
+test('capture can defer its first frame until the rebased picture is drawn', () => {
+  const scope = fakeScope({ withRequestFrame: true });
+  const rec = new SongRecorder({ stage, scope });
+  rec.start({ presetId: '720p', deferFirstFrame: true });
+  assert.equal(rec._videoTrack.frames, 0);
+  assert.equal(rec._canvas.draws.length, 0);
+  rec.captureFrame();
+  assert.equal(rec._videoTrack.frames, 1);
+  assert.equal(rec._canvas.draws.length, 1);
+});
+
 test('a browser without requestFrame falls back to timed sampling, not to failure', () => {
   const scope = fakeScope({ withRequestFrame: false });
   const rec = new SongRecorder({ stage, scope });
@@ -263,14 +274,18 @@ test('an unknown preset records at the default rather than 0x0', () => {
   assert.equal(rec._canvas.width, presetById('720p').width);
 });
 
-test('recording finalizes before retaining chunks beyond the byte budget', () => {
+test('recording requests owner cleanup before retaining chunks beyond the byte budget', async () => {
   const scope = fakeScope({ chunkOnStart: false });
-  const rec = new SongRecorder({ stage, scope });
+  let requested = 0;
+  let rec;
+  rec = new SongRecorder({ stage, scope, onAutoStop: () => { requested++; rec.stop(); } });
   assert.equal(rec.start(), true);
   scope.recorders[0].ondataavailable({ data: { size: MAX_RECORDING_BYTES + 1 } });
   assert.equal(rec.bytes, 0);
   assert.match(rec.error, /512 MB export limit/);
   assert.equal(rec.recording, false);
+  assert.equal(requested, 1);
+  await rec._stopPromise;
 });
 
 test('start is not re-entrant and frames outside a recording are ignored', async () => {

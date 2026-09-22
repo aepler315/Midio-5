@@ -1,5 +1,11 @@
 # Graphics implementation ledger
 
+Current completion status and the boundary between mechanical validation and
+remaining human/device evidence are recorded in
+[`../feature-status.md`](../feature-status.md) and
+[`validation.md`](./validation.md). The investigation below remains as
+historical evidence and is not rewritten to imply it ran on later revisions.
+
 Specification: supplied midio5-graphics-implementation-prompt(1)(1).md.
 Baseline: current origin/main d5e1621fab44619edd1e7ee47783c9f8c7e89f57 (2026-09-21).
 Isolation: fresh task-only clone, branch feat/world-identity-graphics. No existing changes.

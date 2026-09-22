@@ -45,6 +45,13 @@ test('a failing open is the same as no storage', async () => {
   assert.deepEqual(await listTracks(null, scope), []);
 });
 
+test('a failed replacement never prunes the previously stored library', async () => {
+  const scope = fakeIdb({ rejectPut: (row, store) => store === 'tracks' && row.path === 'b.mp3' });
+  await replaceTracks('r', [track({ path: 'a.mp3' })], scope);
+  assert.equal(await replaceTracks('r', [track({ path: 'b.mp3' })], scope), 0);
+  assert.deepEqual((await listTracks('r', scope)).map((row) => row.path), ['a.mp3']);
+});
+
 test('only a browser that can hand back a persistable folder claims to', () => {
   assert.equal(directoryHandlesSupported({ showDirectoryPicker: () => {} }), true);
   // Firefox and Safari have webkitdirectory but no handle to store, and
@@ -53,16 +60,59 @@ test('only a browser that can hand back a persistable folder claims to', () => {
   assert.equal(directoryHandlesSupported(null), false);
 });
 
+function directoryHandle(name, identity, { comparisonFails = false } = {}) {
+  return {
+    name,
+    identity,
+    async isSameEntry(other) {
+      if (comparisonFails) throw new Error('comparison unavailable');
+      return other?.identity === identity;
+    },
+  };
+}
+
 test('the same folder chosen twice is one library, not two', async () => {
   const scope = fakeIdb();
   assert.equal(rootIdFor('Music'), rootIdFor('music'));
-  await addRoot({ name: 'Music', handle: { h: 1 } }, scope);
-  await addRoot({ name: 'Music', handle: { h: 2 } }, scope);
+  const firstHandle = directoryHandle('Music', 'same');
+  const refreshedHandle = directoryHandle('Music', 'same');
+  const first = await addRoot({ name: 'Music', handle: firstHandle }, scope);
+  const refreshed = await addRoot({ name: 'Music', handle: refreshedHandle }, scope);
   const roots = await listRoots(scope);
   assert.equal(roots.length, 1);
+  assert.equal(refreshed.id, first.id);
   // The newer handle wins: it is the one the player just granted.
-  assert.deepEqual(roots[0].handle, { h: 2 });
+  assert.equal(roots[0].handle.identity, 'same');
   assert.equal(roots[0].persistable, true);
+});
+
+test('two unrelated folders with the same display name remain distinct', async () => {
+  const scope = fakeIdb();
+  const first = await addRoot({ name: 'Music', handle: directoryHandle('Music', 'one') }, scope);
+  const second = await addRoot({ name: 'Music', handle: directoryHandle('Music', 'two') }, scope);
+  assert.notEqual(first.id, second.id);
+  assert.equal((await listRoots(scope)).length, 2);
+});
+
+test('a failed handle comparison never guesses identity from the name', async () => {
+  const scope = fakeIdb();
+  const first = await addRoot({ name: 'Music', handle: directoryHandle('Music', 'one') }, scope);
+  const second = await addRoot({
+    name: 'Music', handle: directoryHandle('Music', 'one', { comparisonFails: true }),
+  }, scope);
+  assert.notEqual(first.id, second.id);
+  assert.equal((await listRoots(scope)).length, 2);
+});
+
+test('roots are restored in most-recently-selected order', async () => {
+  const scope = fakeIdb();
+  const a = directoryHandle('A', 'a');
+  const b = directoryHandle('B', 'b');
+  await addRoot({ name: 'A', handle: a }, scope);
+  await addRoot({ name: 'B', handle: b }, scope);
+  assert.equal((await listRoots(scope))[0].name, 'B');
+  await addRoot({ name: 'A', handle: a }, scope);
+  assert.equal((await listRoots(scope))[0].name, 'A');
 });
 
 test('a handle the browser refuses to store still leaves a remembered library', async () => {
@@ -78,6 +128,11 @@ test('a handle the browser refuses to store still leaves a remembered library', 
     assert.equal(root.persistable, false);
     assert.equal((await listRoots(scope)).length, 1);
   }
+});
+
+test('a root request success followed by transaction abort reports failure', async () => {
+  const scope = fakeIdb({ lateAbort: true });
+  assert.equal(await addRoot({ name: 'Music', handle: { h: 1 } }, scope), null);
 });
 
 test('a rescan drops files that are gone from disk', async () => {

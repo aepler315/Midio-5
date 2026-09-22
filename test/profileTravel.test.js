@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  energyCentroid01, profileStart01, profileRate, profileTravelPx, ridgeDepth, terrainScrollPx,
+  energyCentroid01, profileStart01, profileRate, profileTravelPx, ridgeDepth,
+  terrainPreviewStationPx, terrainScrollPx,
 } from '../src/world/terrain/ProfileTravel.js';
 
 // The far layer's old crawl: world speed 220 px/s through the 0.10 ratio.
@@ -73,4 +74,9 @@ test('travel does not jump backward when energy falls, and a seek matches playba
   assert.equal(profileTravelPx(10, curves), before);
   assert.equal(profileTravelPx(10, { ...curves }), before);
   assert.equal(profileTravelPx(-1, curves), 0);
+});
+
+test('geographic preview uses one fixed inspection station', () => {
+  assert.equal(terrainPreviewStationPx(8192), 4096);
+  assert.equal(terrainPreviewStationPx(NaN), 0);
 });

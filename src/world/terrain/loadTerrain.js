@@ -7,6 +7,12 @@ import { profilesFromJSON } from './TerrainProfile.js';
 let cached = null;
 
 export function alpineTerrainProfiles() {
-  if (!cached) cached = profilesFromJSON(raw);
+  if (!cached) {
+    try { cached = profilesFromJSON(raw); }
+    catch (error) {
+      console.warn('[terrain] bundled profile rejected; using procedural fallback', error);
+      cached = {};
+    }
+  }
   return cached;
 }

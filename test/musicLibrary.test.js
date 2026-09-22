@@ -88,6 +88,18 @@ test('choosing a folder scans it and remembers it for next time', async () => {
   assert.equal(second.playable, true);
 });
 
+test('a chosen folder remains playable for the session when storage is unavailable', async () => {
+  const handle = fakeDirHandle('Music', { 'a.mp3': fakeFile('a.mp3') });
+  const scope = { showDirectoryPicker: async () => handle };
+  const lib = new MusicLibrary({ scope });
+  const tracks = await lib.pickFolder();
+  assert.equal(tracks.length, 1);
+  assert.equal(lib.root.persistable, false);
+  assert.equal(lib.handle, handle);
+  assert.equal(lib.playable, true);
+  assert.ok(await lib.openFile(tracks[0]));
+});
+
 test('a folder whose permission lapsed lists but does not claim to be playable', async () => {
   const handle = fakeDirHandle('Music', { 'a.mp3': fakeFile('a.mp3') }, { permission: 'prompt' });
   const scope = fakeIdb();
@@ -159,6 +171,16 @@ test('a browser with no persistable handle gets a library and an honest caveat',
   const next = await new MusicLibrary({ scope }).init();
   assert.equal(next.tracks.length, 1);
   assert.equal(next.playable, false);
+});
+
+test('folder import remains playable when IndexedDB is unavailable', async () => {
+  const lib = new MusicLibrary({ scope: {}, fetchFn: null });
+  const file = Object.assign(fakeFile('sample.wav'), { webkitRelativePath: 'Music/sample.wav' });
+  await lib.adoptFileList([file], { name: 'Music' });
+  assert.equal(lib.tracks.length, 1);
+  assert.equal(lib.sessionFiles.size, 1);
+  assert.equal(lib.scanning, false);
+  assert.equal(await lib.openFile(lib.tracks[0]), file);
 });
 
 test('auto-tagging writes only what it found, and only over guesses', async () => {

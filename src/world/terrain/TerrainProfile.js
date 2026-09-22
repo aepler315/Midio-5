@@ -40,7 +40,7 @@ export function profileUnits(profile) {
   const out = new Float32Array(profile.angles.length);
   for (let i = 0; i < out.length; i++) {
     const a = profile.angles[i];
-    out[i] = Number.isFinite(a) && span > 1e-12 ? (a - profile.angleMin) / span : 0;
+    out[i] = Number.isFinite(a) ? (span > 1e-12 ? (a - profile.angleMin) / span : 0.5) : 0;
   }
   return out;
 }
@@ -52,7 +52,18 @@ export function assertProfile(profile) {
   if (!(profile.spacingM > 0) || !profile.angles || profile.angles.length < 2) {
     throw new Error('skyline profile is missing samples');
   }
-  if (!(profile.angleMax >= profile.angleMin)) throw new Error('skyline profile scale is inverted');
+  if (!Number.isFinite(profile.spacingM)) throw new Error('skyline profile spacing is not finite');
+  if (!Number.isFinite(profile.angleMin) || !Number.isFinite(profile.angleMax)
+    || profile.angleMax < profile.angleMin) throw new Error('skyline profile scale is invalid');
+  if (![...profile.angles].some((angle) => Number.isFinite(angle))) {
+    throw new Error('skyline profile has no finite samples');
+  }
+  for (const field of ['crestElevM', 'skylineElevM']) {
+    const values = profile[field];
+    if (values && values.length !== 0 && values.length !== profile.angles.length) {
+      throw new Error(`skyline profile ${field} length does not match angles`);
+    }
+  }
 }
 
 /** Sample `count` heights starting at `startM`, every `stepM`, on the
@@ -161,15 +172,24 @@ export function profilesFromJSON(obj) {
   if (!obj || obj.version !== 1 || !obj.layers) throw new Error('not a terrain profile set');
   const profiles = {};
   for (const [key, p] of Object.entries(obj.layers)) {
+    if (!['L2', 'L3', 'L4'].includes(key)) throw new Error(`unknown terrain layer ${key}`);
+    const numericArray = (value, field) => {
+      if (!Array.isArray(value)) throw new Error(`terrain ${key} ${field} is not an array`);
+      return Float64Array.from(value, (sample) => {
+        if (sample === null) return NaN;
+        if (typeof sample !== 'number') throw new Error(`terrain ${key} ${field} has a non-numeric sample`);
+        return sample;
+      });
+    };
     profiles[key] = {
       version: 1,
       kind: 'skyline',
       spacingM: p.spacingM,
       angleMin: p.angleMin,
       angleMax: p.angleMax,
-      angles: Float64Array.from(p.angles),
-      crestElevM: Float64Array.from(p.crestElevM || []),
-      skylineElevM: Float64Array.from(p.skylineElevM || []),
+      angles: numericArray(p.angles, 'angles'),
+      crestElevM: numericArray(p.crestElevM || [], 'crestElevM'),
+      skylineElevM: numericArray(p.skylineElevM || [], 'skylineElevM'),
       meta: p.meta || {},
     };
     assertProfile(profiles[key]);

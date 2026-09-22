@@ -13,7 +13,7 @@ import {
 
 /** Enough of IndexedDB for this module: one keyPath store, get/put/delete/
  *  getAll/clear, and the async request shape. */
-function fakeIdb({ failOpen = false, failPut = false } = {}) {
+function fakeIdb({ failOpen = false, failPut = false, lateAbort = false } = {}) {
   const data = new Map();
   const fire = (req, prop, value) => {
     queueMicrotask(() => { req.result = value; req[prop]?.(); });
@@ -34,7 +34,11 @@ function fakeIdb({ failOpen = false, failPut = false } = {}) {
   const db = {
     objectStoreNames: { contains: () => true },
     createObjectStore: () => store,
-    transaction: () => ({ objectStore: () => store }),
+    transaction: () => {
+      const transaction = { objectStore: () => store };
+      setTimeout(() => (lateAbort ? transaction.onabort?.() : transaction.oncomplete?.()), 0);
+      return transaction;
+    },
     close: () => {},
   };
   return {
@@ -116,6 +120,11 @@ test('a database that refuses to open is survived, not thrown from', async () =>
 
 test('a write that fails (quota) reports false without throwing', async () => {
   const scope = fakeIdb({ failPut: true });
+  assert.equal(await putBundle('k', bundleFor('a'), scope), false);
+});
+
+test('a request success followed by transaction abort reports false', async () => {
+  const scope = fakeIdb({ lateAbort: true });
   assert.equal(await putBundle('k', bundleFor('a'), scope), false);
 });
 

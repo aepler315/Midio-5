@@ -16,7 +16,7 @@ import {
 } from './soulseek-bridge.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(process.env.SITE_ROOT || path.join(__dirname, '..'));
 const PORT = Number(process.env.PORT || process.argv[2]) || 8080;
 const HOST = process.env.HOST || '127.0.0.1';
 const BRIDGE_TOKEN = process.env.MIDIO_BRIDGE_TOKEN?.trim() || '';
