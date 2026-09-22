@@ -37,7 +37,20 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 
-const ROOT = path.resolve(process.argv[2] || process.env.MUSIC_DIR || process.cwd());
+// Canonicalised, not merely resolved. Containment is checked by comparing
+// against `fsp.realpath()` of each request path, so if ROOT is itself a
+// symlink the two live in different trees and EVERY request -- `/` included
+// -- looks like an escape and 403s. That is not hypothetical: on the
+// documented Termux setup, shared-storage music paths are normally reached
+// through exactly such a symlink.
+const ROOT_ARG = path.resolve(process.argv[2] || process.env.MUSIC_DIR || process.cwd());
+let ROOT;
+try {
+  ROOT = fs.realpathSync(ROOT_ARG);
+} catch {
+  console.error(`music-server: cannot read ${ROOT_ARG}`);
+  process.exit(1);
+}
 const PORT = Number(process.argv[3] || process.env.MUSIC_PORT) || 8088;
 const HOST = process.env.MUSIC_HOST || '127.0.0.1';
 
@@ -50,9 +63,10 @@ const MIME = {
   '.opus': 'audio/opus',
   '.m4a': 'audio/mp4',
   '.aac': 'audio/aac',
-  '.mid': 'audio/midi',
-  '.midi': 'audio/midi',
 };
+// No .mid/.midi: the page's URL loader sends everything to decodeAudioData
+// and has no MIDI ingest path, so listing one would advertise a song that
+// cannot play. See the note in src/net/UrlAudioSource.js.
 const AUDIO_EXTENSIONS = new Set(Object.keys(MIME));
 
 function isAudio(name) {

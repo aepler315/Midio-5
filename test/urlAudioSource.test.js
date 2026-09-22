@@ -12,6 +12,7 @@ import {
   classifyUrl, isLoopbackHost, isAudioName, extensionOf, audioNameFromUrl,
   parseListing, parseJsonListing, fetchAudioAsFile, openAudioUrl, UrlAudioError,
 } from '../src/net/UrlAudioSource.js';
+import { AUDIO_LOAD_LIMITS } from '../src/audio/loadLimits.js';
 
 const HTTPS_PAGE = 'https://supermaudio.com/';
 const HTTP_PAGE = 'http://localhost:8080/';
@@ -71,13 +72,25 @@ test('empty and unparseable input are distinguished', () => {
 });
 
 test('audio is recognised by extension, case-insensitively, and video is not', () => {
-  for (const name of ['a.mp3', 'a.MP3', 'a.flac', 'a.m4a', 'a.opus', 'a.mid', 'a.midi', 'a.oga']) {
+  for (const name of ['a.mp3', 'a.MP3', 'a.flac', 'a.m4a', 'a.opus', 'a.oga', 'a.wav', 'a.aac']) {
     assert.equal(isAudioName(name), true, name);
   }
   for (const name of ['a.mp4', 'a.jpg', 'cover.png', 'a.nfo', 'a', '', 'a.cue']) {
     assert.equal(isAudioName(name), false, name);
   }
   assert.equal(extensionOf('Song.Name.FLAC'), '.flac');
+});
+
+test('MIDI is not offered, because this page cannot decode it', () => {
+  // Everything from here reaches audioEngine.decodeFile() == decodeAudioData,
+  // and the page has no MIDI ingest path (MidiAdapter is test-only). Listing
+  // a .mid would advertise a song that fails to decode every single time.
+  assert.equal(isAudioName('song.mid'), false);
+  assert.equal(isAudioName('song.midi'), false);
+  const { entries } = parseListing('<ignored/>', 'http://127.0.0.1:8088/', {
+    parse: fakeParser([['tune.mid', 'tune.mid'], ['real.mp3', 'real.mp3']]),
+  });
+  assert.deepEqual(entries.map((e) => e.name), ['real.mp3']);
 });
 
 test('a filename comes back percent-decoded, because %20 is not a song title', () => {
@@ -185,12 +198,38 @@ function fakeBlob(size, type = 'audio/mpeg') {
   return { size, type, arrayBuffer: async () => new ArrayBuffer(size) };
 }
 
+/** A response whose body streams `chunkSizes` in order, so the size cap can
+ *  be observed taking effect mid-transfer rather than after the fact. */
+function streamingResponse(chunkSizes, headers = {}) {
+  let i = 0;
+  let cancelled = false;
+  const res = response({ headers });
+  res.body = {
+    getReader: () => ({
+      read: async () => (i < chunkSizes.length
+        ? { done: false, value: new Uint8Array(chunkSizes[i++]) }
+        : { done: true, value: undefined }),
+      cancel: async () => { cancelled = true; },
+    }),
+  };
+  res.wasCancelled = () => cancelled;
+  res.chunksRead = () => i;
+  return res;
+}
+
 function withFetch(impl, run) {
   const original = globalThis.fetch;
   const originalFile = globalThis.File;
   globalThis.fetch = impl;
   // `new File([blob], name, {type})` is how the drop pipeline is reached;
   // Node has File, but not one that accepts a fake blob, so stub it.
+  const originalBlob = globalThis.Blob;
+  globalThis.Blob = class {
+    constructor(parts = [], options = {}) {
+      this.size = parts.reduce((n, p) => n + (p?.byteLength || p?.size || 0), 0);
+      this.type = options.type || '';
+    }
+  };
   globalThis.File = class {
     constructor(parts, name, options = {}) {
       this.parts = parts;
@@ -203,6 +242,7 @@ function withFetch(impl, run) {
     try { return await run(); } finally {
       globalThis.fetch = original;
       globalThis.File = originalFile;
+      globalThis.Blob = originalBlob;
     }
   })();
 }
@@ -375,6 +415,113 @@ test('a page of prose is reported as such, not decoded as audio', async () => {
       await assert.rejects(
         () => openAudioUrl('http://127.0.0.1:8088/readme', { pageUrl: HTTPS_PAGE }),
         (err) => err instanceof UrlAudioError && /neither audio nor a folder/.test(err.message),
+      );
+    },
+  );
+});
+
+
+// --- the size cap during transfer ---------------------------------------
+
+test('a lying Content-Length is cut off mid-transfer, not buffered in full', async () => {
+  // The header check cannot be trusted, so the bytes are counted as they
+  // arrive. Without this, a server declaring 1KB and streaming gigabytes
+  // would exhaust the tab before anyone noticed.
+  const oneMib = 1024 * 1024;
+  const res = streamingResponse(new Array(600).fill(oneMib), { 'content-length': '1024' });
+  await withFetch(
+    async () => res,
+    async () => {
+      await assert.rejects(
+        () => fetchAudioAsFile('http://127.0.0.1:8088/liar.mp3'),
+        (err) => err instanceof UrlAudioError && /understated its size/.test(err.message),
+      );
+      // Cut off, not drained: the reader was cancelled part-way through.
+      assert.equal(res.wasCancelled(), true);
+      assert.ok(res.chunksRead() < 600, 'should stop before reading every chunk');
+    },
+  );
+});
+
+test('a streamed file within the limit arrives whole', async () => {
+  const res = streamingResponse([1000, 2000, 48], { 'content-type': 'audio/flac' });
+  await withFetch(
+    async () => res,
+    async () => {
+      const file = await fetchAudioAsFile('http://127.0.0.1:8088/ok.flac');
+      assert.equal(file.size, 3048);
+      assert.equal(res.wasCancelled(), false);
+    },
+  );
+});
+
+test('the extensionless branch refuses an oversized declared length too', async () => {
+  // This branch used to call blob() before applying the limit, so it would
+  // buffer the whole response where the direct path refused it outright.
+  let bodyRead = false;
+  await withFetch(
+    async () => {
+      const res = response({
+        headers: { 'content-type': 'audio/mpeg', 'content-length': String(400 * 1024 * 1024) },
+      });
+      res.blob = async () => { bodyRead = true; return fakeBlob(1); };
+      return res;
+    },
+    async () => {
+      await assert.rejects(
+        () => openAudioUrl('http://127.0.0.1:8088/stream/7', { pageUrl: HTTPS_PAGE }),
+        (err) => err instanceof UrlAudioError && /over the/.test(err.message),
+      );
+      assert.equal(bodyRead, false, 'must refuse from the header, before reading');
+    },
+  );
+});
+
+test('a body that stalls after the headers is abandoned, not waited on forever', async () => {
+  // fetch() resolves on headers, so a helper that clears its timer there
+  // leaves the body read unbounded and un-abortable. This is that hang.
+  await withFetch(
+    async (url, { signal }) => {
+      const res = response({ headers: { 'content-type': 'audio/mpeg' } });
+      res.body = {
+        getReader: () => ({
+          // Never resolves on its own; only the abort signal ends it.
+          read: () => new Promise((_resolve, reject) => {
+            signal?.addEventListener('abort', () => {
+              const err = new Error('aborted');
+              err.name = 'AbortError';
+              reject(err);
+            }, { once: true });
+          }),
+          cancel: async () => {},
+        }),
+      };
+      return res;
+    },
+    async () => {
+      await assert.rejects(
+        () => fetchAudioAsFile('http://127.0.0.1:8088/stalls.mp3', { limits: AUDIO_LOAD_LIMITS }),
+        (err) => err instanceof UrlAudioError && /stopped responding/.test(err.message),
+      );
+    },
+  );
+});
+
+test("a caller's own abort is not reported as a timeout", async () => {
+  const controller = new AbortController();
+  await withFetch(
+    async (url, { signal }) => {
+      controller.abort();
+      const err = new Error('aborted');
+      err.name = 'AbortError';
+      void signal;
+      throw err;
+    },
+    async () => {
+      await assert.rejects(
+        () => fetchAudioAsFile('http://127.0.0.1:8088/a.mp3', { signal: controller.signal }),
+        // Rethrown as-is so the UI can tell "superseded" from "failed".
+        (err) => err.name === 'AbortError' && !(err instanceof UrlAudioError),
       );
     },
   );

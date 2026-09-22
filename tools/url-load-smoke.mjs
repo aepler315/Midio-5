@@ -58,8 +58,13 @@ try {
     assert.equal(await page.locator('#urlLoad').isHidden(), true);
   });
 
-  await run('tapping Browse files leaves the input focused -- the keyboard moment', async () => {
-    await page.locator('#dropzone').click({ position: { x: 10, y: 10 } });
+  await run('tapping the real Browse files button routes through the probe', async () => {
+    // Click the BUTTON, not a coordinate on #dropzone. When this was a
+    // <label> wrapping #fileInput, native label activation clicked the input
+    // directly and bypassed openFilePicker(), so the primary control kept
+    // producing the dead click forever -- and a dropzone-coordinate click
+    // hid that completely.
+    await page.locator('#browseBtn').click();
     assert.equal(await focusedId(), 'fileInput', 'the dead click should focus the input');
     assert.equal(await deadClicks(), 1);
   });
@@ -83,9 +88,15 @@ try {
 
   await run('a second tap does not press the dead button again', async () => {
     // Clicking is what summons the keyboard, so not clicking is the fix.
-    await page.locator('#dropzone').click({ position: { x: 10, y: 10 } });
+    await page.locator('#browseBtn').click();
     await page.waitForTimeout(400);
     assert.equal(await deadClicks(), 1, 'the verdict is known; stop clicking');
+  });
+
+  await run('the dropzone itself routes through the probe too', async () => {
+    await page.locator('#dropzone').click({ position: { x: 10, y: 10 } });
+    await page.waitForTimeout(400);
+    assert.equal(await deadClicks(), 1, 'still no click: the verdict is remembered');
   });
 
   await run('the verdict survives a reload, so the wait is paid once', async () => {
@@ -126,6 +137,18 @@ try {
       await page.locator('.urlLoadEntry').first().waitFor({ timeout: 10000 });
       const rows = await page.locator('.urlLoadEntry').count();
       assert.ok(rows > 0, 'the listing should have entries');
+      // Going into a subfolder must leave a way back: browsing does not
+      // touch history, so the browser's Back would leave the page.
+      const folder = page.locator('.urlLoadEntry[data-kind="folder"]').first();
+      if (await folder.count()) {
+        await folder.click();
+        await page.locator('#urlLoadCrumb .urlLoadUp').waitFor({ timeout: 10000 });
+        await page.locator('#urlLoadCrumb .urlLoadUp').click();
+        await page.locator('.urlLoadEntry[data-kind="folder"]').first().waitFor({ timeout: 10000 });
+        // Back at the root, where there is nothing above to go up to.
+        assert.equal(await page.locator('#urlLoadCrumb .urlLoadUp').count(), 0,
+          'the server root should offer no Up button');
+      }
       const song = page.locator('.urlLoadEntry[data-kind="file"]').first();
       if (await song.count()) {
         await song.click();

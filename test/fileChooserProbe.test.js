@@ -285,3 +285,23 @@ test('reset() forgets the verdict so the next tap probes again', async () => {
   assert.equal(support.isAbsent, false);
   assert.equal(storage.size, 0);
 });
+
+test('a localStorage property that throws on ACCESS does not take the app down', () => {
+  // Where site data is blocked, reading `window.localStorage` itself throws
+  // a SecurityError -- before any try/catch inside the accessors runs. main.js
+  // constructs this class during module init, so an unguarded read there
+  // aborts the whole page instead of merely forgetting a verdict.
+  const had = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    get() { throw new Error('SecurityError: access denied'); },
+  });
+  try {
+    let support;
+    assert.doesNotThrow(() => { support = new FileChooserSupport({ userAgent: '' }); });
+    assert.equal(support.isAbsent, false);
+  } finally {
+    if (had) Object.defineProperty(globalThis, 'localStorage', had);
+    else delete globalThis.localStorage;
+  }
+});

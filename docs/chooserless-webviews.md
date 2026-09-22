@@ -76,6 +76,22 @@ Android IME (there is no API for the keyboard itself), and the verdict is
 remembered in `localStorage`. From then on the button is not clicked at
 all — which is the actual fix for "the button opens the keyboard".
 
+**Every route to the picker must go through that probe**, and this is easy
+to get wrong. The visible "Browse files" control was originally a `<label>`
+wrapping the hidden input — the standard accessible pattern. But a label
+*natively activates its nested input*, so tapping it clicked the input
+directly and never entered `openFilePicker()` at all: the primary button
+kept producing the dead click and the phantom keyboard on every tap, and no
+verdict was ever recorded. It is a real `<button>` now, with the input as a
+sibling carrying `tabindex="-1"`, so the button is the focusable control and
+every activation is routed through JS. The `webkitdirectory` fallback had
+the same trap and the same fix.
+
+Worth knowing because the first version of the smoke test missed it
+entirely: it clicked a coordinate on `#dropzone` rather than the button, so
+it exercised the one path that was already correct. The test clicks
+`#browseBtn` now.
+
 ### 2. Offer a URL instead
 
 `loadAudioFiles()` in `main.js` needs objects with `name`, `size` and
@@ -87,6 +103,30 @@ Point the field at a song and it plays. Point it at a folder and the page
 lists what is in it — a JSON listing or an ordinary HTML directory index,
 with subfolders navigable. That is the part that answers "let me *see* my
 files" rather than "let me type a path".
+
+Browsing deliberately does not touch history, so each listing renders an
+**Up a folder** button derived from the current path. Without it the
+browser's own Back would leave the page rather than return to the previous
+folder, and one wrong tap into an album would mean retyping the address by
+hand — the parent link in an HTML index is filtered out as a
+non-descendant, and the JSON listing has no parent entry.
+
+`.mid` and `.midi` are **not** offered, even though they are audio files.
+Everything here reaches `audioEngine.decodeFile()`, which is
+`decodeAudioData`, and this page has no MIDI ingest path at all
+(`MidiAdapter` is reachable only from the tests). Listing a MIDI file would
+advertise a song that fails to decode every time.
+
+One subtlety in the fetch layer: `fetch()` resolves when the response
+*headers* arrive, not when the body does. A timeout that is cleared at that
+point leaves the body read — `blob()`, `text()`, `json()` — with no
+deadline and no abort wiring, so a server that sends headers and then
+stalls hangs the UI exactly as if there were no timeout. So the body is
+read inside the same helper, under the same `AbortController`, against a
+deadline that is pushed back whenever bytes actually arrive: silence is
+bounded, slowness is not punished. The size cap is enforced during that
+read too, so a server that understates its `Content-Length` is cut off
+rather than buffered in full.
 
 ## Making it actually work on a phone
 
@@ -119,7 +159,13 @@ that is the cause the error message names first.
 
 `tools/music-server.mjs` is a minimal server that sends the header, serves
 a JSON listing, supports range requests, and is read-only and confined to
-one directory. Under Termux (`pkg install nodejs`):
+one directory. It canonicalises its root directory at startup, which
+matters here specifically: containment is checked against the `realpath` of
+each request, so a root that is *itself* a symlink — how shared storage is
+normally reached on Termux — would otherwise make every request, `/`
+included, look like an escape attempt and return 403.
+
+Under Termux (`pkg install nodejs`):
 
 ```
 node tools/music-server.mjs ~/Music
@@ -151,8 +197,10 @@ there and the URL loader becomes a convenience rather than the only way in.
   audio, listing parsing, and the fetch error messages.
 - `tools/url-load-smoke.mjs` — reproduces the chooserless WebView in real
   Chromium by patching `HTMLInputElement.prototype.click`, then checks that
-  the keyboard is dismissed, the dead button is never pressed twice, and a
-  song reaches the decoder. Run it with `npm start` and a music server up:
+  the real `#browseBtn` routes through the probe, the keyboard is
+  dismissed, the dead button is never pressed twice, a subfolder can be
+  left again, and a song reaches the decoder. Run it with `npm start` and a
+  music server up:
 
   ```
   node tools/music-server.mjs <folder with audio> &

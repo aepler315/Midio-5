@@ -64,15 +64,19 @@
             <span class="dropIcon" aria-hidden="true">&#9834;</span>
             <span class="dropPrimary">Drop a song to play</span>
             <span class="dropSecondary">mp3 &middot; wav &middot; flac &middot; m4a &mdash; multi-stem drops welcome</span>
-            <label class="filebtn" onclick="event.stopPropagation()">
-              Browse files
-              <!-- inputmode="none" is a best-effort hint: in a WebView with
-                   no file chooser the click leaves this input focused and
-                   Android raises the soft keyboard for it. Where the hint is
-                   honoured the keyboard never appears; where it isn't,
-                   FileChooserProbe blurs the input instead. -->
-              <input id="fileInput" type="file" inputmode="none" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,audio/*" multiple class="fileInputVisuallyHidden" />
-            </label>
+            <!-- A real button, not a <label> wrapping the input. A label
+                 natively activates its nested input, which would click the
+                 input directly and bypass openFilePicker() -- so in a
+                 browser with no chooser the primary button would keep
+                 producing the dead click (and the phantom keyboard) on
+                 every tap, never recording a verdict. Every activation
+                 goes through JS instead. -->
+            <button id="browseBtn" type="button" class="filebtn" onclick="event.stopPropagation()">Browse files</button>
+            <!-- tabindex="-1" keeps this out of the tab order: #browseBtn is
+                 the focusable control now, and a focused file input is what
+                 raises the Android IME. inputmode="none" is a best-effort
+                 hint against the same thing. -->
+            <input id="fileInput" type="file" tabindex="-1" inputmode="none" aria-hidden="true" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,audio/*" multiple class="fileInputVisuallyHidden" />
             <button id="demoBtn" type="button" class="ghostbtn" onclick="event.stopPropagation()">Play a sample</button>
           </div>
         </div>
@@ -121,10 +125,8 @@
           <button id="libraryFolderBtn" type="button" class="ghostbtn libraryFolderBtn">Use a music folder</button>
           <!-- Browsers with no persistable directory handle fall back to
                this; main.js shows whichever one the browser can honour. -->
-          <label id="libraryFolderFallback" class="ghostbtn libraryFolderBtn hidden">
-            Use a music folder
-            <input id="libraryFolderInput" type="file" inputmode="none" webkitdirectory directory multiple class="fileInputVisuallyHidden" />
-          </label>
+          <button id="libraryFolderFallback" type="button" class="ghostbtn libraryFolderBtn hidden">Use a music folder</button>
+          <input id="libraryFolderInput" type="file" tabindex="-1" inputmode="none" aria-hidden="true" webkitdirectory directory multiple class="fileInputVisuallyHidden" />
           <button id="urlLoadOpenBtn" type="button" class="ghostbtn libraryFolderBtn">Load from a URL</button>
           <p class="libraryFolderHint">Choose it once and it stays. Your files never leave the device &mdash; the folder is read straight off your disk.</p>
         </div>

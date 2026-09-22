@@ -50,6 +50,19 @@ export function isAndroidWebView(userAgent) {
   return /\bAndroid\b/.test(ua) && /\(\s*[^)]*;\s*wv\s*[;)]/.test(ua);
 }
 
+/** Reading `window.localStorage` can itself throw a SecurityError where
+ *  site data is blocked -- before any try/catch inside the accessor
+ *  functions gets a chance. main.js constructs FileChooserSupport during
+ *  module initialisation, so an unguarded access there takes the whole app
+ *  down instead of merely forgetting a verdict. */
+function defaultStorage() {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function readStoredVerdict(storage) {
   try {
     const value = storage?.getItem(VERDICT_KEY);
@@ -146,7 +159,7 @@ export class FileChooserSupport {
    * @param {object}  [options.probeDeps]  forwarded to probeFileChooser
    */
   constructor({ storage = undefined, userAgent = undefined, probeDeps = {} } = {}) {
-    this.storage = storage === undefined ? globalThis.localStorage : storage;
+    this.storage = storage === undefined ? defaultStorage() : storage;
     this.userAgent = userAgent === undefined ? globalThis.navigator?.userAgent : userAgent;
     this.probeDeps = probeDeps;
     this.verdict = readStoredVerdict(this.storage);

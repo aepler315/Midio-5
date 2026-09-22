@@ -46,8 +46,15 @@ import {
 const LISTING_TIMEOUT_MS = 15000;
 const DOWNLOAD_TIMEOUT_MS = 45000;
 
-/** Extensions the picker accepts, so a URL and a drop agree on "audio". */
-const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.ogg', '.oga', '.m4a', '.aac', '.opus', '.mid', '.midi'];
+// Extensions the picker accepts, so a URL and a drop agree on "audio".
+//
+// `.mid`/`.midi` are deliberately absent. Everything this module produces
+// goes to `handleFiles()` and on to `audioEngine.decodeFile()`, which is
+// `decodeAudioData` -- and this page has no MIDI ingest path at all
+// (`MidiAdapter` is reachable only from the tests). Listing a MIDI file
+// would advertise it as playable and then fail to decode it every time, so
+// it is not offered.
+const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.ogg', '.oga', '.m4a', '.aac', '.opus'];
 
 const MIME_BY_EXTENSION = {
   '.mp3': 'audio/mpeg',
@@ -58,8 +65,6 @@ const MIME_BY_EXTENSION = {
   '.m4a': 'audio/mp4',
   '.aac': 'audio/aac',
   '.opus': 'audio/opus',
-  '.mid': 'audio/midi',
-  '.midi': 'audio/midi',
 };
 
 export class UrlAudioError extends Error {}
@@ -157,20 +162,49 @@ export function classifyUrl(raw, pageUrl = 'https://supermaudio.com/') {
   return { ok: true, url: url.href, code: 'ok', message: '' };
 }
 
-/** fetch() with a hard timeout. A request to a host that is listening but
- *  never answers hangs rather than rejecting, which would leave the UI
- *  reading "Loading..." with no way out but a reload. */
-async function fetchWithTimeout(url, ms, signal = null) {
+/**
+ * A request whose timeout covers reading the body, not just the headers.
+ *
+ * `fetch()` resolves as soon as the response HEADERS arrive. A helper that
+ * clears its timer at that point leaves the body read -- `res.blob()`,
+ * `res.text()`, `res.json()` -- with no timeout and no abort wiring at all,
+ * so a server that sends headers and then stalls mid-transfer hangs the UI
+ * forever: exactly the failure this helper exists to prevent. So the body is
+ * consumed by `consume` INSIDE this function, under the same
+ * `AbortController` and a still-live timer.
+ *
+ * The timer is a stall deadline, not a total budget: `consume` is handed an
+ * `arm` callback to push it back whenever bytes actually arrive, so a large
+ * download over a slow link is not killed for being slow while a silent
+ * connection still dies on schedule.
+ *
+ * @param {string} url
+ * @param {number} stallMs how long silence is tolerated before aborting
+ * @param {AbortSignal|null} signal the caller's own cancellation
+ * @param {(res: Response, arm: () => void) => Promise<any>} consume
+ */
+async function requestWithTimeout(url, stallMs, signal, consume) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
+  let timer = null;
+  const arm = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => controller.abort(), stallMs);
+  };
   const onOuterAbort = () => controller.abort();
+  if (signal?.aborted) controller.abort();
   signal?.addEventListener('abort', onOuterAbort, { once: true });
+  arm();
   try {
-    return await fetch(url, { signal: controller.signal, redirect: 'follow' });
+    const res = await fetch(url, { signal: controller.signal, redirect: 'follow' });
+    arm(); // headers arrived; the body gets its own fresh stall window
+    return await consume(res, arm);
   } catch (err) {
     if (signal?.aborted) throw err; // the caller's own cancellation, not ours
+    if (err instanceof UrlAudioError) throw err; // already explained by consume
     if (err?.name === 'AbortError') {
-      throw new UrlAudioError(`Timed out after ${Math.round(ms / 1000)}s waiting for ${url}.`);
+      throw new UrlAudioError(
+        `${url} stopped responding for ${Math.round(stallMs / 1000)}s, so the transfer was cancelled.`,
+      );
     }
     // A CORS rejection, a refused connection and a wrong port are
     // indistinguishable here by design -- fetch reports "Failed to fetch"
@@ -186,6 +220,64 @@ async function fetchWithTimeout(url, ms, signal = null) {
     clearTimeout(timer);
     signal?.removeEventListener('abort', onOuterAbort);
   }
+}
+
+/** The size limit as a human-readable megabyte count, for error messages. */
+function megabytes(bytes) { return Math.round(bytes / (1024 * 1024)); }
+
+/** Refuses an oversized response from its own `Content-Length`, before a
+ *  byte of the body is read. A header is only a claim, so `readBody` below
+ *  re-checks the bytes that actually arrive -- but honouring the claim when
+ *  it is present avoids pulling down a disk image to find out. */
+function checkDeclaredLength(res, name, limits) {
+  const declared = Number(res.headers?.get?.('content-length'));
+  if (Number.isFinite(declared) && declared > limits.maxFileBytes) {
+    throw new UrlAudioError(
+      `${name} is ${megabytes(declared)}MB, over the ${megabytes(limits.maxFileBytes)}MB limit.`,
+    );
+  }
+}
+
+/**
+ * Reads a response body as a Blob, enforcing the size cap as the bytes
+ * arrive rather than after they are all in memory.
+ *
+ * This is what makes a lying `Content-Length` harmless: a server that
+ * declares 1KB and then streams gigabytes is cut off at the limit instead
+ * of being buffered in full first.
+ *
+ * Where the response has no streaming body -- an older browser, or a test
+ * double -- it falls back to a one-shot read, which is still bounded by the
+ * stall timer and still cap-checked once it lands.
+ */
+async function readBody(res, arm, { name, limits, type = '' }) {
+  if (!res.body?.getReader) {
+    const blob = await res.blob();
+    if (blob.size > limits.maxFileBytes) {
+      throw new UrlAudioError(
+        `${name} is ${megabytes(blob.size)}MB, over the ${megabytes(limits.maxFileBytes)}MB limit.`,
+      );
+    }
+    return blob;
+  }
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    arm(); // bytes arrived, so this is progress rather than a stall
+    total += value.byteLength;
+    if (total > limits.maxFileBytes) {
+      try { await reader.cancel(); } catch { /* already torn down */ }
+      throw new UrlAudioError(
+        `${name} exceeds the ${megabytes(limits.maxFileBytes)}MB limit`
+        + ' (the server understated its size), so the transfer was stopped.',
+      );
+    }
+    chunks.push(value);
+  }
+  return new Blob(chunks, type ? { type } : undefined);
 }
 
 /**
@@ -306,19 +398,14 @@ export function parseJsonListing(json, baseUrl) {
  * afterwards because Content-Length is a claim, not a guarantee.
  */
 export async function fetchAudioAsFile(url, { signal = null, limits = AUDIO_LOAD_LIMITS } = {}) {
-  const res = await fetchWithTimeout(url, DOWNLOAD_TIMEOUT_MS, signal);
-  if (!res.ok) {
-    throw new UrlAudioError(`${url} returned HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.`);
-  }
   const name = audioNameFromUrl(url);
-  const declared = Number(res.headers?.get?.('content-length'));
-  if (Number.isFinite(declared) && declared > limits.maxFileBytes) {
-    throw new UrlAudioError(
-      `${name} is ${Math.round(declared / (1024 * 1024))}MB, over the`
-      + ` ${Math.round(limits.maxFileBytes / (1024 * 1024))}MB limit.`,
-    );
-  }
-  const blob = await res.blob();
+  const blob = await requestWithTimeout(url, DOWNLOAD_TIMEOUT_MS, signal, async (res, arm) => {
+    if (!res.ok) {
+      throw new UrlAudioError(`${url} returned HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.`);
+    }
+    checkDeclaredLength(res, name, limits);
+    return readBody(res, arm, { name, limits });
+  });
   try {
     validateAudioBytes(blob.size, name, limits);
   } catch (err) {
@@ -354,47 +441,51 @@ export async function openAudioUrl(raw, { pageUrl = undefined, signal = null, li
     return { kind: 'audio', file: await fetchAudioAsFile(url, { signal, limits }) };
   }
 
-  const res = await fetchWithTimeout(url, LISTING_TIMEOUT_MS, signal);
-  if (!res.ok) {
-    throw new UrlAudioError(`${url} returned HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.`);
-  }
-  const contentType = (res.headers?.get?.('content-type') || '').toLowerCase();
-
-  if (contentType.includes('json')) {
-    const { entries, folders } = parseJsonListing(await res.json(), url);
-    if (!entries.length && !folders.length) {
-      throw new UrlAudioError(`No audio files listed at ${url}.`);
+  return requestWithTimeout(url, LISTING_TIMEOUT_MS, signal, async (res, arm) => {
+    if (!res.ok) {
+      throw new UrlAudioError(`${url} returned HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.`);
     }
-    return { kind: 'listing', entries, folders, url };
-  }
-  if (contentType.includes('html')) {
-    const { entries, folders } = parseListing(await res.text(), url);
-    if (!entries.length && !folders.length) {
-      throw new UrlAudioError(
-        `No audio links found at ${url}. If that is a folder, make sure the`
-        + ' server serves a directory index.',
-      );
-    }
-    return { kind: 'listing', entries, folders, url };
-  }
+    const contentType = (res.headers?.get?.('content-type') || '').toLowerCase();
 
-  // Not a listing and not an audio-looking path: an extensionless URL from
-  // a server that streams audio anyway. Take the bytes it already sent.
-  if (contentType.startsWith('audio/') || contentType.includes('octet-stream') || !contentType) {
-    const blob = await res.blob();
-    try {
-      validateAudioBytes(blob.size, audioNameFromUrl(url), limits);
-    } catch (err) {
-      throw new UrlAudioError(err.message);
+    if (contentType.includes('json')) {
+      const { entries, folders } = parseJsonListing(await res.json(), url);
+      if (!entries.length && !folders.length) {
+        throw new UrlAudioError(`No audio files listed at ${url}.`);
+      }
+      return { kind: 'listing', entries, folders, url };
     }
-    if (blob.size === 0) throw new UrlAudioError(`${url} came back empty.`);
-    const name = audioNameFromUrl(url);
-    const withExtension = isAudioName(name) ? name : `${name}.mp3`;
-    return {
-      kind: 'audio',
-      file: new File([blob], withExtension, { type: blob.type || 'audio/mpeg' }),
-    };
-  }
+    if (contentType.includes('html')) {
+      const { entries, folders } = parseListing(await res.text(), url);
+      if (!entries.length && !folders.length) {
+        throw new UrlAudioError(
+          `No audio links found at ${url}. If that is a folder, make sure the`
+          + ' server serves a directory index.',
+        );
+      }
+      return { kind: 'listing', entries, folders, url };
+    }
 
-  throw new UrlAudioError(`${url} served ${contentType}, which is neither audio nor a folder listing.`);
+    // Not a listing and not an audio-looking path: an extensionless URL from
+    // a server that streams audio anyway. Take the bytes it already sent --
+    // under the same declared-length refusal and streaming cap as the direct
+    // path, so an oversized response is not buffered here either.
+    if (contentType.startsWith('audio/') || contentType.includes('octet-stream') || !contentType) {
+      const name = audioNameFromUrl(url);
+      checkDeclaredLength(res, name, limits);
+      const blob = await readBody(res, arm, { name, limits });
+      try {
+        validateAudioBytes(blob.size, name, limits);
+      } catch (err) {
+        throw new UrlAudioError(err.message);
+      }
+      if (blob.size === 0) throw new UrlAudioError(`${url} came back empty.`);
+      const withExtension = isAudioName(name) ? name : `${name}.mp3`;
+      return {
+        kind: 'audio',
+        file: new File([blob], withExtension, { type: blob.type || 'audio/mpeg' }),
+      };
+    }
+
+    throw new UrlAudioError(`${url} served ${contentType}, which is neither audio nor a folder listing.`);
+  });
 }

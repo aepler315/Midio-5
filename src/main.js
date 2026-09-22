@@ -122,6 +122,7 @@ const loaderEl = document.getElementById('loader');
 const dropzoneEl = document.getElementById('dropzone');
 const fileInputEl = document.getElementById('fileInput');
 const demoBtnEl = document.getElementById('demoBtn');
+const browseBtnEl = document.getElementById('browseBtn');
 const urlLoadEl = document.getElementById('urlLoad');
 const urlLoadWhyEl = document.getElementById('urlLoadWhy');
 const urlLoadFormEl = document.getElementById('urlLoadForm');
@@ -2177,7 +2178,25 @@ function renderUrlListing({ entries = [], folders = [], url = '' }) {
   urlLoadListEl.replaceChildren();
 
   if (urlLoadCrumbEl) {
-    urlLoadCrumbEl.textContent = decodeUrlPathForDisplay(url);
+    urlLoadCrumbEl.replaceChildren();
+    // Browsing does not touch history, so the browser's Back leaves the
+    // page rather than returning to the previous folder. Without an
+    // in-page way up, one wrong tap on a car screen means retyping the
+    // address by hand.
+    const parent = parentListingUrl(url);
+    if (parent) {
+      const up = document.createElement('button');
+      up.type = 'button';
+      up.className = 'urlLoadUp';
+      up.textContent = '\u2191 Up a folder';
+      up.addEventListener('pointerdown', unlockAudio, { passive: true });
+      up.addEventListener('click', () => openUrlTarget(parent));
+      urlLoadCrumbEl.append(up);
+    }
+    const path = document.createElement('span');
+    path.className = 'urlLoadCrumbPath';
+    path.textContent = decodeUrlPathForDisplay(url);
+    urlLoadCrumbEl.append(path);
     urlLoadCrumbEl.classList.remove('hidden');
   }
 
@@ -2211,6 +2230,9 @@ function renderUrlListing({ entries = [], folders = [], url = '' }) {
     // itself a user activation and bootAudio() would be refused after it.
     btn.addEventListener('pointerdown', unlockAudio, { passive: true });
     btn.addEventListener('click', () => {
+      // Also here, not only on pointerdown: Enter/Space on a focused button
+      // fires click alone, and that click is the only gesture available.
+      unlockAudio();
       if (row.kind === 'folder') openUrlTarget(row.url);
       else loadUrlAudio(row.url, row.name);
     });
@@ -2224,6 +2246,26 @@ function renderUrlListing({ entries = [], folders = [], url = '' }) {
     urlLoadListEl.append(li);
   }
   urlLoadListEl.classList.toggle('hidden', rows.length === 0);
+}
+
+/** The folder above `url`, or null at the server root. Derived from the
+ *  path rather than from a link in the listing, because an HTML index's own
+ *  parent link is filtered out as a non-descendant and the JSON listing has
+ *  no parent entry at all. */
+function parentListingUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  if (!segments.length) return null; // already at the root
+  segments.pop();
+  parsed.pathname = segments.length ? `/${segments.join('/')}/` : '/';
+  parsed.search = '';
+  parsed.hash = '';
+  return parsed.href;
 }
 
 /** A URL is unreadable on a car screen with its escapes intact. */
@@ -2306,11 +2348,23 @@ function bindUrlLoad() {
   urlLoadListenersBound = true;
   urlLoadFormEl.addEventListener('submit', (e) => {
     e.preventDefault();
+    // Enter, or the mobile keyboard's Go key, fires no pointerdown -- so
+    // without this the fetch starts with no unlock and the AudioContext can
+    // refuse to resume by the time the bytes arrive, even though tapping
+    // Open works. The unlock must happen synchronously inside the gesture.
+    unlockAudio();
     openUrlTarget(urlLoadInputEl?.value || '');
   });
-  // Unlock audio on the gesture, not on the fetch that follows it.
   urlLoadFormEl.addEventListener('pointerdown', unlockAudio, { passive: true });
 }
+
+// The visible button, which is what a player actually taps. It used to be
+// a <label> wrapping #fileInput, and a label natively activates its nested
+// input -- so the click reached the input directly, bypassed this function,
+// and kept producing the dead click and the phantom keyboard on every tap
+// without ever recording a verdict. It is a real <button> now.
+browseBtnEl?.addEventListener('click', () => openFilePicker());
+browseBtnEl?.addEventListener('pointerdown', unlockAudio, { passive: true });
 
 urlLoadOpenBtnEl?.addEventListener('click', () => revealUrlLoad('', { focus: true }));
 
@@ -3486,7 +3540,7 @@ function renderLibraryHome() {
   // privacy line to someone who already accepted it.
   const folderLabel = hasLibrary ? 'Change folder' : 'Use a music folder';
   if (libraryFolderBtnEl) libraryFolderBtnEl.textContent = folderLabel;
-  if (libraryFolderFallbackEl) libraryFolderFallbackEl.childNodes[0].nodeValue = `${folderLabel} `;
+  if (libraryFolderFallbackEl) libraryFolderFallbackEl.textContent = folderLabel;
   if (libraryFolderHintEl) {
     libraryFolderHintEl.textContent = hasLibrary
       ? `Reading from ${musicLibrary.root?.name || 'your folder'}.`
@@ -3689,6 +3743,8 @@ async function runAutoTag() {
 
 libraryOpenBtnEl?.addEventListener('click', openLibrary);
 libraryFolderBtnEl?.addEventListener('click', chooseMusicFolder);
+// Was a <label> wrapping #libraryFolderInput; same bypass, same fix.
+libraryFolderFallbackEl?.addEventListener('click', chooseMusicFolder);
 libraryFolderInputEl?.addEventListener('change', async (e) => {
   // Copy BEFORE clearing: `e.target.files` is a live FileList view of the
   // input, so resetting the value empties the list the scan is about to

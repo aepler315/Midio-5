@@ -3063,3 +3063,35 @@ html, body {
   color: var(--text-tertiary);
   font-size: 0.8rem;
 }
+
+/* The way back up out of a subfolder. Browsing does not touch history, so
+   the browser's own Back button leaves the page instead of returning to the
+   previous listing -- on a touch screen this is the only way up. */
+.urlLoadCrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.urlLoadUp {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.urlLoadUp:hover,
+.urlLoadUp:focus-visible {
+  border-color: var(--spec-cool);
+  outline: none;
+}
+.urlLoadCrumbPath {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
