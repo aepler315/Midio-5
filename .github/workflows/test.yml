@@ -14,13 +14,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-          cache: npm
-      - name: Install game dependencies
-        run: npm ci --no-fund
+      - name: Set up the game
+        uses: ./.github/actions/setup
       - name: Audit game dependencies
         run: npm audit --audit-level=high
       - name: Lint
@@ -34,17 +29,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - name: Set up the game
+        uses: ./.github/actions/setup
         with:
-          node-version: 24
-          cache: npm
-      - name: Install game dependencies
-        run: npm ci --no-fund
-      - name: Audit game dependencies
-        run: npm audit --audit-level=high
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+          browser: true
       - name: Exercise audio upload and playback
         run: |
           mkdir -p .smoke
@@ -82,17 +70,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - name: Set up the game
+        uses: ./.github/actions/setup
         with:
-          node-version: 24
-          cache: npm
-      - name: Install game dependencies
-        run: npm ci --no-fund
-      - name: Audit game dependencies
-        run: npm audit --audit-level=high
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+          browser: true
       - name: Exercise pointer and keyboard world selection
         run: |
           mkdir -p .smoke

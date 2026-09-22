@@ -303,7 +303,7 @@ An existing recording can use the same checks (choose one at least
 15 seconds long):
 
 ```sh
-node tools/smoke-audio.mjs path/to/recording.wav http://localhost:8080 .smoke/custom
+node tools/smoke.mjs http://localhost:8080 .smoke/custom path/to/recording.wav
 ```
 
 Car mode (wake lock, wake-up-tap absorption) has its own check against a

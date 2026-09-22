@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 
 // DebugOverlay's vision-config form is plain DOM glue with no framework, so
 // a hand-rolled element stub (just enough of the API surface it touches) is
-// cheaper and more deterministic here than a full browser -- this sandbox
-// has no launchable Chromium (see tools/smoke-vision.mjs), so this is the
+// cheaper and more deterministic here than a full browser, and it is the
 // only automated coverage the form's interactive logic gets.
 function fakeElement() {
   const el = {
