@@ -20,6 +20,10 @@ import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
 import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
+import { FileChooserSupport } from './ui/FileChooserProbe.js';
+import {
+  openAudioUrl, UrlAudioError, fetchAudioAsFile, classifyUrl,
+} from './net/UrlAudioSource.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
 import { DrawErrorLog } from './render/DrawErrorLog.js';
 import { ROLE_LOW, ROLE_HIGH, GrooveFingerprint } from './sim/GrooveFingerprint.js';
@@ -120,6 +124,16 @@ const loaderEl = document.getElementById('loader');
 const dropzoneEl = document.getElementById('dropzone');
 const fileInputEl = document.getElementById('fileInput');
 const demoBtnEl = document.getElementById('demoBtn');
+const browseBtnEl = document.getElementById('browseBtn');
+const urlLoadEl = document.getElementById('urlLoad');
+const urlLoadWhyEl = document.getElementById('urlLoadWhy');
+const urlLoadFormEl = document.getElementById('urlLoadForm');
+const urlLoadInputEl = document.getElementById('urlLoadInput');
+const urlLoadBtnEl = document.getElementById('urlLoadBtn');
+const urlLoadStatusEl = document.getElementById('urlLoadStatus');
+const urlLoadListEl = document.getElementById('urlLoadList');
+const urlLoadCrumbEl = document.getElementById('urlLoadCrumb');
+const urlLoadOpenBtnEl = document.getElementById('urlLoadOpenBtn');
 const worldSelectEl = document.getElementById('worldSelect');
 const worldSelectGridEl = document.getElementById('worldSelectGrid');
 const worldSelectBackEl = document.getElementById('worldSelectBack');
@@ -571,8 +585,35 @@ function randomizeSeed() {
   }
 }
 
+let bootAudioInFlight = null;
+
+/**
+ * Starts the audio engine, at most once, and makes every caller wait for
+ * the SAME attempt.
+ *
+ * ORDER MATTERS, and it is the opposite of the obvious one. `bootAudioOnce`
+ * assigns `audioEngine` before it awaits `resume()`, so `audioEngine` is
+ * truthy for the whole of that window -- which means checking it first
+ * returns early against a context that has not resumed, or one the first
+ * call is about to null out because resume failed. Checking it first is
+ * exactly the bug the in-flight promise exists to close, so the in-flight
+ * check has to come first or it is unreachable while it matters.
+ *
+ * A truthy `audioEngine` with nothing in flight is the only state that
+ * means "already booted", and only then is returning immediately correct.
+ *
+ * `unlockAudio()` fires this from a gesture and discards the promise, so
+ * the window is reachable rather than theoretical: a small loopback
+ * download can finish well before a slow `resume()` does.
+ */
 async function bootAudio() {
+  if (bootAudioInFlight) return bootAudioInFlight;
   if (audioEngine) return;
+  bootAudioInFlight = bootAudioOnce().finally(() => { bootAudioInFlight = null; });
+  return bootAudioInFlight;
+}
+
+async function bootAudioOnce() {
   audioEngine = new AudioEngine();
   applyBtLatencyToAudioEngine(); // carry over any negative trim set before this song started
   const running = await audioEngine.resume();
@@ -2068,6 +2109,11 @@ function handleFile(file) {
  *  song (their filenames cast the characters). The built-in sample is a
  *  second door into the same chooser. */
 function handleFiles(files) {
+  // Whatever this is, it is the source the player chose most recently, so
+  // an in-flight URL fetch must not be allowed to land afterwards and take
+  // the playback back. The URL path releases its own operation before
+  // calling in here, so this never cancels the load that invoked it.
+  cancelUrlLoad();
   let list;
   try {
     list = validateAudioFiles(files, AUDIO_LOAD_LIMITS);
@@ -2088,6 +2134,347 @@ fileInputEl?.addEventListener('change', (e) => {
   // Same-file re-upload doesn't fire `change` unless we clear the value.
   e.target.value = '';
 });
+
+// --- Browsers with no file chooser ---------------------------------------
+//
+// An `<input type="file">` only opens a chooser if the browser implements
+// one. An Android WebView delegates that to its host app via
+// `WebChromeClient.onShowFileChooser()`, and an app that never overrides it
+// gets no chooser at all -- the click then leaves the hidden input focused
+// and Android raises the soft keyboard, which is how this reaches a player:
+// "the upload button just opens the keyboard". Fermata's browser is one
+// such app. Nothing this page serves can add a chooser there, so instead
+// the dead click is detected once, suppressed from then on, and the URL
+// loader below is offered in its place. See src/ui/FileChooserProbe.js.
+const fileChooser = new FileChooserSupport();
+
+/** Every route to the picker goes through here, so a browser with no
+ *  chooser reveals the alternative instead of raising a keyboard. */
+function openFilePicker(input = fileInputEl) {
+  return fileChooser.open(input, () => revealUrlLoad(
+    `This browser has no file chooser, so "Browse files" cannot open one.${
+      fileChooser.looksLikeWebView
+        ? ' That is a limit of the app you are browsing in, not of this page.'
+        : ''
+    } Load a song by address instead.`,
+  ));
+}
+
+/** How many song rows are built at once; the rest arrive on request. */
+const URL_LISTING_BATCH_ROWS = 500;
+let urlLoadAbort = null;
+let urlLoadListenersBound = false;
+
+/**
+ * Shows the URL panel, with `why` explaining an unasked-for appearance.
+ *
+ * `focus` is deliberately NOT the default. Focusing a text field raises the
+ * soft keyboard -- the very thing the player just complained about -- so a
+ * panel that appears because the chooser turned out to be missing stays
+ * unfocused, and only a panel the player opened on purpose takes focus.
+ */
+function revealUrlLoad(why = '', { focus = false } = {}) {
+  if (!urlLoadEl) return;
+  urlLoadEl.classList.remove('hidden');
+  if (urlLoadWhyEl) urlLoadWhyEl.textContent = why;
+  bindUrlLoad();
+  // Scrolling it into view matters on a head unit, where the panel can open
+  // below the fold and look as if nothing happened.
+  try { urlLoadEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch { /* older WebView */ }
+  if (focus) urlLoadInputEl?.focus();
+}
+
+function setUrlLoadStatus(text, isError = false) {
+  if (!urlLoadStatusEl) return;
+  urlLoadStatusEl.textContent = text || '';
+  urlLoadStatusEl.classList.toggle('isError', Boolean(isError) && Boolean(text));
+}
+
+function setUrlLoadBusy(busy) {
+  if (urlLoadBtnEl) urlLoadBtnEl.disabled = busy;
+}
+
+function clearUrlLoadListing() {
+  if (urlLoadListEl) {
+    urlLoadListEl.replaceChildren();
+    urlLoadListEl.classList.add('hidden');
+  }
+  if (urlLoadCrumbEl) {
+    urlLoadCrumbEl.textContent = '';
+    urlLoadCrumbEl.classList.add('hidden');
+  }
+}
+
+/** Renders one folder's worth of entries. Everything is built with
+ *  createElement/textContent -- the listing comes off a server the player
+ *  named, so its names are text to display, never markup to parse. */
+function renderUrlListing({ entries = [], folders = [], url = '' }) {
+  if (!urlLoadListEl) return;
+  urlLoadListEl.replaceChildren();
+
+  if (urlLoadCrumbEl) {
+    urlLoadCrumbEl.replaceChildren();
+    // Browsing does not touch history, so the browser's Back leaves the
+    // page rather than returning to the previous folder. Without an
+    // in-page way up, one wrong tap on a car screen means retyping the
+    // address by hand.
+    const parent = parentListingUrl(url);
+    if (parent) {
+      const up = document.createElement('button');
+      up.type = 'button';
+      up.className = 'urlLoadUp';
+      up.textContent = '\u2191 Up a folder';
+      up.addEventListener('pointerdown', unlockAudio, { passive: true });
+      up.addEventListener('click', () => openUrlTarget(parent));
+      urlLoadCrumbEl.append(up);
+    }
+    const path = document.createElement('span');
+    path.className = 'urlLoadCrumbPath';
+    path.textContent = decodeUrlPathForDisplay(url);
+    urlLoadCrumbEl.append(path);
+    urlLoadCrumbEl.classList.remove('hidden');
+  }
+
+  /** One tappable row. Built with createElement/textContent throughout --
+   *  the names come off a server the player named, so they are text to
+   *  display, never markup to parse. */
+  const appendEntry = (row) => {
+    const li = document.createElement('li');
+    li.className = 'urlLoadItem';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'urlLoadEntry';
+    btn.dataset.kind = row.kind;
+    const icon = document.createElement('span');
+    icon.className = 'urlLoadEntryIcon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = row.kind === 'folder' ? '\u25b8' : '\u266a';
+    const name = document.createElement('span');
+    name.className = 'urlLoadEntryName';
+    name.textContent = row.name;
+    btn.append(icon, name);
+    // A folder navigates; a song loads. The AudioContext is unlocked on the
+    // pointer-down that starts either, because the fetch that follows is not
+    // itself a user activation and bootAudio() would be refused after it.
+    btn.addEventListener('pointerdown', unlockAudio, { passive: true });
+    btn.addEventListener('click', () => {
+      // Also here, not only on pointerdown: Enter/Space on a focused button
+      // fires click alone, and that click is the only gesture available.
+      unlockAudio();
+      if (row.kind === 'folder') openUrlTarget(row.url);
+      else loadUrlAudio(row.url, row.name);
+    });
+    li.append(btn);
+    urlLoadListEl.append(li);
+  };
+
+  // Folders first -- they are navigation, and the natural order to scan --
+  // then songs, all of it through ONE batched list.
+  //
+  // Batching is not a limit: building thousands of buttons at once is
+  // seconds of frozen UI on a head unit, so rows arrive a batch at a time
+  // with a "Show more" button after them. Nothing is ever dropped, which
+  // matters for both kinds and for different reasons: a hidden song in a
+  // FLAT folder has no subfolder to reach it through, and a hidden folder
+  // has nothing at all. An artist root with thousands of subfolders costs
+  // exactly as much to render as a flat album with thousands of tracks, so
+  // both are paced the same way.
+  const rows = [
+    ...folders.map((folder) => ({ ...folder, kind: 'folder' })),
+    ...entries.map((entry) => ({ ...entry, kind: 'file' })),
+  ];
+
+  let shownRows = 0;
+  const showMoreRow = document.createElement('li');
+  showMoreRow.className = 'urlLoadItem urlLoadMoreRow';
+  const showMoreBtn = document.createElement('button');
+  showMoreBtn.type = 'button';
+  showMoreBtn.className = 'urlLoadMore';
+  showMoreRow.append(showMoreBtn);
+
+  const showNextBatch = () => {
+    showMoreRow.remove();
+    const next = rows.slice(shownRows, shownRows + URL_LISTING_BATCH_ROWS);
+    for (const row of next) appendEntry(row);
+    shownRows += next.length;
+    const remaining = rows.length - shownRows;
+    if (remaining > 0) {
+      showMoreBtn.textContent = `Show ${Math.min(remaining, URL_LISTING_BATCH_ROWS)} more`
+        + ` (${remaining} left)`;
+      urlLoadListEl.append(showMoreRow);
+    }
+  };
+  showMoreBtn.addEventListener('click', showNextBatch);
+  showNextBatch();
+
+  urlLoadListEl.classList.toggle('hidden', entries.length === 0 && folders.length === 0);
+}
+
+/** The folder above `url`, or null at the server root. Derived from the
+ *  path rather than from a link in the listing, because an HTML index's own
+ *  parent link is filtered out as a non-descendant and the JSON listing has
+ *  no parent entry at all. */
+function parentListingUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  if (!segments.length) return null; // already at the root
+  segments.pop();
+  parsed.pathname = segments.length ? `/${segments.join('/')}/` : '/';
+  parsed.search = '';
+  parsed.hash = '';
+  return parsed.href;
+}
+
+/** A URL is unreadable on a car screen with its escapes intact. */
+function decodeUrlPathForDisplay(url) {
+  try {
+    const parsed = new URL(url);
+    return decodeURIComponent(parsed.pathname) || '/';
+  } catch {
+    return String(url || '');
+  }
+}
+
+/** Abandons any URL fetch still in flight. Called whenever a DIFFERENT
+ *  source claims playback: otherwise a download started earlier lands
+ *  later, calls handleFiles(), claims a newer load generation and replaces
+ *  the file the player just dropped or picked. */
+function cancelUrlLoad() {
+  if (!urlLoadAbort) return;
+  urlLoadAbort.abort();
+  urlLoadAbort = null;
+  setUrlLoadBusy(false);
+}
+
+/** Starts a fresh URL operation, superseding any still in flight. */
+function beginUrlLoadOperation() {
+  urlLoadAbort?.abort();
+  urlLoadAbort = new AbortController();
+  setUrlLoadBusy(true);
+  return urlLoadAbort.signal;
+}
+
+function endUrlLoadOperation(signal) {
+  if (urlLoadAbort?.signal === signal) {
+    urlLoadAbort = null;
+    setUrlLoadBusy(false);
+  }
+}
+
+/** Opens whatever the address turns out to be: a song, or a folder to browse. */
+async function openUrlTarget(raw) {
+  const signal = beginUrlLoadOperation();
+  setUrlLoadStatus('Opening\u2026');
+  try {
+    const result = await openAudioUrl(raw, { pageUrl: location.href, signal });
+    if (signal.aborted) return;
+    if (result.kind === 'listing') {
+      renderUrlListing(result);
+      const count = result.entries.length;
+      setUrlLoadStatus(count
+        ? `${count} song${count === 1 ? '' : 's'} here. Tap one to play it.`
+        : 'No songs in this folder \u2014 open a subfolder.');
+      if (urlLoadInputEl) urlLoadInputEl.value = result.url;
+      return;
+    }
+    clearUrlLoadListing();
+    setUrlLoadStatus('');
+    endUrlLoadOperation(signal); // release before handing off, see cancelUrlLoad
+    handleFiles([result.file]);
+  } catch (err) {
+    if (signal.aborted) return;
+    setUrlLoadStatus(
+      err instanceof UrlAudioError ? err.message : `Could not open that URL: ${err?.message || err}`,
+      true,
+    );
+  } finally {
+    endUrlLoadOperation(signal);
+  }
+}
+
+/** Loads one song picked out of a listing.
+ *
+ *  The URL is re-validated even though it came from a listing we just
+ *  fetched: a listing is free to contain absolute links, and an HTML index
+ *  usually does. A server started with MUSIC_HOST set advertises its LAN
+ *  address, so a folder on loopback can list songs on http://192.168.x.x --
+ *  which the browser blocks as mixed content. Without this check the browse
+ *  succeeds and every song click then fails as an unreachable-server/CORS
+ *  error, which points at entirely the wrong thing. */
+async function loadUrlAudio(url, name = '') {
+  // Supersede first, validate second. Returning before beginUrlLoadOperation()
+  // left an earlier download running: the rejection message appeared, then
+  // the old request finished, cleared it, and started playing a song the
+  // player had already moved on from. openUrlTarget() has always claimed
+  // the operation up front for the same reason.
+  const signal = beginUrlLoadOperation();
+  const verdict = classifyUrl(url, location.href);
+  if (!verdict.ok) {
+    setUrlLoadStatus(verdict.message, true);
+    endUrlLoadOperation(signal);
+    return;
+  }
+  setUrlLoadStatus(`Fetching ${name || decodeUrlPathForDisplay(url)}\u2026`);
+  try {
+    const file = await fetchAudioAsFile(verdict.url, { signal, name });
+    if (signal.aborted) return;
+    setUrlLoadStatus('');
+    endUrlLoadOperation(signal); // release before handing off, see cancelUrlLoad
+    handleFiles([file]);
+  } catch (err) {
+    if (signal.aborted) return;
+    setUrlLoadStatus(
+      err instanceof UrlAudioError ? err.message : `Could not load that song: ${err?.message || err}`,
+      true,
+    );
+  } finally {
+    endUrlLoadOperation(signal);
+  }
+}
+
+function bindUrlLoad() {
+  if (urlLoadListenersBound || !urlLoadFormEl) return;
+  urlLoadListenersBound = true;
+  urlLoadFormEl.addEventListener('submit', (e) => {
+    e.preventDefault();
+    // Enter, or the mobile keyboard's Go key, fires no pointerdown -- so
+    // without this the fetch starts with no unlock and the AudioContext can
+    // refuse to resume by the time the bytes arrive, even though tapping
+    // Open works. The unlock must happen synchronously inside the gesture.
+    unlockAudio();
+    openUrlTarget(urlLoadInputEl?.value || '');
+  });
+  urlLoadFormEl.addEventListener('pointerdown', unlockAudio, { passive: true });
+}
+
+// The visible button, which is what a player actually taps. It used to be
+// a <label> wrapping #fileInput, and a label natively activates its nested
+// input -- so the click reached the input directly, bypassed this function,
+// and kept producing the dead click and the phantom keyboard on every tap
+// without ever recording a verdict. It is a real <button> now.
+browseBtnEl?.addEventListener('click', () => {
+  // Enter/Space on a focused button fires click with no pointerdown, so the
+  // pointerdown listener below covers touch and mouse only. Without this the
+  // chooser opens un-unlocked and the later `change` handler -- which is not
+  // a user activation -- can fail with "Audio is blocked."
+  unlockAudio();
+  openFilePicker();
+});
+browseBtnEl?.addEventListener('pointerdown', unlockAudio, { passive: true });
+
+urlLoadOpenBtnEl?.addEventListener('click', () => revealUrlLoad('', { focus: true }));
+
+// A browser already known to have no chooser shows the alternative up
+// front, rather than making the player tap a dead button to find out again.
+if (fileChooser.isAbsent) {
+  revealUrlLoad('This browser has no file chooser, so files cannot be browsed'
+    + ' from this page. Load a song by address instead.');
+}
 worldSelectBackEl?.addEventListener('click', () => backToTitle());
 worldSelectEl?.addEventListener('keydown', (e) => {
   // Native modality makes the background inert; explicitly wrap the two
@@ -2108,6 +2495,7 @@ worldSelectEl?.addEventListener('cancel', (e) => {
 
 /** Authored sample (Proof) so a visitor can see the worlds without a file. */
 async function startDemoSample() {
+  cancelUrlLoad(); // the sample is a choice too, and outranks an older fetch
   try {
     await bootAudio();
   } catch (err) {
@@ -2163,7 +2551,7 @@ worldSelectEl?.addEventListener('pointerdown', unlockAudio, { passive: true });
   e.preventDefault();
   dropzoneEl.classList.remove('drag');
 }));
-dropzoneEl.addEventListener('click', () => fileInputEl.click());
+dropzoneEl.addEventListener('click', () => openFilePicker());
 // #dropzone is role="button" tabindex="0", but browsers don't synthesize a
 // click from Enter/Space on a plain div the way they do for a real
 // <button> -- without this the game's primary call-to-action isn't
@@ -2173,7 +2561,7 @@ dropzoneEl.addEventListener('keydown', (e) => {
   if (e.target !== dropzoneEl) return; // nested sample/upload controls own their keys
   if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
   e.preventDefault(); // Space must not also scroll the page
-  fileInputEl.click();
+  openFilePicker();
 });
 
 // --- Global drag-and-drop: works at ANY time, not just from the initial
@@ -3254,7 +3642,7 @@ function renderLibraryHome() {
   // privacy line to someone who already accepted it.
   const folderLabel = hasLibrary ? 'Change folder' : 'Use a music folder';
   if (libraryFolderBtnEl) libraryFolderBtnEl.textContent = folderLabel;
-  if (libraryFolderFallbackEl) libraryFolderFallbackEl.childNodes[0].nodeValue = `${folderLabel} `;
+  if (libraryFolderFallbackEl) libraryFolderFallbackEl.textContent = folderLabel;
   if (libraryFolderHintEl) {
     libraryFolderHintEl.textContent = hasLibrary
       ? `Reading from ${musicLibrary.root?.name || 'your folder'}.`
@@ -3374,7 +3762,10 @@ async function chooseMusicFolder() {
     return;
   }
   if (!musicLibrary.persistable) {
-    libraryFolderInputEl?.click();
+    // The `webkitdirectory` fallback is still an <input type="file">, so a
+    // browser with no chooser cannot open it either -- same route, same
+    // suppression, same alternative offered.
+    openFilePicker(libraryFolderInputEl);
     return;
   }
   try {
@@ -3454,6 +3845,8 @@ async function runAutoTag() {
 
 libraryOpenBtnEl?.addEventListener('click', openLibrary);
 libraryFolderBtnEl?.addEventListener('click', chooseMusicFolder);
+// Was a <label> wrapping #libraryFolderInput; same bypass, same fix.
+libraryFolderFallbackEl?.addEventListener('click', chooseMusicFolder);
 libraryFolderInputEl?.addEventListener('change', async (e) => {
   // Copy BEFORE clearing: `e.target.files` is a live FileList view of the
   // input, so resetting the value empties the list the scan is about to
