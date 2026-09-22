@@ -34,6 +34,7 @@ import { CodaDirector } from './CodaDirector.js';
 import { FilmFinish } from '../render/FilmFinish.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { alpineTerrainProfiles } from '../world/terrain/loadTerrain.js';
+import { getWorld } from '../world/Worlds.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { WorldAssembly } from '../world/WorldAssembly.js';
 import { GroundField } from '../world/GroundField.js';
@@ -76,6 +77,7 @@ export class Simulation {
     songSeed: pinnedSeed = null,
     conductorCues = null,
     worldId = null,
+    terrainProfiles = null,
   } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
@@ -254,7 +256,14 @@ export class Simulation {
       structure,
       conductorSchedule: conductorCues ? conductorCues.scheduleCues : null,
       worldId: this.worldId,
-      terrainProfiles: this.worldId === 'alpine' ? alpineTerrainProfiles() : null,
+      // Keyed on the world's KIND, not its id. A world chosen in the picker or
+      // on the title screen is a tailored variant whose id is 'custom', so the
+      // old `worldId === 'alpine'` test was false in normal play: the real
+      // Teton skyline only ever appeared in the demo and fallback paths.
+      // The range itself is the song's match from the basket (RangeLibrary),
+      // with the bundled Tetons as the fallback.
+      terrainProfiles: getWorld(this.worldId)?.kind === 'alpine'
+        ? (terrainProfiles || alpineTerrainProfiles()) : null,
     });
     this.reducedFlash = false;
     this.visualStyle = 'rendered';

@@ -9,7 +9,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { demFromLatLon, crestGuideFromDem } from '../src/world/terrain/LatLonDem.js';
+import { demFromLatLon, crestGuideTraced } from '../src/world/terrain/LatLonDem.js';
 import { rangeLayerProfiles, compositeLayerProfiles, profilesToJSON } from '../src/world/terrain/TerrainProfile.js';
 import { scanCorridor, smoothBaseline, pointAlong } from '../src/world/terrain/SkylineScan.js';
 import { guidesFromGeoJSON } from '../src/world/terrain/GuideGeoJSON.js';
@@ -28,17 +28,35 @@ const src = JSON.parse(gridBytes.toString('utf8'));
 const buf = Buffer.from(src.elevB64, 'base64');
 const elev = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
 const dem = demFromLatLon({ ...src, elev }, src.cellM || 200);
-const guide = crestGuideFromDem(dem, 500);
-const scanOpts = {
+// Traced, not per-row max: the per-row max hops between parallel ridges
+// (see crestGuideTraced), which broke every skyline built without
+// hand-authored guides.
+const guide = crestGuideTraced(dem, 500);
+// Which side the camera stands on decides whether the main crest is what
+// you see at all. From the wrong side, nearer and lower terrain gets in the
+// way: the automated Teton build viewed from the west had its skyline sit
+// 400-1,300m below the crest for most of the range. Unless the grid names a
+// side, scan from both and keep the one whose skyline IS the crest most.
+function crestAgreement(side) {
+  const probe = scanCorridor(dem, guide, { ...baseScanOpts, side });
+  let agree = 0;
+  for (let i = 0; i < probe.skylineElevM.length; i++) {
+    const sky = probe.skylineElevM[i], crest = probe.crestElevM[i];
+    if (Number.isFinite(sky) && Number.isFinite(crest) && Math.abs(sky - crest) <= 150) agree++;
+  }
+  return agree / Math.max(1, probe.skylineElevM.length);
+}
+const baseScanOpts = {
   distanceM: src.distanceM || 45000,
   cameraElevM: src.cameraElevM || 2200,
-  side: src.side ?? -1,
   spacingM: src.spacingM || 400,
   pastM: src.pastM || 6000,
   curvature: src.curvature !== false,
   smoothWindowM: src.smoothWindowM || 8000,
   minGapM: src.minGapM || 8000,
 };
+const side = src.side ?? (crestAgreement(1) > crestAgreement(-1) ? 1 : -1);
+const scanOpts = { ...baseScanOpts, side };
 const scan = scanCorridor(dem, guide, scanOpts);
 let differ = 0;
 let skyMax = -Infinity;
@@ -76,6 +94,7 @@ const sharedMeta = {
   noData: src.noData ?? 'non-finite samples omitted',
   bbox: [src.west, src.south, src.east, src.north],
   distanceM: scanOpts.distanceM,
+  side: scanOpts.side,
   cameraElevM: scanOpts.cameraElevM,
   cellM: dem.cellM,
   crestSkylineDisagree: differ,
@@ -90,7 +109,7 @@ const profiles = authored
     guide: 'authored-polylines',
     composite: true,
   })
-  : rangeLayerProfiles(dem, guide, scanOpts, { ...sharedMeta, guide: 'max-elevation-per-row' });
+  : rangeLayerProfiles(dem, guide, scanOpts, { ...sharedMeta, guide: 'traced-ridge' });
 const layerElevM = {};
 for (const [key, profile] of Object.entries(profiles)) {
   let hi = -Infinity;

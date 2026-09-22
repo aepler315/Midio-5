@@ -1,0 +1,31 @@
+{
+  "id": "torres-del-paine",
+  "name": "Cordillera del Paine",
+  "region": "Patagonia, Chile",
+  "bbox": [
+    -73.25,
+    -51.15,
+    -72.85,
+    -50.9
+  ],
+  "archetype": "majestic",
+  "mood": "heroism",
+  "quality": {
+    "floorShare": 0.09
+  },
+  "scores": {
+    "energy": 0.5,
+    "rawness": 0.494,
+    "grandeur": 0.529,
+    "dominance": 0.445
+  },
+  "features": {
+    "reliefM": 2380.5,
+    "slopeMPerKm": 361,
+    "peaksPer10Km": 2.8,
+    "roughnessM": 164.7,
+    "dominance": 0.4,
+    "summitM": 2473.7,
+    "lengthKm": 32.4
+  }
+}

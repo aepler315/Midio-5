@@ -1,0 +1,31 @@
+{
+  "id": "fitz-roy",
+  "name": "Fitz Roy massif",
+  "region": "Patagonia, Argentina",
+  "bbox": [
+    -73.3,
+    -49.45,
+    -72.85,
+    -49.1
+  ],
+  "archetype": "majestic",
+  "mood": "heroism",
+  "quality": {
+    "floorShare": 0.03
+  },
+  "scores": {
+    "energy": 0.405,
+    "rawness": 0.426,
+    "grandeur": 0.3,
+    "dominance": 0.544
+  },
+  "features": {
+    "reliefM": 1349.6,
+    "slopeMPerKm": 252.9,
+    "peaksPer10Km": 3.1,
+    "roughnessM": 116,
+    "dominance": 0.5,
+    "summitM": 2804.2,
+    "lengthKm": 41.6
+  }
+}

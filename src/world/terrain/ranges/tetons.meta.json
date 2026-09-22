@@ -1,0 +1,31 @@
+{
+  "id": "tetons",
+  "name": "Teton Range",
+  "region": "Wyoming, USA",
+  "bbox": [
+    -111,
+    43.55,
+    -110.25,
+    43.95
+  ],
+  "archetype": "majestic",
+  "mood": "heroism",
+  "quality": {
+    "floorShare": 0.01
+  },
+  "scores": {
+    "energy": 0.457,
+    "rawness": 0.464,
+    "grandeur": 0.352,
+    "dominance": 0.482
+  },
+  "features": {
+    "reliefM": 1582.3,
+    "slopeMPerKm": 277.2,
+    "peaksPer10Km": 3.6,
+    "roughnessM": 120.5,
+    "dominance": 0.5,
+    "summitM": 3994.5,
+    "lengthKm": 39.2
+  }
+}

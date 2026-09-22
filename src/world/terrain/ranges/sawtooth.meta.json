@@ -1,0 +1,31 @@
+{
+  "id": "sawtooth",
+  "name": "Sawtooth Range",
+  "region": "Idaho, USA",
+  "bbox": [
+    -115.25,
+    43.85,
+    -114.75,
+    44.3
+  ],
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.02
+  },
+  "scores": {
+    "energy": 0.346,
+    "rawness": 0.37,
+    "grandeur": 0.142,
+    "dominance": 0.521
+  },
+  "features": {
+    "reliefM": 637.8,
+    "slopeMPerKm": 162.4,
+    "peaksPer10Km": 3.7,
+    "roughnessM": 67.2,
+    "dominance": 0.5,
+    "summitM": 3184.5,
+    "lengthKm": 52
+  }
+}

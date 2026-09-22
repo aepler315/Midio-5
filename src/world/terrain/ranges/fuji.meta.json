@@ -1,0 +1,31 @@
+{
+  "id": "fuji",
+  "name": "Mount Fuji",
+  "region": "Honshu, Japan",
+  "bbox": [
+    138.55,
+    35.2,
+    138.95,
+    35.5
+  ],
+  "archetype": "sublime",
+  "mood": "awe",
+  "quality": {
+    "floorShare": 0.12
+  },
+  "scores": {
+    "energy": 0.321,
+    "rawness": 0.196,
+    "grandeur": 0.616,
+    "dominance": 0.784
+  },
+  "features": {
+    "reliefM": 2770.2,
+    "slopeMPerKm": 224.3,
+    "peaksPer10Km": 0.9,
+    "roughnessM": 72,
+    "dominance": 0.8,
+    "summitM": 3688.3,
+    "lengthKm": 32.8
+  }
+}
