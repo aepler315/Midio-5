@@ -66,11 +66,56 @@
             <span class="dropSecondary">mp3 &middot; wav &middot; flac &middot; m4a &mdash; multi-stem drops welcome</span>
             <label class="filebtn" onclick="event.stopPropagation()">
               Browse files
-              <input id="fileInput" type="file" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,audio/*" multiple class="fileInputVisuallyHidden" />
+              <!-- inputmode="none" is a best-effort hint: in a WebView with
+                   no file chooser the click leaves this input focused and
+                   Android raises the soft keyboard for it. Where the hint is
+                   honoured the keyboard never appears; where it isn't,
+                   FileChooserProbe blurs the input instead. -->
+              <input id="fileInput" type="file" inputmode="none" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,audio/*" multiple class="fileInputVisuallyHidden" />
             </label>
             <button id="demoBtn" type="button" class="ghostbtn" onclick="event.stopPropagation()">Play a sample</button>
           </div>
         </div>
+
+        <!-- The way in for browsers with no file chooser. Hidden until it is
+             needed: either the probe finds no chooser, or the player opens
+             it deliberately. See src/ui/FileChooserProbe.js. -->
+        <section id="urlLoad" class="urlLoad hidden" aria-labelledby="urlLoadTitle">
+          <h2 id="urlLoadTitle" class="urlLoadTitle">Load from a URL</h2>
+          <p id="urlLoadWhy" class="urlLoadWhy"></p>
+          <form id="urlLoadForm" class="urlLoadForm" autocomplete="off">
+            <label class="urlLoadLabel" for="urlLoadInput">Address of a song, or of a folder to browse</label>
+            <div class="urlLoadRow">
+              <input id="urlLoadInput" type="url" inputmode="url" spellcheck="false"
+                     placeholder="http://127.0.0.1:8088/" class="urlLoadInput" />
+              <button id="urlLoadBtn" type="submit" class="ghostbtn chipbtn">Open</button>
+            </div>
+          </form>
+          <p id="urlLoadStatus" class="urlLoadStatus" role="status" aria-live="polite"></p>
+          <nav id="urlLoadCrumb" class="urlLoadCrumb hidden" aria-label="Folder"></nav>
+          <ul id="urlLoadList" class="urlLoadList hidden"></ul>
+          <details class="urlLoadHelp">
+            <summary>Why can't I browse my files?</summary>
+            <div class="urlLoadHelpBody">
+              <p>A web page can only read a file off this device if the browser
+                 opens a file chooser for it. Some in-app browsers &mdash;
+                 Fermata's among them &mdash; never implement one, so the
+                 button has nothing to open and the keyboard comes up instead.
+                 No change to this page can add a chooser to that browser.</p>
+              <p>What works instead is serving the folder over HTTP from this
+                 same device and loading it by address. A server on
+                 <code>127.0.0.1</code> is readable from an https page;
+                 a LAN address such as <code>192.168.1.5</code> is not.
+                 The server also has to send an
+                 <code>Access-Control-Allow-Origin</code> header, which most
+                 simple ones do not &mdash;
+                 <code>tools/music-server.mjs</code> in the Midio repository
+                 is a small one that does.</p>
+              <p>Opening this page in Chrome instead, where a chooser exists,
+                 also works.</p>
+            </div>
+          </details>
+        </section>
 
         <div class="titleFolderRow">
           <button id="libraryFolderBtn" type="button" class="ghostbtn libraryFolderBtn">Use a music folder</button>
@@ -78,8 +123,9 @@
                this; main.js shows whichever one the browser can honour. -->
           <label id="libraryFolderFallback" class="ghostbtn libraryFolderBtn hidden">
             Use a music folder
-            <input id="libraryFolderInput" type="file" webkitdirectory directory multiple class="fileInputVisuallyHidden" />
+            <input id="libraryFolderInput" type="file" inputmode="none" webkitdirectory directory multiple class="fileInputVisuallyHidden" />
           </label>
+          <button id="urlLoadOpenBtn" type="button" class="ghostbtn libraryFolderBtn">Load from a URL</button>
           <p class="libraryFolderHint">Choose it once and it stays. Your files never leave the device &mdash; the folder is read straight off your disk.</p>
         </div>
 

@@ -70,6 +70,18 @@ storage at all, there is simply no library and dropping a song still works.
 
 See [docs/library.md](docs/library.md) for the details.
 
+Some in-app browsers have no file chooser at all. A `WebView` does not
+implement one itself -- it asks the host app via
+`WebChromeClient.onShowFileChooser()` -- so in an app that never overrides
+that callback (Fermata's browser, for one) tapping **Browse files** opens
+the soft keyboard and nothing else, because the click leaves the hidden
+input focused. Nothing a page serves can add a chooser there. So the dead
+click is detected once, suppressed from then on, and a **Load from a URL**
+field is offered instead: point it at a song to play it, or at a folder to
+browse what is in it. `tools/music-server.mjs` serves a music folder for
+that purpose. See
+[docs/chooserless-webviews.md](docs/chooserless-webviews.md).
+
 ## Saving a video
 
 The show can be recorded to a file: the record dot in the HUD captures from
@@ -313,6 +325,9 @@ upload regression suite.
 - [VFX suite](docs/vfx-suite.md) — visual-system design notes.
 - [Car mode](docs/car-mode.md) — keeping a head-unit display awake and in
   fullscreen, and why a page cannot fake a tap.
+- [Browsers with no file chooser](docs/chooserless-webviews.md) — why the
+  upload button opens the keyboard in some in-app browsers, why that is not
+  fixable from the page, and the URL route offered instead.
 - [Soulseek bridge notes](docs/soulseek.md) — retained backend tooling;
   the current upload page does not expose its search/connect controls.
 - [SoundFont tooling](soundfonts/README.md) — retained synthesis support;

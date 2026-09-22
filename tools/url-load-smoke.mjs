@@ -1,0 +1,153 @@
+// The way in for browsers with no file chooser. Start `npm start` first,
+// and a music server for the browse half:
+//
+//   node tools/music-server.mjs <a folder with audio in it> &
+//   node tools/url-load-smoke.mjs [page-url] [music-url]
+//
+// The interesting half of this harness is that it REPRODUCES the bug rather
+// than mocking around it. A WebView with no `onShowFileChooser` turns
+// `input.click()` into nothing but a focus change, and that focused input
+// is why Android raises the soft keyboard -- so the patch below makes a
+// real Chromium behave the same way, and the assertions are then about what
+// a player actually experiences in Fermata: whether the keyboard is
+// dismissed, whether the dead button is ever pressed twice, and whether
+// there is a route to their music at the end of it.
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright';
+
+const pageUrl = process.argv[2] || 'http://127.0.0.1:8080';
+const musicUrl = process.argv[3] || process.env.MUSIC_URL || '';
+
+const browser = await chromium.launch({
+  headless: true,
+  ...(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {}),
+});
+let failures = 0;
+const run = async (name, check) => {
+  try { await check(); console.log(`PASS ${name}`); } catch (error) { failures++; console.error(`FAIL ${name}: ${error.message}`); }
+};
+
+try {
+  const context = await browser.newContext({ viewport: { width: 420, height: 900 } });
+  await context.route('**/soundfonts/', (route) => route.fulfill({ json: [] }));
+  await context.route('**/favicon.ico', (route) => route.fulfill({ status: 204 }));
+
+  // Turn every file input into a chooserless one, before any page script runs.
+  await context.addInitScript(() => {
+    const realClick = HTMLInputElement.prototype.click;
+    HTMLInputElement.prototype.click = function patched() {
+      if (this.type === 'file') {
+        window.__deadClicks = (window.__deadClicks || 0) + 1;
+        this.focus(); // all a chooserless WebView does, and the keyboard's cause
+        return undefined;
+      }
+      return realClick.call(this);
+    };
+  });
+
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(pageUrl);
+  await page.locator('#dropzone').waitFor();
+
+  const deadClicks = () => page.evaluate(() => window.__deadClicks || 0);
+  const focusedId = () => page.evaluate(() => document.activeElement?.id || null);
+
+  await run('the URL panel stays out of the way until it is needed', async () => {
+    assert.equal(await page.locator('#urlLoad').isHidden(), true);
+  });
+
+  await run('tapping Browse files leaves the input focused -- the keyboard moment', async () => {
+    await page.locator('#dropzone').click({ position: { x: 10, y: 10 } });
+    assert.equal(await focusedId(), 'fileInput', 'the dead click should focus the input');
+    assert.equal(await deadClicks(), 1);
+  });
+
+  await run('the phantom keyboard is dismissed once the probe decides', async () => {
+    // Blurring the focused element is what lowers the Android IME; there is
+    // no API for the keyboard itself.
+    await page.waitForFunction(() => document.activeElement?.id !== 'fileInput', null, { timeout: 5000 });
+    assert.notEqual(await focusedId(), 'fileInput');
+    // And focus must not land in the URL field either: focusing a text
+    // input raises the same keyboard, which would read as the same bug.
+    assert.notEqual(await focusedId(), 'urlLoadInput',
+      'the panel must not auto-focus its input when it appears unasked');
+  });
+
+  await run('the alternative is offered, with a reason', async () => {
+    await page.locator('#urlLoad:not(.hidden)').waitFor({ timeout: 5000 });
+    const why = await page.locator('#urlLoadWhy').textContent();
+    assert.match(why, /no file chooser/i, 'the panel must say why it appeared');
+  });
+
+  await run('a second tap does not press the dead button again', async () => {
+    // Clicking is what summons the keyboard, so not clicking is the fix.
+    await page.locator('#dropzone').click({ position: { x: 10, y: 10 } });
+    await page.waitForTimeout(400);
+    assert.equal(await deadClicks(), 1, 'the verdict is known; stop clicking');
+  });
+
+  await run('the verdict survives a reload, so the wait is paid once', async () => {
+    await page.reload();
+    await page.locator('#urlLoad:not(.hidden)').waitFor({ timeout: 5000 });
+    assert.equal(await deadClicks(), 0, 'nothing was tapped on this load');
+  });
+
+  await run('a file:// URL is refused with the reason, not a generic error', async () => {
+    await page.locator('#urlLoadInput').fill('file:///sdcard/Music/a.mp3');
+    await page.locator('#urlLoadBtn').click();
+    await page.waitForFunction(
+      () => /cannot read file:\/\//.test(document.getElementById('urlLoadStatus')?.textContent || ''),
+      null, { timeout: 5000 },
+    );
+  });
+
+  await run('the mixed-content rule reads the page scheme, not the target', async () => {
+    // This dev server is http, so a LAN http URL is legitimately allowed
+    // here -- the rule only bites on an https page, which supermaudio.com
+    // is. Exercise the real module rather than faking the page's origin.
+    const verdicts = await page.evaluate(async () => {
+      const m = await import('/src/net/UrlAudioSource.js');
+      const https = 'https://supermaudio.com/';
+      return {
+        lan: m.classifyUrl('http://192.168.1.5:8088/a.mp3', https).code,
+        loopback: m.classifyUrl('http://127.0.0.1:8088/a.mp3', https).code,
+      };
+    });
+    assert.equal(verdicts.lan, 'mixed-content', 'a LAN http URL cannot be fetched from https');
+    assert.equal(verdicts.loopback, 'ok', 'loopback is exempt -- the whole reason this works');
+  });
+
+  if (musicUrl) {
+    await run('a folder can be browsed, and a song in it reaches the decoder', async () => {
+      await page.locator('#urlLoadInput').fill(musicUrl);
+      await page.locator('#urlLoadBtn').click();
+      await page.locator('.urlLoadEntry').first().waitFor({ timeout: 10000 });
+      const rows = await page.locator('.urlLoadEntry').count();
+      assert.ok(rows > 0, 'the listing should have entries');
+      const song = page.locator('.urlLoadEntry[data-kind="file"]').first();
+      if (await song.count()) {
+        await song.click();
+        // Either it plays or it fails to decode -- both prove the bytes got
+        // from the URL all the way into the AudioContext, which is the
+        // whole point. A stuck "Fetching..." would not.
+        await page.waitForFunction(() => {
+          const status = document.getElementById('urlLoadStatus')?.textContent || '';
+          const banner = document.querySelector('.errorBanner')?.textContent || '';
+          const progress = document.getElementById('progressText');
+          return /decode|Reading|Analy/i.test(banner + (progress?.textContent || ''))
+            || !/Fetching/.test(status);
+        }, null, { timeout: 20000 });
+      }
+    });
+  } else {
+    console.log('SKIP browse (pass a music-server URL as argv[2] to include it)');
+  }
+
+  await run('no page errors', () => assert.deepEqual(errors, []));
+} finally {
+  await browser.close();
+}
+console.log(failures === 0 ? 'url-load smoke: OK' : `url-load smoke: ${failures} failing`);
+process.exit(failures === 0 ? 0 : 1);

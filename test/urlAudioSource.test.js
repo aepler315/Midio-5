@@ -1,0 +1,381 @@
+// A URL is the only way into a browser that has no file chooser, so the
+// rules about which URLs can possibly work are load-bearing: getting them
+// wrong means the player is told "could not load" by a page that never
+// tried, or watches a request that the browser was always going to block.
+//
+// These tests hold the three that decide it -- the loopback carve-out in
+// mixed-content blocking, what counts as audio, and that a directory index
+// off an untrusted server contributes links and nothing else.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  classifyUrl, isLoopbackHost, isAudioName, extensionOf, audioNameFromUrl,
+  parseListing, parseJsonListing, fetchAudioAsFile, openAudioUrl, UrlAudioError,
+} from '../src/net/UrlAudioSource.js';
+
+const HTTPS_PAGE = 'https://supermaudio.com/';
+const HTTP_PAGE = 'http://localhost:8080/';
+
+test('loopback hosts are recognised across the whole 127/8 block and IPv6', () => {
+  for (const host of ['127.0.0.1', '127.1.2.3', '127.255.255.255', 'localhost', 'LOCALHOST', 'app.localhost', '[::1]', '::1']) {
+    assert.equal(isLoopbackHost(host), true, `${host} should be loopback`);
+  }
+  for (const host of ['192.168.1.5', '10.0.0.1', '128.0.0.1', 'example.com', '', '127.0.0.256', '0.0.0.0']) {
+    assert.equal(isLoopbackHost(host), false, `${host} should not be loopback`);
+  }
+});
+
+test('an https page may load http from loopback but not from a LAN address', () => {
+  // This is the whole reason the feature is usable on a phone: the file
+  // server runs on the same device as the browser, so it is loopback.
+  const loopback = classifyUrl('http://127.0.0.1:8088/song.mp3', HTTPS_PAGE);
+  assert.equal(loopback.ok, true);
+
+  const lan = classifyUrl('http://192.168.1.5:8088/song.mp3', HTTPS_PAGE);
+  assert.equal(lan.ok, false);
+  assert.equal(lan.code, 'mixed-content');
+  // The message has to name the way out, not just the refusal.
+  assert.match(lan.message, /mixed content/i);
+  assert.match(lan.message, /127\.0\.0\.1/);
+});
+
+test('an http page is not subject to the mixed-content rule at all', () => {
+  const lan = classifyUrl('http://192.168.1.5:8088/song.mp3', HTTP_PAGE);
+  assert.equal(lan.ok, true);
+});
+
+test('https is always allowed, loopback or not', () => {
+  assert.equal(classifyUrl('https://example.com/a.flac', HTTPS_PAGE).ok, true);
+  assert.equal(classifyUrl('https://127.0.0.1/a.flac', HTTPS_PAGE).ok, true);
+});
+
+test('a bare host:port is treated as http, which is what someone types on a car screen', () => {
+  const verdict = classifyUrl('127.0.0.1:8088/song.mp3', HTTPS_PAGE);
+  assert.equal(verdict.ok, true);
+  assert.equal(verdict.url, 'http://127.0.0.1:8088/song.mp3');
+});
+
+test('file:// is refused with the reason, not as a generic bad URL', () => {
+  const verdict = classifyUrl('file:///sdcard/Music/song.mp3', HTTPS_PAGE);
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.code, 'scheme');
+  // Reaching for file:// is the first thing anyone tries once the chooser
+  // fails, so this message is the one that has to teach something.
+  assert.match(verdict.message, /cannot read file:\/\//);
+});
+
+test('empty and unparseable input are distinguished', () => {
+  assert.equal(classifyUrl('', HTTPS_PAGE).code, 'empty');
+  assert.equal(classifyUrl('   ', HTTPS_PAGE).code, 'empty');
+  assert.equal(classifyUrl('http://', HTTPS_PAGE).code, 'invalid');
+});
+
+test('audio is recognised by extension, case-insensitively, and video is not', () => {
+  for (const name of ['a.mp3', 'a.MP3', 'a.flac', 'a.m4a', 'a.opus', 'a.mid', 'a.midi', 'a.oga']) {
+    assert.equal(isAudioName(name), true, name);
+  }
+  for (const name of ['a.mp4', 'a.jpg', 'cover.png', 'a.nfo', 'a', '', 'a.cue']) {
+    assert.equal(isAudioName(name), false, name);
+  }
+  assert.equal(extensionOf('Song.Name.FLAC'), '.flac');
+});
+
+test('a filename comes back percent-decoded, because %20 is not a song title', () => {
+  assert.equal(audioNameFromUrl('http://127.0.0.1:8088/Rock/03%20Airbag.flac'), '03 Airbag.flac');
+  assert.equal(audioNameFromUrl('http://127.0.0.1:8088/'), 'url-audio');
+  // A malformed escape must not throw on the way to a filename.
+  assert.equal(audioNameFromUrl('http://127.0.0.1:8088/bad%zz.mp3'), 'bad%zz.mp3');
+});
+
+// --- directory listings --------------------------------------------------
+
+/** parseListing takes an injectable parser so it runs without a DOM. */
+function fakeParser(links) {
+  return () => ({
+    querySelectorAll: () => links.map(([href, text]) => ({
+      getAttribute: (name) => (name === 'href' ? href : null),
+      textContent: text ?? '',
+    })),
+  });
+}
+
+test('a directory index yields its audio links, resolved against the folder', () => {
+  const { entries } = parseListing('<ignored/>', 'http://127.0.0.1:8088/Rock/', {
+    parse: fakeParser([
+      ['01%20Intro.mp3', '01 Intro.mp3'],
+      ['cover.jpg', 'cover.jpg'],
+      ['/Jazz/So%20What.flac', 'So What.flac'],
+      ['#top', 'top'],
+    ]),
+  });
+  assert.deepEqual(entries.map((e) => e.name), ['01 Intro.mp3', 'So What.flac']);
+  assert.equal(entries[0].url, 'http://127.0.0.1:8088/Rock/01%20Intro.mp3');
+  // An absolute href is honoured, so a listing may point outside its folder.
+  assert.equal(entries[1].url, 'http://127.0.0.1:8088/Jazz/So%20What.flac');
+});
+
+test('subfolders are offered, but the index\'s own parent link is not a subfolder', () => {
+  const { folders } = parseListing('<ignored/>', 'http://127.0.0.1:8088/Rock/', {
+    parse: fakeParser([
+      ['Live/', 'Live/'],
+      ['../', 'Parent Directory'],
+      ['/', 'root'],
+    ]),
+  });
+  // Without the descendant check, every listing shows "../" and "/" as
+  // folders to open, which reads as two mystery entries in every folder.
+  assert.deepEqual(folders.map((f) => f.name), ['Live']);
+  assert.equal(folders[0].url, 'http://127.0.0.1:8088/Rock/Live/');
+});
+
+test('a listing link is data: its label never carries markup into the page', () => {
+  // renderUrlListing uses textContent, and this is the parser half of that
+  // contract -- the label is whatever the server said, as a string.
+  const { entries } = parseListing('<ignored/>', 'http://127.0.0.1:8088/', {
+    parse: fakeParser([['evil.mp3', '<img src=x onerror=alert(1)>']]),
+  });
+  // The label is not audio-looking, so the path wins; either way it is text.
+  assert.equal(entries[0].name, 'evil.mp3');
+  assert.equal(typeof entries[0].name, 'string');
+});
+
+test('duplicate hrefs in one index are listed once', () => {
+  const { entries } = parseListing('<ignored/>', 'http://127.0.0.1:8088/', {
+    parse: fakeParser([['a.mp3', 'a'], ['a.mp3', 'a again'], ['./a.mp3', 'a third time']]),
+  });
+  assert.equal(entries.length, 1);
+});
+
+test('the JSON listing shape music-server serves is understood', () => {
+  const { entries, folders } = parseJsonListing({
+    path: '/Rock/',
+    folders: ['/Rock/Live/'],
+    files: [{ name: '01 Intro.mp3', url: '/Rock/01%20Intro.mp3' }],
+  }, 'http://127.0.0.1:8088/Rock/');
+  assert.deepEqual(entries.map((e) => e.name), ['01 Intro.mp3']);
+  assert.deepEqual(folders.map((f) => f.name), ['Live']);
+});
+
+test('looser JSON shapes from other local servers still work', () => {
+  // A bare array of filenames is what the simplest hand-rolled servers emit.
+  const bare = parseJsonListing(['a.mp3', 'b.flac', 'cover.jpg'], 'http://127.0.0.1:8088/');
+  assert.deepEqual(bare.entries.map((e) => e.name), ['a.mp3', 'b.flac']);
+  assert.deepEqual(bare.folders, []);
+  // And nothing usable is an empty result, not a throw.
+  assert.deepEqual(parseJsonListing(null, 'http://127.0.0.1:8088/'), { entries: [], folders: [] });
+});
+
+// --- fetching ------------------------------------------------------------
+
+function response({ ok = true, status = 200, headers = {}, blob = null, body = null, json = null }) {
+  const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), String(v)]));
+  return {
+    ok,
+    status,
+    statusText: '',
+    headers: { get: (name) => lower[String(name).toLowerCase()] ?? null },
+    blob: async () => blob,
+    text: async () => body,
+    json: async () => json,
+  };
+}
+
+/** A stand-in for Blob/File so these tests need no browser globals. */
+function fakeBlob(size, type = 'audio/mpeg') {
+  return { size, type, arrayBuffer: async () => new ArrayBuffer(size) };
+}
+
+function withFetch(impl, run) {
+  const original = globalThis.fetch;
+  const originalFile = globalThis.File;
+  globalThis.fetch = impl;
+  // `new File([blob], name, {type})` is how the drop pipeline is reached;
+  // Node has File, but not one that accepts a fake blob, so stub it.
+  globalThis.File = class {
+    constructor(parts, name, options = {}) {
+      this.parts = parts;
+      this.name = name;
+      this.type = options.type || '';
+      this.size = parts.reduce((n, p) => n + (p?.size || 0), 0);
+    }
+  };
+  return (async () => {
+    try { return await run(); } finally {
+      globalThis.fetch = original;
+      globalThis.File = originalFile;
+    }
+  })();
+}
+
+test('an audio URL becomes a File the drop pipeline already accepts', async () => {
+  await withFetch(
+    async () => response({ headers: { 'content-length': '2048', 'content-type': 'audio/flac' }, blob: fakeBlob(2048, 'audio/flac') }),
+    async () => {
+      const file = await fetchAudioAsFile('http://127.0.0.1:8088/Rock/03%20Airbag.flac');
+      // name/size/arrayBuffer() is the entire contract loadAudioFiles needs.
+      assert.equal(file.name, '03 Airbag.flac');
+      assert.equal(file.size, 2048);
+      assert.equal(file.type, 'audio/flac');
+    },
+  );
+});
+
+test('an oversized file is refused from Content-Length, before the body is read', async () => {
+  let blobRead = false;
+  await withFetch(
+    async () => {
+      const res = response({ headers: { 'content-length': String(400 * 1024 * 1024) } });
+      res.blob = async () => { blobRead = true; return fakeBlob(1); };
+      return res;
+    },
+    async () => {
+      await assert.rejects(
+        () => fetchAudioAsFile('http://127.0.0.1:8088/huge.mp3'),
+        (err) => err instanceof UrlAudioError && /over the/.test(err.message),
+      );
+      // The point of checking the header is not downloading it first.
+      assert.equal(blobRead, false);
+    },
+  );
+});
+
+test('a lying Content-Length does not get past the check on the real bytes', async () => {
+  await withFetch(
+    async () => response({
+      headers: { 'content-length': '1024' },
+      blob: fakeBlob(400 * 1024 * 1024),
+    }),
+    async () => {
+      await assert.rejects(
+        () => fetchAudioAsFile('http://127.0.0.1:8088/liar.mp3'),
+        (err) => err instanceof UrlAudioError,
+      );
+    },
+  );
+});
+
+test('an unreachable host reports the missing CORS header, the likeliest cause', async () => {
+  // fetch reports a CORS rejection, a refused connection and a wrong port
+  // identically ("Failed to fetch") so a page cannot probe the network. For
+  // a local music server the missing header is overwhelmingly likeliest, so
+  // the message has to say so rather than leaving the player with nothing.
+  await withFetch(
+    async () => { throw new TypeError('Failed to fetch'); },
+    async () => {
+      await assert.rejects(
+        () => fetchAudioAsFile('http://127.0.0.1:8088/a.mp3'),
+        (err) => err instanceof UrlAudioError && /Access-Control-Allow-Origin/.test(err.message),
+      );
+    },
+  );
+});
+
+test('an HTTP error is reported with its status', async () => {
+  await withFetch(
+    async () => response({ ok: false, status: 404 }),
+    async () => {
+      await assert.rejects(
+        () => fetchAudioAsFile('http://127.0.0.1:8088/gone.mp3'),
+        (err) => err instanceof UrlAudioError && /HTTP 404/.test(err.message),
+      );
+    },
+  );
+});
+
+test('an empty response is an error, not a zero-byte song to decode', async () => {
+  await withFetch(
+    async () => response({ headers: { 'content-length': '0' }, blob: fakeBlob(0) }),
+    async () => {
+      await assert.rejects(
+        () => fetchAudioAsFile('http://127.0.0.1:8088/empty.mp3'),
+        (err) => err instanceof UrlAudioError && /empty/.test(err.message),
+      );
+    },
+  );
+});
+
+test('openAudioUrl blocks a LAN http URL without making a request', async () => {
+  let requested = false;
+  await withFetch(
+    async () => { requested = true; return response({ blob: fakeBlob(1) }); },
+    async () => {
+      await assert.rejects(
+        () => openAudioUrl('http://192.168.1.5:8088/a.mp3', { pageUrl: HTTPS_PAGE }),
+        (err) => err instanceof UrlAudioError && /mixed content/i.test(err.message),
+      );
+      assert.equal(requested, false);
+    },
+  );
+});
+
+test('openAudioUrl fetches an audio path directly -- one request, no probe', async () => {
+  const urls = [];
+  await withFetch(
+    async (url) => {
+      urls.push(url);
+      return response({ headers: { 'content-type': 'audio/mpeg' }, blob: fakeBlob(64) });
+    },
+    async () => {
+      const result = await openAudioUrl('http://127.0.0.1:8088/a.mp3', { pageUrl: HTTPS_PAGE });
+      assert.equal(result.kind, 'audio');
+      assert.equal(urls.length, 1);
+    },
+  );
+});
+
+test('openAudioUrl turns a folder into a browsable listing', async () => {
+  await withFetch(
+    async () => response({
+      headers: { 'content-type': 'application/json' },
+      json: { folders: ['/Rock/'], files: [{ name: 'a.mp3', url: '/a.mp3' }] },
+    }),
+    async () => {
+      const result = await openAudioUrl('http://127.0.0.1:8088/', { pageUrl: HTTPS_PAGE });
+      assert.equal(result.kind, 'listing');
+      assert.deepEqual(result.entries.map((e) => e.name), ['a.mp3']);
+      assert.deepEqual(result.folders.map((f) => f.name), ['Rock']);
+    },
+  );
+});
+
+test('a folder with subfolders but no songs is a listing, not an error', async () => {
+  // The top of a music tree usually has only artist folders in it; erroring
+  // there would make the whole browse path unusable at its entry point.
+  await withFetch(
+    async () => response({
+      headers: { 'content-type': 'application/json' },
+      json: { folders: ['/Rock/', '/Jazz/'], files: [] },
+    }),
+    async () => {
+      const result = await openAudioUrl('http://127.0.0.1:8088/', { pageUrl: HTTPS_PAGE });
+      assert.equal(result.kind, 'listing');
+      assert.equal(result.entries.length, 0);
+      assert.equal(result.folders.length, 2);
+    },
+  );
+});
+
+test('an extensionless URL that serves audio anyway is still playable', async () => {
+  await withFetch(
+    async () => response({ headers: { 'content-type': 'audio/mpeg' }, blob: fakeBlob(128, 'audio/mpeg') }),
+    async () => {
+      const result = await openAudioUrl('http://127.0.0.1:8088/stream/7', { pageUrl: HTTPS_PAGE });
+      assert.equal(result.kind, 'audio');
+      // Decoding is by content sniffing, but a name with no extension breaks
+      // the library's own audio filters, so one is supplied.
+      assert.match(result.file.name, /\.mp3$/);
+    },
+  );
+});
+
+test('a page of prose is reported as such, not decoded as audio', async () => {
+  await withFetch(
+    async () => response({ headers: { 'content-type': 'text/plain' }, body: 'nope' }),
+    async () => {
+      await assert.rejects(
+        () => openAudioUrl('http://127.0.0.1:8088/readme', { pageUrl: HTTPS_PAGE }),
+        (err) => err instanceof UrlAudioError && /neither audio nor a folder/.test(err.message),
+      );
+    },
+  );
+});

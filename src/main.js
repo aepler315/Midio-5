@@ -20,6 +20,8 @@ import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
 import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
+import { FileChooserSupport } from './ui/FileChooserProbe.js';
+import { openAudioUrl, UrlAudioError, fetchAudioAsFile } from './net/UrlAudioSource.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
 import { DrawErrorLog } from './render/DrawErrorLog.js';
 import { ROLE_LOW, ROLE_HIGH, GrooveFingerprint } from './sim/GrooveFingerprint.js';
@@ -120,6 +122,15 @@ const loaderEl = document.getElementById('loader');
 const dropzoneEl = document.getElementById('dropzone');
 const fileInputEl = document.getElementById('fileInput');
 const demoBtnEl = document.getElementById('demoBtn');
+const urlLoadEl = document.getElementById('urlLoad');
+const urlLoadWhyEl = document.getElementById('urlLoadWhy');
+const urlLoadFormEl = document.getElementById('urlLoadForm');
+const urlLoadInputEl = document.getElementById('urlLoadInput');
+const urlLoadBtnEl = document.getElementById('urlLoadBtn');
+const urlLoadStatusEl = document.getElementById('urlLoadStatus');
+const urlLoadListEl = document.getElementById('urlLoadList');
+const urlLoadCrumbEl = document.getElementById('urlLoadCrumb');
+const urlLoadOpenBtnEl = document.getElementById('urlLoadOpenBtn');
 const worldSelectEl = document.getElementById('worldSelect');
 const worldSelectGridEl = document.getElementById('worldSelectGrid');
 const worldSelectBackEl = document.getElementById('worldSelectBack');
@@ -2088,6 +2099,227 @@ fileInputEl?.addEventListener('change', (e) => {
   // Same-file re-upload doesn't fire `change` unless we clear the value.
   e.target.value = '';
 });
+
+// --- Browsers with no file chooser ---------------------------------------
+//
+// An `<input type="file">` only opens a chooser if the browser implements
+// one. An Android WebView delegates that to its host app via
+// `WebChromeClient.onShowFileChooser()`, and an app that never overrides it
+// gets no chooser at all -- the click then leaves the hidden input focused
+// and Android raises the soft keyboard, which is how this reaches a player:
+// "the upload button just opens the keyboard". Fermata's browser is one
+// such app. Nothing this page serves can add a chooser there, so instead
+// the dead click is detected once, suppressed from then on, and the URL
+// loader below is offered in its place. See src/ui/FileChooserProbe.js.
+const fileChooser = new FileChooserSupport();
+
+/** Every route to the picker goes through here, so a browser with no
+ *  chooser reveals the alternative instead of raising a keyboard. */
+function openFilePicker(input = fileInputEl) {
+  return fileChooser.open(input, () => revealUrlLoad(
+    `This browser has no file chooser, so "Browse files" cannot open one.${
+      fileChooser.looksLikeWebView
+        ? ' That is a limit of the app you are browsing in, not of this page.'
+        : ''
+    } Load a song by address instead.`,
+  ));
+}
+
+const URL_LISTING_MAX_ROWS = 500;
+let urlLoadAbort = null;
+let urlLoadListenersBound = false;
+
+/**
+ * Shows the URL panel, with `why` explaining an unasked-for appearance.
+ *
+ * `focus` is deliberately NOT the default. Focusing a text field raises the
+ * soft keyboard -- the very thing the player just complained about -- so a
+ * panel that appears because the chooser turned out to be missing stays
+ * unfocused, and only a panel the player opened on purpose takes focus.
+ */
+function revealUrlLoad(why = '', { focus = false } = {}) {
+  if (!urlLoadEl) return;
+  urlLoadEl.classList.remove('hidden');
+  if (urlLoadWhyEl) urlLoadWhyEl.textContent = why;
+  bindUrlLoad();
+  // Scrolling it into view matters on a head unit, where the panel can open
+  // below the fold and look as if nothing happened.
+  try { urlLoadEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch { /* older WebView */ }
+  if (focus) urlLoadInputEl?.focus();
+}
+
+function setUrlLoadStatus(text, isError = false) {
+  if (!urlLoadStatusEl) return;
+  urlLoadStatusEl.textContent = text || '';
+  urlLoadStatusEl.classList.toggle('isError', Boolean(isError) && Boolean(text));
+}
+
+function setUrlLoadBusy(busy) {
+  if (urlLoadBtnEl) urlLoadBtnEl.disabled = busy;
+}
+
+function clearUrlLoadListing() {
+  if (urlLoadListEl) {
+    urlLoadListEl.replaceChildren();
+    urlLoadListEl.classList.add('hidden');
+  }
+  if (urlLoadCrumbEl) {
+    urlLoadCrumbEl.textContent = '';
+    urlLoadCrumbEl.classList.add('hidden');
+  }
+}
+
+/** Renders one folder's worth of entries. Everything is built with
+ *  createElement/textContent -- the listing comes off a server the player
+ *  named, so its names are text to display, never markup to parse. */
+function renderUrlListing({ entries = [], folders = [], url = '' }) {
+  if (!urlLoadListEl) return;
+  urlLoadListEl.replaceChildren();
+
+  if (urlLoadCrumbEl) {
+    urlLoadCrumbEl.textContent = decodeUrlPathForDisplay(url);
+    urlLoadCrumbEl.classList.remove('hidden');
+  }
+
+  const rows = [
+    ...folders.map((f) => ({ ...f, kind: 'folder' })),
+    ...entries.map((e) => ({ ...e, kind: 'file' })),
+  ];
+  // One folder of one album is a handful of rows; a server configured to
+  // serve a whole music drive flat is thousands, and building that many
+  // buttons is seconds of frozen UI on a head unit. Folders are never
+  // dropped -- they are the way to reach the rest.
+  const shown = rows.slice(0, URL_LISTING_MAX_ROWS);
+  const hidden = rows.length - shown.length;
+  for (const row of shown) {
+    const li = document.createElement('li');
+    li.className = 'urlLoadItem';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'urlLoadEntry';
+    btn.dataset.kind = row.kind;
+    const icon = document.createElement('span');
+    icon.className = 'urlLoadEntryIcon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = row.kind === 'folder' ? '\u25b8' : '\u266a';
+    const name = document.createElement('span');
+    name.className = 'urlLoadEntryName';
+    name.textContent = row.name;
+    btn.append(icon, name);
+    // A folder navigates; a song loads. The AudioContext is unlocked on the
+    // pointer-down that starts either, because the fetch that follows is not
+    // itself a user activation and bootAudio() would be refused after it.
+    btn.addEventListener('pointerdown', unlockAudio, { passive: true });
+    btn.addEventListener('click', () => {
+      if (row.kind === 'folder') openUrlTarget(row.url);
+      else loadUrlAudio(row.url, row.name);
+    });
+    li.append(btn);
+    urlLoadListEl.append(li);
+  }
+  if (hidden > 0) {
+    const li = document.createElement('li');
+    li.className = 'urlLoadItem urlLoadTruncated';
+    li.textContent = `+${hidden} more not shown \u2014 open a subfolder to narrow it down.`;
+    urlLoadListEl.append(li);
+  }
+  urlLoadListEl.classList.toggle('hidden', rows.length === 0);
+}
+
+/** A URL is unreadable on a car screen with its escapes intact. */
+function decodeUrlPathForDisplay(url) {
+  try {
+    const parsed = new URL(url);
+    return decodeURIComponent(parsed.pathname) || '/';
+  } catch {
+    return String(url || '');
+  }
+}
+
+/** Starts a fresh URL operation, superseding any still in flight. */
+function beginUrlLoadOperation() {
+  urlLoadAbort?.abort();
+  urlLoadAbort = new AbortController();
+  setUrlLoadBusy(true);
+  return urlLoadAbort.signal;
+}
+
+function endUrlLoadOperation(signal) {
+  if (urlLoadAbort?.signal === signal) {
+    urlLoadAbort = null;
+    setUrlLoadBusy(false);
+  }
+}
+
+/** Opens whatever the address turns out to be: a song, or a folder to browse. */
+async function openUrlTarget(raw) {
+  const signal = beginUrlLoadOperation();
+  setUrlLoadStatus('Opening\u2026');
+  try {
+    const result = await openAudioUrl(raw, { pageUrl: location.href, signal });
+    if (signal.aborted) return;
+    if (result.kind === 'listing') {
+      renderUrlListing(result);
+      const count = result.entries.length;
+      setUrlLoadStatus(count
+        ? `${count} song${count === 1 ? '' : 's'} here. Tap one to play it.`
+        : 'No songs in this folder \u2014 open a subfolder.');
+      if (urlLoadInputEl) urlLoadInputEl.value = result.url;
+      return;
+    }
+    clearUrlLoadListing();
+    setUrlLoadStatus('');
+    handleFiles([result.file]);
+  } catch (err) {
+    if (signal.aborted) return;
+    setUrlLoadStatus(
+      err instanceof UrlAudioError ? err.message : `Could not open that URL: ${err?.message || err}`,
+      true,
+    );
+  } finally {
+    endUrlLoadOperation(signal);
+  }
+}
+
+/** Loads one song picked out of a listing. */
+async function loadUrlAudio(url, name = '') {
+  const signal = beginUrlLoadOperation();
+  setUrlLoadStatus(`Fetching ${name || decodeUrlPathForDisplay(url)}\u2026`);
+  try {
+    const file = await fetchAudioAsFile(url, { signal });
+    if (signal.aborted) return;
+    setUrlLoadStatus('');
+    handleFiles([file]);
+  } catch (err) {
+    if (signal.aborted) return;
+    setUrlLoadStatus(
+      err instanceof UrlAudioError ? err.message : `Could not load that song: ${err?.message || err}`,
+      true,
+    );
+  } finally {
+    endUrlLoadOperation(signal);
+  }
+}
+
+function bindUrlLoad() {
+  if (urlLoadListenersBound || !urlLoadFormEl) return;
+  urlLoadListenersBound = true;
+  urlLoadFormEl.addEventListener('submit', (e) => {
+    e.preventDefault();
+    openUrlTarget(urlLoadInputEl?.value || '');
+  });
+  // Unlock audio on the gesture, not on the fetch that follows it.
+  urlLoadFormEl.addEventListener('pointerdown', unlockAudio, { passive: true });
+}
+
+urlLoadOpenBtnEl?.addEventListener('click', () => revealUrlLoad('', { focus: true }));
+
+// A browser already known to have no chooser shows the alternative up
+// front, rather than making the player tap a dead button to find out again.
+if (fileChooser.isAbsent) {
+  revealUrlLoad('This browser has no file chooser, so files cannot be browsed'
+    + ' from this page. Load a song by address instead.');
+}
 worldSelectBackEl?.addEventListener('click', () => backToTitle());
 worldSelectEl?.addEventListener('keydown', (e) => {
   // Native modality makes the background inert; explicitly wrap the two
@@ -2163,7 +2395,7 @@ worldSelectEl?.addEventListener('pointerdown', unlockAudio, { passive: true });
   e.preventDefault();
   dropzoneEl.classList.remove('drag');
 }));
-dropzoneEl.addEventListener('click', () => fileInputEl.click());
+dropzoneEl.addEventListener('click', () => openFilePicker());
 // #dropzone is role="button" tabindex="0", but browsers don't synthesize a
 // click from Enter/Space on a plain div the way they do for a real
 // <button> -- without this the game's primary call-to-action isn't
@@ -2173,7 +2405,7 @@ dropzoneEl.addEventListener('keydown', (e) => {
   if (e.target !== dropzoneEl) return; // nested sample/upload controls own their keys
   if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
   e.preventDefault(); // Space must not also scroll the page
-  fileInputEl.click();
+  openFilePicker();
 });
 
 // --- Global drag-and-drop: works at ANY time, not just from the initial
@@ -3374,7 +3606,10 @@ async function chooseMusicFolder() {
     return;
   }
   if (!musicLibrary.persistable) {
-    libraryFolderInputEl?.click();
+    // The `webkitdirectory` fallback is still an <input type="file">, so a
+    // browser with no chooser cannot open it either -- same route, same
+    // suppression, same alternative offered.
+    openFilePicker(libraryFolderInputEl);
     return;
   }
   try {
