@@ -387,12 +387,18 @@ export function parseListing(html, baseUrl, deps = {}) {
       folders.push({ name: folderLabel(resolved), url: resolved.href });
       continue;
     }
-    if (!isAudioName(resolved.pathname)) continue;
+    // Either the path OR the visible label may carry the extension. A
+    // file-manager share commonly renders a track as
+    // `<a href="download?id=1">Pretty Song.flac</a>`, and gating on the
+    // pathname alone dropped that row before the label was ever read --
+    // while parseJsonListing already admitted the same shape on its name.
+    const label = (anchor.textContent || '').trim();
+    const labelIsAudio = isAudioName(label);
+    if (!isAudioName(resolved.pathname) && !labelIsAudio) continue;
     // The link text is usually the filename and is the friendlier label,
     // but an index that labels links "download" is better off with the path.
-    const label = (anchor.textContent || '').trim();
     entries.push({
-      name: isAudioName(label) ? label : audioNameFromUrl(resolved.href),
+      name: labelIsAudio ? label : audioNameFromUrl(resolved.href),
       url: resolved.href,
     });
   }

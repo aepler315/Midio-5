@@ -209,8 +209,21 @@ function streamToResponse(stream, res, label) {
   });
 }
 
-function sendFile(req, res, file, size) {
-  const type = MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
+/** The last path segment as the client asked for it, decoded. A symlink's
+ *  TARGET is the wrong thing to judge by: `song.mp3 -> blob` is listed as
+ *  audio (the listing reads the link's own name) and would then 404 on the
+ *  canonical `blob`, so the listing could advertise a song that never
+ *  plays. The realpath still decides containment and supplies the bytes. */
+function requestedName(urlPath) {
+  try {
+    return decodeURIComponent(urlPath).split('/').filter(Boolean).pop() || '';
+  } catch {
+    return urlPath.split('/').filter(Boolean).pop() || '';
+  }
+}
+
+function sendFile(req, res, file, size, name = file) {
+  const type = MIME[path.extname(name).toLowerCase()] || 'application/octet-stream';
   const headers = {
     ...corsHeaders(req),
     'Content-Type': type,
@@ -275,7 +288,10 @@ const server = http.createServer(async (req, res) => {
     }
     const stat = await fsp.stat(real);
     if (stat.isDirectory()) await sendListing(req, res, real, urlPath);
-    else if (stat.isFile() && isAudio(real)) sendFile(req, res, real, stat.size);
+    else if (stat.isFile() && isAudio(requestedName(urlPath))) {
+      // Same name the listing judged by, so a listed song is always fetchable.
+      sendFile(req, res, real, stat.size, requestedName(urlPath));
+    }
     else {
       res.writeHead(404, { ...corsHeaders(req), 'Content-Type': 'text/plain' });
       res.end('Not an audio file');
