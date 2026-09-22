@@ -42,19 +42,22 @@
 import {
   AUDIO_LOAD_LIMITS, validateAudioBytes,
 } from '../audio/loadLimits.js';
+import { AUDIO_EXTENSIONS as LIBRARY_AUDIO_EXTENSIONS } from '../library/LibraryScanner.js';
 
 const LISTING_TIMEOUT_MS = 15000;
 const DOWNLOAD_TIMEOUT_MS = 45000;
 
-// Extensions the picker accepts, so a URL and a drop agree on "audio".
+// What counts as audio, taken from the library scanner rather than
+// restated here. A second hand-maintained list drifts: this one was missing
+// .aif/.aiff/.wma, so a folder the normal library workflow shows in full
+// appeared with tracks silently absent when browsed by URL.
 //
-// `.mid`/`.midi` are deliberately absent. Everything this module produces
-// goes to `handleFiles()` and on to `audioEngine.decodeFile()`, which is
-// `decodeAudioData` -- and this page has no MIDI ingest path at all
-// (`MidiAdapter` is reachable only from the tests). Listing a MIDI file
-// would advertise it as playable and then fail to decode it every time, so
-// it is not offered.
-const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.ogg', '.oga', '.m4a', '.aac', '.opus'];
+// `.mid`/`.midi` are absent from that list too, which is correct for this
+// path: everything here goes to `handleFiles()` and on to
+// `audioEngine.decodeFile()` -- `decodeAudioData` -- and the page has no
+// MIDI ingest at all (`MidiAdapter` is reachable only from the tests), so a
+// listed MIDI file would advertise a song that fails to decode every time.
+const AUDIO_EXTENSIONS = LIBRARY_AUDIO_EXTENSIONS.map((ext) => `.${ext}`);
 
 const MIME_BY_EXTENSION = {
   '.mp3': 'audio/mpeg',
@@ -65,6 +68,9 @@ const MIME_BY_EXTENSION = {
   '.m4a': 'audio/mp4',
   '.aac': 'audio/aac',
   '.opus': 'audio/opus',
+  '.aif': 'audio/aiff',
+  '.aiff': 'audio/aiff',
+  '.wma': 'audio/x-ms-wma',
 };
 
 export class UrlAudioError extends Error {}

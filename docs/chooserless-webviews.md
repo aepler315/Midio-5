@@ -111,13 +111,28 @@ lists what is in it — a JSON listing or an ordinary HTML directory index,
 with subfolders navigable. That is the part that answers "let me *see* my
 files" rather than "let me type a path".
 
-Long listings render every folder, and songs a batch at a time with a
-**Show more** button after them. Building thousands of buttons at once is
-seconds of frozen UI on a head unit, but simply dropping the rest strands
-them — the earlier "open a subfolder to narrow it down" advice is no
-advice at all in a flat music folder, where there is no subfolder to open,
-so a capped song was unreachable without typing its URL by hand. Batching
-bounds the cost without bounding what exists.
+Long listings arrive a batch at a time — folders first, then songs, 500
+rows per **Show more**. Building thousands of buttons at once is seconds of
+frozen UI on a head unit, and an artist root with thousands of subfolders
+costs exactly as much as a flat album with thousands of tracks, so both are
+paced the same way. Nothing is ever dropped, which matters for both kinds
+for different reasons: a hidden song in a flat folder has no subfolder to
+reach it through, and a hidden folder has nothing at all.
+
+What counts as audio comes from `LibraryScanner`'s list rather than a
+second copy here. The copy had already drifted — it was missing `.aif`,
+`.aiff` and `.wma`, so a folder the normal library workflow showed in full
+appeared with tracks silently absent when browsed by URL. (`.mid` is absent
+from that list too, which is right for this path: everything here reaches
+`decodeAudioData`, and the page has no MIDI ingest at all.)
+
+`bootAudio()` makes every caller await the *same* attempt. It assigns
+`audioEngine` before awaiting `resume()`, so a plain `if (audioEngine)
+return` would let a second caller through against a context that has not
+resumed — or one the first call is about to discard because resume failed.
+`unlockAudio()` fires it from a gesture and drops the promise, and a
+loopback download can finish before a slow resume does, so that window is
+reachable rather than theoretical.
 
 A URL fetch is abandoned the moment a different source is chosen. Without
 that, a download started earlier could land afterwards, claim a newer load
@@ -196,7 +211,13 @@ that is the cause the error message names first.
 
 `tools/music-server.mjs` is a minimal server that sends the header, serves
 a JSON listing, supports range requests, and is read-only and confined to
-one directory. It allows a fixed **list** of origins rather than `*`:
+one directory. Symlinks whose targets stay inside the root are listed as
+what they point at: a `readdir` entry for a symlink is neither
+`isDirectory()` nor `isFile()`, so without resolving them a symlinked album
+was reachable by direct URL yet invisible in the listing — and symlinks are
+how shared storage is normally organised on Termux. One that escapes the
+root is still refused, by the same realpath check that guards direct
+requests. It allows a fixed **list** of origins rather than `*`:
 binding to loopback keeps other machines out, but it does not keep other
 *websites* out — the server exists precisely so a page can reach
 `127.0.0.1`, and every other site open on the device can do the same. With

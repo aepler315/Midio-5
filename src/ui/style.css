@@ -3089,10 +3089,27 @@ html, body {
 }
 
 /* "Show more" closes a listing's only dead end: in a flat folder there is
-   no subfolder to open, so a song past the batch size would otherwise be
-   unreachable without typing its URL by hand. */
+   no subfolder to open, so a row past the batch size would otherwise be
+   unreachable without typing its URL by hand. It deliberately does NOT
+   carry .urlLoadEntry -- it is a control, not a row, and sharing the class
+   would make "count the entries" quietly wrong. */
 .urlLoadMore {
+  display: flex;
+  align-items: center;
   justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
   color: var(--text-secondary);
+  font-family: inherit;
   font-size: 0.82rem;
+  cursor: pointer;
+}
+.urlLoadMore:hover,
+.urlLoadMore:focus-visible {
+  border-color: var(--spec-cool);
+  outline: none;
 }

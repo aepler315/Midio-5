@@ -585,8 +585,28 @@ function randomizeSeed() {
   }
 }
 
+let bootAudioInFlight = null;
+
+/**
+ * Starts the audio engine, at most once, and makes every caller wait for
+ * the SAME attempt.
+ *
+ * The early return below is not enough on its own: `bootAudioOnce` assigns
+ * `audioEngine` before it awaits `resume()`, so a second caller arriving in
+ * that window would see a truthy `audioEngine` and return immediately --
+ * against a context that has not resumed, or one the first call is about to
+ * null out because resume failed. `unlockAudio()` fires this from a gesture
+ * and discards the promise, so that window is real and reachable: a small
+ * loopback download can finish before a slow `resume()` does.
+ */
 async function bootAudio() {
   if (audioEngine) return;
+  if (bootAudioInFlight) return bootAudioInFlight;
+  bootAudioInFlight = bootAudioOnce().finally(() => { bootAudioInFlight = null; });
+  return bootAudioInFlight;
+}
+
+async function bootAudioOnce() {
   audioEngine = new AudioEngine();
   applyBtLatencyToAudioEngine(); // carry over any negative trim set before this song started
   const running = await audioEngine.resume();
@@ -2241,29 +2261,36 @@ function renderUrlListing({ entries = [], folders = [], url = '' }) {
     urlLoadListEl.append(li);
   };
 
-  // Folders first, and all of them: a folder is navigation, and one that is
-  // not rendered cannot be reached by any other means.
-  for (const folder of folders) appendEntry({ ...folder, kind: 'folder' });
+  // Folders first -- they are navigation, and the natural order to scan --
+  // then songs, all of it through ONE batched list.
+  //
+  // Batching is not a limit: building thousands of buttons at once is
+  // seconds of frozen UI on a head unit, so rows arrive a batch at a time
+  // with a "Show more" button after them. Nothing is ever dropped, which
+  // matters for both kinds and for different reasons: a hidden song in a
+  // FLAT folder has no subfolder to reach it through, and a hidden folder
+  // has nothing at all. An artist root with thousands of subfolders costs
+  // exactly as much to render as a flat album with thousands of tracks, so
+  // both are paced the same way.
+  const rows = [
+    ...folders.map((folder) => ({ ...folder, kind: 'folder' })),
+    ...entries.map((entry) => ({ ...entry, kind: 'file' })),
+  ];
 
-  // Songs come in batches. Building thousands of buttons at once is seconds
-  // of frozen UI on a head unit, but simply dropping the rest strands them:
-  // in a FLAT folder there is no subfolder to open, so a capped song is
-  // unreachable without typing its URL by hand. So the cap is a batch size
-  // with a "Show more" button after it, not a limit on what exists.
-  let shownFiles = 0;
+  let shownRows = 0;
   const showMoreRow = document.createElement('li');
   showMoreRow.className = 'urlLoadItem urlLoadMoreRow';
   const showMoreBtn = document.createElement('button');
   showMoreBtn.type = 'button';
-  showMoreBtn.className = 'urlLoadEntry urlLoadMore';
+  showMoreBtn.className = 'urlLoadMore';
   showMoreRow.append(showMoreBtn);
 
   const showNextBatch = () => {
     showMoreRow.remove();
-    const next = entries.slice(shownFiles, shownFiles + URL_LISTING_BATCH_ROWS);
-    for (const entry of next) appendEntry({ ...entry, kind: 'file' });
-    shownFiles += next.length;
-    const remaining = entries.length - shownFiles;
+    const next = rows.slice(shownRows, shownRows + URL_LISTING_BATCH_ROWS);
+    for (const row of next) appendEntry(row);
+    shownRows += next.length;
+    const remaining = rows.length - shownRows;
     if (remaining > 0) {
       showMoreBtn.textContent = `Show ${Math.min(remaining, URL_LISTING_BATCH_ROWS)} more`
         + ` (${remaining} left)`;

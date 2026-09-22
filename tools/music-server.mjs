@@ -64,6 +64,9 @@ const MIME = {
   '.opus': 'audio/opus',
   '.m4a': 'audio/mp4',
   '.aac': 'audio/aac',
+  '.aif': 'audio/aiff',
+  '.aiff': 'audio/aiff',
+  '.wma': 'audio/x-ms-wma',
 };
 // No .mid/.midi: the page's URL loader sends everything to decodeAudioData
 // and has no MIDI ingest path, so listing one would advertise a song that
@@ -157,8 +160,23 @@ async function sendListing(req, res, dir, urlPath) {
   const files = [];
   for (const entry of entries) {
     if (entry.name.startsWith('.')) continue;
-    if (entry.isDirectory()) folders.push(`${base}${encodeURIComponent(entry.name)}/`);
-    else if (entry.isFile() && isAudio(entry.name)) {
+    let { isDir, isFile } = { isDir: entry.isDirectory(), isFile: entry.isFile() };
+    if (entry.isSymbolicLink()) {
+      // A symlink Dirent is NEITHER isDirectory() nor isFile(), so without
+      // this a symlinked album or track vanishes from the listing -- even
+      // though a direct request for it succeeds, since that path resolves
+      // through realPathInRoot(). Symlinks are how shared storage is
+      // normally organised on the documented Termux setup, so this made
+      // whole sections of a collection undiscoverable.
+      const target = await realPathInRoot(path.join(dir, entry.name)).catch(() => null);
+      if (!target) continue; // unreadable, or it escapes ROOT: not ours to serve
+      const stat = await fsp.stat(target).catch(() => null);
+      if (!stat) continue;
+      isDir = stat.isDirectory();
+      isFile = stat.isFile();
+    }
+    if (isDir) folders.push(`${base}${encodeURIComponent(entry.name)}/`);
+    else if (isFile && isAudio(entry.name)) {
       files.push({ name: entry.name, url: `${base}${encodeURIComponent(entry.name)}` });
     }
   }
@@ -270,7 +288,12 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`music-server: serving ${ROOT}`);
-  console.log(`  http://${HOST === '0.0.0.0' ? '127.0.0.1' : HOST}:${PORT}/`);
+  // An IPv6 literal must be bracketed or the result is not a URL: bare
+  // `http://::1:8088/` is rejected by the loader it is meant to be pasted
+  // into, and ::1 is a loopback host this server explicitly supports.
+  const shown = HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : HOST;
+  const authority = shown.includes(':') && !shown.startsWith('[') ? `[${shown}]` : shown;
+  console.log(`  http://${authority}:${PORT}/`);
   console.log('  Paste that into Midio\'s "Load from a URL" field.');
   if (HOST !== '127.0.0.1' && HOST !== 'localhost') {
     console.log('  NOTE: bound to a non-loopback address. An https page cannot');

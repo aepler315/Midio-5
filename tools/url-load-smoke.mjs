@@ -185,15 +185,23 @@ try {
     // produces -- waiting on a folder row would pass against the previous
     // listing and hide a regression.
     await page.locator('.urlLoadMore').waitFor({ timeout: 15000 });
-    const folders = await page.locator('.urlLoadEntry[data-kind="folder"]').count();
-    assert.equal(folders, 600, 'every folder must stay reachable');
-    assert.equal(await page.locator('.urlLoadEntry[data-kind="file"]').count(), 500,
-      'songs arrive a batch at a time');
-    // And the rest must be reachable. In a FLAT folder there is no subfolder
-    // to open, so a capped song with no Show-more is lost for good.
-    await page.locator('.urlLoadMore').click();
+    // ONE batched list: folders first, then songs, 500 rows at a time.
+    // Folders are batched too -- an artist root with thousands of them
+    // costs exactly as much to render as a flat album with thousands of
+    // tracks -- but nothing is ever dropped.
+    assert.equal(await page.locator('.urlLoadEntry').count(), 500, 'one batch to start');
+    assert.equal(await page.locator('.urlLoadEntry[data-kind="folder"]').count(), 500,
+      'folders come first');
+    // Click until there is nothing left rather than a fixed number of
+    // times: 1500 rows at 500 a batch is two clicks, and hard-coding three
+    // just tests the harness's arithmetic.
+    for (let guard = 0; guard < 20 && await page.locator('.urlLoadMore').count(); guard++) {
+      await page.locator('.urlLoadMore').click();
+    }
+    assert.equal(await page.locator('.urlLoadEntry[data-kind="folder"]').count(), 600,
+      'every folder must stay reachable');
     assert.equal(await page.locator('.urlLoadEntry[data-kind="file"]').count(), 900,
-      'the remaining songs must be reachable');
+      'every song must stay reachable');
     assert.equal(await page.locator('.urlLoadMore').count(), 0,
       'nothing left to show, so no button');
     await page.unroute(/bigdir/);
@@ -208,12 +216,15 @@ try {
         files: Array.from({ length: 1200 }, (_, i) => ({ name: `s${i}.mp3`, url: `/flatdir/s${i}.mp3` })),
       }),
     }));
+    await page.locator('#urlLoadList').evaluate((el) => { el.replaceChildren(); });
     await page.locator('#urlLoadInput').fill('http://127.0.0.1:9/flatdir/');
     await page.locator('#urlLoadBtn').click();
     await page.locator('.urlLoadMore').waitFor({ timeout: 10000 });
-    assert.equal(await page.locator('.urlLoadEntry[data-kind="folder"]').count(), 0);
-    await page.locator('.urlLoadMore').click();
-    await page.locator('.urlLoadMore').click();
+    assert.equal(await page.locator('.urlLoadEntry[data-kind="folder"]').count(), 0,
+      'this listing has no folders at all');
+    for (let guard = 0; guard < 20 && await page.locator('.urlLoadMore').count(); guard++) {
+      await page.locator('.urlLoadMore').click();
+    }
     assert.equal(await page.locator('.urlLoadEntry[data-kind="file"]').count(), 1200);
     await page.unroute(/flatdir/);
   });
