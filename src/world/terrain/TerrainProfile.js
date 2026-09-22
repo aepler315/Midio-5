@@ -25,6 +25,7 @@ export function buildProfile(scan, meta = {}) {
     spacingM: scan.spacingM,
     angles: scan.skylineAngle,
     crestElevM: scan.crestElevM,
+    skylineElevM: scan.skylineElevM,
     angleMin,
     angleMax,
     meta,
@@ -116,6 +117,42 @@ export function rangeLayerProfiles(dem, guide, scanOpts, meta = {}) {
     profile.angleMin = angleMin;
     profile.angleMax = angleMax;
     profiles[LAYER_KEY[name]] = profile;
+  }
+  return profiles;
+}
+
+export function profilesToJSON(profiles, meta = {}) {
+  const layers = {};
+  for (const [key, p] of Object.entries(profiles)) {
+    layers[key] = {
+      spacingM: p.spacingM,
+      angleMin: p.angleMin,
+      angleMax: p.angleMax,
+      angles: Array.from(p.angles),
+      crestElevM: Array.from(p.crestElevM),
+      skylineElevM: p.skylineElevM ? Array.from(p.skylineElevM) : [],
+      meta: p.meta || {},
+    };
+  }
+  return { version: 1, meta, layers };
+}
+
+export function profilesFromJSON(obj) {
+  if (!obj || obj.version !== 1 || !obj.layers) throw new Error('not a terrain profile set');
+  const profiles = {};
+  for (const [key, p] of Object.entries(obj.layers)) {
+    profiles[key] = {
+      version: 1,
+      kind: 'skyline',
+      spacingM: p.spacingM,
+      angleMin: p.angleMin,
+      angleMax: p.angleMax,
+      angles: Float64Array.from(p.angles),
+      crestElevM: Float64Array.from(p.crestElevM || []),
+      skylineElevM: Float64Array.from(p.skylineElevM || []),
+      meta: p.meta || {},
+    };
+    assertProfile(profiles[key]);
   }
   return profiles;
 }
