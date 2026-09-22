@@ -87,9 +87,20 @@ test('the fata morgana is wired to the real far shore it mirrors', () => {
   assert.equal(FAR_SHORE_PARALLAX, 0.012, 'mirage rides the far shore parallax, not its own crawl');
 });
 
-test('the fata morgana is shed with the rest of the heavy post-FX', () => {
+test('the fata morgana still paints when heavy post-FX has shed', () => {
+  // Three filled paths, not a whole-frame pass -- keep the ghost visible
+  // even when the ladder drops heavyPostFx.
   const { ctx, fills } = recordingCtx();
   const self = { ...fataMorganaThis(), _perf: { heavyPostFx: false } };
+  BiomeManager.prototype._drawFataMorgana.call(self, ctx, CANVAS, 400, PROFILE, PROFILE, 0.5);
+  assert.equal(fills.length, 3);
+});
+
+test('the fata morgana is fully off at the presence trough', () => {
+  // 37s sine trough is at 3/4 period (t=27.75). Alpha mapping is 0.22 * p^1.6
+  // with a 0.02 skip, so the stacked images must not paint at all.
+  const { ctx, fills } = recordingCtx();
+  const self = { ...fataMorganaThis(), tSec: 37 * 0.75 };
   BiomeManager.prototype._drawFataMorgana.call(self, ctx, CANVAS, 400, PROFILE, PROFILE, 0.5);
   assert.equal(fills.length, 0);
 });
