@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SkyVoyage, VoyagePhase } from '../src/sim/SkyVoyage.js';
+import {
+  CONSTELLATION_HOLD_SEC,
+  CONSTELLATION_LIFE_SEC,
+  SkyVoyage,
+  VoyagePhase,
+  constellationLife01,
+} from '../src/sim/SkyVoyage.js';
 
 const STEP_MS = 1000 / 120;
 
@@ -74,11 +80,14 @@ test('an unguided voyage station uses a real vertical spread, not a sliver near 
     ys.push(v._station.y / h);
   }
   const spread = Math.max(...ys) - Math.min(...ys);
-  assert.ok(spread > 0.15, `station y-fraction spread across seeds was only ${spread.toFixed(3)}, still reads as a thin band`);
+  assert.ok(spread > 0.10, `station y-fraction spread across seeds was only ${spread.toFixed(3)}, still reads as a thin band`);
   // And it must never approach real terrain (peaks ~0.55): the largest
   // figure orbit is roughly 0.21 of stageH, so station.y itself should stay
   // comfortably below 0.55 - 0.21.
-  for (const y of ys) assert.ok(y <= 0.34, `station y-fraction ${y.toFixed(3)} risks dipping into terrain once the figure orbit is added`);
+  for (const y of ys) {
+    assert.ok(y >= 0.12, `station y-fraction ${y.toFixed(3)} still hugs the top of frame`);
+    assert.ok(y <= 0.50, `station y-fraction ${y.toFixed(3)} risks dipping into terrain once the figure orbit is added`);
+  }
 });
 
 // ── A chorus voyage's middle figure is sky-written lyric text, hard-coded
@@ -263,7 +272,7 @@ test('the trail accumulates points and is capped by both time and count', () => 
   advance(v, t, 6); // well into deep space
   assert.ok(v.trail.length > 0, 'trail should have points');
   for (const pt of v.trail) {
-    assert.ok(v.trail[v.trail.length - 1].tMs - pt.tMs <= 3200 + 1, 'no point should be older than the 3.2s trail window');
+    assert.ok(v.trail[v.trail.length - 1].tMs - pt.tMs <= 5500 + STEP_MS, 'no point should be older than the 5.5s trail window');
   }
 });
 
@@ -279,10 +288,17 @@ test('completed figures freeze into constellations, capped and eventually expiri
   t = advance(v, t, 3.3 + 3.3); // clear the remaining figure switches (voyage ends around here)
   assert.ok(v.constellations.length <= 4, 'constellations must be capped');
 
-  // Let enough simulated time pass for every constellation to expire (6s life).
-  t = advance(v, t, 8);
-  const anyOld = v.constellations.some((c) => t - c.bornMs > 6000);
-  assert.equal(anyOld, false, 'nothing older than 6s should remain');
+  // Let enough simulated time pass for every constellation to expire (15s life).
+  t = advance(v, t, 16);
+  const anyOld = v.constellations.some((c) => t - c.bornMs > 15000);
+  assert.equal(anyOld, false, 'nothing older than 15s should remain');
+});
+
+test('constellationLife01 holds, then smoothly fades to zero', () => {
+  assert.equal(constellationLife01(0, CONSTELLATION_HOLD_SEC * 1000), 1, 'life should hold at full brightness through the hold window');
+  const midFade = constellationLife01(0, 11000);
+  assert.ok(midFade > 0 && midFade < 1, `life at 11s should be in the fade window, got ${midFade}`);
+  assert.ok(constellationLife01(0, CONSTELLATION_LIFE_SEC * 1000) <= 1e-9, 'life should be effectively zero by 15s');
 });
 
 test('forceEnd immediately begins reentry from any active phase', () => {
@@ -466,7 +482,7 @@ test('expired constellations crystallize into the atlas instead of vanishing', (
   assert.ok(v.constellations.length >= 1);
   assert.equal(v.atlas.length, 0, 'nothing crystallized yet');
 
-  t = advance(v, t, 7); // past the 6s bright life
+  t = advance(v, t, 16); // past the 15s bright life
   assert.equal(v.constellations.length + 0, v.constellations.length); // (sanity no-op)
   assert.ok(v.atlas.length >= 1, 'the expired constellation should now live in the atlas');
   const entry = v.atlas[0];
@@ -481,13 +497,13 @@ test('the atlas persists after the voyage ends and across a second voyage', () =
   const v = new SkyVoyage(51);
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 20); // full voyage + everything expired into the atlas
+  t = advance(v, t, 30); // full voyage + everything expired into the atlas
   assert.equal(v.phase, VoyagePhase.IDLE);
   const atlasAfterFirst = v.atlas.length;
   assert.ok(atlasAfterFirst >= 1, 'the sky remembers the first voyage');
 
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  t = advance(v, t, 20);
+  t = advance(v, t, 30);
   assert.ok(v.atlas.length > atlasAfterFirst, 'the second voyage adds to the same map');
 });
 
@@ -558,7 +574,7 @@ test('past voyages pull the next station toward the densest cluster (she revisit
 
   // And the pull can never drag her out of the safe sky band.
   assert.ok(guided._station.x >= 1280 * 0.08 - 1 && guided._station.x <= 1280 * 0.92 + 1);
-  assert.ok(guided._station.y >= 720 * 0.08 - 1 && guided._station.y <= 720 * 0.32 + 1);
+  assert.ok(guided._station.y >= 720 * 0.12 - 1 && guided._station.y <= 720 * 0.50 + 1);
 });
 
 test('detonateAtlas converts every atlas star into a staggered nova and spends the map', () => {

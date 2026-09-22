@@ -40,11 +40,13 @@ const FIGURE_RADIUS_PX = 130;
 // to whichever figure a given voyage can actually draw.
 const FIGURE_SCALE_MAX = 1.18;
 const LYRIC_TEXT_SCALE = 2.2;
-const TRAIL_SEC = 3.2;
+const TRAIL_SEC = 5.5;
 const TRAIL_MAX_PTS = 400;
 // Trail segments longer than this are a teleport chord — skip them in draw.
 export const TRAIL_GAP_PX = 28;
-const CONSTELLATION_LIFE_SEC = 6;
+export const CONSTELLATION_HOLD_SEC = 8;
+export const CONSTELLATION_FADE_SEC = 7;
+export const CONSTELLATION_LIFE_SEC = 15;
 const CONSTELLATION_MAX = 4;
 const ATLAS_MAX = 8; // permanent star-map entries; oldest myths fade first
 // Navigational atlas: the next voyage is drawn toward the densest cluster
@@ -181,22 +183,38 @@ export class SkyVoyage {
    * existing atlas star is furthest away. With an empty atlas both modes
    * collapse to a plain random roll, so the first voyage of a song is
    * unchanged. Pure apart from this.rand. */
-  _pickStation(stageW, stageH, marginFracX) {
+  _pickStation(stageW, stageH, marginFracX, radPx) {
     const xMin = stageW * marginFracX, xMax = stageW * (1 - marginFracX);
+    let yMin = radPx + 20;
+    let yMax = Math.min(stageH * 0.46, stageH - radPx * 0.35);
+    if (yMax < yMin) {
+      const y = clamp((yMin + yMax) / 2, 24, stageH * 0.46);
+      yMin = y;
+      yMax = y;
+    }
+    const safeXMin = radPx + 8;
+    const safeXMax = stageW - radPx - 8;
+    const clampX = (x) => safeXMax < safeXMin ? stageW * 0.5 : clamp(x, safeXMin, safeXMax);
+    const clampY = (y) => clamp(y, yMin, yMax);
     const roll = () => ({
       x: stageW * (marginFracX + this.rand() * (1 - 2 * marginFracX)),
-      y: stageH * (0.10 + this.rand() * 0.20),
+      y: yMin + this.rand() * (yMax - yMin),
+    });
+
+    const finish = (station) => ({
+      x: clampX(station.x),
+      y: clampY(station.y),
     });
 
     const nav = this._navTarget();
-    if (!nav) return roll();
+    if (!nav) return finish(roll());
 
     if (this.rand() < NAV_REVISIT_CHANCE) {
       const base = roll();
-      return {
+      return finish({
         x: clamp(lerp(base.x, nav.x, NAV_PULL), xMin, xMax),
-        y: clamp(lerp(base.y, nav.y, NAV_PULL), stageH * 0.08, stageH * 0.32),
-      };
+        y: clamp(lerp(base.y, nav.y, NAV_PULL), yMin, yMax),
+      });
     }
 
     // Unwritten sky. Distance to the NEAREST existing star is the right
@@ -215,7 +233,7 @@ export class SkyVoyage {
       }
       if (gap > bestGap) { bestGap = gap; best = cand; }
     }
-    return best;
+    return finish(best);
   }
 
   /** The finale: every atlas star detonates, staggered like popcorn, and
@@ -345,7 +363,8 @@ export class SkyVoyage {
     // "a large portion of the drawings are outside the frame."
     const voyageScaleMax = this._chorusText ? LYRIC_TEXT_SCALE : FIGURE_SCALE_MAX;
     const marginFracX = clamp((FIGURE_RADIUS_PX * voyageScaleMax) / stageW, 0.05, 0.45);
-    this._station = this._pickStation(stageW, stageH, marginFracX);
+    const radPx = FIGURE_RADIUS_PX * voyageScaleMax;
+    this._station = this._pickStation(stageW, stageH, marginFracX, radPx);
 
     this._figureOrder = this._pickFigureOrder();
     this._figureCount = 0;
@@ -856,6 +875,14 @@ export class SkyVoyage {
     }
     this.constellations = keep;
   }
+}
+
+export function constellationLife01(bornMs, nowMs) {
+  const age = (nowMs - bornMs) / 1000;
+  if (age <= CONSTELLATION_HOLD_SEC) return 1;
+  const u = clamp((age - CONSTELLATION_HOLD_SEC) / CONSTELLATION_FADE_SEC, 0, 1);
+  const s = u * u * (3 - 2 * u);
+  return 1 - s;
 }
 
 /** Fallback recipe when tests inject bare kind strings into _figureOrder. */
