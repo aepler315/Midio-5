@@ -11,6 +11,7 @@
 // math directly.
 import { clamp, clamp01, mulberry32 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
+import { kickEnv } from './MountainChoreo.js';
 
 // +3 joints past each edge (was +1 vs. the old 24-on-screen packing) so the
 // widened depth spread never pulls the outermost joints on-screen.
@@ -47,6 +48,19 @@ const DEPTH_GLOBAL_PERIOD_SEC = 31;
 const DEPTH_GAIN = 0.45;        // per-node depth contribution to size/spread/alpha
 const DEPTH_GLOBAL_GAIN = 0.30; // whole-structure dolly contribution
 const DEPTH_MUL_MIN = 0.42, DEPTH_MUL_MAX = 1.85;
+
+// The icosahedron used to spin at a fixed rad/s, so its pose never met a
+// note. A kick cocks it forward by this many radians at the envelope peak
+// and lets it fall back into the slow tumble. ~22 degrees: a hitch, not a spin-out.
+export const WIRE_KICK_RAD = 0.38;
+
+/** Extra rotation (radians) of the sky wireframe at `tauMs` after a kick.
+ *  0 before the hit and again once the envelope has settled, so the slow
+ *  tumble stays the resting motion and the beat is a single cock forward. */
+export function wireframeKickRadians(tauMs) {
+  if (!(tauMs >= 0)) return 0;
+  return WIRE_KICK_RAD * kickEnv(tauMs);
+}
 
 /**
  * How calm stretches the ridge's own attack/release envelopes. This line
@@ -142,7 +156,7 @@ export class SpaceRidge {
     this._tSec = 0;
   }
 
-  update(nowMs, dtSec, eqBands, calmLevel = 0) {
+  update(nowMs, dtSec, eqBands, calmLevel = 0, kickTauMs = -1) {
     const { tauMul } = calmResponseParams(calmLevel);
     for (let i = 0; i < this.nodes.length; i++) {
       const n = this.nodes[i];
@@ -161,8 +175,12 @@ export class SpaceRidge {
     this._flashes = this._flashes.filter((f) => nowMs - f.atMs < FLASH_LIFE_MS);
     const tSec = nowMs / 1000;
     this._tSec = tSec;
-    this._rotX = tSec * 0.04;
-    this._rotY = tSec * 0.027;
+    // Idle tumble is a function of song time (seek-safe). The kick term is
+    // zero except during the hit, so a scrub back to the same instant
+    // draws the same pose.
+    const wobble = wireframeKickRadians(kickTauMs);
+    this._rotX = tSec * 0.04 + wobble;
+    this._rotY = tSec * 0.027 + wobble * 0.7;
     this._tidalPx = tidalOffset(tSec, this._lastCanvasHeight || 720);
     this._zGlobal = Math.sin((tSec * 2 * Math.PI) / DEPTH_GLOBAL_PERIOD_SEC);
   }

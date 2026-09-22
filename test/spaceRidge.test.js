@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   SpaceRidge, projectWireframe, ICO_VERTS, ICO_EDGES, N_NODES, nodeXFrac,
   tidalOffset, TIDAL_AMPLITUDE_FRAC, calmResponseParams,
+  wireframeKickRadians, WIRE_KICK_RAD,
 } from '../src/world/SpaceRidge.js';
 
 test('node band assignment: 30 nodes (+3 joints each edge), treble-weighted, deterministic', () => {
@@ -103,6 +104,22 @@ test('projectWireframe: finite coordinates, edge count preserved, full rotation 
     assert.ok(Math.abs(p0.points[i].y - pFull.points[i].y) < 1e-6);
   }
   assert.ok(ICO_EDGES.length >= 12, 'icosahedron should have a reasonable edge count');
+});
+
+test('the sky wireframe cocks forward on a kick and settles back into the tumble', () => {
+  assert.equal(wireframeKickRadians(-1), 0);
+  const peak = wireframeKickRadians(40);
+  assert.ok(peak > 0.3 && peak <= WIRE_KICK_RAD + 1e-9, `peak hitch ${peak}`);
+  assert.ok(wireframeKickRadians(2000) < 0.02, 'the hitch must be gone within a beat or two');
+  const bands = new Array(7).fill(0);
+  const idle = new SpaceRidge(3);
+  idle.update(10_000, 0.016, bands, 0, -1);
+  const hit = new SpaceRidge(3);
+  hit.update(10_000, 0.016, bands, 0, 40);
+  assert.ok(hit._rotX > idle._rotX + 0.3, 'same song time, the kick pose leads the idle tumble');
+  // Seek back to the same instant with no kick in progress: same pose.
+  hit.update(10_000, 0.016, bands, 0, -1);
+  assert.ok(Math.abs(hit._rotX - idle._rotX) < 1e-9);
 });
 
 test('draw() no longer takes a worldX -- the structure never scrolls with the world', () => {

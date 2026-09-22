@@ -219,6 +219,32 @@ export function kickEnv(tauMs) {
   return Math.exp(-(tauMs - 40) / 180);
 }
 
+/** How long after the heard kick a plane at this depth should crest.
+ *  Mountain layers use their own DANCE_LAYERS delay: the far ridge leads,
+ *  the near hills follow. Planes that are not a ridge borrow the layer
+ *  they are drawn with. Far vignettes sit on L2. The ocean is the ground
+ *  under the near hills, and the foreground (near field, scatter) is in
+ *  front of those hills, so both crest with L5 — not on a private offset
+ *  of 60ms or 250ms, which landed them between beats. */
+export function planeKickDelayMs(plane) {
+  if (plane === 'vignette') return DANCE_LAYERS.L2.delaySec * 1000;
+  if (plane === 'ocean' || plane === 'near') return DANCE_LAYERS.L5.delaySec * 1000;
+  const cfg = DANCE_LAYERS[plane];
+  return cfg ? cfg.delaySec * 1000 : 0;
+}
+
+/** Kick envelope for one depth plane, on the heard clock. */
+export function planeKick(nowMs, kickMs, plane, amp = 1) {
+  return kickEnv(nowMs - kickMs - planeKickDelayMs(plane)) * (amp || 0);
+}
+
+/** Added halo scale at a kick. 0 at rest, a fraction of `amount` at a full
+ *  hit, gone within a beat. The body stays put; only the glow around it
+ *  grows, which is what reads as the sun landing on the note. */
+export function kickBloom(kick, amount = 0.45) {
+  return amount * clamp01(kick);
+}
+
 /** Softer kick envelope for ridge dance — slower attack, longer settle. */
 export function ridgeKickEnv(tauMs) {
   if (!(tauMs >= 0)) return 0;
