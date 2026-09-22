@@ -129,7 +129,7 @@ const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.0
 // ocean begins; the catalogue only needs to cover every pixel that can
 // ever actually be sky, which is everything above OCEAN_HORIZON_FRAC.
 const STAR_SKY_FRAC = OCEAN_HORIZON_FRAC;
-const STAR_CATALOGUE_COUNT = 720;
+const STAR_CATALOGUE_COUNT = 2800;
 // Horizontal parallax per catalogue layer (far / mid / near). The old
 // (1 + layer * 0.6) * 0.02 spread was almost the same speed on every star,
 // so the field read as a painted backdrop. Far stars barely crawl; heroes
@@ -538,8 +538,8 @@ export class BiomeManager {
     // read the brief asked for. Generated once and cached, exactly like
     // the silhouette strips, so the density costs nothing per frame; only
     // twinkle (in _drawStarfield) is computed live. Bumped from a flat 96
-    // to 280 -- still cheap since only the brightest slice (layer 2) pays
-    // for a radial-gradient hero glow; the rest are one fillRect each.
+    // to 2800 -- still cheap because the catalogue stays 1px and the common
+    // layers are still batched into one fill per bucket.
     // The field is generated over the full frame: every pixel that can ever
     // be sky (valleys, city streets of sky between towers, the zenith) gets
     // stars, and the mountain / skyline stack paints over the rest. A
@@ -548,17 +548,17 @@ export class BiomeManager {
     const catalogue = generateCatalogue(hashSeed(`${songSeed}:starcat`), STAR_CATALOGUE_COUNT, this.w, this.h * STAR_SKY_FRAC);
     // See StarCatalogue.perceptualStretch for why this is applied to
     // subPixelDraw's OUTPUT below, never fed in as its input.
-    // Hero glow (layer 2) is reserved by RANK, not by an absolute magnitude
+    // Hero-bright layer 2 is reserved by RANK, not by an absolute magnitude
     // cutoff -- the realistic population makes true hero-magnitude stars
     // vanishingly rare at this sample size, so a fixed threshold could
     // easily reserve zero. A guaranteed slice keeps the sky visually alive
     // without touching the underlying (correctly faint-dominated) catalogue.
     // A fixed 6 (regardless of population) read as a sparse scatter of
-    // glow-dots rather than "a sky full of stars" -- the un-glowed cheap
-    // dots that make up the rest are real (see perceptualStretch) but
+    // isolated bright dots rather than "a sky full of stars" -- the cheap
+    // points that make up the rest are real (see perceptualStretch) but
     // small and easily washed out by anything drawn over them (haze,
     // cloud, nebula washes), so most of a genuinely full-looking sky needs
-    // to come from the reliably-visible glow tier, not the faint majority.
+    // to come from the reliably-visible bright tier, not the faint majority.
     const byMag = catalogue.slice().sort((a, b) => a.mag - b.mag);
     const heroCutMag = byMag[Math.min(byMag.length - 1, Math.floor(byMag.length * 0.08))].mag;
     const midCutMag = byMag[Math.min(byMag.length - 1, Math.floor(byMag.length * 0.35))].mag;
@@ -3312,7 +3312,7 @@ export class BiomeManager {
       if (x > canvas.width) x -= canvas.width;
       else if (x < 0) x += canvas.width;
       const y = s.yFrac * skyH;
-      const sz = s.size;
+      const sz = 1;
 
       // The same air path that dimmed it also scatters its blue out first,
       // so what survives is warmer. Pull the star's own spectral hue toward
@@ -3322,54 +3322,12 @@ export class BiomeManager {
       const useHue = s.hue > 0 || red > 0.35;
 
       if (s.layer === 2) {
-        const r = Math.max(1.2, sz * 1.6);
-        ctx.globalAlpha = a * 0.55;
-        const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-        if (useHue) {
-          grad.addColorStop(0, `hsla(${hue},62%,92%,1)`);
-          grad.addColorStop(0.45, `hsla(${hue},50%,80%,0.3)`);
-          grad.addColorStop(1, `hsla(${hue},40%,70%,0)`);
-        } else {
-          grad.addColorStop(0, 'rgba(255,255,255,1)');
-          grad.addColorStop(0.4, 'rgba(220,230,255,0.35)');
-          grad.addColorStop(1, 'rgba(200,220,255,0)');
-        }
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Diffraction spikes, only on the ones bright enough to earn them.
-        // They have to TAPER -- a constant-width, constant-alpha cross reads
-        // as a drawn crosshair rather than as light -- so each arm runs
-        // through a gradient that is solid only at the core and reaches zero
-        // at the tip, which is the shape real spikes actually have.
-        if (a > 0.34) {
-          const spike = r * (1.6 + 1.0 * tw);
-          const tint = useHue ? `hsla(${hue},45%,94%,` : 'rgba(226,236,255,';
-          ctx.globalAlpha = a * 0.45;
-          ctx.lineWidth = 0.7;
-          for (const [dx, dy] of [[1, 0], [0, 1]]) {
-            const gS = ctx.createLinearGradient(
-              x - dx * spike, y - dy * spike, x + dx * spike, y + dy * spike,
-            );
-            gS.addColorStop(0, `${tint}0)`);
-            gS.addColorStop(0.5, `${tint}1)`);
-            gS.addColorStop(1, `${tint}0)`);
-            ctx.strokeStyle = gS;
-            ctx.beginPath();
-            ctx.moveTo(x - dx * spike, y - dy * spike);
-            ctx.lineTo(x + dx * spike, y + dy * spike);
-            ctx.stroke();
-          }
-        }
-
         ctx.globalAlpha = a;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(x - 0.6, y - 0.6, 1.2, 1.2);
+        ctx.fillStyle = useHue ? `hsl(${hue},55%,88%)` : '#ffffff';
+        ctx.fillRect(x - 0.5, y - 0.5, sz, sz);
         if (s.companion) {
           ctx.globalAlpha = a * 0.45;
-          ctx.fillRect(x + s.companion.dx - 0.4, y + s.companion.dy - 0.4, 0.9, 0.9);
+          ctx.fillRect(x + s.companion.dx - 0.5, y + s.companion.dy - 0.5, 1, 1);
         }
       } else {
         // Deferred into a bucket instead of drawn here. Setting fillStyle per
@@ -3398,7 +3356,7 @@ export class BiomeManager {
             : (s.layer === 1 ? '#f0f4ff' : '#d8e0f5');
           starBuckets.set(key, bucket);
         }
-        bucket.rects.push(x, y, sz);
+        bucket.rects.push(x - 0.5, y - 0.5, sz);
       }
     }
 
@@ -4037,15 +3995,14 @@ export class BiomeManager {
    * produces.
    */
   _drawFataMorgana(ctx, canvas, worldX, A, B, t) {
-    if (this._perf && !this._perf.heavyPostFx) return;
     const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
     const sinkPx = Math.max(14, canvas.height * 0.015);
     const baseY = horizonY + sinkPx;
-    // A touch SMALLER in pixels than the old invented range (0.13 -> 0.115 of
-    // canvas height) -- the mirage is stretched vertically by refraction but
+    // Smaller in pixels than before (0.115 -> 0.055 of canvas height) -- the
+    // mirage is stretched vertically by refraction but
     // stays compact, because its scale is conveyed by how slowly it moves and
     // how it towers, not by raw screen area.
-    const maxHeightPx = Math.max(54, canvas.height * 0.115);
+    const maxHeightPx = Math.max(28, canvas.height * 0.055);
     // The mirage IS the far shore: same recipe, same horizontal span, same
     // (near-static) parallax as the dark shoreline one draw-call earlier, so
     // the two stay locked together as the same landmass.
@@ -4058,11 +4015,6 @@ export class BiomeManager {
     const drift = mirageDriftPx(this.tSec, canvas.height);
     const stretch = mirageStretch01(this.tSec);
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, canvas.width, horizonY + sinkPx * 0.6);
-    ctx.clip(); // the mirage still can't show below its own base -- it floats AT the horizon, not below it
-
     // Pale, cold, and close to the sky's own high color rather than the
     // biome's palette -- a mirage is refracted SKYLIGHT, not local terrain,
     // so it should read as an extension of the air, not as another range.
@@ -4071,7 +4023,13 @@ export class BiomeManager {
     const pale = this.lerpCache.get('#eef4fb', this.lerpCache.get(skyHorizon, air, 0.4), 0.35);
     const { r, g, b } = hexToRgb(pale);
     const presence = miragePresence01(this.tSec);
-    const alpha = 0.10 + 0.10 * presence;
+    if (presence < 0.02) return;
+    const alpha = 0.22 * presence;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, canvas.width, horizonY + sinkPx * 0.6);
+    ctx.clip(); // the mirage still can't show below its own base -- it floats AT the horizon, not below it
 
     const buildPath = (squash, yBias) => {
       ctx.beginPath();
