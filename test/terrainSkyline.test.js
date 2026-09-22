@@ -5,7 +5,7 @@ import {
 } from '../src/world/terrain/SkylineScan.js';
 import {
   buildProfile, profileUnits, sampleProfile, profileChunks, profileFromDem, rangeLayerProfiles,
-  compositeLayerProfiles,
+  compositeLayerProfiles, profilesToJSON, profilesFromJSON,
 } from '../src/world/terrain/TerrainProfile.js';
 import { resolveStripHeights, layoutRidgeYs } from '../src/world/SilhouetteGenerator.js';
 
@@ -105,6 +105,41 @@ test('profile scale is the whole range, and a window does not tile or re-stretch
   const end = sampleProfile(profile, profile.spacingM * (units.length - 1), 1, profile.spacingM);
   assert.equal(past[0], end[0]);
   assert.equal(past[1], end[0]);
+});
+
+test('profile JSON preserves a missing skyline sample', () => {
+  const profile = {
+    version: 1, kind: 'skyline', spacingM: 400,
+    angleMin: -1, angleMax: 1,
+    angles: Float64Array.from([-1, NaN, 1]),
+    crestElevM: Float64Array.from([2000, NaN, 3000]),
+    skylineElevM: Float64Array.from([2000, NaN, 3000]), meta: {},
+  };
+  const encoded = JSON.parse(JSON.stringify(profilesToJSON({ L2: profile })));
+  const decoded = profilesFromJSON(encoded).L2;
+  assert.deepEqual([...profileUnits(decoded)], [...profileUnits(profile)]);
+  assert.equal(Number.isNaN(decoded.angles[1]), true);
+  assert.equal(Number.isNaN(decoded.crestElevM[1]), true);
+});
+
+test('profile JSON rejects a layer with no observed skyline samples', () => {
+  assert.throws(() => profilesFromJSON({
+    version: 1,
+    layers: {
+      L2: { spacingM: 10, angleMin: 0, angleMax: 1, angles: [null, null], crestElevM: [] },
+    },
+  }), /no finite samples/);
+});
+
+test('a finite flat skyline stays drawable at mid-height', () => {
+  const profile = {
+    version: 1, kind: 'skyline', spacingM: 400,
+    angleMin: 0.2, angleMax: 0.2,
+    angles: Float64Array.from([0.2, 0.2]),
+    crestElevM: Float64Array.from([2000, 2000]),
+    skylineElevM: Float64Array.from([2000, 2000]), meta: {},
+  };
+  assert.deepEqual([...profileUnits(profile)], [0.5, 0.5]);
 });
 
 test('consecutive chunks overlap on the same source samples', () => {

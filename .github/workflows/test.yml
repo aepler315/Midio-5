@@ -58,6 +58,14 @@ jobs:
           npm run test:worlds -- http://127.0.0.1:8080
           npm run test:export -- http://127.0.0.1:8080
           npm run test:car -- http://127.0.0.1:8080
+          npm run test:urlload -- http://127.0.0.1:8080
+      - name: Exercise the staged production artifact
+        run: |
+          npm run stage:site
+          SITE_ROOT=_site HOST=127.0.0.1 PORT=8090 node tools/serve.js > .smoke/staged-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          npm run test:bootstrap -- http://127.0.0.1:8090
       - name: Upload browser diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

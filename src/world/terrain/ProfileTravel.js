@@ -24,6 +24,11 @@ const PEAK_AT = 0.40;
 
 const startCache = new WeakMap();
 
+export function terrainPreviewStationPx(stripWidth = 0) {
+  const width = Number.isFinite(stripWidth) && stripWidth > 0 ? stripWidth : 0;
+  return width * 0.5;
+}
+
 /** 0..1 time-centroid of global energy. 0 when the song never speaks. */
 export function energyCentroid01(curves, durationMs) {
   const dur = Number(durationMs) || 0;

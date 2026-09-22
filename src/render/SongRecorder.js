@@ -48,11 +48,12 @@ export class SongRecorder {
    * @param {AudioNode} opts.audioSource  the bus to record (the master gain)
    * @param {object} [opts.scope]  window, injected for testing
    */
-  constructor({ stage, audioContext = null, audioSource = null, scope = (typeof window !== 'undefined' ? window : null) } = {}) {
+  constructor({ stage, audioContext = null, audioSource = null, onAutoStop = null, scope = (typeof window !== 'undefined' ? window : null) } = {}) {
     this.stage = stage;
     this.audioContext = audioContext;
     this.audioSource = audioSource;
     this.scope = scope;
+    this.onAutoStop = onAutoStop;
 
     this.recording = false;
     // MediaRecorder.stop() finalises its container asynchronously.  Keep
@@ -100,7 +101,7 @@ export class SongRecorder {
    * with `this.error` set, because a failed export must not take the song
    * down with it.
    */
-  start({ presetId } = {}) {
+  start({ presetId, deferFirstFrame = false } = {}) {
     if (this.recording || this.finalizing) return false;
     this.error = null;
     const MR = this.scope?.MediaRecorder;
@@ -126,13 +127,16 @@ export class SongRecorder {
         if (!e.data?.size) return;
         if (this.bytes + e.data.size > MAX_RECORDING_BYTES) {
           this.error = 'Recording reached the 512 MB export limit.';
-          if (this._recorder?.state !== 'inactive') this.stop();
+          if (this._recorder?.state !== 'inactive') this.onAutoStop?.(this.error);
           return;
         }
         this._chunks.push(e.data);
         this.bytes += e.data.size;
       };
-      this._recorder.onerror = (e) => { this.error = e?.error?.message || 'Recording failed.'; };
+      this._recorder.onerror = (e) => {
+        this.error = e?.error?.message || 'Recording failed.';
+        this.onAutoStop?.(this.error);
+      };
       this._recorder.onstop = () => this._finish();
       this._recorder.start(TIMESLICE_MS);
     } catch (err) {
@@ -148,7 +152,7 @@ export class SongRecorder {
     this._stopPromise = new Promise((resolve) => { this._resolveStop = resolve; });
     // One frame right away, so a recording stopped immediately still holds a
     // picture rather than an empty track.
-    this.captureFrame();
+    if (!deferFirstFrame) this.captureFrame();
     return true;
   }
 

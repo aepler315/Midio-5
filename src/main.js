@@ -56,6 +56,7 @@ import { fetchLyricsCached } from './lyrics/LyricsClient.js';
 import { toBlocks, labelBlocks } from './lyrics/LyricStructure.js';
 import { isVocalStemName, vocalActivity, syllableOnsets, alignBlocks } from './lyrics/StemAlign.js';
 import { visualNow, VISUAL_LEAD_MS } from './core/ChoreoClock.js';
+import { CaptureClock } from './core/CaptureClock.js';
 import {
   SyncCalibrator, syncStatusText, syncResultText, positiveTrimCeilingMs, beatPulse01,
   PHASE_EAR, PHASE_EYE,
@@ -78,7 +79,6 @@ import {
   RENDER_PRESETS, DEFAULT_PRESET_ID, presetById, reachSummary, estimateBytes,
   formatBytes, formatElapsed, exportFileName, describeResult,
 } from './render/VideoExport.js';
-import { stepExportClock, evenExportSize } from './render/BulkExport.js';
 import { MusicLibrary } from './library/MusicLibrary.js';
 import { LibraryPanel } from './ui/LibraryPanel.js';
 import { recentlyPlayed, displayTitle, displayArtist, untaggedTracks } from './library/TrackIndex.js';
@@ -283,13 +283,11 @@ function effectiveOutputLatencyMs() {
  * choreography must use the same zero-latency clock rather than baking this
  * room's device/Bluetooth compensation into the video.
  *
- * The live MediaRecorder path still includes the presentation lead (a file
- * has no scanout delay, and removing it from that recorder is its own
- * piece of work — see docs/video-export.md). Bulk export steps the sim on
- * the audio clock instead, so `bulkExportArmed` clears the latency here
- * and `startTimeline` passes a zero visual lead. */
+ * NOT the presentation lead, which a captured frame also does not need --
+ * that one is still baked into the recorded choreography, and taking it out
+ * is its own piece of work. See docs/video-export.md. */
 function choreographyOutputLatencyMs() {
-  return (songRecorder?.recording || bulkExportArmed) ? 0 : effectiveOutputLatencyMs();
+  return captureClock.captureRequested ? 0 : effectiveOutputLatencyMs();
 }
 
 /** The other half of the signed BT trim (see effectiveOutputLatencyMs): a
@@ -370,6 +368,7 @@ const STAGE_FPS_KEY = 'smw:stageFps';
 let simTime = 0;
 let acc = 0;
 let lastNowMs = 0;
+const captureClock = new CaptureClock({ liveLeadMs: VISUAL_LEAD_MS });
 let running = false;
 let paused = false; // suspends the AudioContext itself -- the master clock everything derives from
 let fpsHudVisible = resolveFpsHudVisible(typeof location !== 'undefined' ? location.search : '');
@@ -446,41 +445,10 @@ let fpsCapMs = 1000 / readFpsCap();
 let lastDrawMs = 0;
 /** Exact backing-store size while tools/bulk-export.mjs is driving frames.
  *  Display-fit and the perf ladder both stand aside for it. */
-let bulkExportSize = null;
-let bulkExportArmed = false;
-
-function readBulkExportFromUrl() {
-  try {
-    const q = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
-    if (q.get('bulkExport') !== '1') return null;
-    return evenExportSize({ w: Number(q.get('exportW')), h: Number(q.get('exportH')) });
-  } catch {
-    return null;
-  }
-}
-
 /** Backing-store size for the chosen preset (up to 4K). Sim stays logical 1280×720.
  *  Under perf pressure the backing store shrinks (PerfGovernor.resolutionScale),
  *  CSS-upscaled to fill the viewport — the single biggest win at 4K. */
 function fitCanvas() {
-  if (bulkExportSize) {
-    const { w, h } = bulkExportSize;
-    if (perfGovernor) {
-      perfGovernor.retro = false;
-      perfGovernor.holdQuality = true;
-      perfGovernor.targetCanvasWidth = w;
-      perfGovernor.canvasWidth = w;
-    }
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
-    }
-    const ctx2d = canvas.getContext('2d');
-    if (ctx2d) ctx2d.imageSmoothingEnabled = true;
-    canvas.classList.remove('retro');
-    landscapeHintEl?.classList.remove('is-visible');
-    return;
-  }
   const preset = readStagePreset();
   const dims = stageDims(preset);
   const adaptive = isAutoPreset(preset);
@@ -1028,7 +996,7 @@ function stopTimeline({ preservePause = false } = {}) {
   // A recording running when the song is torn down (Stop, or a new drop)
   // is saved rather than dropped: whatever was captured is work the player
   // asked for, and silently discarding it is the worse surprise.
-  if (songRecorder?.recording) finishRecording();
+  if (songRecorder?.recording || pendingCapturePresetId) finishRecording();
   audioEngine?.pause();
   // Forget any decoded buffer from a previous raw-audio song -- otherwise a
   // MIDI/demo load right after one leaves the OLD song's buffer attached,
@@ -1414,52 +1382,6 @@ worldPassagePeakEl?.addEventListener('click', () => {
 worldChooseForMeEl?.addEventListener('click', () => chooseRecommendedWorld());
 
 
-/** Step the armed export clock to `timeMs` and draw that instant. */
-function renderExportFrame(timeMs) {
-  if (!bulkExportArmed || !sim || !renderer) throw new Error('Bulk export is not armed.');
-  const target = Number(timeMs);
-  if (!Number.isFinite(target)) throw new Error('Export frame time is not a number.');
-  if (audioEngine?.master) audioEngine.master.gain.value = 0;
-  if (audioEngine?.ctx?.state === 'running') audioEngine.ctx.suspend();
-  const advanced = stepExportClock({
-    simTime,
-    targetMs: target,
-    stepMs: STEP_MS,
-    step: (dt, at) => sim.step(dt, at),
-  });
-  simTime = advanced.simTime;
-  renderer.draw(sim, 0);
-  return { width: canvas.width, height: canvas.height, timeMs: simTime };
-}
-
-/** Rebuild the current song at an exact frame size and arm the export clock.
- *  The seed and the decoded buffer carry over, so each resolution is the
- *  same performance. */
-function beginBulkExport({ width, height } = {}) {
-  const size = evenExportSize({ w: width, h: height });
-  if (!size) throw new Error(`Export size must be even and at least 2×2 (got ${width}×${height}).`);
-  if (!lastTimelineData) throw new Error('Load a song before exporting.');
-  const extra = {
-    playBuffer: lastAudioBuffer || undefined,
-    exportMode: true,
-    exportSize: size,
-    startAtMs: 0,
-    fitDiagnostic: lastFitDiagnostic,
-  };
-  if (lastSongSeed != null) extra.songSeed = lastSongSeed;
-  startTimeline(lastTimelineData, extra);
-  if (!bulkExportArmed || !sim || canvas.width !== size.w || canvas.height !== size.h) {
-    throw new Error(`Export armed at ${canvas.width}×${canvas.height}, wanted ${size.w}×${size.h}.`);
-  }
-  return {
-    durationMs: conductor?.durationMs || 0,
-    width: canvas.width,
-    height: canvas.height,
-    seed: sim.songSeed,
-    worldId: sim.worldId,
-  };
-}
-
 function confirmWorld(id) {
   const pending = pendingWorldStart;
   pendingWorldStart = null;
@@ -1470,44 +1392,26 @@ function confirmWorld(id) {
   closeWorldChooser();
   // World select can sit for a while; a suspended context would start a
   // silent, frozen first frame that reads as "upload did nothing."
-  // Bulk export keeps the context suspended: the file's audio is the
-  // source track, muxed later, and a live play would fight the stepped clock.
-  const extra = { ...(pending.extra || {}) };
-  if (pending.seed != null && extra.songSeed === undefined) extra.songSeed = pending.seed;
-  const exporting = !!(extra.exportMode || readBulkExportFromUrl());
-  if (!exporting) audioEngine?.resume?.();
+  audioEngine?.resume?.();
   // A recording already has every voice. The timeline synth (oscillator
   // "keyboard" tones + hat/kick clicks) must not sit on top of it.
+  const extra = { ...(pending.extra || {}) };
+  if (pending.seed != null && extra.songSeed === undefined) extra.songSeed = pending.seed;
   if (extra.playBuffer) muteTimelineSynth = true;
   startTimeline(pending.data, extra);
   if (running) canvas.focus({ preventScroll: true });
   if (extra.playBuffer) {
     lastAudioBuffer = extra.playBuffer;
-    if (!exporting) audioEngine.playBuffer(extra.playBuffer, 0);
+    audioEngine.playBuffer(extra.playBuffer, 0);
   }
 }
 
 function startTimeline(timelineData, extra = {}) {
   const {
     songSeed: seedOverride = undefined, playBuffer, live = false,
-    startAtMs = 0, startAtWallMs = 0, preservePause = false,
-    exportMode: exportModeFlag = false, exportSize = null,
+    startAtMs = 0, startAtWallMs = 0, preservePause = false, captureMode = false,
   } = extra;
-  const fromUrl = exportModeFlag ? null : readBulkExportFromUrl();
-  const exportMode = !!(exportModeFlag || fromUrl);
-  if (exportMode) {
-    const size = evenExportSize(exportSize || fromUrl || bulkExportSize);
-    if (!size) throw new Error('Bulk export was requested without an even frame size.');
-    bulkExportSize = size;
-    bulkExportArmed = true;
-  } else {
-    bulkExportSize = null;
-    bulkExportArmed = false;
-  }
-  // An export rebuild must not resume the context on the way through
-  // stopTimeline: that resume is asynchronous and would land after the
-  // suspend below, leaving the song playing under a stepped clock.
-  stopTimeline({ preservePause: preservePause || exportMode });
+  stopTimeline({ preservePause });
   fitCanvas();
   // Any path that is about to play a decoded recording (confirmWorld,
   // replay) mutes the timeline synth. Live listening mutes it for the same
@@ -1533,11 +1437,10 @@ function startTimeline(timelineData, extra = {}) {
   // chosen preset, rather than spending the first song at full quality
   // until something calls fitCanvas() again.
   perfGovernor = new PerfGovernor({
-    startLevel: exportMode ? 0 : perfStartLevel,
-    retro: exportMode ? false : isRetroPreset(readStagePreset()),
-    retroPalette: exportMode ? false : isPalettePreset(readStagePreset()),
+    startLevel: perfStartLevel,
+    retro: isRetroPreset(readStagePreset()),
+    retroPalette: isPalettePreset(readStagePreset()),
   });
-  if (exportMode) perfGovernor.holdQuality = true;
   fitCanvas(); // sync the new governor's canvasWidth/scale to the live buffer
   // World construction (parallax strips, landmarks) is CPU-heavy; surface a
   // progress line so a multi-second bake never looks like a dead freeze.
@@ -1559,9 +1462,7 @@ function startTimeline(timelineData, extra = {}) {
       // ChoreoClock leg 3: how far ahead frame() steps the world so a frame
       // depicts the moment it reaches the screen, not the moment it was
       // built. Handed in so scoring can subtract it back out.
-      // Bulk export passes 0: the file's frame is the picture at that
-      // audio time, and there is no scanout delay left to lead.
-      visualLeadMs: exportMode ? 0 : VISUAL_LEAD_MS,
+      visualLeadMs: captureMode ? 0 : VISUAL_LEAD_MS,
       lyricSections: timelineData.lyricSections || null,
       syncedLyrics: timelineData.syncedLyrics || null,
       // SSM structure read (StructureAnalyzer), audio path only. Null on
@@ -1601,15 +1502,8 @@ function startTimeline(timelineData, extra = {}) {
   // with undefined multipliers and throw on rgba(...,NaN).
   try {
     if (!(startAtMs > 0)) {
-      if (exportMode) {
-        // Frame 0 of a file is the opening, on the audio clock. The live
-        // prime steps one tick ahead so the first rAF has initialized dials.
-        sim.step(0, 0);
-        simTime = 0;
-      } else {
-        sim.step(STEP_MS, STEP_MS);
-        simTime = STEP_MS;
-      }
+      if (captureMode) { sim.step(0, 0); simTime = 0; }
+      else { sim.step(STEP_MS, STEP_MS); simTime = STEP_MS; }
     }
   } catch (err) {
     console.warn('[sim prime]', err);
@@ -1642,44 +1536,33 @@ function startTimeline(timelineData, extra = {}) {
   // stray keypress never re-"clicks" them.
   document.activeElement?.blur?.();
   audioEngine.restoreLevel?.(0.85);
-  if (exportMode) {
-    // The source file is muxed in later. Silence the graph and freeze the
-    // audio clock; renderExportFrame advances simTime on its own.
-    if (audioEngine.master) audioEngine.master.gain.value = 0;
-    audioEngine.start(0);
-    paused = true;
-    try { audioEngine.ctx.suspend(); } catch { /* already suspended */ }
-    if (startAtMs > 0) {
-      sim.startAt(startAtMs);
-      simTime = startAtMs;
-    }
-    lastNowMs = simTime;
-  } else {
-    // A recognised song is already playing in the room, some way in. The clock
-    // every system reads (AudioEngine.nowMs) is just an offset from the context
-    // time, so starting it AT that position is all it takes for the whole show
-    // -- notes, sections, the arc -- to arrive already in step with the music.
-    //
-    // But the position was measured BEFORE everything above ran, and building a
-    // world takes seconds (strip bakes, cold paths). Starting at the raw
-    // measurement would put the show that far behind the music -- measured at
-    // about two seconds, which the periodic re-sync then had to correct as a
-    // visible jump rather than an ease. So the wall-clock time spent getting
-    // here is added back: `startAtWallMs` is when `startAtMs` was true.
-    const startedAt = startAtWallMs > 0
-      ? startAtMs + (performance.now() - startAtWallMs)
-      : startAtMs;
-    audioEngine.start(startedAt);
-    if (startedAt > 0) sim.startAt(startedAt + VISUAL_LEAD_MS);
-    // Both seeded in led time (see frame()), or the first frame would see the
-    // whole lead as a delta and spend it on fixed steps nobody asked for.
-    simTime = startedAt + VISUAL_LEAD_MS;
-    // After start(), not before: the clock's origin has only just been set, and
-    // reading it earlier leaves the first frame with a delta of the entire
-    // start offset -- which the 250ms clamp then turns into a quarter second of
-    // sim time nobody asked for.
-    lastNowMs = audioEngine.nowMs + VISUAL_LEAD_MS;
-  }
+  // A recognised song is already playing in the room, some way in. The clock
+  // every system reads (AudioEngine.nowMs) is just an offset from the context
+  // time, so starting it AT that position is all it takes for the whole show
+  // -- notes, sections, the arc -- to arrive already in step with the music.
+  //
+  // But the position was measured BEFORE everything above ran, and building a
+  // world takes seconds (strip bakes, cold paths). Starting at the raw
+  // measurement would put the show that far behind the music -- measured at
+  // about two seconds, which the periodic re-sync then had to correct as a
+  // visible jump rather than an ease. So the wall-clock time spent getting
+  // here is added back: `startAtWallMs` is when `startAtMs` was true.
+  const startedAt = startAtWallMs > 0
+    ? startAtMs + (performance.now() - startAtWallMs)
+    : startAtMs;
+  audioEngine.start(startedAt);
+  if (captureMode) captureClock.beginFullCapture(startedAt);
+  else captureClock.resetLive(startedAt);
+  const presentationLeadMs = captureClock.leadMs;
+  if (startedAt > 0) sim.startAt(startedAt + presentationLeadMs);
+  // Both seeded in led time (see frame()), or the first frame would see the
+  // whole lead as a delta and spend it on fixed steps nobody asked for.
+  simTime = startedAt + presentationLeadMs;
+  // After start(), not before: the clock's origin has only just been set, and
+  // reading it earlier leaves the first frame with a delta of the entire
+  // start offset -- which the 250ms clamp then turns into a quarter second of
+  // sim time nobody asked for.
+  lastNowMs = audioEngine.nowMs + presentationLeadMs;
   running = true;
   syncKeepAwake();
   stopTitleBackdrop();
@@ -1688,12 +1571,7 @@ function startTimeline(timelineData, extra = {}) {
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
   wakeHud();
-  if (exportMode) {
-    try { renderer.draw(sim, 0); }
-    catch (err) { console.error('[bulk export] first frame', err); }
-  } else {
-    rafHandle = requestAnimationFrame(frame);
-  }
+  rafHandle = requestAnimationFrame(frame);
 
   // Exposed for the debug overlay and for smoke-testing internals.
   // `rafHandle` is a live getter (not a snapshot) so smoke tests can
@@ -1721,11 +1599,6 @@ function startTimeline(timelineData, extra = {}) {
     // celestial approach, the section schedule) stays at the start -- which
     // silently made every seek-based screenshot a picture of second one.
     seek: (ms) => seekSong(ms),
-    exportReady: exportMode,
-    get durationMs() { return conductor?.durationMs || 0; },
-    get exportSize() { return { width: canvas.width, height: canvas.height }; },
-    beginBulkExport: (size) => beginBulkExport(size),
-    renderExportFrame: (timeMs) => renderExportFrame(timeMs),
     get perfLevel() { return perfGovernor?.level ?? null; },
     get perf() { return perfGovernor || null; },
     // Car mode (KeepAwake.js): live state for debugging on a head unit, plus
@@ -2858,7 +2731,8 @@ function frame(tRaf) {
   // one compositor-plus-scanout hop after it is built, so `simTime` and
   // `lastNowMs` both live in led time. A constant lead shifts the sequence
   // without changing any delta, so the fixed-step accumulator is unaffected.
-  const renderNowMs = nowMs + VISUAL_LEAD_MS;
+  const renderNowMs = captureClock.renderNow(nowMs);
+  if (sim) sim.visualLeadMs = captureClock.leadMs;
 
   try {
     const advanced = advanceFixedStepClock({
@@ -2897,6 +2771,12 @@ function frame(tRaf) {
     return;
   }
   lastDrawMs = tRaf;
+
+  if (pendingCapturePresetId && captureClock.captureReady) {
+    const presetId = pendingCapturePresetId;
+    pendingCapturePresetId = null;
+    beginRecorder(presetId);
+  }
 
   const alpha = acc / STEP_MS;
   try {
@@ -3613,11 +3493,8 @@ function replaySong({ songSeed } = {}) {
   startTimeline(lastTimelineData, {
     songSeed: songSeed !== undefined ? songSeed : readPinnedSeed(),
     playBuffer: buffer || undefined,
+    captureMode: !!pendingExportPresetId,
   });
-  if (buffer) {
-    lastAudioBuffer = buffer;
-    audioEngine.playBuffer(buffer, 0);
-  }
   // A full-song export replays the song with the recorder armed, so the
   // file covers it start to finish rather than from wherever someone
   // managed to press a button.
@@ -3625,6 +3502,13 @@ function replaySong({ songSeed } = {}) {
     const presetId = pendingExportPresetId;
     pendingExportPresetId = null;
     startRecording(presetId);
+  }
+  // Start the recorder's master-bus tap before the replacement source. That
+  // keeps the first audio onset inside a full-song file instead of letting
+  // playback begin a few milliseconds before MediaRecorder exists.
+  if (buffer) {
+    lastAudioBuffer = buffer;
+    audioEngine.playBuffer(buffer, 0);
   }
   // Seed field + complete readout stay in sync with the run that just started.
   if (sim?.songSeed != null) {
@@ -3839,7 +3723,10 @@ musicLibrary.subscribe(() => {
   if (!libraryPanel) return;
   libraryPanel.setRoot({
     name: musicLibrary.root?.name || '',
-    persistable: musicLibrary.playable || musicLibrary.persistable,
+    // Playable and durable are different promises: a webkitdirectory File
+    // list (or a handle whose IndexedDB write failed) works now but cannot
+    // be reopened after reload.
+    persistable: !!musicLibrary.root?.persistable,
     trackCount: musicLibrary.tracks.length,
   });
   libraryPanel.setTracks(musicLibrary.tracks);
@@ -4050,6 +3937,9 @@ const EXPORT_PRESET_KEY = 'midio.export.preset';
 let songRecorder = null;
 /** Set just before a replay so the recorder starts with the new song. */
 let pendingExportPresetId = null;
+/** Mid-song capture waits until the live presentation lead has been paid
+ * down without rewinding simulation time. */
+let pendingCapturePresetId = null;
 /** The last object URL handed out, revoked when the next one replaces it. */
 let lastExportUrl = null;
 
@@ -4070,15 +3960,17 @@ function ensureRecorder() {
     stage: canvas,
     audioContext: audioEngine.ctx,
     audioSource: audioEngine.master,
+    onAutoStop: () => finishRecording(),
   });
   return songRecorder;
 }
 
-function startRecording(presetId = storedExportPresetId()) {
+function beginRecorder(presetId) {
   const recorder = ensureRecorder();
   if (!recorder) { showErrorBanner('Start a song before recording.'); return false; }
-  if (!recorder.start({ presetId })) {
+  if (!recorder.start({ presetId, deferFirstFrame: true })) {
     showErrorBanner(recorder.error || 'This browser cannot record video.');
+    captureClock.release(audioEngine?.nowMs || 0);
     syncRecordUI();
     return false;
   }
@@ -4087,11 +3979,31 @@ function startRecording(presetId = storedExportPresetId()) {
   return true;
 }
 
+function startRecording(presetId = storedExportPresetId()) {
+  const recorder = ensureRecorder();
+  if (!recorder?.candidate) {
+    showErrorBanner('This browser cannot record video.');
+    return false;
+  }
+  if (captureClock.captureReady) return beginRecorder(presetId);
+  pendingCapturePresetId = presetId;
+  captureClock.arm(audioEngine?.nowMs || 0);
+  syncRecordUI();
+  return true;
+}
+
 /** Stop, save, and say what it turned out to be. Fire-and-forget: nothing
  *  on screen waits for a file to finish writing. */
 function finishRecording() {
   const recorder = songRecorder;
+  if (pendingCapturePresetId) {
+    pendingCapturePresetId = null;
+    captureClock.release(audioEngine?.nowMs || 0);
+    syncRecordUI();
+    return;
+  }
   if (!recorder?.recording) return;
+  captureClock.release(audioEngine?.nowMs || 0);
   recorder.stop().then((result) => {
     syncRecordUI();
     if (!result) {
@@ -4140,14 +4052,18 @@ function setExportNote(text, className = '') {
 }
 
 function syncRecordUI() {
+  const arming = !!pendingCapturePresetId;
   const active = !!songRecorder?.recording;
-  const busy = active || !!songRecorder?.finalizing;
-  recordBtnEl?.setAttribute('aria-pressed', String(active));
+  const finalizing = !!songRecorder?.finalizing;
+  const busy = active || arming || finalizing;
+  recordBtnEl?.setAttribute('aria-pressed', String(active || arming));
   recordBtnEl?.setAttribute('title', active
     ? 'Stop recording and save the video'
+    : arming ? 'Cancel recording before capture begins'
     : 'Record the show to a video file from this moment. Press again to stop and save.');
-  recordStatusEl?.classList.toggle('hidden', !active);
-  if (recordBtnEl) recordBtnEl.disabled = busy && !active;
+  recordStatusEl?.classList.toggle('hidden', !active && !arming);
+  if (arming && recordStatusEl) recordStatusEl.textContent = 'Aligning capture…';
+  if (recordBtnEl) recordBtnEl.disabled = finalizing;
   if (exportBtnEl) exportBtnEl.disabled = busy;
 }
 
@@ -4209,7 +4125,7 @@ function syncExportUI() {
 }
 
 recordBtnEl?.addEventListener('click', () => {
-  if (songRecorder?.recording) finishRecording();
+  if (songRecorder?.recording || pendingCapturePresetId) finishRecording();
   else if (songRecorder?.finalizing) return;
   else startRecording();
 });

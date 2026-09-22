@@ -15,6 +15,13 @@ import { scanDirectory, scanFileList, resolveFile, ensureReadPermission } from '
 import { createTagQueue } from './AutoTag.js';
 import { untaggedTracks } from './TrackIndex.js';
 
+let sessionRootSequence = 0;
+
+function sessionRootId(name) {
+  sessionRootSequence += 1;
+  return `session:${String(name || 'music').toLowerCase()}:${Date.now().toString(36)}:${sessionRootSequence}`;
+}
+
 export class MusicLibrary {
   constructor({ scope = globalThis, fetchFn = (typeof fetch !== 'undefined' ? fetch : null) } = {}) {
     this.scope = scope;
@@ -104,9 +111,13 @@ export class MusicLibrary {
       if (err?.name === 'AbortError') return null;
       throw err;
     }
-    const root = await addRoot({ name: handle.name, handle }, this.scope);
-    if (!root) return null;
-    this.root = root;
+    const persisted = await addRoot({ name: handle.name, handle }, this.scope);
+    // A usable directory handle is still a library for this session when
+    // IndexedDB is blocked, full, or aborts its transaction. Persistence is
+    // a durability enhancement, not permission to discard the user's pick.
+    this.root = persisted || {
+      id: sessionRootId(handle.name), name: handle.name, handle, persistable: false,
+    };
     this.handle = handle;
     this.sessionFiles.clear();
     this.tracks = [];
@@ -114,7 +125,7 @@ export class MusicLibrary {
     // Before the walk starts, not after it finishes: the caller opens the
     // library on this, so the folder's contents appear as they are read
     // instead of minutes later in one go.
-    onRootChosen?.(root);
+    onRootChosen?.(this.root);
     return this.rescan({ onProgress });
   }
 
@@ -128,7 +139,9 @@ export class MusicLibrary {
     const first = list[0]?.webkitRelativePath || '';
     const folderName = first.includes('/') ? first.slice(0, first.indexOf('/')) : name;
     const root = await addRoot({ name: folderName, handle: null, persistable: false }, this.scope);
-    this.root = root || { id: `root:${folderName.toLowerCase()}`, name: folderName, handle: null, persistable: false };
+    this.root = root || {
+      id: sessionRootId(folderName), name: folderName, handle: null, persistable: false,
+    };
     this.handle = null;
     const rootId = this.root.id;
 
@@ -169,6 +182,10 @@ export class MusicLibrary {
       if (!mine()) return this.tracks;
       if (!signal.aborted && allStored) await pruneTracks(rootId, tracks.map((t) => t.path), this.scope);
       if (!mine()) return this.tracks;
+      // The streamed scan rows and Files are the usable session library.
+      // If persistence was unavailable or any batch failed, an empty/stale
+      // database read must not replace them.
+      if (!allStored) return this.tracks;
       const rows = await listTracks(rootId, this.scope);
       if (!mine()) return this.tracks;
       this.tracks = rows;
@@ -235,6 +252,7 @@ export class MusicLibrary {
       // whose writes all landed.
       if (!signal.aborted && allStored) await pruneTracks(rootId, scanned.map((t) => t.path), this.scope);
       if (!mine()) return this.tracks;
+      if (!allStored) return this.tracks;
       // Re-read rather than keeping the scan records: what the view should
       // show is the merged row, with the play counts and auto-tags that
       // carryForward preserved.

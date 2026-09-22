@@ -38,8 +38,9 @@ import {
   ridgeYSmooth, danceOffsetSmooth, danceScaleSmooth, danceScaleRamp, assignBandFeatures, geoCrestOffset,
 } from './GeoCrest.js';
 import { profileUnits } from './terrain/TerrainProfile.js';
-import { ridgeDepth, terrainScrollPx } from './terrain/ProfileTravel.js';
+import { ridgeDepth, terrainPreviewStationPx, terrainScrollPx } from './terrain/ProfileTravel.js';
 import { TERRAIN_STRIP_WIDTH } from './terrain/StripRead.js';
+import { TerrainStripCache } from './terrain/TerrainStripCache.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
 import { strataBeds } from './RockStrata.js';
 import {
@@ -709,7 +710,7 @@ export class BiomeManager {
 
     this.songSeed = songSeed;
     this.visualStyle = 'rendered'; // set via setVisualStyle from Simulation / main
-    this.strips = new Map(); // biomeName -> { L2, L3, L4, L5 }
+    this.strips = new TerrainStripCache(); // biomeName -> { L2, L3, L4, L5 }
 
     this.fields = new Map(); // biomeName -> ParticleField
     for (const b of this.profiles) this.fields.set(b.name, new ParticleField(b.particles, canvasWidth, canvasHeight, hashSeed(b.name + 'p')));
@@ -898,6 +899,7 @@ export class BiomeManager {
   dispose() {
     for (const unsub of this._unsub) unsub();
     this._unsub.length = 0;
+    this.strips.clear();
   }
 
   _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null, structure = null, conductorSchedule = null) {
@@ -1437,10 +1439,7 @@ export class BiomeManager {
     if (!this._ridgePortrait) {
       this._ridgePortrait = extractRidgePortrait(this.energyCurves, this.durationMs);
     }
-    this.strips = new Map();
-    for (const b of this.profiles) {
-      this.strips.set(b.name, this._buildStripSet(b));
-    }
+    this.strips.clear();
   }
 
   /**
@@ -1545,9 +1544,21 @@ export class BiomeManager {
    *  built on first use and cached, so every call site gets the same strip
    *  set whether it was baked up front or on demand. */
   stripsFor(key) {
+    const pins = this.currentBlend
+      ? [this.currentBlend.from, this.currentBlend.to]
+      : [this.sections?.[0]?.profile || key];
+    this.strips.setPins(pins);
     let strips = this.strips.get(key);
     if (strips) return strips;
     const profile = this._profile(key);
+    const kind = this.world?.kind || 'alpine';
+    const estimatedBytes = ['L2', 'L3', 'L4', 'L5'].reduce((total, layerKey) => {
+      const bake = layerBake(kind, layerKey);
+      const width = this.terrainProfiles?.[layerKey] && layerKey !== 'L5' ? TERRAIN_STRIP_WIDTH : 2048;
+      // City strips own a same-sized emissive window surface.
+      return total + width * bake.height * 4 * (bake.profile === 'city' ? 2 : 1);
+    }, 0);
+    this.strips.reserve(estimatedBytes, new Set([key]));
     strips = this._buildStripSet(profile);
     this.strips.set(key, strips);
     return strips;
@@ -5022,6 +5033,7 @@ export class BiomeManager {
     if (!this.terrainProfiles?.[layerKey]) {
       return worldX * CodaDirector.delaminateRatio(LAYER_RATIOS[layerKey], this.unravel);
     }
+    if (this.terrainPreview) return terrainPreviewStationPx(this._terrainStripWidth(layerKey));
     return terrainScrollPx({
       tSec: this.tSec,
       curves: this.energyCurves,
@@ -5081,7 +5093,7 @@ export class BiomeManager {
     // HEADROOM refit would erase an in-strip height change on L2/L3.
     // Phrase openings that earned a lift add a brief extra scale on top;
     // decorative cuts leave scaleMul at 1.
-    const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
+    const growthMul = preview ? 1 : orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
       * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0))
       * Math.max(0, heightMul)
       * (ridge?.scaleMul ?? 1);
@@ -5118,8 +5130,10 @@ export class BiomeManager {
         // live crest stroke blended between column CENTERS -- a ramp phase-
         // shifted half a column from a staircase. That is why the neon ridge
         // line floated off the fill it traces.
-        const dyL = danceOffset(scrollX + sx, this.tSec, groove, kick, cfg, this.fever || 0) * terrainEnergy;
-        const dyR = danceOffset(scrollX + sx + cw, this.tSec, groove, kick, cfg, this.fever || 0) * terrainEnergy;
+        const danceTime = preview ? 0 : this.tSec;
+        const fever = preview ? 0 : (this.fever || 0);
+        const dyL = danceOffset(scrollX + sx, danceTime, groove, kick, cfg, fever) * terrainEnergy;
+        const dyR = danceOffset(scrollX + sx + cw, danceTime, groove, kick, cfg, fever) * terrainEnergy;
         // Foot-anchored: this column's own foot (baseY + dh + dy, the same
         // translation the offset dance already applies) never moves: only
         // the elevation above it stretches, so a squat foothill barely
@@ -5141,9 +5155,9 @@ export class BiomeManager {
         // cap, the cast shadow and the strata all tracing a smooth curve the
         // fill underneath them was not actually drawn on.
         // Isolated accents may still sharpen a summit when bounce is gated.
-        const sharpen = ridge ? Math.max(kick, ridge.gesture) : kick;
-        const scaleL = danceScaleSmooth(strip.ridge, scrollX + sx, sharpen, sustain, cfg, colW);
-        const scaleR = danceScaleSmooth(strip.ridge, scrollX + sx + cw, sharpen, sustain, cfg, colW);
+        const sharpen = preview ? 0 : (ridge ? Math.max(kick, ridge.gesture) : kick);
+        const scaleL = preview ? 1 : danceScaleSmooth(strip.ridge, scrollX + sx, sharpen, sustain, cfg, colW);
+        const scaleR = preview ? 1 : danceScaleSmooth(strip.ridge, scrollX + sx + cw, sharpen, sustain, cfg, colW);
         const colDh = dh * (1 + (scaleL - 1) * terrainEnergy);
         const colDhR = dh * (1 + (scaleR - 1) * terrainEnergy);
         const dy = dyL;
@@ -5224,7 +5238,7 @@ export class BiomeManager {
     const nowMs = this.tSec * 1000;
     const kick = preview ? 0 : ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
       * this._danceKickAmp * (ridge?.kickMul ?? 1);
-    const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
+    const growthMul = preview ? 1 : orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
       * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0))
       * Math.max(0, heightMul)
       * (ridge?.scaleMul ?? 1);
@@ -5233,8 +5247,8 @@ export class BiomeManager {
     const baseY = canvas.height - dh + yOff;
     const w = strip.width;
     const isGeo = layerKey === 'L4';
-    const tSec = this.tSec;
-    const fever = this.fever || 0;
+    const tSec = preview ? 0 : this.tSec;
+    const fever = preview ? 0 : (this.fever || 0);
     const groove = preview ? 0 : (ridge ? ridge.groove : this._danceGroove);
     const sustain = preview ? 0 : (ridge ? ridge.sustain : (this._danceSustain || 0));
 
@@ -5247,7 +5261,7 @@ export class BiomeManager {
       const u = stripSampleX(strip, stripX);
       const yR = ridgeYSmooth(strip.ridge, u) * scale;
       const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever, colW) * terrainEnergy;
-      const lift = (isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
+      const lift = (!preview && isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
       // Stage 2 (ridge deformation): foot-anchored per-column scale -- the
       // strip's foot (screen y = baseY + dh) never moves; only the
       // elevation above it stretches, by this column's own relative peak
@@ -5259,7 +5273,8 @@ export class BiomeManager {
       // can actually paint (one straight top edge per column), so the crest
       // polyline and every overlay hung off it land ON the fill instead of on
       // a silhouette that was never drawn. See GeoCrest.danceScaleRamp.
-      const rawScale = danceScaleRamp(strip.ridge, stripX, ridge ? Math.max(kick, ridge.gesture) : kick, sustain, cfg, colW);
+      const rawScale = preview ? 1 : danceScaleRamp(strip.ridge, stripX,
+        ridge ? Math.max(kick, ridge.gesture) : kick, sustain, cfg, colW);
       const localScale = 1 + (rawScale - 1) * terrainEnergy;
       const heightAboveFoot = dh - yR;
       const yRDeformed = dh - heightAboveFoot * localScale;

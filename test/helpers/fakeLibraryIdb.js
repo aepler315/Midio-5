@@ -2,7 +2,7 @@
 // one index, multi-store transactions, and the commit event that writes wait
 // on. Shared by the LibraryDB and MusicLibrary tests so both exercise the
 // same storage behaviour -- including its failure modes.
-export function fakeIdb({ failOpen = false, rejectPut = () => false } = {}) {
+export function fakeIdb({ failOpen = false, rejectPut = () => false, lateAbort = false } = {}) {
   const stores = { roots: new Map(), tracks: new Map() };
   const keyPaths = { roots: 'id', tracks: 'key' };
 
@@ -51,7 +51,7 @@ export function fakeIdb({ failOpen = false, rejectPut = () => false } = {}) {
       // Commit once the queued work has drained -- a few macrotask ticks is
       // more than the module's longest chain, and firing immediately would
       // let a caller close the db before its writes landed.
-      setTimeout(() => { (tx.failed ? tx.onerror : tx.oncomplete)?.(); }, 0);
+      setTimeout(() => { (lateAbort ? tx.onabort : (tx.failed ? tx.onerror : tx.oncomplete))?.(); }, 0);
       void names;
       return tx;
     },
@@ -71,4 +71,3 @@ export function fakeIdb({ failOpen = false, rejectPut = () => false } = {}) {
     },
   };
 }
-

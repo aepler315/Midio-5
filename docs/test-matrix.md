@@ -17,18 +17,22 @@ Revision tagged against the 20432ab audit unless a later row says otherwise.
 | Local audio-only app | Chromium-family browsers | README + `npm start` on loopback |
 
 Root `package.json` scripts that CI does **not** run on every PR:
-`test:car`, `bench:sections`, `eval:worlds`. Those are operator tools.
+`bench:sections`, `eval:worlds`. Those are operator tools. `test:car` runs in
+the `audio-smoke` job.
 
 ## Workflow jobs
 
 | Job | Command / check | Pass bar | Proves | Does not prove |
 | --- | --- | --- | --- | --- |
 | `test` | `npm ci`, `npm audit --audit-level=high`, `npm run lint`, `npm test` | zero failing Node tests under `test/*.js`, `test/*.mjs`, `test/helpers/*.js`; lint clean; no high+ npm advisories | Unit contracts for analysis, library fakes, export estimates, UI helpers | Real IndexedDB in a browser; Firefox/Safari; long recordings; physical devices |
-| `audio-smoke` | `npm run test:smoke`, `test:lighting`, `test:shading`, `test:seek`, `test:worlds`, `test:export` against `tools/serve.js` | each script exits 0; artifacts under `.smoke/` | Chromium can upload a short synthetic fixture, pick a world, draw, seek, and start an export | Watchability, identity, other engines, songs longer than the fixture |
+| `audio-smoke` | Playback/lighting/shading/seek/world/export/car/URL-loader smokes against source, then `stage:site` + `test:bootstrap` against that artifact | each script exits 0; staged Browse opens a real chooser; artifacts under `.smoke/` | Chromium can boot the actual public file set, upload a short synthetic fixture, pick a world, draw, seek, and start an export | Watchability, identity, other engines, songs longer than the fixture |
 | `world-chooser` | `npm run test:chooser`, `test:chooser-keyboard` | exit 0 | Pointer and keyboard world selection in Chromium | Visual distinctness of the nine worlds |
 
-GitHub Pages deploy is a separate workflow. It publishes `index.html`,
-`src/`, `soundfonts/`, and `CNAME`. It does not run the Soulseek bridge.
+GitHub Pages deploy stages one artifact with `stage:site`, runs bootstrap and
+audio playback against that exact directory, uploads it, and deploys only
+after the reusable validation workflow succeeds. It publishes `index.html`,
+`src/`, `soundfonts/`, `CNAME`, and `.nojekyll`; it does not publish tools,
+tests, raw terrain inputs, or the Soulseek bridge.
 
 ## Thresholds that are measured today
 

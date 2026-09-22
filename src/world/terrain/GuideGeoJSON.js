@@ -10,7 +10,12 @@ const LAYERS = new Set(['far', 'mid', 'near']);
 function positionsOf(geometry) {
   if (!geometry) throw new Error('guide feature is missing geometry');
   if (geometry.type === 'LineString') return [geometry.coordinates];
-  if (geometry.type === 'MultiLineString') return geometry.coordinates;
+  if (geometry.type === 'MultiLineString') {
+    if (geometry.coordinates?.length !== 1) {
+      throw new Error('disconnected MultiLineString guides are not supported');
+    }
+    return geometry.coordinates;
+  }
   throw new Error('guide geometry must be a LineString');
 }
 
