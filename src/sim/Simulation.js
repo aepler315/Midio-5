@@ -33,6 +33,7 @@ import { KeyDirector } from './KeyDirector.js';
 import { CodaDirector } from './CodaDirector.js';
 import { FilmFinish } from '../render/FilmFinish.js';
 import { BiomeManager } from '../world/BiomeManager.js';
+import { alpineTerrainProfiles } from '../world/terrain/loadTerrain.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { WorldAssembly } from '../world/WorldAssembly.js';
 import { GroundField } from '../world/GroundField.js';
@@ -253,6 +254,7 @@ export class Simulation {
       structure,
       conductorSchedule: conductorCues ? conductorCues.scheduleCues : null,
       worldId: this.worldId,
+      terrainProfiles: this.worldId === 'alpine' ? alpineTerrainProfiles() : null,
     });
     this.reducedFlash = false;
     this.visualStyle = 'rendered';

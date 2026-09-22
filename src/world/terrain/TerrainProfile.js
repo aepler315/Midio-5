@@ -3,7 +3,7 @@
 // for the whole profile — a window onto a foothill is not stretched to
 // the height of a summit that sits somewhere else on the range.
 
-import { scanCorridor } from './SkylineScan.js';
+import { scanCorridor, splitScanLayers } from './SkylineScan.js';
 
 export function buildProfile(scan, meta = {}) {
   if (!scan || !scan.skylineAngle || scan.skylineAngle.length < 2) {
@@ -25,6 +25,7 @@ export function buildProfile(scan, meta = {}) {
     spacingM: scan.spacingM,
     angles: scan.skylineAngle,
     crestElevM: scan.crestElevM,
+    skylineElevM: scan.skylineElevM,
     angleMin,
     angleMax,
     meta,
@@ -87,6 +88,93 @@ export function profileChunks(sampleCount, { chunk, overlap = 0 } = {}) {
   const tail = sampleCount - chunk;
   if (tail > 0 && (starts.length === 0 || starts[starts.length - 1] !== tail)) starts.push(tail);
   return starts;
+}
+
+const LAYER_KEY = { far: 'L2', mid: 'L3', near: 'L4' };
+
+/** Each guide is its own ridge, scanned with the same camera and kept
+ *  apart by isolateBandM. Each ridge keeps its own angle span, so its
+ *  saddles cut down instead of sitting on a shared horizon. Depth is the
+ *  layer that draws it: the near strip is shorter. A shared span pinned
+ *  to the lowest foreground angle left the Teton crest as a flat wave at
+ *  the top of the strip. A guide that misses the grid is omitted. */
+export function compositeLayerProfiles(dem, guides, scanOpts, meta = {}) {
+  const profiles = {};
+  for (const name of ['far', 'mid', 'near']) {
+    if (!guides[name] || guides[name].length < 2) continue;
+    const scan = scanCorridor(dem, guides[name], {
+      ...scanOpts,
+      isolateBandM: scanOpts.isolateBandM ?? 4000,
+    });
+    if (![...scan.skylineAngle].some((a) => Number.isFinite(a))) continue;
+    profiles[LAYER_KEY[name]] = buildProfile(scan, { layer: name, composite: true, ...meta });
+  }
+  return profiles;
+}
+
+/** One corridor, up to three profiles sharing a single angle scale.
+ *  Far is L2, middle L3, near L4. A missing group is omitted rather than
+ *  invented, and L5 is never filled — it stays the rolling foreground. */
+export function rangeLayerProfiles(dem, guide, scanOpts, meta = {}) {
+  const scan = scanCorridor(dem, guide, scanOpts);
+  const layers = splitScanLayers(scan, { minGapM: scanOpts.minGapM ?? 8000 });
+  let angleMin = Infinity;
+  let angleMax = -Infinity;
+  for (const layer of Object.values(layers)) {
+    if (!layer) continue;
+    for (let i = 0; i < layer.skylineAngle.length; i++) {
+      const a = layer.skylineAngle[i];
+      if (!Number.isFinite(a)) continue;
+      if (a < angleMin) angleMin = a;
+      if (a > angleMax) angleMax = a;
+    }
+  }
+  const profiles = {};
+  for (const name of ['far', 'mid', 'near']) {
+    const layer = layers[name];
+    if (!layer) continue;
+    const profile = buildProfile(layer, { layer: name, ...meta });
+    profile.angleMin = angleMin;
+    profile.angleMax = angleMax;
+    profiles[LAYER_KEY[name]] = profile;
+  }
+  return profiles;
+}
+
+export function profilesToJSON(profiles, meta = {}) {
+  const layers = {};
+  for (const [key, p] of Object.entries(profiles)) {
+    layers[key] = {
+      spacingM: p.spacingM,
+      angleMin: p.angleMin,
+      angleMax: p.angleMax,
+      angles: Array.from(p.angles),
+      crestElevM: Array.from(p.crestElevM),
+      skylineElevM: p.skylineElevM ? Array.from(p.skylineElevM) : [],
+      meta: p.meta || {},
+    };
+  }
+  return { version: 1, meta, layers };
+}
+
+export function profilesFromJSON(obj) {
+  if (!obj || obj.version !== 1 || !obj.layers) throw new Error('not a terrain profile set');
+  const profiles = {};
+  for (const [key, p] of Object.entries(obj.layers)) {
+    profiles[key] = {
+      version: 1,
+      kind: 'skyline',
+      spacingM: p.spacingM,
+      angleMin: p.angleMin,
+      angleMax: p.angleMax,
+      angles: Float64Array.from(p.angles),
+      crestElevM: Float64Array.from(p.crestElevM || []),
+      skylineElevM: Float64Array.from(p.skylineElevM || []),
+      meta: p.meta || {},
+    };
+    assertProfile(profiles[key]);
+  }
+  return profiles;
 }
 
 /** Guide polyline + elevation grid → profile. The grid is the builder's

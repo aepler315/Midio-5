@@ -18,9 +18,10 @@ export function ridgeYSmooth(ridge, x) {
   if (!ridge) return 0;
   const { heights, step, baseline, amplitude, height } = ridge;
   const n = heights.length;
-  const fi = x / step;
-  const i0 = ((Math.floor(fi) % n) + n) % n;
-  const i1 = (i0 + 1) % n;
+  const terrain = ridge.source === 'terrain';
+  const fi = terrain ? Math.max(0, Math.min(n - 1, x / step)) : x / step;
+  const i0 = terrain ? Math.floor(fi) : ((Math.floor(fi) % n) + n) % n;
+  const i1 = terrain ? Math.min(n - 1, i0 + 1) : (i0 + 1) % n;
   const f = fi - Math.floor(fi);
   const c = (1 - Math.cos(f * Math.PI)) / 2;
   const hVal = heights[i0] * (1 - c) + heights[i1] * c;

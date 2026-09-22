@@ -68,6 +68,10 @@ export function resampleHeights(src, n) {
 /** Screen-space crest from normalized heights. `preserveScale` skips the
  *  per-strip refit that pulls every tile's tallest sample up to the same
  *  headroom line. */
+// Alpine strips are drawn a little taller than the authored amplitude.
+// Terrain checks have to use the same gain or they measure a different crest.
+export const ALPINE_AMP_GAIN = 1.12;
+
 export function layoutRidgeYs(heights, {
   height, footY, hanging, amplitude, profile, preserveScale,
 }) {
@@ -669,7 +673,7 @@ export function generateSilhouette({
   });
 
   const hanging = anchor === 'ceiling';
-  const amp = profile === 'alpine' ? amplitude * 1.12 : amplitude;
+  const amp = profile === 'alpine' ? amplitude * ALPINE_AMP_GAIN : amplitude;
   const footY = hanging ? 0 : height * baseline;
   const { ridgeYs, ampFitted } = layoutRidgeYs(heights, {
     height, baseline, amplitude: amp, profile, anchor, preserveScale, footY, hanging,
@@ -798,10 +802,33 @@ export function ridgeYAt(strip, x) {
   return r.height * r.baseline - r.heights[i] * r.height * r.amplitude;
 }
 
+/** A scanned range is one piece of geography. It must not tile. */
+export function isTerrainStrip(strip) {
+  return strip?.ridge?.source === 'terrain';
+}
+
+/** Screen x of the strip's left edge. Procedural strips wrap. A terrain
+ *  strip scrolls until its far end fills the canvas, then holds. */
+export function stripOriginX(strip, scrollX, canvasWidth = 0) {
+  const w = strip.width;
+  if (!isTerrainStrip(strip)) return -(((scrollX % w) + w) % w);
+  const maxScroll = Math.max(0, w - canvasWidth);
+  const held = Math.min(Math.max(0, scrollX), maxScroll);
+  return held === 0 ? 0 : -held;
+}
+
+/** Strip-local x. Terrain clamps so a sample past the end stays on the
+ *  last ridge instead of reappearing at the start. */
+export function stripSampleX(strip, x) {
+  const w = strip.width || 1;
+  if (!isTerrainStrip(strip)) return ((x % w) + w) % w;
+  return Math.max(0, Math.min(w - 1e-4, x));
+}
+
 /** Placement shared by the static bitmap and its shading geometry. */
-export function tiledStripPlacement(strip, scrollX, canvasHeight, yOffset = 0) {
+export function tiledStripPlacement(strip, scrollX, canvasHeight, yOffset = 0, canvasWidth = 0) {
   return {
-    x: -(((scrollX % strip.width) + strip.width) % strip.width),
+    x: stripOriginX(strip, scrollX, canvasWidth),
     y: strip.ridge?.anchor === 'ceiling' ? yOffset : canvasHeight - strip.height + yOffset,
   };
 }
@@ -809,11 +836,12 @@ export function tiledStripPlacement(strip, scrollX, canvasHeight, yOffset = 0) {
 /** Exact baked vertices, with the same tile origin and size as drawTiledStrip. */
 export function staticStripGeometry(strip, scrollX, canvasWidth, canvasHeight, yOffset = 0) {
   if (!strip?.ridge) return null;
-  const { x, y } = tiledStripPlacement(strip, scrollX, canvasHeight, yOffset);
+  const { x, y } = tiledStripPlacement(strip, scrollX, canvasHeight, yOffset, canvasWidth);
   const ridge = strip.ridge;
   const ys = ridge.ridgeYs || Array.from(ridge.heights, (_, i) => ridgeYAt(strip, i * ridge.step));
   const pts = [];
-  for (let tileX = x; tileX < canvasWidth; tileX += strip.width) {
+  const tileStops = isTerrainStrip(strip) ? [x] : null;
+  for (let tileX = x; tileStops ? tileStops.includes(tileX) : tileX < canvasWidth; tileX += strip.width) {
     for (let i = 0; i < ys.length; i++) {
       const localX = i * ridge.step;
       if (localX > strip.width) break;
@@ -833,7 +861,11 @@ export function staticStripGeometry(strip, scrollX, canvasWidth, canvasHeight, y
 
 /** Draws a tileable strip scroll-wrapped across the canvas width at the given y offset. */
 export function drawTiledStrip(ctx, strip, scrollX, canvasWidth, canvasHeight, yOffset = 0) {
-  const placement = tiledStripPlacement(strip, scrollX, canvasHeight, yOffset);
+  const placement = tiledStripPlacement(strip, scrollX, canvasHeight, yOffset, canvasWidth);
+  if (isTerrainStrip(strip)) {
+    ctx.drawImage(strip, placement.x, placement.y);
+    return;
+  }
   for (let x = placement.x; x < canvasWidth; x += strip.width) {
     ctx.drawImage(strip, x, placement.y);
   }

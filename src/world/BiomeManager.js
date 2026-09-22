@@ -4,7 +4,7 @@ import { identityAllows } from './WorldIdentity.js';
 // profile crossfading (§4.1.4). Each biome is pure data (BiomeProfiles.js);
 // this file is the one place that knows how to render the contract.
 import { BIOMES } from './BiomeProfiles.js';
-import { generateSilhouette, drawTiledStrip, ridgeYAt, staticStripGeometry } from './SilhouetteGenerator.js';
+import { generateSilhouette, drawTiledStrip, ridgeYAt, staticStripGeometry, stripOriginX, stripSampleX, isTerrainStrip } from './SilhouetteGenerator.js';
 import {
   materialFor, layerBake, layerColor, terrainModsForLayer, groundColorFor, catchlightRgb,
 } from './WorldMaterial.js';
@@ -37,6 +37,9 @@ import {
 import {
   ridgeYSmooth, danceOffsetSmooth, danceScaleSmooth, danceScaleRamp, assignBandFeatures, geoCrestOffset,
 } from './GeoCrest.js';
+import { profileUnits } from './terrain/TerrainProfile.js';
+import { ridgeDepth, terrainScrollPx } from './terrain/ProfileTravel.js';
+import { TERRAIN_STRIP_WIDTH } from './terrain/StripRead.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
 import { strataBeds } from './RockStrata.js';
 import {
@@ -452,7 +455,7 @@ export function fogBandAlphaFractionAtY(geo, y) {
 }
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null }) {
     this.conductor = conductor;
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
@@ -466,6 +469,12 @@ export class BiomeManager {
     this.customBiome = customBiome || null;
     this.world = getWorld(worldId || DEFAULT_WORLD_ID);
     this.worldId = this.world.id;
+    // Optional real-terrain skylines for L2 (far), L3 (middle), L4 (near).
+    // Absent, every layer stays procedural. L5 is never taken from here.
+    this.terrainProfiles = terrainProfiles;
+    // Hold the scanned ridges still so the geographic profile can be checked
+    // without the musical heave. F4 toggles this.
+    this.terrainPreview = false;
     // Palettes live on the world. Alpine keeps the stock biomes (+ optional
     // MIDI-derived custom). City worlds bring their own night palettes and
     // ignore the alpine custom biome so a generated mountain skin never
@@ -1485,6 +1494,7 @@ export class BiomeManager {
         ? scheme[bake.characterIndex] || scheme[0]
         : 'massif';
       const color = layerColor(b.silhouette, worldKind, layerKey);
+      const terrain = layerKey !== 'L5' ? this.terrainProfiles?.[layerKey] : null;
       strips[layerKey] = generateSilhouette({
         seed: seed + idx + 1,
         height: bake.height,
@@ -1509,6 +1519,13 @@ export class BiomeManager {
         terrainMods: terrainModsForLayer(terrainMods, bake),
         timeline: this._layerTimeline(layerKey),
         edgeLight: el,
+        // One south-to-north pass. Where the view opens, and how fast it
+        // moves, is the song's (see _terrainScroll), not this width.
+        // The whole profile is on this strip, so the headroom fit is one
+        // scale for all of it, not a per-window stretch.
+        width: terrain ? TERRAIN_STRIP_WIDTH : undefined,
+        sourceHeights: terrain ? profileUnits(terrain) : null,
+        preserveScale: false,
       });
     });
 
@@ -2244,9 +2261,11 @@ export class BiomeManager {
     // The Unraveling: each layer's scroll ratio drifts apart from the rest
     // as the world delaminates -- nearer layers race ahead more than far
     // ones (the ratio itself is the depth proxy, so no separate table).
-    const scrollX0 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L2, this.unravel);
+    // Scanned L2 and L4 keep that depth, but the song chooses their station
+    // and their speed. L3 has no profile here, so it stays on worldX.
+    const scrollX0 = this._terrainScroll('L2', worldX);
     const scrollX1 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L3, this.unravel);
-    const scrollX2 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L4, this.unravel);
+    const scrollX2 = this._terrainScroll('L4', worldX);
     const scrollX3 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L5, this.unravel);
     // A biome's silhouette is one fixed authored color; the sky behind it
     // pulls toward near-black at night (see _drawSky's nightPull). On a
@@ -4994,18 +5013,45 @@ export class BiomeManager {
     return env;
   }
 
+  /** Scroll for one range. A procedural layer keeps world parallax.
+   *  A scanned profile does not: the song picks the station it opens on
+   *  and the speed it travels, instead of the south end at L2's fixed
+   *  rate. The nearer scanned range still leads by its depth ratio.
+   *  L3 has no profile on this tile, so it stays on the parallax clock. */
+  _terrainScroll(layerKey, worldX) {
+    if (!this.terrainProfiles?.[layerKey]) {
+      return worldX * CodaDirector.delaminateRatio(LAYER_RATIOS[layerKey], this.unravel);
+    }
+    return terrainScrollPx({
+      tSec: this.tSec,
+      curves: this.energyCurves,
+      durationMs: this.durationMs,
+      stripWidth: this._terrainStripWidth(layerKey),
+      reducedFlash: !!this.reducedFlash,
+      response: this.world?.response,
+      depth: ridgeDepth(LAYER_RATIOS[layerKey], LAYER_RATIOS.L2, this.unravel || 0),
+    });
+  }
+
+  _terrainStripWidth(layerKey) {
+    const name = this.currentBlend?.from || this.profiles?.[0]?.name;
+    const width = name ? this.strips.get(name)?.[layerKey]?.width : 0;
+    return width > 0 ? width : TERRAIN_STRIP_WIDTH;
+  }
+
   /** How heaved the furthest range is right now at one screen column, 0..1
    *  (see MountainChoreo.ridgeSwell01). Midio's jump gate rides this, so it
    *  is read from the sim rather than from a draw pass -- it deliberately
    *  re-derives the same strip-space column position _drawDancingStrip uses
-   *  (worldX through the L2 parallax ratio, delamination included) so the
-   *  number describes the range the player is actually looking at.
+   *  (song travel on a scanned L2, otherwise worldX through the L2 parallax
+   *  ratio, delamination included) so the number describes the range the
+   *  player is actually looking at.
    *  @param {number} screenX the column to read, in stage space */
   farRidgeSwell01(screenX = 0) {
     const cfg = DANCE_LAYERS[FAR_DANCE_LAYER];
     if (!cfg) return 0;
     const kick = ridgeKickEnv(this.tSec * 1000 - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
-    const scrollX = this._danceWorldX * CodaDirector.delaminateRatio(LAYER_RATIOS[FAR_DANCE_LAYER], this.unravel);
+    const scrollX = this._terrainScroll(FAR_DANCE_LAYER, this._danceWorldX);
     return ridgeSwell01(scrollX + screenX, this.tSec, cfg, kick);
   }
 
@@ -5025,7 +5071,8 @@ export class BiomeManager {
     }
     const nowMs = this.tSec * 1000;
     const ridge = this._ridgeEnvelope();
-    const kick = ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
+    const preview = this.terrainPreview && isTerrainStrip(strip);
+    const kick = preview ? 0 : ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
       * this._danceKickAmp * (ridge?.kickMul ?? 1);
     // Orogeny grows the range, then mountainStripDrawHeight hard-caps so peaks
     // stay on-frame (ocean/sky remain visible; off-screen summits are useless).
@@ -5043,8 +5090,8 @@ export class BiomeManager {
     // Stage 2 (ridge deformation): summits sharpen on the kick, flanks swell
     // on sustained energy -- gated by terrainEnergy exactly like the offset
     // dance above, so a flat/calm biome doesn't deform either.
-    const sustain = ridge ? ridge.sustain : (this._danceSustain || 0);
-    const groove = ridge ? ridge.groove : this._danceGroove;
+    const sustain = preview ? 0 : (ridge ? ridge.sustain : (this._danceSustain || 0));
+    const groove = preview ? 0 : (ridge ? ridge.groove : this._danceGroove);
     // Slice width is the dance's sampling resolution, and a quality setting
     // (PerfGovernor.danceColumnWidth): the step between neighbouring slices
     // is the offset curve's slope times this width, so narrowing it shrinks
@@ -5052,7 +5099,8 @@ export class BiomeManager {
     // SAME width, or the live crest polyline lands where the blit didn't.
     const colW = this._danceColW();
     const w = strip.width;
-    let x = -(((scrollX % w) + w) % w);
+    const terrain = isTerrainStrip(strip);
+    let x = stripOriginX(strip, scrollX, canvas.width);
     while (x < canvas.width) {
       for (let cx = 0; cx < w; cx += colW) {
         const cw = Math.min(colW, w - cx);
@@ -5123,6 +5171,7 @@ export class BiomeManager {
           ctx.restore();
         }
       }
+      if (terrain) break;
       x += w;
     }
   }
@@ -5166,13 +5215,14 @@ export class BiomeManager {
     let byStrip = cache && cache.get(strip);
     const colW = this._danceColW();
     const ridge = this._ridgeEnvelope();
-    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}|${colW}|${ridge?.scaleMul ?? 1}|${ridge?.groove ?? 'g'}|${ridge?.sustain ?? 's'}`;
+    const preview = this.terrainPreview && isTerrainStrip(strip);
+    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}|${colW}|${ridge?.scaleMul ?? 1}|${ridge?.groove ?? 'g'}|${ridge?.sustain ?? 's'}|${preview ? 1 : 0}`;
     if (byStrip) {
       const hit = byStrip.get(cacheKey);
       if (hit) return hit;
     }
     const nowMs = this.tSec * 1000;
-    const kick = ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
+    const kick = preview ? 0 : ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
       * this._danceKickAmp * (ridge?.kickMul ?? 1);
     const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
       * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0))
@@ -5185,15 +5235,16 @@ export class BiomeManager {
     const isGeo = layerKey === 'L4';
     const tSec = this.tSec;
     const fever = this.fever || 0;
-    const groove = ridge ? ridge.groove : this._danceGroove;
-    const sustain = ridge ? ridge.sustain : (this._danceSustain || 0);
+    const groove = preview ? 0 : (ridge ? ridge.groove : this._danceGroove);
+    const sustain = preview ? 0 : (ridge ? ridge.sustain : (this._danceSustain || 0));
 
     const pts = new Array(Math.ceil(canvas.width / CREST_STEP_PX) + 3);
     let n = 0;
     let crestY = Infinity;
+    const viewScroll = isTerrainStrip(strip) ? -stripOriginX(strip, scrollX, canvas.width) : scrollX;
     for (let x = -CREST_STEP_PX; x <= canvas.width + CREST_STEP_PX; x += CREST_STEP_PX) {
-      const stripX = scrollX + x;
-      const u = (((stripX % w) + w) % w);
+      const stripX = viewScroll + x;
+      const u = stripSampleX(strip, stripX);
       const yR = ridgeYSmooth(strip.ridge, u) * scale;
       const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever, colW) * terrainEnergy;
       const lift = (isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
@@ -5959,11 +6010,10 @@ export class BiomeManager {
     if (strength <= 0) return;
     const r = strip.ridge;
     if (!r) return;
-    const w = strip.width;
     const pts = [];
     let edgeMax = yOff;
     for (let x = 0; x <= canvas.width; x += CREST_STEP_PX) {
-      const u = (((scrollX + x) % w) + w) % w;
+      const u = stripSampleX(strip, scrollX + x);
       const y = yOff + Math.max(0, ridgeYAt(strip, u));
       pts.push({ x, y });
       if (y > edgeMax) edgeMax = y;
@@ -6294,13 +6344,15 @@ export class BiomeManager {
   _drawShimmered(ctx, canvas, strip, scrollX, yOff = 0) {
     const w = strip.width, h = strip.height;
     const baseY = canvas.height - h + yOff;
-    let x0 = -(((scrollX % w) + w) % w);
+    let x0 = stripOriginX(strip, scrollX, canvas.width);
     const step = 6;
+    const once = isTerrainStrip(strip);
     for (let sx = x0; sx < canvas.width; sx += w) {
       for (let row = 0; row < h; row += step) {
         const offset = 2 * Math.sin(row / 24 + this.tSec * 4);
         ctx.drawImage(strip, 0, row, w, step, sx + offset, baseY + row, w, step);
       }
+      if (once) break;
     }
   }
 
