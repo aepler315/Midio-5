@@ -68,6 +68,10 @@ export function resampleHeights(src, n) {
 /** Screen-space crest from normalized heights. `preserveScale` skips the
  *  per-strip refit that pulls every tile's tallest sample up to the same
  *  headroom line. */
+// Alpine strips are drawn a little taller than the authored amplitude.
+// Terrain checks have to use the same gain or they measure a different crest.
+export const ALPINE_AMP_GAIN = 1.12;
+
 export function layoutRidgeYs(heights, {
   height, footY, hanging, amplitude, profile, preserveScale,
 }) {
@@ -669,7 +673,7 @@ export function generateSilhouette({
   });
 
   const hanging = anchor === 'ceiling';
-  const amp = profile === 'alpine' ? amplitude * 1.12 : amplitude;
+  const amp = profile === 'alpine' ? amplitude * ALPINE_AMP_GAIN : amplitude;
   const footY = hanging ? 0 : height * baseline;
   const { ridgeYs, ampFitted } = layoutRidgeYs(heights, {
     height, baseline, amplitude: amp, profile, anchor, preserveScale, footY, hanging,

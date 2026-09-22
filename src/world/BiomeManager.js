@@ -38,6 +38,7 @@ import {
 } from './GeoCrest.js';
 import { profileUnits } from './terrain/TerrainProfile.js';
 import { ridgeDepth, terrainScrollPx } from './terrain/ProfileTravel.js';
+import { TERRAIN_STRIP_WIDTH } from './terrain/StripRead.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
 import { strataBeds } from './RockStrata.js';
 import {
@@ -116,9 +117,6 @@ import { blendSections, medianBeatSec, sectionIndexAt } from './BiomeSchedule.js
 export { medianBeatSec } from './BiomeSchedule.js';
 
 const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
-// One south-to-north pass of a scanned range. The song travels this strip;
-// it is not a tile.
-const TERRAIN_STRIP_WIDTH = 8192;
 // Star catalogue spans down to the sea horizon, not the whole frame. An
 // earlier cut generated only over the top 78% so stars "behind" the
 // mountains were not wasted — but valleys, shorter biomes, and the city
