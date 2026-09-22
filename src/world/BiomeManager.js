@@ -37,6 +37,7 @@ import {
   ridgeYSmooth, danceOffsetSmooth, danceScaleSmooth, danceScaleRamp, assignBandFeatures, geoCrestOffset,
 } from './GeoCrest.js';
 import { profileUnits } from './terrain/TerrainProfile.js';
+import { ridgeDepth, terrainScrollPx } from './terrain/ProfileTravel.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
 import { strataBeds } from './RockStrata.js';
 import {
@@ -115,6 +116,9 @@ import { blendSections, medianBeatSec, sectionIndexAt } from './BiomeSchedule.js
 export { medianBeatSec } from './BiomeSchedule.js';
 
 const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.00, L7: 1.20 };
+// One south-to-north pass of a scanned range. The song travels this strip;
+// it is not a tile.
+const TERRAIN_STRIP_WIDTH = 8192;
 // Star catalogue spans down to the sea horizon, not the whole frame. An
 // earlier cut generated only over the top 78% so stars "behind" the
 // mountains were not wasted — but valleys, shorter biomes, and the city
@@ -1516,10 +1520,11 @@ export class BiomeManager {
         terrainMods: terrainModsForLayer(terrainMods, bake),
         timeline: this._layerTimeline(layerKey),
         edgeLight: el,
-        // One pass of the range, wide enough that the far parallax does not
-        // finish it in a short song. The whole profile is on this strip, so
-        // the headroom fit is one scale for all of it, not a per-window stretch.
-        width: terrain ? 8192 : undefined,
+        // One south-to-north pass. Where the view opens, and how fast it
+        // moves, is the song's (see _terrainScroll), not this width.
+        // The whole profile is on this strip, so the headroom fit is one
+        // scale for all of it, not a per-window stretch.
+        width: terrain ? TERRAIN_STRIP_WIDTH : undefined,
         sourceHeights: terrain ? profileUnits(terrain) : null,
         preserveScale: false,
       });
@@ -2252,9 +2257,11 @@ export class BiomeManager {
     // The Unraveling: each layer's scroll ratio drifts apart from the rest
     // as the world delaminates -- nearer layers race ahead more than far
     // ones (the ratio itself is the depth proxy, so no separate table).
-    const scrollX0 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L2, this.unravel);
+    // Scanned L2 and L4 keep that depth, but the song chooses their station
+    // and their speed. L3 has no profile here, so it stays on worldX.
+    const scrollX0 = this._terrainScroll('L2', worldX);
     const scrollX1 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L3, this.unravel);
-    const scrollX2 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L4, this.unravel);
+    const scrollX2 = this._terrainScroll('L4', worldX);
     const scrollX3 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L5, this.unravel);
     // A biome's silhouette is one fixed authored color; the sky behind it
     // pulls toward near-black at night (see _drawSky's nightPull). On a
@@ -5029,18 +5036,45 @@ export class BiomeManager {
     return env;
   }
 
+  /** Scroll for one range. A procedural layer keeps world parallax.
+   *  A scanned profile does not: the song picks the station it opens on
+   *  and the speed it travels, instead of the south end at L2's fixed
+   *  rate. The nearer scanned range still leads by its depth ratio.
+   *  L3 has no profile on this tile, so it stays on the parallax clock. */
+  _terrainScroll(layerKey, worldX) {
+    if (!this.terrainProfiles?.[layerKey]) {
+      return worldX * CodaDirector.delaminateRatio(LAYER_RATIOS[layerKey], this.unravel);
+    }
+    return terrainScrollPx({
+      tSec: this.tSec,
+      curves: this.energyCurves,
+      durationMs: this.durationMs,
+      stripWidth: this._terrainStripWidth(layerKey),
+      reducedFlash: !!this.reducedFlash,
+      response: this.world?.response,
+      depth: ridgeDepth(LAYER_RATIOS[layerKey], LAYER_RATIOS.L2, this.unravel || 0),
+    });
+  }
+
+  _terrainStripWidth(layerKey) {
+    const name = this.currentBlend?.from || this.profiles?.[0]?.name;
+    const width = name ? this.strips.get(name)?.[layerKey]?.width : 0;
+    return width > 0 ? width : TERRAIN_STRIP_WIDTH;
+  }
+
   /** How heaved the furthest range is right now at one screen column, 0..1
    *  (see MountainChoreo.ridgeSwell01). Midio's jump gate rides this, so it
    *  is read from the sim rather than from a draw pass -- it deliberately
    *  re-derives the same strip-space column position _drawDancingStrip uses
-   *  (worldX through the L2 parallax ratio, delamination included) so the
-   *  number describes the range the player is actually looking at.
+   *  (song travel on a scanned L2, otherwise worldX through the L2 parallax
+   *  ratio, delamination included) so the number describes the range the
+   *  player is actually looking at.
    *  @param {number} screenX the column to read, in stage space */
   farRidgeSwell01(screenX = 0) {
     const cfg = DANCE_LAYERS[FAR_DANCE_LAYER];
     if (!cfg) return 0;
     const kick = ridgeKickEnv(this.tSec * 1000 - this._danceKickMs - cfg.delaySec * 1000) * this._danceKickAmp;
-    const scrollX = this._danceWorldX * CodaDirector.delaminateRatio(LAYER_RATIOS[FAR_DANCE_LAYER], this.unravel);
+    const scrollX = this._terrainScroll(FAR_DANCE_LAYER, this._danceWorldX);
     return ridgeSwell01(scrollX + screenX, this.tSec, cfg, kick);
   }
 
