@@ -39,7 +39,7 @@ function stations(seed, count = 12) {
       }
       v.constellations.push({ points, hue: 200, bornMs: now });
     }
-    now += 7000;
+    now += 16000;
     v.pruneConstellations(now);
   }
   return out;
@@ -87,7 +87,7 @@ test('stations stay inside the safe band at every stage size', () => {
   for (const seed of [1, 315]) {
     for (const s of stations(seed)) {
       assert.ok(s.x > 0.04 && s.x < 0.96, `station x ${s.x.toFixed(2)} escaped the frame margin`);
-      assert.ok(s.y >= 0.08 && s.y <= 0.32, `station y ${s.y.toFixed(2)} escaped the safe vertical band`);
+      assert.ok(s.y >= 0.12 && s.y <= 0.50, `station y ${s.y.toFixed(2)} escaped the safe vertical band`);
     }
   }
 });

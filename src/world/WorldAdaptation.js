@@ -16,7 +16,7 @@ import {
   RIDGE_TERRAIN_KEYS, CITY_TERRAIN_KEYS, ROLLING_TERRAIN_KEYS,
 } from './dna/ShapeGrammar.js';
 import { castBiomes } from './Dramaturgy.js';
-import { identityFor, stockPaletteMixFor } from './WorldIdentity.js';
+import { identityFor, stockPaletteMixFor, constrainPalette } from './WorldIdentity.js';
 
 export const ADAPT_VERSION = 1;
 
@@ -280,7 +280,7 @@ export function adaptWorld(baseWorld, songProfile, data = null) {
             const toward = Array.isArray(base.palettes)
               ? base.palettes[i % base.palettes.length]
               : stock;
-            return materializePalette(p, toward || stock, stockPaletteMixFor(identity, caps.materialMix));
+            return constrainPalette(identity, materializePalette(p, toward || stock, stockPaletteMixFor(identity, caps.materialMix)), toward || stock);
           });
           temperature = synth.temperature;
           cast = (energies, seed) => castBiomes(energies, seed, temperature);

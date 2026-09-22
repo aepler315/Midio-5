@@ -1,10 +1,9 @@
+import { drawStaticStrip, drawGroundBase, drawParticleBlend } from '../WorldDraw.js';
 // The Foundry draw path. Industrial: smokestacks, pour glow, molten
 // rivers of light. Haze is smoke, not atmosphere. The edge-light on
 // every layer is furnace glow bleeding through silhouette gaps.
-import { drawTiledStrip } from '../SilhouetteGenerator.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
 import { ensureContrast } from '../../render/VisualStyle.js';
-import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
 import { hexToRgb } from '../../utils/color.js';
@@ -14,16 +13,9 @@ import { furnaceHeat, pourGlow, operationIndex, machineStroke, millActivity, bou
 const LAYER_RATIOS = { L2: 0.05, L3: 0.12, L4: 0.26, L5: 0.58 };
 const Y_OFF = { L2: 2, L3: 14, L4: 36, L5: 66 };
 
-function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
-  if (!strip) return;
-  ctx.save();
-  if (alpha < 0.999) ctx.globalAlpha = alpha;
-  drawTiledStrip(ctx, strip, scrollX, canvas.width, canvas.height, yOff);
-  ctx.restore();
-}
 
 export function drawFoundryWorld(mgr, frame) {
-  const { ctx, canvas, worldX, originX, A, B, t, dn, particleMul, groundView } = frame;
+  const { ctx, canvas, worldX, A, B, t, dn } = frame;
   const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const heat = furnaceHeat(music.energy);
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
@@ -105,12 +97,10 @@ export function drawFoundryWorld(mgr, frame) {
     // -- that half is alpine-specific. The shading half is not.
     if (stripsA) {
       const a = to === from ? 1 : 1 - t;
-      blit(ctx, canvas, stripsA[key], sx, yOff, a);
-      mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
+      drawStaticStrip(mgr, ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1);
     }
     if (to !== from && t > 0.02 && stripsB) {
-      blit(ctx, canvas, stripsB[key], sx, yOff, t);
-      mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
+      drawStaticStrip(mgr, ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1);
     }
   };
 
@@ -120,31 +110,17 @@ export function drawFoundryWorld(mgr, frame) {
   drawSmoke(0.52);
 
   // Particles: embers, sparks, fog.
-  const openA = mgr.openingGain;
-  const mandalaColor = mgr._rotated(mgr.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-  const rimOn = mgr._perf ? mgr._perf.rimLightEnabled : true;
-  const particleLights = rimOn
-    ? [mgr.light, ...groundGlowLights(mgr.groundField ? mgr.groundField.activeGlowScreenLights(worldX, originX) : [], mandalaColor)].filter(Boolean)
-    : null;
-  ctx.save();
-  if (openA < 0.999) ctx.globalAlpha = openA;
-  mgr.fields.get(from)?.draw(ctx, particleMul * 1.2, mandalaColor, unravel, particleLights);
-  ctx.restore();
-  if (to !== from && t > 0.02) {
-    ctx.save(); ctx.globalAlpha = t * openA;
-    mgr.fields.get(to)?.draw(ctx, particleMul * 1.2, mandalaColor, unravel, particleLights);
-    ctx.restore();
-  }
+  drawParticleBlend(mgr, frame, 1.2);
 
   drawRange('L4');
   drawSmoke(0.62);
   drawRange('L5');
 
   // Ground
-  const groundCanvas = groundView ? groundView.stage : canvas;
-  if (groundView) groundView.apply();
-  mgr._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
-  mgr._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
+  const groundCanvas = drawGroundBase(mgr, frame, tint);
+  // Assemblies share the fixed ground transform, so camera pull-back cannot
+  // bury furnace mouths under the independently aligned ground pass.
+  mgr._drawSignature(frame, music);
   drawMills(ctx, groundCanvas, worldX, mgr, music, heat, pour, operation);
   mgr._drawFlood(ctx, groundCanvas);
   mgr._drawTransitionOverlays(ctx, groundCanvas, B);
@@ -170,6 +146,42 @@ function drawMills(ctx, canvas, worldX, mgr, music, heat, pour, operation) {
     ctx.beginPath();
     ctx.arc(x, gy - 54 + drop, 5, 0, Math.PI * 2);
     ctx.fill();
+  }
+  ctx.restore();
+}
+
+export function drawMachinery(mgr, frame, music) {
+  const { ctx, A, worldX } = frame;
+  const canvas = frame.groundView ? frame.groundView.stage : frame.canvas;
+  const w = canvas.width, h = canvas.height;
+  const floor = (mgr.groundField ? mgr.groundField.heightAt(worldX) : mgr.groundY) - 4;
+  const heat = furnaceHeat(music.energy);
+  const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
+  const pour = pourGlow({ heat, reveal: music.reveal, lift, reducedFlash: mgr.reducedFlash });
+  const operation = operationIndex(mgr._lastSectionIdx);
+  ctx.save();
+  for (let machine = 0; machine < 3; machine++) {
+    const x = w * (0.22 + machine * 0.29), half = w * 0.075, top = floor - h * (0.31 + machine % 2 * 0.05);
+    const stroke = machineStroke({ accent: music.accent, group: music.group, operation, machine });
+    const drop = mgr.reducedFlash ? 0 : stroke * h * 0.035;
+    ctx.fillStyle = A.silhouette;
+    ctx.beginPath(); ctx.rect(x - half, top, half * 2, 15);
+    ctx.rect(x - half, top, 13, floor - top); ctx.rect(x + half - 13, top, 13, floor - top);
+    ctx.rect(x - half * 0.7, floor - 24, half * 1.4, 24); ctx.fill();
+    ctx.strokeStyle = '#665448'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x - half, floor); ctx.lineTo(x + half, top);
+    ctx.moveTo(x + half, floor); ctx.lineTo(x - half, top); ctx.stroke();
+    // Visible ram, piston head and furnace mouth form one assembly.
+    ctx.fillStyle = '#766759'; ctx.fillRect(x - 5, top + 15, 10, h * 0.12 + drop);
+    ctx.fillRect(x - 25, top + h * 0.12 + drop, 50, 14);
+    ctx.fillStyle = '#e68139';
+    ctx.globalAlpha = capFlashAlpha(0.28 + heat * 0.32, mgr.reducedFlash);
+    ctx.fillRect(x - half * 0.48, floor - 22, half * 0.96, 18);
+    ctx.globalAlpha = capFlashAlpha(0.12 + pour * 0.4, mgr.reducedFlash);
+    ctx.beginPath(); ctx.moveTo(x + half * 0.46, floor - 21);
+    ctx.lineTo(x + half * 0.62, floor - 21); ctx.lineTo(x + half * 0.88, floor + 10);
+    ctx.lineTo(x + half * 0.72, floor + 10); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
   }
   ctx.restore();
 }

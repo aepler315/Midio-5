@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DANCE_LAYERS, danceOffset, kickEnv, spectrumBars,
+  DANCE_LAYERS, danceOffset, kickEnv, planeKick, planeKickDelayMs, kickBloom, spectrumBars,
   mountainStripDrawHeight, MOUNTAIN_SKY_HEADROOM_FRAC,
   massifDrawHeight, MASSIF_SKY_HEADROOM_FRAC,
   massifRidgeHeight01, massifRidgeJagPx, massifClearing01, MASSIF_CLEARING_PERIOD_SEC,
@@ -67,6 +67,30 @@ test('the furthest range is nearly still even at full fever -- no vibrating hori
     }
   }
   assert.ok(peak < 14, `far range peak excursion ${peak.toFixed(1)}px should stay subtle even at full fever`);
+});
+
+test('depth planes share the mountain kick clock', () => {
+  // Far vignettes are drawn at L2, so they crest with the far ridge.
+  // Ocean and the foreground used to wait 250ms and 60ms on their own,
+  // which put those hits between beats. They now crest with the near hills.
+  assert.equal(planeKickDelayMs('vignette'), DANCE_LAYERS.L2.delaySec * 1000);
+  assert.equal(planeKickDelayMs('ocean'), DANCE_LAYERS.L5.delaySec * 1000);
+  assert.equal(planeKickDelayMs('near'), DANCE_LAYERS.L5.delaySec * 1000);
+  assert.equal(planeKickDelayMs('L4'), DANCE_LAYERS.L4.delaySec * 1000);
+  // 60ms after the hit: the far skyline is mid-bounce, the near plane is not.
+  assert.ok(planeKick(60, 0, 'vignette', 1) > 0.5);
+  assert.equal(planeKick(60, 0, 'ocean', 1), 0);
+  assert.equal(planeKick(60, 0, 'near', 1), 0);
+  // A full beat later the near plane has crested and started to settle.
+  const nearDelay = planeKickDelayMs('near');
+  assert.ok(planeKick(nearDelay + 40, 0, 'near', 1) > 0.9);
+});
+
+test('kickBloom is a glow on the hit and nothing at rest', () => {
+  assert.equal(kickBloom(0), 0);
+  assert.equal(kickBloom(-1), 0);
+  assert.ok(kickBloom(1) > 0.3 && kickBloom(1) < 0.6);
+  assert.ok(kickBloom(0.5) < kickBloom(1));
 });
 
 test('kickEnv snaps up fast and settles smoothly', () => {

@@ -1,8 +1,8 @@
+import { drawStaticStrip, drawGroundBase } from '../WorldDraw.js';
 // Far Side draw path. An airless body: no haze, no aerial perspective,
 // no weather, no atmosphere effects. Distance carried by parallax rate
 // and contrast only. The sky is black and full of stars at noon.
 // The primary (a gas giant) occupies a quarter of the frame.
-import { drawTiledStrip } from '../SilhouetteGenerator.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
 import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
@@ -15,13 +15,6 @@ import { identityAllows } from '../WorldIdentity.js';
 const LAYER_RATIOS = { L2: 0.04, L3: 0.10, L4: 0.22, L5: 0.50 };
 const Y_OFF = { L2: 6, L3: 18, L4: 40, L5: 68 };
 
-function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
-  if (!strip) return;
-  ctx.save();
-  if (alpha < 0.999) ctx.globalAlpha = alpha;
-  drawTiledStrip(ctx, strip, scrollX, canvas.width, canvas.height, yOff);
-  ctx.restore();
-}
 
 // The hero object: a genuinely large, banded, ringed primary — not the
 // generic moon renderer at a bigger number. "Airless, no haze, no weather"
@@ -86,7 +79,7 @@ function drawPrimary(mgr, ctx, canvas, cyFrac, cxFrac, alpha, color, haloColor, 
 }
 
 export function drawFarsideWorld(mgr, frame) {
-  const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
+  const { ctx, canvas, worldX, A, B, t, dn, phenomenaFull, particleMul, skyVoyage } = frame;
   const identity = mgr.world;
   const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
@@ -160,12 +153,10 @@ export function drawFarsideWorld(mgr, frame) {
     // -- that half is alpine-specific. The shading half is not.
     if (stripsA) {
       const a = to === from ? 1 : 1 - t;
-      blit(ctx, canvas, stripsA[key], sx, yOff, a);
-      mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
+      drawStaticStrip(mgr, ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1);
     }
     if (to !== from && t > 0.02 && stripsB) {
-      blit(ctx, canvas, stripsB[key], sx, yOff, t);
-      mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
+      drawStaticStrip(mgr, ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1);
     }
   };
 
@@ -192,10 +183,7 @@ export function drawFarsideWorld(mgr, frame) {
   drawRange('L5');
 
   // Ground
-  const groundCanvas = groundView ? groundView.stage : canvas;
-  if (groundView) groundView.apply();
-  mgr._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
-  mgr._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
+  const groundCanvas = drawGroundBase(mgr, frame, tint);
   drawSurfaceTraces(ctx, groundCanvas, worldX, mgr, music);
   mgr._drawFlood(ctx, groundCanvas);
   mgr._drawTransitionOverlays(ctx, groundCanvas, B);

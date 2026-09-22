@@ -1,10 +1,9 @@
+import { drawStaticStrip, drawGroundBase, drawParticleBlend } from '../WorldDraw.js';
 // Redline draw path. A desert highway that only exists at speed.
 // Flat horizon, heat shimmer, neon signage. The parallax layers are
 // road infrastructure — gantries, guardrails, billboards — not mountains.
-import { drawTiledStrip } from '../SilhouetteGenerator.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
 import { ensureContrast, styleDials } from '../../render/VisualStyle.js';
-import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
 import { hexToRgb } from '../../utils/color.js';
@@ -15,16 +14,9 @@ import { identityAllows } from '../WorldIdentity.js';
 const LAYER_RATIOS = { L2: 0.06, L3: 0.14, L4: 0.32, L5: 0.70 };
 const Y_OFF = { L2: 4, L3: 14, L4: 34, L5: 64 };
 
-function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
-  if (!strip) return;
-  ctx.save();
-  if (alpha < 0.999) ctx.globalAlpha = alpha;
-  drawTiledStrip(ctx, strip, scrollX, canvas.width, canvas.height, yOff);
-  ctx.restore();
-}
 
 export function drawRedlineWorld(mgr, frame) {
-  const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView, skyVoyage } = frame;
+  const { ctx, canvas, worldX, A, B, t, dn, phenomenaFull, skyVoyage } = frame;
   const identity = mgr.world;
   const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
@@ -98,12 +90,10 @@ export function drawRedlineWorld(mgr, frame) {
     // -- that half is alpine-specific. The shading half is not.
     if (stripsA) {
       const a = to === from ? 1 : 1 - t;
-      blit(ctx, canvas, stripsA[key], sx, yOff, a);
-      mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
+      drawStaticStrip(mgr, ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1);
     }
     if (to !== from && t > 0.02 && stripsB) {
-      blit(ctx, canvas, stripsB[key], sx, yOff, t);
-      mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
+      drawStaticStrip(mgr, ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1);
     }
   };
 
@@ -131,31 +121,14 @@ export function drawRedlineWorld(mgr, frame) {
   if (passage.horizon > 0.01) drawHorizonWash(ctx, canvas, passage.horizon, mgr.reducedFlash);
 
   // Particles: wind streaks, digital rain, flaresparks.
-  const openA = mgr.openingGain;
-  const mandalaColor = mgr._rotated(mgr.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-  const rimOn = mgr._perf ? mgr._perf.rimLightEnabled : true;
-  const particleLights = rimOn
-    ? [mgr.light, ...groundGlowLights(mgr.groundField ? mgr.groundField.activeGlowScreenLights(worldX, originX) : [], mandalaColor)].filter(Boolean)
-    : null;
-  ctx.save();
-  if (openA < 0.999) ctx.globalAlpha = openA;
-  mgr.fields.get(from)?.draw(ctx, particleMul, mandalaColor, unravel, particleLights);
-  ctx.restore();
-  if (to !== from && t > 0.02) {
-    ctx.save(); ctx.globalAlpha = t * openA;
-    mgr.fields.get(to)?.draw(ctx, particleMul, mandalaColor, unravel, particleLights);
-    ctx.restore();
-  }
+  drawParticleBlend(mgr, frame, 1);
 
   drawRange('L4');
   drawRange('L5');
 
   // Ground
-  const groundCanvas = groundView ? groundView.stage : canvas;
-  if (groundView) groundView.apply();
-  mgr._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
-  mgr._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
-  drawLaneMarkers(ctx, groundCanvas, worldX, mgr);
+  const groundCanvas = drawGroundBase(mgr, frame, tint);
+  mgr._drawSignature(frame, music);
   drawReflectors(ctx, groundCanvas, worldX, mgr, music);
   mgr._drawFlood(ctx, groundCanvas);
   mgr._drawTransitionOverlays(ctx, groundCanvas, B);
@@ -189,23 +162,6 @@ function drawHorizonWash(ctx, canvas, wash, reducedFlash) {
   ctx.restore();
 }
 
-function drawLaneMarkers(ctx, canvas, worldX, mgr) {
-  const gy = mgr.groundField ? mgr.groundField.heightAt(worldX) : mgr.groundY;
-  const spacing = 56;
-  const travel = cruiseTravel(mgr.tSec, mgr.energyCurves, mgr.reducedFlash, mgr.world?.response);
-  const phase = ((travel - worldX * 0.55) % spacing + spacing) % spacing;
-  ctx.save();
-  ctx.fillStyle = 'rgba(255, 230, 160, 0.62)';
-  for (let x = -phase; x < canvas.width + 24; x += spacing) {
-    ctx.fillRect(x, gy + 6, 22, 3);
-  }
-  ctx.globalAlpha = 0.38;
-  for (let x = -phase + spacing / 2; x < canvas.width + 24; x += spacing) {
-    ctx.fillRect(x, gy + 18, 16, 2);
-  }
-  ctx.restore();
-}
-
 function drawReflectors(ctx, canvas, worldX, mgr, music) {
   const spacing = 90;
   const phase = ((worldX * 0.8) % spacing + spacing) % spacing;
@@ -219,6 +175,43 @@ function drawReflectors(ctx, canvas, worldX, mgr, music) {
     ctx.fillStyle = i % 2 ? '#ff7a4a' : '#ffe08a';
     ctx.fillRect(x, gy - 14, 3, 8);
     ctx.fillRect(x, gy - 4, 3, 3);
+  }
+  ctx.restore();
+}
+
+export function drawRoad(mgr, frame, music) {
+  const { ctx, worldX } = frame;
+  const canvas = frame.groundView ? frame.groundView.stage : frame.canvas;
+  const w = canvas.width, h = canvas.height;
+  const gy = mgr.groundField ? mgr.groundField.heightAt(worldX) : mgr.groundY;
+  const vx = w * 0.62, vy = gy - h * 0.20;
+  const bottom = h;
+  ctx.save();
+  ctx.fillStyle = '#151923';
+  ctx.beginPath(); ctx.moveTo(vx - 5, vy); ctx.lineTo(vx + 5, vy);
+  ctx.lineTo(w * 2.2, bottom); ctx.lineTo(w * -1.2, bottom); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#987c68'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(vx - 5, vy); ctx.lineTo(w * -1.2, bottom);
+  ctx.moveTo(vx + 5, vy); ctx.lineTo(w * 2.2, bottom); ctx.stroke();
+  const travel = cruiseTravel(mgr.tSec, mgr.energyCurves, mgr.reducedFlash, mgr.world?.response);
+  const phase = ((travel % 90) + 90) % 90 / 90;
+  ctx.fillStyle = '#c8b58a';
+  for (let lane = 0; lane < 2; lane++) {
+    for (let i = 0; i < 10; i++) {
+      const near = ((i + phase) / 10) ** 2;
+      const far = Math.max(0, (i + phase - 0.35) / 10) ** 2;
+      const dx = (lane ? 0.52 : -0.68) * w;
+      ctx.beginPath(); ctx.moveTo(vx + dx * far, vy + (bottom - vy) * far);
+      ctx.lineTo(vx + dx * near, vy + (bottom - vy) * near);
+      ctx.lineTo(vx + dx * near + 2 + near * 3, vy + (bottom - vy) * near);
+      ctx.lineTo(vx + dx * far + 1, vy + (bottom - vy) * far); ctx.closePath(); ctx.fill();
+    }
+  }
+  ctx.strokeStyle = frame.A.edgeLight || '#dc9362';
+  ctx.globalAlpha = capFlashAlpha(0.22 + music.energy * 0.22, mgr.reducedFlash);
+  for (let side = -1; side <= 1; side += 2) {
+    ctx.beginPath(); ctx.moveTo(vx, vy - 8);
+    ctx.lineTo(vx + side * w * 1.65, bottom - 12); ctx.stroke();
   }
   ctx.restore();
 }

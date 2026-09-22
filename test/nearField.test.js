@@ -203,3 +203,47 @@ test('every biome has a real silhouette color to darken (no crash on an unknown 
     assert.doesNotThrow(() => nf._colorFor(b.name));
   }
 });
+
+test('world foreground geometry is independent of a generated landmark key', () => {
+  for (const kind of ['alpine', 'city', 'airless', 'abyssal', 'strip', 'foundry', 'overgrowth', 'nave']) {
+    const a = new NearField(555, { id: 'custom', kind });
+    const b = new NearField(555, { id: 'custom', kind });
+    const shapesA = [], shapesB = [];
+    for (let i = 1; i < 100; i++) {
+      const da = a._sector(i, 'DUNE');
+      const db = b._sector(i, 'GEODE');
+      if (da) shapesA.push({ kind: da.kind, hang: da.hang, scale: da.scale, painterIdx: da.painterIdx });
+      if (db) shapesB.push({ kind: db.kind, hang: db.hang, scale: db.scale, painterIdx: db.painterIdx });
+    }
+    assert.ok(shapesA.length > 0);
+    assert.ok(shapesA.every(d => d.kind === kind), `${kind} descriptors retain physical identity`);
+    assert.deepEqual(shapesA, shapesB);
+    if (!['overgrowth', 'nave', 'foundry'].includes(kind)) assert.ok(shapesA.every(d => !d.hang));
+  }
+});
+
+test('foreground occupancy is independent of seek and query order', () => {
+  const forward = new NearField(1), backward = new NearField(1);
+  for (let i = 1; i <= 100; i++) forward._sector(i, BIOME);
+  for (let i = 100; i >= 1; i--) backward._sector(i, BIOME);
+  for (let i = 1; i <= 100; i++) {
+    assert.deepEqual(backward._sector(i, BIOME), forward._sector(i, BIOME));
+    assert.deepEqual(new NearField(1)._sector(i, BIOME), forward._sector(i, BIOME));
+    assert.ok(!(forward._sector(i, BIOME) && forward._sector(i + 1, BIOME)));
+  }
+});
+
+test('world props stay within bounded coverage and stop swaying under reduced motion', () => {
+  for (const kind of ['alpine', 'city', 'airless', 'abyssal', 'strip', 'foundry', 'overgrowth', 'nave']) {
+    const nf = new NearField(315, { kind });
+    let d;
+    for (let i = 1; !d && i < 100; i++) d = nf._sector(i, BIOME);
+    const transforms = [];
+    const ctx = { ...recordingCtx(), rect() {}, scale: (x, y) => transforms.push([x, y]) };
+    nf._drawOne(ctx, { width: 1280, height: 720 }, d, 640, { tSec: 1, reducedMotion: true, biomeName: BIOME });
+    const [sx, sy] = transforms[0];
+    assert.ok(Math.abs(sx) * 100 <= 1280 * 0.09);
+    assert.ok(Math.abs(sy) * 100 <= 720 * nf.identity.foreground.maxHeight);
+    assert.equal(ctx.calls.translate[0][0], 640);
+  }
+});

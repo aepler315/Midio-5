@@ -54,7 +54,11 @@ export const REGION = { xMin: 0.03, xMax: 0.97, yMin: 0.04, yMax: OCEAN_HORIZON_
 const FIGURE_DOTS_MIN = 5;
 const FIGURE_DOTS_MAX = 8;
 const EDGE_GROW_MS = 250;
-const STALL_EDGE_MS = 1500;
+export const STALL_EDGE_MS = 1500;
+// Last resort when neither a melody note nor a kick arrives. The ordinary
+// stall used to reveal the next edge on this timer alone, which drew a
+// bright line on a clock the music was not on. A kick claims it first.
+const STALL_SAFETY_MS = 8000;
 const HOLD_MS = 5000;
 const FADE_MS = 3000;
 const MAX_ACTIVE_FIGURES = 3;
@@ -263,8 +267,21 @@ export class ConstellationWeaver {
     }
   }
 
-  onKick(vel) {
+  onKick(vel, nowMs = this._lastNowMs) {
     this.pulse = Math.max(this.pulse, clamp01(vel));
+    this._advanceStalledEdge(nowMs);
+  }
+
+  // A melody rest used to grow the next edge 1.5s later, wherever that
+  // fell in the bar. Drums are still playing in that rest far more often
+  // than the whole band is silent, so the edge waits for the next kick
+  // and lands on it. The safety in update() only fires if no kick comes.
+  _advanceStalledEdge(nowMs) {
+    const fig = this.building;
+    if (!fig || fig.phase !== 'connecting') return;
+    if (!(nowMs - fig.edgeStartMs > STALL_EDGE_MS)) return;
+    this._revealNextEdge(fig, nowMs);
+    if (fig.edgeRevealedCount >= fig.targetCount - 1) this._commitBuilding(nowMs);
   }
 
   _revealNextEdge(fig, nowMs) {
@@ -333,9 +350,8 @@ export class ConstellationWeaver {
     this.pulse *= Math.exp(-dtSec / PULSE_TAU_SEC);
 
     if (this.building && this.building.phase === 'connecting'
-        && nowMs - this.building.edgeStartMs > STALL_EDGE_MS) {
-      this._revealNextEdge(this.building, nowMs);
-      if (this.building.edgeRevealedCount >= this.building.targetCount - 1) this._commitBuilding(nowMs);
+        && nowMs - this.building.edgeStartMs > STALL_SAFETY_MS) {
+      this._advanceStalledEdge(nowMs);
     }
 
     for (const f of this.figures) {

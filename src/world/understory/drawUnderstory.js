@@ -1,11 +1,10 @@
+import { drawStaticStrip, drawGroundBase, drawParticleBlend } from '../WorldDraw.js';
 // Understory draw path. A dense forest floor where light filters through
 // a living canopy. God rays and dappled light replace haze. The parallax
 // layers are trunk columns and undergrowth, not ridges. Spores, pollen,
 // and fireflies instead of weather.
-import { drawTiledStrip } from '../SilhouetteGenerator.js';
 import { CodaDirector } from '../../sim/CodaDirector.js';
 import { ensureContrast } from '../../render/VisualStyle.js';
-import { groundGlowLights } from '../../render/LightField.js';
 import { celestialYFracFor, celestialXFracFor, horizonFade } from '../DayNight.js';
 import { capFlashAlpha, flashCompositeOp } from '../../ui/Accessibility.js';
 import { sampleManagerMusic } from '../WorldMusic.js';
@@ -14,16 +13,9 @@ import { canopyGrowth, shaftOpen, sporeBurst, boundaryLift01 } from './Canopy.js
 const LAYER_RATIOS = { L2: 0.03, L3: 0.08, L4: 0.20, L5: 0.48 };
 const Y_OFF = { L2: 8, L3: 18, L4: 38, L5: 66 };
 
-function blit(ctx, canvas, strip, scrollX, yOff, alpha = 1) {
-  if (!strip) return;
-  ctx.save();
-  if (alpha < 0.999) ctx.globalAlpha = alpha;
-  drawTiledStrip(ctx, strip, scrollX, canvas.width, canvas.height, yOff);
-  ctx.restore();
-}
 
 export function drawUnderstoryWorld(mgr, frame) {
-  const { ctx, canvas, worldX, originX, A, B, t, dn, phenomenaFull, particleMul, groundView } = frame;
+  const { ctx, canvas, worldX, A, B, t, dn, phenomenaFull, particleMul } = frame;
   const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
   const growth = canopyGrowth({ energy: music.energy, orogeny: mgr.orogenyGrowth ?? 0 });
@@ -96,12 +88,10 @@ export function drawUnderstoryWorld(mgr, frame) {
     const sx = scroll(key);
     if (stripsA) {
       const a = to === from ? 1 : 1 - t;
-      blit(ctx, canvas, stripsA[key], sx, yOff, a);
-      mgr._drawRidgeVolume(ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
+      drawStaticStrip(mgr, ctx, canvas, stripsA[key], sx, yOff, key, a, A.terrainEnergy ?? 1);
     }
     if (to !== from && t > 0.02 && stripsB) {
-      blit(ctx, canvas, stripsB[key], sx, yOff, t);
-      mgr._drawRidgeVolume(ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1, 1, 1, { geology: false, geometry: 'static' });
+      drawStaticStrip(mgr, ctx, canvas, stripsB[key], sx, yOff, key, t, B.terrainEnergy ?? 1);
     }
   };
 
@@ -113,23 +103,10 @@ export function drawUnderstoryWorld(mgr, frame) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.restore();
   drawRange('L3');
+  mgr._drawSignature(frame, music);
 
   // Particles: pollen, spores, fireflies.
-  const openA = mgr.openingGain;
-  const mandalaColor = mgr._rotated(mgr.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-  const rimOn = mgr._perf ? mgr._perf.rimLightEnabled : true;
-  const particleLights = rimOn
-    ? [mgr.light, ...groundGlowLights(mgr.groundField ? mgr.groundField.activeGlowScreenLights(worldX, originX) : [], mandalaColor)].filter(Boolean)
-    : null;
-  ctx.save();
-  if (openA < 0.999) ctx.globalAlpha = openA;
-  mgr.fields.get(from)?.draw(ctx, particleMul * 0.8, mandalaColor, unravel, particleLights);
-  ctx.restore();
-  if (to !== from && t > 0.02) {
-    ctx.save(); ctx.globalAlpha = t * openA;
-    mgr.fields.get(to)?.draw(ctx, particleMul * 0.8, mandalaColor, unravel, particleLights);
-    ctx.restore();
-  }
+  drawParticleBlend(mgr, frame, 0.8);
 
   if (particleMul > 0) drawSpores(ctx, canvas, worldX, music, mgr.reducedFlash, particleMul);
 
@@ -137,10 +114,7 @@ export function drawUnderstoryWorld(mgr, frame) {
   drawRange('L5');
 
   // Ground
-  const groundCanvas = groundView ? groundView.stage : canvas;
-  if (groundView) groundView.apply();
-  mgr._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
-  mgr._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
+  const groundCanvas = drawGroundBase(mgr, frame, tint);
   mgr._drawFlood(ctx, groundCanvas);
   mgr._drawTransitionOverlays(ctx, groundCanvas, B);
 }
@@ -160,6 +134,45 @@ function drawSpores(ctx, canvas, worldX, music, reducedFlash, particleMul) {
       ctx.arc(x + dot * 8, y + Math.sin(dot * 2 + colony) * 6, 1.4 + burst * 1.6, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+  ctx.restore();
+}
+
+// Broad masses are retained at every quality level; fine spores remain optional.
+export function drawCanopy(mgr, { ctx, canvas, worldX, A }, music) {
+  const w = canvas.width, h = canvas.height;
+  const spacing = w / 4;
+  const phase = ((worldX * 0.08) % spacing + spacing) % spacing;
+  const sway = mgr.reducedFlash ? 0 : music.current * 5;
+  ctx.save();
+  ctx.fillStyle = A.silhouette;
+  for (let i = -1; i < 6; i++) {
+    const x = i * spacing - phase;
+    const treeIndex = i + Math.floor(worldX * 0.08 / spacing);
+    const crownY = h * (0.07 + (treeIndex % 2 ? 0.04 : 0));
+    // Roots, tapering trunk and two connected boughs.
+    ctx.beginPath();
+    ctx.moveTo(x - 38, h * 0.86);
+    ctx.bezierCurveTo(x - 12, h * 0.66, x - 20, h * 0.35, x - 14 + sway, crownY);
+    ctx.lineTo(x + 17 + sway, crownY);
+    ctx.bezierCurveTo(x + 12, h * 0.38, x + 13, h * 0.69, x + 42, h * 0.86);
+    ctx.closePath(); ctx.fill();
+    ctx.lineWidth = 18;
+    ctx.strokeStyle = A.silhouette;
+    ctx.beginPath(); ctx.moveTo(x, h * 0.4);
+    ctx.bezierCurveTo(x - 10, h * 0.26, x - spacing * 0.3, h * 0.15, x - spacing * 0.5, crownY);
+    ctx.moveTo(x + 4, h * 0.32);
+    ctx.bezierCurveTo(x + 38, h * 0.2, x + spacing * 0.38, h * 0.2, x + spacing * 0.55, crownY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(x + sway, crownY - h * 0.04, spacing * 0.69, h * 0.13, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // A narrow lit edge supports the mass without turning the sky bright.
+    ctx.strokeStyle = '#668a50'; ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.22 + music.bass * 0.12;
+    ctx.beginPath(); ctx.moveTo(x + 17, h * 0.75);
+    ctx.bezierCurveTo(x + 10, h * 0.5, x + 20, h * 0.28, x + 35, h * 0.2);
+    ctx.stroke(); ctx.globalAlpha = 1;
   }
   ctx.restore();
 }

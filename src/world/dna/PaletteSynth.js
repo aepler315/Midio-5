@@ -6,6 +6,7 @@
 // out the parallax, or clip the sRGB gamut into mud are rejected outright.
 import { clamp01, lerp, lerpHue, mulberry32 } from '../../utils/math.js';
 import { oklchToHex, hexToOklab, oklabDelta } from './OklchColor.js';
+import { constrainPalette } from '../WorldIdentity.js';
 import { FIFTHS_ORDER } from './SongDNA.js';
 import {
   buildShapeGrammar, computeTemperature, pickFx, pickParticleKind, pickCelestialKind, deriveParticleMotion,
@@ -348,7 +349,7 @@ export function synthesizePalette(dna, temperatureOverride = null) {
  *  replay. Falls back to a single entry when there's no section data. */
 export function synthesizeSectionPalettes(dna, name) {
   // `name` is the world kind (alpine, city, …). It is only a palette-id
-  // prefix here; WorldAdaptation then tints the result toward that kind's
+  // prefix and physical admission key; WorldAdaptation then tints toward its
   // stock materials so After Hours does not inherit a mountain sky.
   // castBiomes forbids picking the same name twice in a row, so a single
   // entry would strand every section after the first with no candidate.
@@ -367,7 +368,7 @@ export function synthesizeSectionPalettes(dna, name) {
     const sectionDna = { ...dna, tempoHeat: clamp01(dna.tempoHeat + (rand() - 0.5) * 0.2) };
     const { profile } = synthesizePalette(sectionDna, sectionTemp);
     const paletteName = `${name}_${label}_${i}`.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
-    palettes.push({ ...profile, name: paletteName });
+    palettes.push(constrainPalette(name, { ...profile, name: paletteName }));
     temperature[paletteName] = sectionTemp;
   });
 

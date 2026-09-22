@@ -2899,3 +2899,217 @@ html, body {
   background: transparent;
   color: inherit;
 }
+
+/* --- Load from a URL -----------------------------------------------------
+   The way in for browsers with no file chooser (see
+   src/ui/FileChooserProbe.js). It is a full-width well like .libraryHome
+   rather than a chip, because when it is showing it is the *only* way the
+   player can reach their music -- and it has to be operable on a car screen
+   with a low-precision touch panel, so every target is at least 44px tall
+   and the list is one column, never a grid. */
+.urlLoad {
+  width: 100%;
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4);
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+
+.urlLoadTitle {
+  margin: 0 0 var(--space-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* Filled in by main.js only when the probe found no chooser -- an
+   explanation nobody needs is worse than no explanation. */
+.urlLoadWhy {
+  margin: 0 0 var(--space-3);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.urlLoadWhy:empty { display: none; }
+
+.urlLoadForm { margin: 0; }
+
+.urlLoadLabel {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+}
+
+.urlLoadRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.urlLoadInput {
+  flex: 1 1 220px;
+  min-width: 0;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  /* An address is read character by character when it goes wrong, and a
+     proportional font makes 1/l and 0/O the same shape. */
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+}
+.urlLoadInput:focus {
+  outline: none;
+  border-color: var(--spec-cool);
+}
+
+.urlLoad .chipbtn { min-height: 44px; }
+
+.urlLoadStatus {
+  margin: var(--space-2) 0 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  /* A CORS or mixed-content explanation is several lines long and is the
+     whole value of the message, so it wraps rather than truncating. */
+  overflow-wrap: anywhere;
+}
+.urlLoadStatus:empty { display: none; }
+.urlLoadStatus.isError { color: var(--spec-rhythm); }
+
+.urlLoadCrumb {
+  margin: var(--space-3) 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.urlLoadList {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  /* A music folder is thousands of files; the well must not become the
+     whole page. */
+  max-height: 46vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.urlLoadItem + .urlLoadItem { margin-top: var(--space-1); }
+
+.urlLoadEntry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.urlLoadEntry:hover,
+.urlLoadEntry:focus-visible {
+  border-color: var(--spec-cool);
+  outline: none;
+}
+.urlLoadEntry .urlLoadEntryName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.urlLoadEntry .urlLoadEntryIcon {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+.urlLoadEntry[data-kind='folder'] .urlLoadEntryIcon { color: var(--spec-gold); }
+
+.urlLoadHelp {
+  margin-top: var(--space-3);
+  font-size: 0.82rem;
+  color: var(--text-tertiary);
+}
+.urlLoadHelp > summary {
+  cursor: pointer;
+  padding: var(--space-1) 0;
+}
+.urlLoadHelpBody > p { margin: var(--space-2) 0 0; line-height: 1.5; }
+.urlLoadHelpBody code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  overflow-wrap: anywhere;
+}
+
+/* The way back up out of a subfolder. Browsing does not touch history, so
+   the browser's own Back button leaves the page instead of returning to the
+   previous listing -- on a touch screen this is the only way up. */
+.urlLoadCrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.urlLoadUp {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.urlLoadUp:hover,
+.urlLoadUp:focus-visible {
+  border-color: var(--spec-cool);
+  outline: none;
+}
+.urlLoadCrumbPath {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "Show more" closes a listing's only dead end: in a flat folder there is
+   no subfolder to open, so a row past the batch size would otherwise be
+   unreachable without typing its URL by hand. It deliberately does NOT
+   carry .urlLoadEntry -- it is a control, not a row, and sharing the class
+   would make "count the entries" quietly wrong. */
+.urlLoadMore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.urlLoadMore:hover,
+.urlLoadMore:focus-visible {
+  border-color: var(--spec-cool);
+  outline: none;
+}

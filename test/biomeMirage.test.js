@@ -87,9 +87,16 @@ test('the fata morgana is wired to the real far shore it mirrors', () => {
   assert.equal(FAR_SHORE_PARALLAX, 0.012, 'mirage rides the far shore parallax, not its own crawl');
 });
 
-test('the fata morgana is shed with the rest of the heavy post-FX', () => {
+test('the fata morgana still paints when heavy post-FX is shed', () => {
   const { ctx, fills } = recordingCtx();
   const self = { ...fataMorganaThis(), _perf: { heavyPostFx: false } };
+  BiomeManager.prototype._drawFataMorgana.call(self, ctx, CANVAS, 400, PROFILE, PROFILE, 0.5);
+  assert.equal(fills.length, 3, 'the 3-stack mirage should survive the heavyPostFx perf rung');
+});
+
+test('the fata morgana fully disappears at the sine trough', () => {
+  const { ctx, fills } = recordingCtx();
+  const self = { ...fataMorganaThis(), tSec: 27.75 };
   BiomeManager.prototype._drawFataMorgana.call(self, ctx, CANVAS, 400, PROFILE, PROFILE, 0.5);
   assert.equal(fills.length, 0);
 });

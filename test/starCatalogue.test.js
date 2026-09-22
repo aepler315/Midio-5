@@ -93,45 +93,40 @@ test('subPixelDraw preserves total light (size^2 * alpha) instead of dropping or
   assert.deepEqual(passthrough, { drawSize: 2.4, drawAlpha: 0.6 });
 });
 
-test('perceptualStretch(subPixelDraw(...).drawAlpha) keeps nearly every star visible even after realistic per-frame dimming', () => {
-  // A realistic 560-star field spans this whole magnitude range; sample it
-  // densely (weighted like the real population -- most stars are faint) and
-  // confirm the correct composition order (stretch AFTER subPixelDraw)
-  // clears a real visibility floor for nearly all of them even after the
-  // draw loop's other per-frame multipliers (layer alpha, twinkle,
-  // atmospheric extinction -- none of them close to 1 for a typical star at
-  // a typical moment) are applied on top, exactly as _drawStarfield does.
-  // This is the regression that shipped and was caught live: with the
-  // wrong composition order (stretch fed INTO subPixelDraw, crushed by the
-  // area ratio all over again) a real 560-star field measured only 33
-  // visible; with the wrong order but today's higher floor it's mostly
-  // masked (the floor alone is high enough to paper over it), which is why
-  // the floor value itself is pinned by the dedicated monotonicity test
-  // below -- this test's job is just to confirm the CORRECT path works.
+test('perceptualStretch(subPixelDraw(...).drawAlpha) preserves a wide dark-sky brightness range after frame multipliers', () => {
   const VISIBLE = 0.01; // matches BiomeManager._drawStarfield's own a<0.01 skip
-  const WORST_CASE_FRAME_MULTIPLIER = 0.4 * 0.4 * 0.35; // dim ambient, twinkle trough, near-horizon extinction
-  let correctVisible = 0;
+  const FRAME_ALPHA = 0.48; // starfield ambient floor before twinkle/extinction
   const n = 500;
   const rand = mulberry32(7);
+  let sawBelowCutoff = false;
+  let sawBrightPoint = false;
   for (let i = 0; i < n; i++) {
     const mag = sampleMagnitude(rand); // real luminosity-function-weighted draw
     const brightness = magnitudeToBrightness01(mag);
     const sizePx = sizeForMagnitude(mag);
-    const correct = perceptualStretch(subPixelDraw(sizePx, brightness).drawAlpha) * WORST_CASE_FRAME_MULTIPLIER;
-    if (correct >= VISIBLE) correctVisible++;
+    const altitude01 = i / (n - 1);
+    const twDepth = twinkleAmplitude(mag, altitude01);
+    const tw = i % 2 === 0 ? (1 - twDepth) : 1;
+    const drawn = perceptualStretch(subPixelDraw(sizePx, brightness).drawAlpha)
+      * FRAME_ALPHA
+      * tw
+      * extinction01(altitude01);
+    if (drawn < VISIBLE) sawBelowCutoff = true;
+    if (drawn > 0.05) sawBrightPoint = true;
   }
-  assert.ok(correctVisible / n > 0.95, `expected >95% visible even in a pessimistic frame, got ${correctVisible}/${n}`);
+  assert.ok(sawBelowCutoff, 'expected some faint trough/horizon stars to fall below the draw cutoff');
+  assert.ok(sawBrightPoint, 'expected some brighter stars to remain well above 0.05');
 });
 
-test('perceptualStretch is monotone (preserves relative star ordering) and always returns 0.60..1', () => {
+test('perceptualStretch is monotone (preserves relative star ordering) and always returns 0.18..1', () => {
   let prev = -1;
   for (let a = 0; a <= 1; a += 0.02) {
     const s = perceptualStretch(a);
-    assert.ok(s >= 0.60 - 1e-9 && s <= 1 + 1e-9, `out of range at a=${a}: ${s}`);
+    assert.ok(s >= 0.18 - 1e-9 && s <= 1 + 1e-9, `out of range at a=${a}: ${s}`);
     assert.ok(s >= prev - 1e-9, 'must be monotone non-decreasing');
     prev = s;
   }
-  assert.ok(Math.abs(perceptualStretch(0) - 0.60) < 1e-9, 'a=0 should sit exactly at the (raised) floor');
+  assert.ok(Math.abs(perceptualStretch(0) - 0.18) < 1e-9, 'a=0 should sit exactly at the floor');
 });
 
 test('twinkle amplitude is stronger for fainter (more point-like) stars and near the horizon', () => {

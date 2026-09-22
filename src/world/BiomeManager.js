@@ -1,3 +1,4 @@
+import { identityAllows } from './WorldIdentity.js';
 // Orchestrates the 8-layer parallax contract (spec §4.1.1), biome
 // scheduling via novelty-curve segmentation (§4.1.3), and gamma-correct
 // profile crossfading (§4.1.4). Each biome is pure data (BiomeProfiles.js);
@@ -11,7 +12,7 @@ import {
   extractRidgePortrait, lithologyFromShares, landformWindow, relEnergyLadder, snowLine01For,
 } from './RidgePortrait.js';
 import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
-import { WORLD_RENDERERS } from './WorldRegistry.js';
+import { WORLD_SIGNATURES, WORLD_RENDERERS } from './WorldRegistry.js';
 import { sampleWorldMusic } from './WorldMusic.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { ParticleField } from './ParticleField.js';
@@ -26,7 +27,7 @@ import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import {
-  DANCE_LAYERS, danceOffset, columnHeight01At, ridgeBakedCrestY, kickEnv, ridgeKickEnv, spectrumBars, orogenyHeightMul,
+  DANCE_LAYERS, danceOffset, columnHeight01At, ridgeBakedCrestY, kickEnv, ridgeKickEnv, planeKick, kickBloom, spectrumBars, orogenyHeightMul,
   pullbackHeightMul,
   mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER,
   massifDrawHeight, massifRidgeHeight01, massifRidgeJagPx, massifClearing01,
@@ -111,7 +112,7 @@ import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { spectralShiftDeg, easeSpectralShift } from '../render/spectral.js';
 import { Role } from '../core/NoteEvent.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
-import { VoyagePhase } from '../sim/SkyVoyage.js';
+import { VoyagePhase, constellationLife01 } from '../sim/SkyVoyage.js';
 import { blendSections, medianBeatSec, sectionIndexAt } from './BiomeSchedule.js';
 
 export { medianBeatSec } from './BiomeSchedule.js';
@@ -131,7 +132,7 @@ const LAYER_RATIOS = { L1: 0.05, L2: 0.10, L3: 0.18, L4: 0.30, L5: 0.65, L6: 1.0
 // ocean begins; the catalogue only needs to cover every pixel that can
 // ever actually be sky, which is everything above OCEAN_HORIZON_FRAC.
 const STAR_SKY_FRAC = OCEAN_HORIZON_FRAC;
-const STAR_CATALOGUE_COUNT = 720;
+const STAR_CATALOGUE_COUNT = 2800;
 // Horizontal parallax per catalogue layer (far / mid / near). The old
 // (1 + layer * 0.6) * 0.02 spread was almost the same speed on every star,
 // so the field read as a painted backdrop. Far stars barely crawl; heroes
@@ -546,8 +547,8 @@ export class BiomeManager {
     // read the brief asked for. Generated once and cached, exactly like
     // the silhouette strips, so the density costs nothing per frame; only
     // twinkle (in _drawStarfield) is computed live. Bumped from a flat 96
-    // to 280 -- still cheap since only the brightest slice (layer 2) pays
-    // for a radial-gradient hero glow; the rest are one fillRect each.
+    // to 2800 -- still cheap because the catalogue stays 1px and the common
+    // layers are still batched into one fill per bucket.
     // The field is generated over the full frame: every pixel that can ever
     // be sky (valleys, city streets of sky between towers, the zenith) gets
     // stars, and the mountain / skyline stack paints over the rest. A
@@ -556,17 +557,17 @@ export class BiomeManager {
     const catalogue = generateCatalogue(hashSeed(`${songSeed}:starcat`), STAR_CATALOGUE_COUNT, this.w, this.h * STAR_SKY_FRAC);
     // See StarCatalogue.perceptualStretch for why this is applied to
     // subPixelDraw's OUTPUT below, never fed in as its input.
-    // Hero glow (layer 2) is reserved by RANK, not by an absolute magnitude
+    // Hero-bright layer 2 is reserved by RANK, not by an absolute magnitude
     // cutoff -- the realistic population makes true hero-magnitude stars
     // vanishingly rare at this sample size, so a fixed threshold could
     // easily reserve zero. A guaranteed slice keeps the sky visually alive
     // without touching the underlying (correctly faint-dominated) catalogue.
     // A fixed 6 (regardless of population) read as a sparse scatter of
-    // glow-dots rather than "a sky full of stars" -- the un-glowed cheap
-    // dots that make up the rest are real (see perceptualStretch) but
+    // isolated bright dots rather than "a sky full of stars" -- the cheap
+    // points that make up the rest are real (see perceptualStretch) but
     // small and easily washed out by anything drawn over them (haze,
     // cloud, nebula washes), so most of a genuinely full-looking sky needs
-    // to come from the reliably-visible glow tier, not the faint majority.
+    // to come from the reliably-visible bright tier, not the faint majority.
     const byMag = catalogue.slice().sort((a, b) => a.mag - b.mag);
     const heroCutMag = byMag[Math.min(byMag.length - 1, Math.floor(byMag.length * 0.08))].mag;
     const midCutMag = byMag[Math.min(byMag.length - 1, Math.floor(byMag.length * 0.35))].mag;
@@ -744,7 +745,7 @@ export class BiomeManager {
     // the OTHER end of the depth stack -- huge biome-landmark silhouettes
     // sweeping past faster than the characters, close enough to occlude
     // them. Drawn in drawForeground(), after everything else.
-    this.nearField = new NearField(songSeed);
+    this.nearField = new NearField(songSeed, this.world);
     this.groundScatter = new GroundScatter(songSeed);
 
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections, structure, conductorSchedule);
@@ -876,7 +877,7 @@ export class BiomeManager {
         this.swarm.kick(evt.vel);
         this.ribbon.kick();
         this.rd.onKick();
-        this.weaver.onKick(evt.vel);
+        this.weaver.onKick(evt.vel, evt.tMs);
         if (evt.vel > 0.78) this.murmuration.startle(evt.vel);
         // Heavy kicks strike lightning, but only while a storm is blowing.
         const active = this.currentBlend ? this._profile(this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from) : null;
@@ -1977,7 +1978,9 @@ export class BiomeManager {
     const weaverFinale = smoothstep(0.8, 1, this._progress);
     const weaverFullness = clamp01(weaverPulse * 0.5 + weaverFinale);
     this.weaver.update(nowMs, dtSec, weaverFullness);
-    this.spaceRidge.update(nowMs, dtSec, this._eqSmoothed, this.calmLevel);
+    // Reduced flash keeps the slow tumble and drops the beat hitch.
+    const kickTau = this.reducedFlash ? -1 : nowMs - this._danceKickMs;
+    this.spaceRidge.update(nowMs, dtSec, this._eqSmoothed, this.calmLevel, kickTau);
     // Drops send a heavy ring through the lake and snap every light-rig beam
     // onto Midio for a moment -- edge-detected off the externally-set
     // dropAtMs (same passthrough pattern as heatShimmer).
@@ -2196,7 +2199,10 @@ export class BiomeManager {
     // a lit sky instead of only appearing at night.
     const dayBoost = 1 + 0.85 * (1 - dn.night);
     const nightAlphaMul = (1 + 1.2 * dn.night) * Math.max(0.55, skyA) * dayBoost;
-    if (phenomenaFull && skyA > 0.02) this.weaver.draw(ctx, canvas, this.reducedFlash, nightAlphaMul);
+    // The weaver is far lighter than the rest of the phenomena layer -- it
+    // must NOT drop out with them (rung 5) or The Range's sky goes dark.
+    const constellationsOn = this._perf ? this._perf.constellationsEnabled : true;
+    if (constellationsOn && skyA > 0.02) this.weaver.draw(ctx, canvas, this.reducedFlash, nightAlphaMul);
     if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
 
     // The sun (this biome's celestial, crossfaded A->B as usual) while
@@ -2314,7 +2320,7 @@ export class BiomeManager {
     // "witnessed in the far distance", not sprites pasted on the sky.
     if (phenomenaFull) this.farVignettes.draw(ctx, canvas, worldX, {
       tSec: this.tSec,
-      kick: kickEnv(this.tSec * 1000 - this._danceKickMs - 170) * this._danceKickAmp,
+      kick: planeKick(this.tSec * 1000, this._danceKickMs, 'vignette', this._danceKickAmp),
       silhouette: tintL2, // they sit at L2's depth, so they wear L2's air
       sky: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
       halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
@@ -2637,7 +2643,12 @@ export class BiomeManager {
    * constellations (completed figures frozen into the sky), the live
    * persistent trail sky-writing the current figure, and a small mote of
    * light at her current position. A no-op whenever she isn't away. */
+  _drawSignature(frame, music) {
+    WORLD_SIGNATURES.get(this.world?.kind)?.(this, frame, music);
+  }
+
   drawDeepSky(ctx, voyage, canvas) {
+    if (!identityAllows(this.world, 'deepSky')) return;
     if (!voyage) return;
     const nowMs = this.tSec * 1000;
     // Every position SkyVoyage stores (station, trail, constellations, the
@@ -2742,7 +2753,7 @@ export class BiomeManager {
     // used to read as random straight lines across the sky).
     const CONST_EDGE_MAX = 22;
     for (const c of voyage.constellations) {
-      const life = 1 - clamp01((nowMs - c.bornMs) / 6000);
+      const life = constellationLife01(c.bornMs, nowMs);
       if (life <= 0) continue;
       ctx.strokeStyle = `hsla(${c.hue}, 60%, 80%, ${0.45 * life})`;
       ctx.lineWidth = 1.3;
@@ -2907,9 +2918,9 @@ export class BiomeManager {
       // an archetype name, not a synthesized palette's own display name.
       const dominantLandmarkKey = this._profile(dominant)?.landmarkKey || dominant;
       const ratio = CodaDirector.delaminateRatio(NEARFIELD_RATIO, this.unravel);
-      const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 60) * this._danceKickAmp;
+      const kick = planeKick(this.tSec * 1000, this._danceKickMs, 'near', this._danceKickAmp);
       this.nearField.draw(ctx, canvas, worldX, {
-        tSec: this.tSec, kick, biomeName: dominantLandmarkKey, reducedMotion: !!this.reducedFlash, ratio,
+        tSec: this.tSec, kick, biomeName: dominantLandmarkKey, silhouette: this._profile(dominant)?.silhouette, reducedMotion: !!this.reducedFlash, ratio,
       });
 
       // Ground scatter: the frontmost plane's small detail, drawn after
@@ -3020,7 +3031,7 @@ export class BiomeManager {
 
   _drawSky(ctx, canvas, A, B, t, night = 0, starOptions = {}) {
     // Water and vault ceilings retain local light effects, not astronomy.
-    const astronomical = starOptions.astronomical !== false;
+    const astronomical = identityAllows(this.world, 'astronomy') && starOptions.astronomical !== false;
     const dials = styleDials(this.visualStyle);
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
     // Night + rendered both pull toward deep space so stars/ocean have a stage.
@@ -3153,6 +3164,7 @@ export class BiomeManager {
 
   /** Layered starfield: ambient by day, rich at night / starTwinkle biomes. */
   _drawStarfield(ctx, canvas, A, B, t, night = 0, { atmosphere = true } = {}) {
+    if (!identityAllows(this.world, 'astronomy')) return;
     const dials = styleDials(this.visualStyle);
     const showStars = A.fx === 'starTwinkle' || B.fx === 'starTwinkle';
     const twinkleBlend = showStars
@@ -3321,7 +3333,7 @@ export class BiomeManager {
       if (x > canvas.width) x -= canvas.width;
       else if (x < 0) x += canvas.width;
       const y = s.yFrac * skyH;
-      const sz = s.size;
+      const sz = 1;
 
       // The same air path that dimmed it also scatters its blue out first,
       // so what survives is warmer. Pull the star's own spectral hue toward
@@ -3331,54 +3343,12 @@ export class BiomeManager {
       const useHue = s.hue > 0 || red > 0.35;
 
       if (s.layer === 2) {
-        const r = Math.max(1.2, sz * 1.6);
-        ctx.globalAlpha = a * 0.55;
-        const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-        if (useHue) {
-          grad.addColorStop(0, `hsla(${hue},62%,92%,1)`);
-          grad.addColorStop(0.45, `hsla(${hue},50%,80%,0.3)`);
-          grad.addColorStop(1, `hsla(${hue},40%,70%,0)`);
-        } else {
-          grad.addColorStop(0, 'rgba(255,255,255,1)');
-          grad.addColorStop(0.4, 'rgba(220,230,255,0.35)');
-          grad.addColorStop(1, 'rgba(200,220,255,0)');
-        }
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Diffraction spikes, only on the ones bright enough to earn them.
-        // They have to TAPER -- a constant-width, constant-alpha cross reads
-        // as a drawn crosshair rather than as light -- so each arm runs
-        // through a gradient that is solid only at the core and reaches zero
-        // at the tip, which is the shape real spikes actually have.
-        if (a > 0.34) {
-          const spike = r * (1.6 + 1.0 * tw);
-          const tint = useHue ? `hsla(${hue},45%,94%,` : 'rgba(226,236,255,';
-          ctx.globalAlpha = a * 0.45;
-          ctx.lineWidth = 0.7;
-          for (const [dx, dy] of [[1, 0], [0, 1]]) {
-            const gS = ctx.createLinearGradient(
-              x - dx * spike, y - dy * spike, x + dx * spike, y + dy * spike,
-            );
-            gS.addColorStop(0, `${tint}0)`);
-            gS.addColorStop(0.5, `${tint}1)`);
-            gS.addColorStop(1, `${tint}0)`);
-            ctx.strokeStyle = gS;
-            ctx.beginPath();
-            ctx.moveTo(x - dx * spike, y - dy * spike);
-            ctx.lineTo(x + dx * spike, y + dy * spike);
-            ctx.stroke();
-          }
-        }
-
         ctx.globalAlpha = a;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(x - 0.6, y - 0.6, 1.2, 1.2);
+        ctx.fillStyle = useHue ? `hsl(${hue},55%,88%)` : '#ffffff';
+        ctx.fillRect(x - 0.5, y - 0.5, sz, sz);
         if (s.companion) {
           ctx.globalAlpha = a * 0.45;
-          ctx.fillRect(x + s.companion.dx - 0.4, y + s.companion.dy - 0.4, 0.9, 0.9);
+          ctx.fillRect(x + s.companion.dx - 0.5, y + s.companion.dy - 0.5, 1, 1);
         }
       } else {
         // Deferred into a bucket instead of drawn here. Setting fillStyle per
@@ -3407,7 +3377,7 @@ export class BiomeManager {
             : (s.layer === 1 ? '#f0f4ff' : '#d8e0f5');
           starBuckets.set(key, bucket);
         }
-        bucket.rects.push(x, y, sz);
+        bucket.rects.push(x - 0.5, y - 0.5, sz);
       }
     }
 
@@ -3676,6 +3646,7 @@ export class BiomeManager {
   }
 
   _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22, alpha = 1, cxFrac = CELESTIAL_DEFAULT_XFRAC) {
+    if (!identityAllows(this.world, 'celestialBodies')) return;
     // The body is closing over the length of the song: its arc climbs higher
     // above the sea and its disc grows as 1/distance, so the size
     // accelerates while the path barely seems to change. See
@@ -3684,6 +3655,13 @@ export class BiomeManager {
     const app = this._celestialApproachAt(canvas, canvas.width * cxFrac, canvas.height * cyFrac);
     const cx = app.x, cy = app.y;
     const grow = app.scale;
+    // The disc does not move. The halo blooms on the heard kick (no depth
+    // delay — the sun is the beat marker, same clock as a character flash)
+    // and stays still under reduced flash.
+    const heardKick = this.reducedFlash
+      ? 0
+      : kickEnv(this.tSec * 1000 - this._danceKickMs) * this._danceKickAmp;
+    const haloMul = 1 + kickBloom(heardKick);
     const rotCel = (c) => ({
       ...c,
       color: this._rotated(c.color),
@@ -3712,11 +3690,11 @@ export class BiomeManager {
       }
     }
     if (B === A) {
-      this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), alpha);
+      this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), alpha, haloMul);
       this._drawCompanions(ctx, canvas, cx, cy, A.celestial.companions, alpha);
     } else {
-      this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), (1 - t) * alpha);
-      this._drawOneCelestial(ctx, cx, cy, rotCel(B.celestial), t * alpha);
+      this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), (1 - t) * alpha, haloMul);
+      this._drawOneCelestial(ctx, cx, cy, rotCel(B.celestial), t * alpha, haloMul);
       this._drawCompanions(ctx, canvas, cx, cy, A.celestial.companions, (1 - t) * alpha);
       this._drawCompanions(ctx, canvas, cx, cy, B.celestial.companions, t * alpha);
     }
@@ -3815,6 +3793,7 @@ export class BiomeManager {
    */
   _drawMoon(ctx, canvas, cyFrac, alpha, tidalOffsetPx = 0, cxFrac = CELESTIAL_DEFAULT_XFRAC,
     sunXFrac = null, sunYFrac = null, phase01 = 0.5) {
+    if (!identityAllows(this.world, 'celestialBodies')) return;
     if (alpha <= 0.02) return;
     // Same approach the sun is on (CelestialApproach.js): both bodies are
     // closing on the convergence point, so the moon grows through the night
@@ -4044,15 +4023,14 @@ export class BiomeManager {
    * produces.
    */
   _drawFataMorgana(ctx, canvas, worldX, A, B, t) {
-    if (this._perf && !this._perf.heavyPostFx) return;
     const horizonY = canvas.height * OCEAN_HORIZON_FRAC;
     const sinkPx = Math.max(14, canvas.height * 0.015);
     const baseY = horizonY + sinkPx;
-    // A touch SMALLER in pixels than the old invented range (0.13 -> 0.115 of
-    // canvas height) -- the mirage is stretched vertically by refraction but
+    // Smaller in pixels than before (0.115 -> 0.055 of canvas height) -- the
+    // mirage is stretched vertically by refraction but
     // stays compact, because its scale is conveyed by how slowly it moves and
     // how it towers, not by raw screen area.
-    const maxHeightPx = Math.max(54, canvas.height * 0.115);
+    const maxHeightPx = Math.max(28, canvas.height * 0.055);
     // The mirage IS the far shore: same recipe, same horizontal span, same
     // (near-static) parallax as the dark shoreline one draw-call earlier, so
     // the two stay locked together as the same landmass.
@@ -4065,11 +4043,6 @@ export class BiomeManager {
     const drift = mirageDriftPx(this.tSec, canvas.height);
     const stretch = mirageStretch01(this.tSec);
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, canvas.width, horizonY + sinkPx * 0.6);
-    ctx.clip(); // the mirage still can't show below its own base -- it floats AT the horizon, not below it
-
     // Pale, cold, and close to the sky's own high color rather than the
     // biome's palette -- a mirage is refracted SKYLIGHT, not local terrain,
     // so it should read as an extension of the air, not as another range.
@@ -4078,7 +4051,13 @@ export class BiomeManager {
     const pale = this.lerpCache.get('#eef4fb', this.lerpCache.get(skyHorizon, air, 0.4), 0.35);
     const { r, g, b } = hexToRgb(pale);
     const presence = miragePresence01(this.tSec);
-    const alpha = 0.10 + 0.10 * presence;
+    if (presence < 0.02) return;
+    const alpha = 0.22 * presence;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, canvas.width, horizonY + sinkPx * 0.6);
+    ctx.clip(); // the mirage still can't show below its own base -- it floats AT the horizon, not below it
 
     const buildPath = (squash, yBias) => {
       ctx.beginPath();
@@ -4125,7 +4104,7 @@ export class BiomeManager {
     const nearY = canvas.height * OCEAN_NEAR_FRAC - (canvas.height * (OCEAN_NEAR_FRAC - OCEAN_HORIZON_FRAC)) * 0.4 * withdrawal01;
     const bass = 0.5 * ((this._eqSmoothed[0] || 0) + (this._eqSmoothed[1] || 0));
     const treble = 0.5 * ((this._eqSmoothed[5] || 0) + (this._eqSmoothed[6] || 0));
-    const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 250) * this._danceKickAmp;
+    const kick = planeKick(this.tSec * 1000, this._danceKickMs, 'ocean', this._danceKickAmp);
     const tsunami = this._activeTsunami(canvas.width);
     const dials = styleDials(this.visualStyle);
     const presence = 1.28 * (dials.oceanPresence ?? 1);
@@ -4404,7 +4383,7 @@ export class BiomeManager {
     const water = this._rotated(this.lerpCache.get(sil, skyMid, 0.45));
     const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
     const bass = 0.5 * ((this._eqSmoothed[0] || 0) + (this._eqSmoothed[1] || 0));
-    const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 250) * this._danceKickAmp;
+    const kick = planeKick(this.tSec * 1000, this._danceKickMs, 'ocean', this._danceKickAmp);
     const nowMs = this.tSec * 1000;
     const scroll = worldX * OCEAN_LIFE_RATIO;
     const pad = 200;
@@ -4704,7 +4683,7 @@ export class BiomeManager {
     ctx.restore();
   }
 
-  _drawOneCelestial(ctx, cx, cy, c, alpha) {
+  _drawOneCelestial(ctx, cx, cy, c, alpha, haloMul = 1) {
     if (alpha <= 0.02) return;
     ctx.save();
     // A previous pass (see git history) cut this halo's ALPHA to 0.55 and
@@ -4717,8 +4696,8 @@ export class BiomeManager {
     // cuts both: alpha down further, and the multiplier itself (3.2/2.2 ->
     // 2.4/1.7, roughly a 25% smaller footprint) so the glow's total extent
     // shrinks along with its brightness, not just one or the other.
-    const haloRadiusMul = c.dominant ? 2.4 : 1.7;
-    ctx.globalAlpha = alpha * 0.4;
+    const haloRadiusMul = (c.dominant ? 2.4 : 1.7) * haloMul;
+    ctx.globalAlpha = Math.min(0.72, alpha * 0.4 * haloMul);
     const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, c.radius * haloRadiusMul);
     halo.addColorStop(0, c.haloColor);
     halo.addColorStop(1, 'rgba(0,0,0,0)');

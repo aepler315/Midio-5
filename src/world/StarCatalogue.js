@@ -159,19 +159,15 @@ export function subPixelDraw(sizePx, alpha01) {
  * away again immediately afterward -- measured against a real 560-star
  * field, only 33 ever cleared the draw loop's visibility cutoff.
  *
- * The floor itself also has to survive what happens to it AFTER this
- * function returns: _drawStarfield multiplies every star's alpha by the
- * layer's own ambient/night gain (~0.4-0.9), per-star twinkle (~0.4-1),
- * and atmospheric extinction near the horizon (~0.35-1) on top. Even the
- * old 0.45 floor left the worst case (faint star, near horizon,
- * mid-twinkle-trough) sitting right on top of _drawStarfield's own 0.01
- * visibility cutoff -- reported live as the sky reading like "a dull band
- * of mostly nothing" outside the best conditions. Raised to 0.60 for real
- * headroom in that worst case, while still leaving room up to 1.0 for true
- * hero stars to stand out above the rest.
+ * The display goal changed with the denser 1px field: not "keep almost
+ * everything visible," but preserve real dynamic range so the sky reads as a
+ * dark-sky site full of mostly faint points and a few genuinely bright ones.
+ * The floor therefore stays above zero, but low enough that realistic
+ * per-frame dimming in _drawStarfield can still push some stars below the
+ * 0.01 draw cutoff while leaving brighter ones well clear of it.
  */
 export function perceptualStretch(alpha01) {
-  return 0.60 + 0.40 * Math.pow(clamp01(alpha01), 0.35);
+  return 0.18 + 0.82 * Math.pow(clamp01(alpha01), 0.35);
 }
 
 /**

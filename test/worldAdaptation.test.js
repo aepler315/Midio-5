@@ -237,3 +237,47 @@ for (const id of ['nave', 'foundry', 'redline']) {
     assert.deepEqual(base.palettes, before);
   });
 }
+
+for (const fixture of [
+  { bpm: 64, energyAt: () => 0.05 },
+  { bpm: 84, energyAt: () => 0.65, bandsAt: () => [8, 5, 1, 1, 1, 1, 1] },
+  { bpm: 180, energyAt: t => (Math.floor(t * 120) % 2 ? 0.95 : 0.2) },
+  { bpm: 120, energyAt: t => t < 0.33 || t > 0.67 ? 0.12 : 0.9 },
+]) {
+  test(`adapted physical vocabulary stays within selected world at bpm=${fixture.bpm}`, () => {
+    const { data, profile } = song(fixture);
+    for (const base of listWorlds()) {
+      if (base.kind === 'alpine' || base.kind === 'cathode') continue;
+      const { world } = adaptWorld(base, profile, data);
+      assert.equal(world.kind, base.kind);
+      const particles = new Set(base.palettes.map(p => p.particles.kind));
+      const effects = new Set(base.palettes.map(p => p.fx));
+      for (const palette of world.palettes) {
+        assert.ok(particles.has(palette.particles.kind), `${base.kind}: inappropriate ${palette.particles.kind}`);
+        assert.ok(effects.has(palette.fx), `${base.kind}: inappropriate ${palette.fx}`);
+      }
+    }
+  });
+}
+
+test('Far Side adaptation keeps an airless dark sky around its primary', () => {
+  const { data, profile } = song({ energyAt: () => 0.9, bpm: 160 });
+  const base = listWorlds().find(w => w.kind === 'airless');
+  const { world } = adaptWorld(base, profile, data);
+  for (const palette of world.palettes) {
+    for (const color of [...palette.sky, ...palette.skyStops]) {
+      assert.ok(color.slice(1).match(/../g).every(byte => parseInt(byte, 16) < 64), color);
+    }
+  }
+});
+
+test('After Hours adaptation keeps the sky subordinate to city lights', () => {
+  const { data, profile } = song();
+  const base = listWorlds().find(w => w.kind === 'city');
+  const { world } = adaptWorld(base, profile, data);
+  for (const palette of world.palettes) {
+    for (const color of [...palette.sky, ...palette.skyStops]) {
+      assert.ok(color.slice(1).match(/../g).every(byte => parseInt(byte, 16) < 112), color);
+    }
+  }
+});
