@@ -47,6 +47,12 @@ export const TRAIL_GAP_PX = 28;
 export const CONSTELLATION_HOLD_SEC = 8;
 export const CONSTELLATION_FADE_SEC = 7;
 export const CONSTELLATION_LIFE_SEC = 15;
+// Her in-progress trail at the moment she lands. It used to be discarded in
+// a single frame (`this.trail = []`), so whatever she was mid-way through
+// writing vanished the instant she left the sky. It now hands off to an
+// afterglow that fades out over this long instead.
+export const AFTERGLOW_SEC = 15;
+const AFTERGLOW_MAX = 2;
 const CONSTELLATION_MAX = 4;
 const ATLAS_MAX = 8; // permanent star-map entries; oldest myths fade first
 // Navigational atlas: the next voyage is drawn toward the densest cluster
@@ -110,6 +116,7 @@ export class SkyVoyage {
     this.hue = 200;
     this.trail = []; // {x, y, hue, tMs}
     this.constellations = []; // {points:[{x,y}], hue, bornMs}
+    this.afterglows = []; // {trail:[{x,y,hue,gap}], bornMs} -- a landed voyage's last trail, fading
     this._station = { x: 0, y: 0 };
     this._startPos = { x: 0, y: 0 };
     this._windUpFrom = { x: 0, y: 0 };
@@ -634,6 +641,10 @@ export class SkyVoyage {
       // No trail during reentry — the dive home used to paint a long straight.
       if (this._phaseU >= 1) {
         this.phase = VoyagePhase.IDLE;
+        if (this.trail.length > 1) {
+          this.afterglows.push({ trail: this.trail, bornMs: nowMs });
+          if (this.afterglows.length > AFTERGLOW_MAX) this.afterglows.shift();
+        }
         this.trail = [];
         this._liss = null;
         this._lissPrev = null;
@@ -874,7 +885,14 @@ export class SkyVoyage {
       if (this.atlas.length > ATLAS_MAX) this.atlas.shift();
     }
     this.constellations = keep;
+    this.afterglows = this.afterglows.filter((g) => nowMs - g.bornMs < AFTERGLOW_SEC * 1000);
   }
+}
+
+/** 1 at landing, easing to 0 over AFTERGLOW_SEC. */
+export function afterglowLife01(bornMs, nowMs) {
+  const u = clamp((nowMs - bornMs) / (AFTERGLOW_SEC * 1000), 0, 1);
+  return 1 - u * u * (3 - 2 * u);
 }
 
 export function constellationLife01(bornMs, nowMs) {
