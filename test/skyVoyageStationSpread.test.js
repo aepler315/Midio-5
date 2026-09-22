@@ -39,7 +39,7 @@ function stations(seed, count = 12) {
       }
       v.constellations.push({ points, hue: 200, bornMs: now });
     }
-    now += 7000;
+    now += 16000;
     v.pruneConstellations(now);
   }
   return out;
