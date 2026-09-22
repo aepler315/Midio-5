@@ -8,7 +8,7 @@
 // her normal glyph for the phases where she isn't "here."
 import { mulberry32, clamp, lerp } from '../utils/math.js';
 import { superformula, thomasDeriv, rk4Step3, hypotrochoid } from '../render/oscillators.js';
-import { layoutTextPath } from '../world/LyricGlyph.js';
+import { layoutTextPath, glyphTracePath } from '../world/LyricGlyph.js';
 
 export const VoyagePhase = Object.freeze({
   IDLE: 'IDLE', WINDUP: 'WINDUP', ASCENT: 'ASCENT', DEEP_SPACE: 'DEEP_SPACE', REENTRY: 'REENTRY',
@@ -40,6 +40,10 @@ const FIGURE_RADIUS_PX = 130;
 // to whichever figure a given voyage can actually draw.
 const FIGURE_SCALE_MAX = 1.18;
 const LYRIC_TEXT_SCALE = 2.2;
+// A lyric SYMBOL (lyricGlyph): the song's own motif -- heart, hourglass,
+// chain -- traced as one of her figures. A little larger than a math
+// figure so it reads as the centrepiece rather than one more curve.
+const LYRIC_GLYPH_SCALE = 1.4;
 const TRAIL_SEC = 5.5;
 const TRAIL_MAX_PTS = 400;
 // Trail segments longer than this are a teleport chord — skip them in draw.
@@ -338,7 +342,7 @@ export class SkyVoyage {
     }
   }
 
-  trigger(nowMs, fromPos, stageW, stageH, chorusText = null) {
+  trigger(nowMs, fromPos, stageW, stageH, chorusText = null, lyricSymbol = null) {
     if (this.active) return false;
     this.phase = VoyagePhase.WINDUP;
     this.phaseStartMs = nowMs;
@@ -347,6 +351,8 @@ export class SkyVoyage {
     this.p = { ...fromPos };
     this._voyageSerial++;
     this._chorusText = chorusText || null;
+    this._lyricSymbolPath = lyricSymbol ? glyphTracePath(lyricSymbol) : [];
+    this._lyricSymbol = this._lyricSymbolPath.length >= 4 ? lyricSymbol : null;
     // The station used to roll x in [0.48, 0.78] and y in [0.12, 0.20] --
     // right-of-center only (never the left half of the sky at all) and a
     // band under a tenth of the screen tall. Confirmed live: during
@@ -368,7 +374,8 @@ export class SkyVoyage {
     // math families' FIGURE_SCALE_MAX (1.18). Placed at the old fixed 0.12
     // margin, that text's own ends run past the frame edge -- the reported
     // "a large portion of the drawings are outside the frame."
-    const voyageScaleMax = this._chorusText ? LYRIC_TEXT_SCALE : FIGURE_SCALE_MAX;
+    const voyageScaleMax = this._chorusText ? LYRIC_TEXT_SCALE
+      : this._lyricSymbol ? Math.max(LYRIC_GLYPH_SCALE, FIGURE_SCALE_MAX) : FIGURE_SCALE_MAX;
     const marginFracX = clamp((FIGURE_RADIUS_PX * voyageScaleMax) / stageW, 0.05, 0.45);
     const radPx = FIGURE_RADIUS_PX * voyageScaleMax;
     this._station = this._pickStation(stageW, stageH, marginFracX, radPx);
@@ -423,6 +430,19 @@ export class SkyVoyage {
           phase: 0, slot: 1, textPath,
         };
       }
+    }
+    // The lyrics' symbol: her drawings used to be pure math unless it was a
+    // chorus, and even then only the words. Now whatever the section (or,
+    // failing that, the song) keeps returning to -- love, time, freedom,
+    // captivity -- is traced as one of her three figures: the centrepiece
+    // normally, and the opening figure when the middle slot is already the
+    // chorus's own words.
+    if (this._lyricSymbol) {
+      const slot = order[1]?.kind === 'lyricText' ? 0 : 1;
+      order[slot] = {
+        kind: 'lyricGlyph', rate: 1, scale: LYRIC_GLYPH_SCALE,
+        phase: 0, slot, textPath: this._lyricSymbolPath, glyphId: this._lyricSymbol,
+      };
     }
     return order;
   }
@@ -690,7 +710,7 @@ export class SkyVoyage {
     const recipe = typeof recipeOrKind === 'string'
       ? defaultRecipe(recipeOrKind, this._figureIdx)
       : (recipeOrKind || this._recipeAt(this._figureIdx));
-    if (!recipe || recipe.kind === 'thomas' || recipe.kind === 'lyricText') return 0;
+    if (!recipe || recipe.kind === 'thomas' || recipe.kind === 'lyricText' || recipe.kind === 'lyricGlyph') return 0;
     let bestT = 0, bestD = Infinity;
     // Sample ~1.5 periods of the parametric rate used in _figureOffset.
     for (let i = 0; i < 48; i++) {
@@ -788,7 +808,7 @@ export class SkyVoyage {
       const norm = Math.max(1e-6, Math.abs(R - rIn) + Math.abs(d));
       return { x: p.x / norm, y: p.y / norm };
     }
-    if (kind === 'lyricText') {
+    if (kind === 'lyricText' || kind === 'lyricGlyph') {
       const path = recipe.textPath;
       if (!path || path.length < 2) return { x: 0, y: 0 };
       const totalTime = FIGURE_SEC * 0.82;

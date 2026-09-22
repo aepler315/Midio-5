@@ -84,7 +84,7 @@ import { flameFlicker, smokeDrift } from './Wildfire.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
-import { scanLine } from '../lyrics/LyricLexicon.js';
+import { scanLine, dominantSymbol } from '../lyrics/LyricLexicon.js';
 import { celestialApproach } from './CelestialApproach.js';
 import { snapCutsToReleases } from './BoundarySnap.js';
 import { applyConductorSchedule } from '../core/ConductorTrack.js';
@@ -515,6 +515,12 @@ export class BiomeManager {
     this._lyricLineCursor = 0;
     this.currentKind = null;
     this.currentSectionText = null;
+    // The symbol Midasus sky-writes on a voyage (SkyVoyage's lyricGlyph
+    // figure): the current section's motif, else the whole song's. Worked
+    // out once per section change and once per song, never per frame.
+    this.currentSectionSymbol = null;
+    this._symbolForText = undefined;
+    this.songSymbol = syncedLyrics?.length ? dominantSymbol(syncedLyrics.map((l) => l.text)) : null;
     this.lyricIntensityEased = 0.4;
     // Confidence in `currentKind` being the right FUNCTION label, not just
     // that a boundary sits here -- eased the same way, and read by callers
@@ -1818,6 +1824,10 @@ export class BiomeManager {
     // lyric data was ever fused in.
     this.currentKind = activeSection?.kind || null;
     this.currentSectionText = activeSection?.lyricText || null;
+    if (this.currentSectionText !== this._symbolForText) {
+      this._symbolForText = this.currentSectionText;
+      this.currentSectionSymbol = this.currentSectionText ? dominantSymbol(this.currentSectionText) : null;
+    }
     const targetLyricIntensity = activeSection?.lyricIntensity ?? 0.4;
     this.lyricIntensityEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetLyricIntensity - this.lyricIntensityEased);
     const targetKindConfidence = activeSection?.kindConfidence ?? 0;

@@ -977,6 +977,7 @@ export class Simulation {
       vibe: this.vibe, calm: this.calm, hype: this.hype, energyCurves: this.energyCurves,
       conductor: this.conductor, midasus: this.midasus, broshi: this.broshi, worldX: this.worldX,
       chorusText,
+      lyricSymbol: this.biomes.currentSectionSymbol || this.biomes.songSymbol || null,
     });
     // He punches through the ground on the way down -- the screen itself
     // takes a small crack where he broke the surface, same glass-fracture
