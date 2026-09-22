@@ -109,7 +109,7 @@ import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { spectralShiftDeg, easeSpectralShift } from '../render/spectral.js';
 import { Role } from '../core/NoteEvent.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
-import { VoyagePhase } from '../sim/SkyVoyage.js';
+import { VoyagePhase, constellationLife01 } from '../sim/SkyVoyage.js';
 import { blendSections, medianBeatSec, sectionIndexAt } from './BiomeSchedule.js';
 
 export { medianBeatSec } from './BiomeSchedule.js';
@@ -2732,7 +2732,7 @@ export class BiomeManager {
     // used to read as random straight lines across the sky).
     const CONST_EDGE_MAX = 22;
     for (const c of voyage.constellations) {
-      const life = 1 - clamp01((nowMs - c.bornMs) / 6000);
+      const life = constellationLife01(c.bornMs, nowMs);
       if (life <= 0) continue;
       ctx.strokeStyle = `hsla(${c.hue}, 60%, 80%, ${0.45 * life})`;
       ctx.lineWidth = 1.3;
