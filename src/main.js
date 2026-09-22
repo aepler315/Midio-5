@@ -2344,15 +2344,21 @@ async function openUrlTarget(raw) {
  *  succeeds and every song click then fails as an unreachable-server/CORS
  *  error, which points at entirely the wrong thing. */
 async function loadUrlAudio(url, name = '') {
+  // Supersede first, validate second. Returning before beginUrlLoadOperation()
+  // left an earlier download running: the rejection message appeared, then
+  // the old request finished, cleared it, and started playing a song the
+  // player had already moved on from. openUrlTarget() has always claimed
+  // the operation up front for the same reason.
+  const signal = beginUrlLoadOperation();
   const verdict = classifyUrl(url, location.href);
   if (!verdict.ok) {
     setUrlLoadStatus(verdict.message, true);
+    endUrlLoadOperation(signal);
     return;
   }
-  const signal = beginUrlLoadOperation();
   setUrlLoadStatus(`Fetching ${name || decodeUrlPathForDisplay(url)}\u2026`);
   try {
-    const file = await fetchAudioAsFile(verdict.url, { signal });
+    const file = await fetchAudioAsFile(verdict.url, { signal, name });
     if (signal.aborted) return;
     setUrlLoadStatus('');
     handleFiles([file]);
@@ -2387,7 +2393,14 @@ function bindUrlLoad() {
 // input -- so the click reached the input directly, bypassed this function,
 // and kept producing the dead click and the phantom keyboard on every tap
 // without ever recording a verdict. It is a real <button> now.
-browseBtnEl?.addEventListener('click', () => openFilePicker());
+browseBtnEl?.addEventListener('click', () => {
+  // Enter/Space on a focused button fires click with no pointerdown, so the
+  // pointerdown listener below covers touch and mouse only. Without this the
+  // chooser opens un-unlocked and the later `change` handler -- which is not
+  // a user activation -- can fail with "Audio is blocked."
+  unlockAudio();
+  openFilePicker();
+});
 browseBtnEl?.addEventListener('pointerdown', unlockAudio, { passive: true });
 
 urlLoadOpenBtnEl?.addEventListener('click', () => revealUrlLoad('', { focus: true }));

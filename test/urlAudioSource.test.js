@@ -182,13 +182,16 @@ test('looser JSON shapes from other local servers still work', () => {
 
 function response({ ok = true, status = 200, headers = {}, blob = null, body = null, json = null }) {
   const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), String(v)]));
+  // A listing is read as TEXT and parsed by the module, so a `json` fixture
+  // has to be serialised into the body the way a real server would send it.
+  const text = body !== null ? body : (json !== null ? JSON.stringify(json) : null);
   return {
     ok,
     status,
     statusText: '',
     headers: { get: (name) => lower[String(name).toLowerCase()] ?? null },
     blob: async () => blob,
-    text: async () => body,
+    text: async () => text,
     json: async () => json,
   };
 }
@@ -500,7 +503,9 @@ test('a body that stalls after the headers is abandoned, not waited on forever',
     },
     async () => {
       await assert.rejects(
-        () => fetchAudioAsFile('http://127.0.0.1:8088/stalls.mp3', { limits: AUDIO_LOAD_LIMITS }),
+        () => fetchAudioAsFile('http://127.0.0.1:8088/stalls.mp3', {
+          limits: AUDIO_LOAD_LIMITS, stallMs: 20,
+        }),
         (err) => err instanceof UrlAudioError && /stopped sending data/.test(err.message),
       );
     },
@@ -534,9 +539,9 @@ test('a broken listing is reported as such, not as a CORS or connectivity failur
   // when the actual fault is the body.
   await withFetch(
     async () => {
-      const res = response({ headers: { 'content-type': 'application/json' } });
-      res.json = async () => { throw new SyntaxError('Unexpected token < in JSON at position 0'); };
-      return res;
+      // An HTML error page served with a JSON content-type: the parse, not
+      // the network, is what fails.
+      return response({ headers: { 'content-type': 'application/json' }, body: '<html>nope</html>' });
     },
     async () => {
       await assert.rejects(
@@ -574,9 +579,124 @@ test('a timeout before any response reads differently from one mid-transfer', as
     }),
     async () => {
       await assert.rejects(
-        () => fetchAudioAsFile('http://127.0.0.1:8088/silent.mp3'),
+        () => fetchAudioAsFile('http://127.0.0.1:8088/silent.mp3', { stallMs: 20 }),
         (err) => err instanceof UrlAudioError && /did not answer within/.test(err.message),
       );
+    },
+  );
+});
+
+
+// --- what the third review round turned up -------------------------------
+
+test('a bare host:port works even when the host starts with a letter', () => {
+  // `localhost:8088` parses as a URL whose SCHEME is `localhost:`, so a
+  // scheme check that only looked for `x:` rejected the single most likely
+  // thing anyone types -- while `isLoopbackHost` explicitly supports it.
+  for (const raw of ['localhost:8088/a.mp3', '127.0.0.1:8088/a.mp3']) {
+    const verdict = classifyUrl(raw, HTTPS_PAGE);
+    assert.equal(verdict.ok, true, raw);
+    assert.equal(verdict.url.startsWith('http://'), true, raw);
+  }
+  assert.equal(classifyUrl('localhost:8088/a.mp3', HTTPS_PAGE).url, 'http://localhost:8088/a.mp3');
+
+  // A non-loopback bare host is now read as a HOST rather than a scheme,
+  // and is then refused for the right reason. Before, it came back as
+  // `scheme` -- "only http:// and https:// can be loaded" -- about an
+  // address that was already http.
+  assert.equal(classifyUrl('music.local:8088/a.mp3', HTTPS_PAGE).code, 'mixed-content');
+  assert.equal(classifyUrl('music.local:8088/a.mp3', HTTP_PAGE).ok, true);
+});
+
+test('requiring :// does not break the schemes that carry meaning', () => {
+  // file:// must still be recognised so it gets its own explanation
+  // rather than being turned into http://file://...
+  assert.equal(classifyUrl('file:///sdcard/a.mp3', HTTPS_PAGE).code, 'scheme');
+  assert.equal(classifyUrl('https://example.com/a.flac', HTTPS_PAGE).ok, true);
+  // A scheme with no slashes is not a host, and must not become one.
+  assert.equal(classifyUrl('javascript:alert(1)', HTTPS_PAGE).ok, false);
+  assert.equal(classifyUrl('mailto:a@b.com', HTTPS_PAGE).ok, false);
+});
+
+test('an explicit listing name survives an extensionless download URL', () => {
+  // The row is admitted BECAUSE of its name (the URL has no extension), so
+  // discarding that name right afterwards labels the track "download".
+  const { entries } = parseJsonListing({
+    files: [{ name: 'Pretty Song.flac', url: 'download?id=1' }],
+  }, 'http://127.0.0.1:8088/');
+  assert.equal(entries[0].name, 'Pretty Song.flac');
+});
+
+test('a fetched file can be given the name the listing declared', async () => {
+  await withFetch(
+    async () => response({ headers: { 'content-type': 'audio/flac' }, blob: fakeBlob(64, 'audio/flac') }),
+    async () => {
+      const file = await fetchAudioAsFile('http://127.0.0.1:8088/download?id=1', {
+        name: 'Pretty Song.flac',
+      });
+      assert.equal(file.name, 'Pretty Song.flac');
+      // and without one, the URL is still the fallback
+      const fallback = await fetchAudioAsFile('http://127.0.0.1:8088/download?id=1');
+      assert.equal(fallback.name, 'download');
+    },
+  );
+});
+
+test('a redirected folder resolves its links against where it landed', async () => {
+  // A conventional server redirects /music to /music/. Resolving `song.mp3`
+  // against the pre-redirect URL yields /song.mp3 -- a 404 on every click.
+  await withFetch(
+    async () => {
+      const res = response({
+        headers: { 'content-type': 'application/json' },
+        json: { folders: [], files: [{ name: 'song.mp3', url: 'song.mp3' }] },
+      });
+      res.url = 'http://127.0.0.1:8088/music/'; // where fetch actually ended up
+      return res;
+    },
+    async () => {
+      const result = await openAudioUrl('http://127.0.0.1:8088/music', { pageUrl: HTTPS_PAGE });
+      assert.equal(result.entries[0].url, 'http://127.0.0.1:8088/music/song.mp3');
+      // The reported url is the final one too, so "Up a folder" is derived
+      // from a path that actually exists.
+      assert.equal(result.url, 'http://127.0.0.1:8088/music/');
+    },
+  );
+});
+
+test('a listing body re-arms the stall deadline as it streams', async () => {
+  // res.json()/res.text() read the body internally and never call back, so
+  // using them made the documented stall deadline a total-duration one: a
+  // big index arriving steadily was aborted anyway.
+  let arms = 0;
+  const payload = JSON.stringify({ files: [{ name: 'a.mp3', url: '/a.mp3' }] });
+  const bytes = new TextEncoder().encode(payload);
+  await withFetch(
+    async () => {
+      const res = response({ headers: { 'content-type': 'application/json' } });
+      let i = 0;
+      res.body = {
+        getReader: () => ({
+          // One byte at a time, so every chunk is an observable tick.
+          read: async () => (i < bytes.length
+            ? { done: false, value: bytes.slice(i, ++i) }
+            : { done: true, value: undefined }),
+          cancel: async () => {},
+        }),
+      };
+      return res;
+    },
+    async () => {
+      const original = globalThis.setTimeout;
+      globalThis.setTimeout = (...args) => { arms++; return original(...args); };
+      try {
+        const result = await openAudioUrl('http://127.0.0.1:8088/', { pageUrl: HTTPS_PAGE });
+        assert.equal(result.entries.length, 1);
+      } finally {
+        globalThis.setTimeout = original;
+      }
+      // One arm per chunk, plus the initial and post-headers arms.
+      assert.ok(arms >= bytes.length, `expected >= ${bytes.length} re-arms, saw ${arms}`);
     },
   );
 });

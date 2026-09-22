@@ -129,6 +129,16 @@ Everything here reaches `audioEngine.decodeFile()`, which is
 (`MidiAdapter` is reachable only from the tests). Listing a MIDI file would
 advertise a song that fails to decode every time.
 
+Two details about the address field are load-bearing and easy to undo.
+It is `type="text"` with `inputmode="url"`, **not** `type="url"`: a url
+input applies native constraint validation on submit, and a bare
+`127.0.0.1:8088` is not a valid absolute URL, so the browser would block
+the submit before the code that exists to prepend `http://` ever ran. And
+the scheme check that decides whether to prepend looks for `://` rather
+than `scheme:`, because `localhost:8088` otherwise parses as a URL whose
+*scheme* is `localhost:` — which would then be rejected as an unsupported
+scheme, for the single most likely thing anyone types.
+
 One subtlety in the fetch layer: `fetch()` resolves when the response
 *headers* arrive, not when the body does. A timeout that is cleared at that
 point leaves the body read — `blob()`, `text()`, `json()` — with no
@@ -138,7 +148,15 @@ read inside the same helper, under the same `AbortController`, against a
 deadline that is pushed back whenever bytes actually arrive: silence is
 bounded, slowness is not punished. The size cap is enforced during that
 read too, so a server that understates its `Content-Length` is cut off
-rather than buffered in full.
+rather than buffered in full. Listings are streamed for the same reason:
+`res.json()` and `res.text()` read the whole body internally and never
+report progress, which would silently turn the stall deadline back into a
+total-duration one.
+
+Directory links resolve against the response's *final* URL. A conventional
+server redirects a typed `/music` to `/music/`, and resolving `song.mp3`
+against the address that was typed rather than the one that answered yields
+`/song.mp3` — a 404 on every row.
 
 ## Making it actually work on a phone
 

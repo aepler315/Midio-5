@@ -204,6 +204,37 @@ try {
     assert.match(message, /mixed content/i);
   });
 
+  if (musicUrl) {
+    await run('a bare address submits, instead of being blocked by the browser', async () => {
+      // The field was type="url", which applies native constraint validation
+      // on submit -- so a bare `127.0.0.1:8099/` never reached classifyUrl(),
+      // the very code that exists to prepend http:// for that shape.
+      const bare = musicUrl.replace(/^https?:\/\//, '');
+      await page.locator('#urlLoadList').evaluate((el) => { el.replaceChildren(); });
+      await page.locator('#urlLoadInput').fill(bare);
+      await page.locator('#urlLoadBtn').click();
+      await page.locator('.urlLoadEntry').first().waitFor({ timeout: 10000 });
+      const shown = await page.locator('#urlLoadInput').inputValue();
+      assert.ok(shown.startsWith('http://'), `expected http:// to be added, got ${shown}`);
+    });
+  }
+
+  await run('the picker button unlocks audio on keyboard activation too', async () => {
+    // Enter/Space fires click with no pointerdown, so a pointerdown-only
+    // unlock left the chooser opening un-unlocked.
+    const unlocked = await page.evaluate(async () => {
+      const btn = document.getElementById('browseBtn');
+      let sawClick = false;
+      btn.addEventListener('click', () => { sawClick = true; }, { once: true });
+      btn.focus();
+      btn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      btn.click(); // what the browser synthesises for Enter on a button
+      await new Promise((r) => setTimeout(r, 100));
+      return sawClick;
+    });
+    assert.equal(unlocked, true, 'keyboard activation must reach the click handler');
+  });
+
   await run('no page errors', () => assert.deepEqual(errors, []));
 } finally {
   await browser.close();

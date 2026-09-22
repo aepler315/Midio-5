@@ -125,7 +125,15 @@ export function classifyUrl(raw, pageUrl = 'https://supermaudio.com/') {
   try {
     // Resolving against the page lets a bare `127.0.0.1:8080/song.mp3` work,
     // which is what someone typing on a car screen will actually enter.
-    url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(text) ? text : `http://${text}`, pageUrl);
+    //
+    // The test is for `://`, not merely `scheme:`. A bare `localhost:8088`
+    // or `music.local:8088` otherwise parses as a URL whose SCHEME is
+    // `localhost:`/`music.local:` -- and is then rejected by the scheme
+    // check below, even though `localhost` is exactly the loopback setup
+    // this feature is built around. Requiring the slashes keeps
+    // `file:///...` and `http://...` recognised while treating a
+    // hostname-and-port as what it is.
+    url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `http://${text}`, pageUrl);
   } catch {
     return { ok: false, code: 'invalid', message: `"${text}" is not a URL.` };
   }
@@ -265,6 +273,42 @@ function checkDeclaredLength(res, name, limits) {
  * double -- it falls back to a one-shot read, which is still bounded by the
  * stall timer and still cap-checked once it lands.
  */
+/** A listing is text, not audio, and does not need the audio budget -- but
+ *  it does need a bound, so a server streaming an endless index cannot fill
+ *  memory. */
+const LISTING_MAX_BYTES = 32 * 1024 * 1024;
+
+/**
+ * Reads a listing body as text, re-arming the stall deadline per chunk.
+ *
+ * `res.json()` and `res.text()` read the whole body internally and never
+ * call back, so using them turned the documented stall deadline into a
+ * total-duration one: a large index arriving steadily over more than the
+ * listing timeout was aborted even though bytes never stopped.
+ */
+async function readListingText(res, arm) {
+  if (!res.body?.getReader) return res.text();
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    arm(); // bytes arrived, so this is progress rather than a stall
+    total += value.byteLength;
+    if (total > LISTING_MAX_BYTES) {
+      try { await reader.cancel(); } catch { /* already torn down */ }
+      throw new UrlAudioError(
+        `The listing at ${res.url || 'that address'} is larger than`
+        + ` ${Math.round(LISTING_MAX_BYTES / (1024 * 1024))}MB, so it was not read.`,
+      );
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+}
+
 async function readBody(res, arm, { name, limits, type = '' }) {
   if (!res.body?.getReader) {
     const blob = await res.blob();
@@ -389,7 +433,12 @@ export function parseJsonListing(json, baseUrl) {
     const resolved = safeUrl(rawUrl, baseUrl);
     if (!resolved) continue;
     if (!isAudioName(resolved.pathname) && !isAudioName(rawName)) continue;
-    entries.push({ name: audioNameFromUrl(resolved.href) || String(rawName), url: resolved.href });
+    // An explicit name wins over one derived from the URL. A row is
+    // admitted on the strength of its name when the URL has no extension
+    // (`download?id=1`), so discarding that name right afterwards would
+    // label the track "download" everywhere it appears.
+    const explicit = typeof row === 'object' && row?.name ? String(row.name) : '';
+    entries.push({ name: explicit || audioNameFromUrl(resolved.href), url: resolved.href });
   }
 
   for (const row of folderRows) {
@@ -412,9 +461,19 @@ export function parseJsonListing(json, baseUrl) {
  * being pulled down in full first; the received bytes are re-checked
  * afterwards because Content-Length is a claim, not a guarantee.
  */
-export async function fetchAudioAsFile(url, { signal = null, limits = AUDIO_LOAD_LIMITS } = {}) {
-  const name = audioNameFromUrl(url);
-  const blob = await requestWithTimeout(url, DOWNLOAD_TIMEOUT_MS, signal, async (res, arm) => {
+export async function fetchAudioAsFile(url, {
+  signal = null,
+  limits = AUDIO_LOAD_LIMITS,
+  // The listing may know a better filename than the URL does -- a row like
+  // `{ name: "Pretty Song.flac", url: "download?id=1" }` would otherwise
+  // become "download", and that name is what the HUD shows and what
+  // identity resolution and caching key on.
+  name: declaredName = '',
+  // Injectable so tests can exercise the timeout without waiting for it.
+  stallMs = DOWNLOAD_TIMEOUT_MS,
+} = {}) {
+  const name = String(declaredName || '').trim() || audioNameFromUrl(url);
+  const blob = await requestWithTimeout(url, stallMs, signal, async (res, arm) => {
     if (!res.ok) {
       throw new UrlAudioError(`${url} returned HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.`);
     }
@@ -445,7 +504,13 @@ export async function fetchAudioAsFile(url, { signal = null, limits = AUDIO_LOAD
  *   | { kind: 'listing', entries: Array<{name:string,url:string}>,
  *       folders: Array<{name:string,url:string}>, url: string }>}
  */
-export async function openAudioUrl(raw, { pageUrl = undefined, signal = null, limits = AUDIO_LOAD_LIMITS } = {}) {
+export async function openAudioUrl(raw, {
+  pageUrl = undefined,
+  signal = null,
+  limits = AUDIO_LOAD_LIMITS,
+  stallMs = LISTING_TIMEOUT_MS,
+  downloadStallMs = DOWNLOAD_TIMEOUT_MS,
+} = {}) {
   const verdict = pageUrl === undefined ? classifyUrl(raw) : classifyUrl(raw, pageUrl);
   if (!verdict.ok) throw new UrlAudioError(verdict.message);
   const url = verdict.url;
@@ -453,31 +518,41 @@ export async function openAudioUrl(raw, { pageUrl = undefined, signal = null, li
   // A URL that plainly names an audio file is fetched straight as audio --
   // no HEAD probe, so the common case costs exactly one request.
   if (isAudioName(new URL(url).pathname)) {
-    return { kind: 'audio', file: await fetchAudioAsFile(url, { signal, limits }) };
+    return {
+      kind: 'audio',
+      file: await fetchAudioAsFile(url, { signal, limits, stallMs: downloadStallMs }),
+    };
   }
 
-  return requestWithTimeout(url, LISTING_TIMEOUT_MS, signal, async (res, arm) => {
+  return requestWithTimeout(url, stallMs, signal, async (res, arm) => {
     if (!res.ok) {
       throw new UrlAudioError(`${url} returned HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.`);
     }
     const contentType = (res.headers?.get?.('content-type') || '').toLowerCase();
+    // Relative links resolve against where the listing ACTUALLY came from.
+    // A conventional server redirects a typed `/music` to `/music/`, and
+    // resolving `song.mp3` against the pre-redirect URL yields `/song.mp3`
+    // instead of `/music/song.mp3`. The reported url is the final one too,
+    // so the "Up a folder" button is derived from a real path.
+    const base = res.url || url;
 
     if (contentType.includes('json')) {
-      const { entries, folders } = parseJsonListing(await res.json(), url);
+      const text = await readListingText(res, arm);
+      const { entries, folders } = parseJsonListing(JSON.parse(text), base);
       if (!entries.length && !folders.length) {
-        throw new UrlAudioError(`No audio files listed at ${url}.`);
+        throw new UrlAudioError(`No audio files listed at ${base}.`);
       }
-      return { kind: 'listing', entries, folders, url };
+      return { kind: 'listing', entries, folders, url: base };
     }
     if (contentType.includes('html')) {
-      const { entries, folders } = parseListing(await res.text(), url);
+      const { entries, folders } = parseListing(await readListingText(res, arm), base);
       if (!entries.length && !folders.length) {
         throw new UrlAudioError(
-          `No audio links found at ${url}. If that is a folder, make sure the`
+          `No audio links found at ${base}. If that is a folder, make sure the`
           + ' server serves a directory index.',
         );
       }
-      return { kind: 'listing', entries, folders, url };
+      return { kind: 'listing', entries, folders, url: base };
     }
 
     // Not a listing and not an audio-looking path: an extensionless URL from

@@ -90,7 +90,14 @@
           <form id="urlLoadForm" class="urlLoadForm" autocomplete="off">
             <label class="urlLoadLabel" for="urlLoadInput">Address of a song, or of a folder to browse</label>
             <div class="urlLoadRow">
-              <input id="urlLoadInput" type="url" inputmode="url" spellcheck="false"
+              <!-- type="text", NOT type="url". A url input applies native
+                   constraint validation on submit, and a bare address like
+                   `127.0.0.1:8088` is not a valid absolute URL -- so the
+                   browser would block the submit and classifyUrl(), which
+                   exists precisely to prepend http:// for that shape, would
+                   never run. inputmode="url" still gets the URL keyboard. -->
+              <input id="urlLoadInput" type="text" inputmode="url" spellcheck="false"
+                     autocapitalize="off" autocorrect="off"
                      placeholder="http://127.0.0.1:8088/" class="urlLoadInput" />
               <button id="urlLoadBtn" type="submit" class="ghostbtn chipbtn">Open</button>
             </div>
