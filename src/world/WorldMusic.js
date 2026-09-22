@@ -13,7 +13,7 @@ const LIFT_FULL = 0.22;
 // into a quiet section. This is the floor such a boundary keeps.
 const REL_FLOOR = 0.45;
 
-export function sampleWorldMusic({ nowMs = 0, energyCurves = null, rhythm = null, section = null, reducedFlash = false, response = null } = {}) {
+export function sampleWorldMusic({ nowMs = 0, energyCurves = null, rhythm = null, section = null, reducedFlash = false, response = null, glowTame01 = 0 } = {}) {
   nowMs = Number.isFinite(nowMs) ? Math.max(0, nowMs) : 0;
   const windowMs = Number.isFinite(response?.smoothingMs) ? response.smoothingMs : 1200;
   const n = Math.max(8, Math.round(windowMs / 20));
@@ -40,6 +40,8 @@ export function sampleWorldMusic({ nowMs = 0, energyCurves = null, rhythm = null
   const ambientScale = Number.isFinite(response?.ambientScale) ? response.ambientScale : 1;
   const cityFloor = response && Number.isFinite(response.cityLightFloor) ? response.cityLightFloor : 0.18;
   const waterFloor = response && Number.isFinite(response.waterLightFloor) ? response.waterLightFloor : 0.12;
+  const tame = clamp01(Number.isFinite(glowTame01) ? glowTame01 : (section?.glowTame01 ?? 0));
+  const energyGlow = energy * (1 - 0.70 * tame);
   // Open over four seconds at an evidence-backed boundary. Pacing-only
   // cuts are visual scheduling, not evidence of a musical phrase.
   const elapsed = nowMs - (section?.startMs ?? 0);
@@ -49,22 +51,25 @@ export function sampleWorldMusic({ nowMs = 0, energyCurves = null, rhythm = null
     ? Math.sin(Math.PI * elapsed / span) ** 2 * trust : 0;
   return {
     bass, energy, accent, reveal,
+    glowTame: tame,
     group: rhythm && Number.isFinite(rhythm.tMs) ? Math.abs(Math.round(rhythm.tMs * 0.013)) % 4 : 0,
     current: reducedFlash ? 0 : Math.sin(nowMs / macroMs) * (0.35 + 0.35 * bass) * ambientScale,
-    cityLight: cityFloor + 0.45 * energy * ambientScale,
+    cityLight: cityFloor + 0.45 * energyGlow * ambientScale,
     waterLight: waterFloor + 0.22 * bass * ambientScale,
   };
 }
 
 /** Draw paths share this so a world's response config actually reaches the sample. */
 export function sampleManagerMusic(mgr, extra = {}) {
+  const section = mgr?.sections?.[mgr._lastSectionIdx];
   return sampleWorldMusic({
     nowMs: (mgr?.tSec ?? 0) * 1000,
     energyCurves: mgr?.energyCurves,
     rhythm: mgr?.worldRhythm,
-    section: mgr?.sections?.[mgr._lastSectionIdx],
+    section,
     reducedFlash: !!mgr?.reducedFlash,
     response: mgr?.world?.response,
+    glowTame01: extra.glowTame01 ?? section?.glowTame01 ?? mgr?.buildGlowTame ?? 0,
     ...extra,
   });
 }
