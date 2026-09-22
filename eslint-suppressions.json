@@ -219,11 +219,6 @@
       "count": 1
     }
   },
-  "tools/smoke-motionblur.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
   "tools/song-meta.mjs": {
     "no-sparse-arrays": {
       "count": 1

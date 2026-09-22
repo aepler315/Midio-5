@@ -1,6 +1,10 @@
 // Upload audio through the file chooser, analyse it, pick a world,
 // render advancing playback, pause/resume, and stop. Start npm start first.
-// Usage: node tools/smoke.mjs [url] [outDir]
+// Usage: node tools/smoke.mjs [url] [outDir] [recording]
+//
+// With no recording, a synthetic fixture is generated. Pass one to run the
+// same checks against real music; it should be at least 15 seconds long,
+// or the playback checks run out of song before they finish.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
@@ -224,7 +228,7 @@ export async function runAudioSmoke({
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  runAudioSmoke({ url: process.argv[2], outDir: process.argv[3] }).catch((error) => {
+  runAudioSmoke({ url: process.argv[2], outDir: process.argv[3], wavPath: process.argv[4] }).catch((error) => {
     console.error(error);
     process.exitCode = 1;
   });
