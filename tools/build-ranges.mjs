@@ -81,7 +81,13 @@ for (const range of manifest.ranges) {
     execFileSync(process.execPath, [path.join(root, 'tools/build-terrain-profile.mjs'), gridPath, profilePath],
       { stdio: ['ignore', 'ignore', 'inherit'] });
   }
-  const profile = JSON.parse(readFileSync(profilePath, 'utf8'));
+  // Seven significant figures: elevations to 0.1mm, angles to a millionth
+  // of a degree. The raw values are single-precision elevations printed at
+  // full double length, which eslint's no-loss-of-precision rejects in the
+  // generated modules -- and the extra digits are only noise. Rounded
+  // BEFORE scoring, so the scores describe exactly the profile that ships.
+  const profile = JSON.parse(readFileSync(profilePath, 'utf8'),
+    (_, v) => (typeof v === 'number' && !Number.isInteger(v) ? Number(v.toPrecision(7)) : v));
   const character = rangeCharacter(profile);
   const quality = skylineQuality(profile);
   // A rejected build leaves nothing behind: an old good build of the same
