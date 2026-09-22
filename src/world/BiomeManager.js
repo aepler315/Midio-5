@@ -38,8 +38,8 @@ import {
   ridgeYSmooth, danceOffsetSmooth, danceScaleSmooth, danceScaleRamp, assignBandFeatures, geoCrestOffset,
 } from './GeoCrest.js';
 import { profileUnits } from './terrain/TerrainProfile.js';
+import { TERRAIN_STRIP_WIDTH, crestRimAlpha } from './terrain/StripRead.js';
 import { ridgeDepth, terrainScrollPx } from './terrain/ProfileTravel.js';
-import { TERRAIN_STRIP_WIDTH } from './terrain/StripRead.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
 import { strataBeds } from './RockStrata.js';
 import {
@@ -1495,15 +1495,18 @@ export class BiomeManager {
         : 'massif';
       const color = layerColor(b.silhouette, worldKind, layerKey);
       const terrain = layerKey !== 'L5' ? this.terrainProfiles?.[layerKey] : null;
+      // An invented layer in front of a real range was the loud sawtooth.
+      // Keep it as a low foothill so the scanned ridges are what you see.
+      const standIn = !!(this.terrainProfiles && !terrain && (layerKey === 'L3' || layerKey === 'L5'));
       strips[layerKey] = generateSilhouette({
         seed: seed + idx + 1,
         height: bake.height,
-        octaves: bake.octaves,
-        amplitude: bake.amplitude,
+        octaves: standIn ? 1 : bake.octaves,
+        amplitude: standIn ? bake.amplitude * 0.5 : bake.amplitude,
         baseline: bake.baseline,
         color,
         shadeMode,
-        profile: bake.profile,
+        profile: standIn ? 'rolling' : bake.profile,
         character,
         anchor: bake.anchor,
         fillLift: mat.fillLift,
@@ -1513,7 +1516,7 @@ export class BiomeManager {
         bayPx: bake.bayPx,
         colFrac: bake.colFrac,
         organic: bake.organic,
-        softenScale: bake.soften,
+        softenScale: standIn ? 1 : bake.soften,
         portrait,
         layerKey,
         terrainMods: terrainModsForLayer(terrainMods, bake),
@@ -4959,7 +4962,7 @@ export class BiomeManager {
       // it's a wider live pass across the two biggest ranges on screen.
       const rimOkA = layerKey === 'L4' || layerKey === 'L5' || !this._perf || this._perf.heavyPostFx;
       if (rimOkA && A.edgeLight) {
-        this._drawCrest(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.edgeLight, CREST_RIM_ALPHA[layerKey] ?? 1, A.terrainEnergy ?? 1, heightMulA);
+        this._drawCrest(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.edgeLight, crestRimAlpha(CREST_RIM_ALPHA[layerKey] ?? 1, isTerrainStrip(stripsA[layerKey])), A.terrainEnergy ?? 1, heightMulA);
       }
     }
     if (B !== A && t > 0.02) {
@@ -4969,7 +4972,7 @@ export class BiomeManager {
       this._drawRidgeVolume(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, t, B.terrainEnergy ?? 1, heightMulB, snowLineB);
       const rimOkB = layerKey === 'L4' || layerKey === 'L5' || !this._perf || this._perf.heavyPostFx;
       if (rimOkB && B.edgeLight) {
-        this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t * (CREST_RIM_ALPHA[layerKey] ?? 1), B.terrainEnergy ?? 1, heightMulB);
+        this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t * crestRimAlpha(CREST_RIM_ALPHA[layerKey] ?? 1, isTerrainStrip(stripsB[layerKey])), B.terrainEnergy ?? 1, heightMulB);
       }
     }
     ctx.restore();
@@ -5247,7 +5250,8 @@ export class BiomeManager {
       const u = stripSampleX(strip, stripX);
       const yR = ridgeYSmooth(strip.ridge, u) * scale;
       const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever, colW) * terrainEnergy;
-      const lift = (isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
+      const lift = (isGeo && !isTerrainStrip(strip)
+        ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
       // Stage 2 (ridge deformation): foot-anchored per-column scale -- the
       // strip's foot (screen y = baseY + dh) never moves; only the
       // elevation above it stretches, by this column's own relative peak
