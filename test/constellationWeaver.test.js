@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ConstellationWeaver, nextDotPos, edgeRevealFrac, groundFadeAlpha, REGION, GROUND_FADE_START,
-  MELODY_STEPS_PER_UPDATE,
+  MELODY_STEPS_PER_UPDATE, STALL_EDGE_MS,
 } from '../src/world/ConstellationWeaver.js';
 import { mulberry32 } from '../src/utils/math.js';
 
@@ -198,6 +198,24 @@ test('draw() rescales dots against the ACTUAL canvas, not the construction-time 
   // (unless sx/sy happen to be 1, which they aren't here).
   const drewUnscaled = ctx.arcs.some((p) => Math.abs(p.x - rawDot.x) < 1e-6 && Math.abs(p.y - rawDot.y) < 1e-6);
   assert.equal(drewUnscaled, false, 'must not draw at the un-rescaled field coordinate');
+});
+
+test('a stalled constellation edge waits for the next kick', () => {
+  const weaver = new ConstellationWeaver(5, 1280, 720);
+  let t = 0;
+  for (let i = 0; i < 40 && !(weaver.building && weaver.building.phase === 'connecting'); i++) {
+    tickMelody(weaver, melodyEvt(t, 60 + i));
+    t += 80;
+  }
+  const fig = weaver.building;
+  assert.ok(fig && fig.phase === 'connecting', 'figure should be connecting edges');
+  const before = fig.edgeRevealedCount;
+  const stalled = fig.edgeStartMs + STALL_EDGE_MS + 400;
+  weaver.update(stalled, 0.05);
+  assert.equal(fig.edgeRevealedCount, before, 'the stall timer alone must not draw the next edge');
+  weaver.onKick(0.8, stalled);
+  assert.equal(weaver.building, fig, 'one edge must not finish the figure');
+  assert.equal(fig.edgeRevealedCount, before + 1);
 });
 
 test('onKick pulse rises then decays toward 0', () => {

@@ -26,7 +26,7 @@ import { ChaosRibbon } from './ChaosRibbon.js';
 import { ReactionDiffusion } from './ReactionDiffusion.js';
 import { decorateStrip } from './Landmarks.js';
 import {
-  DANCE_LAYERS, danceOffset, columnHeight01At, ridgeBakedCrestY, kickEnv, ridgeKickEnv, spectrumBars, orogenyHeightMul,
+  DANCE_LAYERS, danceOffset, columnHeight01At, ridgeBakedCrestY, kickEnv, ridgeKickEnv, planeKick, kickBloom, spectrumBars, orogenyHeightMul,
   pullbackHeightMul,
   mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER,
   massifDrawHeight, massifRidgeHeight01, massifRidgeJagPx, massifClearing01,
@@ -867,7 +867,7 @@ export class BiomeManager {
         this.swarm.kick(evt.vel);
         this.ribbon.kick();
         this.rd.onKick();
-        this.weaver.onKick(evt.vel);
+        this.weaver.onKick(evt.vel, evt.tMs);
         if (evt.vel > 0.78) this.murmuration.startle(evt.vel);
         // Heavy kicks strike lightning, but only while a storm is blowing.
         const active = this.currentBlend ? this._profile(this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from) : null;
@@ -1960,7 +1960,9 @@ export class BiomeManager {
     const weaverFinale = smoothstep(0.8, 1, this._progress);
     const weaverFullness = clamp01(weaverPulse * 0.5 + weaverFinale);
     this.weaver.update(nowMs, dtSec, weaverFullness);
-    this.spaceRidge.update(nowMs, dtSec, this._eqSmoothed, this.calmLevel);
+    // Reduced flash keeps the slow tumble and drops the beat hitch.
+    const kickTau = this.reducedFlash ? -1 : nowMs - this._danceKickMs;
+    this.spaceRidge.update(nowMs, dtSec, this._eqSmoothed, this.calmLevel, kickTau);
     // Drops send a heavy ring through the lake and snap every light-rig beam
     // onto Midio for a moment -- edge-detected off the externally-set
     // dropAtMs (same passthrough pattern as heatShimmer).
@@ -2295,7 +2297,7 @@ export class BiomeManager {
     // "witnessed in the far distance", not sprites pasted on the sky.
     if (phenomenaFull) this.farVignettes.draw(ctx, canvas, worldX, {
       tSec: this.tSec,
-      kick: kickEnv(this.tSec * 1000 - this._danceKickMs - 170) * this._danceKickAmp,
+      kick: planeKick(this.tSec * 1000, this._danceKickMs, 'vignette', this._danceKickAmp),
       silhouette: tintL2, // they sit at L2's depth, so they wear L2's air
       sky: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
       halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
@@ -2888,7 +2890,7 @@ export class BiomeManager {
       // an archetype name, not a synthesized palette's own display name.
       const dominantLandmarkKey = this._profile(dominant)?.landmarkKey || dominant;
       const ratio = CodaDirector.delaminateRatio(NEARFIELD_RATIO, this.unravel);
-      const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 60) * this._danceKickAmp;
+      const kick = planeKick(this.tSec * 1000, this._danceKickMs, 'near', this._danceKickAmp);
       this.nearField.draw(ctx, canvas, worldX, {
         tSec: this.tSec, kick, biomeName: dominantLandmarkKey, reducedMotion: !!this.reducedFlash, ratio,
       });
@@ -3665,6 +3667,13 @@ export class BiomeManager {
     const app = this._celestialApproachAt(canvas, canvas.width * cxFrac, canvas.height * cyFrac);
     const cx = app.x, cy = app.y;
     const grow = app.scale;
+    // The disc does not move. The halo blooms on the heard kick (no depth
+    // delay — the sun is the beat marker, same clock as a character flash)
+    // and stays still under reduced flash.
+    const heardKick = this.reducedFlash
+      ? 0
+      : kickEnv(this.tSec * 1000 - this._danceKickMs) * this._danceKickAmp;
+    const haloMul = 1 + kickBloom(heardKick);
     const rotCel = (c) => ({
       ...c,
       color: this._rotated(c.color),
@@ -3693,11 +3702,11 @@ export class BiomeManager {
       }
     }
     if (B === A) {
-      this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), alpha);
+      this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), alpha, haloMul);
       this._drawCompanions(ctx, canvas, cx, cy, A.celestial.companions, alpha);
     } else {
-      this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), (1 - t) * alpha);
-      this._drawOneCelestial(ctx, cx, cy, rotCel(B.celestial), t * alpha);
+      this._drawOneCelestial(ctx, cx, cy, rotCel(A.celestial), (1 - t) * alpha, haloMul);
+      this._drawOneCelestial(ctx, cx, cy, rotCel(B.celestial), t * alpha, haloMul);
       this._drawCompanions(ctx, canvas, cx, cy, A.celestial.companions, (1 - t) * alpha);
       this._drawCompanions(ctx, canvas, cx, cy, B.celestial.companions, t * alpha);
     }
@@ -4106,7 +4115,7 @@ export class BiomeManager {
     const nearY = canvas.height * OCEAN_NEAR_FRAC - (canvas.height * (OCEAN_NEAR_FRAC - OCEAN_HORIZON_FRAC)) * 0.4 * withdrawal01;
     const bass = 0.5 * ((this._eqSmoothed[0] || 0) + (this._eqSmoothed[1] || 0));
     const treble = 0.5 * ((this._eqSmoothed[5] || 0) + (this._eqSmoothed[6] || 0));
-    const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 250) * this._danceKickAmp;
+    const kick = planeKick(this.tSec * 1000, this._danceKickMs, 'ocean', this._danceKickAmp);
     const tsunami = this._activeTsunami(canvas.width);
     const dials = styleDials(this.visualStyle);
     const presence = 1.28 * (dials.oceanPresence ?? 1);
@@ -4385,7 +4394,7 @@ export class BiomeManager {
     const water = this._rotated(this.lerpCache.get(sil, skyMid, 0.45));
     const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
     const bass = 0.5 * ((this._eqSmoothed[0] || 0) + (this._eqSmoothed[1] || 0));
-    const kick = kickEnv(this.tSec * 1000 - this._danceKickMs - 250) * this._danceKickAmp;
+    const kick = planeKick(this.tSec * 1000, this._danceKickMs, 'ocean', this._danceKickAmp);
     const nowMs = this.tSec * 1000;
     const scroll = worldX * OCEAN_LIFE_RATIO;
     const pad = 200;
@@ -4685,7 +4694,7 @@ export class BiomeManager {
     ctx.restore();
   }
 
-  _drawOneCelestial(ctx, cx, cy, c, alpha) {
+  _drawOneCelestial(ctx, cx, cy, c, alpha, haloMul = 1) {
     if (alpha <= 0.02) return;
     ctx.save();
     // A previous pass (see git history) cut this halo's ALPHA to 0.55 and
@@ -4698,8 +4707,8 @@ export class BiomeManager {
     // cuts both: alpha down further, and the multiplier itself (3.2/2.2 ->
     // 2.4/1.7, roughly a 25% smaller footprint) so the glow's total extent
     // shrinks along with its brightness, not just one or the other.
-    const haloRadiusMul = c.dominant ? 2.4 : 1.7;
-    ctx.globalAlpha = alpha * 0.4;
+    const haloRadiusMul = (c.dominant ? 2.4 : 1.7) * haloMul;
+    ctx.globalAlpha = Math.min(0.72, alpha * 0.4 * haloMul);
     const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, c.radius * haloRadiusMul);
     halo.addColorStop(0, c.haloColor);
     halo.addColorStop(1, 'rgba(0,0,0,0)');
