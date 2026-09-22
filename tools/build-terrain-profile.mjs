@@ -1,18 +1,20 @@
 // Build a three-layer skyline profile from a north-up lat/lon elevation
 // grid (Float32, row 0 = north). The grid is an argument, not fetched here.
 //
-//   node tools/build-terrain-profile.mjs grid.json out.json
+//   node tools/build-terrain-profile.mjs grid.json out.json [guides.geojson]
 //
 // grid.json: { west, south, east, north, width, height, elevB64 }
+// guides.geojson: FeatureCollection of LineStrings, properties.layer = far|mid|near,
+// coordinates [lon, lat]. Without a guide file the crest is the highest cell per row.
 import { readFileSync, writeFileSync } from 'node:fs';
-import { demFromLatLon, crestGuideFromDem, projectLatLon } from '../src/world/terrain/LatLonDem.js';
+import { demFromLatLon, crestGuideFromDem } from '../src/world/terrain/LatLonDem.js';
 import { rangeLayerProfiles, compositeLayerProfiles, profilesToJSON } from '../src/world/terrain/TerrainProfile.js';
 import { scanCorridor, smoothBaseline, pointAlong } from '../src/world/terrain/SkylineScan.js';
-import { TETON_GUIDES } from '../src/world/terrain/tetonGuides.js';
+import { guidesFromGeoJSON } from '../src/world/terrain/GuideGeoJSON.js';
 
-const [gridPath, outPath] = process.argv.slice(2);
+const [gridPath, outPath, guidePath] = process.argv.slice(2);
 if (!gridPath || !outPath) {
-  console.error('usage: node tools/build-terrain-profile.mjs grid.json out.json');
+  console.error('usage: node tools/build-terrain-profile.mjs grid.json out.json [guides.geojson]');
   process.exit(1);
 }
 const src = JSON.parse(readFileSync(gridPath, 'utf8'));
@@ -49,10 +51,9 @@ const summitLat = src.south + summitPt.y / 110540;
 const lat0 = ((src.south + src.north) / 2) * Math.PI / 180;
 const summitLon = src.west + summitPt.x / (111320 * Math.cos(lat0));
 const frame = { west: src.west, south: src.south, north: src.north };
-const authored = src.name === 'tetons-front' ? {
-  far: projectLatLon(TETON_GUIDES.far, frame),
-  near: projectLatLon(TETON_GUIDES.near, frame),
-} : null;
+const authored = guidePath
+  ? guidesFromGeoJSON(JSON.parse(readFileSync(guidePath, 'utf8')), frame)
+  : null;
 const sharedMeta = {
   source: 'USGS 3DEP',
   bbox: [src.west, src.south, src.east, src.north],
@@ -83,7 +84,7 @@ const json = profilesToJSON(profiles, {
   ...sharedMeta,
   layerElevM,
   layersFound: Object.keys(profiles),
-  guide: authored ? 'authored-polylines' : 'max-elevation-per-row',
+  guide: guidePath || (authored ? 'authored-polylines' : 'max-elevation-per-row'),
   note: authored
     ? 'Far is the Teton crest and near is the range east of Jackson Hole, each scanned on its own. They are stacked, not one view. No third range runs the length of this tile.'
     : (Object.keys(profiles).length < 3
