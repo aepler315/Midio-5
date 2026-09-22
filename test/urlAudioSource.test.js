@@ -501,7 +501,7 @@ test('a body that stalls after the headers is abandoned, not waited on forever',
     async () => {
       await assert.rejects(
         () => fetchAudioAsFile('http://127.0.0.1:8088/stalls.mp3', { limits: AUDIO_LOAD_LIMITS }),
-        (err) => err instanceof UrlAudioError && /stopped responding/.test(err.message),
+        (err) => err instanceof UrlAudioError && /stopped sending data/.test(err.message),
       );
     },
   );
@@ -522,6 +522,60 @@ test("a caller's own abort is not reported as a timeout", async () => {
         () => fetchAudioAsFile('http://127.0.0.1:8088/a.mp3', { signal: controller.signal }),
         // Rethrown as-is so the UI can tell "superseded" from "failed".
         (err) => err.name === 'AbortError' && !(err instanceof UrlAudioError),
+      );
+    },
+  );
+});
+
+
+test('a broken listing is reported as such, not as a CORS or connectivity failure', async () => {
+  // Once the response has arrived, a thrown error is the consumer's problem.
+  // Blaming CORS for malformed JSON sends someone to fix response headers
+  // when the actual fault is the body.
+  await withFetch(
+    async () => {
+      const res = response({ headers: { 'content-type': 'application/json' } });
+      res.json = async () => { throw new SyntaxError('Unexpected token < in JSON at position 0'); };
+      return res;
+    },
+    async () => {
+      await assert.rejects(
+        () => openAudioUrl('http://127.0.0.1:8088/', { pageUrl: HTTPS_PAGE }),
+        (err) => err instanceof UrlAudioError
+          && /answered, but its response could not be read/.test(err.message)
+          && !/Access-Control-Allow-Origin/.test(err.message),
+      );
+    },
+  );
+});
+
+test('a server that never answers is still reported as unreachable, naming CORS', async () => {
+  // The other half of that split: nothing came back, so the CORS advice is
+  // the useful guess and must survive.
+  await withFetch(
+    async () => { throw new TypeError('Failed to fetch'); },
+    async () => {
+      await assert.rejects(
+        () => openAudioUrl('http://127.0.0.1:8088/', { pageUrl: HTTPS_PAGE }),
+        (err) => err instanceof UrlAudioError && /Access-Control-Allow-Origin/.test(err.message),
+      );
+    },
+  );
+});
+
+test('a timeout before any response reads differently from one mid-transfer', async () => {
+  await withFetch(
+    async (url, { signal }) => new Promise((_resolve, reject) => {
+      signal?.addEventListener('abort', () => {
+        const err = new Error('aborted');
+        err.name = 'AbortError';
+        reject(err);
+      }, { once: true });
+    }),
+    async () => {
+      await assert.rejects(
+        () => fetchAudioAsFile('http://127.0.0.1:8088/silent.mp3'),
+        (err) => err instanceof UrlAudioError && /did not answer within/.test(err.message),
       );
     },
   );

@@ -21,7 +21,9 @@ import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { FileChooserSupport } from './ui/FileChooserProbe.js';
-import { openAudioUrl, UrlAudioError, fetchAudioAsFile } from './net/UrlAudioSource.js';
+import {
+  openAudioUrl, UrlAudioError, fetchAudioAsFile, classifyUrl,
+} from './net/UrlAudioSource.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
 import { DrawErrorLog } from './render/DrawErrorLog.js';
 import { ROLE_LOW, ROLE_HIGH, GrooveFingerprint } from './sim/GrooveFingerprint.js';
@@ -2206,10 +2208,18 @@ function renderUrlListing({ entries = [], folders = [], url = '' }) {
   ];
   // One folder of one album is a handful of rows; a server configured to
   // serve a whole music drive flat is thousands, and building that many
-  // buttons is seconds of frozen UI on a head unit. Folders are never
-  // dropped -- they are the way to reach the rest.
-  const shown = rows.slice(0, URL_LISTING_MAX_ROWS);
-  const hidden = rows.length - shown.length;
+  // buttons is seconds of frozen UI on a head unit.
+  //
+  // Only FILE rows are capped. Slicing the combined list dropped folders
+  // past the limit as well, and a dropped folder is unreachable -- there is
+  // no control left to open it, and the only advice shown is "open a
+  // subfolder". A hidden song can still be reached by going into the folder
+  // that holds it; a hidden folder is a dead end.
+  const folderRows = rows.filter((row) => row.kind === 'folder');
+  const fileRows = rows.filter((row) => row.kind === 'file');
+  const shownFiles = fileRows.slice(0, URL_LISTING_MAX_ROWS);
+  const shown = [...folderRows, ...shownFiles];
+  const hidden = fileRows.length - shownFiles.length;
   for (const row of shown) {
     const li = document.createElement('li');
     li.className = 'urlLoadItem';
@@ -2242,7 +2252,8 @@ function renderUrlListing({ entries = [], folders = [], url = '' }) {
   if (hidden > 0) {
     const li = document.createElement('li');
     li.className = 'urlLoadItem urlLoadTruncated';
-    li.textContent = `+${hidden} more not shown \u2014 open a subfolder to narrow it down.`;
+    li.textContent = `+${hidden} more song${hidden === 1 ? '' : 's'} not shown`
+      + ' \u2014 open a subfolder to narrow it down.';
     urlLoadListEl.append(li);
   }
   urlLoadListEl.classList.toggle('hidden', rows.length === 0);
@@ -2323,12 +2334,25 @@ async function openUrlTarget(raw) {
   }
 }
 
-/** Loads one song picked out of a listing. */
+/** Loads one song picked out of a listing.
+ *
+ *  The URL is re-validated even though it came from a listing we just
+ *  fetched: a listing is free to contain absolute links, and an HTML index
+ *  usually does. A server started with MUSIC_HOST set advertises its LAN
+ *  address, so a folder on loopback can list songs on http://192.168.x.x --
+ *  which the browser blocks as mixed content. Without this check the browse
+ *  succeeds and every song click then fails as an unreachable-server/CORS
+ *  error, which points at entirely the wrong thing. */
 async function loadUrlAudio(url, name = '') {
+  const verdict = classifyUrl(url, location.href);
+  if (!verdict.ok) {
+    setUrlLoadStatus(verdict.message, true);
+    return;
+  }
   const signal = beginUrlLoadOperation();
   setUrlLoadStatus(`Fetching ${name || decodeUrlPathForDisplay(url)}\u2026`);
   try {
-    const file = await fetchAudioAsFile(url, { signal });
+    const file = await fetchAudioAsFile(verdict.url, { signal });
     if (signal.aborted) return;
     setUrlLoadStatus('');
     handleFiles([file]);

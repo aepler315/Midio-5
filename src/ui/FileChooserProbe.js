@@ -33,6 +33,20 @@
 const VERDICT_KEY = 'smw:fileChooser';
 const GRACE_MS = 1200;
 
+// How long a remembered "this browser has no chooser" is trusted.
+//
+// An absent verdict must not be permanent. The whole point of
+// docs/fermata-upstream-issue.md is that Fermata may implement
+// `onShowFileChooser` -- and on the day it does, anyone carrying a cached
+// `absent` would be locked out of the now-working chooser forever, with no
+// in-page way back and no reason to suspect site data was the cause. So the
+// negative verdict expires and the probe runs again. One 1200ms wait a
+// month is a small price for not stranding people on a fixed bug.
+//
+// A positive verdict never expires: a browser that has a chooser does not
+// lose one, and if it somehow did the next probe would catch it anyway.
+const ABSENT_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
 export const CHOOSER_OPENED = 'opened';
 export const CHOOSER_ABSENT = 'absent';
 
@@ -63,18 +77,34 @@ function defaultStorage() {
   }
 }
 
-function readStoredVerdict(storage) {
+/**
+ * Reads the remembered verdict, discarding an `absent` that has aged out.
+ *
+ * Values are stored as `<verdict>:<epoch ms>`. A bare verdict with no
+ * timestamp is what earlier versions wrote; it is treated as expired if it
+ * says `absent`, so upgrading re-probes once rather than honouring a
+ * verdict of unknown age.
+ */
+function readStoredVerdict(storage, now = Date.now()) {
+  let raw;
   try {
-    const value = storage?.getItem(VERDICT_KEY);
-    return value === CHOOSER_OPENED || value === CHOOSER_ABSENT ? value : null;
+    raw = storage?.getItem(VERDICT_KEY);
   } catch {
     return null; // private mode / disabled storage: probe again, don't crash
   }
+  if (!raw) return null;
+  const [verdict, stamp] = String(raw).split(':');
+  if (verdict !== CHOOSER_OPENED && verdict !== CHOOSER_ABSENT) return null;
+  if (verdict === CHOOSER_OPENED) return verdict;
+  const written = Number(stamp);
+  if (!Number.isFinite(written) || written <= 0) return null; // unknown age
+  if (now - written >= ABSENT_TTL_MS) return null; // aged out: probe again
+  return verdict;
 }
 
-function writeStoredVerdict(storage, verdict) {
+function writeStoredVerdict(storage, verdict, now = Date.now()) {
   try {
-    storage?.setItem(VERDICT_KEY, verdict);
+    storage?.setItem(VERDICT_KEY, `${verdict}:${now}`);
   } catch { /* nothing to do; the verdict just won't be remembered */ }
 }
 
@@ -158,11 +188,12 @@ export class FileChooserSupport {
    * @param {string}  [options.userAgent]
    * @param {object}  [options.probeDeps]  forwarded to probeFileChooser
    */
-  constructor({ storage = undefined, userAgent = undefined, probeDeps = {} } = {}) {
+  constructor({ storage = undefined, userAgent = undefined, probeDeps = {}, now = undefined } = {}) {
     this.storage = storage === undefined ? defaultStorage() : storage;
     this.userAgent = userAgent === undefined ? globalThis.navigator?.userAgent : userAgent;
     this.probeDeps = probeDeps;
-    this.verdict = readStoredVerdict(this.storage);
+    this.now = now || (() => Date.now());
+    this.verdict = readStoredVerdict(this.storage, this.now());
     this.pending = null;
   }
 
@@ -204,7 +235,7 @@ export class FileChooserSupport {
     }
     const verdict = await this.pending;
     this.verdict = verdict;
-    writeStoredVerdict(this.storage, verdict);
+    writeStoredVerdict(this.storage, verdict, this.now());
     if (verdict === CHOOSER_ABSENT) {
       // Dismiss the keyboard the dead click raised. Blurring the focused
       // element is what lowers the Android IME; there is no direct API.

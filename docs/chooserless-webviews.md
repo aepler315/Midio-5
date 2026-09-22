@@ -76,6 +76,13 @@ Android IME (there is no API for the keyboard itself), and the verdict is
 remembered in `localStorage`. From then on the button is not clicked at
 all — which is the actual fix for "the button opens the keyboard".
 
+The **negative** verdict expires after 30 days. It has to: the whole point
+of the upstream bug report below is that Fermata may one day implement
+`onShowFileChooser`, and on that day anyone carrying a cached `absent`
+would be locked out of the now-working chooser forever, with no in-page
+reset and no reason to suspect site data. A positive verdict never expires,
+since a browser that has a chooser does not lose one.
+
 **Every route to the picker must go through that probe**, and this is easy
 to get wrong. The visible "Browse files" control was originally a `<label>`
 wrapping the hidden input — the standard accessible pattern. But a label
@@ -103,6 +110,11 @@ Point the field at a song and it plays. Point it at a folder and the page
 lists what is in it — a JSON listing or an ordinary HTML directory index,
 with subfolders navigable. That is the part that answers "let me *see* my
 files" rather than "let me type a path".
+
+Long listings cap **file** rows only, never folders: a hidden song can
+still be reached by opening the folder that holds it, but a hidden folder
+is a dead end, since the only control that would reach it is the one being
+dropped.
 
 Browsing deliberately does not touch history, so each listing renders an
 **Up a folder** button derived from the current path. Without it the
@@ -159,7 +171,13 @@ that is the cause the error message names first.
 
 `tools/music-server.mjs` is a minimal server that sends the header, serves
 a JSON listing, supports range requests, and is read-only and confined to
-one directory. It canonicalises its root directory at startup, which
+one directory. It allows a fixed **list** of origins rather than `*`:
+binding to loopback keeps other machines out, but it does not keep other
+*websites* out — the server exists precisely so a page can reach
+`127.0.0.1`, and every other site open on the device can do the same. With
+a wildcard, any of them could read the listing and download the music.
+Add development origins with
+`MUSIC_ALLOW_ORIGIN="http://127.0.0.1:8080,http://localhost:8080"`. It canonicalises its root directory at startup, which
 matters here specifically: containment is checked against the `realpath` of
 each request, so a root that is *itself* a symlink — how shared storage is
 normally reached on Termux — would otherwise make every request, `/`

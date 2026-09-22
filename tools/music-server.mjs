@@ -36,6 +36,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { pipeline } from 'node:stream';
 
 // Canonicalised, not merely resolved. Containment is checked by comparing
 // against `fsp.realpath()` of each request path, so if ROOT is itself a
@@ -102,21 +103,54 @@ async function realPathInRoot(full) {
   return real;
 }
 
-function corsHeaders() {
-  return {
-    // The page fetching this is a different origin by definition, and
-    // without this header its JavaScript cannot read the bytes at all.
-    'Access-Control-Allow-Origin': '*',
+// WHICH PAGES MAY READ THIS. An allowlist, not `*`.
+//
+// Binding to loopback keeps other machines out, but it does NOT keep other
+// *websites* out: this server exists precisely so that a page can fetch it
+// from 127.0.0.1, and every other site open in any browser on this device
+// can do exactly the same. With `Access-Control-Allow-Origin: *`, any of
+// them could read the directory listing and download the music while the
+// server runs. The origin is echoed back only when it is one we expect.
+const DEFAULT_ALLOWED_ORIGINS = [
+  'https://supermaudio.com',
+  'https://www.supermaudio.com',
+];
+
+/** Extra origins for development, e.g.
+ *  MUSIC_ALLOW_ORIGIN="http://127.0.0.1:8080,http://localhost:8080" */
+const EXTRA_ALLOWED_ORIGINS = (process.env.MUSIC_ALLOW_ORIGIN || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+const ALLOWED_ORIGINS = new Set([...DEFAULT_ALLOWED_ORIGINS, ...EXTRA_ALLOWED_ORIGINS]);
+const ALLOW_ANY_ORIGIN = ALLOWED_ORIGINS.has('*');
+
+function corsHeaders(req) {
+  const origin = req?.headers?.origin;
+  const headers = {
     'Access-Control-Allow-Methods': 'GET,HEAD,OPTIONS',
     'Access-Control-Allow-Headers': 'Range,Content-Type',
     // A cross-origin reader only sees these response headers if they are
     // explicitly exposed; Content-Length is how the page refuses an
     // oversized file before downloading it.
     'Access-Control-Expose-Headers': 'Content-Length,Content-Range,Accept-Ranges',
+    // The response now differs per origin, so it must not be cached as if
+    // it were the same for everyone.
+    Vary: 'Origin',
   };
+  if (ALLOW_ANY_ORIGIN) {
+    headers['Access-Control-Allow-Origin'] = '*';
+  } else if (origin && ALLOWED_ORIGINS.has(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  }
+  // No header at all for an origin we do not know: the browser then refuses
+  // to hand the bytes to that page. A same-origin or non-browser request
+  // (curl, an <audio> element) sends no Origin and is unaffected.
+  return headers;
 }
 
-async function sendListing(res, dir, urlPath) {
+async function sendListing(req, res, dir, urlPath) {
   const entries = await fsp.readdir(dir, { withFileTypes: true });
   const base = urlPath.endsWith('/') ? urlPath : `${urlPath}/`;
   const folders = [];
@@ -131,17 +165,36 @@ async function sendListing(res, dir, urlPath) {
   folders.sort();
   files.sort((a, b) => a.name.localeCompare(b.name));
   res.writeHead(200, {
-    ...corsHeaders(),
+    ...corsHeaders(req),
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
   });
   res.end(JSON.stringify({ path: base, folders, files }));
 }
 
+/** Streams a file to the response without letting a read error kill the
+ *  process. `pipe()` does not forward a SOURCE error, so an unreadable file
+ *  -- deleted, unmounted, or on storage that went away between stat() and
+ *  the open, all ordinary on a phone -- becomes an unhandled 'error' event
+ *  and takes the whole server down instead of failing one request.
+ *  `pipeline()` handles both ends and destroys the other on failure. */
+function streamToResponse(stream, res, label) {
+  pipeline(stream, res, (err) => {
+    if (!err) return;
+    // The headers are already sent by this point, so there is no status left
+    // to change: log it and drop the connection so the client sees a
+    // truncated transfer rather than a silent, permanent stall.
+    if (err.code !== 'ERR_STREAM_PREMATURE_CLOSE' && err.code !== 'EPIPE') {
+      console.error(`music-server: read failed for ${label}: ${err.message}`);
+    }
+    res.destroy();
+  });
+}
+
 function sendFile(req, res, file, size) {
   const type = MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
   const headers = {
-    ...corsHeaders(),
+    ...corsHeaders(req),
     'Content-Type': type,
     'Accept-Ranges': 'bytes',
   };
@@ -155,7 +208,7 @@ function sendFile(req, res, file, size) {
     if (!range[1]) start = Math.max(0, size - Number(range[2])); // suffix range
     if (!range[1]) end = size - 1;
     if (start > end || start >= size) {
-      res.writeHead(416, { ...corsHeaders(), 'Content-Range': `bytes */${size}` });
+      res.writeHead(416, { ...corsHeaders(req), 'Content-Range': `bytes */${size}` });
       res.end();
       return;
     }
@@ -166,23 +219,23 @@ function sendFile(req, res, file, size) {
       'Content-Length': String(end - start + 1),
     });
     if (req.method === 'HEAD') { res.end(); return; }
-    fs.createReadStream(file, { start, end }).pipe(res);
+    streamToResponse(fs.createReadStream(file, { start, end }), res, file);
     return;
   }
 
   res.writeHead(200, { ...headers, 'Content-Length': String(size) });
   if (req.method === 'HEAD') { res.end(); return; }
-  fs.createReadStream(file).pipe(res);
+  streamToResponse(fs.createReadStream(file), res, file);
 }
 
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, corsHeaders());
+    res.writeHead(204, corsHeaders(req));
     res.end();
     return;
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') {
-    res.writeHead(405, { ...corsHeaders(), Allow: 'GET, HEAD, OPTIONS' });
+    res.writeHead(405, { ...corsHeaders(req), Allow: 'GET, HEAD, OPTIONS' });
     res.end();
     return;
   }
@@ -190,7 +243,7 @@ const server = http.createServer(async (req, res) => {
   const urlPath = (req.url || '/').split('?')[0] || '/';
   const full = safePath(urlPath);
   if (!full) {
-    res.writeHead(403, { ...corsHeaders(), 'Content-Type': 'text/plain' });
+    res.writeHead(403, { ...corsHeaders(req), 'Content-Type': 'text/plain' });
     res.end('Forbidden');
     return;
   }
@@ -198,19 +251,19 @@ const server = http.createServer(async (req, res) => {
   try {
     const real = await realPathInRoot(full);
     if (!real) {
-      res.writeHead(403, { ...corsHeaders(), 'Content-Type': 'text/plain' });
+      res.writeHead(403, { ...corsHeaders(req), 'Content-Type': 'text/plain' });
       res.end('Forbidden');
       return;
     }
     const stat = await fsp.stat(real);
-    if (stat.isDirectory()) await sendListing(res, real, urlPath);
+    if (stat.isDirectory()) await sendListing(req, res, real, urlPath);
     else if (stat.isFile() && isAudio(real)) sendFile(req, res, real, stat.size);
     else {
-      res.writeHead(404, { ...corsHeaders(), 'Content-Type': 'text/plain' });
+      res.writeHead(404, { ...corsHeaders(req), 'Content-Type': 'text/plain' });
       res.end('Not an audio file');
     }
   } catch {
-    res.writeHead(404, { ...corsHeaders(), 'Content-Type': 'text/plain' });
+    res.writeHead(404, { ...corsHeaders(req), 'Content-Type': 'text/plain' });
     res.end('Not found');
   }
 });

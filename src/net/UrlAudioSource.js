@@ -194,23 +194,38 @@ async function requestWithTimeout(url, stallMs, signal, consume) {
   if (signal?.aborted) controller.abort();
   signal?.addEventListener('abort', onOuterAbort, { once: true });
   arm();
+  // Whether the response ever arrived. Once it has, a thrown error is the
+  // consumer's problem (malformed JSON, an oversized body) and NOT a
+  // network or CORS failure -- telling someone to check their CORS headers
+  // because their directory index is invalid JSON sends them to fix the
+  // wrong thing entirely.
+  let responded = false;
   try {
     const res = await fetch(url, { signal: controller.signal, redirect: 'follow' });
+    responded = true;
     arm(); // headers arrived; the body gets its own fresh stall window
     return await consume(res, arm);
   } catch (err) {
     if (signal?.aborted) throw err; // the caller's own cancellation, not ours
     if (err instanceof UrlAudioError) throw err; // already explained by consume
     if (err?.name === 'AbortError') {
+      throw new UrlAudioError(responded
+        ? `${url} stopped sending data for ${Math.round(stallMs / 1000)}s, so the transfer was cancelled.`
+        : `${url} did not answer within ${Math.round(stallMs / 1000)}s.`);
+    }
+    if (responded) {
+      // Reached, read, and then unusable. Name what actually broke.
       throw new UrlAudioError(
-        `${url} stopped responding for ${Math.round(stallMs / 1000)}s, so the transfer was cancelled.`,
+        `${url} answered, but its response could not be read:`
+        + ` ${err?.message || err}. If that is a folder listing, check that`
+        + ' the server is serving valid JSON or HTML.',
       );
     }
-    // A CORS rejection, a refused connection and a wrong port are
-    // indistinguishable here by design -- fetch reports "Failed to fetch"
-    // for all three so a page cannot probe the network. Since a missing
-    // CORS header is overwhelmingly the likeliest cause for a local file
-    // server, name it first rather than leaving the player with nothing.
+    // Nothing came back. A CORS rejection, a refused connection and a wrong
+    // port are indistinguishable here by design -- fetch reports "Failed to
+    // fetch" for all three so a page cannot probe the network. Since a
+    // missing CORS header is overwhelmingly the likeliest cause for a local
+    // file server, name it first rather than leaving the player with nothing.
     throw new UrlAudioError(
       `Could not reach ${url}. Either nothing is listening there, or the`
       + ' server did not send an Access-Control-Allow-Origin header (a page'

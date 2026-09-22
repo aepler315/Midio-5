@@ -168,6 +168,42 @@ try {
     console.log('SKIP browse (pass a music-server URL as argv[2] to include it)');
   }
 
+  await run('a listing bigger than the row cap still shows every folder', async () => {
+    // Only file rows are capped. Slicing the combined list dropped folders
+    // past the limit, and a dropped folder cannot be reached at all -- the
+    // only advice rendered is "open a subfolder".
+    await page.route(/bigdir/, (route) => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        folders: Array.from({ length: 600 }, (_, i) => `/bigdir/f${i}/`),
+        files: Array.from({ length: 900 }, (_, i) => ({ name: `s${i}.mp3`, url: `/bigdir/s${i}.mp3` })),
+      }),
+    }));
+    await page.locator('#urlLoadInput').fill('http://127.0.0.1:9/bigdir/');
+    await page.locator('#urlLoadBtn').click();
+    // Wait for the truncation note, which only the big listing produces --
+    // waiting on a folder row would pass against the previous listing.
+    await page.locator('.urlLoadTruncated').waitFor({ timeout: 15000 });
+    const folders = await page.locator('.urlLoadEntry[data-kind="folder"]').count();
+    const files = await page.locator('.urlLoadEntry[data-kind="file"]').count();
+    assert.equal(folders, 600, 'every folder must stay reachable');
+    assert.equal(files, 500, 'file rows are the ones capped');
+    const note = await page.locator('.urlLoadTruncated').textContent();
+    assert.match(note, /400 more songs? not shown/);
+    await page.unroute(/bigdir/);
+  });
+
+  await run('a song link the browser would block is refused with the real reason', async () => {
+    // A listing may contain absolute links; an HTML index usually does, and
+    // a server started with MUSIC_HOST advertises its LAN address. Clicking
+    // such a song used to fail as a CORS/connectivity error.
+    const message = await page.evaluate(async () => {
+      const m = await import('/src/net/UrlAudioSource.js');
+      return m.classifyUrl('http://192.168.1.50:8088/a.mp3', 'https://supermaudio.com/').message;
+    });
+    assert.match(message, /mixed content/i);
+  });
+
   await run('no page errors', () => assert.deepEqual(errors, []));
 } finally {
   await browser.close();

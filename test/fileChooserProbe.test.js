@@ -305,3 +305,56 @@ test('a localStorage property that throws on ACCESS does not take the app down',
     else delete globalThis.localStorage;
   }
 });
+
+// --- the negative verdict must not be permanent --------------------------
+
+test('an aged-out absent verdict is discarded, so a fixed browser works again', () => {
+  // The upstream fix this PR documents would otherwise strand every user who
+  // had already recorded `absent`: no in-page reset, no reason to suspect
+  // site data, permanently unable to use a chooser that now exists.
+  const day = 24 * 60 * 60 * 1000;
+  const storage = fakeStorage({ 'smw:fileChooser': `absent:${1000 * day}` });
+
+  const fresh = new FileChooserSupport({
+    storage, userAgent: '', now: () => 1000 * day + (29 * day),
+  });
+  assert.equal(fresh.isAbsent, true, '29 days old: still trusted');
+
+  const stale = new FileChooserSupport({
+    storage, userAgent: '', now: () => 1000 * day + (31 * day),
+  });
+  assert.equal(stale.isAbsent, false, '31 days old: must re-probe');
+});
+
+test('a positive verdict never expires', () => {
+  const day = 24 * 60 * 60 * 1000;
+  const storage = fakeStorage({ 'smw:fileChooser': `opened:${1000 * day}` });
+  const support = new FileChooserSupport({
+    storage, userAgent: '', now: () => 1000 * day + (365 * day),
+  });
+  // A browser with a chooser does not lose one, and a re-probe would be a
+  // pointless 1200ms wait on every fresh load.
+  assert.equal(support.verdict, CHOOSER_OPENED);
+});
+
+test('a verdict written by an older version, with no timestamp, is not trusted', () => {
+  // Earlier builds stored a bare "absent". Its age is unknowable, so it is
+  // treated as expired rather than honoured forever.
+  const storage = fakeStorage({ 'smw:fileChooser': 'absent' });
+  assert.equal(new FileChooserSupport({ storage, userAgent: '' }).isAbsent, false);
+  // A bare "opened" is harmless to honour: it only skips a probe.
+  const opened = fakeStorage({ 'smw:fileChooser': 'opened' });
+  assert.equal(new FileChooserSupport({ storage: opened, userAgent: '' }).verdict, CHOOSER_OPENED);
+});
+
+test('a stored verdict carries a timestamp so it can be aged', async () => {
+  const storage = fakeStorage();
+  const h = harness({ focusedAfterClick: 'input' });
+  const support = new FileChooserSupport({
+    storage, userAgent: '', probeDeps: h.deps, now: () => 12345,
+  });
+  const verdict = support.open(h.input);
+  h.elapse();
+  await verdict;
+  assert.equal(storage.getItem('smw:fileChooser'), 'absent:12345');
+});
