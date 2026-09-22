@@ -46,6 +46,32 @@ const ENTRIES = [
   { id: 'mountain',  pri: 1, words: ['mountain', 'mountains', 'summit', 'peak', 'peaks', 'everest'] },
   { id: 'infinity',  pri: 1, words: ['forever', 'infinite', 'infinity', 'eternal', 'eternity', 'endless', 'timeless'] },
   { id: 'cross',     pri: 1, words: ['cross', 'crucifix', 'crucified', 'holy', 'sacred', 'divine'] },
+
+  // --- Symbolism (priority 1): what a line is ABOUT, not only what it names.
+  // The entries above only fire on a literal noun, so most lines -- which
+  // talk about love, time, freedom, loss -- drew nothing at all, and the
+  // lyric feature read as occasional clip-art. These map a theme to its
+  // conventional symbol (love -> heart, time -> hourglass, freedom -> bird,
+  // grief -> tear, captivity -> chain). Still conservative in the file
+  // header's sense: every word here carries its theme in nearly any lyric,
+  // and deliberately generic words ('go', 'feel', 'know') are left out.
+  { id: 'heart',     pri: 1, words: ['love', 'loved', 'lover', 'lovers', 'loving', 'darling', 'sweetheart'] },
+  { id: 'hourglass', pri: 1, words: ['time', 'clock', 'clocks', 'hourglass', 'ticking', 'hours', 'minutes', 'yesterday', 'tomorrow'] },
+  { id: 'bird',      pri: 1, words: ['bird', 'birds', 'sparrow', 'dove', 'doves', 'eagle', 'raven', 'crow', 'fly', 'flying', 'flew', 'free', 'freedom'] },
+  { id: 'key',       pri: 1, words: ['key', 'keys', 'unlock', 'unlocked', 'secret', 'secrets'] },
+  { id: 'rose',      pri: 1, words: ['rose', 'roses', 'flower', 'flowers', 'bloom', 'blooming', 'blossom', 'petal', 'petals', 'garden'] },
+  { id: 'sun',       pri: 1, words: ['sun', 'sunshine', 'sunlight', 'sunrise', 'sunset', 'dawn', 'daylight'] },
+  { id: 'tear',      pri: 1, words: ['tears', 'teardrop', 'teardrops', 'cry', 'crying', 'cried', 'weep', 'weeping', 'rain', 'raining'] },
+  { id: 'tree',      pri: 1, words: ['tree', 'trees', 'roots', 'branches', 'forest', 'woods'] },
+  { id: 'anchor',    pri: 1, words: ['anchor', 'anchored', 'harbor', 'harbour', 'steady', 'stay'] },
+  { id: 'chain',     pri: 1, words: ['chain', 'chains', 'chained', 'cage', 'caged', 'prison', 'trapped', 'shackles', 'captive'] },
+  { id: 'moon',      pri: 1, words: ['night', 'nights', 'midnight'] },
+  { id: 'flame',     pri: 1, words: ['burn', 'burning', 'burned', 'burnt', 'desire'] },
+  { id: 'skull',     pri: 1, words: ['death', 'dead', 'die', 'dying'] },
+  { id: 'cross',     pri: 1, words: ['pray', 'prayer', 'prayers', 'heaven', 'god'] },
+  { id: 'star',      pri: 1, words: ['shine', 'shining', 'wish', 'wishes'] },
+  { id: 'wave',      pri: 1, words: ['sea', 'seas'] },
+  { id: 'mountain',  pri: 1, words: ['climb', 'climbing'] },
 ];
 
 // Pre-build a word → entry lookup for O(1) matching.
@@ -129,6 +155,30 @@ export function scanLine(rawText) {
     }
   }
   return best;
+}
+
+/** The symbol a whole passage keeps returning to: the glyph matched by the
+ *  most lines, ties broken by priority and then by which came first. One
+ *  passing mention loses to a motif, which is what makes it the passage's
+ *  symbol rather than its clip-art. `lines` is an array of strings, or one
+ *  string with newline-separated lines. Null when nothing matches. */
+export function dominantSymbol(lines) {
+  const list = Array.isArray(lines) ? lines : String(lines || '').split('\n');
+  const tally = new Map();
+  list.forEach((line, order) => {
+    const hit = scanLine(line);
+    if (!hit) return;
+    const t = tally.get(hit.glyphId) || { count: 0, priority: hit.priority, first: order };
+    t.count++;
+    tally.set(hit.glyphId, t);
+  });
+  let best = null;
+  for (const [glyphId, t] of tally) {
+    if (!best || t.count > best.count
+      || (t.count === best.count && (t.priority > best.priority
+        || (t.priority === best.priority && t.first < best.first)))) best = { glyphId, ...t };
+  }
+  return best ? best.glyphId : null;
 }
 
 /** Extract a short, punchy phrase from a chorus block's text for sky

@@ -1,0 +1,31 @@
+{
+  "id": "canadian-rockies",
+  "name": "Canadian Rockies, Lake Louise",
+  "region": "Alberta, Canada",
+  "bbox": [
+    -116.5,
+    51.1,
+    -115.8,
+    51.55
+  ],
+  "archetype": "majestic",
+  "mood": "heroism",
+  "quality": {
+    "floorShare": 0.01
+  },
+  "scores": {
+    "energy": 0.559,
+    "rawness": 0.59,
+    "grandeur": 0.3,
+    "dominance": 0.405
+  },
+  "features": {
+    "reliefM": 1351.9,
+    "slopeMPerKm": 309.3,
+    "peaksPer10Km": 5.1,
+    "roughnessM": 131.9,
+    "dominance": 0.4,
+    "summitM": 3363.6,
+    "lengthKm": 58.4
+  }
+}

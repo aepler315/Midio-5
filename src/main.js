@@ -21,6 +21,13 @@ import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { FileChooserSupport } from './ui/FileChooserProbe.js';
+import { prepareSongRange } from './world/terrain/RangeLibrary.js';
+import {
+  ASK as ASK_WORLD, AUTO as TITLE_AUTO, readTitleWorld, resolveTitleWorldChoice, writeTitleWorld,
+} from './ui/TitleWorldChoice.js';
+// How long a title-screen world choice waits for the song's range to load
+// before starting anyway on the bundled Tetons.
+const RANGE_WAIT_MS = 1500;
 import {
   openAudioUrl, UrlAudioError, fetchAudioAsFile, classifyUrl,
 } from './net/UrlAudioSource.js';
@@ -136,6 +143,7 @@ const urlLoadListEl = document.getElementById('urlLoadList');
 const urlLoadCrumbEl = document.getElementById('urlLoadCrumb');
 const urlLoadOpenBtnEl = document.getElementById('urlLoadOpenBtn');
 const worldSelectEl = document.getElementById('worldSelect');
+const titleWorldEl = document.getElementById('titleWorld');
 const worldSelectGridEl = document.getElementById('worldSelectGrid');
 const worldSelectBackEl = document.getElementById('worldSelectBack');
 const worldPassageQuietEl = document.getElementById('worldPassageQuiet');
@@ -1212,6 +1220,20 @@ function renderWorldGrid(customWorld, features = null, extras = {}) {
   }
 }
 
+// Title-screen world choice (TitleWorldChoice.js): one option per
+// registered world after the two fixed ones, and the remembered pick.
+if (titleWorldEl) {
+  for (const world of listWorlds()) {
+    const opt = document.createElement('option');
+    opt.value = world.id;
+    opt.textContent = world.name;
+    titleWorldEl.appendChild(opt);
+  }
+  const remembered = resolveTitleWorldChoice(readTitleWorld(), listWorlds().map((w) => w.id));
+  titleWorldEl.value = remembered.id ?? remembered.mode;
+  titleWorldEl.addEventListener('change', () => writeTitleWorld(titleWorldEl.value));
+}
+
 function offerWorldsThenStart(data, extra = {}) {
   try {
     clearCustomWorld();
@@ -1233,7 +1255,33 @@ function offerWorldsThenStart(data, extra = {}) {
       readPinnedSeed(),
     );
     pendingWorldStart = { data, extra, features, seed, profile };
+    // The song's real mountain range (RangeLibrary): matched and loaded in
+    // the background while the picker is up. One small module, normally
+    // ready long before a card is clicked. Kept on the song's data so it
+    // survives the rebuilds a song goes through (seek, replay, export).
+    const pendingForRange = pendingWorldStart;
+    pendingForRange.terrainReady = prepareSongRange(profile, seed).then((terrain) => {
+      pendingForRange.data.terrain = terrain;
+      return terrain;
+    });
     lastFitDiagnostic = recordFitDiagnostic(features, profile);
+    // A world already chosen on the title screen: start in it, no picker.
+    const titleChoice = resolveTitleWorldChoice(titleWorldEl?.value ?? readTitleWorld(),
+      listWorlds().map((w) => w.id));
+    // Skipping the picker leaves no time for the range to load in the
+    // background, so wait for it -- briefly; it never rejects, and a slow
+    // load still falls back to the bundled Tetons rather than holding the
+    // song. A newer load starting in the meantime wins.
+    if (titleChoice.mode !== ASK_WORLD) {
+      const mine = pendingWorldStart;
+      const go = () => {
+        if (pendingWorldStart !== mine) return;
+        if (titleChoice.mode === TITLE_AUTO) chooseRecommendedWorld();
+        else playSelectedWorld(titleChoice.id);
+      };
+      Promise.race([mine.terrainReady, new Promise((r) => setTimeout(r, RANGE_WAIT_MS))]).then(go);
+      return;
+    }
     const hasLabels = Array.isArray(data.structure?.labels) && data.structure.labels.length > 1;
     renderWorldGrid(null, features, { hasLabels });
     worldSelectEl?.classList.remove('hidden');
@@ -1481,6 +1529,9 @@ function startTimeline(timelineData, extra = {}) {
       // null for any uploaded/dropped file.
       conductorCues: timelineData.conductor || null,
       worldId: timelineData.worldId || lastWorldId || DEFAULT_WORLD_ID,
+      // The song's matched real range, if it loaded; Simulation falls back to
+      // the bundled Tetons, and uses real terrain only in alpine-kind worlds.
+      terrainProfiles: timelineData.terrain?.profiles || null,
     });
   } catch (err) {
     console.error('[world build failed]', err);
@@ -1587,6 +1638,9 @@ function startTimeline(timelineData, extra = {}) {
     muteTimelineSynth,
     songSeed: sim.songSeed,
     worldId: sim.worldId,
+    // Which real range the song was matched to (null: bundled Tetons or a
+    // non-alpine world).
+    terrainRange: timelineData.terrain?.range || null,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
     // The shed level decides which passes are running at all (rim light,

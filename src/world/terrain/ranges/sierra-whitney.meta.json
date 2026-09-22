@@ -1,0 +1,31 @@
+{
+  "id": "sierra-whitney",
+  "name": "Sierra Nevada, Whitney escarpment",
+  "region": "California, USA",
+  "bbox": [
+    -118.75,
+    36.25,
+    -117.95,
+    36.85
+  ],
+  "archetype": "majestic",
+  "mood": "heroism",
+  "quality": {
+    "floorShare": 0.11
+  },
+  "scores": {
+    "energy": 0.453,
+    "rawness": 0.516,
+    "grandeur": 0.384,
+    "dominance": 0.555
+  },
+  "features": {
+    "reliefM": 1728.5,
+    "slopeMPerKm": 273.8,
+    "peaksPer10Km": 3.4,
+    "roughnessM": 153.1,
+    "dominance": 0.6,
+    "summitM": 4173.9,
+    "lengthKm": 70
+  }
+}

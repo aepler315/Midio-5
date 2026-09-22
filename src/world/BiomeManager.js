@@ -84,7 +84,7 @@ import { flameFlicker, smokeDrift } from './Wildfire.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
 import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
-import { scanLine } from '../lyrics/LyricLexicon.js';
+import { scanLine, dominantSymbol } from '../lyrics/LyricLexicon.js';
 import { celestialApproach } from './CelestialApproach.js';
 import { snapCutsToReleases } from './BoundarySnap.js';
 import { applyConductorSchedule } from '../core/ConductorTrack.js';
@@ -113,7 +113,7 @@ import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { spectralShiftDeg, easeSpectralShift } from '../render/spectral.js';
 import { Role } from '../core/NoteEvent.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
-import { VoyagePhase, constellationLife01 } from '../sim/SkyVoyage.js';
+import { VoyagePhase, constellationLife01, afterglowLife01 } from '../sim/SkyVoyage.js';
 import { blendSections, medianBeatSec, sectionIndexAt } from './BiomeSchedule.js';
 
 export { medianBeatSec } from './BiomeSchedule.js';
@@ -515,6 +515,12 @@ export class BiomeManager {
     this._lyricLineCursor = 0;
     this.currentKind = null;
     this.currentSectionText = null;
+    // The symbol Midasus sky-writes on a voyage (SkyVoyage's lyricGlyph
+    // figure): the current section's motif, else the whole song's. Worked
+    // out once per section change and once per song, never per frame.
+    this.currentSectionSymbol = null;
+    this._symbolForText = undefined;
+    this.songSymbol = syncedLyrics?.length ? dominantSymbol(syncedLyrics.map((l) => l.text)) : null;
     this.lyricIntensityEased = 0.4;
     // Confidence in `currentKind` being the right FUNCTION label, not just
     // that a boundary sits here -- eased the same way, and read by callers
@@ -1818,6 +1824,10 @@ export class BiomeManager {
     // lyric data was ever fused in.
     this.currentKind = activeSection?.kind || null;
     this.currentSectionText = activeSection?.lyricText || null;
+    if (this.currentSectionText !== this._symbolForText) {
+      this._symbolForText = this.currentSectionText;
+      this.currentSectionSymbol = this.currentSectionText ? dominantSymbol(this.currentSectionText) : null;
+    }
     const targetLyricIntensity = activeSection?.lyricIntensity ?? 0.4;
     this.lyricIntensityEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetLyricIntensity - this.lyricIntensityEased);
     const targetKindConfidence = activeSection?.kindConfidence ?? 0;
@@ -2764,36 +2774,64 @@ export class BiomeManager {
       ctx.restore();
     }
 
+    // Frozen figures and the last voyage's afterglow fade on their OWN
+    // clocks (constellationLife01, afterglowLife01), so they draw whether or
+    // not she's away. They used to sit below the depth gate, which cut them
+    // off the instant she re-entered: a figure only a few seconds into its
+    // 15-second life disappeared as soon as she flew home.
+    if (voyage.constellations.length || voyage.afterglows?.length) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      // Frozen figures: short curve segments only (skip long chords that
+      // used to read as random straight lines across the sky).
+      const CONST_EDGE_MAX = 22;
+      for (const c of voyage.constellations) {
+        const life = constellationLife01(c.bornMs, nowMs);
+        if (life <= 0) continue;
+        ctx.strokeStyle = `hsla(${c.hue}, 60%, 80%, ${0.45 * life})`;
+        ctx.lineWidth = 1.3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        for (let i = 1; i < c.points.length; i++) {
+          const a = c.points[i - 1], b = c.points[i];
+          const dx = b.x - a.x, dy = b.y - a.y;
+          if (dx * dx + dy * dy > CONST_EDGE_MAX * CONST_EDGE_MAX) continue;
+          ctx.beginPath();
+          ctx.moveTo(X(a.x), Y(a.y));
+          ctx.lineTo(X(b.x), Y(b.y));
+          ctx.stroke();
+        }
+        ctx.fillStyle = `hsla(${c.hue}, 75%, 90%, ${0.9 * life})`;
+        for (const p of c.points) {
+          ctx.beginPath();
+          ctx.arc(X(p.x), Y(p.y), 2.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Afterglow: the trail she was still writing when she landed.
+      for (const g of voyage.afterglows || []) {
+        const life = afterglowLife01(g.bornMs, nowMs);
+        if (life <= 0) continue;
+        const tr = g.trail;
+        ctx.lineCap = 'round';
+        for (let i = 1; i < tr.length; i++) {
+          const a = tr[i - 1], b = tr[i];
+          if (b.gap) continue;
+          const dx = b.x - a.x, dy = b.y - a.y;
+          if (dx * dx + dy * dy > 28 * 28) continue;
+          const u = i / tr.length;
+          ctx.strokeStyle = `hsla(${b.hue}, 75%, 88%, ${0.6 * u * life})`;
+          ctx.lineWidth = 1.4;
+          ctx.beginPath(); ctx.moveTo(X(a.x), Y(a.y)); ctx.lineTo(X(b.x), Y(b.y)); ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
     if (voyage.depth <= 0.02) return;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-
-    // Frozen figures: short curve segments only (skip long chords that
-    // used to read as random straight lines across the sky).
-    const CONST_EDGE_MAX = 22;
-    for (const c of voyage.constellations) {
-      const life = constellationLife01(c.bornMs, nowMs);
-      if (life <= 0) continue;
-      ctx.strokeStyle = `hsla(${c.hue}, 60%, 80%, ${0.45 * life})`;
-      ctx.lineWidth = 1.3;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      for (let i = 1; i < c.points.length; i++) {
-        const a = c.points[i - 1], b = c.points[i];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        if (dx * dx + dy * dy > CONST_EDGE_MAX * CONST_EDGE_MAX) continue;
-        ctx.beginPath();
-        ctx.moveTo(X(a.x), Y(a.y));
-        ctx.lineTo(X(b.x), Y(b.y));
-        ctx.stroke();
-      }
-      ctx.fillStyle = `hsla(${c.hue}, 75%, 90%, ${0.9 * life})`;
-      for (const p of c.points) {
-        ctx.beginPath();
-        ctx.arc(X(p.x), Y(p.y), 2.4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
 
     // Atlas crystal edges: only short links (same rule — no sky triangles).
     // (Full atlas stroke is drawn above; keep stars, drop long polylines.)

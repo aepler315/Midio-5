@@ -81,6 +81,17 @@
           </div>
         </div>
 
+        <!-- Choose the world before the song, not only after analysis. Any
+             choice but "Show me the worlds" skips the post-analysis picker.
+             Worlds are filled in from the registry by main.js. -->
+        <div class="resRow titleWorldRow">
+          <label for="titleWorld">World</label>
+          <select id="titleWorld" title="The world your song plays in. Pick one to start in it directly, or keep the picker that opens once the song is ready. Remembered.">
+            <option value="ask" selected>Show me the worlds</option>
+            <option value="auto">Choose for me</option>
+          </select>
+        </div>
+
         <!-- The way in for browsers with no file chooser. Hidden until it is
              needed: either the probe finds no chooser, or the player opens
              it deliberately. See src/ui/FileChooserProbe.js. -->

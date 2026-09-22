@@ -1,0 +1,31 @@
+{
+  "id": "rainier",
+  "name": "Mount Rainier",
+  "region": "Washington, USA",
+  "bbox": [
+    -121.95,
+    46.7,
+    -121.55,
+    47
+  ],
+  "archetype": "sublime",
+  "mood": "awe",
+  "quality": {
+    "floorShare": 0.25
+  },
+  "scores": {
+    "energy": 0.435,
+    "rawness": 0.307,
+    "grandeur": 0.616,
+    "dominance": 0.832
+  },
+  "features": {
+    "reliefM": 2770.8,
+    "slopeMPerKm": 241.4,
+    "peaksPer10Km": 2.7,
+    "roughnessM": 68.6,
+    "dominance": 0.8,
+    "summitM": 4346,
+    "lengthKm": 33.6
+  }
+}

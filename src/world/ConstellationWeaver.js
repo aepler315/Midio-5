@@ -70,7 +70,10 @@ const MAX_DOTS = 40;
 const MAX_STAR_FIGURES = 6;
 const CRYSTALLIZE_CHANCE = 0.45;
 const PULSE_TAU_SEC = 0.25;
-const GLYPH_COOLDOWN_FIGURES = 3; // figures between glyph-shaped ones
+// Was 3. With lyric glyphs now firing on a line's theme as well as its
+// literal nouns, lyrics were still only shaping one figure in four; two
+// ordinary figures between symbols keeps them special without being rare.
+const GLYPH_COOLDOWN_FIGURES = 2; // figures between glyph-shaped ones
 const GLYPH_SIZE_FRAC = 0.18;     // fraction of sky width
 // How long a glyph's interior detail strokes take to fade in once the
 // outline finishes connecting (fig.holdStartMs). Held back until then

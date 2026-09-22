@@ -1,0 +1,31 @@
+{
+  "id": "wasatch",
+  "name": "Wasatch Front",
+  "region": "Utah, USA",
+  "bbox": [
+    -111.95,
+    40.45,
+    -111.5,
+    41
+  ],
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.04
+  },
+  "scores": {
+    "energy": 0.384,
+    "rawness": 0.387,
+    "grandeur": 0.301,
+    "dominance": 0.56
+  },
+  "features": {
+    "reliefM": 1352.3,
+    "slopeMPerKm": 181.6,
+    "peaksPer10Km": 3.6,
+    "roughnessM": 80.1,
+    "dominance": 0.6,
+    "summitM": 3420,
+    "lengthKm": 70.4
+  }
+}

@@ -21,3 +21,6 @@ _site/
 /data/terrain/*.tif
 /data/terrain/*-grid.json
 .env
+
+# Elevation tiles fetched by tools/fetch-terrain-grid.mjs
+/.terrain-cache/
