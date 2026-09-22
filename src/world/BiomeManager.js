@@ -1544,9 +1544,17 @@ export class BiomeManager {
    *  built on first use and cached, so every call site gets the same strip
    *  set whether it was baked up front or on demand. */
   stripsFor(key) {
-    const pins = this.currentBlend
-      ? [this.currentBlend.from, this.currentBlend.to]
-      : [this.sections?.[0]?.profile || key];
+    // What must stay resident is what this frame is about to draw, and that
+    // is never just the blend pair. Callers fetch two sets in a row --
+    // `stripsA = stripsFor(from); stripsB = stripsFor(to)` in every world's
+    // draw function, and arbitrary section pairs here -- so the key asked for
+    // last is still in the caller's hand while this call re-pins. Pinning the
+    // key being returned and the one before it covers that; the blend pair is
+    // kept as well for the frames either side of a transition. The old fallback
+    // pinned sections[0] -- the FIRST section of the song rather than the one
+    // playing -- which left the biome actually on screen evictable.
+    const pins = [key, this._lastStripKey, this.currentBlend?.from, this.currentBlend?.to];
+    this._lastStripKey = key;
     this.strips.setPins(pins);
     let strips = this.strips.get(key);
     if (strips) return strips;
