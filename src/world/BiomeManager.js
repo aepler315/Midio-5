@@ -3,7 +3,7 @@
 // profile crossfading (§4.1.4). Each biome is pure data (BiomeProfiles.js);
 // this file is the one place that knows how to render the contract.
 import { BIOMES } from './BiomeProfiles.js';
-import { generateSilhouette, drawTiledStrip, ridgeYAt, staticStripGeometry } from './SilhouetteGenerator.js';
+import { generateSilhouette, drawTiledStrip, ridgeYAt, staticStripGeometry, stripOriginX, stripSampleX, isTerrainStrip } from './SilhouetteGenerator.js';
 import {
   materialFor, layerBake, layerColor, terrainModsForLayer, groundColorFor, catchlightRgb,
 } from './WorldMaterial.js';
@@ -1513,8 +1513,12 @@ export class BiomeManager {
         terrainMods: terrainModsForLayer(terrainMods, bake),
         timeline: this._layerTimeline(layerKey),
         edgeLight: el,
+        // One pass of the range, wide enough that the far parallax does not
+        // finish it in a short song. The whole profile is on this strip, so
+        // the headroom fit is one scale for all of it, not a per-window stretch.
+        width: terrain ? 8192 : undefined,
         sourceHeights: terrain ? profileUnits(terrain) : null,
-        preserveScale: !!terrain,
+        preserveScale: false,
       });
     });
 
@@ -5080,7 +5084,8 @@ export class BiomeManager {
     // SAME width, or the live crest polyline lands where the blit didn't.
     const colW = this._danceColW();
     const w = strip.width;
-    let x = -(((scrollX % w) + w) % w);
+    const terrain = isTerrainStrip(strip);
+    let x = stripOriginX(strip, scrollX, canvas.width);
     while (x < canvas.width) {
       for (let cx = 0; cx < w; cx += colW) {
         const cw = Math.min(colW, w - cx);
@@ -5151,6 +5156,7 @@ export class BiomeManager {
           ctx.restore();
         }
       }
+      if (terrain) break;
       x += w;
     }
   }
@@ -5219,9 +5225,10 @@ export class BiomeManager {
     const pts = new Array(Math.ceil(canvas.width / CREST_STEP_PX) + 3);
     let n = 0;
     let crestY = Infinity;
+    const viewScroll = isTerrainStrip(strip) ? -stripOriginX(strip, scrollX, canvas.width) : scrollX;
     for (let x = -CREST_STEP_PX; x <= canvas.width + CREST_STEP_PX; x += CREST_STEP_PX) {
-      const stripX = scrollX + x;
-      const u = (((stripX % w) + w) % w);
+      const stripX = viewScroll + x;
+      const u = stripSampleX(strip, stripX);
       const yR = ridgeYSmooth(strip.ridge, u) * scale;
       const dy = danceOffsetSmooth(stripX, tSec, groove, kick, cfg, fever, colW) * terrainEnergy;
       const lift = (isGeo ? geoCrestOffset(u / w, this._eqSmoothed, this._geoFeatures, tSec) : 0) * terrainEnergy;
@@ -5987,11 +5994,10 @@ export class BiomeManager {
     if (strength <= 0) return;
     const r = strip.ridge;
     if (!r) return;
-    const w = strip.width;
     const pts = [];
     let edgeMax = yOff;
     for (let x = 0; x <= canvas.width; x += CREST_STEP_PX) {
-      const u = (((scrollX + x) % w) + w) % w;
+      const u = stripSampleX(strip, scrollX + x);
       const y = yOff + Math.max(0, ridgeYAt(strip, u));
       pts.push({ x, y });
       if (y > edgeMax) edgeMax = y;
@@ -6322,13 +6328,15 @@ export class BiomeManager {
   _drawShimmered(ctx, canvas, strip, scrollX, yOff = 0) {
     const w = strip.width, h = strip.height;
     const baseY = canvas.height - h + yOff;
-    let x0 = -(((scrollX % w) + w) % w);
+    let x0 = stripOriginX(strip, scrollX, canvas.width);
     const step = 6;
+    const once = isTerrainStrip(strip);
     for (let sx = x0; sx < canvas.width; sx += w) {
       for (let row = 0; row < h; row += step) {
         const offset = 2 * Math.sin(row / 24 + this.tSec * 4);
         ctx.drawImage(strip, 0, row, w, step, sx + offset, baseY + row, w, step);
       }
+      if (once) break;
     }
   }
 

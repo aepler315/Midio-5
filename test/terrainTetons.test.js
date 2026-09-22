@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { demFromLatLon, crestGuideFromDem } from '../src/world/terrain/LatLonDem.js';
 import { profilesFromJSON } from '../src/world/terrain/TerrainProfile.js';
+import { alpineTerrainProfiles } from '../src/world/terrain/loadTerrain.js';
+import { stripOriginX } from '../src/world/SilhouetteGenerator.js';
 
 test('a north-up raster keeps north to the north, and the crest guide follows the high column', () => {
   // Two rows, row 0 is north. The northern row is high on the west.
@@ -21,6 +23,21 @@ test('a north-up raster keeps north to the north, and the crest guide follows th
   const guide = crestGuideFromDem(dem, 200);
   assert.ok(guide.length >= 2);
   assert.ok(guide[guide.length - 1].y > guide[0].y);
+});
+
+test('a terrain strip scrolls to its end and holds instead of tiling', () => {
+  const strip = { width: 1000, ridge: { source: 'terrain' } };
+  const loop = { width: 1000, ridge: { source: 'procedural' } };
+  assert.equal(stripOriginX(strip, 0, 400), 0);
+  assert.equal(stripOriginX(strip, 100, 400), -100);
+  assert.equal(stripOriginX(strip, 5000, 400), -600);
+  assert.equal(stripOriginX(loop, 1500, 400), -500);
+});
+
+test('The Range loads the Teton far ridge and nothing nearer', () => {
+  const profiles = alpineTerrainProfiles();
+  assert.deepEqual(Object.keys(profiles), ['L2']);
+  assert.equal(alpineTerrainProfiles(), profiles);
 });
 
 test('the Teton front profile is one real range, and its skyline is the high peaks', () => {

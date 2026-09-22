@@ -101,10 +101,14 @@ export function columnHeights01(ridge) {
     }
     raw[c] = peak === -Infinity ? 0 : peak;
   }
-  // Circular box blur, radius 1 -- wraps at both ends since the strip tiles.
+  // Procedural strips tile, so the blur wraps. A scanned range does not:
+  // its first column must not be mixed with its last.
+  const terrain = ridge.source === 'terrain';
   const blurred = new Float32Array(nCols);
   for (let c = 0; c < nCols; c++) {
-    blurred[c] = (raw[(c - 1 + nCols) % nCols] + raw[c] + raw[(c + 1) % nCols]) / 3;
+    const prev = terrain ? Math.max(0, c - 1) : (c - 1 + nCols) % nCols;
+    const next = terrain ? Math.min(nCols - 1, c + 1) : (c + 1) % nCols;
+    blurred[c] = (raw[prev] + raw[c] + raw[next]) / 3;
   }
   let lo = Infinity, hi = -Infinity;
   for (const v of blurred) { if (v < lo) lo = v; if (v > hi) hi = v; }
@@ -151,6 +155,10 @@ export function columnHeight01At(ridge, x) {
   const cols = columnHeights01(ridge);
   if (!cols) return 0;
   const n = cols.length;
+  if (ridge.source === 'terrain') {
+    const c = Math.max(0, Math.min(n - 1, Math.floor(x / DANCE_COL_W)));
+    return cols[c];
+  }
   const c = ((Math.floor(x / DANCE_COL_W) % n) + n) % n;
   return cols[c];
 }
