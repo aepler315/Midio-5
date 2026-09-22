@@ -164,8 +164,16 @@ try {
         }, null, { timeout: 20000 });
       }
     });
+    // Playing a song leaves the loader screen, and every check below needs
+    // the URL field back. Reloading is how the app returns to a first-load
+    // state; the stored verdict means the panel is there immediately, which
+    // is what the reload check above already relies on. This sits outside
+    // run() so a failing browse check still hands the rest a usable page
+    // rather than three misleading "element is not visible" timeouts.
+    await page.reload();
+    await page.locator('#urlLoad:not(.hidden)').waitFor({ timeout: 5000 });
   } else {
-    console.log('SKIP browse (pass a music-server URL as argv[2] to include it)');
+    console.log('SKIP browse (pass a music-server URL as argv[3] to include it)');
   }
 
   await run('a listing bigger than the row cap still shows every folder', async () => {
@@ -271,21 +279,29 @@ try {
     assert.equal(unlocked, true, 'keyboard activation must reach the click handler');
   });
 
-  await run('a listed song is always fetchable, symlink or not', async () => {
-    // The listing judges a file by the name it advertises; the request path
-    // must judge by the same name. A symlink `song.mp3 -> blob` was listed
-    // (link name) and then 404'd (canonical target has no extension), so a
-    // listing could advertise a song that never plays.
-    const listing = await page.evaluate(async (base) => {
-      const res = await fetch(base);
-      return res.json();
-    }, musicUrl || 'http://127.0.0.1:8099/');
-    for (const file of (listing.files || []).slice(0, 5)) {
-      const status = await page.evaluate(async (u) => (await fetch(u)).status,
-        new URL(file.url, musicUrl || 'http://127.0.0.1:8099/').href);
-      assert.equal(status, 200, `${file.name} is listed but not fetchable`);
-    }
-  });
+  // Needs a real music server, like the browse half above: it asks the server
+  // for its listing and then asks for the files in it. Without one this used
+  // to reach for a hard-coded 127.0.0.1:8099 and fail with "Failed to fetch"
+  // wherever nothing happened to be listening there -- CI included.
+  if (musicUrl) {
+    await run('a listed song is always fetchable, symlink or not', async () => {
+      // The listing judges a file by the name it advertises; the request path
+      // must judge by the same name. A symlink `song.mp3 -> blob` was listed
+      // (link name) and then 404'd (canonical target has no extension), so a
+      // listing could advertise a song that never plays.
+      const listing = await page.evaluate(async (base) => {
+        const res = await fetch(base);
+        return res.json();
+      }, musicUrl);
+      for (const file of (listing.files || []).slice(0, 5)) {
+        const status = await page.evaluate(async (u) => (await fetch(u)).status,
+          new URL(file.url, musicUrl).href);
+        assert.equal(status, 200, `${file.name} is listed but not fetchable`);
+      }
+    });
+  } else {
+    console.log('SKIP a listed song is always fetchable (pass a music-server URL as argv[3] to include it)');
+  }
 
   await run('no page errors', () => assert.deepEqual(errors, []));
 } finally {
