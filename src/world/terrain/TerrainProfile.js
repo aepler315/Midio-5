@@ -93,36 +93,21 @@ export function profileChunks(sampleCount, { chunk, overlap = 0 } = {}) {
 const LAYER_KEY = { far: 'L2', mid: 'L3', near: 'L4' };
 
 /** Each guide is its own ridge, scanned with the same camera and kept
- *  apart by isolateBandM. Angles share one scale, so a lower range stays
- *  shorter. This is a geographic composite: the layers are not one
- *  photograph. A guide that misses the elevation grid is omitted. */
+ *  apart by isolateBandM. Each ridge keeps its own angle span, so its
+ *  saddles cut down instead of sitting on a shared horizon. Depth is the
+ *  layer that draws it: the near strip is shorter. A shared span pinned
+ *  to the lowest foreground angle left the Teton crest as a flat wave at
+ *  the top of the strip. A guide that misses the grid is omitted. */
 export function compositeLayerProfiles(dem, guides, scanOpts, meta = {}) {
-  const scans = {};
+  const profiles = {};
   for (const name of ['far', 'mid', 'near']) {
     if (!guides[name] || guides[name].length < 2) continue;
     const scan = scanCorridor(dem, guides[name], {
       ...scanOpts,
       isolateBandM: scanOpts.isolateBandM ?? 4000,
     });
-    if ([...scan.skylineAngle].some((a) => Number.isFinite(a))) scans[name] = scan;
-  }
-  let angleMin = Infinity;
-  let angleMax = -Infinity;
-  for (const scan of Object.values(scans)) {
-    for (let i = 0; i < scan.skylineAngle.length; i++) {
-      const a = scan.skylineAngle[i];
-      if (!Number.isFinite(a)) continue;
-      if (a < angleMin) angleMin = a;
-      if (a > angleMax) angleMax = a;
-    }
-  }
-  const profiles = {};
-  for (const name of ['far', 'mid', 'near']) {
-    if (!scans[name]) continue;
-    const profile = buildProfile(scans[name], { layer: name, composite: true, ...meta });
-    profile.angleMin = angleMin;
-    profile.angleMax = angleMax;
-    profiles[LAYER_KEY[name]] = profile;
+    if (![...scan.skylineAngle].some((a) => Number.isFinite(a))) continue;
+    profiles[LAYER_KEY[name]] = buildProfile(scan, { layer: name, composite: true, ...meta });
   }
   return profiles;
 }

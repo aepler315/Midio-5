@@ -158,7 +158,7 @@ function threeRidgeDem() {
   return { elev, width, height, cellM, originX: 0, originY: 0 };
 }
 
-test('two authored guides stay on their own ridges and share a scale', () => {
+test('two authored guides keep their own shape, and the far crest subtends more', () => {
   const width = 81;
   const height = 11;
   const elev = new Float64Array(width * height);
@@ -185,11 +185,12 @@ test('two authored guides stay on their own ridges and share a scale', () => {
   });
   assert.ok(profiles.L2 && profiles.L4);
   assert.equal(profiles.L3, undefined);
-  const farU = Math.max(...profileUnits(profiles.L2));
-  const nearU = Math.max(...profileUnits(profiles.L4));
-  assert.ok(farU > nearU, `far ${farU} near ${nearU}`);
-  assert.equal(profiles.L2.angleMin, profiles.L4.angleMin);
-  assert.equal(profiles.L2.angleMax, profiles.L4.angleMax);
+  // Each ridge fills its own shape. The far crest still subtends the
+  // greater angle, which is what keeps it the major range.
+  assert.ok(profiles.L2.angleMax > profiles.L4.angleMax);
+  let nearElev = -Infinity;
+  for (const v of profiles.L4.skylineElevM) if (Number.isFinite(v) && v > nearElev) nearElev = v;
+  assert.ok(nearElev > 2000 && nearElev < 3000, `near ridge elev ${nearElev}`);
 });
 
 test('one corridor yields three layers that do not copy each other', () => {

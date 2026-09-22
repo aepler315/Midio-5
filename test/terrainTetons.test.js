@@ -53,8 +53,7 @@ test('the authored Teton ridges keep their own heights on one scale', () => {
   const near = maxOf(profiles.L4);
   assert.ok(far > 3800, `Teton skyline ${far}`);
   assert.ok(near > 2500 && near < far, `eastern skyline ${near}`);
-  const farU = Math.max(...profileUnits(profiles.L2));
-  const nearU = Math.max(...profileUnits(profiles.L4));
-  assert.ok(farU > nearU);
-  assert.equal(profiles.L2.angleMin, profiles.L4.angleMin);
+  assert.ok(profiles.L2.angleMax > profiles.L4.angleMax);
+  assert.equal(Math.max(...profileUnits(profiles.L2)), 1);
+  assert.equal(Math.max(...profileUnits(profiles.L4)), 1);
 });

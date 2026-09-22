@@ -99,8 +99,17 @@ test('the eastern range stays shorter than the Teton crest at every draw size', 
       if (b[i] > nearMax) nearMax = b[i];
       if (b[i] >= a[i]) taller++;
     }
-    assert.equal(taller, 0, `at growth ${g} pullback ${p}, ${taller} stations of the eastern range meet the crest`);
-    assert.ok(nearMax < farMin,
-      `at growth ${g} pullback ${p}, eastern max ${nearMax.toFixed(0)}px reaches the crest's low ${farMin.toFixed(0)}px`);
+    let farMax = -Infinity;
+    let nearMed = 0;
+    const nb = [...b].sort((x, y) => x - y);
+    nearMed = nb[Math.floor(nb.length / 2)];
+    let farMed = 0;
+    const na = [...a].sort((x, y) => x - y);
+    farMed = na[Math.floor(na.length / 2)];
+    for (let i = 0; i < a.length; i++) if (a[i] > farMax) farMax = a[i];
+    assert.ok(nearMax < farMax,
+      `at growth ${g} pullback ${p}, eastern summit ${nearMax.toFixed(0)}px reaches the Teton summit ${farMax.toFixed(0)}px`);
+    assert.ok(nearMed < farMed,
+      `at growth ${g} pullback ${p}, eastern midline ${nearMed.toFixed(0)}px is not below the crest ${farMed.toFixed(0)}px`);
   }
 });
