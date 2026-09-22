@@ -3,7 +3,7 @@
 // for the whole profile — a window onto a foothill is not stretched to
 // the height of a summit that sits somewhere else on the range.
 
-import { scanCorridor } from './SkylineScan.js';
+import { scanCorridor, splitScanLayers } from './SkylineScan.js';
 
 export function buildProfile(scan, meta = {}) {
   if (!scan || !scan.skylineAngle || scan.skylineAngle.length < 2) {
@@ -87,6 +87,37 @@ export function profileChunks(sampleCount, { chunk, overlap = 0 } = {}) {
   const tail = sampleCount - chunk;
   if (tail > 0 && (starts.length === 0 || starts[starts.length - 1] !== tail)) starts.push(tail);
   return starts;
+}
+
+const LAYER_KEY = { far: 'L2', mid: 'L3', near: 'L4' };
+
+/** One corridor, up to three profiles sharing a single angle scale.
+ *  Far is L2, middle L3, near L4. A missing group is omitted rather than
+ *  invented, and L5 is never filled — it stays the rolling foreground. */
+export function rangeLayerProfiles(dem, guide, scanOpts, meta = {}) {
+  const scan = scanCorridor(dem, guide, scanOpts);
+  const layers = splitScanLayers(scan, { minGapM: scanOpts.minGapM ?? 8000 });
+  let angleMin = Infinity;
+  let angleMax = -Infinity;
+  for (const layer of Object.values(layers)) {
+    if (!layer) continue;
+    for (let i = 0; i < layer.skylineAngle.length; i++) {
+      const a = layer.skylineAngle[i];
+      if (!Number.isFinite(a)) continue;
+      if (a < angleMin) angleMin = a;
+      if (a > angleMax) angleMax = a;
+    }
+  }
+  const profiles = {};
+  for (const name of ['far', 'mid', 'near']) {
+    const layer = layers[name];
+    if (!layer) continue;
+    const profile = buildProfile(layer, { layer: name, ...meta });
+    profile.angleMin = angleMin;
+    profile.angleMax = angleMax;
+    profiles[LAYER_KEY[name]] = profile;
+  }
+  return profiles;
 }
 
 /** Guide polyline + elevation grid → profile. The grid is the builder's

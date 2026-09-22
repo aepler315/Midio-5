@@ -4,7 +4,7 @@ import {
   apparentAngle, scanCorridor, smoothBaseline, pointAlong,
 } from '../src/world/terrain/SkylineScan.js';
 import {
-  buildProfile, profileUnits, sampleProfile, profileChunks, profileFromDem,
+  buildProfile, profileUnits, sampleProfile, profileChunks, profileFromDem, rangeLayerProfiles,
 } from '../src/world/terrain/TerrainProfile.js';
 import { resolveStripHeights, layoutRidgeYs } from '../src/world/SilhouetteGenerator.js';
 
@@ -143,6 +143,42 @@ test('smoothBaseline of a straight guide stays on that guide', () => {
   for (const p of smooth) assert.ok(Math.abs(p.x) < 1, `left the guide: ${p.x}`);
   const mid = pointAlong(pts, 5000);
   assert.equal(mid.y, 5000);
+});
+
+function threeRidgeDem() {
+  const cellM = 1000;
+  const width = 81;
+  const height = 21;
+  const elev = new Float64Array(width * height);
+  elev.fill(1000);
+  elev[10 * width + 0] = 4000;  // far, 80 km, the traced crest
+  elev[10 * width + 35] = 2200; // middle, 45 km
+  elev[10 * width + 65] = 1200; // near, 15 km
+  return { elev, width, height, cellM, originX: 0, originY: 0 };
+}
+
+test('one corridor yields three layers that do not copy each other', () => {
+  const profiles = rangeLayerProfiles(threeRidgeDem(), GUIDE, {
+    distanceM: 80000,
+    cameraElevM: 1000,
+    side: -1,
+    spacingM: 10000,
+    pastM: 2000,
+    smoothWindowM: 0,
+    minGapM: 8000,
+  }, { name: 'front' });
+  assert.ok(profiles.L2 && profiles.L3 && profiles.L4);
+  assert.equal(profiles.L5, undefined);
+  const at = 1; // y = 10000
+  assert.ok(profiles.L2.angles[at] > profiles.L4.angles[at]);
+  // Far crest is the tall angle. The near ridge is a real, shorter layer,
+  // not the far skyline drawn again.
+  const farU = profileUnits(profiles.L2)[at];
+  const midU = profileUnits(profiles.L3)[at];
+  const nearU = profileUnits(profiles.L4)[at];
+  assert.ok(farU > midU && midU > nearU, `units far ${farU} mid ${midU} near ${nearU}`);
+  assert.ok(Math.abs(profiles.L2.angleMin - profiles.L4.angleMin) < 1e-12);
+  assert.ok(Math.abs(profiles.L2.angleMax - profiles.L4.angleMax) < 1e-12);
 });
 
 test('buildProfile rejects a scan with no visible terrain', () => {

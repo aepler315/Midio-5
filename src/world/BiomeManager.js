@@ -36,6 +36,7 @@ import {
 import {
   ridgeYSmooth, danceOffsetSmooth, danceScaleSmooth, danceScaleRamp, assignBandFeatures, geoCrestOffset,
 } from './GeoCrest.js';
+import { profileUnits } from './terrain/TerrainProfile.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
 import { strataBeds } from './RockStrata.js';
 import {
@@ -451,7 +452,7 @@ export function fogBandAlphaFractionAtY(geo, y) {
 }
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null }) {
     this.conductor = conductor;
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
@@ -465,6 +466,9 @@ export class BiomeManager {
     this.customBiome = customBiome || null;
     this.world = getWorld(worldId || DEFAULT_WORLD_ID);
     this.worldId = this.world.id;
+    // Optional real-terrain skylines for L2 (far), L3 (middle), L4 (near).
+    // Absent, every layer stays procedural. L5 is never taken from here.
+    this.terrainProfiles = terrainProfiles;
     // Palettes live on the world. Alpine keeps the stock biomes (+ optional
     // MIDI-derived custom). City worlds bring their own night palettes and
     // ignore the alpine custom biome so a generated mountain skin never
@@ -1484,6 +1488,7 @@ export class BiomeManager {
         ? scheme[bake.characterIndex] || scheme[0]
         : 'massif';
       const color = layerColor(b.silhouette, worldKind, layerKey);
+      const terrain = layerKey !== 'L5' ? this.terrainProfiles?.[layerKey] : null;
       strips[layerKey] = generateSilhouette({
         seed: seed + idx + 1,
         height: bake.height,
@@ -1508,6 +1513,8 @@ export class BiomeManager {
         terrainMods: terrainModsForLayer(terrainMods, bake),
         timeline: this._layerTimeline(layerKey),
         edgeLight: el,
+        sourceHeights: terrain ? profileUnits(terrain) : null,
+        preserveScale: !!terrain,
       });
     });
 

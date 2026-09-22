@@ -187,6 +187,7 @@ export function scanCorridor(dem, guide, {
   const skylineDistM = new Float64Array(n);
   const crestElevM = new Float64Array(n);
   const alongM = new Float64Array(n);
+  const peaks = new Array(n);
 
   for (let i = 0; i < n; i++) {
     const d = Math.min(total, i * spacingM);
@@ -205,6 +206,11 @@ export function scanCorridor(dem, guide, {
     let bestElev = NaN;
     let bestDist = NaN;
     const step = dem.cellM;
+    const peaksHere = [];
+    let prevPrev = null;
+    let prev = null;
+    let first = null;
+    let second = null;
     for (let ray = corridorMinM; ray <= corridorMax; ray += step) {
       if (isolateBandM != null && Math.abs(ray - distanceM) > isolateBandM) continue;
       const x = cam.x + look.x * ray;
@@ -212,12 +218,24 @@ export function scanCorridor(dem, guide, {
       const elev = sampleDem(dem, x, y);
       if (!Number.isFinite(elev)) continue;
       const ang = apparentAngle(elev, cameraElevM, ray, curvature);
+      const sample = { dist: ray, elev, angle: ang };
+      if (!first) first = sample;
+      else if (!second) second = sample;
+      // A ridge is a local maximum of apparent angle, not of elevation.
+      if (prevPrev && prev && prev.angle >= prevPrev.angle && prev.angle > ang) peaksHere.push(prev);
+      prevPrev = prev;
+      prev = sample;
       if (ang > best) {
         best = ang;
         bestElev = elev;
         bestDist = ray;
       }
     }
+    if (first && second && first.angle > second.angle) peaksHere.unshift(first);
+    if (prev && prevPrev && prev.angle > prevPrev.angle && peaksHere[peaksHere.length - 1] !== prev) {
+      peaksHere.push(prev);
+    }
+    peaks[i] = peaksHere;
     skylineAngle[i] = Number.isFinite(best) ? best : NaN;
     skylineElevM[i] = bestElev;
     skylineDistM[i] = bestDist;
@@ -230,7 +248,83 @@ export function scanCorridor(dem, guide, {
     skylineElevM,
     skylineDistM,
     crestElevM,
+    peaks,
     baselineLengthM: total,
     guideLengthM: polylineLength(guide),
   };
+}
+
+/** Split sorted distances into at most `maxLayers` groups. A split is the
+ *  midpoint of a gap at least `minGapM` wide, largest gaps first. Equal-width
+ *  bands are intentionally not used: a boundary in the middle of one ridge
+ *  would make that ridge draw into two layers. */
+export function clusterBounds(distances, minGapM, maxLayers = 3) {
+  const s = distances.filter((d) => Number.isFinite(d)).sort((a, b) => a - b);
+  if (s.length === 0) return [];
+  const gaps = [];
+  for (let i = 1; i < s.length; i++) gaps.push({ i, gap: s[i] - s[i - 1] });
+  gaps.sort((a, b) => b.gap - a.gap);
+  const cuts = gaps.filter((g) => g.gap >= minGapM).slice(0, maxLayers - 1);
+  cuts.sort((a, b) => a.i - b.i);
+  const edges = [s[0]];
+  for (const c of cuts) edges.push((s[c.i - 1] + s[c.i]) / 2);
+  edges.push(s[s.length - 1]);
+  const bounds = [];
+  for (let k = 0; k < edges.length - 1; k++) bounds.push({ lo: edges[k], hi: edges[k + 1] });
+  return bounds;
+}
+
+/** One corridor scan → up to three skylines, near to far, each the max
+ *  apparent angle inside its own distance cluster. A station with no ridge
+ *  in a cluster is NaN there, not a copy of another layer. */
+export function splitScanLayers(scan, { minGapM = 8000, maxLayers = 3 } = {}) {
+  const dists = [];
+  for (const ps of scan.peaks || []) for (const p of ps) dists.push(p.dist);
+  const bounds = clusterBounds(dists, minGapM, maxLayers);
+  const names = bounds.length === 3 ? ['near', 'mid', 'far']
+    : bounds.length === 2 ? ['near', 'far']
+    : ['far'];
+  const out = { near: null, mid: null, far: null };
+  const n = scan.skylineAngle.length;
+  bounds.forEach((b, bi) => {
+    const skylineAngle = new Float64Array(n);
+    const skylineElevM = new Float64Array(n);
+    const skylineDistM = new Float64Array(n);
+    let any = false;
+    for (let s = 0; s < n; s++) {
+      let best = -Infinity;
+      let elev = NaN;
+      let dist = NaN;
+      for (const p of scan.peaks[s]) {
+        if (p.dist + 1e-6 < b.lo || p.dist - 1e-6 > b.hi) continue;
+        if (p.angle > best) {
+          best = p.angle;
+          elev = p.elev;
+          dist = p.dist;
+        }
+      }
+      if (Number.isFinite(best) && best > -Infinity) {
+        skylineAngle[s] = best;
+        skylineElevM[s] = elev;
+        skylineDistM[s] = dist;
+        any = true;
+      } else {
+        skylineAngle[s] = NaN;
+        skylineElevM[s] = NaN;
+        skylineDistM[s] = NaN;
+      }
+    }
+    if (!any) return;
+    out[names[bi]] = {
+      spacingM: scan.spacingM,
+      alongM: scan.alongM,
+      skylineAngle,
+      skylineElevM,
+      skylineDistM,
+      crestElevM: scan.crestElevM,
+      baselineLengthM: scan.baselineLengthM,
+      guideLengthM: scan.guideLengthM,
+    };
+  });
+  return out;
 }
