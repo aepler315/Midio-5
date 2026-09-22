@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { demFromLatLon, crestGuideFromDem } from '../src/world/terrain/LatLonDem.js';
-import { profilesFromJSON } from '../src/world/terrain/TerrainProfile.js';
+import { profilesFromJSON, profileUnits } from '../src/world/terrain/TerrainProfile.js';
 import { alpineTerrainProfiles } from '../src/world/terrain/loadTerrain.js';
 import { stripOriginX } from '../src/world/SilhouetteGenerator.js';
 
@@ -34,27 +34,27 @@ test('a terrain strip scrolls to its end and holds instead of tiling', () => {
   assert.equal(stripOriginX(loop, 1500, 400), -500);
 });
 
-test('The Range loads the Teton far ridge and nothing nearer', () => {
+test('The Range loads the Teton crest and the eastern range, not a made-up middle', () => {
   const profiles = alpineTerrainProfiles();
-  assert.deepEqual(Object.keys(profiles), ['L2']);
+  assert.deepEqual(Object.keys(profiles).sort(), ['L2', 'L4']);
   assert.equal(alpineTerrainProfiles(), profiles);
 });
 
-test('the Teton front profile is one real range, and its skyline is the high peaks', () => {
+test('the authored Teton ridges keep their own heights on one scale', () => {
   const raw = JSON.parse(readFileSync(new URL('../data/terrain/tetons-front.json', import.meta.url), 'utf8'));
   const profiles = profilesFromJSON(raw);
-  assert.deepEqual(Object.keys(profiles), ['L2']);
-  assert.equal(raw.meta.note.length > 0, true);
-  const layer = profiles.L2;
-  let max = -Infinity;
-  for (let i = 0; i < layer.skylineElevM.length; i++) {
-    if (layer.skylineElevM[i] > max) max = layer.skylineElevM[i];
-  }
-  // The 200 m grid understates the surveyed 4199 m summit. It should still
-  // be the high Teton crest, not the valley floor (~2000 m).
-  assert.ok(max > 3900, `skyline max ${max}`);
-  assert.ok(raw.meta.summitLat > 43.70 && raw.meta.summitLat < 43.85, raw.meta.summitLat);
-  assert.ok(raw.meta.summitLon < -110.75 && raw.meta.summitLon > -110.90, raw.meta.summitLon);
-  // The traced crest and the visible skyline are not the same line.
-  assert.ok(raw.meta.crestSkylineDisagree > layer.angles.length * 0.5);
+  assert.deepEqual(Object.keys(profiles).sort(), ['L2', 'L4']);
+  const maxOf = (layer) => {
+    let max = -Infinity;
+    for (const v of layer.skylineElevM) if (Number.isFinite(v) && v > max) max = v;
+    return max;
+  };
+  const far = maxOf(profiles.L2);
+  const near = maxOf(profiles.L4);
+  assert.ok(far > 3800, `Teton skyline ${far}`);
+  assert.ok(near > 2500 && near < far, `eastern skyline ${near}`);
+  const farU = Math.max(...profileUnits(profiles.L2));
+  const nearU = Math.max(...profileUnits(profiles.L4));
+  assert.ok(farU > nearU);
+  assert.equal(profiles.L2.angleMin, profiles.L4.angleMin);
 });

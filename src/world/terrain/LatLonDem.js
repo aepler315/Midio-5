@@ -4,6 +4,20 @@
 
 const M_PER_DEG_LAT = 110540;
 
+export function metersPerDegree(south, north) {
+  const lat0 = ((south + north) / 2) * Math.PI / 180;
+  return { mPerDegLon: 111320 * Math.cos(lat0), mPerDegLat: M_PER_DEG_LAT };
+}
+
+/** Lat/lon points into the same meter space as demFromLatLon. */
+export function projectLatLon(points, { west, south, north }) {
+  const { mPerDegLon, mPerDegLat } = metersPerDegree(south, north);
+  return points.map((p) => ({
+    x: (p.lon - west) * mPerDegLon,
+    y: (p.lat - south) * mPerDegLat,
+  }));
+}
+
 function bilinear(elev, width, height, x, y) {
   const x0 = Math.floor(x);
   const y0 = Math.floor(y);
@@ -34,10 +48,9 @@ export function demFromLatLon(src, cellM = 150) {
   if (!(east > west) || !(north > south) || !(cellM > 0)) {
     throw new Error('demFromLatLon needs a non-empty lat/lon extent');
   }
-  const lat0 = ((south + north) / 2) * Math.PI / 180;
-  const mPerDegLon = 111320 * Math.cos(lat0);
+  const { mPerDegLon, mPerDegLat } = metersPerDegree(south, north);
   const widthM = (east - west) * mPerDegLon;
-  const heightM = (north - south) * M_PER_DEG_LAT;
+  const heightM = (north - south) * mPerDegLat;
   const gw = Math.max(2, Math.ceil(widthM / cellM));
   const gh = Math.max(2, Math.ceil(heightM / cellM));
   const out = new Float64Array(gw * gh);

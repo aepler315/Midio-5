@@ -1,6 +1,6 @@
-// The Range's far ridge. Built by tools/build-terrain-profile.mjs from
-// USGS 3DEP. One layer: this view of the Tetons did not contain a second
-// ridge far enough away to be its own group.
+// The Range. Far is the Teton crest, near is the range east of Jackson
+// Hole. Built by tools/build-terrain-profile.mjs. They are stacked, not
+// one photograph. There is no middle ridge in this tile.
 import raw from './tetonsFrontData.js';
 import { profilesFromJSON } from './TerrainProfile.js';
 

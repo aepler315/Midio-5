@@ -5,9 +5,10 @@
 //
 // grid.json: { west, south, east, north, width, height, elevB64 }
 import { readFileSync, writeFileSync } from 'node:fs';
-import { demFromLatLon, crestGuideFromDem } from '../src/world/terrain/LatLonDem.js';
-import { rangeLayerProfiles, profilesToJSON } from '../src/world/terrain/TerrainProfile.js';
+import { demFromLatLon, crestGuideFromDem, projectLatLon } from '../src/world/terrain/LatLonDem.js';
+import { rangeLayerProfiles, compositeLayerProfiles, profilesToJSON } from '../src/world/terrain/TerrainProfile.js';
 import { scanCorridor, smoothBaseline, pointAlong } from '../src/world/terrain/SkylineScan.js';
+import { TETON_GUIDES } from '../src/world/terrain/tetonGuides.js';
 
 const [gridPath, outPath] = process.argv.slice(2);
 if (!gridPath || !outPath) {
@@ -47,9 +48,13 @@ const summitPt = pointAlong(baseline, scan.alongM[skyAt]);
 const summitLat = src.south + summitPt.y / 110540;
 const lat0 = ((src.south + src.north) / 2) * Math.PI / 180;
 const summitLon = src.west + summitPt.x / (111320 * Math.cos(lat0));
-const profiles = rangeLayerProfiles(dem, guide, scanOpts, {
+const frame = { west: src.west, south: src.south, north: src.north };
+const authored = src.name === 'tetons-front' ? {
+  far: projectLatLon(TETON_GUIDES.far, frame),
+  near: projectLatLon(TETON_GUIDES.near, frame),
+} : null;
+const sharedMeta = {
   source: 'USGS 3DEP',
-  guide: 'max-elevation-per-row',
   bbox: [src.west, src.south, src.east, src.north],
   distanceM: scanOpts.distanceM,
   cameraElevM: scanOpts.cameraElevM,
@@ -59,21 +64,31 @@ const profiles = rangeLayerProfiles(dem, guide, scanOpts, {
   summitElevM: skyMax,
   summitLat,
   summitLon,
-});
+};
+const profiles = authored
+  ? compositeLayerProfiles(dem, authored, { ...scanOpts, isolateBandM: 3500 }, {
+    ...sharedMeta,
+    guide: 'authored-polylines',
+    composite: true,
+  })
+  : rangeLayerProfiles(dem, guide, scanOpts, { ...sharedMeta, guide: 'max-elevation-per-row' });
+const layerElevM = {};
+for (const [key, profile] of Object.entries(profiles)) {
+  let hi = -Infinity;
+  for (const v of profile.skylineElevM) if (Number.isFinite(v) && v > hi) hi = v;
+  layerElevM[key] = hi;
+}
 const json = profilesToJSON(profiles, {
   name: src.name || 'terrain',
-  bbox: [src.west, src.south, src.east, src.north],
-  distanceM: scanOpts.distanceM,
-  cameraElevM: scanOpts.cameraElevM,
+  ...sharedMeta,
+  layerElevM,
   layersFound: Object.keys(profiles),
-  crestSkylineDisagree: differ,
-  stations: scan.skylineElevM.length,
-  summitElevM: skyMax,
-  summitLat,
-  summitLon,
-  note: Object.keys(profiles).length < 3
-    ? 'The gap between ridge distances never opened. This view is one range, so nearer layers were not invented.'
-    : '',
+  guide: authored ? 'authored-polylines' : 'max-elevation-per-row',
+  note: authored
+    ? 'Far is the Teton crest and near is the range east of Jackson Hole, each scanned on its own. They are stacked, not one view. No third range runs the length of this tile.'
+    : (Object.keys(profiles).length < 3
+      ? 'The gap between ridge distances never opened. This view is one range, so nearer layers were not invented.'
+      : ''),
 });
 writeFileSync(outPath, JSON.stringify(json));
 if (outPath.endsWith('.json')) {

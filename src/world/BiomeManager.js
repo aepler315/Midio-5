@@ -469,6 +469,9 @@ export class BiomeManager {
     // Optional real-terrain skylines for L2 (far), L3 (middle), L4 (near).
     // Absent, every layer stays procedural. L5 is never taken from here.
     this.terrainProfiles = terrainProfiles;
+    // Hold the scanned ridges still so the geographic profile can be checked
+    // without the musical heave. F4 toggles this.
+    this.terrainPreview = false;
     // Palettes live on the world. Alpine keeps the stock biomes (+ optional
     // MIDI-derived custom). City worlds bring their own night palettes and
     // ignore the alpine custom biome so a generated mountain skin never
@@ -5057,7 +5060,8 @@ export class BiomeManager {
     }
     const nowMs = this.tSec * 1000;
     const ridge = this._ridgeEnvelope();
-    const kick = ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
+    const preview = this.terrainPreview && isTerrainStrip(strip);
+    const kick = preview ? 0 : ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
       * this._danceKickAmp * (ridge?.kickMul ?? 1);
     // Orogeny grows the range, then mountainStripDrawHeight hard-caps so peaks
     // stay on-frame (ocean/sky remain visible; off-screen summits are useless).
@@ -5075,8 +5079,8 @@ export class BiomeManager {
     // Stage 2 (ridge deformation): summits sharpen on the kick, flanks swell
     // on sustained energy -- gated by terrainEnergy exactly like the offset
     // dance above, so a flat/calm biome doesn't deform either.
-    const sustain = ridge ? ridge.sustain : (this._danceSustain || 0);
-    const groove = ridge ? ridge.groove : this._danceGroove;
+    const sustain = preview ? 0 : (ridge ? ridge.sustain : (this._danceSustain || 0));
+    const groove = preview ? 0 : (ridge ? ridge.groove : this._danceGroove);
     // Slice width is the dance's sampling resolution, and a quality setting
     // (PerfGovernor.danceColumnWidth): the step between neighbouring slices
     // is the offset curve's slope times this width, so narrowing it shrinks
@@ -5200,13 +5204,14 @@ export class BiomeManager {
     let byStrip = cache && cache.get(strip);
     const colW = this._danceColW();
     const ridge = this._ridgeEnvelope();
-    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}|${colW}|${ridge?.scaleMul ?? 1}|${ridge?.groove ?? 'g'}|${ridge?.sustain ?? 's'}`;
+    const preview = this.terrainPreview && isTerrainStrip(strip);
+    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}|${colW}|${ridge?.scaleMul ?? 1}|${ridge?.groove ?? 'g'}|${ridge?.sustain ?? 's'}|${preview ? 1 : 0}`;
     if (byStrip) {
       const hit = byStrip.get(cacheKey);
       if (hit) return hit;
     }
     const nowMs = this.tSec * 1000;
-    const kick = ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
+    const kick = preview ? 0 : ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
       * this._danceKickAmp * (ridge?.kickMul ?? 1);
     const growthMul = orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
       * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0))
@@ -5219,8 +5224,8 @@ export class BiomeManager {
     const isGeo = layerKey === 'L4';
     const tSec = this.tSec;
     const fever = this.fever || 0;
-    const groove = ridge ? ridge.groove : this._danceGroove;
-    const sustain = ridge ? ridge.sustain : (this._danceSustain || 0);
+    const groove = preview ? 0 : (ridge ? ridge.groove : this._danceGroove);
+    const sustain = preview ? 0 : (ridge ? ridge.sustain : (this._danceSustain || 0));
 
     const pts = new Array(Math.ceil(canvas.width / CREST_STEP_PX) + 3);
     let n = 0;
