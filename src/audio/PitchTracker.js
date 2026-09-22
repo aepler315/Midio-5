@@ -18,6 +18,7 @@
 // can exercise it against synthesized sines directly.
 import { clamp, clamp01 } from '../utils/math.js';
 import { throwIfAborted } from './loadLimits.js';
+import { createYielder } from '../utils/yieldToMain.js';
 
 export const SEMITONE_LO = 36; // C2
 export const SEMITONE_HI = 95; // B6
@@ -25,6 +26,9 @@ const SEMITONE_COUNT = SEMITONE_HI - SEMITONE_LO + 1;
 
 const DEFAULT_WIN = 4096;
 const DEFAULT_HOP = 2048;
+// Work between yields: short enough that the loading show keeps its frame
+// rate, long enough that yielding is not the cost.
+const YIELD_BUDGET_MS = 12;
 
 const BRIGHT_LO_HZ = 50, BRIGHT_HI_HZ = 8000;
 
@@ -179,16 +183,17 @@ export async function computePitchFeaturesAsync(samples, sampleRate, {
 } = {}) {
   throwIfAborted(signal);
   const iterator = pitchFeatureFrames(samples, sampleRate, { win, hop });
-  const interval = Math.max(1, Math.floor(yieldEvery) || 1);
-  let frames = 0;
+  // Yield by elapsed time, not every `yieldEvery` frames. It used to await a
+  // setTimeout(0) every 4 frames, and browsers clamp a nested setTimeout(0)
+  // to >= 4ms -- ~1,300 idle yields on a four-minute song, around half of
+  // this whole phase spent waiting. `yieldEvery` is kept for callers that
+  // pass it but no longer paces anything.
+  void yieldEvery;
+  const maybeYield = createYielder(YIELD_BUDGET_MS);
   let step = iterator.next();
   while (!step.done) {
-    frames++;
     throwIfAborted(signal);
-    if (frames % interval === 0) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      throwIfAborted(signal);
-    }
+    if (await maybeYield()) throwIfAborted(signal);
     step = iterator.next();
   }
   throwIfAborted(signal);
