@@ -22,6 +22,9 @@ import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { FileChooserSupport } from './ui/FileChooserProbe.js';
 import {
+  AUTO as TITLE_AUTO, readTitleWorld, resolveTitleWorldChoice, writeTitleWorld,
+} from './ui/TitleWorldChoice.js';
+import {
   openAudioUrl, UrlAudioError, fetchAudioAsFile, classifyUrl,
 } from './net/UrlAudioSource.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
@@ -136,6 +139,7 @@ const urlLoadListEl = document.getElementById('urlLoadList');
 const urlLoadCrumbEl = document.getElementById('urlLoadCrumb');
 const urlLoadOpenBtnEl = document.getElementById('urlLoadOpenBtn');
 const worldSelectEl = document.getElementById('worldSelect');
+const titleWorldEl = document.getElementById('titleWorld');
 const worldSelectGridEl = document.getElementById('worldSelectGrid');
 const worldSelectBackEl = document.getElementById('worldSelectBack');
 const worldPassageQuietEl = document.getElementById('worldPassageQuiet');
@@ -1212,6 +1216,20 @@ function renderWorldGrid(customWorld, features = null, extras = {}) {
   }
 }
 
+// Title-screen world choice (TitleWorldChoice.js): one option per
+// registered world after the two fixed ones, and the remembered pick.
+if (titleWorldEl) {
+  for (const world of listWorlds()) {
+    const opt = document.createElement('option');
+    opt.value = world.id;
+    opt.textContent = world.name;
+    titleWorldEl.appendChild(opt);
+  }
+  const remembered = resolveTitleWorldChoice(readTitleWorld(), listWorlds().map((w) => w.id));
+  titleWorldEl.value = remembered.id ?? remembered.mode;
+  titleWorldEl.addEventListener('change', () => writeTitleWorld(titleWorldEl.value));
+}
+
 function offerWorldsThenStart(data, extra = {}) {
   try {
     clearCustomWorld();
@@ -1234,6 +1252,11 @@ function offerWorldsThenStart(data, extra = {}) {
     );
     pendingWorldStart = { data, extra, features, seed, profile };
     lastFitDiagnostic = recordFitDiagnostic(features, profile);
+    // A world already chosen on the title screen: start in it, no picker.
+    const titleChoice = resolveTitleWorldChoice(titleWorldEl?.value ?? readTitleWorld(),
+      listWorlds().map((w) => w.id));
+    if (titleChoice.mode === TITLE_AUTO) { chooseRecommendedWorld(); return; }
+    if (titleChoice.mode === 'world') { playSelectedWorld(titleChoice.id); return; }
     const hasLabels = Array.isArray(data.structure?.labels) && data.structure.labels.length > 1;
     renderWorldGrid(null, features, { hasLabels });
     worldSelectEl?.classList.remove('hidden');
