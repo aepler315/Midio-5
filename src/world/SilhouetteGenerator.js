@@ -31,6 +31,86 @@ import { cityHeightField, bakeWindowStrip } from './city/CitySilhouette.js';
 import { pickFormation, varyFormation, spaceByIsolation } from './ColoradoPlateau.js';
 import { rimStroke } from './WorldMaterial.js';
 
+/** Resample an external profile onto the strip, or build a procedural one
+ *  and close it into a tile. Real profiles are not closed: blending the
+ *  last 12% back toward the first sample would rewrite the end of a range. */
+export function resolveStripHeights(n, sourceHeights, procedural) {
+  if (sourceHeights) return resampleHeights(sourceHeights, n);
+  const heights = procedural();
+  const blendCount = Math.max(1, Math.floor(n * 0.12));
+  for (let i = 0; i < blendCount; i++) {
+    const idx = n - blendCount + i;
+    const t = i / blendCount;
+    heights[idx] = lerp(heights[idx], heights[0], t * t * (3 - 2 * t));
+  }
+  return heights;
+}
+
+export function resampleHeights(src, n) {
+  const out = new Float32Array(n);
+  if (!src || src.length === 0 || n < 1) return out;
+  if (src.length === 1 || n === 1) {
+    out.fill(src[0]);
+    return out;
+  }
+  const last = src.length - 1;
+  for (let i = 0; i < n; i++) {
+    const f = (i / (n - 1)) * last;
+    const j = Math.floor(f);
+    const t = f - j;
+    const a = src[j];
+    const b = src[Math.min(last, j + 1)];
+    out[i] = a + (b - a) * t;
+  }
+  return out;
+}
+
+/** Screen-space crest from normalized heights. `preserveScale` skips the
+ *  per-strip refit that pulls every tile's tallest sample up to the same
+ *  headroom line. */
+export function layoutRidgeYs(heights, {
+  height, footY, hanging, amplitude, profile, preserveScale,
+}) {
+  const n = heights.length;
+  const amp = amplitude;
+  const ridgeYs = new Float32Array(n);
+  let minY = hanging ? 0 : height;
+  let maxY = 0;
+  for (let i = 0; i < n; i++) {
+    ridgeYs[i] = hanging
+      ? heights[i] * height * amp
+      : footY - heights[i] * height * amp;
+    if (ridgeYs[i] < minY) minY = ridgeYs[i];
+    if (ridgeYs[i] > maxY) maxY = ridgeYs[i];
+  }
+  const HEADROOM = profile === 'alpine' ? 14 : profile === 'city' ? 10 : profile === 'columnar' ? 8 : 6;
+  if (!preserveScale && !hanging && minY < HEADROOM) {
+    const span = footY - minY;
+    const target = footY - HEADROOM;
+    if (span > 1e-6 && target > 0) {
+      const s = target / span;
+      for (let i = 0; i < n; i++) ridgeYs[i] = footY - (footY - ridgeYs[i]) * s;
+      minY = HEADROOM;
+    } else {
+      minY = Math.max(HEADROOM, minY);
+    }
+  }
+  if (!preserveScale && hanging && maxY > height - HEADROOM) {
+    const target = height - HEADROOM;
+    if (maxY > 1e-6 && target > 0) {
+      const s = target / maxY;
+      for (let i = 0; i < n; i++) ridgeYs[i] *= s;
+      maxY = target;
+    }
+  }
+  let hMax = 0;
+  for (let i = 0; i < n; i++) if (heights[i] > hMax) hMax = heights[i];
+  const ampFitted = hMax > 1e-6
+    ? (hanging ? maxY / (height * hMax) : (footY - minY) / (height * hMax))
+    : amp;
+  return { ridgeYs, ampFitted, minY, maxY };
+}
+
 function makeCanvas(width, height) {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
   const c = document.createElement('canvas');
@@ -560,78 +640,40 @@ export function generateSilhouette({
   // silhouette body blurs under them, which reads as a soft, backlit edge
   // rather than a mismatch.
   softenScale = 1,
+  // Real-terrain heights, already scaled against the whole profile (0..1).
+  // When set, the song does not invent a skyline and the tile does not
+  // blend its tail back to its head — a real range is not a repeating loop.
+  sourceHeights = null,
+  // Keep the profile's own vertical scale. The procedural path still
+  // stretches each strip so its tallest sample fills the canvas; doing
+  // that to a window of a real range would make a foothill as tall as
+  // the summit it was cut from.
+  preserveScale = false,
 }) {
   const noise = new ValueNoise1D(seed, 256);
   const n = Math.floor(width / step) + 1;
 
-  let heights;
-  if (profile === 'alpine') {
-    heights = alpineHeightField(noise, n, step, seed, width, character, portrait, layerKey, terrainMods, timeline);
-  } else if (profile === 'city') {
-    heights = cityHeightField(n, step, seed, width, portrait, layerKey, terrainMods);
-  } else if (profile === 'columnar') {
-    heights = columnarHeightField(n, step, seed, width, portrait, {
-      bayPx, colFrac, colH, archAmp, organic, layerKey,
-    });
-  } else {
-    heights = rollingHeightField(noise, n, step, octaves, portrait, width, terrainMods, timeline);
-  }
+  const heights = resolveStripHeights(n, sourceHeights, () => {
+    if (profile === 'alpine') {
+      return alpineHeightField(noise, n, step, seed, width, character, portrait, layerKey, terrainMods, timeline);
+    }
+    if (profile === 'city') {
+      return cityHeightField(n, step, seed, width, portrait, layerKey, terrainMods);
+    }
+    if (profile === 'columnar') {
+      return columnarHeightField(n, step, seed, width, portrait, {
+        bayPx, colFrac, colH, archAmp, organic, layerKey,
+      });
+    }
+    return rollingHeightField(noise, n, step, octaves, portrait, width, terrainMods, timeline);
+  });
 
-  // Force a seamless horizontal wrap by blending the tail back to the head.
-  const blendCount = Math.max(1, Math.floor(n * 0.12));
-  for (let i = 0; i < blendCount; i++) {
-    const idx = n - blendCount + i;
-    const t = i / blendCount;
-    heights[idx] = lerp(heights[idx], heights[0], t * t * (3 - 2 * t));
-  }
-
-  // Precompute ridge y samples + the highest crest (for gradient top).
-  // Alpine: slightly more vertical throw so tall peaks really pierce the sky.
   const hanging = anchor === 'ceiling';
   const amp = profile === 'alpine' ? amplitude * 1.12 : amplitude;
   const footY = hanging ? 0 : height * baseline;
-  const ridgeYs = new Float32Array(n);
-  let minY = hanging ? 0 : height;
-  let maxY = 0;
-  for (let i = 0; i < n; i++) {
-    ridgeYs[i] = hanging
-      ? heights[i] * height * amp
-      : footY - heights[i] * height * amp;
-    if (ridgeYs[i] < minY) minY = ridgeYs[i];
-    if (ridgeYs[i] > maxY) maxY = ridgeYs[i];
-  }
-
-  // CRITICAL: peaks that compute above the strip top (y < 0) are clipped by
-  // the canvas into flat mesas. Rescale the vertical throw so the tallest
-  // summit keeps headroom — shape stays pointy, nothing shears off.
-  const HEADROOM = profile === 'alpine' ? 14 : profile === 'city' ? 10 : profile === 'columnar' ? 8 : 6;
-  if (!hanging && minY < HEADROOM) {
-    const span = footY - minY;
-    const target = footY - HEADROOM;
-    if (span > 1e-6 && target > 0) {
-      const s = target / span;
-      for (let i = 0; i < n; i++) {
-        ridgeYs[i] = footY - (footY - ridgeYs[i]) * s;
-      }
-      minY = HEADROOM;
-    } else {
-      minY = Math.max(HEADROOM, minY);
-    }
-  }
-  if (hanging && maxY > height - HEADROOM) {
-    const target = height - HEADROOM;
-    if (maxY > 1e-6 && target > 0) {
-      const s = target / maxY;
-      for (let i = 0; i < n; i++) ridgeYs[i] *= s;
-      maxY = target;
-    }
-  }
-  // Fitted amplitude so ridgeYAt matches the painted (unclipped) skyline.
-  let hMax = 0;
-  for (let i = 0; i < n; i++) if (heights[i] > hMax) hMax = heights[i];
-  const ampFitted = hMax > 1e-6
-    ? (hanging ? maxY / (height * hMax) : (footY - minY) / (height * hMax))
-    : amp;
+  const { ridgeYs, ampFitted } = layoutRidgeYs(heights, {
+    height, baseline, amplitude: amp, profile, anchor, preserveScale, footY, hanging,
+  });
 
   // Softened bakes draw at a reduced physical size; everything below still
   // addresses coordinates in full logical width/height, so a plain
@@ -734,7 +776,11 @@ export function generateSilhouette({
   // throw so ridgeYAt matches what was painted (no clipped-mesa ghost).
   // Full precision regardless of softenScale -- see the softenScale doc
   // above for why the vector data and the baked pixels are independent.
-  canvas.ridge = { heights, ridgeYs, step, baseline: hanging ? 0 : baseline, amplitude: ampFitted, height, profile, anchor: hanging ? 'ceiling' : 'ground' };
+  canvas.ridge = {
+    heights, ridgeYs, step, baseline: hanging ? 0 : baseline, amplitude: ampFitted, height, profile,
+    anchor: hanging ? 'ceiling' : 'ground',
+    source: sourceHeights ? 'terrain' : 'procedural',
+  };
   if (profile === 'city') {
     canvas.windows = bakeWindowStrip(ridgeYs, {
       width, height, step, seed, color: '#f2d090',
