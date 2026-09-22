@@ -111,10 +111,17 @@ lists what is in it — a JSON listing or an ordinary HTML directory index,
 with subfolders navigable. That is the part that answers "let me *see* my
 files" rather than "let me type a path".
 
-Long listings cap **file** rows only, never folders: a hidden song can
-still be reached by opening the folder that holds it, but a hidden folder
-is a dead end, since the only control that would reach it is the one being
-dropped.
+Long listings render every folder, and songs a batch at a time with a
+**Show more** button after them. Building thousands of buttons at once is
+seconds of frozen UI on a head unit, but simply dropping the rest strands
+them — the earlier "open a subfolder to narrow it down" advice is no
+advice at all in a flat music folder, where there is no subfolder to open,
+so a capped song was unreachable without typing its URL by hand. Batching
+bounds the cost without bounding what exists.
+
+A URL fetch is abandoned the moment a different source is chosen. Without
+that, a download started earlier could land afterwards, claim a newer load
+generation and replace the file the player had just dropped.
 
 Browsing deliberately does not touch history, so each listing renders an
 **Up a folder** button derived from the current path. Without it the

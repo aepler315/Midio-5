@@ -2082,6 +2082,11 @@ function handleFile(file) {
  *  song (their filenames cast the characters). The built-in sample is a
  *  second door into the same chooser. */
 function handleFiles(files) {
+  // Whatever this is, it is the source the player chose most recently, so
+  // an in-flight URL fetch must not be allowed to land afterwards and take
+  // the playback back. The URL path releases its own operation before
+  // calling in here, so this never cancels the load that invoked it.
+  cancelUrlLoad();
   let list;
   try {
     list = validateAudioFiles(files, AUDIO_LOAD_LIMITS);
@@ -2128,7 +2133,8 @@ function openFilePicker(input = fileInputEl) {
   ));
 }
 
-const URL_LISTING_MAX_ROWS = 500;
+/** How many song rows are built at once; the rest arrive on request. */
+const URL_LISTING_BATCH_ROWS = 500;
 let urlLoadAbort = null;
 let urlLoadListenersBound = false;
 
@@ -2202,25 +2208,10 @@ function renderUrlListing({ entries = [], folders = [], url = '' }) {
     urlLoadCrumbEl.classList.remove('hidden');
   }
 
-  const rows = [
-    ...folders.map((f) => ({ ...f, kind: 'folder' })),
-    ...entries.map((e) => ({ ...e, kind: 'file' })),
-  ];
-  // One folder of one album is a handful of rows; a server configured to
-  // serve a whole music drive flat is thousands, and building that many
-  // buttons is seconds of frozen UI on a head unit.
-  //
-  // Only FILE rows are capped. Slicing the combined list dropped folders
-  // past the limit as well, and a dropped folder is unreachable -- there is
-  // no control left to open it, and the only advice shown is "open a
-  // subfolder". A hidden song can still be reached by going into the folder
-  // that holds it; a hidden folder is a dead end.
-  const folderRows = rows.filter((row) => row.kind === 'folder');
-  const fileRows = rows.filter((row) => row.kind === 'file');
-  const shownFiles = fileRows.slice(0, URL_LISTING_MAX_ROWS);
-  const shown = [...folderRows, ...shownFiles];
-  const hidden = fileRows.length - shownFiles.length;
-  for (const row of shown) {
+  /** One tappable row. Built with createElement/textContent throughout --
+   *  the names come off a server the player named, so they are text to
+   *  display, never markup to parse. */
+  const appendEntry = (row) => {
     const li = document.createElement('li');
     li.className = 'urlLoadItem';
     const btn = document.createElement('button');
@@ -2248,15 +2239,41 @@ function renderUrlListing({ entries = [], folders = [], url = '' }) {
     });
     li.append(btn);
     urlLoadListEl.append(li);
-  }
-  if (hidden > 0) {
-    const li = document.createElement('li');
-    li.className = 'urlLoadItem urlLoadTruncated';
-    li.textContent = `+${hidden} more song${hidden === 1 ? '' : 's'} not shown`
-      + ' \u2014 open a subfolder to narrow it down.';
-    urlLoadListEl.append(li);
-  }
-  urlLoadListEl.classList.toggle('hidden', rows.length === 0);
+  };
+
+  // Folders first, and all of them: a folder is navigation, and one that is
+  // not rendered cannot be reached by any other means.
+  for (const folder of folders) appendEntry({ ...folder, kind: 'folder' });
+
+  // Songs come in batches. Building thousands of buttons at once is seconds
+  // of frozen UI on a head unit, but simply dropping the rest strands them:
+  // in a FLAT folder there is no subfolder to open, so a capped song is
+  // unreachable without typing its URL by hand. So the cap is a batch size
+  // with a "Show more" button after it, not a limit on what exists.
+  let shownFiles = 0;
+  const showMoreRow = document.createElement('li');
+  showMoreRow.className = 'urlLoadItem urlLoadMoreRow';
+  const showMoreBtn = document.createElement('button');
+  showMoreBtn.type = 'button';
+  showMoreBtn.className = 'urlLoadEntry urlLoadMore';
+  showMoreRow.append(showMoreBtn);
+
+  const showNextBatch = () => {
+    showMoreRow.remove();
+    const next = entries.slice(shownFiles, shownFiles + URL_LISTING_BATCH_ROWS);
+    for (const entry of next) appendEntry({ ...entry, kind: 'file' });
+    shownFiles += next.length;
+    const remaining = entries.length - shownFiles;
+    if (remaining > 0) {
+      showMoreBtn.textContent = `Show ${Math.min(remaining, URL_LISTING_BATCH_ROWS)} more`
+        + ` (${remaining} left)`;
+      urlLoadListEl.append(showMoreRow);
+    }
+  };
+  showMoreBtn.addEventListener('click', showNextBatch);
+  showNextBatch();
+
+  urlLoadListEl.classList.toggle('hidden', entries.length === 0 && folders.length === 0);
 }
 
 /** The folder above `url`, or null at the server root. Derived from the
@@ -2287,6 +2304,17 @@ function decodeUrlPathForDisplay(url) {
   } catch {
     return String(url || '');
   }
+}
+
+/** Abandons any URL fetch still in flight. Called whenever a DIFFERENT
+ *  source claims playback: otherwise a download started earlier lands
+ *  later, calls handleFiles(), claims a newer load generation and replaces
+ *  the file the player just dropped or picked. */
+function cancelUrlLoad() {
+  if (!urlLoadAbort) return;
+  urlLoadAbort.abort();
+  urlLoadAbort = null;
+  setUrlLoadBusy(false);
 }
 
 /** Starts a fresh URL operation, superseding any still in flight. */
@@ -2322,6 +2350,7 @@ async function openUrlTarget(raw) {
     }
     clearUrlLoadListing();
     setUrlLoadStatus('');
+    endUrlLoadOperation(signal); // release before handing off, see cancelUrlLoad
     handleFiles([result.file]);
   } catch (err) {
     if (signal.aborted) return;
@@ -2361,6 +2390,7 @@ async function loadUrlAudio(url, name = '') {
     const file = await fetchAudioAsFile(verdict.url, { signal, name });
     if (signal.aborted) return;
     setUrlLoadStatus('');
+    endUrlLoadOperation(signal); // release before handing off, see cancelUrlLoad
     handleFiles([file]);
   } catch (err) {
     if (signal.aborted) return;
@@ -2431,6 +2461,7 @@ worldSelectEl?.addEventListener('cancel', (e) => {
 
 /** Authored sample (Proof) so a visitor can see the worlds without a file. */
 async function startDemoSample() {
+  cancelUrlLoad(); // the sample is a choice too, and outranks an older fetch
   try {
     await bootAudio();
   } catch (err) {

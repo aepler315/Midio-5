@@ -181,16 +181,41 @@ try {
     }));
     await page.locator('#urlLoadInput').fill('http://127.0.0.1:9/bigdir/');
     await page.locator('#urlLoadBtn').click();
-    // Wait for the truncation note, which only the big listing produces --
-    // waiting on a folder row would pass against the previous listing.
-    await page.locator('.urlLoadTruncated').waitFor({ timeout: 15000 });
+    // Wait for the Show-more button, which only an over-batch listing
+    // produces -- waiting on a folder row would pass against the previous
+    // listing and hide a regression.
+    await page.locator('.urlLoadMore').waitFor({ timeout: 15000 });
     const folders = await page.locator('.urlLoadEntry[data-kind="folder"]').count();
-    const files = await page.locator('.urlLoadEntry[data-kind="file"]').count();
     assert.equal(folders, 600, 'every folder must stay reachable');
-    assert.equal(files, 500, 'file rows are the ones capped');
-    const note = await page.locator('.urlLoadTruncated').textContent();
-    assert.match(note, /400 more songs? not shown/);
+    assert.equal(await page.locator('.urlLoadEntry[data-kind="file"]').count(), 500,
+      'songs arrive a batch at a time');
+    // And the rest must be reachable. In a FLAT folder there is no subfolder
+    // to open, so a capped song with no Show-more is lost for good.
+    await page.locator('.urlLoadMore').click();
+    assert.equal(await page.locator('.urlLoadEntry[data-kind="file"]').count(), 900,
+      'the remaining songs must be reachable');
+    assert.equal(await page.locator('.urlLoadMore').count(), 0,
+      'nothing left to show, so no button');
     await page.unroute(/bigdir/);
+  });
+
+  await run('a flat folder past the batch size is still fully reachable', async () => {
+    // The case the subfolder advice could never cover.
+    await page.route(/flatdir/, (route) => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        folders: [],
+        files: Array.from({ length: 1200 }, (_, i) => ({ name: `s${i}.mp3`, url: `/flatdir/s${i}.mp3` })),
+      }),
+    }));
+    await page.locator('#urlLoadInput').fill('http://127.0.0.1:9/flatdir/');
+    await page.locator('#urlLoadBtn').click();
+    await page.locator('.urlLoadMore').waitFor({ timeout: 10000 });
+    assert.equal(await page.locator('.urlLoadEntry[data-kind="folder"]').count(), 0);
+    await page.locator('.urlLoadMore').click();
+    await page.locator('.urlLoadMore').click();
+    assert.equal(await page.locator('.urlLoadEntry[data-kind="file"]').count(), 1200);
+    await page.unroute(/flatdir/);
   });
 
   await run('a song link the browser would block is refused with the real reason', async () => {
