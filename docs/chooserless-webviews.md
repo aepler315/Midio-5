@@ -126,10 +126,19 @@ appeared with tracks silently absent when browsed by URL. (`.mid` is absent
 from that list too, which is right for this path: everything here reaches
 `decodeAudioData`, and the page has no MIDI ingest at all.)
 
-`bootAudio()` makes every caller await the *same* attempt. It assigns
-`audioEngine` before awaiting `resume()`, so a plain `if (audioEngine)
-return` would let a second caller through against a context that has not
-resumed — or one the first call is about to discard because resume failed.
+`bootAudio()` makes every caller await the *same* attempt, and **the order
+of its two guards is the whole fix**. `bootAudioOnce` assigns `audioEngine`
+before awaiting `resume()`, so `audioEngine` is truthy for that entire
+window — which means checking it first returns early against a context that
+has not resumed, or one the first call is about to discard because resume
+failed. The in-flight check must come first, or it is unreachable exactly
+when it is needed. Only "truthy *and* nothing in flight" means booted.
+
+This is worth spelling out because the first attempt at the fix added the
+in-flight promise *after* the `audioEngine` check and therefore changed
+nothing at all. `test/bootAudioOnce.test.js` pins the ordering; two of its
+cases fail if the guards are swapped back.
+
 `unlockAudio()` fires it from a gesture and drops the promise, and a
 loopback download can finish before a slow resume does, so that window is
 reachable rather than theoretical.

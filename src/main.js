@@ -591,17 +591,24 @@ let bootAudioInFlight = null;
  * Starts the audio engine, at most once, and makes every caller wait for
  * the SAME attempt.
  *
- * The early return below is not enough on its own: `bootAudioOnce` assigns
- * `audioEngine` before it awaits `resume()`, so a second caller arriving in
- * that window would see a truthy `audioEngine` and return immediately --
- * against a context that has not resumed, or one the first call is about to
- * null out because resume failed. `unlockAudio()` fires this from a gesture
- * and discards the promise, so that window is real and reachable: a small
- * loopback download can finish before a slow `resume()` does.
+ * ORDER MATTERS, and it is the opposite of the obvious one. `bootAudioOnce`
+ * assigns `audioEngine` before it awaits `resume()`, so `audioEngine` is
+ * truthy for the whole of that window -- which means checking it first
+ * returns early against a context that has not resumed, or one the first
+ * call is about to null out because resume failed. Checking it first is
+ * exactly the bug the in-flight promise exists to close, so the in-flight
+ * check has to come first or it is unreachable while it matters.
+ *
+ * A truthy `audioEngine` with nothing in flight is the only state that
+ * means "already booted", and only then is returning immediately correct.
+ *
+ * `unlockAudio()` fires this from a gesture and discards the promise, so
+ * the window is reachable rather than theoretical: a small loopback
+ * download can finish well before a slow `resume()` does.
  */
 async function bootAudio() {
-  if (audioEngine) return;
   if (bootAudioInFlight) return bootAudioInFlight;
+  if (audioEngine) return;
   bootAudioInFlight = bootAudioOnce().finally(() => { bootAudioInFlight = null; });
   return bootAudioInFlight;
 }
