@@ -91,22 +91,15 @@ test('the eastern range stays shorter than the Teton crest at every draw size', 
   for (const [g, p] of [[0, 0], [0.1, 0], [1, 0], [0, 1], [1, 1]]) {
     const a = far.at(g, p);
     const b = near.at(g, p);
-    let farMin = Infinity;
-    let nearMax = -Infinity;
-    let taller = 0;
-    for (let i = 0; i < a.length; i++) {
-      if (a[i] < farMin) farMin = a[i];
-      if (b[i] > nearMax) nearMax = b[i];
-      if (b[i] >= a[i]) taller++;
-    }
     let farMax = -Infinity;
-    let nearMed = 0;
-    const nb = [...b].sort((x, y) => x - y);
-    nearMed = nb[Math.floor(nb.length / 2)];
-    let farMed = 0;
-    const na = [...a].sort((x, y) => x - y);
-    farMed = na[Math.floor(na.length / 2)];
-    for (let i = 0; i < a.length; i++) if (a[i] > farMax) farMax = a[i];
+    let nearMax = -Infinity;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] > farMax) farMax = a[i];
+      if (b[i] > nearMax) nearMax = b[i];
+    }
+    const mid = (vals) => [...vals].sort((x, y) => x - y)[Math.floor(vals.length / 2)];
+    const nearMed = mid(b);
+    const farMed = mid(a);
     assert.ok(nearMax < farMax,
       `at growth ${g} pullback ${p}, eastern summit ${nearMax.toFixed(0)}px reaches the Teton summit ${farMax.toFixed(0)}px`);
     assert.ok(nearMed < farMed,
