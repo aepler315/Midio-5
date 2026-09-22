@@ -700,3 +700,28 @@ test('a listing body re-arms the stall deadline as it streams', async () => {
     },
   );
 });
+
+
+test('an HTML index admits a download link by its visible filename', () => {
+  // A file-manager share commonly renders a track as
+  // `<a href="download?id=1">Pretty Song.flac</a>`. Gating on the pathname
+  // alone dropped the row before the label was ever read -- while
+  // parseJsonListing already admitted the same shape on its name.
+  const { entries } = parseListing('<ignored/>', 'http://127.0.0.1:8088/', {
+    parse: fakeParser([
+      ['download?id=1', 'Pretty Song.flac'],
+      ['download?id=2', 'readme'],
+      ['plain.mp3', 'plain.mp3'],
+    ]),
+  });
+  assert.deepEqual(entries.map((e) => e.name), ['Pretty Song.flac', 'plain.mp3']);
+  // The explicit label becomes the name, since the URL has none to offer.
+  assert.equal(entries[0].url, 'http://127.0.0.1:8088/download?id=1');
+});
+
+test('a label that is not audio cannot smuggle in a non-audio link', () => {
+  const { entries } = parseListing('<ignored/>', 'http://127.0.0.1:8088/', {
+    parse: fakeParser([['cover.jpg', 'cover.jpg'], ['notes.txt', 'notes']]),
+  });
+  assert.deepEqual(entries, []);
+});

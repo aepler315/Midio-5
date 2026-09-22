@@ -271,6 +271,22 @@ try {
     assert.equal(unlocked, true, 'keyboard activation must reach the click handler');
   });
 
+  await run('a listed song is always fetchable, symlink or not', async () => {
+    // The listing judges a file by the name it advertises; the request path
+    // must judge by the same name. A symlink `song.mp3 -> blob` was listed
+    // (link name) and then 404'd (canonical target has no extension), so a
+    // listing could advertise a song that never plays.
+    const listing = await page.evaluate(async (base) => {
+      const res = await fetch(base);
+      return res.json();
+    }, musicUrl || 'http://127.0.0.1:8099/');
+    for (const file of (listing.files || []).slice(0, 5)) {
+      const status = await page.evaluate(async (u) => (await fetch(u)).status,
+        new URL(file.url, musicUrl || 'http://127.0.0.1:8099/').href);
+      assert.equal(status, 200, `${file.name} is listed but not fetchable`);
+    }
+  });
+
   await run('no page errors', () => assert.deepEqual(errors, []));
 } finally {
   await browser.close();

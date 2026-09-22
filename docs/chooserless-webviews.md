@@ -111,6 +111,11 @@ lists what is in it — a JSON listing or an ordinary HTML directory index,
 with subfolders navigable. That is the part that answers "let me *see* my
 files" rather than "let me type a path".
 
+An HTML index admits a row when **either** its path or its visible label
+carries an audio extension, so `<a href="download?id=1">Pretty Song.flac</a>`
+— a common file-manager-share shape — is offered rather than dropped, and
+the label becomes the track name since the URL has none to give.
+
 Long listings arrive a batch at a time — folders first, then songs, 500
 rows per **Show more**. Building thousands of buttons at once is seconds of
 frozen UI on a head unit, and an artist root with thousands of subfolders
@@ -220,7 +225,13 @@ that is the cause the error message names first.
 
 `tools/music-server.mjs` is a minimal server that sends the header, serves
 a JSON listing, supports range requests, and is read-only and confined to
-one directory. Symlinks whose targets stay inside the root are listed as
+one directory. A file is judged by **the name the request asked for**, not
+by its canonical target: `song.mp3 -> blob` is listed (the link's own name
+says audio) and must therefore also serve, where checking the target's
+extension gave a listing that advertised a song and then 404'd on the
+click. The realpath still decides containment and supplies the bytes.
+
+Symlinks whose targets stay inside the root are listed as
 what they point at: a `readdir` entry for a symlink is neither
 `isDirectory()` nor `isFile()`, so without resolving them a symlinked album
 was reachable by direct URL yet invisible in the listing — and symlinks are
