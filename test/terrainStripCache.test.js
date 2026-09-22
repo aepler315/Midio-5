@@ -52,3 +52,77 @@ test('reserve evicts before the next palette allocation', () => {
   assert.equal(cache.has('old'), false);
   assert.equal(cache.bytes + 400 <= cache.maxBytes, true);
 });
+
+// --- Regression: the seam between the cache and what actually uses it.
+//
+// The tests above all size strips at 10x10 against budgets of ~1000 bytes,
+// so they exercise the eviction POLICY but never the real ratio of working
+// set to budget. At real dimensions a single alpine biome's four layers are
+// ~35.8MB and a city biome's ~69.7MB, against DEFAULT_TERRAIN_STRIP_BUDGET
+// of 64MB -- so two biomes have never fit, and one city biome does not fit
+// on its own.
+
+import { layerBake } from '../src/world/WorldMaterial.js';
+import { TERRAIN_STRIP_WIDTH } from '../src/world/terrain/StripRead.js';
+import { DEFAULT_TERRAIN_STRIP_BUDGET } from '../src/world/terrain/TerrainStripCache.js';
+
+/** One biome's strip set at the dimensions BiomeManager really bakes. */
+function realStripSet(kind) {
+  const strips = {};
+  for (const layerKey of ['L2', 'L3', 'L4', 'L5']) {
+    const bake = layerBake(kind, layerKey);
+    const width = layerKey !== 'L5' ? TERRAIN_STRIP_WIDTH : 2048;
+    const surface = { width, height: bake.height, getContext: () => ({}) };
+    if (bake.profile === 'city') surface.windows = { width, height: bake.height, getContext: () => ({}) };
+    strips[layerKey] = surface;
+  }
+  return strips;
+}
+
+test('the default budget holds the two biomes a transition draws at once', () => {
+  // Every world's draw function asks for two strip sets per frame:
+  //   const stripsA = mgr.stripsFor(from);
+  //   const stripsB = mgr.stripsFor(to);
+  // If the pair cannot be resident together, fetching the second one evicts
+  // the first while the caller is still holding it.
+  for (const kind of ['alpine', 'city']) {
+    const pair = stripSetBytes(realStripSet(kind)) * 2;
+    assert.ok(pair <= DEFAULT_TERRAIN_STRIP_BUDGET,
+      `${kind}: a transition needs ${(pair / 1048576).toFixed(1)}MB but the budget is `
+      + `${(DEFAULT_TERRAIN_STRIP_BUDGET / 1048576).toFixed(1)}MB`);
+  }
+});
+
+test('fetching a second strip set does not destroy the first one', () => {
+  // The exact shape of drawCity/drawNave/drawFarside/... at real sizes.
+  const cache = new TerrainStripCache();
+  cache.setPins(['from', 'to']);
+  cache.set('from', realStripSet('alpine'));
+  cache.set('to', realStripSet('alpine'));
+
+  const stripsA = cache.get('from');
+  const stripsB = cache.get('to');
+  assert.ok(stripsA && stripsB, 'both sets should still be cached');
+  // A destroyed canvas is a 0x0 one: drawing it silently paints nothing.
+  for (const [label, set] of [['from', stripsA], ['to', stripsB]]) {
+    for (const [layerKey, surface] of Object.entries(set)) {
+      assert.ok(surface.width > 0 && surface.height > 0,
+        `${label}.${layerKey} was released while still referenced`);
+    }
+  }
+});
+
+test('an entry handed out is not released underneath its holder', () => {
+  // Eviction must cost a rebuild, never corrupt a frame already in flight:
+  // BiomeManager:4924 fetches two arbitrary section profiles in one
+  // expression, and the second fetch re-pins before the first is drawn.
+  const cache = new TerrainStripCache({ maxBytes: 1_000 });
+  const held = { L2: { width: 10, height: 10, getContext: () => ({}) } };
+  cache.set('held', held);
+  cache.setPins(['other']);
+  cache.set('other', { L2: { width: 10, height: 10, getContext: () => ({}) } });
+  cache.set('third', { L2: { width: 10, height: 10, getContext: () => ({}) } });
+  assert.equal(cache.has('held'), false, 'it may leave the cache');
+  assert.ok(held.L2.width > 0,
+    'but the canvas the caller still holds must remain drawable');
+});
