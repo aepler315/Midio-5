@@ -233,6 +233,20 @@ async function chooseWorld(page, world) {
   }
 }
 
+/** Wait for the page to arm export, or stop as soon as it reports it can't.
+ *  An arming failure is not an uncaught error: the world picker's variant
+ *  fallback catches it, so the page records it in __SMW_EXPORT_ERROR
+ *  instead. Without this the tool sat out the full ten-minute timeout. */
+async function waitForExportReady(page) {
+  await page.waitForFunction(
+    () => window.__SMW?.exportReady === true || !!window.__SMW_EXPORT_ERROR,
+    null,
+    { timeout: 600000 },
+  );
+  const armError = await page.evaluate(() => window.__SMW_EXPORT_ERROR || null);
+  if (armError) throw new Error(`Export could not start: ${armError}`);
+}
+
 async function loadSong(page, file, { world, lyrics }) {
   if (!lyrics) {
     await page.locator('#titleSettings').evaluate((node) => { node.open = true; });
@@ -244,7 +258,7 @@ async function loadSong(page, file, { world, lyrics }) {
   await page.locator('#fileInput').setInputFiles(file);
   await page.locator('#worldSelect[open]').waitFor({ timeout: 600000 });
   await chooseWorld(page, world);
-  await page.waitForFunction(() => window.__SMW?.exportReady === true, null, { timeout: 600000 });
+  await waitForExportReady(page);
   const info = await page.evaluate(() => ({
     durationMs: window.__SMW.durationMs,
     width: window.__SMW.exportSize.width,

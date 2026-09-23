@@ -460,6 +460,18 @@ let bulkExportArmed = false;
 /** `?bulkExport=1&exportW=&exportH=` arms export on the next song start.
  *  An odd or unusable size reads as not armed (evenExportSize -> null);
  *  startTimeline then refuses loudly rather than rendering a wrong size. */
+/** An export that can't be armed has to say so where both a person and
+ *  tools/bulk-export.mjs will see it. A throw alone doesn't: startTimeline
+ *  runs inside the world picker's variant fallback, which catches it as a
+ *  variant failure, and its retry is a no-op because confirmWorld already
+ *  consumed the pending start. So record it on the page (the tool polls
+ *  __SMW_EXPORT_ERROR), show the banner, and hand back the error to throw. */
+function failBulkExport(message) {
+  if (typeof window !== 'undefined') window.__SMW_EXPORT_ERROR = message;
+  showErrorBanner(message);
+  return new Error(message);
+}
+
 function readBulkExportFromUrl() {
   try {
     const q = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
@@ -1553,8 +1565,9 @@ function startTimeline(timelineData, extra = {}) {
     const requested = exportSize || fromUrl || bulkExportSize;
     const size = evenExportSize(requested);
     if (!size) {
-      throw new Error(`Bulk export needs an even frame size of at least 2×2 (got ${requested?.w}×${requested?.h}).`);
+      throw failBulkExport(`Bulk export needs an even frame size of at least 2×2 (got ${requested?.w}×${requested?.h}).`);
     }
+    if (typeof window !== 'undefined') window.__SMW_EXPORT_ERROR = null;
     bulkExportSize = size;
     bulkExportArmed = true;
   } else {
@@ -1685,6 +1698,8 @@ function startTimeline(timelineData, extra = {}) {
   // (Cathode) replaces the renderer outright rather than branching inside
   // it. Created here, per song, which is after the world is known.
   renderer = createRenderer(canvas, rendererMode, getWorld(sim.worldId));
+  // An exported frame is the picture, not the player: no seekbar strip.
+  if (exportMode) renderer.hudInFrame = false;
   // enabled stays false (opt-in via V); provider/key/model/endpoint persist
   // across songs since they're a machine-level setting, not a per-song one.
   visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false, perfGovernor, ...readVisionConfig() });
