@@ -1,0 +1,33 @@
+{
+  "id": "eagle-peak",
+  "name": "Eagle Peak",
+  "region": "Texas, USA",
+  "bbox": [
+    -105.316,
+    30.722,
+    -104.855,
+    31.12
+  ],
+  "source": "discovered",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.11,
+    "artifact": 0.07
+  },
+  "scores": {
+    "energy": 0.219,
+    "rawness": 0.211,
+    "grandeur": 0.194,
+    "dominance": 0.808
+  },
+  "features": {
+    "reliefM": 872.3,
+    "slopeMPerKm": 101.5,
+    "peaksPer10Km": 2,
+    "roughnessM": 42.6,
+    "dominance": 0.8,
+    "summitM": 2188.6,
+    "lengthKm": 45.6
+  }
+}

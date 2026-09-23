@@ -1,0 +1,33 @@
+{
+  "id": "cerro-las-lagunas",
+  "name": "Cerro Las Lagunas",
+  "region": "San Luis Potosí, Mexico",
+  "bbox": [
+    -100.609,
+    22.553,
+    -100.181,
+    22.951
+  ],
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.14
+  },
+  "scores": {
+    "energy": 0.157,
+    "rawness": 0.152,
+    "grandeur": 0.15,
+    "dominance": 0.321
+  },
+  "features": {
+    "reliefM": 673.2,
+    "slopeMPerKm": 72.1,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 31.9,
+    "dominance": 0.3,
+    "summitM": 2300,
+    "lengthKm": 43.6
+  }
+}

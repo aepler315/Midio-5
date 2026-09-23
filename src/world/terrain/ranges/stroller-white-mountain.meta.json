@@ -1,0 +1,33 @@
+{
+  "id": "stroller-white-mountain",
+  "name": "Stroller White Mountain",
+  "region": "Alaska, USA",
+  "bbox": [
+    -134.955,
+    58.275,
+    -134.199,
+    58.673
+  ],
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.38
+  },
+  "scores": {
+    "energy": 0.472,
+    "rawness": 0.499,
+    "grandeur": 0.227,
+    "dominance": 0.506
+  },
+  "features": {
+    "reliefM": 1023.1,
+    "slopeMPerKm": 233.8,
+    "peaksPer10Km": 4.7,
+    "roughnessM": 97.7,
+    "dominance": 0.5,
+    "summitM": 1948.4,
+    "lengthKm": 44.4
+  }
+}

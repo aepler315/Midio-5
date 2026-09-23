@@ -1,0 +1,33 @@
+{
+  "id": "truuli-peak",
+  "name": "Truuli Peak",
+  "region": "Alaska, USA",
+  "bbox": [
+    -150.828,
+    59.714,
+    -150.039,
+    60.112
+  ],
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.07,
+    "artifact": 0.18
+  },
+  "scores": {
+    "energy": 0.387,
+    "rawness": 0.454,
+    "grandeur": 0.163,
+    "dominance": 0.438
+  },
+  "features": {
+    "reliefM": 735,
+    "slopeMPerKm": 243.9,
+    "peaksPer10Km": 3.4,
+    "roughnessM": 121.8,
+    "dominance": 0.4,
+    "summitM": 1925.1,
+    "lengthKm": 53.2
+  }
+}

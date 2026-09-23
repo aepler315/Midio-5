@@ -1,0 +1,33 @@
+{
+  "id": "volcan-de-colima",
+  "name": "Volcán de Colima",
+  "region": "Jalisco, Mexico",
+  "bbox": [
+    -103.826,
+    19.313,
+    -103.407,
+    19.711
+  ],
+  "source": "discovered",
+  "archetype": "sublime",
+  "mood": "awe",
+  "quality": {
+    "floorShare": 0.11,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.319,
+    "rawness": 0.205,
+    "grandeur": 0.706,
+    "dominance": 0.519
+  },
+  "features": {
+    "reliefM": 3178,
+    "slopeMPerKm": 189.7,
+    "peaksPer10Km": 1,
+    "roughnessM": 75,
+    "dominance": 0.5,
+    "summitM": 4184.6,
+    "lengthKm": 41.6
+  }
+}

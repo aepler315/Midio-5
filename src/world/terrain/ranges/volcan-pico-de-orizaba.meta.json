@@ -1,0 +1,33 @@
+{
+  "id": "volcan-pico-de-orizaba",
+  "name": "Volcán Pico de Orizaba",
+  "region": "Veracruz, Mexico",
+  "bbox": [
+    -97.48,
+    18.832,
+    -97.062,
+    19.23
+  ],
+  "source": "discovered",
+  "archetype": "sublime",
+  "mood": "awe",
+  "quality": {
+    "floorShare": 0.16,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.327,
+    "rawness": 0.234,
+    "grandeur": 0.648,
+    "dominance": 0.593
+  },
+  "features": {
+    "reliefM": 2916.2,
+    "slopeMPerKm": 178.9,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 74.6,
+    "dominance": 0.6,
+    "summitM": 5553.5,
+    "lengthKm": 42.4
+  }
+}

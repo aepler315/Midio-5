@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import zlib from 'node:zlib';
 import {
-  AXES, MAX_FLOOR_SHARE, countPeaks, rangeCharacter, skylineFeatures, skylineQuality,
+  AXES, MAX_ARTIFACT, MAX_FLOOR_SHARE, countPeaks, rangeCharacter, skylineArtifact, skylineFeatures, skylineQuality,
 } from '../src/world/terrain/RangeCharacter.js';
 import { NEAR_TIE, matchRange, songTerrainTarget } from '../src/world/terrain/RangeMatcher.js';
 import { RANGES, LOADERS } from '../src/world/terrain/ranges/index.js';
@@ -59,6 +59,20 @@ test('the quality gate rejects a skyline lying on its own floor', () => {
   assert.equal(bad.usable, false);
 });
 
+test('the quality gate rejects a needle the ground does not back up, and keeps a real one', () => {
+  const ridge = Array.from({ length: 100 }, (_, i) => 2000 + 300 * Math.sin(i / 7));
+  const angles = ridge.map((v) => v / 1e5);
+  // A knoll near the camera: the angle leaps while the skyline's elevation dips.
+  const knoll = angles.map((a, i) => (i === 40 ? a + 0.02 : a));
+  const knollElev = ridge.map((v, i) => (i === 40 ? v - 400 : v));
+  assert.ok(skylineArtifact(knoll, knollElev) > MAX_ARTIFACT);
+  assert.equal(skylineQuality(profileOf(knollElev, knoll)).usable, false);
+  // A real summit: angle and elevation leap together.
+  const summitElev = ridge.map((v, i) => (i === 40 ? v + 2000 : v));
+  assert.ok(skylineArtifact(summitElev.map((v) => v / 1e5), summitElev) < 0.1);
+  assert.equal(skylineQuality(profileOf(summitElev)).usable, true);
+});
+
 const range = (id, scores, archetype = 'majestic') => ({ id, archetype, scores });
 
 test('one range in the basket: that one, whatever the song', () => {
@@ -108,7 +122,7 @@ test('songTerrainTarget tolerates a missing profile', () => {
 });
 
 test('every range in the generated index has scores, a loader and a loadable profile', async () => {
-  assert.ok(RANGES.length >= 3, 'the basket holds more than the Tetons');
+  assert.ok(RANGES.length >= 50, 'the basket holds the discovered ranges too');
   const ids = new Set();
   for (const r of RANGES) {
     assert.ok(!ids.has(r.id), `${r.id} appears once`); ids.add(r.id);

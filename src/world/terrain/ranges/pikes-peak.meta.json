@@ -1,0 +1,33 @@
+{
+  "id": "pikes-peak",
+  "name": "Pikes Peak",
+  "region": "Colorado, USA",
+  "bbox": [
+    -105.298,
+    38.642,
+    -104.791,
+    39.04
+  ],
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.07
+  },
+  "scores": {
+    "energy": 0.245,
+    "rawness": 0.195,
+    "grandeur": 0.359,
+    "dominance": 0.731
+  },
+  "features": {
+    "reliefM": 1613.9,
+    "slopeMPerKm": 123.4,
+    "peaksPer10Km": 1.6,
+    "roughnessM": 46.9,
+    "dominance": 0.7,
+    "summitM": 4292.5,
+    "lengthKm": 43.6
+  }
+}

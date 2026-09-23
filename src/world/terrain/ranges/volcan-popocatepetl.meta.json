@@ -1,0 +1,33 @@
+{
+  "id": "volcan-popocatepetl",
+  "name": "Volcán Popocatépetl",
+  "region": "México, Mexico",
+  "bbox": [
+    -98.837,
+    18.823,
+    -98.419,
+    19.221
+  ],
+  "source": "discovered",
+  "archetype": "sublime",
+  "mood": "awe",
+  "quality": {
+    "floorShare": 0.1,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.318,
+    "rawness": 0.184,
+    "grandeur": 0.696,
+    "dominance": 0.484
+  },
+  "features": {
+    "reliefM": 3132.3,
+    "slopeMPerKm": 192.4,
+    "peaksPer10Km": 0.9,
+    "roughnessM": 64.8,
+    "dominance": 0.5,
+    "summitM": 5332.6,
+    "lengthKm": 42.4
+  }
+}

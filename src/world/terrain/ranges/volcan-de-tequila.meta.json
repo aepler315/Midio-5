@@ -1,0 +1,33 @@
+{
+  "id": "volcan-de-tequila",
+  "name": "Volcan de Tequila",
+  "region": "Jalisco, Mexico",
+  "bbox": [
+    -104.057,
+    20.588,
+    -103.634,
+    20.986
+  ],
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.31
+  },
+  "scores": {
+    "energy": 0.315,
+    "rawness": 0.33,
+    "grandeur": 0.35,
+    "dominance": 0.691
+  },
+  "features": {
+    "reliefM": 1573.3,
+    "slopeMPerKm": 182.1,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 97.6,
+    "dominance": 0.7,
+    "summitM": 2896,
+    "lengthKm": 72.8
+  }
+}

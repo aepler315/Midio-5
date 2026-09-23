@@ -1,0 +1,33 @@
+{
+  "id": "mount-marcus-baker",
+  "name": "Mount Marcus Baker",
+  "region": "Alaska, USA",
+  "bbox": [
+    -148.165,
+    61.238,
+    -147.339,
+    61.636
+  ],
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.19
+  },
+  "scores": {
+    "energy": 0.565,
+    "rawness": 0.571,
+    "grandeur": 0.395,
+    "dominance": 0.605
+  },
+  "features": {
+    "reliefM": 1778,
+    "slopeMPerKm": 343.6,
+    "peaksPer10Km": 4.5,
+    "roughnessM": 142.8,
+    "dominance": 0.6,
+    "summitM": 3899.3,
+    "lengthKm": 48.4
+  }
+}

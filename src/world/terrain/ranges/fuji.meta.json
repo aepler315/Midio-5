@@ -8,10 +8,12 @@
     138.95,
     35.5
   ],
+  "source": "curated",
   "archetype": "sublime",
   "mood": "awe",
   "quality": {
-    "floorShare": 0.12
+    "floorShare": 0.12,
+    "artifact": 0.14
   },
   "scores": {
     "energy": 0.321,

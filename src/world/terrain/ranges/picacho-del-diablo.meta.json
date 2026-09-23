@@ -1,0 +1,33 @@
+{
+  "id": "picacho-del-diablo",
+  "name": "Picacho del Diablo",
+  "region": "Baja California, Mexico",
+  "bbox": [
+    -115.606,
+    30.793,
+    -115.144,
+    31.191
+  ],
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.255,
+    "rawness": 0.228,
+    "grandeur": 0.284,
+    "dominance": 0.354
+  },
+  "features": {
+    "reliefM": 1276.6,
+    "slopeMPerKm": 116,
+    "peaksPer10Km": 2.1,
+    "roughnessM": 46.3,
+    "dominance": 0.4,
+    "summitM": 2981.5,
+    "lengthKm": 47.2
+  }
+}

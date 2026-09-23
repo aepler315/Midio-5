@@ -1,0 +1,33 @@
+{
+  "id": "bush-butte",
+  "name": "Bush Butte",
+  "region": "Wyoming, USA",
+  "bbox": [
+    -107.886,
+    44.279,
+    -107.332,
+    44.677
+  ],
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.281,
+    "rawness": 0.233,
+    "grandeur": 0.382,
+    "dominance": 0.259
+  },
+  "features": {
+    "reliefM": 1719,
+    "slopeMPerKm": 107.9,
+    "peaksPer10Km": 2.3,
+    "roughnessM": 41.9,
+    "dominance": 0.3,
+    "summitM": 3324.8,
+    "lengthKm": 73.6
+  }
+}

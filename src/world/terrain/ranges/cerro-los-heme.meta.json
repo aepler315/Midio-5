@@ -1,0 +1,33 @@
+{
+  "id": "cerro-los-heme",
+  "name": "Cerro los Heme",
+  "region": "Baja California, Mexico",
+  "bbox": [
+    -115.062,
+    30.158,
+    -114.604,
+    30.557
+  ],
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.12
+  },
+  "scores": {
+    "energy": 0.158,
+    "rawness": 0.164,
+    "grandeur": 0.146,
+    "dominance": 0.339
+  },
+  "features": {
+    "reliefM": 655.7,
+    "slopeMPerKm": 81,
+    "peaksPer10Km": 1.3,
+    "roughnessM": 40.8,
+    "dominance": 0.3,
+    "summitM": 1261.1,
+    "lengthKm": 45.6
+  }
+}

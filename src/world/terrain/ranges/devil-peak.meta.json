@@ -1,0 +1,33 @@
+{
+  "id": "devil-peak",
+  "name": "Devil Peak",
+  "region": "California, USA",
+  "bbox": [
+    -120.802,
+    38.76,
+    -120.294,
+    39.158
+  ],
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.1
+  },
+  "scores": {
+    "energy": 0.239,
+    "rawness": 0.228,
+    "grandeur": 0.289,
+    "dominance": 0.402
+  },
+  "features": {
+    "reliefM": 1299.4,
+    "slopeMPerKm": 102,
+    "peaksPer10Km": 2,
+    "roughnessM": 50.9,
+    "dominance": 0.4,
+    "summitM": 2496,
+    "lengthKm": 75.6
+  }
+}

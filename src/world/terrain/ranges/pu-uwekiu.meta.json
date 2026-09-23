@@ -1,0 +1,33 @@
+{
+  "id": "pu-uwekiu",
+  "name": "Pu‘uwēkiu",
+  "region": "Hawaii, USA",
+  "bbox": [
+    -155.678,
+    19.622,
+    -155.258,
+    20.02
+  ],
+  "source": "discovered",
+  "archetype": "sublime",
+  "mood": "awe",
+  "quality": {
+    "floorShare": 0.09,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.245,
+    "rawness": 0.072,
+    "grandeur": 0.705,
+    "dominance": 0.597
+  },
+  "features": {
+    "reliefM": 3172,
+    "slopeMPerKm": 140.4,
+    "peaksPer10Km": 0.2,
+    "roughnessM": 29.9,
+    "dominance": 0.6,
+    "summitM": 4162.4,
+    "lengthKm": 42
+  }
+}

@@ -8,10 +8,12 @@
     -111.5,
     41
   ],
+  "source": "curated",
   "archetype": "brooding",
   "mood": "melancholy",
   "quality": {
-    "floorShare": 0.04
+    "floorShare": 0.04,
+    "artifact": 0.16
   },
   "scores": {
     "energy": 0.384,

@@ -1,0 +1,33 @@
+{
+  "id": "mount-lemmon",
+  "name": "Mount Lemmon",
+  "region": "Arizona, USA",
+  "bbox": [
+    -111.023,
+    32.244,
+    -110.554,
+    32.642
+  ],
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.18,
+    "artifact": 0.1
+  },
+  "scores": {
+    "energy": 0.28,
+    "rawness": 0.254,
+    "grandeur": 0.335,
+    "dominance": 0.569
+  },
+  "features": {
+    "reliefM": 1508.3,
+    "slopeMPerKm": 149.8,
+    "peaksPer10Km": 2,
+    "roughnessM": 63.9,
+    "dominance": 0.6,
+    "summitM": 2748.1,
+    "lengthKm": 44.8
+  }
+}

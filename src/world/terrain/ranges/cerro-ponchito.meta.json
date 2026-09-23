@@ -1,0 +1,33 @@
+{
+  "id": "cerro-ponchito",
+  "name": "Cerro Ponchito",
+  "region": "Sinaloa, Mexico",
+  "bbox": [
+    -108.25,
+    26.09,
+    -107.809,
+    26.489
+  ],
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.15
+  },
+  "scores": {
+    "energy": 0.259,
+    "rawness": 0.222,
+    "grandeur": 0.324,
+    "dominance": 0.369
+  },
+  "features": {
+    "reliefM": 1458.5,
+    "slopeMPerKm": 130.4,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 51.1,
+    "dominance": 0.4,
+    "summitM": 2039.6,
+    "lengthKm": 63.2
+  }
+}

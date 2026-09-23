@@ -1,0 +1,33 @@
+{
+  "id": "cerro-el-billete",
+  "name": "Cerro El Billete",
+  "region": "Guerrero, Mexico",
+  "bbox": [
+    -101.541,
+    17.955,
+    -101.125,
+    18.353
+  ],
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.07
+  },
+  "scores": {
+    "energy": 0.35,
+    "rawness": 0.34,
+    "grandeur": 0.261,
+    "dominance": 0.566
+  },
+  "features": {
+    "reliefM": 1173.4,
+    "slopeMPerKm": 173.1,
+    "peaksPer10Km": 3.2,
+    "roughnessM": 67.5,
+    "dominance": 0.6,
+    "summitM": 2663.3,
+    "lengthKm": 50
+  }
+}

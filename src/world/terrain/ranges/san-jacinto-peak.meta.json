@@ -1,0 +1,33 @@
+{
+  "id": "san-jacinto-peak",
+  "name": "San Jacinto Peak",
+  "region": "California, USA",
+  "bbox": [
+    -116.917,
+    33.615,
+    -116.441,
+    34.013
+  ],
+  "source": "discovered",
+  "archetype": "sublime",
+  "mood": "awe",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.17
+  },
+  "scores": {
+    "energy": 0.394,
+    "rawness": 0.348,
+    "grandeur": 0.505,
+    "dominance": 0.676
+  },
+  "features": {
+    "reliefM": 2273.5,
+    "slopeMPerKm": 196.1,
+    "peaksPer10Km": 2.9,
+    "roughnessM": 83.8,
+    "dominance": 0.7,
+    "summitM": 3235.7,
+    "lengthKm": 73.2
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "id": "boulder-baldy",
+  "name": "Boulder Baldy",
+  "region": "Montana, USA",
+  "bbox": [
+    -111.614,
+    46.357,
+    -111.04,
+    46.755
+  ],
+  "source": "discovered",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.236,
+    "rawness": 0.228,
+    "grandeur": 0.209,
+    "dominance": 0.69
+  },
+  "features": {
+    "reliefM": 939,
+    "slopeMPerKm": 103.8,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 43.7,
+    "dominance": 0.7,
+    "summitM": 2838.6,
+    "lengthKm": 64
+  }
+}

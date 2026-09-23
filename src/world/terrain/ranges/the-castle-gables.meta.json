@@ -1,0 +1,33 @@
+{
+  "id": "the-castle-gables",
+  "name": "The Castle Gables",
+  "region": "Nunavut, Canada",
+  "bbox": [
+    -78.473,
+    72.769,
+    -77.123,
+    73.167
+  ],
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "quality": {
+    "floorShare": 0.09,
+    "artifact": 0.18
+  },
+  "scores": {
+    "energy": 0.411,
+    "rawness": 0.378,
+    "grandeur": 0.4,
+    "dominance": 0.227
+  },
+  "features": {
+    "reliefM": 1797.9,
+    "slopeMPerKm": 159.6,
+    "peaksPer10Km": 3.9,
+    "roughnessM": 62.2,
+    "dominance": 0.2,
+    "summitM": 1797.9,
+    "lengthKm": 68.8
+  }
+}

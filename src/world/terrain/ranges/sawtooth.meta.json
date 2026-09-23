@@ -8,10 +8,12 @@
     -114.75,
     44.3
   ],
+  "source": "curated",
   "archetype": "restless",
   "mood": "unease",
   "quality": {
-    "floorShare": 0.02
+    "floorShare": 0.02,
+    "artifact": 0.17
   },
   "scores": {
     "energy": 0.346,
