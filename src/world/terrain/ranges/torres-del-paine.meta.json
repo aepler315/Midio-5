@@ -8,10 +8,12 @@
     -72.85,
     -50.9
   ],
+  "source": "curated",
   "archetype": "majestic",
   "mood": "heroism",
   "quality": {
-    "floorShare": 0.09
+    "floorShare": 0.09,
+    "artifact": 0.17
   },
   "scores": {
     "energy": 0.5,

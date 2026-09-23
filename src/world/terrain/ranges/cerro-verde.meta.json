@@ -1,0 +1,33 @@
+{
+  "id": "cerro-verde",
+  "name": "Cerro Verde",
+  "region": "Baja California Sur, Mexico",
+  "bbox": [
+    -110.178,
+    23.396,
+    -109.747,
+    23.794
+  ],
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.303,
+    "rawness": 0.284,
+    "grandeur": 0.296,
+    "dominance": 0.479
+  },
+  "features": {
+    "reliefM": 1332.9,
+    "slopeMPerKm": 148.1,
+    "peaksPer10Km": 2.5,
+    "roughnessM": 60.9,
+    "dominance": 0.5,
+    "summitM": 2042.7,
+    "lengthKm": 43.2
+  }
+}

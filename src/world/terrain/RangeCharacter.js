@@ -135,23 +135,67 @@ export function archetypeOf(scores) {
 
 /**
  * Whether a built skyline actually shows a range. A build can succeed and
- * still be garbage -- the camera underground, or a crest that recedes out of
- * view -- and the tell is a skyline that sits on the floor of its own view:
- * the share of stations within 8% of the lowest angle. Across the first
- * basket every usable range read 0.27 or less; the broken Cordillera Blanca
- * build read 0.83. Nobody will eyeball three hundred plots, so the builder
- * rejects anything above MAX_FLOOR_SHARE instead.
+ * still be garbage, and nobody will eyeball three hundred plots, so the
+ * builder rejects on two measured faults instead:
+ *
+ * floorShare -- the share of stations within 8% of the lowest angle. A
+ *   skyline that sits on the floor of its own view (camera underground, or a
+ *   crest receding out of view). Usable ranges read 0.27 or less; the broken
+ *   first Cordillera Blanca build read 0.83.
+ *
+ * artifact -- the biggest jump in viewing angle that the ground does not
+ *   back up: a station whose angle stands out from its neighbours (or steps
+ *   from the last one) by more, as a share of the skyline's range, than its
+ *   elevation does. A real summit rises in both; a ridge standing close in
+ *   front of the crest, or the edge of the elevation grid, rises in angle
+ *   alone and draws as a needle or a sheer wall. The curated ranges read
+ *   0.25 or less (Monument Valley's buttes, which really are sheer, 0.05);
+ *   the builds that looked broken on a contact sheet read 0.43 to 0.56.
  */
 export const MAX_FLOOR_SHARE = 0.5;
+export const MAX_ARTIFACT = 0.42;
+const ARTIFACT_WINDOW = 4;
+
+function neighbourMedian(values, i) {
+  const nb = [];
+  for (let k = i - ARTIFACT_WINDOW; k <= i + ARTIFACT_WINDOW; k++) {
+    if (k !== i && k >= 0 && k < values.length && Number.isFinite(values[k])) nb.push(values[k]);
+  }
+  if (!nb.length) return NaN;
+  nb.sort((a, b) => a - b);
+  return nb[nb.length >> 1];
+}
+
+/** The artifact score described above; 0 when elevations are missing. */
+export function skylineArtifact(angles, elevs) {
+  const fa = finite(angles), fe = finite(elevs);
+  if (fa.length < 4 || fe.length < 4 || angles.length !== elevs.length) return 0;
+  const aSpan = Math.max(...fa) - Math.min(...fa);
+  const eSpan = Math.max(...fe) - Math.min(...fe);
+  if (!(aSpan > 0)) return 0;
+  const eShare = (d) => (eSpan > 0 && Number.isFinite(d) ? d / eSpan : 0);
+  let worst = 0;
+  for (let i = 0; i < angles.length; i++) {
+    if (!Number.isFinite(angles[i])) continue;
+    const standsOut = (angles[i] - neighbourMedian(angles, i)) / aSpan;
+    if (Number.isFinite(standsOut)) worst = Math.max(worst, standsOut - Math.max(0, eShare(elevs[i] - neighbourMedian(elevs, i))));
+    if (i > 0 && Number.isFinite(angles[i - 1])) {
+      worst = Math.max(worst, Math.abs(angles[i] - angles[i - 1]) / aSpan - Math.abs(eShare(elevs[i] - elevs[i - 1])));
+    }
+  }
+  return worst;
+}
+
 export function skylineQuality(profileJson) {
   const layer = profileJson?.layers?.L2 || Object.values(profileJson?.layers || {})[0];
   const angles = finite(layer?.angles);
-  if (angles.length < 4) return { floorShare: 1, usable: false };
+  if (angles.length < 4) return { floorShare: 1, artifact: 0, usable: false };
   const lo = Math.min(...angles), hi = Math.max(...angles);
   const span = hi - lo;
-  if (!(span > 0)) return { floorShare: 1, usable: false };
+  if (!(span > 0)) return { floorShare: 1, artifact: 0, usable: false };
   const floorShare = angles.filter((a) => a - lo < 0.08 * span).length / angles.length;
-  return { floorShare, usable: floorShare <= MAX_FLOOR_SHARE };
+  const artifact = skylineArtifact(layer.angles, layer.skylineElevM || []);
+  return { floorShare, artifact, usable: floorShare <= MAX_FLOOR_SHARE && artifact <= MAX_ARTIFACT };
 }
 
 /** Score a baked profile JSON. Null when it has no usable far skyline. */

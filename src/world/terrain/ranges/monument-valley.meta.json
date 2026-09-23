@@ -8,10 +8,12 @@
     -109.9,
     37.1
   ],
+  "source": "curated",
   "archetype": "defiant",
   "mood": "defiance",
   "quality": {
-    "floorShare": 0.27
+    "floorShare": 0.27,
+    "artifact": 0.05
   },
   "scores": {
     "energy": 0.195,

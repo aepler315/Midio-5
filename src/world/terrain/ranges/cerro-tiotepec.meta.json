@@ -1,0 +1,33 @@
+{
+  "id": "cerro-tiotepec",
+  "name": "Cerro Tiotepec",
+  "region": "Guerrero, Mexico",
+  "bbox": [
+    -100.343,
+    17.269,
+    -99.929,
+    17.667
+  ],
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.15
+  },
+  "scores": {
+    "energy": 0.43,
+    "rawness": 0.431,
+    "grandeur": 0.487,
+    "dominance": 0.379
+  },
+  "features": {
+    "reliefM": 2192.8,
+    "slopeMPerKm": 204.1,
+    "peaksPer10Km": 3.5,
+    "roughnessM": 107.1,
+    "dominance": 0.4,
+    "summitM": 3531.1,
+    "lengthKm": 72.4
+  }
+}

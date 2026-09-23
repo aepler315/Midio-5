@@ -19,7 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchTerrainGrid } from './fetch-terrain-grid.mjs';
 import { rangeAxisDeg, rangeElongation, rotateGrid, valleyCameraElevM } from './lib/terrarium.mjs';
-import { rangeCharacter, skylineQuality } from '../src/world/terrain/RangeCharacter.js';
+import { MAX_FLOOR_SHARE, rangeCharacter, skylineQuality } from '../src/world/terrain/RangeCharacter.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const manifest = JSON.parse(readFileSync(path.join(root, 'data/terrain/ranges.json'), 'utf8'));
@@ -117,8 +117,12 @@ async function buildRange(range, reject) {
   const character = rangeCharacter(profile);
   const quality = skylineQuality(profile);
   if (!character) { reject('no usable skyline'); return; }
-  if (!quality.usable) {
+  if (quality.floorShare > MAX_FLOOR_SHARE) {
     reject(`skyline sits on its own floor for ${Math.round(quality.floorShare * 100)}% of its length`);
+    return;
+  }
+  if (!quality.usable) {
+    reject(`a needle or wall the ground does not back up (artifact ${round(quality.artifact, 2)})`);
     return;
   }
   writeFileSync(path.join(outDir, `${range.id}.js`),
@@ -128,7 +132,7 @@ async function buildRange(range, reject) {
     id: range.id, name: range.name, region: range.region, bbox: range.bbox,
     source: range.summit ? 'discovered' : 'curated',
     archetype: character.archetype, mood: character.mood,
-    quality: { floorShare: round(quality.floorShare, 2) },
+    quality: { floorShare: round(quality.floorShare, 2), artifact: round(quality.artifact, 2) },
     scores: Object.fromEntries(Object.entries(character.scores).map(([k, v]) => [k, round(v)])),
     features: Object.fromEntries(Object.entries(character.features).map(([k, v]) => [k, round(v, 1)])),
   };

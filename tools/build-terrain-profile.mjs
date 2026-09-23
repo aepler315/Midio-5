@@ -54,6 +54,11 @@ const baseScanOpts = {
   curvature: src.curvature !== false,
   smoothWindowM: src.smoothWindowM || 8000,
   minGapM: src.minGapM || 8000,
+  // Ground this close to the camera is at its feet, not in the view: a
+  // 1,559m knoll 1.6km away out-angled Mount Hayes (4,216m) and drew as a
+  // needle nine times the height of the range. Only the automated builds
+  // read this; the Tetons are authored.
+  corridorMinM: src.corridorMinM || 4000,
 };
 const side = src.side ?? (crestAgreement(1) > crestAgreement(-1) ? 1 : -1);
 const scanOpts = { ...baseScanOpts, side };

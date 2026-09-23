@@ -1,0 +1,33 @@
+{
+  "id": "mount-hayes",
+  "name": "Mount Hayes",
+  "region": "Alaska, USA",
+  "bbox": [
+    -147.161,
+    63.421,
+    -146.271,
+    63.819
+  ],
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.12
+  },
+  "scores": {
+    "energy": 0.591,
+    "rawness": 0.546,
+    "grandeur": 0.644,
+    "dominance": 0.481
+  },
+  "features": {
+    "reliefM": 2896.7,
+    "slopeMPerKm": 353.5,
+    "peaksPer10Km": 4,
+    "roughnessM": 147.7,
+    "dominance": 0.5,
+    "summitM": 4105.8,
+    "lengthKm": 74.4
+  }
+}

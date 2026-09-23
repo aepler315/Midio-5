@@ -1,0 +1,33 @@
+{
+  "id": "cerro-zempoaltepec",
+  "name": "Cerro Zempoaltepec",
+  "region": "Oaxaca, Mexico",
+  "bbox": [
+    -96.206,
+    16.969,
+    -95.792,
+    17.367
+  ],
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.07,
+    "artifact": 0.07
+  },
+  "scores": {
+    "energy": 0.283,
+    "rawness": 0.273,
+    "grandeur": 0.282,
+    "dominance": 0.567
+  },
+  "features": {
+    "reliefM": 1269.2,
+    "slopeMPerKm": 170.4,
+    "peaksPer10Km": 2,
+    "roughnessM": 74,
+    "dominance": 0.6,
+    "summitM": 3345.4,
+    "lengthKm": 44.8
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "id": "lavender-peak",
+  "name": "Lavender Peak",
+  "region": "British Columbia, Canada",
+  "bbox": [
+    -129.671,
+    55.451,
+    -128.97,
+    55.849
+  ],
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.4
+  },
+  "scores": {
+    "energy": 0.405,
+    "rawness": 0.446,
+    "grandeur": 0.28,
+    "dominance": 0.507
+  },
+  "features": {
+    "reliefM": 1260.4,
+    "slopeMPerKm": 262,
+    "peaksPer10Km": 3.1,
+    "roughnessM": 127.6,
+    "dominance": 0.5,
+    "summitM": 2213.8,
+    "lengthKm": 58
+  }
+}
