@@ -862,8 +862,9 @@ back into `NEONMILE` on the drop is the payoff.
 
 **Translated:** parallax (rates re-derived from bpm rather than depth
 constants), haze (as headlight glare and horizon bloom), ground field (the
-road, still bass-breathing), `EpicycleShow` (repurposed as the sign-gantry
-animation — rotating figures on the boards), particle fields, weather (rain
+road, still bass-breathing), the sign-gantry
+animation (rotating figures on the boards; the milestone-digit
+`EpicycleShow` it was to reuse has been removed, so it needs its own), particle fields, weather (rain
 on a highway at speed is excellent), film finish, the trio, section
 transitions (as tunnel mouths).
 

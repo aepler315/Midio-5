@@ -76,7 +76,7 @@ export class MidioPerformer {
     this._lastMilestoneIdx = -1;
     this.milestoneFlash = false; // one-shot per step
     this.goldFlash = 0;
-    this.lastMilestone = null; // {idx, atMs} -- persists for the renderer
+    this.lastMilestone = null; // {idx, atMs} -- persists for the meteor volley
 
     this.afterimages = [];
     this._lastCaptureMs = -Infinity;
@@ -147,8 +147,9 @@ export class MidioPerformer {
       this._lastMilestoneIdx = idx;
       this.milestoneFlash = true;
       this.goldFlash = 1;
-      // Persistent record (not a one-shot flag) so the renderer can't
-      // miss it between sim steps -- it triggers the epicycle glyph show.
+      // Persistent record (not a one-shot flag) so it can't be missed
+      // between sim steps -- Simulation hands it to BiomeManager for the
+      // meteor volley.
       this.lastMilestone = { idx, atMs: nowMs };
       // And a victory dance: a decaying grounded shimmy (see update()).
       this._danceStartMs = nowMs;
