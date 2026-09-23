@@ -1022,6 +1022,46 @@ html, body {
 /* On-device FPS HUD (mobile performance round): small, always-on-top,
    toggled by the P key or the ?fps URL param -- deliberately much lighter
    than #debugOverlay so it's cheap enough to leave on during play. */
+/* The real range's name (RangeCaption.js): lower left, over the show like a
+   film's location card. Fades in, holds, fades out; never takes input. It
+   sits above the song-progress strip the renderer draws along the bottom of
+   the canvas (~82px tall at 720p). */
+.rangeCaption {
+  position: absolute;
+  left: var(--space-6);
+  bottom: max(104px, 15vh);
+  max-width: min(80vw, 520px);
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 1.2s ease, transform 1.2s ease;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.75);
+}
+.rangeCaption.shown { opacity: 1; transform: none; }
+.rangeCaptionTitle {
+  font-size: clamp(20px, 3.2vw, 30px);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+.rangeCaptionPlace {
+  margin-top: var(--space-1);
+  font-size: clamp(13px, 1.6vw, 16px);
+  color: var(--text-secondary);
+}
+.rangeCaptionCredit {
+  margin-top: var(--space-2);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+@media (max-width: 600px) {
+  .rangeCaption { left: var(--space-4); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rangeCaption { transition: opacity 0.4s linear; transform: none; }
+}
+
 #fpsHud {
   position: absolute;
   left: var(--space-2); bottom: var(--space-2);
