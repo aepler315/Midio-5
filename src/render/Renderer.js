@@ -136,6 +136,10 @@ export class Renderer {
     this._lastMilestoneMs = null;
     this._milestoneSeeded = false;
     this.composer = null; // lazy: needs the conductor's timeline at first draw
+    // The seekbar strip is player chrome painted into the canvas. Bulk export
+    // turns it off: a music video should not carry a timeline labelled with
+    // the song's length burned into every frame.
+    this.hudInFrame = true;
     this.brush = new RainbowBrush();
     // Drop motion blur: a 3-slot ring of backing-store-sized canvases holding
     // the last three composed frames, captured every frame so the ring is
@@ -480,7 +484,7 @@ export class Renderer {
     // content, and main.js's hitTest already converts pointer coords into
     // the nominal STAGE_W/STAGE_H space -- drawing it against the zoomed
     // stage would desync the visible strip from where clicks land.
-    if (sim.conductor) {
+    if (sim.conductor && this.hudInFrame) {
       const sxN = canvas.width / nominalW;
       const syN = canvas.height / nominalH;
       const nominalStage = this._nominalStageView
