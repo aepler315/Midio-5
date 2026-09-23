@@ -44,6 +44,18 @@ const round = (v, d = 3) => Math.round(v * 10 ** d) / 10 ** d;
 // extent is recomputed around the same centre to match the rotated grid's
 // metric size, because the builder reads cell geometry from it; the result
 // is range-aligned rather than north-up, and its meta says so.
+// Resolution. Terrarium z12 is ~25-35m per pixel across North America,
+// the finest the AWS tiles carry everywhere without the tile count
+// exploding, so the grid is resampled at 30m and a skyline station is taken
+// every 30m: ~1,500-2,500 samples a range, one every 4-5px of the 8192px
+// strip the game draws it on, which is as fine as that strip's crest line
+// goes. (It was z11, 200m cells and a station every 400m: ~180 samples,
+// drawn as long straight segments.) Scoring pools back to 400m
+// (RangeCharacter.SCORE_SPACING_M).
+const ZOOM = 12;
+const CELL_M = 30;
+const SPACING_M = 30;
+
 const ALIGN_MIN_DEG = 12;
 const ALIGN_MIN_ELONGATION = 1.8;
 function alignToRange(grid, range) {
@@ -100,7 +112,8 @@ async function buildRange(range, reject) {
   if (!profilePath) {
     const [west, south, east, north] = range.bbox;
     const gridPath = path.join(gridDir, `${range.id}.json`);
-    const grid = alignToRange(await fetchTerrainGrid({ bbox: { west, south, east, north } }), range);
+    const grid = alignToRange(await fetchTerrainGrid({ bbox: { west, south, east, north }, zoom: ZOOM, cellM: CELL_M }), range);
+    grid.spacingM = range.spacingM ?? SPACING_M;
     if (range.side) grid.side = range.side;
     writeFileSync(gridPath, JSON.stringify(grid));
     profilePath = path.join(gridDir, `${range.id}-profile.json`);

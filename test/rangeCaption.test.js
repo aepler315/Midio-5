@@ -4,38 +4,38 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BUNDLED_RANGE, CAPTION_DELAY_MS, CAPTION_FADE_MS, CAPTION_HOLD_MS,
-  captionAlpha, drawRangeCaption, rangeCaptionFor, rangeStatsLine, ridgesLine,
+  captionAlpha, drawRangeCaption, castRows, rangeCaptionFor, rangeStatsLine, shortRegion,
 } from '../src/ui/RangeCaption.js';
 import { fitNearRidge, groundSpeedMps, profileTravelPx, terrainScrollPx } from '../src/world/terrain/ProfileTravel.js';
 import { RANGE_HISTORY_MAX, noteRangeShown, readRecentRanges } from '../src/world/terrain/RangeHistory.js';
 
+const wasatch = { id: 'wasatch', name: 'Wasatch Range', region: 'Utah, USA', source: 'curated' };
+const taconic = { id: 'taconic-mountains', name: 'Taconic Mountains', region: 'New York, USA', source: 'discovered' };
 const hood = { id: 'oregon-cascades', name: 'Oregon Cascades', landmark: 'Mount Hood', region: 'Oregon, USA', source: 'discovered' };
 
-test('the caption names the range, then the landmark and region', () => {
-  const c = rangeCaptionFor(hood, 'alpine', { lengthKm: 33.8, speedMps: 150 });
-  assert.equal(c.title, 'Oregon Cascades');
-  assert.equal(c.place, 'Mount Hood · Oregon, USA');
+test('the caption is a cast list of the three ranges, back ridge first', () => {
+  const c = rangeCaptionFor(hood, 'alpine', { lengthKm: 33.8, speedMps: 150 }, { mid: wasatch, near: taconic });
+  assert.deepEqual(c.rows, [
+    { label: 'BACK', name: 'Oregon Cascades', region: 'Oregon' },
+    { label: 'MIDDLE', name: 'Wasatch Range', region: 'Utah' },
+    { label: 'FRONT', name: 'Taconic Mountains', region: 'New York' },
+  ]);
   assert.equal(c.stats, '21 mi of real skyline sampled · riding at ~335 mph');
   assert.match(c.credit, /GeoNames \(CC BY 4\.0\)/);
 });
 
-const wasatch = { id: 'wasatch', name: 'Wasatch Range', region: 'Utah, USA', source: 'curated' };
-const taconic = { id: 'taconic-mountains', name: 'Taconic Mountains', region: 'New York, USA', source: 'discovered' };
-
-test('the caption names the ranges on the middle and front ridges too', () => {
-  const c = rangeCaptionFor(hood, 'alpine', {}, { mid: wasatch, near: taconic });
-  assert.equal(c.title, 'Oregon Cascades', 'the back range keeps the title');
-  assert.equal(c.ridges, 'Middle ridge: Wasatch Range, Utah, USA · Front ridge: Taconic Mountains, New York, USA');
-  assert.equal(ridgesLine({ near: taconic }), 'Front ridge: Taconic Mountains, New York, USA', 'an invented ridge is not named');
+test('an invented ridge is left off the list; a lone range needs no label', () => {
+  assert.deepEqual(rangeCaptionFor(hood, 'alpine', {}, { near: taconic }).rows.map((r) => r.label), ['BACK', 'FRONT']);
+  assert.deepEqual(castRows({ far: hood }), [{ label: '', name: 'Oregon Cascades', region: 'Oregon' }]);
+  assert.equal(shortRegion('British Columbia, Canada'), 'British Columbia');
   const curatedBack = rangeCaptionFor({ ...hood, source: 'curated' }, 'alpine', {}, { near: taconic });
   assert.match(curatedBack.credit, /GeoNames/, 'any discovered range on screen is credited');
-  assert.equal(rangeCaptionFor(null, 'alpine', {}, { mid: wasatch }).ridges, '', 'the bundled Tetons stand alone');
 });
 
-test('only the alpine world gets a caption; no match names the bundled Tetons', () => {
+test('only the alpine world gets a caption; no match names the bundled Tetons alone', () => {
   assert.equal(rangeCaptionFor(hood, 'ocean'), null);
-  const tetons = rangeCaptionFor(null, 'alpine');
-  assert.equal(tetons.title, BUNDLED_RANGE.name);
+  const tetons = rangeCaptionFor(null, 'alpine', {}, { mid: wasatch });
+  assert.deepEqual(tetons.rows, [{ label: '', name: BUNDLED_RANGE.name, region: 'Wyoming' }]);
   assert.ok(!tetons.credit.includes('GeoNames'), 'a curated range is not credited to GeoNames');
 });
 
@@ -59,17 +59,25 @@ function fakeCtx() {
   const calls = [];
   return {
     calls, save() {}, restore() {}, fillText: (text, x, y) => calls.push({ text, x, y }),
+    measureText: (text) => ({ width: text.length * 10 }),
     set globalAlpha(v) { calls.alpha = v; }, get globalAlpha() { return calls.alpha; },
   };
 }
 
-test('drawRangeCaption draws every line bottom-up above the progress strip, and nothing when faded', () => {
+test('drawRangeCaption lays the cast list out in columns above the progress strip', () => {
   const caption = rangeCaptionFor(hood, 'alpine', { lengthKm: 33.8, speedMps: 150 }, { mid: wasatch, near: taconic });
   const ctx = fakeCtx();
   drawRangeCaption(ctx, { width: 1280, height: 720 }, caption, 5000);
-  assert.deepEqual(ctx.calls.map((c) => c.text).reverse(), [caption.title, caption.place, caption.ridges, caption.stats, caption.credit]);
+  const at = (text) => ctx.calls.find((c) => c.text === text);
   assert.ok(ctx.calls.every((c) => c.y <= 720 - 100), 'clear of the 82px progress strip');
-  assert.ok(ctx.calls[0].y > ctx.calls[ctx.calls.length - 1].y, 'the title sits highest');
+  // Rows run back to front, top to bottom, above the stats and credit.
+  assert.ok(at('Oregon Cascades').y < at('Wasatch Range').y && at('Wasatch Range').y < at('Taconic Mountains').y);
+  assert.ok(at('Taconic Mountains').y < at(caption.stats).y && at(caption.stats).y < at(caption.credit).y);
+  // Labels, names and regions each share a column.
+  assert.equal(new Set(['BACK', 'MIDDLE', 'FRONT'].map((t) => at(t).x)).size, 1);
+  assert.equal(new Set(['Oregon Cascades', 'Wasatch Range', 'Taconic Mountains'].map((t) => at(t).x)).size, 1);
+  assert.equal(new Set(['Oregon', 'Utah', 'New York'].map((t) => at(t).x)).size, 1);
+  assert.ok(at('Oregon').x > at('Taconic Mountains').x + 'Taconic Mountains'.length * 10, 'regions clear the longest name');
   const early = fakeCtx();
   drawRangeCaption(early, { width: 1280, height: 720 }, caption, 500);
   assert.equal(early.calls.length, 0);
