@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 const url = process.argv[2] || 'http://127.0.0.1:8080';
@@ -29,7 +30,7 @@ const check = (name, ok, detail = '') => {
 };
 
 const wav = path.join(out, 'export-fixture.wav');
-execFileSync(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), 'gen-test-wav.mjs'), wav, '120', '20']);
+execFileSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), 'gen-test-wav.mjs'), wav, '120', '20']);
 
 /** Decode a file the page just wrote, and report what is actually in it. */
 const inspect = async (page, bytes, mime) => page.evaluate(async ({ b64, type }) => {

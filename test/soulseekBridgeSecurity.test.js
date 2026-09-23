@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import {
@@ -47,7 +48,7 @@ test('pathsInsideDownloads never escapes the downloads root', () => {
 
 test('local Soulseek reads are bounded independently of a stale file size', async () => {
   const fs = await import('node:fs/promises');
-  const file = path.join('/tmp', `midio-bounded-${process.pid}-${Date.now()}.bin`);
+  const file = path.join(os.tmpdir(), `midio-bounded-${process.pid}-${Date.now()}.bin`);
   await fs.writeFile(file, Buffer.from('safe'));
   try {
     assert.deepEqual([...readBoundedFile(file)], [...Buffer.from('safe')]);
