@@ -142,6 +142,7 @@ export class PerfGovernor {
     // second level on the ladder because it is not a shed: it ADDS work, in
     // exchange for a look, which is the one thing the ladder never does.
     this._retroPalette = !!retroPalette && this._retro;
+    this._holdQuality = false;
     this.level = this._retro ? MAX_LEVEL : Math.max(0, Math.min(MAX_LEVEL, startLevel));
     this._overCount = 0;
     this._cleanSinceMs = null;
@@ -224,8 +225,22 @@ export class PerfGovernor {
     this._catastrophicRun = 0;
   }
 
+  /** Bulk export pins full quality for the whole render.
+   *
+   *  The ladder's evidence is frame period. An offline render's period is
+   *  however long the frame took to draw, which at 2160p is the signal the
+   *  ladder uses to shed the picture the file was opened to keep. Holding
+   *  level 0 means every frame is the full show. */
+  get holdQuality() { return this._holdQuality; }
+
+  set holdQuality(on) {
+    this._holdQuality = !!on;
+    if (this._holdQuality) this.level = 0;
+  }
+
   /** Call once per rendered frame with the raw rAF-to-rAF delta. */
   sample(deltaMs, nowMs) {
+    if (this._holdQuality) { this.level = 0; return; }
     // 8-bit mode holds the floor: neither shedding (already at the bottom)
     // nor recovering (see the `retro` setter -- recovery is exactly the
     // failure mode pinning exists to prevent).
