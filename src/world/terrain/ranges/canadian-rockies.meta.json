@@ -1,6 +1,7 @@
 {
   "id": "canadian-rockies",
-  "name": "Canadian Rockies, Lake Louise",
+  "name": "Canadian Rockies",
+  "landmark": "Lake Louise",
   "region": "Alberta, Canada",
   "bbox": [
     -116.5,

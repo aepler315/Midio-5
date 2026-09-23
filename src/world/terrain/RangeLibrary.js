@@ -5,13 +5,15 @@
 // downloading all of them.
 import { RANGES, LOADERS } from './ranges/index.js';
 import { matchRange } from './RangeMatcher.js';
+import { readRecentRanges } from './RangeHistory.js';
 import { profilesFromJSON } from './TerrainProfile.js';
 
 export { RANGES };
 
-/** Pick the song's range from the whole basket. */
-export function chooseRange(profile, seed) {
-  return matchRange(RANGES, profile, seed);
+/** Pick the song's range from the whole basket, passing over the ranges
+ *  this player saw most recently. */
+export function chooseRange(profile, seed, recent = readRecentRanges()) {
+  return matchRange(RANGES, profile, seed, { recent });
 }
 
 /** Load a range's baked skyline and turn it into terrain profiles. Rejects

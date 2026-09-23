@@ -1,6 +1,7 @@
 {
   "id": "monument-valley",
   "name": "Monument Valley",
+  "landmark": null,
   "region": "Utah-Arizona, USA",
   "bbox": [
     -110.25,

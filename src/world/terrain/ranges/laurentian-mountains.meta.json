@@ -1,0 +1,34 @@
+{
+  "id": "laurentian-mountains",
+  "name": "Laurentian Mountains",
+  "landmark": "Mont Tremblant",
+  "region": "Quebec, Canada",
+  "bbox": [
+    -74.869,
+    46.051,
+    -74.297,
+    46.449
+  ],
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.171,
+    "rawness": 0.181,
+    "grandeur": 0.098,
+    "dominance": 0.503
+  },
+  "features": {
+    "reliefM": 442.7,
+    "slopeMPerKm": 85.7,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 37.7,
+    "dominance": 0.5,
+    "summitM": 851.1,
+    "lengthKm": 42.4
+  }
+}

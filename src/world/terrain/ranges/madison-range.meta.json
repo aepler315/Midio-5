@@ -1,0 +1,34 @@
+{
+  "id": "madison-range",
+  "name": "Madison Range",
+  "landmark": "Echo Peak",
+  "region": "Montana, USA",
+  "bbox": [
+    -111.742,
+    44.743,
+    -111.184,
+    45.141
+  ],
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.11
+  },
+  "scores": {
+    "energy": 0.46,
+    "rawness": 0.478,
+    "grandeur": 0.266,
+    "dominance": 0.367
+  },
+  "features": {
+    "reliefM": 1198.7,
+    "slopeMPerKm": 238.7,
+    "peaksPer10Km": 4.3,
+    "roughnessM": 100.3,
+    "dominance": 0.4,
+    "summitM": 3382.6,
+    "lengthKm": 46
+  }
+}

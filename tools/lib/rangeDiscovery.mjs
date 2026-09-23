@@ -97,16 +97,24 @@ export const RELIEF_BANDS = Object.freeze([
  * Choose which measured summits become ranges. `measured` items carry
  * {lat, lon, reliefM}. Every pick is at least `spacingKm` from every other
  * pick and from every point in `avoid` (existing ranges' centres), and
- * outside every box in `avoidBoxes`. Returns at most `count` picks.
+ * outside every box in `avoidBoxes`. With `uniqueBy`, no two picks (nor any
+ * name in `takenNames`) share its value -- one pick per named range, so the
+ * basket is eighty ranges rather than five Saint Elias summits. Returns at
+ * most `count` picks.
  *
  * Within a band, picks are spread evenly across its relief rather than
  * taken from the top down: top-down, a 1,200-2,000m band came back as
  * twenty-eight ranges between 1,925 and 1,996m.
  */
-export function selectRanges(measured, { count, spacingKm = 80, avoid = [], avoidBoxes = [], bands = RELIEF_BANDS }) {
+export function selectRanges(measured, {
+  count, spacingKm = 80, avoid = [], avoidBoxes = [], bands = RELIEF_BANDS, uniqueBy = null, takenNames = [],
+}) {
   const taken = [...avoid];
+  const names = new Set(takenNames);
   const picks = [];
-  const clear = (s) => !avoidBoxes.some((b) => insideBbox(s, b)) && taken.every((t) => distanceKm(s, t) >= spacingKm);
+  const clear = (s) => !avoidBoxes.some((b) => insideBbox(s, b))
+    && !(uniqueBy && names.has(s[uniqueBy]))
+    && taken.every((t) => distanceKm(s, t) >= spacingKm);
   // Every band's unfilled quota rolls into the next, so a thin band still
   // fills the basket.
   let carry = 0;
@@ -123,7 +131,10 @@ export function selectRanges(measured, { count, spacingKm = 80, avoid = [], avoi
       // nearest it. A target with nothing clear is skipped, and a second
       // top-down pass fills whatever quota the targets left.
       const targets = Array.from({ length: quota }, (_, k) => hi - ((k + 0.5) / quota) * (hi - lo));
-      const take = (s) => { picks.push(s); taken.push(s); used.add(s); got++; };
+      const take = (s) => {
+        picks.push(s); taken.push(s); used.add(s); got++;
+        if (uniqueBy) names.add(s[uniqueBy]);
+      };
       for (const t of targets) {
         let best = null;
         for (const s of pool) {
@@ -140,6 +151,32 @@ export function selectRanges(measured, { count, spacingKm = 80, avoid = [], avoi
     carry = quota - got;
   });
   return picks;
+}
+
+/**
+ * The mountain range a summit belongs to, from Wikidata summits whose range
+ * is recorded ("mountain range", P4552). `named` is [{lat, lon, range}].
+ * The summit's own record would be best, but fewer than half of the picked
+ * summits have one; so the neighbours vote: every recorded summit within
+ * `voteKm` votes for its range, nearer ones louder. Null unless one of them
+ * is within `nearKm` -- a range named from 20km away is a guess.
+ */
+export function rangeNameFor(summit, named, { nearKm = 12, voteKm = 25 } = {}) {
+  const votes = new Map();
+  let nearest = Infinity;
+  for (const n of named) {
+    if (Math.abs(n.lat - summit.lat) > voteKm / 100) continue;
+    const d = distanceKm(summit, n);
+    if (d > voteKm) continue;
+    nearest = Math.min(nearest, d);
+    votes.set(n.range, (votes.get(n.range) || 0) + 1 / (1 + d));
+  }
+  if (!(nearest <= nearKm)) return null;
+  let best = null, bestVotes = -1;
+  for (const [range, v] of votes) {
+    if (v > bestVotes || (v === bestVotes && range < best)) { best = range; bestVotes = v; }
+  }
+  return best;
 }
 
 export function slugify(text) {

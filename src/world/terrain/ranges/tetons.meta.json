@@ -1,6 +1,7 @@
 {
   "id": "tetons",
   "name": "Teton Range",
+  "landmark": "Grand Teton",
   "region": "Wyoming, USA",
   "bbox": [
     -111,

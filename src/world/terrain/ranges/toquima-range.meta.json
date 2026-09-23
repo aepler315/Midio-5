@@ -1,0 +1,34 @@
+{
+  "id": "toquima-range",
+  "name": "Toquima Range",
+  "landmark": "South Summit",
+  "region": "Nevada, USA",
+  "bbox": [
+    -117.18,
+    38.553,
+    -116.673,
+    38.951
+  ],
+  "source": "discovered",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.2,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.245,
+    "rawness": 0.208,
+    "grandeur": 0.251,
+    "dominance": 0.746
+  },
+  "features": {
+    "reliefM": 1127.5,
+    "slopeMPerKm": 122.5,
+    "peaksPer10Km": 2,
+    "roughnessM": 40,
+    "dominance": 0.7,
+    "summitM": 3591.3,
+    "lengthKm": 45.2
+  }
+}

@@ -10,8 +10,11 @@
 //
 // Steps: download each country's GeoNames dump (cached under
 // .terrain-cache/geonames/), keep the highest summit per half-degree cell,
-// measure each one's local relief from low-zoom elevation tiles, and pick the
-// basket by relief band and spacing (tools/lib/rangeDiscovery.mjs).
+// measure each one's local relief from low-zoom elevation tiles, name each
+// one's mountain range from Wikidata (cached under .terrain-cache/wikidata/),
+// and pick the basket by relief band, spacing and one pick per named range
+// (tools/lib/rangeDiscovery.mjs). A summit with no confidently named range
+// is left out: the caption names the range, not the peak.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -19,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { loadTiles } from './fetch-terrain-grid.mjs';
 import { resampleGrid, tilesForBbox, TERRARIUM_URL } from './lib/terrarium.mjs';
 import {
-  boxAround, highestPerCell, localRelief, parseGeonamesRow, selectRanges, uniqueId,
+  boxAround, highestPerCell, localRelief, parseGeonamesRow, rangeNameFor, selectRanges, uniqueId,
 } from './lib/rangeDiscovery.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -30,6 +33,9 @@ const countries = arg('countries', 'US,CA,MX').split(',').map((c) => c.trim().to
 const count = Number(arg('count', 80));
 const spacingKm = Number(arg('spacing', 80));
 const COUNTRY_NAMES = { US: 'USA', CA: 'Canada', MX: 'Mexico' };
+// North America only: Hawaii is a US state but not on the continent.
+const EXCLUDE_ADMIN1 = new Set(['US.HI']);
+const WIKIDATA_COUNTRIES = { US: 'Q30', CA: 'Q16', MX: 'Q96' };
 // Relief is measured in a box this far either side of the summit, on z8
 // tiles (~450m pixels at 45 deg): coarse, but a valley 1,500m down shows at
 // any resolution, and z8 keeps all of North America to about a thousand
@@ -77,11 +83,52 @@ async function prefetch(boxes, zoom, parallel = 8) {
   }));
 }
 
+/** Every Wikidata summit in these countries with its range recorded, as
+ *  [{lat, lon, range}]. One query per country; a single query for all three
+ *  outruns Wikidata's 60s limit and comes back truncated. */
+async function wikidataNamedSummits() {
+  const file = path.join(root, '.terrain-cache/wikidata', `named-summits-${countries.join('-')}.json`);
+  if (existsSync(file)) return JSON.parse(readFileSync(file, 'utf8'));
+  const sparql = async (q) => {
+    const res = await fetch(`https://query.wikidata.org/sparql?query=${encodeURIComponent(q)}`, {
+      headers: { Accept: 'application/sparql-results+json', 'User-Agent': 'Midio5-range-builder/1.0' },
+    });
+    if (!res.ok) throw new Error(`Wikidata: HTTP ${res.status}`);
+    return (await res.json()).results.bindings;
+  };
+  const id = (uri) => uri.split('/').pop();
+  const rows = [];
+  for (const cc of countries) {
+    const q = WIKIDATA_COUNTRIES[cc];
+    if (!q) continue;
+    for (const b of await sparql(`SELECT ?coord ?range WHERE { ?peak wdt:P17 wd:${q} ; wdt:P4552 ?range ; wdt:P625 ?coord . }`)) {
+      const m = /Point\(([-\d.]+) ([-\d.]+)\)/.exec(b.coord.value);
+      if (m) rows.push({ lon: Number(m[1]), lat: Number(m[2]), range: id(b.range.value) });
+    }
+  }
+  const ids = [...new Set(rows.map((r) => r.range))];
+  const labels = {};
+  for (let i = 0; i < ids.length; i += 400) {
+    const values = ids.slice(i, i + 400).map((x) => `wd:${x}`).join(' ');
+    for (const b of await sparql(`SELECT ?r ?l WHERE { VALUES ?r { ${values} } ?r rdfs:label ?l . FILTER(LANG(?l) = "en") }`)) {
+      labels[id(b.r.value)] = b.l.value;
+    }
+  }
+  const named = rows.filter((r) => labels[r.range]).map((r) => ({ lat: r.lat, lon: r.lon, range: labels[r.range] }));
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(named));
+  return named;
+}
+
 const admin1 = new Map(readFileSync(await download('admin1CodesASCII.txt'), 'utf8').split('\n')
   .map((l) => l.split('\t')).filter((f) => f.length > 1).map((f) => [f[0], f[1]]));
 
 const summits = [];
-for (const cc of countries) summits.push(...await readCountry(cc));
+for (const cc of countries) {
+  summits.push(...(await readCountry(cc)).filter((s) => !EXCLUDE_ADMIN1.has(`${s.country}.${s.admin1}`)));
+}
+const named = await wikidataNamedSummits();
+console.log(`${named.length} Wikidata summits with a named range`);
 const cells = highestPerCell(summits);
 console.log(`${summits.length} summits, ${cells.length} cells to measure`);
 
@@ -96,7 +143,8 @@ for (const s of cells) {
   try {
     const { tiles } = await loadTiles(bbox, PROBE_ZOOM);
     const reliefM = localRelief(resampleGrid(bbox, PROBE_ZOOM, tiles, 450).elev, s.elevM);
-    if (Number.isFinite(reliefM)) measured.push({ ...s, reliefM: Math.round(reliefM) });
+    const rangeName = rangeNameFor(s, named);
+    if (Number.isFinite(reliefM) && rangeName) measured.push({ ...s, reliefM: Math.round(reliefM), rangeName });
   } catch (err) {
     console.warn(`${s.name}: ${err.message}`);
   }
@@ -108,17 +156,20 @@ const picks = selectRanges(measured, {
   count, spacingKm,
   avoid: manifest.ranges.map((r) => center(r.bbox)),
   avoidBoxes: manifest.ranges.map((r) => r.bbox),
+  uniqueBy: 'rangeName',
+  takenNames: manifest.ranges.map((r) => r.name),
 });
 
 const used = new Set(manifest.ranges.map((r) => r.id));
 const ranges = picks.map((s) => {
   const region = [admin1.get(`${s.country}.${s.admin1}`), COUNTRY_NAMES[s.country] || s.country].filter(Boolean).join(', ');
   return {
-    id: uniqueId(s.name, region, used),
-    // The summit's own name only. GeoNames places a named range at one
-    // point, so "the nearest range" named Mount Shasta after the Trinity
-    // Mountains and Mount Robson after the Selwyn Range.
-    name: s.name,
+    id: uniqueId(s.rangeName, region, used),
+    // The range, from Wikidata's neighbouring summits (rangeNameFor). Not
+    // GeoNames' own named ranges: it places each at a single point, and
+    // "the nearest" named Mount Shasta after the Trinity Mountains.
+    name: s.rangeName,
+    landmark: s.name,
     region,
     bbox: boxAround(s.lat, s.lon, RANGE_HALF_KM),
     summit: { name: s.name, lat: s.lat, lon: s.lon, elevM: Math.round(s.elevM), geonameId: s.geonameId },
@@ -128,10 +179,11 @@ const ranges = picks.map((s) => {
 ranges.sort((a, b) => a.id.localeCompare(b.id));
 
 writeFileSync(path.join(root, 'data/terrain/discovered.json'), JSON.stringify({
-  about: 'Generated by tools/discover-ranges.mjs; rerun it rather than editing. Summits from GeoNames (geonames.org, CC BY 4.0); relief measured on AWS Terrain Tiles. tools/build-ranges.mjs builds these next to the hand-curated ranges.json, and its quality gate drops any that do not make a usable skyline.',
+  about: 'Generated by tools/discover-ranges.mjs; rerun it rather than editing. Summits from GeoNames (geonames.org, CC BY 4.0); range names from Wikidata (CC0); relief measured on AWS Terrain Tiles. tools/build-ranges.mjs builds these next to the hand-curated ranges.json, and its quality gate drops any that do not make a usable skyline.',
   countries, count, spacingKm,
   ranges,
 }, null, 1) + '\n');
 const byBand = (lo, hi) => ranges.filter((r) => r.probeReliefM >= lo && r.probeReliefM < hi).length;
 console.log(`picked ${ranges.length} of ${measured.length} measured: `
   + `${byBand(2000, Infinity)} over 2,000m relief, ${byBand(1200, 2000)} 1,200-2,000m, ${byBand(600, 1200)} 600-1,200m`);
+console.log(`named: ${measured.length} of ${cells.length} measured summits have a range name`);

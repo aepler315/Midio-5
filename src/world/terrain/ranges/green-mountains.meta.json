@@ -1,0 +1,34 @@
+{
+  "id": "green-mountains",
+  "name": "Green Mountains",
+  "landmark": "The Chin",
+  "region": "Vermont, USA",
+  "bbox": [
+    -73.092,
+    44.345,
+    -72.537,
+    44.743
+  ],
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.14
+  },
+  "scores": {
+    "energy": 0.333,
+    "rawness": 0.35,
+    "grandeur": 0.236,
+    "dominance": 0.371
+  },
+  "features": {
+    "reliefM": 1062.5,
+    "slopeMPerKm": 166,
+    "peaksPer10Km": 3.1,
+    "roughnessM": 77.5,
+    "dominance": 0.4,
+    "summitM": 1194.8,
+    "lengthKm": 45.6
+  }
+}

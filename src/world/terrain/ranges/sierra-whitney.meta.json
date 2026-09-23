@@ -1,6 +1,7 @@
 {
   "id": "sierra-whitney",
-  "name": "Sierra Nevada, Whitney escarpment",
+  "name": "Sierra Nevada",
+  "landmark": "Mount Whitney",
   "region": "California, USA",
   "bbox": [
     -118.75,

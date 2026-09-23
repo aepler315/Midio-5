@@ -1,0 +1,34 @@
+{
+  "id": "yukon-ranges",
+  "name": "Yukon Ranges",
+  "landmark": "Trapper Mountain",
+  "region": "Yukon, Canada",
+  "bbox": [
+    -138.636,
+    64.389,
+    -137.714,
+    64.787
+  ],
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.09,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.259,
+    "rawness": 0.255,
+    "grandeur": 0.204,
+    "dominance": 0.324
+  },
+  "features": {
+    "reliefM": 917.9,
+    "slopeMPerKm": 125.2,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 52.2,
+    "dominance": 0.3,
+    "summitM": 2152.8,
+    "lengthKm": 42.4
+  }
+}

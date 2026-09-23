@@ -1,0 +1,34 @@
+{
+  "id": "vaca-mountains",
+  "name": "Vaca Mountains",
+  "landmark": "Berryessa Peak",
+  "region": "California, USA",
+  "bbox": [
+    -122.443,
+    38.465,
+    -121.937,
+    38.863
+  ],
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.141,
+    "rawness": 0.123,
+    "grandeur": 0.185,
+    "dominance": 0.247
+  },
+  "features": {
+    "reliefM": 830.4,
+    "slopeMPerKm": 68.1,
+    "peaksPer10Km": 1,
+    "roughnessM": 28.7,
+    "dominance": 0.2,
+    "summitM": 888.1,
+    "lengthKm": 67.6
+  }
+}

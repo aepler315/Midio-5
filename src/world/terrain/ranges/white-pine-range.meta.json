@@ -1,0 +1,34 @@
+{
+  "id": "white-pine-range",
+  "name": "White Pine Range",
+  "landmark": "Currant Mountain",
+  "region": "Nevada, USA",
+  "bbox": [
+    -115.678,
+    38.711,
+    -115.17,
+    39.109
+  ],
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.238,
+    "rawness": 0.203,
+    "grandeur": 0.305,
+    "dominance": 0.486
+  },
+  "features": {
+    "reliefM": 1371.7,
+    "slopeMPerKm": 129.1,
+    "peaksPer10Km": 1.6,
+    "roughnessM": 51.4,
+    "dominance": 0.5,
+    "summitM": 3415.7,
+    "lengthKm": 43.6
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "deep-creek-range",
+  "name": "Deep Creek Range",
+  "landmark": "Ibapah Peak",
+  "region": "Utah, USA",
+  "bbox": [
+    -114.177,
+    39.629,
+    -113.662,
+    40.027
+  ],
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "quality": {
+    "floorShare": 0.1,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.342,
+    "rawness": 0.273,
+    "grandeur": 0.513,
+    "dominance": 0.385
+  },
+  "features": {
+    "reliefM": 2307.2,
+    "slopeMPerKm": 164,
+    "peaksPer10Km": 2.3,
+    "roughnessM": 63.9,
+    "dominance": 0.4,
+    "summitM": 3605.8,
+    "lengthKm": 69.6
+  }
+}

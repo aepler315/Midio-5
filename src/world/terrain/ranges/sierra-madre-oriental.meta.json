@@ -1,0 +1,34 @@
+{
+  "id": "sierra-madre-oriental",
+  "name": "Sierra Madre Oriental",
+  "landmark": "Cerro La Viga",
+  "region": "Coahuila, Mexico",
+  "bbox": [
+    -100.652,
+    25.132,
+    -100.214,
+    25.53
+  ],
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.258,
+    "rawness": 0.263,
+    "grandeur": 0.286,
+    "dominance": 0.352
+  },
+  "features": {
+    "reliefM": 1286.4,
+    "slopeMPerKm": 145.3,
+    "peaksPer10Km": 1.8,
+    "roughnessM": 74.9,
+    "dominance": 0.4,
+    "summitM": 3634.2,
+    "lengthKm": 65.2
+  }
+}

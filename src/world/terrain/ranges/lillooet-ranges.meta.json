@@ -1,0 +1,34 @@
+{
+  "id": "lillooet-ranges",
+  "name": "Lillooet Ranges",
+  "landmark": "Cantilever Range",
+  "region": "British Columbia, Canada",
+  "bbox": [
+    -122.011,
+    49.984,
+    -121.394,
+    50.382
+  ],
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.459,
+    "rawness": 0.403,
+    "grandeur": 0.516,
+    "dominance": 0.299
+  },
+  "features": {
+    "reliefM": 2324.2,
+    "slopeMPerKm": 237.9,
+    "peaksPer10Km": 3.5,
+    "roughnessM": 91.5,
+    "dominance": 0.3,
+    "summitM": 2869.2,
+    "lengthKm": 72
+  }
+}

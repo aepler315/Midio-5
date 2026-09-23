@@ -1,0 +1,34 @@
+{
+  "id": "black-range",
+  "name": "Black Range",
+  "landmark": "Black Mountain",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -108.464,
+    33.179,
+    -107.99,
+    33.577
+  ],
+  "source": "discovered",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.174,
+    "rawness": 0.17,
+    "grandeur": 0.151,
+    "dominance": 0.688
+  },
+  "features": {
+    "reliefM": 679.4,
+    "slopeMPerKm": 76.9,
+    "peaksPer10Km": 1.6,
+    "roughnessM": 32.9,
+    "dominance": 0.7,
+    "summitM": 2939.8,
+    "lengthKm": 43.2
+  }
+}

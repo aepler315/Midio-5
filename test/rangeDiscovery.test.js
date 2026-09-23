@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  boxAround, distanceKm, highestPerCell, localRelief, parseGeonamesRow, selectRanges, slugify, uniqueId,
+  boxAround, distanceKm, highestPerCell, localRelief, parseGeonamesRow, rangeNameFor, selectRanges, slugify, uniqueId,
 } from '../tools/lib/rangeDiscovery.mjs';
 
 const row = (fields) => {
@@ -80,4 +80,23 @@ test('ids are slugs, unique within the basket', () => {
   const used = new Set(['pine-mountain']);
   assert.equal(uniqueId('Pine Mountain', 'Oregon, USA', used), 'pine-mountain-oregon-usa');
   assert.equal(uniqueId('Pine Mountain', 'Oregon, USA', used), 'pine-mountain-oregon-usa-2');
+});
+
+test('a summit takes the range its recorded neighbours vote for, and none from afar', () => {
+  const named = [
+    { lat: 45.37, lon: -121.70, range: 'Oregon Cascades' },
+    { lat: 45.40, lon: -121.60, range: 'Oregon Cascades' },
+    { lat: 45.30, lon: -121.85, range: 'Mount Hood Wilderness' },
+    { lat: 46.20, lon: -121.50, range: 'Washington Cascades' },
+  ];
+  assert.equal(rangeNameFor({ lat: 45.37, lon: -121.69 }, named), 'Oregon Cascades');
+  assert.equal(rangeNameFor({ lat: 44.0, lon: -121.7 }, named), null, 'nothing recorded within reach');
+});
+
+test('selectRanges takes one summit per named range', () => {
+  const pool = line([2900, 2800, 2700, 2600]).map((s, i) => ({ ...s, rangeName: i < 3 ? 'Alaska Range' : 'Brooks Range' }));
+  const picks = selectRanges(pool, { count: 4, uniqueBy: 'rangeName', bands: [{ minM: 0, maxM: Infinity, share: 1 }] });
+  assert.deepEqual(picks.map((p) => p.rangeName).sort(), ['Alaska Range', 'Brooks Range']);
+  const none = selectRanges(pool, { count: 4, uniqueBy: 'rangeName', takenNames: ['Alaska Range', 'Brooks Range'], bands: [{ minM: 0, maxM: Infinity, share: 1 }] });
+  assert.equal(none.length, 0, 'a curated range name is already taken');
 });

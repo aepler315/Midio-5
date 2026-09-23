@@ -32,7 +32,10 @@ import {
   openAudioUrl, UrlAudioError, fetchAudioAsFile, classifyUrl,
 } from './net/UrlAudioSource.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
-import { RangeCaption, rangeCaptionFor } from './ui/RangeCaption.js';
+import { rangeCaptionFor } from './ui/RangeCaption.js';
+import { noteRangeShown } from './world/terrain/RangeHistory.js';
+import { groundSpeedMps } from './world/terrain/ProfileTravel.js';
+import { TERRAIN_STRIP_WIDTH } from './world/terrain/StripRead.js';
 import { DrawErrorLog } from './render/DrawErrorLog.js';
 import { ROLE_LOW, ROLE_HIGH, GrooveFingerprint } from './sim/GrooveFingerprint.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
@@ -220,7 +223,6 @@ const lyricsSkipBtnEl = document.getElementById('lyricsSkipBtn');
 const lyricsNoneBtnEl = document.getElementById('lyricsNoneBtn');
 const lyricGroundingBtnEl = document.getElementById('lyricGroundingBtn');
 const calibrateBtnEl = document.getElementById('calibrateBtn');
-const rangeCaption = new RangeCaption(document.getElementById('rangeCaption'));
 const recalibration = new RecalibrationOverlay({
   panel: document.getElementById('recalPanel'),
   number: document.getElementById('recalNumber'),
@@ -1030,7 +1032,6 @@ function stopTimeline({ preservePause = false } = {}) {
   running = false;
   syncKeepAwake();
   recalibration.stop();
-  rangeCaption.hide();
   // conductor is a single instance shared across every song (see its
   // construction above); Simulation and its subsystems subscribe to it at
   // construction and never unsubscribe on their own. Without this, a replay
@@ -1760,12 +1761,27 @@ function startTimeline(timelineData, extra = {}) {
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
   wakeHud();
-  // Name the real range behind The Range. Not in a bulk export: the caption
-  // is page chrome, and an export records only the canvas. Chrome must never
-  // stop a song: a throw here once aborted starting the world.
-  if (!exportMode) {
-    try { rangeCaption.show(rangeCaptionFor(timelineData.terrain?.range, getWorld(sim.worldId)?.kind)); }
-    catch (err) { console.warn('[range caption]', err); }
+  // Name the real range behind The Range. The renderer draws it on the
+  // canvas, so recordings and bulk exports carry it. Chrome must never stop
+  // a song: a throw here once aborted starting the world.
+  try {
+    const range = timelineData.terrain?.range || null;
+    const kind = getWorld(sim.worldId)?.kind;
+    const far = sim.biomes?.terrainProfiles?.L2;
+    const lengthM = far?.spacingM > 0 && far.angles?.length > 1 ? far.spacingM * (far.angles.length - 1) : NaN;
+    sim.rangeCaption = rangeCaptionFor(range, kind, {
+      lengthKm: lengthM / 1000,
+      speedMps: groundSpeedMps({
+        curves: sim.biomes?.energyCurves,
+        durationMs: conductor?.durationMs,
+        lengthM,
+        stripWidth: TERRAIN_STRIP_WIDTH,
+        response: sim.biomes?.world?.response,
+      }),
+    });
+    if (sim.rangeCaption && range?.id && !exportMode) noteRangeShown(range.id);
+  } catch (err) {
+    console.warn('[range caption]', err);
   }
   if (exportMode) {
     // No rAF loop: the exporter asks for each frame. Frame 0 is drawn now so
