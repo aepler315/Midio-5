@@ -86,6 +86,7 @@ import {
   RENDER_PRESETS, DEFAULT_PRESET_ID, presetById, reachSummary, estimateBytes,
   formatBytes, formatElapsed, exportFileName, describeResult,
 } from './render/VideoExport.js';
+import { stepExportClock, evenExportSize } from './render/BulkExport.js';
 import { MusicLibrary } from './library/MusicLibrary.js';
 import { LibraryPanel } from './ui/LibraryPanel.js';
 import { recentlyPlayed, displayTitle, displayArtist, untaggedTracks } from './library/TrackIndex.js';
@@ -453,10 +454,44 @@ let fpsCapMs = 1000 / readFpsCap();
 let lastDrawMs = 0;
 /** Exact backing-store size while tools/bulk-export.mjs is driving frames.
  *  Display-fit and the perf ladder both stand aside for it. */
+let bulkExportSize = null;
+let bulkExportArmed = false;
+
+/** `?bulkExport=1&exportW=&exportH=` arms export on the next song start.
+ *  An odd or unusable size reads as not armed (evenExportSize -> null);
+ *  startTimeline then refuses loudly rather than rendering a wrong size. */
+function readBulkExportFromUrl() {
+  try {
+    const q = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
+    if (q.get('bulkExport') !== '1') return null;
+    return { w: Number(q.get('exportW')), h: Number(q.get('exportH')) };
+  } catch {
+    return null;
+  }
+}
+
 /** Backing-store size for the chosen preset (up to 4K). Sim stays logical 1280×720.
  *  Under perf pressure the backing store shrinks (PerfGovernor.resolutionScale),
  *  CSS-upscaled to fill the viewport — the single biggest win at 4K. */
 function fitCanvas() {
+  if (bulkExportSize) {
+    const { w, h } = bulkExportSize;
+    if (perfGovernor) {
+      perfGovernor.retro = false;
+      perfGovernor.holdQuality = true;
+      perfGovernor.targetCanvasWidth = w;
+      perfGovernor.canvasWidth = w;
+    }
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    const ctx2d = canvas.getContext('2d');
+    if (ctx2d) ctx2d.imageSmoothingEnabled = true;
+    canvas.classList.remove('retro');
+    landscapeHintEl?.classList.remove('is-visible');
+    return;
+  }
   const preset = readStagePreset();
   const dims = stageDims(preset);
   const adaptive = isAutoPreset(preset);
@@ -1430,6 +1465,55 @@ worldPassagePeakEl?.addEventListener('click', () => {
 worldChooseForMeEl?.addEventListener('click', () => chooseRecommendedWorld());
 
 
+/** Step the armed export clock to `timeMs` and draw that instant.
+ *  stepExportClock takes whole fixed steps, so the frame is drawn -- and
+ *  reported -- at the instant actually simulated, up to one step short of
+ *  the one asked for; the remainder carries into the next frame. */
+function renderExportFrame(timeMs) {
+  if (!bulkExportArmed || !sim || !renderer) throw new Error('Bulk export is not armed.');
+  const target = Number(timeMs);
+  if (!Number.isFinite(target)) throw new Error('Export frame time is not a number.');
+  if (audioEngine?.master) audioEngine.master.gain.value = 0;
+  if (audioEngine?.ctx?.state === 'running') audioEngine.ctx.suspend();
+  const advanced = stepExportClock({
+    simTime,
+    targetMs: target,
+    stepMs: STEP_MS,
+    step: (dt, at) => sim.step(dt, at),
+  });
+  simTime = advanced.simTime;
+  renderer.draw(sim, 0);
+  return { width: canvas.width, height: canvas.height, timeMs: simTime };
+}
+
+/** Rebuild the current song at an exact frame size and arm the export clock.
+ *  The seed and the decoded buffer carry over, so each resolution is the
+ *  same performance. */
+function beginBulkExport({ width, height } = {}) {
+  const size = evenExportSize({ w: width, h: height });
+  if (!size) throw new Error(`Export size must be even and at least 2×2 (got ${width}×${height}).`);
+  if (!lastTimelineData) throw new Error('Load a song before exporting.');
+  const extra = {
+    playBuffer: lastAudioBuffer || undefined,
+    exportMode: true,
+    exportSize: size,
+    startAtMs: 0,
+    fitDiagnostic: lastFitDiagnostic,
+  };
+  if (lastSongSeed != null) extra.songSeed = lastSongSeed;
+  startTimeline(lastTimelineData, extra);
+  if (!bulkExportArmed || !sim || canvas.width !== size.w || canvas.height !== size.h) {
+    throw new Error(`Export armed at ${canvas.width}×${canvas.height}, wanted ${size.w}×${size.h}.`);
+  }
+  return {
+    durationMs: conductor?.durationMs || 0,
+    width: canvas.width,
+    height: canvas.height,
+    seed: sim.songSeed,
+    worldId: sim.worldId,
+  };
+}
+
 function confirmWorld(id) {
   const pending = pendingWorldStart;
   pendingWorldStart = null;
@@ -1440,26 +1524,51 @@ function confirmWorld(id) {
   closeWorldChooser();
   // World select can sit for a while; a suspended context would start a
   // silent, frozen first frame that reads as "upload did nothing."
-  audioEngine?.resume?.();
-  // A recording already has every voice. The timeline synth (oscillator
-  // "keyboard" tones + hat/kick clicks) must not sit on top of it.
+  // Bulk export keeps the context suspended: the file's audio is the
+  // source track, muxed later, and a live play would fight the stepped clock.
   const extra = { ...(pending.extra || {}) };
   if (pending.seed != null && extra.songSeed === undefined) extra.songSeed = pending.seed;
+  const exporting = !!(extra.exportMode || readBulkExportFromUrl());
+  if (!exporting) audioEngine?.resume?.();
+  // A recording already has every voice. The timeline synth (oscillator
+  // "keyboard" tones + hat/kick clicks) must not sit on top of it.
   if (extra.playBuffer) muteTimelineSynth = true;
   startTimeline(pending.data, extra);
   if (running) canvas.focus({ preventScroll: true });
   if (extra.playBuffer) {
     lastAudioBuffer = extra.playBuffer;
-    audioEngine.playBuffer(extra.playBuffer, 0);
+    if (!exporting) audioEngine.playBuffer(extra.playBuffer, 0);
   }
 }
 
 function startTimeline(timelineData, extra = {}) {
   const {
     songSeed: seedOverride = undefined, playBuffer, live = false,
-    startAtMs = 0, startAtWallMs = 0, preservePause = false, captureMode = false,
+    startAtMs = 0, startAtWallMs = 0, preservePause = false, captureMode: captureModeFlag = false,
+    exportMode: exportModeFlag = false, exportSize = null,
   } = extra;
-  stopTimeline({ preservePause });
+  const fromUrl = exportModeFlag ? null : readBulkExportFromUrl();
+  const exportMode = !!(exportModeFlag || fromUrl);
+  if (exportMode) {
+    const requested = exportSize || fromUrl || bulkExportSize;
+    const size = evenExportSize(requested);
+    if (!size) {
+      throw new Error(`Bulk export needs an even frame size of at least 2×2 (got ${requested?.w}×${requested?.h}).`);
+    }
+    bulkExportSize = size;
+    bulkExportArmed = true;
+  } else {
+    bulkExportSize = null;
+    bulkExportArmed = false;
+  }
+  // Bulk export is a full capture on a stepped clock: the same zero lead and
+  // frame-0 prime as captureMode, so it rides that path (and CaptureClock's
+  // zero-latency choreography) rather than keeping a parallel special case.
+  const captureMode = captureModeFlag || exportMode;
+  // An export rebuild must not resume the context on the way through
+  // stopTimeline: that resume is asynchronous and would land after the
+  // suspend below, leaving the song playing under a stepped clock.
+  stopTimeline({ preservePause: preservePause || exportMode });
   fitCanvas();
   // Any path that is about to play a decoded recording (confirmWorld,
   // replay) mutes the timeline synth. Live listening mutes it for the same
@@ -1485,10 +1594,13 @@ function startTimeline(timelineData, extra = {}) {
   // chosen preset, rather than spending the first song at full quality
   // until something calls fitCanvas() again.
   perfGovernor = new PerfGovernor({
-    startLevel: perfStartLevel,
-    retro: isRetroPreset(readStagePreset()),
-    retroPalette: isPalettePreset(readStagePreset()),
+    startLevel: exportMode ? 0 : perfStartLevel,
+    retro: exportMode ? false : isRetroPreset(readStagePreset()),
+    retroPalette: exportMode ? false : isPalettePreset(readStagePreset()),
   });
+  // An offline frame's period is its draw time, which the ladder would read
+  // as pressure and shed the picture the file exists to keep.
+  if (exportMode) perfGovernor.holdQuality = true;
   fitCanvas(); // sync the new governor's canvasWidth/scale to the live buffer
   // World construction (parallax strips, landmarks) is CPU-heavy; surface a
   // progress line so a multi-second bake never looks like a dead freeze.
@@ -1614,6 +1726,14 @@ function startTimeline(timelineData, extra = {}) {
   // start offset -- which the 250ms clamp then turns into a quarter second of
   // sim time nobody asked for.
   lastNowMs = audioEngine.nowMs + presentationLeadMs;
+  if (exportMode) {
+    // The source file is muxed in later. Silence the graph and freeze the
+    // audio clock; renderExportFrame advances simTime on its own.
+    if (audioEngine.master) audioEngine.master.gain.value = 0;
+    paused = true;
+    try { audioEngine.ctx.suspend(); } catch { /* already suspended */ }
+    lastNowMs = simTime;
+  }
   running = true;
   syncKeepAwake();
   stopTitleBackdrop();
@@ -1622,7 +1742,14 @@ function startTimeline(timelineData, extra = {}) {
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
   wakeHud();
-  rafHandle = requestAnimationFrame(frame);
+  if (exportMode) {
+    // No rAF loop: the exporter asks for each frame. Frame 0 is drawn now so
+    // the first capture is the opening, not an unpainted canvas.
+    try { renderer.draw(sim, 0); }
+    catch (err) { console.error('[bulk export] first frame', err); }
+  } else {
+    rafHandle = requestAnimationFrame(frame);
+  }
 
   // Exposed for the debug overlay and for smoke-testing internals.
   // `rafHandle` is a live getter (not a snapshot) so smoke tests can
@@ -1653,6 +1780,13 @@ function startTimeline(timelineData, extra = {}) {
     // celestial approach, the section schedule) stays at the start -- which
     // silently made every seek-based screenshot a picture of second one.
     seek: (ms) => seekSong(ms),
+    // tools/bulk-export.mjs drives these: arm at an exact size, then ask for
+    // each output frame by time. See docs/video-export.md, "Bulk export".
+    exportReady: exportMode,
+    get durationMs() { return conductor?.durationMs || 0; },
+    get exportSize() { return { width: canvas.width, height: canvas.height }; },
+    beginBulkExport: (size) => beginBulkExport(size),
+    renderExportFrame: (timeMs) => renderExportFrame(timeMs),
     get perfLevel() { return perfGovernor?.level ?? null; },
     get perf() { return perfGovernor || null; },
     // Car mode (KeepAwake.js): live state for debugging on a head unit, plus

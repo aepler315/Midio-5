@@ -98,7 +98,13 @@ which one you got rather than trusting the extension.
 
 Recording runs in real time — a four-minute song takes four minutes.
 
-See [docs/video-export.md](docs/video-export.md) for the details.
+To render a folder of songs at 1080p, 1440p, or 2160p, and at 30 or 60 fps:
+
+```
+node tools/bulk-export.mjs --out exports --res 1080,1440,2160 --fps 30,60 path\to\songs
+```
+
+That path steps every frame and muxes H.264 with ffmpeg. See [docs/video-export.md](docs/video-export.md) for the details.
 
 ## Controls and preferences
 
