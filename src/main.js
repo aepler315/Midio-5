@@ -32,6 +32,7 @@ import {
   openAudioUrl, UrlAudioError, fetchAudioAsFile, classifyUrl,
 } from './net/UrlAudioSource.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
+import { RangeCaption, rangeCaptionFor } from './ui/RangeCaption.js';
 import { DrawErrorLog } from './render/DrawErrorLog.js';
 import { ROLE_LOW, ROLE_HIGH, GrooveFingerprint } from './sim/GrooveFingerprint.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
@@ -219,6 +220,7 @@ const lyricsSkipBtnEl = document.getElementById('lyricsSkipBtn');
 const lyricsNoneBtnEl = document.getElementById('lyricsNoneBtn');
 const lyricGroundingBtnEl = document.getElementById('lyricGroundingBtn');
 const calibrateBtnEl = document.getElementById('calibrateBtn');
+const rangeCaption = new RangeCaption(document.getElementById('rangeCaption'));
 const recalibration = new RecalibrationOverlay({
   panel: document.getElementById('recalPanel'),
   number: document.getElementById('recalNumber'),
@@ -1028,6 +1030,7 @@ function stopTimeline({ preservePause = false } = {}) {
   running = false;
   syncKeepAwake();
   recalibration.stop();
+  rangeCaption.hide();
   // conductor is a single instance shared across every song (see its
   // construction above); Simulation and its subsystems subscribe to it at
   // construction and never unsubscribe on their own. Without this, a replay
@@ -1757,6 +1760,13 @@ function startTimeline(timelineData, extra = {}) {
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
   wakeHud();
+  // Name the real range behind The Range. Not in a bulk export: the caption
+  // is page chrome, and an export records only the canvas. Chrome must never
+  // stop a song: a throw here once aborted starting the world.
+  if (!exportMode) {
+    try { rangeCaption.show(rangeCaptionFor(timelineData.terrain?.range, getWorld(sim.worldId)?.kind)); }
+    catch (err) { console.warn('[range caption]', err); }
+  }
   if (exportMode) {
     // No rAF loop: the exporter asks for each frame. Frame 0 is drawn now so
     // the first capture is the opening, not an unpainted canvas.
