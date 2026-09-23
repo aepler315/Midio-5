@@ -56,5 +56,18 @@ export default [
       'no-new': 'error',
     },
   },
-  { ignores: ['node_modules/**', '.smoke/**', 'slskd/**', 'data/**'] },
+  {
+    ignores: [
+      'node_modules/**', '.smoke/**', 'slskd/**', 'data/**',
+      // Generated range profiles (tools/build-ranges.mjs): one JSON.stringify
+      // blob each, so the same "data, not code" call as data/** above.
+      // JSON writes shortest round-trip floats, and for a float32 sample
+      // whose exact decimal ends in a 5 (780.50567626953125 -> "...312")
+      // no-loss-of-precision re-rounds the tie up and reports a value that
+      // is in fact exact -- which failed CI on every PR after #306. The
+      // loader index is code, so it stays linted.
+      'src/world/terrain/ranges/*.js',
+      '!src/world/terrain/ranges/index.js',
+    ],
+  },
 ];
