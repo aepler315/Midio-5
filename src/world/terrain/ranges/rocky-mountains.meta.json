@@ -1,0 +1,34 @@
+{
+  "id": "rocky-mountains",
+  "name": "Rocky Mountains",
+  "landmark": "Fairview Peak",
+  "region": "Montana, USA",
+  "bbox": [
+    -110.562,
+    45.757,
+    -109.993,
+    46.155
+  ],
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.11,
+    "artifact": 0.12
+  },
+  "scores": {
+    "energy": 0.309,
+    "rawness": 0.264,
+    "grandeur": 0.374,
+    "dominance": 0.335
+  },
+  "features": {
+    "reliefM": 1681.1,
+    "slopeMPerKm": 138,
+    "peaksPer10Km": 2.5,
+    "roughnessM": 52.1,
+    "dominance": 0.3,
+    "summitM": 3291.8,
+    "lengthKm": 44
+  }
+}

@@ -99,3 +99,16 @@ export function terrainScrollPx({
   const traveled = profileTravelPx(tSec, curves, reducedFlash, response) * (depth > 0 ? depth : 1);
   return start + traveled;
 }
+
+/**
+ * How fast the view travels along the real range, averaged over the song, in
+ * metres per second. The whole sampled skyline (`lengthM`) is laid across a
+ * `stripWidth`-pixel strip, so each strip pixel is lengthM / stripWidth of
+ * real ground; the song's travel in pixels over its length, times that, is
+ * real distance over real time. NaN when anything needed is missing.
+ */
+export function groundSpeedMps({ curves = null, durationMs = 0, lengthM = 0, stripWidth = 0, response = null } = {}) {
+  const sec = (Number(durationMs) || 0) / 1000;
+  if (!(sec > 0) || !(lengthM > 0) || !(stripWidth > 0)) return NaN;
+  return (profileTravelPx(sec, curves, false, response) / sec) * (lengthM / stripWidth);
+}

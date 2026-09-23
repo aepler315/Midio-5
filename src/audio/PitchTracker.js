@@ -24,8 +24,8 @@ export const SEMITONE_LO = 36; // C2
 export const SEMITONE_HI = 95; // B6
 const SEMITONE_COUNT = SEMITONE_HI - SEMITONE_LO + 1;
 
-const DEFAULT_WIN = 4096;
-const DEFAULT_HOP = 2048;
+export const DEFAULT_WIN = 4096;
+export const DEFAULT_HOP = 2048;
 // Work between yields: short enough that the loading show keeps its frame
 // rate, long enough that yielding is not the cost.
 const YIELD_BUDGET_MS = 12;

@@ -9,6 +9,7 @@ import { easeHueDeg } from './stellar.js';
 import { MIDIO_IDENTITY_HUE, REWARD_HUE } from './ColorLaw.js';
 import { EpicycleShow } from './EpicycleShow.js';
 import { ComposerStrip } from './ComposerStrip.js';
+import { drawRangeCaption } from '../ui/RangeCaption.js';
 import { RainbowBrush } from './RainbowBrush.js';
 import { GOLD_AFTERIMAGE_LIFE_MS } from '../sim/MidioPerformer.js';
 import { contactShadow } from '../world/ContactShadow.js';
@@ -505,6 +506,19 @@ export class Renderer {
       this.composer.draw(ctx, nominalStage, sim.timeMs, {
         showLabels: !!(sim.showSectionLabels || sim.paramBus?.showSectionLabels),
       });
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+
+    // The real range's name (RangeCaption.js). Not HUD chrome: it is part of
+    // the picture, so it is drawn whether or not the HUD is in frame, and
+    // recordings and bulk exports carry it.
+    if (sim.rangeCaption) {
+      ctx.setTransform(canvas.width / nominalW, 0, 0, canvas.height / nominalH, 0, 0);
+      const captionStage = this._captionStageView || (this._captionStageView = { width: nominalW, height: nominalH });
+      captionStage.width = nominalW;
+      captionStage.height = nominalH;
+      try { drawRangeCaption(ctx, captionStage, sim.rangeCaption, sim.timeMs); }
+      catch (err) { console.warn('[range caption]', err); }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
 

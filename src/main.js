@@ -32,7 +32,10 @@ import {
   openAudioUrl, UrlAudioError, fetchAudioAsFile, classifyUrl,
 } from './net/UrlAudioSource.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
-import { RangeCaption, rangeCaptionFor } from './ui/RangeCaption.js';
+import { rangeCaptionFor } from './ui/RangeCaption.js';
+import { noteRangeShown } from './world/terrain/RangeHistory.js';
+import { groundSpeedMps } from './world/terrain/ProfileTravel.js';
+import { TERRAIN_STRIP_WIDTH } from './world/terrain/StripRead.js';
 import { DrawErrorLog } from './render/DrawErrorLog.js';
 import { ROLE_LOW, ROLE_HIGH, GrooveFingerprint } from './sim/GrooveFingerprint.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
@@ -220,7 +223,6 @@ const lyricsSkipBtnEl = document.getElementById('lyricsSkipBtn');
 const lyricsNoneBtnEl = document.getElementById('lyricsNoneBtn');
 const lyricGroundingBtnEl = document.getElementById('lyricGroundingBtn');
 const calibrateBtnEl = document.getElementById('calibrateBtn');
-const rangeCaption = new RangeCaption(document.getElementById('rangeCaption'));
 const recalibration = new RecalibrationOverlay({
   panel: document.getElementById('recalPanel'),
   number: document.getElementById('recalNumber'),
@@ -1030,7 +1032,6 @@ function stopTimeline({ preservePause = false } = {}) {
   running = false;
   syncKeepAwake();
   recalibration.stop();
-  rangeCaption.hide();
   // conductor is a single instance shared across every song (see its
   // construction above); Simulation and its subsystems subscribe to it at
   // construction and never unsubscribe on their own. Without this, a replay
@@ -1529,10 +1530,28 @@ function beginBulkExport({ width, height } = {}) {
   };
 }
 
+// How long starting a world waits for a lyrics lookup still in flight. The
+// picker usually covers it; a slow network must not hold the song longer.
+const LYRICS_START_WAIT_MS = 2000;
+
 function confirmWorld(id) {
   const pending = pendingWorldStart;
   pendingWorldStart = null;
   if (!pending) return;
+  const lyricsReady = pending.extra?.lyricsReady;
+  if (lyricsReady && !lyricsReady.settled) {
+    const gen = loadGen;
+    Promise.race([lyricsReady, new Promise((r) => setTimeout(r, LYRICS_START_WAIT_MS))]).then(() => {
+      // A newer song chosen while waiting wins.
+      if (gen !== loadGen) return;
+      startConfirmedWorld(pending, id);
+    });
+    return;
+  }
+  startConfirmedWorld(pending, id);
+}
+
+function startConfirmedWorld(pending, id) {
   stopWorldPreview();
   lastWorldId = id;
   pending.data.worldId = id;
@@ -1760,12 +1779,27 @@ function startTimeline(timelineData, extra = {}) {
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
   wakeHud();
-  // Name the real range behind The Range. Not in a bulk export: the caption
-  // is page chrome, and an export records only the canvas. Chrome must never
-  // stop a song: a throw here once aborted starting the world.
-  if (!exportMode) {
-    try { rangeCaption.show(rangeCaptionFor(timelineData.terrain?.range, getWorld(sim.worldId)?.kind)); }
-    catch (err) { console.warn('[range caption]', err); }
+  // Name the real range behind The Range. The renderer draws it on the
+  // canvas, so recordings and bulk exports carry it. Chrome must never stop
+  // a song: a throw here once aborted starting the world.
+  try {
+    const range = timelineData.terrain?.range || null;
+    const kind = getWorld(sim.worldId)?.kind;
+    const far = sim.biomes?.terrainProfiles?.L2;
+    const lengthM = far?.spacingM > 0 && far.angles?.length > 1 ? far.spacingM * (far.angles.length - 1) : NaN;
+    sim.rangeCaption = rangeCaptionFor(range, kind, {
+      lengthKm: lengthM / 1000,
+      speedMps: groundSpeedMps({
+        curves: sim.biomes?.energyCurves,
+        durationMs: conductor?.durationMs,
+        lengthM,
+        stripWidth: TERRAIN_STRIP_WIDTH,
+        response: sim.biomes?.world?.response,
+      }),
+    });
+    if (sim.rangeCaption && range?.id && !exportMode) noteRangeShown(range.id);
+  } catch (err) {
+    console.warn('[range caption]', err);
   }
   if (exportMode) {
     // No rAF loop: the exporter asks for each frame. Frame 0 is drawn now so
@@ -2232,11 +2266,35 @@ async function loadAudioFiles(files) {
       : resolveLyricsForAudio(selectedFiles[0], audioBuffer.duration, vocalStem, { prompt: false, signal });
     // Reuse only the same decoded fingerprint, stem assignments, and learned
     // rhythm settings. Different encodings may have different fingerprints.
+    //
+    // The analysis starts FIRST and the fingerprint is taken while it runs:
+    // the analysis's first long stretch is native band rendering on other
+    // threads (and pitch in a worker), which leaves this thread free. When
+    // the fingerprint finds the song in the cache, the analysis is cancelled
+    // instead. Fingerprint-then-analyse had the two queue one behind the
+    // other, ~0.5s of a 3.5-minute song's load.
+    const analysisAbort = new AbortController();
+    const cancelAnalysis = () => analysisAbort.abort();
+    signal.addEventListener('abort', cancelAnalysis, { once: true });
     let fingerprint = null;
     let cacheKey = null;
     let data = null;
+    const analysis = audioToTimeline(audioBuffer, {
+      userStems: isStemDrop ? decoded : null,
+      // Everything previous sessions learned about how this player splits a
+      // kick from a hat, applied to a song they've never played.
+      groove: analysisGroove,
+      signal: analysisAbort.signal,
+      onProgress: ({ phase, progress }) => {
+        if (isStale() || analysisAbort.signal.aborted) return;
+        if (phase === 'separate') loadShow?.setStage(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`, progress);
+        else if (phase === 'analyze') loadShow?.setStage('Detecting onsets, tempo, and downbeat…', 0.7);
+        else if (phase === 'pitch') loadShow?.setStage('Tracing melody, bass, and harmony…', 0.9);
+      },
+    });
+    // Settled either way; a cancelled analysis is not an error.
+    analysis.catch(() => {});
     try {
-      loadShow?.setStage('Recognising the recording…', 0.05);
       fingerprint = fingerprintBuffer(audioBuffer);
       cacheKey = analysisCacheKey(fingerprint, { stems: isStemDrop ? decoded : [], groove: analysisGroove });
       const cached = cacheKey ? await getBundle(cacheKey) : null;
@@ -2245,49 +2303,44 @@ async function loadAudioFiles(files) {
         // An unreadable bundle (older layout, truncated, hand-edited) is not
         // an error worth surfacing: unpackBundle returns null and we analyse
         // from scratch, which is slow but always correct.
-        if (data) console.info('[analysis] restored from cache:', fingerprint.key);
+        if (data) {
+          cancelAnalysis();
+          console.info('[analysis] restored from cache:', fingerprint.key);
+        }
       }
     } catch (err) {
       // Fingerprinting must never be able to stop a song from playing.
       console.warn('[analysis] fingerprint/cache lookup failed', err);
     }
     try {
-      if (!data) data = await audioToTimeline(audioBuffer, {
-        userStems: isStemDrop ? decoded : null,
-        // Everything previous sessions learned about how this player splits a
-        // kick from a hat, applied to a song they've never played.
-        groove: analysisGroove,
-        signal,
-        onProgress: ({ phase, progress }) => {
-          if (isStale()) return;
-          if (phase === 'separate') loadShow?.setStage(`Separating into 7 frequency bands… ${Math.round(progress * 100)}%`, progress);
-          else if (phase === 'analyze') loadShow?.setStage('Detecting onsets, tempo, and downbeat…', 0.7);
-          else if (phase === 'pitch') loadShow?.setStage('Tracing melody, bass, and harmony…', 0.9);
-        },
-      });
+      if (!data) data = await analysis;
     } finally {
+      signal.removeEventListener('abort', cancelAnalysis);
       loadShow?.stop(loadShowSession);
     }
-    const { identity: lyricIdentity, lyricSections, syncedLyrics } = await lyricsPromise;
-    // A newer load has since started -- let it win. Its own flow owns the
-    // loader/audition/HUD visibility from here; this stale one touches none
-    // of it.
     if (isStale()) return;
-    data.lyricIdentity = lyricIdentity;
-    data.lyricSections = lyricSections;
-    data.syncedLyrics = syncedLyrics;
+    // Lyrics no longer hold up the world picker: the lookup is network work
+    // with no fixed length, and the picker is where the player spends the
+    // next few seconds anyway. It lands on the song's data when it resolves;
+    // starting a world waits for it only briefly (confirmWorld).
+    //
     // Remember this analysis for next time. Stored after identity resolves so
     // the bundle carries the artist/title it was matched to. Not awaited: the
     // show must not wait on a disk write, and a failed one costs only a
     // re-analysis later. Lyrics are deliberately NOT in the bundle -- they
     // are fetched per play and the preference can change between plays.
-    if (cacheKey && !data.fromBundle) {
-      Promise.resolve()
-        .then(() => putBundle(cacheKey, packBundle(data, {
+    const lyricsReady = lyricsPromise.then(({ identity: lyricIdentity, lyricSections, syncedLyrics }) => {
+      data.lyricIdentity = lyricIdentity;
+      data.lyricSections = lyricSections;
+      data.syncedLyrics = syncedLyrics;
+      if (cacheKey && !data.fromBundle) {
+        return Promise.resolve(putBundle(cacheKey, packBundle(data, {
           fingerprint, name: selectedFiles[0].name || '', identity: lyricIdentity,
-        })))
-        .catch((err) => console.warn('[analysis] could not cache bundle', err));
-    }
+        }))).catch((err) => console.warn('[analysis] could not cache bundle', err));
+      }
+      return null;
+    }).catch((err) => console.warn('[lyrics] lookup failed; continuing without', err))
+      .finally(() => { lyricsReady.settled = true; });
     if (auditionHeadingEl) auditionHeadingEl.textContent = 'PULLING THE RECORDING APART';
     auditionPanelEl?.classList.add('hidden');
     lyricsRowEl?.classList.add('hidden');
@@ -2312,7 +2365,7 @@ async function loadAudioFiles(files) {
     lastSongName = selectedFiles[0].name || 'song';
     lastAudioBuffer = audioBuffer;
     fontRecommender?.clear(); // the recording is its own sound source
-    offerWorldsThenStart(data, { playBuffer: audioBuffer });
+    offerWorldsThenStart(data, { playBuffer: audioBuffer, lyricsReady });
   } catch (err) {
     if (isStale() || err?.name === 'AbortError') return;
     console.error('[audio load failed]', err);

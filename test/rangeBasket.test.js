@@ -6,7 +6,7 @@ import zlib from 'node:zlib';
 import {
   AXES, MAX_ARTIFACT, MAX_FLOOR_SHARE, countPeaks, rangeCharacter, skylineArtifact, skylineFeatures, skylineQuality,
 } from '../src/world/terrain/RangeCharacter.js';
-import { NEAR_TIE, matchRange, songTerrainTarget } from '../src/world/terrain/RangeMatcher.js';
+import { choiceCount, matchRange, rankScores, songTerrainTarget } from '../src/world/terrain/RangeMatcher.js';
 import { RANGES, LOADERS } from '../src/world/terrain/ranges/index.js';
 import { profilesFromJSON } from '../src/world/terrain/TerrainProfile.js';
 import {
@@ -93,19 +93,49 @@ test('a song goes to the range nearest it on the shared axes', () => {
 
 test('a confident minor key leans toward the heavier archetypes', () => {
   const s = { energy: 0.4, rawness: 0.4, grandeur: 0.4, dominance: 0.5 };
-  const ranges = [range('bright', s, 'majestic'), range('dark', { ...s, energy: 0.42 }, 'brooding')];
+  // Identical scores, so only the key can separate them.
+  const ranges = [range('bright', s, 'majestic'), range('dark', { ...s }, 'brooding')];
   const song = (mode) => ({ watch: { drive: 0.4, onset: 0.4, texture: 0.4, arc: 0.4, contrast: 0.5 }, tonal: { mode, confidence: 0.8 } });
   assert.equal(matchRange(ranges, song('minor'), 0).ranked[0].range.id, 'dark');
   assert.equal(matchRange(ranges, song('major'), 0).ranked[0].range.id, 'bright');
 });
 
-test('near-ties are shared out by seed, and each song is stable', () => {
-  const s = { energy: 0.5, rawness: 0.5, grandeur: 0.5, dominance: 0.5 };
-  const ranges = ['a', 'b', 'c'].map((id, i) => range(id, { ...s, energy: 0.5 + i * (NEAR_TIE / 4) }));
+// A basket of n ranges spread through the four axes.
+const spread = (n) => Array.from({ length: n }, (_, i) => range(`r${i}`, {
+  energy: ((i * 7) % n) / n, rawness: ((i * 11) % n) / n, grandeur: ((i * 13) % n) / n, dominance: ((i * 17) % n) / n,
+}));
+
+test('a song chooses among its nearest few by seed, and a given seed is stable', () => {
+  const basket = spread(48);
   const song = { watch: { drive: 0.5, onset: 0.5, texture: 0.5, arc: 0.5, contrast: 0.5 } };
-  const picks = new Set([0, 1, 2, 3, 4, 5].map((seed) => matchRange(ranges, song, seed).range.id));
-  assert.ok(picks.size > 1, 'different songs spread across equally good ranges');
-  assert.equal(matchRange(ranges, song, 4).range.id, matchRange(ranges, song, 4).range.id);
+  const picks = new Set([0, 1, 2, 3, 4, 5, 6, 7].map((seed) => matchRange(basket, song, seed).range.id));
+  assert.equal(picks.size, choiceCount(48), 'every one of the nearest few gets a turn');
+  const nearest = new Set(matchRange(basket, song, 0).ranked.slice(0, choiceCount(48)).map((r) => r.range.id));
+  for (const id of picks) assert.ok(nearest.has(id), `${id} is one of the nearest`);
+  assert.equal(matchRange(basket, song, 4).range.id, matchRange(basket, song, 4).range.id);
+});
+
+test('one extreme range does not take every extreme song', () => {
+  // The Denali problem: one range far out on grandeur, the rest bunched low.
+  const basket = [...spread(35).map((r) => ({ ...r, scores: { ...r.scores, grandeur: r.scores.grandeur * 0.6 } })),
+    range('giant', { energy: 0.6, rawness: 0.45, grandeur: 0.98, dominance: 0.6 })];
+  const loud = (i) => ({ watch: { drive: 0.6 + (i % 5) * 0.05, onset: 0.6, texture: 0.6, arc: 0.7 + (i % 4) * 0.07, contrast: 0.7 } });
+  let giant = 0;
+  for (let i = 0; i < 60; i++) if (matchRange(basket, loud(i), i).range.id === 'giant') giant++;
+  assert.ok(giant < 20, `giant took ${giant} of 60 loud songs`);
+  assert.equal(rankScores(basket).get(basket[basket.length - 1]).grandeur, 1, 'ranked, the giant is simply first');
+});
+
+test('recently shown ranges are passed over while others are near', () => {
+  const basket = spread(48);
+  const song = { watch: { drive: 0.3, onset: 0.6, texture: 0.4, arc: 0.7, contrast: 0.2 } };
+  const nearest = matchRange(basket, song, 0).ranked.slice(0, choiceCount(48)).map((r) => r.range.id);
+  const recent = nearest.slice(0, -1);
+  for (let seed = 0; seed < 6; seed++) {
+    assert.equal(matchRange(basket, song, seed, { recent }).range.id, nearest[nearest.length - 1]);
+  }
+  const all = matchRange(basket, song, 1, { recent: nearest }).range.id;
+  assert.ok(!nearest.includes(all), 'with the nearest all recent, it reaches a little further');
 });
 
 test('growing the basket far from a song does not change its range', () => {

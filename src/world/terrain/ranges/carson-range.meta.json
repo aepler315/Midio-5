@@ -1,0 +1,34 @@
+{
+  "id": "carson-range",
+  "name": "Carson Range",
+  "landmark": "Mount Rose",
+  "region": "Nevada, USA",
+  "bbox": [
+    -120.173,
+    39.145,
+    -119.662,
+    39.543
+  ],
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.12
+  },
+  "scores": {
+    "energy": 0.262,
+    "rawness": 0.233,
+    "grandeur": 0.304,
+    "dominance": 0.427
+  },
+  "features": {
+    "reliefM": 1368.1,
+    "slopeMPerKm": 136.6,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 55.4,
+    "dominance": 0.4,
+    "summitM": 3193.6,
+    "lengthKm": 46.4
+  }
+}

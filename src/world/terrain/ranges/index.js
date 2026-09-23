@@ -2,302 +2,25 @@
 // Every range's scores up front; each profile behind its own import.
 export const RANGES = [
  {
-  "id": "blue-ridge",
-  "name": "Blue Ridge, Shenandoah",
-  "region": "Virginia, USA",
-  "source": "curated",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.215,
-   "rawness": 0.217,
-   "grandeur": 0.169,
-   "dominance": 0.331
-  }
- },
- {
-  "id": "bluff-mountain",
-  "name": "Bluff Mountain",
-  "region": "Montana, USA",
-  "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.151,
-   "rawness": 0.136,
-   "grandeur": 0.233,
-   "dominance": 0.321
-  }
- },
- {
-  "id": "bokan-mountain",
-  "name": "Bokan Mountain",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.284,
-   "rawness": 0.259,
-   "grandeur": 0.329,
-   "dominance": 0.399
-  }
- },
- {
-  "id": "boulder-baldy",
-  "name": "Boulder Baldy",
-  "region": "Montana, USA",
-  "source": "discovered",
-  "archetype": "defiant",
-  "mood": "defiance",
-  "scores": {
-   "energy": 0.236,
-   "rawness": 0.228,
-   "grandeur": 0.209,
-   "dominance": 0.69
-  }
- },
- {
-  "id": "bush-butte",
-  "name": "Bush Butte",
+  "id": "absaroka-range",
+  "name": "Absaroka Range",
+  "landmark": "Carter Mountain",
   "region": "Wyoming, USA",
   "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
+  "archetype": "restless",
+  "mood": "unease",
   "scores": {
-   "energy": 0.281,
-   "rawness": 0.233,
-   "grandeur": 0.382,
-   "dominance": 0.259
-  }
+   "energy": 0.465,
+   "rawness": 0.507,
+   "grandeur": 0.215,
+   "dominance": 0.286
+  },
+  "lengthKm": 53.6
  },
  {
-  "id": "cabresto-peak",
-  "name": "Cabresto Peak",
-  "region": "New Mexico, USA",
-  "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.298,
-   "rawness": 0.286,
-   "grandeur": 0.388,
-   "dominance": 0.31
-  }
- },
- {
-  "id": "canadian-rockies",
-  "name": "Canadian Rockies, Lake Louise",
-  "region": "Alberta, Canada",
-  "source": "curated",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.559,
-   "rawness": 0.59,
-   "grandeur": 0.3,
-   "dominance": 0.405
-  }
- },
- {
-  "id": "carpathian-peak",
-  "name": "Carpathian Peak",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.479,
-   "rawness": 0.534,
-   "grandeur": 0.25,
-   "dominance": 0.477
-  }
- },
- {
-  "id": "cerro-el-billete",
-  "name": "Cerro El Billete",
-  "region": "Guerrero, Mexico",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.35,
-   "rawness": 0.34,
-   "grandeur": 0.261,
-   "dominance": 0.566
-  }
- },
- {
-  "id": "cerro-grande",
-  "name": "Cerro Grande",
-  "region": "Zacatecas, Mexico",
-  "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.142,
-   "rawness": 0.142,
-   "grandeur": 0.107,
-   "dominance": 0.431
-  }
- },
- {
-  "id": "cerro-las-lagunas",
-  "name": "Cerro Las Lagunas",
-  "region": "San Luis Potosí, Mexico",
-  "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.157,
-   "rawness": 0.152,
-   "grandeur": 0.15,
-   "dominance": 0.321
-  }
- },
- {
-  "id": "cerro-los-heme",
-  "name": "Cerro los Heme",
-  "region": "Baja California, Mexico",
-  "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.158,
-   "rawness": 0.164,
-   "grandeur": 0.146,
-   "dominance": 0.339
-  }
- },
- {
-  "id": "cerro-ponchito",
-  "name": "Cerro Ponchito",
-  "region": "Sinaloa, Mexico",
-  "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.259,
-   "rawness": 0.222,
-   "grandeur": 0.324,
-   "dominance": 0.369
-  }
- },
- {
-  "id": "cerro-tinaja-de-la-sepultura",
-  "name": "Cerro Tinaja de la Sepultura",
-  "region": "Tamaulipas, Mexico",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.274,
-   "rawness": 0.259,
-   "grandeur": 0.273,
-   "dominance": 0.394
-  }
- },
- {
-  "id": "cerro-tiotepec",
-  "name": "Cerro Tiotepec",
-  "region": "Guerrero, Mexico",
-  "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.43,
-   "rawness": 0.431,
-   "grandeur": 0.487,
-   "dominance": 0.379
-  }
- },
- {
-  "id": "cerro-verde",
-  "name": "Cerro Verde",
-  "region": "Baja California Sur, Mexico",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.303,
-   "rawness": 0.284,
-   "grandeur": 0.296,
-   "dominance": 0.479
-  }
- },
- {
-  "id": "cerro-zempoaltepec",
-  "name": "Cerro Zempoaltepec",
-  "region": "Oaxaca, Mexico",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.283,
-   "rawness": 0.273,
-   "grandeur": 0.282,
-   "dominance": 0.567
-  }
- },
- {
-  "id": "cerro-zizintepetl",
-  "name": "Cerro Zizintepetl",
-  "region": "Puebla, Mexico",
-  "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.362,
-   "rawness": 0.343,
-   "grandeur": 0.349,
-   "dominance": 0.256
-  }
- },
- {
-  "id": "cochise-head",
-  "name": "Cochise Head",
-  "region": "Arizona, USA",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.31,
-   "rawness": 0.279,
-   "grandeur": 0.343,
-   "dominance": 0.526
-  }
- },
- {
-  "id": "cordillera-blanca",
-  "name": "Cordillera Blanca",
-  "region": "Ancash, Peru",
-  "source": "curated",
-  "archetype": "wild",
-  "mood": "ferocity",
-  "scores": {
-   "energy": 0.683,
-   "rawness": 0.812,
-   "grandeur": 0.725,
-   "dominance": 0.459
-  }
- },
- {
-  "id": "deep-creek-peak",
-  "name": "Deep Creek Peak",
-  "region": "Idaho, USA",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.259,
-   "rawness": 0.27,
-   "grandeur": 0.147,
-   "dominance": 0.506
-  }
- },
- {
-  "id": "denali",
-  "name": "Denali",
+  "id": "alaska-range",
+  "name": "Alaska Range",
+  "landmark": "Denali",
   "region": "Alaska, USA",
   "source": "discovered",
   "archetype": "sublime",
@@ -307,571 +30,13 @@ export const RANGES = [
    "rawness": 0.435,
    "grandeur": 0.984,
    "dominance": 0.606
-  }
+  },
+  "lengthKm": 69.6
  },
  {
-  "id": "devil-peak",
-  "name": "Devil Peak",
-  "region": "California, USA",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.239,
-   "rawness": 0.228,
-   "grandeur": 0.289,
-   "dominance": 0.402
-  }
- },
- {
-  "id": "dora-peak",
-  "name": "Dora Peak",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "restless",
-  "mood": "unease",
-  "scores": {
-   "energy": 0.314,
-   "rawness": 0.312,
-   "grandeur": 0.215,
-   "dominance": 0.44
-  }
- },
- {
-  "id": "eagle-peak",
-  "name": "Eagle Peak",
-  "region": "Texas, USA",
-  "source": "discovered",
-  "archetype": "defiant",
-  "mood": "defiance",
-  "scores": {
-   "energy": 0.219,
-   "rawness": 0.211,
-   "grandeur": 0.194,
-   "dominance": 0.808
-  }
- },
- {
-  "id": "fitz-roy",
-  "name": "Fitz Roy massif",
-  "region": "Patagonia, Argentina",
-  "source": "curated",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.405,
-   "rawness": 0.426,
-   "grandeur": 0.3,
-   "dominance": 0.544
-  }
- },
- {
-  "id": "fuji",
-  "name": "Mount Fuji",
-  "region": "Honshu, Japan",
-  "source": "curated",
-  "archetype": "sublime",
-  "mood": "awe",
-  "scores": {
-   "energy": 0.321,
-   "rawness": 0.196,
-   "grandeur": 0.616,
-   "dominance": 0.784
-  }
- },
- {
-  "id": "ibapah-peak",
-  "name": "Ibapah Peak",
-  "region": "Utah, USA",
-  "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.342,
-   "rawness": 0.273,
-   "grandeur": 0.513,
-   "dominance": 0.385
-  }
- },
- {
-  "id": "james-dalton-mountain",
-  "name": "James Dalton Mountain",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "restless",
-  "mood": "unease",
-  "scores": {
-   "energy": 0.353,
-   "rawness": 0.364,
-   "grandeur": 0.127,
-   "dominance": 0.438
-  }
- },
- {
-  "id": "king-peak",
-  "name": "King Peak",
-  "region": "British Columbia, Canada",
-  "source": "discovered",
-  "archetype": "restless",
-  "mood": "unease",
-  "scores": {
-   "energy": 0.482,
-   "rawness": 0.516,
-   "grandeur": 0.13,
-   "dominance": 0.493
-  }
- },
- {
-  "id": "lavender-peak",
-  "name": "Lavender Peak",
-  "region": "British Columbia, Canada",
-  "source": "discovered",
-  "archetype": "restless",
-  "mood": "unease",
-  "scores": {
-   "energy": 0.405,
-   "rawness": 0.446,
-   "grandeur": 0.28,
-   "dominance": 0.507
-  }
- },
- {
-  "id": "magnetic-peak",
-  "name": "Magnetic Peak",
-  "region": "Hawaii, USA",
-  "source": "discovered",
-  "archetype": "sublime",
-  "mood": "awe",
-  "scores": {
-   "energy": 0.256,
-   "rawness": 0.093,
-   "grandeur": 0.761,
-   "dominance": 0.532
-  }
- },
- {
-  "id": "monument-valley",
-  "name": "Monument Valley",
-  "region": "Utah-Arizona, USA",
-  "source": "curated",
-  "archetype": "defiant",
-  "mood": "defiance",
-  "scores": {
-   "energy": 0.195,
-   "rawness": 0.236,
-   "grandeur": 0.071,
-   "dominance": 0.669
-  }
- },
- {
-  "id": "mount-baker",
-  "name": "Mount Baker",
-  "region": "Washington, USA",
-  "source": "discovered",
-  "archetype": "sublime",
-  "mood": "awe",
-  "scores": {
-   "energy": 0.359,
-   "rawness": 0.302,
-   "grandeur": 0.462,
-   "dominance": 0.749
-  }
- },
- {
-  "id": "mount-blackburn",
-  "name": "Mount Blackburn",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "sublime",
-  "mood": "awe",
-  "scores": {
-   "energy": 0.491,
-   "rawness": 0.37,
-   "grandeur": 0.882,
-   "dominance": 0.501
-  }
- },
- {
-  "id": "mount-fairweather",
-  "name": "Mount Fairweather",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "wild",
-  "mood": "ferocity",
-  "scores": {
-   "energy": 0.661,
-   "rawness": 0.614,
-   "grandeur": 0.853,
-   "dominance": 0.471
-  }
- },
- {
-  "id": "mount-glottof",
-  "name": "Mount Glottof",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.316,
-   "rawness": 0.333,
-   "grandeur": 0.187,
-   "dominance": 0.33
-  }
- },
- {
-  "id": "mount-hayes",
-  "name": "Mount Hayes",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.591,
-   "rawness": 0.546,
-   "grandeur": 0.644,
-   "dominance": 0.481
-  }
- },
- {
-  "id": "mount-hood",
-  "name": "Mount Hood",
-  "region": "Oregon, USA",
-  "source": "discovered",
-  "archetype": "sublime",
-  "mood": "awe",
-  "scores": {
-   "energy": 0.366,
-   "rawness": 0.301,
-   "grandeur": 0.49,
-   "dominance": 0.844
-  }
- },
- {
-  "id": "mount-krause",
-  "name": "Mount Krause",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.509,
-   "rawness": 0.513,
-   "grandeur": 0.394,
-   "dominance": 0.267
-  }
- },
- {
-  "id": "mount-kupreanof",
-  "name": "Mount Kupreanof",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.332,
-   "rawness": 0.306,
-   "grandeur": 0.396,
-   "dominance": 0.605
-  }
- },
- {
-  "id": "mount-lemmon",
-  "name": "Mount Lemmon",
-  "region": "Arizona, USA",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.28,
-   "rawness": 0.254,
-   "grandeur": 0.335,
-   "dominance": 0.569
-  }
- },
- {
-  "id": "mount-marcus-baker",
-  "name": "Mount Marcus Baker",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.565,
-   "rawness": 0.571,
-   "grandeur": 0.395,
-   "dominance": 0.605
-  }
- },
- {
-  "id": "mount-robson",
-  "name": "Mount Robson",
-  "region": "British Columbia, Canada",
-  "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.585,
-   "rawness": 0.562,
-   "grandeur": 0.55,
-   "dominance": 0.521
-  }
- },
- {
-  "id": "mount-saint-elias",
-  "name": "Mount Saint Elias",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.482,
-   "rawness": 0.431,
-   "grandeur": 0.644,
-   "dominance": 0.612
-  }
- },
- {
-  "id": "mount-shasta",
-  "name": "Mount Shasta",
-  "region": "California, USA",
-  "source": "discovered",
-  "archetype": "sublime",
-  "mood": "awe",
-  "scores": {
-   "energy": 0.419,
-   "rawness": 0.316,
-   "grandeur": 0.67,
-   "dominance": 0.717
-  }
- },
- {
-  "id": "mount-taylor",
-  "name": "Mount Taylor",
-  "region": "New Mexico, USA",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.214,
-   "rawness": 0.178,
-   "grandeur": 0.319,
-   "dominance": 0.526
-  }
- },
- {
-  "id": "mount-torbert",
-  "name": "Mount Torbert",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.446,
-   "rawness": 0.402,
-   "grandeur": 0.645,
-   "dominance": 0.24
-  }
- },
- {
-  "id": "mount-waas",
-  "name": "Mount Waas",
-  "region": "Utah, USA",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.324,
-   "rawness": 0.269,
-   "grandeur": 0.438,
-   "dominance": 0.45
-  }
- },
- {
-  "id": "mount-zbura",
-  "name": "Mount Zbura",
-  "region": "British Columbia, Canada",
-  "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.63,
-   "rawness": 0.684,
-   "grandeur": 0.204,
-   "dominance": 0.433
-  }
- },
- {
-  "id": "orno-peak",
-  "name": "Orno Peak",
-  "region": "Colorado, USA",
-  "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.212,
-   "rawness": 0.214,
-   "grandeur": 0.254,
-   "dominance": 0.251
-  }
- },
- {
-  "id": "picacho-del-diablo",
-  "name": "Picacho del Diablo",
-  "region": "Baja California, Mexico",
-  "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.255,
-   "rawness": 0.228,
-   "grandeur": 0.284,
-   "dominance": 0.354
-  }
- },
- {
-  "id": "pikes-peak",
-  "name": "Pikes Peak",
-  "region": "Colorado, USA",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.245,
-   "rawness": 0.195,
-   "grandeur": 0.359,
-   "dominance": 0.731
-  }
- },
- {
-  "id": "pine-mountain",
-  "name": "Pine Mountain",
-  "region": "Oregon, USA",
-  "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.118,
-   "rawness": 0.082,
-   "grandeur": 0.227,
-   "dominance": 0.422
-  }
- },
- {
-  "id": "pu-uwekiu",
-  "name": "Pu‘uwēkiu",
-  "region": "Hawaii, USA",
-  "source": "discovered",
-  "archetype": "sublime",
-  "mood": "awe",
-  "scores": {
-   "energy": 0.245,
-   "rawness": 0.072,
-   "grandeur": 0.705,
-   "dominance": 0.597
-  }
- },
- {
-  "id": "rainier",
-  "name": "Mount Rainier",
-  "region": "Washington, USA",
-  "source": "curated",
-  "archetype": "sublime",
-  "mood": "awe",
-  "scores": {
-   "energy": 0.435,
-   "rawness": 0.307,
-   "grandeur": 0.616,
-   "dominance": 0.832
-  }
- },
- {
-  "id": "redoubt-volcano",
-  "name": "Redoubt Volcano",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.489,
-   "rawness": 0.437,
-   "grandeur": 0.543,
-   "dominance": 0.627
-  }
- },
- {
-  "id": "risky-peak",
-  "name": "Risky Peak",
-  "region": "Northwest Territories, Canada",
-  "source": "discovered",
-  "archetype": "restless",
-  "mood": "unease",
-  "scores": {
-   "energy": 0.45,
-   "rawness": 0.457,
-   "grandeur": 0.214,
-   "dominance": 0.304
-  }
- },
- {
-  "id": "roan-peaks",
-  "name": "Roan Peaks",
-  "region": "Utah, USA",
-  "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.179,
-   "rawness": 0.166,
-   "grandeur": 0.193,
-   "dominance": 0.242
-  }
- },
- {
-  "id": "san-jacinto-peak",
-  "name": "San Jacinto Peak",
-  "region": "California, USA",
-  "source": "discovered",
-  "archetype": "sublime",
-  "mood": "awe",
-  "scores": {
-   "energy": 0.394,
-   "rawness": 0.348,
-   "grandeur": 0.505,
-   "dominance": 0.676
-  }
- },
- {
-  "id": "savage-mountain",
-  "name": "Savage Mountain",
-  "region": "New Hampshire, USA",
-  "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.235,
-   "rawness": 0.235,
-   "grandeur": 0.156,
-   "dominance": 0.29
-  }
- },
- {
-  "id": "sawtooth",
-  "name": "Sawtooth Range",
-  "region": "Idaho, USA",
-  "source": "curated",
-  "archetype": "restless",
-  "mood": "unease",
-  "scores": {
-   "energy": 0.346,
-   "rawness": 0.37,
-   "grandeur": 0.142,
-   "dominance": 0.521
-  }
- },
- {
-  "id": "shishaldin-volcano",
-  "name": "Shishaldin Volcano",
+  "id": "aleutian-range",
+  "name": "Aleutian Range",
+  "landmark": "Shishaldin Volcano",
   "region": "Alaska, USA",
   "source": "discovered",
   "archetype": "sublime",
@@ -881,151 +46,29 @@ export const RANGES = [
    "rawness": 0.23,
    "grandeur": 0.592,
    "dominance": 0.811
-  }
+  },
+  "lengthKm": 66
  },
  {
-  "id": "sierra-whitney",
-  "name": "Sierra Nevada, Whitney escarpment",
-  "region": "California, USA",
-  "source": "curated",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.453,
-   "rawness": 0.516,
-   "grandeur": 0.384,
-   "dominance": 0.555
-  }
- },
- {
-  "id": "siniktanneyak-mountain",
-  "name": "Siniktanneyak Mountain",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.289,
-   "rawness": 0.296,
-   "grandeur": 0.212,
-   "dominance": 0.492
-  }
- },
- {
-  "id": "snowy-mountain",
-  "name": "Snowy Mountain",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.356,
-   "rawness": 0.333,
-   "grandeur": 0.359,
-   "dominance": 0.416
-  }
- },
- {
-  "id": "stroller-white-mountain",
-  "name": "Stroller White Mountain",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "restless",
-  "mood": "unease",
-  "scores": {
-   "energy": 0.472,
-   "rawness": 0.499,
-   "grandeur": 0.227,
-   "dominance": 0.506
-  }
- },
- {
-  "id": "telescope-peak",
-  "name": "Telescope Peak",
-  "region": "California, USA",
-  "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.343,
-   "rawness": 0.329,
-   "grandeur": 0.349,
-   "dominance": 0.439
-  }
- },
- {
-  "id": "tetons",
-  "name": "Teton Range",
-  "region": "Wyoming, USA",
-  "source": "curated",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.457,
-   "rawness": 0.464,
-   "grandeur": 0.352,
-   "dominance": 0.482
-  }
- },
- {
-  "id": "the-castle-gables",
-  "name": "The Castle Gables",
+  "id": "arctic-cordillera",
+  "name": "Arctic Cordillera",
+  "landmark": "Mount Biederbick",
   "region": "Nunavut, Canada",
   "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
+  "archetype": "serene",
+  "mood": "calm",
   "scores": {
-   "energy": 0.411,
-   "rawness": 0.378,
-   "grandeur": 0.4,
-   "dominance": 0.227
-  }
+   "energy": 0.31,
+   "rawness": 0.324,
+   "grandeur": 0.226,
+   "dominance": 0.336
+  },
+  "lengthKm": 74.8
  },
  {
-  "id": "torres-del-paine",
-  "name": "Cordillera del Paine",
-  "region": "Patagonia, Chile",
-  "source": "curated",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.5,
-   "rawness": 0.494,
-   "grandeur": 0.529,
-   "dominance": 0.445
-  }
- },
- {
-  "id": "trident-peak",
-  "name": "Trident Peak",
-  "region": "British Columbia, Canada",
-  "source": "discovered",
-  "archetype": "restless",
-  "mood": "unease",
-  "scores": {
-   "energy": 0.409,
-   "rawness": 0.42,
-   "grandeur": 0.259,
-   "dominance": 0.342
-  }
- },
- {
-  "id": "truuli-peak",
-  "name": "Truuli Peak",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "restless",
-  "mood": "unease",
-  "scores": {
-   "energy": 0.387,
-   "rawness": 0.454,
-   "grandeur": 0.163,
-   "dominance": 0.438
-  }
- },
- {
-  "id": "tweedy-mountain",
-  "name": "Tweedy Mountain",
+  "id": "beaverhead-mountains",
+  "name": "Beaverhead Mountains",
+  "landmark": "Tweedy Mountain",
   "region": "Montana, USA",
   "source": "discovered",
   "archetype": "restless",
@@ -1035,53 +78,1053 @@ export const RANGES = [
    "rawness": 0.427,
    "grandeur": 0.207,
    "dominance": 0.357
-  }
+  },
+  "lengthKm": 42.8
  },
  {
-  "id": "virgin-peak",
-  "name": "Virgin Peak",
+  "id": "big-horn-mountains",
+  "name": "Big Horn Mountains",
+  "landmark": "Bush Butte",
+  "region": "Wyoming, USA",
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.281,
+   "rawness": 0.233,
+   "grandeur": 0.382,
+   "dominance": 0.259
+  },
+  "lengthKm": 73.6
+ },
+ {
+  "id": "black-range",
+  "name": "Black Range",
+  "landmark": "Black Mountain",
+  "region": "New Mexico, USA",
+  "source": "discovered",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "scores": {
+   "energy": 0.174,
+   "rawness": 0.17,
+   "grandeur": 0.151,
+   "dominance": 0.688
+  },
+  "lengthKm": 43.2
+ },
+ {
+  "id": "blue-ridge",
+  "name": "Blue Ridge Mountains",
+  "landmark": "Shenandoah",
+  "region": "Virginia, USA",
+  "source": "curated",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.215,
+   "rawness": 0.217,
+   "grandeur": 0.169,
+   "dominance": 0.331
+  },
+  "lengthKm": 77.6
+ },
+ {
+  "id": "book-cliffs",
+  "name": "Book Cliffs",
+  "landmark": "Roan Peaks",
+  "region": "Utah, USA",
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.179,
+   "rawness": 0.166,
+   "grandeur": 0.193,
+   "dominance": 0.242
+  },
+  "lengthKm": 43.6
+ },
+ {
+  "id": "boundary-ranges",
+  "name": "Boundary Ranges",
+  "landmark": "Chutine Peak",
+  "region": "British Columbia, Canada",
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.439,
+   "rawness": 0.469,
+   "grandeur": 0.18,
+   "dominance": 0.491
+  },
+  "lengthKm": 44.4
+ },
+ {
+  "id": "brooks-range",
+  "name": "Brooks Range",
+  "landmark": "James Dalton Mountain",
+  "region": "Alaska, USA",
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.353,
+   "rawness": 0.364,
+   "grandeur": 0.127,
+   "dominance": 0.438
+  },
+  "lengthKm": 44
+ },
+ {
+  "id": "california-cascades",
+  "name": "California Cascades",
+  "landmark": "Mount Shasta",
+  "region": "California, USA",
+  "source": "discovered",
+  "archetype": "sublime",
+  "mood": "awe",
+  "scores": {
+   "energy": 0.419,
+   "rawness": 0.316,
+   "grandeur": 0.67,
+   "dominance": 0.717
+  },
+  "lengthKm": 73.2
+ },
+ {
+  "id": "canadian-rockies",
+  "name": "Canadian Rockies",
+  "landmark": "Lake Louise",
+  "region": "Alberta, Canada",
+  "source": "curated",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.559,
+   "rawness": 0.59,
+   "grandeur": 0.3,
+   "dominance": 0.405
+  },
+  "lengthKm": 58.4
+ },
+ {
+  "id": "carson-range",
+  "name": "Carson Range",
+  "landmark": "Mount Rose",
   "region": "Nevada, USA",
   "source": "discovered",
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.302,
-   "rawness": 0.259,
-   "grandeur": 0.4,
-   "dominance": 0.443
-  }
+   "energy": 0.262,
+   "rawness": 0.233,
+   "grandeur": 0.304,
+   "dominance": 0.427
+  },
+  "lengthKm": 46.4
  },
  {
-  "id": "volcan-de-colima",
-  "name": "Volcán de Colima",
-  "region": "Jalisco, Mexico",
+  "id": "chigmit-mountains",
+  "name": "Chigmit Mountains",
+  "landmark": "Redoubt Volcano",
+  "region": "Alaska, USA",
   "source": "discovered",
-  "archetype": "sublime",
-  "mood": "awe",
+  "archetype": "majestic",
+  "mood": "heroism",
   "scores": {
-   "energy": 0.319,
-   "rawness": 0.205,
-   "grandeur": 0.706,
-   "dominance": 0.519
-  }
+   "energy": 0.489,
+   "rawness": 0.437,
+   "grandeur": 0.543,
+   "dominance": 0.627
+  },
+  "lengthKm": 52.8
  },
  {
-  "id": "volcan-de-tequila",
-  "name": "Volcan de Tequila",
-  "region": "Jalisco, Mexico",
+  "id": "chiricahua-mountains",
+  "name": "Chiricahua Mountains",
+  "landmark": "Cochise Head",
+  "region": "Arizona, USA",
   "source": "discovered",
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.315,
-   "rawness": 0.33,
-   "grandeur": 0.35,
-   "dominance": 0.691
-  }
+   "energy": 0.31,
+   "rawness": 0.279,
+   "grandeur": 0.343,
+   "dominance": 0.526
+  },
+  "lengthKm": 68.8
  },
  {
-  "id": "volcan-pico-de-orizaba",
-  "name": "Volcán Pico de Orizaba",
+  "id": "chugach-mountains",
+  "name": "Chugach Mountains",
+  "landmark": "Mount Marcus Baker",
+  "region": "Alaska, USA",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.565,
+   "rawness": 0.571,
+   "grandeur": 0.395,
+   "dominance": 0.605
+  },
+  "lengthKm": 48.4
+ },
+ {
+  "id": "coast-mountains",
+  "name": "Coast Mountains",
+  "landmark": "Mount Priestley",
+  "region": "British Columbia, Canada",
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.341,
+   "rawness": 0.378,
+   "grandeur": 0.236,
+   "dominance": 0.25
+  },
+  "lengthKm": 42
+ },
+ {
+  "id": "countess-of-dufferin-range",
+  "name": "Countess of Dufferin Range",
+  "landmark": "Mount Patterson",
+  "region": "British Columbia, Canada",
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.291,
+   "rawness": 0.287,
+   "grandeur": 0.212,
+   "dominance": 0.377
+  },
+  "lengthKm": 46.4
+ },
+ {
+  "id": "deep-creek-range",
+  "name": "Deep Creek Range",
+  "landmark": "Ibapah Peak",
+  "region": "Utah, USA",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.342,
+   "rawness": 0.273,
+   "grandeur": 0.513,
+   "dominance": 0.385
+  },
+  "lengthKm": 69.6
+ },
+ {
+  "id": "diablo-range",
+  "name": "Diablo Range",
+  "landmark": "Mount Oso",
+  "region": "California, USA",
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.226,
+   "rawness": 0.225,
+   "grandeur": 0.201,
+   "dominance": 0.294
+  },
+  "lengthKm": 47.6
+ },
+ {
+  "id": "fairweather-range",
+  "name": "Fairweather Range",
+  "landmark": "Mount Fairweather",
+  "region": "Alaska, USA",
+  "source": "discovered",
+  "archetype": "wild",
+  "mood": "ferocity",
+  "scores": {
+   "energy": 0.661,
+   "rawness": 0.614,
+   "grandeur": 0.853,
+   "dominance": 0.471
+  },
+  "lengthKm": 70.8
+ },
+ {
+  "id": "front-range",
+  "name": "Front Range",
+  "landmark": "Pikes Peak",
+  "region": "Colorado, USA",
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.245,
+   "rawness": 0.195,
+   "grandeur": 0.359,
+   "dominance": 0.731
+  },
+  "lengthKm": 43.6
+ },
+ {
+  "id": "garibaldi-ranges",
+  "name": "Garibaldi Ranges",
+  "landmark": "Mount Garibaldi",
+  "region": "British Columbia, Canada",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.475,
+   "rawness": 0.484,
+   "grandeur": 0.255,
+   "dominance": 0.401
+  },
+  "lengthKm": 48
+ },
+ {
+  "id": "green-mountains",
+  "name": "Green Mountains",
+  "landmark": "The Chin",
+  "region": "Vermont, USA",
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.333,
+   "rawness": 0.35,
+   "grandeur": 0.236,
+   "dominance": 0.371
+  },
+  "lengthKm": 45.6
+ },
+ {
+  "id": "hualapai-mountains",
+  "name": "Hualapai Mountains",
+  "landmark": "Hayden Peak",
+  "region": "Arizona, USA",
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.226,
+   "rawness": 0.199,
+   "grandeur": 0.269,
+   "dominance": 0.47
+  },
+  "lengthKm": 45.6
+ },
+ {
+  "id": "klamath-mountains",
+  "name": "Klamath Mountains",
+  "landmark": "Page Mountain",
+  "region": "Oregon, USA",
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.373,
+   "rawness": 0.387,
+   "grandeur": 0.273,
+   "dominance": 0.356
+  },
+  "lengthKm": 67.6
+ },
+ {
+  "id": "la-sal-mountains",
+  "name": "La Sal Mountains",
+  "landmark": "Mount Peale",
+  "region": "Utah, USA",
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.251,
+   "rawness": 0.199,
+   "grandeur": 0.389,
+   "dominance": 0.406
+  },
+  "lengthKm": 42
+ },
+ {
+  "id": "laurentian-mountains",
+  "name": "Laurentian Mountains",
+  "landmark": "Mont Tremblant",
+  "region": "Quebec, Canada",
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.171,
+   "rawness": 0.181,
+   "grandeur": 0.098,
+   "dominance": 0.503
+  },
+  "lengthKm": 42.4
+ },
+ {
+  "id": "lillooet-ranges",
+  "name": "Lillooet Ranges",
+  "landmark": "Cantilever Range",
+  "region": "British Columbia, Canada",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.459,
+   "rawness": 0.403,
+   "grandeur": 0.516,
+   "dominance": 0.299
+  },
+  "lengthKm": 72
+ },
+ {
+  "id": "little-belt-mountains",
+  "name": "Little Belt Mountains",
+  "landmark": "Big Baldy Mountain",
+  "region": "Montana, USA",
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.332,
+   "rawness": 0.323,
+   "grandeur": 0.248,
+   "dominance": 0.358
+  },
+  "lengthKm": 43.6
+ },
+ {
+  "id": "livingston-range",
+  "name": "Livingston Range",
+  "landmark": "Kintla Peak",
+  "region": "Montana, USA",
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.45,
+   "rawness": 0.481,
+   "grandeur": 0.21,
+   "dominance": 0.467
+  },
+  "lengthKm": 44.8
+ },
+ {
+  "id": "madison-range",
+  "name": "Madison Range",
+  "landmark": "Echo Peak",
+  "region": "Montana, USA",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.46,
+   "rawness": 0.478,
+   "grandeur": 0.266,
+   "dominance": 0.367
+  },
+  "lengthKm": 46
+ },
+ {
+  "id": "mahoosuc-range",
+  "name": "Mahoosuc Range",
+  "landmark": "Old Speck Mountain",
+  "region": "Maine, USA",
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.282,
+   "rawness": 0.285,
+   "grandeur": 0.187,
+   "dominance": 0.451
+  },
+  "lengthKm": 59.6
+ },
+ {
+  "id": "medicine-bow-mountains",
+  "name": "Medicine Bow Mountains",
+  "landmark": "Medicine Bow Peak",
+  "region": "Wyoming, USA",
+  "source": "discovered",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "scores": {
+   "energy": 0.172,
+   "rawness": 0.16,
+   "grandeur": 0.17,
+   "dominance": 0.624
+  },
+  "lengthKm": 43.6
+ },
+ {
+  "id": "mission-mountains",
+  "name": "Mission Mountains",
+  "landmark": "McDonald Peak",
+  "region": "Montana, USA",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.476,
+   "rawness": 0.481,
+   "grandeur": 0.257,
+   "dominance": 0.431
+  },
+  "lengthKm": 47.2
+ },
+ {
+  "id": "monument-valley",
+  "name": "Monument Valley",
+  "landmark": null,
+  "region": "Utah-Arizona, USA",
+  "source": "curated",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "scores": {
+   "energy": 0.195,
+   "rawness": 0.236,
+   "grandeur": 0.071,
+   "dominance": 0.669
+  },
+  "lengthKm": 20
+ },
+ {
+  "id": "north-cascades",
+  "name": "North Cascades",
+  "landmark": "Glacier Peak",
+  "region": "Washington, USA",
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.344,
+   "rawness": 0.359,
+   "grandeur": 0.211,
+   "dominance": 0.551
+  },
+  "lengthKm": 45.2
+ },
+ {
+  "id": "olympic-mountains",
+  "name": "Olympic Mountains",
+  "landmark": "Second Top",
+  "region": "Washington, USA",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.451,
+   "rawness": 0.425,
+   "grandeur": 0.463,
+   "dominance": 0.286
+  },
+  "lengthKm": 66.4
+ },
+ {
+  "id": "oregon-cascades",
+  "name": "Oregon Cascades",
+  "landmark": "Mount Hood",
+  "region": "Oregon, USA",
+  "source": "discovered",
+  "archetype": "sublime",
+  "mood": "awe",
+  "scores": {
+   "energy": 0.366,
+   "rawness": 0.301,
+   "grandeur": 0.49,
+   "dominance": 0.844
+  },
+  "lengthKm": 49.2
+ },
+ {
+  "id": "panamint-range",
+  "name": "Panamint Range",
+  "landmark": "Telescope Peak",
+  "region": "California, USA",
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.343,
+   "rawness": 0.329,
+   "grandeur": 0.349,
+   "dominance": 0.439
+  },
+  "lengthKm": 43.6
+ },
+ {
+  "id": "peninsular-ranges",
+  "name": "Peninsular Ranges",
+  "landmark": "Volcán Las Tres Vírgenes",
+  "region": "Baja California Sur, Mexico",
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.262,
+   "rawness": 0.237,
+   "grandeur": 0.342,
+   "dominance": 0.707
+  },
+  "lengthKm": 46
+ },
+ {
+  "id": "pinaleno-mountains",
+  "name": "Pinaleño Mountains",
+  "landmark": "Mount Graham",
+  "region": "Arizona, USA",
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.242,
+   "rawness": 0.18,
+   "grandeur": 0.457,
+   "dominance": 0.604
+  },
+  "lengthKm": 71.6
+ },
+ {
+  "id": "pine-valley-mountains",
+  "name": "Pine Valley Mountains",
+  "landmark": "Burger Peak",
+  "region": "Utah, USA",
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.303,
+   "rawness": 0.248,
+   "grandeur": 0.467,
+   "dominance": 0.536
+  },
+  "lengthKm": 68.4
+ },
+ {
+  "id": "rainbow-range",
+  "name": "Rainbow Range",
+  "landmark": "Mount Robson",
+  "region": "British Columbia, Canada",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.585,
+   "rawness": 0.562,
+   "grandeur": 0.55,
+   "dominance": 0.521
+  },
+  "lengthKm": 44.8
+ },
+ {
+  "id": "rainier",
+  "name": "Cascade Range",
+  "landmark": "Mount Rainier",
+  "region": "Washington, USA",
+  "source": "curated",
+  "archetype": "sublime",
+  "mood": "awe",
+  "scores": {
+   "energy": 0.435,
+   "rawness": 0.307,
+   "grandeur": 0.616,
+   "dominance": 0.832
+  },
+  "lengthKm": 33.6
+ },
+ {
+  "id": "revelation-mountains",
+  "name": "Revelation Mountains",
+  "landmark": "Mount Hesperus",
+  "region": "Alaska, USA",
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.471,
+   "rawness": 0.524,
+   "grandeur": 0.225,
+   "dominance": 0.52
+  },
+  "lengthKm": 44.4
+ },
+ {
+  "id": "rocky-mountains",
+  "name": "Rocky Mountains",
+  "landmark": "Fairview Peak",
+  "region": "Montana, USA",
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.309,
+   "rawness": 0.264,
+   "grandeur": 0.374,
+   "dominance": 0.335
+  },
+  "lengthKm": 44
+ },
+ {
+  "id": "saint-elias-mountains",
+  "name": "Saint Elias Mountains",
+  "landmark": "Mount Saint Elias",
+  "region": "Alaska, USA",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.482,
+   "rawness": 0.431,
+   "grandeur": 0.644,
+   "dominance": 0.612
+  },
+  "lengthKm": 43.6
+ },
+ {
+  "id": "san-gabriel-mountains",
+  "name": "San Gabriel Mountains",
+  "landmark": "Mount San Antonio",
+  "region": "California, USA",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.341,
+   "rawness": 0.252,
+   "grandeur": 0.586,
+   "dominance": 0.315
+  },
+  "lengthKm": 70
+ },
+ {
+  "id": "san-jacinto-mountains",
+  "name": "San Jacinto Mountains",
+  "landmark": "San Jacinto Peak",
+  "region": "California, USA",
+  "source": "discovered",
+  "archetype": "sublime",
+  "mood": "awe",
+  "scores": {
+   "energy": 0.394,
+   "rawness": 0.348,
+   "grandeur": 0.505,
+   "dominance": 0.676
+  },
+  "lengthKm": 73.2
+ },
+ {
+  "id": "san-mateo-mountains",
+  "name": "San Mateo Mountains",
+  "landmark": "Mount Taylor",
+  "region": "New Mexico, USA",
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.214,
+   "rawness": 0.178,
+   "grandeur": 0.319,
+   "dominance": 0.526
+  },
+  "lengthKm": 60
+ },
+ {
+  "id": "sangre-de-cristo-mountains",
+  "name": "Sangre de Cristo Mountains",
+  "landmark": "Cabresto Peak",
+  "region": "New Mexico, USA",
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.298,
+   "rawness": 0.286,
+   "grandeur": 0.388,
+   "dominance": 0.31
+  },
+  "lengthKm": 74.4
+ },
+ {
+  "id": "sangre-de-cristo-range",
+  "name": "Sangre de Cristo Range",
+  "landmark": "Mount Adams",
+  "region": "Colorado, USA",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.402,
+   "rawness": 0.368,
+   "grandeur": 0.379,
+   "dominance": 0.2
+  },
+  "lengthKm": 66.4
+ },
+ {
+  "id": "sawtooth",
+  "name": "Sawtooth Range",
+  "landmark": "Thompson Peak",
+  "region": "Idaho, USA",
+  "source": "curated",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.346,
+   "rawness": 0.37,
+   "grandeur": 0.142,
+   "dominance": 0.521
+  },
+  "lengthKm": 52
+ },
+ {
+  "id": "sierra-de-san-pedro-martir",
+  "name": "Sierra de San Pedro Mártir",
+  "landmark": "Picacho del Diablo",
+  "region": "Baja California, Mexico",
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.255,
+   "rawness": 0.228,
+   "grandeur": 0.284,
+   "dominance": 0.354
+  },
+  "lengthKm": 47.2
+ },
+ {
+  "id": "sierra-estrella",
+  "name": "Sierra Estrella",
+  "landmark": "Montezuma Peak",
+  "region": "Arizona, USA",
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.252,
+   "rawness": 0.243,
+   "grandeur": 0.203,
+   "dominance": 0.449
+  },
+  "lengthKm": 46.8
+ },
+ {
+  "id": "sierra-madre-del-sur",
+  "name": "Sierra Madre del Sur",
+  "landmark": "Cerro Tiotepec",
+  "region": "Guerrero, Mexico",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.43,
+   "rawness": 0.431,
+   "grandeur": 0.487,
+   "dominance": 0.379
+  },
+  "lengthKm": 72.4
+ },
+ {
+  "id": "sierra-madre-occidental",
+  "name": "Sierra Madre Occidental",
+  "landmark": "Cerro Mohinora",
+  "region": "Chihuahua, Mexico",
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.278,
+   "rawness": 0.313,
+   "grandeur": 0.242,
+   "dominance": 0.474
+  },
+  "lengthKm": 44.4
+ },
+ {
+  "id": "sierra-madre-oriental",
+  "name": "Sierra Madre Oriental",
+  "landmark": "Cerro La Viga",
+  "region": "Coahuila, Mexico",
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.258,
+   "rawness": 0.263,
+   "grandeur": 0.286,
+   "dominance": 0.352
+  },
+  "lengthKm": 65.2
+ },
+ {
+  "id": "sierra-mixteca",
+  "name": "Sierra Mixteca",
+  "landmark": "Cerro Zempoaltepec",
+  "region": "Oaxaca, Mexico",
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.283,
+   "rawness": 0.273,
+   "grandeur": 0.282,
+   "dominance": 0.567
+  },
+  "lengthKm": 44.8
+ },
+ {
+  "id": "sierra-whitney",
+  "name": "Sierra Nevada",
+  "landmark": "Mount Whitney",
+  "region": "California, USA",
+  "source": "curated",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.453,
+   "rawness": 0.516,
+   "grandeur": 0.384,
+   "dominance": 0.555
+  },
+  "lengthKm": 70
+ },
+ {
+  "id": "skagit-range",
+  "name": "Skagit Range",
+  "landmark": "Mount Baker",
+  "region": "Washington, USA",
+  "source": "discovered",
+  "archetype": "sublime",
+  "mood": "awe",
+  "scores": {
+   "energy": 0.359,
+   "rawness": 0.302,
+   "grandeur": 0.462,
+   "dominance": 0.749
+  },
+  "lengthKm": 47.2
+ },
+ {
+  "id": "skeena-mountains",
+  "name": "Skeena Mountains",
+  "landmark": "Delta Peak",
+  "region": "British Columbia, Canada",
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.354,
+   "rawness": 0.372,
+   "grandeur": 0.124,
+   "dominance": 0.34
+  },
+  "lengthKm": 50.4
+ },
+ {
+  "id": "strawberry-range",
+  "name": "Strawberry Range",
+  "landmark": "Strawberry Mountain",
+  "region": "Oregon, USA",
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.218,
+   "rawness": 0.178,
+   "grandeur": 0.346,
+   "dominance": 0.279
+  },
+  "lengthKm": 64.4
+ },
+ {
+  "id": "taconic-mountains",
+  "name": "Taconic Mountains",
+  "landmark": "Dorset Mountain",
+  "region": "Vermont, USA",
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.154,
+   "rawness": 0.156,
+   "grandeur": 0.111,
+   "dominance": 0.475
+  },
+  "lengthKm": 43.2
+ },
+ {
+  "id": "tetons",
+  "name": "Teton Range",
+  "landmark": "Grand Teton",
+  "region": "Wyoming, USA",
+  "source": "curated",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.457,
+   "rawness": 0.464,
+   "grandeur": 0.352,
+   "dominance": 0.482
+  },
+  "lengthKm": 39.2
+ },
+ {
+  "id": "toquima-range",
+  "name": "Toquima Range",
+  "landmark": "South Summit",
+  "region": "Nevada, USA",
+  "source": "discovered",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "scores": {
+   "energy": 0.245,
+   "rawness": 0.208,
+   "grandeur": 0.251,
+   "dominance": 0.746
+  },
+  "lengthKm": 45.2
+ },
+ {
+  "id": "tordrillo-mountains",
+  "name": "Tordrillo Mountains",
+  "landmark": "Mount Torbert",
+  "region": "Alaska, USA",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.446,
+   "rawness": 0.402,
+   "grandeur": 0.645,
+   "dominance": 0.24
+  },
+  "lengthKm": 63.2
+ },
+ {
+  "id": "tower-of-london-range",
+  "name": "Tower of London Range",
+  "landmark": "King Peak",
+  "region": "British Columbia, Canada",
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.482,
+   "rawness": 0.516,
+   "grandeur": 0.13,
+   "dominance": 0.493
+  },
+  "lengthKm": 52
+ },
+ {
+  "id": "trans-mexican-volcanic-belt",
+  "name": "Trans-Mexican Volcanic Belt",
+  "landmark": "Volcán Pico de Orizaba",
   "region": "Veracruz, Mexico",
   "source": "discovered",
   "archetype": "sublime",
@@ -1091,39 +1134,45 @@ export const RANGES = [
    "rawness": 0.234,
    "grandeur": 0.648,
    "dominance": 0.593
-  }
+  },
+  "lengthKm": 42.4
  },
  {
-  "id": "volcan-popocatepetl",
-  "name": "Volcán Popocatépetl",
-  "region": "México, Mexico",
+  "id": "vaca-mountains",
+  "name": "Vaca Mountains",
+  "landmark": "Berryessa Peak",
+  "region": "California, USA",
   "source": "discovered",
-  "archetype": "sublime",
-  "mood": "awe",
+  "archetype": "serene",
+  "mood": "calm",
   "scores": {
-   "energy": 0.318,
-   "rawness": 0.184,
-   "grandeur": 0.696,
-   "dominance": 0.484
-  }
+   "energy": 0.141,
+   "rawness": 0.123,
+   "grandeur": 0.185,
+   "dominance": 0.247
+  },
+  "lengthKm": 67.6
  },
  {
-  "id": "volcan-tacana",
-  "name": "Volcán Tacaná",
-  "region": "Mexico",
+  "id": "wallowa-mountains",
+  "name": "Wallowa Mountains",
+  "landmark": "Matterhorn",
+  "region": "Oregon, USA",
   "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
+  "archetype": "restless",
+  "mood": "unease",
   "scores": {
-   "energy": 0.4,
-   "rawness": 0.289,
-   "grandeur": 0.651,
-   "dominance": 0.372
-  }
+   "energy": 0.353,
+   "rawness": 0.372,
+   "grandeur": 0.157,
+   "dominance": 0.481
+  },
+  "lengthKm": 47.6
  },
  {
   "id": "wasatch",
-  "name": "Wasatch Front",
+  "name": "Wasatch Range",
+  "landmark": "Lone Peak",
   "region": "Utah, USA",
   "source": "curated",
   "archetype": "brooding",
@@ -1133,25 +1182,29 @@ export const RANGES = [
    "rawness": 0.387,
    "grandeur": 0.301,
    "dominance": 0.56
-  }
+  },
+  "lengthKm": 70.4
  },
  {
-  "id": "west-spanish-peak",
-  "name": "West Spanish Peak",
-  "region": "Colorado, USA",
+  "id": "wassuk-range",
+  "name": "Wassuk Range",
+  "landmark": "Mount Grant",
+  "region": "Nevada, USA",
   "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
+  "archetype": "majestic",
+  "mood": "heroism",
   "scores": {
-   "energy": 0.261,
-   "rawness": 0.24,
-   "grandeur": 0.266,
-   "dominance": 0.505
-  }
+   "energy": 0.368,
+   "rawness": 0.378,
+   "grandeur": 0.42,
+   "dominance": 0.539
+  },
+  "lengthKm": 73.6
  },
  {
-  "id": "white-mountain-peak",
-  "name": "White Mountain Peak",
+  "id": "white-mountains",
+  "name": "White Mountains",
+  "landmark": "White Mountain Peak",
   "region": "California, USA",
   "source": "discovered",
   "archetype": "majestic",
@@ -1161,92 +1214,137 @@ export const RANGES = [
    "rawness": 0.263,
    "grandeur": 0.562,
    "dominance": 0.263
-  }
+  },
+  "lengthKm": 67.6
+ },
+ {
+  "id": "white-pine-range",
+  "name": "White Pine Range",
+  "landmark": "Currant Mountain",
+  "region": "Nevada, USA",
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.238,
+   "rawness": 0.203,
+   "grandeur": 0.305,
+   "dominance": 0.486
+  },
+  "lengthKm": 43.6
+ },
+ {
+  "id": "wrangell-mountains",
+  "name": "Wrangell Mountains",
+  "landmark": "Mount Blackburn",
+  "region": "Alaska, USA",
+  "source": "discovered",
+  "archetype": "sublime",
+  "mood": "awe",
+  "scores": {
+   "energy": 0.491,
+   "rawness": 0.37,
+   "grandeur": 0.882,
+   "dominance": 0.501
+  },
+  "lengthKm": 71.2
+ },
+ {
+  "id": "yukon-ranges",
+  "name": "Yukon Ranges",
+  "landmark": "Trapper Mountain",
+  "region": "Yukon, Canada",
+  "source": "discovered",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.259,
+   "rawness": 0.255,
+   "grandeur": 0.204,
+   "dominance": 0.324
+  },
+  "lengthKm": 42.4
  }
 ];
 
 export const LOADERS = {
+  "absaroka-range": () => import('./absaroka-range.js'),
+  "alaska-range": () => import('./alaska-range.js'),
+  "aleutian-range": () => import('./aleutian-range.js'),
+  "arctic-cordillera": () => import('./arctic-cordillera.js'),
+  "beaverhead-mountains": () => import('./beaverhead-mountains.js'),
+  "big-horn-mountains": () => import('./big-horn-mountains.js'),
+  "black-range": () => import('./black-range.js'),
   "blue-ridge": () => import('./blue-ridge.js'),
-  "bluff-mountain": () => import('./bluff-mountain.js'),
-  "bokan-mountain": () => import('./bokan-mountain.js'),
-  "boulder-baldy": () => import('./boulder-baldy.js'),
-  "bush-butte": () => import('./bush-butte.js'),
-  "cabresto-peak": () => import('./cabresto-peak.js'),
+  "book-cliffs": () => import('./book-cliffs.js'),
+  "boundary-ranges": () => import('./boundary-ranges.js'),
+  "brooks-range": () => import('./brooks-range.js'),
+  "california-cascades": () => import('./california-cascades.js'),
   "canadian-rockies": () => import('./canadian-rockies.js'),
-  "carpathian-peak": () => import('./carpathian-peak.js'),
-  "cerro-el-billete": () => import('./cerro-el-billete.js'),
-  "cerro-grande": () => import('./cerro-grande.js'),
-  "cerro-las-lagunas": () => import('./cerro-las-lagunas.js'),
-  "cerro-los-heme": () => import('./cerro-los-heme.js'),
-  "cerro-ponchito": () => import('./cerro-ponchito.js'),
-  "cerro-tinaja-de-la-sepultura": () => import('./cerro-tinaja-de-la-sepultura.js'),
-  "cerro-tiotepec": () => import('./cerro-tiotepec.js'),
-  "cerro-verde": () => import('./cerro-verde.js'),
-  "cerro-zempoaltepec": () => import('./cerro-zempoaltepec.js'),
-  "cerro-zizintepetl": () => import('./cerro-zizintepetl.js'),
-  "cochise-head": () => import('./cochise-head.js'),
-  "cordillera-blanca": () => import('./cordillera-blanca.js'),
-  "deep-creek-peak": () => import('./deep-creek-peak.js'),
-  "denali": () => import('./denali.js'),
-  "devil-peak": () => import('./devil-peak.js'),
-  "dora-peak": () => import('./dora-peak.js'),
-  "eagle-peak": () => import('./eagle-peak.js'),
-  "fitz-roy": () => import('./fitz-roy.js'),
-  "fuji": () => import('./fuji.js'),
-  "ibapah-peak": () => import('./ibapah-peak.js'),
-  "james-dalton-mountain": () => import('./james-dalton-mountain.js'),
-  "king-peak": () => import('./king-peak.js'),
-  "lavender-peak": () => import('./lavender-peak.js'),
-  "magnetic-peak": () => import('./magnetic-peak.js'),
+  "carson-range": () => import('./carson-range.js'),
+  "chigmit-mountains": () => import('./chigmit-mountains.js'),
+  "chiricahua-mountains": () => import('./chiricahua-mountains.js'),
+  "chugach-mountains": () => import('./chugach-mountains.js'),
+  "coast-mountains": () => import('./coast-mountains.js'),
+  "countess-of-dufferin-range": () => import('./countess-of-dufferin-range.js'),
+  "deep-creek-range": () => import('./deep-creek-range.js'),
+  "diablo-range": () => import('./diablo-range.js'),
+  "fairweather-range": () => import('./fairweather-range.js'),
+  "front-range": () => import('./front-range.js'),
+  "garibaldi-ranges": () => import('./garibaldi-ranges.js'),
+  "green-mountains": () => import('./green-mountains.js'),
+  "hualapai-mountains": () => import('./hualapai-mountains.js'),
+  "klamath-mountains": () => import('./klamath-mountains.js'),
+  "la-sal-mountains": () => import('./la-sal-mountains.js'),
+  "laurentian-mountains": () => import('./laurentian-mountains.js'),
+  "lillooet-ranges": () => import('./lillooet-ranges.js'),
+  "little-belt-mountains": () => import('./little-belt-mountains.js'),
+  "livingston-range": () => import('./livingston-range.js'),
+  "madison-range": () => import('./madison-range.js'),
+  "mahoosuc-range": () => import('./mahoosuc-range.js'),
+  "medicine-bow-mountains": () => import('./medicine-bow-mountains.js'),
+  "mission-mountains": () => import('./mission-mountains.js'),
   "monument-valley": () => import('./monument-valley.js'),
-  "mount-baker": () => import('./mount-baker.js'),
-  "mount-blackburn": () => import('./mount-blackburn.js'),
-  "mount-fairweather": () => import('./mount-fairweather.js'),
-  "mount-glottof": () => import('./mount-glottof.js'),
-  "mount-hayes": () => import('./mount-hayes.js'),
-  "mount-hood": () => import('./mount-hood.js'),
-  "mount-krause": () => import('./mount-krause.js'),
-  "mount-kupreanof": () => import('./mount-kupreanof.js'),
-  "mount-lemmon": () => import('./mount-lemmon.js'),
-  "mount-marcus-baker": () => import('./mount-marcus-baker.js'),
-  "mount-robson": () => import('./mount-robson.js'),
-  "mount-saint-elias": () => import('./mount-saint-elias.js'),
-  "mount-shasta": () => import('./mount-shasta.js'),
-  "mount-taylor": () => import('./mount-taylor.js'),
-  "mount-torbert": () => import('./mount-torbert.js'),
-  "mount-waas": () => import('./mount-waas.js'),
-  "mount-zbura": () => import('./mount-zbura.js'),
-  "orno-peak": () => import('./orno-peak.js'),
-  "picacho-del-diablo": () => import('./picacho-del-diablo.js'),
-  "pikes-peak": () => import('./pikes-peak.js'),
-  "pine-mountain": () => import('./pine-mountain.js'),
-  "pu-uwekiu": () => import('./pu-uwekiu.js'),
+  "north-cascades": () => import('./north-cascades.js'),
+  "olympic-mountains": () => import('./olympic-mountains.js'),
+  "oregon-cascades": () => import('./oregon-cascades.js'),
+  "panamint-range": () => import('./panamint-range.js'),
+  "peninsular-ranges": () => import('./peninsular-ranges.js'),
+  "pinaleno-mountains": () => import('./pinaleno-mountains.js'),
+  "pine-valley-mountains": () => import('./pine-valley-mountains.js'),
+  "rainbow-range": () => import('./rainbow-range.js'),
   "rainier": () => import('./rainier.js'),
-  "redoubt-volcano": () => import('./redoubt-volcano.js'),
-  "risky-peak": () => import('./risky-peak.js'),
-  "roan-peaks": () => import('./roan-peaks.js'),
-  "san-jacinto-peak": () => import('./san-jacinto-peak.js'),
-  "savage-mountain": () => import('./savage-mountain.js'),
+  "revelation-mountains": () => import('./revelation-mountains.js'),
+  "rocky-mountains": () => import('./rocky-mountains.js'),
+  "saint-elias-mountains": () => import('./saint-elias-mountains.js'),
+  "san-gabriel-mountains": () => import('./san-gabriel-mountains.js'),
+  "san-jacinto-mountains": () => import('./san-jacinto-mountains.js'),
+  "san-mateo-mountains": () => import('./san-mateo-mountains.js'),
+  "sangre-de-cristo-mountains": () => import('./sangre-de-cristo-mountains.js'),
+  "sangre-de-cristo-range": () => import('./sangre-de-cristo-range.js'),
   "sawtooth": () => import('./sawtooth.js'),
-  "shishaldin-volcano": () => import('./shishaldin-volcano.js'),
+  "sierra-de-san-pedro-martir": () => import('./sierra-de-san-pedro-martir.js'),
+  "sierra-estrella": () => import('./sierra-estrella.js'),
+  "sierra-madre-del-sur": () => import('./sierra-madre-del-sur.js'),
+  "sierra-madre-occidental": () => import('./sierra-madre-occidental.js'),
+  "sierra-madre-oriental": () => import('./sierra-madre-oriental.js'),
+  "sierra-mixteca": () => import('./sierra-mixteca.js'),
   "sierra-whitney": () => import('./sierra-whitney.js'),
-  "siniktanneyak-mountain": () => import('./siniktanneyak-mountain.js'),
-  "snowy-mountain": () => import('./snowy-mountain.js'),
-  "stroller-white-mountain": () => import('./stroller-white-mountain.js'),
-  "telescope-peak": () => import('./telescope-peak.js'),
+  "skagit-range": () => import('./skagit-range.js'),
+  "skeena-mountains": () => import('./skeena-mountains.js'),
+  "strawberry-range": () => import('./strawberry-range.js'),
+  "taconic-mountains": () => import('./taconic-mountains.js'),
   "tetons": () => import('./tetons.js'),
-  "the-castle-gables": () => import('./the-castle-gables.js'),
-  "torres-del-paine": () => import('./torres-del-paine.js'),
-  "trident-peak": () => import('./trident-peak.js'),
-  "truuli-peak": () => import('./truuli-peak.js'),
-  "tweedy-mountain": () => import('./tweedy-mountain.js'),
-  "virgin-peak": () => import('./virgin-peak.js'),
-  "volcan-de-colima": () => import('./volcan-de-colima.js'),
-  "volcan-de-tequila": () => import('./volcan-de-tequila.js'),
-  "volcan-pico-de-orizaba": () => import('./volcan-pico-de-orizaba.js'),
-  "volcan-popocatepetl": () => import('./volcan-popocatepetl.js'),
-  "volcan-tacana": () => import('./volcan-tacana.js'),
+  "toquima-range": () => import('./toquima-range.js'),
+  "tordrillo-mountains": () => import('./tordrillo-mountains.js'),
+  "tower-of-london-range": () => import('./tower-of-london-range.js'),
+  "trans-mexican-volcanic-belt": () => import('./trans-mexican-volcanic-belt.js'),
+  "vaca-mountains": () => import('./vaca-mountains.js'),
+  "wallowa-mountains": () => import('./wallowa-mountains.js'),
   "wasatch": () => import('./wasatch.js'),
-  "west-spanish-peak": () => import('./west-spanish-peak.js'),
-  "white-mountain-peak": () => import('./white-mountain-peak.js'),
+  "wassuk-range": () => import('./wassuk-range.js'),
+  "white-mountains": () => import('./white-mountains.js'),
+  "white-pine-range": () => import('./white-pine-range.js'),
+  "wrangell-mountains": () => import('./wrangell-mountains.js'),
+  "yukon-ranges": () => import('./yukon-ranges.js'),
 };

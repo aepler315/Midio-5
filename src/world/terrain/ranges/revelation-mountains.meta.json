@@ -1,0 +1,34 @@
+{
+  "id": "revelation-mountains",
+  "name": "Revelation Mountains",
+  "landmark": "Mount Hesperus",
+  "region": "Alaska, USA",
+  "bbox": [
+    -154.561,
+    61.605,
+    -153.724,
+    62.003
+  ],
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.29
+  },
+  "scores": {
+    "energy": 0.471,
+    "rawness": 0.524,
+    "grandeur": 0.225,
+    "dominance": 0.52
+  },
+  "features": {
+    "reliefM": 1010.6,
+    "slopeMPerKm": 274.7,
+    "peaksPer10Km": 4.3,
+    "roughnessM": 127.5,
+    "dominance": 0.5,
+    "summitM": 2747.9,
+    "lengthKm": 44.4
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "mission-mountains",
+  "name": "Mission Mountains",
+  "landmark": "McDonald Peak",
+  "region": "Montana, USA",
+  "bbox": [
+    -114.211,
+    47.184,
+    -113.627,
+    47.582
+  ],
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.4
+  },
+  "scores": {
+    "energy": 0.476,
+    "rawness": 0.481,
+    "grandeur": 0.257,
+    "dominance": 0.431
+  },
+  "features": {
+    "reliefM": 1154.3,
+    "slopeMPerKm": 237.7,
+    "peaksPer10Km": 4.7,
+    "roughnessM": 90.9,
+    "dominance": 0.4,
+    "summitM": 2841.4,
+    "lengthKm": 47.2
+  }
+}

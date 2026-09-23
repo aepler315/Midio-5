@@ -1,9 +1,8 @@
 // Which real mountain range a song plays against.
 //
 // The song and every range are placed on the same four axes
-// (RangeCharacter.AXES) and the song gets its nearest range. Works the same
-// with one range in the basket or three hundred: with one, that one wins;
-// with many, the choice only gets finer.
+// (RangeCharacter.AXES) and the song gets a range near it. Works the same
+// with one range in the basket or three hundred.
 //
 //   energy     song drive                    <-> ruggedness and peak density
 //   rawness    percussive onsets and grit    <-> unweathered, irregular skyline
@@ -12,15 +11,24 @@
 //
 // Key colours the emotional reading: a confident minor key leans toward the
 // heavier archetypes, a major key toward the brighter ones.
+//
+// Spread. Matching raw scores sent every loud song to Denali: its relief
+// scores 0.98 and nothing else comes close, so any big dynamic arc landed
+// there. So the ranges are compared by RANK on each axis -- a range's score
+// is where it stands in this basket, 0 lowest to 1 highest -- which spreads
+// them evenly across the space a song can land in. Then the song chooses
+// among its few nearest ranges by its seed, and skips the ranges this player
+// saw most recently. Character still decides the neighbourhood; the seed and
+// the history decide the house.
 import { AXES, axisDistance } from './RangeCharacter.js';
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
-// Ranges within this distance of the best are treated as equally good, and
-// the song's seed chooses among them -- so similar songs spread across
-// similar ranges instead of every one of them landing on the same one, and
-// a given song still always gets the same range.
-export const NEAR_TIE = 0.04;
+// How many of the nearest ranges a song chooses among: about one in twelve
+// of the basket (seven of eighty), at least one, at most eight.
+export function choiceCount(n) {
+  return Math.max(1, Math.min(8, Math.round(n / 12)));
+}
 // How much a key-matched archetype is preferred, as distance taken off.
 const MODE_PULL = 0.05;
 const MINOR_ARCHETYPES = new Set(['brooding', 'sublime', 'wild', 'restless']);
@@ -44,21 +52,53 @@ function keyPull(range, tonal) {
   return favoured.has(range.archetype) ? MODE_PULL : 0;
 }
 
-/** Every range, nearest first. */
+const valid = (r) => r && r.scores && AXES.every((a) => Number.isFinite(r.scores[a]));
+const rankCache = new WeakMap();
+/** Each usable range's rank on each axis within `basket`, 0..1 (ties share
+ *  the mean rank). One range alone sits at 0.5. Cached per basket array. */
+export function rankScores(basket) {
+  const hit = rankCache.get(basket);
+  if (hit) return hit;
+  const ranges = basket.filter(valid);
+  const out = new Map(ranges.map((r) => [r, {}]));
+  for (const axis of AXES) {
+    const sorted = [...ranges].sort((a, b) => a.scores[axis] - b.scores[axis]);
+    for (let i = 0; i < sorted.length;) {
+      let j = i;
+      while (j + 1 < sorted.length && sorted[j + 1].scores[axis] === sorted[i].scores[axis]) j++;
+      const rank = sorted.length > 1 ? ((i + j) / 2) / (sorted.length - 1) : 0.5;
+      for (let k = i; k <= j; k++) out.get(sorted[k])[axis] = rank;
+      i = j + 1;
+    }
+  }
+  rankCache.set(basket, out);
+  return out;
+}
+
+/** Every range, nearest first, compared by rank. */
 export function rankRanges(ranges, target, tonal = null) {
-  return ranges
-    .filter((r) => r && r.scores && AXES.every((a) => Number.isFinite(r.scores[a])))
-    .map((range) => ({ range, distance: axisDistance(target, range.scores) - keyPull(range, tonal) }))
+  const ranks = rankScores(ranges);
+  return [...ranks.keys()]
+    .map((range) => ({ range, distance: axisDistance(target, ranks.get(range)) - keyPull(range, tonal) }))
     .sort((a, b) => a.distance - b.distance || a.range.id.localeCompare(b.range.id));
 }
 
-/** The range for this song. `seed` picks among near-ties. Null if the
- *  basket is empty. */
-export function matchRange(ranges, profile, seed = 0) {
+/**
+ * The range for this song, or null if the basket is empty. `seed` picks
+ * among the nearest few; `recent` lists range ids this player saw lately,
+ * newest first, which are passed over while anything else near is left.
+ */
+export function matchRange(ranges, profile, seed = 0, { recent = [] } = {}) {
   const target = songTerrainTarget(profile);
   const ranked = rankRanges(ranges, target, profile?.tonal);
   if (!ranked.length) return null;
-  const ties = ranked.filter((r) => r.distance <= ranked[0].distance + NEAR_TIE);
-  const pick = ties[(Math.abs(Math.trunc(seed)) >>> 0) % ties.length];
+  const k = choiceCount(ranked.length);
+  const seen = new Set(recent);
+  // The nearest k that are not recent; if the history covers all of them,
+  // widen to 2k before giving up and allowing a repeat.
+  let pool = ranked.slice(0, k).filter((r) => !seen.has(r.range.id));
+  if (!pool.length) pool = ranked.slice(0, 2 * k).filter((r) => !seen.has(r.range.id)).slice(0, k);
+  if (!pool.length) pool = ranked.slice(0, k);
+  const pick = pool[(Math.abs(Math.trunc(seed)) >>> 0) % pool.length];
   return { range: pick.range, distance: pick.distance, target, ranked };
 }

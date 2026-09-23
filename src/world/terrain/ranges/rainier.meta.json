@@ -1,6 +1,7 @@
 {
   "id": "rainier",
-  "name": "Mount Rainier",
+  "name": "Cascade Range",
+  "landmark": "Mount Rainier",
   "region": "Washington, USA",
   "bbox": [
     -121.95,
