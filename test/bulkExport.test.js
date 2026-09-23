@@ -1,6 +1,94 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stepExportClock, evenExportSize } from '../src/render/BulkExport.js';
+import {
+  BULK_RESOLUTIONS, parseResolutions, parseFrameRates, evenExportSize,
+  frameCount, frameTimeMs, passesFor, stepExportClock, bulkFileName,
+  songLabels, ffmpegRawArgs, parseBulkArgs, isAudioPath,
+} from '../src/render/BulkExport.js';
+
+test('every bulk resolution is even 16:9', () => {
+  for (const r of BULK_RESOLUTIONS) {
+    assert.equal(r.width % 2, 0, r.id);
+    assert.equal(r.height % 2, 0, r.id);
+    assert.ok(Math.abs(r.width / r.height - 16 / 9) < 1e-9, r.id);
+  }
+  assert.deepEqual(BULK_RESOLUTIONS.map((r) => r.height), [1080, 1440, 2160]);
+});
+
+test('resolution and frame-rate lists accept aliases and come back canonical', () => {
+  assert.deepEqual(parseResolutions('4k, 1440, 1080p, 4k'), ['1080p', '1440p', '2160p']);
+  assert.deepEqual(parseResolutions('all'), ['1080p', '1440p', '2160p']);
+  assert.deepEqual(parseFrameRates('30,60,30'), [60, 30]);
+  assert.deepEqual(parseFrameRates('30'), [30]);
+  assert.throws(() => parseResolutions('720'), /1080/);
+  assert.throws(() => parseFrameRates('24'), /30 or 60/);
+});
+
+test('a 60fps draw and a 30fps file share timestamps', () => {
+  const passes = passesFor(['2160p', '1080p'], [30, 60]);
+  assert.deepEqual(passes.map((p) => p.resolution.id), ['1080p', '2160p']);
+  assert.equal(passes[0].drawFps, 60);
+  assert.deepEqual(passes[0].outputs, [
+    { fps: 60, every: 1 },
+    { fps: 30, every: 2 },
+  ]);
+  const frames = frameCount(180_000, 60);
+  assert.equal(frames, 10800);
+  for (let i = 0; i < frames; i += 2) {
+    assert.equal(frameTimeMs(i, 60), frameTimeMs(i / 2, 30));
+  }
+  assert.equal(frameCount(0, 60), 0);
+  assert.equal(passesFor(['1440p'], [30])[0].drawFps, 30);
+});
+
+test('filenames keep the song readable and disambiguate collisions', () => {
+  assert.equal(
+    bulkFileName({ songName: 'A/B: Night?.mp3', resolutionId: '2160p', fps: 60 }),
+    'A-B- Night- - 2160p60.mp4',
+  );
+  assert.deepEqual(songLabels([
+    'C:/music/album/intro.wav',
+    'C:/music/live/intro.wav',
+    'C:/music/album/other.mp3',
+  ]), ['album - intro.wav', 'live - intro.wav', 'other.mp3']);
+  assert.equal(isAudioPath('song.FLAC'), true);
+  assert.equal(isAudioPath('notes.mid'), false);
+});
+
+test('ffmpeg is asked for H.264, AAC, and a constant frame rate', () => {
+  const args = ffmpegRawArgs({
+    width: 2560, height: 1440, fps: 30,
+    audioPath: 'song.wav', outPath: 'out.mp4', crf: 16, preset: 'medium',
+  });
+  assert.equal(args[args.indexOf('-pixel_format') + 1], 'rgba');
+  assert.equal(args[args.indexOf('-video_size') + 1], '2560x1440');
+  assert.equal(args[args.indexOf('-framerate') + 1], '30');
+  assert.equal(args[args.indexOf('-i') + 1], 'pipe:0');
+  assert.equal(args[args.indexOf('-c:v') + 1], 'libx264');
+  assert.equal(args[args.indexOf('-crf') + 1], '16');
+  assert.equal(args[args.indexOf('-c:a') + 1], 'aac');
+  assert.ok(args.includes('+faststart'));
+  assert.equal(args.at(-1), 'out.mp4');
+  assert.throws(() => ffmpegRawArgs({
+    width: 100, height: 100, fps: 24, audioPath: 'a', outPath: 'b',
+  }), /30 or 60/);
+});
+
+test('the command line defaults to the full matrix and records the inputs', () => {
+  const opts = parseBulkArgs(['--res', '4k,1080', '--fps=30', '--out', 'vids', '--crf', '18', 'a.mp3', 'album']);
+  assert.deepEqual(opts.resolutions, ['1080p', '2160p']);
+  assert.deepEqual(opts.frameRates, [30]);
+  assert.equal(opts.out, 'vids');
+  assert.equal(opts.crf, 18);
+  assert.deepEqual(opts.inputs, ['a.mp3', 'album']);
+  assert.equal(opts.lyrics, false);
+  assert.equal(parseBulkArgs(['--help']).help, true);
+  assert.deepEqual(parseBulkArgs(['song.wav']).resolutions, ['1080p', '1440p', '2160p']);
+  assert.deepEqual(parseBulkArgs(['song.wav']).frameRates, [60, 30]);
+  assert.throws(() => parseBulkArgs(['--nope']), /Unknown option/);
+});
+
+// --- The clock and the frame size (carried over from main, #300/#301) ---
 
 // A recording stepper: every call is kept so the tests can assert on the
 // shape of the advance, not just where it ended up.
@@ -114,4 +202,23 @@ test('evenExportSize survives a missing size', () => {
   assert.equal(evenExportSize(null), null);
   assert.equal(evenExportSize(undefined), null);
   assert.equal(evenExportSize(1280), null);
+});
+
+test('stepExportClock takes the same whole steps every frame across a long render', () => {
+  // Frame times are products (i * 1000/fps); simTime is a running sum of
+  // 1000/120. Without a rounding tolerance the two drift apart and some
+  // frames take one step short and the next one long: a periodic stutter
+  // that round-number cases like the ones above can never show. Ten minutes
+  // at each rate the bulk tool draws.
+  const stepMs = 1000 / 120;
+  for (const [fps, perFrame] of [[60, 2], [30, 4]]) {
+    let simTime = 0;
+    const frames = frameCount(600_000, fps);
+    for (let i = 1; i <= frames; i += 1) {
+      const out = stepExportClock({ simTime, targetMs: frameTimeMs(i, fps), stepMs, step: () => {} });
+      assert.equal(out.steps, perFrame, `${fps}fps frame ${i} took ${out.steps} steps`);
+      simTime = out.simTime;
+    }
+    assert.ok(Math.abs(simTime - 600_000) < 1e-3, `${fps}fps ended at ${simTime}`);
+  }
 });

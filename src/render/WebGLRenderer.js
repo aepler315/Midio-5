@@ -91,6 +91,12 @@ export class WebGLRenderer {
     return this.backend === 'webgl';
   }
 
+  /** The HUD strip is drawn by the canvas compositor underneath, so the
+   *  switch has to reach it rather than land on this wrapper. */
+  get hudInFrame() { return this.canvasRenderer.hudInFrame; }
+
+  set hudInFrame(on) { this.canvasRenderer.hudInFrame = !!on; }
+
   _tryInitWebGL() {
     if (typeof document === 'undefined') {
       this.backend = 'canvas-fallback';

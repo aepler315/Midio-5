@@ -79,3 +79,18 @@ test('createRenderer(canvas, webgl) never steals WebGL context from stage canvas
   assert.equal(typeof r.dispose, 'function');
   r.dispose();
 });
+
+test('hudInFrame defaults on, and reaches the compositor through the WebGL wrapper', () => {
+  // Bulk export switches the seekbar strip off; on the WebGL path the strip
+  // is drawn by the inner canvas Renderer, so a flag that only landed on the
+  // wrapper would silently leave it burned into every exported frame.
+  const plain = createRenderer(makeCanvasStub(), 'canvas');
+  assert.equal(plain.hudInFrame, true);
+  plain.hudInFrame = false;
+  assert.equal(plain.hudInFrame, false);
+
+  const wrapped = createRenderer(makeCanvasStub(), 'webgl');
+  assert.equal(wrapped.hudInFrame, true);
+  wrapped.hudInFrame = false;
+  assert.equal(wrapped.canvasRenderer.hudInFrame, false);
+});

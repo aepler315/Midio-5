@@ -195,6 +195,16 @@ test('Auto quality lowers backing resolution before world-defining phenomena are
   assert.equal(gov.phenomenaFull, true, 'Auto buys pixels before shedding world identity at level 5');
 });
 
+test('holdQuality stays at full detail through a run of slow frames', () => {
+  const gov = new PerfGovernor({ startLevel: 0 });
+  gov.holdQuality = true;
+  for (let t = 0; t < 5000; t += 100) gov.sample(100, t);
+  assert.equal(gov.level, 0);
+  gov.holdQuality = false;
+  feedFrames(gov, 60, 20, 0);
+  assert.equal(gov.level, 1);
+});
+
 test('manual resolution overrides remain fixed under governor pressure', () => {
   const gov = new PerfGovernor({ startLevel: MAX_LEVEL });
   assert.equal(gov.resolutionScale(2160, { adaptive: false }), 1);

@@ -6,6 +6,12 @@ import { resampleHeights, layoutRidgeYs, ALPINE_AMP_GAIN } from '../SilhouetteGe
 
 // One south-to-north pass. BiomeManager bakes every scanned layer at this.
 export const TERRAIN_STRIP_WIDTH = 8192;
+
+/** A scanned ridge is not the spectrum equalizer. Full-strength rim on it
+ *  reads as neon piping over the real shape. */
+export function crestRimAlpha(layerAlpha, terrainStrip) {
+  return terrainStrip ? Math.min(layerAlpha, 0.4) : layerAlpha;
+}
 export const STRIP_SAMPLE_STEP = 4;
 
 /** Ridge samples for one layer, in strip pixels (y down). Alpine gain included. */

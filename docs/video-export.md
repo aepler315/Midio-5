@@ -142,21 +142,26 @@ lead, so expect video to appear only when parked; and **record in Chrome or
 Edge**, because a WebM or a VP9-in-MP4 file will not play there. The export
 tells you which one you got.
 
-## What is not here
+## Bulk export
 
-An **offline renderer** — stepping a virtual clock, capturing every frame
-regardless of how long each takes, and muxing with ffmpeg — would remove
-both the real-time cost and the dropped-frame risk, and could render 1080p
-from a machine that cannot draw 1080p at 60fps live. The pieces are mostly
-in place: the sim is fixed-step at 120Hz, world generation is seeded, and
-`tools/worlds-smoke.mjs` already drives the app headlessly and seeks its
-clock.
+`node tools/bulk-export.mjs` (or `npm run export:bulk`) renders a file or a
+folder of songs to H.264 MP4 at 1080p, 1440p, and 2160p, and at 30fps and
+60fps. The default is that whole matrix. Narrow it with `--res` and `--fps`.
 
-What it would need is a Node-side toolchain (Playwright plus a real ffmpeg —
-the one Playwright bundles is a stripped build with no H.264 encoder and no
-MP4 muxer) and a way to drive the audio analysis deterministically off a
-synthetic clock. That last part is unverified and is the thing to check
-first.
+```
+node tools/bulk-export.mjs --out exports --res 1080,1440,2160 --fps 30,60 D:\songs
+```
+
+The page steps the sim on the audio clock, one output frame at a time, and
+posts the pixels to ffmpeg, which muxes them with the source audio as AAC.
+A pass that asks for both frame rates draws at 60 and writes the 30fps file
+from every other frame. The same seed is reused across sizes, so those
+files are one performance. Each frame is the picture at that audio time,
+to within one 120Hz sim step: the export clock only takes whole steps, so
+physics never depends on the frame rate being exported to.
+
+It needs ffmpeg on PATH, with libx264. A long song at 2160p takes as long
+as the frames take to draw.
 
 ## Testing
 

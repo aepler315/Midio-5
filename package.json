@@ -20,6 +20,7 @@
     "test:chooser": "node tools/smoke-world-chooser.mjs",
     "test:chooser-keyboard": "node tools/chooser-keyboard-smoke.mjs",
     "test:export": "node tools/export-smoke.mjs",
+    "export:bulk": "node tools/bulk-export.mjs",
     "test:car": "node tools/car-mode-smoke.mjs",
     "test:urlload": "node tools/url-load-smoke.mjs",
     "music-server": "node tools/music-server.mjs",
@@ -35,7 +36,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.10.0",
+    "eslint": "^10.11.0",
     "globals": "^17.12.0",
     "playwright": "^1.63.0"
   }
