@@ -2,9 +2,10 @@
 //
 // The Range draws a real skyline (src/world/terrain/), matched to the song
 // from a basket of real ranges. This names it once, the way a film names its
-// location: the range, the place the view centres on, two quick numbers --
-// how much real skyline was sampled and how fast the characters cover it --
-// and the credits the data asks for. It fades in a moment after the song
+// location: the back range, the place the view centres on, the ranges
+// standing in front of it, two quick numbers -- how much real skyline was
+// sampled and how fast the characters cover it -- and the credits the data
+// asks for. It fades in a moment after the song
 // starts, holds, and goes.
 //
 // It is drawn on the canvas (Renderer calls drawRangeCaption), not laid over
@@ -33,20 +34,34 @@ export function rangeStatsLine({ lengthKm = NaN, speedMps = NaN } = {}) {
   return parts.join(' · ');
 }
 
+const where = (r) => [r.name, r.region].filter(Boolean).join(', ');
+
+/** "Middle ridge: Wasatch Range, Utah, USA · Front ridge: Taconic
+ *  Mountains, New York, USA", or '' with neither. */
+export function ridgesLine({ mid = null, near = null } = {}) {
+  const parts = [];
+  if (mid?.name) parts.push(`Middle ridge: ${where(mid)}`);
+  if (near?.name) parts.push(`Front ridge: ${where(near)}`);
+  return parts.join(' · ');
+}
+
 /**
  * What to show, or null for nothing. Only the alpine world draws real
  * terrain, so every other world gets no caption even when a range was
- * matched (it is matched before the world is chosen).
+ * matched (it is matched before the world is chosen). `range` is the back
+ * range; `ridges` ({ mid, near }) the ranges standing in front of it.
  */
-export function rangeCaptionFor(range, worldKind, stats = {}) {
+export function rangeCaptionFor(range, worldKind, stats = {}, ridges = {}) {
   if (worldKind !== 'alpine') return null;
   const r = range && range.name ? range : BUNDLED_RANGE;
-  const credit = r.source === 'discovered'
-    ? 'Real elevation: AWS Terrain Tiles · summit: GeoNames (CC BY 4.0) · range: Wikidata'
+  const all = [r, ridges?.mid, ridges?.near].filter((x) => x?.name);
+  const credit = all.some((x) => x.source === 'discovered')
+    ? 'Real elevation: AWS Terrain Tiles · summits: GeoNames (CC BY 4.0) · ranges: Wikidata'
     : 'Real elevation: AWS Terrain Tiles';
   return {
     title: r.name,
     place: [r.landmark, r.region].filter(Boolean).join(' · '),
+    ridges: r === BUNDLED_RANGE ? '' : ridgesLine(ridges || {}),
     stats: rangeStatsLine(stats),
     credit,
   };
@@ -80,6 +95,7 @@ export function drawRangeCaption(ctx, stage, caption, songMs) {
   const lines = [
     { text: caption.title, font: '600 30px "Segoe UI", system-ui, -apple-system, sans-serif', color: 'rgba(242, 240, 248, 1)', gap: 0 },
     { text: caption.place, font: '16px "Segoe UI", system-ui, -apple-system, sans-serif', color: 'rgba(242, 240, 248, 0.72)', gap: 8 },
+    { text: caption.ridges, font: '14px "Segoe UI", system-ui, -apple-system, sans-serif', color: 'rgba(242, 240, 248, 0.66)', gap: 6 },
     { text: caption.stats, font: '14px "Segoe UI", system-ui, -apple-system, sans-serif', color: 'rgba(255, 215, 106, 0.85)', gap: 8 },
     { text: caption.credit, font: '11px "Segoe UI", system-ui, -apple-system, sans-serif', color: 'rgba(242, 240, 248, 0.5)', gap: 8 },
   ].filter((l) => l.text);

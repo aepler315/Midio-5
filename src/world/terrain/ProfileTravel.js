@@ -81,9 +81,34 @@ export function ridgeDepth(layerRatio, farRatio, unravel = 0) {
 }
 
 /**
- * Pixels into a south-to-north strip. `depth` 1 is the far ridge; the
- * nearer scanned range passes a larger depth and moves faster, but it
- * opens on the same station.
+ * Where a nearer scanned ridge opens and how fast it runs, so its whole
+ * trip fits its own strip. A nearer ridge moves `depth` times as fast as
+ * the far one, and a real range does not tile: past its end the strip just
+ * stops, and a front ridge three times as fast as the back one used to run
+ * out and freeze a minute or two into a song while everything behind it
+ * kept moving. So first open it earlier on its range; if even the whole
+ * range is too short, compress every nearer ridge's lead over the far one
+ * by the same factor (`maxDepth` is the nearest ridge's depth), which keeps
+ * them in depth order and never slower than the far ridge.
+ *   totalPx   the far ridge's travel over the whole song
+ *   room      strip width less one view
+ */
+export function fitNearRidge({ startPx = 0, depth = 1, maxDepth = depth, totalPx = 0, room = 0 } = {}) {
+  if (!(depth > 1) || !(totalPx > 0) || !(room > 0)) return { startPx, depth };
+  let d = depth;
+  if (maxDepth > 1 && maxDepth * totalPx > room) {
+    const squeeze = Math.max(0, Math.min(1, (room / totalPx - 1) / (maxDepth - 1)));
+    d = 1 + (depth - 1) * squeeze;
+  }
+  const start = Math.max(0, Math.min(startPx, room - d * totalPx));
+  return { startPx: start, depth: d };
+}
+
+/**
+ * Pixels into a south-to-north strip. `depth` 1 is the far ridge; a nearer
+ * scanned range passes a larger depth and moves faster. With `fit`
+ * ({ viewWidth, maxDepth }) a nearer ridge is fitted to its strip
+ * (fitNearRidge); without it, it opens on the far ridge's station.
  */
 export function terrainScrollPx({
   tSec = 0,
@@ -93,10 +118,21 @@ export function terrainScrollPx({
   reducedFlash = false,
   response = null,
   depth = 1,
+  fit = null,
 } = {}) {
   const width = Number.isFinite(stripWidth) && stripWidth > 0 ? stripWidth : 0;
-  const start = profileStart01(curves, durationMs) * width;
-  const traveled = profileTravelPx(tSec, curves, reducedFlash, response) * (depth > 0 ? depth : 1);
+  let start = profileStart01(curves, durationMs) * width;
+  let d = depth > 0 ? depth : 1;
+  if (fit && d > 1 && width > 0) {
+    const totalPx = profileTravelPx((Number(durationMs) || 0) / 1000, curves, reducedFlash, response);
+    const fitted = fitNearRidge({
+      startPx: start, depth: d, maxDepth: Math.max(d, fit.maxDepth || d), totalPx,
+      room: width - (fit.viewWidth > 0 ? fit.viewWidth : 0),
+    });
+    start = fitted.startPx;
+    d = fitted.depth;
+  }
+  const traveled = profileTravelPx(tSec, curves, reducedFlash, response) * d;
   return start + traveled;
 }
 

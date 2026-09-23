@@ -1784,20 +1784,27 @@ function startTimeline(timelineData, extra = {}) {
   // a song: a throw here once aborted starting the world.
   try {
     const range = timelineData.terrain?.range || null;
+    const ridges = timelineData.terrain?.ranges || {};
     const kind = getWorld(sim.worldId)?.kind;
-    const far = sim.biomes?.terrainProfiles?.L2;
-    const lengthM = far?.spacingM > 0 && far.angles?.length > 1 ? far.spacingM * (far.angles.length - 1) : NaN;
+    const profiles = sim.biomes?.terrainProfiles || {};
+    const lengthOf = (p) => (p?.spacingM > 0 && p.angles?.length > 1 ? p.spacingM * (p.angles.length - 1) : 0);
+    const farM = lengthOf(profiles.L2) || NaN;
+    // Miles sampled covers every real ridge on screen; the speed is the back
+    // ridge's, the one the travel is measured on.
+    const sampledM = ['L2', 'L3', 'L4'].reduce((sum, k) => sum + lengthOf(profiles[k]), 0) || NaN;
     sim.rangeCaption = rangeCaptionFor(range, kind, {
-      lengthKm: lengthM / 1000,
+      lengthKm: sampledM / 1000,
       speedMps: groundSpeedMps({
         curves: sim.biomes?.energyCurves,
         durationMs: conductor?.durationMs,
-        lengthM,
+        lengthM: farM,
         stripWidth: TERRAIN_STRIP_WIDTH,
         response: sim.biomes?.world?.response,
       }),
-    });
-    if (sim.rangeCaption && range?.id && !exportMode) noteRangeShown(range.id);
+    }, ridges);
+    if (sim.rangeCaption && !exportMode) {
+      for (const r of [ridges.near, ridges.mid, range]) if (r?.id) noteRangeShown(r.id);
+    }
   } catch (err) {
     console.warn('[range caption]', err);
   }
@@ -1825,8 +1832,9 @@ function startTimeline(timelineData, extra = {}) {
     songSeed: sim.songSeed,
     worldId: sim.worldId,
     // Which real range the song was matched to (null: bundled Tetons or a
-    // non-alpine world).
+    // non-alpine world), and the ranges on all three ridges.
     terrainRange: timelineData.terrain?.range || null,
+    terrainRidges: timelineData.terrain?.ranges || null,
     tracks: timelineData.tracks || [], pairs: timelineData.pairs || [],
     get rafHandle() { return rafHandle; },
     // The shed level decides which passes are running at all (rim light,
