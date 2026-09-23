@@ -64,7 +64,7 @@ function fakeCtx() {
   };
 }
 
-test('drawRangeCaption lays the cast list out in columns above the progress strip', () => {
+test('drawRangeCaption lays the cast list out in columns, bottom right, above the progress strip', () => {
   const caption = rangeCaptionFor(hood, 'alpine', { lengthKm: 33.8, speedMps: 150 }, { mid: wasatch, near: taconic });
   const ctx = fakeCtx();
   drawRangeCaption(ctx, { width: 1280, height: 720 }, caption, 5000);
@@ -78,6 +78,13 @@ test('drawRangeCaption lays the cast list out in columns above the progress stri
   assert.equal(new Set(['Oregon Cascades', 'Wasatch Range', 'Taconic Mountains'].map((t) => at(t).x)).size, 1);
   assert.equal(new Set(['Oregon', 'Utah', 'New York'].map((t) => at(t).x)).size, 1);
   assert.ok(at('Oregon').x > at('Taconic Mountains').x + 'Taconic Mountains'.length * 10, 'regions clear the longest name');
+  // Bottom right, clear of the characters on the left; the widest line ends
+  // at the right margin.
+  const right = Math.max(...ctx.calls.map((c) => c.x + c.text.length * 10));
+  assert.ok(Math.abs(right - (1280 - 24)) < 1e-6, `block ends at ${right}`);
+  const narrow = fakeCtx();
+  drawRangeCaption(narrow, { width: 300, height: 720 }, caption, 5000);
+  assert.equal(Math.min(...narrow.calls.map((c) => c.x)), 24, 'a stage too narrow keeps the left margin');
   const early = fakeCtx();
   drawRangeCaption(early, { width: 1280, height: 720 }, caption, 500);
   assert.equal(early.calls.length, 0);

@@ -93,8 +93,8 @@ const LABEL_W = 70; // the widest label, MIDDLE, at 11px with tracking
 const REGION_GAP = 18;
 
 /** Draw the caption into a 2D context whose transform maps `stage`
- *  (the nominal stage, in its own units) onto the canvas. Laid out bottom
- *  up, so the block keeps its bottom edge above the progress strip:
+ *  (the nominal stage, in its own units) onto the canvas, in the bottom
+ *  right corner. Laid out bottom up, so the block keeps its bottom edge above the progress strip:
  *
  *    BACK     Lillooet Ranges      British Columbia
  *    MIDDLE   Sierra Nevada        California
@@ -115,6 +115,21 @@ export function drawRangeCaption(ctx, stage, caption, songMs) {
   ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
   ctx.shadowBlur = 12;
   ctx.shadowOffsetY = 1;
+  const nameFont = `600 20px ${FONT}`;
+  const regionFont = `15px ${FONT}`;
+  const statsFont = `14px ${FONT}`;
+  const creditFont = `11px ${FONT}`;
+  const labelled = rows.some((r) => r.label);
+  const width = (str, font) => { ctx.font = font; return str ? ctx.measureText(str).width : 0; };
+  const nameW = rows.reduce((w, r) => Math.max(w, width(r.name, nameFont)), 0);
+  const regionW = rows.reduce((w, r) => Math.max(w, width(r.region, regionFont)), 0);
+  const blockW = Math.max(
+    (labelled ? LABEL_W : 0) + nameW + (regionW > 0 ? REGION_GAP + regionW : 0),
+    width(caption.stats, statsFont), width(caption.credit, creditFont));
+  // Bottom right: the characters run along the left third of the frame, and
+  // a block there sat under them. A stage too narrow to fit it (portrait)
+  // keeps it at the left edge.
+  const left = Math.max(LEFT, stage.width - LEFT - blockW);
   let y = stage.height - BOTTOM_CLEAR + lift;
   const text = (str, x, font, color) => {
     ctx.font = font;
@@ -122,27 +137,23 @@ export function drawRangeCaption(ctx, stage, caption, songMs) {
     ctx.fillText(str, x, y);
   };
   if (caption.credit) {
-    text(caption.credit, LEFT, `11px ${FONT}`, 'rgba(242, 240, 248, 0.5)');
+    text(caption.credit, left, creditFont, 'rgba(242, 240, 248, 0.5)');
     y -= caption.stats ? 20 : ROW_H + 4;
   }
   if (caption.stats) {
-    text(caption.stats, LEFT, `14px ${FONT}`, 'rgba(255, 215, 106, 0.88)');
+    text(caption.stats, left, statsFont, 'rgba(255, 215, 106, 0.88)');
     y -= ROW_H + 4;
   }
-  const nameFont = `600 20px ${FONT}`;
-  const labelled = rows.some((r) => r.label);
-  const nameX = LEFT + (labelled ? LABEL_W : 0);
-  ctx.font = nameFont;
-  const nameW = rows.reduce((w, r) => Math.max(w, ctx.measureText(r.name).width), 0);
+  const nameX = left + (labelled ? LABEL_W : 0);
   for (let i = rows.length - 1; i >= 0; i--) {
     const r = rows[i];
     if (r.label) {
       if ('letterSpacing' in ctx) ctx.letterSpacing = '1.5px';
-      text(r.label, LEFT, `700 11px ${FONT}`, 'rgba(242, 240, 248, 0.55)');
+      text(r.label, left, `700 11px ${FONT}`, 'rgba(242, 240, 248, 0.55)');
       if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
     }
     text(r.name, nameX, nameFont, 'rgba(242, 240, 248, 1)');
-    if (r.region) text(r.region, nameX + nameW + REGION_GAP, `15px ${FONT}`, 'rgba(242, 240, 248, 0.62)');
+    if (r.region) text(r.region, nameX + nameW + REGION_GAP, regionFont, 'rgba(242, 240, 248, 0.62)');
     y -= ROW_H;
   }
   ctx.restore();

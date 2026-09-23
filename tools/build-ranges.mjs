@@ -112,7 +112,17 @@ async function buildRange(range, reject) {
   if (!profilePath) {
     const [west, south, east, north] = range.bbox;
     const gridPath = path.join(gridDir, `${range.id}.json`);
-    const grid = alignToRange(await fetchTerrainGrid({ bbox: { west, south, east, north }, zoom: ZOOM, cellM: CELL_M }), range);
+    // Far north a tile covers less ground, so the same box needs more of
+    // them; there z11 is already as fine as z12 is further south.
+    const bbox = { west, south, east, north };
+    let fetched;
+    try {
+      fetched = await fetchTerrainGrid({ bbox, zoom: ZOOM, cellM: CELL_M });
+    } catch (err) {
+      if (!/too many/.test(err.message)) throw err;
+      fetched = await fetchTerrainGrid({ bbox, zoom: ZOOM - 1, cellM: CELL_M });
+    }
+    const grid = alignToRange(fetched, range);
     grid.spacingM = range.spacingM ?? SPACING_M;
     if (range.side) grid.side = range.side;
     writeFileSync(gridPath, JSON.stringify(grid));

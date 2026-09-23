@@ -14,21 +14,21 @@
   "mood": "calm",
   "quality": {
     "floorShare": 0.09,
-    "artifact": 0.05
+    "artifact": 0.04
   },
   "scores": {
     "energy": 0.259,
-    "rawness": 0.255,
-    "grandeur": 0.204,
-    "dominance": 0.324
+    "rawness": 0.26,
+    "grandeur": 0.232,
+    "dominance": 0.356
   },
   "features": {
-    "reliefM": 917.9,
-    "slopeMPerKm": 125.2,
-    "peaksPer10Km": 2.4,
-    "roughnessM": 52.2,
-    "dominance": 0.3,
-    "summitM": 2152.8,
-    "lengthKm": 42.4
+    "reliefM": 1045.7,
+    "slopeMPerKm": 134.1,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 62.2,
+    "dominance": 0.4,
+    "summitM": 2318.7,
+    "lengthKm": 41.7
   }
 }

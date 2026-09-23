@@ -10,25 +10,25 @@
     50.05
   ],
   "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
+  "archetype": "restless",
+  "mood": "unease",
   "quality": {
     "floorShare": 0.02,
-    "artifact": 0.33
+    "artifact": 0.14
   },
   "scores": {
-    "energy": 0.475,
-    "rawness": 0.484,
-    "grandeur": 0.255,
-    "dominance": 0.401
+    "energy": 0.361,
+    "rawness": 0.377,
+    "grandeur": 0.245,
+    "dominance": 0.427
   },
   "features": {
-    "reliefM": 1145.5,
-    "slopeMPerKm": 282.3,
-    "peaksPer10Km": 4.2,
-    "roughnessM": 109.8,
+    "reliefM": 1100.9,
+    "slopeMPerKm": 230,
+    "peaksPer10Km": 2.8,
+    "roughnessM": 100.8,
     "dominance": 0.4,
-    "summitM": 2595.1,
-    "lengthKm": 48
+    "summitM": 2659.8,
+    "lengthKm": 42.5
   }
 }

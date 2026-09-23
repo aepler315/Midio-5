@@ -13,22 +13,22 @@
   "archetype": "majestic",
   "mood": "heroism",
   "quality": {
-    "floorShare": 0.02,
-    "artifact": 0.08
+    "floorShare": 0.03,
+    "artifact": 0.1
   },
   "scores": {
-    "energy": 0.451,
-    "rawness": 0.425,
-    "grandeur": 0.463,
-    "dominance": 0.286
+    "energy": 0.417,
+    "rawness": 0.367,
+    "grandeur": 0.525,
+    "dominance": 0.271
   },
   "features": {
-    "reliefM": 2082.7,
-    "slopeMPerKm": 216.2,
-    "peaksPer10Km": 3.8,
-    "roughnessM": 92.9,
+    "reliefM": 2361.3,
+    "slopeMPerKm": 175,
+    "peaksPer10Km": 3.4,
+    "roughnessM": 74,
     "dominance": 0.3,
-    "summitM": 2251.6,
-    "lengthKm": 66.4
+    "summitM": 2361.3,
+    "lengthKm": 64.4
   }
 }

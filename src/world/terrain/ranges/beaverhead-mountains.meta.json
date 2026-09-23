@@ -17,18 +17,18 @@
     "artifact": 0.12
   },
   "scores": {
-    "energy": 0.396,
-    "rawness": 0.427,
-    "grandeur": 0.207,
-    "dominance": 0.357
+    "energy": 0.425,
+    "rawness": 0.466,
+    "grandeur": 0.227,
+    "dominance": 0.325
   },
   "features": {
-    "reliefM": 933.1,
-    "slopeMPerKm": 212.5,
-    "peaksPer10Km": 3.7,
-    "roughnessM": 94.8,
-    "dominance": 0.4,
-    "summitM": 3292.4,
-    "lengthKm": 42.8
+    "reliefM": 1021,
+    "slopeMPerKm": 224.3,
+    "peaksPer10Km": 4,
+    "roughnessM": 105,
+    "dominance": 0.3,
+    "summitM": 3383.8,
+    "lengthKm": 42.1
   }
 }
