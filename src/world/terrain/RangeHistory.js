@@ -3,7 +3,9 @@
 // localStorage; a private window or blocked storage just means no history.
 
 export const RANGE_HISTORY_KEY = 'smw:recentRanges';
-export const RANGE_HISTORY_MAX = 10;
+// Three ranges per song (one per ridge), so this is about the last ten
+// songs' worth.
+export const RANGE_HISTORY_MAX = 30;
 
 function storage() {
   try { return typeof localStorage !== 'undefined' ? localStorage : null; } catch { return null; }

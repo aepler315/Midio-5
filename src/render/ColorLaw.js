@@ -15,8 +15,8 @@
 //    already key-rotated) -- meaning "this is dangerous" changed hue
 //    every time the biome or the song's key did.
 //  - REWARD_HUE: what you did right. Already fairly consistent in
-//    practice (three independent gold-ish magic numbers -- EpicycleShow's
-//    GOLD hex, and two bare hue literals in Renderer.js -- that happened
+//    practice (three independent gold-ish magic numbers -- the old
+//    milestone digit's GOLD hex, and two bare hue literals in Renderer.js -- that happened
 //    to agree) but never actually the same named constant, so nothing
 //    enforced they'd stay in agreement.
 import { hexToRgb, rgbToHsl } from '../utils/color.js';
@@ -31,5 +31,5 @@ export const MIDIO_IDENTITY_HUE = 178; // cool aquamarine
 export const HAZARD_HEX = '#ff4d4d'; // clear warm red -- reads as danger against every biome palette, none of which lean this red
 export const HAZARD_HUE = hueOf(HAZARD_HEX);
 
-export const REWARD_HEX = '#ffd75e'; // gold -- was EpicycleShow.js's local, unshared GOLD constant
+export const REWARD_HEX = '#ffd75e'; // gold -- was the milestone digit's local, unshared GOLD constant
 export const REWARD_HUE = hueOf(REWARD_HEX);

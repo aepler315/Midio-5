@@ -7,7 +7,6 @@ import { computeRestLengths, drawMeshPart, displaceMeshRadial, meltMesh, lerpMes
 import { midioMotion } from './MidioMotion.js';
 import { easeHueDeg } from './stellar.js';
 import { MIDIO_IDENTITY_HUE, REWARD_HUE } from './ColorLaw.js';
-import { EpicycleShow } from './EpicycleShow.js';
 import { ComposerStrip } from './ComposerStrip.js';
 import { drawRangeCaption } from '../ui/RangeCaption.js';
 import { RainbowBrush } from './RainbowBrush.js';
@@ -129,13 +128,6 @@ export class Renderer {
     this._midioBodyRest = computeRestLengths(MIDIO_BODY);
     this._midioEyeRest = computeRestLengths(MIDIO_EYE);
     this._apoBodyRest = computeRestLengths(MIDIO_APOTHEOSIS_FOLDED);
-    this.epicycles = new EpicycleShow();
-    // Seeded from whatever the performer already holds, not from null.
-    // `lastMilestone` persists for the whole Simulation, so a renderer rebuilt
-    // mid-song (a restart, a resize path) would otherwise see a milestone from
-    // minutes ago as "new" and replay it out of nowhere.
-    this._lastMilestoneMs = null;
-    this._milestoneSeeded = false;
     this.composer = null; // lazy: needs the conductor's timeline at first draw
     // The seekbar strip is player chrome painted into the canvas. Bulk export
     // turns it off: a music video should not carry a timeline labelled with
@@ -390,16 +382,13 @@ export class Renderer {
         ? sim.beatAnchor.phaseRad(sim.timeMs) / (Math.PI * 2)
         : null);
 
-    // Combo milestone: a Fourier epicycle machine draws the digit above Midio.
-    const lm = sim.performer ? sim.performer.lastMilestone : null;
-    if (!this._milestoneSeeded) {
-      this._milestoneSeeded = true;
-      this._lastMilestoneMs = lm ? lm.atMs : null; // adopt, don't replay
-    } else if (lm && lm.atMs !== this._lastMilestoneMs) {
-      this._lastMilestoneMs = lm.atMs;
-      this.epicycles.trigger(lm.idx, pose.midioDrawX + 30, sim.midio.groundY - 245, sim.timeMs);
-    }
-    this.epicycles.draw(ctx, sim.timeMs);
+    // Combo milestones (streaks of 5/10/20) no longer draw their number
+    // above Midio. Under autoplay every song reaches all three in its first
+    // twenty or so jumps, so the "5", "10", "20" arrived back to back at the
+    // start of nearly every song and read as random digits in the sky. The
+    // milestone still earns the gold flash, the victory dance and the meteor
+    // volley.
+
     // Everything from here down draws under the fixed ground transform
     // biomeManager.draw() switched to before painting the ground -- see
     // groundView's own comment above. Sized to groundView.stage (also

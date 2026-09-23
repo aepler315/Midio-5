@@ -3,22 +3,26 @@
 // its own module, loaded only when a song is matched to it. That split is
 // what lets the basket grow to hundreds of ranges without the page
 // downloading all of them.
+//
+// A song gets three ranges, one per ridge: a high one at the back, a mid
+// one in the middle and a low one in front (RangeMatcher.matchRidgeSet).
+// Each range's module holds the skyline scanned for its far layer; that one
+// skyline is what the song's ridge draws, whichever ridge it stands on.
 import { RANGES, LOADERS } from './ranges/index.js';
-import { matchRange } from './RangeMatcher.js';
+import { RIDGE_BANDS, matchRidgeSet } from './RangeMatcher.js';
 import { readRecentRanges } from './RangeHistory.js';
 import { profilesFromJSON } from './TerrainProfile.js';
 
 export { RANGES };
 
-/** Pick the song's range from the whole basket, passing over the ranges
- *  this player saw most recently. */
-export function chooseRange(profile, seed, recent = readRecentRanges()) {
-  return matchRange(RANGES, profile, seed, { recent });
+/** Pick the song's three ranges from the whole basket, passing over the
+ *  ranges this player saw most recently: { far, mid, near } match results. */
+export function chooseRanges(profile, seed, recent = readRecentRanges()) {
+  return matchRidgeSet(RANGES, profile, seed, { recent });
 }
 
 /** Load a range's baked skyline and turn it into terrain profiles. Rejects
- *  on an unknown id or a profile TerrainProfile will not accept; callers
- *  fall back to the bundled Tetons. */
+ *  on an unknown id or a profile TerrainProfile will not accept. */
 export async function loadRangeProfiles(id) {
   const load = LOADERS[id];
   if (!load) throw new Error(`no range '${id}' in the basket`);
@@ -26,13 +30,40 @@ export async function loadRangeProfiles(id) {
   return profilesFromJSON(mod.default);
 }
 
-/** Choose and load in one step. Resolves to {range, profiles} or null --
- *  never rejects, because a missing range must not stop a song. */
+/**
+ * Choose and load in one step. Resolves to
+ *   { range, ranges: { far, mid, near }, profiles: { L2, L3, L4 } }
+ * where `range` is the back (far) range, or null -- never rejects, because
+ * a missing range must not stop a song. The back range is required; a
+ * middle or front range that fails to load leaves that ridge to the
+ * game's own invented hills.
+ */
 export async function prepareSongRange(profile, seed) {
   try {
-    const match = chooseRange(profile, seed);
-    if (!match) return null;
-    return { range: match.range, profiles: await loadRangeProfiles(match.range.id) };
+    const set = chooseRanges(profile, seed);
+    const loaded = await Promise.all(RIDGE_BANDS.map(async (b) => {
+      const match = set[b.ridge];
+      if (!match) return null;
+      try {
+        const layers = await loadRangeProfiles(match.range.id);
+        const skyline = layers.L2;
+        return skyline ? { ridge: b.ridge, layer: b.layer, range: match.range, skyline } : null;
+      } catch (err) {
+        if (b.ridge === 'far') throw err;
+        console.warn(`[terrain] ${b.ridge} range unavailable; that ridge stays invented`, err);
+        return null;
+      }
+    }));
+    const far = loaded.find((x) => x?.ridge === 'far');
+    if (!far) return null;
+    const ranges = {};
+    const profiles = {};
+    for (const x of loaded) {
+      if (!x) continue;
+      ranges[x.ridge] = x.range;
+      profiles[x.layer] = x.skyline;
+    }
+    return { range: far.range, ranges, profiles };
   } catch (err) {
     console.warn('[terrain] range unavailable; using the bundled Tetons', err);
     return null;

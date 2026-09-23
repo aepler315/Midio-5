@@ -5076,8 +5076,10 @@ export class BiomeManager {
   /** Scroll for one range. A procedural layer keeps world parallax.
    *  A scanned profile does not: the song picks the station it opens on
    *  and the speed it travels, instead of the south end at L2's fixed
-   *  rate. The nearer scanned range still leads by its depth ratio.
-   *  L3 has no profile on this tile, so it stays on the parallax clock. */
+   *  rate. A nearer scanned range still leads by its depth ratio, fitted
+   *  so it reaches the end of its own range no sooner than the song ends
+   *  (ProfileTravel.fitNearRidge). A layer with no profile stays on the
+   *  parallax clock. */
   _terrainScroll(layerKey, worldX) {
     if (!this.terrainProfiles?.[layerKey]) {
       return worldX * CodaDirector.delaminateRatio(LAYER_RATIOS[layerKey], this.unravel);
@@ -5091,6 +5093,10 @@ export class BiomeManager {
       reducedFlash: !!this.reducedFlash,
       response: this.world?.response,
       depth: ridgeDepth(LAYER_RATIOS[layerKey], LAYER_RATIOS.L2, this.unravel || 0),
+      fit: layerKey === 'L2' ? null : {
+        viewWidth: this.w,
+        maxDepth: ridgeDepth(LAYER_RATIOS.L4, LAYER_RATIOS.L2, this.unravel || 0),
+      },
     });
   }
 

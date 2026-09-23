@@ -15,7 +15,8 @@ export const RANGES = [
    "grandeur": 0.215,
    "dominance": 0.286
   },
-  "lengthKm": 53.6
+  "lengthKm": 53.6,
+  "reliefM": 969.5
  },
  {
   "id": "alaska-range",
@@ -31,7 +32,8 @@ export const RANGES = [
    "grandeur": 0.984,
    "dominance": 0.606
   },
-  "lengthKm": 69.6
+  "lengthKm": 69.6,
+  "reliefM": 4426.9
  },
  {
   "id": "aleutian-range",
@@ -47,7 +49,8 @@ export const RANGES = [
    "grandeur": 0.592,
    "dominance": 0.811
   },
-  "lengthKm": 66
+  "lengthKm": 66,
+  "reliefM": 2662.2
  },
  {
   "id": "arctic-cordillera",
@@ -63,7 +66,8 @@ export const RANGES = [
    "grandeur": 0.226,
    "dominance": 0.336
   },
-  "lengthKm": 74.8
+  "lengthKm": 74.8,
+  "reliefM": 1015
  },
  {
   "id": "beaverhead-mountains",
@@ -79,7 +83,8 @@ export const RANGES = [
    "grandeur": 0.207,
    "dominance": 0.357
   },
-  "lengthKm": 42.8
+  "lengthKm": 42.8,
+  "reliefM": 933.1
  },
  {
   "id": "big-horn-mountains",
@@ -95,7 +100,8 @@ export const RANGES = [
    "grandeur": 0.382,
    "dominance": 0.259
   },
-  "lengthKm": 73.6
+  "lengthKm": 73.6,
+  "reliefM": 1719
  },
  {
   "id": "black-range",
@@ -111,7 +117,8 @@ export const RANGES = [
    "grandeur": 0.151,
    "dominance": 0.688
   },
-  "lengthKm": 43.2
+  "lengthKm": 43.2,
+  "reliefM": 679.4
  },
  {
   "id": "blue-ridge",
@@ -127,7 +134,8 @@ export const RANGES = [
    "grandeur": 0.169,
    "dominance": 0.331
   },
-  "lengthKm": 77.6
+  "lengthKm": 77.6,
+  "reliefM": 758.7
  },
  {
   "id": "book-cliffs",
@@ -143,7 +151,8 @@ export const RANGES = [
    "grandeur": 0.193,
    "dominance": 0.242
   },
-  "lengthKm": 43.6
+  "lengthKm": 43.6,
+  "reliefM": 869.9
  },
  {
   "id": "boundary-ranges",
@@ -159,7 +168,8 @@ export const RANGES = [
    "grandeur": 0.18,
    "dominance": 0.491
   },
-  "lengthKm": 44.4
+  "lengthKm": 44.4,
+  "reliefM": 809.6
  },
  {
   "id": "brooks-range",
@@ -175,7 +185,8 @@ export const RANGES = [
    "grandeur": 0.127,
    "dominance": 0.438
   },
-  "lengthKm": 44
+  "lengthKm": 44,
+  "reliefM": 571.1
  },
  {
   "id": "california-cascades",
@@ -191,7 +202,8 @@ export const RANGES = [
    "grandeur": 0.67,
    "dominance": 0.717
   },
-  "lengthKm": 73.2
+  "lengthKm": 73.2,
+  "reliefM": 3014.4
  },
  {
   "id": "canadian-rockies",
@@ -207,7 +219,8 @@ export const RANGES = [
    "grandeur": 0.3,
    "dominance": 0.405
   },
-  "lengthKm": 58.4
+  "lengthKm": 58.4,
+  "reliefM": 1351.9
  },
  {
   "id": "carson-range",
@@ -223,7 +236,8 @@ export const RANGES = [
    "grandeur": 0.304,
    "dominance": 0.427
   },
-  "lengthKm": 46.4
+  "lengthKm": 46.4,
+  "reliefM": 1368.1
  },
  {
   "id": "chigmit-mountains",
@@ -239,7 +253,8 @@ export const RANGES = [
    "grandeur": 0.543,
    "dominance": 0.627
   },
-  "lengthKm": 52.8
+  "lengthKm": 52.8,
+  "reliefM": 2445.1
  },
  {
   "id": "chiricahua-mountains",
@@ -255,7 +270,8 @@ export const RANGES = [
    "grandeur": 0.343,
    "dominance": 0.526
   },
-  "lengthKm": 68.8
+  "lengthKm": 68.8,
+  "reliefM": 1545.7
  },
  {
   "id": "chugach-mountains",
@@ -271,7 +287,8 @@ export const RANGES = [
    "grandeur": 0.395,
    "dominance": 0.605
   },
-  "lengthKm": 48.4
+  "lengthKm": 48.4,
+  "reliefM": 1778
  },
  {
   "id": "coast-mountains",
@@ -287,7 +304,8 @@ export const RANGES = [
    "grandeur": 0.236,
    "dominance": 0.25
   },
-  "lengthKm": 42
+  "lengthKm": 42,
+  "reliefM": 1062.2
  },
  {
   "id": "countess-of-dufferin-range",
@@ -303,7 +321,8 @@ export const RANGES = [
    "grandeur": 0.212,
    "dominance": 0.377
   },
-  "lengthKm": 46.4
+  "lengthKm": 46.4,
+  "reliefM": 954.9
  },
  {
   "id": "deep-creek-range",
@@ -319,7 +338,8 @@ export const RANGES = [
    "grandeur": 0.513,
    "dominance": 0.385
   },
-  "lengthKm": 69.6
+  "lengthKm": 69.6,
+  "reliefM": 2307.2
  },
  {
   "id": "diablo-range",
@@ -335,7 +355,8 @@ export const RANGES = [
    "grandeur": 0.201,
    "dominance": 0.294
   },
-  "lengthKm": 47.6
+  "lengthKm": 47.6,
+  "reliefM": 905
  },
  {
   "id": "fairweather-range",
@@ -351,7 +372,8 @@ export const RANGES = [
    "grandeur": 0.853,
    "dominance": 0.471
   },
-  "lengthKm": 70.8
+  "lengthKm": 70.8,
+  "reliefM": 3837.4
  },
  {
   "id": "front-range",
@@ -367,7 +389,8 @@ export const RANGES = [
    "grandeur": 0.359,
    "dominance": 0.731
   },
-  "lengthKm": 43.6
+  "lengthKm": 43.6,
+  "reliefM": 1613.9
  },
  {
   "id": "garibaldi-ranges",
@@ -383,7 +406,8 @@ export const RANGES = [
    "grandeur": 0.255,
    "dominance": 0.401
   },
-  "lengthKm": 48
+  "lengthKm": 48,
+  "reliefM": 1145.5
  },
  {
   "id": "green-mountains",
@@ -399,7 +423,8 @@ export const RANGES = [
    "grandeur": 0.236,
    "dominance": 0.371
   },
-  "lengthKm": 45.6
+  "lengthKm": 45.6,
+  "reliefM": 1062.5
  },
  {
   "id": "hualapai-mountains",
@@ -415,7 +440,8 @@ export const RANGES = [
    "grandeur": 0.269,
    "dominance": 0.47
   },
-  "lengthKm": 45.6
+  "lengthKm": 45.6,
+  "reliefM": 1211.2
  },
  {
   "id": "klamath-mountains",
@@ -431,7 +457,8 @@ export const RANGES = [
    "grandeur": 0.273,
    "dominance": 0.356
   },
-  "lengthKm": 67.6
+  "lengthKm": 67.6,
+  "reliefM": 1230.4
  },
  {
   "id": "la-sal-mountains",
@@ -447,7 +474,8 @@ export const RANGES = [
    "grandeur": 0.389,
    "dominance": 0.406
   },
-  "lengthKm": 42
+  "lengthKm": 42,
+  "reliefM": 1749.4
  },
  {
   "id": "laurentian-mountains",
@@ -463,7 +491,8 @@ export const RANGES = [
    "grandeur": 0.098,
    "dominance": 0.503
   },
-  "lengthKm": 42.4
+  "lengthKm": 42.4,
+  "reliefM": 442.7
  },
  {
   "id": "lillooet-ranges",
@@ -479,7 +508,8 @@ export const RANGES = [
    "grandeur": 0.516,
    "dominance": 0.299
   },
-  "lengthKm": 72
+  "lengthKm": 72,
+  "reliefM": 2324.2
  },
  {
   "id": "little-belt-mountains",
@@ -495,7 +525,8 @@ export const RANGES = [
    "grandeur": 0.248,
    "dominance": 0.358
   },
-  "lengthKm": 43.6
+  "lengthKm": 43.6,
+  "reliefM": 1115.8
  },
  {
   "id": "livingston-range",
@@ -511,7 +542,8 @@ export const RANGES = [
    "grandeur": 0.21,
    "dominance": 0.467
   },
-  "lengthKm": 44.8
+  "lengthKm": 44.8,
+  "reliefM": 945.4
  },
  {
   "id": "madison-range",
@@ -527,7 +559,8 @@ export const RANGES = [
    "grandeur": 0.266,
    "dominance": 0.367
   },
-  "lengthKm": 46
+  "lengthKm": 46,
+  "reliefM": 1198.7
  },
  {
   "id": "mahoosuc-range",
@@ -543,7 +576,8 @@ export const RANGES = [
    "grandeur": 0.187,
    "dominance": 0.451
   },
-  "lengthKm": 59.6
+  "lengthKm": 59.6,
+  "reliefM": 840.3
  },
  {
   "id": "medicine-bow-mountains",
@@ -559,7 +593,8 @@ export const RANGES = [
    "grandeur": 0.17,
    "dominance": 0.624
   },
-  "lengthKm": 43.6
+  "lengthKm": 43.6,
+  "reliefM": 764.8
  },
  {
   "id": "mission-mountains",
@@ -575,7 +610,8 @@ export const RANGES = [
    "grandeur": 0.257,
    "dominance": 0.431
   },
-  "lengthKm": 47.2
+  "lengthKm": 47.2,
+  "reliefM": 1154.3
  },
  {
   "id": "monument-valley",
@@ -591,7 +627,8 @@ export const RANGES = [
    "grandeur": 0.071,
    "dominance": 0.669
   },
-  "lengthKm": 20
+  "lengthKm": 20,
+  "reliefM": 317.6
  },
  {
   "id": "north-cascades",
@@ -607,7 +644,8 @@ export const RANGES = [
    "grandeur": 0.211,
    "dominance": 0.551
   },
-  "lengthKm": 45.2
+  "lengthKm": 45.2,
+  "reliefM": 948.4
  },
  {
   "id": "olympic-mountains",
@@ -623,7 +661,8 @@ export const RANGES = [
    "grandeur": 0.463,
    "dominance": 0.286
   },
-  "lengthKm": 66.4
+  "lengthKm": 66.4,
+  "reliefM": 2082.7
  },
  {
   "id": "oregon-cascades",
@@ -639,7 +678,8 @@ export const RANGES = [
    "grandeur": 0.49,
    "dominance": 0.844
   },
-  "lengthKm": 49.2
+  "lengthKm": 49.2,
+  "reliefM": 2203.4
  },
  {
   "id": "panamint-range",
@@ -655,7 +695,8 @@ export const RANGES = [
    "grandeur": 0.349,
    "dominance": 0.439
   },
-  "lengthKm": 43.6
+  "lengthKm": 43.6,
+  "reliefM": 1572.7
  },
  {
   "id": "peninsular-ranges",
@@ -671,7 +712,8 @@ export const RANGES = [
    "grandeur": 0.342,
    "dominance": 0.707
   },
-  "lengthKm": 46
+  "lengthKm": 46,
+  "reliefM": 1540.4
  },
  {
   "id": "pinaleno-mountains",
@@ -687,7 +729,8 @@ export const RANGES = [
    "grandeur": 0.457,
    "dominance": 0.604
   },
-  "lengthKm": 71.6
+  "lengthKm": 71.6,
+  "reliefM": 2055.5
  },
  {
   "id": "pine-valley-mountains",
@@ -703,7 +746,8 @@ export const RANGES = [
    "grandeur": 0.467,
    "dominance": 0.536
   },
-  "lengthKm": 68.4
+  "lengthKm": 68.4,
+  "reliefM": 2100.2
  },
  {
   "id": "rainbow-range",
@@ -719,7 +763,8 @@ export const RANGES = [
    "grandeur": 0.55,
    "dominance": 0.521
   },
-  "lengthKm": 44.8
+  "lengthKm": 44.8,
+  "reliefM": 2475.7
  },
  {
   "id": "rainier",
@@ -735,7 +780,8 @@ export const RANGES = [
    "grandeur": 0.616,
    "dominance": 0.832
   },
-  "lengthKm": 33.6
+  "lengthKm": 33.6,
+  "reliefM": 2770.8
  },
  {
   "id": "revelation-mountains",
@@ -751,7 +797,8 @@ export const RANGES = [
    "grandeur": 0.225,
    "dominance": 0.52
   },
-  "lengthKm": 44.4
+  "lengthKm": 44.4,
+  "reliefM": 1010.6
  },
  {
   "id": "rocky-mountains",
@@ -767,7 +814,8 @@ export const RANGES = [
    "grandeur": 0.374,
    "dominance": 0.335
   },
-  "lengthKm": 44
+  "lengthKm": 44,
+  "reliefM": 1681.1
  },
  {
   "id": "saint-elias-mountains",
@@ -783,7 +831,8 @@ export const RANGES = [
    "grandeur": 0.644,
    "dominance": 0.612
   },
-  "lengthKm": 43.6
+  "lengthKm": 43.6,
+  "reliefM": 2898.3
  },
  {
   "id": "san-gabriel-mountains",
@@ -799,7 +848,8 @@ export const RANGES = [
    "grandeur": 0.586,
    "dominance": 0.315
   },
-  "lengthKm": 70
+  "lengthKm": 70,
+  "reliefM": 2635.7
  },
  {
   "id": "san-jacinto-mountains",
@@ -815,7 +865,8 @@ export const RANGES = [
    "grandeur": 0.505,
    "dominance": 0.676
   },
-  "lengthKm": 73.2
+  "lengthKm": 73.2,
+  "reliefM": 2273.5
  },
  {
   "id": "san-mateo-mountains",
@@ -831,7 +882,8 @@ export const RANGES = [
    "grandeur": 0.319,
    "dominance": 0.526
   },
-  "lengthKm": 60
+  "lengthKm": 60,
+  "reliefM": 1437.7
  },
  {
   "id": "sangre-de-cristo-mountains",
@@ -847,7 +899,8 @@ export const RANGES = [
    "grandeur": 0.388,
    "dominance": 0.31
   },
-  "lengthKm": 74.4
+  "lengthKm": 74.4,
+  "reliefM": 1746.3
  },
  {
   "id": "sangre-de-cristo-range",
@@ -863,7 +916,8 @@ export const RANGES = [
    "grandeur": 0.379,
    "dominance": 0.2
   },
-  "lengthKm": 66.4
+  "lengthKm": 66.4,
+  "reliefM": 1703.7
  },
  {
   "id": "sawtooth",
@@ -879,7 +933,8 @@ export const RANGES = [
    "grandeur": 0.142,
    "dominance": 0.521
   },
-  "lengthKm": 52
+  "lengthKm": 52,
+  "reliefM": 637.8
  },
  {
   "id": "sierra-de-san-pedro-martir",
@@ -895,7 +950,8 @@ export const RANGES = [
    "grandeur": 0.284,
    "dominance": 0.354
   },
-  "lengthKm": 47.2
+  "lengthKm": 47.2,
+  "reliefM": 1276.6
  },
  {
   "id": "sierra-estrella",
@@ -911,7 +967,8 @@ export const RANGES = [
    "grandeur": 0.203,
    "dominance": 0.449
   },
-  "lengthKm": 46.8
+  "lengthKm": 46.8,
+  "reliefM": 912.2
  },
  {
   "id": "sierra-madre-del-sur",
@@ -927,7 +984,8 @@ export const RANGES = [
    "grandeur": 0.487,
    "dominance": 0.379
   },
-  "lengthKm": 72.4
+  "lengthKm": 72.4,
+  "reliefM": 2192.8
  },
  {
   "id": "sierra-madre-occidental",
@@ -943,7 +1001,8 @@ export const RANGES = [
    "grandeur": 0.242,
    "dominance": 0.474
   },
-  "lengthKm": 44.4
+  "lengthKm": 44.4,
+  "reliefM": 1089.7
  },
  {
   "id": "sierra-madre-oriental",
@@ -959,7 +1018,8 @@ export const RANGES = [
    "grandeur": 0.286,
    "dominance": 0.352
   },
-  "lengthKm": 65.2
+  "lengthKm": 65.2,
+  "reliefM": 1286.4
  },
  {
   "id": "sierra-mixteca",
@@ -975,7 +1035,8 @@ export const RANGES = [
    "grandeur": 0.282,
    "dominance": 0.567
   },
-  "lengthKm": 44.8
+  "lengthKm": 44.8,
+  "reliefM": 1269.2
  },
  {
   "id": "sierra-whitney",
@@ -991,7 +1052,8 @@ export const RANGES = [
    "grandeur": 0.384,
    "dominance": 0.555
   },
-  "lengthKm": 70
+  "lengthKm": 70,
+  "reliefM": 1728.5
  },
  {
   "id": "skagit-range",
@@ -1007,7 +1069,8 @@ export const RANGES = [
    "grandeur": 0.462,
    "dominance": 0.749
   },
-  "lengthKm": 47.2
+  "lengthKm": 47.2,
+  "reliefM": 2079.5
  },
  {
   "id": "skeena-mountains",
@@ -1023,7 +1086,8 @@ export const RANGES = [
    "grandeur": 0.124,
    "dominance": 0.34
   },
-  "lengthKm": 50.4
+  "lengthKm": 50.4,
+  "reliefM": 558.8
  },
  {
   "id": "strawberry-range",
@@ -1039,7 +1103,8 @@ export const RANGES = [
    "grandeur": 0.346,
    "dominance": 0.279
   },
-  "lengthKm": 64.4
+  "lengthKm": 64.4,
+  "reliefM": 1557.5
  },
  {
   "id": "taconic-mountains",
@@ -1055,7 +1120,8 @@ export const RANGES = [
    "grandeur": 0.111,
    "dominance": 0.475
   },
-  "lengthKm": 43.2
+  "lengthKm": 43.2,
+  "reliefM": 501.4
  },
  {
   "id": "tetons",
@@ -1071,7 +1137,8 @@ export const RANGES = [
    "grandeur": 0.352,
    "dominance": 0.482
   },
-  "lengthKm": 39.2
+  "lengthKm": 39.2,
+  "reliefM": 1582.3
  },
  {
   "id": "toquima-range",
@@ -1087,7 +1154,8 @@ export const RANGES = [
    "grandeur": 0.251,
    "dominance": 0.746
   },
-  "lengthKm": 45.2
+  "lengthKm": 45.2,
+  "reliefM": 1127.5
  },
  {
   "id": "tordrillo-mountains",
@@ -1103,7 +1171,8 @@ export const RANGES = [
    "grandeur": 0.645,
    "dominance": 0.24
   },
-  "lengthKm": 63.2
+  "lengthKm": 63.2,
+  "reliefM": 2901.6
  },
  {
   "id": "tower-of-london-range",
@@ -1119,7 +1188,8 @@ export const RANGES = [
    "grandeur": 0.13,
    "dominance": 0.493
   },
-  "lengthKm": 52
+  "lengthKm": 52,
+  "reliefM": 583.1
  },
  {
   "id": "trans-mexican-volcanic-belt",
@@ -1135,7 +1205,8 @@ export const RANGES = [
    "grandeur": 0.648,
    "dominance": 0.593
   },
-  "lengthKm": 42.4
+  "lengthKm": 42.4,
+  "reliefM": 2916.2
  },
  {
   "id": "vaca-mountains",
@@ -1151,7 +1222,8 @@ export const RANGES = [
    "grandeur": 0.185,
    "dominance": 0.247
   },
-  "lengthKm": 67.6
+  "lengthKm": 67.6,
+  "reliefM": 830.4
  },
  {
   "id": "wallowa-mountains",
@@ -1167,7 +1239,8 @@ export const RANGES = [
    "grandeur": 0.157,
    "dominance": 0.481
   },
-  "lengthKm": 47.6
+  "lengthKm": 47.6,
+  "reliefM": 707
  },
  {
   "id": "wasatch",
@@ -1183,7 +1256,8 @@ export const RANGES = [
    "grandeur": 0.301,
    "dominance": 0.56
   },
-  "lengthKm": 70.4
+  "lengthKm": 70.4,
+  "reliefM": 1352.3
  },
  {
   "id": "wassuk-range",
@@ -1199,7 +1273,8 @@ export const RANGES = [
    "grandeur": 0.42,
    "dominance": 0.539
   },
-  "lengthKm": 73.6
+  "lengthKm": 73.6,
+  "reliefM": 1890.5
  },
  {
   "id": "white-mountains",
@@ -1215,7 +1290,8 @@ export const RANGES = [
    "grandeur": 0.562,
    "dominance": 0.263
   },
-  "lengthKm": 67.6
+  "lengthKm": 67.6,
+  "reliefM": 2530.6
  },
  {
   "id": "white-pine-range",
@@ -1231,7 +1307,8 @@ export const RANGES = [
    "grandeur": 0.305,
    "dominance": 0.486
   },
-  "lengthKm": 43.6
+  "lengthKm": 43.6,
+  "reliefM": 1371.7
  },
  {
   "id": "wrangell-mountains",
@@ -1247,7 +1324,8 @@ export const RANGES = [
    "grandeur": 0.882,
    "dominance": 0.501
   },
-  "lengthKm": 71.2
+  "lengthKm": 71.2,
+  "reliefM": 3970.8
  },
  {
   "id": "yukon-ranges",
@@ -1263,7 +1341,8 @@ export const RANGES = [
    "grandeur": 0.204,
    "dominance": 0.324
   },
-  "lengthKm": 42.4
+  "lengthKm": 42.4,
+  "reliefM": 917.9
  }
 ];
 

@@ -157,6 +157,9 @@ const indexEntries = metas.map(({ id, name, landmark, region, source, archetype,
   id, name, landmark, region, source, archetype, mood, scores,
   // For the caption's stats: how much real skyline was sampled.
   lengthKm: features?.lengthKm ?? null,
+  // Which ridge the range can stand on: high, mid or low relief
+  // (RangeMatcher.RIDGE_BANDS).
+  reliefM: features?.reliefM ?? null,
 }));
 const loaders = metas.map((m) => `  ${JSON.stringify(m.id)}: () => import('./${m.id}.js'),`).join('\n');
 writeFileSync(path.join(outDir, 'index.js'),

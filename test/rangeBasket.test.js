@@ -6,7 +6,10 @@ import zlib from 'node:zlib';
 import {
   AXES, MAX_ARTIFACT, MAX_FLOOR_SHARE, countPeaks, rangeCharacter, skylineArtifact, skylineFeatures, skylineQuality,
 } from '../src/world/terrain/RangeCharacter.js';
-import { choiceCount, matchRange, rankScores, songTerrainTarget } from '../src/world/terrain/RangeMatcher.js';
+import {
+  FAIR_SHARE, RIDGE_BANDS, bandBaskets, drawOdds, matchRange, matchRidgeSet, rankScores, reliefBand, seedTicket, songPercentile,
+  songTerrainTarget,
+} from '../src/world/terrain/RangeMatcher.js';
 import { RANGES, LOADERS } from '../src/world/terrain/ranges/index.js';
 import { profilesFromJSON } from '../src/world/terrain/TerrainProfile.js';
 import {
@@ -80,15 +83,20 @@ test('one range in the basket: that one, whatever the song', () => {
   assert.equal(matchRange(only, { watch: { drive: 0.1 } }, 3).range.id, 'solo');
 });
 
-test('a song goes to the range nearest it on the shared axes', () => {
+test('the range nearest a song is the likeliest draw, and wins most songs of its kind', () => {
   const ranges = [
     range('calm', { energy: 0.2, rawness: 0.2, grandeur: 0.1, dominance: 0.3 }, 'serene'),
     range('fierce', { energy: 0.8, rawness: 0.85, grandeur: 0.7, dominance: 0.4 }, 'wild'),
   ];
   const quiet = { watch: { drive: 0.15, onset: 0.1, texture: 0.2, arc: 0.15, contrast: 0.3 } };
   const loud = { watch: { drive: 0.85, onset: 0.9, texture: 0.7, arc: 0.7, contrast: 0.4 } };
-  assert.equal(matchRange(ranges, quiet, 1).range.id, 'calm');
-  assert.equal(matchRange(ranges, loud, 1).range.id, 'fierce');
+  for (const [song, want] of [[quiet, 'calm'], [loud, 'fierce']]) {
+    const m = matchRange(ranges, song, 0);
+    assert.equal(m.ranked[0].range.id, want);
+    let wins = 0;
+    for (let seed = 0; seed < 400; seed++) if (matchRange(ranges, song, seed).range.id === want) wins++;
+    assert.ok(wins > 220, `${want} won ${wins} of 400`);
+  }
 });
 
 test('a confident minor key leans toward the heavier archetypes', () => {
@@ -105,14 +113,38 @@ const spread = (n) => Array.from({ length: n }, (_, i) => range(`r${i}`, {
   energy: ((i * 7) % n) / n, rawness: ((i * 11) % n) / n, grandeur: ((i * 13) % n) / n, dominance: ((i * 17) % n) / n,
 }));
 
-test('a song chooses among its nearest few by seed, and a given seed is stable', () => {
+test('every range keeps a fair share of every song\'s draw, and a seed always draws the same', () => {
   const basket = spread(48);
-  const song = { watch: { drive: 0.5, onset: 0.5, texture: 0.5, arc: 0.5, contrast: 0.5 } };
-  const picks = new Set([0, 1, 2, 3, 4, 5, 6, 7].map((seed) => matchRange(basket, song, seed).range.id));
-  assert.equal(picks.size, choiceCount(48), 'every one of the nearest few gets a turn');
-  const nearest = new Set(matchRange(basket, song, 0).ranked.slice(0, choiceCount(48)).map((r) => r.range.id));
-  for (const id of picks) assert.ok(nearest.has(id), `${id} is one of the nearest`);
-  assert.equal(matchRange(basket, song, 4).range.id, matchRange(basket, song, 4).range.id);
+  for (const drive of [0.05, 0.5, 0.95]) {
+    const song = { watch: { drive, onset: 1 - drive, texture: 0.5, arc: drive, contrast: 0.5 } };
+    const odds = drawOdds(matchRange(basket, song, 0).ranked);
+    assert.ok(Math.abs(odds.reduce((a, b) => a + b, 0) - 1) < 1e-9, 'the odds sum to one');
+    for (const o of odds) assert.ok(o >= FAIR_SHARE / 48 - 1e-12, 'no range falls below its fair floor');
+    assert.equal(matchRange(basket, song, 12345).range.id, matchRange(basket, song, 12345).range.id);
+  }
+  assert.notEqual(seedTicket(7, 0), seedTicket(7, 1), 'each ridge draws its own ticket');
+  for (let seed = 0; seed < 50; seed++) {
+    const t = seedTicket(seed * 7919, seed % 3);
+    assert.ok(t >= 0 && t < 1);
+  }
+});
+
+test('across many songs every range gets a roughly equal chance', () => {
+  const basket = spread(24);
+  const hits = new Map();
+  const n = 2400;
+  for (let i = 0; i < n; i++) {
+    // Songs spread over the whole watch space, one seed each.
+    const u = (k) => seedTicket(i, 10 + k);
+    const song = { watch: { drive: u(0), onset: u(1), texture: u(2), arc: u(3), contrast: u(4) } };
+    const id = matchRange(basket, song, i).range.id;
+    hits.set(id, (hits.get(id) || 0) + 1);
+  }
+  const fair = n / basket.length;
+  for (const r of basket) {
+    const share = (hits.get(r.id) || 0) / fair;
+    assert.ok(share > 0.5 && share < 1.8, `${r.id} drew ${share.toFixed(2)}x an equal share`);
+  }
 });
 
 test('one extreme range does not take every extreme song', () => {
@@ -126,24 +158,43 @@ test('one extreme range does not take every extreme song', () => {
   assert.equal(rankScores(basket).get(basket[basket.length - 1]).grandeur, 1, 'ranked, the giant is simply first');
 });
 
-test('recently shown ranges are passed over while others are near', () => {
-  const basket = spread(48);
+test('recently shown ranges sit the draw out while any other is left', () => {
+  const basket = spread(12);
   const song = { watch: { drive: 0.3, onset: 0.6, texture: 0.4, arc: 0.7, contrast: 0.2 } };
-  const nearest = matchRange(basket, song, 0).ranked.slice(0, choiceCount(48)).map((r) => r.range.id);
-  const recent = nearest.slice(0, -1);
-  for (let seed = 0; seed < 6; seed++) {
-    assert.equal(matchRange(basket, song, seed, { recent }).range.id, nearest[nearest.length - 1]);
+  const recent = basket.slice(0, 11).map((r) => r.id);
+  for (let seed = 0; seed < 30; seed++) {
+    assert.equal(matchRange(basket, song, seed, { recent }).range.id, 'r11');
   }
-  const all = matchRange(basket, song, 1, { recent: nearest }).range.id;
-  assert.ok(!nearest.includes(all), 'with the nearest all recent, it reaches a little further');
+  const all = basket.map((r) => r.id);
+  assert.ok(all.includes(matchRange(basket, song, 3, { recent: all }).range.id), 'all recent: still a range');
 });
 
-test('growing the basket far from a song does not change its range', () => {
-  const near = range('near', { energy: 0.3, rawness: 0.3, grandeur: 0.3, dominance: 0.5 });
-  const song = { watch: { drive: 0.3, onset: 0.3, texture: 0.3, arc: 0.3, contrast: 0.5 } };
-  const before = matchRange([near], song, 9).range.id;
-  const far = range('far', { energy: 0.95, rawness: 0.95, grandeur: 0.95, dominance: 0.1 }, 'wild');
-  assert.equal(matchRange([near, far], song, 9).range.id, before);
+test('song watch values are read as percentiles of real material', () => {
+  const knots = [0.2, 0.3, 0.4, 0.6, 0.7];
+  assert.equal(songPercentile(0, knots), 0);
+  assert.equal(songPercentile(0.4, knots), 0.5);
+  assert.equal(songPercentile(1, knots), 1);
+  assert.ok(songPercentile(0.35, knots) > 0.25 && songPercentile(0.35, knots) < 0.5);
+  const t = songTerrainTarget({ watch: {} });
+  for (const axis of AXES) assert.ok(Math.abs(t[axis] - 0.5) < 0.05, `a song with no readings is typical on ${axis}`);
+});
+
+test('three ridges, three bands: high at the back, mid in the middle, low in front', () => {
+  const at = (id, reliefM) => ({ ...range(id, { energy: 0.5, rawness: 0.5, grandeur: 0.5, dominance: 0.5 }), reliefM });
+  const basket = [at('foothill', 700), at('hills', 1100), at('mid', 1500), at('giant', 3000), at('odd', NaN)];
+  assert.deepEqual(RIDGE_BANDS.map((b) => [b.ridge, b.layer, b.band]),
+    [['far', 'L2', 'high'], ['mid', 'L3', 'mid'], ['near', 'L4', 'low']]);
+  assert.equal(reliefBand(basket[0]), 'low');
+  assert.equal(reliefBand({ reliefM: 1200 }), 'mid', 'an edge belongs to the band above');
+  assert.equal(reliefBand({ reliefM: 2000 }), 'high');
+  assert.equal(reliefBand(basket[4]), null);
+  assert.equal(bandBaskets(basket), bandBaskets(basket), 'split once per basket');
+  const song = { watch: { drive: 0.5 } };
+  const set = matchRidgeSet(basket, song, 42);
+  assert.equal(set.far.range.id, 'giant');
+  assert.equal(set.mid.range.id, 'mid');
+  assert.ok(['foothill', 'hills'].includes(set.near.range.id));
+  assert.equal(matchRidgeSet([at('foothill', 700)], song, 1).far, null, 'an empty band leaves its ridge unmatched');
 });
 
 test('songTerrainTarget tolerates a missing profile', () => {
@@ -153,10 +204,15 @@ test('songTerrainTarget tolerates a missing profile', () => {
 
 test('every range in the generated index has scores, a loader and a loadable profile', async () => {
   assert.ok(RANGES.length >= 50, 'the basket holds the discovered ranges too');
+  const bands = bandBaskets(RANGES);
+  for (const band of ['high', 'mid', 'low']) {
+    assert.ok(bands[band].length >= 15, `${band} relief holds ${bands[band].length} ranges`);
+  }
   const ids = new Set();
   for (const r of RANGES) {
     assert.ok(!ids.has(r.id), `${r.id} appears once`); ids.add(r.id);
     for (const axis of AXES) assert.ok(r.scores[axis] >= 0 && r.scores[axis] <= 1, `${r.id}.${axis}`);
+    assert.ok(reliefBand(r), `${r.id} has a relief band`);
     assert.equal(typeof LOADERS[r.id], 'function', `${r.id} has a loader`);
     const mod = await LOADERS[r.id]();
     assert.ok(skylineQuality(mod.default).usable, `${r.id} passed the quality gate`);
