@@ -5,13 +5,16 @@ import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const exec = promisify(execFile);
 
 test('a generic terrain build touches only its requested JSON output', async (t) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'terrain-builder-'));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
-  const repo = path.resolve(new URL('..', import.meta.url).pathname);
+  // fileURLToPath, not URL.pathname: on Windows the pathname is "/V:/..." and
+  // path.resolve then prefixes the drive again ("V:\V:\...").
+  const repo = fileURLToPath(new URL('..', import.meta.url));
   await fs.mkdir(path.join(dir, 'tools'), { recursive: true });
   await fs.mkdir(path.join(dir, 'src/world'), { recursive: true });
   await fs.copyFile(path.join(repo, 'tools/build-terrain-profile.mjs'), path.join(dir, 'tools/build-terrain-profile.mjs'));
