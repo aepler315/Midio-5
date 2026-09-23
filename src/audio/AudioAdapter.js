@@ -10,7 +10,8 @@
 // fingerprint's dominant-class hue) behaves the same as it does on MIDI.
 // The adapter also returns an `analysis` fingerprint (chroma, tonality,
 // brightness, dynamic range, stereo width) for the custom-biome importer.
-import { separateStemsSequential } from './StemSeparator.js';
+import { bandRenderConcurrency, separateStemsPooled } from './StemSeparator.js';
+import { computePitchFeaturesOffThread } from './PitchWorkerClient.js';
 import { BANDS } from './bands.js';
 import {
   bandEnvelope, envelopeFrameCount, normalizeBands, detectRhythmOnsets, estimateTempo,
@@ -18,7 +19,7 @@ import {
   buildDriftAwareBarGrid,
 } from './OnsetDetector.js';
 import {
-  computePitchFeaturesAsync, chromaHistogram, melodyPitchAt, estimateBassPitchAt,
+  chromaHistogram, melodyPitchAt, estimateBassPitchAt,
   tonalityFrom, tonalityTimeline, meanBrightness, brightnessAt, windowChroma,
 } from './PitchTracker.js';
 import { throwIfAborted } from './loadLimits.js';
@@ -121,11 +122,22 @@ export async function audioToTimeline(audioBuffer, {
   // envelope is extracted.
   let rate, numFrames, bassChannels = null;
   const raw = new Array(BANDS.length);
-  await separateStemsSequential(audioBuffer, (i, buf) => {
+  // The pitch pass needs only the mix, so it starts now, in a worker, and
+  // runs while the bands render instead of after them.
+  const mixChannels = channelArrays(audioBuffer);
+  const pitchPromise = computePitchFeaturesOffThread(mixChannels, audioBuffer.sampleRate, { signal });
+  // Settled either way before anything below can throw, so an abort or a
+  // failed band never leaves an unhandled rejection behind.
+  pitchPromise.catch(() => {});
+  await separateStemsPooled(audioBuffer, (i, buf) => {
     if (numFrames === undefined) ({ numFrames, rate } = envelopeFrameCount(buf.length, buf.sampleRate));
     raw[i] = bandEnvelope(buf, numFrames);
     if (i === 1) bassChannels = channelArrays(buf); // the BASS band: 60-250 Hz, already isolated
-  }, (p) => onProgress?.({ phase: 'separate', progress: p }), signal);
+  }, (p) => onProgress?.({ phase: 'separate', progress: p }), signal, bandRenderConcurrency({
+    length: audioBuffer.length,
+    channels: audioBuffer.numberOfChannels,
+    deviceMemoryGb: typeof navigator !== 'undefined' ? navigator.deviceMemory : null,
+  }));
   throwIfAborted(signal);
   onProgress?.({ phase: 'analyze', progress: 0 });
 
@@ -141,8 +153,7 @@ export async function audioToTimeline(audioBuffer, {
   // full mix for melody/harmony, autocorrelation over the bass stem (FFT
   // bins are far too coarse below ~100 Hz to separate semitones).
   onProgress?.({ phase: 'pitch', progress: 0 });
-  const mixChannels = channelArrays(audioBuffer);
-  const pitchFeatures = await computePitchFeaturesAsync(mixChannels, audioBuffer.sampleRate, { signal });
+  const pitchFeatures = await pitchPromise;
   throwIfAborted(signal);
 
   const melodyLane = extractPseudoLane(normBands, rate, {
