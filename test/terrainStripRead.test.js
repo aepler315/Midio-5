@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { profileUnits } from '../src/world/terrain/TerrainProfile.js';
 import { alpineTerrainProfiles } from '../src/world/terrain/loadTerrain.js';
 import {
-  TERRAIN_STRIP_WIDTH, bakedCrest, heightAboveFoot, prominentPeaks, viewRelief,
+  TERRAIN_STRIP_WIDTH, bakedCrest, crestRimAlpha, heightAboveFoot, prominentPeaks, viewRelief,
 } from '../src/world/terrain/StripRead.js';
 import { layerBake } from '../src/world/WorldMaterial.js';
 import {
@@ -32,6 +32,12 @@ function drawn(layerKey) {
   };
   return { bake, crest, at };
 }
+
+test('a scanned ridge does not get the full neon rim', () => {
+  assert.equal(crestRimAlpha(1, true), 0.4);
+  assert.equal(crestRimAlpha(0.35, true), 0.35);
+  assert.equal(crestRimAlpha(1, false), 1);
+});
 
 test('alpine L2 is drawn as an 8192×400 strip at amplitude 0.50', () => {
   const bake = layerBake('alpine', 'L2');
