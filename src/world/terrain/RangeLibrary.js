@@ -11,6 +11,7 @@
 import { RANGES, LOADERS } from './ranges/index.js';
 import { RIDGE_BANDS, matchRidgeSet } from './RangeMatcher.js';
 import { readRecentRanges } from './RangeHistory.js';
+import { chooseSongBiomes, chooseBiomeRidges } from './BiomeSet.js';
 import { profilesFromJSON } from './TerrainProfile.js';
 
 export { RANGES };
@@ -66,6 +67,65 @@ export async function prepareSongRange(profile, seed) {
     return { range: far.range, ranges, profiles };
   } catch (err) {
     console.warn('[terrain] range unavailable; using the bundled Tetons', err);
+    return null;
+  }
+}
+
+/**
+ * The song's biomes and the ranges standing in each (BiomeSet.js). Resolves
+ * as soon as the home biome -- the one the song opens in -- has loaded, to
+ *   { biomes, home, byBiome, whenAll, allLoaded, range, ranges, profiles }
+ * where `byBiome` maps a biome name to { ranges: { far, mid, near },
+ * profiles: { L2, L3, L4 } } and fills in as the others load (`whenAll`
+ * settles when they have), and `range`/`ranges`/`profiles` are the home
+ * biome's. A biome whose back range fails to load is left out of byBiome,
+ * and its sections draw the game's own hills. Resolves to null -- never
+ * rejects -- when the home biome cannot load: the song falls back to the
+ * bundled Tetons.
+ */
+export async function prepareSongTerrain(profile, seed, recent = readRecentRanges()) {
+  try {
+    const biomes = chooseSongBiomes(profile, seed);
+    if (!biomes.length) return null;
+    const byBiome = new Map();
+    const load = async (biome) => {
+      const set = chooseBiomeRidges(biome, profile, seed, { recent });
+      const loaded = await Promise.all(RIDGE_BANDS.map(async (b) => {
+        const match = set[b.ridge];
+        if (!match) return null;
+        try {
+          const layers = await loadRangeProfiles(match.range.id);
+          return layers.L2 ? { ridge: b.ridge, layer: b.layer, range: match.range, skyline: layers.L2 } : null;
+        } catch (err) {
+          if (b.ridge === 'far') throw err;
+          console.warn(`[terrain] ${biome} ${b.ridge} range unavailable; that ridge stays invented`, err);
+          return null;
+        }
+      }));
+      if (!loaded.some((x) => x?.ridge === 'far')) return null;
+      const entry = { biome, ranges: {}, profiles: {} };
+      for (const x of loaded) {
+        if (!x) continue;
+        entry.ranges[x.ridge] = x.range;
+        entry.profiles[x.layer] = x.skyline;
+      }
+      byBiome.set(biome, entry);
+      return entry;
+    };
+    const home = await load(biomes[0]);
+    if (!home) return null;
+    const whenAll = Promise.all(biomes.slice(1).map((b) => load(b).catch((err) => {
+      console.warn(`[terrain] ${b} unavailable; its sections stay invented`, err);
+      return null;
+    })));
+    const terrain = {
+      biomes, home: biomes[0], byBiome, whenAll, allLoaded: false,
+      range: home.ranges.far, ranges: home.ranges, profiles: home.profiles,
+    };
+    whenAll.then(() => { terrain.allLoaded = true; });
+    return terrain;
+  } catch (err) {
+    console.warn('[terrain] song biomes unavailable; using the bundled Tetons', err);
     return null;
   }
 }

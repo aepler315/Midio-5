@@ -97,6 +97,8 @@ import { MeteorShowerFX } from './MeteorShower.js';
 import { LightRig } from './LightRig.js';
 import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS, hazeScatter } from './DepthHaze.js';
 import { PERSONALITY } from './BiomePersonality.js';
+import { REAL_PERSONALITY } from './RealBiomes.js';
+import { castSongBiomes } from './terrain/BiomeSet.js';
 import { styleDials, shiftLightness, ensureContrast, ensureMinLightness } from '../render/VisualStyle.js';
 import { Murmuration } from './Murmuration.js';
 import { Atmosphere } from './Atmosphere.js';
@@ -455,8 +457,27 @@ export function fogBandAlphaFractionAtY(geo, y) {
   return d >= geo.r ? 0 : 1 - d / geo.r;
 }
 
+// Travel between real biomes (see _drawLayer). The seam's soft edge, as a
+// share of the view, and how many alpha steps fake the gradient across it
+// (a clip can only be a hard rectangle).
+const TRAVEL_FEATHER = 0.18;
+const TRAVEL_BANDS = 4;
+// When each layer's seam has crossed the whole view, as a share of the
+// travel: the nearest ranges change first, the back skyline last.
+const TRAVEL_ARRIVAL = { L5: 0.55, L4: 0.7, L3: 0.85, L2: 1 };
+
+/** Where the seam between the old biome (left) and the new one (right)
+ *  stands on screen for one layer, `p` of the way through the travel. It
+ *  starts past the right edge, feather and all, and leaves past the left. */
+export function travelSeam(width, layerKey, p) {
+  const span = TRAVEL_ARRIVAL[layerKey] ?? 1;
+  const q = smoothstep(0, 1, Math.min(1, Math.max(0, p) / span));
+  const feather = width * TRAVEL_FEATHER;
+  return width + feather / 2 - q * (width + feather);
+}
+
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null, songTerrain = null }) {
     this.conductor = conductor;
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
@@ -473,6 +494,10 @@ export class BiomeManager {
     // Optional real-terrain skylines for L2 (far), L3 (middle), L4 (near).
     // Absent, every layer stays procedural. L5 is never taken from here.
     this.terrainProfiles = terrainProfiles;
+    // The song's biomes and each one's own ranges (RangeLibrary.
+    // prepareSongTerrain). A biome whose ranges have not loaded yet draws on
+    // terrainProfiles -- the home biome's -- and is re-baked when they land.
+    this.songTerrain = songTerrain?.byBiome ? songTerrain : null;
     // Hold the scanned ridges still so the geographic profile can be checked
     // without the musical heave. F4 toggles this.
     this.terrainPreview = false;
@@ -481,7 +506,10 @@ export class BiomeManager {
     // ignore the alpine custom biome so a generated mountain skin never
     // paints itself onto a skyline.
     this.profiles = this.world.palettes.slice();
-    if (customBiome && this.world.kind === 'alpine') {
+    // Real biomes are places, cast section by section; a generated single
+    // biome would paint the whole song as one of them.
+    this._singleCustom = this.world.kind === 'alpine' && !this.world.realBiomes;
+    if (customBiome && this._singleCustom) {
       this.profiles = [...this.profiles, customBiome];
     }
     this._lastSectionIdx = null;
@@ -767,7 +795,7 @@ export class BiomeManager {
     // MIDI custom biome: cast every section into the generated world so the
     // dropped file IS the place, while stock demos keep dramaturgical casting.
     // MIDI custom biome: alpine only — city worlds keep their own palettes.
-    if (this.customBiome && this.world.kind === 'alpine') this.loadCustom(this.customBiome);
+    if (this.customBiome && this._singleCustom) this.loadCustom(this.customBiome);
 
     // Ocean ecosystem: islands + ships sit on the water always; sea life,
     // the rare monster, and tsunamis (anchored on the song's loudest bars)
@@ -1166,9 +1194,11 @@ export class BiomeManager {
       labels.forEach((l, i) => { if (l === lab) { s += meanEnergies[i]; n++; } });
       return n > 0 ? s / n : 0;
     });
-    const labelCast = this.world?.cast
-      ? this.world.cast(labelEnergy, songSeed)
-      : castBiomes(labelEnergy, songSeed);
+    const labelCast = this.world?.realBiomes && this.songTerrain?.biomes?.length
+      ? castSongBiomes(labelEnergy, this.songTerrain.biomes)
+      : this.world?.cast
+        ? this.world.cast(labelEnergy, songSeed)
+        : castBiomes(labelEnergy, songSeed);
     const biomeByLabel = new Map(uniqueLabels.map((lab, i) => [lab, labelCast[i]]));
 
     // Each label also gets a deterministic color signature (a hue bias),
@@ -1423,7 +1453,7 @@ export class BiomeManager {
   }
 
   _blend(nowMs) {
-    return blendSections(this.sections, nowMs);
+    return blendSections(this.sections, nowMs, { travel: !!this.world?.realBiomes });
   }
 
   /**
@@ -1492,6 +1522,10 @@ export class BiomeManager {
       : (mat.scheme && CHARACTER_SCHEMES[mat.scheme]) || songScheme;
 
     const strips = {};
+    const biomeTerrain = this._terrainFor(b.name);
+    // Which terrain this set was baked on: stripsFor re-bakes it when the
+    // biome's own ranges land after it was first drawn.
+    Object.defineProperty(strips, '_terrain', { value: biomeTerrain, enumerable: false });
     const keys = ['L2', 'L3', 'L4', 'L5'];
     keys.forEach((layerKey, idx) => {
       const bake = layerBake(worldKind, layerKey);
@@ -1499,10 +1533,10 @@ export class BiomeManager {
         ? scheme[bake.characterIndex] || scheme[0]
         : 'massif';
       const color = layerColor(b.silhouette, worldKind, layerKey);
-      const terrain = layerKey !== 'L5' ? this.terrainProfiles?.[layerKey] : null;
+      const terrain = layerKey !== 'L5' ? biomeTerrain?.[layerKey] : null;
       // An invented layer in front of a real range was the loud sawtooth.
       // Keep it as a low foothill so the scanned ridges are what you see.
-      const standIn = !!(this.terrainProfiles && !terrain && (layerKey === 'L3' || layerKey === 'L5'));
+      const standIn = !!(biomeTerrain && !terrain && (layerKey === 'L3' || layerKey === 'L5'));
       strips[layerKey] = generateSilhouette({
         seed: seed + idx + 1,
         height: bake.height,
@@ -1541,8 +1575,13 @@ export class BiomeManager {
     // own members; hanging a pine on a nave bay is how the worlds collapsed.
     if (worldKind === 'alpine' || worldKind === 'airless') {
       const landmarkKey = b.landmarkKey || b.name;
-      decorateStrip(strips.L4, landmarkKey, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: 3, scale: 1 });
-      decorateStrip(strips.L5, landmarkKey, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: 2, scale: 1.9 });
+      // A real biome's vegetation is a density along the ground, not three
+      // props: a forest has to read as forest across a 8,192px strip.
+      const count = (key, fallback) => (b.density
+        ? Math.round((b.density[key] || 0) * strips[key].width / 1000)
+        : fallback);
+      decorateStrip(strips.L4, landmarkKey, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: count('L4', 3), scale: 1 });
+      decorateStrip(strips.L5, landmarkKey, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: count('L5', 2), scale: 1.9 });
     }
     return strips;
   }
@@ -1566,12 +1605,12 @@ export class BiomeManager {
     this._lastStripKey = key;
     this.strips.setPins(pins);
     let strips = this.strips.get(key);
-    if (strips) return strips;
+    if (strips && strips._terrain === this._terrainFor(key)) return strips;
     const profile = this._profile(key);
     const kind = this.world?.kind || 'alpine';
     const estimatedBytes = ['L2', 'L3', 'L4', 'L5'].reduce((total, layerKey) => {
       const bake = layerBake(kind, layerKey);
-      const width = this.terrainProfiles?.[layerKey] && layerKey !== 'L5' ? TERRAIN_STRIP_WIDTH : 2048;
+      const width = this._terrainFor(key)?.[layerKey] && layerKey !== 'L5' ? TERRAIN_STRIP_WIDTH : 2048;
       // City strips own a same-sized emissive window surface.
       return total + width * bake.height * 4 * (bake.profile === 'city' ? 2 : 1);
     }, 0);
@@ -1579,6 +1618,17 @@ export class BiomeManager {
     strips = this._buildStripSet(profile);
     this.strips.set(key, strips);
     return strips;
+  }
+
+  /** The real skylines a biome stands on: its own ranges once loaded, else
+   *  the home biome's (terrainProfiles), else none. */
+  _terrainFor(name) {
+    return this.songTerrain?.byBiome?.get(name)?.profiles || this.terrainProfiles || null;
+  }
+
+  /** The ranges on screen for a biome ({ far, mid, near }), or null. */
+  rangesFor(name) {
+    return this.songTerrain?.byBiome?.get(name)?.ranges || null;
   }
 
   _profile(name) {
@@ -1611,6 +1661,8 @@ export class BiomeManager {
    *  same handful of rotated hex strings recur across many frames, so this
    *  small cache actually hits instead of growing unbounded. */
   _rotated(hex) {
+    // Real biomes keep their real colours (RealBiomes.js).
+    if (this.world?.realBiomes) return hex;
     // The One-Spectrum key shift (eased, landing the anchor on the tonic)
     // and the song-form section signature compose into one hue offset --
     // quantized together to 3deg steps so the cache stays hot.
@@ -1736,10 +1788,10 @@ export class BiomeManager {
     this.calmLevel = calmLevel;
     this._danceWorldX = worldX; // kept for farRidgeSwell01(), read by the sim
     const {
-      from, to, t, fromHeightMul, toHeightMul, fromSnowLine01, toSnowLine01,
+      from, to, t, fromHeightMul, toHeightMul, fromSnowLine01, toSnowLine01, travel = false, travelP = 1,
     } = this._blend(nowMs);
     this.currentBlend = {
-      from, to, t, fromHeightMul, toHeightMul, fromSnowLine01, toSnowLine01,
+      from, to, t, fromHeightMul, toHeightMul, fromSnowLine01, toSnowLine01, travel, travelP,
     };
     // One Spectrum: glide the key shift (needs the blend just resolved).
     this._updateSpectralShift(dtSec);
@@ -1752,7 +1804,9 @@ export class BiomeManager {
       const sec = this.sections[sectionIdx];
       if (this._lastSectionIdx != null) {
         if (sec.transition === 'cut') { this._cutFlash = 1; this.cutFlashJustFired = true; }
-        else if (sec.transition === 'shutter') {
+        // Travelling into a new biome is the transition: a shutter would
+        // black out the very ranges coming in.
+        else if (sec.transition === 'shutter' && !(this.world?.realBiomes && sec.profile !== this.sections[this._lastSectionIdx]?.profile)) {
           // Through a real rate limiter. Boundaries are allowed to sit
           // MIN_SECTION_CUT_GAP_MS (11s) apart, so before this two near-total
           // blackouts eleven seconds apart were a permitted outcome -- and
@@ -1891,7 +1945,7 @@ export class BiomeManager {
     this.rd.intensity = gain;
 
     // Biome personality: the dominant biome tunes the phenomena dials.
-    const pers = PERSONALITY[t > 0.5 ? to : from] || {};
+    const pers = PERSONALITY[t > 0.5 ? to : from] || REAL_PERSONALITY[t > 0.5 ? to : from] || {};
     this.cymatics.modePool = pers.cymaticModes || null;
     const [bandLo, bandHi] = pers.swarmBand || [0.18, 0.53];
     this.swarm.setBand(bandLo, bandHi);
@@ -4999,6 +5053,54 @@ export class BiomeManager {
       ctx.rotate(tilt);
       ctx.translate(-pivotX, -pivotY);
     }
+    const drawSet = (P, strips, alpha, heightMul, snowLine) => {
+      ctx.globalAlpha = alpha;
+      this._drawDancingStrip(ctx, canvas, strips[layerKey], scrollX, yOff, layerKey, P.terrainEnergy ?? 1, heightMul);
+      ctx.globalAlpha = 1;
+      // Volume before the crest: the skyline stroke has to sit on top of
+      // its own mountain's shading, not under it.
+      this._drawRidgeVolume(ctx, canvas, strips[layerKey], scrollX, yOff, layerKey, alpha, P.terrainEnergy ?? 1, heightMul, snowLine);
+      // Crest rim: full strength at the near anchors (L4/L5), extended to
+      // L2/L3 at reduced alpha (Stage 3) -- gated on heavyPostFx there since
+      // it's a wider live pass across the two biggest ranges on screen.
+      const rimOk = layerKey === 'L4' || layerKey === 'L5' || !this._perf || this._perf.heavyPostFx;
+      if (rimOk && P.edgeLight) {
+        this._drawCrest(ctx, canvas, strips[layerKey], scrollX, yOff, layerKey, P.edgeLight, alpha * crestRimAlpha(CREST_RIM_ALPHA[layerKey] ?? 1, isTerrainStrip(strips[layerKey])), P.terrainEnergy ?? 1, heightMul);
+      }
+    };
+    const blend = this.currentBlend;
+    if (blend?.travel && B !== A) {
+      // Travelling into a new biome (BiomeSchedule.travelMs): its ranges come
+      // in from the right behind a soft seam, the nearest layer first -- the
+      // way the foreground changes before the far skyline when you cross a
+      // pass -- instead of one range dissolving into another in place.
+      const seam = travelSeam(canvas.width, layerKey, blend.travelP);
+      const feather = canvas.width * TRAVEL_FEATHER;
+      const clip = (x0, x1, fn) => {
+        if (!(x1 > x0)) return;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x0, -canvas.height, x1 - x0, canvas.height * 3);
+        ctx.clip();
+        fn();
+        ctx.restore();
+      };
+      const lo = seam - feather / 2, hi = seam + feather / 2;
+      clip(-canvas.width, lo, () => drawSet(A, stripsA, 1, heightMulA, snowLineA));
+      // Across the seam the old ranges fade out as the new ones fade in, so
+      // neither ends in a cliff where the other is lower.
+      for (let k = 0; k < TRAVEL_BANDS; k++) {
+        const x0 = lo + (k * feather) / TRAVEL_BANDS;
+        const a = (k + 0.5) / TRAVEL_BANDS;
+        clip(x0, x0 + feather / TRAVEL_BANDS, () => {
+          drawSet(A, stripsA, 1 - a, heightMulA, snowLineA);
+          drawSet(B, stripsB, a, heightMulB, snowLineB);
+        });
+      }
+      clip(hi, canvas.width * 2, () => drawSet(B, stripsB, 1, heightMulB, snowLineB));
+      ctx.restore();
+      return;
+    }
     const wantShimmerSlices = styleDials(this.visualStyle).heatShimmerSlices !== false;
     const biomeShimmerAlpha = (A.fx === 'heatShimmer' ? 1 - t : 0) + (B.fx === 'heatShimmer' ? t : 0);
     const applyBiomeShimmer = wantShimmerSlices && biomeShimmerAlpha > 0.05 && layerKey !== 'L5';
@@ -5010,28 +5112,9 @@ export class BiomeManager {
     if (applyBiomeShimmer || applyDynamicShimmer) {
       this._drawShimmered(ctx, canvas, stripsA[layerKey], scrollX, yOff);
     } else {
-      this._drawDancingStrip(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.terrainEnergy ?? 1, heightMulA);
-      // Volume before the crest: the skyline stroke has to sit on top of
-      // its own mountain's shading, not under it.
-      this._drawRidgeVolume(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, 1, A.terrainEnergy ?? 1, heightMulA, snowLineA);
-      // Crest rim: full strength at the near anchors (L4/L5), extended to
-      // L2/L3 at reduced alpha (Stage 3) -- gated on heavyPostFx there since
-      // it's a wider live pass across the two biggest ranges on screen.
-      const rimOkA = layerKey === 'L4' || layerKey === 'L5' || !this._perf || this._perf.heavyPostFx;
-      if (rimOkA && A.edgeLight) {
-        this._drawCrest(ctx, canvas, stripsA[layerKey], scrollX, yOff, layerKey, A.edgeLight, crestRimAlpha(CREST_RIM_ALPHA[layerKey] ?? 1, isTerrainStrip(stripsA[layerKey])), A.terrainEnergy ?? 1, heightMulA);
-      }
+      drawSet(A, stripsA, 1, heightMulA, snowLineA);
     }
-    if (B !== A && t > 0.02) {
-      ctx.globalAlpha = t;
-      this._drawDancingStrip(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.terrainEnergy ?? 1, heightMulB);
-      ctx.globalAlpha = 1;
-      this._drawRidgeVolume(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, t, B.terrainEnergy ?? 1, heightMulB, snowLineB);
-      const rimOkB = layerKey === 'L4' || layerKey === 'L5' || !this._perf || this._perf.heavyPostFx;
-      if (rimOkB && B.edgeLight) {
-        this._drawCrest(ctx, canvas, stripsB[layerKey], scrollX, yOff, layerKey, B.edgeLight, t * crestRimAlpha(CREST_RIM_ALPHA[layerKey] ?? 1, isTerrainStrip(stripsB[layerKey])), B.terrainEnergy ?? 1, heightMulB);
-      }
-    }
+    if (B !== A && t > 0.02) drawSet(B, stripsB, t, heightMulB, snowLineB);
     ctx.restore();
   }
 

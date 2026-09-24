@@ -333,7 +333,8 @@ test('a palette-synthesis-only failure still leaves terrain shaping intact, and 
   console.warn = (...args) => warnCalls.push(args);
   let result;
   try {
-    result = buildWorldVariant('alpine', feat, data);
+    // Far Side: The Range's real biomes are never synthesized.
+    result = buildWorldVariant('farside', feat, data);
   } finally {
     console.warn = originalWarn;
   }

@@ -23,6 +23,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { renderWorldFrame } from './world-frame.mjs';
+import { withAllWorlds } from './lib/allWorlds.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const url = process.argv[2] || 'http://127.0.0.1:8080';
@@ -194,7 +195,7 @@ try {
       const entry = new URL(url);
       entry.searchParams.set('seed', '315');
       entry.searchParams.set('perf', 'high'); // start the ladder at full quality
-      await page.goto(entry.href);
+      await page.goto(withAllWorlds(entry.href));
       // The title screen's settings live behind a disclosure now, so that a
       // returning player's first screenful is their music rather than a
       // wall of preferences. Open it before reaching for one.

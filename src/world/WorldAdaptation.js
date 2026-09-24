@@ -271,7 +271,9 @@ export function adaptWorld(baseWorld, songProfile, data = null) {
       degraded.dna = true;
     }
 
-    if (dna) {
+    // Real biomes are real places: their colours are not synthesized from
+    // the song. The song's DNA still shapes the invented terrain below.
+    if (dna && !base.realBiomes) {
       try {
         const synth = synthesizeSectionPalettes(dna, base.kind || 'world');
         if (synth.palettes.length) {
@@ -294,7 +296,9 @@ export function adaptWorld(baseWorld, songProfile, data = null) {
         proof.dna = { error: String(err?.message || err) };
         degraded.palette = true;
       }
+    }
 
+    if (dna) {
       try {
         const grammar = buildShapeGrammar(dna);
         const full = deriveTerrainParams(grammar);
@@ -321,6 +325,7 @@ export function adaptWorld(baseWorld, songProfile, data = null) {
     aerial: base.aerial,
     renderer: base.renderer,
     manualOnly: !!base.manualOnly,
+    realBiomes: !!base.realBiomes,
     custom: overlayId === 'custom',
     baseId: base.id,
     comfort: base.comfort,
