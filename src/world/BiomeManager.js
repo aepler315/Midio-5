@@ -100,6 +100,7 @@ import { PERSONALITY } from './BiomePersonality.js';
 import { REAL_PERSONALITY } from './RealBiomes.js';
 import { castSongBiomes } from './terrain/BiomeSet.js';
 import { WIRE_LAYERS, wireAmplitude, wireColor, drawCrestWire } from './CrestWire.js';
+import { depthRamp } from './DepthRamp.js';
 import {
   horizonCrest, crestHeightAt, horizonRidgeLift01, massifCrest, massifRidgeLift01,
 } from './terrain/HorizonRidge.js';
@@ -2400,8 +2401,15 @@ export class BiomeManager {
       const pull = AERIAL_PULL[layerKey] || 0;
       return pull > 0.001 ? this.lerpCache.get(tint, skyHorizonNight, pull) : tint;
     };
-    const tintL2 = layerTint('L2'), tintL3 = layerTint('L3');
-    const tintL4 = layerTint('L4'), tintL5 = layerTint('L5');
+    // The Range owns its depth directly in the four ridge bodies. Its
+    // atmospheric passes are deliberately quiet below; other worlds retain
+    // the generic aerial treatment they were authored around.
+    const isRange = this.world?.id === 'alpine';
+    const rangeTints = isRange ? depthRamp(tint, skyHorizonNight) : null;
+    const tintL2 = rangeTints?.L2 || layerTint('L2');
+    const tintL3 = rangeTints?.L3 || layerTint('L3');
+    const tintL4 = rangeTints?.L4 || layerTint('L4');
+    const tintL5 = rangeTints?.L5 || layerTint('L5');
     // What each range's crest wire sits between: its own body below, and
     // the sky or the next range back above it.
     const wireAccent = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
@@ -2431,7 +2439,7 @@ export class BiomeManager {
       this._drawDistantWave(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, B, B, t, t);
     }
     this._drawLayer(ctx, canvas, 'L2', scrollX0, tintL2, t, A, B);
-    if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
+    if (!isRange && hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
     // Far-distance vignettes: between the farthest range and everything
     // nearer, so the L3/L4/L5 ridges partially occlude them -- genuinely
     // "witnessed in the far distance", not sprites pasted on the sky.
@@ -2443,7 +2451,7 @@ export class BiomeManager {
       halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
     });
     this._drawLayer(ctx, canvas, 'L3', scrollX1, tintL3, t, A, B);
-    this._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
+    if (!isRange) this._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
     this._drawCastShadow(ctx, canvas, 'L2', 'L3', scrollX0, scrollX1, A, B, t);
 
     // Ambient particle field lives roughly at mid-depth. The Unraveling:
@@ -2498,10 +2506,10 @@ export class BiomeManager {
     // frame, atmosphere rather than gameplay.
     if (phenomenaFull) this.swarm.draw(ctx, canvas, mandalaColor);
     if (phenomenaFull) this.murmuration.draw(ctx, this.tSec * 1000, mandalaColor, particleMul);
-    this._drawFogBanks(ctx, canvas);
+    if (!isRange) this._drawFogBanks(ctx, canvas);
 
     this._drawLayer(ctx, canvas, 'L4', scrollX2, tintL4, t, A, B);
-    if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L4', A, B, t, arc);
+    if (!isRange && hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L4', A, B, t, arc);
     this._drawCastShadow(ctx, canvas, 'L3', 'L4', scrollX1, scrollX2, A, B, t);
     // Green country bridging the sightline wherever the dancing far skyline
     // has ducked behind the hills in front of it. Between L4 and L5 so the
@@ -5101,7 +5109,8 @@ export class BiomeManager {
       ctx.globalAlpha = 1;
       // Volume before the crest: the skyline stroke has to sit on top of
       // its own mountain's shading, not under it.
-      this._drawRidgeVolume(ctx, canvas, strips[layerKey], scrollX, yOff, layerKey, alpha, P.terrainEnergy ?? 1, heightMul, snowLine);
+      this._drawRidgeVolume(ctx, canvas, strips[layerKey], scrollX, yOff, layerKey, alpha, P.terrainEnergy ?? 1, heightMul, snowLine,
+        { bodyTint: this.world?.id === 'alpine' ? tint : null });
       // Crest wire (CrestWire.js) on every range: the wire itself is one
       // thin stroke, cheap at any perf level; its glow passes shed inside
       // _drawCrest. Far ranges wear it a little fainter, as depth.
@@ -5918,7 +5927,7 @@ export class BiomeManager {
    * dance columns is a hard seam at every column boundary), so this pass is
    * the only source of shading depth any range has, in any world.
    */
-  _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1, heightMul = 1, snowLine01 = 1, { geology = true, geometry = 'dancing' } = {}) {
+  _drawRidgeVolume(ctx, canvas, strip, scrollX, yOff, layerKey, alpha, terrainEnergy = 1, heightMul = 1, snowLine01 = 1, { geology = true, geometry = 'dancing', bodyTint = null } = {}) {
     // Ceiling landforms are hanging masses. Foot-anchored crest shading
     // (catchlight on a summit, shade pooling in a valley) paints the
     // wrong volume onto a vault or a canopy — but skipping the pass
@@ -5947,6 +5956,16 @@ export class BiomeManager {
 
     ctx.save();
     ctx.clip(body);
+
+    // The Range's depth ramp is a body pass, not a suggestion for later
+    // effects: it recolours this exact live silhouette before the existing
+    // catchlight, shade, snow and crest passes shape it.
+    if (bodyTint) {
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = bodyTint;
+      ctx.fill(body);
+      ctx.globalAlpha = 1;
+    }
 
     // Screen-anchored depth: catch the light along the crest, sink the
     // foot, leave the middle alone. Deliberately NOT a repaint in the
@@ -6035,7 +6054,7 @@ export class BiomeManager {
     // clinging to a summit. L5 gets AERIAL_PULL.L5 === 0, so this is a
     // guaranteed no-op there -- the near anchor stays exactly as crisp as
     // its authored color.
-    const aerialPull = AERIAL_PULL[layerKey] || 0;
+    const aerialPull = this.world?.id === 'alpine' ? 0 : (AERIAL_PULL[layerKey] || 0);
     if (ridgeShadingFull && aerialPull > 0.001 && mat.aerial !== false) {
       const airHex = mat.aerial === 'invert'
         ? (mat.deep || '#020a0e')
@@ -6142,7 +6161,7 @@ export class BiomeManager {
     // a live but screen-horizontal stripe would still crawl unnaturally
     // against a dancing, foot-anchored ridge. Tracing the polyline means
     // every band moves WITH the ridge, so there is no seam to reintroduce.
-    if (geology && (layerKey === 'L2' || layerKey === 'L3') && (!this._perf || this._perf.heavyPostFx)) {
+    if (geology && this.world?.id !== 'alpine' && (layerKey === 'L2' || layerKey === 'L3') && (!this._perf || this._perf.heavyPostFx)) {
       // Beds dip opposite ways on the two layers so the ranges read as two
       // separate pieces of country rather than one structure drawn twice.
       const beds = strataBeds({
