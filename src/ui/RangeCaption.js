@@ -37,7 +37,7 @@ export function rangeStatsLine({ lengthKm = NaN, speedMps = NaN } = {}) {
   return parts.join(' · ');
 }
 
-const RIDGE_LABELS = [['horizon', 'HORIZON'], ['far', 'BACK'], ['mid', 'MIDDLE'], ['near', 'FRONT']];
+const RIDGE_LABELS = [['horizon', 'HORIZON'], ['massif', 'MASSIF'], ['far', 'BACK'], ['mid', 'MIDDLE'], ['near', 'FRONT']];
 
 /** "British Columbia" from "British Columbia, Canada": the country is
  *  noise in a cast list that is all North America. */
@@ -46,8 +46,8 @@ export function shortRegion(region) {
 }
 
 /**
- * The cast list, back ridge first (the horizon's dancing skyline, when it
- * stands on a real range, above that): [{ label, name, region }]. Only ridges
+ * The cast list, back ridge first (the horizon's dancing skyline and the
+ * massif, when they stand on real ranges, above that): [{ label, name, region }]. Only ridges
  * that stand on a real range are listed; a lone range (the bundled Tetons)
  * is listed without a label, since there is nothing to tell it apart from.
  */
@@ -64,12 +64,13 @@ export function castRows(ranges) {
  * terrain, so every other world gets no caption even when a range was
  * matched (it is matched before the world is chosen). `range` is the back
  * range; `ridges` ({ mid, near }) the ranges standing in front of it, and
- * `ridges.horizon` the skyline the horizon EQ dances on, behind it.
+ * `ridges.horizon` and `ridges.massif` the skylines the horizon EQ and the
+ * spectrum massif stand on, behind it.
  */
 export function rangeCaptionFor(range, worldKind, stats = {}, ridges = {}, biome = null) {
   if (worldKind !== 'alpine') return null;
   const far = range && range.name ? range : BUNDLED_RANGE;
-  const cast = far === BUNDLED_RANGE ? { far } : { horizon: ridges?.horizon, far, mid: ridges?.mid, near: ridges?.near };
+  const cast = far === BUNDLED_RANGE ? { far } : { horizon: ridges?.horizon, massif: ridges?.massif, far, mid: ridges?.mid, near: ridges?.near };
   const credit = Object.values(cast).some((x) => x?.source === 'discovered')
     ? 'Elevation: AWS Terrain Tiles · summits: GeoNames (CC BY 4.0) · ranges: Wikidata'
     : 'Elevation: AWS Terrain Tiles';

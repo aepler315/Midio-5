@@ -32,7 +32,7 @@ import {
   mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER,
   massifDrawHeight, massifRidgeHeight01, massifRidgeJagPx, massifClearing01,
   MASSIF_MARKER_SPEED_PX_S, MASSIF_MARKER_LIFE_SEC, nextMassifMarkerDelaySec,
-  massifEqStep,
+  massifEqStep, massifBandLevel,
 } from './MountainChoreo.js';
 import {
   ridgeYSmooth, danceOffsetSmooth, danceScaleSmooth, danceScaleRamp, assignBandFeatures, geoCrestOffset,
@@ -99,7 +99,9 @@ import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS, hazeScatter } from '
 import { PERSONALITY } from './BiomePersonality.js';
 import { REAL_PERSONALITY } from './RealBiomes.js';
 import { castSongBiomes } from './terrain/BiomeSet.js';
-import { horizonCrest, crestHeightAt, horizonRidgeLift01 } from './terrain/HorizonRidge.js';
+import {
+  horizonCrest, crestHeightAt, horizonRidgeLift01, massifCrest, massifRidgeLift01,
+} from './terrain/HorizonRidge.js';
 import { styleDials, shiftLightness, ensureContrast, ensureMinLightness } from '../render/VisualStyle.js';
 import { Murmuration } from './Murmuration.js';
 import { Atmosphere } from './Atmosphere.js';
@@ -270,6 +272,9 @@ const BAND_COUNT = 7;
 const EQ_ATTACK_SEC = 0.08;
 const EQ_RELEASE_SEC = 0.6;
 const EQ_MAX_HEIGHT_FRAC = 0.4; // never exceed 40% of screen height, however excited the section is
+// Width of the spectrum massif when it stands on a real summit
+// (HorizonRidge.massifCrest), against 340 px for the seven EQ columns.
+const MASSIF_REAL_WIDTH_PX = 900;
 
 // --- Ridge volume: the dancing ranges read as MASS, not as flat cutouts ---
 // Sampling step (px) for the smooth crest polyline shared by the crest
@@ -509,6 +514,17 @@ export class BiomeManager {
         this.horizonRange = songTerrain.horizon.range || null;
       } catch (err) {
         console.warn('[terrain] horizon crest rejected; the EQ keeps its own shape', err);
+      }
+    }
+    // The same for the spectrum massif: a real summit under its slow EQ.
+    this.massifRange = null;
+    this._massifCrest = null;
+    if (songTerrain?.massif?.profile) {
+      try {
+        this._massifCrest = massifCrest(songTerrain.massif.profile);
+        this.massifRange = songTerrain.massif.range || null;
+      } catch (err) {
+        console.warn('[terrain] massif crest rejected; it keeps its own shape', err);
       }
     }
     // Hold the scanned ridges still so the geographic profile can be checked
@@ -6367,7 +6383,9 @@ export class BiomeManager {
   _drawSpectrumMassif(ctx, canvas, worldX, A, B, t) {
     const bars = spectrumBars(this._massifEqSmoothed);
     const barW = 46, gap = 3;
-    const massifW = bars.length * (barW + gap) - gap;
+    // A real summit keeps something like its real proportions: squeezed
+    // into the seven columns' width it stood up as a needle.
+    const massifW = this._massifCrest ? MASSIF_REAL_WIDTH_PX : bars.length * (barW + gap) - gap;
     const period = canvas.width * 1.5;
     const scroll = worldX * CodaDirector.delaminateRatio(0.03, this.unravel);
     const left = ((((canvas.width * 0.58 - scroll) % period) + period) % period) - massifW;
@@ -6408,15 +6426,22 @@ export class BiomeManager {
     // RANGE instead, while the bass-builds-the-summit EQ shape survives
     // completely intact -- it's still exactly the same seven peaks, just
     // connected.
-    const RIDGE_STEP_PX = 8;
+    //
+    // On a real summit (HorizonRidge.massifRidgeLift01) the crest is the
+    // bell and the jag both: the slow band level scales the real outline
+    // from its foot, sampled finely enough to keep its spires.
+    const crest = this._massifCrest;
+    const RIDGE_STEP_PX = crest ? 3 : 8;
+    const heightAt = crest
+      ? (u) => baseY - massifRidgeLift01(crest, u, massifBandLevel(this._massifEqSmoothed, u)) * maxH
+      : (u) => baseY - massifRidgeHeight01(bars, u) * maxH + massifRidgeJagPx(u);
     const ridgePts = [];
     for (let x = 0; x <= massifW; x += RIDGE_STEP_PX) {
-      const u = x / massifW;
-      ridgePts.push({ x: left + x, y: baseY - massifRidgeHeight01(bars, u) * maxH + massifRidgeJagPx(u) });
+      ridgePts.push({ x: left + x, y: heightAt(x / massifW) });
     }
     const lastX = ridgePts[ridgePts.length - 1].x;
     if (lastX < left + massifW - 0.01) {
-      ridgePts.push({ x: left + massifW, y: baseY - massifRidgeHeight01(bars, 1) * maxH + massifRidgeJagPx(1) });
+      ridgePts.push({ x: left + massifW, y: heightAt(1) });
     }
 
     ctx.save();

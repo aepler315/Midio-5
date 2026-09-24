@@ -65,12 +65,13 @@ export const HORIZON_REST = 0.4;
 
 /** The song's horizon range: drawn evenly from HORIZON_RANGES, passing over
  *  `exclude` (ids already standing in the song's own ridges). Null when
- *  nothing is left. */
-export function chooseHorizonRange(seed, { exclude = [], ranges = RANGES } = {}) {
+ *  nothing is left. A different `salt` is a different draw -- the massif
+ *  behind the horizon draws its own. */
+export function chooseHorizonRange(seed, { exclude = [], ranges = RANGES, salt = 307 } = {}) {
   const skip = new Set(exclude);
   const open = ranges.filter((r) => HORIZON_RANGES.includes(r.id) && !skip.has(r.id));
   if (!open.length) return null;
-  const i = Math.min(open.length - 1, Math.floor(seedTicket(seed, 307) * open.length));
+  const i = Math.min(open.length - 1, Math.floor(seedTicket(seed, salt) * open.length));
   return open[i];
 }
 
@@ -128,4 +129,34 @@ export function crestHeightAt(crest, songP, u) {
 /** The dancing height (0..1): the crest scaled by the band level `v`. */
 export function horizonRidgeLift01(crest01, v) {
   return crest01 * (HORIZON_REST + (1 - HORIZON_REST) * clamp01(v));
+}
+
+// --- The massif --------------------------------------------------------
+//
+// The spectrum massif (BiomeManager._drawSpectrumMassif) is one impossibly
+// large mountain far behind everything, crawling on a multi-second EQ. It
+// stands on a real summit too: MASSIF_WINDOW_M of another famous skyline,
+// centred on its highest point, held still (it has no travel -- the
+// massif's own slow parallax is its motion). Its flanks taper to the foot
+// over MASSIF_TAPER of its width, so a window that ends high on a ridge
+// still lands as one mountain instead of a cut-off block.
+export const MASSIF_SALT = 419;
+export const MASSIF_WINDOW_M = 12000;
+const MASSIF_TAPER = 0.14;
+
+/** The massif's crest: horizonCrest over a short window with no travel. */
+export function massifCrest(profile) {
+  return horizonCrest(profile, { windowM: MASSIF_WINDOW_M, travelM: 0 });
+}
+
+/** 0 at either edge of the massif, 1 over its middle, smoothstepped. */
+export function massifTaper01(u) {
+  const e = Math.min(clamp01(u), 1 - clamp01(u)) / MASSIF_TAPER;
+  const t = Math.min(1, e);
+  return t * t * (3 - 2 * t);
+}
+
+/** The massif's height (0..1) at `u` across it, for band level `v` there. */
+export function massifRidgeLift01(crest, u, v) {
+  return horizonRidgeLift01(crestHeightAt(crest, 0, u), v) * massifTaper01(u);
 }

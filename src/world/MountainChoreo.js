@@ -407,6 +407,24 @@ export function massifEqStep(prev, raw, dtSec) {
 }
 
 /**
+ * The live band level (0..1) under fractional position u across the massif:
+ * the same bass-in-the-middle band order as spectrumBars, smoothstepped
+ * between neighbouring columns, without the pedestal bell -- for a massif
+ * standing on a real crest (HorizonRidge.massifRidgeLift01), where the
+ * crest is the bell.
+ * @param {ArrayLike<number>} eq 7 smoothed band levels, 0..1
+ */
+export function massifBandLevel(eq, u) {
+  const n = MASSIF_ORDER.length;
+  const pos = Math.min(n - 1 - 1e-9, Math.max(0, u * (n - 1)));
+  const i0 = Math.floor(pos);
+  const frac = pos - i0;
+  const s = frac * frac * (3 - 2 * frac);
+  const a = clamp01(eq?.[MASSIF_ORDER[i0]] ?? 0), b = clamp01(eq?.[MASSIF_ORDER[i0 + 1]] ?? 0);
+  return a * (1 - s) + b * s;
+}
+
+/**
  * The ridge's smooth 0..1 height profile at fractional position u (0..1)
  * across the WHOLE massif width -- smoothstep-interpolated between
  * neighboring bar peaks (spectrumBars), so seven discrete columns read as
