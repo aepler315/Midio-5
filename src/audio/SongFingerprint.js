@@ -139,8 +139,14 @@ export function fingerprintMono(mono, sampleRate) {
 
 // Add spectral power, not signed samples: opposite-phase channels must not cancel.
 function fingerprintChannels(channels, sampleRate) {
+  return fingerprintSignals(channels.map((channel) => resampleMono(channel, sampleRate, FP_RATE)));
+}
+
+/** The frames from channels already resampled to FP_RATE -- the expensive
+ *  half of a fingerprint, and the half fingerprintWorker.js runs off the
+ *  main thread. */
+export function fingerprintSignals(signals) {
   const frameHz = FP_RATE / FP_HOP;
-  const signals = channels.map((channel) => resampleMono(channel, sampleRate, FP_RATE));
   const sig = signals[0];
   const count = Math.max(0, Math.floor((sig.length - FP_WINDOW) / FP_HOP) + 1);
   if (count < 2) return { frames: new Uint32Array(0), frameHz };
@@ -183,8 +189,16 @@ function fingerprintChannels(channels, sampleRate) {
 
 /** Fingerprint a decoded AudioBuffer. */
 export function fingerprintBuffer(buffer) {
+  const { signals, signal, durationMs } = fingerprintInputs(buffer);
+  return fingerprintResult(fingerprintSignals(signals), signal, durationMs);
+}
+
+/** The cheap half of a fingerprint, taken from the decoded buffer: each
+ *  channel resampled to FP_RATE, and the level and stereo measurements the
+ *  cache key also depends on. */
+export function fingerprintInputs(buffer) {
   const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
-  const { frames, frameHz } = fingerprintChannels(channels, buffer.sampleRate);
+  const signals = channels.map((channel) => resampleMono(channel, buffer.sampleRate, FP_RATE));
   // Matching tolerates gain/phase changes; cached analysis does not (absolute
   // silence thresholds and stereo width differ). Carry those inputs separately.
   const channelRms = channels.map((channel) => {
@@ -198,12 +212,18 @@ export function fingerprintBuffer(buffer) {
   }
   const signal = { sampleRate: buffer.sampleRate, length: buffer.length,
     channelRms, crossPower: crossPower / Math.max(1, buffer.length) };
+  return { signals, signal, durationMs: (buffer.duration || 0) * 1000 };
+}
+
+/** A fingerprint from its frames and its buffer's measurements. */
+export function fingerprintResult({ frames, frameHz }, signal, durationMs) {
+  const { channelRms } = signal;
   // Empty/constant fingerprints carry no distinguishing temporal information.
   // A new namespace prevents old channel-cancelled bundles from being reused.
   const informative = channelRms.some((rms) => rms > 1e-6)
     && frames.length > 1 && frames.some((frame) => frame !== frames[0]);
   const key = informative ? fingerprintKey(frames).replace('fp1_', 'fp2_') : null;
-  return { frames, frameHz, key, signal, durationMs: (buffer.duration || 0) * 1000 };
+  return { frames, frameHz, key, signal, durationMs };
 }
 
 /**

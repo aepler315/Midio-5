@@ -6,8 +6,11 @@ import { synthesizeEnergyCurves } from './core/EnergyCurvesSynth.js';
 import { buildDemoSong } from './core/DemoSong.js';
 import { audioToTimeline } from './audio/AudioAdapter.js';
 import {
+  OPENING_SECONDS, adoptFullAnalysis, asOpening, sliceAudioBuffer, useOpeningAnalysis,
+} from './audio/OpeningAnalysis.js';
+import {
   AUDIO_LOAD_LIMITS, accumulateDecodedAudioBytes, accumulateDecodedByteLength,
-  accumulateEncodedAudioBytes, throwIfAborted, validateAudioFiles,
+  accumulateEncodedAudioBytes, audioAbortError, throwIfAborted, validateAudioFiles,
   validateDecodedAudioBuffer, validateDecodedByteLength,
 } from './audio/loadLimits.js';
 import { Simulation } from './sim/Simulation.js';
@@ -81,7 +84,7 @@ import { buildWorldChoices, moveChoiceIndex } from './ui/WorldChooser.js';
 import {
   PreviewSession, loadPreviewRenderer,
 } from './ui/WorldPreview.js';
-import { fingerprintBuffer } from './audio/SongFingerprint.js';
+import { fingerprintBufferOffThread } from './audio/FingerprintWorkerClient.js';
 import { readVisionConfig, persistVisionConfig } from './vision/config.js';
 import { packBundle, unpackBundle } from './audio/AnalysisBundle.js';
 import { analysisCacheKey, getBundle, putBundle } from './audio/AnalysisCache.js';
@@ -362,6 +365,11 @@ let loadGen = 0;     // a newer load cancels a stale audition gate's start
 // (sim is fully seeded + autoplay-driven). `lastAudioBuffer` is only set on
 // the raw-audio-file path (MIDI/demo regenerate sound from the timeline).
 let lastTimelineData = null;
+// The whole-song analysis of a song started on its opening
+// (OpeningAnalysis.js), while it is still running; null otherwise.
+let fullAnalysisPending = null;
+// What the running song was started with, so an in-place rebuild keeps it.
+let lastStartExtra = {};
 let lastAudioBuffer = null;
 let lastWorldId = DEFAULT_WORLD_ID;
 let pendingWorldStart = null;
@@ -1028,7 +1036,7 @@ function toggleTrackList() {
  *  voices, and resets the UI panels a fresh song should start without. Safe
  *  to call before the very first song too (everything it touches already
  *  tolerates being idle). */
-function stopTimeline({ preservePause = false } = {}) {
+function stopTimeline({ preservePause = false, keepAudio = false } = {}) {
   running = false;
   syncKeepAwake();
   recalibration.stop();
@@ -1055,13 +1063,15 @@ function stopTimeline({ preservePause = false } = {}) {
   // A recording running when the song is torn down (Stop, or a new drop)
   // is saved rather than dropped: whatever was captured is work the player
   // asked for, and silently discarding it is the worse surprise.
-  if (songRecorder?.recording || pendingCapturePresetId) finishRecording();
-  audioEngine?.pause();
+  // An in-place rebuild (the whole-song analysis arriving) keeps the music
+  // and any recording running straight through it.
+  if (!keepAudio && (songRecorder?.recording || pendingCapturePresetId)) finishRecording();
+  if (!keepAudio) audioEngine?.pause();
   // Forget any decoded buffer from a previous raw-audio song -- otherwise a
   // MIDI/demo load right after one leaves the OLD song's buffer attached,
   // and the mountain seekbar would start playing it on top of the new one.
   // A raw-audio load re-attaches its own buffer via playBuffer() afterward.
-  audioEngine?.clearBuffer();
+  if (!keepAudio) audioEngine?.clearBuffer();
   // The log-on-powers-of-two cadence is meant to keep a PERSISTENT failure
   // legible without flooding the console. Carried across songs, it does the
   // opposite: a brand new regression in song 2 inherits song 1's count and
@@ -1288,7 +1298,11 @@ if (titleWorldEl) {
 function offerWorldsThenStart(data, extra = {}) {
   try {
     clearCustomWorld();
-    const profile = data.songProfile?.version === PROFILE_VERSION ? data.songProfile : buildSongProfile({
+    // A song's look comes from its identity when it has one: the opening's
+    // profile and seed, kept for every later play (OpeningAnalysis.js).
+    const identity = data.songIdentity || null;
+    const identityProfile = identity?.songProfile?.version === PROFILE_VERSION ? identity.songProfile : null;
+    const profile = identityProfile || (data.songProfile?.version === PROFILE_VERSION ? data.songProfile : buildSongProfile({
       energyCurves: data.energyCurves,
       durationMs: data.durationMs,
       bpm: data.bpm,
@@ -1299,12 +1313,14 @@ function offerWorldsThenStart(data, extra = {}) {
       structure: data.structure,
       timeline: data.timeline,
       barGrid: data.barGrid,
-    });
+    }));
     const features = profile.watch;
-    const seed = resolveSongSeed(
-      { timeline: data.timeline, durationMs: data.durationMs },
-      readPinnedSeed(),
-    );
+    const autoSeed = Number.isFinite(identity?.seed)
+      ? identity.seed >>> 0
+      : resolveSongSeed({ timeline: data.timeline, durationMs: data.durationMs }, null);
+    const pinnedSeed = readPinnedSeed();
+    const seed = pinnedSeed != null && Number.isFinite(pinnedSeed) ? pinnedSeed >>> 0 : autoSeed;
+    if (!identity) data.songIdentity = { seed: autoSeed, songProfile: profile, customBiome: data.customBiome || null };
     pendingWorldStart = { data, extra, features, seed, profile };
     // The song's real mountain range (RangeLibrary): matched and loaded in
     // the background while the picker is up. One small module, normally
@@ -1509,6 +1525,8 @@ function beginBulkExport({ width, height } = {}) {
   const size = evenExportSize({ w: width, h: height });
   if (!size) throw new Error(`Export size must be even and at least 2×2 (got ${width}×${height}).`);
   if (!lastTimelineData) throw new Error('Load a song before exporting.');
+  // An export is the whole song: never render one from its opening alone.
+  if (lastTimelineData.opening) throw new Error('Still analysing the whole song. Try the export again in a few seconds.');
   const extra = {
     playBuffer: lastAudioBuffer || undefined,
     exportMode: true,
@@ -1579,8 +1597,9 @@ function startTimeline(timelineData, extra = {}) {
   const {
     songSeed: seedOverride = undefined, playBuffer, live = false,
     startAtMs = 0, startAtWallMs = 0, preservePause = false, captureMode: captureModeFlag = false,
-    exportMode: exportModeFlag = false, exportSize = null,
+    exportMode: exportModeFlag = false, exportSize = null, keepAudio = false,
   } = extra;
+  lastStartExtra = { ...extra, keepAudio: false, startAtMs: 0, startAtWallMs: 0 };
   const fromUrl = exportModeFlag ? null : readBulkExportFromUrl();
   const exportMode = !!(exportModeFlag || fromUrl);
   if (exportMode) {
@@ -1603,7 +1622,7 @@ function startTimeline(timelineData, extra = {}) {
   // An export rebuild must not resume the context on the way through
   // stopTimeline: that resume is asynchronous and would land after the
   // suspend below, leaving the song playing under a stepped clock.
-  stopTimeline({ preservePause: preservePause || exportMode });
+  stopTimeline({ preservePause: preservePause || exportMode, keepAudio });
   fitCanvas();
   // Any path that is about to play a decoded recording (confirmWorld,
   // replay) mutes the timeline synth. Live listening mutes it for the same
@@ -1747,10 +1766,13 @@ function startTimeline(timelineData, extra = {}) {
   // about two seconds, which the periodic re-sync then had to correct as a
   // visible jump rather than an ease. So the wall-clock time spent getting
   // here is added back: `startAtWallMs` is when `startAtMs` was true.
-  const startedAt = startAtWallMs > 0
-    ? startAtMs + (performance.now() - startAtWallMs)
-    : startAtMs;
-  audioEngine.start(startedAt);
+  // Kept audio is still playing (or paused) where it was: the show joins it
+  // at the clock's own position, which the build above moved on from.
+  const startedAt = keepAudio
+    ? audioEngine.nowMs
+    : (startAtWallMs > 0 ? startAtMs + (performance.now() - startAtWallMs) : startAtMs);
+  if (keepAudio) conductor.seekTo(startedAt);
+  else audioEngine.start(startedAt);
   if (captureMode) captureClock.beginFullCapture(startedAt);
   else captureClock.resetLive(startedAt);
   const presentationLeadMs = captureClock.leadMs;
@@ -2288,7 +2310,12 @@ async function loadAudioFiles(files) {
     let fingerprint = null;
     let cacheKey = null;
     let data = null;
-    const analysis = audioToTimeline(audioBuffer, {
+    // A long song starts on its opening and is analysed whole while it plays
+    // (OpeningAnalysis.js). The first pass is then just the opening.
+    const openingFirst = useOpeningAnalysis({
+      durationSec: audioBuffer.duration, stemDrop: isStemDrop, exporting: !!readBulkExportFromUrl(),
+    });
+    const analysis = audioToTimeline(openingFirst ? sliceAudioBuffer(audioBuffer, OPENING_SECONDS) : audioBuffer, {
       userStems: isStemDrop ? decoded : null,
       // Everything previous sessions learned about how this player splits a
       // kick from a hat, applied to a song they've never played.
@@ -2303,31 +2330,79 @@ async function loadAudioFiles(files) {
     });
     // Settled either way; a cancelled analysis is not an error.
     analysis.catch(() => {});
-    try {
-      fingerprint = fingerprintBuffer(audioBuffer);
-      cacheKey = analysisCacheKey(fingerprint, { stems: isStemDrop ? decoded : [], groove: analysisGroove });
-      const cached = cacheKey ? await getBundle(cacheKey) : null;
-      if (cached) {
-        data = unpackBundle(cached);
+    // Fingerprint the song and look it up in the analysis cache. A hit is the
+    // whole-song analysis, ready-made.
+    const lookUp = async () => {
+      try {
+        fingerprint = await fingerprintBufferOffThread(audioBuffer);
+        cacheKey = analysisCacheKey(fingerprint, { stems: isStemDrop ? decoded : [], groove: analysisGroove });
+        const cached = cacheKey ? await getBundle(cacheKey) : null;
         // An unreadable bundle (older layout, truncated, hand-edited) is not
         // an error worth surfacing: unpackBundle returns null and we analyse
         // from scratch, which is slow but always correct.
-        if (data) {
-          cancelAnalysis();
-          console.info('[analysis] restored from cache:', fingerprint.key);
-        }
+        const restored = cached ? unpackBundle(cached) : null;
+        if (restored) console.info('[analysis] restored from cache:', fingerprint.key);
+        return restored;
+      } catch (err) {
+        // Fingerprinting must never be able to stop a song from playing.
+        console.warn('[analysis] fingerprint/cache lookup failed', err);
+        return null;
       }
-    } catch (err) {
-      // Fingerprinting must never be able to stop a song from playing.
-      console.warn('[analysis] fingerprint/cache lookup failed', err);
-    }
+    };
+    let fullAnalysis = null;
     try {
-      if (!data) data = await analysis;
+      if (!openingFirst) {
+        const restored = await lookUp();
+        if (restored) {
+          data = restored;
+          cancelAnalysis();
+        } else {
+          data = await analysis;
+        }
+      } else {
+        data = asOpening(await analysis, audioBuffer.duration * 1000);
+        // The whole song, in the background, once the picker has had a moment
+        // to paint. The cache lookup runs behind the picker too: the opening
+        // is analysed the same way every time, so the song looks the same
+        // cached or not, and a hit just finishes the whole-song pass early.
+        // The analysis takes turns with the page rather than holding it
+        // (cooperative), and lands on the same data object the picker and
+        // the running song hold (adoptFullAnalysis).
+        fullAnalysis = new Promise((resolve) => setTimeout(resolve, 150)).then(async () => {
+          if (analysisAbort.signal.aborted) throw audioAbortError();
+          const whole = audioToTimeline(audioBuffer, {
+            groove: analysisGroove, signal: analysisAbort.signal, cooperative: true,
+          });
+          whole.catch(() => {});
+          const restored = await lookUp();
+          if (restored) {
+            cancelAnalysis();
+            return restored;
+          }
+          return whole;
+        });
+      }
     } finally {
-      signal.removeEventListener('abort', cancelAnalysis);
+      if (!fullAnalysis) signal.removeEventListener('abort', cancelAnalysis);
       loadShow?.stop(loadShowSession);
     }
     if (isStale()) return;
+    const opened = data;
+    const wholeSong = fullAnalysis
+      ? fullAnalysis.then((full) => {
+        if (isStale()) return null;
+        adoptFullAnalysis(opened, full);
+        if (fullAnalysisPending === wholeSong) fullAnalysisPending = null;
+        adoptFullAnalysisLive(opened);
+        return opened;
+      }).catch((err) => {
+        if (fullAnalysisPending === wholeSong) fullAnalysisPending = null;
+        // The opening stands: the song plays on what it has.
+        if (err?.name !== 'AbortError') console.warn('[analysis] whole-song pass failed; keeping the opening', err);
+        return null;
+      }).finally(() => signal.removeEventListener('abort', cancelAnalysis))
+      : null;
+    fullAnalysisPending = wholeSong;
     // Lyrics no longer hold up the world picker: the lookup is network work
     // with no fixed length, and the picker is where the player spends the
     // next few seconds anyway. It lands on the song's data when it resolves;
@@ -2342,11 +2417,14 @@ async function loadAudioFiles(files) {
       data.lyricIdentity = lyricIdentity;
       data.lyricSections = lyricSections;
       data.syncedLyrics = syncedLyrics;
-      if (cacheKey && !data.fromBundle) {
-        return Promise.resolve(putBundle(cacheKey, packBundle(data, {
+      // Cached once the whole song is in (the key may only be known then,
+      // too): an opening would be restored next time as if it were the song.
+      Promise.resolve(wholeSong).then(() => {
+        if (!cacheKey || data.fromBundle || data.opening) return null;
+        return putBundle(cacheKey, packBundle(data, {
           fingerprint, name: selectedFiles[0].name || '', identity: lyricIdentity,
-        }))).catch((err) => console.warn('[analysis] could not cache bundle', err));
-      }
+        }));
+      }).catch((err) => console.warn('[analysis] could not cache bundle', err));
       return null;
     }).catch((err) => console.warn('[lyrics] lookup failed; continuing without', err))
       .finally(() => { lyricsReady.settled = true; });
@@ -2365,7 +2443,9 @@ async function loadAudioFiles(files) {
     // Audio files get the same per-song visual fingerprint MIDI files do: a
     // unique custom biome from the timeline plus the adapter's chroma/
     // brightness/dynamics/width analysis (see BiomeImporter).
-    data.customBiome = generateCustomBiomeFromMidi(data, selectedFiles[0].name || 'Audio');
+    // Part of the song's identity: restored as it was first made, so a song
+    // started on its opening looks the same on every later play.
+    data.customBiome = data.songIdentity?.customBiome || generateCustomBiomeFromMidi(data, selectedFiles[0].name || 'Audio');
     rememberCustomBiome(paramBus, data.customBiome);
     // Raw audio already has every voice baked into the decoded buffer —
     // stacking the synth's pseudo-onset voicing on top is the unwanted
@@ -3304,6 +3384,30 @@ canvas.addEventListener('pointermove', (e) => {
   sim.setPointer(p.x, p.y);
 });
 
+/**
+ * The whole-song analysis has landed on a song that started on its opening
+ * (OpeningAnalysis.js). Still on the picker, or waiting on lyrics: nothing to
+ * do -- the song will start on the whole analysis. Already playing: rebuild
+ * the show on it at the moment the music has reached, with the music, the
+ * pause state and any recording left running (a seek without the seek).
+ */
+function adoptFullAnalysisLive(data) {
+  if (!running || !sim || !audioEngine || lastTimelineData !== data) return;
+  if (bulkExportArmed) return;
+  const wasPaused = paused;
+  startTimeline(data, {
+    ...lastStartExtra,
+    songSeed: sim.songSeed,
+    startAtMs: Math.max(1, audioEngine.nowMs),
+    keepAudio: true,
+    preservePause: wasPaused,
+    fitDiagnostic: sim.fitDiagnostic,
+  });
+  if (!running || !sim) return;
+  if (wasPaused) { paused = true; updatePauseButtonUI(); }
+  renderer.draw(sim, 1);
+}
+
 /** Seek is a fresh playback scene at the destination. Use the same complete
  * teardown/construction lifecycle as replay so no effect pool, timestamp,
  * subscription or renderer history can survive from the discarded future. */
@@ -3761,6 +3865,17 @@ function onSongComplete() {
  *  whatever is currently in the seed field (or auto if blank). */
 function replaySong({ songSeed } = {}) {
   if (!lastTimelineData) { window.location.reload(); return; }
+  // A full-song recording is the whole song: wait for its analysis rather
+  // than record the part past the opening with nothing driving it.
+  if (pendingExportPresetId && lastTimelineData.opening && fullAnalysisPending) {
+    const waitingOn = lastTimelineData;
+    showProgress('Finishing the analysis…');
+    fullAnalysisPending.finally(() => {
+      progressEl.classList.add('hidden');
+      if (lastTimelineData === waitingOn) replaySong({ songSeed });
+    });
+    return;
+  }
   // Capture buffer before rebuild — startTimeline stops the AudioContext source
   // via stopTimeline, but must not lose the decoded song for the restart.
   const buffer = lastAudioBuffer;

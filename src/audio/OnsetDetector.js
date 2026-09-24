@@ -42,6 +42,32 @@ export function bandEnvelope(buf, numFrames) {
   return env;
 }
 
+/** bandEnvelope, pausing for the browser whenever `maybeYield` (a
+ *  createYielder check) says its time is up: the same arithmetic in the same
+ *  order, so the same envelope. For an analysis running while a song plays
+ *  (OpeningAnalysis.js), where a band's 0.2s in one piece is a dropped
+ *  frame. */
+export async function bandEnvelopeAsync(buf, numFrames, maybeYield) {
+  const chans = [];
+  for (let c = 0; c < buf.numberOfChannels; c++) chans.push(buf.getChannelData(c));
+  const env = new Float32Array(numFrames);
+  for (let n = 0; n < numFrames; n++) {
+    if ((n & 255) === 0) await maybeYield();
+    const start = n * HOP;
+    let sum = 0;
+    for (let k = 0; k < WIN; k++) {
+      let power = 0;
+      for (let c = 0; c < chans.length; c++) {
+        const s = chans[c][start + k] || 0;
+        power += s * s;
+      }
+      sum += power / Math.max(1, chans.length);
+    }
+    env[n] = Math.sqrt(sum / WIN);
+  }
+  return env;
+}
+
 /** How many analysis frames a buffer of this length yields, and the frame
  *  rate that follows from it -- the one thing every per-band envelope call
  *  must agree on, whether computed all at once or streamed one band at a
