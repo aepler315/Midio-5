@@ -2,10 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   HORIZON_RANGES, HORIZON_REST, chooseHorizonRange, horizonCrest, crestHeightAt, horizonRidgeLift01,
+  MASSIF_SALT, massifCrest, massifRidgeLift01,
 } from '../src/world/terrain/HorizonRidge.js';
 import { RANGES } from '../src/world/terrain/ranges/index.js';
 import { loadRangeProfiles } from '../src/world/terrain/RangeLibrary.js';
 import { castRows } from '../src/ui/RangeCaption.js';
+import { massifBandLevel } from '../src/world/MountainChoreo.js';
 
 test('the horizon draws only famous skylines in the lower 48 and southern BC and Alberta', () => {
   const byId = new Map(RANGES.map((r) => [r.id, r]));
@@ -63,4 +65,36 @@ test('the caption names the horizon above the back ridge', () => {
     far: { name: 'Sawtooth Range', region: 'Idaho, USA' },
   });
   assert.deepEqual(rows.map((r) => r.label), ['HORIZON', 'BACK']);
+});
+
+test('the massif stands on a different famous summit, tapered to its foot at both edges', async () => {
+  for (let s = 1; s <= 200; s++) {
+    const horizon = chooseHorizonRange(s);
+    const massif = chooseHorizonRange(s, { exclude: [horizon.id], salt: MASSIF_SALT });
+    assert.notEqual(massif.id, horizon.id);
+  }
+  const crest = massifCrest((await loadRangeProfiles('rainier')).L2);
+  assert.equal(massifRidgeLift01(crest, 0, 1), 0);
+  assert.equal(massifRidgeLift01(crest, 1, 1), 0);
+  let top = 0;
+  for (let u = 0; u <= 1; u += 0.01) top = Math.max(top, massifRidgeLift01(crest, u, 1));
+  assert.ok(top > 0.95, 'the summit stands at full height when the band is loud');
+  assert.ok(massifRidgeLift01(crest, 0.5, 0) < massifRidgeLift01(crest, 0.5, 1));
+});
+
+test('the massif reads its bands bass in the middle, smoothly between columns', () => {
+  const eq = [1, 0, 0, 0, 0, 0, 0];
+  assert.equal(massifBandLevel(eq, 0.5), 1);
+  assert.equal(massifBandLevel(eq, 0), 0);
+  const a = massifBandLevel(eq, 0.45), b = massifBandLevel(eq, 0.4);
+  assert.ok(a < 1 && a > b && b > 0);
+});
+
+test('the caption names the massif under the horizon', () => {
+  const rows = castRows({
+    horizon: { name: 'Teton Range', region: 'Wyoming, USA' },
+    massif: { name: 'Mount Rainier', region: 'Washington, USA' },
+    far: { name: 'Sawtooth Range', region: 'Idaho, USA' },
+  });
+  assert.deepEqual(rows.map((r) => r.label), ['HORIZON', 'MASSIF', 'BACK']);
 });
