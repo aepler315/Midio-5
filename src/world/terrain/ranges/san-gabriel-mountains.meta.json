@@ -14,21 +14,21 @@
   "mood": "heroism",
   "quality": {
     "floorShare": 0.11,
-    "artifact": 0.09
+    "artifact": 0.04
   },
   "scores": {
-    "energy": 0.341,
-    "rawness": 0.252,
-    "grandeur": 0.586,
-    "dominance": 0.315
+    "energy": 0.363,
+    "rawness": 0.273,
+    "grandeur": 0.589,
+    "dominance": 0.299
   },
   "features": {
-    "reliefM": 2635.7,
-    "slopeMPerKm": 166.7,
-    "peaksPer10Km": 2,
-    "roughnessM": 63.4,
+    "reliefM": 2652.4,
+    "slopeMPerKm": 171,
+    "peaksPer10Km": 2.3,
+    "roughnessM": 63.1,
     "dominance": 0.3,
-    "summitM": 3043.8,
-    "lengthKm": 70
+    "summitM": 3060.7,
+    "lengthKm": 64.7
   }
 }

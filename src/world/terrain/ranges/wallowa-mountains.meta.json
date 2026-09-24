@@ -13,22 +13,22 @@
   "archetype": "restless",
   "mood": "unease",
   "quality": {
-    "floorShare": 0.03,
-    "artifact": 0.18
+    "floorShare": 0.04,
+    "artifact": 0.26
   },
   "scores": {
-    "energy": 0.353,
-    "rawness": 0.372,
+    "energy": 0.336,
+    "rawness": 0.376,
     "grandeur": 0.157,
-    "dominance": 0.481
+    "dominance": 0.469
   },
   "features": {
-    "reliefM": 707,
-    "slopeMPerKm": 176.5,
-    "peaksPer10Km": 3.6,
-    "roughnessM": 71.2,
+    "reliefM": 706.6,
+    "slopeMPerKm": 180.8,
+    "peaksPer10Km": 3.2,
+    "roughnessM": 85.8,
     "dominance": 0.5,
-    "summitM": 2914.1,
-    "lengthKm": 47.6
+    "summitM": 2985,
+    "lengthKm": 43.3
   }
 }

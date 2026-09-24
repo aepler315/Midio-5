@@ -13,22 +13,22 @@
   "archetype": "defiant",
   "mood": "defiance",
   "quality": {
-    "floorShare": 0.2,
-    "artifact": 0.04
+    "floorShare": 0.14,
+    "artifact": 0.05
   },
   "scores": {
-    "energy": 0.245,
-    "rawness": 0.208,
+    "energy": 0.214,
+    "rawness": 0.168,
     "grandeur": 0.251,
-    "dominance": 0.746
+    "dominance": 0.759
   },
   "features": {
-    "reliefM": 1127.5,
-    "slopeMPerKm": 122.5,
-    "peaksPer10Km": 2,
-    "roughnessM": 40,
-    "dominance": 0.7,
-    "summitM": 3591.3,
-    "lengthKm": 45.2
+    "reliefM": 1129.5,
+    "slopeMPerKm": 127.3,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 39.9,
+    "dominance": 0.8,
+    "summitM": 3637,
+    "lengthKm": 42.9
   }
 }

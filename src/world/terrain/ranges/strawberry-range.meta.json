@@ -13,22 +13,22 @@
   "archetype": "serene",
   "mood": "calm",
   "quality": {
-    "floorShare": 0.1,
-    "artifact": 0.07
+    "floorShare": 0.07,
+    "artifact": 0.06
   },
   "scores": {
-    "energy": 0.218,
-    "rawness": 0.178,
-    "grandeur": 0.346,
-    "dominance": 0.279
+    "energy": 0.264,
+    "rawness": 0.27,
+    "grandeur": 0.363,
+    "dominance": 0.324
   },
   "features": {
-    "reliefM": 1557.5,
-    "slopeMPerKm": 104.9,
-    "peaksPer10Km": 1.4,
-    "roughnessM": 45.2,
+    "reliefM": 1635.2,
+    "slopeMPerKm": 136.5,
+    "peaksPer10Km": 1.8,
+    "roughnessM": 81.2,
     "dominance": 0.3,
-    "summitM": 2678,
-    "lengthKm": 64.4
+    "summitM": 2754.6,
+    "lengthKm": 67.9
   }
 }

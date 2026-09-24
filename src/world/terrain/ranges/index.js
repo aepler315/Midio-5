@@ -7,16 +7,16 @@ export const RANGES = [
   "landmark": "Carter Mountain",
   "region": "Wyoming, USA",
   "source": "discovered",
-  "archetype": "restless",
-  "mood": "unease",
+  "archetype": "serene",
+  "mood": "calm",
   "scores": {
-   "energy": 0.465,
-   "rawness": 0.507,
-   "grandeur": 0.215,
-   "dominance": 0.286
+   "energy": 0.355,
+   "rawness": 0.391,
+   "grandeur": 0.22,
+   "dominance": 0.203
   },
-  "lengthKm": 53.6,
-  "reliefM": 969.5
+  "lengthKm": 43.7,
+  "reliefM": 990.8
  },
  {
   "id": "alaska-range",
@@ -27,13 +27,13 @@ export const RANGES = [
   "archetype": "sublime",
   "mood": "awe",
   "scores": {
-   "energy": 0.592,
-   "rawness": 0.435,
-   "grandeur": 0.984,
-   "dominance": 0.606
+   "energy": 0.591,
+   "rawness": 0.428,
+   "grandeur": 1,
+   "dominance": 0.571
   },
-  "lengthKm": 69.6,
-  "reliefM": 4426.9
+  "lengthKm": 65.5,
+  "reliefM": 4557.9
  },
  {
   "id": "aleutian-range",
@@ -44,13 +44,13 @@ export const RANGES = [
   "archetype": "sublime",
   "mood": "awe",
   "scores": {
-   "energy": 0.313,
-   "rawness": 0.23,
-   "grandeur": 0.592,
-   "dominance": 0.811
+   "energy": 0.303,
+   "rawness": 0.222,
+   "grandeur": 0.612,
+   "dominance": 0.814
   },
-  "lengthKm": 66,
-  "reliefM": 2662.2
+  "lengthKm": 69.4,
+  "reliefM": 2754.6
  },
  {
   "id": "arctic-cordillera",
@@ -58,16 +58,16 @@ export const RANGES = [
   "landmark": "Mount Biederbick",
   "region": "Nunavut, Canada",
   "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
+  "archetype": "brooding",
+  "mood": "melancholy",
   "scores": {
-   "energy": 0.31,
-   "rawness": 0.324,
-   "grandeur": 0.226,
-   "dominance": 0.336
+   "energy": 0.259,
+   "rawness": 0.268,
+   "grandeur": 0.201,
+   "dominance": 0.464
   },
-  "lengthKm": 74.8,
-  "reliefM": 1015
+  "lengthKm": 67.9,
+  "reliefM": 905.3
  },
  {
   "id": "beaverhead-mountains",
@@ -78,13 +78,13 @@ export const RANGES = [
   "archetype": "restless",
   "mood": "unease",
   "scores": {
-   "energy": 0.396,
-   "rawness": 0.427,
-   "grandeur": 0.207,
-   "dominance": 0.357
+   "energy": 0.425,
+   "rawness": 0.466,
+   "grandeur": 0.227,
+   "dominance": 0.325
   },
-  "lengthKm": 42.8,
-  "reliefM": 933.1
+  "lengthKm": 42.1,
+  "reliefM": 1021
  },
  {
   "id": "big-horn-mountains",
@@ -95,13 +95,13 @@ export const RANGES = [
   "archetype": "serene",
   "mood": "calm",
   "scores": {
-   "energy": 0.281,
-   "rawness": 0.233,
-   "grandeur": 0.382,
-   "dominance": 0.259
+   "energy": 0.301,
+   "rawness": 0.302,
+   "grandeur": 0.385,
+   "dominance": 0.288
   },
-  "lengthKm": 73.6,
-  "reliefM": 1719
+  "lengthKm": 71.4,
+  "reliefM": 1731
  },
  {
   "id": "black-range",
@@ -112,13 +112,13 @@ export const RANGES = [
   "archetype": "defiant",
   "mood": "defiance",
   "scores": {
-   "energy": 0.174,
-   "rawness": 0.17,
-   "grandeur": 0.151,
-   "dominance": 0.688
+   "energy": 0.161,
+   "rawness": 0.156,
+   "grandeur": 0.15,
+   "dominance": 0.73
   },
-  "lengthKm": 43.2,
-  "reliefM": 679.4
+  "lengthKm": 41.7,
+  "reliefM": 676.5
  },
  {
   "id": "blue-ridge",
@@ -129,13 +129,13 @@ export const RANGES = [
   "archetype": "serene",
   "mood": "calm",
   "scores": {
-   "energy": 0.215,
-   "rawness": 0.217,
-   "grandeur": 0.169,
-   "dominance": 0.331
+   "energy": 0.21,
+   "rawness": 0.204,
+   "grandeur": 0.195,
+   "dominance": 0.284
   },
-  "lengthKm": 77.6,
-  "reliefM": 758.7
+  "lengthKm": 73.3,
+  "reliefM": 878
  },
  {
   "id": "book-cliffs",
@@ -146,13 +146,13 @@ export const RANGES = [
   "archetype": "serene",
   "mood": "calm",
   "scores": {
-   "energy": 0.179,
-   "rawness": 0.166,
-   "grandeur": 0.193,
-   "dominance": 0.242
+   "energy": 0.173,
+   "rawness": 0.168,
+   "grandeur": 0.151,
+   "dominance": 0.291
   },
-  "lengthKm": 43.6,
-  "reliefM": 869.9
+  "lengthKm": 41.7,
+  "reliefM": 677.3
  },
  {
   "id": "boundary-ranges",
@@ -163,30 +163,13 @@ export const RANGES = [
   "archetype": "restless",
   "mood": "unease",
   "scores": {
-   "energy": 0.439,
-   "rawness": 0.469,
-   "grandeur": 0.18,
-   "dominance": 0.491
+   "energy": 0.338,
+   "rawness": 0.378,
+   "grandeur": 0.132,
+   "dominance": 0.53
   },
-  "lengthKm": 44.4,
-  "reliefM": 809.6
- },
- {
-  "id": "brooks-range",
-  "name": "Brooks Range",
-  "landmark": "James Dalton Mountain",
-  "region": "Alaska, USA",
-  "source": "discovered",
-  "archetype": "restless",
-  "mood": "unease",
-  "scores": {
-   "energy": 0.353,
-   "rawness": 0.364,
-   "grandeur": 0.127,
-   "dominance": 0.438
-  },
-  "lengthKm": 44,
-  "reliefM": 571.1
+  "lengthKm": 41.7,
+  "reliefM": 592.2
  },
  {
   "id": "california-cascades",
@@ -197,13 +180,13 @@ export const RANGES = [
   "archetype": "sublime",
   "mood": "awe",
   "scores": {
-   "energy": 0.419,
-   "rawness": 0.316,
-   "grandeur": 0.67,
+   "energy": 0.354,
+   "rawness": 0.26,
+   "grandeur": 0.673,
    "dominance": 0.717
   },
-  "lengthKm": 73.2,
-  "reliefM": 3014.4
+  "lengthKm": 60.5,
+  "reliefM": 3027.9
  },
  {
   "id": "canadian-rockies",
@@ -214,13 +197,13 @@ export const RANGES = [
   "archetype": "majestic",
   "mood": "heroism",
   "scores": {
-   "energy": 0.559,
-   "rawness": 0.59,
-   "grandeur": 0.3,
-   "dominance": 0.405
+   "energy": 0.473,
+   "rawness": 0.504,
+   "grandeur": 0.271,
+   "dominance": 0.432
   },
-  "lengthKm": 58.4,
-  "reliefM": 1351.9
+  "lengthKm": 49.5,
+  "reliefM": 1220.6
  },
  {
   "id": "carson-range",
@@ -231,13 +214,13 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.262,
-   "rawness": 0.233,
-   "grandeur": 0.304,
-   "dominance": 0.427
+   "energy": 0.229,
+   "rawness": 0.194,
+   "grandeur": 0.385,
+   "dominance": 0.362
   },
-  "lengthKm": 46.4,
-  "reliefM": 1368.1
+  "lengthKm": 42.1,
+  "reliefM": 1732.7
  },
  {
   "id": "chigmit-mountains",
@@ -245,16 +228,16 @@ export const RANGES = [
   "landmark": "Redoubt Volcano",
   "region": "Alaska, USA",
   "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
+  "archetype": "sublime",
+  "mood": "awe",
   "scores": {
-   "energy": 0.489,
-   "rawness": 0.437,
-   "grandeur": 0.543,
-   "dominance": 0.627
+   "energy": 0.354,
+   "rawness": 0.302,
+   "grandeur": 0.452,
+   "dominance": 0.778
   },
-  "lengthKm": 52.8,
-  "reliefM": 2445.1
+  "lengthKm": 41.7,
+  "reliefM": 2033.2
  },
  {
   "id": "chiricahua-mountains",
@@ -265,13 +248,13 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.31,
-   "rawness": 0.279,
-   "grandeur": 0.343,
-   "dominance": 0.526
+   "energy": 0.283,
+   "rawness": 0.252,
+   "grandeur": 0.347,
+   "dominance": 0.521
   },
-  "lengthKm": 68.8,
-  "reliefM": 1545.7
+  "lengthKm": 63.2,
+  "reliefM": 1561.5
  },
  {
   "id": "chugach-mountains",
@@ -282,13 +265,13 @@ export const RANGES = [
   "archetype": "majestic",
   "mood": "heroism",
   "scores": {
-   "energy": 0.565,
-   "rawness": 0.571,
-   "grandeur": 0.395,
-   "dominance": 0.605
+   "energy": 0.559,
+   "rawness": 0.565,
+   "grandeur": 0.502,
+   "dominance": 0.48
   },
-  "lengthKm": 48.4,
-  "reliefM": 1778
+  "lengthKm": 44.9,
+  "reliefM": 2260
  },
  {
   "id": "coast-mountains",
@@ -296,16 +279,16 @@ export const RANGES = [
   "landmark": "Mount Priestley",
   "region": "British Columbia, Canada",
   "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
+  "archetype": "restless",
+  "mood": "unease",
   "scores": {
-   "energy": 0.341,
-   "rawness": 0.378,
-   "grandeur": 0.236,
-   "dominance": 0.25
+   "energy": 0.374,
+   "rawness": 0.418,
+   "grandeur": 0.225,
+   "dominance": 0.315
   },
-  "lengthKm": 42,
-  "reliefM": 1062.2
+  "lengthKm": 41.7,
+  "reliefM": 1012.4
  },
  {
   "id": "countess-of-dufferin-range",
@@ -316,13 +299,13 @@ export const RANGES = [
   "archetype": "serene",
   "mood": "calm",
   "scores": {
-   "energy": 0.291,
-   "rawness": 0.287,
-   "grandeur": 0.212,
-   "dominance": 0.377
+   "energy": 0.272,
+   "rawness": 0.27,
+   "grandeur": 0.186,
+   "dominance": 0.392
   },
-  "lengthKm": 46.4,
-  "reliefM": 954.9
+  "lengthKm": 42.1,
+  "reliefM": 836.2
  },
  {
   "id": "deep-creek-range",
@@ -330,16 +313,16 @@ export const RANGES = [
   "landmark": "Ibapah Peak",
   "region": "Utah, USA",
   "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
+  "archetype": "brooding",
+  "mood": "melancholy",
   "scores": {
-   "energy": 0.342,
-   "rawness": 0.273,
-   "grandeur": 0.513,
-   "dominance": 0.385
+   "energy": 0.289,
+   "rawness": 0.211,
+   "grandeur": 0.528,
+   "dominance": 0.359
   },
-  "lengthKm": 69.6,
-  "reliefM": 2307.2
+  "lengthKm": 65.5,
+  "reliefM": 2375.2
  },
  {
   "id": "diablo-range",
@@ -350,13 +333,13 @@ export const RANGES = [
   "archetype": "serene",
   "mood": "calm",
   "scores": {
-   "energy": 0.226,
-   "rawness": 0.225,
-   "grandeur": 0.201,
-   "dominance": 0.294
+   "energy": 0.215,
+   "rawness": 0.201,
+   "grandeur": 0.21,
+   "dominance": 0.353
   },
-  "lengthKm": 47.6,
-  "reliefM": 905
+  "lengthKm": 41.7,
+  "reliefM": 945.9
  },
  {
   "id": "fairweather-range",
@@ -367,13 +350,13 @@ export const RANGES = [
   "archetype": "wild",
   "mood": "ferocity",
   "scores": {
-   "energy": 0.661,
-   "rawness": 0.614,
-   "grandeur": 0.853,
-   "dominance": 0.471
+   "energy": 0.64,
+   "rawness": 0.575,
+   "grandeur": 0.889,
+   "dominance": 0.446
   },
-  "lengthKm": 70.8,
-  "reliefM": 3837.4
+  "lengthKm": 65.5,
+  "reliefM": 4002.6
  },
  {
   "id": "front-range",
@@ -384,13 +367,13 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.245,
-   "rawness": 0.195,
-   "grandeur": 0.359,
-   "dominance": 0.731
+   "energy": 0.275,
+   "rawness": 0.248,
+   "grandeur": 0.346,
+   "dominance": 0.723
   },
-  "lengthKm": 43.6,
-  "reliefM": 1613.9
+  "lengthKm": 41.7,
+  "reliefM": 1554.8
  },
  {
   "id": "garibaldi-ranges",
@@ -398,16 +381,16 @@ export const RANGES = [
   "landmark": "Mount Garibaldi",
   "region": "British Columbia, Canada",
   "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
+  "archetype": "restless",
+  "mood": "unease",
   "scores": {
-   "energy": 0.475,
-   "rawness": 0.484,
-   "grandeur": 0.255,
-   "dominance": 0.401
+   "energy": 0.361,
+   "rawness": 0.377,
+   "grandeur": 0.245,
+   "dominance": 0.427
   },
-  "lengthKm": 48,
-  "reliefM": 1145.5
+  "lengthKm": 42.5,
+  "reliefM": 1100.9
  },
  {
   "id": "green-mountains",
@@ -415,16 +398,16 @@ export const RANGES = [
   "landmark": "The Chin",
   "region": "Vermont, USA",
   "source": "discovered",
-  "archetype": "restless",
-  "mood": "unease",
+  "archetype": "brooding",
+  "mood": "melancholy",
   "scores": {
-   "energy": 0.333,
-   "rawness": 0.35,
-   "grandeur": 0.236,
-   "dominance": 0.371
+   "energy": 0.243,
+   "rawness": 0.237,
+   "grandeur": 0.219,
+   "dominance": 0.47
   },
-  "lengthKm": 45.6,
-  "reliefM": 1062.5
+  "lengthKm": 41.7,
+  "reliefM": 983.5
  },
  {
   "id": "hualapai-mountains",
@@ -435,13 +418,30 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.226,
-   "rawness": 0.199,
-   "grandeur": 0.269,
-   "dominance": 0.47
+   "energy": 0.21,
+   "rawness": 0.17,
+   "grandeur": 0.286,
+   "dominance": 0.426
   },
-  "lengthKm": 45.6,
-  "reliefM": 1211.2
+  "lengthKm": 41.7,
+  "reliefM": 1288.6
+ },
+ {
+  "id": "jackson-mountains",
+  "name": "Jackson Mountains",
+  "landmark": "Parrot Peak",
+  "region": "Nevada, USA",
+  "source": "discovered",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.226,
+   "rawness": 0.198,
+   "grandeur": 0.301,
+   "dominance": 0.581
+  },
+  "lengthKm": 41.7,
+  "reliefM": 1352.4
  },
  {
   "id": "klamath-mountains",
@@ -452,13 +452,13 @@ export const RANGES = [
   "archetype": "restless",
   "mood": "unease",
   "scores": {
-   "energy": 0.373,
-   "rawness": 0.387,
-   "grandeur": 0.273,
-   "dominance": 0.356
+   "energy": 0.367,
+   "rawness": 0.373,
+   "grandeur": 0.274,
+   "dominance": 0.374
   },
-  "lengthKm": 67.6,
-  "reliefM": 1230.4
+  "lengthKm": 64,
+  "reliefM": 1234.3
  },
  {
   "id": "la-sal-mountains",
@@ -469,13 +469,13 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.251,
-   "rawness": 0.199,
-   "grandeur": 0.389,
-   "dominance": 0.406
+   "energy": 0.257,
+   "rawness": 0.205,
+   "grandeur": 0.397,
+   "dominance": 0.391
   },
-  "lengthKm": 42,
-  "reliefM": 1749.4
+  "lengthKm": 41.7,
+  "reliefM": 1787.2
  },
  {
   "id": "laurentian-mountains",
@@ -486,13 +486,13 @@ export const RANGES = [
   "archetype": "serene",
   "mood": "calm",
   "scores": {
-   "energy": 0.171,
-   "rawness": 0.181,
-   "grandeur": 0.098,
-   "dominance": 0.503
+   "energy": 0.196,
+   "rawness": 0.21,
+   "grandeur": 0.09,
+   "dominance": 0.507
   },
-  "lengthKm": 42.4,
-  "reliefM": 442.7
+  "lengthKm": 41.7,
+  "reliefM": 403.6
  },
  {
   "id": "lillooet-ranges",
@@ -503,13 +503,13 @@ export const RANGES = [
   "archetype": "majestic",
   "mood": "heroism",
   "scores": {
-   "energy": 0.459,
-   "rawness": 0.403,
-   "grandeur": 0.516,
-   "dominance": 0.299
+   "energy": 0.434,
+   "rawness": 0.379,
+   "grandeur": 0.515,
+   "dominance": 0.321
   },
-  "lengthKm": 72,
-  "reliefM": 2324.2
+  "lengthKm": 67.1,
+  "reliefM": 2316.3
  },
  {
   "id": "little-belt-mountains",
@@ -517,16 +517,16 @@ export const RANGES = [
   "landmark": "Big Baldy Mountain",
   "region": "Montana, USA",
   "source": "discovered",
-  "archetype": "restless",
-  "mood": "unease",
+  "archetype": "serene",
+  "mood": "calm",
   "scores": {
-   "energy": 0.332,
-   "rawness": 0.323,
-   "grandeur": 0.248,
-   "dominance": 0.358
+   "energy": 0.258,
+   "rawness": 0.256,
+   "grandeur": 0.24,
+   "dominance": 0.408
   },
-  "lengthKm": 43.6,
-  "reliefM": 1115.8
+  "lengthKm": 41.7,
+  "reliefM": 1082.1
  },
  {
   "id": "livingston-range",
@@ -537,13 +537,13 @@ export const RANGES = [
   "archetype": "restless",
   "mood": "unease",
   "scores": {
-   "energy": 0.45,
-   "rawness": 0.481,
-   "grandeur": 0.21,
-   "dominance": 0.467
+   "energy": 0.489,
+   "rawness": 0.518,
+   "grandeur": 0.216,
+   "dominance": 0.428
   },
-  "lengthKm": 44.8,
-  "reliefM": 945.4
+  "lengthKm": 42.9,
+  "reliefM": 973.5
  },
  {
   "id": "madison-range",
@@ -551,16 +551,16 @@ export const RANGES = [
   "landmark": "Echo Peak",
   "region": "Montana, USA",
   "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
+  "archetype": "restless",
+  "mood": "unease",
   "scores": {
-   "energy": 0.46,
-   "rawness": 0.478,
-   "grandeur": 0.266,
-   "dominance": 0.367
+   "energy": 0.31,
+   "rawness": 0.328,
+   "grandeur": 0.182,
+   "dominance": 0.385
   },
-  "lengthKm": 46,
-  "reliefM": 1198.7
+  "lengthKm": 42.9,
+  "reliefM": 820.6
  },
  {
   "id": "mahoosuc-range",
@@ -568,16 +568,16 @@ export const RANGES = [
   "landmark": "Old Speck Mountain",
   "region": "Maine, USA",
   "source": "discovered",
-  "archetype": "restless",
-  "mood": "unease",
+  "archetype": "brooding",
+  "mood": "melancholy",
   "scores": {
-   "energy": 0.282,
-   "rawness": 0.285,
-   "grandeur": 0.187,
-   "dominance": 0.451
+   "energy": 0.24,
+   "rawness": 0.237,
+   "grandeur": 0.19,
+   "dominance": 0.455
   },
-  "lengthKm": 59.6,
-  "reliefM": 840.3
+  "lengthKm": 59.3,
+  "reliefM": 853.9
  },
  {
   "id": "medicine-bow-mountains",
@@ -588,13 +588,13 @@ export const RANGES = [
   "archetype": "defiant",
   "mood": "defiance",
   "scores": {
-   "energy": 0.172,
-   "rawness": 0.16,
-   "grandeur": 0.17,
-   "dominance": 0.624
+   "energy": 0.12,
+   "rawness": 0.101,
+   "grandeur": 0.175,
+   "dominance": 0.668
   },
-  "lengthKm": 43.6,
-  "reliefM": 764.8
+  "lengthKm": 41.7,
+  "reliefM": 788.7
  },
  {
   "id": "mission-mountains",
@@ -602,16 +602,16 @@ export const RANGES = [
   "landmark": "McDonald Peak",
   "region": "Montana, USA",
   "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
+  "archetype": "restless",
+  "mood": "unease",
   "scores": {
-   "energy": 0.476,
-   "rawness": 0.481,
-   "grandeur": 0.257,
-   "dominance": 0.431
+   "energy": 0.363,
+   "rawness": 0.367,
+   "grandeur": 0.277,
+   "dominance": 0.383
   },
-  "lengthKm": 47.2,
-  "reliefM": 1154.3
+  "lengthKm": 42.5,
+  "reliefM": 1244.9
  },
  {
   "id": "monument-valley",
@@ -619,16 +619,16 @@ export const RANGES = [
   "landmark": null,
   "region": "Utah-Arizona, USA",
   "source": "curated",
-  "archetype": "defiant",
-  "mood": "defiance",
+  "archetype": "serene",
+  "mood": "calm",
   "scores": {
-   "energy": 0.195,
-   "rawness": 0.236,
-   "grandeur": 0.071,
-   "dominance": 0.669
+   "energy": 0.198,
+   "rawness": 0.22,
+   "grandeur": 0.078,
+   "dominance": 0.456
   },
-  "lengthKm": 20,
-  "reliefM": 317.6
+  "lengthKm": 19.9,
+  "reliefM": 351.6
  },
  {
   "id": "north-cascades",
@@ -639,13 +639,13 @@ export const RANGES = [
   "archetype": "restless",
   "mood": "unease",
   "scores": {
-   "energy": 0.344,
-   "rawness": 0.359,
-   "grandeur": 0.211,
-   "dominance": 0.551
+   "energy": 0.347,
+   "rawness": 0.36,
+   "grandeur": 0.225,
+   "dominance": 0.522
   },
-  "lengthKm": 45.2,
-  "reliefM": 948.4
+  "lengthKm": 43.3,
+  "reliefM": 1011.3
  },
  {
   "id": "olympic-mountains",
@@ -656,13 +656,13 @@ export const RANGES = [
   "archetype": "majestic",
   "mood": "heroism",
   "scores": {
-   "energy": 0.451,
-   "rawness": 0.425,
-   "grandeur": 0.463,
-   "dominance": 0.286
+   "energy": 0.417,
+   "rawness": 0.367,
+   "grandeur": 0.525,
+   "dominance": 0.271
   },
-  "lengthKm": 66.4,
-  "reliefM": 2082.7
+  "lengthKm": 64.4,
+  "reliefM": 2361.3
  },
  {
   "id": "oregon-cascades",
@@ -673,13 +673,30 @@ export const RANGES = [
   "archetype": "sublime",
   "mood": "awe",
   "scores": {
-   "energy": 0.366,
-   "rawness": 0.301,
-   "grandeur": 0.49,
-   "dominance": 0.844
+   "energy": 0.342,
+   "rawness": 0.274,
+   "grandeur": 0.483,
+   "dominance": 0.883
   },
-  "lengthKm": 49.2,
-  "reliefM": 2203.4
+  "lengthKm": 41.7,
+  "reliefM": 2173.5
+ },
+ {
+  "id": "pacific-ranges",
+  "name": "Pacific Ranges",
+  "landmark": "Mount Raleigh",
+  "region": "British Columbia, Canada",
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.372,
+   "rawness": 0.38,
+   "grandeur": 0.258,
+   "dominance": 0.528
+  },
+  "lengthKm": 44.5,
+  "reliefM": 1160
  },
  {
   "id": "panamint-range",
@@ -690,13 +707,30 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.343,
-   "rawness": 0.329,
-   "grandeur": 0.349,
-   "dominance": 0.439
+   "energy": 0.309,
+   "rawness": 0.294,
+   "grandeur": 0.362,
+   "dominance": 0.427
   },
-  "lengthKm": 43.6,
-  "reliefM": 1572.7
+  "lengthKm": 42.1,
+  "reliefM": 1627.3
+ },
+ {
+  "id": "park-ranges",
+  "name": "Park Ranges",
+  "landmark": "Mount Clemenceau",
+  "region": "British Columbia, Canada",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.537,
+   "rawness": 0.572,
+   "grandeur": 0.276,
+   "dominance": 0.372
+  },
+  "lengthKm": 42.5,
+  "reliefM": 1241.3
  },
  {
   "id": "peninsular-ranges",
@@ -707,13 +741,13 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.262,
-   "rawness": 0.237,
-   "grandeur": 0.342,
-   "dominance": 0.707
+   "energy": 0.304,
+   "rawness": 0.265,
+   "grandeur": 0.428,
+   "dominance": 0.562
   },
-  "lengthKm": 46,
-  "reliefM": 1540.4
+  "lengthKm": 42.1,
+  "reliefM": 1927.7
  },
  {
   "id": "pinaleno-mountains",
@@ -724,13 +758,13 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.242,
-   "rawness": 0.18,
-   "grandeur": 0.457,
-   "dominance": 0.604
+   "energy": 0.236,
+   "rawness": 0.171,
+   "grandeur": 0.46,
+   "dominance": 0.541
   },
-  "lengthKm": 71.6,
-  "reliefM": 2055.5
+  "lengthKm": 62.4,
+  "reliefM": 2068.2
  },
  {
   "id": "pine-valley-mountains",
@@ -741,30 +775,13 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.303,
-   "rawness": 0.248,
-   "grandeur": 0.467,
-   "dominance": 0.536
+   "energy": 0.282,
+   "rawness": 0.217,
+   "grandeur": 0.471,
+   "dominance": 0.49
   },
-  "lengthKm": 68.4,
-  "reliefM": 2100.2
- },
- {
-  "id": "rainbow-range",
-  "name": "Rainbow Range",
-  "landmark": "Mount Robson",
-  "region": "British Columbia, Canada",
-  "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.585,
-   "rawness": 0.562,
-   "grandeur": 0.55,
-   "dominance": 0.521
-  },
-  "lengthKm": 44.8,
-  "reliefM": 2475.7
+  "lengthKm": 62.4,
+  "reliefM": 2120.5
  },
  {
   "id": "rainier",
@@ -775,13 +792,13 @@ export const RANGES = [
   "archetype": "sublime",
   "mood": "awe",
   "scores": {
-   "energy": 0.435,
-   "rawness": 0.307,
-   "grandeur": 0.616,
-   "dominance": 0.832
+   "energy": 0.425,
+   "rawness": 0.294,
+   "grandeur": 0.628,
+   "dominance": 0.826
   },
-  "lengthKm": 33.6,
-  "reliefM": 2770.8
+  "lengthKm": 31.2,
+  "reliefM": 2826
  },
  {
   "id": "revelation-mountains",
@@ -792,13 +809,13 @@ export const RANGES = [
   "archetype": "restless",
   "mood": "unease",
   "scores": {
-   "energy": 0.471,
-   "rawness": 0.524,
-   "grandeur": 0.225,
-   "dominance": 0.52
+   "energy": 0.434,
+   "rawness": 0.478,
+   "grandeur": 0.261,
+   "dominance": 0.374
   },
-  "lengthKm": 44.4,
-  "reliefM": 1010.6
+  "lengthKm": 42.1,
+  "reliefM": 1176.2
  },
  {
   "id": "rocky-mountains",
@@ -806,16 +823,16 @@ export const RANGES = [
   "landmark": "Fairview Peak",
   "region": "Montana, USA",
   "source": "discovered",
-  "archetype": "brooding",
-  "mood": "melancholy",
+  "archetype": "majestic",
+  "mood": "heroism",
   "scores": {
-   "energy": 0.309,
-   "rawness": 0.264,
-   "grandeur": 0.374,
-   "dominance": 0.335
+   "energy": 0.352,
+   "rawness": 0.302,
+   "grandeur": 0.396,
+   "dominance": 0.308
   },
-  "lengthKm": 44,
-  "reliefM": 1681.1
+  "lengthKm": 42.5,
+  "reliefM": 1780.1
  },
  {
   "id": "saint-elias-mountains",
@@ -823,16 +840,16 @@ export const RANGES = [
   "landmark": "Mount Saint Elias",
   "region": "Alaska, USA",
   "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
+  "archetype": "wild",
+  "mood": "ferocity",
   "scores": {
-   "energy": 0.482,
-   "rawness": 0.431,
-   "grandeur": 0.644,
-   "dominance": 0.612
+   "energy": 0.588,
+   "rawness": 0.541,
+   "grandeur": 0.941,
+   "dominance": 0.449
   },
-  "lengthKm": 43.6,
-  "reliefM": 2898.3
+  "lengthKm": 55,
+  "reliefM": 4236.1
  },
  {
   "id": "san-gabriel-mountains",
@@ -843,13 +860,13 @@ export const RANGES = [
   "archetype": "majestic",
   "mood": "heroism",
   "scores": {
-   "energy": 0.341,
-   "rawness": 0.252,
-   "grandeur": 0.586,
-   "dominance": 0.315
+   "energy": 0.363,
+   "rawness": 0.273,
+   "grandeur": 0.589,
+   "dominance": 0.299
   },
-  "lengthKm": 70,
-  "reliefM": 2635.7
+  "lengthKm": 64.7,
+  "reliefM": 2652.4
  },
  {
   "id": "san-jacinto-mountains",
@@ -860,13 +877,13 @@ export const RANGES = [
   "archetype": "sublime",
   "mood": "awe",
   "scores": {
-   "energy": 0.394,
-   "rawness": 0.348,
-   "grandeur": 0.505,
-   "dominance": 0.676
+   "energy": 0.311,
+   "rawness": 0.233,
+   "grandeur": 0.546,
+   "dominance": 0.604
   },
-  "lengthKm": 73.2,
-  "reliefM": 2273.5
+  "lengthKm": 63.2,
+  "reliefM": 2458.6
  },
  {
   "id": "san-mateo-mountains",
@@ -877,13 +894,30 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.214,
-   "rawness": 0.178,
-   "grandeur": 0.319,
-   "dominance": 0.526
+   "energy": 0.217,
+   "rawness": 0.177,
+   "grandeur": 0.329,
+   "dominance": 0.517
   },
-  "lengthKm": 60,
-  "reliefM": 1437.7
+  "lengthKm": 60.1,
+  "reliefM": 1482.5
+ },
+ {
+  "id": "san-rafael-mountains",
+  "name": "San Rafael Mountains",
+  "landmark": "Big Pine Mountain",
+  "region": "California, USA",
+  "source": "discovered",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "scores": {
+   "energy": 0.23,
+   "rawness": 0.251,
+   "grandeur": 0.163,
+   "dominance": 0.608
+  },
+  "lengthKm": 62,
+  "reliefM": 732.7
  },
  {
   "id": "sangre-de-cristo-mountains",
@@ -891,16 +925,16 @@ export const RANGES = [
   "landmark": "Cabresto Peak",
   "region": "New Mexico, USA",
   "source": "discovered",
-  "archetype": "serene",
-  "mood": "calm",
+  "archetype": "brooding",
+  "mood": "melancholy",
   "scores": {
-   "energy": 0.298,
-   "rawness": 0.286,
-   "grandeur": 0.388,
-   "dominance": 0.31
+   "energy": 0.318,
+   "rawness": 0.295,
+   "grandeur": 0.387,
+   "dominance": 0.34
   },
-  "lengthKm": 74.4,
-  "reliefM": 1746.3
+  "lengthKm": 65.5,
+  "reliefM": 1740.5
  },
  {
   "id": "sangre-de-cristo-range",
@@ -911,13 +945,13 @@ export const RANGES = [
   "archetype": "majestic",
   "mood": "heroism",
   "scores": {
-   "energy": 0.402,
-   "rawness": 0.368,
-   "grandeur": 0.379,
-   "dominance": 0.2
+   "energy": 0.407,
+   "rawness": 0.369,
+   "grandeur": 0.402,
+   "dominance": 0.214
   },
-  "lengthKm": 66.4,
-  "reliefM": 1703.7
+  "lengthKm": 65.1,
+  "reliefM": 1811.2
  },
  {
   "id": "sawtooth",
@@ -928,13 +962,30 @@ export const RANGES = [
   "archetype": "restless",
   "mood": "unease",
   "scores": {
-   "energy": 0.346,
-   "rawness": 0.37,
-   "grandeur": 0.142,
-   "dominance": 0.521
+   "energy": 0.365,
+   "rawness": 0.387,
+   "grandeur": 0.146,
+   "dominance": 0.447
   },
-  "lengthKm": 52,
-  "reliefM": 637.8
+  "lengthKm": 48.8,
+  "reliefM": 654.8
+ },
+ {
+  "id": "selkirk-mountains",
+  "name": "Selkirk Mountains",
+  "landmark": "Mount Proteus",
+  "region": "British Columbia, Canada",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.553,
+   "rawness": 0.606,
+   "grandeur": 0.219,
+   "dominance": 0.565
+  },
+  "lengthKm": 44.1,
+  "reliefM": 983.8
  },
  {
   "id": "sierra-de-san-pedro-martir",
@@ -945,13 +996,13 @@ export const RANGES = [
   "archetype": "serene",
   "mood": "calm",
   "scores": {
-   "energy": 0.255,
-   "rawness": 0.228,
-   "grandeur": 0.284,
-   "dominance": 0.354
+   "energy": 0.247,
+   "rawness": 0.218,
+   "grandeur": 0.29,
+   "dominance": 0.362
   },
-  "lengthKm": 47.2,
-  "reliefM": 1276.6
+  "lengthKm": 45.2,
+  "reliefM": 1306.5
  },
  {
   "id": "sierra-estrella",
@@ -962,13 +1013,13 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.252,
-   "rawness": 0.243,
-   "grandeur": 0.203,
-   "dominance": 0.449
+   "energy": 0.217,
+   "rawness": 0.198,
+   "grandeur": 0.231,
+   "dominance": 0.55
   },
-  "lengthKm": 46.8,
-  "reliefM": 912.2
+  "lengthKm": 42.1,
+  "reliefM": 1038.3
  },
  {
   "id": "sierra-madre-del-sur",
@@ -979,13 +1030,13 @@ export const RANGES = [
   "archetype": "majestic",
   "mood": "heroism",
   "scores": {
-   "energy": 0.43,
-   "rawness": 0.431,
-   "grandeur": 0.487,
-   "dominance": 0.379
+   "energy": 0.334,
+   "rawness": 0.291,
+   "grandeur": 0.499,
+   "dominance": 0.304
   },
-  "lengthKm": 72.4,
-  "reliefM": 2192.8
+  "lengthKm": 61.2,
+  "reliefM": 2247.2
  },
  {
   "id": "sierra-madre-occidental",
@@ -996,13 +1047,13 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.278,
-   "rawness": 0.313,
-   "grandeur": 0.242,
-   "dominance": 0.474
+   "energy": 0.272,
+   "rawness": 0.341,
+   "grandeur": 0.23,
+   "dominance": 0.646
   },
-  "lengthKm": 44.4,
-  "reliefM": 1089.7
+  "lengthKm": 42.5,
+  "reliefM": 1034
  },
  {
   "id": "sierra-madre-oriental",
@@ -1013,13 +1064,13 @@ export const RANGES = [
   "archetype": "serene",
   "mood": "calm",
   "scores": {
-   "energy": 0.258,
-   "rawness": 0.263,
-   "grandeur": 0.286,
-   "dominance": 0.352
+   "energy": 0.27,
+   "rawness": 0.27,
+   "grandeur": 0.313,
+   "dominance": 0.323
   },
-  "lengthKm": 65.2,
-  "reliefM": 1286.4
+  "lengthKm": 62.8,
+  "reliefM": 1408.3
  },
  {
   "id": "sierra-mixteca",
@@ -1030,13 +1081,13 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.283,
-   "rawness": 0.273,
-   "grandeur": 0.282,
-   "dominance": 0.567
+   "energy": 0.277,
+   "rawness": 0.264,
+   "grandeur": 0.276,
+   "dominance": 0.571
   },
-  "lengthKm": 44.8,
-  "reliefM": 1269.2
+  "lengthKm": 43.7,
+  "reliefM": 1239.8
  },
  {
   "id": "sierra-whitney",
@@ -1047,13 +1098,13 @@ export const RANGES = [
   "archetype": "majestic",
   "mood": "heroism",
   "scores": {
-   "energy": 0.453,
-   "rawness": 0.516,
-   "grandeur": 0.384,
-   "dominance": 0.555
+   "energy": 0.494,
+   "rawness": 0.586,
+   "grandeur": 0.44,
+   "dominance": 0.608
   },
-  "lengthKm": 70,
-  "reliefM": 1728.5
+  "lengthKm": 65.5,
+  "reliefM": 1979.7
  },
  {
   "id": "skagit-range",
@@ -1064,13 +1115,13 @@ export const RANGES = [
   "archetype": "sublime",
   "mood": "awe",
   "scores": {
-   "energy": 0.359,
-   "rawness": 0.302,
-   "grandeur": 0.462,
-   "dominance": 0.749
+   "energy": 0.387,
+   "rawness": 0.314,
+   "grandeur": 0.536,
+   "dominance": 0.628
   },
-  "lengthKm": 47.2,
-  "reliefM": 2079.5
+  "lengthKm": 42.1,
+  "reliefM": 2412
  },
  {
   "id": "skeena-mountains",
@@ -1078,16 +1129,16 @@ export const RANGES = [
   "landmark": "Delta Peak",
   "region": "British Columbia, Canada",
   "source": "discovered",
-  "archetype": "restless",
-  "mood": "unease",
+  "archetype": "serene",
+  "mood": "calm",
   "scores": {
-   "energy": 0.354,
-   "rawness": 0.372,
-   "grandeur": 0.124,
-   "dominance": 0.34
+   "energy": 0.331,
+   "rawness": 0.348,
+   "grandeur": 0.217,
+   "dominance": 0.256
   },
-  "lengthKm": 50.4,
-  "reliefM": 558.8
+  "lengthKm": 42.5,
+  "reliefM": 976.8
  },
  {
   "id": "strawberry-range",
@@ -1098,13 +1149,13 @@ export const RANGES = [
   "archetype": "serene",
   "mood": "calm",
   "scores": {
-   "energy": 0.218,
-   "rawness": 0.178,
-   "grandeur": 0.346,
-   "dominance": 0.279
+   "energy": 0.264,
+   "rawness": 0.27,
+   "grandeur": 0.363,
+   "dominance": 0.324
   },
-  "lengthKm": 64.4,
-  "reliefM": 1557.5
+  "lengthKm": 67.9,
+  "reliefM": 1635.2
  },
  {
   "id": "taconic-mountains",
@@ -1115,13 +1166,13 @@ export const RANGES = [
   "archetype": "serene",
   "mood": "calm",
   "scores": {
-   "energy": 0.154,
-   "rawness": 0.156,
-   "grandeur": 0.111,
-   "dominance": 0.475
+   "energy": 0.234,
+   "rawness": 0.244,
+   "grandeur": 0.115,
+   "dominance": 0.411
   },
-  "lengthKm": 43.2,
-  "reliefM": 501.4
+  "lengthKm": 41.7,
+  "reliefM": 516.7
  },
  {
   "id": "tetons",
@@ -1129,16 +1180,33 @@ export const RANGES = [
   "landmark": "Grand Teton",
   "region": "Wyoming, USA",
   "source": "curated",
-  "archetype": "majestic",
-  "mood": "heroism",
+  "archetype": "brooding",
+  "mood": "melancholy",
   "scores": {
-   "energy": 0.457,
-   "rawness": 0.464,
-   "grandeur": 0.352,
-   "dominance": 0.482
+   "energy": 0.424,
+   "rawness": 0.445,
+   "grandeur": 0.253,
+   "dominance": 0.751
   },
-  "lengthKm": 39.2,
-  "reliefM": 1582.3
+  "lengthKm": 43.3,
+  "reliefM": 1139.3
+ },
+ {
+  "id": "thudaka-range",
+  "name": "Thudaka Range",
+  "landmark": "Thudaka Peak",
+  "region": "British Columbia, Canada",
+  "source": "discovered",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.425,
+   "rawness": 0.482,
+   "grandeur": 0.181,
+   "dominance": 0.571
+  },
+  "lengthKm": 41.7,
+  "reliefM": 814.2
  },
  {
   "id": "toquima-range",
@@ -1149,13 +1217,13 @@ export const RANGES = [
   "archetype": "defiant",
   "mood": "defiance",
   "scores": {
-   "energy": 0.245,
-   "rawness": 0.208,
+   "energy": 0.214,
+   "rawness": 0.168,
    "grandeur": 0.251,
-   "dominance": 0.746
+   "dominance": 0.759
   },
-  "lengthKm": 45.2,
-  "reliefM": 1127.5
+  "lengthKm": 42.9,
+  "reliefM": 1129.5
  },
  {
   "id": "tordrillo-mountains",
@@ -1166,13 +1234,13 @@ export const RANGES = [
   "archetype": "majestic",
   "mood": "heroism",
   "scores": {
-   "energy": 0.446,
-   "rawness": 0.402,
-   "grandeur": 0.645,
-   "dominance": 0.24
+   "energy": 0.457,
+   "rawness": 0.382,
+   "grandeur": 0.649,
+   "dominance": 0.225
   },
-  "lengthKm": 63.2,
-  "reliefM": 2901.6
+  "lengthKm": 60.5,
+  "reliefM": 2920
  },
  {
   "id": "tower-of-london-range",
@@ -1183,13 +1251,13 @@ export const RANGES = [
   "archetype": "restless",
   "mood": "unease",
   "scores": {
-   "energy": 0.482,
-   "rawness": 0.516,
-   "grandeur": 0.13,
-   "dominance": 0.493
+   "energy": 0.441,
+   "rawness": 0.49,
+   "grandeur": 0.126,
+   "dominance": 0.557
   },
-  "lengthKm": 52,
-  "reliefM": 583.1
+  "lengthKm": 42.1,
+  "reliefM": 569
  },
  {
   "id": "trans-mexican-volcanic-belt",
@@ -1200,13 +1268,13 @@ export const RANGES = [
   "archetype": "sublime",
   "mood": "awe",
   "scores": {
-   "energy": 0.327,
-   "rawness": 0.234,
-   "grandeur": 0.648,
-   "dominance": 0.593
+   "energy": 0.359,
+   "rawness": 0.264,
+   "grandeur": 0.653,
+   "dominance": 0.577
   },
-  "lengthKm": 42.4,
-  "reliefM": 2916.2
+  "lengthKm": 42.1,
+  "reliefM": 2938.8
  },
  {
   "id": "vaca-mountains",
@@ -1217,13 +1285,30 @@ export const RANGES = [
   "archetype": "serene",
   "mood": "calm",
   "scores": {
-   "energy": 0.141,
-   "rawness": 0.123,
-   "grandeur": 0.185,
-   "dominance": 0.247
+   "energy": 0.121,
+   "rawness": 0.099,
+   "grandeur": 0.192,
+   "dominance": 0.24
   },
-  "lengthKm": 67.6,
-  "reliefM": 830.4
+  "lengthKm": 66.3,
+  "reliefM": 862.7
+ },
+ {
+  "id": "waddington-range",
+  "name": "Waddington Range",
+  "landmark": "Mount Waddington",
+  "region": "British Columbia, Canada",
+  "source": "discovered",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.647,
+   "rawness": 0.648,
+   "grandeur": 0.452,
+   "dominance": 0.676
+  },
+  "lengthKm": 45.6,
+  "reliefM": 2033.8
  },
  {
   "id": "wallowa-mountains",
@@ -1234,13 +1319,13 @@ export const RANGES = [
   "archetype": "restless",
   "mood": "unease",
   "scores": {
-   "energy": 0.353,
-   "rawness": 0.372,
+   "energy": 0.336,
+   "rawness": 0.376,
    "grandeur": 0.157,
-   "dominance": 0.481
+   "dominance": 0.469
   },
-  "lengthKm": 47.6,
-  "reliefM": 707
+  "lengthKm": 43.3,
+  "reliefM": 706.6
  },
  {
   "id": "wasatch",
@@ -1251,30 +1336,13 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.384,
-   "rawness": 0.387,
-   "grandeur": 0.301,
-   "dominance": 0.56
+   "energy": 0.336,
+   "rawness": 0.33,
+   "grandeur": 0.33,
+   "dominance": 0.509
   },
-  "lengthKm": 70.4,
-  "reliefM": 1352.3
- },
- {
-  "id": "wassuk-range",
-  "name": "Wassuk Range",
-  "landmark": "Mount Grant",
-  "region": "Nevada, USA",
-  "source": "discovered",
-  "archetype": "majestic",
-  "mood": "heroism",
-  "scores": {
-   "energy": 0.368,
-   "rawness": 0.378,
-   "grandeur": 0.42,
-   "dominance": 0.539
-  },
-  "lengthKm": 73.6,
-  "reliefM": 1890.5
+  "lengthKm": 60.8,
+  "reliefM": 1483.6
  },
  {
   "id": "white-mountains",
@@ -1285,13 +1353,13 @@ export const RANGES = [
   "archetype": "majestic",
   "mood": "heroism",
   "scores": {
-   "energy": 0.348,
-   "rawness": 0.263,
-   "grandeur": 0.562,
-   "dominance": 0.263
+   "energy": 0.333,
+   "rawness": 0.251,
+   "grandeur": 0.587,
+   "dominance": 0.277
   },
-  "lengthKm": 67.6,
-  "reliefM": 2530.6
+  "lengthKm": 67.1,
+  "reliefM": 2641.5
  },
  {
   "id": "white-pine-range",
@@ -1302,13 +1370,13 @@ export const RANGES = [
   "archetype": "brooding",
   "mood": "melancholy",
   "scores": {
-   "energy": 0.238,
+   "energy": 0.235,
    "rawness": 0.203,
-   "grandeur": 0.305,
-   "dominance": 0.486
+   "grandeur": 0.31,
+   "dominance": 0.48
   },
-  "lengthKm": 43.6,
-  "reliefM": 1371.7
+  "lengthKm": 43.3,
+  "reliefM": 1394.7
  },
  {
   "id": "wrangell-mountains",
@@ -1316,16 +1384,16 @@ export const RANGES = [
   "landmark": "Mount Blackburn",
   "region": "Alaska, USA",
   "source": "discovered",
-  "archetype": "sublime",
-  "mood": "awe",
+  "archetype": "majestic",
+  "mood": "heroism",
   "scores": {
-   "energy": 0.491,
-   "rawness": 0.37,
-   "grandeur": 0.882,
-   "dominance": 0.501
+   "energy": 0.558,
+   "rawness": 0.483,
+   "grandeur": 0.857,
+   "dominance": 0.515
   },
-  "lengthKm": 71.2,
-  "reliefM": 3970.8
+  "lengthKm": 69.8,
+  "reliefM": 3857.7
  },
  {
   "id": "yukon-ranges",
@@ -1337,12 +1405,12 @@ export const RANGES = [
   "mood": "calm",
   "scores": {
    "energy": 0.259,
-   "rawness": 0.255,
-   "grandeur": 0.204,
-   "dominance": 0.324
+   "rawness": 0.26,
+   "grandeur": 0.232,
+   "dominance": 0.356
   },
-  "lengthKm": 42.4,
-  "reliefM": 917.9
+  "lengthKm": 41.7,
+  "reliefM": 1045.7
  }
 ];
 
@@ -1357,7 +1425,6 @@ export const LOADERS = {
   "blue-ridge": () => import('./blue-ridge.js'),
   "book-cliffs": () => import('./book-cliffs.js'),
   "boundary-ranges": () => import('./boundary-ranges.js'),
-  "brooks-range": () => import('./brooks-range.js'),
   "california-cascades": () => import('./california-cascades.js'),
   "canadian-rockies": () => import('./canadian-rockies.js'),
   "carson-range": () => import('./carson-range.js'),
@@ -1373,6 +1440,7 @@ export const LOADERS = {
   "garibaldi-ranges": () => import('./garibaldi-ranges.js'),
   "green-mountains": () => import('./green-mountains.js'),
   "hualapai-mountains": () => import('./hualapai-mountains.js'),
+  "jackson-mountains": () => import('./jackson-mountains.js'),
   "klamath-mountains": () => import('./klamath-mountains.js'),
   "la-sal-mountains": () => import('./la-sal-mountains.js'),
   "laurentian-mountains": () => import('./laurentian-mountains.js'),
@@ -1387,11 +1455,12 @@ export const LOADERS = {
   "north-cascades": () => import('./north-cascades.js'),
   "olympic-mountains": () => import('./olympic-mountains.js'),
   "oregon-cascades": () => import('./oregon-cascades.js'),
+  "pacific-ranges": () => import('./pacific-ranges.js'),
   "panamint-range": () => import('./panamint-range.js'),
+  "park-ranges": () => import('./park-ranges.js'),
   "peninsular-ranges": () => import('./peninsular-ranges.js'),
   "pinaleno-mountains": () => import('./pinaleno-mountains.js'),
   "pine-valley-mountains": () => import('./pine-valley-mountains.js'),
-  "rainbow-range": () => import('./rainbow-range.js'),
   "rainier": () => import('./rainier.js'),
   "revelation-mountains": () => import('./revelation-mountains.js'),
   "rocky-mountains": () => import('./rocky-mountains.js'),
@@ -1399,9 +1468,11 @@ export const LOADERS = {
   "san-gabriel-mountains": () => import('./san-gabriel-mountains.js'),
   "san-jacinto-mountains": () => import('./san-jacinto-mountains.js'),
   "san-mateo-mountains": () => import('./san-mateo-mountains.js'),
+  "san-rafael-mountains": () => import('./san-rafael-mountains.js'),
   "sangre-de-cristo-mountains": () => import('./sangre-de-cristo-mountains.js'),
   "sangre-de-cristo-range": () => import('./sangre-de-cristo-range.js'),
   "sawtooth": () => import('./sawtooth.js'),
+  "selkirk-mountains": () => import('./selkirk-mountains.js'),
   "sierra-de-san-pedro-martir": () => import('./sierra-de-san-pedro-martir.js'),
   "sierra-estrella": () => import('./sierra-estrella.js'),
   "sierra-madre-del-sur": () => import('./sierra-madre-del-sur.js'),
@@ -1414,14 +1485,15 @@ export const LOADERS = {
   "strawberry-range": () => import('./strawberry-range.js'),
   "taconic-mountains": () => import('./taconic-mountains.js'),
   "tetons": () => import('./tetons.js'),
+  "thudaka-range": () => import('./thudaka-range.js'),
   "toquima-range": () => import('./toquima-range.js'),
   "tordrillo-mountains": () => import('./tordrillo-mountains.js'),
   "tower-of-london-range": () => import('./tower-of-london-range.js'),
   "trans-mexican-volcanic-belt": () => import('./trans-mexican-volcanic-belt.js'),
   "vaca-mountains": () => import('./vaca-mountains.js'),
+  "waddington-range": () => import('./waddington-range.js'),
   "wallowa-mountains": () => import('./wallowa-mountains.js'),
   "wasatch": () => import('./wasatch.js'),
-  "wassuk-range": () => import('./wassuk-range.js'),
   "white-mountains": () => import('./white-mountains.js'),
   "white-pine-range": () => import('./white-pine-range.js'),
   "wrangell-mountains": () => import('./wrangell-mountains.js'),

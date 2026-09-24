@@ -186,8 +186,37 @@ export function skylineArtifact(angles, elevs) {
   return worst;
 }
 
+// Scores and the quality gate were calibrated on skylines sampled every
+// 400m. A denser build (every ~30m, so the drawn ridge has real detail) is
+// pooled back to this spacing before it is scored or gated, so a range's
+// scores, mood and relief band mean what they meant before.
+export const SCORE_SPACING_M = 400;
+
+/** The far layer at scoring spacing: each 400m run pooled to the sample
+ *  with the highest skyline angle (its elevation with it), so a summit is
+ *  never averaged away. A layer already that coarse is returned as is. */
+export function scoringLayer(layer) {
+  if (!layer || !(layer.spacingM > 0)) return layer;
+  const k = Math.round(SCORE_SPACING_M / layer.spacingM);
+  if (k <= 1) return layer;
+  const angles = [];
+  const elevs = [];
+  const hasElev = layer.skylineElevM && layer.skylineElevM.length === layer.angles.length;
+  for (let i = 0; i < layer.angles.length; i += k) {
+    let best = -1;
+    for (let j = i; j < Math.min(i + k, layer.angles.length); j++) {
+      if (Number.isFinite(layer.angles[j]) && (best < 0 || layer.angles[j] > layer.angles[best])) best = j;
+    }
+    angles.push(best < 0 ? NaN : layer.angles[best]);
+    elevs.push(best < 0 || !hasElev ? NaN : layer.skylineElevM[best]);
+  }
+  return { ...layer, spacingM: layer.spacingM * k, angles, skylineElevM: hasElev ? elevs : layer.skylineElevM };
+}
+
+const farLayer = (profileJson) => scoringLayer(profileJson?.layers?.L2 || Object.values(profileJson?.layers || {})[0]);
+
 export function skylineQuality(profileJson) {
-  const layer = profileJson?.layers?.L2 || Object.values(profileJson?.layers || {})[0];
+  const layer = farLayer(profileJson);
   const angles = finite(layer?.angles);
   if (angles.length < 4) return { floorShare: 1, artifact: 0, usable: false };
   const lo = Math.min(...angles), hi = Math.max(...angles);
@@ -200,7 +229,7 @@ export function skylineQuality(profileJson) {
 
 /** Score a baked profile JSON. Null when it has no usable far skyline. */
 export function rangeCharacter(profileJson) {
-  const layer = profileJson?.layers?.L2 || Object.values(profileJson?.layers || {})[0];
+  const layer = farLayer(profileJson);
   const features = layer ? skylineFeatures(layer.skylineElevM, layer.spacingM) : null;
   if (!features) return null;
   const scores = characterFromFeatures(features);
