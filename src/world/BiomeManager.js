@@ -39,7 +39,7 @@ import {
 } from './GeoCrest.js';
 import { profileUnits } from './terrain/TerrainProfile.js';
 import { ridgeDepth, terrainPreviewStationPx, terrainScrollPx } from './terrain/ProfileTravel.js';
-import { TERRAIN_STRIP_WIDTH, crestRimAlpha } from './terrain/StripRead.js';
+import { TERRAIN_STRIP_WIDTH } from './terrain/StripRead.js';
 import { TerrainStripCache } from './terrain/TerrainStripCache.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
 import { strataBeds } from './RockStrata.js';
@@ -99,6 +99,7 @@ import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS, hazeScatter } from '
 import { PERSONALITY } from './BiomePersonality.js';
 import { REAL_PERSONALITY } from './RealBiomes.js';
 import { castSongBiomes } from './terrain/BiomeSet.js';
+import { WIRE_LAYERS, wireAmplitude, wireColor, drawCrestWire } from './CrestWire.js';
 import {
   horizonCrest, crestHeightAt, horizonRidgeLift01, massifCrest, massifRidgeLift01,
 } from './terrain/HorizonRidge.js';
@@ -109,7 +110,7 @@ import { CodaDirector } from '../sim/CodaDirector.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
 import {
-  computeLight, groundGlowLights, rimGain, CELESTIAL_DEFAULT_XFRAC,
+  computeLight, groundGlowLights, CELESTIAL_DEFAULT_XFRAC,
 } from '../render/LightField.js';
 import {
   clamp, clamp01, smoothstep, mulberry32, hashSeed, lerpHue, lerp,
@@ -150,13 +151,9 @@ const STAR_PARALLAX = [0.007, 0.026, 0.088];
 // L2 is the furthest and sits nearly half way to the sky. See the
 // layerTint() comment in draw() for why this exists.
 const AERIAL_PULL = { L2: 0.46, L3: 0.29, L4: 0.13, L5: 0 };
-// Crest rim (Stage 3 of the mountain overhaul): the backlit skyline edge
-// used to be L4/L5-only, so the two BIGGEST ranges on screen got the LEAST
-// depth treatment of the stack. Extended to L2/L3 at reduced,
-// depth-appropriate alpha -- full strength stays reserved for the near
-// anchors so the crest rim itself still reads as a depth cue, not a flat
-// outline repeated at every layer.
-const CREST_RIM_ALPHA = { L2: 0.35, L3: 0.55, L4: 1, L5: 1 };
+// Crest wire opacity per range (CrestWire.js): every range wears one, the
+// far ones a little fainter so the wire still says which ridge is nearer.
+const WIRE_ALPHA = { L2: 0.7, L3: 0.8, L4: 0.95, L5: 1 };
 // Cast shadow (Stage 5 of the mountain overhaul): a near range darkens the
 // already-drawn farther range in a band just above its own crest. Capped
 // low -- this is a subtle depth cue between adjacent ranges, not a hard
@@ -218,8 +215,6 @@ const FG_SWELL_DARKEN = 0.30;
 const FG_SWELL_ALPHA = 0.86;
 const FG_SWELL_EDGE_ALPHA = 0.42;
 const SNOW_ALPHA = 0.34;
-const RIM_LIGHT_MIX = 0.35;
-const RIM_GRADIENT_STOPS = 8;
 const GROUND_AERIAL_ALPHA = 0.34;
 const GROUND_AERIAL_FALLOFF = 0.38;
 // Section height is a draw-time multiplier, never baked (generateSilhouette's
@@ -2407,6 +2402,13 @@ export class BiomeManager {
     };
     const tintL2 = layerTint('L2'), tintL3 = layerTint('L3');
     const tintL4 = layerTint('L4'), tintL5 = layerTint('L5');
+    // What each range's crest wire sits between: its own body below, and
+    // the sky or the next range back above it.
+    const wireAccent = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
+    this._crestTints = {
+      L2: [tintL2, skyHorizonNight, wireAccent], L3: [tintL3, tintL2, wireAccent],
+      L4: [tintL4, tintL3, wireAccent], L5: [tintL5, tintL4, wireAccent],
+    };
     // Depth haze: three wash layers (L2/L3/L4) at healthy perf; the deepest
     // rung collapses to just L3, the middle layer -- enough of an
     // atmosphere cue to not read as flat, at a third of the cost.
@@ -5100,12 +5102,11 @@ export class BiomeManager {
       // Volume before the crest: the skyline stroke has to sit on top of
       // its own mountain's shading, not under it.
       this._drawRidgeVolume(ctx, canvas, strips[layerKey], scrollX, yOff, layerKey, alpha, P.terrainEnergy ?? 1, heightMul, snowLine);
-      // Crest rim: full strength at the near anchors (L4/L5), extended to
-      // L2/L3 at reduced alpha (Stage 3) -- gated on heavyPostFx there since
-      // it's a wider live pass across the two biggest ranges on screen.
-      const rimOk = layerKey === 'L4' || layerKey === 'L5' || !this._perf || this._perf.heavyPostFx;
-      if (rimOk && P.edgeLight) {
-        this._drawCrest(ctx, canvas, strips[layerKey], scrollX, yOff, layerKey, P.edgeLight, alpha * crestRimAlpha(CREST_RIM_ALPHA[layerKey] ?? 1, isTerrainStrip(strips[layerKey])), P.terrainEnergy ?? 1, heightMul);
+      // Crest wire (CrestWire.js) on every range: the wire itself is one
+      // thin stroke, cheap at any perf level; its glow passes shed inside
+      // _drawCrest. Far ranges wear it a little fainter, as depth.
+      if (P.edgeLight || this._crestTints?.[layerKey]) {
+        this._drawCrest(ctx, canvas, strips[layerKey], scrollX, yOff, layerKey, P.edgeLight || null, alpha * (WIRE_ALPHA[layerKey] ?? 1), P.terrainEnergy ?? 1, heightMul);
       }
     };
     const blend = this.currentBlend;
@@ -5484,6 +5485,9 @@ export class BiomeManager {
     if (!geom) return;
     const { pts } = geom;
     const isGeo = layerKey === 'L4';
+    const tints = this._crestTints?.[layerKey];
+    const wire = tints ? this._wireColor(tints[0], tints[1], tints[2]) : edgeLight;
+    if (!wire) return;
 
     ctx.save();
     if (isGeo) {
@@ -5491,7 +5495,7 @@ export class BiomeManager {
       for (const p of pts) if (p.lift > 1) { anyLift = true; break; }
       if (anyLift) {
         ctx.globalAlpha = 0.10 * alpha;
-        ctx.fillStyle = edgeLight;
+        ctx.fillStyle = edgeLight || wire;
         ctx.beginPath();
         ctx.moveTo(pts[0].x, pts[0].y);
         for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
@@ -5500,50 +5504,48 @@ export class BiomeManager {
         ctx.fill();
       }
     }
-    // Ridge glow: a soft wide pass (CGI catch-light) rather than stacked
-    // hairline polylines that stripe the sky.
+    // The live wire (CrestWire.js): a travelling sine-to-zigzag line that
+    // buzzes on the kick, in a colour picked against this range's body and
+    // whatever stands behind it, with a soft additive glow around it.
     const crestDials = styleDials(this.visualStyle);
     const crestMul = crestDials.crestGlowAlpha ?? 1;
     if (crestDials.crestStroke !== false && crestMul > 0.02) {
-      const passes = [[7.5, 0.10], [3.2, 0.22], [1.1, 0.38]];
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      // A rim is light spilling over an edge, so it takes its color from the
-      // LIGHT as much as from the biome's own accent. Stroked in raw
-      // `edgeLight` it was a marker pen tracing the mountain in whatever
-      // saturated hue the palette happened to name -- which on a bright
-      // palette reads as neon piping rather than as a backlit ridge.
-      const rimColor = this.light
-        ? this.lerpCache.get(edgeLight, this.light.colorHex, RIM_LIGHT_MIX)
-        : edgeLight;
-      const { r: rr, g: rg, b: rb } = hexToRgb(rimColor);
-      // ...and it has to fall off away from the source. A constant alpha all
-      // the way across the frame is the other half of why it read as an
-      // outline: real rim light is strongest where the ridge faces the light
-      // and nearly gone on the far side. One horizontal gradient per pass
-      // does that in the same single stroke call the flat version cost.
-      const lightX = this.light ? this.light.x : canvas.width * 0.5;
-      const rimGrad = (baseA) => {
-        const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
-        for (let s = 0; s <= RIM_GRADIENT_STOPS; s++) {
-          const u = s / RIM_GRADIENT_STOPS;
-          const a = baseA * rimGain(u * canvas.width, lightX, canvas.width);
-          grad.addColorStop(u, `rgba(${rr},${rg},${rb},${a.toFixed(4)})`);
-        }
-        return grad;
-      };
-      for (const [lw, a] of passes) {
-        ctx.strokeStyle = rimGrad(a * alpha * crestMul);
-        ctx.globalAlpha = 1;
-        ctx.lineWidth = lw;
-        ctx.beginPath();
-        for (let i = 0; i < pts.length; i++) {
-          if (i === 0) ctx.moveTo(pts[i].x, pts[i].y); else ctx.lineTo(pts[i].x, pts[i].y);
-        }
-        ctx.stroke();
-      }
+      const { loud, kick } = this._wireMusic();
+      const cfg = WIRE_LAYERS[layerKey] || WIRE_LAYERS.L5;
+      drawCrestWire(ctx, pts, {
+        cfg,
+        color: wire,
+        amp: wireAmplitude(cfg, loud, kick, this.tSec) * terrainEnergy,
+        sharp: clamp01(loud * 1.6),
+        tSec: this.tSec,
+        alpha: alpha * crestMul,
+        glow: !this._perf || this._perf.heavyPostFx,
+      });
     }
     ctx.restore();
+  }
+
+  /** The crest wire's colour for a body/behind pair, cached: both inputs
+   *  are lerped palette colours that hold still for long stretches. */
+  _wireColor(body, behind, accent) {
+    const key = `${body}|${behind}|${accent}`;
+    if (!this._wireColors) this._wireColors = new Map();
+    let hit = this._wireColors.get(key);
+    if (!hit) {
+      if (this._wireColors.size > 256) this._wireColors.clear();
+      hit = wireColor(body, behind, accent);
+      this._wireColors.set(key, hit);
+    }
+    return hit;
+  }
+
+  /** Loudness (mean smoothed band level) and the kick envelope, 0..1, for
+   *  the crest wire. */
+  _wireMusic() {
+    let sum = 0;
+    for (let b = 0; b < BAND_COUNT; b++) sum += this._eqSmoothed[b] || 0;
+    const kick = ridgeKickEnv(this.tSec * 1000 - this._danceKickMs) * (this._danceKickAmp || 0);
+    return { loud: clamp01(sum / BAND_COUNT), kick: clamp01(kick) };
   }
 
   /**
@@ -6488,16 +6490,32 @@ export class BiomeManager {
     // Soft massif crest cap — musical equalizer tell — traced along the
     // exact same ridge path so it never drifts off the silhouette it's
     // supposed to be capping.
+    // On a real summit the cap is the crest wire (CrestWire.js), slower and
+    // broader than the ranges' own, in a colour against its body and sky.
     if (styleDials(this.visualStyle).massifCrestCaps !== false) {
-      ctx.strokeStyle = cap;
-      ctx.globalAlpha = 0.28 * (0.5 + 0.5 * this.budget);
-      ctx.lineWidth = 3.5;
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      ctx.moveTo(ridgePts[0].x, ridgePts[0].y);
-      for (const p of ridgePts) ctx.lineTo(p.x, p.y);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
+      if (crest) {
+        const { loud, kick } = this._wireMusic();
+        const cfg = WIRE_LAYERS.massif;
+        drawCrestWire(ctx, ridgePts, {
+          cfg,
+          color: this._wireColor(body, skyMid, cap),
+          amp: wireAmplitude(cfg, loud, kick, this.tSec),
+          sharp: clamp01(loud * 1.6),
+          tSec: this.tSec,
+          alpha: 0.55 + 0.35 * this.budget,
+          glow: !this._perf || this._perf.heavyPostFx,
+        });
+      } else {
+        ctx.strokeStyle = cap;
+        ctx.globalAlpha = 0.28 * (0.5 + 0.5 * this.budget);
+        ctx.lineWidth = 3.5;
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(ridgePts[0].x, ridgePts[0].y);
+        for (const p of ridgePts) ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
     }
     ctx.restore();
 
