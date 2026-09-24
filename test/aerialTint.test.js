@@ -98,6 +98,25 @@ test('L5 (AERIAL_PULL=0) never washes toward this._airColor -- the near anchor s
   assert.ok(!hasAirColorStop(ctx.fills, 32, 64, 96), 'L5 must never be washed toward the air color');
 });
 
+test('The Range keeps its explicit depth ramp instead of applying a second aerial wash', async () => {
+  const bm = await makeManager();
+  bm.world = { id: 'alpine', kind: 'alpine' };
+  const ctx = new RecordingCtx();
+  const strip = makeStrip();
+  const canvas = { width: 960, height: 540 };
+  bm._drawRidgeVolume(ctx, canvas, strip, 0, 40, 'L2', 1, 1, 1);
+  assert.ok(!hasAirColorStop(ctx.fills, 32, 64, 96), 'The Range must not double-apply aerial depth');
+});
+
+test('a Range ridge paints its computed body tint before volume shading', async () => {
+  const bm = await makeManager();
+  bm.world = { id: 'alpine', kind: 'alpine' };
+  const ctx = new RecordingCtx();
+  bm._drawRidgeVolume(ctx, { width: 960, height: 540 }, makeStrip(), 0, 40, 'L2', 1, 1, 1, 1,
+    { bodyTint: '#123456' });
+  assert.ok(ctx.fills.includes('#123456'), 'the ramp must paint the ridge body, not only its crest wire');
+});
+
 test('no wash at all when this._airColor is unset (defensive: never throws, never fakes a color)', async () => {
   const bm = await makeManager();
   bm._airColor = null;
