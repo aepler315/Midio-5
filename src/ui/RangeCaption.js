@@ -37,7 +37,7 @@ export function rangeStatsLine({ lengthKm = NaN, speedMps = NaN } = {}) {
   return parts.join(' · ');
 }
 
-const RIDGE_LABELS = [['far', 'BACK'], ['mid', 'MIDDLE'], ['near', 'FRONT']];
+const RIDGE_LABELS = [['horizon', 'HORIZON'], ['far', 'BACK'], ['mid', 'MIDDLE'], ['near', 'FRONT']];
 
 /** "British Columbia" from "British Columbia, Canada": the country is
  *  noise in a cast list that is all North America. */
@@ -46,7 +46,8 @@ export function shortRegion(region) {
 }
 
 /**
- * The cast list, back ridge first: [{ label, name, region }]. Only ridges
+ * The cast list, back ridge first (the horizon's dancing skyline, when it
+ * stands on a real range, above that): [{ label, name, region }]. Only ridges
  * that stand on a real range are listed; a lone range (the bundled Tetons)
  * is listed without a label, since there is nothing to tell it apart from.
  */
@@ -62,12 +63,13 @@ export function castRows(ranges) {
  * What to show, or null for nothing. Only the alpine world draws real
  * terrain, so every other world gets no caption even when a range was
  * matched (it is matched before the world is chosen). `range` is the back
- * range; `ridges` ({ mid, near }) the ranges standing in front of it.
+ * range; `ridges` ({ mid, near }) the ranges standing in front of it, and
+ * `ridges.horizon` the skyline the horizon EQ dances on, behind it.
  */
 export function rangeCaptionFor(range, worldKind, stats = {}, ridges = {}, biome = null) {
   if (worldKind !== 'alpine') return null;
   const far = range && range.name ? range : BUNDLED_RANGE;
-  const cast = far === BUNDLED_RANGE ? { far } : { far, mid: ridges?.mid, near: ridges?.near };
+  const cast = far === BUNDLED_RANGE ? { far } : { horizon: ridges?.horizon, far, mid: ridges?.mid, near: ridges?.near };
   const credit = Object.values(cast).some((x) => x?.source === 'discovered')
     ? 'Elevation: AWS Terrain Tiles · summits: GeoNames (CC BY 4.0) · ranges: Wikidata'
     : 'Elevation: AWS Terrain Tiles';
@@ -114,7 +116,7 @@ const BOTTOM_CLEAR = 104;
 const LEFT = 24;
 const FONT = '"Segoe UI", system-ui, -apple-system, sans-serif';
 const ROW_H = 27;
-const LABEL_W = 70; // the widest label, MIDDLE, at 11px with tracking
+const LABEL_W = 80; // the widest label, HORIZON, at 11px with tracking
 const REGION_GAP = 18;
 
 /** Draw the caption into a 2D context whose transform maps `stage`

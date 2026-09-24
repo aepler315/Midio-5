@@ -1662,7 +1662,9 @@ function applyRangeCaptions(timelineData, exportMode) {
       const entry = own || terrain.byBiome.get(terrain.home);
       if (!entry) return;
       const info = realBiomeByName(name);
-      const caption = captionFor(entry.ranges.far, entry.ranges, entry.profiles, info && own ? {
+      // The horizon's skyline is the song's, not a biome's: named once, first.
+      const ridges = i === 0 && terrain.horizon?.range ? { ...entry.ranges, horizon: terrain.horizon.range } : entry.ranges;
+      const caption = captionFor(entry.ranges.far, ridges, entry.profiles, info && own ? {
         title: info.title,
         ecoregion: ecoregionOfRange(entry.ranges.far?.id),
       } : null);
