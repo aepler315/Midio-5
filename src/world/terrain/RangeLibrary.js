@@ -13,6 +13,7 @@ import { RIDGE_BANDS, matchRidgeSet } from './RangeMatcher.js';
 import { readRecentRanges } from './RangeHistory.js';
 import { chooseSongBiomes, chooseBiomeRidges } from './BiomeSet.js';
 import { profilesFromJSON } from './TerrainProfile.js';
+import { chooseHorizonRange } from './HorizonRidge.js';
 
 export { RANGES };
 
@@ -74,14 +75,16 @@ export async function prepareSongRange(profile, seed) {
 /**
  * The song's biomes and the ranges standing in each (BiomeSet.js). Resolves
  * as soon as the home biome -- the one the song opens in -- has loaded, to
- *   { biomes, home, byBiome, whenAll, allLoaded, range, ranges, profiles }
+ *   { biomes, home, byBiome, whenAll, allLoaded, range, ranges, profiles, horizon }
  * where `byBiome` maps a biome name to { ranges: { far, mid, near },
  * profiles: { L2, L3, L4 } } and fills in as the others load (`whenAll`
  * settles when they have), and `range`/`ranges`/`profiles` are the home
  * biome's. A biome whose back range fails to load is left out of byBiome,
  * and its sections draw the game's own hills. Resolves to null -- never
  * rejects -- when the home biome cannot load: the song falls back to the
- * bundled Tetons.
+ * bundled Tetons. `horizon` is { range, profile }, the famous skyline the
+ * horizon EQ dances on (HorizonRidge.js), loaded alongside the home biome;
+ * null when it failed, and the EQ keeps its own shape.
  */
 export async function prepareSongTerrain(profile, seed, recent = readRecentRanges()) {
   try {
@@ -112,7 +115,20 @@ export async function prepareSongTerrain(profile, seed, recent = readRecentRange
       byBiome.set(biome, entry);
       return entry;
     };
-    const home = await load(biomes[0]);
+    const homeIds = Object.values(chooseBiomeRidges(biomes[0], profile, seed, { recent }))
+      .map((m) => m?.range?.id).filter(Boolean);
+    const loadHorizon = async () => {
+      const range = chooseHorizonRange(seed, { exclude: homeIds });
+      if (!range) return null;
+      try {
+        const layers = await loadRangeProfiles(range.id);
+        return layers.L2 ? { range, profile: layers.L2 } : null;
+      } catch (err) {
+        console.warn('[terrain] horizon range unavailable; the EQ keeps its own shape', err);
+        return null;
+      }
+    };
+    const [home, horizon] = await Promise.all([load(biomes[0]), loadHorizon()]);
     if (!home) return null;
     const whenAll = Promise.all(biomes.slice(1).map((b) => load(b).catch((err) => {
       console.warn(`[terrain] ${b} unavailable; its sections stay invented`, err);
@@ -120,7 +136,7 @@ export async function prepareSongTerrain(profile, seed, recent = readRecentRange
     })));
     const terrain = {
       biomes, home: biomes[0], byBiome, whenAll, allLoaded: false,
-      range: home.ranges.far, ranges: home.ranges, profiles: home.profiles,
+      range: home.ranges.far, ranges: home.ranges, profiles: home.profiles, horizon,
     };
     whenAll.then(() => { terrain.allLoaded = true; });
     return terrain;

@@ -99,6 +99,7 @@ import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS, hazeScatter } from '
 import { PERSONALITY } from './BiomePersonality.js';
 import { REAL_PERSONALITY } from './RealBiomes.js';
 import { castSongBiomes } from './terrain/BiomeSet.js';
+import { horizonCrest, crestHeightAt, horizonRidgeLift01 } from './terrain/HorizonRidge.js';
 import { styleDials, shiftLightness, ensureContrast, ensureMinLightness } from '../render/VisualStyle.js';
 import { Murmuration } from './Murmuration.js';
 import { Atmosphere } from './Atmosphere.js';
@@ -498,6 +499,18 @@ export class BiomeManager {
     // prepareSongTerrain). A biome whose ranges have not loaded yet draws on
     // terrainProfiles -- the home biome's -- and is re-baked when they land.
     this.songTerrain = songTerrain?.byBiome ? songTerrain : null;
+    // The famous skyline the horizon EQ dances on (HorizonRidge.js); null
+    // keeps the EQ's own smooth shape.
+    this.horizonRange = null;
+    this._horizonCrest = null;
+    if (songTerrain?.horizon?.profile) {
+      try {
+        this._horizonCrest = horizonCrest(songTerrain.horizon.profile);
+        this.horizonRange = songTerrain.horizon.range || null;
+      } catch (err) {
+        console.warn('[terrain] horizon crest rejected; the EQ keeps its own shape', err);
+      }
+    }
     // Hold the scanned ridges still so the geographic profile can be checked
     // without the musical heave. F4 toggles this.
     this.terrainPreview = false;
@@ -4748,7 +4761,12 @@ export class BiomeManager {
 
     // One extra sample past each edge so the wave terminates off-screen
     // instead of clipping mid-oscillation exactly on the canvas boundary.
-    const N = 64;
+    // On a real crest (HorizonRidge.js) the samples are dense -- one every
+    // few pixels -- so the ridge's own spires and cols survive; the crest
+    // is the resting shape and the band level scales it from the foot.
+    const crest = this._horizonCrest;
+    const songP = crest && this.durationMs > 0 ? clamp01((tS * 1000) / this.durationMs) : 0;
+    const N = crest ? Math.max(64, Math.ceil(canvas.width / 4)) : 64;
     const EDGE_STEPS = 1;
     const pts = new Array(N + 1 + 2 * EDGE_STEPS);
     for (let k = 0; k < pts.length; k++) {
@@ -4760,8 +4778,14 @@ export class BiomeManager {
       const f = p - Math.floor(p);
       const c = (1 - Math.cos(f * Math.PI)) / 2; // cosine ease: no corners
       const v = clamp01(this._eqSmoothed[i0] * (1 - c) + this._eqSmoothed[i1] * c);
-      const wave = Math.sin(u * Math.PI * 7 + tS * 1.6) * 7 * (0.25 + v);
-      pts[k] = { x: u * canvas.width, y: baseline - (v * maxH + wave) };
+      if (crest) {
+        const base = crestHeightAt(crest, songP, u);
+        const wave = Math.sin(u * Math.PI * 7 + tS * 1.6) * 5 * (0.25 + v) * base;
+        pts[k] = { x: u * canvas.width, y: baseline - (horizonRidgeLift01(base, v) * maxH + wave) };
+      } else {
+        const wave = Math.sin(u * Math.PI * 7 + tS * 1.6) * 7 * (0.25 + v);
+        pts[k] = { x: u * canvas.width, y: baseline - (v * maxH + wave) };
+      }
     }
 
     ctx.save();
