@@ -247,3 +247,17 @@ test('song profile confidence survives a bundle round-trip; old bundles without 
   assert.ok(dropped, 'a v3 bundle with an unknown profile version must still restore');
   assert.equal(dropped.songProfile, null);
 });
+
+test('a song\'s identity (seed, opening profile, custom biome) survives, so a later play looks the same', async () => {
+  const { buildSongProfile, snapshotSongProfile } = await import('../src/audio/SongProfile.js');
+  const data = makeAnalysis();
+  const opening = buildSongProfile({ ...data, durationMs: 15000 });
+  data.songIdentity = { seed: 0xdeadbeef, songProfile: opening, customBiome: { name: 'x', palette: ['#102030'] } };
+  const out = unpackBundle(JSON.parse(JSON.stringify(packBundle(data, { fingerprint: FP }))));
+  assert.equal(out.songIdentity.seed, 0xdeadbeef);
+  assert.deepEqual(out.songIdentity.customBiome, { name: 'x', palette: ['#102030'] });
+  assert.equal(out.songIdentity.songProfile.version, opening.version);
+  assert.deepEqual(out.songIdentity.songProfile, snapshotSongProfile(opening));
+  const bare = unpackBundle(JSON.parse(JSON.stringify(packBundle(makeAnalysis(), { fingerprint: FP }))));
+  assert.equal(bare.songIdentity, null, 'an older bundle without one still unpacks');
+});

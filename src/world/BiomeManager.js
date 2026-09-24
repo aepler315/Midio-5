@@ -5076,9 +5076,9 @@ export class BiomeManager {
   /** Scroll for one range. A procedural layer keeps world parallax.
    *  A scanned profile does not: the song picks the station it opens on
    *  and the speed it travels, instead of the south end at L2's fixed
-   *  rate. A nearer scanned range still leads by its depth ratio, fitted
-   *  so it reaches the end of its own range no sooner than the song ends
-   *  (ProfileTravel.fitNearRidge). A layer with no profile stays on the
+   *  rate. A nearer scanned range still leads by its depth ratio. Every
+   *  scanned ridge is fitted so it reaches the end of its own range no
+   *  sooner than the song ends (ProfileTravel.fitRidge). A layer with no profile stays on the
    *  parallax clock. */
   _terrainScroll(layerKey, worldX) {
     if (!this.terrainProfiles?.[layerKey]) {
@@ -5093,7 +5093,7 @@ export class BiomeManager {
       reducedFlash: !!this.reducedFlash,
       response: this.world?.response,
       depth: ridgeDepth(LAYER_RATIOS[layerKey], LAYER_RATIOS.L2, this.unravel || 0),
-      fit: layerKey === 'L2' ? null : {
+      fit: {
         viewWidth: this.w,
         maxDepth: ridgeDepth(LAYER_RATIOS.L4, LAYER_RATIOS.L2, this.unravel || 0),
       },

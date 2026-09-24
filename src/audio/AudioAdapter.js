@@ -14,7 +14,7 @@ import { bandRenderConcurrency, separateStemsPooled } from './StemSeparator.js';
 import { computePitchFeaturesOffThread } from './PitchWorkerClient.js';
 import { BANDS } from './bands.js';
 import {
-  bandEnvelope, envelopeFrameCount, normalizeBands, detectRhythmOnsets, estimateTempo,
+  bandEnvelope, bandEnvelopeAsync, envelopeFrameCount, normalizeBands, detectRhythmOnsets, estimateTempo,
   extractPseudoLane, mixBandEnvelopes, estimateSustainMs, globalBandReferences,
   buildDriftAwareBarGrid,
 } from './OnsetDetector.js';
@@ -23,6 +23,7 @@ import {
   tonalityFrom, tonalityTimeline, meanBrightness, brightnessAt, windowChroma,
 } from './PitchTracker.js';
 import { throwIfAborted } from './loadLimits.js';
+import { createYielder } from '../utils/yieldToMain.js';
 import { EnergyCurves } from './EnergyCurves.js';
 import { summarizeRhythmOnsets } from './RhythmProfile.js';
 import { analyzeStructure } from './StructureAnalyzer.js';
@@ -109,9 +110,14 @@ export function activityEnvelope(samples, sampleRate, rate = 86, signal = null) 
  *   per-moment loudness decides which stem owns each melodic/bass note.
  */
 export async function audioToTimeline(audioBuffer, {
-  onProgress = null, userStems = null, groove = null, signal = null,
+  onProgress = null, userStems = null, groove = null, signal = null, cooperative = false,
 } = {}) {
   throwIfAborted(signal);
+  // Cooperative: the analysis runs while a song is already playing (the
+  // whole-song pass behind an opening, OpeningAnalysis.js), so its main-
+  // thread work pauses for the browser every few milliseconds instead of
+  // holding frames. Same computation, same result; it only takes turns.
+  const maybeYield = cooperative ? createYielder(8) : async () => false;
   // Stream the 7 bands one at a time rather than holding all of them fully
   // decoded at once (~565MB for a 4-minute 44.1kHz song, held simultaneously
   // by the old separateStems+computeBandEnvelopes pairing) -- everything
@@ -129,9 +135,9 @@ export async function audioToTimeline(audioBuffer, {
   // Settled either way before anything below can throw, so an abort or a
   // failed band never leaves an unhandled rejection behind.
   pitchPromise.catch(() => {});
-  await separateStemsPooled(audioBuffer, (i, buf) => {
+  await separateStemsPooled(audioBuffer, async (i, buf) => {
     if (numFrames === undefined) ({ numFrames, rate } = envelopeFrameCount(buf.length, buf.sampleRate));
-    raw[i] = bandEnvelope(buf, numFrames);
+    raw[i] = cooperative ? await bandEnvelopeAsync(buf, numFrames, maybeYield) : bandEnvelope(buf, numFrames);
     if (i === 1) bassChannels = channelArrays(buf); // the BASS band: 60-250 Hz, already isolated
   }, (p) => onProgress?.({ phase: 'separate', progress: p }), signal, bandRenderConcurrency({
     length: audioBuffer.length,
@@ -141,13 +147,17 @@ export async function audioToTimeline(audioBuffer, {
   throwIfAborted(signal);
   onProgress?.({ phase: 'analyze', progress: 0 });
 
+  await maybeYield();
   const normBands = normalizeBands(raw, rate);
   throwIfAborted(signal);
+  await maybeYield();
 
   const { O, onsets: rhythmOnsets } = detectRhythmOnsets(normBands, raw, rate, 1, groove);
   const kickFrames = rhythmOnsets.filter((o) => o.kick).map((o) => o.frame);
+  await maybeYield();
   const tempo = estimateTempo(O, rate, kickFrames);
   throwIfAborted(signal);
+  await maybeYield();
 
   // Real pitch analysis on the actual samples: FFT peak tracking over the
   // full mix for melody/harmony, autocorrelation over the bass stem (FFT
@@ -156,9 +166,11 @@ export async function audioToTimeline(audioBuffer, {
   const pitchFeatures = await pitchPromise;
   throwIfAborted(signal);
 
+  await maybeYield();
   const melodyLane = extractPseudoLane(normBands, rate, {
     bandIndices: [2, 3, 4], pitchLo: 60, pitchHi: 96, role: Role.MELODY, onsetThreshold: 1,
   });
+  await maybeYield();
   const bassLane = extractPseudoLane(normBands, rate, {
     bandIndices: [0, 1], pitchLo: 28, pitchHi: 52, role: Role.BASS, onsetThreshold: 1,
   });
@@ -172,6 +184,7 @@ export async function audioToTimeline(audioBuffer, {
     }));
   }
   for (const n of melodyLane) {
+    await maybeYield();
     const tracked = melodyPitchAt(pitchFeatures, n.tMs);
     const pitch = tracked ?? n.pitch;
     // Casting inside one mixed file: no track names exist, but the spectrum
@@ -185,6 +198,7 @@ export async function audioToTimeline(audioBuffer, {
     }));
   }
   for (const n of bassLane) {
+    await maybeYield();
     const tracked = estimateBassPitchAt(bassChannels || mixChannels, audioBuffer.sampleRate, n.tMs);
     timeline.push(makeNoteEvent({
       tMs: n.tMs, durMs: estimateSustainMs(bassMix, rate, n.frame), pitch: tracked ?? n.pitch,
@@ -234,6 +248,7 @@ export async function audioToTimeline(audioBuffer, {
   }
   const midMix = mixBandEnvelopes(normBands, [2, 3]);
   for (const [fromMs, toMs] of chordWindows) {
+    await maybeYield();
     const chord = windowChroma(pitchFeatures, fromMs, toMs, 3);
     if (chord.length < 2) continue; // a lone class is a melody note's residue, not harmony
     const frame = Math.min(midMix.length - 1, Math.round((fromMs / 1000) * rate));
@@ -258,6 +273,7 @@ export async function audioToTimeline(audioBuffer, {
   // detection domain (onsets/pseudo-lanes/sustains want that local
   // contrast); this is the one place "how loud RIGHT NOW, relative to the
   // whole song" actually needs to be answered honestly.
+  await maybeYield();
   const refBands = globalBandReferences(raw);
   const energyCurves = new EnergyCurves(durationMs, rate);
   for (let i = 0; i < energyCurves.n; i++) {
@@ -267,6 +283,7 @@ export async function audioToTimeline(audioBuffer, {
 
   // The song's analysis fingerprint: whole-song tonality + texture stats
   // the custom-biome importer turns into this file's unique world.
+  await maybeYield();
   const chroma = chromaHistogram(pitchFeatures);
   const tonality = tonalityFrom(chroma);
   const keyTimeline = tonalityTimeline(pitchFeatures, { durationMs });
@@ -301,6 +318,7 @@ export async function audioToTimeline(audioBuffer, {
     pointCount: structurePoints.length,
     barSynchronous: barGrid.length >= 8,
   });
+  await maybeYield();
   const structure = analyzeStructure({
     pointsMs: structurePoints, pitchFeatures, energyCurves, durationMs,
     minGapMs: pacing.minGapMs,

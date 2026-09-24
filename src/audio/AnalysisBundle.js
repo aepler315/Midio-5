@@ -216,6 +216,23 @@ export function packBundle(data, { fingerprint, name = '', identity = null } = {
         return null;
       }
     })(),
+    // Optional. How the song LOOKS -- its seed, the profile its world is
+    // tailored and its ranges matched from, its custom biome -- as first
+    // made, from the song's opening when it started on one
+    // (OpeningAnalysis.js), so every later play looks the same.
+    songIdentity: (() => {
+      const id = data.songIdentity;
+      if (!id) return null;
+      try {
+        return {
+          seed: Number.isFinite(id.seed) ? id.seed >>> 0 : null,
+          songProfile: id.songProfile?.version === PROFILE_VERSION ? snapshotSongProfile(id.songProfile) : null,
+          customBiome: id.customBiome ? JSON.parse(JSON.stringify(id.customBiome)) : null,
+        };
+      } catch {
+        return null;
+      }
+    })(),
   };
 }
 
@@ -327,6 +344,15 @@ export function unpackBundle(bundle) {
         : null,
       stems: bundle.stems || null,
       songProfile: bundle.songProfile?.version === PROFILE_VERSION ? bundle.songProfile : null,
+      songIdentity: bundle.songIdentity
+        ? {
+          seed: Number.isFinite(bundle.songIdentity.seed) ? bundle.songIdentity.seed >>> 0 : null,
+          // A profile from another profile version is dropped; the world is
+          // then chosen from the song's own profile, as for an old bundle.
+          songProfile: bundle.songIdentity.songProfile?.version === PROFILE_VERSION ? bundle.songIdentity.songProfile : null,
+          customBiome: bundle.songIdentity.customBiome || null,
+        }
+        : null,
       /** Set so the rest of the app can tell a restored analysis from a fresh
        *  one -- for the progress copy, and so a bug here is attributable. */
       fromBundle: true,

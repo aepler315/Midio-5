@@ -5,9 +5,10 @@ import vm from 'node:vm';
 import * as cache from '../src/audio/AnalysisCache.js';
 import { fingerprintBuffer } from '../src/audio/SongFingerprint.js';
 import { GrooveFingerprint } from '../src/sim/GrooveFingerprint.js';
+import * as opening from '../src/audio/OpeningAnalysis.js';
 import {
   AUDIO_LOAD_LIMITS, accumulateDecodedAudioBytes, accumulateDecodedByteLength, decodedAudioByteLength,
-  accumulateEncodedAudioBytes, validateAudioFiles, validateDecodedAudioBuffer, validateDecodedByteLength,
+  accumulateEncodedAudioBytes, audioAbortError, validateAudioFiles, validateDecodedAudioBuffer, validateDecodedByteLength,
 } from '../src/audio/loadLimits.js';
 
 // Execute the real upload orchestrator with browser/audio boundaries replaced.
@@ -24,9 +25,11 @@ function harness() {
   const encoded = new ArrayBuffer(1024);
   const keys = [], errors = [];
   const context = vm.createContext({
-    ...cache, fingerprintBuffer, GrooveFingerprint,
+    ...cache, fingerprintBuffer, GrooveFingerprint, ...opening,
+    fingerprintBufferOffThread: async (buffer) => fingerprintBuffer(buffer),
+    readBulkExportFromUrl: () => null, fullAnalysisPending: null, adoptFullAnalysisLive() {},
     AUDIO_LOAD_LIMITS, accumulateDecodedAudioBytes, accumulateDecodedByteLength, decodedAudioByteLength,
-    accumulateEncodedAudioBytes, validateAudioFiles, validateDecodedAudioBuffer, validateDecodedByteLength,
+    accumulateEncodedAudioBytes, audioAbortError, validateAudioFiles, validateDecodedAudioBuffer, validateDecodedByteLength,
     AbortController,
     loadGen: 0, groove: new GrooveFingerprint(), lyricsDisabled: true,
     console, bootAudio: async () => {}, showProgress() {},

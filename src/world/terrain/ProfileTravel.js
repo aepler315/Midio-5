@@ -81,34 +81,43 @@ export function ridgeDepth(layerRatio, farRatio, unravel = 0) {
 }
 
 /**
- * Where a nearer scanned ridge opens and how fast it runs, so its whole
- * trip fits its own strip. A nearer ridge moves `depth` times as fast as
- * the far one, and a real range does not tile: past its end the strip just
- * stops, and a front ridge three times as fast as the back one used to run
- * out and freeze a minute or two into a song while everything behind it
- * kept moving. So first open it earlier on its range; if even the whole
- * range is too short, compress every nearer ridge's lead over the far one
- * by the same factor (`maxDepth` is the nearest ridge's depth), which keeps
- * them in depth order and never slower than the far ridge.
- *   totalPx   the far ridge's travel over the whole song
- *   room      strip width less one view
+ * Where a scanned ridge opens and how fast it runs, so its whole trip fits
+ * its own strip. A real range does not tile: past its end the strip just
+ * stops. A nearer ridge moves `depth` times as fast as the far one, so a
+ * front ridge used to freeze a minute or two into a song while everything
+ * behind it kept moving, and a long, loud song ran even the far ridge off
+ * the end of its range. So, in order:
+ *   1. open the ridge earlier on its range;
+ *   2. if a nearer ridge's trip is still too long, compress every nearer
+ *      ridge's lead over the far one by the same factor (`maxDepth` is the
+ *      nearest ridge's depth), which keeps them in depth order and never
+ *      slower than the far ridge;
+ *   3. if even the far ridge's trip is longer than its range, slow the far
+ *      ridge -- and so every ridge -- to fit.
+ *   totalPx  the far ridge's unscaled travel over the whole song
+ *   room     strip width less one view
+ * Returns the opening station and `rate`, the multiplier on the far ridge's
+ * travel (depth, compressed and scaled).
  */
-export function fitNearRidge({ startPx = 0, depth = 1, maxDepth = depth, totalPx = 0, room = 0 } = {}) {
-  if (!(depth > 1) || !(totalPx > 0) || !(room > 0)) return { startPx, depth };
-  let d = depth;
-  if (maxDepth > 1 && maxDepth * totalPx > room) {
-    const squeeze = Math.max(0, Math.min(1, (room / totalPx - 1) / (maxDepth - 1)));
-    d = 1 + (depth - 1) * squeeze;
+export function fitRidge({ startPx = 0, depth = 1, maxDepth = depth, totalPx = 0, room = 0 } = {}) {
+  const d0 = depth > 0 ? depth : 1;
+  if (!(totalPx > 0) || !(room > 0)) return { startPx, rate: d0 };
+  const farScale = Math.min(1, room / totalPx);
+  const farPx = totalPx * farScale;
+  let d = d0;
+  if (d > 1 && maxDepth > 1 && maxDepth * farPx > room) {
+    const squeeze = Math.max(0, Math.min(1, (room / farPx - 1) / (maxDepth - 1)));
+    d = 1 + (d - 1) * squeeze;
   }
-  const start = Math.max(0, Math.min(startPx, room - d * totalPx));
-  return { startPx: start, depth: d };
+  const rate = d * farScale;
+  return { startPx: Math.max(0, Math.min(startPx, room - rate * totalPx)), rate };
 }
 
 /**
  * Pixels into a south-to-north strip. `depth` 1 is the far ridge; a nearer
  * scanned range passes a larger depth and moves faster. With `fit`
- * ({ viewWidth, maxDepth }) a nearer ridge is fitted to its strip
- * (fitNearRidge); without it, it opens on the far ridge's station.
+ * ({ viewWidth, maxDepth }) the ridge is fitted to its strip (fitRidge);
+ * without it, it opens on the song's station and runs unscaled.
  */
 export function terrainScrollPx({
   tSec = 0,
@@ -122,18 +131,17 @@ export function terrainScrollPx({
 } = {}) {
   const width = Number.isFinite(stripWidth) && stripWidth > 0 ? stripWidth : 0;
   let start = profileStart01(curves, durationMs) * width;
-  let d = depth > 0 ? depth : 1;
-  if (fit && d > 1 && width > 0) {
+  let rate = depth > 0 ? depth : 1;
+  if (fit && width > 0) {
     const totalPx = profileTravelPx((Number(durationMs) || 0) / 1000, curves, reducedFlash, response);
-    const fitted = fitNearRidge({
-      startPx: start, depth: d, maxDepth: Math.max(d, fit.maxDepth || d), totalPx,
+    const fitted = fitRidge({
+      startPx: start, depth: rate, maxDepth: Math.max(rate, fit.maxDepth || rate), totalPx,
       room: width - (fit.viewWidth > 0 ? fit.viewWidth : 0),
     });
     start = fitted.startPx;
-    d = fitted.depth;
+    rate = fitted.rate;
   }
-  const traveled = profileTravelPx(tSec, curves, reducedFlash, response) * d;
-  return start + traveled;
+  return start + profileTravelPx(tSec, curves, reducedFlash, response) * rate;
 }
 
 /**
@@ -143,8 +151,15 @@ export function terrainScrollPx({
  * real ground; the song's travel in pixels over its length, times that, is
  * real distance over real time. NaN when anything needed is missing.
  */
-export function groundSpeedMps({ curves = null, durationMs = 0, lengthM = 0, stripWidth = 0, response = null } = {}) {
+export function groundSpeedMps({
+  curves = null, durationMs = 0, lengthM = 0, stripWidth = 0, response = null, viewWidth = 0,
+} = {}) {
   const sec = (Number(durationMs) || 0) / 1000;
   if (!(sec > 0) || !(lengthM > 0) || !(stripWidth > 0)) return NaN;
-  return (profileTravelPx(sec, curves, false, response) / sec) * (lengthM / stripWidth);
+  const totalPx = profileTravelPx(sec, curves, false, response);
+  // A trip longer than the range is slowed to fit it (fitRidge), so the
+  // speed shown is the speed the view actually travels.
+  const room = stripWidth - (viewWidth > 0 ? viewWidth : 0);
+  const scale = viewWidth > 0 && totalPx > room && room > 0 ? room / totalPx : 1;
+  return ((totalPx * scale) / sec) * (lengthM / stripWidth);
 }
