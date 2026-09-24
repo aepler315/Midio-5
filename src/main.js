@@ -1800,6 +1800,7 @@ function startTimeline(timelineData, extra = {}) {
         lengthM: farM,
         stripWidth: TERRAIN_STRIP_WIDTH,
         response: sim.biomes?.world?.response,
+        viewWidth: sim.biomes?.w || STAGE_W,
       }),
     }, ridges);
     if (sim.rangeCaption && !exportMode) {

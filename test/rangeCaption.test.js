@@ -6,7 +6,7 @@ import {
   BUNDLED_RANGE, CAPTION_DELAY_MS, CAPTION_FADE_MS, CAPTION_HOLD_MS,
   captionAlpha, drawRangeCaption, castRows, rangeCaptionFor, rangeStatsLine, shortRegion,
 } from '../src/ui/RangeCaption.js';
-import { fitNearRidge, groundSpeedMps, profileTravelPx, terrainScrollPx } from '../src/world/terrain/ProfileTravel.js';
+import { fitRidge, groundSpeedMps, profileTravelPx, terrainScrollPx } from '../src/world/terrain/ProfileTravel.js';
 import { RANGE_HISTORY_MAX, noteRangeShown, readRecentRanges } from '../src/world/terrain/RangeHistory.js';
 
 const wasatch = { id: 'wasatch', name: 'Wasatch Range', region: 'Utah, USA', source: 'curated' };
@@ -98,34 +98,55 @@ test('ground speed is the strip travel scaled to real metres', () => {
   assert.ok(Number.isNaN(groundSpeedMps({ curves, durationMs: 0, lengthM: 32000, stripWidth: 8192 })));
 });
 
-test('a nearer ridge that fits its range keeps its lead and its station', () => {
-  assert.deepEqual(fitNearRidge({ startPx: 1000, depth: 1.8, maxDepth: 3, totalPx: 1000, room: 7000 }), { startPx: 1000, depth: 1.8 });
+test('a ridge whose trip fits its range keeps its speed and its station', () => {
+  assert.deepEqual(fitRidge({ startPx: 1000, depth: 1.8, maxDepth: 3, totalPx: 1000, room: 7000 }), { startPx: 1000, rate: 1.8 });
+  assert.deepEqual(fitRidge({ startPx: 1000, depth: 1, totalPx: 1000, room: 7000 }), { startPx: 1000, rate: 1 });
 });
 
 test('a nearer ridge opens earlier, then runs slower, rather than freeze at the end of its range', () => {
   const room = 8192 - 1280;
-  const earlier = fitNearRidge({ startPx: 4000, depth: 3, maxDepth: 3, totalPx: 2000, room });
-  assert.equal(earlier.depth, 3);
+  const earlier = fitRidge({ startPx: 4000, depth: 3, maxDepth: 3, totalPx: 2000, room });
+  assert.equal(earlier.rate, 3);
   assert.equal(earlier.startPx, room - 6000, 'opens where the trip ends right at the end');
   const totalPx = 5000; // a long, driving song
-  const near = fitNearRidge({ startPx: 3000, depth: 3, maxDepth: 3, totalPx, room });
-  const mid = fitNearRidge({ startPx: 3000, depth: 1.8, maxDepth: 3, totalPx, room });
-  assert.ok(near.startPx + near.depth * totalPx <= room + 1e-6, 'the front ridge still moves at the end');
-  assert.ok(near.depth > mid.depth && mid.depth > 1, 'still in depth order, never slower than the back ridge');
-  const tooLong = fitNearRidge({ depth: 3, maxDepth: 3, totalPx: 9000, room });
-  assert.equal(tooLong.depth, 1, 'a range shorter than the far trip moves with the far ridge');
+  const far = fitRidge({ startPx: 3000, depth: 1, maxDepth: 3, totalPx, room });
+  const mid = fitRidge({ startPx: 3000, depth: 1.8, maxDepth: 3, totalPx, room });
+  const near = fitRidge({ startPx: 3000, depth: 3, maxDepth: 3, totalPx, room });
+  assert.ok(near.startPx + near.rate * totalPx <= room + 1e-6, 'the front ridge still moves at the end');
+  assert.ok(near.rate > mid.rate && mid.rate > far.rate, 'still in depth order');
+  assert.equal(far.rate, 1, 'the far ridge keeps its own speed while it fits');
 });
 
-test('fitted scroll stays inside the strip for the whole song', () => {
-  // A four-minute song at a typical energy: ~5,300px of back-ridge travel.
-  const curves = { globalEnergyNorm: () => 0.2 };
-  const durationMs = 240000;
-  for (const depth of [1.8, 3]) {
-    const px = terrainScrollPx({ tSec: 240, curves, durationMs, stripWidth: 8192, depth, fit: { viewWidth: 1280, maxDepth: 3 } });
-    assert.ok(px <= 8192 - 1280 + 1e-6, `depth ${depth} ends at ${px.toFixed(0)}px`);
-    const early = terrainScrollPx({ tSec: 200, curves, durationMs, stripWidth: 8192, depth, fit: { viewWidth: 1280, maxDepth: 3 } });
-    assert.ok(px > early, 'and is still moving near the end');
+test('a song longer than even the far ridge\'s range slows every ridge to fit', () => {
+  const room = 8192 - 1280;
+  const totalPx = 9000;
+  const far = fitRidge({ startPx: 2000, depth: 1, maxDepth: 3, totalPx, room });
+  const near = fitRidge({ startPx: 2000, depth: 3, maxDepth: 3, totalPx, room });
+  assert.equal(far.startPx, 0, 'the far ridge opens at the start of its range');
+  assert.ok(Math.abs(far.startPx + far.rate * totalPx - room) < 1e-6, 'and reaches the end exactly as the song ends');
+  assert.ok(Math.abs(near.rate - far.rate) < 1e-9, 'no room for a lead: the front ridge keeps pace, never slower');
+});
+
+test('fitted scroll stays inside the strip for the whole song, however loud and long', () => {
+  for (const energy of [0.2, 0.4]) { // 0.4 is the fastest travel there is
+    const curves = { globalEnergyNorm: () => energy };
+    const durationMs = 300000;
+    for (const depth of [1, 1.8, 3]) {
+      const scroll = (tSec) => terrainScrollPx({ tSec, curves, durationMs, stripWidth: 8192, depth, fit: { viewWidth: 1280, maxDepth: 3 } });
+      const end = scroll(300);
+      assert.ok(end <= 8192 - 1280 + 1e-6, `energy ${energy} depth ${depth} ends at ${end.toFixed(0)}px`);
+      assert.ok(end > scroll(280), 'and is still moving near the end');
+    }
   }
+});
+
+test('the speed shown is the speed after a too-long trip is slowed', () => {
+  const curves = { globalEnergyNorm: () => 0.4 };
+  const args = { curves, durationMs: 300000, lengthM: 60000, stripWidth: 8192 };
+  const unfitted = groundSpeedMps(args);
+  const fitted = groundSpeedMps({ ...args, viewWidth: 1280 });
+  assert.ok(Math.abs(fitted - ((8192 - 1280) / 300) * (60000 / 8192)) < 1e-9);
+  assert.ok(fitted < unfitted);
 });
 
 function memoryStore() {
