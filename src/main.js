@@ -24,7 +24,7 @@ import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { FileChooserSupport } from './ui/FileChooserProbe.js';
-import { prepareSongRange } from './world/terrain/RangeLibrary.js';
+import { prepareSongTerrain } from './world/terrain/RangeLibrary.js';
 import {
   ASK as ASK_WORLD, AUTO as TITLE_AUTO, readTitleWorld, resolveTitleWorldChoice, writeTitleWorld,
 } from './ui/TitleWorldChoice.js';
@@ -35,7 +35,9 @@ import {
   openAudioUrl, UrlAudioError, fetchAudioAsFile, classifyUrl,
 } from './net/UrlAudioSource.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
-import { rangeCaptionFor } from './ui/RangeCaption.js';
+import { rangeCaptionFor, CAPTION_DELAY_MS } from './ui/RangeCaption.js';
+import { realBiomeByName, ecoregionOfRange } from './world/RealBiomes.js';
+import { travelMs } from './world/BiomeSchedule.js';
 import { noteRangeShown } from './world/terrain/RangeHistory.js';
 import { groundSpeedMps } from './world/terrain/ProfileTravel.js';
 import { TERRAIN_STRIP_WIDTH } from './world/terrain/StripRead.js';
@@ -152,6 +154,15 @@ const urlLoadCrumbEl = document.getElementById('urlLoadCrumb');
 const urlLoadOpenBtnEl = document.getElementById('urlLoadOpenBtn');
 const worldSelectEl = document.getElementById('worldSelect');
 const titleWorldEl = document.getElementById('titleWorld');
+// One-world mode: The Range is the game, so a song starts in it without a
+// picker. The other worlds are still registered, and `?worlds=all` brings
+// the picker and the title-screen world menu back (the smoke tools that
+// exercise them use it).
+const ALL_WORLDS = typeof location !== 'undefined' && new URLSearchParams(location.search).get('worlds') === 'all';
+const ONE_WORLD_ID = 'alpine';
+// How long a one-world start waits for the song's biomes to load before
+// starting on the bundled Tetons instead.
+const BIOME_WAIT_MS = 2500;
 const worldSelectGridEl = document.getElementById('worldSelectGrid');
 const worldSelectBackEl = document.getElementById('worldSelectBack');
 const worldPassageQuietEl = document.getElementById('worldPassageQuiet');
@@ -1283,7 +1294,10 @@ function renderWorldGrid(customWorld, features = null, extras = {}) {
 
 // Title-screen world choice (TitleWorldChoice.js): one option per
 // registered world after the two fixed ones, and the remembered pick.
-if (titleWorldEl) {
+if (titleWorldEl && !ALL_WORLDS) {
+  titleWorldEl.closest('.titleWorldRow')?.classList.add('hidden');
+}
+if (titleWorldEl && ALL_WORLDS) {
   for (const world of listWorlds()) {
     const opt = document.createElement('option');
     opt.value = world.id;
@@ -1327,11 +1341,25 @@ function offerWorldsThenStart(data, extra = {}) {
     // ready long before a card is clicked. Kept on the song's data so it
     // survives the rebuilds a song goes through (seek, replay, export).
     const pendingForRange = pendingWorldStart;
-    pendingForRange.terrainReady = prepareSongRange(profile, seed).then((terrain) => {
+    pendingForRange.terrainReady = prepareSongTerrain(profile, seed).then((terrain) => {
       pendingForRange.data.terrain = terrain;
       return terrain;
     });
     lastFitDiagnostic = recordFitDiagnostic(features, profile);
+    if (!ALL_WORLDS) {
+      // One world: start in it. The home biome's ranges have to be there
+      // first -- there is no picker to cover the load -- and an export waits
+      // for every biome, so its frames never depend on load timing.
+      const mine = pendingWorldStart;
+      const exporting = !!(extra.exportMode || readBulkExportFromUrl());
+      const ready = mine.terrainReady.then((t) => (exporting && t?.whenAll ? t.whenAll.then(() => t) : t));
+      const wait = exporting ? ready : Promise.race([ready, new Promise((r) => setTimeout(r, BIOME_WAIT_MS))]);
+      wait.then(() => {
+        if (pendingWorldStart !== mine) return;
+        playSelectedWorld(ONE_WORLD_ID);
+      });
+      return;
+    }
     // A world already chosen on the title screen: start in it, no picker.
     const titleChoice = resolveTitleWorldChoice(titleWorldEl?.value ?? readTitleWorld(),
       listWorlds().map((w) => w.id));
@@ -1527,6 +1555,7 @@ function beginBulkExport({ width, height } = {}) {
   if (!lastTimelineData) throw new Error('Load a song before exporting.');
   // An export is the whole song: never render one from its opening alone.
   if (lastTimelineData.opening) throw new Error('Still analysing the whole song. Try the export again in a few seconds.');
+  if (lastTimelineData.terrain && !lastTimelineData.terrain.allLoaded) throw new Error('Still loading the song\'s biomes. Try the export again in a few seconds.');
   const extra = {
     playBuffer: lastAudioBuffer || undefined,
     exportMode: true,
@@ -1590,6 +1619,66 @@ function startConfirmedWorld(pending, id) {
   if (extra.playBuffer) {
     lastAudioBuffer = extra.playBuffer;
     if (!exporting) audioEngine.playBuffer(extra.playBuffer, 0);
+  }
+}
+
+/** Name the real ranges behind The Range (RangeCaption.js): one caption per
+ *  biome the song travels through, or one for the song's single range. */
+function applyRangeCaptions(timelineData, exportMode) {
+  const terrain = timelineData.terrain || null;
+  const kind = getWorld(sim.worldId)?.kind;
+  const lengthOf = (p) => (p?.spacingM > 0 && p.angles?.length > 1 ? p.spacingM * (p.angles.length - 1) : 0);
+  const captionFor = (range, ridges, profiles, biome) => {
+    const farM = lengthOf(profiles?.L2) || NaN;
+    // Miles sampled covers every real ridge on screen; the speed is the back
+    // ridge's, the one the travel is measured on.
+    const sampledM = ['L2', 'L3', 'L4'].reduce((sum, k) => sum + lengthOf(profiles?.[k]), 0) || NaN;
+    return rangeCaptionFor(range, kind, {
+      lengthKm: sampledM / 1000,
+      speedMps: groundSpeedMps({
+        curves: sim.biomes?.energyCurves,
+        durationMs: conductor?.durationMs,
+        lengthM: farM,
+        stripWidth: TERRAIN_STRIP_WIDTH,
+        response: sim.biomes?.world?.response,
+        viewWidth: sim.biomes?.w || STAGE_W,
+      }),
+    }, ridges, biome);
+  };
+  sim.rangeCaption = null;
+  sim.rangeCaptions = null;
+  const shown = [];
+  const sections = sim.biomes?.sections || [];
+  if (kind === 'alpine' && terrain?.byBiome && sim.biomes?.world?.realBiomes && sections.length) {
+    // One caption per biome, the first time the song arrives in it --
+    // timed to land as the travel into it finishes.
+    const captions = [];
+    const seen = new Set();
+    sections.forEach((sec, i) => {
+      const name = sec.profile;
+      if (!name || seen.has(name)) return;
+      seen.add(name);
+      const own = terrain.byBiome.get(name);
+      const entry = own || terrain.byBiome.get(terrain.home);
+      if (!entry) return;
+      const info = realBiomeByName(name);
+      const caption = captionFor(entry.ranges.far, entry.ranges, entry.profiles, info && own ? {
+        title: info.title,
+        ecoregion: ecoregionOfRange(entry.ranges.far?.id),
+      } : null);
+      if (!caption) return;
+      const atMs = i === 0 ? 0 : Math.max(0, sec.startMs + travelMs(sec) - CAPTION_DELAY_MS);
+      captions.push({ atMs, caption });
+      shown.push(entry.ranges.near, entry.ranges.mid, entry.ranges.far);
+    });
+    sim.rangeCaptions = captions.length ? captions : null;
+  } else {
+    const profiles = sim.biomes?.terrainProfiles || {};
+    sim.rangeCaption = captionFor(terrain?.range || null, terrain?.ranges || {}, profiles, null);
+    if (sim.rangeCaption) shown.push(terrain?.ranges?.near, terrain?.ranges?.mid, terrain?.range);
+  }
+  if (!exportMode) {
+    for (const r of shown) if (r?.id) noteRangeShown(r.id);
   }
 }
 
@@ -1698,6 +1787,7 @@ function startTimeline(timelineData, extra = {}) {
       // The song's matched real range, if it loaded; Simulation falls back to
       // the bundled Tetons, and uses real terrain only in alpine-kind worlds.
       terrainProfiles: timelineData.terrain?.profiles || null,
+      songTerrain: timelineData.terrain || null,
     });
   } catch (err) {
     console.error('[world build failed]', err);
@@ -1805,28 +1895,16 @@ function startTimeline(timelineData, extra = {}) {
   // canvas, so recordings and bulk exports carry it. Chrome must never stop
   // a song: a throw here once aborted starting the world.
   try {
-    const range = timelineData.terrain?.range || null;
-    const ridges = timelineData.terrain?.ranges || {};
-    const kind = getWorld(sim.worldId)?.kind;
-    const profiles = sim.biomes?.terrainProfiles || {};
-    const lengthOf = (p) => (p?.spacingM > 0 && p.angles?.length > 1 ? p.spacingM * (p.angles.length - 1) : 0);
-    const farM = lengthOf(profiles.L2) || NaN;
-    // Miles sampled covers every real ridge on screen; the speed is the back
-    // ridge's, the one the travel is measured on.
-    const sampledM = ['L2', 'L3', 'L4'].reduce((sum, k) => sum + lengthOf(profiles[k]), 0) || NaN;
-    sim.rangeCaption = rangeCaptionFor(range, kind, {
-      lengthKm: sampledM / 1000,
-      speedMps: groundSpeedMps({
-        curves: sim.biomes?.energyCurves,
-        durationMs: conductor?.durationMs,
-        lengthM: farM,
-        stripWidth: TERRAIN_STRIP_WIDTH,
-        response: sim.biomes?.world?.response,
-        viewWidth: sim.biomes?.w || STAGE_W,
-      }),
-    }, ridges);
-    if (sim.rangeCaption && !exportMode) {
-      for (const r of [ridges.near, ridges.mid, range]) if (r?.id) noteRangeShown(r.id);
+    applyRangeCaptions(timelineData, exportMode);
+    // Biomes after the first load in the background; name them once they
+    // have, unless the song has been rebuilt since.
+    const terrain = timelineData.terrain;
+    if (terrain?.whenAll && !terrain.allLoaded) {
+      const mine = sim;
+      terrain.whenAll.then(() => {
+        if (sim !== mine) return;
+        try { applyRangeCaptions(timelineData, exportMode); } catch (err) { console.warn('[range caption]', err); }
+      });
     }
   } catch (err) {
     console.warn('[range caption]', err);

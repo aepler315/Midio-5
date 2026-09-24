@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
+import { withAllWorlds } from './lib/allWorlds.mjs';
 
 const url = process.argv[2] || 'http://127.0.0.1:8080';
 const out = path.resolve(process.argv[3] || '.smoke/chooser-keyboard');
@@ -22,7 +23,7 @@ try {
       const errors = [];
       page.on('pageerror', e => errors.push(e.message));
       try {
-        await page.goto(url);
+        await page.goto(withAllWorlds(url));
         await check(page);
         assert.deepEqual(errors, [], 'no page errors');
         results.push({ width: viewport.width, name, passed: true });

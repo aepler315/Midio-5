@@ -481,6 +481,119 @@ function paintGeode(ctx, x, rootY, scale, rand, color) {
   }
 }
 
+// --- Real biomes (RealBiomes.js). Stands, not single props: a forest is
+// many trees, and a lone tree on a real skyline reads as a monument. ---
+
+/** A stand of spruce/fir: narrow stacked cones on short trunks. */
+function paintSpruceStand(ctx, x, rootY, scale, rand, color) {
+  ctx.fillStyle = color;
+  const n = 3 + Math.floor(rand() * 5);
+  for (let i = 0; i < n; i++) {
+    const tx = x + (i - n / 2) * (5 + rand() * 4) * scale;
+    const h = (14 + rand() * 16) * scale;
+    const w = h * (0.22 + rand() * 0.08);
+    const tiers = 3;
+    for (let k = 0; k < tiers; k++) {
+      const base = rootY - h * (0.1 + k * 0.26);
+      const top = base - h * (0.5 - k * 0.06);
+      const half = w * (1 - k * 0.22);
+      ctx.beginPath();
+      ctx.moveTo(tx - half, base);
+      ctx.lineTo(tx, top);
+      ctx.lineTo(tx + half, base);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillRect(tx - 0.8 * scale, rootY - h * 0.12, 1.6 * scale, h * 0.14);
+  }
+}
+
+/** Broad, flat-crowned pines and oaks: a few rounded crowns on trunks. */
+function paintPineOak(ctx, x, rootY, scale, rand, color) {
+  ctx.fillStyle = color;
+  const n = 2 + Math.floor(rand() * 3);
+  for (let i = 0; i < n; i++) {
+    const tx = x + (i - n / 2) * (11 + rand() * 6) * scale;
+    const h = (14 + rand() * 12) * scale;
+    ctx.fillRect(tx - 1 * scale, rootY - h * 0.6, 2 * scale, h * 0.6);
+    const lobes = 3 + Math.floor(rand() * 2);
+    for (let k = 0; k < lobes; k++) {
+      ctx.beginPath();
+      ctx.ellipse(tx + (k - (lobes - 1) / 2) * 3.4 * scale, rootY - h * (0.72 + rand() * 0.12),
+        (4 + rand() * 2.5) * scale, (3 + rand() * 1.5) * scale, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+/** Low scrub: a run of rounded bushes hugging the ground (sage, chamise). */
+function paintScrub(ctx, x, rootY, scale, rand, color) {
+  ctx.fillStyle = color;
+  const n = 4 + Math.floor(rand() * 5);
+  for (let i = 0; i < n; i++) {
+    const bx = x + (i - n / 2) * (6 + rand() * 5) * scale;
+    const r = (2.2 + rand() * 2.6) * scale;
+    ctx.beginPath();
+    ctx.ellipse(bx, rootY - r * 0.55, r * 1.3, r, 0, Math.PI, 0);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+/** Saguaro: a column with one or two upturned arms. */
+function paintSaguaro(ctx, x, rootY, scale, rand, color) {
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  const h = (20 + rand() * 18) * scale;
+  const w = 3.2 * scale;
+  ctx.lineWidth = w;
+  ctx.beginPath();
+  ctx.moveTo(x, rootY);
+  ctx.lineTo(x, rootY - h);
+  const arms = 1 + Math.floor(rand() * 2);
+  for (let a = 0; a < arms; a++) {
+    const side = a === 0 ? (rand() < 0.5 ? -1 : 1) : -1 * Math.sign(rand() - 2);
+    const at = rootY - h * (0.35 + rand() * 0.2);
+    const out = (5 + rand() * 3) * scale * side;
+    ctx.moveTo(x, at);
+    ctx.lineTo(x + out, at);
+    ctx.lineTo(x + out, at - h * (0.25 + rand() * 0.15));
+  }
+  ctx.stroke();
+}
+
+/** Butte or mesa: a flat-topped block with talus slopes. */
+function paintButte(ctx, x, rootY, scale, rand, color) {
+  ctx.fillStyle = color;
+  const H = (26 + rand() * 30) * scale;
+  const top = (10 + rand() * 26) * scale;
+  const talus = (12 + rand() * 8) * scale;
+  const cliff = top * 0.08;
+  ctx.beginPath();
+  ctx.moveTo(x - top - talus, rootY);
+  ctx.lineTo(x - top - cliff, rootY - H * 0.42);
+  ctx.lineTo(x - top, rootY - H);
+  ctx.lineTo(x + top, rootY - H);
+  ctx.lineTo(x + top + cliff, rootY - H * 0.42);
+  ctx.lineTo(x + top + talus, rootY);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** Tundra: scattered erratic boulders, nothing taller than a person. */
+function paintBoulders(ctx, x, rootY, scale, rand, color) {
+  ctx.fillStyle = color;
+  const n = 1 + Math.floor(rand() * 3);
+  for (let i = 0; i < n; i++) {
+    const bx = x + (i - n / 2) * (9 + rand() * 6) * scale;
+    const r = (2.5 + rand() * 3.5) * scale;
+    ctx.beginPath();
+    ctx.ellipse(bx, rootY - r * 0.5, r * (1.2 + rand() * 0.5), r, 0, Math.PI, 0);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
 export const LANDMARKS = {
   JADE: [paintTree(4, 22.5)],
   ARCTIC: [paintCrystals],
@@ -499,6 +612,17 @@ export const LANDMARKS = {
   AURUM: [paintSheaves, paintTree(3, 20)],
   NEBULA: [paintFloatIsles],
   GEODE: [paintGeode, paintCrystals],
+  // Real biomes (RealBiomes.js). ICEFIELD has none: nothing grows there.
+  TUNDRA: [paintBoulders],
+  TAIGA: [paintSpruceStand],
+  RAINFOREST: [paintSpruceStand, paintSpruceStand, paintTree(4, 18)],
+  CONIFER: [paintSpruceStand],
+  PINE_OAK: [paintPineOak],
+  BROADLEAF: [paintTree(4, 22.5), paintTree(3, 26)],
+  CHAPARRAL: [paintScrub, paintPineOak],
+  STEPPE: [paintScrub],
+  CANYON: [paintButte, paintScrub],
+  DESERT: [paintSaguaro, paintScrub],
 };
 
 /**

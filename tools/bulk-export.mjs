@@ -219,6 +219,8 @@ async function chooseWorld(page, world) {
     }
     const needle = String(wanted).trim().toLowerCase();
     const cards = [...document.querySelectorAll('.worldCard')];
+    // One-world mode starts the song without a picker.
+    if (!cards.length && !dialogOpen()) return 'started';
     const card = cards.find((el) => {
       const id = (el.dataset.baseWorldId || '').toLowerCase();
       const name = (el.querySelector('.worldCardName')?.textContent || '').trim().toLowerCase();

@@ -10,8 +10,8 @@
 // post-adaptation fit: would this world's response to THIS song sit in a
 // sweet spot — enough going on, not clipping into noise. The gallery
 // never shows that number. Cathode stays a manual pick.
-import { BIOMES } from './BiomeProfiles.js';
-import { BIOME_TEMPERATURE, castBiomes } from './Dramaturgy.js';
+import { REAL_BIOMES, REAL_BIOME_TEMPERATURE } from './RealBiomes.js';
+import { castBiomes } from './Dramaturgy.js';
 import { CITY_PALETTES, CITY_TEMPERATURE } from './city/CityPalettes.js';
 import { FARSIDE_PALETTES, FARSIDE_TEMPERATURE } from './farside/FarsidePalettes.js';
 import { FATHOM_PALETTES, FATHOM_TEMPERATURE } from './fathom/FathomPalettes.js';
@@ -127,9 +127,13 @@ export const WORLDS = [
       centroid: [0.28, 0.72],
     },
     affinity: { arc: 0.40, contrast: 0.25, tempoHeat: 0.35 },
-    palettes: BIOMES,
-    temperature: BIOME_TEMPERATURE,
-    cast: (energies, seed) => castBiomes(energies, seed, BIOME_TEMPERATURE),
+    // Real biomes (RealBiomes.js), each on its own real ranges. The
+    // invented palettes (BiomeProfiles.js) stay in the source for the
+    // other worlds' code and tests.
+    palettes: REAL_BIOMES,
+    temperature: REAL_BIOME_TEMPERATURE,
+    realBiomes: true,
+    cast: (energies, seed) => castBiomes(energies, seed, REAL_BIOME_TEMPERATURE),
   },
   {
     id: 'nocturne',

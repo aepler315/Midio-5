@@ -7,6 +7,10 @@
 // cover it -- and the credits the data asks for. It fades in a moment after the song
 // starts, holds, and goes.
 //
+// A song travels through several real biomes (RealBiomes.js), each on its
+// own ranges, so there is one caption per biome, headed with the biome and
+// the ecoregion it was classified in, shown as the song arrives there.
+//
 // It is drawn on the canvas (Renderer calls drawRangeCaption), not laid over
 // it as page text, so recordings and bulk exports carry it too. Its fade
 // runs on song time, not page timers, so an export frame at 3s shows exactly
@@ -60,14 +64,35 @@ export function castRows(ranges) {
  * matched (it is matched before the world is chosen). `range` is the back
  * range; `ridges` ({ mid, near }) the ranges standing in front of it.
  */
-export function rangeCaptionFor(range, worldKind, stats = {}, ridges = {}) {
+export function rangeCaptionFor(range, worldKind, stats = {}, ridges = {}, biome = null) {
   if (worldKind !== 'alpine') return null;
   const far = range && range.name ? range : BUNDLED_RANGE;
   const cast = far === BUNDLED_RANGE ? { far } : { far, mid: ridges?.mid, near: ridges?.near };
   const credit = Object.values(cast).some((x) => x?.source === 'discovered')
     ? 'Elevation: AWS Terrain Tiles · summits: GeoNames (CC BY 4.0) · ranges: Wikidata'
     : 'Elevation: AWS Terrain Tiles';
-  return { rows: castRows(cast), stats: rangeStatsLine(stats), credit };
+  const credits = biome?.title ? `${credit} · biomes: RESOLVE Ecoregions 2017 (CC BY 4.0)` : credit;
+  return {
+    biome: biome?.title ? { title: biome.title, ecoregion: biome.ecoregion || '' } : null,
+    rows: castRows(cast),
+    stats: rangeStatsLine(stats),
+    credit: credits,
+  };
+}
+
+/**
+ * Which caption is up at `songMs`, and how far into its own showing:
+ * `captions` is one caption (shown from the song's start) or a list of
+ * { atMs, caption }, one per biome, in song order. Null before the first.
+ */
+export function captionAt(captions, songMs) {
+  if (!captions) return null;
+  if (!Array.isArray(captions)) return { caption: captions, localMs: songMs };
+  let hit = null;
+  for (const c of captions) {
+    if (c?.caption && c.atMs <= songMs) hit = c;
+  }
+  return hit ? { caption: hit.caption, localMs: songMs - hit.atMs } : null;
 }
 
 /** Caption opacity at `songMs`: in over CAPTION_FADE_MS after the delay,
@@ -96,15 +121,18 @@ const REGION_GAP = 18;
  *  (the nominal stage, in its own units) onto the canvas, in the bottom
  *  right corner. Laid out bottom up, so the block keeps its bottom edge above the progress strip:
  *
+ *    MOUNTAIN CONIFER FOREST  Northern Rockies conifer forests
  *    BACK     Lillooet Ranges      British Columbia
  *    MIDDLE   Sierra Nevada        California
  *    FRONT    Livingston Range     Montana
  *    116 mi of real skyline sampled · riding at ~600 mph
  *    Elevation: AWS Terrain Tiles · ...
  */
-export function drawRangeCaption(ctx, stage, caption, songMs) {
-  if (!caption) return;
-  const alpha = captionAlpha(songMs);
+export function drawRangeCaption(ctx, stage, captions, songMs) {
+  const up = captionAt(captions, songMs);
+  if (!up) return;
+  const { caption } = up;
+  const alpha = captionAlpha(up.localMs);
   if (!(alpha > 0)) return;
   const lift = (1 - Math.min(1, alpha)) * 6;
   const rows = caption.rows || [];
@@ -123,7 +151,12 @@ export function drawRangeCaption(ctx, stage, caption, songMs) {
   const width = (str, font) => { ctx.font = font; return str ? ctx.measureText(str).width : 0; };
   const nameW = rows.reduce((w, r) => Math.max(w, width(r.name, nameFont)), 0);
   const regionW = rows.reduce((w, r) => Math.max(w, width(r.region, regionFont)), 0);
+  const biomeTitle = caption.biome ? caption.biome.title.toUpperCase() : '';
+  const biomeEco = caption.biome?.ecoregion ? `  ${caption.biome.ecoregion}` : '';
+  const biomeTitleFont = `700 13px ${FONT}`;
+  const biomeEcoFont = `italic 14px ${FONT}`;
   const blockW = Math.max(
+    width(biomeTitle, biomeTitleFont) + (biomeTitle ? 2 * biomeTitle.length : 0) + width(biomeEco, biomeEcoFont),
     (labelled ? LABEL_W : 0) + nameW + (regionW > 0 ? REGION_GAP + regionW : 0),
     width(caption.stats, statsFont), width(caption.credit, creditFont));
   // Bottom right: the characters run along the left third of the frame, and
@@ -155,6 +188,14 @@ export function drawRangeCaption(ctx, stage, caption, songMs) {
     text(r.name, nameX, nameFont, 'rgba(242, 240, 248, 1)');
     if (r.region) text(r.region, nameX + nameW + REGION_GAP, regionFont, 'rgba(242, 240, 248, 0.62)');
     y -= ROW_H;
+  }
+  if (biomeTitle) {
+    y -= 4;
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '2px';
+    text(biomeTitle, left, biomeTitleFont, 'rgba(255, 215, 106, 0.95)');
+    const titleW = ctx.measureText(biomeTitle).width;
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+    if (biomeEco) text(biomeEco, left + titleW, biomeEcoFont, 'rgba(242, 240, 248, 0.7)');
   }
   ctx.restore();
 }

@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
+import { withAllWorlds } from './lib/allWorlds.mjs';
 
 const toolsDir = path.dirname(fileURLToPath(import.meta.url));
 const defaultOutDir = path.join(toolsDir, '..', '.smoke');
@@ -106,7 +107,7 @@ export async function runAudioSmoke({
     // playback. The audio-analysis/rendering path stays real.
     await page.route('**/soundfonts/', (route) => route.fulfill({ json: [] }));
     await page.route('**/favicon.ico', (route) => route.fulfill({ status: 204 }));
-    const response = await page.goto(url, { waitUntil: 'load' });
+    const response = await page.goto(withAllWorlds(url), { waitUntil: 'load' });
     check('homepage loads', response?.ok());
     await page.locator('#loader:not(.hidden)').waitFor({ state: 'visible' });
     // A fresh context has no cached analysis or saved preferences. Disable

@@ -78,6 +78,7 @@ export class Simulation {
     conductorCues = null,
     worldId = null,
     terrainProfiles = null,
+    songTerrain = null,
   } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
@@ -264,6 +265,8 @@ export class Simulation {
       // with the bundled Tetons as the fallback.
       terrainProfiles: getWorld(this.worldId)?.kind === 'alpine'
         ? (terrainProfiles || alpineTerrainProfiles()) : null,
+      // The song's biomes and each one's own ranges (prepareSongTerrain).
+      songTerrain: getWorld(this.worldId)?.kind === 'alpine' ? songTerrain : null,
     });
     this.reducedFlash = false;
     this.visualStyle = 'rendered';

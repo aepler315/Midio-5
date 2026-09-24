@@ -2,6 +2,7 @@
 // reach the UI. Start npm start first. node tools/car-mode-smoke.mjs [url]
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { withAllWorlds } from './lib/allWorlds.mjs';
 
 const url = process.argv[2] || 'http://127.0.0.1:8080';
 const browser = await chromium.launch({ headless: true,
@@ -15,7 +16,7 @@ try {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
-  await page.goto(url);
+  await page.goto(withAllWorlds(url));
   await page.locator('#demoBtn').click();
   await page.locator('#worldSelect:not(.hidden)').waitFor();
   await page.locator('#worldChooseForMe').click();

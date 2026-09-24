@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BUNDLED_RANGE, CAPTION_DELAY_MS, CAPTION_FADE_MS, CAPTION_HOLD_MS,
-  captionAlpha, drawRangeCaption, castRows, rangeCaptionFor, rangeStatsLine, shortRegion,
+  captionAlpha, captionAt, drawRangeCaption, castRows, rangeCaptionFor, rangeStatsLine, shortRegion,
 } from '../src/ui/RangeCaption.js';
 import { fitRidge, groundSpeedMps, profileTravelPx, terrainScrollPx } from '../src/world/terrain/ProfileTravel.js';
 import { RANGE_HISTORY_MAX, noteRangeShown, readRecentRanges } from '../src/world/terrain/RangeHistory.js';
@@ -162,4 +162,21 @@ test('the history keeps the latest ranges shown, newest first, without repeats',
   assert.equal(readRecentRanges(store).length, RANGE_HISTORY_MAX);
   assert.deepEqual(readRecentRanges({ getItem: () => 'not json' }), [], 'bad storage reads as no history');
   assert.deepEqual(readRecentRanges(null), []);
+});
+
+test('a biome caption is headed with the biome and its ecoregion, and credits the map', () => {
+  const c = rangeCaptionFor(hood, 'alpine', {}, { mid: wasatch, near: taconic },
+    { title: 'Temperate Rainforest', ecoregion: 'Central Pacific Northwest coastal forests' });
+  assert.deepEqual(c.biome, { title: 'Temperate Rainforest', ecoregion: 'Central Pacific Northwest coastal forests' });
+  assert.match(c.credit, /RESOLVE Ecoregions 2017/);
+  assert.equal(rangeCaptionFor(hood, 'alpine').biome, null);
+});
+
+test('captionAt picks the latest biome caption and times it from its own arrival', () => {
+  const a = { rows: [] }, b = { rows: [] };
+  const list = [{ atMs: 0, caption: a }, { atMs: 30000, caption: b }];
+  assert.deepEqual(captionAt(list, 1000), { caption: a, localMs: 1000 });
+  assert.deepEqual(captionAt(list, 31500), { caption: b, localMs: 1500 });
+  assert.equal(captionAt([{ atMs: 5000, caption: a }], 100), null);
+  assert.deepEqual(captionAt(a, 700), { caption: a, localMs: 700 });
 });

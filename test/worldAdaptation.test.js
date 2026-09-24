@@ -156,7 +156,9 @@ test('a palette-only failure leaves geometry; a geometry-only failure leaves pal
   console.warn = (...args) => warns.push(args);
   let result;
   try {
-    result = adaptWorld(getWorld('alpine'), profile, data);
+    // Far Side: The Range's real biomes are never synthesized (see below),
+    // so the palette path is exercised on a world that still is.
+    result = adaptWorld(getWorld('farside'), profile, data);
   } finally {
     console.warn = original;
   }
@@ -165,7 +167,18 @@ test('a palette-only failure leaves geometry; a geometry-only failure leaves pal
   assert.ok(result.world.terrainMods, 'ridge geometry must survive a palette-only failure');
   assert.ok(result.world.characterScheme);
   assert.ok(warns.some((args) => String(args[0]).includes('palette')));
+  assert.equal(result.world.palettes, getWorld('farside').palettes);
+});
+
+test('The Range keeps its real biomes: no palette is synthesized into them', () => {
+  const { data, profile } = song({
+    structure: { labels: ['A', 'B', 'A', 'B'], boundariesMs: [0, 30000, 60000, 90000], confidence: 0.5 },
+  });
+  const result = adaptWorld(getWorld('alpine'), profile, data);
   assert.equal(result.world.palettes, getWorld('alpine').palettes);
+  assert.equal(result.world.realBiomes, true);
+  assert.ok(result.world.palettes.every((p) => p.real));
+  assert.ok(result.world.terrainMods, 'the song still shapes the invented terrain');
 });
 
 test('buildWorldVariant no longer constructs a 100 score', () => {
