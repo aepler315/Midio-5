@@ -61,9 +61,9 @@ const MOTION_BLUR_MIN_ALPHA = 0.02;
 // at each source's own edges instead of bleeding into the frame the way a
 // real luminous source does. Downsampled (cheap blur for free) + a
 // self-multiply threshold (keeps near-white sources, crushes midtones) +
-// a real blur, added back additively at a strength driven by the music.
+// a real blur, screened back at a restrained strength driven by the music.
 const BLOOM_DOWNSCALE_BASE = 3;  // offscreen buffers render at 1/N resolution
-const BLOOM_BLUR_PX = 7;         // blur radius AT that downsampled scale
+const BLOOM_BLUR_PX = 4;         // keep highlight spill close to its source
 const BLOOM_THRESHOLD_PASSES = 2; // self-multiply passes: c^(2^passes)
 
 /** Downscale factor for an offscreen post-fx buffer, keyed off the real
@@ -74,19 +74,11 @@ const BLOOM_THRESHOLD_PASSES = 2; // self-multiply passes: c^(2^passes)
 function postFxDownscale(width) {
   return width > 2560 ? 5 : width > 1920 ? 4 : BLOOM_DOWNSCALE_BASE;
 }
-// A low resting glow, not a floor that eats the reactive range: at
-// BLOOM_BASE=0.322 the base alone already used 43% of BLOOM_MAX, so a
-// slam/surge/fever swell only ever had the remaining 57% to move through --
-// a quiet verse and a full drop read as barely different. Cut deep enough
-// that "nothing is happening" genuinely looks like nothing is happening,
-// so the reactive term (up to 1.1, capped by BLOOM_MAX) is what a drop
-// actually detonates against.
-export const BLOOM_BASE = 0.06; // steady glow present even at rest -- never flash-capped
-// Headroom above the base must clear FLASH_CAP (Accessibility.js) with
-// margin, or reduced-flash's own cap on the reactive term would be masked
-// by this ceiling clipping first -- the whole point of capping the
-// reactive term separately is that it still visibly tames the swell.
-const BLOOM_MAX = 0.75;          // hard ceiling so a maxed drop+fever never blows out
+// Bloom supports the scene rather than becoming a white veil on drops.
+// Scale the reactive term AFTER its accessibility cap so reduced-flash
+// remains visibly softer even under this much lower overall ceiling.
+export const BLOOM_BASE = 0.02;
+const BLOOM_MAX = 0.24;
 
 // Heat distortion: a UV-warp lens over the fully composed frame for the two
 // things in this world that are actually on fire -- a drop's shock wave and
@@ -956,9 +948,8 @@ export class Renderer {
   /** Bloom: light-bleed over the whole composed frame. Downsample (a cheap
    *  blur for free and ~DOWNSCALE^2 less fill), crush to highlights via a
    *  self-multiply threshold (near-white sources survive, midtones/darks
-   *  don't), blur, add back additively at a music-reactive strength -- the
-   *  same self-blit + filter-blur + 'lighter' toolkit as the hype echo,
-   *  chromatic shock, and lake reflection, just chained into one pipeline.
+   *  don't), blur, screen back at a restrained music-reactive strength.
+   *  Screen preserves highlight detail where additive compositing clipped.
    *  Naturally tinted by whatever was bright: gold glow bleeds gold,
    *  aurora bleeds green. Sheds under PerfGovernor pressure like the drop
    *  impact pack (a budget-allowing flourish, not core feedback). */
@@ -1000,10 +991,11 @@ export class Renderer {
     bctx.drawImage(a, 0, 0);
     bctx.filter = 'none';
 
-    // 4) Add the blurred highlights back onto the real frame, upscaled --
-    // the upscale itself softens the bloom further, which is the point.
+    // 4) Screen the spill into remaining highlight headroom. Additive
+    // blending clipped bright sky/terrain to white (0.8 + 0.75 * 0.8^4
+    // exceeds 1); screen keeps their differences instead of saturating.
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = 'screen';
     ctx.globalAlpha = strength;
     ctx.drawImage(b, 0, 0, canvas.width, canvas.height);
     ctx.restore();
@@ -1437,7 +1429,7 @@ export function bloomStrength(hype, fever, reducedFlash = false, openingGain = 1
   const slam = hype ? hype.slam : 0;
   const surge = hype ? hype.surge : 0;
   const feverLevel = fever ? fever.level : 0;
-  const reactive = capFlashAlpha(0.45 * slam + 0.35 * surge + 0.3 * feverLevel, reducedFlash);
+  const reactive = 0.25 * capFlashAlpha(0.45 * slam + 0.35 * surge + 0.3 * feverLevel, reducedFlash);
   // The base glow is unconditional, which meant a song fading in from silence
   // still opened on a fully bloomed frame -- the single loudest thing on
   // screen at t=0, and the one least justified by anything audible.
