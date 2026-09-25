@@ -163,3 +163,30 @@ test('phase-sensitive analysis never shares a cache entry with an in-phase recor
   assert.notEqual(cache.analysisCacheKey(a), cache.analysisCacheKey(b),
     'cached stereo width depends on phase');
 });
+
+test('long audio exposes a whole-recording overview while full analysis is pending and after adoption', async () => {
+  const { context, load } = harness();
+  const buffer = recording();
+  buffer.duration = 744.573;
+  context.audioEngine.decodeFile = async () => buffer;
+  context.sliceAudioBuffer = () => ({ ...buffer, duration: 15 });
+  context.setTimeout = (fn) => fn();
+  context.getBundle = async () => null;
+  context.packBundle = () => ({});
+  context.putBundle = async () => {};
+  let finish;
+  const full = new Promise((resolve) => { finish = resolve; });
+  context.audioToTimeline = async (b) => b.duration === 15
+    ? { durationMs: 15000, timeline: [{ tMs: 1000 }], barGrid: [] } : full;
+  let offered;
+  context.offerWorldsThenStart = (data) => { offered = data; };
+  await load();
+  assert.equal(offered.opening.analyzedMs, 15000);
+  assert.ok(offered.audioOverview[200] > 0);
+  const overview = offered.audioOverview;
+  finish({ durationMs: 744573, timeline: [{ tMs: 600000 }], barGrid: [] });
+  await context.fullAnalysisPending;
+  assert.equal(offered.opening, undefined);
+  assert.equal(offered.audioOverview, overview);
+  assert.equal(offered.timeline[0].tMs, 600000);
+});

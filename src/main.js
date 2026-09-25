@@ -6,7 +6,7 @@ import { synthesizeEnergyCurves } from './core/EnergyCurvesSynth.js';
 import { buildDemoSong } from './core/DemoSong.js';
 import { audioToTimeline } from './audio/AudioAdapter.js';
 import {
-  OPENING_SECONDS, adoptFullAnalysis, asOpening, sliceAudioBuffer, useOpeningAnalysis,
+  OPENING_SECONDS, adoptFullAnalysis, asOpening, buildAudioOverview, sliceAudioBuffer, useOpeningAnalysis,
 } from './audio/OpeningAnalysis.js';
 import {
   AUDIO_LOAD_LIMITS, accumulateDecodedAudioBytes, accumulateDecodedByteLength,
@@ -1801,6 +1801,8 @@ function startTimeline(timelineData, extra = {}) {
     showErrorBanner('Could not build the world: ' + (err?.message || err));
     return;
   }
+  sim.audioOverview = timelineData.audioOverview || null;
+  sim.analysisOpening = timelineData.opening || null;
   lastSongSeed = sim.songSeed;
   setSeedInput(sim.songSeed);
   sim.perf = perfGovernor;
@@ -2474,6 +2476,7 @@ async function loadAudioFiles(files) {
       loadShow?.stop(loadShowSession);
     }
     if (isStale()) return;
+    data.audioOverview = buildAudioOverview(audioBuffer);
     const opened = data;
     const wholeSong = fullAnalysis
       ? fullAnalysis.then((full) => {
@@ -2485,7 +2488,10 @@ async function loadAudioFiles(files) {
       }).catch((err) => {
         if (fullAnalysisPending === wholeSong) fullAnalysisPending = null;
         // The opening stands: the song plays on what it has.
-        if (err?.name !== 'AbortError') console.warn('[analysis] whole-song pass failed; keeping the opening', err);
+        if (err?.name !== 'AbortError') {
+          if (opened.opening) opened.opening.failed = true;
+          console.warn('[analysis] whole-song pass failed; keeping the opening', err);
+        }
         return null;
       }).finally(() => signal.removeEventListener('abort', cancelAnalysis))
       : null;

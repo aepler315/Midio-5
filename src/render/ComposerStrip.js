@@ -178,13 +178,13 @@ export class ComposerStrip {
    * @param {object[]} [holds]
    * @param {object[]} [sections] BiomeManager.sections after form + lyric fuse
    */
-  constructor(timeline, barGrid, durationMs, holds = [], sections = null) {
+  constructor(timeline, barGrid, durationMs, holds = [], sections = null, audioOverview = null) {
     this.timeline = timeline || [];
     this.barGrid = barGrid || [];
     this.durationMs = Math.max(1, durationMs || 1);
     this.holds = holds || [];
     this.sections = sections || [];
-    this.mountain = buildSongMountain(this.timeline, this.durationMs, MOUNTAIN_SAMPLES);
+    this.mountain = audioOverview?.length ? audioOverview : buildSongMountain(this.timeline, this.durationMs, MOUNTAIN_SAMPLES);
     /** True when `durationMs` is a nominal guess rather than a measured
      *  length -- set by the live-listening path, where the song has not
      *  finished happening yet. Only affects how the clock is labelled. */
@@ -356,6 +356,13 @@ export class ComposerStrip {
       (this.estimatedDuration ? '~' : '') + formatClock(this.durationMs),
       x0 + w - 10, y0 + h - 6,
     );
+
+    if (this.analysisOpening) {
+      ctx.textAlign = 'center';
+      ctx.fillStyle = C.time;
+      ctx.fillText(this.analysisOpening.failed ? 'Full-song analysis failed · reload song to retry' : 'Analyzing full song…',
+        x0 + w / 2, y0 + h - 6, Math.max(1, w - 140));
+    }
 
     if (this.selectedSection >= 0 && this.selectedSection < this.sections.length) {
       this._drawSectionDetail(ctx, L, this.sections[this.selectedSection], this.selectedSection);
