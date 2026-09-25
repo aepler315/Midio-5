@@ -32,6 +32,19 @@ export const BUZZ_HZ = 13;
 const BUZZ_DEPTH = 0.45;
 // Resampling step along the crest: fine enough for the shortest wavelength.
 export const WIRE_STEP_PX = 3;
+// The glow is the wide additive halo. Intensity is the pass alpha, footprint
+// is the stroke width. Both are a fraction of the original halo.
+export const GLOW_INTENSITY = 0.45;
+export const GLOW_FOOTPRINT = 0.70;
+const GLOW_PASSES = [
+  [14 * GLOW_FOOTPRINT, 0.07 * GLOW_INTENSITY],
+  [6 * GLOW_FOOTPRINT, 0.18 * GLOW_INTENSITY],
+];
+// One brightness packet crosses a crest every this many beats.
+export const CREST_WAVE_BEATS = 2;
+// Front ridges lead; the ranges behind them follow, so the packets do not
+// all sit on the same column.
+export const CREST_WAVE_PHASE = { L5: 0, L4: 0.18, L3: 0.36, L2: 0.54, massif: 0.72 };
 
 /** Triangle wave in [-1, 1] with the same phase as Math.sin. */
 function tri(phase) {
@@ -53,10 +66,29 @@ export function wireOffset(x, tSec, { wavelength, speed }, amp, sharp) {
  * The wire's amplitude (px) this frame: resting size, grown by loudness
  * (0..1) and the kick envelope (0..1), with the buzz riding on top.
  */
-export function wireAmplitude(cfg, loud, kick, tSec) {
-  const base = cfg.amp * (1 + LOUD_GAIN * clamp01(loud) + KICK_GAIN * clamp01(kick));
-  const buzz = 1 + BUZZ_DEPTH * clamp01(0.35 + kick) * Math.sin(tSec * BUZZ_HZ * Math.PI * 2);
+export function wireAmplitude(cfg, loud, kick, tSec, intensity = 1) {
+  const drive = clamp01(intensity);
+  const base = cfg.amp * (1 + LOUD_GAIN * clamp01(loud) * drive + KICK_GAIN * clamp01(kick) * drive);
+  const buzz = 1 + BUZZ_DEPTH * drive * clamp01(0.35 + kick) * Math.sin(tSec * BUZZ_HZ * Math.PI * 2);
   return base * buzz;
+}
+
+/**
+ * A pulse traveling left to right along a crest, 0..1. It crosses once
+ * every CREST_WAVE_BEATS beats and breathes once per beat. `phase01` offsets
+ * a layer so the packets do not stack.
+ */
+export function crestWave01(x, x0, x1, tSec, beatSec, phase01 = 0) {
+  if (!(beatSec > 0) || !(x1 > x0)) return 0;
+  const period = beatSec * CREST_WAVE_BEATS;
+  let u = (tSec / period + phase01) % 1;
+  if (u < 0) u += 1;
+  const center = x0 + u * (x1 - x0);
+  const sigma = Math.max(12, (x1 - x0) * 0.085);
+  const d = (x - center) / sigma;
+  const bump = Math.exp(-0.5 * d * d);
+  const pulse = 0.55 + 0.45 * Math.sin((tSec / beatSec) * Math.PI * 2);
+  return bump * Math.max(0, pulse);
 }
 
 /** Relative luminance (WCAG), 0..1. */
@@ -122,10 +154,20 @@ export function resampleCrest(pts, step = WIRE_STEP_PX) {
  * { cfg, color, amp, sharp, tSec, alpha, glow } -- `glow` false skips the
  * wide additive passes (the cheap rung).
  */
-export function drawCrestWire(ctx, pts, { cfg, color, amp, sharp, tSec, alpha = 1, glow = true }) {
+export function drawCrestWire(ctx, pts, {
+  cfg, color, amp, sharp, tSec, alpha = 1, glow = true, beatSec = 0, wavePhase = 0,
+}) {
   const line = resampleCrest(pts);
   if (line.length < 2 || !(alpha > 0.01)) return;
-  for (const p of line) p.y += wireOffset(p.x, tSec, cfg, amp, sharp);
+  const x0 = line[0].x;
+  const x1 = line[line.length - 1].x;
+  let peak = 0;
+  for (const p of line) {
+    const env = crestWave01(p.x, x0, x1, tSec, beatSec, wavePhase);
+    if (env > peak) peak = env;
+    p.env = env;
+    p.y += wireOffset(p.x, tSec, cfg, amp, sharp) * (1 + 0.9 * env);
+  }
   const path = () => {
     ctx.beginPath();
     ctx.moveTo(line[0].x, line[0].y);
@@ -138,7 +180,7 @@ export function drawCrestWire(ctx, pts, { cfg, color, amp, sharp, tSec, alpha = 
   if (glow) {
     // Ambient glow: wide, faint, additive, so it lifts whatever is behind it.
     ctx.globalCompositeOperation = 'lighter';
-    for (const [lw, a] of [[14, 0.07], [6, 0.18]]) {
+    for (const [lw, a] of GLOW_PASSES) {
       ctx.globalAlpha = a * alpha;
       ctx.lineWidth = lw;
       path();
@@ -150,5 +192,21 @@ export function drawCrestWire(ctx, pts, { cfg, color, amp, sharp, tSec, alpha = 
   ctx.lineWidth = 1.6;
   path();
   ctx.stroke();
+  // The beat packet: a short brighter span riding the same crest, so the
+  // pulse reads as a wave running along the line rather than the whole
+  // ridge flashing at once.
+  if (beatSec > 0 && peak > 0.2) {
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.5 * alpha * peak;
+    ctx.lineWidth = 3.2 * GLOW_FOOTPRINT;
+    ctx.beginPath();
+    let drawing = false;
+    for (const p of line) {
+      if (p.env < 0.35) { drawing = false; continue; }
+      if (!drawing) { ctx.moveTo(p.x, p.y); drawing = true; }
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+  }
   ctx.restore();
 }

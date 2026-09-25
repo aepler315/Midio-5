@@ -340,6 +340,37 @@ export function mountainStripDrawHeight(stripHeight, growthMul, canvasHeight, gr
   return Math.min(desired, maxDh);
 }
 
+// How far the dancing ridge's crest stays above the average crest of the
+// three ranges in front of it, as a fraction of the stage height. The front
+// ranges grow on their own; without this the far ridge stays put and they
+// cover it.
+export const DANCE_RIDGE_CLEARANCE_FRAC = 0.08;
+
+/** Share of a strip's draw height that is the baked crest above the foot. */
+export function crestAboveFootFrac(strip) {
+  const h = Number(strip?.height) || Number(strip?.ridge?.height) || 0;
+  if (!(h > 0)) return 0.5;
+  const crestY = ridgeBakedCrestY(strip.ridge);
+  return Math.max(0.08, Math.min(1, (h - crestY) / h));
+}
+
+/**
+ * Draw height for the dancing ridge. Never shorter than its own fit, and
+ * tall enough that its crest sits DANCE_RIDGE_CLEARANCE_FRAC above the
+ * average crest of the front ranges. `fronts` is [{ strip, dh }].
+ */
+export function anchoredFarDrawHeight({ natural, farStrip, fronts, canvasHeight, groundY }) {
+  const usable = (fronts || []).filter((f) => f?.strip && f.dh > 0);
+  if (!usable.length || !farStrip) return natural;
+  let sum = 0;
+  for (const f of usable) sum += f.dh * crestAboveFootFrac(f.strip);
+  const avg = sum / usable.length;
+  const wantAbove = avg + canvasHeight * DANCE_RIDGE_CLEARANCE_FRAC;
+  const wantDh = wantAbove / crestAboveFootFrac(farStrip);
+  const capped = mountainStripDrawHeight(wantDh, 1, canvasHeight, groundY);
+  return Math.max(natural || 0, capped);
+}
+
 // --- The spectrum massif's scale (megalophobia pass) -----------------------
 //
 // Every other range obeys MOUNTAIN_SKY_HEADROOM_FRAC so the sky/ocean stay
