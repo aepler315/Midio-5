@@ -4986,8 +4986,9 @@ export class BiomeManager {
     }
 
     ctx.save();
-    // Soft additive aurora glow over the CGI sky.
-    ctx.globalCompositeOperation = 'lighter';
+    // Keep the broad spectrum wash translucent. Additive fill stacked
+    // with bloom turned the central skyline into a near-white light mass.
+    ctx.globalCompositeOperation = 'screen';
 
     // Body: luminous fill from crest down — the musical weather mass.
     const grad = ctx.createLinearGradient(0, baseline - maxH, 0, baseline + 30);
@@ -4995,7 +4996,7 @@ export class BiomeManager {
     grad.addColorStop(0.55, `${color}4d`);
     grad.addColorStop(1, `${color}00`);
     ctx.fillStyle = grad;
-    ctx.globalAlpha = 0.75 * this.budget * eqMul;
+    ctx.globalAlpha = 0.22 * this.budget * eqMul;
     ctx.beginPath();
     ctx.moveTo(pts[0].x, baseline + 30);
     for (const p of pts) ctx.lineTo(p.x, p.y);

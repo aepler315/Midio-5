@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dropImpactStrength, speedLineSegments, bloomStrength, BLOOM_BASE, heatAmbient01, dropMotionBlurStrength, dropMotionBlurPasses } from '../src/render/Renderer.js';
+import { Renderer, dropImpactStrength, speedLineSegments, bloomStrength, BLOOM_BASE, heatAmbient01, dropMotionBlurStrength, dropMotionBlurPasses } from '../src/render/Renderer.js';
 
 test('dropImpactStrength is 0 with no drop yet (dropAtMs = -Infinity, HypeDirector\'s initial state)', () => {
   assert.equal(dropImpactStrength(0, -Infinity), 0);
@@ -79,7 +79,25 @@ test('bloomStrength rises monotonically with hype.slam, hype.surge, and fever.le
 
 test('bloomStrength is bounded: a maxed-out drop during max fever never blows out', () => {
   const s = bloomStrength(fakeHype(1, 1), fakeFever(1), false);
-  assert.ok(s <= 0.75 + 1e-9, `expected the hard ceiling, got ${s}`);
+  assert.ok(s <= 0.24 + 1e-9, `bloom must stay a restrained highlight pass, got ${s}`);
+});
+
+test('bloom preserves bright terrain detail instead of additively clipping it to white', () => {
+  const bufferCtx = { drawImage() {}, clearRect() {} };
+  const buffer = () => ({ width: 320, height: 180, getContext: () => bufferCtx });
+  const renderer = Object.create(Renderer.prototype);
+  renderer._bloomA = buffer();
+  renderer._bloomB = buffer();
+  let composite, alpha;
+  const ctx = { save() {}, restore() {}, drawImage() {
+    composite = this.globalCompositeOperation;
+    alpha = this.globalAlpha;
+  } };
+  renderer._drawBloom(ctx, { width: 960, height: 540 }, {
+    hype: fakeHype(1, 1), fever: fakeFever(1),
+  });
+  assert.equal(composite, 'screen', 'highlight spill should use remaining brightness headroom');
+  assert.ok(alpha <= 0.24);
 });
 
 test('reduced-flash tames the reactive swell but preserves the steady base', () => {
