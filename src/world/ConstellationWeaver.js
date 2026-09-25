@@ -380,8 +380,11 @@ export class ConstellationWeaver {
     this.figures = survivors;
   }
 
-  draw(ctx, canvas, reducedFlash = false, alphaMul = 1) {
+  draw(ctx, canvas, reducedFlash = false, alphaMul = 1, presentation = 1, maxHolding = 0) {
     ctx.save();
+    const inherited = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
+    const present = Number.isFinite(presentation) ? Math.min(1, Math.max(0, presentation)) : 1;
+    ctx.globalAlpha = inherited * present;
     ctx.globalCompositeOperation = 'lighter';
 
     // Dots are generated (nextDotPos) in this.w x this.h field space. A
@@ -418,7 +421,12 @@ export class ConstellationWeaver {
       }
     }
 
+    let holdingDrawn = 0;
     for (const fig of this.figures) {
+      if (maxHolding > 0 && fig.phase === 'holding') {
+        if (holdingDrawn >= maxHolding) continue;
+        holdingDrawn += 1;
+      }
       const holdOrFadeFrac = fig.phase === 'fading'
         ? 1 - clamp01((this._lastNowMs - fig.fadeStartMs) / FADE_MS)
         : 1;

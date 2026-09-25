@@ -28,9 +28,103 @@ export function landscapeSnowAllowed(key, snowLine01) {
 }
 export function landscapePasses(kind) { return kind === 'alpine' ? ALPINE_PASSES : OTHER_PASSES; }
 export function landscapeBudget(level = 0) {
-  if (level >= 6) return { facetsPerLayer: 6, gulliesPerLayer: 0, standsPerLayer: 6, fogBanks: 0, localWetFx: false };
-  if (level >= 3) return { facetsPerLayer: 12, gulliesPerLayer: 4, standsPerLayer: 12, fogBanks: 2, localWetFx: false };
-  return { facetsPerLayer: 24, gulliesPerLayer: 12, standsPerLayer: 24, fogBanks: 4, localWetFx: true };
+  if (level >= 6) return { facetsPerLayer: 6, gulliesPerLayer: 0, standsPerLayer: 6, fogBanks: 0, localWetFx: false, groundPatches: 8, wetReceivers: 0, oceanRows: 3 };
+  if (level >= 3) return { facetsPerLayer: 12, gulliesPerLayer: 4, standsPerLayer: 12, fogBanks: 2, localWetFx: false, groundPatches: 16, wetReceivers: 4, oceanRows: 5 };
+  return { facetsPerLayer: 24, gulliesPerLayer: 12, standsPerLayer: 24, fogBanks: 4, localWetFx: true, groundPatches: 24, wetReceivers: 6, oceanRows: 8 };
+}
+
+function finite01(value, fallback = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(1, Math.max(0, n));
+}
+
+// Subdued mineral anchors. Depth and night shift these; they are not a second body paint.
+const ANCHORS = {
+  ICEFIELD: { mass: '#8ea4b0', soil: '#6e7c86', mineral: '#9aa8b0', organic: '#6d7c78', wet: '#5d7a86' },
+  TUNDRA: { mass: '#7d8a78', soil: '#6a6456', mineral: '#8a8474', organic: '#5e6b58', wet: '#4e665c' },
+  TAIGA: { mass: '#4d6254', soil: '#3c4638', mineral: '#6a6458', organic: '#2f4a38', wet: '#2a4450' },
+  RAINFOREST: { mass: '#3d5344', soil: '#2c382c', mineral: '#4a5648', organic: '#1e3a2c', wet: '#1a3840' },
+  CONIFER: { mass: '#51624e', soil: '#3e4638', mineral: '#6a6456', organic: '#2e4634', wet: '#2c4450' },
+  PINE_OAK: { mass: '#6a624c', soil: '#5a4e3c', mineral: '#7a7060', organic: '#4a5838', wet: '#3a4c48' },
+  BROADLEAF: { mass: '#5a6848', soil: '#463e32', mineral: '#6a6050', organic: '#3a4c32', wet: '#2e4440' },
+  CHAPARRAL: { mass: '#7a6a52', soil: '#6a5a42', mineral: '#8a7a64', organic: '#5a5a3a', wet: '#4a5044' },
+  STEPPE: { mass: '#8a7a58', soil: '#7a6a48', mineral: '#8e8068', organic: '#6a7040', wet: '#4a5444' },
+  CANYON: { mass: '#8a5a48', soil: '#7a5240', mineral: '#a07058', organic: '#5a5840', wet: '#4a4440' },
+  DESERT: { mass: '#a89068', soil: '#9a845c', mineral: '#b8a888', organic: '#7a7048', wet: '#6a6450' },
+  CUSTOM: { mass: '#6e6a62', soil: '#5c5852', mineral: '#7a766e', organic: '#5a5e52', wet: '#4a504c' },
+};
+const AIR_MIX = { L2: 0.32, L3: 0.18, L4: 0.08, L5: 0 };
+const LAYER_LIFT = { L2: 0.08, L3: 0.03, L4: -0.03, L5: -0.08 };
+
+function anchorFor(key) { return ANCHORS[key] || ANCHORS.CUSTOM; }
+
+function layerTone(mass, air, layerKey, night01) {
+  const mixed = hexLerp(mass, air || mass, AIR_MIX[layerKey] ?? 0);
+  const lifted = shiftLightness(mixed, (LAYER_LIFT[layerKey] ?? 0) * (1 - night01 * 0.35));
+  const base = night01 > 0 ? shiftLightness(lifted, -0.26 * night01) : lifted;
+  return {
+    base,
+    faceLight: shiftLightness(base, 0.09 * (1 - night01 * 0.4)),
+    faceShade: shiftLightness(base, -0.11),
+    gully: shiftLightness(base, -0.16),
+    intrinsicContrast: 1,
+  };
+}
+
+/** One biome profile, one palette. Callers resolve A and B separately. */
+export function resolveLandscapePalette({ profile, night01, airColor } = {}) {
+  const biomeKey = landscapePolicy(profile?.landmarkKey || profile?.name || profile?.key || profile).key;
+  const anchor = anchorFor(biomeKey);
+  const night = finite01(night01, 0);
+  const air = typeof airColor === 'string' && airColor.startsWith('#') ? airColor : anchor.mass;
+  const authored = typeof profile?.silhouette === 'string' && profile.silhouette.startsWith('#')
+    ? profile.silhouette : null;
+  const mass = authored ? hexLerp(anchor.mass, authored, biomeKey === 'CUSTOM' ? 0.42 : 0.10) : anchor.mass;
+  const soil = authored ? hexLerp(anchor.soil, authored, biomeKey === 'CUSTOM' ? 0.28 : 0.06) : anchor.soil;
+  const groundBase = shiftLightness(hexLerp(soil, air, 0.06), -0.04 - 0.16 * night);
+  return {
+    biomeKey,
+    layers: {
+      L2: layerTone(mass, air, 'L2', night),
+      L3: layerTone(mass, air, 'L3', night),
+      L4: layerTone(mass, air, 'L4', night),
+      L5: layerTone(mass, air, 'L5', night),
+    },
+    ground: {
+      base: groundBase,
+      shallowShade: shiftLightness(groundBase, -0.05),
+      deepShade: shiftLightness(groundBase, -0.12),
+      mineral: shiftLightness(anchor.mineral, -0.08 * night),
+      organic: shiftLightness(anchor.organic, -0.06 * night),
+      wet: shiftLightness(anchor.wet, -0.05 * night),
+    },
+    cover: landscapePolicy(biomeKey).cover,
+  };
+}
+
+/** Alpine sky weights. Reconstructed from the current scene, never accumulated. */
+export function resolveRangePresentation({
+  night01 = 0, salienceSky = 1, voyageWeight = 0, quality = 0, reducedFlash = false,
+} = {}) {
+  const sky = finite01(salienceSky, 1);
+  const voyage = finite01(voyageWeight, 0);
+  const night = finite01(night01, 0);
+  const flash = reducedFlash ? 0.7 : 1;
+  const ambientScale = sky * (1 - 0.62 * voyage) * flash;
+  const rows = landscapeBudget(Number.isFinite(quality) ? quality : 0).oceanRows;
+  const unit = (n) => finite01(n, 0);
+  return {
+    spaceRidge: unit(0.20 * ambientScale),
+    liveWeaver: unit(0.30 * (0.55 + 0.45 * sky) * (1 - 0.35 * voyage)),
+    retainedWeaver: unit(0.20 * ambientScale * (0.85 + 0.15 * night)),
+    ensemble: unit(0.30 * ambientScale),
+    beams: unit(0.15 * sky * (reducedFlash ? 0.4 : 1)),
+    ambient: unit(0.35 * ambientScale),
+    oceanRows: rows,
+    oceanMarks: unit(0.30 * (reducedFlash ? 0.65 : 1)),
+    film: unit(0.82 * (0.75 + 0.25 * sky)),
+  };
 }
 
 export function landscapeLayerColor(silhouetteHex, skyHex, layerKey, biomeKey) {

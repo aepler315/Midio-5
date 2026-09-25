@@ -274,6 +274,7 @@ export class Renderer {
     };
 
     if (biomeManager) {
+      biomeManager.salience = salience;
       biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, worldParticleMul, perf, groundView);
     } else {
       this._drawFallbackSky(ctx, stage);
@@ -415,7 +416,7 @@ export class Renderer {
         { x: sim.midasus ? sim.midasus.p.x : NaN, hue: sim.midasus ? sim.midasus.hue : 0, active: !!sim.midasus && sim.midasus.voyage.depth <= 0 },
       ]);
     }
-    if (biomeManager?.world?.kind === 'alpine') {
+    if (biomeManager?.world?.kind === 'alpine' && biomeManager._pass?.('ground-response') !== false) {
       const lights = [
         characterGlowLight(pose.midioDrawX, pose.midioY, MIDIO_IDENTITY_HUE, .28),
         sim.broshi?.burrow.depth <= .02 ? characterGlowLight(sim.broshi.renderX, sim.broshi.groundY - 12, sim.broshi.hue, .22) : null,
@@ -746,9 +747,11 @@ export class Renderer {
     const gradeWarm = fam ? fam.warmHex : FILM_GRADE_WARM;
     const color = this._filmLerpCache.get(gradeCool, gradeWarm, ff.warmth);
     const gradeAlpha = (FILM_GRADE_ALPHA_BASE + FILM_GRADE_ALPHA_RANGE * Math.abs(ff.warmth - 0.5) * 2) * gradeMul;
+    const filmWeight = sim.biomes?.world?.kind === 'alpine' ? (sim.biomes._rangePresentation?.film ?? 1) : 1;
+    const filmOn = sim.biomes?._pass?.('film') !== false;
     ctx.save();
     ctx.globalCompositeOperation = 'soft-light';
-    ctx.globalAlpha = Math.min(0.22, gradeAlpha);
+    ctx.globalAlpha = filmOn ? Math.min(0.22, gradeAlpha) * filmWeight : 0;
     ctx.fillStyle = color;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     // Rendered: a whisper of indigo space grade so the whole frame reads
@@ -1214,9 +1217,18 @@ export class Renderer {
   _drawContactShadow(ctx, s) {
     if (s.alpha <= 0.002 || s.rx <= 0.5) return;
     ctx.save();
-    ctx.globalAlpha = s.alpha;
     ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = '#0a0a12';
+    if (ctx.createRadialGradient) {
+      const g = ctx.createRadialGradient(s.cx, s.cy, Math.max(0.5, Math.min(s.rx, s.ry) * 0.2), s.cx, s.cy, Math.max(s.rx, s.ry));
+      g.addColorStop(0, `rgba(10,10,18,${s.alpha.toFixed(3)})`);
+      g.addColorStop(0.55, `rgba(10,10,18,${(s.alpha * 0.42).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(10,10,18,0)');
+      ctx.fillStyle = g;
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.globalAlpha = s.alpha;
+      ctx.fillStyle = '#0a0a12';
+    }
     ctx.beginPath();
     ctx.ellipse(s.cx, s.cy, s.rx, s.ry, 0, 0, Math.PI * 2);
     ctx.fill();

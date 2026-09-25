@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { REAL_BIOMES } from '../src/world/RealBiomes.js';
-import { landscapePolicy, landscapeBudget, landscapeLayerColor, landscapePasses, landscapeSnowAllowed } from '../src/world/alpine/LandscapePolicy.js';
+import { landscapePolicy, landscapeBudget, landscapeLayerColor, landscapePasses, landscapeSnowAllowed, resolveLandscapePalette, resolveRangePresentation } from '../src/world/alpine/LandscapePolicy.js';
+import { hexToRgb } from '../src/utils/color.js';
 
 test('all real biomes have distinct, immutable landscape cover policies', () => {
   for (const { name } of REAL_BIOMES) {
@@ -25,6 +26,31 @@ test('alpine depth is painted into each layer while other worlds keep their pass
   assert.equal(landscapePasses('alpine').shimmerSlices, false);
   assert.equal(landscapePasses('city').shimmerSlices, true);
   assert.ok(landscapeBudget(6).facetsPerLayer > 0);
+});
+
+function luma(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+test('live palettes stay distinct across depth, biome and night', () => {
+  const day = resolveLandscapePalette({ profile: { name: 'RAINFOREST', silhouette: '#314c40' }, night01: 0, airColor: '#91abb2' });
+  const night = resolveLandscapePalette({ profile: { name: 'RAINFOREST', silhouette: '#314c40' }, night01: 1, airColor: '#1a2430' });
+  assert.ok(luma(day.layers.L2.base) - luma(day.layers.L5.base) >= 8);
+  assert.ok(luma(night.layers.L5.base) < luma(day.layers.L5.base));
+  const desert = resolveLandscapePalette({ profile: 'DESERT', night01: 0, airColor: '#d8c7a4' });
+  const ice = resolveLandscapePalette({ profile: 'ICEFIELD', night01: 0, airColor: '#d8c7a4' });
+  assert.notEqual(desert.ground.base, ice.ground.base);
+  assert.equal(resolveLandscapePalette({ profile: 'NO-SUCH', night01: Number.NaN }).biomeKey, 'CUSTOM');
+  const mid = resolveRangePresentation({ salienceSky: 0.5, voyageWeight: 0.25, quality: 6, reducedFlash: false });
+  for (const key of ['spaceRidge', 'liveWeaver', 'retainedWeaver', 'ensemble', 'beams', 'ambient', 'oceanMarks', 'film']) {
+    assert.ok(mid[key] >= 0 && mid[key] <= 1);
+  }
+  assert.equal(mid.oceanRows, landscapeBudget(6).oceanRows);
+  assert.deepEqual(
+    resolveRangePresentation({ night01: 0.2, salienceSky: 0.4, voyageWeight: 0.1, quality: 1, reducedFlash: true }),
+    resolveRangePresentation({ night01: 0.2, salienceSky: 0.4, voyageWeight: 0.1, quality: 1, reducedFlash: true }),
+  );
 });
 
 test('dry cover excludes snow while high wet mountain cover permits it', () => {

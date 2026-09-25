@@ -1,3 +1,6 @@
+import { hexLerp, hexToRgb } from '../../utils/color.js';
+import { shiftLightness } from '../../render/VisualStyle.js';
+
 /** Project an inferred strip-space point through the same live crest as the fill. */
 export function projectSurfacePoint({ sx, depth01 }, { geom, stripWidth, terrain }) {
   if (!geom?.pts?.length || !Number.isFinite(sx) || !Number.isFinite(depth01)) return null;
@@ -63,52 +66,256 @@ function projectedPath(ctx, vertices, offset, projection) {
   return true;
 }
 
-export function drawRidgeSurface(ctx, { surface, geom, terrain = false, policy, budget, light, alpha = 1 }) {
+function normalize3(v) {
+  if (!v) return null;
+  const len = Math.hypot(v.x || 0, v.y || 0, v.z || 0);
+  if (!(len > 1e-8)) return null;
+  return { x: (v.x || 0) / len, y: (v.y || 0) / len, z: (v.z || 0) / len };
+}
+
+function clampUnit(n) {
+  return Math.max(-1, Math.min(1, Number.isFinite(n) ? n : 0));
+}
+
+/** Matte identity stays when the key light is centered, missing, or dark. */
+export function resolveFacetTone({ facet, palette, lightDirection }) {
+  const contrast = Number.isFinite(palette?.intrinsicContrast) ? palette.intrinsicContrast : 1;
+  const tone = clampUnit((facet?.intrinsicTone || 0) * contrast);
+  const mag = Math.abs(tone);
+  const baseColor = tone >= 0
+    ? hexLerp(palette.base, palette.faceLight, mag)
+    : hexLerp(palette.base, palette.faceShade, mag);
+  let directionalAlpha = 0;
+  let directionalColor = baseColor;
+  const intensity = lightDirection && Number.isFinite(lightDirection.intensity)
+    ? Math.max(0, lightDirection.intensity) : 0;
+  if (lightDirection && intensity > 0) {
+    const normal = normalize3(facet?.normal || { x: facet?.normalX || 0, y: -0.2, z: 0.8 });
+    const light = normalize3(lightDirection);
+    if (normal && light) {
+      const dot = Math.max(-1, Math.min(1, normal.x * light.x + normal.y * light.y + normal.z * light.z));
+      const sun = dot * 0.5 + 0.5;
+      directionalAlpha = Math.min(0.08, 0.08 * intensity) * (0.35 + 0.65 * Math.abs(dot));
+      directionalColor = hexLerp(palette.faceShade, palette.faceLight, sun);
+      return {
+        baseColor: shiftLightness(baseColor, (sun - 0.5) * 0.1 * intensity),
+        directionalColor,
+        directionalAlpha,
+      };
+    }
+  }
+  return { baseColor, directionalColor, directionalAlpha };
+}
+
+function itemCenter(item) {
+  if (Number.isFinite(item?.sx)) return item.sx;
+  if (Number.isFinite(item?.sx0) && Number.isFinite(item?.sx1)) return (item.sx0 + item.sx1) * 0.5;
+  const verts = item?.vertices || item?.points || [];
+  if (!verts.length) return 0;
+  let sum = 0;
+  for (const v of verts) sum += v.sx;
+  return sum / verts.length;
+}
+
+function itemOverlaps(item, window) {
+  if (!window) return true;
+  if (Number.isFinite(item?.sx)) return item.sx >= window.min && item.sx <= window.max;
+  if (Number.isFinite(item?.sx0)) return item.sx1 >= window.min && item.sx0 <= window.max;
+  const verts = item?.vertices || item?.points || [];
+  if (!verts.length) return false;
+  let lo = Infinity, hi = -Infinity;
+  for (const v of verts) { if (v.sx < lo) lo = v.sx; if (v.sx > hi) hi = v.sx; }
+  return hi >= window.min && lo <= window.max;
+}
+
+function pickSpatial(items, window, slots) {
+  if (!(slots > 0) || !items?.length) return [];
+  const visible = items.filter((item) => itemOverlaps(item, window));
+  if (!visible.length) return [];
+  const span = Math.max(1e-9, (window?.max ?? 1) - (window?.min ?? 0));
+  const bins = new Array(slots).fill(null);
+  const binOf = (item) => {
+    let b = Math.floor(((itemCenter(item) - (window?.min ?? 0)) / span) * slots);
+    if (b < 0) b = 0;
+    if (b >= slots) b = slots - 1;
+    return b;
+  };
+  const place = (list) => {
+    const ranked = [...list].sort((a, b) => (b.importance || 0) - (a.importance || 0)
+      || String(a.id).localeCompare(String(b.id)));
+    for (const item of ranked) {
+      const b = binOf(item);
+      if (!bins[b]) bins[b] = item;
+    }
+  };
+  place(visible.filter((item) => item.structural));
+  place(visible.filter((item) => !item.structural));
+  return bins.filter(Boolean);
+}
+
+function optionalAlpha(transition) {
+  if (!transition) return 1;
+  if (transition.immediate) return 0;
+  const age = Number.isFinite(transition.ageMs) ? transition.ageMs : 0;
+  if (age >= 120) return 1;
+  return 1 - age / 120;
+}
+
+/**
+ * Reserve paired A/B slots inside the draw cap. Seam weight does not change
+ * which source intervals are selected.
+ */
+export function selectVisibleSurface({ sides, sourceWindows, budget, qualityTransition }) {
+  const cap = Math.max(0, budget?.facetsPerLayer ?? 0);
+  const gullyCap = Math.max(0, budget?.gulliesPerLayer ?? 0);
+  const standCap = Math.max(0, budget?.standsPerLayer ?? 0);
+  const active = (sides || []).filter((side) => side?.surface);
+  const paired = active.length >= 2;
+  const facetSlots = paired ? Math.floor(cap / 2) : cap;
+  const gullySlots = paired ? Math.floor(gullyCap / 2) : gullyCap;
+  const standSlots = paired ? Math.floor(standCap / 2) : standCap;
+  const detail = optionalAlpha(qualityTransition);
+  const take = (key, slots, structuralAlpha) => {
+    const out = [];
+    for (const side of active) {
+      const window = sourceWindows?.[side.sideId] || { min: -Infinity, max: Infinity };
+      for (const item of pickSpatial(side.surface[key] || [], window, slots)) {
+        out.push({
+          sideId: side.sideId, id: item.id,
+          alpha: item.structural ? structuralAlpha : detail,
+        });
+      }
+    }
+    return out;
+  };
+  return {
+    facets: take('facets', facetSlots, 1),
+    gullies: take('gullies', gullySlots, detail),
+    stands: take('stands', standSlots, 1),
+  };
+}
+
+function ensureId(item, prefix, index) {
+  return item.id ? item : { ...item, id: `${prefix}:${index}` };
+}
+
+function rgba(hex, alpha) {
+  const { r, g, b } = hexToRgb(hex);
+  return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, alpha)).toFixed(4)})`;
+}
+
+function lightDirectionFrom(light, geom) {
+  if (!light || !Number.isFinite(light.x)) return null;
+  const centerX = (geom.pts[0].x + geom.pts.at(-1).x) * 0.5;
+  const halfWidth = Math.max(1, (geom.pts.at(-1).x - geom.pts[0].x) * 0.5);
+  const lx = (light.x - centerX) / halfWidth;
+  return { x: lx, y: -0.65, z: 0.45, intensity: Math.max(0, light.intensity ?? 1) };
+}
+
+function paletteOrFallback(palette) {
+  return palette || {
+    base: '#5c6255', faceLight: '#788071', faceShade: '#343d3a', gully: '#26332f', intrinsicContrast: 1,
+  };
+}
+
+function drawTaperedGully(ctx, gully, offset, projection, alpha) {
+  const pts = gully.points.map((p) => projectSurfacePoint({ sx: p.sx + offset, depth01: p.depth01 }, projection));
+  if (pts.some((p) => !p)) return;
+  const widths = gully.widthsSource || [gully.widthPx || 1.4];
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const w = widths[Math.min(i, widths.length - 1)] || 1;
+    ctx.lineTo(pts[i].x + w, pts[i].y + w * 0.6);
+  }
+  ctx.closePath();
+  ctx.fillStyle = rgba('#1c2824', alpha * 0.45);
+  ctx.fill();
+}
+
+export function drawRidgeSurface(ctx, {
+  surface, geom, terrain = false, policy, budget, light, alpha = 1, palette = null,
+  sideId = 'A', sharedHandoff = false, qualityTransition = null,
+  drawFaces = true, drawCover = true,
+}) {
   if (!surface || !geom?.pts?.length) return;
   const projection = { geom, stripWidth: surface.width, terrain };
-  const offsets = surfaceCopies(surface.width, geom.pts[0].stripX,
-    geom.pts[geom.pts.length - 1].stripX, terrain);
-  const minX = geom.pts[0].stripX - 64, maxX = geom.pts.at(-1).stripX + 64;
-  const centerX = (geom.pts[0].x + geom.pts.at(-1).x) * .5;
-  const halfWidth = Math.max(1, (geom.pts.at(-1).x - geom.pts[0].x) * .5);
-  const lightX = Number.isFinite(light?.x) ? Math.max(-1, Math.min(1, (light.x - centerX) / halfWidth)) : -.5;
-  const lightIntensity = Math.max(0, Math.min(1, light?.intensity ?? 1));
+  const offsets = surfaceCopies(surface.width, geom.pts[0].stripX, geom.pts.at(-1).stripX, terrain);
+  const sourceWindow = { min: geom.pts[0].stripX, max: geom.pts.at(-1).stripX };
+  const facets = (surface.facets || []).map((item, i) => ensureId(item, 'face', i));
+  const gullies = (surface.gullies || []).map((item, i) => ensureId(item, 'gully', i));
+  const stands = (surface.stands || []).map((item, i) => ensureId(item, 'stand', i));
+  const owned = { ...surface, facets, gullies, stands };
+  const sideBudget = sharedHandoff ? {
+    facetsPerLayer: Math.floor((budget?.facetsPerLayer ?? 0) / 2),
+    gulliesPerLayer: Math.floor((budget?.gulliesPerLayer ?? 0) / 2),
+    standsPerLayer: Math.floor((budget?.standsPerLayer ?? 0) / 2),
+  } : budget;
+  const selected = selectVisibleSurface({
+    sides: [{ sideId, surface: owned, seamWeight: 1 }],
+    sourceWindows: { [sideId]: sourceWindow },
+    budget: sideBudget,
+    qualityTransition,
+  });
+  const facetAlpha = new Map(selected.facets.filter((item) => item.sideId === sideId).map((item) => [item.id, item.alpha]));
+  const gullyAlpha = new Map(selected.gullies.filter((item) => item.sideId === sideId).map((item) => [item.id, item.alpha]));
+  const standAlpha = new Map(selected.stands.filter((item) => item.sideId === sideId).map((item) => [item.id, item.alpha]));
+  const tones = paletteOrFallback(palette);
+  const lightDirection = lightDirectionFrom(light, geom);
+  const inherited = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
   ctx.save();
   for (const offset of offsets) {
-    let faceCount = 0;
-    for (const facet of surface.facets) {
-      if (facet.vertices.every(v => v.sx + offset < minX)
-        || facet.vertices.every(v => v.sx + offset > maxX)) continue;
-      if (faceCount++ >= budget.facetsPerLayer) break;
+    if (!drawFaces) facetAlpha.clear();
+    if (!drawCover) { gullyAlpha.clear(); standAlpha.clear(); }
+    for (const facet of facets) {
+      const weight = facetAlpha.get(facet.id);
+      if (weight == null) continue;
       if (!projectedPath(ctx, facet.vertices, offset, projection)) continue;
-      const facing = Math.max(0, Math.min(1, .5 + facet.normalX * lightX * .4));
-      ctx.fillStyle = facing > .5 ? `rgba(244,232,204,${(alpha * (facing - .5) * .14 * lightIntensity).toFixed(3)})`
-        : `rgba(5,14,20,${(alpha * (.5 - facing) * .24).toFixed(3)})`;
+      const tone = resolveFacetTone({ facet, palette: tones, lightDirection });
+      ctx.globalAlpha = inherited * alpha * weight;
+      ctx.fillStyle = tone.baseColor;
       ctx.fill();
+      if (tone.directionalAlpha > 0.004) {
+        ctx.globalAlpha = inherited * alpha * weight * Math.min(1, tone.directionalAlpha / 0.08);
+        ctx.fillStyle = tone.directionalColor;
+        ctx.fill();
+      }
     }
-    let gullyCount = 0;
-    for (const gully of surface.gullies) {
-      if (gully.points.every(v => v.sx + offset < minX)
-        || gully.points.every(v => v.sx + offset > maxX)) continue;
-      if (gullyCount++ >= budget.gulliesPerLayer) break;
-      const points = gully.points.map(p => projectSurfacePoint({ sx: p.sx + offset, depth01: p.depth01 }, projection));
-      if (points.some(p => !p)) continue;
-      ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-      ctx.lineWidth = gully.widthPx;
-      ctx.strokeStyle = `rgba(5,15,18,${(alpha * .17).toFixed(3)})`;
-      ctx.stroke();
+    for (const gully of gullies) {
+      const weight = gullyAlpha.get(gully.id);
+      if (weight == null) continue;
+      if (gully.widthsSource) drawTaperedGully(ctx, gully, offset, projection, inherited * alpha * weight);
+      else if (gully.points) {
+        const points = gully.points.map((p) => projectSurfacePoint({ sx: p.sx + offset, depth01: p.depth01 }, projection));
+        if (points.some((p) => !p)) continue;
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+        ctx.lineWidth = gully.widthPx || 1.4;
+        ctx.strokeStyle = rgba('#14201c', inherited * alpha * weight * 0.5);
+        ctx.stroke();
+      }
     }
-    let standCount = 0;
-    if (policy?.canopy > .2) for (const stand of surface.stands) {
-      if (stand.sx + offset < minX || stand.sx + offset > maxX) continue;
-      if (standCount++ >= budget.standsPerLayer) break;
-      const p = projectSurfacePoint({ sx: stand.sx + offset, depth01: stand.depth01 }, projection);
-      if (!p) continue;
-      ctx.fillStyle = `rgba(9,27,23,${(alpha * .22).toFixed(3)})`;
-      ctx.beginPath();
-      ctx.ellipse(p.x, p.y, stand.widthPx * .5, stand.heightPx * .55, 0, 0, Math.PI * 2);
-      ctx.fill();
+    if ((policy?.canopy ?? 1) > 0.2) for (const stand of stands) {
+      const weight = standAlpha.get(stand.id);
+      if (weight == null) continue;
+      ctx.globalAlpha = inherited * alpha * weight * 0.9;
+      if (stand.vertices?.length) {
+        if (!projectedPath(ctx, stand.vertices, offset, projection)) continue;
+        ctx.fillStyle = stand.kind === 'broadleaf' ? '#1d3a2c'
+          : stand.kind === 'scrub' ? '#3d4632'
+            : stand.kind === 'grass' || stand.kind === 'mat' ? '#4a5338'
+              : '#163228';
+        ctx.fill();
+      } else if (Number.isFinite(stand.sx)) {
+        const p = projectSurfacePoint({ sx: stand.sx + offset, depth01: stand.depth01 }, projection);
+        if (!p) continue;
+        ctx.fillStyle = `rgba(9,27,23,${(0.22).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, stand.widthPx * 0.5, stand.heightPx * 0.55, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
   ctx.restore();
