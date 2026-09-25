@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   scatterSlot, visibleScatter, scatterPath,
+  scatterBiomeLayers,
   SCATTER_RATIO, SCATTER_SPACING_PX, SCATTER_KINDS,
 } from '../src/world/GroundScatter.js';
 import { NEARFIELD_RATIO } from '../src/world/NearField.js';
@@ -17,6 +18,11 @@ test('the scatter layer outruns every other layer -- that is the speed cue', () 
   assert.ok(SCATTER_RATIO > NEARFIELD_RATIO,
     `scatter (${SCATTER_RATIO}) must outrun near-field (${NEARFIELD_RATIO})`);
   assert.ok(NEARFIELD_RATIO > 1, 'near-field already outruns the characters');
+});
+
+test('biome vocabulary blends through midpoint without replacing props in place', () => {
+  assert.deepEqual(scatterBiomeLayers('RAINFOREST', 'DESERT', .49).map(x => x.alpha), [.51, .49]);
+  assert.deepEqual(scatterBiomeLayers('RAINFOREST', 'DESERT', .51).map(x => x.alpha), [.49, .51]);
 });
 
 test('slots are deterministic per seed, and different seeds lay different ground', () => {
@@ -125,6 +131,16 @@ test('a kick lifts the band, and lifts the front row hardest', () => {
 test('degenerate geometry yields nothing rather than throwing', () => {
   assert.deepEqual(visibleScatter({ ...BASE, canvasW: 0 }), []);
   assert.deepEqual(visibleScatter({ ...BASE, bandH: 0 }), []);
+});
+
+test('deep long-travel parallax retains both near and far slots in view', () => {
+  for (const worldX of [10_000, 100_000, 1_000_000]) {
+    const props = visibleScatter({ ...BASE, worldX, biomeKey: 'RAINFOREST' });
+    assert.ok(props.length > 20, `lost ground cover at ${worldX}`);
+    assert.ok(props.some(p => p.depth01 < .25));
+    assert.ok(props.some(p => p.depth01 > .75));
+    assert.ok(props.every(p => p.kind !== 'splinter'), 'wet forest should not scatter bare sticks');
+  }
 });
 
 test('every kind produces a closed, non-degenerate silhouette', () => {

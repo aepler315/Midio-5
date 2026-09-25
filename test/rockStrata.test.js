@@ -77,6 +77,7 @@ async function makeManager({ perf = null } = {}) {
   bm.groundY = 400;
   bm.h = 540;
   bm._airColor = null;
+  bm.world = { kind: 'city' }; // Legacy strata still belong to non-alpine worlds.
   return bm;
 }
 

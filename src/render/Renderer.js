@@ -20,6 +20,7 @@ import { hypeFrameStyle } from '../sim/HypeDirector.js';
 import { salienceBudgetFor } from './SalienceBudget.js';
 import { isRendered, styleDials } from './VisualStyle.js';
 import { groundGlowLights, characterGlowLight } from './LightField.js';
+import { GroundResponse, recentConductorHits } from '../world/alpine/GroundResponse.js';
 import { quantizeCanvas } from './PaletteQuantize.js';
 
 // Reserve margin (logical stage px) around the visible frame that camera
@@ -137,7 +138,10 @@ export class Renderer {
     // Renderer-owned (not sim.biomes.lerpCache) so the film finish still
     // works if sim.biomes were ever null (the fallback-sky branch below).
     this._filmLerpCache = new LerpCache();
+    this._groundResponse = new GroundResponse();
   }
+
+  dispose() { this._groundResponse.dispose(); }
 
   draw(sim, alpha) {
     const { ctx, canvas } = this;
@@ -410,6 +414,18 @@ export class Renderer {
         { x: sim.broshi ? sim.broshi.renderX : NaN, hue: sim.broshi ? sim.broshi.hue : 0, active: !!sim.broshi && sim.broshi.burrow.depth <= 0.02 },
         { x: sim.midasus ? sim.midasus.p.x : NaN, hue: sim.midasus ? sim.midasus.hue : 0, active: !!sim.midasus && sim.midasus.voyage.depth <= 0 },
       ]);
+    }
+    if (biomeManager?.world?.kind === 'alpine') {
+      const lights = [
+        characterGlowLight(pose.midioDrawX, pose.midioY, MIDIO_IDENTITY_HUE, .28),
+        sim.broshi?.burrow.depth <= .02 ? characterGlowLight(sim.broshi.renderX, sim.broshi.groundY - 12, sim.broshi.hue, .22) : null,
+        midasusGlowLight,
+      ].filter(Boolean);
+      this._groundResponse.draw(ctx, { receivers: biomeManager._groundReceivers,
+        lights, nowMs: sim.timeMs,
+        hits: recentConductorHits(sim.conductor?.timeline, sim.timeMs),
+        reducedFlash: !!sim.reducedFlash,
+        quality: perf?.level ?? 0 });
     }
     if (sim.battle) this._drawBattleFX(ctx, sim);
     if (sim.gnat) sim.gnat.draw(ctx, sim.timeMs);

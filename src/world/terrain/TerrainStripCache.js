@@ -16,6 +16,7 @@ export function stripSetBytes(strips) {
     const height = Number(surface?.height);
     if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
       bytes += width * height * 4;
+      bytes += Math.max(0, Number(surface.ridge?.surface?.byteLength) || 0);
       const nested = surface.windows;
       const nestedWidth = Number(nested?.width);
       const nestedHeight = Number(nested?.height);

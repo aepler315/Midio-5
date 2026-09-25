@@ -64,6 +64,7 @@ async function makeManager() {
   bm.groundY = 400;
   bm.h = 540;
   bm._airColor = '#204060';
+  bm.world = { kind: 'city' }; // The alpine depth color is baked; legacy aerial wash stays elsewhere.
   return bm;
 }
 
