@@ -1888,6 +1888,10 @@ function startTimeline(timelineData, extra = {}) {
     try { audioEngine.ctx.suspend(); } catch { /* already suspended */ }
     lastNowMs = simTime;
   }
+  // Bake the biome on screen before the first paint. The next section's
+  // set is pumped a layer at a time from Simulation, ahead of its boundary.
+  try { sim.biomes.preparePlaybackStrips(); }
+  catch (err) { console.warn('[strip prepare]', err); }
   running = true;
   syncKeepAwake();
   stopTitleBackdrop();

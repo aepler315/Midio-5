@@ -37,7 +37,10 @@ export const WORLD_IDENTITIES = Object.freeze({
     lightSource: 'a horizon sun or moon',
     paletteFloor: 0.22,
     castPlacement: 'figures cross the foreground ridge, never float in the sky',
-    sharedEffects: OPEN_SKY,
+    // Ocean walls, the flood they spill, and the camera accent on arrival
+    // belong to the range that actually has a sea. Other worlds do not
+    // inherit that hazard just because they share the manager.
+    sharedEffects: { ...OPEN_SKY, ocean: true },
   }),
   city: policy({
     kind: 'city',

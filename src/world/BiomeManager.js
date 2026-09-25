@@ -40,7 +40,7 @@ import {
 import { profileUnits } from './terrain/TerrainProfile.js';
 import { ridgeDepth, terrainPreviewStationPx, terrainScrollPx } from './terrain/ProfileTravel.js';
 import { TERRAIN_STRIP_WIDTH } from './terrain/StripRead.js';
-import { TerrainStripCache } from './terrain/TerrainStripCache.js';
+import { TerrainStripCache, stripSetBytes } from './terrain/TerrainStripCache.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
 import { strataBeds } from './RockStrata.js';
 import {
@@ -121,6 +121,7 @@ import { Role } from '../core/NoteEvent.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { VoyagePhase, constellationLife01, afterglowLife01 } from '../sim/SkyVoyage.js';
 import { blendSections, medianBeatSec, sectionIndexAt } from './BiomeSchedule.js';
+import { drawParticleBlend } from './WorldDraw.js';
 
 export { medianBeatSec } from './BiomeSchedule.js';
 
@@ -830,7 +831,11 @@ export class BiomeManager {
     this._seaLifeIdx = 0;
     this._monsters = monsterSchedule(hashSeed(`${songSeed}:monster`), durationMs);
     this._monsterIdx = 0;
-    this._tsunamis = tsunamiSchedule(hashSeed(`${songSeed}:tsunami`), durationMs, this._oceanHotspotMs || []);
+    // Worlds without a sea do not grow a tsunami schedule. An empty list
+    // keeps the shared update from arming a flood nothing will draw.
+    this._tsunamis = this.acceptsOceanHazard()
+      ? tsunamiSchedule(hashSeed(`${songSeed}:tsunami`), durationMs, this._oceanHotspotMs || [])
+      : [];
     this._tsunamiIdx = 0;
     this._tsunamiFlecks = sprayFlecks(hashSeed(`${songSeed}:tsunamispray`));
     this.mandala = new Mandala(songSeed);
@@ -1499,6 +1504,7 @@ export class BiomeManager {
     if (!this._ridgePortrait) {
       this._ridgePortrait = extractRidgePortrait(this.energyCurves, this.durationMs);
     }
+    this._cancelBake();
     this.strips.clear();
   }
 
@@ -1522,8 +1528,15 @@ export class BiomeManager {
 
   /** Bake one profile's L2-L5 strip set. Extracted from _rebuildStrips so
    *  stripsFor() can lazily build the same thing on a cache miss (a profile
-   *  name not eagerly baked -- see Stage 1's "only bake what's cast"). */
+   *  name not eagerly baked -- see Stage 1's "only bake what's cast").
+   *  The same job can be pumped one layer at a time ahead of a boundary. */
   _buildStripSet(b) {
+    const job = this._composeStripJob(b);
+    while (!this._bakeOneLayer(job)) { /* all four layers */ }
+    return job.strips;
+  }
+
+  _composeStripJob(b) {
     const songSeed = this.songSeed ?? 1;
     const shadeMode = 'rendered';
     if (!this._ridgePortrait) {
@@ -1544,77 +1557,221 @@ export class BiomeManager {
     const scheme = mat.scheme === 'song'
       ? songScheme
       : (mat.scheme && CHARACTER_SCHEMES[mat.scheme]) || songScheme;
-
     const strips = {};
     const biomeTerrain = this._terrainFor(b.name);
     // Which terrain this set was baked on: stripsFor re-bakes it when the
     // biome's own ranges land after it was first drawn.
     Object.defineProperty(strips, '_terrain', { value: biomeTerrain, enumerable: false });
-    const keys = ['L2', 'L3', 'L4', 'L5'];
-    keys.forEach((layerKey, idx) => {
-      const bake = layerBake(worldKind, layerKey);
-      const character = Number.isInteger(bake.characterIndex)
-        ? scheme[bake.characterIndex] || scheme[0]
-        : 'massif';
-      const color = layerColor(b.silhouette, worldKind, layerKey);
-      const terrain = layerKey !== 'L5' ? biomeTerrain?.[layerKey] : null;
-      // An invented layer in front of a real range was the loud sawtooth.
-      // Keep it as a low foothill so the scanned ridges are what you see.
-      const standIn = !!(biomeTerrain && !terrain && (layerKey === 'L3' || layerKey === 'L5'));
-      strips[layerKey] = generateSilhouette({
-        seed: seed + idx + 1,
-        height: bake.height,
-        octaves: standIn ? 1 : bake.octaves,
-        amplitude: standIn ? bake.amplitude * 0.5 : bake.amplitude,
-        baseline: bake.baseline,
-        color,
-        shadeMode,
-        profile: standIn ? 'rolling' : bake.profile,
-        character,
-        anchor: bake.anchor,
-        fillLift: mat.fillLift,
-        kind: worldKind,
-        colH: bake.colH,
-        archAmp: bake.archAmp,
-        bayPx: bake.bayPx,
-        colFrac: bake.colFrac,
-        organic: bake.organic,
-        softenScale: standIn ? 1 : bake.soften,
-        portrait,
-        layerKey,
-        terrainMods: terrainModsForLayer(terrainMods, bake),
-        timeline: this._layerTimeline(layerKey),
-        edgeLight: el,
-        // One south-to-north pass. Where the view opens, and how fast it
-        // moves, is the song's (see _terrainScroll), not this width.
-        // The whole profile is on this strip, so the headroom fit is one
-        // scale for all of it, not a per-window stretch.
-        width: terrain ? TERRAIN_STRIP_WIDTH : undefined,
-        sourceHeights: terrain ? profileUnits(terrain) : null,
-        preserveScale: false,
-      });
-    });
+    return {
+      key: b.name, terrain: biomeTerrain, profile: b, strips, index: 0, done: false,
+      layers: ['L2', 'L3', 'L4', 'L5'],
+      songSeed, shadeMode, portrait, worldKind, mat, seed, el, terrainMods, scheme,
+    };
+  }
 
+  /** Bake the next layer of a job. Returns true when the set is complete. */
+  _bakeOneLayer(job) {
+    if (job.done) return true;
+    const layerKey = job.layers[job.index];
+    const idx = job.index;
+    const b = job.profile;
+    const { shadeMode, portrait, worldKind, mat, seed, el, terrainMods, scheme } = job;
+    const biomeTerrain = job.terrain;
+    const bake = layerBake(worldKind, layerKey);
+    const character = Number.isInteger(bake.characterIndex)
+      ? scheme[bake.characterIndex] || scheme[0]
+      : 'massif';
+    const color = layerColor(b.silhouette, worldKind, layerKey);
+    const terrain = layerKey !== 'L5' ? biomeTerrain?.[layerKey] : null;
+    // An invented layer in front of a real range was the loud sawtooth.
+    // Keep it as a low foothill so the scanned ridges are what you see.
+    const standIn = !!(biomeTerrain && !terrain && (layerKey === 'L3' || layerKey === 'L5'));
+    job.strips[layerKey] = generateSilhouette({
+      seed: seed + idx + 1,
+      height: bake.height,
+      octaves: standIn ? 1 : bake.octaves,
+      amplitude: standIn ? bake.amplitude * 0.5 : bake.amplitude,
+      baseline: bake.baseline,
+      color,
+      shadeMode,
+      profile: standIn ? 'rolling' : bake.profile,
+      character,
+      anchor: bake.anchor,
+      fillLift: mat.fillLift,
+      kind: worldKind,
+      colH: bake.colH,
+      archAmp: bake.archAmp,
+      bayPx: bake.bayPx,
+      colFrac: bake.colFrac,
+      organic: bake.organic,
+      softenScale: standIn ? 1 : bake.soften,
+      portrait,
+      layerKey,
+      terrainMods: terrainModsForLayer(terrainMods, bake),
+      timeline: this._layerTimeline(layerKey),
+      edgeLight: el,
+      // One south-to-north pass. Where the view opens, and how fast it
+      // moves, is the song's (see _terrainScroll), not this width.
+      // The whole profile is on this strip, so the headroom fit is one
+      // scale for all of it, not a per-window stretch.
+      width: terrain ? TERRAIN_STRIP_WIDTH : undefined,
+      sourceHeights: terrain ? profileUnits(terrain) : null,
+      preserveScale: false,
+    });
+    job.index += 1;
+    if (job.index < job.layers.length) return false;
     // Landmarks are alpine/rolling dressing. Columns and skylines have their
     // own members; hanging a pine on a nave bay is how the worlds collapsed.
     if (worldKind === 'alpine' || worldKind === 'airless') {
       const landmarkKey = b.landmarkKey || b.name;
+      const songSeed = job.songSeed;
       // A real biome's vegetation is a density along the ground, not three
       // props: a forest has to read as forest across a 8,192px strip.
       const count = (key, fallback) => (b.density
-        ? Math.round((b.density[key] || 0) * strips[key].width / 1000)
+        ? Math.round((b.density[key] || 0) * job.strips[key].width / 1000)
         : fallback);
-      decorateStrip(strips.L4, landmarkKey, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: count('L4', 3), scale: 1 });
-      decorateStrip(strips.L5, landmarkKey, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: count('L5', 2), scale: 1.9 });
+      decorateStrip(job.strips.L4, landmarkKey, hashSeed(`${songSeed}:${b.name}:L4`), b.silhouette, { count: count('L4', 3), scale: 1 });
+      decorateStrip(job.strips.L5, landmarkKey, hashSeed(`${songSeed}:${b.name}:L5`), b.silhouette, { count: count('L5', 2), scale: 1.9 });
     }
-    return strips;
+    job.done = true;
+    return true;
+  }
+
+  _estimateStripBytes(key) {
+    const kind = this.world?.kind || 'alpine';
+    return ['L2', 'L3', 'L4', 'L5'].reduce((total, layerKey) => {
+      const bake = layerBake(kind, layerKey);
+      const width = this._terrainFor(key)?.[layerKey] && layerKey !== 'L5' ? TERRAIN_STRIP_WIDTH : 2048;
+      // City strips own a same-sized emissive window surface.
+      return total + width * bake.height * 4 * (bake.profile === 'city' ? 2 : 1);
+    }, 0);
+  }
+
+  _stripsMatch(key, terrain = this._terrainFor(key)) {
+    const strips = this.strips?.get(key);
+    return !!(strips && strips._terrain === terrain);
+  }
+
+  _visibleStripNames() {
+    return [this.currentBlend?.from, this.currentBlend?.to].filter(Boolean);
+  }
+
+  _releaseStripSurfaces(strips) {
+    for (const surface of Object.values(strips || {})) {
+      if (surface && typeof surface.getContext === 'function') {
+        surface.width = 0;
+        surface.height = 0;
+      }
+      if (surface?.windows && typeof surface.windows.getContext === 'function') {
+        surface.windows.width = 0;
+        surface.windows.height = 0;
+      }
+    }
+  }
+
+  _cancelBake() {
+    const job = this._bakeJob;
+    this._bakeJob = null;
+    if (job && !job.published) this._releaseStripSurfaces(job.strips);
+  }
+
+  /** Store a finished job without evicting the biomes on screen. Returns
+   *  false when the budget cannot hold it beside that pair; the job stays
+   *  so a later pump can retry. */
+  _publishBake(job) {
+    if (!job?.done) return false;
+    const visible = new Set(this._visibleStripNames());
+    this.strips.setPins([...visible, job.key]);
+    const bytes = stripSetBytes(job.strips);
+    if (!this.strips.reserve(bytes, visible)) return false;
+    this.strips.set(job.key, job.strips);
+    job.published = true;
+    return true;
+  }
+
+  _queueBake(key) {
+    const terrain = this._terrainFor(key);
+    if (this._stripsMatch(key, terrain)) return;
+    if (this._bakeJob && this._bakeJob.key === key && this._bakeJob.terrain === terrain) return;
+    this._cancelBake();
+    const job = this._composeStripJob(this._profile(key));
+    // Cache identity is the name the caller asked for. The profile object
+    // can fall back to another biome; the stored key must not follow it.
+    job.key = key;
+    this._bakeJob = job;
+  }
+
+  /** Bake at least one layer, and more while `budgetMs` remains. A finished
+   *  job is published only when that does not evict the visible pair. */
+  _pumpBake(budgetMs = 8) {
+    const job = this._bakeJob;
+    if (!job) return;
+    if (job.done) {
+      if (this._publishBake(job)) this._bakeJob = null;
+      return;
+    }
+    const start = performance.now();
+    do {
+      const done = this._bakeOneLayer(job);
+      if (done) {
+        if (this._publishBake(job)) this._bakeJob = null;
+        return;
+      }
+    } while (performance.now() - start < budgetMs);
+  }
+
+  /** The biome after the one on screen, when it still needs a strip set. */
+  _nextBiomeName() {
+    const idx = this._sectionAt((this.tSec || 0) * 1000);
+    const next = idx >= 0 ? this.sections?.[idx + 1] : null;
+    if (!next?.profile) return null;
+    if (this._stripsMatch(next.profile)) return null;
+    return next.profile;
+  }
+
+  /** Synchronous bake of whatever is on screen, before the first paint.
+   *  A stale set from a profile that landed during loading is replaced
+   *  here because nothing has been shown yet. */
+  preparePlaybackStrips() {
+    const nowMs = (this.tSec || 0) * 1000;
+    const blend = this._blend(nowMs);
+    if (blend) this.currentBlend = blend;
+    const names = this._visibleStripNames();
+    if (!names.length && this.sections?.[0]?.profile) names.push(this.sections[0].profile);
+    for (const name of names) {
+      const terrain = this._terrainFor(name);
+      if (this._stripsMatch(name, terrain)) continue;
+      if (this._bakeJob?.key === name && this._bakeJob.terrain === terrain) {
+        this._pumpBake(1e9);
+        if (this._stripsMatch(name, terrain)) continue;
+      }
+      this._cancelBake();
+      if (this.strips.has(name)) this.strips.delete(name);
+      this.stripsFor(name);
+    }
+  }
+
+  /** Time-boxed prebake of a stale visible set, else the next section's
+   *  biome. Never evicts the pair on screen to make room. */
+  pumpStripPrewarm(budgetMs = 8) {
+    const visible = this._visibleStripNames();
+    const stale = visible.find((name) => this.strips.has(name) && !this._stripsMatch(name));
+    const target = stale || this._nextBiomeName();
+    if (!target) {
+      if (this._bakeJob && !visible.includes(this._bakeJob.key)) this._cancelBake();
+      return;
+    }
+    if (this._bakeJob && this._bakeJob.key !== target) this._cancelBake();
+    if (!this._bakeJob) this._queueBake(target);
+    this._pumpBake(budgetMs);
   }
 
   /** Lazy-bake indirection over this.strips: a profile name eagerly baked by
    *  _rebuildStrips() is a plain lookup; a name not yet baked (Stage 1's
    *  "only bake what's cast" -- a variant not chosen for any section) is
    *  built on first use and cached, so every call site gets the same strip
-   *  set whether it was baked up front or on demand. */
+   *  set whether it was baked up front or on demand. A set baked on an older
+   *  terrain reference stays on screen until its replacement is published. */
   stripsFor(key) {
     // What must stay resident is what this frame is about to draw, and that
     // is never just the blend pair. Callers fetch two sets in a row --
@@ -1628,17 +1785,28 @@ export class BiomeManager {
     const pins = [key, this._lastStripKey, this.currentBlend?.from, this.currentBlend?.to];
     this._lastStripKey = key;
     this.strips.setPins(pins);
+    const terrain = this._terrainFor(key);
     let strips = this.strips.get(key);
-    if (strips && strips._terrain === this._terrainFor(key)) return strips;
+    if (strips && strips._terrain === terrain) return strips;
+    if (this._bakeJob?.key === key && this._bakeJob.terrain === terrain) {
+      this._pumpBake(1e9);
+      // The frame needs the set now. A prewarm that would not fit beside the
+      // visible pair is installed anyway, the same way a cold miss is, so
+      // the finished layers are not baked a second time.
+      if (this._bakeJob?.done && this._bakeJob.key === key && !this._bakeJob.published) {
+        this.strips.set(key, this._bakeJob.strips);
+        this._bakeJob.published = true;
+        this._bakeJob = null;
+      }
+      strips = this.strips.get(key);
+      if (strips && strips._terrain === terrain) return strips;
+    }
+    if (strips) {
+      this._queueBake(key);
+      return strips;
+    }
     const profile = this._profile(key);
-    const kind = this.world?.kind || 'alpine';
-    const estimatedBytes = ['L2', 'L3', 'L4', 'L5'].reduce((total, layerKey) => {
-      const bake = layerBake(kind, layerKey);
-      const width = this._terrainFor(key)?.[layerKey] && layerKey !== 'L5' ? TERRAIN_STRIP_WIDTH : 2048;
-      // City strips own a same-sized emissive window surface.
-      return total + width * bake.height * 4 * (bake.profile === 'city' ? 2 : 1);
-    }, 0);
-    this.strips.reserve(estimatedBytes, new Set([key]));
+    this.strips.reserve(this._estimateStripBytes(key), new Set([key]));
     strips = this._buildStripSet(profile);
     this.strips.set(key, strips);
     return strips;
@@ -2070,38 +2238,22 @@ export class BiomeManager {
     // an existing grid), so nothing queues up while they are stopped. They
     // resume from where they left off, which for a diffusion field and two
     // oscillator banks is a valid state rather than a stale one.
-    if (!this._perf || this._perf.phenomenaFull) {
-      this.mandala.update(nowMs, dtSec, energyCurves, calmLevel);
-      this.cymatics.update(nowMs, dtSec, energyCurves, calmLevel);
-      this.swarm.update(nowMs, dtSec, energyCurves, this._beatMs, calmLevel);
-      this.ribbon.update(nowMs, dtSec, energyCurves, calmLevel);
-      this.rd.update(nowMs, dtSec, energyCurves, calmLevel);
-    }
-    this.lightning.update(dtSec);
-    this.lightRig.update(nowMs, dtSec, this._beatMs, calmLevel, this.budget, this.fever || 0);
-    this.meteors.update(dtSec);
-    // Sky "fullness": a slow breathing pulse so the constellation weaver's
-    // concurrency cap loosens every now and then rather than sitting flat
-    // for the whole song, plus a hard bias toward dense over the last fifth
-    // of the track so the sky is visibly fuller as the song closes out.
-    const weaverPulse = 0.5 + 0.5 * Math.sin(this.tSec * 0.05);
-    const weaverFinale = smoothstep(0.8, 1, this._progress);
-    const weaverFullness = clamp01(weaverPulse * 0.5 + weaverFinale);
-    this.weaver.update(nowMs, dtSec, weaverFullness);
-    // Reduced flash keeps the slow tumble and drops the beat hitch.
-    const kickTau = this.reducedFlash ? -1 : nowMs - this._danceKickMs;
-    this.spaceRidge.update(nowMs, dtSec, this._eqSmoothed, this.calmLevel, kickTau);
+    // Optional spectacle is stepped only when this world draws it and the
+    // current quality still wants it. Cathode never draws the manager, so
+    // the policy has to arrive from Simulation before this update; a missing
+    // policy still means full quality for worlds that do paint the effect.
+    const fx = this.stepOptionalEffects(nowMs, dtSec, energyCurves, calmLevel, wind);
     // Drops send a heavy ring through the lake and snap every light-rig beam
     // onto Midio for a moment -- edge-detected off the externally-set
     // dropAtMs (same passthrough pattern as heatShimmer).
     if (Number.isFinite(this.dropAtMs) && this.dropAtMs !== this._lastSeenDropAtMs) {
       this._lastSeenDropAtMs = this.dropAtMs;
       this.lakeRing.excite(22);
-      this.lightRig.trigger(nowMs, this.midioX, this.midioY);
-      this._triggerMeteors(nowMs, DROP_METEOR_BASE);
+      if (fx.lightRig) this.lightRig.trigger(nowMs, this.midioX, this.midioY);
+      if (fx.meteors) this._triggerMeteors(nowMs, DROP_METEOR_BASE);
       // A drop also throws a bonus tsunami wall across the ocean, if one
-      // hasn't rolled through recently.
-      if (nowMs - (this._lastDropTsunamiMs ?? -Infinity) >= 30000) {
+      // hasn't rolled through recently. Worlds without a sea ignore it.
+      if (this.acceptsOceanHazard() && nowMs - (this._lastDropTsunamiMs ?? -Infinity) >= 30000) {
         this._lastDropTsunamiMs = nowMs;
         this._tsunamis.push({ tMs: nowMs, dir: this._tsunamis.length % 2 === 0 ? 1 : -1 });
       }
@@ -2113,25 +2265,17 @@ export class BiomeManager {
     // this only detects the trigger, since tsunami scheduling/state is
     // BiomeManager's own domain. armFromTsunami() is itself guarded
     // per-event, so a wall's crest sitting above the threshold across
-    // several frames only ever arms once.
-    const activeNow = this._activeTsunami(this.w || 1280);
-    if (activeNow && tsunamiHeightScale(nowMs - activeNow.ev.tMs) >= TSUNAMI_OVERTOP_SCALE) {
-      this.flood?.armFromTsunami(nowMs, activeNow.ev.tMs);
-    }
-    // Edge-triggered one-frame flag for the moment a wall's approach
-    // window actually begins (not the withdrawal lead-up) -- Simulation
-    // reads this to fire the same authored-cut treatment (FilmFinish.hit)
-    // the drop/apotheosis/finale already get.
-    this.tsunamiJustArrived = !!activeNow && !this._wasTsunamiActive;
-    this._wasTsunamiActive = !!activeNow;
+    // several frames only ever arms once. Worlds without an ocean never arm.
+    this.stepOceanHazards(nowMs);
     // Combo milestones (streak 5/10/20) throw their own reward volley.
     if (Number.isFinite(this.milestoneAtMs) && this.milestoneAtMs !== this._lastSeenMilestoneMs) {
       this._lastSeenMilestoneMs = this.milestoneAtMs;
-      const idx = Math.max(0, Math.min(MILESTONE_METEOR_BASE.length - 1, this.milestoneIdx));
-      this._triggerMeteors(nowMs, MILESTONE_METEOR_BASE[idx]);
+      if (fx.meteors) {
+        const idx = Math.max(0, Math.min(MILESTONE_METEOR_BASE.length - 1, this.milestoneIdx));
+        this._triggerMeteors(nowMs, MILESTONE_METEOR_BASE[idx]);
+      }
     }
     this.lakeRing.update(dtSec);
-    this.murmuration.update(nowMs, dtSec, energyCurves, calmLevel, wind);
 
     if (this._scanlineActive) {
       this._scanlineY += dtSec * this.h * 2.2;
@@ -2371,11 +2515,14 @@ export class BiomeManager {
     // The Unraveling: each layer's scroll ratio drifts apart from the rest
     // as the world delaminates -- nearer layers race ahead more than far
     // ones (the ratio itself is the depth proxy, so no separate table).
-    // Scanned L2 and L4 keep that depth, but the song chooses their station
-    // and their speed. L3 has no profile here, so it stays on worldX.
-    const scrollX0 = this._terrainScroll('L2', worldX);
-    const scrollX1 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L3, this.unravel);
-    const scrollX2 = this._terrainScroll('L4', worldX);
+    // Scanned L2, L3 and L4 keep that depth, but the song chooses their
+    // station and their speed so a finite profile lasts the song. L5 stays
+    // procedural and on world parallax. View width is the canvas being
+    // drawn, not the construction-time stage, so the fit matches the frame.
+    const viewW = canvas.width;
+    const scrollX0 = this._terrainScroll('L2', worldX, viewW);
+    const scrollX1 = this._terrainScroll('L3', worldX, viewW);
+    const scrollX2 = this._terrainScroll('L4', worldX, viewW);
     const scrollX3 = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L5, this.unravel);
     // A biome's silhouette is one fixed authored color; the sky behind it
     // pulls toward near-black at night (see _drawSky's nightPull). On a
@@ -2467,18 +2614,13 @@ export class BiomeManager {
         ),
       ].filter(Boolean)
       : null;
+    // Complementary time blend (WorldDraw.drawParticleBlend): the outgoing
+    // field fades as the incoming one rises, and the two weights sum to the
+    // opening gain. The geographic seam stays on the ridges.
     ctx.save();
-    // Set unconditionally, not just when the gain is below 1: ParticleField
-    // now scales through the alpha it arrives with, so an unset alpha here
-    // would hand it whatever an earlier sky draw happened to leave behind.
-    ctx.globalAlpha = openA;
-    this.fields.get(from).draw(ctx, particleMul, mandalaColor, this.unravel, particleLights);
+    ctx.globalAlpha = 1;
+    drawParticleBlend(this, frame, 1, particleLights);
     ctx.restore();
-    if (to !== from && t > 0.02) {
-      ctx.save(); ctx.globalAlpha = t * openA;
-      this.fields.get(to).draw(ctx, particleMul, mandalaColor, this.unravel, particleLights);
-      ctx.restore();
-    }
     // Music-reactive weather, same mid-depth as the ambient field above --
     // density (and thus fever's boost) comes free from `particleMul`, hue
     // convergence at the coda comes free from `this.unravel`.
@@ -2690,6 +2832,7 @@ export class BiomeManager {
    *  without depending on draw() having already run. */
   _drawFlood(ctx, canvas) {
     if (!this.flood?.active) return;
+    if (this.flood.source === 'tsunami' && !this.acceptsOceanHazard()) return;
     const level01 = this.flood.level01;
     const FLOOD_RISE_PX = 46;
     const levelY = this.groundY - FLOOD_RISE_PX * level01;
@@ -4085,7 +4228,95 @@ export class BiomeManager {
    *  sea-epicenter quake, then calls this ~20-40s later so the aftershock
    *  reads as having kicked up a real wave). Keeps `_tsunamis` sorted so
    *  `_activeTsunami`'s first-match scan stays correct. */
+  /** The Range is the world with an ocean. Other kinds must not grow
+   *  tsunami state, flood from it, or take a camera accent from its arrival. */
+  acceptsOceanHazard() {
+    return identityAllows(this.world, 'ocean');
+  }
+
+  /** Wet-footing contribution. Rain may still soften a world that has
+   *  weather. A tsunami flood does not, unless this world has an ocean. */
+  floodFooting01() {
+    const level = this.flood?.level01 || 0;
+    if (this.flood?.source === 'tsunami' && !this.acceptsOceanHazard()) return 0;
+    return level;
+  }
+
+  /** Presentation policy, independent of draw(). Simulation sets this
+   *  before update so Cathode, which never calls draw(), still sheds. */
+  adoptPerf(perf) {
+    this._perf = perf || null;
+  }
+
+  /** Which optional simulators this world will actually show at the
+   *  current quality. Alpine spectacle is the mandala, cymatics, swarm,
+   *  ribbon, space ridge, light rig, murmuration and lightning. Reaction
+   *  diffusion feeds the shared ground pass, so every painterly world
+   *  keeps it; Cathode does not consume that pass. */
+  optionalEffectsActive() {
+    const phenomenaFull = !this._perf || !!this._perf.phenomenaFull;
+    const constellations = !this._perf || this._perf.constellationsEnabled !== false;
+    const kind = this.world?.kind || 'alpine';
+    const alpine = kind === 'alpine';
+    return {
+      mandala: phenomenaFull && alpine,
+      cymatics: phenomenaFull && alpine,
+      swarm: phenomenaFull && alpine,
+      ribbon: phenomenaFull && alpine,
+      reactionDiffusion: phenomenaFull && kind !== 'cathode',
+      spaceRidge: alpine,
+      lightRig: alpine,
+      murmuration: phenomenaFull && alpine,
+      lightning: alpine,
+      weaver: constellations && identityAllows(this.world, 'constellations'),
+      meteors: phenomenaFull && identityAllows(this.world, 'meteors'),
+    };
+  }
+
+  /** Step the optional simulators the active policy still wants. */
+  stepOptionalEffects(nowMs, dtSec, energyCurves, calmLevel, wind) {
+    const fx = this.optionalEffectsActive();
+    if (fx.mandala) this.mandala.update(nowMs, dtSec, energyCurves, calmLevel);
+    if (fx.cymatics) this.cymatics.update(nowMs, dtSec, energyCurves, calmLevel);
+    if (fx.swarm) this.swarm.update(nowMs, dtSec, energyCurves, this._beatMs, calmLevel);
+    if (fx.ribbon) this.ribbon.update(nowMs, dtSec, energyCurves, calmLevel);
+    if (fx.reactionDiffusion) this.rd.update(nowMs, dtSec, energyCurves, calmLevel);
+    if (fx.lightning) this.lightning.update(dtSec);
+    if (fx.lightRig) this.lightRig.update(nowMs, dtSec, this._beatMs, calmLevel, this.budget, this.fever || 0);
+    if (fx.meteors) this.meteors.update(dtSec);
+    // Sky "fullness": a slow breathing pulse so the constellation weaver's
+    // concurrency cap loosens every now and then rather than sitting flat
+    // for the whole song, plus a hard bias toward dense over the last fifth
+    // of the track so the sky is visibly fuller as the song closes out.
+    const weaverPulse = 0.5 + 0.5 * Math.sin(this.tSec * 0.05);
+    const weaverFinale = smoothstep(0.8, 1, this._progress);
+    const weaverFullness = clamp01(weaverPulse * 0.5 + weaverFinale);
+    if (fx.weaver) this.weaver.update(nowMs, dtSec, weaverFullness);
+    // Reduced flash keeps the slow tumble and drops the beat hitch.
+    const kickTau = this.reducedFlash ? -1 : nowMs - this._danceKickMs;
+    if (fx.spaceRidge) this.spaceRidge.update(nowMs, dtSec, this._eqSmoothed, this.calmLevel, kickTau);
+    if (fx.murmuration) this.murmuration.update(nowMs, dtSec, energyCurves, calmLevel, wind);
+    return fx;
+  }
+
+  /** Arm flood and the arrival flag from the live tsunami, or clear both
+   *  when this world has no ocean. */
+  stepOceanHazards(nowMs) {
+    if (!this.acceptsOceanHazard()) {
+      this.tsunamiJustArrived = false;
+      this._wasTsunamiActive = false;
+      return;
+    }
+    const activeNow = this._activeTsunami(this.w || 1280);
+    if (activeNow && tsunamiHeightScale(nowMs - activeNow.ev.tMs) >= TSUNAMI_OVERTOP_SCALE) {
+      this.flood?.armFromTsunami(nowMs, activeNow.ev.tMs);
+    }
+    this.tsunamiJustArrived = !!activeNow && !this._wasTsunamiActive;
+    this._wasTsunamiActive = !!activeNow;
+  }
+
   armTsunami(tMs, dir = 1) {
+    if (!this.acceptsOceanHazard()) return;
     this._tsunamis.push({ tMs, dir });
     this._tsunamis.sort((a, b) => a.tMs - b.tMs);
   }
@@ -5043,6 +5274,69 @@ export class BiomeManager {
     ctx.restore();
   }
 
+  /** A reusable full-view surface for one side of a biome travel. Null when
+   *  this environment cannot allocate a canvas; the caller keeps the
+   *  per-band path in that case. */
+  _acquireTravelSurface(canvas, slot) {
+    const width = canvas?.width || 0;
+    const height = canvas?.height || 0;
+    if (!(width > 0) || !(height > 0)) return null;
+    if (!this._travelSurfaces) this._travelSurfaces = {};
+    let surface = this._travelSurfaces[slot];
+    if (!surface || surface.width !== width || surface.height !== height) {
+      if (typeof document === 'undefined' || !document.createElement) return null;
+      surface = document.createElement('canvas');
+      surface.width = width;
+      surface.height = height;
+      this._travelSurfaces[slot] = surface;
+    }
+    if (!surface.getContext?.('2d')) return null;
+    return surface;
+  }
+
+  _paintTravelSide(surface, paint) {
+    const sctx = surface.getContext('2d');
+    if (!sctx) return;
+    if (sctx.setTransform) sctx.setTransform(1, 0, 0, 1, 0, 0);
+    sctx.globalCompositeOperation = 'source-over';
+    sctx.globalAlpha = 1;
+    if (sctx.clearRect) sctx.clearRect(0, 0, surface.width, surface.height);
+    paint();
+  }
+
+  /** Same seam steps the per-band redraw used: full A left of the feather,
+   *  complementary alphas across TRAVEL_BANDS, full B to the right. */
+  _compositeTravelSides(ctx, canvas, surfA, surfB, layerKey, travelP) {
+    const seam = travelSeam(canvas.width, layerKey, travelP);
+    const feather = canvas.width * TRAVEL_FEATHER;
+    const lo = seam - feather / 2;
+    const hi = seam + feather / 2;
+    const clip = (x0, x1, fn) => {
+      if (!(x1 > x0)) return;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, -canvas.height, x1 - x0, canvas.height * 3);
+      ctx.clip();
+      fn();
+      ctx.restore();
+    };
+    const blit = (surface, alpha) => {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(surface, 0, 0);
+    };
+    clip(-canvas.width, lo, () => blit(surfA, 1));
+    for (let k = 0; k < TRAVEL_BANDS; k++) {
+      const x0 = lo + (k * feather) / TRAVEL_BANDS;
+      const a = (k + 0.5) / TRAVEL_BANDS;
+      clip(x0, x0 + feather / TRAVEL_BANDS, () => {
+        blit(surfA, 1 - a);
+        blit(surfB, a);
+      });
+    }
+    clip(hi, canvas.width * 2, () => blit(surfB, 1));
+  }
+
   /** `this.groundY` is fixed at construction against the NOMINAL
    *  (unzoomed) frame, but during a camera pull-back this method's caller
    *  is drawing into the wider/taller zoomed logical stage instead
@@ -5095,18 +5389,18 @@ export class BiomeManager {
       ctx.rotate(tilt);
       ctx.translate(-pivotX, -pivotY);
     }
-    const drawSet = (P, strips, alpha, heightMul, snowLine) => {
-      ctx.globalAlpha = alpha;
-      this._drawDancingStrip(ctx, canvas, strips[layerKey], scrollX, yOff, layerKey, P.terrainEnergy ?? 1, heightMul);
-      ctx.globalAlpha = 1;
+    const drawSet = (P, strips, alpha, heightMul, snowLine, targetCtx = ctx, targetCanvas = canvas) => {
+      targetCtx.globalAlpha = alpha;
+      this._drawDancingStrip(targetCtx, targetCanvas, strips[layerKey], scrollX, yOff, layerKey, P.terrainEnergy ?? 1, heightMul);
+      targetCtx.globalAlpha = 1;
       // Volume before the crest: the skyline stroke has to sit on top of
       // its own mountain's shading, not under it.
-      this._drawRidgeVolume(ctx, canvas, strips[layerKey], scrollX, yOff, layerKey, alpha, P.terrainEnergy ?? 1, heightMul, snowLine);
+      this._drawRidgeVolume(targetCtx, targetCanvas, strips[layerKey], scrollX, yOff, layerKey, alpha, P.terrainEnergy ?? 1, heightMul, snowLine);
       // Crest wire (CrestWire.js) on every range: the wire itself is one
       // thin stroke, cheap at any perf level; its glow passes shed inside
       // _drawCrest. Far ranges wear it a little fainter, as depth.
       if (P.edgeLight || this._crestTints?.[layerKey]) {
-        this._drawCrest(ctx, canvas, strips[layerKey], scrollX, yOff, layerKey, P.edgeLight || null, alpha * (WIRE_ALPHA[layerKey] ?? 1), P.terrainEnergy ?? 1, heightMul);
+        this._drawCrest(targetCtx, targetCanvas, strips[layerKey], scrollX, yOff, layerKey, P.edgeLight || null, alpha * (WIRE_ALPHA[layerKey] ?? 1), P.terrainEnergy ?? 1, heightMul);
       }
     };
     const blend = this.currentBlend;
@@ -5115,30 +5409,41 @@ export class BiomeManager {
       // in from the right behind a soft seam, the nearest layer first -- the
       // way the foreground changes before the far skyline when you cross a
       // pass -- instead of one range dissolving into another in place.
-      const seam = travelSeam(canvas.width, layerKey, blend.travelP);
-      const feather = canvas.width * TRAVEL_FEATHER;
-      const clip = (x0, x1, fn) => {
-        if (!(x1 > x0)) return;
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(x0, -canvas.height, x1 - x0, canvas.height * 3);
-        ctx.clip();
-        fn();
-        ctx.restore();
-      };
-      const lo = seam - feather / 2, hi = seam + feather / 2;
-      clip(-canvas.width, lo, () => drawSet(A, stripsA, 1, heightMulA, snowLineA));
-      // Across the seam the old ranges fade out as the new ones fade in, so
-      // neither ends in a cliff where the other is lower.
-      for (let k = 0; k < TRAVEL_BANDS; k++) {
-        const x0 = lo + (k * feather) / TRAVEL_BANDS;
-        const a = (k + 0.5) / TRAVEL_BANDS;
-        clip(x0, x0 + feather / TRAVEL_BANDS, () => {
-          drawSet(A, stripsA, 1 - a, heightMulA, snowLineA);
-          drawSet(B, stripsB, a, heightMulB, snowLineB);
-        });
+      // Each side is painted once. The seam is an alpha composite of those
+      // two surfaces, using the same band steps as the old per-band redraw,
+      // so the silhouette crossfade holds while strip, volume and crest run
+      // twice instead of ten times. The wire's additive glow is flattened
+      // into that surface for the travel; settled frames still stroke it live.
+      const surfA = this._acquireTravelSurface(canvas, 'A');
+      const surfB = this._acquireTravelSurface(canvas, 'B');
+      if (surfA && surfB) {
+        this._paintTravelSide(surfA, () => drawSet(A, stripsA, 1, heightMulA, snowLineA, surfA.getContext('2d'), surfA));
+        this._paintTravelSide(surfB, () => drawSet(B, stripsB, 1, heightMulB, snowLineB, surfB.getContext('2d'), surfB));
+        this._compositeTravelSides(ctx, canvas, surfA, surfB, layerKey, blend.travelP);
+      } else {
+        const seam = travelSeam(canvas.width, layerKey, blend.travelP);
+        const feather = canvas.width * TRAVEL_FEATHER;
+        const clip = (x0, x1, fn) => {
+          if (!(x1 > x0)) return;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x0, -canvas.height, x1 - x0, canvas.height * 3);
+          ctx.clip();
+          fn();
+          ctx.restore();
+        };
+        const lo = seam - feather / 2, hi = seam + feather / 2;
+        clip(-canvas.width, lo, () => drawSet(A, stripsA, 1, heightMulA, snowLineA));
+        for (let k = 0; k < TRAVEL_BANDS; k++) {
+          const x0 = lo + (k * feather) / TRAVEL_BANDS;
+          const a = (k + 0.5) / TRAVEL_BANDS;
+          clip(x0, x0 + feather / TRAVEL_BANDS, () => {
+            drawSet(A, stripsA, 1 - a, heightMulA, snowLineA);
+            drawSet(B, stripsB, a, heightMulB, snowLineB);
+          });
+        }
+        clip(hi, canvas.width * 2, () => drawSet(B, stripsB, 1, heightMulB, snowLineB));
       }
-      clip(hi, canvas.width * 2, () => drawSet(B, stripsB, 1, heightMulB, snowLineB));
       ctx.restore();
       return;
     }
@@ -5197,18 +5502,42 @@ export class BiomeManager {
     return env;
   }
 
+  /** True when a biome on screen has a scanned profile for this layer.
+   *  A partial set is per layer: a missing L3 stays on parallax even when
+   *  L2 and L4 are real, and a biome's own ranges win over the home set. */
+  _scannedLayer(layerKey) {
+    if (layerKey === 'L5' || layerKey === 'L1') return false;
+    const names = [this.currentBlend?.from, this.currentBlend?.to].filter(Boolean);
+    const sources = names.length ? names : [this.profiles?.[0]?.name].filter(Boolean);
+    if (!sources.length) return !!this.terrainProfiles?.[layerKey];
+    return sources.some((name) => !!this._terrainFor(name)?.[layerKey]);
+  }
+
+  /** Deepest scanned layer's lead over L2. A song that never loaded L4
+   *  must not compress L3 as if the near ridge were there. */
+  _scannedMaxDepth() {
+    let max = 1;
+    const unravel = this.unravel || 0;
+    for (const key of ['L2', 'L3', 'L4']) {
+      if (!this._scannedLayer(key)) continue;
+      max = Math.max(max, ridgeDepth(LAYER_RATIOS[key], LAYER_RATIOS.L2, unravel));
+    }
+    return max;
+  }
+
   /** Scroll for one range. A procedural layer keeps world parallax.
    *  A scanned profile does not: the song picks the station it opens on
    *  and the speed it travels, instead of the south end at L2's fixed
    *  rate. A nearer scanned range still leads by its depth ratio. Every
    *  scanned ridge is fitted so it reaches the end of its own range no
    *  sooner than the song ends (ProfileTravel.fitRidge). A layer with no profile stays on the
-   *  parallax clock. */
-  _terrainScroll(layerKey, worldX) {
-    if (!this.terrainProfiles?.[layerKey]) {
+   *  parallax clock. `viewWidth` is the canvas being drawn. */
+  _terrainScroll(layerKey, worldX, viewWidth = this.w) {
+    if (!this._scannedLayer(layerKey)) {
       return worldX * CodaDirector.delaminateRatio(LAYER_RATIOS[layerKey], this.unravel);
     }
     if (this.terrainPreview) return terrainPreviewStationPx(this._terrainStripWidth(layerKey));
+    const view = viewWidth > 0 ? viewWidth : (this.w > 0 ? this.w : 0);
     return terrainScrollPx({
       tSec: this.tSec,
       curves: this.energyCurves,
@@ -5218,8 +5547,8 @@ export class BiomeManager {
       response: this.world?.response,
       depth: ridgeDepth(LAYER_RATIOS[layerKey], LAYER_RATIOS.L2, this.unravel || 0),
       fit: {
-        viewWidth: this.w,
-        maxDepth: ridgeDepth(LAYER_RATIOS.L4, LAYER_RATIOS.L2, this.unravel || 0),
+        viewWidth: view,
+        maxDepth: this._scannedMaxDepth(),
       },
     });
   }

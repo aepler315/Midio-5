@@ -1,4 +1,4 @@
-import { drawStaticStrip } from '../WorldDraw.js';
+import { drawStaticStrip, drawParticleBlend } from '../WorldDraw.js';
 // After Hours draw path. BiomeManager.draw() hands off here for city worlds.
 //
 // Translated from alpine: ridge portrait → skyline, parallax, haze, rain,
@@ -149,21 +149,12 @@ export function drawCityWorld(mgr, frame) {
   drawRange('L3');
   mgr._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
 
-  const openA = mgr.openingGain;
   const rimOn = mgr._perf ? mgr._perf.rimLightEnabled : true;
   const mandalaColor = mgr._rotated(mgr.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
   const particleLights = rimOn
     ? [mgr.light, ...groundGlowLights(mgr.groundField ? mgr.groundField.activeGlowScreenLights(worldX, originX) : [], mandalaColor)].filter(Boolean)
     : null;
-  ctx.save();
-  if (openA < 0.999) ctx.globalAlpha = openA;
-  mgr.fields.get(from)?.draw(ctx, particleMul, mandalaColor, unravel, particleLights);
-  ctx.restore();
-  if (to !== from && t > 0.02) {
-    ctx.save(); ctx.globalAlpha = t * openA;
-    mgr.fields.get(to)?.draw(ctx, particleMul, mandalaColor, unravel, particleLights);
-    ctx.restore();
-  }
+  drawParticleBlend(mgr, frame, 1, particleLights);
   if (mgr._activeWeatherIntensity > 0.01) {
     const weatherField = mgr.weatherFields.get(mgr.weatherState?.kind);
     if (weatherField) weatherField.draw(ctx, mgr._activeWeatherIntensity * particleMul, mandalaColor, unravel, particleLights);
