@@ -615,10 +615,10 @@ export const LANDMARKS = {
   // Real biomes (RealBiomes.js). ICEFIELD has none: nothing grows there.
   TUNDRA: [paintBoulders],
   TAIGA: [paintSpruceStand],
-  RAINFOREST: [paintSpruceStand, paintSpruceStand, paintTree(4, 18)],
+  RAINFOREST: [paintSpruceStand, paintSpruceStand],
   CONIFER: [paintSpruceStand],
   PINE_OAK: [paintPineOak],
-  BROADLEAF: [paintTree(4, 22.5), paintTree(3, 26)],
+  BROADLEAF: [paintPineOak],
   CHAPARRAL: [paintScrub, paintPineOak],
   STEPPE: [paintScrub],
   CANYON: [paintButte, paintScrub],

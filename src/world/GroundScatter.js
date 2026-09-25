@@ -45,6 +45,12 @@ export const SCATTER_FILL = 0.82;
 
 export const SCATTER_KINDS = ['pebble', 'shard', 'tuft', 'splinter'];
 
+export function scatterBiomeLayers(from, to, progress) {
+  if (!to || from === to) return [{ biomeKey: from, alpha: 1 }];
+  const t = clamp01(progress);
+  return [{ biomeKey: from, alpha: 1 - t }, { biomeKey: to, alpha: t }];
+}
+
 /**
  * The deterministic spec for one scatter slot. Pure: slot `i` under a given
  * song seed is always the same prop, so a replay lays the same ground down.
@@ -57,10 +63,13 @@ export const SCATTER_KINDS = ['pebble', 'shard', 'tuft', 'splinter'];
  * @returns {?{kind:string, sizePx:number, xOff:number, depth01:number,
  *   lean:number, flip:boolean}} null for an empty slot
  */
-export function scatterSlot(songSeed, i) {
+export function scatterSlot(songSeed, i, stratified = false) {
   const rand = mulberry32(hashSeed(`${songSeed}:scatter:${i}`));
   if (rand() > SCATTER_FILL) return null;
-  const depth01 = clamp01(rand());
+  // Fixed stratified depth lanes keep each slot's parallax speed known before
+  // searching for visible indices. A single expanding min/max window would
+  // examine thousands of invisible slots late in a long recording.
+  const depth01 = stratified ? ((i % 16 + 16) % 16 + 0.5) / 16 : clamp01(rand());
   return {
     kind: SCATTER_KINDS[Math.floor(rand() * SCATTER_KINDS.length) % SCATTER_KINDS.length],
     // Nearer props are bigger. The range stays small: this is grit, and
@@ -89,29 +98,38 @@ export function scatterSlot(songSeed, i) {
  * @param {number} [o.kick]        0..1 beat envelope; lifts props slightly
  */
 export function visibleScatter({
-  worldX, canvasW, baselineY, bandH, songSeed, ratio = SCATTER_RATIO, kick = 0,
+  worldX, canvasW, baselineY, bandH, songSeed, ratio = SCATTER_RATIO, kick = 0, biomeKey = null,
 }) {
   if (!(canvasW > 0) || !(bandH > 0)) return [];
-  const scroll = worldX * ratio;
   // A margin either side so props enter and leave off-screen rather than
   // popping in at the edges.
   const margin = 60;
-  const first = Math.floor((scroll - margin) / SCATTER_SPACING_PX);
-  const last = Math.ceil((scroll + canvasW + margin) / SCATTER_SPACING_PX);
   const out = [];
-  for (let i = first; i <= last; i++) {
-    const spec = scatterSlot(songSeed, i);
-    if (!spec) continue;
-    // Nearer props (depth01 -> 1) also scroll a touch faster still: internal
-    // parallax inside the band itself.
-    const ownScroll = worldX * ratio * (0.94 + 0.12 * spec.depth01);
-    const x = i * SCATTER_SPACING_PX + spec.xOff - ownScroll;
-    if (x < -margin || x > canvasW + margin) continue;
-    // Nearer = lower in frame. The kick lift is tiny and scales with depth
-    // so the front row answers the beat hardest, matching how every other
-    // layer in the scene reacts.
-    const y = baselineY - bandH * (1 - spec.depth01) - kick * (1.5 + 2.5 * spec.depth01);
-    out.push({ ...spec, x, y });
+  const lanes = biomeKey ? 16 : 1;
+  for (let lane = 0; lane < lanes; lane++) {
+    const depth = (lane + .5) / 16;
+    const scroll = biomeKey ? worldX * ratio * (.94 + .12 * depth) : worldX * ratio;
+    const lo = (scroll - margin) / SCATTER_SPACING_PX;
+    const hi = (scroll + canvasW + margin) / SCATTER_SPACING_PX;
+    const first = biomeKey ? lane + 16 * Math.ceil((lo - lane) / 16) : Math.floor(lo);
+    for (let i = first; i <= hi; i += lanes) {
+      const spec = scatterSlot(songSeed, i, !!biomeKey);
+      if (!spec) continue;
+      // Nearer props (depth01 -> 1) also scroll a touch faster still: internal
+      // parallax inside the band itself.
+      const ownScroll = worldX * ratio * (0.94 + 0.12 * spec.depth01);
+      const x = i * SCATTER_SPACING_PX + spec.xOff - ownScroll;
+      if (x < -margin || x > canvasW + margin) continue;
+      // Nearer = lower in frame. The kick lift is tiny and scales with depth
+      // so the front row answers the beat hardest, matching how every other
+      // layer in the scene reacts.
+      const y = baselineY - bandH * (1 - spec.depth01) - kick * (1.5 + 2.5 * spec.depth01);
+      const vocab = biomeKey === 'RAINFOREST' || biomeKey === 'TAIGA'
+        ? ['tuft', 'pebble', 'tuft', 'shard']
+        : biomeKey === 'ICEFIELD' || biomeKey === 'DESERT' || biomeKey === 'CANYON'
+          ? ['pebble', 'shard', 'shard', 'pebble'] : SCATTER_KINDS;
+      out.push({ ...spec, kind: vocab[SCATTER_KINDS.indexOf(spec.kind)], x, y });
+    }
   }
   // Far (small depth01) first so near props paint over them.
   out.sort((a, b) => a.depth01 - b.depth01);
@@ -181,6 +199,7 @@ export class GroundScatter {
       songSeed: this.songSeed,
       ratio: env.ratio ?? SCATTER_RATIO,
       kick: env.kick ?? 0,
+      biomeKey: env.biomeKey,
     });
     if (!props.length) return;
 

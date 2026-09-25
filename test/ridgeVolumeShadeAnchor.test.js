@@ -150,6 +150,7 @@ test('ridgeShadingFull off drops exactly the shade and aerial passes, keeping ca
   const strip = makeStrip({ phase: 0 });
 
   const bmOff = await makeManager();
+  bmOff.world = { kind: 'city' };
   bmOff.tSec = 3;
   bmOff._airColor = '#88aacc'; // a real air color, so the aerial pass would be live
   bmOff._perf = new PerfGovernor({ startLevel: MAX_LEVEL });
@@ -157,6 +158,7 @@ test('ridgeShadingFull off drops exactly the shade and aerial passes, keeping ca
   bmOff._drawRidgeVolume(ctxOff, canvas, strip, 0, 0, 'L2', 1, 1, 1, 1);
 
   const bmOn = await makeManager();
+  bmOn.world = { kind: 'city' };
   bmOn.tSec = 3;
   bmOn._airColor = '#88aacc';
   bmOn._perf = new PerfGovernor({ startLevel: MAX_LEVEL });
@@ -183,6 +185,7 @@ test('no perf object at all reads every rung, including ridgeShadingFull, as ful
   const strip = makeStrip({ phase: 0 });
 
   const bmFreshGovernor = await makeManager();
+  bmFreshGovernor.world = { kind: 'city' };
   bmFreshGovernor.tSec = 3;
   bmFreshGovernor._airColor = '#88aacc';
   bmFreshGovernor._perf = new PerfGovernor(); // level 0
@@ -190,6 +193,7 @@ test('no perf object at all reads every rung, including ridgeShadingFull, as ful
   bmFreshGovernor._drawRidgeVolume(ctxFreshGovernor, canvas, strip, 0, 0, 'L2', 1, 1, 1, 1);
 
   const bmNoPerf = await makeManager();
+  bmNoPerf.world = { kind: 'city' };
   bmNoPerf.tSec = 3;
   bmNoPerf._airColor = '#88aacc';
   const ctxNoPerf = new RecordingCtx();

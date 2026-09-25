@@ -50,3 +50,18 @@ test('every biome has a landmark painter set', () => {
     assert.ok(Array.isArray(LANDMARKS[b.name]) && LANDMARKS[b.name].length > 0, `missing landmarks for ${b.name}`);
   }
 });
+
+test('real rainforest and broadleaf stands paint filled crowns, never bare branching lines', () => {
+  for (const biome of ['RAINFOREST', 'BROADLEAF']) {
+    for (const painter of LANDMARKS[biome]) {
+      const calls = { fill: 0, stroke: 0, ellipse: 0 };
+      const ctx = { beginPath() {}, moveTo() {}, lineTo() {}, closePath() {},
+        fillRect() { calls.fill++; }, fill() { calls.fill++; },
+        stroke() { calls.stroke++; }, ellipse() { calls.ellipse++; } };
+      painter(ctx, 100, 100, 1, () => .45, '#234');
+      assert.ok(calls.fill > 0, `${biome} should contain filled canopy`);
+      assert.equal(calls.stroke, 0, `${biome} should not select the bare tree painter`);
+      if (biome === 'BROADLEAF') assert.ok(calls.ellipse > 0);
+    }
+  }
+});

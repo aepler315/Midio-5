@@ -2,6 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TerrainStripCache, stripSetBytes } from '../src/world/terrain/TerrainStripCache.js';
 
+test('owned surface descriptors count against strip-set memory', () => {
+  const a = strip(10, 20);
+  a.ridge = { surface: { byteLength: 2048 } };
+  assert.equal(stripSetBytes({ L2: a }), 10 * 20 * 4 + 2048);
+});
+
 const strip = (width, height) => ({ width, height });
 
 test('strip byte accounting includes every owned RGBA surface', () => {
