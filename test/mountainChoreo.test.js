@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DANCE_LAYERS, danceOffset, kickEnv, planeKick, planeKickDelayMs, kickBloom, spectrumBars,
-  mountainStripDrawHeight, MOUNTAIN_SKY_HEADROOM_FRAC,
+  mountainStripDrawHeight, MOUNTAIN_SKY_HEADROOM_FRAC, anchoredFarDrawHeight, DANCE_RIDGE_CLEARANCE_FRAC,
   massifDrawHeight, MASSIF_SKY_HEADROOM_FRAC,
   massifRidgeHeight01, massifRidgeJagPx, massifClearing01, MASSIF_CLEARING_PERIOD_SEC,
   nextMassifMarkerDelaySec, MASSIF_MARKER_MIN_GAP_SEC, MASSIF_MARKER_MAX_GAP_SEC,
@@ -122,6 +122,27 @@ test('full-blast bars never exceed their bell profile ceiling', () => {
   const full = spectrumBars([1, 1, 1, 1, 1, 1, 1]);
   for (const b of full) assert.ok(b.h01 <= 1 + 1e-9);
   assert.ok(full[3].h01 > full[0].h01, 'center stays tallest even at full blast');
+});
+
+test('the dancing ridge rises to clear the average of the three ridges in front', () => {
+  const canvasHeight = 720;
+  const groundY = 540;
+  const front = { height: 200, ridge: { heights: [0.5], baseline: 0.8, amplitude: 0.5, height: 200 } };
+  const far = { height: 220, ridge: { heights: [0.6], baseline: 0.75, amplitude: 0.55, height: 220 } };
+  const short = anchoredFarDrawHeight({
+    natural: 180, farStrip: far,
+    fronts: [{ strip: front, dh: 80 }, { strip: front, dh: 70 }, { strip: front, dh: 60 }],
+    canvasHeight, groundY,
+  });
+  assert.equal(short, 180, 'a low front stack must not shrink the dancing ridge');
+  const tall = anchoredFarDrawHeight({
+    natural: 180, farStrip: far,
+    fronts: [{ strip: front, dh: 280 }, { strip: front, dh: 260 }, { strip: front, dh: 240 }],
+    canvasHeight, groundY,
+  });
+  assert.ok(tall > 180, `expected a lift above the front average, got ${tall}`);
+  assert.ok(tall <= mountainStripDrawHeight(tall, 1, canvasHeight, groundY) + 1e-6);
+  assert.equal(DANCE_RIDGE_CLEARANCE_FRAC, 0.08);
 });
 
 // --- The spectrum massif's scale (megalophobia pass) -----------------------

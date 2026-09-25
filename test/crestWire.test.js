@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   WIRE_LAYERS, wireOffset, wireAmplitude, wireColor, contrastRatio, resampleCrest, drawCrestWire,
+  crestWave01, CREST_WAVE_BEATS, GLOW_INTENSITY, GLOW_FOOTPRINT,
 } from '../src/world/CrestWire.js';
 import { hexToRgb, rgbToHsl } from '../src/utils/color.js';
 
@@ -21,6 +22,45 @@ test('quiet is a sine, loud is a zigzag, and both stay within the amplitude', ()
 
 test('the wave travels along the crest over time', () => {
   assert.notEqual(wireOffset(5, 0, cfg, 3, 0), wireOffset(5, 0.05, cfg, 3, 0));
+});
+
+test('a quiet band barely buzzes and a hot band drives the wire', () => {
+  const quiet = wireAmplitude(cfg, 1, 1, 0, 0);
+  const hot = wireAmplitude(cfg, 1, 1, 0, 1);
+  assert.ok(hot > quiet);
+  const quarterBuzz = 1 / (13 * 4);
+  assert.equal(wireAmplitude(cfg, 0.4, 0.4, 0, 0), wireAmplitude(cfg, 0.4, 0.4, quarterBuzz, 0));
+  assert.notEqual(wireAmplitude(cfg, 0.4, 0.4, 0, 1), wireAmplitude(cfg, 0.4, 0.4, quarterBuzz, 1));
+});
+
+test('the crest pulse crosses the line once per two beats', () => {
+  const beat = 0.5;
+  const atStart = crestWave01(0, 0, 1000, 0, beat, 0);
+  const atFar = crestWave01(1000, 0, 1000, 0, beat, 0);
+  assert.ok(atStart > 0.5);
+  assert.ok(atFar < 0.05);
+  const half = beat * CREST_WAVE_BEATS * 0.5;
+  const mid = crestWave01(500, 0, 1000, half, beat, 0);
+  assert.ok(mid > atStart * 0.5, `mid ${mid} should sit on the packet`);
+  assert.ok(crestWave01(0, 0, 1000, half, beat, 0) < mid);
+});
+
+test('the glow is 45% as bright and 70% as wide as the original halo', () => {
+  const widths = [];
+  const alphas = [];
+  const ctx = {
+    beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, save() {}, restore() {},
+    set lineWidth(v) { widths.push(v); },
+    set globalAlpha(v) { alphas.push(v); },
+    set strokeStyle(_v) {}, set lineJoin(_v) {}, set lineCap(_v) {}, set globalCompositeOperation(_v) {},
+  };
+  drawCrestWire(ctx, [{ x: 0, y: 10 }, { x: 90, y: 20 }], {
+    cfg, color: '#ff00ff', amp: 2, sharp: 0, tSec: 0, alpha: 1, glow: true,
+  });
+  assert.ok(Math.abs(widths[0] - 14 * GLOW_FOOTPRINT) < 1e-9);
+  assert.ok(Math.abs(widths[1] - 6 * GLOW_FOOTPRINT) < 1e-9);
+  assert.ok(Math.abs(alphas[0] - 0.07 * GLOW_INTENSITY) < 1e-9);
+  assert.ok(Math.abs(alphas[1] - 0.18 * GLOW_INTENSITY) < 1e-9);
 });
 
 test('loudness and the kick grow the wire, and it buzzes', () => {

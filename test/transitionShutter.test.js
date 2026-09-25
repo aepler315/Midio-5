@@ -43,6 +43,19 @@ function crossBoundary(bm, idx, nowMs) {
   return bm.shutterDebug;
 }
 
+test('a boundary no longer paints the column shutter', () => {
+  const fills = [];
+  const ctx = {
+    save() {}, restore() {},
+    fillRect() { fills.push('bar'); },
+  };
+  const bm = Object.create(BiomeManager.prototype);
+  bm._cutFlash = 0;
+  bm.tSec = 2;
+  bm._drawTransitionOverlays(ctx, { width: 200, height: 100 }, { silhouette: '#000' });
+  assert.equal(fills.length, 0);
+});
+
 test('the shutter is the strongest effect, so only the sharpest boundary earns it', () => {
   assert.equal(classifyTransition(1.0, 1), 'shutter');
   assert.equal(classifyTransition(0.5, 1), 'cut', 'a moderate boundary flashes instead');

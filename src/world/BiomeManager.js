@@ -29,7 +29,7 @@ import { decorateStrip } from './Landmarks.js';
 import {
   DANCE_LAYERS, danceOffset, columnHeight01At, ridgeBakedCrestY, kickEnv, ridgeKickEnv, planeKick, kickBloom, spectrumBars, orogenyHeightMul,
   pullbackHeightMul,
-  mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER,
+  mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER, anchoredFarDrawHeight,
   massifDrawHeight, massifRidgeHeight01, massifRidgeJagPx, massifClearing01,
   MASSIF_MARKER_SPEED_PX_S, MASSIF_MARKER_LIFE_SEC, nextMassifMarkerDelaySec,
   massifEqStep, massifBandLevel,
@@ -47,7 +47,7 @@ import {
   occludedFraction, stepDistantWave, swellCrest,
   isthmusReveal01, foregroundSwellCrest,
 } from './DistantWave.js';
-import { FlourishGate } from '../sim/FlourishGate.js';
+
 import {
   seaLineY, oceanRowYs, waveRows, rowAlpha, OCEAN_HORIZON_FRAC, OCEAN_NEAR_FRAC,
   breakerLift, whitecapMask, rowPhaseDrift,
@@ -99,7 +99,7 @@ import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS, hazeScatter } from '
 import { PERSONALITY } from './BiomePersonality.js';
 import { REAL_PERSONALITY } from './RealBiomes.js';
 import { castSongBiomes } from './terrain/BiomeSet.js';
-import { WIRE_LAYERS, wireAmplitude, wireColor, drawCrestWire } from './CrestWire.js';
+import { WIRE_LAYERS, wireAmplitude, wireColor, drawCrestWire, CREST_WAVE_PHASE } from './CrestWire.js';
 import {
   horizonCrest, crestHeightAt, horizonRidgeLift01, massifCrest, massifRidgeLift01,
 } from './terrain/HorizonRidge.js';
@@ -247,15 +247,6 @@ const SSM_CONFIDENCE_FLOOR = 0.45;
 // refuse to manufacture boundaries on the same terms.
 const NOVELTY_NOISE_FLOOR = 0.15;
 
-// --- The shutter: the screen closing down over a section boundary --------
-// A hard floor between bites. Section boundaries may legally sit 11s apart,
-// and two near-total blackouts that close together read as the game
-// malfunctioning rather than as punctuation.
-const SHUTTER_MIN_GAP_MS = 45000;
-// How much of the screen each half may swallow. Was 0.5 -- with both halves
-// closing that is a total blackout, which is more than any transition needs
-// to earn its point.
-const SHUTTER_MAX_COVER = 0.34;
 const WORLD_SPEED_PX_S = 220;
 const BAND_COUNT = 7;
 
@@ -547,12 +538,6 @@ export class BiomeManager {
     this._distantWaveOn = false;
     this._distantWaveMix = 0;
     this._cutFlash = 0;
-    this._shutterStartMs = -Infinity;
-    this._shutterBarMs = 500;
-    // The shutter is the most aggressive thing on screen; it gets the same
-    // hard-floor rate limiter the character flourishes use.
-    this._shutterGate = new FlourishGate({ minGapMs: SHUTTER_MIN_GAP_MS, chance: 1 });
-    this.shutterDebug = null;
     this.cutFlashJustFired = false;
     // Edge-triggered once per section boundary, any transition style -- other
     // systems (character tumble choreography) hang a rare accent off this.
@@ -1996,19 +1981,8 @@ export class BiomeManager {
       const sec = this.sections[sectionIdx];
       if (this._lastSectionIdx != null) {
         if (sec.transition === 'cut') { this._cutFlash = 1; this.cutFlashJustFired = true; }
-        // Travelling into a new biome is the transition: a shutter would
-        // black out the very ranges coming in.
-        else if (sec.transition === 'shutter' && !(this.world?.realBiomes && sec.profile !== this.sections[this._lastSectionIdx]?.profile)) {
-          // Through a real rate limiter. Boundaries are allowed to sit
-          // MIN_SECTION_CUT_GAP_MS (11s) apart, so before this two near-total
-          // blackouts eleven seconds apart were a permitted outcome -- and
-          // nothing else in the game punctuates that hard. The gate's floor
-          // cannot be bypassed (transition: true skips only the probability
-          // roll), which is exactly the guarantee wanted here.
-          const fired = this._shutterGate.tryFire(nowMs, { intensity: this.vibeEpic || 0, transition: true });
-          this.shutterDebug = { fired, reason: this._shutterGate.lastReason, atMs: nowMs };
-          if (fired) { this._shutterStartMs = nowMs; this._shutterBarMs = sec.barMs; }
-        }
+        // A shutter boundary used to drop blocky bars over the frame. It
+        // still names a short blend; it does not paint anything.
         // A lyric-identified instrumental/solo section gets the same
         // spotlight snap a hype drop does -- the show notices the vocals
         // stepping back just as much as it notices them stepping forward.
@@ -3132,35 +3106,8 @@ export class BiomeManager {
     ctx.restore();
   }
 
-  /** Cut flash + shutter wipe, fired by the Dramaturgy Director. */
-  _drawTransitionOverlays(ctx, canvas, B) {
-    const nowMs = this.tSec * 1000;
-    const u = (nowMs - this._shutterStartMs) / this._shutterBarMs;
-    if (u >= 0 && u <= 1) {
-      // Vertical shutter columns closing then reopening over one bar,
-      // phase-staggered so the wipe ripples instead of slamming.
-      //
-      // Coverage is capped well short of meeting in the middle. At 0.5 per
-      // half these columns closed the frame to solid black for about a
-      // second -- the screen biting shut. It should read as the world
-      // narrowing on a moment, not as the picture being taken away.
-      //
-      // Reduced-flash halves it again. This is the largest, highest-contrast
-      // event in the game and it was the one thing in this file ignoring the
-      // accessibility cap entirely.
-      const cover = this.reducedFlash ? SHUTTER_MAX_COVER * 0.5 : SHUTTER_MAX_COVER;
-      ctx.save();
-      ctx.fillStyle = B.silhouette;
-      const cols = 14;
-      const colW = canvas.width / cols;
-      for (let i = 0; i < cols; i++) {
-        const stagger = 0.8 + 0.2 * Math.sin(i * 1.7);
-        const h = canvas.height * cover * Math.sin(Math.PI * Math.min(1, u * 1.05)) * stagger;
-        ctx.fillRect(i * colW, 0, colW + 1, h);
-        ctx.fillRect(i * colW, canvas.height - h, colW + 1, h);
-      }
-      ctx.restore();
-    }
+  /** Cut flash on a sharp boundary. The column shutter is not drawn. */
+  _drawTransitionOverlays(ctx, canvas, _B) {
     if (this._cutFlash > 0.01) {
       ctx.save();
       ctx.globalAlpha = capFlashAlpha(0.35 * this._cutFlash, this.reducedFlash);
@@ -5390,6 +5337,7 @@ export class BiomeManager {
       ctx.translate(-pivotX, -pivotY);
     }
     const drawSet = (P, strips, alpha, heightMul, snowLine, targetCtx = ctx, targetCanvas = canvas) => {
+      this._heightStrips = strips;
       targetCtx.globalAlpha = alpha;
       this._drawDancingStrip(targetCtx, targetCanvas, strips[layerKey], scrollX, yOff, layerKey, P.terrainEnergy ?? 1, heightMul);
       targetCtx.globalAlpha = 1;
@@ -5575,6 +5523,52 @@ export class BiomeManager {
     return ridgeSwell01(scrollX + screenX, this.tSec, cfg, kick);
   }
 
+  _growthMul(layerKey, heightMul, preview) {
+    if (preview) return 1;
+    const ridge = this._ridgeEnvelope();
+    return orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
+      * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0))
+      * Math.max(0, heightMul)
+      * (ridge?.scaleMul ?? 1);
+  }
+
+  /** Screen draw height for one range. The dancing ridge (L2) is lifted so
+   *  its crest stays a fixed fraction of the stage above the average crest
+   *  of L3, L4 and L5. */
+  _rangeDh(canvas, strip, layerKey, heightMul, preview) {
+    const groundY = this._zoomedGroundY(canvas);
+    const natural = mountainStripDrawHeight(
+      strip?.height || 1, this._growthMul(layerKey, heightMul, preview), canvas.height, groundY,
+    );
+    if (preview || layerKey !== FAR_DANCE_LAYER || !this._heightStrips) return natural;
+    const fronts = ['L3', 'L4', 'L5'].map((key) => {
+      const front = this._heightStrips[key];
+      if (!front?.height) return null;
+      return {
+        strip: front,
+        dh: mountainStripDrawHeight(
+          front.height, this._growthMul(key, heightMul, false), canvas.height, groundY,
+        ),
+      };
+    });
+    return anchoredFarDrawHeight({
+      natural, farStrip: strip, fronts, canvasHeight: canvas.height, groundY,
+    });
+  }
+
+  /** How hard a front ridge's wire vibrates, 0.32..1. L3 follows the low
+   *  bands, L4 the middle, L5 the top. Other wires stay at full drive. */
+  _wireDrive(layerKey) {
+    if (layerKey !== 'L3' && layerKey !== 'L4' && layerKey !== 'L5') return 1;
+    const eq = this._eqSmoothed;
+    const span = layerKey === 'L3' ? [0, 1] : layerKey === 'L4' ? [2, 4] : [5, 6];
+    if (!eq) return 0.55;
+    let sum = 0;
+    let n = 0;
+    for (let i = span[0]; i <= span[1]; i++) { sum += Number(eq[i]) || 0; n++; }
+    return 0.32 + 0.68 * clamp01(n ? sum / n : 0);
+  }
+
   /** The mountains dance: the strip is drawn in column slices, each riding
    *  a groove-scaled traveling wave along the ridge, and the whole range
    *  bounces on kicks — near hills first, far peaks a beat-fraction later
@@ -5601,11 +5595,7 @@ export class BiomeManager {
     // HEADROOM refit would erase an in-strip height change on L2/L3.
     // Phrase openings that earned a lift add a brief extra scale on top;
     // decorative cuts leave scaleMul at 1.
-    const growthMul = preview ? 1 : orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
-      * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0))
-      * Math.max(0, heightMul)
-      * (ridge?.scaleMul ?? 1);
-    const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this._zoomedGroundY(canvas));
+    const dh = this._rangeDh(canvas, strip, layerKey, heightMul, preview);
     const baseY = canvas.height - dh + yOff;
     // Stage 2 (ridge deformation): summits sharpen on the kick, flanks swell
     // on sustained energy -- gated by terrainEnergy exactly like the offset
@@ -5738,7 +5728,10 @@ export class BiomeManager {
     const colW = this._danceColW();
     const ridge = this._ridgeEnvelope();
     const preview = this.terrainPreview && isTerrainStrip(strip);
-    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}|${colW}|${ridge?.scaleMul ?? 1}|${ridge?.groove ?? 'g'}|${ridge?.sustain ?? 's'}|${preview ? 1 : 0}`;
+    const sibKey = layerKey === 'L2' && this._heightStrips
+      ? ['L3', 'L4', 'L5'].map((key) => this._heightStrips[key]?.height || 0).join(',')
+      : '';
+    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}|${colW}|${ridge?.scaleMul ?? 1}|${ridge?.groove ?? 'g'}|${ridge?.sustain ?? 's'}|${preview ? 1 : 0}|${sibKey}`;
     if (byStrip) {
       const hit = byStrip.get(cacheKey);
       if (hit) return hit;
@@ -5746,11 +5739,7 @@ export class BiomeManager {
     const nowMs = this.tSec * 1000;
     const kick = preview ? 0 : ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
       * this._danceKickAmp * (ridge?.kickMul ?? 1);
-    const growthMul = preview ? 1 : orogenyHeightMul(layerKey, clamp01(this.orogenyGrowth || 0))
-      * pullbackHeightMul(layerKey, clamp01(this.pullback01 || 0))
-      * Math.max(0, heightMul)
-      * (ridge?.scaleMul ?? 1);
-    const dh = mountainStripDrawHeight(strip.height, growthMul, canvas.height, this._zoomedGroundY(canvas));
+    const dh = this._rangeDh(canvas, strip, layerKey, heightMul, preview);
     const scale = dh / Math.max(1, strip.height);
     const baseY = canvas.height - dh + yOff;
     const w = strip.width;
@@ -5841,14 +5830,17 @@ export class BiomeManager {
     if (crestDials.crestStroke !== false && crestMul > 0.02) {
       const { loud, kick } = this._wireMusic();
       const cfg = WIRE_LAYERS[layerKey] || WIRE_LAYERS.L5;
+      const drive = this._wireDrive(layerKey);
       drawCrestWire(ctx, pts, {
         cfg,
         color: wire,
-        amp: wireAmplitude(cfg, loud, kick, this.tSec) * terrainEnergy,
+        amp: wireAmplitude(cfg, loud, kick, this.tSec, drive) * terrainEnergy,
         sharp: clamp01(loud * 1.6),
         tSec: this.tSec,
-        alpha: alpha * crestMul,
+        alpha: alpha * crestMul * drive,
         glow: !this._perf || this._perf.heavyPostFx,
+        beatSec: (this._beatMs > 0 ? this._beatMs : 500) / 1000,
+        wavePhase: CREST_WAVE_PHASE[layerKey] || 0,
       });
     }
     ctx.restore();
@@ -5918,6 +5910,7 @@ export class BiomeManager {
     const profile = t > 0.5 ? B : A;
     const strips = this.stripsFor(profile.name);
     if (!strips) return;
+    this._heightStrips = strips;
     const { from: heightMulA = 1, to: heightMulB = 1 } = this._drawHeightMul || {};
     // Interpolated, NOT switched at the midpoint. Picking one side or the
     // other steps the whole overlay the moment t crosses 0.5: measured at 86px
@@ -6024,6 +6017,7 @@ export class BiomeManager {
     const profile = t > 0.5 ? B : A;
     const strips = this.stripsFor(profile.name);
     if (!strips) return;
+    this._heightStrips = strips;
     const { from: heightMulA = 1, to: heightMulB = 1 } = this._drawHeightMul || {};
     // Interpolated, NOT switched at the midpoint. Picking one side or the
     // other steps the whole overlay the moment t crosses 0.5: measured at 86px
@@ -6124,6 +6118,7 @@ export class BiomeManager {
     const profile = t > 0.5 ? B : A;
     const strips = this.stripsFor(profile.name);
     if (!strips) return;
+    this._heightStrips = strips;
     const farStrip = strips[farLayerKey], nearStrip = strips[nearLayerKey];
     if (!farStrip || !nearStrip) return;
     const { from: heightMulA = 1, to: heightMulB = 1 } = this._drawHeightMul || {};
@@ -6833,6 +6828,8 @@ export class BiomeManager {
           tSec: this.tSec,
           alpha: 0.55 + 0.35 * this.budget,
           glow: !this._perf || this._perf.heavyPostFx,
+          beatSec: (this._beatMs > 0 ? this._beatMs : 500) / 1000,
+          wavePhase: CREST_WAVE_PHASE.massif,
         });
       } else {
         ctx.strokeStyle = cap;
