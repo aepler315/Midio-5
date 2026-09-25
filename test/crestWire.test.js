@@ -5,8 +5,60 @@ import {
   crestWave01, CREST_WAVE_BEATS, GLOW_INTENSITY, GLOW_FOOTPRINT,
 } from '../src/world/CrestWire.js';
 import { hexToRgb, rgbToHsl } from '../src/utils/color.js';
+import * as CrestWire from '../src/world/CrestWire.js';
 
 const cfg = WIRE_LAYERS.L4;
+
+test('a supplied musical position keeps the packet independent of the kick interval estimate', () => {
+  const trace = (beatSec) => {
+    const points = [];
+    const ctx = { save() {}, restore() {}, beginPath() {}, stroke() {},
+      moveTo(x, y) { points.push([x, y]); }, lineTo(x, y) { points.push([x, y]); } };
+    drawCrestWire(ctx, [{ x: 0, y: 20 }, { x: 900, y: 20 }], {
+      cfg, color: '#ffffff', amp: 3, sharp: 0, tSec: 123.4,
+      glow: false, beatSec, beatPosition: 246.8,
+    });
+    return points;
+  };
+  assert.deepEqual(trace(0.5), trace(0.525), 'a kick estimate must not teleport the packet');
+});
+
+test('packet intensity stays continuous as it leaves the right edge and re-enters the left', () => {
+  for (const x of [0, 10, 990, 1000]) {
+    const before = crestWave01(x, 0, 1000, 1 - 1e-7, 0.5);
+    const after = crestWave01(x, 0, 1000, 1 + 1e-7, 0.5);
+    assert.ok(Math.abs(before - after) < 0.001, `packet snaps at x=${x}: ${before} -> ${after}`);
+  }
+});
+
+test('the crest clock follows offset downbeats, tempo changes, meters and backward seeks', () => {
+  assert.equal(typeof CrestWire.CrestBeatClock, 'function');
+  const clock = new CrestWire.CrestBeatClock([
+    { ms: 250, numerator: 3 }, { ms: 1750, numerator: 4 },
+    { ms: 4750, numerator: 4 },
+  ]);
+  assert.equal(clock.at(0.25), 0);
+  assert.equal(clock.at(1.25), 2);
+  assert.equal(clock.at(1.75), 3);
+  assert.equal(clock.at(2.5), 4);
+  assert.equal(clock.at(4.75), 7);
+  assert.equal(clock.at(5.5), 8, 'last bar continues at the last measured beat period');
+  assert.equal(clock.at(1.25), 2, 'seeking backward is history-independent');
+  assert.ok(Math.abs(clock.at(1.75 - 1e-7) - clock.at(1.75 + 1e-7)) < 1e-5);
+  assert.equal(new CrestWire.CrestBeatClock([]).at(2), 4);
+  assert.equal(new CrestWire.CrestBeatClock([{ ms: 250 }]).at(0.75), 1);
+});
+
+test('a shared MIDI meter-change downbeat is counted once using the new meter', () => {
+  const clock = new CrestWire.CrestBeatClock([
+    { ms: 0, numerator: 3 }, { ms: 1500, numerator: 3 },
+    { ms: 1500, numerator: 4 }, { ms: 3500, numerator: 4 },
+  ]);
+  assert.equal(clock.at(1.5), 3);
+  assert.equal(clock.at(2), 4);
+  assert.equal(clock.at(3.5), 7);
+  assert.ok(Math.abs(clock.at(1.5 - 1e-7) - clock.at(1.5 + 1e-7)) < 1e-5);
+});
 
 test('quiet is a sine, loud is a zigzag, and both stay within the amplitude', () => {
   const quarter = cfg.wavelength / 4;
@@ -37,11 +89,11 @@ test('the crest pulse crosses the line once per two beats', () => {
   const beat = 0.5;
   const atStart = crestWave01(0, 0, 1000, 0, beat, 0);
   const atFar = crestWave01(1000, 0, 1000, 0, beat, 0);
-  assert.ok(atStart > 0.5);
+  assert.equal(atStart, 0, 'the packet fades in after wrapping');
   assert.ok(atFar < 0.05);
   const half = beat * CREST_WAVE_BEATS * 0.5;
   const mid = crestWave01(500, 0, 1000, half, beat, 0);
-  assert.ok(mid > atStart * 0.5, `mid ${mid} should sit on the packet`);
+  assert.ok(mid > 0.5, `mid ${mid} should sit on the packet`);
   assert.ok(crestWave01(0, 0, 1000, half, beat, 0) < mid);
 });
 
