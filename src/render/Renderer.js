@@ -954,6 +954,8 @@ export class Renderer {
    *  aurora bleeds green. Sheds under PerfGovernor pressure like the drop
    *  impact pack (a budget-allowing flourish, not core feedback). */
   _drawBloom(ctx, canvas, sim, salience = null) {
+    // Range already has luminous crest lines; a full-frame bloom obscures them.
+    if (sim.biomes?.world?.kind === 'alpine') return;
     const perf = sim.perf;
     if (perf && !perf.bloomEnabled) return;
     const strength = bloomStrength(

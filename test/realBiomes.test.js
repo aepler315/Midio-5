@@ -1,3 +1,4 @@
+import { WALL_SHARE } from '../src/world/terrain/ranges/shapes.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -71,14 +72,15 @@ test('home biomes are drawn roughly evenly across songs', () => {
   }
 });
 
-test('a biome stacks its three ranges tallest at the back', () => {
+test('a biome puts an open skyline in front and orders the back pair by relief', () => {
   for (const name of REAL_BIOME_NAMES) {
     const set = chooseBiomeRidges(name, {}, 42);
     const ids = [set.far, set.mid, set.near].filter(Boolean).map((m) => m.range.id);
     assert.equal(ids.length, 3, name);
     assert.equal(new Set(ids).size, 3);
     for (const id of ids) assert.equal(biomeOfRange(id), name);
-    assert.ok(set.far.range.reliefM >= set.mid.range.reliefM && set.mid.range.reliefM >= set.near.range.reliefM);
+    assert.ok(set.far.range.reliefM >= set.mid.range.reliefM);
+    assert.ok(WALL_SHARE[set.near.range.id] <= 0.25, name);
   }
 });
 

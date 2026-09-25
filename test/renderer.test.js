@@ -176,3 +176,11 @@ test('dropMotionBlurPasses drops the older ghost first as strength falls', () =>
   const none = dropMotionBlurPasses(0.01, 6, -2);
   assert.equal(none.length, 0, 'everything under the floor composites nothing');
 });
+
+test('Range skips full-frame bloom even during a maximum drop', () => {
+  const renderer = Object.create(Renderer.prototype);
+  renderer._drawBloom({}, { width: 960, height: 540 }, {
+    biomes: { world: { kind: 'alpine' } }, hype: fakeHype(1, 1), fever: fakeFever(1),
+  });
+  assert.equal(renderer._bloomA, undefined);
+});
