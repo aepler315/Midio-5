@@ -1,4 +1,4 @@
-import { drawStaticStrip, drawGroundBase } from '../WorldDraw.js';
+import { drawStaticStrip, drawGroundBase, drawParticleBlend } from '../WorldDraw.js';
 // Far Side draw path. An airless body: no haze, no aerial perspective,
 // no weather, no atmosphere effects. Distance carried by parallax rate
 // and contrast only. The sky is black and full of stars at noon.
@@ -79,7 +79,7 @@ function drawPrimary(mgr, ctx, canvas, cyFrac, cxFrac, alpha, color, haloColor, 
 }
 
 export function drawFarsideWorld(mgr, frame) {
-  const { ctx, canvas, worldX, A, B, t, dn, phenomenaFull, particleMul, skyVoyage } = frame;
+  const { ctx, canvas, worldX, A, B, t, dn, phenomenaFull, skyVoyage } = frame;
   const identity = mgr.world;
   const music = sampleManagerMusic(mgr, { energyCurves: mgr.energyCurves, worldRhythm: mgr.worldRhythm });
   const lift = boundaryLift01(mgr.sections?.[mgr._lastSectionIdx], mgr.sections?.[mgr._lastSectionIdx - 1]);
@@ -165,18 +165,8 @@ export function drawFarsideWorld(mgr, frame) {
   drawRange('L3');
 
   // Particles — sparse regolith dust, no secondary lights (no atmosphere
-  // to scatter them).
-  const openA = mgr.openingGain;
-  const mandalaColor = mgr._rotated(mgr.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-  ctx.save();
-  if (openA < 0.999) ctx.globalAlpha = openA;
-  mgr.fields.get(from)?.draw(ctx, particleMul * 0.6, mandalaColor, unravel, null);
-  ctx.restore();
-  if (to !== from && t > 0.02) {
-    ctx.save(); ctx.globalAlpha = t * openA;
-    mgr.fields.get(to)?.draw(ctx, particleMul * 0.6, mandalaColor, unravel, null);
-    ctx.restore();
-  }
+  // to scatter them). A time blend, weights summing to the opening gain.
+  drawParticleBlend(mgr, frame, 0.6, null);
 
   drawRange('L4');
   // No haze, no connector hills, no fog banks.

@@ -815,7 +815,9 @@ export class Simulation {
       this._pendingQuakeTsunamiAtMs = nowMs + delayMs;
     }
     if (Number.isFinite(this._pendingQuakeTsunamiAtMs) && nowMs >= this._pendingQuakeTsunamiAtMs) {
-      this.biomes.armTsunami(nowMs, this.quake.epicenterWorldX >= this.worldX ? 1 : -1);
+      if (this.biomes.acceptsOceanHazard()) {
+        this.biomes.armTsunami(nowMs, this.quake.epicenterWorldX >= this.worldX ? 1 : -1);
+      }
       this._pendingQuakeTsunamiAtMs = -Infinity;
     }
     // Slippery surfaces: settled snowfall OR a biome that is snow to begin
@@ -828,7 +830,7 @@ export class Simulation {
     // spring genuinely loses damping, so he visibly overshoots and slides
     // back.
     const biomeSnow = this.biomes.currentParticleKind && this.biomes.currentParticleKind() === 'snow' ? 0.8 : 0;
-    this.snowCover = Math.max(this.weather.groundCover, biomeSnow, this.flood.level01 || 0);
+    this.snowCover = Math.max(this.weather.groundCover, biomeSnow, this.biomes.floodFooting01());
     this.broshi.traction = tractionFrom(this.snowCover);
     this.biomes.snowCover = this.snowCover;
     // Keep the anchor's notion of "the song's own beat" tracking the live
@@ -1155,7 +1157,12 @@ export class Simulation {
       this.biomes.milestoneAtMs = this.performer.lastMilestone.atMs;
       this.biomes.milestoneIdx = this.performer.lastMilestone.idx;
     }
+    // Perf has to land before the world steps. Cathode never calls
+    // biomes.draw(), which used to be the only assignment of this policy,
+    // so optional simulators kept running on its cheap path.
+    this.biomes.adoptPerf(this.perf);
     this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level, this.worldX);
+    this.biomes.pumpStripPrewarm();
     // Flood: runs right after biomes.update() so a tsunami-overtop arm
     // called from inside that update (BiomeManager already owns tsunami
     // scheduling) lands in this same frame's envelope, not one frame late
@@ -1176,7 +1183,10 @@ export class Simulation {
     // do -- same "called after filmFinish.update() above" ordering as
     // those, so the hit() isn't immediately overwritten this same frame.
     if (this.disasters.justStruck && this.disasters.struckKind === 'quake') this.filmFinish.hit('quake');
-    if (this.biomes.tsunamiJustArrived) { this.filmFinish.hit('tsunami'); this.camera.shake(4); }
+    if (this.biomes.tsunamiJustArrived && this.biomes.acceptsOceanHazard()) {
+      this.filmFinish.hit('tsunami');
+      this.camera.shake(4);
+    }
     this.assembly.update(nowMs);
     // Finale silence is owned by main.js (has AudioEngine) — flag only here.
 

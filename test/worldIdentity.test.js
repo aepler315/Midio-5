@@ -27,6 +27,12 @@ test('every registered world kind declares a complete, immutable identity', () =
   assert.equal(Object.keys(WORLD_IDENTITIES).length, new Set(WORLDS.map((w) => w.kind)).size);
 });
 
+test('only the alpine range owns an ocean hazard', () => {
+  for (const [kind, identity] of Object.entries(WORLD_IDENTITIES)) {
+    assert.equal(identityAllows(identity, 'ocean'), kind === 'alpine', `${kind} ocean hazard`);
+  }
+});
+
 test('enclosed worlds reject open-sky spectacle while airless space keeps it', () => {
   for (const kind of ['abyssal', 'overgrowth', 'nave']) {
     assert.equal(identityAllows(kind, 'deepSky'), false, `${kind} must not show deep sky`);
