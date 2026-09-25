@@ -46,6 +46,39 @@ export const CREST_WAVE_BEATS = 2;
 // all sit on the same column.
 export const CREST_WAVE_PHASE = { L5: 0, L4: 0.18, L3: 0.36, L2: 0.54, massif: 0.72 };
 
+/** Absolute musical position from analyzed downbeats. Unlike dividing song
+ * time by a live kick-interval estimate, this stays continuous at tempo
+ * changes and gives the same result after a seek or during an export. */
+export class CrestBeatClock {
+  constructor(barGrid = []) {
+    this.segments = [];
+    // MIDI's preceding meter includes its endpoint; the next meter then
+    // emits that downbeat again. Keep the later meter, not an extra bar.
+    const bars = barGrid.filter((bar, i) => bar.ms !== barGrid[i + 1]?.ms);
+    let beat = 0, beatSec = 0.5;
+    for (let i = 0; i < bars.length; i++) {
+      const bar = bars[i];
+      const beats = bar.numerator > 0 ? bar.numerator : 4;
+      const duration = (bars[i + 1]?.ms - bar.ms) / 1000;
+      if (duration > 0) beatSec = duration / beats;
+      this.segments.push({ sec: bar.ms / 1000, beat, beatSec });
+      beat += beats;
+    }
+  }
+
+  at(tSec) {
+    if (!this.segments.length) return tSec / 0.5;
+    let lo = 0, hi = this.segments.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (this.segments[mid].sec <= tSec) lo = mid;
+      else hi = mid - 1;
+    }
+    const s = this.segments[lo];
+    return s.beat + (tSec - s.sec) / s.beatSec;
+  }
+}
+
 /** Triangle wave in [-1, 1] with the same phase as Math.sin. */
 function tri(phase) {
   return (2 / Math.PI) * Math.asin(Math.sin(phase));
@@ -78,17 +111,20 @@ export function wireAmplitude(cfg, loud, kick, tSec, intensity = 1) {
  * every CREST_WAVE_BEATS beats and breathes once per beat. `phase01` offsets
  * a layer so the packets do not stack.
  */
-export function crestWave01(x, x0, x1, tSec, beatSec, phase01 = 0) {
-  if (!(beatSec > 0) || !(x1 > x0)) return 0;
-  const period = beatSec * CREST_WAVE_BEATS;
-  let u = (tSec / period + phase01) % 1;
+export function crestWave01(x, x0, x1, tSec, beatSec, phase01 = 0, beatPosition = tSec / beatSec) {
+  if (!Number.isFinite(beatPosition) || !(x1 > x0)) return 0;
+  let u = (beatPosition / CREST_WAVE_BEATS + phase01) % 1;
   if (u < 0) u += 1;
   const center = x0 + u * (x1 - x0);
   const sigma = Math.max(12, (x1 - x0) * 0.085);
   const d = (x - center) / sigma;
   const bump = Math.exp(-0.5 * d * d);
-  const pulse = 0.55 + 0.45 * Math.sin((tSec / beatSec) * Math.PI * 2);
-  return bump * Math.max(0, pulse);
+  const pulse = 0.55 + 0.45 * Math.cos(beatPosition * Math.PI * 2);
+  // Fade before wrapping, so a bright packet cannot teleport from the
+  // right edge to the left in one frame. Smoothstep also softens its speed
+  // of brightening, while leaving most of the crossing at full strength.
+  const edge = Math.min(1, u / 0.08, (1 - u) / 0.08);
+  return bump * pulse * edge * edge * (3 - 2 * edge);
 }
 
 /** Relative luminance (WCAG), 0..1. */
@@ -156,6 +192,7 @@ export function resampleCrest(pts, step = WIRE_STEP_PX) {
  */
 export function drawCrestWire(ctx, pts, {
   cfg, color, amp, sharp, tSec, alpha = 1, glow = true, beatSec = 0, wavePhase = 0,
+  beatPosition = tSec / beatSec,
 }) {
   const line = resampleCrest(pts);
   if (line.length < 2 || !(alpha > 0.01)) return;
@@ -163,7 +200,7 @@ export function drawCrestWire(ctx, pts, {
   const x1 = line[line.length - 1].x;
   let peak = 0;
   for (const p of line) {
-    const env = crestWave01(p.x, x0, x1, tSec, beatSec, wavePhase);
+    const env = crestWave01(p.x, x0, x1, tSec, beatSec, wavePhase, beatPosition);
     if (env > peak) peak = env;
     p.env = env;
     p.y += wireOffset(p.x, tSec, cfg, amp, sharp) * (1 + 0.9 * env);
@@ -195,7 +232,7 @@ export function drawCrestWire(ctx, pts, {
   // The beat packet: a short brighter span riding the same crest, so the
   // pulse reads as a wave running along the line rather than the whole
   // ridge flashing at once.
-  if (beatSec > 0 && peak > 0.2) {
+  if (Number.isFinite(beatPosition) && peak > 0.2) {
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = 0.5 * alpha * peak;
     ctx.lineWidth = 3.2 * GLOW_FOOTPRINT;

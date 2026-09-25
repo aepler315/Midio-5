@@ -72,6 +72,23 @@ async function makeManager() {
 
 const canvas = { width: 960, height: 540 };
 
+test('far-ridge cache follows sibling relief even when bitmap heights match', async () => {
+  const bm = await makeManager();
+  bm.tSec = 0;
+  const strip = makeStrip({ height: 140 });
+  const low = makeStrip({ height: 320 });
+  const high = makeStrip({ height: 320 });
+  low.ridge.heights.fill(0);
+  high.ridge.heights.fill(1);
+  bm._heightStrips = { L3: low, L4: low, L5: low };
+  const a = bm._crestPoints(canvas, strip, 0, 0, 'L2', 1, 1);
+  bm._heightStrips = { L3: high, L4: high, L5: high };
+  const b = bm._crestPoints(canvas, strip, 0, 0, 'L2', 1, 1);
+  assert.ok(b.dh > a.dh, `new relief must lift the far ridge: ${a.dh} -> ${b.dh}`);
+  assert.equal(b.dh, bm._rangeDh(canvas, strip, 'L2', 1, false));
+  assert.strictEqual(bm._crestPoints(canvas, strip, 0, 0, 'L2', 1, 1), b);
+});
+
 test('the ridge-volume shading gradient anchors to a stable summit, not the live dancing crest', async () => {
   const strip = makeStrip({ phase: 0 });
   const bm1 = await makeManager();

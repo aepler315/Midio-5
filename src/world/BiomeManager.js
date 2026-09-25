@@ -99,7 +99,7 @@ import { hazeAlpha, hazeWarmMix, HAZE_WARM_COLOR, HAZE_EPS, hazeScatter } from '
 import { PERSONALITY } from './BiomePersonality.js';
 import { REAL_PERSONALITY } from './RealBiomes.js';
 import { castSongBiomes } from './terrain/BiomeSet.js';
-import { WIRE_LAYERS, wireAmplitude, wireColor, drawCrestWire, CREST_WAVE_PHASE } from './CrestWire.js';
+import { WIRE_LAYERS, wireAmplitude, wireColor, drawCrestWire, CREST_WAVE_PHASE, CrestBeatClock } from './CrestWire.js';
 import {
   horizonCrest, crestHeightAt, horizonRidgeLift01, massifCrest, massifRidgeLift01,
 } from './terrain/HorizonRidge.js';
@@ -472,6 +472,7 @@ export function travelSeam(width, layerKey, p) {
 export class BiomeManager {
   constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null, songTerrain = null }) {
     this.conductor = conductor;
+    this._crestBeatClock = new CrestBeatClock(conductor.barGrid);
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
     this._dayNightCycleMs = dayNightCycleMs(this.durationMs);
@@ -5728,10 +5729,11 @@ export class BiomeManager {
     const colW = this._danceColW();
     const ridge = this._ridgeEnvelope();
     const preview = this.terrainPreview && isTerrainStrip(strip);
-    const sibKey = layerKey === 'L2' && this._heightStrips
-      ? ['L3', 'L4', 'L5'].map((key) => this._heightStrips[key]?.height || 0).join(',')
-      : '';
-    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}|${colW}|${ridge?.scaleMul ?? 1}|${ridge?.groove ?? 'g'}|${ridge?.sustain ?? 's'}|${preview ? 1 : 0}|${sibKey}`;
+    // Sibling bitmap heights alone do not describe their relief. Key by
+    // the actual fitted height used by the fill, so crest and shading
+    // cannot reuse geometry from a different biome's anchoring decision.
+    const dh = this._rangeDh(canvas, strip, layerKey, heightMul, preview);
+    const cacheKey = `${layerKey}|${scrollX}|${terrainEnergy}|${heightMul}|${colW}|${ridge?.scaleMul ?? 1}|${ridge?.groove ?? 'g'}|${ridge?.sustain ?? 's'}|${preview ? 1 : 0}|${dh}`;
     if (byStrip) {
       const hit = byStrip.get(cacheKey);
       if (hit) return hit;
@@ -5739,7 +5741,6 @@ export class BiomeManager {
     const nowMs = this.tSec * 1000;
     const kick = preview ? 0 : ridgeKickEnv(nowMs - this._danceKickMs - cfg.delaySec * 1000)
       * this._danceKickAmp * (ridge?.kickMul ?? 1);
-    const dh = this._rangeDh(canvas, strip, layerKey, heightMul, preview);
     const scale = dh / Math.max(1, strip.height);
     const baseY = canvas.height - dh + yOff;
     const w = strip.width;
@@ -5839,7 +5840,7 @@ export class BiomeManager {
         tSec: this.tSec,
         alpha: alpha * crestMul * drive,
         glow: !this._perf || this._perf.heavyPostFx,
-        beatSec: (this._beatMs > 0 ? this._beatMs : 500) / 1000,
+        beatPosition: this._crestBeatClock?.at(this.tSec) ?? this.tSec / 0.5,
         wavePhase: CREST_WAVE_PHASE[layerKey] || 0,
       });
     }
@@ -6828,7 +6829,7 @@ export class BiomeManager {
           tSec: this.tSec,
           alpha: 0.55 + 0.35 * this.budget,
           glow: !this._perf || this._perf.heavyPostFx,
-          beatSec: (this._beatMs > 0 ? this._beatMs : 500) / 1000,
+          beatPosition: this._crestBeatClock?.at(this.tSec) ?? this.tSec / 0.5,
           wavePhase: CREST_WAVE_PHASE.massif,
         });
       } else {
