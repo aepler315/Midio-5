@@ -98,3 +98,17 @@ test('the caption names the massif under the horizon', () => {
   });
   assert.deepEqual(rows.map((r) => r.label), ['HORIZON', 'MASSIF', 'BACK']);
 });
+
+test('horizon travels left three times faster in screen space without running past finite scans', async () => {
+  for (const id of HORIZON_RANGES) {
+    const profile = (await loadRangeProfiles(id)).L2;
+    const old = horizonCrest(profile, { speedMul: 1, zoom: 1 });
+    const next = horizonCrest(profile);
+    assert.ok(Math.abs(next.travelM / next.windowM - 3 * old.travelM / old.windowM) < 1e-9, id);
+    assert.ok(next.windowM <= old.windowM / 1.2 + 1e-6, id);
+    assert.ok(next.travelM + next.windowM <= profile.spacingM * (profile.angles.length - 1) + 1e-6, id);
+    // The same geographic point arrives farther left as time advances.
+    const shift = 0.1 * next.travelM / next.windowM;
+    assert.ok(Math.abs(crestHeightAt(next, 0.4, 0.5) - crestHeightAt(next, 0.5, 0.5 - shift)) < 1e-6, id);
+  }
+});

@@ -83,13 +83,18 @@ export function chooseHorizonRange(seed, { exclude = [], ranges = RANGES, salt =
  */
 export function horizonCrest(profile, {
   windowM = HORIZON_WINDOW_M, travelM = HORIZON_TRAVEL_M, stepM = HORIZON_STEP_M,
+  speedMul = 3, zoom = 1.2,
 } = {}) {
   const units = profileUnits(profile);
   const n = units.length;
   const spacing = profile.spacingM;
   const lengthM = spacing * (n - 1);
-  const window = Math.min(windowM, lengthM * 0.6);
-  const travel = Math.max(0, Math.min(travelM, lengthM - window));
+  const oldWindow = Math.min(windowM, lengthM * 0.6);
+  const oldTravel = Math.max(0, Math.min(travelM, lengthM - oldWindow));
+  // Fit the full journey into finite scans while preserving screen speed.
+  const shift = speedMul * oldTravel / oldWindow;
+  const window = Math.min(oldWindow / zoom, lengthM / (1 + shift));
+  const travel = window * shift;
   const stretch = window + travel;
   let summit = 0;
   for (let i = 1; i < n; i++) if (units[i] > units[summit]) summit = i;
@@ -146,7 +151,7 @@ const MASSIF_TAPER = 0.14;
 
 /** The massif's crest: horizonCrest over a short window with no travel. */
 export function massifCrest(profile) {
-  return horizonCrest(profile, { windowM: MASSIF_WINDOW_M, travelM: 0 });
+  return horizonCrest(profile, { windowM: MASSIF_WINDOW_M, travelM: 0, speedMul: 1, zoom: 1 });
 }
 
 /** 0 at either edge of the massif, 1 over its middle, smoothstepped. */

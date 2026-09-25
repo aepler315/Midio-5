@@ -19,6 +19,7 @@
 import { FAIR_SHARE, matchRange, seedTicket, songTerrainTarget } from './RangeMatcher.js';
 import { REAL_BIOME_NAMES, REAL_BIOME_TEMPERATURE, rangesByBiome } from '../RealBiomes.js';
 import { RANGES } from './ranges/index.js';
+import { WALL_SHARE } from './ranges/shapes.js';
 
 export const SONG_BIOME_COUNT = 5;
 const KERNEL_WIDTH = 0.3;
@@ -74,24 +75,31 @@ export function chooseSongBiomes(profile, seed = 0, {
 
 /**
  * Up to three distinct ranges from one biome, as { far, mid, near } match
- * results: the tallest (by relief) at the back, the lowest in front, the way
- * a real view stacks. A biome with fewer than three ranges leaves the
+ * results: an open skyline in front, with the remaining two ordered by
+ * relief. Tall, flat scans remain available in the distance.
+ * A biome with fewer than three ranges leaves the
  * middle ridge, then the front, to the game's own hills.
  */
 export function chooseBiomeRidges(biome, profile, seed = 0, { ranges = RANGES, recent = [] } = {}) {
   const basket = groupsFor(ranges).get(biome) || [];
   const picked = [];
   let left = basket.slice();
-  for (let k = 0; k < 3 && left.length; k++) {
+  // Choose foreground first, where flat high windows obscure the music.
+  // Retain a lottery among every suitably open scan in this biome.
+  const best = Math.min(...basket.map((r) => WALL_SHARE[r.id] ?? 0));
+  const open = basket.filter((r) => (WALL_SHARE[r.id] ?? 0) <= Math.max(0.25, best));
+  const near = basket.length > 1
+    ? matchRange(open, profile, seed, { recent, salt: 210 + 7 * REAL_BIOME_NAMES.indexOf(biome) })
+    : null;
+  if (near) left = left.filter((r) => r !== near.range);
+  for (let k = 0; k < (near ? 2 : 1) && left.length; k++) {
     const hit = matchRange(left, profile, seed, { recent, salt: 211 + k + 7 * REAL_BIOME_NAMES.indexOf(biome) });
     if (!hit) break;
     picked.push(hit);
     left = left.filter((r) => r !== hit.range);
   }
   picked.sort((a, b) => (b.range.reliefM || 0) - (a.range.reliefM || 0));
-  if (picked.length === 3) return { far: picked[0], mid: picked[1], near: picked[2] };
-  if (picked.length === 2) return { far: picked[0], mid: null, near: picked[1] };
-  return { far: picked[0] || null, mid: null, near: null };
+  return { far: picked[0] || null, mid: picked[1] || null, near };
 }
 
 /**

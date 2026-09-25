@@ -213,3 +213,31 @@ test('ridgeShadingFull off still leaves the catchlight gradient anchored correct
   assert.ok(Math.abs(ctx.gradients[0].y0 - geom.bakedCrestY) < 0.01);
   assert.ok(Math.abs(ctx.gradients[0].y1 - geom.bottomY) < 0.01);
 });
+
+test('scanned foreground remains below a fixed screen envelope as mountains grow', async () => {
+  const bm = await makeManager();
+  bm.world = { kind: 'alpine' };
+  const strip = makeStrip({ height: 1000 });
+  strip.ridge.source = 'terrain';
+  for (const growth of [0, 0.5, 1]) {
+    bm.orogenyGrowth = growth;
+    assert.ok(bm._rangeDh(canvas, strip, 'L3', 1, false) <= canvas.height * 0.42);
+    assert.ok(bm._rangeDh(canvas, strip, 'L4', 1, false) <= canvas.height * 0.30);
+  }
+  assert.ok(bm._rangeDh(canvas, strip, 'L4', 1, true) > canvas.height * 0.30, 'terrain preview retains scale');
+});
+
+test('far anchor uses the capped foreground heights', async () => {
+  const bm = await makeManager();
+  bm.world = { kind: 'alpine' };
+  const far = makeStrip({ height: 140 });
+  const front = makeStrip({ height: 1000 });
+  front.ridge.source = 'terrain';
+  bm._heightStrips = { L2: far, L3: front, L4: front };
+  const before = bm._rangeDh(canvas, far, 'L2', 1, false);
+  const taller = makeStrip({ height: 2000 });
+  taller.ridge.source = 'terrain';
+  bm._heightStrips = { L2: far, L3: taller, L4: taller };
+  assert.equal(bm._rangeDh(canvas, far, 'L2', 1, false), before,
+    'invisible height beyond the foreground cap must not inflate the back ridge');
+});

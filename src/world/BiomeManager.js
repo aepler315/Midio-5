@@ -2485,7 +2485,7 @@ export class BiomeManager {
     // silhouettes so the ranges occlude their lower reach the same way
     // Lightning's bolts do.
     const cx = canvas.width * celestialXFrac, cy = canvas.height * celestialYFrac;
-    this.lightRig.draw(ctx, canvas, cx, cy, mandalaColor, particleMul, this.reducedFlash);
+    this.lightRig.draw(ctx, canvas, cx, cy, mandalaColor, particleMul * (this.world?.kind === 'alpine' ? 0.25 : 1), this.reducedFlash);
 
     // The Unraveling: each layer's scroll ratio drifts apart from the rest
     // as the world delaminates -- nearer layers race ahead more than far
@@ -2859,7 +2859,7 @@ export class BiomeManager {
     // tint. Dies with the layer (hazeLayers already collapses L2/L4 at
     // the deep rung) and is a hard skip when hazeScatter returns null.
     const scatter = hazeScatter(layerKey, this.light, hazeMul, canvas.height);
-    if (scatter) {
+    if (scatter && this.world?.kind !== 'alpine') {
       ctx.globalCompositeOperation = 'lighter';
       const halo = ctx.createRadialGradient(scatter.cx, scatter.cy, 0, scatter.cx, scatter.cy, scatter.radius);
       halo.addColorStop(0, `rgba(${r},${g},${b},${scatter.alpha.toFixed(3)})`);
@@ -4986,30 +4986,12 @@ export class BiomeManager {
     }
 
     ctx.save();
-    // Keep the broad spectrum wash translucent. Additive fill stacked
-    // with bloom turned the central skyline into a near-white light mass.
-    ctx.globalCompositeOperation = 'screen';
-
-    // Body: luminous fill from crest down — the musical weather mass.
-    const grad = ctx.createLinearGradient(0, baseline - maxH, 0, baseline + 30);
-    grad.addColorStop(0, `${color}99`);
-    grad.addColorStop(0.55, `${color}4d`);
-    grad.addColorStop(1, `${color}00`);
-    ctx.fillStyle = grad;
-    ctx.globalAlpha = 0.22 * this.budget * eqMul;
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, baseline + 30);
-    for (const p of pts) ctx.lineTo(p.x, p.y);
-    ctx.lineTo(pts[pts.length - 1].x, baseline + 30);
-    ctx.closePath();
-    ctx.fill();
-
-    // Bright aurora crest line on top — the fill alone reads as a haze;
-    // this is what makes the spectrum's own shape legible against the sky.
+    // A crisp skyline, without a luminous body washing out the terrain.
+    ctx.globalCompositeOperation = 'source-over';
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.strokeStyle = color;
-    for (const [lw, alpha] of [[10, 0.16], [4, 0.32], [1.6, 0.85]]) {
+    for (const [lw, alpha] of [[3, 0.08], [1.3, 0.55]]) {
       ctx.globalAlpha = alpha * this.budget * eqMul;
       ctx.lineWidth = lw;
       ctx.beginPath();
@@ -5542,15 +5524,19 @@ export class BiomeManager {
     const natural = mountainStripDrawHeight(
       strip?.height || 1, this._growthMul(layerKey, heightMul, preview), canvas.height, groundY,
     );
+    // Keep real foreground scans below the dancing skyline, even when a
+    // locally flat section occupies the viewport. Fill and wire share this.
+    if (!preview && isTerrainStrip(strip) && this.world?.kind === 'alpine') {
+      const cap = { L3: 0.42, L4: 0.30 }[layerKey];
+      if (cap) return Math.min(natural, canvas.height * cap);
+    }
     if (preview || layerKey !== FAR_DANCE_LAYER || !this._heightStrips) return natural;
     const fronts = ['L3', 'L4', 'L5'].map((key) => {
       const front = this._heightStrips[key];
       if (!front?.height) return null;
       return {
         strip: front,
-        dh: mountainStripDrawHeight(
-          front.height, this._growthMul(key, heightMul, false), canvas.height, groundY,
-        ),
+        dh: this._rangeDh(canvas, front, key, heightMul, false),
       };
     });
     return anchoredFarDrawHeight({

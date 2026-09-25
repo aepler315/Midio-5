@@ -192,3 +192,5 @@ writeFileSync(path.join(outDir, 'index.js'),
   + `export const LOADERS = {\n${loaders}\n};\n`);
 console.log(`index: ${metas.length} ranges`);
 if (rejected.length) console.log(`rejected (not in the index):\n  ${rejected.join('\n  ')}`);
+// Refresh the small foreground-selection table whenever scans change.
+await import('./build-range-shapes.mjs');
