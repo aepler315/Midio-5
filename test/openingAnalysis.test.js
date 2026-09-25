@@ -1,10 +1,12 @@
 // Starting a long song on its opening and finishing its analysis while it
 // plays (src/audio/OpeningAnalysis.js).
 import { test } from 'node:test';
+import * as opening from '../src/audio/OpeningAnalysis.js';
 import assert from 'node:assert/strict';
 import {
   MIN_SECONDS_FOR_OPENING, OPENING_SECONDS, adoptFullAnalysis, asOpening, extendBarGrid, sliceAudioBuffer, useOpeningAnalysis,
 } from '../src/audio/OpeningAnalysis.js';
+import { ComposerStrip } from '../src/render/ComposerStrip.js';
 import { EnergyCurves } from '../src/audio/EnergyCurves.js';
 
 test('only a single long file starts on its opening', () => {
@@ -80,4 +82,38 @@ test('a cached whole-song analysis does not replace the identity the song alread
   adoptFullAnalysis(data, { timeline: [], fromBundle: true, songIdentity: null });
   assert.deepEqual(data.songIdentity, { seed: 7 });
   assert.equal(data.fromBundle, true, 'and is known to be cached, so it is not written back');
+});
+
+test('a long recording has an overview beyond its 15-second analysis opening', () => {
+  const samples = Float32Array.from({ length: 744000 }, (_, i) =>
+    Math.sin(i * 0.31) * (i < 15000 ? 0.1 : 0.5));
+  const buffer = { length: samples.length, numberOfChannels: 2,
+    getChannelData: (c) => c ? samples.map((v) => -v) : samples };
+  const shape = opening.buildAudioOverview(buffer);
+  assert.equal(shape.length, 320);
+  assert.ok(shape[200] > 0.8, 'music late in the song must not look empty');
+  assert.ok(shape[0] < shape[200] * 0.3, 'retain the quiet intro');
+});
+
+
+test('audio seekbar uses the whole recording while notes cover only the opening', () => {
+  const overview = new Float32Array(320).fill(0.6);
+  const notes = [{ tMs: 1000, vel: 0.8, kick: true }];
+  const audio = new ComposerStrip(notes, [], 744573, [], null, overview);
+  const midi = new ComposerStrip(notes, [], 744573);
+  assert.equal(audio.mountain[200], overview[200]);
+  assert.equal(midi.mountain[200], 0, 'MIDI still uses authored note density');
+  const data = asOpening({ durationMs: 15000 }, 744573);
+  data.audioOverview = overview;
+  adoptFullAnalysis(data, { durationMs: 744573 });
+  assert.equal(data.audioOverview, overview, 'full analysis does not discard the overview');
+  assert.equal(data.opening, undefined, 'pending status clears on completion');
+});
+
+
+test('overview samples windows so a tone cannot disappear at a matching sample stride', () => {
+  const samples = Float32Array.from({ length: 102400 }, (_, i) => Math.sin((i % 100) * 2 * Math.PI / 100));
+  const shape = opening.buildAudioOverview({ length: samples.length, numberOfChannels: 1,
+    getChannelData: () => samples }, 1);
+  assert.equal(shape[0], 1);
 });

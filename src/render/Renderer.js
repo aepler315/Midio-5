@@ -478,12 +478,13 @@ export class Renderer {
         const holds = sim.noteChart ? sim.noteChart.notes.filter((n) => n.type === 'hold') : [];
         const sections = sim.biomes?.sections || [];
         this.composer = new ComposerStrip(
-          sim.conductor.timeline, sim.conductor.barGrid, sim.conductor.durationMs, holds, sections,
+          sim.conductor.timeline, sim.conductor.barGrid, sim.conductor.durationMs, holds, sections, sim.audioOverview,
         );
         this.composer.estimatedDuration = !!sim.estimatedDuration;
       } else if (sim.biomes?.sections) {
         this.composer.setSections(sim.biomes.sections);
       }
+      this.composer.analysisOpening = sim.analysisOpening || null;
       this.composer.draw(ctx, nominalStage, sim.timeMs, {
         showLabels: !!(sim.showSectionLabels || sim.paramBus?.showSectionLabels),
       });

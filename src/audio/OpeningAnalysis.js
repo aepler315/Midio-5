@@ -102,3 +102,29 @@ export function adoptFullAnalysis(data, full) {
   delete data.opening;
   return data;
 }
+
+/** Cheap whole-recording overview, independent of the slower note analysis.
+ * Sample short windows throughout each bucket and combine channels in power
+ * so stereo phase cancellation cannot turn audible music into silence. */
+export function buildAudioOverview(buffer, count = 320) {
+  const out = new Float32Array(count);
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+  let peak = 0;
+  for (let b = 0; b < count; b++) {
+    const from = Math.floor(b * buffer.length / count);
+    const to = Math.floor((b + 1) * buffer.length / count);
+    const windows = Math.min(64, to - from);
+    let power = 0, n = 0;
+    for (let w = 0; w < windows; w++) {
+      const start = from + Math.floor(w * (to - from) / windows);
+      const end = Math.min(to, start + 16);
+      for (let i = start; i < end; i++) {
+        for (const channel of channels) { const v = channel[i] || 0; power += v * v; n++; }
+      }
+    }
+    out[b] = n ? Math.sqrt(power / n) : 0;
+    peak = Math.max(peak, out[b]);
+  }
+  if (peak > 0) for (let i = 0; i < count; i++) out[i] /= peak;
+  return out;
+}
