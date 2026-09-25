@@ -27,8 +27,6 @@ try {
       old.sim.apotheosis.forceTrigger(60000);
       old.sim.hype.cueDrop(60000);
       old.sim.ensemble._discGate.tryFire(60000, { transition: true });
-      old.sim.biomes._shutterGate.tryFire(60000, { transition: true });
-      old.sim.biomes._shutterStartMs = 60000;
       old.sim.biomes._cutFlash = 1;
       old.sim.fire.strike(60000, 0);
       old.sim.quake.strike(60000, 0);
