@@ -5013,7 +5013,7 @@ export class BiomeManager {
    * the horizon whose silhouette IS the 7-band spectrum -- cosine-
    * interpolated between bands so there is not a straight line in it,
    * slowly scrolling through the bands, with a traveling undulation riding
-   * the crest. Filled glow below, a bright aurora crest line on top.
+   * the crest. A contained halo and a bright crest reveal that motion.
    */
   _horizonEqPoints(canvas, worldX) {
     return horizonEqPoints({
@@ -5026,20 +5026,28 @@ export class BiomeManager {
   }
 
   _drawHorizonEQ(ctx, canvas, worldX, A, B, t) {
-    const color = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
+    const color = ensureMinLightness(
+      this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)), .72);
     const eqMul = styleDials(this.visualStyle).horizonEqAlpha ?? 1;
     const pts = this._horizonEqPoints(canvas, worldX);
     if (this._landscapeGeometry) this._landscapeGeometry.horizon = pts;
-    if (eqMul < 0.05) return;
+    const presence = clamp01(this.openingGain ?? 1) * eqMul;
+    if (presence < 0.005) return;
+    const activity = clamp01(this._eqSmoothed.reduce((sum, value) => sum + value, 0) / BAND_COUNT);
+    const halo = presence * (.08 + .28 * activity) * (this.reducedFlash ? .42 : 1)
+      * (.75 + .25 * clamp01(this.budget));
 
     ctx.save();
-    // A crisp skyline, without a luminous body washing out the terrain.
+    // The contour is identity-bearing, so the decorative budget only shapes
+    // its halo. Keep its core visible through quiet/focus dips; let the music
+    // animate a narrow aura rather than washing the entire horizon with light.
     ctx.globalCompositeOperation = 'source-over';
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.strokeStyle = color;
-    for (const [lw, alpha] of [[3, 0.08], [1.3, 0.55]]) {
-      ctx.globalAlpha = alpha * this.budget * eqMul;
+    for (const [lw, alpha] of [[10, halo * .65], [5, halo],
+      [1.9, presence * (.72 + .12 * activity)]]) {
+      ctx.globalAlpha = alpha;
       ctx.lineWidth = lw;
       ctx.beginPath();
       pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
