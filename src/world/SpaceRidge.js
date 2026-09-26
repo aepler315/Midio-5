@@ -12,23 +12,24 @@
 import { clamp, clamp01, mulberry32 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { kickEnv } from './MountainChoreo.js';
+import { hexToRgb } from '../utils/color.js';
 
 // +3 joints past each edge (was +1 vs. the old 24-on-screen packing) so the
 // widened depth spread never pulls the outermost joints on-screen.
 export const N_NODES = 30;
 const ATTACK_SEC = 0.05;
 const RELEASE_SEC = 0.25;
-const FLASH_JUMP_THRESHOLD = 0.35;
+const FLASH_ON_THRESHOLD = 0.55;
+const FLASH_REARM_THRESHOLD = 0.24;
 const FLASH_LIFE_MS = 300;
-// Deep sky baseline — below the celestial band so it doesn't pin the top edge.
+// The foot of the immense sky structure, kept above the ocean horizon.
 // Exported so anything that needs to MEET this structure (the monolith in
 // FractureEngine ties into it) can anchor to the real altitude rather than
 // re-deriving it from a magic number that would silently drift out of sync.
-export const BASELINE_FRAC = 0.19;
-// Vertical throw from band energy alone is now just a residual shimmer --
-// the tidal drift owns the big vertical motion (was 0.22 -- read as its own
-// skyline, not a shimmer).
-const MAX_H_FRAC = 0.03;
+export const BASELINE_FRAC = 0.33;
+// The musical lift is broad enough to change the distant silhouette at
+// playback size; three adjacent levels are averaged before projection.
+const MAX_H_FRAC = 0.11;
 // Extra span past each screen edge (in units of one joint spacing).
 const EDGE_JOINTS = 3;
 
@@ -137,6 +138,13 @@ export function tidalOffset(tSec, canvasHeight) {
 export class SpaceRidge {
   constructor(seed) {
     const rand = mulberry32((seed ^ 0x2b1e) >>> 0 || 1);
+    // Three far-off masses share one silhouette; their uneven centers and
+    // widths are stable for a song, while the seven bands move their crest.
+    this._spine = [
+      { x: 0.16 + rand() * 0.06, width: 0.10, height: 0.61 },
+      { x: 0.44 + rand() * 0.08, width: 0.15, height: 1 },
+      { x: 0.75 + rand() * 0.07, width: 0.11, height: 0.76 },
+    ];
     this.nodes = [];
     for (let i = 0; i < N_NODES; i++) {
       const xFrac = nodeXFrac(i) + (rand() - 0.5) * 0.012;
@@ -146,7 +154,7 @@ export class SpaceRidge {
       if (r < 0.10) band = rand() < 0.5 ? 0 : 1;
       else if (r < 0.35) band = 2 + Math.floor(rand() * 2); // 2-3
       else band = 4 + Math.floor(rand() * 3); // 4-6
-      this.nodes.push({ xFrac, band, phase: rand() * Math.PI * 2, level: 0, z: 0 });
+      this.nodes.push({ xFrac, band, phase: rand() * Math.PI * 2, level: 0, z: 0, flashArmed: true });
     }
     this._flashes = [];
     this._rotX = 0;
@@ -163,9 +171,14 @@ export class SpaceRidge {
       const raw = clamp01(eqBands ? (eqBands[n.band] ?? 0) : 0);
       const target = Math.pow(raw, 1.4);
       const tau = (target > n.level ? ATTACK_SEC : RELEASE_SEC) * tauMul;
-      const prev = n.level;
       n.level += (1 - Math.exp(-dtSec / tau)) * (target - n.level);
-      if (n.level - prev > FLASH_JUMP_THRESHOLD) this._flashes.push({ i, atMs: nowMs });
+      // A one-step jump cannot exceed .154 at the live 120Hz clock. Arm on
+      // release and fire on a fresh rise in the incoming band instead.
+      if (raw <= FLASH_REARM_THRESHOLD) n.flashArmed = true;
+      if (n.flashArmed && raw >= FLASH_ON_THRESHOLD) {
+        this._flashes.push({ i, atMs: nowMs });
+        n.flashArmed = false;
+      }
 
       // Depth is a second-order lag behind level -- same attack/release
       // shape, one step slower, so a node's push-out/recede never snaps.
@@ -201,16 +214,45 @@ export class SpaceRidge {
     const y0 = canvas.height * BASELINE_FRAC + this._tidalPx;
     const maxH = canvas.height * MAX_H_FRAC;
     const cx = canvas.width / 2;
-    const tSec = this._tSec;
     const pts = this.nodes.map((n, i) => {
       const depthMul = clamp(1 + DEPTH_GAIN * n.z + DEPTH_GLOBAL_GAIN * this._zGlobal, DEPTH_MUL_MIN, DEPTH_MUL_MAX);
       const xBase = n.xFrac * canvas.width;
       const x = cx + (xBase - cx) * depthMul;
-      const y = y0 - n.level * maxH
-        + 3.5 * Math.sin(tSec * 0.45 + n.phase) * (0.5 + 0.5 * n.level);
+      const level = (this.nodes[Math.max(0, i - 1)].level + n.level
+        + this.nodes[Math.min(this.nodes.length - 1, i + 1)].level) / 3;
+      const mass = Math.min(1, this._spine.reduce((sum, peak) => {
+        const distance = (n.xFrac - peak.x) / peak.width;
+        return sum + peak.height * Math.exp(-distance * distance);
+      }, 0));
+      const resting = canvas.height * (0.045 + 0.09 * mass);
+      const y = y0 - resting - level * maxH;
       return { x, y, i, level: n.level, depthMul };
     });
+    // Independent near/far nodes can otherwise cross in projection and fold
+    // the skyline into sharp loops. Depth may compress spacing, not its order.
+    for (let i = 1; i < pts.length; i++) pts[i].x = Math.max(pts[i].x, pts[i - 1].x + 3);
     return { pts, y0, maxH };
+  }
+
+  /** The space occupied by the actual live structure, for secondary sky paint. */
+  corridorAt(canvas, x) {
+    return this.corridor(canvas)(x);
+  }
+
+  corridor(canvas) {
+    const { pts: raw, y0 } = this._samples(canvas);
+    const pts = raw.slice().sort((a, b) => a.x - b.x);
+    return (x) => {
+      let y = pts[0].y;
+      for (let i = 1; i < pts.length; i++) {
+        if (x > pts[i].x) { y = pts[i].y; continue; }
+        const dx = pts[i].x - pts[i - 1].x;
+        const t = dx > 0 ? clamp01((x - pts[i - 1].x) / dx) : 0;
+        y = pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t;
+        break;
+      }
+      return { top: Math.min(y, y0) - 18, bottom: y0 + 15 };
+    };
   }
 
   draw(ctx, canvas, color, tSec, reducedFlash = false, presentation = 1) {
@@ -226,20 +268,35 @@ export class SpaceRidge {
     const inherited = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
     const present = Number.isFinite(presentation) ? Math.min(1, Math.max(0, presentation)) : 1;
     const paint = inherited * present;
-    const ghost = present < 0.999 ? 0.4 : 1;
-    const halo = present < 0.999 ? 0.55 : 1;
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = 'source-over';
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
+
+    // A broad, quiet body gives the skyline physical scale even between
+    // notes. The contour above it is the musical edge, not an isolated wire.
+    const { r, g, b } = hexToRgb(color);
+    const body = ctx.createLinearGradient(0, y0 - maxH - canvas.height * 0.07, 0, y0);
+    body.addColorStop(0, `rgba(${r},${g},${b},0.03)`);
+    body.addColorStop(0.55, `rgba(${r},${g},${b},0.15)`);
+    body.addColorStop(1, `rgba(${r},${g},${b},0.02)`);
+    ctx.globalAlpha = paint;
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+    ctx.lineTo(pts[pts.length - 1].x, y0);
+    ctx.lineTo(pts[0].x, y0);
+    ctx.closePath();
+    ctx.fill();
 
     // One soft depth ghost only (two tall ghosts read as extra sky-high bands).
     const depthLayers = [
       { yScale: 1.2, yOff: -maxH * 0.06, alpha: 0.035, lw: 8 },
     ];
+    ctx.globalCompositeOperation = reducedFlash ? 'source-over' : 'lighter';
     for (const layer of depthLayers) {
       ctx.strokeStyle = color;
-      ctx.globalAlpha = paint * ghost * capFlashAlpha(layer.alpha, reducedFlash);
+      ctx.globalAlpha = paint * capFlashAlpha(layer.alpha, reducedFlash);
       ctx.lineWidth = layer.lw;
       ctx.beginPath();
       for (let i = 0; i < pts.length; i++) {
@@ -252,7 +309,7 @@ export class SpaceRidge {
 
     // Vast mirrored ghost above — inverted cosmos echo, not a hairline.
     ctx.strokeStyle = color;
-    ctx.globalAlpha = paint * ghost * capFlashAlpha(0.035, reducedFlash);
+    ctx.globalAlpha = paint * capFlashAlpha(0.035, reducedFlash);
     ctx.lineWidth = 5;
     ctx.beginPath();
     pts.forEach((p, i) => {
@@ -276,7 +333,7 @@ export class SpaceRidge {
       const a = pts[i], b = pts[i + 1];
       const flash = Math.max(flashSet.get(a.i) || 0, flashSet.get(b.i) || 0);
       const dm = (a.depthMul + b.depthMul) / 2;
-      for (const [lw, base] of [[14, 0.065], [6, 0.09], [2.2, 0.14]]) {
+      for (const [lw, base] of [[17, 0.075], [7, 0.16], [2.8, 0.58]]) {
         ctx.strokeStyle = color;
         ctx.globalAlpha = paint * capFlashAlpha((base + 0.35 * flash) * dm, reducedFlash);
         ctx.lineWidth = lw * dm;
@@ -292,14 +349,15 @@ export class SpaceRidge {
     // strokes above: a bigger, dimmer point reads as a distant glow: a
     // small, near-full-alpha one reads as a nearby light bulb.
     for (const p of pts) {
+      if (p.i % 4 !== 1) continue;
       const n = this.nodes[p.i];
       const dm = p.depthMul;
       ctx.fillStyle = color;
-      ctx.globalAlpha = paint * capFlashAlpha(0.09 * dm, reducedFlash);
+      ctx.globalAlpha = paint * capFlashAlpha(0.07 * dm, reducedFlash);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, (9 + 5 * n.level) * dm * halo, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, (9 + 5 * n.level) * dm, 0, Math.PI * 2);
       ctx.fill();
-      ctx.globalAlpha = paint * capFlashAlpha((0.28 + 0.3 * n.level) * dm, reducedFlash);
+      ctx.globalAlpha = paint * capFlashAlpha((0.18 + 0.24 * n.level) * dm, reducedFlash);
       ctx.beginPath();
       ctx.arc(p.x, p.y, 3.2 * dm, 0, Math.PI * 2);
       ctx.fill();

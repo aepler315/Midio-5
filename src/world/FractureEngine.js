@@ -233,9 +233,9 @@ export function buildMonolithPolylines(w, h, seed, count = RIDGE_GEN_COUNT) {
   pushChord({ x: cx - crownHW * 0.72, y: topY }, { x: cx + crownHW * 0.72, y: topY }, 2, 3);
 
   // --- 5. It connects (piece 15) -----------------------------------------
-  // The last birth of the song, at exactly the altitude the SpaceRidge hangs
-  // at: the monolith stops being a thing in the world's sky and becomes part
-  // of the structure out there.
+  // The last birth of the song meets SpaceRidge's underside (BASELINE_FRAC),
+  // below its moving musical crest: the monolith becomes part of the immense
+  // filled structure without chasing its notes.
   pushPts([
     { x: cx - w * MONOLITH_TIE_REACH, y: ridgeY + h * 0.012 },
     { x: cx - girthHW, y: ridgeY },

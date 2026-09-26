@@ -1,4 +1,4 @@
-import { hexLerp } from '../../utils/color.js';
+import { hexLerp, hexToRgb, rgbToHsl, hslToRgb, rgbToHex } from '../../utils/color.js';
 import { shiftLightness } from '../../render/VisualStyle.js';
 
 // Artistic cover and material permissions, keyed by the actual real-biome name.
@@ -59,15 +59,29 @@ const LAYER_LIFT = { L2: 0.08, L3: 0.03, L4: -0.03, L5: -0.08 };
 
 function anchorFor(key) { return ANCHORS[key] || ANCHORS.CUSTOM; }
 
-function layerTone(mass, air, layerKey, night01) {
-  const mixed = hexLerp(mass, air || mass, AIR_MIX[layerKey] ?? 0);
-  const lifted = shiftLightness(mixed, (LAYER_LIFT[layerKey] ?? 0) * (1 - night01 * 0.35));
-  const base = night01 > 0 ? shiftLightness(lifted, -0.26 * night01) : lifted;
+// Distance already mixes the mineral with the air. A light/shade adjustment
+// must not remove saturation again: repeated VisualStyle shifts made pale-sky
+// forest faces completely gray before they reached the canvas.
+function materialLightness(hex, delta) {
+  const { r, g, b } = hexToRgb(hex);
+  const { h, s, l } = rgbToHsl(r, g, b);
+  const rgb = hslToRgb(h, s, Math.max(0, Math.min(1, l + delta)));
+  return rgbToHex(rgb.r, rgb.g, rgb.b);
+}
+
+function layerTone(mass, air, layerKey, night01, organic) {
+  const atDepth = (color) => {
+    const mixed = hexLerp(color, air || color, AIR_MIX[layerKey] ?? 0);
+    const lifted = materialLightness(mixed, (LAYER_LIFT[layerKey] ?? 0) * (1 - night01 * 0.35));
+    return night01 > 0 ? materialLightness(lifted, -0.26 * night01) : lifted;
+  };
+  const base = atDepth(mass);
   return {
     base,
-    faceLight: shiftLightness(base, 0.09 * (1 - night01 * 0.4)),
-    faceShade: shiftLightness(base, -0.11),
-    gully: shiftLightness(base, -0.16),
+    cover: atDepth(organic),
+    faceLight: materialLightness(base, 0.09 * (1 - night01 * 0.4)),
+    faceShade: materialLightness(base, -0.11),
+    gully: materialLightness(base, -0.16),
     intrinsicContrast: 1,
   };
 }
@@ -86,10 +100,10 @@ export function resolveLandscapePalette({ profile, night01, airColor } = {}) {
   return {
     biomeKey,
     layers: {
-      L2: layerTone(mass, air, 'L2', night),
-      L3: layerTone(mass, air, 'L3', night),
-      L4: layerTone(mass, air, 'L4', night),
-      L5: layerTone(mass, air, 'L5', night),
+      L2: layerTone(mass, air, 'L2', night, anchor.organic),
+      L3: layerTone(mass, air, 'L3', night, anchor.organic),
+      L4: layerTone(mass, air, 'L4', night, anchor.organic),
+      L5: layerTone(mass, air, 'L5', night, anchor.organic),
     },
     ground: {
       base: groundBase,
@@ -115,7 +129,8 @@ export function resolveRangePresentation({
   const rows = landscapeBudget(Number.isFinite(quality) ? quality : 0).oceanRows;
   const unit = (n) => finite01(n, 0);
   return {
-    spaceRidge: unit(0.20 * ambientScale),
+    // The cosmic ridge is the authored Range signature, not ambient garnish.
+    spaceRidge: 1,
     liveWeaver: unit(0.30 * (0.55 + 0.45 * sky) * (1 - 0.35 * voyage)),
     retainedWeaver: unit(0.20 * ambientScale * (0.85 + 0.15 * night)),
     ensemble: unit(0.30 * ambientScale),

@@ -731,6 +731,7 @@ export class Renderer {
    *  gradeAlpha has no percussive term at all), so this deliberately never
    *  routes through capFlashAlpha. */
   _drawFilmFinish(ctx, canvas, sim) {
+    if (sim.biomes?._pass?.('film') === false) return;
     const ff = sim.filmFinish;
     const dials = styleDials(sim.visualStyle);
     const gradeMul = dials.filmGradeMul;
@@ -748,10 +749,9 @@ export class Renderer {
     const color = this._filmLerpCache.get(gradeCool, gradeWarm, ff.warmth);
     const gradeAlpha = (FILM_GRADE_ALPHA_BASE + FILM_GRADE_ALPHA_RANGE * Math.abs(ff.warmth - 0.5) * 2) * gradeMul;
     const filmWeight = sim.biomes?.world?.kind === 'alpine' ? (sim.biomes._rangePresentation?.film ?? 1) : 1;
-    const filmOn = sim.biomes?._pass?.('film') !== false;
     ctx.save();
     ctx.globalCompositeOperation = 'soft-light';
-    ctx.globalAlpha = filmOn ? Math.min(0.22, gradeAlpha) * filmWeight : 0;
+    ctx.globalAlpha = Math.min(0.22, gradeAlpha) * filmWeight;
     ctx.fillStyle = color;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     // Rendered: a whisper of indigo space grade so the whole frame reads

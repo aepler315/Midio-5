@@ -2,9 +2,9 @@
 
 function yAt(samples, x) {
   if (!samples?.length) return null;
-  if (x <= samples[0].x) return samples[0].y;
+  if (x < samples[0].x) return null;
   const last = samples[samples.length - 1];
-  if (x >= last.x) return last.y;
+  if (x > last.x) return null;
   let lo = 0;
   let hi = samples.length - 1;
   while (hi - lo > 1) {
@@ -16,6 +16,20 @@ function yAt(samples, x) {
   const b = samples[hi];
   const t = (x - a.x) / Math.max(1e-9, b.x - a.x);
   return a.y + (b.y - a.y) * t;
+}
+
+/** Integrate a ridge body above the actual drawn ground curve. Masks nearer
+ * than this ridge still need to be considered separately for exposed area. */
+export function bodyAreaFraction(crest, ground, width, height) {
+  if (!crest?.length || !ground?.length || !(width > 0 && height > 0)) return null;
+  let area = 0;
+  for (let i = 1; i < crest.length; i++) {
+    const a = crest[i - 1], b = crest[i];
+    const ga = yAt(ground, a.x), gb = yAt(ground, b.x);
+    if (ga == null || gb == null) continue;
+    area += Math.max(0, b.x - a.x) * (Math.max(0, ga - a.y) + Math.max(0, gb - b.y)) / 2;
+  }
+  return area / (width * height);
 }
 
 /**

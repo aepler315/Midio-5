@@ -44,6 +44,9 @@ function manager(overrides = {}) {
     fields: new Map([['Home', { draw() {} }]]),
     _perf: { phenomenaFull: false, constellationsEnabled: false, hazeLayers: 1, rimLightEnabled: false },
   }, overrides);
+  // This test isolates scroll selection: its cached strips carry widths but
+  // no canvas surfaces, so bypass the unrelated bake/pin lifecycle.
+  mgr.stripsFor = (key) => mgr.strips.get(key);
   const noop = () => {};
   for (const name of [
     '_drawSky', 'drawDeepSky', '_drawCelestial', '_drawMoon', '_drawFarShore', '_drawFataMorgana',
@@ -52,7 +55,8 @@ function manager(overrides = {}) {
     '_drawTerrainFooting', '_drawFlood', '_drawForegroundSwell', '_drawTransitionOverlays',
   ]) mgr[name] = noop;
   mgr._moonPhase01 = () => 0.5;
-  mgr.spaceRidge = { draw: noop, tidalOffsetPx: () => 0 };
+  mgr.spaceRidge = { draw: noop, tidalOffsetPx: () => 0,
+    corridor: () => () => ({ top: -Infinity, bottom: -Infinity }) };
   mgr.lightning = { draw: noop };
   mgr.lightRig = { draw: noop };
   return mgr;

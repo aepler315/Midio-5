@@ -1,48 +1,126 @@
-# Range landscape correction: validation record
+# Range visual correction — validation
 
-Execution base and visual baseline are the same commit: `e4a0e81` (PR #328). No commits landed on main after that audit. The corrective branch is `fix/range-landscape-correction`.
+Base: `3231263e8d1a624f8f78421ed46ee70bc7770061` (main after #329).
+The implementation was recovered from an interrupted CLI session and checked
+against a fresh checkout of that exact base. The original user screenshot and
+session logs are not repository assets.
 
-## What changed
+## Visual comparison
 
-- Leaf sky painters multiply inherited opacity instead of replacing it. Range presentation weights dim SpaceRidge, constellations, planets, beams, ordinary water marks and film without changing the physical light.
-- Each alpine side is painted at full opacity on the existing travel surface, recolored with that profile's live layer color, then composited once. Alpine ground uses the same palette family instead of the generic lightness lift.
-- Ridge descriptors are version 2. Peaks come from the smoothed source, with saddle-bounded faces and low-contrast panels on long quiet slopes. Paint keeps those faces readable when the key light is centered or absent, and reserves form across the visible width during an A/B handoff.
-- Cover is a connected source-space mass. Valley fog uses saddle intervals. Ground patches follow the rendered curve by actual sample x. Alpine contact shadows are feathered, and the celestial is converted into ground space at the ground-transform boundary.
-- `node tools/range-landscape-smoke.mjs --url --source-root --expect-sha --preset --output` is the named capture CLI. `.github/workflows/landscape-visual.yml` runs the primary preset and uploads the images on failure too.
+The corrected scene restores a broad, filled, music-responsive SpaceRidge
+behind the celestial bodies. Generic stars and incidental figures yield its
+corridor. The scenic ranges retain their real source contours, while lower,
+fixed per-biome fits leave the musical horizon exposed. Forest and dry faces
+retain intrinsic shading; distant vegetation receives the same atmospheric
+depth as the ridge carrying it. Ground response and performer identity remain.
 
-## What Node can prove
+![Matched forest and desert frames, before and after](evidence/range-20260926/before-after.jpg)
 
-Geometry, palette separation, opacity multiplication, case identity and the light-space mapping have unit tests. `npm test` and `npm run lint` are the local gate. They do not establish how the frame looks.
+![All eleven real-biome fixtures](evidence/range-20260926/all-biomes.jpg)
 
-## What a browser frame showed
+The initial recovered candidate was not accepted: it retained gray forest
+highlights, dark cover patches, and overly shallow ranges. Live canvas probes
+identified repeated saturation removal and a 64px ground-coordinate error in
+the fitter. Regression tests and fresh captures validate those corrections.
+Independent review also caught an exhausted-dominant edge case in visibility
+fitting. A dedicated regression now proves that another actual blocker yields
+when the first reaches its minimum. All review findings are resolved.
 
-One headless Chrome frame of The Range at seed 315, about one second in, biome RAINFOREST, 1280×720, was captured with the installed browser. The page reported no errors. All eleven real biomes were in the cast. The resolved ground base was `#314436`, and the Range presentation weights were live (`spaceRidge` 0.20, beams 0.15, ocean marks 0.30). The lower ground reads as dark soil. The near skyline is still pale beside the sky, and ordinary sky and water lines are still easy to see. That frame is local scratch under `.smoke/`; it is not the paired baseline/candidate set.
+![SpaceRidge isolated against the same full scene](evidence/range-20260926/signature.jpg)
 
-## What is still a picture
+[Ten-second travel clip](evidence/range-20260926/travel-motion.mp4) ·
+[Capture provenance and metrics](evidence/range-20260926/manifest.json)
 
-Full-scene before/after images, the 21-station sightline sheets, motion clips and frame-time tables come from the landscape workflow or from `npm run test:landscape`. Until that set exists, this branch is a corrective candidate, not a visually accepted one.
+## Evidence contract
 
-The original user screenshot (`image(2).png`, SHA-256 `6889239a874ec1503a8294544403bc9228e8cf1fbb0c08e24a5039f4669610af`) is private feedback. It is not a repository fixture, and this work does not claim to reproduce that exact frame.
+Captures use Chromium 153, a deterministic generated 96-second WAV, construction
+seed 315, and explicit real-range fixtures. Construction seed and actual song
+seed are distinct and recorded separately. The harness checks actual range IDs,
+clock, DPR, and served module hashes before and after each completed run.
+Candidate captures intentionally record the dirty working tree at the base SHA;
+the module hashes, rather than that SHA alone, identify the implementation.
 
+The accepted matrix has 36 candidate cases and 36 matched baseline cases.
+Candidate full, visibility, and motion runs finished without page errors.
 
-## Implemented
+| Check | Result |
+| --- | --- |
+| All 11 biomes, normal view | Horizon 100%; minimum L2 crest exposure 62.11% |
+| Tilted pullback at zoom 0.72 | Horizon 100%; L2 crest exposure 57.85% |
+| 21 broad-profile stations | Horizon 100%; minimum L2 crest exposure 64.29% |
+| Full-matrix foreground area | Maximum L3 14.38%; L4 1.99% of viewport |
+| Motion | 120 distinct frames at 12 fps, from 18.000s through 27.917s |
+| World playback | All nine worlds completed selection, passage, rhythm, seek and reduced-motion assertions across resumed runs |
 
-- Alpine-only cover/depth/quality policy for all eleven real biomes and a dry custom fallback.
-- Distinct colors baked into the actual L2–L5 strips; ordinary alpine wire and baked edge-light removed. The dedicated horizon EQ and its timing remain unchanged.
-- Deterministic inferred facets, gullies, canopy stands and valley anchors from the fitted strip skyline. Live rendering projects them through `_crestPoints` into the existing clipped body. Each A/B travel side owns its own strip metadata.
-- Alpine connector infill and replacement distant-wave painting disabled. Distant-wave occlusion measurement still runs. Full-frame alpine haze and fog-bank paint replaced with small valley patches; other worlds retain their existing paths.
-- Forest stand painters use filled crowns. Ground patches use the existing rendered curve and never alter physics. Ground scatter gets biome vocabulary and bounded depth-lane candidate search on long travel.
-- Bounded local receiver-edge light and small clipped pool ripples after characters, derived from recent conductor events by time so backward seeks recompute the same response. Detailed character mesh reflections are omitted; composited-canvas crops include unrelated scenery and no isolated character surface fits the present pass contract.
-- The old row-sliced shimmer does not run on alpine scenic strips because it bypasses live material projection; other worlds retain it. Dry biomes retain their distinct material and palette but this specific heat-shimmer treatment needs a material-aware replacement if visual review calls for it.
+The 21 broad-profile stations are distinct captures from 5s through 85s. Across
+them the musical horizon is fully exposed, L2 crest exposure is at least 64.29%,
+and L3 body area above the actual ground never exceeds 15.75% of the viewport.
+These are fixture results, not guarantees for every song or terrain choice.
 
-## Verification available in this environment
+Moving-seam fixtures assert that L2–L5 actually invoke the travel compositor at
+25%, 50%, and 75%. Earlier dissolve-only captures are excluded. Pullback sets
+both zoom and the corresponding layer tilt. Scenic masks are recorded after
+that tilt, only during painting; diagnostic recomputation cannot overwrite them.
+Transition frames report side geometry without claiming both entire sides are
+simultaneously visible. Body area is unavailable when the ground-interior pass
+does not paint (for example, a liquid-ground case); no zero is substituted.
 
-`npm test`, `npm run lint`, and `npm run stage:site` passed after the changes. Pure geometry tests cover flat/long strips, deterministic IDs, late-window cover, source projection, dry materials, reduced-flash envelopes, cache accounting and long-travel scatter.
+The first full baseline run stopped after 33 captures because the portable
+browser's single-process mode could not replace a browser context. The flag was
+removed from the local runner; real seam, viewport, and tilted-pullback cases
+were then captured in completed supplementary runs. Baseline source remained
+unchanged. No portable-browser package was added to the product dependencies.
 
-Browser acceptance is **incomplete**. Playwright Chromium is absent; `npx playwright install chromium` repeatedly downloaded a zero-length/invalid archive from the CDN, and `tools/range-landscape-smoke.mjs` exits at browser launch. No baseline/final PNGs, per-pass pixel captures, 10-second motion clip, transition matrix, device DPR comparison or measured p50/p95 Canvas draw times exist yet. No visual quality or frame-rate claim follows from Node tests.
+The full matrix exposed an ICEFIELD failure hidden by the fitter's original
+10th-percentile test. Fitting now checks every sampled station. Full and motion
+captures were repeated after that correction. Their source hashes precede the
+final exhausted-dominant fallback; a fresh browser probe verified identical fit
+coefficients and visibility metrics for all eleven fixtures after the fallback.
+The earlier 21-station CANYON run retains its own hash: its fit coefficients are
+unchanged by either correction. The manifest preserves these distinct snapshots
+instead of relabeling them as one revision.
 
-## Next visual pass
+The clip was checked using sampled frames and frame differences. Terrain moves
+through the A/B seam without a transparent overlap. The largest pixel delta at
+24.083s is a brief full-scene landing/accent flash, not a terrain discontinuity.
+Reduced-flash presence is covered separately by matrix cases and unit tests.
 
-On a machine with Chromium: start `npm start`, then run `node tools/range-landscape-smoke.mjs http://127.0.0.1:8080 .smoke/range-landscape candidate`. Its manifest notes biomes not available in a given synthetic song cast; vary the fixture/seed until all eleven have real range IDs. Capture the corresponding baseline from the audited revision with the same synthetic fixture and harness. Review the three-plane depth, shade alignment during fractional scroll, rainforest cover density, snow permissions, fog location, ground patches and non-alpine worlds before treating this as release-ready. Run the existing `test:worlds`, `test:shading`, `test:lighting`, and `test:seek` browser suites.
+World smoke runs resumed after software rendering skipped a narrow live-clock
+window. The harness now pauses after actual live rhythm has advanced, then seeks
+synchronously using audio time (simulation time includes a 52ms visual lead).
+The first three successful world records are retained from the earlier run;
+six worlds completed with the corrected harness. All nine have no page errors.
 
-The harness includes wire/fog/connector suppression frames, but does not yet isolate each scenic layer, ground, horizon EQ or ocean seam; motion video also remains open. The plan's 21-station occlusion report, device performance matrix and landscape-specific tuning remain open. This is a draft implementation candidate.
+## Verification
+
+- `npm test`: 3,225 passed, zero failures.
+- `npm run lint`: passed.
+- `npm run stage:site`: passed.
+- `npm audit`: zero vulnerabilities.
+- Whole-branch review: blockers resolved; no new findings on follow-up.
+
+The independent reviewer reran all 13 composition tests after the final fix
+and reported no remaining findings. The change introduces no dependencies.
+
+## Reproduce
+
+Start `node tools/serve.js 8090` from the revision to inspect, then run the
+candidate harness with explicit source identity:
+
+```sh
+node tools/range-landscape-smoke.mjs \
+  --url http://127.0.0.1:8090 \
+  --source-root . \
+  --expect-sha "$(git rev-parse HEAD)" \
+  --preset full --output .smoke/range-full --stage candidate
+```
+
+Repeat with `--preset visibility` and `--preset motion` in separate output
+directories. For a historical comparison, serve a clean baseline checkout and
+point the current harness at that checkout's URL, source root, and SHA. Use the
+same generated WAV, fixture definitions, browser, and viewport settings.
+
+The motion capture measures deterministic rendered continuity. Headless draw
+submission timings are not device FPS, GPU timings, or a performance guarantee.
+SpaceRidge's monolith connection deliberately meets its fixed underside, below
+the moving musical crest.

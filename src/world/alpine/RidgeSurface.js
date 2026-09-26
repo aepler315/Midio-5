@@ -76,13 +76,14 @@ function slopeFace(sx0, sx1, id, intervalId, facing, tone, importance, material,
   const hi = Math.max(0, Math.min(width, Math.max(sx0, sx1)));
   const crest = facing < 0 ? hi : lo;
   const foot = facing < 0 ? lo : hi;
-  const mid = (crest + foot) * 0.5;
+  const flank = foot + (crest - foot) * 0.25;
+  const deepFlank = foot + (crest - foot) * 0.66;
   return face(id, intervalId, [
     { sx: crest, depth01: 0 },
-    { sx: foot, depth01: 0.1 },
-    { sx: foot, depth01: 0.74 },
-    { sx: mid, depth01: 0.86 },
-    { sx: crest, depth01: 0.4 },
+    { sx: foot, depth01: 0.04 },
+    { sx: flank, depth01: 0.18 },
+    { sx: deepFlank, depth01: 0.43 },
+    { sx: crest, depth01: 0.24 },
   ], facing, tone, importance, material);
 }
 
@@ -94,24 +95,26 @@ function coverKind(policy) {
   return 'conifer';
 }
 
-function coverVertices(sx, widthSrc, kind, rand, stripWidth) {
-  const low = kind === 'grass' || kind === 'mat' || kind === 'scrub' || kind === 'sand' || kind === 'stone' || kind === 'ice';
-  const top = low ? 0.18 : 0.04;
-  const bot = kind === 'grass' || kind === 'mat' ? 0.34 : kind === 'scrub' || kind === 'sand' ? 0.46 : kind === 'conifer' ? 0.7 : 0.58;
-  const lobes = kind === 'conifer' ? 4 : kind === 'broadleaf' ? 3 : 2;
+function coverVertices(sx, widthSrc, kind, rand, stripWidth, valley01, depthScale) {
+  const low = kind === 'grass' || kind === 'mat' || kind === 'scrub';
+  const top = low ? 0.11 : 0.035;
+  const foot = (low ? 0.25 : 0.22) + 0.04 * valley01;
+  const segments = kind === 'conifer' ? 11 : kind === 'broadleaf' ? 9 : 7;
   const verts = [];
-  const steps = lobes * 2;
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const wobble = (rand() - 0.5) * (kind === 'conifer' ? 0.06 : 0.14);
-    const arch = kind === 'broadleaf' ? Math.sin(t * Math.PI) * 0.08 : kind === 'conifer' && i % 2 === 1 ? -0.05 : 0;
+  const phase = rand() * Math.PI * 2;
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const edge = Math.abs(t * 2 - 1);
+    const crown = Math.sin(t * Math.PI) * (0.018 + 0.012 * Math.sin(t * Math.PI * 3 + phase));
+    const irregularity = (rand() - 0.5) * (low ? 0.012 : 0.024);
     verts.push({
       sx: Math.max(0, Math.min(stripWidth, sx + widthSrc * (t - 0.5))),
-      depth01: Math.max(0, Math.min(1, top + wobble * 0.2 + arch)),
+      depth01: Math.max(0.005, (top + 0.055 * edge - crown + irregularity) * depthScale),
     });
   }
-  verts.push({ sx: Math.max(0, Math.min(stripWidth, sx + widthSrc * 0.42)), depth01: bot });
-  verts.push({ sx: Math.max(0, Math.min(stripWidth, sx - widthSrc * 0.42)), depth01: bot });
+  verts.push({ sx: Math.min(stripWidth, sx + widthSrc * 0.32), depth01: foot * depthScale });
+  verts.push({ sx: Math.min(stripWidth, sx + widthSrc * 0.06), depth01: (foot + 0.025) * depthScale });
+  verts.push({ sx: Math.max(0, sx - widthSrc * 0.30), depth01: (foot - 0.015) * depthScale });
   return verts;
 }
 
@@ -167,8 +170,8 @@ export function buildRidgeSurface({ seed, biomeKey, layerKey, width, ridgeYs, st
       if (peakSx - leftSx < 12 && rightSx - peakSx < 12) {
         facets.push(face(`${key}:face:${intervalId}:P`, intervalId, [
           { sx: peakSx, depth01: 0 },
-          { sx: Math.max(0, peakSx - 18), depth01: 0.55 },
-          { sx: Math.min(width, peakSx + 18), depth01: 0.55 },
+          { sx: Math.max(0, peakSx - 18), depth01: 0.45 },
+          { sx: Math.min(width, peakSx + 18), depth01: 0.45 },
         ], faceRand() < 0.5 ? -1 : 1, tone, importance, material));
       }
       covered.push([leftSx, rightSx]);
@@ -193,33 +196,42 @@ export function buildRidgeSurface({ seed, biomeKey, layerKey, width, ridgeYs, st
   }
 
   const claimed = (sx) => covered.some(([a, b]) => sx >= a && sx <= b);
-  const panelSpan = Math.max(180, step * 48);
-  for (let x = 0; x < width - panelSpan * 0.65 && facets.length < 40; x += panelSpan) {
-    const mid = x + panelSpan * 0.5;
+  const panelSpan = Math.max(180, step * 48, Math.ceil(width / 40));
+  const panelTop = (sx) => 0.05 + 0.015 * Math.sin(sx / 237);
+  const panelFoot = (sx) => 0.29 + 0.04 * Math.sin(sx / 390 + 1);
+  for (let x = 0; x < width && facets.length < 40; x += panelSpan) {
+    const next = Math.min(width, x + panelSpan);
+    const mid = (x + next) * 0.5;
     if (claimed(mid)) continue;
     const intervalId = `panel:${Math.round(x)}`;
     const tone = (facets.length % 2 === 0 ? 1 : -1) * 0.08;
     facets.push(face(`${key}:panel:${intervalId}`, intervalId, [
-      { sx: x, depth01: 0.06 },
-      { sx: Math.min(width, x + panelSpan), depth01: 0.08 },
-      { sx: Math.min(width, x + panelSpan * 0.82), depth01: 0.7 },
-      { sx: x + panelSpan * 0.18, depth01: 0.66 },
+      { sx: x, depth01: panelTop(x) },
+      { sx: next, depth01: panelTop(next) },
+      { sx: next, depth01: panelFoot(next) },
+      { sx: x, depth01: panelFoot(x) },
     ], tone < 0 ? -1 : 1, tone, 0.15, material));
   }
 
   const kind = coverKind(policy);
   if (policy.canopy > 0.2 && kind !== 'sand' && kind !== 'stone' && kind !== 'ice') {
-    const spacing = kind === 'grass' || kind === 'mat' ? 220 : 150;
-    for (let sx = spacing * 0.5; sx < width - 40 && stands.length < 48; sx += spacing) {
+    const spacing = Math.max(kind === 'grass' || kind === 'mat' ? 190 : 130, width / 46);
+    const depthScale = { L2: 0.75, L3: 0.88, L4: 1, L5: 1.05 }[layerKey] || 1;
+    for (let sx = spacing * 0.45; sx < width - 40 && stands.length < 48;
+      sx += spacing * (0.68 + coverRand() * 0.76)) {
       const i = Math.min(smooth.length - 2, Math.max(1, Math.round(sx / step)));
       const slope = Math.abs(smooth[i + 1] - smooth[i - 1]) / (2 * step);
-      if (slope > 0.55 || coverRand() > policy.canopy) continue;
-      const widthSrc = (kind === 'broadleaf' ? 70 : kind === 'conifer' ? 46 : 34) + coverRand() * 16;
-      const at = Math.max(widthSrc, Math.min(width - widthSrc, sx + (coverRand() - 0.5) * 20));
+      const valley01 = extent > 1 ? Math.max(0, Math.min(1, (smooth[i] - lo) / extent)) : 0.5;
+      const chance = Math.min(1, policy.canopy * (0.55 + 0.5 * valley01));
+      if (slope > 0.55 || coverRand() > chance) continue;
+      const widthSrc = (kind === 'broadleaf' ? 105 : kind === 'conifer' ? 85 : 65)
+        + coverRand() * (kind === 'conifer' ? 65 : 50);
+      const at = Math.max(widthSrc * 0.5, Math.min(width - widthSrc * 0.5,
+        sx + (coverRand() - 0.5) * spacing * 0.45));
       const intervalId = `cover:${Math.round(at)}`;
       stands.push({
         id: `${key}:stand:${intervalId}`, intervalId,
-        vertices: coverVertices(at, widthSrc, kind, edgeRand, width),
+        vertices: coverVertices(at, widthSrc, kind, edgeRand, width, valley01, depthScale),
         kind, edgeSeed: Math.floor(edgeRand() * 1e9), structural: true,
       });
     }

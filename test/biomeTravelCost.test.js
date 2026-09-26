@@ -20,12 +20,22 @@ function recordingCtx() {
 let made = 0;
 globalThis.document = {
   createElement() {
-    const slot = made++ === 0 ? 'A' : 'B';
+    const slot = ['A', 'B', 'mix'][made++];
     const sctx = {
+      blits: [],
       globalAlpha: 1,
       globalCompositeOperation: 'source-over',
       setTransform() {},
       clearRect() {},
+      save() {},
+      restore() {},
+      beginPath() {},
+      rect() {},
+      clip() {},
+      drawImage(surface) {
+        this.blits.push({ slot: surface.slot, alpha: this.globalAlpha,
+          composite: this.globalCompositeOperation });
+      },
     };
     return {
       slot,
@@ -62,7 +72,7 @@ test('a settled ridge paints strip, volume and crest once', () => {
   assert.deepEqual(mgr.counts, { strip: 1, volume: 1, crest: 1 });
 });
 
-test('biome travel paints each side once and composites the seam with complementary alphas', () => {
+test('biome travel paints each side once and sends one mixed surface to the scene', () => {
   made = 0;
   const mgr = manager();
   mgr.currentBlend = { travel: true, travelP: 0.5, from: 'Out', to: 'In' };
@@ -70,17 +80,19 @@ test('biome travel paints each side once and composites the seam with complement
   mgr._drawLayer(ctx, { width: 1000, height: 600 }, 'L3', 10, '#333', 0.5, A, B);
   assert.deepEqual(mgr.counts, { strip: 2, volume: 2, crest: 2 });
   const bands = [0.125, 0.375, 0.625, 0.875];
-  const expected = [
-    { slot: 'A', alpha: 1 },
-    ...bands.flatMap((a) => [{ slot: 'A', alpha: 1 - a }, { slot: 'B', alpha: a }]),
-    { slot: 'B', alpha: 1 },
-  ];
-  assert.equal(ctx.blits.length, expected.length);
+  assert.deepEqual(ctx.blits, [{ slot: 'mix', alpha: 1 }]);
+  const mixBlits = mgr._travelSurfaces.mix.getContext('2d').blits;
+  const expected = [{ slot: 'A', alpha: 1, composite: 'source-over' },
+    ...bands.flatMap((a) => [
+      { slot: 'A', alpha: 1 - a, composite: 'source-over' },
+      { slot: 'B', alpha: a, composite: 'lighter' },
+    ]),
+    { slot: 'B', alpha: 1, composite: 'source-over' }];
+  assert.equal(mixBlits.length, expected.length);
   for (let i = 0; i < expected.length; i++) {
-    assert.equal(ctx.blits[i].slot, expected[i].slot, `blit ${i} side`);
-    assert.ok(Math.abs(ctx.blits[i].alpha - expected[i].alpha) < 1e-9, `blit ${i} alpha ${ctx.blits[i].alpha}`);
-  }
-  for (let i = 1; i < ctx.blits.length - 1; i += 2) {
-    assert.ok(Math.abs(ctx.blits[i].alpha + ctx.blits[i + 1].alpha - 1) < 1e-9);
+    assert.equal(mixBlits[i].slot, expected[i].slot, `blit ${i} side`);
+    assert.equal(mixBlits[i].composite, expected[i].composite, `blit ${i} operation`);
+    assert.ok(Math.abs(mixBlits[i].alpha - expected[i].alpha) < 1e-9,
+      `blit ${i} alpha ${mixBlits[i].alpha}`);
   }
 });
