@@ -380,7 +380,8 @@ export class ConstellationWeaver {
     this.figures = survivors;
   }
 
-  draw(ctx, canvas, reducedFlash = false, alphaMul = 1, presentation = 1, maxHolding = 0) {
+  draw(ctx, canvas, reducedFlash = false, alphaMul = 1, presentation = 1, maxHolding = 0,
+    { maxFigures = Infinity, maxRetained = Infinity, allowPoint = () => true } = {}) {
     ctx.save();
     const inherited = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
     const present = Number.isFinite(presentation) ? Math.min(1, Math.max(0, presentation)) : 1;
@@ -401,10 +402,14 @@ export class ConstellationWeaver {
     // Crystallized stars: dim and persistent, atlas-style. alphaMul lets
     // the night sky brighten them without touching the active figures
     // below (those are event-driven, not ambient starlight).
-    for (const star of this.stars) {
+    const retained = maxRetained === 0 ? []
+      : Number.isFinite(maxRetained) ? this.stars.slice(-maxRetained) : this.stars;
+    for (const star of retained) {
       ctx.lineWidth = 0.8;
       for (let i = 0; i < star.dots.length - 1; i++) {
         const a = star.dots[i], b = star.dots[i + 1];
+        if (!allowPoint(a.x * sx, a.y * sy) || !allowPoint(b.x * sx, b.y * sy)
+          || !allowPoint((a.x + b.x) * sx / 2, (a.y + b.y) * sy / 2)) continue;
         const fade = groundFadeAlpha(Math.max(a.y, b.y) / this.h);
         ctx.strokeStyle = `hsla(${star.hue}, 32%, 80%, ${capFlashAlpha(0.07 * alphaMul * fade, reducedFlash)})`;
         ctx.beginPath();
@@ -413,6 +418,7 @@ export class ConstellationWeaver {
         ctx.stroke();
       }
       for (const s of star.dots) {
+        if (!allowPoint(s.x * sx, s.y * sy)) continue;
         const fade = groundFadeAlpha(s.y / this.h);
         ctx.fillStyle = `hsla(${star.hue}, 40%, 86%, ${capFlashAlpha(0.14 * alphaMul * fade, reducedFlash)})`;
         ctx.beginPath();
@@ -422,7 +428,10 @@ export class ConstellationWeaver {
     }
 
     let holdingDrawn = 0;
-    for (const fig of this.figures) {
+    const limited = Number.isFinite(maxFigures)
+      ? (this.building ? [this.building] : []).concat(this.figures.slice().reverse()).slice(0, maxFigures)
+      : this.figures;
+    for (const fig of limited) {
       if (maxHolding > 0 && fig.phase === 'holding') {
         if (holdingDrawn >= maxHolding) continue;
         holdingDrawn += 1;
@@ -430,14 +439,14 @@ export class ConstellationWeaver {
       const holdOrFadeFrac = fig.phase === 'fading'
         ? 1 - clamp01((this._lastNowMs - fig.fadeStartMs) / FADE_MS)
         : 1;
-      this._drawFigure(ctx, fig, this._lastNowMs, holdOrFadeFrac, reducedFlash, sx, sy);
+      this._drawFigure(ctx, fig, this._lastNowMs, holdOrFadeFrac, reducedFlash, sx, sy, allowPoint);
     }
-    if (this.building) this._drawFigure(ctx, this.building, this._lastNowMs, 1, reducedFlash, sx, sy);
+    if (!Number.isFinite(maxFigures) && this.building) this._drawFigure(ctx, this.building, this._lastNowMs, 1, reducedFlash, sx, sy, allowPoint);
 
     ctx.restore();
   }
 
-  _drawFigure(ctx, fig, nowMs, lifeAlpha, reducedFlash, sx = 1, sy = 1) {
+  _drawFigure(ctx, fig, nowMs, lifeAlpha, reducedFlash, sx = 1, sy = 1, allowPoint = () => true) {
     const pulseBoost = 1 + 1.2 * this.pulse;
     const frac = edgeRevealFrac(fig, nowMs);
     const edgeCount = fig.dots.length - 1;
@@ -449,6 +458,7 @@ export class ConstellationWeaver {
         const a = fig.dots[i], b = fig.dots[i + 1];
         const ax = a.x * sx, ay = a.y * sy, bx = b.x * sx, by = b.y * sy;
         const x = ax + (bx - ax) * edgeAlpha, y = ay + (by - ay) * edgeAlpha;
+        if (!allowPoint(ax, ay) || !allowPoint(x, y) || !allowPoint((ax + x) / 2, (ay + y) / 2)) continue;
         const fade = groundFadeAlpha(Math.max(a.y, b.y) / this.h);
         for (const [lw, base] of [[3, 0.08], [1, 0.30]]) {
           ctx.strokeStyle = `hsla(${fig.hue}, 60%, 82%, ${capFlashAlpha(base * lifeAlpha * pulseBoost * fade, reducedFlash)})`;
@@ -463,6 +473,7 @@ export class ConstellationWeaver {
     for (let i = 0; i < fig.dots.length; i++) {
       const d = fig.dots[i];
       const dx = d.x * sx, dy = d.y * sy;
+      if (!allowPoint(dx, dy)) continue;
       const fade = groundFadeAlpha(d.y / this.h);
       ctx.fillStyle = `hsla(${fig.hue}, 70%, 88%, ${capFlashAlpha(0.5 * lifeAlpha * pulseBoost * fade, reducedFlash)})`;
       ctx.beginPath();
@@ -487,6 +498,7 @@ export class ConstellationWeaver {
           for (let i = 0; i < stroke.length - 1; i++) {
             const a = stroke[i], b = stroke[i + 1];
             const ax = a.x * sx, ay = a.y * sy, bx = b.x * sx, by = b.y * sy;
+            if (!allowPoint(ax, ay) || !allowPoint(bx, by) || !allowPoint((ax + bx) / 2, (ay + by) / 2)) continue;
             const fade = groundFadeAlpha(Math.max(a.y, b.y) / this.h);
             ctx.strokeStyle = `hsla(${fig.hue}, 55%, 84%, ${capFlashAlpha(0.22 * lifeAlpha * pulseBoost * fade * interiorAlpha, reducedFlash)})`;
             ctx.lineWidth = 1;

@@ -15,6 +15,7 @@ export async function sha256File(file) {
  */
 export function verifyServedIdentity({ expectSha, expectedHashes, served }) {
   if (!served || typeof served !== 'object') throw new Error('served identity missing');
+  if (!Object.keys(expectedHashes || {}).length) throw new Error('expected source hashes are empty');
   if (expectSha && served.commit && served.commit !== expectSha) {
     throw new Error(`served commit ${served.commit} does not match ${expectSha}`);
   }

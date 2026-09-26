@@ -51,6 +51,8 @@ test('live palettes stay distinct across depth, biome and night', () => {
     resolveRangePresentation({ night01: 0.2, salienceSky: 0.4, voyageWeight: 0.1, quality: 1, reducedFlash: true }),
     resolveRangePresentation({ night01: 0.2, salienceSky: 0.4, voyageWeight: 0.1, quality: 1, reducedFlash: true }),
   );
+  assert.equal(resolveRangePresentation({ salienceSky: 0.2, voyageWeight: 1, reducedFlash: true }).spaceRidge, 1,
+    'the Range signature remains present while ambient sky yields');
 });
 
 test('dry cover excludes snow while high wet mountain cover permits it', () => {
@@ -58,4 +60,20 @@ test('dry cover excludes snow while high wet mountain cover permits it', () => {
   assert.equal(landscapeSnowAllowed('ICEFIELD', .7), true);
   assert.equal(landscapeSnowAllowed('RAINFOREST', .8), false);
   assert.equal(landscapeSnowAllowed('RAINFOREST', .94), true);
+});
+
+test('pale daytime air preserves rainforest color in the lit far face', () => {
+  const profile = REAL_BIOMES.find(b => b.name === 'RAINFOREST');
+  const palette = resolveLandscapePalette({ profile, night01: 0, airColor: '#b4c2be' });
+  const lit = hexToRgb(palette.layers.L2.faceLight);
+  assert.ok(lit.g > lit.r + 4 && lit.g > lit.b + 2,
+    `forest highlight became neutral: ${palette.layers.L2.faceLight}`);
+});
+
+test('distant forest cover shares the ridge depth instead of foreground contrast', () => {
+  const palette = resolveLandscapePalette({ profile: 'RAINFOREST', night01: 0, airColor: '#b4c2be' });
+  assert.equal(typeof palette.layers.L2.cover, 'string');
+  assert.ok(luma(palette.layers.L2.cover) > luma(palette.layers.L4.cover) + 20);
+  assert.ok(luma(palette.layers.L2.base) - luma(palette.layers.L2.cover) < 35,
+    'far vegetation must not read as dark holes in a pale ridge');
 });

@@ -16,6 +16,7 @@ import { WORLD_SIGNATURES, WORLD_RENDERERS } from './WorldRegistry.js';
 import { sampleWorldMusic } from './WorldMusic.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { landscapeLayerColor, landscapePasses, landscapePolicy, landscapeBudget, landscapeSnowAllowed, resolveLandscapePalette, resolveRangePresentation } from './alpine/LandscapePolicy.js';
+import { createRangeSkyComposition, rangeMoonRadius } from './alpine/RangeSkyComposition.js';
 import { buildRidgeSurface } from './alpine/RidgeSurface.js';
 import { drawRidgeSurface } from './alpine/RidgeSurfaceDraw.js';
 import { buildGroundPatches, drawGroundMaterial } from './alpine/GroundMaterial.js';
@@ -46,6 +47,8 @@ import {
 } from './GeoCrest.js';
 import { profileUnits } from './terrain/TerrainProfile.js';
 import { ridgeDepth, terrainPreviewStationPx, terrainScrollPx } from './terrain/ProfileTravel.js';
+import { findClimaxMs, orogenyGrowthAt } from './OrogenyDirector.js';
+import { fitRidgeComposition, horizonEqPoints, compositionMetrics, massifShapeScale } from './alpine/RidgeComposition.js';
 import { TERRAIN_STRIP_WIDTH } from './terrain/StripRead.js';
 import { TerrainStripCache, stripSetBytes } from './terrain/TerrainStripCache.js';
 import { occludedSpans, hillCurve } from './ConnectorHills.js';
@@ -108,7 +111,7 @@ import { REAL_PERSONALITY } from './RealBiomes.js';
 import { castSongBiomes } from './terrain/BiomeSet.js';
 import { WIRE_LAYERS, wireAmplitude, wireColor, drawCrestWire, CREST_WAVE_PHASE, CrestBeatClock } from './CrestWire.js';
 import {
-  horizonCrest, crestHeightAt, horizonRidgeLift01, massifCrest, massifRidgeLift01,
+  horizonCrest, massifCrest, massifRidgeLift01,
 } from './terrain/HorizonRidge.js';
 import { styleDials, shiftLightness, ensureContrast, ensureMinLightness } from '../render/VisualStyle.js';
 import { Murmuration } from './Murmuration.js';
@@ -522,9 +525,12 @@ export class BiomeManager {
         console.warn('[terrain] massif crest rejected; it keeps its own shape', err);
       }
     }
+    this._massifShapeScale = massifShapeScale(this._massifCrest);
     // Hold the scanned ridges still so the geographic profile can be checked
     // without the musical heave. F4 toggles this.
     this.terrainPreview = false;
+    this._ridgeCompositionFits = new WeakMap();
+    this._landscapeGeometry = null;
     // Palettes live on the world. Alpine keeps the stock biomes (+ optional
     // MIDI-derived custom). City worlds bring their own night palettes and
     // ignore the alpine custom biome so a generated mountain skin never
@@ -2312,6 +2318,11 @@ export class BiomeManager {
     const A = this._profile(from), B = this._profile(to);
     this._drawHeightMul = { from: fromHeightMul, to: toHeightMul };
     this._drawSnowLine = { from: fromSnowLine01, to: toSnowLine01 };
+    this._landscapeGeometry = { horizon: [], massif: [], sides: {}, metrics: {} };
+    if (this.world?.kind === 'alpine' && !this.terrainPreview) {
+      this._compositionFor(this.stripsFor(A.name));
+      if (B.name !== A.name) this._compositionFor(this.stripsFor(B.name));
+    }
 
     // Sunrise/moonrise cycle: which body is up, how high, and how dark the
     // sky should read. Computed once per frame -- feeds the sky gradient,
@@ -2360,6 +2371,9 @@ export class BiomeManager {
         reducedFlash: !!this.reducedFlash,
       })
       : null;
+    this._rangeSky = this.world?.kind === 'alpine'
+      ? createRangeSkyComposition(this.spaceRidge, canvas, { voyageActive: (skyVoyage?.depth ?? 0) > 0 })
+      : null;
 
     // The horizon color, and from it the air color every range body and the
     // ground are washed toward. Computed HERE, above the world-kind dispatch
@@ -2397,7 +2411,7 @@ export class BiomeManager {
 
     // Planets + astral artifacts, behind everything else in the heavens --
     // purely atmospheric, first to go on the deepest perf rung.
-    if (this._pass('ensemble') && phenomenaFull) this.skyEnsemble.draw(ctx, canvas, this.tSec * 1000, {
+    if (!this._rangeSky && this._pass('ensemble') && phenomenaFull) this.skyEnsemble.draw(ctx, canvas, this.tSec * 1000, {
       fromName: A.name, toName: B.name, t,
       colors: {
         skyMid: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
@@ -2410,30 +2424,14 @@ export class BiomeManager {
       maxPlanets: this.world?.kind === 'alpine' ? 1 : Infinity,
     });
 
-    // Space ridge: orbital jewelry — faint in Soft, present in Neon. Drawn
-    // here, before even the dawn/dusk wash, so it sits at the very back of
-    // the sky stack: the atmospheric tint washes over it like it would any
-    // other deep-space light, and the sun/moon (drawn further down, in
-    // ordinary source-over) properly occlude it rather than blooming on top
-    // of something that is supposed to read as unimaginably far behind them
-    // -- it used to draw AFTER both, so its additive glow sat in front of
-    // the moon disc itself, which is backwards for a structure whose entire
-    // point is "too large and far to be nearby." Its draw call was removed
-    // for a stretch while a still-live SkyVoyage station bug (see
-    // SkyVoyage.js trigger()) was misdiagnosed as this; restored once the
-    // real cause was found and fixed. Reinstated on explicit request after
-    // the sky read as too empty without it.
+    // The Range's main upper-sky form. Its painter owns steady contrast;
+    // ordinary astronomy was excluded from its live corridor in _drawSky.
+    // Draw before dawn wash and the opaque celestial so it remains distant.
     {
       const spaceCol = this._rotated(rotateHueHex(
         this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t), 45,
       ));
-      const ridgeA = styleDials(this.visualStyle).spaceRidgeAlpha ?? 1;
-      if (this._pass('space-ridge') && ridgeA > 0.02) {
-        ctx.save();
-        ctx.globalAlpha = ridgeA * (phenomenaFull ? 1 : 0.4);
-        this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash, this._rangePresentation?.spaceRidge ?? 1);
-        ctx.restore();
-      }
+      if (this._pass('space-ridge')) this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash);
     }
 
     // Dawn/dusk tint washes bracket the sun's own rise and set.
@@ -2473,12 +2471,13 @@ export class BiomeManager {
     // The weaver is far lighter than the rest of the phenomena layer -- it
     // must NOT drop out with them (rung 5) or The Range's sky goes dark.
     const constellationsOn = this._perf ? this._perf.constellationsEnabled : true;
-    if (this._pass('weaver') && constellationsOn && skyA > 0.02) {
+    if (this._pass('weaver') && constellationsOn && skyA > 0.02 && (!this._rangeSky || this._rangeSky.showWeaver)) {
       const live = this._rangePresentation?.liveWeaver ?? 1;
       const retained = this._rangePresentation?.retainedWeaver ?? 1;
       const alpineSky = this.world?.kind === 'alpine';
       const starMul = alpineSky && live > 0.001 ? nightAlphaMul * (retained / live) : nightAlphaMul;
-      this.weaver.draw(ctx, canvas, this.reducedFlash, starMul, alpineSky ? live : 1, alpineSky ? 2 : 0);
+      this.weaver.draw(ctx, canvas, this.reducedFlash, starMul, alpineSky ? live : 1,
+        alpineSky ? 2 : 0, this._rangeSky?.weaverOptions);
     }
     if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
 
@@ -2506,7 +2505,7 @@ export class BiomeManager {
     // never gameplay, so they shed at the same rung as the rest of the
     // optional phenomena layer below rather than paying full cost regardless
     // of perf level.
-    if (phenomenaFull && skyA > 0.02) {
+    if (phenomenaFull && skyA > 0.02 && !this._rangeSky) {
       const prevM = this.mandala.intensity;
       this.mandala.intensity = prevM * skyA;
       this.mandala.draw(ctx, canvas.width * celestialXFrac, canvas.height * celestialYFrac, canvas.height * 0.30 * this.mandalaScaleMul, mandalaColor);
@@ -2515,7 +2514,7 @@ export class BiomeManager {
     // Phenomena layer, deep sky: cymatic dust settling into Chladni
     // figures, and the chaos ribbon opposite the celestial for balance.
     if (phenomenaFull) this.cymatics.draw(ctx, canvas, mandalaColor);
-    if (phenomenaFull) {
+    if (phenomenaFull && !this._rangeSky) {
       const ribbonA = Math.max(0.18, skyA);
       const prevR = this.ribbon.intensity;
       this.ribbon.intensity = prevR * ribbonA;
@@ -2523,7 +2522,7 @@ export class BiomeManager {
       this.ribbon.intensity = prevR;
     }
     this._drawFarShore(ctx, canvas, worldX, A, B, t); // beyond the ocean, behind the water itself
-    this._drawFataMorgana(ctx, canvas, worldX, A, B, t); // the fata morgana, layered on top of the far shore at the same horizon
+    if (!this._rangeSky) this._drawFataMorgana(ctx, canvas, worldX, A, B, t);
     this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
     this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
@@ -2533,7 +2532,7 @@ export class BiomeManager {
     // silhouettes so the ranges occlude their lower reach the same way
     // Lightning's bolts do.
     const cx = canvas.width * celestialXFrac, cy = canvas.height * celestialYFrac;
-    if (this._pass('beams')) {
+    if (this._pass('beams') && !this._rangeSky) {
       this.lightRig.draw(ctx, canvas, cx, cy, mandalaColor, particleMul * (this.world?.kind === 'alpine' ? 0.25 : 1), this.reducedFlash, this._rangePresentation?.beams ?? 1);
     }
 
@@ -2677,6 +2676,9 @@ export class BiomeManager {
     this._drawConnectorHills(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t);
     this._drawLayer(ctx, canvas, 'L5', scrollX3, tintL5, t, A, B);
     this._drawCastShadow(ctx, canvas, 'L4', 'L5', scrollX2, scrollX3, A, B, t);
+    if (this.world?.kind === 'alpine') {
+      this._recordLandscapeGeometry(canvas, { L2: scrollX0, L3: scrollX1, L4: scrollX2, L5: scrollX3 }, A, B);
+    }
 
     // Ground view: switch to the fixed, never-zoomed transform for the
     // ground and everything painted from here on (see Renderer.draw's
@@ -3371,7 +3373,7 @@ export class BiomeManager {
       const alpha = (A.fx === 'nebulaBloom' ? 1 - t : 0) + (B.fx === 'nebulaBloom' ? t : 0);
       if (alpha > 0.02) this._drawNebulaBloom(ctx, canvas, alpha, A, B, t);
     }
-    if (A.fx === 'godRays' || B.fx === 'godRays') {
+    if (this._rangeSky?.biomeRays !== false && (A.fx === 'godRays' || B.fx === 'godRays')) {
       const alpha = (A.fx === 'godRays' ? 1 - t : 0) + (B.fx === 'godRays' ? t : 0);
       if (alpha > 0.02) this._drawGodRays(ctx, canvas, alpha);
     }
@@ -3488,7 +3490,7 @@ export class BiomeManager {
     // be a horizontal bar pinned at 0.14 of the canvas while the density
     // ridge sat at 0.32, so the painted galaxy and the actual stars
     // disagreed about where the plane was.
-    {
+    if (!this._rangeSky) {
       const yL = galacticBandCenterY(0, skyH);
       const yR = galacticBandCenterY(1, skyH);
       const half = skyH * GALACTIC_BAND.halfFrac;
@@ -3547,7 +3549,7 @@ export class BiomeManager {
     // can sit in front of one. These do not twinkle -- an extended source
     // averages scintillation away, which is exactly the cue that separates
     // "a nebula" from "a bright star" at a glance.
-    {
+    if (!this._rangeSky) {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       for (const o of this.deepSky) {
@@ -3595,7 +3597,8 @@ export class BiomeManager {
     ctx.globalCompositeOperation = 'lighter';
     const starBuckets = this._starBuckets;
     // Cheap dots for the field; soft glow only for hero stars (layer 2).
-    for (const s of this.stars) {
+    for (let starIndex = 0; starIndex < this.stars.length; starIndex++) {
+      const s = this.stars[starIndex];
       // Per-star scintillation depth (StarCatalogue.js): fainter, more
       // point-like stars and stars nearer the horizon twinkle harder, real
       // atmospheric stars do not all blink at the same depth. Falls back to
@@ -3627,6 +3630,7 @@ export class BiomeManager {
       if (x > canvas.width) x -= canvas.width;
       else if (x < 0) x += canvas.width;
       const y = s.yFrac * skyH;
+      if (this._rangeSky && !this._rangeSky.allowStar(starIndex, x, y)) continue;
       const sz = 1;
 
       // The same air path that dimmed it also scatters its blue out first,
@@ -3690,7 +3694,7 @@ export class BiomeManager {
     // colored, and deliberately NOT twinkling -- a resolved disc averages
     // scintillation away, so holding perfectly steady in a field of
     // shivering points is the whole tell.
-    for (const p of this.planets) {
+    for (const p of this._rangeSky ? [] : this.planets) {
       const pa = alpha * p.bright * (atmosphere ? extinction01(p.altitude01) : 1) * 1.15;
       if (pa < 0.03) continue;
       const py = p.yFrac * skyH;
@@ -4100,7 +4104,9 @@ export class BiomeManager {
     // Scales with the frame like every other sky element, instead of staying
     // a fixed 26px while a camera pull-back widens the stage around it.
     // Matches the old constant exactly at the nominal 720-tall stage.
-    const R = Math.max(14, canvas.height * 0.0361) * app.scale;
+    const R = this.world?.kind === 'alpine'
+      ? rangeMoonRadius(canvas.height, app.scale)
+      : Math.max(14, canvas.height * 0.0361) * app.scale;
     ctx.save();
     ctx.globalAlpha = alpha;
     const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 2.2);
@@ -5009,43 +5015,22 @@ export class BiomeManager {
    * slowly scrolling through the bands, with a traveling undulation riding
    * the crest. Filled glow below, a bright aurora crest line on top.
    */
+  _horizonEqPoints(canvas, worldX) {
+    return horizonEqPoints({
+      width: canvas.width, height: canvas.height, crest: this._horizonCrest,
+      songP: this._horizonCrest && this.durationMs > 0
+        ? clamp01((this.tSec * 1000) / this.durationMs) : 0,
+      bands: this._eqSmoothed, worldX, tSec: this.tSec,
+      maxHeightFrac: EQ_MAX_HEIGHT_FRAC,
+    });
+  }
+
   _drawHorizonEQ(ctx, canvas, worldX, A, B, t) {
     const color = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
     const eqMul = styleDials(this.visualStyle).horizonEqAlpha ?? 1;
+    const pts = this._horizonEqPoints(canvas, worldX);
+    if (this._landscapeGeometry) this._landscapeGeometry.horizon = pts;
     if (eqMul < 0.05) return;
-    const baseline = canvas.height * 0.60;
-    const maxH = canvas.height * EQ_MAX_HEIGHT_FRAC;
-    const scroll = worldX * 0.0018;
-    const tS = this.tSec;
-
-    // One extra sample past each edge so the wave terminates off-screen
-    // instead of clipping mid-oscillation exactly on the canvas boundary.
-    // On a real crest (HorizonRidge.js) the samples are dense -- one every
-    // few pixels -- so the ridge's own spires and cols survive; the crest
-    // is the resting shape and the band level scales it from the foot.
-    const crest = this._horizonCrest;
-    const songP = crest && this.durationMs > 0 ? clamp01((tS * 1000) / this.durationMs) : 0;
-    const N = crest ? Math.max(64, Math.ceil(canvas.width / 4)) : 64;
-    const EDGE_STEPS = 1;
-    const pts = new Array(N + 1 + 2 * EDGE_STEPS);
-    for (let k = 0; k < pts.length; k++) {
-      const i = k - EDGE_STEPS;
-      const u = i / N;
-      // Which pair of bands this column sits between (wrapping, scrolling).
-      const p = ((u * BAND_COUNT + scroll) % BAND_COUNT + BAND_COUNT) % BAND_COUNT;
-      const i0 = Math.floor(p) % BAND_COUNT, i1 = (i0 + 1) % BAND_COUNT;
-      const f = p - Math.floor(p);
-      const c = (1 - Math.cos(f * Math.PI)) / 2; // cosine ease: no corners
-      const v = clamp01(this._eqSmoothed[i0] * (1 - c) + this._eqSmoothed[i1] * c);
-      if (crest) {
-        const base = crestHeightAt(crest, songP, u);
-        const wave = Math.sin(u * Math.PI * 7 + tS * 1.6) * 5 * (0.25 + v) * base;
-        pts[k] = { x: u * canvas.width, y: baseline - (horizonRidgeLift01(base, v) * maxH + wave) };
-      } else {
-        const wave = Math.sin(u * Math.PI * 7 + tS * 1.6) * 7 * (0.25 + v);
-        pts[k] = { x: u * canvas.width, y: baseline - (v * maxH + wave) };
-      }
-    }
 
     ctx.save();
     // A crisp skyline, without a luminous body washing out the terrain.
@@ -5199,7 +5184,7 @@ export class BiomeManager {
       ctx.lineTo(cx - c.radius * 0.1, cy + c.radius * 0.2);
       ctx.stroke();
     }
-    if (c.shafts) {
+    if (c.shafts && this._rangeSky?.celestialShafts !== false) {
       ctx.globalAlpha = alpha * 0.10;
       ctx.fillStyle = c.color;
       for (let i = 0; i < 5; i++) {
@@ -5298,26 +5283,40 @@ export class BiomeManager {
     paint();
   }
 
-  /** Same seam steps the per-band redraw used: full A left of the feather,
-   *  complementary alphas across TRAVEL_BANDS, full B to the right. */
+  /** Mix the fully painted side canvases before they meet the scene. Canvas
+   *  lighter adds premultiplied colors and alphas, so overlapping opaque
+   *  sides remain opaque through the feather. */
   _compositeTravelSides(ctx, canvas, surfA, surfB, layerKey, travelP) {
     const seam = travelSeam(canvas.width, layerKey, travelP);
     const feather = canvas.width * TRAVEL_FEATHER;
     const lo = seam - feather / 2;
     const hi = seam + feather / 2;
+    const mix = this._acquireTravelSurface(canvas, 'mix');
+    if (!mix) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(travelP < 0.5 ? surfA : surfB, 0, 0);
+      ctx.restore();
+      return;
+    }
+    const mixed = mix.getContext('2d');
+    mixed.setTransform(1, 0, 0, 1, 0, 0);
+    mixed.globalCompositeOperation = 'source-over';
+    mixed.globalAlpha = 1;
+    mixed.clearRect(0, 0, canvas.width, canvas.height);
     const clip = (x0, x1, fn) => {
       if (!(x1 > x0)) return;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x0, -canvas.height, x1 - x0, canvas.height * 3);
-      ctx.clip();
+      mixed.save();
+      mixed.beginPath();
+      mixed.rect(x0, -canvas.height, x1 - x0, canvas.height * 3);
+      mixed.clip();
       fn();
-      ctx.restore();
+      mixed.restore();
     };
-    const blit = (surface, alpha) => {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = alpha;
-      ctx.drawImage(surface, 0, 0);
+    const blit = (surface, alpha, composite = 'source-over') => {
+      mixed.globalCompositeOperation = composite;
+      mixed.globalAlpha = alpha;
+      mixed.drawImage(surface, 0, 0);
     };
     clip(-canvas.width, lo, () => blit(surfA, 1));
     for (let k = 0; k < TRAVEL_BANDS; k++) {
@@ -5325,10 +5324,15 @@ export class BiomeManager {
       const a = (k + 0.5) / TRAVEL_BANDS;
       clip(x0, x0 + feather / TRAVEL_BANDS, () => {
         blit(surfA, 1 - a);
-        blit(surfB, a);
+        blit(surfB, a, 'lighter');
       });
     }
     clip(hi, canvas.width * 2, () => blit(surfB, 1));
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.drawImage(mix, 0, 0);
+    ctx.restore();
   }
 
   /** `this.groundY` is fixed at construction against the NOMINAL
@@ -5428,7 +5432,20 @@ export class BiomeManager {
         if (offscreen && this.world?.kind === 'alpine') {
           const pal = resolveLandscapePalette({ profile: P, night01: this._night01 || 0, airColor: this._airColor });
           targetCtx.save();
-          targetCtx.globalCompositeOperation = 'source-in';
+          // Recolor only the mountain body. Landmarks baked above its crest
+          // keep their own RGB while the live body owns the biome palette.
+          const geom = this._crestPoints(targetCanvas, strips[layerKey], scrollX, yOff,
+            layerKey, P.terrainEnergy ?? 1, heightMul);
+          if (geom?.pts?.length) {
+            const body = new Path2D();
+            body.moveTo(geom.pts[0].x, geom.pts[0].y);
+            for (let i = 1; i < geom.pts.length; i++) body.lineTo(geom.pts[i].x, geom.pts[i].y);
+            body.lineTo(geom.pts.at(-1).x, geom.bottomY);
+            body.lineTo(geom.pts[0].x, geom.bottomY);
+            body.closePath();
+            targetCtx.clip(body);
+          }
+          targetCtx.globalCompositeOperation = 'source-atop';
           targetCtx.globalAlpha = 1;
           targetCtx.fillStyle = pal.layers[layerKey]?.base || '#5c6258';
           targetCtx.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
@@ -5659,6 +5676,122 @@ export class BiomeManager {
       * (ridge?.scaleMul ?? 1);
   }
 
+  /** The same fixed source fit is used by the bitmap, live crest, volume and
+   *  everything projected from that crest. The 64px inset matches Renderer's
+   *  shake reserve. Fit in the nominal view, then retain these coefficients
+   *  while camera zoom and musical motion change the live draw height. */
+  _compositionFor(strips) {
+    if (this.world?.kind !== 'alpine' || !strips?.L2 || !isTerrainStrip(strips.L2)) return null;
+    const cached = this._ridgeCompositionFits.get(strips);
+    if (cached) return cached;
+    const inset = 64;
+    const stage = {
+      width: this.w + inset * 2, height: this.h + inset * 2,
+      viewLeft: inset, viewWidth: this.w, viewTop: inset, viewHeight: this.h,
+      // Ground paints at its nominal coordinate through the same -64px
+      // overscan translation. Adding the inset counts buried body as visible.
+      groundY: this.groundY,
+      footY: this.groundY * (this.h + inset * 2) / this.h + 40,
+    };
+    const ground = this.groundY * stage.height / this.h;
+    const baseHeights = {};
+    for (const key of ['L2', 'L3', 'L4', 'L5']) {
+      const strip = strips[key];
+      if (!strip) continue;
+      let dh = mountainStripDrawHeight(strip.height, 1, stage.height, ground);
+      if (isTerrainStrip(strip)) {
+        const cap = { L3: .42, L4: .30 }[key];
+        if (cap) dh = Math.min(dh, stage.height * cap);
+      }
+      baseHeights[key] = dh;
+    }
+    const maxDepth = ['L2', 'L3', 'L4'].reduce((max, key) => isTerrainStrip(strips[key])
+      ? Math.max(max, ridgeDepth(LAYER_RATIOS[key], LAYER_RATIOS.L2, 0)) : max, 1);
+    const scrollAt = (key, songP) => {
+      const strip = strips[key];
+      if (!isTerrainStrip(strip)) return 0;
+      return terrainScrollPx({
+        tSec: songP * this.durationMs / 1000,
+        curves: this.energyCurves, durationMs: this.durationMs,
+        stripWidth: strip.width, response: this.world?.response,
+        depth: ridgeDepth(LAYER_RATIOS[key], LAYER_RATIOS.L2, 0),
+        fit: { viewWidth: stage.width, maxDepth },
+      });
+    };
+    const quietBands = new Float32Array(BAND_COUNT);
+    const climaxMs = findClimaxMs(this.energyCurves, this.durationMs);
+    const heightAt = (key, songP, scales) => {
+      const tMs = songP * this.durationMs;
+      const growth = orogenyGrowthAt(tMs, this.durationMs, climaxMs);
+      const natural = (layer) => {
+        const target = strips[layer];
+        if (!target) return 0;
+        let dh = mountainStripDrawHeight(target.height,
+          orogenyHeightMul(layer, growth), stage.height, ground);
+        const cap = { L3: .42, L4: .30 }[layer];
+        if (cap && isTerrainStrip(target)) dh = Math.min(dh, stage.height * cap);
+        return dh;
+      };
+      if (key !== 'L2') return natural(key) * scales[key];
+      const fronts = ['L3', 'L4', 'L5'].filter((layer) => strips[layer]).map((layer) => ({
+        strip: strips[layer], dh: natural(layer) * scales[layer],
+      }));
+      return anchoredFarDrawHeight({ natural: natural('L2'), farStrip: strips.L2,
+        fronts, canvasHeight: stage.height, groundY: ground }) * scales.L2;
+    };
+    const horizonAt = (songP) => this._horizonCrest ? horizonEqPoints({
+      width: stage.width, height: stage.height, crest: this._horizonCrest,
+      songP, bands: quietBands, tSec: songP * this.durationMs / 1000,
+      maxHeightFrac: EQ_MAX_HEIGHT_FRAC,
+    }).filter((p) => p.x >= stage.viewLeft && p.x <= stage.viewLeft + stage.viewWidth) : null;
+    const massifAt = this._massifCrest ? (songP) => {
+      const tSec = songP * this.durationMs / 1000;
+      return (this._massifGeometry(stage, WORLD_SPEED_PX_S * tSec, quietBands)?.ridgePts || [])
+        .filter((p) => p.x >= stage.viewLeft && p.x <= stage.viewLeft + stage.viewWidth);
+    } : null;
+    const fit = fitRidgeComposition({ strips, stage, baseHeights, scrollAt, horizonAt, massifAt, heightAt });
+    this._ridgeCompositionFits.set(strips, fit);
+    return fit;
+  }
+
+  /** Actual live polylines for visual capture. These are read after the
+   *  ridges paint, through the same _crestPoints cache as faces and wires. */
+  _recordLandscapeGeometry(canvas, scrolls, A, B) {
+    const geometry = this._landscapeGeometry;
+    if (!geometry) return;
+    const inset = 64;
+    const viewRight = canvas.width - inset;
+    const horizon = geometry.horizon.filter((p) => p.x >= inset && p.x <= viewRight);
+    const massif = geometry.massif.filter((p) => p.x >= inset && p.x <= viewRight);
+    const yOff = this._zoomedGroundY(canvas) + 40 - canvas.height;
+    const sides = [
+      ['from', A, this._drawHeightMul?.from ?? 1],
+      ['to', B, this._drawHeightMul?.to ?? 1],
+    ];
+    const before = this._heightStrips;
+    for (const [side, profile, heightMul] of sides) {
+      if (side === 'to' && A.name === B.name) continue;
+      const strips = this.stripsFor(profile.name);
+      this._heightStrips = strips;
+      const ridges = {};
+      for (const key of ['L2', 'L3', 'L4', 'L5']) {
+        const strip = strips[key];
+        if (!strip) continue;
+        const result = this._crestPoints(canvas, strip, scrolls[key], yOff,
+          key, profile.terrainEnergy ?? 1, heightMul);
+        if (result) ridges[key] = result.pts.filter((p) => p.x >= inset && p.x <= viewRight);
+      }
+      geometry.sides[side] = ridges;
+      geometry.metrics[side] = compositionMetrics({
+        horizon, massif, ridges, width: canvas.width - inset * 2,
+        groundY: inset + (this.groundY - inset) * (canvas.height - inset * 2) / this.h,
+        viewHeight: canvas.height - inset * 2,
+      });
+    }
+    this._heightStrips = before;
+    geometry.layers = geometry.sides.from || {};
+  }
+
   /** Screen draw height for one range. The dancing ridge (L2) is lifted so
    *  its crest stays a fixed fraction of the stage above the average crest
    *  of L3, L4 and L5. */
@@ -5671,7 +5804,10 @@ export class BiomeManager {
     // locally flat section occupies the viewport. Fill and wire share this.
     if (!preview && isTerrainStrip(strip) && this.world?.kind === 'alpine') {
       const cap = { L3: 0.42, L4: 0.30 }[layerKey];
-      if (cap) return Math.min(natural, canvas.height * cap);
+      if (cap) {
+        const fit = this._compositionFor(this._heightStrips);
+        return Math.min(natural, canvas.height * cap) * (fit?.scales?.[layerKey] ?? 1);
+      }
     }
     if (preview || layerKey !== FAR_DANCE_LAYER || !this._heightStrips) return natural;
     const fronts = ['L3', 'L4', 'L5'].map((key) => {
@@ -5682,9 +5818,14 @@ export class BiomeManager {
         dh: this._rangeDh(canvas, front, key, heightMul, false),
       };
     });
-    return anchoredFarDrawHeight({
+    const anchored = anchoredFarDrawHeight({
       natural, farStrip: strip, fronts, canvasHeight: canvas.height, groundY,
     });
+    if (isTerrainStrip(strip) && this.world?.kind === 'alpine') {
+      const fit = this._compositionFor(this._heightStrips);
+      return anchored * (fit?.scales?.L2 ?? 1);
+    }
+    return anchored;
   }
 
   /** How hard a front ridge's wire vibrates, 0.32..1. L3 follows the low
@@ -6486,7 +6627,8 @@ export class BiomeManager {
         surface: alpineSurface, geom, terrain: isTerrainStrip(strip),
         policy: landscapePolicy(alpineSurface.biomeKey),
         budget: landscapeBudget(this._perf?.level ?? 0), light: this._scenicLight || this.light,
-        alpha, palette: pal.layers[layerKey], sharedHandoff: !!this._alpineHandoff,
+        alpha, palette: pal.layers[layerKey], coverColor: pal.layers[layerKey].cover,
+        sharedHandoff: !!this._alpineHandoff,
         drawFaces: this._pass('ridge-faces', layerKey),
         drawCover: this._pass('cover', layerKey),
       });
@@ -6850,8 +6992,8 @@ export class BiomeManager {
    *  megalophobia -- the raw height alone was never going to do that on
    *  its own. Thin halo-colored crest caps stay the "this peak is an
    *  equalizer" tell, same as always. */
-  _drawSpectrumMassif(ctx, canvas, worldX, A, B, t) {
-    const bars = spectrumBars(this._massifEqSmoothed);
+  _massifGeometry(canvas, worldX, bands = this._massifEqSmoothed) {
+    const bars = spectrumBars(bands);
     const barW = 46, gap = 3;
     // A real summit keeps something like its real proportions: squeezed
     // into the seven columns' width it stood up as a needle.
@@ -6859,7 +7001,7 @@ export class BiomeManager {
     const period = canvas.width * 1.5;
     const scroll = worldX * CodaDirector.delaminateRatio(0.03, this.unravel);
     const left = ((((canvas.width * 0.58 - scroll) % period) + period) % period) - massifW;
-    if (left > canvas.width || left + massifW < 0) return;
+    if (left > canvas.width || left + massifW < 0) return null;
 
     // Same bottom anchor as L2's own strips (_drawLayer's yOff), so the
     // massif reads as sitting at L2's altitude/layer instead of floating at
@@ -6876,16 +7018,8 @@ export class BiomeManager {
     // foreground ranges are, it simply already IS that size, so the real
     // ceiling (ordinary frame geometry) is always what actually binds.
     const growth = orogenyHeightMul('L2', clamp01(this.orogenyGrowth || 0));
-    const maxH = massifDrawHeight(2000, growth, canvas.height, this._zoomedGroundY(canvas));
-    const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
-    const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
-    const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.55));
-    const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-
-    const nowMs = this.tSec * 1000;
-    // The clearing: mostly veiled near its own crest, rarely fully bared --
-    // see massifClearing01's doc for why the window is deliberately narrow.
-    const clearing = massifClearing01(this.tSec);
+    const maxH = massifDrawHeight(2000, growth, canvas.height, this._zoomedGroundY(canvas))
+      * this._massifShapeScale;
 
     // ONE continuous ridge line across the whole width -- not seven
     // separate rectangles with gaps between them. At genuinely towering
@@ -6903,7 +7037,7 @@ export class BiomeManager {
     const crest = this._massifCrest;
     const RIDGE_STEP_PX = crest ? 3 : 8;
     const heightAt = crest
-      ? (u) => baseY - massifRidgeLift01(crest, u, massifBandLevel(this._massifEqSmoothed, u)) * maxH
+      ? (u) => baseY - massifRidgeLift01(crest, u, massifBandLevel(bands, u)) * maxH
       : (u) => baseY - massifRidgeHeight01(bars, u) * maxH + massifRidgeJagPx(u);
     const ridgePts = [];
     for (let x = 0; x <= massifW; x += RIDGE_STEP_PX) {
@@ -6913,6 +7047,23 @@ export class BiomeManager {
     if (lastX < left + massifW - 0.01) {
       ridgePts.push({ x: left + massifW, y: heightAt(1) });
     }
+    return { ridgePts, bars, left, massifW, baseY, maxH };
+  }
+
+  _drawSpectrumMassif(ctx, canvas, worldX, A, B, t) {
+    const geometry = this._massifGeometry(canvas, worldX);
+    if (this._landscapeGeometry) this._landscapeGeometry.massif = geometry?.ridgePts || [];
+    if (!geometry) return;
+    const { ridgePts, left, massifW, baseY, maxH } = geometry;
+    const crest = this._massifCrest;
+    const skyMid = this.lerpCache.get(A.sky[1], B.sky[1], t);
+    const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
+    const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.55));
+    const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
+    const nowMs = this.tSec * 1000;
+    // The clearing: mostly veiled near its own crest, rarely fully bared --
+    // see massifClearing01's doc for why the window is deliberately narrow.
+    const clearing = massifClearing01(this.tSec);
 
     ctx.save();
     ctx.fillStyle = body;

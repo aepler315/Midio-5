@@ -1,5 +1,4 @@
 import { hexLerp, hexToRgb } from '../../utils/color.js';
-import { shiftLightness } from '../../render/VisualStyle.js';
 
 /** Project an inferred strip-space point through the same live crest as the fill. */
 export function projectSurfacePoint({ sx, depth01 }, { geom, stripWidth, terrain }) {
@@ -98,7 +97,7 @@ export function resolveFacetTone({ facet, palette, lightDirection }) {
       directionalAlpha = Math.min(0.08, 0.08 * intensity) * (0.35 + 0.65 * Math.abs(dot));
       directionalColor = hexLerp(palette.faceShade, palette.faceLight, sun);
       return {
-        baseColor: shiftLightness(baseColor, (sun - 0.5) * 0.1 * intensity),
+        baseColor,
         directionalColor,
         directionalAlpha,
       };
@@ -218,7 +217,7 @@ function paletteOrFallback(palette) {
   };
 }
 
-function drawTaperedGully(ctx, gully, offset, projection, alpha) {
+function drawTaperedGully(ctx, gully, offset, projection, color) {
   const pts = gully.points.map((p) => projectSurfacePoint({ sx: p.sx + offset, depth01: p.depth01 }, projection));
   if (pts.some((p) => !p)) return;
   const widths = gully.widthsSource || [gully.widthPx || 1.4];
@@ -230,12 +229,24 @@ function drawTaperedGully(ctx, gully, offset, projection, alpha) {
     ctx.lineTo(pts[i].x + w, pts[i].y + w * 0.6);
   }
   ctx.closePath();
-  ctx.fillStyle = rgba('#1c2824', alpha * 0.45);
+  ctx.fillStyle = rgba(color, 0.45);
   ctx.fill();
+}
+
+function copyItem(item, offset) {
+  if (!offset) return item;
+  const shifted = { ...item, id: `${item.id}@${offset}` };
+  if (Number.isFinite(item.sx)) shifted.sx = item.sx + offset;
+  if (Number.isFinite(item.sx0)) shifted.sx0 = item.sx0 + offset;
+  if (Number.isFinite(item.sx1)) shifted.sx1 = item.sx1 + offset;
+  if (item.vertices) shifted.vertices = item.vertices.map((p) => ({ ...p, sx: p.sx + offset }));
+  if (item.points) shifted.points = item.points.map((p) => ({ ...p, sx: p.sx + offset }));
+  return shifted;
 }
 
 export function drawRidgeSurface(ctx, {
   surface, geom, terrain = false, policy, budget, light, alpha = 1, palette = null,
+  coverColor = null,
   sideId = 'A', sharedHandoff = false, qualityTransition = null,
   drawFaces = true, drawCover = true,
 }) {
@@ -243,9 +254,11 @@ export function drawRidgeSurface(ctx, {
   const projection = { geom, stripWidth: surface.width, terrain };
   const offsets = surfaceCopies(surface.width, geom.pts[0].stripX, geom.pts.at(-1).stripX, terrain);
   const sourceWindow = { min: geom.pts[0].stripX, max: geom.pts.at(-1).stripX };
-  const facets = (surface.facets || []).map((item, i) => ensureId(item, 'face', i));
-  const gullies = (surface.gullies || []).map((item, i) => ensureId(item, 'gully', i));
-  const stands = (surface.stands || []).map((item, i) => ensureId(item, 'stand', i));
+  const copies = (items, prefix) => offsets.flatMap((offset) =>
+    (items || []).map((item, i) => copyItem(ensureId(item, prefix, i), offset)));
+  const facets = copies(surface.facets, 'face');
+  const gullies = copies(surface.gullies, 'gully');
+  const stands = copies(surface.stands, 'stand');
   const owned = { ...surface, facets, gullies, stands };
   const sideBudget = sharedHandoff ? {
     facetsPerLayer: Math.floor((budget?.facetsPerLayer ?? 0) / 2),
@@ -265,57 +278,56 @@ export function drawRidgeSurface(ctx, {
   const lightDirection = lightDirectionFrom(light, geom);
   const inherited = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
   ctx.save();
-  for (const offset of offsets) {
-    if (!drawFaces) facetAlpha.clear();
-    if (!drawCover) { gullyAlpha.clear(); standAlpha.clear(); }
-    for (const facet of facets) {
-      const weight = facetAlpha.get(facet.id);
-      if (weight == null) continue;
-      if (!projectedPath(ctx, facet.vertices, offset, projection)) continue;
-      const tone = resolveFacetTone({ facet, palette: tones, lightDirection });
-      ctx.globalAlpha = inherited * alpha * weight;
-      ctx.fillStyle = tone.baseColor;
+  if (!drawFaces) facetAlpha.clear();
+  if (!drawCover) { gullyAlpha.clear(); standAlpha.clear(); }
+  for (const facet of facets) {
+    const weight = facetAlpha.get(facet.id);
+    if (weight == null) continue;
+    if (!projectedPath(ctx, facet.vertices, 0, projection)) continue;
+    const tone = resolveFacetTone({ facet, palette: tones, lightDirection });
+    ctx.globalAlpha = inherited * alpha * weight;
+    ctx.fillStyle = tone.baseColor;
+    ctx.fill();
+    if (tone.directionalAlpha > 0.004) {
+      ctx.globalAlpha = inherited * alpha * weight * tone.directionalAlpha;
+      ctx.fillStyle = tone.directionalColor;
       ctx.fill();
-      if (tone.directionalAlpha > 0.004) {
-        ctx.globalAlpha = inherited * alpha * weight * Math.min(1, tone.directionalAlpha / 0.08);
-        ctx.fillStyle = tone.directionalColor;
-        ctx.fill();
-      }
     }
-    for (const gully of gullies) {
-      const weight = gullyAlpha.get(gully.id);
-      if (weight == null) continue;
-      if (gully.widthsSource) drawTaperedGully(ctx, gully, offset, projection, inherited * alpha * weight);
-      else if (gully.points) {
-        const points = gully.points.map((p) => projectSurfacePoint({ sx: p.sx + offset, depth01: p.depth01 }, projection));
-        if (points.some((p) => !p)) continue;
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-        ctx.lineWidth = gully.widthPx || 1.4;
-        ctx.strokeStyle = rgba('#14201c', inherited * alpha * weight * 0.5);
-        ctx.stroke();
-      }
+  }
+  for (const gully of gullies) {
+    const weight = gullyAlpha.get(gully.id);
+    if (weight == null) continue;
+    ctx.globalAlpha = inherited * alpha * weight;
+    if (gully.widthsSource) drawTaperedGully(ctx, gully, 0, projection, tones.gully || '#1c2824');
+    else if (gully.points) {
+      const points = gully.points.map((p) => projectSurfacePoint({ sx: p.sx, depth01: p.depth01 }, projection));
+      if (points.some((p) => !p)) continue;
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+      ctx.lineWidth = gully.widthPx || 1.4;
+      ctx.strokeStyle = rgba(tones.gully || '#14201c', 0.5);
+      ctx.stroke();
     }
-    if ((policy?.canopy ?? 1) > 0.2) for (const stand of stands) {
-      const weight = standAlpha.get(stand.id);
-      if (weight == null) continue;
-      ctx.globalAlpha = inherited * alpha * weight * 0.9;
-      if (stand.vertices?.length) {
-        if (!projectedPath(ctx, stand.vertices, offset, projection)) continue;
-        ctx.fillStyle = stand.kind === 'broadleaf' ? '#1d3a2c'
-          : stand.kind === 'scrub' ? '#3d4632'
-            : stand.kind === 'grass' || stand.kind === 'mat' ? '#4a5338'
-              : '#163228';
-        ctx.fill();
-      } else if (Number.isFinite(stand.sx)) {
-        const p = projectSurfacePoint({ sx: stand.sx + offset, depth01: stand.depth01 }, projection);
-        if (!p) continue;
-        ctx.fillStyle = `rgba(9,27,23,${(0.22).toFixed(3)})`;
-        ctx.beginPath();
-        ctx.ellipse(p.x, p.y, stand.widthPx * 0.5, stand.heightPx * 0.55, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
+  }
+  if ((policy?.canopy ?? 1) > 0.2) for (const stand of stands) {
+    const weight = standAlpha.get(stand.id);
+    if (weight == null) continue;
+    ctx.globalAlpha = inherited * alpha * weight * 0.9;
+    if (stand.vertices?.length) {
+      if (!projectedPath(ctx, stand.vertices, 0, projection)) continue;
+      ctx.fillStyle = coverColor || (stand.kind === 'broadleaf' ? '#1d3a2c'
+        : stand.kind === 'scrub' ? '#3d4632'
+          : stand.kind === 'grass' || stand.kind === 'mat' ? '#4a5338'
+            : '#163228');
+      ctx.fill();
+    } else if (Number.isFinite(stand.sx)) {
+      const p = projectSurfacePoint({ sx: stand.sx, depth01: stand.depth01 }, projection);
+      if (!p) continue;
+      ctx.fillStyle = `rgba(9,27,23,${(0.22).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, stand.widthPx * 0.5, stand.heightPx * 0.55, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
   ctx.restore();

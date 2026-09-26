@@ -22,6 +22,16 @@ test('a centered or absent key light does not erase matte face differences', () 
   }
 });
 
+test('directional lighting leaves the intrinsic material tone unchanged', () => {
+  const palette = { base: '#879990', faceLight: '#a0b1a7', faceShade: '#617569', intrinsicContrast: 1 };
+  const facet = { normal: { x: .6, y: -.2, z: .77 }, intrinsicTone: .55 };
+  const unlit = resolveFacetTone({ facet, palette, lightDirection: null });
+  const lit = resolveFacetTone({ facet, palette, lightDirection: { x: 0, y: -1, z: .3, intensity: 1 } });
+  assert.equal(lit.baseColor, unlit.baseColor,
+    'the separately painted directional accent must own the lighting adjustment');
+  assert.ok(lit.directionalAlpha > 0 && lit.directionalAlpha <= .08);
+});
+
 test('structural faces stay distributed across a handoff', () => {
   const facet = (id, sx) => ({
     id, structural: true, importance: 1,
@@ -96,8 +106,115 @@ test('face illumination follows screen-space celestial position smoothly', () =>
     ] };
     drawRidgeSurface(ctx, { surface, geom, terrain: true, budget: {
       facetsPerLayer: 6, gulliesPerLayer: 0, standsPerLayer: 0 }, light: { x, intensity: 1 } });
-    return colors[0];
+    return colors.at(-1);
   };
   assert.notEqual(render(20), render(180));
   assert.notEqual(render(180), render(200), 'sun movement should not saturate at ordinary screen x');
+});
+
+function paintProbe() {
+  const fills = [];
+  const stack = [];
+  const ctx = {
+    globalAlpha: 1, fillStyle: '', strokeStyle: '',
+    save() { stack.push(this.globalAlpha); },
+    restore() { this.globalAlpha = stack.pop(); },
+    beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, stroke() {},
+    fill() { fills.push({ color: this.fillStyle, alpha: this.globalAlpha }); },
+  };
+  return { ctx, fills };
+}
+
+const flatGeom = { bottomY: 300, pts: [
+  { stripX: 0, x: 0, y: 100 }, { stripX: 200, x: 200, y: 100 },
+] };
+const paintBudget = { facetsPerLayer: 6, gulliesPerLayer: 4, standsPerLayer: 0 };
+const paintPalette = { base: '#5c6255', faceLight: '#788071', faceShade: '#343d3a',
+  gully: '#26332f', intrinsicContrast: 1 };
+
+test('centered light keeps the bounded directional accent and intrinsic face contrast', () => {
+  const probe = paintProbe();
+  const surface = { width: 200, facets: [-1, 1].map((sign) => ({
+    id: `face:${sign}`, intrinsicTone: sign * .55,
+    normal: { x: sign * .62, y: -.22, z: .75 }, structural: true,
+    vertices: [{ sx: 20 + sign * 10, depth01: 0 }, { sx: 60 + sign * 10, depth01: .6 },
+      { sx: 40 + sign * 10, depth01: .8 }],
+  })), gullies: [], stands: [] };
+  drawRidgeSurface(probe.ctx, { surface, geom: flatGeom, terrain: true,
+    budget: paintBudget, palette: paintPalette, light: { x: 100, intensity: 1 } });
+  assert.equal(probe.fills.length, 4);
+  assert.ok(probe.fills[1].alpha <= .08, `left accent painted at ${probe.fills[1].alpha}`);
+  assert.ok(probe.fills[3].alpha <= .08, `right accent painted at ${probe.fills[3].alpha}`);
+  const rgb = (hex) => [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+  const painted = (base, accent) => rgb(base.color).map((v, i) =>
+    Math.round(v * (1 - accent.alpha) + rgb(accent.color)[i] * accent.alpha));
+  const left = painted(probe.fills[0], probe.fills[1]);
+  const right = painted(probe.fills[2], probe.fills[3]);
+  assert.ok(left.every((v, i) => Math.abs(v - right[i]) >= 25),
+    `painted face separation collapsed: ${left} vs ${right}`);
+});
+
+test('gully opacity does not inherit the last facet accent', () => {
+  const probe = paintProbe();
+  const surface = { width: 200, facets: [{ id: 'face', structural: true, intrinsicTone: .5,
+    normal: { x: .62, y: -.22, z: .75 }, vertices: [
+      { sx: 20, depth01: 0 }, { sx: 60, depth01: .5 }, { sx: 40, depth01: .8 },
+    ] }], gullies: [{ id: 'g', points: [
+      { sx: 100, depth01: .1 }, { sx: 110, depth01: .4 }, { sx: 105, depth01: .8 },
+    ], widthsSource: [2, 1, .5] }], stands: [] };
+  drawRidgeSurface(probe.ctx, { surface, geom: flatGeom, terrain: true,
+    budget: paintBudget, palette: paintPalette, light: { x: 100, intensity: 1 } });
+  const gully = probe.fills.at(-1);
+  assert.match(gully.color, /^rgba\(/);
+  const colorAlpha = Number(gully.color.match(/,([\d.]+)\)$/)[1]);
+  assert.ok(Math.abs(gully.alpha * colorAlpha - .45) < .001,
+    `effective gully alpha ${gully.alpha * colorAlpha}`);
+  const dim = paintProbe();
+  dim.ctx.globalAlpha = .5;
+  drawRidgeSurface(dim.ctx, { surface, geom: flatGeom, terrain: true, alpha: .5,
+    budget: paintBudget, palette: paintPalette, light: { x: 100, intensity: 1 } });
+  const dimGully = dim.fills.at(-1);
+  const dimColorAlpha = Number(dimGully.color.match(/,([\d.]+)\)$/)[1]);
+  assert.ok(Math.abs(dimGully.alpha * dimColorAlpha - .1125) < .001);
+});
+
+test('procedural material selection follows every visible tile copy', () => {
+  const surface = { width: 200, facets: [{ id: 'f', structural: true,
+    vertices: [{ sx: 20, depth01: 0 }, { sx: 80, depth01: .6 },
+      { sx: 40, depth01: .8 }] }], gullies: [], stands: [] };
+  const probe = paintProbe();
+  const secondTile = { bottomY: 300, pts: [
+    { stripX: 200, x: 0, y: 100 }, { stripX: 400, x: 200, y: 100 },
+  ] };
+  drawRidgeSurface(probe.ctx, { surface, geom: secondTile, budget: paintBudget,
+    palette: paintPalette, light: null });
+  assert.ok(probe.fills.length > 0, 'second copy lost its material');
+});
+
+test('vegetation follows the active biome palette', () => {
+  const surface = { width: 200, facets: [], gullies: [], stands: [{ id: 's', structural: true,
+    kind: 'broadleaf', vertices: [
+      { sx: 20, depth01: .05 }, { sx: 80, depth01: .05 }, { sx: 70, depth01: .4 },
+    ] }] };
+  const render = (coverColor) => {
+    const probe = paintProbe();
+    drawRidgeSurface(probe.ctx, { surface, geom: flatGeom, terrain: true,
+      policy: { canopy: .9 }, budget: { ...paintBudget, standsPerLayer: 1 },
+      palette: paintPalette, coverColor });
+    return probe.fills[0]?.color;
+  };
+  assert.equal(render('#28432b'), '#28432b');
+  assert.equal(render('#716b3e'), '#716b3e');
+});
+
+test('a viewport straddling tiled copies respects one facet budget', () => {
+  const surface = { width: 200, facets: [{ id: 'f', structural: true,
+    vertices: [{ sx: 20, depth01: 0 }, { sx: 180, depth01: .5 },
+      { sx: 40, depth01: .8 }] }], gullies: [], stands: [] };
+  const probe = paintProbe();
+  drawRidgeSurface(probe.ctx, { surface, geom: { bottomY: 300, pts: [
+    { stripX: 150, x: 0, y: 100 }, { stripX: 250, x: 100, y: 100 },
+  ] }, budget: { facetsPerLayer: 1, gulliesPerLayer: 0, standsPerLayer: 0 },
+  palette: paintPalette, light: null });
+  assert.equal(probe.fills.length, 1);
 });

@@ -93,6 +93,61 @@ test('flashes fire on a big jump and drain within their life window', () => {
   assert.equal(ridge._flashes.length, 0, 'flashes should have drained');
 });
 
+test('a real 120Hz onset flashes once and rearms only after the band releases', () => {
+  const ridge = new SpaceRidge(2);
+  const quiet = new Array(7).fill(0);
+  const loud = new Array(7).fill(1);
+  const dt = 1 / 120;
+  let time = 0;
+  const step = (bands) => { ridge.update(time, dt, bands, 0); time += 1000 / 120; };
+  for (let i = 0; i < 30; i++) step(quiet);
+  let first = 0;
+  for (let i = 0; i < 60; i++) { step(loud); first += ridge._flashes.length > 0 ? 1 : 0; }
+  assert.ok(first > 0, 'a live-cadence attack must produce an accent');
+  assert.ok(first < 40, 'sustained energy must not continuously retrigger');
+  for (let i = 0; i < 80; i++) step(quiet);
+  let second = 0;
+  for (let i = 0; i < 60; i++) { step(loud); second += ridge._flashes.length > 0 ? 1 : 0; }
+  assert.ok(second > 0, 'a later onset must rearm');
+});
+
+test('the Range sky form has a large musical throw even with reduced flash', () => {
+  const ridge = new SpaceRidge(315);
+  const stage = { width: 1280, height: 720 };
+  const quiet = ridge._samples(stage).pts;
+  const quietMean = quiet.reduce((sum, p) => sum + p.y, 0) / quiet.length;
+  for (let i = 0; i < 240; i++) ridge.update(i * 1000 / 120, 1 / 120, new Array(7).fill(1), 0);
+  const loud = ridge._samples(stage).pts;
+  const loudMean = loud.reduce((sum, p) => sum + p.y, 0) / loud.length;
+  assert.ok(quietMean - loudMean >= 60 && quietMean - loudMean <= 120,
+    `musical form should move 60-120px at 720p, got ${quietMean - loudMean}`);
+});
+
+test('the resting cosmic ridge already has a broad sculptural profile', () => {
+  const ridge = new SpaceRidge(315);
+  const ys = ridge._samples({ width: 1280, height: 720 }).pts.slice(3, -3).map(p => p.y);
+  assert.ok(Math.max(...ys) - Math.min(...ys) >= 45,
+    'quiet sky must retain large-scale relief rather than become a horizontal string');
+});
+
+test('the live ridge exposes a deterministic exclusion corridor to other sky paint', () => {
+  const ridge = new SpaceRidge(315);
+  const canvas = { width: 1280, height: 720 };
+  const corridor = ridge.corridor(canvas);
+  const middle = corridor(canvas.width / 2);
+  const sample = ridge._samples(canvas).pts.filter(p => Math.abs(p.x - canvas.width / 2) < 80)[0];
+  assert.ok(sample && middle.top < sample.y && middle.bottom > sample.y);
+  assert.deepEqual(corridor(canvas.width / 2), middle);
+  assert.ok(middle.bottom < canvas.height * 0.3781, 'space ridge stays distinct from the sea horizon');
+});
+
+test('opposite adjacent band depths never fold the immense contour back on itself', () => {
+  const ridge = new SpaceRidge(315);
+  ridge.nodes.forEach((node, i) => { node.z = i % 2; node.level = i % 2; });
+  const xs = ridge._samples({ width: 1280, height: 720 }).pts.map(p => p.x);
+  assert.ok(xs.every((x, i) => i === 0 || x > xs[i - 1]), 'skyline x must stay ordered as depth changes');
+});
+
 test('projectWireframe: finite coordinates, edge count preserved, full rotation is near-identity', () => {
   const p0 = projectWireframe(ICO_VERTS, ICO_EDGES, 0, 0, 10);
   assert.equal(p0.edges.length, ICO_EDGES.length);

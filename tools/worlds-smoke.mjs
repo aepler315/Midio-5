@@ -55,10 +55,10 @@ async function saveStage(page, destination) {
 // going missing again, as it did once already -- still shows up in the diff.
 const WORLDS = [
   { name: 'The Range', kind: 'alpine',
-    // _drawFataMorgana is the pass that was dead for a week. It is faint by
-    // design -- about 4.6% of the frame, peaking at alpha 52/255 -- which is
-    // exactly why a whole-frame check could not see it and a per-pass one can.
-    mustPaint: ['_drawSky', '_drawGround', '_drawFataMorgana'],
+    // The Range reserves the major upper-sky form for SpaceRidge. Optional
+    // mirage and broad god-ray fans are deliberately excluded there.
+    mustPaint: ['_drawSky', '_drawGround'],
+    mustNotPaint: ['_drawFataMorgana', '_drawGodRays'],
     watch: ['drawDeepSky', '_drawStarfield', '_drawFarShore', '_drawOcean', '_drawLayer'] },
   { name: 'After Hours', kind: 'city',
     mustPaint: ['_drawSky', '_drawGround'],
@@ -207,24 +207,31 @@ try {
       await page.locator('#worldSelect:not(.hidden)').waitFor({ timeout: 90000 });
       await page.locator('.worldCard').filter({ has: page.getByText(name, { exact: true }) }).click();
       await page.waitForFunction(() => window.__SMW?.sim?.timeMs > 1200, null, { timeout: 60000 });
-      assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.world.kind), kind);
-      // Exercise backward seek and the reduced-motion preference while the
-      // song is far from the ending boundary.
+      const liveState = await page.evaluate(() => {
+        document.querySelector('#pauseBtn').click();
+        const mgr = window.__SMW.sim.biomes;
+        return { kind: mgr.world.kind, rhythmMs: mgr.worldRhythm?.tMs };
+      });
+      assert.equal(liveState.kind, kind);
+      assert.ok(Number.isFinite(liveState.rhythmMs), name + ' receives detected rhythm during live playback');
+      // Pause after real playback, then verify an actual backward seek in
+      // one page task. A wall-clock wait for 4.5–12s could miss that entire
+      // interval on a loaded software renderer and fail after song end.
       await page.keyboard.press('r');
-      await page.evaluate(() => window.__SMW.seek(4000));
-      await page.waitForFunction(() => {
-        const tSec = window.__SMW?.sim?.biomes?.tSec;
-        return Number.isFinite(tSec) && tSec > 4.5 && tSec < 12;
-      }, null, { timeout: 60000 });
+      const seekTimes = await page.evaluate(() => {
+        window.__SMW.seek(8000);
+        const before = window.__SMW.sim.timeMs - window.__SMW.sim.visualLeadMs;
+        window.__SMW.seek(4000);
+        return { before, after: window.__SMW.sim.timeMs - window.__SMW.sim.visualLeadMs };
+      });
+      assert.ok(Math.abs(seekTimes.before - 8000) < 20, name + ' reaches the first seek destination');
+      assert.ok(Math.abs(seekTimes.after - 4000) < 20, name + ' seeks backward to the requested destination');
       assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.reducedFlash), true);
       await saveStage(page, path.join(out, `${kind}-reduced.png`));
-      assert.ok(await page.evaluate(() => Number.isFinite(window.__SMW.sim.biomes.worldRhythm?.tMs)),
-        name + ' receives detected rhythm during live playback');
       // Keep reduced-motion assertions isolated from the per-world paint and
       // dynamics checks below.
       await page.keyboard.press('r');
       assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.reducedFlash), false);
-      await page.locator('#pauseBtn').click();
       assert.equal(await page.locator('#pauseBtn').getAttribute('aria-pressed'), 'true');
       const samples = [];
       for (const [label, atMs] of [['quiet', 6000], ['energetic', 18000], ['return', 27000]]) {
@@ -313,7 +320,7 @@ try {
         }
       }
             assert.deepEqual(errors, [], name + ' has no browser errors');
-      report.worlds.push({ name, kind, samples, auditConfiguration, paint, cathode, degradedConfiguration, degradedPaint, motion, errors });
+      report.worlds.push({ name, kind, liveState, seekTimes, samples, auditConfiguration, paint, cathode, degradedConfiguration, degradedPaint, motion, errors });
       const painted = paint
         ? Object.entries(paint).filter(([, s]) => s.paintedPx > 0).map(([k]) => k).join(', ')
         : 'pixel renderer';

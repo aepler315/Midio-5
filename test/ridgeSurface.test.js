@@ -34,6 +34,19 @@ test('flat scans keep the skyline and only add restrained panels', () => {
   assert.equal(dry.stands.length, 0);
 });
 
+test('quiet-slope panels share both crest and depth boundaries', () => {
+  const flat = fixture();
+  flat.ridgeYs.fill(100);
+  const panels = buildRidgeSurface(flat).facets.filter((f) => f.id.includes(':panel:'));
+  assert.ok(panels.length >= 2);
+  for (let i = 1; i < panels.length; i++) {
+    const previous = panels[i - 1].vertices;
+    const next = panels[i].vertices;
+    assert.deepEqual(previous[1], next[0], `crest gap at panel ${i}`);
+    assert.deepEqual(previous[2], next.at(-1), `depth gap at panel ${i}`);
+  }
+});
+
 test('forest cover continues through a long strip instead of ending after early peaks', () => {
   const args = fixture();
   args.width = 8192;
@@ -74,4 +87,40 @@ test('cover and face families do not share a random stream', () => {
   const canyon = buildRidgeSurface(fixture(315, 'CANYON'));
   assert.deepEqual(rain.facets.map((f) => f.vertices), canyon.facets.map((f) => f.vertices));
   assert.notDeepEqual(rain.stands.map((s) => s.kind), canyon.stands.map((s) => s.kind));
+});
+
+test('summit facets taper into the upper slope instead of becoming full-height slabs', () => {
+  const surface = buildRidgeSurface(fixture());
+  const summitFaces = surface.facets.filter((f) => f.id.includes(':face:'));
+  assert.ok(summitFaces.length >= 2);
+  for (const face of summitFaces) {
+    assert.ok(Math.max(...face.vertices.map((v) => v.depth01)) <= .5,
+      `${face.id} reaches too deep into the flat body`);
+  }
+  const [left, right] = summitFaces;
+  assert.ok(left.vertices.some((v) => right.vertices.some((w) => v.sx === w.sx && v.depth01 === w.depth01)),
+    'paired summit faces lost their shared crest');
+});
+
+test('forest descriptors form shallow tapered clusters with irregular spacing', () => {
+  const args = fixture();
+  args.width = 8192;
+  args.ridgeYs = Float32Array.from({ length: 2049 }, (_, i) => 120 - 30 * Math.sin(i * Math.PI / 250));
+  const surface = buildRidgeSurface(args);
+  assert.ok(surface.stands.length >= 8);
+  const centers = [];
+  for (const stand of surface.stands) {
+    const points = stand.vertices;
+    const minX = Math.min(...points.map((p) => p.sx));
+    const maxX = Math.max(...points.map((p) => p.sx));
+    const minDepth = Math.min(...points.map((p) => p.depth01));
+    const maxDepth = Math.max(...points.map((p) => p.depth01));
+    assert.ok(maxDepth - minDepth <= .35, `${stand.id} is a canopy tower`);
+    const lower = points.filter((p) => p.depth01 > minDepth + .14);
+    assert.ok(lower.every((p) => p.sx > minX + 0.1 * (maxX - minX)
+      && p.sx < maxX - 0.1 * (maxX - minX)), `${stand.id} has a vertical wall edge`);
+    centers.push((minX + maxX) * .5);
+  }
+  const gaps = centers.slice(1).map((x, i) => x - centers[i]);
+  assert.ok(Math.max(...gaps) - Math.min(...gaps) > 70, 'forest still marches at regular intervals');
 });
