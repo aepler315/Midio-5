@@ -1,6 +1,59 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { projectSurfacePoint, surfaceCopies, drawRidgeSurface } from '../src/world/alpine/RidgeSurfaceDraw.js';
+import { projectSurfacePoint, surfaceCopies, drawRidgeSurface, resolveFacetTone, selectVisibleSurface } from '../src/world/alpine/RidgeSurfaceDraw.js';
+
+test('a centered or absent key light does not erase matte face differences', () => {
+  const palette = {
+    base: '#5c6255', faceLight: '#788071', faceShade: '#343d3a',
+    gully: '#26332f', intrinsicContrast: 1,
+  };
+  const a = { normal: { x: -.6, y: -.2, z: .77 }, intrinsicTone: .55 };
+  const b = { normal: { x: .6, y: -.2, z: .77 }, intrinsicTone: -.55 };
+  for (const lightDirection of [null, { x: 0, y: -1, z: .3, intensity: 1 }]) {
+    const left = resolveFacetTone({ facet: a, palette, lightDirection });
+    const right = resolveFacetTone({ facet: b, palette, lightDirection });
+    assert.notEqual(left.baseColor, right.baseColor);
+    assert.ok(Number.isFinite(left.directionalAlpha));
+    assert.ok(Number.isFinite(right.directionalAlpha));
+    if (lightDirection === null) {
+      assert.equal(left.directionalAlpha, 0);
+      assert.equal(right.directionalAlpha, 0);
+    }
+  }
+});
+
+test('structural faces stay distributed across a handoff', () => {
+  const facet = (id, sx) => ({
+    id, structural: true, importance: 1,
+    vertices: [{ sx, depth01: 0 }, { sx: sx + 20, depth01: 0.5 }, { sx: sx + 10, depth01: 0.8 }],
+  });
+  const left = [facet('L1', 20), facet('L2', 40), facet('L3', 60), facet('L4', 80)];
+  const right = [facet('R1', 900)];
+  const surface = { facets: [...left, ...right], gullies: [], stands: [] };
+  const picked = selectVisibleSurface({
+    sides: [{ sideId: 'A', surface, seamWeight: 1 }],
+    sourceWindows: { A: { min: 0, max: 1000 } },
+    budget: { facetsPerLayer: 6, gulliesPerLayer: 0, standsPerLayer: 0 },
+  });
+  assert.ok(picked.facets.some((item) => item.id === 'R1'));
+  const pair = {
+    sides: [
+      { sideId: 'A', surface, seamWeight: 0.49 },
+      { sideId: 'B', surface: { ...surface, facets: [facet('B1', 100)] }, seamWeight: 0.51 },
+    ],
+    sourceWindows: { A: { min: 0, max: 1000 }, B: { min: 0, max: 1000 } },
+    budget: { facetsPerLayer: 6, gulliesPerLayer: 0, standsPerLayer: 0 },
+  };
+  const ids = [];
+  for (let step = 1; step <= 99; step++) {
+    pair.sides[0].seamWeight = step / 100;
+    pair.sides[1].seamWeight = 1 - step / 100;
+    const next = selectVisibleSurface(pair);
+    assert.ok(next.facets.length <= 6);
+    ids.push(next.facets.map((item) => `${item.sideId}:${item.id}`).join(','));
+  }
+  assert.equal(new Set(ids).size, 1);
+});
 
 test('features project onto the exact live crest and local foot', () => {
   const geom = { bottomY: 300, dh: 200, pts: [

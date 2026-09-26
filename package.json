@@ -17,6 +17,7 @@
     "test:shading": "node tools/static-shading-smoke.mjs",
     "test:lighting": "node tools/adapted-lighting-smoke.mjs",
     "test:worlds": "node tools/worlds-smoke.mjs",
+    "test:landscape": "node tools/range-landscape-smoke.mjs",
     "test:chooser": "node tools/smoke-world-chooser.mjs",
     "test:chooser-keyboard": "node tools/chooser-keyboard-smoke.mjs",
     "test:export": "node tools/export-smoke.mjs",

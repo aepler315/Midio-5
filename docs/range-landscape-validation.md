@@ -1,6 +1,29 @@
-# Range landscape candidate: validation record
+# Range landscape correction: validation record
 
-Base: `cb56501` (PR #327, after the audited terrain commit `8db7392`).
+Execution base and visual baseline are the same commit: `e4a0e81` (PR #328). No commits landed on main after that audit. The corrective branch is `fix/range-landscape-correction`.
+
+## What changed
+
+- Leaf sky painters multiply inherited opacity instead of replacing it. Range presentation weights dim SpaceRidge, constellations, planets, beams, ordinary water marks and film without changing the physical light.
+- Each alpine side is painted at full opacity on the existing travel surface, recolored with that profile's live layer color, then composited once. Alpine ground uses the same palette family instead of the generic lightness lift.
+- Ridge descriptors are version 2. Peaks come from the smoothed source, with saddle-bounded faces and low-contrast panels on long quiet slopes. Paint keeps those faces readable when the key light is centered or absent, and reserves form across the visible width during an A/B handoff.
+- Cover is a connected source-space mass. Valley fog uses saddle intervals. Ground patches follow the rendered curve by actual sample x. Alpine contact shadows are feathered, and the celestial is converted into ground space at the ground-transform boundary.
+- `node tools/range-landscape-smoke.mjs --url --source-root --expect-sha --preset --output` is the named capture CLI. `.github/workflows/landscape-visual.yml` runs the primary preset and uploads the images on failure too.
+
+## What Node can prove
+
+Geometry, palette separation, opacity multiplication, case identity and the light-space mapping have unit tests. `npm test` and `npm run lint` are the local gate. They do not establish how the frame looks.
+
+## What a browser frame showed
+
+One headless Chrome frame of The Range at seed 315, about one second in, biome RAINFOREST, 1280×720, was captured with the installed browser. The page reported no errors. All eleven real biomes were in the cast. The resolved ground base was `#314436`, and the Range presentation weights were live (`spaceRidge` 0.20, beams 0.15, ocean marks 0.30). The lower ground reads as dark soil. The near skyline is still pale beside the sky, and ordinary sky and water lines are still easy to see. That frame is local scratch under `.smoke/`; it is not the paired baseline/candidate set.
+
+## What is still a picture
+
+Full-scene before/after images, the 21-station sightline sheets, motion clips and frame-time tables come from the landscape workflow or from `npm run test:landscape`. Until that set exists, this branch is a corrective candidate, not a visually accepted one.
+
+The original user screenshot (`image(2).png`, SHA-256 `6889239a874ec1503a8294544403bc9228e8cf1fbb0c08e24a5039f4669610af`) is private feedback. It is not a repository fixture, and this work does not claim to reproduce that exact frame.
+
 
 ## Implemented
 

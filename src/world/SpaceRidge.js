@@ -213,7 +213,7 @@ export class SpaceRidge {
     return { pts, y0, maxH };
   }
 
-  draw(ctx, canvas, color, tSec, reducedFlash = false) {
+  draw(ctx, canvas, color, tSec, reducedFlash = false, presentation = 1) {
     const { pts, y0, maxH } = this._samples(canvas);
 
     const flashSet = new Map();
@@ -223,6 +223,11 @@ export class SpaceRidge {
       flashSet.set(f.i, 1 - u);
     }
 
+    const inherited = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
+    const present = Number.isFinite(presentation) ? Math.min(1, Math.max(0, presentation)) : 1;
+    const paint = inherited * present;
+    const ghost = present < 0.999 ? 0.4 : 1;
+    const halo = present < 0.999 ? 0.55 : 1;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineJoin = 'round';
@@ -234,7 +239,7 @@ export class SpaceRidge {
     ];
     for (const layer of depthLayers) {
       ctx.strokeStyle = color;
-      ctx.globalAlpha = capFlashAlpha(layer.alpha, reducedFlash);
+      ctx.globalAlpha = paint * ghost * capFlashAlpha(layer.alpha, reducedFlash);
       ctx.lineWidth = layer.lw;
       ctx.beginPath();
       for (let i = 0; i < pts.length; i++) {
@@ -247,7 +252,7 @@ export class SpaceRidge {
 
     // Vast mirrored ghost above — inverted cosmos echo, not a hairline.
     ctx.strokeStyle = color;
-    ctx.globalAlpha = capFlashAlpha(0.035, reducedFlash);
+    ctx.globalAlpha = paint * ghost * capFlashAlpha(0.035, reducedFlash);
     ctx.lineWidth = 5;
     ctx.beginPath();
     pts.forEach((p, i) => {
@@ -273,7 +278,7 @@ export class SpaceRidge {
       const dm = (a.depthMul + b.depthMul) / 2;
       for (const [lw, base] of [[14, 0.065], [6, 0.09], [2.2, 0.14]]) {
         ctx.strokeStyle = color;
-        ctx.globalAlpha = capFlashAlpha((base + 0.35 * flash) * dm, reducedFlash);
+        ctx.globalAlpha = paint * capFlashAlpha((base + 0.35 * flash) * dm, reducedFlash);
         ctx.lineWidth = lw * dm;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
@@ -290,11 +295,11 @@ export class SpaceRidge {
       const n = this.nodes[p.i];
       const dm = p.depthMul;
       ctx.fillStyle = color;
-      ctx.globalAlpha = capFlashAlpha(0.09 * dm, reducedFlash);
+      ctx.globalAlpha = paint * capFlashAlpha(0.09 * dm, reducedFlash);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, (9 + 5 * n.level) * dm, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, (9 + 5 * n.level) * dm * halo, 0, Math.PI * 2);
       ctx.fill();
-      ctx.globalAlpha = capFlashAlpha((0.28 + 0.3 * n.level) * dm, reducedFlash);
+      ctx.globalAlpha = paint * capFlashAlpha((0.28 + 0.3 * n.level) * dm, reducedFlash);
       ctx.beginPath();
       ctx.arc(p.x, p.y, 3.2 * dm, 0, Math.PI * 2);
       ctx.fill();
@@ -307,7 +312,7 @@ export class SpaceRidge {
     const icoScale = Math.max(36, canvas.height * 0.055) * (1 + 0.15 * this._zGlobal);
     const wf = projectWireframe(ICO_VERTS, ICO_EDGES, this._rotX, this._rotY, icoScale);
     ctx.strokeStyle = color;
-    ctx.globalAlpha = capFlashAlpha(0.055, reducedFlash);
+    ctx.globalAlpha = paint * capFlashAlpha(0.055, reducedFlash);
     ctx.lineWidth = 1.4;
     ctx.beginPath();
     for (const [i, j] of wf.edges) {

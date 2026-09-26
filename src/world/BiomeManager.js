@@ -15,11 +15,13 @@ import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
 import { WORLD_SIGNATURES, WORLD_RENDERERS } from './WorldRegistry.js';
 import { sampleWorldMusic } from './WorldMusic.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
-import { landscapeLayerColor, landscapePasses, landscapePolicy, landscapeBudget, landscapeSnowAllowed } from './alpine/LandscapePolicy.js';
+import { landscapeLayerColor, landscapePasses, landscapePolicy, landscapeBudget, landscapeSnowAllowed, resolveLandscapePalette, resolveRangePresentation } from './alpine/LandscapePolicy.js';
 import { buildRidgeSurface } from './alpine/RidgeSurface.js';
 import { drawRidgeSurface } from './alpine/RidgeSurfaceDraw.js';
 import { buildGroundPatches, drawGroundMaterial } from './alpine/GroundMaterial.js';
 import { valleyFogPatches, drawValleyFog } from './alpine/ValleyAtmosphere.js';
+import { convertLightBetween } from './alpine/LightSpace.js';
+import { diagnosticAllows } from './alpine/LandscapeDiagnostics.js';
 import { ParticleField } from './ParticleField.js';
 import {
   sampleTerrainCurve, curveFacing, facingColorStops, reliefLitStripRGBA, reliefShadeStripRGBA,
@@ -2284,6 +2286,10 @@ export class BiomeManager {
     if (this._glitchTimer <= 0) { this._glitchActiveMs = 60; this._glitchTimer = 2.5 + this._starSeed() * 3.5; }
   }
 
+  _pass(id, layerKey = null) {
+    return diagnosticAllows(this._landscapeDiag, id, layerKey);
+  }
+
   draw(ctx, canvas, worldX, originX = 0, skyVoyage = null, particleMul = 1, perf = null, groundView = null) {
     // Deeper PerfGovernor rungs (mobile performance round): the optional
     // phenomena layer and the depth-haze layer count both read this for
@@ -2341,6 +2347,19 @@ export class BiomeManager {
       dayArcAlpha: dn.dawnAlpha + dn.duskAlpha,
       reducedFlash: this.reducedFlash,
     });
+    this._frameWorldX = worldX;
+    this._night01 = dn.night || 0;
+    this._scenicLight = this.light;
+    this._scenicTransform = ctx.getTransform ? ctx.getTransform() : null;
+    this._rangePresentation = this.world?.kind === 'alpine'
+      ? resolveRangePresentation({
+        night01: this._night01,
+        salienceSky: this.salience?.sky ?? 1,
+        voyageWeight: skyVoyage?.depth ?? 0,
+        quality: perf?.level ?? 0,
+        reducedFlash: !!this.reducedFlash,
+      })
+      : null;
 
     // The horizon color, and from it the air color every range body and the
     // ground are washed toward. Computed HERE, above the world-kind dispatch
@@ -2378,7 +2397,7 @@ export class BiomeManager {
 
     // Planets + astral artifacts, behind everything else in the heavens --
     // purely atmospheric, first to go on the deepest perf rung.
-    if (phenomenaFull) this.skyEnsemble.draw(ctx, canvas, this.tSec * 1000, {
+    if (this._pass('ensemble') && phenomenaFull) this.skyEnsemble.draw(ctx, canvas, this.tSec * 1000, {
       fromName: A.name, toName: B.name, t,
       colors: {
         skyMid: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
@@ -2387,6 +2406,8 @@ export class BiomeManager {
       },
       tSec: this.tSec, groove: this._ridgeEnvelope()?.groove ?? this._danceGroove,
       reducedFlash: this.reducedFlash,
+      presentation: this._rangePresentation?.ensemble ?? 1,
+      maxPlanets: this.world?.kind === 'alpine' ? 1 : Infinity,
     });
 
     // Space ridge: orbital jewelry — faint in Soft, present in Neon. Drawn
@@ -2407,10 +2428,10 @@ export class BiomeManager {
         this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t), 45,
       ));
       const ridgeA = styleDials(this.visualStyle).spaceRidgeAlpha ?? 1;
-      if (ridgeA > 0.02) {
+      if (this._pass('space-ridge') && ridgeA > 0.02) {
         ctx.save();
         ctx.globalAlpha = ridgeA * (phenomenaFull ? 1 : 0.4);
-        this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash);
+        this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash, this._rangePresentation?.spaceRidge ?? 1);
         ctx.restore();
       }
     }
@@ -2452,7 +2473,13 @@ export class BiomeManager {
     // The weaver is far lighter than the rest of the phenomena layer -- it
     // must NOT drop out with them (rung 5) or The Range's sky goes dark.
     const constellationsOn = this._perf ? this._perf.constellationsEnabled : true;
-    if (constellationsOn && skyA > 0.02) this.weaver.draw(ctx, canvas, this.reducedFlash, nightAlphaMul);
+    if (this._pass('weaver') && constellationsOn && skyA > 0.02) {
+      const live = this._rangePresentation?.liveWeaver ?? 1;
+      const retained = this._rangePresentation?.retainedWeaver ?? 1;
+      const alpineSky = this.world?.kind === 'alpine';
+      const starMul = alpineSky && live > 0.001 ? nightAlphaMul * (retained / live) : nightAlphaMul;
+      this.weaver.draw(ctx, canvas, this.reducedFlash, starMul, alpineSky ? live : 1, alpineSky ? 2 : 0);
+    }
     if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
 
     // The sun (this biome's celestial, crossfaded A->B as usual) while
@@ -2506,7 +2533,9 @@ export class BiomeManager {
     // silhouettes so the ranges occlude their lower reach the same way
     // Lightning's bolts do.
     const cx = canvas.width * celestialXFrac, cy = canvas.height * celestialYFrac;
-    this.lightRig.draw(ctx, canvas, cx, cy, mandalaColor, particleMul * (this.world?.kind === 'alpine' ? 0.25 : 1), this.reducedFlash);
+    if (this._pass('beams')) {
+      this.lightRig.draw(ctx, canvas, cx, cy, mandalaColor, particleMul * (this.world?.kind === 'alpine' ? 0.25 : 1), this.reducedFlash, this._rangePresentation?.beams ?? 1);
+    }
 
     // The Unraveling: each layer's scroll ratio drifts apart from the rest
     // as the world delaminates -- nearer layers race ahead more than far
@@ -2661,6 +2690,9 @@ export class BiomeManager {
     // opted in still get the old, single-transform behavior.
     const groundCanvas = groundView ? groundView.stage : canvas;
     if (groundView) groundView.apply();
+    if (this.world?.kind === 'alpine' && this._scenicLight && this._scenicTransform && ctx.getTransform) {
+      this.light = convertLightBetween(this._scenicLight, this._scenicTransform, ctx.getTransform());
+    }
     this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
     // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
     this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
@@ -3193,10 +3225,11 @@ export class BiomeManager {
           this.currentBlend?.t ?? 1)
         : [{ biomeKey: null, alpha: 1 }];
       for (const layer of scatterLayers) if (layer.alpha > .001) {
-        this.groundScatter.draw(ctx, canvas, worldX, {
+        if (this._pass('ground-scatter')) this.groundScatter.draw(ctx, canvas, worldX, {
           groundY: this.groundY, kick, biomeKey: layer.biomeKey,
           ratio: CodaDirector.delaminateRatio(SCATTER_RATIO, this.unravel),
           alpha: (0.55 + 0.45 * clamp01(this.budget)) * layer.alpha,
+          color: this.world?.kind === 'alpine' ? (this._alpineGround?.organic || '#3e4638') : undefined,
         });
       }
     }
@@ -4471,7 +4504,10 @@ export class BiomeManager {
 
     // Rendered: fewer contour rows so the plane reads as water mass, not a
     // neon wireframe grid. Classic keeps the denser field.
-    const rowBudget = Math.max(8, Math.ceil(this._oceanRows.length * (dials.rowCountMul ?? 1)));
+    let rowBudget = Math.max(8, Math.ceil(this._oceanRows.length * (dials.rowCountMul ?? 1)));
+    if (this.world?.kind === 'alpine' && this._rangePresentation) {
+      rowBudget = Math.min(rowBudget, this._rangePresentation.oceanRows);
+    }
     const fullRows = this._oceanRows.slice(0, rowBudget);
     const rows = phenomenaFull ? fullRows : fullRows.slice(0, Math.ceil(fullRows.length * 0.65));
     const rowYs = oceanRowYs(horizonY, nearY, rows.length);
@@ -4513,7 +4549,7 @@ export class BiomeManager {
       // when the sky is otherwise at its most visible.
       ctx.globalAlpha = 1;
       ctx.fillStyle = backing;
-      ctx.fillRect(0, horizonY, canvas.width, Math.max(1, nearY - horizonY));
+      if (this._pass('ocean-backing')) ctx.fillRect(0, horizonY, canvas.width, Math.max(1, nearY - horizonY));
     }
 
     // Body plate: a continuous water mass under the wave contours so the
@@ -4527,11 +4563,12 @@ export class BiomeManager {
       body.addColorStop(1, `${water}00`);
       ctx.globalAlpha = 0.78 * this.budget * presence * bodyMul;
       ctx.fillStyle = body;
-      ctx.fillRect(0, horizonY, canvas.width, Math.max(1, nearY - horizonY));
+      if (this._pass('ocean-backing')) ctx.fillRect(0, horizonY, canvas.width, Math.max(1, nearY - horizonY));
     }
 
     // Wave contour polylines — soft perspective lines on the water plate.
-    const drawContours = dials.oceanDrawContours !== false && lineMul > 0.02;
+    const markWeight = this._rangePresentation?.oceanMarks ?? 1;
+    const drawContours = this._pass('ocean-marks') && dials.oceanDrawContours !== false && lineMul > 0.02;
     const N = 48;
     const nRows = rows.length;
     if (drawContours) {
@@ -4542,7 +4579,7 @@ export class BiomeManager {
       ctx.lineJoin = 'round';
       for (let j = 0; j < nRows; j++) {
         const row = rows[j];
-        const alpha = rowAlpha(j, nRows) * row.alphaMul * this.budget * presence * lineMul * 0.7;
+        const alpha = rowAlpha(j, nRows) * row.alphaMul * this.budget * presence * lineMul * 0.7 * markWeight;
         if (alpha <= 0.01) continue;
         const gapAbove = j === 0 ? nearY - rowYs[0] : rowYs[j - 1] - rowYs[j];
         const ampScale = row.ampMul * Math.max(0.2, clamp01(gapAbove / 24));
@@ -5316,6 +5353,40 @@ export class BiomeManager {
     return this.groundY * zoomScale;
   }
 
+  _paintAlpineLayer(ctx, canvas, layerKey, job) {
+    const { drawSet, A, B, t, stripsA, stripsB, heightMulA, heightMulB, snowLineA, snowLineB, blend } = job;
+    const handoff = B !== A && (!!blend?.travel || t > 0.02);
+    const surfA = this._acquireTravelSurface(canvas, 'A');
+    const surfB = handoff ? this._acquireTravelSurface(canvas, 'B') : null;
+    const paintSide = (surf, profile, strips, heightMul, snowLine) => {
+      this._paintTravelSide(surf, () => {
+        drawSet(profile, strips, 1, heightMul, snowLine, surf.getContext('2d'), surf);
+      });
+    };
+    if (!surfA || (handoff && !surfB)) {
+      drawSet(A, stripsA, 1, heightMulA, snowLineA);
+      if (handoff && !blend?.travel && t > 0.02) drawSet(B, stripsB, t, heightMulB, snowLineB);
+      return;
+    }
+    paintSide(surfA, A, stripsA, heightMulA, snowLineA);
+    if (blend?.travel && B !== A) {
+      paintSide(surfB, B, stripsB, heightMulB, snowLineB);
+      this._compositeTravelSides(ctx, canvas, surfA, surfB, layerKey, blend.travelP);
+      return;
+    }
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.drawImage(surfA, 0, 0);
+    ctx.restore();
+    if (handoff && t > 0.02) {
+      paintSide(surfB, B, stripsB, heightMulB, snowLineB);
+      ctx.save();
+      ctx.globalAlpha = t;
+      ctx.drawImage(surfB, 0, 0);
+      ctx.restore();
+    }
+  }
+
   _drawLayer(ctx, canvas, layerKey, scrollX, tint, t, A, B) {
     const stripsA = this.stripsFor(A.name), stripsB = this.stripsFor(B.name);
     // Per-section height (Stage 1): a draw-time multiplier, set once per
@@ -5348,9 +5419,24 @@ export class BiomeManager {
     }
     const drawSet = (P, strips, alpha, heightMul, snowLine, targetCtx = ctx, targetCanvas = canvas) => {
       this._heightStrips = strips;
-      targetCtx.globalAlpha = alpha;
-      this._drawDancingStrip(targetCtx, targetCanvas, strips[layerKey], scrollX, yOff, layerKey, P.terrainEnergy ?? 1, heightMul);
-      targetCtx.globalAlpha = 1;
+      this._alpineSideProfile = P;
+      const offscreen = targetCtx !== ctx;
+      if (this._pass('ridge-base', layerKey)) {
+        targetCtx.globalAlpha = alpha;
+        this._drawDancingStrip(targetCtx, targetCanvas, strips[layerKey], scrollX, yOff, layerKey, P.terrainEnergy ?? 1, heightMul);
+        targetCtx.globalAlpha = 1;
+        if (offscreen && this.world?.kind === 'alpine') {
+          const pal = resolveLandscapePalette({ profile: P, night01: this._night01 || 0, airColor: this._airColor });
+          targetCtx.save();
+          targetCtx.globalCompositeOperation = 'source-in';
+          targetCtx.globalAlpha = 1;
+          targetCtx.fillStyle = pal.layers[layerKey]?.base || '#5c6258';
+          targetCtx.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
+          targetCtx.restore();
+        }
+      } else {
+        targetCtx.globalAlpha = 1;
+      }
       // Volume before the crest: the skyline stroke has to sit on top of
       // its own mountain's shading, not under it.
       this._drawRidgeVolume(targetCtx, targetCanvas, strips[layerKey], scrollX, yOff, layerKey, alpha, P.terrainEnergy ?? 1, heightMul, snowLine);
@@ -5358,10 +5444,15 @@ export class BiomeManager {
         const strip = strips[layerKey], surface = strip.ridge?.surface;
         const policy = landscapePolicy(surface?.biomeKey);
         const maxBanks = Math.min(layerKey === 'L2' ? 2 : 1, landscapeBudget(this._perf?.level ?? 0).fogBanks);
-        if (surface && maxBanks) {
+        if (surface && maxBanks && this._pass('valley-fog', layerKey)) {
           const geom = this._crestPoints(targetCanvas, strip, scrollX, yOff, layerKey, P.terrainEnergy ?? 1, heightMul);
+          const nearerKey = { L2: 'L3', L3: 'L4', L4: 'L5' }[layerKey];
+          const nearScroll = nearerKey ? this._terrainScroll(nearerKey, this._frameWorldX || 0, targetCanvas.width) : scrollX;
+          const nearGeom = nearerKey && strips[nearerKey]
+            ? this._crestPoints(targetCanvas, strips[nearerKey], nearScroll, yOff, nearerKey, P.terrainEnergy ?? 1, heightMul)
+            : null;
           drawValleyFog(targetCtx, valleyFogPatches({ surface, geom, terrain: isTerrainStrip(strip),
-            moisture: policy.moisture, nowMs: this.tSec * 1000, maxBanks }), this._airColor || '#91a5a6', alpha);
+            moisture: policy.moisture, nowMs: this.tSec * 1000, maxBanks, nearGeom }), this._airColor || '#91a5a6', alpha);
         }
       }
       // Crest wire (CrestWire.js) on every range: the wire itself is one
@@ -5372,6 +5463,19 @@ export class BiomeManager {
       }
     };
     const blend = this.currentBlend;
+    if (this.world?.kind === 'alpine') {
+      this._alpineHandoff = B !== A && (!!blend?.travel || t > 0.02);
+      try {
+        this._paintAlpineLayer(ctx, canvas, layerKey, {
+          drawSet, A, B, t, stripsA, stripsB, heightMulA, heightMulB, snowLineA, snowLineB, blend,
+        });
+      } finally {
+        this._alpineHandoff = false;
+        this._alpineSideProfile = null;
+      }
+      ctx.restore();
+      return;
+    }
     if (blend?.travel && B !== A) {
       // Travelling into a new biome (BiomeSchedule.travelMs): its ranges come
       // in from the right behind a soft seam, the nearest layer first -- the
@@ -6335,7 +6439,8 @@ export class BiomeManager {
     const worldKind = this.world?.kind || 'alpine';
     const mat = materialFor(worldKind);
     const cl = catchlightRgb(worldKind);
-    if (cl) {
+    const materialFaces = worldKind === 'alpine' && strip?.ridge?.surface;
+    if (cl && !materialFaces) {
       const grad = ctx.createLinearGradient(0, shadeTopY, 0, bottomY);
       grad.addColorStop(0, `rgba(${cl.r},${cl.g},${cl.b},${(RIDGE_CATCHLIGHT_ALPHA * alpha * strength).toFixed(3)})`);
       grad.addColorStop(0.34, 'rgba(0,0,0,0)');
@@ -6357,7 +6462,8 @@ export class BiomeManager {
     // equivalent black source-over alpha could yield the same pixels;
     // depth here comes from the gradient's form and the source color,
     // rather than from the compositing operator by itself.
-    if (ridgeShadingFull) {
+    // Alpine faces own that contrast. This wash flattened them.
+    if (ridgeShadingFull && !materialFaces) {
       const shadeStrength = RIDGE_SHADE_STRENGTH * alpha * strength;
       const g = Math.max(0, Math.min(255, Math.round(255 * (1 - shadeStrength))));
       const shadeGrad = ctx.createLinearGradient(0, shadeTopY, 0, bottomY);
@@ -6372,11 +6478,19 @@ export class BiomeManager {
     }
 
     const alpineSurface = worldKind === 'alpine' ? strip.ridge?.surface : null;
-    if (alpineSurface) drawRidgeSurface(ctx, {
-      surface: alpineSurface, geom, terrain: isTerrainStrip(strip),
-      policy: landscapePolicy(alpineSurface.biomeKey),
-      budget: landscapeBudget(this._perf?.level ?? 0), light: this.light, alpha: alpha * strength,
-    });
+    if (alpineSurface && (this._pass('ridge-faces', layerKey) || this._pass('cover', layerKey))) {
+      const pal = resolveLandscapePalette({
+        profile: this._alpineSideProfile, night01: this._night01 || 0, airColor: this._airColor,
+      });
+      drawRidgeSurface(ctx, {
+        surface: alpineSurface, geom, terrain: isTerrainStrip(strip),
+        policy: landscapePolicy(alpineSurface.biomeKey),
+        budget: landscapeBudget(this._perf?.level ?? 0), light: this._scenicLight || this.light,
+        alpha, palette: pal.layers[layerKey], sharedHandoff: !!this._alpineHandoff,
+        drawFaces: this._pass('ridge-faces', layerKey),
+        drawCover: this._pass('cover', layerKey),
+      });
+    }
 
     // Aerial perspective (Stage 3 of the mountain overhaul): AERIAL_PULL was
     // already computed once per frame into tintL2..tintL5 (see draw()) and
@@ -7024,12 +7138,23 @@ export class BiomeManager {
 
     if (this.world?.kind === 'alpine') {
       const from = A || B || { name: 'CUSTOM' }, to = B || from;
+      if (this._alpineGround && this._pass('ground-base')) {
+        const { r, g, b } = hexToRgb(this._alpineGround.deepShade || this._alpineGround.base);
+        const shade = ctx.createLinearGradient(0, crest, 0, canvas.height);
+        shade.addColorStop(0, 'rgba(0,0,0,0)');
+        shade.addColorStop(0.45, `rgba(${r},${g},${b},0.18)`);
+        shade.addColorStop(1, `rgba(${r},${g},${b},0.42)`);
+        ctx.fillStyle = shade;
+        ctx.fillRect(0, crest, canvas.width, depth);
+      }
       const draw = (profile, opacity) => {
+        if (!this._pass('ground-material')) return { wetMasks: [], litEdges: [] };
         const policy = landscapePolicy(profile.landmarkKey || profile.name);
+        const palette = resolveLandscapePalette({ profile, night01: this._night01 || 0, airColor: this._airColor }).ground;
         return drawGroundMaterial(ctx, {
           patches: buildGroundPatches({ seed: this.songSeed, biomeKey: policy.key,
             worldX: worldX - originX, viewWidth: canvas.width, moisture: policy.moisture }),
-          bars, worldX, originX, policy, alpha: opacity,
+          bars, worldX, originX, policy, alpha: opacity, palette,
         });
       };
       const a = draw(from, from === to ? 1 : 1 - t);
@@ -7264,8 +7389,25 @@ export class BiomeManager {
       const bars = this.groundField.visibleBars(worldX, originX, canvas.width);
       const fillPath = this._terrainTopPath(bars, canvas.height, true, canvas.width);
       const strokePath = this._terrainTopPath(bars, canvas.height, false, canvas.width);
-      ctx.fillStyle = groundColor;
-      ctx.fill(fillPath);
+      if (worldKind === 'alpine' && this._pass('ground-base')) {
+        const palA = resolveLandscapePalette({ profile: A, night01: this._night01 || 0, airColor: this._airColor });
+        const palB = B !== A
+          ? resolveLandscapePalette({ profile: B, night01: this._night01 || 0, airColor: this._airColor })
+          : palA;
+        ctx.fillStyle = palA.ground.base;
+        ctx.fill(fillPath);
+        if (B !== A && t > 0.02) {
+          ctx.save();
+          ctx.globalAlpha = t;
+          ctx.fillStyle = palB.ground.base;
+          ctx.fill(fillPath);
+          ctx.restore();
+        }
+        this._alpineGround = t > 0.5 ? palB.ground : palA.ground;
+      } else if (this._pass('ground-base')) {
+        ctx.fillStyle = groundColor;
+        ctx.fill(fillPath);
+      }
       // Aerial perspective for the ground.
       //
       // Every range got this in Stage 3 of the mountain overhaul; the ground
@@ -7279,7 +7421,7 @@ export class BiomeManager {
       // (the top, where the ground meets the ranges) toward this._airColor,
       // and leave the near edge alone at full color. Runs before
       // _drawGroundInterior so the interior detail still reads on top of it.
-      if (mat.ground.aerial !== false && this._airColor && bars.length) {
+      if (worldKind !== 'alpine' && mat.ground.aerial !== false && this._airColor && bars.length) {
         let minTop = canvas.height;
         for (const bar of bars) if (bar.y < minTop) minTop = bar.y;
         const near = Math.max(minTop + 1, canvas.height);

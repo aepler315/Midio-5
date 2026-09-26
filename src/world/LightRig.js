@@ -114,7 +114,7 @@ export class LightRig {
     this.targetY = targetY;
   }
 
-  draw(ctx, canvas, cx, cy, haloColor, particleMul, reducedFlash) {
+  draw(ctx, canvas, cx, cy, haloColor, particleMul, reducedFlash, presentation = 1) {
     const { r, g, b } = hexToRgb(haloColor);
     const rgb = `${r},${g},${b}`;
     const halfAngleBase = lerp(HALF_ANGLE_CALM, HALF_ANGLE_HOT, this.heat);
@@ -124,8 +124,11 @@ export class LightRig {
     const drawCore = particleMul >= 1;
     const len = canvas.height * BEAM_LEN_MUL;
 
+    const inherited = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
+    const present = Number.isFinite(presentation) ? Math.min(1, Math.max(0, presentation)) : 1;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = inherited * present;
     for (let i = 0; i < drawnBeams; i++) {
       const beam = this.beams[i];
       if (beam.presence <= 0.01) continue;

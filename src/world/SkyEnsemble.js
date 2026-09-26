@@ -98,12 +98,20 @@ export class SkyEnsemble {
    */
   draw(ctx, canvas, nowMs, {
     fromName, toName, t = 0, colors, tSec = 0, groove = 0, reducedFlash = false,
-  }) {
+    presentation = 1, maxPlanets = Infinity,
+  } = {}) {
+    const inherited = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
+    const present = Number.isFinite(presentation) ? Math.min(1, Math.max(0, presentation)) : 1;
+    const paint = inherited * present;
+    const cap = Number.isFinite(maxPlanets) ? maxPlanets : Infinity;
     if (toName === fromName) {
-      this._drawPlanetSet(ctx, canvas, this._planets(fromName), 1, colors, tSec, groove);
+      this._drawPlanetSet(ctx, canvas, this._planets(fromName), 1, colors, tSec, groove, paint, cap);
     } else {
-      this._drawPlanetSet(ctx, canvas, this._planets(fromName), 1 - t, colors, tSec, groove);
-      this._drawPlanetSet(ctx, canvas, this._planets(toName), t, colors, tSec, groove);
+      const outW = 1 - t;
+      const inW = t;
+      const sum = outW + inW || 1;
+      this._drawPlanetSet(ctx, canvas, this._planets(fromName), outW / sum, colors, tSec, groove, paint, cap);
+      this._drawPlanetSet(ctx, canvas, this._planets(toName), inW / sum, colors, tSec, groove, paint, cap);
     }
 
     const a = this.activeArtifact(nowMs);
@@ -112,11 +120,11 @@ export class SkyEnsemble {
     // Ease the whole artifact in and out so nothing pops into the sky.
     const env = Math.sin(Math.PI * u) ** 0.7;
     switch (a.kind) {
-      case 'comet': this._drawComet(ctx, canvas, u, env, a.seed, colors); break;
-      case 'eclipse': this._drawEclipse(ctx, canvas, u, env, this._planets(t > 0.5 ? toName : fromName), colors); break;
-      case 'satellite': this._drawSatellite(ctx, canvas, u, env, a.seed, tSec); break;
-      case 'auroraRibbon': this._drawAuroraRibbon(ctx, canvas, u, env, a.seed, tSec, colors); break;
-      case 'starPair': this._drawStarPair(ctx, canvas, u, env, a.seed, reducedFlash); break;
+      case 'comet': this._drawComet(ctx, canvas, u, env, a.seed, colors, paint); break;
+      case 'eclipse': this._drawEclipse(ctx, canvas, u, env, this._planets(t > 0.5 ? toName : fromName), colors, paint); break;
+      case 'satellite': this._drawSatellite(ctx, canvas, u, env, a.seed, tSec, paint); break;
+      case 'auroraRibbon': this._drawAuroraRibbon(ctx, canvas, u, env, a.seed, tSec, colors, paint); break;
+      case 'starPair': this._drawStarPair(ctx, canvas, u, env, a.seed, reducedFlash, paint); break;
       default: break;
     }
   }
@@ -141,9 +149,10 @@ export class SkyEnsemble {
     return p._cc;
   }
 
-  _drawPlanetSet(ctx, canvas, planets, alpha, colors, tSec, groove) {
+  _drawPlanetSet(ctx, canvas, planets, alpha, colors, tSec, groove, paint = 1, maxPlanets = Infinity) {
     if (alpha <= 0.02) return;
-    for (const p of planets) {
+    const shown = planets.slice(0, maxPlanets);
+    for (const p of shown) {
       const cc = this._planetColors(ctx, p, colors);
       ctx.save();
       // A whisper of drift -- planets hang, they don't dart.
@@ -153,7 +162,7 @@ export class SkyEnsemble {
       );
 
       // Halo: barely-there, breathing with the groove.
-      ctx.globalAlpha = alpha * (0.10 + 0.08 * groove * (0.5 + 0.5 * Math.sin(tSec * 1.2 + p.phase)));
+      ctx.globalAlpha = paint * alpha * (0.10 + 0.08 * groove * (0.5 + 0.5 * Math.sin(tSec * 1.2 + p.phase)));
       ctx.fillStyle = colors.halo;
       ctx.beginPath();
       ctx.arc(0, 0, p.r * 1.9, 0, Math.PI * 2);
@@ -161,7 +170,7 @@ export class SkyEnsemble {
 
       // Ring behind (upper arc) so the body occludes its middle.
       if (p.kind === 'ringed') {
-        ctx.globalAlpha = alpha * 0.5;
+        ctx.globalAlpha = paint * alpha * 0.5;
         ctx.strokeStyle = cc.lit;
         ctx.lineWidth = 1.6;
         ctx.beginPath();
@@ -170,7 +179,7 @@ export class SkyEnsemble {
       }
 
       // Body with a lit limb toward the celestial (upper right).
-      ctx.globalAlpha = alpha * 0.9;
+      ctx.globalAlpha = paint * alpha * 0.9;
       ctx.fillStyle = cc.grad;
       ctx.beginPath();
       ctx.arc(0, 0, p.r, 0, Math.PI * 2);
@@ -181,7 +190,7 @@ export class SkyEnsemble {
         ctx.beginPath();
         ctx.arc(0, 0, p.r, 0, Math.PI * 2);
         ctx.clip();
-        ctx.globalAlpha = alpha * 0.30;
+        ctx.globalAlpha = paint * alpha * 0.30;
         ctx.strokeStyle = colors.skyMid;
         ctx.lineWidth = p.r * 0.22;
         for (let b = -1; b <= 1; b++) {
@@ -191,7 +200,7 @@ export class SkyEnsemble {
         }
         ctx.restore();
       } else if (p.kind === 'cratered') {
-        ctx.globalAlpha = alpha * 0.35;
+        ctx.globalAlpha = paint * alpha * 0.35;
         ctx.fillStyle = colors.silhouette;
         for (const [ox, oy, cr] of [[-0.35, -0.1, 0.2], [0.2, 0.3, 0.14], [0.05, -0.42, 0.11]]) {
           ctx.beginPath();
@@ -200,7 +209,7 @@ export class SkyEnsemble {
         }
       } else if (p.kind === 'crescent') {
         // Shadow disc offset toward the dark side carves the crescent.
-        ctx.globalAlpha = alpha * 0.85;
+        ctx.globalAlpha = paint * alpha * 0.85;
         ctx.fillStyle = colors.skyMid;
         ctx.beginPath();
         ctx.arc(-p.r * 0.4, p.r * 0.28, p.r * 0.92, 0, Math.PI * 2);
@@ -209,7 +218,7 @@ export class SkyEnsemble {
 
       // Ring in front (lower arc).
       if (p.kind === 'ringed') {
-        ctx.globalAlpha = alpha * 0.65;
+        ctx.globalAlpha = paint * alpha * 0.65;
         ctx.strokeStyle = cc.lit;
         ctx.lineWidth = 1.6;
         ctx.beginPath();
@@ -220,7 +229,7 @@ export class SkyEnsemble {
     }
   }
 
-  _drawComet(ctx, canvas, u, env, seed, colors) {
+  _drawComet(ctx, canvas, u, env, seed, colors, paint = 1) {
     const rand = mulberry32(seed);
     const y0 = (0.06 + rand() * 0.16) * canvas.height;
     const dip = (0.05 + rand() * 0.1) * canvas.height;
@@ -233,7 +242,7 @@ export class SkyEnsemble {
     const dir = ltr ? -1 : 1;
     for (let i = 0; i < 14; i++) {
       const f = i / 14;
-      ctx.globalAlpha = env * 0.30 * (1 - f);
+      ctx.globalAlpha = paint * env * 0.30 * (1 - f);
       ctx.strokeStyle = i % 3 === 0 ? colors.halo : '#cfe6ff';
       ctx.lineWidth = 2.4 * (1 - f) + 0.4;
       ctx.beginPath();
@@ -241,7 +250,7 @@ export class SkyEnsemble {
       ctx.lineTo(x + dir * (i + 1) * 13, y - Math.sin(u * Math.PI) * (i + 1) * 0.9);
       ctx.stroke();
     }
-    ctx.globalAlpha = env * 0.85;
+    ctx.globalAlpha = paint * env * 0.85;
     ctx.fillStyle = '#eef7ff';
     ctx.beginPath();
     ctx.arc(x, y, 3.2, 0, Math.PI * 2);
@@ -249,14 +258,14 @@ export class SkyEnsemble {
     ctx.restore();
   }
 
-  _drawEclipse(ctx, canvas, u, env, planets, colors) {
+  _drawEclipse(ctx, canvas, u, env, planets, colors, paint = 1) {
     const p = planets[0];
     if (!p) return;
     const cx = p.xFrac * canvas.width, cy = p.yFrac * canvas.height;
     // A small dark moon transits the planet's face left to right.
     const mx = cx + (u * 2 - 1) * p.r * 2.4;
     ctx.save();
-    ctx.globalAlpha = env * 0.9;
+    ctx.globalAlpha = paint * env * 0.9;
     ctx.fillStyle = colors.silhouette;
     ctx.beginPath();
     ctx.arc(mx, cy - p.r * 0.1, p.r * 0.55, 0, Math.PI * 2);
@@ -265,7 +274,7 @@ export class SkyEnsemble {
     const overlap = 1 - Math.min(1, Math.abs(mx - cx) / (p.r * 1.2));
     if (overlap > 0.6) {
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = env * 0.35 * (overlap - 0.6) / 0.4;
+      ctx.globalAlpha = paint * env * 0.35 * (overlap - 0.6) / 0.4;
       ctx.strokeStyle = colors.halo;
       ctx.lineWidth = 1.8;
       ctx.beginPath();
@@ -275,25 +284,25 @@ export class SkyEnsemble {
     ctx.restore();
   }
 
-  _drawSatellite(ctx, canvas, u, env, seed, tSec) {
+  _drawSatellite(ctx, canvas, u, env, seed, tSec, paint = 1) {
     const rand = mulberry32(seed);
     const y = (0.08 + rand() * 0.14) * canvas.height;
     const ltr = rand() < 0.5;
     const x = (ltr ? u : 1 - u) * (canvas.width + 60) - 30;
     const blink = (Math.sin(tSec * 7) > 0.55) ? 1 : 0.25; // slow strobe, mostly dim
     ctx.save();
-    ctx.globalAlpha = env * 0.7 * blink;
+    ctx.globalAlpha = paint * env * 0.7 * blink;
     ctx.fillStyle = '#dfe9ff';
     ctx.fillRect(x - 1.2, y - 1.2, 2.4, 2.4);
     // Tiny solar panels: one dark pixel either side, barely readable -- a
     // satellite, not a star.
-    ctx.globalAlpha = env * 0.35;
+    ctx.globalAlpha = paint * env * 0.35;
     ctx.fillRect(x - 4.6, y - 0.7, 2.4, 1.4);
     ctx.fillRect(x + 2.2, y - 0.7, 2.4, 1.4);
     ctx.restore();
   }
 
-  _drawAuroraRibbon(ctx, canvas, u, env, seed, tSec, colors) {
+  _drawAuroraRibbon(ctx, canvas, u, env, seed, tSec, colors, paint = 1) {
     const rand = mulberry32(seed);
     const cx = (0.15 + rand() * 0.5) * canvas.width;
     const w = (0.25 + rand() * 0.2) * canvas.width;
@@ -301,7 +310,7 @@ export class SkyEnsemble {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (let band = 0; band < 2; band++) {
-      ctx.globalAlpha = env * (0.10 - band * 0.03);
+      ctx.globalAlpha = paint * env * (0.10 - band * 0.03);
       ctx.strokeStyle = band === 0 ? colors.halo : '#7fe8c9';
       ctx.lineWidth = 14 - band * 5;
       ctx.beginPath();
@@ -316,10 +325,11 @@ export class SkyEnsemble {
     ctx.restore();
   }
 
-  _drawStarPair(ctx, canvas, u, env, seed, reducedFlash) {
+  _drawStarPair(ctx, canvas, u, env, seed, reducedFlash, paint = 1) {
     const rand = mulberry32(seed);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = paint;
     for (let s = 0; s < 2; s++) {
       // Each streak lives inside its own half of the window, staggered.
       const su = clamp01((u - s * 0.45) / 0.4);
