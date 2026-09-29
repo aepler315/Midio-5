@@ -9,8 +9,8 @@ Reference image: `docs/evidence/range-v2/reference.webp` (1806×871, documentati
 | --- | --- |
 | Branch | `claude/amazing-brown-tbiycu` |
 | Base | `b8a3d72b344792d149906449f1cd86d68df8cc2b` (= audited SHA; `origin/main` rechecked 2026-09-29) |
-| Last completed task | 15 (curated catalog: one approved view per biome) |
-| Next action | Task 16 — resource, lifecycle and performance proof |
+| Last completed task | 16 (resource, lifecycle, quality ladder; device runs outstanding) |
+| Next action | Task 17 — complete-output verification and delivery (`docs/range-v2-validation.md`); device runs per `docs/range-v2-device-runs.md` |
 
 ## Decisions recorded with the user (2026-09-29)
 
@@ -66,6 +66,7 @@ The four confirmed defects in plan §1 are re-verified in Task 1 against source 
 | (fix) travel review round 2 | done | PR #334 second Codex round: the two sides blend in a reserved composition buffer (`range:travel-scratch`) with B added (`lighter`) so the feather stays opaque; a view that joins a travel late fades in over 1.2 s; the frame's resources are pinned before side B / the buffer are reserved; the app passes export mode to the presentation (the simulation never had it); travel exposure is checked at matching stations (both sides share the song's progress) and `--approve` checks every pair with the views already approved |
 | (fix) travel review round 3 | done | PR #334 third Codex round: a late-joining view still fading when the travel ends keeps the A/B handoff (seam fully across) until its fade completes, and only a view some travel frame drew without counts as late; legacy-only passes (far shore, mirage, sea, sea life, horizon EQ) keep drawing under an arriving scene; exposure is measured per runtime partition from each shipped tile's own `band` (nearest-band masks), a travel composes the far/mid/near passes through their own seams (L2/L4/L5), and `--approve` also requires a far crest spanning half the frame at every station |
 | 15 catalog | done | 11 approved views, one per biome (catalog v15); each passed the far-crest gate alone and in travel against every other view (0 failing pairs); habitat/shoreline fixes from the colour review; see the approvals table below |
+| 16 lifecycle/perf | done (device runs unverified) | Budget crowding, fallback-strip lock-out, rock-stage crash and striped seam found and fixed; lifecycle suite 6/6 cycles (song replacement, resize, real context loss/restore) with stable ownership; v2 quality ladder; device probe + instructions. No phone or GPU here: device acceptance is **unverified** |
 
 ## Task 15 coverage (candidates)
 
@@ -143,6 +144,50 @@ Five synthetic songs (`tools/gen-test-wav.mjs`: 120 bpm / 96 s, 80 / 150, 150 / 
 - **Views crowded each other out of the budget.** `whenReady` prepared every view of the song at once; later biomes' pending reservations (not evictable) filled the 256 MiB budget, the view on screen was refused and the refusal was permanent, so the biome fell to legacy (whose strips then took 72 MB more). 0 of 6 frames were v2 in the first song. Now a budget refusal is deferred and retried (the biome still counts as covered), `whenReady` prepares in song order and stops at the first view that does not fit, and export frames `settle()` (wait for the views the frame wanted, keeping both travel sides resident) and are redrawn at the same heard time. Opening a natural song went from the 600 s readiness timeout to ~10 s.
 - **Rock stage crash.** `RockStageGL._upload` allocated nothing when the first frame had no pools, and the next line threw inside the draw.
 - **Striped travel seam.** The shared seam uses 4 constant-weight bands (fine for legacy strips); on real terrain they read as vertical stripes. v2 now uses 16 whole-pixel bands (`V2_TRAVEL_BANDS`); legacy keeps 4.
+
+## Task 16: resource, lifecycle and performance
+
+### Fixes found by exercising real (unforced) play
+
+| Defect | Effect | Fix |
+| --- | --- | --- |
+| `whenReady` prepared every view of a song at once | Pending reservations (not evictable) of later biomes filled the 256 MiB budget; the view on screen was refused, permanently; natural songs drew legacy | Budget refusals are deferred and retried; sequential in-order `whenReady`; export `settle()` keeps both travel sides resident |
+| Legacy strips baked by a frame drawn while a view prepared | Non-evictable; they held the room the view needed, so it was refused again (a travel frame stayed legacy even after settle) | Strips for biomes v2 covers are fallback: adopted as evictable (dispose forgets the cache entry), and a refusal drops them (`onBudgetRefusal`) |
+| `RockStageGL._upload` on an empty first frame | Nothing allocated, next line threw inside the draw | Always allocate on first upload (test fails on the old code) |
+| 4 constant-weight seam bands | Vertical stripes across real terrain in travels | v2 uses 16 whole-pixel bands; legacy keeps 4 |
+| `settle()` during a lost context | Waited out its 120 s timeout | Returns at once |
+
+### Lifecycle suite
+
+`node tools/range-scene-smoke.mjs --suite lifecycle --cycles 6` (SwiftShader, desktop budget 256 MiB; report `docs/evidence/range-v2/t16-lifecycle-report.json`). Two songs alternate, two stage sizes alternate, a real `WEBGL_lose_context` loss/restore at cycles 2 and 5. Per cycle: inside the budget, no overcommit, no ledger entry of a replaced song (by generation and by legacy-strip owner), no page or shader error, every frame on its v2 view.
+
+| Cycle | Song | Stage | Owned MiB | Entries | Generations | JS heap MiB | Frames (8 / 30 / 55 s) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | 96 s | 1280x720 | 224.2 | 8 | 0, 1 | 174.9 | Ross / San Gabriel / Ross |
+| 1 | 80 s | 1280x720 | 215.0 | 6 | 0, 2 | 151.3 | Panamint / Panamint / La Sal |
+| 2 | 96 s | 960x540 | 157.6 | 6 | 0, 3 | 120.2 | Ross / San Gabriel / Ross; lost: legacy (context-lost), restored: Ross |
+| 3 | 80 s | 960x540 | 215.0 | 6 | 0, 4 | 176.6 | Panamint / Panamint / La Sal |
+| 4 | 96 s | 1280x720 | 214.0 | 7 | 0, 5 | 172.9 | Ross / San Gabriel / Ross |
+| 5 | 80 s | 1280x720 | 133.6 | 5 | 0, 6 | 113.8 | Panamint / Panamint / La Sal; lost: legacy, restored: La Sal |
+
+Same song and size four cycles apart: 224.2 -> 214.0 MiB (8 -> 7 entries), 215.0 -> 133.6 MiB (6 -> 5): ownership returns to a level at or below the earlier one rather than rising per cycle. 36/36 checks passed.
+
+Plan checklist, as covered:
+
+- all-pinned denial: `test/graphicsResidency.test.js` (a denial evicts nothing), `test/rangeSceneLifecycle.test.js` (a pinned view survives pressure);
+- repeated resize and song replacement: the lifecycle suite;
+- stale fetch completion: generation tests in `test/rangeSceneLifecycle.test.js`;
+- context loss/restore: the lifecycle suite (real extension);
+- idempotent disposal: ledger release;
+- faults: injectable through the fake scenes in `test/rangePresentation.test.js`.
+
+Not exercised separately: switching to another *world* (as opposed to another song) mid-session.
+
+### Quality ladder and device runs
+
+`src/world/alpine/RangeQuality.js`: foliage subset first, then fog samples (6 -> 4 -> 3 -> 2, frame haze within 3%), then pool reflections at level 6; landform, contact, performers and musical signatures are never touched; `PerfGovernor` supplies the hysteresis. The near rock scan is skipped where its weight is zero.
+
+Device measurement: `tools/range-device-probe.js` and `docs/range-v2-device-runs.md` (Android, iPhone and desktop runs, report fields, acceptance). **No physical phone or GPU was available: device acceptance is unverified.** Software-rendered timings are not reported as device FPS.
 
 ## Asset budget (60 MB ceiling)
 
