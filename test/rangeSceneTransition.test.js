@@ -310,3 +310,54 @@ test('the frame is pinned before side B and the buffer are reserved', async () =
   p.beginScenic();
   assert.ok(order.indexOf('pin') < order.indexOf('reserve'), order.join(','));
 });
+
+test('a budget-denied incoming view that gets room later still joins as late and fades', async () => {
+  const scene = fakeScene();
+  let room = false;
+  scene.ensureSide = () => { if (!room) return false; scene.sideB = true; return true; };
+  const p = new RangePresentation({ mode: 'v2', catalog, sceneFactory: async () => scene, makeCanvas: fakeCanvas });
+  p.setSong({ terrain: { sceneByBiome: new Map([['RAINFOREST', { view: catalog.views[0] }], ['TAIGA', { view: catalog.views[1] }]]) }, generation: 1 });
+  await p.whenReady({ timeoutMs: 50 }).catch(() => {});
+  const at = (tSec, travelP) => { const i = inputs(travelP); i.sim.biomes.tSec = tSec; p.setFrameInputs(i); return p.beginScenic(); };
+  at(10, 0.3);
+  assert.equal(p.snapshot().incomingViewId, null, 'no room: outgoing alone');
+  room = true;
+  at(10.5, 0.4);
+  assert.equal(p.snapshot().incomingViewId, 'b');
+  assert.equal(p.incomingFade, 0, 'joins late, not at the advanced seam');
+});
+
+test('during a held handoff the ground receivers stay with the side that is visible', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const scene = fakeScene();
+  const prepare = scene.prepare;
+  scene.prepare = (v) => (v.id === 'b' ? gate.then(() => prepare(v)) : prepare(v));
+  const p = new RangePresentation({ mode: 'v2', catalog, sceneFactory: async () => scene, makeCanvas: fakeCanvas });
+  p.setSong({ terrain: { sceneByBiome: new Map([['RAINFOREST', { view: catalog.views[0] }], ['TAIGA', { view: catalog.views[1] }]]) }, generation: 1 });
+  await p.whenReady({ timeoutMs: 1 }).catch(() => {});
+  const travel = (tSec, travelP) => { const i = inputs(travelP); i.sim.biomes.tSec = tSec; p.setFrameInputs(i); return p.beginScenic(); };
+  travel(10, 0.5);
+  release();
+  await new Promise((r) => setTimeout(r, 5));
+  travel(10.9, 0.97);
+  const i = inputs(1); i.sim.biomes.tSec = 10.95; i.sim.biomes.currentBlend = { from: 'TAIGA', to: 'TAIGA', t: 1 };
+  p.setFrameInputs(i);
+  p.beginScenic();
+  assert.ok(p.incomingFade < 0.5);
+  p.drawGround(recordingCtx(), { width: W, height: H });
+  assert.equal(p.stage.id, 'a', 'B is still invisible: its pools must not answer yet');
+});
+
+test('the composition buffer is reallocated when either dimension outgrows it', async () => {
+  const { p } = await presentation();
+  p.setFrameInputs(inputs(0.5));
+  p.beginScenic();
+  const first = p._scratch;
+  const tall = inputs(0.5);
+  tall.scenicViewport = { logicalWidth: 600, logicalHeight: 1400, backingWidth: 600, backingHeight: 1400 };
+  p.setFrameInputs(tall);
+  p.beginScenic();
+  assert.ok(p._scratch.height >= 1400, 'taller viewport, same or fewer pixels: new buffer');
+  assert.notEqual(p._scratch, first);
+});

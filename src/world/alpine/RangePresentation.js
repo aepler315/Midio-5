@@ -10,7 +10,7 @@
 // context loss, 404, bad manifest, decode error, budget denial, stale
 // generation -- takes the legacy path for that frame with a recorded
 // reason; the cast and music never wait on the GPU.
-import { travelSeam, travelSpans } from '../TravelSeam.js';
+import { travelSpans } from '../TravelSeam.js';
 import { buildRangeFrame, viewportState } from './RangeFrame.js';
 import { forcedSceneChoice } from '../terrain/SceneCatalog.js';
 import SCENE_CATALOG from '../terrain/sceneCatalogData.js';
@@ -341,7 +341,12 @@ export class RangePresentation {
     // The incoming side needs its own target and a composition buffer,
     // reserved before they exist; without room the outgoing view carries on
     // alone.
-    if (incoming && !(this.scene.ensureSide?.('B') && this._ensureScratch(vp))) incoming = null;
+    if (incoming && !(this.scene.ensureSide?.('B') && this._ensureScratch(vp))) {
+      // A frame drew the outgoing view alone: if room appears later in this
+      // travel, the incoming view joins late and fades in.
+      this._waitedFor = incoming.id;
+      incoming = null;
+    }
     if (!incoming) {
       this.scene.releaseSide?.('B');
       this._releaseScratch();
@@ -393,7 +398,9 @@ export class RangePresentation {
   _ensureScratch(vp) {
     const w = Math.max(2, Math.round(vp.backingWidth)), h = Math.max(2, Math.round(vp.backingHeight));
     const bytes = w * h * 4;
-    if (this._scratch && this._scratchBytes >= bytes) return true;
+    // Both dimensions must fit: a same-area but taller viewport would
+    // otherwise be squashed into the stale height.
+    if (this._scratch && this._scratch.width >= w && this._scratch.height >= h) return true;
     this._releaseScratch();
     let res = null;
     if (this.residency) {
@@ -514,8 +521,13 @@ export class RangePresentation {
       const drawn = this._compositeSides(ctx, stage, 'L5',
         () => (outA = this.scene.renderGround(this.frame, this.viewId))?.canvas,
         () => (outB = this.scene.renderGround(this.frame, this.incomingViewId))?.canvas);
-      const seam = travelSeam(stage.width, 'L5', this.seamP ?? 0);
-      this.stage = (seam > stage.width / 2 ? outA : outB)?.stage || outA?.stage || outB?.stage || null;
+      // Receivers (pools, wet masks) follow the side that visibly holds the
+      // centre: B's seam weight there, scaled by its late-join fade.
+      const { lo, hi, bands } = travelSpans(stage.width, 'L5', this.seamP ?? 0);
+      const cx = stage.width / 2;
+      const seamW = cx < lo ? 0 : cx >= hi ? 1 : (bands.find((b) => cx >= b.x0 && cx < b.x1)?.weightB ?? 0.5);
+      const bHolds = seamW * (this.incomingFade ?? 1) >= 0.5;
+      this.stage = (bHolds ? outB : outA)?.stage || outA?.stage || outB?.stage || null;
       return drawn;
     }
     const out = this.scene.renderGround(this.frame, this.viewId);

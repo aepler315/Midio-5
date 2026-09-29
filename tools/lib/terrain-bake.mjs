@@ -132,12 +132,12 @@ export function pointVisible(ob, p, occ) {
 /**
  * Remove spikes: a valid sample (or a cluster up to three samples across)
  * higher than every valid sample on the surrounding ring at distance r by
- * more than `ratio * r` cell widths (steeper than ~79 degrees for the
- * default 5) cannot be real terrain at this spacing, and is lowered to that
+ * more than `ratio * r` cell widths (steeper than ~63 degrees for the
+ * default 2) cannot be real terrain at this spacing, and is lowered to that
  * ring's highest sample. Edge samples use the in-bounds part of the ring.
  * Returns the number of samples changed.
  */
-export function despikeGrid(grid, { ratio = 5 } = {}) {
+export function despikeGrid(grid, { ratio = 2 } = {}) {
   const { width: w, height: hgt, heightsM: h, valid, cellSizeM: cell } = grid;
   let changed = 0;
   for (const r of [1, 2, 1]) {
@@ -157,6 +157,43 @@ export function despikeGrid(grid, { ratio = 5 } = {}) {
     }
   }
   return changed;
+}
+
+/**
+ * Soften resampling steps on gentle ground. A coarse global source (Terrain
+ * Tiles) resampled to the bake grid leaves stair-steps that read as a
+ * waffle pattern on valley floors (a beat between the source pixel and
+ * the bake cell, ~5 cells long); a 7x7 Gaussian (sigma 2 cells) is
+ * blended in where the slope is gentle and fades out by ~17 degrees, so
+ * ridges and cliffs keep their shape. Returns the mean absolute change (m).
+ */
+export function smoothGentleGround(grid) {
+  const { width: w, height: hgt, heightsM: h, valid, cellSizeM: cell } = grid;
+  const k = [];
+  for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) k.push([dx, dy, Math.exp(-(dx * dx + dy * dy) / (2 * 2 * 2))]);
+  const out = new Float32Array(h);
+  let sum = 0, n = 0;
+  for (let y = 1; y < hgt - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    if (!valid[i]) continue;
+    const gx = (h[i + 1] - h[i - 1]) / (2 * cell), gy = (h[i + w] - h[i - w]) / (2 * cell);
+    const slope = Math.hypot(gx, gy);
+    const t = Math.min(1, Math.max(0, (slope - 0.1) / 0.2));
+    const blend = 1 - t * t * (3 - 2 * t);
+    if (!(blend > 0)) continue;
+    let acc = 0, wsum = 0;
+    for (const [dx, dy, wt] of k) {
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= w || yy >= hgt) continue;
+      const j = yy * w + xx;
+      if (!valid[j]) continue;
+      acc += h[j] * wt; wsum += wt;
+    }
+    out[i] = h[i] + (acc / wsum - h[i]) * blend;
+    sum += Math.abs(out[i] - h[i]); n++;
+  }
+  h.set(out);
+  return n ? sum / n : 0;
 }
 
 /** Legacy parity (RidgeComposition MIN_EXPOSED): at every station the far

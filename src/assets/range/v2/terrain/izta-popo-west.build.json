@@ -148,54 +148,54 @@
  "characterScores": {
   "energy": 0.276,
   "rawness": 0.197,
-  "grandeur": 0.381,
-  "dominance": 0.646
+  "grandeur": 0.38,
+  "dominance": 0.644
  },
  "archetype": "brooding",
  "skylineFeatures": [
   {
-   "reliefM": 1717.981689453125,
-   "slopeMPerKm": 160.87588685451885,
-   "peaksPer10Km": 2.050873270099095,
-   "roughnessM": 47.10456809643385,
-   "dominance": 0.5906444258534319,
-   "summitM": 5410.27587890625,
-   "lengthKm": 43.88374518901958
+   "reliefM": 1705.541015625,
+   "slopeMPerKm": 160.34770683667114,
+   "peaksPer10Km": 2.059473021455675,
+   "roughnessM": 47.258164467235616,
+   "dominance": 0.5864670759484538,
+   "summitM": 5395.80322265625,
+   "lengthKm": 43.70049962411563
   },
   {
-   "reliefM": 1704.844970703125,
-   "slopeMPerKm": 162.70049902218483,
-   "peaksPer10Km": 1.6297515012007309,
-   "roughnessM": 45.41307737941635,
-   "dominance": 0.6382316024026767,
+   "reliefM": 1705.876220703125,
+   "slopeMPerKm": 158.16582909456187,
+   "peaksPer10Km": 1.571504351452684,
+   "roughnessM": 45.36521220678524,
+   "dominance": 0.6378457735060723,
    "summitM": 5395.46923828125,
-   "lengthKm": 42.951333346480745
+   "lengthKm": 44.543306504555744
   },
   {
-   "reliefM": 1724.8271484375,
-   "slopeMPerKm": 137.20087631430508,
-   "peaksPer10Km": 1.5188705890107719,
-   "roughnessM": 37.53564393515771,
-   "dominance": 0.7084527265243403,
-   "summitM": 5410.27587890625,
-   "lengthKm": 52.670715055522514
+   "reliefM": 1718.2841796875,
+   "slopeMPerKm": 141.19086945752002,
+   "peaksPer10Km": 1.5768915505236725,
+   "roughnessM": 36.802093102022134,
+   "dominance": 0.7069387555604558,
+   "summitM": 5403.02490234375,
+   "lengthKm": 50.73272158344223
   }
  ],
- "manifestSha256": "a8c297385b562001bb4499296758d69528dd4e61dfda58c0755776b36efc015d",
- "payloadSha256": "c7e571d8fd17d98e5d6e298b7a86c01a4569b7243326e8fb8ec6d4ccd0f4a05d",
- "payloadBytes": 1061198,
+ "manifestSha256": "a0e796b6510f732bc84b9fb8180f74bb966113a0fa6596513280dc67c70f4e70",
+ "payloadSha256": "cb9f664740670fb93c164edc009406e7b2f639a2d3bef70508954a50c765427f",
+ "payloadBytes": 982674,
  "stats": {
-  "tiles": 161,
+  "tiles": 162,
   "desktop": {
-   "vertices": 601825,
-   "triangles": 1165312,
-   "meshBytes": 21205644,
+   "vertices": 573562,
+   "triangles": 1110048,
+   "meshBytes": 20203320,
    "surfaceTextureBytes": 11136133
   },
   "mobile": {
-   "vertices": 320300,
-   "triangles": 616066,
-   "meshBytes": 11236392,
+   "vertices": 302987,
+   "triangles": 582558,
+   "meshBytes": 10626540,
    "surfaceTextureBytes": 11136133
   }
  },
@@ -230,8 +230,9 @@
   }
  ],
  "achievedErrorPx": {
-  "desktop": 0.984,
-  "mobile": 1.974
+  "desktop": 0.987,
+  "mobile": 2
  },
- "despikedSamples": 0
+ "despikedSamples": 0,
+ "gentleGroundSmoothingM": 0.885155399827647
 }

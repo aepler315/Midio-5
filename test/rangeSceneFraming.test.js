@@ -98,8 +98,9 @@ test('every travel between approved views keeps the far crest exposed at every s
   // Both sides render at the song's one progress value: station k of A is
   // blended with station k of B.
   for (const a of approved) for (const b of approved) {
-    const { min, at } = pairExposure(exposures.get(a.id), exposures.get(b.id));
+    const { min, at, minCrest } = pairExposure(exposures.get(a.id), exposures.get(b.id));
     assert.ok(min >= MIN_FAR_EXPOSED, `${a.id} -> ${b.id}: ${min.toFixed(2)} at station ${at.station}, seam ${at.p}`);
+    assert.ok(minCrest >= 0.5, `${a.id} -> ${b.id}: crest spans only ${minCrest.toFixed(2)} in travel`);
   }
 });
 
@@ -125,9 +126,9 @@ test('pair exposure checks matching stations, not rail ends', () => {
 
 test('travel exposure follows the seam: all A before, all B after', () => {
   const A = masks(), B = masks({ ownerAtCrest: 2 });
-  assert.equal(travelExposure(A, B, 0), 1);
-  assert.equal(travelExposure(A, B, 1), 0);
-  const mid = travelExposure(A, B, 0.5);
+  assert.equal(travelExposure(A, B, 0).fraction, 1);
+  assert.equal(travelExposure(A, B, 1).fraction, 0);
+  const mid = travelExposure(A, B, 0.5).fraction;
   assert.ok(mid > 0 && mid < 1);
 });
 
@@ -136,8 +137,8 @@ test("travel exposure composes every partition's own seam: B's near pass can cov
   // near seam (L5) has fully crossed while the far seam (L2) has not: the
   // columns whose far crest still comes from A are covered by B's near.
   const A = masks(), B = masks({ crest: false, ownerAtCrest: 3 });
-  assert.equal(travelExposure(A, B, 0), 1);
-  assert.equal(travelExposure(A, B, 0.55), 0, 'an L2-only check would score these A columns exposed');
+  assert.equal(travelExposure(A, B, 0).fraction, 1);
+  assert.equal(travelExposure(A, B, 0.55).fraction, 0, 'an L2-only check would score these A columns exposed');
 });
 
 test('crest coverage is reported, so a sliver of crest cannot pass as exposed', async () => {
@@ -168,4 +169,33 @@ test('far-crest exposure catches a near wall and the ground line', async () => {
   assert.ok(walled.fraction < MIN_FAR_EXPOSED, `walled ${walled.fraction}`);
   const low = farCrestExposure(make(0), { ...pose, targetM: [0, 4500, -10000] }, 7000);
   assert.ok(low.crestColumns > 0.5 && low.fraction < MIN_FAR_EXPOSED, `a far crest pushed under the ground line is not exposed (${low.fraction})`);
+});
+
+test('travel reports crest coverage: complementary crests leave a sliver mid-seam', () => {
+  // A has its far crest only on the right half, B only on the left half:
+  // as the seam passes, the composite can hold almost no crest at all.
+  const A = masks(), B = masks();
+  for (let x = 0; x < 50; x++) A.topFar[x] = -1;
+  for (let x = 50; x < 100; x++) B.topFar[x] = -1;
+  const low = Math.min(...[0.2, 0.3, 0.4, 0.5, 0.6].map((p) => travelExposure(A, B, p).crestColumns));
+  assert.ok(low < 0.5, `crest coverage ${low}`);
+  assert.ok(pairExposure({ stations: [{ masks: A }] }, { stations: [{ masks: B }] }, { seamSamples: 11 }).minCrest < 0.5);
+});
+
+test('trees in the depth pre-pass can hide the far crest', async () => {
+  const { stationMasks, maskExposure } = await import('../tools/lib/range-exposure.mjs');
+  const W = 201, cell = 100;
+  const heightsM = new Float32Array(W * W);
+  for (let j = 0; j < W; j++) for (let i = 0; i < W; i++) heightsM[j * W + i] = -10000 + j * cell < -8000 ? 900 : 0;
+  const mk = (keep) => ({ width: W, height: W, cellSizeM: cell, originM: [-10000, -10000], heightsM: keep ? heightsM : new Float32Array(W * W), valid: new Uint8Array(W * W).fill(keep ? 1 : 0) });
+  const far = mk(true);
+  // Near-band (2) trees in a row 400 m ahead, tall enough to reach the crest
+  // (about 6 degrees up from the eye).
+  const rows = [];
+  for (let x = -600; x <= 600; x += 6) rows.push(x, 0, -400, 150, 8, 0, 0.5, 2);
+  const pose = { eyeM: [0, 20, 0], targetM: [0, 20, -10000], fovYDeg: 35 };
+  const open = maskExposure(stationMasks({ far, mid: mk(false), near: mk(false) }, pose));
+  const wooded = maskExposure(stationMasks({ far, mid: mk(false), near: mk(false) }, pose, { trees: { data: new Float32Array(rows), stride: 8 } }));
+  assert.ok(open.fraction > 0.9, `open ${open.fraction}`);
+  assert.ok(wooded.fraction < open.fraction - 0.5, `wooded ${wooded.fraction}`);
 });

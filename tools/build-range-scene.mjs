@@ -16,7 +16,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeDem, readDemGrid } from './lib/terrain-source.mjs';
-import { bakeTerrain, viewSkyline, despikeGrid } from './lib/terrain-bake.mjs';
+import { bakeTerrain, viewSkyline, despikeGrid, smoothGentleGround } from './lib/terrain-bake.mjs';
 import { skylineFeatures, characterFromFeatures, archetypeOf } from '../src/world/terrain/RangeCharacter.js';
 import { cameraPoseAt } from '../src/world/terrain/SceneTravel.js';
 import { cameraRailErrors } from '../src/world/terrain/SceneTravel.js';
@@ -92,6 +92,10 @@ export async function buildView(view, { outDir, cell = null, log = console.log }
   // count is recorded.
   const despiked = despikeGrid(grid);
   if (despiked) log(`${view.id}: despiked ${despiked} sample(s)`);
+  // Terrain Tiles is a coarse global mosaic: soften its resampling steps on
+  // gentle ground (3DEP sources are left as they are).
+  const smoothedM = dem.source === 'terrarium' ? smoothGentleGround(grid) : null;
+  if (smoothedM != null) log(`${view.id}: gentle ground smoothed (mean change ${smoothedM.toFixed(2)} m)`);
   const camera = localCamera(view, grid.points);
   const landmarks = (view.landmarks || []).map((l) => {
     const p = grid.points[`landmark:${l.name}`];
@@ -132,6 +136,7 @@ export async function buildView(view, { outDir, cell = null, log = console.log }
     payloadBytes: baked.payload.byteLength, stats: baked.stats, landmarks,
     achievedErrorPx: baked.manifest.lod.achievedErrorPx,
     despikedSamples: despiked,
+    gentleGroundSmoothingM: smoothedM,
   };
   log(`${view.id}: ${baked.stats.tiles} tiles, ${(baked.payload.byteLength / 1048576).toFixed(2)} MiB payload, `
     + `desktop ${baked.stats.desktop.triangles} tris, mobile ${baked.stats.mobile.triangles} tris, `
@@ -232,7 +237,12 @@ export async function approveView(doc, id, { evidence = [] } = {}) {
   const build = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${id}.build.json`), 'utf8'));
   // Legacy parity: the far range stays readable at every rail station.
   const { viewExposure, pairExposure, MIN_FAR_EXPOSED, MIN_FAR_CREST_COLUMNS } = await import('./lib/range-exposure.mjs');
-  const exposureOf = (x) => viewExposure(RUNTIME_DIR, { ...x, terrainManifestUrl: `terrain/${x.id}.terrain.json` });
+  const byId = new Map(doc.views.map((x) => [x.id, x]));
+  const exposureOf = (x) => viewExposure(RUNTIME_DIR, {
+    ...x, terrainManifestUrl: `terrain/${x.id}.terrain.json`,
+    materialManifestUrl: `materials/${byId.get(x.id)?.materialPack || DEFAULT_PACKS[x.biome]}.json`,
+    materialRules: byId.get(x.id)?.materialRules || {},
+  });
   const exposure = await exposureOf(build.view);
   if (exposure.min < MIN_FAR_EXPOSED) {
     throw new Error(`${id}: far crest only ${exposure.min.toFixed(2)} exposed at its worst station (needs ${MIN_FAR_EXPOSED}); not approved`);
@@ -251,6 +261,9 @@ export async function approveView(doc, id, { evidence = [] } = {}) {
       const r = pairExposure(a, b);
       if (r.min < MIN_FAR_EXPOSED) {
         throw new Error(`${name}: far crest only ${r.min.toFixed(2)} exposed in travel (station ${r.at.station}, seam ${r.at.p}); not approved`);
+      }
+      if (r.minCrest < MIN_FAR_CREST_COLUMNS) {
+        throw new Error(`${name}: far crest spans only ${r.minCrest.toFixed(2)} of the frame in travel (station ${r.crestAt.station}, seam ${r.crestAt.p}); not approved`);
       }
     }
   }

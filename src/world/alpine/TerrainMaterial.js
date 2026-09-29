@@ -91,6 +91,14 @@ export const SCENE_FRAG = /* glsl */`
   vec3 tonemap(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
   ${MIST_GLSL}
   float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+  // Smooth value noise: a per-cell hash alone steps at every cell edge,
+  // which a threshold (snow line, tree line) turns into a visible grid.
+  float vnoise12(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash12(i), b = hash12(i + vec2(1.0, 0.0)), c = hash12(i + vec2(0.0, 1.0)), d = hash12(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
   // Triplanar sample of a data texture (RG normal, B, A height) around the
   // geometric normal; returns the world-space normal offset in .xyz via
   // whiteout blending and the blended B/A in .ba of the second output.
@@ -145,7 +153,7 @@ export const SCENE_FRAG = /* glsl */`
       float detailFade = 1.0 - smoothstep(9000.0, 30000.0, dist);
       vec3 dn = (macro.dn * 1.3 + macro2.dn * 0.8 * (1.0 - smoothstep(2500.0, 9000.0, dist))) * detailFade + near.dn * 0.7 * nearFade;
       float rh = mix(macro.h, macro2.h, 0.35);
-      float breakup = hash12(floor(vWorld.xz / 23.0)) * 0.15 + rh;
+      float breakup = vnoise12(vWorld.xz / 23.0) * 0.15 + rh;
       // Masks from the real surface.
       // Rock: cliffs (by slope, broken up by the rock's own relief and
       // pushed out of gullies), sharp convex crests, and bare ground above
@@ -154,9 +162,15 @@ export const SCENE_FRAG = /* glsl */`
       // near 47 degrees.
       float treeLine = rTreeline + (breakup - 0.5) * 220.0 + curv * 140.0;
       float alpine = smoothstep(treeLine - 50.0, treeLine + 350.0, h);
-      float rockMask = smoothstep(max(40.0, rForestMaxSlope - 6.0), rForestMaxSlope + 10.0, slopeDeg + (rh - 0.5) * 16.0 - curv * 12.0);
+      // Edges kept ordered: a pack whose forest stops below 30 degrees
+      // (tundra) would otherwise invert smoothstep and mark flats as rock.
+      float cliff0 = max(40.0, rForestMaxSlope - 6.0);
+      float rockMask = smoothstep(cliff0, max(cliff0 + 8.0, rForestMaxSlope + 10.0), slopeDeg + (rh - 0.5) * 16.0 - curv * 12.0);
       rockMask = max(rockMask, smoothstep(0.45, 0.9, -curv) * smoothstep(30.0, 44.0, slopeDeg) * 0.7);
-      rockMask = max(rockMask, alpine * smoothstep(0.25, 0.65, rh + slopeDeg / 90.0));
+      // Above the treeline, bare rock where it is steep or sharply convex;
+      // gentle alpine ground stays meadow/tundra mat (a flat valley of
+      // "rock" tiles its detail texture into a visible grid).
+      rockMask = max(rockMask, alpine * smoothstep(20.0, 38.0, slopeDeg + (rh - 0.5) * 18.0 - curv * 10.0));
       float forest = (1.0 - smoothstep(treeLine - 90.0, treeLine + 60.0, h))
         * (1.0 - smoothstep(rForestMaxSlope - 6.0, rForestMaxSlope + 4.0, slopeDeg))
         * rForestDensity;
@@ -171,7 +185,9 @@ export const SCENE_FRAG = /* glsl */`
       // Ground between: meadow on gentle open slopes, soil/scree steeper,
       // moss along wet drainage.
       vec3 ground = mix(pMeadow, pSoil, smoothstep(18.0, 34.0, slopeDeg));
-      ground = mix(ground, pMoss, rMoss * smoothstep(0.35, 0.75, flowN) * (1.0 - rockMask));
+      // Drainage moss only where water actually runs: on filled flats the
+      // D8 flow routing is an artefact of straight diagonal channels.
+      ground = mix(ground, pMoss, rMoss * smoothstep(0.35, 0.75, flowN) * smoothstep(1.5, 5.0, slopeDeg) * (1.0 - rockMask));
       vec3 rockCol = mix(pRockShade, pRockLit, clamp(rh * 1.2 - 0.1 + curv * -0.25, 0.0, 1.0));
       rockCol = mix(rockCol, pRockWarm, rStrata * smoothstep(0.55, 0.9, macro2.h));
       rockCol = mix(rockCol, pLichen, 0.25 * (1.0 - rockMask) );
@@ -184,13 +200,18 @@ export const SCENE_FRAG = /* glsl */`
       albedo = mix(ground, forestCol, crowns);
       albedo = mix(albedo, ground * 0.9, forest * (1.0 - cn.b) * 0.5);
       albedo = mix(albedo, rockCol, rockMask * (1.0 - crowns * 0.6));
+      // Two snow scales at unrelated sizes and angles: a single 60 m tile
+      // repeats visibly as a grid across a wide snowy flat.
       Tri sn = triplanar(tSnow, vWorld, n, sSnow, 0.7);
-      vec3 snowCol = mix(pSnowShade, pSnow, 0.55 + 0.45 * sn.h);
+      Tri sn2 = triplanar(tSnow, vWorld, n, sSnow * 3.7, 2.1);
+      sn.h = mix(sn.h, sn2.h, 0.5);
+      sn.dn = mix(sn.dn, sn2.dn, 0.5);
+      vec3 snowCol = mix(pSnowShade, pSnow, 0.7 + 0.3 * sn.h);
       albedo = mix(albedo, snowCol, snow);
       // Detail normal: rock gets the full detail, forest the crowns, snow
       // its own ripples.
       vec3 cdn = vec3(cn.r * 2.0 - 1.0, 0.0, cn.g * 2.0 - 1.0) * 0.8;
-      vec3 detail = mix(dn * mix(0.35, 1.0, rockMask), cdn, crowns);
+      vec3 detail = mix(dn * mix(0.15, 1.0, rockMask), cdn, crowns);
       detail = mix(detail, sn.dn * 0.4, snow);
       nShade = normalize(n + detail);
       rough = mix(mix(0.9, macro.b, rockMask), 0.6, snow);

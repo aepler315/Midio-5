@@ -39,3 +39,18 @@ test('every GLSL helper is defined before its first call', () => {
   }
   assert.ok(checked > 10, `helpers checked: ${checked}`);
 });
+
+test('the cliff mask keeps its smoothstep edges ordered for every material pack', async () => {
+  // GLSL smoothstep is undefined when edge0 >= edge1; with a low forest
+  // slope limit (tundra, 20 degrees) the old edges inverted and marked every
+  // flat as rock. Mirror the shader's edges and check them per pack.
+  const { SCENE_FRAG } = await import('../src/world/alpine/TerrainMaterial.js');
+  assert.match(SCENE_FRAG, /float cliff0 = max\(40\.0, rForestMaxSlope - 6\.0\);/);
+  assert.match(SCENE_FRAG, /smoothstep\(cliff0, max\(cliff0 \+ 8\.0, rForestMaxSlope \+ 10\.0\)/);
+  const dir = path.resolve('src/assets/range/v2/materials');
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
+    const m = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')).rules.forestMaxSlopeDeg;
+    const e0 = Math.max(40, m - 6), e1 = Math.max(e0 + 8, m + 10);
+    assert.ok(e1 > e0, `${f}: cliff edges ${e0}..${e1}`);
+  }
+});

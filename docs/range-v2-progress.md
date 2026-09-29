@@ -85,6 +85,17 @@ One corridor per biome, chosen on a range that `RealBiomes.biomeOfRange` already
 | CANYON | `la-sal-castle-valley` | La Sal Mountains (Colorado Plateau shrublands) | 3DEP 1/3" | Peale 3877 / 3876; Castleton Tower 2025 / 1965 (thin spire under-resolved at 22 m) |
 | DESERT | `panamint-dantes-view` | Panamint Range (Mojave desert) | 3DEP 1/3" | Telescope 3366 / 3361 |
 
+Terrain and material fixes found while reviewing these views (they apply to every view):
+
+- **Spikes.** Terrain Tiles carried a cluster of fake 4200 m samples at the Tombstone grid's edge, and a few single-sample needles at Tombstone and Denali. The build now lowers any sample (or cluster up to three across) that stands more than 2 cell widths per ring step above its surroundings (~63 degrees) and records the count; no 3DEP view triggers it.
+- **Dry flats.** A view can declare `water: false`; Badwater's salt pan was being marked as a lake.
+- **Gentle-ground smoothing** (Terrain Tiles views only) softens resampling steps on flats; 3DEP views are untouched.
+- **Cliff mask bug.** `smoothstep(max(40, forestMaxSlope - 6), forestMaxSlope + 10, slope)` inverts when a pack's forest limit is below 30 degrees (tundra, 20): every tundra flat was bare rock, and the rock detail texture tiled into a visible grid. The edges are now kept ordered (test in `test/rangeShaderSource.test.js`).
+- **Alpine ground.** Above the treeline, rock now follows slope and convexity; gentle alpine ground stays meadow / tundra mat.
+- **Surface normals** are taken from a bilinear surface across each tile's stored sample spacing, so coarse tiles no longer shade as flat triangle facets.
+- **Snow** blends two unrelated tile scales; the snow/tree line breakup uses smooth value noise instead of a per-23 m-cell hash; drainage moss fades out on flats (filled-flat D8 routing is straight diagonal channels).
+- A faint residual pattern remains on Tombstone's tundra valley floor at close range; recorded in its review.
+
 First placements that failed, and why: the Black Mountains from Craggy Pinnacle hid the far crest at 18 of 21 stations (nearer ridges; now seen broadside from the Catawba side); Muncho Lake's first eye sat in the mountains east of the lake; the Tetons from the east shore were too far for the range to read (moved over the lake).
 
 ## Asset budget (60 MB ceiling)

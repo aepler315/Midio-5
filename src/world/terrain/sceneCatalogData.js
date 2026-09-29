@@ -198,7 +198,7 @@ export default {
    "place": "Denali National Park, Alaska",
    "credit": "Elevation: AWS Terrain Tiles",
    "terrainManifestUrl": "terrain/denali-wonder-lake.terrain.json",
-   "terrainManifestSha256": "77083f297692afc78b1d7b818031bf25ea26d82abb07596f7956c7ed2d6295d5",
+   "terrainManifestSha256": "351aad9728f86a3e78fe985d9d154214f4f7c0a4e89ad1d823df690b6543e46a",
    "materialManifestUrl": "materials/icefield.json",
    "materialRules": {},
    "camera": {
@@ -225,10 +225,10 @@ export default {
     "fovYDeg": 17.9
    },
    "characterScores": {
-    "energy": 0.289,
-    "rawness": 0.235,
-    "grandeur": 0.71,
-    "dominance": 0.595
+    "energy": 0.286,
+    "rawness": 0.238,
+    "grandeur": 0.733,
+    "dominance": 0.578
    },
    "archetype": "sublime",
    "evidence": {
@@ -560,7 +560,7 @@ export default {
      "7f61e4ced52cd68390386cb85b79a380af61648300f5f9bb783f65e8bc626683",
      "31896f65becf296043c765e7483a5444b43ff22debfc8889aec70b2d708d4cfa",
      "1c3b522ec7888a3e4e159134073e5c4de101ca5be33055a903e0f350a7599ff4",
-     "ed0a4843c2ed67ac6bf6c86680302dacd62bf561c2dfc9dbb115ab160d2b606d"
+     "73f8cb644518da9972e6871ba9dbffce15d425e0aad663cdf417f4571e436382"
     ]
    }
   },
@@ -574,7 +574,7 @@ export default {
    "place": "Tombstone Territorial Park, Yukon",
    "credit": "Elevation: AWS Terrain Tiles",
    "terrainManifestUrl": "terrain/tombstone-north-klondike.terrain.json",
-   "terrainManifestSha256": "e236a2d9ae69ca643f03f9df908173ae65c192e74be1c8ef8e31d2a7e37bffdc",
+   "terrainManifestSha256": "a01c1b22dd7c6351e861a60c95a05e9d3b75e8da23669c3ea04b72efb8eb7efb",
    "materialManifestUrl": "materials/tundra.json",
    "materialRules": {},
    "camera": {
@@ -601,10 +601,10 @@ export default {
     "fovYDeg": 32
    },
    "characterScores": {
-    "energy": 0.085,
-    "rawness": 0.115,
+    "energy": 0.087,
+    "rawness": 0.113,
     "grandeur": 0.203,
-    "dominance": 0.511
+    "dominance": 0.512
    },
    "archetype": "serene",
    "evidence": {
@@ -756,7 +756,7 @@ export default {
      "56005b720081f4dae0f394fad9c21afab2476a6c3fa877ca69c037d476bdd8dd",
      "b90a2fd87da8ee3d68dbda9879f44b9234d5828feab31cee554e713e30b5e5f8",
      "363ea4a1252ac2e8c499c98f12fd8092862ba2fbc0414c2a7013052e0fe93cc9",
-     "a3bf8c6ee5ef14e534747e169af212e6f1ef861ff24906f3b02f751c8a8d94f6"
+     "31cb1272c8f37c1297923c03ec1400705dcf67caaf1d2044eb8ae769d85c5128"
     ]
    }
   },
@@ -770,7 +770,7 @@ export default {
    "place": "Northern Rockies, British Columbia",
    "credit": "Elevation: AWS Terrain Tiles",
    "terrainManifestUrl": "terrain/muncho-lake-south.terrain.json",
-   "terrainManifestSha256": "c26d7c73565427f942fe8b2b1daae03660ac9c224c5f8633c5bf17bd0570994e",
+   "terrainManifestSha256": "2c63299d159796d5e60d6360b4d99e39dbb6fc50a1994a265e32481f8ef34bac",
    "materialManifestUrl": "materials/taiga.json",
    "materialRules": {},
    "camera": {
@@ -799,7 +799,7 @@ export default {
    "characterScores": {
     "energy": 0.129,
     "rawness": 0.087,
-    "grandeur": 0.299,
+    "grandeur": 0.298,
     "dominance": 0.287
    },
    "archetype": "serene",
@@ -908,7 +908,7 @@ export default {
      "9e84bccc11a487f6e7f14a60aa483bc258a9d8e260e7e366668219c9bcfb9c4b",
      "b6f54c740ea008eaa13ae7407326d4718bcd87e7812288f624a125d273464d2d",
      "81885b22b7d65f536f7009b81ec6348126815583091726036067d013423158c7",
-     "fb919cdf034f168c2e5b3bda90116d670a7353c9a4f5c32e276ee7f78b844319"
+     "aba780d25be624a995e74c1e9e051910d937da7cbb3eb49c3b69cc1e53339fca"
     ]
    }
   },
@@ -922,7 +922,7 @@ export default {
    "place": "Trans-Mexican Volcanic Belt, México",
    "credit": "Elevation: AWS Terrain Tiles",
    "terrainManifestUrl": "terrain/izta-popo-west.terrain.json",
-   "terrainManifestSha256": "a8c297385b562001bb4499296758d69528dd4e61dfda58c0755776b36efc015d",
+   "terrainManifestSha256": "a0e796b6510f732bc84b9fb8180f74bb966113a0fa6596513280dc67c70f4e70",
    "materialManifestUrl": "materials/pine-oak.json",
    "materialRules": {},
    "camera": {
@@ -951,8 +951,8 @@ export default {
    "characterScores": {
     "energy": 0.276,
     "rawness": 0.197,
-    "grandeur": 0.381,
-    "dominance": 0.646
+    "grandeur": 0.38,
+    "dominance": 0.644
    },
    "archetype": "brooding",
    "evidence": {
@@ -1009,7 +1009,7 @@ export default {
      "4dda0a11f80862e3b765901f3cc88eff55218891d874f01edcafc6732ca48ad5",
      "42bdc77b7846b8cefd54858ab6d6de55f961f9c1bd755d8717b5c125bc028206",
      "05ea6952b8c8b6e91306e1719a9a67e0fc0469bffa7a489b3fa9e5d61f11bfa6",
-     "c7e571d8fd17d98e5d6e298b7a86c01a4569b7243326e8fb8ec6d4ccd0f4a05d"
+     "cb9f664740670fb93c164edc009406e7b2f639a2d3bef70508954a50c765427f"
     ]
    }
   },

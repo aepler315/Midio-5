@@ -234,56 +234,56 @@
   }
  },
  "characterScores": {
-  "energy": 0.085,
-  "rawness": 0.115,
+  "energy": 0.087,
+  "rawness": 0.113,
   "grandeur": 0.203,
-  "dominance": 0.511
+  "dominance": 0.512
  },
  "archetype": "serene",
  "skylineFeatures": [
   {
    "reliefM": 708.6826171875,
-   "slopeMPerKm": 23.775722010792396,
-   "peaksPer10Km": 0.42700053531968174,
-   "roughnessM": 20.70096494829778,
-   "dominance": 0.40192916130970346,
+   "slopeMPerKm": 26.448181688746004,
+   "peaksPer10Km": 0.4914431788752424,
+   "roughnessM": 19.832993934842566,
+   "dominance": 0.4042114687931916,
    "summitM": 2328.22900390625,
-   "lengthKm": 210.77256948312692
+   "lengthKm": 183.13409132258477
   },
   {
    "reliefM": 1031.673828125,
-   "slopeMPerKm": 23.866248500702824,
-   "peaksPer10Km": 0.43669461906099494,
-   "roughnessM": 51.375675574309426,
+   "slopeMPerKm": 24.540925010971247,
+   "peaksPer10Km": 0.44898860541268015,
+   "roughnessM": 46.998330463245814,
    "dominance": 0.5455944242612412,
    "summitM": 2627.775390625,
-   "lengthKm": 366.388760053973
+   "lengthKm": 334.08420211940586
   },
   {
-   "reliefM": 1005.0487060546875,
-   "slopeMPerKm": 31.15377523883056,
-   "peaksPer10Km": 0.5270275380823456,
-   "roughnessM": 62.39798928146318,
-   "dominance": 0.584769715495219,
+   "reliefM": 1004.907470703125,
+   "slopeMPerKm": 30.99774715919426,
+   "peaksPer10Km": 0.5264010019606715,
+   "roughnessM": 62.35918022148627,
+   "dominance": 0.5854236812945066,
    "summitM": 2627.775390625,
-   "lengthKm": 341.53813035074427
+   "lengthKm": 341.9446378892876
   }
  ],
- "manifestSha256": "e236a2d9ae69ca643f03f9df908173ae65c192e74be1c8ef8e31d2a7e37bffdc",
- "payloadSha256": "a3bf8c6ee5ef14e534747e169af212e6f1ef861ff24906f3b02f751c8a8d94f6",
- "payloadBytes": 1776883,
+ "manifestSha256": "a01c1b22dd7c6351e861a60c95a05e9d3b75e8da23669c3ea04b72efb8eb7efb",
+ "payloadSha256": "31cb1272c8f37c1297923c03ec1400705dcf67caaf1d2044eb8ae769d85c5128",
+ "payloadBytes": 1829433,
  "stats": {
   "tiles": 353,
   "desktop": {
-   "vertices": 1132977,
-   "triangles": 2191360,
-   "meshBytes": 39892044,
+   "vertices": 1148657,
+   "triangles": 2222080,
+   "meshBytes": 40448844,
    "surfaceTextureBytes": 26784432
   },
   "mobile": {
-   "vertices": 675469,
-   "triangles": 1301080,
-   "meshBytes": 23718588,
+   "vertices": 677029,
+   "triangles": 1304248,
+   "meshBytes": 23775324,
    "surfaceTextureBytes": 26784432
   }
  },
@@ -304,8 +304,9 @@
   }
  ],
  "achievedErrorPx": {
-  "desktop": 0.997,
-  "mobile": 1.99
+  "desktop": 0.988,
+  "mobile": 1.982
  },
- "despikedSamples": 7
+ "despikedSamples": 13,
+ "gentleGroundSmoothingM": 0.6648223176209561
 }

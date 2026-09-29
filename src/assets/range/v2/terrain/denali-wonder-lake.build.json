@@ -421,56 +421,56 @@
   }
  },
  "characterScores": {
-  "energy": 0.289,
-  "rawness": 0.235,
-  "grandeur": 0.71,
-  "dominance": 0.595
+  "energy": 0.286,
+  "rawness": 0.238,
+  "grandeur": 0.733,
+  "dominance": 0.578
  },
  "archetype": "sublime",
  "skylineFeatures": [
   {
-   "reliefM": 3298.662841796875,
-   "slopeMPerKm": 143.69446047278498,
-   "peaksPer10Km": 0.9880927418487604,
-   "roughnessM": 81.52270244436816,
-   "dominance": 0.5902190333248639,
-   "summitM": 6154.75537109375,
-   "lengthKm": 80.96405996295131
+   "reliefM": 3612.10009765625,
+   "slopeMPerKm": 126.76128001058883,
+   "peaksPer10Km": 0.8090397322550201,
+   "roughnessM": 91.33000202556187,
+   "dominance": 0.5384535836782322,
+   "summitM": 6152.77001953125,
+   "lengthKm": 98.88265904693904
   },
   {
-   "reliefM": 3156.95263671875,
-   "slopeMPerKm": 133.22636173232098,
-   "peaksPer10Km": 1.1981942340934468,
-   "roughnessM": 92.38841093922896,
-   "dominance": 0.5977247639332766,
-   "summitM": 6147.77978515625,
-   "lengthKm": 100.1507072772654
+   "reliefM": 3151.197998046875,
+   "slopeMPerKm": 132.55357417099572,
+   "peaksPer10Km": 1.1973720591603025,
+   "roughnessM": 92.58547685802418,
+   "dominance": 0.5975173597404942,
+   "summitM": 6141.14013671875,
+   "lengthKm": 100.21947571096159
   },
   {
-   "reliefM": 3135.438720703125,
-   "slopeMPerKm": 121.79745703753399,
-   "peaksPer10Km": 0.9701174439323473,
-   "roughnessM": 90.33756705852883,
-   "dominance": 0.5962145044089832,
-   "summitM": 6150.15576171875,
-   "lengthKm": 113.38833322501416
+   "reliefM": 3135.358642578125,
+   "slopeMPerKm": 120.56434062858877,
+   "peaksPer10Km": 0.9696193612187086,
+   "roughnessM": 90.51032062333253,
+   "dominance": 0.5977260220788451,
+   "summitM": 6150.07568359375,
+   "lengthKm": 113.44657955441575
   }
  ],
- "manifestSha256": "77083f297692afc78b1d7b818031bf25ea26d82abb07596f7956c7ed2d6295d5",
- "payloadSha256": "ed0a4843c2ed67ac6bf6c86680302dacd62bf561c2dfc9dbb115ab160d2b606d",
- "payloadBytes": 1964840,
+ "manifestSha256": "351aad9728f86a3e78fe985d9d154214f4f7c0a4e89ad1d823df690b6543e46a",
+ "payloadSha256": "73f8cb644518da9972e6871ba9dbffce15d425e0aad663cdf417f4571e436382",
+ "payloadBytes": 1898501,
  "stats": {
-  "tiles": 390,
+  "tiles": 391,
   "desktop": {
-   "vertices": 1170655,
-   "triangles": 2262678,
-   "meshBytes": 41199996,
+   "vertices": 1132987,
+   "triangles": 2189600,
+   "meshBytes": 39871044,
    "surfaceTextureBytes": 27024005
   },
   "mobile": {
-   "vertices": 454573,
-   "triangles": 866898,
-   "meshBytes": 15857652,
+   "vertices": 442071,
+   "triangles": 843248,
+   "meshBytes": 15423828,
    "surfaceTextureBytes": 27024005
   }
  },
@@ -505,8 +505,9 @@
   }
  ],
  "achievedErrorPx": {
-  "desktop": 0.994,
-  "mobile": 2
+  "desktop": 0.947,
+  "mobile": 1.978
  },
- "despikedSamples": 3
+ "despikedSamples": 10,
+ "gentleGroundSmoothingM": 1.0180714504660981
 }
