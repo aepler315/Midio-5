@@ -17,5 +17,5 @@ export {
   NoBlending, NormalBlending, AdditiveBlending, CustomBlending,
   OneFactor, ZeroFactor, OneMinusSrcAlphaFactor, SrcAlphaFactor, AddEquation,
   LessEqualDepth, EqualDepth, AlwaysDepth,
-  NoToneMapping, REVISION,
+  NoToneMapping, DynamicDrawUsage, REVISION,
 } from 'three';

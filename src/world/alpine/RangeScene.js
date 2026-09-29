@@ -369,7 +369,9 @@ export class RangeScene {
     const lightDir = new THREE.Vector3((0.5 - c.xFrac) * 1.4, 0.55 + 0.6 * c.altitude01, -0.45).normalize();
     p.stageGL.update(stage, { width: vp.logicalWidth, height: vp.logicalHeight, frame, lightDir,
       skyZenith: u.uSkyZenith.value, skyHorizon: u.uSkyHorizon.value });
-    p.stageGL.uniforms.uKeyColor.value.copy(u.uLightColor.value).multiplyScalar(0.8);
+    // The celestial key, tempered for up-facing slab tops (see RockStageGL's
+    // ambient note for the measured calibration).
+    p.stageGL.uniforms.uKeyColor.value.copy(u.uLightColor.value).multiplyScalar(0.3);
     p.stageGL.uniforms.uDiag.value = this.diag === 'markers' ? 1 : 0;
     const r = this.renderer;
     this._setCanvasSize(w, h);

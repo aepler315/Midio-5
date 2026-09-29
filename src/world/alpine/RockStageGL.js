@@ -43,14 +43,17 @@ const FRAG = /* glsl */`
   vec3 tonemap(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
   void main() {
     bool riser = vSurface > 0.5;
-    vec4 st = texture(tStage, vUv / sStage);
-    vec4 so = texture(tSoil, vUv / sSoil);
-    vec2 dn = (st.rg * 2.0 - 1.0);
+    float front = riser ? 1.0 : vSurface / 0.45; // 0 back .. 1 front edge
+    // Two rotated scales of the scan data hide its tile.
+    vec2 uvB = mat2(0.8, -0.6, 0.6, 0.8) * vUv;
+    vec4 st = mix(texture(tStage, vUv / (sStage * 2.6)), texture(tStage, uvB / sStage + 0.37), 0.5);
+    vec4 so = texture(tSoil, uvB / sSoil);
+    vec2 dn = (st.rg * 2.0 - 1.0) * 1.4;
     vec3 n = normalize(vN + (riser ? vec3(dn.x, dn.y, 0.0) : vec3(dn.x, 0.0, -dn.y)) * 0.9);
-    // Moss gathers in low relief of the slab tops and along riser lips.
-    float lip = riser ? 0.0 : smoothstep(0.72, 0.98, fract(vDepth * 7.0));
-    float moss = uMoss * smoothstep(0.42, 0.2, st.a) * (riser ? 0.25 : 1.0);
-    moss = clamp(moss + lip * 0.25 * uMoss + smoothstep(0.55, 0.8, so.a) * 0.2 * uMoss, 0.0, 1.0);
+    // Moss gathers in low relief of the slab tops and just behind the lips.
+    float lip = riser ? 0.0 : smoothstep(0.55, 0.85, front) * (1.0 - smoothstep(0.93, 1.0, front));
+    float moss = uMoss * (smoothstep(0.5, 0.3, st.a) * 0.8 + smoothstep(0.5, 0.72, so.a) * 0.6) * (riser ? 0.25 : 1.0);
+    moss = clamp(moss + lip * 0.3 * uMoss, 0.0, 1.0);
     // Damp ring around pools (the water itself is drawn separately).
     float damp = 0.0;
     for (int i = 0; i < 8; i++) {
@@ -59,16 +62,23 @@ const FRAG = /* glsl */`
       vec2 q = (vXY - p.xy) / (p.zw * vec2(1.35, 2.2));
       damp = max(damp, uPoolAlpha[i] * (1.0 - smoothstep(0.7, 1.0, length(q))));
     }
-    vec3 rock = mix(pRockShade, pRockLit, clamp(st.a * 1.15 - 0.05, 0.0, 1.0));
+    vec3 rock = mix(pRockShade, pRockLit, clamp((st.a - 0.5) * 1.8 + 0.45, 0.0, 1.0));
+    // Worn front edge: the lit lip of each slab.
+    float edge = riser ? 0.0 : smoothstep(0.9, 1.0, front);
     rock = mix(rock, pLichen, 0.18 * smoothstep(0.6, 0.9, so.a));
     vec3 albedo = mix(rock, pMoss, moss);
     albedo = mix(albedo, pWetRock, damp * 0.8);
-    if (riser) albedo *= 0.62;
+    albedo *= riser ? 0.8 : 1.0 + 0.2 * edge;
     float rough = mix(st.b, 0.25, damp);
     float wrap = 0.2;
     float key = max((dot(n, uKeyDir) + wrap) / (1.0 + wrap), 0.0);
-    vec3 hemi = mix(uSkyHorizon * 0.5, uSkyZenith, 0.5 + 0.5 * n.y) * uAmbientScale;
-    vec3 lit = albedo * (hemi * (riser ? 0.55 : 1.0) + uKeyColor * key);
+    // Sky light on near rock: a top sees the whole dome (zenith and the
+    // brighter horizon band), a face toward the camera mostly the horizon.
+    // Using the zenith alone left the stage black once night deepened.
+    vec3 dome = mix(uSkyZenith, uSkyHorizon, 0.45);
+    vec3 hemi = mix(uSkyHorizon * 0.6, dome, 0.5 + 0.5 * n.y) * uAmbientScale;
+    // Tops face the open sky; faces toward the camera see the horizon.
+    vec3 lit = albedo * (hemi * (riser ? 0.7 : 1.0) + uKeyColor * key * (1.0 + 0.4 * edge));
     // Local emitters: compact, material-dependent (wet rock returns more).
     for (int i = 0; i < 3; i++) {
       vec4 e = uEmitters[i];
@@ -100,7 +110,9 @@ const WATER_FRAG = /* glsl */`
     // Shallow water seen at a grazing angle: mostly sky, a little bed.
     float ripple = 0.5 + 0.5 * sin(vXY.x * 0.09 + uTime * 1.3) * sin(vXY.y * 0.4 - uTime * 0.9);
     vec3 sky = mix(uSkyHorizon, uSkyZenith, 0.35 + 0.1 * ripple);
-    vec3 c = mix(pWaterDeep, sky * 1.4, 0.55);
+    // The sky it mirrors is seen at a grazing angle and darkened by the
+    // shallow bed; kept below the lit rock so pools read as water, not glare.
+    vec3 c = mix(pWaterDeep, sky * 0.45, 0.6);
     for (int i = 0; i < 3; i++) {
       vec4 e = uEmitters[i];
       if (e.w <= 0.0) continue;
@@ -140,7 +152,13 @@ export class RockStageGL {
       pWater: { value: col(palette.water) }, pWaterDeep: { value: col(palette.waterDeep) },
       uKeyDir: { value: new THREE.Vector3(-0.4, 0.8, -0.3).normalize() }, uKeyColor: { value: new THREE.Color(0.2, 0.22, 0.28) },
       uSkyZenith: { value: new THREE.Color() }, uSkyHorizon: { value: new THREE.Color() },
-      uAmbientScale: { value: 2.5 }, uExposure: { value: 2.0 }, uMoss: { value: rules.moss ?? 0.5 },
+      // Near rock sees far less of the sky than open terrain does (the cast,
+      // the slabs behind and the valley walls shade it): a lower ambient
+      // keeps the stage the darkest band of the frame, as in the reference.
+      // Measured in the pilot (SwiftShader, mean sRGB of the stage): about
+      // (50,63,61) at 30 s with the moon up and (26,33,36) at 90 s with it
+      // set, against the reference's foreground rock ~(45,52,58).
+      uAmbientScale: { value: 0.45 }, uExposure: { value: 2.0 }, uMoss: { value: rules.moss ?? 0.5 },
       uEmitters: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
       uEmitterColor: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
       uPools: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
@@ -148,13 +166,16 @@ export class RockStageGL {
       uDiag: { value: 0 }, uTime: { value: 0 }, uAlpha: { value: 1 },
     };
     this.uniforms = u;
-    this.material = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: VERT, fragmentShader: FRAG, uniforms: u });
+    // The camera maps y down (top 0, bottom H), which mirrors triangle
+    // winding: faces are two-sided so none is culled as a back face.
+    this.material = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: VERT, fragmentShader: FRAG, uniforms: u,
+      side: THREE.DoubleSide });
     this.geometry = new THREE.BufferGeometry();
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.frustumCulled = false;
     this.scene.add(this.mesh);
     this.waterMaterial = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: WATER_VERT, fragmentShader: WATER_FRAG,
-      uniforms: u, transparent: true, depthTest: false, depthWrite: false, premultipliedAlpha: true });
+      uniforms: u, transparent: true, depthTest: false, depthWrite: false, premultipliedAlpha: true, side: THREE.DoubleSide });
     this.waterGeometry = new THREE.BufferGeometry();
     this.water = new THREE.Mesh(this.waterGeometry, this.waterMaterial);
     this.water.frustumCulled = false;
@@ -164,16 +185,11 @@ export class RockStageGL {
 
   /** Upload this frame's stage and per-frame uniforms. */
   update(stage, { width, height, frame, lightDir, skyZenith, skyHorizon }) {
-    const THREE = this.THREE;
     const cam = this.camera;
     cam.left = 0; cam.right = width; cam.top = 0; cam.bottom = height;
     cam.updateProjectionMatrix();
-    const g = this.geometry;
-    g.setAttribute('position', new THREE.BufferAttribute(stage.positions, 3));
-    g.setAttribute('normal', new THREE.BufferAttribute(stage.normals, 3));
-    g.setAttribute('surface', new THREE.BufferAttribute(stage.surfaces, 1));
-    g.setAttribute('stageUv', new THREE.BufferAttribute(stage.uv, 2));
-    g.setIndex(new THREE.BufferAttribute(stage.indices, 1));
+    this._upload(this.geometry, { position: [stage.positions, 3], normal: [stage.normals, 3],
+      surface: [stage.surfaces, 1], stageUv: [stage.uv, 2] }, stage.indices);
     // Water: fans of the exact pool polygons.
     const wp = [];
     const u = this.uniforms;
@@ -188,7 +204,7 @@ export class RockStageGL {
       u.uPoolAlpha.value[i] = p.alpha;
     });
     for (let i = stage.pools.length; i < 8; i++) { u.uPools.value[i].set(0, 0, 0, 0); u.uPoolAlpha.value[i] = 0; }
-    this.waterGeometry.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(wp), 3));
+    this._upload(this.waterGeometry, { position: [Float32Array.from(wp), 3] }, null);
     this.water.visible = wp.length > 0;
     u.uAlpha.value = 1;
     const ems = (frame.emitters || []).filter((e) => e.visible).slice(0, 3);
@@ -205,6 +221,47 @@ export class RockStageGL {
     if (skyHorizon) u.uSkyHorizon.value.copy(skyHorizon);
     u.uTime.value = frame.timeMs / 1000;
     this.bytes = stage.positions.byteLength * 3 + stage.indices.byteLength + wp.length * 4;
+  }
+
+  /** Copy this frame's arrays into reused GPU attributes. Replacing an
+   *  attribute object would orphan its GL buffer (three.js frees buffers only
+   *  for the attributes a geometry holds when it is disposed), so storage
+   *  grows geometrically and is otherwise rewritten in place. */
+  _upload(geometry, attrs, indices) {
+    const THREE = this.THREE;
+    const count = attrs.position[0].length / 3;
+    const cap = geometry.userData.capacity || 0;
+    const icap = geometry.userData.indexCapacity || 0;
+    if (count > cap || (indices && indices.length > icap)) {
+      geometry.dispose();
+      const n = Math.max(64, Math.ceil(count * 1.5)), ni = indices ? Math.max(96, Math.ceil(indices.length * 1.5)) : 0;
+      for (const [name, [, size]] of Object.entries(attrs)) {
+        const a = new THREE.BufferAttribute(new Float32Array(n * size), size);
+        a.setUsage(THREE.DynamicDrawUsage);
+        geometry.setAttribute(name, a);
+      }
+      if (indices) {
+        const ia = new THREE.BufferAttribute(new Uint32Array(ni), 1);
+        ia.setUsage(THREE.DynamicDrawUsage);
+        geometry.setIndex(ia);
+      }
+      geometry.userData.capacity = n;
+      geometry.userData.indexCapacity = ni;
+    }
+    for (const [name, [data]] of Object.entries(attrs)) {
+      const a = geometry.getAttribute(name);
+      a.array.set(data);
+      a.clearUpdateRanges();
+      a.addUpdateRange(0, data.length);
+      a.needsUpdate = true;
+    }
+    if (indices) {
+      geometry.index.array.set(indices);
+      geometry.index.clearUpdateRanges();
+      geometry.index.addUpdateRange(0, indices.length);
+      geometry.index.needsUpdate = true;
+    }
+    geometry.setDrawRange(0, indices ? indices.length : count);
   }
 
   dispose() {

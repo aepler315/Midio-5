@@ -92,7 +92,6 @@ export const SCENE_FRAG = /* glsl */`
   // geometric normal; returns the world-space normal offset in .xyz via
   // whiteout blending and the blended B/A in .ba of the second output.
   struct Tri { vec3 dn; float b; float h; };
-  Tri triplanar(sampler2D t, vec3 p, vec3 n, float scale, float rot) { return triplanarRib(t, p, n, scale, rot, 1.0); }
   // rib < 1 stretches side projections vertically: cliff faces get
   // fluting and gully ribs rather than isotropic blotches.
   Tri triplanarRib(sampler2D t, vec3 p, vec3 n, float scale, float rot, float rib) {
@@ -112,6 +111,7 @@ export const SCENE_FRAG = /* glsl */`
     r.h = w.x * tx.a + w.y * ty.a + w.z * tz.a;
     return r;
   }
+  Tri triplanar(sampler2D t, vec3 p, vec3 n, float scale, float rot) { return triplanarRib(t, p, n, scale, rot, 1.0); }
   void main() {
     vec2 uv = vUv * (1.0 - uTexel) + 0.5 * uTexel;
     vec4 s = texture(uSurface, uv);

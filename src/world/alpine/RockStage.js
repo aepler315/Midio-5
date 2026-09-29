@@ -68,9 +68,13 @@ export function slabEdges(wx, seed) {
   return edges;
 }
 
-/** Riser height (px) in front of slab k at world x. */
+/** Riser height (px) in front of slab k at world x. It falls to zero along
+ *  stretches where two slabs meet flush, so edges read as broken ledges
+ *  rather than stripes across the whole stage. */
 function riserPx(wx, k, seed) {
-  return 7 + 16 * noise1(wx, 90 + 25 * k, seed + 31 * k);
+  const h = 7 + 16 * noise1(wx, 90 + 25 * k, seed + 31 * k);
+  const present = noise1(wx, 140 + 30 * k, seed + 57 * k);
+  return h * Math.min(1, Math.max(0, (present - 0.3) / 0.2));
 }
 
 /**
@@ -82,7 +86,8 @@ function riserPx(wx, k, seed) {
  * Returns { positions, normals, surfaces, uv, indices, pools, wetMasks, contactY(x) }
  * positions: Float32 [x, y, depth01] per vertex (logical px; depth for the
  *   z-buffer), normals: stage-space [nx, ny, nz] (y up, z toward camera),
- *   surfaces: 0 top face, 1 riser, uv: world-anchored material coords (px).
+ *   surfaces: top faces 0 (back edge) .. 0.45 (front edge), risers 1;
+ *   uv: world-anchored material coords (px).
  */
 export function buildRockStage({ bars, width, height, worldX = 0, originX = 0, seed = 0, overscan = 48 }) {
   const cols = Math.ceil((width + 2 * overscan) / COLUMN_PX) + 1;
@@ -129,7 +134,9 @@ export function buildRockStage({ bars, width, height, worldX = 0, originX = 0, s
       for (const [x, y, d, wx, t] of quad) {
         pos.push(x, y, riser ? d + 0.001 : d);
         nor.push(...nn);
-        srf.push(riser ? 1 : 0);
+        // Tops carry their back-to-front position (0..0.45) so the shader
+        // can light the lip along each slab's front edge; risers are 1.
+        srf.push(riser ? 1 : 0.45 * t);
         // Material coordinates in px: world x along, face-local down.
         uv.push(wx, riser ? a.y0 + t * (a.y1 - a.y0) - L.S : (a.d0 + t * (a.d1 - a.d0)) * 400 + a.k * 173);
       }

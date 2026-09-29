@@ -19,7 +19,7 @@ function contactVertices(stage) {
   const out = [];
   const { positions, surfaces } = stage;
   for (let q = 0; q < positions.length / 12; q++) {
-    if (surfaces[q * 4] !== 0) continue;
+    if (surfaces[q * 4] > 0.5) continue; // risers are 1
     // Top-left / top-right corners of a top face at depth 0.
     for (const k of [0, 1]) {
       const i = (q * 4 + k) * 3;
@@ -129,4 +129,16 @@ test('GroundResponse clips a polygon receiver to its path, not a rectangle', () 
   });
   assert.ok(!calls.includes('rect'), 'no rectangle clip');
   assert.deepEqual(calls.slice(0, 6), ['move', 'line', 'line', 'line', 'close', 'clip']);
+});
+
+test('slab edges break: risers vanish along some stretches and stand along others', () => {
+  const stage = buildRockStage({ bars: flat, width: W * 6, height: H, seed: 4 });
+  const { positions, surfaces } = stage;
+  let flush = 0, ledge = 0;
+  for (let q = 0; q < positions.length / 12; q++) {
+    if (surfaces[q * 4] < 0.5) continue;
+    const h = positions[(q * 4 + 3) * 3 + 1] - positions[(q * 4) * 3 + 1];
+    if (h < 0.5) flush++; else if (h > 6) ledge++;
+  }
+  assert.ok(flush > 20 && ledge > 20, `flush ${flush}, ledge ${ledge}`);
 });

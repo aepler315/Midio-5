@@ -96,6 +96,12 @@ export class RangePresentation {
     return v && !this.failures.has(v.id) ? v : null;
   }
 
+  /** Whether v2 is expected to draw this biome's scenery, so the legacy
+   *  strip set for it is only a fallback and need not be baked ahead. */
+  coversBiome(biome) {
+    return !!this.captionViewFor(biome);
+  }
+
   _wantedViewIds() {
     if (this.forced?.view) return [this.forced.view.id];
     return [...(this.sceneByBiome?.values?.() || [])].map((c) => c?.view?.id).filter(Boolean);

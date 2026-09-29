@@ -79,7 +79,12 @@ export async function openSong(browser, { url, wav, width, height, params = {}, 
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'warning' && /range v2/.test(m.text())) errors.push(`warn: ${m.text()}`); });
+  page.on('console', (m) => {
+    if (m.type() === 'warning' && /range v2/.test(m.text())) errors.push(`warn: ${m.text()}`);
+    // A shader that fails to compile draws nothing without throwing; the
+    // frame would silently lose that layer, so it fails the suite.
+    if (/Shader Error|program not valid/.test(m.text())) errors.push(`gl: ${m.text().slice(0, 400)}`);
+  });
   await page.route('**/soundfonts/', (route) => route.fulfill({ json: [] }));
   await context.route(/^https:\/\//, (route) => route.abort());
   const entry = new URL(url);

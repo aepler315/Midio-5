@@ -1775,8 +1775,17 @@ export class BiomeManager {
    *  biome. Never evicts the pair on screen to make room. */
   pumpStripPrewarm(budgetMs = 8) {
     const visible = this._visibleStripNames();
-    const stale = visible.find((name) => this.strips.has(name) && !this._stripsMatch(name));
-    const target = stale || this._nextBiomeName();
+    // Range v2: a biome whose scenery the GPU scene draws needs no legacy
+    // strips. While v2 is drawing, sets for covered biomes are dropped
+    // (not released: a holder mid-frame keeps a valid canvas) and none are
+    // baked ahead; a real fallback bakes lazily in stripsFor().
+    const covered = (name) => !!name && !!this.rangePresentation?.coversBiome?.(name);
+    if (this._rangeV2Active) {
+      for (const key of [...this.strips.entries.keys()]) if (covered(key)) this.strips.delete(key);
+    }
+    const stale = visible.find((name) => this.strips.has(name) && !this._stripsMatch(name) && !(this._rangeV2Active && covered(name)));
+    let target = stale || this._nextBiomeName();
+    if (!stale && covered(target)) target = null;
     if (!target) {
       if (this._bakeJob && !visible.includes(this._bakeJob.key)) this._cancelBake();
       return;
@@ -2531,10 +2540,17 @@ export class BiomeManager {
       this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075 * (this._ribbonScaleMul || 1), mandalaColor);
       this.ribbon.intensity = prevR;
     }
-    this._drawFarShore(ctx, canvas, worldX, A, B, t); // beyond the ocean, behind the water itself
-    if (!this._rangeSky) this._drawFataMorgana(ctx, canvas, worldX, A, B, t);
-    this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
-    this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
+    // Range v2 shows a real inland view: the painted sea, its far shore,
+    // mirage and sea life are legacy scenery faces and stay off. The sea
+    // still rises for a live tsunami or its withdrawal, so that heard-time
+    // hazard remains visible.
+    const seaHazard = v2 && (this._activeWithdrawal() > 0 || !!this._activeTsunami(canvas.width));
+    if (!v2) {
+      this._drawFarShore(ctx, canvas, worldX, A, B, t); // beyond the ocean, behind the water itself
+      if (!this._rangeSky) this._drawFataMorgana(ctx, canvas, worldX, A, B, t);
+    }
+    if (!v2 || seaHazard) this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
+    if (!v2) this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
     if (!v2) this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
     this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
 
@@ -3289,7 +3305,9 @@ export class BiomeManager {
           this._profile(this.currentBlend?.to)?.landmarkKey || this.currentBlend?.to,
           this.currentBlend?.t ?? 1)
         : [{ biomeKey: null, alpha: 1 }];
-      for (const layer of scatterLayers) if (layer.alpha > .001) {
+      // Range v2: the rock stage is world-anchored and carries the speed
+      // read itself; the flat glyph scatter would sit on real rock.
+      for (const layer of scatterLayers) if (layer.alpha > .001 && !this._rangeV2Active) {
         if (this._pass('ground-scatter')) this.groundScatter.draw(ctx, canvas, worldX, {
           groundY: this.groundY, kick, biomeKey: layer.biomeKey,
           ratio: CodaDirector.delaminateRatio(SCATTER_RATIO, this.unravel),
