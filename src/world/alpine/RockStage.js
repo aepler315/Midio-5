@@ -16,9 +16,9 @@
 // line is the support curve itself.
 //
 // Pools sit on slab tops as flat water. A water surface is level, so a pool
-// is only shown where the support curve is level across its whole width
-// (interior samples, not just its endpoints); on a hump it fades out rather
-// than climbing it. Wet masks are the exact pool polygons.
+// is only shown where the slab top holding it is level across its whole
+// width (interior samples, not just its endpoints); on a hump it fades out
+// rather than climbing it. Wet masks are the exact pool polygons.
 import { hash2 } from './ForestCover.js';
 
 const u01 = (h) => h / 4294967296;
@@ -109,7 +109,11 @@ export function buildRockStage({ bars, width, height, worldX = 0, originX = 0, s
       const top0 = S + edges[k] * span + drop;
       const next = k + 1 < STAGE_SLABS ? edges[k + 1] : 1.05;
       const top1 = S + next * span + drop;
-      rows.push({ kind: 0, y0: top0, y1: top1, d0: edges[k], d1: next, k });
+      // Elevation (screen px, y down) of this slab top relative to its
+      // neighbours: the support profile attenuated by the slab's depth. The
+      // edge wander and riser drops shape its outline, not its tilt.
+      const elev = S * (1 - (k + 0.5) / STAGE_SLABS);
+      rows.push({ kind: 0, y0: top0, y1: top1, d0: edges[k], d1: next, k, elev, drop });
       if (k + 1 < STAGE_SLABS) {
         const r = riserPx(wx, k, seed);
         rows.push({ kind: 1, y0: top1, y1: top1 + r, d0: next, d1: next, k });
@@ -148,21 +152,27 @@ export function buildRockStage({ bars, width, height, worldX = 0, originX = 0, s
   // slab), kept only where the support is level across the pool.
   const pools = [];
   const wx0 = -overscan + worldX - originX, wx1 = width + overscan + worldX - originX;
-  const cell = 260;
+  const cell = 210;
   for (let i = Math.floor(wx0 / cell); i * cell < wx1; i++) {
     const h = hash2(i, seed, 404);
-    if (u01(h) > 0.45) continue;
-    const pw = 60 + 110 * u01(hash2(i, seed, 405));
+    if (u01(h) > 0.62) continue;
+    const pw = 55 + 75 * u01(hash2(i, seed, 405)); // fits its 210 px cell
     const pcx = i * cell + 40 + (cell - 80 - pw) * u01(hash2(i, seed, 406)) + pw / 2;
     const slab = 1 + (hash2(i, seed, 407) % 2);
     const xL = pcx - pw / 2 - (worldX - originX), xR = pcx + pw / 2 - (worldX - originX);
-    // Level test over interior samples, not only the endpoints.
+    // Only pools the built columns cover (the rest are off the stage).
+    if (xL < colX(0) || xR > colX(cols - 1)) continue;
+    // Level test over interior samples, not only the endpoints, on the slab
+    // top the water rests in (lower slabs flatten toward the frame bottom,
+    // so gently rolling support still holds pools there; a hump does not).
     let lo = Infinity, hi = -Infinity;
-    for (let s = 0; s <= 12; s++) {
-      const y = supportAt(bars, xL + (xR - xL) * s / 12);
+    for (let c = 0; c < cols; c++) {
+      const col = layout[c];
+      if (col.x < xL || col.x > xR) continue;
+      const y = col.rows[slab * 2].elev;
       lo = Math.min(lo, y); hi = Math.max(hi, y);
     }
-    const unevenness = hi - lo;
+    const unevenness = Number.isFinite(hi - lo) ? hi - lo : Infinity;
     const alpha = Math.max(0, Math.min(1, (POOL_FLAT_PX * 2 - unevenness) / POOL_FLAT_PX));
     if (alpha <= 0) continue;
     // The pool polygon: a rounded lens on the slab top, level at the
@@ -171,22 +181,40 @@ export function buildRockStage({ bars, width, height, worldX = 0, originX = 0, s
     const topAt = (x) => {
       const col = layout[Math.max(0, Math.min(cols - 1, Math.round((x + overscan) / COLUMN_PX)))];
       const row = col.rows[slab * 2];
-      return { y0: row.y0, y1: row.y1 };
+      return { y0: row.y0, y1: row.y1, drop: row.drop };
     };
     const mid = topAt((xL + xR) / 2);
-    const waterY = mid.y0 + (mid.y1 - mid.y0) * 0.45;
-    const depthPx = Math.max(3, (mid.y1 - mid.y0) * 0.38);
+    const waterY = mid.y0 + (mid.y1 - mid.y0) * 0.5;
+    // Seen at a grazing angle: a flat lens, never deeper than a fifth of
+    // its width.
+    const depthPx = Math.max(3, Math.min((mid.y1 - mid.y0) * 0.28, pw * 0.2));
     for (let s = 0; s <= 16; s++) {
       const a = (s / 16) * Math.PI * 2;
       const wob = 1 + 0.12 * Math.sin(a * 3 + i) + 0.08 * Math.sin(a * 5 + 2 * i);
       pts.push({ x: (xL + xR) / 2 + Math.cos(a) * (pw / 2) * wob, y: waterY + Math.sin(a) * depthPx * wob });
     }
-    pools.push({ id: `pool:${seed}:${i}`, polygon: pts, waterY, alpha, slab, unevenness });
+    // The slab top the pool lies in, over the pool's span: water (and any
+    // reflection in it) can never show outside the rock face holding it.
+    const back = [], front = [];
+    for (let c = 0; c < cols; c++) {
+      const col = layout[c];
+      if (col.x < xL - COLUMN_PX || col.x > xR + COLUMN_PX) continue;
+      const row = col.rows[slab * 2];
+      back.push({ x: col.x, y: row.y0 });
+      front.push({ x: col.x, y: row.y1 });
+    }
+    const surfacePolygon = back.concat(front.reverse());
+    // The level lens must lie wholly on the face holding it.
+    if (!pts.every((q) => insidePolygon(surfacePolygon, q.x, q.y))) continue;
+    // How far the water lies below the contact line in elevation: the
+    // riser steps between them (a reflection mirrors about the water).
+    const dropPx = mid.drop;
+    pools.push({ id: `pool:${seed}:${i}`, polygon: pts, surfacePolygon, waterY, dropPx, alpha, slab, unevenness });
   }
   return {
     positions: Float32Array.from(pos), normals: Float32Array.from(nor), surfaces: Float32Array.from(srf),
     uv: Float32Array.from(uv), indices: Uint32Array.from(idx),
-    pools, wetMasks: pools.map((p) => ({ id: p.id, polygon: p.polygon, alpha: p.alpha })),
+    pools, wetMasks: pools.map((p) => ({ id: p.id, polygon: p.polygon, surfacePolygon: p.surfacePolygon, dropPx: p.dropPx, alpha: p.alpha })),
     contactY: (x) => supportAt(bars, x),
     vertexCount: v,
   };

@@ -125,6 +125,62 @@ export async function captureFrame(page, timeMs, { hook = null } = {}) {
   }, { timeMs, hook });
 }
 
+/**
+ * Task 12 evidence: find a frame where a performer stands over a pool, then
+ * render that same heard time four times -- reflections off, on, on, off.
+ * Re-rendering one time is a paused frame. Pixel differences are classified
+ * as inside a pool (the reflection), inside a captured body's rectangle
+ * (single-draw composite vs direct draw) or elsewhere (must be ~none).
+ */
+export async function reflectionEvidence(page, { fromMs, toMs, stepMs = 1000 }) {
+  return page.evaluate(async ({ fromMs: a, toMs: b, stepMs: st }) => {
+    const smw = window.__SMW;
+    const r = smw.renderer.canvasRenderer || smw.renderer;
+    const stage = document.querySelector('#stage');
+    const grab = () => {
+      const c = document.createElement('canvas'); c.width = stage.width; c.height = stage.height;
+      const x = c.getContext('2d'); x.drawImage(stage, 0, 0);
+      return { data: x.getImageData(0, 0, c.width, c.height).data, png: c.toDataURL('image/png').split(',')[1] };
+    };
+    let found = null;
+    for (let t = a; t <= b; t += st) {
+      r.reflectionStats = null;
+      smw.renderExportFrame(t);
+      const s = r.reflectionStats;
+      if (s && s.frameId === smw.rangeState.frameId && s.layers.length) { found = { t, stats: s }; break; }
+    }
+    if (!found) return { found: false };
+    const t = found.t;
+    r.reflectionsEnabled = false; smw.renderExportFrame(t); const off1 = grab();
+    r.reflectionsEnabled = true; smw.renderExportFrame(t); const on1 = grab(); const stats = r.reflectionStats;
+    smw.renderExportFrame(t); const on2 = grab();
+    r.reflectionsEnabled = false; smw.renderExportFrame(t); const off2 = grab();
+    r.reflectionsEnabled = true;
+    const W = stage.width, H = stage.height;
+    const [ma, , , md, me, mf] = stats.transform;
+    const polys = stats.pools.map((p) => p.polygon.map((q) => ({ x: ma * q.x + me, y: md * q.y + mf })));
+    const inside = (poly, x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const p = poly[i], q = poly[j]; if ((p.y > y) !== (q.y > y) && x < ((q.x - p.x) * (y - p.y)) / (q.y - p.y) + p.x) c = !c; } return c; };
+    const inBody = (x, y) => stats.layers.some((l) => x >= l.device.x && x < l.device.x + l.device.w && y >= l.device.y && y < l.device.y + l.device.h);
+    const diff = (A, B, thr = 6) => {
+      const out = { pool: 0, body: 0, elsewhere: 0, maxElsewhere: 0 };
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        const d = Math.max(Math.abs(A[i] - B[i]), Math.abs(A[i + 1] - B[i + 1]), Math.abs(A[i + 2] - B[i + 2]));
+        if (d <= thr) continue;
+        if (polys.some((p) => inside(p, x + 0.5, y + 0.5))) out.pool++;
+        else if (inBody(x, y)) out.body++;
+        else { out.elsewhere++; out.maxElsewhere = Math.max(out.maxElsewhere, d); }
+      }
+      return out;
+    };
+    return {
+      found: true, t, stats,
+      reflection: diff(off1.data, on1.data), paused: diff(on1.data, on2.data), noise: diff(off1.data, off2.data),
+      pngOn: on1.png, pngOff: off1.png,
+    };
+  }, { fromMs, toMs, stepMs });
+}
+
 async function writePng(dir, name, b64) {
   const file = path.join(dir, name);
   await fs.writeFile(file, Buffer.from(b64, 'base64'));
@@ -140,6 +196,25 @@ async function suitePilot(ctx) {
   assert.equal(v2.state.runtime, 'ready', `v2 runtime not ready: ${JSON.stringify(v2.state)}`);
   assert.ok(v2.state.scene?.prepared?.includes(view), `pilot view not prepared: ${JSON.stringify(v2.state.failures)}`);
   for (const t of [6000, 30000, 60000, 90000]) {
+    if (t === 60000) {
+      // Task 12: a performer over a pool, between the 30 s and 59 s frames.
+      const refl = await reflectionEvidence(v2.page, { fromMs: 31000, toMs: 58000 });
+      if (refl.found) {
+        report.pilot.reflection = { t: refl.t, layers: refl.stats.layers, pools: refl.stats.pools.length,
+          reflection: refl.reflection, paused: refl.paused, noise: refl.noise,
+          pngOn: path.relative(root, await writePng(out, `pilot-v2-${view}-${refl.t}-reflection-on.png`, refl.pngOn)),
+          pngOff: path.relative(root, await writePng(out, `pilot-v2-${view}-${refl.t}-reflection-off.png`, refl.pngOff)) };
+        console.log(`reflection ${refl.t}ms: ${JSON.stringify({ reflection: refl.reflection, paused: refl.paused, noise: refl.noise })}`);
+        assert.ok(refl.reflection.pool > 50, 'reflection pixels inside the pools');
+        // Outside pools and body rectangles only render noise may differ
+        // (measured by re-rendering with reflections off twice).
+        assert.ok(refl.reflection.elsewhere <= refl.noise.elsewhere + 20, 'no reflection outside the wet masks');
+        assert.equal(refl.paused.pool + refl.paused.elsewhere, 0, 'a paused frame redraws the same reflection');
+      } else {
+        report.pilot.reflection = { found: false };
+        console.log('reflection: no performer over a pool between 31 s and 58 s');
+      }
+    }
     if (t === 60000) {
       // Pass-disabled diagnostic at 60s, before the 60s frame: the far
       // partition's pixels must be absent. The export clock only runs forward.

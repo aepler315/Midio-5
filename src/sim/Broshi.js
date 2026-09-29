@@ -908,6 +908,16 @@ export class Broshi {
     return BODY_WIDTH_LOCAL * DRAW_SCALE * this.squashX;
   }
 
+  /** Conservative logical box around everything draw() paints this frame
+   *  (body, rho ring, wings, glow), for single-draw capture. Null while he
+   *  is underground (draw() paints nothing then). */
+  drawBounds() {
+    if (this.burrow.depth > 0.02) return null;
+    const x = this.renderX, y = this.groundY - this.hopY;
+    const half = 0.5 * this.shadowWidthPx + 95;
+    return { x: x - half, y: y - 175, w: 2 * half, h: 240 };
+  }
+
   draw(ctx, pose, lights = null, focusMul = 1) {
     if (this.burrow.depth > 0.02) return; // he's underground; Renderer draws the Burrow band instead
     // Midasus style: a pale pitch-class spectral hue (eased in update), not

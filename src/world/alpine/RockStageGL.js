@@ -112,12 +112,14 @@ const WATER_FRAG = /* glsl */`
     vec3 sky = mix(uSkyHorizon, uSkyZenith, 0.35 + 0.1 * ripple);
     // The sky it mirrors is seen at a grazing angle and darkened by the
     // shallow bed; kept below the lit rock so pools read as water, not glare.
-    vec3 c = mix(pWaterDeep, sky * 0.45, 0.6);
+    vec3 c = mix(pWaterDeep, sky * 0.1, 0.5);
     for (int i = 0; i < 3; i++) {
       vec4 e = uEmitters[i];
       if (e.w <= 0.0) continue;
       float fall = max(0.0, 1.0 - length(vXY - e.xy) / (e.z * 1.4));
-      c += uEmitterColor[i] * e.w * fall * fall * 0.6;
+      // A glow nearby tints the water; kept weak so the pool stays dark
+      // enough for the reflection drawn into it to read.
+      c += uEmitterColor[i] * e.w * fall * fall * 0.18;
     }
     vec3 color = tonemap(c * uExposure);
     outColor = vec4(pow(color, vec3(1.0 / 2.2)) * uAlpha, uAlpha);
