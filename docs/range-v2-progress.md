@@ -9,8 +9,8 @@ Reference image: `docs/evidence/range-v2/reference.webp` (1806×871, documentati
 | --- | --- |
 | Branch | `claude/amazing-brown-tbiycu` |
 | Base | `b8a3d72b344792d149906449f1cd86d68df8cc2b` (= audited SHA; `origin/main` rechecked 2026-09-29) |
-| Last completed task | 14 (transitions, framing, arrival fade, far-crest visibility) |
-| Next action | Task 15 — curated views for the other 10 biomes (each must pass the far-crest gate before `--approve`) |
+| Last completed task | 15 (curated catalog: one approved view per biome) |
+| Next action | Task 16 — resource, lifecycle and performance proof |
 
 ## Decisions recorded with the user (2026-09-29)
 
@@ -65,7 +65,7 @@ The four confirmed defects in plan §1 are re-verified in Task 1 against source 
 | (fix) approval identity | done | Review of PR #334: an approval now also covers the view's `materialRules` (key-sorted hash), hashes the published `.terrain.json` on disk rather than the build record's copy, and requires at least one existing evidence file. Ross Lake re-approved with the same evidence (catalog v3) |
 | (fix) travel review round 2 | done | PR #334 second Codex round: the two sides blend in a reserved composition buffer (`range:travel-scratch`) with B added (`lighter`) so the feather stays opaque; a view that joins a travel late fades in over 1.2 s; the frame's resources are pinned before side B / the buffer are reserved; the app passes export mode to the presentation (the simulation never had it); travel exposure is checked at matching stations (both sides share the song's progress) and `--approve` checks every pair with the views already approved |
 | (fix) travel review round 3 | done | PR #334 third Codex round: a late-joining view still fading when the travel ends keeps the A/B handoff (seam fully across) until its fade completes, and only a view some travel frame drew without counts as late; legacy-only passes (far shore, mirage, sea, sea life, horizon EQ) keep drawing under an arriving scene; exposure is measured per runtime partition from each shipped tile's own `band` (nearest-band masks), a travel composes the far/mid/near passes through their own seams (L2/L4/L5), and `--approve` also requires a far crest spanning half the frame at every station |
-| 15 catalog | in progress | One candidate corridor per remaining biome, each on a range the app already classifies into that biome (see coverage table below) |
+| 15 catalog | done | 11 approved views, one per biome (catalog v15); each passed the far-crest gate alone and in travel against every other view (0 failing pairs); habitat/shoreline fixes from the colour review; see the approvals table below |
 
 ## Task 15 coverage (candidates)
 
@@ -106,12 +106,34 @@ Second review pass (colour in-app frames of all ten candidates):
 
 First placements that failed, and why: the Black Mountains from Craggy Pinnacle hid the far crest at 18 of 21 stations (nearer ridges; now seen broadside from the Catawba side); Muncho Lake's first eye sat in the mountains east of the lake; the Tetons from the east shore were too far for the range to read (moved over the lake).
 
+## Task 15 approvals (catalog v15, 2026-09-29)
+
+Each view: 21-station neutral/silhouette review, 61-frame motion review, in-app frame at 10 s (`docs/evidence/range-v2/<id>-stations.jpg`, `<id>-inapp-10s.jpg`), and the far-crest gate at its worst station (single) and in travel against every other approved view. Hashes are the approval record's (first 12 hex).
+
+| Biome | View | Terrain | Material | Worst single | Notes |
+| --- | --- | --- | --- | --- | --- |
+| RAINFOREST | `nc-ross-lake-north` | 32ee5822fccb | 8f5ff6bb64b0 | 0.64 | re-approved after the shoreline re-bake (1 of 355 tiles); keeps its pilot frames |
+| CONIFER | `teton-jackson-lake` | bd3b57442d20 | 6afff55ebe77 | 1.00 | re-approved after the shoreline re-bake (18 of 251 tiles, Jackson Lake) |
+| ICEFIELD | `denali-wonder-lake` | 351aad9728f8 | ac0da317cbbc | 1.00 | unchanged approval |
+| TUNDRA | `tombstone-north-klondike` | 5cbcec0d5132 | 76deaaa34707 | 0.81 | the range sits low in the frame; summer tundra; faint close-range pattern on the valley floor |
+| TAIGA | `muncho-lake-south` | d25af9f0f975 | c44b2272c561 | 0.91 | a near hillside fills the right third; the lake and forest read |
+| PINE_OAK | `izta-popo-west` | 435e0a01cab2 | 8959b57b8915 | 1.00 | `water: false`: the farmland plain was marked as two lakes |
+| BROADLEAF | `black-mountains-catawba` | 0f5d8ce42c05 | 3e8ff42e5065 | 1.00 | softest composition of the set: low, rounded, fully forested ridges under night air |
+| CHAPARRAL | `san-gabriel-baldy` | 56871dd030fa | f3357cb770f8 | 0.95 | |
+| STEPPE | `white-mountains-owens` | a83a16041b11 | ada04aa0d676 | 1.00 | open Owens Valley floor below the pinyon belt |
+| CANYON | `la-sal-castle-valley` | 930f04303855 | ca6259b1e0cd | 1.00 | scattered small trees on Castle Valley |
+| DESERT | `panamint-dantes-view` | b7d3479f3160 | 2beecf1f1647 | 1.00 | pale by nature (salt pan, 25 km to the crest); `water: false` |
+
+The plan aims for 12-18 views; 11 (one per biome) is delivered. Further views per biome are an open choice for the user.
+
 ## Asset budget (60 MB ceiling)
 
 | Item | Size |
 | --- | --- |
-| Ross Lake terrain package | 1.6 MB payload + 0.2 MB manifest |
-| Shared data textures (10 x 512^2 lossless WebP) | ~7 MB |
+| Terrain packages (11 views) | 14.9 MiB payload (0.8-2.1 MiB each) + manifests: 17 MB on disk |
+| Shared data textures (10 x 512^2 lossless WebP) | 7.0 MB |
+| Material packs (11 manifests) | 92 KB |
+| **Total `src/assets/range/v2/`** | **24 MB** |
 | Three.js subset bundle | 0.54 MB |
 
 ## Decisions taken without asking (assumptions)
