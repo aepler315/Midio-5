@@ -129,6 +129,36 @@ export function pointVisible(ob, p, occ) {
   return z <= surfaceDepth * (1 + occ.depthSlack) + occ.slackM;
 }
 
+/**
+ * Remove spikes: a valid sample (or a cluster up to three samples across)
+ * higher than every valid sample on the surrounding ring at distance r by
+ * more than `ratio * r` cell widths (steeper than ~79 degrees for the
+ * default 5) cannot be real terrain at this spacing, and is lowered to that
+ * ring's highest sample. Edge samples use the in-bounds part of the ring.
+ * Returns the number of samples changed.
+ */
+export function despikeGrid(grid, { ratio = 5 } = {}) {
+  const { width: w, height: hgt, heightsM: h, valid, cellSizeM: cell } = grid;
+  let changed = 0;
+  for (const r of [1, 2, 1]) {
+    const limit = ratio * r * cell;
+    for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!valid[i]) continue;
+      let top = -Infinity;
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= w || yy >= hgt) continue;
+        const j = yy * w + xx;
+        if (valid[j] && h[j] > top) top = h[j];
+      }
+      if (Number.isFinite(top) && h[i] - top > limit) { h[i] = top; changed++; }
+    }
+  }
+  return changed;
+}
+
 /** Legacy parity (RidgeComposition MIN_EXPOSED): at every station the far
  *  range's crest must stay at least this exposed. */
 export const MIN_FAR_EXPOSED = 0.55;
@@ -437,7 +467,9 @@ export async function bakeTerrain(grid, view, options = {}) {
   // Hydrology on the whole grid (tile-independent, so seams agree).
   const filled = fillDepressions(h, valid, w, hgt);
   const acc = flowAccumulation(filled, valid, w, hgt);
-  const water = waterMask(h, valid, w, hgt, options.water);
+  // A view may declare that its flats are not water (a salt pan or playa
+  // reads as perfectly flat too): then no sample is marked water.
+  const water = options.water === false ? new Uint8Array(w * hgt) : waterMask(h, valid, w, hgt, options.water);
   const flowByte = (i) => (water[i] ? WATER_FLOW : Math.min(254, Math.round(Math.log2(Math.max(1, acc[i])) * 16)));
 
   const tilesX = Math.ceil((w - 1) / cells), tilesZ = Math.ceil((hgt - 1) / cells);
@@ -611,7 +643,10 @@ export async function bakeTerrain(grid, view, options = {}) {
       achievedErrorPx: Object.fromEntries(Object.entries(achieved).map(([k, v]) => [k, Math.round(v * 1000) / 1000])),
       triangulation: 'quads split along the (0,0)-(1,1) diagonal; finer edges snap to the coarser neighbour',
     },
-    hydrology: { flow: 'log2(D8 accumulation over depression-filled heights) * 16, capped 254', water: 'hydro-flattened components (3x3 range <= 0.35 m, >= 60 cells) = 255' },
+    hydrology: {
+      flow: 'log2(D8 accumulation over depression-filled heights) * 16, capped 254',
+      water: options.water === false ? 'none: the view declares its flats are not water' : 'hydro-flattened components (3x3 range <= 0.35 m, >= 60 cells) = 255',
+    },
     payload: {
       url: options.dataUrl || `${view.id}.terrain.bin.gz`, encoding: 'gzip',
       byteLength: payload.byteLength, sha256: sha256(payload),

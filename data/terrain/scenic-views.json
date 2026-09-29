@@ -350,16 +350,16 @@
             -110.79428,
             43.79304
           ],
-          "heightM": 2700
+          "heightM": 2371
         },
         "targetEnd": {
           "lonLat": [
             -110.80572,
             43.80696
           ],
-          "heightM": 2700
+          "heightM": 2371
         },
-        "fovYDeg": 35
+        "fovYDeg": 29.9
       },
       "landmarks": [
         {
@@ -421,16 +421,16 @@
             -150.98233,
             63.06879
           ],
-          "heightM": 3200
+          "heightM": 2427
         },
         "targetEnd": {
           "lonLat": [
             -151.01767,
             63.07121
           ],
-          "heightM": 3200
+          "heightM": 2427
         },
-        "fovYDeg": 35
+        "fovYDeg": 17.9
       },
       "landmarks": [
         {
@@ -475,43 +475,43 @@
       "rail": {
         "eyeStart": {
           "lonLat": [
-            -138.37444,
-            64.49298
+            -138.37748,
+            64.49202
           ],
-          "aboveGroundM": 450
+          "aboveGroundM": 800
         },
         "eyeEnd": {
           "lonLat": [
-            -138.39956,
-            64.50502
+            -138.39652,
+            64.50598
           ],
-          "aboveGroundM": 450
+          "aboveGroundM": 800
         },
         "targetStart": {
           "lonLat": [
-            -138.52446,
-            64.43498
+            -138.6305,
+            64.42802
           ],
-          "heightM": 1700
+          "heightM": 1300
         },
         "targetEnd": {
           "lonLat": [
-            -138.54954,
-            64.44702
+            -138.6495,
+            64.44198
           ],
-          "heightM": 1700
+          "heightM": 1300
         },
-        "fovYDeg": 35
+        "fovYDeg": 32
       },
       "landmarks": [
         {
           "name": "Tombstone Mountain",
           "lonLat": [
-            -138.5555,
-            64.4705
+            -138.6764,
+            64.4386
           ],
           "elevationM": 2192,
-          "note": "located as the DEM maximum near 64 28 N 138 33 W; the Terrain Tiles surface reads 2328 m there"
+          "note": "DEM maximum within 3 km of 64 26 N 138 38 W (approximate published position); a single-sample 465 m spike near 138.556 W was removed"
         }
       ],
       "title": "Tombstone Range",
@@ -522,7 +522,7 @@
       "regionId": "tower-of-london-range",
       "biome": "TAIGA",
       "status": "candidate",
-      "notes": "Over the north end of Muncho Lake looking south down the lake between the Terminal and Sentinel ranges.",
+      "notes": "Over the middle of Muncho Lake looking south down the water between the Terminal and Sentinel ranges.",
       "dem": {
         "source": "terrarium",
         "zoom": 12,
@@ -539,33 +539,33 @@
       "rail": {
         "eyeStart": {
           "lonLat": [
-            -125.79329,
-            59.07654
+            -125.79443,
+            59.01784
           ],
-          "aboveGroundM": 350
+          "aboveGroundM": 600
         },
         "eyeEnd": {
           "lonLat": [
-            -125.82471,
-            59.07546
+            -125.80837,
+            59.01736
           ],
-          "aboveGroundM": 350
+          "aboveGroundM": 600
         },
         "targetStart": {
           "lonLat": [
-            -125.77435,
-            58.93054
+            -125.78305,
+            58.93024
           ],
-          "heightM": 1000
+          "heightM": 729
         },
         "targetEnd": {
           "lonLat": [
-            -125.80565,
-            58.92946
+            -125.79695,
+            58.92976
           ],
-          "heightM": 1000
+          "heightM": 729
         },
-        "fovYDeg": 35
+        "fovYDeg": 31.4
       },
       "landmarks": [],
       "title": "Muncho Lake",
@@ -610,16 +610,16 @@
             -98.62888,
             19.10802
           ],
-          "heightM": 3900
+          "heightM": 2407
         },
         "targetEnd": {
           "lonLat": [
             -98.63112,
             19.09198
           ],
-          "heightM": 3900
+          "heightM": 2407
         },
-        "fovYDeg": 35
+        "fovYDeg": 30
       },
       "landmarks": [
         {
@@ -680,16 +680,16 @@
             -82.27531,
             35.78137
           ],
-          "heightM": 1500
+          "heightM": 1193
         },
         "targetEnd": {
           "lonLat": [
             -82.26869,
             35.79663
           ],
-          "heightM": 1500
+          "heightM": 1193
         },
-        "fovYDeg": 35
+        "fovYDeg": 18.2
       },
       "landmarks": [
         {
@@ -709,7 +709,7 @@
       "regionId": "san-gabriel-mountains",
       "biome": "CHAPARRAL",
       "status": "candidate",
-      "notes": "From above the Pomona Valley looking north at the chaparral front of the San Gabriels rising to Mount San Antonio.",
+      "notes": "From above the San Gabriel foothills looking north into the chaparral front ranges rising to Mount San Antonio.",
       "dem": {
         "source": "3dep13",
         "centerLonLat": [
@@ -725,33 +725,33 @@
       "rail": {
         "eyeStart": {
           "lonLat": [
-            -117.7295,
-            34.07691
+            -117.70551,
+            34.15891
           ],
-          "aboveGroundM": 700
+          "aboveGroundM": 900
         },
         "eyeEnd": {
           "lonLat": [
-            -117.7105,
-            34.07309
+            -117.68649,
+            34.15509
           ],
-          "aboveGroundM": 700
+          "aboveGroundM": 900
         },
         "targetStart": {
           "lonLat": [
             -117.66952,
             34.28191
           ],
-          "heightM": 1800
+          "heightM": 1492
         },
         "targetEnd": {
           "lonLat": [
             -117.65048,
             34.27809
           ],
-          "heightM": 1800
+          "heightM": 1492
         },
-        "fovYDeg": 35
+        "fovYDeg": 28.1
       },
       "landmarks": [
         {
@@ -812,16 +812,16 @@
             -118.25103,
             37.56653
           ],
-          "heightM": 2600
+          "heightM": 2537
         },
         "targetEnd": {
           "lonLat": [
             -118.23897,
             37.55347
           ],
-          "heightM": 2600
+          "heightM": 2537
         },
-        "fovYDeg": 35
+        "fovYDeg": 24
       },
       "landmarks": [
         {
@@ -874,16 +874,16 @@
             -109.23413,
             38.54005
           ],
-          "heightM": 2600
+          "heightM": 2471
         },
         "targetEnd": {
           "lonLat": [
             -109.24787,
             38.52795
           ],
-          "heightM": 2600
+          "heightM": 2471
         },
-        "fovYDeg": 35
+        "fovYDeg": 21.1
       },
       "landmarks": [
         {
@@ -930,30 +930,30 @@
             -116.72453,
             36.21199
           ],
-          "aboveGroundM": 80
+          "aboveGroundM": 250
         },
         "eyeEnd": {
           "lonLat": [
             -116.72747,
             36.22801
           ],
-          "aboveGroundM": 80
+          "aboveGroundM": 250
         },
         "targetStart": {
           "lonLat": [
             -117.05853,
             36.17199
           ],
-          "heightM": 1400
+          "heightM": 303
         },
         "targetEnd": {
           "lonLat": [
             -117.06147,
             36.18801
           ],
-          "heightM": 1400
+          "heightM": 303
         },
-        "fovYDeg": 35
+        "fovYDeg": 26
       },
       "landmarks": [
         {
@@ -973,7 +973,8 @@
         }
       ],
       "title": "Panamint Range",
-      "place": "Death Valley, California"
+      "place": "Death Valley, California",
+      "water": false
     }
   ]
 }

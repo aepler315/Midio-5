@@ -16,7 +16,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeDem, readDemGrid } from './lib/terrain-source.mjs';
-import { bakeTerrain, viewSkyline } from './lib/terrain-bake.mjs';
+import { bakeTerrain, viewSkyline, despikeGrid } from './lib/terrain-bake.mjs';
 import { skylineFeatures, characterFromFeatures, archetypeOf } from '../src/world/terrain/RangeCharacter.js';
 import { cameraPoseAt } from '../src/world/terrain/SceneTravel.js';
 import { cameraRailErrors } from '../src/world/terrain/SceneTravel.js';
@@ -87,6 +87,11 @@ export async function buildView(view, { outDir, cell = null, log = console.log }
       cellM: dem.cellM, zoom: dem.zoom, cache: CACHE, points, fill: dem.fill, fillZoom: dem.fillZoom,
     });
   }
+  // Single-sample spikes in the elevation source (seen in Terrain Tiles)
+  // would draw as needles; they are lowered to their neighbours, and the
+  // count is recorded.
+  const despiked = despikeGrid(grid);
+  if (despiked) log(`${view.id}: despiked ${despiked} sample(s)`);
   const camera = localCamera(view, grid.points);
   const landmarks = (view.landmarks || []).map((l) => {
     const p = grid.points[`landmark:${l.name}`];
@@ -97,7 +102,9 @@ export async function buildView(view, { outDir, cell = null, log = console.log }
     };
   });
   const runtimeView = { ...view, camera };
-  const baked = await bakeTerrain(grid, runtimeView, { landmarks, dataUrl: `${view.id}.terrain.bin.gz` });
+  const baked = await bakeTerrain(grid, runtimeView, {
+    landmarks, dataUrl: `${view.id}.terrain.bin.gz`, ...(view.water === false ? { water: false } : {}),
+  });
   await fs.mkdir(outDir, { recursive: true });
   const manifestText = JSON.stringify(baked.manifest) + '\n';
   await fs.writeFile(path.join(outDir, `${view.id}.terrain.json`), manifestText);
@@ -124,6 +131,7 @@ export async function buildView(view, { outDir, cell = null, log = console.log }
     skylineFeatures: features, manifestSha256: sha(manifestText), payloadSha256: baked.manifest.payload.sha256,
     payloadBytes: baked.payload.byteLength, stats: baked.stats, landmarks,
     achievedErrorPx: baked.manifest.lod.achievedErrorPx,
+    despikedSamples: despiked,
   };
   log(`${view.id}: ${baked.stats.tiles} tiles, ${(baked.payload.byteLength / 1048576).toFixed(2)} MiB payload, `
     + `desktop ${baked.stats.desktop.triangles} tris, mobile ${baked.stats.mobile.triangles} tris, `
