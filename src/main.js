@@ -415,9 +415,9 @@ const rendererMode = resolveRendererMode(
   typeof location !== 'undefined' ? location.search : '',
 );
 paramBus.rendererMode = rendererMode;
-// Range v2 (real-terrain scenic views): ?rangeRenderer=v2 opts in, legacy is
-// the default during migration; ?rangeView=<id> forces one catalog view for
-// diagnostics. One presentation (and one GPU context) per page.
+// Range v2 (real-terrain scenic views) is the default; ?rangeRenderer=legacy
+// opts out, and any v2 failure falls back to legacy per frame on its own.
+// ?rangeView=<id> forces one catalog view for diagnostics. One presentation (and one GPU context) per page.
 const rangeMode = resolveRangeMode();
 const rangePresentation = rangeMode.mode === 'v2'
   ? new RangePresentation({ mode: 'v2', forcedViewId: rangeMode.forcedViewId, diag: rangeMode.diag, residency: sharedResidency(), budget: residencyBudgetFor().name })

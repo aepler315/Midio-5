@@ -4,7 +4,8 @@
 // partition into the authoritative main canvas at its pass boundary. It
 // never owns simulation.
 //
-// Modes: ?rangeRenderer=v2 opts in (legacy stays the default until rollout);
+// Modes: v2 is the default; ?rangeRenderer=legacy opts out (unknown values
+// take the default);
 // ?rangeView=<id> forces one catalog view for every biome, candidates
 // included, and marks the frame forcedCandidate. Any failure -- no WebGL2,
 // context loss, 404, bad manifest, decode error, budget denial, stale
@@ -17,19 +18,20 @@ import SCENE_CATALOG from '../terrain/sceneCatalogData.js';
 import { noteViewShown } from '../terrain/RangeHistory.js';
 
 export const RANGE_RENDERER_MODES = Object.freeze(['legacy', 'v2']);
+export const RANGE_DEFAULT_MODE = 'v2';
 const ASSET_BASE = new URL('../../assets/range/v2/', import.meta.url).href;
 const RUNTIME_URL = new URL('../../vendor/range/three-range.module.js', import.meta.url).href;
 
-/** ?rangeRenderer=v2|legacy and ?rangeView=<id>. Default legacy. */
+/** ?rangeRenderer=v2|legacy and ?rangeView=<id>. Default v2. */
 export function resolveRangeMode(search = (typeof location !== 'undefined' ? location.search : '')) {
   try {
     const q = new URLSearchParams(String(search || '').replace(/^\?/, ''));
-    const raw = (q.get('rangeRenderer') || 'legacy').toLowerCase();
+    const raw = (q.get('rangeRenderer') || RANGE_DEFAULT_MODE).toLowerCase();
     const forcedViewId = q.get('rangeView') || null;
     const diag = q.get('rangeDiag') === 'markers' ? 'markers' : null;
-    return { mode: RANGE_RENDERER_MODES.includes(raw) ? raw : 'legacy', forcedViewId, diag };
+    return { mode: RANGE_RENDERER_MODES.includes(raw) ? raw : RANGE_DEFAULT_MODE, forcedViewId, diag };
   } catch {
-    return { mode: 'legacy', forcedViewId: null, diag: null };
+    return { mode: RANGE_DEFAULT_MODE, forcedViewId: null, diag: null };
   }
 }
 

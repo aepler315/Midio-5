@@ -82,13 +82,15 @@ test('when v2 is not ready the legacy stack draws, with the ridge in its origina
   m.dispose();
 });
 
-test('mode resolution: legacy by default, explicit v2 and view/diagnostic flags', () => {
-  assert.deepEqual(resolveRangeMode(''), { mode: 'legacy', forcedViewId: null, diag: null });
+test('mode resolution: v2 by default, explicit legacy opt-out and view/diagnostic flags', () => {
+  assert.deepEqual(resolveRangeMode(''), { mode: 'v2', forcedViewId: null, diag: null });
+  assert.deepEqual(resolveRangeMode('?rangeRenderer=legacy'), { mode: 'legacy', forcedViewId: null, diag: null });
+  assert.equal(resolveRangeMode('?rangeRenderer=LEGACY').mode, 'legacy');
   assert.deepEqual(resolveRangeMode('?rangeRenderer=v2'), { mode: 'v2', forcedViewId: null, diag: null });
   assert.deepEqual(resolveRangeMode('?rangeRenderer=V2&rangeView=nc-ross-lake-north&rangeDiag=markers'),
     { mode: 'v2', forcedViewId: 'nc-ross-lake-north', diag: 'markers' });
-  assert.equal(resolveRangeMode('?rangeRenderer=webgl').mode, 'legacy', 'unknown values never enable v2');
-  assert.equal(resolveRangeMode('?renderer=webgl').mode, 'legacy', 'the old overlay flag does not imply terrain');
+  assert.equal(resolveRangeMode('?rangeRenderer=webgl').mode, 'v2', 'unknown values take the default');
+  assert.equal(resolveRangeMode('?renderer=webgl').mode, 'v2', 'the old overlay flag does not change the Range renderer');
 });
 
 const catalog = { catalogVersion: 1, views: [{

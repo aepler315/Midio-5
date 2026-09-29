@@ -14,7 +14,7 @@ Run each on the real device, with the tab in front, the screen awake and nothing
 
 ## How
 
-1. **Open the page** with the v2 renderer: `https://supermaudio.com/?rangeRenderer=v2`. Add `&fpsHud=1` to watch the frame rate on screen.
+1. **Open the page:** `https://supermaudio.com/?fpsHud=1` (v2 is the default renderer; `fpsHud=1` shows the frame rate on screen). For a legacy comparison run, add `&rangeRenderer=legacy`.
 2. **Load a song of at least 4 minutes,** so it passes through several biomes and view-to-view travels. Choose the Range world when the picker asks.
 3. **Attach DevTools to the page:**
    - Android: connect the phone by USB with USB debugging on, open `chrome://inspect` on a desktop Chrome, and choose **inspect** under the tab.

@@ -1,5 +1,6 @@
 // Range v2 device run (plan Task 16). Paste into the DevTools console of a
-// page playing a song with ?rangeRenderer=v2 (see docs/range-v2-device-runs.md).
+// page playing a song in the Range world (v2 is the default renderer; see
+// docs/range-v2-device-runs.md).
 // It watches live playback for MINUTES and prints one JSON report: frame
 // intervals (median/p95/p99, >100 ms stalls) for the cold start, steady
 // playback and view-to-view travels, the quality levels the governor chose,
