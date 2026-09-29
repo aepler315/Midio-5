@@ -662,7 +662,8 @@
         }
       ],
       "title": "Iztaccíhuatl and Popocatépetl",
-      "place": "Trans-Mexican Volcanic Belt, México"
+      "place": "Trans-Mexican Volcanic Belt, México",
+      "water": false
     },
     {
       "id": "black-mountains-catawba",

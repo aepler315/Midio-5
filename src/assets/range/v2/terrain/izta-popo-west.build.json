@@ -121,6 +121,7 @@
   ],
   "title": "Iztaccíhuatl and Popocatépetl",
   "place": "Trans-Mexican Volcanic Belt, México",
+  "water": false,
   "camera": {
    "eyeStartM": [
     -15662.9,
@@ -181,9 +182,9 @@
    "lengthKm": 51.82092100809286
   }
  ],
- "manifestSha256": "0a4d2c66e6d5cdde0f3f5fab5ea9b451d49d6984766b97168da01ff80d1fd481",
- "payloadSha256": "573a61dbf671f439f1f656722c0d182a6c4fcb23db6f424b85b6c4aace3d0e90",
- "payloadBytes": 995433,
+ "manifestSha256": "435e0a01cab2af34ca66a16d7bd63cf513ab3d4b071a9ff941709ea63ad3478a",
+ "payloadSha256": "02233f778ef622fef7601d005c7dcd96dcbf45ecf3ce40cd427a6aff7f07a202",
+ "payloadBytes": 995553,
  "stats": {
   "tiles": 162,
   "desktop": {
@@ -193,9 +194,9 @@
    "surfaceTextureBytes": 11136133
   },
   "mobile": {
-   "vertices": 305246,
-   "triangles": 587040,
-   "meshBytes": 10707432,
+   "vertices": 304982,
+   "triangles": 586560,
+   "meshBytes": 10698504,
    "surfaceTextureBytes": 11136133
   }
  },

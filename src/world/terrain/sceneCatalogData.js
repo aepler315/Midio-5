@@ -926,7 +926,7 @@ export default {
    "place": "Trans-Mexican Volcanic Belt, México",
    "credit": "Elevation: AWS Terrain Tiles",
    "terrainManifestUrl": "terrain/izta-popo-west.terrain.json",
-   "terrainManifestSha256": "0a4d2c66e6d5cdde0f3f5fab5ea9b451d49d6984766b97168da01ff80d1fd481",
+   "terrainManifestSha256": "435e0a01cab2af34ca66a16d7bd63cf513ab3d4b071a9ff941709ea63ad3478a",
    "materialManifestUrl": "materials/pine-oak.json",
    "materialManifestSha256": "8959b57b89150274c889b241bd4656a0cdfafd28d31f675f4fd4011abaa7a38f",
    "materialRules": {},
@@ -1014,7 +1014,7 @@ export default {
      "4dda0a11f80862e3b765901f3cc88eff55218891d874f01edcafc6732ca48ad5",
      "42bdc77b7846b8cefd54858ab6d6de55f961f9c1bd755d8717b5c125bc028206",
      "05ea6952b8c8b6e91306e1719a9a67e0fc0469bffa7a489b3fa9e5d61f11bfa6",
-     "573a61dbf671f439f1f656722c0d182a6c4fcb23db6f424b85b6c4aace3d0e90"
+     "02233f778ef622fef7601d005c7dcd96dcbf45ecf3ce40cd427a6aff7f07a202"
     ]
    }
   },
