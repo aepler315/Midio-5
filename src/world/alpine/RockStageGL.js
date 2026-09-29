@@ -234,7 +234,9 @@ export class RockStageGL {
     const count = attrs.position[0].length / 3;
     const cap = geometry.userData.capacity || 0;
     const icap = geometry.userData.indexCapacity || 0;
-    if (count > cap || (indices && indices.length > icap)) {
+    // The first upload always allocates: an empty first frame (no pools yet)
+    // is not "within capacity" when nothing has been allocated at all.
+    if (!geometry.getAttribute('position') || count > cap || (indices && indices.length > icap)) {
       geometry.dispose();
       const n = Math.max(64, Math.ceil(count * 1.5)), ni = indices ? Math.max(96, Math.ceil(indices.length * 1.5)) : 0;
       for (const [name, [, size]] of Object.entries(attrs)) {

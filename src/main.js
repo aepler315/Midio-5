@@ -2013,6 +2013,9 @@ function startTimeline(timelineData, extra = {}) {
     rangeRenderer: rangeMode.mode,
     get rangeState() { return rangePresentation ? rangePresentation.snapshot() : { mode: 'legacy', active: false }; },
     rangeReady: (opts) => (rangePresentation ? rangePresentation.whenReady(opts) : Promise.resolve({ mode: 'legacy' })),
+    // Export: after a frame, wait for the scenic views it lacked; true means
+    // the caller should redraw the same heard time (deterministic).
+    rangeSettle: (opts) => (rangePresentation ? rangePresentation.settle(opts) : Promise.resolve(false)),
     get perf() { return perfGovernor || null; },
     // Car mode (KeepAwake.js): live state for debugging on a head unit, plus
     // the one hook a smoke test needs -- backdating the last-input clock, so

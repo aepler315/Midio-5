@@ -179,7 +179,10 @@ function closeEncoder(enc) {
 
 async function pushExportFrame({ timeMs, url, width, height, jpeg }) {
   const t0 = performance.now();
-  const frame = window.__SMW.renderExportFrame(timeMs);
+  let frame = window.__SMW.renderExportFrame(timeMs);
+  // Range v2 prepares each section's view as the song reaches it; a frame
+  // drawn before its view was ready is drawn again once it is.
+  if (await window.__SMW.rangeSettle?.()) frame = window.__SMW.renderExportFrame(timeMs);
   const drawn = performance.now();
   if (frame.width !== width || frame.height !== height) {
     throw new Error(`stage is ${frame.width}×${frame.height}, wanted ${width}×${height}`);

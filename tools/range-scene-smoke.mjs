@@ -122,8 +122,14 @@ export async function captureFrame(page, timeMs, { hook = null } = {}) {
       if (pres) { const orig = pres.drawPartition; pres.drawPartition = function (ctx, pass, stage) { return pass === 'far' ? false : orig.call(this, ctx, pass, stage); }; }
     }
     const t0 = performance.now();
-    const clock = smw.renderExportFrame(t);
-    const drawMs = performance.now() - t0;
+    let clock = smw.renderExportFrame(t);
+    let drawMs = performance.now() - t0;
+    // A view prepared on demand: redraw the same instant once it is ready.
+    if (await smw.rangeSettle?.()) {
+      const t1 = performance.now();
+      clock = smw.renderExportFrame(t);
+      drawMs = performance.now() - t1;
+    }
     const canvas = document.querySelector('#stage');
     return {
       clock, drawMs, png: canvas.toDataURL('image/png').split(',')[1],
