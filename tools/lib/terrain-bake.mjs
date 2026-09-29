@@ -572,3 +572,43 @@ export async function bakeTerrain(grid, view, options = {}) {
   return { manifest, payload, decoded, stats: { tiles: tiles.length, ...manifest.estimatedBytes } };
 }
 
+
+// ---------------------------------------------------------------------------
+// Character: the view's own skyline, measured from the DEM through its
+// camera, scored on the same four axes as songs and ranges.
+
+/**
+ * The skyline seen from `pose`: for `columns` bearings across the core
+ * horizontal field of view, march each ray over the grid and keep the
+ * terrain point with the highest elevation angle. Returns the elevations of
+ * those points (metres), their distances, and the mean horizontal spacing
+ * between neighbouring skyline points.
+ */
+export function viewSkyline(grid, pose, { aspect = 16 / 9, columns = 160, stepM = null, maxDistM = 60000 } = {}) {
+  const { width: w, height: hgt, cellSizeM: cell, originM, heightsM: h, valid } = grid;
+  const step = stepM || cell;
+  const f = norm3(sub3(pose.targetM, pose.eyeM));
+  const yaw = Math.atan2(f[0], -f[2]); // bearing from north, clockwise
+  const hfov = 2 * Math.atan(Math.tan((pose.fovYDeg * Math.PI) / 360) * aspect);
+  const elev = [], dist = [], pts = [];
+  for (let c = 0; c < columns; c++) {
+    const b = yaw - hfov / 2 + (hfov * (c + 0.5)) / columns;
+    const dx = Math.sin(b), dz = -Math.cos(b);
+    let best = -Infinity, bestH = NaN, bestD = NaN, bestP = null;
+    for (let d = step; d <= maxDistM; d += step) {
+      const x = pose.eyeM[0] + dx * d, z = pose.eyeM[2] + dz * d;
+      const gx = Math.round((x - originM[0]) / cell), gz = Math.round((z - originM[1]) / cell);
+      if (gx < 0 || gz < 0 || gx >= w || gz >= hgt) break;
+      const i = gz * w + gx;
+      if (!valid[i]) continue;
+      const a = (h[i] - pose.eyeM[1]) / d;
+      if (a > best) { best = a; bestH = h[i]; bestD = d; bestP = [x, z]; }
+    }
+    elev.push(bestH); dist.push(bestD); pts.push(bestP);
+  }
+  let gap = 0, n = 0;
+  for (let c = 1; c < columns; c++) {
+    if (pts[c] && pts[c - 1]) { gap += Math.hypot(pts[c][0] - pts[c - 1][0], pts[c][1] - pts[c - 1][1]); n++; }
+  }
+  return { elevationsM: elev, distancesM: dist, spacingM: n ? gap / n : NaN };
+}
