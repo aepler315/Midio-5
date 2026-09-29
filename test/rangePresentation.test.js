@@ -350,3 +350,25 @@ test('export: settle waits for a view still being built even after earlier refus
   assert.equal(await p.settle({ attempts: 3 }), true);
   assert.ok(scene.isReady('v0'), 'the attempt that got room was waited for');
 });
+
+test('a budget refusal asks the owner to free fallback scenery; only covered biomes lose their strips', async () => {
+  const scene = budgetScene(0);
+  const p = presentationWith(scene, { catalog: { ...catalog, views: views4 } });
+  const asked = [];
+  p.onBudgetRefusal = (id) => asked.push(id);
+  p.setSong({ terrain: song4(), generation: 1 });
+  await p._ensureRuntime();
+  p.setFrameInputs(inputs('RAINFOREST'));
+  p.beginScenic();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(asked, ['v0']);
+  // The owner's side: BiomeManager drops the strip sets v2 covers (a legacy
+  // frame re-bakes on demand) and keeps the rest.
+  const { m } = manager();
+  const kept = [];
+  m.strips = { entries: new Map([['RAINFOREST', {}], ['DESERT', {}]]), delete(k) { this.entries.delete(k); } };
+  m.rangePresentation = { coversBiome: (b) => b === 'RAINFOREST' };
+  assert.equal(m.dropCoveredStrips(), 1);
+  kept.push(...m.strips.entries.keys());
+  assert.deepEqual(kept, ['DESERT']);
+});

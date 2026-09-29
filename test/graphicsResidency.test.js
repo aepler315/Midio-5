@@ -81,6 +81,10 @@ test('snapshot reports ownership by owner, pins and cancellations', () => {
   assert.deepEqual(s.byOwner.gpu, { pending: 0, live: 10 * MiB, count: 1 });
   assert.deepEqual(s.byOwner.cpu, { pending: 5 * MiB, live: 0, count: 1 });
   assert.deepEqual(s.pinned, ['g']);
+  assert.equal(s.entryCount, 2);
+  assert.deepEqual(s.generations, [0]);
+  r.reserve({ key: 'n', bytes: MiB, owner: 'gpu', generation: 3 });
+  assert.deepEqual(r.snapshot().generations, [0, 3]);
 });
 
 test('legacy strips share the ledger instead of a second allowance', () => {

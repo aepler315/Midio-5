@@ -176,6 +176,9 @@ export class GraphicsResidency {
       budget: this.name, budgetBytes: this.budgetBytes,
       pendingBytes: this.pendingBytes, liveBytes: this.liveBytes, denials: this.denials, overcommits: this.overcommits || 0,
       byOwner, pinned: [...this.pinned], cancelledGenerations: [...this.cancelled],
+      // Lifecycle evidence: how many entries exist and which generations
+      // still own any (a replaced song's generation must not linger).
+      entryCount: this.entries.size, generations: [...new Set([...this.entries.values()].map((e) => e.generation))].sort((x, y) => x - y),
     };
   }
 }

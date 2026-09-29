@@ -1943,6 +1943,12 @@ function startTimeline(timelineData, extra = {}) {
         if (sim !== owner) return;
         try { applyRangeCaptions(timelineData, exportMode); } catch (err) { console.warn('[range caption]', err); }
       };
+      // A view refused GPU room: legacy strips baked for biomes the scene
+      // covers are fallback-only and cannot be evicted by the ledger.
+      rangePresentation.onBudgetRefusal = () => {
+        if (sim !== owner) return;
+        sim.biomes?.dropCoveredStrips?.();
+      };
     }
     // Biomes after the first load in the background; name them once they
     // have, unless the song has been rebuilt since.

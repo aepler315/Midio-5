@@ -98,6 +98,7 @@ export class RangePresentation {
     this.deferred = new Map(); // viewId -> retry-at (ms)
     this._needed = new Set(); // views this frame wanted on screen but lacked
     this._wants = []; // every view this frame wanted (both travel sides)
+    this.onBudgetRefusal = null; // (viewId) => void: free fallback scenery
     this.shown = new Set();
     this.frameId = 0;
     this.timings = { lastCopyMs: 0, lastPartitionMs: 0 };
@@ -202,8 +203,10 @@ export class RangePresentation {
         if (gen !== this.generation) return; // stale: the new song decides again
         if (err?.reason === 'budget') {
           // No room right now (other views still pending or pinned): try
-          // again shortly instead of dropping the biome to legacy for good.
+          // again shortly instead of dropping the biome to legacy for good,
+          // and let the owner free fallback scenery the retry can use.
           this.deferred.set(view.id, Date.now() + BUDGET_RETRY_MS);
+          try { this.onBudgetRefusal?.(view.id); } catch (e) { console.warn('[range v2] budget reclaim failed', e); }
           return;
         }
         const reason = err?.reason ? `${err.reason}: ${err.message}` : String(err?.message || err);

@@ -3,7 +3,7 @@
 //
 //   node tools/range-scene-smoke.mjs --url http://127.0.0.1:8092 --source-root "$PWD" \
 //     --expect-sha "$(git rev-parse HEAD)" --suite <pilot|selection|motion|lifecycle|export|complete> \
-//     --output .smoke/range-v2 [--view <id>] [--width 1280 --height 720]
+//     --output .smoke/range-v2 [--view <id>] [--width 1280 --height 720] [--cycles 6]
 //
 // Every capture records the renderer that actually drew it (v2 or legacy,
 // with the reason), the view, forcedCandidate, quality, residency and the
@@ -20,7 +20,7 @@ import { chromium } from 'playwright';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SUITES = ['pilot', 'selection', 'motion', 'lifecycle', 'export', 'complete'];
-const NAMED = new Set(['url', 'source-root', 'expect-sha', 'suite', 'output', 'view', 'width', 'height', 'fps', 'seconds']);
+const NAMED = new Set(['cycles', 'url', 'source-root', 'expect-sha', 'suite', 'output', 'view', 'width', 'height', 'fps', 'seconds']);
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 const IDENTITY_FILES = [
   'src/world/alpine/RangeScene.js', 'src/world/alpine/RangePresentation.js', 'src/world/alpine/RangeFrame.js',
@@ -428,6 +428,107 @@ async function suiteExport(ctx) {
   await context.close();
 }
 
+/**
+ * Task 16 lifecycle: repeated song replacement, stage resizes, A/B travels
+ * and a real WebGL context loss/restore in one page, with the shared
+ * residency ledger read after every cycle. Ownership must stay inside the
+ * budget, never overcommit, hold no entry of a replaced song, and return to
+ * a stable level instead of rising per cycle.
+ */
+async function suiteLifecycle(ctx) {
+  const { browser, args, wav, out, report } = ctx;
+  const wavB = path.join(out, 'synthetic-150bpm-80s.wav');
+  execFileSync(process.execPath, [path.join(root, 'tools/gen-test-wav.mjs'), wavB, '150', '80']);
+  const songs = [wav, wavB];
+  const sizes = [{ width: 1280, height: 720 }, { width: 960, height: 540 }];
+  const cycles = Number(args.cycles || 6);
+  report.lifecycle = { cycles: [], checks: [] };
+  const check = (name, ok, detail = '') => {
+    report.lifecycle.checks.push({ name, ok: !!ok, detail });
+    console.log(`${ok ? 'PASS' : 'FAIL'} lifecycle: ${name}${detail ? ` -- ${detail}` : ''}`);
+    if (!ok) throw new Error(`lifecycle check failed: ${name} ${detail}`);
+  };
+  const MiB = 1024 * 1024;
+  const s = await openSong(browser, { url: args.url, wav: songs[0], width: sizes[0].width, height: sizes[0].height, params: { rangeRenderer: 'v2' } });
+  const { page } = s;
+  const arm = async (size) => {
+    const deadline = Date.now() + 600000;
+    for (;;) {
+      const r = await page.evaluate((sz) => { try { return { ok: window.__SMW.beginBulkExport(sz) }; } catch (e) { return { err: String(e.message || e) }; } }, size);
+      if (r.ok) break;
+      if (!/Load a song|Still analysing|Still loading/.test(r.err) || Date.now() > deadline) throw new Error(`arm: ${r.err}`);
+      await new Promise((res) => setTimeout(res, 500));
+    }
+    await page.evaluate(() => window.__SMW.rangeReady({ timeoutMs: 600000 }));
+  };
+  const read = () => page.evaluate(() => {
+    const st = window.__SMW.rangeState;
+    return { generation: window.__SMW.generation, rangeGeneration: st.generation, active: st.active, viewId: st.viewId, reason: st.reason,
+      residency: st.residency, prepared: st.scene?.prepared || [], heap: performance.memory?.usedJSHeapSize ?? null };
+  });
+  const frames = async () => {
+    const out2 = [];
+    for (const t of [8000, 30000, 55000]) {
+      const f = await captureFrame(page, t);
+      out2.push({ t, active: f.range.active, viewId: f.range.viewId, incoming: f.range.incomingViewId, reason: f.range.reason });
+    }
+    return out2;
+  };
+  let song = 0;
+  for (let i = 0; i < cycles; i++) {
+    const wantSong = i % 2, size = sizes[Math.floor(i / 2) % 2];
+    if (wantSong !== song) {
+      await page.locator('#fileInput').setInputFiles(songs[wantSong]);
+      song = wantSong;
+    }
+    await arm(size);
+    const drawn = await frames();
+    let contextCycle = null;
+    if (i % 3 === 2) {
+      const lost = await page.evaluate(() => {
+        const r = window.__SMW.sim.biomes.rangePresentation.scene.renderer;
+        const ext = r.getContext().getExtension('WEBGL_lose_context');
+        ext.loseContext();
+        return !!ext;
+      });
+      await new Promise((res) => setTimeout(res, 200));
+      const during = await captureFrame(page, 20000);
+      await page.evaluate(() => {
+        const r = window.__SMW.sim.biomes.rangePresentation.scene.renderer;
+        r.getContext().getExtension('WEBGL_lose_context').restoreContext();
+      });
+      await new Promise((res) => setTimeout(res, 300));
+      const after = await captureFrame(page, 20000);
+      contextCycle = { lost, duringActive: during.range.active, duringReason: during.range.reason, afterActive: after.range.active, afterView: after.range.viewId };
+      check(`cycle ${i}: context loss draws legacy, restore draws v2 again`, lost && !during.range.active && after.range.active,
+        JSON.stringify(contextCycle));
+    }
+    const st = await read();
+    const r = st.residency;
+    const row = { cycle: i, song: wantSong, size: `${size.width}x${size.height}`, generation: st.rangeGeneration,
+      liveMiB: +(r.liveBytes / MiB).toFixed(1), pendingMiB: +(r.pendingBytes / MiB).toFixed(1), entries: r.entryCount,
+      generations: r.generations, overcommits: r.overcommits, denials: r.denials,
+      byOwnerMiB: Object.fromEntries(Object.entries(r.byOwner).map(([k, v]) => [k, +((v.live + v.pending) / MiB).toFixed(1)])),
+      prepared: st.prepared, heapMiB: st.heap ? +(st.heap / MiB).toFixed(1) : null, frames: drawn, context: contextCycle };
+    report.lifecycle.cycles.push(row);
+    console.log(`cycle ${i}: song ${wantSong} ${row.size} gen ${row.generation} live ${row.liveMiB} MiB pending ${row.pendingMiB} entries ${row.entries} gens ${row.generations} heap ${row.heapMiB} frames ${drawn.map((d) => d.active ? d.viewId : `legacy(${d.reason})`).join(',')}`);
+    check(`cycle ${i}: inside the budget`, r.liveBytes + r.pendingBytes <= r.budgetBytes, `${row.liveMiB + row.pendingMiB} MiB`);
+    check(`cycle ${i}: nothing of a replaced song remains`, r.generations.every((g) => g === 0 || g === st.rangeGeneration), `generations ${r.generations}, current ${st.rangeGeneration}`);
+    check(`cycle ${i}: every frame drew its v2 view`, drawn.every((d) => d.active), JSON.stringify(drawn));
+  }
+  const rows = report.lifecycle.cycles;
+  check('no overcommit in any cycle', rows.every((x) => x.overcommits === 0), rows.map((x) => x.overcommits).join(','));
+  // Same song and size recur every 4 cycles: ownership returns to the same
+  // level (within one view's worth of LRU leftovers), not rising per cycle.
+  for (let i = 4; i < rows.length; i++) {
+    const a = rows[i - 4], b = rows[i];
+    check(`cycle ${i} vs ${i - 4}: ownership stable`, b.liveMiB <= a.liveMiB + 100, `${a.liveMiB} -> ${b.liveMiB} MiB`);
+  }
+  const heaps = rows.map((x) => x.heapMiB).filter((x) => x != null);
+  if (heaps.length > 3) check('JS heap does not climb per cycle', heaps.at(-1) <= Math.max(...heaps.slice(0, 3)) * 1.5, heaps.join(','));
+  await s.context.close();
+}
+
 async function main() {
   const args = parseSceneArgs(process.argv);
   const sourceRoot = path.resolve(args['source-root']);
@@ -448,7 +549,7 @@ async function main() {
   let failed = null;
   try {
     const suites = args.suite === 'complete' ? SUITES.filter((s) => s !== 'complete') : [args.suite];
-    const impl = { pilot: suitePilot, export: suiteExport, motion: suiteMotion };
+    const impl = { pilot: suitePilot, export: suiteExport, motion: suiteMotion, lifecycle: suiteLifecycle };
     for (const s of suites) {
       // A requested suite that does not exist yet fails the run: an empty
       // "pass" would be evidence of nothing.

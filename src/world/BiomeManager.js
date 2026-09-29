@@ -1759,6 +1759,20 @@ export class BiomeManager {
     }
   }
 
+  /** Range v2 was refused room: legacy strip sets for biomes v2 draws are
+   *  only a fallback (a legacy frame re-bakes them on demand), and the
+   *  ledger cannot evict them itself. A frame that drew legacy while a view
+   *  was still preparing baked them, and they then kept that view out. */
+  dropCoveredStrips() {
+    const covered = (name) => !!name && !!this.rangePresentation?.coversBiome?.(name);
+    let dropped = 0;
+    for (const key of [...this.strips.entries.keys()]) {
+      if (covered(key)) { this.strips.delete(key); dropped++; }
+    }
+    if (this._bakeJob && covered(this._bakeJob.key)) this._cancelBake();
+    return dropped;
+  }
+
   /** Time-boxed prebake of a stale visible set, else the next section's
    *  biome. Never evicts the pair on screen to make room. */
   pumpStripPrewarm(budgetMs = 8) {
