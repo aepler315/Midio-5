@@ -101,11 +101,11 @@ export class GraphicsResidency {
    * it exceeds the budget; `overcommits` makes that visible in diagnostics
    * instead of hiding it. New Range v2 code uses reserve()/commit().
    */
-  adopt({ key, bytes, owner, generation = 0, resource = null, dispose = null }) {
+  adopt({ key, bytes, owner, generation = 0, resource = null, dispose = null, evictable = false }) {
     this.release(key);
     const want = Math.max(0, Math.ceil(Number(bytes) || 0));
     if (this.usedBytes + want > this.budgetBytes) this.overcommits = (this.overcommits || 0) + 1;
-    this.entries.set(key, { key, bytes: want, owner: owner || 'unknown', generation, evictable: false, state: 'live', used: ++this.tick, resource, dispose });
+    this.entries.set(key, { key, bytes: want, owner: owner || 'unknown', generation, evictable: !!evictable, state: 'live', used: ++this.tick, resource, dispose });
   }
 
   /** Pending -> live. Returns false (and disposes `resource`) when the

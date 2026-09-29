@@ -372,3 +372,16 @@ test('a budget refusal asks the owner to free fallback scenery; only covered bio
   kept.push(...m.strips.entries.keys());
   assert.deepEqual(kept, ['DESERT']);
 });
+
+test('settle does not wait while the GPU context is lost', async () => {
+  const scene = budgetScene(0);
+  const p = presentationWith(scene, { catalog: { ...catalog, views: views4 } });
+  p.setSong({ terrain: song4(), generation: 1, exportMode: true });
+  await p._ensureRuntime();
+  p.setFrameInputs(inputs('RAINFOREST'));
+  p.beginScenic();
+  scene.contextLost = true;
+  const t0 = Date.now();
+  assert.equal(await p.settle({ timeoutMs: 5000 }), false);
+  assert.ok(Date.now() - t0 < 200, 'returned at once');
+});

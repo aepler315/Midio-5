@@ -441,7 +441,10 @@ async function suiteLifecycle(ctx) {
   execFileSync(process.execPath, [path.join(root, 'tools/gen-test-wav.mjs'), wavB, '150', '80']);
   const songs = [wav, wavB];
   const sizes = [{ width: 1280, height: 720 }, { width: 960, height: 540 }];
-  const cycles = Number(args.cycles || 6);
+  const cycles = Number(args.cycles ?? 6);
+  if (!Number.isInteger(cycles) || cycles < 1) throw new Error(`--cycles must be a positive integer, got ${args.cycles}`);
+  // Expected length of each song, to confirm a replacement actually landed.
+  const songMs = [96000, 80000];
   report.lifecycle = { cycles: [], checks: [] };
   const check = (name, ok, detail = '') => {
     report.lifecycle.checks.push({ name, ok: !!ok, detail });
@@ -451,12 +454,16 @@ async function suiteLifecycle(ctx) {
   const MiB = 1024 * 1024;
   const s = await openSong(browser, { url: args.url, wav: songs[0], width: sizes[0].width, height: sizes[0].height, params: { rangeRenderer: 'v2' } });
   const { page } = s;
-  const arm = async (size) => {
+  // Arms the export at `size` once the song of `expectMs` has loaded: a
+  // replacement's decode is asynchronous and arming too early would rebuild
+  // the previous song.
+  const arm = async (size, expectMs) => {
     const deadline = Date.now() + 600000;
     for (;;) {
       const r = await page.evaluate((sz) => { try { return { ok: window.__SMW.beginBulkExport(sz) }; } catch (e) { return { err: String(e.message || e) }; } }, size);
-      if (r.ok) break;
-      if (!/Load a song|Still analysing|Still loading/.test(r.err) || Date.now() > deadline) throw new Error(`arm: ${r.err}`);
+      if (r.ok && Math.abs(r.ok.durationMs - expectMs) < 2000) break;
+      if (!r.ok && !/Load a song|Still analysing|Still loading/.test(r.err)) throw new Error(`arm: ${r.err}`);
+      if (Date.now() > deadline) throw new Error(`arm: song of ${expectMs} ms never loaded (${r.err || `got ${r.ok?.durationMs} ms`})`);
       await new Promise((res) => setTimeout(res, 500));
     }
     await page.evaluate(() => window.__SMW.rangeReady({ timeoutMs: 600000 }));
@@ -464,6 +471,7 @@ async function suiteLifecycle(ctx) {
   const read = () => page.evaluate(() => {
     const st = window.__SMW.rangeState;
     return { generation: window.__SMW.generation, rangeGeneration: st.generation, active: st.active, viewId: st.viewId, reason: st.reason,
+      stripOwner: window.__SMW.sim?.biomes?.strips?.owner ?? null,
       residency: st.residency, prepared: st.scene?.prepared || [], heap: performance.memory?.usedJSHeapSize ?? null };
   });
   const frames = async () => {
@@ -481,7 +489,7 @@ async function suiteLifecycle(ctx) {
       await page.locator('#fileInput').setInputFiles(songs[wantSong]);
       song = wantSong;
     }
-    await arm(size);
+    await arm(size, songMs[wantSong]);
     const drawn = await frames();
     let contextCycle = null;
     if (i % 3 === 2) {
@@ -507,7 +515,8 @@ async function suiteLifecycle(ctx) {
     const st = await read();
     const r = st.residency;
     const row = { cycle: i, song: wantSong, size: `${size.width}x${size.height}`, generation: st.rangeGeneration,
-      liveMiB: +(r.liveBytes / MiB).toFixed(1), pendingMiB: +(r.pendingBytes / MiB).toFixed(1), entries: r.entryCount,
+      liveMiB: +(r.liveBytes / MiB).toFixed(1), pendingMiB: +(r.pendingBytes / MiB).toFixed(1),
+      ownedMiB: +((r.liveBytes + r.pendingBytes) / MiB).toFixed(1), entries: r.entryCount,
       generations: r.generations, overcommits: r.overcommits, denials: r.denials,
       byOwnerMiB: Object.fromEntries(Object.entries(r.byOwner).map(([k, v]) => [k, +((v.live + v.pending) / MiB).toFixed(1)])),
       prepared: st.prepared, heapMiB: st.heap ? +(st.heap / MiB).toFixed(1) : null, frames: drawn, context: contextCycle };
@@ -515,6 +524,12 @@ async function suiteLifecycle(ctx) {
     console.log(`cycle ${i}: song ${wantSong} ${row.size} gen ${row.generation} live ${row.liveMiB} MiB pending ${row.pendingMiB} entries ${row.entries} gens ${row.generations} heap ${row.heapMiB} frames ${drawn.map((d) => d.active ? d.viewId : `legacy(${d.reason})`).join(',')}`);
     check(`cycle ${i}: inside the budget`, r.liveBytes + r.pendingBytes <= r.budgetBytes, `${row.liveMiB + row.pendingMiB} MiB`);
     check(`cycle ${i}: nothing of a replaced song remains`, r.generations.every((g) => g === 0 || g === st.rangeGeneration), `generations ${r.generations}, current ${st.rangeGeneration}`);
+    // Legacy strips are adopted at generation 0 but are owned per song
+    // (one BiomeManager each): only the current manager may own any.
+    const stripOwners = Object.keys(r.byOwner).filter((o) => o.startsWith('legacy-strips'));
+    check(`cycle ${i}: no replaced song's legacy strips remain`, stripOwners.every((o) => o === st.stripOwner), `${stripOwners} (current ${st.stripOwner})`);
+    const pageErrors = s.errors.filter((e) => !e.startsWith('warn:'));
+    check(`cycle ${i}: no page or shader errors`, pageErrors.length === 0, pageErrors.slice(0, 2).join(' | '));
     check(`cycle ${i}: every frame drew its v2 view`, drawn.every((d) => d.active), JSON.stringify(drawn));
   }
   const rows = report.lifecycle.cycles;
@@ -523,7 +538,10 @@ async function suiteLifecycle(ctx) {
   // level (within one view's worth of LRU leftovers), not rising per cycle.
   for (let i = 4; i < rows.length; i++) {
     const a = rows[i - 4], b = rows[i];
-    check(`cycle ${i} vs ${i - 4}: ownership stable`, b.liveMiB <= a.liveMiB + 100, `${a.liveMiB} -> ${b.liveMiB} MiB`);
+    // Live and pending both count, and so do entries: a leak of pending
+    // reservations or small entries would not move the live bytes.
+    check(`cycle ${i} vs ${i - 4}: ownership stable`, b.ownedMiB <= a.ownedMiB + 100 && b.entries <= a.entries + 4,
+      `${a.ownedMiB} -> ${b.ownedMiB} MiB, ${a.entries} -> ${b.entries} entries`);
   }
   const heaps = rows.map((x) => x.heapMiB).filter((x) => x != null);
   if (heaps.length > 3) check('JS heap does not climb per cycle', heaps.at(-1) <= Math.max(...heaps.slice(0, 3)) * 1.5, heaps.join(','));

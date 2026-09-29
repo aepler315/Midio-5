@@ -280,7 +280,9 @@ export class RangePresentation {
     // missing side must not evict the side that was already there (a frame
     // that drew no GPU scene pinned nothing).
     const views = this._wants;
-    if (!lacking || !views.length || !this.scene) return false;
+    // A lost context cannot make progress: nothing is ready until it is
+    // restored, and waiting would only run out the timeout.
+    if (!lacking || !views.length || !this.scene || this.scene.contextLost) return false;
     const deadline = Date.now() + timeoutMs;
     const tries = new Map();
     let waited = false;

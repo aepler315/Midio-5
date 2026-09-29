@@ -44,10 +44,15 @@ export class TerrainStripCache {
   /** `residency` (GraphicsResidency) makes these strips share the page's
    *  one graphics budget with Range v2 instead of holding a second,
    *  independent allowance; `maxBytes` remains this cache's own ceiling. */
-  constructor({ maxBytes = DEFAULT_TERRAIN_STRIP_BUDGET, residency = null, owner = 'legacy-strips' } = {}) {
+  constructor({ maxBytes = DEFAULT_TERRAIN_STRIP_BUDGET, residency = null, owner = 'legacy-strips', isFallback = () => false } = {}) {
     this.maxBytes = maxBytes;
     this.residency = residency;
     this.owner = owner;
+    // A set whose biome another renderer (Range v2) draws is fallback only:
+    // the shared ledger may evict it for that renderer's own reservations
+    // (a legacy frame re-bakes it on demand). Anything else is not evictable
+    // by other owners.
+    this.isFallback = isFallback;
     this.bytes = 0;
     this.entries = new Map();
     this.pins = new Set();
@@ -116,7 +121,8 @@ export class TerrainStripCache {
           console.warn(`[residency] ${this.owner}:${key} (${bytes} B) exceeds the shared budget`);
         }
       }
-      this.residency.adopt({ key: `${this.owner}:${key}`, bytes, owner: this.owner });
+      this.residency.adopt({ key: `${this.owner}:${key}`, bytes, owner: this.owner,
+        evictable: !!this.isFallback(key), dispose: () => this._evictedByLedger(key) });
     }
     this._evict(new Set([key]));
     return this;
@@ -136,6 +142,16 @@ export class TerrainStripCache {
     this.bytes -= entry.bytes;
     this.residency?.release(`${this.owner}:${key}`);
     return true;
+  }
+
+  /** The ledger evicted a fallback set for another owner: forget it (the
+   *  reference only, as delete() does). A delete() of our own has already
+   *  removed the entry by the time its release reaches here. */
+  _evictedByLedger(key) {
+    const entry = this.entries.get(key);
+    if (!entry) return;
+    this.entries.delete(key);
+    this.bytes -= entry.bytes;
   }
 
   /** Teardown, not eviction: the caller is discarding the whole world, so

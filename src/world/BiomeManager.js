@@ -761,7 +761,11 @@ export class BiomeManager {
     // Legacy strips share the page's graphics budget when one is given, so
     // a fallback never holds a second, independent allowance.
     this.residency = residency;
-    this.strips = new TerrainStripCache({ residency, owner: `legacy-strips#${++BIOME_MANAGER_SERIAL}` }); // biomeName -> { L2, L3, L4, L5 }
+    this.strips = new TerrainStripCache({ residency, owner: `legacy-strips#${++BIOME_MANAGER_SERIAL}`,
+      // Sets for biomes Range v2 draws are fallback: the ledger may evict
+      // them when the scene reserves room (else a legacy frame drawn while a
+      // view prepared re-bakes them and keeps the view out).
+      isFallback: (name) => !!this.rangePresentation?.coversBiome?.(name) }); // biomeName -> { L2, L3, L4, L5 }
 
     this.fields = new Map(); // biomeName -> ParticleField
     for (const b of this.profiles) this.fields.set(b.name, new ParticleField(b.particles, canvasWidth, canvasHeight, hashSeed(b.name + 'p')));
