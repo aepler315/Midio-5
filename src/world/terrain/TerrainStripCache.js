@@ -41,8 +41,13 @@ function release(strips) {
 }
 
 export class TerrainStripCache {
-  constructor({ maxBytes = DEFAULT_TERRAIN_STRIP_BUDGET } = {}) {
+  /** `residency` (GraphicsResidency) makes these strips share the page's
+   *  one graphics budget with Range v2 instead of holding a second,
+   *  independent allowance; `maxBytes` remains this cache's own ceiling. */
+  constructor({ maxBytes = DEFAULT_TERRAIN_STRIP_BUDGET, residency = null, owner = 'legacy-strips' } = {}) {
     this.maxBytes = maxBytes;
+    this.residency = residency;
+    this.owner = owner;
     this.bytes = 0;
     this.entries = new Map();
     this.pins = new Set();
@@ -68,7 +73,8 @@ export class TerrainStripCache {
    * owned raster memory rather than only the post-insertion steady state. */
   reserve(bytes, extraPins = new Set()) {
     const wanted = Math.max(0, Number(bytes) || 0);
-    while (this.bytes + wanted > this.maxBytes) {
+    const shared = () => !this.residency || this.residency.canFit(wanted);
+    while (this.bytes + wanted > this.maxBytes || !shared()) {
       let victim = null;
       for (const [key, entry] of this.entries) {
         if (this.pins.has(key) || extraPins.has(key)) continue;
@@ -77,14 +83,41 @@ export class TerrainStripCache {
       if (!victim) return false;
       this.delete(victim[0]);
     }
+    // Hold real shared capacity (evicting other owners' evictable entries
+    // now, not merely probing that they could be) until set() adopts it.
+    if (this.residency) {
+      this.residency.release(this._holdKey);
+      if (!this.residency.reserve({ key: this._holdKey, bytes: wanted, owner: this.owner })) return false;
+    }
     return true;
   }
+
+  get _holdKey() { return `${this.owner}:__reserved`; }
 
   set(key, strips) {
     this.delete(key);
     const bytes = stripSetBytes(strips);
     this.entries.set(key, { strips, bytes, used: ++this.tick });
     this.bytes += bytes;
+    // The held reservation becomes this entry's live accounting in one
+    // synchronous step, so nothing can claim the room in between. Without a
+    // hold (reserve() was not called, or was refused) the room is claimed
+    // now, evicting what may be evicted. Only when even that fails -- the
+    // strips on screen are already allocated and alone exceed the budget --
+    // is the adoption recorded as an overcommit, visibly.
+    if (this.residency) {
+      const held = this.residency.entries.get(this._holdKey);
+      this.residency.release(this._holdKey);
+      if (!held || held.bytes < bytes) {
+        const res = this.residency.reserve({ key: this._holdKey, bytes, owner: this.owner });
+        if (res) this.residency.release(this._holdKey);
+        else {
+          this.overBudget = (this.overBudget || 0) + 1;
+          console.warn(`[residency] ${this.owner}:${key} (${bytes} B) exceeds the shared budget`);
+        }
+      }
+      this.residency.adopt({ key: `${this.owner}:${key}`, bytes, owner: this.owner });
+    }
     this._evict(new Set([key]));
     return this;
   }
@@ -101,6 +134,7 @@ export class TerrainStripCache {
     if (!entry) return false;
     this.entries.delete(key);
     this.bytes -= entry.bytes;
+    this.residency?.release(`${this.owner}:${key}`);
     return true;
   }
 
@@ -108,6 +142,7 @@ export class TerrainStripCache {
    *  nothing is mid-frame and the memory is worth reclaiming immediately
    *  rather than at the collector's convenience. */
   clear() {
+    this.residency?.release(this._holdKey);
     for (const [key, entry] of [...this.entries]) {
       this.delete(key);
       release(entry.strips);

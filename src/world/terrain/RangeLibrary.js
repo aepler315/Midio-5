@@ -10,7 +10,9 @@
 // skyline is what the song's ridge draws, whichever ridge it stands on.
 import { RANGES, LOADERS } from './ranges/index.js';
 import { RIDGE_BANDS, matchRidgeSet } from './RangeMatcher.js';
-import { readRecentRanges } from './RangeHistory.js';
+import { readRecentRanges, readRecentViews, readRecentRegions } from './RangeHistory.js';
+import { assignSongScenes } from './SceneCatalog.js';
+import SCENE_CATALOG from './sceneCatalogData.js';
 import { chooseSongBiomes, chooseBiomeRidges } from './BiomeSet.js';
 import { profilesFromJSON } from './TerrainProfile.js';
 import { chooseHorizonRange, MASSIF_SALT } from './HorizonRidge.js';
@@ -86,7 +88,8 @@ export async function prepareSongRange(profile, seed) {
  * horizon EQ dances on (HorizonRidge.js), loaded alongside the home biome;
  * null when it failed, and the EQ keeps its own shape. `massif` is the same
  * for the spectrum massif behind it: another of those skylines, never the
- * horizon's.
+ * horizon's. `sceneByBiome` maps each biome to its Range v2 SceneChoice
+ * ({ view, fallbackReason }) from the curated catalog, drawn once per song.
  */
 export async function prepareSongTerrain(profile, seed, recent = readRecentRanges()) {
   try {
@@ -141,9 +144,21 @@ export async function prepareSongTerrain(profile, seed, recent = readRecentRange
       console.warn(`[terrain] ${b} unavailable; its sections stay invented`, err);
       return null;
     })));
+    // Range v2: one lightweight scenic assignment per biome, drawn once for
+    // this song. Not a GPU preparation; RangePresentation loads the active
+    // and next view on demand. A biome without an approved view carries a
+    // null view and a fallback reason; its sections keep the legacy ranges.
+    let sceneByBiome = new Map();
+    try {
+      sceneByBiome = assignSongScenes(biomes, profile, seed, SCENE_CATALOG,
+        { recentViewIds: readRecentViews(), recentRegionIds: readRecentRegions() });
+    } catch (err) {
+      console.warn('[terrain] scenic catalog unavailable; legacy ranges only', err);
+    }
     const terrain = {
       biomes, home: biomes[0], byBiome, whenAll, allLoaded: false,
       range: home.ranges.far, ranges: home.ranges, profiles: home.profiles, horizon, massif,
+      sceneByBiome, catalogVersion: SCENE_CATALOG.catalogVersion,
     };
     whenAll.then(() => { terrain.allLoaded = true; });
     return terrain;
