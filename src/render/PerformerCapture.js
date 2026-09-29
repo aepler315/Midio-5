@@ -89,8 +89,12 @@ function defaultCanvas(w, h) {
 }
 
 export class PerformerCapture {
-  constructor({ createCanvas = defaultCanvas } = {}) {
+  /** `residency` (GraphicsResidency) owns the canvas bytes: a set is only
+   *  created or resized after its reservation succeeds. */
+  constructor({ createCanvas = defaultCanvas, residency = null } = {}) {
     this.createCanvas = createCanvas;
+    this.residency = residency;
+    this.serial = 0;
     this.pool = [];
     this.stats = { captures: 0, allocations: 0, direct: 0 };
   }
@@ -99,8 +103,25 @@ export class PerformerCapture {
    *  w x h and clear. */
   _acquire(w, h) {
     let entry = this.pool.find((e) => !e.layer || e.layer.pending === 0);
-    if (!entry) {
-      entry = { canvases: Array.from({ length: MAX_SEGMENTS }, () => this.createCanvas(w, h)), layer: null };
+    const resized = !entry || entry.canvases[0].width !== w || entry.canvases[0].height !== h;
+    if (resized && this.residency) {
+      // Own the bytes before allocating them; a refusal means this body is
+      // drawn directly this frame (no reflection), never an overcommit.
+      const key = entry ? entry.key : `performer-capture#${++this.serial}`;
+      this.residency.release(key);
+      const res = this.residency.reserve({ key, bytes: w * h * 4 * MAX_SEGMENTS, owner: 'performer-capture', evictable: false });
+      if (!res) {
+        if (entry) { for (const c of entry.canvases) { c.width = 0; c.height = 0; } this.pool.splice(this.pool.indexOf(entry), 1); }
+        this.stats.denied = (this.stats.denied || 0) + 1;
+        return null;
+      }
+      this.residency.commit(res, null);
+      if (entry) entry.key = key;
+      else entry = { key, canvases: null, layer: null };
+    }
+    if (!entry) entry = { key: null, canvases: null, layer: null };
+    if (!entry.canvases) {
+      entry.canvases = Array.from({ length: MAX_SEGMENTS }, () => this.createCanvas(w, h));
       this.pool.push(entry);
       this.stats.allocations++;
     }
@@ -137,6 +158,7 @@ export class PerformerCapture {
     if (!(x1 > x0 && y1 > y0)) return null;
     const w = x1 - x0, h = y1 - y0;
     const entry = this._acquire(w, h);
+    if (!entry) return null;
     const first = ctx.globalCompositeOperation === 'lighter' ? 'lighter' : 'source-over';
     const second = first === 'lighter' ? 'source-over' : 'lighter';
     const modes = entry.canvases.map((_, i) => (i % 2 === 0 ? first : second));
@@ -190,7 +212,10 @@ export class PerformerCapture {
   }
 
   dispose() {
-    for (const e of this.pool) for (const c of e.canvases) { c.width = 0; c.height = 0; }
+    for (const e of this.pool) {
+      for (const c of e.canvases) { c.width = 0; c.height = 0; }
+      if (e.key) this.residency?.release(e.key);
+    }
     this.pool.length = 0;
   }
 }

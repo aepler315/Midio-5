@@ -53,7 +53,15 @@ async function servedIdentity(url, sourceRoot) {
     files.push(`src/assets/range/v2/${v.terrainManifestUrl}`);
     const m = JSON.parse(await fs.readFile(path.join(sourceRoot, 'src/assets/range/v2', v.terrainManifestUrl), 'utf8'));
     files.push(path.posix.join('src/assets/range/v2', path.posix.dirname(v.terrainManifestUrl), m.payload.url));
+    // The material pack and every texture it names shape the same pixels.
+    if (v.materialManifestUrl) {
+      const matFile = path.posix.join('src/assets/range/v2', v.materialManifestUrl);
+      files.push(matFile);
+      const mat = JSON.parse(await fs.readFile(path.join(sourceRoot, matFile), 'utf8'));
+      for (const t of Object.values(mat.textures || {})) files.push(path.posix.join(path.posix.dirname(matFile), t.url));
+    }
   }
+  files.splice(0, files.length, ...new Set(files));
   const hashes = {};
   for (const file of files) {
     const local = sha256(await fs.readFile(path.join(sourceRoot, file)));
@@ -433,7 +441,9 @@ async function main() {
     const suites = args.suite === 'complete' ? SUITES.filter((s) => s !== 'complete') : [args.suite];
     const impl = { pilot: suitePilot, export: suiteExport, motion: suiteMotion };
     for (const s of suites) {
-      if (!impl[s]) { report[s] = { status: 'unimplemented' }; console.log(`${s}: not implemented yet`); continue; }
+      // A requested suite that does not exist yet fails the run: an empty
+      // "pass" would be evidence of nothing.
+      if (!impl[s]) { report[s] = { status: 'unimplemented' }; throw new Error(`suite ${s} is not implemented yet`); }
       await impl[s](ctx);
     }
   } catch (err) {

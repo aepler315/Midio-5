@@ -74,5 +74,8 @@ test('staging verifies the Range v2 runtime bundle and shipped terrain assets', 
   buf[buf.length - 10] ^= 0xff;
   await fsp.writeFile(payload, buf);
   await assert.rejects(verifyRangeRuntime(root, out), /does not match/);
+  // A staged runtime without its scene catalog is a broken site.
+  await fsp.rm(p.join(out, 'src', 'world', 'terrain', 'sceneCatalogData.js'));
+  await assert.rejects(verifyRangeRuntime(root, out), /scene catalog cannot be loaded/);
   await fsp.rm(out, { recursive: true, force: true });
 });

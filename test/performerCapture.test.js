@@ -149,3 +149,22 @@ test('a captured body with glows composites its segments in draw order', () => {
   cap.composite(ctx, layer);
   assert.deepEqual(ctx.calls.filter((c) => c[0] === 'drawImage').map((c) => c[2]), ['source-over', 'lighter', 'source-over']);
 });
+
+test('capture canvases are owned in the shared ledger; a refusal draws directly', async () => {
+  const { GraphicsResidency, MiB } = await import('../src/render/GraphicsResidency.js');
+  const r = new GraphicsResidency({ budgetBytes: 4 * MiB });
+  const cap = new PerformerCapture({ createCanvas: mockCanvas, residency: r });
+  const ctx = stage();
+  const draws = { count: 0 };
+  // 200 x 240 x 4 B x 6 segments = 1.1 MiB: fits.
+  const l = cap.capture(ctx, 1, body(draws));
+  assert.ok(l);
+  assert.equal(r.snapshot().byOwner['performer-capture'].live, 200 * 240 * 4 * 6);
+  cap.release(l); cap.release(l);
+  // A box too large for the budget is refused before any canvas grows.
+  const big = cap.capture(ctx, 2, { ...body(draws), bounds: { x: 0, y: 0, w: 1400, h: 840 } });
+  assert.equal(big, null);
+  assert.ok(r.usedBytes <= 4 * MiB);
+  cap.dispose();
+  assert.equal(r.usedBytes, 0);
+});

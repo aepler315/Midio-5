@@ -177,10 +177,18 @@ export class RangeScene {
         const placed = await placeForestAsync(cpu.data, view, rules, { seed: hashSeed(view.id), signal });
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         const forestBytes = placed.count * 7 * 4;
-        const bytes = (est?.meshBytes || 0) + (est?.surfaceTextureBytes || 0) + forestBytes;
+        // The surface texture's RGBA array stays referenced by its
+        // DataTexture after upload (4 B/px), and building it needs temporary
+        // height and flow arrays (5 B/px): the first is owned for the view's
+        // life, the second is reserved only while the texture is built.
+        const gridPx = cpu.data.grid.width * cpu.data.grid.height;
+        const bytes = (est?.meshBytes || 0) + (est?.surfaceTextureBytes || 0) + forestBytes + gridPx * 4;
         res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation }) || null;
         if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
-        surface = createSurfaceTexture(THREE, cpu.data);
+        const scratchKey = `range:surface-scratch:${view.id}`;
+        const scratch = this.residency?.reserve({ key: scratchKey, bytes: gridPx * 5, owner: 'range-scratch', generation }) || null;
+        if (this.residency && !scratch) throw new RangeAssetError('budget', `no room to build ${view.id} surface`);
+        try { surface = createSurfaceTexture(THREE, cpu.data); } finally { if (scratch) this.residency.release(scratchKey); }
         await yieldToMain();
         const base = terrainUniforms(THREE, cpu.data, surface);
         const uniforms = sceneUniforms(THREE, base);

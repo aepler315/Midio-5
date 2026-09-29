@@ -174,6 +174,15 @@ export class RangePresentation {
    * whether the GPU scene draws the scenic partitions this frame.
    */
   beginScenic() {
+    const ok = this._beginScenic();
+    // A legacy frame draws no view: release the previous frame's pins so a
+    // destination (or a legacy strip fallback) may evict what is no longer
+    // on screen.
+    if (!ok) this.residency?.pin?.([]);
+    return ok;
+  }
+
+  _beginScenic() {
     this.active = false;
     this.frame = null;
     if (!this.enabled) { this.reason = 'legacy-mode'; return false; }

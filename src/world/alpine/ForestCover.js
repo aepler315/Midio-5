@@ -115,7 +115,9 @@ function* placeForestSteps(data, view, rules, { seed = 0, rings = FOREST_RINGS, 
   const eyeA = cameraPoseAt(view, 0).eyeM, eyeB = cameraPoseAt(view, 1).eyeM;
   const b = bands || data.manifest.bands || { nearM: 1800, midM: 7000 };
   const treeline = rules.treelineM, maxSlope = rules.forestMaxSlopeDeg, density = rules.forestDensity;
-  const mesh = [], board = [];
+  // Typed chunks, not growing JS arrays: a 300k-tree view would otherwise
+  // reallocate and copy millions of elements in single long pauses.
+  const mesh = new FloatChunks(), board = new FloatChunks();
   const cells = data.cells, cs = data.grid.cellSizeM;
   for (const tile of data.tiles.values()) {
     if (!tile.visible || tile.minY > treeline + 300) continue;
@@ -149,10 +151,34 @@ function* placeForestSteps(data, view, rules, { seed = 0, rings = FOREST_RINGS, 
         const rec = [x, y, z, height, width, (h2 >>> 8) % 4, u01(hash2(ix, iz, seed + 4)), band];
         (d < rings.meshM ? mesh : board).push(...rec);
       }
+      // One lattice row per step: a 64-cell tile holds ~100 rows of ~100
+      // candidates, so a whole tile between yields could run for 100 ms.
+      yield;
     }
-    yield;
   }
-  return { mesh: Float32Array.from(mesh), billboard: Float32Array.from(board), stride: STRIDE, count: (mesh.length + board.length) / STRIDE };
+  return { mesh: mesh.toArray(), billboard: board.toArray(), stride: STRIDE, count: (mesh.length + board.length) / STRIDE };
+}
+
+/** Append-only float storage in fixed typed chunks. */
+class FloatChunks {
+  constructor(size = 1 << 16) { this.size = size; this.chunks = [new Float32Array(size)]; this.fill = 0; this.length = 0; }
+  push(...values) {
+    for (const v of values) {
+      if (this.fill === this.size) { this.chunks.push(new Float32Array(this.size)); this.fill = 0; }
+      this.chunks[this.chunks.length - 1][this.fill++] = v;
+      this.length++;
+    }
+  }
+  toArray() {
+    const out = new Float32Array(this.length);
+    let at = 0;
+    for (const c of this.chunks) {
+      const n = Math.min(c.length, this.length - at);
+      out.set(n === c.length ? c : c.subarray(0, n), at);
+      at += n;
+    }
+    return out;
+  }
 }
 
 /** Indices (into an instance array) kept at a quality rung: a stable

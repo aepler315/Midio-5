@@ -22,6 +22,7 @@ import { isRendered, styleDials } from './VisualStyle.js';
 import { groundGlowLights, characterGlowLight } from './LightField.js';
 import { GroundResponse, recentConductorHits } from '../world/alpine/GroundResponse.js';
 import { PerformerCapture } from './PerformerCapture.js';
+import { sharedResidency } from './GraphicsResidency.js';
 import { drawWetReflections } from '../world/alpine/WetReflection.js';
 import { viewportState } from '../world/alpine/RangeFrame.js';
 import { quantizeCanvas } from './PaletteQuantize.js';
@@ -617,7 +618,7 @@ export class Renderer {
       return [lo, hi];
     });
     const overPool = (b) => !!b && spans.some(([lo, hi]) => b.x < hi && b.x + b.w > lo);
-    const cap = this._capture || (this._capture = new PerformerCapture());
+    const cap = this._capture || (this._capture = new PerformerCapture({ residency: sharedResidency() }));
     const frameId = pres.frame.frameId;
     if (sim.broshi) {
       const bounds = sim.broshi.drawBounds();

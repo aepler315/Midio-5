@@ -61,8 +61,13 @@ export async function verifyRangeRuntime(sourceDir, outputDir) {
   }
   const catalogPath = path.join(outputDir, 'src', 'world', 'terrain', 'sceneCatalogData.js');
   const views = [];
-  try {
-    const { default: catalog } = await import(`${pathToFileURL(catalogPath).href}?stage=${Date.now()}`);
+  // A Range-enabled build (runtime.json exists) imports the catalog in its
+  // module graph: a missing catalog is a broken site, not a skipped check.
+  let catalog;
+  try { ({ default: catalog } = await import(`${pathToFileURL(catalogPath).href}?stage=${Date.now()}`)); } catch (err) {
+    throw new Error(`Range runtime is staged but its scene catalog cannot be loaded: ${err.message}`, { cause: err });
+  }
+  {
     const root = path.join(outputDir, 'src', 'assets', 'range', 'v2');
     for (const view of catalog.views) {
       const manifestBuf = await fs.readFile(path.join(root, view.terrainManifestUrl));
@@ -82,9 +87,6 @@ export async function verifyRangeRuntime(sourceDir, outputDir) {
       }
       views.push(view.id);
     }
-  } catch (err) {
-    if (err.code === 'ERR_MODULE_NOT_FOUND' && !views.length) return { checked: true, rebuilt, views };
-    throw err;
   }
   return { checked: true, rebuilt, views };
 }

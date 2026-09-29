@@ -111,3 +111,24 @@ test('a strip reservation really evicts an unpinned entry instead of overcommitt
   assert.equal(r.overcommits || 0, 0);
   assert.ok(r.usedBytes <= 10 * MiB);
 });
+
+test('inserting strips without a hold claims room first, and only an impossible fit overcommits', () => {
+  const canvas = (w, h) => ({ width: w, height: h });
+  // Room can be made: the unpinned scene is evicted, no overcommit.
+  let r = ledger(10);
+  let cache = new TerrainStripCache({ maxBytes: 100 * MiB, residency: r, owner: 'legacy' });
+  r.commit(r.reserve({ key: 'scene', bytes: 8 * MiB, owner: 'range' }), {});
+  cache.set('A', { L2: canvas(1024, 1024) }); // 4 MiB, no reserve() first
+  assert.equal(r.snapshot().byOwner.range, undefined);
+  assert.equal(r.overcommits || 0, 0);
+  assert.equal(cache.overBudget || 0, 0);
+  // No room can be made (the scene is pinned): recorded, not hidden.
+  r = ledger(10);
+  cache = new TerrainStripCache({ maxBytes: 100 * MiB, residency: r, owner: 'legacy' });
+  r.commit(r.reserve({ key: 'scene', bytes: 8 * MiB, owner: 'range' }), {});
+  r.pin(['scene']);
+  const warn = console.warn; console.warn = () => {};
+  try { cache.set('A', { L2: canvas(1024, 1024) }); } finally { console.warn = warn; }
+  assert.equal(cache.overBudget, 1);
+  assert.equal(r.overcommits, 1);
+});
