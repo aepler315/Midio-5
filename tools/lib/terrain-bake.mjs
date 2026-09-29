@@ -42,7 +42,94 @@ export const LOD_BUDGETS = Object.freeze({
 // (2.4:1), the deepest camera pull-back (1 / ZOOM_MIN = 1.52) and the shake
 // overscan margin together. Conservative on purpose: a tile culled here is
 // never baked finely, so under-estimating would show coarse terrain.
-export const VISIBILITY = Object.freeze({ aspect: 2.4, fovScale: 1.85, stations: 21, minDistanceM: 40 });
+export const VISIBILITY = Object.freeze({
+  // Normal framing: 16:9 up to the reference's 2.07:1, with shake overscan.
+  core: { aspect: 2.1, fovScale: 1.2, budgetScale: 1 },
+  // Everything a frame can ever show: 2.4:1 at the deepest pull-back.
+  // Terrain only visible here is baked at 3x the pixel budget.
+  extended: { aspect: 2.4, fovScale: 1.85, budgetScale: 3 },
+  stations: 21, minDistanceM: 40,
+  // Occlusion raster: width in pixels, sample stride in cells, tolerance.
+  occlusion: { width: 384, stride: 4, depthSlack: 0.015, slackM: 30 },
+});
+
+/** One station's conservative depth buffer (nearest 1/depth per pixel) of
+ *  the whole grid at a coarse stride, for occlusion tests at bake time. */
+export function occlusionBuffer(grid, pose, framing, occ) {
+  const { width: w, height: hgt, cellSizeM: cell, originM, heightsM: h, valid } = grid;
+  const W = occ.width, H = Math.max(2, Math.round(occ.width / framing.aspect));
+  const buf = new Float32Array(W * H); // 1/depth, 0 = sky
+  const R = occ.stride;
+  const cols = Math.floor((w - 1) / R) + 1, rows = Math.floor((hgt - 1) / R) + 1;
+  const sx = new Float32Array(cols * rows), sy = new Float32Array(cols * rows), iz = new Float32Array(cols * rows);
+  const f = norm3(sub3(pose.targetM, pose.eyeM));
+  const r = norm3(cross3(f, [0, 1, 0]));
+  const u = cross3(r, f);
+  const t = Math.tan((pose.fovYDeg * Math.PI) / 360) * framing.fovScale;
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const k = j * cols + i;
+    const gi = (j * R) * w + i * R;
+    if (!valid[gi]) { iz[k] = -1; continue; }
+    const d = [originM[0] + i * R * cell - pose.eyeM[0], h[gi] - pose.eyeM[1], originM[1] + j * R * cell - pose.eyeM[2]];
+    const z = d[0] * f[0] + d[1] * f[1] + d[2] * f[2];
+    if (z < 1) { iz[k] = -1; continue; }
+    sx[k] = ((d[0] * r[0] + d[1] * r[1] + d[2] * r[2]) / (z * t * framing.aspect) * 0.5 + 0.5) * W;
+    sy[k] = (0.5 - (d[0] * u[0] + d[1] * u[1] + d[2] * u[2]) / (z * t) * 0.5) * H;
+    iz[k] = 1 / z;
+  }
+  const tri = (a, b, c) => {
+    if (iz[a] < 0 || iz[b] < 0 || iz[c] < 0) return;
+    const minX = Math.max(0, Math.floor(Math.min(sx[a], sx[b], sx[c])));
+    const maxX = Math.min(W - 1, Math.ceil(Math.max(sx[a], sx[b], sx[c])));
+    const minY = Math.max(0, Math.floor(Math.min(sy[a], sy[b], sy[c])));
+    const maxY = Math.min(H - 1, Math.ceil(Math.max(sy[a], sy[b], sy[c])));
+    if (minX > maxX || minY > maxY) return;
+    const area = (sx[b] - sx[a]) * (sy[c] - sy[a]) - (sx[c] - sx[a]) * (sy[b] - sy[a]);
+    if (Math.abs(area) < 1e-9) return;
+    for (let py = minY; py <= maxY; py++) {
+      const y = py + 0.5;
+      for (let px = minX; px <= maxX; px++) {
+        const x = px + 0.5;
+        const w0 = ((sx[b] - x) * (sy[c] - y) - (sx[c] - x) * (sy[b] - y)) / area;
+        const w1 = ((sx[c] - x) * (sy[a] - y) - (sx[a] - x) * (sy[c] - y)) / area;
+        const w2 = 1 - w0 - w1;
+        if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+        const v = w0 * iz[a] + w1 * iz[b] + w2 * iz[c];
+        const o = py * W + px;
+        if (v > buf[o]) buf[o] = v;
+      }
+    }
+  };
+  for (let j = 0; j + 1 < rows; j++) for (let i = 0; i + 1 < cols; i++) {
+    const a = j * cols + i, b = a + 1, c = a + cols, d = c + 1;
+    tri(a, c, d); tri(a, d, b);
+  }
+  return { buf, W, H, f, r, u, t, eye: pose.eyeM, aspect: framing.aspect };
+}
+
+/** Whether a local point is in frame and not behind the buffer's surface. */
+export function pointVisible(ob, p, occ) {
+  const d = [p[0] - ob.eye[0], p[1] - ob.eye[1], p[2] - ob.eye[2]];
+  const z = d[0] * ob.f[0] + d[1] * ob.f[1] + d[2] * ob.f[2];
+  if (z < 1) return false;
+  const x = ((d[0] * ob.r[0] + d[1] * ob.r[1] + d[2] * ob.r[2]) / (z * ob.t * ob.aspect) * 0.5 + 0.5) * ob.W;
+  const y = (0.5 - (d[0] * ob.u[0] + d[1] * ob.u[1] + d[2] * ob.u[2]) / (z * ob.t) * 0.5) * ob.H;
+  if (x < -1 || y < -1 || x > ob.W + 1 || y > ob.H + 1) return false;
+  let nearest = 0;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const px = Math.min(ob.W - 1, Math.max(0, Math.floor(x) + dx)), py = Math.min(ob.H - 1, Math.max(0, Math.floor(y) + dy));
+    // The least-occluded neighbour: a point peeking past an edge counts.
+    const v = ob.buf[py * ob.W + px];
+    nearest = dx === -1 && dy === -1 ? v : Math.min(nearest, v);
+  }
+  if (!(nearest > 0)) return true; // sky there
+  const surfaceDepth = 1 / nearest;
+  return z <= surfaceDepth * (1 + occ.depthSlack) + occ.slackM;
+}
+
+const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm3 = (a) => { const l = Math.hypot(a[0], a[1], a[2]); return [a[0] / l, a[1] / l, a[2] / l]; };
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 
@@ -306,6 +393,21 @@ export async function bakeTerrain(grid, view, options = {}) {
 
   const tilesX = Math.ceil((w - 1) / cells), tilesZ = Math.ceil((hgt - 1) / cells);
   const stations = railStations(view, vis.stations);
+  // Occlusion buffers per station and framing, built once.
+  const occluders = {
+    core: stations.map((pose) => occlusionBuffer(grid, pose, vis.core, vis.occlusion)),
+    extended: stations.map((pose) => occlusionBuffer(grid, pose, vis.extended, vis.occlusion)),
+  };
+  // Each tile's highest valid sample: narrow summits must not slip between
+  // the coarse occlusion samples.
+  const peak = new Map();
+  for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    if (!valid[i]) continue;
+    const key = `${Math.min(Math.floor(x / cells), Math.ceil((w - 1) / cells) - 1)},${Math.min(Math.floor(y / cells), Math.ceil((hgt - 1) / cells) - 1)}`;
+    const cur = peak.get(key);
+    if (!cur || h[i] > cur[1]) peak.set(key, [originM[0] + x * cell, h[i], originM[1] + y * cell]);
+  }
   const focal = Object.fromEntries(Object.entries(budgets).map(([k, b]) => [k, focalPx(view.camera.fovYDeg, b.heightPx)]));
   const tiles = [];
   const chunks = [];
@@ -331,13 +433,31 @@ export async function bakeTerrain(grid, view, options = {}) {
         min: [originM[0] + x0 * cell, minY, originM[1] + y0 * cell],
         max: [originM[0] + (x0 + cells) * cell, maxY, originM[1] + (y0 + cells) * cell],
       };
-      let dmin = Infinity;
-      for (const pose of stations) {
-        if (!boxMayBeVisible(pose, vis.aspect, box, vis.fovScale)) continue;
-        dmin = Math.min(dmin, distanceToBox(pose.eyeM, box));
+      // Closest approach per framing among stations where some sample of
+      // the tile is on screen and not hidden behind nearer terrain.
+      const samplePts = [];
+      const R = vis.occlusion.stride;
+      for (let v = 0; v <= cells; v += R) for (let u = 0; u <= cells; u += R) {
+        const X = Math.min(w - 1, x0 + u), Y = Math.min(hgt - 1, y0 + v);
+        const i = Y * w + X;
+        if (valid[i]) samplePts.push([originM[0] + X * cell, h[i], originM[1] + Y * cell]);
       }
-      const visible = Number.isFinite(dmin);
-      const dist = Math.max(vis.minDistanceM, visible ? dmin : Infinity);
+      if (peak.has(`${ix},${iz}`)) samplePts.push(peak.get(`${ix},${iz}`));
+      const reach = {};
+      for (const name of ['core', 'extended']) {
+        let dmin = Infinity;
+        stations.forEach((pose, k) => {
+          if (!boxMayBeVisible(pose, vis[name].aspect, box, vis[name].fovScale)) return;
+          const ob = occluders[name][k];
+          if (!samplePts.some((p) => pointVisible(ob, p, vis.occlusion))) return;
+          dmin = Math.min(dmin, distanceToBox(pose.eyeM, box));
+        });
+        reach[name] = dmin;
+      }
+      const framing = Number.isFinite(reach.core) ? 'core' : Number.isFinite(reach.extended) ? 'extended' : null;
+      const visible = framing !== null;
+      const dist = Math.max(vis.minDistanceM, visible ? reach[framing] : Infinity);
+      const budgetScale = visible ? vis[framing].budgetScale : 1;
       const errorsM = {};
       for (const s of STRIDES) if (s <= cells) errorsM[s] = tileStrideError(h, valid, w, hgt, x0, y0, cells, s);
       const pick = (budget) => {
@@ -345,14 +465,17 @@ export async function bakeTerrain(grid, view, options = {}) {
         let best = 1;
         for (const s of STRIDES) {
           if (s > cells) break;
-          if (errorsM[s] * focal[budget] / dist <= budgets[budget].errorPx) best = s;
+          if (errorsM[s] * focal[budget] / dist <= budgets[budget].errorPx * budgetScale) best = s;
         }
         return best;
       };
+      // Hidden from every station in every framing: never drawn, so not
+      // shipped (options.keepHidden keeps it, coarsest, for diagnostics).
+      if (!visible && !options.keepHidden) continue;
       const lod = Object.fromEntries(Object.keys(budgets).map((k) => [k, pick(k)]));
       const stride = Math.min(...Object.values(lod));
       for (const k of Object.keys(lod)) {
-        if (visible) achieved[k] = Math.max(achieved[k], errorsM[lod[k]] * focal[k] / dist);
+        if (framing === 'core') achieved[k] = Math.max(achieved[k], errorsM[lod[k]] * focal[k] / dist);
       }
       const n = cells / stride + 1;
       const q = new Uint16Array(n * n);
@@ -383,7 +506,7 @@ export async function bakeTerrain(grid, view, options = {}) {
         heights: { byteOffset: hAt, byteLength: residual.byteLength, count: n * n, type: 'uint16', predictor: 'planar', planes: 'lo-hi' },
         flow: { byteOffset: fAt, byteLength: flow.byteLength, count: n * n, type: 'uint8', water: WATER_FLOW },
         validity: allValid ? { mode: 'all' } : { mode: 'bits', byteOffset: pushChunk(vbits), byteLength: vbits.byteLength },
-        minY, maxY, visible, closestM: visible ? Math.round(dist) : null,
+        minY, maxY, visible, framing, closestM: visible ? Math.round(dist) : null,
         band: !visible ? 'far' : dist < bands.nearM ? 'near' : dist < bands.midM ? 'mid' : 'far',
         lod, errorsM: Object.fromEntries(Object.entries(errorsM).filter(([s]) => Number(s) >= stride).map(([s, e]) => [s, Math.round(e * 1000) / 1000])),
       };
@@ -419,6 +542,7 @@ export async function bakeTerrain(grid, view, options = {}) {
     source: {
       demSha256: grid.meta?.payload?.heights?.sha256 || null,
       provenance: grid.provenance || null,
+      fill: grid.fill || null,
       horizontalCrs: grid.horizontalCrs, verticalReference: grid.verticalReference,
       centerLonLat: grid.centerLonLat || null,
       sourceResolutionM: grid.sourceResolutionM, outputSpacingM: grid.outputSpacingM,
@@ -431,6 +555,7 @@ export async function bakeTerrain(grid, view, options = {}) {
     bands,
     lod: {
       budgets, fovYDeg: view.camera.fovYDeg, visibility: vis,
+      framings: 'core tiles meet the pixel budget at their closest unoccluded approach; extended-only tiles at budgetScale x; hidden tiles are not drawn',
       achievedErrorPx: Object.fromEntries(Object.entries(achieved).map(([k, v]) => [k, Math.round(v * 1000) / 1000])),
       triangulation: 'quads split along the (0,0)-(1,1) diagonal; finer edges snap to the coarser neighbour',
     },

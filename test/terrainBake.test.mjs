@@ -55,6 +55,18 @@ test('a close camera bakes full resolution and decodes the input samples', async
   }
 });
 
+test('terrain hidden behind a nearer ridge from every station is not drawn', async () => {
+  // A wall 300 m high right in front of the camera hides the plain behind it.
+  const g = makeGrid(257, 257, 10, (x, z) => 1000 + (z > 900 && z < 1000 ? 300 : 0));
+  const baked = await bakeTerrain(g, view([0, 1100, 1250], [0, 1000, -1000]));
+  assert.equal(baked.manifest.tiles.filter((t) => t.iz === 0).length, 0, 'occluded plain should not ship');
+  const kept = await bakeTerrain(g, view([0, 1100, 1250], [0, 1000, -1000]), { keepHidden: true });
+  const behind = kept.manifest.tiles.filter((t) => t.iz === 0);
+  assert.ok(behind.length && behind.every((t) => !t.visible && t.stride === 64), 'kept hidden tiles are coarsest');
+  const wall = baked.manifest.tiles.filter((t) => t.visible);
+  assert.ok(wall.length > 0);
+});
+
 test('branch and valley extrema survive the accepted detail level', async () => {
   const g = makeGrid(257, 257, 10, branched);
   const eye = [0, 2600, 9000];
@@ -82,9 +94,12 @@ test('a distant camera coarsens tiles and keeps their errors', async () => {
   const g = makeGrid(257, 257, 10, branched);
   const near = await bakeTerrain(g, view([0, 1600, 1400], [0, 1300, 0]));
   const far = await bakeTerrain(g, view([0, 4000, 60000], [0, 1500, 0]));
-  const avg = (m) => m.tiles.reduce((s, t) => s + t.stride, 0) / m.tiles.length;
-  assert.ok(avg(far.manifest) > avg(near.manifest), `far ${avg(far.manifest)} near ${avg(near.manifest)}`);
-  assert.ok(far.payload.byteLength < near.payload.byteLength);
+  // Compare tiles both cameras actually see; hidden tiles are not drawn.
+  const nearById = new Map(near.manifest.tiles.map((t) => [t.id, t]));
+  const both = far.manifest.tiles.filter((t) => t.visible && nearById.get(t.id)?.visible);
+  assert.ok(both.length > 4);
+  for (const t of both) assert.ok(t.stride >= nearById.get(t.id).stride, `${t.id} finer from far away`);
+  assert.ok(both.some((t) => t.stride > nearById.get(t.id).stride));
   for (const t of far.manifest.tiles) {
     assert.ok(t.lod.mobile >= t.lod.desktop, 'mobile budget never finer than desktop');
     assert.equal(t.stride, t.lod.desktop);

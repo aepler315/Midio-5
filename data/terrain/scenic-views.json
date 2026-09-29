@@ -1,0 +1,300 @@
+{
+  "about": "Range v2 scenic views: curated real terrain corridors with authored camera rails. Authoring source for tools/build-range-scene.mjs; the runtime catalog (src/assets/range/v2/catalog.json) is generated from it. Rail anchors are lon/lat (NAD83 for 3DEP sources) with an absolute height (heightM, metres above the source vertical datum) or a height above the DEM ground (aboveGroundM). status: candidate | approved | rejected; only approved views are production-eligible.",
+  "catalogVersion": 1,
+  "views": [
+    {
+      "id": "nc-ross-lake-north",
+      "regionId": "north-cascades",
+      "biome": "RAINFOREST",
+      "status": "candidate",
+      "notes": "Elevated over the Ross Dam / Diablo Lake junction looking north-north-east up Ross Lake: the lake is the central opening, Jack Mountain the tall snowy mass on the right, Sourdough's wooded flanks at the left, Hozomeen and the Pasayten peaks on the far skyline. The rail trucks 1.8 km east-south-east, across the line of sight, for parallax.",
+      "dem": {
+        "source": "3dep13",
+        "fill": "terrarium",
+        "fillZoom": 12,
+        "centerLonLat": [
+          -120.9,
+          48.87
+        ],
+        "extentM": [
+          44800,
+          44800
+        ],
+        "cellM": 20
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -121.1144,
+            48.706
+          ],
+          "heightM": 1500
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -121.0937,
+            48.6974
+          ],
+          "heightM": 1500
+        },
+        "targetStart": {
+          "lonLat": [
+            -120.9644,
+            48.866
+          ],
+          "heightM": 700
+        },
+        "targetEnd": {
+          "lonLat": [
+            -120.9437,
+            48.8574
+          ],
+          "heightM": 700
+        },
+        "fovYDeg": 35
+      },
+      "landmarks": [
+        {
+          "name": "Jack Mountain",
+          "lonLat": [
+            -120.9575,
+            48.7727
+          ],
+          "elevationM": 2763
+        },
+        {
+          "name": "Hozomeen Mountain",
+          "lonLat": [
+            -121.012,
+            48.9822
+          ],
+          "elevationM": 2459,
+          "note": "summit located as the DEM maximum within 5 km of the first estimate"
+        },
+        {
+          "name": "Ross Dam",
+          "lonLat": [
+            -121.0676,
+            48.7317
+          ]
+        }
+      ],
+      "review": "2026-09-29 geometry/camera review (Task 4): 21 stations + continuous traverse, neutral/silhouette/depth/crop-edge modes. Connected real relief (Ross Lake chain, Jack Mountain spurs, Sourdough flanks); no crop-edge skyline, no cracks; terrain coverage 0.62-0.64, skyline top 0.28 of frame height. Geometry approved for material pilot; production status stays candidate until the Task 13 full pilot."
+    },
+    {
+      "id": "nc-diablo-colonial",
+      "regionId": "north-cascades",
+      "biome": "RAINFOREST",
+      "status": "rejected",
+      "notes": "From the Diablo Lake overlook looking south-west across the lake to Colonial and Pyramid peaks and the Snowfield group.",
+      "dem": {
+        "source": "3dep13",
+        "centerLonLat": [
+          -121.17,
+          48.66
+        ],
+        "extentM": [
+          26880,
+          23040
+        ],
+        "cellM": 20
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -121.09,
+            48.716
+          ],
+          "aboveGroundM": 420
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -121.112,
+            48.722
+          ],
+          "aboveGroundM": 380
+        },
+        "targetStart": {
+          "lonLat": [
+            -121.175,
+            48.655
+          ],
+          "heightM": 1300
+        },
+        "targetEnd": {
+          "lonLat": [
+            -121.2,
+            48.655
+          ],
+          "heightM": 1300
+        },
+        "fovYDeg": 35
+      },
+      "landmarks": [
+        {
+          "name": "Colonial Peak",
+          "lonLat": [
+            -121.1392,
+            48.6463
+          ],
+          "elevationM": 2361
+        },
+        {
+          "name": "Pyramid Peak",
+          "lonLat": [
+            -121.1134,
+            48.6386
+          ],
+          "elevationM": 2266
+        },
+        {
+          "name": "Snowfield Peak",
+          "lonLat": [
+            -121.2031,
+            48.6552
+          ],
+          "elevationM": 2527
+        }
+      ],
+      "review": "2026-09-29 geometry review (3 stations, neutral/silhouette): a near wall of ridges fills the frame with no central opening or stage sightline; skyline is a continuous high band. Also explored an elevated eastern eye (diablo-e) - better, but still no single strong opening; Ross Lake north supersedes it for this region."
+    },
+    {
+      "id": "skagit-baker-lake",
+      "regionId": "skagit-range",
+      "biome": "RAINFOREST",
+      "status": "rejected",
+      "notes": "From the east shore above Baker Lake looking west-north-west to Mount Baker across the lake valley.",
+      "dem": {
+        "source": "3dep13",
+        "centerLonLat": [
+          -121.7,
+          48.72
+        ],
+        "extentM": [
+          26880,
+          23040
+        ],
+        "cellM": 20
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -121.585,
+            48.662
+          ],
+          "aboveGroundM": 450
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -121.6,
+            48.688
+          ],
+          "aboveGroundM": 420
+        },
+        "targetStart": {
+          "lonLat": [
+            -121.8,
+            48.755
+          ],
+          "heightM": 1700
+        },
+        "targetEnd": {
+          "lonLat": [
+            -121.8,
+            48.765
+          ],
+          "heightM": 1700
+        },
+        "fovYDeg": 35
+      },
+      "landmarks": [
+        {
+          "name": "Mount Baker",
+          "lonLat": [
+            -121.8135,
+            48.7768
+          ],
+          "elevationM": 3286
+        },
+        {
+          "name": "Mount Shuksan",
+          "lonLat": [
+            -121.6025,
+            48.8312
+          ],
+          "elevationM": 2783
+        }
+      ],
+      "review": "2026-09-29 geometry review: Mount Baker reads as one broad centred cone over a long level shoulder - a high flat wall across most of the frame, with little internal overlap; the lake sits too low for the stage band. Elevated southern/south-eastern eyes (baker-s, baker-se) kept the same centred mass."
+    },
+    {
+      "id": "skagit-shuksan-north",
+      "regionId": "skagit-range",
+      "biome": "RAINFOREST",
+      "status": "rejected",
+      "notes": "From above the head of Baker Lake looking north up the Baker River toward Mount Shuksan, with Mount Baker's shoulder at the left.",
+      "dem": {
+        "source": "3dep13",
+        "centerLonLat": [
+          -121.62,
+          48.8
+        ],
+        "extentM": [
+          24960,
+          23040
+        ],
+        "cellM": 20
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -121.64,
+            48.735
+          ],
+          "aboveGroundM": 500
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -121.625,
+            48.752
+          ],
+          "aboveGroundM": 450
+        },
+        "targetStart": {
+          "lonLat": [
+            -121.6,
+            48.84
+          ],
+          "heightM": 1500
+        },
+        "targetEnd": {
+          "lonLat": [
+            -121.585,
+            48.845
+          ],
+          "heightM": 1500
+        },
+        "fovYDeg": 35
+      },
+      "landmarks": [
+        {
+          "name": "Mount Shuksan",
+          "lonLat": [
+            -121.6025,
+            48.8312
+          ],
+          "elevationM": 2783
+        },
+        {
+          "name": "Mount Baker",
+          "lonLat": [
+            -121.8135,
+            48.7768
+          ],
+          "elevationM": 3286
+        }
+      ],
+      "review": "2026-09-29 geometry review: a close foreground mound occupies the lower half at every station and hides the valley; Shuksan is a small distant skyline notch. Elevating the eye (baker-river-n) did not open a central valley."
+    }
+  ]
+}

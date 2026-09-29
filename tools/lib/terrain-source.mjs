@@ -67,6 +67,9 @@ export async function normalizeDem(input, options) {
   if (options.cache) args.push('--cache', options.cache);
   if (options.pin) args.push('--pin', options.pin);
   if (options.retrievedAt) args.push('--retrieved-at', options.retrievedAt);
+  if (options.points) args.push('--points', JSON.stringify(options.points));
+  if (options.fill) args.push('--fill', options.fill);
+  if (options.fillZoom) args.push('--fill-zoom', String(options.fillZoom));
   await fs.mkdir(path.dirname(path.resolve(out)), { recursive: true });
   await run(python, args, { env: curlEnv(), maxBuffer: 1 << 24, timeout: 30 * 60 * 1000 });
   return readDemGrid(out);
@@ -107,7 +110,7 @@ export async function readDemGrid(prefix) {
     horizontalCrs: meta.horizontalCrs, verticalReference: meta.verticalReference,
     sourceResolutionM: meta.sourceResolutionM, outputSpacingM: meta.outputSpacingM,
     upsampled: meta.upsampled,
-    provenance: meta.provenance, meta,
+    provenance: meta.provenance, fill: meta.fill || null, points: meta.points || {}, meta,
   };
 }
 

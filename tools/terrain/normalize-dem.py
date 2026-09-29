@@ -321,6 +321,13 @@ def main(argv=None):
     ap.add_argument('--cache', default='.terrain-cache')
     ap.add_argument('--pin', default=None, help='JSON file mapping 3DEP tile -> dated URL')
     ap.add_argument('--retrieved-at', default=None, help='override the recorded retrieval date')
+    ap.add_argument('--fill', choices=['terrarium'], default=None,
+                    help='fill cells the primary source leaves invalid (e.g. 3DEP beyond the U.S. border)')
+    ap.add_argument('--fill-zoom', type=int, default=12)
+    ap.add_argument('--feather-cells', type=int, default=15,
+                    help='width of the blend from fill to primary inside primary coverage')
+    ap.add_argument('--points', default=None,
+                    help='JSON object name -> [lon, lat]; each is reported in local metres with the grid height there')
     args = ap.parse_args(argv)
     args.center = [float(v) for v in args.center.split(',')]
     args.extent = [float(v) for v in args.extent.split(',')]
@@ -360,6 +367,47 @@ def main(argv=None):
     )
     out_ds = gdal.Warp('', src['paths'], options=warp_opts)
     heights = out_ds.GetRasterBand(1).ReadAsArray().astype('<f4')
+    primary_valid = np.isfinite(heights)
+    fill_meta = None
+    source_mask = primary_valid.astype(np.uint8)  # 1 primary, 2 fill, 0 none
+    if args.fill and not primary_valid.all():
+        fsrc = source_terrarium(env, args.fill_zoom, os.path.join(args.cache, 'terrarium'), scratch)
+        fwarp = gdal.WarpOptions(
+            format='MEM', dstSRS=tm.ExportToWkt(),
+            outputBounds=[bounds['west'], bounds['south'], bounds['east'], bounds['north']],
+            width=bounds['cols'], height=bounds['rows'],
+            resampleAlg='bilinear' if args.cell < 1.25 * fsrc['sourceResolutionM'] else 'average',
+            dstNodata=float('nan'), outputType=gdal.GDT_Float32, errorThreshold=0)
+        fill_ds = gdal.Warp('', fsrc['paths'], options=fwarp)  # keep the dataset alive while reading
+        fill = fill_ds.GetRasterBand(1).ReadAsArray().astype('<f4')
+        fill_ds = None
+        # Blend weight: 0 at the primary coverage edge rising to 1 after
+        # `feather` cells inside it, so the two sources meet without a step.
+        feather = max(1, args.feather_cells)
+        inside = primary_valid.copy()
+        weight = np.zeros(heights.shape, dtype=np.float32)
+        for k in range(feather):
+            weight += inside
+            er = inside.copy()
+            er[1:, :] &= inside[:-1, :]; er[:-1, :] &= inside[1:, :]
+            er[:, 1:] &= inside[:, :-1]; er[:, :-1] &= inside[:, 1:]
+            inside = er
+        weight /= feather
+        both = primary_valid & np.isfinite(fill)
+        blended = heights.copy()
+        blended[both] = weight[both] * heights[both] + (1 - weight[both]) * fill[both]
+        only_fill = ~primary_valid & np.isfinite(fill)
+        blended[only_fill] = fill[only_fill]
+        heights = blended.astype('<f4')
+        source_mask[only_fill] = 2
+        fill_meta = {
+            'source': 'terrarium', 'zoom': args.fill_zoom,
+            'sourceResolutionM': fsrc['sourceResolutionM'],
+            'verticalReference': fsrc['verticalReference'],
+            'cells': int(only_fill.sum()), 'featherCells': feather,
+            'rule': 'fill only where the primary source has no data; linear blend over featherCells inside primary coverage',
+            'provenance': fsrc['provenance'],
+        }
     valid = np.isfinite(heights).astype(np.uint8)
     heights[valid == 0] = np.nan
     prefix = args.out
@@ -367,6 +415,9 @@ def main(argv=None):
         fh.write(heights.tobytes())
     with open(prefix + '.valid.u8', 'wb') as fh:
         fh.write(valid.tobytes())
+    source_mask[valid == 0] = 0
+    with open(prefix + '.source.u8', 'wb') as fh:
+        fh.write(source_mask.tobytes())
     finite = heights[valid == 1]
     meta = {
         'schema': SCHEMA, 'version': VERSION,
@@ -389,14 +440,37 @@ def main(argv=None):
         'heightRangeM': [float(finite.min()), float(finite.max())] if finite.size else None,
         'provenance': {**src['provenance'],
                        'retrievedAt': args.retrieved_at or datetime.date.today().isoformat()},
+        'fill': fill_meta,
         'tools': {'gdal': gdal.__version__, 'numpy': np.__version__, 'python': sys.version.split()[0]},
         'payload': {
             'heights': {'file': os.path.basename(prefix) + '.f32', 'type': 'float32', 'endian': 'little',
                         'byteLength': heights.nbytes, 'sha256': sha256_bytes(heights.tobytes())},
             'valid': {'file': os.path.basename(prefix) + '.valid.u8', 'type': 'uint8',
                       'byteLength': valid.nbytes, 'sha256': sha256_bytes(valid.tobytes())},
+            'source': {'file': os.path.basename(prefix) + '.source.u8', 'type': 'uint8',
+                       'values': '0 none, 1 primary, 2 fill',
+                       'byteLength': source_mask.nbytes, 'sha256': sha256_bytes(source_mask.tobytes())},
         },
     }
+    if args.points:
+        pts = json.loads(args.points) if args.points.strip().startswith('{') else json.load(open(args.points))
+        geo = geographic(src['datum'])
+        to_local = osr.CoordinateTransformation(geo, tm)
+        out_pts = {}
+        radius = max(1, int(round(200 / args.cell)))
+        for name, (lon, lat) in pts.items():
+            e, n, _ = to_local.TransformPoint(lon, lat)
+            x, z = e, -n
+            c = (x - meta['originM'][0]) / args.cell
+            r = (z - meta['originM'][1]) / args.cell
+            ci, ri = int(round(c)), int(round(r))
+            ground = peak = None
+            if 0 <= ci < meta['width'] and 0 <= ri < meta['height'] and valid[ri, ci]:
+                ground = float(heights[ri, ci])
+                win = heights[max(0, ri - radius):ri + radius + 1, max(0, ci - radius):ci + radius + 1]
+                peak = float(np.nanmax(win))
+            out_pts[name] = {'lonLat': [lon, lat], 'localM': [x, z], 'groundM': ground, 'peakWithin200mM': peak}
+        meta['points'] = out_pts
     with open(prefix + '.json', 'w') as fh:
         json.dump(meta, fh, indent=1)
     print(json.dumps({'ok': True, 'out': prefix, 'width': meta['width'], 'height': meta['height'],

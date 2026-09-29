@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Range v2 scene review</title>
+<style>
+  html, body { margin: 0; background: #20242a; color: #ddd; font: 12px system-ui, sans-serif; }
+  canvas { display: block; }
+  #status { position: fixed; left: 8px; top: 8px; }
+</style>
+</head>
+<body>
+<!-- Diagnostic viewer only: the same TerrainMesh geometry, surface texture
+     and cameraPoseAt() the production scene uses, drawn with review
+     materials (neutral light, silhouette, depth). Driven by
+     tools/review-range-views.mjs; not linked from the app. -->
+<div id="status">loading…</div>
+<script type="module">
+  import * as THREE from '../vendor/range/three-range.module.js';
+  import { loadTerrainPackage } from '../world/alpine/RangeAssets.js';
+  import { createSurfaceTexture, terrainUniforms, createBandGeometries, createReviewMaterial, REVIEW_MODES } from '../world/alpine/TerrainGL.js';
+  import { cameraPoseAt } from '../world/terrain/SceneTravel.js';
+  import { terrainHeightAt } from '../world/alpine/TerrainMesh.js';
+
+  const q = new URLSearchParams(location.search);
+  const status = document.getElementById('status');
+  const state = { ready: false, error: null };
+  window.__review = state;
+  try {
+    const manifestUrl = q.get('manifest');
+    const view = await (await fetch(q.get('view'))).json();
+    const budget = q.get('budget') || 'desktop';
+    const pkg = await loadTerrainPackage(manifestUrl);
+    const surface = createSurfaceTexture(THREE, pkg.data);
+    const uniforms = terrainUniforms(THREE, pkg.data, surface);
+    const material = createReviewMaterial(THREE, uniforms);
+    const { geometries, stats } = createBandGeometries(THREE, pkg.data, { budget });
+    const scene = new THREE.Scene();
+    for (const geo of Object.values(geometries)) scene.add(new THREE.Mesh(geo, material));
+    const canvas = document.createElement('canvas');
+    document.body.appendChild(canvas);
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+    const camera = new THREE.PerspectiveCamera(view.camera.fovYDeg, 16 / 9, 5, 120000);
+    state.stats = stats;
+    state.render = ({ progress = 0, mode = 'neutral', width = 1280, height = 720 } = {}) => {
+      renderer.setPixelRatio(1);
+      renderer.setSize(width, height, false);
+      canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
+      const pose = cameraPoseAt(view, progress);
+      camera.aspect = width / height;
+      camera.fov = pose.fovYDeg;
+      camera.position.set(...pose.eyeM);
+      camera.up.set(0, 1, 0);
+      camera.lookAt(...pose.targetM);
+      camera.updateProjectionMatrix();
+      material.uniforms.uMode.value = REVIEW_MODES[mode];
+      renderer.setClearColor(mode === 'silhouette' ? 0xffffff : mode === 'depth' ? 0x000000 : 0x9fb3c8, 1);
+      const t0 = performance.now();
+      renderer.render(scene, camera);
+      renderer.getContext().finish();
+      return { ms: performance.now() - t0, pose };
+    };
+    // Exploration: render an explicit pose (local metres) with the same
+    // camera construction, for comparing candidate rails before authoring.
+    state.renderPose = ({ eye, target, fovYDeg = view.camera.fovYDeg, mode = 'neutral', width = 640, height = 360 }) => {
+      const v = { id: view.id, camera: { eyeStartM: eye, eyeEndM: eye, targetStartM: target, targetEndM: target, fovYDeg } };
+      const saved = view.camera;
+      view.camera = v.camera;
+      try { return state.render({ progress: 0, mode, width, height }); } finally { view.camera = saved; }
+    };
+    state.heightAt = (x, z) => terrainHeightAt(pkg.data, x, z);
+    state.bounds = pkg.manifest.boundsM;
+    state.ready = true;
+    status.textContent = `${view.id}: ${stats.triangles} triangles`;
+  } catch (err) {
+    state.error = String(err?.stack || err);
+    status.textContent = state.error;
+  }
+</script>
+</body>
+</html>

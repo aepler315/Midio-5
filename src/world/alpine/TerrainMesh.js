@@ -99,14 +99,26 @@ export function tileStrides(data, budget = 'desktop', bias = 1) {
 export function buildTerrainGeometry(data, { budget = 'desktop', bias = 1, includeHidden = false, strides = null } = {}) {
   const { grid, cells } = data;
   const stridesById = strides || tileStrides(data, budget, bias);
-  const acc = Object.fromEntries(BANDS.map((b) => [b, { pos: [], idx: [], vertexCount: 0 }]));
-  let triangles = 0;
   const neighbourStride = (t, dx, dz) => {
     const nb = data.byIndex.get(`${t.ix + dx},${t.iz + dz}`);
     return nb ? stridesById.get(nb.id) : 0;
   };
+  // Size every band first so the arrays are allocated once.
+  const size = Object.fromEntries(BANDS.map((b) => [b, { v: 0, i: 0 }]));
+  const drawn = [];
   for (const t of data.tiles.values()) {
     if (!t.visible && !includeHidden) continue;
+    const m = cells / stridesById.get(t.id);
+    const band = BANDS.includes(t.band) ? t.band : 'far';
+    size[band].v += (m + 1) * (m + 1);
+    size[band].i += 6 * m * m;
+    drawn.push([t, band]);
+  }
+  const out = Object.fromEntries(BANDS.map((b) => [b, {
+    positions: new Float32Array(size[b].v * 3), indices: new Uint32Array(size[b].i), vertexCount: 0, indexCount: 0,
+  }]));
+  let triangles = 0;
+  for (const [t, bandName] of drawn) {
     const s = stridesById.get(t.id);
     const step = s / t.stride; // stored samples per runtime step
     const m = cells / s; // runtime cells per side
@@ -115,56 +127,67 @@ export function buildTerrainGeometry(data, { budget = 'desktop', bias = 1, inclu
       north: Math.max(s, neighbourStride(t, 0, -1)), south: Math.max(s, neighbourStride(t, 0, 1)),
       west: Math.max(s, neighbourStride(t, -1, 0)), east: Math.max(s, neighbourStride(t, 1, 0)),
     };
-    const band = acc[BANDS.includes(t.band) ? t.band : 'far'];
+    const band = out[bandName];
     const base = band.vertexCount;
     const x0 = grid.originM[0] + t.ix * cells * grid.cellSizeM;
     const z0 = grid.originM[1] + t.iz * cells * grid.cellSizeM;
     const hRaw = (u, v) => sampleAt(t, u * step, v * step);
-    // Height of runtime vertex (u, v) after snapping an edge vertex onto the
-    // coarser neighbour's straight edge between its own vertices.
+    // A finer tile's edge vertex snaps onto the coarser neighbour's straight
+    // edge between that neighbour's own vertices: shared edges coincide.
+    const along = (k, e) => {
+      const r = e / s; // runtime steps per coarse step
+      const k0 = Math.floor(k / r) * r;
+      return k0 === k ? null : [k0, Math.min(m, k0 + r), (k - k0) / r];
+    };
     const snap = (u, v) => {
-      const along = (k, e) => {
-        const r = e / s; // runtime steps per coarse step
-        const k0 = Math.floor(k / r) * r;
-        if (k0 === k) return null;
-        return [k0, Math.min(m, k0 + r), (k - k0) / r];
-      };
       let seg = null, axis = 'u';
       if (v === 0 && edge.north > s) seg = along(u, edge.north);
       else if (v === m && edge.south > s) seg = along(u, edge.south);
       else if (u === 0 && edge.west > s) { seg = along(v, edge.west); axis = 'v'; }
       else if (u === m && edge.east > s) { seg = along(v, edge.east); axis = 'v'; }
-      if (!seg) return hRaw(u, v);
+      const raw = hRaw(u, v);
+      // No-data stays no-data: snapping never invents a surface.
+      if (!seg || !Number.isFinite(raw)) return raw;
       const [k0, k1, f] = seg;
       const a = axis === 'u' ? hRaw(k0, v) : hRaw(u, k0);
       const b = axis === 'u' ? hRaw(k1, v) : hRaw(u, k1);
       return a + (b - a) * f;
     };
+    const P = band.positions;
+    const heights = new Float32Array(n * n);
     for (let v = 0; v < n; v++) {
       for (let u = 0; u < n; u++) {
         const y = snap(u, v);
-        band.pos.push(x0 + u * s * grid.cellSizeM, y, z0 + v * s * grid.cellSizeM);
+        heights[v * n + u] = y;
+        const o = 3 * (base + v * n + u);
+        P[o] = x0 + u * s * grid.cellSizeM;
+        P[o + 1] = Number.isFinite(y) ? y : 0;
+        P[o + 2] = z0 + v * s * grid.cellSizeM;
       }
     }
+    const I = band.indices;
+    let k = band.indexCount;
     for (let v = 0; v < m; v++) {
       for (let u = 0; u < m; u++) {
-        const a = base + v * n + u, b = a + 1, c = a + n, d = c + 1;
-        // Skip quads touching no-data (NaN heights).
-        if (![a, b, c, d].every((i) => Number.isFinite(band.pos[3 * i + 1]))) continue;
+        const la = v * n + u;
+        // Skip quads touching no-data.
+        if (!(Number.isFinite(heights[la]) && Number.isFinite(heights[la + 1])
+          && Number.isFinite(heights[la + n]) && Number.isFinite(heights[la + n + 1]))) continue;
+        const a = base + la, b = a + 1, c = a + n, d = c + 1;
         // Split along a-d, matching the baker's error measure. Winding is
         // counter-clockwise seen from above (+Y) in X-east/Z-south axes.
-        band.idx.push(a, c, d, a, d, b);
+        I[k++] = a; I[k++] = c; I[k++] = d;
+        I[k++] = a; I[k++] = d; I[k++] = b;
         triangles += 2;
       }
     }
+    band.indexCount = k;
     band.vertexCount += n * n;
   }
   const bands = {};
   for (const b of BANDS) {
-    const { pos, idx, vertexCount } = acc[b];
-    const positions = new Float32Array(pos.length);
-    for (let i = 0; i < pos.length; i++) positions[i] = Number.isFinite(pos[i]) ? pos[i] : 0;
-    bands[b] = { positions, indices: Uint32Array.from(idx), vertexCount };
+    const o = out[b];
+    bands[b] = { positions: o.positions, indices: o.indexCount === o.indices.length ? o.indices : o.indices.slice(0, o.indexCount), vertexCount: o.vertexCount };
   }
   const bytes = BANDS.reduce((sum, b) => sum + bands[b].positions.byteLength + bands[b].indices.byteLength, 0);
   return { bands, stats: { triangles, vertices: BANDS.reduce((s2, b) => s2 + bands[b].vertexCount, 0), bytes } };
