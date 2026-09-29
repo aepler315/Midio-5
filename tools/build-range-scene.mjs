@@ -223,11 +223,16 @@ export async function approveView(doc, id, { evidence = [] } = {}) {
   }
   const build = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${id}.build.json`), 'utf8'));
   // Legacy parity: the far range stays readable at every rail station.
-  const { viewExposure, pairExposure, MIN_FAR_EXPOSED } = await import('./lib/range-exposure.mjs');
+  const { viewExposure, pairExposure, MIN_FAR_EXPOSED, MIN_FAR_CREST_COLUMNS } = await import('./lib/range-exposure.mjs');
   const exposureOf = (x) => viewExposure(RUNTIME_DIR, { ...x, terrainManifestUrl: `terrain/${x.id}.terrain.json` });
   const exposure = await exposureOf(build.view);
   if (exposure.min < MIN_FAR_EXPOSED) {
     throw new Error(`${id}: far crest only ${exposure.min.toFixed(2)} exposed at its worst station (needs ${MIN_FAR_EXPOSED}); not approved`);
+  }
+  // A fraction of a crest that barely exists is meaningless: the far range
+  // must also span the frame at every station.
+  if (exposure.minCrest < MIN_FAR_CREST_COLUMNS) {
+    throw new Error(`${id}: far crest spans only ${exposure.minCrest.toFixed(2)} of the frame at its worst station (needs ${MIN_FAR_CREST_COLUMNS}); not approved`);
   }
   console.log(`${id}: far crest exposure ${exposure.stations.map((s) => s.fraction.toFixed(2)).join(' ')}`);
   // Travel to and from every view already approved, at the shared progress.

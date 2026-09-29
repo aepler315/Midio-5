@@ -2550,14 +2550,18 @@ export class BiomeManager {
     // mirage and sea life are legacy scenery faces and stay off. The sea
     // still rises for a live tsunami or its withdrawal, so that heard-time
     // hazard remains visible.
+    // While the scene is still fading in over legacy scenery these legacy
+    // passes keep drawing underneath it, so nothing vanishes on the fade's
+    // first frame; they hand over when the fade completes.
+    const legacyPasses = !v2 || v2Arriving;
     const seaHazard = v2 && (this._activeWithdrawal() > 0 || !!this._activeTsunami(canvas.width));
-    if (!v2) {
+    if (legacyPasses) {
       this._drawFarShore(ctx, canvas, worldX, A, B, t); // beyond the ocean, behind the water itself
       if (!this._rangeSky) this._drawFataMorgana(ctx, canvas, worldX, A, B, t);
     }
-    if (!v2 || seaHazard) this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
-    if (!v2) this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
-    if (!v2) this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
+    if (legacyPasses || seaHazard) this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
+    if (legacyPasses) this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
+    if (legacyPasses) this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
     this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
 
     // Concert beams: anchored at the celestial, drawn before the mountain

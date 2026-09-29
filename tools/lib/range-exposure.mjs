@@ -1,20 +1,31 @@
 // Range v2 visibility (plan Task 14): the far range's crest must stay at
 // least MIN_FAR_EXPOSED visible at every rail station and every travel
 // sample, the same protection the legacy ridge fit keeps (RidgeComposition
-// MIN_EXPOSED). Measured on the shipped package -- the tiles the runtime
-// actually draws -- through a depth raster of the whole view, with the far
-// partition's skyline tested against everything nearer and the ground line.
+// MIN_EXPOSED), and a far crest must span at least MIN_FAR_CREST_COLUMNS of
+// the frame. Measured on the shipped package the way the runtime draws it:
+// every tile rendered in the partition its manifest assigns (`band`), each
+// partition a depth raster, the far pass's skyline tested against whichever
+// mid and near passes are composited over it, and the ground line.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { decodeTerrain, terrainHeightAt } from '../../src/world/alpine/TerrainMesh.js';
+import { decodeTerrain } from '../../src/world/alpine/TerrainMesh.js';
 import { travelSpans } from '../../src/world/TravelSeam.js';
-import { stationExposure, MIN_FAR_EXPOSED, VISIBILITY } from './terrain-bake.mjs';
+import { cameraPoseAt } from '../../src/world/terrain/SceneTravel.js';
+import { occlusionBuffer, MIN_FAR_EXPOSED, EXPOSURE_FRAMING, VISIBILITY } from './terrain-bake.mjs';
 
 export { MIN_FAR_EXPOSED };
 
+/** A far crest must span at least this share of the frame at every station. */
+export const MIN_FAR_CREST_COLUMNS = 0.5;
+
 /** Occlusion raster over the shipped surface, resampled every `step` cells. */
 export const EXPOSURE_OCCLUSION = Object.freeze({ ...VISIBILITY.occlusion, stride: 1 });
+
+/** Runtime partitions and the layer whose travel timing each follows
+ *  (RangePresentation PASS_LAYER). */
+const PASSES = Object.freeze([['far', 'L2'], ['mid', 'L4'], ['near', 'L5']]);
+const OWNER = Object.freeze({ far: 1, mid: 2, near: 3 });
 
 /** Decode a shipped terrain package (manifest + gzip payload) from disk. */
 export async function loadShippedTerrain(runtimeDir, view) {
@@ -25,46 +36,134 @@ export async function loadShippedTerrain(runtimeDir, view) {
   return decodeTerrain(manifest, new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
 }
 
-/** A regular height grid sampled from the decoded tiles (NaN = not drawn). */
-export function gridFromTerrain(data, step = 4) {
-  const g = data.grid;
+/** Height of stored sample (u, v) of a decoded tile. */
+function tileHeight(tile, gx, gz, cells) {
+  const fu = (gx - tile.ix * cells) / tile.stride, fv = (gz - tile.iz * cells) / tile.stride;
+  const n = tile.samples;
+  const u0 = Math.min(n - 2, Math.floor(fu)), v0 = Math.min(n - 2, Math.floor(fv));
+  const tu = fu - u0, tv = fv - v0;
+  const at = (u, v) => tile.heightsM[v * n + u];
+  const a = at(u0, v0), b = at(u0 + 1, v0), c = at(u0, v0 + 1), d = at(u0 + 1, v0 + 1);
+  return tu >= tv ? a + (b - a) * tu + (d - b) * tv : a + (d - c) * tu + (c - a) * tv;
+}
+
+/**
+ * A regular height grid sampled from the decoded tiles, resampled every
+ * `step` source cells. With `band`, only tiles the runtime draws in that
+ * partition contribute; a sample on a tile edge belongs to every tile that
+ * shares it, so partitions meet without gaps. Hidden tiles are never drawn
+ * and never contribute.
+ */
+export function gridFromTerrain(data, step = 4, { band = null } = {}) {
+  const g = data.grid, cells = data.cells;
   const w = Math.floor((g.width - 1) / step) + 1, h = Math.floor((g.height - 1) / step) + 1;
   const heightsM = new Float32Array(w * h), valid = new Uint8Array(w * h);
+  const drawn = (t) => t && t.visible !== false && (!band || t.band === band);
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
-    const y = terrainHeightAt(data, g.originM[0] + i * step * g.cellSizeM, g.originM[1] + j * step * g.cellSizeM);
+    const gx = i * step, gz = j * step;
+    const ixs = [Math.floor(gx / cells)], izs = [Math.floor(gz / cells)];
+    if (gx % cells === 0 && gx > 0) ixs.push(gx / cells - 1);
+    if (gz % cells === 0 && gz > 0) izs.push(gz / cells - 1);
+    let y = NaN;
+    for (const ix of ixs) for (const iz of izs) {
+      const t = data.byIndex.get(`${ix},${iz}`);
+      if (!Number.isFinite(y) && drawn(t)) y = tileHeight(t, gx, gz, cells);
+    }
     if (Number.isFinite(y)) { heightsM[j * w + i] = y; valid[j * w + i] = 1; }
   }
   return { width: w, height: h, cellSizeM: g.cellSizeM * step, originM: [...g.originM], heightsM, valid };
 }
 
-/** Per-station exposure of a shipped view: { stations, min }. */
+/**
+ * One station as the runtime composes it: per pixel, which partition's
+ * surface is nearest (0 none, 1 far, 2 mid, 3 near) -- what each pass's
+ * image actually contains after the shared depth pre-pass -- and, per
+ * column, the top row of the far partition's skyline (-1 = none).
+ */
+export function stationMasks(bandGrids, pose, { framing = EXPOSURE_FRAMING, occ = EXPOSURE_OCCLUSION } = {}) {
+  const buf = {};
+  for (const [name] of PASSES) buf[name] = occlusionBuffer(bandGrids[name], pose, framing, occ);
+  const { W, H } = buf.far;
+  const owner = new Uint8Array(W * H);
+  const slack = 1 + occ.depthSlack;
+  for (let o = 0; o < W * H; o++) {
+    const f = buf.far.buf[o], m = buf.mid.buf[o], n = buf.near.buf[o];
+    // Larger 1/depth is nearer; ties within the slack go to the farther
+    // band (its pass draws first and the nearer pass only covers it when
+    // it is really in front).
+    if (n > 0 && n > m * slack && n > f * slack) owner[o] = OWNER.near;
+    else if (m > 0 && m > f * slack) owner[o] = OWNER.mid;
+    else if (f > 0) owner[o] = OWNER.far;
+    else if (m > 0) owner[o] = OWNER.mid;
+    else if (n > 0) owner[o] = OWNER.near;
+  }
+  const topFar = new Int16Array(W).fill(-1);
+  for (let x = 0; x < W; x++) {
+    for (let y = 0; y < H; y++) if (buf.far.buf[y * W + x] > 0) { topFar[x] = y; break; }
+  }
+  return { W, H, groundRow: Math.floor((framing.groundFrac ?? 1) * H), owner, topFar };
+}
+
+/** Exposed share of the far crest in one composed frame, where each
+ *  partition p in columns x comes from `sideOf(p, x)`'s masks. */
+function composedExposure(sideOf, W) {
+  let crest = 0, shown = 0;
+  for (let x = 0; x < W; x++) {
+    const f = sideOf('far', x);
+    const y = f.topFar[x];
+    if (y < 0) continue;
+    crest++;
+    if (y >= f.groundRow) continue;
+    const o = y * W + x;
+    // The far image holds the crest only where far is its side's nearest
+    // surface; the mid and near images drawn over it must not cover it.
+    if (f.owner[o] !== OWNER.far) continue;
+    if (sideOf('mid', x).owner[o] === OWNER.mid) continue;
+    if (sideOf('near', x).owner[o] === OWNER.near) continue;
+    shown++;
+  }
+  return { fraction: crest ? shown / crest : 0, crestColumns: crest / W };
+}
+
+/** Exposure of one view's station: all partitions from the same side. */
+export function maskExposure(m) {
+  return composedExposure(() => m, m.W);
+}
+
+/** Per-station exposure of a shipped view: { stations, min, minCrest }. */
 export async function viewExposure(runtimeDir, view, { stations = VISIBILITY.stations } = {}) {
   const data = await loadShippedTerrain(runtimeDir, view);
-  const grid = gridFromTerrain(data);
-  const list = stationExposure(grid, { ...view, bands: data.manifest.bands }, { stations, occ: EXPOSURE_OCCLUSION });
-  return { stations: list, min: Math.min(...list.map((s) => s.fraction)) };
+  const grids = Object.fromEntries(PASSES.map(([name]) => [name, gridFromTerrain(data, 4, { band: name })]));
+  const list = [];
+  for (let k = 0; k < stations; k++) {
+    const masks = stationMasks(grids, cameraPoseAt(view, stations > 1 ? k / (stations - 1) : 0));
+    list.push({ ...maskExposure(masks), masks });
+  }
+  return {
+    stations: list,
+    min: Math.min(...list.map((s) => s.fraction)),
+    minCrest: Math.min(...list.map((s) => s.crestColumns)),
+  };
+}
+
+/** Whether side B supplies column x of a pass at seam progress p. */
+function useB(spans, x) {
+  const cx = x + 0.5;
+  if (cx < spans.lo) return false;
+  if (cx >= spans.hi) return true;
+  return (spans.bands.find((b) => cx >= b.x0 && cx < b.x1)?.weightB ?? 0.5) >= 0.5;
 }
 
 /**
- * Exposure of a travel composite at seam progress `p`: columns are taken
- * from the side that dominates them (side A left of the seam, side B right
- * of it; the feather band splits at weight 0.5), following the far range's
- * own travel timing ('L2').
+ * Exposure of a travel composite at seam progress `p`. Each partition
+ * follows its own seam (far L2, mid L4, near L5), so at one column the far
+ * crest may come from side A while side B's mid or near pass already covers
+ * it; the feather band splits at weight 0.5.
  */
-export function travelExposure(colsA, colsB, p, layerKey = 'L2') {
-  const W = colsA.length;
-  const { lo, hi, bands } = travelSpans(W, layerKey, p);
-  let crest = 0, shown = 0;
-  for (let x = 0; x < W; x++) {
-    const cx = x + 0.5;
-    let useB;
-    if (cx < lo) useB = false;
-    else if (cx >= hi) useB = true;
-    else useB = (bands.find((b) => cx >= b.x0 && cx < b.x1)?.weightB ?? 0.5) >= 0.5;
-    const c = (useB ? colsB : colsA)[x];
-    if (c) { crest++; if (c === 2) shown++; }
-  }
-  return crest ? shown / crest : 0;
+export function travelExposure(masksA, masksB, p) {
+  const W = masksA.W;
+  const spans = Object.fromEntries(PASSES.map(([name, layer]) => [name, travelSpans(W, layer, p)]));
+  return composedExposure((pass, x) => (useB(spans[pass], x) ? masksB : masksA), W).fraction;
 }
 
 /**
@@ -79,7 +178,7 @@ export function pairExposure(expA, expB, { seamSamples = 21 } = {}) {
   for (let k = 0; k < n; k++) {
     for (let j = 0; j < seamSamples; j++) {
       const p = seamSamples > 1 ? j / (seamSamples - 1) : 0;
-      const f = travelExposure(expA.stations[k].columns, expB.stations[k].columns, p);
+      const f = travelExposure(expA.stations[k].masks, expB.stations[k].masks, p);
       if (f < min) { min = f; at = { station: k, p }; }
     }
   }

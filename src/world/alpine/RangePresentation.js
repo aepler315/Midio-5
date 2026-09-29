@@ -75,6 +75,8 @@ export class RangePresentation {
     this._scratchBytes = 0;
     this._incomingJoin = null; // { id, tSec } | null
     this.incomingFade = 1;
+    this._handoff = null; // { outgoing, incoming } views while a late join fades
+    this._waitedFor = null; // incoming view id a travel frame drew without
     this.scene = null;
     this.runtimeState = mode === 'v2' ? 'idle' : 'off'; // idle | loading | ready | failed | off
     this.generation = 0;
@@ -110,6 +112,8 @@ export class RangePresentation {
     this.exportMode = !!exportMode;
     this._incomingJoin = null;
     this.incomingFade = 1;
+    this._handoff = null;
+    this._waitedFor = null;
     this.sceneByBiome = terrain?.sceneByBiome || null;
     this.failures.clear();
     this.shown.clear();
@@ -229,6 +233,7 @@ export class RangePresentation {
       this.residency?.pin?.([]);
       this.scene?.releaseSide?.('B');
       this._releaseScratch();
+      this._handoff = null;
     }
     this._updateArrival(ok);
     return ok;
@@ -301,8 +306,25 @@ export class RangePresentation {
     if (blending && to.view.id !== from.view.id) {
       view = from.view;
       if (!this.failures.has(to.view.id) && this.scene.isReady(to.view.id)) incoming = to.view;
+      // A frame of this travel drew the outgoing view alone: when the
+      // incoming one does join, it joins late and fades in.
+      else this._waitedFor = to.view.id;
     } else {
       view = t >= 1 ? to.view : from.view;
+    }
+    // A view that joined late and is still fading in when the travel ends
+    // keeps the A/B handoff (seam fully across, B at its fade) until the fade
+    // completes, instead of replacing A in one frame.
+    let holding = false;
+    const hold = this._handoff;
+    const join = this._incomingJoin;
+    const tNow = Number(inputs.sim.biomes.tSec);
+    const fading = !!join && join.id === hold?.incoming.id && tNow >= join.tSec && tNow - join.tSec < ARRIVAL_SEC;
+    if (!incoming && hold && fading && view.id === hold.incoming.id && hold.outgoing.id !== view.id
+      && !this.failures.has(hold.outgoing.id) && this.scene.isReady(hold.outgoing.id)) {
+      incoming = view;
+      view = hold.outgoing;
+      holding = true;
     }
     if (this.failures.has(view.id)) { this.reason = this.failures.get(view.id); return false; }
     if (!this.scene.isReady(view.id)) { this.reason = this.scene.contextLost ? 'context-lost' : 'preparing'; return false; }
@@ -325,8 +347,9 @@ export class RangePresentation {
       this._releaseScratch();
     }
     this.incomingViewId = incoming?.id ?? null;
-    this.seamP = blend.travel ? (blend.travelP ?? t) : t;
+    this.seamP = holding ? 1 : blend.travel ? (blend.travelP ?? t) : t;
     this._updateIncomingFade(incoming, inputs.sim);
+    this._handoff = incoming && this.incomingFade < 1 ? { outgoing: view, incoming } : null;
     this.scene.pinView?.(incoming ? [view.id, incoming.id] : view.id, incoming ? [TRAVEL_SCRATCH_KEY] : []);
     this.frame = buildRangeFrame({
       frameId: ++this.frameId, generation: this.generation, sim: inputs.sim, pose: inputs.pose,
@@ -357,7 +380,9 @@ export class RangePresentation {
       return;
     }
     if (this._incomingJoin?.id !== incoming.id) {
-      this._incomingJoin = (this.seamP ?? 0) > 0.001 ? { id: incoming.id, tSec } : { id: incoming.id, tSec: -Infinity };
+      const late = this._waitedFor === incoming.id && (this.seamP ?? 0) > 0.001;
+      this._incomingJoin = late ? { id: incoming.id, tSec } : { id: incoming.id, tSec: -Infinity };
+      this._waitedFor = null;
     }
     const u = (tSec - this._incomingJoin.tSec) / ARRIVAL_SEC;
     this.incomingFade = u < 0 ? 1 : fade01(u);

@@ -64,6 +64,28 @@ The four confirmed defects in plan §1 are re-verified in Task 1 against source 
 | 14 transitions/framing | done | View-to-view travel keeps the outgoing view and composites an incoming side (own target `range:render-target-B`, reserved before use, released after) through the shared travel seam (`src/world/TravelSeam.js`), nearest partition first; a loading/failed/unaffordable incoming view leaves the outgoing one drawing. `scenicProjection` keeps terrain at nominal pixels-per-radian under pull-back/overscan; DPR never changes framing; worst case (ZOOM_MIN + 64 px shake) is inside the extended bake. Mid-song legacy -> v2 handoff fades in over 1.2 s of heard time (legacy scenery drawn underneath; exports never fade). Far-crest exposure (legacy `MIN_EXPOSED` 0.55) measured on the shipped package at 21 stations and at 21 seam samples of every approved-view pair; `--approve` refuses a view below it. Ross Lake: 0.65-1.00 |
 | (fix) approval identity | done | Review of PR #334: an approval now also covers the view's `materialRules` (key-sorted hash), hashes the published `.terrain.json` on disk rather than the build record's copy, and requires at least one existing evidence file. Ross Lake re-approved with the same evidence (catalog v3) |
 | (fix) travel review round 2 | done | PR #334 second Codex round: the two sides blend in a reserved composition buffer (`range:travel-scratch`) with B added (`lighter`) so the feather stays opaque; a view that joins a travel late fades in over 1.2 s; the frame's resources are pinned before side B / the buffer are reserved; the app passes export mode to the presentation (the simulation never had it); travel exposure is checked at matching stations (both sides share the song's progress) and `--approve` checks every pair with the views already approved |
+| (fix) travel review round 3 | done | PR #334 third Codex round: a late-joining view still fading when the travel ends keeps the A/B handoff (seam fully across) until its fade completes, and only a view some travel frame drew without counts as late; legacy-only passes (far shore, mirage, sea, sea life, horizon EQ) keep drawing under an arriving scene; exposure is measured per runtime partition from each shipped tile's own `band` (nearest-band masks), a travel composes the far/mid/near passes through their own seams (L2/L4/L5), and `--approve` also requires a far crest spanning half the frame at every station |
+| 15 catalog | in progress | One candidate corridor per remaining biome, each on a range the app already classifies into that biome (see coverage table below) |
+
+## Task 15 coverage (candidates)
+
+One corridor per biome, chosen on a range that `RealBiomes.biomeOfRange` already puts in that biome, for a strong readable far crest. Summit checks compare the published height with the DEM maximum within 200 m.
+
+| Biome | View id | Range (RESOLVE ecoregion) | Elevation source | Summit check |
+| --- | --- | --- | --- | --- |
+| RAINFOREST | `nc-ross-lake-north` (approved) | North Cascades | 3DEP 1/3" + Terrain Tiles | Jack Mtn 2763 |
+| CONIFER | `teton-jackson-lake` | Tetons (South Central Rockies forests) | 3DEP 1/3" | Grand Teton 4199 / 4189; Moran 3842 / 3841 |
+| ICEFIELD | `denali-wonder-lake` | Alaska Range (Rock and Ice) | Terrain Tiles z12 (the 3DEP query returned no Alaska coverage) | Denali 6190 / 6161; Foraker 5304 / 5313 |
+| TUNDRA | `tombstone-north-klondike` | Yukon Ranges (Ogilvie-MacKenzie alpine tundra) | Terrain Tiles z12 | Tombstone 2192 / 2328 (located as the DEM maximum; the tile surface overshoots the spire) |
+| TAIGA | `muncho-lake-south` | Tower of London Range (Northern Cordillera forests) | Terrain Tiles z12 | lake located from the DEM (flat water mask) |
+| PINE_OAK | `izta-popo-west` | Trans-Mexican Volcanic Belt pine-oak forests | Terrain Tiles z12 at 36 m (finer cells were refused as upsampled) | Izta 5230 / 5208; Popo 5426 / 5410 |
+| BROADLEAF | `black-mountains-catawba` | Blue Ridge (Appalachian-Blue Ridge forests) | 3DEP 1/3" | Mitchell 2037 / 2036 |
+| CHAPARRAL | `san-gabriel-baldy` | San Gabriel Mountains (California montane chaparral) | 3DEP 1/3" | San Antonio 3069 / 3068; Baden-Powell 2865 / 2864 |
+| STEPPE | `white-mountains-owens` | White Mountains (Great Basin shrub steppe) | 3DEP 1/3" | White Mtn Peak 4344 / 4340 |
+| CANYON | `la-sal-castle-valley` | La Sal Mountains (Colorado Plateau shrublands) | 3DEP 1/3" | Peale 3877 / 3876; Castleton Tower 2025 / 1965 (thin spire under-resolved at 22 m) |
+| DESERT | `panamint-dantes-view` | Panamint Range (Mojave desert) | 3DEP 1/3" | Telescope 3366 / 3361 |
+
+First placements that failed, and why: the Black Mountains from Craggy Pinnacle hid the far crest at 18 of 21 stations (nearer ridges; now seen broadside from the Catawba side); Muncho Lake's first eye sat in the mountains east of the lake; the Tetons from the east shore were too far for the range to read (moved over the lake).
 
 ## Asset budget (60 MB ceiling)
 

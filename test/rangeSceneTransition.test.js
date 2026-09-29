@@ -216,6 +216,40 @@ test('a view that becomes ready after legacy was on screen fades in over heard t
   assert.equal(p.arrival, 1);
 });
 
+test('a view that joins just before the travel ends keeps the handoff until its fade completes', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const scene = fakeScene();
+  const prepare = scene.prepare;
+  scene.prepare = (v) => (v.id === 'b' ? gate.then(() => prepare(v)) : prepare(v));
+  const p = new RangePresentation({ mode: 'v2', catalog, sceneFactory: async () => scene, makeCanvas: fakeCanvas });
+  p.setSong({ terrain: { sceneByBiome: new Map([['RAINFOREST', { view: catalog.views[0] }], ['TAIGA', { view: catalog.views[1] }]]) }, generation: 1 });
+  await p.whenReady({ timeoutMs: 1 }).catch(() => {});
+  const travel = (tSec, travelP) => { const i = inputs(travelP); i.sim.biomes.tSec = tSec; p.setFrameInputs(i); return p.beginScenic(); };
+  const arrived = (tSec) => {
+    const i = inputs(1); i.sim.biomes.tSec = tSec;
+    i.sim.biomes.currentBlend = { from: 'TAIGA', to: 'TAIGA', t: 1 };
+    p.setFrameInputs(i);
+    return p.beginScenic();
+  };
+  travel(10, 0.5);
+  release();
+  await new Promise((r) => setTimeout(r, 5));
+  travel(10.9, 0.97);
+  assert.equal(p.snapshot().incomingViewId, 'b');
+  assert.equal(p.incomingFade, 0);
+  // The blend collapses to the destination while B is still fading in.
+  assert.equal(arrived(11.2), true);
+  assert.equal(p.snapshot().viewId, 'a', 'A is still drawn under B');
+  assert.equal(p.snapshot().incomingViewId, 'b');
+  assert.equal(p.seamP, 1, 'seam fully across: only B spans, at its fade');
+  assert.ok(p.incomingFade > 0 && p.incomingFade < 1);
+  // Once the fade completes, B draws alone.
+  arrived(12.2);
+  assert.equal(p.snapshot().viewId, 'b');
+  assert.equal(p.snapshot().incomingViewId, null);
+});
+
 test('an incoming view that becomes ready mid-travel fades in instead of popping', async () => {
   let release;
   const gate = new Promise((r) => { release = r; });

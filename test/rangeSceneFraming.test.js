@@ -103,25 +103,51 @@ test('every travel between approved views keeps the far crest exposed at every s
   }
 });
 
+// Synthetic station masks: a far crest on row 5 of every column, and which
+// partition is nearest there (1 far = exposed, 2 mid / 3 near = covering).
+function masks({ W = 100, crest = true, ownerAtCrest = 1 } = {}) {
+  const H = 20, owner = new Uint8Array(W * H);
+  for (let x = 0; x < W; x++) owner[5 * W + x] = ownerAtCrest;
+  return { W, H, groundRow: 18, owner, topFar: new Int16Array(W).fill(crest ? 5 : -1) };
+}
+
 test('pair exposure checks matching stations, not rail ends', () => {
-  const cols = (fill) => new Uint8Array(40).fill(fill);
-  const good = (k) => ({ columns: cols(2), fraction: 1, k });
-  const bad = { columns: cols(1), fraction: 0 };
+  const good = () => ({ masks: masks() });
+  const bad = { masks: masks({ ownerAtCrest: 2 }) };
   // A is fine at every station; B is hidden only at station 1 -- a rail-end
   // check (A's last, B's first) would miss it.
-  const A = { stations: [good(0), good(1), good(2)] };
-  const B = { stations: [good(0), bad, good(2)] };
+  const A = { stations: [good(), good(), good()] };
+  const B = { stations: [good(), bad, good()] };
   const r = pairExposure(A, B, { seamSamples: 5 });
   assert.equal(r.min, 0);
   assert.equal(r.at.station, 1);
 });
 
 test('travel exposure follows the seam: all A before, all B after', () => {
-  const A = new Uint8Array(100).fill(2), B = new Uint8Array(100).fill(1);
+  const A = masks(), B = masks({ ownerAtCrest: 2 });
   assert.equal(travelExposure(A, B, 0), 1);
   assert.equal(travelExposure(A, B, 1), 0);
   const mid = travelExposure(A, B, 0.5);
   assert.ok(mid > 0 && mid < 1);
+});
+
+test("travel exposure composes every partition's own seam: B's near pass can cover A's far crest", () => {
+  // B has no far crest at all but its near pass covers row 5. At 55% the
+  // near seam (L5) has fully crossed while the far seam (L2) has not: the
+  // columns whose far crest still comes from A are covered by B's near.
+  const A = masks(), B = masks({ crest: false, ownerAtCrest: 3 });
+  assert.equal(travelExposure(A, B, 0), 1);
+  assert.equal(travelExposure(A, B, 0.55), 0, 'an L2-only check would score these A columns exposed');
+});
+
+test('crest coverage is reported, so a sliver of crest cannot pass as exposed', async () => {
+  const { maskExposure, MIN_FAR_CREST_COLUMNS } = await import('../tools/lib/range-exposure.mjs');
+  const m = masks();
+  m.topFar.fill(-1);
+  m.topFar[3] = 5; // one exposed column
+  const e = maskExposure(m);
+  assert.equal(e.fraction, 1);
+  assert.ok(e.crestColumns < MIN_FAR_CREST_COLUMNS);
 });
 
 test('far-crest exposure catches a near wall and the ground line', async () => {
