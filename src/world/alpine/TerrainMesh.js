@@ -206,6 +206,9 @@ export function buildSurfaceTexture(data) {
   const W = grid.width, H = grid.height;
   const heights = new Float32Array(W * H).fill(NaN);
   const flow = new Uint8Array(W * H);
+  // Each cell's stored sample spacing: coarse tiles on gentle ground keep
+  // few samples, and their slopes are measured across that spacing.
+  const spacing = new Uint8Array(W * H).fill(1);
   for (const t of data.tiles.values()) {
     const x0 = t.ix * cells, z0 = t.iz * cells;
     for (let gz = 0; gz <= cells; gz++) {
@@ -220,9 +223,13 @@ export function buildSurfaceTexture(data) {
         const u0 = Math.min(t.samples - 2, Math.floor(fu)), tu = fu - u0;
         const a = sampleAt(t, u0, v0), b = sampleAt(t, u0 + 1, v0);
         const c = sampleAt(t, u0, v0 + 1), d = sampleAt(t, u0 + 1, v0 + 1);
-        const hh = tu >= tv ? a + (b - a) * tu + (d - b) * tv : a + (d - c) * tu + (c - a) * tv;
+        // Bilinear, not the mesh's diagonal split: a coarse tile's triangles
+        // are flat facets, and normals taken from them light up as a
+        // diamond grid across gentle ground.
+        const hh = a + (b - a) * tu + (c - a) * tv + (a - b - c + d) * tu * tv;
         const i = Z * W + X;
         heights[i] = hh;
+        spacing[i] = Math.min(255, t.stride);
         const nu = Math.min(t.samples - 1, Math.round(fu)), nv = Math.min(t.samples - 1, Math.round(fv));
         flow[i] = t.flowBytes[nv * t.samples + nu];
       }
@@ -241,10 +248,13 @@ export function buildSurfaceTexture(data) {
       const h0 = heights[i];
       const o = i * 4;
       if (!Number.isFinite(h0)) { out[o] = 128; out[o + 1] = 128; out[o + 2] = 128; out[o + 3] = 0; continue; }
-      let hl = at(x - 1, z), hr = at(x + 1, z), hu = at(x, z - 1), hd = at(x, z + 1);
+      // Central differences across the stored sample spacing (at least one
+      // cell), so the slope blends across a coarse tile's sample cells.
+      const r = Math.max(1, spacing[i] >> 1);
+      let hl = at(x - r, z), hr = at(x + r, z), hu = at(x, z - r), hd = at(x, z + r);
       if (!Number.isFinite(hl)) hl = h0; if (!Number.isFinite(hr)) hr = h0;
       if (!Number.isFinite(hu)) hu = h0; if (!Number.isFinite(hd)) hd = h0;
-      const dx = (hr - hl) / (2 * cell), dz = (hd - hu) / (2 * cell);
+      const dx = (hr - hl) / (2 * r * cell), dz = (hd - hu) / (2 * r * cell);
       const inv = 1 / Math.hypot(dx, 1, dz);
       out[o] = Math.round((-dx * inv * 0.5 + 0.5) * 255);
       out[o + 1] = Math.round((-dz * inv * 0.5 + 0.5) * 255);

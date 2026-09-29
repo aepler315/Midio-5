@@ -227,7 +227,8 @@ function instanced(THREE, base, instances, stride, indices) {
  * air, deformation, palette); forest adds uTime (heard seconds, for wind)
  * and uForestKeep (the quality rung's stable fraction, applied per id in
  * the vertex shader, so a rung change never rebuilds the forest).
- * Returns { byBand: { far: [...Mesh], mid, near }, depth: [...Mesh], bytes, counts, dispose }.
+ * Returns { byBand: { far: [...Mesh], mid, near }, depth: [...Mesh],
+ * depthByBand: { far, mid, near } (depth meshes per band), bytes, counts, dispose }.
  */
 export function createForest(THREE, placed, uniforms, { partitioned = true } = {}) {
   const u = { ...uniforms, uTime: uniforms.uTime || { value: 0 }, uForestKeep: uniforms.uForestKeep || { value: 1 } };
@@ -243,7 +244,7 @@ export function createForest(THREE, placed, uniforms, { partitioned = true } = {
   };
   materials.board.side = THREE.DoubleSide; materials.boardDepth.side = THREE.DoubleSide;
   const baseMesh = coniferGeometry(THREE), baseBoard = billboardGeometry(THREE);
-  const byBand = { far: [], mid: [], near: [] }, depth = [], geos = [];
+  const byBand = { far: [], mid: [], near: [] }, depth = [], depthByBand = { far: [], mid: [], near: [] }, geos = [];
   const bandName = ['far', 'mid', 'near'];
   let bytes = 0;
   const counts = { mesh: 0, billboard: 0 };
@@ -263,10 +264,14 @@ export function createForest(THREE, placed, uniforms, { partitioned = true } = {
       const d = new THREE.Mesh(geo, depthMat); d.frustumCulled = false;
       byBand[bandName[b]].push(m);
       depth.push(d);
+      // A second depth mesh (same geometry and material) for the band's own
+      // depth scene: a mesh has one parent scene.
+      const db = new THREE.Mesh(geo, depthMat); db.frustumCulled = false;
+      depthByBand[bandName[b]].push(db);
     }
   }
   return {
-    byBand, depth, bytes, counts, uniforms: u,
+    byBand, depth, depthByBand, bytes, counts, uniforms: u,
     dispose: () => { for (const g of geos) g.dispose(); baseMesh.dispose(); baseBoard.dispose(); for (const m of Object.values(materials)) m.dispose(); },
   };
 }

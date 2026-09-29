@@ -9,8 +9,8 @@ Reference image: `docs/evidence/range-v2/reference.webp` (1806×871, documentati
 | --- | --- |
 | Branch | `claude/amazing-brown-tbiycu` |
 | Base | `b8a3d72b344792d149906449f1cd86d68df8cc2b` (= audited SHA; `origin/main` rechecked 2026-09-29) |
-| Last completed task | 12 (reflections); Task 13 in progress (mist, sky hierarchy, motion pilot) |
-| Next action | Task 13 — verify mist/moon/clouds in the app, run the motion suite, then approve the pilot view |
+| Last completed task | 14 (transitions, framing, arrival fade, far-crest visibility) |
+| Next action | Task 15 — curated views for the other 10 biomes (each must pass the far-crest gate before `--approve`) |
 
 ## Decisions recorded with the user (2026-09-29)
 
@@ -60,7 +60,43 @@ The four confirmed defects in plan §1 are re-verified in Task 1 against source 
 | (fix) terrain shader | done | `triplanar()` called `triplanarRib()` before its definition, so the terrain program never linked in the app (only trees drew). Guarded by `test/rangeShaderSource.test.js` and shader-error detection in the scene smoke |
 | (fix) residency | done | legacy strips for v2-covered biomes dropped/not prebaked: pilot 267 MB -> 110 MB of the 256 MiB budget |
 | 12 reflections | done | single body draw into ordered source-over/lighter segments; mirror about each pool's water plane; clip = pool polygon ∩ slab top. Pilot pixel check: 124-129 px in pools, 0 elsewhere, paused re-render identical |
-| 13 atmosphere/pilot | in progress | valley mist (height layer + drifting noise, ray-integrated so nearer terrain occludes it), v2 moon at ~3.5% width with maria, sparse clouds; motion suite written |
+| 13 atmosphere/pilot | done | mist, secondary celestial + clouds; motion pilot 20 s @ 12 fps from 0 s (opening included), calm/energetic stills, backward seek 32 s -> 8 s returns to the identical rail position; `nc-ross-lake-north` approved against its terrain/material/camera hashes (catalog v2; a changed asset voids the approval). Evidence: `docs/evidence/range-v2/pilot-ross-lake-*.jpg` |
+| 14 transitions/framing | done | View-to-view travel keeps the outgoing view and composites an incoming side (own target `range:render-target-B`, reserved before use, released after) through the shared travel seam (`src/world/TravelSeam.js`), nearest partition first; a loading/failed/unaffordable incoming view leaves the outgoing one drawing. `scenicProjection` keeps terrain at nominal pixels-per-radian under pull-back/overscan; DPR never changes framing; worst case (ZOOM_MIN + 64 px shake) is inside the extended bake. Mid-song legacy -> v2 handoff fades in over 1.2 s of heard time (legacy scenery drawn underneath; exports never fade). Far-crest exposure (legacy `MIN_EXPOSED` 0.55) measured on the shipped package at 21 stations and at 21 seam samples of every approved-view pair; `--approve` refuses a view below it. Ross Lake: 0.65-1.00 |
+| (fix) approval identity | done | Review of PR #334: an approval now also covers the view's `materialRules` (key-sorted hash), hashes the published `.terrain.json` on disk rather than the build record's copy, and requires at least one existing evidence file. Ross Lake re-approved with the same evidence (catalog v3) |
+| (fix) travel review round 2 | done | PR #334 second Codex round: the two sides blend in a reserved composition buffer (`range:travel-scratch`) with B added (`lighter`) so the feather stays opaque; a view that joins a travel late fades in over 1.2 s; the frame's resources are pinned before side B / the buffer are reserved; the app passes export mode to the presentation (the simulation never had it); travel exposure is checked at matching stations (both sides share the song's progress) and `--approve` checks every pair with the views already approved |
+| (fix) travel review round 3 | done | PR #334 third Codex round: a late-joining view still fading when the travel ends keeps the A/B handoff (seam fully across) until its fade completes, and only a view some travel frame drew without counts as late; legacy-only passes (far shore, mirage, sea, sea life, horizon EQ) keep drawing under an arriving scene; exposure is measured per runtime partition from each shipped tile's own `band` (nearest-band masks), a travel composes the far/mid/near passes through their own seams (L2/L4/L5), and `--approve` also requires a far crest spanning half the frame at every station |
+| 15 catalog | in progress | One candidate corridor per remaining biome, each on a range the app already classifies into that biome (see coverage table below) |
+
+## Task 15 coverage (candidates)
+
+One corridor per biome, chosen on a range that `RealBiomes.biomeOfRange` already puts in that biome, for a strong readable far crest. Summit checks compare the published height with the DEM maximum within 200 m.
+
+| Biome | View id | Range (RESOLVE ecoregion) | Elevation source | Summit check |
+| --- | --- | --- | --- | --- |
+| RAINFOREST | `nc-ross-lake-north` (approved) | North Cascades | 3DEP 1/3" + Terrain Tiles | Jack Mtn 2763 |
+| CONIFER | `teton-jackson-lake` | Tetons (South Central Rockies forests) | 3DEP 1/3" | Grand Teton 4199 / 4189; Moran 3842 / 3841 |
+| ICEFIELD | `denali-wonder-lake` | Alaska Range (Rock and Ice) | Terrain Tiles z12 (the 3DEP query returned no Alaska coverage) | Denali 6190 / 6161; Foraker 5304 / 5313 |
+| TUNDRA | `tombstone-north-klondike` | Yukon Ranges (Ogilvie-MacKenzie alpine tundra) | Terrain Tiles z12 | Tombstone 2192 / 2328 (located as the DEM maximum; the tile surface overshoots the spire) |
+| TAIGA | `muncho-lake-south` | Tower of London Range (Northern Cordillera forests) | Terrain Tiles z12 | lake located from the DEM (flat water mask) |
+| PINE_OAK | `izta-popo-west` | Trans-Mexican Volcanic Belt pine-oak forests | Terrain Tiles z12 at 36 m (finer cells were refused as upsampled) | Izta 5230 / 5208; Popo 5426 / 5410 |
+| BROADLEAF | `black-mountains-catawba` | Blue Ridge (Appalachian-Blue Ridge forests) | 3DEP 1/3" | Mitchell 2037 / 2036 |
+| CHAPARRAL | `san-gabriel-baldy` | San Gabriel Mountains (California montane chaparral) | 3DEP 1/3" | San Antonio 3069 / 3068; Baden-Powell 2865 / 2864 |
+| STEPPE | `white-mountains-owens` | White Mountains (Great Basin shrub steppe) | 3DEP 1/3" | White Mtn Peak 4344 / 4340 |
+| CANYON | `la-sal-castle-valley` | La Sal Mountains (Colorado Plateau shrublands) | 3DEP 1/3" | Peale 3877 / 3876; Castleton Tower 2025 / 1965 (thin spire under-resolved at 22 m) |
+| DESERT | `panamint-dantes-view` | Panamint Range (Mojave desert) | 3DEP 1/3" | Telescope 3366 / 3361 |
+
+Terrain and material fixes found while reviewing these views (they apply to every view):
+
+- **Spikes.** Terrain Tiles carried a cluster of fake 4200 m samples at the Tombstone grid's edge, and a few single-sample needles at Tombstone and Denali. The build now lowers any sample (or cluster up to three across) that stands more than 2 cell widths per ring step above its surroundings (~63 degrees) and records the count; no 3DEP view triggers it.
+- **Dry flats.** A view can declare `water: false`; Badwater's salt pan was being marked as a lake.
+- **Gentle-ground smoothing** (Terrain Tiles views only) softens resampling steps on flats; 3DEP views are untouched.
+- **Cliff mask bug.** `smoothstep(max(40, forestMaxSlope - 6), forestMaxSlope + 10, slope)` inverts when a pack's forest limit is below 30 degrees (tundra, 20): every tundra flat was bare rock, and the rock detail texture tiled into a visible grid. The edges are now kept ordered (test in `test/rangeShaderSource.test.js`).
+- **Alpine ground.** Above the treeline, rock now follows slope and convexity; gentle alpine ground stays meadow / tundra mat.
+- **Surface normals** are taken from a bilinear surface across each tile's stored sample spacing, so coarse tiles no longer shade as flat triangle facets.
+- **Snow** blends two unrelated tile scales; the snow/tree line breakup uses smooth value noise instead of a per-23 m-cell hash; drainage moss fades out on flats (filled-flat D8 routing is straight diagonal channels).
+- A faint residual pattern remains on Tombstone's tundra valley floor at close range; recorded in its review.
+
+First placements that failed, and why: the Black Mountains from Craggy Pinnacle hid the far crest at 18 of 21 stations (nearer ridges; now seen broadside from the Catawba side); Muncho Lake's first eye sat in the mountains east of the lake; the Tetons from the east shore were too far for the range to read (moved over the lake).
 
 ## Asset budget (60 MB ceiling)
 
@@ -75,6 +111,8 @@ The four confirmed defects in plan §1 are re-verified in Task 1 against source 
 - Under v2 the painted sea, far shore, mirage and sea life are off (the view is inland; the reference has no sea). The sea still draws during a live tsunami/withdrawal so that hazard stays visible.
 - Under v2 the glyph ground scatter is off: the world-anchored rock stage carries the speed read.
 - Midasus is reflected only when she is within 220 px of her floor and not on a voyage.
+- Far-crest exposure is measured on terrain only, at normal framing (16:9, zoom 1) with Midio's ground line (625/720) as the rock-stage occluder. Trees and the cast are not counted as occluders.
+- In-browser A/B travel between two different real views cannot be exercised until Task 15 adds a second approved view; it is covered by unit tests (`test/rangeSceneTransition.test.js`) and the exposure check for every approved pair.
 - The motion pilot is captured at 1280x720, 12 fps, 20 s: software GL needs ~9 s per frame (the bulk exporter's 1080p minimum is slower still).
 
 ## Measurements so far (SwiftShader, not device numbers)
@@ -83,6 +121,7 @@ The four confirmed defects in plan §1 are re-verified in Task 1 against source 
 - Partition copy (drawImage of the WebGL canvas) 0.1-0.3 ms of submission.
 - Desktop LOD for the pilot: 1.85 M triangles; mobile budget 0.80 M.
 - Pilot residency with v2 active: 110 MB (terrain GPU 66, CPU 9, material 11, targets 22).
+- Live playback (staged site, SwiftShader): the legacy -> v2 arrival fade started at 10.0 s heard time and was complete by the next live frame (13.1 s; frames were ~3 s apart). Resizing the window with v2 active kept the view active and the canvas filled edge to edge at 1280x780, 1600x900 and portrait 900x1400 (stage 900x506). The 1920x800 sample was never drawn because the 240 s song ended first (software frames took up to ~70 s at these sizes). An earlier all-black reading was the song's end, not a render fault.
 - Rock stage mean sRGB: ~(50,63,61) at 30 s (moon up), ~(26,33,36) at 90 s; reference foreground rock ~(45,52,58).
 
 ## Command log

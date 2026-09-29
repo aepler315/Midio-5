@@ -24,6 +24,7 @@ import { RockStageGL } from './RockStageGL.js';
 import { cameraPoseAt } from '../terrain/SceneTravel.js';
 import { BANDS } from './TerrainMesh.js';
 import { mistParams } from './RangeAtmosphere.js';
+import { scenicProjection } from './RangeFrame.js';
 
 const COPY_VERT = /* glsl */`
   out vec2 vUv;
@@ -80,9 +81,10 @@ export class RangeScene {
     this.pending = new Map(); // viewId -> { generation, job }
     this.materialLoads = new Map(); // manifest URL -> in-flight acquisition
     this.target = null;
+    this.sideTargets = { B: null };
+    this.depthCache = { A: { frame: -1, view: null }, B: { frame: -1, view: null } };
     this.size = { width: 0, height: 0 };
     this.contextLost = false;
-    this.lastDepthFrame = -1;
     this.stats = { depthPasses: 0, partitions: 0, lastPartitionMs: 0 };
     this._copy = this._createCopy();
     this.canvas.addEventListener?.('webglcontextlost', (e) => { e.preventDefault(); this.contextLost = true; });
@@ -128,7 +130,40 @@ export class RangeScene {
     });
     this.size = { width: w, height: h };
     if (res) this.residency.commit(res, this.target, (t) => t.dispose());
-    this.lastDepthFrame = -1;
+    this.depthCache.A.frame = -1;
+    // The incoming side's target follows the new size on its next use.
+    this.releaseSide('B');
+  }
+
+  /** A second scenic target for the incoming side of a view-to-view
+   *  travel, reserved before it exists. False when the budget refuses it
+   *  (the outgoing view then keeps drawing alone). */
+  ensureSide(side = 'B') {
+    if (side !== 'B') return !!this.target;
+    if (this.sideTargets.B) return true;
+    if (!this.target) return false;
+    const { width: w, height: h } = this.size;
+    const key = 'range:render-target-B';
+    const res = this.residency?.reserve({ key, bytes: w * h * 8, owner: 'range-targets' });
+    if (this.residency && !res) return false;
+    const THREE = this.THREE;
+    const t = new THREE.WebGLRenderTarget(w, h, {
+      depthBuffer: true, stencilBuffer: false, type: THREE.UnsignedByteType,
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
+    });
+    this.sideTargets.B = t;
+    if (res) this.residency.commit(res, t, (x) => { x.dispose(); if (this.sideTargets.B === x) this.sideTargets.B = null; });
+    this.depthCache.B.frame = -1;
+    return true;
+  }
+
+  /** Free the incoming side's target once no transition needs it. */
+  releaseSide(side = 'B') {
+    if (side !== 'B' || !this.sideTargets?.B) return;
+    const t = this.sideTargets.B;
+    if (this.residency) this.residency.release('range:render-target-B');
+    else t.dispose();
+    this.sideTargets.B = null;
   }
 
   /** The one drawing buffer is shared by scenic and ground images of
@@ -215,12 +250,23 @@ export class RangeScene {
         stageGL = new RockStageGL(THREE, { textures: mat.textures, palette: mat.pack.manifest.palette, rules });
         for (const band of BANDS) for (const m of forest.byBand[band]) scenes[band].add(m);
         for (const d of forest.depth) depthScene.add(d);
+        // Per-band depth scenes for travel frames, where a side's nearer
+        // bands are drawn only in some columns (same geometry and material;
+        // a mesh has one parent, so these are separate mesh objects).
+        const depthScenes = {};
+        for (const band of BANDS) {
+          depthScenes[band] = new THREE.Scene();
+          const dm = new THREE.Mesh(geos.geometries[band], depthMaterial);
+          dm.frustumCulled = false;
+          depthScenes[band].add(dm);
+          for (const d of forest.depthByBand?.[band] || []) depthScenes[band].add(d);
+        }
         // Compile now, not in the first playing frame.
         this.renderer.compile(scenes.far, this.camera);
         this.renderer.compile(depthScene, this.camera);
         const prepared = {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
-          surface, uniforms, material, depthMaterial, geometries: geos.geometries, scenes, depthScene,
+          surface, uniforms, material, depthMaterial, geometries: geos.geometries, scenes, depthScene, depthScenes,
           forest, stageGL, stats: { ...geos.stats, trees: forest.counts }, gpuKey, cpuKey: cpu.key,
           rules, waterLevelM: waterLevel(cpu.data), materialKey: mat.key,
         };
@@ -265,12 +311,42 @@ export class RangeScene {
     this._disposePrepared(p);
   }
 
+  /** Depth pre-pass for one pass of a travel side: the pass's band and the
+   *  farther ones across the whole width, each nearer band only inside its
+   *  [x0, x1] columns (fractions of the width), or not at all. */
+  _travelDepth(p, target, pass, bandColumns) {
+    const r = this.renderer;
+    const at = BANDS.indexOf(pass);
+    const { width: W, height: H } = this.size;
+    r.setRenderTarget(target);
+    r.setClearColor(0x000000, 0);
+    r.clear(true, true, false);
+    BANDS.forEach((band, i) => {
+      if (i <= at) { r.render(p.depthScenes[band], this.camera); return; }
+      const cols = bandColumns[band];
+      if (!cols) return;
+      const x0 = Math.max(0, Math.floor(cols[0] * W)), x1 = Math.min(W, Math.ceil(cols[1] * W));
+      if (!(x1 > x0)) return;
+      target.scissor.set(x0, 0, x1 - x0, H);
+      target.scissorTest = true;
+      r.setRenderTarget(target);
+      r.render(p.depthScenes[band], this.camera);
+      target.scissorTest = false;
+      r.setRenderTarget(target);
+    });
+    this.stats.depthPasses++;
+  }
+
   /** Keep what the current frame draws resident: its view's GPU, CPU and
    *  material entries and the two render targets. */
-  pinView(viewId) {
-    const p = this.prepared.get(viewId);
-    if (!p || !this.residency) return;
-    this.residency.pin([p.gpuKey, p.cpuKey, p.materialKey, 'range:render-target', 'range:ground-target']);
+  pinView(viewIds, extraKeys = []) {
+    if (!this.residency) return;
+    const keys = ['range:render-target', 'range:ground-target', 'range:render-target-B', ...extraKeys];
+    for (const id of [].concat(viewIds)) {
+      const p = this.prepared.get(id);
+      if (p) keys.push(p.gpuKey, p.cpuKey, p.materialKey);
+    }
+    this.residency.pin(keys);
   }
 
   /** One GPU copy per material pack, shared by the views that use it. Its
@@ -285,7 +361,7 @@ export class RangeScene {
       inflight = (async () => {
         let res = null;
         const pack = await loadMaterialPack(url, {
-          signal,
+          signal, expectSha256: view.materialManifestSha256 || null,
           onManifest: (manifest) => {
             res = this.residency?.reserve({ key: `range:material:${manifest.id}`, bytes: materialGpuBytes(manifest), owner: 'range-material', generation: 0 }) || null;
             if (this.residency && !res) throw new RangeAssetError('budget', `no room for material ${manifest.id}`);
@@ -342,12 +418,10 @@ export class RangeScene {
    *  once when the partition is composited. */
   _setCamera(view, frame) {
     const pose = cameraPoseAt(view, frame.progress01);
-    const vp = frame.scenicViewport;
-    const nominalH = vp.nominalHeight || 720;
     const cam = this.camera;
-    const tanHalf = Math.tan((pose.fovYDeg * Math.PI) / 360) * (vp.logicalHeight / nominalH);
-    cam.fov = (2 * Math.atan(tanHalf) * 180) / Math.PI;
-    cam.aspect = vp.logicalWidth / vp.logicalHeight;
+    const proj = scenicProjection(pose.fovYDeg, frame.scenicViewport);
+    cam.fov = proj.fovYDeg;
+    cam.aspect = proj.aspect;
     cam.position.set(pose.eyeM[0], pose.eyeM[1], pose.eyeM[2]);
     cam.up.set(0, 1, 0);
     cam.lookAt(pose.targetM[0], pose.targetM[1], pose.targetM[2]);
@@ -404,23 +478,34 @@ export class RangeScene {
    * return the canvas holding it (valid until the next render call; copy it
    * before calling again). Null when nothing can be drawn for this view.
    */
-  renderPartition(frame, pass, viewId = frame.viewFromId) {
+  renderPartition(frame, pass, viewId = frame.viewFromId, { side = 'A', bandColumns = null } = {}) {
     const p = this.prepared.get(viewId);
-    if (!p || this.contextLost || !this.target) return null;
+    const target = side === 'B' ? this.sideTargets.B : this.target;
+    if (!p || this.contextLost || !target) return null;
     const t0 = performance.now();
     const r = this.renderer;
-    if (this.lastDepthFrame !== frame.frameId || this.lastDepthView !== viewId) {
-      this._setCamera(p.view, frame);
-      this._setUniforms(p, frame);
-      r.setRenderTarget(this.target);
+    // The camera is shared: set this side's pose for every pass, even when
+    // its depth pre-pass (kept per side) is reused.
+    this._setCamera(p.view, frame);
+    this._setUniforms(p, frame);
+    const depth = this.depthCache[side];
+    if (bandColumns && p.depthScenes) {
+      // Travel: this side draws its nearer bands only in some columns (the
+      // other side supplies them elsewhere), so its depth pre-pass holds a
+      // nearer band only where it is drawn -- otherwise this pass keeps
+      // holes shaped like ridges the frame never shows.
+      this._travelDepth(p, target, pass, bandColumns);
+      depth.frame = -1;
+    } else if (depth.frame !== frame.frameId || depth.view !== viewId) {
+      r.setRenderTarget(target);
       r.setClearColor(0x000000, 0);
       r.clear(true, true, false);
       r.render(p.depthScene, this.camera);
-      this.lastDepthFrame = frame.frameId;
-      this.lastDepthView = viewId;
+      depth.frame = frame.frameId;
+      depth.view = viewId;
       this.stats.depthPasses++;
     }
-    r.setRenderTarget(this.target);
+    r.setRenderTarget(target);
     r.setClearColor(0x000000, 0);
     r.clear(true, false, false);
     p.uniforms.uDiag.value = this.diag === 'markers' && pass === 'far' ? 1 : 0;
@@ -428,7 +513,7 @@ export class RangeScene {
     r.setRenderTarget(null);
     this._setCanvasSize(this.size.width, this.size.height);
     r.clear(true, true, false);
-    this._copy.mesh.material.uniforms.uColor.value = this.target.texture;
+    this._copy.mesh.material.uniforms.uColor.value = target.texture;
     r.render(this._copy.scene, this._copy.camera);
     this.stats.partitions++;
     this.stats.lastPartitionMs = performance.now() - t0;
@@ -489,17 +574,20 @@ export class RangeScene {
     for (const id of [...this.prepared.keys()]) this.release(id);
     this.size = { width: 0, height: 0 };
     this.target = null;
+    this.releaseSide('B');
+    this.depthCache.A.frame = this.depthCache.B.frame = -1;
   }
 
   snapshot() {
     return {
       prepared: [...this.prepared.keys()], pending: [...this.pending.keys()], contextLost: this.contextLost,
-      size: { ...this.size }, stats: { ...this.stats },
+      size: { ...this.size }, stats: { ...this.stats }, sideB: !!this.sideTargets.B,
     };
   }
 
   dispose() {
     for (const id of [...this.prepared.keys()]) this.release(id);
+    this.releaseSide('B');
     this.residency?.release('range:render-target');
     this.residency?.release('range:ground-target');
     this.target?.dispose();

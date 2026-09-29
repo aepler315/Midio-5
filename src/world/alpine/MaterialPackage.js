@@ -54,7 +54,7 @@ export function materialGpuBytes(m) {
  * these are data, and alpha carries height, not coverage.
  * Resolves { manifest, images: Map sha256 -> ImageBitmap, roles }.
  */
-export async function loadMaterialPack(manifestUrl, { signal = null, fetchImpl = globalThis.fetch, decode = null, onManifest = null } = {}) {
+export async function loadMaterialPack(manifestUrl, { signal = null, fetchImpl = globalThis.fetch, decode = null, onManifest = null, expectSha256 = null } = {}) {
   const get = async (url) => {
     let res;
     try { res = await fetchImpl(url, { signal }); } catch (err) {
@@ -65,7 +65,14 @@ export async function loadMaterialPack(manifestUrl, { signal = null, fetchImpl =
       throw new RangeAssetError(signal?.aborted ? 'aborted' : 'http', `body read failed for ${url}: ${err?.message || err}`);
     }
   };
-  const text = new TextDecoder().decode(await get(manifestUrl));
+  const manifestBytes = await get(manifestUrl);
+  // The pack a view was approved with: any other bytes (a newer pack beside
+  // a cached catalog) fail, so the view falls back instead of rendering an
+  // unreviewed palette or rule set.
+  if (expectSha256 && (await sha256Hex(manifestBytes)) !== expectSha256) {
+    throw new RangeAssetError('hash', `material manifest ${manifestUrl} does not match the catalog`);
+  }
+  const text = new TextDecoder().decode(manifestBytes);
   let manifest;
   try { manifest = JSON.parse(text); } catch { throw new RangeAssetError('manifest', `material manifest is not JSON: ${manifestUrl}`); }
   const check = validateMaterialManifest(manifest);

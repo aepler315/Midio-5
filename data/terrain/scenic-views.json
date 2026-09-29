@@ -1,12 +1,12 @@
 {
   "about": "Range v2 scenic views: curated real terrain corridors with authored camera rails. Authoring source for tools/build-range-scene.mjs; the runtime catalog (src/assets/range/v2/catalog.json) is generated from it. Rail anchors are lon/lat (NAD83 for 3DEP sources) with an absolute height (heightM, metres above the source vertical datum) or a height above the DEM ground (aboveGroundM). status: candidate | approved | rejected; only approved views are production-eligible.",
-  "catalogVersion": 1,
+  "catalogVersion": 5,
   "views": [
     {
       "id": "nc-ross-lake-north",
       "regionId": "north-cascades",
       "biome": "RAINFOREST",
-      "status": "candidate",
+      "status": "approved",
       "notes": "Elevated over the Ross Dam / Diablo Lake junction looking north-north-east up Ross Lake: the lake is the central opening, Jack Mountain the tall snowy mass on the right, Sourdough's wooded flanks at the left, Hozomeen and the Pasayten peaks on the far skyline. The rail trucks 1.8 km east-south-east, across the line of sight, for parallax.",
       "dem": {
         "source": "3dep13",
@@ -81,7 +81,19 @@
       ],
       "review": "2026-09-29 geometry/camera review (Task 4): 21 stations + continuous traverse, neutral/silhouette/depth/crop-edge modes. Connected real relief (Ross Lake chain, Jack Mountain spurs, Sourdough flanks); no crop-edge skyline, no cracks; terrain coverage 0.62-0.64, skyline top 0.28 of frame height. Geometry approved for material pilot; production status stays candidate until the Task 13 full pilot.",
       "title": "Ross Lake",
-      "place": "North Cascades, Washington"
+      "place": "North Cascades, Washington",
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "8995e13dae058742479bb8b35396400b6a690a953e0d172be8988144047d2748",
+        "materialManifestSha256": "8f5ff6bb64b01072364f9d4698c13591af20de8f32dfbd40b67f0614fd242bb0",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "cameraSha256": "1947b732c79e756600438f9747cb0dbd629daecafb072dd925d4d5cd1773eb7a",
+        "evidence": [
+          "docs/evidence/range-v2/pilot-ross-lake-calm-10s.jpg",
+          "docs/evidence/range-v2/pilot-ross-lake-energetic-32s.jpg",
+          "docs/evidence/range-v2/pilot-ross-lake-reflection-38s.jpg"
+        ]
+      }
     },
     {
       "id": "nc-diablo-colonial",
@@ -297,6 +309,694 @@
         }
       ],
       "review": "2026-09-29 geometry review: a close foreground mound occupies the lower half at every station and hides the valley; Shuksan is a small distant skyline notch. Elevating the eye (baker-river-n) did not open a central valley."
+    },
+    {
+      "id": "teton-jackson-lake",
+      "regionId": "tetons",
+      "biome": "CONIFER",
+      "status": "approved",
+      "notes": "Over the south arm of Jackson Lake looking south-west across the water to Mount Moran and the Cathedral Group.",
+      "dem": {
+        "source": "3dep13",
+        "fill": "terrarium",
+        "fillZoom": 12,
+        "centerLonLat": [
+          -110.7,
+          43.83
+        ],
+        "extentM": [
+          44800,
+          44800
+        ],
+        "cellM": 20
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -110.64927,
+            43.85504
+          ],
+          "aboveGroundM": 350
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -110.66073,
+            43.86896
+          ],
+          "aboveGroundM": 350
+        },
+        "targetStart": {
+          "lonLat": [
+            -110.79428,
+            43.79304
+          ],
+          "heightM": 2371
+        },
+        "targetEnd": {
+          "lonLat": [
+            -110.80572,
+            43.80696
+          ],
+          "heightM": 2371
+        },
+        "fovYDeg": 29.9
+      },
+      "landmarks": [
+        {
+          "name": "Grand Teton",
+          "lonLat": [
+            -110.8024,
+            43.7411
+          ],
+          "elevationM": 4199
+        },
+        {
+          "name": "Mount Moran",
+          "lonLat": [
+            -110.7762,
+            43.835
+          ],
+          "elevationM": 3842
+        }
+      ],
+      "title": "Teton Range",
+      "place": "Jackson Lake, Wyoming",
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "e98c6ab7e7fe80ca393867f053b178b40c742724b5d663ee7b1320ba16ba9ea0",
+        "materialManifestSha256": "6afff55ebe7762475b09f09fa8f60627714d051f9f117ffffd8e124894281175",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "cameraSha256": "eda9f5f9370642792602854f1dab20861e664781068cdeba95bbb2ecb5c8726d",
+        "evidence": [
+          "docs/evidence/range-v2/teton-jackson-lake-stations.jpg",
+          "docs/evidence/range-v2/teton-jackson-lake-inapp-10s.jpg"
+        ]
+      }
+    },
+    {
+      "id": "denali-wonder-lake",
+      "regionId": "alaska-range",
+      "biome": "ICEFIELD",
+      "status": "approved",
+      "notes": "From the ridge above Wonder Lake looking south-south-west across the McKinley River bar to the Denali massif.",
+      "dem": {
+        "source": "terrarium",
+        "zoom": 12,
+        "centerLonLat": [
+          -150.98,
+          63.24
+        ],
+        "extentM": [
+          72000,
+          72000
+        ],
+        "cellM": 32
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -150.85209,
+            63.45379
+          ],
+          "aboveGroundM": 250
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -150.88791,
+            63.45621
+          ],
+          "aboveGroundM": 250
+        },
+        "targetStart": {
+          "lonLat": [
+            -150.98233,
+            63.06879
+          ],
+          "heightM": 2427
+        },
+        "targetEnd": {
+          "lonLat": [
+            -151.01767,
+            63.07121
+          ],
+          "heightM": 2427
+        },
+        "fovYDeg": 17.9
+      },
+      "landmarks": [
+        {
+          "name": "Denali",
+          "lonLat": [
+            -151.0074,
+            63.0695
+          ],
+          "elevationM": 6190
+        },
+        {
+          "name": "Mount Foraker",
+          "lonLat": [
+            -151.3983,
+            62.9605
+          ],
+          "elevationM": 5304
+        }
+      ],
+      "title": "Denali",
+      "place": "Denali National Park, Alaska",
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "351aad9728f86a3e78fe985d9d154214f4f7c0a4e89ad1d823df690b6543e46a",
+        "materialManifestSha256": "ac0da317cbbc611f7b9a47755b4d66705d11b37b4fbceab783d918a79d6d49ae",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "cameraSha256": "538b92f2099b226251f8298e1473bd80ef2717336b70279c9154bb63b4b52731",
+        "evidence": [
+          "docs/evidence/range-v2/denali-wonder-lake-stations.jpg",
+          "docs/evidence/range-v2/denali-wonder-lake-inapp-10s.jpg"
+        ]
+      }
+    },
+    {
+      "id": "tombstone-north-klondike",
+      "regionId": "yukon-ranges",
+      "biome": "TUNDRA",
+      "status": "candidate",
+      "notes": "From the ridges above the North Klondike valley looking south-west into the Tombstone Range granite spires.",
+      "dem": {
+        "source": "terrarium",
+        "zoom": 12,
+        "centerLonLat": [
+          -138.42,
+          64.47
+        ],
+        "extentM": [
+          44800,
+          44800
+        ],
+        "cellM": 20
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -138.37748,
+            64.49202
+          ],
+          "aboveGroundM": 800
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -138.39652,
+            64.50598
+          ],
+          "aboveGroundM": 800
+        },
+        "targetStart": {
+          "lonLat": [
+            -138.60735,
+            64.41348
+          ],
+          "heightM": 1300
+        },
+        "targetEnd": {
+          "lonLat": [
+            -138.62634,
+            64.42745
+          ],
+          "heightM": 1300
+        },
+        "fovYDeg": 32
+      },
+      "landmarks": [
+        {
+          "name": "Tombstone Mountain",
+          "lonLat": [
+            -138.6764,
+            64.4386
+          ],
+          "elevationM": 2192,
+          "note": "DEM maximum within 3 km of 64 26 N 138 38 W (approximate published position); a single-sample 465 m spike near 138.556 W was removed"
+        }
+      ],
+      "title": "Tombstone Range",
+      "place": "Tombstone Territorial Park, Yukon"
+    },
+    {
+      "id": "muncho-lake-south",
+      "regionId": "tower-of-london-range",
+      "biome": "TAIGA",
+      "status": "candidate",
+      "notes": "Over the middle of Muncho Lake looking south down the water between the Terminal and Sentinel ranges.",
+      "dem": {
+        "source": "terrarium",
+        "zoom": 12,
+        "centerLonLat": [
+          -125.76,
+          58.93
+        ],
+        "extentM": [
+          44800,
+          44800
+        ],
+        "cellM": 20
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -125.79443,
+            59.01784
+          ],
+          "aboveGroundM": 600
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -125.80837,
+            59.01736
+          ],
+          "aboveGroundM": 600
+        },
+        "targetStart": {
+          "lonLat": [
+            -125.75948,
+            58.93191
+          ],
+          "heightM": 729
+        },
+        "targetEnd": {
+          "lonLat": [
+            -125.77338,
+            58.93143
+          ],
+          "heightM": 729
+        },
+        "fovYDeg": 31.4
+      },
+      "landmarks": [],
+      "title": "Muncho Lake",
+      "place": "Northern Rockies, British Columbia"
+    },
+    {
+      "id": "izta-popo-west",
+      "regionId": "trans-mexican-volcanic-belt",
+      "biome": "PINE_OAK",
+      "status": "candidate",
+      "notes": "From the western foothills above Tlalmanalco looking east to Iztaccíhuatl and Popocatépetl.",
+      "dem": {
+        "source": "terrarium",
+        "zoom": 12,
+        "centerLonLat": [
+          -98.72,
+          19.1
+        ],
+        "extentM": [
+          52000,
+          52000
+        ],
+        "cellM": 36
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -98.86888,
+            19.13802
+          ],
+          "aboveGroundM": 400
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -98.87112,
+            19.12198
+          ],
+          "aboveGroundM": 400
+        },
+        "targetStart": {
+          "lonLat": [
+            -98.62888,
+            19.10802
+          ],
+          "heightM": 2407
+        },
+        "targetEnd": {
+          "lonLat": [
+            -98.63112,
+            19.09198
+          ],
+          "heightM": 2407
+        },
+        "fovYDeg": 30
+      },
+      "landmarks": [
+        {
+          "name": "Iztaccíhuatl",
+          "lonLat": [
+            -98.6425,
+            19.1786
+          ],
+          "elevationM": 5230
+        },
+        {
+          "name": "Popocatépetl",
+          "lonLat": [
+            -98.6278,
+            19.0225
+          ],
+          "elevationM": 5426
+        }
+      ],
+      "title": "Iztaccíhuatl and Popocatépetl",
+      "place": "Trans-Mexican Volcanic Belt, México"
+    },
+    {
+      "id": "black-mountains-catawba",
+      "regionId": "blue-ridge",
+      "biome": "BROADLEAF",
+      "status": "candidate",
+      "notes": "From above the Catawba foothills looking west at the Black Mountains crest and Mount Mitchell across layered Blue Ridge spurs.",
+      "dem": {
+        "source": "3dep13",
+        "centerLonLat": [
+          -82.29,
+          35.76
+        ],
+        "extentM": [
+          44800,
+          44800
+        ],
+        "cellM": 20
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -82.12131,
+            35.73737
+          ],
+          "aboveGroundM": 700
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -82.11469,
+            35.75263
+          ],
+          "aboveGroundM": 700
+        },
+        "targetStart": {
+          "lonLat": [
+            -82.27531,
+            35.78137
+          ],
+          "heightM": 1193
+        },
+        "targetEnd": {
+          "lonLat": [
+            -82.26869,
+            35.79663
+          ],
+          "heightM": 1193
+        },
+        "fovYDeg": 18.2
+      },
+      "landmarks": [
+        {
+          "name": "Mount Mitchell",
+          "lonLat": [
+            -82.2652,
+            35.765
+          ],
+          "elevationM": 2037
+        }
+      ],
+      "title": "Black Mountains",
+      "place": "Blue Ridge, North Carolina"
+    },
+    {
+      "id": "san-gabriel-baldy",
+      "regionId": "san-gabriel-mountains",
+      "biome": "CHAPARRAL",
+      "status": "candidate",
+      "notes": "From above the San Gabriel foothills looking north into the chaparral front ranges rising to Mount San Antonio.",
+      "dem": {
+        "source": "3dep13",
+        "centerLonLat": [
+          -117.7,
+          34.23
+        ],
+        "extentM": [
+          44800,
+          44800
+        ],
+        "cellM": 20
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -117.70551,
+            34.15891
+          ],
+          "aboveGroundM": 900
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -117.68649,
+            34.15509
+          ],
+          "aboveGroundM": 900
+        },
+        "targetStart": {
+          "lonLat": [
+            -117.66952,
+            34.28191
+          ],
+          "heightM": 1492
+        },
+        "targetEnd": {
+          "lonLat": [
+            -117.65048,
+            34.27809
+          ],
+          "heightM": 1492
+        },
+        "fovYDeg": 28.1
+      },
+      "landmarks": [
+        {
+          "name": "Mount San Antonio",
+          "lonLat": [
+            -117.6464,
+            34.2889
+          ],
+          "elevationM": 3069
+        },
+        {
+          "name": "Mount Baden-Powell",
+          "lonLat": [
+            -117.7647,
+            34.3583
+          ],
+          "elevationM": 2865
+        }
+      ],
+      "title": "San Gabriel Mountains",
+      "place": "Angeles National Forest, California"
+    },
+    {
+      "id": "white-mountains-owens",
+      "regionId": "white-mountains",
+      "biome": "STEPPE",
+      "status": "candidate",
+      "notes": "From the Owens Valley floor near Laws looking east-north-east at the White Mountains escarpment and White Mountain Peak.",
+      "dem": {
+        "source": "3dep13",
+        "centerLonLat": [
+          -118.34,
+          37.47
+        ],
+        "extentM": [
+          50000,
+          50000
+        ],
+        "cellM": 22
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -118.40602,
+            37.47653
+          ],
+          "aboveGroundM": 400
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -118.39398,
+            37.46347
+          ],
+          "aboveGroundM": 400
+        },
+        "targetStart": {
+          "lonLat": [
+            -118.25103,
+            37.56653
+          ],
+          "heightM": 2537
+        },
+        "targetEnd": {
+          "lonLat": [
+            -118.23897,
+            37.55347
+          ],
+          "heightM": 2537
+        },
+        "fovYDeg": 24
+      },
+      "landmarks": [
+        {
+          "name": "White Mountain Peak",
+          "lonLat": [
+            -118.2555,
+            37.6341
+          ],
+          "elevationM": 4344
+        }
+      ],
+      "title": "White Mountains",
+      "place": "Owens Valley, California"
+    },
+    {
+      "id": "la-sal-castle-valley",
+      "regionId": "la-sal-mountains",
+      "biome": "CANYON",
+      "status": "candidate",
+      "notes": "From above upper Castle Valley looking south-east over the red-rock benches to the north La Sal group.",
+      "dem": {
+        "source": "3dep13",
+        "centerLonLat": [
+          -109.34,
+          38.58
+        ],
+        "extentM": [
+          50000,
+          50000
+        ],
+        "cellM": 22
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -109.38412,
+            38.64405
+          ],
+          "aboveGroundM": 400
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -109.39788,
+            38.63195
+          ],
+          "aboveGroundM": 400
+        },
+        "targetStart": {
+          "lonLat": [
+            -109.23413,
+            38.54005
+          ],
+          "heightM": 2471
+        },
+        "targetEnd": {
+          "lonLat": [
+            -109.24787,
+            38.52795
+          ],
+          "heightM": 2471
+        },
+        "fovYDeg": 21.1
+      },
+      "landmarks": [
+        {
+          "name": "Castleton Tower",
+          "lonLat": [
+            -109.3667,
+            38.6503
+          ],
+          "elevationM": 2025
+        },
+        {
+          "name": "Mount Peale",
+          "lonLat": [
+            -109.2292,
+            38.4386
+          ],
+          "elevationM": 3877
+        }
+      ],
+      "title": "La Sal Mountains",
+      "place": "Castle Valley, Utah"
+    },
+    {
+      "id": "panamint-dantes-view",
+      "regionId": "panamint-range",
+      "biome": "DESERT",
+      "status": "candidate",
+      "notes": "From Dante's View looking west across the Badwater salt pan to Telescope Peak and the Panamint crest.",
+      "dem": {
+        "source": "3dep13",
+        "centerLonLat": [
+          -116.92,
+          36.2
+        ],
+        "extentM": [
+          50000,
+          50000
+        ],
+        "cellM": 22
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -116.72453,
+            36.21199
+          ],
+          "aboveGroundM": 250
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -116.72747,
+            36.22801
+          ],
+          "aboveGroundM": 250
+        },
+        "targetStart": {
+          "lonLat": [
+            -117.05853,
+            36.17199
+          ],
+          "heightM": 303
+        },
+        "targetEnd": {
+          "lonLat": [
+            -117.06147,
+            36.18801
+          ],
+          "heightM": 303
+        },
+        "fovYDeg": 26
+      },
+      "landmarks": [
+        {
+          "name": "Telescope Peak",
+          "lonLat": [
+            -117.0891,
+            36.1697
+          ],
+          "elevationM": 3366
+        },
+        {
+          "name": "Badwater",
+          "lonLat": [
+            -116.7675,
+            36.2297
+          ]
+        }
+      ],
+      "title": "Panamint Range",
+      "place": "Death Valley, California",
+      "water": false
     }
   ]
 }

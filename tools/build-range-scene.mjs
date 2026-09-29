@@ -3,6 +3,8 @@
 // package. Authoring source: data/terrain/scenic-views.json.
 //
 //   node tools/build-range-scene.mjs --view <id> [--out DIR] [--publish] [--cell M]
+//   node tools/build-range-scene.mjs --approve <id> --evidence <file,file>
+//   node tools/build-range-scene.mjs --catalog
 //
 // Without --publish the output goes to .terrain-cache/views/<id>/ for review
 // (tools/review-range-views.mjs). With --publish the package is written to
@@ -14,7 +16,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeDem, readDemGrid } from './lib/terrain-source.mjs';
-import { bakeTerrain, viewSkyline } from './lib/terrain-bake.mjs';
+import { bakeTerrain, viewSkyline, despikeGrid, smoothGentleGround } from './lib/terrain-bake.mjs';
 import { skylineFeatures, characterFromFeatures, archetypeOf } from '../src/world/terrain/RangeCharacter.js';
 import { cameraPoseAt } from '../src/world/terrain/SceneTravel.js';
 import { cameraRailErrors } from '../src/world/terrain/SceneTravel.js';
@@ -85,6 +87,15 @@ export async function buildView(view, { outDir, cell = null, log = console.log }
       cellM: dem.cellM, zoom: dem.zoom, cache: CACHE, points, fill: dem.fill, fillZoom: dem.fillZoom,
     });
   }
+  // Single-sample spikes in the elevation source (seen in Terrain Tiles)
+  // would draw as needles; they are lowered to their neighbours, and the
+  // count is recorded.
+  const despiked = despikeGrid(grid);
+  if (despiked) log(`${view.id}: despiked ${despiked} sample(s)`);
+  // Terrain Tiles is a coarse global mosaic: soften its resampling steps on
+  // gentle ground (3DEP sources are left as they are).
+  const smoothedM = dem.source === 'terrarium' ? smoothGentleGround(grid) : null;
+  if (smoothedM != null) log(`${view.id}: gentle ground smoothed (mean change ${smoothedM.toFixed(2)} m)`);
   const camera = localCamera(view, grid.points);
   const landmarks = (view.landmarks || []).map((l) => {
     const p = grid.points[`landmark:${l.name}`];
@@ -95,7 +106,9 @@ export async function buildView(view, { outDir, cell = null, log = console.log }
     };
   });
   const runtimeView = { ...view, camera };
-  const baked = await bakeTerrain(grid, runtimeView, { landmarks, dataUrl: `${view.id}.terrain.bin.gz` });
+  const baked = await bakeTerrain(grid, runtimeView, {
+    landmarks, dataUrl: `${view.id}.terrain.bin.gz`, ...(view.water === false ? { water: false } : {}),
+  });
   await fs.mkdir(outDir, { recursive: true });
   const manifestText = JSON.stringify(baked.manifest) + '\n';
   await fs.writeFile(path.join(outDir, `${view.id}.terrain.json`), manifestText);
@@ -122,6 +135,8 @@ export async function buildView(view, { outDir, cell = null, log = console.log }
     skylineFeatures: features, manifestSha256: sha(manifestText), payloadSha256: baked.manifest.payload.sha256,
     payloadBytes: baked.payload.byteLength, stats: baked.stats, landmarks,
     achievedErrorPx: baked.manifest.lod.achievedErrorPx,
+    despikedSamples: despiked,
+    gentleGroundSmoothingM: smoothedM,
   };
   log(`${view.id}: ${baked.stats.tiles} tiles, ${(baked.payload.byteLength / 1048576).toFixed(2)} MiB payload, `
     + `desktop ${baked.stats.desktop.triangles} tris, mobile ${baked.stats.mobile.triangles} tris, `
@@ -150,13 +165,30 @@ export async function buildCatalog(doc) {
     let build;
     try { build = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${v.id}.build.json`), 'utf8')); }
     catch { continue; } // not published yet
+    // An approval holds only for the assets it reviewed: if the terrain
+    // package, material pack or camera changed since, the view ships as a
+    // candidate again until it is re-reviewed.
+    const hashes = await approvalHashes(v, build);
+    if (hashes.terrainManifestSha256 !== build.manifestSha256) {
+      console.warn(`${v.id}: published terrain manifest differs from its build record (interrupted publish?)`);
+    }
+    let status = v.status;
+    if (status === 'approved') {
+      const a = v.approval || {};
+      const stale = APPROVAL_KEYS.filter((k) => !a[k] || a[k] !== hashes[k]);
+      if (stale.length) {
+        console.warn(`${v.id}: approval is stale (${stale.join(', ')} changed); shipping as candidate`);
+        status = 'candidate';
+      }
+    }
     views.push({
-      id: v.id, regionId: v.regionId, biome: v.biome, status: v.status, catalogVersion: doc.catalogVersion,
+      id: v.id, regionId: v.regionId, biome: v.biome, status, catalogVersion: doc.catalogVersion,
       title: v.title || v.id, place: v.place || '',
       credit: build.credit || null,
       terrainManifestUrl: `terrain/${v.id}.terrain.json`,
-      terrainManifestSha256: build.manifestSha256,
+      terrainManifestSha256: hashes.terrainManifestSha256,
       materialManifestUrl: `materials/${v.materialPack || DEFAULT_PACKS[v.biome]}.json`,
+      materialManifestSha256: hashes.materialManifestSha256,
       materialRules: v.materialRules || {},
       camera: build.view.camera,
       characterScores: build.characterScores,
@@ -164,11 +196,83 @@ export async function buildCatalog(doc) {
       evidence: {
         reviewPath: v.reviewPath || 'docs/range-v2-progress.md',
         review: v.review || null,
+        approval: status === 'approved' ? v.approval : null,
         sourceHashes: [...new Set([...(build.sourceSha256 || []), build.payloadSha256])],
       },
     });
   }
   return { catalogVersion: doc.catalogVersion, views };
+}
+
+/** Everything an approval is recorded against; a change to any voids it. */
+export const APPROVAL_KEYS = Object.freeze(['terrainManifestSha256', 'materialManifestSha256', 'materialRulesSha256', 'cameraSha256']);
+
+/** Key-sorted JSON, so reordering an object never changes its hash. */
+const canonical = (x) => (Array.isArray(x) ? `[${x.map(canonical).join(',')}]`
+  : x && typeof x === 'object' ? `{${Object.keys(x).sort().map((k) => `${JSON.stringify(k)}:${canonical(x[k])}`).join(',')}}`
+    : JSON.stringify(x));
+
+/** The hashes an approval is recorded against: the published terrain
+ *  manifest as it is on disk (not the build record's copy of its hash), the
+ *  material pack, the view's own material overrides and its camera. */
+export async function approvalHashes(v, build) {
+  const matUrl = `materials/${v.materialPack || DEFAULT_PACKS[v.biome]}.json`;
+  const mat = await fs.readFile(path.join(RUNTIME_DIR, matUrl));
+  const terrain = await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${v.id}.terrain.json`));
+  return {
+    terrainManifestSha256: sha(terrain), materialManifestSha256: sha(mat),
+    materialRulesSha256: sha(canonical(v.materialRules || {})), cameraSha256: sha(JSON.stringify(build.view.camera)),
+  };
+}
+
+/** Mark a published view approved against its current assets. Evidence is
+ *  required: at least one review file, each of which must exist. Mutates
+ *  `doc`; the caller writes it. */
+export async function approveView(doc, id, { evidence = [] } = {}) {
+  const v = doc.views.find((x) => x.id === id);
+  if (!v) throw new Error(`no view ${id} in scenic-views.json`);
+  if (!evidence.length) throw new Error(`${id}: --evidence <file,file> is required to approve a view`);
+  for (const file of evidence) {
+    try { await fs.access(path.resolve(root, file)); } catch { throw new Error(`${id}: evidence file ${file} does not exist`); }
+  }
+  const build = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${id}.build.json`), 'utf8'));
+  // Legacy parity: the far range stays readable at every rail station.
+  const { viewExposure, pairExposure, MIN_FAR_EXPOSED, MIN_FAR_CREST_COLUMNS } = await import('./lib/range-exposure.mjs');
+  const byId = new Map(doc.views.map((x) => [x.id, x]));
+  const exposureOf = (x) => viewExposure(RUNTIME_DIR, {
+    ...x, terrainManifestUrl: `terrain/${x.id}.terrain.json`,
+    materialManifestUrl: `materials/${byId.get(x.id)?.materialPack || DEFAULT_PACKS[x.biome]}.json`,
+    materialRules: byId.get(x.id)?.materialRules || {},
+  });
+  const exposure = await exposureOf(build.view);
+  if (exposure.min < MIN_FAR_EXPOSED) {
+    throw new Error(`${id}: far crest only ${exposure.min.toFixed(2)} exposed at its worst station (needs ${MIN_FAR_EXPOSED}); not approved`);
+  }
+  // A fraction of a crest that barely exists is meaningless: the far range
+  // must also span the frame at every station.
+  if (exposure.minCrest < MIN_FAR_CREST_COLUMNS) {
+    throw new Error(`${id}: far crest spans only ${exposure.minCrest.toFixed(2)} of the frame at its worst station (needs ${MIN_FAR_CREST_COLUMNS}); not approved`);
+  }
+  console.log(`${id}: far crest exposure ${exposure.stations.map((s) => s.fraction.toFixed(2)).join(' ')}`);
+  // Travel to and from every view already approved, at the shared progress.
+  for (const other of doc.views.filter((x) => x.status === 'approved' && x.id !== id)) {
+    const ob = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${other.id}.build.json`), 'utf8'));
+    const oe = await exposureOf(ob.view);
+    for (const [a, b, name] of [[exposure, oe, `${id} -> ${other.id}`], [oe, exposure, `${other.id} -> ${id}`]]) {
+      const r = pairExposure(a, b);
+      if (r.min < MIN_FAR_EXPOSED) {
+        throw new Error(`${name}: far crest only ${r.min.toFixed(2)} exposed in travel (station ${r.at.station}, seam ${r.at.p}); not approved`);
+      }
+      if (r.minCrest < MIN_FAR_CREST_COLUMNS) {
+        throw new Error(`${name}: far crest spans only ${r.minCrest.toFixed(2)} of the frame in travel (station ${r.crestAt.station}, seam ${r.crestAt.p}); not approved`);
+      }
+    }
+  }
+  v.status = 'approved';
+  v.approval = { date: new Date().toISOString().slice(0, 10), ...(await approvalHashes(v, build)), evidence };
+  doc.catalogVersion = (doc.catalogVersion || 0) + 1;
+  console.log(`${id}: approved; catalog version ${doc.catalogVersion}`);
+  return doc;
 }
 
 async function writeCatalog(doc) {
@@ -184,6 +288,13 @@ async function main() {
   const args = process.argv.slice(2);
   const opt = (k) => (args.includes(k) ? args[args.indexOf(k) + 1] : null);
   if (args.includes('--catalog')) { await writeCatalog(await readAuthoring()); return; }
+  if (opt('--approve')) {
+    const doc = await readAuthoring();
+    await approveView(doc, opt('--approve'), { evidence: (opt('--evidence') || '').split(',').filter(Boolean) });
+    await fs.writeFile(AUTHORING, JSON.stringify(doc, null, 2) + '\n');
+    await writeCatalog(doc);
+    return;
+  }
   const id = opt('--view');
   const doc = await readAuthoring();
   const views = id === 'all' ? doc.views : doc.views.filter((v) => v.id === id);

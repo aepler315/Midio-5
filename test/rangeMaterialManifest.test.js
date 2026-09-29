@@ -114,3 +114,17 @@ test('a body that fails mid-read is a classified asset error', async () => {
   const fetchImpl = async () => ({ ok: true, arrayBuffer: async () => { throw new TypeError('network dropped'); } });
   await assert.rejects(loadMaterialPack(base, { fetchImpl }), (e) => e.reason === 'http');
 });
+
+test('a view loads only the material pack it was approved with', async () => {
+  const { createHash } = await import('node:crypto');
+  const m = packs.find((p) => p.m.id === 'wet-conifer').m;
+  const base = 'http://assets.test/v2/materials/wet-conifer.json';
+  const manifestText = JSON.stringify(m);
+  const files = new Map([[base, manifestText]]);
+  for (const t of Object.values(m.textures)) files.set(new URL(t.url, base).href, await fs.readFile(path.join(dir, t.url)));
+  const fetchImpl = async (u) => (files.has(u) ? new Response(files.get(u)) : new Response('', { status: 404 }));
+  const decode = async (bytes) => { const t = Object.values(m.textures).find((x) => x.bytes === bytes.byteLength); return { width: t.width, height: t.height }; };
+  const approved = createHash('sha256').update(manifestText).digest('hex');
+  assert.ok((await loadMaterialPack(base, { fetchImpl, decode, expectSha256: approved })).images.size > 0);
+  await assert.rejects(loadMaterialPack(base, { fetchImpl, decode, expectSha256: '0'.repeat(64) }), (e) => e.reason === 'hash');
+});

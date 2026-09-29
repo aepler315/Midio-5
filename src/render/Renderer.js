@@ -33,7 +33,7 @@ import { quantizeCanvas } from './PaletteQuantize.js';
 // maxed impact shake (~10px) + full calm drift (26px) + full beat sway
 // (12px) plus a few px of corner reveal from the small impact roll, with
 // headroom to spare. See Renderer.draw's stageW/stageH derivation.
-const SHAKE_MARGIN_PX = 64;
+export const SHAKE_MARGIN_PX = 64;
 
 const MIDIO_DRAW_SCALE = 1.935; // 10% smaller than 2.15; physics footprint stays 23px half-width
 
