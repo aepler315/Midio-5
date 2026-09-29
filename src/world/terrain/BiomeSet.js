@@ -10,13 +10,13 @@
 // lands, but the biome the song opened in does not.
 //
 // Fairness follows the range draw (RangeMatcher.drawOdds): the home biome
-// -- the one the song opens in -- is drawn with HOME_BIOME_FAIR_SHARE of its odds
+// -- the one the song opens in -- is drawn with FAIR_SHARE of its odds
 // equal for every biome and the rest leaning toward biomes whose ground is
 // as calm or as violent as the song (REAL_BIOME_TEMPERATURE). The biomes it
 // travels on to are drawn evenly, so a song's later sections are free to
 // go anywhere; castSongBiomes then gives the loudest sections the most
 // violent of them.
-import { HOME_BIOME_FAIR_SHARE, matchRange, seedTicket, songTerrainTarget } from './RangeMatcher.js';
+import { FAIR_SHARE, matchRange, seedTicket, songTerrainTarget } from './RangeMatcher.js';
 import { REAL_BIOME_NAMES, REAL_BIOME_TEMPERATURE, rangesByBiome } from '../RealBiomes.js';
 import { RANGES } from './ranges/index.js';
 import { WALL_SHARE } from './ranges/shapes.js';
@@ -62,7 +62,7 @@ export function chooseSongBiomes(profile, seed = 0, {
     if (k === 0) {
       const kernel = left.map((n) => kernelAt(Math.abs((temperature[n] ?? 0.5) - energy)));
       const kSum = kernel.reduce((a, b) => a + b, 0) || 1;
-      weights = kernel.map((v) => HOME_BIOME_FAIR_SHARE / left.length + (1 - HOME_BIOME_FAIR_SHARE) * (v / kSum));
+      weights = kernel.map((v) => FAIR_SHARE / left.length + (1 - FAIR_SHARE) * (v / kSum));
     } else {
       weights = left.map(() => 1);
     }

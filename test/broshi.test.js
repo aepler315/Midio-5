@@ -317,34 +317,3 @@ test('Broshi never renders inside Midio\'s landing column, across a scripted sur
   }
   assert.ok(worst >= 55 - 1e-6, `renderX came within ${worst}px of the landing column`);
 });
-
-// Range v2 Task 1: drawing is render-only; it must never advance behaviour.
-test('Broshi.draw does not consume the behavioural RNG', () => {
-  const make = () => {
-    const b = new Broshi(fakeConductor(), { get: () => 0 }, { seed: 4242 });
-    b.rho = 0.8; // the serrated rho ring is the draw path that used to call rand()
-    return b;
-  };
-  const drawn = make();
-  const control = make();
-  const pose = { x: 200, y: 400 };
-  drawn.draw(fakeCtx(), pose);
-  drawn.draw(fakeCtx(), pose);
-  assert.equal(drawn.rand(), control.rand(), 'draw advanced the behaviour RNG');
-  assert.equal(drawn.rho, control.rho);
-});
-
-test('Broshi rho ring shape is stable for one frame time and seed', () => {
-  const pts = (b) => {
-    const out = [];
-    const ctx = fakeCtx();
-    ctx.lineTo = (x, y) => out.push([x, y]);
-    b.draw(ctx, { x: 0, y: 0 });
-    return out;
-  };
-  const a = new Broshi(fakeConductor(), { get: () => 0 }, { seed: 7 });
-  const b = new Broshi(fakeConductor(), { get: () => 0 }, { seed: 7 });
-  a.rho = b.rho = 0.9;
-  assert.deepEqual(pts(a), pts(a));
-  assert.deepEqual(pts(a), pts(b));
-});

@@ -40,10 +40,6 @@ const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 // 0.7x and 1.35x an equal share, while the ranges drawn still sit nearer the
 // song than a blind pick would (distance 0.66 against 0.79).
 export const FAIR_SHARE = 0.65;
-// The home-biome draw (BiomeSet.chooseSongBiomes) has used the same value;
-// it is named separately so neither the range pool nor the Range v2 scenic
-// pool (SceneCatalog.SCENIC_FAIR_SHARE) can move it by accident.
-export const HOME_BIOME_FAIR_SHARE = 0.65;
 // How quickly character preference falls off with distance on the rank
 // axes. Nearest neighbours among ~25 ranges spread through four axes sit
 // about 0.35 apart, so this favours a song's nearest handful.

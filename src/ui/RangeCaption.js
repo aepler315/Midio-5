@@ -84,25 +84,6 @@ export function rangeCaptionFor(range, worldKind, stats = {}, ridges = {}, biome
 }
 
 /**
- * The caption for a Range v2 scenic view: the curated place the scene is
- * built from (not the legacy ranges), the song's horizon/massif skylines
- * above it, and the elevation credit the view's own build records.
- */
-export function sceneCaptionFor(view, { horizon = null, massif = null } = {}, biome = null) {
-  if (!view?.title) return null;
-  const rows = [];
-  if (horizon?.name) rows.push({ label: 'HORIZON', name: horizon.name, region: shortRegion(horizon.region) });
-  if (massif?.name) rows.push({ label: 'MASSIF', name: massif.name, region: shortRegion(massif.region) });
-  rows.push({ label: rows.length ? 'VIEW' : '', name: view.title, region: shortRegion(view.place) });
-  const credit = [view.credit || 'Elevation: USGS 3DEP', (horizon || massif) ? 'skylines: AWS Terrain Tiles' : null,
-    biome?.title ? 'biomes: RESOLVE Ecoregions 2017 (CC BY 4.0)' : null].filter(Boolean).join(' · ');
-  return {
-    biome: biome?.title ? { title: biome.title, ecoregion: biome.ecoregion || '' } : null,
-    rows, stats: '', credit,
-  };
-}
-
-/**
  * Which caption is up at `songMs`, and how far into its own showing:
  * `captions` is one caption (shown from the song's start) or a list of
  * { atMs, caption }, one per biome, in song order. Null before the first.

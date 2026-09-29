@@ -16,7 +16,7 @@ import { WORLD_SIGNATURES, WORLD_RENDERERS } from './WorldRegistry.js';
 import { sampleWorldMusic } from './WorldMusic.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { landscapeLayerColor, landscapePasses, landscapePolicy, landscapeBudget, landscapeSnowAllowed, resolveLandscapePalette, resolveRangePresentation } from './alpine/LandscapePolicy.js';
-import { createRangeSkyComposition, rangeMoonRadius, rangeV2MoonRadius, drawMoonMaria, rangeCloudBanks, drawRangeClouds } from './alpine/RangeSkyComposition.js';
+import { createRangeSkyComposition, rangeMoonRadius } from './alpine/RangeSkyComposition.js';
 import { buildRidgeSurface } from './alpine/RidgeSurface.js';
 import { drawRidgeSurface } from './alpine/RidgeSurfaceDraw.js';
 import { buildGroundPatches, drawGroundMaterial } from './alpine/GroundMaterial.js';
@@ -479,10 +479,8 @@ export function travelSeam(width, layerKey, p) {
   return width + feather / 2 - q * (width + feather);
 }
 
-let BIOME_MANAGER_SERIAL = 0;
-
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null, songTerrain = null, residency = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null, songTerrain = null }) {
     this.conductor = conductor;
     this._crestBeatClock = new CrestBeatClock(conductor.barGrid);
     this.energyCurves = energyCurves;
@@ -770,10 +768,7 @@ export class BiomeManager {
 
     this.songSeed = songSeed;
     this.visualStyle = 'rendered'; // set via setVisualStyle from Simulation / main
-    // Legacy strips share the page's graphics budget when one is given, so
-    // a fallback never holds a second, independent allowance.
-    this.residency = residency;
-    this.strips = new TerrainStripCache({ residency, owner: `legacy-strips#${++BIOME_MANAGER_SERIAL}` }); // biomeName -> { L2, L3, L4, L5 }
+    this.strips = new TerrainStripCache(); // biomeName -> { L2, L3, L4, L5 }
 
     this.fields = new Map(); // biomeName -> ParticleField
     for (const b of this.profiles) this.fields.set(b.name, new ParticleField(b.particles, canvasWidth, canvasHeight, hashSeed(b.name + 'p')));
@@ -1775,17 +1770,8 @@ export class BiomeManager {
    *  biome. Never evicts the pair on screen to make room. */
   pumpStripPrewarm(budgetMs = 8) {
     const visible = this._visibleStripNames();
-    // Range v2: a biome whose scenery the GPU scene draws needs no legacy
-    // strips. While v2 is drawing, sets for covered biomes are dropped
-    // (not released: a holder mid-frame keeps a valid canvas) and none are
-    // baked ahead; a real fallback bakes lazily in stripsFor().
-    const covered = (name) => !!name && !!this.rangePresentation?.coversBiome?.(name);
-    if (this._rangeV2Active) {
-      for (const key of [...this.strips.entries.keys()]) if (covered(key)) this.strips.delete(key);
-    }
-    const stale = visible.find((name) => this.strips.has(name) && !this._stripsMatch(name) && !(this._rangeV2Active && covered(name)));
-    let target = stale || this._nextBiomeName();
-    if (!stale && covered(target)) target = null;
+    const stale = visible.find((name) => this.strips.has(name) && !this._stripsMatch(name));
+    const target = stale || this._nextBiomeName();
     if (!target) {
       if (this._bakeJob && !visible.includes(this._bakeJob.key)) this._cancelBake();
       return;
@@ -2333,6 +2319,11 @@ export class BiomeManager {
     this._drawHeightMul = { from: fromHeightMul, to: toHeightMul };
     this._drawSnowLine = { from: fromSnowLine01, to: toSnowLine01 };
     this._landscapeGeometry = { horizon: [], massif: [], sides: {}, metrics: {} };
+    if (this.world?.kind === 'alpine' && !this.terrainPreview) {
+      this._compositionFor(this.stripsFor(A.name));
+      if (B.name !== A.name) this._compositionFor(this.stripsFor(B.name));
+    }
+
     // Sunrise/moonrise cycle: which body is up, how high, and how dark the
     // sky should read. Computed once per frame -- feeds the sky gradient,
     // the celestial itself, the mandala/light-rig anchor, and the ocean's
@@ -2395,16 +2386,6 @@ export class BiomeManager {
       ? this.lerpCache.get(skyHorizon, NIGHT_SKY_COLOR, horizonPull)
       : skyHorizon;
     this._airColor = skyHorizonNight;
-
-    // Range v2 decides here, with light and air resolved, whether its GPU
-    // scene draws this frame's scenic partitions. Legacy strips are only
-    // baked (and their composition fitted) when the legacy stack draws.
-    const v2 = this.world?.kind === 'alpine' && !this.terrainPreview && !!this.rangePresentation?.beginScenic?.();
-    this._rangeV2Active = v2;
-    if (this.world?.kind === 'alpine' && !this.terrainPreview && !v2) {
-      this._compositionFor(this.stripsFor(A.name));
-      if (B.name !== A.name) this._compositionFor(this.stripsFor(B.name));
-    }
 
     // Everything a world draw module gets for this frame, in one object.
     // Positional argument lists let the two worlds that take no skyVoyage
@@ -2504,7 +2485,6 @@ export class BiomeManager {
     // it's up; a plain pale moon takes over once it sets. Both fade in/out
     // over their last stretch of altitude rather than popping at the
     // horizon, and both rise from and set into the sea horizon.
-    this._moonDisc = null;
     if (sunUp) this._drawCelestial(ctx, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt), celestialXFrac);
     if (dn.moonAlt > 0.001) {
       // Where the sun really is -- below the horizon all night, which is the
@@ -2516,19 +2496,6 @@ export class BiomeManager {
         celestialXFracFor(dn.moonAz01),
         sun.xFrac, sun.yFrac, this._moonPhase01(),
       );
-    }
-    // Range v2: sparse, low-contrast cloud banks (two wisps crossing the
-    // moon), lit on the side facing the celestial, clear of the SpaceRidge.
-    if (this._rangeV2Active && this._pass('range-clouds')) {
-      const halo = hexToRgb(this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)));
-      const top = hexToRgb(this._rotated(this.lerpCache.get(A.sky[0], B.sky[0], t)));
-      const moon = this._moonDisc;
-      drawRangeClouds(ctx, rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, moon }), {
-        dark: [Math.round(top.r * 0.8 + 18), Math.round(top.g * 0.8 + 22), Math.round(top.b * 0.8 + 30)],
-        lit: [Math.round(halo.r * 0.7 + 60), Math.round(halo.g * 0.7 + 50), Math.round(halo.b * 0.7 + 45)],
-        light: moon || { x: canvas.width * celestialXFrac, y: canvas.height * celestialYFrac },
-        allowPoint: this._rangeSky?.allowPoint || null,
-      });
     }
     // Spirograph resonance mandala, centered on the celestial body so it
     // reads as the sun/moon itself resonating with the track.
@@ -2554,18 +2521,11 @@ export class BiomeManager {
       this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075 * (this._ribbonScaleMul || 1), mandalaColor);
       this.ribbon.intensity = prevR;
     }
-    // Range v2 shows a real inland view: the painted sea, its far shore,
-    // mirage and sea life are legacy scenery faces and stay off. The sea
-    // still rises for a live tsunami or its withdrawal, so that heard-time
-    // hazard remains visible.
-    const seaHazard = v2 && (this._activeWithdrawal() > 0 || !!this._activeTsunami(canvas.width));
-    if (!v2) {
-      this._drawFarShore(ctx, canvas, worldX, A, B, t); // beyond the ocean, behind the water itself
-      if (!this._rangeSky) this._drawFataMorgana(ctx, canvas, worldX, A, B, t);
-    }
-    if (!v2 || seaHazard) this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
-    if (!v2) this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
-    if (!v2) this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
+    this._drawFarShore(ctx, canvas, worldX, A, B, t); // beyond the ocean, behind the water itself
+    if (!this._rangeSky) this._drawFataMorgana(ctx, canvas, worldX, A, B, t);
+    this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
+    this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
+    this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
     this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
 
     // Concert beams: anchored at the celestial, drawn before the mountain
@@ -2576,53 +2536,6 @@ export class BiomeManager {
       this.lightRig.draw(ctx, canvas, cx, cy, mandalaColor, particleMul * (this.world?.kind === 'alpine' ? 0.25 : 1), this.reducedFlash, this._rangePresentation?.beams ?? 1);
     }
 
-    // Scenic partitions. Range v2 (RangePresentation) replaces the legacy
-    // ranges, their haze, connector hills and cast shadows with the real
-    // terrain scene when its view is ready; otherwise the legacy stack draws.
-    const tint = v2
-      ? this._drawRangeV2Scenic(ctx, canvas, frame, { worldX, originX, A, B, t, phenomenaFull, particleMul, mandalaColor, skyHorizonNight })
-      : this._drawLegacyScenic(ctx, canvas, frame, { worldX, originX, A, B, t, arc, phenomenaFull, particleMul, mandalaColor, skyHorizonNight });
-
-    // Ground view: switch to the fixed, never-zoomed transform for the
-    // ground and everything painted from here on (see Renderer.draw's
-    // groundView comment for the full reasoning). Everything above this
-    // point -- sky, massif, L2-L5 -- stays on the zoomed transform that was
-    // already active when draw() was called, which is exactly what makes a
-    // camera pull-back read as "more sky and mountain becomes visible
-    // above a ground that never moves" instead of "everything, ground
-    // included, shrinks in place." No-ops (keeps the caller's transform)
-    // when no groundView was handed in -- tests and any caller that hasn't
-    // opted in still get the old, single-transform behavior.
-    const groundCanvas = groundView ? groundView.stage : canvas;
-    if (groundView) groundView.apply();
-    if (this.world?.kind === 'alpine' && this._scenicLight && this._scenicTransform && ctx.getTransform) {
-      this.light = convertLightBetween(this._scenicLight, this._scenicTransform, ctx.getTransform());
-    }
-    // Range v2: the rock stage on the rendered support curve replaces the
-    // legacy ground fill, footing and ground materials; the ground's musical
-    // signatures still draw over it. Legacy ground otherwise.
-    if (v2 && this.groundField && this.rangePresentation.drawGround(ctx, groundCanvas)) {
-      const bars = this.groundField.visibleBars(worldX, originX, groundCanvas.width);
-      this._groundReceivers = this.rangePresentation.groundReceivers();
-      this._lakeReflectGroundY = null;
-      this._drawGroundSignatures(ctx, groundCanvas, bars, this._terrainTopPath(bars, groundCanvas.height, false, groundCanvas.width), worldX, A, B, t);
-    } else {
-      this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
-      // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
-      this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
-    }
-    this._drawFlood(ctx, groundCanvas);
-    // In FRONT of the ground: as the camera pulls back, the near water comes
-    // into frame and the strip they run along turns out to be an isthmus.
-    this._drawForegroundSwell(ctx, groundCanvas, worldX, A, B, t);
-    this._drawTransitionOverlays(ctx, groundCanvas, B);
-  }
-
-  /** The legacy scenic stack: scanned/procedural L2-L5 strips with their
-   *  haze, distant wave, connector hills and cast shadows, the far
-   *  vignettes and mid-depth life between them. Returns the silhouette tint
-   *  the ground uses. */
-  _drawLegacyScenic(ctx, canvas, frame, { worldX, originX, A, B, t, arc, phenomenaFull, particleMul, mandalaColor, skyHorizonNight }) {
     // The Unraveling: each layer's scroll ratio drifts apart from the rest
     // as the world delaminates -- nearer layers race ahead more than far
     // ones (the ratio itself is the depth proxy, so no separate table).
@@ -2690,50 +2603,6 @@ export class BiomeManager {
     }
     this._drawLayer(ctx, canvas, 'L2', scrollX0, tintL2, t, A, B);
     if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
-    this._drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, tintL2);
-    this._drawLayer(ctx, canvas, 'L3', scrollX1, tintL3, t, A, B);
-    this._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
-    this._drawCastShadow(ctx, canvas, 'L2', 'L3', scrollX0, scrollX1, A, B, t);
-
-    this._drawMidDepthLife(ctx, canvas, frame, { worldX, originX, phenomenaFull, particleMul, mandalaColor });
-    this._drawFogBanks(ctx, canvas);
-
-    this._drawLayer(ctx, canvas, 'L4', scrollX2, tintL4, t, A, B);
-    if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L4', A, B, t, arc);
-    this._drawCastShadow(ctx, canvas, 'L3', 'L4', scrollX1, scrollX2, A, B, t);
-    // Green country bridging the sightline wherever the dancing far skyline
-    // has ducked behind the hills in front of it. Between L4 and L5 so the
-    // nearest hills still overlap it and it reads as depth rather than as a
-    // pane laid over the scene.
-    this._drawConnectorHills(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t);
-    this._drawLayer(ctx, canvas, 'L5', scrollX3, tintL5, t, A, B);
-    this._drawCastShadow(ctx, canvas, 'L4', 'L5', scrollX2, scrollX3, A, B, t);
-    if (this.world?.kind === 'alpine') {
-      this._recordLandscapeGeometry(canvas, { L2: scrollX0, L3: scrollX1, L4: scrollX2, L5: scrollX3 }, A, B);
-    }
-
-    return tint;
-  }
-
-  /** Range v2 scenic partitions (plan §6.2): far terrain, then the Dancing
-   *  Ridge across it (the reference's luminous line over the distant
-   *  range, still occluded by nearer ridges), far vignettes, mid terrain,
-   *  mid-depth life, near terrain. Atmosphere is the scene's own, applied
-   *  once in the terrain shader. Returns the silhouette tint the ground uses. */
-  _drawRangeV2Scenic(ctx, canvas, frame, { worldX, originX, A, B, t, phenomenaFull, particleMul, mandalaColor, skyHorizonNight }) {
-    const pres = this.rangePresentation;
-    const tint = ensureContrast(this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)), skyHorizonNight, 0.14);
-    const farTint = this.lerpCache.get(tint, skyHorizonNight, AERIAL_PULL.L2 || 0);
-    pres.drawPartition(ctx, 'far', canvas);
-    this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
-    this._drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, farTint);
-    pres.drawPartition(ctx, 'mid', canvas);
-    this._drawMidDepthLife(ctx, canvas, frame, { worldX, originX, phenomenaFull, particleMul, mandalaColor });
-    pres.drawPartition(ctx, 'near', canvas);
-    return tint;
-  }
-
-  _drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, tintL2) {
     // Far-distance vignettes: between the farthest range and everything
     // nearer, so the L3/L4/L5 ridges partially occlude them -- genuinely
     // "witnessed in the far distance", not sprites pasted on the sky.
@@ -2744,11 +2613,10 @@ export class BiomeManager {
       sky: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
       halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
     });
-  }
+    this._drawLayer(ctx, canvas, 'L3', scrollX1, tintL3, t, A, B);
+    this._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
+    this._drawCastShadow(ctx, canvas, 'L2', 'L3', scrollX0, scrollX1, A, B, t);
 
-  /** Mid-depth life shared by both scenic stacks: ambient particles,
-   *  music weather, the Kuramoto swarm and the murmuration. */
-  _drawMidDepthLife(ctx, canvas, frame, { worldX, originX, phenomenaFull, particleMul, mandalaColor }) {
     // Ambient particle field lives roughly at mid-depth. The Unraveling:
     // particle hues converge toward the biome's own halo color as the
     // ending arc progresses.
@@ -2796,6 +2664,45 @@ export class BiomeManager {
     // frame, atmosphere rather than gameplay.
     if (phenomenaFull) this.swarm.draw(ctx, canvas, mandalaColor);
     if (phenomenaFull) this.murmuration.draw(ctx, this.tSec * 1000, mandalaColor, particleMul);
+    this._drawFogBanks(ctx, canvas);
+
+    this._drawLayer(ctx, canvas, 'L4', scrollX2, tintL4, t, A, B);
+    if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L4', A, B, t, arc);
+    this._drawCastShadow(ctx, canvas, 'L3', 'L4', scrollX1, scrollX2, A, B, t);
+    // Green country bridging the sightline wherever the dancing far skyline
+    // has ducked behind the hills in front of it. Between L4 and L5 so the
+    // nearest hills still overlap it and it reads as depth rather than as a
+    // pane laid over the scene.
+    this._drawConnectorHills(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t);
+    this._drawLayer(ctx, canvas, 'L5', scrollX3, tintL5, t, A, B);
+    this._drawCastShadow(ctx, canvas, 'L4', 'L5', scrollX2, scrollX3, A, B, t);
+    if (this.world?.kind === 'alpine') {
+      this._recordLandscapeGeometry(canvas, { L2: scrollX0, L3: scrollX1, L4: scrollX2, L5: scrollX3 }, A, B);
+    }
+
+    // Ground view: switch to the fixed, never-zoomed transform for the
+    // ground and everything painted from here on (see Renderer.draw's
+    // groundView comment for the full reasoning). Everything above this
+    // point -- sky, massif, L2-L5 -- stays on the zoomed transform that was
+    // already active when draw() was called, which is exactly what makes a
+    // camera pull-back read as "more sky and mountain becomes visible
+    // above a ground that never moves" instead of "everything, ground
+    // included, shrinks in place." No-ops (keeps the caller's transform)
+    // when no groundView was handed in -- tests and any caller that hasn't
+    // opted in still get the old, single-transform behavior.
+    const groundCanvas = groundView ? groundView.stage : canvas;
+    if (groundView) groundView.apply();
+    if (this.world?.kind === 'alpine' && this._scenicLight && this._scenicTransform && ctx.getTransform) {
+      this.light = convertLightBetween(this._scenicLight, this._scenicTransform, ctx.getTransform());
+    }
+    this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
+    // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
+    this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
+    this._drawFlood(ctx, groundCanvas);
+    // In FRONT of the ground: as the camera pulls back, the near water comes
+    // into frame and the strip they run along turns out to be an isthmus.
+    this._drawForegroundSwell(ctx, groundCanvas, worldX, A, B, t);
+    this._drawTransitionOverlays(ctx, groundCanvas, B);
   }
 
   /**
@@ -3319,9 +3226,7 @@ export class BiomeManager {
           this._profile(this.currentBlend?.to)?.landmarkKey || this.currentBlend?.to,
           this.currentBlend?.t ?? 1)
         : [{ biomeKey: null, alpha: 1 }];
-      // Range v2: the rock stage is world-anchored and carries the speed
-      // read itself; the flat glyph scatter would sit on real rock.
-      for (const layer of scatterLayers) if (layer.alpha > .001 && !this._rangeV2Active) {
+      for (const layer of scatterLayers) if (layer.alpha > .001) {
         if (this._pass('ground-scatter')) this.groundScatter.draw(ctx, canvas, worldX, {
           groundY: this.groundY, kick, biomeKey: layer.biomeKey,
           ratio: CodaDirector.delaminateRatio(SCATTER_RATIO, this.unravel),
@@ -4048,12 +3953,6 @@ export class BiomeManager {
     const app = this._celestialApproachAt(canvas, canvas.width * cxFrac, canvas.height * cyFrac);
     const cx = app.x, cy = app.y;
     const grow = app.scale;
-    // Range v2: the celestial is a secondary object (about 3.5% of the
-    // frame width across, as in the reference), never a dominating disc.
-    const capR = this._rangeV2Active ? rangeV2MoonRadius(canvas.width, grow) : Infinity;
-    if (this._rangeV2Active && alpha > 0.02) {
-      this._moonDisc = { x: cx, y: cy, R: Math.min(capR, Math.max(A.celestial.radius || 0, B.celestial.radius || 0) * grow) };
-    }
     // The disc does not move. The halo blooms on the heard kick (no depth
     // delay — the sun is the beat marker, same clock as a character flash)
     // and stays still under reduced flash.
@@ -4065,7 +3964,7 @@ export class BiomeManager {
       ...c,
       color: this._rotated(c.color),
       haloColor: this._rotated(c.haloColor),
-      radius: Math.min(capR, (c.radius || 0) * grow),
+      radius: (c.radius || 0) * grow,
     });
     // One shared opaque backing, at the body's full (un-split) alpha, before
     // either crossfading celestial draws on top of it. _drawOneCelestial
@@ -4077,7 +3976,7 @@ export class BiomeManager {
     // larger so it covers both without a visible seam as they fade past
     // each other.
     if (alpha > 0.02) {
-      const backR = Math.min(capR, Math.max((A.celestial.radius || 0), (B.celestial.radius || 0)) * grow);
+      const backR = Math.max((A.celestial.radius || 0), (B.celestial.radius || 0)) * grow;
       if (backR > 0) {
         ctx.save();
         ctx.globalAlpha = alpha;
@@ -4206,9 +4105,8 @@ export class BiomeManager {
     // a fixed 26px while a camera pull-back widens the stage around it.
     // Matches the old constant exactly at the nominal 720-tall stage.
     const R = this.world?.kind === 'alpine'
-      ? (this._rangeV2Active ? rangeV2MoonRadius(canvas.width, app.scale) : rangeMoonRadius(canvas.height, app.scale))
+      ? rangeMoonRadius(canvas.height, app.scale)
       : Math.max(14, canvas.height * 0.0361) * app.scale;
-    this._moonDisc = { x: cx, y: cy, R };
     ctx.save();
     ctx.globalAlpha = alpha;
     const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 2.2);
@@ -4303,7 +4201,6 @@ export class BiomeManager {
     ctx.fillStyle = face;
     ctx.fill();
     ctx.restore();
-    if (this._rangeV2Active) drawMoonMaria(ctx, cx, cy, R, alpha);
   }
 
   /** A far ocean seen through/behind the mountain silhouettes: not a solid
@@ -7743,7 +7640,97 @@ export class BiomeManager {
         ctx.restore();
       }
 
-      this._drawGroundSignatures(ctx, canvas, bars, strokePath, worldX, A, B, t);
+      const haloColor = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
+      const { r, g, b } = hexToRgb(haloColor);
+      const rgb = `${r},${g},${b}`;
+
+      // Soft groove cap: music-terrain tell, soft alpha so it reads as
+      // energy riding the land — not a cyan hairline glitch. A thick stroke
+      // along the same ridge curve rather than a per-bar rect.
+      const grooveNow = bars.length ? bars[0].groove || 0 : 0;
+      const wantGroundCaps = styleDials(this.visualStyle).groundCrestCaps !== false;
+      if (grooveNow > 0.05 && wantGroundCaps) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const a = 0.16 * grooveNow;
+        ctx.strokeStyle = `rgba(${rgb},${capFlashAlpha(a, this.reducedFlash)})`;
+        ctx.lineWidth = 4;
+        ctx.lineJoin = 'round';
+        ctx.stroke(strokePath);
+        ctx.restore();
+      }
+
+      // Settled snow: a frost cap riding the ridge -- a pale band whose
+      // thickness grows with cover, plus seeded glints so ice reads as ICE
+      // (slippery, see Traction.js) rather than just pale paint. Melts to
+      // zero cost the moment cover does.
+      if ((this.snowCover || 0) > 0.03) {
+        const cover = this.snowCover;
+        ctx.save();
+        ctx.strokeStyle = `rgba(230,242,255,${(0.34 * cover).toFixed(3)})`;
+        ctx.lineWidth = 4 + 9 * cover;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.stroke(strokePath);
+        // Specular glints: a few bar-top points catch the light each moment,
+        // drifting with world scroll so the sheen slides underfoot.
+        const glints = [];
+        for (const bar of bars) {
+          const glint = 0.5 + 0.5 * Math.sin(bar.x * 0.13 + worldX * 0.011 + this.tSec * 1.7);
+          if (glint > 0.86) glints.push([bar, 0.30 * cover * (glint - 0.86) / 0.14]);
+        }
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = '#fff';
+        for (const [bar, a] of glints) {
+          ctx.globalAlpha = a;
+          ctx.beginPath();
+          ctx.arc(bar.x + bar.width / 2, bar.y, 1.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+
+      // Kick ground glow: an emissive rim over bars a kick-synced pulse
+      // (GroundField.kickGlow) is currently racing through -- tinted toward
+      // the biome's own halo color so it reads as the world's light, not a
+      // generic overlay. Silent (zero cost) whenever no pulse is active.
+      const glowBars = bars.filter((bar) => bar.glow > 0.01);
+      if (glowBars.length) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        for (const bar of glowBars) {
+          const alpha = capFlashAlpha(0.5 * bar.glow, this.reducedFlash);
+          // Floored at 1: a bar at or past the bottom edge (canvas.height -
+          // bar.y <= 0) used to hand createRadialGradient a negative radius,
+          // throwing IndexSizeError and killing the frame's whole draw call
+          // -- not just this glow -- every time a kick pulse reached a bar
+          // that low.
+          const rimH = Math.max(1, Math.min(60, canvas.height - bar.y));
+          // An elliptical falloff centered on the bar, not a rect filled with
+          // a vertical-only gradient -- the old version faded top-to-bottom
+          // but left the bar's own width as a hard-edged box (flat top, hard
+          // left/right sides) sitting right on the ground line every time a
+          // kick pulse raced through, exactly the "straight lined box" /
+          // "hard cutoff" artifact this fades away on every side instead.
+          const cx = bar.x + bar.width / 2, cy = bar.y;
+          const ry = rimH;
+          const rx = bar.width / 2 + 6;
+          const sx = rx / ry;
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.scale(sx, 1);
+          const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, ry);
+          grad.addColorStop(0, `rgba(${rgb},${alpha})`);
+          grad.addColorStop(1, `rgba(${rgb},0)`);
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(0, 0, ry, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.restore();
+      }
 
       // Gray-Scott texture living inside the ground: clip to the ridge's
       // silhouette (one smooth Path2D, not a union of per-slice rects) so
@@ -7801,104 +7788,6 @@ export class BiomeManager {
     // only the lake band -- and only THIS frame's ground line -- is a valid
     // surface to reflect them into.
     this._lakeReflectGroundY = isLake ? localGroundY : null;
-  }
-
-  /** The ground's musical signatures, shared by the legacy ground and the
-   *  Range v2 rock stage: the groove cap riding the support curve, settled
-   *  snow (a traction cue) and kick-synced ground glow. */
-  _drawGroundSignatures(ctx, canvas, bars, strokePath, worldX, A, B, t) {
-    const haloColor = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-    const { r, g, b } = hexToRgb(haloColor);
-    const rgb = `${r},${g},${b}`;
-
-    // Soft groove cap: music-terrain tell, soft alpha so it reads as
-    // energy riding the land — not a cyan hairline glitch. A thick stroke
-    // along the same ridge curve rather than a per-bar rect.
-    const grooveNow = bars.length ? bars[0].groove || 0 : 0;
-    const wantGroundCaps = styleDials(this.visualStyle).groundCrestCaps !== false;
-    if (grooveNow > 0.05 && wantGroundCaps) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      const a = 0.16 * grooveNow;
-      ctx.strokeStyle = `rgba(${rgb},${capFlashAlpha(a, this.reducedFlash)})`;
-      ctx.lineWidth = 4;
-      ctx.lineJoin = 'round';
-      ctx.stroke(strokePath);
-      ctx.restore();
-    }
-
-    // Settled snow: a frost cap riding the ridge -- a pale band whose
-    // thickness grows with cover, plus seeded glints so ice reads as ICE
-    // (slippery, see Traction.js) rather than just pale paint. Melts to
-    // zero cost the moment cover does.
-    if ((this.snowCover || 0) > 0.03) {
-      const cover = this.snowCover;
-      ctx.save();
-      ctx.strokeStyle = `rgba(230,242,255,${(0.34 * cover).toFixed(3)})`;
-      ctx.lineWidth = 4 + 9 * cover;
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      ctx.stroke(strokePath);
-      // Specular glints: a few bar-top points catch the light each moment,
-      // drifting with world scroll so the sheen slides underfoot.
-      const glints = [];
-      for (const bar of bars) {
-        const glint = 0.5 + 0.5 * Math.sin(bar.x * 0.13 + worldX * 0.011 + this.tSec * 1.7);
-        if (glint > 0.86) glints.push([bar, 0.30 * cover * (glint - 0.86) / 0.14]);
-      }
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.fillStyle = '#fff';
-      for (const [bar, a] of glints) {
-        ctx.globalAlpha = a;
-        ctx.beginPath();
-        ctx.arc(bar.x + bar.width / 2, bar.y, 1.6, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-      ctx.restore();
-    }
-
-    // Kick ground glow: an emissive rim over bars a kick-synced pulse
-    // (GroundField.kickGlow) is currently racing through -- tinted toward
-    // the biome's own halo color so it reads as the world's light, not a
-    // generic overlay. Silent (zero cost) whenever no pulse is active.
-    const glowBars = bars.filter((bar) => bar.glow > 0.01);
-    if (glowBars.length) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      for (const bar of glowBars) {
-        const alpha = capFlashAlpha(0.5 * bar.glow, this.reducedFlash);
-        // Floored at 1: a bar at or past the bottom edge (canvas.height -
-        // bar.y <= 0) used to hand createRadialGradient a negative radius,
-        // throwing IndexSizeError and killing the frame's whole draw call
-        // -- not just this glow -- every time a kick pulse reached a bar
-        // that low.
-        const rimH = Math.max(1, Math.min(60, canvas.height - bar.y));
-        // An elliptical falloff centered on the bar, not a rect filled with
-        // a vertical-only gradient -- the old version faded top-to-bottom
-        // but left the bar's own width as a hard-edged box (flat top, hard
-        // left/right sides) sitting right on the ground line every time a
-        // kick pulse raced through, exactly the "straight lined box" /
-        // "hard cutoff" artifact this fades away on every side instead.
-        const cx = bar.x + bar.width / 2, cy = bar.y;
-        const ry = rimH;
-        const rx = bar.width / 2 + 6;
-        const sx = rx / ry;
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.scale(sx, 1);
-        const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, ry);
-        grad.addColorStop(0, `rgba(${rgb},${alpha})`);
-        grad.addColorStop(1, `rgba(${rgb},0)`);
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(0, 0, ry, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-      ctx.restore();
-    }
-
   }
 
   /** The Mirror (Movement IV): flip the sky/phenomena/silhouette region

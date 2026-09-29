@@ -58,9 +58,7 @@ export default [
   },
   {
     ignores: [
-      'node_modules/**', '.smoke/**', 'slskd/**', 'data/**', '_site/**',
-      // Generated, minified Three.js subset (tools/build-range-runtime.mjs).
-      'src/vendor/**',
+      'node_modules/**', '.smoke/**', 'slskd/**', 'data/**',
       // Generated range profiles (tools/build-ranges.mjs): one JSON.stringify
       // blob each, so the same "data, not code" call as data/** above.
       // JSON writes shortest round-trip floats, and for a float32 sample

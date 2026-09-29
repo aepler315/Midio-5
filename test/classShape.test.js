@@ -28,14 +28,10 @@ import { classBodies, classMethods, thisCalls } from './helpers/classShape.js';
 
 const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src');
 
-// Generated third-party bundles (src/vendor, see tools/build-range-runtime.mjs)
-// are minified library code, not this project's classes.
-const GENERATED = new Set([path.join(SRC, 'vendor')]);
-
 function sourceFiles(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, entry.name);
-    if (entry.isDirectory()) { if (!GENERATED.has(p)) sourceFiles(p, out); }
+    if (entry.isDirectory()) sourceFiles(p, out);
     else if (entry.name.endsWith('.js')) out.push(p);
   }
   return out;

@@ -35,7 +35,7 @@ import {
   openAudioUrl, UrlAudioError, fetchAudioAsFile, classifyUrl,
 } from './net/UrlAudioSource.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
-import { rangeCaptionFor, sceneCaptionFor, CAPTION_DELAY_MS } from './ui/RangeCaption.js';
+import { rangeCaptionFor, CAPTION_DELAY_MS } from './ui/RangeCaption.js';
 import { realBiomeByName, ecoregionOfRange } from './world/RealBiomes.js';
 import { travelMs } from './world/BiomeSchedule.js';
 import { noteRangeShown } from './world/terrain/RangeHistory.js';
@@ -51,9 +51,6 @@ import {
 } from './ui/Accessibility.js';
 import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
-import { sharedResidency } from './render/GraphicsResidency.js';
-import { RangePresentation, resolveRangeMode } from './world/alpine/RangePresentation.js';
-import { residencyBudgetFor } from './render/GraphicsResidency.js';
 import {
   DEFAULT_STAGE_PRESET, resolveStagePreset, stageDims, isAutoPreset, isRetroPreset,
   isPalettePreset, displayLimitedSize, autoStageSize, shouldSuggestLandscape,
@@ -415,13 +412,6 @@ const rendererMode = resolveRendererMode(
   typeof location !== 'undefined' ? location.search : '',
 );
 paramBus.rendererMode = rendererMode;
-// Range v2 (real-terrain scenic views): ?rangeRenderer=v2 opts in, legacy is
-// the default during migration; ?rangeView=<id> forces one catalog view for
-// diagnostics. One presentation (and one GPU context) per page.
-const rangeMode = resolveRangeMode();
-const rangePresentation = rangeMode.mode === 'v2'
-  ? new RangePresentation({ mode: 'v2', forcedViewId: rangeMode.forcedViewId, diag: rangeMode.diag, residency: sharedResidency(), budget: residencyBudgetFor().name })
-  : null;
 
 // The title screen is alive from the very first frame: a living backdrop
 // (starfield + nebula + the trio) runs on its own rAF loop until a song
@@ -1538,11 +1528,8 @@ worldChooseForMeEl?.addEventListener('click', () => chooseRecommendedWorld());
 /** Step the armed export clock to `timeMs` and draw that instant.
  *  stepExportClock takes whole fixed steps, so the frame is drawn -- and
  *  reported -- at the instant actually simulated, up to one step short of
- *  the one asked for; the remainder carries into the next frame.
- *  `beforeDraw` (evidence fixtures only) runs after the clock has stepped
- *  and before the one draw, so a fixture configures the frame it captures
- *  instead of painting a second time over the natural one. */
-function renderExportFrame(timeMs, { beforeDraw = null } = {}) {
+ *  the one asked for; the remainder carries into the next frame. */
+function renderExportFrame(timeMs) {
   if (!bulkExportArmed || !sim || !renderer) throw new Error('Bulk export is not armed.');
   const target = Number(timeMs);
   if (!Number.isFinite(target)) throw new Error('Export frame time is not a number.');
@@ -1555,13 +1542,8 @@ function renderExportFrame(timeMs, { beforeDraw = null } = {}) {
     step: (dt, at) => sim.step(dt, at),
   });
   simTime = advanced.simTime;
-  if (typeof beforeDraw === 'function') beforeDraw();
-  const drawsBefore = renderer.drawCount ?? 0;
   renderer.draw(sim, 0);
-  return {
-    width: canvas.width, height: canvas.height, timeMs: simTime,
-    draws: (renderer.drawCount ?? 0) - drawsBefore,
-  };
+  return { width: canvas.width, height: canvas.height, timeMs: simTime };
 }
 
 /** Rebuild the current song at an exact frame size and arm the export clock.
@@ -1685,19 +1667,14 @@ function applyRangeCaptions(timelineData, exportMode) {
       const ridges = i === 0
         ? { ...entry.ranges, horizon: terrain.horizon?.range, massif: terrain.massif?.range }
         : entry.ranges;
-      // Range v2 draws this biome from a curated view: name that place.
-      const scene = rangePresentation?.captionViewFor?.(name);
-      const caption = scene
-        ? sceneCaptionFor(scene, i === 0 ? { horizon: terrain.horizon?.range, massif: terrain.massif?.range } : {},
-          info ? { title: info.title, ecoregion: scene.place } : null)
-        : captionFor(entry.ranges.far, ridges, entry.profiles, info && own ? {
-          title: info.title,
-          ecoregion: ecoregionOfRange(entry.ranges.far?.id),
-        } : null);
+      const caption = captionFor(entry.ranges.far, ridges, entry.profiles, info && own ? {
+        title: info.title,
+        ecoregion: ecoregionOfRange(entry.ranges.far?.id),
+      } : null);
       if (!caption) return;
       const atMs = i === 0 ? 0 : Math.max(0, sec.startMs + travelMs(sec) - CAPTION_DELAY_MS);
       captions.push({ atMs, caption });
-      if (!scene) shown.push(entry.ranges.near, entry.ranges.mid, entry.ranges.far);
+      shown.push(entry.ranges.near, entry.ranges.mid, entry.ranges.far);
     });
     sim.rangeCaptions = captions.length ? captions : null;
   } else {
@@ -1816,7 +1793,6 @@ function startTimeline(timelineData, extra = {}) {
       // the bundled Tetons, and uses real terrain only in alpine-kind worlds.
       terrainProfiles: timelineData.terrain?.profiles || null,
       songTerrain: timelineData.terrain || null,
-      residency: sharedResidency(),
     });
   } catch (err) {
     console.error('[world build failed]', err);
@@ -1860,10 +1836,6 @@ function startTimeline(timelineData, extra = {}) {
   // (Cathode) replaces the renderer outright rather than branching inside
   // it. Created here, per song, which is after the world is known.
   renderer = createRenderer(canvas, rendererMode, getWorld(sim.worldId));
-  if (rangePresentation) {
-    rangePresentation.setSong({ terrain: timelineData.terrain || null, generation: loadGen });
-    renderer.rangePresentation = rangePresentation;
-  }
   // An exported frame is the picture, not the player: no seekbar strip.
   if (exportMode) renderer.hudInFrame = false;
   // enabled stays false (opt-in via V); provider/key/model/endpoint persist
@@ -1935,15 +1907,6 @@ function startTimeline(timelineData, extra = {}) {
   // a song: a throw here once aborted starting the world.
   try {
     applyRangeCaptions(timelineData, exportMode);
-    // A scenic view that turns out unavailable falls back to legacy
-    // scenery; its caption must stop naming the scenic location.
-    if (rangePresentation) {
-      const owner = sim;
-      rangePresentation.onAvailabilityChange = () => {
-        if (sim !== owner) return;
-        try { applyRangeCaptions(timelineData, exportMode); } catch (err) { console.warn('[range caption]', err); }
-      };
-    }
     // Biomes after the first load in the background; name them once they
     // have, unless the song has been rebuilt since.
     const terrain = timelineData.terrain;
@@ -2002,17 +1965,8 @@ function startTimeline(timelineData, extra = {}) {
     get durationMs() { return conductor?.durationMs || 0; },
     get exportSize() { return { width: canvas.width, height: canvas.height }; },
     beginBulkExport: (size) => beginBulkExport(size),
-    renderExportFrame: (timeMs, options) => renderExportFrame(timeMs, options),
+    renderExportFrame: (timeMs) => renderExportFrame(timeMs),
     get perfLevel() { return perfGovernor?.level ?? null; },
-    // The load generation this simulation belongs to; evidence records it
-    // so a late response from an older load can be told apart.
-    get generation() { return loadGen; },
-    // Range v2: which renderer the Range uses and why, and a promise that
-    // settles once the song's scenic views are prepared or have failed
-    // (evidence/export wait on it; playback never does).
-    rangeRenderer: rangeMode.mode,
-    get rangeState() { return rangePresentation ? rangePresentation.snapshot() : { mode: 'legacy', active: false }; },
-    rangeReady: (opts) => (rangePresentation ? rangePresentation.whenReady(opts) : Promise.resolve({ mode: 'legacy' })),
     get perf() { return perfGovernor || null; },
     // Car mode (KeepAwake.js): live state for debugging on a head unit, plus
     // the one hook a smoke test needs -- backdating the last-input clock, so

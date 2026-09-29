@@ -34,19 +34,6 @@ export function assertActualDpr(requested, actual) {
   }
 }
 
-/**
- * A capture is evidence only for the state that actually drew it: the
- * requested quality rung must be the rung in force, and the requested
- * instant must have been painted exactly once.
- */
-export function assertCaptureState({ quality, finalDraws } = {}) {
-  if (!quality || quality.actual !== quality.requested) {
-    throw new Error(`actual quality ${quality?.actual} !== requested ${quality?.requested}`);
-  }
-  if (finalDraws !== 1) throw new Error(`final frame drawn ${finalDraws} times, expected exactly 1`);
-  return true;
-}
-
 export function claimCase(seen, id) {
   if (seen.has(id)) throw new Error(`duplicate landscape case ${id}`);
   seen.add(id);
@@ -73,11 +60,6 @@ export function buildManifest(record) {
     fallback: record.fallback || null,
     timeMs: record.timeMs ?? null,
     quality: record.quality ?? null,
-    finalDraws: record.finalDraws ?? null,
-    generation: record.generation ?? null,
-    renderer: record.renderer || null,
-    rangeRenderer: record.rangeRenderer || null,
-    passes: record.passes || null,
     reducedFlash: !!record.reducedFlash,
     camera: record.camera || null,
     light: record.light || null,

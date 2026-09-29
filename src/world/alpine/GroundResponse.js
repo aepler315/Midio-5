@@ -27,12 +27,6 @@ export function recentConductorHits(timeline = [], nowMs = 0) {
   return hits;
 }
 
-function polygonBox(poly) {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const q of poly) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-}
-
 /** Small edge responses in fixed-ground coordinates; owns no full-screen canvas. */
 export class GroundResponse {
   constructor() { this.disposed = false; }
@@ -49,7 +43,7 @@ export class GroundResponse {
         const distance = Math.hypot(light.x - cx, light.y - edge.y);
         illumination += Math.max(0, 1 - distance / 96) * Math.max(0, light.intensity || 0);
       }
-      const wet = wetMasks.some(mask => mask.x === edge.x && !mask.polygon);
+      const wet = wetMasks.some(mask => mask.x === edge.x);
       // Each receiver evaluates the same conductor event at its own center.
       // Past performer positions are not reconstructed from current poses.
       const localHits = wet ? hits.map(hit => ({ ...hit, x: cx })) : [];
@@ -66,13 +60,7 @@ export class GroundResponse {
       const maskAlpha = mask.alpha ?? 1;
       if (!(maskAlpha > .001)) continue;
       ctx.save(); ctx.beginPath();
-      // Exact receivers: a pool polygon when the ground provides one (Range
-      // v2 rock stage), the legacy patch rectangle otherwise.
-      if (mask.polygon?.length > 2) {
-        ctx.moveTo(mask.polygon[0].x, mask.polygon[0].y);
-        for (const q of mask.polygon.slice(1)) ctx.lineTo(q.x, q.y);
-        ctx.closePath();
-      } else ctx.rect(mask.x, mask.y + 2, mask.widthPx, mask.depthPx);
+      ctx.rect(mask.x, mask.y + 2, mask.widthPx, mask.depthPx);
       ctx.clip();
       for (const hit of hits.slice(0, 2)) {
         const age = (nowMs - hit.tMs) / 1000;
@@ -83,8 +71,7 @@ export class GroundResponse {
         ctx.strokeStyle = `rgba(212,229,224,${opacity.toFixed(3)})`;
         ctx.lineWidth = 1;
         ctx.beginPath();
-        const box = mask.polygon?.length > 2 ? polygonBox(mask.polygon) : { x: mask.x, y: mask.y, w: mask.widthPx, h: mask.depthPx };
-        ctx.ellipse(box.x + box.w * .5, box.y + box.h * .5,
+        ctx.ellipse(mask.x + mask.widthPx * .5, mask.y + mask.depthPx * .5,
           4 + age * 22, 2 + age * 4, 0, 0, Math.PI * 2);
         ctx.stroke();
       }

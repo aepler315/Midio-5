@@ -258,18 +258,9 @@ async function loadSong(page, file, { world, lyrics }) {
     }
   }
   await page.locator('#fileInput').setInputFiles(file);
-  // One-world builds (the default) start the song without a picker; only
-  // an all-worlds build opens it. Wait for whichever happens.
-  const picker = await Promise.race([
-    page.locator('#worldSelect[open]').waitFor({ timeout: 600000 }).then(() => true),
-    page.waitForFunction(() => window.__SMW?.exportReady === true || !!window.__SMW_EXPORT_ERROR,
-      null, { timeout: 600000 }).then(() => false),
-  ]);
-  if (picker) await chooseWorld(page, world);
+  await page.locator('#worldSelect[open]').waitFor({ timeout: 600000 });
+  await chooseWorld(page, world);
   await waitForExportReady(page);
-  // Range v2 prepares its real-terrain view asynchronously; an export must
-  // not bake legacy frames because the first ones arrived before it.
-  await page.evaluate(() => window.__SMW.rangeReady?.());
   const info = await page.evaluate(() => ({
     durationMs: window.__SMW.durationMs,
     width: window.__SMW.exportSize.width,
@@ -299,7 +290,6 @@ async function renderPass({ page, session, frameUrl, pass, audioPath, outDir, la
       (size) => window.__SMW.beginBulkExport(size),
       { width, height },
     );
-    await page.evaluate(() => window.__SMW.rangeReady?.());
   }
   if (info.width !== width || info.height !== height) {
     throw new Error(`Stage is ${info.width}×${info.height}; ${pass.resolution.id} needs ${width}×${height}.`);

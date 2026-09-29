@@ -21,10 +21,6 @@ import { salienceBudgetFor } from './SalienceBudget.js';
 import { isRendered, styleDials } from './VisualStyle.js';
 import { groundGlowLights, characterGlowLight } from './LightField.js';
 import { GroundResponse, recentConductorHits } from '../world/alpine/GroundResponse.js';
-import { PerformerCapture } from './PerformerCapture.js';
-import { sharedResidency } from './GraphicsResidency.js';
-import { drawWetReflections } from '../world/alpine/WetReflection.js';
-import { viewportState } from '../world/alpine/RangeFrame.js';
 import { quantizeCanvas } from './PaletteQuantize.js';
 
 // Reserve margin (logical stage px) around the visible frame that camera
@@ -143,21 +139,11 @@ export class Renderer {
     // works if sim.biomes were ever null (the fallback-sky branch below).
     this._filmLerpCache = new LerpCache();
     this._groundResponse = new GroundResponse();
-    // Range v2 wet reflections (Task 12); evidence turns them off to diff.
-    this.reflectionsEnabled = true;
-    this.reflectionStats = null;
-    // Range v2 presentation (RangePresentation), set by main.js; null means
-    // the Range draws with its legacy painters.
-    this.rangePresentation = null;
-    // Completed stage draws. Evidence tools compare it across one capture
-    // to prove a fixture frame was painted exactly once at its time.
-    this.drawCount = 0;
   }
 
-  dispose() { this._groundResponse.dispose(); this._capture?.dispose(); }
+  dispose() { this._groundResponse.dispose(); }
 
   draw(sim, alpha) {
-    this.drawCount++;
     const { ctx, canvas } = this;
     const fracture = sim.fracture || null;
     this._styleDials = styleDials(sim.visualStyle);
@@ -287,24 +273,6 @@ export class Renderer {
       },
     };
 
-    // Range v2: hand the presentation this frame's inputs and viewports
-    // (logical vs backing sizes, overscan, the Canvas transform in effect).
-    if (biomeManager && this.rangePresentation?.enabled) {
-      biomeManager.rangePresentation = this.rangePresentation;
-      const t = ctx.getTransform();
-      this.rangePresentation.setFrameInputs({
-        sim, pose,
-        scenicViewport: viewportState({ logicalWidth: stageW, logicalHeight: stageH,
-          backingWidth: Math.round(stageW * sx), backingHeight: Math.round(stageH * sy), overscanPx: SHAKE_MARGIN_PX,
-          transform: [t.a, t.b, t.c, t.d, t.e, t.f], nominalWidth: nominalW, nominalHeight: nominalH,
-          pixelRatio: typeof devicePixelRatio === 'number' ? devicePixelRatio : 1 }),
-        groundViewport: viewportState({ logicalWidth: groundStage.width, logicalHeight: groundStage.height,
-          backingWidth: Math.round(groundStage.width * sxFixed), backingHeight: Math.round(groundStage.height * syFixed),
-          overscanPx: SHAKE_MARGIN_PX, nominalWidth: nominalW, nominalHeight: nominalH }),
-      });
-    } else if (biomeManager) {
-      biomeManager.rangePresentation = null;
-    }
     if (biomeManager) {
       biomeManager.salience = salience;
       biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, worldParticleMul, perf, groundView);
@@ -377,6 +345,23 @@ export class Renderer {
       this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs, sim.apotheosis && sim.apotheosis.active ? 2 : 1, !!sim.reducedFlash, stage.width);
     }
 
+    // Contact shadows: grounds the trio to the terrain instead of letting
+    // them read as floating. Drawn just before each character so the
+    // shadow always sits directly underneath its owner in paint order.
+    if (contactShadowsEnabled && sim.broshi && sim.broshi.burrow.depth <= 0.02) {
+      this._drawContactShadow(ctx, contactShadow(sim.broshi.renderX, sim.broshi.groundY, sim.broshi.hopY, sim.broshi.shadowWidthPx, light));
+    }
+    if (sim.broshi) sim.broshi.draw(ctx, pose, companionLights, sim.focus ? sim.focus.mul('burrow') : 1);
+
+    if (sim.performer) {
+      this._drawMidioAfterimages(ctx, sim.performer, pose.midioDrawX, MIDIO_IDENTITY_HUE);
+      this._drawGoldAfterimages(ctx, sim.performer, pose.midioDrawX, sim.timeMs);
+    }
+    const midioWidthPx = sim.midio.halfWidth * 2 * MIDIO_DRAW_SCALE * pose.scaleX;
+    const midioHeightAbove = sim.midio.groundY - pose.midioY;
+    if (contactShadowsEnabled) {
+      this._drawContactShadow(ctx, contactShadow(pose.midioDrawX, sim.midio.groundY, midioHeightAbove, midioWidthPx, light));
+    }
     // Fever adds its own glow on top of the vibe's epic-ness -- a hot streak
     // makes Midio himself burn brighter, not just the world around him.
     const feverGlow = sim.fever ? 3.0 * sim.fever.level : 0;
@@ -389,38 +374,10 @@ export class Renderer {
     // something that actually happens rather than something that was
     // always half-happening.
     const vibeMelt = sim.vibe ? 0.3 + 6.7 * sim.vibe.epic : 0;
-    const drawMidioBody = (c) => this._drawMidio(c, pose, sim.performer, sim.timeMs / 1000, vibeMelt + feverGlow, sim.apotheosis, sim.reducedFlash, MIDIO_IDENTITY_HUE, sim.ensemble, companionLights, sim.focus ? sim.focus.mul('midio') : 1, sim.gaze,
+    this._drawMidio(ctx, pose, sim.performer, sim.timeMs / 1000, vibeMelt + feverGlow, sim.apotheosis, sim.reducedFlash, MIDIO_IDENTITY_HUE, sim.ensemble, companionLights, sim.focus ? sim.focus.mul('midio') : 1, sim.gaze,
       sim.beatAnchor && sim.beatAnchor.periodMs > 0
         ? sim.beatAnchor.phaseRad(sim.timeMs) / (Math.PI * 2)
         : null);
-    const drawBroshiBody = (c) => sim.broshi.draw(c, pose, companionLights, sim.focus ? sim.focus.mul('burrow') : 1);
-    const drawMidasusBody = (c) => sim.midasus.draw(c, particleMul, worldLights);
-    const voyageMul = sim.focus ? sim.focus.mul('voyage') : 1;
-    // Range v2 wet reflections (Task 12): a performer over a pool draws its
-    // body once, into a capture layer that both its reflection (here, under
-    // the cast) and its composite (at its usual slot below) reuse.
-    const cast = this._captureCastForReflections(ctx, sim, pose, biomeManager, perf, { drawMidioBody, drawBroshiBody, drawMidasusBody, voyageMul });
-
-    // Contact shadows: grounds the trio to the terrain instead of letting
-    // them read as floating. Drawn just before each character so the
-    // shadow always sits directly underneath its owner in paint order.
-    if (contactShadowsEnabled && sim.broshi && sim.broshi.burrow.depth <= 0.02) {
-      this._drawContactShadow(ctx, contactShadow(sim.broshi.renderX, sim.broshi.groundY, sim.broshi.hopY, sim.broshi.shadowWidthPx, light));
-    }
-    if (cast.broshi) this._capture.composite(ctx, cast.broshi);
-    else if (sim.broshi) drawBroshiBody(ctx);
-
-    if (sim.performer) {
-      this._drawMidioAfterimages(ctx, sim.performer, pose.midioDrawX, MIDIO_IDENTITY_HUE);
-      this._drawGoldAfterimages(ctx, sim.performer, pose.midioDrawX, sim.timeMs);
-    }
-    const midioWidthPx = sim.midio.halfWidth * 2 * MIDIO_DRAW_SCALE * pose.scaleX;
-    const midioHeightAbove = sim.midio.groundY - pose.midioY;
-    if (contactShadowsEnabled) {
-      this._drawContactShadow(ctx, contactShadow(pose.midioDrawX, sim.midio.groundY, midioHeightAbove, midioWidthPx, light));
-    }
-    if (cast.midio) this._capture.composite(ctx, cast.midio);
-    else drawMidioBody(ctx);
 
     // Combo milestones (streaks of 5/10/20) no longer draw their number
     // above Midio. Under autoplay every song reaches all three in its first
@@ -440,15 +397,13 @@ export class Renderer {
       const heightAbove = sim.midasus.yFloor - sim.midasus.p.y;
       this._drawContactShadow(ctx, contactShadow(sim.midasus.p.x, sim.midasus.yFloor, heightAbove, sim.midasus.shadowWidthPx, light));
     }
-    if (cast.midasus) {
-      // Captured with the voyage fade already applied (see below).
-      this._capture.composite(ctx, cast.midasus);
-    } else if (sim.midasus) {
+    if (sim.midasus) {
       // Midasus.draw never sets ctx.globalAlpha to an absolute value
       // internally (verified directly), so an outer multiply here is safe
       // and cheaper than threading a new param through her whole draw path.
+      const voyageMul = sim.focus ? sim.focus.mul('voyage') : 1;
       if (voyageMul < 1) { ctx.save(); ctx.globalAlpha *= voyageMul; }
-      drawMidasusBody(ctx);
+      sim.midasus.draw(ctx, particleMul, worldLights);
       if (voyageMul < 1) ctx.restore();
     }
     // Faint reflections in the Mirror lake: has to wait until here, after the
@@ -603,61 +558,6 @@ export class Renderer {
 
   /** The Key of the World: a kick-synced vertical chromatic wash, in the
    *  new tonic's hue, sweeping across the frame over a confirmed key change. */
-  /** Range v2 (Task 12): capture the performers that stand over a pool this
-   *  frame and draw their reflections. Returns the layers by performer; a
-   *  null entry means that body draws directly. Nothing is captured outside
-   *  an active v2 frame with pools on the stage. */
-  _captureCastForReflections(ctx, sim, pose, biomeManager, perf, { drawMidioBody, drawBroshiBody, drawMidasusBody, voyageMul }) {
-    const out = { broshi: null, midio: null, midasus: null };
-    const pres = biomeManager?.rangePresentation;
-    const receivers = biomeManager?._groundReceivers;
-    if (!this.reflectionsEnabled || !biomeManager?._rangeV2Active || !pres?.frame || !receivers?.pools?.length || (perf?.level ?? 0) >= 6) return out;
-    const spans = receivers.pools.map((p) => {
-      let lo = Infinity, hi = -Infinity;
-      for (const q of p.polygon) { lo = Math.min(lo, q.x); hi = Math.max(hi, q.x); }
-      return [lo, hi];
-    });
-    const overPool = (b) => !!b && spans.some(([lo, hi]) => b.x < hi && b.x + b.w > lo);
-    const cap = this._capture || (this._capture = new PerformerCapture({ residency: sharedResidency() }));
-    const frameId = pres.frame.frameId;
-    if (sim.broshi) {
-      const bounds = sim.broshi.drawBounds();
-      if (overPool(bounds)) out.broshi = cap.capture(ctx, frameId, { id: 'broshi', bounds, hue: sim.broshi.hue, visible: true,
-        contactY: sim.broshi.groundY, airbornePx: sim.broshi.hopY, draw: drawBroshiBody });
-    }
-    {
-      // Midio's mesh spans about +-45 x -80..+20 local units around
-      // (midioDrawX, midioY); scale headroom covers breathe, pulse, the
-      // Apotheosis growth and melt, the pads his glow and hover.
-      const s = MIDIO_DRAW_SCALE * Math.max(Math.abs(pose.scaleX || 1), Math.abs(pose.scaleY || 1)) * 1.6;
-      const bounds = { x: pose.midioDrawX - 45 * s - 70, y: pose.midioY - 80 * s - 100, w: 90 * s + 140, h: 100 * s + 190 };
-      if (overPool(bounds)) out.midio = cap.capture(ctx, frameId, { id: 'midio', bounds, hue: MIDIO_IDENTITY_HUE, visible: true,
-        contactY: sim.midio.groundY, airbornePx: sim.midio.groundY - pose.midioY, draw: drawMidioBody });
-    }
-    // Midasus reflects only while she is down near the cast: out of a
-    // voyage AND within reflection range of the ground (she usually flies
-    // far above it, where a pool shows nothing of her).
-    if (sim.midasus && sim.midasus.voyage.depth <= 0 && sim.midasus.yFloor - sim.midasus.p.y < 220) {
-      const bounds = sim.midasus.drawBounds();
-      if (overPool(bounds)) {
-        ctx.save();
-        if (voyageMul < 1) ctx.globalAlpha *= voyageMul;
-        out.midasus = cap.capture(ctx, frameId, { id: 'midasus', bounds, hue: sim.midasus.hue, visible: true,
-          contactY: sim.midasus.yFloor, airbornePx: sim.midasus.yFloor - sim.midasus.p.y, draw: drawMidasusBody });
-        ctx.restore();
-      }
-    }
-    const layers = [out.broshi, out.midio, out.midasus].filter(Boolean);
-    if (layers.length) {
-      const drawn = drawWetReflections(ctx, { frame: pres.frame, layers, receivers, quality: perf?.level ?? 0, capture: cap });
-      const m = ctx.getTransform();
-      this.reflectionStats = { frameId, drawn, layers: layers.map((l) => ({ id: l.id, device: { ...l.device } })),
-        transform: [m.a, m.b, m.c, m.d, m.e, m.f], pools: receivers.pools.map((p) => ({ id: p.id, polygon: p.polygon, dropPx: p.dropPx, alpha: p.alpha })),
-        contacts: layers.map((l) => ({ id: l.id, contactY: l.contactY, bounds: l.bounds })) };
-    }
-    return out;
-  }
-
   _drawTranspositionWave(ctx, canvas, keyDirector) {
     if (!keyDirector.transitionActive || !keyDirector.lastKeyChange) return;
     const hue = (((keyDirector.lastKeyChange.to % 12) + 12) % 12) * 30;

@@ -126,15 +126,6 @@ const easeOutElastic = (t) => {
   return 2 ** (-10 * t) * Math.sin(((t * 10 - 0.75) * (2 * Math.PI)) / 3) + 1;
 };
 
-const RING_JITTER_HZ = 30;
-/** Stateless 0..1 hash of (seed, frame, index) for render-only variation. */
-export function renderJitter01(seed, frame, index) {
-  let h = (seed ^ Math.imul(frame | 0, 0x9e3779b1) ^ Math.imul(index + 1, 0x85ebca6b)) >>> 0;
-  h = Math.imul(h ^ (h >>> 16), 0x7feb352d) >>> 0;
-  h = Math.imul(h ^ (h >>> 15), 0x846ca68b) >>> 0;
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-
 export class Broshi {
   /**
    * @param {?Function} opts.hopFilter which events are HIS line to hop --
@@ -144,10 +135,6 @@ export class Broshi {
   constructor(conductor, paramBus, { seed = 555, hopFilter = null } = {}) {
     this.conductor = conductor;
     this.rand = mulberry32(seed);
-    // Draw-only variation comes from a stateless hash of this seed and the
-    // heard time, never from `rand`: drawing twice (export, reflections,
-    // repeated diagnostics) must not change what he does next.
-    this._renderSeed = seed >>> 0;
     this._hopFilter = hopFilter || ((evt) => evt.role === Role.MELODY);
     // Output-latency compensation (ChoreoClock): set by Simulation each
     // step; every decorative envelope below evaluates on the heard clock.
@@ -908,16 +895,6 @@ export class Broshi {
     return BODY_WIDTH_LOCAL * DRAW_SCALE * this.squashX;
   }
 
-  /** Conservative logical box around everything draw() paints this frame
-   *  (body, rho ring, wings, glow), for single-draw capture. Null while he
-   *  is underground (draw() paints nothing then). */
-  drawBounds() {
-    if (this.burrow.depth > 0.02) return null;
-    const x = this.renderX, y = this.groundY - this.hopY;
-    const half = 0.5 * this.shadowWidthPx + 95;
-    return { x: x - half, y: y - 175, w: 2 * half, h: 240 };
-  }
-
   draw(ctx, pose, lights = null, focusMul = 1) {
     if (this.burrow.depth > 0.02) return; // he's underground; Renderer draws the Burrow band instead
     // Midasus style: a pale pitch-class spectral hue (eased in update), not
@@ -937,9 +914,6 @@ export class Broshi {
     ctx.scale(DRAW_SCALE, DRAW_SCALE);
 
     if (this.rho > 0.02) {
-      // The serration re-rolls at RING_JITTER_HZ of heard time, as it
-      // used to at frame rate, but the same instant always draws the same ring.
-      const ringFrame = Math.floor((this._nowMs || 0) * RING_JITTER_HZ / 1000);
       ctx.save();
       ctx.globalAlpha = 0.38 * this.rho * focusMul;
       ctx.strokeStyle = '#e8f2ff';
@@ -947,7 +921,7 @@ export class Broshi {
       ctx.beginPath();
       for (let i = 0; i <= 14; i++) {
         const ang = (i / 14) * Math.PI * 2;
-        const r = (i % 2 === 0 ? 30 : 21) + (renderJitter01(this._renderSeed, ringFrame, i) * 2 - 1) * 4; // serrated, not round
+        const r = (i % 2 === 0 ? 30 : 21) + (this.rand() * 2 - 1) * 4; // serrated, not round
         const px = Math.cos(ang) * r, py = -16 + Math.sin(ang) * r * 0.7;
         if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }

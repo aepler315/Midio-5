@@ -143,8 +143,6 @@ export class PerfGovernor {
     // exchange for a look, which is the one thing the ladder never does.
     this._retroPalette = !!retroPalette && this._retro;
     this._holdQuality = false;
-    // Evidence fixtures pin an exact rung (setFixtureLevel). Null when off.
-    this._fixtureLevel = null;
     this.level = this._retro ? MAX_LEVEL : Math.max(0, Math.min(MAX_LEVEL, startLevel));
     this._overCount = 0;
     this._cleanSinceMs = null;
@@ -208,8 +206,8 @@ export class PerfGovernor {
     this._catastrophicRun = 0;
     this._fallbacks.clear();
     this._recoveredInto.clear();
-    if (next && this._fixtureLevel === null) this.level = MAX_LEVEL;
-    if (!next) this._retroPalette = false; // the palette pass never outlives the floor
+    if (next) this.level = MAX_LEVEL;
+    else this._retroPalette = false; // the palette pass never outlives the floor
   }
 
   /** Whether the composed frame should be quantized to the 256-color
@@ -237,34 +235,11 @@ export class PerfGovernor {
 
   set holdQuality(on) {
     this._holdQuality = !!on;
-    if (this._fixtureLevel !== null) { this.level = this._fixtureLevel; return; }
     if (this._holdQuality) this.level = 0;
   }
 
-  /** Controlled evidence captures pin an exact rung, 0..MAX_LEVEL, which
-   *  outranks export's full-quality hold and the 8-bit floor while set.
-   *  `null` clears the pin and returns the level to what hold/retro/the
-   *  ladder would choose. Fixtures clear it in a `finally` so a capture
-   *  never leaks its rung into later playback. */
-  setFixtureLevel(level) {
-    if (level === null) {
-      this._fixtureLevel = null;
-      if (this._holdQuality) this.level = 0;
-      else if (this._retro) this.level = MAX_LEVEL;
-      return;
-    }
-    if (!Number.isInteger(level) || level < 0 || level > MAX_LEVEL) {
-      throw new RangeError(`fixture quality must be an integer 0..${MAX_LEVEL}, got ${level}`);
-    }
-    this._fixtureLevel = level;
-    this.level = level;
-  }
-
-  get fixtureLevel() { return this._fixtureLevel; }
-
   /** Call once per rendered frame with the raw rAF-to-rAF delta. */
   sample(deltaMs, nowMs) {
-    if (this._fixtureLevel !== null) { this.level = this._fixtureLevel; return; }
     if (this._holdQuality) { this.level = 0; return; }
     // 8-bit mode holds the floor: neither shedding (already at the bottom)
     // nor recovering (see the `retro` setter -- recovery is exactly the
