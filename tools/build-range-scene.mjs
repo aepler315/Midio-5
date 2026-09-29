@@ -3,6 +3,8 @@
 // package. Authoring source: data/terrain/scenic-views.json.
 //
 //   node tools/build-range-scene.mjs --view <id> [--out DIR] [--publish] [--cell M]
+//   node tools/build-range-scene.mjs --approve <id> --evidence <file,file>
+//   node tools/build-range-scene.mjs --catalog
 //
 // Without --publish the output goes to .terrain-cache/views/<id>/ for review
 // (tools/review-range-views.mjs). With --publish the package is written to
@@ -150,8 +152,21 @@ export async function buildCatalog(doc) {
     let build;
     try { build = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${v.id}.build.json`), 'utf8')); }
     catch { continue; } // not published yet
+    // An approval holds only for the assets it reviewed: if the terrain
+    // package, material pack or camera changed since, the view ships as a
+    // candidate again until it is re-reviewed.
+    const hashes = await approvalHashes(v, build);
+    let status = v.status;
+    if (status === 'approved') {
+      const a = v.approval || {};
+      const stale = ['terrainManifestSha256', 'materialManifestSha256', 'cameraSha256'].filter((k) => a[k] !== hashes[k]);
+      if (stale.length) {
+        console.warn(`${v.id}: approval is stale (${stale.join(', ')} changed); shipping as candidate`);
+        status = 'candidate';
+      }
+    }
     views.push({
-      id: v.id, regionId: v.regionId, biome: v.biome, status: v.status, catalogVersion: doc.catalogVersion,
+      id: v.id, regionId: v.regionId, biome: v.biome, status, catalogVersion: doc.catalogVersion,
       title: v.title || v.id, place: v.place || '',
       credit: build.credit || null,
       terrainManifestUrl: `terrain/${v.id}.terrain.json`,
@@ -164,11 +179,31 @@ export async function buildCatalog(doc) {
       evidence: {
         reviewPath: v.reviewPath || 'docs/range-v2-progress.md',
         review: v.review || null,
+        approval: status === 'approved' ? v.approval : null,
         sourceHashes: [...new Set([...(build.sourceSha256 || []), build.payloadSha256])],
       },
     });
   }
   return { catalogVersion: doc.catalogVersion, views };
+}
+
+/** The hashes an approval is recorded against. */
+export async function approvalHashes(v, build) {
+  const matUrl = `materials/${v.materialPack || DEFAULT_PACKS[v.biome]}.json`;
+  const mat = await fs.readFile(path.join(RUNTIME_DIR, matUrl));
+  return { terrainManifestSha256: build.manifestSha256, materialManifestSha256: sha(mat), cameraSha256: sha(JSON.stringify(build.view.camera)) };
+}
+
+/** Mark a published view approved against its current assets. */
+async function approveView(doc, id, { evidence }) {
+  const v = doc.views.find((x) => x.id === id);
+  if (!v) throw new Error(`no view ${id} in scenic-views.json`);
+  const build = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${id}.build.json`), 'utf8'));
+  v.status = 'approved';
+  v.approval = { date: new Date().toISOString().slice(0, 10), ...(await approvalHashes(v, build)), evidence };
+  doc.catalogVersion = (doc.catalogVersion || 0) + 1;
+  await fs.writeFile(AUTHORING, JSON.stringify(doc, null, 2) + '\n');
+  console.log(`${id}: approved; catalog version ${doc.catalogVersion}`);
 }
 
 async function writeCatalog(doc) {
@@ -184,6 +219,12 @@ async function main() {
   const args = process.argv.slice(2);
   const opt = (k) => (args.includes(k) ? args[args.indexOf(k) + 1] : null);
   if (args.includes('--catalog')) { await writeCatalog(await readAuthoring()); return; }
+  if (opt('--approve')) {
+    const doc = await readAuthoring();
+    await approveView(doc, opt('--approve'), { evidence: (opt('--evidence') || '').split(',').filter(Boolean) });
+    await writeCatalog(doc);
+    return;
+  }
   const id = opt('--view');
   const doc = await readAuthoring();
   const views = id === 'all' ? doc.views : doc.views.filter((v) => v.id === id);

@@ -9,8 +9,8 @@ Reference image: `docs/evidence/range-v2/reference.webp` (1806×871, documentati
 | --- | --- |
 | Branch | `claude/amazing-brown-tbiycu` |
 | Base | `b8a3d72b344792d149906449f1cd86d68df8cc2b` (= audited SHA; `origin/main` rechecked 2026-09-29) |
-| Last completed task | 12 (reflections); Task 13 in progress (mist, sky hierarchy, motion pilot) |
-| Next action | Task 13 — verify mist/moon/clouds in the app, run the motion suite, then approve the pilot view |
+| Last completed task | 13 (pilot view approved, catalog v2); PR #332 merged to main |
+| Next action | Task 14 — transitions A/B, framing (16:9, wide, portrait), opening warmup |
 
 ## Decisions recorded with the user (2026-09-29)
 
@@ -60,7 +60,7 @@ The four confirmed defects in plan §1 are re-verified in Task 1 against source 
 | (fix) terrain shader | done | `triplanar()` called `triplanarRib()` before its definition, so the terrain program never linked in the app (only trees drew). Guarded by `test/rangeShaderSource.test.js` and shader-error detection in the scene smoke |
 | (fix) residency | done | legacy strips for v2-covered biomes dropped/not prebaked: pilot 267 MB -> 110 MB of the 256 MiB budget |
 | 12 reflections | done | single body draw into ordered source-over/lighter segments; mirror about each pool's water plane; clip = pool polygon ∩ slab top. Pilot pixel check: 124-129 px in pools, 0 elsewhere, paused re-render identical |
-| 13 atmosphere/pilot | in progress | valley mist (height layer + drifting noise, ray-integrated so nearer terrain occludes it), v2 moon at ~3.5% width with maria, sparse clouds; motion suite written |
+| 13 atmosphere/pilot | done | mist, secondary celestial + clouds; motion pilot 20 s @ 12 fps from 0 s (opening included), calm/energetic stills, backward seek 32 s -> 8 s returns to the identical rail position; `nc-ross-lake-north` approved against its terrain/material/camera hashes (catalog v2; a changed asset voids the approval). Evidence: `docs/evidence/range-v2/pilot-ross-lake-*.jpg` |
 
 ## Asset budget (60 MB ceiling)
 

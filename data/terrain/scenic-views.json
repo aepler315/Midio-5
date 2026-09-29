@@ -1,12 +1,12 @@
 {
   "about": "Range v2 scenic views: curated real terrain corridors with authored camera rails. Authoring source for tools/build-range-scene.mjs; the runtime catalog (src/assets/range/v2/catalog.json) is generated from it. Rail anchors are lon/lat (NAD83 for 3DEP sources) with an absolute height (heightM, metres above the source vertical datum) or a height above the DEM ground (aboveGroundM). status: candidate | approved | rejected; only approved views are production-eligible.",
-  "catalogVersion": 1,
+  "catalogVersion": 2,
   "views": [
     {
       "id": "nc-ross-lake-north",
       "regionId": "north-cascades",
       "biome": "RAINFOREST",
-      "status": "candidate",
+      "status": "approved",
       "notes": "Elevated over the Ross Dam / Diablo Lake junction looking north-north-east up Ross Lake: the lake is the central opening, Jack Mountain the tall snowy mass on the right, Sourdough's wooded flanks at the left, Hozomeen and the Pasayten peaks on the far skyline. The rail trucks 1.8 km east-south-east, across the line of sight, for parallax.",
       "dem": {
         "source": "3dep13",
@@ -81,7 +81,18 @@
       ],
       "review": "2026-09-29 geometry/camera review (Task 4): 21 stations + continuous traverse, neutral/silhouette/depth/crop-edge modes. Connected real relief (Ross Lake chain, Jack Mountain spurs, Sourdough flanks); no crop-edge skyline, no cracks; terrain coverage 0.62-0.64, skyline top 0.28 of frame height. Geometry approved for material pilot; production status stays candidate until the Task 13 full pilot.",
       "title": "Ross Lake",
-      "place": "North Cascades, Washington"
+      "place": "North Cascades, Washington",
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "8995e13dae058742479bb8b35396400b6a690a953e0d172be8988144047d2748",
+        "materialManifestSha256": "8f5ff6bb64b01072364f9d4698c13591af20de8f32dfbd40b67f0614fd242bb0",
+        "cameraSha256": "1947b732c79e756600438f9747cb0dbd629daecafb072dd925d4d5cd1773eb7a",
+        "evidence": [
+          "docs/evidence/range-v2/pilot-ross-lake-calm-10s.jpg",
+          "docs/evidence/range-v2/pilot-ross-lake-energetic-32s.jpg",
+          "docs/evidence/range-v2/pilot-ross-lake-reflection-38s.jpg"
+        ]
+      }
     },
     {
       "id": "nc-diablo-colonial",
