@@ -7,6 +7,8 @@
 // terrain so trees sit in the same air.
 import { DEFORM_GLSL } from './TerrainMaterial.js';
 
+import { MIST_GLSL } from './RangeAtmosphere.js';
+
 const TREE_COMMON = /* glsl */`
   ${DEFORM_GLSL}
   uniform float uTime;
@@ -82,6 +84,7 @@ const SHADE = /* glsl */`
   uniform vec3 pForestNear;
   uniform vec3 pForestFar;
   uniform float uDiag;
+  ${MIST_GLSL}
   vec3 tonemap(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
   vec4 shadeTree(vec3 n, vec3 world, float core) {
     float dist = length(world - uCameraPos);
@@ -96,7 +99,8 @@ const SHADE = /* glsl */`
     vec3 lit = base * (hemi * (0.55 + 0.45 * core) + uLightColor * key);
     float heightTerm = exp(-max(0.0, world.y - uCameraPos.y * 0.25) * uAirHeightFalloff);
     float air = 1.0 - exp(-dist * uAirDensity * (0.35 + 0.65 * heightTerm));
-    vec3 color = mix(tonemap(lit * uExposure), uAirColor, clamp(air, 0.0, 0.96));
+    vec3 color = mix(tonemap(lit * uExposure), uMistColor, mistAmount(uCameraPos, world));
+    color = mix(color, uAirColor, clamp(air, 0.0, 0.96));
     if (uDiag > 0.5) return vec4(1.0, 0.0, 1.0, 1.0);
     return vec4(pow(max(color, 0.0), vec3(1.0 / 2.2)), 1.0);
   }

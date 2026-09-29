@@ -16,7 +16,7 @@ import { WORLD_SIGNATURES, WORLD_RENDERERS } from './WorldRegistry.js';
 import { sampleWorldMusic } from './WorldMusic.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { landscapeLayerColor, landscapePasses, landscapePolicy, landscapeBudget, landscapeSnowAllowed, resolveLandscapePalette, resolveRangePresentation } from './alpine/LandscapePolicy.js';
-import { createRangeSkyComposition, rangeMoonRadius } from './alpine/RangeSkyComposition.js';
+import { createRangeSkyComposition, rangeMoonRadius, rangeV2MoonRadius, drawMoonMaria, rangeCloudBanks, drawRangeClouds } from './alpine/RangeSkyComposition.js';
 import { buildRidgeSurface } from './alpine/RidgeSurface.js';
 import { drawRidgeSurface } from './alpine/RidgeSurfaceDraw.js';
 import { buildGroundPatches, drawGroundMaterial } from './alpine/GroundMaterial.js';
@@ -2505,6 +2505,7 @@ export class BiomeManager {
     // over their last stretch of altitude rather than popping at the
     // horizon, and both rise from and set into the sea horizon.
     if (sunUp) this._drawCelestial(ctx, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt), celestialXFrac);
+    this._moonDisc = null;
     if (dn.moonAlt > 0.001) {
       // Where the sun really is -- below the horizon all night, which is the
       // whole point: it's what makes the moon read as lit from underneath.
@@ -2515,6 +2516,19 @@ export class BiomeManager {
         celestialXFracFor(dn.moonAz01),
         sun.xFrac, sun.yFrac, this._moonPhase01(),
       );
+    }
+    // Range v2: sparse, low-contrast cloud banks (two wisps crossing the
+    // moon), lit on the side facing the celestial, clear of the SpaceRidge.
+    if (this._rangeV2Active && this._pass('range-clouds')) {
+      const halo = hexToRgb(this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)));
+      const top = hexToRgb(this._rotated(this.lerpCache.get(A.sky[0], B.sky[0], t)));
+      const moon = this._moonDisc;
+      drawRangeClouds(ctx, rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, moon }), {
+        dark: [Math.round(top.r * 0.8 + 18), Math.round(top.g * 0.8 + 22), Math.round(top.b * 0.8 + 30)],
+        lit: [Math.round(halo.r * 0.7 + 60), Math.round(halo.g * 0.7 + 50), Math.round(halo.b * 0.7 + 45)],
+        light: moon || { x: canvas.width * celestialXFrac, y: canvas.height * celestialYFrac },
+        allowPoint: this._rangeSky?.allowPoint || null,
+      });
     }
     // Spirograph resonance mandala, centered on the celestial body so it
     // reads as the sun/moon itself resonating with the track.
@@ -4186,8 +4200,9 @@ export class BiomeManager {
     // a fixed 26px while a camera pull-back widens the stage around it.
     // Matches the old constant exactly at the nominal 720-tall stage.
     const R = this.world?.kind === 'alpine'
-      ? rangeMoonRadius(canvas.height, app.scale)
+      ? (this._rangeV2Active ? rangeV2MoonRadius(canvas.width, app.scale) : rangeMoonRadius(canvas.height, app.scale))
       : Math.max(14, canvas.height * 0.0361) * app.scale;
+    this._moonDisc = { x: cx, y: cy, R };
     ctx.save();
     ctx.globalAlpha = alpha;
     const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 2.2);
@@ -4282,6 +4297,7 @@ export class BiomeManager {
     ctx.fillStyle = face;
     ctx.fill();
     ctx.restore();
+    if (this._rangeV2Active) drawMoonMaria(ctx, cx, cy, R, alpha);
   }
 
   /** A far ocean seen through/behind the mountain silhouettes: not a solid

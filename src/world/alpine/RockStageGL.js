@@ -6,6 +6,7 @@
 // Local light: the cast's own glows light the rock around them (up to 3
 // emitters, in the same fixed-ground coordinates as their bodies).
 import { setLinearFromHex } from './TerrainMaterial.js';
+import { emitterStrength } from './RangeAtmosphere.js';
 
 const VERT = /* glsl */`
   in float surface;
@@ -213,8 +214,7 @@ export class RockStageGL {
     for (let i = 0; i < 3; i++) {
       const e = ems[i];
       if (!e) { u.uEmitters.value[i].set(0, 0, 1, 0); continue; }
-      const lift = Math.min(1, (e.airborneM || 0) / 160);
-      u.uEmitters.value[i].set(e.x, e.supportY ?? e.y, 150, (frame.reducedFlash ? 0.12 : 0.22) * (1 - 0.6 * lift));
+      u.uEmitters.value[i].set(e.x, e.supportY ?? e.y, 150, emitterStrength({ airbornePx: e.airborneM, reducedFlash: frame.reducedFlash }));
       const [r, gg, b] = hueToLinear(e.hue ?? 180);
       u.uEmitterColor.value[i].set(r, gg, b);
     }

@@ -242,6 +242,76 @@ async function suitePilot(ctx) {
   assert.deepEqual(v2.errors.filter((e) => !e.startsWith('warn')), [], 'page errors');
 }
 
+/**
+ * Motion pilot (Task 13): a calm -> energetic -> calm song, stepped on the
+ * export clock at 1280x720 (software GL cannot render the exporter's 1080p
+ * minimum in reasonable time), 24 fps from 0 s so the opening is included;
+ * frames encode to MP4. Then one backward seek in the same page, compared
+ * with the sequence's own frame at that heard time.
+ */
+async function suiteMotion(ctx) {
+  const { browser, args, out, report } = ctx;
+  const view = args.view || 'nc-ross-lake-north';
+  const wav = path.join(out, 'pilot-60s.wav');
+  execFileSync(process.execPath, [path.join(root, 'tools/gen-pilot-wav.mjs'), wav, '60']);
+  const s = await openSong(browser, { url: args.url, wav, width: 1280, height: 720, params: { rangeRenderer: 'v2', rangeView: view } });
+  const fps = 24, seconds = 26, n = fps * seconds;
+  const dir = path.join(out, 'motion-frames');
+  await fs.rm(dir, { recursive: true, force: true });
+  await fs.mkdir(dir, { recursive: true });
+  report.motion = { view, fps, seconds, size: '1280x720', song: 'tools/gen-pilot-wav.mjs 60: calm 0-21 s, energetic 21-45 s, calm after', samples: [] };
+  const grab = (t, quality) => s.page.evaluate(({ t: tt, q }) => {
+    const smw = window.__SMW;
+    const t0 = performance.now();
+    smw.renderExportFrame(tt);
+    const drawMs = performance.now() - t0;
+    const c = document.querySelector('#stage');
+    const st = smw.rangeState;
+    return { img: c.toDataURL(q ? 'image/jpeg' : 'image/png', q || undefined).split(',')[1], drawMs,
+      range: { active: st.active, reason: st.reason, viewId: st.viewId, progress01: st.progress01, frameId: st.frameId } };
+  }, { t, q: quality });
+  let lastSample = null;
+  for (let i = 0; i < n; i++) {
+    const t = (i * 1000) / fps;
+    const f = await grab(t, 0.9);
+    await fs.writeFile(path.join(dir, `f${String(i).padStart(5, '0')}.jpg`), Buffer.from(f.img, 'base64'));
+    if (i % fps === 0) {
+      report.motion.samples.push({ t, drawMs: Math.round(f.drawMs), ...f.range });
+      console.log(`motion ${(t / 1000).toFixed(0)}s: active=${f.range.active} ${f.range.reason || ''} u=${f.range.progress01?.toFixed(3)} draw=${f.drawMs.toFixed(0)}ms`);
+    }
+    lastSample = f;
+  }
+  const mp4 = path.join(out, `motion-${view}-26s.mp4`);
+  execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-framerate', String(fps), '-i', path.join(dir, 'f%05d.jpg'),
+    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', mp4]);
+  report.motion.mp4 = path.relative(root, mp4);
+  // Stills: calm (from the sequence) and energetic (ahead on the clock).
+  report.motion.calmStill = path.relative(root, path.join(dir, `f${String(10 * fps).padStart(5, '0')}.jpg`));
+  const hot = await grab(32000);
+  report.motion.energeticStill = path.relative(root, await writePng(out, `motion-${view}-32000-energetic.png`, hot.img));
+  // One backward seek, to the sequence's 8 s frame.
+  const seekT = 8000;
+  const seek = await s.page.evaluate(async (t) => {
+    const smw = window.__SMW;
+    smw.seek(t);
+    const ready = await smw.rangeReady({ timeoutMs: 600000 });
+    return { ready: ready?.runtime ?? null };
+  }, seekT);
+  const after = await grab(seekT);
+  const seqFile = path.join(dir, `f${String((seekT / 1000) * fps).padStart(5, '0')}.jpg`);
+  const afterPng = await writePng(out, `motion-${view}-after-seek-${seekT}.png`, after.img);
+  const seqSample = report.motion.samples.find((x) => x.t === seekT);
+  report.motion.backwardSeek = { fromMs: 32000, toMs: seekT, afterSeek: after.range, sequence: seqSample, ready: seek.ready,
+    afterPng: path.relative(root, afterPng), sequenceFrame: path.relative(root, seqFile) };
+  console.log(`backward seek 32s -> 8s: active=${after.range.active} view=${after.range.viewId} u=${after.range.progress01?.toFixed(4)} (sequence u=${seqSample?.progress01?.toFixed(4)})`);
+  assert.equal(after.range.active, true, `v2 inactive after the backward seek: ${after.range.reason}`);
+  assert.ok(Math.abs(after.range.progress01 - seqSample.progress01) < 0.002, 'the view returns to the same place on its rail');
+  assert.ok(lastSample.range.active, 'v2 active through the pilot');
+  report.motion.pageErrors = s.errors;
+  await s.context.close();
+  assert.deepEqual(s.errors.filter((e) => !e.startsWith('warn')), [], 'page errors');
+}
+
 /** Magenta marker pixels (the diagnostic far partition) in RGBA bytes. */
 export function countMarkers(rgba, { lossy = false } = {}) {
   let n = 0;
@@ -359,7 +429,7 @@ async function main() {
   let failed = null;
   try {
     const suites = args.suite === 'complete' ? SUITES.filter((s) => s !== 'complete') : [args.suite];
-    const impl = { pilot: suitePilot, export: suiteExport };
+    const impl = { pilot: suitePilot, export: suiteExport, motion: suiteMotion };
     for (const s of suites) {
       if (!impl[s]) { report[s] = { status: 'unimplemented' }; console.log(`${s}: not implemented yet`); continue; }
       await impl[s](ctx);

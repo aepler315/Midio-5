@@ -9,8 +9,8 @@ Reference image: `docs/evidence/range-v2/reference.webp` (1806×871, documentati
 | --- | --- |
 | Branch | `claude/amazing-brown-tbiycu` |
 | Base | `b8a3d72b344792d149906449f1cd86d68df8cc2b` (= audited SHA; `origin/main` rechecked 2026-09-29) |
-| Last completed task | 9 (materials integrated; Task 8 recorder-path evidence still open, see below) |
-| Next action | Task 10 — ForestCover instanced conifers (near/mid) over the canopy texture (far) |
+| Last completed task | 12 (reflections); Task 13 in progress (mist, sky hierarchy, motion pilot) |
+| Next action | Task 13 — verify mist/moon/clouds in the app, run the motion suite, then approve the pilot view |
 
 ## Decisions recorded with the user (2026-09-29)
 
@@ -55,6 +55,12 @@ The four confirmed defects in plan §1 are re-verified in Task 1 against source 
 | 7 residency | done | shared ledger incl. legacy strips; budgeted, generation-safe asset prep; staging verifies assets |
 | 8 integration | done except recorder evidence | markers verified in main stage + real bulk-export MP4; recorder check timed out because software-GL live playback outran the 96 s fixture song — rerun with a longer song |
 | 9 materials | done (pilot quality) | 11 packs, CC0 data maps + procedural; exposure calibrated to reference values; rock still reads smooth at 20 m spacing — revisit in Task 13 |
+| 10 forest | done | 13 m lattice, stable quality subsets, instanced near conifers + far silhouette billboards; water rejection uses all four neighbouring samples |
+| 11 rock stage | done | slabs on the rendered support curve every frame; broken ledges; pools level-tested on the slab and contained by its face; exact polygon wet masks. Found+fixed: y-down ortho camera culled every face; per-frame BufferAttribute leak |
+| (fix) terrain shader | done | `triplanar()` called `triplanarRib()` before its definition, so the terrain program never linked in the app (only trees drew). Guarded by `test/rangeShaderSource.test.js` and shader-error detection in the scene smoke |
+| (fix) residency | done | legacy strips for v2-covered biomes dropped/not prebaked: pilot 267 MB -> 110 MB of the 256 MiB budget |
+| 12 reflections | done | single body draw into ordered source-over/lighter segments; mirror about each pool's water plane; clip = pool polygon ∩ slab top. Pilot pixel check: 124-129 px in pools, 0 elsewhere, paused re-render identical |
+| 13 atmosphere/pilot | in progress | valley mist (height layer + drifting noise, ray-integrated so nearer terrain occludes it), v2 moon at ~3.5% width with maria, sparse clouds; motion suite written |
 
 ## Asset budget (60 MB ceiling)
 
@@ -64,14 +70,24 @@ The four confirmed defects in plan §1 are re-verified in Task 1 against source 
 | Shared data textures (10 x 512^2 lossless WebP) | ~7 MB |
 | Three.js subset bundle | 0.54 MB |
 
+## Decisions taken without asking (assumptions)
+
+- Under v2 the painted sea, far shore, mirage and sea life are off (the view is inland; the reference has no sea). The sea still draws during a live tsunami/withdrawal so that hazard stays visible.
+- Under v2 the glyph ground scatter is off: the world-anchored rock stage carries the speed read.
+- Midasus is reflected only when she is within 220 px of her floor and not on a voyage.
+- The motion pilot is captured at 1280x720 / 24 fps: the bulk exporter's 1080p minimum takes ~10 s per frame in software GL.
+
 ## Measurements so far (SwiftShader, not device numbers)
 
 - Export frame at 1280x720 with v2 active: ~430-710 ms draw in SwiftShader; partition copy (drawImage of the WebGL canvas) 0.1-0.3 ms.
 - Desktop LOD for the pilot: 1.85 M triangles; mobile budget 0.80 M.
+- Pilot residency with v2 active: 110 MB (terrain GPU 66, CPU 9, material 11, targets 22).
+- Rock stage mean sRGB: ~(50,63,61) at 30 s (moon up), ~(26,33,36) at 90 s; reference foreground rock ~(45,52,58).
 
 ## Command log
 
 - `node tools/build-range-scene.mjs --view nc-ross-lake-north --publish`
 - `node tools/build-range-materials.mjs`
 - `node tools/review-range-views.mjs --views nc-ross-lake-north --source published --stations 21 --modes neutral,silhouette`
-- `node tools/range-scene-smoke.mjs --url http://127.0.0.1:8092 --source-root "$PWD" --expect-sha <sha> --suite pilot|export --output .smoke/range-v2`
+- `node tools/range-scene-smoke.mjs --url http://127.0.0.1:8092 --source-root "$PWD" --expect-sha <sha> --suite pilot|export|motion|complete --output .smoke/range-v2`
+- `node tools/gen-pilot-wav.mjs <out.wav> 60` (calm/energetic/calm motion-pilot song)

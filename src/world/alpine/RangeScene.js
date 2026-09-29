@@ -23,6 +23,7 @@ import { buildRockStage } from './RockStage.js';
 import { RockStageGL } from './RockStageGL.js';
 import { cameraPoseAt } from '../terrain/SceneTravel.js';
 import { BANDS } from './TerrainMesh.js';
+import { mistParams } from './RangeAtmosphere.js';
 
 const COPY_VERT = /* glsl */`
   out vec2 vUv;
@@ -40,6 +41,19 @@ const COPY_FRAG = /* glsl */`
 `;
 
 const hexToLinear = (THREE, hex, target) => setLinearFromHex(target, hex);
+
+/** Median height of the package's hydro-flattened water samples (the
+ *  valley floor the mist settles on); null when the view has no water. */
+function waterLevel(data) {
+  const hs = [];
+  for (const t of data.tiles.values()) {
+    if (!t.flowBytes) continue;
+    for (let i = 0; i < t.flowBytes.length; i += 7) if (t.flowBytes[i] === 255 && Number.isFinite(t.heightsM[i])) hs.push(t.heightsM[i]);
+  }
+  if (!hs.length) return null;
+  hs.sort((a, b) => a - b);
+  return hs[hs.length >> 1];
+}
 
 export class RangeScene {
   /** `THREE` is the local bundle; `residency` the shared ledger. */
@@ -179,6 +193,7 @@ export class RangeScene {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
           surface, uniforms, material, depthMaterial, geometries: geos.geometries, scenes, depthScene,
           forest, stageGL, stats: { ...geos.stats, trees: forest.counts }, gpuKey, cpuKey: cpu.key,
+          rules, waterLevelM: waterLevel(cpu.data),
         };
         if (signal?.aborted || !isCurrent(generation)) throw new RangeAssetError('stale', `stale ${view.id}`);
         if (res && !this.residency.commit(res, prepared, (p) => this._disposePrepared(p))) {
@@ -299,6 +314,18 @@ export class RangeScene {
       hexToLinear(THREE, frame.light.sky.air || frame.light.sky.horizon, u.uAirColor.value);
     }
     u.uAirDensity.value = (1 / 55000) * (1 + 0.6 * night);
+    // Valley mist: anchored at the view's water level, thicker in calm.
+    const mp = mistParams({ rules: p.rules, waterLevelM: p.waterLevelM, heightRange: [u.uHeightRange.value.x, u.uHeightRange.value.y],
+      tSec: frame.timeMs / 1000, calm01: 1 - (frame.music?.groove ?? 0) });
+    u.uMistDensity.value = frame.qualityLevel >= 5 ? mp.density * 0.6 : mp.density;
+    u.uMistBase.value = mp.baseM;
+    u.uMistHeight.value = mp.heightM;
+    u.uMistTime.value = mp.tSec;
+    // Lit mist: the air's colour lifted toward the key light (display domain).
+    u.uMistColor.value.copy(u.uAirColor.value).multiplyScalar(1.2).add(u.uLightColor.value.clone().multiplyScalar(0.06));
+    u.uMistColor.value.r = Math.min(0.9, u.uMistColor.value.r);
+    u.uMistColor.value.g = Math.min(0.9, u.uMistColor.value.g);
+    u.uMistColor.value.b = Math.min(0.9, u.uMistColor.value.b);
     u.uCameraPos.value.copy(this.camera.position);
   }
 

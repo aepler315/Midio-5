@@ -7,6 +7,8 @@ import { hexToLinear } from './MaterialPackage.js';
 // albedo/detail terms here rather than drawing a second terrain.
 
 // GLSL twin of RangeFrame.sceneDeformation -- keep the two in step.
+import { MIST_GLSL } from './RangeAtmosphere.js';
+
 export const DEFORM_GLSL = /* glsl */`
   uniform vec2 uHeightRange;
   uniform float uDeformAmp;
@@ -87,6 +89,7 @@ export const SCENE_FRAG = /* glsl */`
   // Filmic shoulder (Narkowicz ACES fit): snow and moonlit rock compress
   // instead of clipping; the dark blue-hour body keeps its separation.
   vec3 tonemap(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+  ${MIST_GLSL}
   float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
   // Triplanar sample of a data texture (RG normal, B, A height) around the
   // geometric normal; returns the world-space normal offset in .xyz via
@@ -222,7 +225,10 @@ export const SCENE_FRAG = /* glsl */`
     float air = 1.0 - exp(-dist * uAirDensity * (0.35 + 0.65 * heightTerm));
     // Air is the displayed sky colour; bring it into the exposed domain so
     // distant terrain converges on the sky the 2D painter draws behind it.
-    vec3 color = mix(tonemap(lit * uExposure), uAirColor, clamp(air, 0.0, 0.96));
+    // Valley mist first (it sits in the near and middle air), then the
+    // distance air over everything, mist included.
+    vec3 color = mix(tonemap(lit * uExposure), uMistColor, mistAmount(uCameraPos, vWorld));
+    color = mix(color, uAirColor, clamp(air, 0.0, 0.96));
     outColor = vec4(linearToSrgb(color), 1.0);
     if (uDiag > 0.5) outColor = vec4(1.0, 0.0, 1.0, 1.0);
   }
@@ -247,6 +253,9 @@ export function sceneUniforms(THREE, base) {
     uAirColor: { value: new THREE.Color(0.35, 0.4, 0.5) },
     uAirDensity: { value: 1 / 60000 },
     uAirHeightFalloff: { value: 1 / 2500 },
+    // Valley mist (RangeAtmosphere): off until the scene sets it per frame.
+    uMistDensity: { value: 0 }, uMistBase: { value: 0 }, uMistHeight: { value: 220 }, uMistTime: { value: 0 },
+    uMistColor: { value: new THREE.Color(0.4, 0.43, 0.48) },
     uCameraPos: { value: new THREE.Vector3() },
     uDiag: { value: 0 },
     uHasMaterial: { value: 0 },
