@@ -1,6 +1,6 @@
 {
   "about": "Range v2 scenic views: curated real terrain corridors with authored camera rails. Authoring source for tools/build-range-scene.mjs; the runtime catalog (src/assets/range/v2/catalog.json) is generated from it. Rail anchors are lon/lat (NAD83 for 3DEP sources) with an absolute height (heightM, metres above the source vertical datum) or a height above the DEM ground (aboveGroundM). status: candidate | approved | rejected; only approved views are production-eligible.",
-  "catalogVersion": 2,
+  "catalogVersion": 3,
   "views": [
     {
       "id": "nc-ross-lake-north",
@@ -86,6 +86,7 @@
         "date": "2026-09-29",
         "terrainManifestSha256": "8995e13dae058742479bb8b35396400b6a690a953e0d172be8988144047d2748",
         "materialManifestSha256": "8f5ff6bb64b01072364f9d4698c13591af20de8f32dfbd40b67f0614fd242bb0",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
         "cameraSha256": "1947b732c79e756600438f9747cb0dbd629daecafb072dd925d4d5cd1773eb7a",
         "evidence": [
           "docs/evidence/range-v2/pilot-ross-lake-calm-10s.jpg",

@@ -158,3 +158,16 @@ export function buildRangeFrame({
     worldX: pose.worldX, originX: pose.midioX,
   });
 }
+
+/**
+ * The scenic camera's projection for a viewport: vertical field of view and
+ * aspect. Terrain keeps the same pixels per radian as at the nominal stage,
+ * so a camera pull-back (a larger logical stage) or the shake overscan shows
+ * MORE landscape at the same scale -- characters and terrain keep their
+ * proportions -- and backing size / DPR never change what is framed.
+ */
+export function scenicProjection(fovYDeg, vp) {
+  const nominalH = vp.nominalHeight || 720;
+  const tanHalf = Math.tan((fovYDeg * Math.PI) / 360) * (vp.logicalHeight / nominalH);
+  return { fovYDeg: (2 * Math.atan(tanHalf) * 180) / Math.PI, aspect: vp.logicalWidth / vp.logicalHeight, tanScale: vp.logicalHeight / nominalH };
+}

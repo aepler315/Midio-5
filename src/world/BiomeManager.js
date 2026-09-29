@@ -15,6 +15,7 @@ import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
 import { WORLD_SIGNATURES, WORLD_RENDERERS } from './WorldRegistry.js';
 import { sampleWorldMusic } from './WorldMusic.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
+import { travelSeam, TRAVEL_FEATHER, TRAVEL_BANDS } from './TravelSeam.js';
 import { landscapeLayerColor, landscapePasses, landscapePolicy, landscapeBudget, landscapeSnowAllowed, resolveLandscapePalette, resolveRangePresentation } from './alpine/LandscapePolicy.js';
 import { createRangeSkyComposition, rangeMoonRadius, rangeV2MoonRadius, drawMoonMaria, rangeCloudBanks, drawRangeClouds } from './alpine/RangeSkyComposition.js';
 import { buildRidgeSurface } from './alpine/RidgeSurface.js';
@@ -463,21 +464,8 @@ export function fogBandAlphaFractionAtY(geo, y) {
 // Travel between real biomes (see _drawLayer). The seam's soft edge, as a
 // share of the view, and how many alpha steps fake the gradient across it
 // (a clip can only be a hard rectangle).
-const TRAVEL_FEATHER = 0.18;
-const TRAVEL_BANDS = 4;
-// When each layer's seam has crossed the whole view, as a share of the
-// travel: the nearest ranges change first, the back skyline last.
-const TRAVEL_ARRIVAL = { L5: 0.55, L4: 0.7, L3: 0.85, L2: 1 };
-
-/** Where the seam between the old biome (left) and the new one (right)
- *  stands on screen for one layer, `p` of the way through the travel. It
- *  starts past the right edge, feather and all, and leaves past the left. */
-export function travelSeam(width, layerKey, p) {
-  const span = TRAVEL_ARRIVAL[layerKey] ?? 1;
-  const q = smoothstep(0, 1, Math.min(1, Math.max(0, p) / span));
-  const feather = width * TRAVEL_FEATHER;
-  return width + feather / 2 - q * (width + feather);
-}
+// Travel seam geometry lives in TravelSeam.js (shared with Range v2).
+export { travelSeam };
 
 let BIOME_MANAGER_SERIAL = 0;
 
@@ -1780,7 +1768,7 @@ export class BiomeManager {
     // (not released: a holder mid-frame keeps a valid canvas) and none are
     // baked ahead; a real fallback bakes lazily in stripsFor().
     const covered = (name) => !!name && !!this.rangePresentation?.coversBiome?.(name);
-    if (this._rangeV2Active) {
+    if (this._rangeV2Active && !this._rangeV2Arriving) {
       for (const key of [...this.strips.entries.keys()]) if (covered(key)) this.strips.delete(key);
     }
     const stale = visible.find((name) => this.strips.has(name) && !this._stripsMatch(name) && !(this._rangeV2Active && covered(name)));
@@ -2401,7 +2389,11 @@ export class BiomeManager {
     // baked (and their composition fitted) when the legacy stack draws.
     const v2 = this.world?.kind === 'alpine' && !this.terrainPreview && !!this.rangePresentation?.beginScenic?.();
     this._rangeV2Active = v2;
-    if (this.world?.kind === 'alpine' && !this.terrainPreview && !v2) {
+    // Mid-song arrival: the scene fades in over legacy scenery, which keeps
+    // drawing (and keeps its strips) until the fade completes.
+    const v2Arriving = v2 && !!this.rangePresentation?.arriving;
+    this._rangeV2Arriving = v2Arriving;
+    if (this.world?.kind === 'alpine' && !this.terrainPreview && (!v2 || v2Arriving)) {
       this._compositionFor(this.stripsFor(A.name));
       if (B.name !== A.name) this._compositionFor(this.stripsFor(B.name));
     }
@@ -2579,7 +2571,9 @@ export class BiomeManager {
     // Scenic partitions. Range v2 (RangePresentation) replaces the legacy
     // ranges, their haze, connector hills and cast shadows with the real
     // terrain scene when its view is ready; otherwise the legacy stack draws.
-    const tint = v2
+    const tint = v2Arriving
+      ? this._drawRangeV2Arrival(ctx, canvas, frame, { worldX, originX, A, B, t, arc, phenomenaFull, particleMul, mandalaColor, skyHorizonNight })
+      : v2
       ? this._drawRangeV2Scenic(ctx, canvas, frame, { worldX, originX, A, B, t, phenomenaFull, particleMul, mandalaColor, skyHorizonNight })
       : this._drawLegacyScenic(ctx, canvas, frame, { worldX, originX, A, B, t, arc, phenomenaFull, particleMul, mandalaColor, skyHorizonNight });
 
@@ -2601,7 +2595,13 @@ export class BiomeManager {
     // Range v2: the rock stage on the rendered support curve replaces the
     // legacy ground fill, footing and ground materials; the ground's musical
     // signatures still draw over it. Legacy ground otherwise.
-    if (v2 && this.groundField && this.rangePresentation.drawGround(ctx, groundCanvas)) {
+    if (v2Arriving) {
+      // Legacy ground under the arriving rock stage; receivers stay legacy
+      // until the fade completes.
+      this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
+      this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
+      if (this.groundField) this.rangePresentation.drawGround(ctx, groundCanvas);
+    } else if (v2 && this.groundField && this.rangePresentation.drawGround(ctx, groundCanvas)) {
       const bars = this.groundField.visibleBars(worldX, originX, groundCanvas.width);
       this._groundReceivers = this.rangePresentation.groundReceivers();
       this._lakeReflectGroundY = null;
@@ -2729,6 +2729,17 @@ export class BiomeManager {
     this._drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, farTint);
     pres.drawPartition(ctx, 'mid', canvas);
     this._drawMidDepthLife(ctx, canvas, frame, { worldX, originX, phenomenaFull, particleMul, mandalaColor });
+    pres.drawPartition(ctx, 'near', canvas);
+    return tint;
+  }
+
+  /** Arrival fade: the full legacy scenic stack, then the scene's terrain
+   *  partitions over it at the presentation's arrival alpha. */
+  _drawRangeV2Arrival(ctx, canvas, frame, opts) {
+    const tint = this._drawLegacyScenic(ctx, canvas, frame, opts);
+    const pres = this.rangePresentation;
+    pres.drawPartition(ctx, 'far', canvas);
+    pres.drawPartition(ctx, 'mid', canvas);
     pres.drawPartition(ctx, 'near', canvas);
     return tint;
   }

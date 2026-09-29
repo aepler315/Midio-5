@@ -15,7 +15,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -201,6 +201,9 @@ async function suitePilot(ctx) {
   const view = args.view || 'nc-ross-lake-north';
   const v2 = await openSong(browser, { url: args.url, wav, width, height, params: { rangeRenderer: 'v2', rangeView: view } });
   report.pilot = { view, prepared: v2.state, frames: [] };
+  // Forcing a view is labelled a candidate only when it is not approved.
+  const { default: catalog } = await import(pathToFileURL(path.join(path.resolve(args['source-root']), 'src/world/terrain/sceneCatalogData.js')).href);
+  const expectCandidate = catalog.views.find((v) => v.id === view)?.status !== 'approved';
   assert.equal(v2.state.runtime, 'ready', `v2 runtime not ready: ${JSON.stringify(v2.state)}`);
   assert.ok(v2.state.scene?.prepared?.includes(view), `pilot view not prepared: ${JSON.stringify(v2.state.failures)}`);
   for (const t of [6000, 30000, 60000, 90000]) {
@@ -235,7 +238,7 @@ async function suitePilot(ctx) {
     delete f.png;
     assert.equal(f.range.active, true, `v2 not active at ${t}ms: ${f.range.reason}`);
     assert.equal(f.range.viewId, view);
-    assert.equal(f.range.forcedCandidate, true, 'a forced candidate must be labelled');
+    assert.equal(f.range.forcedCandidate, expectCandidate, expectCandidate ? 'a forced candidate must be labelled' : 'an approved view is not a candidate');
     report.pilot.frames.push({ ...f, png: path.relative(root, png) });
     console.log(`pilot v2 ${t}ms: view=${f.range.viewId} u=${f.range.progress01?.toFixed(3)} draw=${f.drawMs.toFixed(0)}ms partition=${f.range.timings.lastPartitionMs.toFixed(0)}ms copy=${f.range.timings.lastCopyMs.toFixed(1)}ms`);
   }

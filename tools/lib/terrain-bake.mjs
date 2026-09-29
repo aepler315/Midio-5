@@ -55,7 +55,7 @@ export const VISIBILITY = Object.freeze({
 
 /** One station's conservative depth buffer (nearest 1/depth per pixel) of
  *  the whole grid at a coarse stride, for occlusion tests at bake time. */
-export function occlusionBuffer(grid, pose, framing, occ) {
+export function occlusionBuffer(grid, pose, framing, occ, { minDepthM = 0 } = {}) {
   const { width: w, height: hgt, cellSizeM: cell, originM, heightsM: h, valid } = grid;
   const W = occ.width, H = Math.max(2, Math.round(occ.width / framing.aspect));
   const buf = new Float32Array(W * H); // 1/depth, 0 = sky
@@ -77,8 +77,10 @@ export function occlusionBuffer(grid, pose, framing, occ) {
     sy[k] = (0.5 - (d[0] * u[0] + d[1] * u[1] + d[2] * u[2]) / (z * t) * 0.5) * H;
     iz[k] = 1 / z;
   }
+  const maxIz = minDepthM > 0 ? 1 / minDepthM : Infinity;
   const tri = (a, b, c) => {
     if (iz[a] < 0 || iz[b] < 0 || iz[c] < 0) return;
+    if (iz[a] > maxIz || iz[b] > maxIz || iz[c] > maxIz) return;
     const minX = Math.max(0, Math.floor(Math.min(sx[a], sx[b], sx[c])));
     const maxX = Math.min(W - 1, Math.ceil(Math.max(sx[a], sx[b], sx[c])));
     const minY = Math.max(0, Math.floor(Math.min(sy[a], sy[b], sy[c])));
@@ -125,6 +127,47 @@ export function pointVisible(ob, p, occ) {
   if (!(nearest > 0)) return true; // sky there
   const surfaceDepth = 1 / nearest;
   return z <= surfaceDepth * (1 + occ.depthSlack) + occ.slackM;
+}
+
+/** Legacy parity (RidgeComposition MIN_EXPOSED): at every station the far
+ *  range's crest must stay at least this exposed. */
+export const MIN_FAR_EXPOSED = 0.55;
+/** What the audience sees at normal framing: the nominal 16:9 stage, and
+ *  the rock stage/cast from Midio's ground line (625 of 720 px) down. */
+export const EXPOSURE_FRAMING = Object.freeze({ aspect: 16 / 9, fovScale: 1, groundFrac: 625 / 720 });
+
+/**
+ * Far-crest exposure from one pose: for each raster column, the top-most
+ * pixel of terrain at view depth >= `farM` (the far partition's skyline),
+ * and whether nearer terrain -- or the ground line -- covers it. Returns
+ * per-column states (0 no far crest, 1 hidden, 2 exposed) and the exposed
+ * fraction of columns that have a far crest.
+ */
+export function farCrestExposure(grid, pose, farM, { framing = EXPOSURE_FRAMING, occ = VISIBILITY.occlusion } = {}) {
+  const all = occlusionBuffer(grid, pose, framing, occ);
+  const far = occlusionBuffer(grid, pose, framing, occ, { minDepthM: farM });
+  const { W, H } = all;
+  const groundRow = Math.floor((framing.groundFrac ?? 1) * H);
+  const columns = new Uint8Array(W);
+  let crest = 0, shown = 0;
+  for (let x = 0; x < W; x++) {
+    for (let y = 0; y < H; y++) {
+      const v = far.buf[y * W + x];
+      if (!(v > 0)) continue;
+      crest++;
+      const covered = y >= groundRow || all.buf[y * W + x] > v * (1 + occ.depthSlack) + 1e-12;
+      columns[x] = covered ? 1 : 2;
+      if (!covered) shown++;
+      break;
+    }
+  }
+  return { columns, fraction: crest ? shown / crest : 0, crestColumns: crest / W };
+}
+
+/** Far-crest exposure at each of the view's rail stations. */
+export function stationExposure(grid, view, { stations = VISIBILITY.stations, farM = null, framing, occ } = {}) {
+  const far = farM ?? (view.bands?.midM || 7000);
+  return railStations(view, stations).map((pose) => farCrestExposure(grid, pose, far, { framing, occ }));
 }
 
 const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];

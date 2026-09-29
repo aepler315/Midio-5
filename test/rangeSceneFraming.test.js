@@ -1,0 +1,135 @@
+// Range v2 Task 14: the scenic projection keeps terrain at the nominal
+// stage's scale, and every frame the app can produce stays inside what the
+// terrain bake made visible (core at normal framing, extended at the
+// deepest pull-back), shake overscan included.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { scenicProjection, viewportState } from '../src/world/alpine/RangeFrame.js';
+import { ZOOM_MIN } from '../src/render/CameraDirector.js';
+import { SHAKE_MARGIN_PX } from '../src/render/Renderer.js';
+import { VISIBILITY } from '../tools/lib/terrain-bake.mjs';
+
+const FOV = 35;
+const tanHalf = (deg) => Math.tan((deg * Math.PI) / 360);
+
+// The viewport Renderer hands the scene for a zoom and a nominal stage.
+function stageViewport(nominalW, nominalH, zoom = 1, dpr = 1) {
+  const w = (zoom < 1 ? nominalW / zoom : nominalW) + 2 * SHAKE_MARGIN_PX;
+  const h = (zoom < 1 ? nominalH / zoom : nominalH) + 2 * SHAKE_MARGIN_PX;
+  return viewportState({ logicalWidth: w, logicalHeight: h, backingWidth: Math.round(w * dpr), backingHeight: Math.round(h * dpr),
+    overscanPx: SHAKE_MARGIN_PX, nominalWidth: nominalW, nominalHeight: nominalH, pixelRatio: dpr });
+}
+
+// Half-extents of the frustum, in units of the view's own tan(fov/2).
+function extent(proj, fov = FOV) {
+  const v = tanHalf(proj.fovYDeg) / tanHalf(fov);
+  return { v, h: v * proj.aspect };
+}
+const fits = (e, vis) => e.v <= vis.fovScale + 1e-9 && e.h <= vis.fovScale * vis.aspect + 1e-9;
+
+test('at the nominal stage the scenic camera uses the view fov exactly', () => {
+  const p = scenicProjection(FOV, viewportState({ logicalWidth: 1280, logicalHeight: 720, nominalWidth: 1280, nominalHeight: 720 }));
+  assert.ok(Math.abs(p.fovYDeg - FOV) < 1e-9);
+  assert.ok(Math.abs(p.aspect - 16 / 9) < 1e-12);
+  assert.equal(p.tanScale, 1);
+});
+
+test('a pull-back shows more landscape at the same pixels per radian', () => {
+  const pxPerTan = (vp) => (vp.logicalHeight / 2) / tanHalf(scenicProjection(FOV, vp).fovYDeg);
+  const base = pxPerTan(stageViewport(1280, 720, 1));
+  for (const zoom of [0.9, 0.8, ZOOM_MIN]) {
+    const vp = stageViewport(1280, 720, zoom);
+    assert.ok(Math.abs(pxPerTan(vp) - base) < 1e-6, `zoom ${zoom} rescales terrain`);
+    assert.ok(scenicProjection(FOV, vp).fovYDeg > FOV);
+  }
+});
+
+test('backing size and device pixel ratio never change what is framed', () => {
+  const one = scenicProjection(FOV, stageViewport(1280, 720, 0.8, 1));
+  for (const dpr of [1.5, 2, 3]) assert.deepEqual(scenicProjection(FOV, stageViewport(1280, 720, 0.8, dpr)), one);
+});
+
+test('aspect is the logical stage aspect, overscan included', () => {
+  const vp = stageViewport(1280, 720, 1);
+  assert.equal(scenicProjection(FOV, vp).aspect, (1280 + 2 * SHAKE_MARGIN_PX) / (720 + 2 * SHAKE_MARGIN_PX));
+});
+
+test('normal framing with full shake overscan stays inside the core bake', () => {
+  for (const [w, h] of [[1280, 720], [1920, 1080], [1490, 720]]) { // 16:9 and the 2.07:1 reference
+    const e = extent(scenicProjection(FOV, stageViewport(w, h, 1)));
+    assert.ok(fits(e, VISIBILITY.core), `${w}x${h}: v ${e.v.toFixed(3)} h ${e.h.toFixed(3)}`);
+  }
+});
+
+test('the deepest pull-back plus shake stays inside the extended bake', () => {
+  for (const [w, h] of [[1280, 720], [1920, 1080], [1490, 720], [720, 1280]]) { // portrait too, if ever unboxed
+    const e = extent(scenicProjection(FOV, stageViewport(w, h, ZOOM_MIN)));
+    assert.ok(fits(e, VISIBILITY.extended), `${w}x${h}: v ${e.v.toFixed(3)} h ${e.h.toFixed(3)}`);
+  }
+});
+
+test('the fov does not depend on where the stage sits in a resize', () => {
+  // Same nominal stage, different window sizes: the letterboxed stage only
+  // changes backing pixels, so the projection is identical.
+  const a = scenicProjection(FOV, stageViewport(1280, 720, 0.75, 1));
+  const b = scenicProjection(FOV, stageViewport(1280, 720, 0.75, 0.62));
+  assert.deepEqual(a, b);
+});
+
+// Visibility: the far range's crest, measured on the shipped packages.
+const { viewExposure, travelExposure, MIN_FAR_EXPOSED } = await import('../tools/lib/range-exposure.mjs');
+const { default: CATALOG } = await import('../src/world/terrain/sceneCatalogData.js');
+const RUNTIME_DIR = new URL('../src/assets/range/v2/', import.meta.url).pathname;
+const approved = CATALOG.views.filter((v) => v.status === 'approved');
+const exposures = new Map();
+for (const v of approved) exposures.set(v.id, await viewExposure(RUNTIME_DIR, v));
+
+test('every approved view keeps its far crest >= 0.55 exposed at all 21 stations', () => {
+  assert.ok(approved.length > 0);
+  for (const v of approved) {
+    const e = exposures.get(v.id);
+    assert.equal(e.stations.length, 21);
+    assert.ok(e.min >= MIN_FAR_EXPOSED, `${v.id}: ${e.stations.map((s) => s.fraction.toFixed(2)).join(' ')}`);
+    assert.ok(e.stations.every((s) => s.crestColumns > 0.5), `${v.id}: a far range spans the frame`);
+  }
+});
+
+test('every travel between approved views keeps the far crest exposed at every seam sample', () => {
+  for (const a of approved) for (const b of approved) {
+    // The outgoing view leaves from its rail end; the incoming one starts at its beginning.
+    const colsA = exposures.get(a.id).stations.at(-1).columns;
+    const colsB = exposures.get(b.id).stations[0].columns;
+    for (let k = 0; k <= 20; k++) {
+      const f = travelExposure(colsA, colsB, k / 20);
+      assert.ok(f >= MIN_FAR_EXPOSED, `${a.id} -> ${b.id} at ${k / 20}: ${f.toFixed(2)}`);
+    }
+  }
+});
+
+test('travel exposure follows the seam: all A before, all B after', () => {
+  const A = new Uint8Array(100).fill(2), B = new Uint8Array(100).fill(1);
+  assert.equal(travelExposure(A, B, 0), 1);
+  assert.equal(travelExposure(A, B, 1), 0);
+  const mid = travelExposure(A, B, 0.5);
+  assert.ok(mid > 0 && mid < 1);
+});
+
+test('far-crest exposure catches a near wall and the ground line', async () => {
+  const { farCrestExposure } = await import('../tools/lib/terrain-bake.mjs');
+  const W = 201, cell = 100;
+  const make = (wallM) => {
+    const heightsM = new Float32Array(W * W);
+    for (let j = 0; j < W; j++) for (let i = 0; i < W; i++) {
+      const z = -10000 + j * cell; // camera at z = 0 looks toward -z
+      heightsM[j * W + i] = z < -8000 ? 1400 + 200 * Math.sin(i / 6) : (z > -3000 && z < -2000 ? wallM : 0);
+    }
+    return { width: W, height: W, cellSizeM: cell, originM: [-10000, -10000], heightsM, valid: new Uint8Array(W * W).fill(1) };
+  };
+  const pose = { eyeM: [0, 300, 0], targetM: [0, 300, -10000], fovYDeg: 35 };
+  const open = farCrestExposure(make(0), pose, 7000);
+  assert.ok(open.fraction > 0.9, `open ${open.fraction}`);
+  const walled = farCrestExposure(make(2500), pose, 7000);
+  assert.ok(walled.fraction < MIN_FAR_EXPOSED, `walled ${walled.fraction}`);
+  const low = farCrestExposure(make(0), { ...pose, targetM: [0, 4500, -10000] }, 7000);
+  assert.ok(low.crestColumns > 0.5 && low.fraction < MIN_FAR_EXPOSED, `a far crest pushed under the ground line is not exposed (${low.fraction})`);
+});

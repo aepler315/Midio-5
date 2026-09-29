@@ -28,3 +28,31 @@ test('an approval recorded against other assets ships the view as a candidate', 
     assert.equal((await buildCatalog(none)).views.find((x) => x.id === v.id).status, 'candidate');
   } finally { console.warn = warn; }
 });
+
+test('material overrides are part of the approved identity', async () => {
+  const doc = await readAuthoring();
+  const stale = structuredClone(doc);
+  stale.views.find((x) => x.id === 'nc-ross-lake-north').materialRules = { snowlineM: 0, forestDensity: 0 };
+  const warn = console.warn; console.warn = () => {};
+  try {
+    assert.equal((await buildCatalog(stale)).views.find((x) => x.id === 'nc-ross-lake-north').status, 'candidate');
+  } finally { console.warn = warn; }
+});
+
+test('the approval hashes the published terrain manifest itself', async () => {
+  const { approvalHashes, RUNTIME_DIR } = await import('../tools/build-range-scene.mjs');
+  const fs = await import('node:fs/promises');
+  const { createHash } = await import('node:crypto');
+  const doc = await readAuthoring();
+  const v = doc.views.find((x) => x.id === 'nc-ross-lake-north');
+  const onDisk = createHash('sha256').update(await fs.readFile(`${RUNTIME_DIR}/terrain/${v.id}.terrain.json`)).digest('hex');
+  const h = await approvalHashes(v, { manifestSha256: 'f'.repeat(64), view: { camera: {} } });
+  assert.equal(h.terrainManifestSha256, onDisk, 'not the build record copy');
+});
+
+test('approving requires existing evidence files', async () => {
+  const { approveView } = await import('../tools/build-range-scene.mjs');
+  const doc = await readAuthoring();
+  await assert.rejects(approveView(structuredClone(doc), 'nc-ross-lake-north', { evidence: [] }), /evidence/);
+  await assert.rejects(approveView(structuredClone(doc), 'nc-ross-lake-north', { evidence: ['docs/evidence/range-v2/missing.jpg'] }), /does not exist/);
+});

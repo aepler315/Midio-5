@@ -9,8 +9,8 @@ Reference image: `docs/evidence/range-v2/reference.webp` (1806×871, documentati
 | --- | --- |
 | Branch | `claude/amazing-brown-tbiycu` |
 | Base | `b8a3d72b344792d149906449f1cd86d68df8cc2b` (= audited SHA; `origin/main` rechecked 2026-09-29) |
-| Last completed task | 13 (pilot view approved, catalog v2); PR #332 merged to main |
-| Next action | Task 14 — transitions A/B, framing (16:9, wide, portrait), opening warmup |
+| Last completed task | 14 (transitions, framing, arrival fade, far-crest visibility) |
+| Next action | Task 15 — curated views for the other 10 biomes (each must pass the far-crest gate before `--approve`) |
 
 ## Decisions recorded with the user (2026-09-29)
 
@@ -61,6 +61,8 @@ The four confirmed defects in plan §1 are re-verified in Task 1 against source 
 | (fix) residency | done | legacy strips for v2-covered biomes dropped/not prebaked: pilot 267 MB -> 110 MB of the 256 MiB budget |
 | 12 reflections | done | single body draw into ordered source-over/lighter segments; mirror about each pool's water plane; clip = pool polygon ∩ slab top. Pilot pixel check: 124-129 px in pools, 0 elsewhere, paused re-render identical |
 | 13 atmosphere/pilot | done | mist, secondary celestial + clouds; motion pilot 20 s @ 12 fps from 0 s (opening included), calm/energetic stills, backward seek 32 s -> 8 s returns to the identical rail position; `nc-ross-lake-north` approved against its terrain/material/camera hashes (catalog v2; a changed asset voids the approval). Evidence: `docs/evidence/range-v2/pilot-ross-lake-*.jpg` |
+| 14 transitions/framing | done | View-to-view travel keeps the outgoing view and composites an incoming side (own target `range:render-target-B`, reserved before use, released after) through the shared travel seam (`src/world/TravelSeam.js`), nearest partition first; a loading/failed/unaffordable incoming view leaves the outgoing one drawing. `scenicProjection` keeps terrain at nominal pixels-per-radian under pull-back/overscan; DPR never changes framing; worst case (ZOOM_MIN + 64 px shake) is inside the extended bake. Mid-song legacy -> v2 handoff fades in over 1.2 s of heard time (legacy scenery drawn underneath; exports never fade). Far-crest exposure (legacy `MIN_EXPOSED` 0.55) measured on the shipped package at 21 stations and at 21 seam samples of every approved-view pair; `--approve` refuses a view below it. Ross Lake: 0.65-1.00 |
+| (fix) approval identity | done | Review of PR #334: an approval now also covers the view's `materialRules` (key-sorted hash), hashes the published `.terrain.json` on disk rather than the build record's copy, and requires at least one existing evidence file. Ross Lake re-approved with the same evidence (catalog v3) |
 
 ## Asset budget (60 MB ceiling)
 
@@ -75,6 +77,8 @@ The four confirmed defects in plan §1 are re-verified in Task 1 against source 
 - Under v2 the painted sea, far shore, mirage and sea life are off (the view is inland; the reference has no sea). The sea still draws during a live tsunami/withdrawal so that hazard stays visible.
 - Under v2 the glyph ground scatter is off: the world-anchored rock stage carries the speed read.
 - Midasus is reflected only when she is within 220 px of her floor and not on a voyage.
+- Far-crest exposure is measured on terrain only, at normal framing (16:9, zoom 1) with Midio's ground line (625/720) as the rock-stage occluder. Trees and the cast are not counted as occluders.
+- In-browser A/B travel between two different real views cannot be exercised until Task 15 adds a second approved view; it is covered by unit tests (`test/rangeSceneTransition.test.js`) and the exposure check for every approved pair.
 - The motion pilot is captured at 1280x720, 12 fps, 20 s: software GL needs ~9 s per frame (the bulk exporter's 1080p minimum is slower still).
 
 ## Measurements so far (SwiftShader, not device numbers)

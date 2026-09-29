@@ -156,10 +156,13 @@ export async function buildCatalog(doc) {
     // package, material pack or camera changed since, the view ships as a
     // candidate again until it is re-reviewed.
     const hashes = await approvalHashes(v, build);
+    if (hashes.terrainManifestSha256 !== build.manifestSha256) {
+      console.warn(`${v.id}: published terrain manifest differs from its build record (interrupted publish?)`);
+    }
     let status = v.status;
     if (status === 'approved') {
       const a = v.approval || {};
-      const stale = ['terrainManifestSha256', 'materialManifestSha256', 'cameraSha256'].filter((k) => a[k] !== hashes[k]);
+      const stale = APPROVAL_KEYS.filter((k) => !a[k] || a[k] !== hashes[k]);
       if (stale.length) {
         console.warn(`${v.id}: approval is stale (${stale.join(', ')} changed); shipping as candidate`);
         status = 'candidate';
@@ -170,7 +173,7 @@ export async function buildCatalog(doc) {
       title: v.title || v.id, place: v.place || '',
       credit: build.credit || null,
       terrainManifestUrl: `terrain/${v.id}.terrain.json`,
-      terrainManifestSha256: build.manifestSha256,
+      terrainManifestSha256: hashes.terrainManifestSha256,
       materialManifestUrl: `materials/${v.materialPack || DEFAULT_PACKS[v.biome]}.json`,
       materialRules: v.materialRules || {},
       camera: build.view.camera,
@@ -187,23 +190,50 @@ export async function buildCatalog(doc) {
   return { catalogVersion: doc.catalogVersion, views };
 }
 
-/** The hashes an approval is recorded against. */
+/** Everything an approval is recorded against; a change to any voids it. */
+export const APPROVAL_KEYS = Object.freeze(['terrainManifestSha256', 'materialManifestSha256', 'materialRulesSha256', 'cameraSha256']);
+
+/** Key-sorted JSON, so reordering an object never changes its hash. */
+const canonical = (x) => (Array.isArray(x) ? `[${x.map(canonical).join(',')}]`
+  : x && typeof x === 'object' ? `{${Object.keys(x).sort().map((k) => `${JSON.stringify(k)}:${canonical(x[k])}`).join(',')}}`
+    : JSON.stringify(x));
+
+/** The hashes an approval is recorded against: the published terrain
+ *  manifest as it is on disk (not the build record's copy of its hash), the
+ *  material pack, the view's own material overrides and its camera. */
 export async function approvalHashes(v, build) {
   const matUrl = `materials/${v.materialPack || DEFAULT_PACKS[v.biome]}.json`;
   const mat = await fs.readFile(path.join(RUNTIME_DIR, matUrl));
-  return { terrainManifestSha256: build.manifestSha256, materialManifestSha256: sha(mat), cameraSha256: sha(JSON.stringify(build.view.camera)) };
+  const terrain = await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${v.id}.terrain.json`));
+  return {
+    terrainManifestSha256: sha(terrain), materialManifestSha256: sha(mat),
+    materialRulesSha256: sha(canonical(v.materialRules || {})), cameraSha256: sha(JSON.stringify(build.view.camera)),
+  };
 }
 
-/** Mark a published view approved against its current assets. */
-async function approveView(doc, id, { evidence }) {
+/** Mark a published view approved against its current assets. Evidence is
+ *  required: at least one review file, each of which must exist. Mutates
+ *  `doc`; the caller writes it. */
+export async function approveView(doc, id, { evidence = [] } = {}) {
   const v = doc.views.find((x) => x.id === id);
   if (!v) throw new Error(`no view ${id} in scenic-views.json`);
+  if (!evidence.length) throw new Error(`${id}: --evidence <file,file> is required to approve a view`);
+  for (const file of evidence) {
+    try { await fs.access(path.resolve(root, file)); } catch { throw new Error(`${id}: evidence file ${file} does not exist`); }
+  }
   const build = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${id}.build.json`), 'utf8'));
+  // Legacy parity: the far range stays readable at every rail station.
+  const { viewExposure, MIN_FAR_EXPOSED } = await import('./lib/range-exposure.mjs');
+  const exposure = await viewExposure(RUNTIME_DIR, { ...build.view, terrainManifestUrl: `terrain/${id}.terrain.json` });
+  if (exposure.min < MIN_FAR_EXPOSED) {
+    throw new Error(`${id}: far crest only ${exposure.min.toFixed(2)} exposed at its worst station (needs ${MIN_FAR_EXPOSED}); not approved`);
+  }
+  console.log(`${id}: far crest exposure ${exposure.stations.map((s) => s.fraction.toFixed(2)).join(' ')}`);
   v.status = 'approved';
   v.approval = { date: new Date().toISOString().slice(0, 10), ...(await approvalHashes(v, build)), evidence };
   doc.catalogVersion = (doc.catalogVersion || 0) + 1;
-  await fs.writeFile(AUTHORING, JSON.stringify(doc, null, 2) + '\n');
   console.log(`${id}: approved; catalog version ${doc.catalogVersion}`);
+  return doc;
 }
 
 async function writeCatalog(doc) {
@@ -222,6 +252,7 @@ async function main() {
   if (opt('--approve')) {
     const doc = await readAuthoring();
     await approveView(doc, opt('--approve'), { evidence: (opt('--evidence') || '').split(',').filter(Boolean) });
+    await fs.writeFile(AUTHORING, JSON.stringify(doc, null, 2) + '\n');
     await writeCatalog(doc);
     return;
   }

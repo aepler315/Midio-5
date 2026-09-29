@@ -10,6 +10,7 @@
 // context loss, 404, bad manifest, decode error, budget denial, stale
 // generation -- takes the legacy path for that frame with a recorded
 // reason; the cast and music never wait on the GPU.
+import { travelSeam, travelSpans } from '../TravelSeam.js';
 import { buildRangeFrame, viewportState } from './RangeFrame.js';
 import { forcedSceneChoice } from '../terrain/SceneCatalog.js';
 import SCENE_CATALOG from '../terrain/sceneCatalogData.js';
@@ -31,6 +32,14 @@ export function resolveRangeMode(search = (typeof location !== 'undefined' ? loc
     return { mode: 'legacy', forcedViewId: null, diag: null };
   }
 }
+
+/** Which legacy range layer's travel timing each partition follows. */
+const PASS_LAYER = { far: 'L2', mid: 'L4', near: 'L5' };
+
+/** Heard seconds over which a view that finishes preparing after legacy
+ *  scenery was already on screen fades in over it, instead of replacing the
+ *  painted ranges in one frame. */
+export const ARRIVAL_SEC = 1.2;
 
 export class RangePresentation {
   constructor({ mode = 'legacy', forcedViewId = null, diag = null, residency = null, budget = 'desktop',
@@ -57,7 +66,15 @@ export class RangePresentation {
     this.shown = new Set();
     this.frameId = 0;
     this.timings = { lastCopyMs: 0, lastPartitionMs: 0 };
+    // Arrival fade (ARRIVAL_SEC): 1 = the GPU scene fully replaces legacy.
+    this.arrival = 1;
+    this._legacyShown = false;
+    this._arrivalStartSec = null;
   }
+
+  /** True while the scene is fading in over legacy scenery that is still
+   *  drawn underneath it. */
+  get arriving() { return this.active && this.arrival < 1; }
 
   get enabled() { return this.mode === 'v2'; }
 
@@ -69,6 +86,9 @@ export class RangePresentation {
     this.sceneByBiome = terrain?.sceneByBiome || null;
     this.failures.clear();
     this.shown.clear();
+    this.arrival = 1;
+    this._legacyShown = false;
+    this._arrivalStartSec = null;
     // Views the new song still wants move to its generation before the old
     // one is cancelled; everything else of the old song is released.
     const keep = new Set(this._wantedViewIds());
@@ -178,12 +198,54 @@ export class RangePresentation {
     // A legacy frame draws no view: release the previous frame's pins so a
     // destination (or a legacy strip fallback) may evict what is no longer
     // on screen.
-    if (!ok) this.residency?.pin?.([]);
+    if (!ok) {
+      this.residency?.pin?.([]);
+      this.scene?.releaseSide?.('B');
+    }
+    this._updateArrival(ok);
     return ok;
+  }
+
+  /**
+   * Legacy -> GPU scene handoff mid-song (a view that finished preparing
+   * after the opening, or a section after a legacy one): fade in over
+   * ARRIVAL_SEC of heard time. Pure in heard time within one arrival --
+   * pause holds it, a seek before its start completes it -- and an export
+   * (which waits for readiness) never fades.
+   */
+  _updateArrival(ok) {
+    const sim = this.frameInputs?.sim;
+    const tSec = Number(sim?.biomes?.tSec);
+    if (!ok) {
+      this.arrival = 1;
+      this._arrivalStartSec = null;
+      // Only a frame that drew legacy scenery for an enabled v2 counts.
+      if (this.enabled && sim?.biomes) this._legacyShown = true;
+      return;
+    }
+    if (sim?.exportMode || !Number.isFinite(tSec)) {
+      this.arrival = 1;
+      this._legacyShown = false;
+      this._arrivalStartSec = null;
+      return;
+    }
+    if (this._legacyShown) {
+      this._legacyShown = false;
+      this._arrivalStartSec = tSec;
+    }
+    if (this._arrivalStartSec == null) { this.arrival = 1; return; }
+    const u = (tSec - this._arrivalStartSec) / ARRIVAL_SEC;
+    if (u < 0 || u >= 1) {
+      this.arrival = 1;
+      this._arrivalStartSec = null;
+      return;
+    }
+    this.arrival = u * u * (3 - 2 * u);
   }
 
   _beginScenic() {
     this.active = false;
+    this.incomingViewId = null;
     this.frame = null;
     if (!this.enabled) { this.reason = 'legacy-mode'; return false; }
     if (this.runtimeState === 'idle') this._ensureRuntime();
@@ -197,14 +259,23 @@ export class RangePresentation {
     const to = this._choiceFor(name(blend.to) ?? name(blend.from));
     for (const c of [from, to]) if (c?.view) this._prepare(c.view);
     if (!from?.view) { this.reason = from?.fallbackReason || 'no-view-assigned'; return false; }
-    // Until transitions land (Task 14) a frame crossing between different
-    // views stays legacy rather than cutting.
     // A destination without a view (partial catalog coverage) is legacy
     // scenery: the blend toward it, and the section after it, draw legacy.
     const t = blend.t ?? 1;
-    if (t > 0 && t < 1 && to !== from && (!to?.view || to.view.id !== from.view.id)) { this.reason = 'transition-legacy'; return false; }
+    const blending = t > 0 && t < 1 && to !== from;
+    if (blending && !to?.view) { this.reason = 'transition-legacy'; return false; }
     if (t >= 1 && !to?.view) { this.reason = to?.fallbackReason || 'no-view-assigned'; return false; }
-    const view = t >= 1 ? to.view : from.view;
+    // View-to-view travel: the outgoing view stays valid for the whole
+    // blend and the incoming one joins through the travel seam once it is
+    // prepared -- a cancelled, failed or still-loading incoming view simply
+    // leaves the outgoing one drawing, never a legacy flash.
+    let view, incoming = null;
+    if (blending && to.view.id !== from.view.id) {
+      view = from.view;
+      if (!this.failures.has(to.view.id) && this.scene.isReady(to.view.id)) incoming = to.view;
+    } else {
+      view = t >= 1 ? to.view : from.view;
+    }
     if (this.failures.has(view.id)) { this.reason = this.failures.get(view.id); return false; }
     if (!this.scene.isReady(view.id)) { this.reason = this.scene.contextLost ? 'context-lost' : 'preparing'; return false; }
     try {
@@ -214,8 +285,14 @@ export class RangePresentation {
       this.reason = `budget: ${err.message}`;
       return false;
     }
+    // The incoming side needs its own target, reserved before it exists;
+    // without room the outgoing view carries on alone.
+    if (incoming && !this.scene.ensureSide?.('B')) incoming = null;
+    if (!incoming) this.scene.releaseSide?.('B');
+    this.incomingViewId = incoming?.id ?? null;
+    this.seamP = blend.travel ? (blend.travelP ?? t) : t;
     // What this frame draws stays resident (never evicted mid-use).
-    this.scene.pinView?.(view.id);
+    this.scene.pinView?.(incoming ? [view.id, incoming.id] : view.id);
     this.frame = buildRangeFrame({
       frameId: ++this.frameId, generation: this.generation, sim: inputs.sim, pose: inputs.pose,
       scenicViewport: inputs.scenicViewport, groundViewport: inputs.groundViewport,
@@ -236,11 +313,22 @@ export class RangePresentation {
   drawPartition(ctx, pass, stage) {
     if (!this.active || !this.frame) return false;
     const t0 = performance.now();
+    if (this.incomingViewId) {
+      // Travel between two views: each side renders into its own target and
+      // is composited through the shared travel seam (TravelSeam.js), the
+      // nearest partition changing first, as the legacy ranges do.
+      const layerKey = PASS_LAYER[pass] || 'L3';
+      const drawn = this._compositeSides(ctx, stage, layerKey,
+        () => this.scene.renderPartition(this.frame, pass, this.viewId, { side: 'A' }),
+        () => this.scene.renderPartition(this.frame, pass, this.incomingViewId, { side: 'B' }));
+      this.timings.lastPartitionMs = performance.now() - t0;
+      return drawn;
+    }
     const img = this.scene.renderPartition(this.frame, pass, this.viewId);
     const t1 = performance.now();
     if (!img) return false;
     ctx.save();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = this.arrival;
     ctx.globalCompositeOperation = 'source-over';
     ctx.drawImage(img, 0, 0, stage.width, stage.height);
     ctx.restore();
@@ -249,13 +337,50 @@ export class RangePresentation {
     return true;
   }
 
+  /** Draw side A left of the seam and side B right of it, crossfading in
+   *  the feather bands. Each render returns the shared drawing buffer, so A
+   *  is fully drawn before B is rendered. */
+  _compositeSides(ctx, stage, layerKey, renderA, renderB) {
+    const { lo, hi, bands } = travelSpans(stage.width, layerKey, this.seamP ?? 0);
+    const put = (img, x0, x1, alpha) => {
+      if (!img || !(x1 > x0) || !(alpha > 0.001)) return;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, -stage.height, x1 - x0, stage.height * 3);
+      ctx.clip();
+      ctx.globalAlpha = alpha * this.arrival;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(img, 0, 0, stage.width, stage.height);
+      ctx.restore();
+    };
+    const far = stage.width * 2;
+    const a = renderA();
+    put(a, -far, lo, 1);
+    for (const b of bands) put(a, b.x0, b.x1, 1 - b.weightB);
+    const b = renderB();
+    for (const band of bands) put(b, band.x0, band.x1, band.weightB);
+    put(b, hi, far, 1);
+    return !!(a || b);
+  }
+
   /** Composite the rock stage under the fixed-ground transform. */
   drawGround(ctx, stage) {
     if (!this.active || !this.frame) return false;
+    if (this.incomingViewId) {
+      // The rock stage wears each side's material through the nearest seam;
+      // its receivers (pools) come from whichever side holds the centre.
+      let outA = null, outB = null;
+      const drawn = this._compositeSides(ctx, stage, 'L5',
+        () => (outA = this.scene.renderGround(this.frame, this.viewId))?.canvas,
+        () => (outB = this.scene.renderGround(this.frame, this.incomingViewId))?.canvas);
+      const seam = travelSeam(stage.width, 'L5', this.seamP ?? 0);
+      this.stage = (seam > stage.width / 2 ? outA : outB)?.stage || outA?.stage || outB?.stage || null;
+      return drawn;
+    }
     const out = this.scene.renderGround(this.frame, this.viewId);
     if (!out) return false;
     ctx.save();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = this.arrival;
     ctx.globalCompositeOperation = 'source-over';
     ctx.drawImage(out.canvas, 0, 0, stage.width, stage.height);
     ctx.restore();
@@ -266,7 +391,7 @@ export class RangePresentation {
   /** Wet receivers for GroundResponse / reflections: exact pool polygons
    *  in fixed-ground coordinates (no rectangles). */
   groundReceivers() {
-    if (!this.active || !this.stage) return null;
+    if (!this.active || !this.stage || this.arrival < 1) return null;
     return { wetMasks: this.stage.wetMasks, litEdges: [], pools: this.stage.pools };
   }
 
@@ -274,7 +399,7 @@ export class RangePresentation {
     return {
       mode: this.mode, active: this.active, reason: this.reason, viewId: this.active ? this.viewId : null,
       forcedCandidate: !!this.forced?.forcedCandidate, forcedViewId: this.forcedViewId, diag: this.diag,
-      generation: this.generation, runtime: this.runtimeState,
+      generation: this.generation, runtime: this.runtimeState, arrival: this.arrival, incomingViewId: this.active ? this.incomingViewId : null, seamP: this.seamP ?? null,
       failures: Object.fromEntries(this.failures), frameId: this.frameId, progress01: this.frame?.progress01 ?? null,
       scene: this.scene?.snapshot?.() || null, residency: this.residency?.snapshot?.() || null,
       timings: { ...this.timings }, catalogVersion: this.catalog.catalogVersion,
