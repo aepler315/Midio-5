@@ -102,3 +102,45 @@ test('the shipped catalog validates and contains no rejected view', () => {
   assert.deepEqual(r.errors, []);
   assert.ok(catalogData.views.every((v) => v.status !== 'rejected'));
 });
+
+// Range v2 Task 15: the delivered catalog covers every biome.
+const BIOMES = ['ICEFIELD', 'TUNDRA', 'TAIGA', 'RAINFOREST', 'CONIFER', 'PINE_OAK', 'BROADLEAF', 'CHAPARRAL', 'STEPPE', 'CANYON', 'DESERT'];
+
+test('every biome has at least one approved scene in the shipped catalog', () => {
+  for (const biome of BIOMES) {
+    assert.ok(catalogData.views.some((v) => v.biome === biome && v.status === 'approved'), `${biome} has no approved view`);
+  }
+  assert.ok(catalogData.views.length >= 11 && catalogData.views.length <= 18, `${catalogData.views.length} views`);
+});
+
+test("each shipped view wears a material pack made for its own biome", async () => {
+  const fs = await import('node:fs/promises');
+  const { REAL_BIOMES } = await import('../src/world/RealBiomes.js');
+  const names = new Set(REAL_BIOMES.map((b) => b.name));
+  for (const v of catalogData.views) {
+    assert.ok(names.has(v.biome), `${v.id}: unknown biome ${v.biome}`);
+    const pack = JSON.parse(await fs.readFile(new URL(`../src/assets/range/v2/${v.materialManifestUrl}`, import.meta.url), 'utf8'));
+    assert.ok(pack.biomes.includes(v.biome), `${v.id}: pack ${pack.id} is not for ${v.biome}`);
+  }
+});
+
+test('a song through every biome gets each biome its own view, deterministically', () => {
+  for (const seed of [1, 42, 9001]) {
+    const map = assignSongScenes(BIOMES, profile(), seed, catalogData);
+    const again = assignSongScenes(BIOMES, profile(), seed, catalogData);
+    for (const biome of BIOMES) {
+      const v = map.get(biome).view;
+      assert.ok(v, `${biome}: no view`);
+      assert.equal(v.biome, biome);
+      assert.equal(v.status, 'approved');
+      assert.equal(again.get(biome).view.id, v.id, `${biome}: assignment is not deterministic`);
+    }
+  }
+});
+
+test('without an approved view a biome falls back to legacy scenery explicitly', () => {
+  const pruned = { ...catalogData, views: catalogData.views.filter((v) => v.biome !== 'DESERT') };
+  const c = chooseSceneForBiome('DESERT', profile(), 5, pruned);
+  assert.equal(c.view, null);
+  assert.ok(c.fallbackReason);
+});
