@@ -101,6 +101,13 @@ const MIME = {
   '.ogg': 'audio/ogg',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.jpg': 'image/jpeg',
+  // Range v2 payloads are fetched as bytes and gunzipped by the page; no
+  // Content-Encoding, so the browser hands over the stored gzip stream.
+  '.gz': 'application/gzip',
+  '.bin': 'application/octet-stream',
+  '.wasm': 'application/wasm',
   '.sf2': 'application/octet-stream',
   '.zip': 'application/zip',
 };

@@ -51,6 +51,7 @@ import {
 } from './ui/Accessibility.js';
 import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
+import { sharedResidency } from './render/GraphicsResidency.js';
 import {
   DEFAULT_STAGE_PRESET, resolveStagePreset, stageDims, isAutoPreset, isRetroPreset,
   isPalettePreset, displayLimitedSize, autoStageSize, shouldSuggestLandscape,
@@ -1801,6 +1802,7 @@ function startTimeline(timelineData, extra = {}) {
       // the bundled Tetons, and uses real terrain only in alpine-kind worlds.
       terrainProfiles: timelineData.terrain?.profiles || null,
       songTerrain: timelineData.terrain || null,
+      residency: sharedResidency(),
     });
   } catch (err) {
     console.error('[world build failed]', err);

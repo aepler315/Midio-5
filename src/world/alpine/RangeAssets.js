@@ -92,3 +92,63 @@ export async function loadTerrainPackage(manifestUrl, { signal = null, fetchImpl
   catch (err) { throw new RangeAssetError('decode', err?.message || String(err)); }
   return { manifest, data, bytes: { compressed: compressed.byteLength, decoded: decoded.byteLength }, identity: { payloadSha256: manifest.payload.sha256, decodedSha256: decodedSha } };
 }
+
+/** Decoded CPU bytes a terrain package will own: payload (compressed +
+ *  decoded while decoding) plus Float32 heights, flow and validity bytes. */
+export function terrainCpuBytes(manifest) {
+  let samples = 0;
+  for (const t of manifest.tiles) samples += t.samples * t.samples;
+  return manifest.payload.byteLength + manifest.payload.decodedByteLength + samples * (4 + 1 + 1);
+}
+
+/**
+ * Prepare one view's terrain under a residency ledger and a generation.
+ *   view       SceneView (catalog entry)
+ *   options    { baseUrl, residency, generation, signal, isCurrent, fetchImpl }
+ * Reuses an already-live preparation. Reserves CPU ownership after reading
+ * the (small) manifest and before downloading/decoding the payload; a
+ * denial throws RangeAssetError('budget') having allocated nothing. After
+ * every await the generation is re-checked: a stale result is released,
+ * never published into a newer song or world.
+ */
+export async function prepareTerrainAssets(view, {
+  baseUrl, residency, generation = 0, signal = null, isCurrent = () => true, fetchImpl,
+} = {}) {
+  const key = `range:terrain-cpu:${view.id}`;
+  const live = residency?.get(key);
+  if (live) return live;
+  const manifestUrl = new URL(view.terrainManifestUrl, baseUrl).href;
+  const stale = () => signal?.aborted || !isCurrent(generation);
+  const manifestBytes = await fetchBytes(manifestUrl, { signal, fetchImpl });
+  if (stale()) throw new RangeAssetError('stale', `stale generation ${generation} for ${view.id}`);
+  if (view.terrainManifestSha256) {
+    const got = await sha256Hex(manifestBytes);
+    if (got !== view.terrainManifestSha256) throw new RangeAssetError('hash', `${view.id} manifest ${got} is not the catalog's ${view.terrainManifestSha256}`);
+  }
+  let manifest;
+  try { manifest = JSON.parse(new TextDecoder().decode(manifestBytes)); }
+  catch { throw new RangeAssetError('manifest', `manifest is not JSON: ${manifestUrl}`); }
+  const shape = validateTerrainManifest(manifest);
+  if (!shape.ok) throw new RangeAssetError('manifest', `manifest rejected: ${shape.errors.slice(0, 3).join('; ')}`);
+  if (manifest.viewId !== view.id) throw new RangeAssetError('manifest', `manifest is for ${manifest.viewId}, not ${view.id}`);
+  const reservation = residency
+    ? residency.reserve({ key, bytes: terrainCpuBytes(manifest), owner: 'range-terrain-cpu', generation })
+    : null;
+  if (residency && !reservation) throw new RangeAssetError('budget', `no room for ${view.id} terrain`);
+  try {
+    // The manifest is already verified; load the payload through the same path.
+    const pkg = await loadTerrainPackage(manifestUrl, {
+      signal, fetchImpl: async (url, init) => (url === manifestUrl
+        ? new Response(manifestBytes) : (fetchImpl || globalThis.fetch)(url, init)),
+    });
+    if (stale()) throw new RangeAssetError('stale', `stale generation ${generation} for ${view.id}`);
+    const prepared = { viewId: view.id, generation, key, ...pkg };
+    if (reservation && !residency.commit(reservation, prepared, null)) {
+      throw new RangeAssetError('stale', `generation ${generation} cancelled during ${view.id}`);
+    }
+    return prepared;
+  } catch (err) {
+    if (reservation) residency.release(key);
+    throw err instanceof RangeAssetError ? err : new RangeAssetError('decode', err?.message || String(err));
+  }
+}

@@ -41,8 +41,13 @@ function release(strips) {
 }
 
 export class TerrainStripCache {
-  constructor({ maxBytes = DEFAULT_TERRAIN_STRIP_BUDGET } = {}) {
+  /** `residency` (GraphicsResidency) makes these strips share the page's
+   *  one graphics budget with Range v2 instead of holding a second,
+   *  independent allowance; `maxBytes` remains this cache's own ceiling. */
+  constructor({ maxBytes = DEFAULT_TERRAIN_STRIP_BUDGET, residency = null, owner = 'legacy-strips' } = {}) {
     this.maxBytes = maxBytes;
+    this.residency = residency;
+    this.owner = owner;
     this.bytes = 0;
     this.entries = new Map();
     this.pins = new Set();
@@ -68,7 +73,8 @@ export class TerrainStripCache {
    * owned raster memory rather than only the post-insertion steady state. */
   reserve(bytes, extraPins = new Set()) {
     const wanted = Math.max(0, Number(bytes) || 0);
-    while (this.bytes + wanted > this.maxBytes) {
+    const shared = () => !this.residency || this.residency.canFit(wanted);
+    while (this.bytes + wanted > this.maxBytes || !shared()) {
       let victim = null;
       for (const [key, entry] of this.entries) {
         if (this.pins.has(key) || extraPins.has(key)) continue;
@@ -85,6 +91,7 @@ export class TerrainStripCache {
     const bytes = stripSetBytes(strips);
     this.entries.set(key, { strips, bytes, used: ++this.tick });
     this.bytes += bytes;
+    this.residency?.adopt({ key: `${this.owner}:${key}`, bytes, owner: this.owner });
     this._evict(new Set([key]));
     return this;
   }
@@ -101,6 +108,7 @@ export class TerrainStripCache {
     if (!entry) return false;
     this.entries.delete(key);
     this.bytes -= entry.bytes;
+    this.residency?.release(`${this.owner}:${key}`);
     return true;
   }
 

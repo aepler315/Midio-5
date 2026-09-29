@@ -479,8 +479,10 @@ export function travelSeam(width, layerKey, p) {
   return width + feather / 2 - q * (width + feather);
 }
 
+let BIOME_MANAGER_SERIAL = 0;
+
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null, songTerrain = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null, songTerrain = null, residency = null }) {
     this.conductor = conductor;
     this._crestBeatClock = new CrestBeatClock(conductor.barGrid);
     this.energyCurves = energyCurves;
@@ -768,7 +770,10 @@ export class BiomeManager {
 
     this.songSeed = songSeed;
     this.visualStyle = 'rendered'; // set via setVisualStyle from Simulation / main
-    this.strips = new TerrainStripCache(); // biomeName -> { L2, L3, L4, L5 }
+    // Legacy strips share the page's graphics budget when one is given, so
+    // a fallback never holds a second, independent allowance.
+    this.residency = residency;
+    this.strips = new TerrainStripCache({ residency, owner: `legacy-strips#${++BIOME_MANAGER_SERIAL}` }); // biomeName -> { L2, L3, L4, L5 }
 
     this.fields = new Map(); // biomeName -> ParticleField
     for (const b of this.profiles) this.fields.set(b.name, new ParticleField(b.particles, canvasWidth, canvasHeight, hashSeed(b.name + 'p')));

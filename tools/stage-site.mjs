@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
 const REQUIRED = ['index.html', 'CNAME', 'src/main.js', 'soundfonts'];
@@ -23,6 +24,60 @@ async function canonicalPath(target) {
       cursor = parent;
     }
   }
+}
+
+const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
+
+/**
+ * Range v2 delivery checks on a staged tree: the local renderer bundle must
+ * be exactly what tools/build-range-runtime.mjs builds from the locked
+ * dependencies (rebuilt here when they are installed), and every view in
+ * the runtime scene catalog must ship its real terrain manifest and payload
+ * with the hashes the catalog and manifest declare -- no LFS pointers, no
+ * unresolved slots. Skipped for trees that carry no Range v2 runtime.
+ */
+export async function verifyRangeRuntime(sourceDir, outputDir) {
+  const vendor = path.join(outputDir, 'src', 'vendor', 'range');
+  let runtime;
+  try { runtime = JSON.parse(await fs.readFile(path.join(vendor, 'runtime.json'), 'utf8')); }
+  catch { return { checked: false }; }
+  for (const [name, want] of Object.entries(runtime.files)) {
+    const buf = await fs.readFile(path.join(vendor, name));
+    if (sha256(buf) !== want.sha256) throw new Error(`staged src/vendor/range/${name} does not match runtime.json`);
+  }
+  let rebuilt = false;
+  try {
+    await fs.access(path.join(sourceDir, 'node_modules', 'three', 'package.json'));
+    const { buildRangeRuntime } = await import(pathToFileURL(path.join(sourceDir, 'tools', 'build-range-runtime.mjs')).href);
+    const { code } = await buildRangeRuntime();
+    if (sha256(code) !== runtime.files['three-range.module.js'].sha256) {
+      throw new Error('committed Range runtime bundle is stale; run node tools/build-range-runtime.mjs');
+    }
+    rebuilt = true;
+  } catch (err) {
+    if (/stale/.test(err.message)) throw err;
+  }
+  const catalogPath = path.join(outputDir, 'src', 'world', 'terrain', 'sceneCatalogData.js');
+  const views = [];
+  try {
+    const { default: catalog } = await import(`${pathToFileURL(catalogPath).href}?stage=${Date.now()}`);
+    const root = path.join(outputDir, 'src', 'assets', 'range', 'v2');
+    for (const view of catalog.views) {
+      const manifestBuf = await fs.readFile(path.join(root, view.terrainManifestUrl));
+      if (manifestBuf.subarray(0, 40).toString().startsWith('version https://git-lfs')) throw new Error(`${view.id} manifest is an LFS pointer`);
+      if (view.terrainManifestSha256 && sha256(manifestBuf) !== view.terrainManifestSha256) throw new Error(`${view.id} manifest hash differs from the catalog`);
+      const manifest = JSON.parse(manifestBuf.toString('utf8'));
+      const payload = await fs.readFile(path.join(root, path.dirname(view.terrainManifestUrl), manifest.payload.url));
+      if (payload.byteLength !== manifest.payload.byteLength || sha256(payload) !== manifest.payload.sha256) {
+        throw new Error(`${view.id} terrain payload does not match its manifest`);
+      }
+      views.push(view.id);
+    }
+  } catch (err) {
+    if (err.code === 'ERR_MODULE_NOT_FOUND' && !views.length) return { checked: true, rebuilt, views };
+    throw err;
+  }
+  return { checked: true, rebuilt, views };
 }
 
 export async function stageSite(sourceDir, outputDir) {
@@ -55,6 +110,7 @@ export async function stageSite(sourceDir, outputDir) {
     fs.cp(path.join(source, 'soundfonts'), path.join(output, 'soundfonts'), { recursive: true }),
     fs.writeFile(path.join(output, '.nojekyll'), ''),
   ]);
+  await verifyRangeRuntime(source, output);
   return output;
 }
 

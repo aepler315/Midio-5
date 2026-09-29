@@ -1,0 +1,98 @@
+// Range v2 Task 7: one ledger for all Range graphics ownership.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { GraphicsResidency, RESIDENCY_BUDGETS, MiB, residencyBudgetFor } from '../src/render/GraphicsResidency.js';
+import { TerrainStripCache } from '../src/world/terrain/TerrainStripCache.js';
+
+const ledger = (mb = 100) => new GraphicsResidency({ budgetBytes: mb * MiB });
+
+test('budgets match the plan', () => {
+  assert.equal(RESIDENCY_BUDGETS.desktop, 256 * MiB);
+  assert.equal(RESIDENCY_BUDGETS.mobile, 128 * MiB);
+  assert.equal(residencyBudgetFor({ navigator: { deviceMemory: 4 } }).name, 'mobile');
+  assert.equal(residencyBudgetFor({ navigator: { maxTouchPoints: 5 }, screen: { width: 390, height: 844 } }).name, 'mobile');
+  assert.equal(residencyBudgetFor({ navigator: { deviceMemory: 16 }, screen: { width: 2560, height: 1440 } }).name, 'desktop');
+});
+
+test('a denied reservation allocates nothing and evicts nothing', () => {
+  const r = ledger(100);
+  let disposed = 0;
+  const a = r.reserve({ key: 'a', bytes: 60 * MiB, owner: 'terrain' });
+  r.commit(a, {}, () => disposed++);
+  r.pin(['a']);
+  assert.equal(r.reserve({ key: 'b', bytes: 50 * MiB, owner: 'terrain' }), null);
+  assert.equal(disposed, 0);
+  assert.equal(r.has('b'), false);
+  assert.equal(r.snapshot().denials, 1);
+});
+
+test('pending -> live is not double counted', () => {
+  const r = ledger(100);
+  const res = r.reserve({ key: 'k', bytes: 40 * MiB, owner: 'o' });
+  assert.equal(r.pendingBytes, 40 * MiB);
+  assert.equal(r.liveBytes, 0);
+  assert.equal(r.commit(res, { gpu: true }), true);
+  assert.equal(r.pendingBytes, 0);
+  assert.equal(r.liveBytes, 40 * MiB);
+  assert.equal(r.usedBytes, 40 * MiB);
+  assert.throws(() => r.reserve({ key: 'k', bytes: 1, owner: 'o' }), /already exists/);
+});
+
+test('pinned objects survive eviction; unpinned LRU go first', () => {
+  const r = ledger(100);
+  const disposed = [];
+  for (const k of ['old', 'mid', 'pinned']) r.commit(r.reserve({ key: k, bytes: 30 * MiB, owner: 'o' }), k, (x) => disposed.push(x));
+  r.get('mid'); // touch
+  r.pin(['pinned']);
+  assert.ok(r.reserve({ key: 'new', bytes: 40 * MiB, owner: 'o' }));
+  assert.deepEqual(disposed, ['old']);
+  assert.ok(r.has('pinned') && r.has('mid'));
+});
+
+test('cancelling a generation voids pending work and releases its reservations', () => {
+  const r = ledger(100);
+  const res = r.reserve({ key: 'late', bytes: 50 * MiB, owner: 'o', generation: 3 });
+  r.cancelGeneration(3);
+  assert.equal(r.usedBytes, 0, 'cancelled pending bytes are freed at once');
+  let disposed = false;
+  assert.equal(r.commit(res, { stale: true }, () => { disposed = true; }), false, 'late commit is not published');
+  assert.equal(disposed, true);
+  assert.equal(r.has('late'), false);
+  assert.equal(r.reserve({ key: 'again', bytes: 1, owner: 'o', generation: 3 }), null);
+  assert.deepEqual(r.snapshot().cancelledGenerations, [3]);
+});
+
+test('release and dispose are idempotent', () => {
+  const r = ledger(10);
+  let n = 0;
+  r.commit(r.reserve({ key: 'x', bytes: MiB, owner: 'o' }), {}, () => n++);
+  assert.equal(r.release('x'), true);
+  assert.equal(r.release('x'), false);
+  assert.equal(n, 1);
+  assert.equal(r.usedBytes, 0);
+});
+
+test('snapshot reports ownership by owner, pins and cancellations', () => {
+  const r = ledger(100);
+  r.commit(r.reserve({ key: 'g', bytes: 10 * MiB, owner: 'gpu' }), {});
+  r.reserve({ key: 'c', bytes: 5 * MiB, owner: 'cpu' });
+  r.pin(['g']);
+  const s = r.snapshot();
+  assert.deepEqual(s.byOwner.gpu, { pending: 0, live: 10 * MiB, count: 1 });
+  assert.deepEqual(s.byOwner.cpu, { pending: 5 * MiB, live: 0, count: 1 });
+  assert.deepEqual(s.pinned, ['g']);
+});
+
+test('legacy strips share the ledger instead of a second allowance', () => {
+  const r = ledger(10);
+  const canvas = (w, h) => ({ width: w, height: h });
+  const cache = new TerrainStripCache({ maxBytes: 100 * MiB, residency: r, owner: 'legacy' });
+  // Another owner already holds 8 MiB of the 10 MiB ledger.
+  r.commit(r.reserve({ key: 'scene', bytes: 8 * MiB, owner: 'range' }), {});
+  r.pin(['scene']);
+  assert.equal(cache.reserve(4 * MiB), false, 'strip cache must respect the shared budget');
+  cache.set('A', { L2: canvas(512, 512) }); // 1 MiB, adopted truthfully
+  assert.equal(r.snapshot().byOwner.legacy.live, MiB);
+  cache.delete('A');
+  assert.equal(r.snapshot().byOwner.legacy, undefined);
+});
