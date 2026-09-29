@@ -66,13 +66,13 @@ export function rangeCloudBanks({ width, height, tSec = 0, seed = 0, moon = null
     const x = ((hash(i, seed + 2) * span + tSec * speed) % span) - width * 0.3;
     const y = height * (0.06 + 0.3 * hash(i, seed + 3));
     const w = width * (0.12 + 0.16 * hash(i, seed + 4));
-    banks.push({ id: `bank${i}`, x, y, w, h: w * (0.1 + 0.06 * hash(i, seed + 5)), alpha: 0.14 + 0.1 * hash(i, seed + 6), puffs: 7 });
+    banks.push({ id: `bank${i}`, x, y, w, h: w * (0.1 + 0.06 * hash(i, seed + 5)), alpha: 0.28 + 0.14 * hash(i, seed + 6), puffs: 7 });
   }
   if (moon) {
     for (let k = 0; k < 2; k++) {
       const drift = Math.sin(tSec * 0.05 + k * 2.1) * moon.R * 1.2;
       banks.push({ id: `wisp${k}`, x: moon.x + drift + (k ? -0.4 : 0.5) * moon.R * 3, y: moon.y + (k ? 0.45 : -0.2) * moon.R,
-        w: moon.R * (5 + 2 * k), h: moon.R * 0.42, alpha: 0.32 - 0.08 * k, puffs: 5 });
+        w: moon.R * (5 + 2 * k), h: moon.R * 0.42, alpha: 0.5 - 0.1 * k, puffs: 5 });
     }
   }
   return banks;
@@ -89,7 +89,7 @@ export function drawRangeClouds(ctx, banks, { dark = [52, 60, 78], lit = [196, 1
       const py = b.y + Math.sin(u * 9 + b.w) * b.h * 0.25;
       if (allowPoint && !allowPoint(px, py)) continue;
       const rx = b.h * (1.3 + 0.9 * Math.sin(u * Math.PI)), ry = b.h * (0.55 + 0.35 * Math.sin(u * Math.PI));
-      for (const [col, off, a] of [[lit, 0.18, 0.5], [dark, -0.06, 1]]) {
+      for (const [col, off, a] of [[lit, 0.2, 0.75], [dark, -0.06, 1]]) {
         const ox = px + lx * rx * off, oy = py + ly * ry * off;
         const g = ctx.createRadialGradient(ox, oy, 0, ox, oy, rx);
         g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${(b.alpha * a * alpha).toFixed(3)})`);

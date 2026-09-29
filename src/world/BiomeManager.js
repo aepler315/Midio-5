@@ -2504,8 +2504,8 @@ export class BiomeManager {
     // it's up; a plain pale moon takes over once it sets. Both fade in/out
     // over their last stretch of altitude rather than popping at the
     // horizon, and both rise from and set into the sea horizon.
-    if (sunUp) this._drawCelestial(ctx, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt), celestialXFrac);
     this._moonDisc = null;
+    if (sunUp) this._drawCelestial(ctx, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt), celestialXFrac);
     if (dn.moonAlt > 0.001) {
       // Where the sun really is -- below the horizon all night, which is the
       // whole point: it's what makes the moon read as lit from underneath.
@@ -4048,6 +4048,12 @@ export class BiomeManager {
     const app = this._celestialApproachAt(canvas, canvas.width * cxFrac, canvas.height * cyFrac);
     const cx = app.x, cy = app.y;
     const grow = app.scale;
+    // Range v2: the celestial is a secondary object (about 3.5% of the
+    // frame width across, as in the reference), never a dominating disc.
+    const capR = this._rangeV2Active ? rangeV2MoonRadius(canvas.width, grow) : Infinity;
+    if (this._rangeV2Active && alpha > 0.02) {
+      this._moonDisc = { x: cx, y: cy, R: Math.min(capR, Math.max(A.celestial.radius || 0, B.celestial.radius || 0) * grow) };
+    }
     // The disc does not move. The halo blooms on the heard kick (no depth
     // delay — the sun is the beat marker, same clock as a character flash)
     // and stays still under reduced flash.
@@ -4059,7 +4065,7 @@ export class BiomeManager {
       ...c,
       color: this._rotated(c.color),
       haloColor: this._rotated(c.haloColor),
-      radius: (c.radius || 0) * grow,
+      radius: Math.min(capR, (c.radius || 0) * grow),
     });
     // One shared opaque backing, at the body's full (un-split) alpha, before
     // either crossfading celestial draws on top of it. _drawOneCelestial
@@ -4071,7 +4077,7 @@ export class BiomeManager {
     // larger so it covers both without a visible seam as they fade past
     // each other.
     if (alpha > 0.02) {
-      const backR = Math.max((A.celestial.radius || 0), (B.celestial.radius || 0)) * grow;
+      const backR = Math.min(capR, Math.max((A.celestial.radius || 0), (B.celestial.radius || 0)) * grow);
       if (backR > 0) {
         ctx.save();
         ctx.globalAlpha = alpha;
