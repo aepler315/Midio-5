@@ -217,3 +217,136 @@ test('a view that fails to prepare asks for the captions to be rebuilt', async (
   assert.equal(refreshed, 1);
   assert.equal(p.captionViewFor('RAINFOREST'), null, 'the failed view is no longer named');
 });
+
+// Budget: a song's views compete for one residency budget.
+const views4 = ['RAINFOREST', 'CONIFER', 'TUNDRA', 'TAIGA'].map((biome, i) => ({ ...catalog.views[0], id: `v${i}`, biome }));
+const song4 = () => ({ sceneByBiome: new Map(views4.map((v) => [v.biome, { view: v, fallbackReason: null }])) });
+/** A scene with room for `cap` views (prepared or still preparing). */
+function budgetScene(cap) {
+  const prepared = new Set(), jobs = new Map(), calls = [];
+  const s = {
+    cap, calls, prepared: new Map(), contextLost: false,
+    isReady: (id) => prepared.has(id),
+    prepare(view) {
+      calls.push(view.id);
+      if (jobs.has(view.id)) return jobs.get(view.id);
+      if (prepared.size + jobs.size >= s.cap) return Promise.reject(Object.assign(new Error(`no GPU room for ${view.id}`), { reason: 'budget' }));
+      const job = new Promise((r) => setTimeout(() => { jobs.delete(view.id); prepared.add(view.id); r({}); }, 5));
+      jobs.set(view.id, job);
+      return job;
+    },
+    evict(id) { prepared.delete(id); },
+    pinView() {}, resize() {}, release() {}, snapshot: () => ({}), renderPartition: () => ({ width: 2, height: 2 }),
+  };
+  return s;
+}
+
+test('whenReady prepares views in song order and stops at the first that does not fit', async () => {
+  const scene = budgetScene(2);
+  const p = presentationWith(scene, { catalog: { ...catalog, views: views4 } });
+  p.setSong({ terrain: song4(), generation: 1 });
+  await p.whenReady();
+  assert.ok(scene.isReady('v0') && scene.isReady('v1'), 'the opening views are prepared');
+  assert.ok(!scene.isReady('v2') && !scene.isReady('v3'));
+  assert.deepEqual(scene.calls, ['v0', 'v1', 'v2'], 'one at a time, in song order; v3 is left for later');
+  // A refusal is not a failure: the biome is still v2's (no legacy strips).
+  assert.deepEqual(p.snapshot().failures, {});
+  assert.ok(p.coversBiome('TUNDRA'));
+});
+
+test('a budget refusal is retried once room is freed, never dropped to legacy for the song', async () => {
+  const scene = budgetScene(0);
+  const p = presentationWith(scene, { catalog: { ...catalog, views: views4 } });
+  p.setSong({ terrain: song4(), generation: 1 });
+  await p._ensureRuntime();
+  p.setFrameInputs(inputs('RAINFOREST'));
+  assert.equal(p.beginScenic(), false);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(p.snapshot().deferred, ['v0']);
+  // Within the retry interval the view is not asked for again every frame.
+  p.setFrameInputs(inputs('RAINFOREST'));
+  p.beginScenic();
+  assert.equal(scene.calls.length, 1);
+  // Room appears (views no longer on screen were evicted); after the
+  // interval the next frame asks again and the view arrives.
+  scene.cap = 1;
+  p._prepare(views4[0], Date.now() + 2000);
+  await new Promise((r) => setTimeout(r, 20));
+  p.setFrameInputs(inputs('RAINFOREST'));
+  assert.equal(p.beginScenic(), true);
+  assert.equal(p.snapshot().viewId, 'v0');
+});
+
+test('export: settle waits for the view a frame lacked and asks for the same instant again', async () => {
+  const scene = budgetScene(1);
+  const p = presentationWith(scene, { catalog: { ...catalog, views: views4 } });
+  p.setSong({ terrain: song4(), generation: 1, exportMode: true });
+  await p.whenReady();
+  assert.ok(scene.isReady('v0'));
+  // The song reaches CONIFER: its view is not prepared and there is no room
+  // until the previous view is evicted (the ledger does that once it is no
+  // longer pinned).
+  p.setFrameInputs(inputs('CONIFER'));
+  assert.equal(p.beginScenic(), false);
+  scene.evict('v0');
+  assert.equal(await p.settle(), true, 'it waited: the caller redraws the frame');
+  p.setFrameInputs(inputs('CONIFER'));
+  assert.equal(p.beginScenic(), true);
+  assert.equal(p.snapshot().viewId, 'v1');
+  assert.equal(await p.settle(), false, 'nothing lacking: no redraw');
+});
+
+/** budgetScene whose reservations evict the oldest unpinned view (as the
+ *  residency ledger does) before refusing. */
+function evictingScene(cap) {
+  const s = budgetScene(cap);
+  const order = [];
+  let pinned = new Set();
+  const base = s.prepare;
+  s.pinView = (ids) => { pinned = new Set([].concat(ids)); };
+  s.ensureSide = () => true;
+  s.prepare = (view) => {
+    if (!s.isReady(view.id)) {
+      const victim = order.find((id) => s.isReady(id) && !pinned.has(id));
+      if (victim && order.filter((id) => s.isReady(id)).length >= s.cap) { s.evict(victim); order.splice(order.indexOf(victim), 1); }
+    }
+    const job = base(view);
+    job.then(() => { if (!order.includes(view.id)) order.push(view.id); }, () => {});
+    return job;
+  };
+  return s;
+}
+
+test('export: settling a travel keeps the side already prepared while the other is built', async () => {
+  const scene = evictingScene(2);
+  const makeCanvas = (w, h) => ({ width: w, height: h, getContext: () => anyCtx() });
+  const p = presentationWith(scene, { catalog: { ...catalog, views: views4 }, makeCanvas });
+  p.setSong({ terrain: song4(), generation: 1, exportMode: true });
+  await p.whenReady(); // v0 then v1 prepared, in song order
+  assert.ok(scene.isReady('v0') && scene.isReady('v1'));
+  // A travel from TUNDRA (v2, not prepared) to RAINFOREST (v0, prepared).
+  const travel = inputs('TUNDRA');
+  travel.sim.biomes.currentBlend = { from: 'TUNDRA', to: 'RAINFOREST', t: 0.5 };
+  p.setFrameInputs(travel);
+  p.beginScenic();
+  assert.equal(await p.settle(), true);
+  assert.ok(scene.isReady('v2') && scene.isReady('v0'), 'the unrelated v1 was evicted, not the incoming v0');
+  p.setFrameInputs(travel);
+  assert.equal(p.beginScenic(), true);
+  assert.equal(p.snapshot().incomingViewId, 'v0');
+});
+
+test('export: settle waits for a view still being built even after earlier refusals', async () => {
+  const scene = budgetScene(0);
+  const p = presentationWith(scene, { catalog: { ...catalog, views: views4 } });
+  p.setSong({ terrain: song4(), generation: 1, exportMode: true });
+  await p._ensureRuntime();
+  p.setFrameInputs(inputs('RAINFOREST'));
+  p.beginScenic();
+  // Refused twice, then room appears while settle retries.
+  let refusals = 0;
+  const prepare = scene.prepare;
+  scene.prepare = (v) => { if (++refusals === 3) scene.cap = 1; return prepare(v); };
+  assert.equal(await p.settle({ attempts: 3 }), true);
+  assert.ok(scene.isReady('v0'), 'the attempt that got room was waited for');
+});

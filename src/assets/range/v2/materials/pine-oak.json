@@ -267,7 +267,8 @@
   "forestDensity": 0.45,
   "moss": 0.1,
   "wetness": 0.2,
-  "strata": 0.35
+  "strata": 0.35,
+  "forestFloorM": 2700
  },
  "colorManagement": "palette hex values are sRGB albedo; shaders convert to linear; data textures are not colour-managed"
 }

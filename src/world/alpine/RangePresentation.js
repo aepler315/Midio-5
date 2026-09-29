@@ -40,6 +40,11 @@ const PASS_LAYER = { far: 'L2', mid: 'L4', near: 'L5' };
  *  scenery was already on screen fades in over it, instead of replacing the
  *  painted ranges in one frame. */
 export const ARRIVAL_SEC = 1.2;
+// A view refused room is tried again after this long (wall clock).
+export const BUDGET_RETRY_MS = 1000;
+// Feather bands across a view-to-view travel seam (the legacy strips use
+// TRAVEL_BANDS = 4; on real terrain four steps read as vertical stripes).
+export const V2_TRAVEL_BANDS = 16;
 
 /** Residency key of the travel composition buffer (one stage-sized canvas
  *  the two sides are blended in before the single copy to the stage). */
@@ -87,6 +92,12 @@ export class RangePresentation {
     this.active = false;
     this.reason = mode === 'v2' ? 'not-started' : 'legacy-mode';
     this.failures = new Map(); // viewId -> reason (not retried this generation)
+    // A budget refusal is not a failure: the view is retried once room may
+    // have been freed (eviction of views no longer on screen), and its
+    // biome still counts as covered, so no legacy strips are baked for it.
+    this.deferred = new Map(); // viewId -> retry-at (ms)
+    this._needed = new Set(); // views this frame wanted on screen but lacked
+    this._wants = []; // every view this frame wanted (both travel sides)
     this.shown = new Set();
     this.frameId = 0;
     this.timings = { lastCopyMs: 0, lastPartitionMs: 0 };
@@ -116,6 +127,9 @@ export class RangePresentation {
     this._waitedFor = null;
     this.sceneByBiome = terrain?.sceneByBiome || null;
     this.failures.clear();
+    this.deferred.clear();
+    this._needed.clear();
+    this._wants = [];
     this.shown.clear();
     this.arrival = 1;
     this._legacyShown = false;
@@ -177,12 +191,21 @@ export class RangePresentation {
     }
   }
 
-  _prepare(view) {
+  _prepare(view, now = Date.now()) {
     if (!this.scene || this.failures.has(view.id) || this.scene.isReady(view.id)) return;
+    const retryAt = this.deferred.get(view.id);
+    if (retryAt != null && now < retryAt) return;
+    this.deferred.delete(view.id);
     const gen = this.generation;
     this.scene.prepare(view, { generation: gen, baseUrl: this.assetBase, isCurrent: (g) => g === this.generation })
       .catch((err) => {
         if (gen !== this.generation) return; // stale: the new song decides again
+        if (err?.reason === 'budget') {
+          // No room right now (other views still pending or pinned): try
+          // again shortly instead of dropping the biome to legacy for good.
+          this.deferred.set(view.id, Date.now() + BUDGET_RETRY_MS);
+          return;
+        }
         const reason = err?.reason ? `${err.reason}: ${err.message}` : String(err?.message || err);
         this.failures.set(view.id, reason);
         console.warn(`[range v2] ${view.id} unavailable; legacy Range for its sections`, err);
@@ -197,22 +220,86 @@ export class RangePresentation {
     try { this.onAvailabilityChange?.(); } catch (err) { console.warn('[range v2] caption refresh failed', err); }
   }
 
-  /** Resolves once every view this song needs is prepared or has failed
-   *  (evidence/export use this; live playback never waits on it). */
+  /** Prepares the song's views one at a time in song order, keeping those
+   *  already prepared resident, until one no longer fits the budget: the
+   *  opening view is always attempted first, and later views are prepared
+   *  as their sections approach (live) or by settle() (export). Resolves
+   *  with the snapshot (evidence/export use this; live playback never
+   *  waits on it). Preparing every view at once let later biomes' pending
+   *  reservations crowd out the view actually on screen. */
   async whenReady({ timeoutMs = 60000 } = {}) {
     if (!this.enabled) return this.snapshot();
     if (this.runtimeState === 'idle') await this._ensureRuntime();
     else while (this.runtimeState === 'loading') await new Promise((r) => setTimeout(r, 20));
     if (this.runtimeState !== 'ready') return this.snapshot();
+    const unique = this._songViews();
+    const deadline = Date.now() + timeoutMs;
+    const ready = [];
+    for (const v of unique) {
+      if (Date.now() >= deadline) break;
+      this.deferred.delete(v.id);
+      this._prepare(v);
+      while (Date.now() < deadline && !this.scene.isReady(v.id) && !this.failures.has(v.id) && !this.deferred.has(v.id)) {
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      if (this.deferred.has(v.id)) {
+        // Full: this and later views prepare on demand, not now.
+        this.deferred.delete(v.id);
+        break;
+      }
+      if (this.scene.isReady(v.id)) ready.push(v.id);
+      // Keep what is prepared while the next view reserves its room.
+      this.scene.pinView?.(ready);
+    }
+    this.residency?.pin?.([]);
+    return this.snapshot();
+  }
+
+  /** The song's views in song order (the biome order), each once. */
+  _songViews() {
     const views = this.forced?.view ? [this.forced.view]
       : [...(this.sceneByBiome?.values?.() || [])].map((c) => c?.view).filter(Boolean);
-    const unique = [...new Map(views.map((v) => [v.id, v])).values()];
+    return [...new Map(views.map((v) => [v.id, v])).values()];
+  }
+
+  /**
+   * Export: after a frame, wait for the views that frame wanted on screen
+   * but lacked (still preparing, or refused room while others were
+   * pending), retrying a refusal now that the frame's own views are the
+   * only ones pinned. Resolves true when it waited -- the caller then
+   * redraws the same heard time, which is deterministic -- false when the
+   * frame already had everything it needed.
+   */
+  async settle({ timeoutMs = 120000, attempts = 3 } = {}) {
+    const lacking = this._needed.size > 0;
+    this._needed.clear();
+    // Every view the frame wanted, not only the missing ones: preparing a
+    // missing side must not evict the side that was already there (a frame
+    // that drew no GPU scene pinned nothing).
+    const views = this._wants;
+    if (!lacking || !views.length || !this.scene) return false;
     const deadline = Date.now() + timeoutMs;
-    for (const v of unique) this._prepare(v);
-    while (Date.now() < deadline && unique.some((v) => !this.scene.isReady(v.id) && !this.failures.has(v.id))) {
+    const tries = new Map();
+    let waited = false;
+    while (Date.now() < deadline) {
+      this.scene.pinView?.(views.filter((v) => this.scene.isReady(v.id)).map((v) => v.id));
+      const open = views.filter((v) => !this.scene.isReady(v.id) && !this.failures.has(v.id));
+      // A view still being built is always waited for; only one refused
+      // room `attempts` times gives up (the frame draws without it).
+      const givenUp = (v) => this.deferred.has(v.id) && (tries.get(v.id) || 0) >= attempts;
+      if (!open.length || open.every(givenUp)) break;
+      waited = true;
+      for (const v of open) {
+        if (givenUp(v)) continue;
+        if (this.deferred.has(v.id)) {
+          tries.set(v.id, (tries.get(v.id) || 0) + 1);
+          this.deferred.delete(v.id);
+        }
+        this._prepare(v);
+      }
       await new Promise((r) => setTimeout(r, 25));
     }
-    return this.snapshot();
+    return waited;
   }
 
   /** Renderer: this frame's inputs, before BiomeManager.draw. */
@@ -293,7 +380,12 @@ export class RangePresentation {
     const name = (p) => (typeof p === 'string' ? p : p?.name ?? null);
     const from = this._choiceFor(name(blend.from) ?? mgr.sections?.[0]?.profile?.name);
     const to = this._choiceFor(name(blend.to) ?? name(blend.from));
-    for (const c of [from, to]) if (c?.view) this._prepare(c.view);
+    const now = Date.now();
+    const wanted = [...new Map([from, to].map((c) => c?.view).filter(Boolean).map((v) => [v.id, v])).values()];
+    for (const v of wanted) this._prepare(v, now);
+    // What this frame would draw but cannot yet (export settles these).
+    this._wants = wanted;
+    this._needed = new Set(wanted.filter((v) => !this.failures.has(v.id) && !this.scene.isReady(v.id)).map((v) => v.id));
     if (!from?.view) { this.reason = from?.fallbackReason || 'no-view-assigned'; return false; }
     // A destination without a view (partial catalog coverage) is legacy
     // scenery: the blend toward it, and the section after it, draw legacy.
@@ -485,7 +577,7 @@ export class RangePresentation {
     const fading = (this.incomingFade ?? 1) < 1;
     const out = { A: {}, B: {} };
     for (const [band, layer] of [['mid', PASS_LAYER.mid], ['near', PASS_LAYER.near]]) {
-      const { lo, hi } = travelSpans(width, layer, this.seamP ?? 0);
+      const { lo, hi } = travelSpans(width, layer, this.seamP ?? 0, V2_TRAVEL_BANDS);
       out.A[band] = fading ? [0, 1] : [0, Math.min(1, Math.max(0, hi / width))];
       out.B[band] = [Math.min(1, Math.max(0, lo / width)), 1];
     }
@@ -503,7 +595,7 @@ export class RangePresentation {
    * drawing buffer, so A is fully drawn before B is rendered.
    */
   _compositeSides(ctx, stage, layerKey, renderA, renderB) {
-    const { lo, hi, bands } = travelSpans(stage.width, layerKey, this.seamP ?? 0);
+    const { lo, hi, bands } = travelSpans(stage.width, layerKey, this.seamP ?? 0, V2_TRAVEL_BANDS);
     const fadeB = this.incomingFade ?? 1;
     const far = stage.width * 2;
     const spans = [{ x0: -far, x1: lo, w: 0 }, ...bands.map((b) => ({ x0: b.x0, x1: b.x1, w: b.weightB })), { x0: hi, x1: far, w: 1 }]
@@ -525,7 +617,9 @@ export class RangePresentation {
     sctx.clearRect(0, 0, W, H);
     const put = (img, x0, x1, alpha, op) => {
       if (!img || !(alpha > 0.001)) return;
-      const cx0 = Math.max(0, x0 * sx), cx1 = Math.min(W, x1 * sx);
+      // Whole pixels: neighbouring bands share an exact edge (no
+      // anti-aliased hairline where both would be partly transparent).
+      const cx0 = Math.max(0, Math.round(x0 * sx)), cx1 = Math.min(W, Math.round(x1 * sx));
       if (!(cx1 > cx0)) return;
       sctx.save();
       sctx.beginPath();
@@ -560,7 +654,7 @@ export class RangePresentation {
         () => (outB = this.scene.renderGround(this.frame, this.incomingViewId))?.canvas);
       // Receivers (pools, wet masks) follow the side that visibly holds the
       // centre: B's seam weight there, scaled by its late-join fade.
-      const { lo, hi, bands } = travelSpans(stage.width, 'L5', this.seamP ?? 0);
+      const { lo, hi, bands } = travelSpans(stage.width, 'L5', this.seamP ?? 0, V2_TRAVEL_BANDS);
       const cx = stage.width / 2;
       const seamW = cx < lo ? 0 : cx >= hi ? 1 : (bands.find((b) => cx >= b.x0 && cx < b.x1)?.weightB ?? 0.5);
       const bHolds = seamW * (this.incomingFade ?? 1) >= 0.5;
@@ -590,7 +684,7 @@ export class RangePresentation {
       mode: this.mode, active: this.active, reason: this.reason, viewId: this.active ? this.viewId : null,
       forcedCandidate: !!this.forced?.forcedCandidate, forcedViewId: this.forcedViewId, diag: this.diag,
       generation: this.generation, runtime: this.runtimeState, arrival: this.arrival, incomingFade: this.incomingFade, incomingViewId: this.active ? this.incomingViewId : null, seamP: this.seamP ?? null,
-      failures: Object.fromEntries(this.failures), frameId: this.frameId, progress01: this.frame?.progress01 ?? null,
+      failures: Object.fromEntries(this.failures), deferred: [...this.deferred.keys()], frameId: this.frameId, progress01: this.frame?.progress01 ?? null,
       scene: this.scene?.snapshot?.() || null, residency: this.residency?.snapshot?.() || null,
       timings: { ...this.timings }, catalogVersion: this.catalog.catalogVersion,
     };

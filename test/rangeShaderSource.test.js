@@ -54,3 +54,19 @@ test('the cliff mask keeps its smoothstep edges ordered for every material pack'
     assert.ok(e1 > e0, `${f}: cliff edges ${e0}..${e1}`);
   }
 });
+
+test('optional pack rules reach the shader as their defaults when a pack omits them', async () => {
+  const { SCENE_FRAG, applyMaterial } = await import('../src/world/alpine/TerrainMaterial.js');
+  const { RULE_DEFAULTS } = await import('../src/world/alpine/MaterialPackage.js');
+  // The forest mask honours the lower forest limit.
+  assert.match(SCENE_FRAG, /smoothstep\(rForestFloor - 60\.0, rForestFloor \+ 60\.0,/);
+  const uniforms = new Proxy({}, { get: (o, k) => (o[k] ??= { value: { r: 0, g: 0, b: 0 } }) });
+  const read = (f) => JSON.parse(fs.readFileSync(path.resolve('src/assets/range/v2/materials', f), 'utf8'));
+  applyMaterial(uniforms, { manifest: read('wet-conifer.json') }, { roles: {} });
+  assert.equal(uniforms.rForestFloor.value, RULE_DEFAULTS.forestFloorM);
+  // A later pack's value, then a pack without it again: no stale carry-over.
+  applyMaterial(uniforms, { manifest: read('steppe.json') }, { roles: {} });
+  assert.equal(uniforms.rForestFloor.value, read('steppe.json').rules.forestFloorM);
+  applyMaterial(uniforms, { manifest: read('icefield.json') }, { roles: {} });
+  assert.equal(uniforms.rForestFloor.value, RULE_DEFAULTS.forestFloorM);
+});

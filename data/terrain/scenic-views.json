@@ -1,6 +1,6 @@
 {
   "about": "Range v2 scenic views: curated real terrain corridors with authored camera rails. Authoring source for tools/build-range-scene.mjs; the runtime catalog (src/assets/range/v2/catalog.json) is generated from it. Rail anchors are lon/lat (NAD83 for 3DEP sources) with an absolute height (heightM, metres above the source vertical datum) or a height above the DEM ground (aboveGroundM). status: candidate | approved | rejected; only approved views are production-eligible.",
-  "catalogVersion": 5,
+  "catalogVersion": 15,
   "views": [
     {
       "id": "nc-ross-lake-north",
@@ -84,11 +84,13 @@
       "place": "North Cascades, Washington",
       "approval": {
         "date": "2026-09-29",
-        "terrainManifestSha256": "8995e13dae058742479bb8b35396400b6a690a953e0d172be8988144047d2748",
+        "terrainManifestSha256": "32ee5822fccba5a474d0298cd8eb4e941cbb4858e7f1679b4e6ae9fa338aa4d2",
         "materialManifestSha256": "8f5ff6bb64b01072364f9d4698c13591af20de8f32dfbd40b67f0614fd242bb0",
         "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
         "cameraSha256": "1947b732c79e756600438f9747cb0dbd629daecafb072dd925d4d5cd1773eb7a",
         "evidence": [
+          "docs/evidence/range-v2/nc-ross-lake-north-stations.jpg",
+          "docs/evidence/range-v2/nc-ross-lake-north-inapp-10s.jpg",
           "docs/evidence/range-v2/pilot-ross-lake-calm-10s.jpg",
           "docs/evidence/range-v2/pilot-ross-lake-energetic-32s.jpg",
           "docs/evidence/range-v2/pilot-ross-lake-reflection-38s.jpg"
@@ -383,7 +385,7 @@
       "place": "Jackson Lake, Wyoming",
       "approval": {
         "date": "2026-09-29",
-        "terrainManifestSha256": "e98c6ab7e7fe80ca393867f053b178b40c742724b5d663ee7b1320ba16ba9ea0",
+        "terrainManifestSha256": "bd3b57442d203981a66be4e1e23df677116f9a562d7a39497f0a0e0e01b429b1",
         "materialManifestSha256": "6afff55ebe7762475b09f09fa8f60627714d051f9f117ffffd8e124894281175",
         "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
         "cameraSha256": "eda9f5f9370642792602854f1dab20861e664781068cdeba95bbb2ecb5c8726d",
@@ -479,7 +481,7 @@
       "id": "tombstone-north-klondike",
       "regionId": "yukon-ranges",
       "biome": "TUNDRA",
-      "status": "candidate",
+      "status": "approved",
       "notes": "From the ridges above the North Klondike valley looking south-west into the Tombstone Range granite spires.",
       "dem": {
         "source": "terrarium",
@@ -537,13 +539,24 @@
         }
       ],
       "title": "Tombstone Range",
-      "place": "Tombstone Territorial Park, Yukon"
+      "place": "Tombstone Territorial Park, Yukon",
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "5cbcec0d5132d445b75c1ffcec1fe1bb48980e2c34f44f34b6ebb4eb96bdbc89",
+        "materialManifestSha256": "76deaaa34707bc0454ecb6e10080e4d1b6716ba84b760a7fa4ce9df09a26dce2",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "cameraSha256": "64615bae3929523094aa6df0c7ad16b1b1ebd34844546e7af2dbd16ae1667fa2",
+        "evidence": [
+          "docs/evidence/range-v2/tombstone-north-klondike-stations.jpg",
+          "docs/evidence/range-v2/tombstone-north-klondike-inapp-10s.jpg"
+        ]
+      }
     },
     {
       "id": "muncho-lake-south",
       "regionId": "tower-of-london-range",
       "biome": "TAIGA",
-      "status": "candidate",
+      "status": "approved",
       "notes": "Over the middle of Muncho Lake looking south down the water between the Terminal and Sentinel ranges.",
       "dem": {
         "source": "terrarium",
@@ -591,13 +604,24 @@
       },
       "landmarks": [],
       "title": "Muncho Lake",
-      "place": "Northern Rockies, British Columbia"
+      "place": "Northern Rockies, British Columbia",
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "d25af9f0f975972c13f3da100d7b7df0a1c97136adb9073c1e673931e81c6ac2",
+        "materialManifestSha256": "c44b2272c56122a84854f3f8bb2376fad740401588242ed4e0fecb8ed15f564c",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "cameraSha256": "3176be5cc31e5e46d4e85ad26d0869e90b41bc1f274f1b22586d51a968f1398f",
+        "evidence": [
+          "docs/evidence/range-v2/muncho-lake-south-stations.jpg",
+          "docs/evidence/range-v2/muncho-lake-south-inapp-10s.jpg"
+        ]
+      }
     },
     {
       "id": "izta-popo-west",
       "regionId": "trans-mexican-volcanic-belt",
       "biome": "PINE_OAK",
-      "status": "candidate",
+      "status": "approved",
       "notes": "From the western foothills above Tlalmanalco looking east to Iztaccíhuatl and Popocatépetl.",
       "dem": {
         "source": "terrarium",
@@ -662,13 +686,25 @@
         }
       ],
       "title": "Iztaccíhuatl and Popocatépetl",
-      "place": "Trans-Mexican Volcanic Belt, México"
+      "place": "Trans-Mexican Volcanic Belt, México",
+      "water": false,
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "435e0a01cab2af34ca66a16d7bd63cf513ab3d4b071a9ff941709ea63ad3478a",
+        "materialManifestSha256": "8959b57b89150274c889b241bd4656a0cdfafd28d31f675f4fd4011abaa7a38f",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "cameraSha256": "2cd58f7fbb35e1bff5a99481f350fa40401a561156c55257a618e9f47502bf4d",
+        "evidence": [
+          "docs/evidence/range-v2/izta-popo-west-stations.jpg",
+          "docs/evidence/range-v2/izta-popo-west-inapp-10s.jpg"
+        ]
+      }
     },
     {
       "id": "black-mountains-catawba",
       "regionId": "blue-ridge",
       "biome": "BROADLEAF",
-      "status": "candidate",
+      "status": "approved",
       "notes": "From above the Catawba foothills looking west at the Black Mountains crest and Mount Mitchell across layered Blue Ridge spurs.",
       "dem": {
         "source": "3dep13",
@@ -724,13 +760,24 @@
         }
       ],
       "title": "Black Mountains",
-      "place": "Blue Ridge, North Carolina"
+      "place": "Blue Ridge, North Carolina",
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "0f5d8ce42c058a97f1e912a79fc7610ea82f76ef7d557ca964227647250d7b68",
+        "materialManifestSha256": "3e8ff42e50658d7473f7a81d107c6a3e3b628ee8daae6b7d89541f8e21578894",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "cameraSha256": "88bf3629d2ea67526ea219b640fd8e929c9d931f042bf8cae381c48accb67fab",
+        "evidence": [
+          "docs/evidence/range-v2/black-mountains-catawba-stations.jpg",
+          "docs/evidence/range-v2/black-mountains-catawba-inapp-10s.jpg"
+        ]
+      }
     },
     {
       "id": "san-gabriel-baldy",
       "regionId": "san-gabriel-mountains",
       "biome": "CHAPARRAL",
-      "status": "candidate",
+      "status": "approved",
       "notes": "From above the San Gabriel foothills looking north into the chaparral front ranges rising to Mount San Antonio.",
       "dem": {
         "source": "3dep13",
@@ -794,13 +841,24 @@
         }
       ],
       "title": "San Gabriel Mountains",
-      "place": "Angeles National Forest, California"
+      "place": "Angeles National Forest, California",
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "56871dd030fa48fc1d1fce0c165f0320fc8cd9a76cddbe3bfa76539e91c4c904",
+        "materialManifestSha256": "f3357cb770f82d0525600484c2e29132ac827dc07e799cec03e54a13a6004168",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "cameraSha256": "cb64a315752973c009513304687399ce1173b9c516e4462a35668c68392ae9bf",
+        "evidence": [
+          "docs/evidence/range-v2/san-gabriel-baldy-stations.jpg",
+          "docs/evidence/range-v2/san-gabriel-baldy-inapp-10s.jpg"
+        ]
+      }
     },
     {
       "id": "white-mountains-owens",
       "regionId": "white-mountains",
       "biome": "STEPPE",
-      "status": "candidate",
+      "status": "approved",
       "notes": "From the Owens Valley floor near Laws looking east-north-east at the White Mountains escarpment and White Mountain Peak.",
       "dem": {
         "source": "3dep13",
@@ -856,13 +914,24 @@
         }
       ],
       "title": "White Mountains",
-      "place": "Owens Valley, California"
+      "place": "Owens Valley, California",
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "a83a16041b1153ff3babe0a156ed1e54ce47acb9d663f42cca2e53223800fb83",
+        "materialManifestSha256": "ada04aa0d6767f64aa7dde9aedc02e553f98b2b3488b70e032e6319b170be6c9",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "cameraSha256": "7a3c63fb449c361bd9524ee820af9e92f50926125443e1aad8cbe1509b0d0a89",
+        "evidence": [
+          "docs/evidence/range-v2/white-mountains-owens-stations.jpg",
+          "docs/evidence/range-v2/white-mountains-owens-inapp-10s.jpg"
+        ]
+      }
     },
     {
       "id": "la-sal-castle-valley",
       "regionId": "la-sal-mountains",
       "biome": "CANYON",
-      "status": "candidate",
+      "status": "approved",
       "notes": "From above upper Castle Valley looking south-east over the red-rock benches to the north La Sal group.",
       "dem": {
         "source": "3dep13",
@@ -926,13 +995,24 @@
         }
       ],
       "title": "La Sal Mountains",
-      "place": "Castle Valley, Utah"
+      "place": "Castle Valley, Utah",
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "930f043038551229e0b43b47d0a68db31b33a9bf23d631376af54e33fbf62c42",
+        "materialManifestSha256": "ca6259b1e0cd2b10e4aae9e84abbe9c95b32976767ef372aa3caac4e73c326ce",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "cameraSha256": "40d74ce2dd4dc19af5b07ee411f33e00f46e2aab4fa6c8de1f6e69d2f3b075c8",
+        "evidence": [
+          "docs/evidence/range-v2/la-sal-castle-valley-stations.jpg",
+          "docs/evidence/range-v2/la-sal-castle-valley-inapp-10s.jpg"
+        ]
+      }
     },
     {
       "id": "panamint-dantes-view",
       "regionId": "panamint-range",
       "biome": "DESERT",
-      "status": "candidate",
+      "status": "approved",
       "notes": "From Dante's View looking west across the Badwater salt pan to Telescope Peak and the Panamint crest.",
       "dem": {
         "source": "3dep13",
@@ -996,7 +1076,18 @@
       ],
       "title": "Panamint Range",
       "place": "Death Valley, California",
-      "water": false
+      "water": false,
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "b7d3479f316016efe7d25fbacff1127fd5378ab89fa663095e0d55382af5d8c3",
+        "materialManifestSha256": "2beecf1f1647994f69a65b655ee5e48a3e771117bb7bcd1efd4c12ec67cfc14d",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "cameraSha256": "350965c0ebfbe143a39b682af6e3a429228d69b34fb455b530bf2f903b6685a7",
+        "evidence": [
+          "docs/evidence/range-v2/panamint-dantes-view-stations.jpg",
+          "docs/evidence/range-v2/panamint-dantes-view-inapp-10s.jpg"
+        ]
+      }
     }
   ]
 }

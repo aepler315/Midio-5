@@ -70,7 +70,9 @@ export const PACKS = {
     palette: { rockLit: '#747a7e', rockShade: '#30353a', rockWarm: '#766e62', soil: '#4a4636', meadow: '#5e6644',
       forestNear: '#18261e', forestFar: '#28362f', moss: '#56603c', snow: '#eef3f8', snowShade: '#a4b6ca',
       water: '#1e2c36', waterDeep: '#0e161c', wetRock: '#24292c', lichen: '#6a6e58' },
-    rules: { snowlineM: 900, snowFullM: 1300, snowMaxSlopeDeg: 52, treelineM: 700, forestMaxSlopeDeg: 34,
+    // Northern Rockies in summer: boreal forest to ~1400 m above lakes near
+    // 800 m; snow lingers only on the highest peaks.
+    rules: { snowlineM: 2000, snowFullM: 2400, snowMaxSlopeDeg: 52, treelineM: 1400, forestMaxSlopeDeg: 34,
       forestDensity: 0.6, moss: 0.6, wetness: 0.6, strata: 0.2 } },
   icefield: { biomes: ['ICEFIELD'], textures: ALPINE,
     palette: { rockLit: '#5e6670', rockShade: '#23282e', rockWarm: '#625e58', soil: '#403e38', meadow: '#4a5040',
@@ -82,19 +84,23 @@ export const PACKS = {
     palette: { rockLit: '#6e7070', rockShade: '#2e3032', rockWarm: '#6e665c', soil: '#4e4838', meadow: '#6a6a4a',
       forestNear: '#23301f', forestFar: '#34402f', moss: '#6a6a42', snow: '#eef2f6', snowShade: '#a6b6c8',
       water: '#243440', waterDeep: '#101a20', wetRock: '#28292a', lichen: '#7a7a5e' },
-    rules: { snowlineM: 1200, snowFullM: 1700, snowMaxSlopeDeg: 50, treelineM: 300, forestMaxSlopeDeg: 20,
+    // Yukon alpine tundra in summer: snow patches only near the summits.
+    rules: { snowlineM: 1900, snowFullM: 2300, snowMaxSlopeDeg: 50, treelineM: 300, forestMaxSlopeDeg: 20,
       forestDensity: 0.05, moss: 0.8, wetness: 0.5, strata: 0.2 } },
   'pine-oak': { biomes: ['PINE_OAK'], textures: DESERTY,
     palette: { rockLit: '#9a8a74', rockShade: '#3e3830', rockWarm: '#a08066', soil: '#6a5842', meadow: '#7a7650',
       forestNear: '#243224', forestFar: '#3a4636', moss: '#5a5c3a', snow: '#f2f4f6', snowShade: '#b0bccb',
       water: '#2a3a40', waterDeep: '#141e22', wetRock: '#322e28', lichen: '#7e7a62' },
     rules: { snowlineM: 3300, snowFullM: 3600, snowMaxSlopeDeg: 45, treelineM: 3500, forestMaxSlopeDeg: 32,
-      forestDensity: 0.45, moss: 0.1, wetness: 0.2, strata: 0.35 } },
+      forestDensity: 0.45, moss: 0.1, wetness: 0.2, strata: 0.35, forestFloorM: 2700 } },
+  // Deciduous canopy reflects more than conifer needles: lighter greens.
   broadleaf: { biomes: ['BROADLEAF'], textures: ALPINE,
     palette: { rockLit: '#7c7a70', rockShade: '#34342e', rockWarm: '#7e7060', soil: '#4e4632', meadow: '#5a6a3c',
-      forestNear: '#1e2e1c', forestFar: '#2e3e2a', moss: '#4a5a30', snow: '#eef2f6', snowShade: '#a8b6c6',
+      forestNear: '#2e4624', forestFar: '#40563a', moss: '#4e6232', snow: '#eef2f6', snowShade: '#a8b6c6',
       water: '#1e2e32', waterDeep: '#0e1618', wetRock: '#2a2a26', lichen: '#6a6e54' },
-    rules: { snowlineM: 1900, snowFullM: 2200, snowMaxSlopeDeg: 45, treelineM: 1600, forestMaxSlopeDeg: 42,
+    // Southern Appalachian spruce-fir runs to the highest summits (Mitchell
+    // 2037 m): no treeline or lasting snow inside the range's heights.
+    rules: { snowlineM: 2400, snowFullM: 2700, snowMaxSlopeDeg: 45, treelineM: 2300, forestMaxSlopeDeg: 42,
       forestDensity: 0.95, moss: 0.6, wetness: 0.6, strata: 0.2 } },
   chaparral: { biomes: ['CHAPARRAL'], textures: DESERTY,
     palette: { rockLit: '#a8987e', rockShade: '#443c32', rockWarm: '#ae8e6c', soil: '#7a6648', meadow: '#8a8456',
@@ -107,19 +113,19 @@ export const PACKS = {
       forestNear: '#2a3628', forestFar: '#48523e', moss: '#6e6e46', snow: '#f0f3f6', snowShade: '#aebccb',
       water: '#2a3a40', waterDeep: '#141e22', wetRock: '#36322a', lichen: '#8a8868' },
     rules: { snowlineM: 3300, snowFullM: 3600, snowMaxSlopeDeg: 45, treelineM: 3200, forestMaxSlopeDeg: 30,
-      forestDensity: 0.12, moss: 0.05, wetness: 0.1, strata: 0.4 } },
+      forestDensity: 0.12, moss: 0.05, wetness: 0.1, strata: 0.4, forestFloorM: 2000, treeScale: 0.3, airScale: 0.6 } },
   canyon: { biomes: ['CANYON'], textures: DESERTY,
     palette: { rockLit: '#b8805a', rockShade: '#4e2e22', rockWarm: '#c89468', soil: '#9a6a48', meadow: '#8a7a54',
       forestNear: '#2e3a2a', forestFar: '#4a5040', moss: '#6a6040', snow: '#f4f2f0', snowShade: '#bcc0c8',
       water: '#2e3c3c', waterDeep: '#141c1c', wetRock: '#442a20', lichen: '#8a7a60' },
     rules: { snowlineM: 3600, snowFullM: 3900, snowMaxSlopeDeg: 40, treelineM: 3400, forestMaxSlopeDeg: 28,
-      forestDensity: 0.08, moss: 0.02, wetness: 0.05, strata: 0.9 } },
+      forestDensity: 0.08, moss: 0.02, wetness: 0.05, strata: 0.9, forestFloorM: 1700, treeScale: 0.45, airScale: 0.6 } },
   desert: { biomes: ['DESERT'], textures: DESERTY,
     palette: { rockLit: '#a8906e', rockShade: '#46382a', rockWarm: '#b89266', soil: '#96805a', meadow: '#8e8660',
       forestNear: '#303a2a', forestFar: '#4e5440', moss: '#706a48', snow: '#f2f2f2', snowShade: '#b8bec8',
       water: '#2e3c3e', waterDeep: '#141c1e', wetRock: '#3e3226', lichen: '#8e8468' },
     rules: { snowlineM: 3000, snowFullM: 3200, snowMaxSlopeDeg: 42, treelineM: 2600, forestMaxSlopeDeg: 30,
-      forestDensity: 0.1, moss: 0.02, wetness: 0.05, strata: 0.55 } },
+      forestDensity: 0.1, moss: 0.02, wetness: 0.05, strata: 0.55, forestFloorM: 1800, treeScale: 0.3, airScale: 0.5 } },
 };
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');

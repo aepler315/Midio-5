@@ -14,6 +14,7 @@
 // package's own heights. These are derived habitat masks, not measured
 // land cover.
 import { terrainHeightAt } from './TerrainMesh.js';
+import { RULE_DEFAULTS } from './MaterialPackage.js';
 import { cameraPoseAt } from '../terrain/SceneTravel.js';
 
 export const LATTICE_M = 13;
@@ -115,6 +116,7 @@ function* placeForestSteps(data, view, rules, { seed = 0, rings = FOREST_RINGS, 
   const eyeA = cameraPoseAt(view, 0).eyeM, eyeB = cameraPoseAt(view, 1).eyeM;
   const b = bands || data.manifest.bands || { nearM: 1800, midM: 7000 };
   const treeline = rules.treelineM, maxSlope = rules.forestMaxSlopeDeg, density = rules.forestDensity;
+  const floor = rules.forestFloorM ?? RULE_DEFAULTS.forestFloorM, scale = rules.treeScale ?? RULE_DEFAULTS.treeScale;
   // Typed chunks, not growing JS arrays: a 300k-tree view would otherwise
   // reallocate and copy millions of elements in single long pauses.
   const mesh = new FloatChunks(), board = new FloatChunks();
@@ -138,6 +140,9 @@ function* placeForestSteps(data, view, rules, { seed = 0, rings = FOREST_RINGS, 
         // Treeline with a stand-scale breakup, as the shader does.
         const edge = treeline + (u01(hash2(Math.floor(x / 90), Math.floor(z / 90), seed + 9)) - 0.5) * 220;
         if (y > edge) continue;
+        // Lower forest limit (dry valley floors), with the same breakup.
+        const breakup = u01(hash2(Math.floor(x / 90), Math.floor(z / 90), seed + 10)) - 0.5;
+        if (y < floor + breakup * 200) continue;
         const slope = slopeDegAt(data, x, z, cs);
         if (!(slope <= maxSlope + (u01(h3) - 0.5) * 6)) continue;
         if (isWater(data, x, z)) continue;
@@ -145,7 +150,7 @@ function* placeForestSteps(data, view, rules, { seed = 0, rings = FOREST_RINGS, 
         if (d > rings.billboardM) continue;
         // Height tapers toward the treeline and on steep ground.
         const vigor = Math.min(1, Math.max(0.35, (edge - y) / 400)) * (1 - 0.3 * Math.max(0, slope - 25) / 25);
-        const height = (18 + 30 * u01(h3)) * vigor;
+        const height = (18 + 30 * u01(h3)) * vigor * scale;
         const width = height * (0.42 + 0.16 * u01(h1 ^ h2));
         const band = d < b.nearM ? 2 : d < b.midM ? 1 : 0;
         const rec = [x, y, z, height, width, (h2 >>> 8) % 4, u01(hash2(ix, iz, seed + 4)), band];

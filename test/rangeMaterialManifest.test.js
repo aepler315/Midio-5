@@ -57,6 +57,34 @@ test('validation rejects colour-managed or incomplete packs', () => {
   bad((c) => { c.rules.treelineM = NaN; }, /treelineM/);
   bad((c) => { c.version = 9; }, /version/);
   bad((c) => { c.textures.canopy.sha256 = 'x'; }, /sha256/);
+  bad((c) => { c.rules.forestFloorM = 'low'; }, /forestFloorM/);
+  bad((c) => { c.rules.treeScale = 0; }, /treeScale/);
+  bad((c) => { c.rules.airScale = -1; }, /airScale/);
+  // The optional rules may be absent.
+  const plain = structuredClone(base);
+  for (const k of ['forestFloorM', 'treeScale', 'airScale']) delete plain.rules[k];
+  assert.deepEqual(validateMaterialManifest(plain), { ok: true, errors: [] });
+});
+
+test('habitat rules follow each biome\'s real vegetation and snow', () => {
+  const byId = Object.fromEntries(packs.map(({ m }) => [m.id, m]));
+  // Dry country: open valley floors, small trees, clearer air.
+  for (const id of ['steppe', 'canyon', 'desert']) {
+    const r = byId[id].rules;
+    assert.ok(r.forestFloorM > 1000, `${id} forest starts above its valley floors`);
+    assert.ok(r.treeScale < 1, `${id} grows small trees`);
+    assert.ok(r.airScale < 1, `${id} air is clearer than wet ranges'`);
+  }
+  // Wet and alpine packs keep the defaults (their approvals depend on them).
+  for (const id of ['wet-conifer', 'dry-conifer', 'icefield']) {
+    for (const k of ['forestFloorM', 'treeScale', 'airScale']) assert.ok(!(k in byId[id].rules), `${id} ${k}`);
+  }
+  // Southern Appalachian forest reaches the summits (Mitchell 2037 m).
+  assert.ok(byId.broadleaf.rules.treelineM > 2037);
+  // Boreal forest stands above northern lakes (Muncho Lake ~817 m); summer
+  // tundra and taiga are not an icefield.
+  assert.ok(byId.taiga.rules.treelineM > 1200);
+  for (const id of ['taiga', 'tundra']) assert.ok(byId[id].rules.snowlineM > byId.icefield.rules.snowlineM + 1000, id);
 });
 
 test('GPU ownership counts each shared texture once, with mips', () => {

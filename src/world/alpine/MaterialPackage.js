@@ -11,6 +11,11 @@ export const PALETTE_KEYS = Object.freeze(['rockLit', 'rockShade', 'rockWarm', '
   'moss', 'snow', 'snowShade', 'water', 'waterDeep', 'wetRock', 'lichen']);
 export const RULE_KEYS = Object.freeze(['snowlineM', 'snowFullM', 'snowMaxSlopeDeg', 'treelineM', 'forestMaxSlopeDeg',
   'forestDensity', 'moss', 'wetness', 'strata']);
+// Optional rules: dry-country packs keep valley floors open below a lower
+// forest limit (forestFloorM), grow smaller trees (treeScale) and see
+// through clearer air (airScale multiplies the distance haze).
+export const OPTIONAL_RULE_KEYS = Object.freeze(['forestFloorM', 'treeScale', 'airScale']);
+export const RULE_DEFAULTS = Object.freeze({ forestFloorM: -100000, treeScale: 1, airScale: 1 });
 const HEX = /^#[0-9a-f]{6}$/i;
 
 export function validateMaterialManifest(m) {
@@ -33,6 +38,8 @@ export function validateMaterialManifest(m) {
   }
   for (const k of PALETTE_KEYS) if (!HEX.test(m.palette?.[k] || '')) errors.push(`palette ${k}`);
   for (const k of RULE_KEYS) if (!Number.isFinite(m.rules?.[k])) errors.push(`rule ${k}`);
+  for (const k of OPTIONAL_RULE_KEYS) if (m.rules && k in m.rules && !Number.isFinite(m.rules[k])) errors.push(`rule ${k}`);
+  for (const k of ['treeScale', 'airScale']) if (m.rules && k in m.rules && !(m.rules[k] > 0)) errors.push(`rule ${k}`);
   return { ok: !errors.length, errors };
 }
 

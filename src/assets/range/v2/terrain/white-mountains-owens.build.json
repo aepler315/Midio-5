@@ -124,21 +124,21 @@
    "lengthKm": 26.866680854586036
   }
  ],
- "manifestSha256": "025cad21e1bb63b63d4db0e3e96c1efb3cd42ebf0318d421eb4dd542ff6e9f3c",
- "payloadSha256": "8e996a82ea86facf5167886b4aaf33fef5f9564c96949f972489962927037e60",
- "payloadBytes": 1214499,
+ "manifestSha256": "a83a16041b1153ff3babe0a156ed1e54ce47acb9d663f42cca2e53223800fb83",
+ "payloadSha256": "85cc9eac527de9ddc523e7c56c65b980694c3731f8279703c5618adff0d00e10",
+ "payloadBytes": 1215850,
  "stats": {
   "tiles": 213,
   "desktop": {
-   "vertices": 707915,
-   "triangles": 1370100,
-   "meshBytes": 24936180,
+   "vertices": 708616,
+   "triangles": 1371378,
+   "meshBytes": 24959928,
    "surfaceTextureBytes": 27579072
   },
   "mobile": {
-   "vertices": 405905,
-   "triangles": 781104,
-   "meshBytes": 14244108,
+   "vertices": 407451,
+   "triangles": 783900,
+   "meshBytes": 14296212,
    "surfaceTextureBytes": 27579072
   }
  },
@@ -162,5 +162,6 @@
   "desktop": 0.969,
   "mobile": 1.986
  },
- "despikedSamples": 0
+ "despikedSamples": 0,
+ "gentleGroundSmoothingM": null
 }

@@ -8,7 +8,7 @@
   "id": "teton-jackson-lake",
   "regionId": "tetons",
   "biome": "CONIFER",
-  "status": "candidate",
+  "status": "approved",
   "notes": "Over the south arm of Jackson Lake looking south-west across the water to Mount Moran and the Cathedral Group.",
   "dem": {
    "source": "3dep13",
@@ -75,6 +75,17 @@
   ],
   "title": "Teton Range",
   "place": "Jackson Lake, Wyoming",
+  "approval": {
+   "date": "2026-09-29",
+   "terrainManifestSha256": "e98c6ab7e7fe80ca393867f053b178b40c742724b5d663ee7b1320ba16ba9ea0",
+   "materialManifestSha256": "6afff55ebe7762475b09f09fa8f60627714d051f9f117ffffd8e124894281175",
+   "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+   "cameraSha256": "eda9f5f9370642792602854f1dab20861e664781068cdeba95bbb2ecb5c8726d",
+   "evidence": [
+    "docs/evidence/range-v2/teton-jackson-lake-stations.jpg",
+    "docs/evidence/range-v2/teton-jackson-lake-inapp-10s.jpg"
+   ]
+  },
   "camera": {
    "eyeStartM": [
     4078.8,
@@ -135,21 +146,21 @@
    "lengthKm": 56.94031264795068
   }
  ],
- "manifestSha256": "e98c6ab7e7fe80ca393867f053b178b40c742724b5d663ee7b1320ba16ba9ea0",
- "payloadSha256": "64167571a7ce9b474c554c5550e7af986c9d872d1de14e1b484ddf6602b2a816",
- "payloadBytes": 1274358,
+ "manifestSha256": "bd3b57442d203981a66be4e1e23df677116f9a562d7a39497f0a0e0e01b429b1",
+ "payloadSha256": "4d6c2aae717cba1c485d3533ac0406e21ab14733c459b065eec71cdbbcead4f2",
+ "payloadBytes": 1282262,
  "stats": {
   "tiles": 251,
   "desktop": {
-   "vertices": 762158,
-   "triangles": 1475338,
-   "meshBytes": 26849952,
+   "vertices": 766994,
+   "triangles": 1484050,
+   "meshBytes": 27012528,
    "surfaceTextureBytes": 26784432
   },
   "mobile": {
-   "vertices": 507771,
-   "triangles": 979936,
-   "meshBytes": 17852484,
+   "vertices": 515892,
+   "triangles": 994582,
+   "meshBytes": 18125688,
    "surfaceTextureBytes": 26784432
   }
  },
@@ -185,7 +196,8 @@
  ],
  "achievedErrorPx": {
   "desktop": 0.998,
-  "mobile": 1.958
+  "mobile": 1.956
  },
- "despikedSamples": 0
+ "despikedSamples": 0,
+ "gentleGroundSmoothingM": null
 }

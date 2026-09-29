@@ -2,8 +2,8 @@
 // through the shared travel seam; the outgoing view stays valid throughout.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RangePresentation } from '../src/world/alpine/RangePresentation.js';
-import { travelSeam, travelSpans } from '../src/world/TravelSeam.js';
+import { RangePresentation, V2_TRAVEL_BANDS } from '../src/world/alpine/RangePresentation.js';
+import { travelSeam, travelSpans, TRAVEL_BANDS } from '../src/world/TravelSeam.js';
 
 const camera = { eyeStartM: [0, 1500, 0], eyeEndM: [10, 1500, 0], targetStartM: [0, 700, -9000], targetEndM: [10, 700, -9000], fovYDeg: 35 };
 const view = (id, biome) => ({ id, regionId: 'r', biome, status: 'approved', catalogVersion: 1,
@@ -383,4 +383,28 @@ test('the late-join marker is forgotten once its travel is over', async () => {
   travel(80, 0.2);
   assert.equal(p.snapshot().incomingViewId, 'b');
   assert.equal(p.incomingFade, 1);
+});
+
+test('the v2 seam feathers in fine whole-pixel bands; the legacy strips keep their four', async () => {
+  assert.equal(travelSpans(W, 'L2', 0.5).bands.length, TRAVEL_BANDS, 'legacy default unchanged');
+  assert.ok(V2_TRAVEL_BANDS >= 12);
+  const { p } = await presentation();
+  const start = inputs(0); start.sim.biomes.currentBlend = { from: 'RAINFOREST', to: 'TAIGA', t: 0.001, travel: true, travelP: 0 };
+  p.setFrameInputs(start);
+  p.beginScenic();
+  p.setFrameInputs(inputs(0.6));
+  assert.equal(p.beginScenic(), true);
+  p.drawPartition(recordingCtx(), 'far', { width: W, height: H });
+  const draws = scratches.at(-1).ctx.draws;
+  const bBands = draws.filter((d) => d.id === 'b' && d.clip[1] - d.clip[0] < W / 4);
+  assert.equal(bBands.length, V2_TRAVEL_BANDS, 'one incoming draw per feather band');
+  // Whole-pixel edges, each band meeting the next exactly.
+  for (const d of draws) for (const e of d.clip) assert.equal(e, Math.round(e));
+  const edges = bBands.map((d) => d.clip).sort((a, b) => a[0] - b[0]);
+  for (let i = 1; i < edges.length; i++) assert.equal(edges[i][0], edges[i - 1][1]);
+  // Weight rises in small steps and every column stays fully covered.
+  const { lo, hi } = travelSpans(W, 'L2', p.seamP, V2_TRAVEL_BANDS);
+  for (let x = Math.ceil(Math.max(0, lo)); x < Math.min(W, hi); x += 3) {
+    assert.ok(Math.abs(coverageAt(draws, x).total - 1) < 1e-9);
+  }
 });
