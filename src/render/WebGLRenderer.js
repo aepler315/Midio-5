@@ -224,6 +224,8 @@ export class WebGLRenderer {
     }
   }
 
+  get drawCount() { return this.canvasRenderer?.drawCount ?? 0; }
+
   /** Same interface as Renderer.draw — always draws the Canvas scene first. */
   draw(sim, alpha) {
     this.canvasRenderer.draw(sim, alpha);

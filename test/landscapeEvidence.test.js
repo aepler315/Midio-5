@@ -70,12 +70,14 @@ test('travel evidence rejects a dissolve that never painted moving seams', async
     dpr: 1, worldKind: 'alpine', ranges: [], clock: { timeMs: spec.timeMs },
     blend: { from: spec.biome, to: spec.transition.to, t: spec.transition.t },
     travelCompositeLayers: [], pngData: '',
+    quality: { requested: spec.level, actual: spec.level }, finalDraws: 1,
   }) };
   await assert.rejects(captureLandscapeCase(page, spec), /travel seam/);
   page.evaluate = async () => ({
     dpr: 1, worldKind: 'alpine', ranges: [], clock: { timeMs: spec.timeMs },
     blend: { travel: true, travelP: spec.transition.t },
     travelCompositeLayers: ['L2', 'L3'], pngData: '',
+    quality: { requested: spec.level, actual: spec.level }, finalDraws: 1,
   });
   await assert.rejects(captureLandscapeCase(page, spec), /travel seam/);
 });

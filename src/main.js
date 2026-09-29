@@ -1528,8 +1528,11 @@ worldChooseForMeEl?.addEventListener('click', () => chooseRecommendedWorld());
 /** Step the armed export clock to `timeMs` and draw that instant.
  *  stepExportClock takes whole fixed steps, so the frame is drawn -- and
  *  reported -- at the instant actually simulated, up to one step short of
- *  the one asked for; the remainder carries into the next frame. */
-function renderExportFrame(timeMs) {
+ *  the one asked for; the remainder carries into the next frame.
+ *  `beforeDraw` (evidence fixtures only) runs after the clock has stepped
+ *  and before the one draw, so a fixture configures the frame it captures
+ *  instead of painting a second time over the natural one. */
+function renderExportFrame(timeMs, { beforeDraw = null } = {}) {
   if (!bulkExportArmed || !sim || !renderer) throw new Error('Bulk export is not armed.');
   const target = Number(timeMs);
   if (!Number.isFinite(target)) throw new Error('Export frame time is not a number.');
@@ -1542,8 +1545,13 @@ function renderExportFrame(timeMs) {
     step: (dt, at) => sim.step(dt, at),
   });
   simTime = advanced.simTime;
+  if (typeof beforeDraw === 'function') beforeDraw();
+  const drawsBefore = renderer.drawCount ?? 0;
   renderer.draw(sim, 0);
-  return { width: canvas.width, height: canvas.height, timeMs: simTime };
+  return {
+    width: canvas.width, height: canvas.height, timeMs: simTime,
+    draws: (renderer.drawCount ?? 0) - drawsBefore,
+  };
 }
 
 /** Rebuild the current song at an exact frame size and arm the export clock.
@@ -1965,8 +1973,11 @@ function startTimeline(timelineData, extra = {}) {
     get durationMs() { return conductor?.durationMs || 0; },
     get exportSize() { return { width: canvas.width, height: canvas.height }; },
     beginBulkExport: (size) => beginBulkExport(size),
-    renderExportFrame: (timeMs) => renderExportFrame(timeMs),
+    renderExportFrame: (timeMs, options) => renderExportFrame(timeMs, options),
     get perfLevel() { return perfGovernor?.level ?? null; },
+    // The load generation this simulation belongs to; evidence records it
+    // so a late response from an older load can be told apart.
+    get generation() { return loadGen; },
     get perf() { return perfGovernor || null; },
     // Car mode (KeepAwake.js): live state for debugging on a head unit, plus
     // the one hook a smoke test needs -- backdating the last-input clock, so

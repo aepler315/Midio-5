@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { casesForPreset, caseId, RANGE_FIXTURES, requireBiomes } from './lib/landscape-fixtures.mjs';
-import { assertActualDpr, claimCase, sha256File, sha256Text, verifyServedIdentity } from './lib/landscape-evidence.mjs';
+import { assertActualDpr, assertCaptureState, claimCase, sha256File, sha256Text, verifyServedIdentity } from './lib/landscape-evidence.mjs';
 import { visibleCrestFraction, bodyAreaFraction } from './lib/landscape-visibility.mjs';
 import { installLandscapeRanges, paintLandscapeFrame, seedBrowserConstruction } from './lib/landscape-browser.mjs';
 
@@ -60,6 +60,7 @@ function frameMetrics(detail, spec) {
 export async function captureLandscapeCase(page, spec) {
   const detail = await page.evaluate(paintLandscapeFrame, spec);
   assertActualDpr(spec.dpr, detail.dpr);
+  assertCaptureState(detail);
   assert.equal(detail.worldKind, 'alpine');
   for (const side of detail.ranges) assert.deepEqual(side.ids, RANGE_FIXTURES[side.biome],
     `wrong range fixture for ${side.biome}`);

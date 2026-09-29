@@ -139,11 +139,15 @@ export class Renderer {
     // works if sim.biomes were ever null (the fallback-sky branch below).
     this._filmLerpCache = new LerpCache();
     this._groundResponse = new GroundResponse();
+    // Completed stage draws. Evidence tools compare it across one capture
+    // to prove a fixture frame was painted exactly once at its time.
+    this.drawCount = 0;
   }
 
   dispose() { this._groundResponse.dispose(); }
 
   draw(sim, alpha) {
+    this.drawCount++;
     const { ctx, canvas } = this;
     const fracture = sim.fracture || null;
     this._styleDials = styleDials(sim.visualStyle);
