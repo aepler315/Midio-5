@@ -1,6 +1,6 @@
 {
   "about": "Range v2 scenic views: curated real terrain corridors with authored camera rails. Authoring source for tools/build-range-scene.mjs; the runtime catalog (src/assets/range/v2/catalog.json) is generated from it. Rail anchors are lon/lat (NAD83 for 3DEP sources) with an absolute height (heightM, metres above the source vertical datum) or a height above the DEM ground (aboveGroundM). status: candidate | approved | rejected; only approved views are production-eligible.",
-  "catalogVersion": 15,
+  "catalogVersion": 17,
   "views": [
     {
       "id": "nc-ross-lake-north",
@@ -1093,7 +1093,7 @@
       "id": "chugach-matanuska",
       "regionId": "chugach-mountains",
       "biome": "ICEFIELD",
-      "status": "candidate",
+      "status": "approved",
       "notes": "From the Glenn Highway bench above the Matanuska River looking south up Matanuska Glacier into the Chugach Mountains.",
       "dem": {
         "source": "terrarium",
@@ -1141,13 +1141,24 @@
       },
       "landmarks": [],
       "title": "Chugach Mountains",
-      "place": "Matanuska Glacier, Alaska"
+      "place": "Matanuska Glacier, Alaska",
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "1dc2cd8e74ffc2a7201b35b833fc84be693afd2a5280c8ef2185e545cb4c420a",
+        "materialManifestSha256": "ac0da317cbbc611f7b9a47755b4d66705d11b37b4fbceab783d918a79d6d49ae",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "cameraSha256": "b2658692b7cd4c107723137252728e5f83949c9a704cb52d6ab4e3904397aa33",
+        "evidence": [
+          "docs/evidence/range-v2/chugach-matanuska-stations.jpg",
+          "docs/evidence/range-v2/chugach-matanuska-inapp-10s.jpg"
+        ]
+      }
     },
     {
       "id": "wrangell-copper-river",
       "regionId": "wrangell-mountains",
       "biome": "TUNDRA",
-      "status": "candidate",
+      "status": "rejected",
       "notes": "From the Copper River bluffs near Copper Center looking east-north-east across the tundra lowland to Mount Drum, Mount Sanford and Mount Wrangell.",
       "dem": {
         "source": "terrarium",
@@ -1220,13 +1231,14 @@
         }
       ],
       "title": "Wrangell Mountains",
-      "place": "Copper River basin, Alaska"
+      "place": "Copper River basin, Alaska",
+      "review": "2026-09-29 review (21 stations neutral/silhouette, 61-frame motion, in-app frame): the real landform (Mount Drum, Sanford and Wrangell) is traceable, but the near and middle ground is one broad, smooth shield-volcano slope from the z11 source with little internal relief, and it fills the left third of the frame. Weaker than Tombstone for TUNDRA; not added for coverage."
     },
     {
       "id": "monument-valley-163",
       "regionId": "monument-valley",
       "biome": "CANYON",
-      "status": "candidate",
+      "status": "approved",
       "notes": "From US-163 at Forrest Gump Point looking south-west down the highway to the Mittens and Merrick Butte.",
       "dem": {
         "source": "3dep13",
@@ -1273,7 +1285,21 @@
       },
       "landmarks": [],
       "title": "Monument Valley",
-      "place": "Navajo Nation, Utah and Arizona"
+      "place": "Navajo Nation, Utah and Arizona",
+      "materialRules": {
+        "forestFloorM": 1900
+      },
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "78779fcd2a016e3777d524969955edb225e64db416ca02ee1708c8cb9825720e",
+        "materialManifestSha256": "ca6259b1e0cd2b10e4aae9e84abbe9c95b32976767ef372aa3caac4e73c326ce",
+        "materialRulesSha256": "2a9b384b5702447699ced44be1e44f012f28275ec78457db88d62a812d8400b7",
+        "cameraSha256": "c8850b71230e96d2c87c012303b01d8e13162f56aa5a708a727e0d472551de15",
+        "evidence": [
+          "docs/evidence/range-v2/monument-valley-163-stations.jpg",
+          "docs/evidence/range-v2/monument-valley-163-inapp-10s.jpg"
+        ]
+      }
     }
   ]
 }

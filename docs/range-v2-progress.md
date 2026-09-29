@@ -9,8 +9,8 @@ Reference image: `docs/evidence/range-v2/reference.webp` (1806×871, documentati
 | --- | --- |
 | Branch | `claude/amazing-brown-tbiycu` |
 | Base | `b8a3d72b344792d149906449f1cd86d68df8cc2b` (= audited SHA; `origin/main` rechecked 2026-09-29) |
-| Last completed task | 16 (resource, lifecycle, quality ladder; device runs outstanding) |
-| Next action | Task 17 — complete-output verification and delivery (`docs/range-v2-validation.md`); device runs per `docs/range-v2-device-runs.md` |
+| Last completed task | 16; Task 17 in progress (v2 default, 13 approved views, evidence identity) |
+| Next action | Task 17: the §10 sequence on the staged site (`--suite complete`), `docs/range-v2-validation.md`, diff review; device runs per `docs/range-v2-device-runs.md` |
 
 ## Decisions recorded with the user (2026-09-29)
 
@@ -107,7 +107,7 @@ Second review pass (colour in-app frames of all ten candidates):
 
 First placements that failed, and why: the Black Mountains from Craggy Pinnacle hid the far crest at 18 of 21 stations (nearer ridges; now seen broadside from the Catawba side); Muncho Lake's first eye sat in the mountains east of the lake; the Tetons from the east shore were too far for the range to read (moved over the lake).
 
-## Task 15 approvals (catalog v15, 2026-09-29)
+## Task 15 approvals (catalog v17, 2026-09-29)
 
 Each view: 21-station neutral/silhouette review, 61-frame motion review, in-app frame at 10 s (`docs/evidence/range-v2/<id>-stations.jpg`, `<id>-inapp-10s.jpg`), and the far-crest gate at its worst station (single) and in travel against every other approved view. Hashes are the approval record's (first 12 hex).
 
@@ -124,8 +124,12 @@ Each view: 21-station neutral/silhouette review, 61-frame motion review, in-app 
 | STEPPE | `white-mountains-owens` | a83a16041b11 | ada04aa0d676 | 1.00 | open Owens Valley floor below the pinyon belt |
 | CANYON | `la-sal-castle-valley` | 930f04303855 | ca6259b1e0cd | 1.00 | scattered small trees on Castle Valley |
 | DESERT | `panamint-dantes-view` | b7d3479f3160 | 2beecf1f1647 | 1.00 | pale by nature (salt pan, 25 km to the crest); `water: false` |
+| ICEFIELD | `chugach-matanuska` | 1dc2cd8e74ff | ac0da317cbbc | 0.82 | Task 17 addition. Chugach Mountains above the Matanuska Glacier (Terrain Tiles z12): a real snow range with its valley opening; a second, different ICEFIELD view beside Denali |
+| CANYON | `monument-valley-163` | 78779fcd2a01 | ca6259b1e0cd | 0.76 | Task 17 addition. From US-163 toward the mesa wall and buttes (3DEP 1/3"). View rule `forestFloorM: 1900`: the canyon pack's 1700 m floor put conifers across the valley floor. The floor reads olive rather than red sand (the shared canyon colour ramp) |
 
-The plan aims for 12-18 views; 11 (one per biome) is delivered. Further views per biome are an open choice for the user.
+13 approved views: every biome has one, ICEFIELD and CANYON two. The plan aims for 12-18.
+
+Task 17 candidate rejected: **`wrangell-copper-river`** (TUNDRA; Terrain Tiles z11). Mount Drum, Sanford and Wrangell are traceable, but the near and middle ground is one broad, smooth shield-volcano slope with little internal relief, filling the left third of the frame. Weaker than Tombstone, and not added for coverage. Its published package was removed; its authoring and review stay in `data/terrain/scenic-views.json`.
 
 ### Natural song casts (production selector, no forced view)
 
@@ -189,14 +193,26 @@ Not exercised separately: switching to another *world* (as opposed to another so
 
 Device measurement: `tools/range-device-probe.js` and `docs/range-v2-device-runs.md` (Android, iPhone and desktop runs, report fields, acceptance). **No physical phone or GPU was available: device acceptance is unverified.** Software-rendered timings are not reported as device FPS.
 
+## Task 17: delivery (in progress)
+
+- **v2 is the default Range renderer.** `?rangeRenderer=legacy` opts out; unknown values take the default; any v2 failure still falls back to legacy per frame with a recorded reason. The site opens in the Range (one-world mode), so every visitor gets v2.
+- **CI browser contracts under the v2 default** (local run, own server): smoke, lighting, shading, seek, worlds, export, car, urlload, bootstrap, chooser and chooser-keyboard pass. Two needed a change. `tools/smoke.mjs` and `tools/export-smoke.mjs` open the Range as their first world card and play a 24 s song live; software GL takes seconds per v2 frame, so the song ended before the HUD could be clicked. Both test the app shell and the recorder, not the scenery, and now pin `?rangeRenderer=legacy` through `withLegacyRange()` (`tools/lib/allWorlds.mjs`). `range-landscape-smoke` pins legacy because it measures the legacy ridge painters. v2 output, including the real bulk exporter and recorder, is covered by `range-scene-smoke`.
+- **Evidence identity.** Every `range-scene-smoke` capture carries a digest of the files the page actually loaded under `src/` (modules, catalog, manifests, terrain buffers, textures, runtime bundle), each checked against the checkout. The served identity list also covers the quality ladder, atmosphere, strip cache, seam, forest, rock stage and `main.js`.
+- **Review fixes (Codex, two rounds on PR #336).**
+  - The device probe now: follows song restarts; measures the real cold start; reports per-frame render and copy totals; takes its peak from the ledger's own high-water mark.
+  - The lifecycle suite needs at least 5 cycles.
+  - A preparation that straddles a context loss or restore (context epoch) never publishes, and is retried.
+  - Startup strips are fallback from the first bake.
+  - A refused render target also asks for fallback strips to be dropped.
+
 ## Asset budget (60 MB ceiling)
 
 | Item | Size |
 | --- | --- |
-| Terrain packages (11 views) | 14.9 MiB payload (0.8-2.1 MiB each) + manifests: 17 MB on disk |
+| Terrain packages (13 views) | 17.0 MiB payload (0.8-2.1 MiB each) + manifests: 19.9 MB on disk |
 | Shared data textures (10 x 512^2 lossless WebP) | 7.0 MB |
 | Material packs (11 manifests) | 92 KB |
-| **Total `src/assets/range/v2/`** | **24 MB** |
+| **Total `src/assets/range/v2/`** | **27.2 MB** |
 | Three.js subset bundle | 0.54 MB |
 
 ## Decisions taken without asking (assumptions)
