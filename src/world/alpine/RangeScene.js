@@ -16,6 +16,11 @@ import { prepareTerrainAssets, RangeAssetError } from './RangeAssets.js';
 import { createSurfaceTexture, terrainUniforms, createBandGeometries } from './TerrainGL.js';
 import { sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromHex, createMaterialTextures, applyMaterial } from './TerrainMaterial.js';
 import { loadMaterialPack, materialGpuBytes } from './MaterialPackage.js';
+import { placeForest, forestKeepFraction } from './ForestCover.js';
+import { hashSeed } from '../../utils/math.js';
+import { createForest } from './ForestGL.js';
+import { buildRockStage } from './RockStage.js';
+import { RockStageGL } from './RockStageGL.js';
 import { cameraPoseAt } from '../terrain/SceneTravel.js';
 import { BANDS } from './TerrainMesh.js';
 
@@ -96,7 +101,7 @@ export class RangeScene {
     const res = this.residency?.reserve({ key, bytes, owner: 'range-targets' });
     if (this.residency && !res) throw new RangeAssetError('budget', `no room for a ${w}x${h} range target`);
     this.renderer.setPixelRatio(1);
-    this.renderer.setSize(w, h, false);
+    this._setCanvasSize(w, h);
     const THREE = this.THREE;
     this.target = new THREE.WebGLRenderTarget(w, h, {
       depthBuffer: true, stencilBuffer: false, type: THREE.UnsignedByteType,
@@ -105,6 +110,14 @@ export class RangeScene {
     this.size = { width: w, height: h };
     if (res) this.residency.commit(res, this.target, (t) => t.dispose());
     this.lastDepthFrame = -1;
+  }
+
+  /** The one drawing buffer is shared by scenic and ground images of
+   *  different sizes; resize it only when the next copy needs another. */
+  _setCanvasSize(w, h) {
+    if (this.canvasSize?.width === w && this.canvasSize?.height === h) return;
+    this.renderer.setSize(w, h, false);
+    this.canvasSize = { width: w, height: h };
   }
 
   isReady(viewId) { return this.prepared.has(viewId) && !this.contextLost; }
@@ -122,13 +135,19 @@ export class RangeScene {
       const THREE = this.THREE;
       const est = cpu.manifest.estimatedBytes?.[this.budget];
       const gpuKey = `range:terrain-gpu:${view.id}:${this.budget}`;
-      const bytes = (est?.meshBytes || 0) + (est?.surfaceTextureBytes || 0);
+      // The verified material pack comes first: its rules place the trees,
+      // which are placed on the CPU (a stable lattice) so their instance
+      // buffers are counted in the same GPU reservation.
+      const mat = await this._acquireMaterial(view, { baseUrl, signal });
+      if (signal?.aborted || !isCurrent(generation)) { this._releaseMaterial(view.id); throw new RangeAssetError('stale', `stale ${view.id}`); }
+      const rules = { ...mat.pack.manifest.rules, ...(view.materialRules || {}) };
+      const placed = placeForest(cpu.data, view, rules, { seed: hashSeed(view.id) });
+      const forestBytes = placed.count * 7 * 4;
+      const bytes = (est?.meshBytes || 0) + (est?.surfaceTextureBytes || 0) + forestBytes;
       const res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation });
-      if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
-      let surface, geos, material;
+      if (this.residency && !res) { this._releaseMaterial(view.id); throw new RangeAssetError('budget', `no GPU room for ${view.id}`); }
+      let surface, geos, material, forest, stageGL;
       try {
-        const mat = await this._acquireMaterial(view, { baseUrl, signal });
-        if (signal?.aborted || !isCurrent(generation)) throw new RangeAssetError('stale', `stale ${view.id}`);
         surface = createSurfaceTexture(THREE, cpu.data);
         const base = terrainUniforms(THREE, cpu.data, surface);
         const uniforms = sceneUniforms(THREE, base);
@@ -149,13 +168,17 @@ export class RangeScene {
         }
         material.depthFunc = THREE.LessEqualDepth;
         material.depthWrite = false;
+        forest = createForest(THREE, placed, uniforms);
+        stageGL = new RockStageGL(THREE, { textures: mat.textures, palette: mat.pack.manifest.palette, rules });
+        for (const band of BANDS) for (const m of forest.byBand[band]) scenes[band].add(m);
+        for (const d of forest.depth) depthScene.add(d);
         // Compile now, not in the first playing frame.
         this.renderer.compile(scenes.far, this.camera);
         this.renderer.compile(depthScene, this.camera);
         const prepared = {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
           surface, uniforms, material, depthMaterial, geometries: geos.geometries, scenes, depthScene,
-          stats: geos.stats, gpuKey, cpuKey: cpu.key,
+          forest, stageGL, stats: { ...geos.stats, trees: forest.counts }, gpuKey, cpuKey: cpu.key,
         };
         if (signal?.aborted || !isCurrent(generation)) throw new RangeAssetError('stale', `stale ${view.id}`);
         if (res && !this.residency.commit(res, prepared, (p) => this._disposePrepared(p))) {
@@ -166,6 +189,8 @@ export class RangeScene {
       } catch (err) {
         if (res) this.residency.release(gpuKey);
         this._releaseMaterial(view.id);
+        forest?.dispose();
+        stageGL?.dispose();
         material?.dispose();
         surface?.texture?.dispose();
         for (const g of Object.values(geos?.geometries || {})) g.dispose();
@@ -208,6 +233,8 @@ export class RangeScene {
   }
 
   _disposePrepared(p) {
+    p.forest?.dispose();
+    p.stageGL?.dispose();
     for (const g of Object.values(p.geometries || {})) g.dispose();
     p.surface?.texture?.dispose();
     p.material?.dispose();
@@ -255,6 +282,8 @@ export class RangeScene {
     u.uDeformK.value = m.waveK;
     u.uDeformDir.value.set(m.waveDir[0], m.waveDir[1]);
     u.uDeformPhase.value = m.phaseRad;
+    u.uTime.value = frame.timeMs / 1000;
+    u.uForestKeep.value = forestKeepFraction(frame.qualityLevel);
     const c = frame.light.celestial;
     // Unproject the celestial's stage position into a world direction.
     const ndcX = c.xFrac * 2 - 1, ndcY = 1 - c.yFrac * 2;
@@ -300,12 +329,59 @@ export class RangeScene {
     p.uniforms.uDiag.value = this.diag === 'markers' && pass === 'far' ? 1 : 0;
     r.render(p.scenes[pass], this.camera);
     r.setRenderTarget(null);
+    this._setCanvasSize(this.size.width, this.size.height);
     r.clear(true, true, false);
     this._copy.mesh.material.uniforms.uColor.value = this.target.texture;
     r.render(this._copy.scene, this._copy.camera);
     this.stats.partitions++;
     this.stats.lastPartitionMs = performance.now() - t0;
     return this.canvas;
+  }
+
+  /**
+   * Render the fixed-ground rock stage for `frame` at the ground backing
+   * size and return { canvas, stage } -- the canvas valid until the next
+   * render call, the stage carrying exact pool polygons (wet masks).
+   */
+  renderGround(frame, viewId = frame.viewFromId) {
+    const p = this.prepared.get(viewId);
+    if (!p || this.contextLost) return null;
+    const vp = frame.groundViewport;
+    const w = Math.max(2, Math.round(vp.backingWidth)), h = Math.max(2, Math.round(vp.backingHeight));
+    if (!this.groundTarget || this.groundTarget.width !== w || this.groundTarget.height !== h) {
+      const key = 'range:ground-target';
+      this.residency?.release(key);
+      this.groundTarget?.dispose();
+      const res = this.residency?.reserve({ key, bytes: w * h * 8, owner: 'range-targets' });
+      if (this.residency && !res) return null;
+      const THREE = this.THREE;
+      this.groundTarget = new THREE.WebGLRenderTarget(w, h, { depthBuffer: true, stencilBuffer: false,
+        minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+      if (res) this.residency.commit(res, this.groundTarget, (t) => t.dispose());
+    }
+    const stage = buildRockStage({ bars: frame.groundBars, width: vp.logicalWidth, height: vp.logicalHeight,
+      worldX: frame.worldX, originX: frame.originX, seed: frame.seed });
+    const u = p.uniforms;
+    // The scene's key light, re-expressed for the stage: from behind and
+    // above, on the celestial's side of the frame.
+    const THREE = this.THREE;
+    const c = frame.light.celestial;
+    const lightDir = new THREE.Vector3((0.5 - c.xFrac) * 1.4, 0.55 + 0.6 * c.altitude01, -0.45).normalize();
+    p.stageGL.update(stage, { width: vp.logicalWidth, height: vp.logicalHeight, frame, lightDir,
+      skyZenith: u.uSkyZenith.value, skyHorizon: u.uSkyHorizon.value });
+    p.stageGL.uniforms.uKeyColor.value.copy(u.uLightColor.value).multiplyScalar(0.8);
+    p.stageGL.uniforms.uDiag.value = this.diag === 'markers' ? 1 : 0;
+    const r = this.renderer;
+    this._setCanvasSize(w, h);
+    r.setRenderTarget(this.groundTarget);
+    r.setClearColor(0x000000, 0);
+    r.clear(true, true, false);
+    r.render(p.stageGL.scene, p.stageGL.camera);
+    r.setRenderTarget(null);
+    r.clear(true, true, false);
+    this._copy.mesh.material.uniforms.uColor.value = this.groundTarget.texture;
+    r.render(this._copy.scene, this._copy.camera);
+    return { canvas: this.canvas, stage };
   }
 
   _restore() {
@@ -326,7 +402,9 @@ export class RangeScene {
   dispose() {
     for (const id of [...this.prepared.keys()]) this.release(id);
     this.residency?.release('range:render-target');
+    this.residency?.release('range:ground-target');
     this.target?.dispose();
+    this.groundTarget?.dispose();
     this._copy.mesh.geometry.dispose();
     this._copy.mesh.material.dispose();
     this.renderer.dispose();

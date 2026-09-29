@@ -220,6 +220,27 @@ export class RangePresentation {
     return true;
   }
 
+  /** Composite the rock stage under the fixed-ground transform. */
+  drawGround(ctx, stage) {
+    if (!this.active || !this.frame) return false;
+    const out = this.scene.renderGround(this.frame, this.viewId);
+    if (!out) return false;
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(out.canvas, 0, 0, stage.width, stage.height);
+    ctx.restore();
+    this.stage = out.stage;
+    return true;
+  }
+
+  /** Wet receivers for GroundResponse / reflections: exact pool polygons
+   *  in fixed-ground coordinates (no rectangles). */
+  groundReceivers() {
+    if (!this.active || !this.stage) return null;
+    return { wetMasks: this.stage.wetMasks, litEdges: [], pools: this.stage.pools };
+  }
+
   snapshot() {
     return {
       mode: this.mode, active: this.active, reason: this.reason, viewId: this.active ? this.viewId : null,

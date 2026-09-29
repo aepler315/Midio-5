@@ -24,6 +24,9 @@
   import { terrainHeightAt } from '../world/alpine/TerrainMesh.js';
   import { sceneUniforms, createSceneMaterial, createMaterialTextures, applyMaterial, setLinearFromHex } from '../world/alpine/TerrainMaterial.js';
   import { loadMaterialPack } from '../world/alpine/MaterialPackage.js';
+  import { placeForest } from '../world/alpine/ForestCover.js';
+  import { createForest } from '../world/alpine/ForestGL.js';
+  import { hashSeed } from '../utils/math.js';
 
   const q = new URLSearchParams(location.search);
   const status = document.getElementById('status');
@@ -48,6 +51,15 @@
     if (q.get('material')) {
       const pack = await loadMaterialPack(q.get('material'));
       applyMaterial(prodUniforms, pack, createMaterialTextures(THREE, pack), view.materialRules || {});
+    }
+    // Trees on the same terrain, placed by the production ForestCover.
+    let forestMeshes = [];
+    if (q.get('material') && q.get('trees') !== '0') {
+      const pack = await loadMaterialPack(q.get('material'));
+      const placed = placeForest(pkg.data, view, { ...pack.manifest.rules, ...(view.materialRules || {}) }, { seed: hashSeed(view.id) });
+      const forest = createForest(THREE, placed, prodUniforms, { partitioned: false });
+      forestMeshes = [...forest.byBand.far, ...forest.byBand.mid, ...forest.byBand.near];
+      state.trees = forest.counts;
     }
     const lin = (hex) => setLinearFromHex(new THREE.Color(), hex);
     prodUniforms.uSkyZenith.value.copy(lin(q.get('zenith') || '#21374e'));
@@ -77,6 +89,7 @@
       camera.updateProjectionMatrix();
       const useProd = mode === 'material';
       for (const m of meshes) m.material = useProd ? prod : material;
+      for (const m of forestMeshes) { if (useProd && !m.parent) scene.add(m); if (!useProd && m.parent) scene.remove(m); }
       if (!useProd) material.uniforms.uMode.value = REVIEW_MODES[mode];
       if (useProd) {
         prodUniforms.uCameraPos.value.copy(camera.position);

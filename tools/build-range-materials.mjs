@@ -55,8 +55,8 @@ const ALPINE = { rockDetail: 'proc-cliff', rockNear: 'cc0-rock051', stage: 'cc0-
 const DESERTY = { ...ALPINE, rockNear: 'cc0-rock029', stage: 'cc0-rock055' };
 export const PACKS = {
   'wet-conifer': { biomes: ['RAINFOREST'], textures: ALPINE,
-    palette: { rockLit: '#4c5662', rockShade: '#262c34', rockWarm: '#54504a', soil: '#454a3e', meadow: '#4e5c44',
-      forestNear: '#28382f', forestFar: '#2e3e3a', moss: '#465438', snow: '#c9d5e4', snowShade: '#7d90aa',
+    palette: { rockLit: '#454e58', rockShade: '#1e242a', rockWarm: '#4e4a44', soil: '#454a3e', meadow: '#4e5c44',
+      forestNear: '#2c3e34', forestFar: '#33443f', moss: '#465438', snow: '#c9d5e4', snowShade: '#7d90aa',
       water: '#243442', waterDeep: '#16202a', wetRock: '#262e34', lichen: '#56604e' },
     rules: { snowlineM: 1850, snowFullM: 2250, snowMaxSlopeDeg: 52, treelineM: 1750, forestMaxSlopeDeg: 50,
       forestDensity: 0.92, moss: 0.7, wetness: 0.8, strata: 0.25 } },

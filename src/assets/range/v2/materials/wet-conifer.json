@@ -243,13 +243,13 @@
   }
  },
  "palette": {
-  "rockLit": "#4c5662",
-  "rockShade": "#262c34",
-  "rockWarm": "#54504a",
+  "rockLit": "#454e58",
+  "rockShade": "#1e242a",
+  "rockWarm": "#4e4a44",
   "soil": "#454a3e",
   "meadow": "#4e5c44",
-  "forestNear": "#28382f",
-  "forestFar": "#2e3e3a",
+  "forestNear": "#2c3e34",
+  "forestFar": "#33443f",
   "moss": "#465438",
   "snow": "#c9d5e4",
   "snowShade": "#7d90aa",

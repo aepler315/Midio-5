@@ -92,14 +92,17 @@ export const SCENE_FRAG = /* glsl */`
   // geometric normal; returns the world-space normal offset in .xyz via
   // whiteout blending and the blended B/A in .ba of the second output.
   struct Tri { vec3 dn; float b; float h; };
-  Tri triplanar(sampler2D t, vec3 p, vec3 n, float scale, float rot) {
+  Tri triplanar(sampler2D t, vec3 p, vec3 n, float scale, float rot) { return triplanarRib(t, p, n, scale, rot, 1.0); }
+  // rib < 1 stretches side projections vertically: cliff faces get
+  // fluting and gully ribs rather than isotropic blotches.
+  Tri triplanarRib(sampler2D t, vec3 p, vec3 n, float scale, float rot, float rib) {
     vec3 w = pow(abs(n), vec3(4.0));
     w /= (w.x + w.y + w.z);
     float c = cos(rot), s = sin(rot);
     mat2 R = mat2(c, -s, s, c);
-    vec4 tx = texture(t, R * (p.zy / scale));
+    vec4 tx = texture(t, R * (vec2(p.z, p.y * rib) / scale));
     vec4 ty = texture(t, R * (p.xz / scale));
-    vec4 tz = texture(t, R * (p.xy / scale));
+    vec4 tz = texture(t, R * (vec2(p.x, p.y * rib) / scale));
     vec2 nx = tx.rg * 2.0 - 1.0, ny = ty.rg * 2.0 - 1.0, nz = tz.rg * 2.0 - 1.0;
     // Tangent offsets swizzled into world axes per projection.
     vec3 dn = w.x * vec3(0.0, nx.y, nx.x) + w.y * vec3(ny.x, 0.0, ny.y) + w.z * vec3(nz.x, nz.y, 0.0);
@@ -132,12 +135,12 @@ export const SCENE_FRAG = /* glsl */`
     } else {
       // Macro rock detail everywhere (two rotated scales break tiling); the
       // near CC0 scan fades in only where a texel can still be resolved.
-      Tri macro = triplanar(tRock, vWorld, n, sRock, 0.0);
-      Tri macro2 = triplanar(tRock, vWorld, n, sRock * 0.37, 1.1);
+      Tri macro = triplanarRib(tRock, vWorld, n, sRock, 0.0, 0.35);
+      Tri macro2 = triplanarRib(tRock, vWorld, n, sRock * 0.37, 1.1, 0.5);
       float nearFade = 1.0 - smoothstep(600.0, 2200.0, dist);
       Tri near = triplanar(tRockNear, vWorld, n, sRockNear, 0.4);
       float detailFade = 1.0 - smoothstep(9000.0, 30000.0, dist);
-      vec3 dn = (macro.dn * 0.7 + macro2.dn * 0.45 * (1.0 - smoothstep(2500.0, 9000.0, dist))) * detailFade + near.dn * 0.6 * nearFade;
+      vec3 dn = (macro.dn * 1.3 + macro2.dn * 0.8 * (1.0 - smoothstep(2500.0, 9000.0, dist))) * detailFade + near.dn * 0.7 * nearFade;
       float rh = mix(macro.h, macro2.h, 0.35);
       float breakup = hash12(floor(vWorld.xz / 23.0)) * 0.15 + rh;
       // Masks from the real surface.
@@ -169,6 +172,10 @@ export const SCENE_FRAG = /* glsl */`
       vec3 rockCol = mix(pRockShade, pRockLit, clamp(rh * 1.2 - 0.1 + curv * -0.25, 0.0, 1.0));
       rockCol = mix(rockCol, pRockWarm, rStrata * smoothstep(0.55, 0.9, macro2.h));
       rockCol = mix(rockCol, pLichen, 0.25 * (1.0 - rockMask) );
+      // Water streaks: drainage darkens steep rock below where it gathers.
+      rockCol *= 1.0 - 0.45 * smoothstep(0.25, 0.6, flowN) * smoothstep(35.0, 55.0, slopeDeg);
+      // Rib shadows from the stretched detail height.
+      rockCol *= 0.7 + 0.6 * macro.h;
       vec3 forestCol = mix(pForestNear, pForestFar, smoothstep(1500.0, 12000.0, dist));
       forestCol *= 0.65 + 0.7 * cn.a;
       albedo = mix(ground, forestCol, crowns);
@@ -245,6 +252,8 @@ export function sceneUniforms(THREE, base) {
     uHasMaterial: { value: 0 },
     uAmbientScale: { value: 2.5 },
     uDebugMask: { value: 0 },
+    uTime: { value: 0 },
+    uForestKeep: { value: 1 },
     uExposure: { value: 2.0 },
     tRock: { value: null }, sRock: { value: 150 }, tRockNear: { value: null }, sRockNear: { value: 6 },
     tCanopy: { value: null }, sCanopy: { value: 70 }, tSnow: { value: null }, sSnow: { value: 60 },

@@ -2568,9 +2568,19 @@ export class BiomeManager {
     if (this.world?.kind === 'alpine' && this._scenicLight && this._scenicTransform && ctx.getTransform) {
       this.light = convertLightBetween(this._scenicLight, this._scenicTransform, ctx.getTransform());
     }
-    this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
-    // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
-    this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
+    // Range v2: the rock stage on the rendered support curve replaces the
+    // legacy ground fill, footing and ground materials; the ground's musical
+    // signatures still draw over it. Legacy ground otherwise.
+    if (v2 && this.groundField && this.rangePresentation.drawGround(ctx, groundCanvas)) {
+      const bars = this.groundField.visibleBars(worldX, originX, groundCanvas.width);
+      this._groundReceivers = this.rangePresentation.groundReceivers();
+      this._lakeReflectGroundY = null;
+      this._drawGroundSignatures(ctx, groundCanvas, bars, this._terrainTopPath(bars, groundCanvas.height, false, groundCanvas.width), worldX, A, B, t);
+    } else {
+      this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
+      // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
+      this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
+    }
     this._drawFlood(ctx, groundCanvas);
     // In FRONT of the ground: as the camera pulls back, the near water comes
     // into frame and the strip they run along turns out to be an isthmus.
@@ -7693,97 +7703,7 @@ export class BiomeManager {
         ctx.restore();
       }
 
-      const haloColor = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-      const { r, g, b } = hexToRgb(haloColor);
-      const rgb = `${r},${g},${b}`;
-
-      // Soft groove cap: music-terrain tell, soft alpha so it reads as
-      // energy riding the land — not a cyan hairline glitch. A thick stroke
-      // along the same ridge curve rather than a per-bar rect.
-      const grooveNow = bars.length ? bars[0].groove || 0 : 0;
-      const wantGroundCaps = styleDials(this.visualStyle).groundCrestCaps !== false;
-      if (grooveNow > 0.05 && wantGroundCaps) {
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        const a = 0.16 * grooveNow;
-        ctx.strokeStyle = `rgba(${rgb},${capFlashAlpha(a, this.reducedFlash)})`;
-        ctx.lineWidth = 4;
-        ctx.lineJoin = 'round';
-        ctx.stroke(strokePath);
-        ctx.restore();
-      }
-
-      // Settled snow: a frost cap riding the ridge -- a pale band whose
-      // thickness grows with cover, plus seeded glints so ice reads as ICE
-      // (slippery, see Traction.js) rather than just pale paint. Melts to
-      // zero cost the moment cover does.
-      if ((this.snowCover || 0) > 0.03) {
-        const cover = this.snowCover;
-        ctx.save();
-        ctx.strokeStyle = `rgba(230,242,255,${(0.34 * cover).toFixed(3)})`;
-        ctx.lineWidth = 4 + 9 * cover;
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
-        ctx.stroke(strokePath);
-        // Specular glints: a few bar-top points catch the light each moment,
-        // drifting with world scroll so the sheen slides underfoot.
-        const glints = [];
-        for (const bar of bars) {
-          const glint = 0.5 + 0.5 * Math.sin(bar.x * 0.13 + worldX * 0.011 + this.tSec * 1.7);
-          if (glint > 0.86) glints.push([bar, 0.30 * cover * (glint - 0.86) / 0.14]);
-        }
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.fillStyle = '#fff';
-        for (const [bar, a] of glints) {
-          ctx.globalAlpha = a;
-          ctx.beginPath();
-          ctx.arc(bar.x + bar.width / 2, bar.y, 1.6, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.globalAlpha = 1;
-        ctx.restore();
-      }
-
-      // Kick ground glow: an emissive rim over bars a kick-synced pulse
-      // (GroundField.kickGlow) is currently racing through -- tinted toward
-      // the biome's own halo color so it reads as the world's light, not a
-      // generic overlay. Silent (zero cost) whenever no pulse is active.
-      const glowBars = bars.filter((bar) => bar.glow > 0.01);
-      if (glowBars.length) {
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        for (const bar of glowBars) {
-          const alpha = capFlashAlpha(0.5 * bar.glow, this.reducedFlash);
-          // Floored at 1: a bar at or past the bottom edge (canvas.height -
-          // bar.y <= 0) used to hand createRadialGradient a negative radius,
-          // throwing IndexSizeError and killing the frame's whole draw call
-          // -- not just this glow -- every time a kick pulse reached a bar
-          // that low.
-          const rimH = Math.max(1, Math.min(60, canvas.height - bar.y));
-          // An elliptical falloff centered on the bar, not a rect filled with
-          // a vertical-only gradient -- the old version faded top-to-bottom
-          // but left the bar's own width as a hard-edged box (flat top, hard
-          // left/right sides) sitting right on the ground line every time a
-          // kick pulse raced through, exactly the "straight lined box" /
-          // "hard cutoff" artifact this fades away on every side instead.
-          const cx = bar.x + bar.width / 2, cy = bar.y;
-          const ry = rimH;
-          const rx = bar.width / 2 + 6;
-          const sx = rx / ry;
-          ctx.save();
-          ctx.translate(cx, cy);
-          ctx.scale(sx, 1);
-          const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, ry);
-          grad.addColorStop(0, `rgba(${rgb},${alpha})`);
-          grad.addColorStop(1, `rgba(${rgb},0)`);
-          ctx.fillStyle = grad;
-          ctx.beginPath();
-          ctx.arc(0, 0, ry, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        }
-        ctx.restore();
-      }
+      this._drawGroundSignatures(ctx, canvas, bars, strokePath, worldX, A, B, t);
 
       // Gray-Scott texture living inside the ground: clip to the ridge's
       // silhouette (one smooth Path2D, not a union of per-slice rects) so
@@ -7841,6 +7761,104 @@ export class BiomeManager {
     // only the lake band -- and only THIS frame's ground line -- is a valid
     // surface to reflect them into.
     this._lakeReflectGroundY = isLake ? localGroundY : null;
+  }
+
+  /** The ground's musical signatures, shared by the legacy ground and the
+   *  Range v2 rock stage: the groove cap riding the support curve, settled
+   *  snow (a traction cue) and kick-synced ground glow. */
+  _drawGroundSignatures(ctx, canvas, bars, strokePath, worldX, A, B, t) {
+    const haloColor = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
+    const { r, g, b } = hexToRgb(haloColor);
+    const rgb = `${r},${g},${b}`;
+
+    // Soft groove cap: music-terrain tell, soft alpha so it reads as
+    // energy riding the land — not a cyan hairline glitch. A thick stroke
+    // along the same ridge curve rather than a per-bar rect.
+    const grooveNow = bars.length ? bars[0].groove || 0 : 0;
+    const wantGroundCaps = styleDials(this.visualStyle).groundCrestCaps !== false;
+    if (grooveNow > 0.05 && wantGroundCaps) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const a = 0.16 * grooveNow;
+      ctx.strokeStyle = `rgba(${rgb},${capFlashAlpha(a, this.reducedFlash)})`;
+      ctx.lineWidth = 4;
+      ctx.lineJoin = 'round';
+      ctx.stroke(strokePath);
+      ctx.restore();
+    }
+
+    // Settled snow: a frost cap riding the ridge -- a pale band whose
+    // thickness grows with cover, plus seeded glints so ice reads as ICE
+    // (slippery, see Traction.js) rather than just pale paint. Melts to
+    // zero cost the moment cover does.
+    if ((this.snowCover || 0) > 0.03) {
+      const cover = this.snowCover;
+      ctx.save();
+      ctx.strokeStyle = `rgba(230,242,255,${(0.34 * cover).toFixed(3)})`;
+      ctx.lineWidth = 4 + 9 * cover;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.stroke(strokePath);
+      // Specular glints: a few bar-top points catch the light each moment,
+      // drifting with world scroll so the sheen slides underfoot.
+      const glints = [];
+      for (const bar of bars) {
+        const glint = 0.5 + 0.5 * Math.sin(bar.x * 0.13 + worldX * 0.011 + this.tSec * 1.7);
+        if (glint > 0.86) glints.push([bar, 0.30 * cover * (glint - 0.86) / 0.14]);
+      }
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = '#fff';
+      for (const [bar, a] of glints) {
+        ctx.globalAlpha = a;
+        ctx.beginPath();
+        ctx.arc(bar.x + bar.width / 2, bar.y, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+
+    // Kick ground glow: an emissive rim over bars a kick-synced pulse
+    // (GroundField.kickGlow) is currently racing through -- tinted toward
+    // the biome's own halo color so it reads as the world's light, not a
+    // generic overlay. Silent (zero cost) whenever no pulse is active.
+    const glowBars = bars.filter((bar) => bar.glow > 0.01);
+    if (glowBars.length) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const bar of glowBars) {
+        const alpha = capFlashAlpha(0.5 * bar.glow, this.reducedFlash);
+        // Floored at 1: a bar at or past the bottom edge (canvas.height -
+        // bar.y <= 0) used to hand createRadialGradient a negative radius,
+        // throwing IndexSizeError and killing the frame's whole draw call
+        // -- not just this glow -- every time a kick pulse reached a bar
+        // that low.
+        const rimH = Math.max(1, Math.min(60, canvas.height - bar.y));
+        // An elliptical falloff centered on the bar, not a rect filled with
+        // a vertical-only gradient -- the old version faded top-to-bottom
+        // but left the bar's own width as a hard-edged box (flat top, hard
+        // left/right sides) sitting right on the ground line every time a
+        // kick pulse raced through, exactly the "straight lined box" /
+        // "hard cutoff" artifact this fades away on every side instead.
+        const cx = bar.x + bar.width / 2, cy = bar.y;
+        const ry = rimH;
+        const rx = bar.width / 2 + 6;
+        const sx = rx / ry;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.scale(sx, 1);
+        const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, ry);
+        grad.addColorStop(0, `rgba(${rgb},${alpha})`);
+        grad.addColorStop(1, `rgba(${rgb},0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, ry, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
   }
 
   /** The Mirror (Movement IV): flip the sky/phenomena/silhouette region

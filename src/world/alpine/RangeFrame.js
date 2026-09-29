@@ -154,5 +154,7 @@ export function buildRangeFrame({
     progress01, qualityLevel: sim.perf?.level ?? 0, reducedFlash,
     scenicViewport, groundViewport,
     light: lightState, music, groundBars, emitters,
+    // World anchoring for fixed-ground dressing (rock stage, pools).
+    worldX: pose.worldX, originX: pose.midioX,
   });
 }
