@@ -1088,6 +1088,192 @@
           "docs/evidence/range-v2/panamint-dantes-view-inapp-10s.jpg"
         ]
       }
+    },
+    {
+      "id": "chugach-matanuska",
+      "regionId": "chugach-mountains",
+      "biome": "ICEFIELD",
+      "status": "candidate",
+      "notes": "From the Glenn Highway bench above the Matanuska River looking south up Matanuska Glacier into the Chugach Mountains.",
+      "dem": {
+        "source": "terrarium",
+        "zoom": 12,
+        "centerLonLat": [
+          -147.72,
+          61.68
+        ],
+        "extentM": [
+          48000,
+          48000
+        ],
+        "cellM": 24
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -147.78339,
+            61.80698
+          ],
+          "aboveGroundM": 250
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -147.81661,
+            61.80302
+          ],
+          "aboveGroundM": 250
+        },
+        "targetStart": {
+          "lonLat": [
+            -147.66351,
+            61.58198
+          ],
+          "heightM": 2300
+        },
+        "targetEnd": {
+          "lonLat": [
+            -147.69649,
+            61.57802
+          ],
+          "heightM": 2300
+        },
+        "fovYDeg": 26
+      },
+      "landmarks": [],
+      "title": "Chugach Mountains",
+      "place": "Matanuska Glacier, Alaska"
+    },
+    {
+      "id": "wrangell-copper-river",
+      "regionId": "wrangell-mountains",
+      "biome": "TUNDRA",
+      "status": "candidate",
+      "notes": "From the Copper River bluffs near Copper Center looking east-north-east across the tundra lowland to Mount Drum, Mount Sanford and Mount Wrangell.",
+      "dem": {
+        "source": "terrarium",
+        "zoom": 11,
+        "centerLonLat": [
+          -144.78,
+          62.05
+        ],
+        "extentM": [
+          90000,
+          90000
+        ],
+        "cellM": 40
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -144.87134,
+            62.03787
+          ],
+          "aboveGroundM": 450
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -144.85866,
+            62.01713
+          ],
+          "aboveGroundM": 450
+        },
+        "targetStart": {
+          "lonLat": [
+            -144.40635,
+            62.10037
+          ],
+          "heightM": 1759
+        },
+        "targetEnd": {
+          "lonLat": [
+            -144.39365,
+            62.07963
+          ],
+          "heightM": 1759
+        },
+        "fovYDeg": 13.2
+      },
+      "landmarks": [
+        {
+          "name": "Mount Sanford",
+          "lonLat": [
+            -144.1292,
+            62.2136
+          ],
+          "elevationM": 4949
+        },
+        {
+          "name": "Mount Wrangell",
+          "lonLat": [
+            -144.0194,
+            62.0044
+          ],
+          "elevationM": 4317
+        },
+        {
+          "name": "Mount Drum",
+          "lonLat": [
+            -144.6378,
+            62.1161
+          ],
+          "elevationM": 3661
+        }
+      ],
+      "title": "Wrangell Mountains",
+      "place": "Copper River basin, Alaska"
+    },
+    {
+      "id": "monument-valley-163",
+      "regionId": "monument-valley",
+      "biome": "CANYON",
+      "status": "candidate",
+      "notes": "From US-163 at Forrest Gump Point looking south-west down the highway to the Mittens and Merrick Butte.",
+      "dem": {
+        "source": "3dep13",
+        "centerLonLat": [
+          -110.04,
+          37.04
+        ],
+        "extentM": [
+          44800,
+          44800
+        ],
+        "cellM": 20
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -110.0401,
+            37.03716
+          ],
+          "aboveGroundM": 60
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -110.05116,
+            37.04338
+          ],
+          "aboveGroundM": 60
+        },
+        "targetStart": {
+          "lonLat": [
+            -110.08448,
+            36.98689
+          ],
+          "heightM": 1700
+        },
+        "targetEnd": {
+          "lonLat": [
+            -110.09552,
+            36.99311
+          ],
+          "heightM": 1700
+        },
+        "fovYDeg": 16
+      },
+      "landmarks": [],
+      "title": "Monument Valley",
+      "place": "Navajo Nation, Utah and Arizona"
     }
   ]
 }

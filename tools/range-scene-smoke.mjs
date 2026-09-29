@@ -74,6 +74,37 @@ async function servedIdentity(url, sourceRoot) {
   return hashes;
 }
 
+// What each page actually loaded (modules, catalog, manifests, terrain
+// buffers, textures, the runtime bundle), hashed as it arrived. Every
+// capture carries a digest of that set, and each file is checked against
+// the checkout: the pixels come from these bytes and no others.
+const LOADED = new WeakMap();
+const localHashes = new Map();
+let identityRoot = null;
+function watchLoaded(page) {
+  const entry = { files: new Map(), pending: [] };
+  LOADED.set(page, entry);
+  page.on('response', (res) => {
+    const file = new URL(res.url()).pathname.replace(/^\/+/, '');
+    if (!file.startsWith('src/') || !res.ok()) return;
+    entry.pending.push(res.body().then((b) => entry.files.set(file, sha256(b)), () => entry.files.set(file, 'unread')));
+  });
+}
+async function loadedIdentity(page) {
+  const entry = LOADED.get(page);
+  if (!entry) return null;
+  await Promise.all(entry.pending.splice(0));
+  const files = [...entry.files].sort(([a], [b]) => (a < b ? -1 : 1));
+  if (identityRoot) {
+    for (const [file, sha] of files) {
+      if (!localHashes.has(file)) localHashes.set(file, sha256(await fs.readFile(path.join(identityRoot, file))));
+      if (sha !== localHashes.get(file)) throw new Error(`the page loaded ${file} (${sha.slice(0, 12)}), which differs from the checkout`);
+    }
+  }
+  const rangeAssets = files.filter(([f]) => f.startsWith('src/assets/range/') || f.startsWith('src/vendor/range/')).map(([f]) => f);
+  return { loadedDigest: sha256(files.map(([f, h]) => `${f} ${h}\n`).join('')), loadedFiles: files.length, rangeAssets };
+}
+
 async function launch() {
   return chromium.launch({
     ...(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {}),
@@ -85,6 +116,7 @@ async function launch() {
 export async function openSong(browser, { url, wav, width, height, params = {}, dpr = 1 }) {
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: dpr, serviceWorkers: 'block' });
   const page = await context.newPage();
+  watchLoaded(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => {
@@ -115,7 +147,7 @@ export async function openSong(browser, { url, wav, width, height, params = {}, 
 
 /** Draw one export frame at `timeMs` and return its PNG and Range state. */
 export async function captureFrame(page, timeMs, { hook = null } = {}) {
-  return page.evaluate(async ({ timeMs: t, hook: h }) => {
+  const frame = await page.evaluate(async ({ timeMs: t, hook: h }) => {
     const smw = window.__SMW;
     if (h === 'no-far') {
       const pres = smw.sim.biomes.rangePresentation;
@@ -137,6 +169,8 @@ export async function captureFrame(page, timeMs, { hook = null } = {}) {
       world: smw.sim.biomes.world.kind,
     };
   }, { timeMs, hook });
+  frame.identity = await loadedIdentity(page);
+  return frame;
 }
 
 /**
@@ -425,7 +459,73 @@ async function suiteExport(ctx) {
   const recCount = await pngMarkers(recPng);
   check('markers reach the recorded video', recCount > 200, `${recCount} px`);
   report.export.files = { stage: path.relative(root, stagePng), bulk: path.relative(root, framePng), recorder: path.relative(root, recPng) };
+  report.export.stageIdentity = stage.identity;
   await context.close();
+}
+
+/**
+ * Natural casts (plan §10, Task 15): songs opened with no forced view, so
+ * the production selector chooses. Every biome of each song gets an
+ * approved view of its own biome, the musical skyline pool still assigns
+ * each biome its own legacy ranges, the assignment is deterministic (the
+ * same song opened again draws the same views), and every sampled frame
+ * draws its v2 view. Frames are written for review.
+ */
+async function suiteSelection(ctx) {
+  const { browser, args, out, report } = ctx;
+  const specs = [[120, 96], [80, 150], [150, 120], [174, 100], [100, 180]];
+  report.selection = { songs: [], checks: [] };
+  const check = (name, ok, detail = '') => {
+    report.selection.checks.push({ name, ok: !!ok, detail });
+    console.log(`${ok ? 'PASS' : 'FAIL'} selection: ${name}${detail ? ` -- ${detail}` : ''}`);
+    if (!ok) throw new Error(`selection check failed: ${name} ${detail}`);
+  };
+  const cast = async (wav) => {
+    const s = await openSong(browser, { url: args.url, wav, width: 960, height: 540, params: { rangeRenderer: 'v2' } });
+    const song = await s.page.evaluate(async () => {
+      const t = window.__SMW.sim.biomes.songTerrain;
+      if (t?.whenAll) await Promise.race([t.whenAll, new Promise((r) => setTimeout(r, 60000))]);
+      const id = (r) => r?.id || r?.range?.id || null;
+      return {
+        seed: window.__SMW.songSeed, biomes: t?.biomes, catalogVersion: t?.catalogVersion, horizon: id(t?.horizon), massif: id(t?.massif),
+        perBiome: (t?.biomes || []).map((b) => {
+          const e = t.byBiome.get(b), sc = t.sceneByBiome.get(b);
+          return { biome: b, skyline: e ? Object.values(e.ranges || {}).map(id).filter(Boolean) : [],
+            view: sc?.view?.id || null, viewBiome: sc?.view?.biome || null, status: sc?.view?.status || null };
+        }),
+      };
+    });
+    for (const w of [0, 400, 800, 1200, 1600, 2000]) await s.page.evaluate((ms) => window.__SMW.renderExportFrame(ms), w);
+    song.frames = [];
+    for (const t of [10000, 40000, 70000]) {
+      const f = await captureFrame(s.page, t);
+      const file = await writePng(out, `selection-${path.basename(wav, '.wav')}-${t}.png`, f.png);
+      song.frames.push({ t, active: f.range.active, viewId: f.range.viewId, reason: f.range.reason || null, file: path.relative(root, file), identity: f.identity });
+    }
+    song.errors = s.errors.filter((e) => !e.startsWith('warn:'));
+    await s.context.close();
+    return song;
+  };
+  for (const [bpm, sec] of specs) {
+    const wav = path.join(out, `synthetic-${bpm}bpm-${sec}s.wav`);
+    execFileSync(process.execPath, [path.join(root, 'tools/gen-test-wav.mjs'), wav, String(bpm), String(sec)]);
+    const song = await cast(wav);
+    song.wav = path.basename(wav);
+    report.selection.songs.push(song);
+    const tag = `${bpm} bpm ${sec} s`;
+    check(`${tag}: every biome has an approved view of its own biome`,
+      song.perBiome.every((b) => b.view && b.viewBiome === b.biome && b.status === 'approved'), JSON.stringify(song.perBiome.map((b) => [b.biome, b.view])));
+    check(`${tag}: the musical skyline pool assigns every biome its ranges`, song.perBiome.every((b) => b.skyline.length > 0));
+    check(`${tag}: every sampled frame draws its v2 view`, song.frames.every((f) => f.active), JSON.stringify(song.frames.map((f) => f.viewId || f.reason)));
+    check(`${tag}: no page or shader errors`, song.errors.length === 0, song.errors.slice(0, 2).join(' | '));
+  }
+  // Deterministic: the first song again draws the same views.
+  const again = await cast(path.join(out, `synthetic-${specs[0][0]}bpm-${specs[0][1]}s.wav`));
+  const first = report.selection.songs[0];
+  check('the same song draws the same views again', JSON.stringify(again.perBiome.map((b) => b.view)) === JSON.stringify(first.perBiome.map((b) => b.view)));
+  const shown = new Set(report.selection.songs.flatMap((x) => x.frames.map((f) => f.viewId)).filter(Boolean));
+  report.selection.viewsOnScreen = [...shown];
+  console.log(`selection: ${shown.size} distinct views on screen across ${specs.length} songs`);
 }
 
 /**
@@ -478,7 +578,7 @@ async function suiteLifecycle(ctx) {
     const out2 = [];
     for (const t of [8000, 30000, 55000]) {
       const f = await captureFrame(page, t);
-      out2.push({ t, active: f.range.active, viewId: f.range.viewId, incoming: f.range.incomingViewId, reason: f.range.reason });
+      out2.push({ t, active: f.range.active, viewId: f.range.viewId, incoming: f.range.incomingViewId, reason: f.range.reason, loadedDigest: f.identity?.loadedDigest });
     }
     return out2;
   };
@@ -551,6 +651,7 @@ async function suiteLifecycle(ctx) {
 async function main() {
   const args = parseSceneArgs(process.argv);
   const sourceRoot = path.resolve(args['source-root']);
+  identityRoot = sourceRoot;
   const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot, encoding: 'utf8' }).trim();
   if (!sha.startsWith(args['expect-sha'])) throw new Error(`source is ${sha}, not ${args['expect-sha']}`);
   const dirty = execFileSync('git', ['status', '--porcelain', '--', 'src', 'tools'], { cwd: sourceRoot, encoding: 'utf8' }).trim();
@@ -568,7 +669,7 @@ async function main() {
   let failed = null;
   try {
     const suites = args.suite === 'complete' ? SUITES.filter((s) => s !== 'complete') : [args.suite];
-    const impl = { pilot: suitePilot, export: suiteExport, motion: suiteMotion, lifecycle: suiteLifecycle };
+    const impl = { pilot: suitePilot, selection: suiteSelection, export: suiteExport, motion: suiteMotion, lifecycle: suiteLifecycle };
     for (const s of suites) {
       // A requested suite that does not exist yet fails the run: an empty
       // "pass" would be evidence of nothing.
