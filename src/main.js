@@ -1861,7 +1861,7 @@ function startTimeline(timelineData, extra = {}) {
   // it. Created here, per song, which is after the world is known.
   renderer = createRenderer(canvas, rendererMode, getWorld(sim.worldId));
   if (rangePresentation) {
-    rangePresentation.setSong({ terrain: timelineData.terrain || null, generation: loadGen });
+    rangePresentation.setSong({ terrain: timelineData.terrain || null, generation: loadGen, exportMode });
     renderer.rangePresentation = rangePresentation;
   }
   // An exported frame is the picture, not the player: no seekbar strip.

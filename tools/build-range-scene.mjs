@@ -223,12 +223,24 @@ export async function approveView(doc, id, { evidence = [] } = {}) {
   }
   const build = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${id}.build.json`), 'utf8'));
   // Legacy parity: the far range stays readable at every rail station.
-  const { viewExposure, MIN_FAR_EXPOSED } = await import('./lib/range-exposure.mjs');
-  const exposure = await viewExposure(RUNTIME_DIR, { ...build.view, terrainManifestUrl: `terrain/${id}.terrain.json` });
+  const { viewExposure, pairExposure, MIN_FAR_EXPOSED } = await import('./lib/range-exposure.mjs');
+  const exposureOf = (x) => viewExposure(RUNTIME_DIR, { ...x, terrainManifestUrl: `terrain/${x.id}.terrain.json` });
+  const exposure = await exposureOf(build.view);
   if (exposure.min < MIN_FAR_EXPOSED) {
     throw new Error(`${id}: far crest only ${exposure.min.toFixed(2)} exposed at its worst station (needs ${MIN_FAR_EXPOSED}); not approved`);
   }
   console.log(`${id}: far crest exposure ${exposure.stations.map((s) => s.fraction.toFixed(2)).join(' ')}`);
+  // Travel to and from every view already approved, at the shared progress.
+  for (const other of doc.views.filter((x) => x.status === 'approved' && x.id !== id)) {
+    const ob = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${other.id}.build.json`), 'utf8'));
+    const oe = await exposureOf(ob.view);
+    for (const [a, b, name] of [[exposure, oe, `${id} -> ${other.id}`], [oe, exposure, `${other.id} -> ${id}`]]) {
+      const r = pairExposure(a, b);
+      if (r.min < MIN_FAR_EXPOSED) {
+        throw new Error(`${name}: far crest only ${r.min.toFixed(2)} exposed in travel (station ${r.at.station}, seam ${r.at.p}); not approved`);
+      }
+    }
+  }
   v.status = 'approved';
   v.approval = { date: new Date().toISOString().slice(0, 10), ...(await approvalHashes(v, build)), evidence };
   doc.catalogVersion = (doc.catalogVersion || 0) + 1;

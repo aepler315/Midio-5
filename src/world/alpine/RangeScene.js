@@ -302,9 +302,9 @@ export class RangeScene {
 
   /** Keep what the current frame draws resident: its view's GPU, CPU and
    *  material entries and the two render targets. */
-  pinView(viewIds) {
+  pinView(viewIds, extraKeys = []) {
     if (!this.residency) return;
-    const keys = ['range:render-target', 'range:ground-target', 'range:render-target-B'];
+    const keys = ['range:render-target', 'range:ground-target', 'range:render-target-B', ...extraKeys];
     for (const id of [].concat(viewIds)) {
       const p = this.prepared.get(id);
       if (p) keys.push(p.gpuKey, p.cpuKey, p.materialKey);

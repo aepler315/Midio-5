@@ -77,7 +77,7 @@ test('the fov does not depend on where the stage sits in a resize', () => {
 });
 
 // Visibility: the far range's crest, measured on the shipped packages.
-const { viewExposure, travelExposure, MIN_FAR_EXPOSED } = await import('../tools/lib/range-exposure.mjs');
+const { viewExposure, travelExposure, pairExposure, MIN_FAR_EXPOSED } = await import('../tools/lib/range-exposure.mjs');
 const { default: CATALOG } = await import('../src/world/terrain/sceneCatalogData.js');
 const RUNTIME_DIR = new URL('../src/assets/range/v2/', import.meta.url).pathname;
 const approved = CATALOG.views.filter((v) => v.status === 'approved');
@@ -94,16 +94,26 @@ test('every approved view keeps its far crest >= 0.55 exposed at all 21 stations
   }
 });
 
-test('every travel between approved views keeps the far crest exposed at every seam sample', () => {
+test('every travel between approved views keeps the far crest exposed at every station and seam sample', () => {
+  // Both sides render at the song's one progress value: station k of A is
+  // blended with station k of B.
   for (const a of approved) for (const b of approved) {
-    // The outgoing view leaves from its rail end; the incoming one starts at its beginning.
-    const colsA = exposures.get(a.id).stations.at(-1).columns;
-    const colsB = exposures.get(b.id).stations[0].columns;
-    for (let k = 0; k <= 20; k++) {
-      const f = travelExposure(colsA, colsB, k / 20);
-      assert.ok(f >= MIN_FAR_EXPOSED, `${a.id} -> ${b.id} at ${k / 20}: ${f.toFixed(2)}`);
-    }
+    const { min, at } = pairExposure(exposures.get(a.id), exposures.get(b.id));
+    assert.ok(min >= MIN_FAR_EXPOSED, `${a.id} -> ${b.id}: ${min.toFixed(2)} at station ${at.station}, seam ${at.p}`);
   }
+});
+
+test('pair exposure checks matching stations, not rail ends', () => {
+  const cols = (fill) => new Uint8Array(40).fill(fill);
+  const good = (k) => ({ columns: cols(2), fraction: 1, k });
+  const bad = { columns: cols(1), fraction: 0 };
+  // A is fine at every station; B is hidden only at station 1 -- a rail-end
+  // check (A's last, B's first) would miss it.
+  const A = { stations: [good(0), good(1), good(2)] };
+  const B = { stations: [good(0), bad, good(2)] };
+  const r = pairExposure(A, B, { seamSamples: 5 });
+  assert.equal(r.min, 0);
+  assert.equal(r.at.station, 1);
 });
 
 test('travel exposure follows the seam: all A before, all B after', () => {

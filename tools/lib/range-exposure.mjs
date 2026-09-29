@@ -66,3 +66,22 @@ export function travelExposure(colsA, colsB, p, layerKey = 'L2') {
   }
   return crest ? shown / crest : 0;
 }
+
+/**
+ * The worst far-crest exposure of a travel between two views. Both sides
+ * render at the same song progress (RangeScene uses one frame.progress01),
+ * so side A's station k is blended with side B's station k, at every seam
+ * sample. Returns { min, at: { station, p } }.
+ */
+export function pairExposure(expA, expB, { seamSamples = 21 } = {}) {
+  let min = Infinity, at = null;
+  const n = Math.min(expA.stations.length, expB.stations.length);
+  for (let k = 0; k < n; k++) {
+    for (let j = 0; j < seamSamples; j++) {
+      const p = seamSamples > 1 ? j / (seamSamples - 1) : 0;
+      const f = travelExposure(expA.stations[k].columns, expB.stations[k].columns, p);
+      if (f < min) { min = f; at = { station: k, p }; }
+    }
+  }
+  return { min, at };
+}

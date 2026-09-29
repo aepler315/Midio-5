@@ -41,9 +41,23 @@ const PASS_LAYER = { far: 'L2', mid: 'L4', near: 'L5' };
  *  painted ranges in one frame. */
 export const ARRIVAL_SEC = 1.2;
 
+/** Residency key of the travel composition buffer (one stage-sized canvas
+ *  the two sides are blended in before the single copy to the stage). */
+export const TRAVEL_SCRATCH_KEY = 'range:travel-scratch';
+
+const fade01 = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
+
+function defaultCanvas(w, h) {
+  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  return c;
+}
+
 export class RangePresentation {
   constructor({ mode = 'legacy', forcedViewId = null, diag = null, residency = null, budget = 'desktop',
-    loadRuntime = () => import(RUNTIME_URL), sceneFactory = null, catalog = SCENE_CATALOG, assetBase = ASSET_BASE } = {}) {
+    loadRuntime = () => import(RUNTIME_URL), sceneFactory = null, catalog = SCENE_CATALOG, assetBase = ASSET_BASE,
+    makeCanvas = defaultCanvas } = {}) {
     this.mode = mode;
     this.forcedViewId = forcedViewId;
     this.diag = diag;
@@ -53,6 +67,14 @@ export class RangePresentation {
     this.assetBase = assetBase;
     this._loadRuntime = loadRuntime;
     this._sceneFactory = sceneFactory;
+    this._makeCanvas = makeCanvas;
+    this.exportMode = false;
+    // Travel: the composition buffer and the incoming side's own fade-in
+    // (a view that becomes ready after the travel has started).
+    this._scratch = null;
+    this._scratchBytes = 0;
+    this._incomingJoin = null; // { id, tSec } | null
+    this.incomingFade = 1;
     this.scene = null;
     this.runtimeState = mode === 'v2' ? 'idle' : 'off'; // idle | loading | ready | failed | off
     this.generation = 0;
@@ -80,9 +102,14 @@ export class RangePresentation {
 
   /** A new song (or world): new generation, new assignments. Pending work
    *  of the previous generation is cancelled; its late results never land. */
-  setSong({ terrain = null, generation = this.generation + 1 } = {}) {
+  setSong({ terrain = null, generation = this.generation + 1, exportMode = false } = {}) {
     const previous = this.generation;
     this.generation = generation;
+    // Export draws frames on request and waits for readiness: never fades,
+    // never counts as the listener having seen a view.
+    this.exportMode = !!exportMode;
+    this._incomingJoin = null;
+    this.incomingFade = 1;
     this.sceneByBiome = terrain?.sceneByBiome || null;
     this.failures.clear();
     this.shown.clear();
@@ -201,6 +228,7 @@ export class RangePresentation {
     if (!ok) {
       this.residency?.pin?.([]);
       this.scene?.releaseSide?.('B');
+      this._releaseScratch();
     }
     this._updateArrival(ok);
     return ok;
@@ -223,7 +251,7 @@ export class RangePresentation {
       if (this.enabled && sim?.biomes) this._legacyShown = true;
       return;
     }
-    if (sim?.exportMode || !Number.isFinite(tSec)) {
+    if (this.exportMode || sim?.exportMode || !Number.isFinite(tSec)) {
       this.arrival = 1;
       this._legacyShown = false;
       this._arrivalStartSec = null;
@@ -278,21 +306,28 @@ export class RangePresentation {
     }
     if (this.failures.has(view.id)) { this.reason = this.failures.get(view.id); return false; }
     if (!this.scene.isReady(view.id)) { this.reason = this.scene.contextLost ? 'context-lost' : 'preparing'; return false; }
+    // What this frame draws stays resident (never evicted mid-use) -- pinned
+    // before any reservation below, which may evict unpinned entries.
+    const vp = inputs.scenicViewport;
+    this.scene.pinView?.(incoming ? [view.id, incoming.id] : view.id, [TRAVEL_SCRATCH_KEY]);
     try {
-      const vp = inputs.scenicViewport;
       this.scene.resize({ widthPx: vp.backingWidth, heightPx: vp.backingHeight, pixelRatio: vp.pixelRatio || 1 });
     } catch (err) {
       this.reason = `budget: ${err.message}`;
       return false;
     }
-    // The incoming side needs its own target, reserved before it exists;
-    // without room the outgoing view carries on alone.
-    if (incoming && !this.scene.ensureSide?.('B')) incoming = null;
-    if (!incoming) this.scene.releaseSide?.('B');
+    // The incoming side needs its own target and a composition buffer,
+    // reserved before they exist; without room the outgoing view carries on
+    // alone.
+    if (incoming && !(this.scene.ensureSide?.('B') && this._ensureScratch(vp))) incoming = null;
+    if (!incoming) {
+      this.scene.releaseSide?.('B');
+      this._releaseScratch();
+    }
     this.incomingViewId = incoming?.id ?? null;
     this.seamP = blend.travel ? (blend.travelP ?? t) : t;
-    // What this frame draws stays resident (never evicted mid-use).
-    this.scene.pinView?.(incoming ? [view.id, incoming.id] : view.id);
+    this._updateIncomingFade(incoming, inputs.sim);
+    this.scene.pinView?.(incoming ? [view.id, incoming.id] : view.id, incoming ? [TRAVEL_SCRATCH_KEY] : []);
     this.frame = buildRangeFrame({
       frameId: ++this.frameId, generation: this.generation, sim: inputs.sim, pose: inputs.pose,
       scenicViewport: inputs.scenicViewport, groundViewport: inputs.groundViewport,
@@ -301,11 +336,62 @@ export class RangePresentation {
     this.viewId = view.id;
     this.active = true;
     this.reason = null;
-    if (!this.shown.has(view.id) && !this.forced && !inputs.sim.exportMode) {
+    if (!this.shown.has(view.id) && !this.forced && !this.exportMode && !inputs.sim.exportMode) {
       this.shown.add(view.id);
       noteViewShown(view);
     }
     return true;
+  }
+
+  /**
+   * An incoming view that joins a travel already under way (it finished
+   * preparing late) fades in over ARRIVAL_SEC of heard time instead of
+   * appearing at the current seam in one frame. Joining before the seam has
+   * entered the frame needs no fade; an export never fades.
+   */
+  _updateIncomingFade(incoming, sim) {
+    const tSec = Number(sim?.biomes?.tSec);
+    if (!incoming || this.exportMode || sim?.exportMode || !Number.isFinite(tSec)) {
+      this._incomingJoin = null;
+      this.incomingFade = 1;
+      return;
+    }
+    if (this._incomingJoin?.id !== incoming.id) {
+      this._incomingJoin = (this.seamP ?? 0) > 0.001 ? { id: incoming.id, tSec } : { id: incoming.id, tSec: -Infinity };
+    }
+    const u = (tSec - this._incomingJoin.tSec) / ARRIVAL_SEC;
+    this.incomingFade = u < 0 ? 1 : fade01(u);
+  }
+
+  /** The travel composition buffer: one canvas at the scenic backing size,
+   *  reserved before it exists. False when the budget refuses it. */
+  _ensureScratch(vp) {
+    const w = Math.max(2, Math.round(vp.backingWidth)), h = Math.max(2, Math.round(vp.backingHeight));
+    const bytes = w * h * 4;
+    if (this._scratch && this._scratchBytes >= bytes) return true;
+    this._releaseScratch();
+    let res = null;
+    if (this.residency) {
+      res = this.residency.reserve({ key: TRAVEL_SCRATCH_KEY, bytes, owner: 'range-targets' });
+      if (!res) return false;
+    }
+    const canvas = this._makeCanvas(w, h);
+    this._scratch = canvas;
+    this._scratchBytes = bytes;
+    if (res) {
+      this.residency.commit(res, canvas, (c) => {
+        if (this._scratch === c) { this._scratch = null; this._scratchBytes = 0; }
+        c.width = 0; c.height = 0;
+      });
+    }
+    return true;
+  }
+
+  _releaseScratch() {
+    if (!this._scratch) return;
+    if (this.residency) this.residency.release(TRAVEL_SCRATCH_KEY);
+    this._scratch = null;
+    this._scratchBytes = 0;
   }
 
   /** Composite one partition into `ctx` over the scenic stage, under the
@@ -337,30 +423,60 @@ export class RangePresentation {
     return true;
   }
 
-  /** Draw side A left of the seam and side B right of it, crossfading in
-   *  the feather bands. Each render returns the shared drawing buffer, so A
-   *  is fully drawn before B is rendered. */
+  /**
+   * Blend side A (left of the seam) and side B (right of it) in the
+   * composition buffer, then copy it to the stage once. Each span of the
+   * seam gives B a weight w (0 left of the feather, the band's weight inside
+   * it, 1 right of it; all scaled by the incoming fade): A is drawn at 1 - w,
+   * then B is ADDED at w ('lighter' on premultiplied pixels), so where both
+   * sides are opaque the blend stays opaque -- a plain source-over pair would
+   * leave the bands up to 25% see-through. Each render returns the shared
+   * drawing buffer, so A is fully drawn before B is rendered.
+   */
   _compositeSides(ctx, stage, layerKey, renderA, renderB) {
     const { lo, hi, bands } = travelSpans(stage.width, layerKey, this.seamP ?? 0);
-    const put = (img, x0, x1, alpha) => {
-      if (!img || !(x1 > x0) || !(alpha > 0.001)) return;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x0, -stage.height, x1 - x0, stage.height * 3);
-      ctx.clip();
-      ctx.globalAlpha = alpha * this.arrival;
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.drawImage(img, 0, 0, stage.width, stage.height);
-      ctx.restore();
-    };
+    const fadeB = this.incomingFade ?? 1;
     const far = stage.width * 2;
+    const spans = [{ x0: -far, x1: lo, w: 0 }, ...bands.map((b) => ({ x0: b.x0, x1: b.x1, w: b.weightB })), { x0: hi, x1: far, w: 1 }]
+      .filter((sp) => sp.x1 > sp.x0)
+      .map((sp) => ({ ...sp, w: sp.w * fadeB }));
+    const out = this._scratch;
     const a = renderA();
-    put(a, -far, lo, 1);
-    for (const b of bands) put(a, b.x0, b.x1, 1 - b.weightB);
+    if (!out) return false;
+    // Scenic and ground images differ in size: blend in the top-left W x H
+    // of the buffer (reserved at the scenic backing size, which the ground
+    // image -- same scale, smaller stage -- never exceeds), so the buffer is
+    // not reallocated between the two composites of one frame.
+    const W = Math.min(out.width, a?.width || out.width), H = Math.min(out.height, a?.height || out.height);
+    const sctx = out.getContext('2d');
+    const sx = W / stage.width;
+    sctx.setTransform(1, 0, 0, 1, 0, 0);
+    sctx.globalAlpha = 1;
+    sctx.globalCompositeOperation = 'source-over';
+    sctx.clearRect(0, 0, W, H);
+    const put = (img, x0, x1, alpha, op) => {
+      if (!img || !(alpha > 0.001)) return;
+      const cx0 = Math.max(0, x0 * sx), cx1 = Math.min(W, x1 * sx);
+      if (!(cx1 > cx0)) return;
+      sctx.save();
+      sctx.beginPath();
+      sctx.rect(cx0, 0, cx1 - cx0, H);
+      sctx.clip();
+      sctx.globalAlpha = Math.min(1, alpha);
+      sctx.globalCompositeOperation = op;
+      sctx.drawImage(img, 0, 0, W, H);
+      sctx.restore();
+    };
+    for (const sp of spans) put(a, sp.x0, sp.x1, 1 - sp.w, 'source-over');
     const b = renderB();
-    for (const band of bands) put(b, band.x0, band.x1, band.weightB);
-    put(b, hi, far, 1);
-    return !!(a || b);
+    for (const sp of spans) put(b, sp.x0, sp.x1, sp.w, 'lighter');
+    if (!a && !b) return false;
+    ctx.save();
+    ctx.globalAlpha = this.arrival;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(out, 0, 0, W, H, 0, 0, stage.width, stage.height);
+    ctx.restore();
+    return true;
   }
 
   /** Composite the rock stage under the fixed-ground transform. */
@@ -399,7 +515,7 @@ export class RangePresentation {
     return {
       mode: this.mode, active: this.active, reason: this.reason, viewId: this.active ? this.viewId : null,
       forcedCandidate: !!this.forced?.forcedCandidate, forcedViewId: this.forcedViewId, diag: this.diag,
-      generation: this.generation, runtime: this.runtimeState, arrival: this.arrival, incomingViewId: this.active ? this.incomingViewId : null, seamP: this.seamP ?? null,
+      generation: this.generation, runtime: this.runtimeState, arrival: this.arrival, incomingFade: this.incomingFade, incomingViewId: this.active ? this.incomingViewId : null, seamP: this.seamP ?? null,
       failures: Object.fromEntries(this.failures), frameId: this.frameId, progress01: this.frame?.progress01 ?? null,
       scene: this.scene?.snapshot?.() || null, residency: this.residency?.snapshot?.() || null,
       timings: { ...this.timings }, catalogVersion: this.catalog.catalogVersion,
@@ -407,6 +523,7 @@ export class RangePresentation {
   }
 
   dispose() {
+    this._releaseScratch();
     if (this.residency && this.generation) this.residency.cancelGeneration(this.generation);
     this.scene?.dispose();
     this.scene = null;

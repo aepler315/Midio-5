@@ -24,11 +24,11 @@ function fakeScene({ failB = false, holdB = false, sideRoom = true } = {}) {
       ready.add(v.id);
       return Promise.resolve({});
     },
-    resize() {}, release() {}, snapshot: () => ({}), pinView(ids) { scene.pinned = [].concat(ids); },
+    resize() {}, release() {}, snapshot: () => ({}), pinView(ids, extra = []) { scene.pinned = [].concat(ids, extra); },
     ensureSide() { if (!sideRoom) return false; scene.sideB = true; return true; },
     releaseSide() { scene.sideB = false; },
-    renderPartition: (frame, pass, id, opts = {}) => { calls.push({ pass, id, side: opts.side || 'A' }); return { id }; },
-    renderGround: (frame, id) => ({ canvas: { id }, stage: { id, wetMasks: [], pools: [] } }),
+    renderPartition: (frame, pass, id, opts = {}) => { calls.push({ pass, id, side: opts.side || 'A' }); return { id, width: W, height: H }; },
+    renderGround: (frame, id) => ({ canvas: { id, width: W, height: H }, stage: { id, wetMasks: [], pools: [] } }),
   };
   return scene;
 }
@@ -49,15 +49,37 @@ function recordingCtx() {
   const stack = [];
   return {
     draws, globalAlpha: 1, globalCompositeOperation: 'source-over',
-    save() { stack.push([clip, this.globalAlpha]); }, restore() { [clip, this.globalAlpha] = stack.pop(); },
-    beginPath() {}, rect(x, y, w) { clip = [x, x + w]; }, clip() {},
-    drawImage(img) { draws.push({ id: img.id, clip, alpha: this.globalAlpha }); },
+    save() { stack.push([clip, this.globalAlpha, this.globalCompositeOperation]); },
+    restore() { [clip, this.globalAlpha, this.globalCompositeOperation] = stack.pop(); },
+    beginPath() {}, rect(x, y, w) { clip = [x, x + w]; }, clip() {}, setTransform() {},
+    clearRect() { draws.length = 0; },
+    drawImage(img) { draws.push({ id: img.id, clip, alpha: this.globalAlpha, op: this.globalCompositeOperation }); },
   };
+}
+
+// The travel composition buffer: records what is blended into it.
+const scratches = [];
+function fakeCanvas(w, h) {
+  const ctx = recordingCtx();
+  const c = { id: 'scratch', width: w, height: h, ctx, getContext: () => ctx };
+  scratches.push(c);
+  return c;
+}
+
+/** Opacity at screen x of opaque A and B blended as recorded: A's
+ *  source-over alpha plus B's added ('lighter') alpha. */
+function coverageAt(draws, x) {
+  let a = 0, b = 0;
+  for (const d of draws) {
+    if (!(x >= d.clip[0] && x < d.clip[1])) continue;
+    if (d.op === 'lighter') b += d.alpha; else a = d.alpha + a * (1 - d.alpha);
+  }
+  return { a, b, total: a + b };
 }
 
 async function presentation(sceneOpts) {
   const scene = fakeScene(sceneOpts);
-  const p = new RangePresentation({ mode: 'v2', catalog, sceneFactory: async () => scene });
+  const p = new RangePresentation({ mode: 'v2', catalog, sceneFactory: async () => scene, makeCanvas: fakeCanvas });
   p.setSong({ terrain: { sceneByBiome: new Map([['RAINFOREST', { view: catalog.views[0] }], ['TAIGA', { view: catalog.views[1] }]]) }, generation: 1 });
   await p.whenReady({ timeoutMs: 50 }).catch(() => {});
   return { p, scene };
@@ -75,24 +97,36 @@ test('endpoints: before the travel only the outgoing view draws, after it only t
   }
 });
 
-test('25/50/75%: both sides render; the seam moves right to left, nearest layers first', async () => {
+test('25/50/75%: both sides render; the seam moves right to left, nearest layers first; the blend stays opaque', async () => {
   const { p, scene } = await presentation();
+  // The incoming view is ready before its seam enters the frame (no fade).
+  const start = inputs(0); start.sim.biomes.currentBlend = { from: 'RAINFOREST', to: 'TAIGA', t: 0.001, travel: true, travelP: 0 };
+  p.setFrameInputs(start);
+  p.beginScenic();
   let prev = Infinity;
   for (const t of [0.25, 0.5, 0.75]) {
     scene.calls.length = 0;
     p.setFrameInputs(inputs(t));
     assert.equal(p.beginScenic(), true);
     assert.equal(p.snapshot().incomingViewId, 'b');
-    assert.deepEqual(scene.pinned.sort(), ['a', 'b']);
+    assert.deepEqual(scene.pinned.filter((k) => !k.startsWith('range:')).sort(), ['a', 'b']);
+    assert.ok(scene.pinned.includes('range:travel-scratch'));
     const ctx = recordingCtx();
     p.drawPartition(ctx, 'near', { width: W, height: H });
     assert.deepEqual(scene.calls.map((c) => [c.id, c.side]), [['a', 'A'], ['b', 'B']]);
+    // One copy of the blended buffer to the stage.
+    assert.deepEqual(ctx.draws.map((d) => d.id), ['scratch']);
+    const draws = scratches.at(-1).ctx.draws;
     const { lo, hi } = travelSpans(W, 'L5', t);
-    // Solid A left of the seam, solid B right of it, crossfades between.
-    const near = (x, y) => Math.abs(x - y) < 1e-6;
-    if (lo > -W * 2) assert.ok(ctx.draws.some((d) => d.id === 'a' && d.alpha === 1 && near(d.clip[1], lo)));
-    assert.ok(ctx.draws.some((d) => d.id === 'b' && d.alpha === 1 && near(d.clip[0], hi)));
-    for (const d of ctx.draws.filter((x) => x.alpha < 1)) assert.ok(d.clip[0] >= lo - 1e-9 && d.clip[1] <= hi + 1e-9);
+    // Solid A left of the seam, solid B right of it, and every column of
+    // the feather band fully covered (no see-through stripe).
+    if (lo > 1) assert.equal(coverageAt(draws, lo / 2).a, 1);
+    if (hi < W - 1) assert.equal(coverageAt(draws, (hi + W) / 2).b, 1);
+    for (let x = Math.max(0, lo); x < Math.min(W, hi); x += 7) {
+      const c = coverageAt(draws, x);
+      assert.ok(Math.abs(c.total - 1) < 1e-9, `coverage ${c.total} at x=${x}`);
+    }
+    assert.ok(draws.filter((d) => d.id === 'b').every((d) => d.op === 'lighter'), 'B is added, not layered');
     const seam = travelSeam(W, 'L5', t);
     assert.ok(seam < prev);
     prev = seam;
@@ -180,4 +214,65 @@ test('a view that becomes ready after legacy was on screen fades in over heard t
   at(30, {}); p._legacyShown = true;
   at(31, { exportMode: true });
   assert.equal(p.arrival, 1);
+});
+
+test('an incoming view that becomes ready mid-travel fades in instead of popping', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const scene = fakeScene();
+  const prepare = scene.prepare;
+  scene.prepare = (v) => (v.id === 'b' ? gate.then(() => prepare(v)) : prepare(v));
+  const p = new RangePresentation({ mode: 'v2', catalog, sceneFactory: async () => scene, makeCanvas: fakeCanvas });
+  p.setSong({ terrain: { sceneByBiome: new Map([['RAINFOREST', { view: catalog.views[0] }], ['TAIGA', { view: catalog.views[1] }]]) }, generation: 1 });
+  await p.whenReady({ timeoutMs: 1 }).catch(() => {});
+  const at = (tSec, travelP) => { const i = inputs(travelP); i.sim.biomes.tSec = tSec; p.setFrameInputs(i); return p.beginScenic(); };
+  assert.equal(at(10, 0.2), true);
+  assert.equal(p.snapshot().incomingViewId, null, 'still loading: outgoing only');
+  release();
+  await new Promise((r) => setTimeout(r, 5));
+  at(11, 0.75);
+  assert.equal(p.snapshot().incomingViewId, 'b');
+  assert.equal(p.incomingFade, 0, 'joins invisible');
+  const ctx = recordingCtx();
+  p.drawPartition(ctx, 'near', { width: W, height: H });
+  const draws = scratches.at(-1).ctx.draws;
+  for (const x of [10, W / 2, W - 10]) assert.equal(coverageAt(draws, x).a, 1, 'A still fills the frame');
+  at(11.6, 0.8);
+  assert.ok(p.incomingFade > 0.3 && p.incomingFade < 0.7);
+  at(12.3, 0.85);
+  assert.equal(p.incomingFade, 1);
+});
+
+test('an incoming view ready before the seam enters needs no fade', async () => {
+  const { p } = await presentation();
+  const i = inputs(0); i.sim.biomes.currentBlend = { from: 'RAINFOREST', to: 'TAIGA', t: 0.0005, travel: true, travelP: 0 };
+  p.setFrameInputs(i);
+  p.beginScenic();
+  assert.equal(p.incomingFade, 1);
+});
+
+test('export mode (set by the app, not the simulation) never fades', async () => {
+  const scene = fakeScene();
+  const p = new RangePresentation({ mode: 'v2', catalog, sceneFactory: async () => scene, makeCanvas: fakeCanvas });
+  p.setSong({ terrain: { sceneByBiome: new Map([['RAINFOREST', { view: catalog.views[0] }]]) }, generation: 1, exportMode: true });
+  const i = inputs(1, { travel: false });
+  i.sim.biomes.currentBlend = { from: 'RAINFOREST', to: 'RAINFOREST', t: 1 };
+  p.setFrameInputs(i);
+  assert.equal(p.beginScenic(), false, 'first frame before the runtime is ready is legacy');
+  await p.whenReady({ timeoutMs: 50 });
+  p.setFrameInputs(i);
+  assert.equal(p.beginScenic(), true);
+  assert.equal(p.arrival, 1);
+});
+
+test('the frame is pinned before side B and the buffer are reserved', async () => {
+  const { p, scene } = await presentation();
+  const order = [];
+  const pin = scene.pinView;
+  scene.pinView = (ids, extra) => { order.push('pin'); pin(ids, extra); };
+  const ensure = scene.ensureSide;
+  scene.ensureSide = () => { order.push('reserve'); return ensure(); };
+  p.setFrameInputs(inputs(0.5));
+  p.beginScenic();
+  assert.ok(order.indexOf('pin') < order.indexOf('reserve'), order.join(','));
 });
