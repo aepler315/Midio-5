@@ -269,21 +269,21 @@
    "lengthKm": 342.3310078984351
   }
  ],
- "manifestSha256": "bfd21ddf49eb1ce29571fca1183994a333c17903ceeac42f0f4b1655016562ea",
- "payloadSha256": "5da44e429e62bc313b3e143f1e5304415e6a971313ab5a4c064c63d45f47380f",
- "payloadBytes": 1865595,
+ "manifestSha256": "5cbcec0d5132d445b75c1ffcec1fe1bb48980e2c34f44f34b6ebb4eb96bdbc89",
+ "payloadSha256": "54e82597b709d5208bd15cbee53ac4aea35e3a698057ecf6a9c317e2324cd330",
+ "payloadBytes": 1866105,
  "stats": {
   "tiles": 358,
   "desktop": {
-   "vertices": 1169838,
-   "triangles": 2263136,
-   "meshBytes": 41195688,
+   "vertices": 1170046,
+   "triangles": 2263520,
+   "meshBytes": 41202792,
    "surfaceTextureBytes": 26784432
   },
   "mobile": {
-   "vertices": 688835,
-   "triangles": 1327214,
-   "meshBytes": 24192588,
+   "vertices": 689379,
+   "triangles": 1328198,
+   "meshBytes": 24210924,
    "surfaceTextureBytes": 26784432
   }
  },

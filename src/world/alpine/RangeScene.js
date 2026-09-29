@@ -15,7 +15,7 @@
 import { prepareTerrainAssets, RangeAssetError } from './RangeAssets.js';
 import { createSurfaceTexture, terrainUniforms, createBandGeometries } from './TerrainGL.js';
 import { sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromHex, createMaterialTextures, applyMaterial } from './TerrainMaterial.js';
-import { loadMaterialPack, materialGpuBytes } from './MaterialPackage.js';
+import { loadMaterialPack, materialGpuBytes, RULE_DEFAULTS } from './MaterialPackage.js';
 import { placeForestAsync, forestKeepFraction } from './ForestCover.js';
 import { hashSeed } from '../../utils/math.js';
 import { createForest } from './ForestGL.js';
@@ -457,7 +457,7 @@ export class RangeScene {
       hexToLinear(THREE, frame.light.sky.horizon, u.uSkyHorizon.value).multiplyScalar(0.9);
       hexToLinear(THREE, frame.light.sky.air || frame.light.sky.horizon, u.uAirColor.value);
     }
-    u.uAirDensity.value = (1 / 55000) * (1 + 0.6 * night);
+    u.uAirDensity.value = (1 / 55000) * (1 + 0.6 * night) * (p.rules?.airScale ?? RULE_DEFAULTS.airScale);
     // Valley mist: anchored at the view's water level, thicker in calm.
     const mp = mistParams({ rules: p.rules, waterLevelM: p.waterLevelM, heightRange: [u.uHeightRange.value.x, u.uHeightRange.value.y],
       tSec: frame.timeMs / 1000, calm01: 1 - (frame.music?.groove ?? 0) });

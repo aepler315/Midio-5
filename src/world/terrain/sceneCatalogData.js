@@ -7,13 +7,13 @@ export default {
    "id": "nc-ross-lake-north",
    "regionId": "north-cascades",
    "biome": "RAINFOREST",
-   "status": "approved",
+   "status": "candidate",
    "catalogVersion": 5,
    "title": "Ross Lake",
    "place": "North Cascades, Washington",
    "credit": "Elevation: USGS 3DEP 1/3 arc-second DEM + AWS Terrain Tiles (beyond 3DEP coverage)",
    "terrainManifestUrl": "terrain/nc-ross-lake-north.terrain.json",
-   "terrainManifestSha256": "8995e13dae058742479bb8b35396400b6a690a953e0d172be8988144047d2748",
+   "terrainManifestSha256": "32ee5822fccba5a474d0298cd8eb4e941cbb4858e7f1679b4e6ae9fa338aa4d2",
    "materialManifestUrl": "materials/wet-conifer.json",
    "materialManifestSha256": "8f5ff6bb64b01072364f9d4698c13591af20de8f32dfbd40b67f0614fd242bb0",
    "materialRules": {},
@@ -50,18 +50,7 @@ export default {
    "evidence": {
     "reviewPath": "docs/range-v2-progress.md",
     "review": "2026-09-29 geometry/camera review (Task 4): 21 stations + continuous traverse, neutral/silhouette/depth/crop-edge modes. Connected real relief (Ross Lake chain, Jack Mountain spurs, Sourdough flanks); no crop-edge skyline, no cracks; terrain coverage 0.62-0.64, skyline top 0.28 of frame height. Geometry approved for material pilot; production status stays candidate until the Task 13 full pilot.",
-    "approval": {
-     "date": "2026-09-29",
-     "terrainManifestSha256": "8995e13dae058742479bb8b35396400b6a690a953e0d172be8988144047d2748",
-     "materialManifestSha256": "8f5ff6bb64b01072364f9d4698c13591af20de8f32dfbd40b67f0614fd242bb0",
-     "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-     "cameraSha256": "1947b732c79e756600438f9747cb0dbd629daecafb072dd925d4d5cd1773eb7a",
-     "evidence": [
-      "docs/evidence/range-v2/pilot-ross-lake-calm-10s.jpg",
-      "docs/evidence/range-v2/pilot-ross-lake-energetic-32s.jpg",
-      "docs/evidence/range-v2/pilot-ross-lake-reflection-38s.jpg"
-     ]
-    },
+    "approval": null,
     "sourceHashes": [
      "db044eff3e8bbd5e89579b8d11c1c86e1ceec9b61013ee0f4d543927d6838fdd",
      "91642208a0183ec44c382f644a836aad1430092811a3af0d07923e3cc999072f",
@@ -131,7 +120,7 @@ export default {
      "9fe71f8462cda743708757429969c11e25a061911ce8c713a9253511424d9b36",
      "76a07320ae284c5a397bb8b307b1f916c7d999121a67e34a53df0f113aa24e9c",
      "bef1fbf8f871821ae6bd884f381a30b1cf3565eb75d33c51b309cc5ec80ffb60",
-     "75f1eac2ac7f9bd0c149c94df2e7305920f8984bd2841da5c2a8ec37910b2e32"
+     "b621d841e649af0cee550e4db298e94195c22a379186154e8decc741e5a64c1b"
     ]
    }
   },
@@ -139,13 +128,13 @@ export default {
    "id": "teton-jackson-lake",
    "regionId": "tetons",
    "biome": "CONIFER",
-   "status": "approved",
+   "status": "candidate",
    "catalogVersion": 5,
    "title": "Teton Range",
    "place": "Jackson Lake, Wyoming",
    "credit": "Elevation: USGS 3DEP 1/3 arc-second DEM",
    "terrainManifestUrl": "terrain/teton-jackson-lake.terrain.json",
-   "terrainManifestSha256": "e98c6ab7e7fe80ca393867f053b178b40c742724b5d663ee7b1320ba16ba9ea0",
+   "terrainManifestSha256": "bd3b57442d203981a66be4e1e23df677116f9a562d7a39497f0a0e0e01b429b1",
    "materialManifestUrl": "materials/dry-conifer.json",
    "materialManifestSha256": "6afff55ebe7762475b09f09fa8f60627714d051f9f117ffffd8e124894281175",
    "materialRules": {},
@@ -182,21 +171,11 @@ export default {
    "evidence": {
     "reviewPath": "docs/range-v2-progress.md",
     "review": null,
-    "approval": {
-     "date": "2026-09-29",
-     "terrainManifestSha256": "e98c6ab7e7fe80ca393867f053b178b40c742724b5d663ee7b1320ba16ba9ea0",
-     "materialManifestSha256": "6afff55ebe7762475b09f09fa8f60627714d051f9f117ffffd8e124894281175",
-     "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-     "cameraSha256": "eda9f5f9370642792602854f1dab20861e664781068cdeba95bbb2ecb5c8726d",
-     "evidence": [
-      "docs/evidence/range-v2/teton-jackson-lake-stations.jpg",
-      "docs/evidence/range-v2/teton-jackson-lake-inapp-10s.jpg"
-     ]
-    },
+    "approval": null,
     "sourceHashes": [
      "09930a44096be83c6023c6d853c12d1571f428878691e4bfba81cdd17d9077b9",
      "a19a985ea1d6370572bfaac2b7850bd90b49f28e9d10e3ad37c5ac17d4880e8f",
-     "64167571a7ce9b474c554c5550e7af986c9d872d1de14e1b484ddf6602b2a816"
+     "4d6c2aae717cba1c485d3533ac0406e21ab14733c459b065eec71cdbbcead4f2"
     ]
    }
   },
@@ -597,9 +576,9 @@ export default {
    "place": "Tombstone Territorial Park, Yukon",
    "credit": "Elevation: AWS Terrain Tiles",
    "terrainManifestUrl": "terrain/tombstone-north-klondike.terrain.json",
-   "terrainManifestSha256": "bfd21ddf49eb1ce29571fca1183994a333c17903ceeac42f0f4b1655016562ea",
+   "terrainManifestSha256": "5cbcec0d5132d445b75c1ffcec1fe1bb48980e2c34f44f34b6ebb4eb96bdbc89",
    "materialManifestUrl": "materials/tundra.json",
-   "materialManifestSha256": "271d21ad1024facd46affc5956892c362b216dd0abe15541e129306e0de7096f",
+   "materialManifestSha256": "76deaaa34707bc0454ecb6e10080e4d1b6716ba84b760a7fa4ce9df09a26dce2",
    "materialRules": {},
    "camera": {
     "eyeStartM": [
@@ -780,7 +759,7 @@ export default {
      "56005b720081f4dae0f394fad9c21afab2476a6c3fa877ca69c037d476bdd8dd",
      "b90a2fd87da8ee3d68dbda9879f44b9234d5828feab31cee554e713e30b5e5f8",
      "363ea4a1252ac2e8c499c98f12fd8092862ba2fbc0414c2a7013052e0fe93cc9",
-     "5da44e429e62bc313b3e143f1e5304415e6a971313ab5a4c064c63d45f47380f"
+     "54e82597b709d5208bd15cbee53ac4aea35e3a698057ecf6a9c317e2324cd330"
     ]
    }
   },
@@ -794,9 +773,9 @@ export default {
    "place": "Northern Rockies, British Columbia",
    "credit": "Elevation: AWS Terrain Tiles",
    "terrainManifestUrl": "terrain/muncho-lake-south.terrain.json",
-   "terrainManifestSha256": "df5896e554099c364c3d315466b80467c063ae7af3367b250a97f6d355950d9d",
+   "terrainManifestSha256": "d25af9f0f975972c13f3da100d7b7df0a1c97136adb9073c1e673931e81c6ac2",
    "materialManifestUrl": "materials/taiga.json",
-   "materialManifestSha256": "ddf653b89b8c7da84f0bfad8d739263bb72fdad6377bfb9e035eb935f67e1958",
+   "materialManifestSha256": "c44b2272c56122a84854f3f8bb2376fad740401588242ed4e0fecb8ed15f564c",
    "materialRules": {},
    "camera": {
     "eyeStartM": [
@@ -933,7 +912,7 @@ export default {
      "9e84bccc11a487f6e7f14a60aa483bc258a9d8e260e7e366668219c9bcfb9c4b",
      "b6f54c740ea008eaa13ae7407326d4718bcd87e7812288f624a125d273464d2d",
      "81885b22b7d65f536f7009b81ec6348126815583091726036067d013423158c7",
-     "a4277be8de953eef74f4938af1ecea959bb060b2b4ddeb41f8a964170364f83b"
+     "bfd2526a366309e01efceaf3b8c8279a94321b5fb771849b57dd33a634d05467"
     ]
    }
   },
@@ -947,9 +926,9 @@ export default {
    "place": "Trans-Mexican Volcanic Belt, México",
    "credit": "Elevation: AWS Terrain Tiles",
    "terrainManifestUrl": "terrain/izta-popo-west.terrain.json",
-   "terrainManifestSha256": "a0e796b6510f732bc84b9fb8180f74bb966113a0fa6596513280dc67c70f4e70",
+   "terrainManifestSha256": "0a4d2c66e6d5cdde0f3f5fab5ea9b451d49d6984766b97168da01ff80d1fd481",
    "materialManifestUrl": "materials/pine-oak.json",
-   "materialManifestSha256": "59e13fe53c1ed8835c1dcef94e427ffbe81fdae07c07b8d33bd5b8b86ff1dc40",
+   "materialManifestSha256": "8959b57b89150274c889b241bd4656a0cdfafd28d31f675f4fd4011abaa7a38f",
    "materialRules": {},
    "camera": {
     "eyeStartM": [
@@ -975,10 +954,10 @@ export default {
     "fovYDeg": 30
    },
    "characterScores": {
-    "energy": 0.276,
-    "rawness": 0.197,
+    "energy": 0.269,
+    "rawness": 0.19,
     "grandeur": 0.38,
-    "dominance": 0.644
+    "dominance": 0.643
    },
    "archetype": "brooding",
    "evidence": {
@@ -1035,7 +1014,7 @@ export default {
      "4dda0a11f80862e3b765901f3cc88eff55218891d874f01edcafc6732ca48ad5",
      "42bdc77b7846b8cefd54858ab6d6de55f961f9c1bd755d8717b5c125bc028206",
      "05ea6952b8c8b6e91306e1719a9a67e0fc0469bffa7a489b3fa9e5d61f11bfa6",
-     "cb9f664740670fb93c164edc009406e7b2f639a2d3bef70508954a50c765427f"
+     "573a61dbf671f439f1f656722c0d182a6c4fcb23db6f424b85b6c4aace3d0e90"
     ]
    }
   },
@@ -1051,7 +1030,7 @@ export default {
    "terrainManifestUrl": "terrain/black-mountains-catawba.terrain.json",
    "terrainManifestSha256": "0f5d8ce42c058a97f1e912a79fc7610ea82f76ef7d557ca964227647250d7b68",
    "materialManifestUrl": "materials/broadleaf.json",
-   "materialManifestSha256": "7607647252ed18e581e7925ef6fb9b14eaaa40ee1b135db0df01b3bbeac9a3c8",
+   "materialManifestSha256": "3e8ff42e50658d7473f7a81d107c6a3e3b628ee8daae6b7d89541f8e21578894",
    "materialRules": {},
    "camera": {
     "eyeStartM": [
@@ -1157,9 +1136,9 @@ export default {
    "place": "Owens Valley, California",
    "credit": "Elevation: USGS 3DEP 1/3 arc-second DEM",
    "terrainManifestUrl": "terrain/white-mountains-owens.terrain.json",
-   "terrainManifestSha256": "025cad21e1bb63b63d4db0e3e96c1efb3cd42ebf0318d421eb4dd542ff6e9f3c",
+   "terrainManifestSha256": "a83a16041b1153ff3babe0a156ed1e54ce47acb9d663f42cca2e53223800fb83",
    "materialManifestUrl": "materials/steppe.json",
-   "materialManifestSha256": "0a8d1120c321914b7f4d476fb2a967680a1eca63f1f6a5ef1eeb51b2f6b3787a",
+   "materialManifestSha256": "ada04aa0d6767f64aa7dde9aedc02e553f98b2b3488b70e032e6319b170be6c9",
    "materialRules": {},
    "camera": {
     "eyeStartM": [
@@ -1197,7 +1176,7 @@ export default {
     "approval": null,
     "sourceHashes": [
      "c888770207f27ef836b91b02f2848650c49d9f156e82d494f736f97b3de384ee",
-     "8e996a82ea86facf5167886b4aaf33fef5f9564c96949f972489962927037e60"
+     "85cc9eac527de9ddc523e7c56c65b980694c3731f8279703c5618adff0d00e10"
     ]
    }
   },
@@ -1213,7 +1192,7 @@ export default {
    "terrainManifestUrl": "terrain/la-sal-castle-valley.terrain.json",
    "terrainManifestSha256": "930f043038551229e0b43b47d0a68db31b33a9bf23d631376af54e33fbf62c42",
    "materialManifestUrl": "materials/canyon.json",
-   "materialManifestSha256": "84ea883ec82f6eae304329e151008f7d8cdffd0fe96022d0685692cb3a1f77ed",
+   "materialManifestSha256": "ca6259b1e0cd2b10e4aae9e84abbe9c95b32976767ef372aa3caac4e73c326ce",
    "materialRules": {},
    "camera": {
     "eyeStartM": [
@@ -1267,7 +1246,7 @@ export default {
    "terrainManifestUrl": "terrain/panamint-dantes-view.terrain.json",
    "terrainManifestSha256": "b7d3479f316016efe7d25fbacff1127fd5378ab89fa663095e0d55382af5d8c3",
    "materialManifestUrl": "materials/desert.json",
-   "materialManifestSha256": "9720c7a98e868b4ce4409aabb0c00542b423b570d115b2f8c0943f9218a2deee",
+   "materialManifestSha256": "2beecf1f1647994f69a65b655ee5e48a3e771117bb7bcd1efd4c12ec67cfc14d",
    "materialRules": {},
    "camera": {
     "eyeStartM": [

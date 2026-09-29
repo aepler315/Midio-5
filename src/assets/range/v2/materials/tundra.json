@@ -259,8 +259,8 @@
   "lichen": "#7a7a5e"
  },
  "rules": {
-  "snowlineM": 1200,
-  "snowFullM": 1700,
+  "snowlineM": 1900,
+  "snowFullM": 2300,
   "snowMaxSlopeDeg": 50,
   "treelineM": 300,
   "forestMaxSlopeDeg": 20,

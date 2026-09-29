@@ -230,8 +230,16 @@ export function buildSurfaceTexture(data) {
         const i = Z * W + X;
         heights[i] = hh;
         spacing[i] = Math.min(255, t.stride);
-        const nu = Math.min(t.samples - 1, Math.round(fu)), nv = Math.min(t.samples - 1, Math.round(fv));
-        flow[i] = t.flowBytes[nv * t.samples + nu];
+        // Water is the bilinear half-coverage contour of the four samples,
+        // not the nearest sample: a coarse tile's nearest lookup draws a
+        // shoreline in stride-sized stairs. Flow blends the dry samples.
+        const fs = t.samples, o = v0 * fs + u0;
+        const fa = t.flowBytes[o], fb = t.flowBytes[o + 1], fc = t.flowBytes[o + fs], fd = t.flowBytes[o + fs + 1];
+        const wa = (1 - tu) * (1 - tv), wb = tu * (1 - tv), wc = (1 - tu) * tv, wd = tu * tv;
+        const wet = (fa === 255 ? wa : 0) + (fb === 255 ? wb : 0) + (fc === 255 ? wc : 0) + (fd === 255 ? wd : 0);
+        const dry = 1 - wet;
+        const acc = (fa === 255 ? 0 : fa * wa) + (fb === 255 ? 0 : fb * wb) + (fc === 255 ? 0 : fc * wc) + (fd === 255 ? 0 : fd * wd);
+        flow[i] = wet > 0.5 ? 255 : dry > 1e-6 ? Math.min(254, Math.round(acc / dry)) : 254;
       }
     }
   }

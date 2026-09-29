@@ -55,6 +55,23 @@ test('no trees on water, cliffs or above the treeline; roots sit on the drawn su
   }
 });
 
+test('a forest floor keeps low ground open and treeScale shrinks every tree', () => {
+  const base = placeForest(data, view, rules, { seed: 5 });
+  const floored = placeForest(data, view, { ...rules, forestFloorM: 800 }, { seed: 5 });
+  assert.ok(floored.count > 0 && floored.count < base.count);
+  // The floor edge is broken up by up to 100 m either way.
+  for (const t of all(floored)) assert.ok(t[1] >= 800 - 100, `tree at ${t[1].toFixed(0)} m under the floor`);
+  const small = placeForest(data, view, { ...rules, treeScale: 0.3 }, { seed: 5 });
+  assert.equal(small.count, base.count, 'same stands, smaller trees');
+  const a = all(base), b = all(small);
+  for (let i = 0; i < a.length; i++) {
+    assert.deepEqual([...b[i].subarray(0, 3)], [...a[i].subarray(0, 3)]);
+    assert.ok(Math.abs(b[i][3] - 0.3 * a[i][3]) < 1e-3);
+  }
+  // Absent rules are the defaults: nothing moves.
+  assert.deepEqual(placeForest(data, view, { ...rules, forestFloorM: undefined, treeScale: undefined }, { seed: 5 }).mesh, base.mesh);
+});
+
 test('quality keeps a stable subset and never moves a tree', () => {
   const p = placeForest(data, view, rules, { seed: 5 });
   const full = new Set(keptInstances(p.billboard, p.stride, 0));

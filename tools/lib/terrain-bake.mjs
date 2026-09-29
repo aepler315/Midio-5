@@ -32,6 +32,8 @@ import { cameraPoseAt, boxMayBeVisible, viewDepthToBox, focalPx, cameraRailError
 import { TERRAIN_SCHEMA, TERRAIN_VERSION, STRIDES, WATER_FLOW } from '../../src/world/alpine/TerrainPackage.js';
 
 export { TERRAIN_SCHEMA, TERRAIN_VERSION, STRIDES, WATER_FLOW };
+/** Coarsest stride a tile holding both water and land may use (cells). */
+export const SHORE_MAX_STRIDE = 4;
 export { validateTerrainManifest, decodeResiduals } from '../../src/world/alpine/TerrainPackage.js';
 export const TILE_CELLS = 64;
 export const LOD_BUDGETS = Object.freeze({
@@ -581,11 +583,22 @@ export async function bakeTerrain(grid, view, options = {}) {
       const budgetScale = visible ? vis[framing].budgetScale : 1;
       const errorsM = {};
       for (const s of STRIDES) if (s <= cells) errorsM[s] = tileStrideError(h, valid, w, hgt, x0, y0, cells, s);
+      // A shoreline tile keeps a fine stride whatever its height error: a
+      // flat lake edge is "error free" at the coarsest stride, but its four
+      // corners cannot carry where the water ends.
+      let wetCells = 0, landCells = 0;
+      for (let cy = 0; cy <= cells && y0 + cy < hgt; cy++) {
+        for (let cx = 0; cx <= cells && x0 + cx < w; cx++) {
+          const i = (y0 + cy) * w + x0 + cx;
+          if (valid[i]) { if (water[i]) wetCells++; else landCells++; }
+        }
+      }
+      const strideCap = wetCells && landCells ? SHORE_MAX_STRIDE : Infinity;
       const pick = (budget) => {
         if (!visible) return cells;
         let best = 1;
         for (const s of STRIDES) {
-          if (s > cells) break;
+          if (s > cells || s > strideCap) break;
           if (errorsM[s] * focal[budget] / dist <= budgets[budget].errorPx * budgetScale) best = s;
         }
         return best;

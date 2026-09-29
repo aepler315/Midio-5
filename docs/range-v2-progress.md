@@ -76,7 +76,7 @@ One corridor per biome, chosen on a range that `RealBiomes.biomeOfRange` already
 | RAINFOREST | `nc-ross-lake-north` (approved) | North Cascades | 3DEP 1/3" + Terrain Tiles | Jack Mtn 2763 |
 | CONIFER | `teton-jackson-lake` | Tetons (South Central Rockies forests) | 3DEP 1/3" | Grand Teton 4199 / 4189; Moran 3842 / 3841 |
 | ICEFIELD | `denali-wonder-lake` | Alaska Range (Rock and Ice) | Terrain Tiles z12 (the 3DEP query returned no Alaska coverage) | Denali 6190 / 6161; Foraker 5304 / 5313 |
-| TUNDRA | `tombstone-north-klondike` | Yukon Ranges (Ogilvie-MacKenzie alpine tundra) | Terrain Tiles z12 | Tombstone 2192 / 2328 (located as the DEM maximum; the tile surface overshoots the spire) |
+| TUNDRA | `tombstone-north-klondike` | Yukon Ranges (Ogilvie-MacKenzie alpine tundra) | Terrain Tiles z12 | Tombstone 2192 / 2151 (located as the DEM maximum; the thin spire is under-resolved at z12 once the edge spikes are removed) |
 | TAIGA | `muncho-lake-south` | Tower of London Range (Northern Cordillera forests) | Terrain Tiles z12 | lake located from the DEM (flat water mask) |
 | PINE_OAK | `izta-popo-west` | Trans-Mexican Volcanic Belt pine-oak forests | Terrain Tiles z12 at 36 m (finer cells were refused as upsampled) | Izta 5230 / 5208; Popo 5426 / 5410 |
 | BROADLEAF | `black-mountains-catawba` | Blue Ridge (Appalachian-Blue Ridge forests) | 3DEP 1/3" | Mitchell 2037 / 2036 |
@@ -95,6 +95,14 @@ Terrain and material fixes found while reviewing these views (they apply to ever
 - **Surface normals** are taken from a bilinear surface across each tile's stored sample spacing, so coarse tiles no longer shade as flat triangle facets.
 - **Snow** blends two unrelated tile scales; the snow/tree line breakup uses smooth value noise instead of a per-23 m-cell hash; drainage moss fades out on flats (filled-flat D8 routing is straight diagonal channels).
 - A faint residual pattern remains on Tombstone's tundra valley floor at close range; recorded in its review.
+
+Second review pass (colour in-app frames of all ten candidates):
+
+- **Lake holes.** A tile's stride was chosen from height error alone, so a flat lake tile could fall to its four corners and ship half dry (Muncho Lake showed rectangular notches). A tile holding both water and land now keeps stride <= 4 (`SHORE_MAX_STRIDE`), and the surface texture draws water as the bilinear half-coverage contour of the four samples instead of the nearest sample (identical on stride-1 tiles). Re-baking changed only shoreline tiles: Tetons 18 of 251, Ross Lake 1 of 355; both were re-baked and re-approved.
+- **Dry valley floors.** Steppe, canyon and desert packs placed 18-48 m conifers down to the valley floor (Owens Valley, Castle Valley read as dense forest). New optional pack rules: `forestFloorM` (lower forest limit, same stand breakup as the treeline, in placement and shader), `treeScale` (tree size), `airScale` (distance haze). Steppe 2000 m / 0.3, canyon 1700 m / 0.45, desert 1800 m / 0.3; pine-oak 2700 m (Mexican valley floors are farmland). Absent rules keep the old behaviour exactly, so the approved packs (wet-conifer, dry-conifer, icefield) are untouched.
+- **Clear desert air.** `airScale` 0.5-0.6 for desert, canyon and steppe.
+- **Broadleaf.** The treeline was 1600 m, so the Black Mountains' spruce-fir summits (Mitchell 2037 m) drew as bare ground; now 2300 m, with lighter deciduous canopy greens. The remaining grey at night is the shared night air over a dark forest, the same as the Tetons' forest.
+- **Summer taiga and tundra.** Taiga snowline 900 m / treeline 700 m put Muncho Lake (817 m) above the treeline and under snow; now boreal forest to 1400 m and snow above 2000 m. Tundra snowline 1200 -> 1900 m. Both were indistinguishable from the icefield pack.
 
 First placements that failed, and why: the Black Mountains from Craggy Pinnacle hid the far crest at 18 of 21 stations (nearer ridges; now seen broadside from the Catawba side); Muncho Lake's first eye sat in the mountains east of the lake; the Tetons from the east shore were too far for the range to read (moved over the lake).
 

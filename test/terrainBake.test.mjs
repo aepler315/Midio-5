@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import zlib from 'node:zlib';
 import {
-  bakeTerrain, encodeResiduals, decodeResiduals, validateTerrainManifest, tileStrideError, waterMask,
+  bakeTerrain, encodeResiduals, decodeResiduals, validateTerrainManifest, tileStrideError, waterMask, SHORE_MAX_STRIDE,
 } from '../tools/lib/terrain-bake.mjs';
 import { decodeTerrain, buildTerrainGeometry, buildSurfaceTexture, terrainHeightAt, tileStrides } from '../src/world/alpine/TerrainMesh.js';
 
@@ -175,6 +175,42 @@ test('hydro-flattened water is found, sloped ground is not', () => {
   const mask = waterMask(g.heightsM, g.valid, 80, 80);
   assert.equal(mask[40 * 80 + 40], 1);
   assert.equal(mask[2 * 80 + 2], 0);
+});
+
+test('shoreline tiles keep a fine stride and the surface keeps the shore', async () => {
+  // A flat lake in a gentle cone: planar enough that height error alone
+  // would let every tile, lake edge included, fall to its four corners.
+  const lake = (x, z) => { const r = Math.hypot(x, z); return r < 600 ? 500 : 500 + 0.1 * (r - 600); };
+  const g = makeGrid(257, 257, 10, lake);
+  const baked = await bakeTerrain(g, view([0, 4000, 60000], [0, 520, 0]));
+  const wet = waterMask(g.heightsM, g.valid, 257, 257);
+  const cells = baked.manifest.tileCells;
+  let shore = 0;
+  for (const t of baked.manifest.tiles.filter((x) => x.visible)) {
+    let w = 0, d = 0;
+    for (let r = t.iz * cells; r <= Math.min(256, (t.iz + 1) * cells); r++) {
+      for (let c = t.ix * cells; c <= Math.min(256, (t.ix + 1) * cells); c++) (wet[r * 257 + c] ? w++ : d++);
+    }
+    if (w && d) { shore++; assert.ok(t.stride <= SHORE_MAX_STRIDE, `${t.id} shoreline at stride ${t.stride}`); }
+  }
+  assert.ok(shore > 0);
+  assert.ok(baked.manifest.tiles.some((t) => t.visible && t.stride > SHORE_MAX_STRIDE), 'land still coarsens');
+  // The surface texture's water follows the full-resolution mask.
+  const data = await loadBaked(baked);
+  const surf = buildSurfaceTexture(data);
+  let wrong = 0, lakeCells = 0;
+  for (let r = 0; r < 257; r++) for (let c = 0; c < 257; c++) {
+    const gx = c - Math.round((data.grid.originM[0] - g.originM[0]) / 10), gz = r - Math.round((data.grid.originM[1] - g.originM[1]) / 10);
+    if (gx < 0 || gz < 0 || gx >= surf.width || gz >= surf.height) continue;
+    const a = surf.data[(gz * surf.width + gx) * 4 + 3];
+    if (a === 0) continue; // not covered by a shipped tile
+    if (wet[r * 257 + c]) lakeCells++;
+    if ((a === 255) !== !!wet[r * 257 + c]) wrong++;
+  }
+  assert.ok(lakeCells > 1000);
+  // Within about one cell of the true shore (the lake's rim is ~377 cells).
+  const rimCells = (2 * Math.PI * 600) / 10;
+  assert.ok(wrong < 1.5 * rimCells, `${wrong} cells disagree (rim ${Math.round(rimCells)})`);
 });
 
 test('manifest validation rejects malformed packages before any GPU work', async () => {

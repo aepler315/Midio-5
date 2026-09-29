@@ -1,4 +1,4 @@
-import { hexToLinear } from './MaterialPackage.js';
+import { hexToLinear, RULE_DEFAULTS } from './MaterialPackage.js';
 // Range v2 production terrain material (GLSL3 via the local Three.js
 // bundle). Task 8 ships the neutral-material pilot: real geometry, the
 // surface texture's full-grid normals, the frame's resolved celestial light
@@ -81,6 +81,7 @@ export const SCENE_FRAG = /* glsl */`
   uniform vec3 pWater; uniform vec3 pWaterDeep; uniform vec3 pLichen;
   uniform float rSnowline; uniform float rSnowFull; uniform float rSnowMaxSlope; uniform float rTreeline;
   uniform float rForestMaxSlope; uniform float rForestDensity; uniform float rMoss; uniform float rStrata;
+  uniform float rForestFloor;
   in vec2 vUv;
   in vec3 vWorld;
   in float vViewDepth;
@@ -173,6 +174,7 @@ export const SCENE_FRAG = /* glsl */`
       rockMask = max(rockMask, alpine * smoothstep(20.0, 38.0, slopeDeg + (rh - 0.5) * 18.0 - curv * 10.0));
       float forest = (1.0 - smoothstep(treeLine - 90.0, treeLine + 60.0, h))
         * (1.0 - smoothstep(rForestMaxSlope - 6.0, rForestMaxSlope + 4.0, slopeDeg))
+        * smoothstep(rForestFloor - 60.0, rForestFloor + 60.0, h + (breakup - 0.5) * 200.0)
         * rForestDensity;
       float snowLine = rSnowline + (breakup - 0.5) * 260.0 - curv * 180.0;
       float snow = smoothstep(snowLine, max(snowLine + 1.0, snowLine + (rSnowFull - rSnowline)), h);
@@ -295,6 +297,7 @@ export function sceneUniforms(THREE, base) {
     pLichen: { value: new THREE.Color() },
     rSnowline: { value: 2000 }, rSnowFull: { value: 2400 }, rSnowMaxSlope: { value: 50 }, rTreeline: { value: 1700 },
     rForestMaxSlope: { value: 38 }, rForestDensity: { value: 0.8 }, rMoss: { value: 0.5 }, rStrata: { value: 0.2 },
+    rForestFloor: { value: RULE_DEFAULTS.forestFloorM },
   };
 }
 
@@ -304,7 +307,8 @@ const PALETTE_UNIFORM = { rockLit: 'pRockLit', rockShade: 'pRockShade', rockWarm
   forestNear: 'pForestNear', forestFar: 'pForestFar', moss: 'pMoss', snow: 'pSnow', snowShade: 'pSnowShade',
   water: 'pWater', waterDeep: 'pWaterDeep', lichen: 'pLichen' };
 const RULE_UNIFORM = { snowlineM: 'rSnowline', snowFullM: 'rSnowFull', snowMaxSlopeDeg: 'rSnowMaxSlope', treelineM: 'rTreeline',
-  forestMaxSlopeDeg: 'rForestMaxSlope', forestDensity: 'rForestDensity', moss: 'rMoss', strata: 'rStrata' };
+  forestMaxSlopeDeg: 'rForestMaxSlope', forestDensity: 'rForestDensity', moss: 'rMoss', strata: 'rStrata',
+  forestFloorM: 'rForestFloor' };
 
 /** Set a THREE.Color to the linear value of an sRGB hex, exactly once.
  *  (Color.set(hex) already linearises under colour management; chaining
@@ -349,7 +353,7 @@ export function applyMaterial(uniforms, pack, textures, ruleOverrides = {}) {
   }
   for (const [k, u] of Object.entries(PALETTE_UNIFORM)) setLinearFromHex(uniforms[u].value, pack.manifest.palette[k]);
   const rules = { ...pack.manifest.rules, ...ruleOverrides };
-  for (const [k, u] of Object.entries(RULE_UNIFORM)) uniforms[u].value = rules[k];
+  for (const [k, u] of Object.entries(RULE_UNIFORM)) uniforms[u].value = rules[k] ?? RULE_DEFAULTS[k];
   uniforms.uHasMaterial.value = 1;
 }
 
