@@ -439,6 +439,26 @@ export class Midasus {
     return 2 * MIDASUS_HEX_R * DRAW_SCALE * this.pulse;
   }
 
+  /** Conservative logical box around everything draw() paints this frame:
+   *  core and glow, her particle ribbon and the orbiting debris, for
+   *  single-draw capture. Null when draw() paints nothing (deep space). */
+  drawBounds() {
+    if (this.voyage.phase === VoyagePhase.DEEP_SPACE) return null;
+    const swell = this._ens && this._ens.swell != null ? this._ens.swell : 1;
+    const pres = this.voyage.presentationScale * swell * this._discScale;
+    const r = MIDASUS_HEX_R * 2.4 * Math.max(1, this.pulse) * DRAW_SCALE * pres + 40;
+    let x0 = this.p.x - r, x1 = this.p.x + r, y0 = this.p.y - r, y1 = this.p.y + r;
+    for (const q of this.particles.active) {
+      x0 = Math.min(x0, q.x - q.size); x1 = Math.max(x1, q.x + q.size);
+      y0 = Math.min(y0, q.y - q.size); y1 = Math.max(y1, q.y + q.size);
+    }
+    for (const q of this.debris.shards) {
+      x0 = Math.min(x0, q.x - q.size - 2); x1 = Math.max(x1, q.x + q.size + 2);
+      y0 = Math.min(y0, q.y - q.size - 2); y1 = Math.max(y1, q.y + q.size + 2);
+    }
+    return { x: x0 - 8, y: y0 - 8, w: x1 - x0 + 16, h: y1 - y0 + 16 };
+  }
+
   draw(ctx, particleMul = 1, lights = null) {
     // Only DEEP_SPACE hands rendering to BiomeManager's tiny comet-head dot
     // (drawDeepSky) -- WINDUP/ASCENT/REENTRY render right here, in the

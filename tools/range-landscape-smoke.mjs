@@ -6,14 +6,18 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { casesForPreset, caseId, RANGE_FIXTURES, requireBiomes } from './lib/landscape-fixtures.mjs';
-import { assertActualDpr, claimCase, sha256File, sha256Text, verifyServedIdentity } from './lib/landscape-evidence.mjs';
+import { assertActualDpr, assertCaptureState, claimCase, sha256File, sha256Text, verifyServedIdentity } from './lib/landscape-evidence.mjs';
 import { visibleCrestFraction, bodyAreaFraction } from './lib/landscape-visibility.mjs';
 import { installLandscapeRanges, paintLandscapeFrame, seedBrowserConstruction } from './lib/landscape-browser.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MODULES = ['src/world/BiomeManager.js', 'src/world/SpaceRidge.js', 'src/world/ConstellationWeaver.js',
   'src/world/alpine/RidgeSurfaceDraw.js', 'src/world/alpine/RidgeSurface.js',
-  'src/world/alpine/LandscapePolicy.js', 'src/render/Renderer.js'];
+  'src/world/alpine/LandscapePolicy.js', 'src/render/Renderer.js',
+  // The capture also asserts quality/draw-count state (main.js, the
+  // governor) and draws Broshi deterministically: evidence must come from
+  // the reviewed copies of those too.
+  'src/main.js', 'src/render/PerfGovernor.js', 'src/sim/Broshi.js'];
 const OPTIONAL_MODULES = ['src/world/alpine/RidgeComposition.js', 'src/world/alpine/RangeSkyComposition.js'];
 const NAMED = new Set(['url', 'source-root', 'expect-sha', 'preset', 'output', 'stage', 'filter']);
 export function parseLandscapeArgs(argv) {
@@ -60,6 +64,7 @@ function frameMetrics(detail, spec) {
 export async function captureLandscapeCase(page, spec) {
   const detail = await page.evaluate(paintLandscapeFrame, spec);
   assertActualDpr(spec.dpr, detail.dpr);
+  assertCaptureState(detail);
   assert.equal(detail.worldKind, 'alpine');
   for (const side of detail.ranges) assert.deepEqual(side.ids, RANGE_FIXTURES[side.biome],
     `wrong range fixture for ${side.biome}`);

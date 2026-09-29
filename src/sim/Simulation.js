@@ -79,6 +79,7 @@ export class Simulation {
     worldId = null,
     terrainProfiles = null,
     songTerrain = null,
+    residency = null,
   } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
@@ -267,6 +268,8 @@ export class Simulation {
         ? (terrainProfiles || alpineTerrainProfiles()) : null,
       // The song's biomes and each one's own ranges (prepareSongTerrain).
       songTerrain: getWorld(this.worldId)?.kind === 'alpine' ? songTerrain : null,
+      // The page's graphics ledger (GraphicsResidency); null in tests.
+      residency,
     });
     this.reducedFlash = false;
     this.visualStyle = 'rendered';
