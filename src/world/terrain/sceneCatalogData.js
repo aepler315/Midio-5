@@ -9,9 +9,13 @@ export default {
    "biome": "RAINFOREST",
    "status": "candidate",
    "catalogVersion": 1,
+   "title": "Ross Lake",
+   "place": "North Cascades, Washington",
+   "credit": "Elevation: USGS 3DEP 1/3 arc-second DEM + AWS Terrain Tiles (beyond 3DEP coverage)",
    "terrainManifestUrl": "terrain/nc-ross-lake-north.terrain.json",
    "terrainManifestSha256": "f9ad53d91d6710832edc08778809e63af93410a7faea5c250be64b477ea4b555",
    "materialManifestUrl": "materials/wet-conifer.json",
+   "materialRules": {},
    "camera": {
     "eyeStartM": [
      -15780.2,

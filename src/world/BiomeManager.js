@@ -2324,11 +2324,6 @@ export class BiomeManager {
     this._drawHeightMul = { from: fromHeightMul, to: toHeightMul };
     this._drawSnowLine = { from: fromSnowLine01, to: toSnowLine01 };
     this._landscapeGeometry = { horizon: [], massif: [], sides: {}, metrics: {} };
-    if (this.world?.kind === 'alpine' && !this.terrainPreview) {
-      this._compositionFor(this.stripsFor(A.name));
-      if (B.name !== A.name) this._compositionFor(this.stripsFor(B.name));
-    }
-
     // Sunrise/moonrise cycle: which body is up, how high, and how dark the
     // sky should read. Computed once per frame -- feeds the sky gradient,
     // the celestial itself, the mandala/light-rig anchor, and the ocean's
@@ -2391,6 +2386,16 @@ export class BiomeManager {
       ? this.lerpCache.get(skyHorizon, NIGHT_SKY_COLOR, horizonPull)
       : skyHorizon;
     this._airColor = skyHorizonNight;
+
+    // Range v2 decides here, with light and air resolved, whether its GPU
+    // scene draws this frame's scenic partitions. Legacy strips are only
+    // baked (and their composition fitted) when the legacy stack draws.
+    const v2 = this.world?.kind === 'alpine' && !this.terrainPreview && !!this.rangePresentation?.beginScenic?.();
+    this._rangeV2Active = v2;
+    if (this.world?.kind === 'alpine' && !this.terrainPreview && !v2) {
+      this._compositionFor(this.stripsFor(A.name));
+      if (B.name !== A.name) this._compositionFor(this.stripsFor(B.name));
+    }
 
     // Everything a world draw module gets for this frame, in one object.
     // Positional argument lists let the two worlds that take no skyVoyage
@@ -2530,7 +2535,7 @@ export class BiomeManager {
     if (!this._rangeSky) this._drawFataMorgana(ctx, canvas, worldX, A, B, t);
     this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
     this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
-    this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
+    if (!v2) this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
     this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
 
     // Concert beams: anchored at the celestial, drawn before the mountain
@@ -2541,6 +2546,43 @@ export class BiomeManager {
       this.lightRig.draw(ctx, canvas, cx, cy, mandalaColor, particleMul * (this.world?.kind === 'alpine' ? 0.25 : 1), this.reducedFlash, this._rangePresentation?.beams ?? 1);
     }
 
+    // Scenic partitions. Range v2 (RangePresentation) replaces the legacy
+    // ranges, their haze, connector hills and cast shadows with the real
+    // terrain scene when its view is ready; otherwise the legacy stack draws.
+    const tint = v2
+      ? this._drawRangeV2Scenic(ctx, canvas, frame, { worldX, originX, A, B, t, phenomenaFull, particleMul, mandalaColor, skyHorizonNight })
+      : this._drawLegacyScenic(ctx, canvas, frame, { worldX, originX, A, B, t, arc, phenomenaFull, particleMul, mandalaColor, skyHorizonNight });
+
+    // Ground view: switch to the fixed, never-zoomed transform for the
+    // ground and everything painted from here on (see Renderer.draw's
+    // groundView comment for the full reasoning). Everything above this
+    // point -- sky, massif, L2-L5 -- stays on the zoomed transform that was
+    // already active when draw() was called, which is exactly what makes a
+    // camera pull-back read as "more sky and mountain becomes visible
+    // above a ground that never moves" instead of "everything, ground
+    // included, shrinks in place." No-ops (keeps the caller's transform)
+    // when no groundView was handed in -- tests and any caller that hasn't
+    // opted in still get the old, single-transform behavior.
+    const groundCanvas = groundView ? groundView.stage : canvas;
+    if (groundView) groundView.apply();
+    if (this.world?.kind === 'alpine' && this._scenicLight && this._scenicTransform && ctx.getTransform) {
+      this.light = convertLightBetween(this._scenicLight, this._scenicTransform, ctx.getTransform());
+    }
+    this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
+    // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
+    this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
+    this._drawFlood(ctx, groundCanvas);
+    // In FRONT of the ground: as the camera pulls back, the near water comes
+    // into frame and the strip they run along turns out to be an isthmus.
+    this._drawForegroundSwell(ctx, groundCanvas, worldX, A, B, t);
+    this._drawTransitionOverlays(ctx, groundCanvas, B);
+  }
+
+  /** The legacy scenic stack: scanned/procedural L2-L5 strips with their
+   *  haze, distant wave, connector hills and cast shadows, the far
+   *  vignettes and mid-depth life between them. Returns the silhouette tint
+   *  the ground uses. */
+  _drawLegacyScenic(ctx, canvas, frame, { worldX, originX, A, B, t, arc, phenomenaFull, particleMul, mandalaColor, skyHorizonNight }) {
     // The Unraveling: each layer's scroll ratio drifts apart from the rest
     // as the world delaminates -- nearer layers race ahead more than far
     // ones (the ratio itself is the depth proxy, so no separate table).
@@ -2608,6 +2650,50 @@ export class BiomeManager {
     }
     this._drawLayer(ctx, canvas, 'L2', scrollX0, tintL2, t, A, B);
     if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
+    this._drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, tintL2);
+    this._drawLayer(ctx, canvas, 'L3', scrollX1, tintL3, t, A, B);
+    this._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
+    this._drawCastShadow(ctx, canvas, 'L2', 'L3', scrollX0, scrollX1, A, B, t);
+
+    this._drawMidDepthLife(ctx, canvas, frame, { worldX, originX, phenomenaFull, particleMul, mandalaColor });
+    this._drawFogBanks(ctx, canvas);
+
+    this._drawLayer(ctx, canvas, 'L4', scrollX2, tintL4, t, A, B);
+    if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L4', A, B, t, arc);
+    this._drawCastShadow(ctx, canvas, 'L3', 'L4', scrollX1, scrollX2, A, B, t);
+    // Green country bridging the sightline wherever the dancing far skyline
+    // has ducked behind the hills in front of it. Between L4 and L5 so the
+    // nearest hills still overlap it and it reads as depth rather than as a
+    // pane laid over the scene.
+    this._drawConnectorHills(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t);
+    this._drawLayer(ctx, canvas, 'L5', scrollX3, tintL5, t, A, B);
+    this._drawCastShadow(ctx, canvas, 'L4', 'L5', scrollX2, scrollX3, A, B, t);
+    if (this.world?.kind === 'alpine') {
+      this._recordLandscapeGeometry(canvas, { L2: scrollX0, L3: scrollX1, L4: scrollX2, L5: scrollX3 }, A, B);
+    }
+
+    return tint;
+  }
+
+  /** Range v2 scenic partitions (plan §6.2): far terrain, then the Dancing
+   *  Ridge across it (the reference's luminous line over the distant
+   *  range, still occluded by nearer ridges), far vignettes, mid terrain,
+   *  mid-depth life, near terrain. Atmosphere is the scene's own, applied
+   *  once in the terrain shader. Returns the silhouette tint the ground uses. */
+  _drawRangeV2Scenic(ctx, canvas, frame, { worldX, originX, A, B, t, phenomenaFull, particleMul, mandalaColor, skyHorizonNight }) {
+    const pres = this.rangePresentation;
+    const tint = ensureContrast(this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)), skyHorizonNight, 0.14);
+    const farTint = this.lerpCache.get(tint, skyHorizonNight, AERIAL_PULL.L2 || 0);
+    pres.drawPartition(ctx, 'far', canvas);
+    this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
+    this._drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, farTint);
+    pres.drawPartition(ctx, 'mid', canvas);
+    this._drawMidDepthLife(ctx, canvas, frame, { worldX, originX, phenomenaFull, particleMul, mandalaColor });
+    pres.drawPartition(ctx, 'near', canvas);
+    return tint;
+  }
+
+  _drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, tintL2) {
     // Far-distance vignettes: between the farthest range and everything
     // nearer, so the L3/L4/L5 ridges partially occlude them -- genuinely
     // "witnessed in the far distance", not sprites pasted on the sky.
@@ -2618,10 +2704,11 @@ export class BiomeManager {
       sky: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
       halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
     });
-    this._drawLayer(ctx, canvas, 'L3', scrollX1, tintL3, t, A, B);
-    this._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
-    this._drawCastShadow(ctx, canvas, 'L2', 'L3', scrollX0, scrollX1, A, B, t);
+  }
 
+  /** Mid-depth life shared by both scenic stacks: ambient particles,
+   *  music weather, the Kuramoto swarm and the murmuration. */
+  _drawMidDepthLife(ctx, canvas, frame, { worldX, originX, phenomenaFull, particleMul, mandalaColor }) {
     // Ambient particle field lives roughly at mid-depth. The Unraveling:
     // particle hues converge toward the biome's own halo color as the
     // ending arc progresses.
@@ -2669,45 +2756,6 @@ export class BiomeManager {
     // frame, atmosphere rather than gameplay.
     if (phenomenaFull) this.swarm.draw(ctx, canvas, mandalaColor);
     if (phenomenaFull) this.murmuration.draw(ctx, this.tSec * 1000, mandalaColor, particleMul);
-    this._drawFogBanks(ctx, canvas);
-
-    this._drawLayer(ctx, canvas, 'L4', scrollX2, tintL4, t, A, B);
-    if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L4', A, B, t, arc);
-    this._drawCastShadow(ctx, canvas, 'L3', 'L4', scrollX1, scrollX2, A, B, t);
-    // Green country bridging the sightline wherever the dancing far skyline
-    // has ducked behind the hills in front of it. Between L4 and L5 so the
-    // nearest hills still overlap it and it reads as depth rather than as a
-    // pane laid over the scene.
-    this._drawConnectorHills(ctx, canvas, { scrollX0, scrollX1, scrollX2 }, A, B, t);
-    this._drawLayer(ctx, canvas, 'L5', scrollX3, tintL5, t, A, B);
-    this._drawCastShadow(ctx, canvas, 'L4', 'L5', scrollX2, scrollX3, A, B, t);
-    if (this.world?.kind === 'alpine') {
-      this._recordLandscapeGeometry(canvas, { L2: scrollX0, L3: scrollX1, L4: scrollX2, L5: scrollX3 }, A, B);
-    }
-
-    // Ground view: switch to the fixed, never-zoomed transform for the
-    // ground and everything painted from here on (see Renderer.draw's
-    // groundView comment for the full reasoning). Everything above this
-    // point -- sky, massif, L2-L5 -- stays on the zoomed transform that was
-    // already active when draw() was called, which is exactly what makes a
-    // camera pull-back read as "more sky and mountain becomes visible
-    // above a ground that never moves" instead of "everything, ground
-    // included, shrinks in place." No-ops (keeps the caller's transform)
-    // when no groundView was handed in -- tests and any caller that hasn't
-    // opted in still get the old, single-transform behavior.
-    const groundCanvas = groundView ? groundView.stage : canvas;
-    if (groundView) groundView.apply();
-    if (this.world?.kind === 'alpine' && this._scenicLight && this._scenicTransform && ctx.getTransform) {
-      this.light = convertLightBetween(this._scenicLight, this._scenicTransform, ctx.getTransform());
-    }
-    this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
-    // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
-    this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
-    this._drawFlood(ctx, groundCanvas);
-    // In FRONT of the ground: as the camera pulls back, the near water comes
-    // into frame and the strip they run along turns out to be an isthmus.
-    this._drawForegroundSwell(ctx, groundCanvas, worldX, A, B, t);
-    this._drawTransitionOverlays(ctx, groundCanvas, B);
   }
 
   /**

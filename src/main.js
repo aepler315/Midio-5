@@ -35,7 +35,7 @@ import {
   openAudioUrl, UrlAudioError, fetchAudioAsFile, classifyUrl,
 } from './net/UrlAudioSource.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
-import { rangeCaptionFor, CAPTION_DELAY_MS } from './ui/RangeCaption.js';
+import { rangeCaptionFor, sceneCaptionFor, CAPTION_DELAY_MS } from './ui/RangeCaption.js';
 import { realBiomeByName, ecoregionOfRange } from './world/RealBiomes.js';
 import { travelMs } from './world/BiomeSchedule.js';
 import { noteRangeShown } from './world/terrain/RangeHistory.js';
@@ -52,6 +52,8 @@ import {
 import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
 import { sharedResidency } from './render/GraphicsResidency.js';
+import { RangePresentation, resolveRangeMode } from './world/alpine/RangePresentation.js';
+import { residencyBudgetFor } from './render/GraphicsResidency.js';
 import {
   DEFAULT_STAGE_PRESET, resolveStagePreset, stageDims, isAutoPreset, isRetroPreset,
   isPalettePreset, displayLimitedSize, autoStageSize, shouldSuggestLandscape,
@@ -413,6 +415,13 @@ const rendererMode = resolveRendererMode(
   typeof location !== 'undefined' ? location.search : '',
 );
 paramBus.rendererMode = rendererMode;
+// Range v2 (real-terrain scenic views): ?rangeRenderer=v2 opts in, legacy is
+// the default during migration; ?rangeView=<id> forces one catalog view for
+// diagnostics. One presentation (and one GPU context) per page.
+const rangeMode = resolveRangeMode();
+const rangePresentation = rangeMode.mode === 'v2'
+  ? new RangePresentation({ mode: 'v2', forcedViewId: rangeMode.forcedViewId, diag: rangeMode.diag, residency: sharedResidency(), budget: residencyBudgetFor().name })
+  : null;
 
 // The title screen is alive from the very first frame: a living backdrop
 // (starfield + nebula + the trio) runs on its own rAF loop until a song
@@ -1676,14 +1685,19 @@ function applyRangeCaptions(timelineData, exportMode) {
       const ridges = i === 0
         ? { ...entry.ranges, horizon: terrain.horizon?.range, massif: terrain.massif?.range }
         : entry.ranges;
-      const caption = captionFor(entry.ranges.far, ridges, entry.profiles, info && own ? {
-        title: info.title,
-        ecoregion: ecoregionOfRange(entry.ranges.far?.id),
-      } : null);
+      // Range v2 draws this biome from a curated view: name that place.
+      const scene = rangePresentation?.captionViewFor?.(name);
+      const caption = scene
+        ? sceneCaptionFor(scene, i === 0 ? { horizon: terrain.horizon?.range, massif: terrain.massif?.range } : {},
+          info ? { title: info.title, ecoregion: scene.place } : null)
+        : captionFor(entry.ranges.far, ridges, entry.profiles, info && own ? {
+          title: info.title,
+          ecoregion: ecoregionOfRange(entry.ranges.far?.id),
+        } : null);
       if (!caption) return;
       const atMs = i === 0 ? 0 : Math.max(0, sec.startMs + travelMs(sec) - CAPTION_DELAY_MS);
       captions.push({ atMs, caption });
-      shown.push(entry.ranges.near, entry.ranges.mid, entry.ranges.far);
+      if (!scene) shown.push(entry.ranges.near, entry.ranges.mid, entry.ranges.far);
     });
     sim.rangeCaptions = captions.length ? captions : null;
   } else {
@@ -1846,6 +1860,10 @@ function startTimeline(timelineData, extra = {}) {
   // (Cathode) replaces the renderer outright rather than branching inside
   // it. Created here, per song, which is after the world is known.
   renderer = createRenderer(canvas, rendererMode, getWorld(sim.worldId));
+  if (rangePresentation) {
+    rangePresentation.setSong({ terrain: timelineData.terrain || null, generation: loadGen });
+    renderer.rangePresentation = rangePresentation;
+  }
   // An exported frame is the picture, not the player: no seekbar strip.
   if (exportMode) renderer.hudInFrame = false;
   // enabled stays false (opt-in via V); provider/key/model/endpoint persist
@@ -1980,6 +1998,12 @@ function startTimeline(timelineData, extra = {}) {
     // The load generation this simulation belongs to; evidence records it
     // so a late response from an older load can be told apart.
     get generation() { return loadGen; },
+    // Range v2: which renderer the Range uses and why, and a promise that
+    // settles once the song's scenic views are prepared or have failed
+    // (evidence/export wait on it; playback never does).
+    rangeRenderer: rangeMode.mode,
+    get rangeState() { return rangePresentation ? rangePresentation.snapshot() : { mode: 'legacy', active: false }; },
+    rangeReady: (opts) => (rangePresentation ? rangePresentation.whenReady(opts) : Promise.resolve({ mode: 'legacy' })),
     get perf() { return perfGovernor || null; },
     // Car mode (KeepAwake.js): live state for debugging on a head unit, plus
     // the one hook a smoke test needs -- backdating the last-input clock, so

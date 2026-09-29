@@ -112,7 +112,11 @@ export async function buildView(view, { outDir, cell = null, log = console.log }
     for (const k of Object.keys(scores)) scores[k] += c[k] / 3;
   }
   for (const k of Object.keys(scores)) scores[k] = Math.round(scores[k] * 1000) / 1000;
+  const providers = [grid.provenance?.product && 'USGS 3DEP 1/3 arc-second DEM'].filter(Boolean);
+  if (/Terrain Tiles/.test(grid.provenance?.provider || '')) providers.splice(0, 1, 'AWS Terrain Tiles');
+  if (grid.fill) providers.push('AWS Terrain Tiles (beyond 3DEP coverage)');
   const out = {
+    credit: `Elevation: ${providers.join(' + ')}`,
     sourceSha256: (grid.provenance?.sha256 || []).concat(grid.fill?.provenance?.sha256 || []).filter(Boolean),
     view: runtimeView, characterScores: scores, archetype: archetypeOf(scores).archetype,
     skylineFeatures: features, manifestSha256: sha(manifestText), payloadSha256: baked.manifest.payload.sha256,
@@ -148,9 +152,12 @@ export async function buildCatalog(doc) {
     catch { continue; } // not published yet
     views.push({
       id: v.id, regionId: v.regionId, biome: v.biome, status: v.status, catalogVersion: doc.catalogVersion,
+      title: v.title || v.id, place: v.place || '',
+      credit: build.credit || null,
       terrainManifestUrl: `terrain/${v.id}.terrain.json`,
       terrainManifestSha256: build.manifestSha256,
       materialManifestUrl: `materials/${v.materialPack || DEFAULT_PACKS[v.biome]}.json`,
+      materialRules: v.materialRules || {},
       camera: build.view.camera,
       characterScores: build.characterScores,
       archetype: build.archetype,

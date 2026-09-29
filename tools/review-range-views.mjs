@@ -22,11 +22,19 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
 
 /** A loopback static server: /src from the repo, /views/<id>/ from a view dir. */
+const viewRecords = new Map();
 export function startReviewServer(viewDirFor) {
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://x');
       let file = null;
+      if (url.pathname.startsWith('/review-view/')) {
+        const rec = viewRecords.get(decodeURIComponent(url.pathname.slice('/review-view/'.length)));
+        if (!rec) { res.writeHead(404); res.end(); return; }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(rec);
+        return;
+      }
       if (url.pathname.startsWith('/src/')) file = path.join(root, decodeURIComponent(url.pathname));
       else if (url.pathname.startsWith('/views/')) {
         const [, , id, ...rest] = url.pathname.split('/');
@@ -146,11 +154,16 @@ async function main() {
       const dir = viewDirFor(id);
       const build = JSON.parse(await fs.readFile(path.join(dir, `${id}.build.json`), 'utf8'));
       const manifestBuf = await fs.readFile(path.join(dir, `${id}.terrain.json`));
-      await fs.writeFile(path.join(dir, `${id}.view.json`), JSON.stringify(build.view));
+      // The page reads the view record from the review server, not the
+      // asset tree: never write review files into src/assets.
+      viewRecords.set(id, JSON.stringify(build.view));
       const page = await browser.newPage({ viewport: { width, height } });
       const errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
-      const q = new URLSearchParams({ manifest: `/views/${id}/${id}.terrain.json`, view: `/views/${id}/${id}.view.json`, budget });
+      const q = new URLSearchParams({ manifest: `/views/${id}/${id}.terrain.json`, view: `/review-view/${id}`, budget });
+      const pack = opt('--material', null);
+      if (pack) q.set('material', `/src/assets/range/v2/materials/${pack}.json`);
+      for (const k of ['lightDir', 'lightScale', 'airDensity', 'exposure', 'ambient', 'debugMask']) if (opt(`--${k}`)) q.set(k, opt(`--${k}`));
       await page.goto(`http://127.0.0.1:${port}/src/dev/range-scene-review.html?${q}`);
       await page.waitForFunction(() => window.__review?.ready || window.__review?.error, null, { timeout: 600000 });
       const err = await page.evaluate(() => window.__review.error);
@@ -173,6 +186,7 @@ async function main() {
           files.push(file); labels.push(`${id} u=${u.toFixed(2)} ${mode}`);
         }
         const sil = perMode.silhouette?.rgba;
+        if (!sil) { for (const m of Object.values(perMode)) delete m.rgba; record.stations.push({ progress: u, frames: perMode, metrics: {} }); continue; }
         const metrics = sil ? { ...silhouetteMetrics(sil, width, height), ...(perMode.neutral ? reliefMetrics(perMode.neutral.rgba, sil, width, height) : {}) } : {};
         for (const m of Object.values(perMode)) delete m.rgba;
         record.stations.push({ progress: u, frames: perMode, metrics });

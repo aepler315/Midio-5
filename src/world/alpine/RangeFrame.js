@@ -21,8 +21,9 @@ function freezeDeep(o) {
 
 /** A viewport's logical size, backing size, overscan and the six-number
  *  Canvas affine transform (a, b, c, d, e, f) in effect when it is drawn. */
-export function viewportState({ logicalWidth, logicalHeight, backingWidth, backingHeight, overscanPx = 0, transform = [1, 0, 0, 1, 0, 0] }) {
-  return { logicalWidth, logicalHeight, backingWidth, backingHeight, overscanPx, transform: [...transform] };
+export function viewportState({ logicalWidth, logicalHeight, backingWidth, backingHeight, overscanPx = 0,
+  transform = [1, 0, 0, 1, 0, 0], nominalWidth = logicalWidth, nominalHeight = logicalHeight, pixelRatio = 1 }) {
+  return { logicalWidth, logicalHeight, backingWidth, backingHeight, overscanPx, transform: [...transform], nominalWidth, nominalHeight, pixelRatio };
 }
 
 /**

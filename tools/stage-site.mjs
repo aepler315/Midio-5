@@ -71,6 +71,13 @@ export async function verifyRangeRuntime(sourceDir, outputDir) {
       if (payload.byteLength !== manifest.payload.byteLength || sha256(payload) !== manifest.payload.sha256) {
         throw new Error(`${view.id} terrain payload does not match its manifest`);
       }
+      // The view's material pack and every data texture it names.
+      const matBuf = await fs.readFile(path.join(root, view.materialManifestUrl));
+      const mat = JSON.parse(matBuf.toString('utf8'));
+      for (const t of Object.values(mat.textures || {})) {
+        const tex = await fs.readFile(path.join(root, path.dirname(view.materialManifestUrl), t.url));
+        if (tex.byteLength !== t.bytes || sha256(tex) !== t.sha256) throw new Error(`${view.id} material texture ${t.id} does not match its pack`);
+      }
       views.push(view.id);
     }
   } catch (err) {

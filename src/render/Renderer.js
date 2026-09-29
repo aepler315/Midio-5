@@ -21,6 +21,7 @@ import { salienceBudgetFor } from './SalienceBudget.js';
 import { isRendered, styleDials } from './VisualStyle.js';
 import { groundGlowLights, characterGlowLight } from './LightField.js';
 import { GroundResponse, recentConductorHits } from '../world/alpine/GroundResponse.js';
+import { viewportState } from '../world/alpine/RangeFrame.js';
 import { quantizeCanvas } from './PaletteQuantize.js';
 
 // Reserve margin (logical stage px) around the visible frame that camera
@@ -139,6 +140,9 @@ export class Renderer {
     // works if sim.biomes were ever null (the fallback-sky branch below).
     this._filmLerpCache = new LerpCache();
     this._groundResponse = new GroundResponse();
+    // Range v2 presentation (RangePresentation), set by main.js; null means
+    // the Range draws with its legacy painters.
+    this.rangePresentation = null;
     // Completed stage draws. Evidence tools compare it across one capture
     // to prove a fixture frame was painted exactly once at its time.
     this.drawCount = 0;
@@ -277,6 +281,24 @@ export class Renderer {
       },
     };
 
+    // Range v2: hand the presentation this frame's inputs and viewports
+    // (logical vs backing sizes, overscan, the Canvas transform in effect).
+    if (biomeManager && this.rangePresentation?.enabled) {
+      biomeManager.rangePresentation = this.rangePresentation;
+      const t = ctx.getTransform();
+      this.rangePresentation.setFrameInputs({
+        sim, pose,
+        scenicViewport: viewportState({ logicalWidth: stageW, logicalHeight: stageH,
+          backingWidth: Math.round(stageW * sx), backingHeight: Math.round(stageH * sy), overscanPx: SHAKE_MARGIN_PX,
+          transform: [t.a, t.b, t.c, t.d, t.e, t.f], nominalWidth: nominalW, nominalHeight: nominalH,
+          pixelRatio: typeof devicePixelRatio === 'number' ? devicePixelRatio : 1 }),
+        groundViewport: viewportState({ logicalWidth: groundStage.width, logicalHeight: groundStage.height,
+          backingWidth: Math.round(groundStage.width * sxFixed), backingHeight: Math.round(groundStage.height * syFixed),
+          overscanPx: SHAKE_MARGIN_PX, nominalWidth: nominalW, nominalHeight: nominalH }),
+      });
+    } else if (biomeManager) {
+      biomeManager.rangePresentation = null;
+    }
     if (biomeManager) {
       biomeManager.salience = salience;
       biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, worldParticleMul, perf, groundView);

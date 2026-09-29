@@ -124,6 +124,15 @@ export class GraphicsResidency {
     return true;
   }
 
+  /** Move a live or pending entry to another generation (a resource the
+   *  next song keeps must not fall with the previous song's cancellation). */
+  retag(key, generation) {
+    const e = this.entries.get(key);
+    if (!e) return false;
+    e.generation = generation;
+    return true;
+  }
+
   /** Replace the pinned set (current frame + scheduled transition). */
   pin(keys) { this.pinned = new Set([...(keys || [])].filter(Boolean)); }
 
