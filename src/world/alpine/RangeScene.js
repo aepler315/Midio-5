@@ -16,7 +16,8 @@ import { prepareTerrainAssets, RangeAssetError } from './RangeAssets.js';
 import { createSurfaceTexture, terrainUniforms, createBandGeometries } from './TerrainGL.js';
 import { sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromHex, createMaterialTextures, applyMaterial } from './TerrainMaterial.js';
 import { loadMaterialPack, materialGpuBytes, RULE_DEFAULTS } from './MaterialPackage.js';
-import { placeForestAsync, forestKeepFraction } from './ForestCover.js';
+import { placeForestAsync } from './ForestCover.js';
+import { rangeQuality } from './RangeQuality.js';
 import { hashSeed } from '../../utils/math.js';
 import { createForest } from './ForestGL.js';
 import { buildRockStage } from './RockStage.js';
@@ -87,8 +88,12 @@ export class RangeScene {
     this.contextLost = false;
     this.stats = { depthPasses: 0, partitions: 0, lastPartitionMs: 0 };
     this._copy = this._createCopy();
-    this.canvas.addEventListener?.('webglcontextlost', (e) => { e.preventDefault(); this.contextLost = true; });
-    this.canvas.addEventListener?.('webglcontextrestored', () => { this.contextLost = false; this._restore(); });
+    // Each loss and each restore starts a new context epoch: a preparation
+    // that straddles either built GPU objects (and dropped the surface
+    // texture's CPU pixels) in a context that is gone, so it must not publish.
+    this.contextEpoch = 0;
+    this.canvas.addEventListener?.('webglcontextlost', (e) => { e.preventDefault(); this.contextLost = true; this.contextEpoch++; });
+    this.canvas.addEventListener?.('webglcontextrestored', () => { this.contextLost = false; this.contextEpoch++; this._restore(); });
   }
 
   _createCopy() {
@@ -191,11 +196,16 @@ export class RangeScene {
       // prepare for this generation -- never inherit its stale rejection.
       return pend.job.catch(() => {}).then(() => this.prepare(view, opts));
     }
+    if (this.contextLost) return Promise.reject(new RangeAssetError('context-lost', `GPU context lost; ${view.id} waits for restore`));
+    const epoch = this.contextEpoch;
     const job = (async () => {
       const cpu = await prepareTerrainAssets(view, { baseUrl, residency: this.residency, generation, signal, isCurrent });
       let mat = null, res = null, published = false;
       let surface, geos, material, forest, stageGL;
-      const stale = () => signal?.aborted || !isCurrent(generation);
+      const stale = () => {
+        if (this.contextEpoch !== epoch) throw new RangeAssetError('context-lost', `GPU context changed while preparing ${view.id}`);
+        return signal?.aborted || !isCurrent(generation);
+      };
       try {
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         const THREE = this.THREE;
@@ -212,18 +222,22 @@ export class RangeScene {
         const placed = await placeForestAsync(cpu.data, view, rules, { seed: hashSeed(view.id), signal });
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         const forestBytes = placed.count * 7 * 4;
-        // The surface texture's RGBA array stays referenced by its
-        // DataTexture after upload (4 B/px), and building it needs temporary
-        // height and flow arrays (5 B/px): the first is owned for the view's
-        // life, the second is reserved only while the texture is built.
+        // Building the surface texture needs temporary height and flow
+        // arrays (5 B/px) and its RGBA array (4 B/px). The texture is
+        // uploaded at once and drops its RGBA copy after the upload (see
+        // createSurfaceTexture), so all nine bytes are scratch, reserved
+        // only while it is built: the view owns the GPU texture alone.
         const gridPx = cpu.data.grid.width * cpu.data.grid.height;
-        const bytes = (est?.meshBytes || 0) + (est?.surfaceTextureBytes || 0) + forestBytes + gridPx * 4;
+        const bytes = (est?.meshBytes || 0) + (est?.surfaceTextureBytes || 0) + forestBytes;
         res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation }) || null;
         if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
         const scratchKey = `range:surface-scratch:${view.id}`;
-        const scratch = this.residency?.reserve({ key: scratchKey, bytes: gridPx * 5, owner: 'range-scratch', generation }) || null;
+        const scratch = this.residency?.reserve({ key: scratchKey, bytes: gridPx * 9, owner: 'range-scratch', generation }) || null;
         if (this.residency && !scratch) throw new RangeAssetError('budget', `no room to build ${view.id} surface`);
-        try { surface = createSurfaceTexture(THREE, cpu.data); } finally { if (scratch) this.residency.release(scratchKey); }
+        try {
+          surface = createSurfaceTexture(THREE, cpu.data);
+          this.renderer?.initTexture?.(surface.texture);
+        } finally { if (scratch) this.residency.release(scratchKey); }
         await yieldToMain();
         const base = terrainUniforms(THREE, cpu.data, surface);
         const uniforms = sceneUniforms(THREE, base);
@@ -442,7 +456,7 @@ export class RangeScene {
     u.uDeformDir.value.set(m.waveDir[0], m.waveDir[1]);
     u.uDeformPhase.value = m.phaseRad;
     u.uTime.value = frame.timeMs / 1000;
-    u.uForestKeep.value = forestKeepFraction(frame.qualityLevel);
+    u.uForestKeep.value = rangeQuality(frame.qualityLevel).forestKeep;
     const c = frame.light.celestial;
     // Unproject the celestial's stage position into a world direction.
     const ndcX = c.xFrac * 2 - 1, ndcY = 1 - c.yFrac * 2;
@@ -461,7 +475,9 @@ export class RangeScene {
     // Valley mist: anchored at the view's water level, thicker in calm.
     const mp = mistParams({ rules: p.rules, waterLevelM: p.waterLevelM, heightRange: [u.uHeightRange.value.x, u.uHeightRange.value.y],
       tSec: frame.timeMs / 1000, calm01: 1 - (frame.music?.groove ?? 0) });
-    u.uMistDensity.value = frame.qualityLevel >= 5 ? mp.density * 0.6 : mp.density;
+    const quality = rangeQuality(frame.qualityLevel);
+    u.uMistDensity.value = mp.density;
+    u.uMistSteps.value = quality.mistSteps;
     u.uMistBase.value = mp.baseM;
     u.uMistHeight.value = mp.heightM;
     u.uMistTime.value = mp.tSec;

@@ -192,7 +192,7 @@ export async function paintLandscapeFrame(spec) {
     finalDraws: clock.draws,
     generation: window.__SMW.generation ?? null,
     renderer: window.__SMW.rendererBackend || 'canvas',
-    rangeRenderer: window.__SMW.rangeRenderer || 'legacy',
+    rangeRenderer: window.__SMW.rangeRenderer || null,
     passes: { disabled: disabledPasses },
   };
 }

@@ -761,7 +761,11 @@ export class BiomeManager {
     // Legacy strips share the page's graphics budget when one is given, so
     // a fallback never holds a second, independent allowance.
     this.residency = residency;
-    this.strips = new TerrainStripCache({ residency, owner: `legacy-strips#${++BIOME_MANAGER_SERIAL}` }); // biomeName -> { L2, L3, L4, L5 }
+    this.strips = new TerrainStripCache({ residency, owner: `legacy-strips#${++BIOME_MANAGER_SERIAL}`,
+      // Sets for biomes Range v2 draws are fallback: the ledger may evict
+      // them when the scene reserves room (else a legacy frame drawn while a
+      // view prepared re-bakes them and keeps the view out).
+      isFallback: (name) => this.world?.kind === 'alpine' && !!this.rangePresentation?.coversBiome?.(name) }); // biomeName -> { L2, L3, L4, L5 }
 
     this.fields = new Map(); // biomeName -> ParticleField
     for (const b of this.profiles) this.fields.set(b.name, new ParticleField(b.particles, canvasWidth, canvasHeight, hashSeed(b.name + 'p')));
@@ -1757,6 +1761,20 @@ export class BiomeManager {
       if (this.strips.has(name)) this.strips.delete(name);
       this.stripsFor(name);
     }
+  }
+
+  /** Range v2 was refused room: legacy strip sets for biomes v2 draws are
+   *  only a fallback (a legacy frame re-bakes them on demand), and the
+   *  ledger cannot evict them itself. A frame that drew legacy while a view
+   *  was still preparing baked them, and they then kept that view out. */
+  dropCoveredStrips() {
+    const covered = (name) => !!name && !!this.rangePresentation?.coversBiome?.(name);
+    let dropped = 0;
+    for (const key of [...this.strips.entries.keys()]) {
+      if (covered(key)) { this.strips.delete(key); dropped++; }
+    }
+    if (this._bakeJob && covered(this._bakeJob.key)) this._cancelBake();
+    return dropped;
   }
 
   /** Time-boxed prebake of a stale visible set, else the next section's

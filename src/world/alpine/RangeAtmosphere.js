@@ -43,21 +43,22 @@ export function mistMask(x, z, tSec) {
  * Mist opacity (0..1) between the camera `cam` and point `p` ([x, y, z] m).
  * params: { density (1/m at the base; 0 = off), baseM, heightM, tSec }.
  */
-export function mistAmount(cam, p, { density = 0, baseM = 0, heightM = 220, tSec = 0 } = {}) {
+export function mistAmount(cam, p, { density = 0, baseM = 0, heightM = 220, tSec = 0, steps = MIST_SAMPLES } = {}) {
   if (!(density > 0)) return 0;
+  const n = Math.max(1, Math.min(MIST_SAMPLES, Math.round(steps)));
   const dx = p[0] - cam[0], dy = p[1] - cam[1], dz = p[2] - cam[2];
   const L = Math.hypot(dx, dy, dz);
   let od = 0;
-  for (let i = 0; i < MIST_SAMPLES; i++) {
+  for (let i = 0; i < n; i++) {
     // Samples crowd toward the shaded point, where rays meet the valley air.
-    const s = (i + 0.5) / MIST_SAMPLES;
+    const s = (i + 0.5) / n;
     const t = 1 - (1 - s) * (1 - s);
     const w = 2 * (1 - s);
     const y = cam[1] + dy * t;
     const layer = Math.exp(-Math.max(0, y - baseM) / heightM);
     od += w * layer * mistMask(cam[0] + dx * t, cam[2] + dz * t, tSec);
   }
-  od *= density * L / MIST_SAMPLES;
+  od *= density * L / n;
   return 1 - Math.exp(-od);
 }
 
@@ -76,6 +77,7 @@ export function mistParams({ rules = {}, waterLevelM = null, heightRange = [0, 1
 
 export const MIST_GLSL = /* glsl */`
   uniform float uMistDensity;
+  uniform float uMistSteps; // 1..MIST_SAMPLES: the quality ladder's fog sampling
   uniform float uMistBase;
   uniform float uMistHeight;
   uniform float uMistTime;
@@ -97,14 +99,16 @@ export const MIST_GLSL = /* glsl */`
     vec3 d = p - cam;
     float L = length(d);
     float od = 0.0;
+    float n = clamp(floor(uMistSteps + 0.5), 1.0, ${MIST_SAMPLES.toFixed(1)});
     for (int i = 0; i < ${MIST_SAMPLES}; i++) {
-      float s = (float(i) + 0.5) / ${MIST_SAMPLES.toFixed(1)};
+      if (float(i) >= n) break;
+      float s = (float(i) + 0.5) / n;
       float t = 1.0 - (1.0 - s) * (1.0 - s);
       float w = 2.0 * (1.0 - s);
       vec3 q = cam + d * t;
       od += w * exp(-max(0.0, q.y - uMistBase) / uMistHeight) * mistMask(q.xz);
     }
-    od *= uMistDensity * L / ${MIST_SAMPLES.toFixed(1)};
+    od *= uMistDensity * L / n;
     return 1.0 - exp(-od);
   }
 `;

@@ -9,8 +9,8 @@ Reference image: `docs/evidence/range-v2/reference.webp` (1806×871, documentati
 | --- | --- |
 | Branch | `claude/amazing-brown-tbiycu` |
 | Base | `b8a3d72b344792d149906449f1cd86d68df8cc2b` (= audited SHA; `origin/main` rechecked 2026-09-29) |
-| Last completed task | 15 (curated catalog: one approved view per biome) |
-| Next action | Task 16 — resource, lifecycle and performance proof |
+| Last completed task | 16; Task 17 in progress (v2 default, 13 approved views, evidence identity) |
+| Next action | Task 17: the §10 sequence on the staged site (`--suite complete`), `docs/range-v2-validation.md`, diff review; device runs per `docs/range-v2-device-runs.md` |
 
 ## Decisions recorded with the user (2026-09-29)
 
@@ -66,6 +66,7 @@ The four confirmed defects in plan §1 are re-verified in Task 1 against source 
 | (fix) travel review round 2 | done | PR #334 second Codex round: the two sides blend in a reserved composition buffer (`range:travel-scratch`) with B added (`lighter`) so the feather stays opaque; a view that joins a travel late fades in over 1.2 s; the frame's resources are pinned before side B / the buffer are reserved; the app passes export mode to the presentation (the simulation never had it); travel exposure is checked at matching stations (both sides share the song's progress) and `--approve` checks every pair with the views already approved |
 | (fix) travel review round 3 | done | PR #334 third Codex round: a late-joining view still fading when the travel ends keeps the A/B handoff (seam fully across) until its fade completes, and only a view some travel frame drew without counts as late; legacy-only passes (far shore, mirage, sea, sea life, horizon EQ) keep drawing under an arriving scene; exposure is measured per runtime partition from each shipped tile's own `band` (nearest-band masks), a travel composes the far/mid/near passes through their own seams (L2/L4/L5), and `--approve` also requires a far crest spanning half the frame at every station |
 | 15 catalog | done | 11 approved views, one per biome (catalog v15); each passed the far-crest gate alone and in travel against every other view (0 failing pairs); habitat/shoreline fixes from the colour review; see the approvals table below |
+| 16 lifecycle/perf | done (device runs unverified) | Budget crowding, fallback-strip lock-out, rock-stage crash and striped seam found and fixed; lifecycle suite 6/6 cycles (song replacement, resize, real context loss/restore) with stable ownership; v2 quality ladder; device probe + instructions. No phone or GPU here: device acceptance is **unverified** |
 
 ## Task 15 coverage (candidates)
 
@@ -106,7 +107,7 @@ Second review pass (colour in-app frames of all ten candidates):
 
 First placements that failed, and why: the Black Mountains from Craggy Pinnacle hid the far crest at 18 of 21 stations (nearer ridges; now seen broadside from the Catawba side); Muncho Lake's first eye sat in the mountains east of the lake; the Tetons from the east shore were too far for the range to read (moved over the lake).
 
-## Task 15 approvals (catalog v15, 2026-09-29)
+## Task 15 approvals (catalog v17, 2026-09-29)
 
 Each view: 21-station neutral/silhouette review, 61-frame motion review, in-app frame at 10 s (`docs/evidence/range-v2/<id>-stations.jpg`, `<id>-inapp-10s.jpg`), and the far-crest gate at its worst station (single) and in travel against every other approved view. Hashes are the approval record's (first 12 hex).
 
@@ -123,8 +124,12 @@ Each view: 21-station neutral/silhouette review, 61-frame motion review, in-app 
 | STEPPE | `white-mountains-owens` | a83a16041b11 | ada04aa0d676 | 1.00 | open Owens Valley floor below the pinyon belt |
 | CANYON | `la-sal-castle-valley` | 930f04303855 | ca6259b1e0cd | 1.00 | scattered small trees on Castle Valley |
 | DESERT | `panamint-dantes-view` | b7d3479f3160 | 2beecf1f1647 | 1.00 | pale by nature (salt pan, 25 km to the crest); `water: false` |
+| ICEFIELD | `chugach-matanuska` | 1dc2cd8e74ff | ac0da317cbbc | 0.82 | Task 17 addition. Chugach Mountains above the Matanuska Glacier (Terrain Tiles z12): a real snow range with its valley opening; a second, different ICEFIELD view beside Denali |
+| CANYON | `monument-valley-163` | 78779fcd2a01 | ca6259b1e0cd | 0.76 | Task 17 addition. From US-163 toward the mesa wall and buttes (3DEP 1/3"). View rule `forestFloorM: 1900`: the canyon pack's 1700 m floor put conifers across the valley floor. The floor reads olive rather than red sand (the shared canyon colour ramp) |
 
-The plan aims for 12-18 views; 11 (one per biome) is delivered. Further views per biome are an open choice for the user.
+13 approved views: every biome has one, ICEFIELD and CANYON two. The plan aims for 12-18.
+
+Task 17 candidate rejected: **`wrangell-copper-river`** (TUNDRA; Terrain Tiles z11). Mount Drum, Sanford and Wrangell are traceable, but the near and middle ground is one broad, smooth shield-volcano slope with little internal relief, filling the left third of the frame. Weaker than Tombstone, and not added for coverage. Its published package was removed; its authoring and review stay in `data/terrain/scenic-views.json`.
 
 ### Natural song casts (production selector, no forced view)
 
@@ -144,14 +149,70 @@ Five synthetic songs (`tools/gen-test-wav.mjs`: 120 bpm / 96 s, 80 / 150, 150 / 
 - **Rock stage crash.** `RockStageGL._upload` allocated nothing when the first frame had no pools, and the next line threw inside the draw.
 - **Striped travel seam.** The shared seam uses 4 constant-weight bands (fine for legacy strips); on real terrain they read as vertical stripes. v2 now uses 16 whole-pixel bands (`V2_TRAVEL_BANDS`); legacy keeps 4.
 
+## Task 16: resource, lifecycle and performance
+
+### Fixes found by exercising real (unforced) play
+
+| Defect | Effect | Fix |
+| --- | --- | --- |
+| `whenReady` prepared every view of a song at once | Pending reservations (not evictable) of later biomes filled the 256 MiB budget; the view on screen was refused, permanently; natural songs drew legacy | Budget refusals are deferred and retried; sequential in-order `whenReady`; export `settle()` keeps both travel sides resident |
+| Legacy strips baked by a frame drawn while a view prepared | Non-evictable; they held the room the view needed, so it was refused again (a travel frame stayed legacy even after settle) | Strips for biomes v2 covers are fallback: adopted as evictable (dispose forgets the cache entry), and a refusal drops them (`onBudgetRefusal`) |
+| `RockStageGL._upload` on an empty first frame | Nothing allocated, next line threw inside the draw | Always allocate on first upload (test fails on the old code) |
+| 4 constant-weight seam bands | Vertical stripes across real terrain in travels | v2 uses 16 whole-pixel bands; legacy keeps 4 |
+| `settle()` during a lost context | Waited out its 120 s timeout | Returns at once |
+
+### Lifecycle suite
+
+`node tools/range-scene-smoke.mjs --suite lifecycle --cycles 6` (SwiftShader, desktop budget 256 MiB; report `docs/evidence/range-v2/t16-lifecycle-report.json`). Two songs alternate, two stage sizes alternate, a real `WEBGL_lose_context` loss/restore at cycles 2 and 5. Per cycle: inside the budget, no overcommit, no ledger entry of a replaced song (by generation and by legacy-strip owner), no page or shader error, every frame on its v2 view.
+
+| Cycle | Song | Stage | Owned MiB | Entries | Generations | JS heap MiB | Frames (8 / 30 / 55 s) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | 96 s | 1280x720 | 224.2 | 8 | 0, 1 | 174.9 | Ross / San Gabriel / Ross |
+| 1 | 80 s | 1280x720 | 215.0 | 6 | 0, 2 | 151.3 | Panamint / Panamint / La Sal |
+| 2 | 96 s | 960x540 | 157.6 | 6 | 0, 3 | 120.2 | Ross / San Gabriel / Ross; lost: legacy (context-lost), restored: Ross |
+| 3 | 80 s | 960x540 | 215.0 | 6 | 0, 4 | 176.6 | Panamint / Panamint / La Sal |
+| 4 | 96 s | 1280x720 | 214.0 | 7 | 0, 5 | 172.9 | Ross / San Gabriel / Ross |
+| 5 | 80 s | 1280x720 | 133.6 | 5 | 0, 6 | 113.8 | Panamint / Panamint / La Sal; lost: legacy, restored: La Sal |
+
+Same song and size four cycles apart: 224.2 -> 214.0 MiB (8 -> 7 entries), 215.0 -> 133.6 MiB (6 -> 5): ownership returns to a level at or below the earlier one rather than rising per cycle. 36/36 checks passed.
+
+Plan checklist, as covered:
+
+- all-pinned denial: `test/graphicsResidency.test.js` (a denial evicts nothing), `test/rangeSceneLifecycle.test.js` (a pinned view survives pressure);
+- repeated resize and song replacement: the lifecycle suite;
+- stale fetch completion: generation tests in `test/rangeSceneLifecycle.test.js`;
+- context loss/restore: the lifecycle suite (real extension);
+- idempotent disposal: ledger release;
+- faults: injectable through the fake scenes in `test/rangePresentation.test.js`.
+
+Not exercised separately: switching to another *world* (as opposed to another song) mid-session.
+
+### Quality ladder and device runs
+
+`src/world/alpine/RangeQuality.js`: foliage subset first, then fog samples (6 -> 4 -> 3 -> 2, frame haze within 3%), then pool reflections at level 6; landform, contact, performers and musical signatures are never touched; `PerfGovernor` supplies the hysteresis. The near rock scan is skipped where its weight is zero.
+
+Device measurement: `tools/range-device-probe.js` and `docs/range-v2-device-runs.md` (Android, iPhone and desktop runs, report fields, acceptance). **No physical phone or GPU was available: device acceptance is unverified.** Software-rendered timings are not reported as device FPS.
+
+## Task 17: delivery (in progress)
+
+- **v2 is the default Range renderer.** `?rangeRenderer=legacy` opts out; unknown values take the default; any v2 failure still falls back to legacy per frame with a recorded reason. The site opens in the Range (one-world mode), so every visitor gets v2.
+- **CI browser contracts under the v2 default** (local run, own server): smoke, lighting, shading, seek, worlds, export, car, urlload, bootstrap, chooser and chooser-keyboard pass. Two needed a change. `tools/smoke.mjs` and `tools/export-smoke.mjs` open the Range as their first world card and play a 24 s song live; software GL takes seconds per v2 frame, so the song ended before the HUD could be clicked. Both test the app shell and the recorder, not the scenery, and now pin `?rangeRenderer=legacy` through `withLegacyRange()` (`tools/lib/allWorlds.mjs`). `range-landscape-smoke` pins legacy because it measures the legacy ridge painters. v2 output, including the real bulk exporter and recorder, is covered by `range-scene-smoke`.
+- **Evidence identity.** Every `range-scene-smoke` capture carries a digest of the files the page actually loaded under `src/` (modules, catalog, manifests, terrain buffers, textures, runtime bundle), each checked against the checkout. The served identity list also covers the quality ladder, atmosphere, strip cache, seam, forest, rock stage and `main.js`.
+- **Review fixes (Codex, two rounds on PR #336).**
+  - The device probe now: follows song restarts; measures the real cold start; reports per-frame render and copy totals; takes its peak from the ledger's own high-water mark.
+  - The lifecycle suite needs at least 5 cycles.
+  - A preparation that straddles a context loss or restore (context epoch) never publishes, and is retried.
+  - Startup strips are fallback from the first bake.
+  - A refused render target also asks for fallback strips to be dropped.
+
 ## Asset budget (60 MB ceiling)
 
 | Item | Size |
 | --- | --- |
-| Terrain packages (11 views) | 14.9 MiB payload (0.8-2.1 MiB each) + manifests: 17 MB on disk |
+| Terrain packages (13 views) | 17.0 MiB payload (0.8-2.1 MiB each) + manifests: 19.9 MB on disk |
 | Shared data textures (10 x 512^2 lossless WebP) | 7.0 MB |
 | Material packs (11 manifests) | 92 KB |
-| **Total `src/assets/range/v2/`** | **24 MB** |
+| **Total `src/assets/range/v2/`** | **27.2 MB** |
 | Three.js subset bundle | 0.54 MB |
 
 ## Decisions taken without asking (assumptions)

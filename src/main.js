@@ -415,9 +415,9 @@ const rendererMode = resolveRendererMode(
   typeof location !== 'undefined' ? location.search : '',
 );
 paramBus.rendererMode = rendererMode;
-// Range v2 (real-terrain scenic views): ?rangeRenderer=v2 opts in, legacy is
-// the default during migration; ?rangeView=<id> forces one catalog view for
-// diagnostics. One presentation (and one GPU context) per page.
+// Range v2 (real-terrain scenic views) is the default; ?rangeRenderer=legacy
+// opts out, and any v2 failure falls back to legacy per frame on its own.
+// ?rangeView=<id> forces one catalog view for diagnostics. One presentation (and one GPU context) per page.
 const rangeMode = resolveRangeMode();
 const rangePresentation = rangeMode.mode === 'v2'
   ? new RangePresentation({ mode: 'v2', forcedViewId: rangeMode.forcedViewId, diag: rangeMode.diag, residency: sharedResidency(), budget: residencyBudgetFor().name })
@@ -1920,6 +1920,10 @@ function startTimeline(timelineData, extra = {}) {
   }
   // Bake the biome on screen before the first paint. The next section's
   // set is pumped a layer at a time from Simulation, ahead of its boundary.
+  // The presentation is attached first (Renderer.draw would do it on the
+  // first frame), so strips for biomes Range v2 covers are adopted as
+  // evictable fallback from the start.
+  if (rangePresentation?.enabled && sim.biomes) sim.biomes.rangePresentation = rangePresentation;
   try { sim.biomes.preparePlaybackStrips(); }
   catch (err) { console.warn('[strip prepare]', err); }
   running = true;
@@ -1942,6 +1946,12 @@ function startTimeline(timelineData, extra = {}) {
       rangePresentation.onAvailabilityChange = () => {
         if (sim !== owner) return;
         try { applyRangeCaptions(timelineData, exportMode); } catch (err) { console.warn('[range caption]', err); }
+      };
+      // A view refused GPU room: legacy strips baked for biomes the scene
+      // covers are fallback-only and cannot be evicted by the ledger.
+      rangePresentation.onBudgetRefusal = () => {
+        if (sim !== owner) return;
+        sim.biomes?.dropCoveredStrips?.();
       };
     }
     // Biomes after the first load in the background; name them once they

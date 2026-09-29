@@ -89,3 +89,26 @@ test('sky hierarchy: a secondary moon and sparse clouds that drift purely in tim
   const later = rangeCloudBanks({ width: 1280, height: 720, tSec: 31, seed: 7 });
   assert.ok(Math.abs(later[0].x - a[0].x) < 12, 'slow drift');
 });
+
+test('fewer fog samples (the quality ladder) approximate the full integral and never exceed the full sample count', () => {
+  // Single rays land on different puffs of the ~900 m mask; what must hold
+  // is the amount of haze over the frame.
+  const mean = (steps) => {
+    let a = 0, n = 0;
+    for (let x = -12000; x <= 12000; x += 1500) for (let z = -24000; z <= -2000; z += 1500) {
+      for (const y of [500, 700, 1000]) { a += mistAmount(cam, [x, y, z], { ...params, steps }); n++; }
+    }
+    return a / n;
+  };
+  const full = mean(6);
+  for (const steps of [4, 3, 2]) {
+    const lite = mean(steps);
+    assert.ok(Math.abs(lite / full - 1) < 0.05, `${steps} steps: frame haze ${lite.toFixed(4)} vs ${full.toFixed(4)}`);
+  }
+  const far = [9000, 500, -12000];
+  // Asking for more than MIST_SAMPLES is the full integral, not more work.
+  assert.equal(mistAmount(cam, far, { ...params, steps: 99 }), mistAmount(cam, far, params));
+  // The shader bounds its loop the same way.
+  assert.match(MIST_GLSL, /if \(float\(i\) >= n\) break;/);
+  assert.match(MIST_GLSL, /od \*= uMistDensity \* L \/ n;/);
+});

@@ -81,6 +81,10 @@ test('snapshot reports ownership by owner, pins and cancellations', () => {
   assert.deepEqual(s.byOwner.gpu, { pending: 0, live: 10 * MiB, count: 1 });
   assert.deepEqual(s.byOwner.cpu, { pending: 5 * MiB, live: 0, count: 1 });
   assert.deepEqual(s.pinned, ['g']);
+  assert.equal(s.entryCount, 2);
+  assert.deepEqual(s.generations, [0]);
+  r.reserve({ key: 'n', bytes: MiB, owner: 'gpu', generation: 3 });
+  assert.deepEqual(r.snapshot().generations, [0, 3]);
 });
 
 test('legacy strips share the ledger instead of a second allowance', () => {
@@ -131,4 +135,39 @@ test('inserting strips without a hold claims room first, and only an impossible 
   try { cache.set('A', { L2: canvas(1024, 1024) }); } finally { console.warn = warn; }
   assert.equal(cache.overBudget, 1);
   assert.equal(r.overcommits, 1);
+});
+
+test('fallback strips (a biome Range v2 draws) are evictable by the scene; others are not', () => {
+  const r = ledger(10);
+  const canvas = (w, h) => ({ width: w, height: h });
+  const cache = new TerrainStripCache({ maxBytes: 100 * MiB, residency: r, owner: 'legacy', isFallback: (k) => k === 'COVERED' });
+  cache.set('COVERED', { L2: canvas(1024, 1024) }); // 4 MiB, fallback
+  cache.set('LEGACY', { L2: canvas(1024, 1024) }); // 4 MiB, the only scenery for its biome
+  // The scene reserves 5 MiB: only the fallback set may go.
+  assert.ok(r.reserve({ key: 'scene', bytes: 5 * MiB, owner: 'range' }));
+  assert.equal(cache.has('COVERED'), false, 'the cache forgets what the ledger evicted');
+  assert.equal(cache.has('LEGACY'), true);
+  assert.equal(cache.bytes, 4 * MiB);
+  // Nothing more may be taken from legacy-only scenery.
+  assert.equal(r.reserve({ key: 'more', bytes: 3 * MiB, owner: 'range' }), null);
+  // A delete of our own releases once and does not recurse.
+  cache.delete('LEGACY');
+  assert.equal(cache.bytes, 0);
+  assert.equal(r.snapshot().byOwner.legacy, undefined);
+});
+
+test('the high-water mark catches ownership that peaks and falls between samples', () => {
+  const r = ledger(100);
+  r.commit(r.reserve({ key: 'view', bytes: 30 * MiB, owner: 'terrain' }), {});
+  // A scratch buffer reserved and released inside one task.
+  r.reserve({ key: 'scratch', bytes: 40 * MiB, owner: 'scratch' });
+  r.release('scratch');
+  const s = r.snapshot();
+  assert.equal(s.liveBytes + s.pendingBytes, 30 * MiB);
+  assert.equal(s.peakBytes, 70 * MiB);
+  assert.deepEqual(s.peakByOwner, { terrain: 30 * MiB, scratch: 40 * MiB });
+  r.resetPeak();
+  assert.equal(r.snapshot().peakBytes, 30 * MiB, 'a new window starts from what is held now');
+  r.adopt({ key: 'strip', bytes: 5 * MiB, owner: 'legacy' });
+  assert.equal(r.snapshot().peakBytes, 35 * MiB, 'adopted memory counts too');
 });

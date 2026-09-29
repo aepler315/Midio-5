@@ -41,6 +41,27 @@ export class GraphicsResidency {
     this.cancelled = new Set();
     this.tick = 0;
     this.denials = 0;
+    this.resetPeak();
+  }
+
+  /** Start a new high-water window (a device probe calls this when it
+   *  starts recording). */
+  resetPeak() {
+    this.peakBytes = -1;
+    this._notePeak();
+  }
+
+  /** Ownership can peak and fall inside one task (a scratch buffer reserved
+   *  and released during a bake), so the high-water mark is recorded when
+   *  ownership grows, not sampled. The owner breakdown is copied only on a
+   *  new peak. */
+  _notePeak() {
+    const used = this.usedBytes;
+    if (used <= this.peakBytes) return;
+    this.peakBytes = used;
+    const by = {};
+    for (const e of this.entries.values()) by[e.owner] = (by[e.owner] || 0) + e.bytes;
+    this.peakByOwner = by;
   }
 
   get pendingBytes() { let s = 0; for (const e of this.entries.values()) if (e.state === 'pending') s += e.bytes; return s; }
@@ -86,6 +107,7 @@ export class GraphicsResidency {
     }
     const entry = { key, bytes: want, owner: owner || 'unknown', generation, evictable, state: 'pending', used: ++this.tick, resource: null, dispose: null };
     this.entries.set(key, entry);
+    this._notePeak();
     return { key, bytes: want, owner: entry.owner, generation };
   }
 
@@ -101,11 +123,12 @@ export class GraphicsResidency {
    * it exceeds the budget; `overcommits` makes that visible in diagnostics
    * instead of hiding it. New Range v2 code uses reserve()/commit().
    */
-  adopt({ key, bytes, owner, generation = 0, resource = null, dispose = null }) {
+  adopt({ key, bytes, owner, generation = 0, resource = null, dispose = null, evictable = false }) {
     this.release(key);
     const want = Math.max(0, Math.ceil(Number(bytes) || 0));
     if (this.usedBytes + want > this.budgetBytes) this.overcommits = (this.overcommits || 0) + 1;
-    this.entries.set(key, { key, bytes: want, owner: owner || 'unknown', generation, evictable: false, state: 'live', used: ++this.tick, resource, dispose });
+    this.entries.set(key, { key, bytes: want, owner: owner || 'unknown', generation, evictable: !!evictable, state: 'live', used: ++this.tick, resource, dispose });
+    this._notePeak();
   }
 
   /** Pending -> live. Returns false (and disposes `resource`) when the
@@ -176,6 +199,10 @@ export class GraphicsResidency {
       budget: this.name, budgetBytes: this.budgetBytes,
       pendingBytes: this.pendingBytes, liveBytes: this.liveBytes, denials: this.denials, overcommits: this.overcommits || 0,
       byOwner, pinned: [...this.pinned], cancelledGenerations: [...this.cancelled],
+      // Lifecycle evidence: how many entries exist and which generations
+      // still own any (a replaced song's generation must not linger).
+      peakBytes: this.peakBytes, peakByOwner: { ...this.peakByOwner },
+      entryCount: this.entries.size, generations: [...new Set([...this.entries.values()].map((e) => e.generation))].sort((x, y) => x - y),
     };
   }
 }

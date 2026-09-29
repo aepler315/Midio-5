@@ -3,7 +3,7 @@
 //
 //   node tools/range-scene-smoke.mjs --url http://127.0.0.1:8092 --source-root "$PWD" \
 //     --expect-sha "$(git rev-parse HEAD)" --suite <pilot|selection|motion|lifecycle|export|complete> \
-//     --output .smoke/range-v2 [--view <id>] [--width 1280 --height 720]
+//     --output .smoke/range-v2 [--view <id>] [--width 1280 --height 720] [--cycles 6]
 //
 // Every capture records the renderer that actually drew it (v2 or legacy,
 // with the reason), the view, forcedCandidate, quality, residency and the
@@ -20,7 +20,7 @@ import { chromium } from 'playwright';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SUITES = ['pilot', 'selection', 'motion', 'lifecycle', 'export', 'complete'];
-const NAMED = new Set(['url', 'source-root', 'expect-sha', 'suite', 'output', 'view', 'width', 'height', 'fps', 'seconds']);
+const NAMED = new Set(['cycles', 'url', 'source-root', 'expect-sha', 'suite', 'output', 'view', 'width', 'height', 'fps', 'seconds']);
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 const IDENTITY_FILES = [
   'src/world/alpine/RangeScene.js', 'src/world/alpine/RangePresentation.js', 'src/world/alpine/RangeFrame.js',
@@ -28,6 +28,9 @@ const IDENTITY_FILES = [
   'src/world/alpine/TerrainPackage.js', 'src/world/alpine/RangeAssets.js', 'src/render/GraphicsResidency.js',
   'src/world/terrain/SceneCatalog.js', 'src/world/terrain/SceneTravel.js', 'src/world/terrain/sceneCatalogData.js',
   'src/world/BiomeManager.js', 'src/render/Renderer.js', 'src/vendor/range/three-range.module.js',
+  'src/world/alpine/RangeQuality.js', 'src/world/alpine/RangeAtmosphere.js', 'src/world/terrain/TerrainStripCache.js',
+  'src/world/TravelSeam.js', 'src/world/alpine/ForestCover.js', 'src/world/alpine/ForestGL.js',
+  'src/world/alpine/RockStage.js', 'src/world/alpine/RockStageGL.js', 'src/main.js',
 ];
 
 export function parseSceneArgs(argv) {
@@ -74,6 +77,37 @@ async function servedIdentity(url, sourceRoot) {
   return hashes;
 }
 
+// What each page actually loaded (modules, catalog, manifests, terrain
+// buffers, textures, the runtime bundle), hashed as it arrived. Every
+// capture carries a digest of that set, and each file is checked against
+// the checkout: the pixels come from these bytes and no others.
+const LOADED = new WeakMap();
+const localHashes = new Map();
+let identityRoot = null;
+function watchLoaded(page) {
+  const entry = { files: new Map(), pending: [] };
+  LOADED.set(page, entry);
+  page.on('response', (res) => {
+    const file = new URL(res.url()).pathname.replace(/^\/+/, '');
+    if (!file.startsWith('src/') || !res.ok()) return;
+    entry.pending.push(res.body().then((b) => entry.files.set(file, sha256(b)), () => entry.files.set(file, 'unread')));
+  });
+}
+async function loadedIdentity(page) {
+  const entry = LOADED.get(page);
+  if (!entry) return null;
+  await Promise.all(entry.pending.splice(0));
+  const files = [...entry.files].sort(([a], [b]) => (a < b ? -1 : 1));
+  if (identityRoot) {
+    for (const [file, sha] of files) {
+      if (!localHashes.has(file)) localHashes.set(file, sha256(await fs.readFile(path.join(identityRoot, file))));
+      if (sha !== localHashes.get(file)) throw new Error(`the page loaded ${file} (${sha.slice(0, 12)}), which differs from the checkout`);
+    }
+  }
+  const rangeAssets = files.filter(([f]) => f.startsWith('src/assets/range/') || f.startsWith('src/vendor/range/')).map(([f]) => f);
+  return { loadedDigest: sha256(files.map(([f, h]) => `${f} ${h}\n`).join('')), loadedFiles: files.length, rangeAssets };
+}
+
 async function launch() {
   return chromium.launch({
     ...(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {}),
@@ -85,6 +119,7 @@ async function launch() {
 export async function openSong(browser, { url, wav, width, height, params = {}, dpr = 1 }) {
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: dpr, serviceWorkers: 'block' });
   const page = await context.newPage();
+  watchLoaded(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => {
@@ -115,7 +150,7 @@ export async function openSong(browser, { url, wav, width, height, params = {}, 
 
 /** Draw one export frame at `timeMs` and return its PNG and Range state. */
 export async function captureFrame(page, timeMs, { hook = null } = {}) {
-  return page.evaluate(async ({ timeMs: t, hook: h }) => {
+  const frame = await page.evaluate(async ({ timeMs: t, hook: h }) => {
     const smw = window.__SMW;
     if (h === 'no-far') {
       const pres = smw.sim.biomes.rangePresentation;
@@ -137,6 +172,8 @@ export async function captureFrame(page, timeMs, { hook = null } = {}) {
       world: smw.sim.biomes.world.kind,
     };
   }, { timeMs, hook });
+  frame.identity = await loadedIdentity(page);
+  return frame;
 }
 
 /**
@@ -425,12 +462,202 @@ async function suiteExport(ctx) {
   const recCount = await pngMarkers(recPng);
   check('markers reach the recorded video', recCount > 200, `${recCount} px`);
   report.export.files = { stage: path.relative(root, stagePng), bulk: path.relative(root, framePng), recorder: path.relative(root, recPng) };
+  report.export.stageIdentity = stage.identity;
   await context.close();
+}
+
+/**
+ * Natural casts (plan §10, Task 15): songs opened with no forced view, so
+ * the production selector chooses. Every biome of each song gets an
+ * approved view of its own biome, the musical skyline pool still assigns
+ * each biome its own legacy ranges, the assignment is deterministic (the
+ * same song opened again draws the same views), and every sampled frame
+ * draws its v2 view. Frames are written for review.
+ */
+async function suiteSelection(ctx) {
+  const { browser, args, out, report } = ctx;
+  const specs = [[120, 96], [80, 150], [150, 120], [174, 100], [100, 180]];
+  report.selection = { songs: [], checks: [] };
+  const check = (name, ok, detail = '') => {
+    report.selection.checks.push({ name, ok: !!ok, detail });
+    console.log(`${ok ? 'PASS' : 'FAIL'} selection: ${name}${detail ? ` -- ${detail}` : ''}`);
+    if (!ok) throw new Error(`selection check failed: ${name} ${detail}`);
+  };
+  const cast = async (wav) => {
+    const s = await openSong(browser, { url: args.url, wav, width: 960, height: 540, params: { rangeRenderer: 'v2' } });
+    const song = await s.page.evaluate(async () => {
+      const t = window.__SMW.sim.biomes.songTerrain;
+      if (t?.whenAll) await Promise.race([t.whenAll, new Promise((r) => setTimeout(r, 60000))]);
+      const id = (r) => r?.id || r?.range?.id || null;
+      return {
+        seed: window.__SMW.songSeed, biomes: t?.biomes, catalogVersion: t?.catalogVersion, horizon: id(t?.horizon), massif: id(t?.massif),
+        perBiome: (t?.biomes || []).map((b) => {
+          const e = t.byBiome.get(b), sc = t.sceneByBiome.get(b);
+          return { biome: b, skyline: e ? Object.values(e.ranges || {}).map(id).filter(Boolean) : [],
+            view: sc?.view?.id || null, viewBiome: sc?.view?.biome || null, status: sc?.view?.status || null };
+        }),
+      };
+    });
+    for (const w of [0, 400, 800, 1200, 1600, 2000]) await s.page.evaluate((ms) => window.__SMW.renderExportFrame(ms), w);
+    song.frames = [];
+    for (const t of [10000, 40000, 70000]) {
+      const f = await captureFrame(s.page, t);
+      const file = await writePng(out, `selection-${path.basename(wav, '.wav')}-${t}.png`, f.png);
+      song.frames.push({ t, active: f.range.active, viewId: f.range.viewId, reason: f.range.reason || null, file: path.relative(root, file), identity: f.identity });
+    }
+    song.errors = s.errors.filter((e) => !e.startsWith('warn:'));
+    await s.context.close();
+    return song;
+  };
+  for (const [bpm, sec] of specs) {
+    const wav = path.join(out, `synthetic-${bpm}bpm-${sec}s.wav`);
+    execFileSync(process.execPath, [path.join(root, 'tools/gen-test-wav.mjs'), wav, String(bpm), String(sec)]);
+    const song = await cast(wav);
+    song.wav = path.basename(wav);
+    report.selection.songs.push(song);
+    const tag = `${bpm} bpm ${sec} s`;
+    check(`${tag}: every biome has an approved view of its own biome`,
+      song.perBiome.every((b) => b.view && b.viewBiome === b.biome && b.status === 'approved'), JSON.stringify(song.perBiome.map((b) => [b.biome, b.view])));
+    check(`${tag}: the musical skyline pool assigns every biome its ranges`, song.perBiome.every((b) => b.skyline.length > 0));
+    check(`${tag}: every sampled frame draws its v2 view`, song.frames.every((f) => f.active), JSON.stringify(song.frames.map((f) => f.viewId || f.reason)));
+    check(`${tag}: no page or shader errors`, song.errors.length === 0, song.errors.slice(0, 2).join(' | '));
+  }
+  // Deterministic: the first song again draws the same views.
+  const again = await cast(path.join(out, `synthetic-${specs[0][0]}bpm-${specs[0][1]}s.wav`));
+  const first = report.selection.songs[0];
+  check('the same song draws the same views again', JSON.stringify(again.perBiome.map((b) => b.view)) === JSON.stringify(first.perBiome.map((b) => b.view)));
+  const shown = new Set(report.selection.songs.flatMap((x) => x.frames.map((f) => f.viewId)).filter(Boolean));
+  report.selection.viewsOnScreen = [...shown];
+  console.log(`selection: ${shown.size} distinct views on screen across ${specs.length} songs`);
+}
+
+/**
+ * Task 16 lifecycle: repeated song replacement, stage resizes, A/B travels
+ * and a real WebGL context loss/restore in one page, with the shared
+ * residency ledger read after every cycle. Ownership must stay inside the
+ * budget, never overcommit, hold no entry of a replaced song, and return to
+ * a stable level instead of rising per cycle.
+ */
+async function suiteLifecycle(ctx) {
+  const { browser, args, wav, out, report } = ctx;
+  const wavB = path.join(out, 'synthetic-150bpm-80s.wav');
+  execFileSync(process.execPath, [path.join(root, 'tools/gen-test-wav.mjs'), wavB, '150', '80']);
+  const songs = [wav, wavB];
+  const sizes = [{ width: 1280, height: 720 }, { width: 960, height: 540 }];
+  const cycles = Number(args.cycles ?? 6);
+  // Five is the least that exercises every check: song replacement (cycle
+  // 1), a resize (2), a context loss (2) and one same-song-and-size
+  // ownership comparison (4 vs 0).
+  if (!Number.isInteger(cycles) || cycles < 5) throw new Error(`--cycles must be an integer of at least 5, got ${args.cycles}`);
+  // Expected length of each song, to confirm a replacement actually landed.
+  const songMs = [96000, 80000];
+  report.lifecycle = { cycles: [], checks: [] };
+  const check = (name, ok, detail = '') => {
+    report.lifecycle.checks.push({ name, ok: !!ok, detail });
+    console.log(`${ok ? 'PASS' : 'FAIL'} lifecycle: ${name}${detail ? ` -- ${detail}` : ''}`);
+    if (!ok) throw new Error(`lifecycle check failed: ${name} ${detail}`);
+  };
+  const MiB = 1024 * 1024;
+  const s = await openSong(browser, { url: args.url, wav: songs[0], width: sizes[0].width, height: sizes[0].height, params: { rangeRenderer: 'v2' } });
+  const { page } = s;
+  // Arms the export at `size` once the song of `expectMs` has loaded: a
+  // replacement's decode is asynchronous and arming too early would rebuild
+  // the previous song.
+  const arm = async (size, expectMs) => {
+    const deadline = Date.now() + 600000;
+    for (;;) {
+      const r = await page.evaluate((sz) => { try { return { ok: window.__SMW.beginBulkExport(sz) }; } catch (e) { return { err: String(e.message || e) }; } }, size);
+      if (r.ok && Math.abs(r.ok.durationMs - expectMs) < 2000) break;
+      if (!r.ok && !/Load a song|Still analysing|Still loading/.test(r.err)) throw new Error(`arm: ${r.err}`);
+      if (Date.now() > deadline) throw new Error(`arm: song of ${expectMs} ms never loaded (${r.err || `got ${r.ok?.durationMs} ms`})`);
+      await new Promise((res) => setTimeout(res, 500));
+    }
+    await page.evaluate(() => window.__SMW.rangeReady({ timeoutMs: 600000 }));
+  };
+  const read = () => page.evaluate(() => {
+    const st = window.__SMW.rangeState;
+    return { generation: window.__SMW.generation, rangeGeneration: st.generation, active: st.active, viewId: st.viewId, reason: st.reason,
+      stripOwner: window.__SMW.sim?.biomes?.strips?.owner ?? null,
+      residency: st.residency, prepared: st.scene?.prepared || [], heap: performance.memory?.usedJSHeapSize ?? null };
+  });
+  const frames = async () => {
+    const out2 = [];
+    for (const t of [8000, 30000, 55000]) {
+      const f = await captureFrame(page, t);
+      out2.push({ t, active: f.range.active, viewId: f.range.viewId, incoming: f.range.incomingViewId, reason: f.range.reason, loadedDigest: f.identity?.loadedDigest });
+    }
+    return out2;
+  };
+  let song = 0;
+  for (let i = 0; i < cycles; i++) {
+    const wantSong = i % 2, size = sizes[Math.floor(i / 2) % 2];
+    if (wantSong !== song) {
+      await page.locator('#fileInput').setInputFiles(songs[wantSong]);
+      song = wantSong;
+    }
+    await arm(size, songMs[wantSong]);
+    const drawn = await frames();
+    let contextCycle = null;
+    if (i % 3 === 2) {
+      const lost = await page.evaluate(() => {
+        const r = window.__SMW.sim.biomes.rangePresentation.scene.renderer;
+        // Keep the extension object: a lost context returns null for it.
+        const ext = r.getContext().getExtension('WEBGL_lose_context');
+        window.__rangeLoseContext = ext;
+        ext.loseContext();
+        return !!ext;
+      });
+      await new Promise((res) => setTimeout(res, 200));
+      const during = await captureFrame(page, 20000);
+      await page.evaluate(() => {
+        window.__rangeLoseContext.restoreContext();
+      });
+      await new Promise((res) => setTimeout(res, 300));
+      const after = await captureFrame(page, 20000);
+      contextCycle = { lost, duringActive: during.range.active, duringReason: during.range.reason, afterActive: after.range.active, afterView: after.range.viewId };
+      check(`cycle ${i}: context loss draws legacy, restore draws v2 again`, lost && !during.range.active && after.range.active,
+        JSON.stringify(contextCycle));
+    }
+    const st = await read();
+    const r = st.residency;
+    const row = { cycle: i, song: wantSong, size: `${size.width}x${size.height}`, generation: st.rangeGeneration,
+      liveMiB: +(r.liveBytes / MiB).toFixed(1), pendingMiB: +(r.pendingBytes / MiB).toFixed(1),
+      ownedMiB: +((r.liveBytes + r.pendingBytes) / MiB).toFixed(1), entries: r.entryCount,
+      generations: r.generations, overcommits: r.overcommits, denials: r.denials,
+      byOwnerMiB: Object.fromEntries(Object.entries(r.byOwner).map(([k, v]) => [k, +((v.live + v.pending) / MiB).toFixed(1)])),
+      prepared: st.prepared, heapMiB: st.heap ? +(st.heap / MiB).toFixed(1) : null, frames: drawn, context: contextCycle };
+    report.lifecycle.cycles.push(row);
+    console.log(`cycle ${i}: song ${wantSong} ${row.size} gen ${row.generation} live ${row.liveMiB} MiB pending ${row.pendingMiB} entries ${row.entries} gens ${row.generations} heap ${row.heapMiB} frames ${drawn.map((d) => d.active ? d.viewId : `legacy(${d.reason})`).join(',')}`);
+    check(`cycle ${i}: inside the budget`, r.liveBytes + r.pendingBytes <= r.budgetBytes, `${row.liveMiB + row.pendingMiB} MiB`);
+    check(`cycle ${i}: nothing of a replaced song remains`, r.generations.every((g) => g === 0 || g === st.rangeGeneration), `generations ${r.generations}, current ${st.rangeGeneration}`);
+    // Legacy strips are adopted at generation 0 but are owned per song
+    // (one BiomeManager each): only the current manager may own any.
+    const stripOwners = Object.keys(r.byOwner).filter((o) => o.startsWith('legacy-strips'));
+    check(`cycle ${i}: no replaced song's legacy strips remain`, stripOwners.every((o) => o === st.stripOwner), `${stripOwners} (current ${st.stripOwner})`);
+    const pageErrors = s.errors.filter((e) => !e.startsWith('warn:'));
+    check(`cycle ${i}: no page or shader errors`, pageErrors.length === 0, pageErrors.slice(0, 2).join(' | '));
+    check(`cycle ${i}: every frame drew its v2 view`, drawn.every((d) => d.active), JSON.stringify(drawn));
+  }
+  const rows = report.lifecycle.cycles;
+  check('no overcommit in any cycle', rows.every((x) => x.overcommits === 0), rows.map((x) => x.overcommits).join(','));
+  // Same song and size recur every 4 cycles: ownership returns to the same
+  // level (within one view's worth of LRU leftovers), not rising per cycle.
+  for (let i = 4; i < rows.length; i++) {
+    const a = rows[i - 4], b = rows[i];
+    // Live and pending both count, and so do entries: a leak of pending
+    // reservations or small entries would not move the live bytes.
+    check(`cycle ${i} vs ${i - 4}: ownership stable`, b.ownedMiB <= a.ownedMiB + 100 && b.entries <= a.entries + 4,
+      `${a.ownedMiB} -> ${b.ownedMiB} MiB, ${a.entries} -> ${b.entries} entries`);
+  }
+  const heaps = rows.map((x) => x.heapMiB).filter((x) => x != null);
+  if (heaps.length > 3) check('JS heap does not climb per cycle', heaps.at(-1) <= Math.max(...heaps.slice(0, 3)) * 1.5, heaps.join(','));
+  await s.context.close();
 }
 
 async function main() {
   const args = parseSceneArgs(process.argv);
   const sourceRoot = path.resolve(args['source-root']);
+  identityRoot = sourceRoot;
   const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot, encoding: 'utf8' }).trim();
   if (!sha.startsWith(args['expect-sha'])) throw new Error(`source is ${sha}, not ${args['expect-sha']}`);
   const dirty = execFileSync('git', ['status', '--porcelain', '--', 'src', 'tools'], { cwd: sourceRoot, encoding: 'utf8' }).trim();
@@ -448,7 +675,7 @@ async function main() {
   let failed = null;
   try {
     const suites = args.suite === 'complete' ? SUITES.filter((s) => s !== 'complete') : [args.suite];
-    const impl = { pilot: suitePilot, export: suiteExport, motion: suiteMotion };
+    const impl = { pilot: suitePilot, selection: suiteSelection, export: suiteExport, motion: suiteMotion, lifecycle: suiteLifecycle };
     for (const s of suites) {
       // A requested suite that does not exist yet fails the run: an empty
       // "pass" would be evidence of nothing.

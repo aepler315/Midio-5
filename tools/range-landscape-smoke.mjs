@@ -136,6 +136,9 @@ async function main() {
         await page.route('**/soundfonts/', route => route.fulfill({ json: [] }));
         const entry = new URL(args.url);
         entry.searchParams.set('bulkExport', '1');
+        // This suite measures the legacy ridge painters (the L2-L5 masks);
+        // Range v2 is the default renderer, so pin legacy explicitly.
+        entry.searchParams.set('rangeRenderer', 'legacy');
         entry.searchParams.set('exportW', String(job.width * job.dpr));
         entry.searchParams.set('exportH', String(job.height * job.dpr));
         await page.goto(entry.href);

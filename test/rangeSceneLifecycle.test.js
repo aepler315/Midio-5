@@ -101,3 +101,22 @@ test('a new generation never inherits an older generation\'s pending rejection',
   rejectOld(Object.assign(new Error('stale'), { reason: 'stale' }));
   assert.deepEqual(await out, { fresh: true, generation: 2 });
 });
+
+test('a preparation that straddles a context loss or restore never publishes; none starts while lost', async () => {
+  const s = bareScene();
+  s.contextLost = false;
+  s.contextEpoch = 0;
+  // The decoded terrain is already resident, so prepare goes straight to
+  // the GPU stage; the material step is where the context goes away.
+  const cpuKey = 'range:terrain-cpu:a';
+  s.residency.commit(s.residency.reserve({ key: cpuKey, bytes: MiB, owner: 'range-terrain-cpu' }), { key: cpuKey, data: {}, manifest: {} });
+  let released = 0;
+  s._acquireMaterial = async () => { s.contextLost = true; s.contextEpoch++; return { pack: { manifest: { rules: {} } } }; };
+  s._releaseMaterial = () => { released++; };
+  await assert.rejects(s.prepare(view('a'), { baseUrl: base }), (e) => e.reason === 'context-lost');
+  assert.equal(s.prepared.has('a'), false);
+  assert.equal(released, 1, 'the material hold is returned');
+  // While lost, nothing new starts.
+  await assert.rejects(s.prepare(view('b'), { baseUrl: base }), (e) => e.reason === 'context-lost');
+  assert.equal(s.pending.has('b'), false);
+});

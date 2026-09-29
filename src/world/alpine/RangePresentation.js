@@ -4,7 +4,8 @@
 // partition into the authoritative main canvas at its pass boundary. It
 // never owns simulation.
 //
-// Modes: ?rangeRenderer=v2 opts in (legacy stays the default until rollout);
+// Modes: v2 is the default; ?rangeRenderer=legacy opts out (unknown values
+// take the default);
 // ?rangeView=<id> forces one catalog view for every biome, candidates
 // included, and marks the frame forcedCandidate. Any failure -- no WebGL2,
 // context loss, 404, bad manifest, decode error, budget denial, stale
@@ -17,19 +18,20 @@ import SCENE_CATALOG from '../terrain/sceneCatalogData.js';
 import { noteViewShown } from '../terrain/RangeHistory.js';
 
 export const RANGE_RENDERER_MODES = Object.freeze(['legacy', 'v2']);
+export const RANGE_DEFAULT_MODE = 'v2';
 const ASSET_BASE = new URL('../../assets/range/v2/', import.meta.url).href;
 const RUNTIME_URL = new URL('../../vendor/range/three-range.module.js', import.meta.url).href;
 
-/** ?rangeRenderer=v2|legacy and ?rangeView=<id>. Default legacy. */
+/** ?rangeRenderer=v2|legacy and ?rangeView=<id>. Default v2. */
 export function resolveRangeMode(search = (typeof location !== 'undefined' ? location.search : '')) {
   try {
     const q = new URLSearchParams(String(search || '').replace(/^\?/, ''));
-    const raw = (q.get('rangeRenderer') || 'legacy').toLowerCase();
+    const raw = (q.get('rangeRenderer') || RANGE_DEFAULT_MODE).toLowerCase();
     const forcedViewId = q.get('rangeView') || null;
     const diag = q.get('rangeDiag') === 'markers' ? 'markers' : null;
-    return { mode: RANGE_RENDERER_MODES.includes(raw) ? raw : 'legacy', forcedViewId, diag };
+    return { mode: RANGE_RENDERER_MODES.includes(raw) ? raw : RANGE_DEFAULT_MODE, forcedViewId, diag };
   } catch {
-    return { mode: 'legacy', forcedViewId: null, diag: null };
+    return { mode: RANGE_DEFAULT_MODE, forcedViewId: null, diag: null };
   }
 }
 
@@ -98,9 +100,12 @@ export class RangePresentation {
     this.deferred = new Map(); // viewId -> retry-at (ms)
     this._needed = new Set(); // views this frame wanted on screen but lacked
     this._wants = []; // every view this frame wanted (both travel sides)
+    this.onBudgetRefusal = null; // (viewId) => void: free fallback scenery
     this.shown = new Set();
     this.frameId = 0;
-    this.timings = { lastCopyMs: 0, lastPartitionMs: 0 };
+    // last*: the most recent pass. frame*: every pass of the current frame
+    // (scenic partitions and the rock stage, both travel sides), summed.
+    this.timings = { lastCopyMs: 0, lastPartitionMs: 0, frameId: 0, frameRenderMs: 0, frameCopyMs: 0 };
     // Arrival fade (ARRIVAL_SEC): 1 = the GPU scene fully replaces legacy.
     this.arrival = 1;
     this._legacyShown = false;
@@ -200,10 +205,18 @@ export class RangePresentation {
     this.scene.prepare(view, { generation: gen, baseUrl: this.assetBase, isCurrent: (g) => g === this.generation })
       .catch((err) => {
         if (gen !== this.generation) return; // stale: the new song decides again
+        if (err?.reason === 'context-lost') {
+          // Built across a context loss/restore: nothing is wrong with the
+          // view; prepare it again once the context is back.
+          this.deferred.set(view.id, Date.now() + BUDGET_RETRY_MS);
+          return;
+        }
         if (err?.reason === 'budget') {
           // No room right now (other views still pending or pinned): try
-          // again shortly instead of dropping the biome to legacy for good.
+          // again shortly instead of dropping the biome to legacy for good,
+          // and let the owner free fallback scenery the retry can use.
           this.deferred.set(view.id, Date.now() + BUDGET_RETRY_MS);
+          try { this.onBudgetRefusal?.(view.id); } catch (e) { console.warn('[range v2] budget reclaim failed', e); }
           return;
         }
         const reason = err?.reason ? `${err.reason}: ${err.message}` : String(err?.message || err);
@@ -277,7 +290,9 @@ export class RangePresentation {
     // missing side must not evict the side that was already there (a frame
     // that drew no GPU scene pinned nothing).
     const views = this._wants;
-    if (!lacking || !views.length || !this.scene) return false;
+    // A lost context cannot make progress: nothing is ready until it is
+    // restored, and waiting would only run out the timeout.
+    if (!lacking || !views.length || !this.scene || this.scene.contextLost) return false;
     const deadline = Date.now() + timeoutMs;
     const tries = new Map();
     let waited = false;
@@ -445,6 +460,9 @@ export class RangePresentation {
       this.scene.resize({ widthPx: vp.backingWidth, heightPx: vp.backingHeight, pixelRatio: vp.pixelRatio || 1 });
     } catch (err) {
       this.reason = `budget: ${err.message}`;
+      // The render target was refused room: let the owner free fallback
+      // scenery (legacy strips for covered biomes) before the next frame.
+      try { this.onBudgetRefusal?.(view.id); } catch (e) { console.warn('[range v2] budget reclaim failed', e); }
       return false;
     }
     // The incoming side needs its own target and a composition buffer,
@@ -465,6 +483,9 @@ export class RangePresentation {
     this._updateIncomingFade(incoming, inputs.sim);
     this._handoff = incoming && this.incomingFade < 1 ? { outgoing: view, incoming } : null;
     this.scene.pinView?.(incoming ? [view.id, incoming.id] : view.id, incoming ? [TRAVEL_SCRATCH_KEY] : []);
+    this.timings.frameId = this.frameId + 1;
+    this.timings.frameRenderMs = 0;
+    this.timings.frameCopyMs = 0;
     this.frame = buildRangeFrame({
       frameId: ++this.frameId, generation: this.generation, sim: inputs.sim, pose: inputs.pose,
       scenicViewport: inputs.scenicViewport, groundViewport: inputs.groundViewport,
@@ -546,10 +567,12 @@ export class RangePresentation {
       // nearest partition changing first, as the legacy ranges do.
       const layerKey = PASS_LAYER[pass] || 'L3';
       const cols = this._travelBandColumns(stage.width);
+      let renderMs = 0;
+      const timed = (fn) => () => { const r0 = performance.now(); const r = fn(); renderMs += performance.now() - r0; return r; };
       const drawn = this._compositeSides(ctx, stage, layerKey,
-        () => this.scene.renderPartition(this.frame, pass, this.viewId, { side: 'A', bandColumns: cols.A }),
-        () => this.scene.renderPartition(this.frame, pass, this.incomingViewId, { side: 'B', bandColumns: cols.B }));
-      this.timings.lastPartitionMs = performance.now() - t0;
+        timed(() => this.scene.renderPartition(this.frame, pass, this.viewId, { side: 'A', bandColumns: cols.A })),
+        timed(() => this.scene.renderPartition(this.frame, pass, this.incomingViewId, { side: 'B', bandColumns: cols.B })));
+      this._noteTiming(renderMs, performance.now() - t0 - renderMs);
       return drawn;
     }
     const img = this.scene.renderPartition(this.frame, pass, this.viewId);
@@ -560,9 +583,19 @@ export class RangePresentation {
     ctx.globalCompositeOperation = 'source-over';
     ctx.drawImage(img, 0, 0, stage.width, stage.height);
     ctx.restore();
-    this.timings.lastPartitionMs = t1 - t0;
-    this.timings.lastCopyMs = performance.now() - t1;
+    this._noteTiming(t1 - t0, performance.now() - t1);
     return true;
+  }
+
+  /** One pass's render and copy cost: kept as the last pass and summed
+   *  into the frame's totals (a frame has several passes, two sides each
+   *  during a travel). */
+  _noteTiming(renderMs, copyMs) {
+    const t = this.timings;
+    t.lastPartitionMs = renderMs;
+    t.lastCopyMs = copyMs;
+    t.frameRenderMs += renderMs;
+    t.frameCopyMs += copyMs;
   }
 
   /**
@@ -648,10 +681,14 @@ export class RangePresentation {
     if (this.incomingViewId) {
       // The rock stage wears each side's material through the nearest seam;
       // its receivers (pools) come from whichever side holds the centre.
-      let outA = null, outB = null;
+      let outA = null, outB = null, renderMs = 0;
+      const g0 = performance.now();
+      const timed = (fn) => () => { const r0 = performance.now(); const r = fn(); renderMs += performance.now() - r0; return r; };
       const drawn = this._compositeSides(ctx, stage, 'L5',
-        () => (outA = this.scene.renderGround(this.frame, this.viewId))?.canvas,
-        () => (outB = this.scene.renderGround(this.frame, this.incomingViewId))?.canvas);
+        timed(() => (outA = this.scene.renderGround(this.frame, this.viewId))?.canvas),
+        timed(() => (outB = this.scene.renderGround(this.frame, this.incomingViewId))?.canvas));
+      this.timings.frameRenderMs += renderMs;
+      this.timings.frameCopyMs += performance.now() - g0 - renderMs;
       // Receivers (pools, wet masks) follow the side that visibly holds the
       // centre: B's seam weight there, scaled by its late-join fade.
       const { lo, hi, bands } = travelSpans(stage.width, 'L5', this.seamP ?? 0, V2_TRAVEL_BANDS);
@@ -661,13 +698,17 @@ export class RangePresentation {
       this.stage = (bHolds ? outB : outA)?.stage || outA?.stage || outB?.stage || null;
       return drawn;
     }
+    const g0 = performance.now();
     const out = this.scene.renderGround(this.frame, this.viewId);
+    const g1 = performance.now();
     if (!out) return false;
     ctx.save();
     ctx.globalAlpha = this.arrival;
     ctx.globalCompositeOperation = 'source-over';
     ctx.drawImage(out.canvas, 0, 0, stage.width, stage.height);
     ctx.restore();
+    this.timings.frameRenderMs += g1 - g0;
+    this.timings.frameCopyMs += performance.now() - g1;
     this.stage = out.stage;
     return true;
   }

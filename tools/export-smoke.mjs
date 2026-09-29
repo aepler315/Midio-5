@@ -18,7 +18,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { withAllWorlds } from './lib/allWorlds.mjs';
+import { withAllWorlds, withLegacyRange } from './lib/allWorlds.mjs';
 
 const url = process.argv[2] || 'http://127.0.0.1:8080';
 const out = path.resolve(process.argv[3] || '.smoke/export');
@@ -129,7 +129,9 @@ try {
 
   const entry = new URL(url);
   entry.searchParams.set('seed', '315');
-  await page.goto(withAllWorlds(entry.href));
+  // The first card is the Range; its v2 recorder output is covered by
+  // range-scene-smoke --suite export (see withLegacyRange).
+  await page.goto(withLegacyRange(withAllWorlds(entry.href)));
   await page.locator('#titleSettings').evaluate((node) => { node.open = true; });
   const lyrics = page.locator('#lyricGroundingBtn');
   if (await lyrics.getAttribute('aria-pressed') === 'true') await lyrics.click();
