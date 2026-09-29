@@ -387,3 +387,28 @@ test('settle does not wait while the GPU context is lost', async () => {
   assert.equal(await p.settle({ timeoutMs: 5000 }), false);
   assert.ok(Date.now() - t0 < 200, 'returned at once');
 });
+
+test('frame timings sum every pass of a frame and restart with the next frame', async () => {
+  const spin = (ms) => { const end = performance.now() + ms; while (performance.now() < end) { /* busy */ } };
+  const scene = fakeScene();
+  scene.renderPartition = () => { spin(3); return { width: 2, height: 2 }; };
+  scene.renderGround = () => { spin(3); return { canvas: { width: 2, height: 2 }, stage: null }; };
+  const p = presentationWith(scene);
+  p.setSong({ terrain: { sceneByBiome: new Map([['RAINFOREST', { view: catalog.views[0], fallbackReason: null }]]) }, generation: 1 });
+  await p.whenReady();
+  const ctx = { save() {}, restore() {}, drawImage() {} };
+  const stage = { width: 2, height: 2 };
+  const frame = () => {
+    p.setFrameInputs(inputs());
+    assert.equal(p.beginScenic(), true);
+    for (const pass of ['far', 'mid', 'near']) assert.equal(p.drawPartition(ctx, pass, stage), true);
+    assert.equal(p.drawGround(ctx, stage), true);
+    return { ...p.timings };
+  };
+  const a = frame();
+  assert.ok(a.frameRenderMs >= 12, `four 3 ms passes summed, got ${a.frameRenderMs}`);
+  assert.ok(a.lastPartitionMs < a.frameRenderMs, 'the last pass alone is not the frame');
+  const b = frame();
+  assert.equal(b.frameId, a.frameId + 1);
+  assert.ok(b.frameRenderMs < a.frameRenderMs * 2, 'totals restart with each frame');
+});

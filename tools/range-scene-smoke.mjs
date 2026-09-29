@@ -28,6 +28,9 @@ const IDENTITY_FILES = [
   'src/world/alpine/TerrainPackage.js', 'src/world/alpine/RangeAssets.js', 'src/render/GraphicsResidency.js',
   'src/world/terrain/SceneCatalog.js', 'src/world/terrain/SceneTravel.js', 'src/world/terrain/sceneCatalogData.js',
   'src/world/BiomeManager.js', 'src/render/Renderer.js', 'src/vendor/range/three-range.module.js',
+  'src/world/alpine/RangeQuality.js', 'src/world/alpine/RangeAtmosphere.js', 'src/world/terrain/TerrainStripCache.js',
+  'src/world/TravelSeam.js', 'src/world/alpine/ForestCover.js', 'src/world/alpine/ForestGL.js',
+  'src/world/alpine/RockStage.js', 'src/world/alpine/RockStageGL.js', 'src/main.js',
 ];
 
 export function parseSceneArgs(argv) {
@@ -542,7 +545,10 @@ async function suiteLifecycle(ctx) {
   const songs = [wav, wavB];
   const sizes = [{ width: 1280, height: 720 }, { width: 960, height: 540 }];
   const cycles = Number(args.cycles ?? 6);
-  if (!Number.isInteger(cycles) || cycles < 1) throw new Error(`--cycles must be a positive integer, got ${args.cycles}`);
+  // Five is the least that exercises every check: song replacement (cycle
+  // 1), a resize (2), a context loss (2) and one same-song-and-size
+  // ownership comparison (4 vs 0).
+  if (!Number.isInteger(cycles) || cycles < 5) throw new Error(`--cycles must be an integer of at least 5, got ${args.cycles}`);
   // Expected length of each song, to confirm a replacement actually landed.
   const songMs = [96000, 80000];
   report.lifecycle = { cycles: [], checks: [] };

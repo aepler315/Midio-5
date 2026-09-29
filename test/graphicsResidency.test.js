@@ -155,3 +155,19 @@ test('fallback strips (a biome Range v2 draws) are evictable by the scene; other
   assert.equal(cache.bytes, 0);
   assert.equal(r.snapshot().byOwner.legacy, undefined);
 });
+
+test('the high-water mark catches ownership that peaks and falls between samples', () => {
+  const r = ledger(100);
+  r.commit(r.reserve({ key: 'view', bytes: 30 * MiB, owner: 'terrain' }), {});
+  // A scratch buffer reserved and released inside one task.
+  r.reserve({ key: 'scratch', bytes: 40 * MiB, owner: 'scratch' });
+  r.release('scratch');
+  const s = r.snapshot();
+  assert.equal(s.liveBytes + s.pendingBytes, 30 * MiB);
+  assert.equal(s.peakBytes, 70 * MiB);
+  assert.deepEqual(s.peakByOwner, { terrain: 30 * MiB, scratch: 40 * MiB });
+  r.resetPeak();
+  assert.equal(r.snapshot().peakBytes, 30 * MiB, 'a new window starts from what is held now');
+  r.adopt({ key: 'strip', bytes: 5 * MiB, owner: 'legacy' });
+  assert.equal(r.snapshot().peakBytes, 35 * MiB, 'adopted memory counts too');
+});

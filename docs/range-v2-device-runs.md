@@ -15,12 +15,12 @@ Run each on the real device, with the tab in front, the screen awake and nothing
 ## How
 
 1. **Open the page:** `https://supermaudio.com/?fpsHud=1` (v2 is the default renderer; `fpsHud=1` shows the frame rate on screen). For a legacy comparison run, add `&rangeRenderer=legacy`.
-2. **Load a song of at least 4 minutes,** so it passes through several biomes and view-to-view travels. Choose the Range world when the picker asks.
-3. **Attach DevTools to the page:**
+2. **Attach DevTools to the page** (while it still shows the title screen):
    - Android: connect the phone by USB with USB debugging on, open `chrome://inspect` on a desktop Chrome, and choose **inspect** under the tab.
    - iPhone: turn on Settings → Safari → Advanced → Web Inspector, connect to a Mac, and use Safari's Develop menu → the phone → the tab.
    - Desktop: press F12.
-4. **Start the probe.** In the console, paste the whole of `tools/range-device-probe.js` and press Enter. To change the length, edit `MINUTES = 10` in its first line.
+3. **Start the probe before loading the song.** In the console, paste the whole of `tools/range-device-probe.js` and press Enter. It waits for a song, so its cold-start bucket covers the song's real start (world construction, strip bakes, the first view's preparation). To change the length, edit `MINUTES = 10` near its start.
+4. **Load a song of at least 4 minutes,** so it passes through several biomes and view-to-view travels. Choose the Range world if a picker asks.
 5. **Leave it running.** Keep the song playing (restart it if it ends). Don't switch tabs.
 6. **Save the report.** When it finishes, the probe prints one JSON report and copies it to the clipboard. Save the report as `docs/evidence/range-v2/device-<device>-<date>.json` and add a row to the results table below.
 
@@ -31,15 +31,17 @@ Run each on the real device, with the tab in front, the screen awake and nothing
 | `gpu`, `userAgent`, `deviceMemoryGB`, `dpr` | Device, browser and GPU as the browser reports them |
 | `stage`, `rangeTarget` | CSS and backing size of the stage; size of the Range render target |
 | `budget` | Residency budget class chosen (`desktop` 256 MiB, `mobile` 128 MiB) |
-| `intervals.cold` | Frame intervals in the first 20 s after the probe starts |
+| `coldStartCaptured` | True when the probe was running before the song loaded (otherwise `cold` is just the first 20 s it saw) |
+| `songRestarts` | How many times the song was restarted during the run (the probe follows the new song) |
+| `intervals.cold` | Frame intervals in the first 20 s of the song, including the frame that spans world construction |
 | `intervals.steady` | Frame intervals while a single view is drawn |
 | `intervals.travel` | Frame intervals while two views are composited (view-to-view travel) |
 | `…medianMs / p95Ms / p99Ms / stallsOver100ms` | Frame-interval statistics per bucket (rAF to rAF, so vsync waits are included) |
 | `qualityLevels` | Frames spent at each governor level (0 is the full show; see the ladder below) |
 | `legacyFrames` | Frames where the Range drew legacy scenery (a view not ready, or refused room) |
-| `residencyPeakMiB`, `residencyPeakByOwnerMiB` | Highest ledger ownership seen, and what owned it at that moment |
+| `residencyPeakMiB`, `residencyPeakByOwnerMiB` | Highest ledger ownership during the run, recorded by the ledger whenever ownership grows (so short-lived scratch reservations count), and what owned it at that moment |
 | `overcommits`, `denials` | Ledger overcommits (should be 0) and refused reservations |
-| `rangePartitionMs`, `rangeCopyMs` | CPU-side time to render the Range partitions and copy them to the stage |
+| `rangeRenderMsPerFrame`, `rangeCopyMsPerFrame` | CPU-side time per Range frame to render all its passes (far, mid, near, rock stage; both sides during a travel) and to composite them onto the stage |
 
 ## Acceptance
 

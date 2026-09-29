@@ -103,7 +103,9 @@ export class RangePresentation {
     this.onBudgetRefusal = null; // (viewId) => void: free fallback scenery
     this.shown = new Set();
     this.frameId = 0;
-    this.timings = { lastCopyMs: 0, lastPartitionMs: 0 };
+    // last*: the most recent pass. frame*: every pass of the current frame
+    // (scenic partitions and the rock stage, both travel sides), summed.
+    this.timings = { lastCopyMs: 0, lastPartitionMs: 0, frameId: 0, frameRenderMs: 0, frameCopyMs: 0 };
     // Arrival fade (ARRIVAL_SEC): 1 = the GPU scene fully replaces legacy.
     this.arrival = 1;
     this._legacyShown = false;
@@ -472,6 +474,9 @@ export class RangePresentation {
     this._updateIncomingFade(incoming, inputs.sim);
     this._handoff = incoming && this.incomingFade < 1 ? { outgoing: view, incoming } : null;
     this.scene.pinView?.(incoming ? [view.id, incoming.id] : view.id, incoming ? [TRAVEL_SCRATCH_KEY] : []);
+    this.timings.frameId = this.frameId + 1;
+    this.timings.frameRenderMs = 0;
+    this.timings.frameCopyMs = 0;
     this.frame = buildRangeFrame({
       frameId: ++this.frameId, generation: this.generation, sim: inputs.sim, pose: inputs.pose,
       scenicViewport: inputs.scenicViewport, groundViewport: inputs.groundViewport,
@@ -553,10 +558,12 @@ export class RangePresentation {
       // nearest partition changing first, as the legacy ranges do.
       const layerKey = PASS_LAYER[pass] || 'L3';
       const cols = this._travelBandColumns(stage.width);
+      let renderMs = 0;
+      const timed = (fn) => () => { const r0 = performance.now(); const r = fn(); renderMs += performance.now() - r0; return r; };
       const drawn = this._compositeSides(ctx, stage, layerKey,
-        () => this.scene.renderPartition(this.frame, pass, this.viewId, { side: 'A', bandColumns: cols.A }),
-        () => this.scene.renderPartition(this.frame, pass, this.incomingViewId, { side: 'B', bandColumns: cols.B }));
-      this.timings.lastPartitionMs = performance.now() - t0;
+        timed(() => this.scene.renderPartition(this.frame, pass, this.viewId, { side: 'A', bandColumns: cols.A })),
+        timed(() => this.scene.renderPartition(this.frame, pass, this.incomingViewId, { side: 'B', bandColumns: cols.B })));
+      this._noteTiming(renderMs, performance.now() - t0 - renderMs);
       return drawn;
     }
     const img = this.scene.renderPartition(this.frame, pass, this.viewId);
@@ -567,9 +574,19 @@ export class RangePresentation {
     ctx.globalCompositeOperation = 'source-over';
     ctx.drawImage(img, 0, 0, stage.width, stage.height);
     ctx.restore();
-    this.timings.lastPartitionMs = t1 - t0;
-    this.timings.lastCopyMs = performance.now() - t1;
+    this._noteTiming(t1 - t0, performance.now() - t1);
     return true;
+  }
+
+  /** One pass's render and copy cost: kept as the last pass and summed
+   *  into the frame's totals (a frame has several passes, two sides each
+   *  during a travel). */
+  _noteTiming(renderMs, copyMs) {
+    const t = this.timings;
+    t.lastPartitionMs = renderMs;
+    t.lastCopyMs = copyMs;
+    t.frameRenderMs += renderMs;
+    t.frameCopyMs += copyMs;
   }
 
   /**
@@ -655,10 +672,14 @@ export class RangePresentation {
     if (this.incomingViewId) {
       // The rock stage wears each side's material through the nearest seam;
       // its receivers (pools) come from whichever side holds the centre.
-      let outA = null, outB = null;
+      let outA = null, outB = null, renderMs = 0;
+      const g0 = performance.now();
+      const timed = (fn) => () => { const r0 = performance.now(); const r = fn(); renderMs += performance.now() - r0; return r; };
       const drawn = this._compositeSides(ctx, stage, 'L5',
-        () => (outA = this.scene.renderGround(this.frame, this.viewId))?.canvas,
-        () => (outB = this.scene.renderGround(this.frame, this.incomingViewId))?.canvas);
+        timed(() => (outA = this.scene.renderGround(this.frame, this.viewId))?.canvas),
+        timed(() => (outB = this.scene.renderGround(this.frame, this.incomingViewId))?.canvas));
+      this.timings.frameRenderMs += renderMs;
+      this.timings.frameCopyMs += performance.now() - g0 - renderMs;
       // Receivers (pools, wet masks) follow the side that visibly holds the
       // centre: B's seam weight there, scaled by its late-join fade.
       const { lo, hi, bands } = travelSpans(stage.width, 'L5', this.seamP ?? 0, V2_TRAVEL_BANDS);
@@ -668,13 +689,17 @@ export class RangePresentation {
       this.stage = (bHolds ? outB : outA)?.stage || outA?.stage || outB?.stage || null;
       return drawn;
     }
+    const g0 = performance.now();
     const out = this.scene.renderGround(this.frame, this.viewId);
+    const g1 = performance.now();
     if (!out) return false;
     ctx.save();
     ctx.globalAlpha = this.arrival;
     ctx.globalCompositeOperation = 'source-over';
     ctx.drawImage(out.canvas, 0, 0, stage.width, stage.height);
     ctx.restore();
+    this.timings.frameRenderMs += g1 - g0;
+    this.timings.frameCopyMs += performance.now() - g1;
     this.stage = out.stage;
     return true;
   }
