@@ -9,7 +9,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { decodeTerrain } from '../../src/world/alpine/TerrainMesh.js';
+import { decodeTerrain, buildTerrainGeometry } from '../../src/world/alpine/TerrainMesh.js';
 import { travelSpans } from '../../src/world/TravelSeam.js';
 import { cameraPoseAt } from '../../src/world/terrain/SceneTravel.js';
 import { occlusionBuffer, MIN_FAR_EXPOSED, EXPOSURE_FRAMING, VISIBILITY } from './terrain-bake.mjs';
@@ -82,30 +82,99 @@ export function gridFromTerrain(data, step = 4, { band = null } = {}) {
  * image actually contains after the shared depth pre-pass -- and, per
  * column, the top row of the far partition's skyline (-1 = none).
  */
-export function stationMasks(bandGrids, pose, { framing = EXPOSURE_FRAMING, occ = EXPOSURE_OCCLUSION, trees = null } = {}) {
+export function stationMasks(bands, pose, { framing = EXPOSURE_FRAMING, occ = EXPOSURE_OCCLUSION, trees = null } = {}) {
   const buf = {};
-  for (const [name] of PASSES) buf[name] = occlusionBuffer(bandGrids[name], pose, framing, occ);
+  // A band is either the runtime mesh ({ positions, indices }) or a height
+  // grid (synthetic fixtures).
+  for (const [name] of PASSES) {
+    buf[name] = bands[name]?.indices ? meshDepthBuffer(bands[name], pose, framing, occ) : occlusionBuffer(bands[name], pose, framing, occ);
+  }
   // Trees are in the runtime depth pre-pass too, each in its own band.
   if (trees) rasterTrees(buf, trees);
   const { W, H } = buf.far;
   const owner = new Uint8Array(W * H);
-  const slack = 1 + occ.depthSlack;
   for (let o = 0; o < W * H; o++) {
     const f = buf.far.buf[o], m = buf.mid.buf[o], n = buf.near.buf[o];
-    // Larger 1/depth is nearer; ties within the slack go to the farther
-    // band (its pass draws first and the nearer pass only covers it when
-    // it is really in front).
-    if (n > 0 && n > m * slack && n > f * slack) owner[o] = OWNER.near;
-    else if (m > 0 && m > f * slack) owner[o] = OWNER.mid;
+    // Larger 1/depth is nearer, exactly as the runtime depth pre-pass
+    // orders them: the nearest surface owns the pixel.
+    if (n > 0 && n >= m && n >= f) owner[o] = OWNER.near;
+    else if (m > 0 && m >= f) owner[o] = OWNER.mid;
     else if (f > 0) owner[o] = OWNER.far;
-    else if (m > 0) owner[o] = OWNER.mid;
-    else if (n > 0) owner[o] = OWNER.near;
   }
   const topFar = new Int16Array(W).fill(-1);
   for (let x = 0; x < W; x++) {
     for (let y = 0; y < H; y++) if (buf.far.buf[y * W + x] > 0) { topFar[x] = y; break; }
   }
-  return { W, H, groundRow: Math.floor((framing.groundFrac ?? 1) * H), owner, topFar };
+  // Per column, at the far crest: is far nearer than this side's own mid /
+  // near there? (During travel a side's depth pre-pass holds a nearer band
+  // only in the columns it draws that band.) Per pixel: does this side have
+  // a mid (bit 1) or near (bit 2) surface that would cover the other side?
+  const farBeatsMid = new Uint8Array(W), farBeatsNear = new Uint8Array(W);
+  for (let x = 0; x < W; x++) {
+    const y = topFar[x];
+    if (y < 0) continue;
+    const o = y * W + x, f = buf.far.buf[o];
+    farBeatsMid[x] = buf.mid.buf[o] > f ? 0 : 1;
+    farBeatsNear[x] = buf.near.buf[o] > f ? 0 : 1;
+  }
+  const presence = new Uint8Array(W * H);
+  for (let o = 0; o < W * H; o++) presence[o] = (buf.mid.buf[o] > 0 ? 2 : 0) | (buf.near.buf[o] > 0 ? 4 : 0);
+  return { W, H, groundRow: Math.floor((framing.groundFrac ?? 1) * H), owner, topFar, farBeatsMid, farBeatsNear, presence };
+}
+
+/**
+ * Depth raster (nearest 1/depth per pixel) of one band's runtime mesh --
+ * the exact desktop-LOD triangles RangeScene draws, edge snapping included
+ * -- with the same projection as occlusionBuffer.
+ */
+export function meshDepthBuffer(mesh, pose, framing, occ) {
+  const W = occ.width, H = Math.max(2, Math.round(occ.width / framing.aspect));
+  const buf = new Float32Array(W * H);
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]); return [a[0] / l, a[1] / l, a[2] / l]; };
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const f = norm(sub(pose.targetM, pose.eyeM));
+  const r = norm(cross(f, [0, 1, 0]));
+  const u = cross(r, f);
+  const t = Math.tan((pose.fovYDeg * Math.PI) / 360) * framing.fovScale;
+  const P = mesh.positions, I = mesh.indices;
+  const nv = P.length / 3;
+  const sx = new Float32Array(nv), sy = new Float32Array(nv), iz = new Float32Array(nv);
+  const e = pose.eyeM;
+  for (let v = 0; v < nv; v++) {
+    const dx = P[3 * v] - e[0], dy = P[3 * v + 1] - e[1], dz = P[3 * v + 2] - e[2];
+    const z = dx * f[0] + dy * f[1] + dz * f[2];
+    if (z < 1) { iz[v] = -1; continue; }
+    sx[v] = ((dx * r[0] + dy * r[1] + dz * r[2]) / (z * t * framing.aspect) * 0.5 + 0.5) * W;
+    sy[v] = (0.5 - (dx * u[0] + dy * u[1] + dz * u[2]) / (z * t) * 0.5) * H;
+    iz[v] = 1 / z;
+  }
+  for (let k = 0; k < I.length; k += 3) {
+    const a = I[k], b = I[k + 1], c = I[k + 2];
+    if (iz[a] < 0 || iz[b] < 0 || iz[c] < 0) continue;
+    const minX = Math.max(0, Math.floor(Math.min(sx[a], sx[b], sx[c])));
+    const maxX = Math.min(W - 1, Math.ceil(Math.max(sx[a], sx[b], sx[c])));
+    if (minX > maxX) continue;
+    const minY = Math.max(0, Math.floor(Math.min(sy[a], sy[b], sy[c])));
+    const maxY = Math.min(H - 1, Math.ceil(Math.max(sy[a], sy[b], sy[c])));
+    if (minY > maxY) continue;
+    const area = (sx[b] - sx[a]) * (sy[c] - sy[a]) - (sx[c] - sx[a]) * (sy[b] - sy[a]);
+    if (Math.abs(area) < 1e-9) continue;
+    for (let py = minY; py <= maxY; py++) {
+      const y = py + 0.5;
+      for (let px = minX; px <= maxX; px++) {
+        const x = px + 0.5;
+        const w0 = ((sx[b] - x) * (sy[c] - y) - (sx[c] - x) * (sy[b] - y)) / area;
+        const w1 = ((sx[c] - x) * (sy[a] - y) - (sx[a] - x) * (sy[c] - y)) / area;
+        const w2 = 1 - w0 - w1;
+        if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+        const d = w0 * iz[a] + w1 * iz[b] + w2 * iz[c];
+        const o = py * W + px;
+        if (d > buf[o]) buf[o] = d;
+      }
+    }
+  }
+  return { buf, W, H, f, r, u, t, eye: pose.eyeM, aspect: framing.aspect };
 }
 
 /**
@@ -169,11 +238,12 @@ function composedExposure(sideOf, W) {
     crest++;
     if (y >= f.groundRow) continue;
     const o = y * W + x;
-    // The far image holds the crest only where far is its side's nearest
-    // surface; the mid and near images drawn over it must not cover it.
-    if (f.owner[o] !== OWNER.far) continue;
-    if (sideOf('mid', x).owner[o] === OWNER.mid) continue;
-    if (sideOf('near', x).owner[o] === OWNER.near) continue;
+    const m = sideOf('mid', x), n = sideOf('near', x);
+    // The far image holds the crest unless one of its own side's nearer
+    // bands -- only those that side draws in this column -- is in front of
+    // it; the other side's mid / near images drawn over it must not cover it.
+    if (m === f ? !f.farBeatsMid[x] : (m.presence[o] & 2)) continue;
+    if (n === f ? !f.farBeatsNear[x] : (n.presence[o] & 4)) continue;
     shown++;
   }
   return { fraction: crest ? shown / crest : 0, crestColumns: crest / W };
@@ -187,7 +257,8 @@ export function maskExposure(m) {
 /** Per-station exposure of a shipped view: { stations, min, minCrest }. */
 export async function viewExposure(runtimeDir, view, { stations = VISIBILITY.stations, rules = null } = {}) {
   const data = await loadShippedTerrain(runtimeDir, view);
-  const grids = Object.fromEntries(PASSES.map(([name]) => [name, gridFromTerrain(data, 4, { band: name })]));
+  // The runtime's own desktop meshes, band by band.
+  const meshes = buildTerrainGeometry(data, { budget: 'desktop' }).bands;
   // The forest the scene would place (its material rules and the view's
   // overrides); without a material pack, terrain alone.
   let packRules = rules;
@@ -198,7 +269,7 @@ export async function viewExposure(runtimeDir, view, { stations = VISIBILITY.sta
   const trees = packRules ? viewTrees(data, view, packRules) : null;
   const list = [];
   for (let k = 0; k < stations; k++) {
-    const masks = stationMasks(grids, cameraPoseAt(view, stations > 1 ? k / (stations - 1) : 0), { trees });
+    const masks = stationMasks(meshes, cameraPoseAt(view, stations > 1 ? k / (stations - 1) : 0), { trees });
     list.push({ ...maskExposure(masks), masks });
   }
   return {

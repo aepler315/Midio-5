@@ -188,6 +188,7 @@ export async function buildCatalog(doc) {
       terrainManifestUrl: `terrain/${v.id}.terrain.json`,
       terrainManifestSha256: hashes.terrainManifestSha256,
       materialManifestUrl: `materials/${v.materialPack || DEFAULT_PACKS[v.biome]}.json`,
+      materialManifestSha256: hashes.materialManifestSha256,
       materialRules: v.materialRules || {},
       camera: build.view.camera,
       characterScores: build.characterScores,

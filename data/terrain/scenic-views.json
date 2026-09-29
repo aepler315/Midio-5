@@ -1,6 +1,6 @@
 {
   "about": "Range v2 scenic views: curated real terrain corridors with authored camera rails. Authoring source for tools/build-range-scene.mjs; the runtime catalog (src/assets/range/v2/catalog.json) is generated from it. Rail anchors are lon/lat (NAD83 for 3DEP sources) with an absolute height (heightM, metres above the source vertical datum) or a height above the DEM ground (aboveGroundM). status: candidate | approved | rejected; only approved views are production-eligible.",
-  "catalogVersion": 3,
+  "catalogVersion": 5,
   "views": [
     {
       "id": "nc-ross-lake-north",
@@ -314,7 +314,7 @@
       "id": "teton-jackson-lake",
       "regionId": "tetons",
       "biome": "CONIFER",
-      "status": "candidate",
+      "status": "approved",
       "notes": "Over the south arm of Jackson Lake looking south-west across the water to Mount Moran and the Cathedral Group.",
       "dem": {
         "source": "3dep13",
@@ -380,13 +380,24 @@
         }
       ],
       "title": "Teton Range",
-      "place": "Jackson Lake, Wyoming"
+      "place": "Jackson Lake, Wyoming",
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "e98c6ab7e7fe80ca393867f053b178b40c742724b5d663ee7b1320ba16ba9ea0",
+        "materialManifestSha256": "6afff55ebe7762475b09f09fa8f60627714d051f9f117ffffd8e124894281175",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "cameraSha256": "eda9f5f9370642792602854f1dab20861e664781068cdeba95bbb2ecb5c8726d",
+        "evidence": [
+          "docs/evidence/range-v2/teton-jackson-lake-stations.jpg",
+          "docs/evidence/range-v2/teton-jackson-lake-inapp-10s.jpg"
+        ]
+      }
     },
     {
       "id": "denali-wonder-lake",
       "regionId": "alaska-range",
       "biome": "ICEFIELD",
-      "status": "candidate",
+      "status": "approved",
       "notes": "From the ridge above Wonder Lake looking south-south-west across the McKinley River bar to the Denali massif.",
       "dem": {
         "source": "terrarium",
@@ -451,7 +462,18 @@
         }
       ],
       "title": "Denali",
-      "place": "Denali National Park, Alaska"
+      "place": "Denali National Park, Alaska",
+      "approval": {
+        "date": "2026-09-29",
+        "terrainManifestSha256": "351aad9728f86a3e78fe985d9d154214f4f7c0a4e89ad1d823df690b6543e46a",
+        "materialManifestSha256": "ac0da317cbbc611f7b9a47755b4d66705d11b37b4fbceab783d918a79d6d49ae",
+        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "cameraSha256": "538b92f2099b226251f8298e1473bd80ef2717336b70279c9154bb63b4b52731",
+        "evidence": [
+          "docs/evidence/range-v2/denali-wonder-lake-stations.jpg",
+          "docs/evidence/range-v2/denali-wonder-lake-inapp-10s.jpg"
+        ]
+      }
     },
     {
       "id": "tombstone-north-klondike",
@@ -489,15 +511,15 @@
         },
         "targetStart": {
           "lonLat": [
-            -138.6305,
-            64.42802
+            -138.60735,
+            64.41348
           ],
           "heightM": 1300
         },
         "targetEnd": {
           "lonLat": [
-            -138.6495,
-            64.44198
+            -138.62634,
+            64.42745
           ],
           "heightM": 1300
         },
@@ -553,15 +575,15 @@
         },
         "targetStart": {
           "lonLat": [
-            -125.78305,
-            58.93024
+            -125.75948,
+            58.93191
           ],
           "heightM": 729
         },
         "targetEnd": {
           "lonLat": [
-            -125.79695,
-            58.92976
+            -125.77338,
+            58.93143
           ],
           "heightM": 729
         },

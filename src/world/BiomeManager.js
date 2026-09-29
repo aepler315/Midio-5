@@ -2561,7 +2561,9 @@ export class BiomeManager {
     }
     if (legacyPasses || seaHazard) this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
     if (legacyPasses) this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
-    if (legacyPasses) this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
+    // The horizon EQ belongs to the v2 sequence (between far and mid)
+    // whenever v2 draws, arriving or not.
+    if (!v2) this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
     this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
 
     // Concert beams: anchored at the celestial, drawn before the mountain
@@ -2626,7 +2628,7 @@ export class BiomeManager {
    *  haze, distant wave, connector hills and cast shadows, the far
    *  vignettes and mid-depth life between them. Returns the silhouette tint
    *  the ground uses. */
-  _drawLegacyScenic(ctx, canvas, frame, { worldX, originX, A, B, t, arc, phenomenaFull, particleMul, mandalaColor, skyHorizonNight }) {
+  _drawLegacyScenic(ctx, canvas, frame, { worldX, originX, A, B, t, arc, phenomenaFull, particleMul, mandalaColor, skyHorizonNight, skipShared = false }) {
     // The Unraveling: each layer's scroll ratio drifts apart from the rest
     // as the world delaminates -- nearer layers race ahead more than far
     // ones (the ratio itself is the depth proxy, so no separate table).
@@ -2694,12 +2696,12 @@ export class BiomeManager {
     }
     this._drawLayer(ctx, canvas, 'L2', scrollX0, tintL2, t, A, B);
     if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
-    this._drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, tintL2);
+    if (!skipShared) this._drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, tintL2);
     this._drawLayer(ctx, canvas, 'L3', scrollX1, tintL3, t, A, B);
     this._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
     this._drawCastShadow(ctx, canvas, 'L2', 'L3', scrollX0, scrollX1, A, B, t);
 
-    this._drawMidDepthLife(ctx, canvas, frame, { worldX, originX, phenomenaFull, particleMul, mandalaColor });
+    if (!skipShared) this._drawMidDepthLife(ctx, canvas, frame, { worldX, originX, phenomenaFull, particleMul, mandalaColor });
     this._drawFogBanks(ctx, canvas);
 
     this._drawLayer(ctx, canvas, 'L4', scrollX2, tintL4, t, A, B);
@@ -2740,11 +2742,11 @@ export class BiomeManager {
   /** Arrival fade: the full legacy scenic stack, then the scene's terrain
    *  partitions over it at the presentation's arrival alpha. */
   _drawRangeV2Arrival(ctx, canvas, frame, opts) {
-    const tint = this._drawLegacyScenic(ctx, canvas, frame, opts);
-    const pres = this.rangePresentation;
-    pres.drawPartition(ctx, 'far', canvas);
-    pres.drawPartition(ctx, 'mid', canvas);
-    pres.drawPartition(ctx, 'near', canvas);
+    // The legacy stack underneath, without the effects the v2 sequence draws
+    // itself; then that sequence exactly as the steady path orders it, so
+    // nothing changes order when the fade completes.
+    const tint = this._drawLegacyScenic(ctx, canvas, frame, { ...opts, skipShared: true });
+    this._drawRangeV2Scenic(ctx, canvas, frame, opts);
     return tint;
   }
 

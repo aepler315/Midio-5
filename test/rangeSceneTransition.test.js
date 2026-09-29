@@ -361,3 +361,26 @@ test('the composition buffer is reallocated when either dimension outgrows it', 
   assert.ok(p._scratch.height >= 1400, 'taller viewport, same or fewer pixels: new buffer');
   assert.notEqual(p._scratch, first);
 });
+
+test('the late-join marker is forgotten once its travel is over', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const scene = fakeScene();
+  const prepare = scene.prepare;
+  scene.prepare = (v) => (v.id === 'b' ? gate.then(() => prepare(v)) : prepare(v));
+  const p = new RangePresentation({ mode: 'v2', catalog, sceneFactory: async () => scene, makeCanvas: fakeCanvas });
+  p.setSong({ terrain: { sceneByBiome: new Map([['RAINFOREST', { view: catalog.views[0] }], ['TAIGA', { view: catalog.views[1] }]]) }, generation: 1 });
+  await p.whenReady({ timeoutMs: 1 }).catch(() => {});
+  const travel = (tSec, travelP) => { const i = inputs(travelP); i.sim.biomes.tSec = tSec; p.setFrameInputs(i); return p.beginScenic(); };
+  travel(10, 0.3); // B still loading: this travel drew A alone
+  // The travel ends (seek away) before B joins; B finishes loading later.
+  const i = inputs(0); i.sim.biomes.tSec = 50; i.sim.biomes.currentBlend = { from: 'RAINFOREST', to: 'RAINFOREST', t: 1 };
+  p.setFrameInputs(i); p.beginScenic();
+  release();
+  await new Promise((r) => setTimeout(r, 5));
+  // A later travel toward the now-ready B, first seen at a nonzero seam:
+  // B was ready before it began, so it joins without a late fade.
+  travel(80, 0.2);
+  assert.equal(p.snapshot().incomingViewId, 'b');
+  assert.equal(p.incomingFade, 1);
+});

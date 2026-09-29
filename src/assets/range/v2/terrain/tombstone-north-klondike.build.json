@@ -182,15 +182,15 @@
    },
    "targetStart": {
     "lonLat": [
-     -138.6305,
-     64.42802
+     -138.60735,
+     64.41348
     ],
     "heightM": 1300
    },
    "targetEnd": {
     "lonLat": [
-     -138.6495,
-     64.44198
+     -138.62634,
+     64.42745
     ],
     "heightM": 1300
    },
@@ -221,69 +221,69 @@
     -4011.4
    ],
    "targetStartM": [
-    -10142.3,
+    -9031.6,
     1300,
-    4663.3
+    6287.8
    ],
    "targetEndM": [
-    -11052.1,
+    -9942,
     1300,
-    3103.8
+    4727.5
    ],
    "fovYDeg": 32
   }
  },
  "characterScores": {
-  "energy": 0.087,
-  "rawness": 0.113,
-  "grandeur": 0.203,
-  "dominance": 0.512
+  "energy": 0.078,
+  "rawness": 0.104,
+  "grandeur": 0.161,
+  "dominance": 0.46
  },
  "archetype": "serene",
  "skylineFeatures": [
   {
-   "reliefM": 708.6826171875,
-   "slopeMPerKm": 26.448181688746004,
-   "peaksPer10Km": 0.4914431788752424,
-   "roughnessM": 19.832993934842566,
-   "dominance": 0.4042114687931916,
-   "summitM": 2328.22900390625,
-   "lengthKm": 183.13409132258477
+   "reliefM": 724.4083251953125,
+   "slopeMPerKm": 24.822609756893147,
+   "peaksPer10Km": 0.5137386888488862,
+   "roughnessM": 22.867932882330663,
+   "dominance": 0.43393121373130317,
+   "summitM": 2324.5087890625,
+   "lengthKm": 233.58178506835685
   },
   {
-   "reliefM": 1031.673828125,
-   "slopeMPerKm": 24.540925010971247,
-   "peaksPer10Km": 0.44898860541268015,
-   "roughnessM": 46.998330463245814,
-   "dominance": 0.5455944242612412,
-   "summitM": 2627.775390625,
-   "lengthKm": 334.08420211940586
+   "reliefM": 666.027587890625,
+   "slopeMPerKm": 25.912369345349692,
+   "peaksPer10Km": 0.47375112237151507,
+   "roughnessM": 36.14561364633408,
+   "dominance": 0.49456498032110124,
+   "summitM": 2324.5087890625,
+   "lengthKm": 316.62194117689114
   },
   {
-   "reliefM": 1004.907470703125,
-   "slopeMPerKm": 30.99774715919426,
-   "peaksPer10Km": 0.5264010019606715,
-   "roughnessM": 62.35918022148627,
-   "dominance": 0.5854236812945066,
-   "summitM": 2627.775390625,
-   "lengthKm": 341.9446378892876
+   "reliefM": 789.3404541015625,
+   "slopeMPerKm": 30.0819474743368,
+   "peaksPer10Km": 0.4965953889004313,
+   "roughnessM": 55.14450225748709,
+   "dominance": 0.45181129728899644,
+   "summitM": 2324.580322265625,
+   "lengthKm": 342.3310078984351
   }
  ],
- "manifestSha256": "a01c1b22dd7c6351e861a60c95a05e9d3b75e8da23669c3ea04b72efb8eb7efb",
- "payloadSha256": "31cb1272c8f37c1297923c03ec1400705dcf67caaf1d2044eb8ae769d85c5128",
- "payloadBytes": 1829433,
+ "manifestSha256": "bfd21ddf49eb1ce29571fca1183994a333c17903ceeac42f0f4b1655016562ea",
+ "payloadSha256": "5da44e429e62bc313b3e143f1e5304415e6a971313ab5a4c064c63d45f47380f",
+ "payloadBytes": 1865595,
  "stats": {
-  "tiles": 353,
+  "tiles": 358,
   "desktop": {
-   "vertices": 1148657,
-   "triangles": 2222080,
-   "meshBytes": 40448844,
+   "vertices": 1169838,
+   "triangles": 2263136,
+   "meshBytes": 41195688,
    "surfaceTextureBytes": 26784432
   },
   "mobile": {
-   "vertices": 677029,
-   "triangles": 1304248,
-   "meshBytes": 23775324,
+   "vertices": 688835,
+   "triangles": 1327214,
+   "meshBytes": 24192588,
    "surfaceTextureBytes": 26784432
   }
  },
@@ -304,8 +304,8 @@
   }
  ],
  "achievedErrorPx": {
-  "desktop": 0.988,
-  "mobile": 1.982
+  "desktop": 0.997,
+  "mobile": 1.997
  },
  "despikedSamples": 13,
  "gentleGroundSmoothingM": 0.6648223176209561

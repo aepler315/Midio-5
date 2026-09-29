@@ -181,7 +181,7 @@ test('a forced candidate is drawn and labelled; legacy mode never starts a GPU c
   assert.equal(built, false);
 });
 
-test('blending toward (or arriving at) a biome with no view draws legacy, not the outgoing view', async () => {
+test('blending toward a biome with no view fades the outgoing view out over legacy; arriving there draws legacy', async () => {
   const p = presentationWith(fakeScene());
   p.setSong({ terrain: { sceneByBiome: new Map([
     ['RAINFOREST', { view: catalog.views[0], fallbackReason: null }],
@@ -195,8 +195,15 @@ test('blending toward (or arriving at) a biome with no view draws legacy, not th
     return p.beginScenic();
   };
   assert.equal(at(0), true, 'before the blend starts the outgoing view draws');
-  assert.equal(at(0.5), false);
-  assert.equal(p.snapshot().reason, 'transition-legacy');
+  assert.equal(p.arrival, 1);
+  // Not a one-frame cut: the outgoing view keeps drawing, fading out over
+  // the legacy stack as the blend proceeds.
+  assert.equal(at(0.25), true);
+  const early = p.arrival;
+  assert.equal(p.snapshot().viewId, catalog.views[0].id);
+  assert.ok(p.arriving, 'legacy scenery draws underneath');
+  assert.equal(at(0.75), true);
+  assert.ok(p.arrival < early && early < 1, `fades out: ${early} -> ${p.arrival}`);
   assert.equal(at(1), false);
   assert.equal(p.snapshot().reason, 'no-view-for-biome');
 });

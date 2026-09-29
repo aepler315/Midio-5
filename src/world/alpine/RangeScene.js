@@ -250,12 +250,23 @@ export class RangeScene {
         stageGL = new RockStageGL(THREE, { textures: mat.textures, palette: mat.pack.manifest.palette, rules });
         for (const band of BANDS) for (const m of forest.byBand[band]) scenes[band].add(m);
         for (const d of forest.depth) depthScene.add(d);
+        // Per-band depth scenes for travel frames, where a side's nearer
+        // bands are drawn only in some columns (same geometry and material;
+        // a mesh has one parent, so these are separate mesh objects).
+        const depthScenes = {};
+        for (const band of BANDS) {
+          depthScenes[band] = new THREE.Scene();
+          const dm = new THREE.Mesh(geos.geometries[band], depthMaterial);
+          dm.frustumCulled = false;
+          depthScenes[band].add(dm);
+          for (const d of forest.depthByBand?.[band] || []) depthScenes[band].add(d);
+        }
         // Compile now, not in the first playing frame.
         this.renderer.compile(scenes.far, this.camera);
         this.renderer.compile(depthScene, this.camera);
         const prepared = {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
-          surface, uniforms, material, depthMaterial, geometries: geos.geometries, scenes, depthScene,
+          surface, uniforms, material, depthMaterial, geometries: geos.geometries, scenes, depthScene, depthScenes,
           forest, stageGL, stats: { ...geos.stats, trees: forest.counts }, gpuKey, cpuKey: cpu.key,
           rules, waterLevelM: waterLevel(cpu.data), materialKey: mat.key,
         };
@@ -300,6 +311,32 @@ export class RangeScene {
     this._disposePrepared(p);
   }
 
+  /** Depth pre-pass for one pass of a travel side: the pass's band and the
+   *  farther ones across the whole width, each nearer band only inside its
+   *  [x0, x1] columns (fractions of the width), or not at all. */
+  _travelDepth(p, target, pass, bandColumns) {
+    const r = this.renderer;
+    const at = BANDS.indexOf(pass);
+    const { width: W, height: H } = this.size;
+    r.setRenderTarget(target);
+    r.setClearColor(0x000000, 0);
+    r.clear(true, true, false);
+    BANDS.forEach((band, i) => {
+      if (i <= at) { r.render(p.depthScenes[band], this.camera); return; }
+      const cols = bandColumns[band];
+      if (!cols) return;
+      const x0 = Math.max(0, Math.floor(cols[0] * W)), x1 = Math.min(W, Math.ceil(cols[1] * W));
+      if (!(x1 > x0)) return;
+      target.scissor.set(x0, 0, x1 - x0, H);
+      target.scissorTest = true;
+      r.setRenderTarget(target);
+      r.render(p.depthScenes[band], this.camera);
+      target.scissorTest = false;
+      r.setRenderTarget(target);
+    });
+    this.stats.depthPasses++;
+  }
+
   /** Keep what the current frame draws resident: its view's GPU, CPU and
    *  material entries and the two render targets. */
   pinView(viewIds, extraKeys = []) {
@@ -324,7 +361,7 @@ export class RangeScene {
       inflight = (async () => {
         let res = null;
         const pack = await loadMaterialPack(url, {
-          signal,
+          signal, expectSha256: view.materialManifestSha256 || null,
           onManifest: (manifest) => {
             res = this.residency?.reserve({ key: `range:material:${manifest.id}`, bytes: materialGpuBytes(manifest), owner: 'range-material', generation: 0 }) || null;
             if (this.residency && !res) throw new RangeAssetError('budget', `no room for material ${manifest.id}`);
@@ -441,7 +478,7 @@ export class RangeScene {
    * return the canvas holding it (valid until the next render call; copy it
    * before calling again). Null when nothing can be drawn for this view.
    */
-  renderPartition(frame, pass, viewId = frame.viewFromId, { side = 'A' } = {}) {
+  renderPartition(frame, pass, viewId = frame.viewFromId, { side = 'A', bandColumns = null } = {}) {
     const p = this.prepared.get(viewId);
     const target = side === 'B' ? this.sideTargets.B : this.target;
     if (!p || this.contextLost || !target) return null;
@@ -452,7 +489,14 @@ export class RangeScene {
     this._setCamera(p.view, frame);
     this._setUniforms(p, frame);
     const depth = this.depthCache[side];
-    if (depth.frame !== frame.frameId || depth.view !== viewId) {
+    if (bandColumns && p.depthScenes) {
+      // Travel: this side draws its nearer bands only in some columns (the
+      // other side supplies them elsewhere), so its depth pre-pass holds a
+      // nearer band only where it is drawn -- otherwise this pass keeps
+      // holes shaped like ridges the frame never shows.
+      this._travelDepth(p, target, pass, bandColumns);
+      depth.frame = -1;
+    } else if (depth.frame !== frame.frameId || depth.view !== viewId) {
       r.setRenderTarget(target);
       r.setClearColor(0x000000, 0);
       r.clear(true, true, false);

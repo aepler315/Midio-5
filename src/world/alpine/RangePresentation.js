@@ -236,6 +236,9 @@ export class RangePresentation {
       this._handoff = null;
     }
     this._updateArrival(ok);
+    // A departure toward legacy scenery fades the scene out over the blend
+    // (pure in the blend's heard-time progress, exports included).
+    if (ok) this.arrival = Math.min(this.arrival, this._departure ?? 1);
     return ok;
   }
 
@@ -296,14 +299,28 @@ export class RangePresentation {
     // scenery: the blend toward it, and the section after it, draw legacy.
     const t = blend.t ?? 1;
     const blending = t > 0 && t < 1 && to !== from;
-    if (blending && !to?.view) { this.reason = 'transition-legacy'; return false; }
+    // Leaving for a destination without a view (partial catalog coverage):
+    // the outgoing view keeps drawing over the legacy stack and fades out
+    // across the blend, instead of cutting to legacy on its first frame.
+    this._departure = 1;
+    let departing = false;
+    if (blending && !to?.view) {
+      departing = true;
+      this._departure = 1 - t * t * (3 - 2 * t);
+    }
     if (t >= 1 && !to?.view) { this.reason = to?.fallbackReason || 'no-view-assigned'; return false; }
+    // The late-join marker belongs to one travel: forget it once that travel
+    // is over (or another has begun), unless a held handoff still runs.
+    const travellingTo = blending && to?.view && to.view.id !== from.view.id ? to.view.id : null;
+    if (this._waitedFor && this._waitedFor !== travellingTo && !this._handoff) this._waitedFor = null;
     // View-to-view travel: the outgoing view stays valid for the whole
     // blend and the incoming one joins through the travel seam once it is
     // prepared -- a cancelled, failed or still-loading incoming view simply
     // leaves the outgoing one drawing, never a legacy flash.
     let view, incoming = null;
-    if (blending && to.view.id !== from.view.id) {
+    if (departing) {
+      view = from.view;
+    } else if (blending && to.view.id !== from.view.id) {
       view = from.view;
       if (!this.failures.has(to.view.id) && this.scene.isReady(to.view.id)) incoming = to.view;
       // A frame of this travel drew the outgoing view alone: when the
@@ -436,9 +453,10 @@ export class RangePresentation {
       // is composited through the shared travel seam (TravelSeam.js), the
       // nearest partition changing first, as the legacy ranges do.
       const layerKey = PASS_LAYER[pass] || 'L3';
+      const cols = this._travelBandColumns(stage.width);
       const drawn = this._compositeSides(ctx, stage, layerKey,
-        () => this.scene.renderPartition(this.frame, pass, this.viewId, { side: 'A' }),
-        () => this.scene.renderPartition(this.frame, pass, this.incomingViewId, { side: 'B' }));
+        () => this.scene.renderPartition(this.frame, pass, this.viewId, { side: 'A', bandColumns: cols.A }),
+        () => this.scene.renderPartition(this.frame, pass, this.incomingViewId, { side: 'B', bandColumns: cols.B }));
       this.timings.lastPartitionMs = performance.now() - t0;
       return drawn;
     }
@@ -453,6 +471,25 @@ export class RangePresentation {
     this.timings.lastPartitionMs = t1 - t0;
     this.timings.lastCopyMs = performance.now() - t1;
     return true;
+  }
+
+  /**
+   * Where each side draws its mid and near passes during travel, as width
+   * fractions [x0, x1]: side A up to the far edge of that band's seam
+   * feather, side B from its near edge (A everywhere while a late-joining B
+   * is still fading in). Each side's depth pre-pass holds a nearer band only
+   * there, so the far image never keeps ridge-shaped holes for ridges the
+   * other side has replaced.
+   */
+  _travelBandColumns(width) {
+    const fading = (this.incomingFade ?? 1) < 1;
+    const out = { A: {}, B: {} };
+    for (const [band, layer] of [['mid', PASS_LAYER.mid], ['near', PASS_LAYER.near]]) {
+      const { lo, hi } = travelSpans(width, layer, this.seamP ?? 0);
+      out.A[band] = fading ? [0, 1] : [0, Math.min(1, Math.max(0, hi / width))];
+      out.B[band] = [Math.min(1, Math.max(0, lo / width)), 1];
+    }
+    return out;
   }
 
   /**

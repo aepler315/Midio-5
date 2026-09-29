@@ -109,7 +109,12 @@ test('every travel between approved views keeps the far crest exposed at every s
 function masks({ W = 100, crest = true, ownerAtCrest = 1 } = {}) {
   const H = 20, owner = new Uint8Array(W * H);
   for (let x = 0; x < W; x++) owner[5 * W + x] = ownerAtCrest;
-  return { W, H, groundRow: 18, owner, topFar: new Int16Array(W).fill(crest ? 5 : -1) };
+  const presence = new Uint8Array(W * H);
+  for (let x = 0; x < W; x++) presence[5 * W + x] = ownerAtCrest === 2 ? 2 : ownerAtCrest === 3 ? 4 : 0;
+  return {
+    W, H, groundRow: 18, owner, topFar: new Int16Array(W).fill(crest ? 5 : -1), presence,
+    farBeatsMid: new Uint8Array(W).fill(ownerAtCrest === 2 ? 0 : 1), farBeatsNear: new Uint8Array(W).fill(ownerAtCrest === 3 ? 0 : 1),
+  };
 }
 
 test('pair exposure checks matching stations, not rail ends', () => {
@@ -139,6 +144,16 @@ test("travel exposure composes every partition's own seam: B's near pass can cov
   const A = masks(), B = masks({ crest: false, ownerAtCrest: 3 });
   assert.equal(travelExposure(A, B, 0).fraction, 1);
   assert.equal(travelExposure(A, B, 0.55).fraction, 0, 'an L2-only check would score these A columns exposed');
+});
+
+test("a side's own nearer band hides its crest only where that side still draws it", () => {
+  // A's near ridge stands in front of its far crest; B has no near terrain.
+  // Once the near seam has crossed (near from B) while far is still A's,
+  // A's depth pre-pass no longer holds its near ridge there, so A's far
+  // crest shows -- it is no longer cut out by a ridge the frame has dropped.
+  const A = masks({ ownerAtCrest: 3 }), B = masks({ crest: false });
+  assert.equal(travelExposure(A, B, 0).fraction, 0, 'steady A: its own ridge hides the crest');
+  assert.ok(travelExposure(A, B, 0.55).fraction > 0.9);
 });
 
 test('crest coverage is reported, so a sliver of crest cannot pass as exposed', async () => {

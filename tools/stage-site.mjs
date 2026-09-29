@@ -80,6 +80,7 @@ export async function verifyRangeRuntime(sourceDir, outputDir) {
       }
       // The view's material pack and every data texture it names.
       const matBuf = await fs.readFile(path.join(root, view.materialManifestUrl));
+      if (view.materialManifestSha256 && sha256(matBuf) !== view.materialManifestSha256) throw new Error(`${view.id} material manifest hash differs from the catalog`);
       const mat = JSON.parse(matBuf.toString('utf8'));
       for (const t of Object.values(mat.textures || {})) {
         const tex = await fs.readFile(path.join(root, path.dirname(view.materialManifestUrl), t.url));
