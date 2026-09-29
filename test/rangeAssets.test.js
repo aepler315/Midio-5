@@ -75,11 +75,14 @@ test('a late response for an older generation is never published', async () => {
 
 test('cancelling the generation mid-decode frees its bytes and rejects', async () => {
   const r = ledger();
-  let release;
+  let release, requested;
   const gate = new Promise((res) => { release = res; });
-  const { fetchImpl } = server({ [`${base}terrain/v1.terrain.bin.gz`]: async () => { await gate; return new Response(baked.payload); } });
+  // The payload is requested only after the reservation is made, so waiting
+  // for that request (not a fixed delay) puts the cancel mid-decode.
+  const payloadRequested = new Promise((res) => { requested = res; });
+  const { fetchImpl } = server({ [`${base}terrain/v1.terrain.bin.gz`]: async () => { requested(); await gate; return new Response(baked.payload); } });
   const p = prepareTerrainAssets(view, { baseUrl: base, residency: r, generation: 9, fetchImpl });
-  await new Promise((res) => setTimeout(res, 10));
+  await payloadRequested;
   assert.ok(r.pendingBytes > 0);
   r.cancelGeneration(9);
   assert.equal(r.pendingBytes, 0);
