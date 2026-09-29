@@ -412,3 +412,32 @@ test('frame timings sum every pass of a frame and restart with the next frame', 
   assert.equal(b.frameId, a.frameId + 1);
   assert.ok(b.frameRenderMs < a.frameRenderMs * 2, 'totals restart with each frame');
 });
+
+test('a view built across a context loss is retried, not failed; a refused render target asks for room', async () => {
+  const scene = fakeScene();
+  let tries = 0;
+  scene.prepare = () => { tries++; return Promise.reject(Object.assign(new Error('context changed'), { reason: 'context-lost' })); };
+  const p = presentationWith(scene);
+  p.setSong({ terrain: { sceneByBiome: new Map([['RAINFOREST', { view: catalog.views[0], fallbackReason: null }]]) }, generation: 1 });
+  await p.whenReady({ timeoutMs: 50 });
+  assert.equal(p.failures.has('v'), false, 'a context change is not the view failing');
+  // A playing frame asks again; the refusal defers the next try.
+  p.setFrameInputs(inputs());
+  assert.equal(p.beginScenic(), false);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(p.failures.has('v'), false);
+  assert.ok(p.deferred.has('v'), 'retried after a short delay');
+  assert.ok(tries >= 1);
+
+  const s2 = fakeScene();
+  s2.resize = () => { throw new Error('no room for the render target'); };
+  const q = presentationWith(s2);
+  let refusals = 0;
+  q.onBudgetRefusal = () => { refusals++; };
+  q.setSong({ terrain: { sceneByBiome: new Map([['RAINFOREST', { view: catalog.views[0], fallbackReason: null }]]) }, generation: 1 });
+  await q.whenReady();
+  q.setFrameInputs(inputs());
+  assert.equal(q.beginScenic(), false);
+  assert.match(q.snapshot().reason, /budget/);
+  assert.equal(refusals, 1);
+});

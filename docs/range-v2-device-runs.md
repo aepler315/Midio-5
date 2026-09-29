@@ -14,7 +14,7 @@ Run each on the real device, with the tab in front, the screen awake and nothing
 
 ## How
 
-1. **Open the page:** `https://supermaudio.com/?fpsHud=1` (v2 is the default renderer; `fpsHud=1` shows the frame rate on screen). For a legacy comparison run, add `&rangeRenderer=legacy`.
+1. **Open a fresh page** (not one that has already played a song): `https://supermaudio.com/?fpsHud=1` (v2 is the default renderer; `fpsHud=1` shows the frame rate on screen). For a legacy comparison run, add `&rangeRenderer=legacy`.
 2. **Attach DevTools to the page** (while it still shows the title screen):
    - Android: connect the phone by USB with USB debugging on, open `chrome://inspect` on a desktop Chrome, and choose **inspect** under the tab.
    - iPhone: turn on Settings → Safari → Advanced → Web Inspector, connect to a Mac, and use Safari's Develop menu → the phone → the tab.
@@ -39,7 +39,7 @@ Run each on the real device, with the tab in front, the screen awake and nothing
 | `…medianMs / p95Ms / p99Ms / stallsOver100ms` | Frame-interval statistics per bucket (rAF to rAF, so vsync waits are included) |
 | `qualityLevels` | Frames spent at each governor level (0 is the full show; see the ladder below) |
 | `legacyFrames` | Frames where the Range drew legacy scenery (a view not ready, or refused room) |
-| `residencyPeakMiB`, `residencyPeakByOwnerMiB` | Highest ledger ownership during the run, recorded by the ledger whenever ownership grows (so short-lived scratch reservations count), and what owned it at that moment |
+| `residencyPeakMiB`, `residencyPeakByOwnerMiB` | Highest ledger ownership, recorded by the ledger whenever ownership grows (so short-lived scratch reservations count), and what owned it at that moment. `residencyPeakWindow` says where the window starts: `page load` when the probe ran before the song (so use a freshly opened page), else `probe start` |
 | `overcommits`, `denials` | Ledger overcommits (should be 0) and refused reservations |
 | `rangeRenderMsPerFrame`, `rangeCopyMsPerFrame` | CPU-side time per Range frame to render all its passes (far, mid, near, rock stage; both sides during a travel) and to composite them onto the stage |
 

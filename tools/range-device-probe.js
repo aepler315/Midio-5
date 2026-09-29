@@ -27,7 +27,11 @@
     requestAnimationFrame(wait);
   });
   const residency = () => live()?.sim?.biomes?.rangePresentation?.residency || null;
-  residency()?.resetPeak?.();
+  // Started before the song: the ledger's high-water mark since page load
+  // already holds the startup peak (construction, strip bakes, the first
+  // view), so keep it -- open a fresh page for each run. Started during
+  // playback: begin a new window here.
+  if (!coldStartCaptured) residency()?.resetPeak?.();
   const buckets = { cold: [], steady: [], travel: [] };
   const levels = {};
   const renderMs = [], copyMs = [];
@@ -76,6 +80,7 @@
     minutes: MINUTES, coldStartCaptured, songRestarts: restarts,
     intervals: { cold: stats(buckets.cold), steady: stats(buckets.steady), travel: stats(buckets.travel) },
     qualityLevels: levels, legacyFrames,
+    residencyPeakWindow: coldStartCaptured ? 'page load' : 'probe start',
     residencyPeakMiB: r ? +(r.peakBytes / MiB).toFixed(1) : null,
     residencyPeakByOwnerMiB: r ? Object.fromEntries(Object.entries(r.peakByOwner).map(([k, v]) => [k, +(v / MiB).toFixed(1)])) : null,
     overcommits: r?.overcommits ?? null, denials: r?.denials ?? null,

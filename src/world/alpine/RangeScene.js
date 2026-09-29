@@ -88,8 +88,12 @@ export class RangeScene {
     this.contextLost = false;
     this.stats = { depthPasses: 0, partitions: 0, lastPartitionMs: 0 };
     this._copy = this._createCopy();
-    this.canvas.addEventListener?.('webglcontextlost', (e) => { e.preventDefault(); this.contextLost = true; });
-    this.canvas.addEventListener?.('webglcontextrestored', () => { this.contextLost = false; this._restore(); });
+    // Each loss and each restore starts a new context epoch: a preparation
+    // that straddles either built GPU objects (and dropped the surface
+    // texture's CPU pixels) in a context that is gone, so it must not publish.
+    this.contextEpoch = 0;
+    this.canvas.addEventListener?.('webglcontextlost', (e) => { e.preventDefault(); this.contextLost = true; this.contextEpoch++; });
+    this.canvas.addEventListener?.('webglcontextrestored', () => { this.contextLost = false; this.contextEpoch++; this._restore(); });
   }
 
   _createCopy() {
@@ -192,11 +196,16 @@ export class RangeScene {
       // prepare for this generation -- never inherit its stale rejection.
       return pend.job.catch(() => {}).then(() => this.prepare(view, opts));
     }
+    if (this.contextLost) return Promise.reject(new RangeAssetError('context-lost', `GPU context lost; ${view.id} waits for restore`));
+    const epoch = this.contextEpoch;
     const job = (async () => {
       const cpu = await prepareTerrainAssets(view, { baseUrl, residency: this.residency, generation, signal, isCurrent });
       let mat = null, res = null, published = false;
       let surface, geos, material, forest, stageGL;
-      const stale = () => signal?.aborted || !isCurrent(generation);
+      const stale = () => {
+        if (this.contextEpoch !== epoch) throw new RangeAssetError('context-lost', `GPU context changed while preparing ${view.id}`);
+        return signal?.aborted || !isCurrent(generation);
+      };
       try {
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         const THREE = this.THREE;

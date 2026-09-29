@@ -1920,6 +1920,10 @@ function startTimeline(timelineData, extra = {}) {
   }
   // Bake the biome on screen before the first paint. The next section's
   // set is pumped a layer at a time from Simulation, ahead of its boundary.
+  // The presentation is attached first (Renderer.draw would do it on the
+  // first frame), so strips for biomes Range v2 covers are adopted as
+  // evictable fallback from the start.
+  if (rangePresentation?.enabled && sim.biomes) sim.biomes.rangePresentation = rangePresentation;
   try { sim.biomes.preparePlaybackStrips(); }
   catch (err) { console.warn('[strip prepare]', err); }
   running = true;

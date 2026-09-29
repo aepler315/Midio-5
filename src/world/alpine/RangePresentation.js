@@ -205,6 +205,12 @@ export class RangePresentation {
     this.scene.prepare(view, { generation: gen, baseUrl: this.assetBase, isCurrent: (g) => g === this.generation })
       .catch((err) => {
         if (gen !== this.generation) return; // stale: the new song decides again
+        if (err?.reason === 'context-lost') {
+          // Built across a context loss/restore: nothing is wrong with the
+          // view; prepare it again once the context is back.
+          this.deferred.set(view.id, Date.now() + BUDGET_RETRY_MS);
+          return;
+        }
         if (err?.reason === 'budget') {
           // No room right now (other views still pending or pinned): try
           // again shortly instead of dropping the biome to legacy for good,
@@ -454,6 +460,9 @@ export class RangePresentation {
       this.scene.resize({ widthPx: vp.backingWidth, heightPx: vp.backingHeight, pixelRatio: vp.pixelRatio || 1 });
     } catch (err) {
       this.reason = `budget: ${err.message}`;
+      // The render target was refused room: let the owner free fallback
+      // scenery (legacy strips for covered biomes) before the next frame.
+      try { this.onBudgetRefusal?.(view.id); } catch (e) { console.warn('[range v2] budget reclaim failed', e); }
       return false;
     }
     // The incoming side needs its own target and a composition buffer,

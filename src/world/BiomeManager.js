@@ -765,7 +765,7 @@ export class BiomeManager {
       // Sets for biomes Range v2 draws are fallback: the ledger may evict
       // them when the scene reserves room (else a legacy frame drawn while a
       // view prepared re-bakes them and keeps the view out).
-      isFallback: (name) => !!this.rangePresentation?.coversBiome?.(name) }); // biomeName -> { L2, L3, L4, L5 }
+      isFallback: (name) => this.world?.kind === 'alpine' && !!this.rangePresentation?.coversBiome?.(name) }); // biomeName -> { L2, L3, L4, L5 }
 
     this.fields = new Map(); // biomeName -> ParticleField
     for (const b of this.profiles) this.fields.set(b.name, new ParticleField(b.particles, canvasWidth, canvasHeight, hashSeed(b.name + 'p')));
