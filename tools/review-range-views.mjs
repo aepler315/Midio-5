@@ -23,6 +23,12 @@ const sha = (buf) => createHash('sha256').update(buf).digest('hex');
 
 /** A loopback static server: /src from the repo, /views/<id>/ from a view dir. */
 const viewRecords = new Map();
+
+/** Whether `file` lies strictly inside directory `base`. */
+export function isInside(base, file) {
+  const rel = path.relative(base, file);
+  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
 export function startReviewServer(viewDirFor) {
   const server = http.createServer(async (req, res) => {
     try {
@@ -35,12 +41,18 @@ export function startReviewServer(viewDirFor) {
         res.end(rec);
         return;
       }
-      if (url.pathname.startsWith('/src/')) file = path.join(root, decodeURIComponent(url.pathname));
-      else if (url.pathname.startsWith('/views/')) {
+      // Resolve after decoding and require the result to stay under its
+      // root: an encoded slash (..%2f) would otherwise escape it.
+      let base = null;
+      if (url.pathname.startsWith('/src/')) {
+        base = path.join(root, 'src');
+        file = path.resolve(root, `.${decodeURIComponent(url.pathname)}`);
+      } else if (url.pathname.startsWith('/views/')) {
         const [, , id, ...rest] = url.pathname.split('/');
-        file = path.join(viewDirFor(decodeURIComponent(id)), ...rest.map(decodeURIComponent));
+        base = path.resolve(viewDirFor(decodeURIComponent(id)));
+        file = path.resolve(base, ...rest.map(decodeURIComponent));
       }
-      if (!file || file.includes('..')) { res.writeHead(404); res.end(); return; }
+      if (!file || !isInside(base, file)) { res.writeHead(404); res.end(); return; }
       const data = await fs.readFile(file);
       res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
       res.end(data);
@@ -170,7 +182,7 @@ async function main() {
       if (err) throw new Error(`${id}: ${err}`);
       const record = {
         id, manifestSha256: sha(manifestBuf), payloadSha256: build.payloadSha256, cameraSha256: sha(JSON.stringify(build.view.camera)),
-        sourceHashes: build.view.dem ? undefined : undefined, landmarks: build.landmarks, stats: await page.evaluate(() => window.__review.stats),
+        sourceHashes: build.sourceSha256 || [], landmarks: build.landmarks, stats: await page.evaluate(() => window.__review.stats),
         stations: [], pageErrors: errors,
       };
       const files = [], labels = [];

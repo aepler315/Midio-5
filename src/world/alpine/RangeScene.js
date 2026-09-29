@@ -16,7 +16,7 @@ import { prepareTerrainAssets, RangeAssetError } from './RangeAssets.js';
 import { createSurfaceTexture, terrainUniforms, createBandGeometries } from './TerrainGL.js';
 import { sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromHex, createMaterialTextures, applyMaterial } from './TerrainMaterial.js';
 import { loadMaterialPack, materialGpuBytes } from './MaterialPackage.js';
-import { placeForest, forestKeepFraction } from './ForestCover.js';
+import { placeForestAsync, forestKeepFraction } from './ForestCover.js';
 import { hashSeed } from '../../utils/math.js';
 import { createForest } from './ForestGL.js';
 import { buildRockStage } from './RockStage.js';
@@ -41,6 +41,10 @@ const COPY_FRAG = /* glsl */`
 `;
 
 const hexToLinear = (THREE, hex, target) => setLinearFromHex(target, hex);
+
+function yieldToMain() {
+  return new Promise((res) => setTimeout(res, 0));
+}
 
 /** Median height of the package's hydro-flattened water samples (the
  *  valley floor the mist settles on); null when the view has no water. */
@@ -73,7 +77,8 @@ export class RangeScene {
     this.camera = new THREE.PerspectiveCamera(35, 16 / 9, 20, 150000);
     this.prepared = new Map(); // viewId -> PreparedView
     this.materials = new Map(); // manifest URL -> { pack, textures, key, users:Set }
-    this.pending = new Map(); // viewId -> Promise
+    this.pending = new Map(); // viewId -> { generation, job }
+    this.materialLoads = new Map(); // manifest URL -> in-flight acquisition
     this.target = null;
     this.size = { width: 0, height: 0 };
     this.contextLost = false;
@@ -140,35 +145,51 @@ export class RangeScene {
    * Prepare one view (CPU package + GPU objects). Resolves PreparedView or
    * rejects with RangeAssetError; a stale generation never publishes.
    */
-  prepare(view, { signal = null, generation = 0, baseUrl, isCurrent = () => true } = {}) {
+  prepare(view, opts = {}) {
+    const { signal = null, generation = 0, baseUrl, isCurrent = () => true } = opts;
     if (this.prepared.has(view.id)) return Promise.resolve(this.prepared.get(view.id));
-    if (this.pending.has(view.id)) return this.pending.get(view.id);
+    const pend = this.pending.get(view.id);
+    if (pend) {
+      if (pend.generation === generation) return pend.job;
+      // An earlier song's load of the same view: once it settles (it
+      // publishes, or rejects as stale when its generation is cancelled),
+      // prepare for this generation -- never inherit its stale rejection.
+      return pend.job.catch(() => {}).then(() => this.prepare(view, opts));
+    }
     const job = (async () => {
       const cpu = await prepareTerrainAssets(view, { baseUrl, residency: this.residency, generation, signal, isCurrent });
-      if (signal?.aborted || !isCurrent(generation)) throw new RangeAssetError('stale', `stale ${view.id}`);
-      const THREE = this.THREE;
-      const est = cpu.manifest.estimatedBytes?.[this.budget];
-      const gpuKey = `range:terrain-gpu:${view.id}:${this.budget}`;
-      // The verified material pack comes first: its rules place the trees,
-      // which are placed on the CPU (a stable lattice) so their instance
-      // buffers are counted in the same GPU reservation.
-      const mat = await this._acquireMaterial(view, { baseUrl, signal });
-      if (signal?.aborted || !isCurrent(generation)) { this._releaseMaterial(view.id); throw new RangeAssetError('stale', `stale ${view.id}`); }
-      const rules = { ...mat.pack.manifest.rules, ...(view.materialRules || {}) };
-      const placed = placeForest(cpu.data, view, rules, { seed: hashSeed(view.id) });
-      const forestBytes = placed.count * 7 * 4;
-      const bytes = (est?.meshBytes || 0) + (est?.surfaceTextureBytes || 0) + forestBytes;
-      const res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation });
-      if (this.residency && !res) { this._releaseMaterial(view.id); throw new RangeAssetError('budget', `no GPU room for ${view.id}`); }
+      let mat = null, res = null, published = false;
       let surface, geos, material, forest, stageGL;
+      const stale = () => signal?.aborted || !isCurrent(generation);
       try {
+        if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
+        const THREE = this.THREE;
+        const est = cpu.manifest.estimatedBytes?.[this.budget];
+        const gpuKey = `range:terrain-gpu:${view.id}:${this.budget}`;
+        // The verified material pack comes first: its rules place the trees,
+        // which are placed on the CPU (a stable lattice) so their instance
+        // buffers are counted in the same GPU reservation.
+        mat = await this._acquireMaterial(view, { baseUrl, signal });
+        if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
+        const rules = { ...mat.pack.manifest.rules, ...(view.materialRules || {}) };
+        // Placement yields to the event loop as it goes: a view prepared
+        // during playback must not freeze frames while its forest is laid.
+        const placed = await placeForestAsync(cpu.data, view, rules, { seed: hashSeed(view.id), signal });
+        if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
+        const forestBytes = placed.count * 7 * 4;
+        const bytes = (est?.meshBytes || 0) + (est?.surfaceTextureBytes || 0) + forestBytes;
+        res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation }) || null;
+        if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
         surface = createSurfaceTexture(THREE, cpu.data);
+        await yieldToMain();
         const base = terrainUniforms(THREE, cpu.data, surface);
         const uniforms = sceneUniforms(THREE, base);
         applyMaterial(uniforms, mat.pack, mat.textures, view.materialRules || {});
         material = createSceneMaterial(THREE, uniforms);
         const depthMaterial = createDepthMaterial(THREE, uniforms);
         geos = createBandGeometries(THREE, cpu.data, { budget: this.budget });
+        await yieldToMain();
+        if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         const meshes = {}, depthMeshes = {}, scenes = {};
         const depthScene = new THREE.Scene();
         for (const band of BANDS) {
@@ -193,46 +214,87 @@ export class RangeScene {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
           surface, uniforms, material, depthMaterial, geometries: geos.geometries, scenes, depthScene,
           forest, stageGL, stats: { ...geos.stats, trees: forest.counts }, gpuKey, cpuKey: cpu.key,
-          rules, waterLevelM: waterLevel(cpu.data),
+          rules, waterLevelM: waterLevel(cpu.data), materialKey: mat.key,
         };
-        if (signal?.aborted || !isCurrent(generation)) throw new RangeAssetError('stale', `stale ${view.id}`);
-        if (res && !this.residency.commit(res, prepared, (p) => this._disposePrepared(p))) {
+        if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
+        // Eviction (or any release) of the GPU entry also retires the view
+        // from the cache, so no frame can draw disposed resources.
+        if (res && !this.residency.commit(res, prepared, (p) => this._retire(view.id, p))) {
           throw new RangeAssetError('stale', `generation ${generation} cancelled during ${view.id}`);
         }
         this.prepared.set(view.id, prepared);
+        published = true;
         return prepared;
       } catch (err) {
-        if (res) this.residency.release(gpuKey);
-        this._releaseMaterial(view.id);
-        forest?.dispose();
-        stageGL?.dispose();
-        material?.dispose();
-        surface?.texture?.dispose();
-        for (const g of Object.values(geos?.geometries || {})) g.dispose();
+        if (!published) {
+          if (res) this.residency.release(res.key);
+          if (mat) this._releaseMaterial(view.id);
+          // The decoded terrain is only worth its ledger charge to a view
+          // that publishes.
+          this.residency?.release(cpu.key);
+          forest?.dispose();
+          stageGL?.dispose();
+          material?.dispose();
+          surface?.texture?.dispose();
+          for (const g of Object.values(geos?.geometries || {})) g.dispose();
+        }
         throw err;
       }
     })();
-    this.pending.set(view.id, job);
-    job.finally(() => this.pending.delete(view.id)).catch(() => {});
+    this.pending.set(view.id, { generation, job });
+    job.finally(() => { if (this.pending.get(view.id)?.job === job) this.pending.delete(view.id); }).catch(() => {});
     return job;
   }
 
-  /** One GPU copy per material pack, shared by the views that use it. */
+  /** A prepared view's GPU entry was released (evicted, cancelled or
+   *  explicitly): drop it from the cache and free what it holds. */
+  _retire(viewId, p) {
+    if (this.prepared.get(viewId) === p) {
+      this.prepared.delete(viewId);
+      this.residency?.release(p.cpuKey);
+      this._releaseMaterial(viewId);
+    }
+    this._disposePrepared(p);
+  }
+
+  /** Keep what the current frame draws resident: its view's GPU, CPU and
+   *  material entries and the two render targets. */
+  pinView(viewId) {
+    const p = this.prepared.get(viewId);
+    if (!p || !this.residency) return;
+    this.residency.pin([p.gpuKey, p.cpuKey, p.materialKey, 'range:render-target', 'range:ground-target']);
+  }
+
+  /** One GPU copy per material pack, shared by the views that use it. Its
+   *  declared footprint is reserved before any image is decoded, and views
+   *  that ask for the same pack concurrently share one load. */
   async _acquireMaterial(view, { baseUrl, signal }) {
     const url = new URL(view.materialManifestUrl, baseUrl).href;
     const hit = this.materials.get(url);
     if (hit) { hit.users.add(view.id); return hit; }
-    const pack = await loadMaterialPack(url, { signal });
-    const key = `range:material:${pack.manifest.id}`;
-    const res = this.residency?.reserve({ key, bytes: materialGpuBytes(pack.manifest), owner: 'range-material', generation: 0 });
-    if (this.residency && !res) {
-      for (const img of pack.images.values()) img.close?.();
-      throw new RangeAssetError('budget', `no room for material ${pack.manifest.id}`);
+    let inflight = this.materialLoads.get(url);
+    if (!inflight) {
+      inflight = (async () => {
+        let res = null;
+        const pack = await loadMaterialPack(url, {
+          signal,
+          onManifest: (manifest) => {
+            res = this.residency?.reserve({ key: `range:material:${manifest.id}`, bytes: materialGpuBytes(manifest), owner: 'range-material', generation: 0 }) || null;
+            if (this.residency && !res) throw new RangeAssetError('budget', `no room for material ${manifest.id}`);
+          },
+        }).catch((err) => { if (res) this.residency.release(res.key); throw err; });
+        const textures = createMaterialTextures(this.THREE, pack);
+        const entry = { url, pack, textures, key: `range:material:${pack.manifest.id}`, users: new Set() };
+        const dispose = () => { textures.dispose(); for (const img of pack.images.values()) img.close?.(); };
+        if (res && !this.residency.commit(res, entry, dispose)) throw new RangeAssetError('stale', `material ${pack.manifest.id} released while loading`);
+        this.materials.set(url, entry);
+        return entry;
+      })();
+      this.materialLoads.set(url, inflight);
+      inflight.finally(() => this.materialLoads.delete(url)).catch(() => {});
     }
-    const textures = createMaterialTextures(this.THREE, pack);
-    const entry = { url, pack, textures, key, users: new Set([view.id]) };
-    if (res) this.residency.commit(res, entry, () => { textures.dispose(); for (const img of pack.images.values()) img.close?.(); });
-    this.materials.set(url, entry);
+    const entry = await inflight;
+    entry.users.add(view.id);
     return entry;
   }
 

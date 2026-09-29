@@ -54,14 +54,16 @@ export function materialGpuBytes(m) {
  * these are data, and alpha carries height, not coverage.
  * Resolves { manifest, images: Map sha256 -> ImageBitmap, roles }.
  */
-export async function loadMaterialPack(manifestUrl, { signal = null, fetchImpl = globalThis.fetch, decode = null } = {}) {
+export async function loadMaterialPack(manifestUrl, { signal = null, fetchImpl = globalThis.fetch, decode = null, onManifest = null } = {}) {
   const get = async (url) => {
     let res;
     try { res = await fetchImpl(url, { signal }); } catch (err) {
       throw new RangeAssetError(signal?.aborted ? 'aborted' : 'http', `fetch failed for ${url}: ${err?.message || err}`);
     }
     if (!res.ok) throw new RangeAssetError('http', `HTTP ${res.status} for ${url}`);
-    return new Uint8Array(await res.arrayBuffer());
+    try { return new Uint8Array(await res.arrayBuffer()); } catch (err) {
+      throw new RangeAssetError(signal?.aborted ? 'aborted' : 'http', `body read failed for ${url}: ${err?.message || err}`);
+    }
   };
   const text = new TextDecoder().decode(await get(manifestUrl));
   let manifest;
@@ -71,18 +73,30 @@ export async function loadMaterialPack(manifestUrl, { signal = null, fetchImpl =
   const decodeImage = decode || ((bytes) => createImageBitmap(new Blob([bytes]), {
     premultiplyAlpha: 'none', colorSpaceConversion: 'none', imageOrientation: 'none',
   }));
+  // The caller reserves the pack's declared footprint here, before a single
+  // image is decoded (a denial must not follow the very spike it prevents).
+  if (onManifest) await onManifest(manifest);
   const images = new Map();
-  for (const t of Object.values(manifest.textures)) {
-    if (images.has(t.sha256)) continue;
-    const url = new URL(t.url, new URL(manifestUrl, globalThis.location?.href || 'http://localhost/')).href;
-    const bytes = await get(url);
-    if (bytes.byteLength !== t.bytes) throw new RangeAssetError('hash', `${t.id} is ${bytes.byteLength} bytes, not ${t.bytes}`);
-    if ((await sha256Hex(bytes)) !== t.sha256) throw new RangeAssetError('hash', `${t.id} hash mismatch`);
-    if (signal?.aborted) throw new RangeAssetError('aborted', 'aborted');
-    let image;
-    try { image = await decodeImage(bytes); } catch (err) { throw new RangeAssetError('decode', `${t.id}: ${err?.message || err}`); }
-    if (image.width !== t.width || image.height !== t.height) throw new RangeAssetError('decode', `${t.id} decoded ${image.width}x${image.height}`);
-    images.set(t.sha256, image);
+  try {
+    for (const t of Object.values(manifest.textures)) {
+      if (images.has(t.sha256)) continue;
+      const url = new URL(t.url, new URL(manifestUrl, globalThis.location?.href || 'http://localhost/')).href;
+      const bytes = await get(url);
+      if (bytes.byteLength !== t.bytes) throw new RangeAssetError('hash', `${t.id} is ${bytes.byteLength} bytes, not ${t.bytes}`);
+      if ((await sha256Hex(bytes)) !== t.sha256) throw new RangeAssetError('hash', `${t.id} hash mismatch`);
+      if (signal?.aborted) throw new RangeAssetError('aborted', 'aborted');
+      let image;
+      try { image = await decodeImage(bytes); } catch (err) { throw new RangeAssetError('decode', `${t.id}: ${err?.message || err}`); }
+      if (image.width !== t.width || image.height !== t.height) {
+        image.close?.();
+        throw new RangeAssetError('decode', `${t.id} decoded ${image.width}x${image.height}`);
+      }
+      images.set(t.sha256, image);
+    }
+  } catch (err) {
+    // Decoded images live outside the ledger: never abandon them.
+    for (const img of images.values()) img.close?.();
+    throw err;
   }
   return { manifest, images };
 }

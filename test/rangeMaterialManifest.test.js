@@ -82,3 +82,35 @@ test('loading verifies texture bytes before decoding', async () => {
   const buf = Buffer.from(tampered.get(first)); buf[100] ^= 1; tampered.set(first, buf);
   await assert.rejects(loadMaterialPack(base, { fetchImpl: async (u) => new Response(tampered.get(u)), decode }), /hash/);
 });
+
+test('a failing texture closes every image already decoded; the reservation hook runs before decoding', async () => {
+  const m = packs.find((p) => p.m.id === 'wet-conifer').m;
+  const base = 'http://assets.test/v2/materials/wet-conifer.json';
+  const files = new Map([[base, JSON.stringify(m)]]);
+  for (const t of Object.values(m.textures)) files.set(new URL(t.url, base).href, await fs.readFile(path.join(dir, t.url)));
+  const last = new URL(Object.values(m.textures).at(-1).url, base).href;
+  const fetchImpl = async (u) => (u === last ? new Response('', { status: 500 }) : new Response(files.get(u)));
+  const decoded = [];
+  let hookRanFirst = null;
+  const decode = async (bytes) => {
+    if (hookRanFirst === null) hookRanFirst = false;
+    const t = Object.values(m.textures).find((x) => x.bytes === bytes.byteLength);
+    const img = { width: t.width, height: t.height, closed: false, close() { this.closed = true; } };
+    decoded.push(img);
+    return img;
+  };
+  await assert.rejects(loadMaterialPack(base, { fetchImpl, decode, onManifest: () => { hookRanFirst ??= true; } }), /HTTP 500/);
+  assert.equal(hookRanFirst, true);
+  assert.ok(decoded.length > 0 && decoded.every((i) => i.closed));
+  // A denied reservation stops the load before any decode.
+  const none = [];
+  await assert.rejects(loadMaterialPack(base, { fetchImpl, decode: async () => none.push(1),
+    onManifest: () => { throw new Error('budget'); } }), /budget/);
+  assert.equal(none.length, 0);
+});
+
+test('a body that fails mid-read is a classified asset error', async () => {
+  const base = 'http://assets.test/v2/materials/x.json';
+  const fetchImpl = async () => ({ ok: true, arrayBuffer: async () => { throw new TypeError('network dropped'); } });
+  await assert.rejects(loadMaterialPack(base, { fetchImpl }), (e) => e.reason === 'http');
+});

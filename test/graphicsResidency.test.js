@@ -96,3 +96,18 @@ test('legacy strips share the ledger instead of a second allowance', () => {
   cache.delete('A');
   assert.equal(r.snapshot().byOwner.legacy, undefined);
 });
+
+test('a strip reservation really evicts an unpinned entry instead of overcommitting', () => {
+  const r = ledger(10);
+  const canvas = (w, h) => ({ width: w, height: h });
+  const cache = new TerrainStripCache({ maxBytes: 100 * MiB, residency: r, owner: 'legacy' });
+  let disposed = false;
+  r.commit(r.reserve({ key: 'scene', bytes: 8 * MiB, owner: 'range' }), {}, () => { disposed = true; });
+  assert.equal(cache.reserve(4 * MiB), true);
+  assert.equal(disposed, true, 'the evictable scene was released to make room');
+  assert.ok(r.usedBytes <= 10 * MiB);
+  cache.set('A', { L2: canvas(1024, 1024) }); // 4 MiB
+  assert.equal(r.snapshot().byOwner.legacy.live, 4 * MiB);
+  assert.equal(r.overcommits || 0, 0);
+  assert.ok(r.usedBytes <= 10 * MiB);
+});

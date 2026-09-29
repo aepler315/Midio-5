@@ -180,3 +180,33 @@ test('a forced candidate is drawn and labelled; legacy mode never starts a GPU c
   await legacy.whenReady();
   assert.equal(built, false);
 });
+
+test('blending toward (or arriving at) a biome with no view draws legacy, not the outgoing view', async () => {
+  const p = presentationWith(fakeScene());
+  p.setSong({ terrain: { sceneByBiome: new Map([
+    ['RAINFOREST', { view: catalog.views[0], fallbackReason: null }],
+    ['DESERT', { view: null, fallbackReason: 'no-view-for-biome' }],
+  ]) }, generation: 1 });
+  await p.whenReady();
+  const at = (t) => {
+    const i = inputs();
+    i.sim.biomes.currentBlend = { from: 'RAINFOREST', to: 'DESERT', t };
+    p.setFrameInputs(i);
+    return p.beginScenic();
+  };
+  assert.equal(at(0), true, 'before the blend starts the outgoing view draws');
+  assert.equal(at(0.5), false);
+  assert.equal(p.snapshot().reason, 'transition-legacy');
+  assert.equal(at(1), false);
+  assert.equal(p.snapshot().reason, 'no-view-for-biome');
+});
+
+test('a view that fails to prepare asks for the captions to be rebuilt', async () => {
+  const p = presentationWith(fakeScene({ fail: 'HTTP 404' }));
+  let refreshed = 0;
+  p.onAvailabilityChange = () => { refreshed++; };
+  p.setSong({ terrain: { sceneByBiome: new Map([['RAINFOREST', { view: catalog.views[0], fallbackReason: null }]]) }, generation: 1 });
+  await p.whenReady();
+  assert.equal(refreshed, 1);
+  assert.equal(p.captionViewFor('RAINFOREST'), null, 'the failed view is no longer named');
+});

@@ -38,8 +38,8 @@ export function validateTerrainManifest(manifest, byteLengths = {}) {
   if (manifest.schema !== TERRAIN_SCHEMA) fail(`schema ${manifest.schema}`);
   if (manifest.version !== TERRAIN_VERSION) fail(`unsupported version ${manifest.version}`);
   const g = manifest.grid;
-  if (!g || !Number.isInteger(g.width) || !Number.isInteger(g.height) || !(g.cellSizeM > 0) || !Array.isArray(g.originM)
-    || !g.originM.every(Number.isFinite)) fail('grid');
+  if (!g || !Number.isInteger(g.width) || !Number.isInteger(g.height) || g.width < 2 || g.height < 2 || !(g.cellSizeM > 0)
+    || !Array.isArray(g.originM) || g.originM.length !== 2 || !g.originM.every(Number.isFinite)) fail('grid');
   const cells = manifest.tileCells;
   if (!Number.isInteger(cells) || cells < 2 || (cells & (cells - 1))) fail('tileCells must be a power of two');
   const qz = manifest.quantization;

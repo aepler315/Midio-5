@@ -64,7 +64,9 @@ gdalTest('no-data stays invalid and never becomes zero', async () => {
 gdalTest('non-square geographic pixels keep a north-facing slope', async () => {
   const g = await norm('geographic', { extentM: [600, 400], cellM: 10 });
   // 0.0002 deg lon (~14.8 m) x 0.0001 deg lat (~11.1 m): the coarser axis.
-  assert.ok(g.sourceResolutionM > 14 && g.sourceResolutionM < 23, String(g.sourceResolutionM));
+  // Longitude degrees scale with cos(latitude): ~14.8 m at 48 deg, not the
+  // equatorial 22.3 m.
+  assert.ok(g.sourceResolutionM > 14.3 && g.sourceResolutionM < 15.3, String(g.sourceResolutionM));
   assert.ok(sampleHeight(g, 0, -100) > sampleHeight(g, 0, 100) + 150, 'north slope lost or mirrored');
   // 1 m of height per 1.11 m north: slope survives the warp.
   const dh = sampleHeight(g, 0, -100) - sampleHeight(g, 0, 100);

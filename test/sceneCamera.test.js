@@ -41,6 +41,10 @@ test('invalid rails are rejected, not rendered', () => {
   bad({ ...view.camera, fovYDeg: 170 }, /fovYDeg/);
   bad({ ...view.camera, targetStartM: [0, 1500, 0] }, /coincide/);
   bad({ ...view.camera, targetEndM: [2000, -50000, -1000] }, /straight up or down/);
+  // Valid ends, degenerate middle: opposite horizontal look vectors.
+  bad({ eyeStartM: [0, 1500, 0], targetStartM: [1000, 1500, 0], eyeEndM: [1000, 1500, 0], targetEndM: [0, 1500, 0], fovYDeg: 35 }, /coincide at rail/);
+  // Valid ends, a middle that looks straight down.
+  bad({ eyeStartM: [0, 1500, 0], targetStartM: [1000, 0, 0], eyeEndM: [0, 1500, 0], targetEndM: [-1000, 0, 0], fovYDeg: 35 }, /straight up or down at rail/);
   bad({ ...view.camera, eyeEndM: [1, 2] }, /eyeEndM/);
   assert.deepEqual(cameraRailErrors(null), ['camera missing']);
 });

@@ -59,6 +59,26 @@ export function cameraRailErrors(camera) {
     if (!(len > 1)) errors.push(`camera ${name} eye and target coincide`);
     else if (Math.abs(d[1] / len) > 0.98) errors.push(`camera ${name} looks straight up or down`);
   }
+  if (errors.length) return errors;
+  // The look vector d(u) = target(u) - eye(u) is linear in u, so two valid
+  // endpoints can still pass through a degenerate pose in between (e.g.
+  // opposite look directions meet at a zero vector). Check the rail's
+  // minimum over the whole segment, not only its ends.
+  const d0 = sub(camera.targetStartM, camera.eyeStartM), d1 = sub(camera.targetEndM, camera.eyeEndM);
+  const at = (u) => lerp3(d0, d1, u);
+  const closest = (dims) => {
+    const dd = dims.map((k) => d1[k] - d0[k]);
+    const den = dd.reduce((acc, v) => acc + v * v, 0);
+    return den > 0 ? clamp01(-dims.reduce((acc, k, i) => acc + d0[k] * dd[i], 0) / den) : 0;
+  };
+  const probes = [closest([0, 1, 2]), closest([0, 2])];
+  for (let k = 0; k <= 64; k++) probes.push(k / 64);
+  for (const u of probes) {
+    const d = at(u);
+    const len = Math.hypot(...d);
+    if (!(len > 1)) { errors.push(`camera eye and target coincide at rail ${u.toFixed(3)}`); break; }
+    if (Math.abs(d[1] / len) > 0.98) { errors.push(`camera looks straight up or down at rail ${u.toFixed(3)}`); break; }
+  }
   return errors;
 }
 
@@ -133,6 +153,20 @@ export function boxMayBeVisible(pose, aspect, box, fovScale = 1) {
 }
 
 /** Shortest distance from the eye to a box. */
+/** Smallest view-space depth (metres along the pose's forward axis) of any
+ *  point of an axis-aligned box. Projected size scales with 1/depth, not
+ *  1/distance, so this -- not the Euclidean distance, which exceeds it for
+ *  off-axis terrain -- bounds a tile's on-screen error. The minimum of a
+ *  linear function over a box is at a corner. */
+export function viewDepthToBox(pose, box) {
+  const { forward } = cameraBasis(pose);
+  let best = Infinity;
+  for (const x of [box.min[0], box.max[0]]) for (const y of [box.min[1], box.max[1]]) for (const z of [box.min[2], box.max[2]]) {
+    best = Math.min(best, (x - pose.eyeM[0]) * forward[0] + (y - pose.eyeM[1]) * forward[1] + (z - pose.eyeM[2]) * forward[2]);
+  }
+  return best;
+}
+
 export function distanceToBox(eye, box) {
   const dx = Math.max(box.min[0] - eye[0], 0, eye[0] - box.max[0]);
   const dy = Math.max(box.min[1] - eye[1], 0, eye[1] - box.max[1]);

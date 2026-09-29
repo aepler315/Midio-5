@@ -13,7 +13,11 @@ import { installLandscapeRanges, paintLandscapeFrame, seedBrowserConstruction } 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MODULES = ['src/world/BiomeManager.js', 'src/world/SpaceRidge.js', 'src/world/ConstellationWeaver.js',
   'src/world/alpine/RidgeSurfaceDraw.js', 'src/world/alpine/RidgeSurface.js',
-  'src/world/alpine/LandscapePolicy.js', 'src/render/Renderer.js'];
+  'src/world/alpine/LandscapePolicy.js', 'src/render/Renderer.js',
+  // The capture also asserts quality/draw-count state (main.js, the
+  // governor) and draws Broshi deterministically: evidence must come from
+  // the reviewed copies of those too.
+  'src/main.js', 'src/render/PerfGovernor.js', 'src/sim/Broshi.js'];
 const OPTIONAL_MODULES = ['src/world/alpine/RidgeComposition.js', 'src/world/alpine/RangeSkyComposition.js'];
 const NAMED = new Set(['url', 'source-root', 'expect-sha', 'preset', 'output', 'stage', 'filter']);
 export function parseLandscapeArgs(argv) {

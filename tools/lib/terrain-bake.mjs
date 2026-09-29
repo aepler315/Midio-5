@@ -27,7 +27,7 @@
 // coarser neighbour's edge so mixed levels meet without cracks.
 import { createHash } from 'node:crypto';
 import zlib from 'node:zlib';
-import { cameraPoseAt, boxMayBeVisible, distanceToBox, focalPx, cameraRailErrors } from '../../src/world/terrain/SceneTravel.js';
+import { cameraPoseAt, boxMayBeVisible, viewDepthToBox, focalPx, cameraRailErrors } from '../../src/world/terrain/SceneTravel.js';
 
 import { TERRAIN_SCHEMA, TERRAIN_VERSION, STRIDES, WATER_FLOW } from '../../src/world/alpine/TerrainPackage.js';
 
@@ -144,9 +144,15 @@ export function validateDemGrid(grid) {
   if (!(grid.valid instanceof Uint8Array) || grid.valid.length !== width * height) errors.push('validity length');
   if (!Array.isArray(grid.originM) || grid.originM.length !== 2 || !grid.originM.every(Number.isFinite)) errors.push('origin');
   if (!errors.length) {
+    let anyValid = false;
     for (let i = 0; i < grid.heightsM.length; i++) {
-      if (grid.valid[i] && !Number.isFinite(grid.heightsM[i])) { errors.push(`valid cell ${i} not finite`); break; }
+      if (!grid.valid[i]) continue;
+      anyValid = true;
+      if (!Number.isFinite(grid.heightsM[i])) { errors.push(`valid cell ${i} not finite`); break; }
     }
+    // A corridor outside source coverage (or a failed fill) yields no data
+    // at all; baking it would produce an empty package with infinite bounds.
+    if (!anyValid) errors.push('no valid samples');
   }
   if (grid.upsampled) errors.push('grid is upsampled beyond its source resolution');
   return { ok: !errors.length, errors };
@@ -450,7 +456,10 @@ export async function bakeTerrain(grid, view, options = {}) {
           if (!boxMayBeVisible(pose, vis[name].aspect, box, vis[name].fovScale)) return;
           const ob = occluders[name][k];
           if (!samplePts.some((p) => pointVisible(ob, p, vis.occlusion))) return;
-          dmin = Math.min(dmin, distanceToBox(pose.eyeM, box));
+          // View depth, not Euclidean distance: off-axis tiles project
+          // larger than their distance suggests. A box reaching behind the
+          // eye plane falls to minDistanceM below.
+          dmin = Math.min(dmin, Math.max(0, viewDepthToBox(pose, box)));
         });
         reach[name] = dmin;
       }

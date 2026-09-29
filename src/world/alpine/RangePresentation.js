@@ -121,6 +121,7 @@ export class RangePresentation {
     } catch (err) {
       this.runtimeState = 'failed';
       this.reason = `runtime-unavailable: ${err?.message || err}`;
+      this._availabilityChanged();
       console.warn('[range v2] renderer unavailable; legacy Range continues', err);
     }
   }
@@ -134,7 +135,15 @@ export class RangePresentation {
         const reason = err?.reason ? `${err.reason}: ${err.message}` : String(err?.message || err);
         this.failures.set(view.id, reason);
         console.warn(`[range v2] ${view.id} unavailable; legacy Range for its sections`, err);
+        this._availabilityChanged();
       });
+  }
+
+  /** A view (or the renderer) became unavailable: whoever named scenic
+   *  views in captions rebuilds them, so a legacy fallback is never
+   *  credited as the scenic location. */
+  _availabilityChanged() {
+    try { this.onAvailabilityChange?.(); } catch (err) { console.warn('[range v2] caption refresh failed', err); }
   }
 
   /** Resolves once every view this song needs is prepared or has failed
@@ -181,9 +190,12 @@ export class RangePresentation {
     if (!from?.view) { this.reason = from?.fallbackReason || 'no-view-assigned'; return false; }
     // Until transitions land (Task 14) a frame crossing between different
     // views stays legacy rather than cutting.
+    // A destination without a view (partial catalog coverage) is legacy
+    // scenery: the blend toward it, and the section after it, draw legacy.
     const t = blend.t ?? 1;
-    if (to?.view && to.view.id !== from.view.id && t > 0 && t < 1) { this.reason = 'transition-legacy'; return false; }
-    const view = t >= 1 && to?.view ? to.view : from.view;
+    if (t > 0 && t < 1 && to !== from && (!to?.view || to.view.id !== from.view.id)) { this.reason = 'transition-legacy'; return false; }
+    if (t >= 1 && !to?.view) { this.reason = to?.fallbackReason || 'no-view-assigned'; return false; }
+    const view = t >= 1 ? to.view : from.view;
     if (this.failures.has(view.id)) { this.reason = this.failures.get(view.id); return false; }
     if (!this.scene.isReady(view.id)) { this.reason = this.scene.contextLost ? 'context-lost' : 'preparing'; return false; }
     try {
@@ -193,6 +205,8 @@ export class RangePresentation {
       this.reason = `budget: ${err.message}`;
       return false;
     }
+    // What this frame draws stays resident (never evicted mid-use).
+    this.scene.pinView?.(view.id);
     this.frame = buildRangeFrame({
       frameId: ++this.frameId, generation: this.generation, sim: inputs.sim, pose: inputs.pose,
       scenicViewport: inputs.scenicViewport, groundViewport: inputs.groundViewport,

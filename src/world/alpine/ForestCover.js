@@ -80,7 +80,37 @@ function railDistance(a, b, p) {
  * Each instance: x, yRoot, z, height, width, variant, id01, bandIndex
  * (0 far, 1 mid, 2 near -- the terrain band that owns its root).
  */
-export function placeForest(data, view, rules, { seed = 0, rings = FOREST_RINGS, bands = null } = {}) {
+export function placeForest(data, view, rules, options = {}) {
+  const steps = placeForestSteps(data, view, rules, options);
+  let r = steps.next();
+  while (!r.done) r = steps.next();
+  return r.value;
+}
+
+/** placeForest that yields to the event loop every `sliceMs` of work, so a
+ *  view prepared during playback never blocks a frame for long. Same
+ *  result as placeForest. */
+export async function placeForestAsync(data, view, rules, { sliceMs = 8, yieldTo = defaultYield, signal = null, ...options } = {}) {
+  const steps = placeForestSteps(data, view, rules, options);
+  let t0 = performance.now();
+  let r = steps.next();
+  while (!r.done) {
+    if (performance.now() - t0 > sliceMs) {
+      await yieldTo();
+      if (signal?.aborted) throw new Error('aborted');
+      t0 = performance.now();
+    }
+    r = steps.next();
+  }
+  return r.value;
+}
+
+function defaultYield() {
+  return new Promise((res) => (globalThis.scheduler?.yield ? globalThis.scheduler.yield().then(res) : setTimeout(res, 0)));
+}
+
+/** The placement, one tile per step (a generator returning the result). */
+function* placeForestSteps(data, view, rules, { seed = 0, rings = FOREST_RINGS, bands = null } = {}) {
   const STRIDE = 8;
   const eyeA = cameraPoseAt(view, 0).eyeM, eyeB = cameraPoseAt(view, 1).eyeM;
   const b = bands || data.manifest.bands || { nearM: 1800, midM: 7000 };
@@ -120,6 +150,7 @@ export function placeForest(data, view, rules, { seed = 0, rings = FOREST_RINGS,
         (d < rings.meshM ? mesh : board).push(...rec);
       }
     }
+    yield;
   }
   return { mesh: Float32Array.from(mesh), billboard: Float32Array.from(board), stride: STRIDE, count: (mesh.length + board.length) / STRIDE };
 }

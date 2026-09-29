@@ -65,3 +65,13 @@ test('unknown duration previews the rail midpoint', () => {
   assert.equal(sceneProgressAt({ timeMs: 5000, curves: pulse, durationMs: NaN }), 0.5);
   assert.equal(sceneProgressAt({ timeMs: -50, curves: pulse, durationMs: 1000 }), sceneProgressAt({ timeMs: 0, curves: pulse, durationMs: 1000 }));
 });
+
+test('view depth to a box is never more than its distance, and smaller off axis', async () => {
+  const { viewDepthToBox, distanceToBox } = await import('../src/world/terrain/SceneTravel.js');
+  const pose = { eyeM: [0, 0, 0], targetM: [0, 0, -100] };
+  const ahead = { min: [-5, -5, -1005], max: [5, 5, -995] };
+  const side = { min: [995, -5, -1005], max: [1005, 5, -995] };
+  assert.ok(Math.abs(viewDepthToBox(pose, ahead) - 995) < 1e-9);
+  assert.ok(viewDepthToBox(pose, side) < distanceToBox(pose.eyeM, side) * 0.75);
+  assert.ok(viewDepthToBox(pose, ahead) <= distanceToBox(pose.eyeM, ahead) + 1e-9);
+});

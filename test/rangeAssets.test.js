@@ -113,3 +113,11 @@ test('a host that already decoded the gzip transfer is accepted by decoded ident
   const pkg = await loadTerrainPackage(`${base}terrain/v1.terrain.json`, { fetchImpl });
   assert.equal(pkg.bytes.decoded, baked.manifest.payload.decodedByteLength);
 });
+
+test('a body that fails after the headers is a classified asset error', async () => {
+  const ac = new AbortController();
+  const dropped = async () => ({ ok: true, arrayBuffer: async () => { throw new TypeError('connection reset'); } });
+  await assert.rejects(loadTerrainPackage(`${base}terrain/v1.terrain.json`, { fetchImpl: dropped }), (e) => e.reason === 'http');
+  const aborting = async () => ({ ok: true, arrayBuffer: async () => { ac.abort(); throw new DOMException('aborted', 'AbortError'); } });
+  await assert.rejects(loadTerrainPackage(`${base}terrain/v1.terrain.json`, { fetchImpl: aborting, signal: ac.signal }), (e) => e.reason === 'aborted');
+});

@@ -31,7 +31,15 @@ async function fetchBytes(url, { signal, fetchImpl = globalThis.fetch } = {}) {
     throw new RangeAssetError('http', `fetch failed for ${url}: ${err?.message || err}`);
   }
   if (!res.ok) throw new RangeAssetError('http', `HTTP ${res.status} for ${url}`);
-  const buf = new Uint8Array(await res.arrayBuffer());
+  // The body streams after the headers: an abort or a dropped connection
+  // there must still surface as a classified asset error.
+  let buf;
+  try {
+    buf = new Uint8Array(await res.arrayBuffer());
+  } catch (err) {
+    if (signal?.aborted) throw new RangeAssetError('aborted', `aborted: ${url}`);
+    throw new RangeAssetError('http', `body read failed for ${url}: ${err?.message || err}`);
+  }
   if (signal?.aborted) throw new RangeAssetError('aborted', `aborted: ${url}`);
   return buf;
 }

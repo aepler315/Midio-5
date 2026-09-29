@@ -83,14 +83,25 @@ export class TerrainStripCache {
       if (!victim) return false;
       this.delete(victim[0]);
     }
+    // Hold real shared capacity (evicting other owners' evictable entries
+    // now, not merely probing that they could be) until set() adopts it.
+    if (this.residency) {
+      this.residency.release(this._holdKey);
+      if (!this.residency.reserve({ key: this._holdKey, bytes: wanted, owner: this.owner })) return false;
+    }
     return true;
   }
+
+  get _holdKey() { return `${this.owner}:__reserved`; }
 
   set(key, strips) {
     this.delete(key);
     const bytes = stripSetBytes(strips);
     this.entries.set(key, { strips, bytes, used: ++this.tick });
     this.bytes += bytes;
+    // The held reservation becomes this entry's live accounting in one
+    // synchronous step, so nothing can claim the room in between.
+    this.residency?.release(this._holdKey);
     this.residency?.adopt({ key: `${this.owner}:${key}`, bytes, owner: this.owner });
     this._evict(new Set([key]));
     return this;
@@ -116,6 +127,7 @@ export class TerrainStripCache {
    *  nothing is mid-frame and the memory is worth reclaiming immediately
    *  rather than at the collector's convenience. */
   clear() {
+    this.residency?.release(this._holdKey);
     for (const [key, entry] of [...this.entries]) {
       this.delete(key);
       release(entry.strips);

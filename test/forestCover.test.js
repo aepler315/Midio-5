@@ -85,3 +85,13 @@ test('roots follow the shared deformation at the same heard time after a seek', 
   at(100); at(3);
   assert.equal(at(42), first);
 });
+
+test('the async placement yields during the work and gives the same forest', async () => {
+  const { placeForestAsync } = await import('../src/world/alpine/ForestCover.js');
+  let yields = 0;
+  const a = await placeForestAsync(data, view, rules, { seed: 5, sliceMs: 0, yieldTo: async () => { yields++; } });
+  const b = placeForest(data, view, rules, { seed: 5 });
+  assert.ok(yields > 3, `yielded ${yields} times`);
+  assert.deepEqual(a.billboard, b.billboard);
+  assert.deepEqual(a.mesh, b.mesh);
+});

@@ -197,11 +197,16 @@ test('manifest validation rejects malformed packages before any GPU work', async
   bad((c) => { c.tiles[0].minY = NaN; }, /bounds/);
   bad((c) => { c.quantization.stepM = 0; }, /quantization/);
   bad((c) => { c.tiles[0].lod.desktop = 128; }, /lod/);
+  bad((c) => { c.grid.width = 0; }, /grid/);
+  bad((c) => { c.grid.height = -4; }, /grid/);
+  bad((c) => { c.grid.originM = []; }, /grid/);
+  bad((c) => { c.grid.originM = [0, 0, 0]; }, /grid/);
   const truncated = validateTerrainManifest(m, { decoded: m.payload.decodedByteLength - 10 });
   assert.equal(truncated.ok, false);
   assert.throws(() => decodeTerrain(m, new Uint8Array(10)), /manifest rejected/);
   await assert.rejects(bakeTerrain({ ...g, upsampled: true }, view([0, 1600, 1200], [0, 1300, 0])), /upsampled/);
   await assert.rejects(bakeTerrain(g, view([0, 1, 0], [0, 1, 0])), /coincide/);
+  await assert.rejects(bakeTerrain({ ...g, valid: new Uint8Array(g.valid.length) }, view([0, 1600, 1200], [0, 1300, 0])), /no valid samples/);
 });
 
 test('runtime strides can coarsen for the mobile budget without re-baking', async () => {

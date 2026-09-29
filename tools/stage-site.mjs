@@ -45,17 +45,19 @@ export async function verifyRangeRuntime(sourceDir, outputDir) {
     const buf = await fs.readFile(path.join(vendor, name));
     if (sha256(buf) !== want.sha256) throw new Error(`staged src/vendor/range/${name} does not match runtime.json`);
   }
+  // Rebuild the bundle from the installed Three.js and compare it with the
+  // committed one. Only a checkout without dependencies skips this (it
+  // cannot build); any build failure or mismatch fails staging.
   let rebuilt = false;
-  try {
-    await fs.access(path.join(sourceDir, 'node_modules', 'three', 'package.json'));
+  let installed = true;
+  try { await fs.access(path.join(sourceDir, 'node_modules', 'three', 'package.json')); } catch { installed = false; }
+  if (installed) {
     const { buildRangeRuntime } = await import(pathToFileURL(path.join(sourceDir, 'tools', 'build-range-runtime.mjs')).href);
     const { code } = await buildRangeRuntime();
     if (sha256(code) !== runtime.files['three-range.module.js'].sha256) {
       throw new Error('committed Range runtime bundle is stale; run node tools/build-range-runtime.mjs');
     }
     rebuilt = true;
-  } catch (err) {
-    if (/stale/.test(err.message)) throw err;
   }
   const catalogPath = path.join(outputDir, 'src', 'world', 'terrain', 'sceneCatalogData.js');
   const views = [];

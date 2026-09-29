@@ -1935,6 +1935,15 @@ function startTimeline(timelineData, extra = {}) {
   // a song: a throw here once aborted starting the world.
   try {
     applyRangeCaptions(timelineData, exportMode);
+    // A scenic view that turns out unavailable falls back to legacy
+    // scenery; its caption must stop naming the scenic location.
+    if (rangePresentation) {
+      const owner = sim;
+      rangePresentation.onAvailabilityChange = () => {
+        if (sim !== owner) return;
+        try { applyRangeCaptions(timelineData, exportMode); } catch (err) { console.warn('[range caption]', err); }
+      };
+    }
     // Biomes after the first load in the background; name them once they
     // have, unless the song has been rebuilt since.
     const terrain = timelineData.terrain;

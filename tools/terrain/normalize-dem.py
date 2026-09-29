@@ -168,25 +168,50 @@ def read_window_hash(path, env):
     return sha256_bytes(data), [x0, y0, x1 - x0, y1 - y0]
 
 
+def cached_window(keep):
+    """The provenance record of a kept 3DEP window, or None when it is absent
+    or its file no longer matches the hash recorded at acquisition."""
+    if not keep or not os.path.exists(keep) or not os.path.exists(keep + '.json'):
+        return None
+    with open(keep + '.json') as fh:
+        record = json.load(fh)
+    with open(keep, 'rb') as fh:
+        if sha256_bytes(fh.read()) != record.get('cacheSha256'):
+            return None
+    return record
+
+
 def source_3dep(env, cache_dir, pinned=None):
     tiles = threedep_tiles(env, pinned)
     paths, prov = [], []
     for t in tiles:
         vsi = f'/vsicurl/{t["url"]}'
-        meta = head(t['url'])
-        digest, window = read_window_hash(vsi, env)
-        # Keep the native window outside the runtime tree for later rebakes.
+        # The native window is kept outside the runtime tree, named by tile
+        # and requested envelope, with its acquisition provenance and a file
+        # hash beside it. A later normalization of the same envelope verifies
+        # that hash and warps from the local copy: no network, same pixels.
+        keep = None
         if cache_dir:
-            os.makedirs(cache_dir, exist_ok=True)
-            keep = os.path.join(cache_dir, f'{t["tile"]}-{digest[:12] if digest else "all"}.tif')
-            if not os.path.exists(keep):
+            env_key = sha256_bytes(json.dumps([round(v, 7) for v in env]).encode())[:12]
+            keep = os.path.join(cache_dir, f'{t["tile"]}-{env_key}.tif')
+        record = cached_window(keep)
+        if record is None:
+            meta = head(t['url'])
+            digest, window = read_window_hash(vsi, env)
+            record = {'tile': t['tile'], 'url': t['url'], 'etag': meta.get('ETag'),
+                      'lastModified': meta.get('Last-Modified'),
+                      'contentLength': int(meta['Content-Length']) if meta.get('Content-Length') else None,
+                      'windowPixels': window, 'windowSha256': digest}
+            if keep:
+                os.makedirs(cache_dir, exist_ok=True)
                 gdal.Translate(keep, vsi, projWin=[env[0], env[3], env[2], env[1]],
                                creationOptions=['COMPRESS=DEFLATE', 'PREDICTOR=3', 'TILED=YES'])
-        paths.append(vsi)
-        prov.append({'tile': t['tile'], 'url': t['url'], 'etag': meta.get('ETag'),
-                     'lastModified': meta.get('Last-Modified'),
-                     'contentLength': int(meta['Content-Length']) if meta.get('Content-Length') else None,
-                     'windowPixels': window, 'windowSha256': digest})
+                with open(keep, 'rb') as fh:
+                    record['cacheSha256'] = sha256_bytes(fh.read())
+                with open(keep + '.json', 'w') as fh:
+                    json.dump(record, fh, indent=1)
+        paths.append(keep if keep and os.path.exists(keep) else vsi)
+        prov.append({k: v for k, v in record.items() if k != 'cacheSha256'} | {'readFrom': 'cache' if paths[-1] == keep else 'remote'})
     ds = gdal.Open(paths[0])
     gt = ds.GetGeoTransform()
     lat_mid = (env[1] + env[3]) / 2
@@ -283,7 +308,13 @@ def source_input(paths):
     gt = ds.GetGeoTransform()
     band = ds.GetRasterBand(1)
     if srs and srs.IsGeographic():
-        res = max(abs(gt[1]), abs(gt[5]), math.hypot(gt[2], gt[4])) * 111320.0
+        # Degrees of longitude shrink with latitude: measure both pixel
+        # vectors in metres at the raster's own centre latitude.
+        lat = gt[3] + gt[4] * ds.RasterXSize / 2 + gt[5] * ds.RasterYSize / 2
+        k_lon = 111320.0 * math.cos(math.radians(lat))
+        col = math.hypot(gt[1] * k_lon, gt[4] * 111320.0)
+        row = math.hypot(gt[2] * k_lon, gt[5] * 111320.0)
+        res = max(col, row)
     else:
         res = max(math.hypot(gt[1], gt[4]), math.hypot(gt[2], gt[5]))
     md = ds.GetMetadata() or {}
