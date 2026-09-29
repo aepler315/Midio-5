@@ -83,6 +83,13 @@ export function createSurfaceTexture(THREE, data) {
   // Row 0 of the grid is north (smallest Z) and uv.y grows with Z.
   tex.flipY = false;
   tex.needsUpdate = true;
+  // Once on the GPU the CPU copy (4 B/px, ~19 MB for a 2241^2 view) is dead
+  // weight: nothing re-uploads it (a restored context rebuilds the whole
+  // view from its terrain data), so drop it after the first upload.
+  tex.onUpdate = () => {
+    tex.image = { data: null, width: surface.width, height: surface.height };
+    tex.onUpdate = null;
+  };
   return { texture: tex, width: surface.width, height: surface.height, bytes: Math.round(surface.data.byteLength * 4 / 3) };
 }
 
