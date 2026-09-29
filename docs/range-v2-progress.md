@@ -126,6 +126,24 @@ Each view: 21-station neutral/silhouette review, 61-frame motion review, in-app 
 
 The plan aims for 12-18 views; 11 (one per biome) is delivered. Further views per biome are an open choice for the user.
 
+### Natural song casts (production selector, no forced view)
+
+Five synthetic songs (`tools/gen-test-wav.mjs`: 120 bpm / 96 s, 80 / 150, 150 / 120, 174 / 100, 100 / 180), opened with `?rangeRenderer=v2` and no `rangeView`, frames at 10, 40 and 70 s. Each song's five biomes got their own approved view, deterministically per seed; the musical skyline pool is independent and still varies by song (the same biome draws different far/mid/near skyline ranges in different songs, e.g. TUNDRA and PINE_OAK, and each song draws its own horizon and massif ranges).
+
+| Song | Biomes | On screen at 10 / 40 / 70 s |
+| --- | --- | --- |
+| 120 bpm, 96 s | RAINFOREST, CHAPARRAL, CONIFER, ICEFIELD, PINE_OAK | Ross Lake / Ross Lake / Denali |
+| 80 bpm, 150 s | DESERT, ICEFIELD, CANYON, STEPPE, TAIGA | Panamint / Muncho Lake / White Mountains |
+| 150 bpm, 120 s | PINE_OAK, CANYON, TAIGA, TUNDRA, ICEFIELD | Izta-Popo / Muncho Lake / Denali |
+| 174 bpm, 100 s | TUNDRA, ICEFIELD, BROADLEAF, DESERT, TAIGA | Tombstone / Denali / Denali |
+| 100 bpm, 180 s | TUNDRA, ICEFIELD, CHAPARRAL, PINE_OAK, CANYON | Tombstone / Denali / San Gabriel |
+
+15 of 15 frames drew their v2 view, no page errors. The first run of these casts found three defects, all fixed:
+
+- **Views crowded each other out of the budget.** `whenReady` prepared every view of the song at once; later biomes' pending reservations (not evictable) filled the 256 MiB budget, the view on screen was refused and the refusal was permanent, so the biome fell to legacy (whose strips then took 72 MB more). 0 of 6 frames were v2 in the first song. Now a budget refusal is deferred and retried (the biome still counts as covered), `whenReady` prepares in song order and stops at the first view that does not fit, and export frames `settle()` (wait for the views the frame wanted, keeping both travel sides resident) and are redrawn at the same heard time. Opening a natural song went from the 600 s readiness timeout to ~10 s.
+- **Rock stage crash.** `RockStageGL._upload` allocated nothing when the first frame had no pools, and the next line threw inside the draw.
+- **Striped travel seam.** The shared seam uses 4 constant-weight bands (fine for legacy strips); on real terrain they read as vertical stripes. v2 now uses 16 whole-pixel bands (`V2_TRAVEL_BANDS`); legacy keeps 4.
+
 ## Asset budget (60 MB ceiling)
 
 | Item | Size |

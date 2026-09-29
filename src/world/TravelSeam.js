@@ -27,17 +27,19 @@ export function travelSeam(width, layerKey, p) {
 
 /**
  * The seam as screen spans: everything left of `lo` is the old side,
- * everything right of `hi` the new side, and between them TRAVEL_BANDS
- * bands whose new-side weight rises from left to right.
+ * everything right of `hi` the new side, and between them `count` bands
+ * (TRAVEL_BANDS by default) whose new-side weight rises from left to
+ * right. The legacy strips use the default; Range v2's real terrain shows
+ * four constant-weight steps as vertical stripes, so it asks for more.
  */
-export function travelSpans(width, layerKey, p) {
+export function travelSpans(width, layerKey, p, count = TRAVEL_BANDS) {
   const seam = travelSeam(width, layerKey, p);
   const feather = width * TRAVEL_FEATHER;
   const lo = seam - feather / 2, hi = seam + feather / 2;
   const bands = [];
-  for (let k = 0; k < TRAVEL_BANDS; k++) {
-    const x0 = lo + (k * feather) / TRAVEL_BANDS;
-    bands.push({ x0, x1: x0 + feather / TRAVEL_BANDS, weightB: (k + 0.5) / TRAVEL_BANDS });
+  for (let k = 0; k < count; k++) {
+    const x0 = lo + (k * feather) / count;
+    bands.push({ x0, x1: x0 + feather / count, weightB: (k + 0.5) / count });
   }
   return { lo, hi, bands };
 }
