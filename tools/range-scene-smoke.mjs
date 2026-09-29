@@ -20,7 +20,7 @@ import { chromium } from 'playwright';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SUITES = ['pilot', 'selection', 'motion', 'lifecycle', 'export', 'complete'];
-const NAMED = new Set(['url', 'source-root', 'expect-sha', 'suite', 'output', 'view', 'width', 'height']);
+const NAMED = new Set(['url', 'source-root', 'expect-sha', 'suite', 'output', 'view', 'width', 'height', 'fps', 'seconds']);
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 const IDENTITY_FILES = [
   'src/world/alpine/RangeScene.js', 'src/world/alpine/RangePresentation.js', 'src/world/alpine/RangeFrame.js',
@@ -255,7 +255,9 @@ async function suiteMotion(ctx) {
   const wav = path.join(out, 'pilot-60s.wav');
   execFileSync(process.execPath, [path.join(root, 'tools/gen-pilot-wav.mjs'), wav, '60']);
   const s = await openSong(browser, { url: args.url, wav, width: 1280, height: 720, params: { rangeRenderer: 'v2', rangeView: view } });
-  const fps = 24, seconds = 26, n = fps * seconds;
+  // Software GL renders a 1280x720 frame in ~9 s (the cost lands at pixel
+  // readback, not in the draw call), so the frame rate is an option.
+  const fps = Number(args.fps || 12), seconds = Number(args.seconds || 20), n = Math.round(fps * seconds);
   const dir = path.join(out, 'motion-frames');
   await fs.rm(dir, { recursive: true, force: true });
   await fs.mkdir(dir, { recursive: true });
@@ -281,7 +283,7 @@ async function suiteMotion(ctx) {
     }
     lastSample = f;
   }
-  const mp4 = path.join(out, `motion-${view}-26s.mp4`);
+  const mp4 = path.join(out, `motion-${view}-${seconds}s-${fps}fps.mp4`);
   execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-framerate', String(fps), '-i', path.join(dir, 'f%05d.jpg'),
     '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', mp4]);
   report.motion.mp4 = path.relative(root, mp4);
@@ -298,7 +300,7 @@ async function suiteMotion(ctx) {
     return { ready: ready?.runtime ?? null };
   }, seekT);
   const after = await grab(seekT);
-  const seqFile = path.join(dir, `f${String((seekT / 1000) * fps).padStart(5, '0')}.jpg`);
+  const seqFile = path.join(dir, `f${String(Math.round((seekT / 1000) * fps)).padStart(5, '0')}.jpg`);
   const afterPng = await writePng(out, `motion-${view}-after-seek-${seekT}.png`, after.img);
   const seqSample = report.motion.samples.find((x) => x.t === seekT);
   report.motion.backwardSeek = { fromMs: 32000, toMs: seekT, afterSeek: after.range, sequence: seqSample, ready: seek.ready,

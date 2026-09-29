@@ -75,11 +75,12 @@ The four confirmed defects in plan §1 are re-verified in Task 1 against source 
 - Under v2 the painted sea, far shore, mirage and sea life are off (the view is inland; the reference has no sea). The sea still draws during a live tsunami/withdrawal so that hazard stays visible.
 - Under v2 the glyph ground scatter is off: the world-anchored rock stage carries the speed read.
 - Midasus is reflected only when she is within 220 px of her floor and not on a voyage.
-- The motion pilot is captured at 1280x720 / 24 fps: the bulk exporter's 1080p minimum takes ~10 s per frame in software GL.
+- The motion pilot is captured at 1280x720, 12 fps, 20 s: software GL needs ~9 s per frame (the bulk exporter's 1080p minimum is slower still).
 
 ## Measurements so far (SwiftShader, not device numbers)
 
-- Export frame at 1280x720 with v2 active: ~430-710 ms draw in SwiftShader; partition copy (drawImage of the WebGL canvas) 0.1-0.3 ms.
+- **Correction (2026-09-29):** the per-frame "draw" times recorded by the smoke tools (e.g. 430-710 ms) measure command submission only. The 2D canvas defers work, and SwiftShader performs it at pixel readback: a full 1280x720 v2 frame takes ~8-9 s to read back (`toDataURL`). Neither number is a device measurement; Task 16 must time on real hardware.
+- Partition copy (drawImage of the WebGL canvas) 0.1-0.3 ms of submission.
 - Desktop LOD for the pilot: 1.85 M triangles; mobile budget 0.80 M.
 - Pilot residency with v2 active: 110 MB (terrain GPU 66, CPU 9, material 11, targets 22).
 - Rock stage mean sRGB: ~(50,63,61) at 30 s (moon up), ~(26,33,36) at 90 s; reference foreground rock ~(45,52,58).
