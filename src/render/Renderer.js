@@ -26,6 +26,7 @@ import { sharedResidency } from './GraphicsResidency.js';
 import { drawWetReflections } from '../world/alpine/WetReflection.js';
 import { viewportState } from '../world/alpine/RangeFrame.js';
 import { quantizeCanvas } from './PaletteQuantize.js';
+import { rangeQuality } from '../world/alpine/RangeQuality.js';
 
 // Reserve margin (logical stage px) around the visible frame that camera
 // shake/drift/sway/roll are free to pan into without ever exposing raw,
@@ -611,7 +612,7 @@ export class Renderer {
     const out = { broshi: null, midio: null, midasus: null };
     const pres = biomeManager?.rangePresentation;
     const receivers = biomeManager?._groundReceivers;
-    if (!this.reflectionsEnabled || !biomeManager?._rangeV2Active || !pres?.frame || !receivers?.pools?.length || (perf?.level ?? 0) >= 6) return out;
+    if (!this.reflectionsEnabled || !biomeManager?._rangeV2Active || !pres?.frame || !receivers?.pools?.length || !rangeQuality(perf?.level ?? 0).poolReflections) return out;
     const spans = receivers.pools.map((p) => {
       let lo = Infinity, hi = -Infinity;
       for (const q of p.polygon) { lo = Math.min(lo, q.x); hi = Math.max(hi, q.x); }

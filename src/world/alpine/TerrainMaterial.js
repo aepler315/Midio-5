@@ -7,7 +7,7 @@ import { hexToLinear, RULE_DEFAULTS } from './MaterialPackage.js';
 // albedo/detail terms here rather than drawing a second terrain.
 
 // GLSL twin of RangeFrame.sceneDeformation -- keep the two in step.
-import { MIST_GLSL } from './RangeAtmosphere.js';
+import { MIST_GLSL, MIST_SAMPLES } from './RangeAtmosphere.js';
 
 export const DEFORM_GLSL = /* glsl */`
   uniform vec2 uHeightRange;
@@ -150,7 +150,10 @@ export const SCENE_FRAG = /* glsl */`
       Tri macro = triplanarRib(tRock, vWorld, n, sRock, 0.0, 0.35);
       Tri macro2 = triplanarRib(tRock, vWorld, n, sRock * 0.37, 1.1, 0.5);
       float nearFade = 1.0 - smoothstep(600.0, 2200.0, dist);
-      Tri near = triplanar(tRockNear, vWorld, n, sRockNear, 0.4);
+      // Skipped where it cannot contribute (nearFade 0): three fetches saved
+      // on every distant pixel, the result identical.
+      Tri near = Tri(vec3(0.0), 0.0, 0.5);
+      if (nearFade > 0.0) near = triplanar(tRockNear, vWorld, n, sRockNear, 0.4);
       float detailFade = 1.0 - smoothstep(9000.0, 30000.0, dist);
       vec3 dn = (macro.dn * 1.3 + macro2.dn * 0.8 * (1.0 - smoothstep(2500.0, 9000.0, dist))) * detailFade + near.dn * 0.7 * nearFade;
       float rh = mix(macro.h, macro2.h, 0.35);
@@ -278,6 +281,7 @@ export function sceneUniforms(THREE, base) {
     uAirHeightFalloff: { value: 1 / 2500 },
     // Valley mist (RangeAtmosphere): off until the scene sets it per frame.
     uMistDensity: { value: 0 }, uMistBase: { value: 0 }, uMistHeight: { value: 220 }, uMistTime: { value: 0 },
+    uMistSteps: { value: MIST_SAMPLES },
     uMistColor: { value: new THREE.Color(0.4, 0.43, 0.48) },
     uCameraPos: { value: new THREE.Vector3() },
     uDiag: { value: 0 },

@@ -16,7 +16,8 @@ import { prepareTerrainAssets, RangeAssetError } from './RangeAssets.js';
 import { createSurfaceTexture, terrainUniforms, createBandGeometries } from './TerrainGL.js';
 import { sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromHex, createMaterialTextures, applyMaterial } from './TerrainMaterial.js';
 import { loadMaterialPack, materialGpuBytes, RULE_DEFAULTS } from './MaterialPackage.js';
-import { placeForestAsync, forestKeepFraction } from './ForestCover.js';
+import { placeForestAsync } from './ForestCover.js';
+import { rangeQuality } from './RangeQuality.js';
 import { hashSeed } from '../../utils/math.js';
 import { createForest } from './ForestGL.js';
 import { buildRockStage } from './RockStage.js';
@@ -442,7 +443,7 @@ export class RangeScene {
     u.uDeformDir.value.set(m.waveDir[0], m.waveDir[1]);
     u.uDeformPhase.value = m.phaseRad;
     u.uTime.value = frame.timeMs / 1000;
-    u.uForestKeep.value = forestKeepFraction(frame.qualityLevel);
+    u.uForestKeep.value = rangeQuality(frame.qualityLevel).forestKeep;
     const c = frame.light.celestial;
     // Unproject the celestial's stage position into a world direction.
     const ndcX = c.xFrac * 2 - 1, ndcY = 1 - c.yFrac * 2;
@@ -461,7 +462,9 @@ export class RangeScene {
     // Valley mist: anchored at the view's water level, thicker in calm.
     const mp = mistParams({ rules: p.rules, waterLevelM: p.waterLevelM, heightRange: [u.uHeightRange.value.x, u.uHeightRange.value.y],
       tSec: frame.timeMs / 1000, calm01: 1 - (frame.music?.groove ?? 0) });
-    u.uMistDensity.value = frame.qualityLevel >= 5 ? mp.density * 0.6 : mp.density;
+    const quality = rangeQuality(frame.qualityLevel);
+    u.uMistDensity.value = mp.density;
+    u.uMistSteps.value = quality.mistSteps;
     u.uMistBase.value = mp.baseM;
     u.uMistHeight.value = mp.heightM;
     u.uMistTime.value = mp.tSec;

@@ -487,15 +487,16 @@ async function suiteLifecycle(ctx) {
     if (i % 3 === 2) {
       const lost = await page.evaluate(() => {
         const r = window.__SMW.sim.biomes.rangePresentation.scene.renderer;
+        // Keep the extension object: a lost context returns null for it.
         const ext = r.getContext().getExtension('WEBGL_lose_context');
+        window.__rangeLoseContext = ext;
         ext.loseContext();
         return !!ext;
       });
       await new Promise((res) => setTimeout(res, 200));
       const during = await captureFrame(page, 20000);
       await page.evaluate(() => {
-        const r = window.__SMW.sim.biomes.rangePresentation.scene.renderer;
-        r.getContext().getExtension('WEBGL_lose_context').restoreContext();
+        window.__rangeLoseContext.restoreContext();
       });
       await new Promise((res) => setTimeout(res, 300));
       const after = await captureFrame(page, 20000);
