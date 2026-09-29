@@ -88,6 +88,7 @@ The four confirmed defects in plan §1 are re-verified in Task 1 against source 
 - Partition copy (drawImage of the WebGL canvas) 0.1-0.3 ms of submission.
 - Desktop LOD for the pilot: 1.85 M triangles; mobile budget 0.80 M.
 - Pilot residency with v2 active: 110 MB (terrain GPU 66, CPU 9, material 11, targets 22).
+- Live playback (staged site, SwiftShader): the legacy -> v2 arrival fade started at 10.0 s heard time and was complete by the next live frame (13.1 s; frames were ~3 s apart). Resizing the window with v2 active kept the view active and the canvas filled edge to edge at 1280x780, 1600x900 and portrait 900x1400 (stage 900x506). The 1920x800 sample was never drawn because the 240 s song ended first (software frames took up to ~70 s at these sizes). An earlier all-black reading was the song's end, not a render fault.
 - Rock stage mean sRGB: ~(50,63,61) at 30 s (moon up), ~(26,33,36) at 90 s; reference foreground rock ~(45,52,58).
 
 ## Command log
