@@ -9,8 +9,8 @@ Reference image: `docs/evidence/range-v2/reference.webp` (1806×871, documentati
 | --- | --- |
 | Branch | `claude/amazing-brown-tbiycu` |
 | Base | `b8a3d72b344792d149906449f1cd86d68df8cc2b` (= audited SHA; `origin/main` rechecked 2026-09-29) |
-| Last completed task | 0 |
-| Next action | Task 1 — fixture quality pin, Broshi render RNG, evidence state |
+| Last completed task | 9 (materials integrated; Task 8 recorder-path evidence still open, see below) |
+| Next action | Task 10 — ForestCover instanced conifers (near/mid) over the canopy texture (far) |
 
 ## Decisions recorded with the user (2026-09-29)
 
@@ -41,6 +41,37 @@ Reference image: `docs/evidence/range-v2/reference.webp` (1806×871, documentati
 
 The four confirmed defects in plan §1 are re-verified in Task 1 against source before editing.
 
+## Task status
+
+| Task | State | Notes |
+| --- | --- | --- |
+| 0 baseline | done | 3228 tests at base |
+| 1 quality/RNG/evidence | done | level-6 fixture captures now record actual 6; one final draw |
+| 2 DEM normalize | done | 3DEP 1/3" COG windows + Terrarium fill (Canada), local tmerc, provenance per window |
+| 3 bake + runtime bundle | done | heightfield tiles (documented deviation from explicit Float32 buffers for the 60 MB budget); occlusion-aware LOD |
+| 4 corridor | done (geometry) | Ross Lake north pilot, 21 stations; Diablo/Baker Lake/Shuksan rejected with reasons |
+| 5 selection | done | approved-only pool, 15/85, recency, explicit fallback; HOME_BIOME_FAIR_SHARE split |
+| 6 travel + frame | done | sceneProgressAt == legacy fitted scroll; frozen RangeFrame; shared deformation |
+| 7 residency | done | shared ledger incl. legacy strips; budgeted, generation-safe asset prep; staging verifies assets |
+| 8 integration | done except recorder evidence | markers verified in main stage + real bulk-export MP4; recorder check timed out because software-GL live playback outran the 96 s fixture song — rerun with a longer song |
+| 9 materials | done (pilot quality) | 11 packs, CC0 data maps + procedural; exposure calibrated to reference values; rock still reads smooth at 20 m spacing — revisit in Task 13 |
+
+## Asset budget (60 MB ceiling)
+
+| Item | Size |
+| --- | --- |
+| Ross Lake terrain package | 1.6 MB payload + 0.2 MB manifest |
+| Shared data textures (10 x 512^2 lossless WebP) | ~7 MB |
+| Three.js subset bundle | 0.54 MB |
+
+## Measurements so far (SwiftShader, not device numbers)
+
+- Export frame at 1280x720 with v2 active: ~430-710 ms draw in SwiftShader; partition copy (drawImage of the WebGL canvas) 0.1-0.3 ms.
+- Desktop LOD for the pilot: 1.85 M triangles; mobile budget 0.80 M.
+
 ## Command log
 
-(appended per task)
+- `node tools/build-range-scene.mjs --view nc-ross-lake-north --publish`
+- `node tools/build-range-materials.mjs`
+- `node tools/review-range-views.mjs --views nc-ross-lake-north --source published --stations 21 --modes neutral,silhouette`
+- `node tools/range-scene-smoke.mjs --url http://127.0.0.1:8092 --source-root "$PWD" --expect-sha <sha> --suite pilot|export --output .smoke/range-v2`
