@@ -25,6 +25,8 @@ import { PerformerCapture } from './PerformerCapture.js';
 import { sharedResidency } from './GraphicsResidency.js';
 import { drawWetReflections } from '../world/alpine/WetReflection.js';
 import { viewportState } from '../world/alpine/RangeFrame.js';
+import { withNarrativeAlpha, composedNarrativeEdge } from './NarrativeDraw.js';
+import { narrativePressure } from '../world/alpine/RangeNarrative.js';
 import { quantizeCanvas } from './PaletteQuantize.js';
 import { rangeQuality } from '../world/alpine/RangeQuality.js';
 
@@ -122,7 +124,9 @@ const VIGNETTE_ONSET_MAX = 0.62;         // onset fraction at min depth -- only 
  * wrapper uses the same canvas compositor and visibility switch. */
 export function hitTestComposerStrip(renderer, x, y, stage) {
   if (!renderer?.hudInFrame) return null;
-  return (renderer.canvasRenderer || renderer).composer?.hitTest(x, y, stage) || null;
+  const canvasRenderer = renderer.canvasRenderer || renderer;
+  if (canvasRenderer.rangeListeningActive) return null;
+  return canvasRenderer.composer?.hitTest(x, y, stage) || null;
 }
 
 /** The glacier's physical 3D rail supplies the coasting motion. Fade out
@@ -264,6 +268,10 @@ export class Renderer {
     const pose = sim.lerpState(alpha);
     const camera = presentationCamera(sim.camera, this.rangePresentation, sim.biomes);
     const biomeManager = sim.biomes || null;
+    const narrative = sim.rangeNarrativeAt?.() || null;
+    this.rangeListeningActive = !!narrative;
+    const presence = narrative?.cast || { midio: 1, broshi: 1, midasus: 1 };
+    if (biomeManager) biomeManager.rangeNarrative = narrative;
     const perf = sim.perf || null;
     const particleMul = perf ? perf.particleMul : 1;
     const salience = salienceBudgetFor(sim.focus, biomeManager?.world);
@@ -348,7 +356,7 @@ export class Renderer {
     }
     if (biomeManager) {
       biomeManager.salience = salience;
-      biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus ? sim.midasus.voyage : null, worldParticleMul, perf, groundView);
+      biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus && presence.midasus > 0 ? sim.midasus.voyage : null, worldParticleMul, perf, groundView);
     } else {
       this._drawFallbackSky(ctx, stage);
       groundView.apply();
@@ -371,24 +379,24 @@ export class Renderer {
     const worldLights = rimLightEnabled ? [light, ...groundLights].filter(Boolean) : (light ? [light] : []);
     // What everyone ELSE sees: the above, plus her own glow if she's out
     // and visible (not off mid-voyage in deep space, drawn as a tiny dot).
-    const midasusGlowLight = (rimLightEnabled && sim.midasus && sim.midasus.voyage.depth <= 0)
-      ? characterGlowLight(sim.midasus.p.x, sim.midasus.p.y, sim.midasus.hue, 0.25 + 0.35 * clamp01(sim.midasus.pulse - 1))
+    const midasusGlowLight = (rimLightEnabled && presence.midasus > 0 && sim.midasus && sim.midasus.voyage.depth <= 0)
+      ? characterGlowLight(sim.midasus.p.x, sim.midasus.p.y, sim.midasus.hue, (0.25 + 0.35 * clamp01(sim.midasus.pulse - 1)) * presence.midasus)
       : null;
     const companionLights = midasusGlowLight ? [...worldLights, midasusGlowLight] : worldLights;
 
     // Broshi's underground excursion: drawn beneath the world -- literally
     // inside the earth, under everything that walks on it -- rather than
     // inside BiomeManager's sky/parallax stack.
-    if (sim.broshi) sim.broshi.burrow.draw(ctx, pose.worldX, pose.midioX);
+    if (sim.broshi) withNarrativeAlpha(ctx, presence.broshi, c => sim.broshi.burrow.draw(c, pose.worldX, pose.midioX));
 
     // The Unraveling: a global desaturation overlay, drawn right here so it
     // only touches the world painted so far (sky/phenomena/silhouettes/
     // burrow) -- telegraph, obstacles, and every character draw afterward,
     // fully saturated, exactly per the hard rule.
-    if (sim.coda) this._drawDesaturationOverlay(ctx, stage, sim.coda);
+    if (sim.coda && !narrative) this._drawDesaturationOverlay(ctx, stage, sim.coda);
 
-    if (sim.telegraph) sim.telegraph.draw(ctx, sim.midio.groundY);
-    if (contactShadowsEnabled && sim.obstacles) {
+    if (sim.telegraph && !narrative) sim.telegraph.draw(ctx, sim.midio.groundY);
+    if (contactShadowsEnabled && sim.obstacles && !narrative) {
       const groundYAt = groundField
         ? (sx) => groundField.heightAt(pose.worldX + (sx - pose.midioX))
         : () => sim.midio.groundY;
@@ -397,16 +405,16 @@ export class Renderer {
         this._drawContactShadow(ctx, { ...s, alpha: s.alpha * o.presence });
       }
     }
-    if (sim.obstacles) {
+    if (sim.obstacles && !narrative) {
       sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY, {
         nowMs: sim.timeMs, energyCurves: sim.energyCurves,
         wind: sim.biomes ? sim.biomes.wind : { x: 0, y: 0 },
         particleMul, reducedFlash: !!sim.reducedFlash,
       });
     }
-    if (sim.impactFX) sim.impactFX.draw(ctx, pose.worldX, pose.midioX, !!sim.reducedFlash, stage.width);
+    if (sim.impactFX && !narrative) sim.impactFX.draw(ctx, pose.worldX, pose.midioX, !!sim.reducedFlash, stage.width);
     if (sim.rippleFX) sim.rippleFX.draw(ctx, pose.worldX, pose.midioX, sim.reducedFlash, stage.width);
-    if (sim.battle) this._drawBattleEnemies(ctx, sim);
+    if (sim.battle && !narrative) this._drawBattleEnemies(ctx, sim);
 
     // Rainbow brush: paint Midio's jump arcs, world-locked behind him.
     // Purely cosmetic trail decoration -- sheds outright under sustained
@@ -414,7 +422,7 @@ export class Renderer {
     // thinning, since up to 320 additive dabs redrawn every frame is real
     // cost for zero gameplay content.
     this.brush.update(sim.timeMs, pose.airborne, pose.worldX, pose.midioY, particleMul);
-    if (!sim.perf || sim.perf.brushEnabled) {
+    if (!narrative && (!sim.perf || sim.perf.brushEnabled)) {
       this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs, sim.apotheosis && sim.apotheosis.active ? 2 : 1, !!sim.reducedFlash, stage.width);
     }
 
@@ -430,12 +438,12 @@ export class Renderer {
     // something that actually happens rather than something that was
     // always half-happening.
     const vibeMelt = sim.vibe ? 0.3 + 6.7 * sim.vibe.epic : 0;
-    const drawMidioBody = (c) => this._drawMidio(c, pose, sim.performer, sim.timeMs / 1000, vibeMelt + feverGlow, sim.apotheosis, sim.reducedFlash, MIDIO_IDENTITY_HUE, sim.ensemble, companionLights, sim.focus ? sim.focus.mul('midio') : 1, sim.gaze,
+    const drawMidioBody = (c) => withNarrativeAlpha(c, presence.midio, d => this._drawMidio(d, pose, sim.performer, sim.timeMs / 1000, vibeMelt + feverGlow, sim.apotheosis, sim.reducedFlash, MIDIO_IDENTITY_HUE, sim.ensemble, companionLights, sim.focus ? sim.focus.mul('midio') : 1, sim.gaze,
       sim.beatAnchor && sim.beatAnchor.periodMs > 0
         ? sim.beatAnchor.phaseRad(sim.timeMs) / (Math.PI * 2)
-        : null);
-    const drawBroshiBody = (c) => sim.broshi.draw(c, pose, companionLights, sim.focus ? sim.focus.mul('burrow') : 1);
-    const drawMidasusBody = (c) => sim.midasus.draw(c, particleMul, worldLights);
+        : null));
+    const drawBroshiBody = (c) => withNarrativeAlpha(c, presence.broshi, d => sim.broshi.draw(d, pose, companionLights, sim.focus ? sim.focus.mul('burrow') : 1));
+    const drawMidasusBody = (c) => withNarrativeAlpha(c, presence.midasus, d => sim.midasus.draw(d, particleMul, worldLights));
     const voyageMul = sim.focus ? sim.focus.mul('voyage') : 1;
     // Range v2 wet reflections (Task 12): a performer over a pool draws its
     // body once, into a capture layer that both its reflection (here, under
@@ -446,19 +454,19 @@ export class Renderer {
     // them read as floating. Drawn just before each character so the
     // shadow always sits directly underneath its owner in paint order.
     if (contactShadowsEnabled && sim.broshi && sim.broshi.burrow.depth <= 0.02) {
-      this._drawContactShadow(ctx, contactShadow(sim.broshi.renderX, sim.broshi.groundY, sim.broshi.hopY, sim.broshi.shadowWidthPx, light));
+      withNarrativeAlpha(ctx, presence.broshi, c => this._drawContactShadow(c, contactShadow(sim.broshi.renderX, sim.broshi.groundY, sim.broshi.hopY, sim.broshi.shadowWidthPx, light)));
     }
     if (cast.broshi) this._capture.composite(ctx, cast.broshi);
     else if (sim.broshi) drawBroshiBody(ctx);
 
-    if (sim.performer) {
+    if (sim.performer && !narrative) {
       this._drawMidioAfterimages(ctx, sim.performer, pose.midioDrawX, MIDIO_IDENTITY_HUE);
       this._drawGoldAfterimages(ctx, sim.performer, pose.midioDrawX, sim.timeMs);
     }
     const midioWidthPx = sim.midio.halfWidth * 2 * MIDIO_DRAW_SCALE * pose.scaleX;
     const midioHeightAbove = sim.midio.groundY - pose.midioY;
     if (contactShadowsEnabled) {
-      this._drawContactShadow(ctx, contactShadow(pose.midioDrawX, sim.midio.groundY, midioHeightAbove, midioWidthPx, light));
+      withNarrativeAlpha(ctx, presence.midio, c => this._drawContactShadow(c, contactShadow(pose.midioDrawX, sim.midio.groundY, midioHeightAbove, midioWidthPx, light)));
     }
     if (cast.midio) this._capture.composite(ctx, cast.midio);
     else drawMidioBody(ctx);
@@ -475,11 +483,11 @@ export class Renderer {
     // groundView's own comment above. Sized to groundView.stage (also
     // fixed), not the zoomed `stage`, so full-bleed effects match the
     // transform actually in effect.
-    this._drawDropShockwave(ctx, groundView.stage, sim, pose);
+    if (!narrative) this._drawDropShockwave(ctx, groundView.stage, sim, pose);
 
     if (contactShadowsEnabled && sim.midasus && sim.midasus.voyage.depth <= 0) {
       const heightAbove = sim.midasus.yFloor - sim.midasus.p.y;
-      this._drawContactShadow(ctx, contactShadow(sim.midasus.p.x, sim.midasus.yFloor, heightAbove, sim.midasus.shadowWidthPx, light));
+      withNarrativeAlpha(ctx, presence.midasus, c => this._drawContactShadow(c, contactShadow(sim.midasus.p.x, sim.midasus.yFloor, heightAbove, sim.midasus.shadowWidthPx, light)));
     }
     if (cast.midasus) {
       // Captured with the voyage fade already applied (see below).
@@ -497,15 +505,15 @@ export class Renderer {
     // (and reflects the sky/terrain) long before any of them do.
     if (biomeManager && biomeManager.drawCharacterReflections) {
       biomeManager.drawCharacterReflections(ctx, groundView.stage, [
-        { x: pose.midioDrawX, hue: MIDIO_IDENTITY_HUE, active: true },
-        { x: sim.broshi ? sim.broshi.renderX : NaN, hue: sim.broshi ? sim.broshi.hue : 0, active: !!sim.broshi && sim.broshi.burrow.depth <= 0.02 },
-        { x: sim.midasus ? sim.midasus.p.x : NaN, hue: sim.midasus ? sim.midasus.hue : 0, active: !!sim.midasus && sim.midasus.voyage.depth <= 0 },
+        { x: pose.midioDrawX, hue: MIDIO_IDENTITY_HUE, active: presence.midio > 0, presence: presence.midio },
+        { x: sim.broshi ? sim.broshi.renderX : NaN, hue: sim.broshi ? sim.broshi.hue : 0, active: presence.broshi > 0 && !!sim.broshi && sim.broshi.burrow.depth <= 0.02, presence: presence.broshi },
+        { x: sim.midasus ? sim.midasus.p.x : NaN, hue: sim.midasus ? sim.midasus.hue : 0, active: presence.midasus > 0 && !!sim.midasus && sim.midasus.voyage.depth <= 0, presence: presence.midasus },
       ]);
     }
     if (biomeManager?.world?.kind === 'alpine' && biomeManager._pass?.('ground-response') !== false) {
       const lights = [
-        characterGlowLight(pose.midioDrawX, pose.midioY, MIDIO_IDENTITY_HUE, .28),
-        sim.broshi?.burrow.depth <= .02 ? characterGlowLight(sim.broshi.renderX, sim.broshi.groundY - 12, sim.broshi.hue, .22) : null,
+        presence.midio > 0 ? characterGlowLight(pose.midioDrawX, pose.midioY, MIDIO_IDENTITY_HUE, .28 * presence.midio) : null,
+        presence.broshi > 0 && sim.broshi?.burrow.depth <= .02 ? characterGlowLight(sim.broshi.renderX, sim.broshi.groundY - 12, sim.broshi.hue, .22 * presence.broshi) : null,
         midasusGlowLight,
       ].filter(Boolean);
       this._groundResponse.draw(ctx, { receivers: biomeManager._groundReceivers,
@@ -514,8 +522,8 @@ export class Renderer {
         reducedFlash: !!sim.reducedFlash, reducedMotion: !!sim.reducedMotion,
         quality: perf?.level ?? 0 });
     }
-    if (sim.battle) this._drawBattleFX(ctx, sim);
-    if (sim.gnat) sim.gnat.draw(ctx, sim.timeMs);
+    if (sim.battle && !narrative) this._drawBattleFX(ctx, sim);
+    if (sim.gnat && !narrative) sim.gnat.draw(ctx, sim.timeMs);
     // drawForeground (the L7 veil + near-field occluders, NearField.js)
     // before fracture: the cracks are the screen's own glass fracturing,
     // so they belong on top of every world layer, near-field props included
@@ -527,7 +535,7 @@ export class Renderer {
     // its finale timing (isAboutToFreeze / justEnteredFinale), and that
     // timing is the song's ending, not a decoration -- but it no longer
     // draws anything.
-    if (sim.keyDirector) this._drawTranspositionWave(ctx, groundView.stage, sim.keyDirector);
+    if (sim.keyDirector && !narrative) this._drawTranspositionWave(ctx, groundView.stage, sim.keyDirector);
 
     ctx.restore(); // camera transform
 
@@ -538,24 +546,24 @@ export class Renderer {
       sim.assembly.captureFrame(canvas, sim.timeMs);
     }
 
-    if (sim.fever) this._drawFeverAura(ctx, viewStage, sim.fever.level, sim.biomes, sim.reducedFlash);
-    if (sim.hype) this._drawHypeFrame(ctx, viewStage, sim);
+    if (sim.fever && !narrative) this._drawFeverAura(ctx, viewStage, sim.fever.level, sim.biomes, sim.reducedFlash);
+    if (sim.hype && !narrative) this._drawHypeFrame(ctx, viewStage, sim);
     // Drop impact pack: a chromatic shock + radial speed-lines from Midio,
     // both keyed off the same window as the shockwave rings -- drawn last so
     // they shock the fully composed frame, hype border and highway included.
-    if (sim.hype) this._drawDropImpact(ctx, viewStage, sim, pose);
+    if (sim.hype && !narrative) this._drawDropImpact(ctx, viewStage, sim, pose);
 
     // Post FX that sample the pixel buffer need identity transform + full
     // physical canvas size (bloom / retro / freeze capture). Motion blur
     // first: the accumulation smears the fully composed frame (hype border
     // and drop impact included), and bloom then blooms the smeared result.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    this._drawDropMotionBlur(ctx, canvas, sim, camera, sx, sy);
+    if (!narrative) this._drawDropMotionBlur(ctx, canvas, sim, camera, sx, sy);
     this._drawBloom(ctx, canvas, sim, salience);
     // After bloom, not before: heat is a lens on the whole scene, so it
     // should bend the glow bloom just added too, not just the world under it.
     this._drawHeatDistortion(ctx, canvas, sim, pose, viewStage);
-    if (sim.filmFinish && (perf ? perf.heavyPostFx : true)) {
+    if (narrative || (sim.filmFinish && (perf ? perf.heavyPostFx : true))) {
       // Film finish was authored in logical space; scale its fill rects.
       ctx.setTransform(sx, 0, 0, sy, 0, 0);
       this._drawFilmFinish(ctx, viewStage, sim);
@@ -569,7 +577,7 @@ export class Renderer {
     // content, and main.js's hitTest already converts pointer coords into
     // the nominal STAGE_W/STAGE_H space -- drawing it against the zoomed
     // stage would desync the visible strip from where clicks land.
-    if (sim.conductor && this.hudInFrame) {
+    if (sim.conductor && this.hudInFrame && !narrative) {
       const sxN = canvas.width / nominalW;
       const syN = canvas.height / nominalH;
       const nominalStage = this._nominalStageView
@@ -610,7 +618,7 @@ export class Renderer {
     // The reassembling shards sit on top of the fully composed live frame
     // (HUD included) and dissolve away once landed, revealing whatever the
     // actually-live game looks like by then -- not a freeze, just a veil.
-    if (sim.assembly && sim.assembly.active) {
+    if (sim.assembly && sim.assembly.active && !narrative) {
       ctx.setTransform(sx, 0, 0, sy, 0, 0);
       sim.assembly.draw(ctx, sim.timeMs);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -650,6 +658,7 @@ export class Renderer {
    *  an active v2 frame with pools on the stage. */
   _captureCastForReflections(ctx, sim, pose, biomeManager, perf, { drawMidioBody, drawBroshiBody, drawMidasusBody, voyageMul }) {
     const out = { broshi: null, midio: null, midasus: null };
+    const presence = sim.rangeNarrativeAt?.()?.cast || { broshi: 1, midio: 1, midasus: 1 };
     const pres = biomeManager?.rangePresentation;
     const receivers = biomeManager?._groundReceivers;
     if (!this.reflectionsEnabled || !biomeManager?._rangeV2Active || !pres?.frame || !receivers?.pools?.length || !rangeQuality(perf?.level ?? 0).poolReflections) return out;
@@ -661,12 +670,12 @@ export class Renderer {
     const overPool = (b) => !!b && spans.some(([lo, hi]) => b.x < hi && b.x + b.w > lo);
     const cap = this._capture || (this._capture = new PerformerCapture({ residency: sharedResidency() }));
     const frameId = pres.frame.frameId;
-    if (sim.broshi) {
+    if (sim.broshi && presence.broshi > 0) {
       const bounds = sim.broshi.drawBounds();
       if (overPool(bounds)) out.broshi = cap.capture(ctx, frameId, { id: 'broshi', bounds, hue: sim.broshi.hue, visible: true,
         contactY: sim.broshi.groundY, airbornePx: sim.broshi.hopY, draw: drawBroshiBody });
     }
-    {
+    if (presence.midio > 0) {
       // Midio's mesh spans about +-45 x -80..+20 local units around
       // (midioDrawX, midioY); scale headroom covers breathe, pulse, the
       // Apotheosis growth and melt, the pads his glow and hover.
@@ -678,7 +687,7 @@ export class Renderer {
     // Midasus reflects only while she is down near the cast: out of a
     // voyage AND within reflection range of the ground (she usually flies
     // far above it, where a pool shows nothing of her).
-    if (sim.midasus && sim.midasus.voyage.depth <= 0 && sim.midasus.yFloor - sim.midasus.p.y < 220) {
+    if (presence.midasus > 0 && sim.midasus && sim.midasus.voyage.depth <= 0 && sim.midasus.yFloor - sim.midasus.p.y < 220) {
       const bounds = sim.midasus.drawBounds();
       if (overPool(bounds)) {
         ctx.save();
@@ -872,8 +881,10 @@ export class Renderer {
    *  gradeAlpha has no percussive term at all), so this deliberately never
    *  routes through capFlashAlpha. */
   _drawFilmFinish(ctx, canvas, sim) {
-    if (sim.biomes?._pass?.('film') === false) return;
-    const ff = sim.filmFinish;
+    const narrative = sim.rangeNarrativeAt?.() || null;
+    if (!narrative && sim.biomes?._pass?.('film') === false) return;
+    const ff = sim.filmFinish || { warmth: .3, vignetteDepth: 0 };
+    const heavy = (sim.perf?.heavyPostFx ?? true) && sim.biomes?._pass?.('film') !== false;
     const dials = styleDials(sim.visualStyle);
     const gradeMul = dials.filmGradeMul;
     const vigMul = dials.vignetteDepthMul;
@@ -892,13 +903,13 @@ export class Renderer {
     const filmWeight = sim.biomes?.world?.kind === 'alpine' ? (sim.biomes._rangePresentation?.film ?? 1) : 1;
     ctx.save();
     ctx.globalCompositeOperation = 'soft-light';
-    ctx.globalAlpha = Math.min(0.22, gradeAlpha) * filmWeight;
+    ctx.globalAlpha = heavy ? Math.min(0.22, gradeAlpha) * filmWeight * (narrative?.materials ?? 1) : 0;
     ctx.fillStyle = color;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     // Rendered: a whisper of indigo space grade so the whole frame reads
     // a little more orbital / deep-sea than pure warm daylight.
-    if (dials.spaceWash) {
-      ctx.globalAlpha = Math.min(0.12, 0.045 * gradeMul);
+    if (dials.spaceWash && heavy) {
+      ctx.globalAlpha = Math.min(0.12, 0.045 * gradeMul) * (narrative?.skyDark ?? 1);
       ctx.fillStyle = FILM_GRADE_SPACE;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
@@ -907,8 +918,13 @@ export class Renderer {
     const cx = canvas.width / 2, cy = canvas.height / 2;
     const outerR = Math.hypot(cx, cy);
     const depth = Math.min(1, ff.vignetteDepth * vigMul);
-    const onset = VIGNETTE_ONSET_MAX - (VIGNETTE_ONSET_MAX - VIGNETTE_ONSET_MIN) * depth;
-    const edgeAlpha = VIGNETTE_MIN_ALPHA + (VIGNETTE_MAX_ALPHA - VIGNETTE_MIN_ALPHA) * depth;
+    const heardMs = sim.heardTimeMs ?? sim.timeMs;
+    const hits = narrative ? recentConductorHits(sim.conductor?.timeline, heardMs) : [];
+    const kick = hits.length ? hits[0].strength * Math.exp(-(heardMs - hits[0].tMs) / 180) : 0;
+    const pressure = narrativePressure(narrative, kick, sim);
+    const onset = narrative ? .56 - pressure.contraction : VIGNETTE_ONSET_MAX - (VIGNETTE_ONSET_MAX - VIGNETTE_ONSET_MIN) * depth;
+    const filmEdge = heavy ? VIGNETTE_MIN_ALPHA + (VIGNETTE_MAX_ALPHA - VIGNETTE_MIN_ALPHA) * depth : 0;
+    const edgeAlpha = narrative ? composedNarrativeEdge(pressure.edgeAlpha, filmEdge * narrative.skyDark) : filmEdge;
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
     const vg = ctx.createRadialGradient(cx, cy, outerR * onset, cx, cy, outerR);

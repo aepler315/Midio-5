@@ -27,7 +27,7 @@ function harness() {
   const context = vm.createContext({
     ...cache, fingerprintBuffer, GrooveFingerprint, ...opening,
     fingerprintBufferOffThread: async (buffer) => fingerprintBuffer(buffer),
-    readBulkExportFromUrl: () => null, fullAnalysisPending: null, adoptFullAnalysisLive() {},
+    readBulkExportFromUrl: () => null, rangeListening: false, fullAnalysisPending: null, adoptFullAnalysisLive() {},
     AUDIO_LOAD_LIMITS, accumulateDecodedAudioBytes, accumulateDecodedByteLength, decodedAudioByteLength,
     accumulateEncodedAudioBytes, audioAbortError, validateAudioFiles, validateDecodedAudioBuffer, validateDecodedByteLength,
     AbortController,
@@ -189,4 +189,27 @@ test('long audio exposes a whole-recording overview while full analysis is pendi
   assert.equal(offered.opening, undefined);
   assert.equal(offered.audioOverview, overview);
   assert.equal(offered.timeline[0].tMs, 600000);
+});
+
+test('the Range narrative pilot waits for full-song evidence before offering playback', async () => {
+  const { context, load } = harness();
+  const buffer = recording(); buffer.duration = 120;
+  context.audioEngine.decodeFile = async () => buffer;
+  context.rangeListening = true;
+  context.sliceAudioBuffer = () => ({ ...buffer, duration: 15 });
+  context.setTimeout = (fn) => fn();
+  context.getBundle = async () => null;
+  context.packBundle = () => ({}); context.putBundle = async () => {};
+  let finish, offered = null;
+  const full = new Promise(resolve => { finish = resolve; });
+  context.audioToTimeline = async b => b.duration === 15
+    ? { durationMs: 15000, timeline: [], barGrid: [] } : full;
+  context.offerWorldsThenStart = data => { offered = data; };
+  const loading = load();
+  for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(offered, null, 'provisional analysis cannot start a departure');
+  finish({ durationMs: 120000, timeline: [], barGrid: [] });
+  await loading;
+  assert.equal(offered.opening, undefined);
+  assert.equal(offered.durationMs, 120000);
 });

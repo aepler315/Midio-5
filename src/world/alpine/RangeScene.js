@@ -14,7 +14,8 @@
 // reserved here before creation and released through dispose().
 import { prepareTerrainAssets, RangeAssetError } from './RangeAssets.js';
 import { createSurfaceTexture, terrainUniforms, createBandGeometries } from './TerrainGL.js';
-import { sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromHex, createMaterialTextures, applyMaterial } from './TerrainMaterial.js';
+import { sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromHex, createMaterialTextures, applyMaterial, SCENE_VERT, FEATURE_FRAG } from './TerrainMaterial.js';
+import { terrainFeatureSegments } from './TerrainFeatures.js';
 import { loadMaterialPack, materialGpuBytes, RULE_DEFAULTS } from './MaterialPackage.js';
 import { placeForestAsync } from './ForestCover.js';
 import { rangeQuality } from './RangeQuality.js';
@@ -204,7 +205,8 @@ export class RangeScene {
     const job = (async () => {
       const cpu = await prepareTerrainAssets(view, { baseUrl, residency: this.residency, generation, signal, isCurrent });
       let mat = null, res = null, published = false;
-      let surface, geos, material, forest, stageGL;
+      let surface, geos, material, forest, stageGL, featureMaterial;
+      const featureGeometries = {};
       const stale = () => {
         if (this.contextEpoch !== epoch) throw new RangeAssetError('context-lost', `GPU context changed while preparing ${view.id}`);
         return signal?.aborted || !isCurrent(generation);
@@ -231,7 +233,8 @@ export class RangeScene {
         // createSurfaceTexture), so all eleven bytes are scratch, reserved
         // only while it is built: the view owns both GPU textures.
         const gridPx = cpu.data.grid.width * cpu.data.grid.height;
-        const bytes = (est?.meshBytes || 0) + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes;
+        const featureBudgetBytes = 3 * 768 * 6 * 4;
+        const bytes = (est?.meshBytes || 0) + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes;
         res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation }) || null;
         if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
         const scratchKey = `range:surface-scratch:${view.id}`;
@@ -247,6 +250,9 @@ export class RangeScene {
         const uniforms = sceneUniforms(THREE, base);
         applyMaterial(uniforms, mat.pack, mat.textures, view.materialRules || {});
         material = createSceneMaterial(THREE, uniforms);
+        featureMaterial = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, uniforms,
+          vertexShader: SCENE_VERT, fragmentShader: FEATURE_FRAG, transparent: true,
+          depthTest: true, depthWrite: false, depthFunc: THREE.LessEqualDepth });
         const depthMaterial = createDepthMaterial(THREE, uniforms);
         geos = createBandGeometries(THREE, cpu.data, { budget: this.budget });
         await yieldToMain();
@@ -258,6 +264,14 @@ export class RangeScene {
           meshes[band].frustumCulled = false;
           scenes[band] = new THREE.Scene();
           scenes[band].add(meshes[band]);
+          const hints = terrainFeatureSegments(geos.geometries[band].attributes.position.array,
+            geos.geometries[band].index.array);
+          const fg = new THREE.BufferGeometry();
+          fg.setAttribute('position', new THREE.BufferAttribute(hints, 3));
+          featureGeometries[band] = fg;
+          const ink = new THREE.LineSegments(fg, featureMaterial);
+          ink.frustumCulled = false; ink.renderOrder = 2;
+          scenes[band].add(ink);
           depthMeshes[band] = new THREE.Mesh(geos.geometries[band], depthMaterial);
           depthMeshes[band].frustumCulled = false;
           depthScene.add(depthMeshes[band]);
@@ -285,7 +299,8 @@ export class RangeScene {
         const prepared = {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
           surface, uniforms, material, depthMaterial, geometries: geos.geometries, scenes, depthScene, depthScenes,
-          forest, stageGL, stats: { ...geos.stats, trees: forest.counts }, gpuKey, cpuKey: cpu.key,
+          forest, stageGL, featureGeometries, featureMaterial,
+          stats: { ...geos.stats, trees: forest.counts, featureBytes: featureBudgetBytes }, gpuKey, cpuKey: cpu.key,
           rules, waterLevelM: waterLevel(cpu.data), materialKey: mat.key,
         };
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
@@ -307,6 +322,8 @@ export class RangeScene {
           forest?.dispose();
           stageGL?.dispose();
           material?.dispose();
+          featureMaterial?.dispose();
+          for (const g of Object.values(featureGeometries)) g.dispose();
           surface?.texture?.dispose();
           surface?.receiverTexture?.dispose();
           for (const g of Object.values(geos?.geometries || {})) g.dispose();
@@ -413,6 +430,8 @@ export class RangeScene {
   }
 
   _disposePrepared(p) {
+    p.featureMaterial?.dispose();
+    for (const g of Object.values(p.featureGeometries || {})) g.dispose();
     p.forest?.dispose();
     p.stageGL?.dispose();
     for (const g of Object.values(p.geometries || {})) g.dispose();
@@ -455,6 +474,9 @@ export class RangeScene {
   _setUniforms(p, frame) {
     const THREE = this.THREE;
     const u = p.uniforms;
+    const n = frame.narrative;
+    u.uNarrative.value.set(n?.relief ?? 1, n?.atmosphere ?? 1, n?.materials ?? 1, n?.features ?? 1);
+    u.uNarrativeInk.value = n ? (1 - n.materials) * (1 - n.skyDark) : 0;
     applyGlacierUniforms(u, p.view.glacier, frame.glacier);
     const m = calibrateRangeMusic(frame.music, { view: p.view, progress01: frame.progress01,
       heightRange: [u.uHeightRange.value.x, u.uHeightRange.value.y], nominalHeight: frame.scenicViewport?.nominalHeight || 720 });
@@ -471,6 +493,9 @@ export class RangeScene {
     u.uDeformPhase.value = m.phaseRad;
     u.uTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
     u.uForestKeep.value = rangeQuality(frame.qualityLevel).forestKeep;
+    for (const objects of Object.values(p.forest?.byBand || {})) for (const tree of objects) tree.visible = !n || n.materials > .01;
+    for (const tree of p.forest?.depth || []) tree.visible = !n || n.materials > .01;
+    for (const objects of Object.values(p.forest?.depthByBand || {})) for (const tree of objects) tree.visible = !n || n.materials > .01;
     const c = frame.light.celestial;
     // Unproject the celestial's stage position into a world direction.
     const ndcX = c.xFrac * 2 - 1, ndcY = 1 - c.yFrac * 2;
@@ -501,7 +526,7 @@ export class RangeScene {
     const mp = mistParams({ rules: p.rules, waterLevelM: p.waterLevelM, heightRange: [u.uHeightRange.value.x, u.uHeightRange.value.y],
       tSec: frame.reducedMotion ? 0 : frame.timeMs / 1000, calm01: 1 - (frame.music?.groove ?? 0) });
     const quality = rangeQuality(frame.qualityLevel);
-    u.uMistDensity.value = mp.density;
+    u.uMistDensity.value = mp.density * (n?.atmosphere ?? 1);
     u.uMistSteps.value = quality.mistSteps;
     u.uMistBase.value = mp.baseM;
     u.uMistHeight.value = mp.heightM;

@@ -39,6 +39,7 @@ const FRAG = /* glsl */`
   uniform vec4 uPools[8];         // cx, cy, rx, ry  (logical px)
   uniform float uPoolAlpha[8];
   uniform float uDiag;
+  uniform vec2 uNarrativeStage; // physical materials, water features
   in vec3 vN; in vec2 vUv; in vec2 vXY; in float vSurface; in float vDepth;
   out vec4 outColor;
   vec3 tonemap(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
@@ -92,7 +93,7 @@ const FRAG = /* glsl */`
       lit += albedo * uEmitterColor[i] * e.w * fall * face * (1.0 + 1.5 * damp) * 3.0;
       lit += uEmitterColor[i] * e.w * fall * damp * 0.35 * pow(1.0 - rough, 2.0);
     }
-    vec3 color = tonemap(lit * uExposure);
+    vec3 color = mix(uSkyHorizon, tonemap(lit * uExposure), uNarrativeStage.x);
     outColor = vec4(pow(max(color, 0.0), vec3(1.0 / 2.2)), 1.0);
     if (uDiag > 0.5) outColor = vec4(0.0, 1.0, 1.0, 1.0);
   }
@@ -102,6 +103,7 @@ const WATER_FRAG = /* glsl */`
   precision highp float;
   uniform vec3 uSkyZenith; uniform vec3 uSkyHorizon; uniform vec3 pWater; uniform vec3 pWaterDeep;
   uniform float uExposure; uniform float uTime;
+  uniform vec2 uNarrativeStage;
   uniform vec2 uWaterHits[8]; // age seconds, preserved contact strength
   uniform float uWaterFlash;
   uniform vec4 uEmitters[3]; uniform vec3 uEmitterColor[3];
@@ -133,7 +135,8 @@ const WATER_FRAG = /* glsl */`
       c += vec3(0.07) * ring * exp(-hit.x / 0.45) * hit.y * uWaterFlash;
     }
     vec3 color = tonemap(c * uExposure);
-    outColor = vec4(pow(color, vec3(1.0 / 2.2)) * vPoolAlpha, vPoolAlpha);
+    float a = vPoolAlpha * uNarrativeStage.y;
+    outColor = vec4(pow(color, vec3(1.0 / 2.2)) * a, a);
   }
 `;
 
@@ -183,6 +186,7 @@ export class RockStageGL {
       uDiag: { value: 0 }, uTime: { value: 0 },
       uWaterHits: { value: Array.from({ length: 8 }, () => new THREE.Vector2(0, 0)) },
       uWaterFlash: { value: 1 },
+      uNarrativeStage: { value: new THREE.Vector2(1, 1) },
     };
     this.uniforms = u;
     // The camera maps y down (top 0, bottom H), which mirrors triangle
@@ -212,6 +216,7 @@ export class RockStageGL {
     // Water: fans of the exact pool polygons.
     const wp = [], wa = [], wc = [];
     const u = this.uniforms;
+    u.uNarrativeStage.value.set(frame.narrative?.materials ?? 1, frame.narrative?.features ?? 1);
     stage.pools.slice(0, 8).forEach((p, i) => {
       const c = p.polygon.reduce((a, q) => [a[0] + q.x / p.polygon.length, a[1] + q.y / p.polygon.length], [0, 0]);
       for (let k = 0; k < p.polygon.length; k++) {
@@ -237,7 +242,7 @@ export class RockStageGL {
     for (let i = 0; i < 3; i++) {
       const e = ems[i];
       if (!e) { u.uEmitters.value[i].set(0, 0, 1, 0); continue; }
-      u.uEmitters.value[i].set(e.x, e.supportY ?? e.y, 150, emitterStrength({ airbornePx: e.airborneM, reducedFlash: frame.reducedFlash }));
+      u.uEmitters.value[i].set(e.x, e.supportY ?? e.y, 150, emitterStrength({ airbornePx: e.airborneM, reducedFlash: frame.reducedFlash }) * (e.presence ?? 1));
       const [r, gg, b] = hueToLinear(e.hue ?? 180);
       u.uEmitterColor.value[i].set(r, gg, b);
     }

@@ -14,6 +14,7 @@ import { recentConductorHits } from './GroundResponse.js';
 import { MIDIO_IDENTITY_HUE } from '../../render/ColorLaw.js';
 import { glacierStateAt } from './GlacierField.js';
 import { profileTravelPx } from '../terrain/ProfileTravel.js';
+import { styleDials } from '../../render/VisualStyle.js';
 
 const NIGHT_SKY = '#05060d';
 
@@ -141,13 +142,18 @@ export function calibrateRangeMusic(music, { view = null, progress01 = .5, depth
 
 /** Sky colours the scene's atmosphere must agree with (same stops and
  *  night pull as BiomeManager._drawSky's three-stop case). */
-function skyState(mgr, A, B, t, night) {
-  const pull = 0.62 * night;
+export function rangeSkyState(mgr, A, B, t, night, narrative = null) {
+  const pull = 0.62 * night + (styleDials(mgr.visualStyle).spaceWash ? .14 : 0);
   const stop = (i, k) => {
     const c = mgr._rotated(mgr.lerpCache.get(A.sky[i], B.sky[i], t));
     return pull * k > 0.02 ? mgr.lerpCache.get(c, NIGHT_SKY, pull * k) : c;
   };
-  return { top: stop(0, 1), mid: stop(1, 0.75), horizon: stop(2, 0.45), air: mgr._airColor || stop(2, 0.45) };
+  if (!narrative) return { top: stop(0, 1), mid: stop(1, .75), horizon: stop(2, .45), air: mgr._airColor || stop(2, .45) };
+  const dark = narrative.skyDark;
+  const top = mgr.lerpCache.get('#fff3db', stop(0, 1), dark);
+  const mid = mgr.lerpCache.get('#f8e5ca', stop(1, .75), dark);
+  const horizon = mgr.lerpCache.get('#eed7ba', stop(2, .45), dark);
+  return { top, mid, horizon, air: horizon };
 }
 
 /**
@@ -167,7 +173,8 @@ export function buildRangeFrame({
   const nameOf = (p) => (typeof p === 'string' ? p : p?.name ?? null);
   const biomeFrom = nameOf(blend.from), biomeTo = nameOf(blend.to);
   const choice = (b) => forcedView || sceneAssignments?.get?.(b) || null;
-  const timeMs = (mgr.tSec || 0) * 1000;
+  const timeMs = sim.heardTimeMs ?? (mgr.tSec || 0) * 1000;
+  const narrative = sim.rangeNarrativeAt?.(timeMs) || null;
   const reducedFlash = !!mgr.reducedFlash;
   const reducedMotion = !!(sim.reducedMotion || mgr.reducedMotion);
   const progress01 = mgr.terrainPreview ? SCENE_PREVIEW_PROGRESS : sceneProgressAt({
@@ -195,7 +202,7 @@ export function buildRangeFrame({
       intensity: light?.intensity ?? 1,
     },
     night01: dn.night || 0, dawn01: dn.dawnAlpha || 0, dusk01: dn.duskAlpha || 0,
-    sky: A && B ? skyState(mgr, A, B, t, dn.night || 0) : null,
+    sky: A && B ? rangeSkyState(mgr, A, B, t, dn.night || 0, narrative) : null,
   };
   const section = mgr.sections?.[mgr._lastSectionIdx];
   const prior = mgr.sections?.[mgr._lastSectionIdx - 1];
@@ -208,11 +215,18 @@ export function buildRangeFrame({
   const motif = rangeSectionMotif(section, prior, timeMs, sim.songSeed ?? 0);
   const music = rangeMusicState({
     env, tSec: mgr.tSec || 0, kickAgeMs: timeMs - (mgr._danceKickMs ?? -Infinity), kickAmp: mgr._danceKickAmp || 0,
-    melody: sampleRangeMelody(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
+    melody: narrative ? { activity: narrative.sources.midio.pitchActivity * narrative.handoff.midio,
+      pitch01: narrative.sources.midio.pitch01 } : sampleRangeMelody(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
     structural01: section?.provenance === 'detected'
       ? unit(section.relEnergy01) * unit((timeMs - section.startMs) / 4000) : 0,
     reducedMotion, motif,
   });
+  if (narrative) {
+    music.amplitudeM *= .35 + .65 * narrative.handoff.broshi;
+    music.amplitudeM += reducedMotion ? 0 : 10 * narrative.sources.broshi.activity * narrative.handoff.broshi;
+    music.gestureM *= .25 + .75 * narrative.handoff.midasus;
+    music.totalBoundM = music.amplitudeM + music.kickM + music.gestureM + music.melodicM + music.structuralM;
+  }
   // Support curve exactly as the ground painter receives it (render-only
   // ripple/groove/quake included); physics heightAt() is not consulted.
   const gf = mgr.groundField;
@@ -236,6 +250,10 @@ export function buildRangeFrame({
       supportY: m.yFloor, airborneM: Math.max(0, m.yFloor - m.p.y), voyaging: m.voyage.depth > 0 });
   }
   const from = choice(biomeFrom), to = choice(biomeTo);
+  for (const e of emitters) {
+    e.presence = narrative?.cast[e.id] ?? 1;
+    e.visible = e.visible && e.presence > .001;
+  }
   return freezeDeep({
     frameId, generation, timeMs, seed: sim.songSeed ?? 0,
     beatTransport: mgr.beatTransport ? { ...mgr.beatTransport } : null,
@@ -246,7 +264,7 @@ export function buildRangeFrame({
     forcedCandidate: !!forcedView?.forcedCandidate,
     progress01, glacier, qualityLevel: sim.perf?.level ?? 0, reducedFlash, reducedMotion,
     scenicViewport, groundViewport,
-    light: lightState, music, groundBars, emitters,
+    light: lightState, music, narrative, groundBars, emitters,
     waterHits: recentConductorHits(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
     // World anchoring for fixed-ground dressing (rock stage, pools).
     worldX: pose.worldX, originX: pose.midioX,

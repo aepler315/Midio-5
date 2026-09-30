@@ -20,6 +20,8 @@ import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { travelSeam, TRAVEL_FEATHER, TRAVEL_BANDS } from './TravelSeam.js';
 import { landscapeLayerColor, landscapePasses, landscapePolicy, landscapeBudget, landscapeSnowAllowed, resolveLandscapePalette, resolveRangePresentation } from './alpine/LandscapePolicy.js';
 import { createRangeSkyComposition, rangeMoonRadius, rangeV2MoonRadius, drawMoonMaria, rangeCloudBanks, drawRangeClouds } from './alpine/RangeSkyComposition.js';
+import { rangeSkyState } from './alpine/RangeFrame.js';
+import { withNarrativeAlpha, drawNarrativeMarks } from '../render/NarrativeDraw.js';
 import { buildRidgeSurface } from './alpine/RidgeSurface.js';
 import { drawRidgeSurface } from './alpine/RidgeSurfaceDraw.js';
 import { buildGroundPatches, drawGroundMaterial } from './alpine/GroundMaterial.js';
@@ -2440,7 +2442,7 @@ export class BiomeManager {
     // let every caller below share one derivation per unique input.
     this._crestCache = new Map();
     this._ridgeMusicCache = null;
-    const phenomenaFull = perf ? perf.phenomenaFull : true;
+    const phenomenaFull = !this.rangeNarrative && (perf ? perf.phenomenaFull : true);
     const {
       from, to, t, fromHeightMul = 1, toHeightMul = 1, fromSnowLine01 = 1, toSnowLine01 = 1,
     } = this.currentBlend
@@ -2511,6 +2513,7 @@ export class BiomeManager {
       ? this.lerpCache.get(skyHorizon, NIGHT_SKY_COLOR, horizonPull)
       : skyHorizon;
     this._airColor = skyHorizonNight;
+    if (this.rangeNarrative) this._airColor = rangeSkyState(this, A, B, t, dn.night, this.rangeNarrative).air;
 
     // Range v2 decides here, with light and air resolved, whether its GPU
     // scene draws this frame's scenic partitions. Legacy strips are only
@@ -2547,6 +2550,7 @@ export class BiomeManager {
     }
 
     this._drawSky(ctx, canvas, A, B, t, dn.night);
+    drawNarrativeMarks(ctx, this.rangeNarrative, this.tSec * 1000, canvas, this.songSeed, this.reducedMotion);
 
     // Planets + astral artifacts, behind everything else in the heavens --
     // purely atmospheric, first to go on the deepest perf rung.
@@ -2567,17 +2571,21 @@ export class BiomeManager {
     // ordinary astronomy was excluded from its live corridor in _drawSky.
     // Draw before dawn wash and the opaque celestial so it remains distant.
     {
-      const spaceCol = this._rotated(rotateHueHex(
+      let spaceCol = this._rotated(rotateHueHex(
         this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t), 45,
       ));
-      if (this._pass('space-ridge')) this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash);
+      const n = this.rangeNarrative;
+      if (n) spaceCol = this.lerpCache.get('#000000', spaceCol, n.skyDark);
+      const authority = n ? .15 + .85 * n.spaceAuthority : 1;
+      if (this._pass('space-ridge')) this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash,
+        authority, n ? n.sources.midasus.activity * n.handoff.midasus : 0, this.reducedMotion, n?.cast.midasus ?? 1);
     }
 
     // Dawn/dusk tint washes bracket the sun's own rise and set.
     for (const wash of [{ color: '#ff9a6b', alpha: dn.dawnAlpha }, { color: '#141040', alpha: dn.duskAlpha }]) {
       if (wash.alpha > 0.005) {
         ctx.save();
-        ctx.globalAlpha = wash.alpha;
+        ctx.globalAlpha = wash.alpha * (this.rangeNarrative?.atmosphere ?? 1);
         ctx.fillStyle = wash.color;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.restore();
@@ -2596,8 +2604,8 @@ export class BiomeManager {
     // ordinary source-over) now properly occludes whatever of these fell
     // behind its disc, same as it always did for the plain star layer in
     // _drawSky/_drawStarfield (also drawn before the celestial bodies).
-    this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
-    this.drawDeepSky(ctx, skyVoyage, canvas); // Midasus's sky voyage, when she's away -- behind the mountains below
+    if (!this.rangeNarrative) this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
+    withNarrativeAlpha(ctx, this.rangeNarrative?.cast.midasus ?? 1, c => this.drawDeepSky(c, skyVoyage, canvas));
     // Ambient connect-the-dots + reward volleys read as starlight, so the
     // night sky brightens them the same way it brightens the atlas stars.
     // The Range's constellations were effectively washed out in daylight:
@@ -2610,7 +2618,7 @@ export class BiomeManager {
     // The weaver is far lighter than the rest of the phenomena layer -- it
     // must NOT drop out with them (rung 5) or The Range's sky goes dark.
     const constellationsOn = this._perf ? this._perf.constellationsEnabled : true;
-    if (this._pass('weaver') && constellationsOn && skyA > 0.02 && (!this._rangeSky || this._rangeSky.showWeaver)) {
+    if (!this.rangeNarrative && this._pass('weaver') && constellationsOn && skyA > 0.02 && (!this._rangeSky || this._rangeSky.showWeaver)) {
       const live = this._rangePresentation?.liveWeaver ?? 1;
       const retained = this._rangePresentation?.retainedWeaver ?? 1;
       const alpineSky = this.world?.kind === 'alpine';
@@ -2625,30 +2633,30 @@ export class BiomeManager {
     // over their last stretch of altitude rather than popping at the
     // horizon, and both rise from and set into the sea horizon.
     this._moonDisc = null;
-    if (sunUp) this._drawCelestial(ctx, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt), celestialXFrac);
-    if (dn.moonAlt > 0.001) {
+    if (sunUp) withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => this._drawCelestial(c, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt), celestialXFrac));
+    if (dn.moonAlt > 0.001) withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => {
       // Where the sun really is -- below the horizon all night, which is the
       // whole point: it's what makes the moon read as lit from underneath.
       const sun = sunScreenFrac(cyclePhase01(this.tSec * 1000, this._dayNightCycleMs));
       this._drawMoon(
-        ctx, canvas, celestialYFracFor(dn.moonAlt), horizonFade(dn.moonAlt),
+        c, canvas, celestialYFracFor(dn.moonAlt), horizonFade(dn.moonAlt),
         0.22 * this.spaceRidge.tidalOffsetPx(canvas.height),
         celestialXFracFor(dn.moonAz01),
         sun.xFrac, sun.yFrac, this._moonPhase01(),
       );
-    }
+    });
     // Range v2: sparse, low-contrast cloud banks (two wisps crossing the
     // moon), lit on the side facing the celestial, clear of the SpaceRidge.
     if (this._rangeV2Active && this._pass('range-clouds')) {
       const halo = hexToRgb(this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)));
       const top = hexToRgb(this._rotated(this.lerpCache.get(A.sky[0], B.sky[0], t)));
       const moon = this._moonDisc;
-      drawRangeClouds(ctx, rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, moon }), {
+      withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => drawRangeClouds(c, rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, moon }), {
         dark: [Math.round(top.r * 0.8 + 18), Math.round(top.g * 0.8 + 22), Math.round(top.b * 0.8 + 30)],
         lit: [Math.round(halo.r * 0.7 + 60), Math.round(halo.g * 0.7 + 50), Math.round(halo.b * 0.7 + 45)],
         light: moon || { x: canvas.width * celestialXFrac, y: canvas.height * celestialYFrac },
         allowPoint: this._rangeSky?.allowPoint || null,
-      });
+      }));
     }
     // Spirograph resonance mandala, centered on the celestial body so it
     // reads as the sun/moon itself resonating with the track.
@@ -2691,7 +2699,7 @@ export class BiomeManager {
       if (!this._rangeSky) this._drawFataMorgana(ctx, canvas, worldX, A, B, t);
     }
     const glacialInland = v2 && [A.name, B.name].some((name) => this.rangePresentation.captionViewFor?.(name)?.glacier);
-    if (!glacialInland) this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
+    if (!glacialInland) withNarrativeAlpha(ctx, this.rangeNarrative?.features ?? 1, c => this._drawOcean(c, canvas, worldX, A, B, t, phenomenaFull, dn.night));
     if (legacyPasses) this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
     // The horizon EQ belongs to the v2 sequence (between far and mid)
     // whenever v2 draws, arriving or not.
@@ -2743,8 +2751,8 @@ export class BiomeManager {
       const bars = this.groundField.visibleBars(worldX, originX, groundCanvas.width);
       this._groundReceivers = this.rangePresentation.groundReceivers();
       this._lakeReflectGroundY = null;
-      drawRockStageShade(ctx, { bars, width: groundCanvas.width, height: groundCanvas.height });
-      this._drawGroundSignatures(ctx, groundCanvas, bars, this._terrainTopPath(bars, groundCanvas.height, false, groundCanvas.width), worldX, A, B, t);
+      withNarrativeAlpha(ctx, this.rangeNarrative?.relief ?? 1, c => drawRockStageShade(c, { bars, width: groundCanvas.width, height: groundCanvas.height }));
+      withNarrativeAlpha(ctx, this.rangeNarrative?.materials ?? 1, c => this._drawGroundSignatures(c, groundCanvas, bars, this._terrainTopPath(bars, groundCanvas.height, false, groundCanvas.width), worldX, A, B, t));
     } else {
       this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
       // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
@@ -3577,6 +3585,13 @@ export class BiomeManager {
   }
 
   _drawSky(ctx, canvas, A, B, t, night = 0, starOptions = {}) {
+    if (this.rangeNarrative && this.world?.kind === 'alpine') {
+      const sky = rangeSkyState(this, A, B, t, night, this.rangeNarrative);
+      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, sky.top); gradient.addColorStop(.5, sky.mid); gradient.addColorStop(1, sky.horizon);
+      ctx.fillStyle = gradient; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
     // Water and vault ceilings retain local light effects, not astronomy.
     const astronomical = identityAllows(this.world, 'astronomy') && starOptions.astronomical !== false;
     const dials = styleDials(this.visualStyle);
@@ -5279,22 +5294,29 @@ export class BiomeManager {
    * the crest. A contained halo and a bright crest reveal that motion.
    */
   _horizonEqPoints(canvas, worldX) {
-    return horizonEqPoints({
+    const points = horizonEqPoints({
       width: canvas.width, height: canvas.height, crest: this._horizonCrest,
       songP: this._horizonCrest && this.durationMs > 0
         ? clamp01((this.tSec * 1000) / this.durationMs) : 0,
       bands: this._eqSmoothed, worldX, tSec: this.tSec,
       maxHeightFrac: EQ_MAX_HEIGHT_FRAC,
     });
+    const n = this.rangeNarrative;
+    if (n && !this.reducedMotion) {
+      const source = n.sources.midio, gain = source.activity * n.handoff.midio;
+      for (const p of points) p.y -= gain * 14 * Math.sin(p.x / 180 + this.tSec * 2.2 + source.pitch01 * 2);
+    }
+    return points;
   }
 
   _drawHorizonEQ(ctx, canvas, worldX, A, B, t) {
-    const color = ensureMinLightness(
+    let color = ensureMinLightness(
       this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)), .72);
+    if (this.rangeNarrative) color = this.lerpCache.get('#000000', color, this.rangeNarrative.materials);
     const eqMul = styleDials(this.visualStyle).horizonEqAlpha ?? 1;
     const pts = this._horizonEqPoints(canvas, worldX);
     if (this._landscapeGeometry) this._landscapeGeometry.horizon = pts;
-    const presence = clamp01(this.openingGain ?? 1) * eqMul;
+    const presence = clamp01(this.openingGain ?? 1) * eqMul * (this.rangeNarrative ? .35 + .65 * this.rangeNarrative.handoff.midio : 1);
     if (presence < 0.005) return;
     const activity = clamp01(this._eqSmoothed.reduce((sum, value) => sum + value, 0) / BAND_COUNT);
     const halo = presence * (.08 + .28 * activity) * (this.reducedFlash ? .42 : 1)
@@ -5695,6 +5717,24 @@ export class BiomeManager {
     const drawSet = (P, strips, alpha, heightMul, snowLine, targetCtx = ctx, targetCanvas = canvas) => {
       this._heightStrips = strips;
       this._alpineSideProfile = P;
+      if (this.rangeNarrative) {
+        // Technical fallback keeps the current phase on its own available
+        // geometry; it never replays the opening or restores companions.
+        const n = this.rangeNarrative;
+        const geom = this._crestPoints(targetCanvas, strips[layerKey], scrollX, yOff, layerKey, P.terrainEnergy ?? 1, heightMul);
+        const points = geom?.pts || [];
+        if (points.length) {
+          targetCtx.save(); targetCtx.globalAlpha = alpha;
+          targetCtx.beginPath(); points.forEach((p, i) => i ? targetCtx.lineTo(p.x, p.y) : targetCtx.moveTo(p.x, p.y));
+          targetCtx.lineTo(points.at(-1).x, targetCanvas.height); targetCtx.lineTo(points[0].x, targetCanvas.height); targetCtx.closePath();
+          targetCtx.fillStyle = this.lerpCache.get(this._airColor, tint, n.relief); targetCtx.fill();
+          targetCtx.beginPath(); points.forEach((p, i) => i ? targetCtx.lineTo(p.x, p.y) : targetCtx.moveTo(p.x, p.y));
+          targetCtx.strokeStyle = n.materials < .5 ? '#000000' : tint;
+          targetCtx.lineWidth = 1.3; targetCtx.globalAlpha = alpha * (1 - .65 * n.materials); targetCtx.stroke();
+          targetCtx.restore();
+        }
+        return;
+      }
       const offscreen = targetCtx !== ctx;
       if (this._pass('ridge-base', layerKey)) {
         targetCtx.globalAlpha = alpha;
@@ -8147,6 +8187,7 @@ export class BiomeManager {
     ctx.globalCompositeOperation = 'lighter';
     for (const e of entries) {
       if (!e || !e.active || !Number.isFinite(e.x)) continue;
+      ctx.globalAlpha = e.presence ?? 1;
       // Same ring the water ripples borrow from _drawLakeReflection, sampled
       // at this character's own horizontal position so their reflection
       // wobbles in sync with the water right under them, not in lockstep

@@ -255,8 +255,11 @@ export class SpaceRidge {
     };
   }
 
-  draw(ctx, canvas, color, tSec, reducedFlash = false, presentation = 1) {
+  draw(ctx, canvas, color, tSec, reducedFlash = false, presentation = 1, inheritedActivity = 0, reducedMotion = false, satellitePresence = 1) {
     const { pts, y0, maxH } = this._samples(canvas);
+    if (inheritedActivity > 0 && !reducedMotion) {
+      for (const p of pts) p.y -= 10 * inheritedActivity * Math.sin(p.x / 370 + tSec * .42);
+    }
 
     const flashSet = new Map();
     const nowMs = tSec * 1000;
@@ -365,12 +368,13 @@ export class SpaceRidge {
 
     // Tumbling polyhedron — same deep-sky band as the ridge, not the top
     // bezel. No world scroll (matches the ridge); rides the same tidal drift.
+    if (satellitePresence <= 0) { ctx.restore(); return; }
     const cx = canvas.width * 0.16;
     const cy = canvas.height * (BASELINE_FRAC - 0.04) + this._tidalPx * 0.5;
     const icoScale = Math.max(36, canvas.height * 0.055) * (1 + 0.15 * this._zGlobal);
     const wf = projectWireframe(ICO_VERTS, ICO_EDGES, this._rotX, this._rotY, icoScale);
     ctx.strokeStyle = color;
-    ctx.globalAlpha = paint * capFlashAlpha(0.055, reducedFlash);
+    ctx.globalAlpha = paint * capFlashAlpha(0.055, reducedFlash) * satellitePresence;
     ctx.lineWidth = 1.4;
     ctx.beginPath();
     for (const [i, j] of wf.edges) {

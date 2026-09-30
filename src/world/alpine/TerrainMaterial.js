@@ -86,6 +86,8 @@ export const SCENE_FRAG = /* glsl */`
   uniform float uAmbientScale;
   uniform int uDebugMask;
   uniform float uExposure;
+  uniform vec4 uNarrative; // relief, atmospheric depth, materials, feature materials
+  uniform float uNarrativeInk;
   // Material pack (MaterialPackage.js): data textures and scales.
   uniform sampler2D tRock;      uniform float sRock;
   uniform sampler2D tRockNear;  uniform float sRockNear;
@@ -156,6 +158,7 @@ export const SCENE_FRAG = /* glsl */`
     vec3 iceNormal = normalize(cross(dFdx(vRenderedWorld), dFdy(vRenderedWorld)));
     if (iceNormal.y < 0.0) iceNormal = -iceNormal;
     n = normalize(mix(n, iceNormal, ice.y));
+    vec3 geologicalNormal = n; // Ink must not inherit material normal-map detail.
     float dist = length(vRenderedWorld - uCameraPos);
     float slopeDeg = degrees(acos(clamp(n.y, 0.0, 1.0)));
     float curv = (s.b - 0.5) * 2.0;            // + concave gully, - convex ridge
@@ -307,8 +310,18 @@ export const SCENE_FRAG = /* glsl */`
     // distant terrain converges on the sky the 2D painter draws behind it.
     // Valley mist first (it sits in the near and middle air), then the
     // distance air over everything, mist included.
-    vec3 color = mix(tonemap(lit * uExposure), uMistColor, mistAmount(uCameraPos, vRenderedWorld));
-    color = mix(color, uAirColor, clamp(air, 0.0, 0.96));
+    vec3 neutral = vec3(.42) * (.45 + .55 * key);
+    vec3 physical = mix(neutral, tonemap(lit * uExposure), uNarrative.z);
+    if (water || ice.y > .01) physical = mix(neutral, physical, uNarrative.w);
+    vec3 color = mix(uSkyHorizon, physical, uNarrative.x);
+    color = mix(color, uMistColor, mistAmount(uCameraPos, vRenderedWorld) * uNarrative.y);
+    color = mix(color, uAirColor, clamp(air, 0.0, 0.96) * uNarrative.y);
+    // A narrow physical silhouette supplies the main opening ink. Sparse
+    // source-space hints are drawn separately against this same depth.
+    float facing = abs(dot(geologicalNormal, V));
+    float aa = max(.008, fwidth(facing));
+    float edge = 1.0 - smoothstep(.02 - aa, .02 + aa, facing);
+    color = mix(color, vec3(0.0), edge * uNarrativeInk);
     outColor = vec4(linearToSrgb(color), 1.0);
     if (uDiag > 0.5) outColor = vec4(1.0, 0.0, 1.0, 1.0);
   }
@@ -318,6 +331,13 @@ export const DEPTH_FRAG = /* glsl */`
   precision highp float;
   out vec4 outColor;
   void main() { outColor = vec4(0.0); }
+`;
+
+export const FEATURE_FRAG = /* glsl */`
+  precision highp float;
+  uniform float uNarrativeInk;
+  out vec4 outColor;
+  void main() { if (uNarrativeInk < .005) discard; outColor = vec4(0.0, 0.0, 0.0, uNarrativeInk); }
 `;
 
 /** Shared uniforms for the production terrain (values set per frame). */
@@ -349,6 +369,8 @@ export function sceneUniforms(THREE, base) {
     uTime: { value: 0 },
     uForestKeep: { value: 1 },
     uExposure: { value: 2.0 },
+    uNarrative: { value: new THREE.Vector4(1, 1, 1, 1) },
+    uNarrativeInk: { value: 0 },
     tRock: { value: null }, sRock: { value: 150 }, tRockNear: { value: null }, sRockNear: { value: 6 },
     tCanopy: { value: null }, sCanopy: { value: 70 }, tSnow: { value: null }, sSnow: { value: 60 },
     tSoil: { value: null }, sSoil: { value: 3 },
