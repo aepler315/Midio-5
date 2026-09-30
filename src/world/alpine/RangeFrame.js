@@ -1,3 +1,4 @@
+import { sampleHorizonRidge, sampleSpaceRidge } from './RidgeMotion.js';
 // Range v2: the one presentation adapter allowed to read the simulation
 // (plan §7.2). It assembles an immutable RangeFrame -- time, assigned
 // views, rail progress, viewports, light, music, support bars and emitters
@@ -95,12 +96,12 @@ export function rangeSectionMotif(section, previous, timeMs, seed = 0) {
  * standing section growth. Time is always heard time, never integrated.
  * Reduced flash belongs to lighting; reduced motion suppresses geometry. */
 export function rangeMusicState({ env = null, tSec = 0, kickAgeMs = Infinity, kickAmp = 0,
-  melody = null, structural01 = 0, motif = null, reducedMotion = false } = {}) {
+  melody = null, structural01 = 0, motif = null, reducedMotion = false, evaluatedKick01 = null } = {}) {
   const groove = unit(env?.groove), sustain = unit(env?.sustain);
   const scaleMul = Math.min(1.3, Math.max(1, env?.scaleMul ?? 1));
   const kickMul = unit(env?.kickMul);
   const gesture = unit(env?.gesture);
-  const kick01 = Number.isFinite(kickAgeMs) ? ridgeKickEnv(kickAgeMs) * unit(kickAmp) : 0;
+  const kick01 = evaluatedKick01 == null ? (Number.isFinite(kickAgeMs) ? ridgeKickEnv(kickAgeMs) * unit(kickAmp) : 0) : unit(evaluatedKick01);
   const motion = reducedMotion ? 0 : 1;
   const pan = Math.min(1, Math.max(-1, melody?.pan || 0));
   const pitch01 = unit(melody?.pitch01 ?? .5);
@@ -209,17 +210,33 @@ export function buildRangeFrame({
   // musical channels without turning reduced-flash into reduced-motion.
   const sampled = sampleWorldMusic({ nowMs: timeMs, energyCurves: mgr.energyCurves,
     rhythm: mgr.worldRhythm, section, response: mgr.world?.response });
+  const ridgeSample = mgr.ridgeMusicSession?.sample(timeMs);
+  if (ridgeSample) {
+    sampled.energy = ridgeSample.pressureEnergy01;
+    sampled.bass = ridgeSample.bassPressure01;
+    sampled.accent = ridgeSample.rhythmAccent01;
+  }
   const env = ridgeEnvelope({ energy: sampled.energy, bass: sampled.bass, accent: sampled.accent,
     reveal: sampled.reveal, lift: boundaryLift01(section, prior) });
   const motif = rangeSectionMotif(section, prior, timeMs, sim.songSeed ?? 0);
   const music = rangeMusicState({
-    env, tSec: mgr.tSec || 0, kickAgeMs: timeMs - (mgr._danceKickMs ?? -Infinity), kickAmp: mgr._danceKickAmp || 0,
-    melody: narrative ? { activity: narrative.sources.midio.pitchActivity,
+    env, tSec: timeMs / 1000, evaluatedKick01: ridgeSample?.kick01, kickAgeMs: timeMs - (mgr._danceKickMs ?? -Infinity), kickAmp: mgr._danceKickAmp || 0,
+    melody: ridgeSample ? { activity: ridgeSample.sources.midio.pitchActivity, pitch01: ridgeSample.sources.midio.pitch01 } : narrative ? { activity: narrative.sources.midio.pitchActivity,
       pitch01: narrative.sources.midio.pitch01 } : sampleRangeMelody(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
     structural01: section?.provenance === 'detected'
       ? unit(section.relEnergy01) * unit((timeMs - section.startMs) / 4000) : 0,
     reducedMotion, motif,
   });
+  music.activity01 = ridgeSample?.activity01 ?? sampled.energy;
+  const ridgeViewport = { width: sim.stageW || 1280, height: sim.stageH || 720 };
+  const ridges = mgr.ridgeMusicSession && mgr.spaceRidge ? {
+    stateKey: mgr.ridgeMusicSession.stateKey,
+    dance: sampleHorizonRidge({ viewport: ridgeViewport, crest: mgr._horizonCrest,
+      songP: mgr.durationMs > 0 ? unit(timeMs / mgr.durationMs) : 0, worldX: pose.worldX,
+      heardTimeMs: timeMs, history: mgr.ridgeMusicSession, reducedMotion }),
+    space: sampleSpaceRidge({ viewport: ridgeViewport, seededGeometry: mgr.spaceRidge,
+      heardTimeMs: timeMs, history: mgr.ridgeMusicSession, reducedMotion }),
+  } : null;
   // Support curve exactly as the ground painter receives it (render-only
   // ripple/groove/quake included); physics heightAt() is not consulted.
   const gf = mgr.groundField;
@@ -243,7 +260,7 @@ export function buildRangeFrame({
     forcedCandidate: !!forcedView?.forcedCandidate,
     progress01, glacier, qualityLevel: sim.perf?.level ?? 0, reducedFlash, reducedMotion,
     scenicViewport, groundViewport,
-    light: lightState, music, narrative, groundBars, emitters,
+    light: lightState, music, ridges, narrative, groundBars, emitters,
     waterHits: recentConductorHits(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
     // World anchoring for fixed-ground dressing (rock stage, pools).
     worldX: pose.worldX, originX: pose.midioX,

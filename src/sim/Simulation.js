@@ -53,6 +53,7 @@ export class Simulation {
     residency = null,
     chapterState = null,
     rangeListening = true,
+    ridgeMusicSession = null,
   } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
@@ -125,6 +126,8 @@ export class Simulation {
     this.flood = new FloodDirector();
     this.biomes = new BiomeManager({
       conductor, energyCurves, durationMs: conductor.durationMs,
+      ridgeMusicSession,
+      ridgeCasting: this.casting, ridgeCalmCues: conductorCues?.liveCues,
       canvasWidth, canvasHeight, groundY: this.stageAnchor.groundY, songSeed,
       groundField: this.groundField,
       fire: this.fire,

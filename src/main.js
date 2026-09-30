@@ -1,3 +1,4 @@
+import { ensureRidgeMusicSession, upgradeRidgeMusicSession } from './world/RidgeMotionHistory.js';
 // Bootstrap: file loading UI, audio-clock-driven game loop (spec §6.1).
 import { Conductor } from './core/Conductor.js';
 import { advanceFixedStepClock } from './core/FixedStepClock.js';
@@ -1762,6 +1763,8 @@ function startTimeline(timelineData, extra = {}) {
   // idle -> about-to-freeze transition never fires and the song never
   // completes -- the engine would just run forever.
   timelineData.durationMs = resolveDurationMs(timelineData.timeline, timelineData.durationMs);
+  timelineData.ridgeResponse ??= getWorld(timelineData.worldId || lastWorldId || DEFAULT_WORLD_ID)?.response;
+  ensureRidgeMusicSession(timelineData);
   lastTimelineData = timelineData;
   // Keep lastAudioBuffer across replays (same song, new/same seed). Loaders
   // that switch song type clear it themselves — wiping it here made
@@ -1795,6 +1798,7 @@ function startTimeline(timelineData, extra = {}) {
       rangeListening,
       rangeNarrative: timelineData.rangeNarrative || null,
       energyCurves: timelineData.energyCurves || null,
+      ridgeMusicSession: timelineData.ridgeMusicSession,
       // Logical stage always 1280×720 — canvas buffer may be 4K.
       canvasWidth: STAGE_W,
       canvasHeight: STAGE_H,
@@ -2039,6 +2043,7 @@ function startTimeline(timelineData, extra = {}) {
     // The load generation this simulation belongs to; evidence records it
     // so a late response from an older load can be told apart.
     get generation() { return loadGen; },
+    get ridgeStateKey() { return lastTimelineData?.ridgeMusicSession?.stateKey ?? null; },
     // Range v2: which renderer the Range uses and why, and a promise that
     // settles once the song's scenic views are prepared or have failed
     // (evidence/export wait on it; playback never does).
@@ -2563,6 +2568,9 @@ async function loadAudioFiles(files) {
     const wholeSong = fullAnalysis
       ? fullAnalysis.then((full) => {
         if (isStale()) return null;
+        upgradeRidgeMusicSession(opened, full,
+          running && sim && lastTimelineData === opened && !bulkExportArmed ? sim.heardTimeMs : null,
+          `load-${myGen}:final`);
         adoptFullAnalysis(opened, full);
         if (fullAnalysisPending === wholeSong) fullAnalysisPending = null;
         adoptFullAnalysisLive(opened);

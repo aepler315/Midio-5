@@ -1,3 +1,4 @@
+import { RidgeMotionHistory, createRidgeMusicSampler } from './RidgeMotionHistory.js';
 import { resolveLandscapePresentation } from './LandscapePresentation.js';
 import { identityAllows } from './WorldIdentity.js';
 // Orchestrates the 8-layer parallax contract (spec §4.1.1), biome
@@ -12,6 +13,7 @@ import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
 import { WORLD_SIGNATURES, WORLD_RENDERERS } from './WorldRegistry.js';
 import { sampleWorldMusic } from './WorldMusic.js';
 import { visualNow } from '../core/ChoreoClock.js';
+import { sampleHorizonRidge } from './alpine/RidgeMotion.js';
 import { VisualMusicHistory } from './VisualMusicHistory.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { travelSeam, TRAVEL_FEATHER, TRAVEL_BANDS } from './TravelSeam.js';
@@ -225,8 +227,6 @@ const BAND_COUNT = 7;
  * meter, so a 3/4 track is read in three and a drift-aware grid's odd
  * window can't skew the answer.
  */
-const EQ_ATTACK_SEC = 0.08;
-const EQ_RELEASE_SEC = 0.6;
 const EQ_MAX_HEIGHT_FRAC = 0.4; // never exceed 40% of screen height, however excited the section is
 // Width of the spectrum massif when it stands on a real summit
 // (HorizonRidge.massifCrest), against 340 px for the seven EQ columns.
@@ -428,8 +428,10 @@ export { travelSeam };
 let BIOME_MANAGER_SERIAL = 0;
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null, songTerrain = null, residency = null, chapterState = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null, songTerrain = null, residency = null, chapterState = null, ridgeMusicSession = null, ridgeCasting, ridgeCalmCues }) {
     this.conductor = conductor;
+    this.ridgeMusicSession = ridgeMusicSession || createRidgeMusicSampler({ primary: new RidgeMotionHistory({ energyCurves,
+      timeline: conductor.timeline, durationMs, casting: ridgeCasting, conductorCues: ridgeCalmCues, response: getWorld(worldId || DEFAULT_WORLD_ID)?.response }) });
     this._crestBeatClock = new CrestBeatClock(conductor.barGrid);
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
@@ -2290,10 +2292,10 @@ export class BiomeManager {
 
     // Horizon EQ (follow-up item 2): fast attack so hits register, slow
     // release so it breathes instead of flickering -- excited, never noisy.
+    const ridgeMusic = this.ridgeMusicSession?.sample(nowMs);
     for (let b = 0; b < BAND_COUNT; b++) {
       const raw = energyCurves ? clamp01(energyCurves.sample(b, nowMs)) : 0;
-      const tau = raw > this._eqSmoothed[b] ? EQ_ATTACK_SEC : EQ_RELEASE_SEC;
-      this._eqSmoothed[b] += (1 - Math.exp(-dtSec / tau)) * (raw - this._eqSmoothed[b]);
+      this._eqSmoothed[b] = ridgeMusic?.bands[b] ?? raw;
       this._massifEqSmoothed[b] = massifEqStep(this._massifEqSmoothed[b], raw, dtSec);
     }
 
@@ -4535,6 +4537,8 @@ export class BiomeManager {
     if (fx.weaver) this.weaver.update(nowMs, dtSec, weaverFullness);
     // Reduced flash keeps the slow tumble and drops the beat hitch.
     const kickTau = this.reducedFlash ? -1 : nowMs - this._danceKickMs;
+    this.spaceRidge.history = this.ridgeMusicSession;
+    this.spaceRidge.reducedMotion = this.reducedMotion;
     if (fx.spaceRidge) this.spaceRidge.update(nowMs, dtSec, this._eqSmoothed, this.calmLevel, kickTau);
     if (fx.murmuration) this.murmuration.update(nowMs, dtSec, energyCurves, calmLevel, wind);
     return fx;
@@ -5245,19 +5249,11 @@ export class BiomeManager {
    * the crest. A contained halo and a bright crest reveal that motion.
    */
   _horizonEqPoints(canvas, worldX) {
-    const points = horizonEqPoints({
-      width: canvas.width, height: canvas.height, crest: this._horizonCrest,
-      songP: this._horizonCrest && this.durationMs > 0
-        ? clamp01((this.tSec * 1000) / this.durationMs) : 0,
-      bands: this._eqSmoothed, worldX, tSec: this.tSec,
-      maxHeightFrac: EQ_MAX_HEIGHT_FRAC,
-    });
-    const n = this.rangeNarrative;
-    if (n && !this.reducedMotion) {
-      const source = n.sources.midio, gain = source.activity;
-      for (const p of points) p.y -= gain * 14 * Math.sin(p.x / 180 + this.tSec * 2.2 + source.pitch01 * 2);
-    }
-    return points;
+    this.danceRidgeSample = sampleHorizonRidge({ viewport: canvas, crest: this._horizonCrest,
+      songP: this._horizonCrest && this.durationMs > 0 ? clamp01(this.tSec * 1000 / this.durationMs) : 0,
+      worldX, heardTimeMs: this.tSec * 1000, history: this.ridgeMusicSession,
+      tuning: { maxHeightFrac: EQ_MAX_HEIGHT_FRAC }, reducedMotion: this.reducedMotion });
+    return this.danceRidgeSample.points;
   }
 
   _drawHorizonEQ(ctx, canvas, worldX, A, B, t) {
@@ -5826,6 +5822,12 @@ export class BiomeManager {
       reducedFlash: this.reducedFlash,
       response: this.world?.response,
     });
+    const canonical = this.ridgeMusicSession?.sample(nowMs);
+    if (canonical) {
+      music.energy = canonical.pressureEnergy01;
+      music.bass = canonical.bassPressure01;
+      music.accent = canonical.rhythmAccent01 * (this.reducedFlash ? .25 : 1);
+    }
     const env = ridgeEnvelope({
       energy: music.energy,
       bass: music.bass,
