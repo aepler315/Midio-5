@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { SpaceRidge } from '../src/world/SpaceRidge.js';
 import { BiomeManager } from '../src/world/BiomeManager.js';
 import { ridgeDepth, terrainScrollPx } from '../src/world/terrain/ProfileTravel.js';
 import { CodaDirector } from '../src/sim/CodaDirector.js';
@@ -55,8 +56,8 @@ function manager(overrides = {}) {
     '_drawTerrainFooting', '_drawFlood', '_drawForegroundSwell', '_drawTransitionOverlays',
   ]) mgr[name] = noop;
   mgr._moonPhase01 = () => 0.5;
-  mgr.spaceRidge = { draw: noop, tidalOffsetPx: () => 0,
-    corridor: () => () => ({ top: -Infinity, bottom: -Infinity }) };
+  mgr.spaceRidge = Object.assign(new SpaceRidge(1), { draw: noop,
+    corridor: () => () => ({ top: -Infinity, bottom: -Infinity }) });
   mgr.lightning = { draw: noop };
   mgr.lightRig = { draw: noop };
   return mgr;

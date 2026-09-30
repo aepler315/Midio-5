@@ -331,6 +331,14 @@ export class Renderer {
       },
     };
 
+    // Record the exact future ground CTM, including glacier support offset,
+    // before the immutable scenic frame is assembled.
+    ctx.save();
+    groundView.apply();
+    const gt = ctx.getTransform();
+    groundView.transform = [gt.a, gt.b, gt.c, gt.d, gt.e, gt.f];
+    ctx.restore();
+
     // Range v2: hand the presentation this frame's inputs and viewports
     // (logical vs backing sizes, overscan, the Canvas transform in effect).
     if (biomeManager && this.rangePresentation?.enabled) {
@@ -344,7 +352,8 @@ export class Renderer {
           pixelRatio: typeof devicePixelRatio === 'number' ? devicePixelRatio : 1 }),
         groundViewport: viewportState({ logicalWidth: groundStage.width, logicalHeight: groundStage.height,
           backingWidth: Math.round(groundStage.width * sxFixed), backingHeight: Math.round(groundStage.height * syFixed),
-          overscanPx: SHAKE_MARGIN_PX, nominalWidth: nominalW, nominalHeight: nominalH }),
+          overscanPx: SHAKE_MARGIN_PX, nominalWidth: nominalW, nominalHeight: nominalH,
+          transform: groundView.transform, pixelRatio: typeof devicePixelRatio === 'number' ? devicePixelRatio : 1 }),
       });
     } else if (biomeManager) {
       biomeManager.rangePresentation = null;

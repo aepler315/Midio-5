@@ -97,3 +97,13 @@ export function sampleSpaceRidge({ viewport, seededGeometry, heardTimeMs = 0, hi
   return Object.freeze({ points: reducedMotion ? neutralPoints : frozenPoints(clean(evaluate(heardTimeMs))), neutralPoints,
     y0, maxH, boundPx, ...measured(metricAt, heardTimeMs, reducedMotion) });
 }
+
+/** Samples already carry fixed-source, causal trailing measurements. */
+export function sampleRidgeRelationship({ space, dance, nominalViewport, moonVisibility = 1, reducedMotion = false }) {
+  if (reducedMotion) return { dxPx: 0, dyPx: 0 };
+  const q = bounded((space?.displacement01 || 0) - (dance?.displacement01 || 0));
+  const v = bounded((space?.velocity01 || 0) - (dance?.velocity01 || 0));
+  const scale = (nominalViewport?.height || 720) / 720 * clamp01(moonVisibility);
+  const dx = 2 * v, dy = 3 * q, bound = Math.min(1, 6 / (Math.hypot(dx, dy) || 1));
+  return { dxPx: dx * bound * scale, dyPx: dy * bound * scale };
+}

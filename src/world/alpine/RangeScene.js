@@ -500,14 +500,13 @@ export class RangeScene {
     // Unproject the celestial's stage position into a world direction.
     const ndcX = c.xFrac * 2 - 1, ndcY = 1 - c.yFrac * 2;
     const dir = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(this.camera).sub(this.camera.position).normalize();
-    if (dir.y < 0.05) dir.y = 0.05;
     u.uLightDir.value.copy(dir.normalize());
     const night = frame.light.night01;
-    const strength = (c.body === 'sun' ? 1.6 : 0.55) * Math.max(0.15, c.intensity) * (0.35 + 0.65 * Math.min(1, c.altitude01 * 3));
+    const strength = c.body ? c.intensity : 0;
     hexToLinear(THREE, c.colorHex, u.uLightColor.value).multiplyScalar(strength);
     if (frame.light.sky) {
-      hexToLinear(THREE, frame.light.sky.top, u.uSkyZenith.value).multiplyScalar(0.9);
-      hexToLinear(THREE, frame.light.sky.horizon, u.uSkyHorizon.value).multiplyScalar(0.9);
+      hexToLinear(THREE, frame.light.sky.top, u.uSkyZenith.value).multiplyScalar(0.9 * (frame.light.ambientMultiplier ?? 1));
+      hexToLinear(THREE, frame.light.sky.horizon, u.uSkyHorizon.value).multiplyScalar(0.9 * (frame.light.ambientMultiplier ?? 1));
       hexToLinear(THREE, frame.light.sky.air || frame.light.sky.horizon, u.uAirColor.value);
     }
     if (frame.motif) {
@@ -613,8 +612,11 @@ export class RangeScene {
     // The scene's key light, re-expressed for the stage: from behind and
     // above, on the celestial's side of the frame.
     const THREE = this.THREE;
-    const c = frame.light.celestial;
-    const lightDir = new THREE.Vector3((0.5 - c.xFrac) * 1.4, 0.55 + 0.6 * c.altitude01, -0.45).normalize();
+    const key = frame.light.ground;
+    // Stage normals use +Y upward; the recorded ground anchor is Canvas
+    // +Y downward. Keep the existing shallow depth/rock calibration.
+    const lightDir = new THREE.Vector3((key.x - vp.logicalWidth * .5) / vp.logicalHeight,
+      (vp.logicalHeight - key.y) / vp.logicalHeight, -0.45).normalize();
     p.stageGL.update(stage, { width: vp.logicalWidth, height: vp.logicalHeight, frame, lightDir,
       skyZenith: u.uSkyZenith.value, skyHorizon: u.uSkyHorizon.value });
     // The celestial key, tempered for up-facing slab tops (see RockStageGL's

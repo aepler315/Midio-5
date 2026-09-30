@@ -10,7 +10,9 @@ import { cameraPoseAt, focalPx, sceneProgressAt, SCENE_PREVIEW_PROGRESS } from '
 import { sampleWorldMusic, boundaryLift01 } from '../WorldMusic.js';
 import { ridgeEnvelope } from './Ridge.js';
 import { ridgeKickEnv } from '../MountainChoreo.js';
-import { dayNight, celestialYFracFor, celestialXFracFor } from '../DayNight.js';
+import { resolveCelestialState } from '../CelestialState.js';
+import { computeLight } from '../../render/LightField.js';
+import { convertLightBetween } from './LightSpace.js';
 import { recentConductorHits } from './GroundResponse.js';
 import { glacierStateAt } from './GlacierField.js';
 import { profileTravelPx } from '../terrain/ProfileTravel.js';
@@ -192,23 +194,23 @@ export function buildRangeFrame({
   const totalTravel = durationSec > 0 ? profileTravelPx(durationSec, mgr.energyCurves, false, mgr.world?.response) : 0;
   const glacier = glacierStateAt({ timeMs, durationMs: mgr.terrainPreview ? 0 : mgr.durationMs,
     progress01: totalTravel > 0 ? profileTravelPx(timeMs / 1000, mgr.energyCurves, false, mgr.world?.response) / totalTravel : undefined });
-  const dn = dayNight(timeMs, mgr._dayNightCycleMs);
-  const sunUp = dn.sunAlt > 0.001;
+  // Production always resolves before beginScenic; a pure fallback supports
+  // standalone frame consumers without a BiomeManager paint pass.
+  const state = mgr.celestialState || resolveCelestialState({ timeMs, cycleMs: mgr._dayNightCycleMs,
+    viewport: { width: scenicViewport?.logicalWidth || 1280, height: scenicViewport?.logicalHeight || 720 },
+    approach: { progress01: mgr._progress || 0 }, reducedMotion });
   const A = mgr._profile(blend.from), B = mgr._profile(blend.to);
   const t = blend.t ?? 1;
-  const light = mgr.light || null;
+  const light = mgr._scenicLight || computeLight({ canvasWidth: scenicViewport?.logicalWidth || 1280,
+    canvasHeight: scenicViewport?.logicalHeight || 720, celestialState: state });
+  const active = state[state.activeBody] || state.sun;
   const lightState = {
-    space: 'scenic-stage logical px (the zoomed transform); celestial fractions of the scenic stage',
-    celestial: {
-      body: sunUp ? 'sun' : 'moon',
-      xFrac: celestialXFracFor(sunUp ? dn.sunAz01 : dn.moonAz01),
-      yFrac: celestialYFracFor(sunUp ? dn.sunAlt : dn.moonAlt),
-      altitude01: sunUp ? dn.sunAlt : dn.moonAlt,
-      colorHex: light?.colorHex ?? '#ffffff',
-      intensity: light?.intensity ?? 1,
-    },
-    night01: dn.night || 0, dawn01: dn.dawnAlpha || 0, dusk01: dn.duskAlpha || 0,
-    sky: A && B ? rangeSkyState(mgr, A, B, t, dn.night || 0, narrative) : null,
+    space: 'scenic-stage logical px; ground anchor converted through recorded view transforms',
+    state, celestial: { ...active, body: state.activeBody, intensity: light.intensity },
+    ground: mgr._groundLight || convertLightBetween(light, scenicViewport?.transform, groundViewport?.transform),
+    ambientMultiplier: state.ambientMultiplier,
+    night01: state.night01, dawn01: state.dawn01 || 0, dusk01: state.dusk01 || 0,
+    sky: A && B ? rangeSkyState(mgr, A, B, t, state.night01, narrative) : null,
   };
   const section = mgr.sections?.[mgr._lastSectionIdx];
   const prior = mgr.sections?.[mgr._lastSectionIdx - 1];
@@ -234,14 +236,14 @@ export function buildRangeFrame({
     reducedMotion, motif, activity01: ridgeSample?.activity01 ?? sampled.energy,
   });
   const ridgeViewport = { width: sim.stageW || 1280, height: sim.stageH || 720 };
-  const ridges = mgr.ridgeMusicSession && mgr.spaceRidge ? {
+  const ridges = mgr._frameRidges || (mgr.ridgeMusicSession && mgr.spaceRidge ? {
     stateKey: mgr.ridgeMusicSession.stateKey,
     dance: sampleHorizonRidge({ viewport: ridgeViewport, crest: mgr._horizonCrest,
       songP: mgr.durationMs > 0 ? unit(timeMs / mgr.durationMs) : 0, worldX: pose.worldX,
       heardTimeMs: timeMs, history: mgr.ridgeMusicSession, tuning: mgr._horizonTuning, reducedMotion }),
     space: sampleSpaceRidge({ viewport: ridgeViewport, seededGeometry: mgr.spaceRidge,
       heardTimeMs: timeMs, history: mgr.ridgeMusicSession, reducedMotion }),
-  } : null;
+  } : null);
   // Support curve exactly as the ground painter receives it (render-only
   // ripple/groove/quake included); physics heightAt() is not consulted.
   const gf = mgr.groundField;

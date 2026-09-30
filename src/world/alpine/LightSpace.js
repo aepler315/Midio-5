@@ -1,5 +1,7 @@
 /** Scenic logical → device → ground logical. Intensity and color stay put. */
 export function convertLightBetween(light, fromMatrix, toMatrix) {
+  fromMatrix = affineMatrix(fromMatrix);
+  toMatrix = affineMatrix(toMatrix);
   if (!light || !fromMatrix?.transformPoint || !toMatrix?.inverse) return light;
   const inverse = toMatrix.inverse();
   if (!inverse?.transformPoint) return light;
@@ -21,5 +23,16 @@ export function convertLightBetween(light, fromMatrix, toMatrix) {
     dirX: dx / len,
     dirY: dy / len,
     space: 'ground',
+  };
+}
+
+// Viewport snapshots store numeric affine arrays, independent of DOMMatrix.
+function affineMatrix(m) {
+  if (!Array.isArray(m)) return m;
+  const [a,b,c,d,e,f] = m, det = a*d-b*c;
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return null;
+  return {
+    transformPoint: ({x,y}) => ({x:a*x+c*y+e,y:b*x+d*y+f}),
+    inverse: () => affineMatrix([d/det,-b/det,-c/det,a/det,(c*f-d*e)/det,(b*e-a*f)/det]),
   };
 }

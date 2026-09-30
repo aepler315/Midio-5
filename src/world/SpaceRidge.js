@@ -221,6 +221,11 @@ export class SpaceRidge {
    *  structure is deliberately too large/far to read as scrolling with the
    *  world; it moves in depth (see depthMul) and on the tidal drift only. */
   _samples(canvas, reducedMotion = this.reducedMotion) {
+    const frame = this.frameSample;
+    if (frame && frame.width === canvas.width && frame.height === canvas.height && frame.heardTimeMs === this._tSec * 1000 && frame.reducedMotion === !!reducedMotion) {
+      const s = frame.sample;
+      return { pts: s.points, y0: s.y0, maxH: s.maxH };
+    }
     if (this.history) {
       const s = sampleSpaceRidge({ viewport: canvas, seededGeometry: this, history: this.history,
         heardTimeMs: this._tSec * 1000, reducedMotion });

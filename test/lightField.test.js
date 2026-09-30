@@ -89,3 +89,9 @@ test('characterGlowLight carries hueDeg directly (no hex round-trip) plus a boun
   assert.equal(l.intensity, 0.5);
   assert.ok(l.radius > 0 && Number.isFinite(l.radius));
 });
+
+test('hidden shared celestial state cannot regain direct intensity from reduced flash', () => {
+  const light = computeLight({ canvasWidth: 1280, canvasHeight: 720, reducedFlash: true,
+    celestialState: { activeBody: null, sun: { xFrac: .08, yFrac: .6, directGain: 0 }, moon: { xFrac: .92, yFrac: .6, directGain: 0 } } });
+  assert.equal(light.intensity, 0);
+});

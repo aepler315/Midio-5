@@ -117,3 +117,16 @@ test('deformation is bounded, holds valleys still and is a pure function of time
   assert.equal(reduced.amplitudeM, m.amplitudeM, 'reduced flash is a lighting policy');
   assert.equal(sceneDeformation(null, 0, 0, 0, range), 0);
 });
+
+test('frame retains resolved approached celestial anchor and converts it through recorded ground transform', () => {
+  const sim=fakeSim();
+  sim.biomes.celestialState=Object.freeze({activeBody:'moon',sun:{visibility:0,directGain:0},moon:Object.freeze({xFrac:.7,yFrac:.08,altitude01:.9,visibility:1,directGain:.25,colorHex:'#ccddee',radiusFrac:.02}),night01:1,ambientMultiplier:.35});
+  sim.biomes._scenicLight={x:896,y:57.6,intensity:.2,colorHex:'#ccddee',dirX:0,dirY:1};
+  const scenic=viewportState({logicalWidth:1280,logicalHeight:720,transform:[1,0,0,1,-64,-64]});
+  const ground=viewportState({logicalWidth:1280,logicalHeight:720,transform:[2,0,0,2,-64,20]});
+  const frame=buildRangeFrame({frameId:1,sim,pose,scenicViewport:scenic,groundViewport:ground});
+  assert.equal(frame.light.state,sim.biomes.celestialState);
+  assert.equal(frame.light.celestial.xFrac,.7);assert.equal(frame.light.celestial.yFrac,.08);
+  assert.equal(frame.light.ambientMultiplier,.35);
+  assert.ok(Math.abs(frame.light.ground.x-448)<1e-9);assert.ok(Math.abs(frame.light.ground.y+13.2)<1e-9);
+});

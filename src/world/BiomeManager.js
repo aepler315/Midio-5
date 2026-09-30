@@ -13,7 +13,7 @@ import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
 import { WORLD_SIGNATURES, WORLD_RENDERERS } from './WorldRegistry.js';
 import { sampleWorldMusic } from './WorldMusic.js';
 import { visualNow } from '../core/ChoreoClock.js';
-import { DEFAULT_RIDGE_TUNING, sampleHorizonRidge } from './alpine/RidgeMotion.js';
+import { DEFAULT_RIDGE_TUNING, sampleHorizonRidge, sampleSpaceRidge, sampleRidgeRelationship } from './alpine/RidgeMotion.js';
 import { VisualMusicHistory } from './VisualMusicHistory.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { travelSeam, TRAVEL_FEATHER, TRAVEL_BANDS } from './TravelSeam.js';
@@ -64,7 +64,8 @@ import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Drama
 import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
 import { scanLine, dominantSymbol } from '../lyrics/LyricLexicon.js';
-import { celestialApproach } from './CelestialApproach.js';
+import { celestialApproach, approachScale } from './CelestialApproach.js';
+import { resolveCelestialState } from './CelestialState.js';
 import { snapCutsToReleases } from './BoundarySnap.js';
 import { applyConductorSchedule } from '../core/ConductorTrack.js';
 import { analyzeSongForm } from './SongForm.js';
@@ -85,7 +86,7 @@ import { CodaDirector } from '../sim/CodaDirector.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
 import { computeLight, groundGlowLights, CELESTIAL_DEFAULT_XFRAC } from '../render/LightField.js';
-import { clamp, clamp01, smoothstep, mulberry32, hashSeed, lerpHue, lerp } from '../utils/math.js';
+import { clamp01, smoothstep, mulberry32, hashSeed, lerpHue, lerp } from '../utils/math.js';
 import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
 import { spectralShiftDeg, easeSpectralShift } from '../render/spectral.js';
 import { Role } from '../core/NoteEvent.js';
@@ -2432,20 +2433,44 @@ export class BiomeManager {
     // only `.hazeWarm` from the old day-arc survives here.
     const arc = dayArc(this._progress);
 
-    // Movement VII: the celestial body doubles as a light -- every
-    // consumer downstream this frame (layers, characters, obstacles)
-    // reads the same `this.light` rather than re-deriving its position.
+    // The same causal ridge samples own paint geometry and the moon's
+    // bounded relationship. Resolve before sky and before beginScenic.
+    const heardTimeMs = this.tSec * 1000;
+    this._frameRidges = null;
+    this.celestialState = null;
+    if (this.world?.kind === 'alpine') {
+      this.danceRidgeSample = sampleHorizonRidge({ viewport: canvas, crest: this._horizonCrest,
+        songP: this.durationMs > 0 ? clamp01(heardTimeMs / this.durationMs) : 0,
+        worldX, heardTimeMs, history: this.ridgeMusicSession, tuning: this._horizonTuning, reducedMotion: this.reducedMotion });
+      const space = sampleSpaceRidge({ viewport: canvas, seededGeometry: this.spaceRidge,
+        heardTimeMs, history: this.ridgeMusicSession, reducedMotion: this.reducedMotion });
+      this.spaceRidge.frameSample = { sample: space, width: canvas.width, height: canvas.height, heardTimeMs, reducedMotion: !!this.reducedMotion };
+      this._frameRidges = { stateKey: this.ridgeMusicSession?.stateKey, dance: this.danceRidgeSample, space };
+      const moonOffset = sampleRidgeRelationship({ space, dance: this.danceRidgeSample,
+        nominalViewport: canvas, moonVisibility: horizonFade(dn.moonAlt), reducedMotion: this.reducedMotion });
+      const grow = approachScale(this._progress || 0);
+      // A requested v2 scene keeps this radius policy even while its quality
+      // fallback paints, so late preparation cannot move/change the anchor.
+      const compact = !!this.rangePresentation?.enabled && !this.terrainPreview;
+      this.celestialState = resolveCelestialState({ timeMs: heardTimeMs, cycleMs: this._dayNightCycleMs,
+        viewport: canvas, approach: { progress01: this._progress || 0 }, moonOffset,
+        reducedMotion: this.reducedMotion, sunColor: this.currentHaloColor(),
+        sunRadiusPx: Math.max(A.celestial.radius || 0, B.celestial.radius || 0),
+        moonRadiusPx: (compact ? rangeV2MoonRadius(canvas.width, grow) : rangeMoonRadius(canvas.height, grow)) / grow,
+        radiusCapPx: compact ? rangeV2MoonRadius(canvas.width, grow) : Infinity });
+    }
     this.light = computeLight({
       canvasWidth: canvas.width, canvasHeight: canvas.height,
-      celestialYFrac, celestialXFrac, haloColorHex: this.currentHaloColor(),
+      celestialYFrac, celestialXFrac, haloColorHex: this.currentHaloColor(), celestialState: this.celestialState,
       budget: this._lightBudget, unravel: this.unravel,
-      dayArcAlpha: dn.dawnAlpha + dn.duskAlpha,
-      reducedFlash: this.reducedFlash,
+      dayArcAlpha: dn.dawnAlpha + dn.duskAlpha, reducedFlash: this.reducedFlash,
     });
     this._frameWorldX = worldX;
     this._night01 = dn.night || 0;
     this._scenicLight = this.light;
     this._scenicTransform = ctx.getTransform ? ctx.getTransform() : null;
+    this._groundLight = convertLightBetween(this._scenicLight, this._scenicTransform, groundView?.transform);
+    if (this.celestialState) this._castShadowStrength *= this.celestialState[this.celestialState.activeBody]?.visibility || 0;
     this._rangePresentation = this.world?.kind === 'alpine'
       ? resolveRangePresentation({
         night01: this._night01,
@@ -2590,28 +2615,28 @@ export class BiomeManager {
     // over their last stretch of altitude rather than popping at the
     // horizon, and both rise from and set into the sea horizon.
     this._moonDisc = null;
-    if (sunUp) withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => this._drawCelestial(c, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt), celestialXFrac));
+    if (sunUp) withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => this._drawCelestial(c, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt), celestialXFrac, this.celestialState?.sun));
     if (dn.moonAlt > 0.001) withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => {
       // Where the sun really is -- below the horizon all night, which is the
       // whole point: it's what makes the moon read as lit from underneath.
       const sun = sunScreenFrac(cyclePhase01(this.tSec * 1000, this._dayNightCycleMs));
       this._drawMoon(
         c, canvas, celestialYFracFor(dn.moonAlt), horizonFade(dn.moonAlt),
-        0.22 * this.spaceRidge.tidalOffsetPx(canvas.height),
+        0,
         celestialXFracFor(dn.moonAz01),
-        sun.xFrac, sun.yFrac, this._moonPhase01(),
+        sun.xFrac, sun.yFrac, this._moonPhase01(), this.celestialState?.moon,
       );
     });
     // Range v2: sparse, low-contrast cloud banks (two wisps crossing the
     // moon), lit on the side facing the celestial, clear of the SpaceRidge.
     if (this._rangeV2Active && this._pass('range-clouds')) {
-      const halo = hexToRgb(this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)));
+      const halo = hexToRgb(this._scenicLight.colorHex);
       const top = hexToRgb(this._rotated(this.lerpCache.get(A.sky[0], B.sky[0], t)));
       const moon = this._moonDisc;
       withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => drawRangeClouds(c, rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, moon }), {
         dark: [Math.round(top.r * 0.8 + 18), Math.round(top.g * 0.8 + 22), Math.round(top.b * 0.8 + 30)],
         lit: [Math.round(halo.r * 0.7 + 60), Math.round(halo.g * 0.7 + 50), Math.round(halo.b * 0.7 + 45)],
-        light: moon || { x: canvas.width * celestialXFrac, y: canvas.height * celestialYFrac },
+        light: this._scenicLight, directGain: this._scenicLight.intensity,
         allowPoint: this._rangeSky?.allowPoint || null,
       }));
     }
@@ -2693,7 +2718,7 @@ export class BiomeManager {
     const groundCanvas = groundView ? groundView.stage : canvas;
     if (groundView) groundView.apply();
     if (this.world?.kind === 'alpine' && this._scenicLight && this._scenicTransform && ctx.getTransform) {
-      this.light = convertLightBetween(this._scenicLight, this._scenicTransform, ctx.getTransform());
+      this.light = this._groundLight || convertLightBetween(this._scenicLight, this._scenicTransform, ctx.getTransform());
     }
     // Range v2: the rock stage on the rendered support curve replaces the
     // legacy ground fill, footing and ground materials; the ground's musical
@@ -4170,19 +4195,20 @@ export class BiomeManager {
     });
   }
 
-  _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22, alpha = 1, cxFrac = CELESTIAL_DEFAULT_XFRAC) {
+  _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22, alpha = 1, cxFrac = CELESTIAL_DEFAULT_XFRAC, resolved = null) {
     if (!identityAllows(this.world, 'celestialBodies')) return;
     // The body is closing over the length of the song: its arc climbs higher
     // above the sea and its disc grows as 1/distance, so the size
     // accelerates while the path barely seems to change. See
     // CelestialApproach.js for why that ratio is the whole effect -- and for
     // why nothing here pulls the body toward a point.
-    const app = this._celestialApproachAt(canvas, canvas.width * cxFrac, canvas.height * cyFrac);
+    const app = resolved ? { x: resolved.xFrac * canvas.width, y: resolved.yFrac * canvas.height, scale: resolved.scale }
+      : this._celestialApproachAt(canvas, canvas.width * cxFrac, canvas.height * cyFrac);
     const cx = app.x, cy = app.y;
     const grow = app.scale;
     // Range v2: the celestial is a secondary object (about 3.5% of the
     // frame width across, as in the reference), never a dominating disc.
-    const capR = this._rangeV2Active ? rangeV2MoonRadius(canvas.width, grow) : Infinity;
+    const capR = resolved ? resolved.radiusFrac * canvas.width : this._rangeV2Active ? rangeV2MoonRadius(canvas.width, grow) : Infinity;
     if (this._rangeV2Active && alpha > 0.02) {
       this._moonDisc = { x: cx, y: cy, R: Math.min(capR, Math.max(A.celestial.radius || 0, B.celestial.radius || 0) * grow) };
     }
@@ -4323,21 +4349,22 @@ export class BiomeManager {
    * is lit from below, which is exactly what it does in the sky.
    */
   _drawMoon(ctx, canvas, cyFrac, alpha, tidalOffsetPx = 0, cxFrac = CELESTIAL_DEFAULT_XFRAC,
-    sunXFrac = null, sunYFrac = null, phase01 = 0.5) {
+    sunXFrac = null, sunYFrac = null, phase01 = 0.5, resolved = null) {
     if (!identityAllows(this.world, 'celestialBodies')) return;
     if (alpha <= 0.02) return;
     // Same approach the sun is on (CelestialApproach.js): both bodies are
     // closing on the convergence point, so the moon grows through the night
     // exactly as the sun grows through the day and the two agree about how
     // far away the sky is.
-    const app = this._celestialApproachAt(
-      canvas, canvas.width * cxFrac, canvas.height * cyFrac + clamp(tidalOffsetPx, -6, 6),
-    );
+    // Explicit world-specific callers retain their authored orbit/approach.
+    void tidalOffsetPx;
+    const app = resolved ? { x: resolved.xFrac * canvas.width, y: resolved.yFrac * canvas.height, scale: resolved.scale }
+      : this._celestialApproachAt(canvas, canvas.width * cxFrac, canvas.height * cyFrac);
     const cx = app.x, cy = app.y;
     // Scales with the frame like every other sky element, instead of staying
     // a fixed 26px while a camera pull-back widens the stage around it.
     // Matches the old constant exactly at the nominal 720-tall stage.
-    const R = this.world?.kind === 'alpine'
+    const R = resolved ? resolved.radiusFrac * canvas.width : this.world?.kind === 'alpine'
       ? (this._rangeV2Active ? rangeV2MoonRadius(canvas.width, app.scale) : rangeMoonRadius(canvas.height, app.scale))
       : Math.max(14, canvas.height * 0.0361) * app.scale;
     this._moonDisc = { x: cx, y: cy, R };
@@ -4945,41 +4972,43 @@ export class BiomeManager {
     ctx.fillRect(0, horizonY, canvas.width, sheenH);
 
     if (phenomenaFull) {
-      // Celestial reflection path: sun by day, cooler moon path at night.
-      const rx = canvas.width * 0.78;
-      const glintH = (nearY - horizonY) * 0.98;
-      const shimmer = 5 * Math.sin(this.tSec * 1.1);
-      const glintCol = night > 0.45 ? this._rotated(MOON_HALO_COLOR) : cap;
-      const rGrad = ctx.createLinearGradient(rx, horizonY, rx, horizonY + glintH);
-      rGrad.addColorStop(0, `${glintCol}66`);
-      rGrad.addColorStop(0.25, `${glintCol}32`);
-      rGrad.addColorStop(0.65, `${glintCol}14`);
-      rGrad.addColorStop(1, `${glintCol}00`);
-      ctx.fillStyle = rGrad;
-      ctx.globalAlpha = (0.26 + 0.12 * night) * this.budget * reflectMul;
-      // Tapered column (wider at horizon, narrow toward near edge).
-      ctx.beginPath();
-      ctx.moveTo(rx - 10 + shimmer * 0.2, horizonY + glintH);
-      ctx.lineTo(rx - 48 + shimmer * 0.3, horizonY);
-      ctx.lineTo(rx + 48 + shimmer * 0.3, horizonY);
-      ctx.lineTo(rx + 10 + shimmer * 0.2, horizonY + glintH);
-      ctx.closePath();
-      ctx.fill();
-
-      // Secondary sparkle along the reflection path: soft dots only
-      // (1px-tall rects read as dashed glitch).
-      const sparkleN = 5;
-      ctx.fillStyle = glintCol;
-      for (let i = 0; i < sparkleN; i++) {
-        const u = (i + 0.5) / sparkleN;
-        const sy = horizonY + glintH * u;
-        const bob = Math.sin(this.tSec * 2.2 + i * 1.3) * 2;
-        ctx.globalAlpha = (0.08 + 0.10 * (1 - u)) * this.budget * (0.6 + 0.4 * bass);
+      if ((this._scenicLight?.intensity ?? 0) > 0) {
+        // Celestial reflection path: sun by day, cooler moon path at night.
+        const rx = this._scenicLight.x;
+        const glintH = (nearY - horizonY) * 0.98;
+        const shimmer = 5 * Math.sin(this.tSec * 1.1);
+        const glintCol = night > 0.45 ? this._rotated(MOON_HALO_COLOR) : cap;
+        const rGrad = ctx.createLinearGradient(rx, horizonY, rx, horizonY + glintH);
+        rGrad.addColorStop(0, `${glintCol}66`);
+        rGrad.addColorStop(0.25, `${glintCol}32`);
+        rGrad.addColorStop(0.65, `${glintCol}14`);
+        rGrad.addColorStop(1, `${glintCol}00`);
+        ctx.fillStyle = rGrad;
+        ctx.globalAlpha = (0.26 + 0.12 * night) * this.budget * reflectMul * this._scenicLight.intensity;
+        // Tapered column (wider at horizon, narrow toward near edge).
         ctx.beginPath();
-        ctx.arc(rx + bob, sy, 1.6 + 1.2 * (1 - u), 0, Math.PI * 2);
+        ctx.moveTo(rx - 10 + shimmer * 0.2, horizonY + glintH);
+        ctx.lineTo(rx - 48 + shimmer * 0.3, horizonY);
+        ctx.lineTo(rx + 48 + shimmer * 0.3, horizonY);
+        ctx.lineTo(rx + 10 + shimmer * 0.2, horizonY + glintH);
+        ctx.closePath();
         ctx.fill();
-      }
 
+        // Secondary sparkle along the reflection path: soft dots only
+        // (1px-tall rects read as dashed glitch).
+        const sparkleN = 5;
+        ctx.fillStyle = glintCol;
+        for (let i = 0; i < sparkleN; i++) {
+          const u = (i + 0.5) / sparkleN;
+          const sy = horizonY + glintH * u;
+          const bob = Math.sin(this.tSec * 2.2 + i * 1.3) * 2;
+          ctx.globalAlpha = (0.08 + 0.10 * (1 - u)) * this.budget * (0.6 + 0.4 * bass) * this._scenicLight.intensity;
+          ctx.beginPath();
+          ctx.arc(rx + bob, sy, 1.6 + 1.2 * (1 - u), 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+      }
       // Foam: soft flecks only.
       ctx.fillStyle = cap;
       for (let i = 0; i < 9; i++) {
@@ -5253,6 +5282,7 @@ export class BiomeManager {
    * the crest. A contained halo and a bright crest reveal that motion.
    */
   _horizonEqPoints(canvas, worldX) {
+    if (this._frameRidges && this._frameWorldX === worldX) return this._frameRidges.dance.points;
     this.danceRidgeSample = sampleHorizonRidge({ viewport: canvas, crest: this._horizonCrest,
       songP: this._horizonCrest && this.durationMs > 0 ? clamp01(this.tSec * 1000 / this.durationMs) : 0,
       worldX, heardTimeMs: this.tSec * 1000, history: this.ridgeMusicSession,
