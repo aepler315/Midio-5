@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { openSong, captureFrame } from './range-scene-smoke.mjs';
+import { flightSchedule, assertExportTime } from './lib/glacial-smoke-schedule.mjs';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, v, i, all) => {
   if (i % 2 === 0) pairs.push([v.replace(/^--/, ''), all[i + 1]]);
@@ -42,8 +43,26 @@ try {
       cameraM: pres.scene.camera.position.toArray() };
   });
   const frames = [];
-  for (const ms of (args.times || '12000,150000,159000,300000,345000').split(',').map(Number)) {
+  const motion = [];
+  let firstMotionPng = null, lastMotionPng = null;
+  const schedule = flightSchedule((args.times || '12000,150000,159000,300000,345000').split(',').map(Number), args.motion === '1');
+  const motionDir = path.join(out, 'motion');
+  if (args.motion === '1') await fs.mkdir(motionDir, { recursive: true });
+  for (const event of schedule) {
+    const ms = event.timeMs;
     const first = await captureFrame(page, ms);
+    assertExportTime(first.clock, ms);
+    if (event.type === 'motion') {
+      firstMotionPng ??= first.png; lastMotionPng = first.png;
+      const state = await page.evaluate(() => {
+        const pres = window.__SMW.sim.biomes.rangePresentation;
+        return { glacier: pres.frame.glacier, cameraM: pres.scene.camera.position.toArray() };
+      });
+      motion.push({ timeMs: ms, actualTimeMs: first.clock.timeMs, ...state });
+      await fs.writeFile(path.join(motionDir, `${String(event.index).padStart(4, '0')}.png`), Buffer.from(first.png, 'base64'));
+      if (event.index % 12 === 0) console.log(`motion ${event.index}/108`);
+      continue;
+    }
     const terrainFirst = await scenicCapture();
     const state = await page.evaluate(() => {
       const pres = window.__SMW.sim.biomes.rangePresentation;
@@ -55,6 +74,7 @@ try {
           cameraM: pres.scene.camera.position.toArray() })) };
     });
     const repeat = await captureFrame(page, ms);
+    assertExportTime(repeat.clock, ms);
     const terrainRepeat = await scenicCapture();
     const identical = repeat.png === first.png;
     const scenicIdentical = terrainFirst.png === terrainRepeat.png;
@@ -66,18 +86,11 @@ try {
     console.log(JSON.stringify({ timeMs: ms, identical, scenicIdentical, stateIdentical,
       active: first.range?.active, viewId: first.range?.viewId, glacier: state.glacier }));
   }
-  if (args.motion === '1') {
-    const dir = path.join(out, 'motion'); await fs.mkdir(dir, { recursive: true });
-    for (let i = 0; i < 108; i++) {
-      const frame = await captureFrame(page, 150000 + i * (1000 / 12));
-      await fs.writeFile(path.join(dir, `${String(i).padStart(4, '0')}.png`), Buffer.from(frame.png, 'base64'));
-      if (i % 12 === 0) console.log(`motion ${i}/108`);
-    }
-  }
-  const report = { softwareGL: true, errors, frames };
+  const motionChanged = !motion.length || firstMotionPng !== lastMotionPng;
+  const report = { softwareGL: true, errors, frames, motion, motionChanged };
   await fs.writeFile(path.join(out, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   await context.close();
-  if (errors.length || frames.some(f => !f.range?.active || f.range?.mode !== 'v2' || !f.scenicIdentical || !f.stateIdentical
+  if (!motionChanged || errors.length || frames.some(f => !f.range?.active || f.range?.mode !== 'v2' || !f.scenicIdentical || !f.stateIdentical
     || f.state.residency.overcommits > 0 || f.state.residency.liveBytes + f.state.residency.pendingBytes > f.state.residency.budgetBytes)) {
     throw new Error(`rendering failed: ${JSON.stringify(errors)}; inspect ${out}/report.json`);
   }
