@@ -26,7 +26,6 @@ test('detected 90 BPM and downbeat survive sparse kick timing', () => {
   const c = new Conductor(); c.load(data());
   const s = new Simulation(c, new ParamBus(), { bpm: 90, songSeed: 3, worldId: 'range' });
   for (const at of [0, 1000, 2000, 3000, 4000, 5000]) {
-    s.jump.noteKickTiming(at);
     s.syncSongBeat(at);
     assert.ok(Math.abs(s.beatAnchor.periodMs - 60000 / 90) < 1e-8);
     assert.ok(Math.abs(s.beatAnchor.anchorMs - 200) < 1e-8);

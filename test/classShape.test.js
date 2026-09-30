@@ -35,7 +35,9 @@ const GENERATED = new Set([path.join(SRC, 'vendor')]);
 function sourceFiles(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, entry.name);
-    if (entry.isDirectory()) { if (!GENERATED.has(p)) sourceFiles(p, out); }
+    // serve.test.js creates and removes these request fixtures concurrently.
+    // They are not application classes and may disappear during this scan.
+    if (entry.isDirectory()) { if (!GENERATED.has(p) && !entry.name.startsWith('server-test-')) sourceFiles(p, out); }
     else if (entry.name.endsWith('.js')) out.push(p);
   }
   return out;

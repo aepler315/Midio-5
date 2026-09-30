@@ -1,3 +1,4 @@
+import { resolveLandscapePresentation } from './LandscapePresentation.js';
 // Near-field foreground occluders: the one classic side-scroller depth cue
 // this game didn't have -- something large sweeping past IN FRONT of the
 // characters. L7 (the old drawForeground) was three blurred white ellipses
@@ -78,6 +79,7 @@ export function nearFieldForSector(songSeed, sectorIdx, biomeName, prevOccupied 
 
 export class NearField {
   constructor(songSeed, world = null) {
+    this.presentation = resolveLandscapePresentation(world);
     this.identity = world ? identityFor(world) : null;
     this.songSeed = songSeed;
     this._cache = new Map(); // sectorIdx -> descriptor|null
@@ -85,6 +87,7 @@ export class NearField {
   }
 
   _sector(idx, biomeName) {
+    if (!this.presentation.artificialNearProps && ['city', 'strip', 'foundry', 'nave'].includes(this.identity?.kind)) return null;
     if (!this._cache.has(idx)) {
       // A consecutive run of eligible sectors alternates occupied/empty.
       // Walk only to the first failed roll, without caching unseen geometry.

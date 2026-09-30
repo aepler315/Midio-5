@@ -53,15 +53,17 @@ test('WeatherDirector: sustained snowfall settles ground cover; other skies melt
 // The skid must move Midio's BODY, never the world->screen origin that
 // ground/obstacles/burrow anchor on -- folding it into midioX translated
 // the whole world with him and cancelled the visible slide.
-test('lerpState: midioX stays the pure origin, midioDrawX carries the interpolated skid', async () => {
+test('lerpState: stage anchor owns the world origin independently of deprecated actor coordinates', async () => {
   const { Simulation } = await import('../src/sim/Simulation.js');
   const stub = {
     prev: { worldX: 0, midioY: 540, slipX: 10, scaleX: 1, scaleY: 1, leanDeg: 0 },
     curr: { worldX: 2, midioY: 540, slipX: 20, scaleX: 1, scaleY: 1, leanDeg: 0 },
-    midio: { screenX: 220, slipX: 20 },
+    stageAnchor: { x: 220 },
+    midio: { screenX: 999, slipX: 20 },
     jump: { airborne: false },
   };
   const pose = Simulation.prototype.lerpState.call(stub, 0.5);
-  assert.equal(pose.midioX, 220, 'origin never slips');
+  assert.equal(pose.originX, 220, 'stage origin never slips or follows an actor');
+  assert.equal(pose.midioX, 220, 'deprecated origin alias remains compatible');
   assert.ok(Math.abs(pose.midioDrawX - 235) < 1e-9, 'his body slides by the lerped skid (15px)');
 });

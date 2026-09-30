@@ -39,11 +39,6 @@
       "count": 5
     }
   },
-  "src/render/Renderer.js": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
   "src/render/WebGLRenderer.js": {
     "no-unused-vars": {
       "count": 1
@@ -65,11 +60,6 @@
   "src/sim/BattleDirector.js": {
     "no-useless-assignment": {
       "count": 1
-    }
-  },
-  "src/sim/Simulation.js": {
-    "no-unused-vars": {
-      "count": 2
     }
   },
   "src/sim/SyncMonitor.js": {

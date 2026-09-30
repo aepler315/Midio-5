@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBackdropLayout, trioLayout, STAR_COUNT, NEBULA_COUNT } from '../src/ui/TitleBackdrop.js';
+import { buildBackdropLayout, STAR_COUNT, NEBULA_COUNT } from '../src/ui/TitleBackdrop.js';
 
 test('backdrop layout is deterministic for a given seed', () => {
   const a = buildBackdropLayout(1, 1280, 720);
@@ -16,7 +16,7 @@ test('different seeds produce different compositions', () => {
   assert.notDeepEqual(a.stars, b.stars, 'different seeds should scatter stars differently');
 });
 
-test('stars fill the entire stage, including behind the trio', () => {
+test('stars fill the entire title stage', () => {
   const { stars } = buildBackdropLayout(7, 1280, 720);
   let low = 0, high = 0;
   for (const s of stars) {
@@ -36,17 +36,4 @@ test('nebula hues span the wheel and stay faint', () => {
     assert.ok(n.hue >= 0 && n.hue < 360, `nebula hue out of range: ${n.hue}`);
     assert.ok(n.alpha > 0 && n.alpha <= 0.12, `nebula should be a faint wash, got alpha ${n.alpha}`);
   }
-});
-
-test('the trio stands in the lower band, around the title card rather than under it', () => {
-  const w = 1280, h = 720;
-  const t = trioLayout(w, h);
-  for (const [name, p] of Object.entries(t)) {
-    assert.ok(p.y > h * 0.64, `${name} y=${p.y} should sit below the title card`);
-    assert.ok(p.x > 0 && p.x < w, `${name} x out of range`);
-    assert.ok(p.scale > 1, `${name} should read as a stage figure, not a pin`);
-  }
-  // Spread across the stage, not stacked on the card's center.
-  assert.ok(t.broshi.x < w * 0.35, 'Broshi stage-left');
-  assert.ok(t.midasus.x > w * 0.65, 'Midasus stage-right');
 });

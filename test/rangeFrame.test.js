@@ -70,8 +70,7 @@ test('the same instant yields the same frozen snapshot', () => {
   assert.ok(Object.isFrozen(a) && Object.isFrozen(a.groundBars) && Object.isFrozen(a.groundBars[0]) && Object.isFrozen(a.music));
   assert.throws(() => { 'use strict'; a.progress01 = 0; });
   assert.equal(a.viewFromId, 'nc-ross-lake-north');
-  assert.equal(a.emitters.find((e) => e.id === 'broshi').airborneM, 12);
-  assert.equal(a.emitters.find((e) => e.id === 'midasus').visible, false, 'Midasus away on a voyage');
+  assert.deepEqual(a.emitters, [], 'listening never publishes personal lights, even for legacy actor-shaped inputs');
 });
 
 test('seeking back and forth reconstructs the same frame state', () => {

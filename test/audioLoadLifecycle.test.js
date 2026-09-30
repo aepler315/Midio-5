@@ -191,7 +191,7 @@ test('long audio exposes a whole-recording overview while full analysis is pendi
   assert.equal(offered.timeline[0].tMs, 600000);
 });
 
-test('the Range narrative pilot waits for full-song evidence before offering playback', async () => {
+test('landscape listening starts provisionally and adopts the complete analysis', async () => {
   const { context, load } = harness();
   const buffer = recording(); buffer.duration = 120;
   context.audioEngine.decodeFile = async () => buffer;
@@ -207,9 +207,12 @@ test('the Range narrative pilot waits for full-song evidence before offering pla
   context.offerWorldsThenStart = data => { offered = data; };
   const loading = load();
   for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve));
-  assert.equal(offered, null, 'provisional analysis cannot start a departure');
-  finish({ durationMs: 120000, timeline: [], barGrid: [] });
+  assert.ok(offered?.opening, 'landscape starts on opening evidence without a reveal wait');
   await loading;
+  const pending = context.fullAnalysisPending;
+  assert.ok(pending);
+  finish({ durationMs: 120000, timeline: [], barGrid: [] });
+  await pending;
   assert.equal(offered.opening, undefined);
   assert.equal(offered.durationMs, 120000);
 });
