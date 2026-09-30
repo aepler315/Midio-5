@@ -22,9 +22,9 @@ export const MIN_SECONDS_FOR_OPENING = 30;
 
 /** Whether this load should start on its opening. Stem drops and bulk export
  *  analyse the whole song first: stems need every file's full length to cast
- *  the characters, and an export must render frame one from final data. */
+ *  source lanes, and an export must render frame one from final data. */
 export function useOpeningAnalysis({ durationSec = 0, stemDrop = false, exporting = false, rangeListening = false } = {}) {
-  return !stemDrop && !exporting && !rangeListening && durationSec >= MIN_SECONDS_FOR_OPENING;
+  return !stemDrop && !exporting && durationSec >= MIN_SECONDS_FOR_OPENING;
 }
 
 /**

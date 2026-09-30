@@ -286,6 +286,9 @@ export const SCENE_FRAG = /* glsl */`
     // occlusion from curvature and drainage (gullies sit in shade).
     float wrap = 0.18;
     float key = max((dot(nShade, uLightDir) + wrap) / (1.0 + wrap), 0.0);
+    // The opening relief shares the physical key. A dormant direction
+    // must not change even its neutral surface shading during a gap.
+    key *= step(1e-10, dot(uLightColor, uLightColor));
     float ao = clamp(1.0 - max(curv, 0.0) * 0.55 - flowN * 0.12, 0.35, 1.0);
     // Sky radiance: the displayed sky colours are radiance, and a surface
     // integrates the hemisphere, hence the scale.
@@ -352,6 +355,7 @@ export function sceneUniforms(THREE, base) {
     uDeformDir: { value: new THREE.Vector2(0.8, -0.6) }, uDeformPhase: { value: 0 },
     uLightDir: { value: new THREE.Vector3(0, 1, 0) },
     uLightColor: { value: new THREE.Color(1, 1, 1) },
+    uSolarTransmission: { value: 0 },
     uSkyZenith: { value: new THREE.Color(0.1, 0.12, 0.2) },
     uSkyHorizon: { value: new THREE.Color(0.3, 0.35, 0.45) },
     uAirColor: { value: new THREE.Color(0.35, 0.4, 0.5) },

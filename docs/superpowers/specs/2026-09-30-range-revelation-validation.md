@@ -1,4 +1,10 @@
-# Range revelation pilot validation
+# Historical Range revelation pilot validation
+
+> Superseded by the landscape performance implementation. The current default
+> has no opening cast or delayed scenic handoff, and uses provisional analysis
+> during playback. Old revelation/gameplay URLs select the same landscape.
+> See [current validation and evidence](../../evidence/landscape-performance/README.md).
+> Results below describe the earlier pilot and are retained as historical evidence.
 
 Enable **Shared world → landscape (pilot)** in the title settings, or use
 `?rangeExperience=revelation`. Trio and gameplay remains the default. The

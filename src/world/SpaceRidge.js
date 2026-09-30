@@ -12,6 +12,7 @@
 import { clamp, clamp01, mulberry32 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { kickEnv } from './MountainChoreo.js';
+import { sampleSpaceRidge } from './alpine/RidgeMotion.js';
 import { hexToRgb } from '../utils/color.js';
 
 // +3 joints past each edge (was +1 vs. the old 24-on-screen packing) so the
@@ -165,6 +166,16 @@ export class SpaceRidge {
   }
 
   update(nowMs, dtSec, eqBands, calmLevel = 0, kickTauMs = -1) {
+    if (this.history) {
+      const sample = this.history.sample(nowMs);
+      this._tSec = nowMs / 1000;
+      this.nodes.forEach(n => { n.level = sample.spaceLevels[n.band]; n.z = sample.spaceDepths[n.band]; });
+      this._rotX = this._tSec * .04 + sample.kick01 * WIRE_KICK_RAD;
+      this._rotY = this._tSec * .027 + sample.kick01 * WIRE_KICK_RAD * .7;
+      this._tidalPx = this.reducedMotion ? 0 : tidalOffset(this._tSec, this._lastCanvasHeight || 720);
+      this._zGlobal = this.reducedMotion ? 0 : Math.sin(this._tSec * 2 * Math.PI / DEPTH_GLOBAL_PERIOD_SEC);
+      return;
+    }
     const { tauMul } = calmResponseParams(calmLevel);
     for (let i = 0; i < this.nodes.length; i++) {
       const n = this.nodes[i];
@@ -209,7 +220,17 @@ export class SpaceRidge {
   /** Screen-space samples for the ridge polyline. No world scroll -- this
    *  structure is deliberately too large/far to read as scrolling with the
    *  world; it moves in depth (see depthMul) and on the tidal drift only. */
-  _samples(canvas) {
+  _samples(canvas, reducedMotion = this.reducedMotion) {
+    const frame = this.frameSample;
+    if (frame && frame.width === canvas.width && frame.height === canvas.height && frame.heardTimeMs === this._tSec * 1000 && frame.reducedMotion === !!reducedMotion) {
+      const s = frame.sample;
+      return { pts: s.points, y0: s.y0, maxH: s.maxH };
+    }
+    if (this.history) {
+      const s = sampleSpaceRidge({ viewport: canvas, seededGeometry: this, history: this.history,
+        heardTimeMs: this._tSec * 1000, reducedMotion });
+      return { pts: s.points, y0: s.y0, maxH: s.maxH };
+    }
     this._lastCanvasHeight = canvas.height;
     const y0 = canvas.height * BASELINE_FRAC + this._tidalPx;
     const maxH = canvas.height * MAX_H_FRAC;
@@ -256,12 +277,16 @@ export class SpaceRidge {
   }
 
   draw(ctx, canvas, color, tSec, reducedFlash = false, presentation = 1, inheritedActivity = 0, reducedMotion = false, satellitePresence = 1) {
-    const { pts, y0, maxH } = this._samples(canvas);
-    if (inheritedActivity > 0 && !reducedMotion) {
+    const { pts, y0, maxH } = this._samples(canvas, reducedMotion);
+    if (!this.history && inheritedActivity > 0 && !reducedMotion) {
       for (const p of pts) p.y -= 10 * inheritedActivity * Math.sin(p.x / 370 + tSec * .42);
     }
 
     const flashSet = new Map();
+    if (this.history) {
+      const sample = this.history.sample(this._tSec * 1000);
+      this.nodes.forEach((n, i) => flashSet.set(i, sample.spaceFlash01[n.band]));
+    }
     const nowMs = tSec * 1000;
     for (const f of this._flashes) {
       const u = clamp01((nowMs - f.atMs) / FLASH_LIFE_MS);

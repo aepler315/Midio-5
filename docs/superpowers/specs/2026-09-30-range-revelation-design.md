@@ -1,5 +1,8 @@
 Super Maudio World begins with three performers sharing a bright, playful, incomplete world. As the song gathers force, that world resolves into the vast Range landscape. Their expression passes into the ridges, land, and atmosphere as their bodies disappear. What arrives is beautiful and musically alive, but the company that made the opening warm is gone.
 
+> Historical plan: the later [landscape performance plan](../plans/2026-09-30-landscape-performance.md) supersedes actor introduction/departure, optional gameplay presentation and the extra full-analysis wait. Current behavior and evidence are documented in [landscape performance validation](../../evidence/landscape-performance/README.md).
+
+
 **Recommendation: default candidate for the Range listening experience, introduced as an opt-in pilot until visual and device validation establish that the handoff works.** This is a proposed design, not implemented behavior. The artistic interpretation comes from the supplied brief; technical findings below come from current repository source.
 
 The design preserves the tension between fellowship and sublimity. The trio are lovable and real within their world. The landscape offers depth, scale, and transcendence while withholding the intimacy of the opening. There is no narration declaring either experience superior.

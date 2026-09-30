@@ -1,17 +1,19 @@
+import { sampleHorizonRidge, sampleSpaceRidge } from './RidgeMotion.js';
 // Range v2: the one presentation adapter allowed to read the simulation
 // (plan §7.2). It assembles an immutable RangeFrame -- time, assigned
 // views, rail progress, viewports, light, music, support bars and emitters
 // -- before anything draws, so GPU/material/forest/water modules never
 // reach back into mutable state and the same instant always yields the
 // same snapshot (forward seek, backward seek, pause, repeated draws).
-import { hashSeed } from '../../utils/math.js';
+import { hashSeed, smoothstep } from '../../utils/math.js';
 import { cameraPoseAt, focalPx, sceneProgressAt, SCENE_PREVIEW_PROGRESS } from '../terrain/SceneTravel.js';
 import { sampleWorldMusic, boundaryLift01 } from '../WorldMusic.js';
 import { ridgeEnvelope } from './Ridge.js';
 import { ridgeKickEnv } from '../MountainChoreo.js';
-import { dayNight, celestialYFracFor, celestialXFracFor } from '../DayNight.js';
+import { resolveCelestialState } from '../CelestialState.js';
+import { computeLight } from '../../render/LightField.js';
+import { convertLightBetween } from './LightSpace.js';
 import { recentConductorHits } from './GroundResponse.js';
-import { MIDIO_IDENTITY_HUE } from '../../render/ColorLaw.js';
 import { glacierStateAt } from './GlacierField.js';
 import { profileTravelPx } from '../terrain/ProfileTravel.js';
 import { styleDials } from '../../render/VisualStyle.js';
@@ -96,19 +98,20 @@ export function rangeSectionMotif(section, previous, timeMs, seed = 0) {
  * standing section growth. Time is always heard time, never integrated.
  * Reduced flash belongs to lighting; reduced motion suppresses geometry. */
 export function rangeMusicState({ env = null, tSec = 0, kickAgeMs = Infinity, kickAmp = 0,
-  melody = null, structural01 = 0, motif = null, reducedMotion = false } = {}) {
+  melody = null, structural01 = 0, motif = null, reducedMotion = false, evaluatedKick01 = null, activity01 = null } = {}) {
   const groove = unit(env?.groove), sustain = unit(env?.sustain);
   const scaleMul = Math.min(1.3, Math.max(1, env?.scaleMul ?? 1));
   const kickMul = unit(env?.kickMul);
   const gesture = unit(env?.gesture);
-  const kick01 = Number.isFinite(kickAgeMs) ? ridgeKickEnv(kickAgeMs) * unit(kickAmp) : 0;
-  const motion = reducedMotion ? 0 : 1;
+  const kick01 = evaluatedKick01 == null ? (Number.isFinite(kickAgeMs) ? ridgeKickEnv(kickAgeMs) * unit(kickAmp) : 0) : unit(evaluatedKick01);
+  const activity = unit(activity01 ?? Math.max(groove, sustain, kick01, unit(melody?.activity)));
+  const motion = reducedMotion || activity <= 0 ? 0 : 1;
   const pan = Math.min(1, Math.max(-1, melody?.pan || 0));
   const pitch01 = unit(melody?.pitch01 ?? .5);
   const angle = Math.atan2(-.6, .8) + (motif?.angle || 0);
   const state = {
-    groove, sustain, scaleMul, kickMul, gesture, kick01,
-    amplitudeM: (3 + 15 * groove + 14 * sustain) * scaleMul * motion,
+    groove, sustain, scaleMul, kickMul, gesture, kick01, activity01: activity,
+    amplitudeM: (3 + 8 * groove + 28 * sustain) * scaleMul * motion,
     // Dense music retains a readable accent instead of the old .18 floor.
     kickM: 18 * kick01 * (.55 + .45 * kickMul) * motion,
     gestureM: 12 * gesture * motion,
@@ -124,18 +127,23 @@ export function rangeMusicState({ env = null, tSec = 0, kickAgeMs = Infinity, ki
   return state;
 }
 
+export const RANGE_MOTION_REFERENCE_M = 106.7;
+
 /** Calibrate the whole field once per geographic view. Nominal viewport
  * preserves motion across DPR/overscan. Geological caps win when a distant
- * view cannot safely attain the eight-pixel full-response budget. */
+ * view cannot safely attain the activity-dependent projected budget. */
 export function calibrateRangeMusic(music, { view = null, progress01 = .5, depthM = null,
   fovYDeg = view?.camera?.fovYDeg ?? 40, nominalHeight = 720, heightRange = [0, 2000] } = {}) {
   if (view && !(depthM > 0)) { const pose = cameraPoseAt(view, progress01); depthM = Math.hypot(...pose.eyeM.map((v, i) => v - pose.targetM[i])); }
   const metresPerPixel = Math.max(1, depthM || 10000) / focalPx(fovYDeg, nominalHeight);
   const cap = Math.min(180, Math.max(0, heightRange[1] - heightRange[0]) * .065);
-  const gain = Math.min(8 * metresPerPixel / 70, cap / Math.max(1e-9, music.totalBoundM));
+  const targetPx = 8 + 12 * smoothstep(.25, .90, unit(music.activity01));
+  const gain = Math.min(targetPx * metresPerPixel / RANGE_MOTION_REFERENCE_M, cap / RANGE_MOTION_REFERENCE_M);
   const m = { ...music };
   for (const k of ['amplitudeM', 'kickM', 'gestureM', 'melodicM', 'structuralM']) m[k] *= gain;
   m.totalBoundM = music.totalBoundM * gain;
+  m.targetPx = targetPx;
+  m.calibrationGain = gain;
   m.projectedBoundPx = m.totalBoundM / metresPerPixel;
   return m;
 }
@@ -186,23 +194,23 @@ export function buildRangeFrame({
   const totalTravel = durationSec > 0 ? profileTravelPx(durationSec, mgr.energyCurves, false, mgr.world?.response) : 0;
   const glacier = glacierStateAt({ timeMs, durationMs: mgr.terrainPreview ? 0 : mgr.durationMs,
     progress01: totalTravel > 0 ? profileTravelPx(timeMs / 1000, mgr.energyCurves, false, mgr.world?.response) / totalTravel : undefined });
-  const dn = dayNight(timeMs, mgr._dayNightCycleMs);
-  const sunUp = dn.sunAlt > 0.001;
+  // Production always resolves before beginScenic; a pure fallback supports
+  // standalone frame consumers without a BiomeManager paint pass.
+  const state = mgr.celestialState || resolveCelestialState({ timeMs, cycleMs: mgr._dayNightCycleMs,
+    viewport: { width: scenicViewport?.logicalWidth || 1280, height: scenicViewport?.logicalHeight || 720 },
+    approach: { progress01: mgr._progress || 0 }, reducedMotion });
   const A = mgr._profile(blend.from), B = mgr._profile(blend.to);
   const t = blend.t ?? 1;
-  const light = mgr.light || null;
+  const light = mgr._scenicLight || computeLight({ canvasWidth: scenicViewport?.logicalWidth || 1280,
+    canvasHeight: scenicViewport?.logicalHeight || 720, celestialState: state });
+  const active = state[state.activeBody] || state.sun;
   const lightState = {
-    space: 'scenic-stage logical px (the zoomed transform); celestial fractions of the scenic stage',
-    celestial: {
-      body: sunUp ? 'sun' : 'moon',
-      xFrac: celestialXFracFor(sunUp ? dn.sunAz01 : dn.moonAz01),
-      yFrac: celestialYFracFor(sunUp ? dn.sunAlt : dn.moonAlt),
-      altitude01: sunUp ? dn.sunAlt : dn.moonAlt,
-      colorHex: light?.colorHex ?? '#ffffff',
-      intensity: light?.intensity ?? 1,
-    },
-    night01: dn.night || 0, dawn01: dn.dawnAlpha || 0, dusk01: dn.duskAlpha || 0,
-    sky: A && B ? rangeSkyState(mgr, A, B, t, dn.night || 0, narrative) : null,
+    space: 'scenic-stage logical px; ground anchor converted through recorded view transforms',
+    state, celestial: { ...active, body: state.activeBody, intensity: light.intensity },
+    ground: mgr._groundLight || convertLightBetween(light, scenicViewport?.transform, groundViewport?.transform),
+    ambientMultiplier: state.ambientMultiplier,
+    night01: state.night01, dawn01: state.dawn01 || 0, dusk01: state.dusk01 || 0,
+    sky: A && B ? rangeSkyState(mgr, A, B, t, state.night01, narrative) : null,
   };
   const section = mgr.sections?.[mgr._lastSectionIdx];
   const prior = mgr.sections?.[mgr._lastSectionIdx - 1];
@@ -210,23 +218,32 @@ export function buildRangeFrame({
   // musical channels without turning reduced-flash into reduced-motion.
   const sampled = sampleWorldMusic({ nowMs: timeMs, energyCurves: mgr.energyCurves,
     rhythm: mgr.worldRhythm, section, response: mgr.world?.response });
+  const ridgeSample = mgr.ridgeMusicSession?.sample(timeMs);
+  if (ridgeSample) {
+    sampled.energy = ridgeSample.pressureEnergy01;
+    sampled.bass = ridgeSample.bassPressure01;
+    sampled.accent = ridgeSample.rhythmAccent01;
+  }
   const env = ridgeEnvelope({ energy: sampled.energy, bass: sampled.bass, accent: sampled.accent,
     reveal: sampled.reveal, lift: boundaryLift01(section, prior) });
   const motif = rangeSectionMotif(section, prior, timeMs, sim.songSeed ?? 0);
   const music = rangeMusicState({
-    env, tSec: mgr.tSec || 0, kickAgeMs: timeMs - (mgr._danceKickMs ?? -Infinity), kickAmp: mgr._danceKickAmp || 0,
-    melody: narrative ? { activity: narrative.sources.midio.pitchActivity * narrative.handoff.midio,
+    env, tSec: timeMs / 1000, evaluatedKick01: ridgeSample?.kick01, kickAgeMs: timeMs - (mgr._danceKickMs ?? -Infinity), kickAmp: mgr._danceKickAmp || 0,
+    melody: ridgeSample ? { activity: ridgeSample.sources.midio.pitchActivity, pitch01: ridgeSample.sources.midio.pitch01 } : narrative ? { activity: narrative.sources.midio.pitchActivity,
       pitch01: narrative.sources.midio.pitch01 } : sampleRangeMelody(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
     structural01: section?.provenance === 'detected'
       ? unit(section.relEnergy01) * unit((timeMs - section.startMs) / 4000) : 0,
-    reducedMotion, motif,
+    reducedMotion, motif, activity01: ridgeSample?.activity01 ?? sampled.energy,
   });
-  if (narrative) {
-    music.amplitudeM *= .35 + .65 * narrative.handoff.broshi;
-    music.amplitudeM += reducedMotion ? 0 : 10 * narrative.sources.broshi.activity * narrative.handoff.broshi;
-    music.gestureM *= .25 + .75 * narrative.handoff.midasus;
-    music.totalBoundM = music.amplitudeM + music.kickM + music.gestureM + music.melodicM + music.structuralM;
-  }
+  const ridgeViewport = { width: sim.stageW || 1280, height: sim.stageH || 720 };
+  const ridges = mgr._frameRidges || (mgr.ridgeMusicSession && mgr.spaceRidge ? {
+    stateKey: mgr.ridgeMusicSession.stateKey,
+    dance: sampleHorizonRidge({ viewport: ridgeViewport, crest: mgr._horizonCrest,
+      songP: mgr.durationMs > 0 ? unit(timeMs / mgr.durationMs) : 0, worldX: pose.worldX,
+      heardTimeMs: timeMs, history: mgr.ridgeMusicSession, tuning: mgr._horizonTuning, reducedMotion }),
+    space: sampleSpaceRidge({ viewport: ridgeViewport, seededGeometry: mgr.spaceRidge,
+      heardTimeMs: timeMs, history: mgr.ridgeMusicSession, reducedMotion }),
+  } : null);
   // Support curve exactly as the ground painter receives it (render-only
   // ripple/groove/quake included); physics heightAt() is not consulted.
   const gf = mgr.groundField;
@@ -235,20 +252,6 @@ export function buildRangeFrame({
     x: b.x, width: b.width, y: b.y, glow: b.glow || 0,
   })) : [];
   const emitters = [];
-  if (sim.midio) {
-    emitters.push({ id: 'midio', x: pose.midioDrawX, y: pose.midioY, hue: MIDIO_IDENTITY_HUE, visible: true,
-      supportY: sim.midio.groundY, airborneM: Math.max(0, sim.midio.groundY - pose.midioY) });
-  }
-  if (sim.broshi) {
-    const b = sim.broshi;
-    emitters.push({ id: 'broshi', x: b.renderX, y: b.groundY - (b.hopY || 0), hue: b.hue, visible: b.burrow.depth <= 0.02,
-      supportY: b.groundY, airborneM: Math.max(0, b.hopY || 0), burrowed: b.burrow.depth > 0.02 });
-  }
-  if (sim.midasus) {
-    const m = sim.midasus;
-    emitters.push({ id: 'midasus', x: m.p.x, y: m.p.y, hue: m.hue, visible: m.voyage.depth <= 0,
-      supportY: m.yFloor, airborneM: Math.max(0, m.yFloor - m.p.y), voyaging: m.voyage.depth > 0 });
-  }
   const from = choice(biomeFrom), to = choice(biomeTo);
   for (const e of emitters) {
     e.presence = narrative?.cast[e.id] ?? 1;
@@ -264,7 +267,7 @@ export function buildRangeFrame({
     forcedCandidate: !!forcedView?.forcedCandidate,
     progress01, glacier, qualityLevel: sim.perf?.level ?? 0, reducedFlash, reducedMotion,
     scenicViewport, groundViewport,
-    light: lightState, music, narrative, groundBars, emitters,
+    light: lightState, music, ridges, narrative, groundBars, emitters,
     waterHits: recentConductorHits(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
     // World anchoring for fixed-ground dressing (rock stage, pools).
     worldX: pose.worldX, originX: pose.midioX,

@@ -491,6 +491,7 @@ export class RangePresentation {
       scenicViewport: inputs.scenicViewport, groundViewport: inputs.groundViewport,
       sceneAssignments: this.sceneByBiome, forcedView: this.forced,
     });
+    this.scene.prepareShafts?.(this.frame, incoming ? [view.id, incoming.id] : [view.id]);
     this.viewId = view.id;
     this.active = true;
     this.reason = null;

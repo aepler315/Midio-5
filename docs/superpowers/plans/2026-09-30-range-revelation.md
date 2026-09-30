@@ -1,5 +1,8 @@
 # Range revelation implementation plan
 
+> Historical plan: the later [landscape performance plan](../plans/2026-09-30-landscape-performance.md) supersedes actor introduction/departure, optional gameplay presentation and the extra full-analysis wait. Current behavior and evidence are documented in [landscape performance validation](../../evidence/landscape-performance/README.md).
+
+
 **Goal:** Implement the supplied opt-in Range listening arc, preserving gameplay and transport.
 **Architecture:** Compile one immutable song schedule in Simulation; sample at heard time into RangeFrame. Use the existing terrain, depth prepass and shared glacier/deformation vertex shader for material revelation and sparse source-space ink. Central cast weights feed all visual paths; source activity persists in ridge, terrain and atmosphere consumers.
 **Tech stack:** ES modules, Canvas2D, Three.js GLSL3, node:test, Playwright.

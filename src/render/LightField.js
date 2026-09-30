@@ -40,11 +40,14 @@ const REDUCED_FLASH_BASELINE = 0.6;
 export function computeLight({
   canvasWidth, canvasHeight, celestialYFrac = 0.22, haloColorHex = '#ffffff',
   budget = 1, unravel = 0, dayArcAlpha = 0, reducedFlash = false,
-  celestialXFrac = CELESTIAL_DEFAULT_XFRAC,
+  celestialXFrac = CELESTIAL_DEFAULT_XFRAC, celestialState = null,
 }) {
+  const body = celestialState && celestialState[celestialState.activeBody];
+  if (body) { celestialXFrac = body.xFrac; celestialYFrac = body.yFrac; haloColorHex = body.colorHex; }
   const { x, y } = celestialScreenPos(canvasWidth, canvasHeight, celestialYFrac, celestialXFrac);
   let intensity = Math.max(0, budget * (1 - unravel) * (1 - 0.5 * dayArcAlpha));
   if (reducedFlash) intensity = 0.5 * intensity + 0.5 * REDUCED_FLASH_BASELINE;
+  if (celestialState) intensity *= body?.directGain || 0;
   // Generic downward-ish direction toward the ground, for consumers that
   // want "which way the light falls" without a specific subject position.
   const dir = lightDirTo({ x, y }, canvasWidth * 0.5, canvasHeight);

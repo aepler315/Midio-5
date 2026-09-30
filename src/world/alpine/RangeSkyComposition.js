@@ -87,7 +87,7 @@ export function rangeCloudBanks({ width, height, tSec = 0, seed = 0, moon = null
 }
 
 /** Paint cloud banks: a dark body with a lit rim toward the light. */
-export function drawRangeClouds(ctx, banks, { dark = [52, 60, 78], lit = [196, 176, 168], light = null, allowPoint = null, alpha = 1 } = {}) {
+export function drawRangeClouds(ctx, banks, { dark = [52, 60, 78], lit = [196, 176, 168], light = null, allowPoint = null, alpha = 1, directGain = 1 } = {}) {
   ctx.save();
   for (const b of banks) {
     const lx = light ? Math.sign(light.x - b.x) : 0, ly = light ? (light.y < b.y ? -1 : 1) : -1;
@@ -97,7 +97,7 @@ export function drawRangeClouds(ctx, banks, { dark = [52, 60, 78], lit = [196, 1
       const py = b.y + Math.sin(u * 9 + b.w) * b.h * 0.25;
       if (allowPoint && !allowPoint(px, py)) continue;
       const rx = b.h * (1.3 + 0.9 * Math.sin(u * Math.PI)), ry = b.h * (0.55 + 0.35 * Math.sin(u * Math.PI));
-      for (const [col, off, a] of [[lit, 0.2, 0.75], [dark, -0.06, 1]]) {
+      for (const [col, off, a] of [[lit, 0.2, 0.75 * directGain], [dark, -0.06, 1]]) {
         const ox = px + lx * rx * off, oy = py + ly * ry * off;
         const g = ctx.createRadialGradient(ox, oy, 0, ox, oy, rx);
         g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${(b.alpha * a * alpha).toFixed(3)})`);

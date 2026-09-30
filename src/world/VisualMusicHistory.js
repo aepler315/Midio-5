@@ -10,7 +10,8 @@ function lastAt(events, timeMs) {
 }
 export class VisualMusicHistory {
   constructor(timeline = []) {
-    this.rhythm = timeline.filter(e => e.role === Role.RHYTHM);
+    this.rhythm = Object.freeze(timeline.filter(e => e.role === Role.RHYTHM)
+      .map(e => Object.freeze({ ...e })).sort((a, b) => a.tMs - b.tMs));
     this.kicks = this.rhythm.filter(e => e.kick);
   }
   sample(timeMs) {

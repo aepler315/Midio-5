@@ -172,3 +172,20 @@ export function narrativePressure(narrative, kick01 = 0, { reducedFlash = false,
   return { edgeAlpha: Math.min(.32, .24 * dark + .08 * dark * pulse),
     contraction: reducedMotion ? 0 : .04 * dark * pulse };
 }
+
+/** Causal source lookup survives retirement of the full-song reveal arc.
+ * No full-song energy scan, waiting period, or performer handoff is needed. */
+export function compileLandscapeSources({ durationMs = 0, timeline = [], casting = DEFAULT_CASTING } = {}) {
+  const events = timeline.filter(e => Number.isFinite(e.tMs) && e.tMs >= 0 && unit(e.vel) > 0)
+    .map(e => ({ ...e, durMs: Math.max(90, Number.isFinite(e.durMs) ? e.durMs : 90) }))
+    .sort((a, b) => a.tMs - b.tMs);
+  const sources = Object.fromEntries(Object.keys(LANES).map(id => [id, sourceIndex(events, id, casting)]));
+  return Object.freeze({ durationMs, sample(timeMs = 0) {
+    const at = Math.max(0, Number.isFinite(timeMs) ? timeMs : 0);
+    return Object.freeze({ relief: 1, atmosphere: 1, materials: 1, features: 1,
+      spaceAuthority: 1, skyDark: 1, traceResolution: 1, revelation: 1, progress: durationMs > 0 ? unit(at / durationMs) : 0,
+      cast: Object.freeze({ midio: 0, broshi: 0, midasus: 0 }),
+      handoff: Object.freeze({ midio: 1, broshi: 1, midasus: 1 }),
+      sources: Object.freeze(Object.fromEntries(Object.entries(sources).map(([id, sample]) => [id, sample(at)]))) });
+  } });
+}

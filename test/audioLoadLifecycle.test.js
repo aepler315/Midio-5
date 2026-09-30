@@ -5,6 +5,8 @@ import vm from 'node:vm';
 import * as cache from '../src/audio/AnalysisCache.js';
 import { fingerprintBuffer } from '../src/audio/SongFingerprint.js';
 import { GrooveFingerprint } from '../src/sim/GrooveFingerprint.js';
+import { ensureRidgeMusicSession, upgradeRidgeMusicSession } from '../src/world/RidgeMotionHistory.js';
+import { EnergyCurves } from '../src/audio/EnergyCurves.js';
 import * as opening from '../src/audio/OpeningAnalysis.js';
 import {
   AUDIO_LOAD_LIMITS, accumulateDecodedAudioBytes, accumulateDecodedByteLength, decodedAudioByteLength,
@@ -25,7 +27,8 @@ function harness() {
   const encoded = new ArrayBuffer(1024);
   const keys = [], errors = [];
   const context = vm.createContext({
-    ...cache, fingerprintBuffer, GrooveFingerprint, ...opening,
+    ...cache, fingerprintBuffer, GrooveFingerprint, ...opening, ensureRidgeMusicSession, upgradeRidgeMusicSession,
+    running: false, sim: null, lastTimelineData: null, bulkExportArmed: false,
     fingerprintBufferOffThread: async (buffer) => fingerprintBuffer(buffer),
     readBulkExportFromUrl: () => null, rangeListening: false, fullAnalysisPending: null, adoptFullAnalysisLive() {},
     AUDIO_LOAD_LIMITS, accumulateDecodedAudioBytes, accumulateDecodedByteLength, decodedAudioByteLength,
@@ -191,7 +194,7 @@ test('long audio exposes a whole-recording overview while full analysis is pendi
   assert.equal(offered.timeline[0].tMs, 600000);
 });
 
-test('the Range narrative pilot waits for full-song evidence before offering playback', async () => {
+test('landscape listening starts provisionally and adopts the complete analysis', async () => {
   const { context, load } = harness();
   const buffer = recording(); buffer.duration = 120;
   context.audioEngine.decodeFile = async () => buffer;
@@ -207,9 +210,45 @@ test('the Range narrative pilot waits for full-song evidence before offering pla
   context.offerWorldsThenStart = data => { offered = data; };
   const loading = load();
   for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve));
-  assert.equal(offered, null, 'provisional analysis cannot start a departure');
-  finish({ durationMs: 120000, timeline: [], barGrid: [] });
+  assert.ok(offered?.opening, 'landscape starts on opening evidence without a reveal wait');
   await loading;
+  const pending = context.fullAnalysisPending;
+  assert.ok(pending);
+  finish({ durationMs: 120000, timeline: [], barGrid: [] });
+  await pending;
   assert.equal(offered.opening, undefined);
   assert.equal(offered.durationMs, 120000);
+});
+
+
+test('actual background analysis captures the provisional history before adoption and retains heard-time handoff', async () => {
+  const { context, load } = harness();
+  const buffer = recording(); buffer.duration = 120;
+  context.audioEngine.decodeFile = async () => buffer;
+  context.sliceAudioBuffer = () => ({ ...buffer, duration: 15 });
+  context.setTimeout = fn => fn(); context.getBundle = async () => null;
+  context.packBundle = () => ({}); context.putBundle = async () => {};
+  const openingCurves = new EnergyCurves(15000); openingCurves.bands.forEach(b => b.fill(.2));
+  const fullCurves = new EnergyCurves(120000); fullCurves.bands.forEach(b => b.fill(.9));
+  let finish, offered, prior;
+  const full = new Promise(resolve => { finish = resolve; });
+  context.audioToTimeline = async b => b.duration === 15
+    ? { durationMs: 15000, timeline: [], barGrid: [], energyCurves: openingCurves } : full;
+  context.offerWorldsThenStart = data => {
+    offered = data; prior = ensureRidgeMusicSession(data, 'load-1:opening');
+    context.running = true; context.sim = { heardTimeMs: 5000 };
+    context.lastTimelineData = data;
+  };
+  await load();
+  const pending = context.fullAnalysisPending;
+  finish({ durationMs: 120000, timeline: [], barGrid: [], energyCurves: fullCurves });
+  await pending;
+  assert.equal(offered.opening, undefined, 'full adoption actually completed');
+  const retained = offered.ridgeMusicSession;
+  assert.deepEqual(retained.stateKey, { primaryGeneration: 'load-1:final', previousGeneration: 'load-1:opening', handoffStartMs: 5000, handoffDurationMs: 500 });
+  assert.equal(retained.previous, prior.primary);
+  assert.equal(retained.sample(5000).bands[0], prior.sample(5000).bands[0]);
+  assert.ok(Math.abs(retained.sample(5250).bands[0] - .55) < .001);
+  fullCurves.bands.forEach(b => b.fill(0)); openingCurves.bands.forEach(b => b.fill(0));
+  assert.ok(Math.abs(retained.sample(5250).bands[0] - .55) < .001, 'both histories are immutable after live data replacement');
 });

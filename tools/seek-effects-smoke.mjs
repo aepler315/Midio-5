@@ -24,9 +24,8 @@ try {
     const results = [];
     for (const destination of [1000, 20000, 1000]) {
       const old = window.__SMW;
-      old.sim.apotheosis.forceTrigger(60000);
       old.sim.hype.cueDrop(60000);
-      old.sim.ensemble._discGate.tryFire(60000, { transition: true });
+
       old.sim.biomes._cutFlash = 1;
       old.sim.fire.strike(60000, 0);
       old.sim.quake.strike(60000, 0);
@@ -45,9 +44,9 @@ try {
         timeMs: fresh.sim.timeMs, freshSimulation: fresh.sim !== old.sim,
         seedPreserved: fresh.sim.songSeed === initial.sim.songSeed,
         listenersStable: count(fresh.conductor) === listeners,
-        activeTransformation: fresh.sim.apotheosis.active,
         dropCooldown: fresh.sim.hype._cooldownUntilMs,
-        flourishReady: fresh.sim.ensemble._discGate.tryFire(destination, { transition: true }),
+        actorsAbsent: !fresh.sim.broshi && !fresh.sim.midasus && !fresh.sim.ensemble && !fresh.sim.excursions && !fresh.sim.focus && !fresh.sim.apotheosis && !fresh.sim.noteChart,
+        ridgeStatePreserved: JSON.stringify(fresh.ridgeStateKey) === JSON.stringify(initial.ridgeStateKey),
         shutter: Number.isFinite(fresh.sim.biomes._shutterStartMs), cutFlash: fresh.sim.biomes._cutFlash,
         fire: fresh.sim.fire.active, quake: fresh.sim.quake.active, flood: fresh.sim.flood.active,
         pendingTsunami: Number.isFinite(fresh.sim._pendingQuakeTsunamiAtMs),
@@ -55,11 +54,10 @@ try {
         futureAuthoredDrop: nextPainter._authoredDropAtMs === 60000,
         oldHistory: nextPainter._motionHistory === painter._motionHistory,
         snapshotsAgree: JSON.stringify(fresh.sim.prev) === JSON.stringify(fresh.sim.curr),
-        nextNoteIsFuture: !fresh.sim.noteChart.notes[fresh.sim._autoplayCursor]
-          || fresh.sim.noteChart.notes[fresh.sim._autoplayCursor].tMs > fresh.sim.timeMs,
+        nextNoteIsFuture: !fresh.conductor.timeline[fresh.conductor.cursor]
+          || fresh.conductor.timeline[fresh.conductor.cursor].tMs > fresh.sim.timeMs,
       });
       const result = results[results.length - 1];
-      result.transformationReady = fresh.sim.apotheosis.forceTrigger(destination);
       const replayEnergy = { globalEnergyNorm: ms => Math.floor(ms / 4000) % 2 ? 0.95 : 0.05 };
       for (let ms = 1000; ms < 59000; ms += 20) fresh.sim.hype.update(ms, 0.02, replayEnergy);
       result.hypeCanDrop = fresh.sim.hype.dropCount > 0;
@@ -68,8 +66,8 @@ try {
   });
   console.log(JSON.stringify(results, null, 2));
   for (const r of results) {
-    for (const k of ['freshSimulation', 'seedPreserved', 'listenersStable', 'flourishReady', 'snapshotsAgree', 'nextNoteIsFuture', 'transformationReady', 'hypeCanDrop']) assert.equal(r[k], true, k);
-    for (const k of ['activeTransformation', 'shutter', 'fire', 'quake', 'flood', 'pendingTsunami', 'futureDabs', 'futureAuthoredDrop', 'oldHistory']) assert.equal(r[k], false, k);
+    for (const k of ['freshSimulation', 'seedPreserved', 'listenersStable', 'actorsAbsent', 'ridgeStatePreserved', 'snapshotsAgree', 'nextNoteIsFuture', 'hypeCanDrop']) assert.equal(r[k], true, k);
+    for (const k of ['shutter', 'fire', 'quake', 'flood', 'pendingTsunami', 'futureDabs', 'futureAuthoredDrop', 'oldHistory']) assert.equal(r[k], false, k);
     assert.equal(r.cutFlash, 0);
     assert.ok(r.dropCooldown <= r.destination);
     assert.ok(Math.abs(r.timeMs - r.destination) < 100);

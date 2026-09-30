@@ -70,8 +70,7 @@ test('the same instant yields the same frozen snapshot', () => {
   assert.ok(Object.isFrozen(a) && Object.isFrozen(a.groundBars) && Object.isFrozen(a.groundBars[0]) && Object.isFrozen(a.music));
   assert.throws(() => { 'use strict'; a.progress01 = 0; });
   assert.equal(a.viewFromId, 'nc-ross-lake-north');
-  assert.equal(a.emitters.find((e) => e.id === 'broshi').airborneM, 12);
-  assert.equal(a.emitters.find((e) => e.id === 'midasus').visible, false, 'Midasus away on a voyage');
+  assert.deepEqual(a.emitters, [], 'listening never publishes personal lights, even for legacy actor-shaped inputs');
 });
 
 test('seeking back and forth reconstructs the same frame state', () => {
@@ -117,4 +116,17 @@ test('deformation is bounded, holds valleys still and is a pure function of time
   const reduced = rangeMusicState({ env: { groove: 1, sustain: 1, scaleMul: 1.22, kickMul: 1 }, tSec: 12, kickAgeMs: 50, kickAmp: 1, reducedFlash: true });
   assert.equal(reduced.amplitudeM, m.amplitudeM, 'reduced flash is a lighting policy');
   assert.equal(sceneDeformation(null, 0, 0, 0, range), 0);
+});
+
+test('frame retains resolved approached celestial anchor and converts it through recorded ground transform', () => {
+  const sim=fakeSim();
+  sim.biomes.celestialState=Object.freeze({activeBody:'moon',sun:{visibility:0,directGain:0},moon:Object.freeze({xFrac:.7,yFrac:.08,altitude01:.9,visibility:1,directGain:.25,colorHex:'#ccddee',radiusFrac:.02}),night01:1,ambientMultiplier:.35});
+  sim.biomes._scenicLight={x:896,y:57.6,intensity:.2,colorHex:'#ccddee',dirX:0,dirY:1};
+  const scenic=viewportState({logicalWidth:1280,logicalHeight:720,transform:[1,0,0,1,-64,-64]});
+  const ground=viewportState({logicalWidth:1280,logicalHeight:720,transform:[2,0,0,2,-64,20]});
+  const frame=buildRangeFrame({frameId:1,sim,pose,scenicViewport:scenic,groundViewport:ground});
+  assert.equal(frame.light.state,sim.biomes.celestialState);
+  assert.equal(frame.light.celestial.xFrac,.7);assert.equal(frame.light.celestial.yFrac,.08);
+  assert.equal(frame.light.ambientMultiplier,.35);
+  assert.ok(Math.abs(frame.light.ground.x-448)<1e-9);assert.ok(Math.abs(frame.light.ground.y+13.2)<1e-9);
 });

@@ -196,3 +196,21 @@ export async function paintLandscapeFrame(spec) {
     passes: { disabled: disabledPasses },
   };
 }
+
+/** Browser evidence only: restore the existing URL seed receiver omitted by
+ * the current HTML. Source responses remain untouched. Install before modules. */
+export function installSeedReceiver() {
+  const install = () => {
+    if (!document.body) return false;
+    if (!document.getElementById('seedInput')) {
+      const input = document.createElement('input');
+      input.hidden = true; input.id = 'seedInput'; input.value = '0';
+      document.body.prepend(input);
+    }
+    return true;
+  };
+  if (!install()) {
+    const observer = new MutationObserver(() => { if (install()) observer.disconnect(); });
+    observer.observe(document, { childList: true, subtree: true });
+  }
+}
