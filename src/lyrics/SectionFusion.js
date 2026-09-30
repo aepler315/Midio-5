@@ -105,11 +105,11 @@ export function fuseSections(noveltySections, lyricSections, barGrid, durationMs
     const lyricMatch = sectionAt(lyricSections, (startMs + endMs) / 2);
     return withLyric(
       {
-        startMs, endMs, transition: noveltyMatch.transition, barMs: noveltyMatch.barMs,
-        label: noveltyMatch.label, profile: noveltyMatch.profile, hueBias: noveltyMatch.hueBias,
-        meanEnergy: noveltyMatch.meanEnergy, shape: noveltyMatch.shape,
-        relEnergy01: noveltyMatch.relEnergy01, heightMul: noveltyMatch.heightMul,
-        snowLine01: noveltyMatch.snowLine01,
+        ...noveltyMatch, startMs, endMs,
+        // A lyric-only split retains parent identity/metadata, but this new
+        // boundary cannot borrow its parent's musical admission evidence.
+        ...(startMs !== noveltyMatch.startMs
+          ? { provenance: 'decorative', boundaryEvidence: null } : {}),
       },
       lyricMatch,
     );

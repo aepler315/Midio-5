@@ -128,6 +128,10 @@ export function midiToTimeline(arrayBuffer) {
     // `timelineData.conductor` reads stay uniform across both sources.
     conductor: null,
     bpm: tempoMap.bpmAt ? (tempoMap.bpmAt(0) || 120) : 120,
+    confidence: parsed.smpte ? 0 : 1,
+    freeTime: !!parsed.smpte,
+    firstBarMs: barGrid[0]?.ms ?? 0,
+    localTempo: (tempoMap.seg || []).map(s => ({ tMs: s.ms, beatPeriodMs: s.us / 1000, confidence: 1 })),
     tracks: trackData.map(({ track, notes }) => ({
       index: track.index,
       name: track.name,

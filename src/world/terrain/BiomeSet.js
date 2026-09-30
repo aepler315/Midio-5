@@ -1,13 +1,10 @@
 // Which real biomes a song travels through, and which real ranges stand in
 // each one.
 //
-// A song is given SONG_BIOME_COUNT biomes up front, as part of its identity
-// (the same song always gets the same ones), and its sections are cast onto
-// them by structural label (castSongBiomes): every chorus returns to the
-// chorus's biome. Choosing them up front, rather than when the sections are
-// known, is what lets a long song start on its first 15 seconds
-// (OpeningAnalysis.js): the section map changes when the whole-song analysis
-// lands, but the biome the song opened in does not.
+// Reserve up to three deterministic candidates, home first. ChapterPlanner
+// activates one home by default and admits travel only on persistent macro
+// evidence. Candidates do not imply visits, and fine section/motif labels
+// remain independent of geographic identity.
 //
 // Fairness follows the range draw (RangeMatcher.drawOdds): the home biome
 // -- the one the song opens in -- is drawn with HOME_BIOME_FAIR_SHARE of its odds
@@ -21,7 +18,7 @@ import { REAL_BIOME_NAMES, REAL_BIOME_TEMPERATURE, rangesByBiome } from '../Real
 import { RANGES } from './ranges/index.js';
 import { WALL_SHARE } from './ranges/shapes.js';
 
-export const SONG_BIOME_COUNT = 5;
+export const SONG_BIOME_COUNT = 3;
 const KERNEL_WIDTH = 0.3;
 const kernelAt = (d) => Math.exp(-((d / KERNEL_WIDTH) ** 2));
 

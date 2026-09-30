@@ -38,3 +38,21 @@ test('the terrain surface texture drops its CPU copy once uploaded', async () =>
   assert.equal(s.texture.image.width, s.width);
   assert.equal(s.texture.onUpdate, null, 'dropped once');
 });
+
+test('GPU water fans preserve each pool opacity and causal contact strengths', () => {
+  const roles = Object.fromEntries(['stage', 'stageWet', 'soil'].map(k => [k, { texture: null }]));
+  const palette = Object.fromEntries(['rockLit', 'rockShade', 'wetRock', 'moss', 'soil', 'lichen', 'water', 'waterDeep'].map(k => [k, '#334455']));
+  const gl = new RockStageGL(THREE, { textures: { roles }, palette, rules: {} });
+  const poly = x => [{ x, y: 50 }, { x: x + 10, y: 50 }, { x: x + 10, y: 55 }];
+  const stage = { positions: new Float32Array(), normals: new Float32Array(), surfaces: new Float32Array(), uv: new Float32Array(), indices: new Uint32Array(),
+    pools: [{ polygon: poly(10), alpha: .25 }, { polygon: poly(40), alpha: .75 }] };
+  gl.update(stage, { width: 100, height: 100, frame: { timeMs: 1200, emitters: [], waterHits: [{ tMs: 1000, strength: .3 }, { tMs: 1400, strength: 1 }] } });
+  const alpha = gl.waterGeometry.getAttribute('poolAlpha').array;
+  assert.deepEqual([...alpha.slice(0, 9)], new Array(9).fill(.25));
+  assert.deepEqual([...alpha.slice(9, 18)], new Array(9).fill(.75));
+  assert.equal(gl.uniforms.uWaterHits.value[0].y, .3);
+  assert.equal(gl.uniforms.uWaterHits.value[1].y, 0, 'future contact has no response');
+  assert.match(gl.waterMaterial.fragmentShader, /vPoolAlpha/);
+  assert.match(gl.waterMaterial.fragmentShader, /hit.y/);
+  gl.dispose();
+});

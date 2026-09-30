@@ -25,7 +25,7 @@ import { RockStageGL } from './RockStageGL.js';
 import { cameraPoseAt } from '../terrain/SceneTravel.js';
 import { BANDS } from './TerrainMesh.js';
 import { mistParams } from './RangeAtmosphere.js';
-import { scenicProjection } from './RangeFrame.js';
+import { scenicProjection, calibrateRangeMusic } from './RangeFrame.js';
 
 const COPY_VERT = /* glsl */`
   out vec2 vUv;
@@ -223,20 +223,21 @@ export class RangeScene {
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         const forestBytes = placed.count * 7 * 4;
         // Building the surface texture needs temporary height and flow
-        // arrays (5 B/px) and its RGBA array (4 B/px). The texture is
+        // arrays (6 B/px), its RGBA array (4 B/px) and dry receiver mask (1 B/px). The texture is
         // uploaded at once and drops its RGBA copy after the upload (see
-        // createSurfaceTexture), so all nine bytes are scratch, reserved
-        // only while it is built: the view owns the GPU texture alone.
+        // createSurfaceTexture), so all eleven bytes are scratch, reserved
+        // only while it is built: the view owns both GPU textures.
         const gridPx = cpu.data.grid.width * cpu.data.grid.height;
-        const bytes = (est?.meshBytes || 0) + (est?.surfaceTextureBytes || 0) + forestBytes;
+        const bytes = (est?.meshBytes || 0) + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes;
         res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation }) || null;
         if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
         const scratchKey = `range:surface-scratch:${view.id}`;
-        const scratch = this.residency?.reserve({ key: scratchKey, bytes: gridPx * 9, owner: 'range-scratch', generation }) || null;
+        const scratch = this.residency?.reserve({ key: scratchKey, bytes: gridPx * 11, owner: 'range-scratch', generation }) || null;
         if (this.residency && !scratch) throw new RangeAssetError('budget', `no room to build ${view.id} surface`);
         try {
           surface = createSurfaceTexture(THREE, cpu.data);
           this.renderer?.initTexture?.(surface.texture);
+          this.renderer?.initTexture?.(surface.receiverTexture);
         } finally { if (scratch) this.residency.release(scratchKey); }
         await yieldToMain();
         const base = terrainUniforms(THREE, cpu.data, surface);
@@ -304,6 +305,7 @@ export class RangeScene {
           stageGL?.dispose();
           material?.dispose();
           surface?.texture?.dispose();
+          surface?.receiverTexture?.dispose();
           for (const g of Object.values(geos?.geometries || {})) g.dispose();
         }
         throw err;
@@ -412,6 +414,7 @@ export class RangeScene {
     p.stageGL?.dispose();
     for (const g of Object.values(p.geometries || {})) g.dispose();
     p.surface?.texture?.dispose();
+    p.surface?.receiverTexture?.dispose();
     p.material?.dispose();
     p.depthMaterial?.dispose();
   }
@@ -449,13 +452,20 @@ export class RangeScene {
   _setUniforms(p, frame) {
     const THREE = this.THREE;
     const u = p.uniforms;
-    const m = frame.music;
+    const m = calibrateRangeMusic(frame.music, { view: p.view, progress01: frame.progress01,
+      heightRange: [u.uHeightRange.value.x, u.uHeightRange.value.y], nominalHeight: frame.scenicViewport?.nominalHeight || 720 });
     u.uDeformAmp.value = m.amplitudeM;
     u.uDeformKick.value = m.kickM;
+    u.uDeformGesture.value = m.gestureM;
+    u.uDeformMelodic.value = m.melodicM;
+    u.uDeformStructural.value = m.structuralM;
+    u.uMelodyK.value = m.melodyK;
+    u.uMelodyDir.value.set(...m.melodyDir);
+    u.uMelodyPhase.value = m.melodyPhaseRad;
     u.uDeformK.value = m.waveK;
     u.uDeformDir.value.set(m.waveDir[0], m.waveDir[1]);
     u.uDeformPhase.value = m.phaseRad;
-    u.uTime.value = frame.timeMs / 1000;
+    u.uTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
     u.uForestKeep.value = rangeQuality(frame.qualityLevel).forestKeep;
     const c = frame.light.celestial;
     // Unproject the celestial's stage position into a world direction.
@@ -471,10 +481,21 @@ export class RangeScene {
       hexToLinear(THREE, frame.light.sky.horizon, u.uSkyHorizon.value).multiplyScalar(0.9);
       hexToLinear(THREE, frame.light.sky.air || frame.light.sky.horizon, u.uAirColor.value);
     }
+    if (frame.motif) {
+      // A restrained, steady colour recipe marks repeated verses/choruses.
+      // It acts through the shared local light, so forest and water inherit
+      // it without changing geological material masks or sky ownership.
+      const tone = new THREE.Color().setHSL(frame.motif.hueDeg / 360, .65, .65);
+      const amount = frame.motif.intensity01 * (frame.reducedFlash ? .5 : 1);
+      const tint = new THREE.Color(1, 1, 1).lerp(tone, amount);
+      u.uLightColor.value.multiply(tint);
+      u.uSkyZenith.value.multiply(tint);
+      u.uSkyHorizon.value.multiply(tint);
+    }
     u.uAirDensity.value = (1 / 55000) * (1 + 0.6 * night) * (p.rules?.airScale ?? RULE_DEFAULTS.airScale);
     // Valley mist: anchored at the view's water level, thicker in calm.
     const mp = mistParams({ rules: p.rules, waterLevelM: p.waterLevelM, heightRange: [u.uHeightRange.value.x, u.uHeightRange.value.y],
-      tSec: frame.timeMs / 1000, calm01: 1 - (frame.music?.groove ?? 0) });
+      tSec: frame.reducedMotion ? 0 : frame.timeMs / 1000, calm01: 1 - (frame.music?.groove ?? 0) });
     const quality = rangeQuality(frame.qualityLevel);
     u.uMistDensity.value = mp.density;
     u.uMistSteps.value = quality.mistSteps;

@@ -11,6 +11,7 @@ import {
 import { EnergyCurves } from '../src/audio/EnergyCurves.js';
 import { BANDS, FLAT_WEIGHTS } from '../src/audio/bands.js';
 import { makeNoteEvent, Role } from '../src/core/NoteEvent.js';
+import { PROFILE_VERSION } from '../src/audio/SongProfile.js';
 import { Lane } from '../src/core/Casting.js';
 
 const DURATION = 180000;
@@ -228,7 +229,7 @@ test('song profile confidence survives a bundle round-trip; old bundles without 
   const src = makeAnalysis();
   const packed = packBundle(src, { fingerprint: FP });
   assert.equal(packed.v, BUNDLE_VERSION);
-  assert.equal(packed.songProfile.version, 1);
+  assert.equal(packed.songProfile.version, PROFILE_VERSION);
   assert.ok(Number.isFinite(packed.songProfile.confidence.tempo));
   assert.ok(Number.isFinite(packed.songProfile.confidence.key));
   const out = unpackBundle(packed);

@@ -3,7 +3,7 @@
 // interpolate smoothly between 120 Hz sim steps regardless of display refresh.
 import { Role } from '../core/NoteEvent.js';
 import { Lane, laneCounts } from '../core/Casting.js';
-import { MAX_LATENCY_MS } from '../core/ChoreoClock.js';
+import { MAX_LATENCY_MS, visualNow } from '../core/ChoreoClock.js';
 import { skidOffset, skidParams, tractionFrom } from './Traction.js';
 import { Midio } from './Midio.js';
 import { JumpController, A, GAMMA, W, H_BASE, D_MIN, quantizeJumpVel } from './JumpController.js';
@@ -27,6 +27,7 @@ import { VibeDirector } from './VibeDirector.js';
 import { epicBiasForKind } from '../lyrics/SectionFusion.js';
 import { EnsembleDirector } from './EnsembleDirector.js';
 import { BeatAnchor } from './BeatAnchor.js';
+import { SongBeatTransport } from './SongBeatTransport.js';
 import { ExcursionDirector } from './ExcursionDirector.js';
 import { ApotheosisDirector } from './ApotheosisDirector.js';
 import { KeyDirector } from './KeyDirector.js';
@@ -80,6 +81,7 @@ export class Simulation {
     terrainProfiles = null,
     songTerrain = null,
     residency = null,
+    chapterState = null,
   } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
@@ -133,6 +135,8 @@ export class Simulation {
     // fixed object for the sim's lifetime; JumpController reads its current
     // fields on every call, so wiring it in once here is enough.
     this.beatAnchor = new BeatAnchor(60000 / bpm);
+    this.songBeat = new SongBeatTransport({ ...conductor.beatMetadata, bpm: conductor.beatMetadata?.bpm ?? bpm });
+    this.beatAnchor.anchorMs = this.songBeat.originMs;
     this.jump.setAnchor(this.beatAnchor);
     // Cross-song memory of how this player hears a beat (GrooveFingerprint).
     // Unlike the anchor, which is rebuilt per song, this one is handed in by
@@ -256,6 +260,7 @@ export class Simulation {
       lyricSections,
       syncedLyrics,
       structure,
+      chapterState,
       conductorSchedule: conductorCues ? conductorCues.scheduleCues : null,
       worldId: this.worldId,
       // Keyed on the world's KIND, not its id. A world chosen in the picker or
@@ -352,7 +357,7 @@ export class Simulation {
         // with the beat grid everything is choreographed against. Scattered
         // kicks mean the tempo read is wrong, which is what "the characters
         // are moving randomly" actually looks like from the outside.
-        this.syncMonitor.onKick(evt.tMs, this.jump.beatPeriodMs, this.beatAnchor.anchorMs);
+        if (!this.songBeat.freeTime) this.syncMonitor.onKick(evt.tMs, this.songBeat.snapshotAt(evt.tMs).periodMs, this.beatAnchor.anchorMs);
         this.groundField.kickGlow(this.worldX, evt.tMs, evt.vel);
         this.midasus.voyage.onKick(evt.vel); // deep-space sparkle burst (self-gated on phase)
         if (this.apotheosis.active) this.performer.captureGoldAfterimage(this.midio, this.timeMs);
@@ -643,6 +648,28 @@ export class Simulation {
     this.fracture.reducedFlash = v;
   }
 
+  setReducedMotion(v) {
+    this.reducedMotion = !!v;
+    this.biomes.reducedMotion = !!v;
+  }
+
+  syncSongBeat(nowMs) {
+    const state = this.songBeat.snapshotAt(nowMs);
+    this.beatAnchor.setSongBeatMs(state.periodMs, nowMs);
+    if (!this.beatAnchor._history.length) this.beatAnchor.anchorMs = state.anchorMs;
+    this.beatAnchor.update(nowMs);
+    this.biomes.beatTransport = state;
+    this.biomes._beatMs = state.periodMs;
+    // Source confidence owns the musical grid even before the viewer taps.
+    // Keep tap confidence separate for calibration and landing mechanics.
+    this.presentationBeatAnchor = {
+      periodMs: this.beatAnchor.periodMs, anchorMs: this.beatAnchor.anchorMs,
+      confidence: state.freeTime ? 0 : Math.max(state.confidence, this.beatAnchor.confidence),
+      phaseRad: timeMs => this.beatAnchor.phaseRad(timeMs),
+    };
+    return state;
+  }
+
   /** Global graphics presentation: classic (SMW-flat) or rendered (DKC-CGI). */
   setVisualStyle(v) {
     this.visualStyle = v === 'classic' ? 'classic' : 'rendered';
@@ -661,6 +688,9 @@ export class Simulation {
     this.performer.visualLagMs = this.visualLagMs;
     this.broshi.visualLagMs = this.visualLagMs;
     this.midasus.visualLagMs = this.visualLagMs;
+    this.heardTimeMs = visualNow(nowMs, this.visualLagMs);
+    this.biomes.visualLagMs = this.visualLagMs;
+    this.syncSongBeat(this.heardTimeMs);
 
     this.jump.clearFrameFlags();
     this.comboSystem.clearFrameFlags();
@@ -836,24 +866,15 @@ export class Simulation {
     this.snowCover = Math.max(this.weather.groundCover, biomeSnow, this.biomes.floodFooting01());
     this.broshi.traction = tractionFrom(this.snowCover);
     this.biomes.snowCover = this.snowCover;
-    // Keep the anchor's notion of "the song's own beat" tracking the live
-    // chart tempo (JumpController's own kick EMA), so its ladder-snap
-    // reasoning stays meaningful across any mid-song tempo drift.
-    this.beatAnchor.setSongBeatMs(this.jump.beatPeriodMs, nowMs);
-    this.beatAnchor.update(nowMs);
+    // Kick-grid agreement remains diagnostic. An accent pattern cannot
+    // retune the source transport's phase or period.
     this.syncMonitor.update(nowMs, {
-      beatPeriodMs: this.jump.beatPeriodMs,
+      beatPeriodMs: this.beatAnchor.periodMs,
       anchorConfidence: this.beatAnchor.confidence,
-      suppress: this.recalibrating,
+      suppress: this.recalibrating || this.songBeat.freeTime || this.songBeat.confidence < .2,
     });
-    // ...and apply what it found. The monitor used to raise a prompt asking
-    // the viewer to tap a correction in by hand; if the engine can measure
-    // the offset it can apply it, so it does. Moving anchorMs IS the fix --
-    // every kick-quantized thing in the show (jumps, Broshi's surges,
-    // section cuts) hangs off this one grid origin.
-    const gridFix = this.syncMonitor.consumeCorrection();
-    if (gridFix != null) this.beatAnchor.anchorMs += gridFix;
-    this.ensemble.update(nowMs, dtSec, this.vibe, this.jump.beatPeriodMs, this.beatAnchor, this.hype.buildUp);
+    this.syncMonitor.consumeCorrection();
+    this.ensemble.update(this.heardTimeMs, dtSec, this.vibe, this.beatAnchor.periodMs, this.songBeat.freeTime ? null : this.presentationBeatAnchor, this.hype.buildUp);
     // A scene transition is a rare cue for the whole trio to share a brief
     // tumble accent (see EnsembleDirector.maybeTumble) -- one-frame lag
     // against biomes.update() below is inaudible/invisible at 16ms.
@@ -879,7 +900,7 @@ export class Simulation {
     this.jump.update(nowMs);
     this.midio.y = this.jump.y;
 
-    this.groundField.update(nowMs, dtSec, this.worldX, this.energyCurves, this.calm.level);
+    this.groundField.update(nowMs, dtSec, this.worldX, this.energyCurves, this.calm.level, this.heardTimeMs);
     this.midio.groundY = this.groundField.heightAt(this.worldX);
     if (this.groundField.justRecovered) this.camera.shake(5.5);
 
@@ -1221,9 +1242,9 @@ export class Simulation {
     // SAME anchor (live song tempo from the first beat, refined by any
     // player taps) everything else that locks to the beat already reads.
     const beatPeriodMs = Math.max(1, this.beatAnchor.periodMs);
-    const beatTauMs = ((nowMs - this.beatAnchor.anchorMs) % beatPeriodMs + beatPeriodMs) % beatPeriodMs;
-    const beatEnergy = Math.max(this.vibe.epic, this.hype.surge);
-    this.camera.update(dtSec, this.calm.level, this.reducedFlash, beatTauMs, beatEnergy, this.parallelUniverse.pulse);
+    const beatTauMs = ((this.heardTimeMs - this.beatAnchor.anchorMs) % beatPeriodMs + beatPeriodMs) % beatPeriodMs;
+    const beatEnergy = this.songBeat.freeTime ? 0 : Math.max(this.vibe.epic, this.hype.surge);
+    this.camera.update(dtSec, this.calm.level, this.reducedFlash || this.reducedMotion, beatTauMs, beatEnergy, this.parallelUniverse.pulse);
     this.paramBus.step();
 
     this.curr = this._snapshot();

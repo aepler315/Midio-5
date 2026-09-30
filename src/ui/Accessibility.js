@@ -4,6 +4,7 @@
 // disabled/blocked storage API in a locked-down browser, and both fall
 // back to "off" rather than throwing.
 const STORAGE_KEY = 'smw:reducedFlash';
+const MOTION_KEY = 'smw:reducedMotion';
 const NO_LYRICS_KEY = 'smw:noLyrics';
 export const FLASH_CAP = 0.4;
 
@@ -25,6 +26,18 @@ export function getReducedFlash() {
 
 export function setReducedFlash(v) {
   try { localStorage.setItem(STORAGE_KEY, v ? '1' : '0'); } catch { /* no persistent storage available */ }
+}
+
+export function getReducedMotion() {
+  try {
+    const stored = localStorage.getItem(MOTION_KEY);
+    if (stored !== null) return stored === '1';
+  } catch { /* OS preference is available even when storage is blocked. */ }
+  return prefersReducedMotion();
+}
+
+export function setReducedMotion(v) {
+  try { localStorage.setItem(MOTION_KEY, v ? '1' : '0'); } catch { /* unavailable storage */ }
 }
 
 // "No lyrics": a persisted opt-out from the LRCLIB lyric fetch/prompt that

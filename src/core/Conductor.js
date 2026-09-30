@@ -20,10 +20,12 @@ export class Conductor {
     this.aheadRegs = [];
   }
 
-  load({ timeline, barGrid, durationMs }) {
+  load({ timeline, barGrid, durationMs, bpm, beatPeriodMs, confidence, freeTime, firstBarMs, localTempo }) {
     this.timeline = sortNoteEvents([...timeline]);
     this.barGrid = barGrid || [];
     this.durationMs = durationMs || 0;
+    this.beatMetadata = { bpm, beatPeriodMs, confidence, freeTime, firstBarMs, localTempo: localTempo || [],
+      barGrid: this.barGrid, authored: this.timeline.some(e => e.src === 'midi') };
     this.cursor = 0;
     this.barCursor = 0;
     for (const reg of this.aheadRegs) reg.cursor = 0;

@@ -102,9 +102,12 @@ const WATER_FRAG = /* glsl */`
   precision highp float;
   uniform vec3 uSkyZenith; uniform vec3 uSkyHorizon; uniform vec3 pWater; uniform vec3 pWaterDeep;
   uniform float uExposure; uniform float uTime;
-  uniform float uAlpha;
+  uniform vec2 uWaterHits[8]; // age seconds, preserved contact strength
+  uniform float uWaterFlash;
   uniform vec4 uEmitters[3]; uniform vec3 uEmitterColor[3];
   in vec2 vXY;
+  in float vPoolAlpha;
+  in vec2 vPoolCenter;
   out vec4 outColor;
   vec3 tonemap(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
   void main() {
@@ -122,14 +125,25 @@ const WATER_FRAG = /* glsl */`
       // enough for the reflection drawn into it to read.
       c += uEmitterColor[i] * e.w * fall * fall * 0.18;
     }
+    for (int i = 0; i < 8; i++) {
+      vec2 hit = uWaterHits[i];
+      if (hit.x < 0.0 || hit.x > 2.0 || hit.y <= 0.0) continue;
+      vec2 q = (vXY - vPoolCenter) / vec2(4.0 + 22.0 * hit.x, 2.0 + 4.0 * hit.x);
+      float ring = 1.0 - smoothstep(0.02, 0.18, abs(length(q) - 1.0));
+      c += vec3(0.07) * ring * exp(-hit.x / 0.45) * hit.y * uWaterFlash;
+    }
     vec3 color = tonemap(c * uExposure);
-    outColor = vec4(pow(color, vec3(1.0 / 2.2)) * uAlpha, uAlpha);
+    outColor = vec4(pow(color, vec3(1.0 / 2.2)) * vPoolAlpha, vPoolAlpha);
   }
 `;
 
 const WATER_VERT = /* glsl */`
+  in float poolAlpha;
+  in vec2 poolCenter;
   out vec2 vXY;
-  void main() { vXY = position.xy; gl_Position = projectionMatrix * viewMatrix * vec4(position.xy, 1.2, 1.0); }
+  out float vPoolAlpha;
+  out vec2 vPoolCenter;
+  void main() { vXY = position.xy; vPoolAlpha = poolAlpha; vPoolCenter = poolCenter; gl_Position = projectionMatrix * viewMatrix * vec4(position.xy, 1.2, 1.0); }
 `;
 
 export function hueToLinear(h, s = 0.75, l = 0.6) {
@@ -166,7 +180,9 @@ export class RockStageGL {
       uEmitterColor: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
       uPools: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
       uPoolAlpha: { value: new Array(8).fill(0) },
-      uDiag: { value: 0 }, uTime: { value: 0 }, uAlpha: { value: 1 },
+      uDiag: { value: 0 }, uTime: { value: 0 },
+      uWaterHits: { value: Array.from({ length: 8 }, () => new THREE.Vector2(0, 0)) },
+      uWaterFlash: { value: 1 },
     };
     this.uniforms = u;
     // The camera maps y down (top 0, bottom H), which mirrors triangle
@@ -194,22 +210,29 @@ export class RockStageGL {
     this._upload(this.geometry, { position: [stage.positions, 3], normal: [stage.normals, 3],
       surface: [stage.surfaces, 1], stageUv: [stage.uv, 2] }, stage.indices);
     // Water: fans of the exact pool polygons.
-    const wp = [];
+    const wp = [], wa = [], wc = [];
     const u = this.uniforms;
     stage.pools.slice(0, 8).forEach((p, i) => {
       const c = p.polygon.reduce((a, q) => [a[0] + q.x / p.polygon.length, a[1] + q.y / p.polygon.length], [0, 0]);
       for (let k = 0; k < p.polygon.length; k++) {
         const a = p.polygon[k], b = p.polygon[(k + 1) % p.polygon.length];
         wp.push(c[0], c[1], 0, a.x, a.y, 0, b.x, b.y, 0);
+        wa.push(p.alpha ?? 1, p.alpha ?? 1, p.alpha ?? 1);
+        wc.push(c[0], c[1], c[0], c[1], c[0], c[1]);
       }
       const xs = p.polygon.map((q) => q.x), ys = p.polygon.map((q) => q.y);
       u.uPools.value[i].set(c[0], c[1], (Math.max(...xs) - Math.min(...xs)) / 2, (Math.max(...ys) - Math.min(...ys)) / 2);
-      u.uPoolAlpha.value[i] = p.alpha;
+      u.uPoolAlpha.value[i] = p.alpha ?? 1;
     });
     for (let i = stage.pools.length; i < 8; i++) { u.uPools.value[i].set(0, 0, 0, 0); u.uPoolAlpha.value[i] = 0; }
-    this._upload(this.waterGeometry, { position: [Float32Array.from(wp), 3] }, null);
+    this._upload(this.waterGeometry, { position: [Float32Array.from(wp), 3], poolAlpha: [Float32Array.from(wa), 1], poolCenter: [Float32Array.from(wc), 2] }, null);
     this.water.visible = wp.length > 0;
-    u.uAlpha.value = 1;
+    for (let i = 0; i < 8; i++) {
+      const hit = frame.waterHits?.[i];
+      const age = hit ? (frame.timeMs - hit.tMs) / 1000 : -1;
+      u.uWaterHits.value[i].set(age, age >= 0 && age <= 2 && !frame.reducedMotion ? Math.min(1, Math.max(0, hit.strength || 0)) : 0);
+    }
+    u.uWaterFlash.value = frame.reducedFlash ? .35 : 1;
     const ems = (frame.emitters || []).filter((e) => e.visible).slice(0, 3);
     for (let i = 0; i < 3; i++) {
       const e = ems[i];
@@ -221,8 +244,8 @@ export class RockStageGL {
     if (lightDir) u.uKeyDir.value.copy(lightDir);
     if (skyZenith) u.uSkyZenith.value.copy(skyZenith);
     if (skyHorizon) u.uSkyHorizon.value.copy(skyHorizon);
-    u.uTime.value = frame.timeMs / 1000;
-    this.bytes = stage.positions.byteLength * 3 + stage.indices.byteLength + wp.length * 4;
+    u.uTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
+    this.bytes = stage.positions.byteLength * 3 + stage.indices.byteLength + (wp.length + wa.length + wc.length) * 4;
   }
 
   /** Copy this frame's arrays into reused GPU attributes. Replacing an

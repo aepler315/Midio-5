@@ -34,6 +34,8 @@ export class EnergyCurves {
      *  first query and invalidated by setFrame (the builders fill every frame
      *  before anything samples, so in practice it's computed exactly once). */
     this._calCache = new Map();
+    // bands: normalized activity; rmsBands: physical filter-bank RMS amplitude.
+    this.rmsBands = null;
   }
 
   _indexAt(tMs) {
@@ -47,6 +49,20 @@ export class EnergyCurves {
     const f = idx - i0;
     const arr = this.bands[bandIndex];
     return arr[i0] * (1 - f) + arr[i1] * f;
+  }
+
+  sampleRms(bandIndex, tMs) {
+    if (!this.rmsBands) return null;
+    const idx = this._indexAt(tMs), lo = Math.floor(idx), hi = Math.min(this.n - 1, lo + 1);
+    const f = idx - lo, arr = this.rmsBands[bandIndex];
+    return arr[lo] * (1 - f) + arr[hi] * f;
+  }
+
+  powerShares(tMs) {
+    if (!this.rmsBands) return null;
+    const powers = this.rmsBands.map((_, band) => this.sampleRms(band, tMs) ** 2);
+    const sum = powers.reduce((a,b) => a+b, 0);
+    return powers.map(p => sum > 1e-12 ? p / sum : 0);
   }
 
   sampleAll(tMs) {

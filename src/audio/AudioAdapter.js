@@ -26,7 +26,7 @@ import { throwIfAborted } from './loadLimits.js';
 import { createYielder } from '../utils/yieldToMain.js';
 import { EnergyCurves } from './EnergyCurves.js';
 import { summarizeRhythmOnsets } from './RhythmProfile.js';
-import { analyzeStructure } from './StructureAnalyzer.js';
+import { analyzeStructureOffThread } from './StructureWorkerClient.js';
 import { sectionPacing } from './sectionBudget.js';
 import { Role, makeNoteEvent, sortNoteEvents } from '../core/NoteEvent.js';
 import { Lane, melodyLaneForNote, laneForStemName, delegateByStemActivity } from '../core/Casting.js';
@@ -168,11 +168,11 @@ export async function audioToTimeline(audioBuffer, {
 
   await maybeYield();
   const melodyLane = extractPseudoLane(normBands, rate, {
-    bandIndices: [2, 3, 4], pitchLo: 60, pitchHi: 96, role: Role.MELODY, onsetThreshold: 1,
+    bandIndices: [2, 3, 4], pitchLo: 60, pitchHi: 96, role: Role.MELODY, onsetThreshold: 1, rawBands: raw,
   });
   await maybeYield();
   const bassLane = extractPseudoLane(normBands, rate, {
-    bandIndices: [0, 1], pitchLo: 28, pitchHi: 52, role: Role.BASS, onsetThreshold: 1,
+    bandIndices: [0, 1], pitchLo: 28, pitchHi: 52, role: Role.BASS, onsetThreshold: 1, rawBands: raw,
   });
   const melodyMix = mixBandEnvelopes(normBands, [2, 3, 4]);
   const bassMix = mixBandEnvelopes(normBands, [0, 1]);
@@ -185,8 +185,8 @@ export async function audioToTimeline(audioBuffer, {
   }
   for (const n of melodyLane) {
     await maybeYield();
-    const tracked = melodyPitchAt(pitchFeatures, n.tMs);
-    const pitch = tracked ?? n.pitch;
+    const tracked = melodyPitchAt(pitchFeatures, n.tMs, { returnEstimate: true });
+    const pitch = tracked?.pitch ?? n.pitch;
     // Casting inside one mixed file: no track names exist, but the spectrum
     // does -- a note whose centroid rides far above its own fundamental is
     // a driven/synth lead (Midio's line), one that stays near it is a clean
@@ -195,14 +195,16 @@ export async function audioToTimeline(audioBuffer, {
       tMs: n.tMs, durMs: estimateSustainMs(melodyMix, rate, n.frame), pitch,
       vel: n.vel, role: Role.MELODY, src: 'audio', channel: 3,
       lane: melodyLaneForNote(pitch, brightnessAt(pitchFeatures, n.tMs)),
+      pitchProvenance: tracked == null ? 'inferred' : 'tracked', pitchConfidence: tracked?.confidence ?? 0,
     }));
   }
   for (const n of bassLane) {
     await maybeYield();
-    const tracked = estimateBassPitchAt(bassChannels || mixChannels, audioBuffer.sampleRate, n.tMs);
+    const tracked = estimateBassPitchAt(bassChannels || mixChannels, audioBuffer.sampleRate, n.tMs, { returnEstimate: true });
     timeline.push(makeNoteEvent({
-      tMs: n.tMs, durMs: estimateSustainMs(bassMix, rate, n.frame), pitch: tracked ?? n.pitch,
+      tMs: n.tMs, durMs: estimateSustainMs(bassMix, rate, n.frame), pitch: tracked?.pitch ?? n.pitch,
       vel: n.vel, role: Role.BASS, src: 'audio', channel: 1, lane: Lane.BROSHI,
+      pitchProvenance: tracked == null ? 'inferred' : 'tracked', pitchConfidence: tracked?.confidence ?? 0,
     }));
   }
 
@@ -256,7 +258,7 @@ export async function audioToTimeline(audioBuffer, {
     for (const c of chord) {
       timeline.push(makeNoteEvent({
         tMs: fromMs, durMs: Math.max(300, (toMs - fromMs) * 0.9), pitch: 60 + c.pc,
-        vel: vel * (0.6 + 0.4 * c.strength), role: Role.PAD, src: 'audio', channel: 2,
+        vel: vel * (0.6 + 0.4 * c.strength), role: Role.PAD, src: 'audio', channel: 2, pitchProvenance: 'synthetic', pitchConfidence: 0,
       }));
     }
   }
@@ -276,6 +278,7 @@ export async function audioToTimeline(audioBuffer, {
   await maybeYield();
   const refBands = globalBandReferences(raw);
   const energyCurves = new EnergyCurves(durationMs, rate);
+  energyCurves.rmsBands = raw.map(b => Float32Array.from({ length: energyCurves.n }, (_,i) => b[Math.min(b.length - 1,i)]));
   for (let i = 0; i < energyCurves.n; i++) {
     const frame = Math.min(raw[0].length - 1, i);
     energyCurves.setFrame(i, raw.map((b, bi) => clamp01((b[frame] ?? 0) / refBands[bi])));
@@ -319,18 +322,20 @@ export async function audioToTimeline(audioBuffer, {
     barSynchronous: barGrid.length >= 8,
   });
   await maybeYield();
-  const structure = analyzeStructure({
+  const structure = await analyzeStructureOffThread({
     pointsMs: structurePoints, pitchFeatures, energyCurves, durationMs,
     minGapMs: pacing.minGapMs,
     minGapPoints: pacing.minGapPoints,
     maxCuts: pacing.maxCuts,
-  });
+  }, { signal });
   throwIfAborted(signal);
 
   onProgress?.({ phase: 'done', progress: 1 });
 
   return {
     timeline, barGrid, durationMs,
+    firstBarMs: tempo.firstBarMs,
+    localTempo: (tempo.curve || []).map(c => ({ tMs: c.startFrame / rate * 1000, beatPeriodMs: c.tau / rate * 1000, confidence: c.confidence })),
     bpm: tempo.bpm, beatPeriodMs: tempo.beatPeriodMs, confidence: tempo.confidence, freeTime: tempo.freeTime,
     energyCurves, analysis, tonalityTimeline: keyTimeline, structure, stems: stemsSummary,
     songProfile: buildSongProfile({

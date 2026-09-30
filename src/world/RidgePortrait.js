@@ -445,8 +445,9 @@ function meanShares(energyCurves) {
     return shares;
   }
   const sums = new Float64Array(7);
+  const physical = energyCurves.rmsBands;
   for (let i = 0; i < n; i++) {
-    for (let b = 0; b < 7; b++) sums[b] += Math.max(0, energyCurves.bands[b][i] || 0);
+    for (let b = 0; b < 7; b++) sums[b] += physical ? Math.max(0, physical[b][i] || 0) ** 2 : Math.max(0, energyCurves.bands[b][i] || 0);
   }
   let tot = 0;
   for (let b = 0; b < 7; b++) tot += sums[b];

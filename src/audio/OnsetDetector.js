@@ -120,7 +120,10 @@ export function normalizeBands(raw, rate, tau = 4) {
 export function globalBandReferences(raw) {
   const p95s = raw.map((env) => {
     if (env.length === 0) return 1e-6;
-    const sorted = Float32Array.from(env).sort();
+    let peak = 0;
+    for (const value of env) peak = Math.max(peak,value);
+    const sorted = Float32Array.from(env.filter(v => v > Math.max(1e-7, peak * 1e-4))).sort();
+    if (!sorted.length) return 1e-6;
     const idx = Math.min(sorted.length - 1, Math.floor(0.95 * sorted.length));
     return Math.max(1e-6, sorted[idx]);
   });
@@ -590,7 +593,7 @@ export function estimateSustainMs(env, rate, frame, { floorRatio = 0.35, minMs =
  *  refine pitch/duration against the true spectrum (see PitchTracker) --
  *  the band-centroid pitch here is only the fallback for moments the
  *  spectral tracker finds no tonal content in. */
-export function extractPseudoLane(normBands, rate, { bandIndices, pitchLo, pitchHi, role, onsetThreshold = 1 }) {
+export function extractPseudoLane(normBands, rate, { bandIndices, pitchLo, pitchHi, role, onsetThreshold = 1, rawBands = null }) {
   const mix = mixBandEnvelopes(normBands, bandIndices);
 
   const flux = positiveFlux(mix);
@@ -600,6 +603,8 @@ export function extractPseudoLane(normBands, rate, { bandIndices, pitchLo, pitch
   const values = frames.map((i) => flux[i]).sort((a, b) => a - b);
   const p95 = values.length ? Math.max(1e-6, values[Math.min(values.length - 1, Math.floor(0.95 * values.length))]) : 1;
 
+  const refs = rawBands ? globalBandReferences(rawBands) : null;
+  const ref = refs ? bandIndices.reduce((sum,b) => sum + refs[b], 0) : 1;
   return frames.map((i) => {
     let num = 0, den = 0;
     for (let k = 0; k < bandIndices.length; k++) {
@@ -609,6 +614,6 @@ export function extractPseudoLane(normBands, rate, { bandIndices, pitchLo, pitch
     }
     const centroid = den > 0 ? num / den / Math.max(1, bandIndices.length - 1) : 0.5;
     const pitch = Math.round(pitchLo + (pitchHi - pitchLo) * clamp(centroid, 0, 1));
-    return { tMs: (i / rate) * 1000, pitch, vel: clamp(flux[i] / p95, 0, 1), role, frame: i };
+    return { tMs: (i / rate) * 1000, pitch, vel: clamp(flux[i] / p95, 0, 1) * (rawBands ? .18 + .82 * clamp(bandIndices.reduce((sum,b) => sum + rawBands[b][i], 0) / ref, 0, 1) : 1), novelty: clamp(flux[i] / p95, 0, 1), role, frame: i };
   });
 }

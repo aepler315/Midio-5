@@ -58,7 +58,9 @@ test('an opening stands for the whole song until the whole analysis lands', () =
   };
   const data = asOpening(result, 240000);
   assert.equal(data.durationMs, 240000, 'the arc and the ending are the song\'s');
-  assert.deepEqual(data.opening, { analyzedMs: 15000 });
+  assert.equal(data.opening.analyzedMs, 15000);
+  assert.equal(data.opening.provisional, true);
+  assert.equal(data.opening.evidenceScope, 'opening');
   assert.equal(data.songProfile, result.songProfile, 'the world is chosen from the opening\'s own profile');
   assert.ok(data.barGrid.length > 100);
   assert.ok(data.energyCurves.sample(0, 60000) > 0.5, 'past the opening the energy holds rather than falling silent');
