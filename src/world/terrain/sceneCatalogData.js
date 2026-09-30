@@ -1646,6 +1646,89 @@ export default {
      "9a60ac6d2118690f9c0db529cdad9ca52c6a75d731b813df25496dfc640df677"
     ]
    }
+  },
+  {
+   "id": "pend-oreille-valley",
+   "regionId": "pend-oreille-valley",
+   "biome": "CONIFER",
+   "status": "candidate",
+   "catalogVersion": 17,
+   "title": "Pend Oreille Valley",
+   "place": "Newport–Cusick–Ione, Washington",
+   "credit": "Elevation: USGS 3DEP 1/3 arc-second DEM",
+   "terrainManifestUrl": "terrain/pend-oreille-valley.terrain.json",
+   "terrainManifestSha256": "c06b35fc64d0af6a0d22b8a595e9fa1499e7c0d701d755caa61c8b3a5ba6a3bd",
+   "materialManifestUrl": "materials/dry-conifer.json",
+   "materialManifestSha256": "6afff55ebe7762475b09f09fa8f60627714d051f9f117ffffd8e124894281175",
+   "materialRules": {
+    "snowlineM": 2250,
+    "forestFloorM": 550,
+    "forestDensity": 0.2
+   },
+   "camera": {
+    "eyeStartM": [
+     18210.7,
+     1615.9,
+     32774.1
+    ],
+    "eyeEndM": [
+     -8100.3,
+     1458.5,
+     -20022.2
+    ],
+    "targetStartM": [
+     8165.1,
+     850,
+     25013.7
+    ],
+    "targetEndM": [
+     -10648.1,
+     1100,
+     -35595.1
+    ],
+    "fovYDeg": 32,
+    "eyeArcM": [
+     -3500,
+     300,
+     -1000
+    ],
+    "targetArcM": [
+     -2000,
+     100,
+     0
+    ]
+   },
+   "glacier": {
+    "axisStartM": [
+     10417.2,
+     38909.3
+    ],
+    "axisEndM": [
+     -11749.6,
+     -35597.4
+    ],
+    "halfWidthM": 12500,
+    "surfaceStartM": 950,
+    "surfaceEndM": 1400,
+    "maxThicknessM": 850
+   },
+   "characterScores": {
+    "energy": 0.102,
+    "rawness": 0.074,
+    "grandeur": 0.249,
+    "dominance": 0.505
+   },
+   "archetype": "brooding",
+   "evidence": {
+    "reviewPath": "docs/glacial-valley-validation.md",
+    "review": null,
+    "approval": null,
+    "sourceHashes": [
+     "b7f07453b28eaa5404e75822c23e23c2ac32d4a93a315a34071bcd466ba9ca7e",
+     "448aa74ee0a45435316c7292f4323876cc47d9f1ebd9ca752cf9d55e95c770cc",
+     "d51e69acee4988f501b56feaee699dd6fb3e7b087b530ba103dfa89f7270cf32"
+    ]
+   }
   }
  ]
 };

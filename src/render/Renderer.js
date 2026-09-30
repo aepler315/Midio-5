@@ -118,6 +118,52 @@ const VIGNETTE_MAX_ALPHA = 0.54;         // edge darkness at maximum depth (full
 const VIGNETTE_ONSET_MIN = 0.34;         // onset fraction (of corner radius) at max depth -- a deep iris
 const VIGNETTE_ONSET_MAX = 0.62;         // onset fraction at min depth -- only the outer ring ever darkens
 
+/** Hidden canvas chrome must not consume pointer taps. The optional WebGL
+ * wrapper uses the same canvas compositor and visibility switch. */
+export function hitTestComposerStrip(renderer, x, y, stage) {
+  if (!renderer?.hudInFrame) return null;
+  return (renderer.canvasRenderer || renderer).composer?.hitTest(x, y, stage) || null;
+}
+
+/** The glacier's physical 3D rail supplies the coasting motion. Fade out
+ * frame-wide sway as its view arrives, retaining camera.zoom for cast fit. */
+function glacialViewWeight(presentation, biomes) {
+  if (!presentation?.enabled || !presentation.captionViewFor) return 0;
+  const blend = biomes?.currentBlend || {};
+  const name = (p) => typeof p === 'string' ? p : p?.name;
+  const from = name(blend.from) ?? biomes?.sections?.[0]?.profile?.name;
+  const to = name(blend.to) ?? from;
+  const t = clamp01(blend.t ?? 1);
+  const fromIce = !!presentation.captionViewFor(from)?.glacier;
+  const toIce = !!presentation.captionViewFor(to)?.glacier;
+  return (fromIce ? 1 - t : 0) + (toIce ? t : 0);
+}
+
+export function presentationCamera(camera, presentation, biomes) {
+  const weight = glacialViewWeight(presentation, biomes);
+  if (!weight) return camera;
+  const gain = 1 - 0.92 * weight;
+  return { ...camera, shakeX: camera.shakeX * gain, shakeY: camera.shakeY * gain, roll: (camera.roll || 0) * gain };
+}
+
+/** Put the pilot cast on a narrow bottom ledge. This only changes the shared
+ * drawing transform: physics, pool geometry and reflection contacts keep
+ * their original coordinates and therefore move together. */
+export function groundPresentationOffsetY(presentation, biomes, height, supportY) {
+  const weight = glacialViewWeight(presentation, biomes);
+  if (!weight || !Number.isFinite(supportY)) return 0;
+  return weight * Math.max(0, Math.min(height * 0.22, height * 0.915 - supportY + SHAKE_MARGIN_PX));
+}
+
+export function applyFixedGroundTransform(ctx, { sx, sy, width, height, camera, offsetY = 0 }) {
+  const cx = width / 2 + SHAKE_MARGIN_PX, cy = height / 2 + SHAKE_MARGIN_PX;
+  ctx.setTransform(sx, 0, 0, sy, 0, 0);
+  ctx.translate(cx, cy);
+  ctx.rotate(camera.roll || 0);
+  ctx.translate(-cx + camera.shakeX - SHAKE_MARGIN_PX,
+    -cy + camera.shakeY - SHAKE_MARGIN_PX + offsetY);
+}
+
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -127,10 +173,8 @@ export class Renderer {
     this._midioEyeRest = computeRestLengths(MIDIO_EYE);
     this._apoBodyRest = computeRestLengths(MIDIO_APOTHEOSIS_FOLDED);
     this.composer = null; // lazy: needs the conductor's timeline at first draw
-    // The seekbar strip is player chrome painted into the canvas. Bulk export
-    // turns it off: a music video should not carry a timeline labelled with
-    // the song's length burned into every frame.
-    this.hudInFrame = true;
+    // The picture opens clean; F3 can reveal the timeline for section debug.
+    this.hudInFrame = false;
     this.brush = new RainbowBrush();
     // Drop motion blur: a 3-slot ring of backing-store-sized canvases holding
     // the last three composed frames, captured every frame so the ring is
@@ -218,7 +262,7 @@ export class Renderer {
     // removed, so the early-return now just blanks the screen. Removed.
 
     const pose = sim.lerpState(alpha);
-    const camera = sim.camera;
+    const camera = presentationCamera(sim.camera, this.rangePresentation, sim.biomes);
     const biomeManager = sim.biomes || null;
     const perf = sim.perf || null;
     const particleMul = perf ? perf.particleMul : 1;
@@ -273,18 +317,14 @@ export class Renderer {
     // (zoomed, wider) bounds the same way it always has.
     const sxFixed = canvas.width / nominalW;
     const syFixed = canvas.height / nominalH;
-    const groundViewCx = nominalW / 2 + SHAKE_MARGIN_PX;
-    const groundViewCy = nominalH / 2 + SHAKE_MARGIN_PX;
+    const groundOffsetY = groundPresentationOffsetY(this.rangePresentation, biomeManager, nominalH, sim.midio.groundY);
     const groundStage = this._groundStageView || (this._groundStageView = { width: 0, height: 0 });
     groundStage.width = nominalW + 2 * SHAKE_MARGIN_PX;
     groundStage.height = nominalH + 2 * SHAKE_MARGIN_PX;
     const groundView = {
       stage: groundStage,
       apply: () => {
-        ctx.setTransform(sxFixed, 0, 0, syFixed, 0, 0);
-        ctx.translate(groundViewCx, groundViewCy);
-        ctx.rotate(camera.roll || 0);
-        ctx.translate(-groundViewCx + camera.shakeX - SHAKE_MARGIN_PX, -groundViewCy + camera.shakeY - SHAKE_MARGIN_PX);
+        applyFixedGroundTransform(ctx, { sx: sxFixed, sy: syFixed, width: nominalW, height: nominalH, camera, offsetY: groundOffsetY });
       },
     };
 

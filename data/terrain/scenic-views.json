@@ -1300,6 +1300,111 @@
           "docs/evidence/range-v2/monument-valley-163-inapp-10s.jpg"
         ]
       }
+    },
+    {
+      "id": "pend-oreille-valley",
+      "regionId": "pend-oreille-valley",
+      "biome": "CONIFER",
+      "status": "candidate",
+      "notes": "Aerial journey north-west from Newport over the Cusick valley toward Ione, using USGS 3DEP terrain. Glacier geometry is an artistic compressed interpretation of the Pend Oreille River lobe, not a dated reconstruction; the straight axis spans the broad bent valley and bed elevation limits ice to low ground. River station coordinates from USGS NWIS 12395500, 12395950 and 12396500 (NAD83). Regional glacial context: Carrara, Kiver and Stradling (1996), https://pubs.usgs.gov/publication/70018536. Forest recovery is an explicitly compressed later stage. The simplified glacier axis begins west-southwest of Newport to include the Cusick bend, and ends north of Ione; neither axis endpoint is a measured historic terminus. The sparse instanced stands over canopy reflect the mixed forest and open valley floor and keep the long flight within memory limits.",
+      "dem": {
+        "source": "3dep13",
+        "centerLonLat": [
+          -117.27,
+          48.5
+        ],
+        "extentM": [
+          64000,
+          96000
+        ],
+        "cellM": 64
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -117.025,
+            48.205
+          ],
+          "aboveGroundM": 900
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -117.38,
+            48.68
+          ],
+          "aboveGroundM": 800
+        },
+        "targetStart": {
+          "lonLat": [
+            -117.16,
+            48.275
+          ],
+          "heightM": 850
+        },
+        "targetEnd": {
+          "lonLat": [
+            -117.415,
+            48.82
+          ],
+          "heightM": 1100
+        },
+        "fovYDeg": 32,
+        "eyeArcM": [
+          -3500,
+          300,
+          -1000
+        ],
+        "targetArcM": [
+          -2000,
+          100,
+          0
+        ]
+      },
+      "glacier": {
+        "axisStartM": [
+          10417.2,
+          38909.3
+        ],
+        "axisEndM": [
+          -11749.6,
+          -35597.4
+        ],
+        "halfWidthM": 12500,
+        "surfaceStartM": 950,
+        "surfaceEndM": 1400,
+        "maxThicknessM": 850
+      },
+      "landmarks": [
+        {
+          "name": "Newport — USGS 12395500",
+          "lonLat": [
+            -117.0341667,
+            48.1822222
+          ]
+        },
+        {
+          "name": "Cusick — USGS 12395950",
+          "lonLat": [
+            -117.2929986,
+            48.3360166
+          ]
+        },
+        {
+          "name": "Ione / Box Canyon — USGS 12396500",
+          "lonLat": [
+            -117.4163706,
+            48.7809561
+          ]
+        }
+      ],
+      "title": "Pend Oreille Valley",
+      "place": "Newport–Cusick–Ione, Washington",
+      "reviewPath": "docs/glacial-valley-validation.md",
+      "materialRules": {
+        "snowlineM": 2250,
+        "forestFloorM": 550,
+        "forestDensity": 0.2
+      }
     }
   ]
 }

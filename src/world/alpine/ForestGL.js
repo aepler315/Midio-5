@@ -22,6 +22,10 @@ const TREE_COMMON = /* glsl */`
   out float vVar;
   out float vId;
   vec3 rootOf() { vec3 r = iPos; r.y += deformAt(iPos); return r; }
+  bool hiddenByGlacier() {
+    vec3 ice = glacierAt(iPos);
+    return ice.x > 0.5 || iVar.y > ice.z;
+  }
   vec2 windAt(float y01) {
     float ph = iVar.y * 6.2831;
     float s = sin(uTime * 1.3 + ph) * 0.6 + sin(uTime * 2.9 + ph * 1.7) * 0.25;
@@ -44,7 +48,7 @@ const MESH_VERT = /* glsl */`
     vNormal = normalize(vec3(normal.x / iSize.y, normal.y / iSize.x, normal.z / iSize.y));
     gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
     // Quality thinning: a stable subset by each tree's own id.
-    if (iVar.y > uForestKeep) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    if (iVar.y > uForestKeep || hiddenByGlacier()) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   }
 `;
 
@@ -67,7 +71,7 @@ const BOARD_VERT = /* glsl */`
     vVar = iVar.x; vId = iVar.y;
     vRight = right; vToCam = toCam;
     gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
-    if (iVar.y > uForestKeep) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    if (iVar.y > uForestKeep || hiddenByGlacier()) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   }
 `;
 

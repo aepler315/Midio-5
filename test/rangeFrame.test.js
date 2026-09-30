@@ -28,6 +28,24 @@ const pose = { worldX: 1000, midioX: 400, midioDrawX: 402, midioY: 500 };
 const vp = (w, h, bw, bh) => viewportState({ logicalWidth: w, logicalHeight: h, backingWidth: bw, backingHeight: bh, overscanPx: 64 });
 const scenes = new Map([['RAINFOREST', { view: { id: 'nc-ross-lake-north' }, fallbackReason: null }]]);
 
+test('glacier journey spans the song and reconstructs independently of quality and DPR', () => {
+  const at = (t, quality = 0) => {
+    const sim = fakeSim(t); sim.perf.level = quality;
+    return buildRangeFrame({ frameId: 1, sim, pose, scenicViewport: vp(1280, 720, 1280 * (quality + 1), 720), groundViewport: vp(1280, 720, 1280, 720) });
+  };
+  assert.equal(at(0).glacier.retreat01, 0);
+  assert.equal(at(180).glacier.retreat01, 1);
+  let previous = 0;
+  for (let t = 0; t <= 180; t += 5) {
+    const state = at(t).glacier;
+    assert.ok(state.retreat01 >= previous);
+    assert.deepEqual(state, at(t, 6).glacier);
+    previous = state.retreat01;
+  }
+  at(160); at(1);
+  assert.deepEqual(at(80).glacier, at(80).glacier);
+});
+
 test('the same instant yields the same frozen snapshot', () => {
   const a = buildRangeFrame({ frameId: 1, sim: fakeSim(), pose, scenicViewport: vp(1408, 848, 1920, 1080), groundViewport: vp(1408, 848, 1920, 1080), sceneAssignments: scenes });
   const b = buildRangeFrame({ frameId: 1, sim: fakeSim(), pose, scenicViewport: vp(1408, 848, 1920, 1080), groundViewport: vp(1408, 848, 1920, 1080), sceneAssignments: scenes });

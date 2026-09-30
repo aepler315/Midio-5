@@ -65,6 +65,13 @@ export function localCamera(view, points) {
     targetStartM: vec('targetStart'), targetEndM: vec('targetEnd'),
     fovYDeg: view.rail.fovYDeg ?? 35,
   };
+  for (const key of ['eyeArcM', 'targetArcM']) {
+    if (view.rail[key] == null) continue;
+    if (!Array.isArray(view.rail[key]) || view.rail[key].length !== 3 || !view.rail[key].every(Number.isFinite)) {
+      throw new Error(`${view.id}: rail.${key} must be finite XYZ metres`);
+    }
+    camera[key] = [...view.rail[key]];
+  }
   const errors = cameraRailErrors(camera);
   if (errors.length) throw new Error(`${view.id}: ${errors.join('; ')}`);
   return camera;
@@ -108,6 +115,7 @@ export async function buildView(view, { outDir, cell = null, log = console.log }
   const runtimeView = { ...view, camera };
   const baked = await bakeTerrain(grid, runtimeView, {
     landmarks, dataUrl: `${view.id}.terrain.bin.gz`, ...(view.water === false ? { water: false } : {}),
+    ...(camera.eyeArcM || camera.targetArcM ? { visibility: { stations: 61 } } : {}),
   });
   await fs.mkdir(outDir, { recursive: true });
   const manifestText = JSON.stringify(baked.manifest) + '\n';
@@ -175,7 +183,8 @@ export async function buildCatalog(doc) {
     let status = v.status;
     if (status === 'approved') {
       const a = v.approval || {};
-      const stale = APPROVAL_KEYS.filter((k) => !a[k] || a[k] !== hashes[k]);
+      const keys = [...APPROVAL_KEYS, ...(v.glacier || a.glacierSha256 ? ['glacierSha256'] : [])];
+      const stale = keys.filter((k) => !a[k] || a[k] !== hashes[k]);
       if (stale.length) {
         console.warn(`${v.id}: approval is stale (${stale.join(', ')} changed); shipping as candidate`);
         status = 'candidate';
@@ -191,6 +200,7 @@ export async function buildCatalog(doc) {
       materialManifestSha256: hashes.materialManifestSha256,
       materialRules: v.materialRules || {},
       camera: build.view.camera,
+      ...(v.glacier ? { glacier: v.glacier } : {}),
       characterScores: build.characterScores,
       archetype: build.archetype,
       evidence: {
@@ -204,7 +214,8 @@ export async function buildCatalog(doc) {
   return { catalogVersion: doc.catalogVersion, views };
 }
 
-/** Everything an approval is recorded against; a change to any voids it. */
+/** Mandatory approval identity. Optional glacierSha256 is checked when
+ * authored or previously approved, preserving metadata-free old approvals. */
 export const APPROVAL_KEYS = Object.freeze(['terrainManifestSha256', 'materialManifestSha256', 'materialRulesSha256', 'cameraSha256']);
 
 /** Key-sorted JSON, so reordering an object never changes its hash. */
@@ -214,7 +225,7 @@ const canonical = (x) => (Array.isArray(x) ? `[${x.map(canonical).join(',')}]`
 
 /** The hashes an approval is recorded against: the published terrain
  *  manifest as it is on disk (not the build record's copy of its hash), the
- *  material pack, the view's own material overrides and its camera. */
+ *  material pack, the view's own material overrides, camera and optional ice. */
 export async function approvalHashes(v, build) {
   const matUrl = `materials/${v.materialPack || DEFAULT_PACKS[v.biome]}.json`;
   const mat = await fs.readFile(path.join(RUNTIME_DIR, matUrl));
@@ -222,6 +233,7 @@ export async function approvalHashes(v, build) {
   return {
     terrainManifestSha256: sha(terrain), materialManifestSha256: sha(mat),
     materialRulesSha256: sha(canonical(v.materialRules || {})), cameraSha256: sha(JSON.stringify(build.view.camera)),
+    ...(v.glacier ? { glacierSha256: sha(canonical(v.glacier)) } : {}),
   };
 }
 

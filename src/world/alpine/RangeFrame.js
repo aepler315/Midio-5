@@ -12,6 +12,8 @@ import { ridgeKickEnv } from '../MountainChoreo.js';
 import { dayNight, celestialYFracFor, celestialXFracFor } from '../DayNight.js';
 import { recentConductorHits } from './GroundResponse.js';
 import { MIDIO_IDENTITY_HUE } from '../../render/ColorLaw.js';
+import { glacierStateAt } from './GlacierField.js';
+import { profileTravelPx } from '../terrain/ProfileTravel.js';
 
 const NIGHT_SKY = '#05060d';
 
@@ -171,6 +173,12 @@ export function buildRangeFrame({
   const progress01 = mgr.terrainPreview ? SCENE_PREVIEW_PROGRESS : sceneProgressAt({
     timeMs, curves: mgr.energyCurves, durationMs: mgr.durationMs, reducedFlash: reducedMotion, response: mgr.world?.response,
   });
+  const durationSec = (mgr.durationMs || 0) / 1000;
+  // Normalize the integrated journey separately from the old strip's
+  // opening station. The glacier always begins at its southern terminus.
+  const totalTravel = durationSec > 0 ? profileTravelPx(durationSec, mgr.energyCurves, false, mgr.world?.response) : 0;
+  const glacier = glacierStateAt({ timeMs, durationMs: mgr.terrainPreview ? 0 : mgr.durationMs,
+    progress01: totalTravel > 0 ? profileTravelPx(timeMs / 1000, mgr.energyCurves, false, mgr.world?.response) / totalTravel : undefined });
   const dn = dayNight(timeMs, mgr._dayNightCycleMs);
   const sunUp = dn.sunAlt > 0.001;
   const A = mgr._profile(blend.from), B = mgr._profile(blend.to);
@@ -236,7 +244,7 @@ export function buildRangeFrame({
     biomeFrom, biomeTo, transition01: t,
     viewFromId: from?.view?.id ?? null, viewToId: to?.view?.id ?? null,
     forcedCandidate: !!forcedView?.forcedCandidate,
-    progress01, qualityLevel: sim.perf?.level ?? 0, reducedFlash, reducedMotion,
+    progress01, glacier, qualityLevel: sim.perf?.level ?? 0, reducedFlash, reducedMotion,
     scenicViewport, groundViewport,
     light: lightState, music, groundBars, emitters,
     waterHits: recentConductorHits(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),

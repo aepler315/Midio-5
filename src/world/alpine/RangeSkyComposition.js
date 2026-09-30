@@ -1,14 +1,22 @@
-/** One frame's Range-specific upper-sky ownership. The live ridge supplies
- * the geometry; incidental paint is admitted only outside its actual body. */
+/** One frame's Range-specific upper-sky ownership. Keep faint star depth
+ * behind the live ridge while reserving its body for incidental figures. */
 export function createRangeSkyComposition(spaceRidge, canvas, { voyageActive = false } = {}) {
   const corridorAt = spaceRidge.corridor(canvas);
   const allowPoint = (x, y) => {
     const { top, bottom } = corridorAt(x);
     return y < top || y > bottom;
   };
+  const starBrightnessAt = (x, y) => {
+    const { top, bottom } = corridorAt(x);
+    const feather = Math.max(1, canvas.height * 0.025);
+    const distance = Math.max(top - y, y - bottom, 0);
+    const u = Math.min(1, distance / feather);
+    return 0.12 + 0.88 * u * u * (3 - 2 * u);
+  };
   return {
     allowPoint,
-    allowStar: (index, x, y) => index % 5 === 0 && allowPoint(x, y),
+    starBrightnessAt,
+    decorativeAlpha: 0.18,
     showWeaver: !voyageActive,
     weaverOptions: { maxFigures: 1, maxRetained: 0, allowPoint },
     celestialShafts: false,

@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildRockStage, supportAt, slabEdges, insidePolygon, COLUMN_PX, STAGE_SLABS } from '../src/world/alpine/RockStage.js';
 import { GroundResponse } from '../src/world/alpine/GroundResponse.js';
+import * as rockStage from '../src/world/alpine/RockStage.js';
 
 const W = 640, H = 360;
 const barsFrom = (fn, width = W, step = 16) => {
@@ -72,6 +73,24 @@ test('slab edges are world-anchored and ordered', () => {
   // Column c+5 of `a` and column c of `b` sample the same world x.
   const colY = (s, c) => s.positions[(c * (STAGE_SLABS * 2 - 1) * 4 + 3) * 3 + 1]; // bottom-left of the first face
   for (let c = 0; c < 20; c++) assert.ok(Math.abs(colY(a, c + 5) - colY(b, c)) < 1e-3, `column ${c}`);
+});
+
+test('contact slab is a narrow irregular ledge rather than a broad walking plane', () => {
+  const edges = Array.from({ length: 200 }, (_, i) => slabEdges(i * 8, 11)[1]);
+  assert.ok(Math.max(...edges) < 0.16, 'visible contact slab stays narrow');
+  assert.ok(Math.max(...edges) - Math.min(...edges) > 0.025, 'front edge has world-anchored variation');
+});
+
+test('ledge shade follows support and leaves the contact rim readable', () => {
+  assert.equal(typeof rockStage.drawRockStageShade, 'function');
+  const vertices = [], stops = [];
+  const ctx = { save() {}, restore() {}, beginPath() {}, closePath() {}, clip() {}, fillRect() {},
+    moveTo: (x, y) => vertices.push([x, y]), lineTo: (x, y) => vertices.push([x, y]),
+    createLinearGradient: () => ({ addColorStop: (at, color) => stops.push([at, color]) }) };
+  rockStage.drawRockStageShade(ctx, { bars: rolling, width: W, height: H });
+  for (const b of rolling) assert.ok(vertices.some(([x, y]) => x === b.x + b.width / 2 && y === b.y));
+  assert.equal(stops[0][1], 'rgba(0,0,0,0)');
+  assert.ok(stops.at(-1)[1].includes('0.68'));
 });
 
 test('pools appear only where the support is level across the whole pool', () => {

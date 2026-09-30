@@ -112,3 +112,13 @@ test('the async placement yields during the work and gives the same forest', asy
   assert.deepEqual(a.billboard, b.billboard);
   assert.deepEqual(a.mesh, b.mesh);
 });
+
+test('forest rings include stands beside the curved camera path', () => {
+  // Endpoints are far outside this patch; the midpoint arcs directly over it.
+  const bent = { ...view, camera: { ...view.camera,
+    eyeStartM: [-200, 1400, 10000], eyeEndM: [200, 1400, 10000],
+    targetStartM: [-200, 600, 0], targetEndM: [200, 600, 0],
+    eyeArcM: [0, 0, -9000], targetArcM: [0, 0, -500] } };
+  const trees = placeForest(data, bent, rules, { seed: 5, rings: { billboardM: 2500, meshM: 2000 } });
+  assert.ok(trees.count > 500, `stands along the curved rail: ${trees.count}`);
+});

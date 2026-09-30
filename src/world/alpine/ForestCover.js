@@ -71,6 +71,30 @@ function railDistance(a, b, p) {
   return Math.hypot(p[0] - a[0] - ab[0] * t, p[1] - a[1] - ab[1] * t, p[2] - a[2] - ab[2] * t);
 }
 
+/** Conservative distance to the authored eye path. For a quadratic rail,
+ * each of 32 chords deviates by at most |arc|/32² metres; subtracting that
+ * bound keeps stands at a ring's edge while retaining straight-rail parity. */
+function forestRail(view) {
+  const arc = view.camera.eyeArcM;
+  const steps = arc && Math.hypot(...arc) > 0 ? 32 : 1;
+  const poses = Array.from({ length: steps + 1 }, (_, i) => cameraPoseAt(view, i / steps).eyeM);
+  if (steps === 1) return p => railDistance(poses[0], poses[1], p);
+  const segments = poses.slice(1).map((b, i) => {
+    const a = poses[i], d = b.map((v, k) => v - a[k]);
+    return { a, d, length2: d.reduce((sum, v) => sum + v * v, 0) };
+  });
+  const error = steps > 1 ? Math.hypot(...arc) / (steps * steps) : 0;
+  return p => {
+    let best2 = Infinity;
+    for (const { a, d, length2 } of segments) {
+      const x = p[0] - a[0], y = p[1] - a[1], z = p[2] - a[2];
+      const t = length2 > 0 ? Math.max(0, Math.min(1, (x * d[0] + y * d[1] + z * d[2]) / length2)) : 0;
+      best2 = Math.min(best2, (x - t * d[0]) ** 2 + (y - t * d[1]) ** 2 + (z - t * d[2]) ** 2);
+    }
+    return Math.max(0, Math.sqrt(best2) - error);
+  };
+}
+
 /**
  * Place the view's trees.
  *   data    decoded terrain (TerrainMesh.decodeTerrain)
@@ -113,7 +137,7 @@ function defaultYield() {
 /** The placement, one tile per step (a generator returning the result). */
 function* placeForestSteps(data, view, rules, { seed = 0, rings = FOREST_RINGS, bands = null } = {}) {
   const STRIDE = 8;
-  const eyeA = cameraPoseAt(view, 0).eyeM, eyeB = cameraPoseAt(view, 1).eyeM;
+  const distanceToRail = forestRail(view);
   const b = bands || data.manifest.bands || { nearM: 1800, midM: 7000 };
   const treeline = rules.treelineM, maxSlope = rules.forestMaxSlopeDeg, density = rules.forestDensity;
   const floor = rules.forestFloorM ?? RULE_DEFAULTS.forestFloorM, scale = rules.treeScale ?? RULE_DEFAULTS.treeScale;
@@ -127,7 +151,7 @@ function* placeForestSteps(data, view, rules, { seed = 0, rings = FOREST_RINGS, 
     const x1 = x0 + cells * cs, z1 = z0 + cells * cs;
     // Tile-level ring cull before visiting its lattice cells.
     const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
-    const tileDist = railDistance(eyeA, eyeB, [cx, (tile.minY + tile.maxY) / 2, cz]) - Math.hypot(x1 - x0, z1 - z0) / 2;
+    const tileDist = distanceToRail([cx, (tile.minY + tile.maxY) / 2, cz]) - Math.hypot(x1 - x0, z1 - z0) / 2;
     if (tileDist > rings.billboardM) continue;
     for (let iz = Math.ceil(z0 / LATTICE_M); iz * LATTICE_M < z1; iz++) {
       for (let ix = Math.ceil(x0 / LATTICE_M); ix * LATTICE_M < x1; ix++) {
@@ -146,7 +170,7 @@ function* placeForestSteps(data, view, rules, { seed = 0, rings = FOREST_RINGS, 
         const slope = slopeDegAt(data, x, z, cs);
         if (!(slope <= maxSlope + (u01(h3) - 0.5) * 6)) continue;
         if (isWater(data, x, z)) continue;
-        const d = railDistance(eyeA, eyeB, [x, y, z]);
+        const d = distanceToRail([x, y, z]);
         if (d > rings.billboardM) continue;
         // Height tapers toward the treeline and on steep ground.
         const vigor = Math.min(1, Math.max(0.35, (edge - y) / 400)) * (1 - 0.3 * Math.max(0, slope - 25) / 25);

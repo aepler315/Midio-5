@@ -26,6 +26,7 @@ import { cameraPoseAt } from '../terrain/SceneTravel.js';
 import { BANDS } from './TerrainMesh.js';
 import { mistParams } from './RangeAtmosphere.js';
 import { scenicProjection, calibrateRangeMusic } from './RangeFrame.js';
+import { applyGlacierUniforms, glacierErrors } from './GlacierField.js';
 
 const COPY_VERT = /* glsl */`
   out vec2 vUv;
@@ -186,6 +187,8 @@ export class RangeScene {
    * rejects with RangeAssetError; a stale generation never publishes.
    */
   prepare(view, opts = {}) {
+    const iceErrors = glacierErrors(view.glacier);
+    if (iceErrors.length) return Promise.reject(new RangeAssetError('decode', iceErrors.join('; ')));
     const { signal = null, generation = 0, baseUrl, isCurrent = () => true } = opts;
     if (this.prepared.has(view.id)) return Promise.resolve(this.prepared.get(view.id));
     const pend = this.pending.get(view.id);
@@ -434,7 +437,7 @@ export class RangeScene {
    *  padded scenic stage so the Canvas transform (zoom, shake, roll) applies
    *  once when the partition is composited. */
   _setCamera(view, frame) {
-    const pose = cameraPoseAt(view, frame.progress01);
+    const pose = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
     const cam = this.camera;
     const proj = scenicProjection(pose.fovYDeg, frame.scenicViewport);
     cam.fov = proj.fovYDeg;
@@ -452,6 +455,7 @@ export class RangeScene {
   _setUniforms(p, frame) {
     const THREE = this.THREE;
     const u = p.uniforms;
+    applyGlacierUniforms(u, p.view.glacier, frame.glacier);
     const m = calibrateRangeMusic(frame.music, { view: p.view, progress01: frame.progress01,
       heightRange: [u.uHeightRange.value.x, u.uHeightRange.value.y], nominalHeight: frame.scenicViewport?.nominalHeight || 720 });
     u.uDeformAmp.value = m.amplitudeM;
