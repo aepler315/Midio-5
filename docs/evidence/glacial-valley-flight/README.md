@@ -25,3 +25,9 @@ Raw reports: [desktop frames](desktop-frames.json), [mobile frames](mobile-frame
 The uniform 128 m terrain topology prevents glacier seam cracks and fits the mobile budget; its surface-normal grid remains 64 m. The ordinary adaptive one-pixel LOD acceptance is **not claimed** for this candidate. The conservative tile-box bed-error estimate is large where a tile bounds the camera; visual and hardware performance acceptance remain necessary before normal matching is enabled.
 
 The ocean now draws before ordinary Range terrain partitions, which occlude it. The glacial pilot keeps its water inland. Faint clustered sky points and fractional brightness replace blanket star thinning, while large decorative motes and figures recede.
+
+## Verified motion passage
+
+[Silent 2:30–2:39 preview](flight-150-159.mp4), 1280×720 at 12 fps. The 108 frames advance from 150.000 to 158.917 seconds, with every requested time checked against the actual 120 Hz export clock. Camera travel across the sampled frames is 1554.6 m; retreat advances from 0.3963 to 0.4388. First and last source PNGs differ, and the motion report contains no page/shader errors. [Per-frame clocks and states](motion.json).
+
+The recording's audio is not included in the preview or repository.
